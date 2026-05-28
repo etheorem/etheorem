@@ -81,12 +81,26 @@ jobs:
 
       - name: Push split to downstream main
         if: github.ref == 'refs/heads/main'
-        # `--force-with-lease` is safe here: the downstream is a
-        # derived artifact, the only writer is this workflow, and
-        # the concurrency group above ensures no second run is mid-
-        # flight. The lease still catches the pathological case of
-        # someone manually pushing to the downstream between runs.
-        run: git push --force-with-lease downstream _split:main
+        # We deliberately ship without a `downstream` tracking ref
+        # (no `git fetch downstream` above) so the checkout stays
+        # fast on a repo we only ever push to. Bare
+        # `--force-with-lease` then has no recorded "expected
+        # remote" value and aborts with "stale info". Instead, we
+        # query the downstream tip via `ls-remote` immediately
+        # before the push and pass it explicitly as the lease — the
+        # push is rejected only if a manual write landed on the
+        # downstream between the query and the push (the real race
+        # this safety net exists to catch). For the first-ever
+        # push, `ls-remote` returns empty and we fall back to a
+        # plain push (no prior state to lease against).
+        run: |
+          set -euo pipefail
+          current=$(git ls-remote downstream main | cut -f1)
+          if [ -z "$current" ]; then
+            git push downstream _split:main
+          else
+            git push --force-with-lease=main:"$current" downstream _split:main
+          fi
 
       - name: Translate `leansha256-v*` umbrella tag to `v*` downstream
         if: startsWith(github.ref, 'refs/tags/leansha256-v')
