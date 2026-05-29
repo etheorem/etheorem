@@ -5,10 +5,13 @@ A Lean 4 project for Ethereum consensus-spec types and SSZ
 Goal: a faithful, formally verifiable encoder / decoder / Merkleization for
 SSZ types plus the consensus-spec container surface (Phase0 → Gloas).
 
-The Lake package is `Etheorem`; it currently ships three libraries:
+The Lake package is `Etheorem`; it currently ships four libraries:
 **`LeanSha256`** (pure-Lean SHA-256), **`SizzLean`** (the SSZ library),
-and **`LeanEthCS`** (the consensus-spec containers). Mentions of
-"SizzLean" elsewhere in this file refer to the SSZ library library
+**`LeanEthCS`** (the consensus-spec containers), and **`LeanPoseidon`**
+(a pure-Lean Poseidon2 hash, a standalone island parallel to `LeanSha256`
+— it depends on nothing in the monorepo and nothing depends on it yet;
+see [`packages/LeanPoseidon/docs/ARCHITECTURE.md`](packages/LeanPoseidon/docs/ARCHITECTURE.md)).
+Mentions of "SizzLean" elsewhere in this file refer to the SSZ library
 specifically, not to the project as a whole.
 
 The upstream repository is <https://github.com/etheorem/etheorem>.
@@ -101,7 +104,7 @@ and patterns do elsewhere.
 
 ## Layout
 
-Lake monorepo layout. Three subpackages under `packages/`, each
+Lake monorepo layout. Four subpackages under `packages/`, each
 with its own lakefile; an umbrella `lakefile.toml` at the root
 coordinates them via `[[require]]` blocks.
 
@@ -120,9 +123,14 @@ coordinates them via `[[require]]` blocks.
 │   │   ├── csrc/sha256_shim.c
 │   │   ├── docs/                # ARCHITECTURE.md, PLAN.md, research/ (SizzLean-scoped)
 │   │   ├── SizzLean.lean / SizzLean/ / Tests/ / README.md
-│   └── LeanEthCS/               # Consensus-spec containers (Phase 0 → Gloas).
-│       ├── lakefile.toml
-│       ├── LeanEthCS.lean / LeanEthCS/ / Tests/ / README.md
+│   ├── LeanEthCS/               # Consensus-spec containers (Phase 0 → Gloas).
+│   │   ├── lakefile.toml
+│   │   ├── LeanEthCS.lean / LeanEthCS/ / Tests/ / README.md
+│   └── LeanPoseidon/            # Pure-Lean Poseidon2 (BN254 t=3); standalone island.
+│       ├── lakefile.lean        # Procedural — C ABI shim + cargo (zkhash) extern_libs.
+│       ├── csrc/poseidon_shim.c / rust-oracle/  # test-only differential oracle
+│       ├── docs/                # ARCHITECTURE.md, PLAN.md (LeanPoseidon-scoped)
+│       ├── LeanPoseidon.lean / LeanPoseidon/ / LeanPoseidonTests/ / README.md
 └── .github/workflows/           # `leanprover/lean-action@v1` runs `lake build`.
 ```
 
@@ -226,7 +234,8 @@ pinned toolchain — keep the local build green and CI follows.
 
 ## Dependencies
 
-None yet. If you add one (e.g. `mathlib`, `batteries`):
+One Lean dependency: **`mathlib`**, used by `LeanPoseidonProofs` alone (see
+below). If you add another (e.g. `batteries`):
 
 1. Add a `[[require]]` block to `lakefile.toml`.
 2. Run `lake update` and commit the resulting `lake-manifest.json`.
@@ -234,6 +243,20 @@ None yet. If you add one (e.g. `mathlib`, `batteries`):
 
 Adding mathlib is a heavy commitment (long compile, toolchain coupling). Don't
 pull it in for trivia; reach for `batteries` first if a small extension suffices.
+The monorepo's mathlib dependency is **`LeanPoseidonProofs`** (the Poseidon2
+fast-≡-reference equivalence proof) — and it is deliberately **contained**: a
+*standalone* package (not in the umbrella `[[require]]`s), pinned to mathlib's
+`v4.29.1` tag (an exact toolchain match, so `lake exe cache get` uses prebuilt
+oleans — nothing compiles from scratch), with its own committed
+`lake-manifest.json`. So mathlib never touches the SSZ chain, the
+`LeanPoseidon` core, the root build, or any CI job other than the dedicated
+`poseidon-proofs` one. Build it with `just test-poseidon-proofs`. See
+[`packages/LeanPoseidon/docs/PLAN.md`](packages/LeanPoseidon/docs/PLAN.md) Phase 3.
+
+`LeanPoseidon`'s differential-test oracle vendors the Rust `zkhash` crate
+(pinned in `rust-oracle/Cargo.lock`); that is a **test-only, cargo-managed**
+dependency confined to the `poseidon_fuzz` executable — not a Lean/Lake
+dependency, and never on any shipped or proof path.
 
 ## SSZ scope (what this library will cover)
 

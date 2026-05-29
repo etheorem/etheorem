@@ -3,6 +3,13 @@
  "packages":
  [{"type": "path",
    "scope": "",
+   "name": "LeanPoseidon",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "packages/LeanPoseidon",
+   "configFile": "lakefile.lean"},
+  {"type": "path",
+   "scope": "",
    "name": "LeanEthCS",
    "manifestFile": "lake-manifest.json",
    "inherited": false,

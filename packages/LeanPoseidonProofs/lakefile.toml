@@ -1,0 +1,23 @@
+name = "LeanPoseidonProofs"
+defaultTargets = ["LeanPoseidonProofs"]
+# SPDX identifier; the LICENSE file lives at the umbrella root.
+license = "LGPL-3.0-only"
+licenseFiles = ["../../LICENSE"]
+
+# The equivalence proof depends on the (mathlib-free) core...
+[[require]]
+name = "LeanPoseidon"
+path = "../LeanPoseidon"
+
+# ...and on mathlib — the monorepo's first (and only) mathlib dependency,
+# isolated in this package so the core and its conformance gates stay
+# mathlib-free and fast. Pinned to the `v4.29.1` tag, whose `lean-toolchain`
+# (`leanprover/lean4:v4.29.1`) matches the repo's exactly — so `lake exe
+# cache get` fetches prebuilt oleans (no from-scratch mathlib build).
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4.git"
+rev = "v4.29.1"
+
+[[lean_lib]]
+name = "LeanPoseidonProofs"

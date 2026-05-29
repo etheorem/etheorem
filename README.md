@@ -17,13 +17,13 @@ Upstream repository: <https://github.com/etheorem/etheorem>.
 ## Layout
 
 ```
-LeanSha256  ←  SizzLean  ←  LeanEthCS
-   (pure)      (SSZ +        (consensus
-               cache +       containers,
+LeanSha256  ←  SizzLean  ←  LeanEthCS        LeanPoseidon
+   (pure)      (SSZ +        (consensus       (pure Poseidon2,
+               cache +       containers,       standalone island)
                FFI hash)     Phase0…Gloas)
 ```
 
-Three Lake subpackages under `packages/`, each with its own
+Four Lake subpackages under `packages/`, each with its own
 lakefile and independent build target:
 
 - **[`packages/LeanSha256/`](packages/LeanSha256/README.md)** — pure-Lean
@@ -38,11 +38,22 @@ lakefile and independent build target:
   Ethereum consensus-spec containers from Phase 0 through Gloas,
   the preset-struct macro, and the `ssz_static` CLI runner
   (`eth_ssz_vector_runner`, driven by `scripts/run_conformance.py`).
+- **[`packages/LeanPoseidon/`](packages/LeanPoseidon/README.md)** —
+  pure-Lean **Poseidon2** algebraic hash (BN254 *and* BLS12-381 scalar
+  fields, `t = 3`): the permutation, the 2-to-1 `compress`, and a sponge.
+  A *standalone island* parallel to `LeanSha256` — depends on nothing in
+  the monorepo and nothing depends on it yet. Conformance-validated by a
+  differential test against the HorizenLabs `zkhash` Rust oracle
+  (test-only) plus committed KATs; the kernel-/`native_decide`-reducible
+  core needs no Rust. A sibling **`LeanPoseidonProofs`** package (mathlib,
+  standalone) proves `permute = permuteRef` (the shipped fast layers equal
+  the textbook dense reference) with a clean axiom footprint.
 
 The umbrella `lakefile.toml` declares no Lean libraries of its
-own — it just coordinates the three subpackages via
-`[[require]]` blocks. Per-package publication repos will exist
-later; this is a development monorepo.
+own — it just coordinates the four subpackages via `[[require]]` blocks
+(`LeanPoseidonProofs` is built on its own, keeping mathlib out of the
+root). Per-package publication repos will exist later; this is a
+development monorepo.
 
 **Status: conformance-validated.** The Layer 1 spec
 (total serialize / deserialize / hashTreeRoot), the `SSZRepr`
@@ -142,11 +153,15 @@ Toolchain pinned in [`lean-toolchain`](lean-toolchain) (elan picks it up).
 lake build LeanSha256
 lake build SizzLean
 lake build LeanEthCS
+lake build LeanPoseidon     # standalone Poseidon2 island (fires its anchor KAT)
 
 # Test suites (per package, run on demand):
 lake build LeanSha256Tests
 lake build SizzLeanTests
 lake build LeanEthCSTests
+lake build LeanPoseidonTests # committed Poseidon2 KATs (no Rust)
+lake exe   poseidon_fuzz     # Poseidon2 differential test vs the zkhash oracle (needs cargo)
+just test-poseidon-proofs    # mathlib equivalence proof permute = permuteRef (standalone; fetches olean cache)
 
 # Bench + profile executables:
 lake build ssz_bench       # microbench grid, S1–S7 (see SizzLeanBench.lean)

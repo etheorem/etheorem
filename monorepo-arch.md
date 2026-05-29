@@ -6,14 +6,30 @@ arrangement is wired, and the conventions that keep the layout
 stable. For *what* each subpackage does, see the per-package
 READMEs and `packages/SizzLean/docs/ARCHITECTURE.md`.
 
-## Three subpackages under one umbrella
+## Four subpackages under one umbrella
 
 ```
-LeanSha256  ←  SizzLean  ←  LeanEthCS
-   (pure)      (SSZ +        (consensus
-               cache +       containers,
-               FFI hash)     Phase 0 → Gloas)
+LeanSha256  ←  SizzLean  ←  LeanEthCS          LeanPoseidon
+   (pure)      (SSZ +        (consensus          (pure Poseidon2,
+               cache +       containers,          BN254 t=3 —
+               FFI hash)     Phase 0 → Gloas)     standalone island)
 ```
+
+`LeanPoseidon` sits *outside* the `LeanSha256 → SizzLean → LeanEthCS`
+chain: it is a second pure-crypto primitive, parallel to `LeanSha256`,
+that nothing in the monorepo imports (and which imports nothing from it).
+The umbrella `[[require]]`s it so `lake build` builds it, but there is no
+edge into the SSZ side — see `packages/LeanPoseidon/docs/ARCHITECTURE.md`.
+
+A fifth package, **`LeanPoseidonProofs`**, hangs off `LeanPoseidon` (it
+`[[require]]`s the core + **mathlib**) and holds the machine-checked
+fast-≡-reference equivalence proof. It is the monorepo's only mathlib
+dependency and is **standalone** — deliberately *not* in the umbrella
+`[[require]]`s — so mathlib (clone, olean cache, build) is contained to
+that one package and its one CI job, leaving the root build and every
+other package mathlib-free. Build it on its own:
+`cd packages/LeanPoseidonProofs && lake build` (or `just
+test-poseidon-proofs`).
 
 ```
 <repo-root>/
@@ -42,43 +58,67 @@ LeanSha256  ←  SizzLean  ←  LeanEthCS
     │   ├── SizzLeanBench/            # microbench scenarios + Fulu reference fixture
     │   ├── bench/                    # session-output TSVs (gitignored)
     │   └── README.md
-    └── LeanEthCS/
-        ├── lakefile.toml             # declarative
-        ├── LeanEthCS.lean
-        ├── LeanEthCS/                # Forks/{Phase0..Gloas}/, Cli/, Primitives.lean, Preset*.lean
-        └── README.md
+    ├── LeanEthCS/
+    │   ├── lakefile.toml             # declarative
+    │   ├── LeanEthCS.lean
+    │   ├── LeanEthCS/                # Forks/{Phase0..Gloas}/, Cli/, Primitives.lean, Preset*.lean
+    │   └── README.md
+    ├── LeanPoseidon/                 # standalone island (parallel to LeanSha256)
+    │   ├── lakefile.lean             # procedural — C ABI shim + cargo (zkhash) extern_libs
+    │   ├── csrc/                     # poseidon_shim.c (Lean ByteArray ↔ raw-pointer Rust ABI)
+    │   ├── rust-oracle/              # vendored zkhash crate (test-only differential oracle)
+    │   ├── docs/                     # ARCHITECTURE.md, PLAN.md
+    │   ├── scripts/                  # gen_poseidon_params.py + poseidon2_{bn256,bls12}.json
+    │   ├── LeanPoseidon.lean
+    │   ├── LeanPoseidon/             # Field (Bn254Fr, Bls12Fr — shared) + Poseidon2/ (Params, LinearLayers, Permutation, Compress, Sponge)
+    │   ├── LeanPoseidonTests/        # Kat, Ffi, Differential
+    │   ├── FuzzMain.lean             # poseidon_fuzz exe root
+    │   └── README.md
+    └── LeanPoseidonProofs/           # standalone, NOT in the umbrella (mathlib-isolated)
+        ├── lakefile.toml             # require ../LeanPoseidon + mathlib @ v4.29.1
+        ├── lake-manifest.json        # committed — pins mathlib (+ transitive) revs
+        ├── LeanPoseidonProofs.lean
+        └── LeanPoseidonProofs/       # FpCommRing (CommRing (Fp p)), Equivalence (permute = permuteRef)
 ```
 
 ## Why this shape
 
-**Three subpackages.** The pure-Lean SHA-256 reference
+**Four subpackages.** The pure-Lean SHA-256 reference
 (`LeanSha256`) is reusable on its own — anyone wanting a verified
 SHA-256 in Lean shouldn't have to depend on all of SSZ. The SSZ
 library (`SizzLean`) is reusable beyond Ethereum — anyone with a
 custom SSZ-shaped schema shouldn't have to pull in
 consensus-spec containers. The Ethereum consensus types
 (`LeanEthCS`) sit on top of SSZ and don't need to push their
-weight onto SSZ-only consumers. Splitting also lets each layer
-publish on its own cadence later.
+weight onto SSZ-only consumers. `LeanPoseidon` is a *second*
+pure-crypto primitive — a verified Poseidon2 — parallel to
+`LeanSha256` rather than in the SSZ chain: it is a standalone
+island that nothing here imports yet (a future SSZ↔Poseidon2
+hasher bridge is deliberately deferred until EIP-7864 settles a
+hash and an encoding). Splitting also lets each piece publish on
+its own cadence later.
 
 **An umbrella.** While the layers
 are decoupled in principle, in practice every cross-layer change
 needs to land coherently: a `SizzLean` cache-layer tweak that
 breaks `LeanEthCS`'s deriving call sites should be fixed in one
 commit, not three. The umbrella `lakefile.toml` `[[require]]`s
-all three subpackages by relative path so `lake build` at the
-root builds the whole dependency chain in order. Per-package
+all four subpackages by relative path so `lake build` at the
+root builds the SSZ dependency chain in order (and the
+`LeanPoseidon` island alongside it). Per-package
 publication repos will exist later; this is a development
 monorepo.
 
-**`SizzLean` keeps `lakefile.lean`; the others use TOML.** Lake
-allows either form, but `lakefile.toml` is purely declarative —
-it can't express a build target that compiles a `.c` file. The
-FFI SHA-256 shim in `packages/SizzLean/csrc/` needs a procedural
-target (`buildO` over the `.c` file plus an `extern_lib`
-declaration linking to `libcrypto`), so `SizzLean`'s lakefile
-stays `.lean`. `LeanSha256` is pure-Lean (no FFI) and `LeanEthCS`
-just consumes `SizzLean`; both use the simpler `lakefile.toml`.
+**`SizzLean` and `LeanPoseidon` keep `lakefile.lean`; the others use
+TOML.** Lake allows either form, but `lakefile.toml` is purely
+declarative — it can't express a build target that compiles a `.c` file or
+shells `cargo`. The FFI SHA-256 shim in `packages/SizzLean/csrc/` needs a
+procedural target (`buildO` over the `.c` file plus an `extern_lib`
+declaration linking to `libcrypto`), so `SizzLean`'s lakefile stays
+`.lean`; likewise `LeanPoseidon`'s differential-test oracle needs a `cargo`
+target + a C ABI shim + their `extern_lib`s. `LeanSha256` is pure-Lean (no
+FFI) and `LeanEthCS` just consumes `SizzLean`; both use the simpler
+`lakefile.toml`.
 
 The procedural form on `SizzLean` is kept to the minimum: only
 the C-shim target and the `extern_lib` block. Everything else

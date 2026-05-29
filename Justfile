@@ -22,11 +22,12 @@ default:
 # Build
 # ─────────────────────────────────────────────────────────────────────────
 
-# Compile all three libraries (LeanSha256 → SizzLean → LeanEthCS)
+# Compile every library (SSZ chain LeanSha256 → SizzLean → LeanEthCS, plus the standalone LeanPoseidon island)
 build:
     lake build LeanSha256
     lake build SizzLean
     lake build LeanEthCS
+    lake build LeanPoseidon
 
 # Compile the `eth_ssz_vector_runner` CLI driver used by the official-vector-test recipes
 build-cli:
@@ -167,8 +168,8 @@ doctor: doctor-native
     echo
     echo "all dev-time deps present"
 
-# All local tests — SHA-256 NIST CAVP + SSZ library gates + LeanEthCS compile-time validation
-test: test-sha256 test-ssz test-eth
+# All local tests — SHA-256 NIST CAVP + SSZ library gates + LeanEthCS compile-time validation + Poseidon2 anchor KAT
+test: test-sha256 test-ssz test-eth test-poseidon
 
 # Full NIST CAVP byte-oriented SHA-256 vectors — 129 cases via native_decide, ~108s (the 3 anchor FIPS 180-4 §B gates already fire on `lake build LeanSha256` itself; this adds the full upstream suite)
 test-sha256:
@@ -192,6 +193,43 @@ test-ssz:
 # LeanEthCS validation — building the library *is* the test: every `deriving SSZRepr` is a compile-time gate. No in-Lean property tests of its own; upstream-vector conformance lives under `official-ssz-vector-tests*`.
 test-eth:
     lake build LeanEthCS
+
+# Building the core fires the in-file anchor-KAT `native_decide` gate
+# (input [0,1,2] → the known BN254 t=3 Poseidon2 output). Nothing in
+# the monorepo depends on LeanPoseidon (standalone island), so unlike
+# the SSZ-chain libs it isn't built transitively — this recipe is how
+# the anchor gate fires in `test` / CI. No Rust. Analogous to
+# LeanSha256's 3 FIPS §B gates firing on `lake build LeanSha256`.
+# LeanPoseidon core build — fires the Poseidon2 anchor KAT (no Rust)
+test-poseidon:
+    lake build LeanPoseidon
+
+# The broader batch of HorizenLabs `zkhash` BN254 t=3 fixed
+# permutation/compress vectors via `native_decide`, in the separate
+# `LeanPoseidonTests` lib. Heavier than the single anchor; kept out of
+# the default `lake build LeanPoseidon` (mirrors LeanSha256's
+# 129-vector CAVP batch). Needs no Rust toolchain.
+# Poseidon2 committed KAT batch (native_decide, no Rust)
+test-poseidon-vectors:
+    lake build LeanPoseidonTests
+
+# Runs the pure-Lean permutation and the Rust `zkhash` oracle on N
+# seeded-random inputs and asserts equality. This is the only recipe
+# needing a Rust toolchain (cargo); `build` / `test-poseidon` /
+# `test-poseidon-vectors` do not. See packages/LeanPoseidon/README.md.
+# Poseidon2 differential conformance vs the Rust zkhash oracle (needs cargo)
+fuzz-poseidon:
+    lake exe poseidon_fuzz
+
+# The mathlib equivalence proof (`permute = permuteRef`, fast layers = dense
+# reference). Lives in the standalone `LeanPoseidonProofs` package — the
+# monorepo's only mathlib dependency, built on its own so the core and all
+# other recipes stay mathlib-free. `cache get` fetches mathlib's prebuilt
+# oleans (the v4.29.1 pin matches the repo toolchain), so nothing is
+# compiled from scratch. Kept out of `test`/`build` (heavy; needs the cache).
+# Poseidon2 fast=reference equivalence proof (mathlib; fetches olean cache)
+test-poseidon-proofs:
+    cd packages/LeanPoseidonProofs && lake exe cache get && lake build LeanPoseidonProofs
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -289,6 +327,12 @@ gen-cavp:
 # Re-generate the CLI dispatch table (writes to LeanEthCS Cli/Main.lean)
 gen-cli-dispatch:
     .venv/bin/python scripts/gen_cli_dispatch.py
+
+# Emits packages/LeanPoseidon/LeanPoseidon/Params.lean from the pinned
+# HorizenLabs `zkhash` reference. Stdlib-only Python; no .venv needed.
+# Re-generate the BN254 t=3 Poseidon2 constants table
+gen-poseidon-params:
+    python3 packages/LeanPoseidon/scripts/gen_poseidon_params.py
 
 
 # ─────────────────────────────────────────────────────────────────────────

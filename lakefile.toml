@@ -1,13 +1,14 @@
 name = "Etheorem"
 
-# Umbrella package coordinating the three subpackages. It declares
-# no Lean library of its own — building the umbrella delegates to
-# the sub-packages via the `[[require]]` blocks below.
+# Umbrella package coordinating the subpackages. It declares no Lean
+# library of its own — building the umbrella delegates to the
+# sub-packages via the `[[require]]` blocks below.
 #
 # Common targets (build by name from the repo root):
 #   lake build LeanSha256
 #   lake build SizzLean
 #   lake build LeanEthCS
+#   lake build LeanPoseidon
 #   lake build SizzLeanTests
 #   lake build LeanEthCS
 #   lake build eth_ssz_vector_runner          # CLI exe for ssz_static + ssz_generic tests
@@ -25,3 +26,10 @@ path = "packages/SizzLean"
 [[require]]
 name = "LeanEthCS"
 path = "packages/LeanEthCS"
+
+# Standalone island, parallel to `LeanSha256` (a pure-crypto
+# primitive), outside the `LeanSha256 → SizzLean → LeanEthCS` SSZ
+# chain — nothing here imports it. Building the umbrella builds it.
+[[require]]
+name = "LeanPoseidon"
+path = "packages/LeanPoseidon"

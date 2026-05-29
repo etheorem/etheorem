@@ -114,3 +114,47 @@ jobs:
           else
             just official-ssz-vector-tests-smoke
           fi
+
+  poseidon:
+    # Poseidon2 differential conformance against the HorizenLabs `zkhash`
+    # Rust oracle (LeanPoseidon ARCHITECTURE.md §8). This is the ONLY job
+    # that needs a Rust toolchain (cargo): it builds `poseidon_fuzz` (which
+    # shells `cargo build` for the oracle) and runs it. The LeanPoseidon
+    # core and its committed KATs build *without* Rust — the anchor KAT
+    # already fires in the `test` job via `just test` (`test-poseidon`).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v3
+      - uses: dtolnay/rust-toolchain@stable
+      # Same lean-action pin as the other jobs. `build-args: poseidon_fuzz`
+      # builds the exe, which triggers the `cargo build` + the Rust↔Lean
+      # link; LeanPoseidon / LeanPoseidonTests compile transitively.
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: '.'
+          build-args: 'poseidon_fuzz'
+      - name: Committed Poseidon2 KATs (native_decide, no Rust)
+        run: just test-poseidon-vectors
+      - name: Differential conformance vs the zkhash oracle
+        run: just fuzz-poseidon
+
+  poseidon-proofs:
+    # The mathlib equivalence proof (`permute = permuteRef` — the shipped
+    # fast layers equal the dense reference). This is the monorepo's ONLY
+    # mathlib dependency, isolated in the standalone `LeanPoseidonProofs`
+    # package — no other job (and not the umbrella build) touches mathlib.
+    # `just test-poseidon-proofs` runs `lake exe cache get` (the `v4.29.1`
+    # pin matches the repo toolchain, so prebuilt oleans are used — nothing
+    # is compiled from scratch) then builds the proofs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v3
+      # `auto-config: false` → install the Lean toolchain only; the build +
+      # mathlib-cache fetch go through the `just` recipe (CI mirrors `just`).
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          auto-config: false
+      - name: Build the fast≡reference equivalence proof (mathlib cache + build)
+        run: just test-poseidon-proofs

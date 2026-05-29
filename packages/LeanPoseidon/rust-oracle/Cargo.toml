@@ -1,0 +1,21 @@
+# Vendored Poseidon2 conformance oracle.
+#
+# Wraps the HorizenLabs `zkhash` crate (the trusted external reference)
+# behind a small `extern "C"` shim and builds it as a static library
+# (`crate-type = ["staticlib"]`) that Lake adopts via `extern_lib` (see
+# ../lakefile.lean). Test-only: never on the shipped LeanPoseidon path.
+[package]
+name = "poseidon_oracle"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# Pinned (`=`) for reproducible oracle builds; Cargo.lock is committed.
+zkhash = "=0.2.0"
+
+[profile.release]
+opt-level = 3
