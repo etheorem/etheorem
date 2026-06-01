@@ -1,5 +1,10 @@
 import LeanPoseidonProofs.FpCommRing
 import LeanPoseidonProofs.Equivalence
+import LeanPoseidonProofs.FpField
+import LeanPoseidonProofs.Primality
+import LeanPoseidonProofs.Bijective
+import LeanPoseidonProofs.Padding
+import LeanPoseidonProofs.RoundCount
 
 /-!
 # `LeanPoseidonProofs` — the fast-≡-reference equivalence proof (library root)

@@ -251,13 +251,14 @@ test-poseidon-vectors:
 fuzz-poseidon:
     lake exe poseidon_fuzz
 
-# The mathlib equivalence proof (`permute = permuteRef`, fast layers = dense
-# reference). Lives in the standalone `LeanPoseidonProofs` package — the
-# monorepo's only mathlib dependency, built on its own so the core and all
-# other recipes stay mathlib-free. `cache get` fetches mathlib's prebuilt
-# oleans (the v4.29.1 pin matches the repo toolchain), so nothing is
+# The mathlib proofs: `permute = permuteRef` (fast layers = dense reference),
+# `permute` is a bijection, `pad` is injective, `compress` is not injective,
+# and the round-count `#guard`s. Lives in the standalone `LeanPoseidonProofs`
+# package — the monorepo's only mathlib dependency, built on its own so the
+# core and all other recipes stay mathlib-free. `cache get` fetches mathlib's
+# prebuilt oleans (the v4.29.1 pin matches the repo toolchain), so nothing is
 # compiled from scratch. Kept out of `test`/`build` (heavy; needs the cache).
-# Poseidon2 fast=reference equivalence proof (mathlib; fetches olean cache)
+# Poseidon2 structural-correctness + equivalence proofs (mathlib; fetches olean cache)
 test-poseidon-proofs:
     cd packages/LeanPoseidonProofs && lake exe cache get && lake build LeanPoseidonProofs
 

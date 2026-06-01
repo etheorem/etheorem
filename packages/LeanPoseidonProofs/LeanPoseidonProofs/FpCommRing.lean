@@ -41,7 +41,7 @@ namespace Fp
 variable {p : Nat} [NeZero p]
 
 /-- The canonical embedding into `ZMod p`. -/
-private def toZMod (a : Fp p) : ZMod p := (a.val : ZMod p)
+def toZMod (a : Fp p) : ZMod p := (a.val : ZMod p)
 
 -- The four extra carriers mathlib's transport needs, defined through
 -- `ZMod p` so `toZMod` preserves them definitionally up to `natCast_zmod_val`.
@@ -65,37 +65,37 @@ private theorem pow_succ' (a : Fp p) (n : ℕ) : a ^ (n + 1) = a ^ n * a := rfl
 private theorem pow_zero' (a : Fp p) : a ^ 0 = 1 := rfl
 
 omit [NeZero p] in
-private theorem toZMod_injective : Function.Injective (toZMod : Fp p → ZMod p) := by
+theorem toZMod_injective : Function.Injective (toZMod : Fp p → ZMod p) := by
   intro a b h
   have hmod : a.val % p = b.val % p := (ZMod.natCast_eq_natCast_iff _ _ _).mp h
   have hval : a.val = b.val := by
     rwa [Nat.mod_eq_of_lt a.isLt, Nat.mod_eq_of_lt b.isLt] at hmod
   obtain ⟨_, _⟩ := a; obtain ⟨_, _⟩ := b; simpa using hval
 
-private theorem toZMod_zero : toZMod (0 : Fp p) = 0 := by
+theorem toZMod_zero : toZMod (0 : Fp p) = 0 := by
   simp only [toZMod, val_zero, Nat.cast_zero]
-private theorem toZMod_one : toZMod (1 : Fp p) = 1 := by
+theorem toZMod_one : toZMod (1 : Fp p) = 1 := by
   simp only [toZMod, val_one, ZMod.natCast_mod, Nat.cast_one]
-private theorem toZMod_add (a b : Fp p) : toZMod (a + b) = toZMod a + toZMod b := by
+theorem toZMod_add (a b : Fp p) : toZMod (a + b) = toZMod a + toZMod b := by
   simp only [toZMod, val_add, ZMod.natCast_mod, Nat.cast_add]
-private theorem toZMod_mul (a b : Fp p) : toZMod (a * b) = toZMod a * toZMod b := by
+theorem toZMod_mul (a b : Fp p) : toZMod (a * b) = toZMod a * toZMod b := by
   simp only [toZMod, val_mul, ZMod.natCast_mod, Nat.cast_mul]
-private theorem toZMod_neg (a : Fp p) : toZMod (-a) = -toZMod a := by
+theorem toZMod_neg (a : Fp p) : toZMod (-a) = -toZMod a := by
   simp only [toZMod, val_neg, ZMod.natCast_mod, Nat.cast_sub a.isLt.le, ZMod.natCast_self,
     zero_sub]
-private theorem toZMod_sub (a b : Fp p) : toZMod (a - b) = toZMod a - toZMod b := by
+theorem toZMod_sub (a b : Fp p) : toZMod (a - b) = toZMod a - toZMod b := by
   simp only [toZMod, val_sub, ZMod.natCast_mod, Nat.cast_add, Nat.cast_sub b.isLt.le,
     ZMod.natCast_self]
   ring
-private theorem toZMod_nsmul (n : ℕ) (a : Fp p) : toZMod (n • a) = n • toZMod a := by
+theorem toZMod_nsmul (n : ℕ) (a : Fp p) : toZMod (n • a) = n • toZMod a := by
   simp only [toZMod, val_nsmul, ZMod.natCast_zmod_val]
-private theorem toZMod_zsmul (z : ℤ) (a : Fp p) : toZMod (z • a) = z • toZMod a := by
+theorem toZMod_zsmul (z : ℤ) (a : Fp p) : toZMod (z • a) = z • toZMod a := by
   simp only [toZMod, val_zsmul, ZMod.natCast_zmod_val]
-private theorem toZMod_natCast (n : ℕ) : toZMod (n : Fp p) = (n : ZMod p) := by
+theorem toZMod_natCast (n : ℕ) : toZMod (n : Fp p) = (n : ZMod p) := by
   simp only [toZMod, val_natCast, ZMod.natCast_zmod_val]
-private theorem toZMod_intCast (i : ℤ) : toZMod (i : Fp p) = (i : ZMod p) := by
+theorem toZMod_intCast (i : ℤ) : toZMod (i : Fp p) = (i : ZMod p) := by
   simp only [toZMod, val_intCast, ZMod.natCast_zmod_val]
-private theorem toZMod_npow (a : Fp p) (n : ℕ) : toZMod (a ^ n) = (toZMod a) ^ n := by
+theorem toZMod_npow (a : Fp p) (n : ℕ) : toZMod (a ^ n) = (toZMod a) ^ n := by
   induction n with
   | zero => rw [pow_zero', toZMod_one, pow_zero]
   | succ k ih => rw [pow_succ', toZMod_mul, ih, pow_succ]

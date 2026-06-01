@@ -547,6 +547,35 @@ verified"*. The two together — clean-proved optimisation + empirically-pinned
 S-box/schedule/constants — are what make the shipped `permute` faithful
 Poseidon2.
 
+**Beyond the optimisation — the reference as the proof surface (✅ Phase 6).**
+The equivalence also makes `permuteRef` a *proof surface* for the shipped
+`permute`: any property preserved by equality transfers along
+`permute_eq_permuteRef` by a one-line rewrite. This is realised in Phase 6 —
+chiefly **"`permute` is a bijection"** (`permute_bijective_bn254` /
+`permute_bijective_bls12`), the property the name asserts. It is proved on the
+**dense** reference, where the layers are genuine matrix–vector products and
+mathlib's `Matrix.det` / "`IsUnit (det M) ⇒ mulVec` bijective" machinery
+applies directly (external `det = 4`, internal `det = 7`, both `≠ 0` by
+`decide`); the S-box (`x⁵`, bijective since `gcd(5, p−1) = 1` for both shipped
+fields) and the ARK translations are shared, so they are proved once on
+`permuteWith` (rounds composed via a `List.foldl`-based fold-of-bijections
+lemma), then transported to `permute`. Bijectivity needs `Field (Fp p)` —
+hence `Fact (Nat.Prime p)`, which the core's `CommRing (Fp p)` deliberately
+omits; `FpField.lean` supplies the `Field` instance by reusing the existing
+`CommRing` parent (so no `CommRing` diamond). The *generic* structural theorems
+stay at `[propext, Classical.choice, Quot.sound]`; primality is confined to the
+concrete specialisations via a single **cited axiom** per field
+(`bn254FrModulus_prime` / `blsFrModulus_prime` — prime by curve construction,
+attested by EIP-196/197 and the curve papers; `Primality.lean`), swappable in
+one line for a Pratt/Lucas certificate. `#print axioms` is **verified**: the
+concrete bijectivity theorems add exactly that one primality axiom and
+**nothing FFI / `ofReduceBool`**. Phase 6 also ships `pad_injective` (the
+sponge's injective-padding hypothesis; axiom-clean), `compress_not_injective`
+(the 2-to-1 node has collisions by pigeonhole — why leaf pre-hashing is needed,
+§7), and a decidable round-count `#guard` (`RoundCount.lean`, the reference
+script's statistical + interpolation minimum-round bounds). See PLAN.md
+Phase 6.
+
 ### 9.1 Files
 
 | File | Role |
@@ -604,11 +633,25 @@ graph TB
   `…_bn254` / `…_bls12` specialisations, and the two layer lemmas) shows
   exactly `[propext, Classical.choice, Quot.sound]` and nothing
   FFI-flavoured — the Stage 9 acceptance criterion, met.
+- The Phase-6 structural-correctness proofs (`LeanPoseidonProofs`). The
+  *generic* theorems and `pad_injective` are likewise `[propext,
+  Classical.choice, Quot.sound]`. The *concrete* `permute_bijective_{bn254,
+  bls12}` / `compress_not_injective` add **exactly one** further axiom — the
+  cited primality of the relevant standardised modulus (`bn254FrModulus_prime`
+  / `blsFrModulus_prime`, `Primality.lean`) — and still **no FFI, no
+  `ofReduceBool`** (`#print axioms` verified). This is a *third, distinct
+  trusted-base category*: **dischargeable** — provable in principle (a
+  Pratt/Lucas certificate), axiomatised as a cited standardised constant
+  pending that, and bounded by policy to standardised prime-field moduli.
+  Unlike the conformance gates' `ofReduceBool` (compiler trust) or the FFI
+  oracle (external-code trust), it is neither idealised nor empirical — just
+  deferred work. See §9 and PLAN.md Phase 6.
 
 The clean separation is the point: the FFI/`native_decide` trust lives in
-the *conformance gates*, while the *equivalence theorem* — the publishable
-artefact — sits in the verified layer with no empirical trust on its proof
-path.
+the *conformance gates*, while the *equivalence and structural-correctness
+theorems* — the publishable artefacts — sit in the verified layer (the only
+non-standard axiom being the cited, dischargeable primality of the shipped
+moduli).
 
 ## 11. Module layout
 
@@ -756,6 +799,7 @@ SSZ-hash tactic guidance:
 | **3 — Equivalence proofs** | `LeanPoseidonProofs` + mathlib; `CommRing (Fp p)`; `fast = reference` for both layers ⇒ `permute = permuteRef`, specialised to `bn254Params` / `bls12Params`; `#print axioms` clean. | ✅ done | The one place mathlib enters — pinned to the `v4.29.1` tag (exact toolchain match, prebuilt olean cache), standalone so the rest of the repo stays mathlib-free. Axiom footprint verified `[propext, Classical.choice, Quot.sound]`. |
 | **4 — Generalise widths and fields** (optional follow-up) | **10a** — parameterise the field as `Fp (p : Nat)` with `Bn254Fr := Fp bn254FrModulus` (§3). **10b** — additional instances: a second *field* (BLS12-381 `Fr`, t=3) with anchor KAT, committed KATs, and differential; *widths* (`t ≠ 3`) need a core `Vector R t` generalisation. | 10a ✅; 10b field axis ✅ (BLS12-381); 10b width axis ⏸ deferred | Open/Closed — a new field is new data (no edits to the generic layers/proofs); a new width is a core refactor (`Vector R 3 → Vector R t`, `M4` for t≥4). Concrete fields stay `Nat`/GMP-backed (hot path verified by the unchanged anchor KAT + differential). |
 | **5 — Docs** | Package README, root README / CLAUDE.md / monorepo-arch.md updates. | ✅ done | — |
+| **6 — Structural-correctness proofs** | The shipped permutation proved a genuine **bijection** (S-box ∘ invertible layers ∘ ARK), on the dense `permuteRef` and transported via `permute_eq_permuteRef`; plus sponge-`pad` injectivity, `compress` non-injectivity (pigeonhole), and a decidable round-count-meets-the-paper's-bounds `#guard`. | ✅ done | Generic theorems axiom-clean (`[propext, Choice, Quot.sound]`); concrete specialisations carry exactly one **cited** `Nat.Prime` axiom (standardised moduli; §9), no FFI/`ofReduceBool` — `#print axioms` verified. Swappable for a Pratt certificate. Sponge indifferentiability remains out of scope — see below. |
 
 The one decision that was flagged here — the **mathlib ↔ toolchain pin**
 (Phase 3) — is **resolved**: mathlib's `v4.29.1` tag has `lean-toolchain`
@@ -763,3 +807,18 @@ The one decision that was flagged here — the **mathlib ↔ toolchain pin**
 bump was needed and the prebuilt olean cache applies. (The fallback that
 was on the table — hand-proving `CommRing (Fp p)` and the linear identities
 without `ring`, no new dependency — was not needed.)
+
+**Possible future work, not in the works — sponge indifferentiability.** A
+conditional security theorem — *if* `permute` is modelled as an ideal
+permutation, *then* the sponge `hash` is indifferentiable from a random
+oracle up to the capacity bound (Bertoni–Daemen–Peeters–Van Assche;
+machine-checked for Keccak in EasyCrypt) — is the natural *crypto-grade*
+result. It is a deliberate non-goal for now: it is game-based reasoning in
+the random-permutation model (EasyCrypt / VCVio territory, not yet ported to
+a sponge in Lean), it is a statement about an *idealised* permutation rather
+than the concrete one, and it does not fit this library's kernel-reducible,
+identity-style proofs. It is recorded as a possible future direction in
+PLAN.md, not a planned phase. (Unconditional collision/preimage resistance of
+the concrete permutation is **not** a theorem at all — it rests on
+best-known-attack cryptanalysis, which is what the EF Poseidon Initiative
+assesses.)

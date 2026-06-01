@@ -419,6 +419,101 @@ from the README to a working `compress` call.
 
 ---
 
+## Phase 6 — Structural-correctness proofs (✅ done)
+
+The proof investment after Phase 3. Where Phase 3 certified the linear-layer
+*optimisation*, Phase 6 certifies the permutation's **structural correctness** —
+that it is an actual bijection — plus the sponge's padding hypothesis and a
+decidable parameter check. **All four targets are shipped** (in
+`LeanPoseidonProofs`), building green with a verified-clean axiom footprint.
+
+**Strategy — prove on the reference, transport to the shipped path.**
+`permute` and `permuteRef` differ *only* in the linear layers (the S-box, the
+ARK additions, and the schedule are the shared `permuteWith`), and they are
+already proved equal (`permute_eq_permuteRef`, Phase 3). So structural
+properties are proved on the **dense `permuteRef`** — where the layers are
+genuine matrix–vector products and mathlib's `Matrix.det` /
+"`IsUnit (det M) ⇒ mulVec` bijective" machinery applies directly — and
+transported to the shipped `permute` by a one-line rewrite through the
+existing equivalence. This is the reference implementation earning its keep a
+second time (ARCHITECTURE.md §9).
+
+**Primality — decided.** Bijectivity needs `Field (Fp p)`, hence
+`Fact (Nat.Prime p)`, which the core's `CommRing (Fp p)` deliberately does not
+assume (`native_decide` cannot help — `Nat.Prime`'s decidability is trial
+division, infeasible at 254 bits). Generic structural theorems are stated over
+`[Fact (Nat.Prime p)]` and keep the clean
+`[propext, Classical.choice, Quot.sound]` footprint; the concrete `…_bn254` /
+`…_bls12` specialisations get the `Fact` from a single **cited axiom** —
+`axiom bn254FrModulus_prime : Nat.Prime bn254FrModulus` (and the BLS12
+sibling), referencing the canonical modulus def and attested by the curve
+construction + EIP-196/197. These are standardised, literature-vetted primes
+(prime *by curve construction*, not numbers we chose), so a cited axiom is a
+sound import in the same family as the project's existing `ofReduceBool` / FFI
+concessions — bounded by an explicit policy (*standardised prime-field moduli
+only; arbitrary primality facts must be proved*) and swappable in one line for
+the Verified-zkEVM `CompPoly` Pratt/Lucas certificate later. The axiom's blast
+radius is exactly the two specialisations.
+
+**Targets (all shipped).**
+1. ✅ **`permute` is a bijection** — `permute_bijective_bn254` /
+   `permute_bijective_bls12` (`Bijective.lean`). S-box `x⁵` bijective
+   (`gcd(5, p−1) = 1`, `decide`); external/internal dense layers invertible
+   (`det = 4` / `det = 7` ≠ 0, `decide`); ARK translations bijective; composed
+   over `permuteWith` via a `List.foldl`-based fold-of-bijections lemma; then
+   transported to `permute` through `permute_eq_permuteRef`. **Novel** — the
+   first machine-checked structural property of the bare Poseidon2 permutation.
+2. ✅ **Sponge `pad` injectivity** — `pad_injective` (`Padding.lean`). No
+   primality; the marker `1 ≠ 0` pins the parity, `List.append_inj_left` strips
+   the suffix. Axiom footprint completely clean (`[propext, Choice, Quot.sound]`).
+3. ✅ **`compress` not collision-resistant in isolation** —
+   `compress_not_injective` (`Bijective.lean`): the 2-to-1 map has collisions by
+   pigeonhole (`Nat.card_le_card_of_injective` + `p < p²`). The structural reason
+   a Merkle node needs leaf pre-hashing + domain separation, not `compress`
+   alone (ARCHITECTURE.md §7).
+4. ✅ **Decidable round-count check** — `meetsFloor` + `#guard`s
+   (`RoundCount.lean`): the shipped `R_F = 8`, `R_P = 56` clear the reference
+   script's *statistical* (`R_F_1`) and *interpolation* (`R_F_2`, via `Nat.clog`)
+   minimum-round bounds at 128-bit security, for both instances. Certifies the
+   *published security floor* — a different axis than the differential test's
+   "matches `zkhash`". Scope: the two crisply-recastable bounds (the Gröbner
+   `R_F_3..5` + binomial cost rest on the reference's float evaluation and are
+   not re-encoded); it does **not** prove the inequalities imply security.
+
+**Acceptance (met).** `Bijective (permute bn254Params)` / `…bls12Params` and
+`Function.Injective pad` proved with **no `sorry`**, no `native_decide`; the
+round-count `#guard`s pass. `#print axioms` verified: the generic theorems are
+`[propext, Classical.choice, Quot.sound]`; the concrete specialisations add
+**exactly** the one cited primality axiom (`bn254FrModulus_prime` /
+`blsFrModulus_prime`) and **nothing FFI / `ofReduceBool`**; `pad_injective`
+cites no primality axiom at all.
+
+**Shipped files** (`packages/LeanPoseidonProofs/LeanPoseidonProofs/`):
+`Primality.lean` (cited axioms + `Fact` instances), `FpField.lean`
+(`Field (Fp p)` from `[Fact (Nat.Prime p)]`, reusing the `CommRing` parent —
+no diamond), `Bijective.lean` (S-box / layer / round / schedule bijectivity →
+`permute_bijective_{bn254,bls12}` + `compress_not_injective`), `Padding.lean`
+(`pad_injective`), `RoundCount.lean` (`meetsFloor` `#guard`s). `FpCommRing.lean`
+de-privatised its `toZMod` helpers so `FpField` reuses them.
+
+### Out of scope for now — sponge indifferentiability (try in the future)
+
+The natural *crypto-grade* result is conditional: *if* `permute` is modelled
+as an ideal/random permutation, *then* the sponge `hash` is indifferentiable
+from a random oracle up to the capacity bound (Bertoni–Daemen–Peeters–Van
+Assche; machine-checked for Keccak in EasyCrypt). It is **deliberately not in
+the works**: it is game-based reasoning in the random-permutation model
+(EasyCrypt / VCVio territory, not yet ported to a sponge in Lean), it is a
+statement about an *idealised* permutation rather than the concrete one, and
+it does not fit this library's kernel-reducible, identity-style proofs. It is
+recorded here as a possible future direction — something we *could* try later
+— not a planned phase. (Hard boundary: unconditional collision/preimage
+resistance of the concrete permutation is **not** a theorem at all — it rests
+on best-known-attack cryptanalysis, which is what the EF Poseidon Initiative
+assesses.)
+
+---
+
 ## Deferred: SizzLean `Hasher` bridge (not planned)
 
 Wiring a `Hasher Poseidon` instance into `SizzLean` — so SSZ Merkleization
@@ -498,7 +593,9 @@ deliberately left unbuilt until its upstream consumer is concrete.
 | 3 — Equivalence proofs (mathlib) | Stages 8–9 | ✅ done — `CommRing (Fp p)` + `permute = permuteRef` (both fields); axiom footprint verified clean (`propext`/`Classical.choice`/`Quot.sound`); standalone `LeanPoseidonProofs`, `v4.29.1` pin |
 | 4 — Generalise widths and fields (optional) | Stages 10a–10b | 10a ✅ done (`Fp (p)`); 10b field axis ✅ done (BLS12-381 `Fr`); 10b width axis (`t ≠ 3`) ⏸ deferred |
 | 5 — Docs | Stage 11 | ✅ done — README + root README / CLAUDE.md / monorepo-arch.md + this doc |
+| 6 — Structural-correctness proofs | Targets 1–4 (bijectivity, `pad` injectivity, `compress` non-injectivity, round-count `#guard`) | ✅ done — `permute_bijective_{bn254,bls12}` + `compress_not_injective` + `pad_injective` + `meetsFloor` `#guard`s; axioms verified `[propext, Choice, Quot.sound]` + one cited primality axiom on the concrete specialisations, no FFI/`ofReduceBool` |
 | Deferred | SizzLean `Hasher` bridge | not planned (gated on EIP-7864) |
+| Deferred | Sponge indifferentiability | not in the works — possible future (idealised-permutation; EasyCrypt / VCVio territory) |
 
 ### Deviations from the original design (recorded as built)
 

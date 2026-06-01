@@ -9,9 +9,11 @@ node primitive), and a `hash` sponge over arbitrary-length input.
 The shipped path is **pure Lean** — the whole permutation reduces in the
 Lean kernel and under `native_decide`, with no FFI. A Rust [`zkhash`](https://crates.io/crates/zkhash)
 *oracle* is used only for differential conformance testing; it is never on
-the shipped path or inside a proof. Its fast linear layers are also
-**formally proven** equal to the textbook dense reference (`permute =
-permuteRef`).
+the shipped path or inside a proof. The shipped primitive is also
+**machine-checked** in a sibling `mathlib` package: the permutation is a genuine
+**bijection**, its fast linear layers compute the textbook dense reference
+(`permute = permuteRef`), the sponge padding is injective, and the deployed
+round numbers meet the paper's security floor — see [Verification](#verification).
 
 > **Poseidon v1** is out of scope — this is **Poseidon2**. Nethermind's
 > [`Poseidon.lean`](https://github.com/NethermindEth/Poseidon.lean) covers v1.
@@ -45,8 +47,8 @@ rev = "<commit-or-tag>"      # pin a rev; don't track a branch
 
 Two optional toolchains, each confined to one task (see **Tests**):
 `cargo` (Rust) for the differential test, and `mathlib` (fetched
-automatically as a prebuilt olean cache) for the equivalence proof. Neither
-is needed to build or use the core.
+automatically as a prebuilt olean cache) for the proofs. Neither is needed to
+build or use the core.
 
 ## Usage
 
@@ -113,39 +115,51 @@ All names live under `LeanPoseidon` (`open LeanPoseidon`) or its
 | Name | Statement |
 | --- | --- |
 | `Fp.instCommRing` | `instance [NeZero p] : CommRing (Fp p)` (transported from `ZMod p`) |
+| `Fp.instField` | `instance [Fact (Nat.Prime p)] : Field (Fp p)` (reuses the `CommRing` parent — no diamond) |
 | `mulExternalFast_eq_ref` / `mulInternalFast_eq_ref` | the fast layer = the dense layer, over any `[CommRing R]` |
-| `permute_eq_permuteRef` | `permute par st = permuteRef par st`, over any `[CommRing R]` |
-| `permute_eq_permuteRef_bn254` / `…_bls12` | the above specialised to each field |
+| `permute_eq_permuteRef` (+ `…_bn254` / `…_bls12`) | `permute par st = permuteRef par st`, over any `[CommRing R]`, then each field |
+| `permute_bijective_bn254` / `…_bls12` | `Function.Bijective (permute …)` — the shipped permutation is a genuine bijection |
+| `compress_not_injective` | `¬ Function.Injective (fun (a, b) ↦ compress a b)` — the 2-to-1 node has collisions (pigeonhole) |
+| `pad_injective` | `Function.Injective pad` — the sponge padding is injective |
+| `meetsFloor` (`#guard`s) | the deployed `R_F = 8`, `R_P = 56` meet the reference script's minimum-round bounds (`RoundCount.lean`) |
+
+The two standardised moduli are assumed prime via cited axioms
+(`bn254FrModulus_prime` / `blsFrModulus_prime`, `Primality.lean`) — see the
+[Trust boundary](#trust-boundary).
 
 ## Verification
 
-The library's central optimisation is **machine-checked**: the cheap *fast*
-linear layers it ships (the `O(t)` sum-plus-scaled-diagonal forms) are proven
-*equal* to the textbook *dense* `t×t` matrix products, so `permute =
-permuteRef`. The proof is generic over any `[CommRing R]` — covering **both**
-fields at once — and lives in the sibling `LeanPoseidonProofs` package (its
-only dependency, mathlib); the concrete fields plug in through a
-`CommRing (Fp p)` instance transported from `ZMod p`. (`LeanPoseidonProofs`
-also exports the specialisations `permute_eq_permuteRef_bn254` / `…_bls12`.)
+Beyond the conformance gates ([Tests](#tests)), the shipped primitive is
+**machine-checked**. The proofs establish that:
 
-Its axiom footprint is **clean**: `#print axioms permute_eq_permuteRef` is
-exactly `[propext, Classical.choice, Quot.sound]` — mathlib's standard
-axioms, with **no** FFI axiom and **no** `Lean.ofReduceBool` (the
-`native_decide` compiler-trust axiom).
+- **`permute` is a genuine bijection** — it really is a *permutation*
+  (`permute_bijective_bn254` / `permute_bijective_bls12`);
+- **the fast linear layers compute the textbook dense matrices**, so
+  `permute = permuteRef` (the paper's central optimisation);
+- **the sponge padding is injective** (`pad_injective`);
+- **`compress` is not collision-resistant on its own** — the 2-to-1 node has
+  collisions, so a Merkle tree's security must come from pre-hashing its leaves,
+  not from `compress` alone (`compress_not_injective`);
+- **the deployed round numbers meet the paper's minimum-round bounds**
+  (`RoundCount.lean`).
 
-**Scope — what it does and does not cover.** `permute` and `permuteRef`
-share the *same* S-box (`x⁵`), round-constant (ARK) additions, and round
-schedule; those cancel in the equality and are **not** cross-validated by
-the theorem — it would hold unchanged even if the S-box exponent or the
-schedule were wrong. They are pinned instead by the conformance gates (the
-[Tests](#tests) below), which carry compiler (`ofReduceBool`) / empirical
-(`zkhash`) trust. So the trust splits cleanly: the linear-layer
-**optimisation** is proved with no compiler trust here; the
-**spec-faithfulness** of the S-box, schedule, and constants is empirical.
-Together they make the shipped `permute` faithful Poseidon2.
+Run them all with:
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §9 for the theorem
-statements.
+```bash
+just test-poseidon-proofs
+```
+
+**Where the proofs live.** They are *not* part of the `LeanPoseidon` package —
+they sit beside it in the monorepo
+[`etheorem/etheorem`](https://github.com/etheorem/etheorem), under
+`packages/LeanPoseidonProofs`. They are isolated there because they are the
+monorepo's only `mathlib` dependency (a heavy one), so the core library and
+everything else stay `mathlib`-free and fast. **If you depend on `LeanPoseidon`
+as a standalone / mirrored package, the proofs are not bundled with it** — clone
+the monorepo to build them. (Rationale: [§11 of `ARCHITECTURE.md`](docs/ARCHITECTURE.md).)
+
+For these proofs' axiom footprint and the precise boundary of what they do —
+and do not — establish, see [Trust boundary](#trust-boundary).
 
 ## Trust boundary
 
@@ -154,7 +168,22 @@ statements.
 | Shipped API (`permute`, `compress`, `hash`, `Fp` arithmetic, codec) | **Kernel-reducible pure Lean.** No FFI, no extra axioms; reduces under `decide` / `native_decide`. |
 | Anchor + committed KATs (`Permutation.lean`, `Kat.lean`) | `native_decide` → one `Lean.ofReduceBool` axiom each (trusts the compiler's evaluation). Pin the S-box, schedule, and round constants to the reference. |
 | Rust `zkhash` oracle (`@[extern]`, `rust-oracle/`) | **Test-only.** Trusted to implement Poseidon2; validated by the differential test agreeing over 100 000 random inputs. Never on the shipped path or in a proof term. |
-| Equivalence proof (`LeanPoseidonProofs`) | **Clean** (`[propext, Classical.choice, Quot.sound]` — no FFI, no `ofReduceBool`); covers the linear-layer optimisation only — see [Verification](#verification). |
+| Proofs (`LeanPoseidonProofs`) | mathlib-only, **no FFI, no `ofReduceBool`**. `permute = permuteRef`, the generic lemmas, and `pad_injective` are `[propext, Classical.choice, Quot.sound]`; the concrete `permute_bijective_…` / `compress_not_injective` add one **cited, dischargeable** primality axiom (`…Modulus_prime`) — swappable for a kernel-checked Pratt/Lucas certificate. |
+
+**What the proofs do *not* establish** (pinned elsewhere, by design):
+
+- **That the shipped constants and schedule are the canonical Poseidon2 ones.**
+  The proofs are *structure-level* — they hold for any coprime S-box exponent
+  and any round constants — so they do not match `permute` against an external
+  reference. That faithfulness is pinned **empirically**, by the anchor /
+  committed KATs and the `zkhash` differential test (the rows above). The two
+  together — structurally-verified primitive + empirically-pinned constants —
+  are what make the shipped `permute` faithful Poseidon2.
+- **Collision / preimage resistance.** As for any keyless hash, this is a
+  cryptographic *assumption* (assessed empirically, e.g. by the EF Poseidon
+  Cryptanalysis Initiative), **not** a theorem; nothing here claims it.
+  `compress_not_injective` is the opposite — a *proof* that the bare 2-to-1
+  compression has collisions.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §10 for the full diagram.
 
@@ -165,7 +194,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §10 for the full diagram.
 | `lake build LeanPoseidon` | the inline anchor KATs (`permute [0,1,2]` for both fields) fire as `native_decide` gates | — |
 | `just test-poseidon-vectors` | the committed `zkhash` KAT batch (`LeanPoseidonTests`) | — |
 | `just fuzz-poseidon` *(`lake exe poseidon_fuzz [N]`)* | differential test: pure-Lean `permute` vs the Rust oracle over `N` seeded-random inputs per field (default 10 000; CI runs 100 000+, all agreeing) | `cargo` |
-| `just test-poseidon-proofs` | the `permute = permuteRef` equivalence proof | `mathlib` (prebuilt olean cache fetched automatically) |
+| `just test-poseidon-proofs` | all `LeanPoseidonProofs` proofs: `permute = permuteRef`, `permute` is a bijection, `pad` injective, `compress` non-injective, and the round-count `#guard`s | `mathlib` (prebuilt olean cache fetched automatically) |
 
 The core builds and the KAT/committed-KAT gates fire with **no Rust and no
 mathlib**; the latter two are isolated to their respective commands.
@@ -178,5 +207,6 @@ source of truth (`licenseFiles = ["../../LICENSE"]`).
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the design (field, layers,
-  permutation, FFI oracle, trust boundary, the equivalence proof).
+  permutation, FFI oracle, trust boundary, the equivalence and
+  structural-correctness proofs).
 - [`docs/PLAN.md`](docs/PLAN.md) — the staged roadmap and live status table.
