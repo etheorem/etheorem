@@ -1,7 +1,7 @@
 import LeanHazmatKzgTests.Vectors
 
 /-!
-# `LeanHazmatKzgTests` — KZG Known-Answer / round-trip gates
+# `LeanHazmatKzgTests`: KZG Known-Answer / round-trip gates
 
 Self-contained validation of the c-kzg-4844 FFI surface. Build with:
 

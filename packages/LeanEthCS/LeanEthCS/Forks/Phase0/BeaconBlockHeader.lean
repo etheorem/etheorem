@@ -4,7 +4,7 @@ import SizzLean.Repr.Deriving
 /-!
 # `LeanEthCS.Forks.Phase0.BeaconBlockHeader`
 
-Smallest non-trivial Phase 0 composite — five fixed-size primitive
+Smallest non-trivial Phase 0 composite, five fixed-size primitive
 fields. A useful first reading of the `deriving SSZRepr` handler
 against a real consensus-spec type.
 
@@ -20,8 +20,8 @@ class BeaconBlockHeader(Container):
 ```
 
 The SSZ shape is `.container [.uintN 64, .uintN 64,
-.vector (.uintN 8) 32, .vector (.uintN 8) 32, .vector (.uintN 8) 32]` —
-all fixed-size, total wire length is `8 + 8 + 32 + 32 + 32 = 112` bytes.
+.vector (.uintN 8) 32, .vector (.uintN 8) 32, .vector (.uintN 8) 32]`.
+All fixed-size, total wire length is `8 + 8 + 32 + 32 + 32 = 112` bytes.
 -/
 
 set_option autoImplicit false
@@ -32,7 +32,7 @@ open SizzLean
 
 open LeanEthCS
 
-/-- Phase 0 beacon-block header — five fixed-size fields. -/
+/-- Phase 0 beacon-block header, five fixed-size fields. -/
 structure BeaconBlockHeader where
   slot           : Slot
   proposerIndex  : ValidatorIndex
@@ -42,7 +42,7 @@ structure BeaconBlockHeader where
   deriving SSZRepr
 
 /-- Smoke-test: a default-valued header round-trips via the
-`SSZRepr`-driven encode/decode pair. Closed by `native_decide` — the
+`SSZRepr`-driven encode/decode pair. Closed by `native_decide`, the
 verified `SSZ.roundtrip` corollary is gated on `BasicSupported` and
 this concrete check sits outside that surface. -/
 private def roundTripBBH (h : BeaconBlockHeader) : Bool :=

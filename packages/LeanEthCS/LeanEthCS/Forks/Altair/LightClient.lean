@@ -5,7 +5,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Altair.LightClient` — Altair light-client objects
+# `LeanEthCS.Forks.Altair.LightClient`: Altair light-client objects
 
 The Altair light client protocol layers on Phase 0's
 `BeaconBlockHeader` plus Altair's `SyncCommittee` / `SyncAggregate`.
@@ -32,7 +32,7 @@ open LeanEthCS
 open LeanEthCS.Forks.Phase0
 open LeanEthCS.Macros
 
-/-- `LightClientHeader` (Altair) — one-field wrapper around a beacon
+/-- `LightClientHeader` (Altair): one-field wrapper around a beacon
 block header. Preset-invariant in Altair. -/
 structure LightClientHeader where
   beacon : BeaconBlockHeader

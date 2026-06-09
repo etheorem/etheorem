@@ -1,10 +1,10 @@
 import LeanSha256.Core
 
 /-!
-# `LeanSha256` — pure-Lean SHA-256 reference (library root)
+# `LeanSha256`: pure-Lean SHA-256 reference (library root)
 
 A *kernel-reducible* SHA-256 implementation. No FFI, no
-typeclasses, no SSZ coupling — just `hash : ByteArray → ByteArray`
+typeclasses, no SSZ coupling, just `hash : ByteArray → ByteArray`
 and `combine : ByteArray → ByteArray → ByteArray` plus a handful
 of structural conformance lemmas against FIPS 180-4.
 
@@ -15,7 +15,7 @@ should use.
 
 This root re-exports the implementation:
 
-* `LeanSha256.Core` — FIPS 180-4 constants, round functions,
+* `LeanSha256.Core`: FIPS 180-4 constants, round functions,
   message schedule, compression, padding, byte/word conversions,
   `hash`, `combine`, structural lemmas, and three in-file
   `native_decide` examples anchoring the spec against FIPS 180-4

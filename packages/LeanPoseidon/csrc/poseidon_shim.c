@@ -7,7 +7,7 @@
 // the raw-pointer entrypoint `poseidon_oracle_permute_be`.
 //
 // This shim exists (rather than a pure-Rust `@[extern]` function) because
-// Lean's `ByteArray` accessors — `lean_alloc_sarray`, `lean_sarray_cptr` —
+// Lean's `ByteArray` accessors, `lean_alloc_sarray`, `lean_sarray_cptr`,
 // are `static inline` in `lean.h` and thus not linkable symbols a Rust
 // `extern "C"` block could reference. The C compiler inlines them here.
 // Mirrors `SizzLean`'s `csrc/sha256_shim.c`; the difference is the heavy

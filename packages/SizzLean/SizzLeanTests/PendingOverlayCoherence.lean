@@ -6,7 +6,7 @@ import SizzLean.Cache.Update
 import SizzLeanTests.ExampleContainers
 
 /-!
-# `SizzLeanTests.PendingOverlayCoherence` — pending-overlay coherence
+# `SizzLeanTests.PendingOverlayCoherence`: pending-overlay coherence
 
 Every `sszUpdate` on a cached value accumulates into the
 `TreeBacked.pending` overlay rather than walking the spine
@@ -23,17 +23,17 @@ Cases 1–6 cover field and composite-element-index writes; cases
 7–9 cover *basic-packed* element indices (the owner-rebuild path).
 The first six:
 
-1. *zero writes* — `ofValue` then root; sanity check that the
+1. *zero writes*: `ofValue` then root; sanity check that the
    pending field starts empty.
-2. *one write* — single `sszUpdate`; one pending entry.
-3. *three disjoint writes* — same shape, three distinct fields;
+2. *one write*: single `sszUpdate`; one pending entry.
+3. *three disjoint writes*: same shape, three distinct fields;
    three pending entries, no shared spine prefix.
-4. *three writes with a shared prefix* — `BatchExample.rootsA[i]`
+4. *three writes with a shared prefix*: `BatchExample.rootsA[i]`
    for three values of `i`; the `setManyAt` batch-partition step
    should share the outer prefix.
-5. *write-then-overwrite* — `sszUpdate s with f := v1` then
+5. *write-then-overwrite*: `sszUpdate s with f := v1` then
    `sszUpdate s with f := v2`; only `v2` should be observable.
-6. *commit roundtrip* — `t.commit.hashTreeRootCached` must equal
+6. *commit roundtrip*: `t.commit.hashTreeRootCached` must equal
    `t.hashTreeRootCached` (calling commit explicitly should
    change nothing user-observable).
 
@@ -74,13 +74,13 @@ private def b0 : BatchExample :=
   { rootsA := Vector.ofFn fun (i : Fin 8) => batchVal (UInt8.ofNat i.val)
     rootsB := Vector.ofFn fun (i : Fin 8) => batchVal (UInt8.ofNat (8 + i.val)) }
 
-/-! ## Case 1 — zero writes -/
+/-! ## Case 1: zero writes -/
 
 example :
     (TreeBacked.ofValue Sha256 f0).hashTreeRootCached.1
       = SSZ.hashTreeRoot Sha256 f0 := by native_decide
 
-/-! ## Case 2 — one write -/
+/-! ## Case 2: one write -/
 
 example :
     let t  : TreeBacked Sha256 FlatExample := TreeBacked.ofValue Sha256 f0
@@ -88,7 +88,7 @@ example :
     t'.hashTreeRootCached.1 = SSZ.hashTreeRoot Sha256 ({ f0 with marker := 42 } : FlatExample) := by
   native_decide
 
-/-! ## Case 3 — three disjoint writes (one statement) -/
+/-! ## Case 3: three disjoint writes (one statement) -/
 
 example :
     let t  : TreeBacked Sha256 FlatExample := TreeBacked.ofValue Sha256 f0
@@ -103,7 +103,7 @@ example :
     t'.hashTreeRootCached.1 = SSZ.hashTreeRoot Sha256 expected := by
   native_decide
 
-/-! ## Case 4 — three writes with a shared prefix (vector index) -/
+/-! ## Case 4: three writes with a shared prefix (vector index) -/
 
 example :
     let t  : TreeBacked Sha256 BatchExample := TreeBacked.ofValue Sha256 b0
@@ -119,7 +119,7 @@ example :
       = some (SSZ.hashTreeRoot Sha256 expected) := by
   native_decide
 
-/-! ## Case 5 — write-then-overwrite across statements -/
+/-! ## Case 5: write-then-overwrite across statements -/
 
 example :
     let t  : TreeBacked Sha256 FlatExample := TreeBacked.ofValue Sha256 f0
@@ -128,7 +128,7 @@ example :
     t2.hashTreeRootCached.1 = SSZ.hashTreeRoot Sha256 ({ f0 with marker := 42 } : FlatExample) := by
   native_decide
 
-/-! ## Case 6 — repeated reads on the same Box agree (Thunk
+/-! ## Case 6: repeated reads on the same Box agree (Thunk
 memoisation semantics): two `hashTreeRootCached` calls on the
 same `TreeBacked` value produce the same bytes. -/
 
@@ -138,7 +138,7 @@ example :
     t'.hashTreeRootCached.1 = t'.hashTreeRootCached.1 := by
   native_decide
 
-/-! ## Cross-statement batching — three single-field statements
+/-! ## Cross-statement batching: three single-field statements
 in sequence should yield the same root as one three-field
 statement. The integrated overlay (vs a separate `ViewDU` type)
 makes this batching automatic. -/
@@ -167,7 +167,7 @@ index-updated view (the `projDrop` path in `walkPath`) rather than
 keying a per-element write. These cases pin that this stays
 byte-identical to recomputing the root from the updated value. -/
 
-/-! ## Case 7 — packed index into a single-chunk byte vector -/
+/-! ## Case 7: packed index into a single-chunk byte vector -/
 
 example :
     let t  : TreeBacked Sha256 FlatExample := TreeBacked.ofValue Sha256 f0
@@ -175,7 +175,7 @@ example :
       = some (SSZ.hashTreeRoot Sha256 ({ f0 with versionA := f0.versionA.set 2 0xde } : FlatExample)) := by
   native_decide
 
-/-! ## Case 8 — packed index into a multi-chunk byte vector
+/-! ## Case 8: packed index into a multi-chunk byte vector
 (`Vector UInt8 96` spans 3 chunks; the write lands in the middle one). -/
 
 example :
@@ -184,7 +184,7 @@ example :
       = some (SSZ.hashTreeRoot Sha256 ({ n0 with signature := n0.signature.set 40 0x55 } : NestedExample)) := by
   native_decide
 
-/-! ## Case 9 — composite index *then* packed index (`rootsA[3][5]`):
+/-! ## Case 9: composite index *then* packed index (`rootsA[3][5]`):
 the outer composite element keeps its element-gindex + bounds check,
 the inner packed byte triggers the owner-rebuild of `rootsA[3]`. -/
 

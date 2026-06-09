@@ -8,7 +8,7 @@ import SizzLean.Cache.Box
 import SizzLean.Cache.IndexError
 
 /-!
-# `SizzLean.Cache.Update` — `sszUpdate t with …` surface syntax
+# `SizzLean.Cache.Update`: `sszUpdate t with …` surface syntax
 
 User-facing batched multi-field update syntax for SSZ cache values:
 
@@ -25,7 +25,7 @@ Unlike a regular Lean `def`, `sszUpdate` is implemented as a
 *term elaborator* (akin to a macro). Its body runs at compile
 time and produces a `Syntax` tree for the *real* expression Lean
 will then typecheck and compile. This lets the body inspect
-`t`'s elaborated type — known statically — and decide which
+`t`'s elaborated type, known statically, and decide which
 piece of code to produce. The user sees one surface syntax;
 under the hood, the cached and uncached flavours expand to
 different code without any runtime dispatch.
@@ -33,11 +33,11 @@ different code without any runtime dispatch.
 The elaborator inspects `t`'s type at expansion time and emits
 *specialised* code per cache flavour:
 
-* `t : TreeBacked H T` (= `CachedSSZ H T`) — emits a Merkle-aware
+* `t : TreeBacked H T` (= `CachedSSZ H T`): emits a Merkle-aware
   update that lowers to a single `Node.setManyAt` call. Writes
   sharing a path prefix allocate one fresh `.pair` per *level of
   shared spine*, not one per write.
-* `t : UncachedSSZ H T` — emits a plain struct rewrite:
+* `t : UncachedSSZ H T`: emits a plain struct rewrite:
   `{ view := { t.view with f := v, … } }`. No tree machinery, no
   Merkle vocabulary in the emission. The uncached path doesn't
   even reject basic-packed element indexing (a restriction that
@@ -59,7 +59,7 @@ For both flavours:
   update to the previous view binding (so shared-prefix clauses
   compose correctly).
 
-For the cached flavour additionally:
+For the cached flavour, also:
 * **Field-index lookup.** Each `f := v` clause's `f` is resolved
   against `T`'s structure-field list via
   `Lean.Meta.getStructureFields`. Wrong field names fail with a
@@ -67,7 +67,7 @@ For the cached flavour additionally:
 * **Gindex bit computation.** Each field's gindex is converted to
   `List Bool` at expansion time, so the emitted code carries the
   bit list as a literal. No runtime `Nat.log2` / `Nat.testBit`
-  calls — the spine-walk just reads the precomputed bits.
+  calls, the spine-walk just reads the precomputed bits.
 * **Field-type extraction.** Pins `SSZRepr` instance synthesis for
   the per-clause replacement sub-Merkle-tree.
 
@@ -97,7 +97,7 @@ let t₀ : UncachedSSZ H T := t
 ({ view := { t₀.view with f₁ := v₁, …, fₖ := vₖ } } : UncachedSSZ H T)
 ```
 
-That's it — no Merkle, no `Node.ofShape`, no `setManyAt`.
+That's it, no Merkle, no `Node.ofShape`, no `setManyAt`.
 
 ## Nested paths
 
@@ -110,7 +110,7 @@ sszUpdate header with
   signature             := newSig
 ```
 
-The view side uses a `let`-chain — one `with`-record update per
+The view side uses a `let`-chain, one `with`-record update per
 clause, applied in source order. This is correct under shared
 prefixes too: `f.g := w` then `f.h := x` reads `v₁.f` (which has
 `g := w`) when computing the second update, so both mutations
@@ -136,7 +136,7 @@ gindex. Instead it points the write at the *owning* field's gindex
 and rebuilds that whole field's subtree from the index-updated
 `view` (the `projDrop` mechanism in `walkPath`). This is
 byte-identical to the manual whole-field replacement
-`sszUpdate t with vec := t.view.vec.set! i v` — the macro just writes
+`sszUpdate t with vec := t.view.vec.set! i v`, the macro just writes
 it for you. The uncached path handles it with the same plain
 `{ view := { … with vec := vec.set! i v } }` rewrite it uses for
 everything.
@@ -218,8 +218,8 @@ sszGet b validators[i]               -- vector / list index
 sszGet b validators[i].effBalance    -- index + field
 ```
 
-The expansion is purely syntactic — `sszGet b epoch` rewrites to
-`b.view.epoch`, which Lean's kernel handles definitionally — so
+The expansion is purely syntactic: `sszGet b epoch` rewrites to
+`b.view.epoch`, which Lean's kernel handles definitionally. So
 `rfl` / `decide` / `simp` proofs about reads close exactly as if
 the user had written `.view.epoch` by hand. -/
 syntax (name := sszGetStx) "sszGet " term:max ident sszUpdateSegment* : term
@@ -248,7 +248,7 @@ def optErr {α : Type} : Option α → Except IndexError α
   | none   => .error .indexError
 
 /-- True when a `sszGet`/`sszUpdate` path contains an index segment
-`[i]` — the only forms that can go out of bounds, hence the only ones
+`[i]`, the only forms that can go out of bounds, hence the only ones
 that return `Except`. -/
 private def segsHaveIndex (segs : Array (TSyntax `sszUpdateSegment)) : Bool :=
   segs.any (fun seg => seg.raw.getKind == ``sszUpdateSegmentIndex)
@@ -291,18 +291,18 @@ picks this from the base term's type and branches the emission. -/
 private inductive CacheKind where
   | cached    -- `TreeBacked H T` (= `CachedSSZ H T`)
   | uncached  -- `UncachedSSZ H T`
-  | box       -- `SSZ.Box H T` — closed sum; expand to two-arm match
+  | box       -- `SSZ.Box H T`: closed sum; expand to two-arm match
   deriving Inhabited
 
 /-- Extract the hasher `H` (as an `Expr`), `T` (as a `Name`), and
 the cache flavour from the base term's type. The two accepted
-shapes are concrete `TreeBacked H T` and concrete `UncachedSSZ H T`
-— anything else is a clean macro-time error.
+shapes are concrete `TreeBacked H T` and concrete `UncachedSSZ H T`,
+anything else is a clean macro-time error.
 
 The hasher is returned as an `Expr` rather than a `Name` because
 user-facing call sites expect the inferred-`H` to be delab-rendered
-back into syntax (so the macro splices `Sha256` — or whatever `H`
-was pinned at construction — into the cached path's emitted
+back into syntax (so the macro splices `Sha256`, or whatever `H`
+was pinned at construction, into the cached path's emitted
 `Node.ofShape` calls). -/
 private def extractConcreteCacheHT (ty : Expr) :
     MetaM (Expr × Name × CacheKind) := do
@@ -364,7 +364,7 @@ Used only on the cached path.
 Each `PathStep.field n` contributes a *literal* bit-list piece
 (field index gindex is known at expansion time). Each
 `PathStep.index i` contributes a *runtime* bit-list piece because
-`i` is a runtime term — but its base (the per-tree gindex offset)
+`i` is a runtime term, but its base (the per-tree gindex offset)
 is still compile-time-known. List elements get an extra leading
 `[false]` for the mix-in-length wrap.
 
@@ -372,8 +372,8 @@ Composite-element vectors / lists descend into the element's own
 sub-tree (`gindexBits (base + i)`). Basic *packed* element indices
 (`Vector UInt64 n`, `SSZList Gwei cap`, …) have no per-element
 sub-tree, so the walk instead targets the *owning* field's gindex,
-keeps that field as the terminal type, and returns `projDrop := 1`
-— asking the caller to rebuild the whole field's subtree from the
+keeps that field as the terminal type, and returns `projDrop := 1`,
+asking the caller to rebuild the whole field's subtree from the
 index-updated `view` (see the module docstring's owner-rebuild
 note). -/
 private def walkPath (rootT : Name) (path : Array PathStep) :
@@ -505,7 +505,7 @@ emits something like:
     (vPrev.f).set! i { (vPrev.f.get! i) with g := v } }
 ```
 
-Works for both cache flavours — purely value-level. -/
+Works for both cache flavours, purely value-level. -/
 private def nestedViewUpdate (vPrev : TSyntax `term) (path : Array PathStep)
     (rhs : TSyntax `term) : TermElabM (TSyntax `term) := do
   let mut cur : TSyntax `term := rhs
@@ -530,7 +530,7 @@ private def nestedViewUpdate (vPrev : TSyntax `term) (path : Array PathStep)
 /-- Emit an `Option`-typed projection of an update path against a
 base term, then wrap the final value via `final`. For each index
 step `[i]`, emits a runtime bounds check (`i < container.size`)
-that short-circuits to `none` when out-of-bounds — mirroring the
+that short-circuits to `none` when out-of-bounds, mirroring the
 view side's `Array.set!` no-op semantics so the cache stays in
 lockstep with `view` even on writes the user intended for an
 index that no longer exists.
@@ -600,7 +600,7 @@ v_n
 
 Each clause's update reads the *previous* view binding so
 shared-prefix clauses compose correctly. `t₀.view` is field-access
-on the concrete cache type — works for `TreeBacked` and
+on the concrete cache type, works for `TreeBacked` and
 `UncachedSSZ` alike (both have a `view` field). -/
 private def buildViewLetChain
     (clausePaths : Array (Array PathStep))
@@ -623,7 +623,7 @@ private def isIdxStep : PathStep → Bool
   | .index _ => true
   | .field _ => false
 
-/-- Whether any clause has an index segment — the only forms that can
+/-- Whether any clause has an index segment, the only forms that can
 go out of bounds, hence the only ones whose `sszUpdate` returns
 `Except IndexError _` rather than the bare cache value. -/
 private def clausesHaveIndex (clauses : Array Syntax) : Bool :=
@@ -633,7 +633,7 @@ private def clausesHaveIndex (clauses : Array Syntax) : Bool :=
 asserting each index lands inside its owner *in the original view*
 `t₀.view`. Reuses `viewProjectionOption` (which already emits the
 nested `if i < owner.size` checks, short-circuiting safely on the
-outer index) with a trivial `some ()` payload — the access is in
+outer index) with a trivial `some ()` payload, the access is in
 bounds iff the probe is `.isSome`. This is the eager, program-order
 check that turns an out-of-range write into a rejection; the deferred
 commit closures keep their own re-check so a write that a *later* op
@@ -652,8 +652,8 @@ clauses into (path, value) pairs, fold them into a single view-
 update expression, wrap in `{ view := … } : UncachedSSZ H T`.
 
 No `walkPath`, no `Node.ofShape`, no gindex-bit computation. The
-emitted term reduces — via plain `zeta` on the `let t₀ := …` and
-the view-update lets — to:
+emitted term reduces, via plain `zeta` on the `let t₀ := …` and
+the view-update lets, to:
 
 ```lean
 { view := { … { base.view with f₁ := v₁ } … with fₙ := vₙ } }
@@ -663,7 +663,7 @@ the view-update lets — to:
 This shape is what proofs about uncached state-transition
 functions want to see. `rfl` closes `(sszUpdate u with f := v).view
 = { u.view with f := v }` and `(sszUpdate u with f := v).hashTreeRoot
-= SSZ.hashTreeRoot H ({ u.view with f := v })` after reduction —
+= SSZ.hashTreeRoot H ({ u.view with f := v })` after reduction,
 no cache invariant, no Merkle bookkeeping in the goal. -/
 private def buildSszUpdateUncached
     (baseStx hashStx : TSyntax `term) (tIdent : Ident)
@@ -722,14 +722,14 @@ private def buildSszUpdateCached
     -- `view` and builds the matching sub-tree via
     -- `Node.ofShape`. Index steps in the path emit a bounds
     -- check; if any index goes OOB at commit time, the closure
-    -- returns `none` and the pending entry is dropped — the
+    -- returns `none` and the pending entry is dropped, the
     -- view side's `Array.set!` no-op semantics for OOB indices
     -- is mirrored exactly. Field-only paths skip the check and
     -- always return `some`.
     --
     -- Reading from `view` at commit (rather than capturing
     -- `valStx` here) is what makes overlapping parent/child
-    -- writes mutually consistent — the parent's closure
+    -- writes mutually consistent, the parent's closure
     -- naturally sees every later child override that has been
     -- folded into the shared view. Overwritten closures (at the
     -- same gindex) are still dropped by `TreeMap.insert` and
@@ -747,7 +747,7 @@ private def buildSszUpdateCached
   let updatesListStx ← `([$updatePairs,*])
   -- Cached emission: accumulate into the pending overlay rather than
   -- walking the spine here. Cross-statement batching falls out
-  -- automatically — the spine walk runs once per `commit`, which the
+  -- automatically, the spine walk runs once per `commit`, which the
   -- root reader (`hashTreeRootCached`) triggers itself.
   if clausePaths.any (·.any isIdxStep) then
     -- Index form: a failed issue-time guard returns `.error` *without*
@@ -768,7 +768,7 @@ private def buildSszUpdateCached
           $viewLetChain) :
         _root_.SizzLean.Cache.TreeBacked $hashStx $tIdent))
 
-/-- Box emission path. The base term has type `SSZ.Box H T` — the
+/-- Box emission path. The base term has type `SSZ.Box H T`, the
 closed sum over the two cache flavours. The macro builds each arm
 *body* by calling the per-flavour syntax builders on a fresh arm
 binder, then assembles a two-arm match that wraps each body in
@@ -783,7 +783,7 @@ match $baseStx with
 ```
 
 The closed-world `Box` inductive makes the two arms exhaustive at
-the type level — no panic, no default case to maintain. The
+the type level, no panic, no default case to maintain. The
 cached arm gets full O(log N) spine-sharing emission; the uncached
 arm gets the trivial struct rewrite. -/
 private def elabSszUpdateBox

@@ -3,14 +3,14 @@ import LeanEthCS.Forks.Gloas.Primitives
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Gloas.Builder` — ePBS builder-registry containers
+# `LeanEthCS.Forks.Gloas.Builder`: ePBS builder-registry containers
 
 EIP-7732 adds a separate "builder" entity alongside validators. The
 three containers here describe a builder's registry entry plus the
 pending-payment / pending-withdrawal queues that track unsettled
 builder bids and exits.
 
-All three are preset-invariant — their *list caps* on `BeaconState`
+All three are preset-invariant: their *list caps* on `BeaconState`
 (`BUILDER_REGISTRY_LIMIT`, `BUILDER_PENDING_WITHDRAWALS_LIMIT`) are
 preset-sensitive but the containers themselves are not.
 -/
@@ -25,7 +25,7 @@ open SizzLean.Repr
 
 open LeanEthCS
 
-/-- A builder registry entry — the ePBS counterpart of `Validator`.
+/-- A builder registry entry, the ePBS counterpart of `Validator`.
 Tracks a builder's BLS key, version, execution address, balance,
 and lifecycle epochs. -/
 structure Builder where

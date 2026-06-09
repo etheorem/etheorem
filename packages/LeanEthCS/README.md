@@ -14,18 +14,18 @@ file docstrings).
 
 ## Dependencies
 
-* `SizzLean` — the SSZ library (also pulls in `LeanSha256` and
+* `SizzLean`: the SSZ library (also pulls in `LeanSha256` and
   the FFI hasher transitively).
 
 ## Module overview
 
-* `Primitives.lean` — named SSZ primitives shared across forks
+* `Primitives.lean`: named SSZ primitives shared across forks
   (`Slot`, `Epoch`, `Bytes32`, `BLSPubkey`, …).
-* `Preset.lean` + `PresetStruct.lean` — preset constants (minimal /
+* `Preset.lean` + `PresetStruct.lean`: preset constants (minimal /
   mainnet) and the `ssz_struct_for_presets` macro.
-* `Forks/{Phase0,Altair,Bellatrix,Capella,Deneb,Electra,Fulu,Gloas}/`
-  — per-fork container declarations.
-* `Conformance/` — Eth-driven property tests + the `ssz_static`
+* `Forks/{Phase0,Altair,Bellatrix,Capella,Deneb,Electra,Fulu,Gloas}/`:
+  per-fork container declarations.
+* `Conformance/`: Eth-driven property tests + the `ssz_static`
   CLI runner (`Cli/Main.lean` → the `eth_ssz_vector_runner` exe; drives both
   `ssz_static` and `ssz_generic` against
   `ethereum/consensus-spec-tests`).

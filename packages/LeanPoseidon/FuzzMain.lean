@@ -1,7 +1,7 @@
 import LeanPoseidonTests.Differential
 
 /-!
-# `FuzzMain` — entry point for the `poseidon_fuzz` differential executable
+# `FuzzMain`: entry point for the `poseidon_fuzz` differential executable
 
 A thin `main` over `LeanPoseidonTests.Differential.runMain`. It lives here,
 *outside* the `LeanPoseidonTests` library's module hierarchy, on purpose:

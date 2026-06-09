@@ -6,12 +6,12 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Altair.Block` — Altair block hierarchy
+# `LeanEthCS.Forks.Altair.Block`: Altair block hierarchy
 
 The only delta over Phase 0 is the new `sync_aggregate` field on
 `BeaconBlockBody`. The operation-list types (`Attestation`,
 `AttesterSlashing`, `Deposit`, `SignedVoluntaryExit`,
-`ProposerSlashing`) are reused unchanged from Phase 0 — their SSZ
+`ProposerSlashing`) are reused unchanged from Phase 0, their SSZ
 shapes are identical.
 
 Because the new `sync_aggregate` field references the preset-variant

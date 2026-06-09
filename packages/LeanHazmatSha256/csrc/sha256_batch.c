@@ -1,9 +1,9 @@
-// LeanHazmatSha256 — C shim for batched SHA-256 sibling-pair hashing.
+// LeanHazmatSha256: C shim for batched SHA-256 sibling-pair hashing.
 //
 // Exposes one symbol that the Lean side declares as `@[extern]`
 // (see `LeanHazmatSha256/Ffi.lean`):
 //
-//   * lean_hazmat_sha256_batch_combine(lefts, rights) — given two
+//   * lean_hazmat_sha256_batch_combine(lefts, rights): given two
 //     equal-length arrays of 32-byte `ByteArray`s, return an
 //     equal-length array of 32-byte digests where output[i] =
 //     SHA-256(left[i] ++ right[i]).
@@ -16,7 +16,7 @@
 // follow-up that swaps the inner loop without changing the FFI
 // surface.
 //
-// Trust assumption: same as `sha256_shim.c` — the linked OpenSSL
+// Trust assumption: same as `sha256_shim.c`, the linked OpenSSL
 // implements NIST FIPS 180-4 SHA-256 correctly. Pointwise
 // agreement with the pure-Lean reference (`LeanSha256.combine`) is
 // asserted by the `sha256BatchCombine_eq_spec` axiom in SizzLean and
@@ -81,7 +81,7 @@ LEAN_EXPORT lean_obj_res lean_hazmat_sha256_batch_combine(
     }
 
     for (size_t i = 0; i < n_left; i++) {
-        // Borrow the i-th element of each input — no refcount bump.
+        // Borrow the i-th element of each input, no refcount bump.
         // The arrays own these for the duration of this call.
         lean_object *left  = lean_array_get_core(lefts,  i);
         lean_object *right = lean_array_get_core(rights, i);

@@ -5,7 +5,7 @@ import SizzLean.Cache.Uncached
 import SizzLean.Hasher.Sha256
 
 /-!
-# `SizzLean.Cache.Box` — closed sum over the cache flavours
+# `SizzLean.Cache.Box`: closed sum over the cache flavours
 
 A single inductive type that wraps *either* the production cache
 (`CachedSSZ H T`) *or* the proof-side cache (`UncachedSSZ H T`).
@@ -21,7 +21,7 @@ of cache flavours is *closed* and dispatch is resolved at compile
 time:
 
 * The two constructors enumerate the entire design space, so the
-  `sszUpdate` elaborator's two-arm match is exhaustive — every call
+  `sszUpdate` elaborator's two-arm match is exhaustive, every call
   site is handled at compile time, with no instance-resolution
   machinery in the way.
 * Dispatch exposes no Merkle-shaped `Patch` field in a public
@@ -67,15 +67,15 @@ production layer (`CachedSSZ H T`) or the uncached proof layer
 take `SSZ.Box H T` and pattern-match; the `sszUpdate` macro
 recognises the type and expands to a two-arm match.
 
-The two constructors enumerate the entire flavour space — closed-
+The two constructors enumerate the entire flavour space, closed-
 world, so a `match s with | .cached _ | .uncached _` is provably
 exhaustive at compile time.
 
 Type parameters:
-* `H` — the hasher tag, kept parametric so post-quantum hashers
+* `H`: the hasher tag, kept parametric so post-quantum hashers
   (Poseidon2, …) can plug in without changing the user-facing
   type.
-* `T` — the Lean value type with an `SSZRepr` instance. -/
+* `T`: the Lean value type with an `SSZRepr` instance. -/
 inductive Box (H : Type) (T : Type) [Hasher H] [SSZRepr T] where
   | cached   : CachedSSZ   H T → Box H T
   | uncached : UncachedSSZ H T → Box H T
@@ -113,7 +113,7 @@ The user threads the returned box forward; subsequent reads on it
 hit the `rootMemo` directly. The uncached arm recomputes through
 the spec each call and returns `(root, b)` unchanged (no state).
 
-The two flavours are *observationally* equal on the root —
+The two flavours are *observationally* equal on the root,
 that's the coherence invariant validated by
 `Conformance.TreeBackedCoherence`. -/
 def hashTreeRoot {H T : Type} [Hasher H] [SSZRepr T] :
@@ -137,18 +137,18 @@ end Box
 
 Four user-facing entry points, all returning an `SSZ.Box`:
 
-* `SSZ.FastBox v` — cached flavour, Sha256-pinned (the production
-  default — FFI-hashed, O(log N) updates).
-* `SSZ.PureBox v` — uncached flavour, Sha256-pinned (the proof-
-  friendly default — no cache invariant to thread through
+* `SSZ.FastBox v`: cached flavour, Sha256-pinned (the production
+  default, FFI-hashed, O(log N) updates).
+* `SSZ.PureBox v`: uncached flavour, Sha256-pinned (the proof-
+  friendly default, no cache invariant to thread through
   theorems).
-* `SSZ.CachedBox H v` — cached flavour with a caller-chosen
+* `SSZ.CachedBox H v`: cached flavour with a caller-chosen
   `Hasher` instance.
-* `SSZ.UncachedBox H v` — uncached flavour with a caller-chosen
+* `SSZ.UncachedBox H v`: uncached flavour with a caller-chosen
   `Hasher` instance.
 
 The `Box` suffix is present in all four because the return is
-always `SSZ.Box H T` — that's what makes these constructors
+always `SSZ.Box H T`, that's what makes these constructors
 substitutable when a spec function takes a single
 `SSZ.Box`-typed argument.
 
@@ -158,7 +158,7 @@ substitutable when a spec function takes a single
   with the default Sha256 hasher. `Fast` is about runtime cost
   (cached + FFI); `Pure` is about formal status (uncached + no
   coherence invariant). The two adjectives are deliberately on
-  different axes — they don't read as Fast-vs-Slow (which would
+  different axes, they don't read as Fast-vs-Slow (which would
   undersell the proof side) or Production-vs-Test (which would
   imply `Pure` is only for testing).
 * **`Cached` / `Uncached`** describe *only* the cache flavour;
@@ -168,7 +168,7 @@ substitutable when a spec function takes a single
   implies FFI), but `CachedBox Sha256Spec` reads cleanly.
 -/
 
-/-- Build a *cached* `SSZ.Box` over Sha256 — the production
+/-- Build a *cached* `SSZ.Box` over Sha256, the production
 flavour. Wraps the value in the structurally-shared Merkle tree,
 hashed via the FFI SHA-256 instance, so subsequent root reads
 are O(1) and `sszUpdate`s rehash only the path from a changed
@@ -176,7 +176,7 @@ field to the root. -/
 abbrev FastBox {T : Type} [SSZRepr T] (v : T) : Box Sha256 T :=
   Box.ofCached Sha256 v
 
-/-- Build an *uncached* `SSZ.Box` over Sha256 — the proof
+/-- Build an *uncached* `SSZ.Box` over Sha256, the proof
 flavour. Just stores the view; `hashTreeRoot` runs through the
 spec each call, with no cache invariant to thread through
 theorems. -/
@@ -201,7 +201,7 @@ abbrev UncachedBox (H : Type) [Hasher H] {T : Type} [SSZRepr T] (v : T) :
     Box H T :=
   Box.ofPure H v
 
-/-! ### Deserialisers — IO-side companions to the four constructors
+/-! ### Deserialisers: IO-side companions to the four constructors
 
 `SSZ.deserialize` decodes wire bytes into a plain Lean value; each
 `*Box.deserialize` below threads the resulting `T` straight into
@@ -209,7 +209,7 @@ the matching `Box` flavour. Reads symmetrically with `.serialize`
 on a Box: bytes go out via `box.serialize`, come back in via
 `SSZ.FastBox.deserialize` (or any of the four flavours below).
 
-Each helper preserves the `Except` shape — a malformed buffer
+Each helper preserves the `Except` shape, a malformed buffer
 short-circuits to `.error e` without constructing a Box. -/
 
 /-- Deserialise SSZ bytes straight into a `FastBox`. The IO-side

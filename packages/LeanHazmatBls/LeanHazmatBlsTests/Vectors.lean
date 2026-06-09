@@ -1,29 +1,29 @@
 import LeanHazmatBls
 
 /-!
-# `LeanHazmatBlsTests.Vectors` — consensus BLS Known-Answer-Tests
+# `LeanHazmatBlsTests.Vectors`: consensus BLS Known-Answer-Tests
 
 Self-contained KAT gate for the blst-backed BLS shims. There is no
 pure-Lean reference for BLS, so this is the *only* validation of the FFI
 boundary (hazmat-docs/ARCHITECTURE.md §10). Two kinds of case:
 
-* **Ground-truth anchors** — `(sk, msg) ↦ sig` and `(pk, msg, sig) ↦ true`
+* **Ground-truth anchors**: `(sk, msg) ↦ sig` and `(pk, msg, sig) ↦ true`
   triples lifted verbatim from the official `ethereum/consensus-spec-tests`
   `general/phase0/bls` suite (v1.5.0). A wrong ciphersuite, DST, or
   group choice fails these immediately against published ground truth.
-* **Self-contained round-trips** — derive pubkeys with `skToPk`, sign,
+* **Self-contained round-trips**: derive pubkeys with `skToPk`, sign,
   aggregate, and verify, exercising `aggregate` / `aggregateVerify` /
   `fastAggregateVerify` / `ethFastAggregateVerify` without needing
   vendored vectors for every operation.
 
-Each case is one `native_decide` — the blst computation runs as compiled
+Each case is one `native_decide`, the blst computation runs as compiled
 code at proof-check time (one `Lean.ofReduceBool` axiom per case), the
 acceptable regime for a KAT (CLAUDE.md "Proofs involving SSZ hashes"
 generalises to all FFI crypto).
 
 ## Lean idioms used here
 
-* `hex` — a compile-time hex-string → `ByteArray` decoder, so the
+* `hex`: a compile-time hex-string → `ByteArray` decoder, so the
   vectors read as the hex strings the spec publishes. `native_decide`
   evaluates it by running compiled code.
 -/
@@ -36,7 +36,7 @@ open LeanHazmat.Bls
 
 /-! ### Hex helper -/
 
-/-- Value of a single hex digit (`0` for any non-hex char — inputs here
+/-- Value of a single hex digit (`0` for any non-hex char, inputs here
 are always well-formed). -/
 private def hexVal (c : Char) : UInt8 :=
   if '0' ≤ c ∧ c ≤ '9' then (c.toNat - '0'.toNat).toUInt8
@@ -59,7 +59,7 @@ private def hex (s : String) : ByteArray := ⟨(hexBytes s.toList).toArray⟩
 private def skAnchor : ByteArray :=
   hex "47b8192d77bf871b62e87859d653922725724a5c031afeabc60bcef5ff665138"
 
-/-- 32 zero bytes — the message of `sign_case_11b8c7cad5238946`. -/
+/-- 32 zero bytes, the message of `sign_case_11b8c7cad5238946`. -/
 private def msgZero : ByteArray :=
   hex "0000000000000000000000000000000000000000000000000000000000000000"
 
@@ -100,7 +100,7 @@ example : keyValidate pkValid = true := by native_decide
 example : keyValidate ByteArray.empty = false := by native_decide
 
 /-- An all-zero 48-byte input fails `KeyValidate` (not a valid
-compressed point — the compression flag bits are wrong). -/
+compressed point, the compression flag bits are wrong). -/
 example : keyValidate (ByteArray.mk (Array.replicate 48 0)) = false := by
   native_decide
 
@@ -203,7 +203,7 @@ example : g1Add (ethAggregatePubkeys #[pk1, pk2]) pk3 = ethAggregatePubkeys #[pk
   native_decide
 
 /-- The sync-aggregate optimization identity: subtracting the non-participants
-from the full aggregate equals aggregating the participants directly —
+from the full aggregate equals aggregating the participants directly,
 `agg({p1,p2,p3}) + (−p3) = agg({p1,p2})`. -/
 example : g1Add (ethAggregatePubkeys #[pk1, pk2, pk3]) (g1Neg pk3) = ethAggregatePubkeys #[pk1, pk2] := by
   native_decide

@@ -7,7 +7,7 @@ import SizzLeanBench.Fixtures
 import SizzLeanBench.Runner
 
 /-!
-# Scenario S2 — Batched writes (pre-root + writes + post-root)
+# Scenario S2: Batched writes (pre-root + writes + post-root)
 
 The block-processing shape: compute the *pre-state* root, apply
 32 mutations, compute the *post-state* root. Models a consensus
@@ -24,7 +24,7 @@ post-root walk**. On the cached path:
    `treeBase = Thunk.pure cachedTree`.
 2. 32 `sszUpdate`s accumulate in `pending` *on top of* the
    already-cache-filled tree.
-3. Post-root commits via `setManyAt` over the cached tree —
+3. Post-root commits via `setManyAt` over the cached tree,
    untouched subtrees keep their cached `(some r)` slots, so
    only the touched spine + new subtrees need re-hashing.
 
@@ -80,7 +80,7 @@ private def cachedValidator (sink : IO.Ref Nat) (salt : UInt8) : IO Unit := do
     box := sszUpdate box with effectiveBalance := UInt64.ofNat (i + 1)
   sink.modify (· + consume box.hashTreeRoot.1)
 
-/-! ### ValidatorSet16 fixture — writes spread across the
+/-! ### ValidatorSet16 fixture: writes spread across the
 16 validator positions (each mutated twice across N=32). -/
 
 private def pureValidatorSet (sink : IO.Ref Nat) (salt : UInt8) : IO Unit := do

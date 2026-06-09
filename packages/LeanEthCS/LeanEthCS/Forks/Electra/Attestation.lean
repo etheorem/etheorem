@@ -4,7 +4,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Electra.Attestation` — Electra attestation containers
+# `LeanEthCS.Forks.Electra.Attestation`: Electra attestation containers
 
 EIP-7549 changes Phase 0's `Attestation` and `IndexedAttestation`:
 
@@ -20,10 +20,10 @@ EIP-7549 changes Phase 0's `Attestation` and `IndexedAttestation`:
 
 ## Caps
 
-* `MAX_COMMITTEES_PER_SLOT` — 4 (minimal) / 64 (mainnet)
+* `MAX_COMMITTEES_PER_SLOT`: 4 (minimal) / 64 (mainnet)
 * `MAX_VALIDATORS_PER_COMMITTEE = 2048` (preset-invariant)
-* Combined cap `MAX_VALIDATORS_PER_COMMITTEE * MAX_COMMITTEES_PER_SLOT`
-  — 8192 (minimal) / 131072 (mainnet)
+* Combined cap `MAX_VALIDATORS_PER_COMMITTEE * MAX_COMMITTEES_PER_SLOT`:
+  8192 (minimal) / 131072 (mainnet)
 -/
 
 set_option autoImplicit false
@@ -56,7 +56,7 @@ ssz_struct_for_presets AttesterSlashing in LeanEthCS.Forks.Electra
   attestation1 : @%IndexedAttestation,
   attestation2 : @%IndexedAttestation
 
-/-- `SingleAttestation` — an attestation from one validator, no
+/-- `SingleAttestation`: an attestation from one validator, no
 aggregation. Preset-invariant. -/
 structure SingleAttestation where
   committeeIndex : CommitteeIndex

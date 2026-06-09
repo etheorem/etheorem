@@ -9,7 +9,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Fulu.State` — Fulu `BeaconState`
+# `LeanEthCS.Forks.Fulu.State`: Fulu `BeaconState`
 
 Tracks the main branch of consensus-specs (post-v1.5.0): Fulu's
 `BeaconState` is Electra's shape plus one new field,
@@ -19,7 +19,7 @@ Tracks the main branch of consensus-specs (post-v1.5.0): Fulu's
     ((MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH)`
 
   `MIN_SEED_LOOKAHEAD = 1` is preset-invariant, so the vector length
-  reduces to `2 * SLOTS_PER_EPOCH` — 16 (minimal) / 64 (mainnet).
+  reduces to `2 * SLOTS_PER_EPOCH`, 16 (minimal) / 64 (mainnet).
 
 The remaining 36 fields are byte-for-byte identical to Electra's
 `BeaconState`. We re-declare the full container here rather than

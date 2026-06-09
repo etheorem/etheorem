@@ -2,7 +2,7 @@ import LeanEthCS.Forks.Electra.LightClient
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Fulu.LightClient` — Fulu light-client objects
+# `LeanEthCS.Forks.Fulu.LightClient`: Fulu light-client objects
 
 At v1.5.0, Fulu's light-client containers match Electra's verbatim.
 Re-export.

@@ -7,17 +7,17 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Fulu.DataColumn` — Fulu data-column sidecar containers
+# `LeanEthCS.Forks.Fulu.DataColumn`: Fulu data-column sidecar containers
 
 Fulu's PeerDAS introduces per-column blob distribution. Each
 `DataColumnSidecar` carries one column's worth of cells + KZG
 witnesses, plus the inclusion proof linking it to the block header.
 
-* `DataColumnSidecar` — preset-variant via
+* `DataColumnSidecar`: preset-variant via
   `MAX_BLOB_COMMITMENTS_PER_BLOCK` (the same preset-variant cap that
   appears in Deneb's `BeaconBlockBody.blob_kzg_commitments`).
-* `MatrixEntry` — preset-invariant.
-* `DataColumnsByRootIdentifier` — preset-invariant cap `NUMBER_OF_COLUMNS = 128`.
+* `MatrixEntry`: preset-invariant.
+* `DataColumnsByRootIdentifier`: preset-invariant cap `NUMBER_OF_COLUMNS = 128`.
 
 ## Constants
 
@@ -46,7 +46,7 @@ ssz_struct_for_presets DataColumnSidecar in LeanEthCS.Forks.Fulu
   signedBlockHeader               : SignedBeaconBlockHeader,
   kzgCommitmentsInclusionProof    : Vector Bytes32 4
 
-/-- `MatrixEntry` — one (cell, kzg_proof, column, row) record. -/
+/-- `MatrixEntry`: one (cell, kzg_proof, column, row) record. -/
 structure MatrixEntry where
   cell        : Cell
   kzgProof    : KZGProof
@@ -54,7 +54,7 @@ structure MatrixEntry where
   rowIndex    : RowIndex
   deriving SSZRepr
 
-/-- `DataColumnsByRootIdentifier` — `(block_root, [column_indices])`. -/
+/-- `DataColumnsByRootIdentifier`: `(block_root, [column_indices])`. -/
 structure DataColumnsByRootIdentifier where
   blockRoot : Root
   columns   : SSZList ColumnIndex 128

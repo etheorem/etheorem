@@ -9,7 +9,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Deneb.Block` — Deneb block hierarchy
+# `LeanEthCS.Forks.Deneb.Block`: Deneb block hierarchy
 
 Adds `blob_kzg_commitments : List[KZGCommitment,
 MAX_BLOB_COMMITMENTS_PER_BLOCK]` to `BeaconBlockBody`, and threads

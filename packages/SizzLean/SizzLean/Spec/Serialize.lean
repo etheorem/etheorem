@@ -3,20 +3,20 @@ import SizzLean.Spec.Interp
 import SizzLean.Spec.Constants
 
 /-!
-# `SizzLean.Spec.Serialize` — total SSZ encoder
+# `SizzLean.Spec.Serialize`: total SSZ encoder
 
 Implements the encode side of consensus-specs *§Serialization*
 (`simple-serialize.md`): a total recursion on `SSZType` mapping a
 value of `s.interp` to its canonical wire-form `ByteArray`.
 
-## Endianness — little-endian everywhere
+## Endianness: little-endian everywhere
 
-Per spec *§Serialization — Basic types*, every multi-byte integer
+Per spec *§Serialization, Basic types*, every multi-byte integer
 (basic types and offset placeholders alike) is little-endian: byte 0
 carries the eight least-significant bits. `uint16LE`, `uint32LE`,
 `uint64LE` below emit exactly this layout.
 
-## Container offset arithmetic — the load-bearing fiddly bit
+## Container offset arithmetic: the load-bearing fiddly bit
 
 A container with fields `f₁..fₖ` is encoded as a *fixed-size prefix*
 followed by a *variable-size body region*. Each fixed-size field
@@ -26,10 +26,10 @@ contributes a `BYTES_PER_LENGTH_OFFSET = 4`-byte little-endian
 its full bytes to the body region. The first variable field's
 offset equals the prefix width; subsequent offsets advance by the
 size of the previous body. The same offset-table layout is used by
-`vector` and `list` of variable-size element types — see
+`vector` and `list` of variable-size element types, see
 `serializeVarElemsAux`.
 
-Per spec *§Serialization — Variable-size types* and the worked
+Per spec *§Serialization, Variable-size types* and the worked
 example.
 
 ## `Bitlist` trailing-delimiter bit (an SSZ subtlety with fork history)
@@ -38,7 +38,7 @@ The `bitlist` of `n` data bits is encoded as `n + 1` bits LSB-packed
 into bytes: the data bits, then a single `1` bit marking the end. So
 an *empty* bitlist serializes to a single `0x01` byte (just the
 delimiter); the spec is explicit and at least one major client has
-shipped a fork-causing bug here. Per spec *§Serialization — Bitlist*.
+shipped a fork-causing bug here. Per spec *§Serialization, Bitlist*.
 The decoder side recovers `n` from the position of the
 most-significant `1` in the last byte (see `Spec/Deserialize.lean`).
 
@@ -46,30 +46,30 @@ most-significant `1` in the last byte (see `Spec/Deserialize.lean`).
 
 A `bitvector` of length `n` packs exactly `n` bits LSB-first into
 `⌈n/8⌉` bytes; padding bits in the final byte are zero. No
-delimiter — the length is part of the schema, not on the wire. Per
-spec *§Serialization — Bitvector*.
+delimiter, the length is part of the schema, not on the wire. Per
+spec *§Serialization, Bitvector*.
 
 ## Empty `List` (zero bytes)
 
 An empty list serializes as the empty `ByteArray`. The decoder
 recovers length `0` because the buffer is empty / the variable
-region is empty. Per spec *§Serialization — List*.
+region is empty. Per spec *§Serialization, List*.
 
 ## Lean idioms used here, annotated on first appearance
 
-* `mutual ... end` — a block of mutually recursive definitions whose
+* `mutual ... end`: a block of mutually recursive definitions whose
   termination is checked jointly. Same shape `Spec/Interp.lean` uses
   for the same reason: list traversals must be inlined as helpers
   descending on the list, called by the `SSZType`-driven recursion,
   because passing the recursive function through a higher-order
   argument hides the descent from Lean 4.29.1's structural-recursion
   checker.
-* `ByteArray.empty.push b` — single-byte append; `ByteArray.append`
+* `ByteArray.empty.push b`: single-byte append; `ByteArray.append`
   (`++`) concatenates. Lean compiles `push` to in-place mutation
   when the refcount is 1.
-* `BitVec.toNat` — interpret a bitvector as a natural number; used
+* `BitVec.toNat`: interpret a bitvector as a natural number; used
   to feed `natToLEBytes` for `uintN` widths beyond 64.
-* `Subtype.val` (`.val` projection) — extract the underlying
+* `Subtype.val` (`.val` projection): extract the underlying
   `Array` from `{ xs // p xs }`; the proof component is irrelevant
   for serialization.
 -/
@@ -84,7 +84,7 @@ namespace SizzLean.Spec
 `isFixedSize` decides whether a shape's serialized byte length is a
 function of the schema alone; `fixedByteSize` returns that length
 when so. Both must mutually recurse over `List SSZType` (because
-`container fs` is fixed iff every `fs` is) — same higher-order-recursion
+`container fs` is fixed iff every `fs` is), same higher-order-recursion
 trap `Spec/Interp.lean` already worked around with mutual helpers,
 so the same shape is repeated here. -/
 
@@ -110,7 +110,7 @@ def SSZType.allFixedSize : List SSZType → Bool
 
 end
 
-/-- Whether an SSZ shape is a *basic* type — one of the byte-level
+/-- Whether an SSZ shape is a *basic* type, one of the byte-level
 primitives `uintN`, `bool`. Per the SSZ Merkleization spec, basic-element
 collections pack into 32-byte chunks; composite-element collections
 merkleize per-element `hash_tree_root`s. The two paths differ even when
@@ -148,7 +148,7 @@ prefix: its full bytes if fixed, else `BYTES_PER_LENGTH_OFFSET`
 def SSZType.fixedSectionSize (t : SSZType) : Nat :=
   if t.isFixedSize then t.fixedByteSize else BYTES_PER_LENGTH_OFFSET
 
-/-- Byte offset where a container's variable-body region starts —
+/-- Byte offset where a container's variable-body region starts,
 i.e., the total fixed-prefix width. -/
 def SSZType.fixedSectionSizeFields : List SSZType → Nat
   | []      => 0
@@ -156,8 +156,8 @@ def SSZType.fixedSectionSizeFields : List SSZType → Nat
 
 /-! ### Little-endian primitive encoders
 
-These are package-internal helpers — the user-facing API is
-`SSZType.serialize` — but exposed as plain `def` (not `private`) so the
+These are package-internal helpers, the user-facing API is
+`SSZType.serialize`, but exposed as plain `def` (not `private`) so the
 Layer 2 proofs in `Proofs/Roundtrip.lean` can `unfold` / `simp` them
 through their public name when discharging the `.uintN N` arms of
 `decode_encode`. `unfold` can see through `private`, but `simp` cannot
@@ -202,7 +202,7 @@ private def bitvecToLE (n : Nat) (b : BitVec n) : ByteArray :=
 
 /-! ### Bit packing (LSB-first within each byte)
 
-Per spec *§Serialization — Bitvector / Bitlist*: bit at index 0 of
+Per spec *§Serialization, Bitvector / Bitlist*: bit at index 0 of
 the input goes to bit 0 (the LSB) of byte 0; bit 8 goes to bit 0 of
 byte 1; etc. -/
 
@@ -243,7 +243,7 @@ A single `mutual` block: `serialize` recurses structurally on
 `s : SSZType`; the list-traversing helpers
 (`serializeFixedElems`, `serializeVarElemsAux`, `serializeFieldsAux`)
 recurse structurally on their `List` argument. Cross-calls descend
-on subterms — same shape `Spec/Interp.lean` uses, so Lean 4.29.1's
+on subterms, same shape `Spec/Interp.lean` uses, so Lean 4.29.1's
 structural-recursion checker accepts the block without
 `termination_by` annotations. -/
 
@@ -264,7 +264,7 @@ def SSZType.serialize : (s : SSZType) → s.interp → ByteArray
       -- the elaborator does not aggressively unfold `interp` across
       -- the sibling mutual block in `Spec/Interp.lean`. Annotating
       -- the local binding with the expected type forces a defeq check
-      -- which the kernel discharges by reducing `interp` one arm — the
+      -- which the kernel discharges by reducing `interp` one arm, the
       -- minimal nudge that lets later operations on `x'` resolve their
       -- typeclass instances (`push`, `>>>`, `if then else`, …).
       let x' : UInt8 := x
@@ -313,7 +313,7 @@ def SSZType.serialize : (s : SSZType) → s.interp → ByteArray
         offs ++ bodies
   | .list t _,            xs =>
       -- `xs : { ys : Array t.interp // ys.size ≤ cap }`; `xs.val` is
-      -- the underlying `Array t.interp` (subtype projection — the
+      -- the underlying `Array t.interp` (subtype projection, the
       -- proof component is discarded for serialization).
       if t.isFixedSize then
         SSZType.serializeFixedElems t xs.val.toList
@@ -358,7 +358,7 @@ fixed-prefix width by the call site.
 
 In the `t :: ts` arm, `vs : SSZType.interpFields (t :: ts)` unfolds
 to `SSZType.interp t × SSZType.interpFields ts`, so `vs.1` and `vs.2`
-are the field head and tail respectively — Lean recovers their
+are the field head and tail respectively. Lean recovers their
 types from `Prod.fst`/`Prod.snd`'s signatures applied to the
 unfolded `Prod`. The same defeq mechanism that powers the `let x' :`
 coercions in `serialize` makes these projections typecheck. -/

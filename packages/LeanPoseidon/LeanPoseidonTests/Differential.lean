@@ -1,7 +1,7 @@
 import LeanPoseidonTests.Ffi
 
 /-!
-# `LeanPoseidonTests.Differential` — the `poseidon_fuzz` differential test
+# `LeanPoseidonTests.Differential`: the `poseidon_fuzz` differential test
 
 Poseidon2 has no centralised official KAT suite, so conformance is
 *differential*: generate many "random" inputs, run both the pure-Lean
@@ -17,7 +17,7 @@ draw reduced mod `bn254FrModulus`, so inputs cover the whole field, not just sma
 values.
 
 This is the *only* part of the project that links the Rust oracle, and it
-links it into this executable alone — `lake build LeanPoseidon` and
+links it into this executable alone, so `lake build LeanPoseidon` and
 `lake build LeanPoseidonTests` need no Rust toolchain. The oracle never
 appears in the shipped path or in a proof term.
 
@@ -62,7 +62,7 @@ def nextState {p : Nat} [NeZero p] (s : UInt64) : Vector (Fp p) 3 × UInt64 :=
 
 /-- Run `trials` seeded-random differential comparisons of `permute par`
 against the oracle `ffi`, for an instance over field `Fp p`. Throws
-(non-zero exit) if any disagree. Generic over the field — the same body
+(non-zero exit) if any disagree. Generic over the field, the same body
 serves every instance. -/
 def runDifferential {p : Nat} [NeZero p]
     (label : String) (par : Params (Fp p)) (ffi : Vector (Fp p) 3 → Vector (Fp p) 3)
@@ -85,7 +85,7 @@ def runDifferential {p : Nat} [NeZero p]
 
 /-- The `poseidon_fuzz` body. Optional first argument overrides the trial
 count (default 10 000). Runs the differential for **both** shipped fields
-(BN254 and BLS12-381 at t=3) through the *same* generic `runDifferential` —
+(BN254 and BLS12-381 at t=3) through the *same* generic `runDifferential`,
 demonstrating the field abstraction end to end. Invoked from the top-level
 `FuzzMain` exe root (kept out of this test library so Lake compiles a real
 exe `main`). -/

@@ -1,4 +1,4 @@
-# LeanHazmatBls — Architecture
+# LeanHazmatBls: Architecture
 
 The single-family trust-boundary record for `LeanHazmatBls`. The
 cross-family view is
@@ -53,7 +53,7 @@ blst's "build" is two compiler invocations over its own amalgamation
 the pre-generated per-platform assembly) plus an `ar`. The lakefile
 compiles those two objects directly as Lake `buildO` targets (the plan's
 sanctioned "server.c amalgamation" path), with flags mirroring blst's
-default `CFLAGS` minus `-Werror`, plus **`-D__BLST_PORTABLE__`** — which
+default `CFLAGS` minus `-Werror`, plus **`-D__BLST_PORTABLE__`**, which
 compiles both ADX and non-ADX paths behind a runtime CPUID dispatch, so
 the archive runs on any x86-64 host. For that reason the package adds no
 `-march=native`. The shim and the two blst objects archive into one
@@ -76,7 +76,7 @@ correctly**. It is validated only by `LeanHazmatBlsTests`, which runs:
 Each gate is a `native_decide` (one `Lean.ofReduceBool` axiom per case),
 the acceptable regime for an FFI KAT.
 
-## Validation vectors — pin
+## Validation vectors: pin
 
 `ethereum/consensus-spec-tests` **v1.5.0**, `general` config, `bls` suite.
 The anchor vectors are hard-coded into `LeanHazmatBlsTests/Vectors.lean`

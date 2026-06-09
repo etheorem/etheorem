@@ -8,7 +8,7 @@ import SizzLeanBench.Runner
 import SizzLeanBench.Fulu
 
 /-!
-# Scenario S7 — Realistic Fulu BeaconState state-transition
+# Scenario S7: Realistic Fulu BeaconState state-transition
 
 The most production-shaped scenario in the bench. Targets the
 local `SizzLeanBench.Fulu.BeaconState` reference fixture (mainnet
@@ -16,17 +16,17 @@ preset, ~1024 validators). Every per-iteration shot simulates a
 short block-by-block state-transition sequence, touching most
 field shapes the BeaconState container exposes:
 
-* Basic scalars      — `slot`, `eth1DepositIndex`, etc.
-* Sub-containers     — `latestBlockHeader`, checkpoints, `eth1Data`
-* Fixed Vectors      — `blockRoots[k]`, `stateRoots[k]`,
+* Basic scalars      : `slot`, `eth1DepositIndex`, etc.
+* Sub-containers     : `latestBlockHeader`, checkpoints, `eth1Data`
+* Fixed Vectors      : `blockRoots[k]`, `stateRoots[k]`,
                        `randaoMixes[k]`
-* Composite SSZLists — `validators[i]`
-* Basic-element SSZLists — `balances`, `inactivityScores` (whole-
+* Composite SSZLists : `validators[i]`
+* Basic-element SSZLists : `balances`, `inactivityScores` (whole-
                            list replacement; the cached macro
                            doesn't support packed-basic index
                            syntax)
-* Whole-replacement  — `currentSyncCommittee` (every epoch)
-* Bitvector         — `justificationBits` (every epoch)
+* Whole-replacement  : `currentSyncCommittee` (every epoch)
+* Bitvector         : `justificationBits` (every epoch)
 
 The fixture is built **once outside the timed loop** and the
 cached box is pre-warmed via one root walk so every timed
@@ -37,7 +37,7 @@ an "epoch transition" with extra writes.
 ## Why this scenario differs from the synthetic ones
 
 The S1–S6 scenarios use `ValidatorSet256` / `ValidatorSet16`
-fixtures — a vector-of-containers shape. Those miss what makes a
+fixtures, a vector-of-containers shape. Those miss what makes a
 real BeaconState heavy: 37 top-level fields of mixed shapes,
 mainnet-preset constants (8K block-roots, 64K randao-mixes), and
 a deep nested container surface. This row measures the cache's
@@ -48,9 +48,9 @@ actually mutates.
 
 `SizzLeanBench.Fulu` holds a copy of the BeaconState shape; the
 spec-accurate version lives in `LeanEthCS.Forks.Fulu`. The bench
-copy keeps `SizzLeanBench` independent of LeanEthCS — `LeanEthCS`
+copy keeps `SizzLeanBench` independent of LeanEthCS. `LeanEthCS`
 already depends on `SizzLean`, and adding the reverse dependency
-would close a cycle. The copy is a *reference fixture* — it
+would close a cycle. The copy is a *reference fixture*, it
 tracks the shape at the moment of writing and may drift; for
 spec-accurate types use LeanEthCS.
 -/
@@ -204,7 +204,7 @@ final root closes each iteration.
 
 `box.serialize` is intentionally omitted from the per-slot loop:
 the current `SSZ.serialize` runs around 1 MB/s on a ~3 MB mainnet
-BeaconState — calling it 16 times per iteration would dominate
+BeaconState, calling it 16 times per iteration would dominate
 the timing and obscure the cache-vs-pure comparison. -/
 private def runTransitions {H : Type} [Hasher H] [SSZRepr BeaconState]
     (sink : IO.Ref Nat) (initialBox : SSZ.Box H BeaconState) :
@@ -254,13 +254,13 @@ private def runTransitions {H : Type} [Hasher H] [SSZRepr BeaconState]
     let (root, b₁) := box.hashTreeRoot
     box := b₁
     sink.modify (· + consume root)
-  -- Per-iteration `box.serialize` would dominate the bench — see
+  -- Per-iteration `box.serialize` would dominate the bench, see
   -- docstring. One serialize *outside* the slot loop keeps the
   -- bytes path forced (sink stays non-zero) without affecting
   -- the cache-vs-pure delta inside the loop.
   sink.modify (· + consume box.serialize)
 
-/-! ## Entry point — `runAll` -/
+/-! ## Entry point: `runAll` -/
 
 def runAll : IO Unit := do
   let sink ← IO.mkRef (0 : Nat)

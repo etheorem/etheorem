@@ -4,7 +4,7 @@ import LeanEthCS.Forks.Phase0.Attestations
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Phase0.Block` — `BeaconBlockBody`, `BeaconBlock`,
+# `LeanEthCS.Forks.Phase0.Block`: `BeaconBlockBody`, `BeaconBlock`,
 `SignedBeaconBlock`
 
 The block hierarchy. `BeaconBlockBody` is the largest fixed-shape
@@ -31,7 +31,7 @@ open SizzLean.Repr
 
 open LeanEthCS
 
-/-- `BeaconBlockBody` — the variable-size payload of a beacon block.
+/-- `BeaconBlockBody`: the variable-size payload of a beacon block.
 Three fixed-size fields (`randao_reveal`, `eth1_data`, `graffiti`)
 plus five variable-size `List` fields that carry the
 block's slashings, attestations, deposits, and voluntary exits. -/
@@ -46,7 +46,7 @@ structure BeaconBlockBody where
   voluntaryExits    : SSZList SignedVoluntaryExit 16
   deriving SSZRepr
 
-/-- `BeaconBlock` — a proposer's block submission. Variable-size
+/-- `BeaconBlock`: a proposer's block submission. Variable-size
 container (the body field is variable). -/
 structure BeaconBlock where
   slot          : Slot

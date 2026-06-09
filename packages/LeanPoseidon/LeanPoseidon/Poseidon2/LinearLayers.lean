@@ -1,7 +1,7 @@
 import LeanPoseidon.Poseidon2.Params
 
 /-!
-# `LeanPoseidon.LinearLayers` — the linear layers, fast and reference
+# `LeanPoseidon.LinearLayers`: the linear layers, fast and reference
 
 This is the conceptual heart of the library and the subject of the
 (deferred) equivalence proof. Between its non-linear S-box layers,
@@ -17,12 +17,12 @@ adds instead of `O(t²)` multiplies.
 | **fast** (shipped)    | `s = Σ xᵢ;  outᵢ = xᵢ + s`        | `s = Σ xᵢ;  outᵢ = s + (diagᵢ − 1)·xᵢ` |
 | **reference** (dense) | literal `t×t` matrix–vector prod  | literal `t×t` matrix–vector prod      |
 
-For `t = 3` the external matrix is `circ(2,1,1)` — `M_E[i][j] = 1 + δᵢⱼ`
-(diagonal 2, off-diagonal 1) — so `outᵢ = xᵢ + (x₀+x₁+x₂)` *is* exactly
+For `t = 3` the external matrix is `circ(2,1,1)`, i.e. `M_E[i][j] = 1 + δᵢⱼ`
+(diagonal 2, off-diagonal 1). So `outᵢ = xᵢ + (x₀+x₁+x₂)` *is* exactly
 the dense product. The internal matrix is `J + diag(diagᵢ − 1)` (the
 all-ones matrix `J` plus a diagonal), with `M_I[i][i] = diagᵢ` and
 `M_I[i][j] = 1` off the diagonal, giving the scaled-sum form. Both
-equalities are pure ring identities — *that* is what the
+equalities are pure ring identities, *that* is what the
 `LeanPoseidonProofs` package proves (deferred; see `docs/PLAN.md`).
 
 ## Generic over the coefficient ring (the Lean idiom)
@@ -31,7 +31,7 @@ All four functions are generic over `R` and **public** (not `private`):
 the same definitions serve the concrete `Bn254Fr` core *and* the generic-ring
 equivalence proof, which states `mul*Fast = mul*Ref` over any
 `[CommRing R]`. To stay `mathlib`-free here, the core requires only the
-minimal Lean-core algebra classes it actually uses — `Add`, `Mul`, `Sub`,
+minimal Lean-core algebra classes it actually uses, `Add`, `Mul`, `Sub`,
 `One` (and `Inhabited`, to read the diagonal out of the params `Array`).
 `mathlib`'s `CommRing` provides every one of these, so the proof package
 specialises these same definitions to a `CommRing` without re-stating
@@ -40,7 +40,7 @@ them.
 ## Width
 
 The shipped instance is `t = 3` (the width binary Merkle trees use), so
-these layers are written concretely on `Vector R 3` — `Vector α n` is
+these layers are written concretely on `Vector R 3`. `Vector α n` is
 Lean's length-indexed array, so the matrix dimensions are checked by the
 type. Other widths are a deferred follow-up (`docs/PLAN.md` Phase 4); the
 `Fin 3 → Fin 3 → R` matrix form below generalises cleanly when needed.
@@ -65,7 +65,7 @@ def mulMat3 (m : Fin 3 → Fin 3 → R) (st : Vector R 3) : Vector R 3 :=
 def extMatrix3 : Fin 3 → Fin 3 → R := fun i j => if i = j then (1 : R) + 1 else 1
 
 /-- The internal matrix `M_I` for `t = 3` from an instance's diagonal:
-`M[i][i] = intDiagᵢ` on the diagonal, `1` off it — `J + diag(intDiagᵢ − 1)`. -/
+`M[i][i] = intDiagᵢ` on the diagonal, `1` off it. That is `J + diag(intDiagᵢ − 1)`. -/
 def intMatrix3 (par : Params R) : Fin 3 → Fin 3 → R :=
   fun i j => if i = j then par.intDiag[i.val]! else 1
 

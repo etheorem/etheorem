@@ -3,7 +3,7 @@ import LeanEthCS.Forks.Phase0.BeaconBlockHeader
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Phase0.Containers` — Phase 0 fixed-size containers
+# `LeanEthCS.Forks.Phase0.Containers`: Phase 0 fixed-size containers
 
 Bundles the simpler Phase 0 container types that consist entirely of
 fixed-size primitive fields. Each type compiles via `deriving SSZRepr`
@@ -12,7 +12,7 @@ definitions in `consensus-specs/specs/phase0/beacon-chain.md`.
 
 Variable-size containers (`Attestation`, `IndexedAttestation`,
 `BeaconBlockBody`, `BeaconState`) live in dedicated files because
-they exercise the variable-field offset-table path — keeping them
+they exercise the variable-field offset-table path. Keeping them
 separate makes it easier to spot a regression in that path vs.
 one in the simple fixed-field path.
 -/
@@ -25,7 +25,7 @@ open SizzLean
 
 open LeanEthCS
 
-/-- `Fork` — pair of current/previous fork versions plus the
+/-- `Fork`: pair of current/previous fork versions plus the
 activation epoch. Used inside `BeaconState`. -/
 structure Fork where
   previousVersion : Version
@@ -33,20 +33,20 @@ structure Fork where
   epoch           : Epoch
   deriving SSZRepr
 
-/-- `Checkpoint` — an epoch boundary the chain has finalized at. -/
+/-- `Checkpoint`: an epoch boundary the chain has finalized at. -/
 structure Checkpoint where
   epoch : Epoch
   root  : Root
   deriving SSZRepr
 
-/-- `Eth1Data` — the latest eth1-chain anchor a validator votes for. -/
+/-- `Eth1Data`: the latest eth1-chain anchor a validator votes for. -/
 structure Eth1Data where
   depositRoot  : Root
   depositCount : UInt64
   blockHash    : Hash32
   deriving SSZRepr
 
-/-- `AttestationData` — the inner payload of an attestation: which
+/-- `AttestationData`: the inner payload of an attestation: which
 slot, committee index, block being attested to, and source/target
 checkpoints. -/
 structure AttestationData where
@@ -57,7 +57,7 @@ structure AttestationData where
   target          : Checkpoint
   deriving SSZRepr
 
-/-- `Validator` — the validator registry entry. Eight fixed-size
+/-- `Validator`: the validator registry entry. Eight fixed-size
 fields, all primitives. -/
 structure Validator where
   pubkey                       : BLSPubkey
@@ -76,7 +76,7 @@ structure SignedBeaconBlockHeader where
   signature : BLSSignature
   deriving SSZRepr
 
-/-- `ProposerSlashing` — two signed headers from the same proposer
+/-- `ProposerSlashing`: two signed headers from the same proposer
 in the same slot. Exercises a struct-of-struct field
 (`SignedBeaconBlockHeader`), which the deriving handler resolves
 through the recursive `synthInstance` fallback in `Repr/Deriving.lean`. -/
@@ -85,7 +85,7 @@ structure ProposerSlashing where
   signedHeader2 : SignedBeaconBlockHeader
   deriving SSZRepr
 
-/-- `DepositMessage` — the SSZ payload signed by a depositing
+/-- `DepositMessage`: the SSZ payload signed by a depositing
 validator. -/
 structure DepositMessage where
   pubkey                : BLSPubkey
@@ -93,7 +93,7 @@ structure DepositMessage where
   amount                : Gwei
   deriving SSZRepr
 
-/-- `DepositData` — `DepositMessage` plus the BLS signature. -/
+/-- `DepositData`: `DepositMessage` plus the BLS signature. -/
 structure DepositData where
   pubkey                : BLSPubkey
   withdrawalCredentials : Bytes32
@@ -101,7 +101,7 @@ structure DepositData where
   signature             : BLSSignature
   deriving SSZRepr
 
-/-- `VoluntaryExit` — message a validator signs to exit. -/
+/-- `VoluntaryExit`: message a validator signs to exit. -/
 structure VoluntaryExit where
   epoch          : Epoch
   validatorIndex : ValidatorIndex
@@ -113,21 +113,21 @@ structure SignedVoluntaryExit where
   signature : BLSSignature
   deriving SSZRepr
 
-/-- `ForkData` — fork digest pre-image. Same fields as `Fork` but
+/-- `ForkData`: fork digest pre-image. Same fields as `Fork` but
 distinct nominal type (used for BLS domain construction). -/
 structure ForkData where
   currentVersion        : Version
   genesisValidatorsRoot : Root
   deriving SSZRepr
 
-/-- `SigningData` — `(object_root, domain)` pair fed into the BLS
+/-- `SigningData`: `(object_root, domain)` pair fed into the BLS
 signing primitive. -/
 structure SigningData where
   objectRoot : Root
   domain     : Domain
   deriving SSZRepr
 
-/-- `Eth1Block` — minimal eth1-block summary used during deposit
+/-- `Eth1Block`: minimal eth1-block summary used during deposit
 processing. -/
 structure Eth1Block where
   timestamp    : UInt64

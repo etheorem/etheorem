@@ -1,9 +1,9 @@
 import SizzLean.Proofs.Roundtrip
 
 /-!
-# `SizzLean.Proofs.Injective` — non-malleability
+# `SizzLean.Proofs.Injective`: non-malleability
 
-ARCHITECTURE.md §4 calls non-malleability "the highest-leverage
+ARCHITECTURE.md §4 calls non-malleability "the highest-value
 publishable artefact in the library: SSZ guarantees it implicitly
 by construction (canonical little-endian, monotonic offsets,
 minimal bitlist trailing-bit, no extra bytes), but no
@@ -26,7 +26,7 @@ extends.
 
 ## Lean idioms used here
 
-* `Except.ok.inj` — Lean core lemma stating `.ok a = .ok b → a = b`.
+* `Except.ok.inj`: Lean core lemma stating `.ok a = .ok b → a = b`.
   Generated automatically for inductive constructors. Combined with
   `Prod.mk.inj` to project out the first component.
 * The three-line proof template: substitute the assumed equality
@@ -48,7 +48,7 @@ unless they are equal. Direct corollary of `decode_encode`.
 
 The proof script:
 
-1. Apply `decode_encode` twice — once to get
+1. Apply `decode_encode` twice, once to get
    `deserialize s (serialize s x) = .ok (x, _)` (call it `hx`),
    once for `y`.
 2. Rewrite `hx` using the assumed `serialize s x = serialize s y`

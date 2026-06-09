@@ -1,5 +1,5 @@
 /-!
-# `LeanHazmatSha256.Ffi` — OpenSSL SHA-256 behind `@[extern]`
+# `LeanHazmatSha256.Ffi`: OpenSSL SHA-256 behind `@[extern]`
 
 Three `@[extern] opaque` declarations bridge Lean's `ByteArray` to
 the C shims in `csrc/sha256_shim.c` and `csrc/sha256_batch.c`, which
@@ -11,7 +11,7 @@ form of the latter.
 This module deliberately holds **only** the FFI bindings. The
 abstract `Hasher` typeclass, the `Sha256` tag, the `Hasher Sha256`
 instance, and the FFI ≡ pure-Lean *equivalence axioms* all live in
-`SizzLean` — the one layer entitled to import both this package and
+`SizzLean`, the one layer entitled to import both this package and
 the pure-Lean spec `LeanSha256` (see hazmat-docs/ARCHITECTURE.md §9).
 Keeping the bindings free of any spec reference is what lets this
 package ship standalone as a mirror, validated only by its own
@@ -30,8 +30,8 @@ its `SizzLean.Hasher` namespace (ARCHITECTURE.md §3.3).
 `opaque` keeps the kernel from attempting to reduce hash
 computations during proof checking; `@[extern]` instructs the
 compiler to emit a direct call to the named C symbol at runtime. The
-trust assumption — *that the linked OpenSSL implements NIST FIPS
-180-4 SHA-256* — is validated empirically by the CAVP byte-level KAT
+trust assumption, *that the linked OpenSSL implements NIST FIPS
+180-4 SHA-256*, is validated empirically by the CAVP byte-level KAT
 in `LeanHazmatSha256Tests/`, and is the single line item this family
 contributes to the TCB. Unlike every other LeanHazmat family,
 SHA-256 *also* has a kernel-reducible pure-Lean reference
@@ -41,12 +41,12 @@ the empirical assertion in one place.
 
 ## Lean idioms used here
 
-* `@[extern "C-symbol"] opaque foo : T` — declare `foo : T` such that
+* `@[extern "C-symbol"] opaque foo : T`: declare `foo : T` such that
   the *runtime* implementation is the named C symbol, while the
   *kernel* treats `foo` as fully opaque (no reduction, no
   definitional equality with anything else). Exactly what an FFI
   primitive we don't want to reduce inside proofs needs.
-* `@&` on a function argument marks it as *borrowed* — Lean's runtime
+* `@&` on a function argument marks it as *borrowed*, Lean's runtime
   does not bump the refcount when passing it in. The C side receives
   a `b_lean_obj_arg` for these.
 -/
@@ -77,7 +77,7 @@ Pulled out as its own primitive (rather than
 `sha256Hash (left ++ right)`) so production instances can dispatch
 directly to a SHA-NI / AVX-512 two-block hashing primitive without a
 redundant copy at every interior Merkle node. The OpenSSL backend
-just calls `EVP_DigestUpdate` twice — but the abstraction is shaped
+just calls `EVP_DigestUpdate` twice, but the abstraction is shaped
 for the eventual `gohashtree`-style upgrade.
 
 **Trust assumption:** same as `sha256Hash`. Validated by the
@@ -85,13 +85,13 @@ for the eventual `gohashtree`-style upgrade.
 @[extern "lean_hazmat_sha256_combine"]
 opaque sha256Combine (left right : @& ByteArray) : ByteArray
 
-/-- Batched FFI SHA-256 sibling combine. Inputs are parallel arrays —
-`lefts[i]` and `rights[i]` are the i-th sibling pair — and the output
+/-- Batched FFI SHA-256 sibling combine. Inputs are parallel arrays,
+`lefts[i]` and `rights[i]` are the i-th sibling pair, and the output
 array has the same length, with `output[i] = SHA-256(lefts[i] ++
 rights[i])`. The C shim panics if the input lengths disagree.
 
 Runtime implementation is `csrc/sha256_batch.c`'s
-`lean_hazmat_sha256_batch_combine` — currently a scalar loop sharing
+`lean_hazmat_sha256_batch_combine`, currently a scalar loop sharing
 one `EVP_MD_CTX` across the pairs, swappable for SHA-NI / AVX-512
 later without changing the FFI surface. Amortising the context
 allocation across the whole pair array is the win over calling

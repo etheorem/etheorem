@@ -5,7 +5,7 @@ import SizzLean.Cache.TreeBacked
 import SizzLeanTests.ExampleContainers
 
 /-!
-# `SizzLeanTests.TreeBackedCoherence` — coherence on example containers
+# `SizzLeanTests.TreeBackedCoherence`: coherence on example containers
 
 The cache-layer coherence theorem
 
@@ -13,8 +13,8 @@ The cache-layer coherence theorem
       t.hashTreeRootCached = SSZ.hashTreeRoot Sha256 t.view
 
 is what makes the cached path safe to substitute for the spec one
-at runtime. It's not proved in Lean — it's empirically asserted
-via `native_decide` cases.
+at runtime. It is empirically asserted in Lean via `native_decide`
+cases rather than proved.
 
 This file does it on the example containers from
 `ExampleContainers.lean`. The companion file in
@@ -60,7 +60,7 @@ private def zeroBatch : BatchExample :=
   { rootsA := Vector.replicate 8 zeroRoot
     rootsB := Vector.replicate 8 zeroRoot }
 
-/-! ## Realistic values — hand-picked non-zero bytes. -/
+/-! ## Realistic values: hand-picked non-zero bytes. -/
 
 private def realisticVersion : ExVersion :=
   Vector.ofFn (fun (i : Fin 4) => Nat.toUInt8 (0x10 + i.val))

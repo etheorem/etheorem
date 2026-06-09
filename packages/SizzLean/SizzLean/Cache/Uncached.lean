@@ -3,9 +3,9 @@ import SizzLean.Repr.Class
 import SizzLean.Spec.HashTreeRoot
 
 /-!
-# `SizzLean.Cache.Uncached` — the **pure (uncached) backend**
+# `SizzLean.Cache.Uncached`: the **pure (uncached) backend**
 
-This file is the home of `UncachedSSZ H T` — the **pure** branch
+This file is the home of `UncachedSSZ H T`, the **pure** branch
 of the two-backend story documented in `Cache/Box.lean`. The
 companion **fast (cached)** backend lives in
 `Cache/TreeBacked.lean` (`CachedSSZ`); `Cache/Box.lean`'s
@@ -19,15 +19,15 @@ and the hasher-explicit `SSZ.UncachedBox` / `SSZ.CachedBox`).
 > (`UncachedSSZ.ofValue Sha256 v`) is rarely the right thing.
 > Almost always, what the caller wants is one of:
 >
-> * **Plain `T`** — for proof-only functions and one-shot consumers.
+> * **Plain `T`**: for proof-only functions and one-shot consumers.
 >   Lean's built-in `{ f with field := v }` does what a wrapped
 >   update would, `SSZ.hashTreeRoot Sha256 x` reads roots directly,
 >   and there's nothing to thread through theorems. This is the
 >   right answer for ~every proof-side function.
-> * **`SSZ.PureBox v`** — if the same function body must serve a
+> * **`SSZ.PureBox v`**: if the same function body must serve a
 >   cached call site too (e.g. you also have a `SSZ.FastBox`
 >   caller). Produces `SSZ.Box Sha256 T`; `sszUpdate` works on it.
-> * **`SSZ.UncachedBox H v`** — same as `PureBox` but with an
+> * **`SSZ.UncachedBox H v`**: same as `PureBox` but with an
 >   explicit hasher (e.g. `Sha256Spec` for kernel-reducible proofs
 >   of concrete root bytes).
 >
@@ -89,7 +89,7 @@ open SizzLean.Hasher
 /-- A bare SSZ-valued container tagged with hasher `H`.
 
 Parallel to `TreeBacked H T` (= `CachedSSZ H T`) but with no
-Merkle-tree cache — there's only the value-level `view : T`. The
+Merkle-tree cache, there's only the value-level `view : T`. The
 hasher tag `H` is a phantom parameter at the type level: it
 appears in the structure header but no field uses it, so the role
 of `H` is purely to *select an instance* at the call site (most
@@ -100,8 +100,8 @@ See the module docstring for why this type is internal and what
 to reach for instead (`SSZ.PureBox`, `SSZ.UncachedBox`, or plain
 `T`). -/
 structure UncachedSSZ (H : Type) (T : Type) [Hasher H] [SSZRepr T] where
-  /-- The wrapped Lean value. `UncachedSSZ` carries nothing else —
-  there is no Merkle-tree cache and no precomputed root. Every
+  /-- The wrapped Lean value. `UncachedSSZ` carries nothing else.
+  There is no Merkle-tree cache and no precomputed root. Every
   call to `hashTreeRoot` reads through this field and hashes from
   scratch via the spec. -/
   view : T
@@ -110,13 +110,13 @@ namespace UncachedSSZ
 
 /-- Build an `UncachedSSZ H T` from a plain `T`. The hasher `H` is
 pinned into the result's type at construction, matching
-`TreeBacked.ofValue`'s discipline — subsequent operations
+`TreeBacked.ofValue`'s discipline, subsequent operations
 (`hashTreeRoot`, `sszUpdate`) recover `H` from the value's type
 and never require a separate hasher argument.
 
-User code almost always reaches one level up — through
+User code almost always reaches one level up, through
 `SSZ.PureBox v` (Sha256-pinned) or `SSZ.UncachedBox H v`
-(hasher-explicit) — both of which return `SSZ.Box H T`. Direct
+(hasher-explicit), both of which return `SSZ.Box H T`. Direct
 `UncachedSSZ.ofValue` calls live inside the library itself, where
 `Cache/Box.lean`'s `Box.ofPure` delegates here. -/
 def ofValue (H : Type) [Hasher H] {T : Type} [SSZRepr T] (v : T) :
@@ -127,10 +127,10 @@ def ofValue (H : Type) [Hasher H] {T : Type} [SSZRepr T] (v : T) :
 each call.
 
 The `H` parameter is inferred from `t`'s type (it was pinned at
-`ofValue` time), so the chosen `Hasher H` instance — `Sha256`
+`ofValue` time). The chosen `Hasher H` instance is the one
+consumed by every internal `combine` / `hash` call: `Sha256`
 for FFI hashing, `Sha256Spec` for kernel-reducible pure-Lean
-hashing, or any future tag — is the one consumed by every
-internal `combine` / `hash` call. With `H := Sha256` this is
+hashing, or any future tag. With `H := Sha256` this is
 observationally identical to the cached side's
 `hashTreeRootCached`, just slower; with `H := Sha256Spec` the
 whole computation reduces in the kernel without an FFI hop. -/

@@ -1,9 +1,9 @@
-// LeanHazmatKzg — C shim wrapping ethereum/c-kzg-4844 for the Ethereum
+// LeanHazmatKzg: C shim wrapping ethereum/c-kzg-4844 for the Ethereum
 // consensus KZG / polynomial-commitment surface (EIP-4844 blobs +
 // EIP-7594 / Fulu PeerDAS cells).
 //
 // c-kzg is built against LeanHazmatBls's blst (the single blst owner;
-// hazmat-docs/ARCHITECTURE.md §4) — the lakefile compiles c-kzg's own
+// hazmat-docs/ARCHITECTURE.md §4), the lakefile compiles c-kzg's own
 // `src/ckzg.c` amalgamation and links the propagated `libleanhazmat_bls`
 // archive for the `blst_*` symbols.
 //
@@ -20,7 +20,7 @@
 //     setup failing to load). Multi-output operations return a Lean
 //     product / arrays, empty on error.
 //   * verification results are `uint8_t` (Lean `Bool`); a `false`
-//     distinguishes "does not verify / bad input" from a panic — c-kzg's
+//     distinguishes "does not verify / bad input" from a panic, c-kzg's
 //     `C_KZG_RET != C_KZG_OK` collapses to `false` here.
 //
 // Trust assumption (ARCHITECTURE.md §10): c-kzg-4844 + blst correctly
@@ -38,7 +38,7 @@
 #include "ckzg.h"
 
 // ─────────────────────────────────────────────────────────────────────
-// Trusted setup — embedded bytes + load-once
+// Trusted setup: embedded bytes + load-once
 // ─────────────────────────────────────────────────────────────────────
 
 extern const char lean_hazmat_kzg_ts_start[];
@@ -49,7 +49,7 @@ static int g_attempted = 0;
 static int g_load_ok   = 0;
 
 // Load the embedded trusted setup into `g_settings` exactly once.
-// `precompute = 0`: no fixed-base MSM tables — the consensus verifier
+// `precompute = 0`: no fixed-base MSM tables, the consensus verifier
 // surface (commit / prove / verify, including the Fulu cell paths) does
 // not need them, and they cost ~96 MiB. Idempotent via `g_attempted`.
 static void lean_hazmat_kzg_load(void) {

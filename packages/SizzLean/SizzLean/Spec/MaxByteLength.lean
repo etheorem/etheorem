@@ -3,7 +3,7 @@ import SizzLean.Spec.Constants
 import SizzLean.Spec.Serialize  -- for SSZType.isFixedSize
 
 /-!
-# `SizzLean.Spec.MaxByteLength` — static upper bound on serialized size
+# `SizzLean.Spec.MaxByteLength`: static upper bound on serialized size
 
 For every `s : SSZType`, `maxByteLength s` is a `Nat` upper bound
 on `(serialize s x).size`, derived from the schema alone (no value
@@ -12,20 +12,20 @@ central theorem and the foundation of any pre-flight buffer
 sizing in callers.
 
 Mirrors the spec's `*_serialized_byte_length` / `byte_length` helpers
-in `simple-serialize.md` *§Serialization — Byte length*. Definitions
+in `simple-serialize.md` *§Serialization, Byte length*. Definitions
 are structural recursion over `SSZType` plus list-traversing helpers
-in a `mutual` block — same shape as `Spec/Serialize.lean`'s
+in a `mutual` block, same shape as `Spec/Serialize.lean`'s
 `isFixedSize`/`fixedByteSize` to keep the elaborator happy.
 
 ## Per-constructor reasoning
 
 * **Basic types** (`uintN n`, `bool`, `bitvector n`): exact byte
   width determined by the schema. `uintN n` packs `⌈n/8⌉` bytes.
-* **`bitlist cap`**: `⌈(cap + 1)/8⌉` — the `+1` is the trailing
+* **`bitlist cap`**: `⌈(cap + 1)/8⌉`, the `+1` is the trailing
   delimiter bit. See `Spec/Serialize.lean`'s `bitlistToBytes`.
 * **`vector t n`**: `n` elements, each at most `maxByteLength t`.
-* **`list t cap`**: `cap` elements (the *cap*, not the actual length
-  — this is a static upper bound), each at most `maxByteLength t`.
+* **`list t cap`**: `cap` elements (the *cap*, not the actual length,
+  this is a static upper bound), each at most `maxByteLength t`.
 * **`container fs`**: sum of per-field contributions. Fixed-size
   fields contribute their own `maxByteLength`. Variable-size fields
   contribute `BYTES_PER_LENGTH_OFFSET + maxByteLength` (one
@@ -33,7 +33,7 @@ in a `mutual` block — same shape as `Spec/Serialize.lean`'s
 
 ## Lean idioms used here
 
-* `mutual ... end` — needed because the `container` recursion
+* `mutual ... end`: needed because the `container` recursion
   descends into a `List SSZType`, and Lean 4.29.1's
   structural-recursion checker rejects higher-order recursion
   through `List.foldr`. Same workaround `Spec/Interp.lean` /

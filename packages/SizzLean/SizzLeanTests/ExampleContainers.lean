@@ -3,7 +3,7 @@ import SizzLean.Repr.Instances
 import SizzLean.Repr.Deriving
 
 /-!
-# `SizzLeanTests.ExampleContainers` — minimal SSZ containers for testing
+# `SizzLeanTests.ExampleContainers`: minimal SSZ containers for testing
 
 Small example containers used by `SizzLeanTests`'s cache-
 machinery tests. The shapes mirror common Phase-0 / consensus-spec
@@ -17,14 +17,14 @@ type-specific tests are in `LeanEthCS`.
 
 ## Containers
 
-* `FlatExample` — 3 fields (two byte-vectors plus a `UInt64`).
+* `FlatExample`: 3 fields (two byte-vectors plus a `UInt64`).
   Same shape as Phase-0 `Fork`: exercises the multi-field
   `sszUpdate` path (3 clauses, no nesting).
-* `InnerExample` + `NestedExample` — a 5-field nested struct
+* `InnerExample` + `NestedExample`: a 5-field nested struct
   wrapped in a 2-field outer with a sibling vector. Same shape as
   `SignedBeaconBlockHeader`: exercises path composition across one
   nesting level plus a sibling flat clause.
-* `BatchExample` — two `Vector Root 8` fields. Smaller mirror of
+* `BatchExample`: two `Vector Root 8` fields. Smaller mirror of
   `HistoricalBatch.Minimal`: exercises vector-index `sszUpdate`
   on a composite-element vector at non-trivial depth (depth 3).
 -/
@@ -42,7 +42,7 @@ abbrev ExRoot : Type := Vector UInt8 32
 /-- 4-byte version, mirroring `Eth.Primitives.Version`. -/
 abbrev ExVersion : Type := Vector UInt8 4
 
-/-- Flat 3-field container — shape mirrors `Phase0.Fork`.
+/-- Flat 3-field container, shape mirrors `Phase0.Fork`.
 Exercises multi-clause `sszUpdate` with no nesting. -/
 structure FlatExample where
   versionA : ExVersion
@@ -50,7 +50,7 @@ structure FlatExample where
   marker   : UInt64
 deriving Inhabited, DecidableEq, SSZRepr
 
-/-- 5-field inner container — shape mirrors
+/-- 5-field inner container, shape mirrors
 `Phase0.BeaconBlockHeader`. Used inside `NestedExample`. -/
 structure InnerExample where
   slot       : UInt64
@@ -60,7 +60,7 @@ structure InnerExample where
   rootC      : ExRoot
 deriving Inhabited, DecidableEq, SSZRepr
 
-/-- Nested container — outer with one inner-struct field and one
+/-- Nested container, outer with one inner-struct field and one
 sibling primitive-vector field. Shape mirrors
 `Phase0.SignedBeaconBlockHeader`. Exercises path composition
 across one nesting level plus a sibling flat clause. -/
@@ -69,7 +69,7 @@ structure NestedExample where
   signature : Vector UInt8 96
 deriving Inhabited, DecidableEq, SSZRepr
 
-/-- 2-field container of composite-element vectors — shape mirrors
+/-- 2-field container of composite-element vectors, shape mirrors
 `Phase0.HistoricalBatch.Minimal` but with 8 entries per vector
 (versus 64) to keep test-time native_decide fast while still
 exercising depth-3 vector geometry. -/
@@ -79,7 +79,7 @@ structure BatchExample where
 deriving Inhabited, DecidableEq, SSZRepr
 
 /-- 2-field container holding a composite-element `SSZList`.
-Used to exercise list-shrink scenarios — writes referencing an
+Used to exercise list-shrink scenarios, writes referencing an
 index that becomes out-of-bounds after a later whole-list
 replacement. `cap = 8` keeps `native_decide` fast. -/
 structure ListShrinkExample where
@@ -88,7 +88,7 @@ structure ListShrinkExample where
 deriving DecidableEq, SSZRepr
 
 /-- A composite element with a deliberately **non-zero** `Inhabited`
-default. Used to expose the bare-OOB-index fragility — the test
+default. Used to expose the bare-OOB-index fragility, the test
 needs an element type whose `default` does *not* match the
 zero-padding the spec uses for under-capped SSZList positions. -/
 structure NonZeroElem where
@@ -97,7 +97,7 @@ structure NonZeroElem where
 deriving DecidableEq, SSZRepr
 
 /-- Non-zero `Inhabited` default. `default NonZeroElem` is
-`{ a := 1, b := 1 }` — distinct from the all-zero
+`{ a := 1, b := 1 }`, distinct from the all-zero
 `NonZeroElem` that an under-capped SSZList position would
 otherwise resolve to via zero-padding. -/
 instance : Inhabited NonZeroElem := ⟨{ a := 1, b := 1 }⟩

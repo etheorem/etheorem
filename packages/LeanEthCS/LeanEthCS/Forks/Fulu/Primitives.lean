@@ -2,7 +2,7 @@ import LeanEthCS.Primitives
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Fulu.Primitives` — Fulu / PeerDAS primitives
+# `LeanEthCS.Forks.Fulu.Primitives`: Fulu / PeerDAS primitives
 
 Fulu introduces *cell-based* blob commitments for PeerDAS sampling.
 Constants (preset-invariant at v1.5.0):
@@ -25,7 +25,7 @@ abbrev ColumnIndex := UInt64
 /-- Row index in the extended data-availability matrix. -/
 abbrev RowIndex := UInt64
 
-/-- One cell of blob data — `BYTES_PER_CELL = 2048` bytes
+/-- One cell of blob data, `BYTES_PER_CELL = 2048` bytes
 (`FIELD_ELEMENTS_PER_CELL = 64` elements × 32 bytes each). -/
 abbrev Cell := Vector UInt8 2048
 

@@ -47,11 +47,11 @@ import LeanEthCS.Forks.Fulu.LightClient
 import LeanEthCS.Forks.Fulu.Inherited
 
 /-!
-# `LeanEthCS.Cli.Main` — `eth_ssz_vector_runner` driver binary
+# `LeanEthCS.Cli.Main`: `eth_ssz_vector_runner` driver binary
 
 Pure-Lean driver that the Python `scripts/run_conformance.py`
 orchestrator invokes per test case. Its single purpose is to be
-driven by the conformance harness — nothing in the library proper
+driven by the conformance harness, nothing in the library proper
 depends on it.
 Argv contract:
 
@@ -60,17 +60,17 @@ eth_ssz_vector_runner root  <fork>:<type> <input.ssz>
 eth_ssz_vector_runner check <fork>:<type> <input.ssz> <expected_root_hex>
 ```
 
-* `root` — deserialize the SSZ file, compute
+* `root`: deserialize the SSZ file, compute
   `SSZ.hashTreeRoot` (via the FFI SHA-256 instance), print the
   resulting 32-byte root as lowercase hex to stdout. Exit 0.
-* `check` — deserialize, re-serialize (must equal input
+* `check`: deserialize, re-serialize (must equal input
   bytes-for-bytes), compute root, compare against the expected
   hex. Exit 0 on success; non-zero with a diagnostic on any
   failure.
 
 The `<fork>:<type>` dispatch is a hand-rolled match table over the
 known Lean types. Adding a new consensus type means one more arm in
-`runRoot` / `runCheck`. This is *intentional* — the alternative
+`runRoot` / `runCheck`. This is *intentional*, the alternative
 (reflection-based dispatch) would require carrying SSZType /
 SSZRepr metadata at runtime, which conflicts with the kernel-opaque
 treatment of `Hasher` and would complicate the trust boundary.
@@ -1366,7 +1366,7 @@ layout):
 
 `containers` tests use named test-only structures
 (`SingleFieldTestStruct`, `VarTestStruct`, …); those are not parsed
-here — they'd require defining the test container types as Lean
+here, they'd require defining the test container types as Lean
 structures with `deriving SSZRepr`, and the CLI does not. -/
 
 /-- Parse a uintN element identifier (`uint8`, `uint16`, …). -/
@@ -1388,7 +1388,7 @@ private def parseElem (s : String) : Option SSZType :=
 /-! ### Test-only container shapes
 
 The `ssz_generic/containers` tests define a small fixed set of
-test-only container types — see consensus-spec-tests
+test-only container types, see consensus-spec-tests
 `formats/ssz_generic/containers.md`. The CLI hard-codes their SSZ
 shapes so `ssz_generic_check <ContainerName> …` works against the
 upstream vectors without us defining matching Lean `structure`s
@@ -1446,7 +1446,7 @@ private def parseShape (s : String) : Option SSZType :=
   else if s == "BitsStruct" then
     some bitsStructShape
   else if s.startsWith "uint_" then
-    -- `uint_<N>` — convert to `uintN<N>` by dropping the underscore
+    -- `uint_<N>`: convert to `uintN<N>` by dropping the underscore
     -- and parsing the suffix as a Nat.
     let n? := (s.drop 5).toString.toNat?
     match n? with
@@ -1462,7 +1462,7 @@ private def parseShape (s : String) : Option SSZType :=
   else if s.startsWith "bitlist_" then
     (s.drop 8).toString.toNat?.map .bitlist
   else if s.startsWith "vec_" then
-    -- `vec_<elem>_<size>` — split the last `_<size>` off and recurse
+    -- `vec_<elem>_<size>`: split the last `_<size>` off and recurse
     -- on the element identifier.
     let body := (s.drop 4).toString
     let parts := body.splitOn "_"
@@ -1510,7 +1510,7 @@ private def runSSZGenericInvalid (shape : SSZType) (raw : ByteArray) :
 
 /-- Entry point. Parses argv and dispatches. Returns exit code via
 `IO.UInt32`. -/
--- ### `batch` mode — streaming protocol over stdin/stdout
+-- ### `batch` mode: streaming protocol over stdin/stdout
 --
 -- To amortise the Lean-runtime startup cost across many test cases the
 -- conformance harness invokes `eth_ssz_vector_runner batch` once per
@@ -1530,7 +1530,7 @@ private def runSSZGenericInvalid (shape : SSZType) (raw : ByteArray) :
 --   stays single-line.
 --
 -- EOF on stdin terminates the loop with exit code 0. Any malformed
--- request is reported as a `fail` for that case and the loop continues —
+-- request is reported as a `fail` for that case and the loop continues,
 -- the batch as a whole only fails if the CLI itself can't run.
 
 private def escapeRespMsg (msg : String) : String :=

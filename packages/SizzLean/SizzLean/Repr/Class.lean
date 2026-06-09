@@ -9,7 +9,7 @@ import SizzLean.Spec.BasicSupported
 import SizzLean.Proofs.Roundtrip
 
 /-!
-# `SizzLean.Repr.Class` — `SSZRepr` typeclass + thin user-facing wrappers
+# `SizzLean.Repr.Class`: `SSZRepr` typeclass + thin user-facing wrappers
 
 The `SSZRepr` class declaration plus the `SSZ.serialize` /
 `SSZ.deserialize` / `SSZ.hashTreeRoot` user-facing wrappers and
@@ -39,11 +39,11 @@ are then thin wrappers; `SSZ.roundtrip` lifts the spec-side
 The library's `decode_encode` proof currently covers the
 `BasicSupported` subset:
 
-* `.uintN 8 / 16 / 32 / 64`, `.bool` — basic primitives.
-* `.vector t n` / `.list t cap` / `.container fs` — general
+* `.uintN 8 / 16 / 32 / 64`, `.bool`: basic primitives.
+* `.vector t n` / `.list t cap` / `.container fs`: general
   composites over fixed-size element / field types
   (`BasicSupported t` with `t.isFixedSize = true`).
-* `.container [.bool, .bool]` — concrete two-`Bool` container,
+* `.container [.bool, .bool]`: concrete two-`Bool` container,
   exposed as a `def`-level alias of `containerFixed (.cons .bool
   rfl (.cons .bool rfl .nil))` so the hand-written `Pair` example
   can name the witness directly.
@@ -59,20 +59,20 @@ widens.
 
 ## Lean idioms used here (annotated on first appearance)
 
-* `class C T where … end` — declares a typeclass. The fields
+* `class C T where … end`: declares a typeclass. The fields
   inside `where` are the methods; an `instance : C T := …` value
   supplies them for a particular `T`. At a call site, an
   *instance binder* `[C T]` asks the compiler to find a
-  registered instance for `T` — this resolution step is called
+  registered instance for `T`, this resolution step is called
   *instance synthesis*.
-* `(H := H)` — *named-argument* syntax for passing the value `H`
+* `(H := H)`: *named-argument* syntax for passing the value `H`
   to a function's explicit parameter also called `H`. Useful
-  when `H` is a *phantom tag* — a type parameter that appears in
+  when `H` is a *phantom tag*, a type parameter that appears in
   the function's signature but not in any of its argument or
   return types. Instance synthesis cannot recover a phantom from
   value arguments (there is nothing to look at), so the caller
   must pass it explicitly. Same idiom as `Spec/HashTreeRoot.lean`.
-* `inductive … : Prop` for `BasicSupported` — the witness lives
+* `inductive … : Prop` for `BasicSupported`: the witness lives
   in `Prop`, Lean's universe of propositions whose proofs are
   erased at runtime. Using `Prop` lets `decode_encode` take a
   `BasicSupported r.shape` hypothesis without it appearing in
@@ -85,18 +85,18 @@ namespace SizzLean
 
 open SizzLean.Spec
 
-/-- `SSZRepr T` — the user-facing typeclass bridging Lean types to
+/-- `SSZRepr T`: the user-facing typeclass bridging Lean types to
 the SSZ wire format.
 
 A type `T` carries an `SSZRepr T` instance by exhibiting:
-* `shape` — the `SSZType` description that classifies `T`'s wire
+* `shape`: the `SSZType` description that classifies `T`'s wire
   format (e.g. `.uintN 64` for a `Slot`-like wrapper, or
   `.container [.bool, .bool]` for a `Pair {a b : Bool}`).
-* `toRepr` / `fromRepr` — a per-direction conversion between `T`
+* `toRepr` / `fromRepr`: a per-direction conversion between `T`
   values and `shape.interp` values. These are *value-level* iso
   arrows: at runtime they perform any boxing / unboxing the
   in-memory representation requires.
-* `to_from` / `from_to` — the iso laws, kept on the class itself
+* `to_from` / `from_to`: the iso laws, kept on the class itself
   (not as separate theorems) so a user-supplied instance must
   commit to them at definition time. For library-provided
   instances and `deriving`-generated instances, both laws close
@@ -144,7 +144,7 @@ def deserialize {T : Type} [r : SSZRepr T] (b : ByteArray) :
 /-- User-facing Merkleization. Delegates to the spec-level
 `hashTreeRoot` through the `Hasher` instance and the `SSZRepr`'s
 shape. The `(H := H)` is needed because `Hasher`'s parameter is a
-phantom tag — same idiom as `Spec/HashTreeRoot.lean`.
+phantom tag, same idiom as `Spec/HashTreeRoot.lean`.
 `@[specialize]` per `serialize` above. -/
 @[specialize]
 def hashTreeRoot {T : Type} (H : Type) [Hasher H] [r : SSZRepr T]
@@ -159,8 +159,8 @@ Given `[SSZRepr T]` with `BasicSupported r.shape`, the
 
 The proof unfolds the wrappers, applies the spec-level `decode_encode`
 on `r.toRepr x`, then uses `from_to` to fold the round-tripped
-representation `toRepr (fromRepr (toRepr x))` back through to `x` —
-actually, more directly: `decode_encode` gives `deserialize r.shape
+representation `toRepr (fromRepr (toRepr x))` back through to `x`.
+More directly: `decode_encode` gives `deserialize r.shape
 (serialize r.shape (toRepr x)) = .ok (toRepr x, _)`; our wrapper
 then maps the `.ok` payload through `fromRepr`, giving
 `.ok (fromRepr (toRepr x)) = .ok x` by `to_from`.

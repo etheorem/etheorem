@@ -1,4 +1,4 @@
-# SizzLean — Manual
+# SizzLean: Manual
 
 A user's guide to writing code against SizzLean.
 
@@ -15,7 +15,7 @@ A user's guide to writing code against SizzLean.
 
 ## Write the spec once, pick the backend later
 
-SizzLean's user surface is **`SSZ.Box H T`** — one type that
+SizzLean's user surface is **`SSZ.Box H T`**, one type that
 wraps any SSZ value `T` and lets you pick the *cache flavour*
 (cached for production, uncached for proofs) and the *hasher*
 (`Sha256` FFI by default, `Sha256Spec` for kernel-reducible
@@ -46,7 +46,7 @@ def bumpEpoch {H : Type} [Hasher H] (f : SSZ.Box H Fork) (newEpoch : UInt64) :
   sszUpdate f with epoch := newEpoch
 ```
 
-That's it — one function body. Drive it four ways depending on
+That's it, one function body. Drive it four ways depending on
 what you need:
 
 ```lean
@@ -64,9 +64,9 @@ example :
   rfl
 ```
 
-For full control — including swapping in a pure-Lean hasher for
+For full control, including swapping in a pure-Lean hasher for
 kernel-reducible proofs of concrete root bytes, or a future
-post-quantum hasher — there are hasher-explicit constructors:
+post-quantum hasher, there are hasher-explicit constructors:
 
 ```lean
 -- Cached, with a chosen hasher (here the pure-Lean SHA-256
@@ -90,31 +90,31 @@ changes is the wrap at the call site.
 Every call site picks one option on each of two independent
 axes.
 
-**Flavour** — cached vs uncached:
+**Flavour**: cached vs uncached:
 
 | | cached (`SSZ.FastBox` / `SSZ.CachedBox`) | uncached (`SSZ.PureBox` / `SSZ.UncachedBox`) |
 |---|---|---|
 | Use it for | running real code | writing theorems and proofs |
 | Updates after the first one | O(path from the changed field to the root) | trivial struct rewrite |
-| Reading the root | O(1) — pre-computed, cached | recomputed each call |
+| Reading the root | O(1), pre-computed, cached | recomputed each call |
 
 In a production pipeline you wrap with the cached flavour once,
-then run many `sszUpdate`s on the result — the cache pays for
+then run many `sszUpdate`s on the result, the cache pays for
 itself across the second and subsequent root computations. In a
 proof you wrap with the uncached flavour because you want every
 `hashTreeRoot` call to be transparent to the kernel; closing a
 theorem with `rfl` or `decide` is then routine.
 
-**Hasher** — `Sha256` (default, FFI) vs anything else:
+**Hasher**: `Sha256` (default, FFI) vs anything else:
 
 | Hasher | When to pick it |
 |---|---|
-| `Sha256` (default — what `SSZ.FastBox v` / `SSZ.PureBox v` use) | running real code; proofs about concrete root bytes via `native_decide` (one compiler axiom per call) |
-| `Sha256Spec` (pure-Lean reference) | proofs where you want hashes to reduce *in the kernel*, with no compiler axiom — close goals with plain `decide` (or `rfl` when both sides hash the same buffers symbolically) |
+| `Sha256` (default, what `SSZ.FastBox v` / `SSZ.PureBox v` use) | running real code; proofs about concrete root bytes via `native_decide` (one compiler axiom per call) |
+| `Sha256Spec` (pure-Lean reference) | proofs where you want hashes to reduce *in the kernel*, with no compiler axiom, close goals with plain `decide` (or `rfl` when both sides hash the same buffers symbolically) |
 | any future `Hasher` instance (e.g. Poseidon2) | adopt by writing your spec generic in `H` today; only the wrap at the call site changes when the new hasher arrives |
 
 You don't have to choose globally on either axis. The same spec
-body — `bumpEpoch` above — accepts every combination, and
+body, `bumpEpoch` above, accepts every combination, and
 switching is one expression at the call site.
 
 ## Defining your own containers
@@ -141,7 +141,7 @@ deriving SSZRepr
 * The three central correctness theorems (round-trip,
   non-malleability, size bound).
 * The underlying spec functions
-  (`SSZ.serialize` / `SSZ.deserialize` / `SSZ.hashTreeRoot`) — you
+  (`SSZ.serialize` / `SSZ.deserialize` / `SSZ.hashTreeRoot`), you
   use these only at the IO boundary: serialising to bytes for
   the wire, or deserialising incoming bytes back into a Lean
   value before wrapping in `SSZ.Box`.
@@ -154,7 +154,7 @@ box that covers: `UInt8/16/32/64`, `Bool`, `Vector T N`,
 Preset-parameterised containers (those whose layout depends on
 `MAX_VALIDATORS_PER_COMMITTEE` etc.) use the
 `ssz_struct_for_presets` macro from the sister `LeanEthCS`
-package rather than a plain `structure` — see the consensus-spec
+package rather than a plain `structure`, see the consensus-spec
 containers in [`LeanEthCS/Forks/`](../LeanEthCS/LeanEthCS/Forks/)
 for the pattern.
 
@@ -181,7 +181,7 @@ below for the right tactic.
 ## Field reads and updates
 
 Reads and writes on a boxed SSZ value go through a pair of
-macros — `sszGet` for reads, `sszUpdate` for writes — so user
+macros, `sszGet` for reads and `sszUpdate` for writes, so user
 code never has to name the internal `.view` projection. Both
 share the same dotted-and-indexed path syntax, so the read and
 the write of a given field read identically apart from the
@@ -192,7 +192,7 @@ let e  := sszGet    b epoch                  -- read
 let b' := sszUpdate b with epoch := e + 1    -- write
 ```
 
-### `sszGet` — reads
+### `sszGet`: reads
 
 `sszGet base path` expands to `base.view.path` purely
 syntactically, so `rfl` / `decide` / `simp` proofs about reads
@@ -209,12 +209,12 @@ Reads bypass the cache entirely (they only consult the
 value-level `view`), so the cached and uncached flavours give
 identical read behaviour.
 
-### `sszUpdate` — writes
+### `sszUpdate`: writes
 
 The single update entry point. Accepts any `SSZ.Box`-wrapped
-value — whether produced by `SSZ.FastBox`, `SSZ.PureBox`,
+value, whether produced by `SSZ.FastBox`, `SSZ.PureBox`,
 `SSZ.CachedBox`, or `SSZ.UncachedBox`, or threaded in as a
-generic `SSZ.Box H T` parameter — same syntax, the right update
+generic `SSZ.Box H T` parameter. Same syntax, the right update
 strategy fires automatically:
 
 ```lean
@@ -274,7 +274,7 @@ def roundtrip (bytes : ByteArray) : Except SSZError ByteArray := do
 ```
 
 `SSZ.FastBox.deserialize` returns
-`Except SSZError (SSZ.Box Sha256 T)` — the error propagates
+`Except SSZError (SSZ.Box Sha256 T)`. The error propagates
 through if the buffer is malformed, matching `SSZ.deserialize`'s
 shape on plain `T`.
 
@@ -299,14 +299,14 @@ example : SSZ.deserialize (SSZ.serialize myPair) = .ok myPair := by
 This fails to elaborate with `failed to synthesize Decidable (…
 = Except.ok …)`. The reason is that `SSZ.deserialize` returns
 `Except SSZError T`, and core Lean does not ship a
-`DecidableEq (Except ε α)` instance — even when `ε` and `α` are
+`DecidableEq (Except ε α)` instance. Even when `ε` and `α` are
 both `DecidableEq`, the equality on `Except` is not
 auto-derivable. So `native_decide` cannot find a `Decidable`
 instance for the goal.
 
 Three idioms work:
 
-1. **`SSZ.roundtrip` propositional proof** — closes the
+1. **`SSZ.roundtrip` propositional proof**: closes the
    equation as a proof term, not by computation, so no
    `Decidable` instance is required. The shape is what
    SizzLean's internal tests use
@@ -322,7 +322,7 @@ Three idioms work:
    by hand (the `.containerFixed …` term). For ad-hoc smoke
    tests, this is more typing than most users want.
 
-2. **`Bool`-shaped predicate** — convert the round-trip to a
+2. **`Bool`-shaped predicate**: convert the round-trip to a
    computation that returns `Bool`, then gate on `= true`. `Bool`
    equality is trivially `Decidable`, so `native_decide` evaluates
    the whole thing at build time:
@@ -337,10 +337,10 @@ Three idioms work:
    ```
 
    Concise, no `BasicSupported` witness needed. The check is
-   structural-equal on each field — if you add a field later
+   structural-equal on each field. If you add a field later
    you need to extend the comparison.
 
-3. **Trust the library's own gates** — `lake build SizzLeanTests`
+3. **Trust the library's own gates**: `lake build SizzLeanTests`
    runs `SSZ.roundtrip` over every `BasicSupported` shape on the
    built-in types and the example containers in `ReprExamples.lean`.
    The three central theorems
@@ -348,7 +348,7 @@ Three idioms work:
    `SSZ.encode_size_le_max`) are proved universally over
    `SSZType.BasicSupported`, so the round-trip property is
    already a theorem of the library for every container whose
-   shape sits in `BasicSupported` — no per-container assertion
+   shape sits in `BasicSupported`, with no per-container assertion
    needed in your downstream code unless you want the build to
    break on your specific container's wire layout.
 
@@ -363,19 +363,19 @@ involves `hashTreeRoot`. Pick by what the goal needs:
 
 | Goal shape | Tactic | Notes |
 |---|---|---|
-| Symbolic state-transition equality — both sides hash the same buffers; no concrete bytes needed | `rfl` / `simp` / `unfold` | no extra trust commitment |
+| Symbolic state-transition equality, both sides hash the same buffers; no concrete bytes needed | `rfl` / `simp` / `unfold` | no extra trust commitment |
 | FFI-hashed term must reduce to concrete bytes (e.g. *"this state's root is `0xAB…`"*) | `native_decide` | adds the standard `Lean.ofReduceBool` compiler axiom |
-| FFI-hashed term you want to manipulate symbolically before evaluating | rewrite with `sha256Hash_eq_spec` / `sha256Combine_eq_spec`, then `native_decide` | cites the two named FFI ≡ pure-Lean equivalence axioms — both auditable by name |
+| FFI-hashed term you want to manipulate symbolically before evaluating | rewrite with `sha256Hash_eq_spec` / `sha256Combine_eq_spec`, then `native_decide` | cites the two named FFI ≡ pure-Lean equivalence axioms, both auditable by name |
 | Pure-Lean hashed term (built via `SSZ.UncachedBox Sha256Spec` or `SSZ.CachedBox Sha256Spec`) → concrete bytes | `decide` (kernel reduction) | no compiler axiom, no FFI; slower but maximum trust |
 
 Rule of thumb: **use `native_decide` whenever a goal needs an
 FFI hash to reduce to bytes**; use `rfl` when both sides hash the
 same buffers symbolically. Use plain `decide` for non-hash
 decidable goals (Nat comparisons, structural enums, finite
-bitvector reasoning) — those don't need any compiler axiom.
+bitvector reasoning), those don't need any compiler axiom.
 
 When you reach for the FFI-equivalence axioms in case (3),
-document why in the theorem's docstring — they're a real trust
+document why in the theorem's docstring. They're a real trust
 commitment, and a future reader inspecting `#axioms` should find
 context for which empirical assumption is being relied on.
 
@@ -395,7 +395,7 @@ green build is a passed test suite.
 just test-ssz
 ```
 
-Fast — under a minute on a warm cache.
+Fast, under a minute on a warm cache.
 
 ### Full NIST CAVP SHA-256 vectors (`just test-sha256`)
 
@@ -453,9 +453,9 @@ just test
 ```
 
 Runs `test-sha256`, `test-ssz`, and `test-eth` (which is just
-`lake build LeanEthCS` — every `deriving SSZRepr` in the
+`lake build LeanEthCS`, where every `deriving SSZRepr` in the
 consensus-spec containers is a compile-time gate). The
-upstream-vector recipes are *not* in `just test` — they're
+upstream-vector recipes are *not* in `just test`, they're
 opt-in because each requires downloaded archives and runs
 against external data.
 
@@ -494,13 +494,13 @@ earlier in the manual and the `import SizzLean` line in scope.
 
 Three sections:
 
-1. **[Creating containers](#creating-containers)** — the building
+1. **[Creating containers](#creating-containers)**: the building
    blocks for defining your own SSZ-encodable types.
-2. **[The Box interface](#the-box-interface)** — the single
+2. **[The Box interface](#the-box-interface)**: the single
    user-facing entry point: constructors, the read / write /
    root / serialise operations, and the IO-boundary
    deserialiser.
-3. **[Miscellaneous](#miscellaneous)** — hasher tags and the
+3. **[Miscellaneous](#miscellaneous)**: hasher tags and the
    FFI-equivalence axioms; cross-cutting infrastructure.
 
 ### Creating containers
@@ -510,8 +510,8 @@ The pieces you compose into your own SSZ types.
 #### `SSZRepr`
 
 Typeclass that turns a Lean type into an SSZ-encodable type. You
-rarely write an instance by hand — `deriving SSZRepr` synthesises
-it — but you do mention `[SSZRepr T]` in generic-`T` binders.
+rarely write an instance by hand, `deriving SSZRepr` synthesises
+it, but you do mention `[SSZRepr T]` in generic-`T` binders.
 
 ```lean
 def encode {H T : Type} [Hasher H] [SSZRepr T] (b : SSZ.Box H T) : ByteArray :=
@@ -535,7 +535,7 @@ deriving SSZRepr
 #### `SSZList α cap`
 
 Variable-length list of `α` with maximum length `cap`.
-Implemented as `{ xs : Array α // xs.size ≤ cap }` — Lean's array
+Implemented as `{ xs : Array α // xs.size ≤ cap }`, Lean's array
 plus a size proof.
 
 ```lean
@@ -591,7 +591,7 @@ with `.serialize`.
 
 Closed inductive over the two cache flavours (cached + uncached).
 Used as a parameter type in spec functions that should accept
-either flavour at the call site. Constructors are internal —
+either flavour at the call site. Constructors are internal,
 build a `Box` via one of the four smart constructors below.
 
 ```lean
@@ -613,8 +613,8 @@ let b := SSZ.FastBox f0
 #### `SSZ.PureBox`
 
 Sha256-pinned uncached smart constructor. The proof-side
-companion to `FastBox` when one body must serve both call sites
-— each `hashTreeRoot` re-runs the spec, so there's no cache
+companion to `FastBox` when one body must serve both call sites.
+Each `hashTreeRoot` re-runs the spec, so there's no cache
 invariant to thread through theorems.
 
 ```lean
@@ -624,7 +624,7 @@ example : b.view = f0 := by rfl
 
 #### `SSZ.CachedBox`
 
-Hasher-explicit cached smart constructor — like `FastBox` but
+Hasher-explicit cached smart constructor, like `FastBox` but
 the caller picks the `Hasher`. The right entry point when a
 spec function is written generic in `H` and you want the cached
 flavour with a non-default hasher.
@@ -635,7 +635,7 @@ flavour with a non-default hasher.
 
 #### `SSZ.UncachedBox`
 
-Hasher-explicit uncached smart constructor — like `PureBox` but
+Hasher-explicit uncached smart constructor, like `PureBox` but
 the caller picks the `Hasher`. With `Sha256Spec` the whole
 hashing pipeline reduces in the kernel without an FFI hop.
 
@@ -647,7 +647,7 @@ example :
 
 #### `sszGet`
 
-Macro for field reads — the read-side companion of `sszUpdate`,
+Macro for field reads, the read-side companion of `sszUpdate`,
 hiding the internal `.view` projection. Path syntax mirrors
 `sszUpdate` exactly: head field, then any number of `.field` or
 `[i]` segments.
@@ -661,13 +661,13 @@ sszGet b validators[i].effectiveBalance -- index + field
 
 Expands purely syntactically to `b.view.<path>`, so `rfl` /
 `decide` / `simp` proofs about reads close exactly as if you had
-written the projection chain by hand — the macro is invisible
+written the projection chain by hand, the macro is invisible
 to Lean's kernel.
 
 #### `sszUpdate`
 
 Macro for field updates. Accepts any `SSZ.Box`-wrapped value and
-emits the right update path automatically — Merkle-aware partial
+emits the right update path automatically. Merkle-aware partial
 rehash on cached values, trivial struct rewrite on uncached
 values. Supports single-field, multi-field (overlapping paths
 rehashed once), and indexed-field updates on vectors/lists.
@@ -698,7 +698,7 @@ pre-computed root in O(1); the uncached arm re-runs the spec.
 
 #### `.serialize`
 
-Encodes a `Box` to its SSZ wire-format bytes. Always succeeds —
+Encodes a `Box` to its SSZ wire-format bytes. Always succeeds,
 SSZ encoding is total. Works identically on cached and uncached
 flavours.
 
@@ -708,7 +708,7 @@ flavours.
 
 #### `.view`
 
-Lower-level escape hatch — projects the underlying Lean value
+Lower-level escape hatch, projects the underlying Lean value
 out of a `Box`. Works on any of the four `*Box` flavours via
 dot notation. Use this when a lemma or external function takes
 plain `T` and you need to feed it the unwrapped value directly;
@@ -729,9 +729,9 @@ SSZ.FastBox.deserialize (T := Fork) bytes
 ```
 
 A matching `.deserialize` exists for each of the other smart
-constructors — `SSZ.PureBox.deserialize`,
-`SSZ.CachedBox.deserialize H`, `SSZ.UncachedBox.deserialize H`
-— with the same `Except SSZError (SSZ.Box _ T)` shape; reach for
+constructors: `SSZ.PureBox.deserialize`,
+`SSZ.CachedBox.deserialize H`, and `SSZ.UncachedBox.deserialize H`,
+all with the same `Except SSZError (SSZ.Box _ T)` shape. Reach for
 those only when the call site genuinely needs a non-production
 flavour or a non-default hasher.
 
@@ -753,14 +753,14 @@ def explain : SSZError → String := fun e => s!"deserialize: {repr e}"
 
 ### Miscellaneous
 
-Cross-cutting infrastructure used through the Box interface —
+Cross-cutting infrastructure used through the Box interface,
 hasher tags and the FFI ≡ pure-Lean equivalence axioms.
 
 #### `Hasher`
 
 Typeclass with the two methods (`hash`, `combine`) every SSZ
-hashing site goes through. You rarely instantiate it — you reach
-for a tag like `Sha256` — but generic spec functions take
+hashing site goes through. You rarely instantiate it, you reach
+for a tag like `Sha256`, but generic spec functions take
 `[Hasher H]` to stay hasher-flexible.
 
 ```lean
@@ -772,7 +772,7 @@ def myBoxedFork {H : Type} [Hasher H] (f : Fork) : SSZ.Box H Fork :=
 
 Empty `inductive` tag whose `Hasher` instance delegates to the
 FFI SHA-256 shim (OpenSSL). Production default. Opaque to the
-Lean kernel — kernel-`decide` can't reduce its hashes, so use
+Lean kernel. Kernel-`decide` can't reduce its hashes, so use
 `native_decide` when concrete bytes are required in a proof.
 
 ```lean
@@ -783,7 +783,7 @@ Lean kernel — kernel-`decide` can't reduce its hashes, so use
 
 Empty `inductive` tag whose `Hasher` instance delegates to the
 pure-Lean SHA-256 reference (from the sibling `LeanSha256`
-library). Kernel-reducible — `decide` works on its outputs
+library). Kernel-reducible. `decide` works on its outputs
 without a compiler axiom; the trade-off is the kernel has to
 walk the SHA-256 compression function each call (slower).
 

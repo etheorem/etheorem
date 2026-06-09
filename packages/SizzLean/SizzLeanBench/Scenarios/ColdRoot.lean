@@ -6,14 +6,14 @@ import SizzLeanBench.Fixtures
 import SizzLeanBench.Runner
 
 /-!
-# Scenario S1 — Cold root
+# Scenario S1: Cold root
 
 The simplest possible workload: build a fresh value, compute
 its hash-tree root *once*, throw it away. No reuse, no
 follow-up operations.
 
 What this measures: the *baseline wrapper cost*. The cached
-column should be slightly slower than pure here — `SSZ.FastBox`
+column should be slightly slower than pure here. `SSZ.FastBox`
 runs `Node.ofShape` on top of (essentially) the same hashing
 work pure does. With no follow-up operations there's no
 payback.

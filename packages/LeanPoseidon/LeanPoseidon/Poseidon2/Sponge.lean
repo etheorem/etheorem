@@ -1,7 +1,7 @@
 import LeanPoseidon.Poseidon2.Permutation
 
 /-!
-# `LeanPoseidon.Sponge` — a sponge over arbitrary-length input
+# `LeanPoseidon.Sponge`: a sponge over arbitrary-length input
 
 `hash` absorbs an arbitrary-length sequence of field elements into the
 width-3 state and squeezes one element out.
@@ -12,10 +12,10 @@ A *sponge* absorbs input `rate` elements at a time into the state, running
 the permutation between absorptions, then *squeezes* output elements out.
 *Rate* is how many state slots take input per permutation (here
 `t − 1 = 2`); *capacity* (here the 1 remaining slot) is held back and
-never directly touched by input — that reserved slot is what gives the
+never directly touched by input, that reserved slot is what gives the
 construction its security margin.
 
-## ⚠ Conformance status — convention documented, external KAT pending
+## ⚠ Conformance status: convention documented, external KAT pending
 
 Unlike `compress` (whose definition is pinned by `zkhash`'s
 `MerkleTreeHash` and KAT-validated), **the sponge construction over
@@ -34,7 +34,7 @@ consensus-relevant work; treat `hash` as a documented reference sponge.
 
 * state width `t = 3`, `rate = 2`, capacity `1`; initial state `[0,0,0]`;
 * **padding**: append a single `1`, then `0`s, until the length is a
-  multiple of `rate` (a field analogue of `10*` multi-rate padding — it
+  multiple of `rate` (a field analogue of `10*` multi-rate padding, it
   keeps inputs differing only by trailing structure distinct);
 * **absorb**: for each `rate`-element chunk, *add* the chunk into the
   first `rate` state slots and permute;
@@ -73,7 +73,7 @@ def hash (input : Array Bn254Fr) : Array Bn254Fr :=
 /-! ## Internal-consistency gates
 
 These check the sponge *plumbing* against `permute` under the convention
-above — not against an external reference (none is pinned; see the module
+above, not against an external reference (none is pinned; see the module
 docstring). The empty input pads to one chunk `[1, 0]`, so its hash must be
 `permute([1,0,0])[0]`. -/
 

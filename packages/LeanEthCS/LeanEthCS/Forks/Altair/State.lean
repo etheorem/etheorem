@@ -6,7 +6,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Altair.State` — Altair `BeaconState`
+# `LeanEthCS.Forks.Altair.State`: Altair `BeaconState`
 
 The Altair `BeaconState` replaces Phase 0's pair of
 `PendingAttestation` lists with two `List[ParticipationFlags,
@@ -34,7 +34,7 @@ open LeanEthCS
 open LeanEthCS.Forks.Phase0
 open LeanEthCS.Macros
 
--- `BeaconState` (Altair) — 24 fields. Preset-variant in 5 slots:
+-- `BeaconState` (Altair), 24 fields. Preset-variant in 5 slots:
 -- block_roots/state_roots (`SLOTS_PER_HISTORICAL_ROOT`),
 -- eth1_data_votes (`EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH`),
 -- randao_mixes (`EPOCHS_PER_HISTORICAL_VECTOR`),

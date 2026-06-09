@@ -3,7 +3,7 @@ import SizzLean.Repr.Class
 import SizzLean.Repr.Instances
 
 /-!
-# `SizzLean.Repr.Deriving` — `deriving SSZRepr` handler
+# `SizzLean.Repr.Deriving`: `deriving SSZRepr` handler
 
 The user-surface deriving handler so that
 
@@ -16,7 +16,7 @@ structure Foo where
 
 emits an `instance : SSZRepr Foo` with no manual work. The handler
 walks the structure's fields, looks up each field type's `SSZRepr`
-instance (so the field type must itself derive — or carry — an
+instance (so the field type must itself derive, or carry, an
 `SSZRepr` instance), assembles the matching `SSZType.container`
 shape, and emits the iso plus `rfl` proofs.
 
@@ -24,7 +24,7 @@ shape, and emits the iso plus `rfl` proofs.
 
 Lean's `deriving Cls` after a declaration asks the compiler to
 synthesise a `Cls` instance automatically. The compiler looks up
-a *deriving handler* for `Cls` — a function registered ahead of
+a *deriving handler* for `Cls`, a function registered ahead of
 time that takes the just-elaborated type's name and returns the
 elaborated `instance` declaration. For `Repr`, `DecidableEq`,
 etc., the handlers ship with Lean core; for user-defined
@@ -34,7 +34,7 @@ file is that handler.
 The handler runs at *elaboration* time (after parsing, before
 typechecking the generated code), using Lean's metaprogramming
 API (`MetaM`, `TermElabM`, `CommandElabM`). It produces a
-`Syntax` tree that is then re-fed through normal elaboration —
+`Syntax` tree that is then re-fed through normal elaboration,
 so anything the handler emits is typechecked exactly as if a
 user had written it by hand.
 
@@ -61,25 +61,25 @@ instance : SSZRepr Foo where
 ```
 
 The `to_from` proof is `rfl` because `fromRepr ∘ toRepr` rebuilds
-the structure component-wise — Lean's structure eta sees the result
+the structure component-wise, so Lean's structure eta sees the result
 as the original. `from_to` requires `rcases` to destructure the
 right-nested `Prod` chain (terminating in `PUnit`) so the kernel
 can apply `PUnit`'s singleton-eta.
 
 ## Lean metaprogramming idioms used here (annotated on first appearance)
 
-* `registerDerivingHandler : Name → (Array Name → CommandElabM Bool) → IO Unit`
-  — the entry point Lean's `deriving` machinery calls when it sees
+* `registerDerivingHandler : Name → (Array Name → CommandElabM Bool) → IO Unit`:
+  the entry point Lean's `deriving` machinery calls when it sees
   `deriving SSZRepr` after a `structure`/`inductive` declaration.
-* `getStructureFields : Environment → Name → Array Name` — the list
+* `getStructureFields : Environment → Name → Array Name`: the list
   of fields a `structure` declares, in declaration order.
-* `getStructureFieldInfo? : Environment → Name → Name → Option StructureFieldInfo`
-  — per-field metadata including the projection function name.
-* `Lean.Elab.Term.exprToSyntax : Expr → TermElabM Syntax` — turns
+* `getStructureFieldInfo? : Environment → Name → Name → Option StructureFieldInfo`:
+  per-field metadata including the projection function name.
+* `Lean.Elab.Term.exprToSyntax : Expr → TermElabM Syntax`: turns
   an `Expr` (e.g. a field's type extracted from the projection
   function's signature) into something the macro-template antiquotation
   `$...` can splice into a generated `Syntax` tree.
-* `forallTelescopeReducing` — strips off pi-binders from a type,
+* `forallTelescopeReducing`: strips off pi-binders from a type,
   exposing the body and the bound variables. Used here to peek
   at a projection function's return type (= the field's type).
 -/
@@ -97,7 +97,7 @@ open Lean Elab Command Meta Term
 Hardcoded pattern matching on the recognised primitive and composite
 constructors (`Bool`, `UInt8/16/32/64`, `BitVec n`, `Vector α n`).
 For non-recognised types, falls back to typeclass synthesis + `whnf`
-reduction of the resulting `SSZRepr.shape` projection — this lets
+reduction of the resulting `SSZRepr.shape` projection: this lets
 the handler recursively support any user type with a pre-existing
 `SSZRepr` instance (including struct-of-struct fields).
 
@@ -129,7 +129,7 @@ private partial def shapeForType (fieldTypeOrig : Expr) : TermElabM (TSyntax `te
     let nSyn : TSyntax `term := Syntax.mkNumLit (toString nVal)
     return ← `(SizzLean.Spec.SSZType.bitvector $nSyn)
   if fieldTypeOrig.isAppOfArity ``SizzLean.Repr.SSZList 2 then
-    -- `SSZList α cap` — recurse on `α`, splice the literal `cap`.
+    -- `SSZList α cap`: recurse on `α`, splice the literal `cap`.
     let cap := fieldTypeOrig.appArg!
     let α := fieldTypeOrig.appFn!.appArg!
     let αShape ← shapeForType α
@@ -239,7 +239,7 @@ private def mkInstance (declName : Name) : CommandElabM Unit := do
   -- Build `fromRepr` via an anonymous-constructor pattern on the
   -- input. Each pattern binder `v_i` has type
   -- `(SSZRepr.shape Tᵢ).interp` (the inner shape's interp), and the
-  -- structure literal field expects `Tᵢ` — bridge the two through
+  -- structure literal field expects `Tᵢ`, bridge the two through
   -- `SSZRepr.fromRepr`.
   let vBinders : Array Ident := fieldIdents.map fun fid =>
     mkIdent (fid.getId.appendAfter "_v")
@@ -258,10 +258,10 @@ private def mkInstance (declName : Name) : CommandElabM Unit := do
   -- `to_from` / `from_to` proofs: with the iso bodies now wrapping
   -- each field through `toRepr`/`fromRepr`, the proofs need
   -- per-field unfolding (`SSZRepr.to_from`/`SSZRepr.from_to`). We
-  -- discharge with `simp` over those lemma names — the right-nested
+  -- discharge with `simp` over those lemma names: the right-nested
   -- `Prod` chain plus `PUnit` eta closes once the inner iso laws
   -- fire on each field.
-  -- Build an explicit instance name from the full structure path —
+  -- Build an explicit instance name from the full structure path,
   -- `instSSZRepr_<sanitized full name>`. Without this, Lean's
   -- auto-naming uses just the *leaf* component of the type name
   -- (e.g. `instSSZReprMinimal`), which collides between sibling types

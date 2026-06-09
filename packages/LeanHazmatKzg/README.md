@@ -1,7 +1,7 @@
 # LeanHazmatKzg
 
-Lean 4 FFI bindings for Ethereum KZG / polynomial commitments — EIP-4844
-blobs and EIP-7594 (Fulu / PeerDAS) cells — wrapping
+Lean 4 FFI bindings for Ethereum KZG / polynomial commitments, EIP-4844
+blobs and EIP-7594 (Fulu / PeerDAS) cells, wrapping
 [ethereum/c-kzg-4844](https://github.com/ethereum/c-kzg-4844). Part of the
 [LeanHazmat](../../hazmat-docs/ARCHITECTURE.md) FFI crypto family.
 
@@ -24,12 +24,12 @@ name = "LeanHazmatKzg"
 path = "…/packages/LeanHazmatKzg"     # or a git source
 ```
 
-The KZG trusted setup is embedded in the build — no runtime file to ship
+The KZG trusted setup is embedded in the build, with no runtime file to ship
 or locate.
 
 ## Usage
 
-The EIP-4844 blob flow — commit to a blob, produce a proof, verify it:
+The EIP-4844 blob flow, commit to a blob, produce a proof, verify it:
 
 ```lean
 import LeanHazmatKzg
@@ -51,7 +51,7 @@ def main : IO Unit := do
   IO.println s!"batch valid:   {verifyBlobKzgProofBatch #[blob] #[commitment] #[proof]}"
 ```
 
-Point-evaluation proof (the EIP-4844 `0x0a` precompile primitive) — open
+Point-evaluation proof (the EIP-4844 `0x0a` precompile primitive), open
 the committed polynomial at a point `z`, get the value `y`, then verify:
 
 ```lean
@@ -62,7 +62,7 @@ def evalOk : Bool :=
   verifyKzgProof commitment z y proof
 ```
 
-Fulu / PeerDAS cells — extend a blob to 128 cells with proofs, batch-verify
+Fulu / PeerDAS cells, extend a blob to 128 cells with proofs, batch-verify
 them, and recover the full set from any ≥ 50 % subset:
 
 ```lean
@@ -81,8 +81,8 @@ def recovered : Array ByteArray :=
 
 ### Running and checking
 
-These are `@[extern]` native primitives, so they run as **compiled** code —
-call them from an executable (`lake exe …`) or a `def`/`IO` action your app
+These are `@[extern]` native primitives, so they run as **compiled** code.
+Call them from an executable (`lake exe …`) or a `def`/`IO` action your app
 compiles. To assert results at build time, use `native_decide` (this is how
 the test suite runs them):
 
@@ -95,7 +95,7 @@ Plain `#eval` in the interpreter cannot execute opaque `@[extern]` functions.
 ### Error handling
 
 Point/byte results use the **empty `ByteArray`** as the error sentinel (bad
-input length, malformed point, internal failure) — there is no exception.
+input length, malformed point, internal failure), with no exception.
 Verification returns `Bool`, where `false` covers both "does not verify" and
 invalid input:
 
@@ -125,7 +125,7 @@ Size constants (`Nat`): `bytesPerBlob` 131072, `bytesPerCommitment` 48,
 
 ## Trust boundary
 
-Each binding is an opaque `@[extern]` over c-kzg-4844 — no pure-Lean
+Each binding is an opaque `@[extern]` over c-kzg-4844, with no pure-Lean
 reference, validated only against round-trips / spec vectors. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -137,4 +137,4 @@ lake build LeanHazmatKzgTests     # EIP-4844 + Fulu round-trips
 
 ## License
 
-LGPL-3.0-only — see the umbrella [`LICENSE`](../../LICENSE).
+LGPL-3.0-only: see the umbrella [`LICENSE`](../../LICENSE).

@@ -4,10 +4,10 @@ import SizzLean.Cache.MerkleTree.Zero
 import SizzLean.Cache.MerkleTree.Merkle
 
 /-!
-# `SizzLean.Cache.MerkleTree.SetAt` — generalized-index updates
+# `SizzLean.Cache.MerkleTree.SetAt`: generalized-index updates
 
 The highest-risk file in the project per the Nimbus February
-2025 incident — an off-by-one in gindex arithmetic caused a
+2025 incident, an off-by-one in gindex arithmetic caused a
 mainnet client to fork. The mitigation here: never do gindex
 arithmetic on `Nat`. Instead, extract the path as a `List Bool`
 *once* and recurse structurally on the bit list. The compiler
@@ -34,8 +34,8 @@ spell the path. `false` = take the left child, `true` = take the
 right child.
 
 `gindexBits` returns exactly those path bits, in order from root to
-target. The implementation uses `Nat.log2` and `Nat.testBit` —
-no division-by-2 ad-hoc, no fuel arguments — so the result is a
+target. The implementation uses `Nat.log2` and `Nat.testBit`,
+no division-by-2 ad-hoc, no fuel arguments, so the result is a
 direct read of the existing well-tested integer primitives.
 -/
 
@@ -64,19 +64,19 @@ example : gindexBits 7 = [true,  true]            := rfl
 example : gindexBits 8 = [false, false, false]    := rfl
 
 /-- Replace the subtree at the path described by `bits` with
-`newSubtree`. Recursion is *structural on the bit list* — this is
+`newSubtree`. Recursion is *structural on the bit list*, this is
 the mitigation for the Nimbus-class gindex arithmetic bug. The
 `pair`'s cache slot is cleared on the spine (set to `none`); off-path
 children are reused by value, so reference-counting gives the
 structural sharing for free.
 
-* `[]` — we've reached the target, replace.
-* `false :: rest` — descend left, rebuild `pair` with cleared cache.
-* `true :: rest` — descend right, rebuild `pair` with cleared cache.
+* `[]`: we've reached the target, replace.
+* `false :: rest`: descend left, rebuild `pair` with cleared cache.
+* `true :: rest`: descend right, rebuild `pair` with cleared cache.
 
 `leaf` with a non-empty bit list means the gindex addresses a
 position deeper than the tree extends. Returning the leaf unchanged
-is the most conservative response — real use shouldn't hit this. -/
+is the most conservative response, real use shouldn't hit this. -/
 def Node.setAtBits : Node → List Bool → Node → Node
   | _,           [],            newSubtree => newSubtree
   | .leaf b,     _ :: _,        _          => .leaf b
@@ -86,7 +86,7 @@ def Node.setAtBits : Node → List Bool → Node → Node
       .pair l (Node.setAtBits r rest newSubtree) none
 
 /-- Update the subtree at generalized index `g` to `newSubtree`.
-Pure wrapper around `setAtBits ∘ gindexBits` — the `Nat`→`List Bool`
+Pure wrapper around `setAtBits ∘ gindexBits`, the `Nat`→`List Bool`
 hop is the only place gindex arithmetic happens, and it's
 expressed in terms of `Nat.log2` and `Nat.testBit`. -/
 def Node.setAt (n : Node) (g : Nat) (newSubtree : Node) : Node :=
@@ -102,12 +102,12 @@ def Node.asLeafArray : Node → Array ByteArray
   | .leaf b      => #[b]
   | .pair l r _  => Node.asLeafArray l ++ Node.asLeafArray r
 
-/-! ## Batched updates — `Node.setManyAt`
+/-! ## Batched updates: `Node.setManyAt`
 
 `setManyAt n [(bits₁, v₁), …, (bitsₖ, vₖ)]` applies all `k` writes in
 a single tree walk. When several writes share a path prefix, only
-*one* fresh `.pair` is allocated at each level of the shared spine —
-contrast the chained form `((n.setAtBits bits₁ v₁).setAtBits bits₂
+*one* fresh `.pair` is allocated at each level of the shared spine.
+Contrast the chained form `((n.setAtBits bits₁ v₁).setAtBits bits₂
 v₂).setAtBits …`, which allocates one full spine per write and
 clears the cache on every off-target sibling along the way.
 
@@ -116,7 +116,7 @@ clears the cache on every off-target sibling along the way.
 Path bits are *consumed* as we descend: a write `(b :: rest, v)` at
 a pair contributes `(rest, v)` to the matching child's recursion.
 By the time the recursion reaches the targeted node, the path is
-`[]` — that's the "you're here" signal, exactly like
+`[]`, that's the "you're here" signal, exactly like
 `Node.setAtBits _ [] v = v`.
 
 At both leaves *and* pairs, an `[]`-path update replaces the entire
@@ -124,7 +124,7 @@ current subtree with the update's value. If multiple `[]`-path
 updates are present at the same level, the *last* one wins (matching
 `setAtBits`'s left-to-right replacement semantics). Non-empty-path
 updates at a leaf are silently dropped (the path extends past where
-the tree exists — same conservative response as `setAtBits`'s
+the tree exists, same conservative response as `setAtBits`'s
 `.leaf b, _ :: _ => .leaf b` arm).
 
 ### Precondition: no path is a strict prefix of another
@@ -132,7 +132,7 @@ the tree exists — same conservative response as `setAtBits`'s
 `setManyAt` does *not* try to apply non-empty-path updates after a
 whole-subtree replacement at the same level. If the caller passes
 both `([], v)` and `(someBits, w)` at the same level (e.g.
-`sszUpdate t with message := …, message.slot := …` — the second
+`sszUpdate t with message := …, message.slot := …`, the second
 clause is `message`'s child), the `setManyAt` result honours the
 whole-subtree replacement and silently drops the deeper write. The
 `sszUpdate` macro doesn't generate such mixes in practice; the
@@ -148,12 +148,12 @@ nested-vs-flat clauses it produces always target disjoint paths
   `wholeReplacement?`; if present, return its value (with the
   precondition above). Otherwise partition the non-empty-path
   updates by first bit and descend on each side. Reuse a side by
-  value when it has no updates — that's the cache-preservation
+  value when it has no updates, that's the cache-preservation
   property.
 
 Termination: structural recursion on `Node` (we always descend into
 `l` and `r` from the `.pair` arm). The `us` argument is processed
-by `filterMap`/`foldl`, not pattern-matched into shorter forms —
+by `filterMap`/`foldl`, not pattern-matched into shorter forms,
 the size guarantee comes from the `Node` argument alone.
 -/
 
@@ -194,13 +194,13 @@ def Node.setManyAt : Node → List (List Bool × Node) → Node
             | _ :: _ => Node.setManyAt r rights
           .pair l' r' none
 
-/-! ## Fused commit + root walk — `Node.commitAndHash`
+/-! ## Fused commit + root walk: `Node.commitAndHash`
 
 `setManyAt` followed by `merkleRootWithCache` walks the touched
 spine *twice*: once to install the new sub-trees (allocating
 `.pair _ _ none` cells along the way), once to fill the cache
 slots (allocating `.pair _ _ (some r)` for the same cells).
-`commitAndHash` fuses both into one walk — each touched spine cell
+`commitAndHash` fuses both into one walk, each touched spine cell
 is allocated once, with its root computed inline.
 
 For untouched branches, returns the existing child by reference

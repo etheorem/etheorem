@@ -1,5 +1,5 @@
 /-!
-# `SizzLean.Cache.MerkleTree.Node` — persistent binary Merkle tree node
+# `SizzLean.Cache.MerkleTree.Node`: persistent binary Merkle tree node
 
 ARCHITECTURE.md §6.1. A two-constructor inductive underpinning
 the production fast-path for `hash_tree_root`:
@@ -13,14 +13,14 @@ inductive Node where
 The cache slot on `pair` is the only mutable-feeling state in the
 data structure: cleared by `setAt` along the updated spine, filled
 by `merkleRootWithCache` on first walk. `Node` itself stays purely
-functional — sharing comes from Lean's reference-counting runtime
+functional, sharing comes from Lean's reference-counting runtime
 (off-path subtrees survive `setAt` by value-equality).
 
 ## Why a separate Tree layer at all
 
 `Spec/HashTreeRoot.lean` is the verified reference: total,
 parametric over `[Hasher H]`, validated against 38991 upstream
-test vectors. It is also *slow* — every `hash_tree_root` call
+test vectors. It is also *slow*. Every `hash_tree_root` call
 re-runs the
 entire spec recursion. Production beacon-chain code mutates `BeaconState`
 slot-by-slot; recomputing every root from scratch would burn a sizeable
@@ -28,8 +28,8 @@ fraction of slot time on hashing.
 
 The Tree layer is the cache. Each `pair` node remembers its root; an
 incremental `setAt` only invalidates the spine, leaving the rest of
-the tree's roots intact. The contract — that the cached root equals
-the spec root — is the load-bearing property tested by the
+the tree's roots intact. The contract, that the cached root equals
+the spec root, is the load-bearing property tested by the
 `TreeBackedCoherence` and `TreeBackedSetField` gates.
 
 ## Lean idioms used here
@@ -44,7 +44,7 @@ the spec root — is the load-bearing property tested by the
 ## Where `Node.ofLeaves` lives
 
 `ofLeaves` builds a balanced binary tree to a target depth, padding
-the right with `zeroLeaf` subtrees as needed — mirroring the spec's
+the right with `zeroLeaf` subtrees as needed, mirroring the spec's
 `merkleize`'s padding semantics. It depends on `ZERO_HASHES` /
 `zeroLeaf`, so the constructor lives in `Tree/Zero.lean` next to
 those definitions; this file declares only the inductive itself
@@ -83,7 +83,7 @@ populated by `merkleRootWithCache` on its first walk and cleared by
 `setAt` along the updated spine.
 
 This is the only public observer that distinguishes "we have a root"
-from "we'd have to recompute it" — useful for instrumentation and
+from "we'd have to recompute it", useful for instrumentation and
 for `merkleRootWithCache`'s short-circuit. -/
 def Node.cached : Node → Option ByteArray
   | .leaf b      => some b

@@ -2,7 +2,7 @@ import LeanPoseidon
 import Mathlib.Data.Nat.Log
 
 /-!
-# `LeanPoseidonProofs.RoundCount` — the shipped round numbers meet the paper's floor
+# `LeanPoseidonProofs.RoundCount`: the shipped round numbers meet the paper's floor
 
 Phase 6, Target 4. A decidable, build-time check that the shipped Poseidon2
 round numbers (`R_F = 8`, `R_P = 56`) satisfy the **minimum-round inequalities**
@@ -19,7 +19,7 @@ Gröbner/binomial cost bound, evaluated in **floating point**. Two of the five
 bounds recast **exactly** to decidable `Nat` arithmetic and are checked here:
 
 * **statistical / differential–linear** (`R_F_1`): `R_F ≥ 6` (resp. `10`) when
-  `M ≤ ⌊log₂ p − (d−1)/2⌋·(t+1)` — `⌊log₂ p⌋` is `Nat.log 2 p`;
+  `M ≤ ⌊log₂ p − (d−1)/2⌋·(t+1)`, `⌊log₂ p⌋` is `Nat.log 2 p`;
 * **interpolation** (`R_F_2`): `R_F + R_P ≥ 1 + ⌈log_d(2^min(M,n))⌉ + ⌈log_d t⌉`,
   where `⌈log_d(2^k)⌉ = Nat.clog d (2^k)` and `n` is the field bit-length.
 
@@ -28,7 +28,7 @@ satisfied for these parameters) and the Gröbner *cost* bound involves
 `⌈2·log₂ C(over,under)⌉` of a several-hundred-digit binomial; those rest on the
 reference's floating-point evaluation and are **not** re-encoded here. So this
 file certifies the two crisply-recastable security-floor inequalities hold (with
-margin) for both shipped instances — not the full float predicate.
+margin) for both shipped instances, not the full float predicate.
 
 `M = 128` (the target security level for the shipped instances). `Nat.clog`/`Nat.log`
 are kernel-computable, so every check below is a `#guard` (no axioms, no

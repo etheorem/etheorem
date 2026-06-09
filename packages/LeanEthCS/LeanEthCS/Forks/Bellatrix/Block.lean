@@ -7,7 +7,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Bellatrix.Block` — Bellatrix block hierarchy
+# `LeanEthCS.Forks.Bellatrix.Block`: Bellatrix block hierarchy
 
 The only delta over Altair is the new `execution_payload` field on
 `BeaconBlockBody`. Operation-list types are still reused from Phase 0

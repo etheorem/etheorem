@@ -9,7 +9,7 @@ import SizzLean.Spec.Serialize
 import SizzLean.Spec.HashTreeRoot
 
 /-!
-# `SizzLean.Cache.MerkleTree.Build` — shape-driven `Node` construction
+# `SizzLean.Cache.MerkleTree.Build`: shape-driven `Node` construction
 
 The `Node.ofShape` mutual block walks an `SSZType` and the
 corresponding `s.interp` value, emitting a `Node` whose interior
@@ -18,7 +18,7 @@ mirrors the SSZ shape:
 * basic-type values (`uintN`, `bool`) become a single `.leaf` of
   the chunk-padded encoding;
 * `bitvector` / `bitlist` chunk-pack their packed bytes into
-  leaves of a balanced subtree, with `bitlist` additionally
+  leaves of a balanced subtree, with `bitlist` also
   mix-in-length-wrapping the body;
 * `vector t n` / `list t cap` with **basic** `t` flatten the
   serialised body into chunks (same byte path as the spec);
@@ -48,7 +48,7 @@ shape used by `Spec.hashTreeRoot` (`hashTreeRootFields`,
 
 set_option autoImplicit false
 -- Same elaborator heat-budget escalation as `Spec/HashTreeRoot.lean`
--- and `Spec/Deserialize.lean` — the dependent match in `ofShape`
+-- and `Spec/Deserialize.lean`, the dependent match in `ofShape`
 -- refines `s.interp` against `interp`'s own per-constructor
 -- recursion, which drives the elaborator past the 200k default.
 set_option maxHeartbeats 5000000
@@ -134,7 +134,7 @@ def Node.ofShape (H : Type) [Hasher H] :
       let x' : BitVec 256 := x
       .leaf (padToChunk (natToChunk x'.toNat))
   | .uintN _,    _  =>
-      -- Non-spec uintN width — degenerate case, single zero chunk.
+      -- Non-spec uintN width, degenerate case, single zero chunk.
       .leaf (padToChunk ByteArray.empty)
   | .bool,       b  =>
       let b' : Bool := b

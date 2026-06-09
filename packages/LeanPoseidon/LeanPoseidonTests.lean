@@ -3,7 +3,7 @@ import LeanPoseidonTests.Ffi
 import LeanPoseidonTests.Differential
 
 /-!
-# `LeanPoseidonTests` — Poseidon2 conformance gates (library root)
+# `LeanPoseidonTests`: Poseidon2 conformance gates (library root)
 
 Poseidon2 has no centralised official KAT suite the way SHA-256 has NIST
 CAVP, so conformance here is *differential*: agree with a trusted external
@@ -11,10 +11,10 @@ implementation (HorizenLabs `zkhash`) over many inputs, plus committed
 fixed anchors. This test library collects the gates that are heavier than
 the single inline anchor in `LeanPoseidon.Permutation`:
 
-* `LeanPoseidonTests.Kat` — committed `zkhash` BN254 t=3 permutation /
-  `compress` vectors via `native_decide`. **No Rust toolchain** — fires on
+* `LeanPoseidonTests.Kat`: committed `zkhash` BN254 t=3 permutation /
+  `compress` vectors via `native_decide`. **No Rust toolchain**, fires on
   `lake build LeanPoseidonTests` (`just test-poseidon-vectors`).
-* `LeanPoseidonTests.Ffi` / `LeanPoseidonTests.Differential` — the
+* `LeanPoseidonTests.Ffi` / `LeanPoseidonTests.Differential`: the
   `@[extern]` oracle bindings and the seeded-random differential test,
   driven by the `poseidon_fuzz` executable (`just fuzz-poseidon`). These
   are the only part that needs a Rust toolchain (cargo), and they are

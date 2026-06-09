@@ -7,7 +7,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Bellatrix.State` — Bellatrix `BeaconState`
+# `LeanEthCS.Forks.Bellatrix.State`: Bellatrix `BeaconState`
 
 Adds one field over Altair's `BeaconState`:
 
@@ -17,7 +17,7 @@ Bellatrix's `ExecutionPayloadHeader` is preset-invariant, but the
 preceding fields embed `SLOTS_PER_HISTORICAL_ROOT`,
 `EPOCHS_PER_HISTORICAL_VECTOR`, `EPOCHS_PER_SLASHINGS_VECTOR`, and
 `EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH`, plus the
-preset-variant `SyncCommittee` reference — so the whole state is
+preset-variant `SyncCommittee` reference, so the whole state is
 preset-variant.
 -/
 

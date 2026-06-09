@@ -3,7 +3,7 @@ import SizzLean.Repr.Instances
 import SizzLean.Repr.Deriving
 
 /-!
-# `SizzLeanBench.Fulu` — local copy of Fulu BeaconState types
+# `SizzLeanBench.Fulu`: local copy of Fulu BeaconState types
 
 The bench needs a realistic consensus-spec-shaped container to
 measure cache vs pure behaviour against. LeanEthCS has the
@@ -13,7 +13,7 @@ LeanEthCS would create a cycle (`LeanEthCS` already depends on
 `SizzLean` package). Instead, we hold a **copy** of the
 container types here.
 
-The copy is a reference fixture — *not* a spec replica. It tracks
+The copy is a reference fixture, *not* a spec replica. It tracks
 the Fulu/main-branch `BeaconState` shape (37 fields, including
 `proposer_lookahead`) at the moment of writing but is **not
 expected to stay in sync** with LeanEthCS or the upstream spec.
@@ -26,7 +26,7 @@ Differences vs the spec / LeanEthCS:
   mainnet scale; the minimal preset isn't built.
 * `BeaconState` is one concrete `structure`, not a
   `ssz_struct_for_presets` pair. The `ssz_struct_for_presets`
-  macro lives in LeanEthCS — keeping the bench types as plain
+  macro lives in LeanEthCS, keeping the bench types as plain
   `structure`s avoids the macro dependency.
 * Sub-containers are byte-for-byte identical to the LeanEthCS
   versions where the LeanEthCS version is itself a plain
@@ -91,7 +91,7 @@ structure BeaconBlockHeader where
   bodyRoot      : Root
   deriving SSZRepr
 
-/-- `Validator` — eight fixed-size fields. Same layout as
+/-- `Validator`: eight fixed-size fields. Same layout as
 `LeanEthCS.Forks.Phase0.Validator`, plus an `Inhabited`
 instance so `xs[i]!` works on a list of validators. -/
 structure Validator where
@@ -121,7 +121,7 @@ structure HistoricalSummary where
   stateSummaryRoot : Root
   deriving SSZRepr
 
-/-- Deneb `ExecutionPayloadHeader`. Preset-invariant — `logsBloom`
+/-- Deneb `ExecutionPayloadHeader`. Preset-invariant, `logsBloom`
 is a fixed 256-byte vector, `extraData` is an `SSZList UInt8 32`
 (SSZ wire cap), and the base-fee uses a `BitVec 256`. -/
 structure ExecutionPayloadHeader where
@@ -145,7 +145,7 @@ structure ExecutionPayloadHeader where
   deriving SSZRepr
 
 /-- Altair `SyncCommittee`, mainnet preset. `pubkeys` is fixed at
-`SYNC_COMMITTEE_SIZE = 512` for mainnet (32 for minimal — the bench
+`SYNC_COMMITTEE_SIZE = 512` for mainnet (32 for minimal, the bench
 only builds the mainnet variant). -/
 structure SyncCommittee where
   pubkeys         : Vector BLSPubkey 512

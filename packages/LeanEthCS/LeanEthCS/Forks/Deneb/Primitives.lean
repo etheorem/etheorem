@@ -2,7 +2,7 @@ import LeanEthCS.Primitives
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Deneb.Primitives` — Deneb KZG / blob primitives
+# `LeanEthCS.Forks.Deneb.Primitives`: Deneb KZG / blob primitives
 
 Deneb (EIP-4844, "proto-danksharding") introduces blob-carrying
 transactions and the KZG commitment scheme. The four primitives here
@@ -32,7 +32,7 @@ abbrev KZGProof := Vector UInt8 48
 /-- Blob index inside a block. -/
 abbrev BlobIndex := UInt64
 
-/-- One blob — a fixed-size byte array of `BYTES_PER_BLOB = 131072`
+/-- One blob, a fixed-size byte array of `BYTES_PER_BLOB = 131072`
 bytes (= `FIELD_ELEMENTS_PER_BLOB * BYTES_PER_FIELD_ELEMENT`). -/
 abbrev Blob := Vector UInt8 131072
 

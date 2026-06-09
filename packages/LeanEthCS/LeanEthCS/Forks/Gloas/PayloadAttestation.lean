@@ -3,7 +3,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Gloas.PayloadAttestation` — ePBS payload attestations
+# `LeanEthCS.Forks.Gloas.PayloadAttestation`: ePBS payload attestations
 
 EIP-7732 introduces a Payload-Timeliness Committee (PTC) that votes
 on whether the proposed `ExecutionPayload` was made available on
@@ -13,13 +13,13 @@ time. The committee size `PTC_SIZE` is preset-sensitive
 
 The four containers:
 
-* `PayloadAttestationData` — what's being voted on (block root,
+* `PayloadAttestationData`: what's being voted on (block root,
   slot, presence flags). Preset-invariant.
-* `PayloadAttestation` — aggregated PTC vote (uses
+* `PayloadAttestation`: aggregated PTC vote (uses
   `Bitvector[PTC_SIZE]`, preset-sensitive).
-* `PayloadAttestationMessage` — single-validator unaggregated vote.
+* `PayloadAttestationMessage`: single-validator unaggregated vote.
   Preset-invariant.
-* `IndexedPayloadAttestation` — expanded form used by slashing
+* `IndexedPayloadAttestation`: expanded form used by slashing
   predicates; the `attesting_indices` list cap is `PTC_SIZE`
   (preset-sensitive).
 -/
@@ -50,7 +50,7 @@ ssz_struct_for_presets PayloadAttestation in LeanEthCS.Forks.Gloas
   data            : PayloadAttestationData,
   signature       : BLSSignature
 
-/-- A single unaggregated PTC vote — preset-invariant. -/
+/-- A single unaggregated PTC vote, preset-invariant. -/
 structure PayloadAttestationMessage where
   validatorIndex : ValidatorIndex
   data           : PayloadAttestationData

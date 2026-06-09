@@ -6,11 +6,11 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Deneb.Blob` — Deneb blob-sidecar containers
+# `LeanEthCS.Forks.Deneb.Blob`: Deneb blob-sidecar containers
 
-* `BlobIdentifier` — `(block_root, blob_index)` pair used in
+* `BlobIdentifier`: `(block_root, blob_index)` pair used in
   request/response protocols. Preset-invariant.
-* `BlobSidecar` — one blob's full witness: the blob itself, its KZG
+* `BlobSidecar`: one blob's full witness: the blob itself, its KZG
   commitment + proof, the signed block header it belongs to, and the
   Merkle inclusion proof of the commitment in the block. The
   `kzg_commitment_inclusion_proof` depth is preset-sensitive at the
@@ -19,7 +19,7 @@ import SizzLean.Repr.Deriving
 
 ## Constants
 
-* `KZG_COMMITMENT_INCLUSION_PROOF_DEPTH` — 10 minimal / 17 mainnet
+* `KZG_COMMITMENT_INCLUSION_PROOF_DEPTH`: 10 minimal / 17 mainnet
 -/
 
 set_option autoImplicit false
@@ -32,7 +32,7 @@ open LeanEthCS
 open LeanEthCS.Forks.Phase0 (SignedBeaconBlockHeader)
 open LeanEthCS.Macros
 
-/-- `BlobIdentifier` — `(block_root, blob_index)`. -/
+/-- `BlobIdentifier`: `(block_root, blob_index)`. -/
 structure BlobIdentifier where
   blockRoot : Root
   index     : BlobIndex

@@ -19,13 +19,13 @@ LeanSha256  ←  SizzLean  ←  LeanEthCS          LeanPoseidon
 chain: it is a second pure-crypto primitive, parallel to `LeanSha256`,
 that nothing in the monorepo imports (and which imports nothing from it).
 The umbrella `[[require]]`s it so `lake build` builds it, but there is no
-edge into the SSZ side — see `packages/LeanPoseidon/docs/ARCHITECTURE.md`.
+edge into the SSZ side, see `packages/LeanPoseidon/docs/ARCHITECTURE.md`.
 
 A fifth package, **`LeanPoseidonProofs`**, hangs off `LeanPoseidon` (it
 `[[require]]`s the core + **mathlib**) and holds the machine-checked
 fast-≡-reference equivalence proof. It is the monorepo's only mathlib
-dependency and is **standalone** — deliberately *not* in the umbrella
-`[[require]]`s — so mathlib (clone, olean cache, build) is contained to
+dependency and is **standalone**, deliberately *not* in the umbrella
+`[[require]]`s, so mathlib (clone, olean cache, build) is contained to
 that one package and its one CI job, leaving the root build and every
 other package mathlib-free. Build it on its own:
 `cd packages/LeanPoseidonProofs && lake build` (or `just
@@ -89,14 +89,14 @@ test-poseidon-proofs`).
 ## Why this shape
 
 **Four subpackages.** The pure-Lean SHA-256 reference
-(`LeanSha256`) is reusable on its own — anyone wanting a verified
+(`LeanSha256`) is reusable on its own. Anyone wanting a verified
 SHA-256 in Lean shouldn't have to depend on all of SSZ. The SSZ
-library (`SizzLean`) is reusable beyond Ethereum — anyone with a
+library (`SizzLean`) is reusable beyond Ethereum. Anyone with a
 custom SSZ-shaped schema shouldn't have to pull in
 consensus-spec containers. The Ethereum consensus types
 (`LeanEthCS`) sit on top of SSZ and don't need to push their
 weight onto SSZ-only consumers. `LeanPoseidon` is a *second*
-pure-crypto primitive — a verified Poseidon2 — parallel to
+pure-crypto primitive, a verified Poseidon2, parallel to
 `LeanSha256` rather than in the SSZ chain: it is a standalone
 island that nothing here imports yet (a future SSZ↔Poseidon2
 hasher bridge is deliberately deferred until EIP-7864 settles a
@@ -107,19 +107,19 @@ its own cadence later.
 are decoupled in principle, in practice every cross-layer change
 needs to land coherently: a `SizzLean` cache-layer tweak that
 breaks `LeanEthCS`'s deriving call sites should be fixed in one
-commit, not three. The umbrella `lakefile.toml` `[[require]]`s
+commit rather than three. The umbrella `lakefile.toml` `[[require]]`s
 its subpackages by relative path so `lake build` at the
 root builds the whole dependency chain in order, with the
 `LeanPoseidon` island built alongside it. `LeanSha256`
 already publishes standalone via a read-only subtree mirror (see
 [The LeanSha256 mirror](#the-leansha256-mirror)); `SizzLean` and
 `LeanEthCS` may follow the same pattern. Either way the umbrella
-stays the single source of truth — this is a development
+stays the single source of truth. This is a development
 monorepo.
 
 **`SizzLean` and `LeanPoseidon` keep `lakefile.lean`; the others use
 TOML.** Lake allows either form, but `lakefile.toml` is purely
-declarative — it can't express a build target that compiles a `.c` file or
+declarative, it can't express a build target that compiles a `.c` file or
 shells `cargo`. The FFI SHA-256 shim in `packages/SizzLean/csrc/` needs a
 procedural target (`buildO` over the `.c` file plus an `extern_lib`
 declaration linking to `libcrypto`), so `SizzLean`'s lakefile stays
@@ -164,8 +164,8 @@ syntax.
 * The **bench reference fixture** for Fulu BeaconState
   (`SizzLeanBench/Fulu.lean`) is a bench-local *copy* of the
   LeanEthCS Fulu shape. `SizzLeanBench` cannot depend on
-  LeanEthCS — that would close a cycle, since LeanEthCS already
-  depends on SizzLean — so the bench keeps its own copy. The
+  LeanEthCS, since that would close a cycle (LeanEthCS already
+  depends on SizzLean), so the bench keeps its own copy. The
   spec-accurate version lives in LeanEthCS; the bench version is
   a reference fixture, not expected to stay in sync.
 
@@ -190,7 +190,7 @@ the only subpackage mirrored today; `SizzLean` and `LeanEthCS`
 live only in the umbrella.
 
 **Why a separate repo exists.** [Reservoir](https://reservoir.lean-lang.org),
-the Lean package index, indexes repository *roots* — it cannot
+the Lean package index, indexes repository *roots*. It cannot
 see a package that sits in a monorepo subdirectory. For
 `LeanSha256` to be independently discoverable and installable as
 a Lake dependency, its source has to appear at the root of some
@@ -199,7 +199,7 @@ repo. The mirror is that repo.
 **The mirror is one-way and read-only.** The umbrella is the
 single source of truth: all development, issues, and PRs happen
 here, under `packages/LeanSha256/`. The downstream repo is a
-generated artifact — its `README.md` carries a banner redirecting
+generated artifact. Its `README.md` carries a banner redirecting
 contributions to the umbrella, and any direct push to its `main`
 is overwritten by the next mirror run.
 
@@ -210,7 +210,7 @@ workflow runs on every push to the umbrella's `main` and on
 --prefix=packages/LeanSha256` to produce a synthetic branch
 containing only the commits that touched that subtree, with paths
 re-rooted at the package directory and authorship/dates/messages
-preserved — so the downstream carries real per-file history, not
+preserved, so the downstream carries real per-file history rather than
 a single squashed import. The split tip is pushed to the
 downstream `main` over SSH using a deploy key held in
 `secrets.LEANSHA256_DEPLOY_KEY` (configured on the downstream
@@ -224,7 +224,7 @@ release version. `just bump-leansha256-patch` (wrapping
 `packages/LeanSha256/scripts/bump_patch.py`) automates the
 high-frequency patch bump: it edits the `version` field in
 `packages/LeanSha256/lakefile.toml`, commits, and creates the
-`leansha256-v*` tag locally — it deliberately does *not* push, so
+`leansha256-v*` tag locally. It deliberately does *not* push, so
 the maintainer reviews before publishing. Minor/major bumps are
 done by hand.
 
@@ -262,29 +262,29 @@ cd packages/SizzLean && lake build
 
 The repo's `Justfile` wraps the most common workflows
 (`just build`, `just test`, `just bench`,
-`just official-ssz-vector-tests-static`, …) — see `just --list`
+`just official-ssz-vector-tests-static`, …), see `just --list`
 for the full set.
 
 ## What stays at the root
 
-* `README.md` — public-facing overview.
-* `CLAUDE.md` — style and discipline conventions binding on all
+* `README.md`: public-facing overview.
+* `CLAUDE.md`: style and discipline conventions binding on all
   three subpackages.
-* `Justfile` — task runner over the umbrella.
-* `lakefile.toml` — umbrella declaration.
-* `lean-toolchain` — pinned toolchain.
-* `lake-manifest.json` — pinned external deps for the umbrella.
-* `scripts/` — Python harnesses that drive the cross-package
+* `Justfile`: task runner over the umbrella.
+* `lakefile.toml`: umbrella declaration.
+* `lean-toolchain`: pinned toolchain.
+* `lake-manifest.json`: pinned external deps for the umbrella.
+* `scripts/`: Python harnesses that drive the cross-package
   conformance runner.
-* `docs/` — repo-wide design docs (this file). Distinct from the
+* `docs/`: repo-wide design docs (this file). Distinct from the
   per-subpackage `packages/<Pkg>/docs/` below.
-* `.github/` — CI (`lean_action_ci.yml`) plus the LeanSha256
+* `.github/`: CI (`lean_action_ci.yml`) plus the LeanSha256
   subtree-mirror workflow (`mirror-leansha256.yml`).
 * `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`,
-  `CODE_OF_CONDUCT.md` — project-wide governance.
+  `CODE_OF_CONDUCT.md`: project-wide governance.
 
 Repo-wide design docs live in the root `docs/` (this file).
 Per-subpackage design docs live under `packages/<Pkg>/docs/`
-(currently only `SizzLean` has any — ARCHITECTURE / PLAN /
+(currently only `SizzLean` has any: ARCHITECTURE / PLAN /
 OPTIMISATION / research). When `LeanEthCS` or `LeanSha256` grow
 their own design notes, they follow the same convention.

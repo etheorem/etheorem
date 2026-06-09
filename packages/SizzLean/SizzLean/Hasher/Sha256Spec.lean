@@ -2,7 +2,7 @@ import SizzLean.Hasher.Class
 import LeanSha256.Core
 
 /-!
-# `SizzLean.Hasher.Sha256Spec` — `Hasher Sha256Spec` instance bridge
+# `SizzLean.Hasher.Sha256Spec`: `Hasher Sha256Spec` instance bridge
 
 A thin bridge between the standalone `LeanSha256` library (the
 actual pure-Lean SHA-256 implementation lives there) and
@@ -10,7 +10,7 @@ SizzLean's `Hasher` typeclass.
 
 ## What's here
 
-* The `Sha256Spec` phantom tag — distinct nominal type from `Sha256`
+* The `Sha256Spec` phantom tag, a distinct nominal type from `Sha256`
   (the FFI-backed tag in `FFI/Sha256.lean`); call sites pick between
   them via the `Hasher H` instance binder.
 * A single `instance : Hasher Sha256Spec` whose methods delegate
@@ -18,7 +18,7 @@ SizzLean's `Hasher` typeclass.
 
 ## What lives in `LeanSha256` instead
 
-The actual SHA-256 implementation — FIPS 180-4 constants, round
+The actual SHA-256 implementation: FIPS 180-4 constants, round
 functions, message schedule, compression, padding, byte/word
 conversions, `hash`, `combine`, NIST §B acceptance asserts, and
 the full structural-conformance lemma set. `LeanSha256` has no
@@ -42,7 +42,7 @@ them via the `Hasher H` instance binder. -/
 inductive Sha256Spec : Type
 
 /-- Pure-Lean `Hasher Sha256Spec` instance. Both methods delegate
-to the standalone `LeanSha256` library — `hash` runs SHA-256 over
+to the standalone `LeanSha256` library. `hash` runs SHA-256 over
 an arbitrary `ByteArray`, `combine` does the two-input
 concatenation variant. -/
 instance : Hasher Sha256Spec where

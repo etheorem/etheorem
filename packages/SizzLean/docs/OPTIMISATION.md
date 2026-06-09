@@ -1,4 +1,4 @@
-# SizzLean — Cache & performance architecture
+# SizzLean: Cache & performance architecture
 
 This document is the implementation-level companion to
 [`ARCHITECTURE.md`](ARCHITECTURE.md) §6 and the design-research
@@ -8,7 +8,7 @@ exists; this document explains *how* the current code is
 organised (Phase 14, shipped) and *what the open Stage 17
 sub-stages would actually do* (more detail than PLAN.md carries).
 
-Pointers to prior art live throughout — most importantly
+Pointers to prior art live throughout, most importantly
 [`protolambda/remerkleable`](https://github.com/protolambda/remerkleable),
 the Python persistent-Merkle-tree library whose `PairNode` /
 `RootNode` design SizzLean inherits, and Lighthouse / Lodestar /
@@ -18,7 +18,7 @@ converged on.
 ## Contents
 
 1. [Scope](#scope)
-2. [Phase 14 — what's implemented](#phase-14--whats-implemented)
+2. [Phase 14: what's implemented](#phase-14--whats-implemented)
    1. [`Node` representation](#node-representation)
    2. [`ZERO_HASHES` precomputation](#zero_hashes-precomputation)
    3. [Cached root computation (`merkleRootWithCache`)](#cached-root-computation-merklerootwithcache)
@@ -27,20 +27,20 @@ converged on.
    6. [The `sszUpdate` macro (write side)](#the-sszupdate-macro-write-side)
    7. [The `sszGet` macro (read side)](#the-sszget-macro-read-side)
    8. [Coherence invariant and its safety net](#coherence-invariant-and-its-safety-net)
-3. [Phase 17 — open optimisations](#phase-17--open-optimisations)
-   1. [Stage 17a — Deferred-update overlay](#stage-17a--deferred-update-overlay-viewdu-style)
-   2. [Stage 17b — Batched SHA-256](#stage-17b--batched-sha-256)
-   3. [Stage 17c — Hash-consing](#stage-17c--hash-consing)
-   4. [Stage 17d — Profile-guided `@[specialize]`](#stage-17d--profile-guided-specialize)
-   5. [Stage 17e — Serialised-form caching](#stage-17e--serialised-form-caching)
-4. [The cross-stage invariant — the pure path stays kernel-reducible](#the-cross-stage-invariant--the-pure-path-stays-kernel-reducible)
+3. [Phase 17: open optimisations](#phase-17--open-optimisations)
+   1. [Stage 17a: Deferred-update overlay](#stage-17a--deferred-update-overlay-viewdu-style)
+   2. [Stage 17b: Batched SHA-256](#stage-17b--batched-sha-256)
+   3. [Stage 17c: Hash-consing](#stage-17c--hash-consing)
+   4. [Stage 17d: Profile-guided `@[specialize]`](#stage-17d--profile-guided-specialize)
+   5. [Stage 17e: Serialised-form caching](#stage-17e--serialised-form-caching)
+4. [The cross-stage invariant: the pure path stays kernel-reducible](#the-cross-stage-invariant--the-pure-path-stays-kernel-reducible)
 5. [Benchmarking and gating](#benchmarking-and-gating)
 6. [Where to find what](#where-to-find-what)
 
 ## Scope
 
 The library's central correctness path is the verified spec
-recursion on `SSZType` (Layer 1). It is *complete on its own* —
+recursion on `SSZType` (Layer 1). It is *complete on its own*:
 `SSZ.hashTreeRoot Sha256 v` on a plain `T` reads a 32-byte root
 out without ever touching this document's machinery.
 
@@ -48,7 +48,7 @@ What the cache layer adds is *production performance*: a
 hash-tree root after a single-field mutation should walk
 `O(depth)` nodes (40-ish SHA-256 calls for `BeaconState`),
 not the whole tree (millions of leaves). The Layer 4 cache is
-therefore a *performance layer*, not a verification layer —
+therefore a *performance layer*, not a verification layer,
 asserted equivalent to the spec, validated empirically against
 `ethereum/consensus-spec-tests` plus the in-library
 `SizzLeanTests/TreeBackedCoherence.lean` property test. None of
@@ -56,7 +56,7 @@ this document's contents enters the proof obligation; none of
 its optimisations changes what `rfl` / `decide` close on the
 plain-`T` / `SSZ.PureBox` paths.
 
-## Phase 14 — what's implemented
+## Phase 14: what's implemented
 
 Stages 12, 13, 14a–e shipped. The end-to-end story is:
 
@@ -87,14 +87,14 @@ inductive Node where
 
 Two constructors:
 
-* `leaf b` — a 32-byte leaf. The leaf bytes *are* its root.
-* `pair l r c` — an interior node. `c : Option ByteArray` is the
+* `leaf b`: a 32-byte leaf. The leaf bytes *are* its root.
+* `pair l r c`: an interior node. `c : Option ByteArray` is the
   cached root: `some r` after `merkleRootWithCache` has walked
   this subtree, `none` after the most recent `setAt` cleared the
   cache along the updated spine.
 
 This mirrors `remerkleable`'s `PairNode(left, right, root :
-Optional[Root])` and `RootNode(root)` precisely — with the
+Optional[Root])` and `RootNode(root)` precisely, with the
 single departure that we lift `RootNode` to be `leaf` (always-
 populated 32 bytes), and represent "depth-`d` empty subtree" as
 `zeroLeaf H d` (= `leaf ZERO_HASHES[d]`), not as a separate
@@ -110,7 +110,7 @@ filling `none → some r` doesn't change the logical value
 observation cost. `remerkleable` calls this "lazy root caching";
 Lighthouse's Milhouse and ChainSafe's persistent-merkle-tree do
 the same in mutable form. In Lean the slot is an inductive field
-that an update writes to a fresh `pair` cell — same observable
+that an update writes to a fresh `pair` cell, same observable
 semantics, different memory model.
 
 ### `ZERO_HASHES` precomputation
@@ -127,10 +127,10 @@ The recurrence is `ZERO_HASHES[0] = 32 zero bytes` and
 `ZERO_HASHES[d + 1] = Hasher.combine ZERO_HASHES[d]
 ZERO_HASHES[d]`. The cap of 64 covers every SSZ tree depth that
 appears through Gloas (`BeaconState.validators` is `List
-Validator (2 ^ 40)` — depth 40 + 1 for the length mix-in).
+Validator (2 ^ 40)`, depth 40 + 1 for the length mix-in).
 
 The single most-important property this buys: a `List[Validator,
-2 ^ 40]` with 1M populated entries — typical mainnet — is
+2 ^ 40]` with 1M populated entries, typical mainnet, is
 representable in O(populated × depth) Node allocations *plus
 constant zero-subtree pointers*. Every unpopulated subtree is a
 single `zeroLeaf H d` allocation reusing the precomputed bytes.
@@ -159,15 +159,15 @@ def Node.merkleRootWithCache (H : Type) [Hasher H] :
 
 Three arms:
 
-* `leaf b` — root is `b`, return the node unchanged.
-* `pair _ _ (some r)` — **cache hit**; return the cached root,
+* `leaf b`: root is `b`, return the node unchanged.
+* `pair _ _ (some r)`: **cache hit**; return the cached root,
   return the node unchanged. This is the line that makes
   Lighthouse's "BeaconState root in 9 ms after a single
   validator update" performance achievable.
-* `pair l r none` — **cache miss**; recurse both children, combine
+* `pair l r none`: **cache miss**; recurse both children, combine
   their roots via the chosen `Hasher H` instance, return a fresh
   `pair` with the freshly cached root. The fresh-pair allocation
-  is unavoidable in the immutable representation — but it's only
+  is unavoidable in the immutable representation, but it's only
   along the dirty spine, never the off-spine subtrees, which the
   caller passed in by reference and the recursion returns by
   reference.
@@ -187,7 +187,7 @@ cached root in O(1).
 
 `packages/SizzLean/SizzLean/Cache/MerkleTree/SetAt.lean`.
 
-Updates walk the tree by *generalised index* (gindex) — the
+Updates walk the tree by *generalised index* (gindex), the
 standard SSZ scheme that addresses any tree position by the
 binary representation of its level-by-level path.
 
@@ -205,15 +205,15 @@ subtrees on the off-path side are returned by reference, so the
 allocation count for one field update is exactly
 `depth(structure) + 1` `pair` cells.
 
-The single recursion on a `List Bool` of bits — instead of an
-arithmetic gindex traversal — was deliberately chosen so that
+The single recursion on a `List Bool` of bits, instead of an
+arithmetic gindex traversal, was deliberately chosen so that
 the **Nimbus February 2025 mainnet gindex bug** (off-by-one on
 list-length leaf positions) is *unrepresentable* in our walker.
 There is no integer arithmetic on the gindex once the bits are
 extracted; the walker pattern-matches on the bit list.
 
-`setManyAt` is the batched form. The naïve approach — calling
-`setAt` once per write — would allocate fresh spine cells for
+`setManyAt` is the batched form. The naïve approach, calling
+`setAt` once per write, would allocate fresh spine cells for
 *each* write, even when two writes share path prefixes. The
 batched walker partitions the writes by their first bit at each
 level and recurses once per partition, so writes that share a
@@ -240,10 +240,10 @@ abbrev CachedSSZ := TreeBacked
 ```
 
 Two fields: the value-level `view : T` (so reads bypass the
-cache entirely — see `sszGet` below) and the persistent
+cache entirely, see `sszGet` below) and the persistent
 Merkle-tree `tree : Node`. The hasher `H` is part of the *type*,
 so mixing hashers within one cached value is a type error rather
-than a silent root mismatch — the cache cells were filled by
+than a silent root mismatch. The cache cells were filled by
 `H`'s `combine`, and a subsequent read with a different `H'`
 would observe wrong bytes.
 
@@ -298,8 +298,8 @@ types (the index syntax `vec[i] := v` on `Vector Validator n` /
 `SSZList Validator n`), the cached path is fully supported. For
 *basic-packed* elements (`Vector UInt64 n[i] := bal`) the cached
 path is rejected at expansion time, because basic packing
-requires a chunk-rebuild that the flat macro doesn't ship —
-whole-vector replacement (`balances := balances.set! i bal`) is
+requires a chunk-rebuild that the flat macro doesn't ship.
+Whole-vector replacement (`balances := balances.set! i bal`) is
 the current workaround; targeted basic-packed indexing is a
 planned Sub-F follow-up gated on measured need.
 
@@ -316,7 +316,7 @@ sszGet b validators[i]                  -- → b.view.validators[i]
 sszGet b validators[i].effectiveBalance -- → b.view.validators[i].effectiveBalance
 ```
 
-Reads bypass the tree side entirely — they project the
+Reads bypass the tree side entirely; they project the
 value-level `view : T` and walk Lean's standard struct /
 array accessors. The cached and uncached flavours give
 *observationally identical* read behaviour.
@@ -327,7 +327,7 @@ post-expansion term is a chain of Lean's built-in projection
 notation, so `rfl` / `decide` / `simp` proofs about reads close
 exactly as if the user had typed `.view.f.g[i].h` directly. The
 only thing the macro buys is hiding `.view` from the
-documented user surface — the user types `sszGet`, never
+documented user surface; the user types `sszGet`, never
 `.view`.
 
 ### Coherence invariant and its safety net
@@ -340,16 +340,16 @@ The single load-bearing invariant on the cache layer:
 This is *not* a kernel-checked theorem. Per
 [`research/cache-research.md`](research/cache-research.md) §5,
 the cache is intentionally outside the formal-verification
-frontier — the verified spec layer is what closes the
+frontier. The verified spec layer is what closes the
 correctness story, and the cache is asserted equivalent to it.
 The safety net is two property tests:
 
-* `SizzLeanTests/TreeBackedCoherence.lean` —
+* `SizzLeanTests/TreeBackedCoherence.lean`:
   `t.hashTreeRootCached = SSZ.hashTreeRoot Sha256 t.view`
   on the example containers, fired via `native_decide` at
   build time.
 * `SizzLeanTests/TreeBackedSetField.lean` /
-  `MultiSetterIndex.lean` — PRNG-driven property tests for the
+  `MultiSetterIndex.lean`: PRNG-driven property tests for the
   `sszUpdate` emission paths, against the spec oracle.
 
 Plus the cross-implementation `ssz_static` upstream-vector
@@ -362,7 +362,7 @@ This is the same safety-net shape `remerkleable` ships
 (`tests/test_roundtrip.py` plus consensus-spec-tests
 integration in `eth2spec`).
 
-## Phase 17 — open optimisations
+## Phase 17: open optimisations
 
 Five sub-stages with a microbenchmark in
 `packages/SizzLean/SizzLeanBench/` (run via `just bench`). Status:
@@ -380,9 +380,9 @@ Five sub-stages with a microbenchmark in
 The measured-need gate that originally fronted Stage 17 has been
 crossed in two directions: the benches now show *which* of the
 shipped optimisations deliver real wins (17a + 17e together are
-the headline cache-vs-pure ratio on realistic workloads — see
+the headline cache-vs-pure ratio on realistic workloads, see
 S6/S7 in the bench) and *which* ship infrastructure pending a
-follow-up to light up (17b.1 / 17b.2 — needs the SIMD inner loop
+follow-up to light up (17b.1 / 17b.2, needs the SIMD inner loop
 and the level-aware walker). Each section below records both the
 design and the measured result; the per-sub-stage details
 remain accurate as implementation references. They document what
@@ -392,9 +392,9 @@ and the proof-side invariant each must respect.
 
 ### End-to-end win: pure vs all-optimisations-on
 
-For the *combined* effect across a realistic workload — what
+For the *combined* effect across a realistic workload, what
 the library delivers when a user just uses its default surface
-rather than reaching for the spec — see
+rather than reaching for the spec, see
 `SizzLeanBench/Pipeline.lean`. It compares a pure-spec pipeline
 (plain `T`, Lean record-updates, spec calls for every read /
 serialise) against the same workload run through `TreeBacked` +
@@ -410,12 +410,12 @@ every per-update root read in the pure path pays a full re-hash
 (~28 µs × 8 = ~224 µs), while the cached path only walks the
 dirty spine (~10 µs each) plus the serialised cache trims the
 final emit. The process-then-emit pattern shows a smaller win
-because there's only one root read — the SHA-256 work itself is
+because there's only one root read. The SHA-256 work itself is
 the dominant cost, the same in both paths.
 
 `@[specialize]` (17d) fires in both columns (compile-time, can't
 be toggled at runtime). 17b batched SHA-256 and 17c hash-consing
-are *not* exercised by the default cached path — they're opt-in
+are *not* exercised by the default cached path. They're opt-in
 through separate APIs (`sha256BatchCombine` / `Node.mkPair`); see
 their dedicated bench files for in-isolation measurements.
 
@@ -423,7 +423,7 @@ The ordering below is the default sequence (highest-impact-
 first per Lighthouse's Milhouse benchmarks and Lodestar's
 `ViewDU` paper); profiling on a specific workload may re-order.
 
-### Stage 17a — Pending overlay (closure-based, read-from-view) — **shipped**
+### Stage 17a: Pending overlay (closure-based, read-from-view): **shipped**
 
 The pending overlay is folded into the existing `TreeBacked`
 structure rather than exposed as a separate `ViewDU` type. Every
@@ -440,11 +440,11 @@ structure TreeBacked (H : Type) (T : Type) [Hasher H] [SSZRepr T] where
 
 The deferral lives at two levels:
 
-* **`treeBase : Thunk Node`** — `TreeBacked.ofValue` builds it as
+* **`treeBase : Thunk Node`**: `TreeBacked.ofValue` builds it as
   `Thunk.mk (fun _ => Node.ofShape …)`. No tree-shape work runs
   at construction; the first `hashTreeRoot` forces it once and
   `Thunk`'s memo carries the result.
-* **`pending`** — each `sszUpdate` clause emits a *closure*
+* **`pending`**: each `sszUpdate` clause emits a *closure*
   (`T → Option Node`) that, at commit time, projects the
   relevant sub-value out of the **current** `view` and builds
   the matching sub-tree via `Node.ofShape`. Closures that
@@ -469,14 +469,14 @@ The win is threefold:
    reflects every later child write the user issued. The
    `commitAndHash` "drop deeper write at same level as a `[]`-path
    write" rule then drops the redundant child entry without
-   semantic loss — because the parent already encoded it.
+   semantic loss, because the parent already encoded it.
 
 **Why read from view at commit rather than capture at insert.**
 An earlier design captured `(shape, value)` snapshots at insert
 time. That broke on parent/child gindex relations: write
 `parent := y` then `parent.child := z` left both in pending; at
 commit the parent's snapshot `y` had no `z` in it, and the
-commit-time drop discarded the child entry — so the committed
+commit-time drop discarded the child entry, so the committed
 root reflected `y` while the view reflected `y` with
 `child := z`. Reading from view at commit closes that gap by
 construction.
@@ -491,23 +491,23 @@ element type's `Inhabited` default.
 **Measured result.** Benchmarks at `packages/SizzLean/bench/`:
 
 * **S6 BlockProcessingLarge** (32 slots × 8 writes on
-  `ValidatorSet256`): cached ~43 ms, pure ~102 ms — **2.4×
+  `ValidatorSet256`): cached ~43 ms, pure ~102 ms, **2.4×
   cached faster**.
 * **S7 FuluStateTransition** (mainnet preset, ~1024 validators,
   16-slot state-transition simulation): cached ~2.6 s, pure
-  ~5.2 s — **2.0× cached faster**.
+  ~5.2 s, **2.0× cached faster**.
 
 Regression coverage:
 
-* `SizzLeanTests/PendingPrefixConflict.lean` — 5 cases on
+* `SizzLeanTests/PendingPrefixConflict.lean`: 5 cases on
   parent/child gindex prefix relations.
-* `SizzLeanTests/PendingListShrink.lean` — 8 cases on
+* `SizzLeanTests/PendingListShrink.lean`: 8 cases on
   list-shrink + stale-index writes (including a non-zero
   `Inhabited` element that surfaces the bounds-check requirement).
-* `SizzLeanTests/WidthsAndLists.lean` — 32 cases on basic widths
+* `SizzLeanTests/WidthsAndLists.lean`: 32 cases on basic widths
   (Bool, UInt8/16/32/64, BitVec 128/256) × list-size changes.
 
-**Original design sketch follows** — kept for historical
+**Original design sketch follows**, kept for historical
 context; the shipped form removes the separate `ViewDU`
 wrapper.
 
@@ -515,7 +515,7 @@ wrapper.
 keyed by gindex; on `commit`, replay them in gindex-ascending
 order through `Node.setManyAt`, batching across path prefixes
 just like the existing within-statement `sszUpdate` already
-does — but now *across* statements.
+does, but now *across* statements.
 
 The current `sszUpdate` already batches writes within one
 statement: `sszUpdate s with x := v, y := w` shares the
@@ -529,7 +529,7 @@ let s := sszUpdate s with z := 3
 -- then read the root
 ```
 
-— three separate `setManyAt` calls walking three separate
+That is three separate `setManyAt` calls walking three separate
 spines. With `ViewDU`, those three writes are accumulated into a
 `Std.TreeMap Nat Node` and committed in one walk on the
 subsequent root read (or the first time a function asks for the
@@ -555,7 +555,7 @@ def ViewDU.commit (v : ViewDU H T) : TreeBacked H T :=
 The `toList` traversal of an ordered map yields entries in
 gindex-ascending order, which means `setManyAt`'s
 partition-by-first-bit step sees the writes in a path-grouped
-order naturally — every shared prefix appears as a contiguous
+order naturally, every shared prefix appears as a contiguous
 run of writes.
 
 **Prior art.**
@@ -571,7 +571,7 @@ run of writes.
   updates into a single tree walk. The cited speedup over
   per-leaf updates is 5–10× on a 1000-validator slashing
   scenario.
-* Teku's `MutableSchemaList` does it differently — by
+* Teku's `MutableSchemaList` does it differently, by
   duplicating the spine into a writeable copy and rebatching at
   the end. We're following the immutable-base + pending-map
   shape because it matches Lean's reference-counted runtime
@@ -580,7 +580,7 @@ run of writes.
 **Microbenchmark target.** `bench/`: 1000 sequential
 `setField`-style writes on a `BeaconState`-shaped container
 should commit in close to one full-spine walk's worth of
-hashing — i.e. the per-write cost in the ViewDU pipeline should
+hashing. That is, the per-write cost in the ViewDU pipeline should
 be near-zero once the deferral is in effect.
 
 **Proof-side invariant.** `ViewDU` doesn't touch
@@ -589,7 +589,7 @@ strictly cached-path optimisation. The pure / proof path stays
 single-statement-typed and continues to use Lean's built-in
 record-update syntax for any chained "write then read" pattern.
 
-**Risk.** Medium. Spine deduplication is the tricky part — two
+**Risk.** Medium. Spine deduplication is the tricky part, two
 writes whose gindex paths share a prefix should share the
 intermediate `pair` allocations the underlying `setManyAt` makes.
 That's already what `setManyAt` does, so the ViewDU layer is
@@ -603,12 +603,12 @@ map (not pleasant) or running the commit on every read (defeats
 the deferral). Both are surveyed in
 [`research/cache-research.md`](research/cache-research.md) §7.
 
-### Stage 17b — Batched SHA-256
+### Stage 17b: Batched SHA-256
 
 This sub-stage now tracks three pieces of work separately, in
 parallel with PLAN.md §Stage 17b.
 
-#### Stage 17b.0 — FFI primitive + Lean wrapper + axiom — **shipped**
+#### Stage 17b.0: FFI primitive + Lean wrapper + axiom: **shipped**
 
 The FFI primitive `sha256BatchCombine`
 (`csrc/sha256_batch.c`), the Lean wrapper
@@ -627,7 +627,7 @@ fixture:
 | 128 scalar `sha256Combine` calls (FFI) | ~41 µs |
 | `sha256BatchCombine` (one FFI call) | ~41 µs |
 
-FFI scalar and FFI batched are within noise of each other —
+FFI scalar and FFI batched are within noise of each other,
 both ~830× faster than the pure-Lean reference. The empirical
 finding for the batched path: shared-EVP-context batching alone
 doesn't beat scalar because OpenSSL's per-pair SHA-256
@@ -636,12 +636,12 @@ context-allocation amortisation (~10 ns × 127 saved calls =
 ~2 µs).
 
 The pure-Lean column matters for proof-side code that pins
-`H := Sha256Spec` — kernel-reducible but slower; the gap to
+`H := Sha256Spec`, kernel-reducible but slower; the gap to
 the FFI columns measures the FFI's value at hash work. Proofs
 about state-transition functions don't pay this cost because
 they reduce structurally and don't actually compute hashes.
 
-#### Stage 17b.1 — Cross-platform SIMD shim — **not done**
+#### Stage 17b.1: Cross-platform SIMD shim: **not done**
 
 **Goal.** Replace the scalar EVP loop inside
 `csrc/sha256_batch.c` with a per-architecture dispatch that uses
@@ -650,21 +650,21 @@ library per architecture; the Lean-side surface
 (`sha256BatchCombine`) and the axiom (`sha256BatchCombine_eq_spec`)
 are unchanged.
 
-* **x86_64 (Intel + AMD)** — link **Intel ISA-L**
+* **x86_64 (Intel + AMD)**: link **Intel ISA-L**
   (BSD-3-Clause, Intel-maintained, ships in Debian/Ubuntu /
   RHEL / Alpine as `libisal-crypto-dev`). Its `sha256_mb` API
-  hashes 4 (SSE) / 8 (AVX2) / 16 (AVX-512) buffers in parallel
-  — auto-dispatched via CPUID at runtime. Works identically on
+  hashes 4 (SSE) / 8 (AVX2) / 16 (AVX-512) buffers in parallel,
+  auto-dispatched via CPUID at runtime. Works identically on
   AMD CPUs that support the same SIMD ISA (Zen 1+ for AVX2,
   Zen 4+ for AVX-512).
-* **ARM64 (Apple Silicon, AWS Graviton, ARM servers)** — fall
+* **ARM64 (Apple Silicon, AWS Graviton, ARM servers)**: fall
   back to **OpenSSL** (already in our link line). OpenSSL's EVP
   path uses ARMv8 SHA-Ext on supported CPUs (every Apple
-  M-series chip, Graviton 3+, etc.) — each single-pair hash is
+  M-series chip, Graviton 3+, etc.), each single-pair hash is
   already ~30–50 ns. The "batched" path on ARM is a tight loop
   over fast single-pair calls; the function-call amortisation
   is the win, ~1.5×, not the 8–16× of x86 SIMD.
-* **Fallback** (older ARM without SHA-Ext, RISC-V, etc.) —
+* **Fallback** (older ARM without SHA-Ext, RISC-V, etc.):
   OpenSSL EVP loop. Same code path as the ARM64 case.
 
 ```c
@@ -693,7 +693,7 @@ are unchanged.
 with the pure-Lean reference; the equivalence test re-runs
 identically.
 
-#### Stage 17b.2 — Level-aware Lean traversal — **not done; depends on 17b.1**
+#### Stage 17b.2: Level-aware Lean traversal: **not done; depends on 17b.1**
 
 **Goal.** Plug the (now-fast) batched primitive into
 `merkleRootWithCache`'s recursive walk. The default
@@ -701,7 +701,7 @@ identically.
 issues one batched call per tree level instead of per-pair scalar
 calls.
 
-**Deliverable.** `SizzLean/Cache/MerkleTree/MerkleBatch.lean` —
+**Deliverable.** `SizzLean/Cache/MerkleTree/MerkleBatch.lean`:
 a level-aware variant of `merkleRootWithCache` that gathers
 `pair _ _ none` cells at each depth and calls
 `sha256BatchCombine` once per level. Wired as the runtime
@@ -719,7 +719,7 @@ bench (the bench data on the scalar shim confirmed this: FFI
 batched ≈ FFI scalar at ~40 µs / 128 pairs). 17b.2 is only
 worth doing once 17b.1 ships.
 
-**Original design notes follow** — kept for the prior-art
+**Original design notes follow**, kept for the prior-art
 references and the data-structure sketch; both still apply to
 the follow-up SIMD path.
 
@@ -730,19 +730,19 @@ level before issuing the batched call. The Intel SHA-NI
 instruction set hashes one block per cycle per pipe; AVX-512
 runs ~4 blocks in parallel. On modern x86 servers, batched
 SHA-256 is the largest single perf lever after the cache is in
-place — Lighthouse measures ~3× speedup on cold-root
+place; Lighthouse measures ~3× speedup on cold-root
 computation.
 
 **Data structure.** Two new files:
 
-* `csrc/sha256_batch.c` — new C shim wrapping OpenSSL's
+* `csrc/sha256_batch.c`: new C shim wrapping OpenSSL's
   `EVP_DigestUpdate` parallel-pipe mode (or, more aggressively,
   a hand-tuned SHA-NI / AVX-512 implementation along the lines
   of `gohashtree`'s `sha256_avx_x4` and `sha256_avx512_x16`).
-* `SizzLean/Hasher/Sha256Batch.lean` —
+* `SizzLean/Hasher/Sha256Batch.lean`:
   `@[extern "lean_ssz_sha256_batch"] opaque sha256Batch :
   Array (ByteArray × ByteArray) → Array ByteArray`.
-* `SizzLean/Cache/MerkleTree/MerkleBatch.lean` — a variant of
+* `SizzLean/Cache/MerkleTree/MerkleBatch.lean`: a variant of
   `merkleRootWithCache` that collects sibling pairs across a
   level before issuing one batched call. The traversal is
   level-aware: at depth `d`, gather every `pair l r none` whose
@@ -764,11 +764,11 @@ computation.
 
 **Dependency on Stage 15.** The Stage 15 conformance story is
 "FFI Sha256 ≡ pure-Lean `Sha256Spec` on 185 cases". A batched
-primitive would need a parallel empirical equivalence — either
+primitive would need a parallel empirical equivalence, either
 "FFI sha256Batch on a sibling pair equals two scalar
 `Sha256Spec.combine` calls on the same inputs" or, more
 formally, a `@[csimp]` proof. The honest answer for shipping is
-*neither* — the batched primitive stays a performance shim in
+*neither*; the batched primitive stays a performance shim in
 the TCB behind its own assertion, just like the scalar FFI
 shim today. The Stage 15 axioms (`sha256Hash_eq_spec`,
 `sha256Combine_eq_spec`) cover the scalar surface; a parallel
@@ -777,24 +777,24 @@ pairs.map (fun (l, r) => Sha256Spec.combine l r)` would extend
 the empirical-equivalence story to the batched primitive.
 
 **Microbenchmark target.** Cold-root of a fully-populated
-mainnet-preset `BeaconState` (~1M validators) — should drop
+mainnet-preset `BeaconState` (~1M validators), should drop
 from `gohashtree`-comparable scalar timing to within ~50% of
 `gohashtree`'s batched implementation.
 
 **Proof-side invariant.** Wired as an `@[implemented_by]` swap
 on `merkleRootWithCache` (or as a new opt-in entry point), not
 as a change to the `Hasher` typeclass. The abstract
-`Hasher Sha256Spec` instance — what `SSZ.PureBox` /
-`UncachedWith Sha256Spec` paths use — sees no change.
+`Hasher Sha256Spec` instance, what `SSZ.PureBox` /
+`UncachedWith Sha256Spec` paths use, sees no change.
 
 **Risk.** Medium. The FFI shim is straightforward; the
-level-aware traversal that maximises batch fullness is the
+level-aware traversal that keeps batches full is the
 design lever. Naïve batching (one batch per level) leaves the
 parallel pipes underutilised when the tree is sparse; the
 sophisticated version (batch fullness with cross-level work
 stealing) needs careful design.
 
-### Stage 17c — Hash-consing — **library primitive shipped; not on user interface**
+### Stage 17c: Hash-consing: **library primitive shipped; not on user interface**
 
 **Shipped as a library primitive (not wired into the cached
 path).** A global `IO.Ref`-backed bounded-LRU cache
@@ -802,7 +802,7 @@ path).** A global `IO.Ref`-backed bounded-LRU cache
 4096) plus the `Node.mkPair` smart constructor that consults
 the cache. On a cache hit (same 32-byte root previously seen),
 returns the cached `Node` cell; on a miss, allocates fresh and
-inserts. `Node.mkPair` is opt-in — existing `.pair`
+inserts. `Node.mkPair` is opt-in. Existing `.pair`
 allocations in `setAt` / `Build.lean` / etc. continue
 unchanged, and `merkleRootWithCache` does **not** call into the
 consing cache. The user-facing `box.hashTreeRoot` therefore sees
@@ -817,7 +817,7 @@ no consing today; this counts as in-flight Stage 17c work.
 
 The standing micro-bench on the scenarios fixture set (single
 root on `ValidatorSet16`, no inter-tree subtree redundancy)
-showed consing **slowed every root call by ~9×** — the
+showed consing **slowed every root call by ~9×**. The
 cache-lookup overhead per pair is paid on every interior node,
 and the workload offers no hits to amortise it. The win shape
 ChainSafe documents (~30% heap reduction) only materialises on
@@ -840,7 +840,7 @@ a weak-ref API; the bounded-LRU fallback (wipe-all eviction
 when capacity is hit) is what ships. For workloads that justify
 weak refs, the swap is local to `HashCons.lean`.
 
-**Original design notes follow** — the prior-art map and the
+**Original design notes follow**, the prior-art map and the
 weak-ref design discussion both still apply to the follow-up.
 
 **What it does.** Dedupe identical populated subtrees globally
@@ -870,7 +870,7 @@ def Node.mkPairConsed (left right : Node) (root : Option ByteArray) :
           pure n
 ```
 
-(weak-reference semantics omitted in the sketch — Lean's
+(weak-reference semantics omitted in the sketch, Lean's
 runtime needs a real `IO.Ref` with the appropriate
 `@[implemented_by]` swap to `lean_alloc_cached_weak`.)
 
@@ -879,7 +879,7 @@ runtime needs a real `IO.Ref` with the appropriate
 * `remerkleable` does not hash-cons (Python's reference
   semantics make it awkward; a single-state usage doesn't show
   the win).
-* ChainSafe's `persistent-merkle-tree` *does* — it ships a
+* ChainSafe's `persistent-merkle-tree` *does*; it ships a
   global `WeakMap<Root, Node>` and consults it on every `pair`
   construction. Their measurement: a 30% reduction in heap
   usage on a `BeaconState` archive workload (storing 100
@@ -893,7 +893,7 @@ runtime needs a real `IO.Ref` with the appropriate
 `BeaconState`s should use proportionally less heap than `N ×
 fresh-state` once `N ≥ 50`. CPU: a `merkleRootWithCache` hit on
 an interned `Node` should be the same `pair _ _ (some r)` short-
-circuit it is today — no extra work on the hot path.
+circuit it is today, no extra work on the hot path.
 
 **Proof-side invariant.** Pure cache substitution. `Sha256Spec`
 / uncached / plain-`T` paths never allocate `Node` cells; the
@@ -905,12 +905,12 @@ root is *already* known.
 
 **Risk.** Medium. Lean's runtime reference-counting interacts
 with weak references non-trivially. Getting the lifecycle right
-needs care — a `WeakRef` API would be cleaner, but Lean
+needs care, a `WeakRef` API would be cleaner, but Lean
 currently lacks one. The fallback is a bounded-LRU cache (no
 weak references), which loses the unbounded-archive case but
 keeps the common-case win.
 
-### Stage 17d — Profile-guided `@[specialize]` — **shipped (pass 1)**
+### Stage 17d: Profile-guided `@[specialize]`: **shipped (pass 1)**
 
 **Shipped.** `@[specialize]` attributes on the three
 deriving-handler-emitted user-facing surfaces in
@@ -927,7 +927,7 @@ fixed-size fields, ~144 bytes), 1000 iterations:
 | cached (`TreeBacked.ofValue + .hashTreeRootCached`) | ~8.5 µs |
 
 Pure wins by ~1 µs because the cached path adds `TreeBacked.ofValue`'s
-`Node.ofShape` construction cost on every iteration — the
+`Node.ofShape` construction cost on every iteration. The
 cache is for amortising across *multiple* reads on the same
 value, which this single-shot bench doesn't exercise. For the
 ValidatorShape's size, the post-`@[specialize]` baseline is
@@ -944,7 +944,7 @@ that says it pays.
 **What it does.** Monomorphise the `SSZType`-driven generic
 interpreter at the concrete consensus types that dominate the
 profile. Each specialization removes one level of dispatch
-overhead — the `Spec/HashTreeRoot.lean` recursion is currently
+overhead. The `Spec/HashTreeRoot.lean` recursion is currently
 polymorphic in `s : SSZType`, and the generic code path pays a
 dispatch tag check at every constructor.
 
@@ -953,7 +953,7 @@ dispatch tag check at every constructor.
 * `@[specialize]` annotations on the generic functions surfaced
   by the deriving handler (`packages/SizzLean/SizzLean/Repr/Deriving.lean`).
 * `@[specialize SSZ.hashTreeRoot]`-style hints in the
-  consensus-spec containers — but those go in `LeanEthCS`, not
+  consensus-spec containers, but those go in `LeanEthCS`, not
   here.
 
 **Prior art.**
@@ -978,18 +978,18 @@ microbench.
 unspecialised definition for proof reduction. `rfl` / `decide`
 close identically before and after. This is why 17d is the
 only sub-stage that can touch shared deriving-handler output
-without breaking the cross-stage invariant — the attribute
+without breaking the cross-stage invariant, the attribute
 lands at runtime, not at proof-check time.
 
 **Risk.** Low. `@[specialize]` is a hint; worst case it's
 ignored by the compiler. No correctness consequence.
 
-### Stage 17e — Fused commit walk + pre-cached `Node.ofShape` builders — **shipped**
+### Stage 17e: Fused commit walk + pre-cached `Node.ofShape` builders: **shipped**
 
 **Shipped.** Two related optimisations that fuse work and trim
 allocations on the cache layer's hot path:
 
-* **`Node.commitAndHash`** (`Cache/MerkleTree/SetAt.lean`) —
+* **`Node.commitAndHash`** (`Cache/MerkleTree/SetAt.lean`):
   replaces the two-pass `setManyAt` → `merkleRootWithCache`
   sequence at commit time. One walk over the touched spine; each
   cell allocated once with its root computed inline.
@@ -1054,7 +1054,7 @@ structure TreeBacked (H T : Type) [Hasher H] [SSZRepr T] where
   optimisation aimed at the gossip layer (where the same block
   is re-encoded for every peer).
 * Lighthouse's Beacon API cache and Lodestar's `messageBytes`
-  cache do exactly this — a byte-form pinned to the SSZ value,
+  cache do exactly this, a byte-form pinned to the SSZ value,
   invalidated on mutation. The invariant they maintain ("if
   `serialized = some b`, then `SSZ.serialize view = b`") is the
   one we're lifting.
@@ -1076,7 +1076,7 @@ the emission path on the cached side currently writes
 `{ t with view := …, tree := …, serialized := none }`. That's
 one extra field per emission, fine.
 
-## The cross-stage invariant — the pure path stays kernel-reducible
+## The cross-stage invariant: the pure path stays kernel-reducible
 
 The whole point of `SSZ.PureBox` / `UncachedSSZ` / plain `T`
 operating through `SSZ.hashTreeRoot Sha256Spec` is that proofs
@@ -1089,7 +1089,7 @@ optimisation preserves that property:
 |---|---|
 | 17a Overlay | Touches `TreeBacked` directly. `UncachedSSZ` has no spine to defer; plain `T` doesn't have a pending-writes map either. |
 | 17b Batched SHA-256 | Wired as an `@[implemented_by]` swap on `merkleRootWithCache` (or behind `Hasher Sha256`). The abstract `Hasher` typeclass and the `Sha256Spec` instance are unchanged. |
-| 17c Hash-consing | Operates on `Node` allocations. The pure spec path doesn't allocate `Node`s — it hashes through the `SSZType` recursion directly. |
+| 17c Hash-consing | Operates on `Node` allocations. The pure spec path doesn't allocate `Node`s, it hashes through the `SSZType` recursion directly. |
 | 17d `@[specialize]` | Compile-time recommendation. Lean's kernel sees the unspecialised definition for proof reduction; `rfl` / `decide` close identically before and after. |
 | 17e Serialised cache | Slot on `TreeBacked` only. `UncachedSSZ` doesn't have it; `SSZ.serialize` on plain `T` doesn't consult it. |
 
@@ -1106,7 +1106,7 @@ Every Stage 17 sub-stage ships a microbenchmark in
 after numbers for its specific lever. The phase-wide target is
 parity with `fastssz` on encode/decode and with `gohashtree` on
 cached `hash_tree_root` (per ARCHITECTURE.md §2), but no
-individual sub-stage carries that as its gate — each closes when
+individual sub-stage carries that as its gate, each closes when
 its specific optimisation lands with a measured win.
 
 The bench scenarios:
@@ -1118,14 +1118,14 @@ The bench scenarios:
 | S3 | BlockProcessing | Validator / VS16 | 8 slots × (4 writes, root, serialise), small fixture |
 | S4 | ColdRootLarge | VS256 | First-walk overhead at depth 12 |
 | S5 | BatchedWritesLarge | VS256 | 512 writes + one root |
-| S6 | BlockProcessingLarge | VS256 | 32 slots × (8 writes, root, serialise) — best single-number predictor of the cache win at scale |
+| S6 | BlockProcessingLarge | VS256 | 32 slots × (8 writes, root, serialise), best single-number predictor of the cache win at scale |
 | S7 | FuluStateTransition | `SizzLeanBench.Fulu.BeaconState` (mainnet preset, ~1024 validators) | Full state-transition simulation touching every major field shape |
 
 Headline cached vs pure ratios on dev hardware:
 
-* **S6 BlockProcessingLarge** — ~2.4× cached faster than pure
+* **S6 BlockProcessingLarge**: ~2.4× cached faster than pure
   (43 ms vs 102 ms); the production-shaped large workload.
-* **S7 FuluStateTransition** — ~2.0× cached faster than pure
+* **S7 FuluStateTransition**: ~2.0× cached faster than pure
   (2.6 s vs 5.2 s); the realistic mainnet-shape regression gate.
 
 S7's `BeaconState` types live in `SizzLeanBench/Fulu.lean` as a
@@ -1137,7 +1137,7 @@ The default ordering above is highest-impact-first per
 Lighthouse and Lodestar benchmarks; profiling on a specific
 workload may justify reordering. **Do not start a sub-stage
 until a measurement says it's the next bottleneck on your
-workload** — the cache backbone (Phase 14) is already enough
+workload**. The cache backbone (Phase 14) is already enough
 for most pipelines, and any of 17a–e adds maintenance surface
 that should be paid for by measured gain.
 
@@ -1151,7 +1151,7 @@ that should be paid for by measured gain.
 | `gindexBits`, `setAt`, `setManyAt`, `asLeafArray` | `Cache/MerkleTree/SetAt.lean` |
 | `Node.ofShape`, `mixInLength`, `subtreesFor*` | `Cache/MerkleTree/Build.lean` |
 | `TreeBacked` / `CachedSSZ` structure + accessors | `Cache/TreeBacked.lean` |
-| `UncachedSSZ` (internal — see its prominent warning) | `Cache/Uncached.lean` |
+| `UncachedSSZ` (internal, see its prominent warning) | `Cache/Uncached.lean` |
 | `SSZ.Box` + four smart constructors | `Cache/Box.lean` |
 | `sszUpdate` / `sszGet` macros + elaborator | `Cache/Update.lean` |
 | Coherence property test | `SizzLeanTests/TreeBackedCoherence.lean` |

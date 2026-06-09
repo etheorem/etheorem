@@ -6,12 +6,12 @@ import SizzLeanBench.Fixtures
 import SizzLeanBench.Runner
 
 /-!
-# Scenario S4 — Cold root, large fixture
+# Scenario S4: Cold root, large fixture
 
 A single `hashTreeRoot` on a freshly constructed `ValidatorSet256`
 (depth 12, ~36 KB serialised, ~4 K pair hashes). Diagnostic
-sentinel for "Box construction + first-walk cost at scale" —
-regressions here surface in `ofValue` / `Node.ofShape` /
+sentinel for "Box construction + first-walk cost at scale".
+Regressions here surface in `ofValue` / `Node.ofShape` /
 `merkleRootWithCache` before they confound the multi-write
 scenarios (S5, S6).
 

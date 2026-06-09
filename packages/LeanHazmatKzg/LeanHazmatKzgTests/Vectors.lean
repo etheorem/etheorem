@@ -1,7 +1,7 @@
 import LeanHazmatKzg
 
 /-!
-# `LeanHazmatKzgTests.Vectors` — KZG Known-Answer / round-trip tests
+# `LeanHazmatKzgTests.Vectors`: KZG Known-Answer / round-trip tests
 
 Self-contained validation of the c-kzg-4844 FFI surface. KZG has no
 pure-Lean reference, so these round-trips are the family's entire
@@ -10,10 +10,10 @@ exercise the embedded trusted setup loading (no runtime file lookup).
 
 Two layers:
 
-* **EIP-4844** — commit → prove → verify on a blob, the point-evaluation
+* **EIP-4844**: commit → prove → verify on a blob, the point-evaluation
   proof (`computeKzgProof` / `verifyKzgProof`), and the batch verifier,
   each with a negative (corrupted) case.
-* **EIP-7594 / Fulu** — `computeCellsAndKzgProofs` → `verifyCellKzgProofBatch`
+* **EIP-7594 / Fulu**: `computeCellsAndKzgProofs` → `verifyCellKzgProofBatch`
   over all 128 cells, and an erasure-recovery round-trip
   (`recoverCellsAndKzgProofs` from a 64-cell subset reproduces all 128).
 
@@ -25,7 +25,7 @@ once per assertion.
 
 * `native_decide` runs the compiled c-kzg FFI at proof-check time (one
   `Lean.ofReduceBool` axiom per group), the acceptable KAT regime.
-* The blob is a 131072-byte all-zero `ByteArray` — a valid blob (all
+* The blob is a 131072-byte all-zero `ByteArray`, a valid blob (all
   field elements zero); a self-contained input needing no vendored data.
 -/
 

@@ -1,7 +1,7 @@
 import LeanPoseidon
 
 /-!
-# `LeanPoseidonTests.Ffi` — `@[extern]` bindings to the Rust `zkhash` oracle
+# `LeanPoseidonTests.Ffi`: `@[extern]` bindings to the Rust `zkhash` oracle
 
 The differential conformance test (`Differential.lean`) needs a *trusted*
 external Poseidon2 to compare against. That oracle is the HorizenLabs
@@ -13,9 +13,9 @@ library (see `../lakefile.lean`). This file is the Lean ↔ Rust boundary.
 * `@[extern "sym"] opaque f : T` declares `f : T` whose *runtime*
   implementation is the named C symbol, while the *kernel* treats `f` as
   fully opaque (no reduction, no defeq with anything). Exactly what we want
-  for an FFI primitive that must never enter a proof term — and indeed this
+  for an FFI primitive that must never enter a proof term, and indeed this
   oracle never does: it backs the differential *executable* only.
-* `@&` marks the argument *borrowed* — Lean passes it without bumping the
+* `@&` marks the argument *borrowed*, Lean passes it without bumping the
   refcount; the Rust side receives it as a `b_lean_obj_arg` and only reads.
 
 ## The ABI
@@ -42,15 +42,15 @@ open LeanPoseidon
 @[extern "lean_poseidon2_bn254_permute"]
 opaque ffiPermuteRaw (input : @& ByteArray) : ByteArray
 
-/-- Raw FFI permutation (BLS12-381 t=3) — same 96-byte ABI, second field. -/
+/-- Raw FFI permutation (BLS12-381 t=3), same 96-byte ABI, second field. -/
 @[extern "lean_poseidon2_bls12_t3_permute"]
 opaque ffiPermuteRawBls12 (input : @& ByteArray) : ByteArray
 
 /-- Pack a width-3 `Fp p` state to 96 big-endian bytes, call the given raw
 oracle entrypoint, and unpack. Generic over the field (the only per-field
 piece is which raw entrypoint is passed), mirroring the Lean side's field
-abstraction. `get!` **panics** on a decode failure rather than defaulting —
-the oracle always returns canonical residues (`< p`), so a `none` here would
+abstraction. `get!` **panics** on a decode failure rather than defaulting.
+The oracle always returns canonical residues (`< p`), so a `none` here would
 mean a broken ABI/codec, exactly the defect this harness should surface
 loudly, not absorb. -/
 def ffiPermuteWith {p : Nat} [NeZero p]

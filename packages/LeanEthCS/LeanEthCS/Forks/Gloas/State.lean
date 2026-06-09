@@ -11,7 +11,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Gloas.State` — Gloas `BeaconState`
+# `LeanEthCS.Forks.Gloas.State`: Gloas `BeaconState`
 
 Tracks the main branch of consensus-specs. Gloas's `BeaconState`
 diverges substantially from Fulu's via EIP-7732 (ePBS):
@@ -28,7 +28,7 @@ diverges substantially from Fulu's via EIP-7732 (ePBS):
 * **Added:** `ptc_window : Vector (Vector ValidatorIndex PTC_SIZE) ((2 + MIN_SEED_LOOKAHEAD) * SLOTS_PER_EPOCH)`
 
 `MIN_SEED_LOOKAHEAD = 1` is preset-invariant, so `ptc_window`'s
-outer length reduces to `3 * SLOTS_PER_EPOCH` — 24 (minimal) /
+outer length reduces to `3 * SLOTS_PER_EPOCH`, 24 (minimal) /
 96 (mainnet). The inner `PTC_SIZE` is preset-sensitive (16 / 512).
 
 The `proposer_lookahead` field carried over from Fulu remains.

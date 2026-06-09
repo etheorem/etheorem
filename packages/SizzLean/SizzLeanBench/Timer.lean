@@ -1,5 +1,5 @@
 /-!
-# `SizzLeanBench.Timer` — wall-clock helpers for microbenchmarks
+# `SizzLeanBench.Timer`: wall-clock helpers for microbenchmarks
 
 Thin wrappers around Lean's built-in `IO.monoNanosNow : BaseIO Nat`
 that produce per-iteration nanosecond samples for the bench
@@ -42,7 +42,7 @@ def timeAction {α : Type} (act : IO α) : IO (α × Nat) := do
 
 /-- Run an `IO` action `n` times and return an array of per-
 iteration elapsed nanoseconds. The action's *value* is discarded
-each iteration — we only care about timing. Each invocation is
+each iteration, we only care about timing. Each invocation is
 independent: the action runs from scratch every iteration so
 JIT effects, allocator state, and any caches re-warm with each
 sample.

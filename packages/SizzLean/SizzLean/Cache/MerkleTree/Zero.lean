@@ -4,7 +4,7 @@ import LeanHazmatSha256
 import SizzLean.Cache.MerkleTree.Node
 
 /-!
-# `SizzLean.Cache.MerkleTree.Zero` — the zero-hash tower and the depth-padding leaf
+# `SizzLean.Cache.MerkleTree.Zero`: the zero-hash tower and the depth-padding leaf
 
 A 65-entry table of all-zero subtree roots, used both to
 short-circuit zero-padding in `merkleRootWithCache` and to
@@ -13,12 +13,12 @@ depth when `setAt` walks past a not-yet-filled position).
 
 The table is **memoised once at module load** into a private
 `IO.Ref`, populated by direct calls to `LeanHazmat.Sha256.sha256Combine`
-(the FFI primitive — no `Hasher.combine` typeclass dispatch). The
+(the FFI primitive, no `Hasher.combine` typeclass dispatch). The
 public accessor `zeroHashAt` reads from the memo via `unsafeBaseIO`;
 the ref is set-once-at-init and never mutated after, so the access is
 morally const. The polymorphic `[Hasher H]` parameter on `zeroHashAt`
 remains as a vestigial signature compatibility marker so callers
-(`zeroLeaf`, `Node.ofLeaves`, …) don't need to change — by the
+(`zeroLeaf`, `Node.ofLeaves`, …) don't need to change. By the
 `sha256Combine_eq_spec` axiom the bytes returned would be identical
 regardless of which hasher's combine the caller's `[Hasher H]`
 refers to.
@@ -33,8 +33,8 @@ module load via the FFI `lean_hazmat_sha256_combine` shim; subsequent
 `zeroHashAt _ d` calls are O(1) Vector indexes into the memo.
 
 `Vector.get` with a `Fin 65` index is total; the `zeroHashAt`
-fallback (`d ≥ 65`) is defensive — SSZ's `MAX_LENGTH = 2^32` keeps
-any real tree depth well under 65 — but cheap to include and
+fallback (`d ≥ 65`) is defensive, since SSZ's `MAX_LENGTH = 2^32`
+keeps any real tree depth well under 65. It is cheap to include and
 required for `ofLeaves` / `setAt` to typecheck without local bound
 proofs at every call site.
 
@@ -57,7 +57,7 @@ open SizzLean.Hasher
 open SizzLean
 
 /-- 32-byte all-zero `ByteArray`. The leaf at every depth-`0`
-position of an all-zero subtree. Identical to `Spec.zero32` — kept
+position of an all-zero subtree. Identical to `Spec.zero32`, kept
 here as a small private duplicate rather than importing the
 spec-internal helper because the Tree layer is meant to stand
 alone (so a future caller could load it without the spec). -/
@@ -68,7 +68,7 @@ private def zero32 : ByteArray :=
   build 32 ByteArray.empty
 
 /-- Pure recurrence for the depth-`d` Sha256 zero-hash. Used only
-at module-load time to populate the memoised table — no runtime
+at module-load time to populate the memoised table, no runtime
 callers. Calls `LeanHazmat.Sha256.sha256Combine` (the FFI primitive)
 directly rather than going through `Hasher.combine`'s typeclass
 dispatch, since the memo is intentionally Sha256-specific. -/
@@ -96,12 +96,12 @@ private unsafe def zeroHashesUnsafeImpl : Vector ByteArray 65 :=
 
 /-- Safe public-facing zero-hash table. The kernel-visible body
 is the pure recurrence (slow, would re-run on every reduction);
-the runtime body — substituted via `@[implemented_by]` — is the
+the runtime body, substituted via `@[implemented_by]`, is the
 `unsafeBaseIO`-backed read from the memoised ref. Both produce
 identical bytes by construction (the ref was populated by the
 same `zeroHashRec` recurrence at module load), so the trust
 footprint of the swap is "the init action ran before any
-reader" — same trust class as the `@[extern] opaque sha256Combine`
+reader", the same trust class as the `@[extern] opaque sha256Combine`
 that populated the ref. -/
 @[implemented_by zeroHashesUnsafeImpl]
 private def zeroHashes : Vector ByteArray 65 :=
@@ -113,7 +113,7 @@ depth `d`. Real trees never hit the `d ≥ 65` fallback (SSZ
 fallback is a totality convenience for callers without a local
 bound proof on `d`.
 
-The `[Hasher H]` parameter is vestigial — the memoised table is
+The `[Hasher H]` parameter is vestigial: the memoised table is
 Sha256-specific and read directly, but by the
 `sha256Combine_eq_spec` axiom the bytes are identical to what any
 equivalent hasher's recurrence would compute. Keeping the
@@ -129,7 +129,7 @@ tree. `.leaf b` → `b`; `.pair _ _ (some r)` → `r` in O(1);
 builders that need a child's root to embed into a parent's cache
 slot at construction time.
 
-Not a substitute for `merkleRootWithCache` — it doesn't fill
+Not a substitute for `merkleRootWithCache`, since it doesn't fill
 cache slots in the input tree. Use when you only need the root
 *value* and the input is expected to be already cached (in which
 case it's O(1)). -/
@@ -144,8 +144,8 @@ by `Node.ofLeaves` to pad the right of an underfilled tree, and by
 `Node.setAt` when walking past a not-yet-filled position.
 
 For `d = 0` this is a literal zero leaf; for `d > 0` it is a
-`pair` whose cache slot is pre-filled with `zeroHashAt H (d+1)` —
-this lets `merkleRootWithCache` short-circuit the entire zero
+`pair` whose cache slot is pre-filled with `zeroHashAt H (d+1)`.
+This lets `merkleRootWithCache` short-circuit the entire zero
 subtree on the first walk without re-hashing. -/
 def zeroLeaf (H : Type) [Hasher H] : Nat → Node
   | 0     => .leaf zero32
@@ -170,7 +170,7 @@ def Node.ofLeaves (H : Type) [Hasher H] (leaves : List ByteArray)
       -- Split `ls` at index `2^d`. The left half goes into the
       -- left subtree (size `2^d`); whatever remains feeds the
       -- right subtree. We compute the parent's root inline and
-      -- store it in the cache slot — this avoids a subsequent
+      -- store it in the cache slot. This avoids a subsequent
       -- `merkleRootWithCache` walk re-allocating the same pair
       -- with the cache filled in.
       let half := 2 ^ d

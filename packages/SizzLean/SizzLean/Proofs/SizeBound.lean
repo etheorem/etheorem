@@ -10,7 +10,7 @@ import SizzLean.Proofs.ListFixed
 import SizzLean.Proofs.ContainerFixed
 
 /-!
-# `SizzLean.Proofs.SizeBound` — encoded-size upper bound
+# `SizzLean.Proofs.SizeBound`: encoded-size upper bound
 
 The third central theorem; *dispatcher* for the per-arm bounds.
 
@@ -52,7 +52,7 @@ theorem encode_size_le_max : ∀ {s : SSZType}, SSZType.BasicSupported s →
       encode_size_le_max_listFixed t cap h_t h_t_fixed
         (fun y => encode_size_le_max h_t y) xs
   | _, .containerFixed (fs := fs) h_fs, vs => by
-      -- Same dispatch as `decode_encode`'s container arm — reduce the
+      -- Same dispatch as `decode_encode`'s container arm, reduce the
       -- encoder's `(fix ++ var)` shape to size = `fixedByteSizeFields fs`,
       -- then bound via the field-walker.
       have h_var_empty := (size_serializeFieldsAux_fix h_fs vs

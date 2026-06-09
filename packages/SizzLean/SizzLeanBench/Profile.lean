@@ -9,7 +9,7 @@ import SizzLeanBench.Fixtures
 import SizzLeanBench.Runner
 
 /-!
-# `SizzLeanBench.Profile` — phase-by-phase profile of S10 cached
+# `SizzLeanBench.Profile`: phase-by-phase profile of S10 cached
 
 S10 BatchedWritesLarge's cached column is currently ~3× slower
 than its pure counterpart (5.75 ms vs 1.92 ms on
@@ -62,7 +62,7 @@ scratch).
 Every probe sinks at least one value derived from the work
 into an `IO.Ref Nat`. For probes that don't naturally produce
 bytes (P1–P4, P7), we sink the post-state's first-validator
-effective-balance — a `UInt64` read off the `view` that the
+effective-balance, a `UInt64` read off the `view` that the
 compiler can't elide because it crosses an `IO.modify` boundary.
 -/
 
@@ -77,11 +77,11 @@ open SizzLean.Cache.MerkleTree
 open SizzLeanBench.Fixtures
 open SizzLeanBench.Runner
 
-/-- Writes per probe — matches S10 BatchedWritesLarge so the
+/-- Writes per probe, matches S10 BatchedWritesLarge so the
 profile numbers compare directly to the bench TSV. -/
 private def N : Nat := 512
 
-/-- The fixture indexer — same shape as S10's loop. -/
+/-- The fixture indexer, same shape as S10's loop. -/
 @[inline] private def idxOf (i : Nat) : Nat := i % 256
 
 /-- Build the post-update *pure* value: 512 record-updates over
@@ -109,7 +109,7 @@ that accumulate in the pending overlay. Used by P4 / P6 / P7 / P8. -/
     box := sszUpdate box with validators[idx] := newV
   return box
 
-/-- Sink the post-state's first-validator effective balance —
+/-- Sink the post-state's first-validator effective balance,
 defeats DCE on probes that don't compute hashes. -/
 @[inline] private def sinkFirstField (sink : IO.Ref Nat) (s : ValidatorSet256) : IO Unit :=
   sink.modify (· + s.validators[0]!.effectiveBalance.toNat)
@@ -159,7 +159,7 @@ private def sinkNodeShape (sink : IO.Ref Nat) : Node → IO Unit
       sinkNodeShape sink l
       sinkNodeShape sink r
 
-/-- P7 measures the cached commit (setManyAt) only — extract
+/-- P7 measures the cached commit (setManyAt) only. Extract
 pending, materialise via Node.ofShape, walk setManyAt, sink the
 resulting committed tree's structure (no merkleRoot work). -/
 private def p7_cachedCommitOnly (sink : IO.Ref Nat) (salt : UInt8) : IO Unit := do
@@ -188,21 +188,21 @@ private def p8_cachedSplit (sink : IO.Ref Nat) (salt : UInt8) : IO Unit := do
 /-! ## Driver -/
 
 /-- Run every probe, emit TSV rows. The iteration count is
-auto-tuned to land each row near ~200 ms total wall-clock — the
+auto-tuned to land each row near ~200 ms total wall-clock. The
 fast probes (P1, P2) run more iterations to amortise the
 per-call timer overhead. -/
 def runAll : IO Unit := do
   let sink ← IO.mkRef (0 : Nat)
-  -- Construction (fast) — many iterations.
+  -- Construction (fast), many iterations.
   runBench "P1 build only                    · ValidatorSet256" 2000 (p1_buildOnly sink 1)
   runBench "P2 build + Box wrap              · ValidatorSet256" 2000 (p2_buildAndBox sink 1)
-  -- 512 updates without final hash — medium speed.
+  -- 512 updates without final hash, medium speed.
   runBench "P3 pure: build + 512 updates     · ValidatorSet256"  500 (p3_pureUpdates sink 1)
   runBench "P4 cached: build + 512 sszUpdate · ValidatorSet256"  500 (p4_cachedUpdates sink 1)
-  -- Full cycles — same shape as S10.
+  -- Full cycles, same shape as S10.
   runBench "P5 pure: build + 512 + root      · ValidatorSet256" 200 (p5_pureFull sink 1)
   runBench "P6 cached: build + 512 + root    · ValidatorSet256" 200 (p6_cachedFull sink 1)
-  -- Split form — commit only, then commit + hash separately.
+  -- Split form, commit only, then commit + hash separately.
   runBench "P7 cached: commit (setManyAt) only · ValidatorSet256" 200 (p7_cachedCommitOnly sink 1)
   runBench "P8 cached: setManyAt + merkleRoot · ValidatorSet256" 200 (p8_cachedSplit sink 1)
   let total ← sink.get

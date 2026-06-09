@@ -18,10 +18,10 @@ import SizzLeanTests.Sha256BatchEquivalence
 import SizzLeanTests.SerializeCacheCoherence
 
 /-!
-# `SizzLeanTests` — SSZ-only empirical / property-test gates
+# `SizzLeanTests`: SSZ-only empirical / property-test gates
 
-Property-test gates that exercise the SSZ library *in isolation*
-— no Eth consensus-spec types. Build with:
+Property-test gates that exercise the SSZ library *in isolation*,
+no Eth consensus-spec types. Build with:
 
 ```
 lake build SizzLeanTests
@@ -29,7 +29,7 @@ lake build SizzLeanTests
 
 ## What's here
 
-* **SHA-256 FFI ≡ spec equivalence** — `Sha256Equivalence.lean`
+* **SHA-256 FFI ≡ spec equivalence**: `Sha256Equivalence.lean`
   (scalar `hash` / `combine`) and `Sha256BatchEquivalence.lean`
   (batched combine). These are the cross-checks that need *both* the
   FFI binding (`LeanHazmatSha256`) and the pure-Lean spec
@@ -38,13 +38,13 @@ lake build SizzLeanTests
   `sha256{Hash,Combine,BatchCombine}_eq_spec` axioms. The pure
   byte-level CAVP KAT of the FFI shim (the FFI ≡ NIST direction) lives
   in `LeanHazmatSha256Tests`.
-* **Tree machinery** — `Node.setAt` and `Node.setManyAt` PRNG
+* **Tree machinery**: `Node.setAt` and `Node.setManyAt` PRNG
   property tests (`SetAtRandom.lean`).
-* **Cache machinery on example containers** — `TreeBacked`
+* **Cache machinery on example containers**: `TreeBacked`
   coherence (`hashTreeRootCached = SSZ.hashTreeRoot`),
   `sszUpdate` multi-field batched updates, vector-index `sszUpdate`.
   Containers used as test fixtures are defined locally in
-  `ExampleContainers.lean` — small SSZ-shaped types analogous to
+  `ExampleContainers.lean`, small SSZ-shaped types analogous to
   Phase-0 `Fork` / `SignedBeaconBlockHeader` / `HistoricalBatch`
   but with no dependency on the LeanEthCS table.
 

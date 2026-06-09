@@ -5,7 +5,7 @@ import SizzLean.Proofs.SerializeSize
 import SizzLean.Proofs.FixedElems
 
 /-!
-# `SizzLean.Proofs.VectorFixed` — `.vector t n` arm with fixed-size `t`, `n > 0`
+# `SizzLean.Proofs.VectorFixed`: `.vector t n` arm with fixed-size `t`, `n > 0`
 
 Closes `decode_encode` and `encode_size_le_max` for `.vector t n`
 when `t` is `BasicSupported` + fixed-size and `n > 0`.
@@ -31,7 +31,7 @@ when `t` is `BasicSupported` + fixed-size and `n > 0`.
 **decode/encode roundtrip on the element type `t`**
 (`h_decode_encode_t`). This lets the main mutual block in
 `Proofs/Roundtrip.lean` recurse into `decode_encode (h_t : …)`
-without needing this file to be part of the mutual block — the
+without needing this file to be part of the mutual block, the
 recursion happens at the dispatch level.
 -/
 
@@ -44,7 +44,7 @@ open SizzLean.Spec
 
 /-- Roundtrip for `.vector t n` with `t` BasicSupported + fixed
 and `n > 0`. Parameterised by the element-type decode/encode
-roundtrip — the dispatch in `Proofs/Roundtrip.lean` provides it
+roundtrip, the dispatch in `Proofs/Roundtrip.lean` provides it
 via mutual recursion on `BasicSupported`. -/
 theorem decode_encode_vectorFixed
     (t : SSZType) (n : Nat) (h_pos : 0 < n)

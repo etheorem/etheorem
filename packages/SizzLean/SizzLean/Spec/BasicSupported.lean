@@ -2,7 +2,7 @@ import SizzLean.Spec.Type
 import SizzLean.Spec.Serialize  -- for isFixedSize / allFixedSize
 
 /-!
-# `SizzLean.Spec.BasicSupported` — the predicate the proof set grows over
+# `SizzLean.Spec.BasicSupported`: the predicate the proof set grows over
 
 A *strict subset* of `SSZType.Supported` (in `Spec/Supported.lean`)
 that the three central theorems (`decode_encode`,
@@ -13,7 +13,7 @@ extend.
 
 The predicate lives in `Spec/` (not `Proofs/`) because the
 user-facing `SSZ.roundtrip` corollary in `Repr/Class.lean`
-mentions it — a layering concern that follows ARCHITECTURE.md §2's
+mentions it, a layering concern that follows ARCHITECTURE.md §2's
 library-then-surface flow (Spec layer below, Repr layer above;
 Proofs/ reaches over to discharge the theorems).
 
@@ -30,10 +30,10 @@ Proofs/ reaches over to discharge the theorems).
 
 ## Outside `BasicSupported`
 
-* **Bitvector** (`.bitvector n` with `0 < n`) — the bit-packing
+* **Bitvector** (`.bitvector n` with `0 < n`): the bit-packing
   inverse `packBitsLE_unpackBitsLEAux_inverse` has no proof in
   this layer.
-* **Bitlist** (`.bitlist cap`) — needs `msbPos` delimiter
+* **Bitlist** (`.bitlist cap`): needs `msbPos` delimiter
   recovery on top of the bitvector prerequisites.
 
 Both arms remain `Supported` (the spec implements them and
@@ -43,7 +43,7 @@ ungated for these shapes.
 ## Why two mutually inductive predicates
 
 The general `.container fs` arm needs to *recurse* into its field
-list — each field must itself be `BasicSupported` and fixed-size.
+list, each field must itself be `BasicSupported` and fixed-size.
 `BasicSupportedFieldsFixed` captures this pointwise; it is mutual
 with `BasicSupported` because the field-list predicate's `cons`
 constructor takes a `BasicSupported t` witness for the head.
@@ -82,7 +82,7 @@ inductive SSZType.BasicSupported : SSZType → Prop
   | uintN32 : SSZType.BasicSupported (.uintN 32)
   /-- 64-bit little-endian unsigned integer. -/
   | uintN64 : SSZType.BasicSupported (.uintN 64)
-  /-- `Bool` — single-byte 0/1. -/
+  /-- `Bool`, single-byte 0/1. -/
   | bool : SSZType.BasicSupported .bool
   /-- Fixed-length vector with fixed-size element type and
   non-empty length. The `n > 0` precondition mirrors the spec's

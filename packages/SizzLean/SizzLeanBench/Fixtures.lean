@@ -3,7 +3,7 @@ import SizzLean.Repr.Instances
 import SizzLean.Repr.Deriving
 
 /-!
-# `SizzLeanBench.Fixtures` — shared bench fixtures
+# `SizzLeanBench.Fixtures`: shared bench fixtures
 
 Four SSZ-shaped structures used as the workload payloads
 across every scenario in the bench. All `deriving SSZRepr` so
@@ -15,20 +15,20 @@ at four points along the tree-depth / payload-size axis.
 
 Mirrors the consensus-spec `Validator` layout (no LeanEthCS
 dependency): 8 fixed-size fields, ~144 bytes serialised, depth
-4. The smallest fixture — exercises the cache's per-operation
+4. The smallest fixture, exercising the cache's per-operation
 constant-cost path. Wrapper overhead is visible here; payback
 from the cache is *not*.
 
 ## `ValidatorSet16`
 
-Wraps a `Vector ValidatorShape 16` — 16 nested containers,
-~2.3 KB serialised, depth 8. The small "wide" fixture — the
+Wraps a `Vector ValidatorShape 16`, 16 nested containers,
+~2.3 KB serialised, depth 8. The small "wide" fixture. The
 cache wins start to show because every operation walks more
 nodes.
 
 ## `ValidatorSet256` *(large)*
 
-Wraps a `Vector ValidatorShape 256` — 256 nested containers,
+Wraps a `Vector ValidatorShape 256`, 256 nested containers,
 ~36 KB serialised, depth 12. The intermediate-scale fixture
 where the cache's spine-walking advantage starts to dominate;
 each cold root pays ~4 K pair hashes, large enough for any
@@ -36,7 +36,7 @@ SIMD-batched SHA-256 path to amortise its overhead.
 
 ## `ValidatorSet4096` *(huge)*
 
-Wraps a `Vector ValidatorShape 4096` — 4096 nested containers,
+Wraps a `Vector ValidatorShape 4096`, 4096 nested containers,
 ~580 KB serialised, depth 16. The mainnet-shape fixture (still
 4× below 1M-validator mainnet, but at the same order of
 magnitude). Used in the deepest cold-root row to confirm
@@ -73,12 +73,12 @@ structure ValidatorShape where
   withdrawableEpoch            : UInt64
 deriving Inhabited, SSZRepr
 
-/-- 16-validator vector — exercises a depth-8 SSZ tree. -/
+/-- 16-validator vector, exercising a depth-8 SSZ tree. -/
 structure ValidatorSet16 where
   validators : Vector ValidatorShape 16
 deriving Inhabited, SSZRepr
 
-/-- 256-validator vector — depth-12 SSZ tree, ~36 KB serialised.
+/-- 256-validator vector, depth-12 SSZ tree, ~36 KB serialised.
 The first "large" tier. The cache's spine-walking and Thunk
 memoisation wins compound here because every operation either
 walks ~12 tree levels (set/root-fill) or skips ~4 K already-
@@ -87,9 +87,9 @@ structure ValidatorSet256 where
   validators : Vector ValidatorShape 256
 deriving Inhabited, SSZRepr
 
-/-- 4096-validator vector — depth-16 SSZ tree, ~580 KB
+/-- 4096-validator vector, depth-16 SSZ tree, ~580 KB
 serialised. The "huge" tier; used in the deepest cold-root
-row to verify scaling. Cold root pays ~65 K pair hashes — the
+row to verify scaling. Cold root pays ~65 K pair hashes, the
 fixture with the largest amortised batch on which a SIMD
 SHA-256 path could act. -/
 structure ValidatorSet4096 where
@@ -119,13 +119,13 @@ def mkValidatorSet (salt : UInt8) : ValidatorSet16 :=
 
 /-- Build a `ValidatorSet256` whose 256 validators are individually
 salt-derived. The `UInt8` wraps mod 256, so neighbouring slots
-get neighbouring salt values — fine for our anti-constant-folding
+get neighbouring salt values, fine for our anti-constant-folding
 purpose. -/
 def mkValidatorSet256 (salt : UInt8) : ValidatorSet256 :=
   { validators := Vector.ofFn fun (i : Fin 256) =>
       mkValidator (salt + UInt8.ofNat i.val) }
 
-/-- Build a `ValidatorSet4096` — same pattern; the `Fin 4096`
+/-- Build a `ValidatorSet4096`, same pattern; the `Fin 4096`
 index wraps `UInt8` 16 times across the vector. Identical
 validators across wrap boundaries don't matter for the bench
 because the deriving-driven `SSZRepr` walks every element. -/
@@ -135,7 +135,7 @@ def mkValidatorSet4096 (salt : UInt8) : ValidatorSet4096 :=
 
 /-- Consume a `ByteArray` into a `Nat` sink. Used by every
 bench shot to defeat dead-code elimination on the
-computed digest / serialised bytes — the compiler can't elide
+computed digest / serialised bytes. The compiler can't elide
 a chain of `IO.Ref.modify` calls that fold the bytes into a
 running sum. -/
 def consume (b : ByteArray) : Nat :=

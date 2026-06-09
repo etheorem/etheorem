@@ -7,16 +7,16 @@ import SizzLean.Cache.Update
 import SizzLeanTests.ExampleContainers
 
 /-!
-# `SizzLeanTests.WidthsAndLists` — regression net for basic widths and list sizes
+# `SizzLeanTests.WidthsAndLists`, regression net for basic widths and list sizes
 
 The cache invariant is `t.hashTreeRootCached = SSZ.hashTreeRoot t.view`
 for every `t : TreeBacked Sha256 T`. This file pins that invariant
 across two dimensions the previous tests only sampled lightly:
 
-* **Field widths** — basic types from 1 bit (`Bool`) to 256 bits
+* **Field widths**: basic types from 1 bit (`Bool`) to 256 bits
   (`BitVec 256`), exercising the per-width chunk-padding path
   `Node.ofShape` uses for each `.uintN n` / `.bool` arm.
-* **List size changes** — SSZList writes that empty, grow,
+* **List size changes**: SSZList writes that empty, grow,
   shrink, or saturate the underlying cap. Each size change has
   to rebuild the body tree at one shape and rewrite the
   mix-in-length leaf to the new actual size; this is the path
@@ -45,7 +45,7 @@ open SizzLean.Cache
 open SizzLean.Repr
 open SizzLeanTests.ExampleContainers
 
-/-! ## Fixture — `WidthsExample` covers every basic width plus a list -/
+/-! ## Fixture, `WidthsExample` covers every basic width plus a list -/
 
 /-- Container with every basic SSZ width as a field, plus a
 `Vector` and an `SSZList` for size-change tests. The field
@@ -118,7 +118,7 @@ example :
       SSZ.hashTreeRoot Sha256 ({ w0 with word := 0xfedc } : WidthsExample) := by
   native_decide
 
-/-- 32-bit `UInt32` field — boundary width (one Lean machine word
+/-- 32-bit `UInt32` field, boundary width (one Lean machine word
 on 32-bit targets, half-word on 64-bit). -/
 example :
     let t : TreeBacked Sha256 WidthsExample := TreeBacked.ofValue Sha256 w0
@@ -136,7 +136,7 @@ example :
         ({ w0 with qword := 0x123456789abcdef0 } : WidthsExample) := by
   native_decide
 
-/-- 128-bit `BitVec 128` — wider than a machine word, still
+/-- 128-bit `BitVec 128`, wider than a machine word, still
 narrower than a chunk (16 bytes vs 32). -/
 example :
     let t : TreeBacked Sha256 WidthsExample := TreeBacked.ofValue Sha256 w0
@@ -146,7 +146,7 @@ example :
       SSZ.hashTreeRoot Sha256 ({ w0 with u128 := newU128 } : WidthsExample) := by
   native_decide
 
-/-- 256-bit `BitVec 256` — exactly one chunk wide; the chunk
+/-- 256-bit `BitVec 256`, exactly one chunk wide; the chunk
 leaf is the bytes themselves with no padding. -/
 example :
     let t : TreeBacked Sha256 WidthsExample := TreeBacked.ofValue Sha256 w0
@@ -232,7 +232,7 @@ example :
     t'.hashTreeRootCached.1 = SSZ.hashTreeRoot Sha256 expected := by
   native_decide
 
-/-! ## Same-field overwrite — multi-statement -/
+/-! ## Same-field overwrite, multi-statement -/
 
 /-- Two writes at the same gindex; the second one wins
 (`TreeMap.insert` dedup). -/
@@ -252,7 +252,7 @@ example :
       SSZ.hashTreeRoot Sha256 ({ w0 with qword := 3 } : WidthsExample) := by
   native_decide
 
-/-! ## List-size changes — CachedSSZ -/
+/-! ## List-size changes: CachedSSZ -/
 
 /-- Shrink list to empty. -/
 example :
@@ -312,7 +312,7 @@ example :
       SSZ.hashTreeRoot Sha256 ({ w0 with lst := growLst } : WidthsExample) := by
   native_decide
 
-/-! ## List-size changes — `SSZ.FastBox` -/
+/-! ## List-size changes: `SSZ.FastBox` -/
 
 /-- Shrink-to-empty via `SSZ.FastBox`. -/
 example :
@@ -412,7 +412,7 @@ example :
 
 /-! ## Vector inside the same container -/
 
-/-- Single composite-Vector element write — exercises the
+/-- Single composite-Vector element write, exercises the
 Vector-of-`ExRoot` (composite element) index syntax. -/
 example :
     let t : TreeBacked Sha256 WidthsExample := TreeBacked.ofValue Sha256 w0
@@ -423,7 +423,7 @@ example :
   native_decide
 
 /-- Vector index write + width write + list resize in one
-statement — three different shape paths in one commit. -/
+statement, three different shape paths in one commit. -/
 example :
     let t : TreeBacked Sha256 WidthsExample := TreeBacked.ofValue Sha256 w0
     let expected : WidthsExample :=

@@ -7,7 +7,7 @@ import SizzLean.Cache.Update
 import SizzLeanTests.ExampleContainers
 
 /-!
-# `SizzLeanTests.TreeBackedSetField` — `sszUpdate` on example containers
+# `SizzLeanTests.TreeBackedSetField`, `sszUpdate` on example containers
 
 The cached-update coherence statement:
 
@@ -20,9 +20,9 @@ is enforced by PRNG batches on the example containers from
 value and a fresh field value, applies the macro, and checks the
 cached root against the spec root on the struct-updated value.
 
-* `runFlatCases` (50 cases) — flat 3-field `sszUpdate` on
+* `runFlatCases` (50 cases): flat 3-field `sszUpdate` on
   `FlatExample`. Multi-clause emission with no nesting.
-* `runNestedCases` (20 cases) — nested + sibling `sszUpdate` on
+* `runNestedCases` (20 cases): nested + sibling `sszUpdate` on
   `NestedExample`. Path composition across one nesting level plus
   a sibling flat clause.
 
@@ -85,7 +85,7 @@ private def randUInt64 (s : Nat) : UInt64 × Nat :=
   let hi := s2 % 4294967296
   (Nat.toUInt64 (lo + hi * 4294967296), s2)
 
-/-! ### Flat multi-field — `sszUpdate t with f₁ := v₁, f₂ := v₂, f₃ := v₃` -/
+/-! ### Flat multi-field, `sszUpdate t with f₁ := v₁, f₂ := v₂, f₃ := v₃` -/
 
 private def oneFlatCase (s : Nat) : Bool × Nat :=
   let (vA0, s1) := randVersion s
@@ -117,7 +117,7 @@ private def runFlatCases : Nat → Nat → Bool
 
 example : runFlatCases 50 0xFEEDFACE = true := by native_decide
 
-/-! ### Nested + sibling — `sszUpdate t with f.g := v, f.h := w, k := x` -/
+/-! ### Nested + sibling, `sszUpdate t with f.g := v, f.h := w, k := x` -/
 
 private def oneNestedCase (s : Nat) : Bool × Nat :=
   let (slot0,  s1)  := randUInt64 s
@@ -160,7 +160,7 @@ example : runNestedCases 20 0xCAB1E = true := by native_decide
 
 `Cache/Update.lean`'s uncached branch emits a plain
 `{ view := { t.view with f := v, … } } : UncachedSSZ H T`. The two
-`rfl` examples below pin that proof shape — if a future macro
+`rfl` examples below pin that proof shape, if a future macro
 change drags Merkle infrastructure into the uncached path the
 examples stop closing and CI catches it. -/
 
@@ -180,7 +180,7 @@ example (u : UncachedSSZ Sha256 FlatExample) (m : UInt64) :
 wraps each arm in the appropriate `SSZ.Box.cached` /
 `SSZ.Box.uncached` constructor. These examples pin that the
 constructor a value enters with is the constructor the result
-comes out with — i.e. `sszUpdate` on `Box` preserves the flavour. -/
+comes out with, i.e. `sszUpdate` on `Box` preserves the flavour. -/
 
 private def f0 : FlatExample :=
   { versionA := Vector.replicate 4 0x11

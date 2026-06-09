@@ -1,7 +1,7 @@
 import LeanHazmatBls.Ffi
 
 /-!
-# `LeanHazmatBls` — library root
+# `LeanHazmatBls`: library root
 
 FFI bindings for **Ethereum consensus-layer BLS12-381 signatures**
 (minimal-pubkey-size, ciphersuite
@@ -13,14 +13,14 @@ crypto family.
 `import LeanHazmatBls` brings the public surface into scope (all in
 namespace `LeanHazmat.Bls`):
 
-* `sign` / `verify` — single-key sign and verify.
-* `skToPk` — derive a public key from a secret key.
-* `aggregate` / `ethAggregatePubkeys` — signature and pubkey point sums.
-* `aggregateVerify` — distinct-message pairing check.
-* `fastAggregateVerify` / `ethFastAggregateVerify` — same-message
+* `sign` / `verify`: single-key sign and verify.
+* `skToPk`: derive a public key from a secret key.
+* `aggregate` / `ethAggregatePubkeys`: signature and pubkey point sums.
+* `aggregateVerify`: distinct-message pairing check.
+* `fastAggregateVerify` / `ethFastAggregateVerify`: same-message
   aggregate verify (the latter with the consensus empty-list /
   infinity-signature special case).
-* `keyValidate` — pubkey validity predicate.
+* `keyValidate`: pubkey validity predicate.
 
 See [`LeanHazmatBls/Ffi.lean`](LeanHazmatBls/Ffi.lean) for the bindings
 and their trust assumptions, and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
@@ -32,7 +32,7 @@ vectors).
 blst is **vendored** (not a system package): `just vendor-bls`
 shallow-clones the pinned tag into a gitignored `vendor/blst/` before
 `lake build` (hazmat-docs/ARCHITECTURE.md §6). `LeanHazmatBls` is the
-single blst owner for the family — `LeanHazmatKzg` builds c-kzg against
+single blst owner for the family, `LeanHazmatKzg` builds c-kzg against
 *this* blst rather than vendoring its own.
 
 ## Trust boundary

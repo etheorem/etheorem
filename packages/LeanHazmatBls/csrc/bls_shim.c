@@ -1,4 +1,4 @@
-// LeanHazmatBls — C shim wrapping supranational/blst for Ethereum
+// LeanHazmatBls: C shim wrapping supranational/blst for Ethereum
 // consensus-layer BLS signatures.
 //
 // Scheme: minimal-pubkey-size (pubkeys in G1, 48-byte compressed;
@@ -19,7 +19,7 @@
 //
 // Trust assumption (hazmat-docs/ARCHITECTURE.md §10): blst correctly
 // implements BLS12-381 and the named ciphersuite. There is no
-// pure-Lean reference for this primitive — it is an opaque FFI
+// pure-Lean reference for this primitive, it is an opaque FFI
 // boundary, validated only against the official consensus-spec BLS
 // vectors (LeanHazmatBlsTests).
 
@@ -45,7 +45,7 @@ __attribute__((weak)) void __libc_csu_init(int argc, char **argv, char **envp) {
 __attribute__((weak)) void __libc_csu_fini(void) {}
 
 // Consensus signature ciphersuite (proof-of-possession variant).
-// 43 bytes — the trailing NUL is excluded via `sizeof - 1`.
+// 43 bytes, the trailing NUL is excluded via `sizeof - 1`.
 static const byte CONSENSUS_DST[] =
     "BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
 #define DST_LEN  (sizeof(CONSENSUS_DST) - 1)
@@ -227,7 +227,7 @@ LEAN_EXPORT lean_obj_res lean_hazmat_bls_eth_aggregate_pubkeys(
 //   @[extern "lean_hazmat_bls_g1_add"]
 // Raw G1 point addition of two compressed points (`bls.add` composed
 // with `bytes48_to_G1` / `G1_to_bytes48`). Empty ByteArray on a bad
-// length or encoding. No subgroup / identity rejection — this is a raw
+// length or encoding. No subgroup / identity rejection, this is a raw
 // point op, matching `Aggregate`'s "assumes valid inputs" convention;
 // callers establish validity via Verify. The sum may be the point at
 // infinity (compressed `0xc0‖0×47`), e.g. `g1_add(p, g1_neg(p))`.

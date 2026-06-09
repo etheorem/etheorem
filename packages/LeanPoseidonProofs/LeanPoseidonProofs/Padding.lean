@@ -2,10 +2,10 @@ import LeanPoseidon
 import Mathlib
 
 /-!
-# `LeanPoseidonProofs.Padding` — the sponge padding is injective
+# `LeanPoseidonProofs.Padding`: the sponge padding is injective
 
 Phase 6, Target 2. The sponge `pad` (append a marker `1`, then `0`s to a
-multiple of `rate = 2`) is **injective** — the structural hypothesis a sponge
+multiple of `rate = 2`) is **injective**, the structural hypothesis a sponge
 needs (it keeps inputs differing only by trailing structure distinct, and is a
 premise of sponge indifferentiability). `Sponge.lean` only `#guard`s the
 plumbing; this proves the property.

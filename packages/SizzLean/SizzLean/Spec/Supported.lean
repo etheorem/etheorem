@@ -2,7 +2,7 @@ import SizzLean.Spec.Type
 import SizzLean.Spec.Serialize
 
 /-!
-# `SizzLean.Spec.Supported` — the predicate guarding Layer 2 theorems
+# `SizzLean.Spec.Supported`: the predicate guarding Layer 2 theorems
 
 The three central theorems (`decode_encode`,
 `serialize_injective`, `encode_size_le_max`) are stated
@@ -17,16 +17,16 @@ that names exactly the constructors with real implementations.
 
 ## Why three predicates, not one
 
-* `Supported` — the broadest predicate, used by Roundtrip and
+* `Supported`: the broadest predicate, used by Roundtrip and
   Injective. Covers uncapped types (`progBitlist`, `progList t`)
-  because roundtrip and injectivity make sense for them — they have
+  because roundtrip and injectivity make sense for them, they have
   no static *size* bound but the encode/decode pair still inverts
   cleanly.
-* `SupportedFieldsFixed` — pointwise `Supported ∧ isFixedSize` over
+* `SupportedFieldsFixed`: pointwise `Supported ∧ isFixedSize` over
   a `List SSZType`. Needed by the `container` case: the decoder
   handles all-fixed-size field lists; mixed/variable field lists
   fall through to `.error`.
-* `SupportedBounded` — strict subset of `Supported` that *excludes*
+* `SupportedBounded`: strict subset of `Supported` that *excludes*
   uncapped types (`progBitlist`, `progList`). Used only by
   `encode_size_le_max` in `Proofs/SizeBound.lean`, where uncapped
   collections have no sensible finite upper bound. Separation
@@ -122,7 +122,7 @@ inductive SSZType.SupportedBounded : SSZType → Prop
                      SSZType.SupportedBoundedFieldsFixed fs →
                      SSZType.SupportedBounded (.container fs)
 
-/-- Pointwise `SupportedBounded ∧ isFixedSize` — for `container`. -/
+/-- Pointwise `SupportedBounded ∧ isFixedSize`, for `container`. -/
 inductive SSZType.SupportedBoundedFieldsFixed : List SSZType → Prop
   | nil  : SSZType.SupportedBoundedFieldsFixed []
   | cons : ∀ {t : SSZType} {ts : List SSZType},

@@ -7,9 +7,9 @@ import SizzLeanBench.Fixtures
 import SizzLeanBench.Runner
 
 /-!
-# Scenario S5 — Batched writes, large fixture (pre-root + writes + post-root)
+# Scenario S5, Batched writes, large fixture (pre-root + writes + post-root)
 
-The large-tier parallel of S2 — same shape (pre-state root,
+The large-tier parallel of S2, same shape (pre-state root,
 N writes, post-state root) at near-mainnet validator-set
 size. 512 writes spread across 256 validator slots
 (≈ 2 writes/slot, modelling a realistic block where multiple
@@ -24,7 +24,7 @@ pure path does two full re-hashes of the whole
 `ValidatorSet256` (~4 K pair hashes each).
 
 This is the closest single-iteration approximation of one
-consensus slot's full work — pre-state root in hand, apply
+consensus slot's full work, pre-state root in hand, apply
 the block, compute post-state root for the next slot's
 parent reference.
 

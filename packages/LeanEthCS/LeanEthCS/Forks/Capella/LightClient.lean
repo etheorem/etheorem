@@ -6,14 +6,14 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Capella.LightClient` — Capella light-client objects
+# `LeanEthCS.Forks.Capella.LightClient`: Capella light-client objects
 
 Capella widens `LightClientHeader` with two new fields:
 
-* `execution : ExecutionPayloadHeader` — the execution-layer
+* `execution : ExecutionPayloadHeader`: the execution-layer
   header of the same block as `beacon.execution_payload_root`.
-* `execution_branch : Vector[Bytes32, EXECUTION_PAYLOAD_GINDEX_LOG2]`
-  — Merkle branch proving that header is at the canonical gindex
+* `execution_branch : Vector[Bytes32, EXECUTION_PAYLOAD_GINDEX_LOG2]`:
+  Merkle branch proving that header is at the canonical gindex
   inside the body root.
 
 `LightClientHeader` is preset-invariant (its embedded
@@ -39,7 +39,7 @@ open LeanEthCS
 open LeanEthCS.Forks.Phase0
 open LeanEthCS.Macros
 
-/-- `LightClientHeader` (Capella) — Altair header + execution-payload
+/-- `LightClientHeader` (Capella): Altair header + execution-payload
 header + its Merkle branch. Preset-invariant. -/
 structure LightClientHeader where
   beacon          : BeaconBlockHeader

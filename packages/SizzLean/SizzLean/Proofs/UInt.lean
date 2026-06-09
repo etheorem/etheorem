@@ -5,11 +5,11 @@ import SizzLean.Proofs.SimpAttrs
 import Std.Tactic.BVDecide
 
 /-!
-# `SizzLean.Proofs.UInt` — `decode_encode` and size bound for the four `uintN` arms
+# `SizzLean.Proofs.UInt`: `decode_encode` and size bound for the four `uintN` arms
 
 Per-shape lemmas for `.uintN 8 / 16 / 32 / 64`. Each closes by
 `unfold`ing the LE writer/reader (`uint16LE` / `readUInt16LE`,
-etc. — public defs in `Spec/{Serialize,Deserialize}.lean`),
+etc., public defs in `Spec/{Serialize,Deserialize}.lean`),
 reducing the per-byte indexing of the `(empty.push a₀)…push aₙ)[i]`
 chain via `rfl`-typed `have`s, and discharging the residual
 `UInt N` LE identity `b₀ ||| (b₁ <<< 8) ||| … = x` with
@@ -17,21 +17,21 @@ chain via `rfl`-typed `have`s, and discharging the residual
 
 ## Tactics used in this file (annotated on first appearance)
 
-* `unfold f` — replace every occurrence of `f` in the goal by its
+* `unfold f`: replace every occurrence of `f` in the goal by its
   definition's right-hand side. Pure beta/delta reduction; no
   computation is performed. Useful when the definition's RHS is
   already in the form the next tactic needs.
-* `rfl` — close a goal of the form `a = a` after Lean has reduced
+* `rfl`: close a goal of the form `a = a` after Lean has reduced
   both sides definitionally. The fastest tactic; if `rfl` works,
   the equation holds by *definitional equality* (no propositional
   reasoning needed).
-* `bv_decide` — bit-blasts a goal over fixed-width `BitVec` /
+* `bv_decide`: bit-blasts a goal over fixed-width `BitVec` /
   `UInt` operations into a SAT problem and runs a CaDiCaL solver.
   Closes goals like `b₀ ||| (b₁ <<< 8) = x` by trying every
   bit-assignment. Each call introduces a `Lean.ofReduceBool` axiom
   (the standard "trust the verified SAT certificate" footprint);
   `#print axioms <theorem>` shows exactly which.
-* `intro x` — move the `∀ x, …` quantifier into the hypothesis
+* `intro x`: move the `∀ x, …` quantifier into the hypothesis
   context so the rest of the proof reasons about a fixed `x`.
 
 The `.uintN 8` arm closes by `rfl` after one `unfold`; the
@@ -57,7 +57,7 @@ open SizzLean.Spec
 `serialize (.uintN 8) x = ByteArray.empty.push x` (single byte);
 `deserialize (.uintN 8) b = readUInt8At b 0` (reads byte 0, returns
 `.ok (·, 1)`). The composition reduces to `.ok (x, 1) = .ok (x, 1)`
-after one `unfold` — closed by `rfl`. -/
+after one `unfold`, closed by `rfl`. -/
 theorem decode_encode_uintN8 : ∀ (x : UInt8),
     SSZType.deserialize (.uintN 8) (SSZType.serialize (.uintN 8) x) =
       .ok (x, (SSZType.serialize (.uintN 8) x).size) := by
@@ -69,7 +69,7 @@ theorem decode_encode_uintN8 : ∀ (x : UInt8),
 
 After unfolding the 2-byte LE writer / reader and reducing the
 buffer-size dependent-if, the residual is the LE per-bit identity
-on `UInt16` — closed by `bv_decide`. The two `have hᵢ := rfl`
+on `UInt16`, closed by `bv_decide`. The two `have hᵢ := rfl`
 steps reduce `(empty.push a₀).push a₁)[i]` to `aᵢ` for the
 `bv_decide`-visible form. -/
 theorem decode_encode_uintN16 : ∀ (x : UInt16),
@@ -155,7 +155,7 @@ theorem decode_encode_uintN64 : ∀ (x : UInt64),
   rw [h0, h1, h2, h3, h4, h5, h6, h7]
   bv_decide
 
-/-! ### Size bounds — each `(serialize …).size = (N+7)/8 = maxByteLength` -/
+/-! ### Size bounds: each `(serialize …).size = (N+7)/8 = maxByteLength` -/
 
 /-- Per-`UInt8` size bound. Both sides reduce to `1`. -/
 theorem encode_size_le_max_uintN8 : ∀ (x : UInt8),

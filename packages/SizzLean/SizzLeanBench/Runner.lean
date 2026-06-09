@@ -1,7 +1,7 @@
 import SizzLeanBench.Timer
 
 /-!
-# `SizzLeanBench.Runner` — labelled benchmark driver, TSV output
+# `SizzLeanBench.Runner`: labelled benchmark driver, TSV output
 
 A microbenchmark in SizzLean is a labelled `IO α` action plus an
 iteration count. The runner samples it via `Timer.timeIterations`,
@@ -99,7 +99,7 @@ def printRow (label : String) (s : Stats) : IO Unit :=
   IO.println s!"{label}\t{s.iterations}\t{s.median}\t{s.mean}\t{s.stddev}\t{s.min}\t{s.max}"
 
 /-- Run one named benchmark `iterations` times and print one TSV
-row with its stats. The action's return value is ignored — we
+row with its stats. The action's return value is ignored, we
 care only about timing. Setup that must not be timed should be
 performed *before* `runBench` and captured into the action's
 closure. -/

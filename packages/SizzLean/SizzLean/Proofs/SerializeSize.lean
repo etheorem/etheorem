@@ -4,10 +4,10 @@ import SizzLean.Spec.MaxByteLength
 import SizzLean.Proofs.SimpAttrs
 
 /-!
-# `SizzLean.Proofs.SerializeSize` — the shared size-prereq lemma
+# `SizzLean.Proofs.SerializeSize`: the shared size-prereq lemma
 
 For any `s` that is *both* `BasicSupported` and `isFixedSize`, the
-serialized output has size exactly `s.fixedByteSize` — independent
+serialized output has size exactly `s.fixedByteSize`, independent
 of the value. This is *the* prerequisite for the composite arms
 (`VectorFixed`, `ListFixed`, `ContainerFixed`): each decoder needs
 to know exactly how many bytes the encoder produced to slice the
@@ -16,15 +16,15 @@ buffer correctly.
 The proof is structurally recursive on `BasicSupported`. Two
 mutually structural-recursive theorems:
 
-* `size_serialize_eq_fixedByteSize` — main lemma, descends on
+* `size_serialize_eq_fixedByteSize`: main lemma, descends on
   `BasicSupported s`; for `vectorFixed` recurses on the element
   type's witness, for `containerFixed` calls the field-list
   helper below.
-* `size_serializeFieldsAux_fix` — helper for the
+* `size_serializeFieldsAux_fix`: helper for the
   `serializeFieldsAux` field walker; descends on
   `BasicSupportedFieldsFixed fs`. Returns *both* the size of the
   fixed-prefix output **and** the witness that the variable-body
-  output is `.empty` — they travel together because the
+  output is `.empty`, they travel together because the
   recursive case needs to thread both through the cons.
 
 A small non-mutual aux lemma `serializeFixedElems_size_aux`
@@ -41,7 +41,7 @@ Lean 4.29's `cases h with | ctor name₁ … nameₖ` only names the
 `{t : SSZType}` in `vectorFixed`) get anonymous hypothesis names
 (`t✝` etc.). Reaching them requires either `@`-binding (which
 also forces naming every implicit) or a follow-up `rename_i`.
-We use `rename_i` consistently — less syntactic noise and avoids
+We use `rename_i` consistently, less syntactic noise and avoids
 the need to enumerate all implicits at every cases line.
 -/
 
@@ -54,7 +54,7 @@ open SizzLean.Spec
 
 /-- For any `t` whose serialization has constant size `sz` per
 element, `serializeFixedElems t xs` has size `xs.length * sz`.
-Not mutually recursive — induct on `xs` directly; the
+Not mutually recursive, induct on `xs` directly; the
 element-size hypothesis is provided by the caller. Used both by
 the main mutual block here (for the `vectorFixed` arm) and by
 the `VectorFixed` / `ListFixed` proof files. -/

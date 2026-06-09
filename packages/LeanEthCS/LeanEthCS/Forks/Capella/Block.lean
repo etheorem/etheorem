@@ -8,7 +8,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Capella.Block` — Capella block hierarchy
+# `LeanEthCS.Forks.Capella.Block`: Capella block hierarchy
 
 Two deltas over Bellatrix:
 

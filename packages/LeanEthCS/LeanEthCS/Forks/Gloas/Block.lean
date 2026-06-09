@@ -11,7 +11,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Gloas.Block` — Gloas / EIP-7732 block hierarchy
+# `LeanEthCS.Forks.Gloas.Block`: Gloas / EIP-7732 block hierarchy
 
 The Gloas `BeaconBlockBody` is restructured by ePBS:
 
@@ -21,16 +21,16 @@ The Gloas `BeaconBlockBody` is restructured by ePBS:
 * `execution_requests`
 
 **New**:
-* `signed_execution_payload_bid : SignedExecutionPayloadBid` — the
+* `signed_execution_payload_bid : SignedExecutionPayloadBid`, the
   builder's binding commitment, signed before the payload reveal.
-* `payload_attestations : List[PayloadAttestation, MAX_PAYLOAD_ATTESTATIONS]`
-  — PTC votes carried in the block.
-* `parent_execution_requests : ExecutionRequests` — the EL request
+* `payload_attestations : List[PayloadAttestation, MAX_PAYLOAD_ATTESTATIONS]`,
+  PTC votes carried in the block.
+* `parent_execution_requests : ExecutionRequests`, the EL request
   list from the parent slot's payload (Gloas moves request
   processing across the bid/reveal boundary).
 
 `BeaconBlock` and `SignedBeaconBlock` are unchanged from Electra/
-Fulu in shape — only the embedded body differs.
+Fulu in shape, only the embedded body differs.
 -/
 
 set_option autoImplicit false

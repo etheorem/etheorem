@@ -6,7 +6,7 @@ import SizzLean.Cache.Update
 import SizzLeanTests.ExampleContainers
 
 /-!
-# `SizzLeanTests.PendingPrefixConflict` — overlay parent/child writes
+# `SizzLeanTests.PendingPrefixConflict`: overlay parent/child writes
 
 `PendingOverlayCoherence` covers the disjoint-path overlay
 shapes. This file covers the case its precondition documents but
@@ -21,7 +21,7 @@ land in the map without being merged. At commit time,
 updates at the same level include a whole-subtree replacement
 (`[]`-path) and a deeper write, the whole-replacement wins and
 the deeper write is *silently dropped*. The single-statement
-`sszUpdate` macro never emits such mixes — but cross-statement
+`sszUpdate` macro never emits such mixes, but cross-statement
 chains can, and the resulting tree root diverges from
 `SSZ.hashTreeRoot t.view`.
 
@@ -33,11 +33,11 @@ expected view by applying the writes in sequence to the original
 
 | # | Shape                                        | Expected w/ bug         |
 |---|----------------------------------------------|-------------------------|
-| 1 | parent → child   (struct, one level)         | **FAIL** — child dropped |
-| 2 | child  → parent  (struct, one level)         | pass — order coincides   |
-| 3 | parent → child → child (two children)        | **FAIL** — both dropped  |
-| 4 | parent → sibling → child                     | **FAIL** — child dropped |
-| 5 | vector-whole-write → vector-index            | **FAIL** — index dropped |
+| 1 | parent → child   (struct, one level)         | **FAIL**: child dropped |
+| 2 | child  → parent  (struct, one level)         | pass: order coincides   |
+| 3 | parent → child → child (two children)        | **FAIL**: both dropped  |
+| 4 | parent → sibling → child                     | **FAIL**: child dropped |
+| 5 | vector-whole-write → vector-index            | **FAIL**: index dropped |
 
 After the fix, all five should pass.
 -/
@@ -82,7 +82,7 @@ private def b0 : BatchExample :=
 private def newVec : Vector ExRoot 8 :=
   Vector.ofFn fun (i : Fin 8) => batchVal (UInt8.ofNat (100 + i.val))
 
-/-! ## Case 1 — parent-then-child (struct)
+/-! ## Case 1: parent-then-child (struct)
 
 `message := newInner`, then `message.slot := 999`.
 
@@ -103,10 +103,10 @@ example :
     t2.hashTreeRootCached.1 = SSZ.hashTreeRoot Sha256 expected := by
   native_decide
 
-/-! ## Case 2 — child-then-parent (struct)
+/-! ## Case 2: child-then-parent (struct)
 
 Inverse order. The later `message := newInner` whole-replacement
-*should* override the earlier `message.slot` write — and TreeMap's
+*should* override the earlier `message.slot` write, and TreeMap's
 gindex-ascending order happens to deliver that, because
 `gindex(message) < gindex(message.slot)`. This case is expected to
 pass even with the bug present; included so the contrast with
@@ -119,7 +119,7 @@ example :
     t2.hashTreeRootCached.1 = SSZ.hashTreeRoot Sha256 expected := by
   native_decide
 
-/-! ## Case 3 — parent then two children
+/-! ## Case 3: parent then two children
 
 `message := newInner`, then `message.slot := 999`, then
 `message.marker := 1234`. Both child writes are dropped at commit by
@@ -135,7 +135,7 @@ example :
     t3.hashTreeRootCached.1 = SSZ.hashTreeRoot Sha256 expected := by
   native_decide
 
-/-! ## Case 4 — parent, sibling, child
+/-! ## Case 4: parent, sibling, child
 
 `message := newInner`, then `signature := newSig`, then
 `message.slot := 999`. The sibling write at `signature` is a disjoint
@@ -152,7 +152,7 @@ example :
     t3.hashTreeRootCached.1 = SSZ.hashTreeRoot Sha256 expected := by
   native_decide
 
-/-! ## Case 5 — vector-whole-write then vector-index
+/-! ## Case 5: vector-whole-write then vector-index
 
 `rootsA := newVec`, then `rootsA[0] := x`. Same shape as Case 1 but
 the parent is a vector (depth-3 subtree) and the child is one of its

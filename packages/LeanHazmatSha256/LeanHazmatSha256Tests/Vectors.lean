@@ -1,25 +1,25 @@
 import LeanHazmatSha256
 
 /-!
-# `LeanHazmatSha256Tests.Vectors` — anchor KAT for all three primitives
+# `LeanHazmatSha256Tests.Vectors`: anchor KAT for all three primitives
 
 Self-contained Known-Answer-Test gate for the FFI shims. Every
 expected digest is a hard-coded constant from FIPS 180-4 / the SSZ
 spec, compared against the FFI output via `native_decide`. No
-dependency on `LeanSha256` or `SizzLean` — this package validates
+dependency on `LeanSha256` or `SizzLean`, this package validates
 *standalone* (the property that lets it ship as a mirror).
 
 The full NIST CAVP byte-oriented suite (129 vectors) for
 `sha256Hash` lives in the generated companion
 [`Cavp.lean`](Cavp.lean); this file adds the cases CAVP does not
-cover — the two-input `sha256Combine` and the level-batched
-`sha256BatchCombine` — plus a few `sha256Hash` anchors so the file
+cover, the two-input `sha256Combine` and the level-batched
+`sha256BatchCombine`, plus a few `sha256Hash` anchors so the file
 reads as a complete primitive-by-primitive smoke test.
 
 ## Why `native_decide` here (and not in proofs)
 
 `LeanHazmat.Sha256.sha256Hash` is `@[extern] opaque`, so the kernel cannot
-reduce it — only the compiled FFI call produces bytes. `native_decide`
+reduce it, only the compiled FFI call produces bytes. `native_decide`
 evaluates the (closed) proposition by running that compiled code at
 proof-check time, adding one `Lean.ofReduceBool` axiom per call. The
 KAT path is exactly where those axioms are acceptable (ARCHITECTURE.md
@@ -27,9 +27,9 @@ KAT path is exactly where those axioms are acceptable (ARCHITECTURE.md
 
 ## Lean idioms used here
 
-* `ByteArray.mk #[0xab, 0xcd, …]` — build a `ByteArray` from a literal
+* `ByteArray.mk #[0xab, 0xcd, …]`: build a `ByteArray` from a literal
   `Array UInt8`; `UInt8` literals support `0x` hex notation.
-* `native_decide` — see above; a wrong shim (truncation, byte order,
+* `native_decide`: see above; a wrong shim (truncation, byte order,
   padding, length-mismatch in the batch loop) fails at least one case
   with the diverging input visible in the error trace.
 -/
@@ -42,7 +42,7 @@ open LeanHazmat.Sha256
 
 /-! ### Inputs -/
 
-/-- 32 zero bytes — the SSZ "zero leaf" and the most common
+/-- 32 zero bytes, the SSZ "zero leaf" and the most common
 `combine` operand in Merkleization. -/
 def zero32 : ByteArray := ByteArray.mk <| Array.replicate 32 0
 
@@ -76,7 +76,7 @@ def expected_fips56 : ByteArray := ByteArray.mk #[
   0xa3, 0x3c, 0xe4, 0x59, 0x64, 0xff, 0x21, 0x67,
   0xf6, 0xec, 0xed, 0xd4, 0x19, 0xdb, 0x06, 0xc1]
 
-/-- `SHA-256(zero32 ++ zero32)` — the SSZ `ZERO_HASHES[1]` seed:
+/-- `SHA-256(zero32 ++ zero32)`, the SSZ `ZERO_HASHES[1]` seed:
 `f5a5fd42…`. The base of the cache layer's zero-hash tower. -/
 def expected_zero_combine : ByteArray := ByteArray.mk #[
   0xf5, 0xa5, 0xfd, 0x42, 0xd1, 0x6a, 0x20, 0x30,
@@ -95,7 +95,7 @@ example : sha256Hash (String.toUTF8 "abc") = expected_abc := by native_decide
 /-- `sha256Hash` on the 56-byte multi-block input matches §B.2. -/
 example : sha256Hash fips56 = expected_fips56 := by native_decide
 
-/-! ### `sha256Combine` — the two-input concatenation digest -/
+/-! ### `sha256Combine`: the two-input concatenation digest -/
 
 /-- `sha256Combine zero32 zero32` matches the SSZ `ZERO_HASHES[1]`. -/
 example : sha256Combine zero32 zero32 = expected_zero_combine := by native_decide
@@ -108,7 +108,7 @@ example :
       sha256Hash (ByteArray.empty ++ sha256Hash ByteArray.empty) := by
   native_decide
 
-/-! ### `sha256BatchCombine` — the level-batched sibling combine
+/-! ### `sha256BatchCombine`: the level-batched sibling combine
 
 Validated against `sha256Combine` (already anchored above) rather
 than against a separate constant table: a batch is correct iff each

@@ -5,7 +5,7 @@ import SizzLean.Spec.SSZError
 import SizzLean.Spec.Serialize
 
 /-!
-# `SizzLean.Spec.Deserialize` — total SSZ decoder
+# `SizzLean.Spec.Deserialize`: total SSZ decoder
 
 The decode side of consensus-specs *§Deserialization*. Returns
 `Except SSZError (s.interp × Nat)`; the `Nat` is the count of bytes
@@ -15,22 +15,22 @@ longer buffer can be parsed and the remainder reasoned about.
 
 ## Lean idioms used here, annotated on first appearance
 
-* `Except ε α` — sum type for a fallible computation; `.ok` carries
+* `Except ε α`: sum type for a fallible computation; `.ok` carries
   success, `.error` an `SSZError`.
-* `ByteArray.extract b s e` — slice `b[s..e]`. Used to hand a
+* `ByteArray.extract b s e`: slice `b[s..e]`. Used to hand a
   sub-range to a recursive call without changing the call signature.
-* `dite` (`if h : p then ... else ...`) — dependent `if` whose
+* `dite` (`if h : p then ... else ...`): dependent `if` whose
   branches see the proof of `p` (or `¬ p`) as `h`. Used here to
   thread a bound check `n + k ≤ b.size` into the proof-carrying
   `ByteArray.get` call.
-* `Subtype.mk` (`⟨arr, h⟩`) — construct a `{ x // p x }` from a
+* `Subtype.mk` (`⟨arr, h⟩`): construct a `{ x // p x }` from a
   value `arr` and a proof `h : p arr`.
 
 ## Spec-side terms used here
 
-* *Offset table* — the `uint32`-LE prefix of a variable-size container
+* *Offset table*: the `uint32`-LE prefix of a variable-size container
   / variable-size-element list pointing at body positions.
-* *Trailing-delimiter bit* — a `bitlist`'s last `1`-bit, marking the
+* *Trailing-delimiter bit*: a `bitlist`'s last `1`-bit, marking the
   data end (subsequent bits are padding zeros). See
   `deserializeBitlist`.
 -/
@@ -209,7 +209,7 @@ private def deserializeBitvector (n : Nat) (b : ByteArray) :
     let need := (n + 7) / 8
     if h : b.size = need then
       -- Validate that high bits in the last byte (beyond bit `n-1`)
-      -- are zero — the SSZ spec requires unused trailing padding
+      -- are zero, the SSZ spec requires unused trailing padding
       -- bits to be zero. The
       -- `ssz_generic/bitvector/invalid/bitvec_<N>_max_<extra>` cases
       -- exercise this.
@@ -390,7 +390,7 @@ def SSZType.deserialize : (s : SSZType) → ByteArray → Except SSZError (s.int
           | .error e  => .error e
           | .ok offs  =>
               -- The first variable-field offset (if any) must equal
-              -- the total prefix size — i.e. the variable body
+              -- the total prefix size, i.e. the variable body
               -- region starts right after the prefix.
               match offs.head? with
               | .some firstOff =>
@@ -407,7 +407,7 @@ def SSZType.deserialize : (s : SSZType) → ByteArray → Except SSZError (s.int
 bytes wide, from `b` starting at `off`. Recurses structurally on
 `count : Nat`. The cross-call to `deserialize t` does not change
 `t`, but each iteration's input buffer (extracted slice) is
-strictly smaller — Lean's structural-recursion check on `count`
+strictly smaller, Lean's structural-recursion check on `count`
 suffices for termination here.
 
 The implementation threads an explicit accumulator (`acc`,
@@ -421,7 +421,7 @@ match SSZType.deserializeFixedElems t k b (off + sz) sz with
 
 spelling holds `x` and `sz` on the stack across each recursive
 call, which overflows the OS-default 8 MB stack for
-`Vector[uint8, 131072]` (the mainnet `BlobSidecar.blob` field —
+`Vector[uint8, 131072]` (the mainnet `BlobSidecar.blob` field,
 131072 frames). The accumulator form is constant-stack; we
 `List.reverse` the accumulator at the base case, which is itself
 tail-recursive in Lean core. -/
@@ -535,12 +535,12 @@ def SSZType.deserializeVarElems :
 
 end
 
-/-! ### Round-trip examples — three concrete shapes.
+/-! ### Round-trip examples: three concrete shapes.
 
 Each `example` closes its own goal by `decide` /
 `native_decide`, exercising both encoder and decoder end-to-end. -/
 
-/-! ### Round-trip examples — wrapped through total `Bool`-returning
+/-! ### Round-trip examples: wrapped through total `Bool`-returning
 helpers so type-class synthesis sees concrete types (not the opaque
 `s.interp` projections). Each helper extracts the round-tripped
 payload as a known type and compares it against the original; the
@@ -564,8 +564,8 @@ private def roundTripBool (x : Bool) : Bool :=
       -- `y : SSZType.interp .bool` from the `.ok (y, n)` destructure
       -- (the result type of `deserialize .bool _` is
       -- `Except SSZError (SSZType.interp .bool × Nat)`). The `let yb`
-      -- triggers the same defeq reduction trick used in `Serialize.lean`
-      -- — without it, `decide (y = x)` can't synthesise `DecidableEq`
+      -- triggers the same defeq reduction trick used in `Serialize.lean`,
+      -- without it, `decide (y = x)` can't synthesise `DecidableEq`
       -- because `interp .bool` stays opaque to typeclass search.
       let yb : Bool := y
       decide (yb = x) && decide (n = (SSZType.serialize .bool x).size)

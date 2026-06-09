@@ -6,7 +6,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Electra.LightClient` — Electra light-client objects
+# `LeanEthCS.Forks.Electra.LightClient`: Electra light-client objects
 
 Electra inherits Deneb's light-client SSZ shapes verbatim (no field
 changes; only Merkle generalized-index numbering shifts, which is a
@@ -26,7 +26,7 @@ open LeanEthCS
 open LeanEthCS.Forks.Phase0
 open LeanEthCS.Macros
 
-/-- `LightClientHeader` (Electra) — same as Deneb's. -/
+/-- `LightClientHeader` (Electra), same as Deneb's. -/
 structure LightClientHeader where
   beacon          : BeaconBlockHeader
   execution       : LeanEthCS.Forks.Deneb.ExecutionPayloadHeader

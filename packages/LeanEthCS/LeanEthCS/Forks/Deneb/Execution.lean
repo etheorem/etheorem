@@ -6,15 +6,15 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Deneb.Execution` — Deneb execution-payload containers
+# `LeanEthCS.Forks.Deneb.Execution`: Deneb execution-payload containers
 
 Deneb extends Capella's payload with two new fields,
 `blob_gas_used` and `excess_blob_gas`, both `uint64`. Otherwise the
 shape carries over.
 
-* `ExecutionPayload` — preset-variant (via the Capella-introduced
+* `ExecutionPayload`: preset-variant (via the Capella-introduced
   `MAX_WITHDRAWALS_PER_PAYLOAD` cap; 4 minimal / 16 mainnet).
-* `ExecutionPayloadHeader` — preset-invariant.
+* `ExecutionPayloadHeader`: preset-invariant.
 -/
 
 set_option autoImplicit false
@@ -50,7 +50,7 @@ ssz_struct_for_presets ExecutionPayload in LeanEthCS.Forks.Deneb
   blobGasUsed   : UInt64,
   excessBlobGas : UInt64
 
-/-- `ExecutionPayloadHeader` (Deneb) — Capella's header + two new
+/-- `ExecutionPayloadHeader` (Deneb), Capella's header + two new
 `uint64` blob-gas fields. Preset-invariant. -/
 structure ExecutionPayloadHeader where
   parentHash       : Hash32

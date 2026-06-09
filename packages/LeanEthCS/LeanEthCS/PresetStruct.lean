@@ -3,12 +3,12 @@ import LeanEthCS.Preset
 import SizzLean.Repr.Class
 
 /-!
-# `LeanEthCS.PresetStruct` — preset-aware structure macro
+# `LeanEthCS.PresetStruct`: preset-aware structure macro
 
 Lean 4 elaboration macro that takes a single SSZ-container template
 and emits one concrete `structure … deriving SSZRepr` per preset listed
 in `for [...]`. Each emitted structure is an ordinary Lean structure
-with literal `Nat`s baked into its field types — the existing
+with literal `Nat`s baked into its field types, the existing
 `SSZRepr` deriving handler in `SizzLean.Repr.Deriving` fires on it
 unchanged.
 
@@ -42,8 +42,8 @@ Expands to two `structure`s `BeaconState.Minimal` /
 * The `@@FOO` syntax is declared as a `term`-level extension. It only
   has meaning inside `ssz_struct_for_presets`; outside, elaboration
   fails (the macro intercepts and substitutes before elaboration).
-* The macro substitutes *literal* `Nat`s into the emitted structures
-  — it doesn't rely on the deriving handler to reduce
+* The macro substitutes *literal* `Nat`s into the emitted structures,
+  it doesn't rely on the deriving handler to reduce
   `Preset.minimal.FOO` projections at structure-elaboration time.
   This keeps the emitted structures byte-identical to what a human
   would type, sidestepping reducibility concerns.
@@ -97,7 +97,7 @@ private def evalPresetField (presetName : Name) (field : Name) :
   let projConst   := mkConst (`LeanEthCS.Preset ++ field)
   let app := mkApp projConst presetConst
   -- Reduce: unfold the projection through the explicit `Preset.minimal`
-  -- constructor (a single `def`) — then through the projection redex.
+  -- constructor (a single `def`), then through the projection redex.
   let reduced ← Lean.Meta.reduce app (skipProofs := true) (skipTypes := false)
   match ← (Lean.Meta.evalNat reduced).run with
   | some n => return n
@@ -205,7 +205,7 @@ private def elabSSZStructForPresets : CommandElab := fun stx => do
               let ftype' : Term := ⟨ftypeStx'⟩
               `(Lean.Parser.Command.structSimpleBinder|
                   $fname:ident : $ftype':term)
-        -- Emit the structure (no inline `deriving` — that confuses the
+        -- Emit the structure (no inline `deriving`, that confuses the
         -- quotation parser when combined with the spliced binder
         -- array) and the deriving as a separate `deriving instance`
         -- command.

@@ -8,7 +8,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Capella.State` — Capella `BeaconState`
+# `LeanEthCS.Forks.Capella.State`: Capella `BeaconState`
 
 Three fields over Bellatrix's state:
 
@@ -19,7 +19,7 @@ Three fields over Bellatrix's state:
 The legacy `historical_roots` list is *frozen* at the fork: new
 entries go to `historical_summaries` instead. The
 `latest_execution_payload_header` is Capella's wider variant (with
-`withdrawals_root`) — preset-invariant.
+`withdrawals_root`), preset-invariant.
 
 The state is preset-variant via the same field constants as Altair
 plus the preset-variant `SyncCommittee` references.

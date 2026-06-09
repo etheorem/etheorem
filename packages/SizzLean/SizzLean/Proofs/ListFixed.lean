@@ -5,7 +5,7 @@ import SizzLean.Proofs.SerializeSize
 import SizzLean.Proofs.FixedElems
 
 /-!
-# `SizzLean.Proofs.ListFixed` — `.list t cap` arm with fixed-size `t`
+# `SizzLean.Proofs.ListFixed`: `.list t cap` arm with fixed-size `t`
 
 Closes `decode_encode` and `encode_size_le_max` for `.list t cap`
 when `t` is `BasicSupported` + fixed-size **and** has a strictly

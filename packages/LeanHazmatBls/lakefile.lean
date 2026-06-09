@@ -1,7 +1,7 @@
--- LeanHazmatBls subpackage — Lake configuration.
+-- LeanHazmatBls subpackage: Lake configuration.
 --
 -- Procedural `lakefile.lean` (not TOML) because it compiles vendored C
--- + assembly into an `extern_lib`. blst is vendored — `just vendor-bls`
+-- + assembly into an `extern_lib`. blst is vendored, `just vendor-bls`
 -- shallow-clones the pinned tag (v0.3.16) into `vendor/blst/` before
 -- `lake build` (hazmat-docs/ARCHITECTURE.md §6); the build below stays
 -- offline.
@@ -32,7 +32,7 @@ package LeanHazmatBls where
   -- `extern_lib` archive below carries everything. No `-march=native`:
   -- the archive is built portable (`-D__BLST_PORTABLE__`).
 
-/-- blst's compiler flags — its own default `CFLAGS` minus `-Werror`,
+/-- blst's compiler flags, its own default `CFLAGS` minus `-Werror`,
 plus the portability define. Shared by the two blst objects. -/
 def blstFlags : Array String :=
   #["-O2", "-fno-builtin", "-fPIC", "-D__BLST_PORTABLE__"]
@@ -75,7 +75,7 @@ target bls_shim.o pkg : FilePath := do
 
 -- One archive carrying the shim + the whole of blst. Lake links it into
 -- any precompiled library or executable that (transitively) `require`s
--- this package — including `LeanHazmatKzg`, which builds c-kzg against
+-- this package, including `LeanHazmatKzg`, which builds c-kzg against
 -- this same blst.
 extern_lib libleanhazmat_bls pkg := do
   let serverO   ← blst_server.o.fetch
@@ -87,7 +87,7 @@ extern_lib libleanhazmat_bls pkg := do
 @[default_target]
 lean_lib LeanHazmatBls where
   -- Precompiled shared lib so importers link native code. Default globs
-  -- (root only) suffice — `LeanHazmatBls.lean` imports `…Bls.Ffi`.
+  -- (root only) suffice. `LeanHazmatBls.lean` imports `…Bls.Ffi`.
   precompileModules := true
 
 -- Byte-level Known-Answer-Test gate against the consensus-spec BLS

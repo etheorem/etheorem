@@ -1,8 +1,8 @@
 /-!
-# `LeanSha256` — pure-Lean SHA-256 reference
+# `LeanSha256`: pure-Lean SHA-256 reference
 
 A *kernel-reducible* SHA-256 implementation. No FFI, no
-typeclasses, no SSZ coupling — just `hash : ByteArray → ByteArray`
+typeclasses, no SSZ coupling, just `hash : ByteArray → ByteArray`
 and `combine : ByteArray → ByteArray → ByteArray` plus a handful of
 structural conformance lemmas against FIPS 180-4.
 
@@ -12,7 +12,7 @@ SHA-256 is general-purpose. Anyone wanting a Lean-kernel-reducible
 SHA-256 with empirical NIST coverage should be able to depend on
 this library directly, without dragging in any Ethereum SSZ
 machinery. The `LeanSha256` lib is independent of the `SizzLean`
-library — `SizzLean` uses it through a thin `Hasher Sha256Spec`
+library, `SizzLean` uses it through a thin `Hasher Sha256Spec`
 instance bridge (in `SizzLean.Hasher.Sha256Spec`), but it has no
 reverse dependency.
 
@@ -22,7 +22,7 @@ reverse dependency.
   is mod 2³² by construction, matching FIPS 180-4 §4.1.2.
 * `Array (BitVec 32)` (rather than `Vector (BitVec 32) _`) avoids
   size-proof obligations on the message schedule and round state.
-  Out-of-bounds indexing via `arr[i]!` is sound by construction —
+  Out-of-bounds indexing via `arr[i]!` is sound by construction,
   every access sits in `[0, 64)` for the schedule and `[0, 8)` for
   the state.
 * The compression function is a `Nat.fold` over `[0, 64)` of the
@@ -37,7 +37,7 @@ pass *or* the spec is wrong; CI catches it at build time.
 
 For broader empirical coverage (full NIST CAVP short + long
 message vectors), see `Tests/Sha256NistCavp.lean`
-in the SSZ side of the repo — 129 vectors validated against both
+in the SSZ side of the repo, 129 vectors validated against both
 this implementation and a separate FFI-backed OpenSSL shim.
 
 ## Structural conformance lemmas
@@ -57,7 +57,7 @@ theorems documenting that:
 * the top-level digest is always exactly 32 bytes
   (`hash_size_eq_32`, `combine_size_eq_32`).
 
-These don't claim "computes SHA-256" — that's an empirical claim
+These don't claim "computes SHA-256". That's an empirical claim
 the NIST asserts settle. They do claim the *shape* matches the
 FIPS algorithm, which catches a class of structural-regression
 bugs at proof check time.
@@ -100,7 +100,7 @@ private def h0Constants : Array (BitVec 32) := #[
 Identifiers match FIPS 180-4 (Ch, Maj, Σ₀, Σ₁, σ₀, σ₁). All operate
 on `BitVec 32` so `^^^`, `&&&`, `+` are the standard 32-bit XOR /
 AND / mod-2³² ADD operations. `rotateRight` and `ushiftRight` are
-the built-in Lean `BitVec` primitives — same as the spec's `ROTR`
+the built-in Lean `BitVec` primitives, same as the spec's `ROTR`
 and `SHR`. -/
 
 private def ch (x y z : BitVec 32) : BitVec 32 :=
@@ -134,7 +134,7 @@ Implemented as an `Array`-pushing fold: start with the 16 message
 words, run 48 iterations each appending one new word computed from
 the previous four (at offsets `-2`, `-7`, `-15`, `-16`). -/
 
-/-- Structural recursion on `steps` — the kernel sees each step as
+/-- Structural recursion on `steps`, the kernel sees each step as
 one Array-push and a recursive call on a strictly smaller `steps`.
 This is intentionally *not* `partial def` so the size-preservation
 lemma below can unfold the body during a proof. -/
@@ -156,7 +156,7 @@ private def messageSchedule (block : Array (BitVec 32)) :
 /-! ## §6.2 compression function
 
 64 rounds on a working state `(a, b, c, d, e, f, g, h)` carried as
-an `Array (BitVec 32)` of size 8 — element `i` is the `i`-th state
+an `Array (BitVec 32)` of size 8, element `i` is the `i`-th state
 word. Each round:
 
 ```
@@ -259,7 +259,7 @@ private def packState (state : Array (BitVec 32)) : ByteArray :=
 
 `hash` runs the full SHA-256 over an arbitrary `ByteArray`:
 pad, parse blocks, fold compression across the blocks, pack the
-final state to 32 bytes. `combine` is `hash (left ++ right)` — same
+final state to 32 bytes. `combine` is `hash (left ++ right)`, same
 contract as a two-input concatenation primitive. -/
 
 /-- SHA-256 digest of an arbitrary-length `ByteArray`. Returns a
@@ -284,9 +284,9 @@ Three published test vectors, asserted against `hash` via
 `native_decide`. Catches any transcription error in the constants,
 padding, or round functions.
 
-* §B.0 — `SHA-256("")`.
-* §B.1 — `SHA-256("abc")`.
-* §B.2 — `SHA-256(56-byte multi-block example)`.
+* §B.0: `SHA-256("")`.
+* §B.1: `SHA-256("abc")`.
+* §B.2: `SHA-256(56-byte multi-block example)`.
 -/
 
 private def fips56 : ByteArray :=
@@ -317,7 +317,7 @@ example : hash fips56 = expectedFips56 := by native_decide
 /-! ## Structural lemmas (FIPS 180-4 conformance)
 
 Kernel-checked theorems that fix the *shape* of the spec against
-FIPS 180-4. They don't claim "computes SHA-256" — that's an empirical
+FIPS 180-4. They don't claim "computes SHA-256". That's an empirical
 question against NIST vectors. They do claim:
 
 * the round helpers compute exactly the FIPS forms (`ch`, `maj`,
@@ -332,7 +332,7 @@ question against NIST vectors. They do claim:
 * the top-level digest is always exactly 32 bytes.
 
 Bugs *within* a round function (e.g., swapping `y` and `z` in
-`ch`) are out of scope for shape lemmas — they're caught by the
+`ch`) are out of scope for shape lemmas, they're caught by the
 NIST asserts above and the FFI-equivalence gate in
 `Tests/Sha256Equivalence.lean`.
 -/

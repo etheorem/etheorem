@@ -68,8 +68,8 @@ def aggOk : Bool :=
 
 ### Running and checking
 
-These are `@[extern]` native primitives, so they run as **compiled** code —
-call them from an executable (`lake exe …`) or a `def`/`IO` action your app
+These are `@[extern]` native primitives, so they run as **compiled** code.
+Call them from an executable (`lake exe …`) or a `def`/`IO` action your app
 compiles. To assert results at build time, use `native_decide` (this is how
 the test suite runs them):
 
@@ -83,7 +83,7 @@ Plain `#eval` in the interpreter cannot execute opaque `@[extern]` functions.
 
 Point-returning operations (`sign`, `skToPk`, `aggregate`,
 `ethAggregatePubkeys`) return the **empty `ByteArray`** on invalid input
-(wrong length, bad encoding, empty list) — no exception. Verification
+(wrong length, bad encoding, empty list), no exception. Verification
 returns `Bool`; `false` covers "does not verify" and invalid input.
 
 ## API (namespace `LeanHazmat.Bls`)
@@ -102,7 +102,7 @@ ethFastAggregateVerify : Array ByteArray → ByteArray → ByteArray → Bool   
 
 ## Trust boundary
 
-Each binding is an opaque `@[extern]` over blst — no pure-Lean reference,
+Each binding is an opaque `@[extern]` over blst, no pure-Lean reference,
 validated only against the consensus-spec BLS vectors. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -114,4 +114,4 @@ lake build LeanHazmatBlsTests     # consensus-spec anchors + aggregate round-tri
 
 ## License
 
-LGPL-3.0-only — see the umbrella [`LICENSE`](../../LICENSE).
+LGPL-3.0-only: see the umbrella [`LICENSE`](../../LICENSE).

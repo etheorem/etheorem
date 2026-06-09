@@ -7,7 +7,7 @@ import SizzLeanBench.Fixtures
 import SizzLeanBench.Runner
 
 /-!
-# Scenario S3 — Block processing
+# Scenario S3: Block processing
 
 The realistic mixed workload. Eight "block" cycles; each cycle
 mutates four fields, then takes one root, then serialises once.
@@ -22,10 +22,10 @@ mixed shape**. Each block-cycle:
   `box.hashTreeRoot` at the end commits them in one walk
   (cross-statement batching).
 * The block's serialise call is on a fresh post-mutation Box,
-  so the bytes Thunk is forced once that block; the win is
-  *not* the bytes memo (each block has a different view) but
-  the absence of a re-walk of the tree (`SSZ.serialize` on
-  plain T does its own pass; the cached path goes through
+  so the bytes Thunk is forced once that block; the win comes
+  from the absence of a re-walk of the tree (each block has a
+  different view, so the bytes memo does not apply): `SSZ.serialize`
+  on plain T does its own pass; the cached path goes through
   the same `SSZ.serialize` but on the already-current view).
 
 Pure does 4 record updates + 1 full re-hash + 1 spec serialise
@@ -86,7 +86,7 @@ private def cachedValidator (sink : IO.Ref Nat) (salt : UInt8) : IO Unit := do
     sink.modify (· + consume root)
     sink.modify (· + consume box.serialize)
 
-/-! ### ValidatorSet16 fixture — each block's 4 mutations hit
+/-! ### ValidatorSet16 fixture: each block's 4 mutations hit
 different validator positions, so each block touches 4 of the
 16 slots before its root read. -/
 

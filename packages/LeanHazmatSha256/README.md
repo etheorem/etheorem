@@ -2,7 +2,7 @@
 
 Lean 4 FFI bindings for NIST FIPS 180-4 SHA-256, wrapping the system
 OpenSSL `libcrypto`. Part of the
-[LeanHazmat](../../hazmat-docs/ARCHITECTURE.md) FFI crypto family — the FFI
+[LeanHazmat](../../hazmat-docs/ARCHITECTURE.md) FFI crypto family, the FFI
 counterpart to the pure-Lean reference [`LeanSha256`](../LeanSha256).
 
 ## Setup
@@ -47,8 +47,8 @@ def main : IO Unit :=
 
 ### Running and checking
 
-These are `@[extern]` native primitives, so they run as **compiled** code —
-call them from an executable (`lake exe …`) or a `def`/`IO` action your app
+These are `@[extern]` native primitives, so they run as **compiled** code.
+Call them from an executable (`lake exe …`) or a `def`/`IO` action your app
 compiles. To assert results at build time, use `native_decide` (this is how
 the test suite runs them):
 
@@ -76,7 +76,7 @@ Every result is 32 bytes.
 
 ## Trust boundary
 
-`@[extern] opaque` over OpenSSL — the kernel never reduces a hash; the
+`@[extern] opaque` over OpenSSL. The kernel never reduces a hash; the
 single assumption is that OpenSSL implements SHA-256, validated by the
 byte-level NIST CAVP KAT in `LeanHazmatSha256Tests`. SHA-256 is special
 among LeanHazmat families: it *also* has a kernel-reducible pure-Lean spec
@@ -91,4 +91,4 @@ lake build LeanHazmatSha256Tests     # full NIST CAVP (129 vectors) + combine/ba
 
 ## License
 
-LGPL-3.0-only — see the umbrella [`LICENSE`](../../LICENSE).
+LGPL-3.0-only, see the umbrella [`LICENSE`](../../LICENSE).

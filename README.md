@@ -2,7 +2,7 @@
 
 # Etheorem
 
-> **Status — early-stage, experimental, single-developer; personal
+> **Status: early-stage, experimental, single-developer; personal
 > project, not an EF release.** The libraries here pass the
 > upstream consensus-spec test corpus and ship the three central
 > SSZ theorems on a `BasicSupported` cut, but production-grade
@@ -31,29 +31,29 @@ LeanPoseidon (pure Poseidon2, standalone island — nothing depends on it yet)
 Lake subpackages under `packages/`, each with its own lakefile and
 independent build target:
 
-- **[`packages/LeanSha256/`](packages/LeanSha256/README.md)** — pure-Lean
+- **[`packages/LeanSha256/`](packages/LeanSha256/README.md)**: pure-Lean
   SHA-256 reference. NIST CAVP-validated, kernel-reducible. No FFI.
-- **[`packages/SizzLean/`](packages/SizzLean/README.md)** — SSZ
+- **[`packages/SizzLean/`](packages/SizzLean/README.md)**: SSZ
   library: spec types, serialization, deserialization, Merkleization,
   the `SSZRepr` deriving handler, the cache layer, the `sszUpdate`
   macro, plus the `Hasher` typeclass + `Sha256` instance (delegating to
   the `LeanHazmatSha256` FFI binding) and the FFI ≡ spec equivalence
-  axioms — the one layer importing both the FFI binding and the spec.
-- **[`packages/LeanEthCS/`](packages/LeanEthCS/README.md)** —
+  axioms, the one layer importing both the FFI binding and the spec.
+- **[`packages/LeanEthCS/`](packages/LeanEthCS/README.md)**:
   Ethereum consensus-spec containers from Phase 0 through Gloas,
   the preset-struct macro, and the `ssz_static` CLI runner
   (`eth_ssz_vector_runner`, driven by `scripts/run_conformance.py`).
-- **[`packages/LeanHazmat*/`](hazmat-docs/ARCHITECTURE.md)** — the FFI
+- **[`packages/LeanHazmat*/`](hazmat-docs/ARCHITECTURE.md)**: the FFI
   crypto family: one package per primitive family wrapping a
   battle-tested native library behind `@[extern]`. Consensus families
-  ship today — `LeanHazmatSha256` (OpenSSL), `LeanHazmatBls` (blst),
+  ship today: `LeanHazmatSha256` (OpenSSL), `LeanHazmatBls` (blst),
   `LeanHazmatKzg` (c-kzg-4844), consumed à la carte. The aggregator
   meta-packages (`LeanHazmatConsensus`, …) and execution-layer families
   are deferred. See [`hazmat-docs/`](hazmat-docs/).
-- **[`packages/LeanPoseidon/`](packages/LeanPoseidon/README.md)** —
+- **[`packages/LeanPoseidon/`](packages/LeanPoseidon/README.md)**:
   pure-Lean **Poseidon2** algebraic hash (BN254 *and* BLS12-381 scalar
   fields, `t = 3`): the permutation, the 2-to-1 `compress`, and a sponge.
-  A *standalone island* parallel to `LeanSha256` — depends on nothing in
+  A *standalone island* parallel to `LeanSha256`, depending on nothing in
   the monorepo and nothing depends on it yet. Conformance-validated by a
   differential test against the HorizenLabs `zkhash` Rust oracle
   (test-only) plus committed KATs; the kernel-/`native_decide`-reducible
@@ -61,7 +61,7 @@ independent build target:
   standalone) proves `permute = permuteRef` (the shipped fast layers equal
   the textbook dense reference) with a clean axiom footprint.
 
-The umbrella `lakefile.toml` declares no Lean libraries of its own — it
+The umbrella `lakefile.toml` declares no Lean libraries of its own. It
 just coordinates the subpackages via `[[require]]` blocks
 (`LeanPoseidonProofs` is built on its own, keeping mathlib out of the
 root). Per-package publication repos will exist later; this is a
@@ -85,45 +85,45 @@ in `scripts/run_conformance.py`. The universal proof set
 over `SSZType.Supported`) and the AVX-512 SIMD inner loop for
 `sha256BatchCombine` remain as planned follow-ups; see
 [`packages/SizzLean/docs/PLAN.md`](packages/SizzLean/docs/PLAN.md)
-for the staged roadmap.
+for the staged plan.
 
 ## Documents
 
 Per-subpackage design docs live next to the code they describe:
 
-- [`packages/SizzLean/docs/ARCHITECTURE.md`](packages/SizzLean/docs/ARCHITECTURE.md) —
+- [`packages/SizzLean/docs/ARCHITECTURE.md`](packages/SizzLean/docs/ARCHITECTURE.md):
   the SSZ library's binding design (`SSZType` universe, `SSZRepr`
   typeclass + deriving, cached Merkle tree, FFI SHA-256, trust
   boundary, module layout).
-- [`packages/SizzLean/docs/PLAN.md`](packages/SizzLean/docs/PLAN.md) —
+- [`packages/SizzLean/docs/PLAN.md`](packages/SizzLean/docs/PLAN.md):
   SizzLean's stage-by-stage deliverables and acceptance.
-- [`packages/SizzLean/docs/OPTIMISATION.md`](packages/SizzLean/docs/OPTIMISATION.md) —
+- [`packages/SizzLean/docs/OPTIMISATION.md`](packages/SizzLean/docs/OPTIMISATION.md):
   implementation-level companion to ARCHITECTURE.md §6: the cache
   layer's data structures, how each Phase 17 sub-stage is wired,
   and the bench-gating story.
-- [`packages/SizzLean/docs/research/`](packages/SizzLean/docs/research/) —
+- [`packages/SizzLean/docs/research/`](packages/SizzLean/docs/research/):
   background research (`pre-research.md`, `cache-research.md`).
-- [`packages/<Pkg>/README.md`](packages/) — per-subpackage READMEs.
+- [`packages/<Pkg>/README.md`](packages/): per-subpackage READMEs.
 
 Repo-wide docs:
 
-- [`docs/monorepo-arch.md`](docs/monorepo-arch.md) — how the monorepo is
+- [`docs/monorepo-arch.md`](docs/monorepo-arch.md): how the monorepo is
   laid out: the three-subpackage shape, which lakefiles are TOML vs
   procedural, where the FFI C shim lives, the LeanSha256 standalone
   mirror, and the naming / dep / build conventions.
-- [`CLAUDE.md`](CLAUDE.md) — style and discipline conventions, project-wide.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — PR / issue workflow,
+- [`CLAUDE.md`](CLAUDE.md): style and discipline conventions, project-wide.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): PR / issue workflow,
   toolchain setup, code-style pointers.
-- [`SECURITY.md`](SECURITY.md) — vulnerability-disclosure policy.
-- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — community guidelines.
+- [`SECURITY.md`](SECURITY.md): vulnerability-disclosure policy.
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md): community guidelines.
 
 ## Prerequisites
 
 On a fresh machine you need four things before `lake build` will
 work. The Lean toolchain and `just` itself aren't installed by
-the project — they're external tools the recipes assume.
+the project. They are external tools the recipes assume.
 
-1. **`elan`** (the Lean toolchain manager — provides `lake` /
+1. **`elan`** (the Lean toolchain manager, provides `lake` /
    `lean`). The version in [`lean-toolchain`](lean-toolchain) is
    installed on first use.
 
@@ -131,14 +131,14 @@ the project — they're external tools the recipes assume.
    curl https://elan.lean-lang.org/elan-init.sh -sSf | sh
    ```
 
-2. **`just`** (task runner — every workflow below is wrapped in
+2. **`just`** (task runner; every workflow below is wrapped in
    a `just` recipe; `just doctor` won't run until `just` itself
    is installed). Install via your platform's package manager:
    `brew install just` (macOS), `cargo install just` (anywhere
    with Rust), or see <https://just.systems> for distro packages.
 
 3. **OpenSSL 3.x + `pkg-config`** (system-level build deps for
-   the SHA-256 FFI shim — see [Native dependencies](#native-dependencies)
+   the SHA-256 FFI shim, see [Native dependencies](#native-dependencies)
    below for the per-platform one-liners). The Justfile's
    `doctor-native` recipe pinpoints what's missing.
 
@@ -154,7 +154,7 @@ just doctor          # checks elan/lake/lean + pkg-config/OpenSSL + python3/uv
 
 `just doctor` prints actionable platform-specific install hints
 if anything's missing. The CI runs the slimmer `just doctor-native`
-gate (build-time native deps only — the Lean toolchain is
+gate (build-time native deps only, the Lean toolchain is
 installed by `leanprover/lean-action` later in the workflow).
 
 ## Build
@@ -189,7 +189,7 @@ cd packages/SizzLean && lake build
 
 The repo's [`Justfile`](Justfile) wraps the common workflows
 (`just build`, `just test`, `just bench`,
-`just official-ssz-vector-tests-static`, …) — see `just --list`
+`just official-ssz-vector-tests-static`, …). See `just --list`
 for the full set.
 
 CI runs `lake build` for each named library on the pinned
@@ -222,7 +222,7 @@ fetched at pinned tags by `just vendor-bls` / `just vendor-kzg` into
 gitignored `vendor/` trees before `lake build` (never git submodules; see
 [`hazmat-docs/ARCHITECTURE.md`](hazmat-docs/ARCHITECTURE.md) §6). `just
 build` runs both vendor steps for you. The C / C++ compilers are invoked
-through the Lean toolchain's `cc` wrapper — no separate configuration
+through the Lean toolchain's `cc` wrapper, no separate configuration
 required.
 
 ## Conformance harness
@@ -255,7 +255,7 @@ just setup-python
 
 Numbers below are against consensus-spec-tests **v1.6.0-beta.0**
 (the tag pinned in `scripts/run_conformance.py`). Both presets
-green across every fork Phase 0 → Fulu — Gloas and EIP-7805 test
+green across every fork Phase 0 → Fulu. Gloas and EIP-7805 test
 vectors exist in the corpus but aren't yet in the CLI dispatch
 table or the harness's `FORKS` list.
 
@@ -269,7 +269,7 @@ table or the harness's `FORKS` list.
 - **`ssz_static --config mainnet --all`**: **1585 / 1585 cases
   pass** across every fork Phase 0 → Fulu.
 - **`ssz_static --config minimal --all`**: **38991 / 38991 cases
-  pass** across every fork Phase 0 → Fulu — including
+  pass** across every fork Phase 0 → Fulu, including
   variable-size composites (`Attestation`, `BeaconBlockBody`,
   `BeaconState`) and all fork deltas
   (Altair / Bellatrix / Capella / Deneb / Electra / Fulu).

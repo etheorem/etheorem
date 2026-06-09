@@ -2,12 +2,12 @@
 
 > [!IMPORTANT]
 > **Issues and pull requests belong in the
-> [`etheorem` monorepo](https://github.com/etheorem/etheorem) — not
+> [`etheorem` monorepo](https://github.com/etheorem/etheorem), not
 > here.** `LeanSha256` is developed inside the umbrella repo under
 > `packages/LeanSha256/`; this repository is a **read-only
 > subtree mirror** regenerated on every push to the umbrella's
 > `main`. Issues filed here, and pull requests opened against this
-> repo's branches, will not be acted on — please redirect them to
+> repo's branches, will not be acted on. Please redirect them to
 > the umbrella. Any direct pushes to this repo's `main` are
 > overwritten by the next mirror run.
 >
@@ -35,22 +35,22 @@ it without trusting the compiler.
 
 Stable. NIST CAVP byte-oriented short-message and long-message
 test suites pass via build-time `native_decide` gates inside
-`LeanSha256Tests/Nist.lean`. Version `0.1.0` — the two-function
+`LeanSha256Tests/Nist.lean`. At version `0.1.0`, the two-function
 public API is intended to remain stable; internal modules under
 `LeanSha256.Core` (round functions, message schedule, helper
 lemmas) may evolve.
 
 ## Dependencies
 
-None. Pure Lean 4 + the standard library — no `mathlib`, no
+None. Pure Lean 4 + the standard library. No `mathlib`, no
 `batteries`, no native shims.
 
 ## Modules
 
-* `LeanSha256.Core` — the SHA-256 algorithm (initial state, message
+* `LeanSha256.Core`: the SHA-256 algorithm (initial state, message
   schedule, compression function, padding, multi-block driver).
   Kernel-reducible.
-* `LeanSha256Tests.Nist` — NIST CAVP byte-oriented test vectors as
+* `LeanSha256Tests.Nist`: NIST CAVP byte-oriented test vectors as
   `native_decide` gates over `LeanSha256.Core`. Lives in the
   separate `LeanSha256Tests` library so the ~108 s build cost is
   opt-in.
@@ -74,19 +74,19 @@ end LeanSha256
 Both functions are total, structurally terminating, and return a
 32-byte `ByteArray`. The `Core` module also exposes a handful of
 structural conformance lemmas (e.g. that `hash` agrees with a
-single-block compression on inputs ≤ 55 bytes) — see its module
+single-block compression on inputs ≤ 55 bytes). See its module
 docstring for the full list.
 
 ## Trust assumptions
 
 * Kernel-reducible: every definition reduces in Lean's trusted
   kernel. Closing a goal with `decide` against `LeanSha256.hash`
-  adds **no** compiler-trust axiom — only Lean's core kernel is
+  adds **no** compiler-trust axiom, only Lean's core kernel is
   trusted.
 * For speed, consumers normally close hash-equality goals with
   `native_decide`, which trusts the Lean compiler via
   `Lean.ofReduceBool`. The full `LeanSha256Tests` library
-  (`LeanSha256Tests.Nist`) does this — see its `#axioms` output.
+  (`LeanSha256Tests.Nist`) does this. See its `#axioms` output.
 * No `sorry`, no `axiom` declarations, no FFI calls anywhere in
   the library.
 
@@ -111,7 +111,7 @@ cd packages/LeanSha256 && lake build
 
 The CAVP vector files (`SHA256ShortMsg.rsp`, `SHA256LongMsg.rsp`,
 `SHA256Monte.rsp`) live under `cavp/` in this subpackage and are
-the upstream NIST artefacts unmodified — a stranger can verify
+the upstream NIST artefacts unmodified. A stranger can verify
 the byte-for-byte match against the
 [NIST CSRC CAVP archive](https://csrc.nist.gov/projects/cryptographic-algorithm-validation-program/secure-hashing).
 
@@ -144,8 +144,8 @@ own release tags use a `leansha256-vX.Y.Z` prefix; the mirror
 workflow strips the prefix.
 
 Either form (mirror or umbrella) can also be required by `subDir`
-if you want the package directly from the monorepo source — useful
-during development, but for general consumption the mirror is the
+if you want the package directly from the monorepo source, useful
+during development. For general consumption the mirror is the
 canonical address:
 
 ```toml

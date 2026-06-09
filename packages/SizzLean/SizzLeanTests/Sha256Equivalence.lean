@@ -2,7 +2,7 @@ import LeanHazmatSha256
 import LeanSha256.Core
 
 /-!
-# `SizzLeanTests.Sha256Equivalence` — FFI ↔ pure-Lean SHA-256
+# `SizzLeanTests.Sha256Equivalence`: FFI ↔ pure-Lean SHA-256
 
 The empirical equivalence gate: the pure-Lean spec (`LeanSha256`) and
 the FFI binding (`LeanHazmat.Sha256.sha256Hash` / `sha256Combine`) agree
@@ -18,10 +18,10 @@ empirical evidence behind the `sha256Hash_eq_spec` /
   `Conformance/Sha256Vectors.lean`): empty input, `"abc"`,
   56-byte multi-block, `zero32 ++ zero32`, plus a cross-check
   between `combine` and the `hash`-of-concatenation form.
-* **Randomised `combine` batch** — 100 PRNG-generated
+* **Randomised `combine` batch**: 100 PRNG-generated
   `(left, right)` 32-byte pairs run through both
   `LeanSha256.combine` and `sha256Combine`.
-* **Randomised `hash` batch** — 10 PRNG cases each at lengths
+* **Randomised `hash` batch**: 10 PRNG cases each at lengths
   0, 32, 55, 56, 64, 96, 128, 256. The 55/56 boundary catches
   single-vs-double-block padding regressions; 64/96/128/256
   exercise multi-block compression.
@@ -89,7 +89,7 @@ private def randBytes (n : Nat) (s : Nat) : ByteArray × Nat :=
         go k st' (acc.push (Nat.toUInt8 (st' % 256)))
   go n s ByteArray.empty
 
-/-! ### Randomised `combine` batch — 100 cases over 32-byte pairs -/
+/-! ### Randomised `combine` batch: 100 cases over 32-byte pairs -/
 
 private def oneCombineCase (s : Nat) : Bool × Nat :=
   let (l,  s1) := randBytes 32 s
@@ -104,19 +104,19 @@ private def runCombineCases : Nat → Nat → Bool
 
 example : runCombineCases 100 0xFEEDC0DE = true := by native_decide
 
-/-! ### Randomised `hash` batch — 10 cases at each of 8 lengths
+/-! ### Randomised `hash` batch: 10 cases at each of 8 lengths
 
 Lengths chosen to exercise SHA-256's padding boundary:
 
-* `0` — empty input (single-block, just padding).
-* `32` — short, single-block.
-* `55` — max single-block: `55 + 1 + 8 = 64`, exactly one block
+* `0`: empty input (single-block, just padding).
+* `32`: short, single-block.
+* `55`: max single-block: `55 + 1 + 8 = 64`, exactly one block
   after padding.
-* `56` — just over the single-block boundary: padding spills
+* `56`: just over the single-block boundary: padding spills
   into a second block.
-* `64` — exactly one block of message; padding is a whole second
+* `64`: exactly one block of message; padding is a whole second
   block of zeros.
-* `96`, `128`, `256` — multi-block compression. -/
+* `96`, `128`, `256`: multi-block compression. -/
 
 private def oneHashCase (len : Nat) (s : Nat) : Bool × Nat :=
   let (input, s') := randBytes len s

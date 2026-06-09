@@ -5,7 +5,7 @@ import SizzLean.Cache.MerkleTree.Merkle
 import SizzLean.Cache.MerkleTree.HashCons
 
 /-!
-# `SizzLeanTests.HashConsCoherence` — hash-consing smoke gates
+# `SizzLeanTests.HashConsCoherence`: hash-consing smoke gates
 
 The hash-cons cache is a *performance* optimisation, not a
 correctness one. Its safety guarantee:
@@ -20,7 +20,7 @@ i.e. the smart constructor is structurally identical to the raw
 `Node.mkPair` returns `BaseIO Node` (the cache update is a side
 effect on the global ref), so the test cases run inside an
 `IO Unit` driver rather than as `native_decide` examples. The
-driver fires at build time only — the file is part of
+driver fires at build time only, the file is part of
 `SizzLeanTests`, which is built via `lake build SizzLeanTests`
 or `just test-ssz`.
 
@@ -76,7 +76,7 @@ def runCoherenceCases : IO Unit := do
     IO.Process.exit 1
 
 /-! At elaboration time, runCoherenceCases is defined but does
-not yet fire — the test fires when an executable (e.g. the bench
+not yet fire, the test fires when an executable (e.g. the bench
 driver) calls it. The build-time gate is structural: this file
 must elaborate without errors.
 

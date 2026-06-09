@@ -5,7 +5,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Capella.Execution` — Capella execution-payload containers
+# `LeanEthCS.Forks.Capella.Execution`: Capella execution-payload containers
 
 Capella adds the `withdrawals` field to `ExecutionPayload` and the
 matching `withdrawals_root` to `ExecutionPayloadHeader`. The rest of
@@ -47,7 +47,7 @@ ssz_struct_for_presets ExecutionPayload in LeanEthCS.Forks.Capella
   transactions  : SSZList Transaction 1048576,
   withdrawals   : SSZList Withdrawal @@MAX_WITHDRAWALS_PER_PAYLOAD
 
-/-- `ExecutionPayloadHeader` (Capella) — Bellatrix's header plus a
+/-- `ExecutionPayloadHeader` (Capella), Bellatrix's header plus a
 trailing `withdrawals_root`. Preset-invariant (no preset-sensitive
 caps). -/
 structure ExecutionPayloadHeader where

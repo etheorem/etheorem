@@ -2,7 +2,7 @@ import LeanEthCS.Forks.Electra.Block
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Fulu.Block` — Fulu block hierarchy
+# `LeanEthCS.Forks.Fulu.Block`: Fulu block hierarchy
 
 At consensus-spec-tests v1.5.0, Fulu inherits Electra's
 `BeaconBlockBody` / `BeaconBlock` / `SignedBeaconBlock` *verbatim*

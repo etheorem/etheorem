@@ -2,7 +2,7 @@
 
 Thanks for your interest. Etheorem is a Lean 4 implementation of
 Ethereum's SSZ (Simple Serialize), the supporting cache layer,
-and the consensus-spec containers — aiming for machine-checked
+and the consensus-spec containers, aiming for machine-checked
 correctness on the verified core. Contributions are welcome.
 
 ## Quick start
@@ -59,12 +59,12 @@ layout: which lakefiles are procedural vs declarative, where the
 FFI C shim lives, naming conventions, and the dep policy.
 
 Per-subpackage design docs (currently only `SizzLean` has them):
-- `packages/SizzLean/docs/ARCHITECTURE.md` — binding design.
-- `packages/SizzLean/docs/PLAN.md` — staged deliverables.
-- `packages/SizzLean/docs/OPTIMISATION.md` — cache-layer
+- `packages/SizzLean/docs/ARCHITECTURE.md`: binding design.
+- `packages/SizzLean/docs/PLAN.md`: staged deliverables.
+- `packages/SizzLean/docs/OPTIMISATION.md`: cache-layer
   implementation-level companion.
 
-### Inside `packages/SizzLean/` — where to look for what
+### Inside `packages/SizzLean/`: where to look for what
 
 A quick orientation map for the most-asked questions:
 
@@ -77,11 +77,11 @@ A quick orientation map for the most-asked questions:
   (`UncachedSSZ H T`). User-facing smart constructor:
   `SSZ.PureBox` in `Cache/Box.lean`.
 - **The box that unifies them.**
-  `packages/SizzLean/SizzLean/Cache/Box.lean` — `SSZ.Box H T`
+  `packages/SizzLean/SizzLean/Cache/Box.lean`, `SSZ.Box H T`
   closes the two backends into one sum type, and its module
   docstring documents the brand axes; start here for the
   user-facing surface.
-- **Central theorems.** `packages/SizzLean/SizzLean/Proofs/` —
+- **Central theorems.** `packages/SizzLean/SizzLean/Proofs/`,
   `Roundtrip.lean` (`decode_encode`), `Injective.lean`
   (`serialize_injective`), `SizeBound.lean`
   (`encode_size_le_max`). All three ship on the
@@ -93,7 +93,7 @@ A quick orientation map for the most-asked questions:
   `packages/SizzLean/SizzLean/Hasher/Sha256.lean`,
   `Sha256Equiv.lean`, and `Sha256Batch.lean`. The complete
   inventory (3 named `axiom`s plus 3 `@[extern] opaque`
-  primitives) is recoverable with one grep — see SizzLean's
+  primitives) is recoverable with one grep. See SizzLean's
   README "Trust assumptions you can grep for".
 - **Upstream-vector harness.** `scripts/run_conformance.py` at
   the umbrella root, driving the

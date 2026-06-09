@@ -1,10 +1,10 @@
 import LeanHazmatKzg.Ffi
 
 /-!
-# `LeanHazmatKzg` — library root
+# `LeanHazmatKzg`: library root
 
 FFI bindings for **Ethereum consensus-layer KZG / polynomial
-commitments** — EIP-4844 blobs and EIP-7594 / Fulu PeerDAS cells —
+commitments**, EIP-4844 blobs and EIP-7594 / Fulu PeerDAS cells,
 wrapping ethereum/c-kzg-4844 behind `@[extern]` under the `LeanHazmat.Kzg`
 brand namespace. Part of the [LeanHazmat](../../hazmat-docs/ARCHITECTURE.md)
 crypto family.

@@ -6,7 +6,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Deneb.LightClient` — Deneb light-client objects
+# `LeanEthCS.Forks.Deneb.LightClient`: Deneb light-client objects
 
 Same five containers as Capella; `LightClientHeader` is widened to
 carry Deneb's `ExecutionPayloadHeader` (with `blob_gas_used` /
@@ -25,7 +25,7 @@ open LeanEthCS
 open LeanEthCS.Forks.Phase0
 open LeanEthCS.Macros
 
-/-- `LightClientHeader` (Deneb) — Capella's header shape but with
+/-- `LightClientHeader` (Deneb), Capella's header shape but with
 Deneb's `ExecutionPayloadHeader`. Preset-invariant. -/
 structure LightClientHeader where
   beacon          : BeaconBlockHeader

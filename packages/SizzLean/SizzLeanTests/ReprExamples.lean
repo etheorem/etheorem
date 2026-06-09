@@ -3,7 +3,7 @@ import SizzLean.Repr.Instances
 import SizzLean.Repr.Deriving
 
 /-!
-# `SizzLeanTests.ReprExamples` — typechecker-honest gates for `SSZRepr`
+# `SizzLeanTests.ReprExamples`: typechecker-honest gates for `SSZRepr`
 
 Per CLAUDE.md's *literate by default* discipline, every
 user-facing API gets an `example` block the typechecker keeps
@@ -15,7 +15,7 @@ build is a passed gate.
 
 Lives in `SizzLeanTests/` rather than `SizzLean/Repr/` so the
 fixture structures (`Pair`, `DPair`) don't ride along on every
-`import SizzLean` — they're acceptance tests, not part of the
+`import SizzLean`, they're acceptance tests, not part of the
 user-facing surface.
 
 ## Why `Pair {a b : Bool}` as the example
@@ -26,7 +26,7 @@ the four native-width integers (`.uintN 8` / `16` / `32` / `64`),
 `.bool`, and `.container [.bool, .bool]` (see
 `Spec/BasicSupported.lean`). The smallest non-trivial user
 structure that lives in `BasicSupported` is a two-`Bool`
-container — exactly the `Pair` defined below.
+container, exactly the `Pair` defined below.
 
 The integer examples after the `Pair` block exercise the four
 `uintN` arms of `BasicSupported`: thin wrappers around
@@ -42,7 +42,7 @@ namespace SizzLeanTests.ReprExamples
 
 open SizzLean
 
-/-- Two-`Bool` container — the canonical example. -/
+/-- Two-`Bool` container, the canonical example. -/
 structure Pair where
   a : Bool
   b : Bool
@@ -50,7 +50,7 @@ structure Pair where
 
 /-- Hand-written `SSZRepr` instance for `Pair`.
 
-* `shape` is `.container [.bool, .bool]` — what the
+* `shape` is `.container [.bool, .bool]`, what the
   `deriving SSZRepr` handler synthesises mechanically.
 * `toRepr` projects the two booleans into the right-nested `Prod`
   chain `interpFields [.bool, .bool] = Bool × Bool × PUnit`.
@@ -91,12 +91,12 @@ structure DPair where
 
 /-- Acceptance check: roundtrip on the `deriving`-generated
 instance. Closes through the same `containerFixed` arm as the
-hand-written `Pair` example — the synthesised `shape` must
+hand-written `Pair` example, the synthesised `shape` must
 definitionally equal `.container [.bool, .bool]`. -/
 example (p : DPair) : SSZ.deserialize (SSZ.serialize p) = .ok p :=
   SSZ.roundtrip (.containerFixed (.cons .bool rfl (.cons .bool rfl .nil))) p
 
-/-! ### Integer arm examples — the four `uintN` widths
+/-! ### Integer arm examples: the four `uintN` widths
 
 Each `example` exercises one of the four `uintN` constructors of
 `BasicSupported`. The library-provided `SSZRepr` instances for
@@ -133,7 +133,7 @@ These examples exercise the *spec-level* `decode_encode` rather
 than the user-surface `SSZ.roundtrip`. The user-surface path
 would require `SSZRepr` instances on the composite types
 (`Vector UInt64 4` etc.) plus matching the synthesised `shape`
-to the predicate witness — straightforward but mechanical.
+to the predicate witness, straightforward but mechanical.
 -/
 
 open SizzLean.Proofs SizzLean.Spec
@@ -154,7 +154,7 @@ example (xs : { ys : Array UInt32 // ys.size ≤ 100 }) :
       Except.ok (xs, (SSZType.serialize (.list (.uintN 32) 100) xs).size) :=
   decode_encode (.listFixed .uintN32 rfl (by decide)) xs
 
-/-- Roundtrip for a general fixed-field container — three uintN
+/-- Roundtrip for a general fixed-field container, three uintN
 fields. The `BasicSupportedFieldsFixed` witness is a triple-nested
 `.cons`. -/
 example (vs : SSZType.interpFields [.uintN 8, .uintN 16, .uintN 32]) :

@@ -1,14 +1,14 @@
 -- Build-ordering import (not for any Lean symbol): this package's
 -- precompiled `.so` links Bls's shared lib (`moreLinkArgs`,
 -- `-l:libleanhazmat_bls.so`) for the `blst_*` symbols c-kzg references.
--- Importing the Bls module makes the Bls package — and so its shared
--- lib — a build prerequisite of this module, ordering it before this
+-- Importing the Bls module makes the Bls package, and so its shared
+-- lib, a build prerequisite of this module, ordering it before this
 -- package's link step (otherwise a clean parallel build can race and the
 -- KZG `.so` link fails with "unable to find -l:libleanhazmat_bls.so").
 import LeanHazmatBls
 
 /-!
-# `LeanHazmatKzg.Ffi` — Ethereum consensus KZG behind `@[extern]`
+# `LeanHazmatKzg.Ffi`: Ethereum consensus KZG behind `@[extern]`
 
 `@[extern] opaque` bindings to the C shim in `csrc/kzg_shim.c`, which
 wraps ethereum/c-kzg-4844 for the consensus KZG / polynomial-commitment
@@ -20,8 +20,8 @@ surface:
   cell-proof batch verification, and erasure recovery.
 
 c-kzg is built against `LeanHazmatBls`'s blst (the single blst owner;
-hazmat-docs/ARCHITECTURE.md §4). The KZG **trusted setup** — the fixed
-EIP-4844 ceremony output — is embedded into the archive and loaded once
+hazmat-docs/ARCHITECTURE.md §4). The KZG **trusted setup**, the fixed
+EIP-4844 ceremony output, is embedded into the archive and loaded once
 at library load, so there is no runtime file lookup.
 
 ## Sizes & encodings
@@ -36,16 +36,16 @@ extension blob has `CELLS_PER_EXT_BLOB = 128` cells.
 
 * Byte arguments are `@&`-borrowed. Point/byte results are fresh
   `ByteArray`s; an **empty** `ByteArray` (or `#[]` array / a pair of
-  these) is the error sentinel — bad input length, an internal c-kzg
-  failure, or the trusted setup failing to load. Check `.isEmpty`.
+  these) is the error sentinel, signalling bad input length, an internal
+  c-kzg failure, or the trusted setup failing to load. Check `.isEmpty`.
 * Verification returns `Bool`; `false` is a legitimate "does not verify"
   or invalid input (a c-kzg `C_KZG_RET` error collapses to `false`).
 
 ## Trust boundary (ARCHITECTURE.md §10)
 
 No pure-Lean reference exists for KZG; each binding is an opaque
-`@[extern]` boundary. The empirical trust assumption — *that c-kzg-4844
-(+ blst) implements EIP-4844 / EIP-7594 correctly* — is validated only
+`@[extern]` boundary. The empirical trust assumption, *that c-kzg-4844
+(+ blst) implements EIP-4844 / EIP-7594 correctly*, is validated only
 against the spec KAT in `LeanHazmatKzgTests`.
 -/
 

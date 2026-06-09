@@ -1,7 +1,7 @@
 import LeanPoseidon.Poseidon2.LinearLayers
 
 /-!
-# `LeanPoseidon.Permutation` — the Poseidon2 permutation
+# `LeanPoseidon.Permutation`: the Poseidon2 permutation
 
 The full Poseidon2 schedule over a width-3 state, in both the shipped
 *fast* form (`permute`) and a structurally identical *dense* reference
@@ -17,9 +17,9 @@ each S-box; a *linear layer* (`LinearLayers.lean`) diffuses the state
 after it. The BN254 t=3 schedule is:
 
 1. an initial external linear layer `M_E`;
-2. `fullRounds / 2 = 4` **full** rounds — add the 3 round constants → S-box
+2. `fullRounds / 2 = 4` **full** rounds, add the 3 round constants → S-box
    all → `M_E`;
-3. `partialRounds = 56` **partial** rounds — add 1 round constant to
+3. `partialRounds = 56` **partial** rounds, add 1 round constant to
    element 0 → S-box element 0 → internal layer `M_I`;
 4. `fullRounds / 2 = 4` **full** rounds (as step 2).
 
@@ -34,17 +34,17 @@ the *only* difference is which linear-layer functions they pass
 (`mul*Fast` vs `mul*Ref`). The round-constant additions and the S-box are
 byte-for-byte shared. So the (deferred) equivalence `permute = permuteRef`
 is a straight congruence on the two layer equalities (`docs/PLAN.md`
-Phase 3), not a fight against structural mismatch.
+Phase 3); the structures already match.
 
 The output width is `3` *in the type* (`Vector R 3`), so there is no
-separate "output has the right size" lemma to prove — the type carries it.
+separate "output has the right size" lemma to prove, the type carries it.
 
 ## The anchor KAT and `native_decide`
 
 A single `example … := by native_decide` at the bottom locks `permute` on
 input `[0, 1, 2]` to the three expected BN254 t=3 outputs. `native_decide`
 evaluates the goal via *compiled* code (here: the whole permutation over
-GMP-backed `Nat`) and trusts the compiler's reduction — it adds one
+GMP-backed `Nat`) and trusts the compiler's reduction. It adds one
 `Lean.ofReduceBool` axiom. Building this library runs the gate: it passes
 or the implementation (field codec, a constant, a layer, the schedule
 order) is wrong, caught at compile time. This mirrors the three in-file
@@ -60,7 +60,7 @@ variable {R : Type} [Add R] [Mul R] [Sub R] [One R] [Inhabited R]
 /-! ## Non-linear and ARK building blocks -/
 
 /-- The `x ↦ x⁵` S-box, as `x² · x² · x` (two squarings and a
-multiply — exactly `zkhash`'s `sbox_p` for degree `d = 5`). Written with
+multiply, exactly `zkhash`'s `sbox_p` for degree `d = 5`). Written with
 explicit multiplications rather than `Bn254Fr.pow` so the term is a polynomial
 the `ring` tactic can normalise in the (deferred) equivalence proof. -/
 def sbox (x : R) : R := let x2 := x * x; x2 * x2 * x
@@ -83,7 +83,7 @@ def partialRound (intLayer : Vector R 3 → Vector R 3)
 
 `permuteWith` is the schedule parameterised over the two linear-layer ops.
 `Nat.fold n (fun i _ acc => …) init` folds the accumulator over
-`i = 0, …, n−1` (ascending) — the same idiom `LeanSha256` uses for its 64
+`i = 0, …, n−1` (ascending), the same idiom `LeanSha256` uses for its 64
 compression rounds. The round-constant indices follow the flattened ARK
 layout on `Params.roundConstants`. -/
 
@@ -123,13 +123,13 @@ equivalences; exists so that equality can be proved. -/
 def permuteRef (par : Params R) (st : Vector R 3) : Vector R 3 :=
   permuteWith par mulExternalRef (mulInternalRef par) st
 
-/-! ## Anchor KATs — the build-time conformance gates
+/-! ## Anchor KATs: the build-time conformance gates
 
 Input state `[0, 1, 2]` through each pinned `t = 3` instance produces the
 outputs below, taken from the HorizenLabs `zkhash` v0.2.0 reference
 (`poseidon2_tests_bn256::kats` / `poseidon2_tests_bls12::kats`).
 `native_decide` evaluates `permute` via compiled code and checks the
-equality. The **same generic `permute`** runs over both fields — the BLS12
+equality. The **same generic `permute`** runs over both fields. The BLS12
 gate is the field abstraction's anchor: a different field, zero code
 changes. -/
 

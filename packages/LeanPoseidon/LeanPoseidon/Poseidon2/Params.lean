@@ -1,7 +1,7 @@
 import LeanPoseidon.Field
 
 /-!
-# `LeanPoseidon.Poseidon2.Params` — instance data + the pinned constants
+# `LeanPoseidon.Poseidon2.Params`: instance data + the pinned constants
 
 **This file is generated** by `scripts/gen_poseidon_params.py` from the
 pinned `scripts/poseidon2_*.json` data files (HorizenLabs `zkhash` v0.2.0);
@@ -12,13 +12,13 @@ generator header documents the sources and the flattening layout.
 
 A Poseidon2 *permutation* mixes a *state* of `t` field elements through a
 sequence of rounds. A *full round* applies the non-linear S-box `x ↦ xᵈ` to
-all `t` elements; a *partial round* applies it to one element only (cheaper
-— most rounds are partial). *Round constants* (ARK = "add round key") are
+all `t` elements; a *partial round* applies it to one element only (cheaper,
+most rounds are partial). *Round constants* (ARK = "add round key") are
 added before each S-box layer; between S-box layers a *linear layer* (a
-matrix multiply — see `Poseidon2/LinearLayers.lean`) diffuses the state.
+matrix multiply, see `Poseidon2/LinearLayers.lean`) diffuses the state.
 Capturing all of this as *data* (rather than hardcoding) follows CLAUDE.md's
-"configure, don't integrate" and makes a new instance — even over a new
-*field* — new data, not new code (Open/Closed).
+"configure, don't integrate" and makes a new instance, even over a new
+*field*, new data, not new code (Open/Closed).
 -/
 
 set_option autoImplicit false

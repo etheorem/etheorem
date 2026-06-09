@@ -7,7 +7,7 @@ import SizzLeanBench.Fixtures
 import SizzLeanBench.Runner
 
 /-!
-# Scenario S6 — Block processing, large fixture
+# Scenario S6: Block processing, large fixture
 
 The large-tier parallel of S6: process many blocks against a
 large fixture. Each block applies a batch of mutations, then
@@ -15,8 +15,8 @@ takes one root, then serialises once.
 
 What this measures: **the most realistic compounded shape at
 scale**. 32 blocks × 8 mutations per block on
-`ValidatorSet256` produces 256 total writes — coincidentally
-matching one mutation per validator slot — and 32 (root,
+`ValidatorSet256` produces 256 total writes, coincidentally
+matching one mutation per validator slot, and 32 (root,
 serialise) pairs. The cached path's per-block cost is the
 overlay-commit + spine-walk + Thunk-force for the root, plus
 the bytes-Thunk-force for the serialise (each block forces a

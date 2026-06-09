@@ -5,22 +5,22 @@ import LeanPoseidonProofs.Equivalence
 import Mathlib
 
 /-!
-# `LeanPoseidonProofs.Bijective` — the Poseidon2 permutation is a bijection
+# `LeanPoseidonProofs.Bijective`: the Poseidon2 permutation is a bijection
 
 Phase 6 flagship: the shipped `permute` is an actual *permutation* (a bijection
-of the state space). Proved structurally — S-box, linear layers, and ARK
+of the state space). Proved structurally, S-box, linear layers, and ARK
 additions are each bijective, composed through the shared `permuteWith`
-schedule — on the **dense reference** `permuteRef`, then transported to the
+schedule, on the **dense reference** `permuteRef`, then transported to the
 shipped fast `permute` via the Phase-3 equivalence `permute_eq_permuteRef`.
 
 This file builds the pieces bottom-up (each compiled in turn):
-* Stage A — `Fp p ≃+* ZMod p`, `Finite (Fp p)`, `Nat.card (Fp p) = p`.
+* Stage A: `Fp p ≃+* ZMod p`, `Finite (Fp p)`, `Nat.card (Fp p) = p`.
 -/
 
 set_option autoImplicit false
 -- The Stage C section shares `[CommRing R] [Inhabited R]`; some lemmas use only a
 -- subset (e.g. the external layer needs neither `Inhabited` nor the full ring),
--- which is benign — silence the per-lemma unused-section-variable lint.
+-- which is benign, silence the per-lemma unused-section-variable lint.
 set_option linter.unusedSectionVars false
 
 open Function
@@ -29,11 +29,11 @@ namespace LeanPoseidon.Fp
 
 variable {p : Nat} [Fact (Nat.Prime p)]
 
-/-! ## Stage A — `Fp p` as a finite field via `ZMod p`
+/-! ## Stage A: `Fp p` as a finite field via `ZMod p`
 
 `toZMod` is an injective ring hom and (being a finite bijection) a ring
 *iso* `Fp p ≃+* ZMod p`. That gives `Fp p` its `Finite` instance and pins its
-cardinality to `p` — the facts the finite-field S-box argument needs. -/
+cardinality to `p`, the facts the finite-field S-box argument needs. -/
 
 /-- `Fp p` is ring-isomorphic to `ZMod p`: `toZMod` is the injective ring hom
 (`FpCommRing`), with explicit inverse `z ↦ ⟨z.val, _⟩`. -/
@@ -65,10 +65,10 @@ open LeanPoseidon
 
 variable {p : Nat} [Fact (Nat.Prime p)]
 
-/-! ## Stage B — the S-box `x ↦ x⁵` is bijective
+/-! ## Stage B: the S-box `x ↦ x⁵` is bijective
 
 The non-linear layer. `sbox x = x⁵` (`x²·x²·x` by `ring`), and `x ↦ xⁿ` is a
-bijection of a finite field exactly when `gcd(n, |F|−1) = 1` — here `gcd(5, p−1)`,
+bijection of a finite field exactly when `gcd(n, |F|−1) = 1`, here `gcd(5, p−1)`,
 which holds for the shipped fields. The `0 ↦ 0` point is handled separately; on
 the units `(Fp p)ˣ` (a finite group of order `p−1`) it is
 `Nat.Coprime.pow_left_bijective`. -/
@@ -103,7 +103,7 @@ end LeanPoseidon.Poseidon2
 
 namespace LeanPoseidon.Poseidon2
 
-/-! ## Stage C — the dense linear layers are bijective
+/-! ## Stage C: the dense linear layers are bijective
 
 Each dense layer is `mulMat3 m` (a literal `3×3` matrix–vector product). Over a
 commutative ring, if `IsUnit (det M)` then `M.mulVec` is bijective
@@ -149,7 +149,7 @@ theorem mulInternalRef_bijective (par : Params R)
   mulMat3_bijective (intMatrix3 par) hdet
 
 /-- A per-coordinate map `st ↦ ofFn (fun i => g i st[i])` is bijective when each
-coordinate map `g i` is — the building block for the ARK + S-box layers. -/
+coordinate map `g i` is, the building block for the ARK + S-box layers. -/
 theorem piMap_conj_bijective (g : Fin 3 → R → R) (hg : ∀ i, Bijective (g i)) :
     Bijective (fun st : Vector R 3 => Vector.ofFn (fun i => g i (vecEquiv st i))) := by
   have hpi : Bijective (fun (f : Fin 3 → R) (i : Fin 3) => g i (f i)) :=
@@ -161,13 +161,13 @@ theorem piMap_conj_bijective (g : Fin 3 → R → R) (hg : ∀ i, Bijective (g i
 
 end LeanPoseidon.Poseidon2
 
-/-! ## Stage D — fold of bijections, rounds, and the full schedule -/
+/-! ## Stage D: fold of bijections, rounds, and the full schedule -/
 
 section Fold
 open Function
 
 /-- Folding a list of bijections is bijective (each step a bijection of the
-accumulator). Proved by list induction — avoids `Nat.fold`'s dependent proof. -/
+accumulator). Proved by list induction, avoids `Nat.fold`'s dependent proof. -/
 theorem bijective_list_foldl {α β : Type*} (l : List β) (g : β → α → α)
     (hg : ∀ x ∈ l, Bijective (g x)) :
     Bijective (fun init => l.foldl (fun acc x => g x acc) init) := by
@@ -266,7 +266,7 @@ theorem permuteRef_bijective (par : Params (Fp p))
 
 end LeanPoseidon.Poseidon2
 
-/-! ## Stage E — the shipped permutations are bijections; `compress` has collisions
+/-! ## Stage E: the shipped permutations are bijections; `compress` has collisions
 
 Discharge the structural hypotheses for the two shipped instances: the S-box
 exponent is coprime to `p − 1` (`decide`), and the external/internal matrices
@@ -308,7 +308,7 @@ theorem permute_bijective_bls12 : Function.Bijective (permute bls12Params) := by
   exact permuteRef_bijective bls12Params hext hint hcop
 
 /-- **`compress` alone is not collision-resistant.** As a 2-to-1 map
-(`Bn254Fr × Bn254Fr → Bn254Fr`) it has collisions by pigeonhole — domain `p²`,
+(`Bn254Fr × Bn254Fr → Bn254Fr`) it has collisions by pigeonhole, domain `p²`,
 codomain `p`. This is the structural reason a binary-Merkle node built from a
 (bijective, hence invertible) permutation needs leaf pre-hashing + domain
 separation for collision resistance, not `compress` in isolation

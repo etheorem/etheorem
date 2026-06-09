@@ -3,7 +3,7 @@ import SizzLean.Spec.BasicSupported
 import SizzLean.Proofs.SerializeSize
 
 /-!
-# `SizzLean.Proofs.FixedElems` — the `deserializeFixedElems` inverse
+# `SizzLean.Proofs.FixedElems`: the `deserializeFixedElems` inverse
 
 Shared helper for the `VectorFixed` and `ListFixed` arms:
 proves that `deserializeFixedElems` is the left inverse of
@@ -19,16 +19,16 @@ per-slice matching hypothesis.
 
 ## Lemma path
 
-1. **`extract_serializeFixedElems`** — the `i`-th `sz`-byte
+1. **`extract_serializeFixedElems`**: the `i`-th `sz`-byte
    slice of `serializeFixedElems t xs` is exactly `serialize t
    (xs[i])`. Induction on `xs` (handles `i = 0` via
    `extract_append_eq_left`, `i = i'+1` via the shift lemma
    `extract_append_size_add`).
-2. **`deserializeFixedElems_eq_of_slice`** — given the buffer's
+2. **`deserializeFixedElems_eq_of_slice`**: given the buffer's
    per-slice matching, the accumulator-based decoder returns
    `acc.reverse ++ xs`. Induction on `xs` with `off`, `acc`,
    `accSz` generalised.
-3. **`deserializeFixedElems_serializeFixedElems`** — combines
+3. **`deserializeFixedElems_serializeFixedElems`**: combines
    the two: callers (Vector / List) cite this directly.
 
 The helper is parameterised by `decode_encode` on the element

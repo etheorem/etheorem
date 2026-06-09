@@ -4,7 +4,7 @@ import SizzLean.Spec.MaxByteLength
 import SizzLean.Proofs.SerializeSize
 
 /-!
-# `SizzLean.Proofs.ContainerFixed` — general `.container fs` arm
+# `SizzLean.Proofs.ContainerFixed`: general `.container fs` arm
 
 Closes `decode_encode` and `encode_size_le_max` for `.container fs`
 when each field is `BasicSupported` and fixed-size
@@ -13,7 +13,7 @@ when each field is `BasicSupported` and fixed-size
 ## Recipe
 
 The encoder produces `(serializeFieldsAux fs vs varOff).1` (with
-empty `.2` for all-fixed fields — see `size_serializeFieldsAux_fix`).
+empty `.2` for all-fixed fields, see `size_serializeFieldsAux_fix`).
 The decoder dispatches through `deserializeFixedFields fs b 0`,
 which walks the fields left-to-right, reading each at a running
 `off` advanced by `t.fixedByteSize` each step.
@@ -26,11 +26,11 @@ sub-witness, then recurse via the list's induction hypothesis.
 
 Two helpers:
 
-* `deserializeFixedFields_append_shift` — `deserializeFixedFields
+* `deserializeFixedFields_append_shift`: `deserializeFixedFields
   fs (a ++ b) (a.size + off) = deserializeFixedFields fs b off`.
   Lets us peel a fixed prefix off the buffer after consuming a
   field.
-* `fixedByteSize_le_maxByteLength_of_BasicSupported` —
+* `fixedByteSize_le_maxByteLength_of_BasicSupported`:
   `BasicSupported t → t.isFixedSize = true → fixedByteSize t ≤
   maxByteLength t`. Needs an `Inhabited` witness on the element
   type, supplied by the caller.

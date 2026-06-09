@@ -4,10 +4,10 @@ import Mathlib.Algebra.Field.ZMod
 import Mathlib.Tactic
 
 /-!
-# `LeanPoseidonProofs.FpField` — the `Field (Fp p)` instance (prime `p`)
+# `LeanPoseidonProofs.FpField`: the `Field (Fp p)` instance (prime `p`)
 
 `FpCommRing` gives `Fp p` a `CommRing` for any `[NeZero p]`. The Phase 6
-structural proofs — chiefly that the Poseidon2 permutation is a *bijection* —
+structural proofs, chiefly that the Poseidon2 permutation is a *bijection*,
 need `Fp p` to be a **field**: the `x ↦ x⁵` S-box is bijective because the
 multiplicative group of a finite field is cyclic of order `p − 1` and
 `gcd(5, p−1) = 1`, and the dense linear layers are invertible because their
@@ -20,10 +20,10 @@ structural theorems keep it as a hypothesis and stay axiom-clean.
 
 ## How (mirroring mathlib's own `Field (ZMod p)`)
 
-We add a single new carrier — `Inv (Fp p)`, computed through `ZMod p`'s inverse
-— and build the `Field` instance exactly the way mathlib builds `Field (ZMod p)`
+We add a single new carrier, `Inv (Fp p)`, computed through `ZMod p`'s inverse.
+We then build the `Field` instance exactly the way mathlib builds `Field (ZMod p)`
 (`Mathlib/Algebra/Field/ZMod.lean`): the existing `CommRing (Fp p)` is reused as
-the ring parent (so there is **no `CommRing` diamond** — `Field.toCommRing`
+the ring parent (so there is **no `CommRing` diamond**, `Field.toCommRing`
 resolves to `FpCommRing`'s instance), and only the two genuinely field-specific
 axioms `mul_inv_cancel` / `inv_zero` are supplied, both discharged by transport
 along the injective `toZMod : Fp p → ZMod p`. The rational-scalar data
@@ -39,7 +39,7 @@ namespace Fp
 
 variable {p : Nat} [Fact (Nat.Prime p)]
 
-/-- `p ≠ 0`, from primality — so the `[NeZero p]` machinery (`CommRing (Fp p)`,
+/-- `p ≠ 0`, from primality, so the `[NeZero p]` machinery (`CommRing (Fp p)`,
 `ZMod.val_lt`, the `toZMod_*` lemmas) applies under `[Fact p.Prime]`. `NeZero` is
 a `Prop`, so this is proof-irrelevant and never conflicts with another instance. -/
 instance : NeZero p := ⟨(Nat.Prime.pos Fact.out).ne'⟩
@@ -49,8 +49,9 @@ by the `ZMod`/`DivisionRing` convention. The result is reduced (`< p`) by
 `ZMod.val_lt`, so it lands back in `Fp p`. -/
 instance : Inv (Fp p) := ⟨fun a => ⟨((a.val : ZMod p)⁻¹).val, ZMod.val_lt _⟩⟩
 
-/-- `toZMod` preserves inversion — immediate, since the inverse is *defined*
-through `ZMod p` (`ZMod.natCast_zmod_val` cancels the `val`/cast round-trip). -/
+/-- `toZMod` preserves inversion. This is immediate, since the inverse is
+*defined* through `ZMod p` (`ZMod.natCast_zmod_val` cancels the `val`/cast
+round-trip). -/
 theorem toZMod_inv (a : Fp p) : toZMod a⁻¹ = (toZMod a)⁻¹ := by
   show (((a.val : ZMod p)⁻¹).val : ZMod p) = ((a.val : ZMod p))⁻¹
   rw [ZMod.natCast_zmod_val]

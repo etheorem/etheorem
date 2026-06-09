@@ -5,7 +5,7 @@ import SizzLean.Spec.Constants
 import SizzLean.Spec.Serialize
 
 /-!
-# `SizzLean.Spec.HashTreeRoot` — total SSZ Merkleization
+# `SizzLean.Spec.HashTreeRoot`: total SSZ Merkleization
 
 Implements the Merkle-root side of consensus-specs *§Merkleization*
 (`simple-serialize.md`): a total recursion on `SSZType` mapping a
@@ -19,20 +19,20 @@ through either one.
 
 ## Spec-side terms (annotated on first appearance)
 
-* *chunk* — a 32-byte (`BYTES_PER_CHUNK`) leaf in the Merkle tree.
+* *chunk*: a 32-byte (`BYTES_PER_CHUNK`) leaf in the Merkle tree.
   Basic-type roots are right-padded to a chunk and the chunk *is* the
   root; composite types pack their data into a sequence of chunks
   before merkleizing.
-* *merkleization* — bottom-up `combine`-folding of chunks into a
+* *merkleization*: bottom-up `combine`-folding of chunks into a
   binary tree, padded with zero subtrees to the next power-of-two leaf
   count (the "limit", determined by the schema not the data).
-* *zero hashes* — the precomputed `combine`-tower over an all-zero
+* *zero hashes*: the precomputed `combine`-tower over an all-zero
   leaf: `Z[0] = 32·0x00`, `Z[d+1] = combine Z[d] Z[d]`. `Z[d]` is the
   root of an all-zero subtree of depth `d`. We materialise these
   abstractly here (`ZERO_HASHES_SPEC`); the cache layer's
   `Cache/MerkleTree/Zero.lean` produces concrete bytes once a
   `Hasher` instance exists.
-* *mix-in length* — for variable-length collections (`list`,
+* *mix-in length*: for variable-length collections (`list`,
   `bitlist`) the body root is combined with a `uint64`-LE encoding
   of the *actual* element/bit count right-padded to a chunk:
   `combine bodyRoot (uint64ToChunk n)`.
@@ -56,7 +56,7 @@ arm before further unfolding. The same idiom appears below.
 
 ## `uintN` width coverage
 
-`uintN n` is implemented for `n ∈ {8, 16, 32, 64, 128, 256}` —
+`uintN n` is implemented for `n ∈ {8, 16, 32, 64, 128, 256}`,
 the widths used by consensus-spec types Phase 0 through Gloas.
 Other `n` fall through to a 32-byte zero chunk; the `BitVec n`
 fallback collides with the same dependent-match limitation
@@ -141,9 +141,9 @@ def chunkify (b : ByteArray) : List ByteArray :=
 
 /-! ### Zero-hashes tower
 
-Per spec *§Merkleization — Helpers*: an all-zero subtree of depth
+Per spec *§Merkleization, Helpers*: an all-zero subtree of depth
 `d` has root `Z[d]` defined recursively. `ZERO_HASHES_SPEC` exposes
-this as a Lean `Vector` of length 65 — depth `0..64`, sufficient for
+this as a Lean `Vector` of length 65, depth `0..64`, sufficient for
 any Merkle tree the spec admits given `MAX_LENGTH = 2^32` chunks
 plus mix-ins.
 
@@ -156,7 +156,7 @@ values once a hasher instance is in scope. -/
 `zero32` at the leaves; `Hasher.combine` at every interior step.
 
 The `(H := H)` named-argument form is required because `Hasher`'s
-parameter `H` is a phantom *tag* type — it does not appear in the
+parameter `H` is a phantom *tag* type. It does not appear in the
 types of `hash` or `combine`, so instance synthesis cannot recover
 it from the call's value arguments. `(H := H)` supplies `H`
 explicitly; the `[Hasher H]` instance binder then resolves. -/
@@ -173,7 +173,7 @@ tower. Abstract over `[Hasher H]`; no concrete instance required at
 declaration time.
 
 The lambda's parameter type `Fin 65` is inferred from the result
-type `Vector ByteArray 65` — `Vector.ofFn`'s signature is
+type `Vector ByteArray 65`. `Vector.ofFn`'s signature is
 `(Fin n → α) → Vector α n`, and Lean unifies `n` with `65` from the
 expected return. `i.val : Nat` is the index projection used to
 recurse into `zeroHashAt`. -/
@@ -192,7 +192,7 @@ short-circuit the all-zero suffix via `ZERO_HASHES_SPEC` instead of
 materialising the padding explicitly. -/
 
 /-- Look up `ZERO_HASHES[d]` defensively (clamps `d > 64` to the
-deepest entry — sufficient because SSZ's `MAX_LENGTH = 2^32` keeps
+deepest entry, sufficient because SSZ's `MAX_LENGTH = 2^32` keeps
 us within the 65-entry table). -/
 private def zeroHashAtClamped (H : Type) [Hasher H] (d : Nat) : ByteArray :=
   if h : d < 65 then (ZERO_HASHES_SPEC H).get ⟨d, h⟩ else zero32
@@ -201,7 +201,7 @@ private def zeroHashAtClamped (H : Type) [Hasher H] (d : Nat) : ByteArray :=
 as the right sibling for an odd-length tail. The level argument is
 load-bearing for correctness: at level `k`, the phantom right
 sibling of a lone-tail interior node is an all-zero subtree of
-depth `k`, whose root is `ZERO_HASHES[k]` — *not* `zero32` (which
+depth `k`, whose root is `ZERO_HASHES[k]`, *not* `zero32` (which
 would be wrong for `k > 0`).
 
 The implementation is the tail-recursive accumulator pattern
@@ -213,13 +213,13 @@ recurse spelling
 | x :: y :: rs => Hasher.combine (H := H) x y :: combineLayerAt H lvl rs
 ```
 
-is non-tail-recursive — the recursive call is the *tail* of a
+is non-tail-recursive, the recursive call is the *tail* of a
 `cons`, so each step pushes a fresh stack frame holding `combine x
 y` until the list bottoms out. For a `ByteVector[BYTES_PER_BLOB]`
 (131072 bytes ⇒ 4096 chunks) the first layer descends 2048 frames
 deep, which overflows the OS-default 8 MB stack on `BlobSidecar`
 mainnet vectors. The accumulator form keeps the stack flat at the
-cost of one extra `List.reverse` per layer — `O(n)` time, `O(1)`
+cost of one extra `List.reverse` per layer, `O(n)` time, `O(1)`
 stack. -/
 private def combineLayerAtAux (H : Type) [Hasher H] (lvl : Nat) :
     List ByteArray → List ByteArray → List ByteArray
@@ -248,7 +248,7 @@ private def promoteThroughZeros (H : Type) [Hasher H] :
 /-- Build the Merkle root of a balanced binary tree of `2^depth`
 leaves. `chunks` are the *real* left-aligned leaves; the
 remaining `2^depth - chunks.length` positions are conceptually
-zero, but never materialised — `ZERO_HASHES` short-circuits them
+zero, but never materialised. `ZERO_HASHES` short-circuits them
 at the corresponding subtree depth.
 
 This matters for large caps like `VALIDATOR_REGISTRY_LIMIT = 2^40`:
@@ -295,7 +295,7 @@ def chunkDepth (n : Nat) : Nat :=
 
 /-! ### Mix-in helpers -/
 
-/-- *Mix in length.* Per spec *§Merkleization — Helper functions*:
+/-- *Mix in length.* Per spec *§Merkleization, Helper functions*:
 a variable-length collection's root is `combine bodyRoot
 (uint64ToChunk count)`, where `count` is the *actual* element /
 bit count of the value (not the cap). -/
@@ -303,9 +303,9 @@ private def mixInLength (H : Type) [Hasher H]
     (root : ByteArray) (n : Nat) : ByteArray :=
   Hasher.combine (H := H) root (natToChunk n)
 
-/-- *Mix in selector.* Per spec *§Merkleization — Union*: a union's
+/-- *Mix in selector.* Per spec *§Merkleization, Union*: a union's
 root is `combine variantRoot (uint64ToChunk selector)`. The chunk
-encoding is the same as length mix-in — only the semantic role
+encoding is the same as length mix-in, only the semantic role
 differs. -/
 private def mixInSelector (H : Type) [Hasher H]
     (root : ByteArray) (sel : Nat) : ByteArray :=
@@ -314,7 +314,7 @@ private def mixInSelector (H : Type) [Hasher H]
 /-! ### Bit-list to bytes (no trailing delimiter)
 
 The bitlist body merkleization needs the data bits packed LSB-first
-into bytes — *without* the trailing-delimiter bit `serialize`
+into bytes, *without* the trailing-delimiter bit `serialize`
 appends. Reconstructing the body via `BitVec.ofFn` would be cleanest,
 but Lean 4.29.1's core library doesn't ship that constructor; we go
 through `BitVec.ofNat` instead, treating the bit-list LSB-first as
@@ -339,7 +339,7 @@ from the schema. -/
 def bytesToChunkCount (n : Nat) : Nat :=
   (n + BYTES_PER_CHUNK - 1) / BYTES_PER_CHUNK
 
-/-- Number of chunks needed to pack `n` bits — `n` bits become
+/-- Number of chunks needed to pack `n` bits, `n` bits become
 `⌈n/8⌉` bytes which become `⌈⌈n/8⌉/32⌉ = ⌈n/256⌉` chunks. -/
 def bitsToChunkCount (n : Nat) : Nat :=
   (n + 256 - 1) / 256
@@ -351,7 +351,7 @@ A single `mutual` block: `hashTreeRoot` recurses structurally on
 for container fields, `hashTreeRootListFixed` /
 `hashTreeRootListComposite` for collection bodies) recurse
 structurally on their `List` argument. Cross-calls descend on
-subterms — same shape `Spec/Serialize.lean` and `Spec/Interp.lean`
+subterms, same shape `Spec/Serialize.lean` and `Spec/Interp.lean`
 use. -/
 
 mutual
@@ -399,7 +399,7 @@ def SSZType.hashTreeRoot (H : Type) [Hasher H] :
       let x' : BitVec 256 := x
       padToChunk (natToChunk x'.toNat)
   | .uintN _,             _  =>
-      -- Non-spec uintN width — degenerate case, return zero chunk.
+      -- Non-spec uintN width, a degenerate case. Return zero chunk.
       zero32
   | .bool,                b  =>
       let b' : Bool := b
@@ -489,7 +489,7 @@ Inference chain at the call site:
 2. The implicit `{H : Type}` binder is unified with whichever `H` the
    in-scope instance refines.
 3. Inside the body, the *explicit* `H` is passed positionally to
-   `SSZType.hashTreeRoot` — the mutual-block functions take `H` as a
+   `SSZType.hashTreeRoot`, the mutual-block functions take `H` as a
    regular argument (not an instance binder on the function itself)
    because the helpers need it positionally for `(H := H)` projections. -/
 def hashTreeRoot {H : Type} [Hasher H] (s : SSZType) (x : s.interp) :

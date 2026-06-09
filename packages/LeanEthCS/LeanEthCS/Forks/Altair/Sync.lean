@@ -3,7 +3,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Altair.Sync` — Altair sync-committee containers
+# `LeanEthCS.Forks.Altair.Sync`: Altair sync-committee containers
 
 Altair extends Phase 0 with the *sync-committee* subprotocol used by
 light clients. Seven containers carry the sync-committee membership,
@@ -18,7 +18,7 @@ preset-invariant containers (`SyncCommitteeMessage`,
 SSZRepr` declarations.
 
 `SYNC_SUBCOMMITTEE_SIZE` is computed in the field type via the macro's
-literal-Nat substitution as `SYNC_COMMITTEE_SIZE / 4` — at expansion
+literal-Nat substitution as `SYNC_COMMITTEE_SIZE / 4`. At expansion
 the division reduces to `8` (minimal) or `128` (mainnet).
 -/
 
@@ -33,19 +33,19 @@ open SizzLean.Repr
 open LeanEthCS
 open LeanEthCS.Macros
 
--- `SyncAggregate` — bitvector of who signed + the aggregated signature.
+-- `SyncAggregate`: bitvector of who signed + the aggregated signature.
 ssz_struct_for_presets SyncAggregate in LeanEthCS.Forks.Altair
     for [minimal, mainnet] where
   syncCommitteeBits      : Bitvector @@SYNC_COMMITTEE_SIZE,
   syncCommitteeSignature : BLSSignature
 
--- `SyncCommittee` — pubkey registry for one sync-committee period.
+-- `SyncCommittee`: pubkey registry for one sync-committee period.
 ssz_struct_for_presets SyncCommittee in LeanEthCS.Forks.Altair
     for [minimal, mainnet] where
   pubkeys         : Vector BLSPubkey @@SYNC_COMMITTEE_SIZE,
   aggregatePubkey : BLSPubkey
 
-/-- `SyncCommitteeMessage` — a single sync-committee member's
+/-- `SyncCommitteeMessage`: a single sync-committee member's
 attestation for one slot. Fixed-size, no aggregation. Preset-invariant. -/
 structure SyncCommitteeMessage where
   slot            : Slot
@@ -54,7 +54,7 @@ structure SyncCommitteeMessage where
   signature       : BLSSignature
   deriving SSZRepr
 
--- `SyncCommitteeContribution` — partial aggregation across one subnet.
+-- `SyncCommitteeContribution`: partial aggregation across one subnet.
 -- `aggregationBits` length is `SYNC_SUBCOMMITTEE_SIZE = SYNC_COMMITTEE_SIZE / 4`.
 ssz_struct_for_presets SyncCommitteeContribution in LeanEthCS.Forks.Altair
     for [minimal, mainnet] where
@@ -64,7 +64,7 @@ ssz_struct_for_presets SyncCommitteeContribution in LeanEthCS.Forks.Altair
   aggregationBits   : Bitvector (@@SYNC_COMMITTEE_SIZE / 4),
   signature         : BLSSignature
 
--- `ContributionAndProof` — contribution + aggregator's selection proof.
+-- `ContributionAndProof`: contribution + aggregator's selection proof.
 -- Preset-variant via its `contribution` field.
 ssz_struct_for_presets ContributionAndProof in LeanEthCS.Forks.Altair
     for [minimal, mainnet] where
@@ -78,7 +78,7 @@ ssz_struct_for_presets SignedContributionAndProof in LeanEthCS.Forks.Altair
   message   : @%ContributionAndProof,
   signature : BLSSignature
 
-/-- `SyncAggregatorSelectionData` — message a sync-committee aggregator
+/-- `SyncAggregatorSelectionData`: message a sync-committee aggregator
 signs to prove eligibility for a (slot, subcommittee). Preset-invariant. -/
 structure SyncAggregatorSelectionData where
   slot              : Slot

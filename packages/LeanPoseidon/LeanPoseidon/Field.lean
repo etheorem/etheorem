@@ -1,13 +1,13 @@
 /-!
-# `LeanPoseidon.Field` — a prime field over `Nat`, and the BN254 default
+# `LeanPoseidon.Field`: a prime field over `Nat`, and the BN254 default
 
 This file provides two things:
 
-* **`Fp (p : Nat)`** — the *prime-field abstraction*: integers mod `p`,
+* **`Fp (p : Nat)`**: the *prime-field abstraction*, integers mod `p`,
   carried as a `Nat` below the modulus. Generic arithmetic and the byte
   codec are defined once, parameterised by the modulus; adding a field is
   then a modulus (and its `NeZero` proof), not a copy of the arithmetic.
-* **`Bn254Fr`** — the library's default coefficient field: an `abbrev`
+* **`Bn254Fr`**: the library's default coefficient field, an `abbrev`
   for `Fp bn254FrModulus`, where `bn254FrModulus` is the **scalar field**
   order `r` of the BN254 ("alt_bn128") curve (the group order, *not* the
   ~256-bit base-field prime `q`). This is the field Poseidon2's BN254
@@ -21,7 +21,7 @@ the top level; the Poseidon2 construction lives under `Poseidon2`.
 
 * `structure Fp (p : Nat) where val : Nat; isLt : val < p` is the standard
   "bounded `Nat`" encoding of a field element. A `Prop` field like `isLt`
-  is **proof-irrelevant** in Lean — two values with the same `val` are
+  is **proof-irrelevant** in Lean, two values with the same `val` are
   definitionally equal regardless of *which* proof they carry, which is why
   `DecidableEq (Fp p)` reduces to `DecidableEq` on the `val`.
 * `[NeZero p]` (a Lean-core class meaning `p ≠ 0`) is what lets the
@@ -31,14 +31,14 @@ the top level; the Poseidon2 construction lives under `Poseidon2`.
 * Why `Nat` and not a Montgomery limb representation? Lean's `Nat` is
   GMP-backed, so `mul` / `mod` on a 254-bit prime are fast both at runtime
   and under `native_decide`. **The abstraction is purely structural: every
-  concrete field (including `Bn254Fr`) keeps this `Nat`/GMP representation
-  — no typeclass-method indirection at the leaves — so `permute` /
+  concrete field (including `Bn254Fr`) keeps this `Nat`/GMP representation,
+  no typeclass-method indirection at the leaves, so `permute` /
   `compress` reduce in the kernel and under `native_decide` exactly as a
   hand-monomorphised field would.** That is the hot-path constraint
   (ARCHITECTURE.md §3 / Phase 4).
 * `ofBytes?` returns `Option` (`?` is the Lean convention for a partial
   function) because a 32-byte value can exceed the modulus; the codec
-  **never silently reduces** — it rejects out-of-range input.
+  **never silently reduces**, it rejects out-of-range input.
 
 ## The byte codec is the one home for endianness
 
@@ -54,20 +54,20 @@ set_option autoImplicit false
 
 namespace LeanPoseidon
 
-/-- The BN254 / alt_bn128 **scalar-field** order — a 254-bit prime `r`,
+/-- The BN254 / alt_bn128 **scalar-field** order, a 254-bit prime `r`,
 the modulus of `Bn254Fr`. -/
 def bn254FrModulus : Nat :=
   21888242871839275222246405745257275088548364400416034343698204186575808495617
 
 /-- `0 < bn254FrModulus`. `decide` settles it by a single GMP comparison on
-the literal — no unary unfolding. -/
+the literal, no unary unfolding. -/
 theorem bn254FrModulus_pos : 0 < bn254FrModulus := by decide
 
 /-- The `NeZero` instance that powers `Bn254Fr`'s arithmetic. -/
 instance : NeZero bn254FrModulus := ⟨by decide⟩
 
 /-- A prime-field element: a `Nat` below the modulus `p`, carrying an
-erased proof of that bound. Generic over the modulus — `Bn254Fr` (below) is
+erased proof of that bound. Generic over the modulus, `Bn254Fr` (below) is
 the `p = bn254FrModulus` instance. -/
 structure Fp (p : Nat) where
   /-- The canonical representative in `[0, p)`. -/
@@ -130,7 +130,7 @@ protected def pow (a : Fp p) : Nat → Fp p
 instance : Pow (Fp p) Nat := ⟨Fp.pow⟩
 
 /-- Decidable equality. By proof irrelevance on `isLt` this reduces to
-deciding `a.val = b.val` (a fast `Nat` comparison) — exactly what
+deciding `a.val = b.val` (a fast `Nat` comparison), exactly what
 `native_decide` evaluates when checking the anchor KAT. -/
 instance : DecidableEq (Fp p) := fun a b =>
   if h : a.val = b.val then
@@ -139,11 +139,11 @@ instance : DecidableEq (Fp p) := fun a b =>
     .isFalse (by intro he; exact h (congrArg Fp.val he))
 
 /-- Readable error output (the `val`) when a `native_decide` / `#guard`
-gate fails — `Fp` carries a proof field, so the default deriving handler
+gate fails, `Fp` carries a proof field, so the default deriving handler
 cannot print it. -/
 instance : Repr (Fp p) := ⟨fun a _ => repr a.val⟩
 
-/-! ## Byte codec (32-byte big-endian — endianness pinned here)
+/-! ## Byte codec (32-byte big-endian, endianness pinned here)
 
 `toBytes` writes the most-significant byte first; `ofBytes?` reads the same
 way and **rejects** (`none`) any 32-byte value `≥ p`. Neither needs
@@ -195,7 +195,7 @@ abbrev Bn254Fr.ofBytes? (bs : ByteArray) : Option Bn254Fr := Fp.ofBytes? bs
 /-! ## A second field: BLS12-381 `Fr`
 
 The whole point of the abstraction: a different field is *only* a modulus
-plus its `NeZero` instance plus the qualified re-exports — **no arithmetic
+plus its `NeZero` instance plus the qualified re-exports, **no arithmetic
 is rewritten**, and the generic `Poseidon2.permute` / layers work over it
 unchanged. `Bls12Fr` is the scalar field of BLS12-381; Poseidon2's BLS12
 instance lives in `Poseidon2/Params.lean`. (BLS12-381 `Fr` is a 255-bit
@@ -208,7 +208,7 @@ def blsFrModulus : Nat :=
 /-- The `NeZero` instance powering `Bls12Fr`'s arithmetic. -/
 instance : NeZero blsFrModulus := ⟨by decide⟩
 
-/-- The BLS12-381 scalar field — `Fp blsFrModulus`. -/
+/-- The BLS12-381 scalar field, `Fp blsFrModulus`. -/
 abbrev Bls12Fr : Type := Fp blsFrModulus
 
 /-- `Bls12Fr.ofNat` = `Fp.ofNat` at the BLS12-381 modulus. -/

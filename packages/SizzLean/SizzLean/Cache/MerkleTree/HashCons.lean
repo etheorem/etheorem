@@ -2,12 +2,12 @@ import Std.Data.HashMap
 import SizzLean.Cache.MerkleTree.Node
 
 /-!
-# `SizzLean.Cache.MerkleTree.HashCons` — bounded-LRU dedup for identical subtrees
+# `SizzLean.Cache.MerkleTree.HashCons`: bounded-LRU dedup for identical subtrees
 
 A global per-process cache mapping 32-byte SHA-256 roots to the
 populated `Node.pair` cell whose `merkleRoot` equals that root.
 Used to dedup identical populated subtrees *after* their root has
-been computed — when a second tree-construction produces the same
+been computed. When a second tree-construction produces the same
 `(left, right, root)` triple, the smart constructor `Node.mkPair`
 returns the cached cell instead of allocating a fresh one.
 
@@ -20,7 +20,7 @@ returns the cached cell instead of allocating a fresh one.
 * `Node.mkPair` smart constructor: for `(left, right, some root)`
   triples it consults the cache; on hit, returns the cached
   cell. On miss, inserts and returns a fresh `.pair` allocation.
-* `(left, right, none)` is a no-op — the dedup key (the root) is
+* `(left, right, none)` is a no-op, the dedup key (the root) is
   unknown until `merkleRootWithCache` computes it.
 
 ## What the cache does not cover
@@ -30,7 +30,7 @@ returns the cached cell instead of allocating a fresh one.
   reduction on archive workloads). That would require
   identity-keyed lookup on `(left, right)` *before* the root is
   known, which in turn requires the children themselves to be
-  consed first — a recursive structural dependency.
+  consed first, a recursive structural dependency.
 * Integration into `Node.ofShape` (the construction site that
   builds trees from `SSZRepr`). `Node.mkPair` is available to
   call but is not wired into `ofShape`'s `.pair` allocations,
@@ -46,7 +46,7 @@ returns the cached cell instead of allocating a fresh one.
 The cache stores up to `capacity` (default 4096) entries. When
 the next insertion would exceed `capacity`, we clear the
 entire map and start over. This is a "wipe-half" eviction in
-spirit — strictly speaking we wipe-all and let the workload
+spirit, strictly speaking we wipe-all and let the workload
 re-populate. Pragmatic for this use case: the cache is a
 performance optimisation; correctness doesn't depend on a hit.
 
@@ -61,7 +61,7 @@ this scheme captures.
 
 ## Trust footprint
 
-None added. The cache is observationally transparent — a hit
+None added. The cache is observationally transparent, a hit
 returns a `Node` that's structurally `==` to what `.pair l r r0`
 would have produced. The coherence tests in
 `SizzLeanTests/HashConsCoherence.lean` empirically validate this
@@ -111,13 +111,13 @@ def HashCons.size : BaseIO Nat := do
 
 /-- Smart constructor for `Node.pair` that consults the global
 hash-cons cache. On a cache hit (same 32-byte root previously
-seen), returns the *same* `Node` cell — Lean's reference-counting
+seen), returns the *same* `Node` cell. Lean's reference-counting
 runtime then makes the dedup observable as shared structure. On a
 cache miss, allocates a fresh `.pair`, inserts it into the cache,
 and returns it.
 
-For `(left, right, none)` triples — when the root hasn't been
-computed yet — this falls through to the plain `.pair`
+For `(left, right, none)` triples, when the root hasn't been
+computed yet, this falls through to the plain `.pair`
 allocation without touching the cache. The dedup key is the
 root; without it, we have no lookup.
 

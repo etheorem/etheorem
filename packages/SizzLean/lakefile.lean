@@ -1,4 +1,4 @@
--- SizzLean subpackage — Lake configuration.
+-- SizzLean subpackage: Lake configuration.
 --
 -- Uses `lakefile.lean` rather than `lakefile.toml` for the
 -- `pkg-config`-driven OpenSSL discovery (`opensslLinkArgs`) and the
@@ -8,7 +8,7 @@
 -- The FFI SHA-256 binding itself no longer lives here: it was moved
 -- to the `LeanHazmatSha256` package (hazmat-docs/ARCHITECTURE.md §9,
 -- PLAN.md Stage 1). SizzLean now `require`s that package for the FFI
--- shim and keeps only the *spec-side* machinery — the `Hasher`
+-- shim and keeps only the *spec-side* machinery, the `Hasher`
 -- typeclass, the `Sha256` tag + instance, and the FFI ≡ pure-Lean
 -- equivalence axioms, the one place entitled to import both the FFI
 -- binding and the `LeanSha256` spec.
@@ -51,7 +51,7 @@ unsafe def globsUnder
 isn't installed (rare on Linux distros, common on minimal Docker
 images). The Linux-only `-l:libcrypto.so.3` GNU-ld syntax and the
 multiarch `-L/usr/lib/x86_64-linux-gnu` path are deliberately the
-last-resort values — when `pkg-config` is available it produces
+last-resort values. When `pkg-config` is available it produces
 portable equivalents for Fedora, Arch, macOS Homebrew, Nix, etc. -/
 private def opensslFallbackLinkArgs : Array String :=
   #["-L/usr/lib/x86_64-linux-gnu", "-l:libcrypto.so.3"]
@@ -86,7 +86,7 @@ unambiguous to Lean's `lld`.
 On Debian/Ubuntu `pkg-config --variable=libdir libcrypto` returns
 `/usr/lib/x86_64-linux-gnu`; on Fedora `/usr/lib64`; on macOS
 Homebrew `/opt/homebrew/opt/openssl@3/lib`; on Nix the store path.
-All transparent to this code — pkg-config does the platform
+All transparent to this code, pkg-config does the platform
 discrimination for us. -/
 unsafe def opensslLinkArgs : Array String :=
   let libDir := runPkgConfig #["--variable=libdir", "libcrypto"] #[]
@@ -105,8 +105,8 @@ package SizzLean where
   moreLinkArgs := unsafe opensslLinkArgs
   -- Lake's leanc default is already `-O3 -DNDEBUG -fPIC` with the
   -- usual hardening flags. We add `-march=native` so the host's
-  -- AVX2/AVX-512/SHA-NI extensions are visible to the Lean→C path —
-  -- without this, leanc emits generic x86-64 baseline code that can't
+  -- AVX2/AVX-512/SHA-NI extensions are visible to the Lean→C path.
+  -- Without this, leanc emits generic x86-64 baseline code that can't
   -- autovectorise the per-byte / per-word loops the Std `ByteArray` /
   -- `Array` IR walks the most. Cascades to every `lean_lib` (incl.
   -- `SizzLean`, `SizzLeanTests`, `SizzLeanBench`) and `lean_exe`
@@ -152,7 +152,7 @@ lean_lib SizzLeanTests where
 -- `precompileModules := true` is load-bearing for the bench: without
 -- it, the scenario for-loops and the `runBench` driver run as
 -- bytecode through Lean's interpreter even though `ssz_bench` is a
--- native binary — measuring the interpreter, not the library. With
+-- native binary, measuring the interpreter, not the library. With
 -- it, every imported module is compiled to native code via `leanc`,
 -- and the timings reflect compiled `sszUpdate` / `box.hashTreeRoot`
 -- through compiled `Std.TreeMap` / compiled `Thunk` plumbing.
@@ -168,7 +168,7 @@ lean_lib SizzLeanBench where
 -- the binary loads is also native code, not bytecode-interpreted.
 --
 -- `supportInterpreter := true` matches `LeanEthCS`'s
--- `eth_ssz_vector_runner` — needed when the exe root is a submodule
+-- `eth_ssz_vector_runner`, needed when the exe root is a submodule
 -- of a `precompileModules` library to avoid a Lake build-graph cycle
 -- (the `:shared` and `:export` targets self-reference otherwise).
 -- The runtime cost is a small unused interpreter dispatch table in

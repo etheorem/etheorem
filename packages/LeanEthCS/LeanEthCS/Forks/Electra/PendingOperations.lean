@@ -2,7 +2,7 @@ import LeanEthCS.Primitives
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Electra.PendingOperations` — Electra pending-ops containers
+# `LeanEthCS.Forks.Electra.PendingOperations`: Electra pending-ops containers
 
 EIP-7251 introduces three pending-operations queues (deposits,
 partial withdrawals, consolidations) that live on `BeaconState`. The
@@ -18,7 +18,7 @@ open SizzLean
 
 open LeanEthCS
 
-/-- `PendingDeposit` — a deferred deposit waiting to be applied to
+/-- `PendingDeposit`: a deferred deposit waiting to be applied to
 the validator registry. -/
 structure PendingDeposit where
   pubkey                : BLSPubkey
@@ -28,14 +28,14 @@ structure PendingDeposit where
   slot                  : Slot
   deriving SSZRepr
 
-/-- `PendingPartialWithdrawal` — a deferred partial withdrawal. -/
+/-- `PendingPartialWithdrawal`: a deferred partial withdrawal. -/
 structure PendingPartialWithdrawal where
   validatorIndex   : ValidatorIndex
   amount           : Gwei
   withdrawableEpoch : Epoch
   deriving SSZRepr
 
-/-- `PendingConsolidation` — a deferred merge of `source` into
+/-- `PendingConsolidation`: a deferred merge of `source` into
 `target`. -/
 structure PendingConsolidation where
   sourceIndex : ValidatorIndex

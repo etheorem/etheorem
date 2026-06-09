@@ -6,7 +6,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Phase0.State` — `HistoricalBatch` and `BeaconState`
+# `LeanEthCS.Forks.Phase0.State`: `HistoricalBatch` and `BeaconState`
 
 The two Phase 0 composites whose SSZ shape varies between presets.
 Emitted per-preset via `ssz_struct_for_presets`, which stamps out
@@ -14,11 +14,11 @@ matching `Minimal` and `Mainnet` variants from a single declaration.
 
 ## Preset-sensitive caps used here
 
-* `SLOTS_PER_HISTORICAL_ROOT` — 64 (minimal) / 8192 (mainnet)
-* `EPOCHS_PER_HISTORICAL_VECTOR` — 64 / 65536
-* `EPOCHS_PER_SLASHINGS_VECTOR` — 64 / 8192
-* `EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH` — 32 / 2048
-* `MAX_ATTESTATIONS * SLOTS_PER_EPOCH` — 1024 / 4096
+* `SLOTS_PER_HISTORICAL_ROOT`: 64 (minimal) / 8192 (mainnet)
+* `EPOCHS_PER_HISTORICAL_VECTOR`: 64 / 65536
+* `EPOCHS_PER_SLASHINGS_VECTOR`: 64 / 8192
+* `EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH`: 32 / 2048
+* `MAX_ATTESTATIONS * SLOTS_PER_EPOCH`: 1024 / 4096
   (cap for `previous/current_epoch_attestations`)
 
 ## Preset-invariant caps used here (literal `Nat`s)

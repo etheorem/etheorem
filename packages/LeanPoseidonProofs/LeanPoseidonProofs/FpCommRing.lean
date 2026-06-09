@@ -3,11 +3,11 @@ import Mathlib.Data.ZMod.Basic
 import Mathlib.Tactic
 
 /-!
-# `LeanPoseidonProofs.FpCommRing` — the `CommRing (Fp p)` instance
+# `LeanPoseidonProofs.FpCommRing`: the `CommRing (Fp p)` instance
 
 The core's `Fp p` (`{ val : Nat // val < p }`, with `Nat`-mod arithmetic)
 is given a `CommRing` structure here, in the mathlib-bearing proofs
-package — so the core stays mathlib-free. The instance is what lets the
+package, so the core stays mathlib-free. The instance is what lets the
 `ring` tactic discharge the linear-layer identities in `Equivalence.lean`
 over the concrete field.
 
@@ -23,11 +23,11 @@ keeping `Fp p`'s own `+`, `*`, `-`, `0`, `1` as the ring operations**
 that would replace them and break `ring` on `Fp`-arithmetic goals). It is
 generic in `p`, so it covers `Bn254Fr` and `Bls12Fr` (and any future
 `Fp`-based field) with one instance; it needs only `[NeZero p]` (so the
-field is nonempty / `0 < p`), not primality — the layer identities are
+field is nonempty / `0 < p`), not primality. The layer identities are
 ring facts, independent of `p` being prime.
 
-The four operations mathlib's transport additionally requires — `ℕ`/`ℤ`
-scalar multiplication and `Nat`/`Int` casts — are defined here *via*
+The four operations mathlib's transport also requires, `ℕ`/`ℤ`
+scalar multiplication and `Nat`/`Int` casts, are defined here *via*
 `ZMod p` (mathlib-side, so no mathlib leaks into the core), which makes
 their `toZMod`-preservation proofs immediate (`ZMod.natCast_zmod_val`).
 -/
@@ -101,7 +101,7 @@ theorem toZMod_npow (a : Fp p) (n : ℕ) : toZMod (a ^ n) = (toZMod a) ^ n := by
   | succ k ih => rw [pow_succ', toZMod_mul, ih, pow_succ]
 
 /-- `Fp p` is a commutative ring (for `p ≠ 0`), with the core's own
-arithmetic as the ring operations — transported from `ZMod p` along the
+arithmetic as the ring operations, transported from `ZMod p` along the
 injection `toZMod`. -/
 instance instCommRing : CommRing (Fp p) :=
   toZMod_injective.commRing toZMod

@@ -2,7 +2,7 @@ import SizzLeanBench.Profile
 import SizzLeanBench.Runner
 
 /-!
-# `SizzLeanBench.ProfileMain` — `ssz_profile` exe driver
+# `SizzLeanBench.ProfileMain`: `ssz_profile` exe driver
 
 Standalone driver for the S10 cached-path phase profile.
 Invoked as

@@ -1,5 +1,5 @@
 /-!
-# `LeanHazmatBls.Ffi` — Ethereum consensus BLS behind `@[extern]`
+# `LeanHazmatBls.Ffi`: Ethereum consensus BLS behind `@[extern]`
 
 `@[extern] opaque` bindings to the C shim in `csrc/bls_shim.c`, which
 wraps supranational/blst for the **minimal-pubkey-size** BLS signature
@@ -8,13 +8,13 @@ scheme used by the Ethereum consensus layer:
 * public keys in **G1**, 48-byte compressed;
 * signatures in **G2**, 96-byte compressed;
 * secret keys are 32-byte big-endian scalars;
-* ciphersuite `BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_` — the
+* ciphersuite `BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`, the
   *proof-of-possession* (POP) suite. (A *ciphersuite* fixes the
   hash-to-curve domain-separation tag and signing variant; "G1/G2" are
   the two source groups of the BLS12-381 pairing; "compressed" stores a
   curve point as its x-coordinate plus a sign bit.)
 
-This is the **raw primitive** surface — `Sign` / `Verify` / aggregation
+This is the **raw primitive** surface, `Sign` / `Verify` / aggregation
 / pairing verification. Composition into protocol objects (collecting a
 committee's pubkeys, choosing the message to sign) is the caller's job
 (hazmat-docs/ARCHITECTURE.md §4).
@@ -37,8 +37,8 @@ each binding is an opaque `@[extern]` boundary whose only validation is
 the official consensus-spec BLS test vectors (`LeanHazmatBlsTests`).
 `opaque` keeps the kernel from trying to reduce a pairing; `@[extern]`
 emits a direct call to the named blst-backed C symbol. The empirical
-trust assumption — *that blst implements BLS12-381 and this ciphersuite
-correctly* — is what the KAT pins.
+trust assumption, *that blst implements BLS12-381 and this ciphersuite
+correctly*, is what the KAT pins.
 -/
 
 set_option autoImplicit false

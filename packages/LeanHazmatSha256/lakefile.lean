@@ -1,4 +1,4 @@
--- LeanHazmatSha256 subpackage — Lake configuration.
+-- LeanHazmatSha256 subpackage: Lake configuration.
 --
 -- Uses `lakefile.lean` rather than `lakefile.toml` because the FFI
 -- SHA-256 shims (`csrc/sha256_*.c`) need procedural build targets
@@ -18,7 +18,7 @@ open Lake DSL System
 isn't installed (rare on Linux distros, common on minimal Docker
 images). The Linux-only `-l:libcrypto.so.3` GNU-ld syntax and the
 multiarch `-L/usr/lib/x86_64-linux-gnu` path are deliberately the
-last-resort values — when `pkg-config` is available it produces
+last-resort values, when `pkg-config` is available it produces
 portable equivalents for Fedora, Arch, macOS Homebrew, Nix, etc. -/
 private def opensslFallbackLinkArgs : Array String :=
   #["-L/usr/lib/x86_64-linux-gnu", "-l:libcrypto.so.3"]
@@ -53,7 +53,7 @@ unambiguous to Lean's `lld`.
 On Debian/Ubuntu `pkg-config --variable=libdir libcrypto` returns
 `/usr/lib/x86_64-linux-gnu`; on Fedora `/usr/lib64`; on macOS
 Homebrew `/opt/homebrew/opt/openssl@3/lib`; on Nix the store path.
-All transparent to this code — pkg-config does the platform
+All transparent to this code. pkg-config does the platform
 discrimination for us. -/
 unsafe def opensslLinkArgs : Array String :=
   let libDir := runPkgConfig #["--variable=libdir", "libcrypto"] #[]
@@ -120,7 +120,7 @@ target sha256_batch.o pkg : FilePath := do
 
 -- The family's native archive. Lake links this `.a` into any
 -- precompiled library or executable that (transitively) `require`s
--- this package — that is how SizzLean's hash path, and downstream
+-- this package. That is how SizzLean's hash path, and downstream
 -- exes, pick up the OpenSSL-backed symbols.
 extern_lib libleanhazmat_sha256 pkg := do
   let shimFile  ← sha256_shim.o.fetch
@@ -138,7 +138,7 @@ lean_lib LeanHazmatSha256 where
 
 -- Byte-level Known-Answer-Test gate. Built explicitly via
 -- `lake build LeanHazmatSha256Tests`; the default `lake build` skips
--- it. Self-contained — no LeanSha256 / SizzLean dependency — so this
+-- it. Self-contained, no LeanSha256 / SizzLean dependency, so this
 -- package validates standalone when split to a mirror.
 lean_lib LeanHazmatSha256Tests where
   roots := #[`LeanHazmatSha256Tests]

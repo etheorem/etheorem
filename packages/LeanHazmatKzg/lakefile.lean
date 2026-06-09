@@ -1,14 +1,14 @@
--- LeanHazmatKzg subpackage — Lake configuration.
+-- LeanHazmatKzg subpackage: Lake configuration.
 --
 -- Procedural `lakefile.lean` (not TOML) because it compiles vendored C
--- into an `extern_lib`. c-kzg-4844 is vendored — `just vendor-kzg`
+-- into an `extern_lib`. c-kzg-4844 is vendored, `just vendor-kzg`
 -- shallow-clones the pinned tag (v2.1.7) into `vendor/c-kzg-4844/` (NOT
 -- its `--recursive` blst), and copies the trusted setup into `data/`.
 --
 -- This is the one LeanHazmat family that `require`s another: it shares
 -- LeanHazmatBls's single compiled **blst** archive rather than vendoring
 -- a second copy (hazmat-docs/ARCHITECTURE.md §4). c-kzg v2.1.7 pins blst
--- exactly at v0.3.16 — the LeanHazmatBls pin — so the headers and ABI
+-- exactly at v0.3.16, the LeanHazmatBls pin, so the headers and ABI
 -- match. At compile time c-kzg needs blst's `bindings/` on the include
 -- path; the `blst_*` symbols come from LeanHazmatBls's archive.
 --
@@ -23,7 +23,7 @@ open Lake DSL System
 `libleanhazmat_bls.{a,so}`), computed at lakefile-load time. The repo root
 is found by walking up from the CWD (the repo root for an umbrella build,
 or this package's dir for a standalone build) to the directory containing
-`packages/LeanHazmatBls`. The artefacts need not exist yet at load time —
+`packages/LeanHazmatBls`. The artefacts need not exist yet at load time,
 LeanHazmatBls builds first as a `require`d dependency. -/
 unsafe def blsLibDir : String := Id.run <| unsafeBaseIO do
   let rel : FilePath := "packages" / "LeanHazmatBls" / ".lake" / "build" / "lib"
@@ -48,14 +48,14 @@ package LeanHazmatKzg where
   -- at link, and the `-rpath` finds it at `dlopen`. This mirrors exactly
   -- how LeanHazmatSha256's `.so` gains `NEEDED libcrypto.so.3`. blst lives
   -- in Bls's archive (not duplicated here), so the final exe link still
-  -- sees one blst copy via normal `extern_lib` propagation — no
+  -- sees one blst copy via normal `extern_lib` propagation, no
   -- duplicate symbols. (Monorepo path; a standalone Kzg mirror resolves
   -- Bls through its git `require`.)
   moreLinkArgs := Id.run do
     let d := unsafe blsLibDir
     #["-L" ++ d, "-l:libleanhazmat_bls.so", "-Wl,-rpath," ++ d]
 
--- Shares LeanHazmatBls's blst — the single blst owner for the family.
+-- Shares LeanHazmatBls's blst, the single blst owner for the family.
 require LeanHazmatBls from "../LeanHazmatBls"
 
 /-- blst's headers, vendored under the sibling LeanHazmatBls package.
@@ -115,7 +115,7 @@ target trusted_setup.o pkg : FilePath := do
   buildO obj (← inputTextFile src) flags #[] "cc" getLeanTrace
 
 -- This package's archive: the shim + c-kzg + the embedded setup. blst is
--- deliberately NOT included here — it propagates from LeanHazmatBls, so
+-- deliberately NOT included here, it propagates from LeanHazmatBls, so
 -- the final exe link sees one blst copy. (The shared lib reaches blst via
 -- `moreLinkArgs` linking Bls's `.so` instead; see `blsLibDir`.)
 extern_lib libleanhazmat_kzg pkg := do

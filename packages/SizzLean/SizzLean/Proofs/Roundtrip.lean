@@ -10,7 +10,7 @@ import SizzLean.Proofs.ContainerFixed
 import SizzLean.Proofs.FixedElems
 
 /-!
-# `SizzLean.Proofs.Roundtrip` — `decode_encode` dispatch over `BasicSupported`
+# `SizzLean.Proofs.Roundtrip`: `decode_encode` dispatch over `BasicSupported`
 
 This file is the *dispatcher* for the central `decode_encode`
 theorem. Per-arm proofs live in sibling modules:
@@ -27,7 +27,7 @@ theorem. Per-arm proofs live in sibling modules:
 Recursive definitions in Lean must be proved to terminate. The
 *structural-recursion checker* is the cheap path: it accepts a
 recursive call `f arg` if `arg` is a **strict subterm** of the
-caller's input — i.e. extracted by pattern matching, so the
+caller's input, i.e. extracted by pattern matching, so the
 inductive's definition makes it syntactically smaller. The other
 path is well-founded recursion, where the programmer supplies a
 measure and a proof that it decreases; it's strictly more
@@ -41,12 +41,12 @@ recursive calls are written.
 For composite arms (`vectorFixed`, `listFixed`), `decode_encode`
 hands the per-arm helper a closure
 `fun y => decode_encode h_t y`. The checker accepts this because
-`h_t` is the case-split's sub-witness — a *strict subterm* of the
+`h_t` is the case-split's sub-witness, a *strict subterm* of the
 outer `h_sup`, extracted by the `BasicSupported.vectorFixed`
-pattern — so each recursive call descends.
+pattern, so each recursive call descends.
 
 For the `containerFixed` arm, the helper would need
-`∀ t ∈ fs, decode_encode_t` — but a closure abstracting `t`
+`∀ t ∈ fs, decode_encode_t`. A closure abstracting `t`
 loses the connection to `fs`, and the checker can't see the
 descent. The fix is a **mutual block** with a partner function
 `decode_encode_containerFixed_aux` that recurses on

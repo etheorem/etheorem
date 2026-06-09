@@ -1,5 +1,5 @@
 /-!
-# `SizzLean.Cache.IndexError` — SSZ element-access failure
+# `SizzLean.Cache.IndexError`: SSZ element-access failure
 
 The sole failure mode of an *indexed* `sszGet` / `sszUpdate`
 (`xs[i]`): the index is past the current length. This is the
@@ -17,7 +17,7 @@ set_option autoImplicit false
 namespace SizzLean.Cache
 
 /-- The only way an index-form `sszGet`/`sszUpdate` can fail: the index
-is out of range for the field's current length. Carries no payload —
+is out of range for the field's current length. Carries no payload,
 there is a single failure mode. -/
 inductive IndexError where
   | indexError

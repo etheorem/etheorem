@@ -3,37 +3,37 @@ import LeanPoseidonProofs.FpCommRing
 import Mathlib.Tactic
 
 /-!
-# `LeanPoseidonProofs.Equivalence` — fast layers = dense reference
+# `LeanPoseidonProofs.Equivalence`: fast layers = dense reference
 
 The shipped Poseidon2 linear layers use the cheap *fast* forms
 (sum-plus-scaled-diagonal); `Poseidon2/LinearLayers.lean` also ships the
 textbook *dense* `t×t` matrix–vector products as `mul*Ref`. Here we prove
-they compute the same thing — hence the whole permutations coincide. This
+they compute the same thing, hence the whole permutations coincide. This
 is the machine-checked form of Poseidon2's central optimisation claim (the
 `O(t²) → O(t)` linear-layer collapse).
 
 ## Generic over any commutative ring
 
-The layer identities are pure ring identities — `xᵢ + Σⱼxⱼ = 2xᵢ + Σ_{j≠i}xⱼ`
-and `(intDiagᵢ−1)xᵢ + Σⱼxⱼ = intDiagᵢxᵢ + Σ_{j≠i}xⱼ` — true over *any*
+The layer identities are pure ring identities, `xᵢ + Σⱼxⱼ = 2xᵢ + Σ_{j≠i}xⱼ`
+and `(intDiagᵢ−1)xᵢ + Σⱼxⱼ = intDiagᵢxᵢ + Σ_{j≠i}xⱼ`, true over *any*
 `[CommRing R]`, independent of the prime. So they are proved generically by
 `ring` (after `Vector.ext` + `interval_cases` on the width-3 index), and then
 specialised to the concrete fields via `CommRing (Fp p)` (`FpCommRing`).
 
 `permute_eq_permuteRef` then follows by **congruence through the shared
 schedule**: `permute` and `permuteRef` are both `permuteWith par _ _ st`,
-differing only in the two linear-layer functions — so rewriting the two
+differing only in the two linear-layer functions, so rewriting the two
 function-level layer equalities is enough.
 
-## Scope — what this does and does not certify
+## Scope: what this does and does not certify
 
 Because `permute` and `permuteRef` share the *same* `permuteWith` schedule,
 they share the **S-box** (`x ↦ x⁵`), the **round-constant (ARK) additions**,
 and the **round ordering** (initial layer + 4 full + 56 partial + 4 full,
-with the same flattened-constant indexing) — these cancel in the equality.
+with the same flattened-constant indexing). These cancel in the equality.
 So `permute_eq_permuteRef` certifies *only* that the fast linear layers equal
 the dense ones; it says **nothing** about whether the S-box exponent, the
-ARK indexing, the schedule, or the round constants match real Poseidon2 — it
+ARK indexing, the schedule, or the round constants match real Poseidon2. It
 would hold unchanged even if those were wrong (both sides would commit the
 identical error). Those are pinned instead by the `native_decide` anchor KAT
 in `Poseidon2/Permutation.lean` (and the differential test / committed KATs),
@@ -45,11 +45,11 @@ there. Combined, the shipped `permute` is faithful Poseidon2.
 ## Axiom footprint
 
 The proof path uses only `ring` / `CommRing` / `ZMod` (mathlib): its axioms
-are the standard `propext`, `Classical.choice`, `Quot.sound` — **no
+are the standard `propext`, `Classical.choice`, `Quot.sound`. There is **no
 `Lean.ofReduceBool`** (the `native_decide` compiler-trust axiom that the
 conformance KATs use) and **no FFI**. `#print axioms permute_eq_permuteRef`
 shows exactly those three (so read it as "the layer optimisation is clean",
-per *Scope* above — not "the whole permutation is independently verified").
+per *Scope* above, not "the whole permutation is independently verified").
 (Not committed, per CLAUDE.md; run during review.)
 -/
 

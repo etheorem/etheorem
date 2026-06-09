@@ -8,7 +8,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Deneb.State` — Deneb `BeaconState`
+# `LeanEthCS.Forks.Deneb.State`: Deneb `BeaconState`
 
 Same field layout as Capella's `BeaconState`, but the
 `latest_execution_payload_header` is now Deneb's wider

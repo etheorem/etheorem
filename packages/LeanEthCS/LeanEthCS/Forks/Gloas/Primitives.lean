@@ -2,7 +2,7 @@ import LeanEthCS.Primitives
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Gloas.Primitives` — Gloas / EIP-7732 (ePBS) primitives
+# `LeanEthCS.Forks.Gloas.Primitives`: Gloas / EIP-7732 (ePBS) primitives
 
 Gloas introduces Enshrined Proposer-Builder Separation (EIP-7732).
 The protocol tracks a separate `Builder` registry alongside the

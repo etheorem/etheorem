@@ -1,4 +1,4 @@
-# Etheorem — Agent Notes
+# Etheorem: Agent Notes
 
 A Lean 4 project for Ethereum consensus-spec types and SSZ
 ([Simple Serialize](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md)).
@@ -8,8 +8,8 @@ SSZ types plus the consensus-spec container surface (Phase0 → Gloas).
 The Lake package is `Etheorem`; it currently ships four libraries:
 **`LeanSha256`** (pure-Lean SHA-256), **`SizzLean`** (the SSZ library),
 **`LeanEthCS`** (the consensus-spec containers), and **`LeanPoseidon`**
-(a pure-Lean Poseidon2 hash, a standalone island parallel to `LeanSha256`
-— it depends on nothing in the monorepo and nothing depends on it yet;
+(a pure-Lean Poseidon2 hash, a standalone island parallel to `LeanSha256`,
+it depends on nothing in the monorepo and nothing depends on it yet;
 see [`packages/LeanPoseidon/docs/ARCHITECTURE.md`](packages/LeanPoseidon/docs/ARCHITECTURE.md)).
 Mentions of "SizzLean" elsewhere in this file refer to the SSZ library
 specifically, not to the project as a whole.
@@ -20,7 +20,7 @@ links.
 
 ## Principles
 
-These are not new ideas — they are the standard names for what good Lean
+These are not new ideas. They are the standard names for what good Lean
 libraries already do. They show up below as concrete conventions; this section
 is the *why* so edge cases can be judged on principle, not by pattern-matching.
 
@@ -37,7 +37,7 @@ is the *why* so edge cases can be judged on principle, not by pattern-matching.
   the dividend compounds with every new contributor.
 
   Explain non-obvious *inferences* with the same rigor as non-obvious idioms.
-  Lean infers a lot — types, terms, instances, motives — and most of it is
+  Lean infers a lot, types, terms, instances, motives, and most of it is
   unremarkable, but some of it is load-bearing and not recoverable from
   reading the surface code: `let x : ConcreteType := y` coercions that force
   defeq reduction across a mutual-block boundary; dependent pattern
@@ -46,8 +46,8 @@ is the *why* so edge cases can be judged on principle, not by pattern-matching.
   parameter is a phantom tag the methods don't consume); the inferred
   `Fin n` parameter of a `Vector.ofFn` lambda; the synthesised bound proof
   inside `b[i]'h`. When the inference is the load-bearing thing a reader
-  needs to follow, name what Lean inferred and *why* in a one-line comment
-  — don't restate types the RHS already makes obvious. Type-annotate
+  needs to follow, name what Lean inferred and *why* in a one-line comment,
+  don't restate types the RHS already makes obvious. Type-annotate
   intermediate `let` / `have` bindings whose type changes the meaning of
   subsequent code (e.g. `let xs : List t.interp := v.toList`); leave
   inference for the cases that read cleanly without help.
@@ -56,14 +56,14 @@ is the *why* so edge cases can be judged on principle, not by pattern-matching.
   deserialization, *and* merkleization for every type, split it. A 1000-line
   module is the same smell as a 1000-line function, just at a different scale.
 - **Open/Closed (OCP).** Extend by adding new code, not by editing existing
-  code. New SSZ types should land as new instances of an `SSZ` typeclass —
+  code. New SSZ types should land as new instances of an `SSZ` typeclass,
   not as another arm of a giant `match` in a central encoder. If adding
   `Bitlist` requires editing `Vector`, the abstraction is wrong.
 - **Dependency Inversion (DIP).** Code against typeclass interfaces, not
   concrete representations. Tests for a `Container` should depend on the
-  `SSZ` interface (round-trip, root) — not on the byte layout of one specific
+  `SSZ` interface (round-trip, root), not on the byte layout of one specific
   encoder. `variable {α : Type} [SSZ α]` over `(x : SpecificStruct)`.
-- **DRY — one canonical home per fact.** A type's field list is defined once;
+- **DRY: one canonical home per fact.** A type's field list is defined once;
   encode / decode / `hashTreeRoot` instances are `deriving`d or generated
   from that single source. Wire-format constants (`uint64` width, chunk size,
   Merkle padding) live in one module and are imported, not re-typed.
@@ -71,7 +71,7 @@ is the *why* so edge cases can be judged on principle, not by pattern-matching.
   `open` at file scope leak into every importer. Keep `open` and option
   toggles tight to the section that needs them. Don't rely on import order
   for correctness.
-- **Configure, don't integrate.** `lakefile.toml` is declarative — keep it
+- **Configure, don't integrate.** `lakefile.toml` is declarative, keep it
   that way. If a build step starts to feel like a shell script glued onto
   Lake, push it into Lake's API or a small Lean script invoked via
   `lake env lean --run …`, not ad-hoc Make/bash.
@@ -85,7 +85,7 @@ is the *why* so edge cases can be judged on principle, not by pattern-matching.
   `batteries` before re-implementing a list utility; reach for `mathlib`
   only when the math actually demands it.
 - **Strict checking is a force multiplier.** Lean's type system catches an
-  enormous class of bugs *for free* — but only if you don't disarm it.
+  enormous class of bugs *for free*, but only if you don't disarm it.
   Prefer `set_option autoImplicit false` per file; treat `sorry`, unused
   variables, and linter warnings as build failures in spirit even when CI
   doesn't yet enforce it. The cost of strictness is paid once; the cost of
@@ -95,10 +95,10 @@ is the *why* so edge cases can be judged on principle, not by pattern-matching.
   you find yourself comparing strings in load-bearing code, the type is
   asking to be promoted.
 
-These map onto the usual references — Fowler's *Refactoring* (smells), Hunt &
+These map onto the usual references: Fowler's *Refactoring* (smells), Hunt &
 Thomas's *The Pragmatic Programmer* (DRY, orthogonality), Martin's
 *Clean Code* / *Clean Architecture* (SRP, DIP), and Meyer's *Object-Oriented
-Software Construction* (Open/Closed) — adapted to a dependently typed,
+Software Construction* (Open/Closed). They are adapted to a dependently typed,
 proof-carrying setting where typeclasses do most of the work that interfaces
 and patterns do elsewhere.
 
@@ -136,7 +136,7 @@ coordinates them via `[[require]]` blocks.
 ```
 
 The umbrella package is named `Etheorem`. The SSZ library
-library inside it is named `SizzLean` — when this file mentions
+library inside it is named `SizzLean`. When this file mentions
 "SizzLean" elsewhere, that's the library, not the project as a
 whole.
 
@@ -159,7 +159,7 @@ CLAUDE.md wins on form.
 
 - **Module names mirror file paths.** `SizzLean/Foo/Bar.lean` ⇒ `import SizzLean.Foo.Bar`.
   Files and directories are PascalCase.
-- **`import` must be the first thing in a file** — before any `/-! … -/` module
+- **`import` must be the first thing in a file**, before any `/-! … -/` module
   docstring, before any `set_option`. Lean rejects imports placed later.
 - **Library root re-exports.** New top-level submodules go into `SizzLean.lean`
   as `import SizzLean.Foo`. Internal-only helpers don't need to be re-exported.
@@ -173,7 +173,7 @@ CLAUDE.md wins on form.
   `#guard` for assertions you want the build to enforce.
 - **Tactic style:** prefer structured `by` blocks; use `<;>` and `· …` bullets
   rather than long `;`-chains. `decide` / `native_decide` are fine for finite
-  goals — note `native_decide` trusts the compiler.
+  goals, note `native_decide` trusts the compiler.
 - **`partial def` only when termination really can't be shown.** Prefer
   structural recursion or `termination_by` + `decreasing_by`.
 
@@ -184,7 +184,7 @@ scope. The four cases:
 
 1. **Symbolic state-transition proofs (no concrete hash bytes
    needed).** Both sides invoke the same opaque
-   `Hasher.hash` / `Hasher.combine` on the same buffers — equality
+   `Hasher.hash` / `Hasher.combine` on the same buffers, equality
    follows definitionally regardless of what bytes the hasher
    produces. Close with `rfl` / `simp` / `unfold`. `Sha256`'s
    opacity is fine; no axioms needed. **Most state-transition
@@ -202,21 +202,21 @@ scope. The four cases:
    `Hasher/Sha256Equiv.lean` (`sha256Hash_eq_spec`,
    `sha256Combine_eq_spec`), then close with `native_decide`.
    `#axioms` cites the two equivalence axioms + the
-   compiler axiom — all three named and auditable.
+   compiler axiom, all three named and auditable.
 
 4. **`Sha256Spec`-flavoured goals.** Pure-Lean SHA-256 reduces in
-   the kernel — use **`decide`** (no compiler axiom). Slower
+   the kernel, use **`decide`** (no compiler axiom). Slower
    (the kernel reduces hundreds of instructions per hash block);
    reserve for theorems where compiler trust is unacceptable.
 
 Default rule: **prefer `native_decide` over kernel `decide` when
 the goal involves any `Sha256` (FFI) hashing**. For non-hash
 decidable goals (Nat comparisons, structural enums, finite
-bitvector reasoning), kernel `decide` is fine — no compiler
+bitvector reasoning), kernel `decide` is fine, no compiler
 axiom needed.
 
 When the FFI-equivalence axioms are used, document why in the
-theorem's docstring — they're a real trust commitment, and a
+theorem's docstring, they're a real trust commitment, and a
 future reader inspecting `#axioms` should see context for *which*
 empirical assumption is being relied on.
 
@@ -231,7 +231,7 @@ lake env lean --run …   # Run a Lean script with the package env.
 ```
 
 CI (`.github/workflows/lean_action_ci.yml`) just runs `lake build` on the
-pinned toolchain — keep the local build green and CI follows.
+pinned toolchain, keep the local build green and CI follows.
 
 ## Dependencies
 
@@ -240,15 +240,15 @@ below). If you add another (e.g. `batteries`):
 
 1. Add a `[[require]]` block to `lakefile.toml`.
 2. Run `lake update` and commit the resulting `lake-manifest.json`.
-3. Pin the dep's git rev — don't track a branch.
+3. Pin the dep's git rev, don't track a branch.
 
 Adding mathlib is a heavy commitment (long compile, toolchain coupling). Don't
 pull it in for trivia; reach for `batteries` first if a small extension suffices.
 The monorepo's mathlib dependency is **`LeanPoseidonProofs`** (the Poseidon2
-fast-≡-reference equivalence proof) — and it is deliberately **contained**: a
+fast-≡-reference equivalence proof), and it is deliberately **contained**: a
 *standalone* package (not in the umbrella `[[require]]`s), pinned to mathlib's
 `v4.29.1` tag (an exact toolchain match, so `lake exe cache get` uses prebuilt
-oleans — nothing compiles from scratch), with its own committed
+oleans, nothing compiles from scratch), with its own committed
 `lake-manifest.json`. So mathlib never touches the SSZ chain, the
 `LeanPoseidon` core, the root build, or any CI job other than the dedicated
 `poseidon-proofs` one. Build it with `just test-poseidon-proofs`. See
@@ -256,7 +256,7 @@ oleans — nothing compiles from scratch), with its own committed
 
 `LeanPoseidon`'s differential-test oracle vendors the Rust `zkhash` crate
 (pinned in `rust-oracle/Cargo.lock`); that is a **test-only, cargo-managed**
-dependency confined to the `poseidon_fuzz` executable — not a Lean/Lake
+dependency confined to the `poseidon_fuzz` executable, not a Lean/Lake
 dependency, and never on any shipped or proof path.
 
 ## SSZ scope (what this library will cover)
@@ -269,7 +269,7 @@ as the source of truth. Roughly:
 - Operations: `serialize`, `deserialize`, `hash_tree_root` (merkleization).
 - Test vectors from `ethereum/consensus-spec-tests` once the core types land.
 
-When in doubt about behavior, defer to the spec and the official test vectors —
+When in doubt about behavior, defer to the spec and the official test vectors,
 not to other implementations.
 
 ## Don'ts
@@ -280,9 +280,44 @@ not to other implementations.
   and dependencies stay minimal and declarative. `lakefile.lean` is
   permitted *only* for build targets the declarative form cannot
   express (C-source compilation, code generation, dynamic git
-  targets). Stage 9's `sha256_shim` C build is the standing example
-  — Lake doesn't support both `lakefile.toml` and `lakefile.lean`
+  targets). Stage 9's `sha256_shim` C build is the standing example.
+  Lake doesn't support both `lakefile.toml` and `lakefile.lean`
   in one package, so when one procedural target is needed the whole
   config moves to `lakefile.lean` (kept ≤30 lines).
-- Don't bump `lean-toolchain` casually — it cascades through CI and any deps.
+- Don't bump `lean-toolchain` casually, it cascades through CI and any deps.
 - Don't leave `sorry` in committed code without a `TODO` and a tracking note.
+
+## Writing Style & Structural Constraints for Documentation
+
+Applies to comments in code and in other documentation files. Also, when writting in github issues and PRs.
+
+### Sentence Construction (Hard Enforcement)
+
+- **No contrastive negation or antithesis.** Never use patterns like "It's not about X, it's about Y" or "X, not Y, not Z." State the positive reality directly and cleanly, without defensive framing.
+
+### Punctuation & Sentence Structure
+
+- **No em-dashes for subphrases.** Never use em-dashes (—) or hyphens (-, --) to set off parenthetical thoughts, interruptions, or subphrases.
+- **Use commas instead.** Set off descriptive tangents or subphrases with commas (apposition).
+  - Bad: "The strategy—though risky—yielded massive results."
+  - Good: "The strategy, though risky, yielded massive results."
+- **Keep sentences clean.** If a subphrase needs more than two commas to execute, split it into two distinct, clean sentences instead of one complex sentence.
+
+### Structural Rhythm & Voice
+
+- **Vary sentence length.** Alternate between short, punchy sentences (under 5 words) and longer, flowing ones. Never write three sentences of similar length in a row.
+- **No statement-explanation loops.** Do not state a fact or opinion and then spend the next sentence explaining, justifying, or restating it in other words. Every sentence must introduce new information or advance the point.
+- **Active voice.** Write in the active voice. Avoid clinical, detached, or overly academic prose.
+
+### Banned Formatting & Bookends
+
+- **No filler openers.** Skip introductions like "Sure, here is..." or "Let's dive in." Start directly with the first relevant sentence.
+- **No summary closers.** Do not write a concluding summary paragraph or use phrases like "In conclusion," "Ultimately," "In essence," or "At the end of the day." Stop writing when the content ends.
+
+### Banned AI Vocabulary
+
+Never use the following. Replace them with simple, plain English alternatives.
+
+- **Verbs / transitions:** delve, utilize, leverage, facilitate, maximize, embrace, foster, emphasize, furthermore, moreover, additionally.
+- **Nouns / metaphors:** tapestry, landscape, realm, arena, symphony, testament, beacon, journey, roadmap, game-changer, paradigm shift.
+- **Adjectives:** robust, seamless, cutting-edge, innovative, multifaceted, crucial, pivotal, deep dive.

@@ -6,7 +6,7 @@ import SizzLean.Cache.MerkleTree.Merkle
 import SizzLean.Cache.MerkleTree.SetAt
 
 /-!
-# `SizzLeanTests.SetAtRandom` — randomised property test for `Node.setAt`
+# `SizzLeanTests.SetAtRandom`: randomised property test for `Node.setAt`
 
 Generates many random `(tree, gindex, newLeaf)` triples from a
 deterministic seed and checks two things:
@@ -47,7 +47,7 @@ open SizzLean.Cache.MerkleTree
 
 /-! ### Deterministic PRNG
 
-A tiny linear-congruential generator. Not cryptographic — just
+A tiny linear-congruential generator. Not cryptographic, just
 enough to produce a varied stream of bytes for property testing.
 Parameters from "Numerical Recipes" (period `2^32`). -/
 
@@ -96,7 +96,7 @@ private def randGindex (depth : Nat) (s : Nat) : Nat × Nat :=
 Rebuild a fresh `Node` from the leaf array (via `Node.ofLeaves`)
 and compute its root through `merkleRootWithCache`. This *also*
 calls into the cache walker, but from a freshly-built tree with no
-cached state along the spine — so it is the apples-to-apples
+cached state along the spine, so it is the apples-to-apples
 "what should the canonical root be" target for the property test. -/
 
 private def slowMerkleRoot (H : Type) [Hasher H]
@@ -140,7 +140,7 @@ private def runCases (H : Type) [Hasher H] (depth : Nat) (count : Nat)
 
 200 random cases at depth 4 (16 leaves per tree), starting from a
 fixed seed for reproducibility. If this fails, the failure is
-deterministic — re-run with `set_option diagnostics true` to inspect.
+deterministic, re-run with `set_option diagnostics true` to inspect.
 
 The depth 4 / count 200 combination keeps `native_decide`'s
 compile-time cost modest while exercising every position in a
@@ -156,7 +156,7 @@ Property: applying many updates in one batched walk produces the
 same leaf array as applying them sequentially via `setAtBits`. The
 batched form is the implementation; the chained form is the
 "obviously correct" reference. They must produce identical trees up
-to cache state — `asLeafArray` strips cache and exposes structure.
+to cache state. `asLeafArray` strips cache and exposes structure.
 
 ### Why distinct gindexes
 

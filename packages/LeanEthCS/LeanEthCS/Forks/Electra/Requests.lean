@@ -2,7 +2,7 @@ import LeanEthCS.Primitives
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Electra.Requests` — Electra execution-layer requests
+# `LeanEthCS.Forks.Electra.Requests`: Electra execution-layer requests
 
 EIPs 6110 (deposit requests), 7002 (withdrawal requests), and 7251
 (consolidation requests) move three operation types from beacon-chain
@@ -51,7 +51,7 @@ structure ConsolidationRequest where
   targetPubkey  : BLSPubkey
   deriving SSZRepr
 
-/-- `ExecutionRequests` — the union of EL-emitted operation lists.
+/-- `ExecutionRequests`: the union of EL-emitted operation lists.
 Preset-invariant: all three caps are the same on minimal and mainnet. -/
 structure ExecutionRequests where
   deposits       : SSZList DepositRequest 8192

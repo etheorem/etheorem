@@ -11,7 +11,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Electra.Block` — Electra block hierarchy
+# `LeanEthCS.Forks.Electra.Block`: Electra block hierarchy
 
 Two deltas over Deneb:
 

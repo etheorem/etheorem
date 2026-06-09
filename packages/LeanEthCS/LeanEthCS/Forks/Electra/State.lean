@@ -9,7 +9,7 @@ import LeanEthCS.PresetStruct
 import SizzLean.Repr.Deriving
 
 /-!
-# `LeanEthCS.Forks.Electra.State` — Electra `BeaconState`
+# `LeanEthCS.Forks.Electra.State`: Electra `BeaconState`
 
 Adds 9 fields over Deneb's state (all EIP-6110 / EIP-7251):
 

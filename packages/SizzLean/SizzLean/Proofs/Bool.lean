@@ -4,7 +4,7 @@ import SizzLean.Spec.MaxByteLength
 import SizzLean.Proofs.SimpAttrs
 
 /-!
-# `SizzLean.Proofs.Bool` — `decode_encode` and size bound for `.bool`
+# `SizzLean.Proofs.Bool`: `decode_encode` and size bound for `.bool`
 
 Two-line proofs each: `cases x <;> (unfold; rfl)` for the
 roundtrip; `cases x <;> (unfold; decide)` for the size bound.

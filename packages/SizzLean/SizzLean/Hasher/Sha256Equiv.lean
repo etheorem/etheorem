@@ -4,7 +4,7 @@ import LeanHazmatSha256
 import LeanSha256.Core
 
 /-!
-# `SizzLean.Hasher.Sha256Equiv` — FFI / spec SHA-256 equivalence axioms
+# `SizzLean.Hasher.Sha256Equiv`: FFI / spec SHA-256 equivalence axioms
 
 ## What this file asserts
 
@@ -18,8 +18,8 @@ axiom sha256Hash_eq_spec    : @LeanHazmat.Sha256.sha256Hash    = LeanSha256.hash
 axiom sha256Combine_eq_spec : @LeanHazmat.Sha256.sha256Combine = LeanSha256.combine
 ```
 
-These — together with `sha256BatchCombine_eq_spec` in
-`Sha256Batch.lean` — are the SHA-256 *bridge*. They live in SizzLean
+These, together with `sha256BatchCombine_eq_spec` in
+`Sha256Batch.lean`, are the SHA-256 *bridge*. They live in SizzLean
 because SizzLean is the one layer entitled to import both the FFI
 binding (`LeanHazmatSha256`) and the spec (`LeanSha256`); neither
 package leaks into the other (hazmat-docs/ARCHITECTURE.md §9).
@@ -28,7 +28,7 @@ package leaks into the other (hazmat-docs/ARCHITECTURE.md §9).
 
 The FFI implementation lives in `LeanHazmatSha256/csrc/sha256_shim.c`
 and calls OpenSSL's `EVP_*`. Proving in Lean that the C code computes
-SHA-256 would require extracting the C semantics into Lean — not
+SHA-256 would require extracting the C semantics into Lean, not
 feasible without heavy machinery (verified C compiler, model of
 OpenSSL's internals, etc.).
 
@@ -40,7 +40,7 @@ We instead:
    that the FFI and the pure-Lean reference agree on a randomised
    input batch.
 2. **Promote that validation to a named Lean axiom here.** Proofs can
-   now `rw` the FFI calls into their pure-Lean equivalents — at audit
+   now `rw` the FFI calls into their pure-Lean equivalents. At audit
    time, `#axioms theoremName` lists `sha256Hash_eq_spec` /
    `sha256Combine_eq_spec` as the (single, named, replaceable) trust
    assumptions behind the proof.
@@ -69,7 +69,7 @@ theorem someBeaconStateRoot :
 ```
 
 For pure state-transition proofs that don't need concrete hash values
-(only structural equalities), these axioms are *not* required — both
+(only structural equalities), these axioms are *not* required, both
 sides of the equality invoke the same opaque `LeanHazmat.Sha256.sha256Hash` /
 `sha256Combine` calls and `rfl` / `simp` closes them without ever
 caring what the bytes are. Reach for these axioms only when a goal
@@ -80,7 +80,7 @@ requires the hash to *actually compute*.
 The axioms encode an empirical equivalence between two
 implementations of SHA-256. A `@[csimp]`-attributed equality
 proved from primitives would discharge them, leaving every
-dependent proof with identical statements — the axioms are
+dependent proof with identical statements. The axioms are
 named so that path can be taken without rewriting downstream
 theorems.
 -/

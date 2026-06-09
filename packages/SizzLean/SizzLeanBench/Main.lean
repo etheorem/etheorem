@@ -1,7 +1,7 @@
 import SizzLeanBench
 
 /-!
-# `SizzLeanBench.Main` — `ssz_bench` exe driver
+# `SizzLeanBench.Main`: `ssz_bench` exe driver
 
 Runs every scenario's `runAll` in declaration order and emits
 the TSV header once at the top. Invoked as
@@ -26,13 +26,13 @@ open SizzLeanBench.Runner
 
 def main : IO Unit := do
   printHeader
-  -- Small tier (S1–S3) — Validator + ValidatorSet16
+  -- Small tier (S1–S3): Validator + ValidatorSet16
   SizzLeanBench.Scenarios.ColdRoot.runAll
   SizzLeanBench.Scenarios.BatchedWrites.runAll
   SizzLeanBench.Scenarios.BlockProcessing.runAll
-  -- Large tier (S4–S6) — ValidatorSet256
+  -- Large tier (S4–S6): ValidatorSet256
   SizzLeanBench.Scenarios.ColdRootLarge.runAll
   SizzLeanBench.Scenarios.BatchedWritesLarge.runAll
   SizzLeanBench.Scenarios.BlockProcessingLarge.runAll
-  -- Realistic tier (S7) — Fulu BeaconState, mainnet preset
+  -- Realistic tier (S7): Fulu BeaconState, mainnet preset
   SizzLeanBench.Scenarios.FuluStateTransition.runAll
