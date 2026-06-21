@@ -1,0 +1,33 @@
+name = "EthCLSpecs"
+defaultTargets = ["EthCLSpecs"]
+
+# Re-supply the system libcrypto flag (does not propagate across `require`); the
+# blst / c-kzg archives propagate transitively from the LeanHazmat packages.
+moreLinkArgs = ["-L/usr/lib/x86_64-linux-gnu", "-l:libcrypto.so.3"]
+moreLeancArgs = ["-march=native"]
+
+# The framework. Pulls in SizzLean (SSZ), LeanHazmatBls / LeanHazmatKzg (crypto)
+# transitively.
+[[require]]
+name = "EthCLLib"
+path = "../EthCLLib"
+
+# The fork specs (EthCLSpecs.Fulu, EthCLSpecs.Gloas). Precompiled so the runner
+# exe is native and `native_decide` self-tests find the FFI symbols.
+[[lean_lib]]
+name = "EthCLSpecs"
+precompileModules = true
+
+# The conformance runner: a long-lived server instantiating the generic
+# PySpecTests driver at a fork. Its root is a submodule of the precompiled lib,
+# so it needs the interpreter shim to avoid a Lake build-graph cycle.
+[[lean_exe]]
+name = "pyspec_server"
+root = "EthCLSpecs.PySpecTests.Server"
+supportInterpreter = true
+
+# Lean-internal spec self-tests (#guard over hand-built inputs). Sources under
+# EthCLSpecs/Tests/ (namespace EthCLSpecs.Tests.*), excluded from the shipped lib.
+[[lean_lib]]
+name = "EthCLSpecsTests"
+roots = ["EthCLSpecs.Tests"]

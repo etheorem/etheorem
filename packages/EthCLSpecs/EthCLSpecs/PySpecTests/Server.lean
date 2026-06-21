@@ -1,0 +1,222 @@
+import EthCLSpecs
+
+/-!
+# `EthCLSpecs.PySpecTests.Server`: the long-lived conformance server (`pyspec_server`)
+
+The runner exe instantiates the generic `PySpecTests` driver at a fork and runs
+the request/result loop the Python `pytest-xdist` harness talks to
+(`FRAMEWORK_ARCHITECTURE.md` §13.3). One server per `xdist` worker, held through a
+`session`-scoped fixture, so there is no per-vector Lean startup and the crypto
+cache stays warm across a worker's stream of vectors.
+
+## The wire protocol
+
+The Python side snappy-decompresses each case's SSZ blobs to temp files and sends
+one tab-separated request line per case; the server reads the files, runs the
+case through `runCase`, and writes one result line. Keeping the bytes on disk and
+passing paths avoids framing binary SSZ on the line.
+
+Request (8 tab-separated fields):
+```
+runner ⇥ handler ⇥ prePath ⇥ postPath ⇥ blsSetting ⇥ blocksCount ⇥ forkEpoch ⇥ inputPaths
+```
+`postPath` / `forkEpoch` are `-` when absent (an absent `post` marks an invalid
+vector); `inputPaths` is comma-separated (possibly empty).
+
+Result (the driver's `CaseResult.render`):
+```
+pass|fail ⇥ bucket ⇥ detail
+```
+
+## Crash recovery
+
+Every request is processed inside a `try`/`catch`: a malformed request or an
+unreadable file reports `fail ⇥ bug ⇥ <reason>` and the loop continues, so one
+bad case never hangs the worker. A request that dies harder (the process is
+killed) is handled on the Python side: the fixture re-spawns the server and the
+in-flight case reports failed. The empty line / EOF ends the loop cleanly.
+-/
+
+open EthCLLib.Spec
+open EthCLLib.PySpecTests
+open EthCLSpecs.Fulu
+
+namespace EthCLSpecs.PySpecTests
+
+/-- Parse `forkEpoch` / `postPath` sentinel `-` as "absent". -/
+private def dashToNone (s : String) : Option String :=
+  if s == "-" then none else some s
+
+/-- Parse a Gloas PTC vote token (`t`/`f`/`n` per slot, comma-joined) into the
+three-valued vote array a `payload_*_vote` check compares against. -/
+private def parseVotes (s : String) : Array (Option Bool) :=
+  (s.splitOn ",").toArray.map fun c => if c == "t" then some true else if c == "f" then some false else none
+
+/-- Read a request's referenced files and build a `CaseRequest`. -/
+private def buildRequest (fields : Array String) : IO CaseRequest := do
+  if fields.size < 9 then
+    throw (IO.userError s!"malformed request: expected ≥9 tab-fields, got {fields.size}")
+  let runner  := fields[0]!
+  let handler := fields[1]!
+  -- `pre` is `-` for formats with no single pre-state file (`fork_choice`'s
+  -- step/check cases); an empty buffer stands in until those formats are wired.
+  let pre ← match dashToNone fields[2]! with
+    | none   => pure ByteArray.empty
+    | some p => IO.FS.readBinFile p
+  let post ← match dashToNone fields[3]! with
+    | none   => pure none
+    | some p => some <$> IO.FS.readBinFile p
+  let blsSetting  := fields[4]!.toNat!
+  let blocksCount := fields[5]!.toNat!
+  let forkEpoch   := (dashToNone fields[6]!).map (·.toNat!)
+  let inputPaths  := if fields[7]!.isEmpty then #[] else (fields[7]!.splitOn ",").toArray
+  let forkBlock   := (dashToNone fields[8]!).map (·.toNat!)
+  -- Optional 10th field: `execution_valid` for `operations/execution_payload` (the
+  -- mocked EL verdict); absent ⇒ `true`.
+  let executionValid := (fields[9]?.getD "1") == "1"
+  let mut inputs : Array ByteArray := #[]
+  for p in inputPaths do
+    inputs := inputs.push (← IO.FS.readBinFile p)
+  return {
+    runner, handler, pre, post, inputs,
+    caseMeta := { blsSetting, blocksCount, forkEpoch, forkBlock, executionValid }
+  }
+
+/-- One hex digit's value (`0` for a non-digit, the caller controls the input). -/
+private def hexDigit (c : Char) : Nat :=
+  if '0' ≤ c && c ≤ '9' then c.toNat - '0'.toNat
+  else if 'a' ≤ c && c ≤ 'f' then c.toNat - 'a'.toNat + 10
+  else if 'A' ≤ c && c ≤ 'F' then c.toNat - 'A'.toNat + 10
+  else 0
+
+/-- Parse a `0x`-prefixed hex string into a `ByteArray`. -/
+private def hexToBytes (s : String) : ByteArray := Id.run do
+  let cs0 := s.toList.toArray
+  let cs := if s.startsWith "0x" then cs0.extract 2 cs0.size else cs0
+  let mut out := ByteArray.empty
+  for i in [0:cs.size / 2] do
+    out := out.push (UInt8.ofNat (hexDigit cs[2*i]! * 16 + hexDigit cs[2*i+1]!))
+  return out
+
+/-- The fork-choice request path: read the anchor state / block and the step
+script (a line per `steps.yaml` entry, referencing decompressed SSZ files by
+path), decode the steps, and run the fork's `runForkChoice` interpreter. -/
+private def handleForkChoice (iface : ForkInterface) (fields : Array String) : IO String := do
+  let anchorState ← IO.FS.readBinFile fields[2]!
+  let inputs := if fields[7]!.isEmpty then #[] else (fields[7]!.splitOn ",").toArray
+  let anchorBlock ← IO.FS.readBinFile inputs[0]!
+  let scriptTxt ← IO.FS.readFile inputs[1]!
+  let mut steps : Array FcStep := #[]
+  for rawLine in scriptTxt.splitOn "\n" do
+    let parts := ((rawLine.splitOn " ").filter (· != "")).toArray
+    if h : parts.size > 0 then
+      match parts[0] with
+      | "tick"              => steps := steps.push (.tick parts[1]!.toNat!)
+      | "block"             =>
+        let b ← IO.FS.readBinFile parts[1]!
+        -- Optional 4th token: comma-separated PeerDAS column-sidecar paths (`-` if none).
+        let cols ← if parts.size > 3 && parts[3]! != "-" then
+            (parts[3]!.splitOn ",").toArray.mapM (fun (p : String) => IO.FS.readBinFile (System.FilePath.mk p))
+          else pure #[]
+        steps := steps.push (.block b cols (parts[2]! == "1"))
+      | "attestation"       => let b ← IO.FS.readBinFile parts[1]!; steps := steps.push (.attestation b (parts.size ≤ 2 || parts[2]! == "1"))
+      | "attester_slashing" => let b ← IO.FS.readBinFile parts[1]!; steps := steps.push (.attesterSlashing b (parts.size ≤ 2 || parts[2]! == "1"))
+      | "head"              => steps := steps.push (.checkHead (hexToBytes parts[1]!) parts[2]!.toNat!)
+      | "get_proposer_head" => steps := steps.push (.checkProposerHead (hexToBytes parts[1]!))
+      | "execution_payload" => let b ← IO.FS.readBinFile parts[1]!; steps := steps.push (.executionPayload b (parts[2]! == "1"))
+      | "payload_attestation_message" => let b ← IO.FS.readBinFile parts[1]!; steps := steps.push (.payloadAttestationMessage b (parts[2]! == "1"))
+      | "head_payload_status" => steps := steps.push (.checkHeadPayloadStatus parts[1]!.toNat!)
+      | "payload_timeliness_vote"        => steps := steps.push (.checkPayloadTimelinessVote (hexToBytes parts[1]!) (parseVotes parts[2]!))
+      | "payload_data_availability_vote" => steps := steps.push (.checkPayloadDataAvailabilityVote (hexToBytes parts[1]!) (parseVotes parts[2]!))
+      | "justified"         => steps := steps.push (.checkJustified parts[1]!.toNat! (hexToBytes parts[2]!))
+      | "finalized"         => steps := steps.push (.checkFinalized parts[1]!.toNat! (hexToBytes parts[2]!))
+      | "boost"             => steps := steps.push (.checkBoost (hexToBytes parts[1]!))
+      | "time"              => steps := steps.push (.checkTime parts[1]!.toNat!)
+      | "genesis_time"      => steps := steps.push (.checkGenesisTime parts[1]!.toNat!)
+      | "unsupported"       => steps := steps.push (.unsupported "get_proposer_head / should_override check")
+      | _                   => pure ()
+  match iface.runForkChoice anchorState anchorBlock steps with
+  | .ok ()   => return "pass\tpassing\t"
+  | .error e =>
+    -- Classify the runner error: a `spec todo` is out-of-scope, everything else (a
+    -- decode failure, a check mismatch, an unexpected rejection, a missing store key) is
+    -- a bug on the fork-choice path (per-step `valid:false` rejections are resolved inside
+    -- the interpreter and never reach here).
+    let detail := (match e with
+      | .decode what           => s!"{what} decode failed"
+      | .spec (.assert d)      => d
+      | .spec (.todo d)        => d
+      | .spec (.missingKey _)  => "missing store key"
+      | .spec (.transition te) => reprStr te).replace "\t" " " |>.replace "\n" " "
+    match e with
+    | .spec (.todo _) => return s!"fail\ttodo\t{detail}"
+    | _               => return s!"fail\tbug\t{detail}"
+
+/-- Process one request line into a result line, against a given fork's interface.
+Exceptions become a `fail ⇥ bug` result so a single bad case never crashes the
+loop. -/
+private def handleLine (iface : ForkInterface) (line : String) : IO String := do
+  try
+    let fields := (line.splitOn "\t").toArray
+    if fields[0]? == some "fork_choice" then
+      handleForkChoice iface fields
+    else
+      let req ← buildRequest fields
+      return (@runCase iface req).render
+  catch e =>
+    -- Single-line, tab-free reason so the harness parses it.
+    let reason := (toString e).replace "\t" " " |>.replace "\n" " "
+    return s!"fail\tbug\t{reason}"
+
+/-- The request/result loop at one fork's interface. Reads a line, emits a
+result, flushes, repeats; the empty line / EOF ends it. -/
+partial def serve (iface : ForkInterface) : IO UInt32 := do
+  let stdin ← IO.getStdin
+  let stdout ← IO.getStdout
+  let rec loop : IO UInt32 := do
+    -- Strip only the line ending, not interior / trailing tabs (the final
+    -- `inputPaths` field is empty, hence a trailing tab, when a case has no inputs).
+    let line := ((← stdin.getLine).dropEndWhile (fun c => c == '\n' || c == '\r')).toString
+    if line.isEmpty then
+      return 0
+    let result ← handleLine iface line
+    stdout.putStrLn result
+    stdout.flush
+    loop
+  loop
+
+/-- Lowercase hex of a byte buffer, for the `stateroot` debug mode. -/
+def toHex (b : ByteArray) : String :=
+  String.join (b.toList.map fun x =>
+    let s := String.ofList (Nat.toDigits 16 x.toNat)
+    if s.length == 1 then "0" ++ s else s)
+
+/-- Select a fork's interface at a preset. -/
+@[reducible] def pickInterface (forkName preset : String) : ForkInterface :=
+  match forkName, preset with
+  | "gloas", "mainnet" => EthCLSpecs.Gloas.Interface.gloasInterfaceMainnet
+  | "gloas", _         => EthCLSpecs.Gloas.Interface.gloasInterface
+  | _,       "mainnet" => EthCLSpecs.Fulu.Interface.fuluInterfaceMainnet
+  | _,       _         => EthCLSpecs.Fulu.Interface.fuluInterface
+
+end EthCLSpecs.PySpecTests
+
+/-- The exe entry point. `pyspec_server [fork [preset]]` runs the server loop at
+the named fork's interface and preset (`fulu` / `minimal` defaults). The
+`stateroot [fork] <path>` mode decodes a `BeaconState` and prints its root (a
+decode / container-layer sanity check). -/
+def main (args : List String) : IO UInt32 := do
+  match args with
+  | ["stateroot", path] =>
+    let bytes ← IO.FS.readBinFile path
+    match EthCLSpecs.Fulu.Interface.fuluInterface.stateRoot bytes with
+    | .ok root => IO.println (EthCLSpecs.PySpecTests.toHex root); return 0
+    | .error e => IO.eprintln s!"decode failed: {repr e}"; return 1
+  | ["stateroot", "gloas", path] =>
+    let bytes ← IO.FS.readBinFile path
+    match EthCLSpecs.Gloas.Interface.gloasInterface.stateRoot bytes with
+    | .ok root => IO.println (EthCLSpecs.PySpecTests.toHex root); return 0
+    | .error e => IO.eprintln s!"decode failed: {repr e}"; return 1
+  | [forkName, preset] => EthCLSpecs.PySpecTests.serve (EthCLSpecs.PySpecTests.pickInterface forkName preset)
+  | [forkName]         => EthCLSpecs.PySpecTests.serve (EthCLSpecs.PySpecTests.pickInterface forkName "minimal")
+  | _                  => EthCLSpecs.PySpecTests.serve EthCLSpecs.Fulu.Interface.fuluInterface
