@@ -15,10 +15,14 @@ Two groups:
   returns the element type's `default` past the end. The `?` / proof forms are
   the load-bearing gate here: the previous `fun _ _ => True` predicate made
   `xs[i]?` *always* `some`, so a past-the-end read never reported `none`.
-* **Collection surface.** `toArray` / `toList` / `foldl` / `map` / `any` /
-  `all` / `findIdx?` / `contains` and the `for x in xs` (`ForIn`) loop on
+* **Collection surface.** `toArray` / `toList` / `foldl` / `map` / `mapCap` / `push` /
+  `any` / `all` / `findIdx?` / `contains` and the `for x in xs` (`ForIn`) loop on
   `SSZList`, plus `Bitlist.size` / `Bitlist.toArray`. Each delegates to the
   underlying `Array`, so each gate is that it reduces to the `Array` answer.
+  `push` (cap-clamping append) and `mapCap` (cap-preserving map) carry a size
+  proof, so both their below-cap and at-cap behaviour is gated.
+* **Byte-vector coercion.** The `CoeOut (Vector UInt8 n) ByteArray` instance, fired
+  at a type ascription and at a `ByteArray`-typed function argument.
 
 `Array`-folding reductions (`map`, `foldl`, `findIdx?`, the option / bang
 reads) go through well-founded recursion, so the behavioural checks use
@@ -44,6 +48,10 @@ open SizzLean SizzLean.Repr
 
 private def xs : SSZList UInt64 8 := ⟨#[10, 20, 30], by decide⟩
 private def bs : Bitlist 8 := ⟨#[true, false, true], by decide⟩
+/-- A list already at capacity, for the `push` clamp branch. -/
+private def full3 : SSZList UInt64 3 := ⟨#[1, 2, 3], by decide⟩
+/-- A fixed-length byte vector, for the `Vector UInt8 n → ByteArray` coercion. -/
+private def v4 : Vector UInt8 4 := ⟨#[1, 2, 3, 4], by decide⟩
 
 /-! ## Faithful `GetElem` on `SSZList`
 
@@ -102,11 +110,52 @@ example :
         acc := acc + x
       return acc) = 60 := by native_decide
 
+/-! ## `SSZList.push`: cap-clamping append
+
+Below capacity it appends (`xs` is 3 of 8); at capacity it returns the list unchanged
+(`full3` is 3 of 3), so the `if size < cap` clamp branch never overflows. -/
+
+/-- Append below capacity grows the list by one. -/
+example : (xs.push 99).toArray = #[10, 20, 30, 99] := by native_decide
+example : (xs.push 99).val.size = 4 := by native_decide
+/-- At capacity, `push` clamps: the list is returned unchanged. -/
+example : (full3.push 99).toArray = #[1, 2, 3] := by native_decide
+example : (full3.push 99).val.size = 3 := by native_decide
+
+/-! ## `SSZList.mapCap`: cap-preserving map
+
+Unlike `SSZList.map` (which drops to a bare `Array`), `mapCap` stays an `SSZList` at the
+same cap, carrying `Array.size_map`. -/
+
+/-- The result is an `SSZList` at the *same* cap (this ascription fails for the bare-`Array`
+`map`). -/
+example : SSZList UInt64 8 := xs.mapCap (· + 100)
+/-- Same-type map: each element shifted, length preserved. -/
+example : (xs.mapCap (· + 100)).toArray = #[110, 120, 130] := by native_decide
+example : (xs.mapCap (· + 100)).val.size = 3 := by native_decide
+/-- Element-type-changing map (`UInt64 → Bool`), still at cap 8. -/
+example : (xs.mapCap (· > 15) : SSZList Bool 8).toArray = #[false, true, true] := by native_decide
+
 /-! ## `Bitlist` collection surface -/
 
 /-- Runtime length (definitional projection of `Array.size`). -/
 example : bs.size = 3 := rfl
 /-- `toArray` is the underlying bit buffer (definitional). -/
 example : bs.toArray = #[true, false, true] := rfl
+
+/-! ## `Vector UInt8 n → ByteArray` representation coercion
+
+The `CoeOut` instance lets a fixed-length byte vector flow into a `ByteArray` position
+(the wire-bytes seam: a `Root` / pubkey into a hash or BLS-verify argument). It is the
+identity on the underlying buffer, `⟨v.toArray⟩`. `CoeOut` (source-keyed) rather than
+plain `Coe`, since the source type `Vector UInt8 ?n` is parametric. -/
+
+/-- The coercion fires at a type ascription and is the underlying bytes. -/
+example : (v4 : ByteArray).toList = [1, 2, 3, 4] := by native_decide
+example : (v4 : ByteArray).size = 4 := by native_decide
+
+/-- The coercion also fires at a `ByteArray`-typed function argument (the real use site). -/
+private def consumeBytes (b : ByteArray) : Nat := b.size
+example : consumeBytes v4 = 4 := by native_decide
 
 end SizzLeanTests.ElementSurface

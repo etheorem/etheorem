@@ -192,6 +192,13 @@ abbrev SSZList.set! {α : Type} {cap : Nat}
       simp [Array.set!_eq_setIfInBounds]
     rw [h]; exact xs.property⟩
 
+/-- Append `x`, clamping at the cap: a list at capacity is returned unchanged (a valid
+consensus list never overflows, so the clamp branch is unreachable on well-formed input).
+The cap-respecting append on the type itself, so a downstream `sszAppend` / `appendState`
+needs no separate push helper. -/
+def SSZList.push {α : Type} {cap : Nat} (xs : SSZList α cap) (x : α) : SSZList α cap :=
+  if h : xs.val.size < cap then ⟨xs.val.push x, by rw [Array.size_push]; omega⟩ else xs
+
 /-- `GetElem` instance for `SSZList`, with the faithful validity predicate
 `fun xs i => i < xs.size`. So the three element reads behave like `Array`'s:
 `xs[i]?` is a real bounds check (`none` past the end), `xs[i]!` returns the
@@ -222,6 +229,14 @@ abbrev SSZList.toList {α : Type} {cap : Nat} (xs : SSZList α cap) : List α :=
 abbrev SSZList.foldl {α β : Type} {cap : Nat} (f : β → α → β) (init : β) (xs : SSZList α cap) : β := xs.val.foldl f init
 /-- Map the elements to an `Array`. -/
 abbrev SSZList.map {α β : Type} {cap : Nat} (f : α → β) (xs : SSZList α cap) : Array β := xs.val.map f
+/-- Map the elements, preserving the cap. The cap bound carries across because `Array.map`
+does not change the underlying size (`Array.size_map`). The bare-`Array` companion
+`SSZList.map` above drops the proof; reach for `mapCap` when the result must stay an
+`SSZList` at the same cap, as at a fork boundary that copies a list field into its
+element-converted twin. A `def`, not an `abbrev`, because it carries a proof (like
+`SSZList.push`). -/
+def SSZList.mapCap {α β : Type} {cap : Nat} (f : α → β) (xs : SSZList α cap) : SSZList β cap :=
+  ⟨xs.val.map f, by rw [Array.size_map]; exact xs.property⟩
 /-- Whether any element satisfies `p`. -/
 abbrev SSZList.any {α : Type} {cap : Nat} (xs : SSZList α cap) (p : α → Bool) : Bool := xs.val.any p
 /-- Whether every element satisfies `p`. -/
@@ -331,5 +346,14 @@ instance instSSZReprSSZList {α : Type} {cap : Nat} [r : SSZRepr α] :
     rw [Array.map_map]
     have h : r.toRepr ∘ r.fromRepr = id := funext r.from_to
     rw [h, Array.map_id]
+
+/-- A fixed-length byte vector coerces to its underlying `ByteArray`. The conversion is
+representation-only (`⟨v.toArray⟩` is exactly the bytes the vector holds), so it is a
+canonical coercion rather than an explicit call: a `Root` / pubkey / signature (each a
+`Vector UInt8 n`) is usable wherever an SSZ or crypto seam wants raw wire bytes, with no
+conversion written at the call site. The reverse direction stays an explicit function (it
+must choose a length and truncate or zero-pad), so it is deliberately not a coercion. -/
+instance instCoeVectorByteArray {n : Nat} : CoeOut (Vector UInt8 n) ByteArray where
+  coe v := ⟨v.toArray⟩
 
 end SizzLean.Repr

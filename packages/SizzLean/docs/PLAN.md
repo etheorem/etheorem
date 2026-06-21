@@ -263,11 +263,13 @@ deriving handler will recurse on.
   `SSZ.roundtrip` per-user-type corollary.
 - `packages/SizzLean/SizzLean/Repr/Instances.lean`: `SSZRepr` instances for `UInt8/16/32/64`,
   `Bool`, `BitVec n`, `Vector α n`, `SSZ.List α n`, `Bitvector n`,
-  `Bitlist n`, sigma-typed unions. Plus `SSZList.get!` /
-  `SSZList.set!` / `SSZList.size` accessors and a
-  `GetElem (SSZList α cap) Nat α` instance so the same `xs[i]!`
-  syntax works uniformly across `Vector` and `SSZList` in
-  `sszUpdate` projections.
+  `Bitlist n`, sigma-typed unions. Plus the `SSZList` / `Bitlist`
+  element surface (`get!` / `set!` / `size` / `toArray` / `toList`
+  / `foldl` / `map` / `any` / `all` / `findIdx?` / `contains`, a
+  `ForIn` instance, and a faithful `GetElem` with validity
+  `i < xs.size`), so `xs[i]!`, `xs[i]?`, and `xs.size` work
+  uniformly across `Vector` and `SSZList` in `sszUpdate`
+  projections and in spec bodies, with no `.val` projection.
 
 **Acceptance.** A hand-written `instance : SSZRepr Foo` for a small
 example structure compiles, and an `example : deserialize (serialize x) = .ok x`
@@ -1128,10 +1130,11 @@ happens until `hashTreeRoot` walks the tree"** holds.
   the `T → Option Node` closure; index steps get a bounds check
   that short-circuits to `none` when the runtime index is out of
   range.
-- `SizzLean/Repr/Instances.lean`: `GetElem (SSZList α cap) Nat α`
-  instance + `SSZList.size` accessor so the same `xs[i]!` /
-  `xs.size` syntax works uniformly across `Vector` and `SSZList`
-  inside the projection chain.
+- `SizzLean/Repr/Instances.lean`: a faithful `GetElem (SSZList α cap)
+  Nat α` instance (validity `i < xs.size`) plus the `.size` /
+  `.toArray` / `.foldl` / `.map` / … element surface, so `xs[i]!`,
+  `xs[i]?`, and `xs.size` work uniformly across `Vector` and
+  `SSZList` inside the projection chain and in spec bodies.
 - Regression tests covering the bug classes the design closes:
   - `SizzLeanTests/PendingPrefixConflict.lean`: parent/child
     gindex prefix relations (5 cases).

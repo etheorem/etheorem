@@ -26,7 +26,8 @@ converged on.
    5. [`TreeBacked` / `CachedSSZ` value wrapper](#treebacked--cachedssz-value-wrapper)
    6. [The `sszUpdate` macro (write side)](#the-sszupdate-macro-write-side)
    7. [The `sszGet` macro (read side)](#the-sszget-macro-read-side)
-   8. [Coherence invariant and its safety net](#coherence-invariant-and-its-safety-net)
+   8. [The `sszModify` macro (read-modify-write)](#the-sszmodify-macro-read-modify-write)
+   9. [Coherence invariant and its safety net](#coherence-invariant-and-its-safety-net)
 3. [Phase 17: open optimisations](#phase-17--open-optimisations)
    1. [Stage 17a: Deferred-update overlay](#stage-17a--deferred-update-overlay-viewdu-style)
    2. [Stage 17b: Batched SHA-256](#stage-17b--batched-sha-256)
@@ -329,6 +330,19 @@ exactly as if the user had typed `.view.f.g[i].h` directly. The
 only thing the macro buys is hiding `.view` from the
 documented user surface; the user types `sszGet`, never
 `.view`.
+
+### The `sszModify` macro (read-modify-write)
+
+`sszModify` (same file) names a path once for a read-modify-write,
+`sszModify b f[i]! := g` to apply a function and
+`sszModify b f[i]! as x => body` to rewrite the bound current value
+(`fun`-free, for `{ x with … }` bodies). It is a purely syntactic
+rewrite to `sszUpdate b with f[i]! := (let x := sszGet b f[i]!; …)`,
+so it inherits the write side's single-leaf cached update and the
+read side's projection with no extra cost; performance is exactly
+that of the `sszUpdate` / `sszGet` pair it expands to. It applies on
+the total `[i]!` and field paths, where the read returns the bare
+element.
 
 ### Coherence invariant and its safety net
 

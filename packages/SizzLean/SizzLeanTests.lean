@@ -14,6 +14,7 @@ import SizzLeanTests.CollectionInstances
 import SizzLeanTests.ElementSurface
 import SizzLeanTests.IndexErrorPayload
 import SizzLeanTests.InfallibleIndex
+import SizzLeanTests.Modify
 import SizzLeanTests.Sha256BatchEquivalence
 -- `HashConsCoherence` gates the standalone hash-cons primitive; it
 -- is kept on disk but not in the default test build because the
