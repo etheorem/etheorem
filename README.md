@@ -112,6 +112,9 @@ Repo-wide docs:
   procedural, where the FFI C shim lives, the LeanSha256 standalone
   mirror, and the naming / dep / build conventions.
 - [`CLAUDE.md`](CLAUDE.md): style and discipline conventions, project-wide.
+- [`docs/CODING_STYLE.md`](docs/CODING_STYLE.md): worked, example-driven
+  elaboration of the CLAUDE.md conventions, currently a function-body section
+  (paragraphing, local naming, intra-body comments, when to split).
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): PR / issue workflow,
   toolchain setup, code-style pointers.
 - [`SECURITY.md`](SECURITY.md): vulnerability-disclosure policy.

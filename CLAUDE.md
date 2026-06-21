@@ -176,6 +176,11 @@ CLAUDE.md wins on form.
   goals, note `native_decide` trusts the compiler.
 - **`partial def` only when termination really can't be shown.** Prefer
   structural recursion or `termination_by` + `decreasing_by`.
+- **Function-body readability.** For worked before/after examples of these
+  conventions applied inside a definition (paragraphing phases, naming
+  intermediates, section comments, when to split), see
+  [`docs/CODING_STYLE.md`](docs/CODING_STYLE.md). That file shows; this file
+  states the rule.
 
 ### Proofs involving SSZ hashes
 
