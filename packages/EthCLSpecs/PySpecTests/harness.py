@@ -30,12 +30,15 @@ PINNED_VERSION = "v1.7.0-alpha.10"
 CACHE_DIR = Path.home() / ".cache" / "sizzlean"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# In-scope (runner, handler-is-path-segment) formats for Fulu
-# (SPECS_ARCHITECTURE.md §10.1). `ssz_static`, `bls`, `kzg`, `light_client`,
-# `merkle_proof`, `networking`, `sync` are out of scope.
+# In-scope (runner, handler-is-path-segment) formats for Fulu and Gloas.
+# `ssz_static` runs the per-fork consensus-container vectors (decode →
+# hash-tree-root → round-trip) against the container types EthCLSpecs declares;
+# the fork-agnostic `ssz_generic` primitive vectors live in SizzLean instead.
+# `bls`, `kzg`, `light_client`, `merkle_proof`, `networking`, `sync` are out of
+# scope (they exercise primitives a dependency owns).
 IN_SCOPE_RUNNERS = {
     "sanity", "finality", "random", "epoch_processing", "operations",
-    "rewards", "genesis", "fork", "transition", "fork_choice",
+    "rewards", "genesis", "fork", "transition", "fork_choice", "ssz_static",
 }
 
 
@@ -200,12 +203,24 @@ def _build_fork_choice_request(case: Case, tmpdir: Path) -> str:
                       f"{anchor_block},{script_path}"])
 
 
+def _build_ssz_static_request(case: Case, tmpdir: Path) -> str:
+    """Encode an `ssz_static` request: the container type name (the handler path
+    segment), the decompressed `serialized.ssz` path, and the expected
+    hash-tree-root from `roots.yaml`. The Lean server decodes the bytes as that
+    fork's container, compares the root, and checks the round-trip re-serialization."""
+    serialized = _decompress_to(tmpdir, case.path / "serialized.ssz_snappy")
+    roots = yaml.safe_load((case.path / "roots.yaml").read_text())
+    return "\t".join(["ssz_static", case.handler, str(serialized), roots["root"]])
+
+
 def build_request(case: Case, tmpdir: Path) -> str:
     """Decompress the case's SSZ blobs and encode the tab-separated request line
     the Lean server reads. `post` is `-` when the case has no `post` (an invalid
     vector); `inputs` are the `blocks_N` (or the single operation) in order."""
     if case.runner == "fork_choice":
         return _build_fork_choice_request(case, tmpdir)
+    if case.runner == "ssz_static":
+        return _build_ssz_static_request(case, tmpdir)
     meta = parse_meta(case)
     pre = _decompress_to(tmpdir, case.path / "pre.ssz_snappy") if (case.path / "pre.ssz_snappy").exists() else None
     post_src = case.path / "post.ssz_snappy"

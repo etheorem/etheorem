@@ -275,11 +275,70 @@ private def runForkChoiceImpl (P : Preset) (C : Config) (anchorStateBytes anchor
   | .ok anchorState, .ok anchorBlock =>
     RunError.ofSpec (fcInterpret P (getForkchoiceStore anchorState anchorBlock) steps)
 
+/-- The `ssz_static` per-type kernel: decode `bytes` as the container `T`, and on
+success return its hash-tree-root paired with whether re-serializing reproduces
+`bytes` (the round-trip check). A decode failure on a well-formed static vector is
+the runner's `decode` bug, not a consensus reject. `htr` coerces its `Vector UInt8
+32` to the `ByteArray` the driver compares against `roots.yaml`. -/
+private def runStatic (T : Type) [SSZRepr T] (typeName : String) (bytes : ByteArray) :
+    Except (RunError StateTransitionError) (ByteArray × Bool) :=
+  letI : HasherTag := fastHasherTag
+  match SSZ.deserialize (T := T) bytes with
+  | .ok v    => .ok ((htr v : ByteArray), SSZ.serialize v == bytes)
+  | .error _ => .error (.decode typeName)
+
+/-- `sszStatic`: dispatch an `ssz_static/<TypeName>` directory name to the Fulu
+container it names and run it through `runStatic`. The consensus containers Fulu
+models are covered; the light-client, networking, and gossip-aggregation types the
+spec does not declare (`AggregateAndProof`, `LightClient*`, `PowBlock`, …) fall to
+the `todo` default, so they xfail as out of scope rather than failing. -/
+private def sszStaticImpl (P : Preset) (typeName : String) (bytes : ByteArray) :
+    Except (RunError StateTransitionError) (ByteArray × Bool) :=
+  match typeName with
+  | "AttestationData"          => runStatic (@AttestationData P) typeName bytes
+  | "Attestation"              => runStatic (@Attestation P) typeName bytes
+  | "AttesterSlashing"         => runStatic (@AttesterSlashing P) typeName bytes
+  | "BeaconBlock"              => runStatic (@BeaconBlock P) typeName bytes
+  | "BeaconBlockBody"          => runStatic (@BeaconBlockBody P) typeName bytes
+  | "BeaconBlockHeader"        => runStatic (@BeaconBlockHeader P) typeName bytes
+  | "BeaconState"              => runStatic (@BeaconState P) typeName bytes
+  | "BLSToExecutionChange"     => runStatic (@BLSToExecutionChange P) typeName bytes
+  | "Checkpoint"               => runStatic (@Checkpoint P) typeName bytes
+  | "ConsolidationRequest"     => runStatic (@ConsolidationRequest P) typeName bytes
+  | "DataColumnSidecar"        => runStatic (@DataColumnSidecar P) typeName bytes
+  | "Deposit"                  => runStatic (@Deposit P) typeName bytes
+  | "DepositData"              => runStatic (@DepositData P) typeName bytes
+  | "DepositMessage"           => runStatic (@DepositMessage P) typeName bytes
+  | "DepositRequest"           => runStatic (@DepositRequest P) typeName bytes
+  | "Eth1Data"                 => runStatic (@Eth1Data P) typeName bytes
+  | "ExecutionPayload"         => runStatic (@ExecutionPayload P) typeName bytes
+  | "ExecutionPayloadHeader"   => runStatic (@ExecutionPayloadHeader P) typeName bytes
+  | "ExecutionRequests"        => runStatic (@ExecutionRequests P) typeName bytes
+  | "Fork"                     => runStatic (@Fork P) typeName bytes
+  | "HistoricalSummary"        => runStatic (@HistoricalSummary P) typeName bytes
+  | "IndexedAttestation"       => runStatic (@IndexedAttestation P) typeName bytes
+  | "PendingConsolidation"     => runStatic (@PendingConsolidation P) typeName bytes
+  | "PendingDeposit"           => runStatic (@PendingDeposit P) typeName bytes
+  | "PendingPartialWithdrawal" => runStatic (@PendingPartialWithdrawal P) typeName bytes
+  | "ProposerSlashing"         => runStatic (@ProposerSlashing P) typeName bytes
+  | "SyncAggregate"            => runStatic (@SyncAggregate P) typeName bytes
+  | "SyncCommittee"            => runStatic (@SyncCommittee P) typeName bytes
+  | "Validator"                => runStatic (@Validator P) typeName bytes
+  | "VoluntaryExit"            => runStatic (@VoluntaryExit P) typeName bytes
+  | "Withdrawal"               => runStatic (@Withdrawal P) typeName bytes
+  | "WithdrawalRequest"        => runStatic (@WithdrawalRequest P) typeName bytes
+  | "SignedBeaconBlock"        => runStatic (@SignedBeaconBlock P) typeName bytes
+  | "SignedBeaconBlockHeader"  => runStatic (@SignedBeaconBlockHeader P) typeName bytes
+  | "SignedBLSToExecutionChange" => runStatic (@SignedBLSToExecutionChange P) typeName bytes
+  | "SignedVoluntaryExit"      => runStatic (@SignedVoluntaryExit P) typeName bytes
+  | _ => .error (.spec (.todo s!"ssz_static/{typeName}: not modeled by EthCLSpecs.Fulu"))
+
 /-- Fulu's fork-interface instance at preset `P`. The runner injects `minimal` or
 `mainnet` per test; both coexist because the preset is a parameter, not a global
 instance (`FRAMEWORK_ARCHITECTURE.md` §4). -/
 @[reducible] def fuluInterfaceFor (P : Preset) (C : Config) : ForkInterface where
   stateRoot       := stateRootImpl P
+  sszStatic       := sszStaticImpl P
   runSlots        := runSlotsImpl P C
   runBlocks       := runBlocksImpl P C
   runEpochSubstep := runEpochSubstepImpl P C

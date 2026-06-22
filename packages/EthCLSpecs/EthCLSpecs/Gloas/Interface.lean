@@ -345,6 +345,71 @@ private def runForkChoiceImpl (P : Preset) (C : Config) (anchorStateBytes anchor
   | .ok anchorState, .ok anchorBlock =>
     RunError.ofSpec (fcInterpretGloas P (getForkchoiceStore anchorState anchorBlock) steps)
 
+/-- The `ssz_static` per-type kernel: decode `bytes` as the container `T`, return
+its hash-tree-root paired with the round-trip check (`reserialize == bytes`). A
+decode failure on a well-formed static vector is the runner's `decode` bug. -/
+private def runStatic (T : Type) [SizzLean.SSZRepr T] (typeName : String) (bytes : ByteArray) :
+    Except (RunError StateTransitionError) (ByteArray × Bool) :=
+  letI : HasherTag := fastHasherTag
+  match SSZ.deserialize (T := T) bytes with
+  | .ok v    => .ok ((htr v : ByteArray), SSZ.serialize v == bytes)
+  | .error _ => .error (.decode typeName)
+
+/-- `sszStatic`: dispatch an `ssz_static/<TypeName>` directory name to the Gloas
+container it names. Most are the Fulu containers inherited verbatim into the Gloas
+namespace; the rest are the ePBS-new / ePBS-modified ones (`Builder`,
+`ExecutionPayloadBid`, the `PayloadAttestation` family, the restructured
+`BeaconState` / `BeaconBlock`). Types Gloas does not model fall to the `todo`
+default and xfail as out of scope. -/
+private def sszStaticImpl (P : Preset) (typeName : String) (bytes : ByteArray) :
+    Except (RunError StateTransitionError) (ByteArray × Bool) :=
+  match typeName with
+  | "AttestationData"            => runStatic (@Gloas.AttestationData P) typeName bytes
+  | "Attestation"                => runStatic (@Gloas.Attestation P) typeName bytes
+  | "AttesterSlashing"           => runStatic (@Gloas.AttesterSlashing P) typeName bytes
+  | "BeaconBlock"                => runStatic (@Gloas.BeaconBlock P) typeName bytes
+  | "BeaconBlockBody"            => runStatic (@Gloas.BeaconBlockBody P) typeName bytes
+  | "BeaconBlockHeader"          => runStatic (@Gloas.BeaconBlockHeader P) typeName bytes
+  | "BeaconState"                => runStatic (@Gloas.BeaconState P) typeName bytes
+  | "BLSToExecutionChange"       => runStatic (@Gloas.BLSToExecutionChange P) typeName bytes
+  | "Builder"                    => runStatic (@Gloas.Builder P) typeName bytes
+  | "BuilderPendingPayment"      => runStatic (@Gloas.BuilderPendingPayment P) typeName bytes
+  | "BuilderPendingWithdrawal"   => runStatic (@Gloas.BuilderPendingWithdrawal P) typeName bytes
+  | "Checkpoint"                 => runStatic (@Gloas.Checkpoint P) typeName bytes
+  | "ConsolidationRequest"       => runStatic (@Gloas.ConsolidationRequest P) typeName bytes
+  | "Deposit"                    => runStatic (@Gloas.Deposit P) typeName bytes
+  | "DepositData"                => runStatic (@Gloas.DepositData P) typeName bytes
+  | "DepositRequest"             => runStatic (@Gloas.DepositRequest P) typeName bytes
+  | "Eth1Data"                   => runStatic (@Gloas.Eth1Data P) typeName bytes
+  | "ExecutionPayload"           => runStatic (@Gloas.ExecutionPayload P) typeName bytes
+  | "ExecutionPayloadBid"        => runStatic (@Gloas.ExecutionPayloadBid P) typeName bytes
+  | "ExecutionPayloadEnvelope"   => runStatic (@Gloas.ExecutionPayloadEnvelope P) typeName bytes
+  | "ExecutionRequests"          => runStatic (@Gloas.ExecutionRequests P) typeName bytes
+  | "Fork"                       => runStatic (@Gloas.Fork P) typeName bytes
+  | "HistoricalSummary"          => runStatic (@Gloas.HistoricalSummary P) typeName bytes
+  | "IndexedAttestation"         => runStatic (@Gloas.IndexedAttestation P) typeName bytes
+  | "IndexedPayloadAttestation"  => runStatic (@Gloas.IndexedPayloadAttestation P) typeName bytes
+  | "PayloadAttestation"         => runStatic (@Gloas.PayloadAttestation P) typeName bytes
+  | "PayloadAttestationData"     => runStatic (@Gloas.PayloadAttestationData P) typeName bytes
+  | "PayloadAttestationMessage"  => runStatic (@Gloas.PayloadAttestationMessage P) typeName bytes
+  | "PendingConsolidation"       => runStatic (@Gloas.PendingConsolidation P) typeName bytes
+  | "PendingDeposit"             => runStatic (@Gloas.PendingDeposit P) typeName bytes
+  | "PendingPartialWithdrawal"   => runStatic (@Gloas.PendingPartialWithdrawal P) typeName bytes
+  | "ProposerSlashing"           => runStatic (@Gloas.ProposerSlashing P) typeName bytes
+  | "SyncAggregate"              => runStatic (@Gloas.SyncAggregate P) typeName bytes
+  | "SyncCommittee"              => runStatic (@Gloas.SyncCommittee P) typeName bytes
+  | "Validator"                  => runStatic (@Gloas.Validator P) typeName bytes
+  | "VoluntaryExit"              => runStatic (@Gloas.VoluntaryExit P) typeName bytes
+  | "Withdrawal"                 => runStatic (@Gloas.Withdrawal P) typeName bytes
+  | "WithdrawalRequest"          => runStatic (@Gloas.WithdrawalRequest P) typeName bytes
+  | "SignedBeaconBlock"          => runStatic (@Gloas.SignedBeaconBlock P) typeName bytes
+  | "SignedBeaconBlockHeader"    => runStatic (@Gloas.SignedBeaconBlockHeader P) typeName bytes
+  | "SignedBLSToExecutionChange" => runStatic (@Gloas.SignedBLSToExecutionChange P) typeName bytes
+  | "SignedExecutionPayloadBid"      => runStatic (@Gloas.SignedExecutionPayloadBid P) typeName bytes
+  | "SignedExecutionPayloadEnvelope" => runStatic (@Gloas.SignedExecutionPayloadEnvelope P) typeName bytes
+  | "SignedVoluntaryExit"        => runStatic (@Gloas.SignedVoluntaryExit P) typeName bytes
+  | _ => .error (.spec (.todo s!"ssz_static/{typeName}: not modeled by EthCLSpecs.Gloas"))
+
 /-- Gloas's fork-interface instance at preset `P` with the config's
 `GLOAS_FORK_VERSION`. Every in-scope entry is driven: the `fork` upgrade, `stateRoot`,
 all `epoch_processing` substeps, `rewards`, the operation handlers (including the ePBS
@@ -353,6 +418,7 @@ ones), the block spine (`sanity/blocks` / `sanity/slots` / `finality` / `random`
 `runGenesis` stays `todo` (no genesis vectors at the pin). -/
 @[reducible] def gloasInterfaceFor (P : Preset) (C : Config) (forkVersion : Version) : ForkInterface where
   stateRoot       := stateRootImpl P
+  sszStatic       := sszStaticImpl P
   runUpgrade      := runUpgradeImpl P C forkVersion
   runEpochSubstep := runEpochSubstepImpl P C
   runRewards      := runRewardsImpl P C

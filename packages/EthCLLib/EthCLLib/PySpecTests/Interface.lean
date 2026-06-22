@@ -240,6 +240,13 @@ class ForkInterface where
   to turn a vector's `post.ssz_snappy` into the expected root, and to root the
   output of `genesis` / `fork`. -/
   stateRoot : ByteArray → Except (RunError StateTransitionError) ByteArray
+  /-- Decode the SSZ container named `typeName` from wire bytes; return its
+  hash-tree-root together with whether re-serializing reproduces the input (the
+  round-trip check). Drives `ssz_static/<TypeName>`: the fork maps the type name
+  to its own `SSZRepr` container, so the method stays at the `ByteArray`
+  boundary. A container the fork does not model returns a `todo`, so an
+  out-of-scope type xfails rather than failing. -/
+  sszStatic : String → ByteArray → Except (RunError StateTransitionError) (ByteArray × Bool)
   /-- Fold a block sequence over the decoded pre-state and return the post root.
   Drives `sanity/blocks`, `finality`, `random`. -/
   runBlocks : ByteArray → Array ByteArray → CaseMeta → Except (RunError StateTransitionError) ByteArray

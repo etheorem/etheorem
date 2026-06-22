@@ -102,6 +102,30 @@ private def hexToBytes (s : String) : ByteArray := Id.run do
     out := out.push (UInt8.ofNat (hexDigit cs[2*i]! * 16 + hexDigit cs[2*i+1]!))
   return out
 
+/-- The `ssz_static` request path: read the decompressed container bytes, run them
+through the fork's `sszStatic` (decode → hash-tree-root → round-trip), and compare
+the root to the vector's `roots.yaml` value. Request fields:
+`ssz_static ⇥ typeName ⇥ serializedPath ⇥ expectedRootHex`. A type the fork does
+not model returns `todo` (xfail); a root or round-trip mismatch is a bug. -/
+private def handleSszStatic (iface : ForkInterface) (fields : Array String) : IO String := do
+  let typeName := fields[1]!
+  let bytes ← IO.FS.readBinFile fields[2]!
+  let expected := hexToBytes fields[3]!
+  match iface.sszStatic typeName bytes with
+  | .ok (root, roundTripOk) =>
+    if root != expected then
+      return "fail\tbug\troot mismatch"
+    else if !roundTripOk then
+      return "fail\tbug\tround-trip mismatch (re-serialize ≠ input)"
+    else
+      return "pass\tpassing\t"
+  | .error (.spec (.todo d)) => return s!"fail\ttodo\t{d}"
+  | .error e =>
+    let detail := (match e with
+      | .decode what => s!"{what} decode failed"
+      | _            => "ssz_static error").replace "\t" " " |>.replace "\n" " "
+    return s!"fail\tbug\t{detail}"
+
 /-- The fork-choice request path: read the anchor state / block and the step
 script (a line per `steps.yaml` entry, referencing decompressed SSZ files by
 path), decode the steps, and run the fork's `runForkChoice` interpreter. -/
@@ -166,7 +190,9 @@ loop. -/
 private def handleLine (iface : ForkInterface) (line : String) : IO String := do
   try
     let fields := (line.splitOn "\t").toArray
-    if fields[0]? == some "fork_choice" then
+    if fields[0]? == some "ssz_static" then
+      handleSszStatic iface fields
+    else if fields[0]? == some "fork_choice" then
       handleForkChoice iface fields
     else
       let req ← buildRequest fields
