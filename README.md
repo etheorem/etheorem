@@ -8,9 +8,16 @@
 > SSZ theorems on a `BasicSupported` cut, but production-grade
 > stability and a stable release line are not implied.
 
-A Lean 4 monorepo for Ethereum consensus specs and SSZ
+A Lean 4 implementation of the Ethereum consensus specification for the Fulu
+and Gloas forks. It is executable. The SSZ container types, the full
+beacon-chain state transition, the fork upgrade, and fork choice all run, and
+they are checked against Ethereum's official
+[`consensus-spec-tests`](https://github.com/ethereum/consensus-spec-tests)
+vectors.
+
+This is a Lean 4 monorepo that also includes SSZ
 ([Simple Serialize](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md))
-with machine-checked correctness on the verified core.
+with machine-checked correctness on the verified core and other Ethereum dependencies in Lean 4, and FFI bridges.
 
 Upstream repository: <https://github.com/etheorem/etheorem>.
 
