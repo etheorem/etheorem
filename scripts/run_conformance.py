@@ -44,7 +44,7 @@ from tqdm import tqdm
 
 # --- Constants --------------------------------------------------------------
 
-DEFAULT_TAG = "v1.6.0-beta.0"
+DEFAULT_TAG = "v1.7.0-alpha.10"
 DEFAULT_LIMIT = 5
 CACHE_DIR = Path.home() / ".cache" / "sizzlean"
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -289,7 +289,7 @@ def walk_generic_cases(extract_root: Path,
 # omits — EIP-7495 `ProgressiveContainer` / `StableContainer`, EIP-7916
 # `ProgressiveList` / `ProgressiveBitlist`, EIP-8016 `CompatibleUnion`. See
 # that file's module docstring for why (no Phase 0 → Gloas consensus type
-# uses them). Upstream `consensus-spec-tests` v1.6.0-beta.0 added test
+# uses them). Upstream `consensus-spec-tests` v1.7.0-alpha.10 added test
 # vectors for several of these; we classify them as *out of library scope*
 # rather than failures so the conformance run stays green when upstream
 # extends the corpus beyond what SizzLean's universe covers.

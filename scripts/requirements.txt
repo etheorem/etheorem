@@ -12,3 +12,7 @@
 cramjam>=2.0
 PyYAML>=6.0
 tqdm>=4.65
+# The EthCLSpecs conformance harness (packages/EthCLSpecs/PySpecTests) is a
+# pytest-xdist driver over a per-worker Lean server.
+pytest>=8.0
+pytest-xdist>=3.5

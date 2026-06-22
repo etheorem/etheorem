@@ -224,6 +224,27 @@ test-ssz:
 test-eth:
     lake build LeanEthCS
 
+# EthCLLib + EthCLSpecs (the consensus-spec framework + Fulu/Gloas bodies). The
+# `*Tests` libs carry the framework + spec `#guard` / `native_decide` self-tests
+# (inheritance replay, the crypto seam, the running step, the classify driver);
+# building them fires the gates.
+test-ethcl:
+    lake build EthCLLib EthCLLibTests EthCLSpecs EthCLSpecsTests
+
+# EthCLSpecs upstream-vector conformance via the per-worker Lean server. Defaults
+# to the dev subset (a few cases per handler) on Fulu minimal; pass pytest args
+# for more, e.g. `just ethcl-conformance "--subset=0 -n auto"` or `"--fork=gloas"`.
+ethcl-conformance args="":
+    cd packages/EthCLSpecs/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q {{args}}
+
+# CI smoke gate for EthCLSpecs conformance: the dev subset (a few cases per
+# handler) at minimal for both forks. Currently-green formats pass; the rest
+# xfail as the Phase-2 work-queue, so the run is green (exit 0) iff no in-scope
+# vector hits a bug-smell or a real mismatch. Mainnet / full sweep run on demand.
+ethcl-conformance-smoke:
+    cd packages/EthCLSpecs/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --fork=fulu --subset=2
+    cd packages/EthCLSpecs/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --fork=gloas --subset=2
+
 # Building the core fires the in-file anchor-KAT `native_decide` gate
 # (input [0,1,2] → the known BN254 t=3 Poseidon2 output). Nothing in
 # the monorepo depends on LeanPoseidon (standalone island), so unlike

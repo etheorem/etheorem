@@ -84,8 +84,8 @@ jobs:
         # repopulates on first run.
         uses: actions/cache@v4
         with:
-          path: ~/.cache/sizzlean/v1.6.0-beta.0-*.tar.gz
-          key: consensus-spec-tests-v1.6.0-beta.0-archives
+          path: ~/.cache/sizzlean/v1.7.0-alpha.10-*.tar.gz
+          key: consensus-spec-tests-v1.7.0-alpha.10-archives
 
       - name: Verify build-time native deps
         # `just doctor-native` probes pkg-config + libcrypto (the
@@ -123,6 +123,49 @@ jobs:
           else
             just official-ssz-vector-tests-smoke
           fi
+
+  ethcl:
+    # EthCLLib (framework) + EthCLSpecs (Fulu / Gloas) acceptance. `just
+    # test-ethcl` builds all four libs, firing the framework + spec
+    # `#guard` / `native_decide` self-tests (inheritance replay, the crypto
+    # seam, the running step, map-backing equivalence, the signing-root and
+    # Merkle-branch primitives, the walking-skeleton discharge). Then the
+    # `pytest-xdist` conformance smoke gate runs the dev subset at minimal for
+    # both forks through the per-worker `pyspec_server`. Both forks are green on
+    # every collected in-scope format (Fulu incl. PeerDAS data availability,
+    # standalone execution_payload, and get_proposer_head; Gloas the full EIP-7732
+    # ePBS spine, operations, fork choice, and transition), with zero `xfail` — the
+    # only out-of-scope vectors (Electra-parent Fulu fork/transition, ssz_static,
+    # light_client, networking, merkle_proof, sync) are deselected, not collected.
+    # Mainnet and the full sweep run on demand (`--preset=mainnet`, `--subset=0`).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v3
+      - uses: astral-sh/setup-uv@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Cache consensus-spec-tests archives
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sizzlean/v1.7.0-alpha.10-*.tar.gz
+          key: consensus-spec-tests-v1.7.0-alpha.10-archives
+      - name: Verify build-time native deps
+        run: just doctor-native
+      - name: Vendor native crypto sources
+        run: just vendor-bls vendor-kzg
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: '.'
+          # The runner exe; EthCLLib + EthCLSpecs compile transitively as deps.
+          build-args: 'pyspec_server'
+      - name: EthCL self-tests (lake build of the test libs)
+        run: just test-ethcl
+      - name: Install Python dependencies
+        run: just setup-python
+      - name: EthCLSpecs conformance smoke gate (minimal, both forks)
+        run: just ethcl-conformance-smoke
 
   poseidon:
     # Poseidon2 differential conformance against the HorizenLabs `zkhash`

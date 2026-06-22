@@ -57,6 +57,22 @@ path = "packages/SizzLean"
 name = "LeanEthCS"
 path = "packages/LeanEthCS"
 
+# EthCLLib — the consensus-spec framework / DSL (the capturing fork forms, the
+# header macros, the effect monad, the tier and error systems, the container
+# front-end, the crypto seam, the fork-interface typeclass, the generic
+# PySpecTests driver). Builds on SizzLean + LeanHazmatBls/Kzg.
+[[require]]
+name = "EthCLLib"
+path = "packages/EthCLLib"
+
+# EthCLSpecs — the fork bodies (EthCLSpecs.Fulu, later .Gloas) implementing the
+# fork interface, plus the `pyspec_server` conformance runner. The deferred
+# proofs package (EthCLProofs, + mathlib) stays out of the umbrella, the
+# LeanPoseidonProofs containment pattern.
+[[require]]
+name = "EthCLSpecs"
+path = "packages/EthCLSpecs"
+
 # Standalone island, parallel to `LeanSha256` (a pure-crypto
 # primitive), outside the `LeanSha256 → SizzLean → LeanEthCS` SSZ
 # chain — nothing here imports it. Building the umbrella builds it.
