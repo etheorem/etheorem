@@ -167,8 +167,8 @@ lean_lib SizzLeanBench where
 -- `precompileModules := true` on `SizzLeanBench` above, every module
 -- the binary loads is also native code, not bytecode-interpreted.
 --
--- `supportInterpreter := true` matches `LeanEthCS`'s
--- `eth_ssz_vector_runner`, needed when the exe root is a submodule
+-- `supportInterpreter := true` matches `EthCLSpecs`'s
+-- `pyspec_server`, needed when the exe root is a submodule
 -- of a `precompileModules` library to avoid a Lake build-graph cycle
 -- (the `:shared` and `:export` targets self-reference otherwise).
 -- The runtime cost is a small unused interpreter dispatch table in
@@ -185,4 +185,14 @@ lean_exe ssz_bench where
 -- value. Same `supportInterpreter := true` rationale as `ssz_bench`.
 lean_exe ssz_profile where
   root := `SizzLeanBench.ProfileMain
+  supportInterpreter := true
+
+-- The `ssz_generic` upstream-vector conformance server. `SszGenericRunner.lean`
+-- exposes `def main` running a stdin/stdout request loop the SizzLean pytest
+-- harness (`packages/SizzLean/PySpecTests/`) drives. It exercises the `SSZType`
+-- wire format (serialize / deserialize / hashTreeRoot) directly, the
+-- fork-agnostic half of the SSZ suite, so it lives here rather than in a spec
+-- library. The FFI SHA-256 archive links transitively via `LeanHazmatSha256`.
+lean_exe ssz_generic_runner where
+  root := `SszGenericRunner
   supportInterpreter := true
