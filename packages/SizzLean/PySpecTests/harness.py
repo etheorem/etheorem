@@ -1,7 +1,7 @@
 """SizzLean ssz_generic conformance harness: archive acquisition, case walking,
 shape extraction, and the per-worker `ssz_generic_runner` client.
 
-`ssz_generic` is the fork-agnostic half of the upstream `consensus-spec-tests`
+`ssz_generic` is the fork-agnostic half of the upstream `consensus-specs`
 SSZ suite: primitive wire-format vectors (uints, basic vectors, bitvectors,
 bitlists, bools, and a fixed set of test-only containers). It addresses shapes by
 string identifier, not by any consensus container, so it exercises SizzLean's
@@ -73,7 +73,7 @@ def shape_spec_for_generic(handler: str, case_name: str) -> Optional[str]:
 
 def archive_url(tag: str) -> str:
     return (
-        f"https://github.com/ethereum/consensus-spec-tests/releases/"
+        f"https://github.com/ethereum/consensus-specs/releases/"
         f"download/{tag}/general.tar.gz"
     )
 

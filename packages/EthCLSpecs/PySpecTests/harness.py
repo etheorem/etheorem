@@ -23,7 +23,7 @@ from urllib.request import urlopen
 import cramjam
 import yaml
 
-# The pinned release: the latest consensus-spec-tests release, confirmed to
+# The pinned release: the latest consensus-specs release, confirmed to
 # carry both Fulu and Gloas minimal vectors (matches
 # EthCLSpecs.Fulu.Interface.pyspecPinnedVersion).
 PINNED_VERSION = "v1.7.0-alpha.10"
@@ -44,7 +44,7 @@ IN_SCOPE_RUNNERS = {
 
 def archive_url(tag: str, archive: str) -> str:
     return (
-        f"https://github.com/ethereum/consensus-spec-tests/releases/"
+        f"https://github.com/ethereum/consensus-specs/releases/"
         f"download/{tag}/{archive}.tar.gz"
     )
 
