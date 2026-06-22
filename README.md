@@ -8,7 +8,7 @@
 > SSZ theorems on a `BasicSupported` cut, but production-grade
 > stability and a stable release line are not implied.
 
-A Lean 4 monorepo for Ethereum consensus-spec types and SSZ
+A Lean 4 monorepo for Ethereum consensus specs and SSZ
 ([Simple Serialize](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md))
 with machine-checked correctness on the verified core.
 
@@ -30,6 +30,13 @@ LeanPoseidon (pure Poseidon2, standalone island, nothing depends on it yet)
 Lake subpackages under `packages/`, each with its own lakefile and
 independent build target:
 
+- **[`packages/EthCLLib/`](packages/EthCLLib/)** +
+  **[`packages/EthCLSpecs/`](packages/EthCLSpecs/README.md)**: the
+  consensus-spec framework (the fork-authoring DSL, the effect monad, the SSZ
+  container front-end, the conformance driver) and the executable Fulu and
+  Gloas fork bodies built on it. EthCLSpecs declares its containers in-spec and
+  ships the `pyspec_server` runner that drives the state-transition,
+  fork-choice, and `ssz_static` conformance for both forks.
 - **[`packages/LeanSha256/`](packages/LeanSha256/README.md)**: pure-Lean
   SHA-256 reference. NIST CAVP-validated, kernel-reducible. No FFI.
 - **[`packages/SizzLean/`](packages/SizzLean/README.md)**: SSZ
@@ -38,13 +45,6 @@ independent build target:
   macro, plus the `Hasher` typeclass + `Sha256` instance (delegating to
   the `LeanHazmatSha256` FFI binding) and the FFI ≡ spec equivalence
   axioms, the one layer importing both the FFI binding and the spec.
-- **[`packages/EthCLLib/`](packages/EthCLLib/)** +
-  **[`packages/EthCLSpecs/`](packages/EthCLSpecs/README.md)**: the
-  consensus-spec framework (the fork-authoring DSL, the effect monad, the SSZ
-  container front-end, the conformance driver) and the executable Fulu and
-  Gloas fork bodies built on it. EthCLSpecs declares its containers in-spec and
-  ships the `pyspec_server` runner that drives the state-transition,
-  fork-choice, and `ssz_static` conformance for both forks.
 - **[`packages/LeanHazmat*/`](hazmat-docs/ARCHITECTURE.md)**: the FFI
   crypto family: one package per primitive family wrapping a
   battle-tested native library behind `@[extern]`. Consensus families
