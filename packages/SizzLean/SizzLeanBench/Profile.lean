@@ -106,7 +106,7 @@ that accumulate in the pending overlay. Used by P4 / P6 / P7 / P8. -/
     let oldV := box.view.validators[idx]!
     let newV : ValidatorShape :=
       { oldV with effectiveBalance := UInt64.ofNat (i + 1) }
-    box := sszUpdate box with validators[idx] := newV
+    box := sszUpdate box with validators[idx]! := newV
   return box
 
 /-- Sink the post-state's first-validator effective balance,
@@ -166,8 +166,8 @@ private def p7_cachedCommitOnly (sink : IO.Ref Nat) (salt : UInt8) : IO Unit := 
   let box := buildCachedFinal salt
   match box with
   | .cached t =>
-      let updates := t.pending.toList.map fun (g, d) =>
-        (gindexBits g, Node.ofShape Sha256 d.shape d.value)
+      let updates := t.pending.toList.filterMap fun (g, d) =>
+        (d t.view).map fun n => (gindexBits g, n)
       let committed := t.treeBase.get.setManyAt updates
       sinkNodeShape sink committed
   | .uncached _ => sink.modify (· + 1)
@@ -179,8 +179,8 @@ private def p8_cachedSplit (sink : IO.Ref Nat) (salt : UInt8) : IO Unit := do
   let box := buildCachedFinal salt
   match box with
   | .cached t =>
-      let updates := t.pending.toList.map fun (g, d) =>
-        (gindexBits g, Node.ofShape Sha256 d.shape d.value)
+      let updates := t.pending.toList.filterMap fun (g, d) =>
+        (d t.view).map fun n => (gindexBits g, n)
       let committed := t.treeBase.get.setManyAt updates
       sink.modify (· + consume (committed.merkleRoot Sha256))
   | .uncached _ => sink.modify (· + 1)

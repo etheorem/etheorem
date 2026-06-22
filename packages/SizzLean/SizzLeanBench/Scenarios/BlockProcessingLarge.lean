@@ -62,7 +62,7 @@ private def pureValidatorSet256 (sink : IO.Ref Nat) (salt : UInt8) : IO Unit := 
       let mark := UInt64.ofNat (block * MUTATIONS_PER_BLOCK + j + 1)
       let oldV := box.view.validators[idx]!
       let newV : ValidatorShape := { oldV with effectiveBalance := mark }
-      box := sszUpdate box with validators[idx] := newV
+      box := sszUpdate box with validators[idx]! := newV
     let (root, b₁) := box.hashTreeRoot
     box := b₁
     sink.modify (· + consume root)
@@ -77,7 +77,7 @@ private def cachedValidatorSet256 (sink : IO.Ref Nat) (salt : UInt8) : IO Unit :
       let mark := UInt64.ofNat (block * MUTATIONS_PER_BLOCK + j + 1)
       let oldV := box.view.validators[idx]!
       let newV : ValidatorShape := { oldV with effectiveBalance := mark }
-      box := sszUpdate box with validators[idx] := newV
+      box := sszUpdate box with validators[idx]! := newV
     let (root, b₁) := box.hashTreeRoot
     box := b₁
     sink.modify (· + consume root)
