@@ -7,22 +7,23 @@ deliverables it ships, an acceptance criterion (one observable
 that says the stage is done), and notes on dependencies,
 parallelism, and risk.
 
-The two sibling subpackages (`LeanSha256` and `LeanEthCS`) appear
-only where SizzLean's stages need them, `LeanSha256` as the
+The sibling subpackages (`LeanSha256`, `EthCLLib`, `EthCLSpecs`)
+appear only where SizzLean's stages need them, `LeanSha256` as the
 pure-Lean SHA-256 reference SizzLean's `Hasher.Sha256Spec`
-instance bridges to, `LeanEthCS` as the downstream consumer
-whose consensus containers validate SizzLean's user surface.
-Their own plans (if they grow distinct staging) live under
-each subpackage's own docs.
+instance bridges to, `EthCLLib` / `EthCLSpecs` as the downstream
+consumers whose consensus containers validate SizzLean's user
+surface. Their own plans (if they grow distinct staging) live
+under each subpackage's own docs.
 
 **Note on paths.** The plan was written and incrementally amended
 across multiple iterations. Per-stage file-path references in the
 "Deliverables" lists describe what the stage *originally produced*
 under the pre-monorepo layout; many of those files have since
 moved to `packages/SizzLean/SizzLean/...` paths (or, for some
-Eth-side stages, to `packages/LeanEthCS/...`). The deliverables
-themselves landed; the paths drifted. ARCHITECTURE.md §12 carries
-the canonical current layout.
+Eth-side stages, to `packages/EthCLLib/...` and
+`packages/EthCLSpecs/...`). The deliverables themselves landed;
+the paths drifted. ARCHITECTURE.md §12 carries the canonical
+current layout.
 
 The sequencing matches §14 of ARCHITECTURE.md: Phase 1 lays down
 the spec totality plus proof scaffolding (narrow first cut on

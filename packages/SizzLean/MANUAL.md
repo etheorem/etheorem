@@ -152,11 +152,11 @@ box that covers: `UInt8/16/32/64`, `Bool`, `Vector T N`,
 `structure … deriving SSZRepr` you've defined yourself.
 
 Preset-parameterised containers (those whose layout depends on
-`MAX_VALIDATORS_PER_COMMITTEE` etc.) use the
-`ssz_struct_for_presets` macro from the sister `LeanEthCS`
-package rather than a plain `structure`, see the consensus-spec
-containers in [`LeanEthCS/Forks/`](../LeanEthCS/LeanEthCS/Forks/)
-for the pattern.
+`MAX_VALIDATORS_PER_COMMITTEE` etc.) use the `forkstruct` /
+`forkcontainer` DSL from the sister `EthCLLib` framework rather
+than a plain `structure`, see the consensus-spec containers in
+[`EthCLSpecs/Fulu/`](../EthCLSpecs/EthCLSpecs/Fulu/) for the
+pattern.
 
 ## Hash-tree roots
 
@@ -411,40 +411,37 @@ just test-sha256
 
 ### Upstream `ethereum/consensus-spec-tests` vectors
 
-Drives a CLI tool against the official upstream archives, with a
-live tqdm progress bar showing per-case throughput.
+Two pytest harnesses drive a CLI runner against the official
+upstream archives. The fork-agnostic `ssz_generic` wire-format
+suite runs from SizzLean against the `ssz_generic_runner` exe;
+the per-fork `ssz_static` consensus-container suite runs from
+EthCLSpecs against the `pyspec_server` exe (Fulu and Gloas).
 
 ```bash
 # Generic SSZ wire-format tests (uints, vectors, bitlist, …).
-# Quick sample by default:
-just official-ssz-vector-tests
+# Quick dev subset by default:
+just ssz-generic-conformance
 
-# Full generic sweep — 1865 / 1865 cases:
-just official-ssz-vector-tests-generic-full
+# Full generic sweep:
+just ssz-generic-conformance-full
 
 # Per-fork consensus-container tests (BeaconState, attestations, …).
-# Quick sample across all forks Phase 0 → Fulu:
-just official-ssz-vector-tests-static
+# Quick dev subset on Fulu minimal by default:
+just ethcl-conformance
 
-# Full static sweep, minimal preset, every fork — 38991 / 38991 cases:
-just official-ssz-vector-tests-static-full
+# Pass pytest args for more, e.g. a focused glob or a different fork:
+just ssz-generic-conformance "--subset=0 -n auto"
+just ethcl-conformance "--fork=gloas"
 
-# Mainnet preset — heavy; run before a release:
-just official-ssz-vector-tests-static-mainnet
-
-# Focused subset by shape glob:
-just official-ssz-vector-tests-include 'generic:uints/*'
-
-# Everything from the upstream corpus (generic full + static
-# minimal full):
-just official-ssz-vector-tests-all
+# The complete in-scope EthCLSpecs sweep (both forks, both presets):
+just ethcl-conformance-full
 ```
 
 First run downloads + extracts the upstream archive (~hundreds
 of MB) into `~/.cache/sizzlean/`. Subsequent runs hit the cache.
 
-The Python venv (with `cramjam`, `tqdm`, `PyYAML`) is created
-by `just setup-python` once.
+The Python venv (with `cramjam`, `tqdm`, `PyYAML`, `pytest`) is
+created by `just setup-python` once.
 
 ### Everything local (`just test`)
 
@@ -452,9 +449,10 @@ by `just setup-python` once.
 just test
 ```
 
-Runs `test-sha256`, `test-ssz`, and `test-eth` (which is just
-`lake build LeanEthCS`, where every `deriving SSZRepr` in the
-consensus-spec containers is a compile-time gate). The
+Runs the per-package in-Lean gates (`test-sha256`, `test-ssz`,
+and the crypto / Poseidon anchors). The consensus-spec libraries
+have their own `just test-ethcl` recipe, where every `deriving
+SSZRepr` in the in-spec containers is a compile-time gate. The
 upstream-vector recipes are *not* in `just test`, they're
 opt-in because each requires downloaded archives and runs
 against external data.
@@ -482,9 +480,9 @@ import SizzLean
 ```
 
 The consensus-spec containers themselves live in the sibling
-`LeanEthCS` package; add an `[[require]]` for it in your
+`EthCLSpecs` package; add an `[[require]]` for it in your
 `lakefile.toml` and import what you need from
-`LeanEthCS.Forks.<Fork>.<Container>`.
+`EthCLSpecs.Fulu.<Container>` or `EthCLSpecs.Gloas.<Container>`.
 
 ## API reference
 

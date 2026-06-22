@@ -47,12 +47,12 @@ actually mutates.
 ## Why the bench-local copy of Fulu types
 
 `SizzLeanBench.Fulu` holds a copy of the BeaconState shape; the
-spec-accurate version lives in `LeanEthCS.Forks.Fulu`. The bench
-copy keeps `SizzLeanBench` independent of LeanEthCS. `LeanEthCS`
+spec-accurate version lives in `EthCLSpecs.Fulu`. The bench
+copy keeps `SizzLeanBench` independent of EthCLSpecs. `EthCLSpecs`
 already depends on `SizzLean`, and adding the reverse dependency
 would close a cycle. The copy is a *reference fixture*, it
 tracks the shape at the moment of writing and may drift; for
-spec-accurate types use LeanEthCS.
+spec-accurate types use EthCLSpecs.
 -/
 
 set_option autoImplicit false

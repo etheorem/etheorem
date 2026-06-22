@@ -18,14 +18,13 @@ Upstream repository: <https://github.com/etheorem/etheorem>.
 
 ```
 LeanSha256 ─────────────┐
-                        ├─→ SizzLean  ←  LeanEthCS
-LeanHazmatSha256 ───────┘   (SSZ +        (consensus
-   (FFI SHA-256)            cache)        containers,
-                                          Phase0…Gloas)
+                        ├─→ SizzLean ──→ EthCLLib ──→ EthCLSpecs
+LeanHazmatSha256 ───────┘   (SSZ +       (consensus    (Fulu / Gloas
+   (FFI SHA-256)            cache)        framework)    fork bodies)
 
 LeanHazmat* (FFI crypto family):  Sha256 · Bls · Kzg   (consumed à la carte)
 
-LeanPoseidon (pure Poseidon2, standalone island — nothing depends on it yet)
+LeanPoseidon (pure Poseidon2, standalone island, nothing depends on it yet)
 ```
 
 Lake subpackages under `packages/`, each with its own lakefile and
@@ -39,10 +38,13 @@ independent build target:
   macro, plus the `Hasher` typeclass + `Sha256` instance (delegating to
   the `LeanHazmatSha256` FFI binding) and the FFI ≡ spec equivalence
   axioms, the one layer importing both the FFI binding and the spec.
-- **[`packages/LeanEthCS/`](packages/LeanEthCS/README.md)**:
-  Ethereum consensus-spec containers from Phase 0 through Gloas,
-  the preset-struct macro, and the `ssz_static` CLI runner
-  (`eth_ssz_vector_runner`, driven by `scripts/run_conformance.py`).
+- **[`packages/EthCLLib/`](packages/EthCLLib/)** +
+  **[`packages/EthCLSpecs/`](packages/EthCLSpecs/README.md)**: the
+  consensus-spec framework (the fork-authoring DSL, the effect monad, the SSZ
+  container front-end, the conformance driver) and the executable Fulu and
+  Gloas fork bodies built on it. EthCLSpecs declares its containers in-spec and
+  ships the `pyspec_server` runner that drives the state-transition,
+  fork-choice, and `ssz_static` conformance for both forks.
 - **[`packages/LeanHazmat*/`](hazmat-docs/ARCHITECTURE.md)**: the FFI
   crypto family: one package per primitive family wrapping a
   battle-tested native library behind `@[extern]`. Consensus families
@@ -74,13 +76,14 @@ pure-Lean `Sha256Spec` reference, and the cache layer
 (persistent `Node`, `Node.ofShape`, cached merkle walker,
 gindex-driven `setManyAt`, fused commit `Node.commitAndHash`,
 closure-based pending overlay, `sszUpdate` macro,
-`SSZ.Box` user surface) are all landed. Consensus containers
-cover Phase 0 through Gloas, including Fulu's `proposer_lookahead`
-and the full Gloas ePBS `BeaconState` (nine EIP-7732 fields plus
-the supporting `Builder` / `ExecutionPayloadBid` types).
+`SSZ.Box` user surface) are all landed. The executable consensus
+spec covers the Fulu and Gloas forks (state transition, fork choice,
+and the SSZ containers declared in-spec, including Fulu's
+`proposer_lookahead` and the Gloas ePBS additions: the nine EIP-7732
+`BeaconState` fields plus the `Builder` / `ExecutionPayloadBid` types).
 Conformance pinned at consensus-spec-tests
-[v1.6.0-beta.0](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.6.0-beta.0)
-in `scripts/run_conformance.py`. The universal proof set
+[v1.7.0-alpha.10](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.10)
+in the pytest harnesses. The universal proof set
 (`decode_encode`, `serialize_injective`, `encode_size_le_max`
 over `SSZType.Supported`) and the AVX-512 SIMD inner loop for
 `sha256BatchCombine` remain as planned follow-ups; see
@@ -145,7 +148,7 @@ the project. They are external tools the recipes assume.
    below for the per-platform one-liners). The Justfile's
    `doctor-native` recipe pinpoints what's missing.
 
-4. **`python3` + `uv`** (only for `official-ssz-vector-tests*`).
+4. **`python3` + `uv`** (only for the conformance pytest harnesses).
    Run `just setup-python` once to create `.venv/` and install
    the harness deps.
 
@@ -168,13 +171,13 @@ Toolchain pinned in [`lean-toolchain`](lean-toolchain) (elan picks it up).
 # From the repo root — common targets by name:
 lake build LeanSha256
 lake build SizzLean
-lake build LeanEthCS
+lake build EthCLSpecs       # consensus spec (Fulu / Gloas); pulls in EthCLLib
 lake build LeanPoseidon     # standalone Poseidon2 island (fires its anchor KAT)
 
 # Test suites (per package, run on demand):
 lake build LeanSha256Tests
 lake build SizzLeanTests
-lake build LeanEthCSTests
+lake build EthCLLibTests EthCLSpecsTests   # framework + spec self-tests
 lake build LeanPoseidonTests # committed Poseidon2 KATs (no Rust)
 lake exe   poseidon_fuzz     # Poseidon2 differential test vs the zkhash oracle (needs cargo)
 just test-poseidon-proofs    # mathlib equivalence proof permute = permuteRef (standalone; fetches olean cache)
@@ -183,17 +186,17 @@ just test-poseidon-proofs    # mathlib equivalence proof permute = permuteRef (s
 lake build ssz_bench       # microbench grid, S1–S7 (see SizzLeanBench.lean)
 lake build ssz_profile     # phase-by-phase profile of one workload
 
-# ssz_static / ssz_generic CLI driver (consumed by scripts/run_conformance.py):
-lake build eth_ssz_vector_runner
+# Conformance runners the pytest harnesses drive:
+lake build pyspec_server       # EthCLSpecs: state transition / fork choice / ssz_static
+lake build ssz_generic_runner  # SizzLean: ssz_generic wire-format suite
 
 # Or build a single subpackage in isolation:
 cd packages/SizzLean && lake build
 ```
 
 The repo's [`Justfile`](Justfile) wraps the common workflows
-(`just build`, `just test`, `just bench`,
-`just official-ssz-vector-tests-static`, …). See `just --list`
-for the full set.
+(`just build`, `just test`, `just bench`, `just ethcl-conformance`,
+`just ssz-generic-conformance`, …). See `just --list` for the full set.
 
 CI runs `lake build` for each named library on the pinned
 toolchain via `leanprover/lean-action`.
@@ -228,53 +231,47 @@ build` runs both vendor steps for you. The C / C++ compilers are invoked
 through the Lean toolchain's `cc` wrapper, no separate configuration
 required.
 
-## Conformance harness
+## Conformance harnesses
 
-`scripts/run_conformance.py` drives the Lean `eth_ssz_vector_runner` CLI against
-`ethereum/consensus-spec-tests` release archives. Default mode runs
-the **`ssz_generic`** suite (type-agnostic SSZ tests for `uints`,
-`basic_vector`, `bitvector`, `bitlist`, `boolean`, `containers`),
-with a `--limit N` subset cap by default.
+Two `pytest-xdist` harnesses drive long-lived Lean servers against the
+`ethereum/consensus-spec-tests` vectors. Each xdist worker holds one warm
+server, so there is no per-vector Lean startup.
+
+- **EthCLSpecs** (`packages/EthCLSpecs/PySpecTests/`, the `pyspec_server`
+  runner): the Fulu and Gloas state transition, fork choice, and per-fork
+  `ssz_static` container vectors.
+- **SizzLean** (`packages/SizzLean/PySpecTests/`, the `ssz_generic_runner`):
+  the fork-agnostic `ssz_generic` wire-format suite (uints, basic vectors,
+  bitvectors, bitlists, bools, the test-only containers).
 
 ```bash
-# One-time: create `.venv/` with the harness deps (cramjam + PyYAML).
-# Wraps `uv venv` + `uv pip install -r scripts/requirements.txt`.
+# One-time: create `.venv/` with the harness deps (cramjam, PyYAML, pytest,
+# pytest-xdist). Wraps `uv venv` + `uv pip install -r scripts/requirements.txt`.
 just setup-python
 
-# Default: ssz_generic subset (5 cases per handler/suite)
-.venv/bin/python scripts/run_conformance.py
+# Dev-subset smoke gates (a few cases per handler):
+just ethcl-conformance-smoke         # Fulu + Gloas: transition / fork choice / ssz_static
+just ssz-generic-conformance-smoke   # ssz_generic
 
-# Full ssz_generic sweep
-.venv/bin/python scripts/run_conformance.py --all
-
-# Switch to ssz_static (per-fork consensus types)
-.venv/bin/python scripts/run_conformance.py --suite static
-
-# Single-shape focus
-.venv/bin/python scripts/run_conformance.py --include 'generic:uints/*'
+# Full sweeps:
+just ethcl-pyspec-full               # both presets, both forks
+just ssz-generic-conformance-full    # every in-scope wire-format vector
 ```
 
-### Current dispatch coverage
+### Coverage
 
-Numbers below are against consensus-spec-tests **v1.6.0-beta.0**
-(the tag pinned in `scripts/run_conformance.py`). Both presets
-green across every fork Phase 0 → Fulu. Gloas and EIP-7805 test
-vectors exist in the corpus but aren't yet in the CLI dispatch
-table or the harness's `FORKS` list.
+Pinned at consensus-spec-tests
+[v1.7.0-alpha.10](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.10).
 
-- **`ssz_generic`**: **2188 / 2188 in-scope cases pass** across
-  all handlers (uints, basic_vector, bitvector, bitlist, boolean,
-  containers). 292 progressive-container cases are deliberately
-  out of scope. The test-only structs (`SingleFieldTestStruct`,
-  `SmallTestStruct`, `FixedTestStruct`, `VarTestStruct`,
-  `ComplexTestStruct`, `BitsStruct`) have their SSZ shapes
-  hardcoded in `packages/LeanEthCS/LeanEthCS/Cli/Main.lean`.
-- **`ssz_static --config mainnet --all`**: **1585 / 1585 cases
-  pass** across every fork Phase 0 → Fulu.
-- **`ssz_static --config minimal --all`**: **38991 / 38991 cases
-  pass** across every fork Phase 0 → Fulu, including
-  variable-size composites (`Attestation`, `BeaconBlockBody`,
-  `BeaconState`) and all fork deltas
-  (Altair / Bellatrix / Capella / Deneb / Electra / Fulu).
-- **One-command full sweep**: `just official-ssz-vector-tests-all`
-  drives generic + static-mainnet + static-minimal end-to-end.
+- **`ssz_generic`** (SizzLean): 2188 in-scope cases pass across every handler
+  (uints, basic_vector, bitvector, bitlist, boolean, containers). The 292
+  EIP-7495 / 7916 / 8016 progressive / stable / compatible cases are out of
+  SizzLean's `SSZType` universe and xfail. The test-only container shapes
+  (`VarTestStruct`, `ComplexTestStruct`, `BitsStruct`, …) are hard-coded in
+  `packages/SizzLean/SszGenericRunner.lean`.
+- **`ssz_static`** (EthCLSpecs, Fulu + Gloas): the consensus containers
+  EthCLSpecs models pass at both the minimal and mainnet presets; the types it
+  does not model (light-client, gossip-aggregation, networking identifiers,
+  signing helpers) xfail as out of scope. Earlier forks (Phase 0 through
+  Electra) are not covered: EthCLSpecs authors Fulu as the accumulated base,
+  not a per-fork container set.

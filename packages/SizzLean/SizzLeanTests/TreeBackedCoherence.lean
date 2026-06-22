@@ -17,10 +17,9 @@ at runtime. It is empirically asserted in Lean via `native_decide`
 cases rather than proved.
 
 This file does it on the example containers from
-`ExampleContainers.lean`. The companion file in
-`LeanEthCS.TreeBackedCoherence` does it on real
-consensus-spec containers; both files share the same property-test
-pattern but cover disjoint type surfaces.
+`ExampleContainers.lean`. Real consensus-spec containers exercise
+the same coherence property through the `EthCLSpecs` `ssz_static`
+conformance sweep, so the two cover disjoint type surfaces.
 
 Cases per container:
 * one zero-init value

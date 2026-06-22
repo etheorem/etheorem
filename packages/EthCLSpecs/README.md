@@ -31,10 +31,12 @@ Two forks are in scope:
 
 For each fork the library implements the SSZ containers, the state transition
 (slots, blocks, epochs, and every operation), the fork upgrade, and a second
-state machine for fork choice. Genesis is not yet implemented; the pinned
-vector set carries no genesis cases to drive it. Validator duties, p2p
-networking, and the standalone SSZ-static, BLS, and KZG vector formats sit out
-of scope. Those exercise primitives that `SizzLean` and the crypto packages own.
+state machine for fork choice. Its containers are checked against the upstream
+`ssz_static` vectors. Genesis is not yet implemented; the pinned vector set
+carries no genesis cases to drive it. Validator duties, p2p networking, and the
+BLS and KZG vector formats sit out of scope; those exercise primitives the
+crypto packages own. The fork-agnostic `ssz_generic` wire-format vectors run in
+`SizzLean`.
 
 ## Advantages
 

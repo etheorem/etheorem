@@ -508,8 +508,8 @@ pubkey aggregation (the `ffi` / `verifyOff` backends delegate to
 the ePBS tail appends `builders`, `nextWithdrawalBuilderIndex`,
 `executionPayloadAvailability`, `builderPendingPayments`, `builderPendingWithdrawals`,
 `latestExecutionPayloadBid`, `payloadExpectedWithdrawals`, `ptcWindow`. The containers
-track `specs/gloas/beacon-chain.md` (and `fork.md` for `upgradeToGloas`), fetched
-directly rather than from LeanEthCS. Gloas extends Fulu's three constant tiers with the
+are declared in-spec, tracking `specs/gloas/beacon-chain.md` (and `fork.md` for
+`upgradeToGloas`). Gloas extends Fulu's three constant tiers with the
 ePBS values: `ptcSize` / `maxBuildersPerWithdrawalsSweep` (preset);
 `builderRegistryLimit` / `builderPendingWithdrawalsLimit` / `maxPayloadAttestations` /
 the builder-payment threshold and builder prefixes and domains (universal); and

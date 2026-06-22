@@ -19,9 +19,9 @@
 - [ ] Per-package test suites pass:
   - [ ] `lake build LeanSha256Tests`
   - [ ] `lake build SizzLeanTests`
-  - [ ] `lake build LeanEthCSTests`
+  - [ ] `just test-ethcl`
 - [ ] If this touches spec types or cache behaviour:
-      `just official-ssz-vector-tests-static` is green.
+      `just ethcl-conformance` is green.
 - [ ] If this touches a bench-measured hot path: included
       before/after `lake exe ssz_bench` TSV (or relevant rows) in
       the PR description.

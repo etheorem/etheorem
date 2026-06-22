@@ -6,9 +6,9 @@ import SizzLean.Repr.Deriving
 # `SizzLeanBench.Fulu`: local copy of Fulu BeaconState types
 
 The bench needs a realistic consensus-spec-shaped container to
-measure cache vs pure behaviour against. LeanEthCS has the
+measure cache vs pure behaviour against. EthCLSpecs has the
 spec-accurate definitions, but having SizzLeanBench depend on
-LeanEthCS would create a cycle (`LeanEthCS` already depends on
+EthCLSpecs would create a cycle (`EthCLSpecs` already depends on
 `SizzLean`, and `SizzLeanBench` is a `lean_lib` inside the
 `SizzLean` package). Instead, we hold a **copy** of the
 container types here.
@@ -16,20 +16,20 @@ container types here.
 The copy is a reference fixture, *not* a spec replica. It tracks
 the Fulu/main-branch `BeaconState` shape (37 fields, including
 `proposer_lookahead`) at the moment of writing but is **not
-expected to stay in sync** with LeanEthCS or the upstream spec.
-If you need spec-accurate types use `LeanEthCS.Forks.Fulu.*`.
+expected to stay in sync** with EthCLSpecs or the upstream spec.
+If you need spec-accurate types use `EthCLSpecs.Fulu.*`.
 
-Differences vs the spec / LeanEthCS:
+Differences vs the spec / EthCLSpecs:
 
 * Mainnet preset values are **baked in as literals** rather than
   parameterised by a `Preset` record. The bench only runs at
   mainnet scale; the minimal preset isn't built.
-* `BeaconState` is one concrete `structure`, not a
-  `ssz_struct_for_presets` pair. The `ssz_struct_for_presets`
-  macro lives in LeanEthCS, keeping the bench types as plain
-  `structure`s avoids the macro dependency.
-* Sub-containers are byte-for-byte identical to the LeanEthCS
-  versions where the LeanEthCS version is itself a plain
+* `BeaconState` is one concrete `structure`, not a preset-variant
+  pair from the `forkstruct` DSL. That DSL lives in EthCLLib;
+  keeping the bench types as plain `structure`s avoids the
+  framework dependency.
+* Sub-containers are byte-for-byte identical to the EthCLSpecs
+  versions where the EthCLSpecs version is itself a plain
   `structure` (e.g. `Validator`, `Checkpoint`, `Eth1Data`); the
   preset-variant ones (`SyncCommittee`, `BeaconState`) are
   represented as the Mainnet variant only.
@@ -92,7 +92,7 @@ structure BeaconBlockHeader where
   deriving SSZRepr
 
 /-- `Validator`: eight fixed-size fields. Same layout as
-`LeanEthCS.Forks.Phase0.Validator`, plus an `Inhabited`
+`EthCLSpecs.Fulu.Validator`, plus an `Inhabited`
 instance so `xs[i]!` works on a list of validators. -/
 structure Validator where
   pubkey                     : BLSPubkey

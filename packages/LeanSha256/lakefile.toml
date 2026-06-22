@@ -24,7 +24,7 @@ moreLeancArgs = ["-march=native"]
 
 [[lean_lib]]
 name = "LeanSha256"
-# Match the other main libraries (`SizzLean`, `LeanEthCS`): ship the
+# Match the other main libraries (`SizzLean`, `EthCLSpecs`): ship the
 # library as a precompiled shared lib so importers link against
 # native code rather than compiling the modules themselves. With
 # only one downstream consumer (`SizzLean`) the build-time win is

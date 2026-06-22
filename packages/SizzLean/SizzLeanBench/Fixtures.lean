@@ -13,7 +13,7 @@ at four points along the tree-depth / payload-size axis.
 
 ## `ValidatorShape`
 
-Mirrors the consensus-spec `Validator` layout (no LeanEthCS
+Mirrors the consensus-spec `Validator` layout (no EthCLSpecs
 dependency): 8 fixed-size fields, ~144 bytes serialised, depth
 4. The smallest fixture, exercising the cache's per-operation
 constant-cost path. Wrapper overhead is visible here; payback

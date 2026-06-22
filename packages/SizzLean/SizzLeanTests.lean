@@ -51,11 +51,11 @@ lake build SizzLeanTests
   `sszUpdate` multi-field batched updates, vector-index `sszUpdate`.
   Containers used as test fixtures are defined locally in
   `ExampleContainers.lean`, small SSZ-shaped types analogous to
-  Phase-0 `Fork` / `SignedBeaconBlockHeader` / `HistoricalBatch`
-  but with no dependency on the LeanEthCS table.
+  `Fork` / `SignedBeaconBlockHeader` / `HistoricalBatch`
+  but with no dependency on the consensus container surface.
 
-Eth-driven conformance (real Phase-0 → Fulu containers,
-`ssz_static` CLI dispatch) lives in `LeanEthCS`. The
+Eth-driven conformance (real Fulu / Gloas containers,
+`ssz_static` CLI dispatch) lives in `EthCLSpecs`. The
 two libraries share the same property-test patterns but operate on
 different container surfaces.
 
@@ -63,6 +63,6 @@ different container surfaces.
 
 The default `lake build` doesn't rebuild these files; on iterative
 work the heavy `native_decide` batches don't recompile until you
-ask. Splitting Eth-using tests further (into LeanEthCS)
+ask. Keeping Eth-using tests in `EthCLSpecs`
 keeps the SSZ-library gates fast and dependency-light.
 -/

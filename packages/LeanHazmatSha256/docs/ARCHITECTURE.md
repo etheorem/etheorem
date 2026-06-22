@@ -84,6 +84,6 @@ express). The two shim `.c` files compile to one static archive
 library or executable that transitively `require`s this package
 (`SizzLean`, and downstream exes). The OpenSSL `-lcrypto` *flag* does
 **not** propagate across `require` (PLAN.md Stage 0), so every
-exe-hosting dependent, `SizzLean`, `LeanEthCS`, keeps its own
+exe-hosting dependent, `SizzLean`, `EthCLSpecs`, keeps its own
 minimal pkg-config discovery; this package keeps its own for its test
 lib.

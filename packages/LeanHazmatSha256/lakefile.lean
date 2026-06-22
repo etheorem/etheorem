@@ -83,7 +83,7 @@ package LeanHazmatSha256 where
   -- evaluates the FFI under `native_decide`) links `libcrypto`. Lake
   -- does NOT propagate these args to dependent packages across
   -- `require` (settled by hazmat-docs/PLAN.md Stage 0; SizzLean and
-  -- LeanEthCS each keep their own discovery), but the `extern_lib`
+  -- EthCLSpecs each keep their own discovery), but the `extern_lib`
   -- archive below *does* propagate.
   moreLinkArgs := unsafe opensslLinkArgs
   -- Expose the host's SHA-NI / AVX2 extensions to the Lean→C path,

@@ -367,10 +367,10 @@ The safety net is two property tests:
   `sszUpdate` emission paths, against the spec oracle.
 
 Plus the cross-implementation `ssz_static` upstream-vector
-sweep (`packages/LeanEthCS/...`), which exercises the
+sweep (the `EthCLSpecs` pytest harness in
+`packages/EthCLSpecs/PySpecTests/`), which exercises the
 production cached path against the consensus-spec-tests release
-on 38991 / 38991 minimal-preset cases across every fork through
-Fulu.
+for the Fulu and Gloas forks.
 
 This is the same safety-net shape `remerkleable` ships
 (`tests/test_roundtrip.py` plus consensus-spec-tests
@@ -950,7 +950,7 @@ recorded; future hint changes compare against these columns.
 The pass-2 step (site-local `@[specialize T]` annotations on
 specific hot consensus types like `Validator` /
 `BeaconBlockHeader` / per-fork `BeaconState` variants in
-`LeanEthCS`) is deferred pending workload-specific profiling
+`EthCLSpecs`) is deferred pending workload-specific profiling
 that says it pays.
 
 **Original design notes follow.**
@@ -967,8 +967,7 @@ dispatch tag check at every constructor.
 * `@[specialize]` annotations on the generic functions surfaced
   by the deriving handler (`packages/SizzLean/SizzLean/Repr/Deriving.lean`).
 * `@[specialize SSZ.hashTreeRoot]`-style hints in the
-  consensus-spec containers, but those go in `LeanEthCS`, not
-  here.
+  consensus-spec containers, which go in `EthCLSpecs`.
 
 **Prior art.**
 
@@ -1143,8 +1142,8 @@ Headline cached vs pure ratios on dev hardware:
   (2.6 s vs 5.2 s); the realistic mainnet-shape regression gate.
 
 S7's `BeaconState` types live in `SizzLeanBench/Fulu.lean` as a
-bench-local reference copy so `SizzLeanBench` doesn't need a
-`LeanEthCS` dependency (`LeanEthCS` already depends on
+bench-local reference copy so `SizzLeanBench` doesn't need an
+`EthCLSpecs` dependency (`EthCLSpecs` already depends on
 `SizzLean`, so the reverse would close a cycle).
 
 The default ordering above is highest-impact-first per

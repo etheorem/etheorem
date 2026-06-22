@@ -8,8 +8,8 @@ risk.
 
 The sibling package `LeanPoseidonProofs` appears only in Phase 3, where the
 equivalence proof needs it (and mathlib). The rest of the monorepo
-(`LeanSha256` / `SizzLean` / `LeanEthCS`) does not appear at all: LeanPoseidon
-is a standalone island (ARCHITECTURE.md §"Relationship to the rest of the
+(`LeanSha256` / `SizzLean` / `EthCLLib` / `EthCLSpecs`) does not appear at all:
+LeanPoseidon is a standalone island (ARCHITECTURE.md §"Relationship to the rest of the
 monorepo"), parallel to `LeanSha256` and consumed by nothing yet.
 
 The sequencing matches §13 of ARCHITECTURE.md: Phase 1 lands the

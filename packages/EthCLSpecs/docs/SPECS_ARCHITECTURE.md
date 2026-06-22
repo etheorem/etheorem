@@ -81,14 +81,21 @@ goal for the first milestone; proofs are deferred (Section 9).
 
 ### 1.4 Excluded formats
 
-Three vector formats are excluded: `ssz_static`, `bls`, and `kzg`. Each tests a
-primitive the framework or a dependency owns, the SSZ serialization, the BLS
-signature scheme, the KZG commitment scheme, rather than consensus logic the spec
-author writes. They are a framework-library concern, checked by SizzLean's own
-suite and the crypto backend's suite, so the spec does not re-run them. KZG the
-primitive still lives behind the `[CryptoBackend]` seam, where Fulu's PeerDAS
-paths call it; only the standalone `kzg` test format is out of scope. The
-primitive is exercised through in-scope spec paths, never in isolation.
+Two vector formats are excluded: `bls` and `kzg`. Each tests a primitive a
+dependency owns, the BLS signature scheme and the KZG commitment scheme, rather
+than consensus logic the spec author writes. The crypto backend's own suite
+checks them, so the spec does not re-run them. KZG the primitive still lives
+behind the `[CryptoBackend]` seam, where Fulu's PeerDAS paths call it; only the
+standalone `kzg` test format is out of scope. The primitive is exercised through
+in-scope spec paths, never in isolation.
+
+The per-fork `ssz_static` container vectors are in scope. The `pyspec_server`
+runner decodes each named container through its derived `SSZRepr`, checks the
+hash-tree-root against the vector, and round-trips the bytes, for every
+consensus container EthCLSpecs declares; the light-client, gossip, and
+networking types it does not model are reported out of scope. The fork-agnostic
+`ssz_generic` wire-format vectors stay with the `SSZType` primitives they
+exercise, in SizzLean's own conformance harness.
 
 ---
 
@@ -318,7 +325,7 @@ EthCLSpecs   EthCLSpecs.Fulu and EthCLSpecs.Gloas implement the interface; the
 
 A separate package cannot import what it does not require, so `EthCLLib`
 physically cannot reach a spec module. That is the domain line, machine-checked, the
-same one-way enforcement `SizzLean` gets by not depending on `LeanEthCS`.
+same one-way enforcement that keeps `SizzLean` from reaching the libraries built on it.
 
 `PySpecTests` straddles the boundary cleanly along the fork-interface typeclass. Its
 generic driver lives in `EthCLLib`: it decodes through `[SSZRepr]`,
@@ -828,7 +835,8 @@ interface and `PySpecTests`, written once and fork-agnostic, runs every format.
 | `genesis` | `initializeBeaconStateFromEth1` | yes |
 | `fork` | `upgradeToGloas` | yes (Fulu to Gloas only) |
 | `transition` | `stateTransition` with `upgradeToGloas` mid-fold | yes (Fulu to Gloas only) |
-| `ssz_static`, `bls`, `kzg` | n/a | no (framework-library concern) |
+| `ssz_static` | each container's `SSZRepr` (decode, hash-tree-root, round-trip) | yes (Fulu + Gloas) |
+| `bls`, `kzg` | n/a | no (crypto-backend concern) |
 
 The `rewards/*` format is in scope and drives a single delta function in isolation,
 the reward and penalty deltas of the `Rewards` concern file (row 29). `fork` and
@@ -917,8 +925,8 @@ main branch, so it pins a pre-release or alpha tag, or a dev commit, while it is
 unreleased. The two forks sit at different pins at the same time.
 
 The values below are illustrative and are bumped to the current latest release at
-implementation time (the repo's existing `scripts/run_conformance.py` pins
-`v1.7.0-alpha.10` at this writing); the implementation also confirms the chosen tag
+implementation time (the pytest harnesses pin `v1.7.0-alpha.10` at this writing);
+the implementation also confirms the chosen tag
 actually carries Gloas vectors, falling back to a dev commit if not.
 
 ```lean
