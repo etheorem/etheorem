@@ -26,12 +26,12 @@ cached root against the spec root on the struct-updated value.
   `NestedExample`. Path composition across one nesting level plus
   a sibling flat clause.
 
-The companion file `LeanEthCS.TreeBackedSetField`
-runs analogous tests against real consensus-spec containers
-(`Fork`, `SignedBeaconBlockHeader`). The two share the same
-property-test structure on disjoint type surfaces, so a regression
-in either the macro or the underlying `Node.setManyAt` walker is
-caught at both layers.
+Real consensus-spec containers (`Fork`,
+`SignedBeaconBlockHeader`) exercise the same emission paths
+through the `EthCLSpecs` `ssz_static` conformance sweep. The two
+cover disjoint type surfaces, so a regression in either the macro
+or the underlying `Node.setManyAt` walker is caught at both
+layers.
 
 Also included: a small `rfl` block confirming the uncached
 emission path (on `UncachedSSZ`) reduces to a plain

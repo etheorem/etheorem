@@ -57,7 +57,7 @@ plans, not just on the document.
 
 ```mermaid
 graph LR
-    LeanSha256 --> SizzLean --> LeanEthCS
+    LeanSha256 --> SizzLean --> EthCLLib --> EthCLSpecs
     LeanPoseidon["LeanPoseidon<br/>(standalone island)"]
     LeanPoseidonProofs["LeanPoseidonProofs<br/>(mathlib)"] --> LeanPoseidon
     classDef island fill:#eef,stroke:#669;
@@ -67,7 +67,7 @@ graph LR
 * **It is a standalone island.** LeanPoseidon depends on nothing in the
   monorepo and, for now, nothing depends on it. It sits *parallel* to
   `LeanSha256` (the other pure-crypto primitive), not inside the
-  `LeanSha256 → SizzLean → LeanEthCS` SSZ chain. The umbrella
+  `LeanSha256 → SizzLean → EthCLLib → EthCLSpecs` SSZ chain. The umbrella
   `lakefile.toml` `[[require]]`s it so `lake build` at the root builds it,
   but no sibling imports it.
 
@@ -673,7 +673,7 @@ lives). The public surface is therefore `LeanPoseidon.Bn254Fr` and
 Two subpackages. `LeanPoseidon` uses `lakefile.lean` (procedural, since the
 cargo/`extern_lib` target cannot be expressed in TOML, the same
 justification as `SizzLean`'s C shim) and inherits the root `lean-toolchain`
-like `SizzLean` / `LeanEthCS`; `LeanPoseidonProofs` uses `lakefile.toml`.
+like `SizzLean` / `EthCLSpecs`; `LeanPoseidonProofs` uses `lakefile.toml`.
 Both use `licenseFiles = ["../../LICENSE"]`. `LeanPoseidonProofs` *does*
 carry its own `lean-toolchain` (pinned `leanprover/lean4:v4.29.1`, matching
 the root and the mathlib pin): because it is built **standalone** rather

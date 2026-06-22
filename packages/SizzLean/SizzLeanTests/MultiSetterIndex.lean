@@ -7,10 +7,11 @@ import SizzLeanTests.ExampleContainers
 
 /-! ## Vector-index `sszUpdate t with v[i] := x` on `BatchExample`.
 
-Same property test as `LeanEthCS.MultiSetterIndex` but
-on the smaller `BatchExample` (8 entries per vector, depth 3)
-instead of the real `HistoricalBatch.Minimal` (64 entries, depth
-6). The smaller depth keeps the SSZ-library test fast while
+A property test on the small `BatchExample` (8 entries per
+vector, depth 3) rather than a full consensus container like
+`HistoricalBatch` (64 entries, depth 6). Real-container coverage
+of this path comes from the `EthCLSpecs` `ssz_static` conformance
+sweep. The smaller depth keeps the SSZ-library test fast while
 still exercising the runtime-`i` gindex path: the macro composes
 the outer container's field-0 prefix `[false]` with `gindexBits
 (base + i)` for the inner vector position.

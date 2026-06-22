@@ -56,7 +56,7 @@ in `Proofs/`, the Merkle-tree machinery in `Cache/MerkleTree/`,
 the `UncachedSSZ` structure that backs `SSZ.PureBox` /
 `SSZ.UncachedBox`) are *transitively* pulled in via the public
 files above and remain importable by qualified path for advanced
-uses or by sibling packages (`LeanEthCS` reaches into
+uses or by sibling packages (`EthCLSpecs` reaches into
 `Spec/Serialize` etc. directly from its `deriving SSZRepr`
 handler infrastructure). They are deliberately not listed here so
 this file reads as the user's mental model of the library.

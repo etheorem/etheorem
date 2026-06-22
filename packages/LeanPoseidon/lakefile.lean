@@ -25,7 +25,7 @@ package LeanPoseidon where
   license := "LGPL-3.0-only"
   licenseFiles := #["../../LICENSE"]
   -- Match the monorepo's sibling libraries (`LeanSha256`, `SizzLean`,
-  -- `LeanEthCS`): expose the host's ISA to the Lean→C path so the
+  -- `EthCLSpecs`): expose the host's ISA to the Lean→C path so the
   -- compiled `native_decide` evaluation of the anchor KAT (a full
   -- Poseidon2 permutation over GMP-backed `Nat`) runs at native speed.
   -- Same `-march=native` caveat as elsewhere, bakes in the build

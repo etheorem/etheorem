@@ -6,16 +6,17 @@ arrangement is wired, and the conventions that keep the layout
 stable. For *what* each subpackage does, see the per-package
 READMEs and `packages/SizzLean/docs/ARCHITECTURE.md`.
 
-## Four subpackages under one umbrella
+## Subpackages under one umbrella
 
 ```
-LeanSha256  ←  SizzLean  ←  LeanEthCS          LeanPoseidon
-   (pure)      (SSZ +        (consensus          (pure Poseidon2,
-               cache +       containers,          BN254 t=3 —
-               FFI hash)     Phase 0 → Gloas)     standalone island)
+LeanSha256  ←  SizzLean  ←  EthCLLib  ←  EthCLSpecs        LeanPoseidon
+   (pure)      (SSZ +        (consensus    (Fulu/Gloas        (pure Poseidon2,
+               cache +       framework)     specs +            BN254 t=3,
+               FFI hash)                    in-spec            standalone island)
+                                            containers)
 ```
 
-`LeanPoseidon` sits *outside* the `LeanSha256 → SizzLean → LeanEthCS`
+`LeanPoseidon` sits *outside* the `LeanSha256 → SizzLean → EthCLLib → EthCLSpecs`
 chain: it is a second pure-crypto primitive, parallel to `LeanSha256`,
 that nothing in the monorepo imports (and which imports nothing from it).
 The umbrella `[[require]]`s it so `lake build` builds it, but there is no
@@ -40,7 +41,7 @@ test-poseidon-proofs`).
 ├── README.md / CLAUDE.md             # repo-wide overview + style/discipline conventions
 ├── docs/                             # repo-wide design docs (this file)
 ├── Justfile                          # task runner over the umbrella
-├── scripts/                          # Python harnesses (run_conformance.py, …)
+├── scripts/                          # shared Python harness deps (requirements.txt)
 └── packages/
     ├── LeanSha256/                   # also published standalone — see "The LeanSha256 mirror"
     │   ├── lakefile.toml             # pure Lean, no C; carries the name/version/license the mirror ships
@@ -60,13 +61,20 @@ test-poseidon-proofs`).
     │   ├── SizzLean/                 # Spec/, Repr/, Hasher/, Cache/, Proofs/
     │   ├── SizzLeanTests/            # property tests + acceptance gates
     │   ├── SizzLeanBench/            # microbench scenarios + Fulu reference fixture
+    │   ├── PySpecTests/              # pytest harness for the ssz_generic suite (ssz_generic_runner)
     │   ├── bench/                    # session-output TSVs (gitignored)
     │   ├── MANUAL.md                 # user's guide to writing code against SizzLean
     │   └── README.md
-    ├── LeanEthCS/
+    ├── EthCLLib/                     # consensus-spec framework; depends on SizzLean
     │   ├── lakefile.toml             # declarative
-    │   ├── LeanEthCS.lean
-    │   ├── LeanEthCS/                # Forks/{Phase0..Gloas}/, Cli/, Primitives.lean, Preset*.lean
+    │   ├── EthCLLib.lean
+    │   └── EthCLLib/
+    ├── EthCLSpecs/                   # Fulu/Gloas specs + in-spec containers; depends on EthCLLib
+    │   ├── lakefile.toml             # declarative
+    │   ├── EthCLSpecs.lean
+    │   ├── EthCLSpecs/               # Fulu/, Gloas/, Forms.lean
+    │   ├── PySpecTests/              # pytest harness for ssz_static + state transition (pyspec_server)
+    │   ├── docs/                     # IMPLEMENTATION_NOTES.md, PLAN.md
     │   └── README.md
     ├── LeanPoseidon/                 # standalone island (parallel to LeanSha256)
     │   ├── lakefile.lean             # procedural — C ABI shim + cargo (zkhash) extern_libs
@@ -88,13 +96,14 @@ test-poseidon-proofs`).
 
 ## Why this shape
 
-**Four subpackages.** The pure-Lean SHA-256 reference
+**Layered subpackages.** The pure-Lean SHA-256 reference
 (`LeanSha256`) is reusable on its own. Anyone wanting a verified
 SHA-256 in Lean shouldn't have to depend on all of SSZ. The SSZ
 library (`SizzLean`) is reusable beyond Ethereum. Anyone with a
 custom SSZ-shaped schema shouldn't have to pull in
-consensus-spec containers. The Ethereum consensus types
-(`LeanEthCS`) sit on top of SSZ and don't need to push their
+consensus-spec types. The Ethereum consensus framework
+(`EthCLLib`) and the Fulu/Gloas specs built on it
+(`EthCLSpecs`) sit on top of SSZ and don't need to push their
 weight onto SSZ-only consumers. `LeanPoseidon` is a *second*
 pure-crypto primitive, a verified Poseidon2, parallel to
 `LeanSha256` rather than in the SSZ chain: it is a standalone
@@ -106,14 +115,14 @@ its own cadence later.
 **An umbrella.** While the layers
 are decoupled in principle, in practice every cross-layer change
 needs to land coherently: a `SizzLean` cache-layer tweak that
-breaks `LeanEthCS`'s deriving call sites should be fixed in one
+breaks `EthCLSpecs`'s deriving call sites should be fixed in one
 commit rather than three. The umbrella `lakefile.toml` `[[require]]`s
 its subpackages by relative path so `lake build` at the
 root builds the whole dependency chain in order, with the
 `LeanPoseidon` island built alongside it. `LeanSha256`
 already publishes standalone via a read-only subtree mirror (see
 [The LeanSha256 mirror](#the-leansha256-mirror)); `SizzLean` and
-`LeanEthCS` may follow the same pattern. Either way the umbrella
+the consensus packages may follow the same pattern. Either way the umbrella
 stays the single source of truth. This is a development
 monorepo.
 
@@ -125,8 +134,8 @@ procedural target (`buildO` over the `.c` file plus an `extern_lib`
 declaration linking to `libcrypto`), so `SizzLean`'s lakefile stays
 `.lean`; likewise `LeanPoseidon`'s differential-test oracle needs a `cargo`
 target + a C ABI shim + their `extern_lib`s. `LeanSha256` is pure-Lean (no
-FFI) and `LeanEthCS` just consumes `SizzLean`; both use the simpler
-`lakefile.toml`.
+FFI) and the consensus packages (`EthCLLib`, `EthCLSpecs`) just consume
+`SizzLean`; all use the simpler `lakefile.toml`.
 
 The procedural form on `SizzLean` is kept to the minimum: only
 the C-shim target and the `extern_lib` block. Everything else
@@ -155,19 +164,19 @@ syntax.
 * The **NIST CAVP test-vector fixtures** are in `LeanSha256`'s
   `cavp/` directory because `LeanSha256/Nist.lean` loads them at
   build time.
-* The **per-fork consensus containers** live under
-  `LeanEthCS/Forks/<Fork>/` (Phase 0, Altair, …, Gloas). Each
-  fork directory has an `Inherited.lean` re-exporting types it
-  carries over unchanged from earlier forks, so the CLI
-  dispatcher in `LeanEthCS/Cli/Main.lean` never has to know
-  *which* earlier fork originally defined a given type.
+* The **per-fork consensus containers** are declared in-spec
+  under `EthCLSpecs/Fulu/` and `EthCLSpecs/Gloas/`. Gloas has an
+  `Inherited.lean` re-exporting types it carries over unchanged
+  from Fulu, so the `ssz_static` dispatcher in the `pyspec_server`
+  exe never has to know *which* fork originally defined a given
+  type.
 * The **bench reference fixture** for Fulu BeaconState
   (`SizzLeanBench/Fulu.lean`) is a bench-local *copy* of the
-  LeanEthCS Fulu shape. `SizzLeanBench` cannot depend on
-  LeanEthCS, since that would close a cycle (LeanEthCS already
+  EthCLSpecs Fulu shape. `SizzLeanBench` cannot depend on
+  EthCLSpecs, since that would close a cycle (EthCLSpecs already
   depends on SizzLean), so the bench keeps its own copy. The
-  spec-accurate version lives in LeanEthCS; the bench version is
-  a reference fixture, not expected to stay in sync.
+  spec-accurate version lives in `EthCLSpecs.Fulu`; the bench
+  version is a reference fixture, not expected to stay in sync.
 
 ## Dependency policy
 
@@ -186,7 +195,7 @@ syntax.
 
 `packages/LeanSha256/` is published a second time as a standalone
 repository at <https://github.com/etheorem/LeanSha256>. This is
-the only subpackage mirrored today; `SizzLean` and `LeanEthCS`
+the only subpackage mirrored today; the other subpackages
 live only in the umbrella.
 
 **Why a separate repo exists.** [Reservoir](https://reservoir.lean-lang.org),
@@ -244,15 +253,16 @@ package-local copy is overwritten to match on each mirror run.
 # Library targets (all built by `lake build` at the root):
 lake build LeanSha256
 lake build SizzLean
-lake build LeanEthCS
+lake build EthCLLib
+lake build EthCLSpecs
 
 # In-Lean test suites (run on demand):
 lake build LeanSha256Tests
 lake build SizzLeanTests
-lake build LeanEthCSTests
 
 # Executables:
-lake build eth_ssz_vector_runner      # consensus-spec-tests harness driver
+lake build pyspec_server              # EthCLSpecs conformance runner (ssz_static, state transition)
+lake build ssz_generic_runner        # SizzLean conformance runner (ssz_generic)
 lake build ssz_bench                  # microbench grid (S1–S7)
 lake build ssz_profile                # phase-by-phase profile
 
@@ -262,20 +272,20 @@ cd packages/SizzLean && lake build
 
 The repo's `Justfile` wraps the most common workflows
 (`just build`, `just test`, `just bench`,
-`just official-ssz-vector-tests-static`, …), see `just --list`
-for the full set.
+`just ethcl-conformance`, `just ssz-generic-conformance`, …),
+see `just --list` for the full set.
 
 ## What stays at the root
 
 * `README.md`: public-facing overview.
 * `CLAUDE.md`: style and discipline conventions binding on all
-  three subpackages.
+  subpackages.
 * `Justfile`: task runner over the umbrella.
 * `lakefile.toml`: umbrella declaration.
 * `lean-toolchain`: pinned toolchain.
 * `lake-manifest.json`: pinned external deps for the umbrella.
-* `scripts/`: Python harnesses that drive the cross-package
-  conformance runner.
+* `scripts/`: shared Python dependency pins (`requirements.txt`)
+  for the per-package pytest conformance harnesses.
 * `docs/`: repo-wide design docs (this file). Distinct from the
   per-subpackage `packages/<Pkg>/docs/` below.
 * `.github/`: CI (`lean_action_ci.yml`) plus the LeanSha256
@@ -285,6 +295,7 @@ for the full set.
 
 Repo-wide design docs live in the root `docs/` (this file).
 Per-subpackage design docs live under `packages/<Pkg>/docs/`
-(currently only `SizzLean` has any: ARCHITECTURE / PLAN /
-OPTIMISATION / research). When `LeanEthCS` or `LeanSha256` grow
-their own design notes, they follow the same convention.
+(`SizzLean` carries ARCHITECTURE / PLAN / OPTIMISATION /
+research; `EthCLSpecs` carries IMPLEMENTATION_NOTES / PLAN).
+When the other subpackages grow their own design notes, they
+follow the same convention.

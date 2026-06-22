@@ -5,9 +5,12 @@ A Lean 4 project for Ethereum consensus-spec types and SSZ
 Goal: a faithful, formally verifiable encoder / decoder / Merkleization for
 SSZ types plus the consensus-spec container surface (Phase0 → Gloas).
 
-The Lake package is `Etheorem`; it currently ships four libraries:
-**`LeanSha256`** (pure-Lean SHA-256), **`SizzLean`** (the SSZ library),
-**`LeanEthCS`** (the consensus-spec containers), and **`LeanPoseidon`**
+The Lake package is `Etheorem`; it ships several libraries:
+**`LeanSha256`** (pure-Lean SHA-256), the **`LeanHazmat`** FFI crypto
+families (SHA-256 / BLS / KZG), **`SizzLean`** (the SSZ library),
+**`EthCLLib`** + **`EthCLSpecs`** (the consensus-spec framework and the
+Fulu / Gloas fork bodies built on it, which declare their containers
+in-spec), and **`LeanPoseidon`**
 (a pure-Lean Poseidon2 hash, a standalone island parallel to `LeanSha256`,
 it depends on nothing in the monorepo and nothing depends on it yet;
 see [`packages/LeanPoseidon/docs/ARCHITECTURE.md`](packages/LeanPoseidon/docs/ARCHITECTURE.md)).
@@ -114,7 +117,7 @@ coordinates them via `[[require]]` blocks.
 ├── lean-toolchain               # Pinned toolchain; CI reads this. Bump deliberately.
 ├── README.md / CLAUDE.md       # Repo-wide overview + conventions
 ├── docs/                       # Repo-wide design docs (monorepo-arch.md)
-├── scripts/                     # Python harnesses (run_conformance.py, …)
+├── scripts/                     # requirements.txt (conformance-harness Python deps)
 ├── packages/
 │   ├── LeanSha256/              # Pure-Lean SHA-256 reference; no FFI.
 │   │   ├── lakefile.toml
@@ -124,9 +127,12 @@ coordinates them via `[[require]]` blocks.
 │   │   ├── csrc/sha256_shim.c
 │   │   ├── docs/                # ARCHITECTURE.md, PLAN.md, research/ (SizzLean-scoped)
 │   │   ├── SizzLean.lean / SizzLean/ / Tests/ / README.md
-│   ├── LeanEthCS/               # Consensus-spec containers (Phase 0 → Gloas).
+│   ├── EthCLLib/                # Consensus-spec framework / DSL (fork forms, effect monad, container front-end).
 │   │   ├── lakefile.toml
-│   │   ├── LeanEthCS.lean / LeanEthCS/ / Tests/ / README.md
+│   │   ├── EthCLLib.lean / EthCLLib/ / Tests/
+│   ├── EthCLSpecs/              # Fulu / Gloas fork bodies + the pyspec_server conformance runner.
+│   │   ├── lakefile.toml
+│   │   ├── EthCLSpecs.lean / EthCLSpecs/ / PySpecTests/ / docs/ / README.md
 │   └── LeanPoseidon/            # Pure-Lean Poseidon2 (BN254 t=3); standalone island.
 │       ├── lakefile.lean        # Procedural — C ABI shim + cargo (zkhash) extern_libs.
 │       ├── csrc/poseidon_shim.c / rust-oracle/  # test-only differential oracle
@@ -176,6 +182,11 @@ CLAUDE.md wins on form.
   goals, note `native_decide` trusts the compiler.
 - **`partial def` only when termination really can't be shown.** Prefer
   structural recursion or `termination_by` + `decreasing_by`.
+- **Function-body readability.** For worked before/after examples of these
+  conventions applied inside a definition (paragraphing phases, naming
+  intermediates, section comments, when to split), see
+  [`docs/CODING_STYLE.md`](docs/CODING_STYLE.md). That file shows; this file
+  states the rule.
 
 ### Proofs involving SSZ hashes
 

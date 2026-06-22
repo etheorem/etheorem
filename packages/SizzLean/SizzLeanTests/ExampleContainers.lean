@@ -6,14 +6,14 @@ import SizzLean.Repr.Deriving
 # `SizzLeanTests.ExampleContainers`: minimal SSZ containers for testing
 
 Small example containers used by `SizzLeanTests`'s cache-
-machinery tests. The shapes mirror common Phase-0 / consensus-spec
+machinery tests. The shapes mirror common consensus-spec
 patterns (a flat 3-field struct, a nested struct with a sibling,
 a struct with vector fields) but with no dependency on the real
-Eth container table in `LeanEthCS`.
+Eth containers in `EthCLSpecs`.
 
 This lets the SSZ library exercise `TreeBacked` coherence and
 `sszUpdate` end-to-end *without* the consensus-spec types. Eth-
-type-specific tests are in `LeanEthCS`.
+type-specific tests are in `EthCLSpecs`.
 
 ## Containers
 

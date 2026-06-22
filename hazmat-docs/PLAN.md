@@ -48,11 +48,11 @@ args) or whether each downstream package must re-run its own discovery.
 the propagation question is answered in writing.
 
 **Risk.** Low, it is a probe, discarded after. The prior evidence points
-to **no** propagation: `packages/LeanEthCS/lakefile.toml` hand-mirrors
+to **no** propagation: `packages/EthCLSpecs/lakefile.toml` hand-mirrors
 `-l:libcrypto.so.3` rather than inheriting it from `SizzLean`.
 
-**Notes.** If propagation works, Stage 1 lets `SizzLean` (and `LeanEthCS`)
-drop their OpenSSL args entirely. If not, both keep a minimal pkg-config
+**Notes.** If propagation works, Stage 1 lets `SizzLean` (and the consensus
+packages) drop their OpenSSL args entirely. If not, both keep a minimal pkg-config
 discovery, accepted, per the no-shared-lakefile-code decision
 ([`ARCHITECTURE.md`](ARCHITECTURE.md) §3.3).
 
@@ -69,10 +69,10 @@ discovery, accepted, per the no-shared-lakefile-code decision
 > but the `-lcrypto` flag did not. **Decision:** each exe-hosting
 > dependent keeps its own OpenSSL discovery. `SizzLean` keeps its
 > `pkg-config` `lakefile.lean` (it also still needs procedural
-> `globsUnder`), `LeanEthCS` keeps its hardcoded `-l:libcrypto.so.3`,
-> and `LeanHazmatSha256` keeps its own for its test lib. No package
-> reverts to a TOML lakefile. This matches the prior `LeanEthCS`
-> evidence and the no-shared-lakefile-code decision (§3.3).
+> `globsUnder`), the consensus packages keep their hardcoded
+> `-l:libcrypto.so.3`, and `LeanHazmatSha256` keeps its own for its
+> test lib. No package reverts to a TOML lakefile. This matches the
+> prior link-arg evidence and the no-shared-lakefile-code decision (§3.3).
 
 ---
 
@@ -122,15 +122,15 @@ umbrella green.
   hasher only through the cache layer / the `Hasher` typeclass.)
 - Umbrella `lakefile.toml` gains `[[require]] LeanHazmatSha256`.
 - Per Stage 0's outcome: keep a minimal OpenSSL discovery in each
-  exe-hosting package (`SizzLean`, `LeanEthCS`, and `LeanHazmatSha256` for
+  exe-hosting package (`SizzLean`, `EthCLSpecs`, and `LeanHazmatSha256` for
   its test lib). No package reverts to TOML. Link args do **not** propagate
   (Stage 0), and `SizzLean` still needs procedural `globsUnder` regardless.
 
 **Acceptance.** `lake build` is green across the umbrella; `lake build
 SizzLeanTests` and `lake build LeanHazmatSha256Tests` both pass; `#axioms`
 on a `SizzLean` hash-root theorem still cites the three named equivalence
-axioms; the conformance suite (`scripts/run_conformance.py`) still passes
-unchanged.
+axioms; the conformance suites (`just ethcl-conformance` and
+`just ssz-generic-conformance`) still pass unchanged.
 
 **Risk.** Medium. The cross-package link integration (Stage 0 settles its
 shape) and the three-file axiom/extern split are the fiddly parts; the

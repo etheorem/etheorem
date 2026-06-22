@@ -47,12 +47,12 @@ actually mutates.
 ## Why the bench-local copy of Fulu types
 
 `SizzLeanBench.Fulu` holds a copy of the BeaconState shape; the
-spec-accurate version lives in `LeanEthCS.Forks.Fulu`. The bench
-copy keeps `SizzLeanBench` independent of LeanEthCS. `LeanEthCS`
+spec-accurate version lives in `EthCLSpecs.Fulu`. The bench
+copy keeps `SizzLeanBench` independent of EthCLSpecs. `EthCLSpecs`
 already depends on `SizzLean`, and adding the reverse dependency
 would close a cycle. The copy is a *reference fixture*, it
 tracks the shape at the moment of writing and may drift; for
-spec-accurate types use LeanEthCS.
+spec-accurate types use EthCLSpecs.
 -/
 
 set_option autoImplicit false
@@ -232,15 +232,15 @@ private def runTransitions {H : Type} [Hasher H] [SSZRepr BeaconState]
       latestBlockHeader.slot        := slotMark,
       latestBlockHeader.proposerIndex := UInt64.ofNat (s &&& 0xff),
       latestBlockHeader.stateRoot   := saltRoot (UInt8.ofNat (s &&& 0xff)),
-      blockRoots[s % 8192]          := saltRoot (UInt8.ofNat (s &&& 0xff)),
-      stateRoots[s % 8192]          := saltRoot (UInt8.ofNat (s &&& 0xff)),
-      randaoMixes[s % 65536]        := saltRoot (UInt8.ofNat (s &&& 0xff)),
+      blockRoots[s % 8192]!         := saltRoot (UInt8.ofNat (s &&& 0xff)),
+      stateRoots[s % 8192]!         := saltRoot (UInt8.ofNat (s &&& 0xff)),
+      randaoMixes[s % 65536]!       := saltRoot (UInt8.ofNat (s &&& 0xff)),
       eth1DepositIndex              := slotMark,
       depositBalanceToConsume       := slotMark * 1000,
       exitBalanceToConsume          := slotMark * 500,
-      validators[valIdx0]           := newV0,
-      validators[valIdx1]           := newV1,
-      validators[valIdx2]           := newV2,
+      validators[valIdx0]!          := newV0,
+      validators[valIdx1]!          := newV1,
+      validators[valIdx2]!          := newV2,
       balances                      := newBalances,
       inactivityScores              := newInactivity,
       proposerLookahead             := newLookahead

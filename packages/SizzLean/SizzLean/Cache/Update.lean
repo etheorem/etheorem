@@ -317,6 +317,52 @@ macro_rules
         let init : Lean.TSyntax `term ← `(($base).view.$head)
         appendSszGetSegments init segs 0
 
+/-! ## `sszModify`: read-modify-write of one path -/
+
+/-- Read-modify-write of one field or element on a boxed value, naming the path once.
+Two forms: `sszModify t path := g` applies the function `g` to the current value, and
+`sszModify t path as x => body` binds the current value to `x` and rewrites it to `body`
+(the `fun`-free inline form, for `{ x with … }`-style updates). Both are pure syntactic
+sugar over `sszUpdate t with path := … (sszGet t path)`, so the path is written once (no
+read/write drift) and the expansion inherits `sszUpdate`'s write, including the cached
+single-leaf update on a `[i]!` element, and `sszGet`'s read. Use it on the total `[i]!`
+and field paths, where `sszGet` returns the element directly; a checked `[i]` read is
+`Except IndexError`, which the transform cannot consume, so a checked read-modify-write
+needs its own monadic spelling. -/
+syntax (name := sszModifyFnStx)
+    "sszModify " term:max ident sszUpdateSegment* " := " term : term
+syntax (name := sszModifyAsStx)
+    "sszModify " term:max ident sszUpdateSegment* " as " ident " => " term : term
+
+-- Build the `sszUpdate` write-clause in its own `sszUpdateClause` quotation, then splice
+-- the whole clause into `sszUpdate t with …`. Writing the path inline under `with` would
+-- be misread: that position is `sepBy1(sszUpdateClause)`, so the quotation parser takes the
+-- leading `$head` as a whole-clause antiquotation rather than the start of an inline clause.
+macro_rules
+  | `(sszModify $t $head:ident $segs:sszUpdateSegment* := $g) => do
+      let clause ← `(sszUpdateClause|
+        $head:ident $segs:sszUpdateSegment* :=
+          (let cur := sszGet $t $head:ident $segs:sszUpdateSegment*; $g cur))
+      `(sszUpdate $t with $clause)
+  | `(sszModify $t $head:ident $segs:sszUpdateSegment* as $x:ident => $body) => do
+      -- A `let` (not `(fun $x => …) read`) binds `$x` so its type is pinned by the read
+      -- before `$body` elaborates; a `{ $x with … }` record body needs that type eagerly.
+      let clause ← `(sszUpdateClause|
+        $head:ident $segs:sszUpdateSegment* :=
+          (let $x := sszGet $t $head:ident $segs:sszUpdateSegment*; $body))
+      `(sszUpdate $t with $clause)
+
+/-- Append `v` to a list field of a boxed value, naming the field once:
+`sszAppend s f v` is the cap-clamping push, sugar for `sszModify s f as l => l.push v`
+(so `sszUpdate s with f := (sszGet s f).push v`). The non-monadic boxed-state append; the
+monadic state-threading wrapper is the spec's `appendState`. -/
+syntax (name := sszAppendStx)
+    "sszAppend " term:max ident sszUpdateSegment* ppSpace term:max : term
+
+macro_rules
+  | `(sszAppend $t $head:ident $segs:sszUpdateSegment* $v:term) =>
+      `(sszModify $t $head:ident $segs:sszUpdateSegment* as l => l.push $v)
+
 /-- Which cache flavour the macro is targeting. The elaborator
 picks this from the base term's type and branches the emission. -/
 private inductive CacheKind where

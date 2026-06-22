@@ -50,7 +50,8 @@ way:
   `require`s `LeanHazmatSha256` (FFI hash) **and** `LeanSha256` (spec), owns the
   `Hasher` typeclass and the `Sha256` tag, and holds the FFI≡spec equivalence
   axioms. It depends on no other LeanHazmat family.
-* **`LeanEthCS`**: consensus-spec containers; consumes `SizzLean`. No direct
+* **`EthCLLib` / `EthCLSpecs`**: the consensus-spec framework and the
+  Fulu/Gloas specs built on it; consume `SizzLean`. No direct
   LeanHazmat dependency.
 
 See [`../monorepo-arch.md`](../monorepo-arch.md) for the monorepo's overall
@@ -96,7 +97,8 @@ graph TD
 
     Sha256 --> SizzLean
     Spec[LeanSha256<br/>pure-Lean spec] -.equiv axioms live in SizzLean.-> SizzLean
-    SizzLean --> LeanEthCS
+    SizzLean --> EthCLLib
+    EthCLLib --> EthCLSpecs
 
     classDef deferred stroke-dasharray: 5 5,opacity:0.7;
     class execution,Keccak,Secp,Bn254,Blake2f,OsslEL,Execution deferred;
@@ -114,8 +116,8 @@ owning every C library would therefore force **every** consumer to compile
 whole repo builds on `SizzLean`, so a monolith would make every clean build of
 the repository compile blst, c-kzg, mcl, secp256k1, and keccak even though only
 SHA-256 is wanted. Per-family packaging is what keeps the common build path
-(LeanSha256 → SizzLean → LeanEthCS) at *one* cheap system-linked dependency. See
-§3.1.
+(LeanSha256 → SizzLean → EthCLLib → EthCLSpecs) at *one* cheap system-linked
+dependency. See §3.1.
 
 **What "no shared code" buys.** Every family package is self-contained, with zero
 internal dependencies (the one exception in §4). That makes each one
@@ -530,8 +532,8 @@ a per-family mirror is an optional later step, never a phase gate.
 
 The single highest-risk item in Phase 1 is **cross-package link-arg propagation**:
 whether Lake carries a package's `extern_lib`/`moreLinkArgs` to a dependent's
-link step (today `LeanEthCS` hand-mirrors OpenSSL args rather than inheriting
-them, so it is *not* assumed). PLAN.md Stage 0 settles it with a one-package
+link step (today `EthCLLib` and `EthCLSpecs` hand-mirror OpenSSL args rather than
+inheriting them, so it is *not* assumed). PLAN.md Stage 0 settles it with a one-package
 experiment before any code moves, because the answer decides whether
 `LeanHazmatSha256` can be the single pkg-config home or whether downstream
 packages re-run discovery.

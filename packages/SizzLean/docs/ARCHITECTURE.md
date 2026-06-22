@@ -24,14 +24,16 @@ runs fast enough to be useful in real workloads.
   SizzLean's `[[require]] LeanSha256` declaration is in
   `packages/SizzLean/lakefile.lean`.
 
-* **`LeanEthCS`**: sibling subpackage at
-  `../../LeanEthCS/`. Consumes SizzLean. Its consensus-spec
-  containers (Phase 0 → Gloas) `deriving SSZRepr` against the
-  types and instances SizzLean exports. The arrangement validates
-  that SizzLean's user surface is enough to express every
-  consensus container without ad-hoc edits to the library.
-  LeanEthCS doesn't appear elsewhere in this document except as
-  the existence proof for the "scales to BeaconState" claim.
+* **`EthCLLib` / `EthCLSpecs`**: sibling subpackages at
+  `../../EthCLLib/` and `../../EthCLSpecs/`. `EthCLLib` is the
+  consensus-spec framework on top of SizzLean; `EthCLSpecs` holds
+  the Fulu/Gloas specs and declares its consensus containers
+  in-spec, `deriving SSZRepr` against the types and instances
+  SizzLean exports. The arrangement validates that SizzLean's user
+  surface is enough to express every consensus container without
+  ad-hoc edits to the library. They don't appear elsewhere in this
+  document except as the existence proof for the "scales to
+  BeaconState" claim.
 
 This document binds the design of the SizzLean library. It distils the
 two research artefacts under
@@ -911,41 +913,45 @@ requires).
 | `Cache/Box.lean`              | `inductive SSZ.Box H T`, a closed sum over the two cache flavours + `view` / `hashTreeRoot` projectors + four user-facing smart constructors. Sha256-pinned: `SSZ.FastBox v` (cached) and `SSZ.PureBox v` (uncached). Hasher-explicit: `SSZ.CachedBox H v` and `SSZ.UncachedBox H v`. The lower-level `Box.ofCached` / `Box.ofPure` are `private`; the four `*Box` abbrevs are the entire public surface. |
 | `Cache/Update.lean`           | `sszUpdate t with f.g := v, h := w` write surface (elaborator branches per cache type: cached lowers to `Node.setManyAt` (14d), uncached emits a plain struct rewrite, `SSZ.Box` emits a two-arm match dispatching to both) **plus** the read companion `sszGet t f.g[i].h`, a one-line `macro_rules` rewrite that expands to `t.view.f.g[i].h`, so user code never types `.view`. `PathStep` and `elabSszUpdate` are `private`. |
 
-## 7. Layer 5: Ethereum consensus types (`packages/LeanEthCS/`)
+## 7. Layer 5: Ethereum consensus types (`packages/EthCLLib/`, `packages/EthCLSpecs/`)
 
-Now a **separate Lake subpackage** (sibling of `packages/SizzLean/`)
+Now **two separate Lake subpackages** (siblings of `packages/SizzLean/`)
 rather than a subdirectory of SizzLean. The dependency chain runs
-`LeanSha256 → SizzLean → LeanEthCS`, with each link as a
-`[[require]]` between subpackages. Splitting it out lets the SSZ
-library be reused with a different container set (an EIP-7495
-profile, a non-consensus user schema) without dragging the
-consensus-spec table along.
+`LeanSha256 → SizzLean → EthCLLib → EthCLSpecs`, with each link as a
+`[[require]]` between subpackages. `EthCLLib` is the consensus-spec
+framework; `EthCLSpecs` holds the Fulu/Gloas specs and declares its
+SSZ containers in-spec. Splitting it out lets the SSZ library be
+reused with a different container set (an EIP-7495 profile, a
+non-consensus user schema) without dragging the consensus-spec
+types along.
 
-`packages/LeanEthCS/LeanEthCS/Primitives.lean` defines the small types that the spec
-treats as named primitives: `Slot`, `Epoch`, `ValidatorIndex`
+The spec's named primitives, `Slot`, `Epoch`, `ValidatorIndex`
 (each a thin wrapper over `UInt64`), `Root`, `Bytes32`, `Gwei`,
-`BLSPubkey` (each a thin wrapper over a fixed-size byte buffer).
-Each gets a `SSZRepr` instance from `packages/SizzLean/SizzLean/Repr/Instances.lean`
-automatically.
+`BLSPubkey` (each a thin wrapper over a fixed-size byte buffer),
+live in the spec packages and each gets a `SSZRepr` instance from
+`packages/SizzLean/SizzLean/Repr/Instances.lean` automatically.
 
-Per-fork containers live in `packages/LeanEthCS/LeanEthCS/Forks/{Phase0,Altair,Bellatrix,Capella,Deneb,Electra,Fulu,Gloas}/`.
-Plain Lean `structure`s with `deriving SSZRepr`. No bespoke
-metaprogramming except `packages/LeanEthCS/LeanEthCS/PresetStruct.lean` (the
-`ssz_struct_for_presets` macro that stamps out minimal / mainnet
-variants for preset-sensitive containers like `BeaconState`).
+Per-fork containers live under `packages/EthCLSpecs/EthCLSpecs/Fulu/`
+and `packages/EthCLSpecs/EthCLSpecs/Gloas/`. They use the framework's
+`forkcontainer` / `forkstruct` DSL (from `EthCLLib`), which captures
+each shape for fork inheritance and emits the `deriving SSZRepr`
+plumbing, including the minimal / mainnet variants for
+preset-sensitive containers like `BeaconState`.
 
-`packages/LeanEthCS/LeanEthCS/Cli/Main.lean` is the
-`eth_ssz_vector_runner` Lake exe; it consumes `ssz_static` /
-`ssz_generic` test vectors from `ethereum/consensus-spec-tests`
-via `scripts/run_conformance.py`. LeanEthCS itself ships no
-in-Lean property tests; library-level tests live in
-`SizzLean`'s `Tests/` directory using example containers.
+`packages/EthCLSpecs/EthCLSpecs/PySpecTests/Server.lean` is the
+`pyspec_server` Lake exe; the pytest harness in
+`packages/EthCLSpecs/PySpecTests/` drives it over `ssz_static` and
+state-transition vectors from `ethereum/consensus-spec-tests` (Fulu
+and Gloas). The fork-agnostic `ssz_generic` wire-format vectors run
+from `packages/SizzLean/PySpecTests/` against the `ssz_generic_runner`
+exe. The spec packages ship their own in-Lean tests, and SizzLean
+keeps its property tests over example containers.
 
 The SSZ-library's own `Tests` runs the same
 property-test patterns on small example containers defined
 locally in `packages/SizzLean/SizzLeanTests/ExampleContainers.lean` (mirrors
 of `Fork`, `SignedBeaconBlockHeader`, `HistoricalBatch.Minimal`
-shapes, with no LeanEthCS dependency).
+shapes, with no consensus-package dependency).
 
 ## 8. Approach C: `profile%` macro (removed from the plan)
 
@@ -1339,20 +1345,20 @@ proof path.
 
 The repo is a Lean 4 monorepo. The umbrella `lakefile.toml` at the
 root declares no Lean libraries of its own; it `[[require]]`s the
-three subpackages under `packages/`, each with its own
+subpackages under `packages/`, each with its own
 lakefile. `LeanSha256` uses `lakefile.toml` (pure Lean, no FFI);
 `SizzLean` uses `lakefile.lean` because the FFI shim
 (`csrc/sha256_shim.c`) needs a procedural Lake target;
-`LeanEthCS` uses `lakefile.toml`.
+`EthCLLib` and `EthCLSpecs` use `lakefile.toml`.
 
 ```
 <repo root>/
-├── lakefile.toml                       # umbrella; requires the three subpackages
+├── lakefile.toml                       # umbrella; requires the subpackages
 ├── lean-toolchain
 ├── lake-manifest.json
 ├── README.md / CLAUDE.md               # repo-wide overview + conventions
 ├── docs/                               # repo-wide design docs (monorepo-arch.md)
-├── scripts/                            # Python harnesses (run_conformance.py, …)
+├── scripts/                            # shared Python harness deps (requirements.txt)
 └── packages/
     ├── LeanSha256/                     # pure-Lean SHA-256 reference (no FFI)
     │   ├── lakefile.toml
@@ -1376,19 +1382,23 @@ lakefile. `LeanSha256` uses `lakefile.toml` (pure Lean, no FFI);
     │   │   └── Proofs/                 # @[ssz_simp] set + Roundtrip / Injective / SizeBound (internal)
     │   ├── SizzLeanTests/              # separate lean_lib — empirical / property-test gates
     │   ├── SizzLeanBench/              # third lean_lib — Stage 17 microbenchmarks (just bench)
+    │   ├── PySpecTests/                # pytest harness for ssz_generic (ssz_generic_runner exe)
     │   └── bench/                      # TSV output dir (just bench writes timestamped files)
     │
-    └── LeanEthCS/                      # consensus-spec containers; depends on SizzLean
+    ├── EthCLLib/                       # consensus-spec framework; depends on SizzLean
+    │   ├── lakefile.toml
+    │   ├── EthCLLib.lean
+    │   └── EthCLLib/                   # Spec/ (forkdef / forkcontainer / forkstruct DSL, Forms)
+    │
+    └── EthCLSpecs/                     # Fulu/Gloas specs + in-spec containers; depends on EthCLLib
         ├── lakefile.toml
-        ├── LeanEthCS.lean
-        └── LeanEthCS/
-            ├── Primitives.lean / Preset.lean / PresetStruct.lean
-            ├── Forks/                  # Phase0/ Altair/ Bellatrix/ Capella/ Deneb/ Electra/ Fulu/ Gloas/
-            │                           # — each post-P0 fork has an Inherited.lean re-exporting
-            │                           #   the consensus-spec containers it inherits unchanged
-            └── Cli/Main.lean           # eth_ssz_vector_runner: argv + batch-mode dispatch
-                                        # (consumed by scripts/run_conformance.py for upstream
-                                        #  ssz_generic / ssz_static vector runs)
+        ├── EthCLSpecs.lean
+        └── EthCLSpecs/
+            ├── Forms.lean              # spec-local container shorthands (signedwrapper)
+            ├── Fulu/ , Gloas/          # per-fork containers + state transition; Gloas has an
+            │                           #   Inherited.lean re-exporting types it inherits unchanged
+            └── PySpecTests/Server.lean # pyspec_server exe root, driven by the EthCLSpecs pytest
+                                        #   harness over ssz_static + state-transition vectors
 
 # Phase 4, deferred:
 # Sha256Spec.lean's @[csimp]-proved equality replacing the FFI opaque
@@ -1409,7 +1419,7 @@ primitives (`Cache/MerkleTree/*`), `UncachedSSZ`, the
 private-by-attribute helpers (`Box.ofCached`, `Box.ofPure`,
 `PathStep`, `elabSszUpdate`), and the `Proofs/*` artefacts are
 deliberately not in the umbrella import list. They remain
-reachable by qualified path for sibling packages (`LeanEthCS`'s
+reachable by qualified path for sibling packages (`EthCLSpecs`'s
 `deriving SSZRepr` infrastructure imports `Spec/Serialize` etc.
 directly) but are not part of the user-facing surface.
 

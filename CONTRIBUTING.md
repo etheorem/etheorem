@@ -28,7 +28,8 @@ SHA-256 shim against `libcrypto.so.3`.
 
 ```bash
 just test                                    # all per-package in-Lean tests
-just official-ssz-vector-tests-static        # consensus-spec-tests static suite
+just ethcl-conformance                       # consensus-spec-tests ssz_static suite (Fulu/Gloas)
+just ssz-generic-conformance                 # consensus-spec-tests ssz_generic wire-format suite
 just bench                                   # microbench (S1–S7)
 ```
 
@@ -37,8 +38,8 @@ Or via `lake build` directly:
 ```bash
 lake build LeanSha256Tests
 lake build SizzLeanTests
-lake build LeanEthCSTests
-lake build eth_ssz_vector_runner             # consensus-spec-tests harness driver
+lake build pyspec_server                     # EthCLSpecs conformance runner (ssz_static, state transition)
+lake build ssz_generic_runner               # SizzLean conformance runner (ssz_generic)
 lake exe ssz_bench
 ```
 
@@ -47,11 +48,11 @@ The `Justfile` is the source of truth for common workflows; run
 
 ## Project layout
 
-Three Lake subpackages under `packages/` form a layered
+The SSZ subpackages under `packages/` form a layered
 dependency chain:
 
 ```
-LeanSha256  ←  SizzLean  ←  LeanEthCS
+LeanSha256  ←  SizzLean  ←  EthCLLib  ←  EthCLSpecs
 ```
 
 See [`docs/monorepo-arch.md`](docs/monorepo-arch.md) for the full
@@ -95,12 +96,15 @@ A quick orientation map for the most-asked questions:
   inventory (3 named `axiom`s plus 3 `@[extern] opaque`
   primitives) is recoverable with one grep. See SizzLean's
   README "Trust assumptions you can grep for".
-- **Upstream-vector harness.** `scripts/run_conformance.py` at
-  the umbrella root, driving the
-  `eth_ssz_vector_runner` CLI in the sibling `LeanEthCS`
-  subpackage. The one-command entry point is
-  `just official-ssz-vector-tests-all`; smaller subsets and
-  per-suite recipes live in the `Justfile`.
+- **Upstream-vector harnesses.** Two pytest harnesses drive the
+  consensus-spec-tests vectors. The `ssz_static` per-fork
+  containers run from `packages/EthCLSpecs/PySpecTests/` against
+  the `pyspec_server` exe (Fulu and Gloas). The fork-agnostic
+  `ssz_generic` wire-format primitives run from
+  `packages/SizzLean/PySpecTests/` against the
+  `ssz_generic_runner` exe. The one-command entry points are
+  `just ethcl-conformance` and `just ssz-generic-conformance`;
+  smaller subsets and per-suite recipes live in the `Justfile`.
 
 ## Code style and discipline
 
@@ -133,7 +137,7 @@ before sending non-trivial PRs.
   the typechecker keeps honest.
 - If the change touches the spec → cache equivalence path
   (cache invariants, deriving handler, conformance gates),
-  re-run `just official-ssz-vector-tests-static` and note the
+  re-run `just ethcl-conformance` and note the
   result in the PR.
 - If the change touches the bench-measured hot path, capture a
   fresh `lake exe ssz_bench` TSV pre- and post-change and quote

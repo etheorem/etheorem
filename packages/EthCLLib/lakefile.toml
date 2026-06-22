@@ -1,0 +1,39 @@
+name = "EthCLLib"
+defaultTargets = ["EthCLLib"]
+
+# Lake does not propagate a dependency's `moreLinkArgs` across `require`
+# (see SizzLean's lakefile note), so this package re-supplies the system
+# `libcrypto` flag its `native_decide` self-tests need transitively through
+# SizzLean's FFI SHA-256. The blst / c-kzg archives propagate automatically
+# as `extern_lib`s, only the system shared lib needs re-stating here.
+moreLinkArgs = ["-L/usr/lib/x86_64-linux-gnu", "-l:libcrypto.so.3"]
+moreLeancArgs = ["-march=native"]
+
+# SizzLean supplies the SSZ machinery (SSZRepr, Box, the cache, sszGet /
+# sszUpdate, the Hasher class with the Sha256 / Sha256Spec tags). It
+# transitively pulls in LeanHazmatSha256 (the FFI SHA-256).
+[[require]]
+name = "SizzLean"
+path = "../SizzLean"
+
+# BLS verify / aggregate behind the [CryptoBackend] seam.
+[[require]]
+name = "LeanHazmatBls"
+path = "../LeanHazmatBls"
+
+# KZG cell-proof-batch verification behind the [CryptoBackend] seam.
+[[require]]
+name = "LeanHazmatKzg"
+path = "../LeanHazmatKzg"
+
+[[lean_lib]]
+name = "EthCLLib"
+
+# Lean-internal self-tests (#guard / native_decide / example): the
+# inheritance-replay dispatch, the crypto-backend seam, the running step, the
+# classify driver. Distinct from the pytest-xdist conformance harness. The
+# sources live under EthCLLib/Tests/ (namespace EthCLLib.Tests.*) and are
+# excluded from the shipped EthCLLib library, which globs only its own root.
+[[lean_lib]]
+name = "EthCLLibTests"
+roots = ["EthCLLib.Tests"]

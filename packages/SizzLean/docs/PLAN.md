@@ -7,22 +7,23 @@ deliverables it ships, an acceptance criterion (one observable
 that says the stage is done), and notes on dependencies,
 parallelism, and risk.
 
-The two sibling subpackages (`LeanSha256` and `LeanEthCS`) appear
-only where SizzLean's stages need them, `LeanSha256` as the
+The sibling subpackages (`LeanSha256`, `EthCLLib`, `EthCLSpecs`)
+appear only where SizzLean's stages need them, `LeanSha256` as the
 pure-Lean SHA-256 reference SizzLean's `Hasher.Sha256Spec`
-instance bridges to, `LeanEthCS` as the downstream consumer
-whose consensus containers validate SizzLean's user surface.
-Their own plans (if they grow distinct staging) live under
-each subpackage's own docs.
+instance bridges to, `EthCLLib` / `EthCLSpecs` as the downstream
+consumers whose consensus containers validate SizzLean's user
+surface. Their own plans (if they grow distinct staging) live
+under each subpackage's own docs.
 
 **Note on paths.** The plan was written and incrementally amended
 across multiple iterations. Per-stage file-path references in the
 "Deliverables" lists describe what the stage *originally produced*
 under the pre-monorepo layout; many of those files have since
 moved to `packages/SizzLean/SizzLean/...` paths (or, for some
-Eth-side stages, to `packages/LeanEthCS/...`). The deliverables
-themselves landed; the paths drifted. ARCHITECTURE.md §12 carries
-the canonical current layout.
+Eth-side stages, to `packages/EthCLLib/...` and
+`packages/EthCLSpecs/...`). The deliverables themselves landed;
+the paths drifted. ARCHITECTURE.md §12 carries the canonical
+current layout.
 
 The sequencing matches §14 of ARCHITECTURE.md: Phase 1 lays down
 the spec totality plus proof scaffolding (narrow first cut on
@@ -263,11 +264,13 @@ deriving handler will recurse on.
   `SSZ.roundtrip` per-user-type corollary.
 - `packages/SizzLean/SizzLean/Repr/Instances.lean`: `SSZRepr` instances for `UInt8/16/32/64`,
   `Bool`, `BitVec n`, `Vector α n`, `SSZ.List α n`, `Bitvector n`,
-  `Bitlist n`, sigma-typed unions. Plus `SSZList.get!` /
-  `SSZList.set!` / `SSZList.size` accessors and a
-  `GetElem (SSZList α cap) Nat α` instance so the same `xs[i]!`
-  syntax works uniformly across `Vector` and `SSZList` in
-  `sszUpdate` projections.
+  `Bitlist n`, sigma-typed unions. Plus the `SSZList` / `Bitlist`
+  element surface (`get!` / `set!` / `size` / `toArray` / `toList`
+  / `foldl` / `map` / `any` / `all` / `findIdx?` / `contains`, a
+  `ForIn` instance, and a faithful `GetElem` with validity
+  `i < xs.size`), so `xs[i]!`, `xs[i]?`, and `xs.size` work
+  uniformly across `Vector` and `SSZList` in `sszUpdate`
+  projections and in spec bodies, with no `.val` projection.
 
 **Acceptance.** A hand-written `instance : SSZRepr Foo` for a small
 example structure compiles, and an `example : deserialize (serialize x) = .ok x`
@@ -1128,10 +1131,11 @@ happens until `hashTreeRoot` walks the tree"** holds.
   the `T → Option Node` closure; index steps get a bounds check
   that short-circuits to `none` when the runtime index is out of
   range.
-- `SizzLean/Repr/Instances.lean`: `GetElem (SSZList α cap) Nat α`
-  instance + `SSZList.size` accessor so the same `xs[i]!` /
-  `xs.size` syntax works uniformly across `Vector` and `SSZList`
-  inside the projection chain.
+- `SizzLean/Repr/Instances.lean`: a faithful `GetElem (SSZList α cap)
+  Nat α` instance (validity `i < xs.size`) plus the `.size` /
+  `.toArray` / `.foldl` / `.map` / … element surface, so `xs[i]!`,
+  `xs[i]?`, and `xs.size` work uniformly across `Vector` and
+  `SSZList` inside the projection chain and in spec bodies.
 - Regression tests covering the bug classes the design closes:
   - `SizzLeanTests/PendingPrefixConflict.lean`: parent/child
     gindex prefix relations (5 cases).

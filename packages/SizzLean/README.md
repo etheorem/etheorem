@@ -123,8 +123,8 @@ theorems.
 ## Scope
 
 Provides the SSZ *library*, types and primitives. Consensus-spec
-container definitions (Phase0 → Gloas) live in the sibling
-`LeanEthCS` package.
+container definitions live in the sibling `EthCLSpecs` package
+(Fulu and Gloas), built on the `EthCLLib` framework.
 
 ## Status
 
@@ -143,14 +143,14 @@ v1.6.0-beta.0`) pass clean on **both** preset configurations:
 * `ssz_static --config minimal --all`: **38991 / 38991** cases
   passed across every fork Phase 0 → Fulu.
 
-Per-PR CI runs the `--limit 1` smoke; the full sweep across both
-presets is the umbrella `just official-ssz-vector-tests-all`
-target.
+Per-PR CI runs the dev-subset smoke; the full sweeps are the
+umbrella `just ssz-generic-conformance-full` (wire-format) and
+`just ethcl-conformance-full` (per-fork containers) targets.
 
-Gloas and EIP-7805 test vectors exist in the v1.6.0-beta.0 corpus
-but are not yet covered by the CLI dispatch table or the harness's
-`FORKS` list. They're a planned LeanEthCS extension, not a
-SizzLean-library gap.
+The per-fork consensus-container vectors are covered by the
+`EthCLSpecs` conformance harness for the Fulu and Gloas forks.
+Coverage of those forks lives in `EthCLSpecs`, the SSZ library
+itself implements every wire-format type they need.
 
 ### SSZ types implemented
 
@@ -290,9 +290,10 @@ the project, they're external tools the recipes assume.
    the SHA-256 FFI shim, see [Dependencies → System-level](#system-level-build-time-native-deps)
    below for the per-platform one-liners).
 
-4. **`python3` + `uv`** (only for `just official-ssz-vector-tests*`).
-   Run `just setup-python` from the umbrella root once to create
-   `.venv/` and install the harness deps.
+4. **`python3` + `uv`** (only for the `just ssz-generic-conformance*`
+   and `just ethcl-conformance*` recipes). Run `just setup-python`
+   from the umbrella root once to create `.venv/` and install the
+   harness deps.
 
 From the umbrella root, verify everything in one shot:
 
@@ -398,12 +399,13 @@ subpackages stay on declarative TOML.
   vectors, hasher equivalence, `setAt` randomised tests, cache
   machinery on example containers).
 
-The CLI driver that runs the upstream consensus-spec-tests
-corpus (`eth_ssz_vector_runner`) lives in the sibling
-[`LeanEthCS`](../LeanEthCS) subpackage, driven by
-`scripts/run_conformance.py` at the umbrella root. Use the
-one-command `just official-ssz-vector-tests-all` entry point
-documented in [Build / test](#build--test) to drive it.
+The CLI runner for the fork-agnostic `ssz_generic` wire-format
+corpus (`ssz_generic_runner`) lives in this package and is driven
+by the pytest harness in [`PySpecTests/`](PySpecTests). The
+per-fork `ssz_static` corpus is driven by the `EthCLSpecs`
+harness against its `pyspec_server` exe. Use the one-command
+`just ssz-generic-conformance` and `just ethcl-conformance`
+entry points documented in [Build / test](#build--test).
 
 ## Build / test
 
@@ -433,19 +435,17 @@ just test-ssz
 # (lives in the sibling LeanSha256 package, ~108s of native_decide)
 just test-sha256
 
-# Upstream `ethereum/consensus-spec-tests` — drives the Lean CLI
-# against the official archives. A tqdm progress bar shows live
-# per-case throughput. Quick sample:
-just official-ssz-vector-tests
-# Full `ssz_generic` sweep (~2188 in-scope cases, a couple of
-# seconds — 292 progressive-container cases are out of scope):
-just official-ssz-vector-tests-generic-full
-# Full `ssz_static` sweep on mainnet preset (1585 cases, ~2 min):
-just official-ssz-vector-tests-static-full
-# Full `ssz_static` sweep on minimal preset (38991 cases, ~3 min):
-just official-ssz-vector-tests-static-minimal
-# Full upstream corpus: generic + static on both presets:
-just official-ssz-vector-tests-all
+# Upstream `ethereum/consensus-spec-tests`. Pytest harnesses
+# drive a Lean CLI against the official archives. A tqdm progress
+# bar shows live per-case throughput. Quick dev subset:
+just ssz-generic-conformance
+# Full `ssz_generic` wire-format sweep:
+just ssz-generic-conformance-full
+# Per-fork `ssz_static` consensus-container suite (Fulu/Gloas),
+# quick dev subset:
+just ethcl-conformance
+# The complete in-scope EthCLSpecs sweep (both forks, both presets):
+just ethcl-conformance-full
 ```
 
 For the full menu, the protocol the harness uses, and how to

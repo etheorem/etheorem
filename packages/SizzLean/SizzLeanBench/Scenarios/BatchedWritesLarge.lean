@@ -64,7 +64,7 @@ private def pureValidatorSet256 (sink : IO.Ref Nat) (salt : UInt8) : IO Unit := 
     let oldV := box.view.validators[idx]!
     let newV : ValidatorShape :=
       { oldV with effectiveBalance := UInt64.ofNat (i + 1) }
-    box := sszUpdate box with validators[idx] := newV
+    box := sszUpdate box with validators[idx]! := newV
   sink.modify (· + consume box.hashTreeRoot.1)
 
 private def cachedValidatorSet256 (sink : IO.Ref Nat) (salt : UInt8) : IO Unit := do
@@ -78,7 +78,7 @@ private def cachedValidatorSet256 (sink : IO.Ref Nat) (salt : UInt8) : IO Unit :
     let oldV := box.view.validators[idx]!
     let newV : ValidatorShape :=
       { oldV with effectiveBalance := UInt64.ofNat (i + 1) }
-    box := sszUpdate box with validators[idx] := newV
+    box := sszUpdate box with validators[idx]! := newV
   sink.modify (· + consume box.hashTreeRoot.1)
 
 def runAll : IO Unit := do
