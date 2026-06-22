@@ -36,12 +36,17 @@ forkdef processSlot : StateTransition Unit :=
     let mut state := state
     let prevStateRoot : Root := bytesToRoot prevStateRootBytes
     let idx := umodIdx (sszGet state slot) Const.slotsPerHistoricalRoot
+
+    -- Cache the previous state root, backfill it into the latest header, then cache that
+    -- header's block root.
     state := sszUpdate state with stateRoots[idx]! := prevStateRoot
     let latestHeader := sszGet state latestBlockHeader
     let latestHeader := if latestHeader.stateRoot == Fulu.zeroRoot then { latestHeader with stateRoot := prevStateRoot } else latestHeader
     state := sszUpdate state with latestBlockHeader := latestHeader
     let blockRoot := htr (sszGet state latestBlockHeader)
     state := sszUpdate state with blockRoots[idx]! := blockRoot
+
+    -- Gloas addition: the next slot's payload starts unavailable.
     let nextIdx := umodIdx ((sszGet state slot) + 1) Const.slotsPerHistoricalRoot
     state := sszUpdate state with executionPayloadAvailability :=
       bitSet (sszGet state executionPayloadAvailability) nextIdx false
@@ -105,8 +110,10 @@ forkdef stateTransition (signedBlock : SignedBeaconBlock) (validateResult : Bool
     StateTransition Unit := do
   let block := signedBlock.message
   processSlots block.slot
+
   if validateResult then assert (verifyBlockSignature (← get) signedBlock)
   processBlock block
+
   if validateResult then
     let root ← getStateRoot
     assert (block.stateRoot == bytesToRoot root)

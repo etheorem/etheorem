@@ -145,6 +145,8 @@ forkdef getWeight (store : Store map) (root : Root) : Gwei :=
           else if getAncestor store lm.root block.slot == root then acc + (validators[idx]!).effectiveBalance
           else acc
         | none => acc
+
+    -- Add the proposer boost when `root` is an ancestor of the boosted block.
     if store.proposerBoostRoot == fcZeroRoot then attestationScore
     else if getAncestor store store.proposerBoostRoot block.slot == root then
       attestationScore + getProposerScore store
@@ -392,15 +394,18 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) (columns : Array DataColumnSid
   -- Data availability (EIP-7594): only blocks carrying blob commitments need their
   -- columns sampled; a block with no blobs is trivially available.
   assert (block.body.blobKzgCommitments.toArray.isEmpty || isDataAvailable columns)
+
   let postState ← runStateTransition parentState (stateTransition signedBlock)
   let blockRoot := htr block
   -- The head is taken BEFORE the new block is added (v1.7 `update_proposer_boost_root`).
   let head := getHead store
   let isTimely := getCurrentSlot store == block.slot && timeIntoSlotMs store < bpsDeadlineMs Const.attestationDueBps
+
   let store := { store with
     blocks := FcMap.insert store.blocks blockRoot block
     blockStates := FcMap.insert store.blockStates blockRoot postState
     blockTimeliness := FcMap.insert store.blockTimeliness blockRoot isTimely }
+
   -- Boost only a timely first block on the same proposer-shuffling lineage as the
   -- pre-insertion head (v1.7 adds the `is_same_dependent_root` gate).
   let isSameDependentRoot := getDependentRoot store blockRoot == getDependentRoot store head
@@ -456,11 +461,13 @@ forkdef updateLatestMessages (store : Store map) (attestingIndices : Array Valid
 `attestation` step) from a block-implied one. -/
 forkdef onAttestation (att : Attestation) (isFromBlock : Bool) : StoreTransition Unit := do
   validateOnAttestation (← get) att isFromBlock
+
   let store := storeTargetCheckpointState (← get) att.data.target
   let targetState ← FcMap.getOrThrowKey store.checkpointStates att.data.target att.data.target.root
   let attesting := (← liftErr (getAttestingIndices targetState att)).qsort (· < ·)
   let indexedAttestation : IndexedAttestation := { attestingIndices := sszOfArray attesting, data := att.data, signature := att.signature }
   assert (isValidIndexedAttestation targetState indexedAttestation)
+
   set (updateLatestMessages store attesting att)
 
 /-! ## on_attester_slashing -/
@@ -473,6 +480,7 @@ forkdef onAttesterSlashing (asl : AttesterSlashing) : StoreTransition Unit := do
   let state ← FcMap.getOrThrow store.blockStates store.justifiedCheckpoint.root
   assert (isValidIndexedAttestation state asl.attestation1)
   assert (isValidIndexedAttestation state asl.attestation2)
+
   let set2 := asl.attestation2.attestingIndices.toArray
   let inter := arrayInter asl.attestation1.attestingIndices.toArray set2
   let eq := arrayUnion store.equivocatingIndices inter

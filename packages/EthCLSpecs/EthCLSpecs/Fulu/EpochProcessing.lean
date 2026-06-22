@@ -38,6 +38,9 @@ forkdef weighJustificationAndFinalization (totalActive prevTarget currTarget : G
     let oldPrev := sszGet state previousJustifiedCheckpoint
     let oldCurr := sszGet state currentJustifiedCheckpoint
     let mut state := state
+
+    -- Shift the bit window, then justify the previous and current epochs that reached
+    -- a two-thirds target supermajority.
     state := sszUpdate state with
       previousJustifiedCheckpoint := oldCurr,
       justificationBits := { data := (sszGet state justificationBits).data <<< 1 }
@@ -49,6 +52,8 @@ forkdef weighJustificationAndFinalization (totalActive prevTarget currTarget : G
       state := sszUpdate state with
         currentJustifiedCheckpoint := { epoch := currEpoch, root := getBlockRoot state currEpoch },
         justificationBits := bitSet (sszGet state justificationBits) 0 true
+
+    -- Finalize on the four supermajority-link bit patterns.
     let bits := sszGet state justificationBits
     if bitGet bits 1 && bitGet bits 2 && bitGet bits 3 && oldPrev.epoch + 3 == currEpoch then
       state := sszUpdate state with finalizedCheckpoint := oldPrev
@@ -80,6 +85,7 @@ forkdef processInactivityUpdates : StateTransition Unit := do
     let matchingTarget := getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state)
     let leak := isInInactivityLeak state
     let eligible := getEligibleValidatorIndices state
+
     modifyState fun state => Id.run do
       let mut state := state
       for vi in eligible do
@@ -98,12 +104,14 @@ forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) : Except IndexError
   let n := (sszGet state validators).size
   let mut rewards := Array.replicate n (0 : Gwei)
   let mut penalties := Array.replicate n (0 : Gwei)
+
   let prevEpoch := previousEpochOf state
   let unslashed := getUnslashedParticipatingIndices state flagIndex prevEpoch
   let weight := Const.participationFlagWeights[flagIndex]!
   let unslashedIncrements := (getTotalBalance state unslashed).toNat / Const.effectiveBalanceIncrement
   let activeIncrements := (getTotalActiveBalance state).toNat / Const.effectiveBalanceIncrement
   let leak := isInInactivityLeak state
+
   for vi in getEligibleValidatorIndices state do
     let i := vi.toNat
     let baseReward ← getBaseReward state vi
@@ -120,6 +128,7 @@ forkdef getInactivityPenaltyDeltas (state : State) : Array Gwei := Id.run do
   let iscores := sszGet state inactivityScores
   let mut penalties := Array.replicate validators.size (0 : Gwei)
   let matchingTarget := getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state)
+
   for vi in getEligibleValidatorIndices state do
     let i := vi.toNat
     if !matchingTarget.contains vi then
@@ -144,6 +153,7 @@ forkdef processRewardsAndPenalties : StateTransition Unit := do
     let flagDeltas ← liftErr ((List.range 3).mapM (fun f => getFlagIndexDeltas state f))
     let inactPenalties := getInactivityPenaltyDeltas state
     let zeros := Array.replicate (sszGet state validators).size (0 : Gwei)
+
     for (rewards, penalties) in flagDeltas do
       modifyState (applyDeltas rewards penalties)
     modifyState (applyDeltas zeros inactPenalties)
@@ -156,6 +166,7 @@ forkdef processRegistryUpdates : StateTransition Unit := do
   let currentEpoch := currentEpochOf (← get)
   let activationEpoch := computeActivationExitEpoch currentEpoch
   let n := (sszGet (← get) validators).size
+
   for idx in [0 : n] do
     let state ← get
     let validator := sszGet state validators[idx]!
@@ -177,6 +188,7 @@ forkdef processSlashings : StateTransition Unit := do
   let adjusted := umin (sumSlashings * UInt64.ofNat Const.proportionalSlashingMultiplierBellatrix) totalBalance
   let increment := Const.effectiveBalanceIncrementG
   let penaltyPerIncrement := adjusted / (totalBalance / increment)
+
   modifyState fun state => Id.run do
     let mut state := state
     for i in [0 : (sszGet state validators).size] do
@@ -187,52 +199,54 @@ forkdef processSlashings : StateTransition Unit := do
 
 /-! ## Pending deposits (Electra deposit queue) -/
 
-/-- The deposit-queue scan. Returns `(churnLimitReached, processedAmount,
-nextDepositIndex, postponed)`, tail-recursive on `fuel = #deposits`. A deposit for
-a withdrawn validator applies without consuming churn; one for an exiting validator
-is postponed; otherwise it applies while it fits the per-epoch churn, and the scan
-stops (setting `churnLimitReached`) once it does not. The eth1-bridge / not-finalized
-/ per-epoch-limit breaks leave `churnLimitReached` false. -/
+/-- The running state of the pending-deposit scan, and its result. `ndi` is the spec's
+`next_deposit_index`: both the queue cursor and the count of dequeued deposits, since
+every step advances it or stops, so the two never diverge. `churnReached` is set only
+when the per-epoch churn limit halts the scan. -/
+forkstruct DepositScan where
+  ndi          : Nat := 0
+  processed    : Gwei := 0
+  postpone     : Array PendingDeposit := #[]
+  churnReached : Bool := false
+
+/-- The deposit-queue scan, tail-recursive on `fuel = #deposits`. A deposit for a
+withdrawn validator applies without consuming churn; one for an exiting validator is
+postponed; otherwise it applies while it fits the per-epoch churn, and the scan stops
+(setting `churnReached`) once it does not. The eth1-bridge / not-finalized /
+per-epoch-limit stops leave `churnReached` false. -/
 forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (nextEpoch : Epoch) :
-    StateTransition (Bool × Gwei × Nat × Array PendingDeposit) :=
-  -- Threaded accumulator `(di, processed, ndi, postpone)`; the framework `fuelLoop` owns the
-  -- counter. Fuel is `deposits.size + 1` (the `fuelIterate` `length + 1` idiom): the
-  -- `di ≥ deposits.size` guard fires as a `.done` one step before exhaustion, so the
-  -- `exhausted` value is unreachable. Each early-return arm is a `.done`, each continuation a
-  -- `.next` advancing `di` and `ndi`.
-  fuelLoop (deposits.size + 1)
-      ((0, (0 : Gwei), 0, (#[] : Array PendingDeposit)) :
-        Nat × Gwei × Nat × Array PendingDeposit)
-      ((false, (0 : Gwei), 0, (#[] : Array PendingDeposit)) :
-        Bool × Gwei × Nat × Array PendingDeposit)
-      fun (di, processed, ndi, postpone) => do
-    if di ≥ deposits.size then return .done (false, processed, ndi, postpone)
-    else
-      let state ← get
-      let deposit := deposits[di]!
-      if deposit.slot > Const.genesisSlot
-          && (sszGet state eth1DepositIndex) < (sszGet state depositRequestsStartIndex) then
-        return .done (false, processed, ndi, postpone)
-      else if deposit.slot > finalizedSlot then return .done (false, processed, ndi, postpone)
-      else if ndi ≥ Const.maxPendingDepositsPerEpoch then return .done (false, processed, ndi, postpone)
-      else
-        let cont (processed' : Gwei) (postpone' : Array PendingDeposit) :
-            Step (Nat × Gwei × Nat × Array PendingDeposit)
-              (Bool × Gwei × Nat × Array PendingDeposit) :=
-          .next (di + 1, processed', ndi + 1, postpone')
-        match validatorIndexByPubkey? state deposit.pubkey with
-        | some vi =>
-          let validator := sszGet state validators[vi]!
-          if validator.withdrawableEpoch < nextEpoch then
-            applyPendingDeposit deposit; return cont processed postpone
-          else if validator.exitEpoch < Const.farFutureEpoch then
-            return cont processed (postpone.push deposit)
-          else if processed + deposit.amount > avail then
-            return .done (true, processed, ndi, postpone)
-          else applyPendingDeposit deposit; return cont (processed + deposit.amount) postpone
-        | none =>
-          if processed + deposit.amount > avail then return .done (true, processed, ndi, postpone)
-          else applyPendingDeposit deposit; return cont (processed + deposit.amount) postpone
+    StateTransition DepositScan :=
+  -- Fuel is `deposits.size + 1`: the `ndi ≥ deposits.size` guard returns `.done` one step
+  -- before exhaustion, so `fuelLoop`'s `exhausted` value is unreachable.
+  fuelLoop (deposits.size + 1) ({} : DepositScan) ({} : DepositScan) fun s => do
+    if s.ndi ≥ deposits.size then return .done s
+    let state ← get
+    let deposit := deposits[s.ndi]!
+
+    -- Stop the scan early: the eth1-bridge deposits are not yet applied, the deposit is
+    -- not finalized, or this epoch's deposit cap is reached.
+    if deposit.slot > Const.genesisSlot
+        && (sszGet state eth1DepositIndex) < (sszGet state depositRequestsStartIndex) then return .done s
+    if deposit.slot > finalizedSlot then return .done s
+    if s.ndi ≥ Const.maxPendingDepositsPerEpoch then return .done s
+
+    -- Advance past this deposit, carrying the running churn and postpone list forward.
+    let advance (processed : Gwei) (postpone : Array PendingDeposit) : Step DepositScan DepositScan :=
+      .next { s with ndi := s.ndi + 1, processed, postpone }
+
+    -- Read the deposit's validator once, if its pubkey is known, and derive the two flags
+    -- the spec branches on. An unknown pubkey leaves both false, so it falls through to the
+    -- churn check.
+    let (isWithdrawn, isExited) := match validatorIndexByPubkey? state deposit.pubkey with
+      | some vi =>
+        let v := sszGet state validators[vi]!
+        (decide (v.withdrawableEpoch < nextEpoch), decide (v.exitEpoch < Const.farFutureEpoch))
+      | none => (false, false)
+
+    if isWithdrawn then applyPendingDeposit deposit; return advance s.processed s.postpone
+    else if isExited then return advance s.processed (s.postpone.push deposit)
+    else if s.processed + deposit.amount > avail then return .done { s with churnReached := true }
+    else applyPendingDeposit deposit; return advance (s.processed + deposit.amount) s.postpone
 
 /-- `process_pending_deposits`. Churn is accumulated into `deposit_balance_to_consume`
 only when the churn limit was actually hit; every other stop resets it to zero. -/
@@ -242,10 +256,11 @@ forkdef processPendingDeposits : StateTransition Unit := do
   let avail := (sszGet state depositBalanceToConsume) + getActivationExitChurnLimit state
   let finalizedSlot := computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
   let deposits := (sszGet state pendingDeposits).toArray
-  let (churnReached, processed, ndi, postpone) ← ppdLoop deposits finalizedSlot avail nextEpoch
+  let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
+
   modifyState fun state => sszUpdate state with
-    pendingDeposits := sszOfArray (deposits.extract ndi deposits.size ++ postpone),
-    depositBalanceToConsume := if churnReached then avail - processed else 0
+    pendingDeposits := sszOfArray (deposits.extract scan.ndi deposits.size ++ scan.postpone),
+    depositBalanceToConsume := if scan.churnReached then avail - scan.processed else 0
 
 /-! ## Pending consolidations -/
 
@@ -281,6 +296,7 @@ forkdef processPendingConsolidations : StateTransition Unit := do
   let pending := sszGet state pendingConsolidations
   let cons := pending.toArray
   let npc ← pcLoop cons nextEpoch
+
   modifyState fun state =>
     sszUpdate state with pendingConsolidations := sszDrop pending npc
 
@@ -290,9 +306,10 @@ forkdef processPendingConsolidations : StateTransition Unit := do
 forkdef processEffectiveBalanceUpdates : StateTransition Unit :=
   modifyState fun state => Id.run do
     let mut state := state
-    let hystInc := Const.effectiveBalanceIncrementG / UInt64.ofNat Const.hysteresisQuotient
-    let downward := hystInc * UInt64.ofNat Const.hysteresisDownwardMultiplier
-    let upward := hystInc * UInt64.ofNat Const.hysteresisUpwardMultiplier
+    let hysteresisIncrement := Const.effectiveBalanceIncrementG / UInt64.ofNat Const.hysteresisQuotient
+    let downward := hysteresisIncrement * UInt64.ofNat Const.hysteresisDownwardMultiplier
+    let upward := hysteresisIncrement * UInt64.ofNat Const.hysteresisUpwardMultiplier
+
     for i in [0 : (sszGet state validators).size] do
       let validator := sszGet state validators[i]!
       let balance := sszGet state balances[i]!

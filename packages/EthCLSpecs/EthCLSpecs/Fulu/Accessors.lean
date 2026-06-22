@@ -31,6 +31,7 @@ forkdef getUnslashedParticipatingIndices (state : State) (flagIndex : Nat) (epoc
   let part := if isCurrent then sszGet state currentEpochParticipation else sszGet state previousEpochParticipation
   let validators := sszGet state validators
   let mut out : Array ValidatorIndex := #[]
+
   for i in getActiveValidatorIndices state epoch do
     let idx := i.toNat
     if hasFlag (part[idx]!) flagIndex && !(validators[idx]!).slashed then out := out.push i

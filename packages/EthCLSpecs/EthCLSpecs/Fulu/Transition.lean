@@ -39,9 +39,12 @@ forkdef processSlot : StateTransition Unit :=
     let prevStateRoot : Root := bytesToRoot prevStateRootBytes
     let idx := umodIdx (sszGet state slot) Const.slotsPerHistoricalRoot
     state := sszUpdate state with stateRoots[idx]! := prevStateRoot
+
+    -- Fill the latest header's empty state root with the one just cached.
     let latestHeader := sszGet state latestBlockHeader
     let latestHeader := if latestHeader.stateRoot == zeroRoot then { latestHeader with stateRoot := prevStateRoot } else latestHeader
     state := sszUpdate state with latestBlockHeader := latestHeader
+
     let blockRoot := htr (sszGet state latestBlockHeader)
     state := sszUpdate state with blockRoots[idx]! := blockRoot
     return state
@@ -82,12 +85,14 @@ forkdef processBlockHeader (block : BeaconBlock) : StateTransition Unit := do
   assert (block.slot > (sszGet state latestBlockHeader).slot)
   assert (block.proposerIndex == getBeaconProposerIndex state)
   assert (block.parentRoot == htr (sszGet state latestBlockHeader))
+
   let newHeader : BeaconBlockHeader :=
     { slot := block.slot, proposerIndex := block.proposerIndex, parentRoot := block.parentRoot,
       stateRoot := zeroRoot, bodyRoot := htr block.body }
   let hb ← assertH (block.proposerIndex.toNat < (sszGet state validators).size)
   let proposer := (sszGet state validators)[block.proposerIndex.toNat]'hb.down
   assert (!proposer.slashed)
+
   modifyState fun state => sszUpdate state with latestBlockHeader := newHeader
 
 /-- `process_randao`: verify the proposer's RANDAO reveal and mix it into the
@@ -98,6 +103,8 @@ forkdef processRandao (body : BeaconBlockBody) : StateTransition Unit := do
   let proposer ← sszGetIdx (sszGet state validators) (getBeaconProposerIndex state).toNat
   let signingRoot := computeSigningRoot epoch (getDomain state Const.domainRandao epoch)
   assert (blsVerify proposer.pubkey signingRoot body.randaoReveal)
+
+  -- Mix the reveal's hash into the current epoch's mix, then write it back.
   let mix := vmodGet (sszGet state randaoMixes) epoch Const.epochsPerHistoricalVector
   let digest := sha body.randaoReveal
   let newMix : Bytes32 := Vector.ofFn (fun i : Fin 32 => mix[i] ^^^ digest.get! i.val)
@@ -111,6 +118,7 @@ forkdef processEth1Data (body : BeaconBlockBody) : StateTransition Unit := do
   let votes := (sszGet state eth1DataVotes).push body.eth1Data
   let target := htr body.eth1Data
   let cnt := votes.foldl (fun acc e => if htr e == target then acc + 1 else acc) 0
+
   modifyState fun state => Id.run do
     let mut state := state
     state := sszUpdate state with eth1DataVotes := votes
@@ -126,6 +134,8 @@ majority-subtraction optimizations the spec describes are unnecessary and the
 verification result is identical. -/
 forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let state ← get
+
+  -- Verify the aggregate over the previous slot's block root from the bit-selected keys.
   let syncCommittee := sszGet state currentSyncCommittee
   let bits := agg.syncCommitteeBits
   let participantKeys : Array BLSPubkey :=
@@ -134,6 +144,8 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let signingRoot := computeSigningRoot (getBlockRootAtSlot state previousSlot)
     (getDomain state Const.domainSyncCommittee (computeEpochAtSlot previousSlot))
   assert (blsEthFastAggregateVerify participantKeys signingRoot agg.syncCommitteeSignature)
+
+  -- Per-participant and per-proposer reward amounts.
   let totalActiveIncrements := (getTotalActiveBalance state).toNat / Const.effectiveBalanceIncrement
   let totalBaseRewards := getBaseRewardPerIncrement state * totalActiveIncrements
   let maxParticipantRewards := totalBaseRewards * Const.syncRewardWeight / Const.weightDenominator / Const.slotsPerEpoch
@@ -142,6 +154,8 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
     UInt64.ofNat (participantReward.toNat * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight))
   let proposerIdx := getBeaconProposerIndex state
   let validators := (sszGet state validators).toArray
+
+  -- Reward participants (and the proposer), penalize non-participants.
   modifyState fun state => Id.run do
     let mut state := state
     for h : i in [0:Const.syncCommitteeSize] do
@@ -169,6 +183,7 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   let mix := vmodGet (sszGet state randaoMixes) epoch Const.epochsPerHistoricalVector
   assert (payload.prevRandao == mix)
   assert (payload.timestamp == (sszGet state genesisTime) + (sszGet state slot) * Const.secondsPerSlot)
+
   let header : ExecutionPayloadHeader :=
     { parentHash := payload.parentHash, feeRecipient := payload.feeRecipient,
       stateRoot := payload.stateRoot, receiptsRoot := payload.receiptsRoot,

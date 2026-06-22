@@ -60,6 +60,7 @@ forkdef getExpectedWithdrawals (state : State) : Array Withdrawal × Nat := Id.r
   let mut withdrawals : Array Withdrawal := #[]
   let mut withdrawalIndex := sszGet state nextWithdrawalIndex
   let mut processedPartial := 0
+
   -- Pending partial withdrawals (EIP-7251).
   let partialLimit := Nat.min Const.maxPendingPartialsPerWithdrawalsSweep (Const.maxWithdrawalsPerPayload - 1)
   for w in (sszGet state pendingPartialWithdrawals) do
@@ -73,6 +74,7 @@ forkdef getExpectedWithdrawals (state : State) : Array Withdrawal × Nat := Id.r
           amount := umin (bal - Const.minActivationBalance) w.amount }
       withdrawalIndex := withdrawalIndex + 1
     processedPartial := processedPartial + 1
+
   -- Validator sweep (Capella).
   let validatorsLimit := Nat.min nvals Const.maxValidatorsPerWithdrawalsSweep
   let mut vIdx := (sszGet state nextWithdrawalValidatorIndex).toNat
@@ -102,10 +104,12 @@ forkdef processWithdrawals (payload : ExecutionPayload) : StateTransition Unit :
   let (expected, processedPartial) := getExpectedWithdrawals state
   let expectedList : SSZList Withdrawal Const.maxWithdrawalsPerPayload := sszOfArray expected
   assert (htr expectedList == htr payload.withdrawals)
+
   let nvals := (sszGet state validators).size
   let mut stateAcc := state
   for w in expected do
     stateAcc := decreaseBalance stateAcc w.validatorIndex w.amount
+
   if expected.size != 0 then
     stateAcc := sszUpdate stateAcc with nextWithdrawalIndex := (expected[expected.size - 1]!).index + 1
   stateAcc := sszUpdate stateAcc with pendingPartialWithdrawals := sszDrop (sszGet stateAcc pendingPartialWithdrawals) processedPartial

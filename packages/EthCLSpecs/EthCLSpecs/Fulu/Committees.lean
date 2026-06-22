@@ -34,12 +34,18 @@ forkdef computeShuffledPermutation (indexCount : Nat) (seed : ByteArray) : Array
   else
     (List.range Const.shuffleRoundCount).foldl
       (fun indices round =>
+        -- Each round mixes in a fresh seed byte and draws the swap pivot.
         let seedRound := seed.push (UInt8.ofNat round)
         let pivot := (le8 (sha seedRound)) % indexCount
+
+        -- Rebuild every slot independently: swap to `flip`, or keep `cur`.
         Array.ofFn (n := indexCount) (fun i : Fin indexCount =>
           let cur := (indices[i.val]!).toNat
           let flip := (pivot + indexCount - cur) % indexCount
           let position := Nat.max cur flip
+          -- One bit of the round's hash stream decides the swap: hash the seed with
+          -- the high bytes of `position`, then read bit `position % 8` of the byte at
+          -- `(position % 256) / 8`. A set bit moves this slot to `flip`.
           let source := sha (seedRound ++ u32leBytes (position / 256))
           let byteVal := (source.get! ((position % 256) / 8)).toNat
           let bit := (byteVal >>> (position % 8)) % 2
@@ -140,6 +146,7 @@ forkdef getNextSyncCommittee [CryptoBackend] (state : State) : SyncCommittee :=
   let seed := getSeed state epoch Const.domainSyncCommittee
   let indices := computeBalanceWeightedSelection state (getActiveValidatorIndices state epoch)
     seed Const.syncCommitteeSize true
+
   let validators := sszGet state validators
   let pubkeys : Vector BLSPubkey Const.syncCommitteeSize :=
     Vector.ofFn (fun i => (validators[(indices[i.val]!).toNat]?.getD default).pubkey)

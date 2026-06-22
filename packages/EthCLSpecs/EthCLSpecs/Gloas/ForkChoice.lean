@@ -396,12 +396,16 @@ where
   | fuel + 1, blockRoot, acc =>
     let children := FcMap.filterKeys store.blocks (fun _ b => b.parentRoot == blockRoot)
     if children.isEmpty then
+      -- A leaf branch is viable when its voting source stays close to the justified
+      -- checkpoint (genesis, the same epoch, or within two epochs of the current one).
       let currentEpoch := getCurrentStoreEpoch store
       let votingSource := getVotingSource store blockRoot
       let correctJustified :=
         store.justifiedCheckpoint.epoch == Const.genesisEpoch
           || votingSource.epoch == store.justifiedCheckpoint.epoch
           || votingSource.epoch + 2 ≥ currentEpoch
+
+      -- The finalized checkpoint must also lie on this branch.
       let finalizedBlock := getCheckpointBlock store blockRoot store.finalizedCheckpoint.epoch
       let correctFinalized :=
         store.finalizedCheckpoint.epoch == Const.genesisEpoch
@@ -450,10 +454,10 @@ where
   /-- `(weight, root, tiebreaker)` ordering: greater weight wins; ties by greater
   root; further ties by greater tiebreaker. -/
   better (store : Store map) (a b : ForkChoiceNode) : Bool :=
-    let wa := getWeight store a
-    let wb := getWeight store b
-    if wa > wb then true
-    else if wa < wb then false
+    let weightA := getWeight store a
+    let weightB := getWeight store b
+    if weightA > weightB then true
+    else if weightA < weightB then false
     else match compare a.root b.root with
       | Ordering.gt => true
       | Ordering.lt => false
@@ -506,11 +510,15 @@ where
 /-- `advance_store_time`: catch up slot-by-slot, then set the exact time (the pure core
 of `on_tick`, ms-based). Fuel-bounded by the number of slots to advance. -/
 forkdef advanceStoreTime (store : Store map) (time : UInt64) : Store map :=
-  fuelIterate (((((time - store.genesisTime) * 1000) / Const.slotDurationMs) - getCurrentSlot store).toNat + 1) store fun store =>
-    let tickSlot := ((time - store.genesisTime) * 1000) / Const.slotDurationMs
-    if getCurrentSlot store < tickSlot then
-      let previousTime := store.genesisTime + (getCurrentSlot store + 1) * Const.slotDurationMs / 1000
-      .next (onTickPerSlot store previousTime)
+  -- The slot `time` lands in. It is loop-invariant (only `time` and the fixed
+  -- `genesisTime` feed it, and `onTickPerSlot` touches neither), so it doubles as
+  -- the fuel bound and is read unchanged inside the sweep.
+  let targetSlot := ((time - store.genesisTime) * 1000) / Const.slotDurationMs
+  let fuel := (targetSlot - getCurrentSlot store).toNat + 1
+  fuelIterate fuel store fun store =>
+    if getCurrentSlot store < targetSlot then
+      let nextSlotTime := store.genesisTime + (getCurrentSlot store + 1) * Const.slotDurationMs / 1000
+      .next (onTickPerSlot store nextSlotTime)
     else .done (onTickPerSlot store time)
 
 /-- `on_tick`: advance the store clock to `time`. -/
@@ -561,6 +569,7 @@ matches and the validator sits in its PTC, otherwise skip. -/
 forkdef notifyPtcMessages (store : Store map) (state : State) (payloadAttestations : Array PayloadAttestation) :
     Store map := Id.run do
   if sszGet state slot == 0 then return store
+
   let mut store := store
   for pa in payloadAttestations do
     let indexed := getIndexedPayloadAttestation state pa
@@ -585,21 +594,29 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   let store ← get
   let block := signedBlock.message
   let parentState ← FcMap.getOrThrow store.blockStates block.parentRoot
+
+  -- Reject a full-but-unverified parent, a future block, or a finality conflict.
   assert (!(isParentNodeFull store block) || isPayloadVerified store block.parentRoot)
   assert (getCurrentSlot store ≥ block.slot)
   let finalizedSlot := computeStartSlotAtEpoch store.finalizedCheckpoint.epoch
   assert (block.slot > finalizedSlot)
   assert (store.finalizedCheckpoint.root == getCheckpointBlock store block.parentRoot store.finalizedCheckpoint.epoch)
+
+  -- Run the state transition, then snapshot the head before the block is added.
   let postState ← runStateTransition parentState (stateTransition signedBlock)
   let blockRoot := htr block
   -- The head is taken BEFORE the new block is added (`update_proposer_boost_root`).
   let head := getHead store
+
+  -- Insert the block, its post-state, and the two empty per-block PTC vote maps.
   let emptyVotes : Array (Option Bool) := Array.replicate Const.ptcSize none
   let store := { store with
     blocks := FcMap.insert store.blocks blockRoot block
     blockStates := FcMap.insert store.blockStates blockRoot postState
     payloadTimelinessVote := FcMap.insert store.payloadTimelinessVote blockRoot emptyVotes
     payloadDataAvailabilityVote := FcMap.insert store.payloadDataAvailabilityVote blockRoot emptyVotes }
+
+  -- Replay the block's PTC votes, record timeliness, boost, and pull up the tip.
   let store := notifyPtcMessages store postState block.body.payloadAttestations.toArray
   let store := recordBlockTimeliness store blockRoot
   let store := updateProposerBoostRoot store head.root blockRoot
@@ -635,11 +652,18 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
     Except StoreTransitionError State := do
   let envelope := signedEnv.message
   let payload := envelope.payload
+
+  -- Builder signature over the envelope.
   assert (verifyExecutionPayloadEnvelopeSignature state signedEnv)
+
+  -- Block-root binding: the envelope commits to this state's block header (warmed
+  -- with its computed state root) and its parent.
   let (stateRootBytes, warm) := stateRoot state
   let header : BeaconBlockHeader := { sszGet state latestBlockHeader with stateRoot := bytesToRoot stateRootBytes }
   assert (envelope.beaconBlockRoot == htr header)
   assert (envelope.parentBeaconBlockRoot == (sszGet state latestBlockHeader).parentRoot)
+
+  -- Bid consistency: the revealed payload matches the committed bid and the state.
   let bid := sszGet state latestExecutionPayloadBid
   assert (envelope.builderIndex == bid.builderIndex)
   assert (payload.prevRandao == bid.prevRandao)
@@ -659,6 +683,7 @@ forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) 
   let store ← get
   let envelope := signedEnv.message
   let state ← FcMap.getOrThrow store.blockStates envelope.beaconBlockRoot
+
   match verifyExecutionPayloadEnvelope state signedEnv with
   | .error e => throw e
   | .ok warm => set { store with
@@ -676,6 +701,7 @@ forkdef onPayloadAttestationMessage (msg : PayloadAttestationMessage) (isFromBlo
   let store ← get
   let data := msg.data
   let state ← FcMap.getOrThrow store.blockStates data.beaconBlockRoot
+
   if !(data.slot == sszGet state slot) then pure ()
   else
     let ptc := getPtc state data.slot
@@ -712,10 +738,14 @@ forkdef validateOnAttestation (store : Store map) (att : Attestation) (isFromBlo
   let target := att.data.target
   let currentEpoch := getCurrentStoreEpoch store
   let previousEpoch := if currentEpoch > Const.genesisEpoch then currentEpoch - 1 else Const.genesisEpoch
+
+  -- Target epoch in range and consistent with the attestation slot; both roots known.
   assert (isFromBlock || target.epoch == currentEpoch || target.epoch == previousEpoch)
   assert (target.epoch == computeEpochAtSlot att.data.slot)
   assert (FcMap.contains store.blocks target.root)
   assert (FcMap.contains store.blocks att.data.beaconBlockRoot)
+
+  -- Head-block shape: the Gloas index/payload-presence rules and the checkpoint binding.
   let b ← FcMap.getOrThrow store.blocks att.data.beaconBlockRoot
   assert (b.slot ≤ att.data.slot)
   assert (att.data.index == 0 || att.data.index == 1)
@@ -731,6 +761,7 @@ forkdef updateLatestMessages (store : Store map) (attestingIndices : Array Valid
   let slot := att.data.slot
   let beaconBlockRoot := att.data.beaconBlockRoot
   let payloadPresent := att.data.index == 1
+
   let mut lm := store.latestMessages
   for i in attestingIndices do
     if !store.equivocatingIndices.contains i then
@@ -743,11 +774,13 @@ forkdef updateLatestMessages (store : Store map) (attestingIndices : Array Valid
 block-implied one. -/
 forkdef onAttestation (att : Attestation) (isFromBlock : Bool) : StoreTransition Unit := do
   validateOnAttestation (← get) att isFromBlock
+
   let store := storeTargetCheckpointState (← get) att.data.target
   let targetState ← FcMap.getOrThrowKey store.checkpointStates att.data.target att.data.target.root
   let attesting := (← liftErr (getAttestingIndices targetState att)).qsort (· < ·)
   let indexedAttestation : IndexedAttestation := { attestingIndices := sszOfArray attesting, data := att.data, signature := att.signature }
   assert (isValidIndexedAttestation targetState indexedAttestation)
+
   set (updateLatestMessages store attesting att)
 
 /-! ## on_attester_slashing -/
@@ -760,6 +793,7 @@ forkdef onAttesterSlashing (asl : AttesterSlashing) : StoreTransition Unit := do
   let state ← FcMap.getOrThrow store.blockStates store.justifiedCheckpoint.root
   assert (isValidIndexedAttestation state asl.attestation1)
   assert (isValidIndexedAttestation state asl.attestation2)
+
   let set2 := asl.attestation2.attestingIndices.toArray
   let inter := arrayInter asl.attestation1.attestingIndices.toArray set2
   let eq := arrayUnion store.equivocatingIndices inter
@@ -774,6 +808,7 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) : S
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }
+
   { time := (sszGet anchorState genesisTime) + Const.slotDurationMs * (sszGet anchorState slot) / 1000
     genesisTime := sszGet anchorState genesisTime
     justifiedCheckpoint := cp, finalizedCheckpoint := cp

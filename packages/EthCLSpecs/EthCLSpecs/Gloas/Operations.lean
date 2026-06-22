@@ -125,6 +125,7 @@ forkdef onboardBuildersFromPendingDeposits : StateTransition Unit := do
   let state ← get
   let validatorPubkeys := (sszGet state validators).map (·.pubkey)
   let mut kept : Array PendingDeposit := #[]
+
   for d in (sszGet state pendingDeposits) do
     let state ← get
     let builderPubkeys := (sszGet state builders).map (·.pubkey)
@@ -136,6 +137,7 @@ forkdef onboardBuildersFromPendingDeposits : StateTransition Unit := do
       kept := kept.push d
     else
       applyDepositForBuilder d.pubkey d.withdrawalCredentials d.amount d.signature d.slot
+
   modifyState fun state => sszUpdate state with pendingDeposits := sszOfArray kept
 
 /-! ## Gloas-modified operations -/
@@ -148,6 +150,7 @@ forkdef processVoluntaryExit (sve : SignedVoluntaryExit) : StateTransition Unit 
   let domain := computeDomain Const.domainVoluntaryExit Const.capellaForkVersion (sszGet state genesisValidatorsRoot)
   let signingRoot := computeSigningRoot ve domain
   assert (currentEpochOf state ≥ ve.epoch)
+
   if isBuilderIndex ve.validatorIndex then
     let builderIndex := toBuilderIndex ve.validatorIndex
     let hb ← assertH (builderIndex.toNat < (sszGet state builders).size)
@@ -188,6 +191,7 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
   let state ← get
   let h1 := ps.signedHeader1.message
   let h2 := ps.signedHeader2.message
+
   assert (h1.slot == h2.slot)
   assert (h1.proposerIndex == h2.proposerIndex)
   assert (htr h1 != htr h2)
@@ -198,6 +202,8 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
     (getDomain state Const.domainBeaconProposer (computeEpochAtSlot h1.slot)) ps.signedHeader1.signature)
   assert (blsVerifySigned proposer.pubkey h2
     (getDomain state Const.domainBeaconProposer (computeEpochAtSlot h2.slot)) ps.signedHeader2.signature)
+
+  -- Void the slashed proposal's pending payment if it is still in the two-epoch window.
   -- The SSZ zero value: `default` is field-wise `default`, the all-zero container, so this
   -- clears the slot without restating the literal.
   let empty : BuilderPendingPayment := default
@@ -208,6 +214,7 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
   else if proposalEpoch == previousEpochOf state then
     modifyState fun state =>
       sszUpdate state with builderPendingPayments[builderPaymentIndex h1.slot false]! := empty
+
   slashValidator h1.proposerIndex
 
 /-! ## Attestation (payload-aware) + payload-timeliness committee (EIP-7732) -/
@@ -232,6 +239,7 @@ forkdef getAttestationParticipationFlagIndices (state : State) (data : Attestati
                    else sszGet state previousJustifiedCheckpoint
   let isMatchingSource := data.source.epoch == justified.epoch && data.source.root == justified.root
   if !isMatchingSource then return none
+
   let isMatchingTarget := data.target.root == getBlockRoot state data.target.epoch
   let sameSlot := isAttestationSameSlot state data
   if sameSlot && data.index != 0 then return none
@@ -241,6 +249,7 @@ forkdef getAttestationParticipationFlagIndices (state : State) (data : Attestati
       let bit := bitGet (sszGet state executionPayloadAvailability) (data.slot.toNat % Const.slotsPerHistoricalRoot)
       data.index == (if bit then (1 : UInt64) else 0)
   let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == getBlockRootAtSlot state data.slot && payloadMatches
+
   let mut flags : Array Nat := #[]
   if inclusionDelay ≤ UInt64.ofNat (isqrt Const.slotsPerEpoch) then flags := flags.push Const.timelySourceFlagIndex
   if isMatchingTarget then flags := flags.push Const.timelyTargetFlagIndex
@@ -255,22 +264,20 @@ to the slot's `BuilderPendingPayment.weight`, contributing once per slot. -/
 forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   let state ← get
   let data := att.data
+
+  -- Reject on shape: target epoch, slot timing, and the payload-presence bit.
   assert (data.target.epoch == previousEpochOf state || data.target.epoch == currentEpochOf state)
   assert (data.target.epoch == computeEpochAtSlot data.slot)
   assert (data.slot + Const.minAttestationInclusionDelay ≤ sszGet state slot)
   assert (data.index < 2)
+
+  -- Every committee index is valid and non-empty; the bitfield covers them all.
   let count := getCommitteeCountPerSlot state data.target.epoch
-  let (ok, offset) := (getCommitteeIndices att.committeeBits).foldl
-    (fun (acc : Bool × Nat) ci => Id.run do
-      let (okAcc, off) := acc
-      if (UInt64.ofNat ci).toNat ≥ count then return (false, off)
-      let committee := getBeaconCommittee state data.slot ci
-      let attesters := (List.range committee.size).foldl
-        (fun a i => if att.aggregationBits[off + i]! then a + 1 else a) 0
-      return (okAcc && attesters > 0, off + committee.size))
-    (true, 0)
+  let (ok, offset) := verifyCommitteeCoverage state data att count
   assert ok
   assert (att.aggregationBits.size == offset)
+
+  -- Resolve the participation flags, then validate the aggregate signature.
   let flagIndices ← match getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
@@ -278,6 +285,8 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
     { attestingIndices := sszOfArray ((← liftErr (getAttestingIndices state att)).qsort (· < ·)),
       data := att.data, signature := att.signature }
   assert (isValidIndexedAttestation state indexedAttestation)
+
+  -- Apply participation flags and accumulate the builder-payment weight.
   let currentTarget := data.target.epoch == currentEpochOf state
   let sameSlot := isAttestationSameSlot state data
   let paymentIdx := builderPaymentIndex data.slot currentTarget
@@ -304,11 +313,26 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
     if willSet && sameSlot && payment0.withdrawal.amount > 0 then
       let attester ← sszGetIdx (sszGet state validators) i
       weight := weight + attester.effectiveBalance
+
   -- Write back the (possibly weight-updated) payment, as the spec does unconditionally.
   stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := { payment0 with weight := weight }
   let proposerDenom := (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
   stateAcc := increaseBalance stateAcc (getBeaconProposerIndex stateAcc) (UInt64.ofNat (proposerNum / proposerDenom))
   set stateAcc
+where
+  /-- Walk the committee bits: each referenced committee index is in range and
+  attested by at least one bit, and the running `offset` totals their sizes (the
+  aggregation bitfield must match it exactly). Returns `(valid?, totalSize)`. -/
+  verifyCommitteeCoverage (state : State) (data : AttestationData) (att : Attestation) (count : Nat) : Bool × Nat :=
+    (getCommitteeIndices att.committeeBits).foldl
+      (fun (acc : Bool × Nat) ci => Id.run do
+        let (okAcc, off) := acc
+        if (UInt64.ofNat ci).toNat ≥ count then return (false, off)
+        let committee := getBeaconCommittee state data.slot ci
+        let attesters := (List.range committee.size).foldl
+          (fun a i => if att.aggregationBits[off + i]! then a + 1 else a) 0
+        return (okAcc && attesters > 0, off + committee.size))
+      (true, 0)
 
 /-- `get_ptc` (v1.7.0-alpha.10): read the cached PTC for `slot` from `ptc_window`.
 For a slot in the previous epoch the window's first `SLOTS_PER_EPOCH` entries hold
@@ -386,8 +410,10 @@ forkdef settleBuilderPayment (paymentIndex : Nat) : StateTransition Unit := do
   let state ← get
   assert (paymentIndex < 2 * Const.slotsPerEpoch)
   let payment := vget (sszGet state builderPendingPayments) paymentIndex
+
   if payment.withdrawal.amount > 0 then
     appendState builderPendingWithdrawals payment.withdrawal
+
   let empty : BuilderPendingPayment := default
   modifyState fun state =>
     sszUpdate state with builderPendingPayments[paymentIndex]! := empty
@@ -401,6 +427,9 @@ forkdef processExecutionPayloadBid (block : BeaconBlock) : StateTransition Unit 
   let bid := signedBid.message
   let builderIndex := bid.builderIndex
   let amount := bid.value
+
+  -- A self-build sentinel carries no value or signature; a real builder must be
+  -- active, funded, and the signer of the bid.
   if builderIndex == Const.builderIndexSelfBuild then
     assert (amount == 0)
     assert (signedBid.signature == Const.g2PointAtInfinity)
@@ -408,17 +437,20 @@ forkdef processExecutionPayloadBid (block : BeaconBlock) : StateTransition Unit 
     assert (isActiveBuilder state builderIndex)
     assert (canBuilderCoverBid state builderIndex amount)
     assert (verifyExecutionPayloadBidSignature state signedBid)
+
   assert (bid.blobKzgCommitments.size ≤ Const.maxBlobsPerBlockElectra)
   assert (bid.slot == block.slot)
   assert (bid.parentBlockHash == sszGet state latestBlockHash)
   assert (bid.parentBlockRoot == block.parentRoot)
   let randaoMix ← getRandaoMix (currentEpochOf state)
   assert (bid.prevRandao == randaoMix)
+
   if amount > 0 then
     let pending : BuilderPendingPayment :=
       { weight := 0, withdrawal := { feeRecipient := bid.feeRecipient, amount := amount, builderIndex := builderIndex } }
     modifyState fun state =>
       sszUpdate state with builderPendingPayments[builderPaymentIndex bid.slot true]! := pending
+
   modifyState fun state => sszUpdate state with latestExecutionPayloadBid := bid
 
 /-- `apply_parent_execution_payload`: process the parent payload's execution requests
@@ -429,9 +461,13 @@ forkdef applyParentExecutionPayload (requests : ExecutionRequests) : StateTransi
   let parentBid := sszGet state latestExecutionPayloadBid
   let parentSlot := parentBid.slot
   let parentEpoch := computeEpochAtSlot parentSlot
+
   for d in requests.deposits do processDepositRequest d
   for w in requests.withdrawals do processWithdrawalRequest w
   for c in requests.consolidations do processConsolidationRequest c
+
+  -- Settle the parent's payment if it is still in the two-epoch window; outside it,
+  -- queue any remaining value directly as a builder withdrawal.
   if parentEpoch == currentEpochOf state then
     settleBuilderPayment (builderPaymentIndex parentSlot true)
   else if parentEpoch == previousEpochOf state then
@@ -439,6 +475,7 @@ forkdef applyParentExecutionPayload (requests : ExecutionRequests) : StateTransi
   else if parentBid.value > 0 then
     appendState builderPendingWithdrawals
       { feeRecipient := parentBid.feeRecipient, amount := parentBid.value, builderIndex := parentBid.builderIndex }
+
   modifyState fun state => sszUpdate state with executionPayloadAvailability :=
     bitSet (sszGet state executionPayloadAvailability) (umodIdx parentSlot Const.slotsPerHistoricalRoot) true
   modifyState fun state => sszUpdate state with latestBlockHash := parentBid.blockHash

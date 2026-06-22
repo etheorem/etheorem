@@ -61,9 +61,11 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
   let state ← get
   let h1 := ps.signedHeader1.message
   let h2 := ps.signedHeader2.message
+
   assert (h1.slot == h2.slot)
   assert (h1.proposerIndex == h2.proposerIndex)
   assert (htr h1 != htr h2)
+
   let hb ← assertH (h1.proposerIndex.toNat < (sszGet state validators).size)
   let proposer := (sszGet state validators)[h1.proposerIndex.toNat]'hb.down
   assert (isSlashableValidator proposer (currentEpochOf state))
@@ -71,6 +73,7 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
     (getDomain state Const.domainBeaconProposer (computeEpochAtSlot h1.slot)) ps.signedHeader1.signature)
   assert (blsVerifySigned proposer.pubkey h2
     (getDomain state Const.domainBeaconProposer (computeEpochAtSlot h2.slot)) ps.signedHeader2.signature)
+
   slashValidator h1.proposerIndex
 
 /-- `process_attester_slashing`. -/
@@ -79,8 +82,10 @@ forkdef processAttesterSlashing (asl : AttesterSlashing) : StateTransition Unit 
   assert (isSlashableAttestationData asl.attestation1.data asl.attestation2.data)
   assert (isValidIndexedAttestation state asl.attestation1)
   assert (isValidIndexedAttestation state asl.attestation2)
+
   let set2 := asl.attestation2.attestingIndices.toArray
   let indices := (arrayInter asl.attestation1.attestingIndices.toArray set2).qsort (· < ·)
+
   let mut slashedAny := false
   for idx in indices do
     let state ← get
@@ -103,6 +108,7 @@ forkdef getAttestationParticipationFlagIndices (state : State) (data : Attestati
   if !isMatchingSource then return none
   let isMatchingTarget := data.target.root == getBlockRoot state data.target.epoch
   let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == getBlockRootAtSlot state data.slot
+
   let mut flags : Array Nat := #[]
   if inclusionDelay ≤ UInt64.ofNat (isqrt Const.slotsPerEpoch) then flags := flags.push Const.timelySourceFlagIndex
   if isMatchingTarget then flags := flags.push Const.timelyTargetFlagIndex
@@ -127,24 +133,21 @@ forkdef getAttestingIndices (state : State) (att : Attestation) : Except IndexEr
 forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   let state ← get
   let data := att.data
+
+  -- Reject on shape: target epoch, slot timing, and the committee index bound.
   assert (data.target.epoch == previousEpochOf state || data.target.epoch == currentEpochOf state)
   assert (data.target.epoch == computeEpochAtSlot data.slot)
   assert (data.slot + Const.minAttestationInclusionDelay ≤ sszGet state slot)
   assert (data.index == 0)
-  -- Each committee index is valid and contributes ≥1 attester; the bitfield length
-  -- matches the total committee size.
+
+  -- Every committee index is valid and contributes at least one attester; the
+  -- aggregation bitfield length matches the total committee size.
   let count := getCommitteeCountPerSlot state data.target.epoch
-  let (ok, offset) := (getCommitteeIndices att.committeeBits).foldl
-    (fun (acc : Bool × Nat) ci => Id.run do
-      let (okAcc, off) := acc
-      if (UInt64.ofNat ci).toNat ≥ count then return (false, off)
-      let committee := getBeaconCommittee state data.slot ci
-      let attesters := (List.range committee.size).foldl
-        (fun a i => if att.aggregationBits[off + i]! then a + 1 else a) 0
-      return (okAcc && attesters > 0, off + committee.size))
-    (true, 0)
+  let (ok, offset) := verifyCommitteeCoverage state data count
   assert ok
   assert (att.aggregationBits.size == offset)
+
+  -- Resolve the participation flags, then validate the aggregate signature.
   let flagIndices ← match getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "is_matching_source")
@@ -152,6 +155,8 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
     { attestingIndices := sszOfArray ((← liftErr (getAttestingIndices state att)).qsort (· < ·)),
       data := att.data, signature := att.signature }
   assert (isValidIndexedAttestation state indexedAttestation)
+
+  -- Apply participation flags and accumulate the proposer-reward numerator.
   let currentTarget := data.target.epoch == currentEpochOf state
   let mut stateAcc := state
   let mut proposerNum := 0
@@ -170,9 +175,24 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
                  else
                    sszUpdate stateAcc with previousEpochParticipation[i]! := addFlag flag flagIndex
         proposerNum := proposerNum + (← liftErr (getBaseReward state vi)) * Const.participationFlagWeights[flagIndex]!
+
+  -- Pay the proposer the accumulated weight.
   let proposerDenom := (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
   stateAcc := increaseBalance stateAcc (getBeaconProposerIndex stateAcc) (UInt64.ofNat (proposerNum / proposerDenom))
   set stateAcc
+where
+  /-- Fold over the attestation's committee indices: each must be below `count` and
+  contribute at least one attester. Returns `(allValid, totalCommitteeSize)`. -/
+  verifyCommitteeCoverage (state : State) (data : AttestationData) (count : Nat) : Bool × Nat :=
+    (getCommitteeIndices att.committeeBits).foldl
+      (fun (acc : Bool × Nat) ci => Id.run do
+        let (okAcc, off) := acc
+        if (UInt64.ofNat ci).toNat ≥ count then return (false, off)
+        let committee := getBeaconCommittee state data.slot ci
+        let attesters := (List.range committee.size).foldl
+          (fun a i => if att.aggregationBits[off + i]! then a + 1 else a) 0
+        return (okAcc && attesters > 0, off + committee.size))
+      (true, 0)
 
 /-! ## Deposits -/
 
@@ -195,6 +215,7 @@ forkdef processDeposit (d : Deposit) : StateTransition Unit := do
   let state ← get
   assert (isValidMerkleBranch (htr d.data) d.proof.toArray (Const.depositContractTreeDepth + 1)
     (sszGet state eth1DepositIndex).toNat (sszGet state eth1Data).depositRoot)
+
   modifyState fun state => sszUpdate state with eth1DepositIndex := (sszGet state eth1DepositIndex) + 1
   applyDeposit d.data.pubkey d.data.withdrawalCredentials d.data.amount d.data.signature
 
@@ -206,13 +227,16 @@ forkdef processVoluntaryExit (sve : SignedVoluntaryExit) : StateTransition Unit 
   let ve := sve.message
   let hb ← assertH (ve.validatorIndex.toNat < (sszGet state validators).size)
   let validator := (sszGet state validators)[ve.validatorIndex.toNat]'hb.down
+
   assert (isActiveValidator validator (currentEpochOf state))
   assert (hasNotInitiatedExit validator)
   assert (currentEpochOf state ≥ ve.epoch)
   assert (passedShardCommitteePeriod validator (currentEpochOf state))
   assert (getPendingBalanceToWithdraw state ve.validatorIndex == 0)
+
   let domain := computeDomain Const.domainVoluntaryExit Const.capellaForkVersion (sszGet state genesisValidatorsRoot)
   assert (blsVerifySigned validator.pubkey ve domain sve.signature)
+
   initiateValidatorExit ve.validatorIndex
 
 /-! ## BLS-to-execution changes -/
@@ -223,11 +247,13 @@ forkdef processBlsToExecutionChange (sbc : SignedBLSToExecutionChange) : StateTr
   let ac := sbc.message
   let hb ← assertH (ac.validatorIndex.toNat < (sszGet state validators).size)
   let validator := (sszGet state validators)[ac.validatorIndex.toNat]'hb.down
+
   assert (credPrefix validator.withdrawalCredentials == Const.blsWithdrawalPrefix)
   let h := sha ac.fromBlsPubkey
   assert ((List.range 31).all (fun k => vget validator.withdrawalCredentials (k + 1) == h.get! (k + 1)))
   let domain := computeDomain Const.domainBlsToExecutionChange Const.genesisForkVersion (sszGet state genesisValidatorsRoot)
   assert (blsVerifySigned ac.fromBlsPubkey ac domain sbc.signature)
+
   let newWc : Bytes32 := Vector.ofFn (fun i : Fin 32 =>
     if i.val == 0 then Const.eth1AddressWithdrawalPrefix
     else if i.val < 12 then 0
@@ -251,6 +277,7 @@ withdrawal for a compounding validator with excess balance. -/
 forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit := do
   let state ← get
   let isFullExit := wr.amount == Const.fullExitRequestAmount
+  -- Gate: the partial-withdrawal queue has room (full exits bypass the queue cap).
   if (sszGet state pendingPartialWithdrawals).size == Const.pendingPartialWithdrawalsLimit && !isFullExit then
     pure ()
   else
@@ -261,6 +288,8 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
       let validator := sszGet state validators[idxN]!
       let correctCred := hasExecutionWithdrawalCredential validator
       let correctSource := vecSliceEq validator.withdrawalCredentials 12 wr.sourceAddress 0 20
+      -- Validity ladder: execution credential + matching source, active, not exiting,
+      -- past the shard-committee period.
       if !(correctCred && correctSource) then pure ()
       else if !isActiveValidator validator (currentEpochOf state) then pure ()
       else if !hasNotInitiatedExit validator then pure ()
@@ -301,10 +330,12 @@ forkdef isValidSwitchToCompoundingRequest (state : State) (req : ConsolidationRe
 /-- `process_consolidation_request` (EIP-7251). -/
 forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransition Unit := do
   let state ← get
+  -- A switch-to-compounding request is handled separately from a consolidation.
   if isValidSwitchToCompoundingRequest state req then
     match validatorIndexByPubkey? state req.sourcePubkey with
     | some si => switchToCompoundingValidator (UInt64.ofNat si)
     | none    => pure ()
+  -- Request-level gates: distinct source/target, queue room, churn capacity.
   else if req.sourcePubkey == req.targetPubkey then pure ()
   else if (sszGet state pendingConsolidations).size == Const.pendingConsolidationsLimit then pure ()
   else if getConsolidationChurnLimit state ≤ Const.minActivationBalance then pure ()
@@ -316,6 +347,9 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
       let tgt := validators[tgtN]?.getD default
       let correctCred := hasExecutionWithdrawalCredential src
       let correctSource := vecSliceEq src.withdrawalCredentials 12 req.sourceAddress 0 20
+      -- Validity ladder: source execution credential + matching source, target
+      -- compounding, both active, neither exiting, source past the shard-committee
+      -- period with no pending withdrawal.
       if !(correctCred && correctSource) then pure ()
       else if !hasCompoundingWithdrawalCredential tgt then pure ()
       else if !isActiveValidator src (currentEpochOf state) then pure ()
@@ -342,6 +376,7 @@ forkdef processOperations (body : BeaconBlockBody) : StateTransition Unit := do
     assert (UInt64.ofNat body.deposits.size == umin (UInt64.ofNat Const.maxDeposits) (limit - (sszGet state eth1DepositIndex)))
   else
     assert (body.deposits.size == 0)
+
   for op in body.proposerSlashings do processProposerSlashing op
   for op in body.attesterSlashings do processAttesterSlashing op
   for op in body.attestations do processAttestation op

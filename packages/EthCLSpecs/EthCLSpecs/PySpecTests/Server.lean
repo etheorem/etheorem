@@ -56,6 +56,7 @@ private def parseVotes (s : String) : Array (Option Bool) :=
 private def buildRequest (fields : Array String) : IO CaseRequest := do
   if fields.size < 9 then
     throw (IO.userError s!"malformed request: expected ≥9 tab-fields, got {fields.size}")
+
   let runner  := fields[0]!
   let handler := fields[1]!
   -- `pre` is `-` for formats with no single pre-state file (`fork_choice`'s
@@ -74,9 +75,11 @@ private def buildRequest (fields : Array String) : IO CaseRequest := do
   -- Optional 10th field: `execution_valid` for `operations/execution_payload` (the
   -- mocked EL verdict); absent ⇒ `true`.
   let executionValid := (fields[9]?.getD "1") == "1"
+
   let mut inputs : Array ByteArray := #[]
   for p in inputPaths do
     inputs := inputs.push (← IO.FS.readBinFile p)
+
   return {
     runner, handler, pre, post, inputs,
     caseMeta := { blsSetting, blocksCount, forkEpoch, forkBlock, executionValid }
@@ -93,6 +96,7 @@ private def hexDigit (c : Char) : Nat :=
 private def hexToBytes (s : String) : ByteArray := Id.run do
   let cs0 := s.toList.toArray
   let cs := if s.startsWith "0x" then cs0.extract 2 cs0.size else cs0
+
   let mut out := ByteArray.empty
   for i in [0:cs.size / 2] do
     out := out.push (UInt8.ofNat (hexDigit cs[2*i]! * 16 + hexDigit cs[2*i+1]!))
@@ -106,6 +110,9 @@ private def handleForkChoice (iface : ForkInterface) (fields : Array String) : I
   let inputs := if fields[7]!.isEmpty then #[] else (fields[7]!.splitOn ",").toArray
   let anchorBlock ← IO.FS.readBinFile inputs[0]!
   let scriptTxt ← IO.FS.readFile inputs[1]!
+
+  -- Decode the step script: one `steps.yaml` entry per line, the leading token names
+  -- the step and the rest reference its decompressed SSZ files / scalar arguments.
   let mut steps : Array FcStep := #[]
   for rawLine in scriptTxt.splitOn "\n" do
     let parts := ((rawLine.splitOn " ").filter (· != "")).toArray
@@ -135,6 +142,7 @@ private def handleForkChoice (iface : ForkInterface) (fields : Array String) : I
       | "genesis_time"      => steps := steps.push (.checkGenesisTime parts[1]!.toNat!)
       | "unsupported"       => steps := steps.push (.unsupported "get_proposer_head / should_override check")
       | _                   => pure ()
+
   match iface.runForkChoice anchorState anchorBlock steps with
   | .ok ()   => return "pass\tpassing\t"
   | .error e =>

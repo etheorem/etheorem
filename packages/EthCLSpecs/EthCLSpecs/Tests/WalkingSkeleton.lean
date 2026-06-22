@@ -61,7 +61,7 @@ example :
 -- A still-deferred entry (`runGenesis`) returns a `todo` reject, the typed
 -- deferral safety net: a vector that reaches it fails loudly, never silently.
 #guard (match fuluInterface.runGenesis #[] {} with
-  | .error (.todo _) => true | _ => false)
+  | .error (.spec (.todo _)) => true | _ => false)
 
 /-- A `genesis` request. `runGenesis` is a `todo`; the driver classifies the
 unimplemented path out-of-scope so the case fails rather than passing silently. -/

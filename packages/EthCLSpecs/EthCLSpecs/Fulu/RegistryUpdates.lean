@@ -81,6 +81,7 @@ forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Ep
   let earliest := umax (sszGet state earliestExitEpoch) (computeActivationExitEpoch currentEpoch)
   let perEpochChurn := getActivationExitChurnLimit state
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
+
   let (ee, ebtc) := reserveChurn exitBalance consume perEpochChurn earliest
   modifyState fun state =>
     sszUpdate state with exitBalanceToConsume := ebtc - exitBalance, earliestExitEpoch := ee
@@ -95,6 +96,7 @@ forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : 
   let perEpoch := getConsolidationChurnLimit state
   let consume := if (sszGet state earliestConsolidationEpoch) < earliest then perEpoch
                  else (sszGet state consolidationBalanceToConsume)
+
   let (ee, cbtc) := reserveChurn consolidationBalance consume perEpoch earliest
   modifyState fun state =>
     sszUpdate state with consolidationBalanceToConsume := cbtc - consolidationBalance,
@@ -126,6 +128,9 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
   let state ← get
   let validator ← sszGetIdx (sszGet state validators) i.toNat
   let slashIdx := umodIdx epoch Const.epochsPerSlashingsVector
+
+  -- Mark slashed, extend withdrawability, record the effective balance in the
+  -- slashings ring buffer, and apply the slashing penalty.
   let state := modValidator state i fun validator =>
     { validator with
         slashed := true,
@@ -134,6 +139,8 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
     slashings[slashIdx]! := (vget (sszGet state slashings) slashIdx + validator.effectiveBalance)
   let state := decreaseBalance state i (validator.effectiveBalance / UInt64.ofNat Const.minSlashingPenaltyQuotientElectra)
   set state
+
+  -- Pay the proposer its share of the whistleblower reward, then the remainder.
   let proposerIdx := getBeaconProposerIndex (← get)
   let whistleblowerReward := validator.effectiveBalance / UInt64.ofNat Const.whistleblowerRewardQuotientElectra
   let proposerReward := whistleblowerReward * UInt64.ofNat Const.proposerWeight / UInt64.ofNat Const.weightDenominator
