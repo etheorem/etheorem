@@ -45,10 +45,19 @@ private def decodeState (P : Preset) (bytes : ByteArray) :
   | .ok box  => .ok box
   | .error _ => .error (.decode "BeaconState")
 
-/-- `stateRoot`: decode a `BeaconState` and take its hash-tree-root. -/
+/-- `stateRoot`: decode a `BeaconState` and take its hash-tree-root. A one-shot
+terminal root: the decoded value never escapes (the interface returns bytes), and
+no mutation happens between decode and root, so it roots through the uncached
+`htr` with no cached box to build and immediately drop. The mutating entries
+(`runOperation`, `runSlots`, …) still take the cached `decodeState` box, where the
+cache earns its keep across `sszUpdate` re-hashes. -/
 private def stateRootImpl (P : Preset) (bytes : ByteArray) :
     Except (RunError StateTransitionError) ByteArray :=
-  (decodeState P bytes).map (fun box => stateRoot! box)
+  letI : Preset := P
+  letI : HasherTag := fastHasherTag
+  match SSZ.deserialize (T := @BeaconState P) bytes with
+  | .ok v    => .ok (htr v)
+  | .error _ => .error (.decode "BeaconState")
 
 /-- `runSlots`: decode the pre-state, advance to `slot + n` through the real
 `processSlots` (running `processEpoch` at each boundary) at the fast config, and
