@@ -449,19 +449,20 @@ forkdef getHead (store : Store map) : ForkChoiceNode :=
   fuelIterate (2 * (FcMap.keys store.blocks).length + 2) head fun head =>
     let children := getNodeChildren store blocks head
     if children.isEmpty then .done head
-    else .next (children.foldl (init := children[0]!) fun acc c => if better store c acc then c else acc)
+    else .next (children.foldl (init := children[0]!) (betterOf store))
 where
-  /-- `(weight, root, tiebreaker)` ordering: greater weight wins; ties by greater
-  root; further ties by greater tiebreaker. -/
-  better (store : Store map) (a b : ForkChoiceNode) : Bool :=
+  /-- The better of two candidate head nodes under the `(weight, root, tiebreaker)`
+  ordering: greater weight wins, ties by greater root, further ties by the greater
+  payload-status tiebreaker. -/
+  betterOf (store : Store map) (a b : ForkChoiceNode) : ForkChoiceNode :=
     let weightA := getWeight store a
     let weightB := getWeight store b
-    if weightA > weightB then true
-    else if weightA < weightB then false
+    if weightA > weightB then a
+    else if weightB > weightA then b
     else match compare a.root b.root with
-      | Ordering.gt => true
-      | Ordering.lt => false
-      | Ordering.eq => getPayloadStatusTiebreaker store a > getPayloadStatusTiebreaker store b
+      | Ordering.gt => a
+      | Ordering.lt => b
+      | Ordering.eq => if getPayloadStatusTiebreaker store a > getPayloadStatusTiebreaker store b then a else b
 
 /-! ## Checkpoint updates -/
 

@@ -205,14 +205,16 @@ forkdef getHead (store : Store map) : Root :=
       | some b => b.parentRoot == head
       | none   => false
     if children.isEmpty then .done head
-    else
-      let best := children.foldl (init := children[0]!) fun b r =>
-        let wb := getWeight store b
-        let wr := getWeight store r
-        if wr > wb then r
-        else if wr == wb && compare r b == Ordering.gt then r
-        else b
-      .next best
+    else .next (children.foldl (init := children[0]!) (betterOf store))
+where
+  /-- The better of two candidate heads under the `(weight, root)` ordering: greater
+  weight wins, ties broken by the greater root. -/
+  betterOf (store : Store map) (a b : Root) : Root :=
+    let weightA := getWeight store a
+    let weightB := getWeight store b
+    if weightA > weightB then a
+    else if weightB > weightA then b
+    else if compare a b == Ordering.gt then a else b
 
 /-! ## Proposer-head reorg logic (`get_proposer_head`) -/
 
