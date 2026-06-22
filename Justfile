@@ -245,6 +245,16 @@ ethcl-conformance-smoke:
     cd packages/EthCLSpecs/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --fork=fulu --subset=2
     cd packages/EthCLSpecs/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --fork=gloas --subset=2
 
+# The complete in-scope sweep: every collected vector (`--subset=0`) for the
+# full matrix of {fulu, gloas} × {minimal, mainnet}, sharded across cores. The
+# two minimal forks finish quickly; the two mainnet forks are the long poles
+# (real-size SSZ + crypto). Each xdist worker holds its own warm `pyspec_server`.
+ethcl-pyspec-full:
+    cd packages/EthCLSpecs/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --subset=0 -n auto --preset=minimal --fork=fulu
+    cd packages/EthCLSpecs/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --subset=0 -n auto --preset=minimal --fork=gloas
+    cd packages/EthCLSpecs/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --subset=0 -n auto --preset=mainnet --fork=fulu
+    cd packages/EthCLSpecs/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --subset=0 -n auto --preset=mainnet --fork=gloas
+
 # Building the core fires the in-file anchor-KAT `native_decide` gate
 # (input [0,1,2] → the known BN254 t=3 Poseidon2 output). Nothing in
 # the monorepo depends on LeanPoseidon (standalone island), so unlike
