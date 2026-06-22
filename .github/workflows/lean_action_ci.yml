@@ -33,12 +33,11 @@ jobs:
     # In-Lean property tests: SHA-256 NIST CAVP vectors against both
     # the pure-Lean spec (LeanSha256) and the OpenSSL FFI shim
     # (LeanHazmatSha256), the FFI ≡ spec equivalence cross-checks, SSZ
-    # library gates (Merkle PRNG, cache machinery on example
-    # containers), and LeanEthCS compile-time validation (every
-    # `deriving SSZRepr` is a build-time gate). All fire as
-    # `native_decide` examples via `lake build`. The libraries
-    # themselves build transitively, so this job subsumes the previous
-    # standalone build gate.
+    # and SSZ library gates (Merkle PRNG, cache machinery on example
+    # containers). All fire as `native_decide` examples via `lake build`.
+    # The libraries themselves build transitively, so this job subsumes
+    # the previous standalone build gate. The consensus-spec libraries
+    # (EthCLLib / EthCLSpecs) have their own `ethcl` job.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -61,11 +60,12 @@ jobs:
         run: just test
 
   conformance:
-    # Stage 14a/b acceptance: passes upstream consensus-specs vectors.
-    # Smoke gate (`--limit 1` on each suite, mainnet preset, ~30 s wall-
-    # clock) runs on every push / pull_request. `workflow_dispatch` with
+    # ssz_generic acceptance: the fork-agnostic SSZ wire-format suite, run via
+    # the SizzLean pytest harness + `ssz_generic_runner`. The dev-subset smoke
+    # gate runs on every push / pull_request; `workflow_dispatch` with
     # `conformance_limit: all` upgrades to the full sweep
-    # (`just official-ssz-vector-tests-all`).
+    # (`just ssz-generic-conformance-full`). The per-fork ssz_static container
+    # vectors run in the `ethcl` job.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -76,12 +76,11 @@ jobs:
           python-version: '3.12'
 
       - name: Cache consensus-spec-tests archives
-        # Cache only the .tar.gz files (~490 MB for mainnet + general);
-        # the extracted trees (~4 GB total) re-build on each run via
-        # `ensure_archive` in run_conformance.py — extraction is ~1 min,
-        # much cheaper than the GitHub-side cache transfer would be.
-        # Keyed on `DEFAULT_TAG`; bumping it invalidates and the cache
-        # repopulates on first run.
+        # Cache only the .tar.gz files (the `general` archive ssz_generic uses);
+        # the extracted trees re-build on each run via `ensure_archive` in the
+        # SizzLean harness, extraction is ~1 min, much cheaper than the
+        # GitHub-side cache transfer would be. Keyed on the pinned tag; bumping
+        # it invalidates and the cache repopulates on first run.
         uses: actions/cache@v4
         with:
           path: ~/.cache/sizzlean/v1.7.0-alpha.10-*.tar.gz
@@ -101,27 +100,21 @@ jobs:
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
         with:
           lake-package-directory: '.'
-          # Build the CLI the conformance harness drives via batch
-          # protocol. The SizzLean library + LeanEthCS compile
-          # transitively as its dependencies, so they don't need
-          # naming here.
-          build-args: 'eth_ssz_vector_runner'
+          # Build the runner the ssz_generic harness drives; SizzLean and the
+          # LeanHazmat FFI deps compile transitively.
+          build-args: 'ssz_generic_runner'
 
       - name: Install Python dependencies
         run: just setup-python
 
-      - name: Run conformance suite
-        # Mainnet preset is the green gate today; minimal-preset full
-        # sweep is blocked by a LeanEthCS-side gap (per-preset container
-        # constants — see `just official-ssz-vector-tests-static-minimal`
-        # comment in `Justfile`).
+      - name: Run ssz_generic conformance suite
         run: |
           set -euo pipefail
           LIMIT='${{ github.event.inputs.conformance_limit || '1' }}'
           if [ "$LIMIT" = "all" ]; then
-            just official-ssz-vector-tests-all
+            just ssz-generic-conformance-full
           else
-            just official-ssz-vector-tests-smoke
+            just ssz-generic-conformance-smoke
           fi
 
   ethcl:
@@ -131,13 +124,15 @@ jobs:
     # seam, the running step, map-backing equivalence, the signing-root and
     # Merkle-branch primitives, the walking-skeleton discharge). Then the
     # `pytest-xdist` conformance smoke gate runs the dev subset at minimal for
-    # both forks through the per-worker `pyspec_server`. Both forks are green on
-    # every collected in-scope format (Fulu incl. PeerDAS data availability,
-    # standalone execution_payload, and get_proposer_head; Gloas the full EIP-7732
-    # ePBS spine, operations, fork choice, and transition), with zero `xfail` — the
-    # only out-of-scope vectors (Electra-parent Fulu fork/transition, ssz_static,
-    # light_client, networking, merkle_proof, sync) are deselected, not collected.
-    # Mainnet and the full sweep run on demand (`--preset=mainnet`, `--subset=0`).
+    # both forks through the per-worker `pyspec_server`. The consensus formats are
+    # green for both forks (Fulu incl. PeerDAS data availability, standalone
+    # execution_payload, and get_proposer_head; Gloas the full EIP-7732 ePBS spine,
+    # operations, fork choice, and transition). The per-fork ssz_static container
+    # vectors are collected too: the consensus containers pass, and the types
+    # EthCLSpecs does not model (light-client, gossip, networking helpers) xfail.
+    # Out of scope and not collected: Electra-parent Fulu fork/transition,
+    # light_client, networking, merkle_proof, sync. Mainnet and the full sweep run
+    # on demand (`--preset=mainnet`, `--subset=0`).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

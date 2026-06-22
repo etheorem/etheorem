@@ -6,11 +6,12 @@
 # Layers, in order of how heavy they are to run:
 #   1. `build`              — compile every library
 #   2. `test`               — local property tests (in-Lean `native_decide`)
-#   3. `official-ssz-vector-tests*` — drive the Lean CLI against
-#      `ethereum/consensus-spec-tests` release archives
+#   3. conformance          — pytest harnesses driving the Lean servers against
+#      `ethereum/consensus-spec-tests` vectors: `ethcl-conformance*` (Fulu/Gloas
+#      state transition, fork choice, ssz_static) and `ssz-generic-conformance*`
+#      (the SizzLean ssz_generic wire-format suite)
 #
-# The official-vector-tests recipes need a Python venv. Run
-# `just setup-python` once before invoking them.
+# The conformance recipes need a Python venv. Run `just setup-python` once first.
 
 
 # List every recipe with its description
@@ -22,22 +23,25 @@ default:
 # Build
 # ─────────────────────────────────────────────────────────────────────────
 
-# Compile every library: the SSZ chain (LeanSha256 → SizzLean → LeanEthCS),
-# the LeanHazmat FFI crypto families, and the standalone LeanPoseidon island.
-# The vendored families (LeanHazmatBls, LeanHazmatKzg) need their `vendor-*`
-# recipes first; the dependencies run them (idempotent) before building.
+# Compile every library: the SSZ chain (LeanSha256 → SizzLean → EthCLLib →
+# EthCLSpecs), the LeanHazmat FFI crypto families, and the standalone
+# LeanPoseidon island. The vendored families (LeanHazmatBls, LeanHazmatKzg) need
+# their `vendor-*` recipes first; the dependencies run them (idempotent) before
+# building. `lake build EthCLSpecs` pulls in EthCLLib + SizzLean transitively.
 build: vendor-bls vendor-kzg
     lake build LeanSha256
     lake build LeanHazmatSha256
     lake build LeanHazmatBls
     lake build LeanHazmatKzg
     lake build SizzLean
-    lake build LeanEthCS
+    lake build EthCLSpecs
     lake build LeanPoseidon
 
-# Compile the `eth_ssz_vector_runner` CLI driver used by the official-vector-test recipes
+# Compile the conformance runners the pytest harnesses drive: `pyspec_server`
+# (EthCLSpecs state transition / fork choice / ssz_static) and
+# `ssz_generic_runner` (SizzLean ssz_generic wire-format suite).
 build-cli:
-    lake build eth_ssz_vector_runner
+    lake build pyspec_server ssz_generic_runner
 
 # Wipe Lake build artefacts (`.lake/` everywhere)
 clean:
@@ -165,7 +169,7 @@ doctor: doctor-native
     done
 
     echo
-    echo "[ conformance harness — only needed for official-ssz-vector-tests* recipes ]"
+    echo "[ conformance harness — only needed for the *-conformance* pytest recipes ]"
     for cmd in python3 uv; do
       if command -v "$cmd" >/dev/null 2>&1; then
         info "$(printf '%-17s' "$cmd") ($("$cmd" --version 2>&1 | head -1))"
@@ -186,8 +190,8 @@ doctor: doctor-native
     echo
     echo "all dev-time deps present"
 
-# All local tests — SHA-256 spec + FFI CAVP + BLS + KZG KATs + SSZ library gates + LeanEthCS compile-time validation + Poseidon2 anchor KAT
-test: test-sha256 test-sha256-hazmat test-bls test-kzg test-ssz test-eth test-poseidon
+# All local tests — SHA-256 spec + FFI CAVP + BLS + KZG KATs + SSZ library gates + Poseidon2 anchor KAT. The consensus-spec libraries (EthCLLib / EthCLSpecs) have their own `test-ethcl` recipe and CI job.
+test: test-sha256 test-sha256-hazmat test-bls test-kzg test-ssz test-poseidon
 
 # Full NIST CAVP byte-oriented SHA-256 vectors against the pure-Lean SPEC — 129 cases via native_decide, ~108s (the 3 anchor FIPS 180-4 §B gates already fire on `lake build LeanSha256` itself; this adds the full upstream suite)
 test-sha256:
@@ -219,10 +223,6 @@ test-ssz:
     @echo "  The final \"Build completed successfully\" line is authoritative."
     @echo
     lake build SizzLeanTests
-
-# LeanEthCS validation — building the library *is* the test: every `deriving SSZRepr` is a compile-time gate. No in-Lean property tests of its own; upstream-vector conformance lives under `official-ssz-vector-tests*`.
-test-eth:
-    lake build LeanEthCS
 
 # EthCLLib + EthCLSpecs (the consensus-spec framework + Fulu/Gloas bodies). The
 # `*Tests` libs carry the framework + spec `#guard` / `native_decide` self-tests
@@ -324,58 +324,32 @@ bench-diff before after:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Official Ethereum consensus-spec-tests vector suites
+# ssz_generic conformance — the fork-agnostic SSZ wire-format suite
 #
-# Driven by `scripts/run_conformance.py` against
-# `ethereum/consensus-spec-tests` release archives. Requires the
-# Python venv set up via `just setup-python`.
+# Driven by the SizzLean pytest harness (`packages/SizzLean/PySpecTests/`) +
+# `ssz_generic_runner`, against the `general` archive of
+# `ethereum/consensus-spec-tests`. It exercises the `SSZType` wire format
+# directly (uints, basic_vector, bitvector, bitlist, boolean, the test-only
+# containers); the EIP-7495 / 7916 / 8016 progressive / stable / compatible
+# forms are out of `SizzLean`'s universe and xfail. Requires `just setup-python`.
 #
-# Two suites:
-#   • `ssz_generic` — wire-format tests, type-agnostic (uints,
-#     basic_vector, bitvector, bitlist, boolean, containers).
-#   • `ssz_static`  — per-fork consensus-container tests
-#     (BeaconState, Attestation, BeaconBlockBody, …).
+# The per-fork consensus-container `ssz_static` vectors run inside the EthCLSpecs
+# `ethcl-conformance*` recipes (Fulu + Gloas), not here.
 # ─────────────────────────────────────────────────────────────────────────
 
-# Default sample: `ssz_generic`, 5 cases per handler — quick gate
-official-ssz-vector-tests:
-    .venv/bin/python scripts/run_conformance.py
+# ssz_generic conformance via the SizzLean harness. Defaults to a dev subset;
+# pass pytest args, e.g. `just ssz-generic-conformance "--subset=0 -n auto"`.
+ssz-generic-conformance args="":
+    cd packages/SizzLean/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q {{args}}
 
-# 292 out-of-scope progressive-container cases are skipped per
-# `Spec/Type.lean`'s deliberate omission of EIP-7495/7916/8016 forms.
-# Full `ssz_generic` sweep (2188 in-scope cases — every wire-format test)
-official-ssz-vector-tests-generic-full:
-    .venv/bin/python scripts/run_conformance.py --all
+# CI smoke gate: a few cases per (handler, valid/invalid).
+ssz-generic-conformance-smoke:
+    cd packages/SizzLean/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --subset=2
 
-# Quick `ssz_static` sample (mainnet preset, 2 cases per handler per fork)
-official-ssz-vector-tests-static:
-    .venv/bin/python scripts/run_conformance.py --suite static --limit 2
-
-# Matches what the CI `conformance` job runs on every push /
-# pull_request. ~30 s wall-clock once the Lean toolchain is cached.
-# Equivalent to `--suite all --config mainnet --limit 1`.
-# Smoke gate: 1 case per (handler, suite), both suites, mainnet preset
-official-ssz-vector-tests-smoke:
-    .venv/bin/python scripts/run_conformance.py --suite all --config mainnet --limit 1
-
-# Default preset for the project; alias is `static-mainnet`.
-# Full `ssz_static` sweep on mainnet preset (1585 cases, Phase 0…Fulu)
-official-ssz-vector-tests-static-full:
-    .venv/bin/python scripts/run_conformance.py --suite static --config mainnet --all
-
-# Alias for the mainnet sweep (kept for explicit-name call sites)
-official-ssz-vector-tests-static-mainnet: official-ssz-vector-tests-static-full
-
-# Full `ssz_static` sweep on minimal preset (38991 cases, Phase 0 → Fulu)
-official-ssz-vector-tests-static-minimal:
-    .venv/bin/python scripts/run_conformance.py --suite static --config minimal --all
-
-# Focused subset by shape-glob (e.g. `just official-ssz-vector-tests-include 'generic:uints/*'`)
-official-ssz-vector-tests-include PATTERN:
-    .venv/bin/python scripts/run_conformance.py --include "{{PATTERN}}"
-
-# Everything from the upstream test corpus: full generic + full static on both presets
-official-ssz-vector-tests-all: official-ssz-vector-tests-generic-full official-ssz-vector-tests-static-full official-ssz-vector-tests-static-minimal
+# Full sweep: every in-scope wire-format vector (the out-of-scope progressive
+# forms xfail). 2188 passed / 292 xfailed at the pin.
+ssz-generic-conformance-full:
+    cd packages/SizzLean/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --subset=0
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -444,10 +418,6 @@ gen-cavp:
 # Re-generate the NIST CAVP vector table (OpenSSL FFI shim) from `packages/LeanHazmatSha256/cavp/*.rsp`. Stdlib-only Python; no .venv needed.
 gen-cavp-hazmat:
     python3 packages/LeanHazmatSha256/scripts/gen_cavp.py
-
-# Re-generate the CLI dispatch table (writes to LeanEthCS Cli/Main.lean)
-gen-cli-dispatch:
-    .venv/bin/python scripts/gen_cli_dispatch.py
 
 # Emits packages/LeanPoseidon/LeanPoseidon/Params.lean from the pinned
 # HorizenLabs `zkhash` reference. Stdlib-only Python; no .venv needed.

@@ -1,5 +1,4 @@
-# SizzLean conformance harness (`scripts/run_conformance.py`)
-# Python dependencies. Install with:
+# Conformance harness Python dependencies. Install with:
 #
 #   uv venv
 #   uv pip install -r scripts/requirements.txt
@@ -7,12 +6,12 @@
 # (`uv` is pre-installed on the dev machine; for environments without uv,
 # create a venv via `python3 -m venv .venv` and use that venv's pip.)
 #
-# Pinned versions match what's been smoke-tested; loose pins are fine for
-# this tooling — no API surface is fragile across patch releases.
+# Loose pins are fine for this tooling, no API surface is fragile across patch
+# releases. Both conformance harnesses are pytest-xdist drivers over a per-worker
+# Lean server: packages/EthCLSpecs/PySpecTests (state transition / fork choice /
+# ssz_static) and packages/SizzLean/PySpecTests (ssz_generic). They snappy-
+# decompress the vectors (cramjam) and parse case metadata (PyYAML).
 cramjam>=2.0
 PyYAML>=6.0
-tqdm>=4.65
-# The EthCLSpecs conformance harness (packages/EthCLSpecs/PySpecTests) is a
-# pytest-xdist driver over a per-worker Lean server.
 pytest>=8.0
 pytest-xdist>=3.5

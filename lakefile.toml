@@ -10,11 +10,12 @@ name = "Etheorem"
 #   lake build LeanHazmatBls           #   (need `just vendor-bls` / `vendor-kzg`)
 #   lake build LeanHazmatKzg
 #   lake build SizzLean
-#   lake build LeanEthCS
+#   lake build EthCLLib / EthCLSpecs   # consensus-spec framework + Fulu/Gloas bodies
 #   lake build LeanPoseidon
 #   lake build SizzLeanTests
 #   lake build LeanHazmatSha256Tests / LeanHazmatBlsTests / LeanHazmatKzgTests
-#   lake build eth_ssz_vector_runner          # CLI exe for ssz_static + ssz_generic tests
+#   lake build pyspec_server           # EthCLSpecs runner (state transition / fork choice / ssz_static)
+#   lake build ssz_generic_runner      # SizzLean runner (ssz_generic wire-format suite)
 #
 # Or per-package: `cd packages/<Name> && lake build`.
 # The LeanHazmat aggregator meta-packages (LeanHazmatConsensus,
@@ -53,10 +54,6 @@ path = "packages/LeanHazmatKzg"
 name = "SizzLean"
 path = "packages/SizzLean"
 
-[[require]]
-name = "LeanEthCS"
-path = "packages/LeanEthCS"
-
 # EthCLLib — the consensus-spec framework / DSL (the capturing fork forms, the
 # header macros, the effect monad, the tier and error systems, the container
 # front-end, the crypto seam, the fork-interface typeclass, the generic
@@ -74,8 +71,8 @@ name = "EthCLSpecs"
 path = "packages/EthCLSpecs"
 
 # Standalone island, parallel to `LeanSha256` (a pure-crypto
-# primitive), outside the `LeanSha256 → SizzLean → LeanEthCS` SSZ
-# chain — nothing here imports it. Building the umbrella builds it.
+# primitive), outside the `LeanSha256 → SizzLean → EthCLLib → EthCLSpecs`
+# SSZ chain, nothing here imports it. Building the umbrella builds it.
 [[require]]
 name = "LeanPoseidon"
 path = "packages/LeanPoseidon"
