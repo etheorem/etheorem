@@ -174,8 +174,12 @@ def Node.ofLeaves (H : Type) [Hasher H] (leaves : List ByteArray)
       -- `merkleRootWithCache` walk re-allocating the same pair
       -- with the cache filled in.
       let half := 2 ^ d
-      let leftLeaves  := ls.take half
-      let rightLeaves := ls.drop half
+      -- `List.take` is not tail-recursive in Lean core, so `ls.take half`
+      -- recurses `half` frames deep and overflows the OS-default 8 MB stack
+      -- for the large mainnet leaf counts (a 262144-leaf list splits 131072
+      -- at the top). `List.splitAt` yields the same `(take, drop)` pair in a
+      -- single tail-recursive pass.
+      let (leftLeaves, rightLeaves) := ls.splitAt half
       let leftNode  := Node.ofLeaves H leftLeaves  d
       let rightNode :=
         if rightLeaves.isEmpty then zeroLeaf H d

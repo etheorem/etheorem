@@ -78,8 +78,12 @@ def Node.ofSubtrees (H : Type) [Hasher H] :
   | s :: _,     0     => s    -- depth 0 holds exactly one sub-tree
   | subs,       d + 1 =>
       let half := 2 ^ d
-      let leftSubs  := subs.take half
-      let rightSubs := subs.drop half
+      -- Split tail-recursively via `List.splitAt`: core's `List.take` is not
+      -- tail-recursive, so `subs.take half` would recurse `half` frames deep
+      -- and overflow the stack for the large mainnet sub-tree counts (a
+      -- 262144-element composite list splits 131072 at the top). Same
+      -- `(take, drop)` result, one constant-stack pass.
+      let (leftSubs, rightSubs) := subs.splitAt half
       let leftNode  := Node.ofSubtrees H leftSubs d
       let rightNode :=
         if rightSubs.isEmpty then zeroLeaf H d
@@ -193,12 +197,20 @@ def Node.subtreesForFields (H : Type) [Hasher H] :
       Node.ofShape H t vs.1 :: Node.subtreesForFields H ts vs.2
 
 /-- Per-element sub-trees for a composite-element `vector` /
-`list`. Mirrors `hashTreeRootListComposite`. -/
+`list`. Mirrors `hashTreeRootListComposite`.
+
+Tail-recursive over the element list (the `deserializeFixedElems`
+accumulator pattern): the plain `ofShape … :: subtrees …` spelling
+holds a frame per element and overflows the OS stack for the large
+mainnet lists (`pendingConsolidations` at 262144 elements). The
+accumulator form is constant-stack; the base case reverses it, so the
+sub-tree order is unchanged. `acc` defaults to `[]` so call sites pass
+only `(t, elems)`. -/
 def Node.subtreesForListComposite (H : Type) [Hasher H] :
-    (t : SSZType) → List t.interp → List Node
-  | _, []      => []
-  | t, x :: xs =>
-      Node.ofShape H t x :: Node.subtreesForListComposite H t xs
+    (t : SSZType) → List t.interp → (acc : List Node := []) → List Node
+  | _, [],      acc => acc.reverse
+  | t, x :: xs, acc =>
+      Node.subtreesForListComposite H t xs (Node.ofShape H t x :: acc)
 
 end
 

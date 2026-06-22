@@ -470,13 +470,22 @@ def SSZType.hashTreeRootFields (H : Type) [Hasher H] :
 
 /-- Per-element merkleization for composite-element collections
 (`vector t n` / `list t cap` with `¬ t.isFixedSize`). Returns the
-list of element roots in order. -/
+list of element roots in order.
+
+Tail-recursive over the element list (the `combineLayerAtAux` /
+`deserializeFixedElems` accumulator pattern). The natural
+`hashTreeRoot … :: hashTreeRootListComposite …` spelling is
+non-tail, the recursive call is the tail of a `cons`, so it holds
+one stack frame per element and overflows the OS-default 8 MB stack
+on the large mainnet collections (`pendingConsolidations` at
+262144 elements). The accumulator form is constant-stack; the base
+case reverses it, so the root order is unchanged. `acc` defaults to
+`[]` so call sites pass only `(t, elems)`. -/
 def SSZType.hashTreeRootListComposite (H : Type) [Hasher H] :
-    (t : SSZType) → List t.interp → List ByteArray
-  | _, []      => []
-  | t, x :: xs =>
-      SSZType.hashTreeRoot H t x
-        :: SSZType.hashTreeRootListComposite H t xs
+    (t : SSZType) → List t.interp → (acc : List ByteArray := []) → List ByteArray
+  | _, [],      acc => acc.reverse
+  | t, x :: xs, acc =>
+      SSZType.hashTreeRootListComposite H t xs (SSZType.hashTreeRoot H t x :: acc)
 
 end
 
