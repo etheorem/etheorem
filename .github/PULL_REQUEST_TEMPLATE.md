@@ -21,7 +21,7 @@
   - [ ] `lake build SizzLeanTests`
   - [ ] `just test-ethcl`
 - [ ] If this touches spec types or cache behaviour:
-      `just ethcl-conformance` is green.
+      `just ethcl-pyspec` is green.
 - [ ] If this touches a bench-measured hot path: included
       before/after `lake exe ssz_bench` TSV (or relevant rows) in
       the PR description.
@@ -39,3 +39,6 @@
 <!-- Anything that helps the reviewer get oriented: design
      trade-offs considered, decisions made under ambiguity,
      follow-ups deferred. -->
+
+## LICENSE (LGPL version 3)
+ - [x] I have read and accepted LICENSE (LGPL version 3), NOTICE and CLA in the root of this project.
