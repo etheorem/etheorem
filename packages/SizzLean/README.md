@@ -128,7 +128,7 @@ container definitions live in the sibling `EthCLSpecs` package
 
 ## Status
 
-**Experimental, conformance-validated.** Every SSZ type used by
+**Experimental, pyspec-validated.** Every SSZ type used by
 the Ethereum consensus spec from Phase 0 through Gloas is
 implemented. Upstream test suites (`ethereum/consensus-spec-tests
 v1.6.0-beta.0`) pass clean on **both** preset configurations:
@@ -136,7 +136,7 @@ v1.6.0-beta.0`) pass clean on **both** preset configurations:
 * `ssz_generic --all`: **2188 / 2188** in-scope cases passed,
   0 failed. Plus **292** deliberately skipped progressive-container
   cases (see the "deliberately not implemented" table); the
-  conformance harness classifies them as `out of library scope`,
+  pyspec harness classifies them as `out of library scope`,
   not failures.
 * `ssz_static --config mainnet --all`: **1585 / 1585** cases
   passed across every fork Phase 0 → Fulu.
@@ -144,11 +144,11 @@ v1.6.0-beta.0`) pass clean on **both** preset configurations:
   passed across every fork Phase 0 → Fulu.
 
 Per-PR CI runs the dev-subset smoke; the full sweeps are the
-umbrella `just ssz-generic-conformance-full` (wire-format) and
-`just ethcl-conformance-full` (per-fork containers) targets.
+umbrella `just ssz-generic-pyspec-full` (wire-format) and
+`just ethcl-pyspec-full` (per-fork containers) targets.
 
 The per-fork consensus-container vectors are covered by the
-`EthCLSpecs` conformance harness for the Fulu and Gloas forks.
+`EthCLSpecs` pyspec harness for the Fulu and Gloas forks.
 Coverage of those forks lives in `EthCLSpecs`, the SSZ library
 itself implements every wire-format type they need.
 
@@ -290,8 +290,8 @@ the project, they're external tools the recipes assume.
    the SHA-256 FFI shim, see [Dependencies → System-level](#system-level-build-time-native-deps)
    below for the per-platform one-liners).
 
-4. **`python3` + `uv`** (only for the `just ssz-generic-conformance*`
-   and `just ethcl-conformance*` recipes). Run `just setup-python`
+4. **`python3` + `uv`** (only for the `just ssz-generic-pyspec*`
+   and `just ethcl-pyspec*` recipes). Run `just setup-python`
    from the umbrella root once to create `.venv/` and install the
    harness deps.
 
@@ -349,7 +349,7 @@ just doctor-native  # checks only pkg-config + OpenSSL (the CI gate)
 ```
 
 `just doctor` prints actionable platform-specific install hints if
-anything's missing. The CI `test` and `conformance` jobs run
+anything's missing. The CI `test` and `pyspec` jobs run
 `just doctor-native` as their first step.
 
 ### Why a procedural lakefile
@@ -404,7 +404,7 @@ corpus (`ssz_generic_runner`) lives in this package and is driven
 by the pytest harness in [`PySpecTests/`](PySpecTests). The
 per-fork `ssz_static` corpus is driven by the `EthCLSpecs`
 harness against its `pyspec_server` exe. Use the one-command
-`just ssz-generic-conformance` and `just ethcl-conformance`
+`just ssz-generic-pyspec` and `just ethcl-pyspec`
 entry points documented in [Build / test](#build--test).
 
 ## Build / test
@@ -418,7 +418,7 @@ lake build SizzLean         # compile the library
 OpenSSL 3.x and `pkg-config` are present (the build-time native deps
 the FFI shim links against, see [Dependencies](#dependencies)) plus
 the Lean toolchain (elan / lake / lean) and the Python harness
-toolchain (python3 / uv) used by the conformance recipes below. A
+toolchain (python3 / uv) used by the pyspec recipes below. A
 failed check prints the install command for your platform.
 
 Three test surfaces, all driven from the umbrella `just` interface
@@ -436,16 +436,16 @@ just test-ssz
 just test-sha256
 
 # Upstream `ethereum/consensus-spec-tests`. Pytest harnesses
-# drive a Lean CLI against the official archives. A tqdm progress
+# drive a Lean CLI against the pyspec archives. A tqdm progress
 # bar shows live per-case throughput. Quick dev subset:
-just ssz-generic-conformance
+just ssz-generic-pyspec
 # Full `ssz_generic` wire-format sweep:
-just ssz-generic-conformance-full
+just ssz-generic-pyspec-full
 # Per-fork `ssz_static` consensus-container suite (Fulu/Gloas),
 # quick dev subset:
-just ethcl-conformance
+just ethcl-pyspec
 # The complete in-scope EthCLSpecs sweep (both forks, both presets):
-just ethcl-conformance-full
+just ethcl-pyspec-full
 ```
 
 For the full menu, the protocol the harness uses, and how to

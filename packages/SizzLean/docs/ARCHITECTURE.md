@@ -114,7 +114,7 @@ In practice, the proofs widen one constructor at a time. PLAN.md
 Stages 5–6 shipped the proof *infrastructure* (`@[ssz_simp]` set,
 `Supported` predicate, `BasicSupported` dispatch) plus a narrow
 first cut; Phase 3 validated the implementation empirically against
-the official `ethereum/consensus-spec-tests` release vectors;
+the pyspec `ethereum/consensus-spec-tests` release vectors;
 Phase 4 built the performance layer on top of the now-known-good
 library; **Phase 5 (Stage 18) widens the three theorems** toward
 universal `Supported` coverage. As of this writing
@@ -448,7 +448,7 @@ sharing on update, and re-hashing only the dirty spine after a mutation.
 
 This layer is *intentionally outside* the formal-verification frontier.
 The cache is asserted equivalent to the spec, validated empirically by
-the `ssz_generic` conformance vectors plus a property test, and exposed
+the `ssz_generic` pyspec vectors plus a property test, and exposed
 to users behind a separate type (`TreeBacked T`) so that holding a plain
 `T` and calling the verified `SSZ.hashTreeRoot` remains an option per
 use-site.
@@ -747,7 +747,7 @@ The coherence between `view` and `tree` (`view ≡ fromRepr (decodeTree
 tree)`) is maintained by the smart constructors and *not* stated as a
 Lean proposition. Per cache-research.md §5, the cache layer is
 intentionally outside the formal-verification frontier; its safety net is
-the `ssz_generic` conformance suite plus a property test
+the `ssz_generic` pyspec suite plus a property test
 (`∀ t : TreeBacked T, hashTreeRootCached t = SSZ.hashTreeRoot t.view`).
 
 The single `TreeBacked H T` shape (any `T` with `[SSZRepr T]`)

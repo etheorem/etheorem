@@ -414,7 +414,7 @@ keeping with the project's stringly-typed-is-a-smell principle. The two exceptio
 are `assert`'s `descr` (rendered from the asserted expression's syntax) and
 `todo`'s `what`. Both are diagnostic strings, printed only on a vector mismatch and
 never branched on, since the vectors record valid-or-invalid and never a reason.
-The error *constructor* is what is load-bearing, and the conformance harness reads
+The error *constructor* is what is load-bearing, and the pyspec harness reads
 it in its classify mode:
 
 | Constructor | Classify-mode meaning |
@@ -792,7 +792,7 @@ and the signing root is data fed forward into that gate.
 The crypto primitives are instance-implicit (`[CryptoBackend]`), even though one
 real algorithm is used, because the seam buys two things.
 
-**Caching.** The conformance suite calls BLS `verify` repeatedly on recurring
+**Caching.** The pyspec suite calls BLS `verify` repeatedly on recurring
 inputs: shared validator sets, domains, and fixtures recur across the sweep, and the
 runner holds one long-lived server per worker so the memo stays warm. The runner
 injects a backend that memoizes `verify` over the real FFI, keyed on the full
@@ -964,7 +964,7 @@ is `pytest` with `pytest-xdist` for multi-core distribution and reporting. No Le
 test framework parallelizes well across cores, so the mature multi-core runner
 lives on the Python side.
 
-The Lean conformance executable runs as a long-lived **server**: a loop that reads
+The Lean pyspec executable runs as a long-lived **server**: a loop that reads
 a vector request, decodes and runs and compares against the fork interface, and
 emits a structured result, keeping its crypto cache warm across requests. Each
 `xdist` worker holds one such server through a `session`-scoped fixture (session
@@ -1019,7 +1019,7 @@ later prove, so they graduate from tested to proven once proof work starts.
 
 CI runs two jobs. `lake build` over the framework and specs compiles everything
 and runs the Lean unit self-tests (the `#guard` and `native_decide` cases are
-checked at build), the existing `lean-action` workflow. The conformance suite
+checked at build), the existing `lean-action` workflow. The pyspec suite
 (`pytest-xdist`) is a separate job; since the mainnet vectors are slow, it can run
 sharded or on demand rather than on every push.
 

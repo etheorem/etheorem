@@ -28,7 +28,7 @@ cached root against the spec root on the struct-updated value.
 
 Real consensus-spec containers (`Fork`,
 `SignedBeaconBlockHeader`) exercise the same emission paths
-through the `EthCLSpecs` `ssz_static` conformance sweep. The two
+through the `EthCLSpecs` `ssz_static` pyspec sweep. The two
 cover disjoint type surfaces, so a regression in either the macro
 or the underlying `Node.setManyAt` walker is caught at both
 layers.

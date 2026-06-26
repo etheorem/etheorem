@@ -11,7 +11,7 @@
 A Lean 4 implementation of the Ethereum consensus specification for the Fulu
 and Gloas forks. It is executable. The SSZ container types, the full
 beacon-chain state transition, the fork upgrade, and fork choice all run, and
-they are checked against Ethereum's official
+they are checked against the pyspec
 [`consensus-spec-tests`](https://github.com/ethereum/consensus-spec-tests)
 vectors.
 
@@ -40,10 +40,10 @@ independent build target:
 - **[`packages/EthCLLib/`](packages/EthCLLib/)** +
   **[`packages/EthCLSpecs/`](packages/EthCLSpecs/README.md)**: the
   consensus-spec framework (the fork-authoring DSL, the effect monad, the SSZ
-  container front-end, the conformance driver) and the executable Fulu and
+  container front-end, the pyspec driver) and the executable Fulu and
   Gloas fork bodies built on it. EthCLSpecs declares its containers in-spec and
   ships the `pyspec_server` runner that drives the state-transition,
-  fork-choice, and `ssz_static` conformance for both forks.
+  fork-choice, and `ssz_static` pyspec runs for both forks.
 - **[`packages/LeanSha256/`](packages/LeanSha256/README.md)**: pure-Lean
   SHA-256 reference. NIST CAVP-validated, kernel-reducible. No FFI.
 - **[`packages/SizzLean/`](packages/SizzLean/README.md)**: SSZ
@@ -76,7 +76,7 @@ just coordinates the subpackages via `[[require]]` blocks
 root). Per-package publication repos will exist later; this is a
 development monorepo.
 
-**Status: conformance-validated.** The Layer 1 spec
+**Status: pyspec-validated.** The Layer 1 spec
 (total serialize / deserialize / hashTreeRoot), the `SSZRepr`
 typeclass + deriving handler, the FFI SHA-256 backend, the
 pure-Lean `Sha256Spec` reference, and the cache layer
@@ -88,7 +88,7 @@ spec covers the Fulu and Gloas forks (state transition, fork choice,
 and the SSZ containers declared in-spec, including Fulu's
 `proposer_lookahead` and the Gloas ePBS additions: the nine EIP-7732
 `BeaconState` fields plus the `Builder` / `ExecutionPayloadBid` types).
-Conformance pinned at consensus-spec-tests
+Pyspec pinned at consensus-spec-tests
 [v1.7.0-alpha.10](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.10)
 in the pytest harnesses. The universal proof set
 (`decode_encode`, `serialize_injective`, `encode_size_le_max`
@@ -167,7 +167,7 @@ the project. They are external tools the recipes assume.
    below for the per-platform one-liners). The Justfile's
    `doctor-native` recipe pinpoints what's missing.
 
-4. **`python3` + `uv`** (only for the conformance pytest harnesses).
+4. **`python3` + `uv`** (only for the pyspec pytest harnesses).
    Run `just setup-python` once to create `.venv/` and install
    the harness deps.
 
@@ -205,7 +205,7 @@ just test-poseidon-proofs    # mathlib equivalence proof permute = permuteRef (s
 lake build ssz_bench       # microbench grid, S1–S7 (see SizzLeanBench.lean)
 lake build ssz_profile     # phase-by-phase profile of one workload
 
-# Conformance runners the pytest harnesses drive:
+# Pyspec runners the pytest harnesses drive:
 lake build pyspec_server       # EthCLSpecs: state transition / fork choice / ssz_static
 lake build ssz_generic_runner  # SizzLean: ssz_generic wire-format suite
 
@@ -214,8 +214,8 @@ cd packages/SizzLean && lake build
 ```
 
 The repo's [`Justfile`](Justfile) wraps the common workflows
-(`just build`, `just test`, `just bench`, `just ethcl-conformance`,
-`just ssz-generic-conformance`, …). See `just --list` for the full set.
+(`just build`, `just test`, `just bench`, `just ethcl-pyspec`,
+`just ssz-generic-pyspec`, …). See `just --list` for the full set.
 
 CI runs `lake build` for each named library on the pinned
 toolchain via `leanprover/lean-action`.
@@ -250,7 +250,7 @@ build` runs both vendor steps for you. The C / C++ compilers are invoked
 through the Lean toolchain's `cc` wrapper, no separate configuration
 required.
 
-## Conformance harnesses
+## Pyspec harnesses
 
 Two `pytest-xdist` harnesses drive long-lived Lean servers against the
 `ethereum/consensus-spec-tests` vectors. Each xdist worker holds one warm
@@ -269,12 +269,12 @@ server, so there is no per-vector Lean startup.
 just setup-python
 
 # Dev-subset smoke gates (a few cases per handler):
-just ethcl-conformance-smoke         # Fulu + Gloas: transition / fork choice / ssz_static
-just ssz-generic-conformance-smoke   # ssz_generic
+just ethcl-pyspec-smoke         # Fulu + Gloas: transition / fork choice / ssz_static
+just ssz-generic-pyspec-smoke   # ssz_generic
 
 # Full sweeps:
 just ethcl-pyspec-full               # both presets, both forks
-just ssz-generic-conformance-full    # every in-scope wire-format vector
+just ssz-generic-pyspec-full    # every in-scope wire-format vector
 ```
 
 ### Coverage

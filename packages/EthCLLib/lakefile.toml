@@ -31,7 +31,7 @@ name = "EthCLLib"
 
 # Lean-internal self-tests (#guard / native_decide / example): the
 # inheritance-replay dispatch, the crypto-backend seam, the running step, the
-# classify driver. Distinct from the pytest-xdist conformance harness. The
+# classify driver. Distinct from the pytest-xdist pyspec harness. The
 # sources live under EthCLLib/Tests/ (namespace EthCLLib.Tests.*) and are
 # excluded from the shipped EthCLLib library, which globs only its own root.
 [[lean_lib]]

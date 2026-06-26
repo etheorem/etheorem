@@ -1,4 +1,4 @@
-"""pytest-xdist conformance configuration.
+"""pytest-xdist pyspec configuration.
 
 Each xdist worker holds one long-lived `pyspec_server` through the
 `session`-scoped `server` fixture (session scope is per-worker in xdist), so

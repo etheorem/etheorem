@@ -261,8 +261,8 @@ lake build LeanSha256Tests
 lake build SizzLeanTests
 
 # Executables:
-lake build pyspec_server              # EthCLSpecs conformance runner (ssz_static, state transition)
-lake build ssz_generic_runner        # SizzLean conformance runner (ssz_generic)
+lake build pyspec_server              # EthCLSpecs pyspec runner (ssz_static, state transition)
+lake build ssz_generic_runner        # SizzLean pyspec runner (ssz_generic)
 lake build ssz_bench                  # microbench grid (S1–S7)
 lake build ssz_profile                # phase-by-phase profile
 
@@ -272,7 +272,7 @@ cd packages/SizzLean && lake build
 
 The repo's `Justfile` wraps the most common workflows
 (`just build`, `just test`, `just bench`,
-`just ethcl-conformance`, `just ssz-generic-conformance`, …),
+`just ethcl-pyspec`, `just ssz-generic-pyspec`, …),
 see `just --list` for the full set.
 
 ## What stays at the root
@@ -285,7 +285,7 @@ see `just --list` for the full set.
 * `lean-toolchain`: pinned toolchain.
 * `lake-manifest.json`: pinned external deps for the umbrella.
 * `scripts/`: shared Python dependency pins (`requirements.txt`)
-  for the per-package pytest conformance harnesses.
+  for the per-package pytest pyspec harnesses.
 * `docs/`: repo-wide design docs (this file). Distinct from the
   per-subpackage `packages/<Pkg>/docs/` below.
 * `.github/`: CI (`lean_action_ci.yml`) plus the LeanSha256

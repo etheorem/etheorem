@@ -79,7 +79,7 @@ is the *why* so edge cases can be judged on principle, not by pattern-matching.
   Lake, push it into Lake's API or a small Lean script invoked via
   `lake env lean --run …`, not ad-hoc Make/bash.
 - **Spec is the source of truth.** Behavior comes from the consensus-specs
-  SSZ doc and the official test vectors. When other implementations disagree
+  SSZ doc and the pyspec test vectors. When other implementations disagree
   with the spec, the spec wins; we record the discrepancy, we don't paper
   over it.
 - **Lean on Lean.** Prefer what the language gives you over hand-rolled
@@ -117,7 +117,7 @@ coordinates them via `[[require]]` blocks.
 ├── lean-toolchain               # Pinned toolchain; CI reads this. Bump deliberately.
 ├── README.md / CLAUDE.md       # Repo-wide overview + conventions
 ├── docs/                       # Repo-wide design docs (monorepo-arch.md)
-├── scripts/                     # requirements.txt (conformance-harness Python deps)
+├── scripts/                     # requirements.txt (pyspec-harness Python deps)
 ├── packages/
 │   ├── LeanSha256/              # Pure-Lean SHA-256 reference; no FFI.
 │   │   ├── lakefile.toml
@@ -130,7 +130,7 @@ coordinates them via `[[require]]` blocks.
 │   ├── EthCLLib/                # Consensus-spec framework / DSL (fork forms, effect monad, container front-end).
 │   │   ├── lakefile.toml
 │   │   ├── EthCLLib.lean / EthCLLib/ / Tests/
-│   ├── EthCLSpecs/              # Fulu / Gloas fork bodies + the pyspec_server conformance runner.
+│   ├── EthCLSpecs/              # Fulu / Gloas fork bodies + the pyspec_server runner.
 │   │   ├── lakefile.toml
 │   │   ├── EthCLSpecs.lean / EthCLSpecs/ / PySpecTests/ / docs/ / README.md
 │   └── LeanPoseidon/            # Pure-Lean Poseidon2 (BN254 t=3); standalone island.
@@ -280,7 +280,7 @@ as the source of truth. Roughly:
 - Operations: `serialize`, `deserialize`, `hash_tree_root` (merkleization).
 - Test vectors from `ethereum/consensus-spec-tests` once the core types land.
 
-When in doubt about behavior, defer to the spec and the official test vectors,
+When in doubt about behavior, defer to the spec and the pyspec test vectors,
 not to other implementations.
 
 ## Don'ts

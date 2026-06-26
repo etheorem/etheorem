@@ -18,7 +18,7 @@ path = "../EthCLLib"
 name = "EthCLSpecs"
 precompileModules = true
 
-# The conformance runner: a long-lived server instantiating the generic
+# The pyspec runner: a long-lived server instantiating the generic
 # PySpecTests driver at a fork. Its root is a submodule of the precompiled lib,
 # so it needs the interpreter shim to avoid a Lake build-graph cycle.
 [[lean_exe]]

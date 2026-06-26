@@ -129,8 +129,8 @@ umbrella green.
 **Acceptance.** `lake build` is green across the umbrella; `lake build
 SizzLeanTests` and `lake build LeanHazmatSha256Tests` both pass; `#axioms`
 on a `SizzLean` hash-root theorem still cites the three named equivalence
-axioms; the conformance suites (`just ethcl-conformance` and
-`just ssz-generic-conformance`) still pass unchanged.
+axioms; the pyspec suites (`just ethcl-pyspec` and
+`just ssz-generic-pyspec`) still pass unchanged.
 
 **Risk.** Medium. The cross-package link integration (Stage 0 settles its
 shape) and the three-file axiom/extern split are the fiddly parts; the

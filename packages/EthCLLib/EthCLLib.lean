@@ -15,7 +15,7 @@ the generic `PySpecTests` driver. It names no fork; a separate package
 
 The author-facing surface is gathered under `EthCLLib.Spec`, so a spec file
 opens exactly one namespace (`open EthCLLib.Spec`). Internals live under
-`EthCLLib.Internal`; the generic conformance driver under `EthCLLib.PySpecTests`.
+`EthCLLib.Internal`; the generic pyspec driver under `EthCLLib.PySpecTests`.
 
 See `packages/EthCLSpecs/docs/` for the three design documents this implements
 and `IMPLEMENTATION_NOTES.md` there for deviations found while building.

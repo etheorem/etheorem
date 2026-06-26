@@ -562,7 +562,7 @@ EthCLSpecs is where the "preserve the reference's boundaries" rule bites hardest
 because two more mechanisms depend on the 1:1 mapping. The `inherit` mechanism
 replays a fork's bodies into the next fork, so each helper promoted to namespace
 scope joins the inherit surface the next fork has to manage (Gloas `EpochProcessing`
-inherits roughly fifty Fulu defs). The conformance harness dispatches on handler
+inherits roughly fifty Fulu defs). The pyspec harness dispatches on handler
 names that map 1:1 to the spec functions (the `OpKind` / `EpochStep` tags). A
 `where` helper costs the next fork nothing and stays off the dispatch surface; a
 promoted one does not. So in EthCLSpecs the bias toward keeping a spec function

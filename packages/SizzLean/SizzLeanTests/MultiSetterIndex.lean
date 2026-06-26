@@ -10,7 +10,7 @@ import SizzLeanTests.ExampleContainers
 A property test on the small `BatchExample` (8 entries per
 vector, depth 3) rather than a full consensus container like
 `HistoricalBatch` (64 entries, depth 6). Real-container coverage
-of this path comes from the `EthCLSpecs` `ssz_static` conformance
+of this path comes from the `EthCLSpecs` `ssz_static` pyspec
 sweep. The smaller depth keeps the SSZ-library test fast while
 still exercising the runtime-`i` gindex path: the macro composes
 the outer container's field-0 prefix `[false]` with `gindexBits

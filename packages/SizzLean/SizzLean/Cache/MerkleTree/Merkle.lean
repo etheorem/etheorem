@@ -23,7 +23,7 @@ against it.
 ## The trust story
 
 There is no in-kernel proof that
-`merkleRootWithCache = hashTreeRoot`. The conformance vectors
+`merkleRootWithCache = hashTreeRoot`. The pyspec vectors
 validate `hashTreeRoot` against 38991 upstream cases; this file's
 acceptance section re-grounds the equivalence empirically by
 running both paths on the same small trees and asserting byte
@@ -68,7 +68,7 @@ def Node.merkleRoot (H : Type) [Hasher H] (n : Node) : ByteArray :=
 
 Two small hand-built trees, each compared against
 `Spec.SSZType.hashTreeRoot` of an equivalent SSZ value. The spec
-oracle is itself validated by 38991 upstream conformance vectors,
+oracle is itself validated by 38991 upstream pyspec vectors,
 so byte-equality here grounds the cached path in the same
 empirical evidence.
 

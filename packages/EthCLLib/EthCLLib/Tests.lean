@@ -10,7 +10,7 @@ import EthCLLib.Tests.PreambleSection
 
 Lean-internal unit tests for what the framework owns, written as `#guard` /
 `native_decide` / `example` so they are checked at build (`lake build
-EthCLLibTests`). Distinct from the `pytest-xdist` conformance harness, which runs
+EthCLLibTests`). Distinct from the `pytest-xdist` pyspec harness, which runs
 the upstream vectors. See `FRAMEWORK_ARCHITECTURE.md` §14.
 
 The tests live under `EthCLLib/Tests/` (namespace `EthCLLib.Tests.*`), built as

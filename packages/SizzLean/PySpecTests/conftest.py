@@ -1,4 +1,4 @@
-"""pytest-xdist configuration for the SizzLean ssz_generic conformance suite.
+"""pytest-xdist configuration for the SizzLean ssz_generic pyspec suite.
 
 Each xdist worker holds one long-lived `ssz_generic_runner` through the
 `session`-scoped `server` fixture (session scope is per-worker in xdist), so

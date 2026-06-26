@@ -40,7 +40,7 @@ builds each "framework generates" cell; `SPECS_ARCHITECTURE.md` consumes each
 "author writes" cell. The full table is Section 5 of this document.
 
 **The fast-versus-pure duality.** The framework pre-bundles exactly two
-configurations. The *fast* configuration backs the conformance test runner; it
+configurations. The *fast* configuration backs the pyspec test runner; it
 uses `EStateM` and a cached `Box`. The *pure* configuration backs proofs; it
 uses `StateT` over `Except` and an uncached `Box`. The spec body is generic over
 both and names neither. The runner, which the framework owns, instantiates the
@@ -49,7 +49,7 @@ instantiates the pure one. This invariant is stated identically in all three
 documents. Authors never see it. Section 3 derives it.
 
 **The spec-revision pin.** Each fork records the latest upstream Python spec
-version at which its whole conformance suite passes. The pin lives in the spec,
+version at which its whole pyspec suite passes. The pin lives in the spec,
 per fork, as a checked constant. Two forks can sit at different pins at the same
 time. Section 10 gives the operational definition and the discrepancy policy.
 
@@ -594,7 +594,7 @@ package structure and says what crosses each boundary.
 ## 10. The spec-revision pin and the discrepancy policy
 
 The pin is the latest upstream Python spec version for which a fork's Lean
-implementation passes the full conformance suite. It is recorded as a constant in
+implementation passes the full pyspec suite. It is recorded as a constant in
 the fork:
 
 ```lean

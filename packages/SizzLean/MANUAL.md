@@ -411,7 +411,7 @@ just test-sha256
 
 ### Upstream `ethereum/consensus-spec-tests` vectors
 
-Two pytest harnesses drive a CLI runner against the official
+Two pytest harnesses drive a CLI runner against the pyspec
 upstream archives. The fork-agnostic `ssz_generic` wire-format
 suite runs from SizzLean against the `ssz_generic_runner` exe;
 the per-fork `ssz_static` consensus-container suite runs from
@@ -420,21 +420,21 @@ EthCLSpecs against the `pyspec_server` exe (Fulu and Gloas).
 ```bash
 # Generic SSZ wire-format tests (uints, vectors, bitlist, …).
 # Quick dev subset by default:
-just ssz-generic-conformance
+just ssz-generic-pyspec
 
 # Full generic sweep:
-just ssz-generic-conformance-full
+just ssz-generic-pyspec-full
 
 # Per-fork consensus-container tests (BeaconState, attestations, …).
 # Quick dev subset on Fulu minimal by default:
-just ethcl-conformance
+just ethcl-pyspec
 
 # Pass pytest args for more, e.g. a focused glob or a different fork:
-just ssz-generic-conformance "--subset=0 -n auto"
-just ethcl-conformance "--fork=gloas"
+just ssz-generic-pyspec "--subset=0 -n auto"
+just ethcl-pyspec "--fork=gloas"
 
 # The complete in-scope EthCLSpecs sweep (both forks, both presets):
-just ethcl-conformance-full
+just ethcl-pyspec-full
 ```
 
 First run downloads + extracts the upstream archive (~hundreds

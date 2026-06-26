@@ -6,7 +6,7 @@ import SizzLean.Spec.Deserialize
 import SizzLean.Spec.HashTreeRoot
 
 /-!
-# `ssz_generic_runner`: the SSZ wire-format conformance server
+# `ssz_generic_runner`: the SSZ wire-format pyspec server
 
 `ssz_generic` is the fork-agnostic half of the upstream `consensus-spec-tests`
 SSZ suite. It addresses shapes by string identifier (`uint_64`, `vec_bool_16`,
@@ -214,6 +214,6 @@ partial def serve : IO UInt32 := do
 end SszGenericRunner
 
 /-- `ssz_generic_runner`: read tab-separated requests on stdin, write one result
-line each, until EOF. The SizzLean half of the upstream SSZ conformance suite. -/
+line each, until EOF. The SizzLean half of the upstream SSZ pyspec suite. -/
 def main (_args : List String) : IO UInt32 :=
   SszGenericRunner.serve

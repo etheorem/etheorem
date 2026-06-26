@@ -187,7 +187,7 @@ lean_exe ssz_profile where
   root := `SizzLeanBench.ProfileMain
   supportInterpreter := true
 
--- The `ssz_generic` upstream-vector conformance server. `SszGenericRunner.lean`
+-- The `ssz_generic` upstream-vector pyspec server. `SszGenericRunner.lean`
 -- exposes `def main` running a stdin/stdout request loop the SizzLean pytest
 -- harness (`packages/SizzLean/PySpecTests/`) drives. It exercises the `SSZType`
 -- wire format (serialize / deserialize / hashTreeRoot) directly, the

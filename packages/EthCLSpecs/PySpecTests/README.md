@@ -1,7 +1,7 @@
 # EthCLSpecs PySpecTests harness
 
 `pytest-xdist` driver for the upstream `consensus-spec-tests` vectors. Each
-worker holds one long-lived `pyspec_server` (the Lean conformance runner) through
+worker holds one long-lived `pyspec_server` (the Lean pyspec runner) through
 a `session`-scoped fixture, so there is no per-vector Lean startup and the crypto
 cache stays warm (`FRAMEWORK_ARCHITECTURE.md` §13.3).
 
@@ -12,7 +12,7 @@ cache stays warm (`FRAMEWORK_ARCHITECTURE.md` §13.3).
   and `ServerClient` (the long-lived server with re-spawn on death).
 - `conftest.py` — the `server` session fixture and the `case` parametrization;
   options `--preset`, `--fork`, `--subset`, `--tag`, `--no-crypto-cache`.
-- `test_conformance.py` — one test per case; the reject-faithfulness verdict
+- `test_pyspec.py` — one test per case; the reject-faithfulness verdict
   (`bug` fails hard, `todo` is `xfail` the Phase-2 work-queue, otherwise the case
   must pass).
 

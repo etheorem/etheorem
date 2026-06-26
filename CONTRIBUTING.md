@@ -28,8 +28,8 @@ SHA-256 shim against `libcrypto.so.3`.
 
 ```bash
 just test                                    # all per-package in-Lean tests
-just ethcl-conformance                       # consensus-spec-tests ssz_static suite (Fulu/Gloas)
-just ssz-generic-conformance                 # consensus-spec-tests ssz_generic wire-format suite
+just ethcl-pyspec                       # consensus-spec-tests ssz_static suite (Fulu/Gloas)
+just ssz-generic-pyspec                 # consensus-spec-tests ssz_generic wire-format suite
 just bench                                   # microbench (S1–S7)
 ```
 
@@ -38,8 +38,8 @@ Or via `lake build` directly:
 ```bash
 lake build LeanSha256Tests
 lake build SizzLeanTests
-lake build pyspec_server                     # EthCLSpecs conformance runner (ssz_static, state transition)
-lake build ssz_generic_runner               # SizzLean conformance runner (ssz_generic)
+lake build pyspec_server                     # EthCLSpecs pyspec runner (ssz_static, state transition)
+lake build ssz_generic_runner               # SizzLean pyspec runner (ssz_generic)
 lake exe ssz_bench
 ```
 
@@ -103,7 +103,7 @@ A quick orientation map for the most-asked questions:
   `ssz_generic` wire-format primitives run from
   `packages/SizzLean/PySpecTests/` against the
   `ssz_generic_runner` exe. The one-command entry points are
-  `just ethcl-conformance` and `just ssz-generic-conformance`;
+  `just ethcl-pyspec` and `just ssz-generic-pyspec`;
   smaller subsets and per-suite recipes live in the `Justfile`.
 
 ## Code style and discipline
@@ -122,7 +122,7 @@ in detail. The short version:
   once with `ssz_struct_for_presets` / `deriving SSZRepr`; never
   hand-mirrored across files.
 - **Spec is the source of truth.** Behaviour comes from
-  consensus-specs SSZ + the official test vectors; when other
+  consensus-specs SSZ + the pyspec test vectors; when other
   implementations disagree with the spec, the spec wins.
 
 Read `CLAUDE.md`'s *Principles* and *Conventions* sections
@@ -136,8 +136,8 @@ before sending non-trivial PRs.
   per shape; new tactic / proof code adds an `example` block that
   the typechecker keeps honest.
 - If the change touches the spec → cache equivalence path
-  (cache invariants, deriving handler, conformance gates),
-  re-run `just ethcl-conformance` and note the
+  (cache invariants, deriving handler, pyspec gates),
+  re-run `just ethcl-pyspec` and note the
   result in the PR.
 - If the change touches the bench-measured hot path, capture a
   fresh `lake exe ssz_bench` TSV pre- and post-change and quote
@@ -152,7 +152,7 @@ pinned toolchain on every PR.
 - **Bugs in spec / SSZ / cache behaviour**: open a GitHub issue
   with a minimal reproducer (a Lean snippet + expected vs actual
   output). Include the upstream consensus-spec-tests release tag
-  if the bug is conformance-related.
+  if the bug is pyspec-related.
 - **Security vulnerabilities**: do *not* file a public issue.
   See [`SECURITY.md`](SECURITY.md) for the responsible-disclosure
   process.

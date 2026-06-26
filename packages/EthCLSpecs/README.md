@@ -1,20 +1,20 @@
 # EthCLSpecs
 
 > **Status: experimental, single-developer; personal project, not an EF
-> release. Conformance-validated against the official test vectors for two
+> release. Validated against the pyspec test vectors for two
 > forks (Fulu, Gloas); machine-checked proofs are future work.**
 
 A Lean 4 implementation of the Ethereum consensus specification for the Fulu
 and Gloas forks. It is executable. The SSZ container types, the full
 beacon-chain state transition, the fork upgrade, and fork choice all run, and
-they are checked against Ethereum's official
+they are checked against Ethereum's pyspec
 [`consensus-spec-tests`](https://github.com/ethereum/consensus-spec-tests)
 vectors.
 
 EthCLSpecs is one half of a two-package design. The fork-agnostic framework
 lives in the sibling [`EthCLLib`](../EthCLLib), which supplies the authoring
 DSL, the effect monad, the SSZ container front-end over `SizzLean`, and the
-conformance driver. EthCLSpecs writes only the consensus logic on top. The
+pyspec driver. EthCLSpecs writes only the consensus logic on top. The
 dependency chain runs from `SizzLean` (SSZ) and the `LeanHazmat` crypto
 packages, through `EthCLLib`, to `EthCLSpecs`.
 
@@ -91,9 +91,9 @@ passing vector reflects a real match or a faithful rejection.
 lake build EthCLLib EthCLSpecs       # build the framework and the fork bodies
 just test-ethcl                       # build everything plus the Lean self-tests
 
-# Conformance against upstream vectors (downloads and caches the archive):
-just ethcl-conformance-smoke          # dev subset, both forks
-just ethcl-conformance "--subset=0 --fork=gloas"   # one fork, full in-scope suite
+# Pyspec against upstream vectors (downloads and caches the archive):
+just ethcl-pyspec-smoke          # dev subset, both forks
+just ethcl-pyspec "--subset=0 --fork=gloas"   # one fork, full in-scope suite
 just ethcl-pyspec-full                # the full sweep: both presets, both forks
 ```
 

@@ -33,7 +33,7 @@ open EthCLLib.Spec
 
 namespace EthCLLib.PySpecTests
 
-/-- One conformance case, decoded from the wire by the runner. `post = none`
+/-- One pyspec case, decoded from the wire by the runner. `post = none`
 marks an invalid vector (a reject is expected). `inputs` carries the
 format-specific SSZ buffers (the `blocks_N`, the single operation, the genesis
 eth1 inputs). -/

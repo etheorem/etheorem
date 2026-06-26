@@ -1,4 +1,4 @@
-"""SizzLean ssz_generic conformance harness: archive acquisition, case walking,
+"""SizzLean ssz_generic pyspec harness: archive acquisition, case walking,
 shape extraction, and the per-worker `ssz_generic_runner` client.
 
 `ssz_generic` is the fork-agnostic half of the upstream `consensus-specs`

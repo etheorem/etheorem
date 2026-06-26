@@ -50,7 +50,7 @@ that is in scope:
 The domain line of the contract's domain-line section sets this boundary. A
 helper that names a consensus concept is spec-owned and in scope; the validator
 guide's duties and the network layer name no state-transition concept the
-conformance vectors check, so they stay out.
+pyspec vectors check, so they stay out.
 
 Within Fulu, the core state transition and fork-choice land before the PeerDAS
 data-availability surface, because data-availability needs KZG cell verification
@@ -95,7 +95,7 @@ hash-tree-root against the vector, and round-trips the bytes, for every
 consensus container EthCLSpecs declares; the light-client, gossip, and
 networking types it does not model are reported out of scope. The fork-agnostic
 `ssz_generic` wire-format vectors stay with the `SSZType` primitives they
-exercise, in SizzLean's own conformance harness.
+exercise, in SizzLean's own pyspec harness.
 
 ---
 

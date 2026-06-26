@@ -1,4 +1,4 @@
-"""EthCLSpecs conformance harness: archive acquisition, case walking, the
+"""EthCLSpecs pyspec harness: archive acquisition, case walking, the
 per-worker Lean server client, and request encoding.
 
 The Lean side (`pyspec_server`) owns decode / run / compare / classify; this
@@ -70,7 +70,7 @@ def ensure_archive(tag: str, preset: str) -> Path:
 
 @dataclass
 class Case:
-    """One conformance case located on disk."""
+    """One pyspec case located on disk."""
     preset: str
     fork: str
     runner: str

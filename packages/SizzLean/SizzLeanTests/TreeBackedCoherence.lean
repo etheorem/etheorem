@@ -19,7 +19,7 @@ cases rather than proved.
 This file does it on the example containers from
 `ExampleContainers.lean`. Real consensus-spec containers exercise
 the same coherence property through the `EthCLSpecs` `ssz_static`
-conformance sweep, so the two cover disjoint type surfaces.
+pyspec sweep, so the two cover disjoint type surfaces.
 
 Cases per container:
 * one zero-init value

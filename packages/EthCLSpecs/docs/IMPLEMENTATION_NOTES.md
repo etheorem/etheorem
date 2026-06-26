@@ -41,7 +41,7 @@ implemented formats reach matches by root or rejects faithfully.
 
 **CI.** The `ethcl` job in `lean_action_ci.yml` runs `just test-ethcl` (builds all
 four libraries, firing the framework and spec self-tests) and `just
-ethcl-conformance-smoke` (the `pytest-xdist` dev subset at minimal for both forks
+ethcl-pyspec-smoke` (the `pytest-xdist` dev subset at minimal for both forks
 through the per-worker `pyspec_server`). It is green iff no in-scope vector hits a
 bug-smell or a real mismatch. Mainnet and the full sweep run on demand
 (`--preset=mainnet`, `--subset=0`).
@@ -294,7 +294,7 @@ runner caps `-n` accordingly (mainnet runs at `-n 4`, Gloas mainnet at `-n 2`, u
 per-test cleanup lands). That is a runner concern, not a reason to drop the threading
 from the spec.
 
-`CaseRequest` renames the conformance metadata field to `caseMeta`, since `meta` is a
+`CaseRequest` renames the pyspec metadata field to `caseMeta`, since `meta` is a
 section-modifier keyword that fails to project.
 
 ## Authoring conventions
@@ -327,7 +327,7 @@ the author surface would defeat the `sszGet` / `sszUpdate` encapsulation.
 that names concerns rather than a mandated layout. The realized layout is finer: the
 author surface under `EthCLLib/Spec/` (`Arith`, `Assert`, `Crypto`, `Errors`,
 `FiniteMap`, `Forms`, `Hasher`, `Header`, `Loop`, `SigningRoot`, `State`, aggregated by
-`Spec.lean`), the conformance driver under `EthCLLib/PySpecTests/` (`Driver`,
+`Spec.lean`), the pyspec driver under `EthCLLib/PySpecTests/` (`Driver`,
 `Interface`), and the capture base under `EthCLLib/Internal/` (`Capture`). The §3.6
 concerns map on: `Preset` / `Monad` / `Box` → `Spec.State` + `Spec.Header`; `Map` →
 `Spec.FiniteMap`; `Crypto` / `Arith` / `Loop` → the same-named `Spec.*`; `Interface` /
@@ -390,7 +390,7 @@ The per-fork `ForkInterface` instance and its decode / run glue (`fuluInterfaceF
 `stateRootImpl`, the dispatchers, `pyspecPinnedVersion`) live in
 `EthCLSpecs.<Fork>.Interface` (`Fulu/Interface.lean`, `Gloas/Interface.lean`), a
 sub-namespace kept out of the bare `EthCLSpecs.Fulu` / `EthCLSpecs.Gloas` spec namespace.
-The interface is the seam to the conformance harness, not consensus logic, so it does not
+The interface is the seam to the pyspec harness, not consensus logic, so it does not
 sit among the spec helpers; it reaches the spec's `forkdef`s through the enclosing fork
 namespace, and the `Server` selects `EthCLSpecs.<Fork>.Interface.<fork>Interface`.
 
@@ -590,7 +590,7 @@ was a real reject-faithfulness gap until set per preset:
 `pyspec_server` is a long-lived, crash-tolerant loop (a malformed request reports failed
 and the loop continues), one per `pytest-xdist` worker via the `conftest.py` session
 fixture (re-spawn on death). `harness.py` does acquisition / walk / snappy / request
-encoding; `test_conformance.py` is the reject-faithfulness verdict. The server emits one
+encoding; `test_pyspec.py` is the reject-faithfulness verdict. The server emits one
 tab-separated line per case, so two detail sources that could embed a newline and
 desync the worker are flattened at the chokepoint: `EthCLLib.Spec.sanitizeDescr` takes
 the first trimmed line of an `assert` descriptor, and `CaseResult.render` flattens any

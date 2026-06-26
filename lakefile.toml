@@ -63,7 +63,7 @@ name = "EthCLLib"
 path = "packages/EthCLLib"
 
 # EthCLSpecs — the fork bodies (EthCLSpecs.Fulu, later .Gloas) implementing the
-# fork interface, plus the `pyspec_server` conformance runner. The deferred
+# fork interface, plus the `pyspec_server` runner. The deferred
 # proofs package (EthCLProofs, + mathlib) stays out of the umbrella, the
 # LeanPoseidonProofs containment pattern.
 [[require]]

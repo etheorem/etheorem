@@ -518,14 +518,14 @@ discovering it.
   mainnet on demand or sharded.
 - The CI jobs: `lake build` over `EthCLLib` and `EthCLSpecs` (compiling everything and
   running the Lean unit self-tests at build), plus a separate `pytest-xdist`
-  conformance job that can run sharded or on demand.
+  pyspec job that can run sharded or on demand.
 - The per-fork `DISCREPANCIES.md`, keyed by vector id, each entry carrying the vector
   id, the spec-text citation, and the upstream issue link.
 - The `todo`s closed: every crypto-gated or unimplemented branch a mainnet or
   full-suite vector reaches is filled in, so no in-scope vector lands on a `todo`.
 
 **Acceptance.** Both presets are green on the full in-scope suite for both forks, and
-CI is green: `lake build` plus the `pytest-xdist` conformance job. The
+CI is green: `lake build` plus the `pytest-xdist` pyspec job. The
 reject-faithfulness audit holds at mainnet as at minimal. `DISCREPANCIES.md` records
 any logged spec-wins divergence with a citation.
 

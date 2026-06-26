@@ -1,4 +1,4 @@
-"""The conformance test: one parametrized test per vector case.
+"""The pyspec test: one parametrized test per vector case.
 
 The harness builds a request from the case on disk and submits it to the
 worker's Lean server; the server returns the driver's classify verdict. The

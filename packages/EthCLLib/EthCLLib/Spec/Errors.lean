@@ -54,7 +54,7 @@ inductive StoreTransitionError where
   | transition (e : StateTransitionError)
   deriving Inhabited, Repr, DecidableEq
 
-/-- The classify buckets the conformance harness reports
+/-- The classify buckets the pyspec harness reports
 (`FRAMEWORK_ARCHITECTURE.md` §13.3). Derived from a reject's constructor, never
 from its diagnostic string. -/
 inductive ClassifyBucket where

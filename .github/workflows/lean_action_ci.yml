@@ -5,8 +5,8 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      conformance_limit:
-        description: 'Per-suite case cap for the conformance run (use "all" for the full sweep)'
+      pyspec_limit:
+        description: 'Per-suite case cap for the pyspec run (use "all" for the full sweep)'
         default: '1'
         required: false
 
@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v3
       - name: Verify build-time native deps
-        # See `conformance` job below for the rationale.
+        # See `pyspec` job below for the rationale.
         run: just doctor-native
       - name: Vendor native crypto sources
         # blst (LeanHazmatBls) and c-kzg-4844 (LeanHazmatKzg) are vendored,
@@ -59,12 +59,12 @@ jobs:
       - name: Unit tests
         run: just test
 
-  conformance:
+  pyspec:
     # ssz_generic acceptance: the fork-agnostic SSZ wire-format suite, run via
     # the SizzLean pytest harness + `ssz_generic_runner`. The dev-subset smoke
     # gate runs on every push / pull_request; `workflow_dispatch` with
-    # `conformance_limit: all` upgrades to the full sweep
-    # (`just ssz-generic-conformance-full`). The per-fork ssz_static container
+    # `pyspec_limit: all` upgrades to the full sweep
+    # (`just ssz-generic-pyspec-full`). The per-fork ssz_static container
     # vectors run in the `ethcl` job.
     runs-on: ubuntu-latest
     steps:
@@ -107,14 +107,14 @@ jobs:
       - name: Install Python dependencies
         run: just setup-python
 
-      - name: Run ssz_generic conformance suite
+      - name: Run ssz_generic pyspec suite
         run: |
           set -euo pipefail
-          LIMIT='${{ github.event.inputs.conformance_limit || '1' }}'
+          LIMIT='${{ github.event.inputs.pyspec_limit || '1' }}'
           if [ "$LIMIT" = "all" ]; then
-            just ssz-generic-conformance-full
+            just ssz-generic-pyspec-full
           else
-            just ssz-generic-conformance-smoke
+            just ssz-generic-pyspec-smoke
           fi
 
   ethcl:
@@ -123,7 +123,7 @@ jobs:
     # `#guard` / `native_decide` self-tests (inheritance replay, the crypto
     # seam, the running step, map-backing equivalence, the signing-root and
     # Merkle-branch primitives, the walking-skeleton discharge). Then the
-    # `pytest-xdist` conformance smoke gate runs the dev subset at minimal for
+    # `pytest-xdist` pyspec smoke gate runs the dev subset at minimal for
     # both forks through the per-worker `pyspec_server`. The consensus formats are
     # green for both forks (Fulu incl. PeerDAS data availability, standalone
     # execution_payload, and get_proposer_head; Gloas the full EIP-7732 ePBS spine,
@@ -159,8 +159,8 @@ jobs:
         run: just test-ethcl
       - name: Install Python dependencies
         run: just setup-python
-      - name: EthCLSpecs conformance smoke gate (minimal, both forks)
-        run: just ethcl-conformance-smoke
+      - name: EthCLSpecs pyspec smoke gate (minimal, both forks)
+        run: just ethcl-pyspec-smoke
 
   poseidon:
     # Poseidon2 differential conformance against the HorizenLabs `zkhash`

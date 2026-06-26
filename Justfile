@@ -6,12 +6,12 @@
 # Layers, in order of how heavy they are to run:
 #   1. `build`              — compile every library
 #   2. `test`               — local property tests (in-Lean `native_decide`)
-#   3. conformance          — pytest harnesses driving the Lean servers against
-#      `ethereum/consensus-spec-tests` vectors: `ethcl-conformance*` (Fulu/Gloas
-#      state transition, fork choice, ssz_static) and `ssz-generic-conformance*`
+#   3. pyspec               — pytest harnesses driving the Lean servers against
+#      `ethereum/consensus-spec-tests` vectors: `ethcl-pyspec*` (Fulu/Gloas
+#      state transition, fork choice, ssz_static) and `ssz-generic-pyspec*`
 #      (the SizzLean ssz_generic wire-format suite)
 #
-# The conformance recipes need a Python venv. Run `just setup-python` once first.
+# The pyspec recipes need a Python venv. Run `just setup-python` once first.
 
 
 # List every recipe with its description
@@ -37,7 +37,7 @@ build: vendor-bls vendor-kzg
     lake build EthCLSpecs
     lake build LeanPoseidon
 
-# Compile the conformance runners the pytest harnesses drive: `pyspec_server`
+# Compile the pyspec runners the pytest harnesses drive: `pyspec_server`
 # (EthCLSpecs state transition / fork choice / ssz_static) and
 # `ssz_generic_runner` (SizzLean ssz_generic wire-format suite).
 build-cli:
@@ -169,12 +169,12 @@ doctor: doctor-native
     done
 
     echo
-    echo "[ conformance harness — only needed for the *-conformance* pytest recipes ]"
+    echo "[ pyspec harness — only needed for the *-pyspec* pytest recipes ]"
     for cmd in python3 uv; do
       if command -v "$cmd" >/dev/null 2>&1; then
         info "$(printf '%-17s' "$cmd") ($("$cmd" --version 2>&1 | head -1))"
       else
-        warn "$(printf '%-17s' "$cmd") (only needed for the conformance harness)"
+        warn "$(printf '%-17s' "$cmd") (only needed for the pyspec harness)"
       fi
     done
 
@@ -231,17 +231,17 @@ test-ssz:
 test-ethcl:
     lake build EthCLLib EthCLLibTests EthCLSpecs EthCLSpecsTests
 
-# EthCLSpecs upstream-vector conformance via the per-worker Lean server. Defaults
+# EthCLSpecs upstream-vector pyspec run via the per-worker Lean server. Defaults
 # to the dev subset (a few cases per handler) on Fulu minimal; pass pytest args
-# for more, e.g. `just ethcl-conformance "--subset=0 -n auto"` or `"--fork=gloas"`.
-ethcl-conformance args="":
+# for more, e.g. `just ethcl-pyspec "--subset=0 -n auto"` or `"--fork=gloas"`.
+ethcl-pyspec args="":
     cd packages/EthCLSpecs/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q {{args}}
 
-# CI smoke gate for EthCLSpecs conformance: the dev subset (a few cases per
+# CI smoke gate for EthCLSpecs pyspec: the dev subset (a few cases per
 # handler) at minimal for both forks. Currently-green formats pass; the rest
 # xfail as the Phase-2 work-queue, so the run is green (exit 0) iff no in-scope
 # vector hits a bug-smell or a real mismatch. Mainnet / full sweep run on demand.
-ethcl-conformance-smoke:
+ethcl-pyspec-smoke:
     cd packages/EthCLSpecs/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --fork=fulu --subset=2
     cd packages/EthCLSpecs/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --fork=gloas --subset=2
 
@@ -324,7 +324,7 @@ bench-diff before after:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# ssz_generic conformance — the fork-agnostic SSZ wire-format suite
+# ssz_generic pyspec — the fork-agnostic SSZ wire-format suite
 #
 # Driven by the SizzLean pytest harness (`packages/SizzLean/PySpecTests/`) +
 # `ssz_generic_runner`, against the `general` archive of
@@ -334,21 +334,21 @@ bench-diff before after:
 # forms are out of `SizzLean`'s universe and xfail. Requires `just setup-python`.
 #
 # The per-fork consensus-container `ssz_static` vectors run inside the EthCLSpecs
-# `ethcl-conformance*` recipes (Fulu + Gloas), not here.
+# `ethcl-pyspec*` recipes (Fulu + Gloas), not here.
 # ─────────────────────────────────────────────────────────────────────────
 
-# ssz_generic conformance via the SizzLean harness. Defaults to a dev subset;
-# pass pytest args, e.g. `just ssz-generic-conformance "--subset=0 -n auto"`.
-ssz-generic-conformance args="":
+# ssz_generic pyspec via the SizzLean harness. Defaults to a dev subset;
+# pass pytest args, e.g. `just ssz-generic-pyspec "--subset=0 -n auto"`.
+ssz-generic-pyspec args="":
     cd packages/SizzLean/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q {{args}}
 
 # CI smoke gate: a few cases per (handler, valid/invalid).
-ssz-generic-conformance-smoke:
+ssz-generic-pyspec-smoke:
     cd packages/SizzLean/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --subset=2
 
 # Full sweep: every in-scope wire-format vector (the out-of-scope progressive
 # forms xfail). 2188 passed / 292 xfailed at the pin.
-ssz-generic-conformance-full:
+ssz-generic-pyspec-full:
     cd packages/SizzLean/PySpecTests && {{justfile_directory()}}/.venv/bin/python -m pytest -q --subset=0
 
 
@@ -439,7 +439,7 @@ bump-leansha256-patch:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Python venv (one-time setup, required for official-vector-test recipes)
+# Python venv (one-time setup, required for pyspec-vector-test recipes)
 # ─────────────────────────────────────────────────────────────────────────
 
 # Create `.venv/` and install Python dependencies (uses `uv`)

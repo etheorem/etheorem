@@ -75,8 +75,8 @@ predicate that names the implemented arms honestly, and narrow
 first-cut theorems on `.bool` to prove the scaffolding works
 end-to-end. **Complete coverage of the three central theorems is
 deferred to Stage 18 (Phase 5 closing)**, after the empirical
-conformance suite (Phase 3) has validated that the implementation is
-actually correct on the official consensus-specs test vectors.
+pyspec suite (Phase 3) has validated that the implementation is
+actually correct on the pyspec consensus-specs test vectors.
 Proving a wrong implementation right is wasted work; we earn the
 right to invest in the universal proofs by passing the tests first.
 
@@ -241,7 +241,7 @@ Stage 18, after Phase 3 conformance grounds the proof effort.
 Lands the user-facing API: `SSZRepr` typeclass + `deriving SSZRepr`
 handler + Day-1 FFI SHA-256. After this phase the library has a
 complete library for writing user types and a real `Hasher`
-instance, enough to run `ssz_generic` conformance against the
+instance, enough to run `ssz_generic` pyspec against the
 spec functions in Phase 3.
 
 The cached Merkle-tree work (`Tree`, `TreeBacked`) that originally
@@ -340,14 +340,14 @@ and `.container [.bool, .bool]`); full coverage arrives with
 Stage 18. `hashTreeRoot` is uncached and slow; the cache layer
 lands in Phase 4. The library is functionally complete as a
 library; the Ethereum-types instantiation and the empirical
-conformance suite come next.
+pyspec suite come next.
 
 ---
 
 ## Phase 3: Application + empirical validation
 
 Phase 3 is where the library earns its right to invest in complete
-formal verification: passing the official `ethereum/consensus-spec-tests`
+formal verification: passing the pyspec `ethereum/consensus-spec-tests`
 release vectors empirically validates that the spec functions
 implement SSZ correctly. Without this, Stage 18's proof effort risks
 proving a wrong implementation right, a far more expensive failure
@@ -378,10 +378,10 @@ instantiating the consensus-spec types.
 **Risk.** Low. If `deriving SSZRepr` (Stage 8) works, this is
 mechanical.
 
-### Stage 11: Conformance suite (`ssz_generic` + per-fork tests)
+### Stage 11: Pyspec suite (`ssz_generic` + per-fork tests)
 
 **Goal.** Validate every encode / decode / HTR path against the
-official test vectors from `ethereum/consensus-spec-tests` releases.
+pyspec test vectors from `ethereum/consensus-spec-tests` releases.
 Passing this stage is the gating signal for Stage 18: it is what
 makes the complete-proof investment well-targeted rather than
 speculative.
@@ -399,7 +399,7 @@ speculative.
 **Acceptance (two parts).**
 - **14a: Generic.** All `ssz_generic` vectors pass in CI. *This is
   the gate for Stage 18.*
-- **14b: Per-fork.** At least one fork's per-type conformance tests
+- **14b: Per-fork.** At least one fork's per-type pyspec tests
   pass in CI.
 
 **Risk.** Medium. The test-fixture format is well-documented but
@@ -407,7 +407,7 @@ voluminous; expect plumbing work to read the YAML/SSZ vector files
 into Lean.
 
 **Notes.** This is also where the FFI SHA-256 assertion (Stage 9) gets
-its strongest empirical backing. Every Merkle root in the conformance
+its strongest empirical backing. Every Merkle root in the pyspec
 suite indirectly checks the C shim.
 
 **Phase 3 exit gate.** Library passes upstream consensus-specs test
@@ -852,7 +852,7 @@ under `rfl` / `native_decide`; LeanEthCS still imports the
 qualified-path internal modules it needs (`Spec/Serialize`,
 `Repr/Deriving`, etc.) without change.
 
-### Stage 11.1: Conformance harness modernisation: **shipped**
+### Stage 11.1: Pyspec harness modernisation: **shipped**
 
 **Goal.** The Stage 11 harness spawned `eth_ssz_vector_runner`
 once per case via `subprocess.run`. At ~100 ms of Lean-runtime

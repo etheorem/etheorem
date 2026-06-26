@@ -1,7 +1,7 @@
 import EthCLSpecs
 
 /-!
-# `EthCLSpecs.PySpecTests.Server`: the long-lived conformance server (`pyspec_server`)
+# `EthCLSpecs.PySpecTests.Server`: the long-lived pyspec server (`pyspec_server`)
 
 The runner exe instantiates the generic `PySpecTests` driver at a fork and runs
 the request/result loop the Python `pytest-xdist` harness talks to
