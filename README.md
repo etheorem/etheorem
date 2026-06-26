@@ -101,6 +101,18 @@ for the staged plan.
 
 Per-subpackage design docs live next to the code they describe:
 
+- [`packages/EthCLSpecs/docs/`](packages/EthCLSpecs/docs/README.md):
+  the consensus-spec design of record. Read in order:
+  [`SPEC_AUTHORING_MODEL.md`](packages/EthCLSpecs/docs/SPEC_AUTHORING_MODEL.md)
+  (the author-versus-framework contract and glossary),
+  [`FRAMEWORK_ARCHITECTURE.md`](packages/EthCLSpecs/docs/FRAMEWORK_ARCHITECTURE.md)
+  (the EthCLLib framework and fork-authoring DSL), and
+  [`SPECS_ARCHITECTURE.md`](packages/EthCLSpecs/docs/SPECS_ARCHITECTURE.md)
+  (how the Fulu and Gloas specs are organized, ported, and tested).
+  [`PLAN.md`](packages/EthCLSpecs/docs/PLAN.md) sequences the
+  implementation phases; `IMPLEMENTATION_NOTES.md`, `DISCREPANCIES.md`,
+  and `FUTURE_WORK.md` track deviations, spec disagreements, and
+  deferred work.
 - [`packages/SizzLean/docs/ARCHITECTURE.md`](packages/SizzLean/docs/ARCHITECTURE.md):
   the SSZ library's binding design (`SSZType` universe, `SSZRepr`
   typeclass + deriving, cached Merkle tree, FFI SHA-256, trust
@@ -176,15 +188,15 @@ Toolchain pinned in [`lean-toolchain`](lean-toolchain) (elan picks it up).
 
 ```bash
 # From the repo root — common targets by name:
-lake build LeanSha256
-lake build SizzLean
-lake build EthCLSpecs       # consensus spec (Fulu / Gloas); pulls in EthCLLib
+lake build EthCLSpecs       # consensus spec (Fulu / Gloas); pulls in EthCLLib + SizzLean
+lake build SizzLean         # SSZ library (serialize / deserialize / Merkleization)
+lake build LeanSha256       # pure-Lean SHA-256 reference
 lake build LeanPoseidon     # standalone Poseidon2 island (fires its anchor KAT)
 
 # Test suites (per package, run on demand):
-lake build LeanSha256Tests
-lake build SizzLeanTests
 lake build EthCLLibTests EthCLSpecsTests   # framework + spec self-tests
+lake build SizzLeanTests
+lake build LeanSha256Tests
 lake build LeanPoseidonTests # committed Poseidon2 KATs (no Rust)
 lake exe   poseidon_fuzz     # Poseidon2 differential test vs the zkhash oracle (needs cargo)
 just test-poseidon-proofs    # mathlib equivalence proof permute = permuteRef (standalone; fetches olean cache)
