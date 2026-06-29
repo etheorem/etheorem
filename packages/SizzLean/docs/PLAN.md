@@ -1151,7 +1151,7 @@ happens until `hashTreeRoot` walks the tree"** holds.
 This sub-stage now splits into three pieces of work tracked
 separately. The split is structural: the FFI primitive shipped
 in 17b.0; the SIMD shim (17b.1) is what makes the primitive
-actually fast; the level-aware Lean traversal (17b.2) is what
+actually fast; the rank-frontier batched walker (17b.2) is what
 exposes the win through the user interface.
 
 ##### Stage 17b.0: FFI primitive + Lean wrapper + axiom: **shipped**
@@ -1230,30 +1230,55 @@ available, handled by the `#if`-arch dispatch).
 agreement with the pure-Lean reference; the equivalence test
 re-runs identically.
 
-##### Stage 17b.2: Level-aware traversal in Lean: **not done; depends on 17b.1**
+##### Stage 17b.2: Rank-frontier batched walker in Lean: **not done; depends on 17b.1**
 
-**Goal.** Plug the (now-fast) batched primitive into
-`merkleRootWithCache`'s recursive walk. The default `box.hashTreeRoot`
-path then gathers per-level sibling pairs and issues one batched
-call per tree level instead of per-pair scalar calls.
+**Goal.** Feed the now-fast batched primitive from the cache's
+root walk. The walk batches every sibling pair that becomes ready
+at the same moment, wherever it sits in the tree, and issues one
+`sha256BatchCombine` per group. Geometric "one batch per tree
+level" is the special case for a single perfect binary tree;
+SizzLean's trees are not always that shape, so the walker batches
+by *readiness rank* instead.
+
+**Readiness is already in the node type.** The `pair`'s
+`Option ByteArray` cache slot is both the dirty bit (`none` =
+needs recompute) and the readiness flag (`some` = computed,
+`Node.cached` reads it in O(1)). A `pair l r none` is ready the
+moment both children are `some`. `setManyAt` confines the `none`
+cells to the touched spines, so the walk descends only the dirty
+region and prunes resolved branches in O(1) via `Node.rootOf`.
+Rank is the height of a pair's tallest unresolved input
+(`rank = 1 + max` over children, cached children counting 0), so
+pairs of equal rank are mutually independent and form one batch.
+Rank equals geometric level on a perfect tree, and merges ready
+pairs across subtrees of differing heights on a heterogeneous or
+sparsely-dirtied one, which packs the SIMD lanes fuller.
 
 **Deliverable.**
-- `SizzLean/Cache/MerkleTree/MerkleBatch.lean`: a level-aware
-  variant of `merkleRootWithCache` that gathers `pair _ _ none`
-  cells at each depth and calls `sha256BatchCombine` once per
-  level. Wired as the runtime implementation of
-  `merkleRootWithCache` (via `@[implemented_by]` if the
-  signatures match, otherwise as the cached-Box path's default
-  walk).
+- `SizzLean/Cache/MerkleTree/MerkleBatch.lean`: a
+  `commitAndHash`-shaped walk in three phases. (1) One post-order
+  descent that hashes nothing and records each `pair _ _ none` as
+  `(id, leftSource, rightSource, rank)`, sources being either a
+  cached digest or another pair's id, bucketed by rank. (2) Flush
+  rank `0, 1, …, maxRank`, one `sha256BatchCombine` per bucket,
+  writing digests into an id-indexed results array. (3) Rebuild
+  the tree, threading roots back into the `none` slots. Wired as
+  the cached-Box path's default walk (or `@[implemented_by]` on
+  `merkleRootWithCache` when the signatures match).
 
 After this lands, the scenarios bench's `S1`/`S3`/`S4`/`S6`
-ValidatorSet rows should drop dramatically on x86 with AVX-512
-(approx 3–5× faster cached column), modestly on ARM (~1.5×).
+ValidatorSet rows should drop on x86 with AVX-512 (approx 3–5×
+faster cached column), modestly on ARM (~1.5×).
 
-**Risk.** Medium. The recursive Node shape doesn't naturally
-lend itself to level-flattening; the implementation needs
-either a worklist restructure or a CPS-style accumulator.
-Reference: `gohashtree`'s `HashChunks` shape.
+**Risk.** Medium. Schedule-collect and rebuild are mechanical on
+an immutable tree (results route through the id-indexed array
+since slots cannot be flipped in place mid-wave). The design
+lever is batch fullness: rank bucketing already merges across
+subtrees, leaving only the small-tree top ranks underfilled. A
+lane-width threshold hashes sub-`N` ranks with scalar `combine`
+and reserves `sha256BatchCombine` for the wide ranks; 17b.1 owns
+where that threshold sits, 17b.2 owns producing buckets big
+enough to clear it. Reference: `gohashtree`'s `HashChunks` shape.
 
 **Dependency on 17b.1.** Without the SIMD shim, integrating
 this delivers zero measurable improvement on the scenarios

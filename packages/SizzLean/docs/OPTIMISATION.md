@@ -386,7 +386,7 @@ Five sub-stages with a microbenchmark in
 | 17a | Pending overlay (closure-based, read-from-view at commit) | **shipped** |
 | 17b.0 | Batched FFI primitive `sha256BatchCombine` + named axiom | **shipped** |
 | 17b.1 | AVX-512 / SHA-NI inner loop in the C shim | **not done** (FFI surface ready; swap is C-side only) |
-| 17b.2 | Level-aware Lean walker that consumes `combineBatch` | **not done** (depends on 17b.1 to be worth wiring) |
+| 17b.2 | Rank-frontier Lean walker that batches `sha256BatchCombine` by readiness rank | **not done** (depends on 17b.1 to be worth wiring) |
 | 17c | Hash-consing primitive (`Node.mkPair`) | **library primitive shipped; not on default cached path** |
 | 17d | `@[specialize]` on the three SSZ surfaces | **shipped** |
 | 17e | Fused commit walk (`Node.commitAndHash`) + pre-cached `Node.ofShape` builders | **shipped** |
@@ -397,7 +397,7 @@ shipped optimisations deliver real wins (17a + 17e together are
 the headline cache-vs-pure ratio on realistic workloads, see
 S6/S7 in the bench) and *which* ship infrastructure pending a
 follow-up to light up (17b.1 / 17b.2, needs the SIMD inner loop
-and the level-aware walker). Each section below records both the
+and the rank-frontier walker). Each section below records both the
 design and the measured result; the per-sub-stage details
 remain accurate as implementation references. They document what
 the optimisation does, the data structure it needs, the prior
@@ -707,106 +707,150 @@ are unchanged.
 with the pure-Lean reference; the equivalence test re-runs
 identically.
 
-#### Stage 17b.2: Level-aware Lean traversal: **not done; depends on 17b.1**
+#### Stage 17b.2: Rank-frontier batched walker: **not done; depends on 17b.1**
 
-**Goal.** Plug the (now-fast) batched primitive into
-`merkleRootWithCache`'s recursive walk. The default
-`box.hashTreeRoot` path then gathers per-level sibling pairs and
-issues one batched call per tree level instead of per-pair scalar
-calls.
+**Goal.** Feed the now-fast batched primitive from the cache's
+own root walk. The walk groups every sibling pair that becomes
+ready to hash at the same moment, wherever it sits in the tree,
+and issues one `sha256BatchCombine` per group. "One batch per
+geometric tree level" is the special case that holds when the
+whole tree is a single perfect binary tree. SizzLean's trees are
+not always that shape, so the walker batches by *readiness rank*,
+which subsumes level order and packs the SIMD lanes fuller.
 
-**Deliverable.** `SizzLean/Cache/MerkleTree/MerkleBatch.lean`:
-a level-aware variant of `merkleRootWithCache` that gathers
-`pair _ _ none` cells at each depth and calls
-`sha256BatchCombine` once per level. Wired as the runtime
-implementation of `merkleRootWithCache` (via `@[implemented_by]`
-if the signatures match; otherwise as the cached-Box path's
-default walk).
+**Readiness already lives in the node type.** The `Node` cache
+slot does double duty:
+
+```lean
+inductive Node where
+  | leaf : ByteArray → Node
+  | pair : Node → Node → Option ByteArray → Node   -- left, right, cached root
+```
+
+`none` means "needs recompute", `some root` means "already
+computed", and `Node.cached` reads the slot in O(1). A `pair l r
+none` is ready the instant both `l.cached` and `r.cached` are
+`some`. There is no separate dirty set and no version counter;
+the `Option` is the dirty bit and the readiness flag at once.
+`setManyAt` / `setAtBits` confine the `none` cells to the touched
+spines, and off-path children stay `some`, so the walk descends
+only the dirty region and prunes resolved branches in O(1)
+through `Node.rootOf`, the same pruning `commitAndHash` already
+performs.
+
+**Rank, not geometric level.** Give each dirty `pair` a *rank*,
+the height of its tallest unresolved input:
+
+```
+rank(pair l r none) = 1 + max(rankOf l, rankOf r)
+  rankOf child       = if child.cached.isSome then 0 else rank child
+```
+
+A leaf, and any node whose slot is already `some`, has rank 0.
+Two pairs of equal rank are mutually independent: each input is
+either cached or was produced by a strictly lower rank that
+flushed earlier. One rank is therefore one batch. Rank coincides
+with geometric level exactly when the tree is one perfect binary
+tree. Across a heterogeneous container, whose fields are subtrees
+of different heights, and across the incremental case, where
+dirty leaves scatter through the tree, rank merges ready pairs
+from different depths in different subtrees into a single batch.
+That fills more lanes than per-subtree level batching, which
+flushes each subtree's bottom row on its own. The `mix_in_length`
+pair, whose children are a deep data-subtree root and a shallow
+length leaf, falls out for free: the length leaf is `some` from
+construction, so the mix-in pair takes rank `1 + rank(dataRoot)`.
+
+**Deliverable.** `SizzLean/Cache/MerkleTree/MerkleBatch.lean`, a
+`commitAndHash`-shaped walk restructured into three phases over
+an explicit schedule, replacing the current single inline
+recursion:
+
+1. **Descend and schedule.** One post-order pass over the dirty
+   region that hashes nothing. For each `pair _ _ none` it
+   allocates an integer id and records
+   `(id, leftSource, rightSource, rank)`, where each source is
+   `Sum (cached digest) (id of another scheduled pair)`.
+   Post-order yields children before parents, so a pair's rank is
+   known when it is recorded. Records bucket by rank.
+2. **Flush by rank.** For rank `0, 1, …, maxRank`: resolve the
+   bucket's `inr id` inputs from results filled by earlier ranks,
+   call `sha256BatchCombine` once on the whole bucket, and write
+   each digest into an id-indexed results array.
+3. **Rebuild.** Thread the computed roots back into the matching
+   `none` slots, yielding the cached `Node` the recursive walk
+   would have produced plus the root digest.
+
+The schedule decouples hashing order from the immutable tree,
+which the wave model needs. A pure-functional `Node` cannot have
+a slot flipped in place mid-wave, so results sit in the id-indexed
+array until the single rebuild pass. Wired as the cached-Box
+path's default walk, or `@[implemented_by]` on
+`merkleRootWithCache` when the signatures line up.
+
+**Cost shape.** One schedule descent, plus `maxRank + 1` batched
+calls, plus one rebuild, against today's single fused recursion
+in `commitAndHash`. The extra descent and the id-indexed array
+buy full batches on a pure-functional tree. They are dead weight
+until the shim underneath is genuinely parallel, which is why
+this waits on 17b.1.
 
 After this lands, the scenarios bench's `S1`/`S3`/`S4`/`S6`
-ValidatorSet rows should drop dramatically on x86 with AVX-512
-(approx 3–5× faster cached column) and modestly on ARM (~1.5×).
+ValidatorSet rows should drop on x86 with AVX-512 (approx 3–5×
+faster cached column) and modestly on ARM (~1.5×).
 
-**Dependency on 17b.1.** Without the SIMD shim, integrating
-this delivers zero measurable improvement on the scenarios
-bench (the bench data on the scalar shim confirmed this: FFI
-batched ≈ FFI scalar at ~40 µs / 128 pairs). 17b.2 is only
-worth doing once 17b.1 ships.
-
-**Original design notes follow**, kept for the prior-art
-references and the data-structure sketch; both still apply to
-the follow-up SIMD path.
-
-**What it does.** Plumb a SHA-NI / AVX-512 FFI primitive that
-hashes 4–8 sibling pairs in parallel; alter
-`merkleRootWithCache` to collect batchable pairs at one tree
-level before issuing the batched call. The Intel SHA-NI
-instruction set hashes one block per cycle per pipe; AVX-512
-runs ~4 blocks in parallel. On modern x86 servers, batched
-SHA-256 is the largest single perf lever after the cache is in
-place; Lighthouse measures ~3× speedup on cold-root
-computation.
-
-**Data structure.** Two new files:
-
-* `csrc/sha256_batch.c`: new C shim wrapping OpenSSL's
-  `EVP_DigestUpdate` parallel-pipe mode (or, more aggressively,
-  a hand-tuned SHA-NI / AVX-512 implementation along the lines
-  of `gohashtree`'s `sha256_avx_x4` and `sha256_avx512_x16`).
-* `SizzLean/Hasher/Sha256Batch.lean`:
-  `@[extern "lean_ssz_sha256_batch"] opaque sha256Batch :
-  Array (ByteArray × ByteArray) → Array ByteArray`.
-* `SizzLean/Cache/MerkleTree/MerkleBatch.lean`: a variant of
-  `merkleRootWithCache` that collects sibling pairs across a
-  level before issuing one batched call. The traversal is
-  level-aware: at depth `d`, gather every `pair l r none` whose
-  `l` and `r` have already-resolved roots, hash them in one
-  batch, write back the cached roots, and recurse.
+**Dependency on 17b.1.** Without the SIMD shim the rank walker
+delivers zero measurable improvement; the scalar-shim bench
+confirmed it (FFI batched ≈ FFI scalar at ~40 µs / 128 pairs).
+Worth wiring only once 17b.1 ships.
 
 **Prior art.**
 
 * `gohashtree` (Prysm's hashing backend) is the reference
-  implementation of the AVX-512 path. Its `sha256_avx_x4`
-  function hashes four message blocks in parallel and is the
-  basis for our `lean_ssz_sha256_batch` shape.
-* `remerkleable` does not batch (Python-side it would be
-  pointless). The batching pattern is a C-level concern; the
-  Lean-side traversal that *feeds* it is the new contribution.
-* Lighthouse's Milhouse uses `gohashtree`'s `HashChunks` API for
-  bulk-leaf hashing only (not for interior nodes); we'd push
-  the batching one level deeper into the recursive walk.
+  implementation of the AVX-512 multi-buffer path. Its
+  `sha256_avx_x4` hashes four message blocks in parallel and is
+  the shape `sha256BatchCombine` dispatches into.
+* `remerkleable` does not batch; Python-side it would be
+  pointless. Batching is a C-level concern, and the rank-frontier
+  traversal that *feeds* it is the new contribution here.
+* Lighthouse's Milhouse uses `gohashtree`'s `HashChunks` for
+  bulk-leaf hashing only, not interior nodes. The rank walker
+  pushes batching one step further, up through every interior
+  level of the dirty region.
 
-**Dependency on Stage 15.** The Stage 15 conformance story is
-"FFI Sha256 ≡ pure-Lean `Sha256Spec` on 185 cases". A batched
-primitive would need a parallel empirical equivalence, either
-"FFI sha256Batch on a sibling pair equals two scalar
-`Sha256Spec.combine` calls on the same inputs" or, more
-formally, a `@[csimp]` proof. The honest answer for shipping is
-*neither*; the batched primitive stays a performance shim in
-the TCB behind its own assertion, just like the scalar FFI
-shim today. The Stage 15 axioms (`sha256Hash_eq_spec`,
-`sha256Combine_eq_spec`) cover the scalar surface; a parallel
-axiom `sha256Batch_eq_spec : ∀ pairs, sha256Batch pairs =
-pairs.map (fun (l, r) => Sha256Spec.combine l r)` would extend
-the empirical-equivalence story to the batched primitive.
+**Dependency on Stage 15 (trust).** The Stage 15 conformance
+story is "FFI `Sha256` ≡ pure-Lean `Sha256Spec` on 185 cases".
+The batched primitive already carries the parallel assertion
+shipped in 17b.0, the named axiom `sha256BatchCombine_eq_spec`,
+which asserts `sha256BatchCombine lefts rights` equals the
+pointwise `Sha256Spec.combine` of the zipped inputs, validated by
+the seven `Sha256BatchEquivalence` cases. The rank walker adds no
+new axiom: it only changes which pairs land in which FFI call,
+and every call still answers to that one assertion. The batched
+primitive stays a performance shim in the TCB behind its own
+assertion, the same standing as the scalar FFI shim.
 
 **Microbenchmark target.** Cold-root of a fully-populated
-mainnet-preset `BeaconState` (~1M validators), should drop
-from `gohashtree`-comparable scalar timing to within ~50% of
+mainnet-preset `BeaconState` (~1M validators) should drop from
+`gohashtree`-comparable scalar timing to within ~50% of
 `gohashtree`'s batched implementation.
 
-**Proof-side invariant.** Wired as an `@[implemented_by]` swap
-on `merkleRootWithCache` (or as a new opt-in entry point), not
-as a change to the `Hasher` typeclass. The abstract
-`Hasher Sha256Spec` instance, what `SSZ.PureBox` /
-`UncachedWith Sha256Spec` paths use, sees no change.
+**Proof-side invariant.** Wired as an `@[implemented_by]` swap on
+`merkleRootWithCache`, or as a new opt-in entry point, never as a
+change to the `Hasher` typeclass. The abstract `Hasher Sha256Spec`
+instance, which the `SSZ.PureBox` / `UncachedWith Sha256Spec`
+paths use, sees no change and stays kernel-reducible.
 
-**Risk.** Medium. The FFI shim is straightforward; the
-level-aware traversal that keeps batches full is the
-design lever. Naïve batching (one batch per level) leaves the
-parallel pipes underutilised when the tree is sparse; the
-sophisticated version (batch fullness with cross-level work
-stealing) needs careful design.
+**Risk.** Medium. The schedule-collect and rebuild phases are
+mechanical. The design lever is keeping batches full: rank
+bucketing already merges across subtrees, so the remaining
+question is the small-tree tail, where the top ranks hold one or
+two pairs and underfill the lanes. A threshold that hashes
+sub-`N` ranks with the scalar `combine` and reserves
+`sha256BatchCombine` for ranks above the lane width keeps the
+underfilled tail off the SIMD path. 17b.1 owns where that
+threshold sits; 17b.2 owns producing buckets big enough to clear
+it.
 
 ### Stage 17c: Hash-consing: **library primitive shipped; not on user interface**
 
