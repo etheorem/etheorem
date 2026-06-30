@@ -84,9 +84,9 @@ state's queue (`process_deposit_request`) or an in-progress accumulator
 forkdef isPendingValidator (pendingDeposits : Array PendingDeposit) (pubkey : BLSPubkey) : Bool :=
   pendingDeposits.any fun d =>
     d.pubkey == pubkey && isValidDepositSignature d.pubkey d.withdrawalCredentials d.amount d.signature
-/-- `initiate_builder_exit`. Retained for the deferred EIP-8282
+/-- `initiate_builder_exit`. The EL-triggered builder exit, called by
 `process_builder_exit_request` (alpha.11 moved builder exits off `process_voluntary_exit`
-to this EL-triggered path); not yet wired, so it currently has no caller. -/
+to this path). -/
 forkdef initiateBuilderExit (builderIndex : BuilderIndex) : StateTransition Unit := do
   let epoch := currentEpochOf (← get)
   modifyState fun state =>
@@ -150,6 +150,60 @@ forkdef onboardBuildersFromPendingDeposits : StateTransition Unit := do
       applyDepositForBuilder d.pubkey d.withdrawalCredentials d.amount d.signature d.slot
 
   modifyState fun state => sszUpdate state with pendingDeposits := sszOfArray kept
+
+/-! ## EIP-8282 builder-request handlers
+
+The EL-triggered builder onboarding / exit path (alpha.11). `apply_parent_execution_payload`
+runs these over the parent payload's `ExecutionRequests.builder_deposits` /
+`builder_exits` lists, after the validator deposit / withdrawal / consolidation requests. -/
+
+/-- `is_valid_builder_deposit_signature`: the builder-deposit proof-of-possession.
+Like `is_valid_deposit_signature`, the domain is fixed (`compute_domain(DOMAIN_BUILDER_DEPOSIT)`
+over the genesis fork version and a zero `genesis_validators_root`), so verification is a
+single BLS gate through the `[CryptoBackend]` seam. -/
+forkdef isValidBuilderDepositSignature (request : BuilderDepositRequest) : Bool :=
+  let msg : DepositMessage :=
+    { pubkey := request.pubkey, withdrawalCredentials := request.withdrawalCredentials, amount := request.amount }
+  let domain := computeDomain Const.domainBuilderDeposit Const.genesisForkVersion (Vector.replicate 32 0)
+  blsVerify request.pubkey (computeSigningRoot msg domain) request.signature
+
+/-- `process_builder_deposit_request` (EIP-8282): for a new builder pubkey with a valid
+proof-of-possession, onboard it (the `version` byte and execution address come from the
+withdrawal credentials, stamped at `state.slot`); for an existing builder, top up its
+balance and, if it had already initiated exit, push its withdrawable epoch back out. -/
+forkdef processBuilderDepositRequest (request : BuilderDepositRequest) : StateTransition Unit := do
+  let state ← get
+  match (sszGet state builders).findIdx? (·.pubkey == request.pubkey) with
+  | none =>
+    if isValidBuilderDepositSignature request then
+      addBuilderToRegistry request.pubkey (credPrefix request.withdrawalCredentials)
+        (addressOfCred request.withdrawalCredentials) request.amount (sszGet state slot)
+  | some builderIndex =>
+    let epoch := currentEpochOf state
+    modifyState fun state =>
+      sszModify state builders[builderIndex]! as b =>
+        { b with
+          balance := b.balance + request.amount,
+          withdrawableEpoch :=
+            if b.withdrawableEpoch != Const.farFutureEpoch
+            then epoch + Const.minBuilderWithdrawabilityDelay
+            else b.withdrawableEpoch }
+
+/-- `process_builder_exit_request` (EIP-8282): an EL-triggered builder exit. A no-op
+unless the pubkey names an active builder whose registered execution address matches the
+request's `source_address` and that has no pending balance to withdraw; otherwise it
+initiates the builder's exit. -/
+forkdef processBuilderExitRequest (request : BuilderExitRequest) : StateTransition Unit := do
+  let state ← get
+  match (sszGet state builders).findIdx? (·.pubkey == request.pubkey) with
+  | none => pure ()
+  | some idx =>
+    let builderIndex : BuilderIndex := UInt64.ofNat idx
+    let builder := sszGet state builders[idx]!
+    if isActiveBuilder state builderIndex
+        && builder.executionAddress == request.sourceAddress
+        && getPendingBalanceToWithdrawForBuilder state builderIndex == 0 then
+      initiateBuilderExit builderIndex
 
 /-! ## Gloas-modified operations -/
 
@@ -441,10 +495,8 @@ forkdef applyParentExecutionPayload (requests : ExecutionRequests) : StateTransi
   for d in requests.deposits do processDepositRequest d
   for w in requests.withdrawals do processWithdrawalRequest w
   for c in requests.consolidations do processConsolidationRequest c
-  -- Deferred: EIP-8282 builder-deposit / builder-exit request processing is not yet
-  -- ported; a non-empty list xfails the runner (todo) rather than diverging the root.
-  unless requests.builderDeposits.size == 0 && requests.builderExits.size == 0 do
-    throw (StateTransitionError.todo "gloas builder_deposit/builder_exit processing: EIP-8282 not yet ported")
+  for bd in requests.builderDeposits do processBuilderDepositRequest bd
+  for be in requests.builderExits do processBuilderExitRequest be
 
   -- Settle the parent's payment if it is still in the two-epoch window; outside it,
   -- queue any remaining value directly as a builder withdrawal.

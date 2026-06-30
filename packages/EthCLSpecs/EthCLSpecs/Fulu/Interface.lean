@@ -145,8 +145,9 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     | .executionPayload      => (decodeOp (@BeaconBlockBody P) opBytes).map (fun body => do
         assert cmeta.executionValid
         processExecutionPayload body)
-    -- Gloas / EIP-7732-only operation handlers; not standalone Fulu operations.
-    | .voluntaryExitChurn | .payloadAttestation | .executionPayloadBid | .parentExecutionPayload =>
+    -- Gloas / EIP-7732 / EIP-8282-only operation handlers; not standalone Fulu operations.
+    | .voluntaryExitChurn | .payloadAttestation | .executionPayloadBid | .parentExecutionPayload
+    | .builderDepositRequest | .builderExitRequest =>
         .error (.spec (.todo s!"operations/{reprStr kind}: not a standalone Fulu operation"))
   match dispatch with
   | .error e     => .error e

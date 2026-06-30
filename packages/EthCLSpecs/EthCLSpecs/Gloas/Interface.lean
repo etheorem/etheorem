@@ -136,7 +136,8 @@ pre-state. The non-ePBS handlers are inherited from Fulu (`Gloas.Operations`); t
 ePBS-modified / ePBS-new ones are Gloas-specific: `proposer_slashing` (builder-payment
 cleanup), payload-aware `attestation`, `payload_attestation`, the builder-aware
 `withdrawals`, `execution_payload_bid`, `parent_execution_payload`, `block_header`,
-and the builder-branch `voluntary_exit` / `deposit_request`. -/
+the EIP-8282 `builder_deposit_request` / `builder_exit_request`, and the builder-branch
+`voluntary_exit` / `deposit_request`. -/
 private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     (preBytes opBytes : ByteArray) (cmeta : CaseMeta) : Except (RunError StateTransitionError) ByteArray := do
   let box0 ← decodeState P preBytes
@@ -165,6 +166,8 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     | .depositRequest         => (decodeOp (@DepositRequest P) opBytes).map processDepositRequest
     | .withdrawalRequest      => (decodeOp (@WithdrawalRequest P) opBytes).map processWithdrawalRequest
     | .consolidationRequest   => (decodeOp (@ConsolidationRequest P) opBytes).map processConsolidationRequest
+    | .builderDepositRequest  => (decodeOp (@Gloas.BuilderDepositRequest P) opBytes).map processBuilderDepositRequest
+    | .builderExitRequest     => (decodeOp (@Gloas.BuilderExitRequest P) opBytes).map processBuilderExitRequest
     | .syncAggregate          => (decodeOp (@SyncAggregate P) opBytes).map processSyncAggregate
     -- Handlers EIP-7732 does not drive as standalone Gloas operations.
     | .deposit | .executionPayload =>
