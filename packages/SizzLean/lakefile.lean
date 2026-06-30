@@ -145,7 +145,7 @@ lean_lib SizzLeanTests where
 
 -- Microbenchmarks live in a third sibling lib, `SizzLeanBench`.
 -- Built via `lake build SizzLeanBench`; run via `lake exe ssz_bench`
--- (the `just bench` recipe wraps the redirection to a TSV file).
+-- (the `just sizzlean-bench` recipe wraps the redirection to a TSV file).
 -- Each scenario's measurement column lives in its own
 -- `SizzLeanBench/Scenarios/<Name>.lean` file.
 --

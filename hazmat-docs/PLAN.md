@@ -130,7 +130,7 @@ umbrella green.
 SizzLeanTests` and `lake build LeanHazmatSha256Tests` both pass; `#axioms`
 on a `SizzLean` hash-root theorem still cites the three named equivalence
 axioms; the pyspec suites (`just ethcl-pyspec` and
-`just ssz-generic-pyspec`) still pass unchanged.
+`just sizzlean-pyspec`) still pass unchanged.
 
 **Risk.** Medium. The cross-package link integration (Stage 0 settles its
 shape) and the three-file axiom/extern split are the fiddly parts; the
@@ -161,7 +161,7 @@ the vendored-library build harness that every later vendored family reuses.
 
 **Deliverables.**
 - `packages/LeanHazmatBls/` scaffold (per-family shape).
-- A `just vendor-bls` recipe: shallow `git clone --recursive --depth 1` of
+- A `just hazmat-bls-vendor` recipe: shallow `git clone --recursive --depth 1` of
   `blst` at a **pinned tag** into a gitignored `vendor/`. Pin the rev to the
   one `c-kzg-4844` expects, so Stage 3 can share it
   ([`ARCHITECTURE.md`](ARCHITECTURE.md) §4).
@@ -174,11 +174,11 @@ the vendored-library build harness that every later vendored family reuses.
   ciphersuite `BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`.
 - `LeanHazmatBlsTests`: byte-level KAT against the IETF BLS draft vectors
   and the consensus-spec `bls` test suite.
-- CI: a vendoring step (`just vendor-bls`) before `lake build`, plus a
+- CI: a vendoring step (`just hazmat-bls-vendor`) before `lake build`, plus a
   `doctor-native` entry for the C toolchain.
 - Umbrella `[[require]] LeanHazmatBls`.
 
-**Acceptance.** `lake build` green after `just vendor-bls`; the KAT gate
+**Acceptance.** `lake build` green after `just hazmat-bls-vendor`; the KAT gate
 passes, including at least one Sign/Verify roundtrip and one
 `FastAggregateVerify` case; a fresh CI run vendors and builds clean.
 
@@ -191,7 +191,7 @@ pubkey/sig group choice) are all new surface.
 
 > **Status: done (verified).** `packages/LeanHazmatBls/` wraps blst
 > **v0.3.16** (commit `e7f90de5…`, exactly the rev c-kzg-4844 v2.1.7
-> pins, so Stage 3 shares it). `just vendor-bls` shallow-clones the tag
+> pins, so Stage 3 shares it). `just hazmat-bls-vendor` shallow-clones the tag
 > into gitignored `vendor/blst/`. The lakefile compiles blst's own
 > `src/server.c` amalgamation + `build/assembly.S` directly as `buildO`
 > targets with `-D__BLST_PORTABLE__` (portable archive; the flags mirror
@@ -204,7 +204,7 @@ pubkey/sig group choice) are all new surface.
 > consensus-spec v1.5.0 sign/verify **anchors matched byte-for-byte** plus
 > self-contained aggregate / `FastAggregateVerify` / distinct-message
 > `AggregateVerify` / `eth_fast_aggregate_verify` infinity-signature
-> round-trips, all via `native_decide`. CI gains a `just vendor-bls` step;
+> round-trips, all via `native_decide`. CI gains a `just hazmat-bls-vendor` step;
 > `doctor-native` gains `cc` + `git` checks. `lake build` (all libs) and
 > `just lint` are green. (One deviation logged: the plan said "delegate to
 > build.sh"; compiling the amalgamation directly is the sibling sanctioned
@@ -220,7 +220,7 @@ loaded at init.
 
 **Deliverables.**
 - `packages/LeanHazmatKzg/` scaffold; `require LeanHazmatBls`.
-- A `just vendor-kzg` recipe: shallow clone of `c-kzg-4844` at a pinned tag.
+- A `just hazmat-kzg-vendor` recipe: shallow clone of `c-kzg-4844` at a pinned tag.
   Do **not** pull its `--recursive` blst. Stage 2's blst is used instead.
 - A Lake target compiling c-kzg's own `c_kzg_4844.c` against Bls's blst
   archive → `extern_lib`.
@@ -249,7 +249,7 @@ does not, bump Bls's pin to c-kzg's expectation.
 > **Status: done (verified).** `packages/LeanHazmatKzg/` wraps c-kzg-4844
 > **v2.1.7**, `require`s `LeanHazmatBls`, and shares its blst. Confirmed
 > that c-kzg v2.1.7 pins blst at exactly `e7f90de5…` = the v0.3.16 Bls
-> pin, so no second blst is vendored. `just vendor-kzg` clones c-kzg
+> pin, so no second blst is vendored. `just hazmat-kzg-vendor` clones c-kzg
 > *without* `--recursive`. The lakefile compiles c-kzg's `src/ckzg.c`
 > amalgamation + the shim against Bls's `bindings/`. Surface complete:
 > all six EIP-4844 functions + the three Fulu cell functions. KAT passes
@@ -333,7 +333,7 @@ the consumer's concern.
 **Goal.** Wrap Keccak-256 (the EL's most-used primitive) behind `@[extern]`.
 
 **Deliverables.**
-- `packages/LeanHazmatKeccak/` scaffold; `just vendor-keccak` (XKCP or a
+- `packages/LeanHazmatKeccak/` scaffold; `just hazmat-keccak-vendor` (XKCP or a
   small single-file vetted keccak, pinned).
 - `csrc/keccak_shim.c` + `@[extern] opaque keccak256` (namespace
   `LeanHazmat`). **Keccak padding, not SHA3**, distinct domain separation.
@@ -356,7 +356,7 @@ correctness is well-pinned by vectors.
 
 **Deliverables.**
 - `packages/LeanHazmatSecp256k1/` scaffold. Prefer the system
-  `libsecp256k1` via pkg-config if present; otherwise `just vendor-secp256k1`
+  `libsecp256k1` via pkg-config if present; otherwise `just hazmat-secp256k1-vendor`
   (pinned bitcoin-core checkout).
 - `csrc/secp256k1_shim.c` + `@[extern] opaque ecdsaRecover` (namespace
   `LeanHazmat`) returning the **raw recovered public key**, *not* the
@@ -378,7 +378,7 @@ libsecp256k1.
 toolchain step.
 
 **Deliverables.**
-- `packages/LeanHazmatBn254/` scaffold; `just vendor-bn254` (pinned mcl).
+- `packages/LeanHazmatBn254/` scaffold; `just hazmat-bn254-vendor` (pinned mcl).
 - A Lake target building mcl with the **C++** toolchain; `csrc/bn254_shim.cpp`
   with `extern "C"` wrappers; `-lstdc++` (or `-lc++`) wired into the link.
 - `@[extern] opaque` decls (namespace `LeanHazmat`) for G1/G2 add, scalar
@@ -470,7 +470,7 @@ rest reuses the established OpenSSL pkg-config path from Stage 1.
   vectors track the latest consensus-specs / EIP / reference release; bumping
   spec coverage means bumping the pinned vector tag in lockstep.
 - **Vendoring pinned to tags, fetched shallow, never submodules.** `just
-  vendor-<family>` records an exact tag + rev; `vendor/` is gitignored; the
+  hazmat-<family>-vendor` records an exact tag + rev; `vendor/` is gitignored; the
   build itself stays offline.
 - **No `sorry` in committed code.** A `TODO` + tracking note is acceptable for
   a single-commit WIP; CI rejects `sorry` on `main`.
@@ -505,6 +505,6 @@ Phase 2 (the execution-layer families: Keccak, secp256k1, BN254,
 BLAKE2f, the OpenSSL EL shims, and the execution aggregator + top
 umbrella) is **deferred**: it covers the *execution* protocol, which is
 out of scope for this consensus-first effort. The scaffolding it needs
-already exists. The vendoring harness (`just vendor-*`), the per-family
+already exists. The vendoring harness (`just hazmat-*-vendor`), the per-family
 lakefile shape, the KAT-test pattern, and the cross-package blst-sharing
 wiring are all proven by Phase 1.

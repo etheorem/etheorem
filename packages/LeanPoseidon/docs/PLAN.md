@@ -51,9 +51,9 @@ assumes, for a brand-new subpackage.
 - README skeleton pointing at ARCHITECTURE.md / PLAN.md, noting the
   package implements Poseidon2 and linking Nethermind's `Poseidon.lean`
   for v1.
-- Justfile recipes `gen-poseidon-params`, `test-poseidon`, `fuzz-poseidon`
-  (stubs wired as the underlying targets land), mirroring `gen-cavp` /
-  `test-sha256`. CI (`lean_action_ci.yml`) gains `lake build LeanPoseidon`;
+- Justfile recipes `poseidon-gen-params`, `poseidon-test`, `poseidon-fuzz`
+  (stubs wired as the underlying targets land), mirroring `leansha256-gen-cavp` /
+  `leansha256-test`. CI (`lean_action_ci.yml`) gains `lake build LeanPoseidon`;
   every CI step that has a Justfile recipe goes through `just <recipe>`.
 
 **Acceptance.** `lake build LeanPoseidon` succeeds on a clean checkout; the
@@ -109,7 +109,7 @@ so it is mechanised).
   `intDiag`) and the concrete BN254 t=3 instance.
 - `packages/LeanPoseidon/scripts/gen_poseidon_params.py`: emits the
   constants from a pinned HorizenLabs reference commit (stdlib-only
-  Python; wrapped as `just gen-poseidon-params`). The pinned commit is
+  Python; wrapped as `just poseidon-gen-params`). The pinned commit is
   recorded in the script header.
 - `#guard`s on the shape: `roundConstants.size = 80`, `intDiag.size = 3`,
   `sboxDegree = 5`.
@@ -330,7 +330,7 @@ on each shows exactly `[propext, Classical.choice, Quot.sound]`, **no FFI
 axiom, no `Lean.ofReduceBool`** (verified during review).
 
 **Phase 3 exit gate (met).** `permute = permuteRef` proved with a clean,
-verified axiom footprint; `just test-poseidon-proofs` green. The "fast path
+verified axiom footprint; `just poseidon-proofs` green. The "fast path
 is faithful" result is shipped.
 
 ---

@@ -7,7 +7,7 @@ name = "Etheorem"
 # Common targets (build by name from the repo root):
 #   lake build LeanSha256
 #   lake build LeanHazmatSha256        # consensus crypto — FFI families
-#   lake build LeanHazmatBls           #   (need `just vendor-bls` / `vendor-kzg`)
+#   lake build LeanHazmatBls           #   (need `just hazmat-bls-vendor` / `hazmat-kzg-vendor`)
 #   lake build LeanHazmatKzg
 #   lake build SizzLean
 #   lake build EthCLLib / EthCLSpecs   # consensus-spec framework + Fulu/Gloas bodies
@@ -34,14 +34,14 @@ path = "packages/LeanSha256"
 name = "LeanHazmatSha256"
 path = "packages/LeanHazmatSha256"
 
-# BLS12-381 (blst, vendored). Needs `just vendor-bls` before `lake build`.
+# BLS12-381 (blst, vendored). Needs `just hazmat-bls-vendor` before `lake build`.
 # Single blst owner for the family — LeanHazmatKzg shares this blst.
 [[require]]
 name = "LeanHazmatBls"
 path = "packages/LeanHazmatBls"
 
 # KZG / EIP-4844 + Fulu (c-kzg-4844, vendored against LeanHazmatBls's blst).
-# Needs `just vendor-bls` AND `just vendor-kzg` before `lake build`.
+# Needs `just hazmat-bls-vendor` AND `just hazmat-kzg-vendor` before `lake build`.
 [[require]]
 name = "LeanHazmatKzg"
 path = "packages/LeanHazmatKzg"

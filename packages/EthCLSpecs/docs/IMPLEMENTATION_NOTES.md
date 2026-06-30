@@ -39,7 +39,7 @@ implemented formats reach matches by root or rejects faithfully.
   fork-choice formats; outside `IN_SCOPE_RUNNERS`.
 - **`genesis`**: no vectors at the pin (see Genesis below).
 
-**CI.** The `ethcl` job in `lean_action_ci.yml` runs `just test-ethcl` (builds all
+**CI.** The `ethcl` job in `lean_action_ci.yml` runs `just ethcl-test` (builds all
 four libraries, firing the framework and spec self-tests) and `just
 ethcl-pyspec-smoke` (the `pytest-xdist` dev subset at minimal for both forks
 through the per-worker `pyspec_server`). It is green iff no in-scope vector hits a

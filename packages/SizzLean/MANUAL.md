@@ -384,7 +384,7 @@ context for which empirical assumption is being relied on.
 SizzLean ships three test surfaces. All are driven from the
 top-level `just` interface.
 
-### Library-internal property tests (`just test-ssz`)
+### Library-internal property tests (`just sizzlean-test`)
 
 `native_decide`-backed examples covering SHA-256 vectors, hasher
 equivalence, randomised `setAt`, cache coherence on example
@@ -392,12 +392,12 @@ containers, and `sszUpdate` cases. Each fires at build time, so a
 green build is a passed test suite.
 
 ```bash
-just test-ssz
+just sizzlean-test
 ```
 
 Fast, under a minute on a warm cache.
 
-### Full NIST CAVP SHA-256 vectors (`just test-sha256`)
+### Full NIST CAVP SHA-256 vectors (`just leansha256-test`)
 
 The 129 byte-oriented CAVP vectors (65 ShortMsg + 64 LongMsg)
 fired as `native_decide` assertions against the pure-Lean
@@ -406,7 +406,7 @@ takes ~108 s; smaller anchor gates still fire on the default
 build.
 
 ```bash
-just test-sha256
+just leansha256-test
 ```
 
 ### Upstream `ethereum/consensus-spec-tests` vectors
@@ -420,17 +420,17 @@ EthCLSpecs against the `pyspec_server` exe (Fulu and Gloas).
 ```bash
 # Generic SSZ wire-format tests (uints, vectors, bitlist, …).
 # Quick dev subset by default:
-just ssz-generic-pyspec
+just sizzlean-pyspec
 
 # Full generic sweep:
-just ssz-generic-pyspec-full
+just sizzlean-pyspec-full
 
 # Per-fork consensus-container tests (BeaconState, attestations, …).
 # Quick dev subset on Fulu minimal by default:
 just ethcl-pyspec
 
 # Pass pytest args for more, e.g. a focused glob or a different fork:
-just ssz-generic-pyspec "--subset=0 -n auto"
+just sizzlean-pyspec "--subset=0 -n auto"
 just ethcl-pyspec "--fork=gloas"
 
 # The complete in-scope EthCLSpecs sweep (both forks, both presets):
@@ -449,9 +449,9 @@ created by `just setup-python` once.
 just test
 ```
 
-Runs the per-package in-Lean gates (`test-sha256`, `test-ssz`,
+Runs the per-package in-Lean gates (`leansha256-test`, `sizzlean-test`,
 and the crypto / Poseidon anchors). The consensus-spec libraries
-have their own `just test-ethcl` recipe, where every `deriving
+have their own `just ethcl-test` recipe, where every `deriving
 SSZRepr` in the in-spec containers is a compile-time gate. The
 upstream-vector recipes are *not* in `just test`, they're
 opt-in because each requires downloaded archives and runs

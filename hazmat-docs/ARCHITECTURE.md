@@ -222,7 +222,7 @@ actually re-exports.
 packages/LeanHazmat<Family>/
 ├── lakefile.lean              # C target(s) + extern_lib; pkg-config helpers (duplicated)
 ├── csrc/<family>_shim.c       # the @[extern] shim(s)
-├── vendor/                    # gitignored; populated by `just vendor-<family>` (vendored libs only)
+├── vendor/                    # gitignored; populated by `just hazmat-<family>-vendor` (vendored libs only)
 ├── data/                      # e.g. trusted_setup.txt for Kzg (loaded at init)
 ├── LeanHazmat<Family>.lean    # root; re-exports; declarations in namespace LeanHazmat[.<Family>]
 ├── LeanHazmat<Family>/        # module(s)
@@ -297,7 +297,7 @@ added the same way. System linking has no compile cost and no vendored-source
 audit burden.
 
 **Otherwise vendor by shallow fetch into a gitignored tree.** A `just
-vendor-<family>` recipe runs `git clone --recursive --depth 1` at a *pinned tag*
+hazmat-<family>-vendor` recipe runs `git clone --recursive --depth 1` at a *pinned tag*
 into `vendor/` (gitignored), executed once at setup and as a CI step *before*
 `lake build`. Shallow clone keeps fetch time and size down; `--recursive` carries
 nested submodules (c-kzg's blst) correctly, which a GitHub source tarball would
@@ -312,7 +312,7 @@ the Lake target *delegates to that build* (e.g. invoking c-kzg's own make) rathe
 than re-deriving its compiler flags. We do not author a parallel orchestration
 Makefile.
 
-**No git submodules.** The pin lives in the `just vendor-<family>` recipe (tag +
+**No git submodules.** The pin lives in the `just hazmat-<family>-vendor` recipe (tag +
 recorded rev), not as a tracked submodule gitlink. This keeps `vendor/` out of
 the repo's git history entirely and avoids submodule UX for contributors.
 
@@ -527,7 +527,7 @@ a per-family mirror is an optional later step, never a phase gate.
 
 | Phase | Scope | Constraints |
 | --- | --- | --- |
-| **1: Consensus core** | `LeanHazmatSha256` (the SHA-256 migration out of SizzLean) → `LeanHazmatBls` → `LeanHazmatKzg` → `LeanHazmatConsensus`. | SHA-256 goes first as the cross-package de-risk: it exercises the whole per-family machinery (a new package, `SizzLean` requiring it, link-arg behaviour, the axiom split, the test split) on the one family that needs *no* vendoring. Vendoring (and the `just vendor-*` harness) enters with BLS. KZG depends on BLS (§4). |
+| **1: Consensus core** | `LeanHazmatSha256` (the SHA-256 migration out of SizzLean) → `LeanHazmatBls` → `LeanHazmatKzg` → `LeanHazmatConsensus`. | SHA-256 goes first as the cross-package de-risk: it exercises the whole per-family machinery (a new package, `SizzLean` requiring it, link-arg behaviour, the axiom split, the test split) on the one family that needs *no* vendoring. Vendoring (and the `just hazmat-*-vendor` harness) enters with BLS. KZG depends on BLS (§4). |
 | **2: Execution layer** | Keccak; secp256k1; BN254 (mcl, the C++ toolchain step); BLAKE2f; the OpenSSL EL shims (RIPEMD-160 / modexp / P256); `LeanHazmatExecution`; the top `LeanHazmat` umbrella. | Independent of one another except where a primitive reuses a consensus package (point-eval, EIP-2537, SHA-256 precompile). Each exposes a *raw* primitive; precompile composition (input parse, gas, output hashing) is the consumer's. |
 
 The single highest-risk item in Phase 1 is **cross-package link-arg propagation**:

@@ -9,7 +9,7 @@ distributed by NIST's Cryptographic Algorithm Validation Program).
 The shabytetestvectors archive lives on csrc.nist.gov; the .rsp
 files are committed to this package under `cavp/` and regenerated
 via the sibling `scripts/gen_cavp.py` (umbrella shortcut:
-`just gen-cavp-hazmat`).
+`just hazmat-sha256-gen-cavp`).
 
 This is the **FFI** CAVP gate: each (Len, Msg, MD) triple emits one
 `native_decide` example

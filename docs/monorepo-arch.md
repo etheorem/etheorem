@@ -30,7 +30,7 @@ dependency and is **standalone**, deliberately *not* in the umbrella
 that one package and its one CI job, leaving the root build and every
 other package mathlib-free. Build it on its own:
 `cd packages/LeanPoseidonProofs && lake build` (or `just
-test-poseidon-proofs`).
+poseidon-proofs`).
 
 ```
 <repo-root>/
@@ -229,7 +229,7 @@ repo; this workflow is the only holder), guarded by a
 **Releases are tag-driven.** A `leansha256-vX.Y.Z` annotated tag
 on the umbrella is translated by the same workflow into a plain
 `vX.Y.Z` tag on the downstream, which Reservoir surfaces as a
-release version. `just bump-leansha256-patch` (wrapping
+release version. `just leansha256-bump-patch` (wrapping
 `packages/LeanSha256/scripts/bump_patch.py`) automates the
 high-frequency patch bump: it edits the `version` field in
 `packages/LeanSha256/lakefile.toml`, commits, and creates the
@@ -271,8 +271,8 @@ cd packages/SizzLean && lake build
 ```
 
 The repo's `Justfile` wraps the most common workflows
-(`just build`, `just test`, `just bench`,
-`just ethcl-pyspec`, `just ssz-generic-pyspec`, …),
+(`just build`, `just test`, `just sizzlean-bench`,
+`just ethcl-pyspec`, `just sizzlean-pyspec`, …),
 see `just --list` for the full set.
 
 ## What stays at the root

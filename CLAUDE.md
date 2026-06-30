@@ -262,7 +262,7 @@ fast-≡-reference equivalence proof), and it is deliberately **contained**: a
 oleans, nothing compiles from scratch), with its own committed
 `lake-manifest.json`. So mathlib never touches the SSZ chain, the
 `LeanPoseidon` core, the root build, or any CI job other than the dedicated
-`poseidon-proofs` one. Build it with `just test-poseidon-proofs`. See
+`poseidon-proofs` one. Build it with `just poseidon-proofs`. See
 [`packages/LeanPoseidon/docs/PLAN.md`](packages/LeanPoseidon/docs/PLAN.md) Phase 3.
 
 `LeanPoseidon`'s differential-test oracle vendors the Rust `zkhash` crate

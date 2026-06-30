@@ -42,7 +42,7 @@ builds c-kzg against *this* archive rather than vendoring a second copy
 (cross-family ARCHITECTURE.md §4). Bumping this pin requires re-checking
 the c-kzg rev in lockstep.
 
-`just vendor-bls` shallow-clones the tag into a gitignored `vendor/blst/`;
+`just hazmat-bls-vendor` shallow-clones the tag into a gitignored `vendor/blst/`;
 the build is offline thereafter. Never a git submodule (cross-family
 ARCHITECTURE.md §6).
 

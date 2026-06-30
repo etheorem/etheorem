@@ -1,7 +1,7 @@
 -- LeanHazmatKzg subpackage: Lake configuration.
 --
 -- Procedural `lakefile.lean` (not TOML) because it compiles vendored C
--- into an `extern_lib`. c-kzg-4844 is vendored, `just vendor-kzg`
+-- into an `extern_lib`. c-kzg-4844 is vendored, `just hazmat-kzg-vendor`
 -- shallow-clones the pinned tag (v2.1.7) into `vendor/c-kzg-4844/` (NOT
 -- its `--recursive` blst), and copies the trusted setup into `data/`.
 --
@@ -76,10 +76,10 @@ def ckzgSrc (pkg : Package) : FilePath :=
 target ckzg.o pkg : FilePath := do
   let src := ckzgSrc pkg / "ckzg.c"
   unless (← src.pathExists) do
-    error s!"c-kzg not vendored — run `just vendor-kzg` (expected {src})"
+    error s!"c-kzg not vendored — run `just hazmat-kzg-vendor` (expected {src})"
   let bindings := blstBindings pkg
   unless (← bindings.pathExists) do
-    error s!"blst not vendored — run `just vendor-bls` (expected {bindings})"
+    error s!"blst not vendored — run `just hazmat-bls-vendor` (expected {bindings})"
   let obj := pkg.buildDir / "ckzg" / "ckzg.o"
   let flags := #["-O2", "-fPIC", "-I", (ckzgSrc pkg).toString,
                  "-I", bindings.toString]
@@ -91,7 +91,7 @@ target kzg_shim.o pkg : FilePath := do
   let src := pkg.dir / "csrc" / "kzg_shim.c"
   let bindings := blstBindings pkg
   unless (← bindings.pathExists) do
-    error s!"blst not vendored — run `just vendor-bls` (expected {bindings})"
+    error s!"blst not vendored — run `just hazmat-bls-vendor` (expected {bindings})"
   let obj := pkg.buildDir / "csrc" / "kzg_shim.o"
   let leanInclude ← getLeanIncludeDir
   let flags := #["-O2", "-fPIC", "-I", leanInclude.toString,
@@ -103,12 +103,12 @@ target kzg_shim.o pkg : FilePath := do
 -- absolute string via the `TRUSTED_SETUP_PATH` macro (the `.S` extension
 -- runs the C preprocessor first). The setup is pinned/fixed, so the `.S`
 -- input trace is a sufficient cache key in practice; a setup change comes
--- with a c-kzg pin bump (and `just vendor-kzg` re-copies the file).
+-- with a c-kzg pin bump (and `just hazmat-kzg-vendor` re-copies the file).
 target trusted_setup.o pkg : FilePath := do
   let src := pkg.dir / "csrc" / "trusted_setup_incbin.S"
   let data := pkg.dir / "data" / "trusted_setup.txt"
   unless (← data.pathExists) do
-    error s!"trusted setup missing — run `just vendor-kzg` (expected {data})"
+    error s!"trusted setup missing — run `just hazmat-kzg-vendor` (expected {data})"
   let dataAbs ← IO.FS.realPath data
   let obj := pkg.buildDir / "csrc" / "trusted_setup.o"
   let flags := #[s!"-DTRUSTED_SETUP_PATH=\"{dataAbs}\""]

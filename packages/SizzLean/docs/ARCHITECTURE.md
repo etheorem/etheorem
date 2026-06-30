@@ -1381,9 +1381,9 @@ lakefile. `LeanSha256` uses `lakefile.toml` (pure Lean, no FFI);
     │   │   │                           #   UncachedSSZ / SSZ.Box / Update macro / MerkleTree (incl. HashCons)
     │   │   └── Proofs/                 # @[ssz_simp] set + Roundtrip / Injective / SizeBound (internal)
     │   ├── SizzLeanTests/              # separate lean_lib — empirical / property-test gates
-    │   ├── SizzLeanBench/              # third lean_lib — Stage 17 microbenchmarks (just bench)
+    │   ├── SizzLeanBench/              # third lean_lib — Stage 17 microbenchmarks (just sizzlean-bench)
     │   ├── PySpecTests/                # pytest harness for ssz_generic (ssz_generic_runner exe)
-    │   └── bench/                      # TSV output dir (just bench writes timestamped files)
+    │   └── bench/                      # TSV output dir (just sizzlean-bench writes timestamped files)
     │
     ├── EthCLLib/                       # consensus-spec framework; depends on SizzLean
     │   ├── lakefile.toml

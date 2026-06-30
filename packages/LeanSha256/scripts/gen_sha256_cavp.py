@@ -24,7 +24,7 @@ Paths resolve relative to this script's location inside the
 
     python3 packages/LeanSha256/scripts/gen_sha256_cavp.py
 
-The umbrella `Justfile` wraps the invocation as `just gen-cavp`.
+The umbrella `Justfile` wraps the invocation as `just leansha256-gen-cavp`.
 Regenerate when NIST publishes a refreshed vector set; the output
 is otherwise stable and is checked in.
 """
@@ -83,7 +83,7 @@ distributed by NIST's Cryptographic Algorithm Validation Program).
 The shabytetestvectors archive lives on csrc.nist.gov; the .rsp
 files are committed to this package under `cavp/` and regenerated
 via the sibling `scripts/gen_sha256_cavp.py` (umbrella shortcut:
-`just gen-cavp`).
+`just leansha256-gen-cavp`).
 
 This file lives in the `LeanSha256` library — it validates the
 SHA-256 *spec* directly against NIST's published vectors,

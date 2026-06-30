@@ -63,5 +63,5 @@ this file reads as the user's mental model of the library.
 
 Acceptance / property-test gates live in a separate `lean_lib`
 (`SizzLeanTests`); the default `lake build` skips them and they
-fire via `lake build SizzLeanTests` (or `just test-ssz`).
+fire via `lake build SizzLeanTests` (or `just sizzlean-test`).
 -/

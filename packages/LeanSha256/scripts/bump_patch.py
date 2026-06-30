@@ -22,7 +22,7 @@ Stdlib-only; no external Python dependencies. Run from any CWD:
 
 or via the umbrella Justfile shortcut:
 
-    just bump-leansha256-patch
+    just leansha256-bump-patch
 
 Minor (Y) and major (X) bumps are deliberately not supported — they
 represent decisions the maintainer should make by editing

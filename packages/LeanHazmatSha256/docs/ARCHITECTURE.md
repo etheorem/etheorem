@@ -70,7 +70,7 @@ ARCHITECTURE.md §10, CLAUDE.md "Proofs involving SSZ hashes").
 NIST CAVP CAVS 11.0 byte-oriented SHA-256 vectors
 (`SHA256ShortMsg.rsp`, `SHA256LongMsg.rsp`), committed under `cavp/`
 and regenerated into `LeanHazmatSha256Tests/Cavp.lean` by
-`scripts/gen_cavp.py` (umbrella `just gen-cavp-hazmat`). They are
+`scripts/gen_cavp.py` (umbrella `just hazmat-sha256-gen-cavp`). They are
 checked in so the build is hermetic (no network fetch). The Monte
 Carlo vector set is deliberately excluded, it adds no qualitatively
 new coverage over the byte-oriented vectors.

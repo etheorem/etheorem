@@ -31,11 +31,11 @@ This is the **one** LeanHazmat family that is not zero-dependency: it
 `lake build`:
 
 ```bash
-just vendor-bls    # blst v0.3.16 (the rev c-kzg v2.1.7 expects)
-just vendor-kzg    # c-kzg-4844 v2.1.7 (no --recursive blst)
+just hazmat-bls-vendor    # blst v0.3.16 (the rev c-kzg v2.1.7 expects)
+just hazmat-kzg-vendor    # c-kzg-4844 v2.1.7 (no --recursive blst)
 ```
 
-`just vendor-kzg` also refreshes `data/trusted_setup.txt`, which is
+`just hazmat-kzg-vendor` also refreshes `data/trusted_setup.txt`, which is
 embedded into the archive at build time (no runtime file lookup).
 
 ## Trust boundary

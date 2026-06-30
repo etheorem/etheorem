@@ -11,7 +11,7 @@
 //
 // The setup is the fixed EIP-4844 KZG ceremony output shipped with c-kzg
 // (`data/trusted_setup.txt`, refreshed from the pinned tag by
-// `just vendor-kzg`). The C shim reads these bytes via `fmemopen` +
+// `just hazmat-kzg-vendor`). The C shim reads these bytes via `fmemopen` +
 // `load_trusted_setup_file` once at library load.
 
     .section .rodata

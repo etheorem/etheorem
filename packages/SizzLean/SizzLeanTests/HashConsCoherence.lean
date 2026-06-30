@@ -22,7 +22,7 @@ effect on the global ref), so the test cases run inside an
 `IO Unit` driver rather than as `native_decide` examples. The
 driver fires at build time only, the file is part of
 `SizzLeanTests`, which is built via `lake build SizzLeanTests`
-or `just test-ssz`.
+or `just sizzlean-test`.
 
 ## Coverage
 

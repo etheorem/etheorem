@@ -199,7 +199,7 @@ lake build SizzLeanTests
 lake build LeanSha256Tests
 lake build LeanPoseidonTests # committed Poseidon2 KATs (no Rust)
 lake exe   poseidon_fuzz     # Poseidon2 differential test vs the zkhash oracle (needs cargo)
-just test-poseidon-proofs    # mathlib equivalence proof permute = permuteRef (standalone; fetches olean cache)
+just poseidon-proofs    # mathlib equivalence proof permute = permuteRef (standalone; fetches olean cache)
 
 # Bench + profile executables:
 lake build ssz_bench       # microbench grid, S1–S7 (see SizzLeanBench.lean)
@@ -214,8 +214,8 @@ cd packages/SizzLean && lake build
 ```
 
 The repo's [`Justfile`](Justfile) wraps the common workflows
-(`just build`, `just test`, `just bench`, `just ethcl-pyspec`,
-`just ssz-generic-pyspec`, …). See `just --list` for the full set.
+(`just build`, `just test`, `just sizzlean-bench`, `just ethcl-pyspec`,
+`just sizzlean-pyspec`, …). See `just --list` for the full set.
 
 CI runs `lake build` for each named library on the pinned
 toolchain via `leanprover/lean-action`.
@@ -243,7 +243,7 @@ Run `just doctor-native` to verify the build-time native deps
 
 **Vendored crypto (the LeanHazmat BLS / KZG families).** `LeanHazmatBls`
 (blst) and `LeanHazmatKzg` (c-kzg-4844) wrap *vendored* native libraries,
-fetched at pinned tags by `just vendor-bls` / `just vendor-kzg` into
+fetched at pinned tags by `just hazmat-bls-vendor` / `just hazmat-kzg-vendor` into
 gitignored `vendor/` trees before `lake build` (never git submodules; see
 [`hazmat-docs/ARCHITECTURE.md`](hazmat-docs/ARCHITECTURE.md) §6). `just
 build` runs both vendor steps for you. The C / C++ compilers are invoked
@@ -270,11 +270,11 @@ just setup-python
 
 # Dev-subset smoke gates (a few cases per handler):
 just ethcl-pyspec-smoke         # Fulu + Gloas: transition / fork choice / ssz_static
-just ssz-generic-pyspec-smoke   # ssz_generic
+just sizzlean-pyspec-smoke   # ssz_generic
 
 # Full sweeps:
 just ethcl-pyspec-full               # both presets, both forks
-just ssz-generic-pyspec-full    # every in-scope wire-format vector
+just sizzlean-pyspec-full    # every in-scope wire-format vector
 ```
 
 ### Coverage

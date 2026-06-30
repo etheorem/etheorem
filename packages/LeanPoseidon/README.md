@@ -146,7 +146,7 @@ Beyond the conformance gates ([Tests](#tests)), the shipped primitive is
 Run them all with:
 
 ```bash
-just test-poseidon-proofs
+just poseidon-proofs
 ```
 
 **Where the proofs live.** They are *not* part of the `LeanPoseidon` package,
@@ -212,9 +212,9 @@ Neighbouring Lean 4 implementations:
 | Command | What it runs | Needs |
 | --- | --- | --- |
 | `lake build LeanPoseidon` | the inline anchor KATs (`permute [0,1,2]` for both fields) fire as `native_decide` gates | — |
-| `just test-poseidon-vectors` | the committed `zkhash` KAT batch (`LeanPoseidonTests`) | — |
-| `just fuzz-poseidon` *(`lake exe poseidon_fuzz [N]`)* | differential test: pure-Lean `permute` vs the Rust oracle over `N` seeded-random inputs per field (default 10 000; CI runs 100 000+, all agreeing) | `cargo` |
-| `just test-poseidon-proofs` | all `LeanPoseidonProofs` proofs: `permute = permuteRef`, `permute` is a bijection, `pad` injective, `compress` non-injective, and the round-count `#guard`s | `mathlib` (prebuilt olean cache fetched automatically) |
+| `just poseidon-vectors` | the committed `zkhash` KAT batch (`LeanPoseidonTests`) | — |
+| `just poseidon-fuzz` *(`lake exe poseidon_fuzz [N]`)* | differential test: pure-Lean `permute` vs the Rust oracle over `N` seeded-random inputs per field (default 10 000; CI runs 100 000+, all agreeing) | `cargo` |
+| `just poseidon-proofs` | all `LeanPoseidonProofs` proofs: `permute = permuteRef`, `permute` is a bijection, `pad` injective, `compress` non-injective, and the round-count `#guard`s | `mathlib` (prebuilt olean cache fetched automatically) |
 
 The core builds and the KAT/committed-KAT gates fire with **no Rust and no
 mathlib**; the latter two are isolated to their respective commands.

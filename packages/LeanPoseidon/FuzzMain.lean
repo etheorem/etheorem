@@ -11,7 +11,7 @@ standalone exe root, Lake compiles a dedicated object that emits `main`.
 
 The actual differential logic, the splitmix64 PRNG, and the `@[extern]`
 oracle binding all live in `LeanPoseidonTests`; this file only dispatches.
-Run via `just fuzz-poseidon` or `lake exe poseidon_fuzz <trials>`.
+Run via `just poseidon-fuzz` or `lake exe poseidon_fuzz <trials>`.
 -/
 
 set_option autoImplicit false

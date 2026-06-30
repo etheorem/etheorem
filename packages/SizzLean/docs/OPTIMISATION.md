@@ -379,7 +379,7 @@ integration in `eth2spec`).
 ## Phase 17: open optimisations
 
 Five sub-stages with a microbenchmark in
-`packages/SizzLean/SizzLeanBench/` (run via `just bench`). Status:
+`packages/SizzLean/SizzLeanBench/` (run via `just sizzlean-bench`). Status:
 
 | Sub-stage | What | Status |
 |---|---|---|

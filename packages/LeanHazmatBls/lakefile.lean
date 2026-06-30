@@ -1,7 +1,7 @@
 -- LeanHazmatBls subpackage: Lake configuration.
 --
 -- Procedural `lakefile.lean` (not TOML) because it compiles vendored C
--- + assembly into an `extern_lib`. blst is vendored, `just vendor-bls`
+-- + assembly into an `extern_lib`. blst is vendored, `just hazmat-bls-vendor`
 -- shallow-clones the pinned tag (v0.3.16) into `vendor/blst/` before
 -- `lake build` (hazmat-docs/ARCHITECTURE.md §6); the build below stays
 -- offline.
@@ -39,12 +39,12 @@ def blstFlags : Array String :=
 
 -- blst amalgamation: `src/server.c` transitively includes the whole C
 -- source tree. One object for the entire field/curve/pairing library.
--- The `vendor/blst/` path is absent until `just vendor-bls` runs; the
+-- The `vendor/blst/` path is absent until `just hazmat-bls-vendor` runs; the
 -- existence check turns a missing checkout into an actionable message.
 target blst_server.o pkg : FilePath := do
   let src := pkg.dir / "vendor" / "blst" / "src" / "server.c"
   unless (← src.pathExists) do
-    error s!"blst not vendored — run `just vendor-bls` (expected {src})"
+    error s!"blst not vendored — run `just hazmat-bls-vendor` (expected {src})"
   let obj := pkg.buildDir / "blst" / "server.o"
   buildO obj (← inputTextFile src) blstFlags #[] "cc" getLeanTrace
 
@@ -55,7 +55,7 @@ target blst_server.o pkg : FilePath := do
 target blst_assembly.o pkg : FilePath := do
   let src := pkg.dir / "vendor" / "blst" / "build" / "assembly.S"
   unless (← src.pathExists) do
-    error s!"blst not vendored — run `just vendor-bls` (expected {src})"
+    error s!"blst not vendored — run `just hazmat-bls-vendor` (expected {src})"
   let obj := pkg.buildDir / "blst" / "assembly.o"
   buildO obj (← inputTextFile src) blstFlags #[] "cc" getLeanTrace
 
@@ -66,7 +66,7 @@ target bls_shim.o pkg : FilePath := do
   let src := pkg.dir / "csrc" / "bls_shim.c"
   let bindings := pkg.dir / "vendor" / "blst" / "bindings"
   unless (← bindings.pathExists) do
-    error s!"blst not vendored — run `just vendor-bls` (expected {bindings})"
+    error s!"blst not vendored — run `just hazmat-bls-vendor` (expected {bindings})"
   let obj := pkg.buildDir / "csrc" / "bls_shim.o"
   let leanInclude ← getLeanIncludeDir
   let flags := #["-fPIC", "-O2", "-I", leanInclude.toString,

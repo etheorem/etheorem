@@ -5,7 +5,7 @@ Transcription of Poseidon2's round constants is correctness-critical, so it
 is mechanised here rather than hand-typed into the `.lean` file: this script
 plus its sibling data files (`poseidon2_<field>.json`) are the single source
 of truth, and `Params.lean` is *generated* from them
-(`just gen-poseidon-params`). Re-running reproduces `Params.lean`
+(`just poseidon-gen-params`). Re-running reproduces `Params.lean`
 byte-identically. Any transcription error is caught downstream by the anchor
 KATs in `Poseidon2/Permutation.lean` and the differential test in
 `LeanPoseidonTests`.
@@ -26,7 +26,7 @@ Each data file's `_provenance` field records its exact origin. This mirrors
 how `LeanSha256`'s `gen_sha256_cavp.py` reads committed NIST `.rsp` files;
 the generator is hermetic and stdlib-only (no Rust toolchain, no network).
 
-The umbrella `Justfile` wraps this as `just gen-poseidon-params`.
+The umbrella `Justfile` wraps this as `just poseidon-gen-params`.
 """
 
 import json
@@ -76,7 +76,7 @@ HEADER = '''import LeanPoseidon.Field
 
 **This file is generated** by `scripts/gen_poseidon_params.py` from the
 pinned `scripts/poseidon2_*.json` data files (HorizenLabs `zkhash` v0.2.0);
-do not edit by hand. Run `just gen-poseidon-params` to regenerate. The
+do not edit by hand. Run `just poseidon-gen-params` to regenerate. The
 generator header documents the sources and the flattening layout.
 
 ## What a Poseidon2 instance is (for the Lean-fluent reader)

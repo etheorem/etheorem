@@ -19,8 +19,8 @@ comparison rather than a collection of independent
 microbenches.
 
 ```
-just bench                       # writes packages/SizzLean/bench/<timestamp>.tsv
-just bench-diff before.tsv after.tsv
+just sizzlean-bench                       # writes packages/SizzLean/bench/<timestamp>.tsv
+just sizzlean-bench-diff before.tsv after.tsv
 ```
 
 ## Two configurations

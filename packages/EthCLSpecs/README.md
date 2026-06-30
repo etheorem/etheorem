@@ -89,7 +89,7 @@ passing vector reflects a real match or a faithful rejection.
 
 ```bash
 lake build EthCLLib EthCLSpecs       # build the framework and the fork bodies
-just test-ethcl                       # build everything plus the Lean self-tests
+just ethcl-test                       # build everything plus the Lean self-tests
 
 # Pyspec against upstream vectors (downloads and caches the archive):
 just ethcl-pyspec-smoke          # dev subset, both forks

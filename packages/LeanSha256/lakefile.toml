@@ -39,7 +39,7 @@ precompileModules = true
 # `SizzLean`'s `SizzLeanTests` lib when both are visible in the
 # umbrella build). The heavy `native_decide` batch (~108s) only
 # fires when this lib is built explicitly via
-# `lake build LeanSha256Tests` or `just test-sha256`.
+# `lake build LeanSha256Tests` or `just leansha256-test`.
 [[lean_lib]]
 name = "LeanSha256Tests"
 roots = ["LeanSha256Tests"]

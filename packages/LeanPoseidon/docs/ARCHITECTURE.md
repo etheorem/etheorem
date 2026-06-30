@@ -266,7 +266,7 @@ differential test (§8) are the safety net that catches any mistranscription.
 | File | Role |
 | --- | --- |
 | `packages/LeanPoseidon/LeanPoseidon/Poseidon2/Params.lean` | `structure Params`; the generated BN254 t=3 constant instance; size `#guard`s (80 round constants, 3-entry diagonal). |
-| `packages/LeanPoseidon/scripts/gen_poseidon_params.py` | Emits `Params.lean` constants from a pinned reference commit. Stdlib-only Python; wrapped as `just gen-poseidon-params`. |
+| `packages/LeanPoseidon/scripts/gen_poseidon_params.py` | Emits `Params.lean` constants from a pinned reference commit. Stdlib-only Python; wrapped as `just poseidon-gen-params`. |
 
 ## 5. Linear layers: fast and reference
 
@@ -742,7 +742,7 @@ manifest, so every `lake` invocation and CI job at the root would
 materialise mathlib even when it isn't built. Keeping the proofs package
 standalone (its own `lakefile.toml` + committed `lake-manifest.json`, built
 via `cd packages/LeanPoseidonProofs && lake build` / `just
-test-poseidon-proofs` / a dedicated CI job) isolates the entire mathlib
+poseidon-proofs` / a dedicated CI job) isolates the entire mathlib
 dependency (clone, olean cache, and build) to that one package and its
 one job. This *strengthens* the stated goal (the core and all other gates
 stay mathlib-free) rather than weakening it. It still `[[require]]`s the

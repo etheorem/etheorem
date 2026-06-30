@@ -28,7 +28,7 @@ at `packages/LeanSha256/LeanSha256Tests/`, exposed under the
 `LeanSha256Tests.*` module hierarchy (package-prefixed to avoid
 collision with `SizzLean`'s `SizzLeanTests` lib in the umbrella
 build). Build with `lake build LeanSha256Tests` or
-`just test-sha256`. Splitting it out keeps `lake build LeanSha256`
+`just leansha256-test`. Splitting it out keeps `lake build LeanSha256`
 fast for downstream consumers (e.g. `SizzLean`); the full NIST
 gate is opt-in.
 -/

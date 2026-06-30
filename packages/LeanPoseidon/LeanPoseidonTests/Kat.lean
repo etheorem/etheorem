@@ -12,12 +12,12 @@ generic `permute`). The expected outputs were produced by the **HorizenLabs
 test runs against), over a spread of inputs: small values, the boundary
 residues `r−1, r−2, r−3`, and full-width field elements.
 
-These fire on `lake build LeanPoseidonTests` (`just test-poseidon-vectors`)
+These fire on `lake build LeanPoseidonTests` (`just poseidon-vectors`)
 and need **no Rust toolchain**, `native_decide` evaluates the pure-Lean
 `permute` / `compress`. They are the broader, no-toolchain-needed anchor
 set; the per-field `[0,1,2]` permutation anchors live in
 `LeanPoseidon.Poseidon2.Permutation` and fire on `lake build LeanPoseidon`,
-and the live differential test (`just fuzz-poseidon`) covers thousands more
+and the live differential test (`just poseidon-fuzz`) covers thousands more
 inputs per field against the oracle at runtime.
 
 Regenerate (when bumping the pinned reference) from the `rust-oracle`

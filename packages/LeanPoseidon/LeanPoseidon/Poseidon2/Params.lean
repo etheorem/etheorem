@@ -5,7 +5,7 @@ import LeanPoseidon.Field
 
 **This file is generated** by `scripts/gen_poseidon_params.py` from the
 pinned `scripts/poseidon2_*.json` data files (HorizenLabs `zkhash` v0.2.0);
-do not edit by hand. Run `just gen-poseidon-params` to regenerate. The
+do not edit by hand. Run `just poseidon-gen-params` to regenerate. The
 generator header documents the sources and the flattening layout.
 
 ## What a Poseidon2 instance is (for the Lean-fluent reader)

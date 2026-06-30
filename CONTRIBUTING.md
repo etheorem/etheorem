@@ -29,8 +29,8 @@ SHA-256 shim against `libcrypto.so.3`.
 ```bash
 just test                                    # all per-package in-Lean tests
 just ethcl-pyspec                       # consensus-spec-tests ssz_static suite (Fulu/Gloas)
-just ssz-generic-pyspec                 # consensus-spec-tests ssz_generic wire-format suite
-just bench                                   # microbench (S1–S7)
+just sizzlean-pyspec                 # consensus-spec-tests ssz_generic wire-format suite
+just sizzlean-bench                                   # microbench (S1–S7)
 ```
 
 Or via `lake build` directly:
@@ -103,7 +103,7 @@ A quick orientation map for the most-asked questions:
   `ssz_generic` wire-format primitives run from
   `packages/SizzLean/PySpecTests/` against the
   `ssz_generic_runner` exe. The one-command entry points are
-  `just ethcl-pyspec` and `just ssz-generic-pyspec`;
+  `just ethcl-pyspec` and `just sizzlean-pyspec`;
   smaller subsets and per-suite recipes live in the `Justfile`.
 
 ## Code style and discipline

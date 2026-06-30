@@ -29,7 +29,7 @@ vectors).
 
 ## Vendoring
 
-blst is **vendored** (not a system package): `just vendor-bls`
+blst is **vendored** (not a system package): `just hazmat-bls-vendor`
 shallow-clones the pinned tag into a gitignored `vendor/blst/` before
 `lake build` (hazmat-docs/ARCHITECTURE.md §6). `LeanHazmatBls` is the
 single blst owner for the family, `LeanHazmatKzg` builds c-kzg against

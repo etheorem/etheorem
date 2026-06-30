@@ -102,7 +102,7 @@ lake build LeanSha256
 # Full NIST CAVP byte-oriented suite — 129 short-message +
 # long-message cases via native_decide, ~108 s. The `Justfile`
 # at the umbrella root wraps this:
-just test-sha256
+just leansha256-test
 # …which is exactly `lake build LeanSha256Tests`.
 
 # Or from this subpackage's directory:
@@ -121,7 +121,7 @@ To regenerate `LeanSha256Tests/Nist.lean` after refreshing the
 ```bash
 python3 packages/LeanSha256/scripts/gen_sha256_cavp.py
 # or, from the umbrella root:
-just gen-cavp
+just leansha256-gen-cavp
 ```
 
 ## Requiring this package

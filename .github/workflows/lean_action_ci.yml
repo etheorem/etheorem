@@ -49,9 +49,9 @@ jobs:
         # blst (LeanHazmatBls) and c-kzg-4844 (LeanHazmatKzg) are vendored,
         # not system packages — fetch them at their pinned tags before the
         # Lean build. Offline thereafter. `just test` also self-vendors via
-        # the `test-bls` / `test-kzg` recipes; this explicit step keeps the
+        # the `hazmat-bls-test` / `hazmat-kzg-test` recipes; this explicit step keeps the
         # fetch visible and ordered first.
-        run: just vendor-bls vendor-kzg
+        run: just hazmat-bls-vendor hazmat-kzg-vendor
       # Pinned to the commit `v1` resolves to as of 2026-05-10. Bump deliberately.
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
         with:
@@ -64,7 +64,7 @@ jobs:
     # the SizzLean pytest harness + `ssz_generic_runner`. The dev-subset smoke
     # gate runs on every push / pull_request; `workflow_dispatch` with
     # `pyspec_limit: all` upgrades to the full sweep
-    # (`just ssz-generic-pyspec-full`). The per-fork ssz_static container
+    # (`just sizzlean-pyspec-full`). The per-fork ssz_static container
     # vectors run in the `ethcl` job.
     runs-on: ubuntu-latest
     steps:
@@ -112,14 +112,14 @@ jobs:
           set -euo pipefail
           LIMIT='${{ github.event.inputs.pyspec_limit || '1' }}'
           if [ "$LIMIT" = "all" ]; then
-            just ssz-generic-pyspec-full
+            just sizzlean-pyspec-full
           else
-            just ssz-generic-pyspec-smoke
+            just sizzlean-pyspec-smoke
           fi
 
   ethcl:
     # EthCLLib (framework) + EthCLSpecs (Fulu / Gloas) acceptance. `just
-    # test-ethcl` builds all four libs, firing the framework + spec
+    # ethcl-test` builds all four libs, firing the framework + spec
     # `#guard` / `native_decide` self-tests (inheritance replay, the crypto
     # seam, the running step, map-backing equivalence, the signing-root and
     # Merkle-branch primitives, the walking-skeleton discharge). Then the
@@ -149,14 +149,14 @@ jobs:
       - name: Verify build-time native deps
         run: just doctor-native
       - name: Vendor native crypto sources
-        run: just vendor-bls vendor-kzg
+        run: just hazmat-bls-vendor hazmat-kzg-vendor
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
         with:
           lake-package-directory: '.'
           # The runner exe; EthCLLib + EthCLSpecs compile transitively as deps.
           build-args: 'pyspec_server'
       - name: EthCL self-tests (lake build of the test libs)
-        run: just test-ethcl
+        run: just ethcl-test
       - name: Install Python dependencies
         run: just setup-python
       - name: EthCLSpecs pyspec smoke gate (minimal, both forks)
@@ -168,7 +168,7 @@ jobs:
     # that needs a Rust toolchain (cargo): it builds `poseidon_fuzz` (which
     # shells `cargo build` for the oracle) and runs it. The LeanPoseidon
     # core and its committed KATs build *without* Rust — the anchor KAT
-    # already fires in the `test` job via `just test` (`test-poseidon`).
+    # already fires in the `test` job via `just test` (`poseidon-test`).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -182,16 +182,16 @@ jobs:
           lake-package-directory: '.'
           build-args: 'poseidon_fuzz'
       - name: Committed Poseidon2 KATs (native_decide, no Rust)
-        run: just test-poseidon-vectors
+        run: just poseidon-vectors
       - name: Differential conformance vs the zkhash oracle
-        run: just fuzz-poseidon
+        run: just poseidon-fuzz
 
   poseidon-proofs:
     # The mathlib equivalence proof (`permute = permuteRef` — the shipped
     # fast layers equal the dense reference). This is the monorepo's ONLY
     # mathlib dependency, isolated in the standalone `LeanPoseidonProofs`
     # package — no other job (and not the umbrella build) touches mathlib.
-    # `just test-poseidon-proofs` runs `lake exe cache get` (the `v4.29.1`
+    # `just poseidon-proofs` runs `lake exe cache get` (the `v4.29.1`
     # pin matches the repo toolchain, so prebuilt oleans are used — nothing
     # is compiled from scratch) then builds the proofs.
     runs-on: ubuntu-latest
@@ -204,4 +204,4 @@ jobs:
         with:
           auto-config: false
       - name: Build the fast≡reference equivalence proof (mathlib cache + build)
-        run: just test-poseidon-proofs
+        run: just poseidon-proofs

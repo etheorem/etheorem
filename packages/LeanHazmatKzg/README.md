@@ -11,8 +11,8 @@ This package `require`s `LeanHazmatBls` (it reuses Bls's vendored
 **blst**). Fetch both vendored sources once, then build:
 
 ```bash
-just vendor-bls    # blst v0.3.16 (the rev c-kzg v2.1.7 expects)
-just vendor-kzg    # c-kzg-4844 v2.1.7
+just hazmat-bls-vendor    # blst v0.3.16 (the rev c-kzg v2.1.7 expects)
+just hazmat-kzg-vendor    # c-kzg-4844 v2.1.7
 lake build LeanHazmatKzg
 ```
 

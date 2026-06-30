@@ -144,7 +144,7 @@ v1.6.0-beta.0`) pass clean on **both** preset configurations:
   passed across every fork Phase 0 → Fulu.
 
 Per-PR CI runs the dev-subset smoke; the full sweeps are the
-umbrella `just ssz-generic-pyspec-full` (wire-format) and
+umbrella `just sizzlean-pyspec-full` (wire-format) and
 `just ethcl-pyspec-full` (per-fork containers) targets.
 
 The per-fork consensus-container vectors are covered by the
@@ -290,7 +290,7 @@ the project, they're external tools the recipes assume.
    the SHA-256 FFI shim, see [Dependencies → System-level](#system-level-build-time-native-deps)
    below for the per-platform one-liners).
 
-4. **`python3` + `uv`** (only for the `just ssz-generic-pyspec*`
+4. **`python3` + `uv`** (only for the `just sizzlean-pyspec*`
    and `just ethcl-pyspec*` recipes). Run `just setup-python`
    from the umbrella root once to create `.venv/` and install the
    harness deps.
@@ -404,7 +404,7 @@ corpus (`ssz_generic_runner`) lives in this package and is driven
 by the pytest harness in [`PySpecTests/`](PySpecTests). The
 per-fork `ssz_static` corpus is driven by the `EthCLSpecs`
 harness against its `pyspec_server` exe. Use the one-command
-`just ssz-generic-pyspec` and `just ethcl-pyspec`
+`just sizzlean-pyspec` and `just ethcl-pyspec`
 entry points documented in [Build / test](#build--test).
 
 ## Build / test
@@ -429,18 +429,18 @@ the downloaded upstream archive.
 # SizzLean-internal property tests (Sha256 vectors, hasher
 # equivalence, randomised setAt, cache coherence, sszUpdate cases —
 # all fire as native_decide examples at build time)
-just test-ssz
+just sizzlean-test
 
 # Full NIST CAVP SHA-256 vectors — 129 byte-oriented cases
 # (lives in the sibling LeanSha256 package, ~108s of native_decide)
-just test-sha256
+just leansha256-test
 
 # Upstream `ethereum/consensus-spec-tests`. Pytest harnesses
 # drive a Lean CLI against the pyspec archives. A tqdm progress
 # bar shows live per-case throughput. Quick dev subset:
-just ssz-generic-pyspec
+just sizzlean-pyspec
 # Full `ssz_generic` wire-format sweep:
-just ssz-generic-pyspec-full
+just sizzlean-pyspec-full
 # Per-fork `ssz_static` consensus-container suite (Fulu/Gloas),
 # quick dev subset:
 just ethcl-pyspec

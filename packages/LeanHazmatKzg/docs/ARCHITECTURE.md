@@ -28,7 +28,7 @@ availability sampling.
 **`v2.1.7`** (commit `9f4bcc83…`). It is built on **blst**, which it pins
 (as a submodule) at exactly **`v0.3.16`** (`e7f90de5…`), the
 `LeanHazmatBls` pin. So this package does **not** vendor its own blst:
-`just vendor-kzg` clones c-kzg *without* `--recursive`, and the build
+`just hazmat-kzg-vendor` clones c-kzg *without* `--recursive`, and the build
 compiles c-kzg against `LeanHazmatBls`'s blst (cross-family
 ARCHITECTURE.md §4). Bumping either pin requires re-checking the other in
 lockstep (`git ls-tree <c-kzg tag> blst` gives the expected blst rev).

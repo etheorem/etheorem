@@ -37,7 +37,7 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Bench session output. TSVs accumulate every time `just bench` runs;
+# Bench session output. TSVs accumulate every time `just sizzlean-bench` runs;
 # they're working-session output, not curated baselines. Force-add a
 # specific file with `git add -f` if you want to lock it in as a
 # reference.

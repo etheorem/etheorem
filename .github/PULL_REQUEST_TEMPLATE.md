@@ -19,7 +19,7 @@
 - [ ] Per-package test suites pass:
   - [ ] `lake build LeanSha256Tests`
   - [ ] `lake build SizzLeanTests`
-  - [ ] `just test-ethcl`
+  - [ ] `just ethcl-test`
 - [ ] If this touches spec types or cache behaviour:
       `just ethcl-pyspec` is green.
 - [ ] If this touches a bench-measured hot path: included

@@ -14,7 +14,7 @@ compressed G2 points, secret keys 32-byte big-endian scalars.
 blst is vendored. Fetch it once, then build:
 
 ```bash
-just vendor-bls    # blst v0.3.16
+just hazmat-bls-vendor    # blst v0.3.16
 lake build LeanHazmatBls
 ```
 

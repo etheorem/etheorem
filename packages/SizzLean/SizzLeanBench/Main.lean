@@ -10,7 +10,7 @@ the TSV header once at the top. Invoked as
 lake exe ssz_bench > bench/<timestamp>.tsv
 ```
 
-(`just bench` wraps the redirection and runs the compiled
+(`just sizzlean-bench` wraps the redirection and runs the compiled
 binary directly.) Stdout is the bench output; stderr is
 reserved for any setup-side errors a bench shot can't suppress.
 

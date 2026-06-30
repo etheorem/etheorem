@@ -13,10 +13,10 @@ the single inline anchor in `LeanPoseidon.Permutation`:
 
 * `LeanPoseidonTests.Kat`: committed `zkhash` BN254 t=3 permutation /
   `compress` vectors via `native_decide`. **No Rust toolchain**, fires on
-  `lake build LeanPoseidonTests` (`just test-poseidon-vectors`).
+  `lake build LeanPoseidonTests` (`just poseidon-vectors`).
 * `LeanPoseidonTests.Ffi` / `LeanPoseidonTests.Differential`: the
   `@[extern]` oracle bindings and the seeded-random differential test,
-  driven by the `poseidon_fuzz` executable (`just fuzz-poseidon`). These
+  driven by the `poseidon_fuzz` executable (`just poseidon-fuzz`). These
   are the only part that needs a Rust toolchain (cargo), and they are
   *linked* only into that executable, never at library-build time.
 

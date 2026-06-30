@@ -21,7 +21,7 @@ links it into this executable alone, so `lake build LeanPoseidon` and
 `lake build LeanPoseidonTests` need no Rust toolchain. The oracle never
 appears in the shipped path or in a proof term.
 
-Run with `just fuzz-poseidon` (default 10 000 trials) or
+Run with `just poseidon-fuzz` (default 10 000 trials) or
 `lake exe poseidon_fuzz <N>`. The trial count is printed (never a silent
 cap).
 -/
