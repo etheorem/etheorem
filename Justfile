@@ -210,6 +210,19 @@ setup-python:
     uv venv
     uv pip install -r scripts/requirements.txt
 
+# Idempotent guard the `*-pyspec*` recipes depend on: build the venv via
+# `setup-python` only when `.venv/bin/python` is absent, so a test run on a
+# fresh checkout self-provisions, while an existing venv is left untouched (a
+# plain `setup-python` dependency would wipe and reinstall on every run).
+[private]
+_ensure-venv:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ ! -x "{{ justfile_directory() }}/.venv/bin/python" ]; then
+      echo "no Python venv found — provisioning via \`just setup-python\`"
+      just setup-python
+    fi
+
 # ═════════════════════════════════════════════════════════════════════════
 # EthCLSpecs — consensus-spec framework + Fulu / Gloas fork bodies
 #
@@ -230,7 +243,7 @@ ethcl-test:
 
 # Run EthCLSpecs pyspec vectors via the Lean server (dev subset by default; pass pytest args)
 [group('ethcl')]
-ethcl-pyspec args="":
+ethcl-pyspec args="": _ensure-venv
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q {{ args }}
 
 # CI smoke gate for EthCLSpecs pyspec: the dev subset (a few cases per
@@ -240,7 +253,7 @@ ethcl-pyspec args="":
 
 # CI smoke gate: EthCLSpecs pyspec dev subset for both forks at minimal
 [group('ethcl')]
-ethcl-pyspec-smoke:
+ethcl-pyspec-smoke: _ensure-venv
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --fork=fulu --subset=2
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --fork=gloas --subset=2
 
@@ -251,7 +264,7 @@ ethcl-pyspec-smoke:
 
 # Full EthCLSpecs pyspec sweep: {fulu,gloas} × {minimal,mainnet}, sharded across cores
 [group('ethcl')]
-ethcl-pyspec-full:
+ethcl-pyspec-full: _ensure-venv
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n auto --preset=minimal --fork=fulu
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n auto --preset=minimal --fork=gloas
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n auto --preset=mainnet --fork=fulu
@@ -292,12 +305,12 @@ sizzlean-test:
 
 # Run ssz_generic wire-format pyspec via the SizzLean harness (dev subset by default; pass pytest args)
 [group('sizzlean')]
-sizzlean-pyspec args="":
+sizzlean-pyspec args="": _ensure-venv
     cd packages/SizzLean/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q {{ args }}
 
 # CI smoke gate: a few cases per (handler, valid/invalid).
 [group('sizzlean')]
-sizzlean-pyspec-smoke:
+sizzlean-pyspec-smoke: _ensure-venv
     cd packages/SizzLean/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=2
 
 # Full sweep: every in-scope wire-format vector (the out-of-scope progressive
@@ -305,7 +318,7 @@ sizzlean-pyspec-smoke:
 
 # Full ssz_generic pyspec sweep: every in-scope wire-format vector
 [group('sizzlean')]
-sizzlean-pyspec-full:
+sizzlean-pyspec-full: _ensure-venv
     cd packages/SizzLean/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0
 
 # Microbenchmarks — measure-then-optimise gates for Stage 17. Output also
