@@ -58,18 +58,20 @@ example :
     (fuluInterface.runSlots (SizzLean.SSZ.serialize (default : @BeaconState minimal)) 3).toOption.isSome := by
   native_decide
 
--- A still-deferred entry (`runGenesis`) returns a `todo` reject, the typed
--- deferral safety net: a vector that reaches it fails loudly, never silently.
+-- An out-of-scope entry (`runGenesis`, a runner we deliberately do not model)
+-- returns an `outOfScope` reject: a vector that reaches it is reported `skip`,
+-- never silently passed and never counted in the `todo` work-queue.
 #guard (match fuluInterface.runGenesis #[] {} with
-  | .error (.spec (.todo _)) => true | _ => false)
+  | .error (.spec (.outOfScope _)) => true | _ => false)
 
-/-- A `genesis` request. `runGenesis` is a `todo`; the driver classifies the
-unimplemented path out-of-scope so the case fails rather than passing silently. -/
+/-- A `genesis` request. `runGenesis` is `outOfScope`; the driver classifies the
+unmodelled path `outOfScope` so the case is reported `skip` rather than passing
+silently or inflating the `xfail` work-queue. -/
 def sampleGenesisReq : CaseRequest :=
   { runner := "genesis", handler := "initialization",
     pre := ByteArray.empty, post := some ByteArray.empty, inputs := #[], caseMeta := {} }
 
--- The driver dispatches to the interface and classifies the unimplemented path.
+-- The driver dispatches to the interface and classifies the unmodelled path.
 #guard (@runCase fuluInterface sampleGenesisReq).passed = false
 #guard (@runCase fuluInterface sampleGenesisReq).bucket = ClassifyBucket.outOfScope
 

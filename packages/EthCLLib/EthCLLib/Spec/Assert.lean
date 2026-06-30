@@ -29,11 +29,20 @@ namespace EthCLLib.Spec
 universe u
 
 /-- The typed deferral, throwing the section's `todo` reject (resolved through
-`SpecReject` from the monad's error type). Classified out-of-scope by the harness.
-Polymorphic in the result so it stubs any step or helper. -/
+`SpecReject` from the monad's error type). A work-queue item the harness reports
+as `xfail`; it is expected to pass once the branch is filled. Polymorphic in the
+result so it stubs any step or helper. -/
 @[inline] def todo {m : Type → Type u} {α E : Type} [MonadExcept E m] [SpecReject E]
     (what : String) : m α :=
   throw (SpecReject.todo what)
+
+/-- The typed out-of-scope reject (resolved through `SpecReject` from the monad's
+error type). For a branch we deliberately do not model, a runner or type chosen
+not to implement, so the harness reports it as `skip` rather than counting it in
+the `xfail` work-queue. Polymorphic in the result, like `todo`. -/
+@[inline] def outOfScope {m : Type → Type u} {α E : Type} [MonadExcept E m] [SpecReject E]
+    (what : String) : m α :=
+  throw (SpecReject.outOfScope what)
 
 /-- Run the nested state machine from a store action: execute `act` (the
 specialised `state_transition` / `process_slots` as an `EStateM StateTransitionError

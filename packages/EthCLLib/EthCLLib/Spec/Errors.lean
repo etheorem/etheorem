@@ -7,16 +7,22 @@ machine with `StoreTransitionError`, which embeds the state type because
 `onBlock` runs the state machine inside the store machine.
 
 Each constructor carries a *typed* term per failure kind, in keeping with the
-project's stringly-typed-is-a-smell principle. The two `String` payloads
-(`assert`'s `descr`, `todo`'s `what`) are diagnostic only: they are printed on a
-vector mismatch and never branched on. The harness branches on the *constructor*
-(its classify mode), which is typed:
+project's stringly-typed-is-a-smell principle. The `String` payloads
+(`assert`'s `descr`, `todo`'s / `outOfScope`'s `what`) are diagnostic only: they
+are printed on a vector mismatch and never branched on. The harness branches on
+the *constructor* (its classify mode), which is typed:
 
 | Constructor | Classify-mode meaning |
 |---|---|
 | `assert` | an expected rejection; an invalid vector should hit one |
-| `todo` | an unimplemented branch; flagged out-of-scope, not a rejection |
+| `todo` | an unimplemented branch we intend to fill; a work-queue item, reported `xfail` |
+| `outOfScope` | a branch we deliberately do not model; reported `skip`, not counted as work |
 | `outOfBounds` / `missingKey` | a smell; well-formed input should not hit these |
+
+`todo` and `outOfScope` both name a branch that does not run, the distinction is
+intent: a `todo` is expected to pass once the work-queue reaches it, an
+`outOfScope` never will (a runner or type we chose not to implement), so it must
+not inflate the `xfail` work-queue.
 -/
 
 set_option autoImplicit false
@@ -31,8 +37,10 @@ work-queue of `FRAMEWORK_ARCHITECTURE.md` §6.1). -/
 inductive StateTransitionError where
   /-- A spec assertion failed; `descr` is the rendered condition, diagnostic only. -/
   | assert (descr : String)
-  /-- An unimplemented branch, with a documented unreachable-in-scope claim. -/
+  /-- An unimplemented branch we intend to fill: a work-queue deferral, reported `xfail`. -/
   | todo (what : String)
+  /-- A branch we deliberately do not model (an out-of-scope runner / type); reported `skip`. -/
+  | outOfScope (what : String)
   /-- Indexed access past the end: index `idx` against bound `bound`. -/
   | outOfBounds (idx bound : Nat)
   deriving Inhabited, Repr, DecidableEq
@@ -46,8 +54,10 @@ type embeds the state type, the asymmetry the error split is built on. -/
 inductive StoreTransitionError where
   /-- A spec assertion failed; diagnostic only. -/
   | assert (descr : String)
-  /-- An unimplemented branch, with a documented unreachable-in-scope claim. -/
+  /-- An unimplemented branch we intend to fill: a work-queue deferral, reported `xfail`. -/
   | todo (what : String)
+  /-- A branch we deliberately do not model (an out-of-scope runner / type); reported `skip`. -/
+  | outOfScope (what : String)
   /-- An `FcMap` lookup found no entry for `key` (the 32-byte block root). -/
   | missingKey (key : Vector UInt8 32)
   /-- A nested state-transition failure surfaced through `runStateTransition`. -/
@@ -62,7 +72,9 @@ inductive ClassifyBucket where
   | passing
   /-- An `assert` reject; correct for a vector marked invalid. -/
   | expectedRejection
-  /-- A `todo` reject; an out-of-scope deferral, not a rejection. -/
+  /-- A `todo` reject; an unimplemented work-queue branch. Reported `xfail`. -/
+  | todo
+  /-- An `outOfScope` reject; a branch we deliberately do not model. Reported `skip`. -/
   | outOfScope
   /-- An `outOfBounds` / `missingKey` reject; a likely framework or spec bug. -/
   | likelyBug
@@ -70,11 +82,13 @@ inductive ClassifyBucket where
 
 namespace ClassifyBucket
 
-/-- A short tag for wire reporting and human-readable output. -/
+/-- A short tag for wire reporting and human-readable output. `todo` reports as
+`xfail` work-queue; `outOfScope` reports as a `skip` the harness does not count. -/
 def tag : ClassifyBucket → String
   | .passing           => "pass"
   | .expectedRejection => "reject"
-  | .outOfScope        => "todo"
+  | .todo              => "todo"
+  | .outOfScope        => "skip"
   | .likelyBug         => "bug"
 
 end ClassifyBucket
@@ -82,14 +96,16 @@ end ClassifyBucket
 /-- Classify a state-transition reject by its constructor. -/
 def StateTransitionError.classify : StateTransitionError → ClassifyBucket
   | .assert _        => .expectedRejection
-  | .todo _          => .outOfScope
+  | .todo _          => .todo
+  | .outOfScope _    => .outOfScope
   | .outOfBounds _ _ => .likelyBug
 
 /-- Classify a store-transition reject by its constructor. A wrapped nested
 state failure classifies by the inner reject. -/
 def StoreTransitionError.classify : StoreTransitionError → ClassifyBucket
   | .assert _      => .expectedRejection
-  | .todo _        => .outOfScope
+  | .todo _        => .todo
+  | .outOfScope _  => .outOfScope
   | .missingKey _  => .likelyBug
   | .transition e  => e.classify
 
@@ -102,11 +118,13 @@ just the constructors. -/
 class SpecReject (E : Type) where
   /-- The failed-assertion reject. -/
   assert : String → E
-  /-- The unimplemented-branch (out-of-scope) reject. -/
+  /-- The unimplemented-branch reject; a work-queue deferral, reported `xfail`. -/
   todo   : String → E
+  /-- The deliberately-unmodelled-branch reject; reported `skip`, not a work-queue item. -/
+  outOfScope : String → E
 
-instance : SpecReject StateTransitionError := ⟨.assert, .todo⟩
-instance : SpecReject StoreTransitionError := ⟨.assert, .todo⟩
+instance : SpecReject StateTransitionError := ⟨.assert, .todo, .outOfScope⟩
+instance : SpecReject StoreTransitionError := ⟨.assert, .todo, .outOfScope⟩
 
 /-- The reporting bucket of a typed reject, as a class so a runner error generic over the
 spec reject it wraps (`RunError`) can defer to whichever spec error is inside. The two spec

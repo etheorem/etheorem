@@ -411,14 +411,14 @@ private def sszStaticImpl (P : Preset) (typeName : String) (bytes : ByteArray) :
   | "SignedExecutionPayloadBid"      => runStatic (@Gloas.SignedExecutionPayloadBid P) typeName bytes
   | "SignedExecutionPayloadEnvelope" => runStatic (@Gloas.SignedExecutionPayloadEnvelope P) typeName bytes
   | "SignedVoluntaryExit"        => runStatic (@Gloas.SignedVoluntaryExit P) typeName bytes
-  | _ => .error (.spec (.todo s!"ssz_static/{typeName}: not modeled by EthCLSpecs.Gloas"))
+  | _ => .error (.spec (.outOfScope s!"ssz_static/{typeName}: not modeled by EthCLSpecs.Gloas"))
 
 /-- Gloas's fork-interface instance at preset `P` with the config's
 `GLOAS_FORK_VERSION`. Every in-scope entry is driven: the `fork` upgrade, `stateRoot`,
 all `epoch_processing` substeps, `rewards`, the operation handlers (including the ePBS
 ones), the block spine (`sanity/blocks` / `sanity/slots` / `finality` / `random`), the
 `transition` boundary, and the node-based ePBS fork choice (`runForkChoice`). Only
-`runGenesis` stays `todo` (no genesis vectors at the pin). -/
+`runGenesis` is out of scope (the genesis runner is not modeled). -/
 @[reducible] def gloasInterfaceFor (P : Preset) (C : Config) (forkVersion : Version) : ForkInterface where
   stateRoot       := stateRootImpl P
   sszStatic       := sszStaticImpl P
@@ -429,7 +429,7 @@ ones), the block spine (`sanity/blocks` / `sanity/slots` / `finality` / `random`
   runOperation    := runOperationImpl P C
   runBlocks       := runBlocksImpl P C
   runSlots        := runSlotsImpl P C
-  runGenesis      := fun _ _   => .error (.spec (.todo "gloas genesis: not yet ported"))
+  runGenesis      := fun _ _   => .error (.spec (.outOfScope "gloas genesis: out of scope (not modeled)"))
   runTransition   := runTransitionImpl P C forkVersion
 
 /-- The `minimal`-preset / config Gloas interface. -/
