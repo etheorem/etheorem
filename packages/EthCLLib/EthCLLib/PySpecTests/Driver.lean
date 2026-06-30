@@ -128,6 +128,7 @@ def runCase [ForkInterface] (req : CaseRequest) : CaseResult :=
       else { passed := false, bucket := .likelyBug, detail := "rewards deltas mismatch" }
     | .error e =>
       match e.classify with
+      | .todo       => { passed := false, bucket := .todo, detail := reprStr e }
       | .outOfScope => { passed := false, bucket := .outOfScope, detail := reprStr e }
       | _           => { passed := false, bucket := .likelyBug, detail := reprStr e }
   else
@@ -151,11 +152,12 @@ def runCase [ForkInterface] (req : CaseRequest) : CaseResult :=
     { passed := false, bucket := e.classify, detail := reprStr e }
   | .error e, none =>
     -- Invalid vector that rejected: faithful iff it was an `assert`. A bug-smell
-    -- reject still counts as rejected but is flagged; a `todo` fails (not a
-    -- validation).
+    -- reject still counts as rejected but is flagged; a `todo` / `outOfScope` fails
+    -- (not a validation) and reports as its own bucket (xfail / skip respectively).
     match e.classify with
     | .expectedRejection => { passed := true,  bucket := .expectedRejection, detail := reprStr e }
     | .likelyBug         => { passed := true,  bucket := .likelyBug, detail := reprStr e, flagged := true }
+    | .todo              => { passed := false, bucket := .todo, detail := reprStr e }
     | .outOfScope        => { passed := false, bucket := .outOfScope, detail := reprStr e }
     | .passing           => { passed := false, bucket := .likelyBug, detail := "unreachable classify" }
 

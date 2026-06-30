@@ -119,7 +119,8 @@ private def handleSszStatic (iface : ForkInterface) (fields : Array String) : IO
       return "fail\tbug\tround-trip mismatch (re-serialize ≠ input)"
     else
       return "pass\tpassing\t"
-  | .error (.spec (.todo d)) => return s!"fail\ttodo\t{d}"
+  | .error (.spec (.todo d))       => return s!"fail\ttodo\t{d}"
+  | .error (.spec (.outOfScope d)) => return s!"fail\tskip\t{d}"
   | .error e =>
     let detail := (match e with
       | .decode what => s!"{what} decode failed"
@@ -178,11 +179,13 @@ private def handleForkChoice (iface : ForkInterface) (fields : Array String) : I
       | .decode what           => s!"{what} decode failed"
       | .spec (.assert d)      => d
       | .spec (.todo d)        => d
+      | .spec (.outOfScope d)  => d
       | .spec (.missingKey _)  => "missing store key"
       | .spec (.transition te) => reprStr te).replace "\t" " " |>.replace "\n" " "
     match e with
-    | .spec (.todo _) => return s!"fail\ttodo\t{detail}"
-    | _               => return s!"fail\tbug\t{detail}"
+    | .spec (.todo _)       => return s!"fail\ttodo\t{detail}"
+    | .spec (.outOfScope _) => return s!"fail\tskip\t{detail}"
+    | _                     => return s!"fail\tbug\t{detail}"
 
 /-- Process one request line into a result line, against a given fork's interface.
 Exceptions become a `fail ⇥ bug` result so a single bad case never crashes the
