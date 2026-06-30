@@ -331,7 +331,7 @@ private def sszStaticImpl (P : Preset) (typeName : String) (bytes : ByteArray) :
   | "SignedBeaconBlockHeader"  => runStatic (@SignedBeaconBlockHeader P) typeName bytes
   | "SignedBLSToExecutionChange" => runStatic (@SignedBLSToExecutionChange P) typeName bytes
   | "SignedVoluntaryExit"      => runStatic (@SignedVoluntaryExit P) typeName bytes
-  | _ => .error (.spec (.todo s!"ssz_static/{typeName}: not modeled by EthCLSpecs.Fulu"))
+  | _ => .error (.spec (.outOfScope s!"ssz_static/{typeName}: not modeled by EthCLSpecs.Fulu"))
 
 /-- Fulu's fork-interface instance at preset `P`. The runner injects `minimal` or
 `mainnet` per test; both coexist because the preset is a parameter, not a global
@@ -345,9 +345,9 @@ instance (`FRAMEWORK_ARCHITECTURE.md` §4). -/
   runOperation    := runOperationImpl P C
   runRewards      := runRewardsImpl P C
   runForkChoice   := runForkChoiceImpl P C
-  runGenesis      := fun _ _   => .error (.spec (.todo "genesis: no vectors at this pin (out of scope)"))
-  runUpgrade      := fun _     => .error (.spec (.todo "fork upgrade: Gloas only (Phase 3)"))
-  runTransition   := fun _ _ _ => .error (.spec (.todo "transition: needs the Electra parent fork (Electra→Fulu boundary)"))
+  runGenesis      := fun _ _   => .error (.spec (.outOfScope "genesis: out of scope (not modeled)"))
+  runUpgrade      := fun _     => .error (.spec (.outOfScope "fork upgrade: Gloas only (out of scope for Fulu)"))
+  runTransition   := fun _ _ _ => .error (.spec (.outOfScope "transition: needs the Electra parent fork (out of scope; Electra→Fulu boundary)"))
 
 /-- The `minimal`-preset interface (the default; runs on every push). -/
 @[reducible] def fuluInterface : ForkInterface := fuluInterfaceFor minimal minimalConfig
