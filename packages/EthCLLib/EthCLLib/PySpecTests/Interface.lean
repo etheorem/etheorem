@@ -170,6 +170,7 @@ inductive OpKind where
   | voluntaryExitChurn | blsToExecutionChange | depositRequest | withdrawalRequest
   | consolidationRequest | blockHeader | syncAggregate | withdrawals | executionPayload
   | payloadAttestation | executionPayloadBid | parentExecutionPayload
+  | builderDepositRequest | builderExitRequest
   deriving DecidableEq, Repr, Inhabited
 
 /-- Parse a pyspec `operations/<handler>` directory name to its `OpKind`. The single site
@@ -193,6 +194,8 @@ def OpKind.ofString? : String → Option OpKind
   | "payload_attestation"      => some .payloadAttestation
   | "execution_payload_bid"    => some .executionPayloadBid
   | "parent_execution_payload" => some .parentExecutionPayload
+  | "builder_deposit_request"  => some .builderDepositRequest
+  | "builder_exit_request"     => some .builderExitRequest
   | _                          => none
 
 /-- The `epoch_processing/<handler>` axis as a typed tag, one constructor per pyspec
