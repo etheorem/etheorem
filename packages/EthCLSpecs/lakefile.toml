@@ -3,7 +3,9 @@ defaultTargets = ["EthCLSpecs"]
 
 # Re-supply the system libcrypto flag (does not propagate across `require`); the
 # blst / c-kzg archives propagate transitively from the LeanHazmat packages.
-moreLinkArgs = ["-L/usr/lib/x86_64-linux-gnu", "-l:libcrypto.so.3"]
+# Two `-L` paths cover the common Linux libdir layouts (Debian multiarch and
+# `/usr/lib64` on Gentoo / Fedora / RHEL); the linker ignores whichever is absent.
+moreLinkArgs = ["-L/usr/lib/x86_64-linux-gnu", "-L/usr/lib64", "-l:libcrypto.so.3"]
 moreLeancArgs = ["-march=native"]
 
 # The framework. Pulls in SizzLean (SSZ), LeanHazmatBls / LeanHazmatKzg (crypto)
