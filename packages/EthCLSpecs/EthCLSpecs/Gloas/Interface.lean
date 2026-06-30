@@ -31,7 +31,7 @@ namespace EthCLSpecs.Gloas.Interface
 
 /-- Pinned upstream release; Gloas tracks the same tag as Fulu while it is
 pre-release. -/
-def pyspecPinnedVersion : String := "v1.7.0-alpha.10"
+def pyspecPinnedVersion : String := "v1.7.0-alpha.11"
 
 /-- `stateRoot`: decode a Gloas `BeaconState` at preset `P` and take its root. -/
 private def stateRootImpl (P : Preset) (bytes : ByteArray) :
@@ -150,9 +150,10 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     | .attesterSlashing       => (decodeOp (@AttesterSlashing P) opBytes).map processAttesterSlashing
     | .attestation            => (decodeOp (@Attestation P) opBytes).map processAttestation
     | .payloadAttestation     => (decodeOp (@PayloadAttestation P) opBytes).map processPayloadAttestation
-    -- The bid / parent-payload handlers decode a full `BeaconBlock`, not a single
-    -- operation container (the spec functions read `block.body` / `block.slot`).
-    | .executionPayloadBid    => (decodeOp (@BeaconBlock P) opBytes).map processExecutionPayloadBid
+    -- The parent-payload handler decodes a full `BeaconBlock` (it reads `block.body` /
+    -- `parentExecutionRequests`). alpha.11's bid handler takes the
+    -- `SignedExecutionPayloadBid` operand directly and reads slot / parent root from state.
+    | .executionPayloadBid    => (decodeOp (@SignedExecutionPayloadBid P) opBytes).map processExecutionPayloadBid
     | .parentExecutionPayload => (decodeOp (@BeaconBlock P) opBytes).map processParentExecutionPayload
     | .blockHeader            => (decodeOp (@BeaconBlock P) opBytes).map processBlockHeader
     -- `process_withdrawals` (Gloas) takes no operand; it runs purely from state.
@@ -373,6 +374,8 @@ private def sszStaticImpl (P : Preset) (typeName : String) (bytes : ByteArray) :
   | "BeaconState"                => runStatic (@Gloas.BeaconState P) typeName bytes
   | "BLSToExecutionChange"       => runStatic (@Gloas.BLSToExecutionChange P) typeName bytes
   | "Builder"                    => runStatic (@Gloas.Builder P) typeName bytes
+  | "BuilderDepositRequest"      => runStatic (@Gloas.BuilderDepositRequest P) typeName bytes
+  | "BuilderExitRequest"         => runStatic (@Gloas.BuilderExitRequest P) typeName bytes
   | "BuilderPendingPayment"      => runStatic (@Gloas.BuilderPendingPayment P) typeName bytes
   | "BuilderPendingWithdrawal"   => runStatic (@Gloas.BuilderPendingWithdrawal P) typeName bytes
   | "Checkpoint"                 => runStatic (@Gloas.Checkpoint P) typeName bytes

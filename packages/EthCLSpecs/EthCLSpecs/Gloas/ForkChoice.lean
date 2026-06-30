@@ -5,7 +5,7 @@ import EthCLLib.Spec.FiniteMap
 /-!
 # `EthCLSpecs.Gloas.ForkChoice`: the EIP-7732 (ePBS) node-based fork choice
 
-The Gloas fork choice (`specs/gloas/fork-choice.md`, v1.7.0-alpha.10) replaces the
+The Gloas fork choice (`specs/gloas/fork-choice.md`, v1.7.0-alpha.11) replaces the
 phase0 root-walks with a `ForkChoiceNode = (root, payload_status)` abstraction: a
 block's two payload realisations (empty / full) and an undecided pending node are
 distinct fork-choice vertices, so `get_ancestor` / `is_ancestor` / `get_weight` /

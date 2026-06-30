@@ -99,7 +99,7 @@ forkdef processBlock (block : BeaconBlock) : StateTransition Unit := do
   processParentExecutionPayload block
   processBlockHeader block
   processWithdrawals
-  processExecutionPayloadBid block
+  processExecutionPayloadBid block.body.signedExecutionPayloadBid
   processRandao block.body
   processEth1Data block.body
   processOperations block.body

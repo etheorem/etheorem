@@ -26,7 +26,7 @@ import yaml
 # The pinned release: the latest consensus-specs release, confirmed to
 # carry both Fulu and Gloas minimal vectors (matches
 # EthCLSpecs.Fulu.Interface.pyspecPinnedVersion).
-PINNED_VERSION = "v1.7.0-alpha.10"
+PINNED_VERSION = "v1.7.0-alpha.11"
 CACHE_DIR = Path.home() / ".cache" / "sizzlean"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 

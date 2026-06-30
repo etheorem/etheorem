@@ -9,7 +9,7 @@ import EthCLSpecs.Fulu.Committees
 Gloas one, so it lives in Gloas and names both forks. It is the `fork` vector
 format's entry point.
 
-Ported verbatim from the v1.7.0-alpha.10 `specs/gloas/fork.md`: common fields carry
+Ported verbatim from the v1.7.0-alpha.11 `specs/gloas/fork.md`: common fields carry
 across (the unchanged component containers are reused, so the copies are
 direct, no conversion); the fork version bumps (`previous := pre.fork.current`,
 `current := GLOAS_FORK_VERSION`, `epoch := get_current_epoch(pre)`);
@@ -132,7 +132,7 @@ def upgradeToGloas [Preset] [HasherTag] (gloasForkVersion : Version) (pre : Fulu
       { (default : Gloas.ExecutionPayloadBid) with
           blockHash             := pre.latestExecutionPayloadHeader.blockHash
           gasLimit              := pre.latestExecutionPayloadHeader.gasLimit
-          executionRequestsRoot := htr (default : Fulu.ExecutionRequests) }
+          executionRequestsRoot := htr (default : Gloas.ExecutionRequests) }
     nextWithdrawalIndex           := pre.nextWithdrawalIndex
     nextWithdrawalValidatorIndex  := pre.nextWithdrawalValidatorIndex
     historicalSummaries           := pre.historicalSummaries.mapCap cvHistoricalSummary

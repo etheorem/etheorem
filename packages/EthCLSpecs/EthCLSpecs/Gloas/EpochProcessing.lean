@@ -221,7 +221,7 @@ inherit processProposerLookahead
 
 /-! ## Gloas-new epoch substep (EIP-7732) -/
 
-/-- `process_builder_pending_payments` (v1.7.0-alpha.10): for each of the previous
+/-- `process_builder_pending_payments` (v1.7.0-alpha.11): for each of the previous
 epoch's pending payments whose weight clears the quorum threshold
 (`get_total_active_balance / SLOTS_PER_EPOCH * NUMERATOR / DENOMINATOR`, `>=`),
 queue its withdrawal directly; then shift the payment window down by
@@ -247,7 +247,7 @@ forkdef processBuilderPendingPayments : StateTransition Unit := do
       shiftWindow (sszGet state builderPendingPayments) Const.slotsPerEpoch Const.slotsPerEpoch
         (fun _ => empty)
 
-/-- `compute_ptc` (v1.7.0-alpha.10, EIP-7732): the payload-timeliness committee for
+/-- `compute_ptc` (v1.7.0-alpha.11, EIP-7732): the payload-timeliness committee for
 `slot`, with possible duplicates. Concatenate every beacon committee for the slot in
 order, then take a `PTC_SIZE` balance-weighted selection with no shuffle. The seed
 mixes `DOMAIN_PTC_ATTESTER` and the slot. -/
@@ -260,7 +260,7 @@ forkdef computePtc (state : State) (slot : Slot) : Vector ValidatorIndex Const.p
   let sel := computeBalanceWeightedSelection state indices seed Const.ptcSize false
   Vector.ofFn (fun i : Fin Const.ptcSize => sel[i.val]!)
 
-/-- `process_ptc_window` (v1.7.0-alpha.10, EIP-7732): shift the cached PTC window down
+/-- `process_ptc_window` (v1.7.0-alpha.11, EIP-7732): shift the cached PTC window down
 by `SLOTS_PER_EPOCH` and recompute the last epoch's per-slot PTCs from the snapshot
 state. The window length is `(2 + MIN_SEED_LOOKAHEAD) * SLOTS_PER_EPOCH = 3 *
 SLOTS_PER_EPOCH` (MIN_SEED_LOOKAHEAD = 1). -/

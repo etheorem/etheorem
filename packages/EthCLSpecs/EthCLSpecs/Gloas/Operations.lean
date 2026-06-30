@@ -40,6 +40,12 @@ inherit processBlockHeader
 inherit processBlsToExecutionChange
 inherit processWithdrawalRequest
 inherit processConsolidationRequest
+-- alpha.11 reverted the Gloas `process_deposit_request` and `process_voluntary_exit`
+-- overrides: builder onboarding / exit moved to the dedicated EIP-8282
+-- `process_builder_deposit_request` / `process_builder_exit_request`, so a `DepositRequest`
+-- is just queued and a builder-index `VoluntaryExit` is rejected by the inherited handlers.
+inherit processDepositRequest
+inherit processVoluntaryExit
 inherit processSyncAggregate
 
 /-! ## Builder-registry helpers (EIP-7732) -/
@@ -78,7 +84,9 @@ state's queue (`process_deposit_request`) or an in-progress accumulator
 forkdef isPendingValidator (pendingDeposits : Array PendingDeposit) (pubkey : BLSPubkey) : Bool :=
   pendingDeposits.any fun d =>
     d.pubkey == pubkey && isValidDepositSignature d.pubkey d.withdrawalCredentials d.amount d.signature
-/-- `initiate_builder_exit`. -/
+/-- `initiate_builder_exit`. Retained for the deferred EIP-8282
+`process_builder_exit_request` (alpha.11 moved builder exits off `process_voluntary_exit`
+to this EL-triggered path); not yet wired, so it currently has no caller. -/
 forkdef initiateBuilderExit (builderIndex : BuilderIndex) : StateTransition Unit := do
   let epoch := currentEpochOf (← get)
   modifyState fun state =>
@@ -90,23 +98,25 @@ forkdef getIndexForNewBuilder (state : State) : BuilderIndex := Id.run do
   for i in [0:bs.size] do
     if (bs[i]?.getD default).withdrawableEpoch ≤ epoch && (bs[i]?.getD default).balance == 0 then return UInt64.ofNat i
   return UInt64.ofNat bs.size
-/-- `add_builder_to_registry` (set-or-append at the recyclable index). -/
-forkdef addBuilderToRegistry (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) (slot : Slot) :
-    StateTransition Unit := do
+/-- `withdrawal_credentials[12:]` as a 20-byte execution address. -/
+private def addressOfCred (wc : Bytes32) : ExecutionAddress := Vector.ofFn (fun i : Fin 20 => wc[12 + i.val])
+
+/-- `add_builder_to_registry` (EIP-8282): set-or-append a `Builder` at the recyclable
+index with the supplied `version` / `executionAddress`. -/
+forkdef addBuilderToRegistry (pubkey : BLSPubkey) (version : UInt8) (executionAddress : ExecutionAddress)
+    (amount : Gwei) (slot : Slot) : StateTransition Unit := do
   let state ← get
   let idx := (getIndexForNewBuilder state).toNat
   let b : Builder :=
-    { pubkey, version := credPrefix wc, executionAddress := addressOfCred wc, balance := amount,
+    { pubkey, version, executionAddress, balance := amount,
       depositEpoch := computeEpochAtSlot slot, withdrawableEpoch := Const.farFutureEpoch }
   modifyState fun state =>
     if idx < (sszGet state builders).size then
       sszUpdate state with builders[idx]! := b
     else sszAppend state builders b
-where
-  /-- `withdrawal_credentials[12:]` as a 20-byte execution address. -/
-  addressOfCred (wc : Bytes32) : ExecutionAddress := Vector.ofFn (fun i : Fin 20 => wc[12 + i.val])
-/-- `apply_deposit_for_builder`: top up an existing builder, or add a new one with a
-valid proof-of-possession. -/
+/-- `apply_deposit_for_builder` (retained as a helper; the spec inlines it into
+`onboard_builders_from_pending_deposits`): top up an existing builder, or add a new one
+with a valid proof-of-possession, stamped `PAYLOAD_BUILDER_VERSION`. -/
 forkdef applyDepositForBuilder (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei)
     (sig : BLSSignature) (slot : Slot) : StateTransition Unit := do
   let state ← get
@@ -114,7 +124,8 @@ forkdef applyDepositForBuilder (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwe
   | some builderIndex => modifyState fun state =>
       sszModify state builders[builderIndex]! as b => { b with balance := b.balance + amount }
   | none =>
-    if isValidDepositSignature pubkey wc amount sig then addBuilderToRegistry pubkey wc amount slot
+    if isValidDepositSignature pubkey wc amount sig then
+      addBuilderToRegistry pubkey Const.payloadBuilderVersion (addressOfCred wc) amount slot
 
 /-- `onboard_builders_from_pending_deposits`: at the fork, drain the pending-deposit
 queue, applying builder deposits (existing builder pubkey, or a builder-credential
@@ -142,48 +153,6 @@ forkdef onboardBuildersFromPendingDeposits : StateTransition Unit := do
 
 /-! ## Gloas-modified operations -/
 
-/-- `process_voluntary_exit` (Gloas): a builder-index exit branch precedes the
-validator path. -/
-forkdef processVoluntaryExit (sve : SignedVoluntaryExit) : StateTransition Unit := do
-  let state ← get
-  let ve := sve.message
-  let domain := computeDomain Const.domainVoluntaryExit Const.capellaForkVersion (sszGet state genesisValidatorsRoot)
-  let signingRoot := computeSigningRoot ve domain
-  assert (currentEpochOf state ≥ ve.epoch)
-
-  if isBuilderIndex ve.validatorIndex then
-    let builderIndex := toBuilderIndex ve.validatorIndex
-    let hb ← assertH (builderIndex.toNat < (sszGet state builders).size)
-    assert (isActiveBuilder state builderIndex)
-    assert (getPendingBalanceToWithdrawForBuilder state builderIndex == 0)
-    let pubkey := ((sszGet state builders)[builderIndex.toNat]'hb.down).pubkey
-    assert (blsVerify pubkey signingRoot sve.signature)
-    initiateBuilderExit builderIndex
-  else
-    let hb ← assertH (ve.validatorIndex.toNat < (sszGet state validators).size)
-    let validator := (sszGet state validators)[ve.validatorIndex.toNat]'hb.down
-    assert (isActiveValidator validator (currentEpochOf state))
-    assert (hasNotInitiatedExit validator)
-    assert (passedShardCommitteePeriod validator (currentEpochOf state))
-    assert (getPendingBalanceToWithdraw state ve.validatorIndex == 0)
-    assert (blsVerify validator.pubkey signingRoot sve.signature)
-    initiateValidatorExit ve.validatorIndex
-
-/-- `process_deposit_request` (Gloas): a builder deposit (builder pubkey, or a
-builder-credential deposit for a not-yet-known validator) applies immediately;
-otherwise the deposit is queued. -/
-forkdef processDepositRequest (dr : DepositRequest) : StateTransition Unit := do
-  let state ← get
-  let isBuilder := (sszGet state builders).any (·.pubkey == dr.pubkey)
-  let isValidator := (sszGet state validators).any (·.pubkey == dr.pubkey)
-  if isBuilder || (isBuilderWithdrawalCredential dr.withdrawalCredentials && !isValidator
-      && !isPendingValidator (sszGet state pendingDeposits).toArray dr.pubkey) then
-    applyDepositForBuilder dr.pubkey dr.withdrawalCredentials dr.amount dr.signature (sszGet state slot)
-  else
-    modifyState fun state => sszAppend state pendingDeposits
-      { pubkey := dr.pubkey, withdrawalCredentials := dr.withdrawalCredentials, amount := dr.amount,
-        signature := dr.signature, slot := sszGet state slot }
-
 /-- `process_proposer_slashing` (Gloas): Fulu's checks and `slash_validator`, plus
 the EIP-7732 step that voids the slashed proposal's `BuilderPendingPayment` if it
 is still in the two-epoch payment window. -/
@@ -203,17 +172,19 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
   assert (blsVerifySigned proposer.pubkey h2
     (getDomain state Const.domainBeaconProposer (computeEpochAtSlot h2.slot)) ps.signedHeader2.signature)
 
-  -- Void the slashed proposal's pending payment if it is still in the two-epoch window.
-  -- The SSZ zero value: `default` is field-wise `default`, the all-zero container, so this
-  -- clears the slot without restating the literal.
+  -- Void the slashed proposal's pending payment only if it is still in the two-epoch
+  -- window AND the recorded payment belongs to this proposer (EIP-8282). `default` is
+  -- the all-zero `BuilderPendingPayment`, so this clears the slot without restating it.
   let empty : BuilderPendingPayment := default
   let proposalEpoch := computeEpochAtSlot h1.slot
   if proposalEpoch == currentEpochOf state then
-    modifyState fun state =>
-      sszUpdate state with builderPendingPayments[builderPaymentIndex h1.slot true]! := empty
+    let idx := builderPaymentIndex h1.slot true
+    if ((sszGet state builderPendingPayments)[idx]!).proposerIndex == h1.proposerIndex then
+      modifyState fun state => sszUpdate state with builderPendingPayments[idx]! := empty
   else if proposalEpoch == previousEpochOf state then
-    modifyState fun state =>
-      sszUpdate state with builderPendingPayments[builderPaymentIndex h1.slot false]! := empty
+    let idx := builderPaymentIndex h1.slot false
+    if ((sszGet state builderPendingPayments)[idx]!).proposerIndex == h1.proposerIndex then
+      modifyState fun state => sszUpdate state with builderPendingPayments[idx]! := empty
 
   slashValidator h1.proposerIndex
 
@@ -334,7 +305,7 @@ where
         return (okAcc && attesters > 0, off + committee.size))
       (true, 0)
 
-/-- `get_ptc` (v1.7.0-alpha.10): read the cached PTC for `slot` from `ptc_window`.
+/-- `get_ptc` (v1.7.0-alpha.11): read the cached PTC for `slot` from `ptc_window`.
 For a slot in the previous epoch the window's first `SLOTS_PER_EPOCH` entries hold
 it; otherwise an `(epoch - state_epoch + 1) * SLOTS_PER_EPOCH` offset applies. The
 spec asserts the slot is within `[state_epoch-1, state_epoch + MIN_SEED_LOOKAHEAD]`;
@@ -418,36 +389,41 @@ forkdef settleBuilderPayment (paymentIndex : Nat) : StateTransition Unit := do
   modifyState fun state =>
     sszUpdate state with builderPendingPayments[paymentIndex]! := empty
 
-/-- `process_execution_payload_bid` (NEW, EIP-7732): validate the signed bid (self-build
-sentinel or an active, funded, correctly-signed builder), check it commits to the right
-slot / parent / randao, record the `BuilderPendingPayment`, and cache the bid. -/
-forkdef processExecutionPayloadBid (block : BeaconBlock) : StateTransition Unit := do
+/-- `process_execution_payload_bid` (EIP-7732, alpha.11 signature): validate the signed
+bid (self-build sentinel, or an active, payload-builder-versioned, funded, correctly-signed
+builder), check it commits to the current slot / parent / randao, record the
+`BuilderPendingPayment`, and cache the bid. alpha.11 takes the `SignedExecutionPayloadBid`
+directly (not a `BeaconBlock`) and reads the slot / parent root from state. -/
+forkdef processExecutionPayloadBid (signedBid : SignedExecutionPayloadBid) : StateTransition Unit := do
   let state ← get
-  let signedBid := block.body.signedExecutionPayloadBid
   let bid := signedBid.message
   let builderIndex := bid.builderIndex
   let amount := bid.value
 
-  -- A self-build sentinel carries no value or signature; a real builder must be
-  -- active, funded, and the signer of the bid.
+  -- A self-build sentinel carries no value or signature; a real builder must be active,
+  -- a payload builder (`PAYLOAD_BUILDER_VERSION`), funded, and the signer of the bid.
   if builderIndex == Const.builderIndexSelfBuild then
     assert (amount == 0)
     assert (signedBid.signature == Const.g2PointAtInfinity)
   else
     assert (isActiveBuilder state builderIndex)
+    assert ((sszGet state builders[builderIndex.toNat]!).version == Const.payloadBuilderVersion)
     assert (canBuilderCoverBid state builderIndex amount)
     assert (verifyExecutionPayloadBidSignature state signedBid)
 
   assert (bid.blobKzgCommitments.size ≤ Const.maxBlobsPerBlockElectra)
-  assert (bid.slot == block.slot)
+  assert (bid.slot == sszGet state slot)
+  assert ((sszGet state slot) > Const.genesisSlot)
   assert (bid.parentBlockHash == sszGet state latestBlockHash)
-  assert (bid.parentBlockRoot == block.parentRoot)
+  assert (bid.parentBlockRoot == getBlockRootAtSlot state ((sszGet state slot) - 1))
   let randaoMix ← getRandaoMix (currentEpochOf state)
   assert (bid.prevRandao == randaoMix)
 
   if amount > 0 then
     let pending : BuilderPendingPayment :=
-      { weight := 0, withdrawal := { feeRecipient := bid.feeRecipient, amount := amount, builderIndex := builderIndex } }
+      { weight := 0,
+        withdrawal := { feeRecipient := bid.feeRecipient, amount := amount, builderIndex := builderIndex },
+        proposerIndex := getBeaconProposerIndex state }
     modifyState fun state =>
       sszUpdate state with builderPendingPayments[builderPaymentIndex bid.slot true]! := pending
 
@@ -465,6 +441,10 @@ forkdef applyParentExecutionPayload (requests : ExecutionRequests) : StateTransi
   for d in requests.deposits do processDepositRequest d
   for w in requests.withdrawals do processWithdrawalRequest w
   for c in requests.consolidations do processConsolidationRequest c
+  -- Deferred: EIP-8282 builder-deposit / builder-exit request processing is not yet
+  -- ported; a non-empty list xfails the runner (todo) rather than diverging the root.
+  unless requests.builderDeposits.size == 0 && requests.builderExits.size == 0 do
+    throw (StateTransitionError.todo "gloas builder_deposit/builder_exit processing: EIP-8282 not yet ported")
 
   -- Settle the parent's payment if it is still in the two-epoch window; outside it,
   -- queue any remaining value directly as a builder withdrawal.

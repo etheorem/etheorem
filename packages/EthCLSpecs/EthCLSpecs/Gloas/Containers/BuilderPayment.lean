@@ -21,9 +21,11 @@ forkcontainer BuilderPendingWithdrawal where
   amount       : Gwei
   builderIndex : BuilderIndex
 
-/-- A pending builder payment, weighting a pending withdrawal. -/
+/-- A pending builder payment, weighting a pending withdrawal. EIP-8282 records the
+proposer that produced it so a proposer slashing only clears its own payment. -/
 forkcontainer BuilderPendingPayment where
-  weight     : Gwei
-  withdrawal : BuilderPendingWithdrawal
+  weight        : Gwei
+  withdrawal    : BuilderPendingWithdrawal
+  proposerIndex : ValidatorIndex
 
 end EthCLSpecs.Gloas

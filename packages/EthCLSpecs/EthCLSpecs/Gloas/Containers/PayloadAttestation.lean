@@ -1,4 +1,4 @@
-import EthCLSpecs.Gloas.Containers.BuilderPayment
+import EthCLSpecs.Gloas.Containers.ExecutionRequests
 
 /-!
 # `EthCLSpecs.Gloas.Containers.PayloadAttestation`: the payload-attestation family (EIP-7732)

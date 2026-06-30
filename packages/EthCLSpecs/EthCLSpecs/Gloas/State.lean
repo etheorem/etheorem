@@ -3,7 +3,7 @@ import EthCLSpecs.Gloas.Containers.Execution
 /-!
 # `EthCLSpecs.Gloas.State`: the Gloas `BeaconState` and its boxed view (EIP-7732)
 
-The Gloas `BeaconState` (v1.7.0-alpha.10, 46 fields), then the `State` abbrev that
+The Gloas `BeaconState` (v1.7.0-alpha.11, 46 fields), then the `State` abbrev that
 views it as an SSZ box. The eth1 fields remain; `latestExecutionPayloadHeader` is
 dropped (its slot now holds `latestBlockHash`), and the ePBS block is appended
 after `proposerLookahead`. The unchanged component containers are Fulu's
@@ -17,7 +17,7 @@ open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
 
-/-- The Gloas `BeaconState` (v1.7.0-alpha.10, 46 fields). The eth1 fields remain;
+/-- The Gloas `BeaconState` (v1.7.0-alpha.11, 46 fields). The eth1 fields remain;
 `latestExecutionPayloadHeader` is dropped (its slot now holds `latestBlockHash`),
 and the ePBS block is appended after `proposerLookahead`. The unchanged component
 containers are Fulu's. -/

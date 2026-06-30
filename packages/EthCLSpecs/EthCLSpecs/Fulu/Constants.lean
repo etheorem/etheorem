@@ -137,6 +137,9 @@ abbrev maxValidatorsPerCommittee : Nat := 2048
 abbrev maxDepositRequestsPerPayload : Nat := 8192
 abbrev maxWithdrawalRequestsPerPayload : Nat := 16
 abbrev maxConsolidationRequestsPerPayload : Nat := 2
+-- EIP-8282 (Gloas builder deposits / exits): 2**8 and 2**4, identical across presets.
+abbrev maxBuilderDepositRequestsPerPayload : Nat := 256
+abbrev maxBuilderExitRequestsPerPayload : Nat := 16
 abbrev maxAttestationsElectra : Nat := 8
 abbrev maxAttesterSlashingsElectra : Nat := 1
 abbrev maxPendingDepositsPerEpoch : Nat := 16
@@ -225,6 +228,9 @@ abbrev maxPayloadAttestations : Nat := 4
 abbrev builderPaymentThresholdNumerator : UInt64 := 6
 abbrev builderPaymentThresholdDenominator : UInt64 := 10
 abbrev builderWithdrawalPrefix : UInt8 := 0x03
+/-- `PAYLOAD_BUILDER_VERSION = uint8(0)` (EIP-8282): the version stamped on a
+builder onboarded at the fork (`add_builder_to_registry`). -/
+abbrev payloadBuilderVersion : UInt8 := 0
 abbrev builderIndexFlag : UInt64 := 0x10000000000
 /-- `BUILDER_INDEX_SELF_BUILD = BuilderIndex(UINT64_MAX)`: the bid's `builder_index`
 sentinel marking a proposer self-build (no external builder). -/
@@ -234,6 +240,9 @@ this is what `get_blob_parameters(epoch).max_blobs_per_block` returns. -/
 abbrev maxBlobsPerBlockElectra : Nat := 9
 abbrev domainBeaconBuilder : ByteArray := ⟨#[0x0B, 0, 0, 0]⟩
 abbrev domainPtcAttester : ByteArray := ⟨#[0x0C, 0, 0, 0]⟩
+-- EIP-8282 `DOMAIN_BUILDER_DEPOSIT` (`0x0E000000`). Consumed by the deferred
+-- builder-deposit signature check; recorded now alongside the other domain tags.
+abbrev domainBuilderDeposit : ByteArray := ⟨#[0x0E, 0, 0, 0]⟩
 /-- ePBS fork-choice payload statuses for a `ForkChoiceNode`. -/
 abbrev payloadStatusEmpty : UInt8 := 0
 abbrev payloadStatusFull : UInt8 := 1

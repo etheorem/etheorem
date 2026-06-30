@@ -43,7 +43,6 @@ inherit Deposit
 inherit DepositRequest
 inherit Eth1Data
 inherit WithdrawalRequest
-inherit ExecutionRequests
 inherit Fork
 inherit HistoricalSummary
 inherit PendingConsolidation
