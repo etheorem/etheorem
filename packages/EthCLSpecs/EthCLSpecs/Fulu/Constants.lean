@@ -140,6 +140,10 @@ abbrev maxConsolidationRequestsPerPayload : Nat := 2
 -- EIP-8282 (Gloas builder deposits / exits): 2**8 and 2**4, identical across presets.
 abbrev maxBuilderDepositRequestsPerPayload : Nat := 256
 abbrev maxBuilderExitRequestsPerPayload : Nat := 16
+-- EIP-7805 (Heze FOCIL): inclusion-list committee members per slot. A preset-file
+-- value, identical across presets at v1.7.0-alpha.11 (both say 2**4); re-check at
+-- every re-pin, and promote to a `Preset` field (like `ptcSize`) if they diverge.
+abbrev inclusionListCommitteeSize : Nat := 16
 abbrev maxAttestationsElectra : Nat := 8
 abbrev maxAttesterSlashingsElectra : Nat := 1
 abbrev maxPendingDepositsPerEpoch : Nat := 16

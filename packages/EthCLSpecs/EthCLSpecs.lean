@@ -1,6 +1,7 @@
 import EthCLSpecs.Forms
 import EthCLSpecs.Fulu
 import EthCLSpecs.Gloas
+import EthCLSpecs.Heze
 
 /-!
 # `EthCLSpecs`: the Ethereum consensus-spec fork bodies

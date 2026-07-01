@@ -24,13 +24,13 @@ import cramjam
 import yaml
 
 # The pinned release: the latest consensus-specs release, confirmed to
-# carry both Fulu and Gloas minimal vectors (matches
+# carry the Fulu, Gloas, and Heze minimal vectors (matches
 # EthCLSpecs.Fulu.Interface.pyspecPinnedVersion).
 PINNED_VERSION = "v1.7.0-alpha.11"
 CACHE_DIR = Path.home() / ".cache" / "sizzlean"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# In-scope (runner, handler-is-path-segment) formats for Fulu and Gloas.
+# In-scope (runner, handler-is-path-segment) formats for Fulu, Gloas, and Heze.
 # `ssz_static` runs the per-fork consensus-container vectors (decode →
 # hash-tree-root → round-trip) against the container types EthCLSpecs declares;
 # the fork-agnostic `ssz_generic` primitive vectors live in SizzLean instead.
@@ -100,7 +100,8 @@ def walk_cases(extract_root: Path, preset: str, fork: str,
         # Fulu `fork` (Electra->Fulu upgrade) and `transition` (Electra->Fulu
         # boundary) require a full Electra parent fork the library never builds, so
         # they are permanently out of scope: not collected, not counted, not even as
-        # xfail. (The Gloas `fork` / `transition` are Fulu->Gloas, fully in scope.)
+        # xfail. (The Gloas `fork` / `transition` are Fulu->Gloas and the Heze ones
+        # Gloas->Heze, both fully in scope.)
         if fork == "fulu" and runner in ("fork", "transition"):
             continue
         for handler_dir in sorted(p for p in runner_dir.iterdir() if p.is_dir()):

@@ -211,7 +211,7 @@ partial def serve (iface : ForkInterface) : IO UInt32 := do
   let stdin ← IO.getStdin
   let stdout ← IO.getStdout
   let rec loop : IO UInt32 := do
-    -- Strip only the line ending, not interior / trailing tabs (the final
+    -- Strip the line ending while keeping interior / trailing tabs (the final
     -- `inputPaths` field is empty, hence a trailing tab, when a case has no inputs).
     let line := ((← stdin.getLine).dropEndWhile (fun c => c == '\n' || c == '\r')).toString
     if line.isEmpty then
@@ -228,11 +228,24 @@ def toHex (b : ByteArray) : String :=
     let s := String.ofList (Nat.toDigits 16 x.toNat)
     if s.length == 1 then "0" ++ s else s)
 
+/-- Resolve a fork name to its minimal-preset interface; `none` for an unknown name.
+The `stateroot` debug mode uses this to error on a bad fork argument instead of
+inheriting `pickInterface`'s silent Fulu default (which `serve` keeps for the
+documented `pyspec_server [fork [preset]]` fallback). -/
+def forkInterface? (forkName : String) : Option ForkInterface :=
+  match forkName with
+  | "fulu"  => some EthCLSpecs.Fulu.Interface.fuluInterface
+  | "gloas" => some EthCLSpecs.Gloas.Interface.gloasInterface
+  | "heze"  => some EthCLSpecs.Heze.Interface.hezeInterface
+  | _       => none
+
 /-- Select a fork's interface at a preset. -/
 @[reducible] def pickInterface (forkName preset : String) : ForkInterface :=
   match forkName, preset with
   | "gloas", "mainnet" => EthCLSpecs.Gloas.Interface.gloasInterfaceMainnet
   | "gloas", _         => EthCLSpecs.Gloas.Interface.gloasInterface
+  | "heze",  "mainnet" => EthCLSpecs.Heze.Interface.hezeInterfaceMainnet
+  | "heze",  _         => EthCLSpecs.Heze.Interface.hezeInterface
   | _,       "mainnet" => EthCLSpecs.Fulu.Interface.fuluInterfaceMainnet
   | _,       _         => EthCLSpecs.Fulu.Interface.fuluInterface
 
@@ -249,11 +262,16 @@ def main (args : List String) : IO UInt32 := do
     match EthCLSpecs.Fulu.Interface.fuluInterface.stateRoot bytes with
     | .ok root => IO.println (EthCLSpecs.PySpecTests.toHex root); return 0
     | .error e => IO.eprintln s!"decode failed: {repr e}"; return 1
-  | ["stateroot", "gloas", path] =>
-    let bytes ← IO.FS.readBinFile path
-    match EthCLSpecs.Gloas.Interface.gloasInterface.stateRoot bytes with
-    | .ok root => IO.println (EthCLSpecs.PySpecTests.toHex root); return 0
-    | .error e => IO.eprintln s!"decode failed: {repr e}"; return 1
+  -- `fork` is a registered token of the spec DSL (the `forkstruct` family), so the
+  -- binder is `forkName`, matching the serve arms below.
+  | ["stateroot", forkName, path] =>
+    match EthCLSpecs.PySpecTests.forkInterface? forkName with
+    | none => IO.eprintln s!"unknown fork: {forkName} (expected fulu / gloas / heze)"; return 2
+    | some iface =>
+      let bytes ← IO.FS.readBinFile path
+      match iface.stateRoot bytes with
+      | .ok root => IO.println (EthCLSpecs.PySpecTests.toHex root); return 0
+      | .error e => IO.eprintln s!"decode failed: {repr e}"; return 1
   | [forkName, preset] => EthCLSpecs.PySpecTests.serve (EthCLSpecs.PySpecTests.pickInterface forkName preset)
   | [forkName]         => EthCLSpecs.PySpecTests.serve (EthCLSpecs.PySpecTests.pickInterface forkName "minimal")
   | _                  => EthCLSpecs.PySpecTests.serve EthCLSpecs.Fulu.Interface.fuluInterface
