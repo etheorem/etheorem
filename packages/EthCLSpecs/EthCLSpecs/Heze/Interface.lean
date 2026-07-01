@@ -9,9 +9,10 @@ import EthCLSpecs.Heze.ForkChoice
 # `EthCLSpecs.Heze.Interface`: the Heze fork-interface instance
 
 Heze's implementation of `ForkInterface`. At v1.7.0-alpha.11 EIP-7805 (FOCIL) adds no state
-transition and no *vector-tested* fork-choice change: the new inclusion-list fork-choice layer
-(`Heze.ForkChoice`) ships no conformance vector, so every dynamic runner reuses the Gloas spine
-re-instantiated over Heze types (`Heze.EpochProcessing` / `Operations` / `Withdrawals` /
+transition and no *vector-tested* fork-choice change: its overrides run on the existing fork_choice
+vectors but stay Gloas-equivalent (empty inclusion-list store), and the FOCIL-specific behavior
+ships no vector, so every dynamic runner reuses the Gloas spine re-instantiated over Heze types
+(`Heze.EpochProcessing` / `Operations` / `Withdrawals` /
 `Transition` / `ForkChoice`). `runUpgrade` is the Gloas→Heze `fork` format (a pure field
 copy, no onboarding); `runTransition` is the Gloas→Heze boundary; `runForkChoice` runs the
 Heze ePBS store. `runGenesis` and any `ssz_static` type Heze does not model are
@@ -288,7 +289,11 @@ private def fcInterpretHeze [Preset] [Config] [HasherTag] [CryptoBackend]
     | .checkTime t => assert (store.time.toNat == t)
     | .checkGenesisTime t => assert (store.genesisTime.toNat == t)
     | .unsupported reason => throw (StoreTransitionError.todo reason)
-    | _ => pure ()
+    -- `get_proposer_head` is Gloas-Modified but not ported, and no alpha.11 vector exercises it;
+    -- surface it as unmodeled (a `todo` xfail) rather than passing it vacuously. This arm makes
+    -- the match exhaustive over `FcStep`, so a newly added constructor becomes a build error rather
+    -- than a silent pass through a catch-all.
+    | .checkProposerHead _ => throw (StoreTransitionError.todo "get_proposer_head check: not modeled")
   pure ()
 
 /-- `runForkChoice` (Heze): decode the anchor state / block, build the ePBS store, and run
