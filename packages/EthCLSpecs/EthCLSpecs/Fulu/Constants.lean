@@ -247,6 +247,10 @@ abbrev domainPtcAttester : ByteArray := ⟨#[0x0C, 0, 0, 0]⟩
 -- EIP-8282 `DOMAIN_BUILDER_DEPOSIT` (`0x0E000000`). Consumed by the deferred
 -- builder-deposit signature check; recorded now alongside the other domain tags.
 abbrev domainBuilderDeposit : ByteArray := ⟨#[0x0E, 0, 0, 0]⟩
+-- EIP-7805 `DOMAIN_INCLUSION_LIST_COMMITTEE` (`0x10000000`). The FOCIL inclusion-list
+-- committee signature domain; consumed by `Heze.isValidInclusionListSignature`. Recorded
+-- here with the other domain tags (where every fork's domains live, Heze's included).
+abbrev domainInclusionListCommittee : ByteArray := ⟨#[0x10, 0, 0, 0]⟩
 /-- ePBS fork-choice payload statuses for a `ForkChoiceNode`. -/
 abbrev payloadStatusEmpty : UInt8 := 0
 abbrev payloadStatusFull : UInt8 := 1

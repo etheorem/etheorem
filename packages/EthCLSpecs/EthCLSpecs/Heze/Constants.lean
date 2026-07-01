@@ -7,8 +7,9 @@ Heze is a diff over Gloas, adding EIP-7805 (FOCIL). At alpha.11 it modifies no G
 container (PR #5371 reverted the bid change), so the only Heze-specific constants here
 are the two `HEZE_FORK_VERSION` values. `fork Heze from Gloas` records the lineage so
 `inherit` replays Gloas (and through Gloas, Fulu) declarations in the Heze namespace.
-`DOMAIN_INCLUSION_LIST_COMMITTEE` (`0x10000000` at alpha.11) is consumed only by the
-still-deferred FOCIL helpers; it lands with them.
+The FOCIL `DOMAIN_INCLUSION_LIST_COMMITTEE` tag lives with every other BLS domain in
+`Fulu.Const` (`Const.domainInclusionListCommittee`); the FOCIL
+`is_valid_inclusion_list_signature` predicate (`Heze/Focil.lean`) verifies signatures under it.
 -/
 
 set_option autoImplicit false

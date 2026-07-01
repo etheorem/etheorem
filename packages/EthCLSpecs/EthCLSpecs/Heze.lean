@@ -1,6 +1,7 @@
 import EthCLSpecs.Heze.Containers
 import EthCLSpecs.Heze.Upgrade
 import EthCLSpecs.Heze.Interface
+import EthCLSpecs.Heze.Focil
 
 /-!
 # `EthCLSpecs.Heze`: the Heze fork (EIP-7805 FOCIL), a thin diff over Gloas
