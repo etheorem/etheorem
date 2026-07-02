@@ -922,20 +922,20 @@ The pinned version per fork is the `pyspecPinnedVersion` constant of the contrac
 spec-revision-pin section: the latest upstream tag carrying that fork's vectors,
 stable or pre-release. Fulu pins a stable release. Gloas tracks the consensus-specs
 main branch, so it pins a pre-release or alpha tag, or a dev commit, while it is
-unreleased. The two forks sit at different pins at the same time.
+unreleased. Forks can sit at different pins at the same time.
 
 The values below are illustrative and are bumped to the current latest release at
-implementation time (the pytest harnesses pin `v1.7.0-alpha.10` at this writing);
+implementation time (the pytest harnesses pin `v1.7.0-alpha.11` at this writing);
 the implementation also confirms the chosen tag
 actually carries Gloas vectors, falling back to a dev commit if not.
 
 ```lean
 namespace EthCLSpecs.Fulu
-def pyspecPinnedVersion : String := "v1.7.0-alpha.10"   -- latest release at writing
+def pyspecPinnedVersion : String := "v1.7.0-alpha.11"   -- latest release at writing
 end EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
-def pyspecPinnedVersion : String := "v1.7.0-alpha.10"   -- same tag while Gloas is unreleased
+def pyspecPinnedVersion : String := "v1.7.0-alpha.11"   -- same tag while Gloas is unreleased
 end EthCLSpecs.Gloas
 ```
 

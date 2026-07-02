@@ -6,20 +6,21 @@ the glossary). Those four are the design of record. This file records how
 `EthCLSpecs` / `EthCLLib` realize them: the current architecture, the places the code
 deviates from a doc (with the reason), and the spec-faithfulness decisions worth
 knowing. Everything here describes the tree as it stands against the
-`v1.7.0-alpha.10` pin.
+`v1.7.0-alpha.11` pin.
 
 ## Scope and conformance
 
-Two forks, **Fulu** and **Gloas**, against the `consensus-spec-tests` minimal and
-mainnet archives at `v1.7.0-alpha.10` (the latest release with cut vectors; it is
+Three forks, **Fulu**, **Gloas**, and **Heze**, against the `consensus-spec-tests` minimal and
+mainnet archives at `v1.7.0-alpha.11` (the latest release with cut vectors; it is
 flagged pre-release, so the harness pins the tag explicitly rather than reading `gh
-release latest`). The full in-scope suite is green at both presets for both forks,
-`--subset=0`, zero failures and zero `xfail`:
+release latest`). The full in-scope suite is green at both presets for all three
+forks, `--subset=0`, zero failures and zero `xfail`:
 
 | | minimal | mainnet |
 |---|---|---|
-| Fulu  | **760 passed** | **667 passed** |
-| Gloas | **903 passed** | **792 passed** |
+| Fulu  | **5188 passed** | **847 passed** |
+| Gloas | **6573 passed** | **1034 passed** |
+| Heze  | **6770 passed** | **997 passed** |
 
 Fulu's collected formats: `epoch_processing`, `operations` (including the standalone
 `execution_payload`), `rewards`, `sanity/blocks`, `sanity/slots`, `finality`,
@@ -33,15 +34,16 @@ implemented formats reach matches by root or rejects faithfully.
 - **Fulu `fork` / `transition`** (Electra→Fulu): the upgrade and the pre-fork Electra
   blocks both need a complete Electra parent fork the library never builds. The
   **Gloas** `fork` / `transition` (Fulu→Gloas) are in scope and green.
-- **`ssz_static`**: covered by SizzLean's own tests and the build-time `deriving
-  SSZRepr` gates.
+- **Fulu `ssz_static`**: reports `skip` (covered by SizzLean's own tests and the
+  build-time `deriving SSZRepr` gates). Gloas and Heze run their per-fork
+  container vectors for real.
 - **`light_client`, `networking`, `merkle_proof`, `sync`**: not state-transition or
   fork-choice formats; outside `IN_SCOPE_RUNNERS`.
 - **`genesis`**: no vectors at the pin (see Genesis below).
 
 **CI.** The `ethcl` job in `lean_action_ci.yml` runs `just ethcl-test` (builds all
 four libraries, firing the framework and spec self-tests) and `just
-ethcl-pyspec-smoke` (the `pytest-xdist` dev subset at minimal for both forks
+ethcl-pyspec-smoke` (the `pytest-xdist` dev subset at minimal for all three forks
 through the per-worker `pyspec_server`). It is green iff no in-scope vector hits a
 bug-smell or a real mismatch. Mainnet and the full sweep run on demand
 (`--preset=mainnet`, `--subset=0`).
@@ -602,5 +604,5 @@ desynced or dead server, so the parallel run is deterministic.
 
 `SPECS_ARCHITECTURE.md` §10.1 marks `genesis` in scope and §6.1 names
 `initializeBeaconStateFromEth1` / `isValidGenesisState`. The pytest corpus carries no
-`genesis` vectors for Fulu or Gloas at the `v1.7.0-alpha.10` pin, so there is nothing to
+`genesis` vectors for Fulu, Gloas, or Heze at the `v1.7.0-alpha.11` pin, so there is nothing to
 drive; both stay a `todo` stub in `Interface.lean`.

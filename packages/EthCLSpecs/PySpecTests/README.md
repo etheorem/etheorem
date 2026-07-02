@@ -33,8 +33,25 @@ From this directory, with the repo venv:
 caching backend for the plain FFI (caching is on by default). Useful for comparing
 cache-on against cache-off timings.
 
-The pin (`--tag`, default `v1.7.0-alpha.10`) selects the release; the archive is
+The pin (`--tag`, default `v1.7.0-alpha.11`) selects the release; the archive is
 downloaded once and cached.
+
+### Re-pinning checklist
+
+Bumping the pin touches more than the constant. In one pass:
+
+1. Bump `PINNED_VERSION` (`harness.py`) and each fork's `pyspecPinnedVersion`
+   (`Interface.lean`) together.
+2. Re-run the full sweep (`just ethcl-pyspec-full`) at both presets.
+3. Revalidate the spec-markdown line anchors (`<file>.md:NN`) in
+   `../docs/DISCREPANCIES.md` and the fork `.lean` docstrings against the new tag,
+   along with the recorded divergences themselves (the spec text may have moved
+   or fixed the branch a divergence pins).
+4. Sweep every doc for citations of the old tag (`grep -rn '<old-tag>'`); the
+   alpha.10→alpha.11 bump left six behind.
+5. Diff the corpus for new runners or handlers (new directories under
+   `tests/<preset>/<fork>/`); either collect them or name the exclusion in the
+   `IN_SCOPE_RUNNERS` allowlist comment, never leave one silently uncollected.
 
 ## Status
 
