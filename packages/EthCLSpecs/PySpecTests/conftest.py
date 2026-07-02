@@ -10,6 +10,7 @@ Run:
     pytest -n auto               # sharded across cores via xdist
     pytest --subset=0            # the full in-scope suite
     pytest --fork=gloas          # the Gloas vectors
+    pytest --fork=heze           # the Heze vectors
 """
 
 import pytest
@@ -20,7 +21,7 @@ from harness import ServerClient, ensure_archive, walk_cases, PINNED_VERSION
 def pytest_addoption(parser):
     parser.addoption("--preset", default="minimal",
                      help="consensus-spec-tests preset (minimal / mainnet)")
-    parser.addoption("--fork", default="fulu", help="fork to run (fulu / gloas)")
+    parser.addoption("--fork", default="fulu", help="fork to run (fulu / gloas / heze)")
     parser.addoption("--subset", type=int, default=2,
                      help="cases per (runner,handler); 0 = the full suite")
     parser.addoption("--tag", default=PINNED_VERSION,

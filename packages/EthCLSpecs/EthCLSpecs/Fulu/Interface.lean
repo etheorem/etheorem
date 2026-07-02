@@ -255,9 +255,20 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
       let proposerHead := getProposerHead store (getHead store) (getCurrentSlot store)
       assert (proposerHead == root)
     | .unsupported reason => throw (StoreTransitionError.todo reason)
-    -- ePBS-only steps (envelope, PTC message, payload-status / vote checks) never
-    -- appear in Fulu vectors; ignore them so the shared `FcStep` stays exhaustive.
-    | _ => pure ()
+    -- ePBS-only steps (Gloas, EIP-7732): impossible in a well-formed fulu vector, so
+    -- surface one as `todo` (an xfail) rather than passing it vacuously. Explicit arms
+    -- keep the match exhaustive over `FcStep`, so a newly added constructor is a build
+    -- error here too, not just in the Gloas / Heze interpreters.
+    | .executionPayload _ _ =>
+      throw (StoreTransitionError.todo "execution_payload step: ePBS-only, not applicable to fulu")
+    | .payloadAttestationMessage _ _ =>
+      throw (StoreTransitionError.todo "payload_attestation_message step: ePBS-only, not applicable to fulu")
+    | .checkHeadPayloadStatus _ =>
+      throw (StoreTransitionError.todo "head.payload_status check: ePBS-only, not applicable to fulu")
+    | .checkPayloadTimelinessVote _ _ =>
+      throw (StoreTransitionError.todo "payload_timeliness_vote check: ePBS-only, not applicable to fulu")
+    | .checkPayloadDataAvailabilityVote _ _ =>
+      throw (StoreTransitionError.todo "payload_data_availability_vote check: ePBS-only, not applicable to fulu")
   pure ()
 
 /-- `runForkChoice`: decode the anchor state / block, build the store, and run the

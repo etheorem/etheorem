@@ -165,13 +165,21 @@ private def handleForkChoice (iface : ForkInterface) (fields : Array String) : I
       | "boost"             => steps := steps.push (.checkBoost (hexToBytes parts[1]!))
       | "time"              => steps := steps.push (.checkTime parts[1]!.toNat!)
       | "genesis_time"      => steps := steps.push (.checkGenesisTime parts[1]!.toNat!)
-      | "unsupported"       => steps := steps.push (.unsupported "get_proposer_head / should_override check")
-      | _                   => pure ()
+      | "unsupported"       =>
+        -- `harness.py` passes the specific descriptor (`should_override_forkchoice_update`, or an
+        -- unrecognized step key like `on_inclusion_list`), so the xfail reason is accurate.
+        let reason := if parts.size > 1 then String.intercalate " " (parts.toList.drop 1) else "unmodeled step"
+        steps := steps.push (.unsupported s!"unsupported fork-choice step: {reason}")
+      -- An unrecognized token surfaces as `unsupported` (a `todo` xfail) rather than silently
+      -- dropping the step; `harness.py` already maps unknown steps.yaml keys to `unsupported`,
+      -- so this is the second line of defense.
+      | other               => steps := steps.push (.unsupported s!"unrecognized fork-choice step: {other}")
 
   match iface.runForkChoice anchorState anchorBlock steps with
   | .ok ()   => return "pass\tpassing\t"
   | .error e =>
-    -- Classify the runner error: a `spec todo` is out-of-scope, everything else (a
+    -- Classify the runner error: a `spec todo` is the xfail work-queue, a `spec
+    -- outOfScope` a deliberate skip, everything else (a
     -- decode failure, a check mismatch, an unexpected rejection, a missing store key) is
     -- a bug on the fork-choice path (per-step `valid:false` rejections are resolved inside
     -- the interpreter and never reach here).
@@ -211,7 +219,7 @@ partial def serve (iface : ForkInterface) : IO UInt32 := do
   let stdin ← IO.getStdin
   let stdout ← IO.getStdout
   let rec loop : IO UInt32 := do
-    -- Strip only the line ending, not interior / trailing tabs (the final
+    -- Strip the line ending while keeping interior / trailing tabs (the final
     -- `inputPaths` field is empty, hence a trailing tab, when a case has no inputs).
     let line := ((← stdin.getLine).dropEndWhile (fun c => c == '\n' || c == '\r')).toString
     if line.isEmpty then
@@ -228,32 +236,71 @@ def toHex (b : ByteArray) : String :=
     let s := String.ofList (Nat.toDigits 16 x.toNat)
     if s.length == 1 then "0" ++ s else s)
 
+/-- Resolve a fork name to its minimal-preset interface; `none` for an unknown name.
+`main` uses this to error on a bad fork argument instead of inheriting
+`pickInterface`'s silent Fulu default (kept only for the documented no-argument
+invocation). -/
+def forkInterface? (forkName : String) : Option ForkInterface :=
+  match forkName with
+  | "fulu"  => some EthCLSpecs.Fulu.Interface.fuluInterface
+  | "gloas" => some EthCLSpecs.Gloas.Interface.gloasInterface
+  | "heze"  => some EthCLSpecs.Heze.Interface.hezeInterface
+  | _       => none
+
 /-- Select a fork's interface at a preset. -/
 @[reducible] def pickInterface (forkName preset : String) : ForkInterface :=
   match forkName, preset with
   | "gloas", "mainnet" => EthCLSpecs.Gloas.Interface.gloasInterfaceMainnet
   | "gloas", _         => EthCLSpecs.Gloas.Interface.gloasInterface
+  | "heze",  "mainnet" => EthCLSpecs.Heze.Interface.hezeInterfaceMainnet
+  | "heze",  _         => EthCLSpecs.Heze.Interface.hezeInterface
   | _,       "mainnet" => EthCLSpecs.Fulu.Interface.fuluInterfaceMainnet
   | _,       _         => EthCLSpecs.Fulu.Interface.fuluInterface
+
+/-- Serve at a named fork/preset, erroring on the names `pickInterface` would silently
+default. An unknown fork or preset here is a typo'd invocation (the pytest harness passes
+exact names), and silently decoding another fork's SSZ shows up as a wall of opaque decode
+failures instead of one clear message. -/
+def serveKnown (forkName preset : String) : IO UInt32 := do
+  if (forkInterface? forkName).isNone then
+    IO.eprintln s!"unknown fork: {forkName} (expected fulu / gloas / heze)"; return 2
+  else if preset != "minimal" && preset != "mainnet" then
+    IO.eprintln s!"unknown preset: {preset} (expected minimal / mainnet)"; return 2
+  else
+    serve (pickInterface forkName preset)
 
 end EthCLSpecs.PySpecTests
 
 /-- The exe entry point. `pyspec_server [fork [preset]]` runs the server loop at
-the named fork's interface and preset (`fulu` / `minimal` defaults). The
-`stateroot [fork] <path>` mode decodes a `BeaconState` and prints its root (a
-decode / container-layer sanity check). -/
+the named fork's interface and preset; the no-argument invocation defaults to
+`fulu` / `minimal`, and a named-but-unknown fork or preset is an error rather
+than a silent Fulu fallback. The `stateroot [fork] <path>` mode decodes a
+`BeaconState` and prints its root (a decode / container-layer sanity check). -/
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["stateroot", path] =>
-    let bytes ← IO.FS.readBinFile path
-    match EthCLSpecs.Fulu.Interface.fuluInterface.stateRoot bytes with
-    | .ok root => IO.println (EthCLSpecs.PySpecTests.toHex root); return 0
-    | .error e => IO.eprintln s!"decode failed: {repr e}"; return 1
-  | ["stateroot", "gloas", path] =>
-    let bytes ← IO.FS.readBinFile path
-    match EthCLSpecs.Gloas.Interface.gloasInterface.stateRoot bytes with
-    | .ok root => IO.println (EthCLSpecs.PySpecTests.toHex root); return 0
-    | .error e => IO.eprintln s!"decode failed: {repr e}"; return 1
-  | [forkName, preset] => EthCLSpecs.PySpecTests.serve (EthCLSpecs.PySpecTests.pickInterface forkName preset)
-  | [forkName]         => EthCLSpecs.PySpecTests.serve (EthCLSpecs.PySpecTests.pickInterface forkName "minimal")
-  | _                  => EthCLSpecs.PySpecTests.serve EthCLSpecs.Fulu.Interface.fuluInterface
+    -- `stateroot <fork>` with the path forgotten lands here with `path` bound to the
+    -- fork name (and would decode a file of that name as Fulu); catch it explicitly.
+    if (EthCLSpecs.PySpecTests.forkInterface? path).isSome then
+      IO.eprintln s!"stateroot: missing <path> after fork name {path}"; return 2
+    else
+      let bytes ← IO.FS.readBinFile path
+      match EthCLSpecs.Fulu.Interface.fuluInterface.stateRoot bytes with
+      | .ok root => IO.println (EthCLSpecs.PySpecTests.toHex root); return 0
+      | .error e => IO.eprintln s!"decode failed: {repr e}"; return 1
+  -- `fork` is a registered token of the spec DSL (the `forkstruct` family), so the
+  -- binder is `forkName`, matching the serve arms below.
+  | ["stateroot", forkName, path] =>
+    match EthCLSpecs.PySpecTests.forkInterface? forkName with
+    | none => IO.eprintln s!"unknown fork: {forkName} (expected fulu / gloas / heze)"; return 2
+    | some iface =>
+      let bytes ← IO.FS.readBinFile path
+      match iface.stateRoot bytes with
+      | .ok root => IO.println (EthCLSpecs.PySpecTests.toHex root); return 0
+      | .error e => IO.eprintln s!"decode failed: {repr e}"; return 1
+  | [forkName, preset] => EthCLSpecs.PySpecTests.serveKnown forkName preset
+  | [forkName]         => EthCLSpecs.PySpecTests.serveKnown forkName "minimal"
+  | []                 => EthCLSpecs.PySpecTests.serve EthCLSpecs.Fulu.Interface.fuluInterface
+  | _ =>
+    IO.eprintln "usage: pyspec_server [fork [preset]] | pyspec_server stateroot [fork] <path>"
+    return 2

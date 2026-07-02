@@ -43,7 +43,7 @@ instance-implicit class, and a consumer, the test runner, a proof, or a future
 production client, picks the concrete instance at the call boundary. The spec
 body commits to none of them.
 
-Six seams carry the design.
+These seams carry the design.
 
 | Seam | Class / variable | What it abstracts | Fast instance | Pure instance |
 |---|---|---|---|---|
@@ -51,11 +51,12 @@ Six seams carry the design.
 | Config values | `[Config]` | config-tier values (fork versions, genesis delay) | the test config | a fixed config |
 | Merkleization hasher | `[HasherTag]` | the SSZ hash backend, carried as `HasherTag.H` | `Sha256` (FFI, opaque) | `Sha256Spec` (pure-Lean) |
 | Crypto backend | `[CryptoBackend]` | BLS verify/aggregate, KZG | caching FFI | symbolic (abstract `verify`) |
+| Execution engine | `[ExecutionEngine Payload Tx]` | EL-answered predicates (`is_inclusion_list_satisfied`) | optimistic global instance | a local refuting/real instance |
 | Finite-map backing | `{map : MapKind} [FcMap map]` | the fork-choice store's maps | `hashMap` | `treeMap` |
 | Box flavour | smart constructor at the anchor | cache strategy of the boxed state | `FastBox` (cached, `= CachedBox Sha256`) | `UncachedBox Sha256Spec` (uncached) |
 | Effect monad | `{StateTransition : Type → Type}` | the state-threading effect | `EStateM` | `StateT ∘ Except` |
 
-Five of these hide completely behind instance resolution or a constructor choice
+Most of these hide completely behind instance resolution or a constructor choice
 at the anchor, so the author never names them. The fork-choice map is the one
 exception, and it cannot hide: `map` lands in the `Store` type itself, so
 `Store hashMap` and `Store treeMap` are genuinely distinct types. A fork-choice

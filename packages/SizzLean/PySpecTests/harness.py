@@ -29,7 +29,7 @@ import yaml
 
 # The pinned release (matches EthCLSpecs.Fulu.Interface.pyspecPinnedVersion and
 # the EthCLSpecs harness). `ssz_generic` ships in the `general` archive.
-PINNED_VERSION = "v1.7.0-alpha.10"
+PINNED_VERSION = "v1.7.0-alpha.11"
 CACHE_DIR = Path.home() / ".cache" / "sizzlean"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 

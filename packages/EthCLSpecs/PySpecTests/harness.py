@@ -24,21 +24,43 @@ import cramjam
 import yaml
 
 # The pinned release: the latest consensus-specs release, confirmed to
-# carry both Fulu and Gloas minimal vectors (matches
+# carry the Fulu, Gloas, and Heze minimal vectors (matches
 # EthCLSpecs.Fulu.Interface.pyspecPinnedVersion).
 PINNED_VERSION = "v1.7.0-alpha.11"
 CACHE_DIR = Path.home() / ".cache" / "sizzlean"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# In-scope (runner, handler-is-path-segment) formats for Fulu and Gloas.
+# In-scope (runner, handler-is-path-segment) formats for Fulu, Gloas, and Heze.
 # `ssz_static` runs the per-fork consensus-container vectors (decode →
 # hash-tree-root → round-trip) against the container types EthCLSpecs declares;
 # the fork-agnostic `ssz_generic` primitive vectors live in SizzLean instead.
 # `bls`, `kzg`, `light_client`, `merkle_proof`, `networking`, `sync` are out of
-# scope (they exercise primitives a dependency owns).
+# scope (they exercise primitives a dependency owns). `fast_confirmation` (the
+# confirmation-rule fork-choice format, minimal-only) is a runner we have not
+# implemented yet: deliberately uncollected, a named future work item rather
+# than a silent omission.
 IN_SCOPE_RUNNERS = {
     "sanity", "finality", "random", "epoch_processing", "operations",
     "rewards", "genesis", "fork", "transition", "fork_choice", "ssz_static",
+}
+
+# The `checks` keys `_build_fork_choice_request` models (its emitter chain) and,
+# for nested check objects, the subkeys each emitter reads. Keep both in lockstep
+# with the emitter chain: a key handled there but missing here emits a spurious
+# `unsupported <key>` line and silently demotes a fully-checked case to the
+# todo/xfail bucket.
+KNOWN_CHECK_KEYS = {
+    "get_proposer_head", "should_override_forkchoice_update", "head",
+    "payload_timeliness_vote", "payload_data_availability_vote",
+    "justified_checkpoint", "finalized_checkpoint", "proposer_boost_root",
+    "time", "genesis_time",
+}
+KNOWN_CHECK_SUBKEYS = {
+    "head": {"root", "slot", "payload_status"},
+    "payload_timeliness_vote": {"block_root", "votes"},
+    "payload_data_availability_vote": {"block_root", "votes"},
+    "justified_checkpoint": {"epoch", "root"},
+    "finalized_checkpoint": {"epoch", "root"},
 }
 
 
@@ -100,7 +122,8 @@ def walk_cases(extract_root: Path, preset: str, fork: str,
         # Fulu `fork` (Electra->Fulu upgrade) and `transition` (Electra->Fulu
         # boundary) require a full Electra parent fork the library never builds, so
         # they are permanently out of scope: not collected, not counted, not even as
-        # xfail. (The Gloas `fork` / `transition` are Fulu->Gloas, fully in scope.)
+        # xfail. (The Gloas `fork` / `transition` are Fulu->Gloas and the Heze ones
+        # Gloas->Heze, both fully in scope.)
         if fork == "fulu" and runner in ("fork", "transition"):
             continue
         for handler_dir in sorted(p for p in runner_dir.iterdir() if p.is_dir()):
@@ -136,8 +159,12 @@ def _build_fork_choice_request(case: Case, tmpdir: Path) -> str:
     `inputs` pair `anchorBlockPath,scriptPath`. The script is one line per
     `steps.yaml` entry, with `block` / `attestation` / `attester_slashing` steps
     referencing decompressed SSZ files by path, and `checks` split into one line
-    per supported key (`get_proposer_head` / `should_override_forkchoice_update`
-    checks become a single `unsupported` line, so the case reports out-of-scope)."""
+    per key. `get_proposer_head` emits a dedicated `get_proposer_head <root>`
+    step; `should_override_forkchoice_update` emits `unsupported
+    should_override_forkchoice_update`, so that case reports `todo` (an xfail).
+    Sibling keys in the same checks entry still emit their own lines. Any key or
+    nested subkey we don't model becomes `unsupported <key>`, keeping the xfail
+    reason accurate instead of silently dropping the check."""
     anchor_state = _decompress_to(tmpdir, case.path / "anchor_state.ssz_snappy")
     anchor_block = _decompress_to(tmpdir, case.path / "anchor_block.ssz_snappy")
     steps = yaml.safe_load((case.path / "steps.yaml").read_text())
@@ -171,10 +198,8 @@ def _build_fork_choice_request(case: Case, tmpdir: Path) -> str:
             c = s["checks"]
             if "get_proposer_head" in c:
                 lines.append(f"get_proposer_head {c['get_proposer_head']}")
-                continue
             if "should_override_forkchoice_update" in c:
-                lines.append("unsupported")
-                continue
+                lines.append("unsupported should_override_forkchoice_update")
             if "head" in c:
                 lines.append(f"head {c['head']['root']} {int(c['head']['slot'])}")
                 if "payload_status" in c["head"]:
@@ -197,6 +222,28 @@ def _build_fork_choice_request(case: Case, tmpdir: Path) -> str:
                 lines.append(f"time {int(c['time'])}")
             if "genesis_time" in c:
                 lines.append(f"genesis_time {int(c['genesis_time'])}")
+            # A check key we don't model (e.g. a future inclusion_list_satisfied) reports as
+            # `unsupported <key>`, so the case lands in the `todo`/xfail bucket rather than
+            # passing with the check silently dropped. The same guard runs one level down: an
+            # unmodeled subkey of a nested check object (e.g. a new field on `head` past
+            # root/slot/payload_status) surfaces as `unsupported <key>.<subkey>`, so the
+            # unmodeled-key promise covers nested shapes as well as top-level keys. `str(k)`
+            # keeps the join total if YAML 1.1 ever parses an unquoted key as a non-string.
+            # No alpha.11 vector hits either path.
+            unknown = [str(k) for k in c if k not in KNOWN_CHECK_KEYS]
+            for parent, known_sub in KNOWN_CHECK_SUBKEYS.items():
+                sub = c.get(parent)
+                if isinstance(sub, dict):
+                    unknown += [f"{parent}.{k}" for k in sub if k not in known_sub]
+            if unknown:
+                lines.append(f"unsupported {'/'.join(sorted(unknown))}")
+        else:
+            # An unrecognized step key (e.g. a future on_inclusion_list fork-choice step) reports
+            # as `unsupported <key>`, so the case lands `todo`/xfail with an accurate reason rather
+            # than silently dropping the step. Drop the auxiliary flags (valid / columns) and sort,
+            # so the reason names the step rather than its flags. No alpha.11 vector hits this.
+            keys = sorted(str(k) for k in s if k not in ("valid", "columns"))
+            lines.append(f"unsupported {'/'.join(keys) or 'unknown-step'}")
     script_path = tmpdir / "fc_script.txt"
     script_path.write_text("\n".join(lines))
     return "\t".join(["fork_choice", case.handler, str(anchor_state), "-", "1", "0", "-",

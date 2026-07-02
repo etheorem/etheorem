@@ -77,7 +77,7 @@ wraps both behind the `[CryptoBackend]` seam.
 **The vectors and the spec source.** Conformance runs against the upstream
 `consensus-spec-tests`, downloaded per `pyspecPinnedVersion`. The
 `PINNED_VERSION` in `packages/EthCLSpecs/PySpecTests/harness.py` pins
-`v1.7.0-alpha.10`; the implementation bumps
+`v1.7.0-alpha.11`; the implementation bumps
 to the current latest release at start and confirms the tag carries Gloas vectors.
 The archive layout is `tests/<preset>/<fork>/<runner>/<handler>/<suite>/<case>/`; the
 preset and fork live in the path, and each case carries a `meta.yaml`

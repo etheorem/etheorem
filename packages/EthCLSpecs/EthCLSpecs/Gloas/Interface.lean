@@ -329,9 +329,11 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
     | .checkTime t => assert (store.time.toNat == t)
     | .checkGenesisTime t => assert (store.genesisTime.toNat == t)
     | .unsupported reason => throw (StoreTransitionError.todo reason)
-    -- Fulu-only checks (e.g. get_proposer_head) never appear in Gloas vectors; ignore
-    -- them so the shared `FcStep` match stays exhaustive.
-    | _ => pure ()
+    -- `get_proposer_head` is Gloas-Modified but not ported, and no alpha.11 vector exercises it;
+    -- surface it as unmodeled (a `todo` xfail) rather than passing it vacuously. This arm makes
+    -- the match exhaustive over `FcStep`, so a newly added constructor becomes a build error rather
+    -- than a silent pass through a catch-all.
+    | .checkProposerHead _ => throw (StoreTransitionError.todo "get_proposer_head check: not modeled")
   pure ()
 
 /-- `runForkChoice` (Gloas): decode the anchor state / block, build the ePBS store,
