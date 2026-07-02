@@ -27,18 +27,16 @@ Proofs/ reaches over to discharge the theorems).
   (closed in `Proofs/{VectorFixed,ListFixed,ContainerFixed}.lean`
   via mutual induction with the shared prereq
   `Proofs/SerializeSize.lean`).
+* **Bit shapes**: `.bitvector n` (with `0 < n`) and
+  `.bitlist cap` (closed in `Proofs/BitPack.lean` via the
+  bit-packing inverse `packBitsLE_unpackBitsLEAux_inverse` plus
+  `msbPos` delimiter recovery for the bitlist).
 
 ## Outside `BasicSupported`
 
-* **Bitvector** (`.bitvector n` with `0 < n`): the bit-packing
-  inverse `packBitsLE_unpackBitsLEAux_inverse` has no proof in
-  this layer.
-* **Bitlist** (`.bitlist cap`): needs `msbPos` delimiter
-  recovery on top of the bitvector prerequisites.
-
-Both arms remain `Supported` (the spec implements them and
-conformance passes), but the `decode_encode` corollary is
-ungated for these shapes.
+* **Mixed-field containers** (some variable-size fields): the
+  offset-table decode path sits outside `Supported` itself;
+  admitting it here is separate spec-layer work.
 
 ## Why two mutually inductive predicates
 
@@ -99,6 +97,14 @@ inductive SSZType.BasicSupported : SSZType → Prop
                 SSZType.BasicSupported t → t.isFixedSize = true →
                 0 < t.fixedByteSize →
                 SSZType.BasicSupported (.list t cap)
+  /-- Bit-packed fixed-width vector. The `n > 0` precondition
+  mirrors the spec's zero-length rejection, same as `vectorFixed`.
+  Roundtrip closes in `Proofs/BitPack.lean`. -/
+  | bitvector : ∀ {n : Nat}, 0 < n → SSZType.BasicSupported (.bitvector n)
+  /-- Bit-packed variable-length list (up to `cap` data bits) with
+  its trailing delimiter bit. Roundtrip closes in
+  `Proofs/BitPack.lean` via `msbPos` delimiter recovery. -/
+  | bitlist : ∀ {cap : Nat}, SSZType.BasicSupported (.bitlist cap)
   /-- Container with an all-fixed-size, all-`BasicSupported`
   field list. -/
   | containerFixed : ∀ {fs : List SSZType},

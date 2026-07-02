@@ -8,6 +8,7 @@ import SizzLean.Proofs.VectorFixed
 import SizzLean.Proofs.ListFixed
 import SizzLean.Proofs.ContainerFixed
 import SizzLean.Proofs.FixedElems
+import SizzLean.Proofs.BitPack
 
 /-!
 # `SizzLean.Proofs.Roundtrip`: `decode_encode` dispatch over `BasicSupported`
@@ -21,6 +22,7 @@ theorem. Per-arm proofs live in sibling modules:
 | `.bool` | `Proofs/Bool.lean` |
 | `.vectorFixed t n` | `Proofs/VectorFixed.lean` |
 | `.listFixed t cap` | `Proofs/ListFixed.lean` |
+| `.bitvector n` / `.bitlist cap` | `Proofs/BitPack.lean` |
 
 ## A short note on Lean's recursion checker
 
@@ -93,6 +95,8 @@ theorem decode_encode : ∀ {s : SSZType}, SSZType.BasicSupported s →
   | _, .listFixed (t := t) (cap := cap) h_t h_t_fixed h_sz_pos, xs =>
       decode_encode_listFixed t cap h_t h_t_fixed h_sz_pos
         (fun y => decode_encode h_t y) xs
+  | _, .bitvector (n := n) h_pos, bv => decode_encode_bitvector n h_pos bv
+  | _, .bitlist (cap := cap), xs => decode_encode_bitlist cap xs
   | _, .containerFixed (fs := fs) h_fs, vs => by
       -- Reduce the encoder's `(fix, var)` shape to just `fix` (var = .empty for
       -- all-fixed fields), then dispatch into the mutual aux for field-list induction.

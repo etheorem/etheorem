@@ -198,8 +198,10 @@ def msbPosAux (byte : UInt8) : Nat → Option Nat
 
 def msbPos (byte : UInt8) : Option Nat := msbPosAux byte 7
 
-/-- `bitvector n` decoder. -/
-private def deserializeBitvector (n : Nat) (b : ByteArray) :
+/-- `bitvector n` decoder. Public (not `private`) for the same
+reason as the bit-unpacking helpers above: the Layer 2 roundtrip
+proof in `Proofs/BitPack.lean` reasons through its branches. -/
+def deserializeBitvector (n : Nat) (b : ByteArray) :
     Except SSZError (BitVec n × Nat) :=
   -- Per SSZ spec: bitvectors must have `n > 0`. The
   -- `ssz_generic/bitvector/invalid/bitvec_0` test asserts the
@@ -238,8 +240,9 @@ private def deserializeBitvector (n : Nat) (b : ByteArray) :
 Empty buffer ⇒ `bitlistMissingDelimiter` (no delimiter at all).
 Last byte = `0x00` ⇒ same error.
 Otherwise: the position of the most-significant `1` in the last byte
-is the bit-position of the delimiter; bits before it are data. -/
-private def deserializeBitlist (cap : Nat) (b : ByteArray) :
+is the bit-position of the delimiter; bits before it are data.
+Public (not `private`) so `Proofs/BitPack.lean` can reach it. -/
+def deserializeBitlist (cap : Nat) (b : ByteArray) :
     Except SSZError ({ bs : Array Bool // bs.size ≤ cap } × Nat) :=
   if h : b.size = 0 then .error .bitlistMissingDelimiter
   else
