@@ -2,6 +2,7 @@ import SizzLean.Spec.Supported
 import SizzLean.Spec.BasicSupported
 import SizzLean.Spec.MaxByteLength
 import SizzLean.Proofs.SimpAttrs
+import SizzLean.Proofs.BitPack
 
 /-!
 # `SizzLean.Proofs.SerializeSize`: the shared size-prereq lemma
@@ -125,6 +126,15 @@ theorem size_serialize_eq_fixedByteSize :
     rw [Nat.mul_comm]
   | listFixed _ _ =>
     -- `(.list t cap).isFixedSize = false`; `h_fixed : false = true` is absurd.
+    simp [SSZType.isFixedSize] at h_fixed
+  | bitvector _h_pos =>
+    rename_i n
+    let bv : BitVec n := x
+    show (SSZType.serialize (.bitvector n) bv).size = SSZType.fixedByteSize (.bitvector n)
+    rw [size_serialize_bitvector]
+    simp [SSZType.fixedByteSize]
+  | bitlist =>
+    -- `(.bitlist cap).isFixedSize = false`; absurd like `listFixed`.
     simp [SSZType.isFixedSize] at h_fixed
   | containerFixed h_fs =>
     rename_i fs
