@@ -53,7 +53,11 @@ package LeanHazmatKzg where
   -- Bls through its git `require`.)
   moreLinkArgs := Id.run do
     let d := unsafe blsLibDir
-    #["-L" ++ d, "-l:libleanhazmat_bls.so", "-Wl,-rpath," ++ d]
+    if Platform.isOSX then
+      #["-L" ++ d, "-lleanhazmat_bls", "-Wl,-rpath," ++ d]
+    else
+      let lib := nameToSharedLib "leanhazmat_bls"
+      #["-L" ++ d, "-l:" ++ lib, "-Wl,-rpath," ++ d]
 
 -- Shares LeanHazmatBls's blst, the single blst owner for the family.
 require LeanHazmatBls from "../LeanHazmatBls"

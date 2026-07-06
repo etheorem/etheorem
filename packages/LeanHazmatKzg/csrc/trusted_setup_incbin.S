@@ -20,8 +20,23 @@
     .section .rodata
     #endif
 
+    // Mach-O's C ABI prefixes every C symbol with `_` at the linker level;
+    // the compiler adds it automatically when it compiles `kzg_shim.c`'s
+    // `extern const char lean_hazmat_kzg_ts_start[]`, but an `.S` file
+    // bypasses that mangling, so the label written here must carry the
+    // `_` itself on Apple to match what the linker looks for.
+    #ifdef __APPLE__
+    .global _lean_hazmat_kzg_ts_start
+_lean_hazmat_kzg_ts_start:
+    #else
     .global lean_hazmat_kzg_ts_start
 lean_hazmat_kzg_ts_start:
+    #endif
     .incbin TRUSTED_SETUP_PATH
+    #ifdef __APPLE__
+    .global _lean_hazmat_kzg_ts_end
+_lean_hazmat_kzg_ts_end:
+    #else
     .global lean_hazmat_kzg_ts_end
 lean_hazmat_kzg_ts_end:
+    #endif
