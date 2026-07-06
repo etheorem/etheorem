@@ -119,10 +119,11 @@ Phase 4 built the performance layer on top of the now-known-good
 library; **Phase 5 (Stage 18) widens the three theorems** toward
 universal `Supported` coverage. As of this writing
 `BasicSupported` covers `uintN 8/16/32/64`, `bool`, fixed-size
-`vector` and `list`, and `container` over fixed-size fields
-(recursively). See `Spec/BasicSupported.lean` and the
-README's *Proof coverage* table. `bitvector`, `bitlist`, and
-mixed-field containers remain open; the `SSZ.roundtrip`
+`vector` and `list`, `bitvector`, `bitlist` (both via the
+bit-packing inverse in `Proofs/BitPack.lean`), and `container`
+over fixed-size fields (recursively). See
+`Spec/BasicSupported.lean` and the README's *Proof coverage*
+table. Mixed-field containers remain open; the `SSZ.roundtrip`
 user-surface corollary is gated by `BasicSupported r.shape` until
 those land. The asterisk on "verified by inheritance" is
 intentional and small: passing empirical conformance is what

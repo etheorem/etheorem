@@ -8,6 +8,7 @@ import SizzLean.Proofs.Bool
 import SizzLean.Proofs.VectorFixed
 import SizzLean.Proofs.ListFixed
 import SizzLean.Proofs.ContainerFixed
+import SizzLean.Proofs.BitPack
 
 /-!
 # `SizzLean.Proofs.SizeBound`: encoded-size upper bound
@@ -51,6 +52,8 @@ theorem encode_size_le_max : ∀ {s : SSZType}, SSZType.BasicSupported s →
   | _, .listFixed (t := t) (cap := cap) h_t h_t_fixed _h_sz_pos, xs =>
       encode_size_le_max_listFixed t cap h_t h_t_fixed
         (fun y => encode_size_le_max h_t y) xs
+  | _, .bitvector (n := n) _h_pos, bv => encode_size_le_max_bitvector n bv
+  | _, .bitlist (cap := cap), xs => encode_size_le_max_bitlist cap xs
   | _, .containerFixed (fs := fs) h_fs, vs => by
       -- Same dispatch as `decode_encode`'s container arm, reduce the
       -- encoder's `(fix ++ var)` shape to size = `fixedByteSizeFields fs`,

@@ -21,9 +21,9 @@ user-facing surface.
 ## Why `Pair {a b : Bool}` as the example
 
 `SSZ.roundtrip` is gated by `SSZType.BasicSupported r.shape`
-(`Repr/Class.lean`), and `BasicSupported` currently covers
-the four native-width integers (`.uintN 8` / `16` / `32` / `64`),
-`.bool`, and `.container [.bool, .bool]` (see
+(`Repr/Class.lean`); `BasicSupported` covers the four
+native-width integers (`.uintN 8` / `16` / `32` / `64`), `.bool`,
+the bit shapes, and the fixed-size composites (see
 `Spec/BasicSupported.lean`). The smallest non-trivial user
 structure that lives in `BasicSupported` is a two-`Bool`
 container, exactly the `Pair` defined below.
@@ -165,5 +165,48 @@ example (vs : SSZType.interpFields [.uintN 8, .uintN 16, .uintN 32]) :
                   (.cons .uintN8 rfl
                     (.cons .uintN16 rfl
                       (.cons .uintN32 rfl .nil)))) vs
+
+/-! ### Bit-shape arm examples
+
+`BasicSupported` covers `.bitvector n` (`0 < n`) and
+`.bitlist cap` through the bit-packing inverse in
+`Proofs/BitPack.lean`. The widths exercise both decoder branches:
+10 is not a byte multiple (the zero-padding guard runs on the
+partial final byte), 16 is (the guard is skipped). -/
+
+/-- Roundtrip for a 10-bit bitvector. The witness carries the
+`0 < n` precondition, mirroring `vectorFixed`. -/
+example (bv : BitVec 10) :
+    SSZType.deserialize (.bitvector 10)
+        (SSZType.serialize (.bitvector 10) bv) =
+      Except.ok (bv, (SSZType.serialize (.bitvector 10) bv).size) :=
+  decode_encode (.bitvector (by decide)) bv
+
+/-- Roundtrip for a 16-bit (whole-byte) bitvector. -/
+example (bv : BitVec 16) :
+    SSZType.deserialize (.bitvector 16)
+        (SSZType.serialize (.bitvector 16) bv) =
+      Except.ok (bv, (SSZType.serialize (.bitvector 16) bv).size) :=
+  decode_encode (.bitvector (by decide)) bv
+
+/-- Roundtrip for a bitlist capped at 100 data bits. No side
+condition: the delimiter bit makes every encoding non-empty,
+including the empty bitlist's `0x01`. -/
+example (xs : { bs : Array Bool // bs.size ≤ 100 }) :
+    SSZType.deserialize (.bitlist 100)
+        (SSZType.serialize (.bitlist 100) xs) =
+      Except.ok (xs, (SSZType.serialize (.bitlist 100) xs).size) :=
+  decode_encode .bitlist xs
+
+/-- A container carrying a bitvector field: `.bitvector n` is
+fixed-size, so it qualifies under `BasicSupportedFieldsFixed`
+alongside the basic integers. -/
+example (vs : SSZType.interpFields [.uintN 8, .bitvector 10]) :
+    SSZType.deserialize (.container [.uintN 8, .bitvector 10])
+        (SSZType.serialize (.container [.uintN 8, .bitvector 10]) vs) =
+      Except.ok (vs, (SSZType.serialize (.container [.uintN 8, .bitvector 10]) vs).size) :=
+  decode_encode (.containerFixed
+                  (.cons .uintN8 rfl
+                    (.cons (.bitvector (by decide)) rfl .nil))) vs
 
 end SizzLeanTests.ReprExamples
