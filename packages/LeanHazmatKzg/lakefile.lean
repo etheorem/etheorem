@@ -44,11 +44,12 @@ package LeanHazmatKzg where
   licenseFiles := #["../../LICENSE"]
   -- Make this package's *shared* lib depend on LeanHazmatBls's shared lib
   -- so the precompiled module `.so` resolves c-kzg's `blst_*` references
-  -- at load: `-l:libleanhazmat_bls.so` adds a `DT_NEEDED`, `-L` finds it
-  -- at link, and the `-rpath` finds it at `dlopen`. This mirrors exactly
-  -- how LeanHazmatSha256's `.so` gains `NEEDED libcrypto.so.3`. blst lives
-  -- in Bls's archive (not duplicated here), so the final exe link still
-  -- sees one blst copy via normal `extern_lib` propagation, no
+  -- at load: `-L` finds it at link, `-rpath` finds it at `dlopen`, and the
+  -- `-l` itself is platform-specific (`if Platform.isOSX` below; see
+  -- ARCHITECTURE.md "Sharing one blst" for the ELF/Mach-O rationale). This
+  -- mirrors exactly how LeanHazmatSha256's `.so` gains `libcrypto`. blst
+  -- lives in Bls's archive (not duplicated here), so the final exe link
+  -- still sees one blst copy via normal `extern_lib` propagation, no
   -- duplicate symbols. (Monorepo path; a standalone Kzg mirror resolves
   -- Bls through its git `require`.)
   moreLinkArgs := Id.run do
@@ -130,9 +131,9 @@ extern_lib libleanhazmat_kzg pkg := do
   let staticJob ← buildStaticLib (pkg.staticLibDir / name) #[shimO, ckzgO, setupO]
   -- Order LeanHazmatBls's *shared* lib before this archive (and therefore
   -- before the `.so` derived from it). Our shared lib references it via
-  -- `moreLinkArgs` (`-l:libleanhazmat_bls.so`), but that path is invisible
-  -- to Lake's scheduler, so a clean parallel build can otherwise link this
-  -- `.so` before Bls's `.so` exists ("unable to find -l:libleanhazmat_bls.so").
+  -- `moreLinkArgs`'s platform-specific `-l`, but that path is invisible to
+  -- Lake's scheduler, so a clean parallel build can otherwise link this
+  -- `.so` before Bls's `.so` exists ("unable to find" the missing lib).
   -- `Job.zipWith` folds Bls's shared-lib build into this job's dependency
   -- trace (keeping this archive's path as the value), making the ordering
   -- explicit.
@@ -146,8 +147,8 @@ extern_lib libleanhazmat_kzg pkg := do
 lean_lib LeanHazmatKzg where
   -- Precompiled so `native_decide` (here and downstream) finds the KZG
   -- externs as loaded precompiled symbols. The module `.so` resolves
-  -- `blst_*` at load via the `DT_NEEDED` + `-rpath` on Bls's shared lib
-  -- that `moreLinkArgs` adds.
+  -- `blst_*` at load via the platform-specific `-l` + `-rpath` on Bls's
+  -- shared lib that `moreLinkArgs` adds.
   precompileModules := true
 
 -- KAT gate against the consensus-spec KZG vectors + self-contained
