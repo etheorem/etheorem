@@ -198,8 +198,13 @@ def msbPosAux (byte : UInt8) : Nat → Option Nat
 
 def msbPos (byte : UInt8) : Option Nat := msbPosAux byte 7
 
-/-- `bitvector n` decoder. -/
-private def deserializeBitvector (n : Nat) (b : ByteArray) :
+/-- `bitvector n` decoder. `protected`: the Layer 2 roundtrip proof
+in `Proofs/BitPack.lean` reasons through its branches, so it must be
+reachable, but it is proof-internal, not part of the general
+`SizzLean.Spec` surface. `protected` keeps a bare `open
+SizzLean.Spec` from pulling it into scope; the proof file names it
+with an explicit `open SizzLean.Spec (deserializeBitvector)`. -/
+protected def deserializeBitvector (n : Nat) (b : ByteArray) :
     Except SSZError (BitVec n × Nat) :=
   -- Per SSZ spec: bitvectors must have `n > 0`. The
   -- `ssz_generic/bitvector/invalid/bitvec_0` test asserts the
@@ -238,8 +243,11 @@ private def deserializeBitvector (n : Nat) (b : ByteArray) :
 Empty buffer ⇒ `bitlistMissingDelimiter` (no delimiter at all).
 Last byte = `0x00` ⇒ same error.
 Otherwise: the position of the most-significant `1` in the last byte
-is the bit-position of the delimiter; bits before it are data. -/
-private def deserializeBitlist (cap : Nat) (b : ByteArray) :
+is the bit-position of the delimiter; bits before it are data.
+`protected` for the same reason as `deserializeBitvector`:
+proof-internal, reached only by the explicit `open` in
+`Proofs/BitPack.lean`, never by a bare `open SizzLean.Spec`. -/
+protected def deserializeBitlist (cap : Nat) (b : ByteArray) :
     Except SSZError ({ bs : Array Bool // bs.size ≤ cap } × Nat) :=
   if h : b.size = 0 then .error .bitlistMissingDelimiter
   else
@@ -374,8 +382,8 @@ def SSZType.deserialize : (s : SSZType) → ByteArray → Except SSZError (s.int
                           let arr := xs.toArray
                           if h : arr.size ≤ cap then .ok (⟨arr, h⟩, b.size)
                           else .error .outOfRange
-  | .bitvector n, b => deserializeBitvector n b
-  | .bitlist cap, b => deserializeBitlist cap b
+  | .bitvector n, b => SizzLean.Spec.deserializeBitvector n b
+  | .bitlist cap, b => SizzLean.Spec.deserializeBitlist cap b
   | .container fs, b =>
       if SSZType.allFixedSize fs then
         SSZType.deserializeFixedFields fs b 0

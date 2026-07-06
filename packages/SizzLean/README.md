@@ -59,11 +59,10 @@ theorems.
 - **Machine-checked correctness across most of SSZ.** The three
   central theorems, encode/decode roundtrip, non-malleability,
   and a schema-derived static size bound, are proved for every
-  SSZ shape *except* the bit-level types and variable-field
-  containers: `uintN 8 / 16 / 32 / 64`, `bool`, fixed-size
-  `vector` and `list`, and `container` over fixed-size fields
-  (recursively). Bit-level types (`bitvector`, `bitlist`) and
-  mixed-field containers are pending, see
+  SSZ shape *except* variable-field containers:
+  `uintN 8 / 16 / 32 / 64`, `bool`, fixed-size `vector` and
+  `list`, `bitvector`, `bitlist`, and `container` over fixed-size
+  fields (recursively). Mixed-field containers are pending, see
   [Proof coverage](#proof-coverage) for the per-constructor
   table.
 
@@ -199,8 +198,8 @@ Per-constructor breakdown:
 | `.bool` | ✅ | ✅ | ✅ | exhaustive `cases` + `rfl` |
 | `.vector t n` | ✅ ² | ✅ ² | ✅ ² | needs `0 < n` + `BasicSupported t` + `t.isFixedSize = true` |
 | `.list t cap` | ✅ ³ | ✅ ³ | ✅ ³ | needs `BasicSupported t` + `t.isFixedSize = true` + `0 < t.fixedByteSize` |
-| `.bitvector n` | ❌ | ❌ | ❌ | bit-packing inverse (`packBitsLE` / `unpackBitsLEAux`) not yet shipped |
-| `.bitlist cap` | ❌ | ❌ | ❌ | needs bit-packing inverse + `msbPos` delimiter recovery |
+| `.bitvector n` | ✅ ⁴ | ✅ ⁴ | ✅ | needs `0 < n`; bit-packing inverse in `Proofs/BitPack.lean` |
+| `.bitlist cap` | ✅ ⁴ | ✅ ⁴ | ✅ | bit-packing inverse + `msbPos` delimiter recovery |
 | `.container fs` | see below | see below | see below | — |
 
 ¹ Adds one `_native.bv_decide.ax_*` axiom per arm (SAT certificate
@@ -213,6 +212,9 @@ none.
 the mutual `decode_encode` ↔ `decode_encode_containerFixed_aux`
 block.
 ³ Same recursion shape as `.vector`.
+⁴ Byte-level bit identities close by kernel `decide` over the
+finite chunk shapes (`Proofs/BitPack.lean`), so the bit arms add
+no axioms beyond the standard kernel three.
 
 `serialize_injective` is a direct corollary of `decode_encode`
 (via `Except.ok.inj` + `Prod.mk.inj`), so its coverage tracks
@@ -230,7 +232,7 @@ Allowed and excluded field types:
 | `.bool` | ✅ | basic + fixed |
 | `.vector t' n` (with `n > 0`, fixed-size `t'`, `BasicSupported t'`) | ✅ | nested vector, `(.vector t' n).isFixedSize = t'.isFixedSize` |
 | `.container fs'` (with `BasicSupportedFieldsFixed fs'`) | ✅ | nested container, `(.container fs').isFixedSize = allFixedSize fs'` |
-| `.bitvector n` | ❌ | not in `BasicSupported` yet (would qualify once the bitvector arm lands, it *is* fixed-size) |
+| `.bitvector n` (with `n > 0`) | ✅ | bit-packed + fixed, `(.bitvector n).fixedByteSize = ⌈n/8⌉` |
 | `.list t' cap` | ❌ | `(.list _ _).isFixedSize = false`, structurally excluded |
 | `.bitlist cap` | ❌ | `(.bitlist _).isFixedSize = false`, structurally excluded |
 
@@ -245,22 +247,21 @@ requires extending `Supported` with a `containerVar` constructor
 plus an offset-table-invariants proof.
 
 In one line: containers with fields drawn from `{uintN8, uintN16,
-uintN32, uintN64, bool, vectorFixed, containerFixed (recursively)}`
-are proved; containers with any `bitvector`, `list`, or `bitlist`
-field are not.
+uintN32, uintN64, bool, vectorFixed, bitvector,
+containerFixed (recursively)}` are proved; containers with any
+`list` or `bitlist` field are not.
 
 ### Track in progress
 
 **Phase 5 formal-verification widening:** the three central
 theorems (roundtrip, non-malleability, size bound) are landed on
 the `BasicSupported` cut, which now covers `uintN 8 / 16 / 32 /
-64`, `bool`, fixed-size `vector` and `list`, and `container` over
-fixed-size fields (recursively). Widening to a universal statement
-over `SSZType.Supported` requires closing the remaining
-`bitvector` and `bitlist` arms (bit-packing inverse), plus
-extending `Supported` itself to admit mixed-field containers
-(spec-layer follow-up). The library itself is complete; this
-track only closes the proof obligation.
+64`, `bool`, fixed-size `vector` and `list`, `bitvector`,
+`bitlist`, and `container` over fixed-size fields (recursively).
+Widening to a universal statement over `SSZType.Supported`
+requires extending `Supported` itself to admit mixed-field
+containers (spec-layer follow-up). The library itself is
+complete; this track only closes the proof obligation.
 
 See [`docs/PLAN.md`](docs/PLAN.md) for the staged plan and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design

@@ -43,6 +43,8 @@ The library's `decode_encode` proof currently covers the
 * `.vector t n` / `.list t cap` / `.container fs`: general
   composites over fixed-size element / field types
   (`BasicSupported t` with `t.isFixedSize = true`).
+* `.bitvector n` (`0 < n`) / `.bitlist cap`: bit-packed shapes,
+  closed by the bit-packing inverse in `Proofs/BitPack.lean`.
 * `.container [.bool, .bool]`: concrete two-`Bool` container,
   exposed as a `def`-level alias of `containerFixed (.cons .bool
   rfl (.cons .bool rfl .nil))` so the hand-written `Pair` example
@@ -50,10 +52,9 @@ The library's `decode_encode` proof currently covers the
 
 The user-surface corollary inherits that gate: a user type whose
 shape sits inside `BasicSupported` enjoys verified roundtrip; a
-user type whose shape is outside `BasicSupported` (`.bitvector`
-and `.bitlist`, neither covered by a bit-packing inverse proof in
-this layer) enjoys total `serialize` / `deserialize` (the spec
-functions are total) but no verified roundtrip. The gate is
+user type whose shape is outside it (mixed fixed/variable-size
+container fields) enjoys total `serialize` / `deserialize` (the
+spec functions are total) but no verified roundtrip. The gate is
 honest about scope and grows automatically as the proof set
 widens.
 
