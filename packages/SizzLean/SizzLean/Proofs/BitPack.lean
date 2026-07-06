@@ -69,6 +69,11 @@ set_option maxHeartbeats 10000000
 namespace SizzLean.Proofs
 
 open SizzLean.Spec
+-- `deserializeBitvector` / `deserializeBitlist` are `protected` in
+-- `Spec/Deserialize.lean` (proof-internal, kept off the general
+-- `SizzLean.Spec` surface), so the wildcard `open` above does not
+-- bring them into scope; request the two decoders explicitly.
+open SizzLean.Spec (deserializeBitvector deserializeBitlist)
 
 /-! ### ByteArray indexing bridges -/
 
