@@ -35,12 +35,12 @@ on the def name picks them all up. Tagged here:
 Deliberately *not* tagged:
 
 * `SSZType.interp` itself: see above.
-* Private bit-packing helpers (`bitsToByte`, `packBitsLE`,
-  `bitsToNat`, `msbPos`, `byteToBits`, `unpackBitsLEAux`,
-  `bitvecToBytes`, `bitlistToBytes`, `deserializeBitvector`,
-  `deserializeBitlist`, the LE primitive readers/writers). These
-  reduce only inside dedicated round-trip lemmas (e.g.
-  `packBitsLE_unpackBitsLE_inverse`); leaving them out of the
+* Bit-packing helpers (`bitsToByte`, `packBitsLE`, `bitsToNat`,
+  `msbPos`, `byteToBits`, `unpackBitsLEAux`, `bitvecToBytes`,
+  `bitlistToBytes`, `deserializeBitvector`, `deserializeBitlist`,
+  the LE primitive readers/writers). These reduce only inside the
+  dedicated round-trip lemmas of `Proofs/BitPack.lean` (e.g.
+  `packBitsLE_unpackBitsLEAux_inverse`); leaving them out of the
   global set prevents `simp` loops and keeps the search space
   small.
 
