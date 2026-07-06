@@ -14,7 +14,12 @@
 // `just hazmat-kzg-vendor`). The C shim reads these bytes via `fmemopen` +
 // `load_trusted_setup_file` once at library load.
 
+    #ifdef __APPLE__
+    .section __DATA,__const
+    #else
     .section .rodata
+    #endif
+
     .global lean_hazmat_kzg_ts_start
 lean_hazmat_kzg_ts_start:
     .incbin TRUSTED_SETUP_PATH
