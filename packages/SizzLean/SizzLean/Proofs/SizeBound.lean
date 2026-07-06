@@ -76,8 +76,8 @@ cons head, call `encode_size_le_max` on the field's
 `BasicSupported` witness to derive `fixedByteSize t ≤
 maxByteLength t`. -/
 theorem encode_size_le_max_containerFields_aux : ∀ {fs : List SSZType}
-    (h_fs : SSZType.BasicSupportedFieldsFixed fs)
-    (vs : SSZType.interpFields fs),
+    (_h_fs : SSZType.BasicSupportedFieldsFixed fs)
+    (_vs : SSZType.interpFields fs),
     SSZType.fixedByteSizeFields fs ≤ SSZType.maxByteLengthFields fs
   | _, .nil, _ => by
       unfold SSZType.fixedByteSizeFields SSZType.maxByteLengthFields
