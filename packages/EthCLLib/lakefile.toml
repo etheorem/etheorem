@@ -6,9 +6,12 @@ defaultTargets = ["EthCLLib"]
 # `libcrypto` flag its `native_decide` self-tests need transitively through
 # SizzLean's FFI SHA-256. The blst / c-kzg archives propagate automatically
 # as `extern_lib`s, only the system shared lib needs re-stating here.
-# Two `-L` paths cover the common Linux libdir layouts (Debian multiarch and
-# `/usr/lib64` on Gentoo / Fedora / RHEL); the linker ignores whichever is absent.
-moreLinkArgs = ["-L/usr/lib/x86_64-linux-gnu", "-L/usr/lib64", "-l:libcrypto.so.3"]
+# The `-L` paths cover the common libdir layouts across platforms (Debian
+# multiarch, `/usr/lib64` on Fedora/RHEL, and Homebrew's `opt` symlink on
+# both macOS architectures); the linker ignores whichever are absent.
+# `-lcrypto` (not `-l:libcrypto.so.3`) resolves via the unversioned symlink
+# every platform's `-dev`/Homebrew package provides, so it works on both.
+moreLinkArgs = ["-L/usr/lib/x86_64-linux-gnu", "-L/usr/lib64", "-L/opt/homebrew/opt/openssl@3/lib", "-L/usr/local/opt/openssl@3/lib", "-lcrypto"]
 moreLeancArgs = ["-march=native"]
 
 # SizzLean supplies the SSZ machinery (SSZRepr, Box, the cache, sszGet /

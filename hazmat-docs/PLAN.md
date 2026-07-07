@@ -73,6 +73,13 @@ discovery, accepted, per the no-shared-lakefile-code decision
 > `-l:libcrypto.so.3`, and `LeanHazmatSha256` keeps its own for its
 > test lib. No package reverts to a TOML lakefile. This matches the
 > prior link-arg evidence and the no-shared-lakefile-code decision (§3.3).
+>
+> **Addendum (macOS portability).** `EthCLLib`/`EthCLSpecs`'s hardcoded
+> flag later changed from the Linux-only `-l:libcrypto.so.3` to the
+> portable `-lcrypto` plus Homebrew's `-L` paths, so the same
+> independent, hardcoded re-supply this stage decided on now resolves
+> on macOS too. The propagation finding and the decision to re-supply
+> independently are unchanged, only the literal flag each package hardcodes.
 
 ---
 
