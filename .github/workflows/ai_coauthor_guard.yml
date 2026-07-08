@@ -1,0 +1,63 @@
+name: AI co-author guard
+
+# Blocks merge when any commit in the PR lists a known AI agent
+# (Claude, Copilot, Gemini, Codeium, Cody, Aider, …) as a Co-authored-by
+# trailer. Pair this with a branch-protection rule on the base branch that
+# requires the `check` job below to be green before a PR can merge; the
+# workflow alone only produces a status check, the rule is what enforces it.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check:
+    # No checkout needed: the GitHub REST API exposes each commit's full
+    # message (trailers included) via `pulls/{n}/commits`. `--paginate`
+    # covers PRs larger than the 250-commit default page.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject AI-agent co-authors
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          # Known AI-agent identifiers (case-insensitive, grep ERE). A
+          # Co-authored-by trailer mentioning any of these fails the check.
+          # Add new agents here as they appear. Matched against the whole
+          # trailer line, so a human contributor whose name collides with one
+          # of these tokens (e.g. someone literally named Claude) would also
+          # be blocked; narrow a token to an email domain (anthropic\.com) if
+          # that bites.
+          AI_AGENTS='anthropic\.com|claude|copilot|gemini|codeium|cody|aider'
+
+          # Extract every Co-authored-by trailer in the PR, tagged with its
+          # commit's short SHA for actionable feedback. `gh api --jq`
+          # raw-outputs one line per trailer; trailer lines are single
+          # physical lines, so SHA + trailer share a line with no
+          # embedded-newline ambiguity. Agent matching is left to grep so the
+          # AI_AGENTS list stays plain regex with no jq-string escaping.
+          trailers=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/commits" \
+            --paginate \
+            --jq '
+              .[] | .sha as $sha
+              | (.commit.message | split("\n") | .[])
+              | select(test("(?i)^\\s*Co-authored-by:"))
+              | "\($sha[0:8])  \(.)"
+            ')
+
+          offenders=$(printf '%s\n' "$trailers" | grep -iE "$AI_AGENTS" || true)
+
+          if [ -n "$offenders" ]; then
+            echo "::error title=AI co-author detected::One or more commits list an AI agent as co-author. Remove the Co-authored-by trailer (or drop the commit) before merging."
+            printf '%s\n' "$offenders" | sed 's/^/    /'
+            exit 1
+          fi
+
+          echo "No AI-agent co-authors detected."
