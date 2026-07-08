@@ -58,3 +58,4 @@ packages/SizzLean/bench/*.tsv
 
 # macOS Finder cruft
 .DS_Store
+a.out

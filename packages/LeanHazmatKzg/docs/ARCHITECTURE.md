@@ -58,13 +58,15 @@ work without duplicating it:
   one blst copy and no duplicate symbols.
 * **Shared lib (precompiled module / `native_decide`).** The precompiled
   module's `.so` would otherwise have undefined `blst_*` at load. The
-  package's `moreLinkArgs` give it `-l:libleanhazmat_bls.so` +
-  `-L`/`-rpath` into Bls's build lib, so the loader pulls Bls's shared lib
-  and resolves `blst_*`, mirroring how `LeanHazmatSha256`'s `.so` gains
-  `NEEDED libcrypto.so.3`. That link reference is invisible to Lake's
-  scheduler, so the `extern_lib` folds Bls's shared-lib build into its own
-  dependency trace (`Job.zipWith` over `findExternLib? `libleanhazmat_bls`)
-  to keep clean parallel builds from racing ahead of Bls's `.so`.
+  package's `moreLinkArgs` give it `-L`/`-rpath` into Bls's build lib plus
+  a platform-appropriate `-l`: `-l:libleanhazmat_bls.so` (a `DT_NEEDED`
+  entry, ELF/Linux) or `-lleanhazmat_bls` (a Mach-O `LC_LOAD_DYLIB`,
+  Apple), so the loader pulls Bls's shared lib and resolves `blst_*`,
+  mirroring how `LeanHazmatSha256`'s `.so` gains `libcrypto` on each
+  platform. That link reference is invisible to Lake's scheduler, so the
+  `extern_lib` folds Bls's shared-lib build into its own dependency trace
+  (`Job.zipWith` over `findExternLib? `libleanhazmat_bls`) to keep clean
+  parallel builds from racing ahead of Bls's `.so`.
 
 ## Trust boundary
 

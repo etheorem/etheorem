@@ -11,8 +11,11 @@ correctness on the verified core. Contributions are welcome.
 # 1. Install elan (one-time). https://elan.lean-lang.org/
 curl https://elan.lean-lang.org/elan-init.sh -sSf | sh
 
-# 2. Install native deps. On Debian/Ubuntu:
-sudo apt-get install libssl-dev
+# 2. Install native deps.
+# Linux (Debian/Ubuntu):
+sudo apt-get install libssl-dev pkg-config
+# macOS:
+brew install openssl@3 pkg-config
 
 # 3. Clone and build.
 git clone https://github.com/etheorem/etheorem
@@ -22,7 +25,9 @@ lake build
 
 The pinned toolchain in `lean-toolchain` is picked up by elan
 automatically. First build pulls Lake deps + compiles the FFI
-SHA-256 shim against `libcrypto.so.3`.
+SHA-256 shim against the system OpenSSL `libcrypto` (see
+[`README.md`](README.md#native-dependencies) for the per-platform
+library names and discovery details).
 
 ## Running the test suites
 

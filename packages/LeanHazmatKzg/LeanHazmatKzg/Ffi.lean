@@ -1,10 +1,10 @@
 -- Build-ordering import (not for any Lean symbol): this package's
--- precompiled `.so` links Bls's shared lib (`moreLinkArgs`,
--- `-l:libleanhazmat_bls.so`) for the `blst_*` symbols c-kzg references.
+-- precompiled `.so` links Bls's shared lib (`moreLinkArgs`'s
+-- platform-specific `-l`) for the `blst_*` symbols c-kzg references.
 -- Importing the Bls module makes the Bls package, and so its shared
 -- lib, a build prerequisite of this module, ordering it before this
 -- package's link step (otherwise a clean parallel build can race and the
--- KZG `.so` link fails with "unable to find -l:libleanhazmat_bls.so").
+-- KZG `.so` link fails with "unable to find" the missing lib).
 import LeanHazmatBls
 
 /-!
