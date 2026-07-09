@@ -7,7 +7,7 @@ import Std.Tactic.BVDecide
 `EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex` sets the
 `BUILDER_INDEX_FLAG` bit and `EthCLSpecs.Gloas.toBuilderIndex` clears it, both
 single bitwise operations on `UInt64` against the same single-bit mask
-`EthCLSpecs.Fulu.Const.builderIndexFlag`. The round-trip theorems are
+`EthCLSpecs.Fulu.Const.builderIndexFlag`. The round-trip properties are
 conditional: each needs the relevant flag state before clearing or setting
 the bit; see the individual theorems for the exact statement, via
 `isBuilderIndex`, the spec's own named predicate for the bit test, rather
@@ -38,7 +38,8 @@ theorem toBuilderIndex_convertBuilderIndexToValidatorIndex :
     ∀ (bi : BuilderIndex), isBuilderIndex bi = false →
       toBuilderIndex (convertBuilderIndexToValidatorIndex bi) = bi := by
   intro bi h
-  unfold isBuilderIndex toBuilderIndex convertBuilderIndexToValidatorIndex at *
+  unfold isBuilderIndex at h
+  unfold toBuilderIndex convertBuilderIndexToValidatorIndex
   simp only [bne_eq_false_iff_eq] at h
   bv_decide
 
@@ -50,7 +51,8 @@ theorem convertBuilderIndexToValidatorIndex_toBuilderIndex :
     ∀ (vi : ValidatorIndex), isBuilderIndex vi = true →
       convertBuilderIndexToValidatorIndex (toBuilderIndex vi) = vi := by
   intro vi h
-  unfold isBuilderIndex toBuilderIndex convertBuilderIndexToValidatorIndex at *
+  unfold isBuilderIndex at h
+  unfold toBuilderIndex convertBuilderIndexToValidatorIndex
   simp only [bne_iff_ne, ne_eq] at h
   bv_decide
 
