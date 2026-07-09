@@ -16,8 +16,8 @@ flagged pre-release, so the harness pins the tag explicitly rather than reading 
 release latest`). The full in-scope suite is green at both presets for both forks,
 `--subset=0`, zero failures and zero `xfail`:
 
-| | minimal | mainnet |
-|---|---|---|
+|       | minimal        | mainnet        |
+| ----- | -------------- | -------------- |
 | Fulu  | **760 passed** | **667 passed** |
 | Gloas | **903 passed** | **792 passed** |
 
@@ -34,7 +34,7 @@ implemented formats reach matches by root or rejects faithfully.
   blocks both need a complete Electra parent fork the library never builds. The
   **Gloas** `fork` / `transition` (Fulu→Gloas) are in scope and green.
 - **`ssz_static`**: covered by SizzLean's own tests and the build-time `deriving
-  SSZRepr` gates.
+SSZRepr` gates.
 - **`light_client`, `networking`, `merkle_proof`, `sync`**: not state-transition or
   fork-choice formats; outside `IN_SCOPE_RUNNERS`.
 - **`genesis`**: no vectors at the pin (see Genesis below).
@@ -63,7 +63,7 @@ syntax adds no macro scopes, so no blanket hygiene override is needed.
   `fork` fails to parse. The captured-declaration field is `forkNs`, and elaborators
   use `forkNs` locals. Spec authors must not name a binding `fork`.
 - **`fork` identity is the current namespace; the parent is the sibling.** `fork Gloas
-  from Fulu` records `(currNamespace, currNamespace.getPrefix ++ Fulu)`, which assumes
+from Fulu` records `(currNamespace, currNamespace.getPrefix ++ Fulu)`, which assumes
   both forks share a prefix (`EthCLSpecs.Fulu`, `EthCLSpecs.Gloas`), as
   `SPECS_ARCHITECTURE.md` §3.4 mandates. The `Name` argument is documentation; identity
   comes from the namespace.
@@ -95,7 +95,7 @@ plain-structure variant. It also captures and replays arbitrary bracketed binder
 a parameterized `forkstruct Store (map : MapKind) [HasherTag]` (with the auto
 `[Preset]` first) is expressible. Both take `declModifiers` so a `/-- … -/` docstring
 can precede them without derailing the parse, and both emit the `deriving` in a
-*separate* `deriving instance … for` command. `Forms.lean` `import SizzLean`, so the
+_separate_ `deriving instance … for` command. `Forms.lean` `import SizzLean`, so the
 class names resolve as globals rather than hygiene-stamped `SizzLean.SSZRepr✝`.
 
 `Ord` / `Hashable` derive universally now that SizzLean carries them for the collection
@@ -193,7 +193,7 @@ runner selects fork × preset (`pyspec_server [fork] [preset]`).
 ## State access, indexing, and the error model
 
 Reads and writes go through `sszGet` / `sszUpdate`. The index accessor is chosen by three
-questions: is the index *load-bearing* (data-derived and not otherwise bounded), has a
+questions: is the index _load-bearing_ (data-derived and not otherwise bounded), has a
 validation already proved it in range, and is a reject channel in scope (a monadic step or
 an `Except` query) at the read.
 
@@ -258,9 +258,9 @@ fork-choice anchor path), so a decode failure is named for what it is and never 
 as a consensus reject.
 
 **Element writes: infallible `[i]!` vs checked `[i]`.** SizzLean's `sszUpdate` element
-index comes in two forms. The checked `field[i] := v` is *fallible* (`Except
+index comes in two forms. The checked `field[i] := v` is _fallible_ (`Except
 IndexError`, matching the pyspec's `IndexError`), for a write that should reject an
-out-of-range index. The bang `field[i]! := v` is *total*: it returns the bare `State`,
+out-of-range index. The bang `field[i]! := v` is _total_: it returns the bare `State`,
 an out-of-range write being a silent no-op that mirrors `Array.set!`, and it emits the
 same spine address and root as the checked form. The reset / caching writes
 (`process_slot`'s root caching, the slashings / randao resets, the builder-payment
@@ -316,7 +316,7 @@ Spec bodies carry a single `open EthCLLib.Spec`. The module re-exports the SSZ
 collection vocabulary (`export SizzLean.Repr (SSZList Bitvector Bitlist)`, plus the
 byte / collection / hasher helpers), so a pure spec body needs nothing more (Gloas adds
 `open EthCLSpecs.Fulu` for the shared constants and primitive aliases; its component
-*types* are inherited into the Gloas namespace, not opened from Fulu). The residual `open SizzLean.Cache` /
+_types_ are inherited into the Gloas namespace, not opened from Fulu). The residual `open SizzLean.Cache` /
 `Hasher` survive only in the interface / fork-choice / upgrade glue, which name the box
 representation (`SSZ.Box` / `Sha256` / `HasherTag`) directly; re-exporting those into
 the author surface would defeat the `sszGet` / `sszUpdate` encapsulation.
@@ -378,7 +378,7 @@ into `Accessors`. This is a split by concern forced by the seam, not a by-kind
 single-predicate `Predicates` row (`isEligibleForActivation`) to fold into
 `RegistryUpdates`.
 
-**Naming.** The runner is *PySpecTests* on both sides: the Lean exe at
+**Naming.** The runner is _PySpecTests_ on both sides: the Lean exe at
 `EthCLSpecs/PySpecTests/Server.lean` (the `lean_exe` root), the Python harness at the
 package-level `packages/EthCLSpecs/PySpecTests/`. Test libraries are `EthCLLib/Tests/`
 and `EthCLSpecs/Tests/` (namespaces `EthCLLib.Tests.*` / `EthCLSpecs.Tests.*`), each its
@@ -476,7 +476,7 @@ Spec-faithfulness facts worth knowing:
   does not check). The domain is fixed (`compute_domain(DOMAIN_DEPOSIT)`, genesis fork
   version, zero `genesis_validators_root`), so the check is one `[CryptoBackend].verify`.
 - **`initiate_validator_exit` bounds the withdrawable epoch.** It asserts `exit_epoch +
-  MIN_VALIDATOR_WITHDRAWABILITY_DELAY < 2^64` before the write, so an over-range case
+MIN_VALIDATOR_WITHDRAWABILITY_DELAY < 2^64` before the write, so an over-range case
   rejects faithfully (matching the pyspec's `uint64` serialization `ValueError`) instead
   of wrapping silently on Lean's `UInt64`. Valid exits never approach the bound. Gloas
   inherits the substep with no Gloas-side change.
@@ -604,3 +604,21 @@ desynced or dead server, so the parallel run is deterministic.
 `initializeBeaconStateFromEth1` / `isValidGenesisState`. The pytest corpus carries no
 `genesis` vectors for Fulu or Gloas at the `v1.7.0-alpha.10` pin, so there is nothing to
 drive; both stay a `todo` stub in `Interface.lean`.
+
+## Proofs
+
+Consensus proofs currently live in `EthCLSpecs.Proofs`
+(`EthCLSpecs/EthCLSpecs/Proofs/`), colocated with the consensus specifications
+and remaining mathlib-free, following the `SizzLean.Proofs` pattern. The
+standalone `EthCLProofs` package described in `SPECS_ARCHITECTURE.md` and
+`PLAN.md` remains reserved for proofs that require mathlib, following the
+conditional design described in `SPECS_ARCHITECTURE.md` §11.3 and the
+`LeanPoseidonProofs` containment pattern. No current proof requires that
+separation.
+
+- **`Proofs/BuilderIndex.lean`** is the first proof module. It establishes three
+  `bv_decide` theorems over `isBuilderIndex`, `toBuilderIndex`, and
+  `convertBuilderIndexToValidatorIndex`, proving the builder-index flag
+  round-trip and tagging properties.
+
+- **`CONSENSUS_PROOF_CANDIDATES.md`** tracks candidate consensus proof targets.
