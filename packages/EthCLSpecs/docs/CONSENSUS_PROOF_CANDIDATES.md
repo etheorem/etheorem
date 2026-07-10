@@ -2,19 +2,14 @@
 
 ## Purpose
 
-A shortlist of Lean theorem candidates in `EthCLSpecs`, so contributors have a curated
-starting point. This is not a classification of
+A shortlist of Lean theorem candidates in `EthCLSpecs`. This is not a classification of
 the fork's surface area, just the functions with a clear invariant, safety property, algebraic property (such as an inverse), monotonicity property, or other proof-worthy correctness property.
 
 ## Overview
 
-Gloas introduces 62 new functions and overrides 46 inherited ones. The candidates below
-were identified by reading across the Gloas specification and supporting libraries, focusing on functions with
-clear correctness properties, safety invariants, algebraic laws, monotonicity
-properties, and other proof-worthy invariants. The list is not exhaustive.
+Gloas introduces 62 new functions and overrides 46 inherited ones. The candidates below were identified by reading across the Gloas specification and supporting libraries, focusing on functions with clear correctness properties, safety invariants, algebraic laws, monotonicity properties, and other proof-worthy invariants. The list is not exhaustive.
 
-The sections below group candidates by the kind of theorem they naturally suggest, not by whether
-the function is new to Gloas or overrides Fulu.
+The sections below group candidates by the kind of theorem they naturally suggest.
 
 ---
 
@@ -52,9 +47,7 @@ bounded walk to finish.
 
 ## Safety and invariant preservation
 
-Functions with a specific invariant, precondition bundle, or side-effect guarantee that
-should hold whenever the function runs: exactly-once behavior, mutual exclusion between
-cases, or a value staying untouched under some condition.
+Functions with a specific invariant, precondition bundle, or side-effect guarantee that should hold whenever the function runs: exactly-once behavior, mutual exclusion between cases, or a value staying untouched under some condition.
 
 | Function                           | Location                             | Rationale                                                                                                                          |
 | ---------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -99,9 +92,7 @@ direct consequence of running through it.
 
 ## Fork-choice correctness
 
-Properties specific to the fork-choice store and the LMD-GHOST tree: agreement between
-two ways of computing the same relation, preconditions gating block/attestation
-acceptance, and correctness of the store's own bookkeeping.
+Properties specific to the fork-choice store and the LMD-GHOST tree: agreement between two ways of computing the same relation, preconditions gating block/attestation acceptance, and correctness of the store's own bookkeeping.
 
 | Function                         | Location                        | Rationale                                                                                                                                          |
 | -------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
