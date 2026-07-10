@@ -23,8 +23,8 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs
 
-open EthCLSpecs.Fulu
-open EthCLSpecs.Gloas
+open EthCLSpecs.Fulu (BuilderIndex ValidatorIndex)
+open EthCLSpecs.Gloas (isBuilderIndex toBuilderIndex convertBuilderIndexToValidatorIndex)
 
 /-- `convertBuilderIndexToValidatorIndex` and `toBuilderIndex` round-trip on
 every `bi` that does not already carry the `BUILDER_INDEX_FLAG` bit.
