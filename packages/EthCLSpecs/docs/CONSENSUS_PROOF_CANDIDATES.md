@@ -18,12 +18,13 @@ algebraic laws. The list is intentionally curated rather than exhaustive.
 
 ## Gloas overrides
 
-Functions Gloas redeclares under a name that also exists in Fulu, so a Fulu-vs-Gloas diff
-is often the cleanest way to state the theorem.
+Functions Gloas redeclares under a name that also exists in Fulu. Each rationale below
+names a property of the Gloas function on its own, an invariant, a bound, a determinism
+guarantee, rather than an equivalence or diff against Fulu's version.
 
 | Function                         | Location                            | Rationale                                                                                                                      |
 | -------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `processSlot`                    | `Gloas/Transition.lean:33-53`       | Identical to Fulu's `processSlot` except one new bit-clear; the small diff makes this a natural preservation theorem           |
+| `processSlot`                    | `Gloas/Transition.lean:33-53`       | Sets `executionPayloadAvailability`'s bit at index `(slot + 1) mod SLOTS_PER_HISTORICAL_ROOT` to `false` via `bitSet`; the property to establish is that this bit reads `false` right after `processSlot`, matching the docstring's "a payload starts unavailable"           |
 | `processOperations`              | `Gloas/Transition.lean:88-95`       | `assert (body.deposits.size == 0)` — a "should never happen" precondition, cheap to state                                      |
 | `computeExitEpochAndUpdateChurn` | `Gloas/EpochProcessing.lean:90-100` | Shares `reserveChurn` with Fulu; one proof of no-underflow covers 4 call sites across both forks                               |
 | `getAncestor`                    | `Gloas/ForkChoice.lean:156-163`     | `fuelIterate` DAG walk — `Loop.lean`'s own docstring names this exact fuel-bound pattern as a deferred lemma, never discharged |
@@ -49,7 +50,7 @@ own.
 
 | Function                              | Location                             | Rationale                                                                                                                                                                                                              |
 | ------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `initiateBuilderExit`                 | `Gloas/Operations.lean:90-93`        | Sets `withdrawableEpoch := epoch + delay`; unlike Fulu's `initiateValidatorExit`, which guards the identical arithmetic with an overflow assertion, this path lacks one, making it a useful candidate for confirmation |
+| `initiateBuilderExit`                 | `Gloas/Operations.lean:90-93`        | Sets `withdrawableEpoch := epoch + minBuilderWithdrawabilityDelay` via a plain `UInt64` addition with no overflow assertion in this path; whether that addition can overflow given `epoch`'s realistic range needs checking before any bound can be stated as a theorem |
 | `getPtc`                              | `Gloas/Operations.lean:368-376`      | The source comment explicitly notes an unchecked precondition                                                                                                                                                          |
 | `convertBuilderIndexToValidatorIndex` | `Gloas/Operations.lean:415`          | **In review**, see `EthCLSpecs/Proofs/BuilderIndex.lean`. Round-trips with `toBuilderIndex` on any `bi` that does not already carry the `BUILDER_INDEX_FLAG` bit, `toBuilderIndex` always clears it, so the round trip needs that precondition, not a free identity            |
 | `processBuilderPendingPayments`       | `Gloas/EpochProcessing.lean:229-248` | Exactly-once payout via `shiftWindow`                                                                                                                                                                                  |
