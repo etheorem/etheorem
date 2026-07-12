@@ -143,4 +143,15 @@ over-length read. Same shape as `sszGetIdx`, on `Bitlist`'s faithful `[i]?`. -/
     | some b => .ok b
     | none   => .error (IndexError.indexError i bs.val.size)
 
+/-- `sszGetIdx` for a plain `Array`: element `i`, or the typed reject `outOfBounds i size`. The
+monadic safe read for a spec `list[i]` over a non-SSZ `Array`, e.g. a fork-choice `Store` value
+such as `block_timeliness`'s `list[boolean]` (`gloas/fork-choice.md:503,960`), where `[i]!` /
+`?.getD` would mask an over-length read as a silent default. Same shape as `sszGetIdx`, on the
+`Array`'s own `[i]?`. -/
+@[inline] def arrGetIdx {α : Type} {m : Type → Type u} {E : Type} [Monad m]
+    [MonadExcept E m] [ErrorConv IndexError E] (xs : Array α) (i : Nat) : m α :=
+  liftErr <| match xs[i]? with
+    | some a => .ok a
+    | none   => .error (IndexError.indexError i xs.size)
+
 end EthCLLib.Spec

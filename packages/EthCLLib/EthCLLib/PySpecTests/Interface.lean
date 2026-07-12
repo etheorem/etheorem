@@ -125,6 +125,15 @@ def runOn {ε σ : Type} (s : σ) (act : EStateM ε σ Unit) : Except ε σ :=
   | .ok _ s' => .ok s'
   | .error e _ => .error e
 
+/-- Run a read-only `EStateM` query on `s` and project its *result* to `Except`: the query's
+value on success, the reject on failure. The value-returning sibling of `runOn`, for a
+fork-choice read such as `get_head` whose value (not the store) a check step inspects, now
+that those reads can throw. -/
+def runQuery {ε σ α : Type} (s : σ) (act : EStateM ε σ α) : Except ε α :=
+  match act.run s with
+  | .ok a _   => .ok a
+  | .error e _ => .error e
+
 open EthCLLib.Spec in
 /-- The runner's per-step valid/invalid check for a fork-choice step, fork-agnostic over
 the store type `σ`. `before` is the pre-step store (the snapshot, free here since stores
@@ -270,10 +279,11 @@ class ForkInterface where
   /-- Interpret a `fork_choice` vector: build the store from the anchor state /
   block, fold the `steps`, and verify each `checks` step. `.ok` ⇒ every check
   matched; `.error e` carries a `RunError StoreTransitionError` the harness
-  classifies: a `.decode` is a likely bug, and a wrapped `.spec` reject classifies
-  by its constructor (`.todo` an unmodeled-branch xfail, `.assert` an expected
-  rejection, `.missingKey` / a wrapped `.outOfBounds` a likely bug). Drives
-  `fork_choice/*`. -/
+  classifies: `.spec (.todo _)` an unmodeled-branch xfail, `.spec (.outOfScope _)`
+  a skip, and everything else (a `.decode`, an escaping `.assert`, a `.missingKey`,
+  a wrapped `.outOfBounds`) a likely bug. Expected per-step rejections are resolved
+  inside the interpreter by `checkStepValidity`, so an `.assert` that escapes this
+  far was not expected by any step. Drives `fork_choice/*`. -/
   runForkChoice : ByteArray → ByteArray → Array FcStep → Except (RunError StoreTransitionError) Unit
   /-- Build a genesis state from the eth1 inputs and return its root. Drives
   `genesis`. -/
