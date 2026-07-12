@@ -9,7 +9,9 @@ the one new predicate EIP-7805 introduces. `is_valid_inclusion_list_signature` (
 section, `consensus-specs/specs/heze/beacon-chain.md:76-87`) checks a `SignedInclusionList`'s BLS
 signature under `DOMAIN_INCLUSION_LIST_COMMITTEE`. `blsVerifySigned` is the residual trust
 boundary (the `[CryptoBackend]` seam), as for every other signature predicate; no pure assertion
-pins it. FOCIL adds no state transition, so this is a pure predicate rather than a transition step.
+pins it. FOCIL adds no state transition, so this is a predicate rather than a transition step,
+though it throws on an out-of-range `validator_index` (the spec's `state.validators[index]`
+`IndexError`) rather than returning a verdict there.
 -/
 
 set_option autoImplicit false
@@ -37,20 +39,23 @@ The predicate has no in-model caller, by design. Its sole consumer in the spec i
 state-transition and fork-choice layers, not p2p gossip (`networking` is out of the
 conformance scope). `on_inclusion_list` carries no signature check of its own
 (`fork-choice.md:256-267`), so the fork-choice path mirrors the spec faithfully. Kept as the
-beacon-chain surface for spec-completeness. -/
-forkdef isValidInclusionListSignature (state : State) (signed : SignedInclusionList) : Bool :=
+beacon-chain surface for spec-completeness.
+
+It throws (`StateTransition`) rather than returning a `Bool` purely, because `state.validators[index]`
+is a bare list index in the spec, raising `IndexError` on an out-of-range `validator_index`, not
+returning `False`. -/
+forkdef isValidInclusionListSignature (state : State) (signed : SignedInclusionList) :
+    StateTransition Bool := do
   let message := signed.message
   let index := message.validatorIndex
-  let vs := sszGet state validators
-  -- `validator_index` arrives off the wire, so bound it: the spec's `state.validators[index]`
-  -- raises `IndexError` for an out-of-range index, rejecting the list. Reject explicitly rather
-  -- than reading the `Inhabited` default (zero-pubkey) validator through `[…]!`.
-  if index.toNat < vs.size then
-    let pubkey := (vs[index.toNat]!).pubkey
-    let domain := getDomain state Const.domainInclusionListCommittee (computeEpochAtSlot message.slot)
-    blsVerifySigned pubkey message domain signed.signature
-  else
-    false
+  -- `validator_index` arrives off the wire, so the spec's `state.validators[index]` raises
+  -- `IndexError` for an out-of-range index rather than yielding a verdict: `sszGetIdx`
+  -- (→ `outOfBounds`), the monadic safe read, in place of an `if index < size` guard that would
+  -- mask the raise as a `false` and read the `Inhabited` default (zero-pubkey) validator.
+  let validator ← sszGetIdx (sszGet state validators) index.toNat
+  let pubkey := validator.pubkey
+  let domain := getDomain state Const.domainInclusionListCommittee (computeEpochAtSlot message.slot)
+  return blsVerifySigned pubkey message domain signed.signature
 
 end
 

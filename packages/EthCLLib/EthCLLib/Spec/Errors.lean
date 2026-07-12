@@ -43,6 +43,13 @@ inductive StateTransitionError where
   | outOfScope (what : String)
   /-- Indexed access past the end: index `idx` against bound `bound`. -/
   | outOfBounds (idx bound : Nat)
+  /-- A `uint64` arithmetic fault (over/underflow): the spec's `uintN` op raises Python
+  `ValueError`, which the reference runner's `expect_assertion_error` does NOT catch (it
+  catches only `AssertionError` and `IndexError`, `context.py:429-433`). So it is not an
+  expected rejection but a likely bug, distinct from a guarded `assert`. `descr` names the
+  faulting op, diagnostic only. The standing case is `get_balance_after_withdrawals`'
+  `state.balances[i] - withdrawn` (`capella/beacon-chain.md:378`), a bare subtraction. -/
+  | arithmetic (descr : String)
   deriving Inhabited, Repr, DecidableEq
 
 /-- The fork-choice store machine's reject type.
@@ -99,6 +106,7 @@ def StateTransitionError.classify : StateTransitionError → ClassifyBucket
   | .todo _          => .todo
   | .outOfScope _    => .outOfScope
   | .outOfBounds _ _ => .likelyBug
+  | .arithmetic _    => .likelyBug
 
 /-- Classify a store-transition reject by its constructor. A wrapped nested
 state failure classifies by the inner reject. -/
@@ -108,6 +116,24 @@ def StoreTransitionError.classify : StoreTransitionError → ClassifyBucket
   | .outOfScope _  => .outOfScope
   | .missingKey _  => .likelyBug
   | .transition e  => e.classify
+
+/-- Whether a store reject is the expected rejection of a `valid: false` fork-choice step.
+The reference runner (`context.py:429-433`'s `expect_assertion_error`) catches `AssertionError`
+and `IndexError`, so exactly `.assert` (bare and `.transition`-wrapped) and the store machine's
+only index-miss shape, `.transition (.outOfBounds …)`, count; `.missingKey` (an uncaught
+`KeyError`), `.transition (.arithmetic …)` (an uncaught `uint64` `ValueError`), `.todo` /
+`.outOfScope` (our own deferrals), and anything else do not.
+
+This is a *different question* from `classify`, which buckets a reject for reporting (a
+`.transition (.outOfBounds)` is still a `likelyBug` there): `classify` answers "how do we
+report this reject", `isExpectedRejection` answers "does the reference accept it as the
+invalid step's expected raise". `checkStepValidity` is the sole caller; keeping the caught
+set here, next to `classify`, makes the two policies visibly distinct and edited in one
+place each. -/
+def StoreTransitionError.isExpectedRejection : StoreTransitionError → Bool
+  | .assert _
+  | .transition (.assert _) | .transition (.outOfBounds _ _) => true
+  | _ => false
 
 /-- Build the `assert` / `todo` reject of an error type from its diagnostic descriptor.
 The `assert` macro and the `todo` helper resolve `E` from the section's monad, so the

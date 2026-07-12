@@ -29,12 +29,20 @@ withdrawal credentials. Restated (a plain `def` rather than an inheritable `fork
 def addressOf (v : Validator) : ExecutionAddress :=
   Vector.ofFn (fun i : Fin 20 => vget v.withdrawalCredentials (12 + i.val))
 
-/-- `get_balance_after_withdrawals` over `Heze.State`: the balance net of any
-already-queued withdrawals for `vi`. Restated (a plain `def` rather than a `forkdef`). -/
-def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) : Gwei :=
+/-- `get_balance_after_withdrawals` over `Heze.State` (`capella/beacon-chain.md:378`): the
+balance net of any already-queued withdrawals for `vi`. Restated (a plain `def` rather than a
+`forkdef`). Throwing, mirroring the Gloas copy: `state.balances[validator_index]` is a bare list
+index (`IndexError` → `sszGetIdx` → `outOfBounds`), and `- withdrawn` is a bare `uint64`
+subtraction whose underflow raises `ValueError`, uncaught by the reference runner
+(`context.py:429-433`), so it throws the uncaught `.arithmetic` reject, not a caught `.assert`.
+See `Gloas.balanceAfterWithdrawals`. -/
+def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
+    StateTransition Gwei := do
   let withdrawn := ws.foldl (fun acc w => if w.validatorIndex == vi then acc + w.amount else acc) 0
-  let bal := sszGet state balances[vi.toNat]!
-  if withdrawn > bal then 0 else bal - withdrawn
+  let bal ← sszGetIdx (sszGet state balances) vi.toNat
+  if withdrawn > bal then
+    throw (StateTransitionError.arithmetic "get_balance_after_withdrawals: balances[i] - withdrawn underflow")
+  return bal - withdrawn
 
 inherit getBuilderWithdrawals
 inherit getPendingPartialWithdrawals

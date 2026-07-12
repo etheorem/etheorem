@@ -93,6 +93,15 @@ section
 
 variable [Preset] [HasherTag] [Config] {map : MapKind} [FcMap map]
 
+-- The store-transition monad, minus `MonadStateOf`: the inclusion-list helpers below thread the
+-- (sub-)store explicitly rather than through `get`, so they need only `Monad` plus the store
+-- reject to throw (`FcMap.getOrThrow`'s `missingKey`). Leaving `MonadStateOf` off lets the
+-- vectorless pins run them in plain `Except StoreTransitionError`, with no dummy `Store` to
+-- `.run` over. A concrete fork-choice monad (the one `fork_choice_section` opens below) still
+-- satisfies these two, so the store handlers bind these helpers with `←` unchanged.
+variable {StoreTransition : Type → Type} [Monad StoreTransition]
+variable [MonadExceptOf StoreTransitionError StoreTransition]
+
 /-- The empty `InclusionListStore`: no stored lists, no timeliness, no equivocators.
 `getForkchoiceStore` seeds the folded-in `Store` field with it. The spec has no counterpart
 line: there the store is the lazily-created `get_inclusion_list_store()` singleton (see the
@@ -111,21 +120,31 @@ without building a `BeaconState` for the committee key, the same reason `cyclicS
 factored out in `Committees`. The dedup keeps each transaction's first occurrence
 (`arrayUnion`): the spec's `list(set(transactions))` keeps each transaction once and calls
 the order irrelevant, so a deterministic representative lets `#guard` pin the result.
-`timeliness[ilRoot]` is a plain dict read in the spec; the `.getD false` default here is
-unreachable on the spec path, because `process_inclusion_list` writes every stored list and
-its timeliness entry together. -/
+`inclusion_list_timeliness` is a plain `Dict` in the spec (`inclusion-list.md:34`), so
+`timeliness[ilRoot]` raises `KeyError` on a miss: `FcMap.getOrThrow` (→ `missingKey`), throwing,
+in place of the old `lookupD false` default. The read is *conditional*: the comprehension's
+`and`/`or` short-circuit reaches `timeliness[il_root]` only for a non-equivocator's list and
+only when `only_timely` is set, so the guards below run in that exact order. Unreachable on
+the spec path either way, where `process_inclusion_list` writes every stored list and its
+timeliness entry together, so every stored `ilRoot` has an entry. -/
 private def collectInclusionListTransactions (inclusionLists : map Root InclusionList)
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool) (onlyTimely : Bool) :
-    Array Transaction :=
-  -- One `FcMap.fold` pass: each stored `(ilRoot, il)` goes straight to the filter, with no
-  -- second `lookup` and no dead `none` branch.
-  let collected : Array Transaction :=
-    FcMap.fold (fun acc ilRoot il =>
-      let timely := FcMap.lookupD timeliness ilRoot
-      if !equivocators.contains il.validatorIndex && (!onlyTimely || timely) then
-        acc ++ il.transactions.toArray
-      else acc) #[] inclusionLists
-  arrayUnion #[] collected
+    StoreTransition (Array Transaction) := do
+  -- Gather the stored `(ilRoot, il)` entries in the map's fold order first (a pure pass);
+  -- the fold order feeds the `arrayUnion` dedup below, so it is preserved. The throwing
+  -- timeliness read then runs per entry, inside the comprehension's own guard order.
+  let entries : Array (Root × InclusionList) :=
+    FcMap.fold (fun acc ilRoot il => acc.push (ilRoot, il)) #[] inclusionLists
+  let collected ← entries.foldlM (init := (#[] : Array Transaction)) fun acc (ilRoot, il) => do
+    -- The condition is `validator_index not in store.equivocators[key] and (not only_timely
+    -- or store.inclusion_list_timeliness[il_root])`: `and`/`or` short-circuit, so the
+    -- (raising) timeliness read runs last, and only when it can decide the outcome.
+    if equivocators.contains il.validatorIndex then pure acc
+    else if !onlyTimely then pure (acc ++ il.transactions.toArray)
+    else
+      let timely ← FcMap.getOrThrow timeliness ilRoot
+      if timely then pure (acc ++ il.transactions.toArray) else pure acc
+  pure (arrayUnion #[] collected)
 
 /-- `process_inclusion_list(store, inclusion_list, is_timely)`
 (`consensus-specs/specs/heze/inclusion-list.md:57-82`): file a newly-received inclusion list,
@@ -175,17 +194,17 @@ that key, then run the comprehension (here `collectInclusionListTransactions`). 
 `Array` for the spec's `Sequence[Transaction]`; the dedup leaves order unspecified, as the
 spec notes. -/
 forkdef getInclusionListTransactions (store : InclusionListStore map) (state : State)
-    (slot : Slot) (onlyTimely : Bool := true) : Array Transaction :=
+    (slot : Slot) (onlyTimely : Bool := true) : StoreTransition (Array Transaction) :=
   let committee := getInclusionListCommittee state slot
   let key := htr committee
   -- `inclusion_lists` and `equivocators` are `DefaultDict`s (inclusion-list.md:31,35): the
   -- spec's `[key]` auto-creates an empty entry on a miss, so the defaults here are faithful.
   let inclusionLists := (FcMap.lookup store.inclusionLists key).getD FcMap.empty
   let equivocators := FcMap.lookupD store.equivocators key
-  -- TODO(#6): still to make spec-faithful — the `timeliness[ilRoot]` plain-`Dict` read inside
-  -- `collectInclusionListTransactions` and `cyclicSample`'s empty-committee `i % 0` in
-  -- `getInclusionListCommittee` must throw (both are unreachable, but faithfulness is required).
-  -- Deferred only because converting them reworks their kernel `#guard` pins; next follow-up.
+  -- TODO(#6): `getInclusionListCommittee`'s empty-committee `indices[i % 0]` (a spec
+  -- `ZeroDivisionError`) is still modeled total. Making it throw reworks the record pins to a
+  -- non-empty-committee state, so it lands as a focused follow-up. The `timeliness` plain-`Dict`
+  -- read is now faithful: `collectInclusionListTransactions` below throws on a miss.
   collectInclusionListTransactions inclusionLists equivocators store.inclusionListTimeliness onlyTimely
 
 end
@@ -356,7 +375,7 @@ forkdef recordPayloadInclusionListSatisfaction (store : Store map) (state : Stat
   -- substituting an empty required set.
   let stateSlot := sszGet state slot
   assert (stateSlot != 0)
-  let ilTxs := getInclusionListTransactions store.inclusionListStore state (stateSlot - 1)
+  let ilTxs ← getInclusionListTransactions store.inclusionListStore state (stateSlot - 1)
   let satisfied := isInclusionListSatisfied payload ilTxs
   pure { store with
       payloadInclusionListSatisfaction := FcMap.insert store.payloadInclusionListSatisfaction root satisfied }
@@ -718,10 +737,15 @@ private def pinTimeliness : treeMap Root Bool :=
   FcMap.insert (FcMap.insert FcMap.empty pinDummyRoot true) pinAltRoot false
 
 /-- Run the comprehension over `pinLists` / `pinTimeliness` under the minimal preset, so the
-hash-free `#guard`s below need no ambient instance. -/
+hash-free `#guard`s below need no ambient instance. `collectInclusionListTransactions` now throws
+(the `timeliness` plain-`Dict` read), so it runs in `Except StoreTransitionError`; `pinTimeliness`
+carries an entry for every `pinLists` key, so the `.error` branch is unreachable here. -/
 private def pinCollect (equiv : Array ValidatorIndex) (onlyTimely : Bool) : Array Transaction :=
   letI : Preset := minimal
-  collectInclusionListTransactions pinLists equiv pinTimeliness onlyTimely
+  match (collectInclusionListTransactions pinLists equiv pinTimeliness onlyTimely :
+      Except StoreTransitionError (Array Transaction)) with
+  | .ok txs  => txs
+  | .error _ => #[]
 
 -- No equivocators, timeliness ignored: union of {0xAA} and {0xAA, 0xBB}, deduped to two.
 #guard (pinCollect #[] false).size = 2
