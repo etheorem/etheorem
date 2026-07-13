@@ -9,11 +9,11 @@ Payload Timeliness Committee for a slot out of the `ptcWindow` ring buffer. Its
 `if`-branch (a slot in the previous epoch) reads through `vmodGet`, already
 proof-carrying and safe by construction. Its `else`-branch computes a raw
 `UInt64` offset, `(epoch - stateEpoch + 1) * spe + slot % spe`, and reads
-`ptcWindow` at it via the total `vget`, so an out-of-range offset would select
-the fallback behavior of `vget` rather than the intended cached committee. The
-docstring states this offset is in range only under the caller's guarantee
-(`process_payload_attestation`'s `data.slot + 1 == state.slot`), never checked
-in `getPtc` itself. This file proves that claim.
+`ptcWindow` at it via the total `vget`, so an out-of-range offset would not
+correspond to the intended cached committee. The docstring states this offset
+is in range only under the caller's guarantee (`process_payload_attestation`'s
+`data.slot + 1 == state.slot`), never checked in `getPtc` itself. This file
+proves that claim.
 
 `getPtcElseOffset_lt` states the bound at the `Nat` level (`hcaller` via
 `.toNat`), not over the raw `UInt64` `slot + 1 == curSlot`: at `slot =
@@ -44,14 +44,11 @@ def getPtcElseOffset [Preset] (slot curSlot : Slot) : Nat :=
 
 /-- `getPtc`'s unchecked precondition: callers (`process_payload_attestation`)
 guarantee `data.slot + 1 == state.slot` (`hcaller`, at the `Nat` level so
-`slot`'s wraparound at `UInt64.max` cannot make the hypothesis hold
-vacuously). `hbranch` is the `else`-branch's own guard, negated, the offset
-formula's subtraction underflows if `getPtc` would have taken the `if`-branch
-instead. Together the two force `computeEpochAtSlot slot = computeEpochAtSlot
-curSlot`: `hcaller` gives `slot.toNat ≤ curSlot.toNat`, so `computeEpochAtSlot
-slot ≤ computeEpochAtSlot curSlot` by division's monotonicity, and `hbranch`
-gives the reverse `≤`. Equal epochs collapse the offset to `spe + slot % spe`,
-comfortably under `3 * SLOTS_PER_EPOCH`. -/
+`slot`'s wraparound at `UInt64.max` cannot vacuously satisfy it). `hbranch` is
+the `else`-branch's own guard, negated, the epoch subtraction can underflow if
+`getPtc` would have taken the `if`-branch instead. Together they force
+`computeEpochAtSlot slot = computeEpochAtSlot curSlot`, collapsing the offset
+to `spe + slot % spe`, comfortably under `3 * SLOTS_PER_EPOCH`. -/
 theorem getPtcElseOffset_lt [Preset] {slot curSlot : Slot}
     (hcaller : slot.toNat + 1 = curSlot.toNat)
     (hbranch : ¬ computeEpochAtSlot slot < computeEpochAtSlot curSlot) :
