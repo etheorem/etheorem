@@ -247,11 +247,13 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
 /-- `is_attestation_same_slot`: the attestation votes for the block proposed at its
 own slot (head matches this slot's block root but differs from the previous slot's).
 The `slot == 0` guard avoids the `slot - 1` `UInt64` underflow. -/
-forkdef isAttestationSameSlot (state : State) (data : AttestationData) : Bool :=
-  if data.slot == 0 then true
+forkdef isAttestationSameSlot (state : State) (data : AttestationData) : StateTransition Bool := do
+  if data.slot == 0 then pure true
   else
     let blockroot := data.beaconBlockRoot
-    blockroot == getBlockRootAtSlot state data.slot && blockroot != getBlockRootAtSlot state (data.slot - 1)
+    let slotRoot ← getBlockRootAtSlot state data.slot
+    let prevRoot ← getBlockRootAtSlot state (data.slot - 1)
+    pure (blockroot == slotRoot && blockroot != prevRoot)
 
 /-- `get_attestation_participation_flag_indices` (Gloas, EIP-7732): adds the
 payload-matching constraint to `is_matching_head`. A same-slot attestation must have
@@ -259,21 +261,23 @@ payload-matching constraint to `is_matching_head`. A same-slot attestation must 
 compares `data.index` to this slot's `execution_payload_availability` bit. `none`
 also covers the `is_matching_source` reject (as in Fulu). -/
 forkdef getAttestationParticipationFlagIndices (state : State) (data : AttestationData)
-    (inclusionDelay : UInt64) : Option (Array Nat) := Id.run do
+    (inclusionDelay : UInt64) : StateTransition (Option (Array Nat)) := do
   let justified := if data.target.epoch == currentEpochOf state then sszGet state currentJustifiedCheckpoint
                    else sszGet state previousJustifiedCheckpoint
   let isMatchingSource := data.source.epoch == justified.epoch && data.source.root == justified.root
   if !isMatchingSource then return none
 
-  let isMatchingTarget := data.target.root == getBlockRoot state data.target.epoch
-  let sameSlot := isAttestationSameSlot state data
+  let targetRoot ← getBlockRoot state data.target.epoch
+  let isMatchingTarget := data.target.root == targetRoot
+  let sameSlot ← isAttestationSameSlot state data
   if sameSlot && data.index != 0 then return none
   let payloadMatches : Bool :=
     if sameSlot then true
     else
       let bit := bitGet (sszGet state executionPayloadAvailability) (data.slot.toNat % Const.slotsPerHistoricalRoot)
       data.index == (if bit then (1 : UInt64) else 0)
-  let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == getBlockRootAtSlot state data.slot && payloadMatches
+  let headRoot ← getBlockRootAtSlot state data.slot
+  let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == headRoot && payloadMatches
 
   let mut flags : Array Nat := #[]
   if inclusionDelay ≤ UInt64.ofNat (isqrt Const.slotsPerEpoch) then flags := flags.push Const.timelySourceFlagIndex
@@ -303,7 +307,7 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   assert (att.aggregationBits.size == offset)
 
   -- Resolve the participation flags, then validate the aggregate signature.
-  let flagIndices ← match getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) with
+  let flagIndices ← match ← getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
   let indexedAttestation : IndexedAttestation :=
@@ -313,7 +317,7 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
 
   -- Apply participation flags and accumulate the builder-payment weight.
   let currentTarget := data.target.epoch == currentEpochOf state
-  let sameSlot := isAttestationSameSlot state data
+  let sameSlot ← isAttestationSameSlot state data
   let paymentIdx := builderPaymentIndex data.slot currentTarget
   let payment0 := vget (sszGet state builderPendingPayments) paymentIdx
   let mut stateAcc := state
@@ -469,7 +473,8 @@ forkdef processExecutionPayloadBid (signedBid : SignedExecutionPayloadBid) : Sta
   assert (bid.slot == sszGet state slot)
   assert ((sszGet state slot) > Const.genesisSlot)
   assert (bid.parentBlockHash == sszGet state latestBlockHash)
-  assert (bid.parentBlockRoot == getBlockRootAtSlot state ((sszGet state slot) - 1))
+  let parentBlockRoot ← getBlockRootAtSlot state ((sszGet state slot) - 1)
+  assert (bid.parentBlockRoot == parentBlockRoot)
   let randaoMix ← getRandaoMix (currentEpochOf state)
   assert (bid.prevRandao == randaoMix)
 

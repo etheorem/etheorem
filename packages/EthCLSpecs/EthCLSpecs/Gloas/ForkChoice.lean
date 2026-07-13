@@ -1054,4 +1054,21 @@ private def pinTargetAdvanceRejects : Bool :=
   | _ => false
 example : pinTargetAdvanceRejects = true := by native_decide
 
+/-- `getBlockRootAtSlot` rejects (`.assert`) the restored recency guard `slot <
+state.slot <= slot + SLOTS_PER_HISTORICAL_ROOT`: a `default` state has slot 0, so
+`get_block_root_at_slot(state, 0)` fails `0 < 0` where the pre-restore accessor
+mod-indexed silently. This locks the assert itself; the end-to-end
+`compute_pulled_up_tip` pjf reachability it opens up is conformance-gated rather than
+pinned (the epoch-boundary near-zero-stake fixture is finicky to construct). `State` is
+FFI-backed, so `native_decide`. -/
+private def pinBlockRootRecencyRejects : Bool :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let state : State := SSZ.FastBox (default : @EthCLSpecs.Gloas.BeaconState minimal)
+  match (getBlockRootAtSlot state 0 : EStateM StateTransitionError State Root).run state with
+  | .error (.assert _) _ => true
+  | _ => false
+example : pinBlockRootRecencyRejects = true := by native_decide
+
 end EthCLSpecs.Gloas

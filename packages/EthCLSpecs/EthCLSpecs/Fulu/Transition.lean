@@ -141,7 +141,8 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let participantKeys : Array BLSPubkey :=
     (Bitvector.trueIndices bits).map (fun i => syncCommittee.pubkeys[i]!)
   let previousSlot := (umax (sszGet state slot) 1) - 1
-  let signingRoot := computeSigningRoot (getBlockRootAtSlot state previousSlot)
+  let previousBlockRoot ← getBlockRootAtSlot state previousSlot
+  let signingRoot := computeSigningRoot previousBlockRoot
     (getDomain state Const.domainSyncCommittee (computeEpochAtSlot previousSlot))
   assert (blsEthFastAggregateVerify participantKeys signingRoot agg.syncCommitteeSignature)
 

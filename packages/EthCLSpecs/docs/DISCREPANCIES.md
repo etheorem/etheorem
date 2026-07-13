@@ -54,10 +54,11 @@ DSL re-elaborates the captured `forkdef` in the Gloas namespace), so the overflo
 above propagated to Gloas with no Gloas-side change. The fork-choice asserts and plain-`Dict`
 reads throw faithfully, including `get_forkchoice_store`'s anchor-root assert (shared with Fulu
 and Heze) and the PTC block-replay vote writes (`notify_ptc_messages` routes through the
-throwing `on_payload_attestation_message`). The one holdout is `compute_pulled_up_tip`: it
-still swallows a justification-update reject, unreachable only because
-`get_block_root_at_slot` drops the pyspec recency assert. All catalogued in
-`IMPLEMENTATION_NOTES.md`, "Fork choice" and "Heze diff".
+throwing `on_payload_attestation_message`). `compute_pulled_up_tip` now propagates its
+`process_justification_and_finalization` reject instead of swallowing it, and
+`get_block_root_at_slot` carries the pyspec recency assert (`slot < state.slot <= slot +
+SLOTS_PER_HISTORICAL_ROOT`) again, so that reject is reachable rather than dead. All
+catalogued in `IMPLEMENTATION_NOTES.md`, "Fork choice" and "Heze diff".
 
 ## Heze
 
