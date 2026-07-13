@@ -11,14 +11,19 @@ proof-carrying and safe by construction. Its `else`-branch computes a raw
 `UInt64` offset, `(epoch - stateEpoch + 1) * spe + slot % spe`, and reads
 `ptcWindow` at it via the total `vget`, so an out-of-range offset would not
 correspond to the intended cached committee. The docstring states this offset
-is in range only under the caller's guarantee (`process_payload_attestation`'s
-`data.slot + 1 == state.slot`), never checked in `getPtc` itself. This file
-proves that claim.
+is in range only under the caller's guarantee, never checked in `getPtc`
+itself. This file proves that claim for `getPtc`'s two guarded call sites.
 
-`getPtcElseOffset_lt` states the bound at the `Nat` level (`hcaller` via
+`getPtcElseOffset_lt` covers the slot-successor guard used by
+`processPayloadAttestation`. `getPtcElseOffset_lt_same_slot` covers the
+same-slot guard used by fork-choice replay paths. Calls without an established
+relation between the queried slot and state slot are outside this module's
+index-correctness scope.
+
+`getPtcElseOffset_lt` states its bound at the `Nat` level (`hcaller` via
 `.toNat`), not over the raw `UInt64` `slot + 1 == curSlot`: at `slot =
-UInt64.max` that reading wraps to `0`, so the caller's guarantee could hold
-vacuously while the bound itself fails. `.toNat` equality has no such
+UInt64.max` that reading wraps to `0`, so the caller's guarantee could hold by
+wraparound while the bound itself fails. `.toNat` equality has no such
 wraparound.
 
 No mathlib needed; every step is a `UInt64`/`Nat` bridging lemma from Lean's
@@ -38,15 +43,14 @@ open EthCLSpecs.Fulu.Const (slotsPerEpoch slotsPerEpochPos slotsPerEpochLt)
 `getPtcElseOffset_lt` states the bound over one named quantity instead of
 repeating the raw arithmetic. -/
 def getPtcElseOffset [Preset] (slot curSlot : Slot) : Nat :=
-  ((computeEpochAtSlot slot - computeEpochAtSlot curSlot + 1)
-      * UInt64.ofNat slotsPerEpoch
+  ((computeEpochAtSlot slot - computeEpochAtSlot curSlot + 1) * UInt64.ofNat slotsPerEpoch
     + slot % UInt64.ofNat slotsPerEpoch).toNat
 
 /-- `getPtc`'s unchecked precondition: callers (`process_payload_attestation`)
 guarantee `data.slot + 1 == state.slot` (`hcaller`, at the `Nat` level so
 `slot`'s wraparound at `UInt64.max` cannot vacuously satisfy it). `hbranch` is
-the `else`-branch's own guard, negated, the epoch subtraction can underflow if
-`getPtc` would have taken the `if`-branch instead. Together they force
+the negated `else`-branch guard; without it, the epoch subtraction can
+underflow when `getPtc` would have taken the `if`-branch. Together they force
 `computeEpochAtSlot slot = computeEpochAtSlot curSlot`, collapsing the offset
 to `spe + slot % spe`, comfortably under `3 * SLOTS_PER_EPOCH`. -/
 theorem getPtcElseOffset_lt [Preset] {slot curSlot : Slot}
@@ -67,6 +71,18 @@ theorem getPtcElseOffset_lt [Preset] {slot curSlot : Slot}
   have hmod := uint64ModOfNatToNatLt slot slotsPerEpoch slotsPerEpochPos slotsPerEpochLt
   unfold getPtcElseOffset
   rw [heq, UInt64.sub_self, UInt64.zero_add, UInt64.one_mul, UInt64.toNat_add, hspe]
+  omega
+
+/-- Equality-guarded call sites query `getPtc` at the state's current slot.
+Then the else-branch offset collapses to `slotsPerEpoch + slot % slotsPerEpoch`,
+which is below the `3 * slotsPerEpoch` window bound. -/
+theorem getPtcElseOffset_lt_same_slot [Preset] (slot : Slot) :
+    getPtcElseOffset slot slot < 3 * slotsPerEpoch := by
+  have hspe : (UInt64.ofNat slotsPerEpoch).toNat = slotsPerEpoch :=
+    UInt64.toNat_ofNat_of_lt slotsPerEpochLt
+  have hmod := uint64ModOfNatToNatLt slot slotsPerEpoch slotsPerEpochPos slotsPerEpochLt
+  unfold getPtcElseOffset
+  rw [UInt64.sub_self, UInt64.zero_add, UInt64.one_mul, UInt64.toNat_add, hspe]
   omega
 
 end EthCLSpecs.Proofs
