@@ -1,4 +1,5 @@
 import EthCLSpecs.Proofs.BuilderIndex
+import EthCLSpecs.Proofs.GetPtc
 import EthCLSpecs.Proofs.InitializePtcWindow
 
 /-!
@@ -16,6 +17,8 @@ Re-exports:
 
 * `EthCLSpecs.Proofs.BuilderIndex`: the builder-index flag round-trip
   (`isBuilderIndex`, `toBuilderIndex`, `convertBuilderIndexToValidatorIndex`).
+* `EthCLSpecs.Proofs.GetPtc`: `getPtc`'s else-branch `ptcWindow` offset bound
+  (`getPtcElseOffset`, `getPtcElseOffset_lt`).
 * `EthCLSpecs.Proofs.InitializePtcWindow`: the seeded `ptcWindow`'s two
   regions (`initializePtcWindow`).
 -/
