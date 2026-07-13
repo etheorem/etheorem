@@ -144,14 +144,24 @@ The step itself never decides pass/fail; this does. A step expected valid that s
 threads its new store; one expected invalid that is rejected rolls back to `before` and
 continues (the rejection is the expected result). The two mismatches, a valid step that is
 rejected and an invalid step that is accepted, are failures: the first returns the step's
-own error, the second a typed mismatch. So a fork interpreter runs each step to an
-`Except` outcome and pipes it through here; the valid/invalid policy lives in one place. -/
+own error, the second a typed mismatch.
+
+Which rejects count as "the expected rejection" mirrors the reference runner's catch set
+(`AssertionError` / `IndexError`): `.assert`, `.missingKey` (this codebase's image of the
+pinned membership asserts fused into `getOrThrow` reads), and a wrapped state-transition
+`.assert` / `.outOfBounds`. A `.todo` / `.outOfScope` (bare or wrapped) is OUR deferral,
+not the vector's expected reject: the spec assert the step encodes was never exercised,
+so it propagates and the case reports xfail / skip instead of falsely passing. -/
 def checkStepValidity {σ : Type} (before : σ) (expectedValid : Bool)
     (outcome : Except StoreTransitionError σ) : Except StoreTransitionError σ :=
   match outcome, expectedValid with
   | .ok after, true  => .ok after
   | .ok _,     false => .error (.assert "fork_choice: step accepted but expected invalid")
-  | .error _,  false => .ok before
+  | .error e,  false =>
+    match e with
+    | .todo _ | .outOfScope _
+    | .transition (.todo _) | .transition (.outOfScope _) => .error e
+    | _ => .ok before
   | .error e,  true  => .error e
 
 open EthCLLib.Spec in
@@ -283,7 +293,9 @@ class ForkInterface where
   a skip, and everything else (a `.decode`, an escaping `.assert`, a `.missingKey`,
   a wrapped `.outOfBounds`) a likely bug. Expected per-step rejections are resolved
   inside the interpreter by `checkStepValidity`, so an `.assert` that escapes this
-  far was not expected by any step. Drives `fork_choice/*`. -/
+  far was not expected by any step. A `.todo` / `.outOfScope` escaping from an
+  expected-invalid step is the runner's own deferral surfacing (the step's spec
+  assert was never reached), reported xfail / skip. Drives `fork_choice/*`. -/
   runForkChoice : ByteArray → ByteArray → Array FcStep → Except (RunError StoreTransitionError) Unit
   /-- Build a genesis state from the eth1 inputs and return its root. Drives
   `genesis`. -/
