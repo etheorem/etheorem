@@ -251,32 +251,42 @@ private def fcInterpretHeze [Preset] [Config] [HasherTag] [CryptoBackend]
   for step in steps do
     match step with
     | .tick t =>
-      store := (← checkStepValidity store true
+      store := (← checkStepValidity true
         (runOn store (onTick (map := hashMap) (UInt64.ofNat t) : EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes _columns valid =>
-      let outcome := decodeStepOr (α := @Heze.SignedBeaconBlock P) bytes "block" fun sb =>
-        let action : EStateM StoreTransitionError (Store hashMap) Unit := do
-          onBlock (map := hashMap) sb
-          for a in sb.message.body.attestations do onAttestation (map := hashMap) a true
-          for a in sb.message.body.attesterSlashings do onAttesterSlashing (map := hashMap) a
-        runOn store action
-      store := (← checkStepValidity store valid outcome)
+      -- pyspec `add_block` (`fork_choice.py:382-406`) runs `on_block` ALONE against `valid`: an
+      -- invalid block returns right after `on_block` rejects (`:393`), so its own attestations /
+      -- attester-slashings replay only on the valid path (`:400-406`), each `valid = True`. So
+      -- check `on_block` against `valid`, then replay the sub-steps only when the block was
+      -- accepted. (Combining them would let a sub-attestation reject stand in for `on_block`'s on
+      -- a `valid: false` step.) A decode failure is the step's reject, as `decodeStepOr` gives.
+      match SizzLean.SSZ.deserialize (T := @Heze.SignedBeaconBlock P) bytes with
+      | .error _ =>
+        store := (← checkStepValidity valid (.error (.assert "fork_choice: block decode failed", store)))
+      | .ok sb =>
+        store := (← checkStepValidity valid
+          (runOn store (onBlock (map := hashMap) sb : EStateM StoreTransitionError (Store hashMap) Unit)))
+        if valid then
+          let subAction : EStateM StoreTransitionError (Store hashMap) Unit := do
+            for a in sb.message.body.attestations do onAttestation (map := hashMap) a true
+            for a in sb.message.body.attesterSlashings do onAttesterSlashing (map := hashMap) a
+          store := (← checkStepValidity true (runOn store subAction))
     | .attestation bytes valid =>
-      let outcome := decodeStepOr (α := @Attestation P) bytes "attestation" fun a =>
+      let outcome := decodeStepOr (α := @Attestation P) bytes "attestation" store fun a =>
         runOn store (onAttestation (map := hashMap) a false : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity store valid outcome)
+      store := (← checkStepValidity valid outcome)
     | .attesterSlashing bytes valid =>
-      let outcome := decodeStepOr (α := @AttesterSlashing P) bytes "attester_slashing" fun a =>
+      let outcome := decodeStepOr (α := @AttesterSlashing P) bytes "attester_slashing" store fun a =>
         runOn store (onAttesterSlashing (map := hashMap) a : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity store valid outcome)
+      store := (← checkStepValidity valid outcome)
     | .executionPayload bytes valid =>
-      let outcome := decodeStepOr (α := @Heze.SignedExecutionPayloadEnvelope P) bytes "envelope" fun env =>
+      let outcome := decodeStepOr (α := @Heze.SignedExecutionPayloadEnvelope P) bytes "envelope" store fun env =>
         runOn store (onExecutionPayloadEnvelope (map := hashMap) env : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity store valid outcome)
+      store := (← checkStepValidity valid outcome)
     | .payloadAttestationMessage bytes valid =>
-      let outcome := decodeStepOr (α := @Heze.PayloadAttestationMessage P) bytes "ptc message" fun msg =>
+      let outcome := decodeStepOr (α := @Heze.PayloadAttestationMessage P) bytes "ptc message" store fun msg =>
         runOn store (onPayloadAttestationMessage (map := hashMap) msg false : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity store valid outcome)
+      store := (← checkStepValidity valid outcome)
     | .checkHead root slot =>
       let head ← queryHead store
       assert (head.root == root)

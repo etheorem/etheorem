@@ -735,9 +735,15 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   -- itself: no store argument determines the backing.
   notifyPtcMessages (map := map) postState block.body.payloadAttestations.toArray
   let store ← get
+  -- `set` at each pyspec statement boundary below: `update_proposer_boost_root`'s
+  -- dependent-root walks can raise, and so does `compute_pulled_up_tip`'s pull-up, so
+  -- each completed write must persist (in-place runner semantics).
   let store ← recordBlockTimeliness store blockRoot
+  set store
   let store ← updateProposerBoostRoot store head.root blockRoot
+  set store
   let store := updateCheckpoints store (sszGet postState currentJustifiedCheckpoint) (sszGet postState finalizedCheckpoint)
+  set store
   set (← computePulledUpTip store blockRoot)
 
 /-! ## on_execution_payload_envelope -/
@@ -884,7 +890,11 @@ block-implied one. -/
 forkdef onAttestation (att : Attestation) (isFromBlock : Bool) : StoreTransition Unit := do
   validateOnAttestation (← get) att isFromBlock
 
+  -- `store_target_checkpoint_state` mutates `checkpoint_states` before the
+  -- indexed-attestation assert below can reject; `set` at the pyspec statement
+  -- boundary so an expected rejection keeps the cache (in-place runner semantics).
   let store ← storeTargetCheckpointState (← get) att.data.target
+  set store
   let targetState ← FcMap.getOrThrowKey store.checkpointStates att.data.target att.data.target.root
   let attesting := (← liftErr (getAttestingIndices targetState att)).qsort (· < ·)
   let indexedAttestation : IndexedAttestation := { attestingIndices := sszOfArray attesting, data := att.data, signature := att.signature }
