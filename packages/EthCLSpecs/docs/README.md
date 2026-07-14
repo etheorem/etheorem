@@ -26,3 +26,6 @@ the design of record.
 and the shape it will take, so a later pass picks each one up whole. The current entry is
 the provability of the pure indexed reads: a proof parameter or a refined index-list type,
 plus the invariant lemmas they rest on.
+
+[CONSENSUS_PROOF_CANDIDATES.md](CONSENSUS_PROOF_CANDIDATES.md) is a shortlist of Lean
+theorem candidates across the Fulu and Gloas specs, to help contributors pick proof targets.
