@@ -4,6 +4,7 @@ import SizzLean.Spec.BasicSupported
 import SizzLean.Proofs.SimpAttrs
 import SizzLean.Proofs.SerializeSize
 import SizzLean.Proofs.UInt
+import SizzLean.Proofs.UIntWide
 import SizzLean.Proofs.Bool
 import SizzLean.Proofs.VectorFixed
 import SizzLean.Proofs.ListFixed
@@ -45,6 +46,8 @@ theorem encode_size_le_max : ∀ {s : SSZType}, SSZType.BasicSupported s →
   | _, .uintN16, x => encode_size_le_max_uintN16 x
   | _, .uintN32, x => encode_size_le_max_uintN32 x
   | _, .uintN64, x => encode_size_le_max_uintN64 x
+  | _, .uintN128, x => encode_size_le_max_uintN128 x
+  | _, .uintN256, x => encode_size_le_max_uintN256 x
   | _, .bool, b => encode_size_le_max_bool b
   | _, .vectorFixed (t := t) (n := n) h_pos h_t h_t_fixed, v =>
       encode_size_le_max_vectorFixed t n h_pos h_t h_t_fixed

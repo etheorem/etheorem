@@ -118,9 +118,11 @@ the pyspec `ethereum/consensus-spec-tests` release vectors;
 Phase 4 built the performance layer on top of the now-known-good
 library; **Phase 5 (Stage 18) widens the three theorems** toward
 universal `Supported` coverage. As of this writing
-`BasicSupported` covers `uintN 8/16/32/64`, `bool`, fixed-size
-`vector` and `list`, `bitvector`, `bitlist` (both via the
-bit-packing inverse in `Proofs/BitPack.lean`), and `container`
+`BasicSupported` covers `uintN 8/16/32/64` and `uintN 128/256`
+(the wide arms via the `Nat`-digit codec proof in
+`Proofs/UIntWide.lean`, with no `bv_decide` axiom), `bool`,
+fixed-size `vector` and `list`, `bitvector`, `bitlist` (both via
+the bit-packing inverse in `Proofs/BitPack.lean`), and `container`
 over fixed-size fields (recursively). See
 `Spec/BasicSupported.lean` and the README's *Proof coverage*
 table. Mixed-field containers remain open; the `SSZ.roundtrip`
@@ -1465,7 +1467,7 @@ plans as to the document itself.
 | **2: User surface** | Layer 3 (`SSZRepr` + deriving handler) and the Day-1 `FFI/Sha256` `@[extern] opaque` instance. | FFI/Sha256 has no dependency on the verification frontier. SHA-256 is opaque from Day 1; its NIST-conformance assertion is in the TCB. The `SSZ.roundtrip` user-surface corollary is gated by `BasicSupported r.shape` until Stage 18 widens it. The cached Merkle-tree work (Layer 4) has moved to Phase 4. |
 | **3: Application + empirical validation** | Layer 5 (Eth types) + `SizzLeanTests/Sha256Vectors` (consumes `ethereum/consensus-spec-tests` release vectors). | Conformance runs against the verified spec functions (`SSZ.hashTreeRoot` from Layer 1, uncached). This is the empirical safety net for both the verified and asserted-equivalent paths, and the gating signal for both Phase 4 (performance) and Phase 5 (proofs): passing here is what makes either investment well-targeted. |
 | **4: Production primitives + deferred hardening** | Layer 4 (`Tree`, `TreeBacked`, the cached Merkle layer); pure-Lean `Hasher/Sha256Spec.lean` + `@[csimp]` (removes the FFI assertion from TCB); performance work (`ViewDU`-style deferred-update overlay, batched SHA-256, hash-consing). | All stages independent and order-agnostic among themselves. The cache layer lands here (not Phase 2) because it's a *performance* layer asserted equivalent to the spec; deferring it past empirical validation means its property tests have a known-good reference oracle (the spec, validated in Phase 3). The Approach C `profile%` macro is not on the plan; see §8 for the rationale (no fork through Gloas uses EIP-7495 / EIP-7916 / EIP-8016 forms). |
-| **5: Complete formal verification** | **Stage 18: widen `BasicSupported` toward `SSZType.Supported` / `SupportedBounded`, closing `decode_encode`, `serialize_injective`, `encode_size_le_max` arm by arm.** Currently closed: `uintN 8/16/32/64`, `bool`, fixed-size `vector` and `list`, and `container` over fixed-size fields (recursively). Open: `bitvector`, `bitlist`, mixed-field containers. | Positioned last by design: empirical conformance from Phase 3 ensures the proof effort targets a known-correct implementation, not a speculative one. The publishable non-malleability artefact lands when the remaining arms close. |
+| **5: Complete formal verification** | **Stage 18: widen `BasicSupported` toward `SSZType.Supported` / `SupportedBounded`, closing `decode_encode`, `serialize_injective`, `encode_size_le_max` arm by arm.** Currently closed: `uintN 8/16/32/64/128/256`, `bool`, fixed-size `vector` and `list`, `bitvector`, `bitlist`, and `container` over fixed-size fields (recursively). Open: mixed-field containers. | Positioned last by design: empirical conformance from Phase 3 ensures the proof effort targets a known-correct implementation, not a speculative one. The publishable non-malleability artefact lands when the remaining arms close. |
 
 The single highest-risk implementation item is gindex arithmetic in
 `Node.setAt`. Mitigation: structural recursion on an explicit `List Bool`
