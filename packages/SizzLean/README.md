@@ -60,9 +60,9 @@ theorems.
   central theorems, encode/decode roundtrip, non-malleability,
   and a schema-derived static size bound, are proved for every
   SSZ shape *except* variable-field containers:
-  `uintN 8 / 16 / 32 / 64`, `bool`, fixed-size `vector` and
-  `list`, `bitvector`, `bitlist`, and `container` over fixed-size
-  fields (recursively). Mixed-field containers are pending, see
+  `uintN 8 / 16 / 32 / 64 / 128 / 256`, `bool`, fixed-size `vector`
+  and `list`, `bitvector`, `bitlist`, and `container` over
+  fixed-size fields (recursively). Mixed-field containers are pending, see
   [Proof coverage](#proof-coverage) for the per-constructor
   table.
 
@@ -195,6 +195,8 @@ Per-constructor breakdown:
 | `.uintN 16` | ✅ ¹ | ✅ ¹ | ✅ | `bv_decide` on the LE identity |
 | `.uintN 32` | ✅ ¹ | ✅ ¹ | ✅ | `bv_decide` |
 | `.uintN 64` | ✅ ¹ | ✅ ¹ | ✅ | `bv_decide` |
+| `.uintN 128` | ✅ ⁵ | ✅ ⁵ | ✅ | `Nat`-digit induction on the `natToLEBytes` / `readNatLE` codec; no `bv_decide` axiom |
+| `.uintN 256` | ✅ ⁵ | ✅ ⁵ | ✅ | same codec proof as `.uintN 128` (e.g. `base_fee_per_gas`) |
 | `.bool` | ✅ | ✅ | ✅ | exhaustive `cases` + `rfl` |
 | `.vector t n` | ✅ ² | ✅ ² | ✅ ² | needs `0 < n` + `BasicSupported t` + `t.isFixedSize = true` |
 | `.list t cap` | ✅ ³ | ✅ ³ | ✅ ³ | needs `BasicSupported t` + `t.isFixedSize = true` + `0 < t.fixedByteSize` |
@@ -215,6 +217,11 @@ block.
 ⁴ Byte-level bit identities close by kernel `decide` over the
 finite chunk shapes (`Proofs/BitPack.lean`), so the bit arms add
 no axioms beyond the standard kernel three.
+⁵ The wide integer arms (`Proofs/UIntWide.lean`) prove the
+little-endian codec inverse `readNatLE (natToLEBytes w n) 0 w =
+n mod 256ʷ` by induction on the width (the digit step is
+`Nat.mod_mul`). Unlike the narrow arms they use no `bv_decide`, so
+they add **no axioms** beyond the standard kernel three.
 
 `serialize_injective` is a direct corollary of `decode_encode`
 (via `Except.ok.inj` + `Prod.mk.inj`), so its coverage tracks
@@ -228,7 +235,7 @@ Allowed and excluded field types:
 
 | Field type | Allowed as a container field? | Why |
 |---|:---:|---|
-| `.uintN 8 / 16 / 32 / 64` | ✅ | basic + fixed |
+| `.uintN 8 / 16 / 32 / 64 / 128 / 256` | ✅ | basic + fixed |
 | `.bool` | ✅ | basic + fixed |
 | `.vector t' n` (with `n > 0`, fixed-size `t'`, `BasicSupported t'`) | ✅ | nested vector, `(.vector t' n).isFixedSize = t'.isFixedSize` |
 | `.container fs'` (with `BasicSupportedFieldsFixed fs'`) | ✅ | nested container, `(.container fs').isFixedSize = allFixedSize fs'` |
@@ -247,17 +254,18 @@ requires extending `Supported` with a `containerVar` constructor
 plus an offset-table-invariants proof.
 
 In one line: containers with fields drawn from `{uintN8, uintN16,
-uintN32, uintN64, bool, vectorFixed, bitvector,
-containerFixed (recursively)}` are proved; containers with any
-`list` or `bitlist` field are not.
+uintN32, uintN64, uintN128, uintN256, bool, vectorFixed,
+bitvector, containerFixed (recursively)}` are proved; containers
+with any `list` or `bitlist` field are not.
 
 ### Track in progress
 
 **Phase 5 formal-verification widening:** the three central
 theorems (roundtrip, non-malleability, size bound) are landed on
 the `BasicSupported` cut, which now covers `uintN 8 / 16 / 32 /
-64`, `bool`, fixed-size `vector` and `list`, `bitvector`,
-`bitlist`, and `container` over fixed-size fields (recursively).
+64 / 128 / 256`, `bool`, fixed-size `vector` and `list`,
+`bitvector`, `bitlist`, and `container` over fixed-size fields
+(recursively).
 Widening to a universal statement over `SSZType.Supported`
 requires extending `Supported` itself to admit mixed-field
 containers (spec-layer follow-up). The library itself is

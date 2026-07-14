@@ -94,6 +94,27 @@ def readUInt64LE (b : ByteArray) (off : Nat) : Option UInt64 :=
           (g 7 (by omega) <<< 56))
   else .none
 
+/-- Horner fold behind `readNatLE`: read bytes `b[off + k - 1] …
+b[off + 0]` most-significant-first into `acc`. Structurally
+recursive on `k`. Lifted out of `readNatLE` as a top-level
+definition (rather than an inner `let rec`) so the `uintN 128 /
+256` roundtrip proof in `Proofs/UIntWide.lean` can reason about it
+through its own equation lemmas.
+
+`protected` for the same reason as `natToLEBytes`: proof-internal,
+reached only by the explicit `open` in the proof file, never by a
+bare `open SizzLean.Spec`. -/
+protected def readNatLEAux (b : ByteArray) (off : Nat) : (k acc : Nat) → Nat
+  | 0,     acc => acc
+  | k + 1, acc =>
+      -- Read `b[off + k]` (the byte with positional weight 256^k).
+      let idx := off + k
+      if h : idx < b.size then
+        SizzLean.Spec.readNatLEAux b off k (acc * 256 + (b[idx]'h).toNat)
+      else
+        -- guarded by `readNatLE`'s outer size check; defensive
+        acc * 256
+
 /-- Read `width` little-endian bytes from `b` starting at `off` as a
 `Nat`. Used for `uintN 128 / 256` widths where the value is stored
 as a `BitVec n`. Returns `none` if the buffer is too short.
@@ -102,21 +123,12 @@ Horner-style accumulation reading from the *most-significant* byte
 down to the *least-significant*: byte `b[off + width - 1]` is read
 first (folded into `acc`), then `b[off + width - 2]`, …, finally
 `b[off + 0]`. The recursion is structurally on `k = width`,
-counting down. -/
-private def readNatLE (b : ByteArray) (off width : Nat) : Option Nat :=
+counting down (see `readNatLEAux`).
+
+`protected` for the same reason as `readNatLEAux`. -/
+protected def readNatLE (b : ByteArray) (off width : Nat) : Option Nat :=
   if off + width > b.size then .none
-  else
-    let rec go : (k acc : Nat) → Nat
-      | 0,     acc => acc
-      | k + 1, acc =>
-          -- Read `b[off + k]` (the byte with positional weight 256^k).
-          let idx := off + k
-          if h : idx < b.size then
-            go k (acc * 256 + (b[idx]'h).toNat)
-          else
-            -- guarded by the outer size check; defensive
-            acc * 256
-    .some (go width 0)
+  else .some (SizzLean.Spec.readNatLEAux b off width 0)
 
 /-! ### Variable-size container helper: pre-extract field offsets
 
@@ -296,13 +308,13 @@ def SSZType.deserialize : (s : SSZType) → ByteArray → Except SSZError (s.int
       -- 16 little-endian bytes → `BitVec 128`. The `interp` arm for
       -- `.uintN n` (n ∉ {8,16,32,64}) reduces to `BitVec n`, so the
       -- `BitVec.ofNat 128 _` typechecks at `interp (.uintN 128)`.
-      match readNatLE b 0 16 with
+      match SizzLean.Spec.readNatLE b 0 16 with
       | .some n => .ok (BitVec.ofNat 128 n, 16)
       | .none   => .error .tooShort
   | .uintN 256, b =>
       -- 32 little-endian bytes → `BitVec 256`. Used by
       -- `ExecutionPayload.base_fee_per_gas` (Bellatrix+).
-      match readNatLE b 0 32 with
+      match SizzLean.Spec.readNatLE b 0 32 with
       | .some n => .ok (BitVec.ofNat 256 n, 32)
       | .none   => .error .tooShort
   | .uintN _,  _ => .error .tooShort -- non-spec uintN width (only {8,16,32,64,128,256} valid)

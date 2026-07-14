@@ -39,7 +39,9 @@ are then thin wrappers; `SSZ.roundtrip` lifts the spec-side
 The library's `decode_encode` proof currently covers the
 `BasicSupported` subset:
 
-* `.uintN 8 / 16 / 32 / 64`, `.bool`: basic primitives.
+* `.uintN 8 / 16 / 32 / 64` and `.uintN 128 / 256`, `.bool`:
+  basic primitives (the wide integers close by the `Nat`-digit
+  codec proof in `Proofs/UIntWide.lean`).
 * `.vector t n` / `.list t cap` / `.container fs`: general
   composites over fixed-size element / field types
   (`BasicSupported t` with `t.isFixedSize = true`).

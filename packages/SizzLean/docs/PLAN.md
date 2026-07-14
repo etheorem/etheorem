@@ -1401,6 +1401,7 @@ Replaces the Stage 5–6 first-cut theorems on `BasicSupported`.
 | Arm | Status | Proof file |
 |---|---|---|
 | `.uintN 8 / 16 / 32 / 64` | ✅ | `Proofs/UInt.lean` |
+| `.uintN 128 / 256` | ✅ | `Proofs/UIntWide.lean` (`Nat`-digit codec inverse; no `bv_decide` axiom) |
 | `.bool` | ✅ | `Proofs/Bool.lean` |
 | `.vector t n` (general, `0 < n`, fixed-size `t`) | ✅ | `Proofs/VectorFixed.lean` |
 | `.list t cap` (general, fixed-size `t`, `0 < t.fixedByteSize`) | ✅ | `Proofs/ListFixed.lean` |
