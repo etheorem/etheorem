@@ -121,6 +121,21 @@ example (x : UInt32) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
 example (x : UInt64) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
   SSZ.roundtrip .uintN64 x
 
+/-! ### Wide integer arm examples: `uintN 128` and `uintN 256`
+
+The `SSZRepr (BitVec 128)` / `(BitVec 256)` instances
+(`Repr/Instances.lean`) pin the two spec-only widths at shapes
+`.uintN 128` / `.uintN 256` with identity isos. These gates
+compile only if `decode_encode` discharges the wide arms
+(`Proofs/UIntWide.lean`) through the user surface, and, unlike the
+narrow arms, they carry no `bv_decide` axiom. -/
+
+example (x : BitVec 128) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
+  SSZ.roundtrip .uintN128 x
+
+example (x : BitVec 256) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
+  SSZ.roundtrip .uintN256 x
+
 /-! ### Composite arm examples
 
 `BasicSupported` also covers general `vectorFixed`, `listFixed`,
@@ -208,5 +223,17 @@ example (vs : SSZType.interpFields [.uintN 8, .bitvector 10]) :
   decode_encode (.containerFixed
                   (.cons .uintN8 rfl
                     (.cons (.bitvector (by decide)) rfl .nil))) vs
+
+/-- A container carrying a `uint256` field alongside a `uint64`,
+the `ExecutionPayload`-style layout that motivated the wide-integer
+arms: `.uintN 256` is fixed-size, so it qualifies under
+`BasicSupportedFieldsFixed`. -/
+example (vs : SSZType.interpFields [.uintN 64, .uintN 256]) :
+    SSZType.deserialize (.container [.uintN 64, .uintN 256])
+        (SSZType.serialize (.container [.uintN 64, .uintN 256]) vs) =
+      Except.ok (vs, (SSZType.serialize (.container [.uintN 64, .uintN 256]) vs).size) :=
+  decode_encode (.containerFixed
+                  (.cons .uintN64 rfl
+                    (.cons .uintN256 rfl .nil))) vs
 
 end SizzLeanTests.ReprExamples

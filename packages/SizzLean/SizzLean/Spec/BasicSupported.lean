@@ -20,7 +20,10 @@ Proofs/ reaches over to discharge the theorems).
 ## Coverage
 
 * **Basic integers**: `.uintN 8 / 16 / 32 / 64` (closed in
-  `Proofs/UInt.lean` via `unfold` + `bv_decide`).
+  `Proofs/UInt.lean` via `unfold` + `bv_decide`) and
+  `.uintN 128 / 256` (closed in `Proofs/UIntWide.lean` by
+  `Nat`-digit induction on the `natToLEBytes` / `readNatLE` codec,
+  with no `bv_decide` axiom).
 * **Bool**: `.bool` (closed by `cases`, in `Proofs/Bool.lean`).
 * **Composites**: `.vector t n` / `.list t cap` /
   `.container fs` over fixed-size element / field types
@@ -80,6 +83,15 @@ inductive SSZType.BasicSupported : SSZType → Prop
   | uintN32 : SSZType.BasicSupported (.uintN 32)
   /-- 64-bit little-endian unsigned integer. -/
   | uintN64 : SSZType.BasicSupported (.uintN 64)
+  /-- 128-bit little-endian unsigned integer. Unlike the narrow
+  widths, the roundtrip closes by `Nat`-digit induction on the
+  `natToLEBytes` / `readNatLE` codec (`Proofs/UIntWide.lean`), with
+  no `bv_decide` axiom. -/
+  | uintN128 : SSZType.BasicSupported (.uintN 128)
+  /-- 256-bit little-endian unsigned integer (e.g.
+  `ExecutionPayload.base_fee_per_gas`). Same codec proof as
+  `uintN128`. -/
+  | uintN256 : SSZType.BasicSupported (.uintN 256)
   /-- `Bool`, single-byte 0/1. -/
   | bool : SSZType.BasicSupported .bool
   /-- Fixed-length vector with fixed-size element type and

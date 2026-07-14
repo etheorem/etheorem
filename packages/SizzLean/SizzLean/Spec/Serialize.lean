@@ -191,14 +191,23 @@ def uint64LE (x : UInt64) : ByteArray :=
 
 /-- `Nat` → `width` little-endian bytes (truncating). Used for the
 `BitVec n`-backed fallback at `uintN` widths beyond 64 and for
-generic offset emission. Recurses structurally on `width`. -/
-private def natToLEBytes : (width : Nat) → (n : Nat) → ByteArray → ByteArray
+generic offset emission. Recurses structurally on `width`.
+
+`protected`: the Layer 2 roundtrip proof for the `uintN 128 / 256`
+arms in `Proofs/UIntWide.lean` reasons through this writer's
+per-byte recursion, so it must be reachable, but it is
+proof-internal, not part of the general `SizzLean.Spec` surface.
+`protected` keeps a bare `open SizzLean.Spec` from pulling it into
+scope; the proof file names it with an explicit
+`open SizzLean.Spec (natToLEBytes)`. -/
+protected def natToLEBytes : (width : Nat) → (n : Nat) → ByteArray → ByteArray
   | 0,     _, acc => acc
-  | k + 1, m, acc => natToLEBytes k (m / 256) (acc.push (Nat.toUInt8 (m % 256)))
+  | k + 1, m, acc =>
+      SizzLean.Spec.natToLEBytes k (m / 256) (acc.push (Nat.toUInt8 (m % 256)))
 
 /-- `BitVec n` → `⌈n/8⌉` little-endian bytes. -/
 private def bitvecToLE (n : Nat) (b : BitVec n) : ByteArray :=
-  natToLEBytes ((n + 7) / 8) b.toNat .empty
+  SizzLean.Spec.natToLEBytes ((n + 7) / 8) b.toNat .empty
 
 /-! ### Bit packing (LSB-first within each byte)
 
@@ -286,11 +295,11 @@ def SSZType.serialize : (s : SSZType) → s.interp → ByteArray
       -- `interp` in `Spec/Interp.lean`). Force the defeq via `let`
       -- so the typeclass machinery sees `BitVec 128` for `.toNat`.
       let x' : BitVec 128 := x
-      natToLEBytes 16 x'.toNat .empty
+      SizzLean.Spec.natToLEBytes 16 x'.toNat .empty
   | .uintN 256,           x  =>
       -- Used by `ExecutionPayload.base_fee_per_gas` (Bellatrix+).
       let x' : BitVec 256 := x
-      natToLEBytes 32 x'.toNat .empty
+      SizzLean.Spec.natToLEBytes 32 x'.toNat .empty
   | .uintN _,             _  =>
       -- Non-spec `uintN` widths (only {8,16,32,64,128,256} valid).
       -- Returning `.empty` keeps `serialize` total.

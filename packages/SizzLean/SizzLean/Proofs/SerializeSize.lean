@@ -3,6 +3,7 @@ import SizzLean.Spec.BasicSupported
 import SizzLean.Spec.MaxByteLength
 import SizzLean.Proofs.SimpAttrs
 import SizzLean.Proofs.BitPack
+import SizzLean.Proofs.UIntWide
 
 /-!
 # `SizzLean.Proofs.SerializeSize`: the shared size-prereq lemma
@@ -103,6 +104,16 @@ theorem size_serialize_eq_fixedByteSize :
     show (SSZType.serialize (.uintN 64) x').size = SSZType.fixedByteSize (.uintN 64)
     simp [SSZType.serialize, SSZType.fixedByteSize, uint64LE,
           ByteArray.size_push, ByteArray.size_empty]
+  | uintN128 =>
+    let x' : BitVec 128 := x
+    show (SSZType.serialize (.uintN 128) x').size = SSZType.fixedByteSize (.uintN 128)
+    rw [size_serialize_uintN128]
+    simp [SSZType.fixedByteSize]
+  | uintN256 =>
+    let x' : BitVec 256 := x
+    show (SSZType.serialize (.uintN 256) x').size = SSZType.fixedByteSize (.uintN 256)
+    rw [size_serialize_uintN256]
+    simp [SSZType.fixedByteSize]
   | bool =>
     let b : Bool := x
     show (SSZType.serialize .bool b).size = SSZType.fixedByteSize .bool

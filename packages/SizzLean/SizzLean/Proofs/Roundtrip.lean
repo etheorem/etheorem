@@ -3,6 +3,7 @@ import SizzLean.Spec.BasicSupported
 import SizzLean.Proofs.SimpAttrs
 import SizzLean.Proofs.SerializeSize
 import SizzLean.Proofs.UInt
+import SizzLean.Proofs.UIntWide
 import SizzLean.Proofs.Bool
 import SizzLean.Proofs.VectorFixed
 import SizzLean.Proofs.ListFixed
@@ -19,6 +20,7 @@ theorem. Per-arm proofs live in sibling modules:
 | Arm | File |
 |---|---|
 | `.uintN 8/16/32/64` | `Proofs/UInt.lean` |
+| `.uintN 128/256` | `Proofs/UIntWide.lean` |
 | `.bool` | `Proofs/Bool.lean` |
 | `.vectorFixed t n` | `Proofs/VectorFixed.lean` |
 | `.listFixed t cap` | `Proofs/ListFixed.lean` |
@@ -88,6 +90,8 @@ theorem decode_encode : ∀ {s : SSZType}, SSZType.BasicSupported s →
   | _, .uintN16, x => decode_encode_uintN16 x
   | _, .uintN32, x => decode_encode_uintN32 x
   | _, .uintN64, x => decode_encode_uintN64 x
+  | _, .uintN128, x => decode_encode_uintN128 x
+  | _, .uintN256, x => decode_encode_uintN256 x
   | _, .bool, b => decode_encode_bool b
   | _, .vectorFixed (t := t) (n := n) h_pos h_t h_t_fixed, v =>
       decode_encode_vectorFixed t n h_pos h_t h_t_fixed
