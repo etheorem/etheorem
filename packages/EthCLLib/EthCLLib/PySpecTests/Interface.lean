@@ -173,9 +173,10 @@ open EthCLLib.Spec in
 /-- `checkStepValidity` scores a `valid: false` step by the reference runner's caught set:
 `.assert` (bare and `.transition`-wrapped) and `.transition (.outOfBounds …)`, the store
 machine's only index-miss shape, are the expected rejection (pass, threading the error-time
-store). A `.missingKey` (a bare-`Dict` `KeyError`) or a `.transition (.arithmetic …)` (a
-`uint64` `ValueError`), neither of which the reference catches, propagates as a failure;
-`.todo` / `.outOfScope` stay deferrals. Each conjunct is a concrete evaluation, closed by `rfl`
+store). A `.missingKey` (a bare-`Dict` `KeyError`), a `.transition (.arithmetic …)` (a `uint64`
+`ValueError`), or a `.decodeFailure` (a decoder / container bug, never a spec raise), none of
+which the reference catches, propagates as a failure; `.todo` / `.outOfScope` stay deferrals.
+Each conjunct is a concrete evaluation, closed by `rfl`
 (`Except` carries no `DecidableEq`, so `decide` cannot run). -/
 example :
     checkStepValidity (σ := Nat) false (.error (.assert "x", 7)) = .ok 7
@@ -185,23 +186,27 @@ example :
       = .error (.missingKey (Vector.replicate 32 0))
   ∧ checkStepValidity (σ := Nat) false (.error (.transition (.arithmetic "x"), 7))
       = .error (.transition (.arithmetic "x"))
+  ∧ checkStepValidity (σ := Nat) false (.error (.decodeFailure "x", 7)) = .error (.decodeFailure "x")
   ∧ checkStepValidity (σ := Nat) false (.error (.todo "later", 7)) = .error (.todo "later")
   ∧ checkStepValidity (σ := Nat) false (.error (.outOfScope "n/a", 7)) = .error (.outOfScope "n/a") :=
-  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 open EthCLLib.Spec in
 /-- Decode a fork-choice step's SSZ `bytes` to its typed value and run `f` on it, or
 short-circuit to the step's reject when the bytes do not deserialize. Factors the
 decode-or-reject the `block` / `attestation` / `attester_slashing` step arms repeat: each
 decodes its own wire type through the fork's `SSZRepr` and, on a parse failure, fails the
-step with a `<label> decode failed` assertion paired with `before` (nothing ran, so the
-error-time store is the pre-step store). `label` names the wire type in that message;
-`f` runs the handler over the decoded value (typically `runOn before …`). -/
+step with a `<label> decode failed` `decodeFailure` reject paired with `before` (nothing ran,
+so the error-time store is the pre-step store). That reject is a decoder / container bug, NOT
+an expected rejection: fork-choice vectors are always well-formed, so a parse miss here is our
+bug, and modeling it as `.assert` would let a `valid:false` step falsely PASS on a broken
+decoder. `label` names the wire type in that message; `f` runs the handler over the decoded
+value (typically `runOn before …`). -/
 def decodeStepOr {α σ : Type} [SizzLean.SSZRepr α] (bytes : ByteArray) (label : String)
     (before : σ) (f : α → Except (StoreTransitionError × σ) σ) :
     Except (StoreTransitionError × σ) σ :=
   match SizzLean.SSZ.deserialize (T := α) bytes with
-  | .error _    => .error (.assert s!"fork_choice: {label} decode failed", before)
+  | .error _    => .error (.decodeFailure s!"fork_choice: {label} decode failed", before)
   | .ok value   => f value
 
 /-- The `operations/<handler>` axis as a typed tag, one constructor per pyspec

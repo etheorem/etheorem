@@ -184,16 +184,22 @@ private def handleForkChoice (iface : ForkInterface) (fields : Array String) : I
     -- a bug on the fork-choice path (per-step `valid:false` rejections are resolved inside
     -- the interpreter and never reach here).
     let detail := (match e with
-      | .decode what           => s!"{what} decode failed"
-      | .spec (.assert d)      => d
-      | .spec (.todo d)        => d
-      | .spec (.outOfScope d)  => d
-      | .spec (.missingKey _)  => "missing store key"
-      | .spec (.transition te) => reprStr te).replace "\t" " " |>.replace "\n" " "
-    match e with
-    | .spec (.todo _)       => return s!"fail\ttodo\t{detail}"
-    | .spec (.outOfScope _) => return s!"fail\tskip\t{detail}"
-    | _                     => return s!"fail\tbug\t{detail}"
+      | .decode what             => s!"{what} decode failed"
+      | .spec (.assert d)        => d
+      | .spec (.todo d)          => d
+      | .spec (.outOfScope d)    => d
+      | .spec (.missingKey _)    => "missing store key"
+      | .spec (.decodeFailure d) => d
+      | .spec (.transition te)   => reprStr te).replace "\t" " " |>.replace "\n" " "
+    -- Route the verdict through `RunError.classify` (which recurses into `.transition`), so a
+    -- nested state-transition `.todo` / `.outOfScope` reached on a fork-choice step reports as
+    -- xfail / skip rather than a bug. Everything else (decode/container bug, unexpected assert,
+    -- missing key, uncaught fault) is a bug on the fork-choice path; per-step `valid:false`
+    -- rejections are resolved inside the interpreter and never reach here.
+    match e.classify with
+    | .todo       => return s!"fail\ttodo\t{detail}"
+    | .outOfScope => return s!"fail\tskip\t{detail}"
+    | _           => return s!"fail\tbug\t{detail}"
 
 /-- Process one request line into a result line, against a given fork's interface.
 Exceptions become a `fail ⇥ bug` result so a single bad case never crashes the

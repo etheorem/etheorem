@@ -232,7 +232,7 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
       -- a `valid: false` step.) A decode failure is the step's reject, as `decodeStepOr` gives.
       match SizzLean.SSZ.deserialize (T := @SignedBeaconBlock P) bytes with
       | .error _ =>
-        store := (← checkStepValidity valid (.error (.assert "fork_choice: block decode failed", store)))
+        store := (← checkStepValidity valid (.error (.decodeFailure "fork_choice: block decode failed", store)))
       | .ok sb =>
         let cols := columns.filterMap (fun cb => (SSZ.deserialize (T := @DataColumnSidecar P) cb).toOption)
         store := (← checkStepValidity valid

@@ -262,7 +262,7 @@ private def fcInterpretHeze [Preset] [Config] [HasherTag] [CryptoBackend]
       -- a `valid: false` step.) A decode failure is the step's reject, as `decodeStepOr` gives.
       match SizzLean.SSZ.deserialize (T := @Heze.SignedBeaconBlock P) bytes with
       | .error _ =>
-        store := (← checkStepValidity valid (.error (.assert "fork_choice: block decode failed", store)))
+        store := (← checkStepValidity valid (.error (.decodeFailure "fork_choice: block decode failed", store)))
       | .ok sb =>
         store := (← checkStepValidity valid
           (runOn store (onBlock (map := hashMap) sb : EStateM StoreTransitionError (Store hashMap) Unit)))
