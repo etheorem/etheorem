@@ -83,8 +83,28 @@ theorem sszListFoldlPush_val_of_fits {α : Type} {cap : Nat} (xs : SSZList α ca
   rw [sszListFoldlPush_val, List.take_of_length_le (by omega)]
 
 open EthCLSpecs.Gloas
-open EthCLSpecs.Fulu (Preset)
+open EthCLSpecs.Fulu (Preset Gwei getTotalActiveBalance)
+open EthCLSpecs.Fulu.Const (slotsPerEpoch builderPaymentThresholdNumerator builderPaymentThresholdDenominator builderPendingWithdrawalsLimit)
 open EthCLLib.Spec
+
+/-- `do x` for a lone `for`-loop `x` elaborates as `x >>= fun _ => pure ()`, not as `x`
+itself: a `do`-block's last statement always gets an appended `pure`, even when that
+statement already has the block's own return type. `x`'s own accumulator type is `PUnit`
+(a `for`-loop's natural result), one universe below the ascribed `do`-block's `Unit`; the
+appended `pure ()` is what bridges the two. This peels the wrapper back off, so a fact
+about `do x`'s run (as produced by ascribing a lone `for`-loop to its monad) can connect
+to a use site that runs `x` directly, immediately followed by more code instead of an
+implicit `pure`. -/
+theorem run_of_run_seq_pure {ε σ : Type} (x : EStateM ε σ PUnit) (s0 s1 : σ)
+    (h : (x >>= fun _ => (pure () : EStateM ε σ Unit)).run s0 = .ok () s1) :
+    x.run s0 = .ok PUnit.unit s1 := by
+  rw [EStateM.run_bind] at h
+  cases hx : x.run s0 with
+  | ok a s =>
+    rw [hx] at h
+    cases a
+    simpa only [EStateM.run_pure] using h
+  | error e s => rw [hx] at h; simp at h
 
 /-- The withdrawals loop's own reduction: running `for i in [0:n] do if cond i then
 appendState builderPendingWithdrawals (val i)` from `state0` always succeeds (the loop
@@ -151,5 +171,104 @@ theorem forLoopAppendIf_run [Preset] [HasherTag] (n : Nat) (cond : Nat → Prop)
           rw [List.filter_cons_of_neg]; simpa using h
         rw [hw, hfilter]
       · exact hp
+
+/-- `processBuilderPendingPayments`'s quorum threshold, factored out for reuse between
+`qualifyingBuilderWithdrawals`, `expectedWithdrawals`, and their theorems. -/
+def builderPaymentQuorum [Preset] [HasherTag] (state : State) : Gwei :=
+  (getTotalActiveBalance state / UInt64.ofNat slotsPerEpoch) *
+    builderPaymentThresholdNumerator / builderPaymentThresholdDenominator
+
+/-- The previous-epoch payments whose weight clears `builderPaymentQuorum`, mapped to
+their withdrawals, in slot order, before `SSZList.push`'s capacity clamp. -/
+def qualifyingBuilderWithdrawals [Preset] [HasherTag] (state : State) :
+    List BuilderPendingWithdrawal :=
+  let payments := sszGet state builderPendingPayments
+  ((List.range slotsPerEpoch).filter
+      fun i => decide ((vget payments i).weight ≥ builderPaymentQuorum state)).map
+    fun i => (vget payments i).withdrawal
+
+/-- The `builderPendingWithdrawals` value `processBuilderPendingPayments` produces:
+`qualifyingBuilderWithdrawals`, folded through `SSZList.push` from the field's current
+value. `sszListFoldlPush_val` and `sszListFoldlPush_val_of_fits` characterize this
+fold's clamping behavior. -/
+def expectedWithdrawals [Preset] [HasherTag] (state : State) :
+    SSZList BuilderPendingWithdrawal builderPendingWithdrawalsLimit :=
+  (qualifyingBuilderWithdrawals state).foldl (fun l w => l.push w)
+    (sszGet state builderPendingWithdrawals)
+
+/-- The `builderPendingPayments` value `processBuilderPendingPayments` produces: the
+field's current value shifted down by `SLOTS_PER_EPOCH` and padded with empties. -/
+def expectedPaymentWindow [Preset] [HasherTag] (state : State) :
+    Vector BuilderPendingPayment (2 * slotsPerEpoch) :=
+  shiftWindow (sszGet state builderPendingPayments) slotsPerEpoch slotsPerEpoch
+    (fun _ => (default : BuilderPendingPayment))
+
+/-- The postcondition `processBuilderPendingPayments_run` establishes: `after`'s two
+touched fields equal `expectedWithdrawals` / `expectedPaymentWindow` of `before`. Named
+so a later capacity-guarded corollary can restate the withdrawals half without
+re-deriving the window half. -/
+def ProcessBuilderPendingPaymentsPost [Preset] [HasherTag] (before after : State) : Prop :=
+  sszGet after builderPendingWithdrawals = expectedWithdrawals before ∧
+  sszGet after builderPendingPayments = expectedPaymentWindow before
+
+/-- `processBuilderPendingPayments`'s complete successful-run postcondition, for an
+arbitrary input state: it always succeeds, and the result satisfies
+`ProcessBuilderPendingPaymentsPost`. Combines `forLoopAppendIf_run` (the withdrawals
+loop) with `shiftWindow`'s direct application (the payment-window shift), the two
+effects the module docstring describes. -/
+theorem processBuilderPendingPayments_run [Preset] [HasherTag] (before : State) :
+    ∃ after : State,
+      (processBuilderPendingPayments :
+        EStateM StateTransitionError State Unit).run before = .ok () after ∧
+      ProcessBuilderPendingPaymentsPost before after := by
+  obtain ⟨resultState, hrun, hw, hp⟩ :=
+    forLoopAppendIf_run slotsPerEpoch
+      (fun i => (vget (sszGet before builderPendingPayments) i).weight ≥
+        builderPaymentQuorum before)
+      (fun i => (vget (sszGet before builderPendingPayments) i).withdrawal) before
+  have hbare := run_of_run_seq_pure _ _ _ hrun
+  simp only [builderPaymentQuorum] at hbare hw
+  refine ⟨(sszUpdate resultState with builderPendingPayments :=
+      shiftWindow (sszGet resultState builderPendingPayments) slotsPerEpoch slotsPerEpoch
+        (fun _ => (default : BuilderPendingPayment))), ?_, ?_, ?_⟩
+  · -- `show`, not `unfold`: `unfold` would leave the goal holding
+    -- `processBuilderPendingPayments`'s own compiled term, whose `sszUpdate` case-split
+    -- is a different (if computationally identical) declaration than the one `hbare`'s
+    -- `appendState` elaborates to in *this* file. Retyping the source here elaborates
+    -- that case-split fresh, in this file, where it lines up with `hbare`'s for the
+    -- `simp [hbare]` below; `show`'s defeq check doesn't care which spelling it's given.
+    show (do
+        let quorum := builderPaymentQuorum before
+        let payments := sszGet before builderPendingPayments
+        for i in [0:slotsPerEpoch] do
+          if (vget payments i).weight ≥ quorum then
+            appendState builderPendingWithdrawals (vget payments i).withdrawal
+        modifyState fun state =>
+          sszUpdate state with builderPendingPayments :=
+            shiftWindow (sszGet state builderPendingPayments) slotsPerEpoch slotsPerEpoch
+              (fun _ => (default : BuilderPendingPayment))
+        : EStateM StateTransitionError State Unit).run before =
+        .ok () (sszUpdate resultState with builderPendingPayments :=
+          shiftWindow (sszGet resultState builderPendingPayments) slotsPerEpoch slotsPerEpoch
+            (fun _ => (default : BuilderPendingPayment)))
+    simp only [EStateM.run_bind, builderPaymentQuorum, hbare]
+    cases resultState <;> rfl
+  · have hgetW : sszGet (sszUpdate resultState with builderPendingPayments :=
+        shiftWindow (sszGet resultState builderPendingPayments) slotsPerEpoch slotsPerEpoch
+          (fun _ => (default : BuilderPendingPayment))) builderPendingWithdrawals =
+        sszGet resultState builderPendingWithdrawals := by
+      cases resultState <;> rfl
+    rw [hgetW, hw]
+    unfold expectedWithdrawals qualifyingBuilderWithdrawals builderPaymentQuorum
+    rfl
+  · have hgetP : sszGet (sszUpdate resultState with builderPendingPayments :=
+        shiftWindow (sszGet resultState builderPendingPayments) slotsPerEpoch slotsPerEpoch
+          (fun _ => (default : BuilderPendingPayment))) builderPendingPayments =
+        shiftWindow (sszGet resultState builderPendingPayments) slotsPerEpoch slotsPerEpoch
+          (fun _ => (default : BuilderPendingPayment)) := by
+      cases resultState <;> rfl
+    rw [hgetP, hp]
+    unfold expectedPaymentWindow
+    rfl
 
 end EthCLSpecs.Proofs
