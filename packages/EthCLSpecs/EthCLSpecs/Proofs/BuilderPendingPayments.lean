@@ -47,8 +47,8 @@ open EthCLLib.Spec (SSZList)
 /-- Folding `SSZList.push` over a list of values lands on the original array
 plus however much of the values list fits under `cap`: once the list is at
 capacity, `SSZList.push`'s own `if` makes every further push a no-op, so only
-the first `cap - xs.val.size` values are ever appended, in order. Unconditional,
-no capacity hypothesis; this is what the clamp *means*. -/
+the first `cap - xs.val.size` values appear in the result, in order. No
+additional capacity hypothesis is required. -/
 theorem sszListFoldlPush_val {α : Type} {cap : Nat} (xs : SSZList α cap) (vs : List α) :
     (vs.foldl (fun l w => l.push w) xs).val =
       xs.val ++ (vs.take (cap - xs.val.size)).toArray := by
@@ -70,5 +70,13 @@ theorem sszListFoldlPush_val {α : Type} {cap : Nat} (xs : SSZList α cap) (vs :
       have hcap : cap - xs.val.size = 0 := by omega
       rw [hpush, hcap]
       simp
+
+/-- Under an explicit capacity hypothesis, `sszListFoldlPush_val`'s clamp never
+engages: every value in `vs` is appended, in order. `Subtype.ext` promotes this
+from `.val` to the full `SSZList` equality only where a caller needs it. -/
+theorem sszListFoldlPush_val_of_fits {α : Type} {cap : Nat} (xs : SSZList α cap)
+    (vs : List α) (hfits : xs.val.size + vs.length ≤ cap) :
+    (vs.foldl (fun l w => l.push w) xs).val = xs.val ++ vs.toArray := by
+  rw [sszListFoldlPush_val, List.take_of_length_le (by omega)]
 
 end EthCLSpecs.Proofs
