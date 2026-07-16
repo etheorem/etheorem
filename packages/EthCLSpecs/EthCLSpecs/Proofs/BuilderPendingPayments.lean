@@ -34,8 +34,11 @@ this substep ever runs.
 
 See `EthCLSpecs/docs/CONSENSUS_PROOF_CANDIDATES.md`, "Safety and invariant preservation".
 
-TODO: state and prove `processBuilderPendingPayments_run_eq` and its
-capacity-guarded corollary.
+Every theorem below states its state-level conclusions through `sszGet`, never through
+bare `State` equality: `State`'s cache overlay accumulates one pending write per
+`sszUpdate` call, and raw state equality is unnecessary here, each theorem records only
+the specific fields it proves something about, through `sszGet`.
+
 -/
 
 set_option autoImplicit false
@@ -78,5 +81,75 @@ theorem sszListFoldlPush_val_of_fits {α : Type} {cap : Nat} (xs : SSZList α ca
     (vs : List α) (hfits : xs.val.size + vs.length ≤ cap) :
     (vs.foldl (fun l w => l.push w) xs).val = xs.val ++ vs.toArray := by
   rw [sszListFoldlPush_val, List.take_of_length_le (by omega)]
+
+open EthCLSpecs.Gloas
+open EthCLSpecs.Fulu (Preset)
+open EthCLLib.Spec
+
+/-- The withdrawals loop's own reduction: running `for i in [0:n] do if cond i then
+appendState builderPendingWithdrawals (val i)` from `state0` always succeeds (the loop
+body has no error path), and its two observable effects reduce to pure list operations.
+`builderPendingWithdrawals` picks up `val i` for every `i < n` with `cond i`, in order,
+through the exact `SSZList.push` fold; `sszListFoldlPush_val` characterizes its clamping
+behavior. `builderPendingPayments` is untouched, since the loop body never writes it.
+`cond` is a `Prop` with a `Decidable` instance, not a `Bool`, matching how the production
+loop's `p.weight ≥ quorum` guard actually elaborates (`UInt64`'s `≥` is `Prop`-valued).
+Raw state equality is unnecessary: the theorem records the relevant fields through
+`sszGet`, not through `=` on `State` itself, whose cache overlay
+(`SizzLean.Cache.TreeBacked.pending`) does not guarantee that iterating a same-field
+write is syntactically identical to one combined write. -/
+theorem forLoopAppendIf_run [Preset] [HasherTag] (n : Nat) (cond : Nat → Prop)
+    [DecidablePred cond] (val : Nat → BuilderPendingWithdrawal) (state0 : State) :
+    ∃ resultState : State,
+      (do for i in [0:n] do
+            if cond i then
+              appendState builderPendingWithdrawals (val i)
+          : EStateM StateTransitionError State Unit).run state0 = .ok () resultState ∧
+      sszGet resultState builderPendingWithdrawals =
+        (((List.range n).filter fun i => decide (cond i)).map val).foldl
+          (fun l w => l.push w) (sszGet state0 builderPendingWithdrawals) ∧
+      sszGet resultState builderPendingPayments = sszGet state0 builderPendingPayments := by
+  rw [Std.Legacy.Range.forIn_eq_forIn_range']
+  have hsize : ([:n] : Std.Legacy.Range).size = n := by simp [Std.Legacy.Range.size]
+  rw [hsize, show ([:n] : Std.Legacy.Range).start = 0 from rfl,
+    show ([:n] : Std.Legacy.Range).step = 1 from rfl, ← List.range_eq_range']
+  induction (List.range n) generalizing state0 with
+  | nil => exact ⟨state0, rfl, by simp, rfl⟩
+  | cons i rest ih =>
+    by_cases h : cond i
+    · have hstep : (appendState builderPendingWithdrawals (val i) :
+          EStateM StateTransitionError State Unit).run state0 =
+          .ok () (sszUpdate state0 with
+            builderPendingWithdrawals := (sszGet state0 builderPendingWithdrawals).push (val i)) := by
+        cases state0 <;> rfl
+      obtain ⟨resultState, hrun, hw, hp⟩ := ih (sszUpdate state0 with
+        builderPendingWithdrawals := (sszGet state0 builderPendingWithdrawals).push (val i))
+      refine ⟨resultState, ?_, ?_, ?_⟩
+      · rw [List.forIn_cons]
+        simp only [h, if_pos, EStateM.run_bind, hstep]
+        exact hrun
+      · have hgetW : sszGet (sszUpdate state0 with
+            builderPendingWithdrawals := (sszGet state0 builderPendingWithdrawals).push (val i))
+            builderPendingWithdrawals = (sszGet state0 builderPendingWithdrawals).push (val i) := by
+          cases state0 <;> rfl
+        have hfilter : (List.filter (fun i => decide (cond i)) (i :: rest)) =
+            i :: List.filter (fun i => decide (cond i)) rest := by
+          rw [List.filter_cons_of_pos]; simpa using h
+        rw [hw, hgetW, hfilter, List.map_cons, List.foldl_cons]
+      · have hgetP : sszGet (sszUpdate state0 with
+            builderPendingWithdrawals := (sszGet state0 builderPendingWithdrawals).push (val i))
+            builderPendingPayments = sszGet state0 builderPendingPayments := by
+          cases state0 <;> rfl
+        rw [hp, hgetP]
+    · obtain ⟨resultState, hrun, hw, hp⟩ := ih state0
+      refine ⟨resultState, ?_, ?_, ?_⟩
+      · rw [List.forIn_cons]
+        simp only [h, EStateM.run_bind, EStateM.run_pure]
+        exact hrun
+      · have hfilter : (List.filter (fun i => decide (cond i)) (i :: rest)) =
+            List.filter (fun i => decide (cond i)) rest := by
+          rw [List.filter_cons_of_neg]; simpa using h
+        rw [hw, hfilter]
+      · exact hp
 
 end EthCLSpecs.Proofs
