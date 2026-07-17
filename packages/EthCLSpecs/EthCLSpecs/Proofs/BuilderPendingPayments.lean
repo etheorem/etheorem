@@ -46,9 +46,6 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs
 
 open EthCLLib.Spec
--- Re-open selectively: `unfold SSZList.push` needs `SSZList` resolved to
--- `SizzLean.Repr.SSZList`, which the bare `open` above doesn't give it.
-open EthCLLib.Spec (SSZList)
 open EthCLSpecs.Gloas
 open EthCLSpecs.Fulu (Preset Gwei getTotalActiveBalance)
 open EthCLSpecs.Fulu.Const (slotsPerEpoch builderPaymentThresholdNumerator
@@ -68,14 +65,14 @@ theorem sszListFoldlPush_val {α : Type} {cap : Nat} (xs : SSZList α cap) (vs :
     rw [List.foldl_cons, ih]
     by_cases h : xs.val.size < cap
     · have hpush : (xs.push v).val = xs.val.push v := by
-        unfold SSZList.push
+        unfold SizzLean.Repr.SSZList.push
         rw [dif_pos h]
       rw [hpush, Array.size_push]
       have htake : cap - xs.val.size = cap - (xs.val.size + 1) + 1 := by omega
       rw [htake, List.take_succ_cons, List.toArray_cons, Array.push_eq_append,
         Array.append_assoc]
     · have hpush : (xs.push v).val = xs.val := by
-        unfold SSZList.push
+        unfold SizzLean.Repr.SSZList.push
         rw [dif_neg h]
       have hcap : cap - xs.val.size = 0 := by omega
       rw [hpush, hcap]
