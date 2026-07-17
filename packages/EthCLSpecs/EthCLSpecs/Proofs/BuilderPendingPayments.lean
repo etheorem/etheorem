@@ -16,7 +16,7 @@ The withdrawals side rests on two pieces: a pure fact about `SSZList.push`'s cla
 that fits, unconditionally), and the loop's own reduction to that list, in iteration
 order. No capacity-headroom invariant is assumed or proved here; the "every qualifying
 withdrawal is appended" statement above is a corollary of the unconditional clamp fact
-under an explicit `original.size + qualifying.length ≤ Const.builderPendingWithdrawalsLimit`
+under an explicit `original.size + qualifying.length ≤ builderPendingWithdrawalsLimit`
 hypothesis, not an unconditional theorem.
 
 The window side is a direct instance of `shiftWindow`'s general behavior:
@@ -45,13 +45,14 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs
 
+open EthCLLib.Spec
+-- Re-open selectively: `unfold SSZList.push` needs `SSZList` resolved to
+-- `SizzLean.Repr.SSZList`, which the bare `open` above doesn't give it.
+open EthCLLib.Spec (SSZList)
 open EthCLSpecs.Gloas
 open EthCLSpecs.Fulu (Preset Gwei getTotalActiveBalance)
 open EthCLSpecs.Fulu.Const (slotsPerEpoch builderPaymentThresholdNumerator
   builderPaymentThresholdDenominator builderPendingWithdrawalsLimit)
--- Names from `EthCLLib.Spec`; `open scoped` activates the `appendState` macro.
-open EthCLLib.Spec (SSZList HasherTag StateTransitionError vget shiftWindow)
-open scoped EthCLLib.Spec
 
 /-- Folding `SSZList.push` over a list of values lands on the original array
 plus however much of the values list fits under `cap`: once the list is at
@@ -290,8 +291,7 @@ theorem processBuilderPendingPayments_run [Preset] [HasherTag] (before : State) 
 explicit headroom hypothesis, every qualifying withdrawal is appended in slot order,
 with no `SSZList.push` clamp. The payment-window half is unchanged from
 `ProcessBuilderPendingPaymentsPost`. -/
-theorem processBuilderPendingPayments_run_of_fits [Preset] [HasherTag]
-    (before : State)
+theorem processBuilderPendingPayments_run_of_fits [Preset] [HasherTag] (before : State)
     (hfits : (sszGet before builderPendingWithdrawals).val.size +
       (qualifyingBuilderWithdrawals before).length ≤ builderPendingWithdrawalsLimit) :
     ∃ after : State,
