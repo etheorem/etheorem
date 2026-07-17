@@ -245,6 +245,9 @@ theorem processBuilderPendingPayments_run [Preset] [HasherTag] (before : State) 
       (fun i => (vget (sszGet before builderPendingPayments) i).withdrawal) before
   have hbare := run_of_run_seq_pure _ _ _ hrun
   simp only [builderPaymentQuorum] at hbare hw
+  -- Build the witness in execution order: `resultState` is the withdrawals loop's
+  -- output, then the final `sszUpdate` applies the payment-window shift. The `show`
+  -- below confirms that this is the state produced by running the full function.
   refine ⟨(sszUpdate resultState with builderPendingPayments :=
       shiftWindow (sszGet resultState builderPendingPayments) slotsPerEpoch slotsPerEpoch
         (fun _ => (default : BuilderPendingPayment))), ?_, ?_, ?_⟩
