@@ -9,6 +9,7 @@ import SizzLean.Proofs.Bool
 import SizzLean.Proofs.VectorFixed
 import SizzLean.Proofs.ListFixed
 import SizzLean.Proofs.ContainerFixed
+import SizzLean.Proofs.ContainerVar
 import SizzLean.Proofs.BitPack
 
 /-!
@@ -18,12 +19,14 @@ The third central theorem; *dispatcher* for the per-arm bounds.
 
 ## Mutual block
 
-Same shape as `Proofs/Roundtrip.lean`: the `containerFixed` case
-needs per-field size bound `∀ t ∈ fs, …`, which would force the
-helper to take a closure abstracting `t`; the structural-recursion
-checker doesn't see through the closure. Fix: pair
-`encode_size_le_max` with `encode_size_le_max_containerFields_aux`
-in a mutual block.
+Same shape as `Proofs/Roundtrip.lean`: the `containerFixed` /
+`containerVar` cases each need a per-field size bound
+`∀ t ∈ fs, …`, which would force the helper to take a closure
+abstracting `t`; the structural-recursion checker doesn't see
+through the closure. Fix: pair `encode_size_le_max` with
+`encode_size_le_max_containerFields_aux` (for `containerFixed`) and
+`encode_size_le_max_containerVarFields_aux` (for `containerVar`) in
+a three-way mutual block.
 -/
 
 set_option autoImplicit false
@@ -73,6 +76,18 @@ theorem encode_size_le_max : ∀ {s : SSZType}, SSZType.BasicSupported s →
       show SSZType.fixedByteSizeFields fs ≤ SSZType.maxByteLength (.container fs)
       show SSZType.fixedByteSizeFields fs ≤ SSZType.maxByteLengthFields fs
       exact encode_size_le_max_containerFields_aux h_fs vs
+  | _, .containerVar (fs := fs) h_fields _h_not_fixed _h_max_lt, vs => by
+      -- The encoder's `(fix, var)` pair fits within `maxByteLengthFields fs`
+      -- by the size walker (`ContainerVar.lean`), given every field's own
+      -- size bound, which the field-walker below derives from `h_fields`.
+      have h_walk := encode_size_le_max_containerVarFields_aux h_fields vs
+      have h_bound :=
+        size_serializeFieldsAux_le_maxByteLengthFields fs vs
+          (SSZType.fixedSectionSizeFields fs) h_walk
+      show (SSZType.serialize (.container fs) vs).size ≤ SSZType.maxByteLength (.container fs)
+      show (SSZType.serialize (.container fs) vs).size ≤ SSZType.maxByteLengthFields fs
+      unfold SSZType.serialize
+      simpa [ByteArray.size_append] using h_bound
 
 /-- Field-walker companion: descend `h_fs` structurally; at each
 cons head, call `encode_size_le_max` on the field's
@@ -94,6 +109,19 @@ theorem encode_size_le_max_containerFields_aux : ∀ {fs : List SSZType}
       unfold SSZType.fixedByteSizeFields SSZType.maxByteLengthFields
       simp only [h_t_fixed, if_true]
       omega
+
+/-- Field-walker companion for `containerVar`: descend
+`BasicSupportedFields` structurally (no `isFixedSize` witness this
+time), calling `encode_size_le_max` on every field's `BasicSupported`
+witness to build the pointwise `FieldsMaxSizeOk`
+(`Proofs/ContainerVar.lean`) the size walker needs. -/
+theorem encode_size_le_max_containerVarFields_aux : ∀ {fs : List SSZType}
+    (_h_fs : SSZType.BasicSupportedFields fs) (vs : SSZType.interpFields fs),
+    FieldsMaxSizeOk fs vs
+  | _, .nil, _ => by unfold FieldsMaxSizeOk; trivial
+  | _, .cons (t := t) (ts := ts) h_t h_ts, vs => by
+      unfold FieldsMaxSizeOk
+      exact ⟨encode_size_le_max h_t vs.1, encode_size_le_max_containerVarFields_aux h_ts vs.2⟩
 
 end
 

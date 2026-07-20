@@ -236,4 +236,78 @@ example (vs : SSZType.interpFields [.uintN 64, .uintN 256]) :
                   (.cons .uintN64 rfl
                     (.cons .uintN256 rfl .nil))) vs
 
+/-! ### Mixed-field container arm examples (`containerVar`)
+
+`BasicSupported` also covers general `.container fs` with at
+least one variable-size field, decoded through the offset-table
+path (`Proofs/ContainerVar.lean`'s groundwork,
+`Proofs/Roundtrip.lean`'s `decode_encode_containerVar_aux`). The
+witness for `containerVar` is a `BasicSupportedFields fs` (every
+field individually `BasicSupported`, fixed or not) plus
+`allFixedSize fs = false` and `maxByteLengthFields fs < MAX_LENGTH`.
+
+The four gates below exercise the shapes called out in the
+groundwork plan: a variable field last, a variable field first, two
+variable fields (so an earlier variable body's end feeds the next
+field's `curOff`), and a concrete empty-list value where the
+variable field's offset equals `bufEnd` exactly. -/
+
+/-- Variable field last: `.list (.uintN 32) 100` follows a fixed
+`.uintN 64`. -/
+example (vs : SSZType.interpFields [.uintN 64, .list (.uintN 32) 100]) :
+    SSZType.deserialize (.container [.uintN 64, .list (.uintN 32) 100])
+        (SSZType.serialize (.container [.uintN 64, .list (.uintN 32) 100]) vs) =
+      Except.ok (vs,
+        (SSZType.serialize (.container [.uintN 64, .list (.uintN 32) 100]) vs).size) :=
+  decode_encode (.containerVar
+                  (.cons .uintN64
+                    (.cons (.listFixed .uintN32 rfl (by decide)) .nil))
+                  (by decide) (by decide)) vs
+
+/-- Variable field first: `.bitlist 16` precedes a fixed `.uintN 8`,
+so the fixed field's prefix bytes sit *after* the offset placeholder. -/
+example (vs : SSZType.interpFields [.bitlist 16, .uintN 8]) :
+    SSZType.deserialize (.container [.bitlist 16, .uintN 8])
+        (SSZType.serialize (.container [.bitlist 16, .uintN 8]) vs) =
+      Except.ok (vs, (SSZType.serialize (.container [.bitlist 16, .uintN 8]) vs).size) :=
+  decode_encode (.containerVar
+                  (.cons .bitlist (.cons .uintN8 .nil))
+                  (by decide) (by decide)) vs
+
+/-- Two variable fields, `.list (.uintN 8) 10` and `.bitlist 8`,
+straddling a fixed `.bool`: the first variable body's end is the
+second variable field's `curOff`, exercising the walker's
+inter-body offset chaining rather than just a single offset. -/
+example (vs : SSZType.interpFields [.list (.uintN 8) 10, .bool, .bitlist 8]) :
+    SSZType.deserialize (.container [.list (.uintN 8) 10, .bool, .bitlist 8])
+        (SSZType.serialize (.container [.list (.uintN 8) 10, .bool, .bitlist 8]) vs) =
+      Except.ok (vs,
+        (SSZType.serialize (.container [.list (.uintN 8) 10, .bool, .bitlist 8]) vs).size) :=
+  decode_encode (.containerVar
+                  (.cons (.listFixed .uintN8 rfl (by decide))
+                    (.cons .bool (.cons .bitlist .nil)))
+                  (by decide) (by decide)) vs
+
+/-- Edge-case value for the empty-list gate below: the trailing
+`.list (.uintN 32) 10` field serializes to an empty body, so its
+offset equals `bufEnd` exactly, the smallest possible variable-field
+slice `[off, off)` rather than a strict `curOff < nextOff` span. -/
+private def emptyListContainer : SSZType.interpFields [.uintN 8, .list (.uintN 32) 10] :=
+  (0, ⟨#[], by decide⟩, PUnit.unit)
+
+/-- Roundtrip for the empty-list edge case: `deserializeVarFields`'s
+`curOff > nextOff || nextOff > bufEnd` guard must accept
+`curOff = nextOff = bufEnd`, not just `curOff < nextOff < bufEnd`. -/
+example :
+    SSZType.deserialize (.container [.uintN 8, .list (.uintN 32) 10])
+        (SSZType.serialize (.container [.uintN 8, .list (.uintN 32) 10])
+          emptyListContainer) =
+      Except.ok (emptyListContainer,
+        (SSZType.serialize (.container [.uintN 8, .list (.uintN 32) 10])
+          emptyListContainer).size) :=
+  decode_encode (.containerVar
+                  (.cons .uintN8
+                    (.cons (.listFixed .uintN32 rfl (by decide)) .nil))
+                  (by decide) (by decide)) emptyListContainer
+
 end SizzLeanTests.ReprExamples

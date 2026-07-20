@@ -23,9 +23,12 @@ that names exactly the constructors with real implementations.
   no static *size* bound but the encode/decode pair still inverts
   cleanly.
 * `SupportedFieldsFixed`: pointwise `Supported ∧ isFixedSize` over
-  a `List SSZType`. Needed by the `container` case: the decoder
-  handles all-fixed-size field lists; mixed/variable field lists
-  fall through to `.error`.
+  a `List SSZType`. Needed by the `containerFixed` case: the
+  decoder's all-fixed-size path handles these field lists directly.
+* `SupportedFields`: pointwise `Supported`, no `isFixedSize`
+  constraint. Needed by the `containerVar` case: the decoder's
+  offset-table path (`SSZType.deserializeVarFields`) handles fixed
+  and variable fields alike.
 * `SupportedBounded`: strict subset of `Supported` that *excludes*
   uncapped types (`progBitlist`, `progList`). Used only by
   `encode_size_le_max` in `Proofs/SizeBound.lean`, where uncapped
@@ -81,22 +84,44 @@ inductive SSZType.Supported : SSZType → Prop
   | listFixed      : ∀ {t : SSZType} {cap : Nat},
                      SSZType.Supported t → t.isFixedSize = true →
                      SSZType.Supported (.list t cap)
-  /-- `container` decode is only implemented for all-fixed-size
+  /-- `container` decode is implemented for all-fixed-size
   field lists. -/
   | containerFixed : ∀ {fs : List SSZType},
                      SSZType.SupportedFieldsFixed fs →
                      SSZType.Supported (.container fs)
+  /-- `container` decode is also implemented for field lists with
+  at least one variable-size field, via the offset-table path
+  (`SSZType.deserializeVarFields`). The `Bool` argument mirrors
+  `allFixedSize fs`; unlike `containerFixed`'s `isFixedSize = true`
+  witness per field, this predicate carries no positional
+  constraint (the offset table handles fixed and variable fields
+  alike). -/
+  | containerVar   : ∀ {fs : List SSZType},
+                     SSZType.SupportedFields fs →
+                     SSZType.allFixedSize fs = false →
+                     SSZType.Supported (.container fs)
 
 /-- Pointwise `Supported ∧ isFixedSize` over a field list. Used by
-`container`. The second conjunct (`isFixedSize`) is what makes the
-container decode case typecheck: `deserialize`'s `.container` arm
-guards on `allFixedSize fs` and falls back to `.error` otherwise. -/
+`containerFixed`. The second conjunct (`isFixedSize`) is what makes
+the container decode case typecheck: `deserialize`'s `.container`
+arm guards on `allFixedSize fs` and falls back to `.error` otherwise. -/
 inductive SSZType.SupportedFieldsFixed : List SSZType → Prop
   | nil  : SSZType.SupportedFieldsFixed []
   | cons : ∀ {t : SSZType} {ts : List SSZType},
            SSZType.Supported t → t.isFixedSize = true →
            SSZType.SupportedFieldsFixed ts →
            SSZType.SupportedFieldsFixed (t :: ts)
+
+/-- Pointwise `Supported`, no `isFixedSize` constraint. Used by
+`containerVar`: the offset-table decode path handles fixed and
+variable fields alike, so every field just needs to be individually
+`Supported`. -/
+inductive SSZType.SupportedFields : List SSZType → Prop
+  | nil  : SSZType.SupportedFields []
+  | cons : ∀ {t : SSZType} {ts : List SSZType},
+           SSZType.Supported t →
+           SSZType.SupportedFields ts →
+           SSZType.SupportedFields (t :: ts)
 end
 
 mutual
@@ -128,14 +153,32 @@ inductive SSZType.SupportedBounded : SSZType → Prop
   | containerFixed : ∀ {fs : List SSZType},
                      SSZType.SupportedBoundedFieldsFixed fs →
                      SSZType.SupportedBounded (.container fs)
+  /-- Mirrors `Supported.containerVar`: every field of a
+  mixed-field container is itself bounded (whether fixed or
+  variable, `list` / `bitlist` fields are still capped, hence
+  bounded), so the container as a whole has a finite static size
+  bound too. -/
+  | containerVar   : ∀ {fs : List SSZType},
+                     SSZType.SupportedBoundedFields fs →
+                     SSZType.allFixedSize fs = false →
+                     SSZType.SupportedBounded (.container fs)
 
-/-- Pointwise `SupportedBounded ∧ isFixedSize`, for `container`. -/
+/-- Pointwise `SupportedBounded ∧ isFixedSize`, for `containerFixed`. -/
 inductive SSZType.SupportedBoundedFieldsFixed : List SSZType → Prop
   | nil  : SSZType.SupportedBoundedFieldsFixed []
   | cons : ∀ {t : SSZType} {ts : List SSZType},
            SSZType.SupportedBounded t → t.isFixedSize = true →
            SSZType.SupportedBoundedFieldsFixed ts →
            SSZType.SupportedBoundedFieldsFixed (t :: ts)
+
+/-- Pointwise `SupportedBounded`, no `isFixedSize` constraint, for
+`containerVar`. -/
+inductive SSZType.SupportedBoundedFields : List SSZType → Prop
+  | nil  : SSZType.SupportedBoundedFields []
+  | cons : ∀ {t : SSZType} {ts : List SSZType},
+           SSZType.SupportedBounded t →
+           SSZType.SupportedBoundedFields ts →
+           SSZType.SupportedBoundedFields (t :: ts)
 end
 
 end SizzLean.Spec
