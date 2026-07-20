@@ -143,18 +143,25 @@ prefix offset. -/
 
 /-- Pre-extract variable-field offsets from the fixed prefix of a
 container's serialized form. Returns one offset per variable-size
-field in `fs`, in declaration order. -/
-private def extractFieldOffsets (b : ByteArray) :
+field in `fs`, in declaration order.
+
+`protected` (was `private`): the mixed-field container roundtrip
+proof reasons through this walker's branches, so it must be
+reachable, but it is proof-internal, not part of the general
+`SizzLean.Spec` surface. Same convention as `deserializeBitvector`
+/ `natToLEBytes` / `readNatLE`; the proof file names it with an
+explicit `open SizzLean.Spec (extractFieldOffsets)`. -/
+protected def extractFieldOffsets (b : ByteArray) :
     (fs : List SSZType) → (off : Nat) → Except SSZError (List Nat)
   | [],      _   => .ok []
   | t :: ts, off =>
       if t.isFixedSize then
-        extractFieldOffsets b ts (off + t.fixedByteSize)
+        SizzLean.Spec.extractFieldOffsets b ts (off + t.fixedByteSize)
       else
         match readUInt32LE b off with
         | .none => .error .tooShort
         | .some o =>
-            match extractFieldOffsets b ts (off + BYTES_PER_LENGTH_OFFSET) with
+            match SizzLean.Spec.extractFieldOffsets b ts (off + BYTES_PER_LENGTH_OFFSET) with
             | .ok rest  => .ok (o.toNat :: rest)
             | .error e  => .error e
 
@@ -406,7 +413,7 @@ def SSZType.deserialize : (s : SSZType) → ByteArray → Except SSZError (s.int
         let prefixSize := SSZType.fixedSectionSizeFields fs
         if b.size < prefixSize then .error .tooShort
         else
-          match extractFieldOffsets b fs 0 with
+          match SizzLean.Spec.extractFieldOffsets b fs 0 with
           | .error e  => .error e
           | .ok offs  =>
               -- The first variable-field offset (if any) must equal
