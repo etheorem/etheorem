@@ -14,8 +14,8 @@ no mathlib.
 
 set_option autoImplicit false
 
-open EthCLLib.Spec
-open EthCLSpecs.Fulu
+open EthCLLib.Spec (HasherTag)
+open EthCLSpecs.Fulu (Preset computeStartSlotAtEpoch currentEpochOf)
 
 namespace EthCLSpecs.Proofs
 
@@ -25,8 +25,8 @@ open EthCLSpecs.Gloas (initializePtcWindow computePtcFromFulu)
 epoch", empty because the pre-fork Fulu state carries no PTC) are the all-zero
 committee, `initialize_ptc_window`'s `emptyCommittee`. -/
 theorem initializePtcWindow_lt [Preset] [HasherTag] (state : Fulu.State)
-    (i : Fin (3 * Const.slotsPerEpoch)) (h : i.val < Const.slotsPerEpoch) :
-    (initializePtcWindow state)[i] = Vector.replicate Const.ptcSize 0 := by
+    (i : Fin (3 * Fulu.Const.slotsPerEpoch)) (h : i.val < Fulu.Const.slotsPerEpoch) :
+    (initializePtcWindow state)[i] = Vector.replicate Fulu.Const.ptcSize 0 := by
   simp [initializePtcWindow, h]
 
 /-- The window's remaining `2 * SLOTS_PER_EPOCH` entries (the current epoch and
@@ -38,21 +38,21 @@ does, rather than the collapsed `startSlot(currentEpoch) + k` form (which
 would need a `UInt64` no-overflow side condition this statement doesn't
 carry). -/
 theorem initializePtcWindow_ge [Preset] [HasherTag] (state : Fulu.State)
-    (i : Fin (3 * Const.slotsPerEpoch)) (h : Const.slotsPerEpoch ≤ i.val) :
+    (i : Fin (3 * Fulu.Const.slotsPerEpoch)) (h : Fulu.Const.slotsPerEpoch ≤ i.val) :
     (initializePtcWindow state)[i] =
-      let k := i.val - Const.slotsPerEpoch
+      let k := i.val - Fulu.Const.slotsPerEpoch
       computePtcFromFulu state
-        (computeStartSlotAtEpoch (currentEpochOf state + UInt64.ofNat (k / Const.slotsPerEpoch)) +
-          UInt64.ofNat (k % Const.slotsPerEpoch)) := by
+        (computeStartSlotAtEpoch (currentEpochOf state + UInt64.ofNat (k / Fulu.Const.slotsPerEpoch)) +
+          UInt64.ofNat (k % Fulu.Const.slotsPerEpoch)) := by
   simp [initializePtcWindow, Nat.not_lt.mpr h]
 
 /-- The first region's committee is also the ambient `default` for
-`Vector ValidatorIndex Const.ptcSize` (`ValidatorIndex := UInt64`'s `default`
-is `0`, and `Vector`'s `Inhabited` instance is pointwise), so callers that
-already reason in terms of `default` don't need to unfold `initializePtcWindow`
-a second time to get there. -/
+`Vector ValidatorIndex Fulu.Const.ptcSize` (`ValidatorIndex := UInt64`'s
+`default` is `0`, and `Vector`'s `Inhabited` instance is pointwise), so callers
+that already reason in terms of `default` don't need to unfold
+`initializePtcWindow` a second time to get there. -/
 theorem initializePtcWindow_lt_default [Preset] [HasherTag] (state : Fulu.State)
-    (i : Fin (3 * Const.slotsPerEpoch)) (h : i.val < Const.slotsPerEpoch) :
+    (i : Fin (3 * Fulu.Const.slotsPerEpoch)) (h : i.val < Fulu.Const.slotsPerEpoch) :
     (initializePtcWindow state)[i] = default :=
   initializePtcWindow_lt state i h
 
