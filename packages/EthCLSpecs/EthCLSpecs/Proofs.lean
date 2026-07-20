@@ -1,4 +1,5 @@
 import EthCLSpecs.Proofs.BuilderIndex
+import EthCLSpecs.Proofs.InitializePtcWindow
 
 /-!
 # `EthCLSpecs.Proofs`: consensus-spec theorems (index)
@@ -15,4 +16,6 @@ Re-exports:
 
 * `EthCLSpecs.Proofs.BuilderIndex`: the builder-index flag round-trip
   (`isBuilderIndex`, `toBuilderIndex`, `convertBuilderIndexToValidatorIndex`).
+* `EthCLSpecs.Proofs.InitializePtcWindow`: the seeded `ptcWindow`'s two
+  regions (`initializePtcWindow`).
 -/
