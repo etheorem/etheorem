@@ -23,9 +23,8 @@ store.justifiedCheckpoint.epoch` on the unchanged side, `store.justifiedCheckpoi
 < j.epoch` on the advancing side, so the disjunction is the `if`'s condition and its
 negation, not just its two possible outputs. The monotonicity theorems (`_epoch_le`) are
 the corollary a reader actually wants, "epochs never go backwards." Scoped to
-`EthCLSpecs.Gloas.updateCheckpoints` only; the Fulu declaration of the same name has an
-identical body but is a separate, unrelated `forkdef` in a different namespace, not
-covered here.
+`EthCLSpecs.Gloas.updateCheckpoints` only. (The Fulu declaration of the same name is a
+separate `forkdef` in a different namespace, not covered here.)
 
 See `EthCLSpecs/docs/CONSENSUS_PROOF_CANDIDATES.md`, "Monotonicity properties".
 -/
@@ -41,55 +40,19 @@ open EthCLLib.Spec (MapKind HasherTag)
 variable {map : MapKind} [Preset] [HasherTag]
   (store : Store map) (j f : Checkpoint)
 
-/-! ### Field independence
-
-`updateCheckpoints`' two `if`s each write one field of the `Store`; the "each checkpoint
-either remains unchanged or advances" reading of the function depends on those two
-writes not interfering, on the finalized `if` never touching `justifiedCheckpoint` and
-the justified `if` never touching `finalizedCheckpoint`. That's not an assumption about
-`updateCheckpoints`, it's a property of the `{ s with field := v }` update notation both
-`if`s use: the notation elaborates to a `Store.mk` application that substitutes the named
-field and copies every other field straight from `s`, so for two distinct field names
-the write and the read never alias. Recorded here as its own pair of `rfl` lemmas, true
-by that elaboration alone, no unfolding of `updateCheckpoints` and no guard decision
-needed, so the independence is confirmed as a standalone, citable fact rather than left
-implicit in whatever `simp` happens to do inside the two theorems below. (`simp`'s own
-default reduction of a record update performs the identical step when closing those
-theorems' goals, which is *why* passing these lemmas to `simp` there is flagged
-"unused": the fact is already load-bearing in the kernel check, just not under this
-name.) -/
-
-/-- Setting `justifiedCheckpoint` leaves `finalizedCheckpoint` untouched. Not consumed by
-name anywhere (the two theorems below get the identical reduction for free from `simp`'s
-own record-projection handling once both guards are decided), `private` because its role
-is this file's own documentation, not public API. -/
-private theorem finalizedCheckpoint_of_justifiedCheckpoint_update :
-    ({ store with justifiedCheckpoint := j } : Store map).finalizedCheckpoint =
-      store.finalizedCheckpoint := rfl
-
-/-- The mirror: setting `finalizedCheckpoint` leaves `justifiedCheckpoint` untouched. -/
-private theorem justifiedCheckpoint_of_finalizedCheckpoint_update :
-    ({ store with finalizedCheckpoint := f } : Store map).justifiedCheckpoint =
-      store.justifiedCheckpoint := rfl
-
 /-- The justified half of `updateCheckpoints`' two-armed `if`, restated as an exhaustive
 disjunction over the guard `j.epoch > store.justifiedCheckpoint.epoch` and its negation,
 not just over the two outputs: the unchanged arm additionally proves the guard *failed*
 (`j.epoch ≤ store.justifiedCheckpoint.epoch`), the advancing arm additionally proves it
 *fired* (`store.justifiedCheckpoint.epoch < j.epoch`). `UInt64.not_lt` turns the negated
-guard into that `≤`. The `by_cases` on `h2` is there only because `simp` can't push a
-projection through an *undecided* `ite` (no generic `apply_ite`-style lemma is in scope
-here), once `h2` pins down which of the `f`-arm's two branches fired, closing the
-resulting concrete projection is exactly
-`justifiedCheckpoint_of_finalizedCheckpoint_update`, `simp`'s own default reduction of a
-record update already performs that same step, which is why the lemma is redundant to
-name explicitly in the `simp` set below, its content, not its citation, is what the
-`by_cases` is discharging. -/
+guard into that `≤`. -/
 theorem updateCheckpoints_justifiedCheckpoint_eq_or_advances :
     ((updateCheckpoints store j f).justifiedCheckpoint = store.justifiedCheckpoint ∧
         j.epoch ≤ store.justifiedCheckpoint.epoch) ∨
       ((updateCheckpoints store j f).justifiedCheckpoint = j ∧
         store.justifiedCheckpoint.epoch < j.epoch) := by
+  -- Decide both guards so `simp` can reduce the nested record updates
+  -- and project the checkpoint field unaffected by the other update.
   by_cases h1 : j.epoch > store.justifiedCheckpoint.epoch <;>
     by_cases h2 : f.epoch > store.finalizedCheckpoint.epoch
   · exact .inr ⟨by simp [updateCheckpoints, h1, h2], h1⟩
@@ -99,16 +62,14 @@ theorem updateCheckpoints_justifiedCheckpoint_eq_or_advances :
 
 /-- The finalized half of `updateCheckpoints`' two-armed `if`, restated as an exhaustive
 disjunction over the guard `f.epoch > store.finalizedCheckpoint.epoch` and its negation,
-the mirror of `updateCheckpoints_justifiedCheckpoint_eq_or_advances`. Symmetrically, the
-`by_cases` on `h1` decides which of the `j`-arm's two branches fired before the
-`finalizedCheckpoint` projection is taken; once decided, closing it is exactly
-`finalizedCheckpoint_of_justifiedCheckpoint_update`, again already covered by `simp`'s
-default record-projection reduction. -/
+the mirror of `updateCheckpoints_justifiedCheckpoint_eq_or_advances`. -/
 theorem updateCheckpoints_finalizedCheckpoint_eq_or_advances :
     ((updateCheckpoints store j f).finalizedCheckpoint = store.finalizedCheckpoint ∧
         f.epoch ≤ store.finalizedCheckpoint.epoch) ∨
       ((updateCheckpoints store j f).finalizedCheckpoint = f ∧
         store.finalizedCheckpoint.epoch < f.epoch) := by
+  -- Decide both guards so `simp` can reduce the nested record updates
+  -- and project the checkpoint field unaffected by the other update.
   by_cases h2 : f.epoch > store.finalizedCheckpoint.epoch <;>
     by_cases h1 : j.epoch > store.justifiedCheckpoint.epoch
   · exact .inr ⟨by simp [updateCheckpoints, h1, h2], h2⟩
