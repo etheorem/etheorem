@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.BuilderIndex
 import EthCLSpecs.Proofs.InitializePtcWindow
+import EthCLSpecs.Proofs.UpdateCheckpoints
 
 /-!
 # `EthCLSpecs.Proofs`: consensus-spec theorems (index)
@@ -18,4 +19,6 @@ Re-exports:
   (`isBuilderIndex`, `toBuilderIndex`, `convertBuilderIndexToValidatorIndex`).
 * `EthCLSpecs.Proofs.InitializePtcWindow`: the seeded `ptcWindow`'s two
   regions (`initializePtcWindow`).
+* `EthCLSpecs.Proofs.UpdateCheckpoints`: `Gloas.updateCheckpoints` checkpoint
+  monotonicity, the justified/finalized epoch never decreases.
 -/
