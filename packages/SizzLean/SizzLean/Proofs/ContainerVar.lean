@@ -40,7 +40,8 @@ region.
 
 ## Lemma path
 
-The five groundwork facts, in the order they compose:
+The groundwork, in the order it composes (proven facts, plus the
+plumbing `def`s of item 3 that thread per-field data through them):
 
 1. **uint32 codec bridge** (`readUInt32LE_uint32LE_append`,
    `readUInt32LE_append_shift`, `toNat_toUInt32_of_lt`): the
