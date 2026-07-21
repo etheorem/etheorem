@@ -15,9 +15,13 @@ they are checked against the pyspec
 [`consensus-spec-tests`](https://github.com/ethereum/consensus-spec-tests)
 vectors.
 
-This is a Lean 4 monorepo that also includes SSZ
-([Simple Serialize](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md))
-with machine-checked correctness on the verified core and other Ethereum dependencies in Lean 4, and FFI bridges.
+Underneath sits SSZ
+([Simple Serialize](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md)),
+a standalone library with machine-checked correctness on its verified
+core, plus the supporting crypto: pure-Lean SHA-256 and Poseidon2
+references and FFI bridges to native SHA-256, BLS, and KZG. It is a
+development monorepo for Ethereum in Lean. The consensus specs are the
+flagship; the rest is the stack they stand on.
 
 Upstream repository: <https://github.com/etheorem/etheorem>.
 
@@ -130,8 +134,8 @@ Per-subpackage design docs live next to the code they describe:
 Repo-wide docs:
 
 - [`docs/monorepo-arch.md`](docs/monorepo-arch.md): how the monorepo is
-  laid out: the three-subpackage shape, which lakefiles are TOML vs
-  procedural, where the FFI C shim lives, the LeanSha256 standalone
+  laid out: the umbrella + subpackage shape, which lakefiles are TOML vs
+  procedural, where the FFI C shims live, the LeanSha256 standalone
   mirror, and the naming / dep / build conventions.
 - [`CLAUDE.md`](CLAUDE.md): style and discipline conventions, project-wide.
 - [`docs/CODING_STYLE.md`](docs/CODING_STYLE.md): worked, example-driven
