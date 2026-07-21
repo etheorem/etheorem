@@ -61,6 +61,11 @@ inductive SSZType.Supported : SSZType → Prop
   | uintN16        : SSZType.Supported (.uintN 16)
   | uintN32        : SSZType.Supported (.uintN 32)
   | uintN64        : SSZType.Supported (.uintN 64)
+  /-- The two wide spec widths (`uint128` / `uint256`), implemented
+  through the `Nat`-based `natToLEBytes` / `readNatLE` codec rather
+  than the fully-unrolled fixed-width writers of the narrow arms. -/
+  | uintN128       : SSZType.Supported (.uintN 128)
+  | uintN256       : SSZType.Supported (.uintN 256)
   | bool           : SSZType.Supported .bool
   | bitvector      : ∀ {n : Nat}, SSZType.Supported (.bitvector n)
   | bitlist        : ∀ {cap : Nat}, SSZType.Supported (.bitlist cap)
@@ -109,6 +114,8 @@ inductive SSZType.SupportedBounded : SSZType → Prop
   | uintN16        : SSZType.SupportedBounded (.uintN 16)
   | uintN32        : SSZType.SupportedBounded (.uintN 32)
   | uintN64        : SSZType.SupportedBounded (.uintN 64)
+  | uintN128       : SSZType.SupportedBounded (.uintN 128)
+  | uintN256       : SSZType.SupportedBounded (.uintN 256)
   | bool           : SSZType.SupportedBounded .bool
   | bitvector      : ∀ {n : Nat}, SSZType.SupportedBounded (.bitvector n)
   | bitlist        : ∀ {cap : Nat}, SSZType.SupportedBounded (.bitlist cap)

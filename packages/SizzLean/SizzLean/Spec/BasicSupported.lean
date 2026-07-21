@@ -1,5 +1,6 @@
 import SizzLean.Spec.Type
 import SizzLean.Spec.Serialize  -- for isFixedSize / allFixedSize
+import SizzLean.Spec.Supported  -- for the subset theorem below
 
 /-!
 # `SizzLean.Spec.BasicSupported`: the predicate the proof set grows over
@@ -9,7 +10,11 @@ that the three central theorems (`decode_encode`,
 `serialize_injective`, `encode_size_le_max`) are proved for. Each
 constructor here names an `SSZType` shape on which the proofs
 close exhaustively; adding a constructor obliges the proofs to
-extend.
+extend. The subset relation is machine-checked by
+`supported_of_basicSupported` at the bottom of this file, so the
+two predicates cannot drift apart silently (adding a
+`BasicSupported` constructor without its `Supported` counterpart
+breaks the build).
 
 The predicate lives in `Spec/` (not `Proofs/`) because the
 user-facing `SSZ.roundtrip` corollary in `Repr/Class.lean`
@@ -134,5 +139,66 @@ inductive SSZType.BasicSupportedFieldsFixed : List SSZType → Prop
            SSZType.BasicSupportedFieldsFixed ts →
            SSZType.BasicSupportedFieldsFixed (t :: ts)
 end
+
+/-! ### The subset relation, machine-checked
+
+The module docstring's claim that `BasicSupported` is a subset of
+`Supported` used to be prose only, and it silently broke when the
+`uintN 128 / 256` constructors landed on `BasicSupported` before
+`Supported` knew about the wide widths. The mutual theorem below
+turns the claim into a build-enforced invariant: each
+`BasicSupported` constructor maps to its `Supported` counterpart,
+dropping the proof-only preconditions (`0 < n` on `vectorFixed` /
+`bitvector`, `0 < t.fixedByteSize` on `listFixed`) that
+`BasicSupported` carries and `Supported` does not. -/
+
+mutual
+
+/-- Every `BasicSupported` shape is `Supported`: the proof-coverage
+predicate never claims a shape the codec does not implement.
+Structural recursion over the `(BasicSupported,
+BasicSupportedFieldsFixed)` inductive pair, mirroring the mutual
+blocks in `Proofs/Roundtrip.lean`. -/
+theorem SSZType.supported_of_basicSupported : ∀ {s : SSZType},
+    SSZType.BasicSupported s → SSZType.Supported s
+  | _, .uintN8 => .uintN8
+  | _, .uintN16 => .uintN16
+  | _, .uintN32 => .uintN32
+  | _, .uintN64 => .uintN64
+  | _, .uintN128 => .uintN128
+  | _, .uintN256 => .uintN256
+  | _, .bool => .bool
+  | _, .vectorFixed _h_pos h_t h_t_fixed =>
+      .vectorFixed (SSZType.supported_of_basicSupported h_t) h_t_fixed
+  | _, .listFixed h_t h_t_fixed _h_sz_pos =>
+      .listFixed (SSZType.supported_of_basicSupported h_t) h_t_fixed
+  | _, .bitvector _h_pos => .bitvector
+  | _, .bitlist => .bitlist
+  | _, .containerFixed h_fs =>
+      .containerFixed (SSZType.supportedFieldsFixed_of_basicSupportedFieldsFixed h_fs)
+
+/-- Field-list companion: pointwise lift of
+`supported_of_basicSupported` over a container's field list. -/
+theorem SSZType.supportedFieldsFixed_of_basicSupportedFieldsFixed :
+    ∀ {fs : List SSZType},
+    SSZType.BasicSupportedFieldsFixed fs → SSZType.SupportedFieldsFixed fs
+  | _, .nil => .nil
+  | _, .cons h_t h_t_fixed h_ts =>
+      .cons (SSZType.supported_of_basicSupported h_t) h_t_fixed
+        (SSZType.supportedFieldsFixed_of_basicSupportedFieldsFixed h_ts)
+
+end
+
+/-- The subset is *strict*: `Supported` admits shapes the proof set
+does not cover. `.bitvector 0` is the smallest witness, `Supported`
+has no positivity precondition, while `BasicSupported.bitvector`
+requires `0 < n` because the spec's decoder rejects zero-width
+bitvectors and the universal roundtrip would be false. -/
+example : SSZType.Supported (.bitvector 0) := .bitvector
+
+/-- And `.bitvector 0` is indeed outside `BasicSupported`: `cases`
+exposes the constructor's `0 < 0` precondition, absurd by `omega`. -/
+example : ¬ SSZType.BasicSupported (.bitvector 0) := fun h => by
+  cases h; omega
 
 end SizzLean.Spec
