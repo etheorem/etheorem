@@ -68,8 +68,8 @@ structure CaseMeta where
 
 /-- One step of a `fork_choice` vector's `steps.yaml`, decoded by the runner.
 `checks` carries the expected store values to compare; `unsupported` marks a step
-the runner does not model (a `get_proposer_head` / `should_override` check), so the
-case is reported out-of-scope rather than falsely passing. -/
+the runner does not model (a `should_override` check, an unrecognized key), so the
+case reports `todo` (an xfail) rather than falsely passing. -/
 inductive FcStep where
   /-- `{tick: t}`: advance the store clock to absolute time `t` (seconds). -/
   | tick (time : Nat)
@@ -112,8 +112,8 @@ inductive FcStep where
   | checkTime (t : Nat)
   /-- `checks.genesis_time`. -/
   | checkGenesisTime (t : Nat)
-  /-- A check the runner does not model (`get_proposer_head` /
-  `should_override_forkchoice_update`); the case is out-of-scope. -/
+  /-- A check the runner does not model (`should_override_forkchoice_update`, an
+  unrecognized step or check key); the case reports `todo`, an xfail. -/
   | unsupported (reason : String)
   deriving Inhabited
 
@@ -271,7 +271,7 @@ class ForkInterface where
   block, fold the `steps`, and verify each `checks` step. `.ok` ⇒ every check
   matched; `.error e` carries a `RunError StoreTransitionError` the harness
   classifies: a `.decode` is a likely bug, and a wrapped `.spec` reject classifies
-  by its constructor (`.todo` an out-of-scope deferral, `.assert` an expected
+  by its constructor (`.todo` an unmodeled-branch xfail, `.assert` an expected
   rejection, `.missingKey` / a wrapped `.outOfBounds` a likely bug). Drives
   `fork_choice/*`. -/
   runForkChoice : ByteArray → ByteArray → Array FcStep → Except (RunError StoreTransitionError) Unit

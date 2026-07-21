@@ -10,6 +10,11 @@
 #
 # The pyspec recipes need a Python venv. Run `just setup-python` once first.
 
+# xdist worker count for the full pyspec sweeps; `auto` (one per core) is the
+# historical default. Override on memory-constrained machines:
+# `PYTEST_JOBS=2 just ethcl-pyspec-full`.
+pytest_jobs := env_var_or_default("PYTEST_JOBS", "auto")
+
 # List every recipe with its description
 default:
     @just --list --unsorted
@@ -224,7 +229,7 @@ _ensure-venv:
     fi
 
 # ═════════════════════════════════════════════════════════════════════════
-# EthCLSpecs — consensus-spec framework + Fulu / Gloas fork bodies
+# EthCLSpecs — consensus-spec framework + Fulu / Gloas / Heze fork bodies
 #
 # EthCLLib + EthCLSpecs (the consensus-spec framework + Fulu/Gloas bodies). The
 # `*Tests` libs carry the framework + spec `#guard` / `native_decide` self-tests
@@ -232,7 +237,7 @@ _ensure-venv:
 # building them fires the gates.
 # ═════════════════════════════════════════════════════════════════════════
 
-# EthCLLib + EthCLSpecs self-tests (framework + Fulu/Gloas spec gates)
+# EthCLLib + EthCLSpecs self-tests (framework + fork spec gates)
 [group('ethcl')]
 ethcl-test:
     lake build EthCLLib EthCLLibTests EthCLSpecs EthCLSpecsTests
@@ -247,28 +252,31 @@ ethcl-pyspec args="": _ensure-venv
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q {{ args }}
 
 # CI smoke gate for EthCLSpecs pyspec: the dev subset (a few cases per
-# handler) at minimal for both forks. Currently-green formats pass; the rest
+# handler) at minimal for all three forks. Currently-green formats pass; the rest
 # xfail as the Phase-2 work-queue, so the run is green (exit 0) iff no in-scope
 # vector hits a bug-smell or a real mismatch. Mainnet / full sweep run on demand.
 
-# CI smoke gate: EthCLSpecs pyspec dev subset for both forks at minimal
+# CI smoke gate: EthCLSpecs pyspec dev subset for all three forks at minimal
 [group('ethcl')]
 ethcl-pyspec-smoke: _ensure-venv
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --fork=fulu --subset=2
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --fork=gloas --subset=2
+    cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --fork=heze --subset=2
 
 # The complete in-scope sweep: every collected vector (`--subset=0`) for the
-# full matrix of {fulu, gloas} × {minimal, mainnet}, sharded across cores. The
-# two minimal forks finish quickly; the two mainnet forks are the long poles
+# full matrix of {fulu, gloas, heze} × {minimal, mainnet}, sharded across cores. The
+# three minimal forks finish quickly; the three mainnet forks are the long poles
 # (real-size SSZ + crypto). Each xdist worker holds its own warm `pyspec_server`.
 
-# Full EthCLSpecs pyspec sweep: {fulu,gloas} × {minimal,mainnet}, sharded across cores
+# Full EthCLSpecs pyspec sweep: {fulu,gloas,heze} × {minimal,mainnet}, sharded across cores
 [group('ethcl')]
 ethcl-pyspec-full: _ensure-venv
-    cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n auto --preset=minimal --fork=fulu
-    cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n auto --preset=minimal --fork=gloas
-    cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n auto --preset=mainnet --fork=fulu
-    cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n auto --preset=mainnet --fork=gloas
+    cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n {{ pytest_jobs }} --preset=minimal --fork=fulu
+    cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n {{ pytest_jobs }} --preset=minimal --fork=gloas
+    cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n {{ pytest_jobs }} --preset=minimal --fork=heze
+    cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n {{ pytest_jobs }} --preset=mainnet --fork=fulu
+    cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n {{ pytest_jobs }} --preset=mainnet --fork=gloas
+    cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n {{ pytest_jobs }} --preset=mainnet --fork=heze
 
 # ═════════════════════════════════════════════════════════════════════════
 # SizzLean — SSZ library
@@ -280,7 +288,7 @@ ethcl-pyspec-full: _ensure-venv
 # boolean, the test-only containers); the EIP-7495 / 7916 / 8016 progressive /
 # stable / compatible forms are out of `SizzLean`'s universe and xfail. The
 # per-fork consensus-container `ssz_static` vectors run inside the EthCLSpecs
-# `ethcl-pyspec*` recipes (Fulu + Gloas), not here.
+# `ethcl-pyspec*` recipes (the fork bodies), not here.
 # ═════════════════════════════════════════════════════════════════════════
 
 # `SizzLeanTests.PendingListShrink` Cases 4/5/7 deliberately drive
