@@ -626,4 +626,9 @@ separation.
   placeholder and the remainder computed via `computePtcFromFulu`), plus a
   `default` corollary for the first region.
 
+- **`Proofs/UpdateCheckpoints.lean`** establishes exact unchanged-or-advances
+  characterizations for Gloas's justified and finalized checkpoints, with
+  monotonicity corollaries proving that neither recorded epoch decreases.
+  The proofs use ordinary case analysis and core `UInt64` ordering lemmas.
+
 - **`CONSENSUS_PROOF_CANDIDATES.md`** tracks candidate consensus proof targets.
