@@ -1,4 +1,5 @@
 import EthCLSpecs.Gloas.EpochProcessing
+import SizzLean.Proofs.SSZListPush
 
 /-!
 # `EthCLSpecs.Proofs.BuilderPendingPayments`: the builder-payment epoch substep
@@ -12,12 +13,14 @@ capacity hypothesis, every qualifying withdrawal is appended. It then shifts the
 payment window down by `SLOTS_PER_EPOCH`, padding the vacated half with empties.
 
 The withdrawals side rests on two pieces: a pure fact about `SSZList.push`'s clamp
-(iterating it over a list of values ends at the original list plus the clamped prefix
-that fits, unconditionally), and the loop's own reduction to that list, in iteration
-order. No capacity-headroom invariant is assumed or proved here; the "every qualifying
-withdrawal is appended" statement above is a corollary of the unconditional clamp fact
-under an explicit `original.size + qualifying.length ≤ builderPendingWithdrawalsLimit`
-hypothesis, not an unconditional theorem.
+(iterating it over a list of values ends at the original list plus the clamped
+prefix that fits, unconditionally, proved generically in
+`SizzLean.Proofs.SSZListPush`), and the loop's own reduction to that list, in
+iteration order. No capacity-headroom invariant is assumed or proved here; the
+"every qualifying withdrawal is appended" statement above is a corollary of the
+unconditional clamp fact under an explicit
+`original.size + qualifying.length ≤ builderPendingWithdrawalsLimit` hypothesis,
+not an unconditional theorem.
 
 The window side is a direct instance of `shiftWindow`'s general behavior:
 `expectedPaymentWindow_get_lt` / `expectedPaymentWindow_get_upper` state the two
@@ -47,43 +50,10 @@ namespace EthCLSpecs.Proofs
 
 open EthCLLib.Spec
 open EthCLSpecs.Gloas
-open EthCLSpecs.Fulu (Preset Gwei getTotalActiveBalance)
+open EthCLSpecs.Fulu (Preset Gwei)
 open EthCLSpecs.Fulu.Const (slotsPerEpoch builderPaymentThresholdNumerator
   builderPaymentThresholdDenominator builderPendingWithdrawalsLimit)
-
-/-- Folding `SSZList.push` over a list of values lands on the original array
-plus however much of the values list fits under `cap`: once the list is at
-capacity, `SSZList.push`'s own `if` makes every further push a no-op, so only
-the first `cap - xs.val.size` values appear in the result, in order. No
-additional capacity hypothesis is required. -/
-theorem sszListFoldlPush_val {α : Type} {cap : Nat} (xs : SSZList α cap) (vs : List α) :
-    (vs.foldl (fun l w => l.push w) xs).val =
-      xs.val ++ (vs.take (cap - xs.val.size)).toArray := by
-  induction vs generalizing xs with
-  | nil => simp
-  | cons v rest ih =>
-    rw [List.foldl_cons, ih]
-    by_cases h : xs.val.size < cap
-    · have hpush : (xs.push v).val = xs.val.push v := by
-        unfold SizzLean.Repr.SSZList.push
-        rw [dif_pos h]
-      rw [hpush, Array.size_push]
-      have htake : cap - xs.val.size = cap - (xs.val.size + 1) + 1 := by omega
-      rw [htake, List.take_succ_cons, List.toArray_cons, Array.push_eq_append,
-        Array.append_assoc]
-    · have hpush : (xs.push v).val = xs.val := by
-        unfold SizzLean.Repr.SSZList.push
-        rw [dif_neg h]
-      have hcap : cap - xs.val.size = 0 := by omega
-      rw [hpush, hcap]
-      simp
-
-/-- Under an explicit capacity hypothesis, `sszListFoldlPush_val`'s clamp never
-engages: every value in `vs` is appended, in order. -/
-theorem sszListFoldlPush_val_of_fits {α : Type} {cap : Nat} (xs : SSZList α cap)
-    (vs : List α) (hfits : xs.val.size + vs.length ≤ cap) :
-    (vs.foldl (fun l w => l.push w) xs).val = xs.val ++ vs.toArray := by
-  rw [sszListFoldlPush_val, List.take_of_length_le (by omega)]
+open SizzLean.Proofs (sszListFoldlPush_val sszListFoldlPush_val_of_fits)
 
 /-- `do x` for a lone `for`-loop `x` elaborates as `x >>= fun _ => pure ()`, not as `x`
 itself. Peels that wrapper so a fact about the ascribed loop connects to a use site
