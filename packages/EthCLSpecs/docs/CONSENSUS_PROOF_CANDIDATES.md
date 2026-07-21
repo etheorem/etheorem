@@ -114,7 +114,7 @@ incidental, it's what the function does.
 | --------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `upgradeToGloas`      | `Gloas/Upgrade.lean:101-156` | Preserves inherited state while correctly initializing the new ePBS state                                                                                            |
 | `computePtcFromFulu`  | `Gloas/Upgrade.lean:35-43`   | Agrees with `Gloas.computePtc` once the state is upgraded                                                                                                            |
-| `initializePtcWindow` | `Gloas/Upgrade.lean:50-60`   | Each entry of the window it builds is either the empty committee, for the first `SLOTS_PER_EPOCH` slots, or `computePtcFromFulu` evaluated at the corresponding slot |
+| `initializePtcWindow` | `Gloas/Upgrade.lean:50-60`   | **In review**, see `EthCLSpecs/Proofs/InitializePtcWindow.lean`. The first `SLOTS_PER_EPOCH` entries are the empty committee, and every remaining entry equals `computePtcFromFulu` at the slot computed by `initializePtcWindow` |
 
 ---
 

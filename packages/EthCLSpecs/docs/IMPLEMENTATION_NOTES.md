@@ -630,4 +630,9 @@ separation.
   anything about `settleBuilderPayment` / `processProposerSlashing`, the other paths
   that clear a `BuilderPendingPayment`.
 
+- **`Proofs/InitializePtcWindow.lean`** establishes three `simp`-closed theorems
+  over `initializePtcWindow`: its two index regions (the empty first-epoch
+  placeholder and the remainder computed via `computePtcFromFulu`), plus a
+  `default` corollary for the first region.
+
 - **`CONSENSUS_PROOF_CANDIDATES.md`** tracks candidate consensus proof targets.

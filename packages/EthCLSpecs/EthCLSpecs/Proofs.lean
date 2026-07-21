@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.BuilderIndex
 import EthCLSpecs.Proofs.BuilderPendingPayments
+import EthCLSpecs.Proofs.InitializePtcWindow
 
 /-!
 # `EthCLSpecs.Proofs`: consensus-spec theorems (index)
@@ -20,4 +21,6 @@ Re-exports:
   withdrawal-queuing and payment-window-shift postcondition
   (`processBuilderPendingPayments_run`, plus
   `processBuilderPendingPayments_run_of_fits`).
+* `EthCLSpecs.Proofs.InitializePtcWindow`: the seeded `ptcWindow`'s two
+  regions (`initializePtcWindow`).
 -/
