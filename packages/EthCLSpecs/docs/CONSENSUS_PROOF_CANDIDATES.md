@@ -72,7 +72,7 @@ never decreasing, never shrinking, never losing a previously-added element.
 | -------------------- | ------------------------------- | ------------------------------------------------------------ |
 | `getWeight`          | `Gloas/ForkChoice.lean:359-369` | Weight only grows as more attestations accumulate for a node |
 | `onAttesterSlashing` | `Gloas/ForkChoice.lean:791-801` | The set of equivocating indices only grows, never shrinks    |
-| `updateCheckpoints`  | `Gloas/ForkChoice.lean:470-472` | Justified/finalized epochs never decrease                    |
+| `updateCheckpoints`  | `Gloas/ForkChoice.lean:470-472` | **In review**, see `EthCLSpecs/Proofs/UpdateCheckpoints.lean`. Each justified/finalized checkpoint either remains unchanged or advances to its candidate, so its epoch never decreases. |
 
 ---
 

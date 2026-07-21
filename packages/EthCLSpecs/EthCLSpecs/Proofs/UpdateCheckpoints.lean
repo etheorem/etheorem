@@ -31,7 +31,7 @@ or exactly `j` because its epoch is strictly greater. -/
 theorem updateCheckpoints_justifiedCheckpoint_eq_or_advances :
     ((updateCheckpoints store j f).justifiedCheckpoint = store.justifiedCheckpoint ∧
         j.epoch ≤ store.justifiedCheckpoint.epoch) ∨
-      ((updateCheckpoints store j f).justifiedCheckpoint = j ∧
+    ((updateCheckpoints store j f).justifiedCheckpoint = j ∧
         store.justifiedCheckpoint.epoch < j.epoch) := by
   -- Decide both guards so `simp` can reduce the nested record updates
   -- and project the checkpoint field unaffected by the other update.
@@ -47,7 +47,7 @@ or exactly `f` because its epoch is strictly greater. -/
 theorem updateCheckpoints_finalizedCheckpoint_eq_or_advances :
     ((updateCheckpoints store j f).finalizedCheckpoint = store.finalizedCheckpoint ∧
         f.epoch ≤ store.finalizedCheckpoint.epoch) ∨
-      ((updateCheckpoints store j f).finalizedCheckpoint = f ∧
+    ((updateCheckpoints store j f).finalizedCheckpoint = f ∧
         store.finalizedCheckpoint.epoch < f.epoch) := by
   -- Decide both guards so `simp` can reduce the nested record updates
   -- and project the checkpoint field unaffected by the other update.
