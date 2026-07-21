@@ -11,6 +11,8 @@ import SizzLean.Cache.MerkleTree.HashCons
 import SizzLean.Cache.TreeBacked
 import SizzLean.Cache.Box
 import SizzLean.Cache.Update
+-- Keep this proof module on SizzLean's native plugin graph; see module note below.
+import SizzLean.Proofs.SSZListPush
 
 /-!
 # `SizzLean`: library root
@@ -60,6 +62,12 @@ uses or by sibling packages (`EthCLSpecs` reaches into
 `Spec/Serialize` etc. directly from its `deriving SSZRepr`
 handler infrastructure). They are deliberately not listed here so
 this file reads as the user's mental model of the library.
+
+`Proofs.SSZListPush` is imported above to keep its native initializer in
+SizzLean's precompiled plugin. Its current EthCLSpecs consumer reaches it by a
+qualified-path import; without this root import, Lake emits the `.olean` but
+omits the module from the native plugin graph, causing plugin resolution to
+fail at runtime.
 
 Acceptance / property-test gates live in a separate `lean_lib`
 (`SizzLeanTests`); the default `lake build` skips them and they

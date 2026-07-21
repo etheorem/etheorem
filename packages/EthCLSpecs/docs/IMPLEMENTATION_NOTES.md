@@ -621,6 +621,15 @@ separation.
   `convertBuilderIndexToValidatorIndex`, proving the builder-index flag
   round-trip and tagging properties.
 
+- **`Proofs/BuilderPendingPayments.lean`** proves `processBuilderPendingPayments`'s
+  local before/after behavior for one call: the withdrawals loop reduces to a
+  bounded `SSZList.push` fold over the qualifying previous-epoch payments' withdrawals,
+  in slot order, and the payment window shifts down by `SLOTS_PER_EPOCH`. A
+  capacity-guarded corollary derives the full, unclamped append under an explicit
+  headroom hypothesis. It does not prove protocol-wide exactly-once settlement or say
+  anything about `settleBuilderPayment` / `processProposerSlashing`, the other paths
+  that clear a `BuilderPendingPayment`.
+
 - **`Proofs/InitializePtcWindow.lean`** establishes three `simp`-closed theorems
   over `initializePtcWindow`: its two index regions (the empty first-epoch
   placeholder and the remainder computed via `computePtcFromFulu`), plus a
