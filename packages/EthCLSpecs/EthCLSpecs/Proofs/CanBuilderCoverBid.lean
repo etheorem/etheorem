@@ -29,11 +29,11 @@ properties".
 
 set_option autoImplicit false
 
+namespace EthCLSpecs.Proofs
+
 open EthCLLib.Spec
 open EthCLSpecs.Fulu (BuilderIndex Gwei Preset)
 open EthCLSpecs.Gloas (canBuilderCoverBid getPendingBalanceToWithdrawForBuilder)
-
-namespace EthCLSpecs.Proofs
 
 variable [Preset] [HasherTag]
 
