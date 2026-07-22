@@ -40,14 +40,15 @@ variable [Preset] [HasherTag]
 /-- `canBuilderCoverBid` returns `true` exactly when its computed `minBalance`
 does not exceed the builder's balance and the bid fits in the remainder.
 These are the literal `UInt64` values computed by the implementation; no
-non-overflow or in-range interpretation is asserted. -/
+claim is made that pending-obligation accumulation is overflow-free or that
+`builderIndex` identifies a registered builder. -/
 theorem canBuilderCoverBid_iff
     (state : EthCLSpecs.Gloas.State) (builderIndex : BuilderIndex) (bidAmount : Gwei) :
     canBuilderCoverBid state builderIndex bidAmount = true ↔
       let builderBalance := (sszGet state builders[builderIndex.toNat]!).balance
       let minBalance :=
         EthCLSpecs.Fulu.Const.minDepositAmountG +
-          getPendingBalanceToWithdrawForBuilder state builderIndex
+        getPendingBalanceToWithdrawForBuilder state builderIndex
       minBalance ≤ builderBalance ∧ bidAmount ≤ builderBalance - minBalance := by
   unfold canBuilderCoverBid
   -- Reduce the local `let`s before splitting the function's balance guard.
@@ -64,13 +65,13 @@ theorem canBuilderCoverBid_iff_toNat_add_le
       let builderBalance := (sszGet state builders[builderIndex.toNat]!).balance
       let minBalance :=
         EthCLSpecs.Fulu.Const.minDepositAmountG +
-          getPendingBalanceToWithdrawForBuilder state builderIndex
+        getPendingBalanceToWithdrawForBuilder state builderIndex
       minBalance.toNat + bidAmount.toNat ≤ builderBalance.toNat := by
   rw [canBuilderCoverBid_iff]
   dsimp only
   generalize (sszGet state builders[builderIndex.toNat]!).balance = builderBalance
   generalize EthCLSpecs.Fulu.Const.minDepositAmountG +
-      getPendingBalanceToWithdrawForBuilder state builderIndex = minBalance
+    getPendingBalanceToWithdrawForBuilder state builderIndex = minBalance
   constructor
   · rintro ⟨h1, h2⟩
     rw [UInt64.le_iff_toNat_le, UInt64.toNat_sub_of_le _ _ h1] at h2
