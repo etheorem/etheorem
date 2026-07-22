@@ -73,14 +73,14 @@ theorem canBuilderCoverBid_iff_toNat_add_le
   generalize EthCLSpecs.Fulu.Const.minDepositAmountG +
     getPendingBalanceToWithdrawForBuilder state builderIndex = minBalance
   constructor
-  · rintro ⟨h1, h2⟩
-    rw [UInt64.le_iff_toNat_le, UInt64.toNat_sub_of_le _ _ h1] at h2
-    have h1' := UInt64.le_iff_toNat_le.mp h1
+  · rintro ⟨h_min, h_bid⟩
+    rw [UInt64.le_iff_toNat_le, UInt64.toNat_sub_of_le _ _ h_min] at h_bid
+    have h_min_nat := UInt64.le_iff_toNat_le.mp h_min
     omega
   · intro h
-    have h1 : minBalance ≤ builderBalance := UInt64.le_iff_toNat_le.mpr (by omega)
-    refine ⟨h1, ?_⟩
-    rw [UInt64.le_iff_toNat_le, UInt64.toNat_sub_of_le _ _ h1]
+    have h_min : minBalance ≤ builderBalance := UInt64.le_iff_toNat_le.mpr (by omega)
+    refine ⟨h_min, ?_⟩
+    rw [UInt64.le_iff_toNat_le, UInt64.toNat_sub_of_le _ _ h_min]
     omega
 
 end EthCLSpecs.Proofs
