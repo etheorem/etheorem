@@ -1,4 +1,5 @@
 import EthCLSpecs.Proofs.BuilderIndex
+import EthCLSpecs.Proofs.CanBuilderCoverBid
 import EthCLSpecs.Proofs.InitializePtcWindow
 
 /-!
@@ -16,6 +17,8 @@ Re-exports:
 
 * `EthCLSpecs.Proofs.BuilderIndex`: the builder-index flag round-trip
   (`isBuilderIndex`, `toBuilderIndex`, `convertBuilderIndexToValidatorIndex`).
+* `EthCLSpecs.Proofs.CanBuilderCoverBid`: the exact `Bool`-vs-`UInt64`-inequality
+  characterization of `canBuilderCoverBid`.
 * `EthCLSpecs.Proofs.InitializePtcWindow`: the seeded `ptcWindow`'s two
   regions (`initializePtcWindow`).
 -/
