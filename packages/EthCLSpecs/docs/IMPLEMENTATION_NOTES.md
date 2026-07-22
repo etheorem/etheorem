@@ -621,6 +621,13 @@ separation.
   `convertBuilderIndexToValidatorIndex`, proving the builder-index flag
   round-trip and tagging properties.
 
+- **`Proofs/CanBuilderCoverBid.lean`** characterizes `canBuilderCoverBid`'s
+  `Bool` result exactly: `canBuilderCoverBid_iff` states the guard in the
+  implementation's own `UInt64` `builderBalance` / `minBalance` terms;
+  `canBuilderCoverBid_iff_toNat_add_le` restates it over `Nat` as a single
+  non-wrapping addition-fits-in-balance fact. Both hold unconditionally,
+  including for out-of-range `builderIndex`.
+
 - **`Proofs/InitializePtcWindow.lean`** establishes three `simp`-closed theorems
   over `initializePtcWindow`: its two index regions (the empty first-epoch
   placeholder and the remainder computed via `computePtcFromFulu`), plus a
