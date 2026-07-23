@@ -29,3 +29,9 @@ plus the invariant lemmas they rest on.
 
 [CONSENSUS_PROOF_CANDIDATES.md](CONSENSUS_PROOF_CANDIDATES.md) is a shortlist of Lean
 theorem candidates across the Fulu and Gloas specs, to help contributors pick proof targets.
+
+[VERIFICATION_ROADMAP.md](../../../docs/VERIFICATION_ROADMAP.md) (root `docs/`; it spans
+the whole monorepo) is a menu of formal-verification proof
+targets across the SSZ layer, the consensus containers, and the fork framework, each
+cross-referenced against the two prior beacon-chain verification efforts and tagged by
+novelty and difficulty. It is where a contributor looks to pick up a proof.
