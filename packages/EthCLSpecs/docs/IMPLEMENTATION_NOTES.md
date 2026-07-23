@@ -622,7 +622,7 @@ separation.
 
 - **`Proofs/GetPtc.lean`** proves `getPtc`'s `else`-branch offset into
   `ptcWindow` stays in range for its two guarded call sites:
-  `getPtcElseOffset_lt` under `process_payload_attestation`'s guarantee
+  `getPtcElseOffset_lt_next_slot` under `process_payload_attestation`'s guarantee
   (`data.slot + 1 == state.slot`), and `getPtcElseOffset_lt_same_slot` under
   the fork-choice replay callers' exact-equality guarantee (`slot ==
   curSlot`). Both via `UInt64`/`Nat` bridging lemmas and `omega`, no mathlib.
