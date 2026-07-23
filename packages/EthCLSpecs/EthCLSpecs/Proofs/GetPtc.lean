@@ -14,13 +14,13 @@ correspond to the intended cached committee. The docstring states this offset
 is in range only under the caller's guarantee, never checked in `getPtc`
 itself. This file proves that claim for `getPtc`'s two guarded call sites.
 
-`getPtcElseOffset_lt` covers the slot-successor guard used by
+`getPtcElseOffset_lt_next_slot` covers the slot-successor guard used by
 `processPayloadAttestation`. `getPtcElseOffset_lt_same_slot` covers the
 same-slot guard used by fork-choice replay paths. Calls without an established
 relation between the queried slot and state slot are outside this module's
 index-correctness scope.
 
-`getPtcElseOffset_lt` states its bound at the `Nat` level (`hcaller` via
+`getPtcElseOffset_lt_next_slot` states its bound at the `Nat` level (`hcaller` via
 `.toNat`), not over the raw `UInt64` `slot + 1 == curSlot`: at `slot =
 UInt64.max` that reading wraps to `0`, so the caller's guarantee could hold by
 wraparound while the bound itself fails. `.toNat` equality has no such
@@ -40,7 +40,7 @@ open EthCLSpecs.Fulu.Const (slotsPerEpoch slotsPerEpochPos slotsPerEpochLt)
 
 /-- Names `getPtc`'s `else`-branch index into `ptcWindow`
 (`Gloas/Operations.lean`'s `(epoch - stateEpoch + 1) * spe + slot % spe`), so
-`getPtcElseOffset_lt` states the bound over one named quantity instead of
+`getPtcElseOffset_lt_next_slot` states the bound over one named quantity instead of
 repeating the raw arithmetic. -/
 def getPtcElseOffset [Preset] (slot curSlot : Slot) : Nat :=
   ((computeEpochAtSlot slot - computeEpochAtSlot curSlot + 1) * UInt64.ofNat slotsPerEpoch
@@ -53,7 +53,7 @@ the negated `else`-branch guard; without it, the epoch subtraction can
 underflow when `getPtc` would have taken the `if`-branch. Together they force
 `computeEpochAtSlot slot = computeEpochAtSlot curSlot`, collapsing the offset
 to `spe + slot % spe`, comfortably under `3 * SLOTS_PER_EPOCH`. -/
-theorem getPtcElseOffset_lt [Preset] {slot curSlot : Slot}
+theorem getPtcElseOffset_lt_next_slot [Preset] {slot curSlot : Slot}
     (hcaller : slot.toNat + 1 = curSlot.toNat)
     (hbranch : ¬ computeEpochAtSlot slot < computeEpochAtSlot curSlot) :
     getPtcElseOffset slot curSlot < 3 * slotsPerEpoch := by
