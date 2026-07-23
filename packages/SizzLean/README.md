@@ -5,10 +5,12 @@
 > **Status: early-stage, experimental, single-developer; personal
 > project, not an EF release.** The library passes the upstream
 > consensus-spec test corpus and the three central theorems are
-> landed on the `BasicSupported` cut (open work toward `Supported`
-> is tracked in [`docs/PLAN.md`](docs/PLAN.md) Phase 5). Reviews,
-> issues, and pull requests are welcome; production-grade
-> stability and a stable release line are not implied.
+> landed on the `BasicSupported` cut, which now covers
+> mixed-field containers too (remaining open work toward the
+> universally-quantified `Supported` form is tracked in
+> [`docs/PLAN.md`](docs/PLAN.md) Phase 5). Reviews, issues, and
+> pull requests are welcome; production-grade stability and a
+> stable release line are not implied.
 
 A Lean 4 implementation of Ethereum's
 [SSZ](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md)
@@ -59,10 +61,12 @@ theorems.
 - **Machine-checked correctness across most of SSZ.** The three
   central theorems, encode/decode roundtrip, non-malleability,
   and a schema-derived static size bound, are proved for every
-  SSZ shape *except* variable-field containers:
-  `uintN 8 / 16 / 32 / 64 / 128 / 256`, `bool`, fixed-size `vector`
-  and `list`, `bitvector`, `bitlist`, and `container` over
-  fixed-size fields (recursively). Mixed-field containers are pending, see
+  SSZ shape *except* `vector` / `list` over a variable-size
+  element type: `uintN 8 / 16 / 32 / 64 / 128 / 256`, `bool`,
+  fixed-size `vector` and `list`, `bitvector`, `bitlist`, and
+  `container` over any field list, whether every field is
+  fixed-size (recursively) or the field list mixes fixed- and
+  variable-size fields via the offset-table codec. See
   [Proof coverage](#proof-coverage) for the per-constructor
   table.
 
@@ -202,7 +206,8 @@ Per-constructor breakdown:
 | `.list t cap` | ✅ ³ | ✅ ³ | ✅ ³ | needs `BasicSupported t` + `t.isFixedSize = true` + `0 < t.fixedByteSize` |
 | `.bitvector n` | ✅ ⁴ | ✅ ⁴ | ✅ | needs `0 < n`; bit-packing inverse in `Proofs/BitPack.lean` |
 | `.bitlist cap` | ✅ ⁴ | ✅ ⁴ | ✅ | bit-packing inverse + `msbPos` delimiter recovery |
-| `.container fs` | see below | see below | see below | — |
+| `.container fs`, all fields fixed-size | ✅ ² | ✅ ² | ✅ ² | see [per-field type](#container-fs-per-field-type) |
+| `.container fs`, mixed fixed/variable fields | ✅ ⁶ | ✅ ⁶ | ✅ ⁶ | offset-table codec, see [per-field type](#container-fs-per-field-type) |
 
 ¹ Adds one `_native.bv_decide.ax_*` axiom per arm (SAT certificate
 for the multi-byte LE identity). `decode_encode`'s and
@@ -222,6 +227,14 @@ little-endian codec inverse `readNatLE (natToLEBytes w n) 0 w =
 n mod 256ʷ` by induction on the width (the digit step is
 `Nat.mod_mul`). Unlike the narrow arms they use no `bv_decide`, so
 they add **no axioms** beyond the standard kernel three.
+⁶ Mixed-field containers (`containerVar`, `Proofs/ContainerVar.lean`
++ `Proofs/Roundtrip.lean`'s `decode_encode_containerVar_aux`) decode
+through the offset table: fixed fields read straight from the
+prefix, variable fields read from `[offset, nextOffset)` slices.
+The one `uint32` codec bridge lemma (offset placeholders round-trip
+through `UInt32`) uses `bv_decide`; every other step is `Nat`/
+`ByteArray` reasoning, so the arm's trust footprint is that one
+`bv_decide` axiom plus the standard kernel three.
 
 `serialize_injective` is a direct corollary of `decode_encode`
 (via `Except.ok.inj` + `Prod.mk.inj`), so its coverage tracks
@@ -229,47 +242,51 @@ they add **no axioms** beyond the standard kernel three.
 
 #### `.container fs`: per-field type
 
-A container `.container fs` is in `BasicSupported` exactly when
-every field type is itself `BasicSupported` *and* fixed-size.
-Allowed and excluded field types:
+`BasicSupported` covers `.container fs` via two constructors:
+`containerFixed`, every field `BasicSupported` *and* fixed-size
+(so the container itself is fixed-size, decoded via the fixed-prefix
+walker), and `containerVar`, every field `BasicSupported` (fixed
+or not) with at least one variable-size field (decoded via the
+offset-table walker). Allowed and excluded field types:
 
 | Field type | Allowed as a container field? | Why |
 |---|:---:|---|
 | `.uintN 8 / 16 / 32 / 64 / 128 / 256` | ✅ | basic + fixed |
 | `.bool` | ✅ | basic + fixed |
 | `.vector t' n` (with `n > 0`, fixed-size `t'`, `BasicSupported t'`) | ✅ | nested vector, `(.vector t' n).isFixedSize = t'.isFixedSize` |
-| `.container fs'` (with `BasicSupportedFieldsFixed fs'`) | ✅ | nested container, `(.container fs').isFixedSize = allFixedSize fs'` |
+| `.list t' cap` (with fixed-size `t'`, `BasicSupported t'`, `0 < t'.fixedByteSize`) | ✅ ᵛ | variable-size field, needs `containerVar` |
+| `.container fs'` (with `BasicSupportedFieldsFixed fs'` or `BasicSupportedFields fs'`) | ✅ | nested container, either constructor |
 | `.bitvector n` (with `n > 0`) | ✅ | bit-packed + fixed, `(.bitvector n).fixedByteSize = ⌈n/8⌉` |
-| `.list t' cap` | ❌ | `(.list _ _).isFixedSize = false`, structurally excluded |
-| `.bitlist cap` | ❌ | `(.bitlist _).isFixedSize = false`, structurally excluded |
+| `.bitlist cap` | ✅ ᵛ | bit-packed, variable-size field, needs `containerVar` |
 
-For `.list` and `.bitlist` the exclusion is *structural*: they're
-variable-size by SSZ definition, so they cannot satisfy
-`BasicSupportedFieldsFixed`'s `t.isFixedSize = true` precondition.
-Mixed-field containers (containers with at least one variable-size
-field) are **outside `SSZType.Supported` entirely**, not just
-outside `BasicSupported`. The spec layer flags this as
-`TODO(stage-3-deferral)` in `Spec/Deserialize.lean`; closing it
-requires extending `Supported` with a `containerVar` constructor
-plus an offset-table-invariants proof.
+ᵛ Marks a variable-size field type: allowed only in a
+`containerVar` field list (`allFixedSize fs = false`), never in a
+`containerFixed` one, since `.list _ _` and `.bitlist _` are
+`isFixedSize = false` by construction, which fails
+`BasicSupportedFieldsFixed`'s pointwise precondition but is exactly
+what `BasicSupportedFields` (the `containerVar` field predicate)
+allows.
 
-In one line: containers with fields drawn from `{uintN8, uintN16,
-uintN32, uintN64, uintN128, uintN256, bool, vectorFixed,
-bitvector, containerFixed (recursively)}` are proved; containers
-with any `list` or `bitlist` field are not.
+In one line: containers with any field drawn from `{uintN8,
+uintN16, uintN32, uintN64, uintN128, uintN256, bool, vectorFixed,
+listFixed, bitvector, bitlist, container (recursively)}` are
+proved, whether every field is fixed-size or the list mixes fixed-
+and variable-size fields.
 
 ### Track in progress
 
 **Phase 5 formal-verification widening:** the three central
 theorems (roundtrip, non-malleability, size bound) are landed on
 the `BasicSupported` cut, which now covers `uintN 8 / 16 / 32 /
-64 / 128 / 256`, `bool`, fixed-size `vector` and `list`,
-`bitvector`, `bitlist`, and `container` over fixed-size fields
-(recursively).
-Widening to a universal statement over `SSZType.Supported`
-requires extending `Supported` itself to admit mixed-field
-containers (spec-layer follow-up). The library itself is
-complete; this track only closes the proof obligation.
+64 / 128 / 256`, `bool`, `vector` and `list` over fixed-size
+elements, `bitvector`, `bitlist`, and `container` over any field
+list (fixed-only, recursively, or mixed fixed/variable via the
+offset-table codec).
+The remaining gap toward a universal statement over
+`SSZType.Supported` is `vector` / `list` over a variable-size
+element type (`vectorVar` / `listVar`, no proof arm yet). The
+library itself is complete for every shape; this track only closes
+the proof obligation.
 
 See [`docs/PLAN.md`](docs/PLAN.md) for the staged plan and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design

@@ -1,6 +1,8 @@
 import SizzLean.Spec.Type
 import SizzLean.Spec.Serialize  -- for isFixedSize / allFixedSize
 import SizzLean.Spec.Supported  -- for the subset theorem below
+import SizzLean.Spec.MaxByteLength  -- for the containerVar overflow guard
+import SizzLean.Spec.Constants  -- for MAX_LENGTH
 
 /-!
 # `SizzLean.Spec.BasicSupported`: the predicate the proof set grows over
@@ -40,19 +42,34 @@ Proofs/ reaches over to discharge the theorems).
   bit-packing inverse `packBitsLE_unpackBitsLEAux_inverse` plus
   `msbPos` delimiter recovery for the bitlist).
 
-## Outside `BasicSupported`
+* **Mixed-field containers**: `.container fs` with at least one
+  variable-size field (closed in `Proofs/ContainerVar.lean`'s
+  groundwork plus the roundtrip walker
+  `Proofs/Roundtrip.lean`'s `decode_encode_containerVar_aux`, via
+  the offset-table codec).
 
-* **Mixed-field containers** (some variable-size fields): the
-  offset-table decode path sits outside `Supported` itself;
-  admitting it here is separate spec-layer work.
+## Why three mutually inductive predicates
 
-## Why two mutually inductive predicates
+The general `.container fs` arms need to *recurse* into their field
+lists. `containerFixed` needs every field `BasicSupported` and
+fixed-size; `BasicSupportedFieldsFixed` captures this pointwise.
+`containerVar` only needs every field `BasicSupported` (fixed or
+not, since the offset table handles both uniformly);
+`BasicSupportedFields` captures *that* pointwise. Both field-list
+predicates are mutual with `BasicSupported` because their `cons`
+constructors take a `BasicSupported t` witness for the head.
 
-The general `.container fs` arm needs to *recurse* into its field
-list, each field must itself be `BasicSupported` and fixed-size.
-`BasicSupportedFieldsFixed` captures this pointwise; it is mutual
-with `BasicSupported` because the field-list predicate's `cons`
-constructor takes a `BasicSupported t` witness for the head.
+## Why `containerVar` carries `maxByteLengthFields fs < MAX_LENGTH`
+
+Every offset the encoder writes into a variable-size container's
+fixed prefix is a `uint32` (`Nat.toUInt32 varOff`, see
+`Spec/Serialize.lean`'s `serializeFieldsAux`); it round-trips
+through `UInt32` exactly only while `varOff < 2 ^ 32`. Every running
+offset is bounded by the total encoded size, which
+`Proofs/ContainerVar.lean`'s size walker bounds by
+`maxByteLengthFields fs`, so bounding *that* by `MAX_LENGTH = 2 ^ 32`
+(a schema-level, decidable-per-concrete-schema check) is what keeps
+every offset's `UInt32` round-trip exact.
 
 ## Why `0 < n` on `vectorFixed` / `bitvector`
 
@@ -127,6 +144,17 @@ inductive SSZType.BasicSupported : SSZType → Prop
   | containerFixed : ∀ {fs : List SSZType},
                      SSZType.BasicSupportedFieldsFixed fs →
                      SSZType.BasicSupported (.container fs)
+  /-- Container with at least one variable-size field
+  (`allFixedSize fs = false`), decoded via the offset-table path
+  (`Proofs/ContainerVar.lean`, `Proofs/Roundtrip.lean`'s
+  `decode_encode_containerVar_aux`). The `maxByteLengthFields fs <
+  MAX_LENGTH` precondition is the uint32-overflow guard every
+  offset placeholder depends on; see the module docstring. -/
+  | containerVar : ∀ {fs : List SSZType},
+                   SSZType.BasicSupportedFields fs →
+                   SSZType.allFixedSize fs = false →
+                   SSZType.maxByteLengthFields fs < MAX_LENGTH →
+                   SSZType.BasicSupported (.container fs)
 
 /-- Pointwise `BasicSupported ∧ isFixedSize` over a field list.
 Used by the `containerFixed` arm. The `isFixedSize` half makes
@@ -138,6 +166,19 @@ inductive SSZType.BasicSupportedFieldsFixed : List SSZType → Prop
            SSZType.BasicSupported t → t.isFixedSize = true →
            SSZType.BasicSupportedFieldsFixed ts →
            SSZType.BasicSupportedFieldsFixed (t :: ts)
+
+/-- Pointwise `BasicSupported` over a field list, with **no**
+`isFixedSize` constraint (unlike `BasicSupportedFieldsFixed`).
+Used by the `containerVar` arm: the offset-table decode path
+(`SSZType.deserializeVarFields`) handles fixed and variable fields
+alike, so every field just needs to be individually
+`BasicSupported`, whichever shape it is. -/
+inductive SSZType.BasicSupportedFields : List SSZType → Prop
+  | nil : SSZType.BasicSupportedFields []
+  | cons : ∀ {t : SSZType} {ts : List SSZType},
+           SSZType.BasicSupported t →
+           SSZType.BasicSupportedFields ts →
+           SSZType.BasicSupportedFields (t :: ts)
 end
 
 /-! ### The subset relation, machine-checked
@@ -176,6 +217,8 @@ theorem SSZType.supported_of_basicSupported : ∀ {s : SSZType},
   | _, .bitlist => .bitlist
   | _, .containerFixed h_fs =>
       .containerFixed (SSZType.supportedFieldsFixed_of_basicSupportedFieldsFixed h_fs)
+  | _, .containerVar h_fs h_not_fixed _h_max =>
+      .containerVar (SSZType.supportedFields_of_basicSupportedFields h_fs) h_not_fixed
 
 /-- Field-list companion: pointwise lift of
 `supported_of_basicSupported` over a container's field list. -/
@@ -186,6 +229,17 @@ theorem SSZType.supportedFieldsFixed_of_basicSupportedFieldsFixed :
   | _, .cons h_t h_t_fixed h_ts =>
       .cons (SSZType.supported_of_basicSupported h_t) h_t_fixed
         (SSZType.supportedFieldsFixed_of_basicSupportedFieldsFixed h_ts)
+
+/-- Field-list companion for `containerVar`: pointwise lift of
+`supported_of_basicSupported` over a container's field list, with
+no `isFixedSize` witness to carry. -/
+theorem SSZType.supportedFields_of_basicSupportedFields :
+    ∀ {fs : List SSZType},
+    SSZType.BasicSupportedFields fs → SSZType.SupportedFields fs
+  | _, .nil => .nil
+  | _, .cons h_t h_ts =>
+      .cons (SSZType.supported_of_basicSupported h_t)
+        (SSZType.supportedFields_of_basicSupportedFields h_ts)
 
 end
 
