@@ -43,6 +43,17 @@ inductive StateTransitionError where
   | outOfScope (what : String)
   /-- Indexed access past the end: index `idx` against bound `bound`. -/
   | outOfBounds (idx bound : Nat)
+  /-- An uncaught arithmetic fault (a `uint64` over/underflow, or a `% 0`): the spec's `uintN`
+  op raises Python `ValueError` (a `ZeroDivisionError` for `% 0`), which the reference runner's
+  `expect_assertion_error` does NOT catch (it catches only `AssertionError` and `IndexError`,
+  `context.py:429-433`). So it is not an expected rejection but a genuine error, distinct from a
+  guarded `assert`: it `classify`s as `ClassifyBucket.uncaughtFault`, so an invalid vector that
+  rejects this way FAILS rather than passing. `descr` names the faulting op, diagnostic only. The
+  standing case is `get_balance_after_withdrawals`' `state.balances[i] - withdrawn`
+  (`capella/beacon-chain.md:378`), a bare subtraction. On the store machine the same fault rides
+  in wrapped as `.transition (.arithmetic …)`, e.g. Heze's `Slot(state.slot - 1)` underflow and
+  `get_inclusion_list_committee`'s `indices[i % len(indices)]` on an empty committee. -/
+  | arithmetic (descr : String)
   deriving Inhabited, Repr, DecidableEq
 
 /-- The fork-choice store machine's reject type.
@@ -60,6 +71,13 @@ inductive StoreTransitionError where
   | outOfScope (what : String)
   /-- An `FcMap` lookup found no entry for `key` (the 32-byte block root). -/
   | missingKey (key : Vector UInt8 32)
+  /-- A fork-choice step's SSZ input could not be deserialized; `what` names the input. A
+  decoder / container bug, never a spec rejection: fork-choice vectors are always well-formed
+  (malformed-wire testing lives in the `ssz_generic` suite), so a decode miss here is our bug,
+  not the invalid step's expected raise. Kept distinct from `.assert` so it is NOT an expected
+  rejection (`isExpectedRejection`), the mirror of the state-transition machine's
+  `RunError.decode`. -/
+  | decodeFailure (what : String)
   /-- A nested state-transition failure surfaced through `runStateTransition`. -/
   | transition (e : StateTransitionError)
   deriving Inhabited, Repr, DecidableEq
@@ -76,8 +94,17 @@ inductive ClassifyBucket where
   | todo
   /-- An `outOfScope` reject; a branch we deliberately do not model. Reported `skip`. -/
   | outOfScope
-  /-- An `outOfBounds` / `missingKey` reject; a likely framework or spec bug. -/
+  /-- An `outOfBounds` / `missingKey` / `decodeFailure` reject; a likely framework or spec bug.
+  For an invalid vector, an `outOfBounds` (`IndexError`) still counts as a rejection the
+  reference accepts, so the driver passes it (flagged). -/
   | likelyBug
+  /-- An uncaught Python fault the reference runner does NOT catch (a `uint64` `ValueError` from
+  `.arithmetic`, a `ZeroDivisionError`). Reports as a bug like `likelyBug`, but unlike
+  `likelyBug` it is never a valid rejection of an invalid vector: the reference would propagate
+  it as a genuine error, so the driver fails an invalid vector that rejects this way rather than
+  passing it. This is the reporting-side counterpart of `isExpectedRejection` excluding
+  `.transition (.arithmetic …)`. -/
+  | uncaughtFault
   deriving Inhabited, Repr, DecidableEq
 
 namespace ClassifyBucket
@@ -90,6 +117,7 @@ def tag : ClassifyBucket → String
   | .todo              => "todo"
   | .outOfScope        => "skip"
   | .likelyBug         => "bug"
+  | .uncaughtFault     => "bug"
 
 end ClassifyBucket
 
@@ -99,6 +127,7 @@ def StateTransitionError.classify : StateTransitionError → ClassifyBucket
   | .todo _          => .todo
   | .outOfScope _    => .outOfScope
   | .outOfBounds _ _ => .likelyBug
+  | .arithmetic _    => .uncaughtFault
 
 /-- Classify a store-transition reject by its constructor. A wrapped nested
 state failure classifies by the inner reject. -/
@@ -107,7 +136,26 @@ def StoreTransitionError.classify : StoreTransitionError → ClassifyBucket
   | .todo _        => .todo
   | .outOfScope _  => .outOfScope
   | .missingKey _  => .likelyBug
+  | .decodeFailure _ => .likelyBug
   | .transition e  => e.classify
+
+/-- Whether a store reject is the expected rejection of a `valid: false` fork-choice step.
+The reference runner (`context.py:429-433`'s `expect_assertion_error`) catches `AssertionError`
+and `IndexError`, so exactly `.assert` (bare and `.transition`-wrapped) and the store machine's
+only index-miss shape, `.transition (.outOfBounds …)`, count; `.missingKey` (an uncaught
+`KeyError`), `.transition (.arithmetic …)` (an uncaught `uint64` `ValueError`), `.todo` /
+`.outOfScope` (our own deferrals), and anything else do not.
+
+This is a *different question* from `classify`, which buckets a reject for reporting (a
+`.transition (.outOfBounds)` is still a `likelyBug` there): `classify` answers "how do we
+report this reject", `isExpectedRejection` answers "does the reference accept it as the
+invalid step's expected raise". `checkStepValidity` is the sole caller; keeping the caught
+set here, next to `classify`, makes the two policies visibly distinct and edited in one
+place each. -/
+def StoreTransitionError.isExpectedRejection : StoreTransitionError → Bool
+  | .assert _
+  | .transition (.assert _) | .transition (.outOfBounds _ _) => true
+  | _ => false
 
 /-- Build the `assert` / `todo` reject of an error type from its diagnostic descriptor.
 The `assert` macro and the `todo` helper resolve `E` from the section's monad, so the

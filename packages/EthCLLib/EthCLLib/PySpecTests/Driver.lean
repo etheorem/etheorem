@@ -18,7 +18,8 @@ The reject-faithfulness audit (`SPECS_ARCHITECTURE.md` §10.2) is encoded in
 | valid (`post` present) | root matches | pass |
 | valid | any error, or wrong root | fail |
 | invalid (`post` absent) | `assert` reject | pass |
-| invalid | `outOfBounds` / `missingKey` reject | pass, **flagged** (bug-smell) |
+| invalid | `outOfBounds` / `missingKey` reject (caught `IndexError`) | pass, **flagged** (bug-smell) |
+| invalid | `arithmetic` reject (uncaught `ValueError` / `ZeroDivisionError`) | fail (the reference does not catch it) |
 | invalid | `todo` reject | fail (an unimplemented path is not a validation) |
 | invalid | ran clean | fail (should have rejected) |
 
@@ -151,12 +152,15 @@ def runCase [ForkInterface] (req : CaseRequest) : CaseResult :=
     -- Valid vector that rejected: a failure, classified by the reject.
     { passed := false, bucket := e.classify, detail := reprStr e }
   | .error e, none =>
-    -- Invalid vector that rejected: faithful iff it was an `assert`. A bug-smell
-    -- reject still counts as rejected but is flagged; a `todo` / `outOfScope` fails
-    -- (not a validation) and reports as its own bucket (xfail / skip respectively).
+    -- Invalid vector that rejected: faithful iff the reject is one the reference catches.
+    -- An `assert` (AssertionError) is the clean expected rejection; a caught bug-smell
+    -- (`outOfBounds` = IndexError) still counts as rejected but is flagged. An `uncaughtFault`
+    -- (a `ValueError` / `ZeroDivisionError` the reference propagates, not catches) fails, as do
+    -- a `todo` / `outOfScope` (not a validation), each reporting as its own bucket.
     match e.classify with
     | .expectedRejection => { passed := true,  bucket := .expectedRejection, detail := reprStr e }
     | .likelyBug         => { passed := true,  bucket := .likelyBug, detail := reprStr e, flagged := true }
+    | .uncaughtFault     => { passed := false, bucket := .uncaughtFault, detail := reprStr e }
     | .todo              => { passed := false, bucket := .todo, detail := reprStr e }
     | .outOfScope        => { passed := false, bucket := .outOfScope, detail := reprStr e }
     | .passing           => { passed := false, bucket := .likelyBug, detail := "unreachable classify" }

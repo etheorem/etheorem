@@ -263,6 +263,14 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
           assert (sb.message.stateRoot == bytesToRoot root)
       RunError.ofSpec (runToRoot gloasBox0 gloasAction)
 
+/-- Run `getHead` over the snapshot store as a pure query (`runQuery` discards the final
+store; `getHead` only reads it). Shared by the `checkHead` / `checkHeadPayloadStatus` arms,
+which each need the head node against the current fold state. -/
+private def queryHead [Preset] [Config] [HasherTag] (store : Store hashMap) :
+    Except StoreTransitionError ForkChoiceNode :=
+  runQuery store (getHead (map := hashMap) store :
+    EStateM StoreTransitionError (Store hashMap) ForkChoiceNode)
+
 /-- Fold the decoded fork-choice `steps` over the Gloas store. A `block` step runs
 `on_block` (which internally records PTC votes from the block's payload attestations
 via `notify_ptc_messages`), then replays the block's own attestations /
@@ -272,48 +280,61 @@ the head node's payload status and the per-block PTC vote arrays. -/
 private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
     (P : Preset) (store0 : Store hashMap) (steps : Array FcStep) : Except StoreTransitionError Unit := do
   -- Same uniform shape as Fulu's `fcInterpret`: each step runs to an `Except` outcome,
-  -- which `checkStepValidity` resolves against the step's `valid` flag over the pre-step
-  -- snapshot (the framework owns the valid/invalid policy; this loop only threads the
-  -- store). The `block` step folds `on_block` and the block's own attestations /
-  -- attester-slashings into one action; `execution_payload` / `payload_attestation_message`
-  -- are the two ePBS-new valid-flagged steps.
+  -- which `checkStepValidity` resolves against the step's `valid` flag, continuing an
+  -- expected rejection from the error-time store (the framework owns the valid/invalid
+  -- policy; this loop only threads the store). The `block` step folds `on_block` and the
+  -- block's own attestations / attester-slashings into one action; `execution_payload` /
+  -- `payload_attestation_message` are the two ePBS-new valid-flagged steps.
   let mut store : Store hashMap := store0
   for step in steps do
     match step with
     | .tick t =>
-      store := (← checkStepValidity store true
+      store := (← checkStepValidity true
         (runOn store (onTick (map := hashMap) (UInt64.ofNat t) : EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes _columns valid =>
-      let outcome := decodeStepOr (α := @Gloas.SignedBeaconBlock P) bytes "block" fun sb =>
-        let action : EStateM StoreTransitionError (Store hashMap) Unit := do
-          onBlock (map := hashMap) sb
-          for a in sb.message.body.attestations do onAttestation (map := hashMap) a true
-          for a in sb.message.body.attesterSlashings do onAttesterSlashing (map := hashMap) a
-        runOn store action
-      store := (← checkStepValidity store valid outcome)
+      -- pyspec `add_block` (`fork_choice.py:382-406`) runs `on_block` ALONE against `valid`: an
+      -- invalid block returns right after `on_block` rejects (`:393`), so its own attestations /
+      -- attester-slashings replay only on the valid path (`:400-406`), each `valid = True`. So
+      -- check `on_block` against `valid`, then replay the sub-steps only when the block was
+      -- accepted. (Combining them would let a sub-attestation reject stand in for `on_block`'s on
+      -- a `valid: false` step.) A decode failure is the step's reject, as `decodeStepOr` gives.
+      match SizzLean.SSZ.deserialize (T := @Gloas.SignedBeaconBlock P) bytes with
+      | .error _ =>
+        store := (← checkStepValidity valid (.error (.decodeFailure "fork_choice: block decode failed", store)))
+      | .ok sb =>
+        store := (← checkStepValidity valid
+          (runOn store (onBlock (map := hashMap) sb : EStateM StoreTransitionError (Store hashMap) Unit)))
+        if valid then
+          let subAction : EStateM StoreTransitionError (Store hashMap) Unit := do
+            for a in sb.message.body.attestations do onAttestation (map := hashMap) a true
+            for a in sb.message.body.attesterSlashings do onAttesterSlashing (map := hashMap) a
+          store := (← checkStepValidity true (runOn store subAction))
     | .attestation bytes valid =>
-      let outcome := decodeStepOr (α := @Attestation P) bytes "attestation" fun a =>
+      let outcome := decodeStepOr (α := @Attestation P) bytes "attestation" store fun a =>
         runOn store (onAttestation (map := hashMap) a false : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity store valid outcome)
+      store := (← checkStepValidity valid outcome)
     | .attesterSlashing bytes valid =>
-      let outcome := decodeStepOr (α := @AttesterSlashing P) bytes "attester_slashing" fun a =>
+      let outcome := decodeStepOr (α := @AttesterSlashing P) bytes "attester_slashing" store fun a =>
         runOn store (onAttesterSlashing (map := hashMap) a : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity store valid outcome)
+      store := (← checkStepValidity valid outcome)
     | .executionPayload bytes valid =>
-      let outcome := decodeStepOr (α := @Gloas.SignedExecutionPayloadEnvelope P) bytes "envelope" fun env =>
+      let outcome := decodeStepOr (α := @Gloas.SignedExecutionPayloadEnvelope P) bytes "envelope" store fun env =>
         runOn store (onExecutionPayloadEnvelope (map := hashMap) env : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity store valid outcome)
+      store := (← checkStepValidity valid outcome)
     | .payloadAttestationMessage bytes valid =>
-      let outcome := decodeStepOr (α := @Gloas.PayloadAttestationMessage P) bytes "ptc message" fun msg =>
+      let outcome := decodeStepOr (α := @Gloas.PayloadAttestationMessage P) bytes "ptc message" store fun msg =>
         runOn store (onPayloadAttestationMessage (map := hashMap) msg false : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity store valid outcome)
+      store := (← checkStepValidity valid outcome)
     | .checkHead root slot =>
-      let head := getHead store
+      let head ← queryHead store
       assert (head.root == root)
-      let headSlot := match FcMap.lookup store.blocks head.root with | some b => b.slot.toNat | none => 0
-      assert (headSlot == slot)
+      -- `getOrThrow` is monad-polymorphic, and the fold's own monad is already
+      -- `Except StoreTransitionError`, so the read binds directly (no `runQuery` detour).
+      let headBlock ← FcMap.getOrThrow store.blocks head.root
+      assert (headBlock.slot.toNat == slot)
     | .checkHeadPayloadStatus status =>
-      assert ((getHead store).payloadStatus.toNat == status)
+      let head ← queryHead store
+      assert (head.payloadStatus.toNat == status)
     | .checkPayloadTimelinessVote blockRoot votes =>
       assert (FcMap.lookupD store.payloadTimelinessVote (bytesToRoot blockRoot) == votes)
     | .checkPayloadDataAvailabilityVote blockRoot votes =>
@@ -329,9 +350,11 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
     | .checkTime t => assert (store.time.toNat == t)
     | .checkGenesisTime t => assert (store.genesisTime.toNat == t)
     | .unsupported reason => throw (StoreTransitionError.todo reason)
-    -- Fulu-only checks (e.g. get_proposer_head) never appear in Gloas vectors; ignore
-    -- them so the shared `FcStep` match stays exhaustive.
-    | _ => pure ()
+    -- `get_proposer_head` is Gloas-Modified but not ported, and no alpha.11 vector exercises it;
+    -- surface it as unmodeled (a `todo` xfail) rather than passing it vacuously. This arm makes
+    -- the match exhaustive over `FcStep`, so a newly added constructor becomes a build error rather
+    -- than a silent pass through a catch-all.
+    | .checkProposerHead _ => throw (StoreTransitionError.todo "get_proposer_head check: not modeled")
   pure ()
 
 /-- `runForkChoice` (Gloas): decode the anchor state / block, build the ePBS store,
@@ -347,7 +370,9 @@ private def runForkChoiceImpl (P : Preset) (C : Config) (anchorStateBytes anchor
   | .error _, _ => .error (.decode "fork_choice anchor state")
   | _, .error _ => .error (.decode "fork_choice anchor block")
   | .ok anchorState, .ok anchorBlock =>
-    RunError.ofSpec (fcInterpretGloas P (getForkchoiceStore anchorState anchorBlock) steps)
+    RunError.ofSpec (do
+      let store ← getForkchoiceStore anchorState anchorBlock
+      fcInterpretGloas P store steps)
 
 /-- The `ssz_static` per-type kernel: decode `bytes` as the container `T`, return
 its hash-tree-root paired with the round-trip check (`reserialize == bytes`). A

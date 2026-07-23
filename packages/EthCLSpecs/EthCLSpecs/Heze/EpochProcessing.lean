@@ -1,0 +1,116 @@
+import EthCLSpecs.Heze.Containers
+import EthCLSpecs.Gloas.EpochProcessing
+
+/-!
+# `EthCLSpecs.Heze.EpochProcessing`: the inherited epoch substeps (Gloas over Heze state)
+
+EIP-7805 (FOCIL) changes no epoch processing. Every Gloas epoch substep and accessor is
+`inherit`ed here verbatim: each captured Gloas/Fulu `forkdef` (the DSL stores every
+`forkdef`'s source for inheritance; `SPEC_AUTHORING_MODEL.md` §8) re-elaborates in the Heze
+namespace against `Heze.State` (`= SSZ.Box _ Heze.BeaconState`), its sibling calls
+rebinding to the Heze copies. No substep body is restated. The order matches Gloas's so
+each callee is declared before its caller.
+-/
+
+set_option autoImplicit false
+
+open EthCLLib.Spec
+open EthCLSpecs.Fulu
+
+namespace EthCLSpecs.Heze
+
+state_section
+
+inherit computeEpochAtSlot
+inherit computeStartSlotAtEpoch
+inherit getCurrentEpoch
+inherit getPreviousEpoch
+inherit getRandaoMix
+inherit modBalance
+inherit increaseBalance
+inherit decreaseBalance
+inherit modValidator
+inherit computeActivationExitEpoch
+inherit currentEpochOf
+inherit previousEpochOf
+inherit getBeaconProposerIndex
+inherit getBlockRootAtSlot
+inherit getBlockRoot
+inherit isActiveValidator
+inherit isSlashableValidator
+inherit isEligibleForActivationQueue
+inherit isEligibleForActivation
+inherit credPrefix
+inherit hasEth1WithdrawalCredential
+inherit hasCompoundingWithdrawalCredential
+inherit hasExecutionWithdrawalCredential
+inherit getMaxEffectiveBalance
+inherit hasNotInitiatedExit
+inherit passedShardCommitteePeriod
+inherit getActiveValidatorIndices
+inherit getTotalBalance
+inherit getTotalActiveBalance
+inherit getBaseRewardPerIncrement
+inherit getBaseReward
+inherit getUnslashedParticipatingIndices
+inherit getEligibleValidatorIndices
+inherit validatorIndexByPubkey?
+inherit getFinalityDelay
+inherit isInInactivityLeak
+inherit getBalanceChurnLimit
+inherit getActivationExitChurnLimit
+inherit getExitChurnLimit
+inherit getActivationChurnLimit
+inherit computeExitEpochAndUpdateChurn
+inherit initiateValidatorExit
+inherit slashValidator
+inherit getDomain
+inherit getPendingBalanceToWithdraw
+inherit getConsolidationChurnLimit
+inherit computeConsolidationEpochAndUpdateChurn
+inherit queueExcessActiveBalance
+inherit switchToCompoundingValidator
+inherit getValidatorFromDeposit
+inherit addValidatorToRegistry
+inherit isValidDepositSignature
+inherit applyPendingDeposit
+inherit computeShuffledPermutation
+inherit getSeed
+inherit getCommitteeCountPerSlot
+inherit computeCommittee
+inherit getBeaconCommittee
+inherit getCommitteeIndices
+inherit cbwsAux
+inherit computeBalanceWeightedSelection
+inherit computeProposerIndices
+inherit getNextSyncCommittee
+inherit getBeaconProposerIndices
+inherit weighJustificationAndFinalization
+inherit processJustificationAndFinalization
+inherit processInactivityUpdates
+inherit getFlagIndexDeltas
+inherit getInactivityPenaltyDeltas
+inherit applyDeltas
+inherit processRewardsAndPenalties
+inherit processRegistryUpdates
+inherit processSlashings
+inherit DepositScan
+inherit ppdLoop
+inherit processPendingDeposits
+inherit pcLoop
+inherit processPendingConsolidations
+inherit processEffectiveBalanceUpdates
+inherit processSlashingsReset
+inherit processRandaoMixesReset
+inherit processEth1DataReset
+inherit processHistoricalSummariesUpdate
+inherit processParticipationFlagUpdates
+inherit processSyncCommitteeUpdates
+inherit processProposerLookahead
+inherit processBuilderPendingPayments
+inherit computePtc
+inherit processPtcWindow
+
+end
+
+end EthCLSpecs.Heze

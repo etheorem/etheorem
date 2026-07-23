@@ -113,4 +113,17 @@ store map is read (the `Ord` instance lives with the spec's fork-choice store). 
     (mp : map (Vector UInt8 32) V) (k : Vector UInt8 32) : m V :=
   FcMap.getOrThrowKey mp k k
 
+/-- Look up `k`, or throw the spec's `assert` reject. The fused form of the pyspec pair
+`assert k in d` followed by `d[k]`: the membership assert is the spec's own opening line, so
+a miss is an *expected rejection* (`.assert`), where `getOrThrow`'s bare-`d[k]` miss is
+`missingKey` (a bug-smell). Post-assert the key is present, so binding the value at the
+assert site is observably identical to the spec's later read. `descr` renders the asserted
+condition, diagnostic only. -/
+def FcMap.getOrAssert {map : MapKind} [FcMap map] {K V : Type} [Ord K] [BEq K] [Hashable K]
+    {m : Type → Type} [Monad m] [MonadExceptOf StoreTransitionError m]
+    (mp : map K V) (k : K) (descr : String) : m V :=
+  match FcMap.lookup mp k with
+  | some v => pure v
+  | none   => throw (StoreTransitionError.assert descr)
+
 end EthCLLib.Spec

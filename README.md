@@ -30,7 +30,7 @@ Upstream repository: <https://github.com/etheorem/etheorem>.
 ```
 LeanSha256 ─────────────┐
                         ├─→ SizzLean ──→ EthCLLib ──→ EthCLSpecs
-LeanHazmatSha256 ───────┘   (SSZ +       (consensus    (Fulu / Gloas
+LeanHazmatSha256 ───────┘   (SSZ +       (consensus    (Fulu…Heze
    (FFI SHA-256)            cache)        framework)    fork bodies)
 
 LeanHazmat* (FFI crypto family):  Sha256 · Bls · Kzg   (consumed à la carte)
@@ -44,10 +44,10 @@ independent build target:
 - **[`packages/EthCLLib/`](packages/EthCLLib/)** +
   **[`packages/EthCLSpecs/`](packages/EthCLSpecs/README.md)**: the
   consensus-spec framework (the fork-authoring DSL, the effect monad, the SSZ
-  container front-end, the pyspec driver) and the executable Fulu and
-  Gloas fork bodies built on it. EthCLSpecs declares its containers in-spec and
+  container front-end, the pyspec driver) and the executable Fulu, Gloas,
+  and Heze fork bodies built on it. EthCLSpecs declares its containers in-spec and
   ships the `pyspec_server` runner that drives the state-transition,
-  fork-choice, and `ssz_static` pyspec runs for both forks.
+  fork-choice, and `ssz_static` pyspec runs for all three forks.
 - **[`packages/LeanSha256/`](packages/LeanSha256/README.md)**: pure-Lean
   SHA-256 reference. NIST CAVP-validated, kernel-reducible. No FFI.
 - **[`packages/SizzLean/`](packages/SizzLean/README.md)**: SSZ
@@ -88,12 +88,13 @@ pure-Lean `Sha256Spec` reference, and the cache layer
 gindex-driven `setManyAt`, fused commit `Node.commitAndHash`,
 closure-based pending overlay, `sszUpdate` macro,
 `SSZ.Box` user surface) are all landed. The executable consensus
-spec covers the Fulu and Gloas forks (state transition, fork choice,
-and the SSZ containers declared in-spec, including Fulu's
-`proposer_lookahead` and the Gloas ePBS additions: the nine EIP-7732
-`BeaconState` fields plus the `Builder` / `ExecutionPayloadBid` types).
+spec covers the Fulu, Gloas, and Heze forks (state transition, fork
+choice, and the SSZ containers declared in-spec, including Fulu's
+`proposer_lookahead`, the Gloas ePBS additions: the nine EIP-7732
+`BeaconState` fields plus the `Builder` / `ExecutionPayloadBid` types,
+and Heze's EIP-7805 FOCIL inclusion-list layer).
 Pyspec pinned at consensus-spec-tests
-[v1.7.0-alpha.10](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.10)
+[v1.7.0-alpha.11](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.11)
 in the pytest harnesses. The universal proof set
 (`decode_encode`, `serialize_injective`, `encode_size_le_max`
 over `SSZType.Supported`) and the AVX-512 SIMD inner loop for
@@ -112,7 +113,7 @@ Per-subpackage design docs live next to the code they describe:
   [`FRAMEWORK_ARCHITECTURE.md`](packages/EthCLSpecs/docs/FRAMEWORK_ARCHITECTURE.md)
   (the EthCLLib framework and fork-authoring DSL), and
   [`SPECS_ARCHITECTURE.md`](packages/EthCLSpecs/docs/SPECS_ARCHITECTURE.md)
-  (how the Fulu and Gloas specs are organized, ported, and tested).
+  (how the fork specs are organized, ported, and tested).
   [`PLAN.md`](packages/EthCLSpecs/docs/PLAN.md) sequences the
   implementation phases; `IMPLEMENTATION_NOTES.md`, `DISCREPANCIES.md`,
   and `FUTURE_WORK.md` track deviations, spec disagreements, and
@@ -192,7 +193,7 @@ Toolchain pinned in [`lean-toolchain`](lean-toolchain) (elan picks it up).
 
 ```bash
 # From the repo root — common targets by name:
-lake build EthCLSpecs       # consensus spec (Fulu / Gloas); pulls in EthCLLib + SizzLean
+lake build EthCLSpecs       # consensus spec (Fulu / Gloas / Heze); pulls in EthCLLib + SizzLean
 lake build SizzLean         # SSZ library (serialize / deserialize / Merkleization)
 lake build LeanSha256       # pure-Lean SHA-256 reference
 lake build LeanPoseidon     # standalone Poseidon2 island (fires its anchor KAT)
@@ -261,7 +262,7 @@ Two `pytest-xdist` harnesses drive long-lived Lean servers against the
 server, so there is no per-vector Lean startup.
 
 - **EthCLSpecs** (`packages/EthCLSpecs/PySpecTests/`, the `pyspec_server`
-  runner): the Fulu and Gloas state transition, fork choice, and per-fork
+  runner): the Fulu, Gloas, and Heze state transition, fork choice, and per-fork
   `ssz_static` container vectors.
 - **SizzLean** (`packages/SizzLean/PySpecTests/`, the `ssz_generic_runner`):
   the fork-agnostic `ssz_generic` wire-format suite (uints, basic vectors,
@@ -273,18 +274,18 @@ server, so there is no per-vector Lean startup.
 just setup-python
 
 # Dev-subset smoke gates (a few cases per handler):
-just ethcl-pyspec-smoke         # Fulu + Gloas: transition / fork choice / ssz_static
+just ethcl-pyspec-smoke         # all three forks: transition / fork choice / ssz_static
 just sizzlean-pyspec-smoke   # ssz_generic
 
 # Full sweeps:
-just ethcl-pyspec-full               # both presets, both forks
+just ethcl-pyspec-full               # both presets, all three forks
 just sizzlean-pyspec-full    # every in-scope wire-format vector
 ```
 
 ### Coverage
 
 Pinned at consensus-spec-tests
-[v1.7.0-alpha.10](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.10).
+[v1.7.0-alpha.11](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.11).
 
 - **`ssz_generic`** (SizzLean): 2188 in-scope cases pass across every handler
   (uints, basic_vector, bitvector, bitlist, boolean, containers). The 292
@@ -292,7 +293,8 @@ Pinned at consensus-spec-tests
   SizzLean's `SSZType` universe and xfail. The test-only container shapes
   (`VarTestStruct`, `ComplexTestStruct`, `BitsStruct`, …) are hard-coded in
   `packages/SizzLean/SszGenericRunner.lean`.
-- **`ssz_static`** (EthCLSpecs, Fulu + Gloas): the consensus containers
+- **`ssz_static`** (EthCLSpecs, Gloas + Heze; Fulu's containers ride on
+  SizzLean's own suites): the consensus containers
   EthCLSpecs models pass at both the minimal and mainnet presets; the types it
   does not model (light-client, gossip-aggregation, networking identifiers,
   signing helpers) xfail as out of scope. Earlier forks (Phase 0 through

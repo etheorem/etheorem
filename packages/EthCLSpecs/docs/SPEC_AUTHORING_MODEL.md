@@ -598,7 +598,7 @@ implementation passes the full pyspec suite. It is recorded as a constant in
 the fork:
 
 ```lean
-def pyspecPinnedVersion : String := "v1.7.0-alpha.10"
+def pyspecPinnedVersion : String := "v1.7.0-alpha.11"
 ```
 
 The name is lowerCamelCase, per the Lean convention; the value is the release
@@ -629,7 +629,8 @@ fork must provide, with fixed signatures, expressed as a typeclass the fork
 instantiates. The entry points are `stateTransition`, `processSlots`, the
 individual `process_*` steps and operation handlers, the reward and penalty
 delta functions, the `on_*` fork-choice handlers,
-`initializeBeaconStateFromEth1`, and `upgradeToGloas`. Each entry point is
+`initializeBeaconStateFromEth1`, and the fork upgrade (`upgradeToGloas`,
+`upgradeToHeze`). Each entry point is
 independently invocable, so a single-operation vector can drive a single handler
 without running a whole block.
 

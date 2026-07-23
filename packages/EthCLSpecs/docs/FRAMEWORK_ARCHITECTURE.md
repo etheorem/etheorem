@@ -43,7 +43,7 @@ instance-implicit class, and a consumer, the test runner, a proof, or a future
 production client, picks the concrete instance at the call boundary. The spec
 body commits to none of them.
 
-Six seams carry the design.
+Eight seams carry the design.
 
 | Seam | Class / variable | What it abstracts | Fast instance | Pure instance |
 |---|---|---|---|---|
@@ -51,12 +51,16 @@ Six seams carry the design.
 | Config values | `[Config]` | config-tier values (fork versions, genesis delay) | the test config | a fixed config |
 | Merkleization hasher | `[HasherTag]` | the SSZ hash backend, carried as `HasherTag.H` | `Sha256` (FFI, opaque) | `Sha256Spec` (pure-Lean) |
 | Crypto backend | `[CryptoBackend]` | BLS verify/aggregate, KZG | caching FFI | symbolic (abstract `verify`) |
+| Execution engine | `[ExecutionEngine Payload Tx]` | predicates answered by the execution layer (`is_inclusion_list_satisfied`) | optimistic global instance | a local refuting/real instance |
 | Finite-map backing | `{map : MapKind} [FcMap map]` | the fork-choice store's maps | `hashMap` | `treeMap` |
 | Box flavour | smart constructor at the anchor | cache strategy of the boxed state | `FastBox` (cached, `= CachedBox Sha256`) | `UncachedBox Sha256Spec` (uncached) |
 | Effect monad | `{StateTransition : Type → Type}` | the state-threading effect | `EStateM` | `StateT ∘ Except` |
 
-Five of these hide completely behind instance resolution or a constructor choice
-at the anchor, so the author never names them. The fork-choice map is the one
+Seven of the eight hide completely behind instance resolution or a constructor
+choice at the anchor, so the author never names them. (The execution-engine pair
+is a trust axis rather than a speed one: the optimistic default answers `true`
+everywhere, and a local instance replaces it where a test or proof needs a real
+or refuting verdict.) The fork-choice map is the one
 exception, and it cannot hide: `map` lands in the `Store` type itself, so
 `Store hashMap` and `Store treeMap` are genuinely distinct types. A fork-choice
 section takes `map` as an explicit type variable for that reason. The finite-map
@@ -793,7 +797,7 @@ The crypto primitives are instance-implicit (`[CryptoBackend]`), even though one
 real algorithm is used, because the seam buys two things.
 
 **Caching.** The pyspec suite calls BLS `verify` repeatedly on recurring
-inputs: shared validator sets, domains, and fixtures recur across the sweep, and the
+inputs: shared validator sets, domains, and fixtures recur across the suite, and the
 runner holds one long-lived server per worker so the memo stays warm. The runner
 injects a backend that memoizes `verify` over the real FFI, keyed on the full
 `(pubkey, message, signature)` wire bytes, a small fixed-size key whose hash costs far

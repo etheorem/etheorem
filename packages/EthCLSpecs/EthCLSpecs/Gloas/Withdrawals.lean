@@ -37,11 +37,23 @@ def addressOf (v : Validator) : ExecutionAddress :=
 
 /-- `get_balance_after_withdrawals` over `Gloas.State`: the balance net of any
 already-queued withdrawals for `vi`. Fulu's version is a plain `def` bound to
-`Fulu.State`, so it is restated here for the Gloas state. -/
-def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) : Gwei :=
+`Fulu.State`, so it is restated here for the Gloas state.
+
+Throwing (`StateTransition`), because the spec's `return state.balances[validator_index] -
+withdrawn` (`capella/beacon-chain.md:378`) raises two ways, neither an explicit `assert`:
+`state.balances[validator_index]` is a bare list index (`IndexError` out of range), so it goes
+through `sszGetIdx` (→ `outOfBounds`); `- withdrawn` is a bare `uint64` subtraction whose
+underflow raises `ValueError`, which the reference runner does NOT catch (`context.py:429-433`),
+so it throws the uncaught `.arithmetic` reject rather than a caught `.assert`. Both are
+unreachable on a well-formed state (`len(balances) == len(validators)`, and a validator's queued
+withdrawals never exceed its balance), but the reads are modeled faithfully rather than clamped. -/
+def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
+    StateTransition Gwei := do
   let withdrawn := ws.foldl (fun acc w => if w.validatorIndex == vi then acc + w.amount else acc) 0
-  let bal := sszGet state balances[vi.toNat]!
-  if withdrawn > bal then 0 else bal - withdrawn
+  let bal ← sszGetIdx (sszGet state balances) vi.toNat
+  if withdrawn > bal then
+    throw (StateTransitionError.arithmetic "get_balance_after_withdrawals: balances[i] - withdrawn underflow")
+  return bal - withdrawn
 
 /-- `get_builder_withdrawals` (NEW, EIP-7732): drain `builder_pending_withdrawals`
 into validator-flagged withdrawals, capped at `MAX_WITHDRAWALS_PER_PAYLOAD - 1`. -/
@@ -71,7 +83,6 @@ forkdef getPendingPartialWithdrawals (withdrawalIndex : WithdrawalIndex)
   let state ← get
   let epoch := currentEpochOf state
   let limit := Nat.min (prior.size + Const.maxPendingPartialsPerWithdrawalsSweep) (Const.maxWithdrawalsPerPayload - 1)
-  let validators := (sszGet state validators).toArray
   let mut wi := withdrawalIndex
   let mut count := 0
   let mut ws : Array Withdrawal := #[]
@@ -80,9 +91,8 @@ forkdef getPendingPartialWithdrawals (withdrawalIndex : WithdrawalIndex)
     let allW := prior ++ ws
     if !(w.withdrawableEpoch ≤ epoch) || allW.size ≥ limit then break
     let vi := w.validatorIndex
-    let hb ← assertH (vi.toNat < validators.size)
-    let validator := validators[vi.toNat]'hb.down
-    let bal := balanceAfterWithdrawals state vi allW
+    let validator ← sszGetIdx (sszGet state validators) vi.toNat
+    let bal ← balanceAfterWithdrawals state vi allW
     if isEligibleForPartialWithdrawals validator bal then
       ws := ws.push
         { index := wi, validatorIndex := vi, address := addressOf validator,
@@ -109,8 +119,7 @@ forkdef getBuildersSweepWithdrawals (withdrawalIndex : WithdrawalIndex)
 
   for _ in [0:buildersLimit] do
     if prior.size + ws.size ≥ limit then break
-    let hb ← assertH (builderIndex < bs.size)
-    let builder := bs[builderIndex]'hb.down
+    let builder ← sszGetIdx (sszGet state builders) builderIndex
     if builder.withdrawableEpoch ≤ epoch && builder.balance > 0 then
       ws := ws.push
         { index := wi, validatorIndex := convertBuilderIndexToValidatorIndex (UInt64.ofNat builderIndex),
@@ -139,9 +148,8 @@ forkdef getValidatorsSweepWithdrawals (withdrawalIndex : WithdrawalIndex)
   for _ in [0:validatorsLimit] do
     let allW := prior ++ ws
     if allW.size ≥ limit then break
-    assert (vi < nvals)
-    let validator := validators[vi]?.getD default
-    let bal := balanceAfterWithdrawals state (UInt64.ofNat vi) allW
+    let validator ← sszGetIdx (sszGet state validators) vi
+    let bal ← balanceAfterWithdrawals state (UInt64.ofNat vi) allW
     if isFullyWithdrawable validator bal epoch then
       ws := ws.push { index := wi, validatorIndex := UInt64.ofNat vi, address := addressOf validator, amount := bal }
       wi := wi + 1
@@ -175,8 +183,7 @@ forkdef applyWithdrawals (withdrawals : Array Withdrawal) : StateTransition Unit
   for w in withdrawals do
     if isBuilderIndex w.validatorIndex then
       let builderIndex := toBuilderIndex w.validatorIndex
-      let hb ← assertH (builderIndex.toNat < (sszGet stateAcc builders).size)
-      let b := (sszGet stateAcc builders)[builderIndex.toNat]'hb.down
+      let b ← sszGetIdx (sszGet stateAcc builders) builderIndex.toNat
       stateAcc := sszUpdate stateAcc with builders[builderIndex.toNat]! := { b with balance := b.balance - umin w.amount b.balance }
     else
       stateAcc := decreaseBalance stateAcc w.validatorIndex w.amount

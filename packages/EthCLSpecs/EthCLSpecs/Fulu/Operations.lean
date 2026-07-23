@@ -101,13 +101,15 @@ forkdef processAttesterSlashing (asl : AttesterSlashing) : StateTransition Unit 
 `is_matching_source` assertion (a valid attestation always matches source), so the
 caller rejects; `some flags` otherwise. -/
 forkdef getAttestationParticipationFlagIndices (state : State) (data : AttestationData)
-    (inclusionDelay : UInt64) : Option (Array Nat) := Id.run do
+    (inclusionDelay : UInt64) : StateTransition (Option (Array Nat)) := do
   let justified := if data.target.epoch == currentEpochOf state then sszGet state currentJustifiedCheckpoint
                    else sszGet state previousJustifiedCheckpoint
   let isMatchingSource := data.source.epoch == justified.epoch && data.source.root == justified.root
   if !isMatchingSource then return none
-  let isMatchingTarget := data.target.root == getBlockRoot state data.target.epoch
-  let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == getBlockRootAtSlot state data.slot
+  let targetRoot ← getBlockRoot state data.target.epoch
+  let isMatchingTarget := data.target.root == targetRoot
+  let headRoot ← getBlockRootAtSlot state data.slot
+  let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == headRoot
 
   let mut flags : Array Nat := #[]
   if inclusionDelay ≤ UInt64.ofNat (isqrt Const.slotsPerEpoch) then flags := flags.push Const.timelySourceFlagIndex
@@ -148,7 +150,7 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   assert (att.aggregationBits.size == offset)
 
   -- Resolve the participation flags, then validate the aggregate signature.
-  let flagIndices ← match getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) with
+  let flagIndices ← match ← getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "is_matching_source")
   let indexedAttestation : IndexedAttestation :=

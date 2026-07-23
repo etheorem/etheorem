@@ -68,8 +68,8 @@ structure CaseMeta where
 
 /-- One step of a `fork_choice` vector's `steps.yaml`, decoded by the runner.
 `checks` carries the expected store values to compare; `unsupported` marks a step
-the runner does not model (a `get_proposer_head` / `should_override` check), so the
-case is reported out-of-scope rather than falsely passing. -/
+the runner does not model (a `should_override` check, an unrecognized key), so the
+case reports `todo` (an xfail) rather than falsely passing. -/
 inductive FcStep where
   /-- `{tick: t}`: advance the store clock to absolute time `t` (seconds). -/
   | tick (time : Nat)
@@ -112,50 +112,101 @@ inductive FcStep where
   | checkTime (t : Nat)
   /-- `checks.genesis_time`. -/
   | checkGenesisTime (t : Nat)
-  /-- A check the runner does not model (`get_proposer_head` /
-  `should_override_forkchoice_update`); the case is out-of-scope. -/
+  /-- A check the runner does not model (`should_override_forkchoice_update`, an
+  unrecognized step or check key); the case reports `todo`, an xfail. -/
   | unsupported (reason : String)
   deriving Inhabited
 
 /-- Run a state-only `EStateM` action on `s` and project its result to `Except`: the new
-store on success, the reject on failure. The bridge from a fork-choice handler (`onBlock`,
-`onAttestation`, …) to the `Except` outcome `checkStepValidity` consumes. -/
-def runOn {ε σ : Type} (s : σ) (act : EStateM ε σ Unit) : Except ε σ :=
+store on success, the reject PAIRED WITH THE ERROR-TIME STORE on failure. The reference
+pyspec runner mutates the store in place and catches the expected raise, so mutations a
+handler made before rejecting persist there; keeping `EStateM`'s error-branch state is
+how this runner matches that. The bridge from a fork-choice handler (`onBlock`,
+`onAttestation`, …) to the outcome `checkStepValidity` consumes. -/
+def runOn {ε σ : Type} (s : σ) (act : EStateM ε σ Unit) : Except (ε × σ) σ :=
   match act.run s with
-  | .ok _ s' => .ok s'
+  | .ok _ s'    => .ok s'
+  | .error e s' => .error (e, s')
+
+/-- Run a read-only `EStateM` query on `s` and project its *result* to `Except`: the query's
+value on success, the reject on failure. The value-returning sibling of `runOn`, for a
+fork-choice read such as `get_head` whose value (not the store) a check step inspects, now
+that those reads can throw. -/
+def runQuery {ε σ α : Type} (s : σ) (act : EStateM ε σ α) : Except ε α :=
+  match act.run s with
+  | .ok a _   => .ok a
   | .error e _ => .error e
 
 open EthCLLib.Spec in
 /-- The runner's per-step valid/invalid check for a fork-choice step, fork-agnostic over
-the store type `σ`. `before` is the pre-step store (the snapshot, free here since stores
-are immutable values), `expectedValid` the step's wire flag, `outcome` the result of
-running the step.
+the store type `σ`. `expectedValid` is the step's wire flag; `outcome` the result of
+running the step, carrying the error-time store on a reject (`runOn`).
 
 The step itself never decides pass/fail; this does. A step expected valid that succeeds
-threads its new store; one expected invalid that is rejected rolls back to `before` and
-continues (the rejection is the expected result). The two mismatches, a valid step that is
-rejected and an invalid step that is accepted, are failures: the first returns the step's
-own error, the second a typed mismatch. So a fork interpreter runs each step to an
-`Except` outcome and pipes it through here; the valid/invalid policy lives in one place. -/
-def checkStepValidity {σ : Type} (before : σ) (expectedValid : Bool)
-    (outcome : Except StoreTransitionError σ) : Except StoreTransitionError σ :=
+threads its new store. One expected invalid that is rejected continues FROM THE
+ERROR-TIME STORE: the reference pyspec runner mutates in place and catches the raise, so
+mutations made before the reject (e.g. `on_attestation`'s target-checkpoint cache insert
+before the signature assert) persist there, and the handlers `set` at pyspec mutation
+points to reproduce exactly that. The two mismatches, a valid step that is rejected and
+an invalid step that is accepted, are failures: the first returns the step's own error,
+the second a typed mismatch.
+
+Which rejects count as the expected rejection is `StoreTransitionError.isExpectedRejection`
+(`Spec/Errors.lean`), the one home for that policy: the reference runner (`context.py`'s
+`expect_assertion_error`) catches `AssertionError` and `IndexError`, so exactly `.assert` and
+`.transition (.outOfBounds …)` (the store machine's only index-miss shape, since
+`StoreTransitionError` has no bare `.outOfBounds`), bare and `.transition`-wrapped, thread the
+error-time store as faithful expected rejections. Everything else propagates as `.error`:
+`.todo` / `.outOfScope` (bare or wrapped) are our own deferral, reported xfail / skip at the
+server, and `.missingKey` or any other unexpected store error, which the reference does not
+catch and `classify` treats as a likely bug, now fails the step rather than passing it. -/
+def checkStepValidity {σ : Type} (expectedValid : Bool)
+    (outcome : Except (StoreTransitionError × σ) σ) : Except StoreTransitionError σ :=
   match outcome, expectedValid with
   | .ok after, true  => .ok after
   | .ok _,     false => .error (.assert "fork_choice: step accepted but expected invalid")
-  | .error _,  false => .ok before
-  | .error e,  true  => .error e
+  | .error (e, errStore), false =>
+    if e.isExpectedRejection then .ok errStore else .error e
+  | .error (e, _), true  => .error e
+
+open EthCLLib.Spec in
+/-- `checkStepValidity` scores a `valid: false` step by the reference runner's caught set:
+`.assert` (bare and `.transition`-wrapped) and `.transition (.outOfBounds …)`, the store
+machine's only index-miss shape, are the expected rejection (pass, threading the error-time
+store). A `.missingKey` (a bare-`Dict` `KeyError`), a `.transition (.arithmetic …)` (a `uint64`
+`ValueError`), or a `.decodeFailure` (a decoder / container bug, never a spec raise), none of
+which the reference catches, propagates as a failure; `.todo` / `.outOfScope` stay deferrals.
+Each conjunct is a concrete evaluation, closed by `rfl`
+(`Except` carries no `DecidableEq`, so `decide` cannot run). -/
+example :
+    checkStepValidity (σ := Nat) false (.error (.assert "x", 7)) = .ok 7
+  ∧ checkStepValidity (σ := Nat) false (.error (.transition (.assert "x"), 7)) = .ok 7
+  ∧ checkStepValidity (σ := Nat) false (.error (.transition (.outOfBounds 3 2), 7)) = .ok 7
+  ∧ checkStepValidity (σ := Nat) false (.error (.missingKey (Vector.replicate 32 0), 7))
+      = .error (.missingKey (Vector.replicate 32 0))
+  ∧ checkStepValidity (σ := Nat) false (.error (.transition (.arithmetic "x"), 7))
+      = .error (.transition (.arithmetic "x"))
+  ∧ checkStepValidity (σ := Nat) false (.error (.decodeFailure "x", 7)) = .error (.decodeFailure "x")
+  ∧ checkStepValidity (σ := Nat) false (.error (.todo "later", 7)) = .error (.todo "later")
+  ∧ checkStepValidity (σ := Nat) false (.error (.outOfScope "n/a", 7)) = .error (.outOfScope "n/a") :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 open EthCLLib.Spec in
 /-- Decode a fork-choice step's SSZ `bytes` to its typed value and run `f` on it, or
 short-circuit to the step's reject when the bytes do not deserialize. Factors the
 decode-or-reject the `block` / `attestation` / `attester_slashing` step arms repeat: each
 decodes its own wire type through the fork's `SSZRepr` and, on a parse failure, fails the
-step with a `<label> decode failed` assertion. `label` names the wire type in that message;
-`f` runs the handler over the decoded value (typically `runOn store …`). -/
+step with a `<label> decode failed` `decodeFailure` reject paired with `before` (nothing ran,
+so the error-time store is the pre-step store). That reject is a decoder / container bug, NOT
+an expected rejection: fork-choice vectors are always well-formed, so a parse miss here is our
+bug, and modeling it as `.assert` would let a `valid:false` step falsely PASS on a broken
+decoder. `label` names the wire type in that message; `f` runs the handler over the decoded
+value (typically `runOn before …`). -/
 def decodeStepOr {α σ : Type} [SizzLean.SSZRepr α] (bytes : ByteArray) (label : String)
-    (f : α → Except StoreTransitionError σ) : Except StoreTransitionError σ :=
+    (before : σ) (f : α → Except (StoreTransitionError × σ) σ) :
+    Except (StoreTransitionError × σ) σ :=
   match SizzLean.SSZ.deserialize (T := α) bytes with
-  | .error _    => .error (.assert s!"fork_choice: {label} decode failed")
+  | .error _    => .error (.decodeFailure s!"fork_choice: {label} decode failed", before)
   | .ok value   => f value
 
 /-- The `operations/<handler>` axis as a typed tag, one constructor per pyspec
@@ -270,10 +321,13 @@ class ForkInterface where
   /-- Interpret a `fork_choice` vector: build the store from the anchor state /
   block, fold the `steps`, and verify each `checks` step. `.ok` ⇒ every check
   matched; `.error e` carries a `RunError StoreTransitionError` the harness
-  classifies: a `.decode` is a likely bug, and a wrapped `.spec` reject classifies
-  by its constructor (`.todo` an out-of-scope deferral, `.assert` an expected
-  rejection, `.missingKey` / a wrapped `.outOfBounds` a likely bug). Drives
-  `fork_choice/*`. -/
+  classifies: `.spec (.todo _)` an unmodeled-branch xfail, `.spec (.outOfScope _)`
+  a skip, and everything else (a `.decode`, an escaping `.assert`, a `.missingKey`,
+  a wrapped `.outOfBounds`) a likely bug. Expected per-step rejections are resolved
+  inside the interpreter by `checkStepValidity`, so an `.assert` that escapes this
+  far was not expected by any step. A `.todo` / `.outOfScope` escaping from an
+  expected-invalid step is the runner's own deferral surfacing (the step's spec
+  assert was never reached), reported xfail / skip. Drives `fork_choice/*`. -/
   runForkChoice : ByteArray → ByteArray → Array FcStep → Except (RunError StoreTransitionError) Unit
   /-- Build a genesis state from the eth1 inputs and return its root. Drives
   `genesis`. -/
