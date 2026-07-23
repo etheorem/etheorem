@@ -26,6 +26,10 @@ name = "Etheorem"
 name = "LeanSha256"
 path = "packages/LeanSha256"
 
+[[require]]
+name = "LeanImtPlus"
+path = "packages/LeanImtPlus"
+
 # LeanHazmat — FFI crypto family (hazmat-docs/ARCHITECTURE.md).
 # Consensus families ship first; execution-layer families are deferred.
 # SHA-256 leads: it needs no vendoring, so it de-risks the per-family
