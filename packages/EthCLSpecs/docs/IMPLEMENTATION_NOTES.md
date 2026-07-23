@@ -616,10 +616,16 @@ conditional design described in `SPECS_ARCHITECTURE.md` §11.3 and the
 `LeanPoseidonProofs` containment pattern. No current proof requires that
 separation.
 
-- **`Proofs/BuilderIndex.lean`** is the first proof module. It establishes three
-  `bv_decide` theorems over `isBuilderIndex`, `toBuilderIndex`, and
-  `convertBuilderIndexToValidatorIndex`, proving the builder-index flag
-  round-trip and tagging properties.
+- **`Proofs/BuilderIndex.lean`** establishes three `bv_decide` theorems over
+  `isBuilderIndex`, `toBuilderIndex`, and `convertBuilderIndexToValidatorIndex`,
+  proving the builder-index flag round-trip and tagging properties.
+
+- **`Proofs/GetPtc.lean`** proves `getPtc`'s `else`-branch offset into
+  `ptcWindow` stays in range for its two guarded call sites:
+  `getPtcElseOffset_lt_next_slot` under `process_payload_attestation`'s guarantee
+  (`data.slot + 1 == state.slot`), and `getPtcElseOffset_lt_same_slot` under
+  the fork-choice replay callers' exact-equality guarantee (`slot ==
+  curSlot`). Both via `UInt64`/`Nat` bridging lemmas and `omega`, no mathlib.
 
 - **`Proofs/InitializePtcWindow.lean`** establishes three `simp`-closed theorems
   over `initializePtcWindow`: its two index regions (the empty first-epoch
