@@ -27,11 +27,12 @@ default:
 
 # Build all packages
 [group('general')]
-build: hazmat-bls-vendor hazmat-kzg-vendor
+build: hazmat-bls-vendor hazmat-kzg-vendor hazmat-xmss-vendor
     lake build LeanSha256
     lake build LeanHazmatSha256
     lake build LeanHazmatBls
     lake build LeanHazmatKzg
+    lake build LeanHazmatXMSS
     lake build SizzLean
     lake build EthCLSpecs
     lake build LeanPoseidon
@@ -51,7 +52,7 @@ build-cli:
 
 # Run every local property-test recipe (all packages)
 [group('general')]
-test: leansha256-test hazmat-sha256-test hazmat-bls-test hazmat-kzg-test sizzlean-test poseidon-test
+test: leansha256-test hazmat-sha256-test hazmat-bls-test hazmat-kzg-test hazmat-xmss-test sizzlean-test poseidon-test
 
 # Reject committed `sorry`, `#eval`, `#check`, `#print` in Lean source
 # per CLAUDE.md. `git grep` searches tracked files only and returns 1
@@ -373,7 +374,7 @@ leansha256-bump-patch:
     python3 packages/LeanSha256/scripts/bump_patch.py
 
 # ═════════════════════════════════════════════════════════════════════════
-# LeanHazmat — FFI crypto families (SHA-256 / BLS / KZG)
+# LeanHazmat — FFI crypto families (SHA-256 / BLS / KZG / XMSS)
 #
 # The vendor recipes shallow-clone a pinned tag into a gitignored `vendor/`
 # tree (hazmat-docs/ARCHITECTURE.md §6); the build itself stays offline. Run
@@ -449,6 +450,35 @@ hazmat-kzg-vendor:
 [group('hazmat')]
 hazmat-kzg-test: hazmat-bls-vendor hazmat-kzg-vendor
     lake build LeanHazmatKzgTests
+
+# xmss-reference pin: commit 171ccbd (2021-03-16). xmss-reference has no
+# formal release tags; we pin by commit hash. randombytes.c is intentionally
+# excluded from compilation — the shim provides its own deterministic version.
+
+xmss_ref_commit := "171ccbd26f098542a67eb5d2b128281c80bd71a6"
+
+# Vendor xmss-reference for LeanHazmatXMSS — shallow clone at the pinned commit
+[group('hazmat')]
+hazmat-xmss-vendor:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir="packages/LeanHazmatXMSS/vendor/xmss-reference"
+    if [ -d "$dir/.git" ]; then
+      echo "xmss-reference already vendored at $dir ($(git -C "$dir" log -1 --format='%h %s' 2>/dev/null || echo unknown))"
+      exit 0
+    fi
+    rm -rf "$dir"
+    mkdir -p "$(dirname "$dir")"
+    # Full clone required to checkout a specific non-HEAD commit (no tag to shallow-clone by).
+    git clone https://github.com/XMSS/xmss-reference "$dir"
+    git -C "$dir" checkout "{{ xmss_ref_commit }}"
+    echo "checked out {{ xmss_ref_commit }}"
+    echo "vendored xmss-reference {{ xmss_ref_commit }} -> $dir"
+
+# XMSS round-trip KAT (keygen → sign → verify) against the xmss-reference FFI shim. Needs `just hazmat-xmss-vendor` first (run via the dependency).
+[group('hazmat')]
+hazmat-xmss-test: hazmat-xmss-vendor
+    lake build LeanHazmatXMSSTests
 
 # ═════════════════════════════════════════════════════════════════════════
 # LeanPoseidon — pure-Lean Poseidon2 (BN254 t=3), standalone island
