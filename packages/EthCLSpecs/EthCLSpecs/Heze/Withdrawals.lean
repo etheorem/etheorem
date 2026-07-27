@@ -34,8 +34,13 @@ balance net of any already-queued withdrawals for `vi`. Restated (a plain `def` 
 `forkdef`). Throwing, mirroring the Gloas copy: `state.balances[validator_index]` is a bare list
 index (`IndexError` → `sszGetIdx` → `outOfBounds`), and `- withdrawn` is a bare `uint64`
 subtraction whose underflow raises `ValueError`, uncaught by the reference runner
-(`context.py:429-433`), so it throws the uncaught `.arithmetic` reject, not a caught `.assert`.
-See `Gloas.balanceAfterWithdrawals`. -/
+(`context.py:424-435`), so it throws the uncaught `.arithmetic` reject, not a caught `.assert`.
+See `Gloas.balanceAfterWithdrawals`.
+
+The `withdrawn` accumulator is the Fulu divergence restated a third time, deferred with it:
+pyspec's `sum(...)` adds unbounded ints, this fold wraps on `UInt64`, so a true sum ≥ 2^64
+wraps past the `withdrawn > bal` guard and returns a wrong balance where pyspec raises.
+`checkedAdd` (`Spec/Errors.lean`) is the fix when it is taken up. -/
 def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
     StateTransition Gwei := do
   let withdrawn := ws.foldl (fun acc w => if w.validatorIndex == vi then acc + w.amount else acc) 0

@@ -47,7 +47,7 @@ inductive StateTransitionError where
   /-- An uncaught arithmetic fault (a `uint64` over/underflow, or a `% 0`): the spec's `uintN`
   op raises Python `ValueError` (a `ZeroDivisionError` for `% 0`), which the reference runner's
   `expect_assertion_error` does NOT catch (it catches only `AssertionError` and `IndexError`,
-  `context.py:429-433`). So it is not an expected rejection but a genuine error, distinct from a
+  `context.py:424-435`). So it is not an expected rejection but a genuine error, distinct from a
   guarded `assert`: it `classify`s as `ClassifyBucket.uncaughtFault`, so an invalid vector that
   rejects this way FAILS rather than passing. `descr` names the faulting op, diagnostic only. The
   standing case is `get_balance_after_withdrawals`' `state.balances[i] - withdrawn`

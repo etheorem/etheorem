@@ -300,11 +300,11 @@ forkdef isFfgCompetitive (store : Store map) (headRoot parentRoot : Root) : Stor
 
 /-- `is_finalization_ok`: the chain is finalizing within `REORG_MAX_EPOCHS_SINCE_FINALIZATION`.
 pyspec (`phase0/fork-choice.md:609-611`) computes the epoch gap as a checked `uint64`
-subtraction that raises `ValueError`. `on_tick` sets `store.time` for any `time` with no
-monotonicity assert, so a tick moving the clock back below the finalized epoch's start slot is
-reachable for conforming input: the bare `-` wrapped to `2^64-1`, compared `≤ 2` as false, and
-returned a fabricated `finalizationOk := false` where the reference errors. Throwing, so the
-caller binds it. -/
+subtraction that raises `ValueError`. `on_tick_per_slot` sets `store.time = time` with no
+monotonicity assert (`phase0/fork-choice.md:750-754`), so the spec permits a tick that moves
+the clock back below the finalized epoch's start slot, where the subtraction underflows.
+`checkedSub` rejects there. No conformance vector emits a backwards tick, so the path is
+unreachable in the corpus and carries no pin. Throwing, so the caller binds it. -/
 forkdef isFinalizationOk (store : Store map) (slot : Slot) : StoreTransition Bool := do
   let gap ← checkedSub (computeEpochAtSlot slot) store.finalizedCheckpoint.epoch
     "is_finalization_ok: compute_epoch_at_slot(slot) - finalized_checkpoint.epoch"
@@ -790,7 +790,7 @@ example : pinBalanceAfterWithdrawalsThrows = true := by native_decide
 /-- `balanceAfterWithdrawals` rejects (`.arithmetic`) a `uint64` underflow: a validator whose
 queued withdrawals exceed its balance drives `balances[vi] - withdrawn` negative
 (`capella/beacon-chain.md:378`), which pyspec raises as `ValueError`, uncaught by the reference
-runner (`context.py:429-433`), so the Lean throws the uncaught `.arithmetic` reject rather than a
+runner (`context.py:424-435`), so the Lean throws the uncaught `.arithmetic` reject rather than a
 caught `.assert`. Fixture: balance 5 at index 0, a queued withdrawal of 10. `State` is FFI-backed,
 so `native_decide`. -/
 private def pinBalanceUnderflowThrows : Bool :=

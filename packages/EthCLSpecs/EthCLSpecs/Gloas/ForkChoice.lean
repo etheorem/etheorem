@@ -258,7 +258,8 @@ forkdef isPreviousSlotPayloadDecision (store : Store map) (node : ForkChoiceNode
   -- The spec reads `store.blocks[node.root].slot` (plain `Dict`), raising on a missing root.
   let block ← FcMap.getOrThrow store.blocks node.root
   let currentSlot ← getCurrentSlot store
-  let isPreviousSlot := block.slot + 1 == currentSlot
+  let nextSlot ← checkedAdd block.slot 1 "is_previous_slot_payload_decision: blocks[root].slot + 1"
+  let isPreviousSlot := nextSlot == currentSlot
   let isPayloadDecision :=
     node.payloadStatus == Const.payloadStatusEmpty || node.payloadStatus == Const.payloadStatusFull
   pure (isPreviousSlot && isPayloadDecision)
@@ -391,7 +392,8 @@ forkdef shouldApplyProposerBoost (store : Store map) : StoreTransition Bool := d
     let parentRoot := block.parentRoot
     let parent ← FcMap.getOrThrow store.blocks parentRoot
     let slot := block.slot
-    if parent.slot + 1 < slot then pure true
+    let parentNextSlot ← checkedAdd parent.slot 1 "is_proposer_equivocation: parent.slot + 1"
+    if parentNextSlot < slot then pure true
     else if !(← isHeadWeak store parentRoot) then pure true
     else
       -- The spec's equivocation comprehension iterates `store.blocks.items()`
@@ -405,8 +407,9 @@ forkdef shouldApplyProposerBoost (store : Store map) : StoreTransition Bool := d
       let equivExists ← entries.foldlM (init := false) fun found (root, b) => do
         let tl ← FcMap.getOrThrow store.blockTimeliness root
         let timely ← arrGetIdx tl Const.ptcTimelinessIndex
+        let bNextSlot ← checkedAdd b.slot 1 "is_proposer_equivocation: block.slot + 1"
         pure (found || (timely && b.proposerIndex == parent.proposerIndex
-          && b.slot + 1 == slot && root != parentRoot))
+          && bNextSlot == slot && root != parentRoot))
       pure (!equivExists)
 
 /-- `get_weight(store, node)`: zero for an undecided previous-slot payload; otherwise
@@ -461,10 +464,14 @@ where
       -- checkpoint (genesis, the same epoch, or within two epochs of the current one).
       let currentEpoch ← getCurrentStoreEpoch store
       let votingSource ← getVotingSource store blockRoot
-      let correctJustified :=
+      -- Python's `or` short-circuits, so the `+ 2` runs only once the two cheap disjuncts
+      -- fail; the guard keeps that order, since the add is a checked `uint64` op.
+      let justifiedWithoutHorizon :=
         store.justifiedCheckpoint.epoch == Const.genesisEpoch
           || votingSource.epoch == store.justifiedCheckpoint.epoch
-          || votingSource.epoch + 2 ≥ currentEpoch
+      let correctJustified ← if justifiedWithoutHorizon then pure true else do
+        let horizon ← checkedAdd votingSource.epoch 2 "filter_block_tree: voting_source.epoch + 2"
+        pure (decide (horizon ≥ currentEpoch))
 
       -- The finalized checkpoint must also lie on this branch.
       let finalizedBlock ← getCheckpointBlock store blockRoot store.finalizedCheckpoint.epoch
