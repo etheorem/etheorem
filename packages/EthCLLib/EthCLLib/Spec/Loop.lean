@@ -44,20 +44,35 @@ def fuelLoop {β α : Type} {m : Type → Type u} [Monad m]
     | .done a => return a
     | .next b => fuelLoop fuel' b exhausted step
 
-/-- The pure sibling of `fuelLoop`, for a total recursive *walk* whose result is the
-accumulator itself: run `step` from `a` up to `fuel` times, stopping at the first
-`Step.done`, and returning the current accumulator if the fuel runs out. The fuel-out case
-returns `a` (the partial accumulator), matching a hand-rolled `| 0, a => a` walk, so supply
-a `fuel` bound the walk cannot exceed (a store / block count) and exhaustion is unreachable.
-Structural on `fuel`, total and kernel-reducible. Suits a fork-choice DAG walk whose step
-has a single continuation (`get_ancestor`, the `get_head` descent); a walk that recurses
-over many children at once (`filter_block_tree`) is genuine tree recursion and keeps its
-own helper. -/
-def fuelIterate {α : Type} (fuel : Nat) (a : α) (step : α → Step α α) : α :=
+/-- A bounded *walk* whose result is the accumulator itself: run `step` from `a` up to `fuel`
+times, stopping at the first `Step.done`, and returning the current accumulator if the fuel runs
+out. `step` runs in `m`, so the per-iteration body may read the store and throw. Structural on
+`fuel`, total. Distinct from `fuelLoop`, whose fuel-out returns a fixed `exhausted` value rather
+than the live accumulator; supply a `fuel` bound the walk cannot exceed (a store or block count)
+so that case is unreachable, and reach for `fuelIterateM!` where it is not. -/
+def fuelIterateM {α : Type} {m : Type → Type u} [Monad m]
+    (fuel : Nat) (a : α) (step : α → m (Step α α)) : m α := do
   match fuel with
-  | 0         => a
-  | fuel' + 1 => match step a with
-    | .done b => b
-    | .next b => fuelIterate fuel' b step
+  | 0         => return a
+  | fuel' + 1 => match ← step a with
+    | .done b => return b
+    | .next b => fuelIterateM fuel' b step
+
+/-- `fuelIterateM` with no slack: exhausting the fuel throws instead of returning.
+
+`fuelIterateM` returns the live accumulator on fuel-out, which suits a walk whose bound is a
+store or block count that structurally cannot be exceeded. The `on_tick` catch-up is not that
+walk: its bound is `(tick_slot - current_slot) + 1`, exact only because `1000` divides
+`SLOT_DURATION_MS` (true at both pinned presets, 12000 and 6000, and asserted nowhere), so a
+config breaking that divisibility would return a store whose clock never reached `time` and
+surface later as an unrelated `checks: time` mismatch. Throw instead, so the failure names
+itself. -/
+def fuelIterateM! {α : Type} {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
+    [SpecReject E] (fuel : Nat) (a : α) (what : String) (step : α → m (Step α α)) : m α := do
+  match fuel with
+  | 0         => throw (SpecReject.assert s!"{what}: loop fuel exhausted")
+  | fuel' + 1 => match ← step a with
+    | .done b => return b
+    | .next b => fuelIterateM! fuel' b what step
 
 end EthCLLib.Spec

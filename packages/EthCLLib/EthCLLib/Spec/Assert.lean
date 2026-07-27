@@ -57,6 +57,31 @@ the store machine runs the state machine, never the reverse. -/
   | .ok _ post => pure post
   | .error e _ => throw (ErrorConv.conv e : StoreTransitionError)
 
+/-- The value-returning sibling of `runStateTransition`: execute `act` on `pre` and hand back
+its *result*, discarding the post-state, or re-throw the inner failure wrapped as
+`StoreTransitionError.transition`.
+
+`runStateTransition` serves the state machine's *steps*, whose result is the new state. A store
+handler that needs a state-machine *query* wants the value instead, and `get_ptc` is the case:
+it is a state-file `forkdef`, so its rejects are `StateTransitionError`, and
+`on_payload_attestation_message` runs in the store machine and cannot call it directly. The
+bridge stays one-way, the store machine running the state machine and never the reverse. -/
+@[inline] def evalStateTransition {S α : Type} {m : Type → Type u} [Monad m]
+    [MonadExceptOf StoreTransitionError m] (pre : S)
+    (act : EStateM StateTransitionError S α) : m α :=
+  match act.run pre with
+  | .ok a _   => pure a
+  | .error e _ => throw (ErrorConv.conv e : StoreTransitionError)
+
+/-- The bridge carries a value out. -/
+example : (evalStateTransition (m := Except StoreTransitionError) (0 : Nat)
+    (pure 7 : EStateM StateTransitionError Nat Nat)) = .ok 7 := rfl
+
+/-- … and wraps an inner reject as `.transition`, exactly as `runStateTransition` does. -/
+example : (evalStateTransition (m := Except StoreTransitionError) (0 : Nat)
+    (throw (.assert "x") : EStateM StateTransitionError Nat Nat))
+    = .error (.transition (.assert "x")) := rfl
+
 /-- Collapse a reprinted condition to a single tab-free line. `reprint` keeps the
 trailing trivia after `cond` (whitespace and any following comment), which would
 embed newlines / the next line's text in the descriptor and break the

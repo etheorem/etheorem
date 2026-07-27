@@ -30,6 +30,22 @@ namespace EthCLLib.Tests.FrameworkUtils
 #guard le8 (uint64ToBytes 258) = 258
 #guard le8 (uintToBytes (258 : UInt64)) = 258
 
+/-! ## Checked `uint64` arithmetic: the faithful over/underflow faults
+
+`checkedAdd` / `checkedSub` / `checkedMul` mirror remerkleable's `uint64`, which raises on
+over/underflow rather than wrapping. In range they reduce to `.ok`; out of range they raise the
+uncaught `.arithmetic` fault (never an expected rejection). The same source fault rides in as
+`.arithmetic` on the state machine and, via `[ErrorConv …]`, as `.transition (.arithmetic …)` on
+the store machine, so both instantiations are pinned. Faults are unreachable on well-formed
+vectors, so these guards are the only thing exercising the throw. -/
+#guard (checkedAdd 2 3 "x" : Except StateTransitionError UInt64).toOption = some 5
+#guard (checkedSub 5 3 "x" : Except StateTransitionError UInt64).toOption = some 2
+#guard (checkedMul 6 7 "x" : Except StateTransitionError UInt64).toOption = some 42
+#guard (checkedSub 3 5 "u" : Except StateTransitionError UInt64) matches .error (.arithmetic _)
+#guard (checkedAdd 0xffffffffffffffff 1 "o" : Except StateTransitionError UInt64) matches .error (.arithmetic _)
+#guard (checkedMul 0x8000000000000000 4 "o" : Except StateTransitionError UInt64) matches .error (.arithmetic _)
+#guard (checkedSub 3 5 "u" : Except StoreTransitionError UInt64) matches .error (.transition (.arithmetic _))
+
 /-! ## Map-backing equivalence: `treeMap` and `hashMap` agree -/
 
 private def pairs : List (Nat × Nat) := [(3, 30), (1, 10), (2, 20), (1, 11), (5, 50)]

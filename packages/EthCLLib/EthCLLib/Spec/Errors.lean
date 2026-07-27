@@ -17,7 +17,8 @@ the *constructor* (its classify mode), which is typed:
 | `assert` | an expected rejection; an invalid vector should hit one |
 | `todo` | an unimplemented branch we intend to fill; a work-queue item, reported `xfail` |
 | `outOfScope` | a branch we deliberately do not model; reported `skip`, not counted as work |
-| `outOfBounds` / `missingKey` | a smell; well-formed input should not hit these |
+| `outOfBounds` / `decodeFailure` | a smell; well-formed input should not hit these, though the reference catches `IndexError` |
+| `missingKey` / `arithmetic` | a fault the reference propagates rather than catches, so it never rejects a vector |
 
 `todo` and `outOfScope` both name a branch that does not run, the distinction is
 intent: a `todo` is expected to pass once the work-queue reaches it, an
@@ -94,16 +95,17 @@ inductive ClassifyBucket where
   | todo
   /-- An `outOfScope` reject; a branch we deliberately do not model. Reported `skip`. -/
   | outOfScope
-  /-- An `outOfBounds` / `missingKey` / `decodeFailure` reject; a likely framework or spec bug.
-  For an invalid vector, an `outOfBounds` (`IndexError`) still counts as a rejection the
-  reference accepts, so the driver passes it (flagged). -/
+  /-- An `outOfBounds` / `decodeFailure` reject; a likely framework or spec bug. For an invalid
+  vector, an `outOfBounds` (`IndexError`) still counts as a rejection the reference accepts
+  (`context.py`'s `expect_assertion_error` catches `IndexError`), so the driver passes it
+  (flagged). -/
   | likelyBug
   /-- An uncaught Python fault the reference runner does NOT catch (a `uint64` `ValueError` from
-  `.arithmetic`, a `ZeroDivisionError`). Reports as a bug like `likelyBug`, but unlike
-  `likelyBug` it is never a valid rejection of an invalid vector: the reference would propagate
-  it as a genuine error, so the driver fails an invalid vector that rejects this way rather than
-  passing it. This is the reporting-side counterpart of `isExpectedRejection` excluding
-  `.transition (.arithmetic …)`. -/
+  `.arithmetic`, a `ZeroDivisionError`, or a bare-`Dict` `KeyError` from `.missingKey`). Reports
+  as a bug like `likelyBug`, but unlike `likelyBug` it is never a valid rejection of an invalid
+  vector: the reference would propagate it as a genuine error, so the driver fails an invalid
+  vector that rejects this way rather than passing it. This is the reporting-side counterpart of
+  `isExpectedRejection` excluding `.missingKey` and `.transition (.arithmetic …)`. -/
   | uncaughtFault
   deriving Inhabited, Repr, DecidableEq
 
@@ -135,26 +137,39 @@ def StoreTransitionError.classify : StoreTransitionError → ClassifyBucket
   | .assert _      => .expectedRejection
   | .todo _        => .todo
   | .outOfScope _  => .outOfScope
-  | .missingKey _  => .likelyBug
+  | .missingKey _  => .uncaughtFault
   | .decodeFailure _ => .likelyBug
   | .transition e  => e.classify
 
-/-- Whether a store reject is the expected rejection of a `valid: false` fork-choice step.
-The reference runner (`context.py:429-433`'s `expect_assertion_error`) catches `AssertionError`
-and `IndexError`, so exactly `.assert` (bare and `.transition`-wrapped) and the store machine's
+/-- Whether a store reject is the expected rejection of a `valid: false` fork-choice step
+under `expect_assertion_error` (`context.py:424-435`), which catches `AssertionError` and
+`IndexError`. So exactly `.assert` (bare and `.transition`-wrapped) and the store machine's
 only index-miss shape, `.transition (.outOfBounds …)`, count; `.missingKey` (an uncaught
 `KeyError`), `.transition (.arithmetic …)` (an uncaught `uint64` `ValueError`), `.todo` /
 `.outOfScope` (our own deferrals), and anything else do not.
 
+That wrapper scores the attestation, attester-slashing, envelope, and PTC-message steps. The
+block step is scored by `add_block`'s own `except (AssertionError, BlockNotFoundException)`
+(`fork_choice.py:387-395`), which never catches `IndexError`, so its admitted set is this one
+minus the index miss. `FcStepKind.admits` applies that narrowing; `isIndexMiss` is the shape
+it subtracts.
+
 This is a *different question* from `classify`, which buckets a reject for reporting (a
 `.transition (.outOfBounds)` is still a `likelyBug` there): `classify` answers "how do we
 report this reject", `isExpectedRejection` answers "does the reference accept it as the
-invalid step's expected raise". `checkStepValidity` is the sole caller; keeping the caught
-set here, next to `classify`, makes the two policies visibly distinct and edited in one
-place each. -/
+invalid step's expected raise". Keeping the caught set here, next to `classify`, makes the two
+policies visibly distinct and edited in one place each. -/
 def StoreTransitionError.isExpectedRejection : StoreTransitionError → Bool
   | .assert _
   | .transition (.assert _) | .transition (.outOfBounds _ _) => true
+  | _ => false
+
+/-- The store machine's index-miss shape, the reject standing for the spec's `IndexError`.
+`StoreTransitionError` has no bare `.outOfBounds`, so it is always the wrapped one. Split out
+so the step kinds whose reference wrapper does not catch `IndexError` can subtract exactly
+this from `isExpectedRejection`. -/
+def StoreTransitionError.isIndexMiss : StoreTransitionError → Bool
+  | .transition (.outOfBounds _ _) => true
   | _ => false
 
 /-- Build the `assert` / `todo` reject of an error type from its diagnostic descriptor.
@@ -240,5 +255,36 @@ it; `ErrorConv` is just the per-pair conversion that stdlib leaves to the caller
 @[inline] def liftErr {m : Type → Type u} {α E F : Type} [Monad m] [MonadExcept F m]
     [ErrorConv E F] (x : Except E α) : m α :=
   MonadExcept.ofExcept (x.mapError ErrorConv.conv)
+
+/-! ## Checked `uint64` arithmetic
+
+The spec's `uintN` arithmetic is *checked*: remerkleable reconstructs a `uint64` after every
+`+` / `-` / `*` (`basic.py`), so an over- or underflow raises Python `ValueError`. That
+`ValueError` is not an `AssertionError`, so the reference runner does not catch it
+(`context.py`); it is the `.arithmetic` uncaught fault (`classify`s as `uncaughtFault`, never an
+expected rejection). Lean's raw `UInt64` ops wrap instead of raising, so a spec `a + b` / `a - b`
+/ `a * b` that can leave the `uint64` range is modeled with these, not the bare operator. Each
+emits `StateTransitionError.arithmetic`; the `[ErrorConv StateTransitionError E]` bound rides it
+in as `.arithmetic` on the state machine (identity) and `.transition (.arithmetic …)` on the store
+machine, so one definition serves both, exactly as `sszGetIdx` does for `IndexError`. `descr` names
+the faulting op, diagnostic only. -/
+
+/-- Checked `uint64` addition: the sum, or the `.arithmetic` fault on overflow (`a + b` wraps below
+`a`, the unsigned carry test). Mirrors remerkleable's `uint64.__add__`. -/
+@[inline] def checkedAdd {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
+    [ErrorConv StateTransitionError E] (a b : UInt64) (descr : String) : m UInt64 :=
+  liftErr (E := StateTransitionError) <| if a + b < a then .error (.arithmetic descr) else .ok (a + b)
+
+/-- Checked `uint64` subtraction: the difference, or the `.arithmetic` fault on underflow
+(`b > a`). Mirrors remerkleable's `uint64.__sub__` (the standing `balances[i] - withdrawn` case). -/
+@[inline] def checkedSub {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
+    [ErrorConv StateTransitionError E] (a b : UInt64) (descr : String) : m UInt64 :=
+  liftErr (E := StateTransitionError) <| if b > a then .error (.arithmetic descr) else .ok (a - b)
+
+/-- Checked `uint64` multiplication: the product, or the `.arithmetic` fault on overflow (`a ≠ 0`
+and the truncating `a * b / a` fails to recover `b`). Mirrors remerkleable's `uint64.__mul__`. -/
+@[inline] def checkedMul {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
+    [ErrorConv StateTransitionError E] (a b : UInt64) (descr : String) : m UInt64 :=
+  liftErr (E := StateTransitionError) <| if a != 0 && a * b / a != b then .error (.arithmetic descr) else .ok (a * b)
 
 end EthCLLib.Spec
