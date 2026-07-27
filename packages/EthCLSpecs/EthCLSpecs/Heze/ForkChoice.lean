@@ -192,7 +192,7 @@ cyclically (`cyclicSample`, in `Heze/Committees.lean`). Relocated from the beaco
 into this store-throwing block beside its sole caller `getInclusionListTransactions`: the spec's
 `indices[i % len(indices)]` raises `ZeroDivisionError` when the slot has no committee members.
 That is an uncaught fault (the reference runner catches only `AssertionError` / `IndexError`), so
-the empty case throws `.transition (.arithmetic …)` (a `uncaughtFault`, NOT an expected rejection)
+the empty case throws `.transition (.arithmetic …)` (an `uncaughtFault`, not an expected rejection)
 rather than a caught `.assert`, matching how `balanceAfterWithdrawals` models the sibling `uint64`
 fault, and rather than silently sampling a `default`. `state` stays an explicit parameter (the
 accessor reads `state`, not the store). -/
@@ -314,10 +314,12 @@ inclusion-list gate. After the `is_payload_verified` check, a payload that fails
 inclusion-list constraints is not extended (`fork-choice.md:226`). The rest is Gloas verbatim.
 -/
 forkdef shouldExtendPayload (store : Store map) (root : Root) : StoreTransition Bool := do
-  -- Mirrors the (now-throwing) Gloas body plus the inclusion-list gate: the spec opens with
+  -- Mirrors the Gloas body plus the inclusion-list gate: the spec opens with
   -- `assert store.blocks[root].slot + 1 == get_current_slot(store)`.
   let rootBlock ← FcMap.getOrThrow store.blocks root
-  assert (rootBlock.slot + 1 == getCurrentSlot store)
+  let currentSlot ← getCurrentSlot store
+  let nextSlot ← checkedAdd rootBlock.slot 1 "should_extend_payload: blocks[root].slot + 1"
+  assert (nextSlot == currentSlot)
   if !isPayloadVerified store root then pure false
   -- [New in Heze:EIP7805] do not extend a payload that fails the inclusion-list constraints
   else if !(← isPayloadInclusionListSatisfied store root) then pure false
@@ -330,7 +332,7 @@ forkdef shouldExtendPayload (store : Store map) (root : Root) : StoreTransition 
     else
       let pb ← FcMap.getOrThrow store.blocks proposerRoot
       -- Python's final `or` short-circuits: `is_parent_node_full` (whose
-      -- `store.blocks[pb.parent_root]` read now throws) never runs when
+      -- `store.blocks[pb.parent_root]` read throws) never runs when
       -- `pb.parent_root != root` already decides the disjunction (Gloas parity).
       if pb.parentRoot != root then pure true
       else isParentNodeFull store pb
@@ -353,7 +355,6 @@ inherit updateCheckpoints
 inherit updateUnrealizedCheckpoints
 inherit computePulledUpTip
 inherit onTickPerSlot
-inherit advanceStoreTime
 inherit onTick
 inherit recordBlockTimeliness
 inherit updateProposerBoostRoot
@@ -368,7 +369,10 @@ inherit verifyExecutionPayloadEnvelope
 -- The `is_inclusion_list_satisfied` verdict comes from an external EL over the Engine API
 -- (`consensus-specs/specs/heze/fork-choice.md:54-62`), so it enters through the framework's
 -- `[ExecutionEngine]` seam (`EthCLLib.Spec.Engine`, the canonical home of the optimistic-mock
--- rationale), instantiated at Heze's payload / transaction types.
+-- rationale), instantiated at Heze's payload / transaction types. Scoped to the three
+-- declarations that need it: at file scope the binder would ride on every later declaration,
+-- none of which calls the engine.
+section EngineSeam
 variable [ExecutionEngine ExecutionPayload Transaction]
 
 /-- `is_inclusion_list_satisfied(execution_payload, inclusion_list_transactions)`
@@ -391,7 +395,7 @@ forkdef recordPayloadInclusionListSatisfaction (store : Store map) (state : Stat
     (payload : ExecutionPayload) : StoreTransition (Store map) := do
   -- The spec reads `Slot(state.slot - 1)`, a `uint64` subtraction that raises `ValueError` on a
   -- slot-0 state (invalidating the whole envelope). That fault is uncaught by the reference
-  -- runner, so throw `.transition (.arithmetic …)` (a `uncaughtFault`, not an expected rejection),
+  -- runner, so throw `.transition (.arithmetic …)` (an `uncaughtFault`, not an expected rejection),
   -- matching `balanceAfterWithdrawals`, rather than a caught `.assert` or a silent empty set.
   let stateSlot := sszGet state slot
   if stateSlot == 0 then
@@ -429,6 +433,8 @@ forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) 
       blockStates := FcMap.insert store.blockStates envelope.beaconBlockRoot warm,
       payloads := FcMap.insert store.payloads envelope.beaconBlockRoot envelope }
 
+end EngineSeam
+
 inherit storeTargetCheckpointState
 inherit validateOnAttestation
 inherit updateLatestMessages
@@ -453,8 +459,16 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }
 
+  -- `uint64(anchor_state.genesis_time + SLOT_DURATION_MS * anchor_state.slot // 1000)`
+  -- (`phase0/fork-choice.md:223`): both the product and the sum are checked. `anchor_state`
+  -- comes straight off the wire, so a slot at or above `2^64 / SLOT_DURATION_MS` wraps and
+  -- seeds the store with a wrong clock where pyspec errors.
+  let elapsedMs ← checkedMul Const.slotDurationMs (sszGet anchorState slot)
+    "get_forkchoice_store: SLOT_DURATION_MS * anchor_state.slot"
+  let storeTime ← checkedAdd (sszGet anchorState genesisTime) (elapsedMs / 1000)
+    "get_forkchoice_store: genesis_time + SLOT_DURATION_MS * slot // 1000"
   pure
-    { time := (sszGet anchorState genesisTime) + Const.slotDurationMs * (sszGet anchorState slot) / 1000
+    { time := storeTime
       genesisTime := sszGet anchorState genesisTime
       justifiedCheckpoint := cp, finalizedCheckpoint := cp
       unrealizedJustifiedCheckpoint := cp, unrealizedFinalizedCheckpoint := cp
@@ -490,7 +504,7 @@ MUST NOT modify the store" is automatic here. The inclusion-list store rides ins
 forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit := do
   let store ← get
   let inclusionList := signed.message
-  let isTimely := timeIntoSlotMs store < getInclusionListDueMs
+  let isTimely := (← timeIntoSlotMs store) < getInclusionListDueMs
   set { store with
     inclusionListStore := processInclusionList store.inclusionListStore inclusionList isTimely }
 
@@ -547,27 +561,51 @@ private def pinPilsStore (payloadPresent : Bool) (recorded : Option Bool) :
       | none   => FcMap.empty
     inclusionListStore := InclusionListStore.empty }
 
+/-- What `pinPils` observed: the predicate's verdict, or which class of throw rejected it.
+
+Naming the class is the point. Folding every `.error` to a single marker pins only *that* a
+throw happened, so a regression from the spec's `assert` to an uncaught `.missingKey` would
+still satisfy the pin, and that swap is exactly the difference between a faithful rejection and
+a bug. `pinCommitteeThrows` below holds the same line from the other side, asserting a reject is
+*not* an expected rejection. -/
+private inductive PilsVerdict where
+  /-- The predicate ran clean and answered `b`. -/
+  | verdict (b : Bool)
+  /-- The spec's `assert root ∈ payload_inclusion_list_satisfaction` fired: the expected reject. -/
+  | assertReject
+  /-- Any other throw (a bare `.missingKey` read, a decode miss). Never expected at this gate. -/
+  | otherReject
+  deriving DecidableEq
+
 /-- The predicate's verdict on `pinPilsStore payloadPresent recorded`. The `letI`s re-supply the
 preset / hasher the `forkdef` parameters want (Lean re-synthesizes them rather than reading the
 store's fixed type), the same pattern the `InclusionListStore` pins in this file use. -/
-private def pinPils (payloadPresent : Bool) (recorded : Option Bool) : Option Bool :=
+private def pinPils (payloadPresent : Bool) (recorded : Option Bool) : PilsVerdict :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let store := pinPilsStore payloadPresent recorded
-  -- Run the now-throwing predicate concretely; `none` marks the `assert root ∈ …` reject.
+  -- Run the predicate concretely and match on *which* reject fired: `.assert` is the spec's
+  -- own guard, anything else is our bug.
   match (isPayloadInclusionListSatisfied (map := treeMap) store pinPilsRoot : PinM Bool).run store with
-  | .ok b _    => some b
-  | .error _ _ => none
+  | .ok b _              => .verdict b
+  | .error (.assert _) _ => .assertReject
+  | .error _ _           => .otherReject
 
 -- verified + recorded `false` ⇒ `false` (do not extend this payload).
-#guard pinPils true (some false) = some false
+#guard pinPils true (some false) = .verdict false
 -- verified + recorded `true` ⇒ `true`.
-#guard pinPils true (some true) = some true
+#guard pinPils true (some true) = .verdict true
 -- unverified (root ∉ payloads) ⇒ `false`, even with the satisfaction bit recorded `true`.
-#guard pinPils false (some true) = some false
+#guard pinPils false (some true) = .verdict false
 -- verified but no recorded entry ⇒ the spec's `assert root ∈ payload_inclusion_list_satisfaction`
--- now *rejects* (a state the invariant rules out) rather than reading a `lookupD` default.
-#guard pinPils true none = none
+-- now *rejects* (a state the invariant rules out) rather than reading a `lookupD` default. The
+-- `.assertReject` (over a bare "it threw") is what a regression to `.missingKey` would break.
+#guard pinPils true none = .assertReject
+-- unverified AND no recorded entry ⇒ still the spec's assert, because
+-- `assert root in store.payload_inclusion_list_satisfaction` precedes the verified check
+-- (`heze/fork-choice.md:199-212`). A model that tested `is_payload_verified` first would answer
+-- `.verdict false` here, and the other three quadrants could not tell the difference.
+#guard pinPils false none = .assertReject
 
 /-! ### Build-enforced pins (vectorless): the FOCIL fork-choice helpers
 
@@ -647,6 +685,18 @@ private def pinRecordSatisfied : Option Bool :=
   | .error _ _  => none
 example : pinRecordSatisfied = some true := by native_decide
 
+/-- The recorded verdict and the gate's answer, or the reject that fired. Keeping `threw`
+separate is the whole point: the *gate* arm is where a tuple collapses, since a throw from
+`isPayloadInclusionListSatisfied` would hand back `(some false, false)`, byte-identical to the
+legitimate refusal this pin exists to check. The record-path arm was already distinguishable
+(`(none, false)`); this makes both so. -/
+private inductive RecordVerdict where
+  /-- The record path completed: the stored bit and the gate's verdict. -/
+  | recorded (value : Option Bool) (gate : Bool)
+  /-- Either the record path or the gate rejected. -/
+  | threw
+  deriving DecidableEq
+
 /-- The discriminating counterpart to `pinRecordSatisfied`: the same record path under a
 *refuting* engine, a local `letI` instance answering `false` in place of the optimistic
 default (`EthCLLib.Spec.Engine` documents the design). The record path writes `false` at a
@@ -655,7 +705,7 @@ covers the branch every conformance vector leaves dead, end-to-end: oracle → r
 verdict → gate. `pinPilsStore true none` puts `root ∈ payloads`, so the membership check
 passes and the recorded bit is what decides. `State` is FFI-backed (`FastBox`), so
 `native_decide`. -/
-private def pinRecordRefuted : Option Bool × Bool :=
+private def pinRecordRefuted : RecordVerdict :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
@@ -667,14 +717,14 @@ private def pinRecordRefuted : Option Bool × Bool :=
   let store := pinPilsStore true none
   match (recordPayloadInclusionListSatisfaction (map := treeMap) store state pinPilsRoot
       (default : @EthCLSpecs.Heze.ExecutionPayload minimal) : PinM (Store treeMap)).run store with
-  | .error _ _  => (none, false)
+  | .error _ _  => .threw
   | .ok after _ =>
     let recorded := FcMap.lookup after.payloadInclusionListSatisfaction pinPilsRoot
     match (isPayloadInclusionListSatisfied (map := treeMap) after pinPilsRoot : PinM Bool).run after with
-    | .ok gate _  => (recorded, gate)
-    | .error _ _  => (recorded, false)
+    | .ok gate _  => .recorded recorded gate
+    | .error _ _  => .threw
 -- refuting oracle ⇒ recorded `false`, and the gate rejects the verified payload.
-example : pinRecordRefuted = (some false, false) := by native_decide
+example : pinRecordRefuted = .recorded (some false) false := by native_decide
 
 /-- `on_inclusion_list` threads the slot-timeliness bit into `process_inclusion_list`: a list
 received before `INCLUSION_LIST_DUE_BPS` is filed timely, one at/after the deadline untimely. Runs
@@ -799,41 +849,55 @@ private def pinTimeliness : treeMap Root Bool :=
   FcMap.insert (FcMap.insert FcMap.empty pinDummyRoot true) pinAltRoot false
 
 /-- Run the comprehension over `pinLists` / `pinTimeliness` under the minimal preset, so the
-hash-free `#guard`s below need no ambient instance. `collectInclusionListTransactions` now throws
-(the `timeliness` plain-`Dict` read), so it runs in `Except StoreTransitionError`; `pinTimeliness`
-carries an entry for every `pinLists` key, so the `.error` branch is unreachable here. -/
-private def pinCollect (equiv : Array ValidatorIndex) (onlyTimely : Bool) : Array Transaction :=
+hash-free `#guard`s below need no ambient instance. `collectInclusionListTransactions` throws on
+the `timeliness` plain-`Dict` read, and `pinTimeliness` carries an entry for every `pinLists`
+key, so the reject is unreachable here. That is exactly why the reject must stay visible in the
+result type: collapsing it to `#[]` would let a throw satisfy any future case that is
+legitimately empty. The `#guard`s below compare through the `Except`. -/
+private def pinCollect (equiv : Array ValidatorIndex) (onlyTimely : Bool) :
+    Except StoreTransitionError (Array Transaction) :=
   letI : Preset := minimal
-  match (collectInclusionListTransactions pinLists equiv pinTimeliness onlyTimely :
-      Except StoreTransitionError (Array Transaction)) with
-  | .ok txs  => txs
-  | .error _ => #[]
+  collectInclusionListTransactions pinLists equiv pinTimeliness onlyTimely
+
+/-- `p` applied to the collected transactions, and `false` when the comprehension rejected. The
+reject failing every predicate is the point: folding it to `#[]` instead let a throw satisfy any
+claim about an empty result. -/
+private def pinCollectSat (equiv : Array ValidatorIndex) (onlyTimely : Bool)
+    (p : Array Transaction → Bool) : Bool :=
+  match pinCollect equiv onlyTimely with
+  | .ok txs  => p txs
+  | .error _ => false
 
 -- No equivocators, timeliness ignored: union of {0xAA} and {0xAA, 0xBB}, deduped to two.
-#guard (pinCollect #[] false).size = 2
-#guard (pinCollect #[] false).contains (pinTx 0xAA)
-#guard (pinCollect #[] false).contains (pinTx 0xBB)
+#guard pinCollectSat #[] false (·.size == 2)
+#guard pinCollectSat #[] false (·.contains (pinTx 0xAA))
+#guard pinCollectSat #[] false (·.contains (pinTx 0xBB))
 -- only_timely drops validator 6's untimely list, leaving just {0xAA}.
-#guard (pinCollect #[] true).size = 1
-#guard (pinCollect #[] true).contains (pinTx 0xAA)
+#guard pinCollectSat #[] true (·.size == 1)
+#guard pinCollectSat #[] true (·.contains (pinTx 0xAA))
 -- Equivocator 6 is filtered out regardless of timeliness, leaving just {0xAA}.
-#guard (pinCollect #[6] false).size = 1
-#guard (pinCollect #[6] false).contains (pinTx 0xAA)
+#guard pinCollectSat #[6] false (·.size == 1)
+#guard pinCollectSat #[6] false (·.contains (pinTx 0xAA))
 
 /-- Vectorless reject pin for `get_forkchoice_store`'s opening assert
 (`assert anchor_block.state_root == hash_tree_root(anchor_state)`, `fork-choice.md:141`). The
 default block's all-zero `stateRoot` cannot equal `hash_tree_root` of the default state (a
-non-zero SHA-256 digest), so the seed takes the reject branch and returns `.error`;
-`toOption.isNone` reads that verdict. No conformance vector reaches the mismatch (the harness
-derives anchor block + state from one vector, so `state_root` always matches), so this pin is
-the only witness of the throw. Computes `hash_tree_root` (FFI `Sha256`) → `native_decide`. The
-Fulu and Gloas constructors carry the textually-identical assert. -/
+non-zero SHA-256 digest), so the seed takes the reject branch. No conformance vector reaches the
+mismatch (the harness derives anchor block + state from one vector, so `state_root` always
+matches), so this pin is the only witness of the throw. Computes `hash_tree_root` (FFI `Sha256`)
+→ `native_decide`. The Fulu and Gloas constructors carry the textually-identical assert.
+
+Matches `.assert` specifically rather than reading `toOption.isNone`: the spec's opening guard is
+what should fire here, and a regression to some other throw class is a bug this pin has to catch
+rather than absorb. -/
 private def pinAnchorRejects : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  (getForkchoiceStore (SSZ.FastBox (default : @BeaconState minimal))
-      (default : @BeaconBlock minimal) (map := treeMap)).toOption.isNone
+  match getForkchoiceStore (SSZ.FastBox (default : @BeaconState minimal))
+      (default : @BeaconBlock minimal) (map := treeMap) with
+  | .error (.assert _) => true
+  | _                  => false
 example : pinAnchorRejects = true := by native_decide
 
 end EthCLSpecs.Heze
