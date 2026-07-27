@@ -121,7 +121,10 @@ forkdef timeIntoSlotMs (store : Store map) : StoreTransition UInt64 := do
 
 /-- A basis-points deadline within a slot, in milliseconds: `bps * SLOT_DURATION_MS //
 BASIS_POINTS`. Multiply before the `UInt64` truncating divide, so the floor lands on the full
-`bps * SLOT_DURATION_MS` product. -/
+`bps * SLOT_DURATION_MS` product. The product is bare rather than `checkedMul`, and stays
+that way: both factors are constants (`bps ≤ BASIS_POINTS = 10000`, `SLOT_DURATION_MS` is
+12000 at mainnet and 6000 at minimal), so it peaks near `1.2e8` and cannot reach the `uint64`
+bound at any preset. -/
 forkdef bpsDeadlineMs (bps : UInt64) : UInt64 :=
   bps * Const.slotDurationMs / Const.basisPoints
 

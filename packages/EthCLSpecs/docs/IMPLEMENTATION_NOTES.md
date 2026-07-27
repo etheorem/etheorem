@@ -455,14 +455,23 @@ The linear DAG walks route through fuel-bounded combinators (§12). `getAncestor
 which a linear combinator cannot express, so it keeps a local fuel-bounded `where` helper.
 The totality the doc wants is met either way.
 
-The fork-choice weight path still runs on raw `UInt64`, where the pyspec's `uint64` ops
-raise: `getAttestationScore`'s balance fold (the spec's `sum(...)` accumulates in `Gwei`,
-so it raises during accumulation rather than widening, `phase0/fork-choice.md:326-336`),
-`getWeight`'s proposer-boost add, and the products in `committeeWeight`,
-`calculateCommitteeFraction`, and `getProposerScore`.
-`bpsDeadlineMs`'s `bps * SLOT_DURATION_MS` shares the shape. `checkedAdd` / `checkedMul`
-(`Spec/Errors.lean`) are the fix; deferred. Reaching any of them takes a total active
-balance within a factor of the `uint64` bound, which no preset's validator set approaches.
+The fork-choice weight path still runs on raw `UInt64` where the pyspec's `uint64` ops
+raise, and it is deferred as one piece because it rests on one root: `getTotalBalance`
+(`phase0/beacon-chain.md:1130-1140`), whose `sum(...)` accumulates in `Gwei` and raises,
+while this fold wraps. `committeeWeight` is `getTotalActiveBalance / SLOTS_PER_EPOCH`,
+`calculateCommitteeFraction` and `getProposerScore` are its products, and `getWeight`'s
+proposer-boost add takes one operand from them, so checking any of those while the total
+underneath still wraps would only move the wrong number around.
+
+The conversion is larger than the fork-choice layer. `getTotalBalance` and
+`getTotalActiveBalance` are pure `forkdef`s with 15 call sites across epoch processing,
+rewards, registry updates, the transition spine, and fork choice; making them throwing
+propagates upward through every pure caller (§7.1's rule, one layer over). The remaining
+independent site is `getAttestationScore`'s own balance fold, which sums
+`state.validators[i].effective_balance` directly and could be checked on its own; it stays
+with the rest so the weight path converts in one go rather than half-guarded. Reaching any
+of them takes a total active balance within a factor of the `uint64` bound, which no
+preset's validator set approaches.
 
 The reference catches different exceptions per step kind, so what satisfies a
 `valid: false` step varies too. `expect_assertion_error` (`context.py:424-435`) catches
