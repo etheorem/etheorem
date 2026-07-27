@@ -44,7 +44,14 @@ processing (`start_slot < state.slot` holds), fires only on degenerate epoch-bou
 near-zero-stake states (the path that makes `compute_pulled_up_tip`'s pjf reject
 reachable). -/
 forkdef getBlockRootAtSlot (state : State) (s : Slot) : StateTransition Root := do
-  assert (s < (sszGet state slot) && (sszGet state slot) ≤ s + UInt64.ofNat Const.slotsPerHistoricalRoot)
+  -- `assert slot < state.slot <= slot + SLOTS_PER_HISTORICAL_ROOT`. Python's chained comparison
+  -- short-circuits: `slot < state.slot` is checked first (a caught `AssertionError`), and only then
+  -- is `slot + SPHR` formed. That `uint64` sum raises `ValueError` on overflow, an uncaught fault the
+  -- runner does not catch, so it is `checkedAdd`, not a bare `+`, sequenced after the first assert.
+  assert (s < sszGet state slot)
+  let bound ← checkedAdd s (UInt64.ofNat Const.slotsPerHistoricalRoot)
+    "get_block_root_at_slot: slot + SLOTS_PER_HISTORICAL_ROOT"
+  assert (sszGet state slot ≤ bound)
   pure (vmodGet (sszGet state blockRoots) s Const.slotsPerHistoricalRoot)
 
 /-- `get_block_root` (the epoch's first slot). -/

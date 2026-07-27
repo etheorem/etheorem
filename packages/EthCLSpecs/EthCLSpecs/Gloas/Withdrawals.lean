@@ -43,10 +43,15 @@ Throwing (`StateTransition`), because the spec's `return state.balances[validato
 withdrawn` (`capella/beacon-chain.md:378`) raises two ways, neither an explicit `assert`:
 `state.balances[validator_index]` is a bare list index (`IndexError` out of range), so it goes
 through `sszGetIdx` (→ `outOfBounds`); `- withdrawn` is a bare `uint64` subtraction whose
-underflow raises `ValueError`, which the reference runner does NOT catch (`context.py:429-433`),
+underflow raises `ValueError`, which the reference runner does NOT catch (`context.py:424-435`),
 so it throws the uncaught `.arithmetic` reject rather than a caught `.assert`. Both are
 unreachable on a well-formed state (`len(balances) == len(validators)`, and a validator's queued
-withdrawals never exceed its balance), but the reads are modeled faithfully rather than clamped. -/
+withdrawals never exceed its balance), and the reads are modeled rather than clamped.
+
+The `withdrawn` accumulator is the Fulu divergence restated here, deferred with it: pyspec's
+`sum(...)` adds unbounded ints, this fold wraps on `UInt64`, so a true sum ≥ 2^64 wraps past the
+`withdrawn > bal` guard and returns a wrong balance where pyspec raises. `checkedAdd`
+(`Spec/Errors.lean`) is the fix when it is taken up. -/
 def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
     StateTransition Gwei := do
   let withdrawn := ws.foldl (fun acc w => if w.validatorIndex == vi then acc + w.amount else acc) 0

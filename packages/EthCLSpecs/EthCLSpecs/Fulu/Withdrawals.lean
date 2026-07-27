@@ -47,9 +47,17 @@ forkdef isEligibleForPartialWithdrawals (v : Validator) (balance : Gwei) : Bool 
 already-queued withdrawals for that validator. Throwing (`StateTransition`): the spec's
 `state.balances[validator_index]` is a bare list index (`IndexError`, via `sszGetIdx` →
 `outOfBounds`), and `- withdrawn` is a bare `uint64` subtraction whose underflow raises Python
-`ValueError`, which the reference runner does NOT catch (`context.py:429-433` catches only
+`ValueError`, which the reference runner does NOT catch (`context.py:424-435` catches only
 `AssertionError` / `IndexError`), so it throws the uncaught `.arithmetic` reject rather than a
-caught `.assert`. Both unreachable on a well-formed state, modeled faithfully rather than clamped. -/
+caught `.assert`. Both reads are unreachable on a well-formed state and modeled rather than
+clamped.
+
+The `withdrawn` accumulator above them is a known divergence, deferred: pyspec's `sum(...)`
+adds unbounded ints, so its underflow fires against the true sum, while this fold wraps on
+`UInt64`. A true sum ≥ 2^64 wraps to a small value, passes the `withdrawn > bal` guard, and
+returns a wrong balance where pyspec raises. Unreachable while a validator's queued
+withdrawals stay under its balance, which no vector violates. `checkedAdd` (`Spec/Errors.lean`)
+is the fix when it is taken up. -/
 def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
     StateTransition Gwei := do
   let withdrawn := ws.foldl (fun acc w => if w.validatorIndex == vi then acc + w.amount else acc) 0
@@ -64,8 +72,7 @@ Throwing: the two `validators[i]` reads are bare list indices (`IndexError`, via
 raises on the balance read / underflow. Both unreachable on a well-formed state. -/
 forkdef getExpectedWithdrawals (state : State) : StateTransition (Array Withdrawal × Nat) := do
   let epoch := currentEpochOf state
-  let validators := (sszGet state validators).toArray
-  let nvals := validators.size
+  let nvals := (sszGet state validators).size
   let mut withdrawals : Array Withdrawal := #[]
   let mut withdrawalIndex := sszGet state nextWithdrawalIndex
   let mut processedPartial := 0

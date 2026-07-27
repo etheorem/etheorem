@@ -183,7 +183,12 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   let epoch := currentEpochOf state
   let mix := vmodGet (sszGet state randaoMixes) epoch Const.epochsPerHistoricalVector
   assert (payload.prevRandao == mix)
-  assert (payload.timestamp == (sszGet state genesisTime) + (sszGet state slot) * Const.secondsPerSlot)
+  -- Both the product and the sum are checked `uint64` ops in the pyspec.
+  let elapsed ← checkedMul (sszGet state slot) Const.secondsPerSlot
+    "process_execution_payload: state.slot * SECONDS_PER_SLOT"
+  let expectedTimestamp ← checkedAdd (sszGet state genesisTime) elapsed
+    "process_execution_payload: genesis_time + state.slot * SECONDS_PER_SLOT"
+  assert (payload.timestamp == expectedTimestamp)
 
   let header : ExecutionPayloadHeader :=
     { parentHash := payload.parentHash, feeRecipient := payload.feeRecipient,

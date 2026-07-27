@@ -139,7 +139,14 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   -- Reject on shape: target epoch, slot timing, and the committee index bound.
   assert (data.target.epoch == previousEpochOf state || data.target.epoch == currentEpochOf state)
   assert (data.target.epoch == computeEpochAtSlot data.slot)
-  assert (data.slot + Const.minAttestationInclusionDelay ≤ sszGet state slot)
+  -- `data.slot` is wire-controlled and `MIN_ATTESTATION_INCLUSION_DELAY` is 1, so the bare `+`
+  -- wraps `0xFFFF…FFFF + 1` to `0` and `0 ≤ state.slot` bypasses the guard for every state: a
+  -- false ACCEPT, the state-transition twin of `on_attestation`'s. pyspec's checked `uint64` add
+  -- raises `ValueError`, which `process_attestation` does not catch, so the driver scores it
+  -- `uncaughtFault`. Sequenced after the two epoch asserts above, matching Python's order.
+  let inclusionSlot ← checkedAdd data.slot Const.minAttestationInclusionDelay
+    "process_attestation: data.slot + MIN_ATTESTATION_INCLUSION_DELAY"
+  assert (inclusionSlot ≤ sszGet state slot)
   assert (data.index == 0)
 
   -- Every committee index is valid and contributes at least one attester; the

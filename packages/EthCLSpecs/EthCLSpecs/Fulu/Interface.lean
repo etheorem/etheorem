@@ -221,7 +221,7 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
   for step in steps do
     match step with
     | .tick t =>
-      store := (← checkStepValidity true
+      store := (← checkStepValidity .tick true
         (runOn store (onTick (map := hashMap) (UInt64.ofNat t) : EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes columns valid =>
       -- pyspec `add_block` (`fork_choice.py:382-406`) runs `on_block` ALONE against `valid`: an
@@ -232,24 +232,36 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
       -- a `valid: false` step.) A decode failure is the step's reject, as `decodeStepOr` gives.
       match SizzLean.SSZ.deserialize (T := @SignedBeaconBlock P) bytes with
       | .error _ =>
-        store := (← checkStepValidity valid (.error (.decodeFailure "fork_choice: block decode failed", store)))
+        store := (← checkStepValidity .block valid (.error (.decodeFailure "fork_choice: block decode failed", store)))
       | .ok sb =>
-        let cols := columns.filterMap (fun cb => (SSZ.deserialize (T := @DataColumnSidecar P) cb).toOption)
-        store := (← checkStepValidity valid
-          (runOn store (onBlock (map := hashMap) sb cols : EStateM StoreTransitionError (Store hashMap) Unit)))
-        if valid then
-          let subAction : EStateM StoreTransitionError (Store hashMap) Unit := do
-            for a in sb.message.body.attestations do onAttestation (map := hashMap) a true
-            for a in sb.message.body.attesterSlashings do onAttesterSlashing (map := hashMap) a
-          store := (← checkStepValidity true (runOn store subAction))
+        -- A column sidecar the runner cannot deserialize is our decoder's bug, exactly as the
+        -- block decode two lines above: route it through the same `.decodeFailure` rather than
+        -- dropping it from the list. `filterMap` discarded the error, and a dropped column is
+        -- indistinguishable from a column that was never listed, so an unavailable block either
+        -- rejected for the wrong reason (all columns dropped ⇒ `is_data_available` false ⇒ the
+        -- availability assert fires ⇒ the `valid: false` step PASSES on a broken decoder) or was
+        -- accepted outright (some columns dropped ⇒ the survivors all verify). `mapM` in
+        -- `Except` keeps the first error instead.
+        match columns.mapM (fun cb => SSZ.deserialize (T := @DataColumnSidecar P) cb) with
+        | .error _ =>
+          store := (← checkStepValidity .block valid
+            (.error (.decodeFailure "fork_choice: data column sidecar decode failed", store)))
+        | .ok cols =>
+          store := (← checkStepValidity .block valid
+            (runOn store (onBlock (map := hashMap) sb cols : EStateM StoreTransitionError (Store hashMap) Unit)))
+          if valid then
+            let subAction : EStateM StoreTransitionError (Store hashMap) Unit := do
+              for a in sb.message.body.attestations do onAttestation (map := hashMap) a true
+              for a in sb.message.body.attesterSlashings do onAttesterSlashing (map := hashMap) a
+            store := (← checkStepValidity .attestation true (runOn store subAction))
     | .attestation bytes valid =>
       let outcome := decodeStepOr (α := @Attestation P) bytes "attestation" store fun a =>
         runOn store (onAttestation (map := hashMap) a false : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity valid outcome)
+      store := (← checkStepValidity .attestation valid outcome)
     | .attesterSlashing bytes valid =>
       let outcome := decodeStepOr (α := @AttesterSlashing P) bytes "attester_slashing" store fun a =>
         runOn store (onAttesterSlashing (map := hashMap) a : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity valid outcome)
+      store := (← checkStepValidity .attesterSlashing valid outcome)
     | .checkHead root slot =>
       let head ← queryHead store
       assert (head == root)
@@ -267,7 +279,9 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
     | .checkGenesisTime t => assert (store.genesisTime.toNat == t)
     | .checkProposerHead root =>
       let head ← queryHead store
-      let proposerHead ← runQuery store (getProposerHead (map := hashMap) store head (getCurrentSlot store) :
+      let proposerHead ← runQuery store (do
+        let currentSlot ← getCurrentSlot store
+        getProposerHead (map := hashMap) store head currentSlot :
         EStateM StoreTransitionError (Store hashMap) Root)
       assert (proposerHead == root)
     | .unsupported reason => throw (StoreTransitionError.todo reason)
@@ -320,8 +334,8 @@ private def runStatic (T : Type) [SSZRepr T] (typeName : String) (bytes : ByteAr
 /-- `sszStatic`: dispatch an `ssz_static/<TypeName>` directory name to the Fulu
 container it names and run it through `runStatic`. The consensus containers Fulu
 models are covered; the light-client, networking, and gossip-aggregation types the
-spec does not declare (`AggregateAndProof`, `LightClient*`, `PowBlock`, …) fall to
-the `todo` default, so they xfail as out of scope rather than failing. -/
+spec does not declare (`AggregateAndProof`, `LightClient*`, `PowBlock`, …) fall to the
+`.outOfScope` default, so they report `skip` rather than failing. -/
 private def sszStaticImpl (P : Preset) (typeName : String) (bytes : ByteArray) :
     Except (RunError StateTransitionError) (ByteArray × Bool) :=
   match typeName with

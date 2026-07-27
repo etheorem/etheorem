@@ -289,7 +289,7 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
   for step in steps do
     match step with
     | .tick t =>
-      store := (← checkStepValidity true
+      store := (← checkStepValidity .tick true
         (runOn store (onTick (map := hashMap) (UInt64.ofNat t) : EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes _columns valid =>
       -- pyspec `add_block` (`fork_choice.py:382-406`) runs `on_block` ALONE against `valid`: an
@@ -300,31 +300,31 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
       -- a `valid: false` step.) A decode failure is the step's reject, as `decodeStepOr` gives.
       match SizzLean.SSZ.deserialize (T := @Gloas.SignedBeaconBlock P) bytes with
       | .error _ =>
-        store := (← checkStepValidity valid (.error (.decodeFailure "fork_choice: block decode failed", store)))
+        store := (← checkStepValidity .block valid (.error (.decodeFailure "fork_choice: block decode failed", store)))
       | .ok sb =>
-        store := (← checkStepValidity valid
+        store := (← checkStepValidity .block valid
           (runOn store (onBlock (map := hashMap) sb : EStateM StoreTransitionError (Store hashMap) Unit)))
         if valid then
           let subAction : EStateM StoreTransitionError (Store hashMap) Unit := do
             for a in sb.message.body.attestations do onAttestation (map := hashMap) a true
             for a in sb.message.body.attesterSlashings do onAttesterSlashing (map := hashMap) a
-          store := (← checkStepValidity true (runOn store subAction))
+          store := (← checkStepValidity .attestation true (runOn store subAction))
     | .attestation bytes valid =>
       let outcome := decodeStepOr (α := @Attestation P) bytes "attestation" store fun a =>
         runOn store (onAttestation (map := hashMap) a false : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity valid outcome)
+      store := (← checkStepValidity .attestation valid outcome)
     | .attesterSlashing bytes valid =>
       let outcome := decodeStepOr (α := @AttesterSlashing P) bytes "attester_slashing" store fun a =>
         runOn store (onAttesterSlashing (map := hashMap) a : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity valid outcome)
+      store := (← checkStepValidity .attesterSlashing valid outcome)
     | .executionPayload bytes valid =>
       let outcome := decodeStepOr (α := @Gloas.SignedExecutionPayloadEnvelope P) bytes "envelope" store fun env =>
         runOn store (onExecutionPayloadEnvelope (map := hashMap) env : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity valid outcome)
+      store := (← checkStepValidity .executionPayload valid outcome)
     | .payloadAttestationMessage bytes valid =>
       let outcome := decodeStepOr (α := @Gloas.PayloadAttestationMessage P) bytes "ptc message" store fun msg =>
         runOn store (onPayloadAttestationMessage (map := hashMap) msg false : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity valid outcome)
+      store := (← checkStepValidity .payloadAttestationMessage valid outcome)
     | .checkHead root slot =>
       let head ← queryHead store
       assert (head.root == root)
@@ -336,9 +336,15 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
       let head ← queryHead store
       assert (head.payloadStatus.toNat == status)
     | .checkPayloadTimelinessVote blockRoot votes =>
-      assert (FcMap.lookupD store.payloadTimelinessVote (bytesToRoot blockRoot) == votes)
+      -- `add_payload_vote_checks` subscripts a plain `Dict` (`fork_choice.py:517-519`),
+      -- so a missing key raises; the spec-side reads of this same map already throw.
+      let recorded ← FcMap.getOrThrow store.payloadTimelinessVote (bytesToRoot blockRoot)
+      assert (recorded == votes)
     | .checkPayloadDataAvailabilityVote blockRoot votes =>
-      assert (FcMap.lookupD store.payloadDataAvailabilityVote (bytesToRoot blockRoot) == votes)
+      -- `add_payload_vote_checks` subscripts a plain `Dict` (`fork_choice.py:517-519`),
+      -- so a missing key raises; the spec-side reads of this same map already throw.
+      let recorded ← FcMap.getOrThrow store.payloadDataAvailabilityVote (bytesToRoot blockRoot)
+      assert (recorded == votes)
     | .checkJustified epoch root =>
       assert (store.justifiedCheckpoint.epoch.toNat == epoch)
       assert (store.justifiedCheckpoint.root == root)

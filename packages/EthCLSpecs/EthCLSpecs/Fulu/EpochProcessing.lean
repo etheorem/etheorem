@@ -278,7 +278,7 @@ forkdef processPendingDeposits : StateTransition Unit := do
 stops the scan; otherwise the source's effective balance moves to the target. -/
 forkdef pcLoop (cons : Array PendingConsolidation) (nextEpoch : Epoch) : StateTransition Nat :=
   -- Threaded accumulator is the next-pending index `npc`; `fuelLoop` owns the counter. Fuel is
-  -- `cons.size + 1` (the `fuelIterate` `length + 1` idiom): the `npc ≥ cons.size` guard fires as
+  -- `cons.size + 1`: the `npc ≥ cons.size` guard fires as
   -- a `.done` one step before exhaustion, so the `exhausted` value is unreachable. A slashed
   -- source `.next`s; an unwithdrawable source `.done`s; a moved balance `.next`s.
   fuelLoop (cons.size + 1) (0 : Nat) (cons.size) fun npc => do
