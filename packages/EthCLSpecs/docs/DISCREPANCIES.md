@@ -19,8 +19,8 @@ Deliberate implementation divergences that no vector observes live in
 Pin: `v1.7.0-alpha.11` (all forks).
 
 Spec-markdown line citations (`<file>.md:NN`) resolve under `specs/` in
-`ethereum/consensus-specs` at the pinned version (also a git tag there) and are valid
-at this pin; every re-pin re-checks them alongside the divergences they anchor.
+`ethereum/consensus-specs` at the pinned version; every re-pin re-checks them
+alongside the divergences they anchor.
 
 ## Fulu
 
@@ -31,8 +31,7 @@ by root or rejects faithfully (`epoch_processing`, `operations` incl. standalone
 `get_proposer_head`), with zero `xfail`. The only Fulu vectors not run are the
 deselected out-of-scope ones (`IMPLEMENTATION_NOTES.md`, "Scope and conformance"): the Fulu `fork` /
 `transition` formats (the Electra→Fulu upgrade / boundary, needing an Electra parent
-fork) and the `ssz_static` / `light_client` / `networking` / `merkle_proof` / `sync`
-runners.
+fork) and the `light_client` / `networking` / `merkle_proof` / `sync` runners.
 
 | Vector id | Spec citation | Upstream issue | Resolution |
 |---|---|---|---|
@@ -51,21 +50,12 @@ state-transition pipeline, plus operations, fork choice, and the Fulu→Gloas
 transition); every in-scope minimal and mainnet vector passes by root or rejects
 faithfully, with no `xfail`. Gloas inherits the Fulu `registry_updates` substep (the
 DSL re-elaborates the captured `forkdef` in the Gloas namespace), so the overflow fix
-above propagated to Gloas with no Gloas-side change. The fork-choice asserts and plain-`Dict`
-reads throw faithfully, including `get_forkchoice_store`'s anchor-root assert (shared with Fulu
-and Heze) and the PTC block-replay vote writes (`notify_ptc_messages` routes through the
-throwing `on_payload_attestation_message`). `compute_pulled_up_tip` now propagates its
-`process_justification_and_finalization` reject instead of swallowing it, and
-`get_block_root_at_slot` carries the pyspec recency assert (`slot < state.slot <= slot +
-SLOTS_PER_HISTORICAL_ROOT`) again, so that reject is reachable rather than dead. All
-catalogued in `IMPLEMENTATION_NOTES.md`, "Fork choice" and "Heze diff".
+above propagated to Gloas with no Gloas-side change. Deliberate divergences are
+catalogued in `IMPLEMENTATION_NOTES.md`, "Gloas diff" and "Fork choice".
 
 ## Heze
 
 _No open discrepancies._ EIP-7805 (FOCIL) ships no behavioral conformance vector at
-`v1.7.0-alpha.11`; the two new containers pass their full `ssz_static` suites, and the
-inherited Gloas spine and fork choice pass every in-scope Heze vector by root or reject
-faithfully, with no `xfail`. The vectorless FOCIL layer carries deliberate divergences
-from the spec text; those are implementation choices no vector observes, catalogued in
-`IMPLEMENTATION_NOTES.md`, "Heze diff". Where a build-enforced pin covers one, the
-entry names it.
+`v1.7.0-alpha.11`, so there is no Lean-versus-vector divergence to record for the FOCIL
+layer. Its deliberate divergences from the spec text are catalogued in
+`IMPLEMENTATION_NOTES.md`, "Heze diff".

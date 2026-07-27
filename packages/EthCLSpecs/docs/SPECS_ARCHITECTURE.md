@@ -650,16 +650,15 @@ effect-monad section runs the full state transition inside the `onBlock` handler
 and surfaces any inner failure through `StoreTransitionError.transition`. The
 step-and-check harness shape comes from the conformance framework.
 
-### 7.1 The read layer is pure, the handlers are monadic
+### 7.1 The read layer is monadic, like the handlers
 
-The fork-choice read layer is pure functions over the `Store`. `getHead`,
-`getWeight`, `filterBlockTree`, and their helpers take a `Store` and return a value.
-The `on_*` handlers are the monadic `StoreTransition` actions that mutate the store
-and call the read layer on `(← get)`.
+The fork-choice read layer runs in `StoreTransition`. `getHead`, `getWeight`,
+`filterBlockTree`, and their helpers take a `Store` and return a monadic action; the
+`on_*` handlers mutate the store and call the read layer on `(← get)`.
 
 ```lean
--- read layer: pure, recursive, takes the Store as an argument
-def getWeight (store : Store map) (root : Root) : Gwei := ...
+-- read layer: monadic, recursive, takes the Store as an argument
+forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := ...
 
 -- handler: monadic, mutates the store, calls the read layer on the current store
 forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
@@ -669,20 +668,17 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   ...
 ```
 
-This diverges from the monadic state-transition accessors of Section 5, and the
-divergence is deliberate. The fork-choice reads are genuinely recursive: `getHead`
-walks the block tree, `getWeight` sums a subtree, `filterBlockTree` prunes
-recursively. A pure recursive function takes a clean `termination_by` measure on its
-argument and reasons cleanly in a later proof. Monadic recursion would drag the
-termination proof and the equation lemmas through the monad for read-only walks that
-never mutate, which is friction for no gain. Purity is infectious upward: a pure walk
-cannot call a monadic accessor, so the whole read layer is pure together.
+The reads have to be able to reject, which settles the choice. `store.blocks[root]` is a
+plain `Dict` subscript in the spec, so a missing root raises `KeyError`, and the weight
+path's `uint64` arithmetic raises on overflow. A `Gwei`-valued pure function has nowhere
+to put that: it has to supply a default, and a vector that should reject then passes.
+Rejection is infectious upward, so once a leaf read can raise, every walk above it is
+monadic too. That is why the layer moved as a unit, and why a monadic walk calling either
+a pure or a monadic helper is the invariant that holds here.
 
-The same principle drives both machines: be monadic only where it helps and does not
-hurt. It lands on monadic in the state transition because the accessors read the
-threaded state and do not recurse, and it lands on pure here because the recursion
-makes monadic hurt. The state-transition accessors of Section 5 and the fork-choice
-reads here are two applications of one rule, not a contradiction.
+This matches the monadic state-transition accessors of Section 5 for the same reason: in
+both machines a spec-faithful read is one that can fail. Termination is independent of
+the choice, and §7.2 covers it.
 
 ### 7.2 Per-loop termination
 
@@ -695,11 +691,18 @@ invariant proof at definition time. The framework's `fuelLoop` defers that proof
 the cost of a defined-but-unreachable default branch.
 
 The per-loop rule is explicit. Default to well-founded recursion when the measure is
-clean. `getHead`, for instance, has a clean measure when child slots strictly
-increase, so `maxSlot - currentSlot` strictly decreases and `termination_by` closes
-it. Reach for `fuelLoop` only when the up-front invariant proof would block the
+clean, and reach for `fuelLoop` when the up-front invariant proof would block the
 definition from existing before proofs are in scope. Record the choice and its reason
 at each such loop, so a later reader knows whether a bound is honest or deferred.
+
+Every fork-choice walk currently takes the second option: `getAncestor`, `getHead`,
+and `filterBlockTree` are all `fuelLoop`-bounded, with the block count as the bound.
+The read layer being monadic (§7.1) is what tips it. `getHead` has a clean measure on
+paper, since `maxSlot - currentSlot` strictly decreases when child slots increase, but
+discharging it through `StoreTransition` means carrying the measure past a step that
+can reject, which is the up-front proof this rule defers. The bounds are therefore
+deferred rather than honest. The `DAG walks` section header in each fork's
+`ForkChoice.lean` records that choice for the walks it heads.
 
 ---
 
@@ -835,7 +838,7 @@ interface and `PySpecTests`, written once and fork-agnostic, runs every format.
 | `genesis` | `initializeBeaconStateFromEth1` | yes |
 | `fork` | `upgradeToGloas` / `upgradeToHeze` | yes (Fulu→Gloas, Gloas→Heze) |
 | `transition` | `stateTransition` with the upgrade mid-fold | yes (Fulu→Gloas, Gloas→Heze) |
-| `ssz_static` | each container's `SSZRepr` (decode, hash-tree-root, round-trip) | yes (Gloas + Heze; Fulu via SizzLean) |
+| `ssz_static` | each container's `SSZRepr` (decode, hash-tree-root, round-trip) | yes (Fulu + Gloas + Heze) |
 | `bls`, `kzg` | n/a | no (crypto-backend concern) |
 
 The `rewards/*` format is in scope and drives a single delta function in isolation,

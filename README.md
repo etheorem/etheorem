@@ -289,8 +289,7 @@ Pinned at consensus-spec-tests
   SizzLean's `SSZType` universe and xfail. The test-only container shapes
   (`VarTestStruct`, `ComplexTestStruct`, `BitsStruct`, …) are hard-coded in
   `packages/SizzLean/SszGenericRunner.lean`.
-- **`ssz_static`** (EthCLSpecs, Gloas + Heze; Fulu's containers ride on
-  SizzLean's own suites): the consensus containers
+- **`ssz_static`** (EthCLSpecs, Fulu + Gloas + Heze): the consensus containers
   EthCLSpecs models pass at both the minimal and mainnet presets; the types it
   does not model (light-client, gossip-aggregation, networking identifiers,
   signing helpers) xfail as out of scope. Earlier forks (Phase 0 through

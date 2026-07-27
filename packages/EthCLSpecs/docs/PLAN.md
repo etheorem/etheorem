@@ -329,7 +329,8 @@ disk to a green result.
   case-tree walk, `meta.yaml` parsing, and a `pytest-xdist` runner where each worker
   holds one server through a `session`-scoped fixture.
 - The classify-bucket reporting: passing, expected rejection, out-of-scope `todo`,
-  likely-bug (`outOfBounds` / `missingKey`).
+  likely-bug (`outOfBounds` / `decodeFailure`), uncaught fault (`missingKey` /
+  `arithmetic`).
 
 **Acceptance.** One format, the single-operation handler the slice implements, is
 green end-to-end at the minimal preset, driven through a per-worker Lean server.
@@ -375,8 +376,8 @@ has every primitive it calls.
   `[CryptoBackend]` class with the caching FFI backend (keyed by the full serialized
   input per primitive), the symbolic backend, the `bls_setting: 2` verify-off mode,
   and the batch KZG cell verifier.
-- The control-flow combinators: the `Step` done/next type with `fuelLoop` (monadic) and
-  `fuelIterate` (the pure walk for linear DAG descents), with the per-loop decision rule
+- The control-flow combinators: the `Step` done/next type with `fuelLoop`, and
+  `fuelIterateM` / `fuelIterateM!` for linear walks, with the per-loop decision rule
   documented.
 - The finite-map and fork-choice store: `MapKind`, the `FcMap` operation class
   (`insert`, `lookup`, `contains`, `fold`, `keys`), the `treeMap` and `hashMap`

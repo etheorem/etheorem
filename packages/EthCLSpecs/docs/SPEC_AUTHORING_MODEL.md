@@ -327,7 +327,7 @@ order, so they map one to one.
 | **Lifecycle functions** (`initializeBeaconStateFromEth1`, `isValidGenesisState`, `upgradeToGloas`) over the container constructors | the container constructors and the `genesis` / `fork` harness drivers | the container front-end, the conformance framework |
 | **Arithmetic** as faithful `UInt64` transcription | the `UInt64` operations, the `Nat`-correspondence lemmas, `umax` / `umin` / `isqrt`, the type-directed `uintToBytes` width | the arithmetic layer |
 | **Crypto calls** through the framework's signing-root and verify helpers | `computeSigningRoot` and friends, `isValidMerkleBranch`, the vector-typed BLS wrappers (`blsVerify` / `blsVerifySigned` / `blsFastAggregateVerify` / `blsEthFastAggregateVerify` / `blsAggregatePubkeys`) over the BLS and KZG primitives behind `[CryptoBackend]` | the crypto layer |
-| **Bounded loops** as fold / `forM` / well-founded recursion, or `fuelLoop` / `fuelIterate` where the measure resists | the `Step` type, `fuelLoop` (monadic) and `fuelIterate` (pure walk) | the control-flow combinators |
+| **Bounded loops** as fold / `forM` / well-founded recursion, or `fuelLoop` / `fuelIterateM` where the measure resists | the `Step` type, `fuelLoop`, `fuelIterateM` and `fuelIterateM!` | the control-flow combinators |
 | **Constants** as `Const.*` references, grouped by tier | the three-tier `Preset` / universal / `Config` system under one `Const` namespace | the preset / constant / config tier system |
 | **The fork interface implementation** (the fixed entry points) | every test driver and the format-to-entry-point dispatch in `PySpecTests` | the conformance framework |
 

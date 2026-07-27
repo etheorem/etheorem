@@ -43,7 +43,7 @@ instance-implicit class, and a consumer, the test runner, a proof, or a future
 production client, picks the concrete instance at the call boundary. The spec
 body commits to none of them.
 
-Eight seams carry the design.
+These seams carry the design.
 
 | Seam | Class / variable | What it abstracts | Fast instance | Pure instance |
 |---|---|---|---|---|
@@ -56,11 +56,9 @@ Eight seams carry the design.
 | Box flavour | smart constructor at the anchor | cache strategy of the boxed state | `FastBox` (cached, `= CachedBox Sha256`) | `UncachedBox Sha256Spec` (uncached) |
 | Effect monad | `{StateTransition : Type → Type}` | the state-threading effect | `EStateM` | `StateT ∘ Except` |
 
-Seven of the eight hide completely behind instance resolution or a constructor
-choice at the anchor, so the author never names them. (The execution-engine pair
-is a trust axis rather than a speed one: the optimistic default answers `true`
-everywhere, and a local instance replaces it where a test or proof needs a real
-or refuting verdict.) The fork-choice map is the one
+Most of these hide completely behind instance resolution or a constructor choice
+at the anchor, so the author never names them. The execution engine's two columns
+read as a trust axis instead of a speed one. The fork-choice map is the one
 exception, and it cannot hide: `map` lands in the `Store` type itself, so
 `Store hashMap` and `Store treeMap` are genuinely distinct types. A fork-choice
 section takes `map` as an explicit type variable for that reason. The finite-map
@@ -425,7 +423,8 @@ it in its classify mode:
 |---|---|
 | `assert` | an expected rejection; a vector marked invalid should hit one |
 | `todo` | an unimplemented branch; flagged out-of-scope, not counted as a rejection |
-| `outOfBounds` / `missingKey` | a smell; the spec should not hit these on well-formed input, so they surface as likely bugs |
+| `outOfBounds` / `decodeFailure` | a smell; the spec should not hit these on well-formed input, so they surface as likely bugs |
+| `missingKey` / `arithmetic` | a fault the reference propagates rather than catches, so it never counts as a rejection |
 
 ### 6.1 `todo` as the deferral work-queue
 
@@ -861,22 +860,25 @@ shapes result, and only the last needs machinery.
 
 For the hard-measure case, where the bound is a runtime value (store size) and a
 decreasing measure is less obvious up front, the framework provides a `Step` done/next
-type and two structural-recursion-on-`Nat` primitives over it, both total and
-kernel-reducible: `fuelLoop` (monadic, for a walk that reads the store through the
-effect monad) and `fuelIterate` (pure, for a walk that is a plain function of the store).
-The author writes the step body returning `.done` / `.next` and passes the bound (a store
-or block count, a safe over-estimate); no `Nat` counter and no exhaustion branch in the
-body. `fuelIterate` returns the accumulator itself when the fuel runs out, matching a
-hand-rolled `| 0, a => a` walk, so the bound must exceed the walk length (exhaustion is
-then unreachable and the result is always real).
+type and structural-recursion-on-`Nat` primitives over it, all total and
+kernel-reducible: `fuelLoop` for a walk that reads the store through the effect monad,
+and `fuelIterateM` / `fuelIterateM!` for a linear iteration. The author writes the step
+body returning `.done` / `.next` and passes the bound (a store or block count, a safe
+over-estimate); no `Nat` counter and no exhaustion branch in the body. `fuelLoop` and
+`fuelIterateM` take an `exhausted` value and return it when the fuel runs out, so the
+bound must exceed the walk length; `fuelIterateM!` throws there instead, for the bounds
+that rest on an arithmetic identity rather than a structural count.
 
 ```lean
-def getAncestor (store : Store map) (root : Root) (slot : Slot) : Root :=
-  fuelIterate ((FcMap.keys store.blocks).length + 1) root fun r =>
-    match FcMap.lookup store.blocks r with
-    | some block => if block.slot > slot then .next block.parentRoot else .done r
-    | none       => .done r
+forkdef getAncestor (store : Store map) (root : Root) (slot : Slot) : StoreTransition Root :=
+  fuelLoop ((FcMap.keys store.blocks).length + 1) root root fun r => do
+    let block ← FcMap.getOrThrow store.blocks r
+    if block.slot > slot then pure (.next block.parentRoot)
+    else pure (.done r)
 ```
+
+The map read is `getOrThrow`, not a `lookup` with a default: `store.blocks[r]` is a plain
+`Dict` subscript in the spec, so a missing root has to reject.
 
 These suit the *linear* fork-choice walks (a single `.next` continuation): `getAncestor`
 and the `getHead` descent. A *tree* walk like `filterBlockTree`, which recurses over every
@@ -986,8 +988,9 @@ and the pytest fixture managing the subprocess.
 
 The report distinguishes the classify buckets from the error model: a passing
 case, an expected rejection (`assert` against an invalid vector), an out-of-scope
-deferral (`todo`), and a likely bug (`outOfBounds` / `missingKey` on well-formed
-input). A `todo` that a vector actually reaches fails loudly rather than passing
+deferral (`todo`), a likely bug (`outOfBounds` / `decodeFailure` on well-formed
+input), and an uncaught fault (`missingKey` / `arithmetic`, which the reference
+propagates). A `todo` that a vector actually reaches fails loudly rather than passing
 silently, which is the deferral safety net at work.
 
 ---

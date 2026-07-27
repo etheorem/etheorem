@@ -40,7 +40,7 @@ bounded walk to finish.
 | `getPtc`                         | `Gloas/Operations.lean:368-376`     | Under the caller's guarantee that `data.slot + 1 == state.slot`, its computed offset into `ptcWindow` stays in range                              |
 | `canBuilderCoverBid`             | `Gloas/Operations.lean:419-422`     | Primary builder-solvency predicate; the natural theorem is that accepting a bid never leaves the builder insolvent                                |
 | `applyWithdrawals`               | `Gloas/Withdrawals.lean:173-184`    | A builder-flagged withdrawal decreases the builder's balance by at most its own balance, so the balance never goes negative                       |
-| `getAncestor`                    | `Gloas/ForkChoice.lean:156-163`     | The fuel supplied to its `fuelIterate` DAG walk is sufficient for the walk to terminate before running out                                        |
+| `getAncestor`                    | `Gloas/ForkChoice.lean:156-163`     | The fuel supplied to its `fuelLoop` DAG walk is sufficient for the walk to terminate before running out                                            |
 | `getHead`                        | `Gloas/ForkChoice.lean:446-465`     | The fuel `2 * blocks.length + 2` supplied to its LMD-GHOST walk is sufficient for the walk to reach a decided head before running out             |
 
 ---
