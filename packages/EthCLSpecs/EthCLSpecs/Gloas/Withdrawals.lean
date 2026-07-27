@@ -48,13 +48,15 @@ so it throws the uncaught `.arithmetic` reject rather than a caught `.assert`. B
 unreachable on a well-formed state (`len(balances) == len(validators)`, and a validator's queued
 withdrawals never exceed its balance), and the reads are modeled rather than clamped.
 
-The `withdrawn` accumulator is the Fulu divergence restated here, deferred with it: pyspec's
-`sum(...)` adds unbounded ints, this fold wraps on `UInt64`, so a true sum ≥ 2^64 wraps past the
-`withdrawn > bal` guard and returns a wrong balance where pyspec raises. `checkedAdd`
-(`Spec/Errors.lean`) is the fix when it is taken up. -/
+The `withdrawn` accumulator folds through `checkedAdd`, as in Fulu: pyspec's `sum(...)`
+accumulates in `Gwei` rather than widening to a Python `int`, so it raises during the
+accumulation at the same point. See `Fulu.balanceAfterWithdrawals`. -/
 def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
     StateTransition Gwei := do
-  let withdrawn := ws.foldl (fun acc w => if w.validatorIndex == vi then acc + w.amount else acc) 0
+  let withdrawn ← ws.foldlM (init := (0 : Gwei)) fun acc w =>
+    if w.validatorIndex == vi then
+      checkedAdd acc w.amount "get_balance_after_withdrawals: sum(withdrawal.amount)"
+    else pure acc
   let bal ← sszGetIdx (sszGet state balances) vi.toNat
   if withdrawn > bal then
     throw (StateTransitionError.arithmetic "get_balance_after_withdrawals: balances[i] - withdrawn underflow")

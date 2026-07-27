@@ -52,15 +52,19 @@ already-queued withdrawals for that validator. Throwing (`StateTransition`): the
 caught `.assert`. Both reads are unreachable on a well-formed state and modeled rather than
 clamped.
 
-The `withdrawn` accumulator above them is a known divergence, deferred: pyspec's `sum(...)`
-adds unbounded ints, so its underflow fires against the true sum, while this fold wraps on
-`UInt64`. A true sum ≥ 2^64 wraps to a small value, passes the `withdrawn > bal` guard, and
-returns a wrong balance where pyspec raises. Unreachable while a validator's queued
-withdrawals stay under its balance, which no vector violates. `checkedAdd` (`Spec/Errors.lean`)
-is the fix when it is taken up. -/
+The `withdrawn` accumulator folds through `checkedAdd`, which is where pyspec faults too.
+`sum(...)` looks like it widens to a Python `int`, but `Gwei` subclasses `int` and defines
+`__radd__`, so Python's reflected-operand rule makes the accumulator a `Gwei` from the first
+element on, and every add re-runs the bound check in `uint.__new__`
+(`remerkleable/basic.py:88-107`). A running sum past `2^64` therefore raises `ValueError`
+during the accumulation, not at the later subtraction. Verified against the pinned
+remerkleable. -/
 def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
     StateTransition Gwei := do
-  let withdrawn := ws.foldl (fun acc w => if w.validatorIndex == vi then acc + w.amount else acc) 0
+  let withdrawn ← ws.foldlM (init := (0 : Gwei)) fun acc w =>
+    if w.validatorIndex == vi then
+      checkedAdd acc w.amount "get_balance_after_withdrawals: sum(withdrawal.amount)"
+    else pure acc
   let bal ← sszGetIdx (sszGet state balances) vi.toNat
   if withdrawn > bal then
     throw (StateTransitionError.arithmetic "get_balance_after_withdrawals: balances[i] - withdrawn underflow")

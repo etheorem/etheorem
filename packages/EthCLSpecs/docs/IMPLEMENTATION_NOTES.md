@@ -455,9 +455,11 @@ The linear DAG walks route through fuel-bounded combinators (§12). `getAncestor
 which a linear combinator cannot express, so it keeps a local fuel-bounded `where` helper.
 The totality the doc wants is met either way.
 
-The fork-choice weight path still runs on raw `UInt64`, where the pyspec's unbounded ints
-cannot wrap: `getAttestationScore`'s balance fold, `getWeight`'s proposer-boost add, and
-the products in `committeeWeight`, `calculateCommitteeFraction`, and `getProposerScore`.
+The fork-choice weight path still runs on raw `UInt64`, where the pyspec's `uint64` ops
+raise: `getAttestationScore`'s balance fold (the spec's `sum(...)` accumulates in `Gwei`,
+so it raises during accumulation rather than widening, `phase0/fork-choice.md:326-336`),
+`getWeight`'s proposer-boost add, and the products in `committeeWeight`,
+`calculateCommitteeFraction`, and `getProposerScore`.
 `bpsDeadlineMs`'s `bps * SLOT_DURATION_MS` shares the shape. `checkedAdd` / `checkedMul`
 (`Spec/Errors.lean`) are the fix; deferred. Reaching any of them takes a total active
 balance within a factor of the `uint64` bound, which no preset's validator set approaches.
@@ -509,13 +511,6 @@ MIN_VALIDATOR_WITHDRAWABILITY_DELAY < 2^64` before the write, so an over-range c
   rejects faithfully (matching the pyspec's `uint64` serialization `ValueError`) instead
   of wrapping silently on Lean's `UInt64`. Valid exits never approach the bound. Gloas
   inherits the substep with no Gloas-side change.
-- **`get_balance_after_withdrawals` accumulates on a wrapping `UInt64`.** Pyspec's
-  `sum(...)` adds unbounded ints, so its underflow `ValueError` fires against the true
-  sum; this fold wraps, so a true sum ≥ 2^64 passes the `withdrawn > bal` guard and
-  returns a wrong balance where pyspec raises. Unreachable while a validator's queued
-  withdrawals stay under its balance, which no vector violates. `checkedAdd`
-  (`Spec/Errors.lean`) is the fix; deferred. Gloas and Heze each restate the function and
-  carry the same divergence.
 - **`process_execution_payload` takes the execution engine as valid.** It checks
   parent-hash / prev-randao / timestamp consistency and caches the header;
   `verify_and_notify_new_payload` is the consumer's responsibility, which is valid for
