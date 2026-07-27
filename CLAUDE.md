@@ -1,21 +1,41 @@
 # Etheorem: Agent Notes
 
-A Lean 4 project for Ethereum consensus-spec types and SSZ
-([Simple Serialize](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md)).
-Goal: a faithful, formally verifiable encoder / decoder / Merkleization for
-SSZ types plus the consensus-spec container surface (Phase0 → Gloas).
+A Lean 4 monorepo for Ethereum, built in Lean. The centerpiece is an
+executable implementation of the Ethereum consensus specification for
+the Fulu and Gloas forks. The SSZ containers, the beacon-chain state
+transition, the fork upgrade, and fork choice all run, checked against
+the upstream pyspec
+[`consensus-spec-tests`](https://github.com/ethereum/consensus-spec-tests)
+vectors. SSZ
+([Simple Serialize](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md))
+is the foundation those specs stand on, a standalone library with
+machine-checked correctness on its verified core. Supporting crypto
+sits alongside: pure-Lean SHA-256 and Poseidon2 references, plus FFI
+bridges to battle-tested native libraries.
 
-The Lake package is `Etheorem`; it ships several libraries:
-**`LeanSha256`** (pure-Lean SHA-256), the **`LeanHazmat`** FFI crypto
-families (SHA-256 / BLS / KZG), **`SizzLean`** (the SSZ library),
-**`EthCLLib`** + **`EthCLSpecs`** (the consensus-spec framework and the
-Fulu / Gloas fork bodies built on it, which declare their containers
-in-spec), and **`LeanPoseidon`**
-(a pure-Lean Poseidon2 hash, a standalone island parallel to `LeanSha256`,
-it depends on nothing in the monorepo and nothing depends on it yet;
-see [`packages/LeanPoseidon/docs/ARCHITECTURE.md`](packages/LeanPoseidon/docs/ARCHITECTURE.md)).
+The Lake umbrella package is `Etheorem`. It ships these libraries, each
+its own subpackage under `packages/`:
+
+- **`SizzLean`**: the SSZ library. Spec types, serialize / deserialize /
+  Merkleization, the `SSZRepr` deriving handler, the cache layer, and
+  the `Hasher` seam (the `Sha256` tag plus the FFI ≡ pure-Lean
+  equivalence axioms).
+- **`EthCLLib`** + **`EthCLSpecs`**: the consensus-spec framework (the
+  fork-authoring DSL, the effect monad, the container front-end, the
+  pyspec driver) and the Fulu / Gloas fork bodies built on it, which
+  declare their containers in-spec.
+- **`LeanSha256`**: pure-Lean SHA-256 reference. NIST CAVP-validated,
+  kernel-reducible, no FFI.
+- **`LeanHazmatSha256`** / **`LeanHazmatBls`** / **`LeanHazmatKzg`**: the
+  FFI crypto family, one package per primitive wrapping a native library
+  (OpenSSL / blst / c-kzg-4844) behind `@[extern]`.
+- **`LeanPoseidon`** (+ **`LeanPoseidonProofs`**): a pure-Lean Poseidon2
+  hash, a standalone island parallel to `LeanSha256` that nothing in the
+  monorepo imports yet, and its mathlib-isolated equivalence proof. See
+  [`packages/LeanPoseidon/docs/ARCHITECTURE.md`](packages/LeanPoseidon/docs/ARCHITECTURE.md).
+
 Mentions of "SizzLean" elsewhere in this file refer to the SSZ library
-specifically, not to the project as a whole.
+specifically, not to the monorepo as a whole.
 
 The upstream repository is <https://github.com/etheorem/etheorem>.
 Use that when issuing `gh` commands or constructing PR / issue
@@ -78,10 +98,10 @@ is the *why* so edge cases can be judged on principle, not by pattern-matching.
   that way. If a build step starts to feel like a shell script glued onto
   Lake, push it into Lake's API or a small Lean script invoked via
   `lake env lean --run …`, not ad-hoc Make/bash.
-- **Spec is the source of truth.** Behavior comes from the consensus-specs
-  SSZ doc and the pyspec test vectors. When other implementations disagree
-  with the spec, the spec wins; we record the discrepancy, we don't paper
-  over it.
+- **Spec is the source of truth.** Behavior comes from the
+  consensus-specs, the SSZ doc and the fork pyspec, plus their test
+  vectors. When other implementations disagree with the spec, the spec
+  wins, and we record the discrepancy rather than paper over it.
 - **Lean on Lean.** Prefer what the language gives you over hand-rolled
   equivalents: `deriving` instances, `simp` lemmas, `Decidable` + `decide`
   for finite goals, structural recursion over `partial def`. Reach for
@@ -107,59 +127,64 @@ and patterns do elsewhere.
 
 ## Layout
 
-Lake monorepo layout. Four subpackages under `packages/`, each
-with its own lakefile; an umbrella `lakefile.toml` at the root
-coordinates them via `[[require]]` blocks.
+Lake monorepo. Nine subpackages under `packages/`, each with its own
+lakefile; an umbrella `lakefile.toml` at the root coordinates them via
+`[[require]]` blocks. `LeanPoseidonProofs` stays out of the umbrella so
+its mathlib dependency never touches the root build.
 
 ```
 .
-├── lakefile.toml                # Umbrella (TOML, declarative)
+├── lakefile.toml                # Umbrella (TOML, declarative); declares no lib of its own.
 ├── lean-toolchain               # Pinned toolchain; CI reads this. Bump deliberately.
-├── README.md / CLAUDE.md       # Repo-wide overview + conventions
-├── docs/                       # Repo-wide design docs (monorepo-arch.md)
-├── scripts/                     # requirements.txt (pyspec-harness Python deps)
+├── Justfile                     # Task runner over the umbrella (`just --list`).
+├── README.md / CLAUDE.md        # Repo-wide overview + conventions.
+├── docs/                        # Repo-wide docs (monorepo-arch.md, CODING_STYLE.md).
+├── hazmat-docs/                 # LeanHazmat family design (ARCHITECTURE.md, PLAN.md).
+├── scripts/                     # requirements.txt (pyspec-harness Python deps).
 ├── packages/
-│   ├── LeanSha256/              # Pure-Lean SHA-256 reference; no FFI.
-│   │   ├── lakefile.toml
-│   │   ├── LeanSha256.lean / LeanSha256/ / cavp/ / Tests/ / README.md
-│   ├── SizzLean/                # SSZ library + cache + FFI hasher.
-│   │   ├── lakefile.lean        # Procedural — needed for the C shim target.
-│   │   ├── csrc/sha256_shim.c
-│   │   ├── docs/                # ARCHITECTURE.md, PLAN.md, research/ (SizzLean-scoped)
-│   │   ├── SizzLean.lean / SizzLean/ / Tests/ / README.md
-│   ├── EthCLLib/                # Consensus-spec framework / DSL (fork forms, effect monad, container front-end).
-│   │   ├── lakefile.toml
-│   │   ├── EthCLLib.lean / EthCLLib/ / Tests/
+│   ├── LeanSha256/              # Pure-Lean SHA-256 reference; no FFI. Published standalone via a mirror.
+│   │   └── lakefile.toml, LeanSha256.lean / LeanSha256/ / cavp/ / LeanSha256Tests/ / README.md
+│   ├── LeanHazmatSha256/        # FFI SHA-256 (OpenSSL libcrypto); owns the C SHA-256 shim.
+│   │   └── lakefile.lean (C target), csrc/{sha256_shim,sha256_batch}.c / docs/ / README.md
+│   ├── LeanHazmatBls/           # FFI BLS12-381 (blst, vendored). lakefile.lean, csrc/bls_shim.c, docs/.
+│   ├── LeanHazmatKzg/           # FFI KZG / EIP-4844 (c-kzg-4844, vendored). lakefile.lean, csrc/kzg_shim.c, docs/.
+│   ├── SizzLean/                # SSZ library + cache + Hasher seam + FFI ≡ spec equivalence axioms.
+│   │   └── lakefile.lean (pkg-config + glob discovery, no C target), SizzLean/{Spec,Repr,Hasher,Cache,Proofs} / docs/ / Tests/
+│   ├── EthCLLib/                # Consensus-spec framework / DSL. lakefile.toml (declarative).
 │   ├── EthCLSpecs/              # Fulu / Gloas fork bodies + the pyspec_server runner.
-│   │   ├── lakefile.toml
-│   │   ├── EthCLSpecs.lean / EthCLSpecs/ / PySpecTests/ / docs/ / README.md
-│   └── LeanPoseidon/            # Pure-Lean Poseidon2 (BN254 t=3); standalone island.
-│       ├── lakefile.lean        # Procedural — C ABI shim + cargo (zkhash) extern_libs.
-│       ├── csrc/poseidon_shim.c / rust-oracle/  # test-only differential oracle
-│       ├── docs/                # ARCHITECTURE.md, PLAN.md (LeanPoseidon-scoped)
-│       ├── LeanPoseidon.lean / LeanPoseidon/ / LeanPoseidonTests/ / README.md
-└── .github/workflows/           # `leanprover/lean-action@v1` runs `lake build`.
+│   │   └── lakefile.toml, EthCLSpecs/{Fulu,Gloas,Proofs} / Forms.lean / PySpecTests/ / docs/ / README.md
+│   ├── LeanPoseidon/            # Pure-Lean Poseidon2 (standalone island parallel to LeanSha256).
+│   │   └── lakefile.lean (C ABI shim + cargo zkhash oracle), csrc/ / rust-oracle/ / docs/ / README.md
+│   └── LeanPoseidonProofs/      # Poseidon2 permute ≡ reference proof (mathlib; standalone, NOT in the umbrella).
+└── .github/workflows/           # `leanprover/lean-action` runs `lake build`.
 ```
 
-The umbrella package is named `Etheorem`. The SSZ library
-library inside it is named `SizzLean`. When this file mentions
-"SizzLean" elsewhere, that's the library, not the project as a
-whole.
+The umbrella package is `Etheorem`; building it walks the whole
+dependency chain (`LeanSha256 → SizzLean → EthCLLib → EthCLSpecs`, with
+the crypto families feeding in and the `LeanPoseidon` island built
+alongside). `LeanPoseidonProofs` is built on its own so mathlib stays
+out of the root build.
 
-The SizzLean library's design docs live under
+Design docs live next to the code they describe. The consensus-spec
+design of record is under
+[`packages/EthCLSpecs/docs/`](packages/EthCLSpecs/docs/): read
+[`SPEC_AUTHORING_MODEL.md`](packages/EthCLSpecs/docs/SPEC_AUTHORING_MODEL.md),
+[`FRAMEWORK_ARCHITECTURE.md`](packages/EthCLSpecs/docs/FRAMEWORK_ARCHITECTURE.md),
+and [`SPECS_ARCHITECTURE.md`](packages/EthCLSpecs/docs/SPECS_ARCHITECTURE.md)
+in that order, with `PLAN.md`, `IMPLEMENTATION_NOTES.md`,
+`DISCREPANCIES.md`, and `FUTURE_WORK.md` for sequencing and deviations.
+The SSZ library's design is under
 [`packages/SizzLean/docs/`](packages/SizzLean/docs/):
-[`ARCHITECTURE.md`](packages/SizzLean/docs/ARCHITECTURE.md) binds
-the SSZ-library design (the `SSZType` universe, `SSZRepr`
-typeclass + deriving handler, cached Merkle tree, FFI SHA-256,
-trust boundary, the per-subpackage layout under `packages/`),
-[`PLAN.md`](packages/SizzLean/docs/PLAN.md) sequences SizzLean's
-work into stages with concrete deliverables and acceptance
-criteria. [`docs/monorepo-arch.md`](docs/monorepo-arch.md)
-documents how the monorepo's three-subpackage shape works.
-This file (CLAUDE.md) is binding on style, conventions, and
-discipline across all subpackages; when those overlap with
-architectural decisions, ARCHITECTURE.md wins on substance and
-CLAUDE.md wins on form.
+[`ARCHITECTURE.md`](packages/SizzLean/docs/ARCHITECTURE.md) binds the
+design (the `SSZType` universe, `SSZRepr` typeclass + deriving handler,
+cached Merkle tree, FFI SHA-256, trust boundary) and
+[`PLAN.md`](packages/SizzLean/docs/PLAN.md) sequences its stages. The
+FFI crypto families are documented in [`hazmat-docs/`](hazmat-docs/);
+the monorepo's physical layout in
+[`docs/monorepo-arch.md`](docs/monorepo-arch.md). This file (CLAUDE.md)
+is binding on style, conventions, and discipline across all
+subpackages; when those overlap with architectural decisions, the
+relevant ARCHITECTURE.md wins on substance and CLAUDE.md wins on form.
 
 ## Conventions
 
@@ -167,12 +192,14 @@ CLAUDE.md wins on form.
   Files and directories are PascalCase.
 - **`import` must be the first thing in a file**, before any `/-! … -/` module
   docstring, before any `set_option`. Lean rejects imports placed later.
-- **Library root re-exports.** New top-level submodules go into `SizzLean.lean`
-  as `import SizzLean.Foo`. Internal-only helpers don't need to be re-exported.
+- **Library root re-exports.** New top-level submodules go into the
+  library root (e.g. `SizzLean.lean`, `EthCLSpecs.lean`) as
+  `import SizzLean.Foo`. Internal-only helpers don't need to be re-exported.
 - **Naming:** types, structures, inductives, namespaces → `PascalCase`;
   defs, theorems, fields, variables → `lowerCamelCase`.
-- **Namespacing.** Wrap declarations in `namespace SizzLean … end SizzLean`
-  (or a sub-namespace) so the public API is `SizzLean.foo`, not bare `foo`.
+- **Namespacing.** Wrap declarations in the library's own namespace
+  (`namespace SizzLean … end SizzLean`, `namespace EthCLLib … end`, …)
+  or a sub-namespace, so the public API is `SizzLean.foo`, not bare `foo`.
 - **Doc comments:** `/-- … -/` on declarations, `/-! … -/` for module-level
   prose. Skip comments that just restate the code.
 - **No committed `#eval` / `#check` / `#print`.** Use `example : … := by …` or
@@ -270,18 +297,30 @@ oleans, nothing compiles from scratch), with its own committed
 dependency confined to the `poseidon_fuzz` executable, not a Lean/Lake
 dependency, and never on any shipped or proof path.
 
-## SSZ scope (what this library will cover)
+## Scope
 
-Track the [consensus-specs SSZ doc](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md)
-as the source of truth. Roughly:
+Two upstream sources govern behavior. SSZ tracks the
+[consensus-specs SSZ doc](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md);
+the fork bodies track the
+[consensus-specs](https://github.com/ethereum/consensus-specs) pyspec
+for Fulu and Gloas. When an implementation disagrees with the spec, the
+spec wins. We record the discrepancy rather than paper over it.
 
-- Basic types: `uintN` (8/16/32/64/128/256), `Bool`.
-- Composite: `Vector`, `List`, `Bitvector`, `Bitlist`, `Container`, `Union`.
-- Operations: `serialize`, `deserialize`, `hash_tree_root` (merkleization).
-- Test vectors from `ethereum/consensus-spec-tests` once the core types land.
+**SSZ (`SizzLean`).** The `SSZType` universe has seven arms: `uintN`
+(8/16/32/64/128/256), `bool`, `vector`, `list`, `bitvector`, `bitlist`,
+and `container`. Each supports `serialize`, `deserialize`, and
+`hashTreeRoot` (merkleization), checked against the
+`ethereum/consensus-spec-tests` `ssz_generic` vectors. `Union` and the
+EIP-7495 / 7916 / 8016 progressive types sit outside the universe and
+are out of scope.
 
-When in doubt about behavior, defer to the spec and the pyspec test vectors,
-not to other implementations.
+**Consensus specs (`EthCLLib` + `EthCLSpecs`).** The Fulu and Gloas
+forks, authored in-spec on the framework: the SSZ containers, the
+beacon-chain state transition, the fork upgrade, and fork choice, all
+executable and checked against the pyspec `ssz_static`,
+state-transition, and fork-choice vectors at both presets. Earlier
+forks (Phase 0 through Electra) are not modeled as their own container
+sets; Fulu is authored as the accumulated base.
 
 ## Don'ts
 

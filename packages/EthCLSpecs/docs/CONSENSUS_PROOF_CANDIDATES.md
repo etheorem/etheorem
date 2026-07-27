@@ -37,7 +37,7 @@ bounded walk to finish.
 | `reserveChurn`                   | `Fulu/RegistryUpdates.lean:69-74`   | Arithmetic never underflows                                                                                                                       |
 | `getExpectedWithdrawals`         | `Gloas/Withdrawals.lean:160-168`    | The withdrawals returned by its four phases combined never exceed `MAX_WITHDRAWALS_PER_PAYLOAD`                                                   |
 | `initiateBuilderExit`            | `Gloas/Operations.lean:90-93`       | Whether `epoch + minBuilderWithdrawabilityDelay` can overflow `UInt64` given `epoch`'s realistic range is the no-overflow bound to establish here |
-| `getPtc`                         | `Gloas/Operations.lean:368-376`     | Under the caller's guarantee that `data.slot + 1 == state.slot`, its computed offset into `ptcWindow` stays in range                              |
+| `getPtc`                         | `Gloas/Operations.lean:368-376`     | **In review**, see `EthCLSpecs/Proofs/GetPtc.lean`. Its computed offset into `ptcWindow` stays in range under the two guarded call patterns covered here: `data.slot + 1 == state.slot` and the fork-choice replay callers' `slot == curSlot` |
 | `canBuilderCoverBid`             | `Gloas/Operations.lean:419-422`     | Primary builder-solvency predicate; the natural theorem is that accepting a bid never leaves the builder insolvent                                |
 | `applyWithdrawals`               | `Gloas/Withdrawals.lean:173-184`    | A builder-flagged withdrawal decreases the builder's balance by at most its own balance, so the balance never goes negative                       |
 | `getAncestor`                    | `Gloas/ForkChoice.lean:156-163`     | The fuel supplied to its `fuelIterate` DAG walk is sufficient for the walk to terminate before running out                                        |
@@ -114,7 +114,7 @@ incidental, it's what the function does.
 | --------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `upgradeToGloas`      | `Gloas/Upgrade.lean:101-156` | Preserves inherited state while correctly initializing the new ePBS state                                                                                            |
 | `computePtcFromFulu`  | `Gloas/Upgrade.lean:35-43`   | Agrees with `Gloas.computePtc` once the state is upgraded                                                                                                            |
-| `initializePtcWindow` | `Gloas/Upgrade.lean:50-60`   | Each entry of the window it builds is either the empty committee, for the first `SLOTS_PER_EPOCH` slots, or `computePtcFromFulu` evaluated at the corresponding slot |
+| `initializePtcWindow` | `Gloas/Upgrade.lean:50-60`   | **In review**, see `EthCLSpecs/Proofs/InitializePtcWindow.lean`. The first `SLOTS_PER_EPOCH` entries are the empty committee, and every remaining entry equals `computePtcFromFulu` at the slot computed by `initializePtcWindow` |
 
 ---
 
