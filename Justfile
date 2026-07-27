@@ -19,8 +19,8 @@ default:
 # ═════════════════════════════════════════════════════════════════════════
 
 # Compile every library: the SSZ chain (LeanSha256 → SizzLean → EthCLLib →
-# EthCLSpecs), the LeanHazmat FFI crypto families, and the standalone
-# LeanPoseidon island. The vendored families (LeanHazmatBls, LeanHazmatKzg) need
+# EthCLSpecs), LeanImtPlus, the LeanHazmat FFI crypto families, and the
+# standalone LeanPoseidon island. The vendored families need
 # their `hazmat-*-vendor` recipes first; the dependencies run them (idempotent)
 # before building. `lake build EthCLSpecs` pulls in EthCLLib + SizzLean
 # transitively.
@@ -29,6 +29,7 @@ default:
 [group('general')]
 build: hazmat-bls-vendor hazmat-kzg-vendor
     lake build LeanSha256
+    lake build LeanImtPlus
     lake build LeanHazmatSha256
     lake build LeanHazmatBls
     lake build LeanHazmatKzg
@@ -45,13 +46,13 @@ build: hazmat-bls-vendor hazmat-kzg-vendor
 build-cli:
     lake build pyspec_server ssz_generic_runner
 
-# All local tests — SHA-256 spec + FFI CAVP + BLS + KZG KATs + SSZ library gates
-# + Poseidon2 anchor KAT. The consensus-spec libraries (EthCLLib / EthCLSpecs)
+# All local tests: SHA-256 spec, LeanIMT+, FFI CAVP, BLS, KZG, SSZ library gates,
+# and the Poseidon2 anchor KAT. The consensus-spec libraries (EthCLLib / EthCLSpecs)
 # have their own `ethcl-test` recipe and CI job.
 
 # Run every local property-test recipe (all packages)
 [group('general')]
-test: leansha256-test hazmat-sha256-test hazmat-bls-test hazmat-kzg-test sizzlean-test poseidon-test
+test: leansha256-test leanimt-plus-test hazmat-sha256-test hazmat-bls-test hazmat-kzg-test sizzlean-test poseidon-test
 
 # Reject committed `sorry`, `#eval`, `#check`, `#print` in Lean source
 # per CLAUDE.md. `git grep` searches tracked files only and returns 1
@@ -349,6 +350,15 @@ sizzlean-bench-diff before after:
     @diff -u {{ before }} {{ after }} | column -t -s $'\t' || diff -u {{ before }} {{ after }}
 
 # ═════════════════════════════════════════════════════════════════════════
+# LeanIMT+, hash-generic tree and unified proofs
+# ═════════════════════════════════════════════════════════════════════════
+
+# Pure/FFI SHA-256 and Poseidon2 lifecycle, proof, and rejection gates
+[group('leanimt-plus')]
+leanimt-plus-test:
+    lake build LeanImtPlusTests
+
+# ═════════════════════════════════════════════════════════════════════════
 # LeanSha256 — pure-Lean SHA-256 reference (no FFI)
 # ═════════════════════════════════════════════════════════════════════════
 
@@ -451,14 +461,13 @@ hazmat-kzg-test: hazmat-bls-vendor hazmat-kzg-vendor
     lake build LeanHazmatKzgTests
 
 # ═════════════════════════════════════════════════════════════════════════
-# LeanPoseidon — pure-Lean Poseidon2 (BN254 t=3), standalone island
+# LeanPoseidon — pure-Lean Poseidon2 (BN254 t=3)
 # ═════════════════════════════════════════════════════════════════════════
 
 # Building the core fires the in-file anchor-KAT `native_decide` gate
-# (input [0,1,2] → the known BN254 t=3 Poseidon2 output). Nothing in
-# the monorepo depends on LeanPoseidon (standalone island), so unlike
-# the SSZ-chain libs it isn't built transitively — this recipe is how
-# the anchor gate fires in `test` / CI. No Rust. Analogous to
+# (input [0,1,2] → the known BN254 t=3 Poseidon2 output). LeanIMT+ imports
+# only the compression adapter, so this explicit recipe remains how the
+# broader Poseidon anchor gate fires in `test` / CI. No Rust. Analogous to
 # LeanSha256's 3 FIPS §B gates firing on `lake build LeanSha256`.
 
 # LeanPoseidon core build — fires the Poseidon2 anchor KAT (no Rust)

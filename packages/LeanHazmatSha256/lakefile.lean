@@ -14,14 +14,14 @@
 import Lake
 open Lake DSL System
 
-/-- Hardcoded Debian/Ubuntu fallback. Used when `pkg-config` itself
-isn't installed (rare on Linux distros, common on minimal Docker
-images). The Linux-only `-l:libcrypto.so.3` GNU-ld syntax and the
-multiarch `-L/usr/lib/x86_64-linux-gnu` path are deliberately the
-last-resort values, when `pkg-config` is available it produces
-portable equivalents for Fedora, Arch, macOS Homebrew, Nix, etc. -/
+/-- Debian/Ubuntu fallback. Used when `pkg-config` itself isn't installed
+(rare on full distributions, common in minimal containers). Both standard
+x86-64 and AArch64 multiarch directories are harmless to pass when absent;
+the linker selects the directory that contains `libcrypto.so.3`. When
+`pkg-config` is available it still supplies the platform-specific path. -/
 private def opensslFallbackLinkArgs : Array String :=
-  #["-L/usr/lib/x86_64-linux-gnu", "-l:libcrypto.so.3"]
+  #["-L/usr/lib/x86_64-linux-gnu", "-L/usr/lib/aarch64-linux-gnu",
+    "-l:libcrypto.so.3"]
 
 /-- Helper: run `pkg-config <args>` at lakefile-load time and return
 its stdout split on whitespace. Returns `fallback` if pkg-config

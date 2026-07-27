@@ -26,12 +26,15 @@ its own subpackage under `packages/`:
   declare their containers in-spec.
 - **`LeanSha256`**: pure-Lean SHA-256 reference. NIST CAVP-validated,
   kernel-reducible, no FFI.
+- **`LeanImtPlus`**: a hash-generic LeanIMT+ tree and unified
+  membership / non-membership proofs, with pure SHA-256, FFI SHA-256,
+  and Poseidon2 adapters.
 - **`LeanHazmatSha256`** / **`LeanHazmatBls`** / **`LeanHazmatKzg`**: the
   FFI crypto family, one package per primitive wrapping a native library
   (OpenSSL / blst / c-kzg-4844) behind `@[extern]`.
 - **`LeanPoseidon`** (+ **`LeanPoseidonProofs`**): a pure-Lean Poseidon2
-  hash, a standalone island parallel to `LeanSha256` that nothing in the
-  monorepo imports yet, and its mathlib-isolated equivalence proof. See
+  hash, a pure-crypto package parallel to `LeanSha256` used by LeanIMT+'s
+  optional adapter, and its mathlib-isolated equivalence proof. See
   [`packages/LeanPoseidon/docs/ARCHITECTURE.md`](packages/LeanPoseidon/docs/ARCHITECTURE.md).
 
 Mentions of "SizzLean" elsewhere in this file refer to the SSZ library
@@ -144,6 +147,8 @@ its mathlib dependency never touches the root build.
 ├── packages/
 │   ├── LeanSha256/              # Pure-Lean SHA-256 reference; no FFI. Published standalone via a mirror.
 │   │   └── lakefile.toml, LeanSha256.lean / LeanSha256/ / cavp/ / LeanSha256Tests/ / README.md
+│   ├── LeanImtPlus/             # Hash-generic LeanIMT+ tree and unified proofs.
+│   │   └── lakefile.lean, LeanImtPlus/{Hasher,Core,Tree} / LeanImtPlusTests/ / README.md
 │   ├── LeanHazmatSha256/        # FFI SHA-256 (OpenSSL libcrypto); owns the C SHA-256 shim.
 │   │   └── lakefile.lean (C target), csrc/{sha256_shim,sha256_batch}.c / docs/ / README.md
 │   ├── LeanHazmatBls/           # FFI BLS12-381 (blst, vendored). lakefile.lean, csrc/bls_shim.c, docs/.

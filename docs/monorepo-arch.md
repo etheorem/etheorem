@@ -17,10 +17,11 @@ LeanSha256  ←  SizzLean  ←  EthCLLib  ←  EthCLSpecs        LeanPoseidon
 ```
 
 `LeanPoseidon` sits *outside* the `LeanSha256 → SizzLean → EthCLLib → EthCLSpecs`
-chain: it is a second pure-crypto primitive, parallel to `LeanSha256`,
-that nothing in the monorepo imports (and which imports nothing from it).
-The umbrella `[[require]]`s it so `lake build` builds it, but there is no
-edge into the SSZ side, see `packages/LeanPoseidon/docs/ARCHITECTURE.md`.
+chain: it is a second pure-crypto primitive, parallel to `LeanSha256`, and
+imports nothing from the monorepo. `LeanImtPlus` is a separate consumer of
+`LeanSha256`, `LeanHazmatSha256`, and `LeanPoseidon`; its generic core imports
+none of them, while each optional adapter imports one concrete backend. There
+is still no edge from Poseidon2 into the SSZ chain.
 
 A fifth package, **`LeanPoseidonProofs`**, hangs off `LeanPoseidon` (it
 `[[require]]`s the core + **mathlib**) and holds the machine-checked
@@ -53,6 +54,12 @@ poseidon-proofs`).
     │   ├── LeanSha256Tests/          # in-Lean conformance gates
     │   ├── scripts/                  # bump_patch.py (release tag), gen_sha256_cavp.py
     │   └── README.md                 # "issues belong in the umbrella" mirror notice
+    ├── LeanImtPlus/                  # hash-generic tree + pure/FFI SHA-256 and Poseidon2 adapters
+    │   ├── lakefile.lean
+    │   ├── LeanImtPlus.lean
+    │   ├── LeanImtPlus/              # Core, Tree, Hasher interface + adapters
+    │   ├── LeanImtPlusTests/         # fixtures, lifecycle, backend equivalence gates
+    │   └── README.md
     ├── SizzLean/
     │   ├── lakefile.lean             # procedural — needed for the FFI C-shim target
     │   ├── csrc/                     # sha256_shim.c, sha256_batch.c
@@ -252,12 +259,14 @@ package-local copy is overwritten to match on each mirror run.
 ```bash
 # Library targets (all built by `lake build` at the root):
 lake build LeanSha256
+lake build LeanImtPlus
 lake build SizzLean
 lake build EthCLLib
 lake build EthCLSpecs
 
 # In-Lean test suites (run on demand):
 lake build LeanSha256Tests
+lake build LeanImtPlusTests
 lake build SizzLeanTests
 
 # Executables:

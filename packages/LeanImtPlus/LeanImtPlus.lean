@@ -1,42 +1,16 @@
-import LeanImtPlus.Sha256
-
-set_option autoImplicit false
+import LeanImtPlus.Core
+import LeanImtPlus.Hasher.Sha256
+import LeanImtPlus.Tree
 
 /-!
-# LeanIMT+ proof verification
+# LeanIMT+ tree and unified proofs
 
-This package models the SHA-256 LeanIMT+ verifier circuit from
-`protocolwhisper/leanimt-plus`, starting with circuit-equivalent proof
-validation and root recomputation.
+The core API is generic over `LeanImtPlus.Hasher`. This convenience root also
+imports the pure-Lean `Sha256Spec` adapter, preserving a lightweight default.
+The OpenSSL and Poseidon2 adapters remain explicit opt-in imports:
 
-The design reference is the PSE LeanIMT+ writeup:
-https://pse.dev/blog/lean-imt-plus-efficient-merkle-tree-for-membership-and-non-membership-proofs
-
-LeanIMT+ is used here because it is designed for efficient Merkle membership
-and non-membership proofs in one structure. This package starts with the
-smallest useful, circuit-facing surface: verify a supplied proof and recompute
-the committed root.
+```lean
+import LeanImtPlus.Hasher.Sha256Ffi
+import LeanImtPlus.Hasher.Poseidon2
+```
 -/
-
-namespace LeanImtPlus
-
-export Sha256 (
-  ProofType
-  Leaf
-  Proof
-  VerifyError
-  VerifyResult
-  twoPow216
-  max216
-  fits216
-  toBytesBE
-  toBE27
-  natFromBytesBE
-  low216FromDigest
-  hash2
-  leafHash
-  internalHash
-  verify
-)
-
-end LeanImtPlus

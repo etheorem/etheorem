@@ -35,7 +35,9 @@ LeanHazmatSha256 ───────┘   (SSZ +       (consensus    (Fulu / G
 
 LeanHazmat* (FFI crypto family):  Sha256 · Bls · Kzg   (consumed à la carte)
 
-LeanPoseidon (pure Poseidon2, standalone island, nothing depends on it yet)
+LeanSha256 ───────────┐
+LeanHazmatSha256 ─────┼─→ LeanImtPlus (hash-generic tree and unified proofs)
+LeanPoseidon ─────────┘
 ```
 
 Lake subpackages under `packages/`, each with its own lakefile and
@@ -50,6 +52,11 @@ independent build target:
   fork-choice, and `ssz_static` pyspec runs for both forks.
 - **[`packages/LeanSha256/`](packages/LeanSha256/README.md)**: pure-Lean
   SHA-256 reference. NIST CAVP-validated, kernel-reducible. No FFI.
+- **[`packages/LeanImtPlus/`](packages/LeanImtPlus/README.md)**:
+  hash-generic LeanIMT+ tree following `vplasencia/leanimt-plus`. It supports
+  insertion, tombstone removal, in-place update, unified membership and
+  non-membership proofs, and root-bound verification with pure SHA-256,
+  OpenSSL SHA-256, or Poseidon2.
 - **[`packages/SizzLean/`](packages/SizzLean/README.md)**: SSZ
   library: spec types, serialization, deserialization, Merkleization,
   the `SSZRepr` deriving handler, the cache layer, the `sszUpdate`
@@ -66,8 +73,8 @@ independent build target:
 - **[`packages/LeanPoseidon/`](packages/LeanPoseidon/README.md)**:
   pure-Lean **Poseidon2** algebraic hash (BN254 *and* BLS12-381 scalar
   fields, `t = 3`): the permutation, the 2-to-1 `compress`, and a sponge.
-  A *standalone island* parallel to `LeanSha256`, depending on nothing in
-  the monorepo and nothing depends on it yet. Conformance-validated by a
+  A pure-crypto package parallel to `LeanSha256`, depending on nothing in
+  the monorepo; LeanIMT+ consumes its optional Poseidon2 adapter. Validated by a
   differential test against the HorizenLabs `zkhash` Rust oracle
   (test-only) plus committed KATs; the kernel-/`native_decide`-reducible
   core needs no Rust. A sibling **`LeanPoseidonProofs`** package (mathlib,
@@ -195,12 +202,14 @@ Toolchain pinned in [`lean-toolchain`](lean-toolchain) (elan picks it up).
 lake build EthCLSpecs       # consensus spec (Fulu / Gloas); pulls in EthCLLib + SizzLean
 lake build SizzLean         # SSZ library (serialize / deserialize / Merkleization)
 lake build LeanSha256       # pure-Lean SHA-256 reference
+lake build LeanImtPlus      # hash-generic LeanIMT+ tree + pure SHA adapter
 lake build LeanPoseidon     # standalone Poseidon2 island (fires its anchor KAT)
 
 # Test suites (per package, run on demand):
 lake build EthCLLibTests EthCLSpecsTests   # framework + spec self-tests
 lake build SizzLeanTests
 lake build LeanSha256Tests
+lake build LeanImtPlusTests
 lake build LeanPoseidonTests # committed Poseidon2 KATs (no Rust)
 lake exe   poseidon_fuzz     # Poseidon2 differential test vs the zkhash oracle (needs cargo)
 just poseidon-proofs    # mathlib equivalence proof permute = permuteRef (standalone; fetches olean cache)
