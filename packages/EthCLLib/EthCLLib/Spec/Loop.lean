@@ -66,11 +66,20 @@ walk: its bound is `(tick_slot - current_slot) + 1`, exact only because `1000` d
 `SLOT_DURATION_MS` (true at both pinned presets, 12000 and 6000, and asserted nowhere), so a
 config breaking that divisibility would return a store whose clock never reached `time` and
 surface later as an unrelated `checks: time` mismatch. Throw instead, so the failure names
-itself. -/
+itself.
+
+Fuel-out rejects as `todo`, never `assert`. The bound belongs to this model rather than to any
+spec text, so exhausting it is a work-queue item, and `todo` is the class that reports one
+(`xfail`). `assert` is the class a runner scores as a vector's *expected* rejection, so a
+fuel-out on a `valid: false` step would pass green on a bound we know is wrong. That is the
+same reason `decodeFailure` stays out of `StoreTransitionError.isExpectedRejection`. Both
+current call sites are `on_tick`, whose steps carry no `valid` flag and always run
+`expectedValid := true`, so no verdict rides on this today. The class keeps it that way for
+the next caller. -/
 def fuelIterateM! {α : Type} {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
     [SpecReject E] (fuel : Nat) (a : α) (what : String) (step : α → m (Step α α)) : m α := do
   match fuel with
-  | 0         => throw (SpecReject.assert s!"{what}: loop fuel exhausted")
+  | 0         => throw (SpecReject.todo s!"{what}: loop fuel exhausted")
   | fuel' + 1 => match ← step a with
     | .done b => return b
     | .next b => fuelIterateM! fuel' b what step

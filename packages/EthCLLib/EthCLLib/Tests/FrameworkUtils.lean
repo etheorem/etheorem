@@ -46,6 +46,23 @@ vectors, so these guards are the only thing exercising the throw. -/
 #guard (checkedMul 0x8000000000000000 4 "o" : Except StateTransitionError UInt64) matches .error (.arithmetic _)
 #guard (checkedSub 3 5 "u" : Except StoreTransitionError UInt64) matches .error (.transition (.arithmetic _))
 
+/-! ## Fuel exhaustion: a deferral, never an expected rejection
+
+`fuelIterateM!` throws when its bound runs out. That bound is a modeling artifact rather than
+spec text, so the reject is `todo` (a work-queue `xfail`) and stays outside the caught set a
+runner scores as a `valid: false` step's expected rejection. Pinned on the constructor: a
+regression to `.assert` would turn a wrong loop bound into a green step, and breaks the build
+here instead. -/
+private def fuelOut : Except StoreTransitionError Nat :=
+  fuelIterateM! 0 (0 : Nat) "pin" fun n => pure (.next (n + 1))
+
+#guard fuelOut matches .error (.todo _)
+#guard (match fuelOut with | .error e => !e.isExpectedRejection | .ok _ => false)
+-- A walk inside its bound still returns normally: fuel 3 reaches the `.done` at 2.
+#guard (fuelIterateM! 3 (0 : Nat) "pin" (fun n =>
+  pure (if n ≥ 2 then .done n else .next (n + 1))) : Except StoreTransitionError Nat).toOption
+    = some 2
+
 /-! ## Map-backing equivalence: `treeMap` and `hashMap` agree -/
 
 private def pairs : List (Nat × Nat) := [(3, 30), (1, 10), (2, 20), (1, 11), (5, 50)]
