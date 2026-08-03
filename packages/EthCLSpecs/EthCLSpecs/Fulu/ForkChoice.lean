@@ -181,6 +181,13 @@ forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := do
   -- branch outright on a zero boost root. Hoisting the read made an empty-`latest_messages`
   -- store, exactly what `get_forkchoice_store` hands back, raise `.missingKey` where the
   -- reference returns `Gwei(0)`. The Gloas twin already defers it.
+  -- Two non-conversions here are deliberate, since the reads and sums around them did convert.
+  -- `validators[idx]!` stays unchecked: `idx` comes from `getActiveValidatorIndices` on the same
+  -- `state` the array belongs to, so it is in range by construction, and the Gloas
+  -- `getAttestationScore` fold keeps it for that reason too. The two `Gwei` sums below stay bare
+  -- `+` rather than `checkedAdd` because they are operands of the weight path, which converts as
+  -- one piece: `getTotalBalance` underneath still wraps, so checking these alone would move a
+  -- wrong number around instead of catching it.
   let active := getActiveValidatorIndices state (currentEpochOf state)
   let validators := sszGet state validators
   let attestationScore ← active.foldlM (init := (0 : Gwei)) fun acc i => do
