@@ -66,9 +66,7 @@ def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Wi
       checkedAdd acc w.amount "get_balance_after_withdrawals: sum(withdrawal.amount)"
     else pure acc
   let bal ← sszGetIdx (sszGet state balances) vi.toNat
-  if withdrawn > bal then
-    throw (StateTransitionError.arithmetic "get_balance_after_withdrawals: balances[i] - withdrawn underflow")
-  return bal - withdrawn
+  checkedSub bal withdrawn "get_balance_after_withdrawals: balances[i] - withdrawn"
 
 /-- `get_expected_withdrawals`: the pending-partial queue then the validator sweep.
 Throwing: the two `validators[i]` reads are bare list indices (`IndexError`, via

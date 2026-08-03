@@ -203,8 +203,7 @@ forkdef getInclusionListCommittee (state : State) (slot : Slot) :
   let indices := (Array.range committeesPerSlot).foldl
     (fun acc i => acc ++ getBeaconCommittee state slot i) (#[] : Array ValidatorIndex)
   if indices.size == 0 then
-    throw (StoreTransitionError.transition
-      (.arithmetic "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"))
+    throwArithmetic "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"
   pure (cyclicSample indices Const.inclusionListCommitteeSize)
 
 /-- `get_inclusion_list_transactions(store, state, slot, only_timely=True)`
@@ -394,14 +393,13 @@ True`, and the EL verdict comes from `isInclusionListSatisfied`, which reads the
 forkdef recordPayloadInclusionListSatisfaction (store : Store map) (state : State) (root : Root)
     (payload : ExecutionPayload) : StoreTransition (Store map) := do
   -- The spec reads `Slot(state.slot - 1)`, a `uint64` subtraction that raises `ValueError` on a
-  -- slot-0 state (invalidating the whole envelope). That fault is uncaught by the reference
-  -- runner, so throw `.transition (.arithmetic …)` (an `uncaughtFault`, not an expected rejection),
-  -- matching `balanceAfterWithdrawals`, rather than a caught `.assert` or a silent empty set.
+  -- slot-0 state (invalidating the whole envelope). The reference runner leaves that fault
+  -- uncaught, so it is `checkedSub`, the same operator `balanceAfterWithdrawals` reads its
+  -- underflow through. The reject arrives as `.transition (.arithmetic …)`, an `uncaughtFault`
+  -- rather than a caught `.assert` or a silent empty set.
   let stateSlot := sszGet state slot
-  if stateSlot == 0 then
-    throw (StoreTransitionError.transition
-      (.arithmetic "record_payload_inclusion_list_satisfaction: Slot(state.slot - 1) underflow at slot 0"))
-  let ilTxs ← getInclusionListTransactions store.inclusionListStore state (stateSlot - 1)
+  let prevSlot ← checkedSub stateSlot 1 "record_payload_inclusion_list_satisfaction: Slot(state.slot - 1)"
+  let ilTxs ← getInclusionListTransactions store.inclusionListStore state prevSlot
   let satisfied := isInclusionListSatisfied payload ilTxs
   pure { store with
       payloadInclusionListSatisfaction := FcMap.insert store.payloadInclusionListSatisfaction root satisfied }

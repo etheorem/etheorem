@@ -58,9 +58,7 @@ def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Wi
       checkedAdd acc w.amount "get_balance_after_withdrawals: sum(withdrawal.amount)"
     else pure acc
   let bal ← sszGetIdx (sszGet state balances) vi.toNat
-  if withdrawn > bal then
-    throw (StateTransitionError.arithmetic "get_balance_after_withdrawals: balances[i] - withdrawn underflow")
-  return bal - withdrawn
+  checkedSub bal withdrawn "get_balance_after_withdrawals: balances[i] - withdrawn"
 
 /-- `get_builder_withdrawals` (NEW, EIP-7732): drain `builder_pending_withdrawals`
 into validator-flagged withdrawals, capped at `MAX_WITHDRAWALS_PER_PAYLOAD - 1`. -/

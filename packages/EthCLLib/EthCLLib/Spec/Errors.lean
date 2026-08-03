@@ -263,28 +263,39 @@ The spec's `uintN` arithmetic is *checked*: remerkleable reconstructs a `uint64`
 `ValueError` is not an `AssertionError`, so the reference runner does not catch it
 (`context.py`); it is the `.arithmetic` uncaught fault (`classify`s as `uncaughtFault`, never an
 expected rejection). Lean's raw `UInt64` ops wrap instead of raising, so a spec `a + b` / `a - b`
-/ `a * b` that can leave the `uint64` range is modeled with these, not the bare operator. Each
-emits `StateTransitionError.arithmetic`; the `[ErrorConv StateTransitionError E]` bound rides it
-in as `.arithmetic` on the state machine (identity) and `.transition (.arithmetic …)` on the store
-machine, so one definition serves both, exactly as `sszGetIdx` does for `IndexError`. `descr` names
-the faulting op, diagnostic only. -/
+/ `a * b` that can leave the `uint64` range is modeled with these, not the bare operator. All
+of them raise through `throwArithmetic` below, which is also where the spec's one non-operator
+arithmetic fault goes. `descr` names the faulting op, diagnostic only. -/
+
+/-- Raise the `.arithmetic` fault. The single place the reject is constructed, so no call site
+names the wrapper its context needs: the `[ErrorConv StateTransitionError E]` bound rides the
+fault in as `.arithmetic` on the state machine (identity) and `.transition (.arithmetic …)` on
+the store machine, so one definition serves both, exactly as `sszGetIdx` does for `IndexError`.
+
+Two kinds of site reach it. The three checked operators below are the `uint64` over/underflows.
+The other is `get_inclusion_list_committee`'s `indices[i % len(indices)]` on an empty committee
+(`heze/beacon-chain.md:108-110`), a `ZeroDivisionError` rather than a `uint64` op, which lands
+in the same uncaught-fault class because the reference runner propagates it just the same. -/
+@[inline] def throwArithmetic {m : Type → Type u} {α E : Type} [Monad m] [MonadExcept E m]
+    [ErrorConv StateTransitionError E] (descr : String) : m α :=
+  liftErr (E := StateTransitionError) (.error (.arithmetic descr))
 
 /-- Checked `uint64` addition: the sum, or the `.arithmetic` fault on overflow (`a + b` wraps below
 `a`, the unsigned carry test). Mirrors remerkleable's `uint64.__add__`. -/
 @[inline] def checkedAdd {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
     [ErrorConv StateTransitionError E] (a b : UInt64) (descr : String) : m UInt64 :=
-  liftErr (E := StateTransitionError) <| if a + b < a then .error (.arithmetic descr) else .ok (a + b)
+  if a + b < a then throwArithmetic descr else pure (a + b)
 
 /-- Checked `uint64` subtraction: the difference, or the `.arithmetic` fault on underflow
 (`b > a`). Mirrors remerkleable's `uint64.__sub__` (the standing `balances[i] - withdrawn` case). -/
 @[inline] def checkedSub {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
     [ErrorConv StateTransitionError E] (a b : UInt64) (descr : String) : m UInt64 :=
-  liftErr (E := StateTransitionError) <| if b > a then .error (.arithmetic descr) else .ok (a - b)
+  if b > a then throwArithmetic descr else pure (a - b)
 
 /-- Checked `uint64` multiplication: the product, or the `.arithmetic` fault on overflow (`a ≠ 0`
 and the truncating `a * b / a` fails to recover `b`). Mirrors remerkleable's `uint64.__mul__`. -/
 @[inline] def checkedMul {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
     [ErrorConv StateTransitionError E] (a b : UInt64) (descr : String) : m UInt64 :=
-  liftErr (E := StateTransitionError) <| if a != 0 && a * b / a != b then .error (.arithmetic descr) else .ok (a * b)
+  if a != 0 && a * b / a != b then throwArithmetic descr else pure (a * b)
 
 end EthCLLib.Spec
