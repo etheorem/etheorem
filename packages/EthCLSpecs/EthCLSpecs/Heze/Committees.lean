@@ -25,8 +25,11 @@ of the concatenated committees (the spec's `indices[i % len(indices)]`,
 `consensus-specs/specs/heze/beacon-chain.md:108-110`). Factored out of the accessor so the
 wrap-around index arithmetic is unit-checkable below without building a whole `BeaconState`.
 `xs.getD … default` is total via `[Inhabited α]`; the sole caller (`getInclusionListCommittee`
-in `Heze/ForkChoice.lean`) asserts `indices.size != 0` before reaching here, so on every path
-`xs` is non-empty, `i % xs.size < xs.size`, and `getD` always returns a real element. -/
+in `Heze/ForkChoice.lean`) rejects an empty committee before reaching here, so on every path
+`xs` is non-empty, `i % xs.size < xs.size`, and `getD` always returns a real element. That
+guard is an `.arithmetic` throw, not an `assert`: the spec's `i % len(indices)` raises
+`ZeroDivisionError` on an empty committee, an uncaught fault the reference runner propagates
+rather than catching, so it can never be a vector's expected rejection. -/
 def cyclicSample {α : Type} [Inhabited α] (xs : Array α) (n : Nat) : Vector α n :=
   Vector.ofFn (fun i : Fin n => xs.getD (i.val % xs.size) default)
 
