@@ -541,7 +541,13 @@ where
   3-tuple *eagerly for every child*, so `get_payload_status_tiebreaker` (whose
   `payload_timeliness` membership assert throws) runs even when weight alone decides;
   both tiebreakers are therefore bound before any comparison, keeping a losing child's
-  throw observable exactly where pyspec raises it. -/
+  throw observable exactly where pyspec raises it.
+
+  The `foldlM` re-evaluates the accumulator's key on every step, where `max` evaluates each
+  child's key once. That leaves which reject surfaces unchanged. An accumulator reached its
+  position by surviving an earlier step, so its key already succeeded and cannot throw on the
+  re-run, and the first throw stays at the first child whose key raises, in index order, as
+  under `max`. What the repetition does cost is a second `getWeight` walk per comparison. -/
   betterOf (store : Store map) (a b : ForkChoiceNode) : StoreTransition ForkChoiceNode := do
     let weightA ← getWeight store a
     let weightB ← getWeight store b

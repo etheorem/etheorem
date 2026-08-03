@@ -271,7 +271,12 @@ where
   /-- The better of two candidate heads under the phase0 `(weight, root)` ordering:
   greater weight wins, ties by greater root. Phase0 `get_head`'s sort key is the
   2-tuple `(get_weight, child.root)`. The payload-status tiebreaker is a Gloas
-  addition, so only the two weights bind here. -/
+  addition, so only the two weights bind here.
+
+  The `foldlM` re-evaluates the accumulator's weight on every step, where `max` evaluates each
+  child's key once, and the reject that surfaces is the same either way. An accumulator got
+  there by surviving an earlier step, so its `getWeight` already succeeded and cannot throw on
+  the re-run. See the Gloas twin, where the key carries a second throwing component. -/
   betterOf (store : Store map) (a b : Root) : StoreTransition Root := do
     let weightA ← getWeight store a
     let weightB ← getWeight store b
