@@ -196,51 +196,77 @@ private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
     for sb in signedBlocks do stateTransition sb
   RunError.ofSpec (runToRoot box0 action)
 
+/-- Run `getHead` over the snapshot store as a pure query (`runQuery` discards the final
+store). Shared by the `checkHead` / `checkProposerHead` arms. -/
+private def queryHead [Preset] [Config] [HasherTag] (store : Store hashMap) :
+    Except StoreTransitionError Root :=
+  runQuery store (getHead (map := hashMap) store :
+    EStateM StoreTransitionError (Store hashMap) Root)
+
 /-- Fold the decoded `steps` over the store from `store0`, verifying each `checks`
 step. A `block` step also feeds the block's own attestations / attester-slashings
 into the store (`is_from_block = true`). -/
 private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
     (P : Preset) (store0 : Store hashMap) (steps : Array FcStep) : Except StoreTransitionError Unit := do
-  -- Each step runs to an `Except StoreTransitionError (Store hashMap)` outcome (the new
-  -- store, or the handler's reject), which `checkStepValidity` resolves against the step's
-  -- `valid` flag over the pre-step `store` snapshot: an expected rejection rolls back to it
-  -- and continues, a valid-vs-actual mismatch is returned as the run's failure. The
-  -- per-step valid/invalid policy lives in the framework `checkStepValidity`, not here; this
-  -- loop only runs steps and threads the store. Steps with no `valid` flag (`tick`, the
-  -- block's own `is_from_block` sub-attestations) are implicitly `valid := true`, so any
-  -- reject on them propagates. The handler type annotation pins the abstract `StoreTransition`
-  -- monad at `EStateM StoreTransitionError (Store hashMap)`.
+  -- Each step runs to an `Except` outcome (the new store, or the handler's reject paired
+  -- with the error-time store), which `checkStepValidity` resolves against the step's
+  -- `valid` flag: an expected rejection continues from the error-time store (the in-place
+  -- reference-runner semantics), a valid-vs-actual mismatch is returned as the run's
+  -- failure. The per-step valid/invalid policy lives in the framework `checkStepValidity`,
+  -- not here; this loop only runs steps and threads the store. Steps with no `valid` flag
+  -- (`tick`, the block's own `is_from_block` sub-attestations) are implicitly
+  -- `valid := true`, so any reject on them propagates. The handler type annotation pins the
+  -- abstract `StoreTransition` monad at `EStateM StoreTransitionError (Store hashMap)`.
   let mut store : Store hashMap := store0
   for step in steps do
     match step with
     | .tick t =>
-      store := (← checkStepValidity store true
+      store := (← checkStepValidity .tick true
         (runOn store (onTick (map := hashMap) (UInt64.ofNat t) : EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes columns valid =>
-      let outcome := decodeStepOr (α := @SignedBeaconBlock P) bytes "block" fun sb =>
-        let cols := columns.filterMap (fun cb => (SSZ.deserialize (T := @DataColumnSidecar P) cb).toOption)
-        -- `on_block`, then the block's own attestations / attester-slashings, as one
-        -- action: a reject anywhere is the step's reject (and `on_block` rejecting
-        -- short-circuits the sub-steps, as the spec requires).
-        let action : EStateM StoreTransitionError (Store hashMap) Unit := do
-          onBlock (map := hashMap) sb cols
-          for a in sb.message.body.attestations do onAttestation (map := hashMap) a true
-          for a in sb.message.body.attesterSlashings do onAttesterSlashing (map := hashMap) a
-        runOn store action
-      store := (← checkStepValidity store valid outcome)
+      -- pyspec `add_block` (`fork_choice.py:382-406`) runs `on_block` ALONE against `valid`: an
+      -- invalid block returns right after `on_block` rejects (`:393`), so its own attestations /
+      -- attester-slashings replay only on the valid path (`:400-406`), each `valid = True`. So
+      -- check `on_block` against `valid`, then replay the sub-steps only when the block was
+      -- accepted. (Combining them would let a sub-attestation reject stand in for `on_block`'s on
+      -- a `valid: false` step.) A decode failure is the step's reject, as `decodeStepOr` gives.
+      match SizzLean.SSZ.deserialize (T := @SignedBeaconBlock P) bytes with
+      | .error _ =>
+        store := (← checkStepValidity .block valid (.error (.decodeFailure "fork_choice: block decode failed", store)))
+      | .ok sb =>
+        -- A column sidecar the runner cannot deserialize is our decoder's bug, exactly as the
+        -- block decode two lines above: route it through the same `.decodeFailure` rather than
+        -- dropping it from the list. `filterMap` discarded the error, and a dropped column is
+        -- indistinguishable from a column that was never listed, so an unavailable block either
+        -- rejected for the wrong reason (all columns dropped ⇒ `is_data_available` false ⇒ the
+        -- availability assert fires ⇒ the `valid: false` step PASSES on a broken decoder) or was
+        -- accepted outright (some columns dropped ⇒ the survivors all verify). `mapM` in
+        -- `Except` keeps the first error instead.
+        match columns.mapM (fun cb => SSZ.deserialize (T := @DataColumnSidecar P) cb) with
+        | .error _ =>
+          store := (← checkStepValidity .block valid
+            (.error (.decodeFailure "fork_choice: data column sidecar decode failed", store)))
+        | .ok cols =>
+          store := (← checkStepValidity .block valid
+            (runOn store (onBlock (map := hashMap) sb cols : EStateM StoreTransitionError (Store hashMap) Unit)))
+          if valid then
+            let subAction : EStateM StoreTransitionError (Store hashMap) Unit := do
+              for a in sb.message.body.attestations do onAttestation (map := hashMap) a true
+              for a in sb.message.body.attesterSlashings do onAttesterSlashing (map := hashMap) a
+            store := (← checkStepValidity .attestation true (runOn store subAction))
     | .attestation bytes valid =>
-      let outcome := decodeStepOr (α := @Attestation P) bytes "attestation" fun a =>
+      let outcome := decodeStepOr (α := @Attestation P) bytes "attestation" store fun a =>
         runOn store (onAttestation (map := hashMap) a false : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity store valid outcome)
+      store := (← checkStepValidity .attestation valid outcome)
     | .attesterSlashing bytes valid =>
-      let outcome := decodeStepOr (α := @AttesterSlashing P) bytes "attester_slashing" fun a =>
+      let outcome := decodeStepOr (α := @AttesterSlashing P) bytes "attester_slashing" store fun a =>
         runOn store (onAttesterSlashing (map := hashMap) a : EStateM StoreTransitionError (Store hashMap) Unit)
-      store := (← checkStepValidity store valid outcome)
+      store := (← checkStepValidity .attesterSlashing valid outcome)
     | .checkHead root slot =>
-      let head := getHead store
+      let head ← queryHead store
       assert (head == root)
-      let headSlot := match FcMap.lookup store.blocks head with | some b => b.slot.toNat | none => 0
-      assert (headSlot == slot)
+      let headBlock ← FcMap.getOrThrow store.blocks head
+      assert (headBlock.slot.toNat == slot)
     | .checkJustified epoch root =>
       assert (store.justifiedCheckpoint.epoch.toNat == epoch)
       assert (store.justifiedCheckpoint.root == root)
@@ -252,12 +278,27 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
     | .checkTime t => assert (store.time.toNat == t)
     | .checkGenesisTime t => assert (store.genesisTime.toNat == t)
     | .checkProposerHead root =>
-      let proposerHead := getProposerHead store (getHead store) (getCurrentSlot store)
+      let head ← queryHead store
+      let proposerHead ← runQuery store (do
+        let currentSlot ← getCurrentSlot store
+        getProposerHead (map := hashMap) store head currentSlot :
+        EStateM StoreTransitionError (Store hashMap) Root)
       assert (proposerHead == root)
     | .unsupported reason => throw (StoreTransitionError.todo reason)
-    -- ePBS-only steps (envelope, PTC message, payload-status / vote checks) never
-    -- appear in Fulu vectors; ignore them so the shared `FcStep` stays exhaustive.
-    | _ => pure ()
+    -- ePBS-only steps (Gloas, EIP-7732): impossible in a well-formed fulu vector, so
+    -- surface one as `todo` (an xfail) rather than passing it vacuously. Explicit arms
+    -- keep the match exhaustive over `FcStep`, so a newly added constructor is a build
+    -- error here too, not just in the Gloas / Heze interpreters.
+    | .executionPayload _ _ =>
+      throw (StoreTransitionError.todo "execution_payload step: ePBS-only, not applicable to fulu")
+    | .payloadAttestationMessage _ _ =>
+      throw (StoreTransitionError.todo "payload_attestation_message step: ePBS-only, not applicable to fulu")
+    | .checkHeadPayloadStatus _ =>
+      throw (StoreTransitionError.todo "head.payload_status check: ePBS-only, not applicable to fulu")
+    | .checkPayloadTimelinessVote _ _ =>
+      throw (StoreTransitionError.todo "payload_timeliness_vote check: ePBS-only, not applicable to fulu")
+    | .checkPayloadDataAvailabilityVote _ _ =>
+      throw (StoreTransitionError.todo "payload_data_availability_vote check: ePBS-only, not applicable to fulu")
   pure ()
 
 /-- `runForkChoice`: decode the anchor state / block, build the store, and run the
@@ -274,7 +315,9 @@ private def runForkChoiceImpl (P : Preset) (C : Config) (anchorStateBytes anchor
   | .error _, _ => .error (.decode "fork_choice anchor state")
   | _, .error _ => .error (.decode "fork_choice anchor block")
   | .ok anchorState, .ok anchorBlock =>
-    RunError.ofSpec (fcInterpret P (getForkchoiceStore anchorState anchorBlock) steps)
+    RunError.ofSpec (do
+      let store ← getForkchoiceStore anchorState anchorBlock
+      fcInterpret P store steps)
 
 /-- The `ssz_static` per-type kernel: decode `bytes` as the container `T`, and on
 success return its hash-tree-root paired with whether re-serializing reproduces
@@ -291,8 +334,8 @@ private def runStatic (T : Type) [SSZRepr T] (typeName : String) (bytes : ByteAr
 /-- `sszStatic`: dispatch an `ssz_static/<TypeName>` directory name to the Fulu
 container it names and run it through `runStatic`. The consensus containers Fulu
 models are covered; the light-client, networking, and gossip-aggregation types the
-spec does not declare (`AggregateAndProof`, `LightClient*`, `PowBlock`, …) fall to
-the `todo` default, so they xfail as out of scope rather than failing. -/
+spec does not declare (`AggregateAndProof`, `LightClient*`, `PowBlock`, …) fall to the
+`.outOfScope` default, so they report `skip` rather than failing. -/
 private def sszStaticImpl (P : Preset) (typeName : String) (bytes : ByteArray) :
     Except (RunError StateTransitionError) (ByteArray × Bool) :=
   match typeName with

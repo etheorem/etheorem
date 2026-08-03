@@ -1,7 +1,7 @@
 # EthCLSpecs, architecture documents
 
 EthCLSpecs is a Lean 4 library for Ethereum consensus-spec types, SSZ, the
-state-transition function, and fork choice, covering the Fulu and Gloas forks.
+state-transition function, and fork choice, covering the Fulu, Gloas, and Heze forks.
 
 Three documents define the design. Read them in order.
 
@@ -10,8 +10,8 @@ Three documents define the design. Read them in order.
    canonical glossary. Start here.
 2. [FRAMEWORK_ARCHITECTURE.md](FRAMEWORK_ARCHITECTURE.md), the framework and DSL that
    implement the contract.
-3. [SPECS_ARCHITECTURE.md](SPECS_ARCHITECTURE.md), how the Fulu and Gloas specs are
-   organized, ported, and tested.
+3. [SPECS_ARCHITECTURE.md](SPECS_ARCHITECTURE.md), how the fork specs (Fulu, Gloas,
+   Heze) are organized, ported, and tested.
 
 The glossary in the first document is the single source of truth for shared
 vocabulary; the other two quote it.
@@ -21,6 +21,12 @@ vocabulary; the other two quote it.
 implementor needs. During implementation, deviations and notable findings go in
 `IMPLEMENTATION_NOTES.md` (created then), not into these four documents, which stay
 the design of record.
+
+[DISCREPANCIES.md](DISCREPANCIES.md) is the narrow spec-vs-vector ledger: it records
+only cases where a released vector contradicts the spec text (upstream pyspec bugs)
+and resolved vector-level gaps, keyed by vector id. Deliberate implementation
+divergences that no vector observes belong in `IMPLEMENTATION_NOTES.md` instead,
+catalogued per fork.
 
 [FUTURE_WORK.md](FUTURE_WORK.md) records deferred changes: what is left, why it waits,
 and the shape it will take, so a later pass picks each one up whole. The current entry is

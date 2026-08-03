@@ -141,7 +141,8 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let participantKeys : Array BLSPubkey :=
     (Bitvector.trueIndices bits).map (fun i => syncCommittee.pubkeys[i]!)
   let previousSlot := (umax (sszGet state slot) 1) - 1
-  let signingRoot := computeSigningRoot (getBlockRootAtSlot state previousSlot)
+  let previousBlockRoot ← getBlockRootAtSlot state previousSlot
+  let signingRoot := computeSigningRoot previousBlockRoot
     (getDomain state Const.domainSyncCommittee (computeEpochAtSlot previousSlot))
   assert (blsEthFastAggregateVerify participantKeys signingRoot agg.syncCommitteeSignature)
 
@@ -182,7 +183,12 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   let epoch := currentEpochOf state
   let mix := vmodGet (sszGet state randaoMixes) epoch Const.epochsPerHistoricalVector
   assert (payload.prevRandao == mix)
-  assert (payload.timestamp == (sszGet state genesisTime) + (sszGet state slot) * Const.secondsPerSlot)
+  -- Both the product and the sum are checked `uint64` ops in the pyspec.
+  let elapsed ← checkedMul (sszGet state slot) Const.secondsPerSlot
+    "process_execution_payload: state.slot * SECONDS_PER_SLOT"
+  let expectedTimestamp ← checkedAdd (sszGet state genesisTime) elapsed
+    "process_execution_payload: genesis_time + state.slot * SECONDS_PER_SLOT"
+  assert (payload.timestamp == expectedTimestamp)
 
   let header : ExecutionPayloadHeader :=
     { parentHash := payload.parentHash, feeRecipient := payload.feeRecipient,

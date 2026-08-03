@@ -9,6 +9,7 @@ import EthCLLib.Spec.Assert
 import EthCLLib.Spec.Header
 import EthCLLib.Spec.Forms
 import EthCLLib.Spec.Crypto
+import EthCLLib.Spec.Engine
 
 /-!
 # `EthCLLib.Spec`: the author-facing surface

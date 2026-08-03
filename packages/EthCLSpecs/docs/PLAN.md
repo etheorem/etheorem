@@ -77,8 +77,9 @@ wraps both behind the `[CryptoBackend]` seam.
 **The vectors and the spec source.** Conformance runs against the upstream
 `consensus-spec-tests`, downloaded per `pyspecPinnedVersion`. The
 `PINNED_VERSION` in `packages/EthCLSpecs/PySpecTests/harness.py` pins
-`v1.7.0-alpha.10`; the implementation bumps
-to the current latest release at start and confirms the tag carries Gloas vectors.
+`v1.7.0-alpha.11`; the implementation bumps
+to the current latest release at start and confirms the tag carries vectors for the
+newest ported fork (Heze at this writing).
 The archive layout is `tests/<preset>/<fork>/<runner>/<handler>/<suite>/<case>/`; the
 preset and fork live in the path, and each case carries a `meta.yaml`
 (`bls_setting`, `blocks_count`, the `transition` format's `fork_epoch`). The spec
@@ -328,7 +329,8 @@ disk to a green result.
   case-tree walk, `meta.yaml` parsing, and a `pytest-xdist` runner where each worker
   holds one server through a `session`-scoped fixture.
 - The classify-bucket reporting: passing, expected rejection, out-of-scope `todo`,
-  likely-bug (`outOfBounds` / `missingKey`).
+  likely-bug (`outOfBounds` / `decodeFailure`), uncaught fault (`missingKey` /
+  `arithmetic`).
 
 **Acceptance.** One format, the single-operation handler the slice implements, is
 green end-to-end at the minimal preset, driven through a per-worker Lean server.
@@ -374,8 +376,8 @@ has every primitive it calls.
   `[CryptoBackend]` class with the caching FFI backend (keyed by the full serialized
   input per primitive), the symbolic backend, the `bls_setting: 2` verify-off mode,
   and the batch KZG cell verifier.
-- The control-flow combinators: the `Step` done/next type with `fuelLoop` (monadic) and
-  `fuelIterate` (the pure walk for linear DAG descents), with the per-loop decision rule
+- The control-flow combinators: the `Step` done/next type with `fuelLoop`, and
+  `fuelIterateM` / `fuelIterateM!` for linear walks, with the per-loop decision rule
   documented.
 - The finite-map and fork-choice store: `MapKind`, the `FcMap` operation class
   (`insert`, `lookup`, `contains`, `fold`, `keys`), the `treeMap` and `hashMap`

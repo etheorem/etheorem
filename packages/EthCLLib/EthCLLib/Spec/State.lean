@@ -90,20 +90,6 @@ here. -/
   | .ok _ post => .ok (stateRoot! post)
   | .error e _ => .error e
 
-/-- Run a best-effort state-machine action and keep the input state on failure. The
-keep-input-on-error twin of `runToRoot`: a fork-choice helper (`store_target_checkpoint_state`'s
-slot advance) runs a nested `EStateM StateTransitionError` action whose failure should leave the
-surrounding store unchanged, so it discards the reject and returns the pre-state `s` rather than
-threading it out. Generic over the state `S` (the per-fork `State` is concrete only inside a fork
-section), with the error pinned to `StateTransitionError`: that argument type is what forces a
-polymorphic action passed in (e.g. `processSlots target`) to resolve its monad to
-`EStateM StateTransitionError S`, replacing the open-coded `match act.run s with | .ok _ s' => s'
-| .error _ _ => s` and the metavariable-pinning annotation it needed. -/
-@[inline] def runBestEffort {S : Type} (act : EStateM StateTransitionError S Unit) (s : S) : S :=
-  match act.run s with
-  | .ok _ s'   => s'
-  | .error _ _ => s
-
 -- Re-export `IndexError` onto the spec surface, so a pure query reading `validators[i]` can
 -- be typed `Except IndexError α` under the single `open EthCLLib.Spec`.
 export SizzLean.Cache (IndexError)
@@ -142,5 +128,16 @@ over-length read. Same shape as `sszGetIdx`, on `Bitlist`'s faithful `[i]?`. -/
   liftErr <| match bs.val[i]? with
     | some b => .ok b
     | none   => .error (IndexError.indexError i bs.val.size)
+
+/-- `sszGetIdx` for a plain `Array`: element `i`, or the typed reject `outOfBounds i size`. The
+monadic safe read for a spec `list[i]` over a non-SSZ `Array`, e.g. a fork-choice `Store` value
+such as `block_timeliness`'s `list[boolean]` (`gloas/fork-choice.md:503,960`), where `[i]!` /
+`?.getD` would mask an over-length read as a silent default. Same shape as `sszGetIdx`, on the
+`Array`'s own `[i]?`. -/
+@[inline] def arrGetIdx {α : Type} {m : Type → Type u} {E : Type} [Monad m]
+    [MonadExcept E m] [ErrorConv IndexError E] (xs : Array α) (i : Nat) : m α :=
+  liftErr <| match xs[i]? with
+    | some a => .ok a
+    | none   => .error (IndexError.indexError i xs.size)
 
 end EthCLLib.Spec

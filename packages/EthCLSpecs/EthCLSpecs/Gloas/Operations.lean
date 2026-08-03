@@ -247,11 +247,13 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
 /-- `is_attestation_same_slot`: the attestation votes for the block proposed at its
 own slot (head matches this slot's block root but differs from the previous slot's).
 The `slot == 0` guard avoids the `slot - 1` `UInt64` underflow. -/
-forkdef isAttestationSameSlot (state : State) (data : AttestationData) : Bool :=
-  if data.slot == 0 then true
+forkdef isAttestationSameSlot (state : State) (data : AttestationData) : StateTransition Bool := do
+  if data.slot == 0 then pure true
   else
     let blockroot := data.beaconBlockRoot
-    blockroot == getBlockRootAtSlot state data.slot && blockroot != getBlockRootAtSlot state (data.slot - 1)
+    let slotRoot ← getBlockRootAtSlot state data.slot
+    let prevRoot ← getBlockRootAtSlot state (data.slot - 1)
+    pure (blockroot == slotRoot && blockroot != prevRoot)
 
 /-- `get_attestation_participation_flag_indices` (Gloas, EIP-7732): adds the
 payload-matching constraint to `is_matching_head`. A same-slot attestation must have
@@ -259,21 +261,23 @@ payload-matching constraint to `is_matching_head`. A same-slot attestation must 
 compares `data.index` to this slot's `execution_payload_availability` bit. `none`
 also covers the `is_matching_source` reject (as in Fulu). -/
 forkdef getAttestationParticipationFlagIndices (state : State) (data : AttestationData)
-    (inclusionDelay : UInt64) : Option (Array Nat) := Id.run do
+    (inclusionDelay : UInt64) : StateTransition (Option (Array Nat)) := do
   let justified := if data.target.epoch == currentEpochOf state then sszGet state currentJustifiedCheckpoint
                    else sszGet state previousJustifiedCheckpoint
   let isMatchingSource := data.source.epoch == justified.epoch && data.source.root == justified.root
   if !isMatchingSource then return none
 
-  let isMatchingTarget := data.target.root == getBlockRoot state data.target.epoch
-  let sameSlot := isAttestationSameSlot state data
+  let targetRoot ← getBlockRoot state data.target.epoch
+  let isMatchingTarget := data.target.root == targetRoot
+  let sameSlot ← isAttestationSameSlot state data
   if sameSlot && data.index != 0 then return none
   let payloadMatches : Bool :=
     if sameSlot then true
     else
       let bit := bitGet (sszGet state executionPayloadAvailability) (data.slot.toNat % Const.slotsPerHistoricalRoot)
       data.index == (if bit then (1 : UInt64) else 0)
-  let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == getBlockRootAtSlot state data.slot && payloadMatches
+  let headRoot ← getBlockRootAtSlot state data.slot
+  let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == headRoot && payloadMatches
 
   let mut flags : Array Nat := #[]
   if inclusionDelay ≤ UInt64.ofNat (isqrt Const.slotsPerEpoch) then flags := flags.push Const.timelySourceFlagIndex
@@ -293,7 +297,14 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   -- Reject on shape: target epoch, slot timing, and the payload-presence bit.
   assert (data.target.epoch == previousEpochOf state || data.target.epoch == currentEpochOf state)
   assert (data.target.epoch == computeEpochAtSlot data.slot)
-  assert (data.slot + Const.minAttestationInclusionDelay ≤ sszGet state slot)
+  -- `data.slot` is wire-controlled and `MIN_ATTESTATION_INCLUSION_DELAY` is 1, so the bare `+`
+  -- wraps `0xFFFF…FFFF + 1` to `0` and `0 ≤ state.slot` bypasses the guard for every state: a
+  -- false ACCEPT, the state-transition twin of `on_attestation`'s. pyspec's checked `uint64` add
+  -- raises `ValueError`, which `process_attestation` does not catch, so the driver scores it
+  -- `uncaughtFault`. Sequenced after the two epoch asserts above, matching Python's order.
+  let inclusionSlot ← checkedAdd data.slot Const.minAttestationInclusionDelay
+    "process_attestation: data.slot + MIN_ATTESTATION_INCLUSION_DELAY"
+  assert (inclusionSlot ≤ sszGet state slot)
   assert (data.index < 2)
 
   -- Every committee index is valid and non-empty; the bitfield covers them all.
@@ -303,7 +314,7 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   assert (att.aggregationBits.size == offset)
 
   -- Resolve the participation flags, then validate the aggregate signature.
-  let flagIndices ← match getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) with
+  let flagIndices ← match ← getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
   let indexedAttestation : IndexedAttestation :=
@@ -313,7 +324,7 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
 
   -- Apply participation flags and accumulate the builder-payment weight.
   let currentTarget := data.target.epoch == currentEpochOf state
-  let sameSlot := isAttestationSameSlot state data
+  let sameSlot ← isAttestationSameSlot state data
   let paymentIdx := builderPaymentIndex data.slot currentTarget
   let payment0 := vget (sszGet state builderPendingPayments) paymentIdx
   let mut stateAcc := state
@@ -360,28 +371,52 @@ where
       (true, 0)
 
 /-- `get_ptc` (v1.7.0-alpha.11): read the cached PTC for `slot` from `ptc_window`.
-For a slot in the previous epoch the window's first `SLOTS_PER_EPOCH` entries hold
-it; otherwise an `(epoch - state_epoch + 1) * SLOTS_PER_EPOCH` offset applies. The
-spec asserts the slot is within `[state_epoch-1, state_epoch + MIN_SEED_LOOKAHEAD]`;
-callers (`process_payload_attestation`) guarantee this via `data.slot + 1 ==
-state.slot`, so the index is always in range. -/
-forkdef getPtc (state : State) (slot : Slot) : Vector ValidatorIndex Const.ptcSize :=
+For a slot in the previous epoch the window's first `SLOTS_PER_EPOCH` entries hold it;
+otherwise an `(epoch - state_epoch + 1) * SLOTS_PER_EPOCH` offset applies.
+
+The pinned spec (`gloas/beacon-chain.md:853-864`) guards each branch with its own assert,
+`epoch + 1 == state_epoch` on the past-epoch side and
+`epoch <= state_epoch + MIN_SEED_LOOKAHEAD` on the other, and both are modeled here. They
+are also what bounds the index: `MIN_SEED_LOOKAHEAD` is 1, so the else branch's
+`epoch - state_epoch` is 0 or 1, the scaled offset is one or two epochs, and the read lands
+inside the `3 * SLOTS_PER_EPOCH` window by construction. That is why the total `vget` is
+sound once the asserts are in place, and why the spec's own `IndexError` on this subscript is
+unreachable rather than unmodeled.
+
+Both callers already bound the index structurally (`process_payload_attestation` asserts
+`data.slot + 1 == state.slot`, `on_payload_attestation_message` guards
+`data.slot == state.slot`), so no corpus input reaches either reject. This closes a
+faithfulness gap, not a live divergence. Throwing, so `get_indexed_payload_attestation` and
+the fork-choice handler bind it. -/
+forkdef getPtc (state : State) (slot : Slot) :
+    StateTransition (Vector ValidatorIndex Const.ptcSize) := do
   let epoch := computeEpochAtSlot slot
   let stateEpoch := currentEpochOf state
   let spe := UInt64.ofNat Const.slotsPerEpoch
-  if epoch < stateEpoch then vmodGet (sszGet state ptcWindow) slot Const.slotsPerEpoch
-  -- The else index `(epoch - stateEpoch + 1) * spe + slot % spe` is in range only under the
-  -- caller's slot-range guarantee (`process_payload_attestation`'s `data.slot + 1 ==
-  -- state.slot`), which is not in scope here, so it stays a total read.
-  else vget (sszGet state ptcWindow) (((epoch - stateEpoch + 1) * spe + slot % spe).toNat)
+  if epoch < stateEpoch then
+    let nextEpoch ← checkedAdd epoch 1 "get_ptc: epoch + 1"
+    assert (nextEpoch == stateEpoch)
+    pure (vmodGet (sszGet state ptcWindow) slot Const.slotsPerEpoch)
+  else
+    let lookaheadBound ← checkedAdd stateEpoch Const.minSeedLookahead
+      "get_ptc: state_epoch + MIN_SEED_LOOKAHEAD"
+    assert (epoch ≤ lookaheadBound)
+    let offset ← checkedSub epoch stateEpoch "get_ptc: epoch - state_epoch"
+    let windowed ← checkedAdd offset 1 "get_ptc: (epoch - state_epoch) + 1"
+    let scaled ← checkedMul windowed spe "get_ptc: (epoch - state_epoch + 1) * SLOTS_PER_EPOCH"
+    let idx ← checkedAdd scaled (slot % spe) "get_ptc: … + slot % SLOTS_PER_EPOCH"
+    pure (vget (sszGet state ptcWindow) idx.toNat)
 
 /-- `get_indexed_payload_attestation`: resolve the PTC bits to the (sorted) attesting
-validator set. The `aggregation_bits` index into the `PTC_SIZE`-length PTC. -/
-forkdef getIndexedPayloadAttestation (state : State) (pa : PayloadAttestation) : IndexedPayloadAttestation :=
-  let ptc := getPtc state pa.data.slot
+validator set. The `aggregation_bits` index into the `PTC_SIZE`-length PTC. Throwing,
+because `get_ptc` is. -/
+forkdef getIndexedPayloadAttestation (state : State) (pa : PayloadAttestation) :
+    StateTransition IndexedPayloadAttestation := do
+  let ptc ← getPtc state pa.data.slot
   let attesting := (Array.range Const.ptcSize).foldl
     (fun acc i => if bitGet pa.aggregationBits i then acc.push (vget ptc i) else acc) (#[] : Array ValidatorIndex)
-  { attestingIndices := sszOfArray (attesting.qsort (· < ·)), data := pa.data, signature := pa.signature }
+  pure { attestingIndices := sszOfArray (attesting.qsort (· < ·)), data := pa.data,
+         signature := pa.signature }
 
 /-- `is_valid_indexed_payload_attestation`: non-empty, *non-strictly* sorted indices
 (the PTC can repeat a validator), in range, with a valid `DOMAIN_PTC_ATTESTER`
@@ -406,8 +441,16 @@ forkdef processPayloadAttestation (pa : PayloadAttestation) : StateTransition Un
   let state ← get
   let data := pa.data
   assert (data.beaconBlockRoot == (sszGet state latestBlockHeader).parentRoot)
-  assert (data.slot + 1 == sszGet state slot)
-  assert (isValidIndexedPayloadAttestation state (getIndexedPayloadAttestation state pa))
+  -- Only satisfiable by wrap when `state.slot == 0`, which block processing cannot reach — but
+  -- it is the sole path by which `get_ptc`'s asserts could ever be reached, so it is
+  -- checked rather than argued about. pyspec's `data.slot + 1` is a checked `uint64` add.
+  let attestedSlot ← checkedAdd data.slot 1 "process_payload_attestation: data.slot + 1"
+  assert (attestedSlot == sszGet state slot)
+  -- The bind stays after the slot assert: that assert is what bounds `get_ptc`'s index, and the
+  -- spec's order is `beacon_block_root`, then `data.slot + 1 == state.slot`, then the indexed
+  -- signature check.
+  let indexed ← getIndexedPayloadAttestation state pa
+  assert (isValidIndexedPayloadAttestation state indexed)
 
 /-! ## Execution payload bid + parent-payload application (EIP-7732) -/
 
@@ -469,7 +512,8 @@ forkdef processExecutionPayloadBid (signedBid : SignedExecutionPayloadBid) : Sta
   assert (bid.slot == sszGet state slot)
   assert ((sszGet state slot) > Const.genesisSlot)
   assert (bid.parentBlockHash == sszGet state latestBlockHash)
-  assert (bid.parentBlockRoot == getBlockRootAtSlot state ((sszGet state slot) - 1))
+  let parentBlockRoot ← getBlockRootAtSlot state ((sszGet state slot) - 1)
+  assert (bid.parentBlockRoot == parentBlockRoot)
   let randaoMix ← getRandaoMix (currentEpochOf state)
   assert (bid.prevRandao == randaoMix)
 

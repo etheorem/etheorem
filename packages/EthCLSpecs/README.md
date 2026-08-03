@@ -1,11 +1,11 @@
 # EthCLSpecs
 
 > **Status: experimental, single-developer; personal project, not an EF
-> release. Validated against the pyspec test vectors for two
-> forks (Fulu, Gloas); machine-checked proofs are future work.**
+> release. Validated against the pyspec test vectors for three
+> forks (Fulu, Gloas, Heze); machine-checked proofs are future work.**
 
-A Lean 4 implementation of the Ethereum consensus specification for the Fulu
-and Gloas forks. It is executable. The SSZ container types, the full
+A Lean 4 implementation of the Ethereum consensus specification for the Fulu,
+Gloas, and Heze forks. It is executable. The SSZ container types, the full
 beacon-chain state transition, the fork upgrade, and fork choice all run, and
 they are checked against Ethereum's pyspec
 [`consensus-spec-tests`](https://github.com/ethereum/consensus-spec-tests)
@@ -20,14 +20,19 @@ packages, through `EthCLLib`, to `EthCLSpecs`.
 
 ## What it covers
 
-Two forks are in scope:
+Three forks are in scope:
 
 - **Fulu** is the base, authored whole. It carries the accumulated
   beacon-chain spec from Phase 0 through Electra, plus Fulu's PeerDAS
   data-availability additions (EIP-7594).
-- **Gloas** is a diff over Fulu. It adds enshrined proposer-builder separation
-  (EIP-7732): a builder registry, execution payload bids, the
+- **Gloas** is a diff over Fulu. It adds ePBS (EIP-7732): a builder
+  registry, execution payload bids, the
   payload-timeliness committee, and a reordered block pipeline.
+- **Heze** is a thin diff over Gloas. It adds fork-choice inclusion lists
+  (EIP-7805 FOCIL): the `InclusionList` container family, the
+  inclusion-list committee helpers, an inclusion-list store folded into the
+  fork-choice store, and the payload satisfaction gate
+  (`is_payload_inclusion_list_satisfied`).
 
 For each fork the library implements the SSZ containers, the state transition
 (slots, blocks, epochs, and every operation), the fork upgrade, and a second
@@ -80,8 +85,8 @@ inherit processRandao     -- a transition step it leaves unchanged
 ```
 
 **Validated against the real vectors.** The full in-scope suite passes at both
-the `minimal` and `mainnet` presets, for both forks, pinned to release
-`v1.7.0-alpha.10`. The verdict model is honest. An out-of-range read or a crash
+the `minimal` and `mainnet` presets, for all three forks (Fulu, Gloas, Heze),
+pinned to release `v1.7.0-alpha.11`. The verdict model is honest. An out-of-range read or a crash
 is a hard failure, and an unimplemented branch is a visible `xfail`. Every
 passing vector reflects a real match or a faithful rejection.
 
@@ -92,9 +97,9 @@ lake build EthCLLib EthCLSpecs       # build the framework and the fork bodies
 just ethcl-test                       # build everything plus the Lean self-tests
 
 # Pyspec against upstream vectors (downloads and caches the archive):
-just ethcl-pyspec-smoke          # dev subset, both forks
+just ethcl-pyspec-smoke          # dev subset, all three forks
 just ethcl-pyspec "--subset=0 --fork=gloas"   # one fork, full in-scope suite
-just ethcl-pyspec-full                # the full sweep: both presets, both forks
+just ethcl-pyspec-full                # the full sweep: both presets, all three forks
 ```
 
 CI runs the dev-subset smoke gate. The full multi-preset sweep runs on demand.

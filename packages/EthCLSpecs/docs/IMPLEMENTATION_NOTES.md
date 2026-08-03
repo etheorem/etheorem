@@ -6,42 +6,43 @@ the glossary). Those four are the design of record. This file records how
 `EthCLSpecs` / `EthCLLib` realize them: the current architecture, the places the code
 deviates from a doc (with the reason), and the spec-faithfulness decisions worth
 knowing. Everything here describes the tree as it stands against the
-`v1.7.0-alpha.10` pin.
+`v1.7.0-alpha.11` pin.
 
 ## Scope and conformance
 
-Two forks, **Fulu** and **Gloas**, against the `consensus-spec-tests` minimal and
-mainnet archives at `v1.7.0-alpha.10` (the latest release with cut vectors; it is
+Three forks, **Fulu**, **Gloas**, and **Heze**, against the `consensus-spec-tests` minimal and
+mainnet archives at `v1.7.0-alpha.11` (the latest release with cut vectors; it is
 flagged pre-release, so the harness pins the tag explicitly rather than reading `gh
-release latest`). The full in-scope suite is green at both presets for both forks,
-`--subset=0`, zero failures and zero `xfail`:
+release latest`). The full in-scope suite is green at both presets for all three
+forks, `--subset=0`, zero failures and zero `xfail`:
 
-|       | minimal        | mainnet        |
-| ----- | -------------- | -------------- |
-| Fulu  | **760 passed** | **667 passed** |
-| Gloas | **903 passed** | **792 passed** |
+| | minimal | mainnet |
+|---|---|---|
+| Fulu  | **5188 passed** | **847 passed** |
+| Gloas | **6573 passed** | **1034 passed** |
+| Heze  | **6770 passed** | **997 passed** |
 
 Fulu's collected formats: `epoch_processing`, `operations` (including the standalone
 `execution_payload`), `rewards`, `sanity/blocks`, `sanity/slots`, `finality`,
 `random`, `fork_choice` (including the PeerDAS data-availability `on_block` cases and
 `get_proposer_head`). Gloas adds `fork`, `transition`, and the full ePBS
-`fork_choice`. `DISCREPANCIES.md` is empty of open discrepancies: every vector the
-implemented formats reach matches by root or rejects faithfully.
+`fork_choice`. `DISCREPANCIES.md` records no open vector discrepancy: every vector the
+implemented formats reach matches by root or rejects faithfully. Deliberate divergences
+from the spec *text* that no vector observes are catalogued per fork in this file.
 
 **Out of scope** (deselected in `walk_cases`, not collected):
 
 - **Fulu `fork` / `transition`** (Electra→Fulu): the upgrade and the pre-fork Electra
   blocks both need a complete Electra parent fork the library never builds. The
-  **Gloas** `fork` / `transition` (Fulu→Gloas) are in scope and green.
-- **`ssz_static`**: covered by SizzLean's own tests and the build-time `deriving
-SSZRepr` gates.
+  **Gloas** `fork` / `transition` (Fulu→Gloas) and the **Heze** ones (Gloas→Heze)
+  are in scope and green.
 - **`light_client`, `networking`, `merkle_proof`, `sync`**: not state-transition or
   fork-choice formats; outside `IN_SCOPE_RUNNERS`.
 - **`genesis`**: no vectors at the pin (see Genesis below).
 
 **CI.** The `ethcl` job in `lean_action_ci.yml` runs `just ethcl-test` (builds all
 four libraries, firing the framework and spec self-tests) and `just
-ethcl-pyspec-smoke` (the `pytest-xdist` dev subset at minimal for both forks
+ethcl-pyspec-smoke` (the `pytest-xdist` dev subset at minimal for all three forks
 through the per-worker `pyspec_server`). It is green iff no in-scope vector hits a
 bug-smell or a real mismatch. Mainnet and the full sweep run on demand
 (`--preset=mainnet`, `--subset=0`).
@@ -162,6 +163,20 @@ pubkeys are passed to `ethFastAggregateVerify`, which aggregates whatever list i
 given. This matches the spec result for all three of its cases (all-participate,
 majority-subtract, full list) and keeps the seam to `ethFastAggregateVerify` alone,
 with no G1 add/neg and no precomputed-aggregate dependency.
+
+## Engine seam
+
+`EthCLLib.Spec.Engine` defines `[ExecutionEngine]`, the execution-layer sibling of the
+crypto seam: a spec function whose verdict belongs to an external execution client
+routes through the typeclass. Unlike `CryptoBackend` it ships a global default, the
+optimistic instance answering the constant `true` (the seam table in
+`FRAMEWORK_ARCHITECTURE.md` §1). A local `letI` overrides it; `pinRecordRefuted`
+(`EthCLSpecs/Heze/ForkChoice.lean`) refutes the inclusion-list gate that way.
+
+Heze's `is_inclusion_list_satisfied` is the seam's first user. Gloas's engine
+predicates (`verify_and_notify_new_payload`, `is_data_available`) reach the same
+constant-`true` verdict as inline constants; `EthCLLib.Spec.Engine`'s module
+docstring tracks their migration onto the seam.
 
 ## State, presets, and the header macro
 
@@ -343,7 +358,7 @@ carries `getStateRoot` / `stateRoot` / `stateRoot!` and `runToRoot` (run a boxed
 action to its post-root, the `EStateM` twin of `runOn`). `Spec.SigningRoot` carries
 `htr`, `computeForkDataRoot`, `computeDomain`, `computeSigningRoot`, `isValidMerkleBranch`,
 and the signing-root verify combinator `blsVerifySigned`, over `[HasherTag]`. `Spec.Loop`
-carries `Step` / `fuelLoop` (monadic) / `fuelIterate` (pure walk). `Spec.FiniteMap` carries
+carries `Step` / `fuelLoop` / `fuelIterateM` / `fuelIterateM!`. `Spec.FiniteMap` carries
 `MapKind`, `FcMap` (with `lookupD` / `getOrThrow` / `getOrThrowKey` / `values` /
 `filterKeys`), `treeMap`, `hashMap`, and `Hashable (Vector …)`.
 
@@ -404,8 +419,7 @@ on* : StoreTransition Unit` over the typed `StoreTransitionError`. They write th
 `assert` / `todo` the state machine uses (resolved to `StoreTransitionError` through
 `SpecReject` from the section's monad), `missingKey` for `FcMap` misses, and the inner
 `state_transition` runs through `runStateTransition` (`Spec/Assert.lean`, wrapping an inner
-failure as `StoreTransitionError.transition`). Queries and transforms stay pure
-`forkdef`s of the store. `ForkInterface.runForkChoice` returns `Except (RunError
+failure as `StoreTransitionError.transition`). `ForkInterface.runForkChoice` returns `Except (RunError
 StoreTransitionError) Unit`, and `Server` classifies the typed reject (`.spec (.todo _)
 → todo`, everything else, a `decode` or any other spec reject, `→ bug`), so no `"TODO:"`
 string convention is involved. The `FcStep` wire
@@ -435,10 +449,36 @@ boost only when the block is timely, no boost is already set, and the block shar
 head's dependent root (`get_dependent_root`, gated by `MIN_SEED_LOOKAHEAD`), the v1.7
 rule.
 
-The linear DAG walks (`getAncestor`, the `getHead` descent, `advanceStoreTime`) route
-through the framework's pure `fuelIterate` (§12). The one tree walk, `filterBlockTree`,
-recurses over every child inside a fold, which a linear combinator cannot express, so it
-keeps a local fuel-bounded `where` helper. The totality the doc wants is met either way.
+The linear DAG walks route through fuel-bounded combinators (§12). `getAncestor` and the
+`getHead` descent read `store.blocks` as they go, so they thread the store monad through
+`fuelLoop`. The one tree walk, `filterBlockTree`, recurses over every child inside a fold,
+which a linear combinator cannot express, so it keeps a local fuel-bounded `where` helper.
+The totality the doc wants is met either way.
+
+The fork-choice weight path still runs on raw `UInt64` where the pyspec's `uint64` ops
+raise, and it is deferred as one piece because it rests on one root: `getTotalBalance`
+(`phase0/beacon-chain.md:1130-1140`), whose `sum(...)` accumulates in `Gwei` and raises,
+while this fold wraps. `committeeWeight` is `getTotalActiveBalance / SLOTS_PER_EPOCH`,
+`calculateCommitteeFraction` and `getProposerScore` are its products, and `getWeight`'s
+proposer-boost add takes one operand from them, so checking any of those while the total
+underneath still wraps would only move the wrong number around.
+
+The conversion is larger than the fork-choice layer. `getTotalBalance` and
+`getTotalActiveBalance` are pure `forkdef`s with 15 call sites across epoch processing,
+rewards, registry updates, the transition spine, and fork choice; making them throwing
+propagates upward through every pure caller (§7.1's rule, one layer over). The remaining
+independent site is `getAttestationScore`'s own balance fold, which sums
+`state.validators[i].effective_balance` directly and could be checked on its own; it stays
+with the rest so the weight path converts in one go rather than half-guarded. Reaching any
+of them takes a total active balance within a factor of the `uint64` bound, which no
+preset's validator set approaches.
+
+The reference catches different exceptions per step kind, so what satisfies a
+`valid: false` step varies too. `expect_assertion_error` (`context.py:424-435`) catches
+`IndexError` for the attestation, attester-slashing, envelope, and PTC-message steps.
+`add_block` catches `AssertionError` and `BlockNotFoundException` alone
+(`fork_choice.py:389`). `FcStepKind` carries that table, and `checkStepValidity`
+(`PySpecTests/Interface.lean`) reads it.
 
 The Gloas fork choice is the node-based (`ForkChoiceNode = (root, payload_status)`)
 ePBS rewrite: `get_ancestor` / `is_ancestor` / `get_weight` / `get_node_children` /
@@ -566,6 +606,26 @@ payload-availability bit), and `process_epoch` (builder-pending-payments and
 `process_ptc_window` last). The `transition` format folds pre-fork Fulu blocks, applies
 `upgradeToGloas` plus onboarding at the boundary, then folds post-fork Gloas blocks.
 
+## Heze diff
+
+EIP-7805 changes no state-transition substep, so Heze inherits the Gloas spine whole
+and the diff is confined to the fork-choice inclusion-list layer. FOCIL ships no
+behavioral conformance vector at the alpha.11 pin, so the divergences below are anchored
+to the pinned spec text and the `EthCLSpecs/Heze/ForkChoice.lean` pins.
+
+- **`is_inclusion_list_satisfied`** (`heze/fork-choice.md:54-62`) defers its verdict to
+  `ExecutionEngine.is_inclusion_list_satisfied`, an Engine-API call against an external
+  execution client. This harness has no execution layer, so the call goes through the
+  `[ExecutionEngine]` typeclass (the Engine seam above), whose default instance answers
+  the constant `true`. That default is the execution-layer trust boundary of the FOCIL
+  gate. No conformance vector reaches the discriminating `false` branch.
+
+- **The `InclusionListStore` rides inside the fork-choice `Store` as a field.** The
+  spec keeps it as a process-lifetime singleton reached through
+  `get_inclusion_list_store()` (`heze/inclusion-list.md:28-38`), and this framework has no
+  ambient singleton to hang it off. Behavior is identical. The rationale lives on the
+  `InclusionListStore` declaration (`EthCLSpecs/Heze/ForkChoice.lean`).
+
 ## Config-tier values that bite
 
 Three config values differ enough between presets to be worth flagging, because each one
@@ -602,7 +662,7 @@ desynced or dead server, so the parallel run is deterministic.
 
 `SPECS_ARCHITECTURE.md` §10.1 marks `genesis` in scope and §6.1 names
 `initializeBeaconStateFromEth1` / `isValidGenesisState`. The pytest corpus carries no
-`genesis` vectors for Fulu or Gloas at the `v1.7.0-alpha.10` pin, so there is nothing to
+`genesis` vectors for Fulu, Gloas, or Heze at the `v1.7.0-alpha.11` pin, so there is nothing to
 drive; both stay a `todo` stub in `Interface.lean`.
 
 ## Proofs

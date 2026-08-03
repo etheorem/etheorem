@@ -18,7 +18,9 @@ The reject-faithfulness audit (`SPECS_ARCHITECTURE.md` §10.2) is encoded in
 | valid (`post` present) | root matches | pass |
 | valid | any error, or wrong root | fail |
 | invalid (`post` absent) | `assert` reject | pass |
-| invalid | `outOfBounds` / `missingKey` reject | pass, **flagged** (bug-smell) |
+| invalid | `outOfBounds` reject (caught `IndexError`) | pass, **flagged** (bug-smell) |
+| invalid | `decode` failure (our decoder, not a raise) | fail, **flagged** (bug-smell) |
+| invalid | `arithmetic` reject (uncaught `ValueError` / `ZeroDivisionError`) | fail (the reference does not catch it) |
 | invalid | `todo` reject | fail (an unimplemented path is not a validation) |
 | invalid | ran clean | fail (should have rejected) |
 
@@ -63,8 +65,8 @@ structure CaseResult where
   bucket : ClassifyBucket
   /-- A diagnostic line (root mismatch, reject descriptor, …). -/
   detail : String
-  /-- An invalid vector rejected by `outOfBounds` / `missingKey` (rejected, but a
-  smell worth surfacing). -/
+  /-- A bug-smell worth surfacing on the wire: an invalid vector rejected by
+  `outOfBounds`, or any case whose container failed to decode (`RunError.decode`). -/
   flagged : Bool := false
   deriving Inhabited, Repr
 
@@ -150,13 +152,26 @@ def runCase [ForkInterface] (req : CaseRequest) : CaseResult :=
   | .error e, some _ =>
     -- Valid vector that rejected: a failure, classified by the reject.
     { passed := false, bucket := e.classify, detail := reprStr e }
-  | .error e, none =>
-    -- Invalid vector that rejected: faithful iff it was an `assert`. A bug-smell
-    -- reject still counts as rejected but is flagged; a `todo` / `outOfScope` fails
-    -- (not a validation) and reports as its own bucket (xfail / skip respectively).
+  | .error (.decode what), none =>
+    -- A decode failure is our decoder's bug, never the invalid vector's expected raise.
+    -- Every post-less case decodes before any spec code runs (`decodeState`, `decodeOp`,
+    -- `runBlocksImpl`), so scoring this as a rejection would report a handler's whole
+    -- `invalid_*` half as passing on one broken container layout. The store machine
+    -- decided the same question the same way at `298bf02`
+    -- (`StoreTransitionError.decodeFailure` is excluded from `isExpectedRejection`).
+    -- Still flagged, so the wire keeps the smell marker.
+    { passed := false, bucket := .likelyBug, detail := s!"decode failed: {what}",
+      flagged := true }
+  | .error (.spec e), none =>
+    -- Invalid vector that rejected: faithful iff the reject is one the reference catches.
+    -- An `assert` (AssertionError) is the clean expected rejection; a caught bug-smell
+    -- (`outOfBounds` = IndexError) still counts as rejected but is flagged. An `uncaughtFault`
+    -- (a `ValueError` / `ZeroDivisionError` the reference propagates, not catches) fails, as do
+    -- a `todo` / `outOfScope` (not a validation), each reporting as its own bucket.
     match e.classify with
     | .expectedRejection => { passed := true,  bucket := .expectedRejection, detail := reprStr e }
     | .likelyBug         => { passed := true,  bucket := .likelyBug, detail := reprStr e, flagged := true }
+    | .uncaughtFault     => { passed := false, bucket := .uncaughtFault, detail := reprStr e }
     | .todo              => { passed := false, bucket := .todo, detail := reprStr e }
     | .outOfScope        => { passed := false, bucket := .outOfScope, detail := reprStr e }
     | .passing           => { passed := false, bucket := .likelyBug, detail := "unreachable classify" }

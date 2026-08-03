@@ -6,7 +6,7 @@ it, for the Lean 4 consensus-spec library. It sits above its two siblings.
 author writes and what the framework supplies, carries the canonical glossary,
 and states the author/framework boundary table. `FRAMEWORK_ARCHITECTURE.md`
 builds each "framework generates" cell of that table from below. This document
-uses both from the author's side: it shows how the Fulu and Gloas specs are
+uses both from the author's side: it shows how the Fulu, Gloas, and Heze specs are
 organized, ported, tested, and eventually proved, written against the contract
 and on top of the machinery. Read `SPEC_AUTHORING_MODEL.md` first. This document
 quotes its glossary rather than re-coining terms, and cross-references both
@@ -64,7 +64,7 @@ Both `minimal` and `mainnet` presets are supported from the start, through the
 preset tier system that `FRAMEWORK_ARCHITECTURE.md` builds in its
 preset-constant-config-tier-system section. Minimal comes first for fast
 iteration: its smaller vector widths and shorter epochs make a failing vector
-quick to reproduce. Mainnet vectors exist for both forks and run on demand rather
+quick to reproduce. Mainnet vectors exist for all three forks and run on demand rather
 than on every push, since they are slower. The preset machinery carries both from
 day one, so mainnet is a CI-schedule choice, never a missing capability.
 
@@ -650,16 +650,15 @@ effect-monad section runs the full state transition inside the `onBlock` handler
 and surfaces any inner failure through `StoreTransitionError.transition`. The
 step-and-check harness shape comes from the conformance framework.
 
-### 7.1 The read layer is pure, the handlers are monadic
+### 7.1 The read layer is monadic, like the handlers
 
-The fork-choice read layer is pure functions over the `Store`. `getHead`,
-`getWeight`, `filterBlockTree`, and their helpers take a `Store` and return a value.
-The `on_*` handlers are the monadic `StoreTransition` actions that mutate the store
-and call the read layer on `(← get)`.
+The fork-choice read layer runs in `StoreTransition`. `getHead`, `getWeight`,
+`filterBlockTree`, and their helpers take a `Store` and return a monadic action; the
+`on_*` handlers mutate the store and call the read layer on `(← get)`.
 
 ```lean
--- read layer: pure, recursive, takes the Store as an argument
-def getWeight (store : Store map) (root : Root) : Gwei := ...
+-- read layer: monadic, recursive, takes the Store as an argument
+forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := ...
 
 -- handler: monadic, mutates the store, calls the read layer on the current store
 forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
@@ -669,20 +668,17 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   ...
 ```
 
-This diverges from the monadic state-transition accessors of Section 5, and the
-divergence is deliberate. The fork-choice reads are genuinely recursive: `getHead`
-walks the block tree, `getWeight` sums a subtree, `filterBlockTree` prunes
-recursively. A pure recursive function takes a clean `termination_by` measure on its
-argument and reasons cleanly in a later proof. Monadic recursion would drag the
-termination proof and the equation lemmas through the monad for read-only walks that
-never mutate, which is friction for no gain. Purity is infectious upward: a pure walk
-cannot call a monadic accessor, so the whole read layer is pure together.
+The reads have to be able to reject, which settles the choice. `store.blocks[root]` is a
+plain `Dict` subscript in the spec, so a missing root raises `KeyError`, and the weight
+path's `uint64` arithmetic raises on overflow. A `Gwei`-valued pure function has nowhere
+to put that: it has to supply a default, and a vector that should reject then passes.
+Rejection is infectious upward, so once a leaf read can raise, every walk above it is
+monadic too. That is why the layer moved as a unit, and why a monadic walk calling either
+a pure or a monadic helper is the invariant that holds here.
 
-The same principle drives both machines: be monadic only where it helps and does not
-hurt. It lands on monadic in the state transition because the accessors read the
-threaded state and do not recurse, and it lands on pure here because the recursion
-makes monadic hurt. The state-transition accessors of Section 5 and the fork-choice
-reads here are two applications of one rule, not a contradiction.
+This matches the monadic state-transition accessors of Section 5 for the same reason: in
+both machines a spec-faithful read is one that can fail. Termination is independent of
+the choice, and §7.2 covers it.
 
 ### 7.2 Per-loop termination
 
@@ -695,11 +691,18 @@ invariant proof at definition time. The framework's `fuelLoop` defers that proof
 the cost of a defined-but-unreachable default branch.
 
 The per-loop rule is explicit. Default to well-founded recursion when the measure is
-clean. `getHead`, for instance, has a clean measure when child slots strictly
-increase, so `maxSlot - currentSlot` strictly decreases and `termination_by` closes
-it. Reach for `fuelLoop` only when the up-front invariant proof would block the
+clean, and reach for `fuelLoop` when the up-front invariant proof would block the
 definition from existing before proofs are in scope. Record the choice and its reason
 at each such loop, so a later reader knows whether a bound is honest or deferred.
+
+Every fork-choice walk currently takes the second option: `getAncestor`, `getHead`,
+and `filterBlockTree` are all `fuelLoop`-bounded, with the block count as the bound.
+The read layer being monadic (§7.1) is what tips it. `getHead` has a clean measure on
+paper, since `maxSlot - currentSlot` strictly decreases when child slots increase, but
+discharging it through `StoreTransition` means carrying the measure past a step that
+can reject, which is the up-front proof this rule defers. The bounds are therefore
+deferred rather than honest. The `DAG walks` section header in each fork's
+`ForkChoice.lean` records that choice for the walks it heads.
 
 ---
 
@@ -833,15 +836,15 @@ interface and `PySpecTests`, written once and fork-agnostic, runs every format.
 | `rewards/*` | a single delta function | yes |
 | `fork_choice` | the `on_*` handlers | yes |
 | `genesis` | `initializeBeaconStateFromEth1` | yes |
-| `fork` | `upgradeToGloas` | yes (Fulu to Gloas only) |
-| `transition` | `stateTransition` with `upgradeToGloas` mid-fold | yes (Fulu to Gloas only) |
-| `ssz_static` | each container's `SSZRepr` (decode, hash-tree-root, round-trip) | yes (Fulu + Gloas) |
+| `fork` | `upgradeToGloas` / `upgradeToHeze` | yes (Fulu→Gloas, Gloas→Heze) |
+| `transition` | `stateTransition` with the upgrade mid-fold | yes (Fulu→Gloas, Gloas→Heze) |
+| `ssz_static` | each container's `SSZRepr` (decode, hash-tree-root, round-trip) | yes (Fulu + Gloas + Heze) |
 | `bls`, `kzg` | n/a | no (crypto-backend concern) |
 
 The `rewards/*` format is in scope and drives a single delta function in isolation,
 the reward and penalty deltas of the `Rewards` concern file (row 29). `fork` and
-`transition` run only the Fulu-to-Gloas upgrade, since Electra is not built. Both
-presets run; mainnet runs on demand rather than on every CI pass.
+`transition` run the Fulu-to-Gloas and Gloas-to-Heze upgrades only, since Electra is
+not built. Both presets run; mainnet runs on demand rather than on every CI pass.
 
 ### 10.2 The reject-faithfulness audit
 
@@ -922,20 +925,20 @@ The pinned version per fork is the `pyspecPinnedVersion` constant of the contrac
 spec-revision-pin section: the latest upstream tag carrying that fork's vectors,
 stable or pre-release. Fulu pins a stable release. Gloas tracks the consensus-specs
 main branch, so it pins a pre-release or alpha tag, or a dev commit, while it is
-unreleased. The two forks sit at different pins at the same time.
+unreleased. Forks can sit at different pins at the same time.
 
 The values below are illustrative and are bumped to the current latest release at
-implementation time (the pytest harnesses pin `v1.7.0-alpha.10` at this writing);
+implementation time (the pytest harnesses pin `v1.7.0-alpha.11` at this writing);
 the implementation also confirms the chosen tag
-actually carries Gloas vectors, falling back to a dev commit if not.
+actually carries the newest ported fork's vectors, falling back to a dev commit if not.
 
 ```lean
 namespace EthCLSpecs.Fulu
-def pyspecPinnedVersion : String := "v1.7.0-alpha.10"   -- latest release at writing
+def pyspecPinnedVersion : String := "v1.7.0-alpha.11"   -- latest release at writing
 end EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
-def pyspecPinnedVersion : String := "v1.7.0-alpha.10"   -- same tag while Gloas is unreleased
+def pyspecPinnedVersion : String := "v1.7.0-alpha.11"   -- same tag while Gloas is unreleased
 end EthCLSpecs.Gloas
 ```
 

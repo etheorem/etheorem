@@ -31,10 +31,19 @@ state_section
 
 /-- The justification-bits + checkpoint update, given the three target balances. -/
 forkdef weighJustificationAndFinalization (totalActive prevTarget currTarget : Gwei) :
-    StateTransition Unit :=
+    StateTransition Unit := do
+  let state ← get
+  let prevEpoch := previousEpochOf state
+  let currEpoch := currentEpochOf state
+  let justifyPrev := prevTarget.toNat * 3 ≥ totalActive.toNat * 2
+  let justifyCurr := currTarget.toNat * 3 ≥ totalActive.toNat * 2
+  -- `get_block_root` is read ONLY inside its justify branch in the spec (lazy); read
+  -- each only when its branch fires, so the recency assert fires exactly where the
+  -- spec's read does. An unconditional read would assert on an epoch-boundary pull-up
+  -- state whose justify condition is false, a slot the spec never reads there.
+  let prevRoot ← if justifyPrev then getBlockRoot state prevEpoch else pure default
+  let currRoot ← if justifyCurr then getBlockRoot state currEpoch else pure default
   modifyState fun state => Id.run do
-    let prevEpoch := previousEpochOf state
-    let currEpoch := currentEpochOf state
     let oldPrev := sszGet state previousJustifiedCheckpoint
     let oldCurr := sszGet state currentJustifiedCheckpoint
     let mut state := state
@@ -44,13 +53,13 @@ forkdef weighJustificationAndFinalization (totalActive prevTarget currTarget : G
     state := sszUpdate state with
       previousJustifiedCheckpoint := oldCurr,
       justificationBits := { data := (sszGet state justificationBits).data <<< 1 }
-    if prevTarget.toNat * 3 ≥ totalActive.toNat * 2 then
+    if justifyPrev then
       state := sszUpdate state with
-        currentJustifiedCheckpoint := { epoch := prevEpoch, root := getBlockRoot state prevEpoch },
+        currentJustifiedCheckpoint := { epoch := prevEpoch, root := prevRoot },
         justificationBits := bitSet (sszGet state justificationBits) 1 true
-    if currTarget.toNat * 3 ≥ totalActive.toNat * 2 then
+    if justifyCurr then
       state := sszUpdate state with
-        currentJustifiedCheckpoint := { epoch := currEpoch, root := getBlockRoot state currEpoch },
+        currentJustifiedCheckpoint := { epoch := currEpoch, root := currRoot },
         justificationBits := bitSet (sszGet state justificationBits) 0 true
 
     -- Finalize on the four supermajority-link bit patterns.
@@ -269,7 +278,7 @@ forkdef processPendingDeposits : StateTransition Unit := do
 stops the scan; otherwise the source's effective balance moves to the target. -/
 forkdef pcLoop (cons : Array PendingConsolidation) (nextEpoch : Epoch) : StateTransition Nat :=
   -- Threaded accumulator is the next-pending index `npc`; `fuelLoop` owns the counter. Fuel is
-  -- `cons.size + 1` (the `fuelIterate` `length + 1` idiom): the `npc ≥ cons.size` guard fires as
+  -- `cons.size + 1`: the `npc ≥ cons.size` guard fires as
   -- a `.done` one step before exhaustion, so the `exhausted` value is unreachable. A slashed
   -- source `.next`s; an unwithdrawable source `.done`s; a moved balance `.next`s.
   fuelLoop (cons.size + 1) (0 : Nat) (cons.size) fun npc => do

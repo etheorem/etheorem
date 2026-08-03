@@ -140,6 +140,10 @@ abbrev maxConsolidationRequestsPerPayload : Nat := 2
 -- EIP-8282 (Gloas builder deposits / exits): 2**8 and 2**4, identical across presets.
 abbrev maxBuilderDepositRequestsPerPayload : Nat := 256
 abbrev maxBuilderExitRequestsPerPayload : Nat := 16
+-- EIP-7805 (Heze FOCIL): inclusion-list committee members per slot. A preset-file
+-- value, identical across presets at v1.7.0-alpha.11 (both say 2**4); re-check at
+-- every re-pin, and promote to a `Preset` field (like `ptcSize`) if they diverge.
+abbrev inclusionListCommitteeSize : Nat := 16
 abbrev maxAttestationsElectra : Nat := 8
 abbrev maxAttesterSlashingsElectra : Nat := 1
 abbrev maxPendingDepositsPerEpoch : Nat := 16
@@ -243,6 +247,10 @@ abbrev domainPtcAttester : ByteArray := ⟨#[0x0C, 0, 0, 0]⟩
 -- EIP-8282 `DOMAIN_BUILDER_DEPOSIT` (`0x0E000000`). Consumed by the deferred
 -- builder-deposit signature check; recorded now alongside the other domain tags.
 abbrev domainBuilderDeposit : ByteArray := ⟨#[0x0E, 0, 0, 0]⟩
+-- EIP-7805 `DOMAIN_INCLUSION_LIST_COMMITTEE` (`0x10000000`). The FOCIL inclusion-list
+-- committee signature domain; consumed by `Heze.isValidInclusionListSignature`. Recorded
+-- here with the other domain tags (where every fork's domains live, Heze's included).
+abbrev domainInclusionListCommittee : ByteArray := ⟨#[0x10, 0, 0, 0]⟩
 /-- ePBS fork-choice payload statuses for a `ForkChoiceNode`. -/
 abbrev payloadStatusEmpty : UInt8 := 0
 abbrev payloadStatusFull : UInt8 := 1
@@ -270,6 +278,10 @@ abbrev kzgCommitmentsInclusionProofDepth : Nat := 4
 (`ATTESTATION_DUE_BPS_GLOAS`, `PAYLOAD_ATTESTATION_DUE_BPS`). -/
 abbrev attestationDueBpsGloas : UInt64 := 2500
 abbrev payloadAttestationDueBps : UInt64 := 7500
+/-- `INCLUSION_LIST_DUE_BPS` (Heze:EIP7805, ~67% of the slot): the timeliness deadline
+for an inclusion list, in basis points of the slot
+(`consensus-specs/specs/heze/fork-choice.md:38`). -/
+abbrev inclusionListDueBps : UInt64 := 6667
 /-- `PROPOSER_SCORE_BOOST` (percent of the per-slot committee weight). -/
 abbrev proposerScoreBoost : Nat := 40
 /-- `BASIS_POINTS` denominator for the slot-component durations. -/
