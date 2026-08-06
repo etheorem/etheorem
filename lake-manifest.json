@@ -56,7 +56,7 @@
    "manifestFile": "lake-manifest.json",
    "inherited": false,
    "dir": "packages/LeanImtPlus",
-   "configFile": "lakefile.lean"},
+   "configFile": "lakefile.toml"},
   {"type": "path",
    "scope": "",
    "name": "LeanSha256",

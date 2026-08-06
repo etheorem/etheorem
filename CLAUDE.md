@@ -148,7 +148,7 @@ its mathlib dependency never touches the root build.
 │   ├── LeanSha256/              # Pure-Lean SHA-256 reference; no FFI. Published standalone via a mirror.
 │   │   └── lakefile.toml, LeanSha256.lean / LeanSha256/ / cavp/ / LeanSha256Tests/ / README.md
 │   ├── LeanImtPlus/             # Hash-generic LeanIMT+ tree and unified proofs.
-│   │   └── lakefile.lean, LeanImtPlus/{Hasher,Core,Tree} / LeanImtPlusTests/ / README.md
+│   │   └── lakefile.toml, LeanImtPlus/{Hasher,Core,Tree} / LeanImtPlusTests/ / README.md
 │   ├── LeanHazmatSha256/        # FFI SHA-256 (OpenSSL libcrypto); owns the C SHA-256 shim.
 │   │   └── lakefile.lean (C target), csrc/{sha256_shim,sha256_batch}.c / docs/ / README.md
 │   ├── LeanHazmatBls/           # FFI BLS12-381 (blst, vendored). lakefile.lean, csrc/bls_shim.c, docs/.
