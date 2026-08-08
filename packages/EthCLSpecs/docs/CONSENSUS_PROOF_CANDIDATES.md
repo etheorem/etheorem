@@ -10,6 +10,9 @@ the fork's surface area, just the functions with a clear invariant, safety prope
 Gloas introduces 62 new functions and overrides 46 inherited ones. The candidates below were identified by reading across the Gloas specification and supporting libraries, focusing on functions with clear correctness properties, safety invariants, algebraic laws, monotonicity properties, and other proof-worthy invariants. The list is not exhaustive.
 
 The sections below group candidates by the kind of theorem they naturally suggest.
+A candidate carries no marker until it is discharged, at which point its row reads
+**Proved** and names the module holding the theorems. There is no intermediate state:
+a proof in flight is tracked by its pull request, and the row flips when that merges.
 
 ---
 
@@ -21,7 +24,7 @@ under a stated precondition.
 
 | Function                              | Location                    | Rationale                                                                                                                                                                                                                                                                                  |
 | ------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `convertBuilderIndexToValidatorIndex` | `Gloas/Operations.lean:415` | **In review**, see `EthCLSpecs/Proofs/BuilderIndex.lean`. Round-trips with `toBuilderIndex` on any `bi` that does not already carry the `BUILDER_INDEX_FLAG` bit, since `toBuilderIndex` always clears that bit, the round trip holds only under that precondition, not as a free identity |
+| `convertBuilderIndexToValidatorIndex` | `Gloas/Operations.lean:415` | **Proved**, see `EthCLSpecs/Proofs/BuilderIndex.lean`. Round-trips with `toBuilderIndex` on any `bi` that does not already carry the `BUILDER_INDEX_FLAG` bit, since `toBuilderIndex` always clears that bit, the round trip holds only under that precondition, not as a free identity. |
 
 ---
 
@@ -72,7 +75,7 @@ never decreasing, never shrinking, never losing a previously-added element.
 | -------------------- | ------------------------------- | ------------------------------------------------------------ |
 | `getWeight`          | `Gloas/ForkChoice.lean:359-369` | Weight only grows as more attestations accumulate for a node |
 | `onAttesterSlashing` | `Gloas/ForkChoice.lean:791-801` | The set of equivocating indices only grows, never shrinks    |
-| `updateCheckpoints`  | `Gloas/ForkChoice.lean:470-472` | Justified/finalized epochs never decrease                    |
+| `updateCheckpoints`  | `Gloas/ForkChoice.lean:470-472` | **Proved**, see `EthCLSpecs/Proofs/UpdateCheckpoints.lean`. Each justified/finalized checkpoint either remains unchanged or advances to its candidate, so its epoch never decreases, and no other Store field moves. |
 
 ---
 
@@ -114,7 +117,7 @@ incidental, it's what the function does.
 | --------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `upgradeToGloas`      | `Gloas/Upgrade.lean:101-156` | Preserves inherited state while correctly initializing the new ePBS state                                                                                            |
 | `computePtcFromFulu`  | `Gloas/Upgrade.lean:35-43`   | Agrees with `Gloas.computePtc` once the state is upgraded                                                                                                            |
-| `initializePtcWindow` | `Gloas/Upgrade.lean:50-60`   | **In review**, see `EthCLSpecs/Proofs/InitializePtcWindow.lean`. The first `SLOTS_PER_EPOCH` entries are the empty committee, and every remaining entry equals `computePtcFromFulu` at the slot computed by `initializePtcWindow` |
+| `initializePtcWindow` | `Gloas/Upgrade.lean:50-60`   | **Proved**, see `EthCLSpecs/Proofs/InitializePtcWindow.lean`. The first `SLOTS_PER_EPOCH` entries are the empty committee, and every remaining entry equals `computePtcFromFulu` at the slot computed by `initializePtcWindow`. |
 
 ---
 

@@ -2,17 +2,19 @@ import EthCLSpecs.Proofs.BuilderIndex
 import EthCLSpecs.Proofs.BuilderPendingPayments
 import EthCLSpecs.Proofs.GetPtc
 import EthCLSpecs.Proofs.InitializePtcWindow
+import EthCLSpecs.Proofs.UpdateCheckpoints
 
 /-!
 # `EthCLSpecs.Proofs`: consensus-spec theorems (index)
 
 Mathlib-free proofs about `EthCLSpecs` declarations, colocated with the specs
 the way `SizzLean.Proofs` is colocated with `SizzLean`: same package, same
-build, `bv_decide` / `decide` / `native_decide` over the spec's own types, no
-mathlib. A theorem that turns out to need mathlib moves to the standalone
-`EthCLProofs` package instead (`docs/SPECS_ARCHITECTURE.md` §11), the
-`LeanPoseidonProofs` containment pattern, so mathlib never reaches this
-library, the framework, the runner, or the conformance path.
+build. Each theorem is closed by whichever tactic its goal needs, `bv_decide`,
+`decide`, `native_decide`, or plain case analysis. Always over the spec's own
+types, never mathlib. A theorem that turns out to need mathlib moves to the standalone
+`EthCLProofs` package instead (`docs/SPECS_ARCHITECTURE.md` §11), following the
+`LeanPoseidonProofs` containment pattern. Mathlib never reaches this library,
+the framework, the runner, or the conformance path.
 
 Re-exports:
 
@@ -28,4 +30,7 @@ Re-exports:
   (`getPtcElseOffset_lt_same_slot`).
 * `EthCLSpecs.Proofs.InitializePtcWindow`: the seeded `ptcWindow`'s two
   regions (`initializePtcWindow`).
+* `EthCLSpecs.Proofs.UpdateCheckpoints`: `Gloas.updateCheckpoints` checkpoint
+  monotonicity, the justified/finalized epoch never decreases. Its theorems sit
+  in `EthCLSpecs.Proofs.Gloas`, since `updateCheckpoints` exists in both forks.
 -/

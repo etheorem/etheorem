@@ -701,4 +701,12 @@ separation.
   placeholder and the remainder computed via `computePtcFromFulu`), plus a
   `default` corollary for the first region.
 
+- **`Proofs/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
+  single record update, which doubles as the frame condition that no other Store
+  field moves. On top of it sit unchanged-or-advances characterizations for the
+  justified and finalized checkpoints, plus monotonicity corollaries proving that
+  neither recorded epoch decreases. The proofs use ordinary case analysis and
+  core `UInt64` ordering lemmas. Their theorems live in `EthCLSpecs.Proofs.Gloas`
+  rather than the flat `EthCLSpecs.Proofs`, since Fulu declares the same function.
+
 - **`CONSENSUS_PROOF_CANDIDATES.md`** tracks candidate consensus proof targets.
