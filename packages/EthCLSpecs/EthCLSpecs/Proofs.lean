@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.BuilderIndex
 import EthCLSpecs.Proofs.BuilderPendingPayments
+import EthCLSpecs.Proofs.CanBuilderCoverBid
 import EthCLSpecs.Proofs.GetPtc
 import EthCLSpecs.Proofs.InitializePtcWindow
 import EthCLSpecs.Proofs.UpdateCheckpoints
@@ -24,6 +25,8 @@ Re-exports:
   withdrawal-queuing and payment-window-shift postcondition
   (`processBuilderPendingPayments_run`, plus
   `processBuilderPendingPayments_run_of_fits`).
+* `EthCLSpecs.Proofs.CanBuilderCoverBid`: the exact `Bool`-vs-`UInt64`-inequality
+  characterization of `canBuilderCoverBid`.
 * `EthCLSpecs.Proofs.GetPtc`: `getPtc`'s else-branch `ptcWindow` offset bound,
   for the `data.slot + 1 == state.slot` caller (`getPtcElseOffset`,
   `getPtcElseOffset_lt_next_slot`) and the `slot == curSlot` fork-choice replay callers
