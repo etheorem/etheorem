@@ -305,10 +305,17 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
         store := (← checkStepValidity .block valid
           (runOn store (onBlock (map := hashMap) sb : EStateM StoreTransitionError (Store hashMap) Unit)))
         if valid then
-          let subAction : EStateM StoreTransitionError (Store hashMap) Unit := do
+          -- The reference replays each list under its OWN wrapper, `run_on_attestation` then
+          -- `run_on_attester_slashing` (`fork_choice.py:400-406`), so they are scored as two
+          -- sub-steps naming their own kind. Both carry `valid = True`, so `FcStepKind.admits`
+          -- is never consulted and the split is score-equivalent to one combined action; it
+          -- keeps the rule that no call site hides which reference wrapper scores it.
+          let replayAttestations : EStateM StoreTransitionError (Store hashMap) Unit := do
             for a in sb.message.body.attestations do onAttestation (map := hashMap) a true
+          store := (← checkStepValidity .attestation true (runOn store replayAttestations))
+          let replaySlashings : EStateM StoreTransitionError (Store hashMap) Unit := do
             for a in sb.message.body.attesterSlashings do onAttesterSlashing (map := hashMap) a
-          store := (← checkStepValidity .attestation true (runOn store subAction))
+          store := (← checkStepValidity .attesterSlashing true (runOn store replaySlashings))
     | .attestation bytes valid =>
       let outcome := decodeStepOr (α := @Attestation P) bytes "attestation" store fun a =>
         runOn store (onAttestation (map := hashMap) a false : EStateM StoreTransitionError (Store hashMap) Unit)
