@@ -4,7 +4,7 @@ import EthCLSpecs.Fulu.Time
 /-!
 # `EthCLSpecs.Proofs.GetPtc`: the `get_ptc` else-branch offset bound
 
-`EthCLSpecs.Gloas.getPtc` (`Gloas/Operations.lean:368-376`) reads the cached
+`EthCLSpecs.Gloas.getPtc` (`Gloas/Operations.lean:391-408`) reads the cached
 Payload Timeliness Committee for a slot out of the `ptcWindow` ring buffer. Its
 `if`-branch (a slot in the previous epoch) reads through `vmodGet`, already
 proof-carrying and safe by construction. Its `else`-branch computes a raw

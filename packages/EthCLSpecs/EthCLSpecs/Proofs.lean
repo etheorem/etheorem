@@ -3,6 +3,7 @@ import EthCLSpecs.Proofs.BuilderPendingPayments
 import EthCLSpecs.Proofs.CanBuilderCoverBid
 import EthCLSpecs.Proofs.GetPtc
 import EthCLSpecs.Proofs.InitializePtcWindow
+import EthCLSpecs.Proofs.IsValidIndexedPayloadAttestation
 import EthCLSpecs.Proofs.UpdateCheckpoints
 
 /-!
@@ -33,6 +34,10 @@ Re-exports:
   (`getPtcElseOffset_lt_same_slot`).
 * `EthCLSpecs.Proofs.InitializePtcWindow`: the seeded `ptcWindow`'s two
   regions (`initializePtcWindow`).
+* `EthCLSpecs.Proofs.IsValidIndexedPayloadAttestation`: literal and semantic
+  characterizations of `isValidIndexedPayloadAttestation`, including its adjacent
+  nondecreasing and validator-range checks. The semantic layer indexes the
+  validator registry in bounds rather than through `!`.
 * `EthCLSpecs.Proofs.UpdateCheckpoints`: `Gloas.updateCheckpoints` checkpoint
   monotonicity, the justified/finalized epoch never decreases. Its theorems sit
   in `EthCLSpecs.Proofs.Gloas`, since `updateCheckpoints` exists in both forks.

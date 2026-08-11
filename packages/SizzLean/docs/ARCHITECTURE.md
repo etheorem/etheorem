@@ -1426,13 +1426,16 @@ reachable by qualified path for sibling packages (`EthCLSpecs`'s
 `deriving SSZRepr` infrastructure imports `Spec/Serialize` etc.
 directly) but are not part of the user-facing surface.
 
-**Native-plugin exception: `Proofs/SSZListPush.lean`.** Unlike the other
-`Proofs/*` modules, this module is imported from `SizzLean.lean`.
-`EthCLSpecs.Proofs.BuilderPendingPayments` reaches it by qualified path, but
-Lake's `precompileModules` includes native modules only when they are reachable
+**Native-plugin exception: `Proofs/SSZListPush.lean` and
+`Proofs/SSZListGetElem.lean`.** Unlike the other `Proofs/*` modules, these two are
+imported from `SizzLean.lean`. `EthCLSpecs.Proofs.BuilderPendingPayments` and
+`EthCLSpecs.Proofs.IsValidIndexedPayloadAttestation` reach them by qualified path,
+but Lake's `precompileModules` includes native modules only when they are reachable
 from the package's root import graph. Without this root edge, the `.olean` is
-built but the native plugin is unavailable at runtime. Importing it from
-`SizzLean.lean` keeps it on that graph.
+built but the native plugin is unavailable at runtime, and the importing package
+fails with `undefined symbol: initialize_SizzLean_…`. Importing them from
+`SizzLean.lean` keeps them on that graph. A `Proofs/*` module that gains its first
+sibling-package consumer needs the same treatment.
 
 ## 13. Conventions
 
