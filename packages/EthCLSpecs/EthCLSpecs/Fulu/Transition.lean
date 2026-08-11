@@ -183,11 +183,15 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   let epoch := currentEpochOf state
   let mix := vmodGet (sszGet state randaoMixes) epoch Const.epochsPerHistoricalVector
   assert (payload.prevRandao == mix)
-  -- Both the product and the sum are checked `uint64` ops in the pyspec.
-  let elapsed ← checkedMul (sszGet state slot) Const.secondsPerSlot
-    "process_execution_payload: state.slot * SECONDS_PER_SLOT"
-  let expectedTimestamp ← checkedAdd (sszGet state genesisTime) elapsed
-    "process_execution_payload: genesis_time + state.slot * SECONDS_PER_SLOT"
+  -- `compute_time_at_slot(state, state.slot)` (`phase0/beacon-chain.md:900`), inlined the way
+  -- `get_forkchoice_store` inlines the same clock. The spec flags the helper as "unsafe with
+  -- respect to overflows and underflows", so all three ops are checked.
+  let slotsSinceGenesis ← checkedSub (sszGet state slot) Const.genesisSlot
+    "process_execution_payload: state.slot - GENESIS_SLOT"
+  let elapsedMs ← checkedMul slotsSinceGenesis Const.slotDurationMs
+    "process_execution_payload: (state.slot - GENESIS_SLOT) * SLOT_DURATION_MS"
+  let expectedTimestamp ← checkedAdd (sszGet state genesisTime) (elapsedMs / 1000)
+    "process_execution_payload: genesis_time + (state.slot - GENESIS_SLOT) * SLOT_DURATION_MS // 1000"
   assert (payload.timestamp == expectedTimestamp)
 
   let header : ExecutionPayloadHeader :=
