@@ -27,6 +27,7 @@ theorem. Per-arm proofs live in sibling modules:
 | `.vectorFixed t n` | `Proofs/VectorFixed.lean` |
 | `.listFixed t cap` | `Proofs/ListFixed.lean` |
 | `.bitvector n` / `.bitlist cap` | `Proofs/BitPack.lean` |
+| `.containerVar fs` (groundwork) | `Proofs/ContainerVar.lean` |
 
 ## A short note on Lean's recursion checker
 
@@ -42,7 +43,7 @@ powerful but needs an explicit `termination_by`/`decreasing_by`.
 The proofs here use the structural path, which constrains *how*
 recursive calls are written.
 
-## The mutual `decode_encode` / `decode_encode_containerFixed_aux`
+## The three-way mutual block
 
 For composite arms (`vectorFixed`, `listFixed`), `decode_encode`
 hands the per-arm helper a closure
@@ -51,25 +52,43 @@ hands the per-arm helper a closure
 outer `h_sup`, extracted by the `BasicSupported.vectorFixed`
 pattern, so each recursive call descends.
 
-For the `containerFixed` arm, the helper would need
-`∀ t ∈ fs, decode_encode_t`. A closure abstracting `t`
+For the `containerFixed` and `containerVar` arms, the helper would
+need `∀ t ∈ fs, decode_encode_t`. A closure abstracting `t`
 loses the connection to `fs`, and the checker can't see the
-descent. The fix is a **mutual block** with a partner function
-`decode_encode_containerFixed_aux` that recurses on
-`h_fs : BasicSupportedFieldsFixed` structurally and dispatches
-to `decode_encode` per-cons-head. Within a mutual block, members
-can call each other freely so long as every call descends on a
-strict subterm of *some* mutually-defined input; here the descent
-zig-zags between the inductive pair `(BasicSupported,
-BasicSupportedFieldsFixed)`.
+descent. The fix is a **mutual block** with two partner functions:
+
+* `decode_encode_containerFixed_aux`, recursing on
+  `h_fs : BasicSupportedFieldsFixed`;
+* `decode_encode_containerVar_aux`, recursing on
+  `h_fs : BasicSupportedFields`.
+
+Within a mutual block, members can call each other freely so long
+as every call descends on a strict subterm of *some*
+mutually-defined input; here the descent zig-zags between
+`(BasicSupported, BasicSupportedFieldsFixed)` for the fixed arm
+and `(BasicSupported, BasicSupportedFields)` for the mixed arm.
 
 `Proofs/ContainerFixed.lean` still ships the substantive
 helpers (`deserializeFixedFields_append_shift`,
 `allFixedSize_of_BasicSupportedFieldsFixed`,
 `fixedByteSizeFields_le_maxByteLengthFields`) and the top-level
 wrapper `decode_encode_containerFixed` (which unfolds the
-encoder's `(fix ++ .empty)` shape into `fix`). This file's mutual
-block holds only the field-walker `decode_encode_containerFixed_aux`.
+encoder's `(fix ++ .empty)` shape into `fix`).
+`Proofs/ContainerVar.lean` ships the offset-table groundwork
+(`extract_split`, `varOffsetsOf_head_getD`,
+`extractFieldOffsets_serializeFieldsAux`, …). This file's mutual
+block holds the two field-walkers.
+
+## Dependence on `encode_size_le_max`
+
+The `containerVar` arm imports `Proofs/SizeBound.lean` and calls
+`encode_size_le_max_containerVarFields_aux` to obtain a
+per-field size bound. That bound, plus the schema-level
+`maxByteLengthFields fs < MAX_LENGTH` guard on
+`BasicSupported.containerVar`, is how the offsets are shown not
+to overflow `uint32`. The dependence is one-way
+(`decode_encode` → `encode_size_le_max`) and costs no axioms: the
+size theorem's footprint is only `propext` and `Quot.sound`.
 -/
 
 set_option autoImplicit false
@@ -141,7 +160,7 @@ theorem decode_encode : ∀ {s : SSZType}, SSZType.BasicSupported s →
       -- `prefixOff = 0`, `bufEnd = b.size`. `size_serializeFieldsAux_fixedSection`
       -- (`ContainerVar.lean`) pins the fixed prefix's width to the schema value,
       -- which both extract-invariants below and the pre-extraction inverse
-      -- (`extractFieldOffsets_serializeFieldsAux`, PR 1) need.
+      -- (`extractFieldOffsets_serializeFieldsAux`) need.
       have h_ok := fieldsFixedSizeOk_of_basicSupportedFields h_fields vs
       have h_maxOk := encode_size_le_max_containerVarFields_aux h_fields vs
       have h_fix_size :

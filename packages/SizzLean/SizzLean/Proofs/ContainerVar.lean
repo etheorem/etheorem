@@ -4,18 +4,20 @@ import SizzLean.Spec.MaxByteLength
 import Std.Tactic.BVDecide
 
 /-!
-# `SizzLean.Proofs.ContainerVar`: groundwork for mixed-field `.container fs`
+# `SizzLean.Proofs.ContainerVar`: mixed-field `.container fs` lemmas
 
-Mixed-field containers (at least one variable-size field, `list` /
-`bitlist`) are the flagship remaining gap in `SSZType.Supported`:
-the codec ([`Spec/Serialize.lean`](../Spec/Serialize.lean)'s
+The codec ([`Spec/Serialize.lean`](../Spec/Serialize.lean)'s
 `serializeFieldsAux`, [`Spec/Deserialize.lean`](../Spec/Deserialize.lean)'s
-non-`allFixedSize` `.container` branch) fully implements the
-offset-table wire format, but no `BasicSupported` constructor
-claims it yet, and no theorem closes it. This module lays the
-groundwork; the predicates (`containerVar` on `BasicSupported` /
-`Supported` / `SupportedBounded`) and the roundtrip walker land in
-a follow-up, once this file's lemmas are available to build on.
+non-`allFixedSize` `.container` branch) implements the offset-table
+wire format for containers with at least one variable-size field
+(`list` / `bitlist`). This module holds the lemmas that format
+needs: the uint32 offset codec bridge, ByteArray extract helpers,
+encoder-size accounting, the offset-extraction inverse, and the
+extract-split / running-offset facts the roundtrip walker in
+`Proofs/Roundtrip.lean` (`decode_encode_containerVar_aux`) consumes.
+The `containerVar` constructor on `BasicSupported` /
+`Supported` / `SupportedBounded` and the walker itself live with
+the central theorems; the lemmas here are their ground.
 
 ## Wire format (what the lemmas below characterize)
 
@@ -49,19 +51,18 @@ plumbing `def`s of item 3 that thread per-field data through them):
    read an offset placeholder embedded partway through a buffer.
    Same trust class as the narrow `uintN` arms: one `bv_decide`.
 2. **Extract-middle** (`extract_middle`): slicing the middle piece
-   out of a three-way `ByteArray` append, the lemma the (later)
-   roundtrip walker needs to identify `b.extract curOff nextOff`
-   with a variable field's serialized body.
+   out of a three-way `ByteArray` append, identifying
+   `b.extract curOff nextOff` with a variable field's serialized
+   body.
 3. **Field-list plumbing devices** (`FieldsFixedSizeOk`,
    `FieldsMaxSizeOk`, `varOffsetsOf`): the per-field correctness
    facts the accounting lemmas below need, threaded alongside `vs`
    the way `serializeFixedElems_size_aux` threads a per-element size
    fact, but for a *heterogeneous* field list, so the natural shape
    is a structural `def` (not an `inductive`) recursing on `fs` and
-   `vs` in lockstep. Kept local to this file rather than exported to
-   `Spec/`: once `BasicSupportedFields` lands (the real,
-   proof-carrying pointwise predicate), each is a one-line corollary
-   of it, and the dedicated file that adds it will make that link.
+   `vs` in lockstep. `fieldsFixedSizeOk_of_basicSupportedFields` in
+   `Proofs/Roundtrip.lean` turns each into a one-line corollary of
+   `BasicSupportedFields`.
 4. **Encoder accounting** (`size_serializeFieldsAux_fixedSection`):
    `(serializeFieldsAux fs vs varOff).1.size = fixedSectionSizeFields fs`.
 5. **Size walker** (`size_serializeFieldsAux_le_maxByteLengthFields`):
@@ -77,13 +78,12 @@ plumbing `def`s of item 3 that thread per-field data through them):
    the invariant is *simpler* than it first looks (it never has to
    track where the variable region physically sits).
 7. **Extract-split** (`extract_split`) and **running-offset
-   lookahead** (`varOffsetsOf_head_getD`): added once the roundtrip
-   walker (`decode_encode_containerVar_aux`, in
-   `Proofs/Roundtrip.lean`) needed a way to peel one field's
+   lookahead** (`varOffsetsOf_head_getD`): peel one field's
    contribution off an *abstract* buffer characterized by `extract`
    equalities, rather than a literal append chain (unlike 6 above,
    `deserializeVarFields`'s buffer parameter never changes
-   syntactically across the walk).
+   syntactically across the walk). Consumed by
+   `decode_encode_containerVar_aux` in `Proofs/Roundtrip.lean`.
 
 ## Trust
 
@@ -439,17 +439,16 @@ theorem extractFieldOffsets_serializeFieldsAux :
       rw [h_toNat]
       simp only [varOffsetsOf, h_fixed', if_false, Bool.false_eq_true]
 
-/-! ### Roundtrip-walker groundwork
+/-! ### Roundtrip-walker helpers
 
-Two more facts, added on top of the six above once the roundtrip
-walker (`decode_encode_containerVar_aux`, in
-`Proofs/Roundtrip.lean`'s mutual block) needed them. Both concern
-an *abstract* buffer `b` characterized by `extract` equalities
-rather than a literal append chain, which is the shape
-`deserializeVarFields`'s own recursion needs: unlike the encoder's
-recursive calls, its buffer parameter never changes syntactically
-across the walk, only the `prefixOff` / `varOffs` / `bufEnd`
-positions into it do. -/
+Two more facts the roundtrip walker
+(`decode_encode_containerVar_aux`, in `Proofs/Roundtrip.lean`'s
+mutual block) consumes. Both concern an *abstract* buffer `b`
+characterized by `extract` equalities rather than a literal append
+chain, which is the shape `deserializeVarFields`'s own recursion
+needs: unlike the encoder's recursive calls, its buffer parameter
+never changes syntactically across the walk, only the `prefixOff` /
+`varOffs` / `bufEnd` positions into it do. -/
 
 /-- **Extract-split**: given that `b`'s slice `[p, q)` equals a
 two-way append `u ++ v`, both halves recover as the corresponding

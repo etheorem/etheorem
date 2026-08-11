@@ -60,14 +60,18 @@ theorems.
 
 - **Machine-checked correctness across most of SSZ.** The three
   central theorems, encode/decode roundtrip, non-malleability,
-  and a schema-derived static size bound, are proved for every
-  SSZ shape *except* `vector` / `list` over a variable-size
-  element type: `uintN 8 / 16 / 32 / 64 / 128 / 256`, `bool`,
-  fixed-size `vector` and `list`, `bitvector`, `bitlist`, and
-  `container` over any field list, whether every field is
-  fixed-size (recursively) or the field list mixes fixed- and
-  variable-size fields via the offset-table codec. See
-  [Proof coverage](#proof-coverage) for the per-constructor
+  and a schema-derived static size bound, are proved for
+  `uintN 8 / 16 / 32 / 64 / 128 / 256`, `bool`, fixed-size
+  `vector` and `list`, `bitvector`, `bitlist`, and `container`
+  over any field list (fixed-only, or mixed fixed/variable via
+  the offset-table codec), with two exceptions still open:
+  `vector` / `list` over a variable-size element type, and
+  mixed-field containers whose schema-level
+  `maxByteLengthFields fs` is not strictly below `MAX_LENGTH`
+  (the uint32-offset guard; real `BeaconState` /
+  `BeaconBlockBody` shapes sit outside it, see
+  [etheorem#61](https://github.com/etheorem/etheorem/issues/61)).
+  See [Proof coverage](#proof-coverage) for the per-constructor
   table.
 
 - **Trust assumptions you can grep for.** Every reliance on the
@@ -216,14 +220,15 @@ per constructor and with the proof technique for each arm.
 | `.bitvector n` | ✅ ⁴ | ✅ ⁴ | ✅ | needs `0 < n`; bit-packing inverse in `Proofs/BitPack.lean` |
 | `.bitlist cap` | ✅ ⁴ | ✅ ⁴ | ✅ | bit-packing inverse + `msbPos` delimiter recovery |
 | `.container fs`, all fields fixed-size | ✅ ² | ✅ ² | ✅ ² | see [per-field type](#container-fs-per-field-type) |
-| `.container fs`, mixed fixed/variable fields | ✅ ⁶ | ✅ ⁶ | ✅ ⁶ | offset-table codec, see [per-field type](#container-fs-per-field-type) |
+| `.container fs`, mixed fixed/variable fields | ✅ ⁶ | ✅ ⁶ | ✅ | needs `allFixedSize fs = false` + `maxByteLengthFields fs < MAX_LENGTH`; offset-table codec, see [per-field type](#container-fs-per-field-type) |
 
 ¹ Adds one `_native.bv_decide.ax_*` axiom per arm (SAT certificate
-for the multi-byte LE identity). `decode_encode`'s and
+for the multi-byte LE identity). Together with footnote ⁶'s
+uint32-offset bridge, `decode_encode`'s and
 `serialize_injective`'s overall trust footprint is exactly these
-three axioms plus the standard kernel axioms (`propext`,
-`Classical.choice`, `Quot.sound`); `encode_size_le_max` adds
-none.
+four `bv_decide` axioms plus the standard kernel axioms
+(`propext`, `Classical.choice`, `Quot.sound`); `encode_size_le_max`
+adds none.
 ² Recurses on the element type's `BasicSupported` witness via
 the mutual `decode_encode` ↔ `decode_encode_containerFixed_aux`
 block.
@@ -247,7 +252,11 @@ through `UInt32`) uses `bv_decide`; every other step is `Nat`/
 
 `serialize_injective` is a direct corollary of `decode_encode`
 (via `Except.ok.inj` + `Prod.mk.inj`), so its coverage tracks
-`decode_encode` exactly.
+`decode_encode` exactly. It says distinct values produce distinct
+encodings; it does not say the decoder rejects every non-canonical
+byte sequence (offset tables that tile a buffer differently, for
+instance). The `ssz_generic containers/invalid` vectors are the
+current cover for that direction.
 
 #### `.container fs`: per-field type
 
@@ -264,7 +273,7 @@ offset-table walker). Allowed and excluded field types:
 | `.bool` | ✅ | basic + fixed |
 | `.vector t' n` (with `n > 0`, fixed-size `t'`, `BasicSupported t'`) | ✅ | nested vector, `(.vector t' n).isFixedSize = t'.isFixedSize` |
 | `.list t' cap` (with fixed-size `t'`, `BasicSupported t'`, `0 < t'.fixedByteSize`) | ✅ ᵛ | variable-size field, needs `containerVar` |
-| `.container fs'` (with `BasicSupportedFieldsFixed fs'` or `BasicSupportedFields fs'`) | ✅ | nested container, either constructor |
+| `.container fs'` (with `BasicSupported (.container fs')`, via `containerFixed` / `containerVar`) | ✅ ᵛ* | nested container; ᵛ* when the nested shape itself uses `containerVar` |
 | `.bitvector n` (with `n > 0`) | ✅ | bit-packed + fixed, `(.bitvector n).fixedByteSize = ⌈n/8⌉` |
 | `.bitlist cap` | ✅ ᵛ | bit-packed, variable-size field, needs `containerVar` |
 
@@ -280,7 +289,8 @@ In one line: containers with any field drawn from `{uintN8,
 uintN16, uintN32, uintN64, uintN128, uintN256, bool, vectorFixed,
 listFixed, bitvector, bitlist, container (recursively)}` are
 proved, whether every field is fixed-size or the list mixes fixed-
-and variable-size fields.
+and variable-size fields, provided a `containerVar` schema also
+satisfies `maxByteLengthFields fs < MAX_LENGTH`.
 
 ### Track in progress
 
@@ -291,11 +301,13 @@ the `BasicSupported` cut, which now covers `uintN 8 / 16 / 32 /
 elements, `bitvector`, `bitlist`, and `container` over any field
 list (fixed-only, recursively, or mixed fixed/variable via the
 offset-table codec).
-The remaining gap toward a universal statement over
-`SSZType.Supported` is `vector` / `list` over a variable-size
-element type (`vectorVar` / `listVar`, no proof arm yet). The
-library itself is complete for every shape; this track only closes
-the proof obligation.
+Two gaps remain toward a universal statement over
+`SSZType.Supported`: `vector` / `list` over a variable-size
+element type (`vectorVar` / `listVar`, no proof arm yet), and the
+schema-level `maxByteLengthFields fs < MAX_LENGTH` guard on
+`containerVar` (see [etheorem#61](https://github.com/etheorem/etheorem/issues/61)
+for the value-level relaxation). The library itself is complete
+for every shape; this track only closes the proof obligation.
 
 See [`docs/PLAN.md`](docs/PLAN.md) for the staged plan and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design

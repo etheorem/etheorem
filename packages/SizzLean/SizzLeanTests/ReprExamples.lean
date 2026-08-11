@@ -295,9 +295,12 @@ slice `[off, off)` rather than a strict `curOff < nextOff` span. -/
 private def emptyListContainer : SSZType.interpFields [.uintN 8, .list (.uintN 32) 10] :=
   (0, ⟨#[], by decide⟩, PUnit.unit)
 
-/-- Roundtrip for the empty-list edge case: `deserializeVarFields`'s
-`curOff > nextOff || nextOff > bufEnd` guard must accept
-`curOff = nextOff = bufEnd`, not just `curOff < nextOff < bufEnd`. -/
+/-- Same shape as the first `containerVar` gate, instantiated at a
+concrete empty-list value. Documents that the roundtrip theorem
+applies when a variable field's body is empty (so
+`curOff = nextOff = bufEnd`); the actual guard discharge lives in
+`decode_encode_containerVar_aux`'s `h_guard` step, not in this
+example on its own. -/
 example :
     SSZType.deserialize (.container [.uintN 8, .list (.uintN 32) 10])
         (SSZType.serialize (.container [.uintN 8, .list (.uintN 32) 10])

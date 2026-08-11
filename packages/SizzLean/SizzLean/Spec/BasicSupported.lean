@@ -69,7 +69,10 @@ offset is bounded by the total encoded size, which
 `Proofs/ContainerVar.lean`'s size walker bounds by
 `maxByteLengthFields fs`, so bounding *that* by `MAX_LENGTH = 2 ^ 32`
 (a schema-level, decidable-per-concrete-schema check) is what keeps
-every offset's `UInt32` round-trip exact.
+every offset's `UInt32` round-trip exact. The cost is that schemas
+whose static max exceeds `MAX_LENGTH` (real `BeaconState` /
+`BeaconBlockBody` shapes among them) stay outside `BasicSupported`;
+etheorem#61 tracks the value-level relaxation.
 
 ## Why `0 < n` on `vectorFixed` / `bitvector`
 

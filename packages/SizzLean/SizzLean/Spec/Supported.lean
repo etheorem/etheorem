@@ -34,7 +34,11 @@ that names exactly the constructors with real implementations.
   `encode_size_le_max` in `Proofs/SizeBound.lean`, where uncapped
   collections have no sensible finite upper bound. Separation
   rather than reshaping `maxByteLength` to `Option Nat` keeps the
-  three theorem statements parallel.
+  three theorem statements parallel. There is a machine-checked
+  `BasicSupported → Supported` theorem in
+  `Spec/BasicSupported.lean`; nothing yet links `SupportedBounded`
+  to either, so its constructors are maintained by hand in
+  parallel with `Supported`.
 
 ## Why `Prop`, not `Bool`
 
@@ -91,11 +95,11 @@ inductive SSZType.Supported : SSZType → Prop
                      SSZType.Supported (.container fs)
   /-- `container` decode is also implemented for field lists with
   at least one variable-size field, via the offset-table path
-  (`SSZType.deserializeVarFields`). The `Bool` argument mirrors
-  `allFixedSize fs`; unlike `containerFixed`'s `isFixedSize = true`
-  witness per field, this predicate carries no positional
-  constraint (the offset table handles fixed and variable fields
-  alike). -/
+  (`SSZType.deserializeVarFields`). The `allFixedSize fs = false`
+  proof routes the decoder onto that path; unlike
+  `containerFixed`'s `isFixedSize = true` witness per field, this
+  predicate carries no positional constraint (the offset table
+  handles fixed and variable fields alike). -/
   | containerVar   : ∀ {fs : List SSZType},
                      SSZType.SupportedFields fs →
                      SSZType.allFixedSize fs = false →
