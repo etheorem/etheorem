@@ -44,8 +44,8 @@ store whose clock has not advanced past genesis returns `0`, leaving the store a
 
 The two `uint64` ops both stay in range for the trivial reason: `time - genesis_time` is
 `0` when they are equal, so the checked subtraction cannot underflow and the checked
-multiply has nothing to overflow. Closing by `rfl` after the hypothesis is substituted
-shows the whole `do` block reduces at this monad, binds and checked ops included. -/
+multiply has nothing to overflow. `simp` discharges those two guards; the `rfl` after it
+is the whole `do` block reducing at this monad, binds included. -/
 theorem getSlotsSinceGenesis_run_of_time_eq_genesis
     [Preset] [HasherTag] [Config] {map : MapKind} [FcMap map] :
     ∀ store : Store map,
