@@ -728,6 +728,10 @@ separation.
   `∃`, so its pubkey array reads the registry through `Array.attach` and no
   panicking index survives into the public statement. No mathlib.
 
+- **`Proofs/ProcessOperations.lean`** places its public declarations in
+  `EthCLSpecs.Proofs.Gloas`. It characterizes Gloas `processOperations` at
+  `GloasRun`; handlers and later failure postconditions remain opaque.
+
 - **`Proofs/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
   single record update, which doubles as the frame condition that no other Store
   field moves. On top of it sit unchanged-or-advances characterizations for the

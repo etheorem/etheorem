@@ -5,6 +5,7 @@ import EthCLSpecs.Proofs.GetPtc
 import EthCLSpecs.Proofs.InitializePtcWindow
 import EthCLSpecs.Proofs.InitiateBuilderExit
 import EthCLSpecs.Proofs.IsValidIndexedPayloadAttestation
+import EthCLSpecs.Proofs.ProcessOperations
 import EthCLSpecs.Proofs.Run
 import EthCLSpecs.Proofs.UpdateCheckpoints
 
@@ -44,6 +45,10 @@ Re-exports:
   characterizations of `isValidIndexedPayloadAttestation`, including its adjacent
   nondecreasing and validator-range checks. The semantic layer indexes the
   validator registry in bounds rather than through `!`.
+* `EthCLSpecs.Proofs.ProcessOperations`: Gloas `processOperations` structural
+  coordinator equation (`processOperations_eq_seq`), deposit-gate failure, and
+  exact success sequencing under `EthCLSpecs.Proofs.Gloas`; handlers remain
+  opaque and may modify state.
 * `EthCLSpecs.Proofs.Run`: `GloasRun`, the state-transition monad every Gloas
   proof in this directory pins its theorems to.
 * `EthCLSpecs.Proofs.UpdateCheckpoints`: `Gloas.updateCheckpoints` checkpoint
