@@ -14,6 +14,20 @@ A candidate carries no marker until it is discharged, at which point its row rea
 **Proved** and names the module holding the theorems. There is no intermediate state:
 a proof in flight is tracked by its pull request, and the row flips when that merges.
 
+## The Location column
+
+Each row cites a line span into the spec body: start at the declaration's own line
+(`forkdef` / `def` / `abbrev` / `inherit`), end at the last non-blank line before the
+next top-level construct. These spans rot on their own, since any edit above a
+declaration moves it, so `just check-citations` resolves every one of them against the
+declaration its row names and fails on a mismatch. It covers the module docstrings
+under `EthCLSpecs/Proofs/`, which cite in the same format, and it runs in CI next to
+`just lint`. `just check-citations --fix` rewrites the stale spans.
+
+Do not refresh a span by hand. The rows are only worth trusting if they are all
+checked at once, and a hand edit that skips the checker is how the table ends up
+mixing fresh rows with stale ones again.
+
 ---
 
 ## Round-trip and conversion properties
@@ -45,8 +59,8 @@ bounded walk to finish.
 | `getPendingBalanceToWithdrawForBuilder` | `Gloas/Operations.lean:63-67`       | Under an explicit bound preventing overflow across both sequential `UInt64` folds, its result agrees with the unbounded `Nat` sum of the matching pending-withdrawal and pending-payment amounts |
 | `canBuilderCoverBid`                    | `Gloas/Operations.lean:462-465`     | **Proved**, see `EthCLSpecs/Proofs/CanBuilderCoverBid.lean`. Its `Bool` result is characterized exactly against the implementation's computed `minBalance`. Proving that queuing an accepted bid preserves `MIN_DEPOSIT_AMOUNT` + pending obligations ≤ builder balance is the caller-level follow-up, and needs pending-total no-overflow and ring-cell freshness hypotheses |
 | `applyWithdrawals`                      | `Gloas/Withdrawals.lean:186-196`    | A builder-flagged withdrawal decreases the builder's balance by at most its own balance, so the balance never goes negative                        |
-| `getAncestor`                           | `Gloas/ForkChoice.lean:174-181`     | The fuel supplied to its `fuelLoop` DAG walk is sufficient for the walk to terminate before running out                                            |
-| `getHead`                               | `Gloas/ForkChoice.lean:526-561`     | The fuel `2 * blocks.length + 2` supplied to its LMD-GHOST walk is sufficient for the walk to reach a decided head before running out              |
+| `getAncestor`                           | `Gloas/ForkChoice.lean:178-185`     | The fuel supplied to its `fuelLoop` DAG walk is sufficient for the walk to terminate before running out                                            |
+| `getHead`                               | `Gloas/ForkChoice.lean:535-570`     | The fuel `2 * blocks.length + 2` supplied to its LMD-GHOST walk is sufficient for the walk to reach a decided head before running out              |
 
 ---
 
@@ -58,8 +72,8 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | ---------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `processProposerSlashing`          | `Gloas/Operations.lean:213-243`      | Payment-voiding must never touch another proposer's `BuilderPendingPayment`                                                        |
 | `processAttestation`               | `Gloas/Operations.lean:293-371`      | Committee-index safety together with builder-payment weight accounting                                                             |
-| `processBuilderPendingPayments`    | `Gloas/EpochProcessing.lean:229-248` | **Proved**, see `EthCLSpecs/Proofs/BuilderPendingPayments.lean`. Under an explicit capacity hypothesis, every qualifying previous-epoch payment's withdrawal is appended to `builderPendingWithdrawals` in slot order, and the payment window shifts down by `SLOTS_PER_EPOCH`; this does not establish protocol-wide exactly-once settlement |
-| `processPtcWindow`                 | `Gloas/EpochProcessing.lean:267-277` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot                                    |
+| `processBuilderPendingPayments`    | `Gloas/EpochProcessing.lean:231-250` | **Proved**, see `EthCLSpecs/Proofs/BuilderPendingPayments.lean`. Under an explicit capacity hypothesis, every qualifying previous-epoch payment's withdrawal is appended to `builderPendingWithdrawals` in slot order, and the payment window shifts down by `SLOTS_PER_EPOCH`; this does not establish protocol-wide exactly-once settlement |
+| `processPtcWindow`                 | `Gloas/EpochProcessing.lean:269-279` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot                                    |
 | `applyDepositForBuilder`           | `Gloas/Operations.lean:120-128`      | A deposit with an invalid signature is neither applied to a builder's balance nor requeued                                         |
 | `processBuilderDepositRequest`     | `Gloas/Operations.lean:174-190`      | A new builder is onboarded only when its deposit signature is valid                                                                |
 | `getIndexedPayloadAttestation`     | `Gloas/Operations.lean:413-419`      | Preserves `pa.data` and `pa.signature`, and produces the sorted multiset of PTC seats selected by `pa.aggregationBits`. The proof requires `Array.qsort` sortedness and permutation lemmas not currently available in core/Std |
@@ -77,9 +91,9 @@ never decreasing, never shrinking, never losing a previously-added element.
 
 | Function             | Location                        | Rationale                                                    |
 | -------------------- | ------------------------------- | ------------------------------------------------------------ |
-| `getWeight`          | `Gloas/ForkChoice.lean:419-431` | Weight only grows as more attestations accumulate for a node |
-| `onAttesterSlashing` | `Gloas/ForkChoice.lean:978-988` | The set of equivocating indices only grows, never shrinks    |
-| `updateCheckpoints`  | `Gloas/ForkChoice.lean:566-568` | **Proved**, see `EthCLSpecs/Proofs/UpdateCheckpoints.lean`. Each justified/finalized checkpoint either remains unchanged or advances to its candidate, so its epoch never decreases, and no other Store field moves. |
+| `getWeight`          | `Gloas/ForkChoice.lean:423-435` | Weight only grows as more attestations accumulate for a node |
+| `onAttesterSlashing` | `Gloas/ForkChoice.lean:1034-1044` | The set of equivocating indices only grows, never shrinks    |
+| `updateCheckpoints`  | `Gloas/ForkChoice.lean:575-577` | **Proved**, see `EthCLSpecs/Proofs/UpdateCheckpoints.lean`. Each justified/finalized checkpoint either remains unchanged or advances to its candidate, so its epoch never decreases, and no other Store field moves. |
 
 ---
 
@@ -103,11 +117,11 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
 
 | Function                         | Location                         | Rationale                                                                                                                                          |
 | ---------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `onBlock`                        | `Gloas/ForkChoice.lean:748-797`  | Accepts a block only if a full parent implies a verified payload, and the block's ancestry agrees with the currently finalized checkpoint          |
-| `validateOnAttestation`          | `Gloas/ForkChoice.lean:909-939`  | Validates that the attestation's index is 0 or 1, that a same-slot attestation has index 0, and that a full-vote attestation's payload is verified |
-| `getForkchoiceStore`             | `Gloas/ForkChoice.lean:999-1031` | Every root-keyed map in a freshly built store agrees on the anchor entry                                                                           |
-| `isAncestor`                     | `Gloas/ForkChoice.lean:186-191`  | Agrees with the ancestor relation that `getAncestor` computes iteratively                                                                          |
-| `verifyExecutionPayloadEnvelope` | `Gloas/ForkChoice.lean:841-868`  | Acceptance requires every validation check performed by `verifyExecutionPayloadEnvelope` to succeed                                                |
+| `onBlock`                        | `Gloas/ForkChoice.lean:760-809`  | Accepts a block only if a full parent implies a verified payload, and the block's ancestry agrees with the currently finalized checkpoint          |
+| `validateOnAttestation`          | `Gloas/ForkChoice.lean:965-995`  | Validates that the attestation's index is 0 or 1, that a same-slot attestation has index 0, and that a full-vote attestation's payload is verified |
+| `getForkchoiceStore`             | `Gloas/ForkChoice.lean:1055-1087` | Every root-keyed map in a freshly built store agrees on the anchor entry                                                                           |
+| `isAncestor`                     | `Gloas/ForkChoice.lean:190-195`  | Agrees with the ancestor relation that `getAncestor` computes iteratively                                                                          |
+| `verifyExecutionPayloadEnvelope` | `Gloas/ForkChoice.lean:886-919`  | Acceptance requires every validation check performed by `verifyExecutionPayloadEnvelope` to succeed                                                |
 
 ---
 
@@ -133,7 +147,7 @@ identified, the candidate belongs in one of the sections above.
 
 | Function     | Location                             | Rationale                                                                                                                                     |
 | ------------ | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `computePtc` | `Gloas/EpochProcessing.lean:254-261` | No standalone theorem has been identified yet. The strongest current candidate is its agreement with `computePtcFromFulu` after state upgrade |
+| `computePtc` | `Gloas/EpochProcessing.lean:256-263` | No standalone theorem has been identified yet. The strongest current candidate is its agreement with `computePtcFromFulu` after state upgrade |
 
 ---
 

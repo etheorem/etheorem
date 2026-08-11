@@ -72,6 +72,19 @@ lint:
         exit 1; \
     fi
 
+# Resolve every `File.lean:start-end` citation in
+# `packages/EthCLSpecs/docs/CONSENSUS_PROOF_CANDIDATES.md` and the
+# `EthCLSpecs/Proofs/` module docstrings against the declaration it names, and
+# fail on a mismatch. Spans rot silently whenever a cited file grows above the
+# declaration, and refreshing them per-PR leaves the table mixing fresh and
+# stale rows. `--fix` rewrites the stale spans in place. Stdlib-only Python; no
+# .venv needed. The CI `lint` job runs this next to `just lint`.
+
+# Check the line-span citations into the spec bodies (pass --fix to rewrite them)
+[group('general')]
+check-citations args="":
+    python3 scripts/check_citations.py {{ args }}
+
 # Check the *build-time native* dependencies only: `pkg-config` (used
 # by lakefile.lean to discover OpenSSL link/cflags) + OpenSSL 3.x (the
 # library the SHA-256 FFI shim links to). Designed to run on a fresh
