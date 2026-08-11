@@ -554,6 +554,14 @@ The fork choice runs a full state transition inside the `onBlock` handler. The
 `StoreTransition` handler and maps any inner failure to
 `StoreTransitionError.transition`, the wrapper constructor from the error model.
 
+The bridge takes its inner action at `Nested S m`, which is `StateT S (ExceptT
+StateTransitionError m)` over the store handler's own monad `m`. The shape is
+concrete because `.run` has to exist; the genericity that matters lives in `m`, so a
+handler running at the pure store monad runs the state machine at a pure monad too,
+and one running at `EStateM` stays entirely within it. Fixing the inner monad instead
+would have put the fast state machine inside every fork-choice handler regardless,
+and inside any fork-choice proof with it.
+
 ```lean
 def onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   let pre ← getPreState signedBlock.message.parentRoot   -- a boxed State from the Store

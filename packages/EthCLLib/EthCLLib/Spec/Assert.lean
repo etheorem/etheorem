@@ -44,18 +44,41 @@ the `xfail` work-queue. Polymorphic in the result, like `todo`. -/
     (what : String) : m α :=
   throw (SpecReject.outOfScope what)
 
+/-- The shape a store handler runs the state machine at: `StateT` over `ExceptT` over
+the store handler's own monad `m`.
+
+The fork-choice half of the spec is monad-generic. `fork_choice_section` emits
+`{StoreTransition : Type → Type}` with raw constraints, mirroring `state_section`, so a
+handler never names a concrete monad. The two bridges below used to break that: they
+typed the *inner* action as `EStateM StateTransitionError S`, so a handler dropped into
+the fast state machine whatever monad it was itself running in, and any fork-choice
+proof would carry `EStateM` inside it.
+
+Fixing the shape while keeping the store monad abstract is what buys back both. The
+shape has to be concrete for `.run` to exist at all; genericity lives in `m`, which is
+the only thing an `Interface.lean` has to pin. The three constraints `state_section`
+emits (`Monad`, `MonadStateOf S`, `MonadExceptOf StateTransitionError`) all resolve
+here, so every `forkdef` elaborates at it unchanged. -/
+abbrev Nested (S : Type) (m : Type → Type u) : Type → Type u :=
+  StateT S (ExceptT StateTransitionError m)
+
 /-- Run the nested state machine from a store action: execute `act` (the
-specialised `state_transition` / `process_slots` as an `EStateM StateTransitionError
-S` action) on `pre`, returning the post-state, or re-throwing the inner failure
-wrapped as `StoreTransitionError.transition` (`FRAMEWORK_ARCHITECTURE.md` §6, §7.2).
+specialised `state_transition` / `process_slots` at `Nested S m`) on `pre`, returning
+the post-state, or re-throwing the inner failure wrapped as
+`StoreTransitionError.transition` (`FRAMEWORK_ARCHITECTURE.md` §6, §7.2).
 The store handler binds the result in its own monad `m`. This is the one-way bridge:
-the store machine runs the state machine, never the reverse. -/
+the store machine runs the state machine, never the reverse.
+
+The inner reject converts through the existing `ErrorConv StateTransitionError
+StoreTransitionError` instance, so the wrapping is unchanged from the `EStateM`
+spelling. What is gone is the error-branch state: `EStateM` handed one back and this
+discarded it, and `ExceptT` does not produce one to discard. -/
 @[inline] def runStateTransition {S : Type} {m : Type → Type u} [Monad m]
     [MonadExceptOf StoreTransitionError m] (pre : S)
-    (act : EStateM StateTransitionError S Unit) : m S :=
-  match act.run pre with
-  | .ok _ post => pure post
-  | .error e _ => throw (ErrorConv.conv e : StoreTransitionError)
+    (act : Nested S m Unit) : m S := do
+  match ← (act.run pre).run with
+  | .ok (_, post) => pure post
+  | .error e      => throw (ErrorConv.conv e : StoreTransitionError)
 
 /-- The value-returning sibling of `runStateTransition`: execute `act` on `pre` and hand back
 its *result*, discarding the post-state, or re-throw the inner failure wrapped as
@@ -68,19 +91,27 @@ it is a state-file `forkdef`, so its rejects are `StateTransitionError`, and
 bridge stays one-way, the store machine running the state machine and never the reverse. -/
 @[inline] def evalStateTransition {S α : Type} {m : Type → Type u} [Monad m]
     [MonadExceptOf StoreTransitionError m] (pre : S)
-    (act : EStateM StateTransitionError S α) : m α :=
-  match act.run pre with
-  | .ok a _   => pure a
-  | .error e _ => throw (ErrorConv.conv e : StoreTransitionError)
+    (act : Nested S m α) : m α := do
+  match ← (act.run pre).run with
+  | .ok (a, _) => pure a
+  | .error e   => throw (ErrorConv.conv e : StoreTransitionError)
 
 /-- The bridge carries a value out. -/
 example : (evalStateTransition (m := Except StoreTransitionError) (0 : Nat)
-    (pure 7 : EStateM StateTransitionError Nat Nat)) = .ok 7 := rfl
+    (pure 7 : Nested Nat (Except StoreTransitionError) Nat)) = .ok 7 := rfl
 
 /-- … and wraps an inner reject as `.transition`, exactly as `runStateTransition` does. -/
 example : (evalStateTransition (m := Except StoreTransitionError) (0 : Nat)
-    (throw (.assert "x") : EStateM StateTransitionError Nat Nat))
+    (throw (.assert "x") : Nested Nat (Except StoreTransitionError) Nat))
     = .error (.transition (.assert "x")) := rfl
+
+/-- The store monad stays abstract: the nested shape satisfies the three constraints a
+`state_section` emits for any `[Monad m]`, so a `forkdef` elaborates at it without `m`
+being determined. These are what make the bridge generic rather than `EStateM`-shaped. -/
+example (S : Type) (m : Type → Type) [Monad m] : Monad (Nested S m) := inferInstance
+example (S : Type) (m : Type → Type) [Monad m] : MonadStateOf S (Nested S m) := inferInstance
+example (S : Type) (m : Type → Type) [Monad m] :
+    MonadExceptOf StateTransitionError (Nested S m) := inferInstance
 
 /-- Collapse a reprinted condition to a single tab-free line. `reprint` keeps the
 trailing trivia after `cond` (whitespace and any following comment), which would

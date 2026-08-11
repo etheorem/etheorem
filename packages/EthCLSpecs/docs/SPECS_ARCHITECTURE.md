@@ -911,6 +911,13 @@ dependency level, not the spec level. SizzLean's cache-coherence test proves
 handle the hasher, so there is no spec-level fast-equals-pure theorem to prove. The
 specs inherit the gap-closing from the dependency.
 
+Both machines can be pinned this way. `Proofs/Run.lean` names the pure monad for the
+state machine; `Proofs/ForkChoiceRun.lean` names it for the store machine and proves a
+fork-choice `forkdef` at it. The store side needed the nested-machine bridge to take
+its inner action generically first, since a handler that ran the state machine at a
+fixed `EStateM` would have carried the fast configuration into any fork-choice proof
+no matter which store monad the proof pinned.
+
 ### 11.2 The hasher is per goal
 
 The hasher is a per-goal axis, not a fast-versus-pure bundle. Symbolic
