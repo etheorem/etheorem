@@ -30,6 +30,7 @@ The fork choice (`ForkChoice`) is Gloas's with the EIP-7805 inclusion-list layer
 `get_inclusion_list_due_ms` helpers, the `should_extend_payload` and
 `on_execution_payload_envelope` overrides, and the new `on_inclusion_list` handler. FOCIL has no
 behavioral conformance vector (the two new containers do pass their `ssz_static` suites), so that
-layer is pinned to the spec by the build-enforced pins in `ForkChoice`, kernel `#guard`s plus
-`native_decide` examples, rather than exercised by a runner. Pinned to v1.7.0-alpha.11.
+layer is pinned to the spec by the build-enforced pins in `EthCLSpecs.Tests.HezeForkChoicePins`,
+kernel `#guard`s plus `native_decide` examples, rather than exercised by a runner. Pinned to
+v1.7.0-alpha.11.
 -/
