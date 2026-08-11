@@ -692,17 +692,35 @@ the cost of a defined-but-unreachable default branch.
 
 The per-loop rule is explicit. Default to well-founded recursion when the measure is
 clean, and reach for `fuelLoop` when the up-front invariant proof would block the
-definition from existing before proofs are in scope. Record the choice and its reason
-at each such loop, so a later reader knows whether a bound is honest or deferred.
+definition from existing before proofs are in scope. Two things get recorded, and they
+sit at different scopes.
 
-Every fork-choice walk currently takes the second option: `getAncestor`, `getHead`,
-and `filterBlockTree` are all `fuelLoop`-bounded, with the block count as the bound.
-The read layer being monadic (§7.1) is what tips it. `getHead` has a clean measure on
-paper, since `maxSlot - currentSlot` strictly decreases when child slots increase, but
-discharging it through `StoreTransition` means carrying the measure past a step that
-can reject, which is the up-front proof this rule defers. The bounds are therefore
-deferred rather than honest. The `DAG walks` section header in each fork's
-`ForkChoice.lean` records that choice for the walks it heads.
+The **bound** is per site, always. Each loop names the count it is bounded by and the
+value a fuel-out would return, because both are specific to that loop and a reader
+checking whether the bound holds has to read it there.
+
+The **reason** for choosing fuel over a measure may be recorded once for a group of
+loops that share it, at the section heading that group. The reason is uniform across
+the fork-choice walks, and restating one sentence at every site buys nothing. Two
+conditions come with that allowance: the heading has to actually head the loops it
+speaks for, and a loop under a later heading carries the reason in its own docstring
+rather than relying on a heading further up the file. A loop that sits in no such
+group records both at the loop.
+
+Every fork-choice walk currently takes the second option: `getAncestor`,
+`filterBlockTree`, and `getHead` are all `fuelLoop`-bounded, with the block count as
+the bound. The read layer being monadic (§7.1) is what tips it. `getHead` has a clean
+measure on paper, since `maxSlot - currentSlot` strictly decreases when child slots
+increase, but discharging it through `StoreTransition` means carrying the measure past
+a step that can reject, which is the up-front proof this rule defers. The bounds are
+therefore deferred rather than honest.
+
+The loops outside fork choice are bounded for their own reasons, not this one, so each
+records the reason at the loop: the queue scans in `EpochProcessing.lean` and the
+balance-weighted sampler in `Committees.lean` stop on a data-dependent guard rather
+than on a decreasing measure, and `on_tick`'s per-slot catch-up runs on a bound that is
+exact only at the pinned presets, which is why it throws on fuel-out
+(`fuelIterateM!`) instead of returning.
 
 ---
 

@@ -160,6 +160,8 @@ inherit DepositScan
 
 forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (nextEpoch : Epoch) :
     StateTransition DepositScan :=
+  -- Fuel rather than a measure, for the reason Fulu's `ppdLoop` records (§7.2): the scan
+  -- stops on a data-dependent guard rather than on a decreasing quantity.
   -- Fuel is `deposits.size + 1`: the `ndi ≥ deposits.size` guard returns `.done` one step
   -- before exhaustion, so `fuelLoop`'s `exhausted` value is unreachable.
   fuelLoop (deposits.size + 1) ({} : DepositScan) ({} : DepositScan) fun s => do

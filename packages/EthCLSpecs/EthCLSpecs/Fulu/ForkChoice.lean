@@ -130,11 +130,15 @@ forkdef bpsDeadlineMs (bps : UInt64) : UInt64 :=
 
 /-! ## DAG walks
 
-Every walk below is `fuelLoop`-bounded rather than closed by `termination_by`, which
-`SPECS_ARCHITECTURE.md` §7.2 asks each loop to justify. The reason is the same at all of
-them: the reads raise, so the walk is monadic, and a measure would have to be carried
-through a step that can reject. The bounds are honest counts (the block count on a finite
-acyclic DAG), so fuel-out is unreachable and each site names the sentinel it would return.
+The walks under this heading are `fuelLoop`-bounded rather than closed by `termination_by`,
+which `SPECS_ARCHITECTURE.md` §7.2 asks each loop to justify. The reason: the reads raise, so
+the walk is monadic, and a measure would have to be carried through a step that can reject.
+The bounds are honest counts (the block count on a finite acyclic DAG), so fuel-out is
+unreachable and each site names the sentinel it would return.
+
+`filterBlockTree` and `getHead` are the same kind of walk for the same reason, but they sit
+under `Weights and head` below, so each carries the reason in its own docstring rather than
+leaning on this heading.
 -/
 
 /-- `get_ancestor(store, root, slot)`: walk parent links until at/below `slot`.
@@ -211,9 +215,11 @@ forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := do
     else pure attestationScore
 
 /-- `filter_block_tree`: collect the viable branches into `acc` (a key set),
-returning whether `blockRoot` is viable. The recursion is fuel-bounded by the block
-count. Monadic: the opening `store.blocks[block_root]` read and the `get_voting_source`
-reads are plain `Dict`s that raise. -/
+returning whether `blockRoot` is viable. Monadic: the opening `store.blocks[block_root]`
+read and the `get_voting_source` reads are plain `Dict`s that raise, which is why the
+descent is fuel-bounded rather than closed by `termination_by` (§7.2), the same reason the
+`DAG walks` heading gives for the walks it heads. The bound is the block count on a finite
+acyclic DAG, so fuel-out is unreachable; it would return `(acc, false)`. -/
 forkdef filterBlockTree (store : Store map) (blockRoot : Root) (acc : Array Root) :
     StoreTransition (Array Root × Bool) :=
   go ((FcMap.keys store.blocks).length + 1) blockRoot acc
@@ -260,8 +266,11 @@ where
       if anyViable then pure (acc'.push blockRoot, true) else pure (acc', false)
 
 /-- `get_head`: the filtered-block-tree LMD-GHOST walk, ties broken by the
-lexicographically-greater root. Fuel-bounded. Monadic `fuelLoop`; the `max` fold is
-`foldlM`, since `betterOf` can reject. -/
+lexicographically-greater root. Monadic `fuelLoop`; the `max` fold is `foldlM`, since
+`betterOf` can reject, and that rejecting step is why the walk is fuel-bounded rather than
+closed by `termination_by` (§7.2): `maxSlot - currentSlot` is a clean measure on paper but
+would have to be carried past the reject. The bound is the block count, so fuel-out is
+unreachable; the justified root doubles as the sentinel it would return. -/
 forkdef getHead (store : Store map) : StoreTransition Root := do
   let (viable, _) ← filterBlockTree store store.justifiedCheckpoint.root #[]
   fuelLoop ((FcMap.keys store.blocks).length + 1) store.justifiedCheckpoint.root
@@ -459,8 +468,11 @@ forkdef onTick (time : UInt64) : StoreTransition Unit := do
   let tickMs ← checkedMul elapsed 1000 "on_tick: (time - genesis_time) * 1000"
   let tickSlot := tickMs / Const.slotDurationMs
   let cur ← getCurrentSlot store
-  -- The fuel bound is a Lean artifact, not a spec op: a raw `-` here can only underflow to a huge
-  -- ceiling when `tickSlot < cur`, and then the step `.done`s on its first iteration anyway.
+  -- Fuel rather than a measure (§7.2): the body reads the store and can throw, so a decreasing
+  -- `tickSlot - get_current_slot` would have to be carried past a rejecting step. The bound is a
+  -- Lean artifact, not a spec op: a raw `-` here can only underflow to a huge ceiling when
+  -- `tickSlot < cur`, and then the step `.done`s on its first iteration anyway. `fuelIterateM!`
+  -- throws on fuel-out because the bound is exact only where `1000` divides `SLOT_DURATION_MS`.
   fuelIterateM! ((tickSlot - cur).toNat + 1) () "on_tick: per-slot catch-up" fun _ => do
     let cs ← getCurrentSlot (← get)
     if cs < tickSlot then

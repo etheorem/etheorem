@@ -92,8 +92,12 @@ forkdef getCommitteeIndices {n : Nat} (bits : Bitvector n) : Array Nat :=
 
 /-! ## Balance-weighted selection -/
 
-/-- `compute_balance_weighted_selection` inner loop. Fuel-bounded (tail-recursive
-⇒ loop); valid states fill `size` well within the bound. -/
+/-- `compute_balance_weighted_selection` inner loop. Fuel-bounded rather than closed by
+`termination_by` (§7.2): the loop stops once `selected` reaches `size`, and a candidate
+that fails the weight threshold is skipped without filling a slot, so nothing decreases on
+every iteration and the terminating argument is probabilistic rather than structural. Fuel
+is the flat `10000000` `computeBalanceWeightedSelection` passes; tail-recursive, so it
+compiles to a loop, and valid states fill `size` well within the bound. -/
 forkdef cbwsAux [Preset] (indices effBals : Array Nat) (perm : Array ValidatorIndex)
     (seed : ByteArray) (total size : Nat) (shuffle : Bool) :
     Nat → Nat → ByteArray → Array ValidatorIndex → Array ValidatorIndex

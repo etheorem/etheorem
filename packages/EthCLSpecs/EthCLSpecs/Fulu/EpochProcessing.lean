@@ -225,6 +225,9 @@ postponed; otherwise it applies while it fits the per-epoch churn, and the scan 
 per-epoch-limit stops leave `churnReached` false. -/
 forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (nextEpoch : Epoch) :
     StateTransition DepositScan :=
+  -- Fuel rather than a measure (§7.2): the scan stops on a data-dependent guard (churn
+  -- exhausted, an eth1-bridge deposit, a not-yet-finalized slot), not on a quantity that
+  -- decreases every step, so the terminating invariant is not available at definition time.
   -- Fuel is `deposits.size + 1`: the `ndi ≥ deposits.size` guard returns `.done` one step
   -- before exhaustion, so `fuelLoop`'s `exhausted` value is unreachable.
   fuelLoop (deposits.size + 1) ({} : DepositScan) ({} : DepositScan) fun s => do
@@ -277,7 +280,9 @@ forkdef processPendingDeposits : StateTransition Unit := do
 `fuel = #consolidations`. A slashed source is skipped; an unwithdrawable source
 stops the scan; otherwise the source's effective balance moves to the target. -/
 forkdef pcLoop (cons : Array PendingConsolidation) (nextEpoch : Epoch) : StateTransition Nat :=
-  -- Threaded accumulator is the next-pending index `npc`; `fuelLoop` owns the counter. Fuel is
+  -- Threaded accumulator is the next-pending index `npc`; `fuelLoop` owns the counter. Fuel
+  -- rather than a measure (§7.2): an unwithdrawable source stops the scan early, so `npc` is
+  -- the only quantity that moves and the stop is data-dependent, not structural. Fuel is
   -- `cons.size + 1`: the `npc ≥ cons.size` guard fires as
   -- a `.done` one step before exhaustion, so the `exhausted` value is unreachable. A slashed
   -- source `.next`s; an unwithdrawable source `.done`s; a moved balance `.next`s.
