@@ -143,13 +143,18 @@ def chunkify (b : ByteArray) : List ByteArray :=
 
 Per spec *§Merkleization, Helpers*: an all-zero subtree of depth
 `d` has root `Z[d]` defined recursively. `ZERO_HASHES_SPEC` exposes
-this as a Lean `Vector` of length 65, depth `0..64`, sufficient for
-any Merkle tree the spec admits given `MAX_LENGTH = 2^32` chunks
-plus mix-ins.
+this as a Lean `Vector` of length 100, depth `0..99`, mirroring
+`merkle_minimal.py`'s `zerohashes` (seeded with `ZERO_BYTES32`, then
+`for layer in range(1, 100)`) entry for entry.
+
+Depth is what the table is indexed by, and both bounds are far above
+anything the format reaches: `MAX_LENGTH = 2^32` chunks caps a real
+tree near depth 34, and the largest cap in the consensus specs,
+`VALIDATOR_REGISTRY_LIMIT = 2^40`, reaches 40.
 
 Defined abstractly over `[Hasher H]`: type-checking confirms totality
 without picking a concrete instance. The cache layer's
-`Cache/MerkleTree/Zero.lean` materialises the 65 concrete byte
+`Cache/MerkleTree/Zero.lean` materialises the concrete byte
 values once a hasher instance is in scope. -/
 
 /-- Zero-hash at depth `d`: root of an all-zero subtree of depth `d`.
@@ -166,19 +171,26 @@ private def zeroHashAt (H : Type) [Hasher H] : Nat → ByteArray
       let z : ByteArray := zeroHashAt H d
       Hasher.combine (H := H) z z
 
-/-- The depth-indexed zero-hashes table, depth 0 through 64.
+/-- The depth-indexed zero-hashes table, depth 0 through 99, the
+Lean mirror of `merkle_minimal.py`'s `zerohashes`.
 `Vector.ofFn` (Lean core ≥ 4.10) builds a length-indexed `Vector`
-from a function `Fin n → α`; here it materialises the 65-entry
+from a function `Fin n → α`; here it materialises the 100-entry
 tower. Abstract over `[Hasher H]`; no concrete instance required at
 declaration time.
 
-The lambda's parameter type `Fin 65` is inferred from the result
-type `Vector ByteArray 65`. `Vector.ofFn`'s signature is
-`(Fin n → α) → Vector α n`, and Lean unifies `n` with `65` from the
+The lambda's parameter type `Fin 100` is inferred from the result
+type `Vector ByteArray 100`. `Vector.ofFn`'s signature is
+`(Fin n → α) → Vector α n`, and Lean unifies `n` with `100` from the
 expected return. `i.val : Nat` is the index projection used to
-recurse into `zeroHashAt`. -/
-def ZERO_HASHES_SPEC (H : Type) [Hasher H] : Vector ByteArray 65 :=
-  Vector.ofFn (fun (i : Fin 65) => zeroHashAt H i.val)
+recurse into `zeroHashAt`.
+
+This is the spec constant, kept at the spec's own length so a reader
+can check it against `merkle_minimal.py` directly. Merkleization does
+not index it; it calls `zeroHashAt` (the recurrence the table is built
+from) instead, which is both unbounded in depth and cheaper, since
+`Vector.ofFn` is eager and would rebuild all 100 entries per lookup. -/
+def ZERO_HASHES_SPEC (H : Type) [Hasher H] : Vector ByteArray 100 :=
+  Vector.ofFn (fun (i : Fin 100) => zeroHashAt H i.val)
 
 /-! ### Generic merkleization tree
 
@@ -191,11 +203,24 @@ The depth argument (rather than a leaf-count argument) lets us
 short-circuit the all-zero suffix via `ZERO_HASHES_SPEC` instead of
 materialising the padding explicitly. -/
 
-/-- Look up `ZERO_HASHES[d]` defensively (clamps `d > 64` to the
-deepest entry, sufficient because SSZ's `MAX_LENGTH = 2^32` keeps
-us within the 65-entry table). -/
-private def zeroHashAtClamped (H : Type) [Hasher H] (d : Nat) : ByteArray :=
-  if h : d < 65 then (ZERO_HASHES_SPEC H).get ⟨d, h⟩ else zero32
+/-- `ZERO_HASHES[d]`, the root of an all-zero subtree of depth `d`,
+computed from the recurrence rather than read out of the table.
+
+The spec indexes a fixed 100-entry list, so `zerohashes[100]` raises
+`IndexError`. This is total at every depth, because the recurrence is
+defined at every depth and Lean has no error channel here: `merkleize`
+returns a `ByteArray`, and threading `Except` through it would reach
+every `SSZRepr` instance in the library for a case no admissible type
+can produce (depth 100 needs `2^100` chunks).
+
+Being total is not the same as inventing a value. Every depth returns
+what the spec's own recurrence defines for it, which is what
+`Cache/MerkleTree`'s `Node.ofLeaves` builds at that depth, so the two
+paths agree at every depth with no side condition. A clamp or a
+`zero32` fallback would break that agreement above the table, which is
+what this replaced. -/
+private def zeroHashAtDepth (H : Type) [Hasher H] (d : Nat) : ByteArray :=
+  zeroHashAt H d
 
 /-- Pair adjacent chunks at tree level `lvl`, using `ZERO_HASHES[lvl]`
 as the right sibling for an odd-length tail. The level argument is
@@ -225,7 +250,7 @@ private def combineLayerAtAux (H : Type) [Hasher H] (lvl : Nat) :
     List ByteArray → List ByteArray → List ByteArray
   | [],           acc => acc.reverse
   | [x],          acc =>
-      (Hasher.combine (H := H) x (zeroHashAtClamped H lvl) :: acc).reverse
+      (Hasher.combine (H := H) x (zeroHashAtDepth H lvl) :: acc).reverse
   | x :: y :: rs, acc =>
       combineLayerAtAux H lvl rs (Hasher.combine (H := H) x y :: acc)
 
@@ -242,7 +267,7 @@ private def promoteThroughZeros (H : Type) [Hasher H] :
   | c, _,        0     => c
   | c, startLvl, k + 1 =>
       promoteThroughZeros H
-        (Hasher.combine (H := H) c (zeroHashAtClamped H startLvl))
+        (Hasher.combine (H := H) c (zeroHashAtDepth H startLvl))
         (startLvl + 1) k
 
 /-- Build the Merkle root of a balanced binary tree of `2^depth`
@@ -258,27 +283,23 @@ process realistic chunk lists (a few dozen entries) in `O(depth)`
 hash steps regardless of the nominal cap. -/
 private def merkleize (H : Type) [Hasher H]
     (chunks : List ByteArray) (depth : Nat) : ByteArray :=
-  -- Step down through tree levels until we either reach the target
-  -- depth (return the single root) or run out of items and short-
-  -- circuit the remaining levels through `ZERO_HASHES`.
-  let rec go : List ByteArray → Nat → ByteArray
-    | [],   d => zeroHashAtClamped H d
-    | [c],  d => promoteThroughZeros H c 0 d
-    | cs,   0 => cs.head?.getD zero32  -- defensive: depth=0 with multi-chunk
-    | cs,   d + 1 => go (combineLayerAt H 0 cs) d
-  -- Specialisation: `go (combineLayerAt 0 cs) d` then `go (combineLayerAt 1 _) (d-1)` etc.
-  -- The level tracking is folded into a wrapper that increments
-  -- through each call so `combineLayerAt` uses the correct ZH index.
+  -- Step down through tree levels until we either reach the target depth (return the
+  -- single root) or run out of items and short-circuit the remaining levels through
+  -- `ZERO_HASHES`. `curLvl` tracks the level so `combineLayerAt` pads an odd tail with
+  -- the zero subtree of the right depth, and `remaining` counts the levels still to go.
   let rec goAt : List ByteArray → (curLvl : Nat) → (remaining : Nat) → ByteArray
-    | [],   _,      remaining => zeroHashAtClamped H remaining
+    | [],   _,      remaining => zeroHashAtDepth H remaining
     | [c],  curLvl, remaining => promoteThroughZeros H c curLvl remaining
+    -- Levels exhausted with more than one chunk left: the caller asked for a tree too
+    -- shallow to hold its own leaves. `merkleize_chunks` opens with `assert count <=
+    -- limit` and raises here; we return the first chunk, the one arm of this function
+    -- that answers where the spec refuses to. Nothing routes here: `depth` always comes
+    -- from `chunkDepth` of the type's own cap, and a list longer than its cap fails
+    -- deserialization first. Modeling the assert means an error channel through every
+    -- `SSZRepr` instance, which is tracked rather than done.
     | cs,   _,      0         => cs.head?.getD zero32
     | cs,   curLvl, remaining + 1 =>
         goAt (combineLayerAt H curLvl cs) (curLvl + 1) remaining
-  -- Use the level-aware version. (The single-`go` above is left as
-  -- a fallback for callers that don't track level; we always use
-  -- `goAt` from depth root.)
-  let _ := go
   goAt chunks 0 depth
 
 /-- `⌈log₂ (max 1 n)⌉`, used to derive a tree depth from a leaf
