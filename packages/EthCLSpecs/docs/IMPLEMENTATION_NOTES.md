@@ -523,8 +523,9 @@ MIN_VALIDATOR_WITHDRAWABILITY_DELAY < 2^64` before the write, so an over-range c
 - **`process_execution_payload` takes the execution engine as valid.** It checks
   parent-hash / prev-randao / timestamp consistency and caches the header;
   `verify_and_notify_new_payload` is the consumer's responsibility, which is valid for
-  `sanity/blocks`. The timestamp uses `genesis_time + slot * SECONDS_PER_SLOT` (the
-  pinned form), and the standalone `operations/execution_payload` format threads the
+  `sanity/blocks`. The timestamp is `compute_time_at_slot(state, state.slot)`, the
+  millisecond form every other clock site in the tree reads, and the standalone
+  `operations/execution_payload` format threads the
   test's `execution.yaml` engine verdict via `CaseMeta.executionValid` to model an
   engine rejection. The blob-parameter bound is enforced where the operation format
   supplies it. The skip is safe for the in-scope corpus by audit, not just by
