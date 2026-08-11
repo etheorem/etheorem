@@ -14,6 +14,7 @@ import SizzLean.Cache.Update
 -- Keep these proof modules on SizzLean's native plugin graph; see module note below.
 import SizzLean.Proofs.SSZListPush
 import SizzLean.Proofs.SSZListGetElem
+import SizzLean.Proofs.SSZListSet
 
 /-!
 # `SizzLean`: library root
@@ -64,7 +65,7 @@ uses or by sibling packages (`EthCLSpecs` reaches into
 handler infrastructure). They are deliberately not listed here so
 this file reads as the user's mental model of the library.
 
-`Proofs.SSZListPush` and `Proofs.SSZListGetElem` are imported above to keep their
+The `Proofs.SSZList*` modules are imported above to keep their
 native initializers in SizzLean's precompiled plugin. Their current EthCLSpecs
 consumers reach them by a qualified-path import; without these root imports, Lake
 emits the `.olean` but omits the module from the native plugin graph, causing

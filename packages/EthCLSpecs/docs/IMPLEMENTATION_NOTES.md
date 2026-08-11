@@ -709,6 +709,18 @@ separation.
   placeholder and the remainder computed via `computePtcFromFulu`), plus a
   `default` corollary for the first region.
 
+- **`Proofs/InitiateBuilderExit.lean`** gives the whole-transition
+  `initiateBuilderExit_run_eq` equation and projects it onto the builder registry
+  as one unconditional `SSZList.set!`. The in-range and out-of-range theorems read
+  that projection through `SizzLean.Proofs.SSZListSet`, so the range split happens
+  at the read rather than in a second transition proof. It also proves that the
+  withdrawability-delay addition does not wrap for the shipped minimal and
+  mainnet configurations.
+
+- **`Proofs/Run.lean`** names `GloasRun`, the `EStateM StateTransitionError State`
+  the Gloas proofs pin their `forkdef` bodies to. `StateTransition` is a parameter
+  of a fork body, so every run theorem has to fix it; this fixes it once.
+
 - **`Proofs/IsValidIndexedPayloadAttestation.lean`** proves a two-layer,
   backend-generic characterization of `isValidIndexedPayloadAttestation`. Layer 1
   mirrors the implementation's literal validation gates, `validators[i.toNat]!`

@@ -1,4 +1,5 @@
 import EthCLSpecs.Gloas.EpochProcessing
+import EthCLSpecs.Proofs.Run
 import SizzLean.Proofs.SSZListPush
 
 /-!
@@ -82,7 +83,7 @@ private theorem builderPendingWithdrawalsLoop_run [Preset] [HasherTag] (n : Nat)
       (do for i in [0:n] do
             if cond i then
               appendState builderPendingWithdrawals (val i)
-          : EStateM StateTransitionError State Unit).run state0 = .ok () resultState ∧
+          : GloasRun Unit).run state0 = .ok () resultState ∧
       sszGet resultState builderPendingWithdrawals =
         (((List.range n).filter fun i => decide (cond i)).map val).foldl
           (fun l w => l.push w) (sszGet state0 builderPendingWithdrawals) ∧
@@ -95,8 +96,7 @@ private theorem builderPendingWithdrawalsLoop_run [Preset] [HasherTag] (n : Nat)
   | nil => exact ⟨state0, rfl, by simp, rfl⟩
   | cons i rest ih =>
     by_cases h : cond i
-    · have hstep : (appendState builderPendingWithdrawals (val i) :
-          EStateM StateTransitionError State Unit).run state0 =
+    · have hstep : (appendState builderPendingWithdrawals (val i) : GloasRun Unit).run state0 =
           .ok () (sszUpdate state0 with
             builderPendingWithdrawals := (sszGet state0 builderPendingWithdrawals).push (val i)) := by
         cases state0 <;> rfl
@@ -205,8 +205,7 @@ arbitrary input state: it always succeeds, and the result satisfies
 shift), the two effects the module docstring describes. -/
 theorem processBuilderPendingPayments_run [Preset] [HasherTag] (before : State) :
     ∃ after : State,
-      (processBuilderPendingPayments :
-        EStateM StateTransitionError State Unit).run before = .ok () after ∧
+      (processBuilderPendingPayments : GloasRun Unit).run before = .ok () after ∧
       ProcessBuilderPendingPaymentsPost before after := by
   obtain ⟨resultState, hrun, hw, hp⟩ :=
     builderPendingWithdrawalsLoop_run slotsPerEpoch
@@ -233,7 +232,7 @@ theorem processBuilderPendingPayments_run [Preset] [HasherTag] (before : State) 
           sszUpdate state with builderPendingPayments :=
             shiftWindow (sszGet state builderPendingPayments) slotsPerEpoch slotsPerEpoch
               (fun _ => (default : BuilderPendingPayment))
-        : EStateM StateTransitionError State Unit).run before =
+        : GloasRun Unit).run before =
         .ok () (sszUpdate resultState with builderPendingPayments :=
           shiftWindow (sszGet resultState builderPendingPayments) slotsPerEpoch slotsPerEpoch
             (fun _ => (default : BuilderPendingPayment)))
@@ -265,8 +264,7 @@ theorem processBuilderPendingPayments_run_of_fits [Preset] [HasherTag] (before :
     (hfits : (sszGet before builderPendingWithdrawals).val.size +
       (qualifyingBuilderWithdrawals before).length ≤ builderPendingWithdrawalsLimit) :
     ∃ after : State,
-      (processBuilderPendingPayments :
-        EStateM StateTransitionError State Unit).run before = .ok () after ∧
+      (processBuilderPendingPayments : GloasRun Unit).run before = .ok () after ∧
       (sszGet after builderPendingWithdrawals).val =
         (sszGet before builderPendingWithdrawals).val ++
           (qualifyingBuilderWithdrawals before).toArray ∧
