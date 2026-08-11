@@ -166,17 +166,23 @@ with no G1 add/neg and no precomputed-aggregate dependency.
 
 ## Engine seam
 
-`EthCLLib.Spec.Engine` defines `[ExecutionEngine]`, the execution-layer sibling of the
-crypto seam: a spec function whose verdict belongs to an external execution client
-routes through the typeclass. Unlike `CryptoBackend` it ships a global default, the
-optimistic instance answering the constant `true` (the seam table in
-`FRAMEWORK_ARCHITECTURE.md` §1). A local `letI` overrides it; `pinRecordRefuted`
-(`EthCLSpecs/Heze/ForkChoice.lean`) refutes the inclusion-list gate that way.
+`EthCLLib.Spec.Engine` is the execution-layer sibling of the crypto seam: a spec
+function whose verdict belongs to an external execution client routes through a
+typeclass. Unlike `CryptoBackend` these ship a global default, the optimistic instance
+answering the constant `true` (the seam table in `FRAMEWORK_ARCHITECTURE.md` §1). A
+local `letI` overrides it.
 
-Heze's `is_inclusion_list_satisfied` is the seam's first user. Gloas's engine
-predicates (`verify_and_notify_new_payload`, `is_data_available`) reach the same
-constant-`true` verdict as inline constants; `EthCLLib.Spec.Engine`'s module
-docstring tracks their migration onto the seam.
+Three predicates cross the boundary, split across two classes by what the spec calls
+them. `[ExecutionEngine]` holds the two literal `execution_engine.*` methods,
+`is_inclusion_list_satisfied` (Heze) and `verify_and_notify_new_payload` (Gloas).
+`[DataAvailability]` holds `is_data_available` in its Gloas-and-later form, which is a
+free function whose sidecar retrieval the spec marks implementation-dependent.
+Fulu's `is_data_available` predates that change and takes the columns the runner
+supplies, so it checks them for real and reads no seam.
+
+Each has a refuting pin over the branch no vector reaches: `pinRecordRefuted`
+(`Heze/ForkChoice.lean`) for the inclusion-list gate, `pinEngineRefuted`
+(`Gloas/ForkChoice.lean`) for the other two.
 
 ## State, presets, and the header macro
 

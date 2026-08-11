@@ -844,9 +844,42 @@ forkdef verifyExecutionPayloadEnvelopeSignature (state : State) (signedEnv : Sig
   let signingRoot := computeSigningRoot signedEnv.message (getDomain state Const.domainBeaconBuilder (currentEpochOf state))
   pure (blsVerify pubkey signingRoot signedEnv.signature)
 
-/-- `verify_execution_payload_envelope`: the consensus-side envelope checks. The EL
-`verify_and_notify_new_payload` and `is_data_available` are modeled as always `true`
-(no execution layer / data availability in the harness). Returns the cache-warmed
+-- The envelope path crosses the execution layer twice: `verify_and_notify_new_payload`
+-- inside the verification, and `is_data_available` at the handler. Both verdicts belong to
+-- something outside the vector, so both enter through the framework seams in
+-- `EthCLLib.Spec.Engine` (which carries the optimistic-default rationale for each) rather
+-- than being written as constants here. Scoped to the two declarations that need them; at
+-- file scope the binders would ride on every later declaration.
+section EngineSeam
+variable [ExecutionEngine ExecutionPayload Transaction ExecutionRequests] [DataAvailability]
+
+/-- `verify_and_notify_new_payload(new_payload_request)` (`gloas/fork-choice.md:657-666`):
+the EL's verdict on the revealed payload. Reads the `[ExecutionEngine]` seam; the trust
+boundary and the always-`true` default are documented on `EthCLLib.Spec.ExecutionEngine`,
+including why the commitments reach it unmapped by
+`kzg_commitment_to_versioned_hash`. -/
+forkdef verifyAndNotifyNewPayload (payload : ExecutionPayload)
+    (blobKzgCommitments : Array KZGCommitment) (parentBeaconBlockRoot : Root)
+    (executionRequests : ExecutionRequests) : Bool :=
+  -- The three class parameters are implicit on the projection and only `Payload` is
+  -- recoverable from the value arguments (`Tx` appears in no argument of this method, and
+  -- `Requests` is an `ExecutionRequests` the elaborator would have to guess a class instance
+  -- for). Name all three, as the seam's own binder spells them.
+  ExecutionEngine.verifyAndNotifyNewPayload (Payload := ExecutionPayload) (Tx := Transaction)
+    (Requests := ExecutionRequests) payload blobKzgCommitments parentBeaconBlockRoot
+    executionRequests
+
+/-- `is_data_available(beacon_block_root)` (`gloas/fork-choice.md:243-257`): whether the
+block's column sidecars retrieve and verify. Gloas modified the Fulu signature to take a
+root and retrieve the sidecars itself, through a function the spec marks implementation
+and context dependent, so the verdict reads the `[DataAvailability]` seam. Fulu's own
+`isDataAvailable` is unaffected: it is handed the columns the step lists and checks them
+for real. -/
+forkdef isDataAvailable (beaconBlockRoot : Root) : Bool :=
+  DataAvailability.isDataAvailable beaconBlockRoot
+
+/-- `verify_execution_payload_envelope`: the consensus-side envelope checks, closing with
+the EL's `verify_and_notify_new_payload` verdict. Returns the cache-warmed
 state (the `hashTreeRoot` computed for the block-root check) in
 `Except StoreTransitionError`; the handler stores it back so the warm tree is kept
 rather than thrown away. -/
@@ -877,6 +910,12 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
   let expectedTime ← computeTimeAtSlot state (sszGet state slot)
   assert (payload.timestamp == expectedTime)
   assert (htr payload.withdrawals == htr (sszGet state payloadExpectedWithdrawals))
+
+  -- The EL verdict, last as in the spec. `bid.blobKzgCommitments` supplies the request's
+  -- versioned hashes (unmapped, see the seam's docstring); the parent root and the
+  -- execution requests come off the envelope.
+  assert (verifyAndNotifyNewPayload payload bid.blobKzgCommitments.toArray
+    envelope.parentBeaconBlockRoot envelope.executionRequests)
   return warm
 
 /-- `on_execution_payload_envelope`: verify the revealed payload envelope against the
@@ -887,12 +926,17 @@ forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) 
   let envelope := signedEnv.message
   let state ← FcMap.getOrAssert store.blockStates envelope.beaconBlockRoot
     "envelope.beacon_block_root in store.block_states"
+  -- `assert is_data_available(envelope.beacon_block_root)` (`gloas/fork-choice.md:1055`),
+  -- between the block-state read and the verification, as the spec orders it.
+  assert (isDataAvailable envelope.beaconBlockRoot)
 
   match verifyExecutionPayloadEnvelope state signedEnv with
   | .error e => throw e
   | .ok warm => set { store with
       blockStates := FcMap.insert store.blockStates envelope.beaconBlockRoot warm,
       payloads := FcMap.insert store.payloads envelope.beaconBlockRoot envelope }
+
+end EngineSeam
 
 /-! ## on_attestation -/
 
@@ -1185,5 +1229,45 @@ private def pinEnvelopeSigBuilderOob : Bool :=
   | .error (.transition (.outOfBounds _ _)) => true
   | _ => false
 example : pinEnvelopeSigBuilderOob = true := by native_decide
+
+/-! ### The execution-layer seams, refuted
+
+Both verdicts default to `true`, so every conformance vector runs the accepting branch and
+the refuting one is dead to the suite. These pin that the branch exists and that the verdict
+comes from the seam: the same call under the two instances, once each way. `pinRecordRefuted`
+does this for Heze's FOCIL gate; this is the pair for Gloas's two.
+
+Value pins rather than end-to-end reject pins. Both asserts raise `.assert`, and so does
+every other assert on the envelope path, so a handler-level pin would match on a class it
+shares with the asserts around it and pass whether or not the seam was consulted. The
+handler wiring is a one-line `assert` over the wrapper each pin drives. -/
+
+/-- The pair of engine verdicts under the optimistic default. Pure `Bool`s off the seam, no
+hashing, so kernel `#guard` closes them. -/
+private def pinEngineOptimistic : Bool × Bool :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  (verifyAndNotifyNewPayload (default : @EthCLSpecs.Gloas.ExecutionPayload minimal) #[]
+     (Vector.replicate 32 0) (default : @EthCLSpecs.Gloas.ExecutionRequests minimal),
+   isDataAvailable (Vector.replicate 32 0))
+
+#guard pinEngineOptimistic = (true, true)
+
+/-- The same two calls under refuting instances. A `letI` at the concrete fork types
+overrides the global optimistic instance, which is the override a consumer wiring a real EL
+writes. Both flip, so neither wrapper is a constant. -/
+private def pinEngineRefuted : Bool × Bool :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : ExecutionEngine (@EthCLSpecs.Gloas.ExecutionPayload minimal) Transaction
+      (@EthCLSpecs.Gloas.ExecutionRequests minimal) :=
+    { isInclusionListSatisfied := fun _ _ => true
+      verifyAndNotifyNewPayload := fun _ _ _ _ => false }
+  letI : DataAvailability := { isDataAvailable := fun _ => false }
+  (verifyAndNotifyNewPayload (default : @EthCLSpecs.Gloas.ExecutionPayload minimal) #[]
+     (Vector.replicate 32 0) (default : @EthCLSpecs.Gloas.ExecutionRequests minimal),
+   isDataAvailable (Vector.replicate 32 0))
+
+#guard pinEngineRefuted = (false, false)
 
 end EthCLSpecs.Gloas

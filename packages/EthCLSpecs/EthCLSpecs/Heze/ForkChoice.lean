@@ -363,16 +363,22 @@ inherit notifyPtcMessages
 inherit onBlock
 inherit computeTimeAtSlot
 inherit verifyExecutionPayloadEnvelopeSignature
-inherit verifyExecutionPayloadEnvelope
 
--- The `is_inclusion_list_satisfied` verdict comes from an external EL over the Engine API
--- (`consensus-specs/specs/heze/fork-choice.md:54-62`), so it enters through the framework's
--- `[ExecutionEngine]` seam (`EthCLLib.Spec.Engine`, the canonical home of the optimistic-mock
--- rationale), instantiated at Heze's payload / transaction types. Scoped to the three
--- declarations that need it: at file scope the binder would ride on every later declaration,
--- none of which calls the engine.
+-- Three verdicts on this fork's paths belong to something outside the vector: the EL's
+-- `is_inclusion_list_satisfied` (`heze/fork-choice.md:54-62`) and
+-- `verify_and_notify_new_payload`, plus `is_data_available`'s sidecar retrieval. All three
+-- enter through the framework seams in `EthCLLib.Spec.Engine`, which is where the
+-- optimistic-mock rationale lives, instantiated at Heze's payload / transaction / request
+-- types. Scoped to the declarations that need them; at file scope the binders would ride on
+-- every later declaration, most of which never reach the execution layer.
 section EngineSeam
-variable [ExecutionEngine ExecutionPayload Transaction]
+variable [ExecutionEngine ExecutionPayload Transaction ExecutionRequests] [DataAvailability]
+
+-- Inherited inside the section: Gloas's bodies read the seams, so the replay needs the same
+-- binders in scope that the originals were written under.
+inherit verifyAndNotifyNewPayload
+inherit isDataAvailable
+inherit verifyExecutionPayloadEnvelope
 
 /-- `is_inclusion_list_satisfied(execution_payload, inclusion_list_transactions)`
 (`consensus-specs/specs/heze/fork-choice.md:54-62`): the `ExecutionEngine` predicate deciding
@@ -381,7 +387,10 @@ EL-implementation-defined (the Engine API answers it against an external EL), so
 `[ExecutionEngine]` seam rather than a fixed value; the default and the trust boundary are
 documented on `EthCLLib.Spec.ExecutionEngine`. -/
 forkdef isInclusionListSatisfied (payload : ExecutionPayload) (ilTxs : Array Transaction) : Bool :=
-  ExecutionEngine.isInclusionListSatisfied payload ilTxs
+  -- Named type arguments: the class parameters are implicit on the projection, and `Requests`
+  -- appears in no argument of this method, so it cannot be recovered from the call.
+  ExecutionEngine.isInclusionListSatisfied (Payload := ExecutionPayload) (Tx := Transaction)
+    (Requests := ExecutionRequests) payload ilTxs
 
 /-- `record_payload_inclusion_list_satisfaction(store, state, root, payload, execution_engine)`
 (`consensus-specs/specs/heze/fork-choice.md:180-193`): record whether `payload` satisfies the
@@ -415,6 +424,9 @@ forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) 
   let envelope := signedEnv.message
   let state ← FcMap.getOrAssert store.blockStates envelope.beaconBlockRoot
     "envelope.beacon_block_root in store.block_states"
+  -- `assert is_data_available(envelope.beacon_block_root)` (`heze/fork-choice.md:285`),
+  -- inherited from Gloas at the same position.
+  assert (isDataAvailable envelope.beaconBlockRoot)
 
   match verifyExecutionPayloadEnvelope state signedEnv with
   | .error e => throw e
@@ -707,8 +719,10 @@ private def pinRecordRefuted : RecordVerdict :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  letI : ExecutionEngine (@EthCLSpecs.Heze.ExecutionPayload minimal) Transaction :=
-    { isInclusionListSatisfied := fun _ _ => false }
+  letI : ExecutionEngine (@EthCLSpecs.Heze.ExecutionPayload minimal) Transaction
+      (@EthCLSpecs.Heze.ExecutionRequests minimal) :=
+    { isInclusionListSatisfied := fun _ _ => false
+      verifyAndNotifyNewPayload := fun _ _ _ _ => true }
   -- Slot 1 clears the faithful underflow assert and the populated set clears the empty-committee
   -- throw (see `pinRecordSatisfied` / `pinPopulatedState`).
   let state : State := SSZ.FastBox pinPopulatedState
