@@ -67,6 +67,15 @@ included, so a proof about `EthCLSpecs.Gloas.f` says nothing about
 kind of theorem they ask for within a fork, since the kind is what tells an
 author how to state it. `EthCLSpecs/Proofs/` splits per fork the same way.
 
+## Dependencies between rows
+
+Three claims rest on another row:
+
+- The committee partition rests on the shuffle bijection.
+- Plausible liveness rests on accountable safety.
+- Both `processDeposit` rows rest on the Merkle branch check that
+  [`../../SizzLean/docs/PLAN.md`](../../SizzLean/docs/PLAN.md) Phase 5 tracks.
+
 ---
 
 ## Gloas
@@ -170,6 +179,15 @@ Functions where the useful theorem hasn't been identified yet, either because th
 
 ## Fulu
 
+### Round-trip and conversion properties
+
+Functions whose natural theorem is an inverse relationship with another Fulu function, applying one after the other returns the original value, at least under a stated precondition.
+
+| Function | Location | Property | Status | Tracking |
+| --- | --- | --- | --- | --- |
+| `computeEpochAtSlot` | `Fulu/Time.lean:29` | `computeEpochAtSlot (computeStartSlotAtEpoch e) = e`, for `e < 2^59`. The raw `UInt64` multiply wraps above `2^59`, so the identity needs that bound | proposed |  |
+| `computeStartSlotAtEpoch` | `Fulu/Time.lean:32` | The same identity, seen from this side. The round trip is the row above | proposed |  |
+
 ### Bounds and termination properties
 
 Functions where the theorem is a numeric bound, no overflow, no underflow, never exceeding a spec constant, or a termination bound, a fuel parameter large enough for a bounded walk to finish.
@@ -177,6 +195,43 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
 | `reserveChurn` | `Fulu/RegistryUpdates.lean:69-74` | Arithmetic never underflows | proposed |  |
+| `increaseBalance` | `Fulu/Balances.lean:29` | The balance addition never wraps | proposed |  |
+| `processDeposit` | `Fulu/Operations.lean:223` | Neither the incremented deposit index nor the running total balance exceeds `2^64`. Dafny stated both bounds and assumed them through `{:axiom}` lemmas, so Dafny's statements are reusable as a template. Its proofs are not. A sharper bound is open as well. The branch check needs `eth1DepositIndex < 2^32`, which follows from `eth1DepositIndex <= eth1Data.depositCount` together with a bound on `depositCount`. The consensus spec does not bound `depositCount`, since that count arrives from the execution layer. Any statement here is therefore conditional on the deposit contract's depth-32 capacity | proposed |  |
+| `processRegistryUpdates` | `Fulu/EpochProcessing.lean:174` | The registry never exceeds `VALIDATOR_REGISTRY_LIMIT` | proposed |  |
+| `getBeaconCommittee` | `Fulu/Committees.lean:83` | An active-validator count in `[32, 2^22]` implies every committee size is in `(0, MAX_VALIDATORS_PER_COMMITTEE]`. Dafny proves the same bound in `ActiveValidatorBounds` | proposed |  |
+| `computeBalanceWeightedSelection` | `Fulu/Committees.lean:118` | Its `cbwsAux` sampler loop takes `10000000` fuel, which always suffices for the walk to finish | proposed |  |
+
+### Safety and invariant preservation
+
+Functions with a specific invariant, precondition bundle, or side-effect guarantee that should hold whenever the function runs: exactly-once behavior, mutual exclusion between cases, or a value staying untouched under some condition.
+
+| Function | Location | Property | Status | Tracking |
+| --- | --- | --- | --- | --- |
+| `computeShuffledPermutation` | `Fulu/Committees.lean:32` | A bijection on `[0, indexCount)`. No prior art: Dafny stubbed shuffling to the identity, and Runtime Verification did not prove it either | proposed |  |
+| `getBeaconCommittee` | `Fulu/Committees.lean:83` | The committees for a slot partition the active set: their union is the active validator set and they are pairwise disjoint. This follows from the shuffle bijection. The committee-size bound is the separate row under Bounds and termination properties | proposed |  |
+| `processDeposit` | `Fulu/Operations.lean:223` | `validators.size = balances.size` holds at the append site, and then holds across the transition. The two overflow bounds are the separate row under Bounds and termination properties | proposed |  |
+| `isSlashableAttestationData` | `Fulu/Operations.lean:38` | Agrees with the spec's slashability condition, a double vote or a surround vote, given the `strictlySorted` well-formedness the caller establishes | proposed |  |
+| `processRegistryUpdates` | `Fulu/EpochProcessing.lean:174` | One third of a joint claim with `initiateValidatorExit` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
+| `initiateValidatorExit` | `Fulu/RegistryUpdates.lean:112` | One third of a joint claim with `processRegistryUpdates` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
+| `computeExitEpochAndUpdateChurn` | `Fulu/RegistryUpdates.lean:78` | One third of a joint claim with `processRegistryUpdates` and `initiateValidatorExit`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
+
+### State-transition correctness
+
+The block/slot/epoch-processing spine itself: the composition of the individual processing steps into the top-level state transition, and the properties that hold as a direct consequence of running through it.
+
+| Function | Location | Property | Status | Tracking |
+| --- | --- | --- | --- | --- |
+| `processJustificationAndFinalization` | `Fulu/EpochProcessing.lean:78` | Casper FFG accountable safety: conflicting finalized and justified checkpoints imply that at least `1/3` of the stake is slashable. Needs an abstract FFG layer over the epoch-processing functions and a refinement back to them. Plausible liveness, that finalization stays possible with `>= 2/3` honest, comes after accountable safety and reuses that model. Apalache bounded-model-checked the 3SF form of the property (Konnov et al. 2025), so the result is checked up to a bound and remains unproved | proposed |  |
+
+### Fork-choice correctness
+
+Properties specific to the fork-choice store and the LMD-GHOST tree: agreement between two ways of computing the same relation, preconditions gating block/attestation acceptance, and correctness of the store's own bookkeeping.
+
+| Function | Location | Property | Status | Tracking |
+| --- | --- | --- | --- | --- |
+| `getAncestor` | `Fulu/ForkChoice.lean:136` | One third of a joint claim with `getHead` and `onBlock`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
+| `getHead` | `Fulu/ForkChoice.lean:261` | One third of a joint claim with `getAncestor` and `onBlock`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
+| `onBlock` | `Fulu/ForkChoice.lean:526` | One third of a joint claim with `getAncestor` and `getHead`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
 
 
 ---
@@ -197,6 +252,8 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
 | `shouldExtendPayload` | `Heze/ForkChoice.lean:320-342` | Under successful preliminary lookup and slot checks, a verified payload with a recorded `false` inclusion-list satisfaction verdict is rejected by the FOCIL gate, with the pure runner state unchanged. This is not complete correctness of `shouldExtendPayload`: the later Gloas accept and reject paths and the missing-record `assert` branch stay out of scope, and the two write-path rows below stay open | in progress | #63, `Proofs/Heze/ShouldExtendPayload.lean` |
 | `recordPayloadInclusionListSatisfaction` | `Heze/ForkChoice.lean:406-418` | The value inserted at `root` equals `isInclusionListSatisfied payload ilTxs`. Its `false` corollary discharges the recorded-unsatisfaction hypothesis of `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied` | proposed |  |
 | `onExecutionPayloadEnvelope` | `Heze/ForkChoice.lean:426-448` | After a successful envelope acceptance, `payloads[root]` and `payloadInclusionListSatisfaction[root]` are written together for the same `root`, so a verified payload is paired with some recorded satisfaction verdict | proposed |  |
+| `isPayloadInclusionListSatisfied` | `Heze/ForkChoice.lean:305` | EIP-7805 FOCIL: a payload is accepted only when it carries every transaction that a timely inclusion list requires | proposed |  |
+| `processInclusionList` | `Heze/ForkChoice.lean:170` | At most one stored list per validator per committee, asserted in its docstring and not proved. A conflicting second list leaves the stored list untouched and records the sender as an equivocator for that committee. The handler then ignores later lists from that validator on entry | proposed |  |
 
 ---
 
@@ -207,3 +264,21 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
 - [`SPECS_ARCHITECTURE.md`](SPECS_ARCHITECTURE.md) §11 — candidate theorems from the
   framework's own design docs, and the inheritance-replay proof-transfer question the
   `inherit`-adjacent entries above assume.
+- [`../../SizzLean/docs/PLAN.md`](../../SizzLean/docs/PLAN.md) Phase 5 — the SSZ-side
+  targets, which include the merkleization agreement. Any Merkle-proof consumer here
+  needs that agreement before a theorem about the cached tree says anything about a
+  spec root.
+- ConsenSys `eth2.0-dafny` (Phase 0, archived) — proved the state transition as
+  refinement, plus committee-size bounds and fork-choice store invariants. It stubbed
+  shuffling to the identity. It assumed the overflow bounds through `{:axiom}` lemmas
+  instead of proving them. Its Casper FFG accountable-safety result reached only an
+  unmerged branch, under a fixed validator set.
+- Runtime Verification — an executable K model of the Phase 0 transition,
+  conformance-tested rather than proved. A separate Coq development closed Gasper
+  accountable safety and plausible liveness, over an abstract model with dynamic
+  validator sets. It also proved the deposit contract's incremental Merkle root equal
+  to the naive full-tree root. It refined the KEVM bytecode against an untrusted
+  compiler, which found bugs. That incremental-tree result is the closest prior art to
+  the deposit branch check the `processDeposit` rows name.
+- Nyx Foundation `formal-leanSpec` — a parallel Lean 4 formalization of the
+  post-quantum leanSpec, with its own SSZ layer.
