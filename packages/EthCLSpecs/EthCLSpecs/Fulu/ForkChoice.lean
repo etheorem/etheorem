@@ -14,7 +14,7 @@ and the queries (`get_weight`, `get_head`, the reorg predicates) are pure functi
 of the boxed store.
 
 The handlers reuse the Fulu spine: `on_block` runs `state_transition` on a copy of
-the parent post-state through `runStateTransition` (the one-way bridge that wraps an
+the parent post-state through `runNestedStateTransition` (the one-way bridge that wraps an
 inner failure as `StoreTransitionError.transition`); `store_target_checkpoint_state`
 runs `process_slots` and `compute_pulled_up_tip` runs
 `process_justification_and_finalization`, each best-effort through `EStateM.run`.
@@ -430,7 +430,7 @@ pull-up too, where pyspec performs it. -/
 forkdef computePulledUpTip (blockRoot : Root) : StoreTransition Unit := do
   let store ← get
   let state ← FcMap.getOrThrow store.blockStates blockRoot
-  let pulled ← runStateTransition state processJustificationAndFinalization
+  let pulled ← runNestedStateTransition state processJustificationAndFinalization
   let cj := sszGet pulled currentJustifiedCheckpoint
   let fz := sszGet pulled finalizedCheckpoint
   set { store with
@@ -534,7 +534,7 @@ forkdef isDataAvailable (cols : Array DataColumnSidecar) : Bool :=
 
 /-- `on_block`. Rejects (via `assert`) an unknown parent, a future
 block, a finality conflict, or unavailable blob data, and propagates a failed
-`state_transition` through `runStateTransition`. `columns` are the block's PeerDAS
+`state_transition` through `runNestedStateTransition`. `columns` are the block's PeerDAS
 data-column sidecars (EIP-7594); the runner supplies exactly those the step lists. -/
 forkdef onBlock (signedBlock : SignedBeaconBlock) (columns : Array DataColumnSidecar) :
     StoreTransition Unit := do
@@ -557,7 +557,7 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) (columns : Array DataColumnSid
   -- vector produces it.
   assert (block.body.blobKzgCommitments.toArray.isEmpty || isDataAvailable columns)
 
-  let postState ← runStateTransition parentState (stateTransition signedBlock)
+  let postState ← runNestedStateTransition parentState (stateTransition signedBlock)
   let blockRoot := htr block
   -- The head is taken BEFORE the new block is added (v1.7 `update_proposer_boost_root`).
   let head ← getHead store
@@ -603,7 +603,7 @@ forkdef storeTargetCheckpointState (store : Store map) (target : Checkpoint) :
     let targetSlot := computeStartSlotAtEpoch target.epoch
     let advanced ←
       if (sszGet base slot) < targetSlot then
-        runStateTransition base (processSlots targetSlot)
+        runNestedStateTransition base (processSlots targetSlot)
       else pure base
     pure { store with checkpointStates := FcMap.insert store.checkpointStates target advanced }
 

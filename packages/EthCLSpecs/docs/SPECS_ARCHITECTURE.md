@@ -645,7 +645,7 @@ between forks; the upgrade performs the change on a live state.
 The fork choice is the second state machine, written in `StoreTransition` over
 `Store map` in a section opened by `fork_choice_section`. The `Store` and its `on_*`
 handlers are the fork-choice entry points of the fork interface. The
-`runStateTransition` nested-machine bridge of `FRAMEWORK_ARCHITECTURE.md`'s
+`runNestedStateTransition` nested-machine bridge of `FRAMEWORK_ARCHITECTURE.md`'s
 effect-monad section runs the full state transition inside the `onBlock` handler
 and surfaces any inner failure through `StoreTransitionError.transition`. The
 step-and-check harness shape comes from the conformance framework.
@@ -664,7 +664,7 @@ forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := ..
 forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   let store ← get
   ...
-  let post ← runStateTransition pre (stateTransition signedBlock)
+  let post ← runNestedStateTransition pre (stateTransition signedBlock)
   ...
 ```
 
@@ -911,12 +911,12 @@ dependency level, not the spec level. SizzLean's cache-coherence test proves
 handle the hasher, so there is no spec-level fast-equals-pure theorem to prove. The
 specs inherit the gap-closing from the dependency.
 
-Both machines can be pinned this way. `Proofs/Run.lean` names the pure monad for the
-state machine; `Proofs/ForkChoiceRun.lean` names it for the store machine and proves a
-fork-choice `forkdef` at it. The store side needed the nested-machine bridge to take
-its inner action generically first, since a handler that ran the state machine at a
-fixed `EStateM` would have carried the fast configuration into any fork-choice proof
-no matter which store monad the proof pinned.
+Both machines are pinned this way. `Proofs/Run.lean` names the pure monad for the state
+machine; `Proofs/ForkChoiceRun.lean` names it for the store machine and proves a
+fork-choice `forkdef` at it. A handler that runs the state machine picks up its nested
+monad from `NestedStateMachine` (`FRAMEWORK_ARCHITECTURE.md` §7.2), keyed on the store's
+own monad, so pinning the pure store monad pins the pure state monad with it and no fast
+configuration reaches a fork-choice proof.
 
 ### 11.2 The hasher is per goal
 
@@ -1007,7 +1007,7 @@ monadic split of Section 5.
 
 What the framework now generates the author no longer hand-rolls. The experiment
 wrote size proofs and derived instances by hand; `forkcontainer` derives them. It
-wired the monad and the discharge by hand; the header macros and `runStateTransition`
+wired the monad and the discharge by hand; the header macros and `runNestedStateTransition`
 do that. It hand-maintained constants; the per-fork tier system carries them. And it
 had no cross-fork inheritance; the inheritance mechanism supplies it. The experiment
 proved the consensus shape was right. The framework regenerates that shape

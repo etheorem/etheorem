@@ -76,20 +76,6 @@ lossless `stateRoot`. -/
     ByteArray :=
   (state.hashTreeRoot).1
 
-/-- Run a state-machine action on a boxed state and project the result to the post-state
-root, or the reject. The `EStateM`-side twin of `runOn` (`PySpecTests.Interface`, which does
-the same for a fork-choice store): a `PySpecTests` entry point decodes a pre-state, builds
-its `EStateM StateTransitionError` action, and ends with `runToRoot box0 action`, replacing
-the open-coded `match action.run box0 with | .ok _ post => .ok (stateRoot! post) | .error e _
-=> .error e`. The box dies right after, so `stateRoot!` (the cache-dropping form) is correct
-here. -/
-@[inline] def runToRoot {H T : Type} [Hasher H] [SSZRepr T]
-    (box0 : SSZ.Box H T) (act : EStateM StateTransitionError (SSZ.Box H T) Unit) :
-    Except StateTransitionError ByteArray :=
-  match act.run box0 with
-  | .ok _ post => .ok (stateRoot! post)
-  | .error e _ => .error e
-
 -- Re-export `IndexError` onto the spec surface, so a pure query reading `validators[i]` can
 -- be typed `Except IndexError α` under the single `open EthCLLib.Spec`.
 export SizzLean.Cache (IndexError)

@@ -383,7 +383,7 @@ has every primitive it calls.
   (`insert`, `lookup`, `contains`, `fold`, `keys`), the `treeMap` and `hashMap`
   instances, and the `Store` over `forkstruct`.
 - The full `PySpecTests` driver set: the step/check interpreter for `fork_choice`
-  alongside the fold-compare-root and single-step drivers; the `runStateTransition`
+  alongside the fold-compare-root and single-step drivers; the `runNestedStateTransition`
   nested-machine bridge.
 - The forms' edge cases: an inherited container whose field type or capacity cap
   names an overridden symbol, the preamble-in-scope behavior, and legible
@@ -447,7 +447,7 @@ layer, and the handlers.
 
 **Deliverables.** The fork choice (`Store` accessors, `Weight`, `Head`, `Handlers`),
 with the read layer pure and the `on_*` handlers monadic, `onBlock` running the state
-transition through `runStateTransition`, and the recursive walks given their
+transition through `runNestedStateTransition`, and the recursive walks given their
 per-loop termination strategy.
 
 **Acceptance.** `fork_choice` is green at minimal, exercising the step/check

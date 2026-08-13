@@ -15,23 +15,24 @@ here and instantiated at each theorem through `(StateTransition := GloasRun)`.
 `SPECS_ARCHITECTURE.md` §11.1 states that the fast configuration (`FastBox`, `EStateM`,
 `hashMap`) is never a proof target. This is that monad.
 
-Nothing about the fork bodies had to change to get here. The three raw constraints
-`state_section` emits (`Monad`, `MonadStateOf State`, `MonadExceptOf
-StateTransitionError`) all resolve for `StateT` over `Except` out of the box, so every
-`forkdef` elaborates at it unchanged.
+No fork body names it. The three raw constraints `state_section` emits (`Monad`,
+`MonadStateOf State`, `MonadExceptOf StateTransitionError`) all resolve for `StateT` over
+`Except`, so every `forkdef` elaborates at it.
 
-The runner keeps `EStateM` and is not affected. `EthCLLib/PySpecTests/Interface.lean`
-depends on `EStateM.Result` carrying the store on the error branch, which is how it
-matches the reference pyspec mutating in place and catching the expected raise.
-`StateT` over `Except` cannot express that: a rejected run returns the error alone, and
-the pre-reject state is gone. That difference is exactly why the proofs want it. A run
-either produces a state or does not, so a theorem about a rejecting path has nothing to
-say about a half-written state, and the equations stay about values.
+The runner is on `EStateM` instead, and the difference is the reject branch.
+`EthCLLib/PySpecTests/Interface.lean` depends on `EStateM.Result` carrying the store on
+that branch, which is how it matches the reference pyspec mutating in place and catching
+the expected raise. `StateT` over `Except` cannot express that: a rejected run returns
+the error alone. That is exactly why the proofs want it. A run either produces a state or
+does not, so a theorem about a rejecting path has nothing to say about a half-written
+state, and the equations stay about values.
 
-Fork choice is the one place still pinned to `EStateM`: `EthCLLib/Spec/Assert.lean`
-types a handler's inner action concretely, so a store handler runs the state machine at
-`EStateM` whatever monad it is itself in. No proof here is fork-choice, so nothing in
-this directory carries it.
+Fork choice reaches the same monad. `NestedStateMachine` (`EthCLLib/Spec/NestedMachine.lean`)
+resolves a handler's nested state machine from the store's monad, and at the pure store
+monad it resolves to this one. So every theorem below is a theorem about the step running
+under fork choice too. Carrying one over is function application:
+`runNestedStateTransition_of_ok` (`EthCLLib/Spec/NestedMachine.lean`) takes a step's
+`.run` fact and returns the store-machine statement, for any action.
 -/
 
 set_option autoImplicit false
@@ -48,8 +49,7 @@ boxed Gloas `BeaconState` and rejecting with `StateTransitionError`. `abbrev`
 `StateT State (Except StateTransitionError)`.
 
 `.run` here yields `Except StateTransitionError (α × State)`, so a successful run reads
-`.ok (a, state')`. The `EStateM` spelling this replaced yielded `EStateM.Result`, whose
-success reads `.ok a state'` and whose failure also carries a state. -/
+`.ok (a, state')` and a rejecting one reads `.error e`, carrying no state. -/
 abbrev GloasRun [Preset] [HasherTag] : Type → Type :=
   StateT State (Except StateTransitionError)
 

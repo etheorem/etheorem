@@ -5,7 +5,9 @@ import EthCLLib.Spec.Arith
 import EthCLLib.Spec.SigningRoot
 import EthCLLib.Spec.Loop
 import EthCLLib.Spec.FiniteMap
+import EthCLLib.Spec.RunState
 import EthCLLib.Spec.Assert
+import EthCLLib.Spec.NestedMachine
 import EthCLLib.Spec.Header
 import EthCLLib.Spec.Forms
 import EthCLLib.Spec.Crypto

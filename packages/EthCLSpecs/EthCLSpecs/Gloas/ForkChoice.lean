@@ -19,7 +19,7 @@ the typed `StoreTransitionError`. The ePBS surface adds `on_execution_payload_en
 assert, and `notify_ptc_messages` (the block's payload attestations replayed per validator
 through `on_payload_attestation_message`, so the handler's rejects apply on the
 block path too). `on_block` runs the Gloas `state_transition` through
-`runStateTransition`.
+`runNestedStateTransition`.
 
 The `Ord (Vector UInt8 32)` instance and the `Checkpoint` `Ord` / `BEq` / `Hashable`
 instances are the Fulu ones (`EthCLSpecs.Fulu.instOrdBytes32`), in scope through
@@ -589,7 +589,7 @@ unguarded, so a reject aborts the surrounding `on_block`. -/
 forkdef computePulledUpTip (blockRoot : Root) : StoreTransition Unit := do
   let store ← get
   let state ← FcMap.getOrThrow store.blockStates blockRoot
-  let pulled ← runStateTransition state processJustificationAndFinalization
+  let pulled ← runNestedStateTransition state processJustificationAndFinalization
   let cj := sszGet pulled currentJustifiedCheckpoint
   let fz := sszGet pulled finalizedCheckpoint
   set { store with
@@ -711,9 +711,9 @@ forkdef onPayloadAttestationMessage (msg : PayloadAttestationMessage) (isFromBlo
   if !(data.slot == sszGet state slot) then pure ()
   else
     -- `get_ptc` asserts, and it is a state-file `forkdef`, so its `StateTransitionError`
-    -- crosses `evalStateTransition` to reach this store handler. The bind sits after the
+    -- crosses `evalNestedStateTransition` to reach this store handler. The bind sits after the
     -- `data.slot == state.slot` guard that bounds the index.
-    let ptc ← evalStateTransition state (getPtc state data.slot)
+    let ptc ← evalNestedStateTransition state (getPtc state data.slot)
     let ptcIndices := (Array.range Const.ptcSize).filter fun i => vget ptc i == msg.validatorIndex
     assert (ptcIndices.size > 0)
     if isFromBlock then set (← recordPtcVotes store data ptcIndices)
@@ -743,7 +743,7 @@ forkdef notifyPtcMessages (state : State) (payloadAttestations : Array PayloadAt
   for pa in payloadAttestations do
     -- Second bridge crossing: `get_indexed_payload_attestation` inherited `get_ptc`'s asserts,
     -- and this replay loop runs in the store machine.
-    let indexed ← evalStateTransition state (getIndexedPayloadAttestation state pa)
+    let indexed ← evalNestedStateTransition state (getIndexedPayloadAttestation state pa)
     for idx in indexed.attestingIndices do
       -- `(map := map)`: the handler takes no store argument, so the section's map backing
       -- is undetermined at this call site (the ambient `get`/`set` constraint alone leaves
@@ -754,7 +754,7 @@ forkdef notifyPtcMessages (state : State) (payloadAttestations : Array PayloadAt
 
 /-- `on_block`. Rejects (via `assert`) an unknown parent, a
 full-but-unverified parent, a future block, or a finality conflict, and propagates a
-failed `state_transition` through `runStateTransition`. The ePBS additions over the
+failed `state_transition` through `runNestedStateTransition`. The ePBS additions over the
 prior fork: the parent-full assert, the two per-block vote-map inits, and
 `notify_ptc_messages`. -/
 forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
@@ -774,7 +774,7 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   assert (store.finalizedCheckpoint.root == finalizedBlock)
 
   -- Run the state transition, then snapshot the head before the block is added.
-  let postState ← runStateTransition parentState (stateTransition signedBlock)
+  let postState ← runNestedStateTransition parentState (stateTransition signedBlock)
   let blockRoot := htr block
   -- The head is taken BEFORE the new block is added (`update_proposer_boost_root`).
   let head ← getHead store
@@ -956,7 +956,7 @@ forkdef storeTargetCheckpointState (store : Store map) (target : Checkpoint) :
     let targetSlot := computeStartSlotAtEpoch target.epoch
     let advanced ←
       if (sszGet base slot) < targetSlot then
-        runStateTransition base (processSlots targetSlot)
+        runNestedStateTransition base (processSlots targetSlot)
       else pure base
     pure { store with checkpointStates := FcMap.insert store.checkpointStates target advanced }
 

@@ -360,8 +360,11 @@ conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet` 
 `umodIdx` (ring-buffer read / write index), `sszDrop` / `sszOfArray`, `bitGet` / `bitSet`,
 and `hasFlag` / `addFlag`. The cap-clamping append moved to SizzLean (`SSZList.push`,
 with `sszAppend` / `appendState` on top), so the old `sszPush` is gone. `Spec.State`
-carries `getStateRoot` / `stateRoot` / `stateRoot!` and `runToRoot` (run a boxed-state
-action to its post-root, the `EStateM` twin of `runOn`). `Spec.SigningRoot` carries
+carries `getStateRoot` / `stateRoot` / `stateRoot!`. `Spec.RunState` carries
+`MonadRunState`, the class saying a state-machine monad can be run from a starting state,
+and `runToRoot` (run a boxed-state action to its post-root, generic over that class, the
+state-machine twin of `runOn`). `Spec.NestedMachine` carries `NestedStateMachine` and the
+`runNestedStateTransition` / `evalNestedStateTransition` bridges. `Spec.SigningRoot` carries
 `htr`, `computeForkDataRoot`, `computeDomain`, `computeSigningRoot`, `isValidMerkleBranch`,
 and the signing-root verify combinator `blsVerifySigned`, over `[HasherTag]`. `Spec.Loop`
 carries `Step` / `fuelLoop` / `fuelIterateM` / `fuelIterateM!`. `Spec.FiniteMap` carries
@@ -424,7 +427,7 @@ plus the auto `[Preset]`), `LatestMessage`, and the Gloas `ForkChoiceNode` are
 on* : StoreTransition Unit` over the typed `StoreTransitionError`. They write the same
 `assert` / `todo` the state machine uses (resolved to `StoreTransitionError` through
 `SpecReject` from the section's monad), `missingKey` for `FcMap` misses, and the inner
-`state_transition` runs through `runStateTransition` (`Spec/Assert.lean`, wrapping an inner
+`state_transition` runs through `runNestedStateTransition` (`Spec/NestedMachine.lean`, converting an inner
 failure as `StoreTransitionError.transition`). `ForkInterface.runForkChoice` returns `Except (RunError
 StoreTransitionError) Unit`, and `Server` classifies the typed reject (`.spec (.todo _)
 → todo`, everything else, a `decode` or any other spec reject, `→ bug`), so no `"TODO:"`

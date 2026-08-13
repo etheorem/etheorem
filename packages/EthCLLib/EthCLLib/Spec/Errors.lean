@@ -61,7 +61,7 @@ inductive StateTransitionError where
 
 Carries its own `assert` / `todo`, plus `missingKey` (a store-side `FcMap`
 lookup miss) and `transition`, which wraps a nested `StateTransitionError` from
-the state machine `onBlock` runs through `runStateTransition`. Only the store
+the state machine `onBlock` runs through `runNestedStateTransition`. Only the store
 type embeds the state type, the asymmetry the error split is built on. -/
 inductive StoreTransitionError where
   /-- A spec assertion failed; diagnostic only. -/
@@ -79,7 +79,7 @@ inductive StoreTransitionError where
   rejection (`isExpectedRejection`), the mirror of the state-transition machine's
   `RunError.decode`. -/
   | decodeFailure (what : String)
-  /-- A nested state-transition failure surfaced through `runStateTransition`. -/
+  /-- A nested state-transition failure surfaced through `runNestedStateTransition`. -/
   | transition (e : StateTransitionError)
   deriving Inhabited, Repr, DecidableEq
 
@@ -241,7 +241,7 @@ unambiguous. -/
 instance {α : Type} : ErrorConv α α where
   conv := id
 
-/-- A nested state-transition failure surfaced inside a store step (`runStateTransition`). -/
+/-- A nested state-transition failure surfaced inside a store step (`runNestedStateTransition`). -/
 instance : ErrorConv StateTransitionError StoreTransitionError where
   conv := .transition
 
