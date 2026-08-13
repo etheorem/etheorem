@@ -368,7 +368,6 @@ inherit recordPtcVotes
 inherit onPayloadAttestationMessage
 inherit notifyPtcMessages
 inherit onBlock
-inherit computeTimeAtSlot
 inherit verifyExecutionPayloadEnvelopeSignature
 
 -- Three verdicts on this fork's paths belong to something outside the vector: the EL's

@@ -202,7 +202,7 @@ them, plus the ePBS files.
 | 17 | `Containers/BeaconBlockBody` | containers | `BeaconBlockBody` |
 | 18 | `Containers/BeaconBlock` | containers | `BeaconBlock`, `SignedBeaconBlock` |
 | 19 | `State` | state | `BeaconState` definition only; imports all of the containers |
-| 20 | `Time` | operations | `getCurrentEpoch`, `getPreviousEpoch`, `computeEpochAtSlot`, `computeStartSlotAtEpoch`, `computeActivationExitEpoch` |
+| 20 | `Time` | operations | `getCurrentEpoch`, `getPreviousEpoch`, `computeEpochAtSlot`, `computeStartSlotAtEpoch`, `computeActivationExitEpoch`, `computeTimeAtSlot` |
 | 21 | `Signing` | operations | `computeDomain`, `computeSigningRoot`, `getDomain` |
 | 22 | `Randao` | operations | `getRandaoMix` |
 | 23 | `Balances` | operations | `increaseBalance`, `decreaseBalance`, `getTotalBalance` |
@@ -808,7 +808,7 @@ every use site and never classifies the tier there.
 |---|---|---|---|
 | Preset (`[Preset]`) | the `minimal` and `mainnet` instances | `SLOTS_PER_EPOCH` (8 / 32), `SLOTS_PER_HISTORICAL_ROOT` (64 / 8192) | `PTC_SIZE` (16 / 512) |
 | Universal | a `Const` abbrev with a literal body | `FAR_FUTURE_EPOCH`, `VALIDATOR_REGISTRY_LIMIT`, the `DOMAIN_*` tags | `BUILDER_REGISTRY_LIMIT` |
-| Config (`[Config]`) | the `[Config]` instance | `GENESIS_FORK_VERSION`, `SECONDS_PER_SLOT` | `GLOAS_FORK_EPOCH` |
+| Config (`[Config]`) | the `[Config]` instance | `GENESIS_FORK_VERSION`, `SLOT_DURATION_MS` | `GLOAS_FORK_EPOCH` |
 
 The preset-varying values go into the `minimal` and `mainnet` `[Preset]` instances,
 the fixed values into universal `Const` abbrevs, and the network values into the

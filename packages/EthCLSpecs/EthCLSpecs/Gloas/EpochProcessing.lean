@@ -35,6 +35,7 @@ inherit computeEpochAtSlot
 inherit computeStartSlotAtEpoch
 inherit getCurrentEpoch
 inherit getPreviousEpoch
+inherit computeTimeAtSlot
 inherit getRandaoMix
 
 -- Balance / validator mutators, accessors, predicates.

@@ -5,7 +5,7 @@ import SizzLean.Proofs.SSZListPush
 /-!
 # `EthCLSpecs.Proofs.BuilderPendingPayments`: the builder-payment epoch substep
 
-`EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:231-250`)
+`EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:232-251`)
 modifies two fields sequentially within one state transition. This file characterizes
 those effects independently and combines them into one theorem about the function.
 When invoked by the epoch substep, it feeds every qualifying previous-epoch payment's

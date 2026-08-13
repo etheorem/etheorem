@@ -810,18 +810,6 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
 
 /-! ## on_execution_payload_envelope -/
 
-/-- `compute_time_at_slot(state, slot)`. The pinned spec text flags this function itself as
-"unsafe with respect to overflows and underflows" (`phase0/beacon-chain.md:897`), and it gates
-the envelope timestamp assert in `verify_execution_payload_envelope`, which Heze inherits, so it
-sits on a reachable fork-choice path. All three ops are checked. -/
-forkdef computeTimeAtSlot (state : State) (slot : Slot) : StoreTransition UInt64 := do
-  let slotsSinceGenesis ← checkedSub slot Const.genesisSlot
-    "compute_time_at_slot: slot - GENESIS_SLOT"
-  let elapsedMs ← checkedMul slotsSinceGenesis Const.slotDurationMs
-    "compute_time_at_slot: (slot - GENESIS_SLOT) * SLOT_DURATION_MS"
-  checkedAdd (sszGet state genesisTime) (elapsedMs / 1000)
-    "compute_time_at_slot: genesis_time + (slot - GENESIS_SLOT) * SLOT_DURATION_MS // 1000"
-
 /-- `verify_execution_payload_envelope_signature`: the envelope is signed by the
 builder's key (the proposer's, for a self-build) under `DOMAIN_BEACON_BUILDER`.
 
@@ -907,7 +895,9 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
   assert (htr envelope.executionRequests == bid.executionRequestsRoot)
   assert (payload.slotNumber == sszGet state slot)
   assert (payload.parentHash == sszGet state latestBlockHash)
-  let expectedTime ← computeTimeAtSlot state (sszGet state slot)
+  -- `compute_time_at_slot` (`Fulu/Time.lean`, inherited): `liftErr` wraps its `.arithmetic`
+  -- fault as `.transition (.arithmetic …)`, the store machine's shape for the same fault.
+  let expectedTime ← liftErr (computeTimeAtSlot state (sszGet state slot))
   assert (payload.timestamp == expectedTime)
   assert (htr payload.withdrawals == htr (sszGet state payloadExpectedWithdrawals))
 
