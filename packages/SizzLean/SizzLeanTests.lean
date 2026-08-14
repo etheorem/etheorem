@@ -22,6 +22,7 @@ import SizzLeanTests.Sha256BatchEquivalence
 -- `merkleRootWithCache`, so the user-facing `SSZ.FastBox` /
 -- `TreeBacked` path doesn't exercise it.
 import SizzLeanTests.SerializeCacheCoherence
+import SizzLeanTests.ZeroHashDepth
 
 /-!
 # `SizzLeanTests`: SSZ-only empirical / property-test gates

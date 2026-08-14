@@ -183,11 +183,9 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   let epoch := currentEpochOf state
   let mix := vmodGet (sszGet state randaoMixes) epoch Const.epochsPerHistoricalVector
   assert (payload.prevRandao == mix)
-  -- Both the product and the sum are checked `uint64` ops in the pyspec.
-  let elapsed ← checkedMul (sszGet state slot) Const.secondsPerSlot
-    "process_execution_payload: state.slot * SECONDS_PER_SLOT"
-  let expectedTimestamp ← checkedAdd (sszGet state genesisTime) elapsed
-    "process_execution_payload: genesis_time + state.slot * SECONDS_PER_SLOT"
+  -- `compute_time_at_slot(state, state.slot)` (`Fulu/Time.lean`). It can fault, so it arrives
+  -- through `liftErr`, which lands the `.arithmetic` fault on this machine unwrapped.
+  let expectedTimestamp ← liftErr (computeTimeAtSlot state (sszGet state slot))
   assert (payload.timestamp == expectedTimestamp)
 
   let header : ExecutionPayloadHeader :=

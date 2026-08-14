@@ -47,8 +47,8 @@ open SizzLean.Cache
 
 /-! ## The concrete-run theorems
 
-`initiateBuilderExit_run_eq` is the whole-transition equation: the run equals `.ok ()`
-of the source-level `sszModify` on `builders`. `initiateBuilderExit_run_builders`
+`initiateBuilderExit_run_eq` is the whole-transition equation: the run equals
+`.ok ((), _)` of the source-level `sszModify` on `builders`. `initiateBuilderExit_run_builders`
 projects that onto the registry, and the in-range / out-of-range theorems read the
 projection through the `SSZList.set!` lemmas. -/
 
@@ -60,7 +60,7 @@ need not be structurally identical to the pre-state. -/
 theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
     ∀ (state : State) (builderIndex : BuilderIndex),
       (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state =
-        .ok () (sszModify state builders[builderIndex.toNat]! as b =>
+        .ok ((), sszModify state builders[builderIndex.toNat]! as b =>
           { b with withdrawableEpoch :=
               currentEpochOf state + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay }) := by
   intro state builderIndex
@@ -77,7 +77,7 @@ theorem initiateBuilderExit_run_builders [Preset] [HasherTag] [Config] :
     ∀ (state : State) (builderIndex : BuilderIndex),
       ∃ state' : State,
         (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-            = .ok () state'
+            = .ok ((), state')
         ∧ sszGet state' builders
             = (sszGet state builders).set! builderIndex.toNat
                 { sszGet state builders[builderIndex.toNat]! with
@@ -100,7 +100,7 @@ theorem initiateBuilderExit_run_inRange [Preset] [HasherTag] [Config] :
       builderIndex.toNat < (sszGet state builders).size →
       ∃ state' : State,
         (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-            = .ok () state'
+            = .ok ((), state')
         ∧ sszGet state' builders[builderIndex.toNat]!
             = { sszGet state builders[builderIndex.toNat]! with
                 withdrawableEpoch :=
@@ -125,7 +125,7 @@ theorem initiateBuilderExit_run_outOfRange [Preset] [HasherTag] [Config] :
       ¬ builderIndex.toNat < (sszGet state builders).size →
       ∃ state' : State,
         (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-            = .ok () state'
+            = .ok ((), state')
         ∧ sszGet state' builders = sszGet state builders := by
   intro state builderIndex hidx
   obtain ⟨state', hrun, hbuilders⟩ := initiateBuilderExit_run_builders state builderIndex
@@ -166,7 +166,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap [Preset] [HasherTag] [Config] :
           + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay.toNat < 2 ^ 64 →
       ∃ state' : State,
         (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-            = .ok () state'
+            = .ok ((), state')
         ∧ (sszGet state' builders[builderIndex.toNat]!).withdrawableEpoch.toNat
             = (currentEpochOf state).toNat
               + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay.toNat := by
@@ -201,7 +201,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap_minimal [HasherTag] :
       builderIndex.toNat < (sszGet state builders).size →
       ∃ state' : State,
         (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-            = .ok () state'
+            = .ok ((), state')
         ∧ (sszGet state' builders[builderIndex.toNat]!).withdrawableEpoch.toNat
             = (currentEpochOf state).toNat
               + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay.toNat := by
@@ -228,7 +228,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap_mainnet [HasherTag] :
       builderIndex.toNat < (sszGet state builders).size →
       ∃ state' : State,
         (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-            = .ok () state'
+            = .ok ((), state')
         ∧ (sszGet state' builders[builderIndex.toNat]!).withdrawableEpoch.toNat
             = (currentEpochOf state).toNat
               + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay.toNat := by

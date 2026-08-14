@@ -51,7 +51,8 @@ These seams carry the design.
 | Config values | `[Config]` | config-tier values (fork versions, genesis delay) | the test config | a fixed config |
 | Merkleization hasher | `[HasherTag]` | the SSZ hash backend, carried as `HasherTag.H` | `Sha256` (FFI, opaque) | `Sha256Spec` (pure-Lean) |
 | Crypto backend | `[CryptoBackend]` | BLS verify/aggregate, KZG | caching FFI | symbolic (abstract `verify`) |
-| Execution engine | `[ExecutionEngine Payload Tx]` | predicates answered by the execution layer (`is_inclusion_list_satisfied`) | optimistic global instance | a local refuting/real instance |
+| Execution engine | `[ExecutionEngine Payload Tx Requests]` | the `execution_engine.*` methods (`is_inclusion_list_satisfied`, `verify_and_notify_new_payload`) | optimistic global instance | a local refuting/real instance |
+| Data availability | `[DataAvailability]` | `is_data_available` from Gloas on, whose sidecar retrieval the spec leaves implementation-defined | optimistic global instance | a local refuting/real instance |
 | Finite-map backing | `{map : MapKind} [FcMap map]` | the fork-choice store's maps | `hashMap` | `treeMap` |
 | Box flavour | smart constructor at the anchor | cache strategy of the boxed state | `FastBox` (cached, `= CachedBox Sha256`) | `UncachedBox Sha256Spec` (uncached) |
 | Effect monad | `{StateTransition : Type → Type}` | the state-threading effect | `EStateM` | `StateT ∘ Except` |
@@ -531,6 +532,12 @@ fork_choice_section map
 --   variable [Monad StoreTransition]
 --   variable [MonadStateOf (Store map) StoreTransition]
 --   variable [MonadExceptOf StoreTransitionError StoreTransition]
+--   variable {StateTransition : Type → Type}                        -- the nested machine
+--   variable [NestedStateMachine StoreTransition State StateTransition]
+--   variable [MonadRunState State StateTransition]
+--   variable [Monad StateTransition]
+--   variable [MonadStateOf State StateTransition]
+--   variable [MonadExceptOf StateTransitionError StateTransition]
 ```
 
 The fork-choice map cannot hide the way the hasher and the box flavour do, because
@@ -541,6 +548,15 @@ three raw constraints, `[Monad m]`, `[MonadStateOf (Store map) m]`, and
 `[MonadExceptOf StoreTransitionError m]`, with no `StoreM` bundle, for the same
 reasons the state side has none.
 
+The last six lines are the nested state machine a handler may run through
+`runNestedStateTransition` (§7.2). `StateTransition` is an `outParam` of `NestedStateMachine`,
+so the instance picks it and the binder exists only to give the section a name for what
+was picked; `MonadRunState` is how the bridge runs it, and the three raw constraints after
+that are the same ones `state_section` emits. All four resolve once the name is fixed,
+which is why the `NestedStateMachine` line comes first. Lean includes a `variable` only in
+declarations that mention it, so a handler that never crosses the bridge, `on_tick` and
+`on_attester_slashing` among them, carries none of the six.
+
 ### 7.2 Discharge and the nested-machine bridge
 
 Discharge is a consumer concern. The `.run` of the monad stays out of the spec
@@ -549,15 +565,60 @@ discharge it. The runner pins `[Preset]`, `[HasherTag]`, and the concrete monad 
 the entry point, and the inner steps share the section's instances.
 
 The fork choice runs a full state transition inside the `onBlock` handler. The
-`runStateTransition` bridge runs the inner `StateTransition` machine from a
+`runNestedStateTransition` bridge runs the inner `StateTransition` machine from a
 `StoreTransition` handler and maps any inner failure to
 `StoreTransitionError.transition`, the wrapper constructor from the error model.
+
+Running a state machine from outside it takes two things, and they are two classes,
+because the consumers that need the first outnumber the ones that need the second.
+
+**How to run one.** A state machine's monad is a `variable` in every spec body, and the
+three constraints `state_section` emits give no way to get a value back out of it:
+`Monad` gives `pure` and `bind`, `MonadStateOf` gives `get` and `set`, `MonadExceptOf`
+gives `throw` and `tryCatch`. `MonadRunState` (`Spec/RunState.lean`) is that missing
+capability and nothing else.
+
+```lean
+class MonadRunState (S : outParam Type) (M : Type → Type) where
+  runFrom : {α : Type} → S → M α → Except StateTransitionError (α × S)
+```
+
+Nothing about it is fork-choice-specific. `runToRoot`, which every `PySpecTests`
+state-transition entry point ends with, is generic over it too, with no store in sight;
+the entry point's ascription on its action picks the column and `runToRoot` stays out of
+it.
+
+**Which one to run.** That question only arises inside the store machine, where the
+handler names no monad at all, and it is `NestedStateMachine`.
+
+```lean
+class NestedStateMachine (m : Type → Type) (S : Type) (M : outParam (Type → Type))
+```
+
+No fields; it is a type-level choice keyed on `m`, the way `MonadLift` is keyed on its
+source monad. `M` being an `outParam` is what keeps it invisible to spec bodies: a store
+handler calling another store handler leaves the callee's `M` as a metavariable, and were
+`M` an input there would be one solution per instance, so resolution would be ambiguous.
+Determined by `(m, S)`, it resolves from the section's instance at every call site.
+
+Two instances ship, one per column. A store machine at `EStateM` runs its state machine
+at `EStateM`; a store machine at `StateT`/`Except` runs it at `StateT`/`Except`. So the
+runner keeps a two-layer inner monad rather than a stack built over the store's, and a
+fork-choice proof gets `StateT State (Except StateTransitionError)`, the same monad the
+state-machine theorems in `EthCLSpecs/Proofs/` already pin.
+
+What the bridge preserves is proved with it, once for every action.
+`runNestedStateTransition_of_ok` turns a step's `(step).run pre = .ok ((), post)` into the
+store-machine statement `runNestedStateTransition pre step = pure post`, with `_of_error`
+and the two `eval` siblings covering the rest. Carrying a state-machine theorem into a
+fork-choice proof is then function application, which is what the two `example`s at the
+end of `Proofs/ForkChoiceRun.lean` show.
 
 ```lean
 def onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   let pre ← getPreState signedBlock.message.parentRoot   -- a boxed State from the Store
-  let post ← runStateTransition pre (stateTransition signedBlock)
-  -- runStateTransition discharges the inner machine and maps
+  let post ← runNestedStateTransition pre (stateTransition signedBlock)
+  -- runNestedStateTransition discharges the inner machine and maps
   -- StateTransitionError → StoreTransitionError.transition
   storePostState signedBlock post
 ```

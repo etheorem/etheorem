@@ -6,7 +6,7 @@ import SizzLean.Cache.MerkleTree.Node
 /-!
 # `SizzLean.Cache.MerkleTree.Zero`: the zero-hash tower and the depth-padding leaf
 
-A 65-entry table of all-zero subtree roots, used both to
+A 100-entry table of all-zero subtree roots, used both to
 short-circuit zero-padding in `merkleRootWithCache` and to
 materialise `zeroLeaf d` (the right-sibling subtree at any
 depth when `setAt` walks past a not-yet-filled position).
@@ -32,11 +32,20 @@ is structural recursion on `Nat`. Each level is computed once at
 module load via the FFI `lean_hazmat_sha256_combine` shim; subsequent
 `zeroHashAt _ d` calls are O(1) Vector indexes into the memo.
 
-`Vector.get` with a `Fin 65` index is total; the `zeroHashAt`
-fallback (`d ≥ 65`) is defensive, since SSZ's `MAX_LENGTH = 2^32`
-keeps any real tree depth well under 65. It is cheap to include and
-required for `ofLeaves` / `setAt` to typecheck without local bound
-proofs at every call site.
+The table is 100 entries because that is the length of
+`merkle_minimal.py`'s `zerohashes`, which the spec indexes directly
+(so `zerohashes[100]` raises `IndexError`). SSZ's `MAX_LENGTH = 2^32`
+caps a real tree near depth 34 and the largest consensus cap,
+`VALIDATOR_REGISTRY_LIMIT = 2^40`, reaches 40, so the memo covers
+every depth the format admits with room to spare.
+
+`Vector.get` with a `Fin 100` index is total, and the `d ≥ 100`
+fallback continues the same recurrence the table was built from
+rather than clamping. That keeps `zeroHashAt` equal to the depth-`d`
+zero root at *every* depth, which is what lets `Node.ofLeaves` and
+the spec's `merkleize` agree with no depth side condition. It also
+lets `ofLeaves` / `setAt` typecheck without local bound proofs at
+every call site.
 
 ## Trust footprint
 
@@ -79,11 +88,11 @@ private def zeroHashRec : Nat → ByteArray
       LeanHazmat.Sha256.sha256Combine z z
 
 /-- The depth-indexed zero-hash table, lazily populated at module
-load. Held inside an `IO.Ref` so the 65-entry vector is computed
+load. Held inside an `IO.Ref` so the 100-entry vector is computed
 exactly once per process; readers go through `zeroHashes` (and
 ultimately `zeroHashAt`) which fetch in O(1). -/
-private initialize zeroHashesRef : IO.Ref (Vector ByteArray 65) ←
-  IO.mkRef (Vector.ofFn (fun (i : Fin 65) => zeroHashRec i.val))
+private initialize zeroHashesRef : IO.Ref (Vector ByteArray 100) ←
+  IO.mkRef (Vector.ofFn (fun (i : Fin 100) => zeroHashRec i.val))
 
 /-- Runtime impl of `zeroHashes`: reads the memoised vector
 directly from `zeroHashesRef`. Wrapped in `unsafeBaseIO` because
@@ -91,7 +100,7 @@ the ref is set-once at init and never mutated, so the value is
 morally const. Marked `unsafe` so the compiler accepts the
 `unsafeBaseIO` call; the safe `zeroHashes` def below swaps to
 this impl via `@[implemented_by]`. -/
-private unsafe def zeroHashesUnsafeImpl : Vector ByteArray 65 :=
+private unsafe def zeroHashesUnsafeImpl : Vector ByteArray 100 :=
   unsafeBaseIO zeroHashesRef.get
 
 /-- Safe public-facing zero-hash table. The kernel-visible body
@@ -104,14 +113,14 @@ footprint of the swap is "the init action ran before any
 reader", the same trust class as the `@[extern] opaque sha256Combine`
 that populated the ref. -/
 @[implemented_by zeroHashesUnsafeImpl]
-private def zeroHashes : Vector ByteArray 65 :=
-  Vector.ofFn (fun (i : Fin 65) => zeroHashRec i.val)
+private def zeroHashes : Vector ByteArray 100 :=
+  Vector.ofFn (fun (i : Fin 100) => zeroHashRec i.val)
 
 /-- Zero-hash at depth `d`: the root of an all-zero subtree of
-depth `d`. Real trees never hit the `d ≥ 65` fallback (SSZ
-`MAX_LENGTH = 2^32` keeps any real tree depth well under 65); the
-fallback is a totality convenience for callers without a local
-bound proof on `d`.
+depth `d`. Real trees never leave the memo (SSZ `MAX_LENGTH = 2^32`
+keeps any real tree depth well under 100); past it the same
+recurrence runs uncached, so the answer is the depth-`d` zero root at
+every depth rather than a clamped stand-in.
 
 The `[Hasher H]` parameter is vestigial: the memoised table is
 Sha256-specific and read directly, but by the
@@ -121,7 +130,7 @@ parameter preserves the existing call-site signatures
 (`zeroLeaf H d`, `Node.ofLeaves H leaves depth`, …) without
 cascading edits. -/
 def zeroHashAt (H : Type) [Hasher H] (d : Nat) : ByteArray :=
-  if h : d < 65 then zeroHashes.get ⟨d, h⟩ else zero32
+  if h : d < 100 then zeroHashes.get ⟨d, h⟩ else zeroHashRec d
 
 /-- Cheap root lookup that *doesn't* allocate a new cache-filled
 tree. `.leaf b` → `b`; `.pair _ _ (some r)` → `r` in O(1);

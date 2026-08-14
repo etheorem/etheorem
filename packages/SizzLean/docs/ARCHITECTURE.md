@@ -515,15 +515,15 @@ private def zeroHashRec : Nat → ByteArray
   | 0     => zero32
   | d + 1 => let z := zeroHashRec d; sha256Combine z z
 
-private initialize zeroHashesRef : IO.Ref (Vector ByteArray 65) ←
-  IO.mkRef (Vector.ofFn (fun (i : Fin 65) => zeroHashRec i.val))
+private initialize zeroHashesRef : IO.Ref (Vector ByteArray 100) ←
+  IO.mkRef (Vector.ofFn (fun (i : Fin 100) => zeroHashRec i.val))
 
 @[implemented_by zeroHashesUnsafeImpl]
-private def zeroHashes : Vector ByteArray 65 :=
-  Vector.ofFn (fun (i : Fin 65) => zeroHashRec i.val)
+private def zeroHashes : Vector ByteArray 100 :=
+  Vector.ofFn (fun (i : Fin 100) => zeroHashRec i.val)
 
 def zeroHashAt (H : Type) [Hasher H] (d : Nat) : ByteArray :=
-  if h : d < 65 then zeroHashes.get ⟨d, h⟩ else zero32
+  if h : d < 100 then zeroHashes.get ⟨d, h⟩ else zeroHashRec d
 ```
 
 The runtime body of `zeroHashes` (swapped in via `@[implemented_by]`)
@@ -533,6 +533,19 @@ parameter on `zeroHashAt` is vestigial. It is kept so callers'
 signatures don't change and ignored by the body, because by the
 `sha256Combine_eq_spec` axiom the memoised Sha256 table values
 equal any equivalent hasher's recurrence output.
+
+The table is 100 entries because `merkle_minimal.py`'s `zerohashes`
+is, and the spec indexes that list directly, so `zerohashes[100]`
+raises `IndexError`. Past the memo we continue the same recurrence
+rather than clamping. Merkleization has no error channel to report a
+too-deep lookup into, and a clamped stand-in would split the two
+Merkle paths apart exactly at the table's edge: `Spec.merkleize`
+resolves an empty chunk list through one lookup, while
+`Node.ofLeaves` builds `pair` nodes to whatever depth it is handed.
+Continuing the recurrence keeps them equal at every depth.
+`SizzLeanTests/ZeroHashDepth.lean` pins both sides of the boundary.
+No SSZ type goes near it: `MAX_LENGTH = 2^32` caps a real tree at
+depth 34, and `VALIDATOR_REGISTRY_LIMIT = 2^40` at 40.
 
 A 2⁴⁰-leaf list with one entry populated holds 40 real `pair`
 nodes on the populated path and a single shared `zeroLeaf` per

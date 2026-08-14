@@ -21,13 +21,18 @@ on:
 jobs:
   lint:
     # Forbidden-token check on committed Lean source — no Lean
-    # toolchain needed, just `git grep`. Runs in ~5 s.
+    # toolchain needed, just `git grep`. Runs in ~5 s. The citation
+    # check rides along: it reads Lean sources as text, so it needs
+    # no toolchain either, and it catches the same class of rot in
+    # the docs that `just lint` catches in the code.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v3
       - name: Lint Lean sources (sorry / #eval / #check / #print)
         run: just lint
+      - name: Check the line-span citations into the spec bodies
+        run: just check-citations
 
   test:
     # In-Lean property tests: SHA-256 NIST CAVP vectors against both

@@ -64,7 +64,6 @@ class Preset where
 /-- The config-tier values (network parameters). Threaded `[Config]`; never
 shapes a type. -/
 class Config where
-  secondsPerSlot : UInt64
   churnLimitQuotient : UInt64
   minPerEpochChurnLimitElectra : Gwei
   maxPerEpochActivationExitChurnLimit : Gwei
@@ -210,7 +209,6 @@ abbrev domainSyncCommittee : ByteArray := ⟨#[7, 0, 0, 0]⟩
 abbrev domainBlsToExecutionChange : ByteArray := ⟨#[0x0A, 0, 0, 0]⟩
 
 -- Config tier (carries `[Config]`).
-abbrev secondsPerSlot : UInt64 := Config.secondsPerSlot
 abbrev churnLimitQuotient : UInt64 := Config.churnLimitQuotient
 abbrev minPerEpochChurnLimitElectra : Gwei := Config.minPerEpochChurnLimitElectra
 abbrev maxPerEpochActivationExitChurnLimit : Gwei := Config.maxPerEpochActivationExitChurnLimit
@@ -359,7 +357,6 @@ so it coexists with `mainnet`). -/
 
 /-- The `minimal` config. -/
 @[reducible] def minimalConfig : Config where
-  secondsPerSlot := 6
   churnLimitQuotient := 32
   minPerEpochChurnLimitElectra := 64000000000
   maxPerEpochActivationExitChurnLimit := 128000000000
@@ -377,7 +374,6 @@ so it coexists with `mainnet`). -/
 
 /-- The `mainnet` config. -/
 @[reducible] def mainnetConfig : Config where
-  secondsPerSlot := 12
   churnLimitQuotient := 65536
   minPerEpochChurnLimitElectra := 128000000000
   maxPerEpochActivationExitChurnLimit := 256000000000

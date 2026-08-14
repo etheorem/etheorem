@@ -202,7 +202,7 @@ them, plus the ePBS files.
 | 17 | `Containers/BeaconBlockBody` | containers | `BeaconBlockBody` |
 | 18 | `Containers/BeaconBlock` | containers | `BeaconBlock`, `SignedBeaconBlock` |
 | 19 | `State` | state | `BeaconState` definition only; imports all of the containers |
-| 20 | `Time` | operations | `getCurrentEpoch`, `getPreviousEpoch`, `computeEpochAtSlot`, `computeStartSlotAtEpoch`, `computeActivationExitEpoch` |
+| 20 | `Time` | operations | `getCurrentEpoch`, `getPreviousEpoch`, `computeEpochAtSlot`, `computeStartSlotAtEpoch`, `computeActivationExitEpoch`, `computeTimeAtSlot` |
 | 21 | `Signing` | operations | `computeDomain`, `computeSigningRoot`, `getDomain` |
 | 22 | `Randao` | operations | `getRandaoMix` |
 | 23 | `Balances` | operations | `increaseBalance`, `decreaseBalance`, `getTotalBalance` |
@@ -645,7 +645,7 @@ between forks; the upgrade performs the change on a live state.
 The fork choice is the second state machine, written in `StoreTransition` over
 `Store map` in a section opened by `fork_choice_section`. The `Store` and its `on_*`
 handlers are the fork-choice entry points of the fork interface. The
-`runStateTransition` nested-machine bridge of `FRAMEWORK_ARCHITECTURE.md`'s
+`runNestedStateTransition` nested-machine bridge of `FRAMEWORK_ARCHITECTURE.md`'s
 effect-monad section runs the full state transition inside the `onBlock` handler
 and surfaces any inner failure through `StoreTransitionError.transition`. The
 step-and-check harness shape comes from the conformance framework.
@@ -664,7 +664,7 @@ forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := ..
 forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   let store ← get
   ...
-  let post ← runStateTransition pre (stateTransition signedBlock)
+  let post ← runNestedStateTransition pre (stateTransition signedBlock)
   ...
 ```
 
@@ -692,17 +692,35 @@ the cost of a defined-but-unreachable default branch.
 
 The per-loop rule is explicit. Default to well-founded recursion when the measure is
 clean, and reach for `fuelLoop` when the up-front invariant proof would block the
-definition from existing before proofs are in scope. Record the choice and its reason
-at each such loop, so a later reader knows whether a bound is honest or deferred.
+definition from existing before proofs are in scope. Two things get recorded, and they
+sit at different scopes.
 
-Every fork-choice walk currently takes the second option: `getAncestor`, `getHead`,
-and `filterBlockTree` are all `fuelLoop`-bounded, with the block count as the bound.
-The read layer being monadic (§7.1) is what tips it. `getHead` has a clean measure on
-paper, since `maxSlot - currentSlot` strictly decreases when child slots increase, but
-discharging it through `StoreTransition` means carrying the measure past a step that
-can reject, which is the up-front proof this rule defers. The bounds are therefore
-deferred rather than honest. The `DAG walks` section header in each fork's
-`ForkChoice.lean` records that choice for the walks it heads.
+The **bound** is per site, always. Each loop names the count it is bounded by and the
+value a fuel-out would return, because both are specific to that loop and a reader
+checking whether the bound holds has to read it there.
+
+The **reason** for choosing fuel over a measure may be recorded once for a group of
+loops that share it, at the section heading that group. The reason is uniform across
+the fork-choice walks, and restating one sentence at every site buys nothing. Two
+conditions come with that allowance: the heading has to actually head the loops it
+speaks for, and a loop under a later heading carries the reason in its own docstring
+rather than relying on a heading further up the file. A loop that sits in no such
+group records both at the loop.
+
+Every fork-choice walk currently takes the second option: `getAncestor`,
+`filterBlockTree`, and `getHead` are all `fuelLoop`-bounded, with the block count as
+the bound. The read layer being monadic (§7.1) is what tips it. `getHead` has a clean
+measure on paper, since `maxSlot - currentSlot` strictly decreases when child slots
+increase, but discharging it through `StoreTransition` means carrying the measure past
+a step that can reject, which is the up-front proof this rule defers. The bounds are
+therefore deferred rather than honest.
+
+The loops outside fork choice are bounded for their own reasons, not this one, so each
+records the reason at the loop: the queue scans in `EpochProcessing.lean` and the
+balance-weighted sampler in `Committees.lean` stop on a data-dependent guard rather
+than on a decreasing measure, and `on_tick`'s per-slot catch-up runs on a bound that is
+exact only at the pinned presets, which is why it throws on fuel-out
+(`fuelIterateM!`) instead of returning.
 
 ---
 
@@ -790,7 +808,7 @@ every use site and never classifies the tier there.
 |---|---|---|---|
 | Preset (`[Preset]`) | the `minimal` and `mainnet` instances | `SLOTS_PER_EPOCH` (8 / 32), `SLOTS_PER_HISTORICAL_ROOT` (64 / 8192) | `PTC_SIZE` (16 / 512) |
 | Universal | a `Const` abbrev with a literal body | `FAR_FUTURE_EPOCH`, `VALIDATOR_REGISTRY_LIMIT`, the `DOMAIN_*` tags | `BUILDER_REGISTRY_LIMIT` |
-| Config (`[Config]`) | the `[Config]` instance | `GENESIS_FORK_VERSION`, `SECONDS_PER_SLOT` | `GLOAS_FORK_EPOCH` |
+| Config (`[Config]`) | the `[Config]` instance | `GENESIS_FORK_VERSION`, `SLOT_DURATION_MS` | `GLOAS_FORK_EPOCH` |
 
 The preset-varying values go into the `minimal` and `mainnet` `[Preset]` instances,
 the fixed values into universal `Const` abbrevs, and the network values into the
@@ -893,6 +911,13 @@ dependency level, not the spec level. SizzLean's cache-coherence test proves
 handle the hasher, so there is no spec-level fast-equals-pure theorem to prove. The
 specs inherit the gap-closing from the dependency.
 
+Both machines are pinned this way. `Proofs/Run.lean` names the pure monad for the state
+machine; `Proofs/ForkChoiceRun.lean` names it for the store machine and proves a
+fork-choice `forkdef` at it. A handler that runs the state machine picks up its nested
+monad from `NestedStateMachine` (`FRAMEWORK_ARCHITECTURE.md` §7.2), keyed on the store's
+own monad, so pinning the pure store monad pins the pure state monad with it and no fast
+configuration reaches a fork-choice proof.
+
 ### 11.2 The hasher is per goal
 
 The hasher is a per-goal axis, not a fast-versus-pure bundle. Symbolic
@@ -982,7 +1007,7 @@ monadic split of Section 5.
 
 What the framework now generates the author no longer hand-rolls. The experiment
 wrote size proofs and derived instances by hand; `forkcontainer` derives them. It
-wired the monad and the discharge by hand; the header macros and `runStateTransition`
+wired the monad and the discharge by hand; the header macros and `runNestedStateTransition`
 do that. It hand-maintained constants; the per-fork tier system carries them. And it
 had no cross-fork inheritance; the inheritance mechanism supplies it. The experiment
 proved the consensus shape was right. The framework regenerates that shape

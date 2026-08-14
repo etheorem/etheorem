@@ -10,7 +10,8 @@ slot's beacon committees. That accessor lives in `Heze/ForkChoice.lean`, next to
 empty-committee read (`indices[i % 0]` raises `ZeroDivisionError`), so it belongs in the
 store-throwing monad rather than among the pure state accessors. This file holds the one piece
 factored out of it: `cyclicSample`, the wrap-around index fill, kept here so its arithmetic is
-unit-checkable by the `#guard`s below without building a whole `BeaconState`.
+unit-checkable without building a whole `BeaconState`. The `#guard`s that check it live in
+`EthCLSpecs.Tests.HezeCommitteesPins`.
 -/
 
 set_option autoImplicit false
@@ -23,7 +24,8 @@ namespace EthCLSpecs.Heze
 result: element `i` is `xs[i % xs.size]`, wrapping back to the front once `i` passes the end
 of the concatenated committees (the spec's `indices[i % len(indices)]`,
 `consensus-specs/specs/heze/beacon-chain.md:108-110`). Factored out of the accessor so the
-wrap-around index arithmetic is unit-checkable below without building a whole `BeaconState`.
+wrap-around index arithmetic is unit-checkable without building a whole `BeaconState`
+(`EthCLSpecs.Tests.HezeCommitteesPins`).
 `xs.getD … default` is total via `[Inhabited α]`; the sole caller (`getInclusionListCommittee`
 in `Heze/ForkChoice.lean`) rejects an empty committee before reaching here, so on every path
 `xs` is non-empty, `i % xs.size < xs.size`, and `getD` always returns a real element. That
@@ -32,15 +34,5 @@ guard is an `.arithmetic` throw, not an `assert`: the spec's `i % len(indices)` 
 rather than catching, so it can never be a vector's expected rejection. -/
 def cyclicSample {α : Type} [Inhabited α] (xs : Array α) (n : Nat) : Vector α n :=
   Vector.ofFn (fun i : Fin n => xs.getD (i.val % xs.size) default)
-
--- Pins for the cyclic resampling, expected values computed by hand from the Python
--- comprehension `[indices[i % len(indices)] for i in range(n)]`. First: a size-3 source over
--- n = 8 wraps as i % 3 = 0,1,2,0,1,2,0,1. Second: a size-2 source over the real
--- `INCLUSION_LIST_COMMITTEE_SIZE` (= 16) alternates 0,1,…; the 16-element result also pins
--- the constant, since a different size would change the list length and fail the `=`.
-#guard (cyclicSample (#[10, 20, 30] : Array UInt64) 8).toList
-  = [10, 20, 30, 10, 20, 30, 10, 20]
-#guard (cyclicSample (#[7, 8] : Array UInt64) Const.inclusionListCommitteeSize).toList
-  = [7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8]
 
 end EthCLSpecs.Heze

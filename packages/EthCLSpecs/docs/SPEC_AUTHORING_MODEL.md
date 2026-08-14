@@ -152,6 +152,13 @@ named configurations.
 | Fork-choice map | `hashMap` | `treeMap` |
 | Box flavour | `FastBox` (cached, `= CachedBox Sha256`) | `UncachedBox Sha256Spec` (uncached) |
 
+The effect-monad row covers both machines. A fork-choice handler runs the state
+machine through `runNestedStateTransition`, and `NestedStateMachine`
+(`FRAMEWORK_ARCHITECTURE.md` §7.2) resolves that nested monad from the store's, one
+instance per column. So a store machine in the fast column runs its state machine at
+`EStateM`, one in the pure column runs it at `StateT` over `Except`, and the column is
+picked once rather than per machine.
+
 The spec body is generic over every axis and commits to neither column. The
 test runner, which the framework owns, instantiates the fast column. A per-fork
 theorems module, which sits outside the spec body, instantiates the pure column.
@@ -279,7 +286,9 @@ before it appears downstream.
 | `FcMap` | The class of operations a fork-choice map provides (`insert`, `lookup`, `contains`, `fold`/`keys`). |
 | `Store` | The fork-choice store, a record of `FcMap`-backed maps, parameterized by the map backing: `Store map`. |
 | `stateTransition` | The full per-block transition machine (the `pyspec` `state_transition`), written as a do-block. |
-| `runStateTransition` | The act of discharging the `stateTransition` machine; a fork-choice handler runs it inside `onBlock`, the nested-machine bridge. |
+| `runNestedStateTransition` | The act of discharging the `stateTransition` machine; a fork-choice handler runs it inside `onBlock`, the nested-machine bridge. |
+| `MonadRunState` | The class that says a state-machine monad can be run from a starting state; what `runToRoot` and the fork-choice bridge both discharge through. |
+| `NestedStateMachine` | The class that says which state machine a store monad runs; one instance per configuration column, so the store's column picks the nested one. |
 | `fuelLoop` | The bounded-recursion primitive for loops whose decreasing measure resists a clean well-founded argument. |
 | `Preset` | The class of preset-varying constants, threaded `[Preset]`. |
 | `Config` | The class of config values, threaded `[Config]`. |
@@ -321,7 +330,7 @@ order, so they map one to one.
 |---|---|---|
 | **Container types** as a field list under `forkcontainer` | the dependent `structure`, the derived `SSZRepr` (serialize, deserialize, hash-tree-root) plus `Inhabited` / `BEq` / `DecidableEq` / `Ord` / `Hashable`, and the fork-incremental inheritance | the container front-end |
 | **Consensus-domain helpers** (`get_*` / `compute_*` / `is_*`, committees, shuffling) whole; state-free ones pure, state-reading accessors monadic | nothing by the domain line; the framework supplies only the primitives the other rows list | (empty cell, by Section 2.2) |
-| **State-transition steps** as `forkdef` bodies over `StateTransition`, composed into the ordered pipeline | the section header (`state_preamble` / `state_section`), the monad and its constraints, and the discharge (`runStateTransition`) | the effect-monad architecture, the header macros |
+| **State-transition steps** as `forkdef` bodies over `StateTransition`, composed into the ordered pipeline | the section header (`state_preamble` / `state_section`), the monad and its constraints, and the discharge (`runNestedStateTransition`) | the effect-monad architecture, the header macros |
 | **Field access and assertions** via `sszGet` / `sszUpdate` / `modifyState` / `assert` | the access primitives, the size-proof discharge, the cache maintenance, the `assert` descriptor rendering | the state representation, the error model |
 | **Fork-choice `on_*` handlers** as `StoreTransition` actions over the `Store` | `FcMap`, `Store`, and the step/check driver | the finite-map and fork-choice store |
 | **Lifecycle functions** (`initializeBeaconStateFromEth1`, `isValidGenesisState`, `upgradeToGloas`) over the container constructors | the container constructors and the `genesis` / `fork` harness drivers | the container front-end, the conformance framework |

@@ -1,5 +1,6 @@
 import EthCLLib.Spec.State
 import EthCLLib.Spec.FiniteMap
+import EthCLLib.Spec.NestedMachine
 
 /-!
 # `EthCLLib.Spec.Header`: the section-header macros
@@ -113,7 +114,15 @@ cannot hide the way the hasher and box flavour do, since `map` appears in the `S
 type itself, so the macro emits `{map : MapKind} [FcMap map]` explicitly and `Store map`
 (`Store hashMap` and `Store treeMap` are distinct types). The store machine carries its
 own three raw constraints over `StoreTransitionError`. Like `state_section`, it opens
-the `section`; close with the matching `end`. -/
+the `section`; close with the matching `end`.
+
+It also emits the *state* machine a handler may run through `runNestedStateTransition`:
+`{StateTransition}`, its `[NestedStateMachine StoreTransition State StateTransition]`
+instance, and the same three raw constraints `state_section` emits. `StateTransition` is
+an `outParam` of that class, so the instance picks it and no handler names it; the three
+constraints resolve once it is fixed, which is why the instance line comes first. Lean
+includes a `variable` only in declarations that mention it, so a handler that never
+crosses the bridge picks up none of these five. -/
 scoped syntax (name := forkChoiceSectionStx) "fork_choice_section " ident : command
 
 @[command_elab forkChoiceSectionStx]
@@ -130,6 +139,13 @@ def elabForkChoiceSection : CommandElab := fun stx => do
   let cryptoId   := mkIdent `CryptoBackend
   let stId       := mkIdent `StoreTransition
   let errId      := mkIdent ``StoreTransitionError
+  -- The nested state machine's own line. `State` is a use-site identifier, resolved to the
+  -- running fork's, exactly as `state_preamble` declares it.
+  let stateId    := mkIdent `State
+  let stateTrId  := mkIdent `StateTransition
+  let stateErrId := mkIdent ``StateTransitionError
+  let nestedId   := mkIdent ``NestedStateMachine
+  let runStateId := mkIdent ``MonadRunState
   elabCommand (← `(section))
   -- `[Preset] [HasherTag]` first: `Store map` (preset- and hasher-parameterized) needs
   -- them before the `MonadStateOf (Store map)` line below. `[Config]` and `[CryptoBackend]`
@@ -142,6 +158,20 @@ def elabForkChoiceSection : CommandElab := fun stx => do
   elabCommand (← `(variable [Monad $stId]))
   elabCommand (← `(variable [MonadStateOf ($storeId $mapIdent) $stId]))
   elabCommand (← `(variable [MonadExceptOf $errId $stId]))
+  -- The state machine a handler may run through `runNestedStateTransition`. `StateTransition` is
+  -- an `outParam` of `NestedStateMachine`, so the instance determines it and no handler
+  -- names it; the binder exists only to give the section a name for what the instance
+  -- picked. A handler that never crosses the bridge mentions neither, and Lean's
+  -- by-mention `variable` inclusion leaves its signature unchanged.
+  elabCommand (← `(variable {$stateTrId : Type → Type}))
+  elabCommand (← `(variable [$nestedId $stId $stateId $stateTrId]))
+  elabCommand (← `(variable [$runStateId $stateId $stateTrId]))
+  -- The same three raw constraints `state_section` emits, so the nested `forkdef` passed to
+  -- `runNestedStateTransition` elaborates. They resolve after `NestedStateMachine` has fixed
+  -- `StateTransition`, which is why that line comes first.
+  elabCommand (← `(variable [Monad $stateTrId]))
+  elabCommand (← `(variable [MonadStateOf $stateId $stateTrId]))
+  elabCommand (← `(variable [MonadExceptOf $stateErrId $stateTrId]))
 
 /-! ## `appendState`: append to a list field of the threaded state -/
 

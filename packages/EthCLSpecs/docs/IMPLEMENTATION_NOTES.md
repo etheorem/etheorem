@@ -166,17 +166,23 @@ with no G1 add/neg and no precomputed-aggregate dependency.
 
 ## Engine seam
 
-`EthCLLib.Spec.Engine` defines `[ExecutionEngine]`, the execution-layer sibling of the
-crypto seam: a spec function whose verdict belongs to an external execution client
-routes through the typeclass. Unlike `CryptoBackend` it ships a global default, the
-optimistic instance answering the constant `true` (the seam table in
-`FRAMEWORK_ARCHITECTURE.md` §1). A local `letI` overrides it; `pinRecordRefuted`
-(`EthCLSpecs/Heze/ForkChoice.lean`) refutes the inclusion-list gate that way.
+`EthCLLib.Spec.Engine` is the execution-layer sibling of the crypto seam: a spec
+function whose verdict belongs to an external execution client routes through a
+typeclass. Unlike `CryptoBackend` these ship a global default, the optimistic instance
+answering the constant `true` (the seam table in `FRAMEWORK_ARCHITECTURE.md` §1). A
+local `letI` overrides it.
 
-Heze's `is_inclusion_list_satisfied` is the seam's first user. Gloas's engine
-predicates (`verify_and_notify_new_payload`, `is_data_available`) reach the same
-constant-`true` verdict as inline constants; `EthCLLib.Spec.Engine`'s module
-docstring tracks their migration onto the seam.
+Three predicates cross the boundary, split across two classes by what the spec calls
+them. `[ExecutionEngine]` holds the two literal `execution_engine.*` methods,
+`is_inclusion_list_satisfied` (Heze) and `verify_and_notify_new_payload` (Gloas).
+`[DataAvailability]` holds `is_data_available` in its Gloas-and-later form, which is a
+free function whose sidecar retrieval the spec marks implementation-dependent.
+Fulu's `is_data_available` predates that change and takes the columns the runner
+supplies, so it checks them for real and reads no seam.
+
+Each has a refuting pin over the branch no vector reaches: `pinRecordRefuted`
+(`Heze/ForkChoice.lean`) for the inclusion-list gate, `pinEngineRefuted`
+(`Gloas/ForkChoice.lean`) for the other two.
 
 ## State, presets, and the header macro
 
@@ -354,8 +360,11 @@ conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet` 
 `umodIdx` (ring-buffer read / write index), `sszDrop` / `sszOfArray`, `bitGet` / `bitSet`,
 and `hasFlag` / `addFlag`. The cap-clamping append moved to SizzLean (`SSZList.push`,
 with `sszAppend` / `appendState` on top), so the old `sszPush` is gone. `Spec.State`
-carries `getStateRoot` / `stateRoot` / `stateRoot!` and `runToRoot` (run a boxed-state
-action to its post-root, the `EStateM` twin of `runOn`). `Spec.SigningRoot` carries
+carries `getStateRoot` / `stateRoot` / `stateRoot!`. `Spec.RunState` carries
+`MonadRunState`, the class saying a state-machine monad can be run from a starting state,
+and `runToRoot` (run a boxed-state action to its post-root, generic over that class, the
+state-machine twin of `runOn`). `Spec.NestedMachine` carries `NestedStateMachine` and the
+`runNestedStateTransition` / `evalNestedStateTransition` bridges. `Spec.SigningRoot` carries
 `htr`, `computeForkDataRoot`, `computeDomain`, `computeSigningRoot`, `isValidMerkleBranch`,
 and the signing-root verify combinator `blsVerifySigned`, over `[HasherTag]`. `Spec.Loop`
 carries `Step` / `fuelLoop` / `fuelIterateM` / `fuelIterateM!`. `Spec.FiniteMap` carries
@@ -418,7 +427,7 @@ plus the auto `[Preset]`), `LatestMessage`, and the Gloas `ForkChoiceNode` are
 on* : StoreTransition Unit` over the typed `StoreTransitionError`. They write the same
 `assert` / `todo` the state machine uses (resolved to `StoreTransitionError` through
 `SpecReject` from the section's monad), `missingKey` for `FcMap` misses, and the inner
-`state_transition` runs through `runStateTransition` (`Spec/Assert.lean`, wrapping an inner
+`state_transition` runs through `runNestedStateTransition` (`Spec/NestedMachine.lean`, converting an inner
 failure as `StoreTransitionError.transition`). `ForkInterface.runForkChoice` returns `Except (RunError
 StoreTransitionError) Unit`, and `Server` classifies the typed reject (`.spec (.todo _)
 → todo`, everything else, a `decode` or any other spec reject, `→ bug`), so no `"TODO:"`
@@ -523,8 +532,9 @@ MIN_VALIDATOR_WITHDRAWABILITY_DELAY < 2^64` before the write, so an over-range c
 - **`process_execution_payload` takes the execution engine as valid.** It checks
   parent-hash / prev-randao / timestamp consistency and caches the header;
   `verify_and_notify_new_payload` is the consumer's responsibility, which is valid for
-  `sanity/blocks`. The timestamp uses `genesis_time + slot * SECONDS_PER_SLOT` (the
-  pinned form), and the standalone `operations/execution_payload` format threads the
+  `sanity/blocks`. The timestamp is `compute_time_at_slot(state, state.slot)`, the
+  millisecond form every other clock site in the tree reads, and the standalone
+  `operations/execution_payload` format threads the
   test's `execution.yaml` engine verdict via `CaseMeta.executionValid` to model an
   engine rejection. The blob-parameter bound is enforced where the operation format
   supplies it. The skip is safe for the in-scope corpus by audit, not just by

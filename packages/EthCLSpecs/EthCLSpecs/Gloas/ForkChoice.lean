@@ -19,7 +19,7 @@ the typed `StoreTransitionError`. The ePBS surface adds `on_execution_payload_en
 assert, and `notify_ptc_messages` (the block's payload attestations replayed per validator
 through `on_payload_attestation_message`, so the handler's rejects apply on the
 block path too). `on_block` runs the Gloas `state_transition` through
-`runStateTransition`.
+`runNestedStateTransition`.
 
 The `Ord (Vector UInt8 32)` instance and the `Checkpoint` `Ord` / `BEq` / `Hashable`
 instances are the Fulu ones (`EthCLSpecs.Fulu.instOrdBytes32`), in scope through
@@ -144,10 +144,14 @@ forkdef bpsDeadlineMs (bps : UInt64) : UInt64 :=
 
 /-! ## Parent payload status + node walks
 
-The walks here are `fuelLoop`-bounded rather than closed by `termination_by`, the choice
-`SPECS_ARCHITECTURE.md` §7.2 asks each loop to justify: the reads raise, so the walk is
-monadic, and a measure would have to be carried through a step that can reject. The bounds
-are honest counts over a finite acyclic DAG, so fuel-out is unreachable.
+The walks under this heading are `fuelLoop`-bounded rather than closed by `termination_by`,
+the choice `SPECS_ARCHITECTURE.md` §7.2 asks each loop to justify: the reads raise, so the
+walk is monadic, and a measure would have to be carried through a step that can reject. The
+bounds are honest counts over a finite acyclic DAG, so fuel-out is unreachable.
+
+`filterBlockTree` and `getHead` are the same kind of walk for the same reason, but they sit
+under `Filtered block tree + head` below, so each carries the reason in its own docstring
+rather than leaning on this heading.
 -/
 
 /-- `get_parent_payload_status(store, block)`: the parent edge is FULL when the
@@ -446,9 +450,12 @@ forkdef getVotingSource (store : Store map) (blockRoot : Root) : StoreTransition
     pure (sszGet hs currentJustifiedCheckpoint)
 
 /-- `filter_block_tree`: collect the viable branches into `acc` (a root set),
-returning whether `blockRoot` is viable. Root-keyed (unchanged from phase0). The
-recursion is fuel-bounded by the block count (the DAG is finite and acyclic, so the
-depth cannot exceed it), keeping the function total, no `partial def`. -/
+returning whether `blockRoot` is viable. Root-keyed (unchanged from phase0). The opening
+`store.blocks[block_root]` read and the `get_voting_source` reads raise, so the descent is
+fuel-bounded rather than closed by `termination_by` (§7.2), the same reason the node-walk
+heading gives above. The bound is the block count (the DAG is finite and acyclic, so the
+depth cannot exceed it), keeping the function total, no `partial def`; fuel-out is
+unreachable and would return `(acc, false)`. -/
 forkdef filterBlockTree (store : Store map) (blockRoot : Root) (acc : Array Root) :
     StoreTransition (Array Root × Bool) :=
   go ((FcMap.keys store.blocks).length + 1) blockRoot acc
@@ -521,8 +528,10 @@ forkdef getNodeChildren (store : Store map) (blocks : Array Root) (node : ForkCh
 
 /-- `get_head`: the LMD-GHOST walk over the node DAG. The max at each step compares
 `(get_weight, child.root, get_payload_status_tiebreaker)` in that priority order, ties
-broken by the greater root then the greater tiebreaker. Fuel-bounded: each step either
-descends to a new root or flips a pending node to a decided child. -/
+broken by the greater root then the greater tiebreaker. Fuel-bounded rather than closed by
+`termination_by` (§7.2), because the `max` fold runs through the throwing `betterOf` and a
+measure would have to be carried past that reject. Each step either descends to a new root
+or flips a pending node to a decided child, so twice the block count bounds it. -/
 forkdef getHead (store : Store map) : StoreTransition ForkChoiceNode := do
   let blocks ← getFilteredBlockTree store
   let head : ForkChoiceNode := .pending store.justifiedCheckpoint.root
@@ -580,7 +589,7 @@ unguarded, so a reject aborts the surrounding `on_block`. -/
 forkdef computePulledUpTip (blockRoot : Root) : StoreTransition Unit := do
   let store ← get
   let state ← FcMap.getOrThrow store.blockStates blockRoot
-  let pulled ← runStateTransition state processJustificationAndFinalization
+  let pulled ← runNestedStateTransition state processJustificationAndFinalization
   let cj := sszGet pulled currentJustifiedCheckpoint
   let fz := sszGet pulled finalizedCheckpoint
   set { store with
@@ -618,8 +627,11 @@ forkdef onTick (time : UInt64) : StoreTransition Unit := do
   let tickMs ← checkedMul elapsed 1000 "on_tick: (time - genesis_time) * 1000"
   let tickSlot := tickMs / Const.slotDurationMs
   let cur ← getCurrentSlot store
-  -- The fuel bound is a Lean artifact, not a spec op: a raw `-` here can only underflow to a huge
-  -- ceiling when `tickSlot < cur`, and then the step `.done`s on its first iteration anyway.
+  -- Fuel rather than a measure (§7.2): the body reads the store and can throw, so a decreasing
+  -- `tickSlot - get_current_slot` would have to be carried past a rejecting step. The bound is a
+  -- Lean artifact, not a spec op: a raw `-` here can only underflow to a huge ceiling when
+  -- `tickSlot < cur`, and then the step `.done`s on its first iteration anyway. `fuelIterateM!`
+  -- throws on fuel-out because the bound is exact only where `1000` divides `SLOT_DURATION_MS`.
   fuelIterateM! ((tickSlot - cur).toNat + 1) () "on_tick: per-slot catch-up" fun _ => do
     let cs ← getCurrentSlot (← get)
     if cs < tickSlot then
@@ -699,9 +711,9 @@ forkdef onPayloadAttestationMessage (msg : PayloadAttestationMessage) (isFromBlo
   if !(data.slot == sszGet state slot) then pure ()
   else
     -- `get_ptc` asserts, and it is a state-file `forkdef`, so its `StateTransitionError`
-    -- crosses `evalStateTransition` to reach this store handler. The bind sits after the
+    -- crosses `evalNestedStateTransition` to reach this store handler. The bind sits after the
     -- `data.slot == state.slot` guard that bounds the index.
-    let ptc ← evalStateTransition state (getPtc state data.slot)
+    let ptc ← evalNestedStateTransition state (getPtc state data.slot)
     let ptcIndices := (Array.range Const.ptcSize).filter fun i => vget ptc i == msg.validatorIndex
     assert (ptcIndices.size > 0)
     if isFromBlock then set (← recordPtcVotes store data ptcIndices)
@@ -731,7 +743,7 @@ forkdef notifyPtcMessages (state : State) (payloadAttestations : Array PayloadAt
   for pa in payloadAttestations do
     -- Second bridge crossing: `get_indexed_payload_attestation` inherited `get_ptc`'s asserts,
     -- and this replay loop runs in the store machine.
-    let indexed ← evalStateTransition state (getIndexedPayloadAttestation state pa)
+    let indexed ← evalNestedStateTransition state (getIndexedPayloadAttestation state pa)
     for idx in indexed.attestingIndices do
       -- `(map := map)`: the handler takes no store argument, so the section's map backing
       -- is undetermined at this call site (the ambient `get`/`set` constraint alone leaves
@@ -742,7 +754,7 @@ forkdef notifyPtcMessages (state : State) (payloadAttestations : Array PayloadAt
 
 /-- `on_block`. Rejects (via `assert`) an unknown parent, a
 full-but-unverified parent, a future block, or a finality conflict, and propagates a
-failed `state_transition` through `runStateTransition`. The ePBS additions over the
+failed `state_transition` through `runNestedStateTransition`. The ePBS additions over the
 prior fork: the parent-full assert, the two per-block vote-map inits, and
 `notify_ptc_messages`. -/
 forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
@@ -762,7 +774,7 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   assert (store.finalizedCheckpoint.root == finalizedBlock)
 
   -- Run the state transition, then snapshot the head before the block is added.
-  let postState ← runStateTransition parentState (stateTransition signedBlock)
+  let postState ← runNestedStateTransition parentState (stateTransition signedBlock)
   let blockRoot := htr block
   -- The head is taken BEFORE the new block is added (`update_proposer_boost_root`).
   let head ← getHead store
@@ -798,18 +810,6 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
 
 /-! ## on_execution_payload_envelope -/
 
-/-- `compute_time_at_slot(state, slot)`. The pinned spec text flags this function itself as
-"unsafe with respect to overflows and underflows" (`phase0/beacon-chain.md:897`), and it gates
-the envelope timestamp assert in `verify_execution_payload_envelope`, which Heze inherits, so it
-sits on a reachable fork-choice path. All three ops are checked. -/
-forkdef computeTimeAtSlot (state : State) (slot : Slot) : StoreTransition UInt64 := do
-  let slotsSinceGenesis ← checkedSub slot Const.genesisSlot
-    "compute_time_at_slot: slot - GENESIS_SLOT"
-  let elapsedMs ← checkedMul slotsSinceGenesis Const.slotDurationMs
-    "compute_time_at_slot: (slot - GENESIS_SLOT) * SLOT_DURATION_MS"
-  checkedAdd (sszGet state genesisTime) (elapsedMs / 1000)
-    "compute_time_at_slot: genesis_time + (slot - GENESIS_SLOT) * SLOT_DURATION_MS // 1000"
-
 /-- `verify_execution_payload_envelope_signature`: the envelope is signed by the
 builder's key (the proposer's, for a self-build) under `DOMAIN_BEACON_BUILDER`.
 
@@ -832,9 +832,42 @@ forkdef verifyExecutionPayloadEnvelopeSignature (state : State) (signedEnv : Sig
   let signingRoot := computeSigningRoot signedEnv.message (getDomain state Const.domainBeaconBuilder (currentEpochOf state))
   pure (blsVerify pubkey signingRoot signedEnv.signature)
 
-/-- `verify_execution_payload_envelope`: the consensus-side envelope checks. The EL
-`verify_and_notify_new_payload` and `is_data_available` are modeled as always `true`
-(no execution layer / data availability in the harness). Returns the cache-warmed
+-- The envelope path crosses the execution layer twice: `verify_and_notify_new_payload`
+-- inside the verification, and `is_data_available` at the handler. Both verdicts belong to
+-- something outside the vector, so both enter through the framework seams in
+-- `EthCLLib.Spec.Engine` (which carries the optimistic-default rationale for each) rather
+-- than being written as constants here. Scoped to the two declarations that need them; at
+-- file scope the binders would ride on every later declaration.
+section EngineSeam
+variable [ExecutionEngine ExecutionPayload Transaction ExecutionRequests] [DataAvailability]
+
+/-- `verify_and_notify_new_payload(new_payload_request)` (`gloas/fork-choice.md:657-666`):
+the EL's verdict on the revealed payload. Reads the `[ExecutionEngine]` seam; the trust
+boundary and the always-`true` default are documented on `EthCLLib.Spec.ExecutionEngine`,
+including why the commitments reach it unmapped by
+`kzg_commitment_to_versioned_hash`. -/
+forkdef verifyAndNotifyNewPayload (payload : ExecutionPayload)
+    (blobKzgCommitments : Array KZGCommitment) (parentBeaconBlockRoot : Root)
+    (executionRequests : ExecutionRequests) : Bool :=
+  -- The three class parameters are implicit on the projection and only `Payload` is
+  -- recoverable from the value arguments (`Tx` appears in no argument of this method, and
+  -- `Requests` is an `ExecutionRequests` the elaborator would have to guess a class instance
+  -- for). Name all three, as the seam's own binder spells them.
+  ExecutionEngine.verifyAndNotifyNewPayload (Payload := ExecutionPayload) (Tx := Transaction)
+    (Requests := ExecutionRequests) payload blobKzgCommitments parentBeaconBlockRoot
+    executionRequests
+
+/-- `is_data_available(beacon_block_root)` (`gloas/fork-choice.md:243-257`): whether the
+block's column sidecars retrieve and verify. Gloas modified the Fulu signature to take a
+root and retrieve the sidecars itself, through a function the spec marks implementation
+and context dependent, so the verdict reads the `[DataAvailability]` seam. Fulu's own
+`isDataAvailable` is unaffected: it is handed the columns the step lists and checks them
+for real. -/
+forkdef isDataAvailable (beaconBlockRoot : Root) : Bool :=
+  DataAvailability.isDataAvailable beaconBlockRoot
+
+/-- `verify_execution_payload_envelope`: the consensus-side envelope checks, closing with
+the EL's `verify_and_notify_new_payload` verdict. Returns the cache-warmed
 state (the `hashTreeRoot` computed for the block-root check) in
 `Except StoreTransitionError`; the handler stores it back so the warm tree is kept
 rather than thrown away. -/
@@ -862,9 +895,17 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
   assert (htr envelope.executionRequests == bid.executionRequestsRoot)
   assert (payload.slotNumber == sszGet state slot)
   assert (payload.parentHash == sszGet state latestBlockHash)
-  let expectedTime ← computeTimeAtSlot state (sszGet state slot)
+  -- `compute_time_at_slot` (`Fulu/Time.lean`, inherited): `liftErr` wraps its `.arithmetic`
+  -- fault as `.transition (.arithmetic …)`, the store machine's shape for the same fault.
+  let expectedTime ← liftErr (computeTimeAtSlot state (sszGet state slot))
   assert (payload.timestamp == expectedTime)
   assert (htr payload.withdrawals == htr (sszGet state payloadExpectedWithdrawals))
+
+  -- The EL verdict, last as in the spec. `bid.blobKzgCommitments` supplies the request's
+  -- versioned hashes (unmapped, see the seam's docstring); the parent root and the
+  -- execution requests come off the envelope.
+  assert (verifyAndNotifyNewPayload payload bid.blobKzgCommitments.toArray
+    envelope.parentBeaconBlockRoot envelope.executionRequests)
   return warm
 
 /-- `on_execution_payload_envelope`: verify the revealed payload envelope against the
@@ -875,12 +916,17 @@ forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) 
   let envelope := signedEnv.message
   let state ← FcMap.getOrAssert store.blockStates envelope.beaconBlockRoot
     "envelope.beacon_block_root in store.block_states"
+  -- `assert is_data_available(envelope.beacon_block_root)` (`gloas/fork-choice.md:1055`),
+  -- between the block-state read and the verification, as the spec orders it.
+  assert (isDataAvailable envelope.beaconBlockRoot)
 
   match verifyExecutionPayloadEnvelope state signedEnv with
   | .error e => throw e
   | .ok warm => set { store with
       blockStates := FcMap.insert store.blockStates envelope.beaconBlockRoot warm,
       payloads := FcMap.insert store.payloads envelope.beaconBlockRoot envelope }
+
+end EngineSeam
 
 /-! ## on_attestation -/
 
@@ -900,7 +946,7 @@ forkdef storeTargetCheckpointState (store : Store map) (target : Checkpoint) :
     let targetSlot := computeStartSlotAtEpoch target.epoch
     let advanced ←
       if (sszGet base slot) < targetSlot then
-        runStateTransition base (processSlots targetSlot)
+        runNestedStateTransition base (processSlots targetSlot)
       else pure base
     pure { store with checkpointStates := FcMap.insert store.checkpointStates target advanced }
 
@@ -1031,147 +1077,5 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
       payloadDataAvailabilityVote := FcMap.empty }
 
 end
-
-/-! ### Build-enforced pins (vectorless): the PTC replay rejects
-
-The replay conversions' reject branches are unreachable by conformance vectors (the
-generators cannot ship the pyspec `KeyError` case), so they are locked here, the
-same pattern as Heze's inclusion-list pins. `pinStore` mirrors Heze's
-`pinPilsStore` without the two FOCIL fields. -/
-
-/-- The pins' concrete fork-choice monad: the minimal preset over the deterministic
-`treeMap` and the FFI hasher. -/
-private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
-
-private def pinRoot : Root := Vector.replicate 32 9
-
-/-- A minimal empty Gloas `Store`: every field empty/zero, mirroring the
-`getForkchoiceStore` literal. The `letI`s fix the preset / hasher so the anonymous
-`Store` constructor synthesizes them. -/
-private def pinStore : @Store minimal treeMap fastHasherTag :=
-  letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
-  { time := 0, genesisTime := 0
-    justifiedCheckpoint := default, finalizedCheckpoint := default
-    unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
-    proposerBoostRoot := fcZeroRoot
-    equivocatingIndices := #[]
-    blocks := FcMap.empty
-    blockStates := FcMap.empty
-    blockTimeliness := FcMap.empty
-    checkpointStates := FcMap.empty
-    latestMessages := FcMap.empty
-    unrealizedJustifications := FcMap.empty
-    payloads := FcMap.empty
-    payloadTimelinessVote := FcMap.empty
-    payloadDataAvailabilityVote := FcMap.empty }
-
-/-- `recordPtcVotes` rejects (`missingKey`) when the per-block vote maps carry no
-entry for the attested root, the pinned plain-`Dict` read; the pre-conversion
-`lookupD` silently defaulted to `#[]` and the writes no-opped. `FcMap` only
-(hash-free), so kernel `#guard`. -/
-private def pinRecordPtcVotesThrows : Bool :=
-  letI : Preset := minimal
-  letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
-  let data : PayloadAttestationData := { (default : PayloadAttestationData) with beaconBlockRoot := pinRoot }
-  match (recordPtcVotes (map := treeMap) pinStore data #[0] : PinM (Store treeMap)).run pinStore with
-  | .error (.missingKey _) _ => true
-  | _ => false
-#guard pinRecordPtcVotesThrows = true
-
-/-- The routed replay throw, end-to-end: `notifyPtcMessages` over a state at
-`slot := 1` (zeroed `ptc_window`, so the PTC is all validator 0; alpha.11 `get_ptc`
-is a plain window read) and a one-bit payload attestation whose `beacon_block_root`
-the store does not know rejects with the wire handler's `.assert` (the pinned
-`assert data.beacon_block_root in store.block_states` membership assert, a
-`getOrAssert` miss), where the pre-conversion replay silently skipped the
-message. This locks the routing itself: the replay path IS
-`on_payload_attestation_message (is_from_block = true)`. `State` is FFI-backed
-(`FastBox`), so `native_decide`. -/
-private def pinReplayThrows : Bool :=
-  letI : Preset := minimal
-  letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
-  -- The handler wants a `CryptoBackend` for its wire-path signature check; the
-  -- block-replay path (`is_from_block = true`) never reaches it, but elaboration does.
-  letI : CryptoBackend := CryptoBackend.realBackend
-  let state : State := SSZ.FastBox ({ (default : @EthCLSpecs.Gloas.BeaconState minimal) with slot := 1 })
-  let pa : PayloadAttestation := { (default : PayloadAttestation) with
-    aggregationBits := bitSet default 0 true
-    data := { (default : PayloadAttestationData) with beaconBlockRoot := pinRoot, slot := 1 } }
-  match (notifyPtcMessages (map := treeMap) state #[pa] : PinM Unit).run pinStore with
-  | .error (.assert _) _ => true
-  | _ => false
-example : pinReplayThrows = true := by native_decide
-
-/-- The target-checkpoint advance propagates a `process_slots` reject. The fixture
-state is `default` (zero validators, slot 0) carrying one queued
-`PendingConsolidation`: advancing to epoch 1's start slot reaches
-`process_pending_consolidations`, whose `state.validators[source_index]` read is a
-pinned plain-list read (pyspec `IndexError`), so the epoch step rejects with
-`outOfBounds` and the unguarded pinned `process_slots` means
-`store_target_checkpoint_state` re-throws it (`.transition`) with nothing cached. This
-pins the propagation semantics; the throw site inside epoch processing is incidental. The
-consolidation carrier is deliberate: a bare zero-validator advance does NOT reject,
-it grinds through `cbwsAux`'s 10M-iteration fuel in the proposer lookahead, so the
-reject must land earlier in the epoch pipeline. `State` is FFI-backed (`FastBox`),
-so `native_decide`. -/
-private def pinTargetAdvanceRejects : Bool :=
-  letI : Preset := minimal
-  letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
-  -- `process_slots` runs the state machine, whose section wants a `CryptoBackend`.
-  letI : CryptoBackend := CryptoBackend.realBackend
-  let bs : @EthCLSpecs.Gloas.BeaconState minimal :=
-    { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
-      pendingConsolidations := sszOfArray #[{ sourceIndex := 0, targetIndex := 0 }] }
-  let state : State := SSZ.FastBox bs
-  let store := { pinStore with blockStates := FcMap.insert FcMap.empty pinRoot state }
-  let target : Checkpoint := { epoch := 1, root := pinRoot }
-  match (storeTargetCheckpointState (map := treeMap) store target : PinM (Store treeMap)).run store with
-  -- Match the constructor, not the wrapper: `.transition` also spans `.arithmetic`, an uncaught
-  -- fault that would fail the very step this fixture pins as an expected rejection. The pin has
-  -- to break when the reject class changes, which is what Leo's note 3 asked for.
-  | .error (.transition (.outOfBounds _ _)) _ => true
-  | _ => false
-example : pinTargetAdvanceRejects = true := by native_decide
-
-/-- `getBlockRootAtSlot` rejects (`.assert`) the restored recency guard `slot <
-state.slot <= slot + SLOTS_PER_HISTORICAL_ROOT`: a `default` state has slot 0, so
-`get_block_root_at_slot(state, 0)` fails `0 < 0` where the pre-restore accessor
-mod-indexed silently. This locks the assert itself; the end-to-end
-`compute_pulled_up_tip` pjf reachability it opens up is conformance-gated rather than
-pinned (the epoch-boundary near-zero-stake fixture is finicky to construct). `State` is
-FFI-backed, so `native_decide`. -/
-private def pinBlockRootRecencyRejects : Bool :=
-  letI : Preset := minimal
-  letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
-  let state : State := SSZ.FastBox (default : @EthCLSpecs.Gloas.BeaconState minimal)
-  match (getBlockRootAtSlot state 0 : EStateM StateTransitionError State Root).run state with
-  | .error (.assert _) _ => true
-  | _ => false
-example : pinBlockRootRecencyRejects = true := by native_decide
-
-/-- `verifyExecutionPayloadEnvelopeSignature` rejects (`.transition (.outOfBounds …)`) an
-out-of-range `builder_index`: a `default` state has an empty `builders` registry, so an
-envelope with `builder_index = 1` (not the self-build sentinel `UINT64_MAX`) reads
-`state.builders[1]`, which the spec's `IndexError` surfaces through `sszGetIdx` where the
-former `[i]!` would have panicked. The read throws before `bls.Verify`, so no backend runs.
-`State` is FFI-backed, so `native_decide`. -/
-private def pinEnvelopeSigBuilderOob : Bool :=
-  letI : Preset := minimal
-  letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
-  letI : CryptoBackend := CryptoBackend.realBackend
-  let state : State := SSZ.FastBox (default : @EthCLSpecs.Gloas.BeaconState minimal)
-  let signedEnv : SignedExecutionPayloadEnvelope :=
-    { (default : SignedExecutionPayloadEnvelope) with
-      message := { (default : ExecutionPayloadEnvelope) with builderIndex := 1 } }
-  match verifyExecutionPayloadEnvelopeSignature state signedEnv with
-  | .error (.transition (.outOfBounds _ _)) => true
-  | _ => false
-example : pinEnvelopeSigBuilderOob = true := by native_decide
 
 end EthCLSpecs.Gloas

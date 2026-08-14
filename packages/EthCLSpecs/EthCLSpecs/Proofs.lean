@@ -1,6 +1,7 @@
 import EthCLSpecs.Proofs.BuilderIndex
 import EthCLSpecs.Proofs.BuilderPendingPayments
 import EthCLSpecs.Proofs.CanBuilderCoverBid
+import EthCLSpecs.Proofs.ForkChoiceRun
 import EthCLSpecs.Proofs.GetPtc
 import EthCLSpecs.Proofs.InitializePtcWindow
 import EthCLSpecs.Proofs.InitiateBuilderExit
