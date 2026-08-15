@@ -136,10 +136,11 @@ variable-size element type, and the schema-level
 (real `BeaconState` / `BeaconBlockBody` shapes sit outside it;
 see etheorem#61 for the value-level relaxation). The
 `SSZ.roundtrip` user-surface corollary is gated by
-`BasicSupported r.shape` until those close too. The asterisk on "verified by inheritance" is intentional and
-small: passing empirical conformance is what makes both the
-performance investment in Phase 4 and the research-grade proof
-investment in Phase 5 well-targeted rather than speculative.
+`BasicSupported r.shape` until those close too. The asterisk on
+"verified by inheritance" is intentional and small: passing
+empirical conformance is what makes both the performance
+investment in Phase 4 and the research-grade proof investment in
+Phase 5 well-targeted rather than speculative.
 
 **What the cache layer adds.** SSZ's `hash_tree_root` is the dominant cost
 in any consensus-state pipeline: a cold root of `BeaconState` hashes tens

@@ -5,12 +5,12 @@
 > **Status: early-stage, experimental, single-developer; personal
 > project, not an EF release.** The library passes the upstream
 > consensus-spec test corpus and the three central theorems are
-> landed on the `BasicSupported` cut, which now covers
-> mixed-field containers too (remaining open work toward the
-> universally-quantified `Supported` form is tracked in
-> [`docs/PLAN.md`](docs/PLAN.md) Phase 5). Reviews, issues, and
-> pull requests are welcome; production-grade stability and a
-> stable release line are not implied.
+> landed on the `BasicSupported` cut, which now covers mixed-field
+> containers whose schema max stays under `MAX_LENGTH` (remaining
+> open work toward the universally-quantified `Supported` form is
+> tracked in [`docs/PLAN.md`](docs/PLAN.md) Phase 5). Reviews,
+> issues, and pull requests are welcome; production-grade stability
+> and a stable release line are not implied.
 
 A Lean 4 implementation of Ethereum's
 [SSZ](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md)

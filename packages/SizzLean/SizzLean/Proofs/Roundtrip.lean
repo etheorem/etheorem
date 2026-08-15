@@ -27,6 +27,7 @@ theorem. Per-arm proofs live in sibling modules:
 | `.vectorFixed t n` | `Proofs/VectorFixed.lean` |
 | `.listFixed t cap` | `Proofs/ListFixed.lean` |
 | `.bitvector n` / `.bitlist cap` | `Proofs/BitPack.lean` |
+| `.containerFixed fs` (helpers) | `Proofs/ContainerFixed.lean` |
 | `.containerVar fs` (groundwork) | `Proofs/ContainerVar.lean` |
 
 ## A short note on Lean's recursion checker
