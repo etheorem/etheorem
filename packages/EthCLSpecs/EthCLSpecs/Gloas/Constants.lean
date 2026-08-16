@@ -16,9 +16,9 @@ name, replayed into this namespace. That is what lets Gloas body code write
 no copy: the body's unqualified sibling calls late-bind here, so
 `Const.payloadTimelyThreshold` divides *Gloas's* `ptcSize`.
 
-`forkpreset` also emits the scoped downgrade instance to `Fulu.Preset`, the
-bridge `Upgrade.lean` and `Interface.lean` open at the fork boundary
-(`FRAMEWORK_ARCHITECTURE.md` §4).
+`forkpreset` also emits the downgrade instance to `Fulu.Preset`, the bridge
+`Upgrade.lean` and `Interface.lean` open at the fork boundary
+(`FRAMEWORK_ARCHITECTURE.md` §4.2).
 -/
 
 set_option autoImplicit false

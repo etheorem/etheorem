@@ -12,13 +12,10 @@ arrives by lineage merge (the tier classes and their value sets) or by `inherit`
 diff to declare is still written, since the class or value set it emits has to be
 this fork's own.
 
-The replayed surface is nearly the whole of Gloas's, since EIP-7805 leaves the
-ePBS containers and constants alone. The compiler enumerates it: a name Heze
-calls but never inherits fails with an unknown identifier.
-
-`forkpreset` also emits the scoped downgrade instance to `Gloas.Preset`, which
-chains onward to `Fulu.Preset` through Gloas's own bridge. `Upgrade.lean` and
-`Interface.lean` open it (`FRAMEWORK_ARCHITECTURE.md` §4).
+`forkpreset` also emits the downgrade instance to `Gloas.Preset`, which chains
+onward to `Fulu.Preset` through Gloas's own bridge, so injecting `Heze.minimal`
+reaches either ancestor spine. `Upgrade.lean` and `Interface.lean` open it
+(`FRAMEWORK_ARCHITECTURE.md` §4.2).
 -/
 
 set_option autoImplicit false

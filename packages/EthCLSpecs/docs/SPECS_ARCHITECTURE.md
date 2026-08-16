@@ -848,20 +848,27 @@ that `Const.camelCase` projection.
 
 ### 9.1 The tier system is per fork
 
-The tier system is per fork, not shared. Each fork has its own `Preset` and `Config`
-classes and its own `Const` abbrevs. Gloas inherits Fulu's through the inheritance
-mechanism and appends the ePBS constants: `PTC_SIZE` to the preset tier,
-`BUILDER_REGISTRY_LIMIT` to the universal tier, `GLOAS_FORK_EPOCH` to the config
-tier.
+The tier system is per fork. Each fork has its own `Preset` and `Config` classes
+and its own `Const` entries. A child declares its classes with `forkpreset` /
+`forkconfig`, naming only the fields it adds; the framework merges those with the
+ancestors' along the lineage and emits one flat class in the child's namespace.
+Its `Const` entries arrive the same way as everything else, one `inherit` line
+per name, and it declares its own beside them. Gloas adds `PTC_SIZE` and
+`BUILDER_REGISTRY_LIMIT` to its preset tier and `GLOAS_FORK_VERSION` to its
+config tier; Heze adds `INCLUSION_LIST_COMMITTEE_SIZE`.
 
-This is forced by container-cap late-binding, not a stylistic choice. A container
-cap names `Const.x`, so an inherited container must resolve that constant to the
-running fork's tier. A shared constants layer could not provide that, because the
-inherited container's cap would early-bind to the shared symbol rather than the
-child fork's value, and it would contradict the no-shared-spec-layer rule of
-Section 3. Both `minimal` and `mainnet` instances are supplied from the start, as
-`@[reducible] def`s injected at the test boundary, so the spec is generic over the
-preset and the runner picks per test.
+Container-cap late binding forces this. A container cap names `Const.x`, so an
+inherited container has to resolve that constant to the running fork's tier. A
+shared constants layer could not provide it: the inherited container's cap would
+early-bind to the shared symbol and miss the child fork's value, and the layer
+would contradict the no-shared-spec-layer rule of Section 3.
+
+Both `minimal` and `mainnet` are supplied from the start, as `@[reducible] def`s
+injected at the test boundary, so the spec is generic over the preset and the
+runner picks per test. Each fork owns its own copies of those too, so the runner
+injects `Gloas.minimal` against Gloas code; the fork-upgrade boundary reaches the
+parent's classes through the generated downgrade bridge
+(`FRAMEWORK_ARCHITECTURE.md` §4.2) rather than through a second injection.
 
 ---
 

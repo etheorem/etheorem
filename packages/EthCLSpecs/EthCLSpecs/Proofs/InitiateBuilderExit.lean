@@ -26,7 +26,7 @@ and unconditional for the two shipped Gloas preset/config pairs, with no epoch o
 hypothesis from the caller.
 
 Scope is Gloas's `initiateBuilderExit`. Heze inherits the function
-(`Heze/Operations.lean:46`) at its own `State`; these theorems say nothing about that
+(`Heze/Operations.lean:43`) at its own `State`; these theorems say nothing about that
 instantiation. The sole current Gloas caller derives the index from a successful
 `findIdx?`, so its calls are expected to be in range, and that caller-level fact is
 left to `processBuilderExitRequest`'s own theorem.
