@@ -4,14 +4,15 @@ import EthCLSpecs.Fulu.Committees
 /-!
 # `EthCLSpecs.Gloas.Upgrade`: the Fulu → Gloas fork upgrade (load order, lifecycle)
 
-`upgradeToGloas` is the single sanctioned cross-fork reference
-(`SPECS_ARCHITECTURE.md` §6.2): it reads a finished Fulu state and constructs the
-Gloas one, so it lives in Gloas and names both forks. It is the `fork` vector
-format's entry point.
+`upgradeToGloas` is one of the two sanctioned cross-fork references
+(`SPECS_ARCHITECTURE.md` §6.2, `Interface.lean` being the other): it reads a
+finished Fulu state and constructs the Gloas one, so it lives in Gloas and names
+both forks. It is the `fork` vector format's entry point.
 
 Ported verbatim from the v1.7.0-alpha.11 `specs/gloas/fork.md`: common fields carry
-across (the unchanged component containers are reused, so the copies are
-direct, no conversion); the fork version bumps (`previous := pre.fork.current`,
+across through the per-container `cv*` converters below, since a Gloas component
+container is this fork's own replayed copy and so a distinct type from Fulu's;
+the fork version bumps (`previous := pre.fork.current`,
 `current := GLOAS_FORK_VERSION`, `epoch := get_current_epoch(pre)`);
 `latest_block_hash` comes from the dropped payload header's block hash; and the
 ePBS fields initialize to their fork-transition values (`execution_payload_availability`
