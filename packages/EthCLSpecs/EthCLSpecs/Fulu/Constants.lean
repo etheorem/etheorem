@@ -28,8 +28,16 @@ namespace EthCLSpecs.Fulu
 
 fork Fulu
 
-/-- The preset-varying constants (vector widths, list caps, committee / epoch
-lengths). Threaded `[Preset]`; the runner injects `minimal` or `mainnet`. -/
+/-- The preset-varying constants. Threaded `[Preset]`; the runner injects
+`minimal` or `mainnet`.
+
+Membership is decided by the upstream file, not by whether the two presets
+currently agree: everything under `presets/{minimal,mainnet}/*.yaml` sits here,
+even where both files say the same number today. A preset value that shapes a
+type would otherwise be baked in as a literal, and a future divergence would
+silently produce a wrong cap and a wrong Merkle root rather than a build error.
+Values the spec lists under its `## Constants` heading (weights, flag indices,
+domain tags, sentinels, prefix bytes) stay flat in `Const`. -/
 class Preset where
   slotsPerEpoch : Nat
   slotsPerHistoricalRoot : Nat
@@ -47,9 +55,66 @@ class Preset where
   maxBlobCommitmentsPerBlock : Nat
   pendingPartialWithdrawalsLimit : Nat
   pendingConsolidationsLimit : Nat
-  -- Gloas (EIP-7732) preset-varying constants.
+  -- Registry and history caps.
+  validatorRegistryLimit : Nat
+  historicalRootsLimit : Nat
+  pendingDepositsLimit : Nat
+  -- Per-block operation caps.
+  maxProposerSlashings : Nat
+  maxAttesterSlashings : Nat
+  maxAttestations : Nat
+  maxAttesterSlashingsElectra : Nat
+  maxAttestationsElectra : Nat
+  maxDeposits : Nat
+  maxVoluntaryExits : Nat
+  maxBlsToExecutionChanges : Nat
+  maxValidatorsPerCommittee : Nat
+  maxDepositRequestsPerPayload : Nat
+  maxWithdrawalRequestsPerPayload : Nat
+  maxConsolidationRequestsPerPayload : Nat
+  maxPendingDepositsPerEpoch : Nat
+  -- Execution-payload shape.
+  maxExtraDataBytes : Nat
+  maxBytesPerTransaction : Nat
+  maxTransactionsPerPayload : Nat
+  bytesPerLogsBloom : Nat
+  -- Timing and lifecycle.
+  maxSeedLookahead : Epoch
+  minSeedLookahead : Epoch
+  minAttestationInclusionDelay : Slot
+  minEpochsToInactivityPenalty : Epoch
+  -- Balance thresholds. A `…G` field is the `Gwei` form of the value its
+  -- suffix-free twin holds as a `Nat`; both flavours are preset entries because
+  -- both read the same YAML key.
+  effectiveBalanceIncrement : Nat
+  effectiveBalanceIncrementG : Gwei
+  minDepositAmountG : Gwei
+  minActivationBalance : Gwei
+  maxEffectiveBalanceG : Gwei
+  maxEffectiveBalanceElectra : Nat
+  maxEffectiveBalanceElectraG : Gwei
+  hysteresisQuotient : Nat
+  hysteresisDownwardMultiplier : Nat
+  hysteresisUpwardMultiplier : Nat
+  -- Reward / penalty quotients.
+  baseRewardFactor : Nat
+  minSlashingPenaltyQuotientElectra : Nat
+  whistleblowerRewardQuotientElectra : Nat
+  proportionalSlashingMultiplierBellatrix : Nat
+  inactivityPenaltyQuotientBellatrix : Nat
+  -- PeerDAS.
+  numberOfColumns : Nat
+  kzgCommitmentsInclusionProofDepth : Nat
+  -- Gloas (EIP-7732 ePBS, EIP-8282 builder deposits / exits).
   ptcSize : Nat
   maxBuildersPerWithdrawalsSweep : Nat
+  builderRegistryLimit : Nat
+  builderPendingWithdrawalsLimit : Nat
+  maxPayloadAttestations : Nat
+  maxBuilderDepositRequestsPerPayload : Nat
+  maxBuilderExitRequestsPerPayload : Nat
+  -- Heze (EIP-7805 FOCIL).
+  inclusionListCommitteeSize : Nat
   -- Well-formedness of the vector-length constants: each is a positive `uint64`-ranged
   -- value (positivity is what a modulo index into a length-`n` vector needs, `< 2 ^ 64`
   -- is the "it is a uint64" the value carries in pyspec). Carried on the preset so the
@@ -62,7 +127,8 @@ class Preset where
   epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64
 
 /-- The config-tier values (network parameters). Threaded `[Config]`; never
-shapes a type. -/
+shapes a type. Membership follows `configs/{minimal,mainnet}.yaml` the same way
+`Preset` follows the preset files. -/
 class Config where
   churnLimitQuotient : UInt64
   minPerEpochChurnLimitElectra : Gwei
@@ -73,6 +139,8 @@ class Config where
   capellaForkVersion : Version
   slotDurationMs : UInt64
   attestationDueBps : UInt64
+  ejectionBalanceG : Gwei
+  maxBlobsPerBlockElectra : Nat
   -- Gloas (EIP-7732) config-tier constants.
   gloasForkVersion : Version
   churnLimitQuotientGloas : UInt64
@@ -119,61 +187,61 @@ abbrev epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64 := Prese
 abbrev farFutureEpoch : Epoch := 0xffffffffffffffff
 abbrev genesisSlot : Slot := 0
 abbrev genesisEpoch : Epoch := 0
-abbrev validatorRegistryLimit : Nat := 2 ^ 40
-abbrev historicalRootsLimit : Nat := 2 ^ 24
-abbrev pendingDepositsLimit : Nat := 2 ^ 27
+abbrev validatorRegistryLimit : Nat := Preset.validatorRegistryLimit
+abbrev historicalRootsLimit : Nat := Preset.historicalRootsLimit
+abbrev pendingDepositsLimit : Nat := Preset.pendingDepositsLimit
 abbrev justificationBitsLength : Nat := 4
-abbrev maxExtraDataBytes : Nat := 32
+abbrev maxExtraDataBytes : Nat := Preset.maxExtraDataBytes
 abbrev depositContractTreeDepth : Nat := 32
 -- per-block operation caps
-abbrev maxProposerSlashings : Nat := 16
-abbrev maxAttesterSlashings : Nat := 1
-abbrev maxAttestations : Nat := 8
-abbrev maxDeposits : Nat := 16
-abbrev maxVoluntaryExits : Nat := 16
-abbrev maxBlsToExecutionChanges : Nat := 16
-abbrev maxValidatorsPerCommittee : Nat := 2048
-abbrev maxDepositRequestsPerPayload : Nat := 8192
-abbrev maxWithdrawalRequestsPerPayload : Nat := 16
-abbrev maxConsolidationRequestsPerPayload : Nat := 2
+abbrev maxProposerSlashings : Nat := Preset.maxProposerSlashings
+abbrev maxAttesterSlashings : Nat := Preset.maxAttesterSlashings
+abbrev maxAttestations : Nat := Preset.maxAttestations
+abbrev maxDeposits : Nat := Preset.maxDeposits
+abbrev maxVoluntaryExits : Nat := Preset.maxVoluntaryExits
+abbrev maxBlsToExecutionChanges : Nat := Preset.maxBlsToExecutionChanges
+abbrev maxValidatorsPerCommittee : Nat := Preset.maxValidatorsPerCommittee
+abbrev maxDepositRequestsPerPayload : Nat := Preset.maxDepositRequestsPerPayload
+abbrev maxWithdrawalRequestsPerPayload : Nat := Preset.maxWithdrawalRequestsPerPayload
+abbrev maxConsolidationRequestsPerPayload : Nat := Preset.maxConsolidationRequestsPerPayload
 -- EIP-8282 (Gloas builder deposits / exits): 2**8 and 2**4, identical across presets.
-abbrev maxBuilderDepositRequestsPerPayload : Nat := 256
-abbrev maxBuilderExitRequestsPerPayload : Nat := 16
+abbrev maxBuilderDepositRequestsPerPayload : Nat := Preset.maxBuilderDepositRequestsPerPayload
+abbrev maxBuilderExitRequestsPerPayload : Nat := Preset.maxBuilderExitRequestsPerPayload
 -- EIP-7805 (Heze FOCIL): inclusion-list committee members per slot. A preset-file
 -- value, identical across presets at v1.7.0-alpha.11 (both say 2**4); re-check at
 -- every re-pin, and promote to a `Preset` field (like `ptcSize`) if they diverge.
-abbrev inclusionListCommitteeSize : Nat := 16
-abbrev maxAttestationsElectra : Nat := 8
-abbrev maxAttesterSlashingsElectra : Nat := 1
-abbrev maxPendingDepositsPerEpoch : Nat := 16
-abbrev maxBytesPerTransaction : Nat := 2 ^ 30
-abbrev maxTransactionsPerPayload : Nat := 2 ^ 20
-abbrev bytesPerLogsBloom : Nat := 256
+abbrev inclusionListCommitteeSize : Nat := Preset.inclusionListCommitteeSize
+abbrev maxAttestationsElectra : Nat := Preset.maxAttestationsElectra
+abbrev maxAttesterSlashingsElectra : Nat := Preset.maxAttesterSlashingsElectra
+abbrev maxPendingDepositsPerEpoch : Nat := Preset.maxPendingDepositsPerEpoch
+abbrev maxBytesPerTransaction : Nat := Preset.maxBytesPerTransaction
+abbrev maxTransactionsPerPayload : Nat := Preset.maxTransactionsPerPayload
+abbrev bytesPerLogsBloom : Nat := Preset.bytesPerLogsBloom
 -- Balance / effective-balance thresholds, in Gwei. The `G` suffix marks the
 -- `Gwei` (`UInt64`) form; it abbreviates "Gwei", not "Gloas". A threshold that
 -- also feeds `Nat` ratio arithmetic carries a suffix-free `Nat` twin of the same
 -- value, so `effectiveBalanceIncrement` and `maxEffectiveBalanceElectra` are the
 -- `Nat` forms and their `…G` siblings are the `Gwei` forms.
-abbrev effectiveBalanceIncrement : Nat := 1000000000
-abbrev effectiveBalanceIncrementG : Gwei := 1000000000
-abbrev minDepositAmountG : Gwei := 1000000000
-abbrev minActivationBalance : Gwei := 32000000000
-abbrev maxEffectiveBalanceG : Gwei := 32000000000
-abbrev maxEffectiveBalanceElectra : Nat := 2048000000000
-abbrev maxEffectiveBalanceElectraG : Gwei := 2048000000000
-abbrev ejectionBalanceG : Gwei := 16000000000
+abbrev effectiveBalanceIncrement : Nat := Preset.effectiveBalanceIncrement
+abbrev effectiveBalanceIncrementG : Gwei := Preset.effectiveBalanceIncrementG
+abbrev minDepositAmountG : Gwei := Preset.minDepositAmountG
+abbrev minActivationBalance : Gwei := Preset.minActivationBalance
+abbrev maxEffectiveBalanceG : Gwei := Preset.maxEffectiveBalanceG
+abbrev maxEffectiveBalanceElectra : Nat := Preset.maxEffectiveBalanceElectra
+abbrev maxEffectiveBalanceElectraG : Gwei := Preset.maxEffectiveBalanceElectraG
+abbrev ejectionBalanceG : Gwei := Config.ejectionBalanceG
 abbrev unsetDepositRequestsStartIndex : UInt64 := 0xffffffffffffffff
 abbrev fullExitRequestAmount : Gwei := 0
 /-- The BLS G2 point at infinity (`0xc0` then 95 zero bytes); the signature
 placeholder a `queue_excess_active_balance` pending deposit carries. -/
 abbrev g2PointAtInfinity : Vector UInt8 96 := Vector.ofFn (fun i : Fin 96 => if i.val == 0 then 0xc0 else 0)
 -- timing / lifecycle
-abbrev maxSeedLookahead : Epoch := 4
-abbrev minSeedLookahead : Epoch := 1
-abbrev minAttestationInclusionDelay : Slot := 1
-abbrev minEpochsToInactivityPenalty : Epoch := 4
+abbrev maxSeedLookahead : Epoch := Preset.maxSeedLookahead
+abbrev minSeedLookahead : Epoch := Preset.minSeedLookahead
+abbrev minAttestationInclusionDelay : Slot := Preset.minAttestationInclusionDelay
+abbrev minEpochsToInactivityPenalty : Epoch := Preset.minEpochsToInactivityPenalty
 -- reward / penalty weights + quotients (Nat)
-abbrev baseRewardFactor : Nat := 64
+abbrev baseRewardFactor : Nat := Preset.baseRewardFactor
 abbrev weightDenominator : Nat := 64
 abbrev proposerWeight : Nat := 8
 abbrev syncRewardWeight : Nat := 2
@@ -185,15 +253,15 @@ abbrev timelyTargetFlagIndex : Nat := 1
 abbrev timelyHeadFlagIndex : Nat := 2
 /-- `[TIMELY_SOURCE, TIMELY_TARGET, TIMELY_HEAD]` flag weights, in index order. -/
 abbrev participationFlagWeights : List Nat := [timelySourceWeight, timelyTargetWeight, timelyHeadWeight]
-abbrev minSlashingPenaltyQuotientElectra : Nat := 4096
-abbrev whistleblowerRewardQuotientElectra : Nat := 4096
-abbrev proportionalSlashingMultiplierBellatrix : Nat := 3
-abbrev inactivityPenaltyQuotientBellatrix : Nat := 16777216
+abbrev minSlashingPenaltyQuotientElectra : Nat := Preset.minSlashingPenaltyQuotientElectra
+abbrev whistleblowerRewardQuotientElectra : Nat := Preset.whistleblowerRewardQuotientElectra
+abbrev proportionalSlashingMultiplierBellatrix : Nat := Preset.proportionalSlashingMultiplierBellatrix
+abbrev inactivityPenaltyQuotientBellatrix : Nat := Preset.inactivityPenaltyQuotientBellatrix
 abbrev inactivityScoreBias : UInt64 := 4
 abbrev inactivityScoreRecoveryRate : UInt64 := 16
-abbrev hysteresisQuotient : Nat := 4
-abbrev hysteresisDownwardMultiplier : Nat := 1
-abbrev hysteresisUpwardMultiplier : Nat := 5
+abbrev hysteresisQuotient : Nat := Preset.hysteresisQuotient
+abbrev hysteresisDownwardMultiplier : Nat := Preset.hysteresisDownwardMultiplier
+abbrev hysteresisUpwardMultiplier : Nat := Preset.hysteresisUpwardMultiplier
 abbrev maxRandomValue : Nat := 65535
 -- withdrawal-credential prefixes
 abbrev blsWithdrawalPrefix : UInt8 := 0x00
@@ -224,9 +292,9 @@ abbrev consolidationChurnLimitQuotient : UInt64 := Config.consolidationChurnLimi
 abbrev maxPerEpochActivationChurnLimitGloas : Gwei := Config.maxPerEpochActivationChurnLimitGloas
 abbrev minBuilderWithdrawabilityDelay : UInt64 := Config.minBuilderWithdrawabilityDelay
 -- Gloas (EIP-7732) universal constants (identical across presets).
-abbrev builderRegistryLimit : Nat := 2 ^ 40
-abbrev builderPendingWithdrawalsLimit : Nat := 2 ^ 20
-abbrev maxPayloadAttestations : Nat := 4
+abbrev builderRegistryLimit : Nat := Preset.builderRegistryLimit
+abbrev builderPendingWithdrawalsLimit : Nat := Preset.builderPendingWithdrawalsLimit
+abbrev maxPayloadAttestations : Nat := Preset.maxPayloadAttestations
 abbrev builderPaymentThresholdNumerator : UInt64 := 6
 abbrev builderPaymentThresholdDenominator : UInt64 := 10
 abbrev builderWithdrawalPrefix : UInt8 := 0x03
@@ -239,7 +307,7 @@ sentinel marking a proposer self-build (no external builder). -/
 abbrev builderIndexSelfBuild : UInt64 := 0xffffffffffffffff
 /-- `MAX_BLOBS_PER_BLOCK_ELECTRA` (9 for both presets). With an empty `BLOB_SCHEDULE`
 this is what `get_blob_parameters(epoch).max_blobs_per_block` returns. -/
-abbrev maxBlobsPerBlockElectra : Nat := 9
+abbrev maxBlobsPerBlockElectra : Nat := Config.maxBlobsPerBlockElectra
 abbrev domainBeaconBuilder : ByteArray := ⟨#[0x0B, 0, 0, 0]⟩
 abbrev domainPtcAttester : ByteArray := ⟨#[0x0C, 0, 0, 0]⟩
 -- EIP-8282 `DOMAIN_BUILDER_DEPOSIT` (`0x0E000000`). Consumed by the deferred
@@ -268,10 +336,10 @@ abbrev reorgMaxEpochsSinceFinalization : Epoch := 2
 points of the slot (~17%). -/
 abbrev proposerReorgCutoffBps : UInt64 := 1667
 /-- `NUMBER_OF_COLUMNS` (PeerDAS, `= CELLS_PER_EXT_BLOB`): the data-column count. -/
-abbrev numberOfColumns : Nat := 128
+abbrev numberOfColumns : Nat := Preset.numberOfColumns
 /-- Fulu `KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH` (4), the `DataColumnSidecar`'s proof
 vector length. Distinct from the Deneb singular `KZG_COMMITMENT_INCLUSION_PROOF_DEPTH`. -/
-abbrev kzgCommitmentsInclusionProofDepth : Nat := 4
+abbrev kzgCommitmentsInclusionProofDepth : Nat := Preset.kzgCommitmentsInclusionProofDepth
 /-- Gloas slot-component deadlines in basis points of the slot
 (`ATTESTATION_DUE_BPS_GLOAS`, `PAYLOAD_ATTESTATION_DUE_BPS`). -/
 abbrev attestationDueBpsGloas : UInt64 := 2500
@@ -321,6 +389,62 @@ so it coexists with `mainnet`). -/
   pendingConsolidationsLimit := 64
   ptcSize := 16
   maxBuildersPerWithdrawalsSweep := 16
+  -- Registry and history caps.
+  validatorRegistryLimit := 2 ^ 40
+  historicalRootsLimit := 2 ^ 24
+  pendingDepositsLimit := 2 ^ 27
+  -- Per-block operation caps.
+  maxProposerSlashings := 16
+  maxAttesterSlashings := 1
+  maxAttestations := 8
+  maxAttesterSlashingsElectra := 1
+  maxAttestationsElectra := 8
+  maxDeposits := 16
+  maxVoluntaryExits := 16
+  maxBlsToExecutionChanges := 16
+  maxValidatorsPerCommittee := 2048
+  maxDepositRequestsPerPayload := 8192
+  maxWithdrawalRequestsPerPayload := 16
+  maxConsolidationRequestsPerPayload := 2
+  maxPendingDepositsPerEpoch := 16
+  -- Execution-payload shape.
+  maxExtraDataBytes := 32
+  maxBytesPerTransaction := 2 ^ 30
+  maxTransactionsPerPayload := 2 ^ 20
+  bytesPerLogsBloom := 256
+  -- Timing and lifecycle.
+  maxSeedLookahead := 4
+  minSeedLookahead := 1
+  minAttestationInclusionDelay := 1
+  minEpochsToInactivityPenalty := 4
+  -- Balance thresholds.
+  effectiveBalanceIncrement := 1000000000
+  effectiveBalanceIncrementG := 1000000000
+  minDepositAmountG := 1000000000
+  minActivationBalance := 32000000000
+  maxEffectiveBalanceG := 32000000000
+  maxEffectiveBalanceElectra := 2048000000000
+  maxEffectiveBalanceElectraG := 2048000000000
+  hysteresisQuotient := 4
+  hysteresisDownwardMultiplier := 1
+  hysteresisUpwardMultiplier := 5
+  -- Reward / penalty quotients.
+  baseRewardFactor := 64
+  minSlashingPenaltyQuotientElectra := 4096
+  whistleblowerRewardQuotientElectra := 4096
+  proportionalSlashingMultiplierBellatrix := 3
+  inactivityPenaltyQuotientBellatrix := 16777216
+  -- PeerDAS.
+  numberOfColumns := 128
+  kzgCommitmentsInclusionProofDepth := 4
+  -- Gloas (EIP-7732, EIP-8282).
+  builderRegistryLimit := 2 ^ 40
+  builderPendingWithdrawalsLimit := 2 ^ 20
+  maxPayloadAttestations := 4
+  maxBuilderDepositRequestsPerPayload := 256
+  maxBuilderExitRequestsPerPayload := 16
+  -- Heze (EIP-7805 FOCIL).
+  inclusionListCommitteeSize := 16
   slotsPerEpochPos := by decide
   slotsPerEpochLt := by decide
   slotsPerHistoricalRootPos := by decide
@@ -348,6 +472,62 @@ so it coexists with `mainnet`). -/
   pendingConsolidationsLimit := 262144
   ptcSize := 512
   maxBuildersPerWithdrawalsSweep := 16384
+  -- Registry and history caps.
+  validatorRegistryLimit := 2 ^ 40
+  historicalRootsLimit := 2 ^ 24
+  pendingDepositsLimit := 2 ^ 27
+  -- Per-block operation caps.
+  maxProposerSlashings := 16
+  maxAttesterSlashings := 1
+  maxAttestations := 8
+  maxAttesterSlashingsElectra := 1
+  maxAttestationsElectra := 8
+  maxDeposits := 16
+  maxVoluntaryExits := 16
+  maxBlsToExecutionChanges := 16
+  maxValidatorsPerCommittee := 2048
+  maxDepositRequestsPerPayload := 8192
+  maxWithdrawalRequestsPerPayload := 16
+  maxConsolidationRequestsPerPayload := 2
+  maxPendingDepositsPerEpoch := 16
+  -- Execution-payload shape.
+  maxExtraDataBytes := 32
+  maxBytesPerTransaction := 2 ^ 30
+  maxTransactionsPerPayload := 2 ^ 20
+  bytesPerLogsBloom := 256
+  -- Timing and lifecycle.
+  maxSeedLookahead := 4
+  minSeedLookahead := 1
+  minAttestationInclusionDelay := 1
+  minEpochsToInactivityPenalty := 4
+  -- Balance thresholds.
+  effectiveBalanceIncrement := 1000000000
+  effectiveBalanceIncrementG := 1000000000
+  minDepositAmountG := 1000000000
+  minActivationBalance := 32000000000
+  maxEffectiveBalanceG := 32000000000
+  maxEffectiveBalanceElectra := 2048000000000
+  maxEffectiveBalanceElectraG := 2048000000000
+  hysteresisQuotient := 4
+  hysteresisDownwardMultiplier := 1
+  hysteresisUpwardMultiplier := 5
+  -- Reward / penalty quotients.
+  baseRewardFactor := 64
+  minSlashingPenaltyQuotientElectra := 4096
+  whistleblowerRewardQuotientElectra := 4096
+  proportionalSlashingMultiplierBellatrix := 3
+  inactivityPenaltyQuotientBellatrix := 16777216
+  -- PeerDAS.
+  numberOfColumns := 128
+  kzgCommitmentsInclusionProofDepth := 4
+  -- Gloas (EIP-7732, EIP-8282).
+  builderRegistryLimit := 2 ^ 40
+  builderPendingWithdrawalsLimit := 2 ^ 20
+  maxPayloadAttestations := 4
+  maxBuilderDepositRequestsPerPayload := 256
+  maxBuilderExitRequestsPerPayload := 16
+  -- Heze (EIP-7805 FOCIL).
+  inclusionListCommitteeSize := 16
   slotsPerEpochPos := by decide
   slotsPerEpochLt := by decide
   slotsPerHistoricalRootPos := by decide
@@ -366,6 +546,8 @@ so it coexists with `mainnet`). -/
   capellaForkVersion := ⟨#[3, 0, 0, 1], by decide⟩
   slotDurationMs := 6000
   attestationDueBps := 3333
+  ejectionBalanceG := 16000000000
+  maxBlobsPerBlockElectra := 9
   gloasForkVersion := ⟨#[0x07, 0, 0, 1], by decide⟩
   churnLimitQuotientGloas := 16
   consolidationChurnLimitQuotient := 32
@@ -383,6 +565,8 @@ so it coexists with `mainnet`). -/
   capellaForkVersion := ⟨#[3, 0, 0, 0], by decide⟩
   slotDurationMs := 12000
   attestationDueBps := 3333
+  ejectionBalanceG := 16000000000
+  maxBlobsPerBlockElectra := 9
   gloasForkVersion := ⟨#[0x07, 0, 0, 0], by decide⟩
   churnLimitQuotientGloas := 32768
   consolidationChurnLimitQuotient := 65536

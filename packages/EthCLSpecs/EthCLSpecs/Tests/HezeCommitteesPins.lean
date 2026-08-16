@@ -29,7 +29,7 @@ open EthCLSpecs.Heze
 -- the constant, since a different size would change the list length and fail the `=`.
 #guard (cyclicSample (#[10, 20, 30] : Array UInt64) 8).toList
   = [10, 20, 30, 10, 20, 30, 10, 20]
-#guard (cyclicSample (#[7, 8] : Array UInt64) Const.inclusionListCommitteeSize).toList
+#guard (cyclicSample (#[7, 8] : Array UInt64) (@Const.inclusionListCommitteeSize minimal)).toList
   = [7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8]
 
 end EthCLSpecs.Tests.HezeCommitteesPins
