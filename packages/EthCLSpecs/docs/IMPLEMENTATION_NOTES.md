@@ -51,10 +51,12 @@ bug-smell or a real mismatch. Mainnet and the full sweep run on demand
 
 The capture/replay mechanism lives in `EthCLLib.Internal.Capture` (two
 `SimplePersistentEnvExtension`s: `lineageExt` for `fork … from …` edges, `captureExt`
-for the raw declaration bodies) and `EthCLLib.Spec.Forms` (the `fork` / `forkdef` /
-`inherit` command elaborators). `inherit Foo` walks `lineageExt` from the current
-namespace strictly upward and replays the nearest ancestor's captured `Foo` by
-re-emitting a `def` with the bare short name in the current namespace. The body is the
+for the raw declaration bodies), `EthCLLib.Spec.Forms` (the `fork` / `forkdef` /
+`forkabbrev` / `forkinstance` / `forkcontainer` / `forkstruct` / `inherit` command
+elaborators), and `EthCLLib.Spec.Tiers` (the four `Preset` / `Config` forms).
+`inherit Foo` walks `lineageExt` from the current namespace strictly upward and
+replays the nearest ancestor's captured `Foo` in the current namespace, re-emitting
+whichever declaration kind the capture recorded. The body is the
 author's own un-stamped syntax, spliced by quotation, so its sibling identifiers
 late-bind at the child site by ordinary name resolution. Antiquoting pre-existing
 syntax adds no macro scopes, so no blanket hygiene override is needed.
@@ -70,6 +72,46 @@ from Fulu` records `(currNamespace, currNamespace.getPrefix ++ Fulu)`, which ass
   comes from the namespace.
 - **`inherit` is a pure consumer** and never re-captures, so a grandchild walks past an
   unchanged intermediate fork to the nearest ancestor that captured the symbol.
+- **Capture keys split the namespace at the nearest registered fork.** Constants sit
+  inside `namespace Const` within the fork, so keying on the raw `currNamespace` would
+  file them under `EthCLSpecs.Fulu.Const`, which is no fork and which no lineage walk
+  reaches. `captureKey` walks the namespace's prefixes against `lineageExt`, nearest
+  prefix winning, and stores the residual path as the name, so a `forkabbrev` written
+  in `Const` keys as `(EthCLSpecs.Fulu, Const.slotsPerEpoch)`.
+- **Three elaborator properties the constant tiers rest on**, each pinned by
+  `EthCLLib/Tests/ForkScoping.lean` rather than assumed:
+  1. A composite `declId` scopes its body. `def Const.foo` written inside
+     `namespace Gloas` lands at `Gloas.Const.foo` *and* resolves its body's
+     unqualified names as if inside `Gloas.Const`, so late binding reaches into the
+     sub-namespace and a replayed `Const.payloadTimelyThreshold` divides Gloas's
+     `ptcSize`.
+  2. Section-variable auto-binding survives a replay. `inherit` runs `elabCommand`
+     from inside a command elaborator, and the surrounding `section variable
+     [Preset] [Config]` is still picked up by the ordinary used-variable rule, so a
+     child's inherited constants bind to the child's classes with nothing restated.
+  3. Abbrev-ness survives replay, which is why `forkabbrev` exists at all. The test
+     asserts it behaviourally, by synthesising an instance *through* an inherited
+     alias: instance search unfolds a reducible definition and not a `def`, so a
+     demotion would fail there rather than silently degrade SSZRepr synthesis.
+- **`forkinstance` requires a name**, unlike Lean's `instance`. The capture key is a
+  name and `inherit` has nothing else to spell. Its binders ride inside the captured
+  `declSig` (`bracketedBinder* >> ": " term`), so no separate binder slot is needed;
+  `forkstruct` is the one kind that fills one, since `structure` takes its parameters
+  beside the field block.
+- **Tier declarations merge instead of replaying.** A `Preset` / `Config` class or one
+  of their value sets is a single declaration, so `inherit` cannot fuse two of them and
+  refuses a tier capture outright. The child's own `forkpreset` / `forkconfig` /
+  `forkpresetvalues` / `forkconfigvalues` collects the ancestors' captured blocks along
+  the lineage, merges by entry name (child-most-wins, ancestor order preserved), and
+  emits one flat declaration. A fork that adds no field still writes the bare form, so
+  the class it emits is its own.
+- **The downgrade bridge needs its own namespace, not just `scoped`.** A fork's body
+  files sit *inside* the fork's namespace, where a `scoped` instance is already active,
+  so `scoped instance … : Fulu.Preset` in `EthCLSpecs.Gloas` would be reachable from
+  every Gloas module. The generated bridge lands in `EthCLSpecs.Gloas.Downgrade`
+  instead; `Upgrade.lean` and `Interface.lean` write `open scoped Downgrade`, and
+  nothing else can satisfy a parent-class constraint. The instances still resolve
+  `Preset` and its projections, since the fork's namespace encloses the sub-namespace.
 - **Gloas re-declares Fulu's unchanged component containers with `inherit`**
   (`Gloas.Inherited`, 28 types in dependency order: `Checkpoint`, `Validator`,
   `Attestation`, the slashing / deposit / exit evidence, the sync structures, the
@@ -81,9 +123,9 @@ from Fulu` records `(currNamespace, currNamespace.getPrefix ++ Fulu)`, which ass
   to its Gloas twin field-by-field (`cvValidator`, `cvCheckpoint`, …, with SizzLean's
   `SSZList.mapCap` for the list-typed fields), since `Gloas.Validator` is a distinct type from
   `Fulu.Validator`. Dependency order (a field's type inherited before the container that
-  uses it), `open EthCLSpecs.Fulu` for the constants and aliases, and current-namespace
-  priority for the types together make each replayed body bind its siblings to the
-  Gloas-local copy. A plain `def` that the capture mechanism can't replay (`addressOf`) is
+  uses it), this fork's own constants and aliases from `Gloas/Types.lean` and
+  `Gloas/Constants.lean`, and current-namespace priority for the types together make
+  each replayed body bind its siblings to the Gloas-local copy. A plain `def` that the capture mechanism can't replay (`addressOf`) is
   restated for the Gloas validator, the same way `balanceAfterWithdrawals` is. `inherit`
   creating a fresh type is also the right tool for declarations a fork genuinely changes
   (`BeaconState`, `BeaconBlockBody`).
@@ -635,6 +677,35 @@ to the pinned spec text and the `EthCLSpecs/Heze/ForkChoice.lean` pins.
   `get_inclusion_list_store()` (`heze/inclusion-list.md:28-38`), and this framework has no
   ambient singleton to hang it off. Behavior is identical. The rationale lives on the
   `InclusionListStore` declaration (`EthCLSpecs/Heze/ForkChoice.lean`).
+
+## Tier membership follows the upstream file
+
+A value's tier is decided by which upstream file declares it, never by whether the
+two presets currently agree on it. Everything under `presets/{minimal,mainnet}/*.yaml`
+is a `Preset` field, everything under `configs/{minimal,mainnet}.yaml` a `Config`
+field, and only values under the spec's `## Constants` heading (weights, flag
+indices, domain tags, sentinels, prefix bytes) stay flat in `Const`.
+
+The rule earns its keep on the preset side, where a value shapes a type. A flat
+literal for a preset-file value looks right for as long as the two files agree, and
+the day one of them moves it produces a wrong cap, a wrong Merkle root, and a green
+build. 47 constants were in that position and are `Preset` fields now, checked
+against the pinned `v1.7.0-alpha.11` YAMLs. `Config` values never shape a type, so a
+wrong one shows up as a wrong number and conformance catches it; `ejectionBalanceG`
+and `maxBlobsPerBlockElectra` moved there for tidiness rather than safety.
+
+Two entries carry the phase0 caps `MAX_ATTESTATIONS` (128) and
+`MAX_ATTESTER_SLASHINGS` (2) beside their Electra successors (8 and 1). Nothing at
+this fork reads the phase0 pair; the Electra block body reads
+`maxAttestationsElectra` / `maxAttesterSlashingsElectra`. They are kept because
+they are distinct upstream keys, and set to the upstream values so the tier reads
+as a faithful transcription of the file.
+
+Values still flat that the preset / config files do declare: `inactivityScoreBias`,
+`inactivityScoreRecoveryRate`, `proposerScoreBoost`, the reorg thresholds,
+`proposerReorgCutoffBps`, and the `*DueBps*` family are all config-file values held
+as literals. None shapes a type, so none can produce a wrong root, and moving them
+is a follow-up rather than a correctness fix.
 
 ## Config-tier values that bite
 

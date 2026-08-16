@@ -177,14 +177,24 @@ order, and the operations on it sit below that. The layout falls into five layer
 loaded in this order: foundations, the component containers, the state, the state
 operations, and fork choice.
 
+Row 0 is the same in every fork: `Fork.lean`, holding the `fork … from …` lineage
+edge and (in a child) the single feeder import of the parent's library root.
+Nothing else lives there. `inherit` and every capturing form read the lineage
+while they elaborate, so the edge has to be in the environment before any other
+module of the fork elaborates, which pins the file to the first position in the
+intra-fork import chain. The fork's library root cannot hold it, being a
+re-export aggregator that elaborates last. Every other module of the fork imports
+intra-fork only, so `Fork.lean` is the fork's one physical edge to its parent.
+
 The table below is the full Fulu fork in load order. Gloas is the same skeleton
 through the fork diff, minus the PeerDAS-specific files where ePBS supersedes
 them, plus the ePBS files.
 
 | # | File | Layer | Contains |
 |---|------|-------|----------|
+| 0 | `Fork` | foundations | The `fork … from …` lineage edge, plus a child's feeder import of its parent |
 | 1 | `Types` | foundations | Consensus type aliases (`Slot`, `Epoch`, `ValidatorIndex`, `Gwei`, `Root`, `BLSPubkey`, `ParticipationFlags`) over SizzLean basic types and crypto-backend types |
-| 2 | `Constants` | foundations | Universal constant values (`GENESIS_SLOT`, `FAR_FUTURE_EPOCH`, domain tags, flag bits) and the spec's use of `[Preset]` / `[Config]` through `Const.*` |
+| 2 | `Constants` | foundations | This fork's `Preset` / `Config` classes and value sets (declared as a diff over the lineage), its own `Const` entries, and the `inherit Const.*` block replaying the parent's |
 | 3 | `Containers/Fork` | containers | `Fork`, `ForkData` |
 | 4 | `Containers/Checkpoint` | containers | `Checkpoint` |
 | 5 | `Containers/Validator` | containers | `Validator` plus `State`-free predicates (`isActiveValidator`, `isSlashableValidator`, `isEligibleForActivationQueue`) |
@@ -295,7 +305,9 @@ port, the same moment the concern-file set is fixed.
 
 Each fork is a directory of this shape, `EthCLSpecs/Fulu/…` and `EthCLSpecs/Gloas/…`, all
 per-fork through the inheritance mechanism. There is no shared spec layer; the
-framework is the only shared layer. Section 5 explains why a shared layer is
+framework is the only shared layer. A fork's vocabulary is per fork too: its type
+aliases, its constants, and its `Preset` / `Config` classes are all its own, so a
+body file names its own namespace and the framework, nothing else. Section 5 explains why a shared layer is
 neither needed nor wanted. Each section is opened by its header macro,
 `state_section` or `fork_choice_section`, from the effect-monad section of
 `FRAMEWORK_ARCHITECTURE.md`. Fulu's files are the full accumulated spec ported
@@ -624,13 +636,30 @@ def upgradeToGloas (pre : Fulu.State) : Gloas.State :=
   ...
 ```
 
-It is the single sanctioned cross-fork reference. It names both forks' `State`
-types, so it lives in Gloas, imports Fulu, and reads Fulu fields by `sszGet`. This
-one explicit dependency does not reintroduce a shared spec layer. A shared layer
-would be a place both forks import for common helpers, which the inheritance
-mechanism removes the need for; `upgradeToGloas` is the opposite, a deliberate
-single edge from the child to the parent, named once, for the one operation that
-genuinely spans two forks.
+It is one of two sanctioned cross-fork references. It names both forks' `State`
+types, so it lives in Gloas, imports the Fulu module it needs, and reads Fulu
+fields by `sszGet`. The other is `Interface.lean`, the pyspec runner, which drives
+the parent spine for the pre-fork blocks of a mixed `fork_transition` vector.
+These two files are the only ones in a child fork that write a qualified parent
+name; every other file names its own namespace and the framework. The count is
+enforced by grep:
+
+```bash
+grep -rn "open EthCLSpecs.Fulu"   packages/EthCLSpecs/EthCLSpecs/{Gloas,Heze}
+grep -rn "import EthCLSpecs.Fulu" packages/EthCLSpecs/EthCLSpecs/Gloas \
+  | grep -v "Fork.lean\|Upgrade.lean\|Interface.lean"
+```
+
+Both boundary files write one further line, `open scoped Downgrade`, which
+activates the generated bridge from the child's `Preset` / `Config` to the
+parent's (`FRAMEWORK_ARCHITECTURE.md` §4.2). That is what lets the conversion run
+under a single `[Preset]` binder while the preset is still symbolic. The bridge
+lives one namespace below the fork, so no other file can reach it.
+
+This does not reintroduce a shared spec layer. A shared layer would be a place
+both forks import for common helpers, which the inheritance mechanism removes the
+need for; the upgrade is the opposite, a deliberate single edge from the child to
+the parent, named once, for the one operation that genuinely spans two forks.
 
 Only `upgradeToGloas` is implemented. `upgradeToFulu` would require an Electra
 state, and Electra is not built, so only the Fulu-to-Gloas `fork` and `transition`

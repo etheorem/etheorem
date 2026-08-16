@@ -65,7 +65,9 @@ forkpreset where
   validatorRegistryLimit : Nat
   historicalRootsLimit : Nat
   pendingDepositsLimit : Nat
-  -- Per-block operation caps.
+  -- Per-block operation caps. The phase0 `maxAttestations` /
+  -- `maxAttesterSlashings` and their Electra successors are separate YAML keys
+  -- with separate values; the block body at this fork reads the Electra pair.
   maxProposerSlashings : Nat
   maxAttesterSlashings : Nat
   maxAttestations : Nat
@@ -331,8 +333,8 @@ forkpresetvalues minimal where
   pendingDepositsLimit := 2 ^ 27
   -- Per-block operation caps.
   maxProposerSlashings := 16
-  maxAttesterSlashings := 1
-  maxAttestations := 8
+  maxAttesterSlashings := 2
+  maxAttestations := 128
   maxAttesterSlashingsElectra := 1
   maxAttestationsElectra := 8
   maxDeposits := 16
@@ -404,8 +406,8 @@ forkpresetvalues mainnet where
   pendingDepositsLimit := 2 ^ 27
   -- Per-block operation caps.
   maxProposerSlashings := 16
-  maxAttesterSlashings := 1
-  maxAttestations := 8
+  maxAttesterSlashings := 2
+  maxAttestations := 128
   maxAttesterSlashingsElectra := 1
   maxAttestationsElectra := 8
   maxDeposits := 16

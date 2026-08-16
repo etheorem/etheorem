@@ -4,7 +4,7 @@ import EthCLLib.Spec.Forms
 # `EthCLLib.Tests.ForkScoping`: nested-namespace capture keys and the new kinds
 
 A synthetic two-fork chain that pins the three elaboration facts the per-fork
-constant tiers rest on (`FRAMEWORK_ARCHITECTURE.md` §3.4). Each is a property of
+constant tiers rest on (`FRAMEWORK_ARCHITECTURE.md` §3.1). Each is a property of
 Lean's elaborator rather than of our code, so it is asserted here instead of
 being assumed:
 

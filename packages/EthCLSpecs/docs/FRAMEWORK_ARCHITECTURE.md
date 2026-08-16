@@ -162,7 +162,7 @@ Because the inheritance replays the author's own syntax, the sibling names are
 un-stamped and bind at the child site, so no blanket hygiene override is needed.
 `SPEC_AUTHORING_MODEL.md` registers this as *the inheritance mechanism*.
 
-### 3.1 One capture base, three forms
+### 3.1 One capture base, several forms
 
 The same capture powers every kind of declaration, so capture is the shared base
 and each form layers its own generation on top.
@@ -170,20 +170,51 @@ and each form layers its own generation on top.
 | Form | Captures | Generates on top | For |
 |---|---|---|---|
 | `forkdef` | the raw body syntax | nothing beyond a `def` | steps and helpers |
+| `forkabbrev` | the raw body syntax | an `abbrev` rather than a `def` | type aliases, `Const` entries |
+| `forkinstance` | the raw signature and value | a named `instance` | registrations whose subject is a fork name (`ValidModulus`) |
 | `forkcontainer` | the raw field list | the SSZ instances (the container front-end) | SSZ containers |
 | `forkstruct` | the raw field list | ordinary `deriving` only | non-SSZ structures (`Store`, `FcNode`, `LatestMessage`) |
 
-All three are producers into one syntax store, keyed by fork and name. `inherit`
-is the single consumer. The shared `fork` prefix marks the common behavior: every
-form is captured for per-fork replay. Late binding is needed for all three. An
-inherited container field whose type names an overridden container, or whose
-capacity names an overridden constant, must resolve to the child fork's version,
-and re-elaboration in the child namespace delivers that.
+All are producers into one syntax store, keyed by fork and name. `inherit` is the
+single consumer, and it takes several names per line so related entries group
+without losing the one-line-per-name discipline. The shared `fork` prefix marks
+the common behavior: every form is captured for per-fork replay. Late binding is
+needed for all of them. An inherited container field whose type names an
+overridden container, or whose capacity names an overridden constant, must
+resolve to the child fork's version, and re-elaboration in the child namespace
+delivers that.
+
+`forkabbrev` and `forkinstance` earn their places by what replay would otherwise
+lose. Replaying a `forkabbrev` as a `def` would drop `@[reducible]`, and
+reducibility is what lets SSZRepr synthesis see through `Root` to
+`Vector UInt8 32` and lets a symbolic list cap reduce to a literal once a
+concrete `Preset` is injected. A `forkinstance` cannot ride on `forkdef` at all,
+since the capturing forms drop `declModifiers` on replay and an `@[instance]`
+attribute would go with them. `forkinstance` requires a name, unlike Lean's
+`instance`, because the capture key *is* a name and `inherit` has nothing else to
+spell.
+
+#### Capture keys are fork-scoped
+
+A capture is keyed by `(fork, name)`, where the pair comes from splitting the
+elaboration-time namespace at the nearest registered fork. A `forkabbrev` written
+inside `namespace EthCLSpecs.Fulu` … `namespace Const` files as
+`(EthCLSpecs.Fulu, Const.slotsPerEpoch)`, so `inherit Const.slotsPerEpoch` in the
+child resolves it. Keying on the raw current namespace would file the constant
+under `EthCLSpecs.Fulu.Const`, which is no fork at all, and no lineage walk would
+reach it.
+
+The composite name carries through to the replay: Lean places
+`def Const.foo` written inside `namespace Gloas` at `Gloas.Const.foo` *and*
+elaborates its body as if inside `Gloas.Const`, so a dotted key gets exactly the
+late binding a bare one does. `EthCLLib/Tests/ForkScoping.lean` pins that, along
+with section-variable auto-binding through a replay's `elabCommand` and
+abbrev-ness surviving replay.
 
 ### 3.2 The parent declaration
 
-A fork names its parent once, with a `fork` declaration in the fork's root
-module.
+A fork names its parent once, with a `fork` declaration in the fork's
+`Fork.lean` (load-order row 0).
 
 ```lean
 fork Fulu            -- the base, no parent
@@ -192,9 +223,17 @@ fork Gloas from Fulu -- Gloas inherits from Fulu
 
 The `fork … from …` declaration records the lineage edge in an environment
 extension. It is data the resolver reads, not a generator. The bare `fork`
-keyword declares the fork; `forkdef` / `forkcontainer` / `forkstruct` declare its
-members. The lineage generalizes to deeper chains (`X from Y from Z`); the
-current build has one hop, since Fulu is whole and Gloas is its diff.
+keyword declares the fork; the capturing forms declare its members. The lineage
+generalizes to deeper chains, and the current build is `Fulu ← Gloas ← Heze`.
+
+Two placement rules follow from how the data travels. The child's `Fork.lean`
+also carries the **feeder import** of the parent's library root, because
+environment extensions travel only through `.olean` imports and there would
+otherwise be nothing to replay. And the file has to be the *first* module of the
+fork's intra-fork import chain, because `inherit` and every capturing form read
+`lineageExt` while they elaborate; the fork's library root cannot hold it, being
+an aggregator that elaborates last. Every other module of the fork imports
+intra-fork only.
 
 ### 3.3 The two forms over three fates
 
@@ -205,9 +244,8 @@ two *forms*. A declaration is **inherited** (unchanged from the parent),
 
 `inherit Foo` covers the inherit fate. It resolves by walking the lineage from the
 `fork … from …` data: this fork did not capture `Foo`, so the resolver steps to
-the parent and replays the parent's captured `Foo` in the child namespace. A full
-declaration (`forkdef`, `forkcontainer`, or `forkstruct`) covers the override and
-new fates. The two are identical in form. Whether a parent symbol of that name
+the parent and replays the parent's captured `Foo` in the child namespace. Any
+capturing form covers the override and new fates. The two are identical in form. Whether a parent symbol of that name
 existed is the only thing that tells them apart, and the author does not mark
 which; the resolver knows from the lineage.
 
@@ -243,8 +281,10 @@ field list.
 
 Two consequences the author should expect. The replayed declaration resolves
 against whatever is in scope at the `inherit` site, so the author owns the
-preamble: the section header, any `open` or notation, and the constants the body
-uses must be in scope in the child before `inherit`. The framework does not
+preamble: the section header, any notation, and the constants the body uses must
+be in scope in the child before `inherit`. In scope means *this fork's own*: the
+child inherits the vocabulary too, so the constants the body reaches are the
+child's `Const` entries, never the parent's. The framework does not
 reconstruct the preamble; a missing one fails to elaborate with a plain
 unknown-identifier error, which is the legible-errors discipline at work.
 Inheritance is by symbol, so a property proved about a caller is proved per fork:
@@ -273,7 +313,7 @@ nothing to unify against. That is why the tiers are classes.
 | Universal | none | no | `Const.farFutureEpoch : Epoch := 2^64 - 1` | nothing |
 | Config | `class Config` | no | `Const.genesisForkVersion := Config.genesisForkVersion` | `[Config]` |
 
-Each tier is an `abbrev` whose body is a class projection (for the two class
+Each tier is a `forkabbrev` whose body is a class projection (for the two class
 tiers) or a literal (for the universal tier). A preset abbrev carries `[Preset]`;
 the universal abbrev carries no binder and reads identically at the call site; the
 config abbrev carries `[Config]`. The mechanism that makes each abbrev carry only
@@ -287,13 +327,84 @@ namespace Const
 section
 variable [Preset] [Config]
 
-abbrev slotsPerEpoch : Nat := Preset.slotsPerEpoch          -- carries [Preset]
-abbrev farFutureEpoch : Epoch := 2 ^ 64 - 1                 -- carries nothing
-abbrev genesisForkVersion : Version := Config.genesisForkVersion  -- carries [Config]
+forkabbrev slotsPerEpoch : Nat := Preset.slotsPerEpoch          -- carries [Preset]
+forkabbrev farFutureEpoch : Epoch := 2 ^ 64 - 1                 -- carries nothing
+forkabbrev genesisForkVersion : Version := Config.genesisForkVersion  -- carries [Config]
 
 end
 end Const
 ```
+
+The auto-binding survives replay: a child's `inherit Const.slotsPerEpoch` block
+sits inside its own `section variable [Preset] [Config]`, and the replayed body
+picks the binder up by the same used-variable rule, now bound to the *child's*
+classes.
+
+### 4.1 The tiers are per fork
+
+Each fork owns its own `Preset` and `Config`, declared with `forkpreset` /
+`forkconfig` and their value sets with `forkpresetvalues` / `forkconfigvalues`.
+A Gloas function constrains `[Gloas.Preset]` and never mentions Fulu.
+
+These four forms capture like the rest, and compose differently. A class is a
+single declaration, so per-name `inherit` cannot fuse two of them; instead the
+child's own form collects the ancestors' captured blocks along the lineage,
+merges them by entry name (child-most-wins, ancestor order preserved), and emits
+one **flat** class in the child's namespace. The capture records only the child's
+diff, so a grandchild composes transitively. `inherit` rejects a tier capture
+outright, with a message pointing at the right form.
+
+A fork that adds no field of its own still writes the form (`forkconfig` with no
+`where` clause), because the class it emits has to be that fork's own.
+
+Proof fields ride along like any other field, and a proof-field assignment
+(`slotsPerEpochPos := by decide`) re-proves in the child against the child's
+number, so an overridden value gets a fresh proof with nothing restated.
+
+Which values belong on `Preset` is decided by the upstream file, not by whether
+the two presets currently agree: everything under `presets/{minimal,mainnet}/*.yaml`
+is a `Preset` field even where both files say the same number today. A preset
+value that shapes a type would otherwise be baked in as a literal, and a future
+divergence would silently produce a wrong cap and a wrong Merkle root rather than
+a build error. `Config` follows `configs/{minimal,mainnet}.yaml` the same way.
+Values under the spec's `## Constants` heading stay flat.
+
+### 4.2 The downgrade bridge
+
+Per-fork classes create two unrelated instance families, and the fork-upgrade
+boundary sits between them. `upgradeToGloas` copies a
+`Vector Root Fulu.Const.slotsPerHistoricalRoot` field into a
+`Vector Root Gloas.Const.slotsPerHistoricalRoot` field *symbolically*, before any
+concrete preset is injected, and for unrelated classes those cap types are not
+defeq, so the upgrade would not elaborate.
+
+So a child's `forkpreset` also emits
+
+```lean
+namespace Downgrade
+@[reducible] scoped instance toFuluPreset [Preset] : Fulu.Preset := { … }
+end Downgrade
+```
+
+projecting every parent field out of the child's class, generated field by field
+from the parent's merged field list. The fork author never writes the parent's
+name; the form reads it from the lineage.
+
+The upgrade then runs under a single `[Gloas.Preset]` binder: the Fulu side's
+instance is a reducible structure literal, so
+`Fulu.Preset.slotsPerHistoricalRoot toFuluPreset` reduces by iota to the Gloas
+field and cap-type defeq holds with the preset still symbolic. The runner gets
+the same bridge, injecting only `Gloas.minimal` and reaching the Fulu spine by
+projection; the bridges chain, so `Heze.minimal` reaches either ancestor.
+`EthCLLib/Tests/TierMerge.lean` pins the symbolic defeq on a synthetic two-fork
+chain.
+
+The `Downgrade` sub-namespace is what contains the bridge. `scoped` alone would
+not: a fork's body files all sit *inside* the fork's namespace, where a scoped
+instance is already active. One namespace deeper, only a file that writes
+`open scoped Downgrade` can satisfy a parent-class constraint, so the two
+boundary files declare the reach in one line each and everything else stays
+sealed.
 
 Because the preset tier shapes types, a container's field widths read as
 `Const.*` and reduce to literals when the preset instance is concrete. A field
