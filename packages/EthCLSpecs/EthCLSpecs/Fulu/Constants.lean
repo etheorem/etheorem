@@ -145,8 +145,14 @@ namespace Const
 section
 variable [Preset] [Config]
 
--- Preset tier (each carries `[Preset]`; `abbrev` is reducible so the width reduces
--- to a literal at a concrete preset, which the symbolic-cap derive needs).
+-- The entries below run through all three tiers, grouped by subject rather than
+-- by tier: the `Const.x` an author writes never says which tier x sits in, and a
+-- reader looking for a cap wants it beside its neighbours. The body is what
+-- classifies. `Preset.x` carries `[Preset]`, `Config.x` carries `[Config]`, and a
+-- literal carries neither. `abbrev` throughout, since a preset-backed width has
+-- to reduce to a literal at a concrete preset for the symbolic-cap derive.
+
+-- Vector widths and committee / epoch lengths.
 forkabbrev slotsPerEpoch : Nat := Preset.slotsPerEpoch
 forkabbrev slotsPerHistoricalRoot : Nat := Preset.slotsPerHistoricalRoot
 forkabbrev epochsPerHistoricalVector : Nat := Preset.epochsPerHistoricalVector
@@ -174,7 +180,7 @@ forkabbrev slotsPerHistoricalRootLt : slotsPerHistoricalRoot < 2 ^ 64 := Preset.
 forkabbrev epochsPerHistoricalVectorPos : 0 < epochsPerHistoricalVector := Preset.epochsPerHistoricalVectorPos
 forkabbrev epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64 := Preset.epochsPerHistoricalVectorLt
 
--- Universal tier (literal body, no binder, identical across presets).
+-- Sentinels, registry and history caps.
 forkabbrev farFutureEpoch : Epoch := 0xffffffffffffffff
 forkabbrev genesisSlot : Slot := 0
 forkabbrev genesisEpoch : Epoch := 0
@@ -260,7 +266,7 @@ forkabbrev domainVoluntaryExit : ByteArray := ⟨#[4, 0, 0, 0]⟩
 forkabbrev domainSyncCommittee : ByteArray := ⟨#[7, 0, 0, 0]⟩
 forkabbrev domainBlsToExecutionChange : ByteArray := ⟨#[0x0A, 0, 0, 0]⟩
 
--- Config tier (carries `[Config]`).
+-- Network parameters, and the fork-choice tuning beside them.
 forkabbrev churnLimitQuotient : UInt64 := Config.churnLimitQuotient
 forkabbrev minPerEpochChurnLimitElectra : Gwei := Config.minPerEpochChurnLimitElectra
 forkabbrev maxPerEpochActivationExitChurnLimit : Gwei := Config.maxPerEpochActivationExitChurnLimit

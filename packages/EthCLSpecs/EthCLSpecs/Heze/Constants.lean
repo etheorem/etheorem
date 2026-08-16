@@ -69,7 +69,7 @@ inherit domainBuilderDeposit payloadStatusEmpty payloadStatusFull payloadStatusP
 inherit attestationTimelinessIndex ptcTimelinessIndex payloadTimelyThreshold
 inherit dataAvailabilityTimelyThreshold attestationDueBpsGloas payloadAttestationDueBps
 
--- Preset-tier entries.
+-- Vector widths and committee / epoch lengths.
 inherit slotsPerEpoch slotsPerHistoricalRoot epochsPerHistoricalVector
 inherit epochsPerSlashingsVector epochsPerEth1VotingPeriod epochsPerSyncCommitteePeriod
 inherit syncCommitteeSize maxCommitteesPerSlot targetCommitteeSize shuffleRoundCount
@@ -82,7 +82,7 @@ inherit slotsPerEpochPos slotsPerEpochLt slotsPerHistoricalRootPos
 inherit slotsPerHistoricalRootLt epochsPerHistoricalVectorPos
 inherit epochsPerHistoricalVectorLt
 
--- Universal-tier entries: literal bodies, no binder.
+-- Sentinels, registry and history caps.
 inherit farFutureEpoch genesisSlot genesisEpoch validatorRegistryLimit
 inherit historicalRootsLimit pendingDepositsLimit justificationBitsLength
 inherit maxExtraDataBytes depositContractTreeDepth
@@ -121,7 +121,7 @@ inherit blsWithdrawalPrefix eth1AddressWithdrawalPrefix compoundingWithdrawalPre
 inherit domainBeaconProposer domainBeaconAttester domainRandao domainDeposit
 inherit domainVoluntaryExit domainSyncCommittee domainBlsToExecutionChange
 
--- Config-tier entries, and the fork-choice tuning beside them.
+-- Network parameters, and the fork-choice tuning beside them.
 inherit churnLimitQuotient minPerEpochChurnLimitElectra
 inherit maxPerEpochActivationExitChurnLimit minValidatorWithdrawabilityDelay
 inherit shardCommitteePeriod genesisForkVersion capellaForkVersion slotDurationMs
