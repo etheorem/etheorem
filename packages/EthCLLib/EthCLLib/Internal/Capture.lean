@@ -76,6 +76,15 @@ inductive CaptureKind where
   `instance`, which a `def`-shaped capture could not do (the capturing forms
   drop modifiers, so an `@[instance]` attribute would not survive). -/
   | instance_
+  /-- A tier declaration: a `forkpreset` / `forkconfig` class, or a
+  `forkpresetvalues` / `forkconfigvalues` value set. The payload is a block of
+  named entries, and the capture holds only the fork's own *diff*.
+
+  These are the one kind `inherit` never consumes. A class and a value set are
+  each a single declaration, so per-name inheritance cannot compose one; the
+  child's own tier form merges the lineage's blocks by entry name instead
+  (`mergedTier`), which is the class-shaped analogue of per-name `inherit`. -/
+  | tier
   deriving Inhabited, DecidableEq, Repr
 
 /-- One captured declaration's replay payload.
@@ -90,6 +99,7 @@ content depends on `kind`:
 | `instance_`  | ∅ (they ride in `sig`) | `declSig`           | `declVal`     |
 | `container`  | ∅                      | ∅                   | `structFields`|
 | `struct`     | the author's binders   | ∅                   | `structFields`|
+| `tier`       | ∅                      | ∅                   | entry block   |
 
 Only `struct` needs the `binders` slot: Lean's `structure` takes its parameters
 beside the field block, while `declSig` (what an `instance` and a typed `def`
@@ -203,5 +213,41 @@ partial def resolveInherited (env : Environment) (fork name : Name) :
     match lookupCapture env parent name with
     | some cap => some cap
     | none     => resolveInherited env parent name
+
+/-! ## Tier merging
+
+A `tier` capture holds one fork's diff of a `Preset` / `Config` class or of one
+of their value sets. The declaration a fork actually emits is the whole lineage's
+diffs merged, so the two functions below reconstruct it. `inherit` plays no part;
+the child's own tier form calls `mergedTier` directly. -/
+
+/-- The lineage from the root down to `fork`, root first. -/
+partial def lineageChain (env : Environment) (fork : Name) : List Name :=
+  match parentOf env fork with
+  | none        => [fork]
+  | some parent => lineageChain env parent ++ [fork]
+
+/-- The name an entry in a tier block declares. Both entry shapes put it at index
+1, behind the optional docstring, so one accessor serves fields and assignments
+alike. -/
+def tierEntryName (entry : Syntax) : Name := entry[1].getId
+
+/-- Fold one fork's diff into the accumulated block: an entry that redeclares an
+inherited name replaces it *in place*, so the ancestor's ordering survives and a
+child override does not reshuffle the class; a new name is appended. -/
+def mergeTierEntries (acc new : Array Syntax) : Array Syntax :=
+  new.foldl (init := acc) fun acc entry =>
+    match acc.findIdx? (tierEntryName · == tierEntryName entry) with
+    | some i => acc.set! i entry
+    | none   => acc.push entry
+
+/-- The full entry block for tier `key` at `fork`: every ancestor's diff merged
+root-first, then `fork`'s own. A fork that declares nothing under `key`
+contributes nothing, so a tier can skip generations. -/
+def mergedTier (env : Environment) (fork key : Name) : Array Syntax :=
+  (lineageChain env fork).foldl (init := #[]) fun acc f =>
+    match lookupCapture env f key with
+    | some cap => mergeTierEntries acc cap.val.getArgs
+    | none     => acc
 
 end EthCLLib.Internal

@@ -259,6 +259,11 @@ def replayOne (spelled : Name) : CommandElabM Unit := do
     emitContainer (← emptyMods) nameId ⟨cap.val⟩
   | .struct =>
     emitStruct (← emptyMods) nameId (cap.binders.getArgs.map (⟨·⟩)) ⟨cap.val⟩
+  | .tier =>
+    throwError "inherit: '{key}' is a tier declaration ({`Preset} / {`Config} or one of \
+      their value sets), which composes by lineage merge, not by replay. Declare this \
+      fork's diff with the matching `forkpreset` / `forkconfig` / `forkpresetvalues` / \
+      `forkconfigvalues` form instead; the ancestors' entries merge in automatically"
 
 @[command_elab inheritCmd]
 def elabInherit : CommandElab := fun stx =>

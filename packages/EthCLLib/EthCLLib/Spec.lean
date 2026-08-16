@@ -10,6 +10,7 @@ import EthCLLib.Spec.Assert
 import EthCLLib.Spec.NestedMachine
 import EthCLLib.Spec.Header
 import EthCLLib.Spec.Forms
+import EthCLLib.Spec.Tiers
 import EthCLLib.Spec.Crypto
 import EthCLLib.Spec.Engine
 
