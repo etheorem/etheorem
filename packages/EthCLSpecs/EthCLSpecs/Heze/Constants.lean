@@ -1,25 +1,128 @@
-import EthCLSpecs.Gloas.Constants
+import EthCLSpecs.Heze.Types
 
 /-!
-# `EthCLSpecs.Heze.Constants`: the Heze fork declaration + version values
+# `EthCLSpecs.Heze.Constants`: the tier system (load order row 2)
 
-Heze is a diff over Gloas, adding EIP-7805 (FOCIL). At alpha.11 it modifies no Gloas
-container (PR #5371 reverted the bid change), so the only Heze-specific constants here
-are the two `HEZE_FORK_VERSION` values. `fork Heze from Gloas` records the lineage so
-`inherit` replays Gloas (and through Gloas, Fulu) declarations in the Heze namespace.
-The FOCIL `DOMAIN_INCLUSION_LIST_COMMITTEE` tag lives with every other BLS domain in
-`Fulu.Const` (`Const.domainInclusionListCommittee`); the FOCIL
-`is_valid_inclusion_list_signature` predicate (`Heze/Signing.lean`) verifies signatures under it.
+Heze's three constant tiers, written as a diff over Gloas exactly as
+`Gloas/Constants.lean` is a diff over Fulu. EIP-7805 (FOCIL) adds one preset
+field and two flat constants, and leaves the config tier alone; everything else
+arrives by lineage merge (the tier classes and their value sets) or by `inherit`
+(the `Const` entries), replayed into this namespace so Heze body code writes
+`Const.slotsPerEpoch` with no ancestor namespace in sight. A tier form with no
+diff to declare is still written, since the class or value set it emits has to be
+this fork's own.
+
+The replayed surface is nearly the whole of Gloas's, since EIP-7805 leaves the
+ePBS containers and constants alone. The compiler enumerates it: a name Heze
+calls but never inherits fails with an unknown identifier.
+
+`forkpreset` also emits the scoped downgrade instance to `Gloas.Preset`, which
+chains onward to `Fulu.Preset` through Gloas's own bridge. `Upgrade.lean` and
+`Interface.lean` open it (`FRAMEWORK_ARCHITECTURE.md` §4).
 -/
 
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Heze
 
-fork Heze from Gloas
+/-- The one preset field EIP-7805 adds. Gloas's and Fulu's merge in through the
+lineage. -/
+forkpreset where
+  /-- `INCLUSION_LIST_COMMITTEE_SIZE`: FOCIL inclusion-list committee members per
+  slot. -/
+  inclusionListCommitteeSize : Nat
+
+-- EIP-7805 adds no config value, and the fork still declares its own class: Heze
+-- body code constrains `[Heze.Config]`, so the class has to exist here, carrying
+-- the lineage's merged fields.
+forkconfig
+
+namespace Const
+section
+variable [Preset] [Config]
+
+-- Heze's own entries, ahead of the inherited block so a replayed body that names
+-- one binds to the copy here.
+forkabbrev inclusionListCommitteeSize : Nat := Preset.inclusionListCommitteeSize
+-- EIP-7805 `DOMAIN_INCLUSION_LIST_COMMITTEE` (`0x10000000`), the FOCIL
+-- inclusion-list committee signature domain; `Heze.isValidInclusionListSignature`
+-- (`Heze/Signing.lean`) verifies signatures under it.
+forkabbrev domainInclusionListCommittee : ByteArray := ⟨#[0x10, 0, 0, 0]⟩
+/-- `INCLUSION_LIST_DUE_BPS` (EIP-7805, ~67% of the slot): the timeliness deadline
+for an inclusion list, in basis points of the slot
+(`consensus-specs/specs/heze/fork-choice.md:38`). -/
+forkabbrev inclusionListDueBps : UInt64 := 6667
+
+-- Gloas's entries, replayed here in Gloas's own order (its additions, then the
+-- Fulu surface it replays) so each body reaches its dependencies.
+inherit ptcSize maxBuildersPerWithdrawalsSweep builderRegistryLimit
+inherit builderPendingWithdrawalsLimit maxPayloadAttestations
+inherit maxBuilderDepositRequestsPerPayload maxBuilderExitRequestsPerPayload
+inherit gloasForkVersion churnLimitQuotientGloas maxPerEpochActivationChurnLimitGloas
+inherit minBuilderWithdrawabilityDelay builderPaymentThresholdNumerator
+inherit builderPaymentThresholdDenominator builderWithdrawalPrefix payloadBuilderVersion
+inherit builderIndexFlag builderIndexSelfBuild domainBeaconBuilder domainPtcAttester
+inherit domainBuilderDeposit payloadStatusEmpty payloadStatusFull payloadStatusPending
+inherit attestationTimelinessIndex ptcTimelinessIndex payloadTimelyThreshold
+inherit dataAvailabilityTimelyThreshold attestationDueBpsGloas payloadAttestationDueBps
+inherit slotsPerEpoch slotsPerHistoricalRoot epochsPerHistoricalVector
+inherit epochsPerSlashingsVector epochsPerEth1VotingPeriod epochsPerSyncCommitteePeriod
+inherit syncCommitteeSize maxCommitteesPerSlot targetCommitteeSize shuffleRoundCount
+inherit maxValidatorsPerWithdrawalsSweep maxPendingPartialsPerWithdrawalsSweep
+inherit maxWithdrawalsPerPayload maxBlobCommitmentsPerBlock
+inherit pendingPartialWithdrawalsLimit pendingConsolidationsLimit slotsPerEpochPos
+inherit slotsPerEpochLt slotsPerHistoricalRootPos slotsPerHistoricalRootLt
+inherit epochsPerHistoricalVectorPos epochsPerHistoricalVectorLt farFutureEpoch
+inherit genesisSlot genesisEpoch validatorRegistryLimit historicalRootsLimit
+inherit pendingDepositsLimit justificationBitsLength maxExtraDataBytes
+inherit depositContractTreeDepth maxProposerSlashings maxAttesterSlashings
+inherit maxAttestations maxDeposits maxVoluntaryExits maxBlsToExecutionChanges
+inherit maxValidatorsPerCommittee maxDepositRequestsPerPayload
+inherit maxWithdrawalRequestsPerPayload maxConsolidationRequestsPerPayload
+inherit maxAttestationsElectra maxAttesterSlashingsElectra maxPendingDepositsPerEpoch
+inherit maxBytesPerTransaction maxTransactionsPerPayload bytesPerLogsBloom
+inherit effectiveBalanceIncrement effectiveBalanceIncrementG minDepositAmountG
+inherit minActivationBalance maxEffectiveBalanceG maxEffectiveBalanceElectra
+inherit maxEffectiveBalanceElectraG ejectionBalanceG unsetDepositRequestsStartIndex
+inherit fullExitRequestAmount g2PointAtInfinity maxSeedLookahead minSeedLookahead
+inherit minAttestationInclusionDelay minEpochsToInactivityPenalty baseRewardFactor
+inherit weightDenominator proposerWeight syncRewardWeight timelySourceWeight
+inherit timelyTargetWeight timelyHeadWeight timelySourceFlagIndex timelyTargetFlagIndex
+inherit timelyHeadFlagIndex participationFlagWeights minSlashingPenaltyQuotientElectra
+inherit whistleblowerRewardQuotientElectra proportionalSlashingMultiplierBellatrix
+inherit inactivityPenaltyQuotientBellatrix inactivityScoreBias
+inherit inactivityScoreRecoveryRate hysteresisQuotient hysteresisDownwardMultiplier
+inherit hysteresisUpwardMultiplier maxRandomValue blsWithdrawalPrefix
+inherit eth1AddressWithdrawalPrefix compoundingWithdrawalPrefix domainBeaconProposer
+inherit domainBeaconAttester domainRandao domainDeposit domainVoluntaryExit
+inherit domainSyncCommittee domainBlsToExecutionChange churnLimitQuotient
+inherit minPerEpochChurnLimitElectra maxPerEpochActivationExitChurnLimit
+inherit minValidatorWithdrawabilityDelay shardCommitteePeriod genesisForkVersion
+inherit capellaForkVersion slotDurationMs attestationDueBps
+inherit consolidationChurnLimitQuotient maxBlobsPerBlockElectra reorgHeadWeightThreshold
+inherit reorgParentWeightThreshold reorgMaxEpochsSinceFinalization
+inherit proposerReorgCutoffBps numberOfColumns kzgCommitmentsInclusionProofDepth
+inherit proposerScoreBoost basisPoints
+
+end
+end Const
+
+-- Heze's own `ValidModulus` registrations, bound to this fork's `Preset`.
+inherit validModulusSlotsPerEpoch validModulusSlotsPerHistoricalRoot
+inherit validModulusEpochsPerHistoricalVector
+
+-- Each value set is declared here too, so `Heze.minimal` and friends are this
+-- fork's own, typed at this fork's classes, and the runner injects them without
+-- naming an ancestor. Only the FOCIL field needs a value; the rest merge in.
+-- `INCLUSION_LIST_COMMITTEE_SIZE` is `2**4` in both preset files at the pin.
+forkpresetvalues minimal where
+  inclusionListCommitteeSize := 16
+forkpresetvalues mainnet where
+  inclusionListCommitteeSize := 16
+forkconfigvalues minimalConfig
+forkconfigvalues mainnetConfig
 
 /-- `HEZE_FORK_VERSION` at the `minimal` config (`0x08000001`). -/
 def hezeForkVersionMinimal : Version := ⟨#[0x08, 0x00, 0x00, 0x01], by decide⟩

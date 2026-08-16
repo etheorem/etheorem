@@ -40,7 +40,7 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs
 
 open EthCLLib.Spec (HasherTag StateTransitionError)
-open EthCLSpecs.Fulu (Preset)
+open EthCLSpecs.Gloas (Preset)
 open EthCLSpecs.Gloas (State)
 
 /-- The monad the Gloas spec bodies are proved at: `StateT` over `Except`, threading the

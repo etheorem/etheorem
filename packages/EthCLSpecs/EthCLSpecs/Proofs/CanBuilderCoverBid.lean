@@ -34,7 +34,7 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs
 
 open EthCLLib.Spec (HasherTag)
-open EthCLSpecs.Fulu (BuilderIndex Gwei Preset)
+open EthCLSpecs.Gloas (BuilderIndex Gwei Preset)
 open EthCLSpecs.Gloas (canBuilderCoverBid getPendingBalanceToWithdrawForBuilder)
 
 /-- `canBuilderCoverBid` returns `true` exactly when its computed `minBalance`
@@ -47,7 +47,7 @@ theorem canBuilderCoverBid_iff [Preset] [HasherTag] :
       canBuilderCoverBid state builderIndex bidAmount = true ↔
         let builderBalance := (sszGet state builders[builderIndex.toNat]!).balance
         let minBalance :=
-          Fulu.Const.minDepositAmountG +
+          Gloas.Const.minDepositAmountG +
           getPendingBalanceToWithdrawForBuilder state builderIndex
         minBalance ≤ builderBalance ∧ bidAmount ≤ builderBalance - minBalance := by
   intro state builderIndex bidAmount
@@ -75,7 +75,7 @@ theorem canBuilderCoverBid_iff_toNat_add_le [Preset] [HasherTag] :
       canBuilderCoverBid state builderIndex bidAmount = true ↔
         let builderBalance := (sszGet state builders[builderIndex.toNat]!).balance
         let minBalance :=
-          Fulu.Const.minDepositAmountG +
+          Gloas.Const.minDepositAmountG +
           getPendingBalanceToWithdrawForBuilder state builderIndex
         minBalance.toNat + bidAmount.toNat ≤ builderBalance.toNat := by
   intro state builderIndex bidAmount

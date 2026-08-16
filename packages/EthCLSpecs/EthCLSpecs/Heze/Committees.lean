@@ -1,4 +1,4 @@
-import EthCLSpecs.Fulu.Constants
+import EthCLSpecs.Heze.Constants
 
 /-!
 # `EthCLSpecs.Heze.Committees`: the FOCIL inclusion-list committee resampling helper
@@ -16,7 +16,6 @@ unit-checkable without building a whole `BeaconState`. The `#guard`s that check 
 
 set_option autoImplicit false
 
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Heze
 

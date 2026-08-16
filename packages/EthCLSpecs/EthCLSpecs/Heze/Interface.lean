@@ -27,12 +27,19 @@ set_option autoImplicit false
 
 open EthCLLib.Spec
 open EthCLLib.PySpecTests
-open EthCLSpecs.Fulu
 open SizzLean
 open SizzLean.Cache
 open SizzLean.Hasher
 
 namespace EthCLSpecs.Heze.Interface
+
+-- The pyspec runner drives the *parent* spine for the pre-fork blocks of a mixed
+-- `fork_transition` vector, so this file names both forks; it is the second of the
+-- two sanctioned boundaries (`SPECS_ARCHITECTURE.md` §6.2).
+-- `open scoped Downgrade` brings in the generated `Heze.Preset → Gloas.Preset`
+-- bridge, which chains through Gloas's own bridge to `Fulu.Preset`, so injecting
+-- `Heze.minimal` alone reaches either ancestor spine by projection.
+open scoped EthCLSpecs.Heze.Downgrade
 
 /-- Pinned upstream release; Heze tracks the same tag as Fulu / Gloas. -/
 def pyspecPinnedVersion : String := "v1.7.0-alpha.11"
@@ -53,7 +60,7 @@ private def runUpgradeImpl (P : Preset) (forkVersion : Version) (preBytes : Byte
     Except (RunError StateTransitionError) ByteArray :=
   letI : Preset := P
   letI : HasherTag := fastHasherTag
-  match SSZ.deserialize (T := @Gloas.BeaconState P) preBytes with
+  match SSZ.deserialize (T := Gloas.BeaconState) preBytes with
   | .ok pre  => .ok (htr (upgradeToHeze forkVersion pre))
   | .error _ => .error (.decode "Gloas BeaconState")
 
@@ -98,7 +105,7 @@ private def runEpochSubstepImpl (P : Preset) (C : Config) (step : EpochStep) (pr
   RunError.ofSpec (runToRoot box0 action)
 
 /-- `runRewards`: the four reward-delta blobs computed by the inherited Heze delta
-functions. The `Deltas` container is Fulu's (fork-agnostic). -/
+functions. The `Deltas` container is this fork's replayed copy. -/
 private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
     Except (RunError StateTransitionError) (Array ByteArray) := do
   let state ← decodeState P preBytes
@@ -106,7 +113,7 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
   letI : Config := C
   letI : HasherTag := fastHasherTag
   let mkDeltas : Array Gwei × Array Gwei → ByteArray := fun rp =>
-    SSZ.serialize ({ rewards := sszOfArray rp.1, penalties := sszOfArray rp.2 } : Fulu.Deltas)
+    SSZ.serialize ({ rewards := sszOfArray rp.1, penalties := sszOfArray rp.2 } : Deltas)
   let n := (sszGet state validators).size
   let zeros := Array.replicate n (0 : Gwei)
   RunError.ofSpec do
@@ -202,21 +209,21 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
   let forkEpoch := cmeta.forkEpoch.getD 0
   let boundary : Slot := UInt64.ofNat (forkEpoch * Const.slotsPerEpoch)
   let nPre := match cmeta.forkBlock with | some n => n + 1 | none => 0
-  match SSZ.deserialize (T := @Gloas.BeaconState P) preBytes with
+  match SSZ.deserialize (T := Gloas.BeaconState) preBytes with
   | .error _ => .error (.decode "Gloas BeaconState")
   | .ok preGloas => do
     let preBlocks ← (List.range nPre).toArray.mapM (fun i =>
       match blocks[i]? with
       | none    => Except.error (RunError.spec (.outOfBounds i blocks.size))
-      | some bb => match SSZ.deserialize (T := @Gloas.SignedBeaconBlock P) bb with
+      | some bb => match SSZ.deserialize (T := Gloas.SignedBeaconBlock) bb with
         | .ok sb   => Except.ok sb
         | .error _ => Except.error (RunError.decode "Gloas SignedBeaconBlock"))
     let postBlocks ← (blocks.extract nPre blocks.size).mapM (fun bb =>
       match SSZ.deserialize (T := @Heze.SignedBeaconBlock P) bb with
       | .ok sb   => Except.ok sb
       | .error _ => Except.error (RunError.decode "Heze SignedBeaconBlock"))
-    let gloasBox0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox preGloas
-    let gloasAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit := do
+    let gloasBox0 : SSZ.Box Sha256 (Gloas.BeaconState) := SSZ.FastBox preGloas
+    let gloasAction : EStateM StateTransitionError (SSZ.Box Sha256 (Gloas.BeaconState)) Unit := do
       for sb in preBlocks do Gloas.stateTransition sb
       if (sszGet (← get) slot) < boundary then Gloas.processSlots boundary
     match gloasAction.run gloasBox0 with

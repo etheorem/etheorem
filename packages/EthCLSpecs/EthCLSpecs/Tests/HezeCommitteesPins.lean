@@ -16,7 +16,6 @@ Fires on `lake build EthCLSpecsTests` (`just ethcl-test`).
 
 set_option autoImplicit false
 
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Tests.HezeCommitteesPins
 

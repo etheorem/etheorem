@@ -1,5 +1,4 @@
 import EthCLSpecs.Gloas.Operations
-import EthCLSpecs.Fulu.Withdrawals
 
 /-!
 # `EthCLSpecs.Gloas.Withdrawals`: the EIP-7732 builder-aware withdrawal sweep
@@ -17,7 +16,6 @@ decremented on builders or validators per the index's builder flag.
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
 

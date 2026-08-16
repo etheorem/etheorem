@@ -51,8 +51,8 @@ namespace EthCLSpecs.Proofs
 
 open EthCLLib.Spec
 open EthCLSpecs.Gloas
-open EthCLSpecs.Fulu (Preset Gwei)
-open EthCLSpecs.Fulu.Const (slotsPerEpoch builderPaymentThresholdNumerator
+open EthCLSpecs.Gloas (Preset Gwei)
+open EthCLSpecs.Gloas.Const (slotsPerEpoch builderPaymentThresholdNumerator
   builderPaymentThresholdDenominator builderPendingWithdrawalsLimit)
 open SizzLean.Proofs (sszListFoldlPush_val sszListFoldlPush_val_of_fits)
 

@@ -37,8 +37,8 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs
 
 open EthCLLib.Spec (HasherTag)
-open EthCLSpecs.Fulu (Preset Config BuilderIndex Epoch)
-open EthCLSpecs.Fulu (minimal mainnet minimalConfig mainnetConfig)
+open EthCLSpecs.Gloas (Preset Config BuilderIndex Epoch)
+open EthCLSpecs.Gloas (minimal mainnet minimalConfig mainnetConfig)
 open EthCLSpecs.Gloas (initiateBuilderExit State currentEpochOf)
 open SizzLean.Proofs (sszListSet!_size sszListSet!_getElem!_self sszListSet!_getElem!_ne
   sszListSet!_eq_of_size_le)
@@ -62,7 +62,7 @@ theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
       (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state =
         .ok ((), sszModify state builders[builderIndex.toNat]! as b =>
           { b with withdrawableEpoch :=
-              currentEpochOf state + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay }) := by
+              currentEpochOf state + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay }) := by
   intro state builderIndex
   rfl
 
@@ -83,7 +83,7 @@ theorem initiateBuilderExit_run_builders [Preset] [HasherTag] [Config] :
                 { sszGet state builders[builderIndex.toNat]! with
                   withdrawableEpoch :=
                     currentEpochOf state
-                      + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay } := by
+                      + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay } := by
   intro state builderIndex
   refine ⟨_, initiateBuilderExit_run_eq state builderIndex, ?_⟩
   -- `State` is `SSZ.Box`'s two-constructor sum; both flavours' `.view` reduce the
@@ -104,7 +104,7 @@ theorem initiateBuilderExit_run_inRange [Preset] [HasherTag] [Config] :
         ∧ sszGet state' builders[builderIndex.toNat]!
             = { sszGet state builders[builderIndex.toNat]! with
                 withdrawableEpoch :=
-                  currentEpochOf state + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay }
+                  currentEpochOf state + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay }
         ∧ (∀ j : Nat, j ≠ builderIndex.toNat →
               sszGet state' builders[j]! = sszGet state builders[j]!)
         ∧ (sszGet state' builders).size = (sszGet state builders).size := by
@@ -147,9 +147,9 @@ no run-time guard. -/
 unconditionally; under the stated bound, `Nat.mod_eq_of_lt` drops the `%` and the
 `UInt64` sum's `.toNat` is exactly the `Nat` sum, with no wraparound. -/
 private theorem epoch_add_minBuilderWithdrawabilityDelay_no_wrap [Config] {epoch : Epoch} :
-    epoch.toNat + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay.toNat < 2 ^ 64 →
-      (epoch + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay).toNat
-        = epoch.toNat + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay.toNat := by
+    epoch.toNat + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay.toNat < 2 ^ 64 →
+      (epoch + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay).toNat
+        = epoch.toNat + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay.toNat := by
   intro h
   simp [UInt64.toNat_add, Nat.mod_eq_of_lt h]
 
@@ -163,13 +163,13 @@ theorem initiateBuilderExit_run_inRange_no_wrap [Preset] [HasherTag] [Config] :
     ∀ (state : State) (builderIndex : BuilderIndex),
       builderIndex.toNat < (sszGet state builders).size →
       (currentEpochOf state).toNat
-          + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay.toNat < 2 ^ 64 →
+          + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay.toNat < 2 ^ 64 →
       ∃ state' : State,
         (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
             = .ok ((), state')
         ∧ (sszGet state' builders[builderIndex.toNat]!).withdrawableEpoch.toNat
             = (currentEpochOf state).toNat
-              + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay.toNat := by
+              + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay.toNat := by
   intro state builderIndex hidx hbound
   obtain ⟨state', hrun, hview, -, -⟩ := initiateBuilderExit_run_inRange state builderIndex hidx
   exact ⟨state', hrun,
@@ -204,7 +204,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap_minimal [HasherTag] :
             = .ok ((), state')
         ∧ (sszGet state' builders[builderIndex.toNat]!).withdrawableEpoch.toNat
             = (currentEpochOf state).toNat
-              + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay.toNat := by
+              + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay.toNat := by
   letI : Preset := minimal
   letI : Config := minimalConfig
   intro state builderIndex hidx
@@ -213,7 +213,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap_minimal [HasherTag] :
   have hspe : (@Preset.slotsPerEpoch minimal : Nat) = 8 := rfl
   have hdelay : (@Config.minBuilderWithdrawabilityDelay minimalConfig).toNat = 2 := rfl
   simp only [currentEpochOf, EthCLSpecs.Gloas.computeEpochAtSlot,
-    EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay, EthCLSpecs.Fulu.Const.slotsPerEpoch,
+    EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay, EthCLSpecs.Gloas.Const.slotsPerEpoch,
     UInt64.toNat_div, UInt64.toNat_ofNat', hspe, hdelay, Nat.reducePow, Nat.reduceMod]
   omega
 
@@ -231,7 +231,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap_mainnet [HasherTag] :
             = .ok ((), state')
         ∧ (sszGet state' builders[builderIndex.toNat]!).withdrawableEpoch.toNat
             = (currentEpochOf state).toNat
-              + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay.toNat := by
+              + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay.toNat := by
   letI : Preset := mainnet
   letI : Config := mainnetConfig
   intro state builderIndex hidx
@@ -240,7 +240,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap_mainnet [HasherTag] :
   have hspe : (@Preset.slotsPerEpoch mainnet : Nat) = 32 := rfl
   have hdelay : (@Config.minBuilderWithdrawabilityDelay mainnetConfig).toNat = 8192 := rfl
   simp only [currentEpochOf, EthCLSpecs.Gloas.computeEpochAtSlot,
-    EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay, EthCLSpecs.Fulu.Const.slotsPerEpoch,
+    EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay, EthCLSpecs.Gloas.Const.slotsPerEpoch,
     UInt64.toNat_div, UInt64.toNat_ofNat', hspe, hdelay, Nat.reducePow, Nat.reduceMod]
   omega
 

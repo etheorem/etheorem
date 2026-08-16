@@ -6,21 +6,21 @@ import EthCLSpecs.Gloas.Containers.Execution
 The Gloas `BeaconState` (v1.7.0-alpha.11, 46 fields), then the `State` abbrev that
 views it as an SSZ box. The eth1 fields remain; `latestExecutionPayloadHeader` is
 dropped (its slot now holds `latestBlockHash`), and the ePBS block is appended
-after `proposerLookahead`. The unchanged component containers are Fulu's
-(`open EthCLSpecs.Fulu`); the ePBS containers are this fork's (`Containers`).
+after `proposerLookahead`. The unchanged component containers are this fork's
+copies of Fulu's, replayed in `Inherited`; the ePBS containers are its own
+(`Containers`).
 -/
 
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
 
 /-- The Gloas `BeaconState` (v1.7.0-alpha.11, 46 fields). The eth1 fields remain;
 `latestExecutionPayloadHeader` is dropped (its slot now holds `latestBlockHash`),
 and the ePBS block is appended after `proposerLookahead`. The unchanged component
-containers are Fulu's. -/
+containers are the replayed copies in `Inherited`. -/
 forkcontainer BeaconState where
   genesisTime                   : UInt64
   genesisValidatorsRoot         : Root

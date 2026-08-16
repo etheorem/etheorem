@@ -21,10 +21,17 @@ all-ones, `builder_pending_payments` a vector of empties, the rest empty/zero).
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 open SizzLean.Cache
 
 namespace EthCLSpecs.Gloas
+
+-- The fork-upgrade boundary: this file names both forks by definition, so it is
+-- one of the two sanctioned places that reach into the parent
+-- (`SPECS_ARCHITECTURE.md` §6.2). `open scoped Downgrade` activates the
+-- generated bridge from `Gloas.Preset` to `Fulu.Preset`, which is what lets the
+-- conversions below run under a single `[Preset]` binder with the preset still
+-- symbolic. Nothing else in Gloas opens it.
+open scoped Downgrade
 
 /-- `compute_ptc(state, slot)` evaluated over the Fulu pre-state at the fork
 boundary: the seed mixes `DOMAIN_PTC_ATTESTER`, the candidate set is every beacon

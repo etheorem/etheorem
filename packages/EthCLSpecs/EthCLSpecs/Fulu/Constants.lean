@@ -23,8 +23,9 @@ wraparound) to match the pyspec's Python `int` exactly, narrowing back to `Gwei`
 only at the application site. A `…G` suffix marks the `Gwei` form of a value that
 also has a `Nat` form.
 
-Values are Fulu/Electra (the conformance fork), not the Gloas-tweaked ones in the
-GloasSpec reference.
+Values are Fulu/Electra, the conformance fork this body targets. Content a later
+fork introduces lives in that fork: `Gloas/Constants.lean` owns the ePBS and
+EIP-8282 entries, `Heze/Constants.lean` the FOCIL ones.
 -/
 
 set_option autoImplicit false
@@ -110,16 +111,6 @@ forkpreset where
   -- PeerDAS.
   numberOfColumns : Nat
   kzgCommitmentsInclusionProofDepth : Nat
-  -- Gloas (EIP-7732 ePBS, EIP-8282 builder deposits / exits).
-  ptcSize : Nat
-  maxBuildersPerWithdrawalsSweep : Nat
-  builderRegistryLimit : Nat
-  builderPendingWithdrawalsLimit : Nat
-  maxPayloadAttestations : Nat
-  maxBuilderDepositRequestsPerPayload : Nat
-  maxBuilderExitRequestsPerPayload : Nat
-  -- Heze (EIP-7805 FOCIL).
-  inclusionListCommitteeSize : Nat
   -- Well-formedness of the vector-length constants: each is a positive `uint64`-ranged
   -- value (positivity is what a modulo index into a length-`n` vector needs, `< 2 ^ 64`
   -- is the "it is a uint64" the value carries in pyspec). Carried on the preset so the
@@ -146,12 +137,7 @@ forkconfig where
   attestationDueBps : UInt64
   ejectionBalanceG : Gwei
   maxBlobsPerBlockElectra : Nat
-  -- Gloas (EIP-7732) config-tier constants.
-  gloasForkVersion : Version
-  churnLimitQuotientGloas : UInt64
   consolidationChurnLimitQuotient : UInt64
-  maxPerEpochActivationChurnLimitGloas : Gwei
-  minBuilderWithdrawabilityDelay : UInt64
 
 namespace Const
 section
@@ -175,8 +161,6 @@ forkabbrev maxWithdrawalsPerPayload : Nat := Preset.maxWithdrawalsPerPayload
 forkabbrev maxBlobCommitmentsPerBlock : Nat := Preset.maxBlobCommitmentsPerBlock
 forkabbrev pendingPartialWithdrawalsLimit : Nat := Preset.pendingPartialWithdrawalsLimit
 forkabbrev pendingConsolidationsLimit : Nat := Preset.pendingConsolidationsLimit
-forkabbrev ptcSize : Nat := Preset.ptcSize
-forkabbrev maxBuildersPerWithdrawalsSweep : Nat := Preset.maxBuildersPerWithdrawalsSweep
 
 -- Well-formedness of the vector-length constants (positive, `uint64`-ranged), surfaced
 -- with the `Const.` prefix like the values. The proof-carrying premises of
@@ -209,13 +193,6 @@ forkabbrev maxValidatorsPerCommittee : Nat := Preset.maxValidatorsPerCommittee
 forkabbrev maxDepositRequestsPerPayload : Nat := Preset.maxDepositRequestsPerPayload
 forkabbrev maxWithdrawalRequestsPerPayload : Nat := Preset.maxWithdrawalRequestsPerPayload
 forkabbrev maxConsolidationRequestsPerPayload : Nat := Preset.maxConsolidationRequestsPerPayload
--- EIP-8282 (Gloas builder deposits / exits): 2**8 and 2**4, identical across presets.
-forkabbrev maxBuilderDepositRequestsPerPayload : Nat := Preset.maxBuilderDepositRequestsPerPayload
-forkabbrev maxBuilderExitRequestsPerPayload : Nat := Preset.maxBuilderExitRequestsPerPayload
--- EIP-7805 (Heze FOCIL): inclusion-list committee members per slot. A preset-file
--- value, identical across presets at v1.7.0-alpha.11 (both say 2**4); re-check at
--- every re-pin, and promote to a `Preset` field (like `ptcSize`) if they diverge.
-forkabbrev inclusionListCommitteeSize : Nat := Preset.inclusionListCommitteeSize
 forkabbrev maxAttestationsElectra : Nat := Preset.maxAttestationsElectra
 forkabbrev maxAttesterSlashingsElectra : Nat := Preset.maxAttesterSlashingsElectra
 forkabbrev maxPendingDepositsPerEpoch : Nat := Preset.maxPendingDepositsPerEpoch
@@ -223,7 +200,7 @@ forkabbrev maxBytesPerTransaction : Nat := Preset.maxBytesPerTransaction
 forkabbrev maxTransactionsPerPayload : Nat := Preset.maxTransactionsPerPayload
 forkabbrev bytesPerLogsBloom : Nat := Preset.bytesPerLogsBloom
 -- Balance / effective-balance thresholds, in Gwei. The `G` suffix marks the
--- `Gwei` (`UInt64`) form; it abbreviates "Gwei", not "Gloas". A threshold that
+-- `Gwei` (`UInt64`) form; the letter abbreviates "Gwei". A threshold that
 -- also feeds `Nat` ratio arithmetic carries a suffix-free `Nat` twin of the same
 -- value, so `effectiveBalanceIncrement` and `maxEffectiveBalanceElectra` are the
 -- `Nat` forms and their `…G` siblings are the `Gwei` forms.
@@ -291,47 +268,10 @@ forkabbrev genesisForkVersion : Version := Config.genesisForkVersion
 forkabbrev capellaForkVersion : Version := Config.capellaForkVersion
 forkabbrev slotDurationMs : UInt64 := Config.slotDurationMs
 forkabbrev attestationDueBps : UInt64 := Config.attestationDueBps
-forkabbrev gloasForkVersion : Version := Config.gloasForkVersion
-forkabbrev churnLimitQuotientGloas : UInt64 := Config.churnLimitQuotientGloas
 forkabbrev consolidationChurnLimitQuotient : UInt64 := Config.consolidationChurnLimitQuotient
-forkabbrev maxPerEpochActivationChurnLimitGloas : Gwei := Config.maxPerEpochActivationChurnLimitGloas
-forkabbrev minBuilderWithdrawabilityDelay : UInt64 := Config.minBuilderWithdrawabilityDelay
--- Gloas (EIP-7732) universal constants (identical across presets).
-forkabbrev builderRegistryLimit : Nat := Preset.builderRegistryLimit
-forkabbrev builderPendingWithdrawalsLimit : Nat := Preset.builderPendingWithdrawalsLimit
-forkabbrev maxPayloadAttestations : Nat := Preset.maxPayloadAttestations
-forkabbrev builderPaymentThresholdNumerator : UInt64 := 6
-forkabbrev builderPaymentThresholdDenominator : UInt64 := 10
-forkabbrev builderWithdrawalPrefix : UInt8 := 0x03
-/-- `PAYLOAD_BUILDER_VERSION = uint8(0)` (EIP-8282): the version stamped on a
-builder onboarded at the fork (`add_builder_to_registry`). -/
-forkabbrev payloadBuilderVersion : UInt8 := 0
-forkabbrev builderIndexFlag : UInt64 := 0x10000000000
-/-- `BUILDER_INDEX_SELF_BUILD = BuilderIndex(UINT64_MAX)`: the bid's `builder_index`
-sentinel marking a proposer self-build (no external builder). -/
-forkabbrev builderIndexSelfBuild : UInt64 := 0xffffffffffffffff
 /-- `MAX_BLOBS_PER_BLOCK_ELECTRA` (9 for both presets). With an empty `BLOB_SCHEDULE`
 this is what `get_blob_parameters(epoch).max_blobs_per_block` returns. -/
 forkabbrev maxBlobsPerBlockElectra : Nat := Config.maxBlobsPerBlockElectra
-forkabbrev domainBeaconBuilder : ByteArray := ⟨#[0x0B, 0, 0, 0]⟩
-forkabbrev domainPtcAttester : ByteArray := ⟨#[0x0C, 0, 0, 0]⟩
--- EIP-8282 `DOMAIN_BUILDER_DEPOSIT` (`0x0E000000`). Consumed by the deferred
--- builder-deposit signature check; recorded now alongside the other domain tags.
-forkabbrev domainBuilderDeposit : ByteArray := ⟨#[0x0E, 0, 0, 0]⟩
--- EIP-7805 `DOMAIN_INCLUSION_LIST_COMMITTEE` (`0x10000000`). The FOCIL inclusion-list
--- committee signature domain; consumed by `Heze.isValidInclusionListSignature`. Recorded
--- here with the other domain tags (where every fork's domains live, Heze's included).
-forkabbrev domainInclusionListCommittee : ByteArray := ⟨#[0x10, 0, 0, 0]⟩
-/-- ePBS fork-choice payload statuses for a `ForkChoiceNode`. -/
-forkabbrev payloadStatusEmpty : UInt8 := 0
-forkabbrev payloadStatusFull : UInt8 := 1
-forkabbrev payloadStatusPending : UInt8 := 2
-/-- `block_timeliness` deadline indices (attestation-due and PTC-due). -/
-forkabbrev attestationTimelinessIndex : Nat := 0
-forkabbrev ptcTimelinessIndex : Nat := 1
-/-- PTC vote majority thresholds (`PTC_SIZE // 2`). -/
-forkabbrev payloadTimelyThreshold : Nat := ptcSize / 2
-forkabbrev dataAvailabilityTimelyThreshold : Nat := ptcSize / 2
 /-- Reorg weight thresholds (percent of the per-slot committee weight). -/
 forkabbrev reorgHeadWeightThreshold : UInt64 := 20
 forkabbrev reorgParentWeightThreshold : UInt64 := 160
@@ -345,14 +285,6 @@ forkabbrev numberOfColumns : Nat := Preset.numberOfColumns
 /-- Fulu `KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH` (4), the `DataColumnSidecar`'s proof
 vector length. Distinct from the Deneb singular `KZG_COMMITMENT_INCLUSION_PROOF_DEPTH`. -/
 forkabbrev kzgCommitmentsInclusionProofDepth : Nat := Preset.kzgCommitmentsInclusionProofDepth
-/-- Gloas slot-component deadlines in basis points of the slot
-(`ATTESTATION_DUE_BPS_GLOAS`, `PAYLOAD_ATTESTATION_DUE_BPS`). -/
-forkabbrev attestationDueBpsGloas : UInt64 := 2500
-forkabbrev payloadAttestationDueBps : UInt64 := 7500
-/-- `INCLUSION_LIST_DUE_BPS` (Heze:EIP7805, ~67% of the slot): the timeliness deadline
-for an inclusion list, in basis points of the slot
-(`consensus-specs/specs/heze/fork-choice.md:38`). -/
-forkabbrev inclusionListDueBps : UInt64 := 6667
 /-- `PROPOSER_SCORE_BOOST` (percent of the per-slot committee weight). -/
 forkabbrev proposerScoreBoost : Nat := 40
 /-- `BASIS_POINTS` denominator for the slot-component durations. -/
@@ -364,7 +296,8 @@ end Const
 /-! ## `ValidModulus` instances for the ring-buffer divisors
 
 Register the preset's well-formedness fields so a `vmodGet` read into a ring-buffer vector
-(`blockRoots`, `randaoMixes`, `proposerLookahead`, `ptcWindow`) names only the divisor. -/
+(`blockRoots`, `randaoMixes`, `proposerLookahead`) names only the divisor. A child
+fork replays these with `inherit`, so its copies bind to its own `Preset`. -/
 
 forkinstance validModulusSlotsPerEpoch [Preset] : ValidModulus Const.slotsPerEpoch :=
   ⟨Const.slotsPerEpochPos, Const.slotsPerEpochLt⟩
@@ -392,8 +325,6 @@ forkpresetvalues minimal where
   maxBlobCommitmentsPerBlock := 4096
   pendingPartialWithdrawalsLimit := 64
   pendingConsolidationsLimit := 64
-  ptcSize := 16
-  maxBuildersPerWithdrawalsSweep := 16
   -- Registry and history caps.
   validatorRegistryLimit := 2 ^ 40
   historicalRootsLimit := 2 ^ 24
@@ -442,14 +373,6 @@ forkpresetvalues minimal where
   -- PeerDAS.
   numberOfColumns := 128
   kzgCommitmentsInclusionProofDepth := 4
-  -- Gloas (EIP-7732, EIP-8282).
-  builderRegistryLimit := 2 ^ 40
-  builderPendingWithdrawalsLimit := 2 ^ 20
-  maxPayloadAttestations := 4
-  maxBuilderDepositRequestsPerPayload := 256
-  maxBuilderExitRequestsPerPayload := 16
-  -- Heze (EIP-7805 FOCIL).
-  inclusionListCommitteeSize := 16
   slotsPerEpochPos := by decide
   slotsPerEpochLt := by decide
   slotsPerHistoricalRootPos := by decide
@@ -475,8 +398,6 @@ forkpresetvalues mainnet where
   maxBlobCommitmentsPerBlock := 4096
   pendingPartialWithdrawalsLimit := 134217728
   pendingConsolidationsLimit := 262144
-  ptcSize := 512
-  maxBuildersPerWithdrawalsSweep := 16384
   -- Registry and history caps.
   validatorRegistryLimit := 2 ^ 40
   historicalRootsLimit := 2 ^ 24
@@ -525,14 +446,6 @@ forkpresetvalues mainnet where
   -- PeerDAS.
   numberOfColumns := 128
   kzgCommitmentsInclusionProofDepth := 4
-  -- Gloas (EIP-7732, EIP-8282).
-  builderRegistryLimit := 2 ^ 40
-  builderPendingWithdrawalsLimit := 2 ^ 20
-  maxPayloadAttestations := 4
-  maxBuilderDepositRequestsPerPayload := 256
-  maxBuilderExitRequestsPerPayload := 16
-  -- Heze (EIP-7805 FOCIL).
-  inclusionListCommitteeSize := 16
   slotsPerEpochPos := by decide
   slotsPerEpochLt := by decide
   slotsPerHistoricalRootPos := by decide
@@ -553,11 +466,7 @@ forkconfigvalues minimalConfig where
   attestationDueBps := 3333
   ejectionBalanceG := 16000000000
   maxBlobsPerBlockElectra := 9
-  gloasForkVersion := ⟨#[0x07, 0, 0, 1], by decide⟩
-  churnLimitQuotientGloas := 16
   consolidationChurnLimitQuotient := 32
-  maxPerEpochActivationChurnLimitGloas := 128000000000
-  minBuilderWithdrawabilityDelay := 2
 
 /-- The `mainnet` config. -/
 forkconfigvalues mainnetConfig where
@@ -572,10 +481,6 @@ forkconfigvalues mainnetConfig where
   attestationDueBps := 3333
   ejectionBalanceG := 16000000000
   maxBlobsPerBlockElectra := 9
-  gloasForkVersion := ⟨#[0x07, 0, 0, 0], by decide⟩
-  churnLimitQuotientGloas := 32768
   consolidationChurnLimitQuotient := 65536
-  maxPerEpochActivationChurnLimitGloas := 256000000000
-  minBuilderWithdrawabilityDelay := 8192
 
 end EthCLSpecs.Fulu

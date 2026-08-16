@@ -1,5 +1,4 @@
 import EthCLSpecs.Gloas.Transition
-import EthCLSpecs.Fulu.ForkChoice
 import EthCLLib.Spec.FiniteMap
 
 /-!
@@ -34,7 +33,6 @@ open EthCLLib.PySpecTests
 open SizzLean
 open SizzLean.Cache
 open SizzLean.Hasher
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
 

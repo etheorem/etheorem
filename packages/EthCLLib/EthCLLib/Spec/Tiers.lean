@@ -30,7 +30,9 @@ defeq.
 So a child's `forkpreset` also emits
 
 ```lean
+namespace Downgrade
 @[reducible] scoped instance toFuluPreset [Preset] : Fulu.Preset := { … }
+end Downgrade
 ```
 
 projecting every parent field out of the child's class. The upgrade then runs
@@ -40,10 +42,13 @@ iota to the Gloas field, and cap-type defeq holds with the preset still symbolic
 The runner gets the same bridge for free, injecting only `Gloas.minimal` and
 reaching the Fulu spine through the projection.
 
-It is `scoped`, so it activates only where the boundary opens it (`Upgrade.lean`,
-`Interface.lean`) and ordinary fork body code cannot silently satisfy a
-parent-class constraint. The fork author never writes the parent's name; the
-form reads it from `lineageExt`.
+The `Downgrade` sub-namespace is what contains it. `scoped` on its own would
+not: a fork's body files all sit *inside* the fork's namespace, where a scoped
+instance is already active. One namespace deeper, only a file that writes
+`open scoped Downgrade` can satisfy a parent-class constraint, so the two
+boundary files (`Upgrade.lean`, `Interface.lean`) declare the reach in one line
+and everything else stays sealed. The fork author never writes the parent's name;
+the form reads it from `lineageExt`.
 -/
 
 set_option autoImplicit false
@@ -72,25 +77,36 @@ syntax tierAssign := (docComment)? ident " := " term
 
 -- `manyIndent` is what Lean's own `structFields` uses: it saves the block's
 -- column so a field's `term` stops at the next line rather than swallowing the
--- following field name as a function argument.
+-- following field name as a function argument. The whole `where` clause is
+-- optional: a fork that adds no field of its own still writes `forkconfig`, to
+-- materialize its own class out of the lineage's merged fields.
 /-- `forkpreset where <fields>`: declare this fork's `Preset` class as a diff
 over its ancestors', and (in a child) the scoped downgrade instance to the
 parent's. -/
 scoped syntax (name := forkpresetCmd)
-  (docComment)? "forkpreset" " where " manyIndent(ppLine tierField) : command
+  (docComment)? "forkpreset" (" where " manyIndent(ppLine tierField))? : command
 /-- `forkconfig where <fields>`: the `Config` counterpart of `forkpreset`. -/
 scoped syntax (name := forkconfigCmd)
-  (docComment)? "forkconfig" " where " manyIndent(ppLine tierField) : command
+  (docComment)? "forkconfig" (" where " manyIndent(ppLine tierField))? : command
 /-- `forkpresetvalues minimal where <assignments>`: declare one injected value
 set of this fork's `Preset`, as a diff over the ancestors' same-named set. -/
 scoped syntax (name := forkpresetvaluesCmd)
-  (docComment)? "forkpresetvalues " ident " where " manyIndent(ppLine tierAssign) : command
+  (docComment)? "forkpresetvalues " ident (" where " manyIndent(ppLine tierAssign))? : command
 /-- `forkconfigvalues minimalConfig where <assignments>`: the `Config`
 counterpart of `forkpresetvalues`. -/
 scoped syntax (name := forkconfigvaluesCmd)
-  (docComment)? "forkconfigvalues " ident " where " manyIndent(ppLine tierAssign) : command
+  (docComment)? "forkconfigvalues " ident (" where " manyIndent(ppLine tierAssign))? : command
 
 /-! ## Emission -/
+
+/-- The sub-namespace a child fork's downgrade instances land in, relative to the
+fork. Naming it once keeps the emitter and the docs from drifting. -/
+def downgradeNs : Name := `Downgrade
+
+/-- The entries an optional `where <block>` carries: the clause parses as a null
+node holding either nothing or the `where` atom plus the block. -/
+def tierEntryBlock (clause : Syntax) : Array Syntax :=
+  if clause.getArgs.isEmpty then #[] else clause[1].getArgs
 
 /-- Rebuild one merged `tierField` as the `structSimpleBinder` a `class` takes,
 carrying the author's docstring through so the merged class stays literate. -/
@@ -129,8 +145,16 @@ def emitDowngrade (forkNs key : Name) : CommandElabM Unit := do
     -- One dotted ident (`Preset.height`), not `.`-notation on the term `Preset`,
     -- which would try to project a field out of a type.
     `(Parser.Term.structInstField| $(mkIdent field):ident := $(mkIdent (key ++ field)):ident)
+  -- `scoped` alone would not contain this: every body file of the fork sits
+  -- *inside* the fork's namespace, where a scoped instance is already active. The
+  -- extra `Downgrade` namespace is what makes the two boundary files spell
+  -- `open scoped Downgrade` to reach the bridge, and leaves it unreachable
+  -- elsewhere. The body files still resolve `Preset` and its projections here,
+  -- since the fork's namespace encloses this one.
+  elabCommand (← `(namespace $(mkIdent downgradeNs)))
   elabCommand (← `(@[reducible] scoped instance $instId:ident [$classId] :
     $(mkIdent (parent ++ key)) := { $[$projections:structInstField],* }))
+  elabCommand (← `(end $(mkIdent downgradeNs)))
 
 /-- The author's leading docstring as `declModifiers`, optionally with
 `@[reducible]`. A tier form's docstring belongs on the declaration it emits, so
@@ -146,7 +170,7 @@ def tierMods (doc : Syntax) (reducible : Bool) :
 /-- Emit a tier class: the merged field block as a `class`, plus the downgrade
 instance in a child. Shared by `forkpreset` and `forkconfig`. -/
 def elabTierClass (key : Name) : CommandElab := fun stx => do
-  let (forkNs, entries) ← captureTier key stx[3].getArgs
+  let (forkNs, entries) ← captureTier key (tierEntryBlock stx[2])
   let mods ← tierMods stx[0] (reducible := false)
   let fields ← `(Parser.Command.structFields| $(← entries.mapM tierFieldBinder)*)
   elabCommand (← `($mods:declModifiers class $(mkIdent key) where $fields:structFields))
@@ -157,7 +181,7 @@ fork's own class. Reducible (not an instance) so `minimal` and `mainnet` coexist
 and the runner picks one per vector. -/
 def elabTierValues (key : Name) : CommandElab := fun stx => do
   let setId : Ident := ⟨stx[2]⟩
-  let (_, entries) ← captureTier setId.getId stx[4].getArgs
+  let (_, entries) ← captureTier setId.getId (tierEntryBlock stx[3])
   let mods ← tierMods stx[0] (reducible := true)
   let assignments ← entries.mapM tierAssignField
   elabCommand (← `($mods:declModifiers def $setId:ident : $(mkIdent key) :=

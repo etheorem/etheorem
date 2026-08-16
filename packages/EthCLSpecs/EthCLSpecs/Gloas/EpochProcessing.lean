@@ -24,7 +24,6 @@ in the Gloas namespace when it is replayed.
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
 
@@ -72,6 +71,9 @@ inherit getFinalityDelay
 inherit isInInactivityLeak
 inherit getBalanceChurnLimit
 inherit getActivationExitChurnLimit
+
+-- The churn reservation helper the two overrides below call.
+inherit reserveChurn
 
 -- Gloas (EIP-8061) churn: `get_exit_churn_limit` / `get_activation_churn_limit`
 -- use `CHURN_LIMIT_QUOTIENT_GLOAS`, and `compute_exit_epoch_and_update_churn` uses

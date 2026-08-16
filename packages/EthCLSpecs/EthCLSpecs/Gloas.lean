@@ -1,3 +1,6 @@
+import EthCLSpecs.Gloas.Fork
+import EthCLSpecs.Gloas.Types
+import EthCLSpecs.Gloas.Constants
 import EthCLSpecs.Gloas.Containers
 import EthCLSpecs.Gloas.Upgrade
 import EthCLSpecs.Gloas.Interface

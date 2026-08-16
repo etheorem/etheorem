@@ -19,7 +19,7 @@ brings it all into scope; it holds no declarations of its own. The pieces:
 
 The unchanged component and operation containers (`Validator`, `Eth1Data`,
 `Checkpoint`, `Withdrawal`, the attestation / slashing / deposit / exit families,
-`SyncAggregate`, …) are reused from Fulu directly (`open EthCLSpecs.Fulu`); Gloas
-redefines only the containers whose shape changed (EIP-8282 makes `ExecutionRequests`
-one of them).
+`SyncAggregate`, …) arrive as replayed Gloas-local copies from `Inherited`, so the
+namespace is flat and complete. Gloas restates only the containers whose shape
+changed (EIP-8282 makes `ExecutionRequests` one of them).
 -/

@@ -10,7 +10,6 @@ The `Builder` record the ePBS builder registry holds (`SPECS_ARCHITECTURE.md`
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
 

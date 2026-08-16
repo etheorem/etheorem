@@ -95,18 +95,19 @@ end Child
 example : 0 < @Child.Const.width Child.minimal := @Child.Preset.widthPos Child.minimal
 
 -- (3) The downgrade bridge, with the preset symbolic. `Base.Const.width` needs a
--- `Base.Preset`; instance search finds the scoped `toBasePreset`, whose structure
--- literal projects straight back to the `Child.Preset` in scope. Both sides of
+-- `Base.Preset`; instance search finds `Child.Downgrade.toBasePreset`, whose
+-- structure literal projects straight back to the `Child.Preset` in scope. Both sides of
 -- each `rfl` therefore reduce to the same variable projection, with no concrete
 -- value anywhere, which is exactly the situation the fork upgrade elaborates in.
-open scoped Child in
+open scoped Child.Downgrade in
 example [Child.Preset] : Base.Const.width = Child.Const.width := rfl
 
-open scoped Child in
+open scoped Child.Downgrade in
 example [Child.Preset] : Vector Nat Base.Const.height = Vector Nat Child.Const.height := rfl
 
--- Both examples need their `open scoped Child`. Drop it and the `Base.Preset`
--- constraint has nothing to satisfy it, which is the containment the `scoped`
--- buys: fork body code cannot reach the parent's class by accident.
+-- Both examples need their `open scoped Child.Downgrade`. Drop it and the
+-- `Base.Preset` constraint has nothing to satisfy it. The extra namespace is what
+-- buys that: `scoped` alone would leave the bridge active throughout `Child`,
+-- since a fork's own files sit inside the fork's namespace.
 
 end EthCLLib.Tests.TierMerge

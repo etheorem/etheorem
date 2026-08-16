@@ -22,12 +22,18 @@ set_option autoImplicit false
 
 open EthCLLib.Spec
 open EthCLLib.PySpecTests
-open EthCLSpecs.Fulu
 open SizzLean
 open SizzLean.Cache
 open SizzLean.Hasher
 
 namespace EthCLSpecs.Gloas.Interface
+
+-- The pyspec runner drives the *parent* spine for the pre-fork blocks of a mixed
+-- `fork_transition` vector, so this file names both forks; it is the second of
+-- the two sanctioned boundaries (`SPECS_ARCHITECTURE.md` §6.2).
+-- `open scoped Downgrade` brings in the generated `Gloas.Preset → Fulu.Preset`
+-- bridge, so injecting `Gloas.minimal` alone reaches the Fulu spine by projection.
+open scoped EthCLSpecs.Gloas.Downgrade
 
 /-- Pinned upstream release; Gloas tracks the same tag as Fulu while it is
 pre-release. -/
@@ -53,7 +59,7 @@ private def runUpgradeImpl (P : Preset) (C : Config) (forkVersion : Version) (pr
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.realBackend
-  match SSZ.deserialize (T := @Fulu.BeaconState P) preBytes with
+  match SSZ.deserialize (T := Fulu.BeaconState) preBytes with
   | .ok pre  =>
     let box0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox (upgradeToGloas forkVersion pre)
     let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit :=
@@ -115,7 +121,7 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
   letI : Config := C
   letI : HasherTag := fastHasherTag
   let mkDeltas : Array Gwei × Array Gwei → ByteArray := fun rp =>
-    SSZ.serialize ({ rewards := sszOfArray rp.1, penalties := sszOfArray rp.2 } : Fulu.Deltas)
+    SSZ.serialize ({ rewards := sszOfArray rp.1, penalties := sszOfArray rp.2 } : Deltas)
   let n := (sszGet state validators).size
   let zeros := Array.replicate n (0 : Gwei)
   RunError.ofSpec do
@@ -227,7 +233,7 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
   let forkEpoch := cmeta.forkEpoch.getD 0
   let boundary : Slot := UInt64.ofNat (forkEpoch * Const.slotsPerEpoch)
   let nFulu := match cmeta.forkBlock with | some n => n + 1 | none => 0
-  match SSZ.deserialize (T := @Fulu.BeaconState P) preBytes with
+  match SSZ.deserialize (T := Fulu.BeaconState) preBytes with
   | .error _ => .error (.decode "Fulu BeaconState")
   | .ok preFulu => do
     -- Decode both block runs up front (the runner's job): the pre-fork blocks `0..nFulu`
@@ -238,15 +244,15 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
     let fuluBlocks ← (List.range nFulu).toArray.mapM (fun i =>
       match blocks[i]? with
       | none    => Except.error (RunError.spec (.outOfBounds i blocks.size))
-      | some bb => match SSZ.deserialize (T := @Fulu.SignedBeaconBlock P) bb with
+      | some bb => match SSZ.deserialize (T := Fulu.SignedBeaconBlock) bb with
         | .ok sb   => Except.ok sb
         | .error _ => Except.error (RunError.decode "Fulu SignedBeaconBlock"))
     let gloasBlocks ← (blocks.extract nFulu blocks.size).mapM (fun bb =>
       match SSZ.deserialize (T := @Gloas.SignedBeaconBlock P) bb with
       | .ok sb   => Except.ok sb
       | .error _ => Except.error (RunError.decode "Gloas SignedBeaconBlock"))
-    let fuluBox0 : SSZ.Box Sha256 (@Fulu.BeaconState P) := SSZ.FastBox preFulu
-    let fuluAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Fulu.BeaconState P)) Unit := do
+    let fuluBox0 : SSZ.Box Sha256 (Fulu.BeaconState) := SSZ.FastBox preFulu
+    let fuluAction : EStateM StateTransitionError (SSZ.Box Sha256 (Fulu.BeaconState)) Unit := do
       for sb in fuluBlocks do Fulu.stateTransition sb
       if (sszGet (← get) slot) < boundary then Fulu.processSlots boundary
     match fuluAction.run fuluBox0 with

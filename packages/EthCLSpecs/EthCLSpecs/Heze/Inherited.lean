@@ -1,5 +1,4 @@
 import EthCLSpecs.Heze.Constants
-import EthCLSpecs.Gloas.Containers
 
 /-!
 # `EthCLSpecs.Heze.Inherited`: the inherited containers (everything but the new IL family)
@@ -9,18 +8,18 @@ byte-identical to Gloas, so each is `inherit`ed: the ancestor's field block is r
 in `EthCLSpecs.Heze`, giving a distinct type with the same SSZ encoding (the inheritance
 mechanism, `SPEC_AUTHORING_MODEL.md` §8). The bid, `ExecutionRequests`, and the ePBS
 containers come from Gloas; the component containers resolve through Gloas back to the
-definitions captured in Fulu. `BeaconState` / `BeaconBlock*` are inherited in
+definitions captured further up the lineage. `BeaconState` / `BeaconBlock*` are inherited in
 `State` / `Block` (they need the `state_preamble` / signed-wrapper steps).
 -/
 
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Heze
 
--- Component containers (walk to Fulu's captures).
+-- Component containers. Gloas declared its own copies, so each of these resolves
+-- one generation up rather than two.
 inherit Checkpoint
 inherit AttestationData
 inherit Attestation
@@ -30,6 +29,7 @@ inherit BLSToExecutionChange
 inherit BeaconBlockHeader
 inherit ConsolidationRequest
 inherit DepositData
+inherit DepositMessage
 inherit Deposit
 inherit DepositRequest
 inherit Eth1Data
@@ -48,6 +48,8 @@ inherit SyncAggregate
 inherit SyncCommittee
 inherit Validator
 inherit Withdrawal
+-- The runner's rewards-vector output container.
+inherit Deltas
 
 -- ePBS + EIP-8282 containers (declared in Gloas; FOCIL leaves them untouched at alpha.11).
 inherit Builder

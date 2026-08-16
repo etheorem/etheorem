@@ -33,7 +33,7 @@ namespace EthCLSpecs.Proofs
 
 open EthCLLib.Spec (HasherTag StoreTransitionError MapKind FcMap NestedStateMachine
   runNestedStateTransition runNestedStateTransition_of_ok)
-open EthCLSpecs.Fulu (Preset Config BuilderIndex)
+open EthCLSpecs.Gloas (Preset Config BuilderIndex)
 open EthCLSpecs.Gloas (Store getSlotsSinceGenesis getCurrentSlot State currentEpochOf
   initiateBuilderExit processBuilderPendingPayments)
 open SizzLean.Repr
@@ -79,7 +79,7 @@ theorem getCurrentSlot_run_of_time_eq_genesis
         = .ok (0, store) := by
   intro store htime
   simp [getCurrentSlot, getSlotsSinceGenesis, htime, EthCLLib.Spec.checkedSub,
-    EthCLLib.Spec.checkedMul, EthCLSpecs.Fulu.Const.genesisSlot]
+    EthCLLib.Spec.checkedMul, EthCLSpecs.Gloas.Const.genesisSlot]
   rfl
 
 /-! ## The bridge carries a step's own theorem, unchanged
@@ -108,7 +108,7 @@ example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
           (initiateBuilderExit (StateTransition := GloasRun) builderIndex)
         = (pure (sszModify pre builders[builderIndex.toNat]! as b =>
             { b with withdrawableEpoch :=
-                currentEpochOf pre + EthCLSpecs.Fulu.Const.minBuilderWithdrawabilityDelay })
+                currentEpochOf pre + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay })
           : m State) :=
   fun pre builderIndex =>
     runNestedStateTransition_of_ok (initiateBuilderExit_run_eq pre builderIndex)

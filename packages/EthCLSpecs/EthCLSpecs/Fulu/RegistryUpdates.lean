@@ -66,7 +66,7 @@ unchanged; otherwise the leftover is spread forward by the ceiling-division
 `UInt64` (`Epoch`/`Gwei` are both `UInt64`), so the same byte arithmetic runs for Fulu's
 exit/consolidation churn and Gloas's overrides; the per-fork state reads and the `state` write
 stay in the callers. -/
-def reserveChurn (balance consume perEpoch earliest : Gwei) : Epoch × Gwei :=
+forkdef reserveChurn (balance consume perEpoch earliest : Gwei) : Epoch × Gwei :=
   if balance > consume then
     let balanceToProcess := balance - consume
     let additional := (balanceToProcess - 1) / perEpoch + 1

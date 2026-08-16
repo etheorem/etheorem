@@ -42,8 +42,8 @@ namespace EthCLSpecs.Proofs
 
 open EthCLLib.Spec (CryptoBackend HasherTag blsFastAggregateVerify computeSigningRoot)
 open scoped EthCLLib.Spec
-open EthCLSpecs.Fulu (Preset ValidatorIndex)
-open EthCLSpecs.Fulu.Const (domainPtcAttester)
+open EthCLSpecs.Gloas (Preset ValidatorIndex)
+open EthCLSpecs.Gloas.Const (domainPtcAttester)
 open EthCLSpecs.Gloas
   (State IndexedPayloadAttestation isValidIndexedPayloadAttestation getDomain computeEpochAtSlot)
 open SizzLean.Proofs (sszListMap_getElem!_eq_attachMap)
