@@ -16,8 +16,16 @@ Two environment extensions carry the data:
 
 * `lineageExt` records the `fork … from …` edges: each fork's full namespace
   paired with its parent's full namespace (or `Name.anonymous` for a root).
-* `captureExt` records every `forkdef` / `forkcontainer` / `forkstruct` body,
-  keyed by `(forkNamespace, shortName)`, as the raw `Syntax` to replay.
+* `captureExt` records every capturing form's body, keyed by
+  `(forkNamespace, residualName)`, as the raw `Syntax` to replay.
+
+The key's two halves come from splitting the elaboration-time namespace at the
+nearest registered fork (`splitAtFork`). A declaration written inside
+`namespace EthCLSpecs.Fulu` … `namespace Const` keys as
+`(EthCLSpecs.Fulu, Const.slotsPerEpoch)`, so `inherit Const.slotsPerEpoch` in
+the child finds it. Keying on the raw current namespace instead would file the
+constant under `EthCLSpecs.Fulu.Const`, which is no fork at all, and no lineage
+walk would ever reach it.
 
 Both are `SimplePersistentEnvExtension`s, so the captures survive into the
 `.olean` and a child fork in a *separate module* can inherit a parent declared
@@ -60,25 +68,51 @@ inductive CaptureKind where
   is the field block; the form regenerates the `structure` with ordinary
   `deriving` on replay. -/
   | struct
+  /-- A `forkabbrev`: a type alias or a constant. Replay re-emits an `abbrev`,
+  never a `def`; the `@[reducible]` attribute is what SSZRepr synthesis and the
+  symbolic-cap derive see through, so demoting it would break both. -/
+  | abbrev_
+  /-- A `forkinstance`: a named typeclass instance. Replay re-emits an
+  `instance`, which a `def`-shaped capture could not do (the capturing forms
+  drop modifiers, so an `@[instance]` attribute would not survive). -/
+  | instance_
   deriving Inhabited, DecidableEq, Repr
 
 /-- One captured declaration's replay payload.
 
-Stored verbatim from the author's source. `sig` and `val` are the two pieces a
-`forkdef` needs (`optDeclSig` and `declVal`); a container or struct uses only
-`val`, which holds its field block, and leaves `sig` as `Syntax.missing`. -/
+Stored verbatim from the author's source. Which of the three syntax slots carry
+content depends on `kind`:
+
+| kind         | `binders`              | `sig`               | `val`         |
+| ------------ | ---------------------- | ------------------- | ------------- |
+| `def_`       | ∅                      | `optDeclSig`        | `declVal`     |
+| `abbrev_`    | ∅                      | `optDeclSig`        | `declVal`     |
+| `instance_`  | ∅ (they ride in `sig`) | `declSig`           | `declVal`     |
+| `container`  | ∅                      | ∅                   | `structFields`|
+| `struct`     | the author's binders   | ∅                   | `structFields`|
+
+Only `struct` needs the `binders` slot: Lean's `structure` takes its parameters
+beside the field block, while `declSig` (what an `instance` and a typed `def`
+carry) already holds the binders ahead of the `: type`. Both unused slots
+default, so a producer writes only what its kind fills. -/
 structure CapturedDecl where
   /-- The fork namespace the declaration was written in (e.g. `EthCLSpecs.Fulu`).
   Named `forkNs`, not `fork`, because the `fork` keyword the forms declare would
   shadow a field named `fork` at every construction site. -/
   forkNs : Name
-  /-- The declaration's short name (e.g. `processBlock`). -/
+  /-- The declaration's name *relative to the fork namespace*: `processBlock` for
+  a step written directly in the fork, `Const.slotsPerEpoch` for one written
+  inside a nested `namespace Const`. This is the name `inherit` spells. -/
   name : Name
   /-- Which form captured it. -/
   kind : CaptureKind
-  /-- A `forkdef`'s `optDeclSig`; `Syntax.missing` for a container / struct. -/
-  sig  : Syntax
-  /-- A `forkdef`'s `declVal`, or a container / struct's field block. -/
+  /-- A null node of `bracketedBinder`s the author wrote beyond the implicit
+  `[Preset]`. Defaults to the empty null node, so `.getArgs` is well defined
+  even for the kinds that never fill it. -/
+  binders : Syntax := mkNullNode
+  /-- The declaration's signature, in whichever `declSig` flavour the kind uses. -/
+  sig  : Syntax := .missing
+  /-- A declaration value (`declVal`), or a structure's field block. -/
   val  : Syntax
   deriving Inhabited
 
@@ -111,6 +145,37 @@ def recordLineage (env : Environment) (fork : Name) (parent : Option Name) :
 /-- Record a captured declaration body. -/
 def recordCapture (env : Environment) (cap : CapturedDecl) : Environment :=
   captureExt.addEntry env cap
+
+/-- Is `ns` a registered fork, i.e. did some `fork …` command name it? Roots
+count: their lineage entry pairs them with `Name.anonymous`. -/
+def isFork (env : Environment) (ns : Name) : Bool :=
+  (lineageExt.getState env).any fun (f, _) => f == ns
+
+/-- Split an elaboration-time namespace into `(owningFork, residualPath)`,
+nearest enclosing fork wins.
+
+`EthCLSpecs.Fulu.Const` splits as `(EthCLSpecs.Fulu, Const)`; `EthCLSpecs.Fulu`
+itself splits as `(EthCLSpecs.Fulu, .anonymous)`. A namespace with no registered
+fork anywhere above it yields `none`, and the caller keys the capture on the raw
+namespace instead, the behaviour every capture had before nesting was supported.
+
+The recursion peels one component at a time and rebuilds the residual on the way
+out, so the residual's component order matches the source. -/
+partial def splitAtFork (env : Environment) (ns : Name) : Option (Name × Name) :=
+  if isFork env ns then
+    some (ns, Name.anonymous)
+  else
+    match ns with
+    | .anonymous => none
+    | .str p s   => (splitAtFork env p).map fun (f, r) => (f, r.str s)
+    | .num p i   => (splitAtFork env p).map fun (f, r) => (f, r.num i)
+
+/-- The capture key for a declaration named `declName` (the author's `declId`,
+itself possibly dotted) written while the current namespace is `ns`. -/
+def captureKey (env : Environment) (ns declName : Name) : Name × Name :=
+  match splitAtFork env ns with
+  | some (forkNs, residual) => (forkNs, residual ++ declName)
+  | none                    => (ns, declName)
 
 /-- The parent fork of `fork`, if `fork` has a recorded `from` edge with a
 non-anonymous parent. -/

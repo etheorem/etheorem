@@ -5,11 +5,16 @@ import EthCLLib.Internal.Capture
 # `EthCLLib.Spec.Forms`: the capturing declaration forms
 
 The author-facing commands that drive fork inheritance: `fork`, `forkdef`,
-`forkcontainer`, `forkstruct`, and `inherit`. Each producer (`forkdef` /
-`forkcontainer` / `forkstruct`) emits its real declaration *and* records the
-author's raw body in `captureExt` (`EthCLLib.Internal.Capture`); `inherit`
-replays a captured ancestor body in the current namespace, where its
-unqualified sibling references late-bind to the child's overrides.
+`forkabbrev`, `forkinstance`, `forkcontainer`, `forkstruct`, and `inherit`. Each
+producer emits its real declaration *and* records the author's raw body in
+`captureExt` (`EthCLLib.Internal.Capture`); `inherit` replays a captured ancestor
+body in the current namespace, where its unqualified sibling references
+late-bind to the child's overrides.
+
+Every producer keys its capture through `captureKey`, which splits the
+elaboration-time namespace at the nearest enclosing fork. So a form written
+inside a nested `namespace Const` files under the fork with a dotted name, and
+`inherit Const.foo` in the child finds it.
 
 The forms are `scoped`, so `open EthCLLib.Spec` activates them along with the
 rest of the author surface and a spec file opens exactly one namespace.
@@ -53,7 +58,17 @@ def elabFork : CommandElab := fun stx => do
     if fromArgs.size == 2 then some (forkNs.getPrefix ++ fromArgs[1]!.getId) else none
   modifyEnv (recordLineage · forkNs parent?)
 
-/-! ## `forkdef`: steps and helpers -/
+/-! ## Capture keying
+
+Every producer files its entry under the *fork* it was written in, with the path
+from that fork down to the declaration as the name. `keyFor` does the split; the
+producers below differ only in which syntax slots they fill. -/
+
+/-- The `(forkNs, name)` capture key for `declName` at the current namespace. -/
+def keyFor (declName : Name) : CommandElabM (Name × Name) := do
+  return captureKey (← getEnv) (← getScope).currNamespace declName
+
+/-! ## `forkdef` / `forkabbrev`: steps, helpers, aliases, constants -/
 
 /-- `forkdef name … := …`, shaped exactly like `def`. Emits the `def` and
 captures its signature and value for per-fork replay. The only thing it adds
@@ -67,10 +82,64 @@ def elabForkdef : CommandElab := fun stx => do
   let declId : TSyntax ``Parser.Command.declId        := ⟨stx[2]⟩
   let sig    : TSyntax ``Parser.Command.optDeclSig     := ⟨stx[3]⟩
   let val    : TSyntax ``Parser.Command.declVal        := ⟨stx[4]⟩
-  let forkNs := (← getScope).currNamespace
-  let name := stx[2][0].getId
+  let (forkNs, name) ← keyFor stx[2][0].getId
   modifyEnv (recordCapture · { forkNs, name, kind := .def_, sig := sig.raw, val := val.raw })
   elabCommand (← `($mods:declModifiers def $declId:declId $sig:optDeclSig $val:declVal))
+
+/-- `forkabbrev name … := …`, shaped exactly like `abbrev`. Used for the fork's
+type aliases (`Slot`, `Gwei`, `Root`, …) and for every `Const` entry.
+
+The abbrev-ness is load-bearing, not cosmetic: `@[reducible]` is what lets
+SSZRepr instance synthesis see through `Root` to `Vector UInt8 32`, and what lets
+a symbolic list cap `Const.validatorRegistryLimit` reduce to a literal once a
+concrete `Preset` is injected. Replay re-emits an `abbrev` for the same reason. -/
+scoped syntax (name := forkabbrevCmd)
+  declModifiers "forkabbrev " declId optDeclSig declVal : command
+
+@[command_elab forkabbrevCmd]
+def elabForkabbrev : CommandElab := fun stx => do
+  let mods   : TSyntax ``Parser.Command.declModifiers := ⟨stx[0]⟩
+  let declId : TSyntax ``Parser.Command.declId        := ⟨stx[2]⟩
+  let sig    : TSyntax ``Parser.Command.optDeclSig     := ⟨stx[3]⟩
+  let val    : TSyntax ``Parser.Command.declVal        := ⟨stx[4]⟩
+  let (forkNs, name) ← keyFor stx[2][0].getId
+  modifyEnv (recordCapture · { forkNs, name, kind := .abbrev_, sig := sig.raw, val := val.raw })
+  elabCommand (← `($mods:declModifiers abbrev $declId:declId $sig:optDeclSig $val:declVal))
+
+/-! ## `forkinstance`: typeclass registrations that mention fork names -/
+
+/-- `forkinstance name <binders> : Class arg := …`, shaped like `instance`.
+
+The name is mandatory, unlike Lean's `instance`, because the capture key *is* a
+name: `inherit` has nothing else to spell. `forkdef` cannot stand in here, since
+the capturing forms drop `declModifiers` on replay and an `@[instance]`
+attribute would be lost with them.
+
+The users are registrations whose subject is a fork-owned name, e.g. a
+`ValidModulus` on `Const.slotsPerEpoch`: each fork needs its own copy, bound to
+its own `Preset`. An instance that mentions no spec name belongs in `EthCLLib`
+instead, where no fork owns it. -/
+-- `declSig` is `bracketedBinder* >> ": " term`, so the author's `[Preset]` and
+-- friends ride inside `sig` with no separate binder slot, exactly as they do for
+-- Lean's own `instance`.
+scoped syntax (name := forkinstanceCmd)
+  declModifiers "forkinstance " declId Parser.Command.declSig declVal : command
+
+/-- Emit a named `instance`. Shared by `forkinstance` and `inherit`'s instance
+arm, so a replayed instance regenerates identically. -/
+def emitInstance (declId : TSyntax ``Parser.Command.declId)
+    (sig : TSyntax ``Parser.Command.declSig) (val : TSyntax ``Parser.Command.declVal) :
+    CommandElabM Unit := do
+  elabCommand (← `(instance $declId:declId $sig:declSig $val:declVal))
+
+@[command_elab forkinstanceCmd]
+def elabForkinstance : CommandElab := fun stx => do
+  let declId : TSyntax ``Parser.Command.declId   := ⟨stx[2]⟩
+  let sig    : TSyntax ``Parser.Command.declSig  := ⟨stx[3]⟩
+  let val    : TSyntax ``Parser.Command.declVal  := ⟨stx[4]⟩
+  let (forkNs, name) ← keyFor stx[2][0].getId
+  modifyEnv (recordCapture · { forkNs, name, kind := .instance_, sig := sig.raw, val := val.raw })
+  emitInstance declId sig val
 
 /-! ## `forkcontainer` / `forkstruct`: SSZ and non-SSZ structures
 
@@ -126,11 +195,8 @@ def elabForkcontainer : CommandElab := fun stx => do
   let mods   : TSyntax ``Parser.Command.declModifiers := ⟨stx[0]⟩
   let nameId : Ident := ⟨stx[2]⟩
   let fields : TSyntax ``Parser.Command.structFields := ⟨stx[4]⟩
-  let forkNs := (← getScope).currNamespace
-  let cap : CapturedDecl :=
-    { forkNs := forkNs, name := nameId.getId, kind := .container,
-      sig := .missing, val := fields.raw }
-  modifyEnv (fun env => recordCapture env cap)
+  let (forkNs, name) ← keyFor nameId.getId
+  modifyEnv (recordCapture · { forkNs, name, kind := .container, val := fields.raw })
   emitContainer mods nameId fields
 
 /-- `forkstruct Name <binders> where <fields>`: declare a non-SSZ structure and
@@ -146,45 +212,56 @@ def elabForkstruct : CommandElab := fun stx => do
   let nameId  : Ident := ⟨stx[2]⟩
   let binders : Array (TSyntax ``Lean.Parser.Term.bracketedBinder) := stx[3].getArgs.map (⟨·⟩)
   let fields  : TSyntax ``Parser.Command.structFields := ⟨stx[5]⟩
-  let forkNs := (← getScope).currNamespace
-  -- A struct otherwise leaves `sig` `.missing`; stash the binders there (as a null
-  -- node) so `inherit` can replay the same parameter list.
+  let (forkNs, name) ← keyFor nameId.getId
   let cap : CapturedDecl :=
-    { forkNs := forkNs, name := nameId.getId, kind := .struct,
-      sig := mkNullNode (binders.map (·.raw)), val := fields.raw }
-  modifyEnv (fun env => recordCapture env cap)
+    { forkNs, name, kind := .struct,
+      binders := mkNullNode (binders.map (·.raw)), val := fields.raw }
+  modifyEnv (recordCapture · cap)
   emitStruct mods nameId binders fields
 
 /-! ## `inherit`: the single consumer -/
 
-/-- `inherit Foo` replays the nearest ancestor fork's captured `Foo` in the
-current namespace. The current fork did not declare `Foo`; the resolver walks
-its lineage to find the body and re-elaborates it here, so `Foo`'s sibling
-calls bind to this fork's overrides. -/
-scoped syntax (name := inheritCmd) "inherit " ident : command
+/-- `inherit Foo Bar …` replays the nearest ancestor fork's captured `Foo`, `Bar`,
+… in the current namespace. The current fork did not declare them; the resolver
+walks its lineage to find each body and re-elaborates it here, so a replayed
+body's sibling calls bind to this fork's overrides.
 
-@[command_elab inheritCmd]
-def elabInherit : CommandElab := fun stx => do
-  let forkNs := (← getScope).currNamespace
-  let name := stx[1].getId
-  let env ← getEnv
-  let some cap := resolveInherited env forkNs name
-    | throwError "inherit: no ancestor of fork '{forkNs}' declares '{name}'; \
-        a `fork … from …` edge and a captured `{name}` must both be in scope"
-  -- Re-emit in the current namespace. `mkIdent name` is the bare short name, so
-  -- the replayed declaration lands in `fork` and its body's sibling references
-  -- resolve against `fork`'s scope.
+A name may be dotted (`inherit Const.slotsPerEpoch`), matching the capture key a
+form written inside a nested namespace files under. Several names on one line
+group related entries (`inherit Const.domainRandao Const.domainDeposit`) while
+staying explicit per name, the same discipline one-per-line has. -/
+scoped syntax (name := inheritCmd) "inherit " ident+ : command
+
+/-- Replay one captured declaration. `spelled` is the name as the author wrote
+it at the `inherit` site, which is also where the replay lands: emitting the
+author's own ident (rather than the capture's key) keeps the residual namespace
+path from being applied twice when `inherit` itself sits inside a nested
+namespace. -/
+def replayOne (spelled : Name) : CommandElabM Unit := do
+  let (forkNs, key) ← keyFor spelled
+  let some cap := resolveInherited (← getEnv) forkNs key
+    | throwError "inherit: no ancestor of fork '{forkNs}' declares '{key}'; \
+        a `fork … from …` edge and a captured '{key}' must both be in scope"
+  let nameId := mkIdent spelled
+  -- Lean places `def Const.foo` written inside `namespace Gloas` at
+  -- `Gloas.Const.foo` *and* elaborates its body as if inside `Gloas.Const`, so a
+  -- dotted key gets the same late binding a bare one does.
   let declId : TSyntax ``Parser.Command.declId := ⟨mkNode ``Parser.Command.declId
-    #[mkIdent name, mkNullNode]⟩
+    #[nameId, mkNullNode]⟩
   match cap.kind with
   | .def_ =>
-    let sig : TSyntax ``Parser.Command.optDeclSig := ⟨cap.sig⟩
-    let val : TSyntax ``Parser.Command.declVal    := ⟨cap.val⟩
-    elabCommand (← `(def $declId:declId $sig:optDeclSig $val:declVal))
+    elabCommand (← `(def $declId:declId $(⟨cap.sig⟩):optDeclSig $(⟨cap.val⟩):declVal))
+  | .abbrev_ =>
+    elabCommand (← `(abbrev $declId:declId $(⟨cap.sig⟩):optDeclSig $(⟨cap.val⟩):declVal))
+  | .instance_ =>
+    emitInstance declId ⟨cap.sig⟩ ⟨cap.val⟩
   | .container =>
-    emitContainer (← emptyMods) (mkIdent name) ⟨cap.val⟩
+    emitContainer (← emptyMods) nameId ⟨cap.val⟩
   | .struct =>
-    let binders : Array (TSyntax ``Lean.Parser.Term.bracketedBinder) := cap.sig.getArgs.map (⟨·⟩)
-    emitStruct (← emptyMods) (mkIdent name) binders ⟨cap.val⟩
+    emitStruct (← emptyMods) nameId (cap.binders.getArgs.map (⟨·⟩)) ⟨cap.val⟩
+
+@[command_elab inheritCmd]
+def elabInherit : CommandElab := fun stx =>
+  stx[1].getArgs.forM fun nameStx => replayOne nameStx.getId
 
 end EthCLLib.Spec

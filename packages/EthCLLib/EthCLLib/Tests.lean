@@ -1,5 +1,6 @@
 import EthCLLib.Tests.InheritanceReplay
 import EthCLLib.Tests.ReplayChild
+import EthCLLib.Tests.ForkScoping
 import EthCLLib.Tests.CryptoBackendSpike
 import EthCLLib.Tests.ContainerForm
 import EthCLLib.Tests.FrameworkUtils
