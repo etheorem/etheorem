@@ -26,7 +26,7 @@ namespace EthCLSpecs.Fulu
 state_section
 
 /-- The all-zero `Root` (an empty `state_root` sentinel in `latest_block_header`). -/
-def zeroRoot : Root := Vector.replicate 32 0
+forkdef zeroRoot : Root := Vector.replicate 32 0
 
 /-! ### Slot processing -/
 

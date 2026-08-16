@@ -21,9 +21,10 @@ through `on_payload_attestation_message`, so the handler's rejects apply on the
 block path too). `on_block` runs the Gloas `state_transition` through
 `runNestedStateTransition`.
 
-The `Ord (Vector UInt8 32)` instance and the `Checkpoint` `Ord` / `BEq` / `Hashable`
-instances are the Fulu ones (`EthCLSpecs.Fulu.instOrdBytes32`), in scope through
-`open EthCLSpecs.Fulu`.
+The `Ord (Vector UInt8 32)` instance is the framework's
+(`EthCLLib.Spec.instOrdVectorUInt8`), which names no spec concept and so belongs
+to no fork; the `Checkpoint` `Ord` / `BEq` / `Hashable` instances come from the
+container derive.
 -/
 
 set_option autoImplicit false

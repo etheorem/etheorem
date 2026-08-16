@@ -77,18 +77,18 @@ syntax tierAssign := (docComment)? ident " := " term
 over its ancestors', and (in a child) the scoped downgrade instance to the
 parent's. -/
 scoped syntax (name := forkpresetCmd)
-  "forkpreset" " where " manyIndent(ppLine tierField) : command
+  (docComment)? "forkpreset" " where " manyIndent(ppLine tierField) : command
 /-- `forkconfig where <fields>`: the `Config` counterpart of `forkpreset`. -/
 scoped syntax (name := forkconfigCmd)
-  "forkconfig" " where " manyIndent(ppLine tierField) : command
+  (docComment)? "forkconfig" " where " manyIndent(ppLine tierField) : command
 /-- `forkpresetvalues minimal where <assignments>`: declare one injected value
 set of this fork's `Preset`, as a diff over the ancestors' same-named set. -/
 scoped syntax (name := forkpresetvaluesCmd)
-  "forkpresetvalues " ident " where " manyIndent(ppLine tierAssign) : command
+  (docComment)? "forkpresetvalues " ident " where " manyIndent(ppLine tierAssign) : command
 /-- `forkconfigvalues minimalConfig where <assignments>`: the `Config`
 counterpart of `forkpresetvalues`. -/
 scoped syntax (name := forkconfigvaluesCmd)
-  "forkconfigvalues " ident " where " manyIndent(ppLine tierAssign) : command
+  (docComment)? "forkconfigvalues " ident " where " manyIndent(ppLine tierAssign) : command
 
 /-! ## Emission -/
 
@@ -132,22 +132,35 @@ def emitDowngrade (forkNs key : Name) : CommandElabM Unit := do
   elabCommand (← `(@[reducible] scoped instance $instId:ident [$classId] :
     $(mkIdent (parent ++ key)) := { $[$projections:structInstField],* }))
 
+/-- The author's leading docstring as `declModifiers`, optionally with
+`@[reducible]`. A tier form's docstring belongs on the declaration it emits, so
+it is threaded through rather than dropped. -/
+def tierMods (doc : Syntax) (reducible : Bool) :
+    CommandElabM (TSyntax ``Parser.Command.declModifiers) :=
+  match doc.getArgs.isEmpty, reducible with
+  | true,  false => `(declModifiers|)
+  | false, false => `(declModifiers| $(⟨doc[0]⟩):docComment)
+  | true,  true  => `(declModifiers| @[reducible])
+  | false, true  => `(declModifiers| $(⟨doc[0]⟩):docComment @[reducible])
+
 /-- Emit a tier class: the merged field block as a `class`, plus the downgrade
 instance in a child. Shared by `forkpreset` and `forkconfig`. -/
 def elabTierClass (key : Name) : CommandElab := fun stx => do
-  let (forkNs, entries) ← captureTier key stx[2].getArgs
+  let (forkNs, entries) ← captureTier key stx[3].getArgs
+  let mods ← tierMods stx[0] (reducible := false)
   let fields ← `(Parser.Command.structFields| $(← entries.mapM tierFieldBinder)*)
-  elabCommand (← `(class $(mkIdent key) where $fields:structFields))
+  elabCommand (← `($mods:declModifiers class $(mkIdent key) where $fields:structFields))
   emitDowngrade forkNs key
 
 /-- Emit a tier value set: the merged assignments as an `@[reducible] def` of the
 fork's own class. Reducible (not an instance) so `minimal` and `mainnet` coexist
 and the runner picks one per vector. -/
 def elabTierValues (key : Name) : CommandElab := fun stx => do
-  let setId : Ident := ⟨stx[1]⟩
-  let (_, entries) ← captureTier setId.getId stx[3].getArgs
+  let setId : Ident := ⟨stx[2]⟩
+  let (_, entries) ← captureTier setId.getId stx[4].getArgs
+  let mods ← tierMods stx[0] (reducible := true)
   let assignments ← entries.mapM tierAssignField
-  elabCommand (← `(@[reducible] def $setId:ident : $(mkIdent key) :=
+  elabCommand (← `($mods:declModifiers def $setId:ident : $(mkIdent key) :=
     { $[$assignments:structInstField],* }))
 
 @[command_elab forkpresetCmd]       def elabForkpreset       := elabTierClass  `Preset

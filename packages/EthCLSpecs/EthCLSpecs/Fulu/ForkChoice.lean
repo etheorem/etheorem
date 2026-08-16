@@ -33,19 +33,6 @@ open SizzLean.Hasher
 
 namespace EthCLSpecs.Fulu
 
-/-! ## Key instances for the map backing -/
-
-/-- Lexicographic `Ord` on a 32-byte vector (`Root` / `Bytes32` / `Hash32`), so a
-`Root`-keyed map satisfies `MapKind`'s `[Ord K]`. -/
-instance instOrdBytes32 : Ord (Vector UInt8 32) where
-  compare a b := Id.run do
-    for i in [0:32] do
-      let x := a.toArray[i]!
-      let y := b.toArray[i]!
-      if x < y then return .lt
-      if x > y then return .gt
-    return .eq
-
 /-! ## Store -/
 
 /-- The latest attestation seen from a validator: its target epoch and head vote.
