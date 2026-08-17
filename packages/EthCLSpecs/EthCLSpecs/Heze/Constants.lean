@@ -31,10 +31,11 @@ forkpreset where
   slot. -/
   inclusionListCommitteeSize : Nat
 
--- EIP-7805 adds no config value, and the fork still declares its own class: Heze
--- body code constrains `[Heze.Config]`, so the class has to exist here, carrying
--- the lineage's merged fields.
-forkconfig
+/-- The one config value EIP-7805 adds. The lineage's fields merge in. -/
+forkconfig where
+  /-- `INCLUSION_LIST_DUE_BPS` (~67% of the slot): the timeliness deadline for an
+  inclusion list, in basis points of the slot. -/
+  inclusionListDueBps : UInt64
 
 namespace Const
 section
@@ -47,10 +48,8 @@ forkabbrev inclusionListCommitteeSize : Nat := Preset.inclusionListCommitteeSize
 -- inclusion-list committee signature domain; `Heze.isValidInclusionListSignature`
 -- (`Heze/Signing.lean`) verifies signatures under it.
 forkabbrev domainInclusionListCommittee : ByteArray := ⟨#[0x10, 0, 0, 0]⟩
-/-- `INCLUSION_LIST_DUE_BPS` (EIP-7805, ~67% of the slot): the timeliness deadline
-for an inclusion list, in basis points of the slot
-(`consensus-specs/specs/heze/fork-choice.md:38`). -/
-forkabbrev inclusionListDueBps : UInt64 := 6667
+-- `consensus-specs/specs/heze/fork-choice.md:38`.
+forkabbrev inclusionListDueBps : UInt64 := Config.inclusionListDueBps
 
 -- Gloas's entries, replayed here in Gloas's own order (its additions, then the
 -- Fulu surface it replays) so each body reaches its dependencies. The list is the
@@ -68,6 +67,7 @@ inherit builderIndexFlag builderIndexSelfBuild domainBeaconBuilder domainPtcAtte
 inherit domainBuilderDeposit payloadStatusEmpty payloadStatusFull payloadStatusPending
 inherit attestationTimelinessIndex ptcTimelinessIndex payloadTimelyThreshold
 inherit dataAvailabilityTimelyThreshold attestationDueBpsGloas payloadAttestationDueBps
+inherit consolidationChurnLimitQuotient
 
 -- Vector widths and committee / epoch lengths.
 inherit slotsPerEpoch slotsPerHistoricalRoot epochsPerHistoricalVector
@@ -125,7 +125,7 @@ inherit domainVoluntaryExit domainSyncCommittee domainBlsToExecutionChange
 inherit churnLimitQuotient minPerEpochChurnLimitElectra
 inherit maxPerEpochActivationExitChurnLimit minValidatorWithdrawabilityDelay
 inherit shardCommitteePeriod genesisForkVersion capellaForkVersion slotDurationMs
-inherit attestationDueBps consolidationChurnLimitQuotient maxBlobsPerBlockElectra
+inherit attestationDueBps maxBlobsPerBlockElectra
 inherit reorgHeadWeightThreshold reorgParentWeightThreshold
 inherit reorgMaxEpochsSinceFinalization proposerReorgCutoffBps numberOfColumns
 inherit kzgCommitmentsInclusionProofDepth proposerScoreBoost basisPoints
@@ -144,8 +144,10 @@ forkpresetvalues minimal where
   inclusionListCommitteeSize := 16
 forkpresetvalues mainnet where
   inclusionListCommitteeSize := 16
-forkconfigvalues minimalConfig
-forkconfigvalues mainnetConfig
+forkconfigvalues minimalConfig where
+  inclusionListDueBps := 6667
+forkconfigvalues mainnetConfig where
+  inclusionListDueBps := 6667
 
 /-- `HEZE_FORK_VERSION` at the `minimal` config (`0x08000001`). -/
 def hezeForkVersionMinimal : Version := ⟨#[0x08, 0x00, 0x00, 0x01], by decide⟩

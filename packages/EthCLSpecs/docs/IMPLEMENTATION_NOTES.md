@@ -701,11 +701,36 @@ this fork reads the phase0 pair; the Electra block body reads
 they are distinct upstream keys, and set to the upstream values so the tier reads
 as a faithful transcription of the file.
 
-Values still flat that the preset / config files do declare: `inactivityScoreBias`,
-`inactivityScoreRecoveryRate`, `proposerScoreBoost`, the reorg thresholds,
-`proposerReorgCutoffBps`, and the `*DueBps*` family are all config-file values held
-as literals. None shapes a type, so none can produce a wrong root, and moving them
-is a follow-up rather than a correctness fix.
+Membership was audited name by name against the pinned specs: each fork's
+`## Constants` / `## Preset` / `## Configuration` tables (including the
+fork-choice documents, which nest theirs at `###`), with the preset and config
+YAMLs filling in the values no table lists. 138 entries, checked on two axes,
+the tier and the fork that introduces the name.
+
+The audit moved eleven entries. Ten were config-file values held as flat
+literals: `inactivityScoreBias` and `inactivityScoreRecoveryRate` (Altair's
+`Configuration`), `proposerScoreBoost`, `proposerReorgCutoffBps` and the three
+reorg thresholds (phase 0's fork-choice `Configuration`), Gloas's
+`attestationDueBpsGloas` and `payloadAttestationDueBps`, and Heze's
+`inclusionListDueBps`. The eleventh was a fork error, below.
+
+Two entries have no upstream table and stay flat by design.
+`G2_POINT_AT_INFINITY` is defined in the BLS document rather than a constants
+table, and `MAX_RANDOM_VALUE` is a local inside Electra's
+`compute_balance_weighted_selection`, hoisted here to a name.
+
+## A constant can arrive later than the function that reads it
+
+`CONSOLIDATION_CHURN_LIMIT_QUOTIENT` sat in Fulu's `Config` and belongs to Gloas.
+Electra has `get_consolidation_churn_limit`, but it computes a difference of two
+churn limits and names no quotient; EIP-7732 rewrites the function to divide the
+total active balance by a quotient of its own, and the constant arrives with it.
+The name appears in no pre-Gloas document.
+
+The trap generalizes: a fork can keep a function's *name* while replacing its
+body, so "Electra already had this function" is not evidence that Electra had its
+constants. Attribution has to come from the document that tables the constant,
+not from the call site.
 
 ## Config-tier values that bite
 

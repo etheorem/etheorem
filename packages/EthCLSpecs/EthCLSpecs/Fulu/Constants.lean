@@ -139,7 +139,15 @@ forkconfig where
   attestationDueBps : UInt64
   ejectionBalanceG : Gwei
   maxBlobsPerBlockElectra : Nat
-  consolidationChurnLimitQuotient : UInt64
+  /-- `INACTIVITY_SCORE_BIAS` / `INACTIVITY_SCORE_RECOVERY_RATE` (Altair). -/
+  inactivityScoreBias : UInt64
+  inactivityScoreRecoveryRate : UInt64
+  /-- Fork-choice tuning, from the spec's fork-choice `Configuration` table. -/
+  proposerScoreBoost : Nat
+  proposerReorgCutoffBps : UInt64
+  reorgHeadWeightThreshold : UInt64
+  reorgParentWeightThreshold : UInt64
+  reorgMaxEpochsSinceFinalization : Epoch
 
 namespace Const
 section
@@ -247,8 +255,8 @@ forkabbrev minSlashingPenaltyQuotientElectra : Nat := Preset.minSlashingPenaltyQ
 forkabbrev whistleblowerRewardQuotientElectra : Nat := Preset.whistleblowerRewardQuotientElectra
 forkabbrev proportionalSlashingMultiplierBellatrix : Nat := Preset.proportionalSlashingMultiplierBellatrix
 forkabbrev inactivityPenaltyQuotientBellatrix : Nat := Preset.inactivityPenaltyQuotientBellatrix
-forkabbrev inactivityScoreBias : UInt64 := 4
-forkabbrev inactivityScoreRecoveryRate : UInt64 := 16
+forkabbrev inactivityScoreBias : UInt64 := Config.inactivityScoreBias
+forkabbrev inactivityScoreRecoveryRate : UInt64 := Config.inactivityScoreRecoveryRate
 forkabbrev hysteresisQuotient : Nat := Preset.hysteresisQuotient
 forkabbrev hysteresisDownwardMultiplier : Nat := Preset.hysteresisDownwardMultiplier
 forkabbrev hysteresisUpwardMultiplier : Nat := Preset.hysteresisUpwardMultiplier
@@ -276,25 +284,24 @@ forkabbrev genesisForkVersion : Version := Config.genesisForkVersion
 forkabbrev capellaForkVersion : Version := Config.capellaForkVersion
 forkabbrev slotDurationMs : UInt64 := Config.slotDurationMs
 forkabbrev attestationDueBps : UInt64 := Config.attestationDueBps
-forkabbrev consolidationChurnLimitQuotient : UInt64 := Config.consolidationChurnLimitQuotient
 /-- `MAX_BLOBS_PER_BLOCK_ELECTRA` (9 for both presets). With an empty `BLOB_SCHEDULE`
 this is what `get_blob_parameters(epoch).max_blobs_per_block` returns. -/
 forkabbrev maxBlobsPerBlockElectra : Nat := Config.maxBlobsPerBlockElectra
 /-- Reorg weight thresholds (percent of the per-slot committee weight). -/
-forkabbrev reorgHeadWeightThreshold : UInt64 := 20
-forkabbrev reorgParentWeightThreshold : UInt64 := 160
+forkabbrev reorgHeadWeightThreshold : UInt64 := Config.reorgHeadWeightThreshold
+forkabbrev reorgParentWeightThreshold : UInt64 := Config.reorgParentWeightThreshold
 /-- `REORG_MAX_EPOCHS_SINCE_FINALIZATION`: do not reorg if finality is older. -/
-forkabbrev reorgMaxEpochsSinceFinalization : Epoch := 2
+forkabbrev reorgMaxEpochsSinceFinalization : Epoch := Config.reorgMaxEpochsSinceFinalization
 /-- `PROPOSER_REORG_CUTOFF_BPS`: the on-time deadline for a reorg proposal, in basis
 points of the slot (~17%). -/
-forkabbrev proposerReorgCutoffBps : UInt64 := 1667
+forkabbrev proposerReorgCutoffBps : UInt64 := Config.proposerReorgCutoffBps
 /-- `NUMBER_OF_COLUMNS` (PeerDAS, `= CELLS_PER_EXT_BLOB`): the data-column count. -/
 forkabbrev numberOfColumns : Nat := Preset.numberOfColumns
 /-- Fulu `KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH` (4), the `DataColumnSidecar`'s proof
 vector length. Distinct from the Deneb singular `KZG_COMMITMENT_INCLUSION_PROOF_DEPTH`. -/
 forkabbrev kzgCommitmentsInclusionProofDepth : Nat := Preset.kzgCommitmentsInclusionProofDepth
 /-- `PROPOSER_SCORE_BOOST` (percent of the per-slot committee weight). -/
-forkabbrev proposerScoreBoost : Nat := 40
+forkabbrev proposerScoreBoost : Nat := Config.proposerScoreBoost
 /-- `BASIS_POINTS` denominator for the slot-component durations. -/
 forkabbrev basisPoints : UInt64 := 10000
 
@@ -474,7 +481,13 @@ forkconfigvalues minimalConfig where
   attestationDueBps := 3333
   ejectionBalanceG := 16000000000
   maxBlobsPerBlockElectra := 9
-  consolidationChurnLimitQuotient := 32
+  inactivityScoreBias := 4
+  inactivityScoreRecoveryRate := 16
+  proposerScoreBoost := 40
+  proposerReorgCutoffBps := 1667
+  reorgHeadWeightThreshold := 20
+  reorgParentWeightThreshold := 160
+  reorgMaxEpochsSinceFinalization := 2
 
 /-- The `mainnet` config. -/
 forkconfigvalues mainnetConfig where
@@ -489,6 +502,12 @@ forkconfigvalues mainnetConfig where
   attestationDueBps := 3333
   ejectionBalanceG := 16000000000
   maxBlobsPerBlockElectra := 9
-  consolidationChurnLimitQuotient := 65536
+  inactivityScoreBias := 4
+  inactivityScoreRecoveryRate := 16
+  proposerScoreBoost := 40
+  proposerReorgCutoffBps := 1667
+  reorgHeadWeightThreshold := 20
+  reorgParentWeightThreshold := 160
+  reorgMaxEpochsSinceFinalization := 2
 
 end EthCLSpecs.Fulu

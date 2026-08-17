@@ -55,6 +55,13 @@ forkconfig where
   maxPerEpochActivationChurnLimitGloas : Gwei
   /-- `MIN_BUILDER_WITHDRAWABILITY_DELAY`. -/
   minBuilderWithdrawabilityDelay : UInt64
+  /-- `CONSOLIDATION_CHURN_LIMIT_QUOTIENT`. Electra's `get_consolidation_churn_limit`
+  was a difference of two churn limits; EIP-7732 gives it its own quotient, so the
+  value arrives with this fork rather than with Electra. -/
+  consolidationChurnLimitQuotient : UInt64
+  /-- Slot-component deadlines in basis points of the slot. -/
+  attestationDueBpsGloas : UInt64
+  payloadAttestationDueBps : UInt64
 
 namespace Const
 section
@@ -74,6 +81,7 @@ forkabbrev gloasForkVersion : Version := Config.gloasForkVersion
 forkabbrev churnLimitQuotientGloas : UInt64 := Config.churnLimitQuotientGloas
 forkabbrev maxPerEpochActivationChurnLimitGloas : Gwei := Config.maxPerEpochActivationChurnLimitGloas
 forkabbrev minBuilderWithdrawabilityDelay : UInt64 := Config.minBuilderWithdrawabilityDelay
+forkabbrev consolidationChurnLimitQuotient : UInt64 := Config.consolidationChurnLimitQuotient
 
 /-- The builder-payment threshold, as a fraction of the bid
 (`BUILDER_PAYMENT_THRESHOLD_NUMERATOR / …_DENOMINATOR`). -/
@@ -104,10 +112,8 @@ forkabbrev ptcTimelinessIndex : Nat := 1
 /-- PTC vote majority thresholds (`PTC_SIZE // 2`). -/
 forkabbrev payloadTimelyThreshold : Nat := ptcSize / 2
 forkabbrev dataAvailabilityTimelyThreshold : Nat := ptcSize / 2
-/-- Gloas slot-component deadlines in basis points of the slot
-(`ATTESTATION_DUE_BPS_GLOAS`, `PAYLOAD_ATTESTATION_DUE_BPS`). -/
-forkabbrev attestationDueBpsGloas : UInt64 := 2500
-forkabbrev payloadAttestationDueBps : UInt64 := 7500
+forkabbrev attestationDueBpsGloas : UInt64 := Config.attestationDueBpsGloas
+forkabbrev payloadAttestationDueBps : UInt64 := Config.payloadAttestationDueBps
 
 -- Fulu's entries, replayed here in Fulu's own order so each body reaches its
 -- dependencies. The list is the whole surface, not the subset Gloas happens to
@@ -170,7 +176,7 @@ inherit domainVoluntaryExit domainSyncCommittee domainBlsToExecutionChange
 inherit churnLimitQuotient minPerEpochChurnLimitElectra
 inherit maxPerEpochActivationExitChurnLimit minValidatorWithdrawabilityDelay
 inherit shardCommitteePeriod genesisForkVersion capellaForkVersion slotDurationMs
-inherit attestationDueBps consolidationChurnLimitQuotient maxBlobsPerBlockElectra
+inherit attestationDueBps maxBlobsPerBlockElectra
 inherit reorgHeadWeightThreshold reorgParentWeightThreshold
 inherit reorgMaxEpochsSinceFinalization proposerReorgCutoffBps numberOfColumns
 inherit kzgCommitmentsInclusionProofDepth proposerScoreBoost basisPoints
@@ -203,6 +209,9 @@ forkpresetvalues mainnet where
 
 /-- The `minimal` config's Gloas entries. -/
 forkconfigvalues minimalConfig where
+  consolidationChurnLimitQuotient := 32
+  attestationDueBpsGloas := 2500
+  payloadAttestationDueBps := 7500
   gloasForkVersion := ⟨#[0x07, 0, 0, 1], by decide⟩
   churnLimitQuotientGloas := 16
   maxPerEpochActivationChurnLimitGloas := 128000000000
@@ -210,6 +219,9 @@ forkconfigvalues minimalConfig where
 
 /-- The `mainnet` config's Gloas entries. -/
 forkconfigvalues mainnetConfig where
+  consolidationChurnLimitQuotient := 65536
+  attestationDueBpsGloas := 2500
+  payloadAttestationDueBps := 7500
   gloasForkVersion := ⟨#[0x07, 0, 0, 0], by decide⟩
   churnLimitQuotientGloas := 32768
   maxPerEpochActivationChurnLimitGloas := 256000000000
