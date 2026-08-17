@@ -1,0 +1,1162 @@
+{
+ "AGGREGATE_DUE_BPS": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "AGGREGATE_DUE_BPS_GLOAS": [
+  "gloas",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "ALTAIR_FORK_EPOCH": [
+  "altair",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "ALTAIR_FORK_VERSION": [
+  "altair",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "ATTESTATION_DUE_BPS": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "ATTESTATION_DUE_BPS_GLOAS": [
+  "gloas",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "ATTESTATION_PROPAGATION_SLOT_RANGE": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "ATTESTATION_SUBNET_COUNT": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "ATTESTATION_SUBNET_EXTRA_BITS": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "ATTESTATION_TIMELINESS_INDEX": [
+  "gloas",
+  "flat",
+  "gloas/fork-choice.md"
+ ],
+ "BALANCE_PER_ADDITIONAL_CUSTODY_GROUP": [
+  "fulu",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "BASE_REWARDS_PER_EPOCH": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "BASE_REWARD_FACTOR": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "BASIS_POINTS": [
+  "phase0",
+  "flat",
+  "phase0/fork-choice.md"
+ ],
+ "BELLATRIX_FORK_EPOCH": [
+  "bellatrix",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "BELLATRIX_FORK_VERSION": [
+  "bellatrix",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "BLOB_SCHEDULE": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "BLOB_SIDECAR_SUBNET_COUNT": [
+  "deneb",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "BLOB_SIDECAR_SUBNET_COUNT_ELECTRA": [
+  "electra",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "BLS_WITHDRAWAL_PREFIX": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "BUILDER_DEPOSIT_REQUEST_TYPE": [
+  "gloas",
+  "flat",
+  "gloas/beacon-chain.md"
+ ],
+ "BUILDER_EXIT_REQUEST_TYPE": [
+  "gloas",
+  "flat",
+  "gloas/beacon-chain.md"
+ ],
+ "BUILDER_INDEX_FLAG": [
+  "gloas",
+  "flat",
+  "gloas/beacon-chain.md"
+ ],
+ "BUILDER_INDEX_SELF_BUILD": [
+  "gloas",
+  "flat",
+  "gloas/beacon-chain.md"
+ ],
+ "BUILDER_PAYMENT_THRESHOLD_DENOMINATOR": [
+  "gloas",
+  "flat",
+  "gloas/beacon-chain.md"
+ ],
+ "BUILDER_PAYMENT_THRESHOLD_NUMERATOR": [
+  "gloas",
+  "flat",
+  "gloas/beacon-chain.md"
+ ],
+ "BUILDER_PENDING_WITHDRAWALS_LIMIT": [
+  "gloas",
+  "Preset",
+  "gloas/beacon-chain.md"
+ ],
+ "BUILDER_REGISTRY_LIMIT": [
+  "gloas",
+  "Preset",
+  "gloas/beacon-chain.md"
+ ],
+ "BUILDER_WITHDRAWAL_PREFIX": [
+  "gloas",
+  "flat",
+  "gloas/beacon-chain.md"
+ ],
+ "BYTES_PER_LOGS_BLOOM": [
+  "bellatrix",
+  "Preset",
+  "bellatrix/beacon-chain.md"
+ ],
+ "CAPELLA_FORK_EPOCH": [
+  "capella",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "CAPELLA_FORK_VERSION": [
+  "capella",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "CELLS_PER_EXT_BLOB": [
+  "fulu",
+  "Preset",
+  "presets/fulu.yaml"
+ ],
+ "CHURN_LIMIT_QUOTIENT": [
+  "phase0",
+  "Config",
+  "phase0/beacon-chain.md"
+ ],
+ "CHURN_LIMIT_QUOTIENT_GLOAS": [
+  "gloas",
+  "Config",
+  "gloas/beacon-chain.md"
+ ],
+ "COMPOUNDING_WITHDRAWAL_PREFIX": [
+  "electra",
+  "flat",
+  "electra/beacon-chain.md"
+ ],
+ "CONFIG_NAME": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "CONFIRMATION_BYZANTINE_THRESHOLD": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "CONSOLIDATION_CHURN_LIMIT_QUOTIENT": [
+  "gloas",
+  "Config",
+  "gloas/beacon-chain.md"
+ ],
+ "CONSOLIDATION_REQUEST_TYPE": [
+  "electra",
+  "flat",
+  "electra/beacon-chain.md"
+ ],
+ "CONTRIBUTION_DUE_BPS": [
+  "altair",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "CONTRIBUTION_DUE_BPS_GLOAS": [
+  "gloas",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "CUSTODY_REQUIREMENT": [
+  "fulu",
+  "Config",
+  "fulu/das-core.md"
+ ],
+ "DATA_AVAILABILITY_TIMELY_THRESHOLD": [
+  "gloas",
+  "flat",
+  "gloas/fork-choice.md"
+ ],
+ "DATA_COLUMN_SIDECAR_SUBNET_COUNT": [
+  "fulu",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "DENEB_FORK_EPOCH": [
+  "deneb",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "DENEB_FORK_VERSION": [
+  "deneb",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "DEPOSIT_CHAIN_ID": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "DEPOSIT_CONTRACT_ADDRESS": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "DEPOSIT_CONTRACT_TREE_DEPTH": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "DEPOSIT_NETWORK_ID": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "DEPOSIT_REQUEST_TYPE": [
+  "electra",
+  "flat",
+  "electra/beacon-chain.md"
+ ],
+ "DOMAIN_AGGREGATE_AND_PROOF": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "DOMAIN_APPLICATION_MASK": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "DOMAIN_BEACON_ATTESTER": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "DOMAIN_BEACON_BUILDER": [
+  "gloas",
+  "flat",
+  "gloas/beacon-chain.md"
+ ],
+ "DOMAIN_BEACON_PROPOSER": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "DOMAIN_BLS_TO_EXECUTION_CHANGE": [
+  "capella",
+  "flat",
+  "capella/beacon-chain.md"
+ ],
+ "DOMAIN_BUILDER_DEPOSIT": [
+  "gloas",
+  "flat",
+  "gloas/beacon-chain.md"
+ ],
+ "DOMAIN_CONTRIBUTION_AND_PROOF": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "DOMAIN_DEPOSIT": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "DOMAIN_INCLUSION_LIST_COMMITTEE": [
+  "heze",
+  "flat",
+  "heze/beacon-chain.md"
+ ],
+ "DOMAIN_PROPOSER_PREFERENCES": [
+  "gloas",
+  "flat",
+  "gloas/beacon-chain.md"
+ ],
+ "DOMAIN_PTC_ATTESTER": [
+  "gloas",
+  "flat",
+  "gloas/beacon-chain.md"
+ ],
+ "DOMAIN_RANDAO": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "DOMAIN_SELECTION_PROOF": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "DOMAIN_SYNC_COMMITTEE": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "DOMAIN_VOLUNTARY_EXIT": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "EFFECTIVE_BALANCE_INCREMENT": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "EJECTION_BALANCE": [
+  "phase0",
+  "Config",
+  "phase0/beacon-chain.md"
+ ],
+ "ELECTRA_FORK_EPOCH": [
+  "electra",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "ELECTRA_FORK_VERSION": [
+  "electra",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "EMPTY_BLOCK_HASH": [
+  "bellatrix",
+  "flat",
+  "bellatrix/beacon-chain.md"
+ ],
+ "ENDIANNESS": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "EPOCHS_PER_ETH1_VOTING_PERIOD": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "EPOCHS_PER_HISTORICAL_VECTOR": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "EPOCHS_PER_SLASHINGS_VECTOR": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "EPOCHS_PER_SUBNET_SUBSCRIPTION": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "EPOCHS_PER_SYNC_COMMITTEE_PERIOD": [
+  "altair",
+  "Preset",
+  "altair/beacon-chain.md"
+ ],
+ "ETH1_ADDRESS_WITHDRAWAL_PREFIX": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "ETH1_FOLLOW_DISTANCE": [
+  "phase0",
+  "Config",
+  "phase0/beacon-chain.md"
+ ],
+ "FAR_FUTURE_EPOCH": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "FIELD_ELEMENTS_PER_BLOB": [
+  "deneb",
+  "Preset",
+  "presets/deneb.yaml"
+ ],
+ "FIELD_ELEMENTS_PER_CELL": [
+  "fulu",
+  "Preset",
+  "presets/fulu.yaml"
+ ],
+ "FIELD_ELEMENTS_PER_EXT_BLOB": [
+  "fulu",
+  "Preset",
+  "presets/fulu.yaml"
+ ],
+ "FULL_EXIT_REQUEST_AMOUNT": [
+  "electra",
+  "flat",
+  "electra/beacon-chain.md"
+ ],
+ "FULU_FORK_EPOCH": [
+  "fulu",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "FULU_FORK_VERSION": [
+  "fulu",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "GENESIS_DELAY": [
+  "phase0",
+  "Config",
+  "phase0/beacon-chain.md"
+ ],
+ "GENESIS_EPOCH": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "GENESIS_FORK_VERSION": [
+  "phase0",
+  "Config",
+  "phase0/beacon-chain.md"
+ ],
+ "GENESIS_SLOT": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "GLOAS_FORK_EPOCH": [
+  "gloas",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "GLOAS_FORK_VERSION": [
+  "gloas",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "HEZE_FORK_EPOCH": [
+  "heze",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "HEZE_FORK_VERSION": [
+  "heze",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "HISTORICAL_ROOTS_LIMIT": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "HYSTERESIS_DOWNWARD_MULTIPLIER": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "HYSTERESIS_QUOTIENT": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "HYSTERESIS_UPWARD_MULTIPLIER": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "INACTIVITY_PENALTY_QUOTIENT": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "INACTIVITY_PENALTY_QUOTIENT_ALTAIR": [
+  "altair",
+  "Preset",
+  "altair/beacon-chain.md"
+ ],
+ "INACTIVITY_PENALTY_QUOTIENT_BELLATRIX": [
+  "bellatrix",
+  "Preset",
+  "bellatrix/beacon-chain.md"
+ ],
+ "INACTIVITY_SCORE_BIAS": [
+  "altair",
+  "Config",
+  "altair/beacon-chain.md"
+ ],
+ "INACTIVITY_SCORE_RECOVERY_RATE": [
+  "altair",
+  "Config",
+  "altair/beacon-chain.md"
+ ],
+ "INCLUSION_LIST_COMMITTEE_SIZE": [
+  "heze",
+  "Preset",
+  "heze/beacon-chain.md"
+ ],
+ "INCLUSION_LIST_DUE_BPS": [
+  "heze",
+  "Config",
+  "heze/fork-choice.md"
+ ],
+ "JUSTIFICATION_BITS_LENGTH": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH": [
+  "fulu",
+  "Preset",
+  "presets/fulu.yaml"
+ ],
+ "KZG_COMMITMENT_INCLUSION_PROOF_DEPTH": [
+  "deneb",
+  "Preset",
+  "presets/deneb.yaml"
+ ],
+ "MAXIMUM_GOSSIP_CLOCK_DISPARITY": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "MAX_ATTESTATIONS": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MAX_ATTESTATIONS_ELECTRA": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "MAX_ATTESTER_SLASHINGS": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MAX_ATTESTER_SLASHINGS_ELECTRA": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "MAX_BLOBS_PER_BLOCK": [
+  "deneb",
+  "Config",
+  "deneb/beacon-chain.md"
+ ],
+ "MAX_BLOBS_PER_BLOCK_ELECTRA": [
+  "electra",
+  "Config",
+  "electra/beacon-chain.md"
+ ],
+ "MAX_BLOB_COMMITMENTS_PER_BLOCK": [
+  "deneb",
+  "Preset",
+  "deneb/beacon-chain.md"
+ ],
+ "MAX_BLS_TO_EXECUTION_CHANGES": [
+  "capella",
+  "Preset",
+  "capella/beacon-chain.md"
+ ],
+ "MAX_BUILDERS_PER_WITHDRAWALS_SWEEP": [
+  "gloas",
+  "Preset",
+  "gloas/beacon-chain.md"
+ ],
+ "MAX_BUILDER_DEPOSIT_REQUESTS_PER_PAYLOAD": [
+  "gloas",
+  "Preset",
+  "gloas/beacon-chain.md"
+ ],
+ "MAX_BUILDER_EXIT_REQUESTS_PER_PAYLOAD": [
+  "gloas",
+  "Preset",
+  "gloas/beacon-chain.md"
+ ],
+ "MAX_BYTES_PER_INCLUSION_LIST": [
+  "heze",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "MAX_BYTES_PER_TRANSACTION": [
+  "bellatrix",
+  "Preset",
+  "bellatrix/beacon-chain.md"
+ ],
+ "MAX_COMMITTEES_PER_SLOT": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MAX_CONSOLIDATION_REQUESTS_PER_PAYLOAD": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "MAX_DEPOSITS": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MAX_DEPOSIT_REQUESTS_PER_PAYLOAD": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "MAX_EFFECTIVE_BALANCE": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MAX_EFFECTIVE_BALANCE_ELECTRA": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "MAX_EXTRA_DATA_BYTES": [
+  "bellatrix",
+  "Preset",
+  "bellatrix/beacon-chain.md"
+ ],
+ "MAX_PAYLOAD_ATTESTATIONS": [
+  "gloas",
+  "Preset",
+  "gloas/beacon-chain.md"
+ ],
+ "MAX_PAYLOAD_SIZE": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "MAX_PENDING_DEPOSITS_PER_EPOCH": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT": [
+  "deneb",
+  "Config",
+  "deneb/beacon-chain.md"
+ ],
+ "MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS": [
+  "gloas",
+  "Config",
+  "gloas/beacon-chain.md"
+ ],
+ "MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT": [
+  "electra",
+  "Config",
+  "electra/beacon-chain.md"
+ ],
+ "MAX_PROPOSER_SLASHINGS": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MAX_REQUEST_BLOCKS": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "MAX_REQUEST_BLOCKS_DENEB": [
+  "deneb",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "MAX_REQUEST_INCLUSION_LIST": [
+  "heze",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "MAX_REQUEST_PAYLOADS": [
+  "gloas",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "MAX_SEED_LOOKAHEAD": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MAX_TRANSACTIONS_PER_PAYLOAD": [
+  "bellatrix",
+  "Preset",
+  "bellatrix/beacon-chain.md"
+ ],
+ "MAX_VALIDATORS_PER_COMMITTEE": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP": [
+  "capella",
+  "Preset",
+  "capella/beacon-chain.md"
+ ],
+ "MAX_VOLUNTARY_EXITS": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MAX_WITHDRAWALS_PER_PAYLOAD": [
+  "capella",
+  "Preset",
+  "capella/beacon-chain.md"
+ ],
+ "MAX_WITHDRAWAL_REQUESTS_PER_PAYLOAD": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "MESSAGE_DOMAIN_INVALID_SNAPPY": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "MESSAGE_DOMAIN_VALID_SNAPPY": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "MIN_ACTIVATION_BALANCE": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "MIN_ATTESTATION_INCLUSION_DELAY": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MIN_BUILDER_WITHDRAWABILITY_DELAY": [
+  "gloas",
+  "Config",
+  "gloas/beacon-chain.md"
+ ],
+ "MIN_DEPOSIT_AMOUNT": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS": [
+  "deneb",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS": [
+  "fulu",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "MIN_EPOCHS_TO_INACTIVITY_PENALTY": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MIN_GENESIS_ACTIVE_VALIDATOR_COUNT": [
+  "phase0",
+  "Config",
+  "phase0/beacon-chain.md"
+ ],
+ "MIN_GENESIS_TIME": [
+  "phase0",
+  "Config",
+  "phase0/beacon-chain.md"
+ ],
+ "MIN_PER_EPOCH_CHURN_LIMIT": [
+  "phase0",
+  "Config",
+  "phase0/beacon-chain.md"
+ ],
+ "MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA": [
+  "electra",
+  "Config",
+  "electra/beacon-chain.md"
+ ],
+ "MIN_SEED_LOOKAHEAD": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MIN_SLASHING_PENALTY_QUOTIENT": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "MIN_SLASHING_PENALTY_QUOTIENT_ALTAIR": [
+  "altair",
+  "Preset",
+  "altair/beacon-chain.md"
+ ],
+ "MIN_SLASHING_PENALTY_QUOTIENT_BELLATRIX": [
+  "bellatrix",
+  "Preset",
+  "bellatrix/beacon-chain.md"
+ ],
+ "MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "MIN_SYNC_COMMITTEE_PARTICIPANTS": [
+  "altair",
+  "Preset",
+  "presets/altair.yaml"
+ ],
+ "MIN_VALIDATOR_WITHDRAWABILITY_DELAY": [
+  "phase0",
+  "Config",
+  "phase0/beacon-chain.md"
+ ],
+ "NUMBER_OF_COLUMNS": [
+  "fulu",
+  "Preset",
+  "fulu/das-core.md"
+ ],
+ "NUMBER_OF_CUSTODY_GROUPS": [
+  "fulu",
+  "Config",
+  "fulu/das-core.md"
+ ],
+ "NUM_BLOCK_TIMELINESS_DEADLINES": [
+  "gloas",
+  "flat",
+  "gloas/fork-choice.md"
+ ],
+ "PARTICIPATION_FLAG_WEIGHTS": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "PAYLOAD_ATTESTATION_DUE_BPS": [
+  "gloas",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "PAYLOAD_BUILDER_VERSION": [
+  "gloas",
+  "flat",
+  "gloas/beacon-chain.md"
+ ],
+ "PAYLOAD_DUE_BPS": [
+  "gloas",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "PAYLOAD_STATUS_EMPTY": [
+  "gloas",
+  "flat",
+  "gloas/fork-choice.md"
+ ],
+ "PAYLOAD_STATUS_FULL": [
+  "gloas",
+  "flat",
+  "gloas/fork-choice.md"
+ ],
+ "PAYLOAD_STATUS_PENDING": [
+  "gloas",
+  "flat",
+  "gloas/fork-choice.md"
+ ],
+ "PAYLOAD_TIMELY_THRESHOLD": [
+  "gloas",
+  "flat",
+  "gloas/fork-choice.md"
+ ],
+ "PENDING_CONSOLIDATIONS_LIMIT": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "PENDING_DEPOSITS_LIMIT": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "PENDING_PARTIAL_WITHDRAWALS_LIMIT": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "PRESET_BASE": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "PROPORTIONAL_SLASHING_MULTIPLIER": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "PROPORTIONAL_SLASHING_MULTIPLIER_ALTAIR": [
+  "altair",
+  "Preset",
+  "altair/beacon-chain.md"
+ ],
+ "PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX": [
+  "bellatrix",
+  "Preset",
+  "bellatrix/beacon-chain.md"
+ ],
+ "PROPOSER_REORG_CUTOFF_BPS": [
+  "phase0",
+  "Config",
+  "phase0/fork-choice.md"
+ ],
+ "PROPOSER_REWARD_QUOTIENT": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "PROPOSER_SCORE_BOOST": [
+  "phase0",
+  "Config",
+  "phase0/fork-choice.md"
+ ],
+ "PROPOSER_WEIGHT": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "PTC_SIZE": [
+  "gloas",
+  "Preset",
+  "gloas/beacon-chain.md"
+ ],
+ "PTC_TIMELINESS_INDEX": [
+  "gloas",
+  "flat",
+  "gloas/fork-choice.md"
+ ],
+ "REORG_HEAD_WEIGHT_THRESHOLD": [
+  "phase0",
+  "Config",
+  "phase0/fork-choice.md"
+ ],
+ "REORG_MAX_EPOCHS_SINCE_FINALIZATION": [
+  "phase0",
+  "Config",
+  "phase0/fork-choice.md"
+ ],
+ "REORG_PARENT_WEIGHT_THRESHOLD": [
+  "phase0",
+  "Config",
+  "phase0/fork-choice.md"
+ ],
+ "SAMPLES_PER_SLOT": [
+  "fulu",
+  "Config",
+  "fulu/das-core.md"
+ ],
+ "SECONDS_PER_ETH1_BLOCK": [
+  "phase0",
+  "Config",
+  "phase0/beacon-chain.md"
+ ],
+ "SHARD_COMMITTEE_PERIOD": [
+  "phase0",
+  "Config",
+  "phase0/beacon-chain.md"
+ ],
+ "SHUFFLE_ROUND_COUNT": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "SLOTS_PER_EPOCH": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "SLOTS_PER_HISTORICAL_ROOT": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "SLOT_DURATION_MS": [
+  "phase0",
+  "Config",
+  "phase0/beacon-chain.md"
+ ],
+ "SUBNETS_PER_NODE": [
+  "?",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "SYNC_COMMITTEE_SIZE": [
+  "altair",
+  "Preset",
+  "altair/beacon-chain.md"
+ ],
+ "SYNC_MESSAGE_DUE_BPS": [
+  "altair",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "SYNC_MESSAGE_DUE_BPS_GLOAS": [
+  "gloas",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "SYNC_REWARD_WEIGHT": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "TARGET_COMMITTEE_SIZE": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "TERMINAL_BLOCK_HASH": [
+  "bellatrix",
+  "Config",
+  "bellatrix/beacon-chain.md"
+ ],
+ "TERMINAL_BLOCK_HASH_ACTIVATION_EPOCH": [
+  "bellatrix",
+  "Config",
+  "bellatrix/beacon-chain.md"
+ ],
+ "TERMINAL_TOTAL_DIFFICULTY": [
+  "bellatrix",
+  "Config",
+  "bellatrix/beacon-chain.md"
+ ],
+ "TIMELY_HEAD_FLAG_INDEX": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "TIMELY_HEAD_WEIGHT": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "TIMELY_SOURCE_FLAG_INDEX": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "TIMELY_SOURCE_WEIGHT": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "TIMELY_TARGET_FLAG_INDEX": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "TIMELY_TARGET_WEIGHT": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "UINT256_MAX": [
+  "fulu",
+  "flat",
+  "fulu/das-core.md"
+ ],
+ "UINT64_MAX": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "UINT64_MAX_SQRT": [
+  "phase0",
+  "flat",
+  "phase0/beacon-chain.md"
+ ],
+ "UNSET_DEPOSIT_REQUESTS_START_INDEX": [
+  "electra",
+  "flat",
+  "electra/beacon-chain.md"
+ ],
+ "UPDATE_TIMEOUT": [
+  "altair",
+  "Preset",
+  "presets/altair.yaml"
+ ],
+ "VALIDATOR_CUSTODY_REQUIREMENT": [
+  "fulu",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "VALIDATOR_REGISTRY_LIMIT": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "VERSIONED_HASH_VERSION_KZG": [
+  "deneb",
+  "flat",
+  "deneb/beacon-chain.md"
+ ],
+ "WEIGHT_DENOMINATOR": [
+  "altair",
+  "flat",
+  "altair/beacon-chain.md"
+ ],
+ "WHISTLEBLOWER_REWARD_QUOTIENT": [
+  "phase0",
+  "Preset",
+  "phase0/beacon-chain.md"
+ ],
+ "WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA": [
+  "electra",
+  "Preset",
+  "electra/beacon-chain.md"
+ ],
+ "WITHDRAWAL_REQUEST_TYPE": [
+  "electra",
+  "flat",
+  "electra/beacon-chain.md"
+ ]
+}

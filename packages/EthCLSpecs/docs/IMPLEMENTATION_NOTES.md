@@ -680,44 +680,44 @@ to the pinned spec text and the `EthCLSpecs/Heze/ForkChoice.lean` pins.
 
 ## Tier membership follows the upstream file
 
-A value's tier is decided by which upstream file declares it, never by whether the
-two presets currently agree on it. Everything under `presets/{minimal,mainnet}/*.yaml`
-is a `Preset` field, everything under `configs/{minimal,mainnet}.yaml` a `Config`
-field, and only values under the spec's `## Constants` heading (weights, flag
-indices, domain tags, sentinels, prefix bytes) stay flat in `Const`.
+A value's tier is decided by the upstream file that declares it, never by whether
+the two presets currently agree on it. Everything under
+`presets/{minimal,mainnet}/*.yaml` is a `Preset` field, everything under
+`configs/{minimal,mainnet}.yaml` a `Config` field, and a value the spec lists in a
+constants table (weights, flag indices, domain tags, sentinels, prefix bytes)
+stays flat in `Const`.
+
+Reading that rule off the documents has one trap worth naming, because it is the
+one that bit. The beacon-chain documents write `## Constants` and `## Preset`; the
+fork-choice documents write `### Constant`, singular, one heading level deeper. A
+sweep that matches only the beacon-chain shape drops every fork-choice constant
+and comes back clean.
 
 The rule earns its keep on the preset side, where a value shapes a type. A flat
-literal for a preset-file value looks right for as long as the two files agree, and
-the day one of them moves it produces a wrong cap, a wrong Merkle root, and a green
-build. 47 constants were in that position and are `Preset` fields now, checked
-against the pinned `v1.7.0-alpha.11` YAMLs. `Config` values never shape a type, so a
-wrong one shows up as a wrong number and conformance catches it; `ejectionBalanceG`
-and `maxBlobsPerBlockElectra` moved there for tidiness rather than safety.
+literal for a preset-file value looks right for as long as the two files agree,
+and the day one of them moves it produces a wrong cap, a wrong Merkle root, and a
+green build. Config values never shape a type, so a wrong one shows up as a wrong
+number and conformance catches it.
 
-Two entries carry the phase0 caps `MAX_ATTESTATIONS` (128) and
-`MAX_ATTESTER_SLASHINGS` (2) beside their Electra successors (8 and 1). Nothing at
-this fork reads the phase0 pair; the Electra block body reads
+`scripts/check_constant_tiers.py` (`just check-constants`) is the standing check,
+over both the tier and the fork that introduces each name. It moved 58 entries
+when it was first run against the pinned `v1.7.0-alpha.11` documents: 47
+preset-file values and 10 config-file values that were flat literals, plus one
+constant filed under the wrong fork (below).
+
+Two constants have no upstream table, so the attribution the check relies on
+cannot place them. `G2_POINT_AT_INFINITY` is defined in the BLS document, and
+`MAX_RANDOM_VALUE` is a local inside Electra's
+`compute_balance_weighted_selection`. Both are ordinary flat `Const` entries,
+placed by reading the spec text; the check lists them by name each run so a
+re-pin re-examines them.
+
+Two entries carry the phase 0 caps `MAX_ATTESTATIONS` (128) and
+`MAX_ATTESTER_SLASHINGS` (2) beside their Electra successors (8 and 1). Nothing
+at this fork reads the phase 0 pair; the Electra block body reads
 `maxAttestationsElectra` / `maxAttesterSlashingsElectra`. They are kept because
 they are distinct upstream keys, and set to the upstream values so the tier reads
 as a faithful transcription of the file.
-
-Membership was audited name by name against the pinned specs: each fork's
-`## Constants` / `## Preset` / `## Configuration` tables (including the
-fork-choice documents, which nest theirs at `###`), with the preset and config
-YAMLs filling in the values no table lists. 138 entries, checked on two axes,
-the tier and the fork that introduces the name.
-
-The audit moved eleven entries. Ten were config-file values held as flat
-literals: `inactivityScoreBias` and `inactivityScoreRecoveryRate` (Altair's
-`Configuration`), `proposerScoreBoost`, `proposerReorgCutoffBps` and the three
-reorg thresholds (phase 0's fork-choice `Configuration`), Gloas's
-`attestationDueBpsGloas` and `payloadAttestationDueBps`, and Heze's
-`inclusionListDueBps`. The eleventh was a fork error, below.
-
-Two entries have no upstream table and stay flat by design.
-`G2_POINT_AT_INFINITY` is defined in the BLS document rather than a constants
-table, and `MAX_RANDOM_VALUE` is a local inside Electra's
-`compute_balance_weighted_selection`, hoisted here to a name.
 
 ## A constant can arrive later than the function that reads it
 

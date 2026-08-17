@@ -85,6 +85,22 @@ lint:
 check-citations args="":
     python3 scripts/check_citations.py {{ args }}
 
+# Two facts about a spec constant have to match upstream, and neither is visible
+# from the Lean source: its tier (preset file -> `Preset` class, config file ->
+# `Config` class, constants table -> flat literal) and the fork that introduces
+# it. Both rot silently at a re-pin, when upstream moves a value between tiers or
+# a later fork takes over a constant an earlier one owned. A misfiled preset
+# value is a correctness bug, not an untidiness: it can shape an SSZ cap, so the
+# day the two preset files diverge it produces a wrong root and a green build.
+# `--refresh` re-downloads the pinned specs and rewrites
+# `scripts/constant_tiers.json`; run it whenever the pin moves. Stdlib-only
+# Python; only `--refresh` needs the network.
+
+# Check each spec constant's tier and owning fork (pass --refresh after a re-pin)
+[group('general')]
+check-constants args="":
+    python3 scripts/check_constant_tiers.py {{ args }}
+
 # Check the *build-time native* dependencies only: `pkg-config` (used
 # by lakefile.lean to discover OpenSSL link/cflags) + OpenSSL 3.x (the
 # library the SHA-256 FFI shim links to). Designed to run on a fresh
