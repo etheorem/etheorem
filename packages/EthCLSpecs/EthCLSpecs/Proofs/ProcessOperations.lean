@@ -38,7 +38,7 @@ namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag CryptoBackend SpecReject SSZList)
 open scoped EthCLLib.Spec
-open EthCLSpecs.Fulu (Preset Config)
+open EthCLSpecs.Gloas (Preset Config)
 open EthCLSpecs.Gloas (
   State BeaconBlockBody processOperations
   processProposerSlashing processAttesterSlashing processAttestation

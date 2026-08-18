@@ -15,7 +15,6 @@ everything that embeds it (`BeaconBlockBody.parentExecutionRequests`,
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
 

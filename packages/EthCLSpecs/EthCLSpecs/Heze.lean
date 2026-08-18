@@ -1,3 +1,6 @@
+import EthCLSpecs.Heze.Fork
+import EthCLSpecs.Heze.Types
+import EthCLSpecs.Heze.Constants
 import EthCLSpecs.Heze.Containers
 import EthCLSpecs.Heze.Upgrade
 import EthCLSpecs.Heze.Interface

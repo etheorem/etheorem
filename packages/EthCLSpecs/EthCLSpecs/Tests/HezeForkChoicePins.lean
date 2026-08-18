@@ -35,7 +35,6 @@ namespace EthCLSpecs.Tests.HezeForkChoicePins
 -- declarations beat the `open EthCLSpecs.Fulu` above it. Out here neither wins, so the
 -- Fulu names that Heze (or Gloas, through it) redeclares are hidden.
 open EthCLSpecs.Heze
-open EthCLSpecs.Fulu hiding Store State fcZeroRoot Checkpoint Validator BeaconState
   BeaconBlock
 
 /-! ### Build-enforced pin (vectorless): the inclusion-list satisfaction gate

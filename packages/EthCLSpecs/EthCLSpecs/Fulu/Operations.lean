@@ -27,7 +27,7 @@ state_section
 /-! ## Attestation validity predicates -/
 
 /-- A strictly-increasing index array (so the indices are sorted and unique). -/
-def strictlySorted (a : Array ValidatorIndex) : Bool := Id.run do
+forkdef strictlySorted (a : Array ValidatorIndex) : Bool := Id.run do
   let mut ok := true
   for i in [0:a.size] do
     if i + 1 < a.size && !(a[i]! < a[i+1]!) then ok := false

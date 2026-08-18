@@ -1,5 +1,4 @@
 import EthCLSpecs.Heze.Transition
-import EthCLSpecs.Gloas.ForkChoice
 import EthCLSpecs.Heze.Committees
 import EthCLLib.Spec.FiniteMap
 import EthCLLib.Spec.Engine
@@ -57,7 +56,6 @@ open EthCLLib.PySpecTests
 open SizzLean
 open SizzLean.Cache
 open SizzLean.Hasher
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Heze
 

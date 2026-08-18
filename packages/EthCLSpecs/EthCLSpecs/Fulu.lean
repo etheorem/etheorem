@@ -1,3 +1,4 @@
+import EthCLSpecs.Fulu.Fork
 import EthCLSpecs.Fulu.Types
 import EthCLSpecs.Fulu.Constants
 import EthCLSpecs.Fulu.Containers
@@ -24,7 +25,8 @@ import EthCLSpecs.Fulu.Interface
 # `EthCLSpecs.Fulu`: the Fulu fork
 
 Re-export of the Fulu spec modules in load order (`SPECS_ARCHITECTURE.md` §3.1):
-the foundations (`Types`, `Constants`), the per-container files and `BeaconState`
+the lineage declaration (`Fork`, row 0, which every other module reaches through
+`Types`), the foundations (`Types`, `Constants`), the per-container files and `BeaconState`
 (`Containers`, `State`), the state-operation concern files (`Time` through
 `Operations`, split by concern with the read/write seam resolved), the state
 transition (`Transition`), fork choice (`ForkChoice`), and the fork-interface

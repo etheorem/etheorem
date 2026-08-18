@@ -1,5 +1,4 @@
 import EthCLSpecs.Heze.Containers
-import EthCLSpecs.Gloas.EpochProcessing
 
 /-!
 # `EthCLSpecs.Heze.EpochProcessing`: the inherited epoch substeps (Gloas over Heze state)
@@ -15,13 +14,13 @@ each callee is declared before its caller.
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Heze
 
 state_section
 
 inherit computeEpochAtSlot
+inherit reserveChurn
 inherit computeStartSlotAtEpoch
 inherit getCurrentEpoch
 inherit getPreviousEpoch

@@ -165,11 +165,24 @@ syntax.
   `cavp/` directory because `LeanSha256/Nist.lean` loads them at
   build time.
 * The **per-fork consensus containers** are declared in-spec
-  under `EthCLSpecs/Fulu/` and `EthCLSpecs/Gloas/`. Gloas has an
-  `Inherited.lean` re-exporting types it carries over unchanged
-  from Fulu, so the `ssz_static` dispatcher in the `pyspec_server`
-  exe never has to know *which* fork originally defined a given
-  type.
+  under `EthCLSpecs/Fulu/`, `EthCLSpecs/Gloas/`, and
+  `EthCLSpecs/Heze/`. A child fork has an `Inherited.lean`
+  replaying the types it carries over unchanged, so every fork is
+  a complete, flat namespace and the `ssz_static` dispatcher in
+  the `pyspec_server` exe never has to know *which* fork
+  originally declared a given type.
+* Each fork owns its **whole vocabulary**, and three modules at
+  the head of its load order set that up. `Fork.lean` (row 0)
+  holds the `fork … from …` lineage edge and, in a child, the one
+  feeder import of its parent's library root; the lineage has to
+  be in the environment before any other module of the fork
+  elaborates, which is what pins it to row 0 rather than the
+  fork's library root. `Types.lean` (row 1) inherits the type
+  aliases. `Constants.lean` (row 2) declares this fork's `Preset`
+  and `Config` classes as a diff over the lineage and inherits the
+  parent's `Const` entries. Every other module of the fork imports
+  intra-fork only, and only `Upgrade.lean` and `Interface.lean`
+  write a qualified ancestor name.
 * The **bench reference fixture** for Fulu BeaconState
   (`SizzLeanBench/Fulu.lean`) is a bench-local *copy* of the
   EthCLSpecs Fulu shape. `SizzLeanBench` cannot depend on

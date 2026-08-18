@@ -1,10 +1,10 @@
 import EthCLLib.Spec.Arith
-import EthCLSpecs.Fulu.Time
+import EthCLSpecs.Gloas.EpochProcessing
 
 /-!
 # `EthCLSpecs.Proofs.GetPtc`: the `get_ptc` else-branch offset bound
 
-`EthCLSpecs.Gloas.getPtc` (`Gloas/Operations.lean:391-408`) reads the cached
+`EthCLSpecs.Gloas.getPtc` (`Gloas/Operations.lean:389-406`) reads the cached
 Payload Timeliness Committee for a slot out of the `ptcWindow` ring buffer. Its
 `if`-branch (a slot in the previous epoch) reads through `vmodGet`, already
 proof-carrying and safe by construction. Its `else`-branch computes a raw
@@ -35,8 +35,8 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs
 
 open EthCLLib.Spec (uint64ModOfNatToNatLt)
-open EthCLSpecs.Fulu (Slot Preset computeEpochAtSlot)
-open EthCLSpecs.Fulu.Const (slotsPerEpoch slotsPerEpochPos slotsPerEpochLt)
+open EthCLSpecs.Gloas (Slot Preset computeEpochAtSlot)
+open EthCLSpecs.Gloas.Const (slotsPerEpoch slotsPerEpochPos slotsPerEpochLt)
 
 /-- Names `getPtc`'s `else`-branch index into `ptcWindow`
 (`Gloas/Operations.lean`'s `(epoch - stateEpoch + 1) * spe + slot % spe`), so

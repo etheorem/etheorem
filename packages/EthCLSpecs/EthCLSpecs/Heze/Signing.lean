@@ -4,7 +4,8 @@ import EthCLSpecs.Heze.Containers
 /-!
 # `EthCLSpecs.Heze.Signing`: the EIP-7805 (FOCIL) inclusion-list signature predicate
 
-Heze inherits the domain accessor and the rest of the signing surface from Fulu; this file adds
+Heze inherits the domain accessor and the rest of the signing surface from its
+lineage; this file adds
 the one new predicate EIP-7805 introduces. `is_valid_inclusion_list_signature` (the "Predicates"
 section, `consensus-specs/specs/heze/beacon-chain.md:76-87`) checks a `SignedInclusionList`'s BLS
 signature under `DOMAIN_INCLUSION_LIST_COMMITTEE`. `blsVerifySigned` is the residual trust
@@ -17,7 +18,6 @@ though it throws on an out-of-range `validator_index` (the spec's `state.validat
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Heze
 

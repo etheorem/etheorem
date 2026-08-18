@@ -78,11 +78,20 @@ correct by construction: the child's version binds at every call site in the
 inherited body.
 
 ```lean
-fork Gloas from Fulu      -- declare the lineage once
+fork Gloas from Fulu      -- declare the lineage once, in Gloas/Fork.lean
 
 inherit Validator         -- a container EIP-7732 leaves unchanged
 inherit processRandao     -- a transition step it leaves unchanged
+inherit Root Gwei         -- and the vocabulary the steps are written in
+inherit Const.slotsPerEpoch
 ```
+
+That last pair is the point of the model. A fork's body code names its own
+namespace and the framework, and nothing else: its type aliases, its constants,
+and its `Preset` / `Config` classes are all its own, so a Gloas function
+constrains `[Gloas.Preset]` and never mentions Fulu. Two files per fork name
+their parent, the fork-upgrade boundary and the pyspec runner, and one more holds
+the lineage edge.
 
 **Validated against the real vectors.** The full in-scope suite passes at both
 the `minimal` and `mainnet` presets, for all three forks (Fulu, Gloas, Heze),

@@ -1,5 +1,4 @@
 import EthCLSpecs.Heze.Withdrawals
-import EthCLSpecs.Gloas.Transition
 
 /-!
 # `EthCLSpecs.Heze.Transition`: the inherited state-transition spine (Gloas over Heze)
@@ -15,7 +14,6 @@ files above, the transition "spine", and never to the Gloas originals.
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Heze
 

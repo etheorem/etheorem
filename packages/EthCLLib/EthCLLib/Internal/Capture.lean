@@ -16,8 +16,16 @@ Two environment extensions carry the data:
 
 * `lineageExt` records the `fork … from …` edges: each fork's full namespace
   paired with its parent's full namespace (or `Name.anonymous` for a root).
-* `captureExt` records every `forkdef` / `forkcontainer` / `forkstruct` body,
-  keyed by `(forkNamespace, shortName)`, as the raw `Syntax` to replay.
+* `captureExt` records every capturing form's body, keyed by
+  `(forkNamespace, residualName)`, as the raw `Syntax` to replay.
+
+The key's two halves come from splitting the elaboration-time namespace at the
+nearest registered fork (`splitAtFork`). A declaration written inside
+`namespace EthCLSpecs.Fulu` … `namespace Const` keys as
+`(EthCLSpecs.Fulu, Const.slotsPerEpoch)`, so `inherit Const.slotsPerEpoch` in
+the child finds it. Keying on the raw current namespace instead would file the
+constant under `EthCLSpecs.Fulu.Const`, which is no fork at all, and no lineage
+walk would ever reach it.
 
 Both are `SimplePersistentEnvExtension`s, so the captures survive into the
 `.olean` and a child fork in a *separate module* can inherit a parent declared
@@ -60,25 +68,61 @@ inductive CaptureKind where
   is the field block; the form regenerates the `structure` with ordinary
   `deriving` on replay. -/
   | struct
+  /-- A `forkabbrev`: a type alias or a constant. Replay re-emits an `abbrev`,
+  never a `def`; the `@[reducible]` attribute is what SSZRepr synthesis and the
+  symbolic-cap derive see through, so demoting it would break both. -/
+  | abbrev_
+  /-- A `forkinstance`: a named typeclass instance. Replay re-emits an
+  `instance`, which a `def`-shaped capture could not do (the capturing forms
+  drop modifiers, so an `@[instance]` attribute would not survive). -/
+  | instance_
+  /-- A tier declaration: a `forkpreset` / `forkconfig` class, or a
+  `forkpresetvalues` / `forkconfigvalues` value set. The payload is a block of
+  named entries, and the capture holds only the fork's own *diff*.
+
+  These are the one kind `inherit` never consumes. A class and a value set are
+  each a single declaration, so per-name inheritance cannot compose one; the
+  child's own tier form merges the lineage's blocks by entry name instead
+  (`mergedTier`), which is the class-shaped analogue of per-name `inherit`. -/
+  | tier
   deriving Inhabited, DecidableEq, Repr
 
 /-- One captured declaration's replay payload.
 
-Stored verbatim from the author's source. `sig` and `val` are the two pieces a
-`forkdef` needs (`optDeclSig` and `declVal`); a container or struct uses only
-`val`, which holds its field block, and leaves `sig` as `Syntax.missing`. -/
+Stored verbatim from the author's source. Which of the three syntax slots carry
+content depends on `kind`:
+
+| kind         | `binders`              | `sig`               | `val`         |
+| ------------ | ---------------------- | ------------------- | ------------- |
+| `def_`       | ∅                      | `optDeclSig`        | `declVal`     |
+| `abbrev_`    | ∅                      | `optDeclSig`        | `declVal`     |
+| `instance_`  | ∅ (they ride in `sig`) | `declSig`           | `declVal`     |
+| `container`  | ∅                      | ∅                   | `structFields`|
+| `struct`     | the author's binders   | ∅                   | `structFields`|
+| `tier`       | ∅                      | ∅                   | entry block   |
+
+Only `struct` needs the `binders` slot: Lean's `structure` takes its parameters
+beside the field block, while `declSig` (what an `instance` and a typed `def`
+carry) already holds the binders ahead of the `: type`. Both unused slots
+default, so a producer writes only what its kind fills. -/
 structure CapturedDecl where
   /-- The fork namespace the declaration was written in (e.g. `EthCLSpecs.Fulu`).
   Named `forkNs`, not `fork`, because the `fork` keyword the forms declare would
   shadow a field named `fork` at every construction site. -/
   forkNs : Name
-  /-- The declaration's short name (e.g. `processBlock`). -/
+  /-- The declaration's name *relative to the fork namespace*: `processBlock` for
+  a step written directly in the fork, `Const.slotsPerEpoch` for one written
+  inside a nested `namespace Const`. This is the name `inherit` spells. -/
   name : Name
   /-- Which form captured it. -/
   kind : CaptureKind
-  /-- A `forkdef`'s `optDeclSig`; `Syntax.missing` for a container / struct. -/
-  sig  : Syntax
-  /-- A `forkdef`'s `declVal`, or a container / struct's field block. -/
+  /-- A null node of `bracketedBinder`s the author wrote beyond the implicit
+  `[Preset]`. Defaults to the empty null node, so `.getArgs` is well defined
+  even for the kinds that never fill it. -/
+  binders : Syntax := mkNullNode
+  /-- The declaration's signature, in whichever `declSig` flavour the kind uses. -/
+  sig  : Syntax := .missing
+  /-- A declaration value (`declVal`), or a structure's field block. -/
   val  : Syntax
   deriving Inhabited
 
@@ -112,6 +156,37 @@ def recordLineage (env : Environment) (fork : Name) (parent : Option Name) :
 def recordCapture (env : Environment) (cap : CapturedDecl) : Environment :=
   captureExt.addEntry env cap
 
+/-- Is `ns` a registered fork, i.e. did some `fork …` command name it? Roots
+count: their lineage entry pairs them with `Name.anonymous`. -/
+def isFork (env : Environment) (ns : Name) : Bool :=
+  (lineageExt.getState env).any fun (f, _) => f == ns
+
+/-- Split an elaboration-time namespace into `(owningFork, residualPath)`,
+nearest enclosing fork wins.
+
+`EthCLSpecs.Fulu.Const` splits as `(EthCLSpecs.Fulu, Const)`; `EthCLSpecs.Fulu`
+itself splits as `(EthCLSpecs.Fulu, .anonymous)`. A namespace with no registered
+fork anywhere above it yields `none`, and the caller keys the capture on the raw
+namespace instead, the behaviour every capture had before nesting was supported.
+
+The recursion peels one component at a time and rebuilds the residual on the way
+out, so the residual's component order matches the source. -/
+partial def splitAtFork (env : Environment) (ns : Name) : Option (Name × Name) :=
+  if isFork env ns then
+    some (ns, Name.anonymous)
+  else
+    match ns with
+    | .anonymous => none
+    | .str p s   => (splitAtFork env p).map fun (f, r) => (f, r.str s)
+    | .num p i   => (splitAtFork env p).map fun (f, r) => (f, r.num i)
+
+/-- The capture key for a declaration named `declName` (the author's `declId`,
+itself possibly dotted) written while the current namespace is `ns`. -/
+def captureKey (env : Environment) (ns declName : Name) : Name × Name :=
+  match splitAtFork env ns with
+  | some (forkNs, residual) => (forkNs, residual ++ declName)
+  | none                    => (ns, declName)
+
 /-- The parent fork of `fork`, if `fork` has a recorded `from` edge with a
 non-anonymous parent. -/
 def parentOf (env : Environment) (fork : Name) : Option Name :=
@@ -138,5 +213,41 @@ partial def resolveInherited (env : Environment) (fork name : Name) :
     match lookupCapture env parent name with
     | some cap => some cap
     | none     => resolveInherited env parent name
+
+/-! ## Tier merging
+
+A `tier` capture holds one fork's diff of a `Preset` / `Config` class or of one
+of their value sets. The declaration a fork actually emits is the whole lineage's
+diffs merged, so the two functions below reconstruct it. `inherit` plays no part;
+the child's own tier form calls `mergedTier` directly. -/
+
+/-- The lineage from the root down to `fork`, root first. -/
+partial def lineageChain (env : Environment) (fork : Name) : List Name :=
+  match parentOf env fork with
+  | none        => [fork]
+  | some parent => lineageChain env parent ++ [fork]
+
+/-- The name an entry in a tier block declares. Both entry shapes put it at index
+1, behind the optional docstring, so one accessor serves fields and assignments
+alike. -/
+def tierEntryName (entry : Syntax) : Name := entry[1].getId
+
+/-- Fold one fork's diff into the accumulated block: an entry that redeclares an
+inherited name replaces it *in place*, so the ancestor's ordering survives and a
+child override does not reshuffle the class; a new name is appended. -/
+def mergeTierEntries (acc new : Array Syntax) : Array Syntax :=
+  new.foldl (init := acc) fun acc entry =>
+    match acc.findIdx? (tierEntryName · == tierEntryName entry) with
+    | some i => acc.set! i entry
+    | none   => acc.push entry
+
+/-- The full entry block for tier `key` at `fork`: every ancestor's diff merged
+root-first, then `fork`'s own. A fork that declares nothing under `key`
+contributes nothing, so a tier can skip generations. -/
+def mergedTier (env : Environment) (fork key : Name) : Array Syntax :=
+  (lineageChain env fork).foldl (init := #[]) fun acc f =>
+    match lookupCapture env f key with
+    | some cap => mergeTierEntries acc cap.val.getArgs
+    | none     => acc
 
 end EthCLLib.Internal

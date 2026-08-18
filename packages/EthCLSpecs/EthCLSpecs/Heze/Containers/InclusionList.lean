@@ -5,7 +5,7 @@ import EthCLSpecs.Heze.Inherited
 
 The two containers EIP-7805 adds at alpha.11: an `InclusionList` (a committee member's
 committed transactions for a slot) and its signed wrapper. `Transaction` and
-`MAX_TRANSACTIONS_PER_PAYLOAD` are the existing Fulu/Gloas types. These are the *only*
+`MAX_TRANSACTIONS_PER_PAYLOAD` are the inherited types. These are the *only*
 new Heze containers; the bid is unchanged at alpha.11.
 
 The two DSL forms: `forkcontainer` declares an SSZ container in the fork namespace and
@@ -19,7 +19,6 @@ order (`EthCLLib.Spec.Forms` documents `forkcontainer`; `EthCLSpecs.Forms` docum
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Heze
 

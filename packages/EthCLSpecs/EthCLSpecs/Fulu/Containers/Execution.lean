@@ -21,7 +21,7 @@ forkcontainer ExecutionPayloadHeader where
   feeRecipient     : ExecutionAddress
   stateRoot        : Bytes32
   receiptsRoot     : Bytes32
-  logsBloom        : Vector UInt8 256
+  logsBloom        : Vector UInt8 Const.bytesPerLogsBloom
   prevRandao       : Bytes32
   blockNumber      : UInt64
   gasLimit         : UInt64

@@ -15,9 +15,9 @@ twin field-by-field at the boundary, the price of the flat namespace.
 
 The declarations are in dependency order (a container's field types are inherited
 before it), so each replayed body's sibling references late-bind to the Gloas-local
-copy rather than Fulu's: `open EthCLSpecs.Fulu` supplies the constants and primitive
-aliases (`Const.…`, `Root`, `Gwei`, …), while current-namespace priority makes a bare
-`Checkpoint` / `AttestationData` resolve to the copy declared just above. The ePBS
+copy: the constants and primitive aliases (`Const.…`, `Root`, `Gwei`, …) are this
+fork's own by then (`Gloas/Types.lean`, `Gloas/Constants.lean`), and a bare
+`Checkpoint` / `AttestationData` resolves to the copy declared just above. The ePBS
 containers that EIP-7732 *changes* (`ExecutionPayload`, `BeaconBlockBody`, `BeaconBlock`,
 the bid / envelope / payload-attestation types) are not here; they are this fork's own
 (`Gloas.Containers`, `Gloas.Block`, `Gloas.State`).
@@ -26,7 +26,6 @@ the bid / envelope / payload-attestation types) are not here; they are this fork
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
 
@@ -39,6 +38,7 @@ inherit BLSToExecutionChange
 inherit BeaconBlockHeader
 inherit ConsolidationRequest
 inherit DepositData
+inherit DepositMessage
 inherit Deposit
 inherit DepositRequest
 inherit Eth1Data
@@ -57,5 +57,7 @@ inherit SyncAggregate
 inherit SyncCommittee
 inherit Validator
 inherit Withdrawal
+-- The runner's rewards-vector output container.
+inherit Deltas
 
 end EthCLSpecs.Gloas

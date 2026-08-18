@@ -32,7 +32,6 @@ namespace EthCLSpecs.Tests.GloasForkChoicePins
 -- the Fulu names that Gloas redeclares are hidden and the rest (`Preset`, `Config`,
 -- `minimal`, `Root`, ...) come through as before.
 open EthCLSpecs.Gloas
-open EthCLSpecs.Fulu hiding Store State fcZeroRoot Checkpoint
 
 /-! ### Build-enforced pins (vectorless): the PTC replay rejects
 

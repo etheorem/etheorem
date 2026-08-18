@@ -11,7 +11,6 @@ it: the aggregated `PayloadAttestation`, its resolved-set
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
 

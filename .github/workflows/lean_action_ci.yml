@@ -21,10 +21,13 @@ on:
 jobs:
   lint:
     # Forbidden-token check on committed Lean source — no Lean
-    # toolchain needed, just `git grep`. Runs in ~5 s. The citation
-    # check rides along: it reads Lean sources as text, so it needs
-    # no toolchain either, and it catches the same class of rot in
-    # the docs that `just lint` catches in the code.
+    # toolchain needed, just `git grep`. Runs in ~5 s. Two more checks
+    # ride along: both read Lean sources as text, so they need no
+    # toolchain either, and both catch the same class of rot that
+    # `just lint` catches in the code. The citation check covers the
+    # line spans the docs cite into the spec bodies; the constants
+    # check covers each constant's tier and owning fork against the
+    # pinned specs, from a vendored ground truth (no network).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -33,6 +36,8 @@ jobs:
         run: just lint
       - name: Check the line-span citations into the spec bodies
         run: just check-citations
+      - name: Check each spec constant's tier and owning fork
+        run: just check-constants
 
   test:
     # In-Lean property tests: SHA-256 NIST CAVP vectors against both

@@ -15,9 +15,16 @@ Gloas fork, and EIP-7805 adds no `BeaconState` field, so the upgrade is a pure c
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Heze
+
+-- The fork-upgrade boundary: this file converts a Gloas pre-state into a Heze
+-- state, so it names both forks by definition and is one of the two sanctioned
+-- places that reach into the parent (`SPECS_ARCHITECTURE.md` §6.2).
+-- `open scoped Downgrade` activates the generated bridge from `Heze.Preset` to
+-- `Gloas.Preset`, which lets the conversions below run under a single `[Preset]`
+-- binder with the preset still symbolic. Nothing else in Heze opens it.
+open scoped Downgrade
 
 /-! ## Component-container conversion at the fork boundary -/
 

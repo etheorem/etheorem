@@ -473,19 +473,45 @@ owns the macro detail.
 
 ### 8.3 The parent declaration
 
-A fork names its parent once, with a `fork` declaration in the fork's root
-module:
+A fork names its parent once, in the fork's `Fork.lean`:
 
 ```lean
-fork Fulu            -- the base, no parent
-fork Gloas from Fulu -- Gloas inherits from Fulu
+-- EthCLSpecs/Gloas/Fork.lean, the whole file's content
+import EthCLSpecs.Fulu
+
+namespace EthCLSpecs.Gloas
+fork Gloas from Fulu
+end EthCLSpecs.Gloas
 ```
 
 The `fork … from …` declaration records the lineage edge in an environment
 extension. It is data the resolver reads, not a generator. The bare `fork`
-keyword declares the fork; `forkdef` / `forkcontainer` / `forkstruct` declare its
-members. The lineage generalizes to deeper chains (`X from Y from Z`), one hop
-here since Fulu is whole.
+keyword declares the fork; the capturing forms declare its members. The lineage
+generalizes to deeper chains, and the implemented one is `Fulu ← Gloas ← Heze`.
+
+Two rules govern that file, and both follow from how the data travels.
+
+**One feeder import, and only there.** A capture lives in an environment
+extension, and an environment extension travels only through an `.olean` import,
+so the child has to import the parent's library root or there is nothing to
+replay. Decoupling means no `open` and no qualified reference into the parent; it
+never means dropping the physical import. Fulu's `Fork.lean` carries no feeder,
+being the base.
+
+**Row 0, not the library root.** `inherit` reads the lineage while it elaborates,
+and so does every capturing form, to work out which fork it is filing under. The
+edge therefore has to be in the environment before any other module of the fork
+elaborates, which puts `Fork.lean` at the *first* module of the intra-fork import
+chain: `Types.lean` imports it, and every other module reaches it from there. The
+fork's library root cannot hold it, being a re-export aggregator that imports the
+fork's modules and so elaborates last.
+
+Every other module of the fork imports intra-fork only. Two files may write a
+qualified parent name, and no more: `Upgrade.lean`, whose subject is the
+conversion from a parent state to a child one, and `Interface.lean`, where the
+pyspec runner drives the parent spine for the pre-fork blocks of a mixed vector.
+Each of them also writes `open scoped Downgrade` to reach the generated
+parent-class bridge. Nothing else in the fork may name an ancestor at all.
 
 ### 8.4 The three fates over two forms
 
@@ -503,7 +529,7 @@ The two forms:
   the `fork … from …` data: this fork did not capture `Foo`, so the resolver
   steps to the parent and replays the parent's captured `Foo` in the child
   namespace.
-- **A full declaration** (`forkdef`, `forkcontainer`, or `forkstruct`) for the
+- **A full declaration** (any capturing form) for the
   override and new fates. The two are identical in form. Whether a parent symbol
   of that name existed is the only thing that distinguishes an override from a
   new declaration, and the author does not have to mark which.
@@ -530,16 +556,28 @@ pipeline can `inherit` it.
 ### 8.5 Capture is the common base
 
 The same mechanism inherits every kind of declaration, so capture is the shared
-base of all three forms, and each form layers its own generation on top:
+base of every form, and each layers its own generation on top:
 
 - `forkdef` captures, for steps and helpers.
+- `forkabbrev` captures and re-emits an `abbrev`, for type aliases and `Const`
+  entries. Replaying one as a `def` would drop `@[reducible]`, and reducibility
+  is what SSZRepr synthesis and the symbolic-cap derive see through.
+- `forkinstance` captures and re-emits a named `instance`, for a registration
+  whose subject is a fork-owned name (the `ValidModulus` divisors). It needs a
+  name, unlike Lean's `instance`, because the capture key is a name and
+  `inherit` has nothing else to spell.
 - `forkcontainer` captures and generates the SSZ instances, for SSZ containers.
 - `forkstruct` captures and runs ordinary `deriving`, for non-SSZ structures
   like `Store`, `FcNode`, and `LatestMessage`.
 
+An instance that mentions no spec name belongs in `EthCLLib` instead, where no
+fork owns it.
+
 The shared `fork` prefix marks the common behavior: every form is captured for
-per-fork replay. All three are producers into one syntax store; `inherit` is the
-single consumer. Late binding is needed for all of them. An inherited container
+per-fork replay. All are producers into one syntax store; `inherit` is the single
+consumer, and it takes several names per line so related entries group without
+losing the one-name-per-entry discipline. Late binding is needed for all of
+them. An inherited container
 field whose type names an overridden container, or whose capacity names an
 overridden constant, must resolve to the child fork's version.
 
@@ -552,13 +590,56 @@ declaration regenerates the SSZ instances over its field list.
 
 Two consequences the author should expect. First, the replayed declaration
 resolves against whatever is in scope at the `inherit` site, so the author owns
-the preamble. The section header (Section 3), any `open` or notation, and the
-constants the body uses must be in scope in the child before `inherit`. The
-framework does not reconstruct the preamble; a missing one fails to elaborate
-with a plain unknown-identifier error. Second, inheritance is by symbol, so a
+the preamble. The section header (Section 3), any notation, and the constants the
+body uses must be in scope in the child before `inherit`, where in scope means
+*this fork's own copies*. The framework does not reconstruct the preamble; a
+missing one fails to elaborate with a plain unknown-identifier error, which is
+how a fork's inherited closure surfaces: the compiler enumerates it. Second, inheritance is by symbol, so a
 property proved about a caller is proved per fork: Fulu's and Gloas's
 `processOperations` are distinct symbols. Proof reuse across forks is a known
 cost, acceptable while proofs are deferred (Section 9).
+
+### 8.6 The vocabulary and the tiers are per fork
+
+A fork's body code names its own namespace plus the framework, and nothing else.
+That extends past the steps to the vocabulary they are written in.
+
+`Types.lean` (row 1) carries an `inherit` line for every type alias, so `Root` in
+a Gloas signature is `EthCLSpecs.Gloas.Root`. `Constants.lean` (row 2) declares
+this fork's `Preset` and `Config` with `forkpreset` / `forkconfig`, their value
+sets with `forkpresetvalues` / `forkconfigvalues`, its own `Const` entries with
+`forkabbrev`, and an `inherit Const.*` block for the parent's. A tier form is
+written even when the fork adds no field of its own, because the class it emits
+has to be that fork's.
+
+The tier forms are the one place per-name `inherit` does not apply. A class is a
+single declaration, so the child's own form merges the lineage's captured field
+blocks by name (child-most-wins) and emits one flat class; the author still
+spells out the fork's diff explicitly, and `inherit` refuses a tier capture with
+a message pointing at the right form.
+
+The `inherit Const.*` block covers the parent's whole constant surface, not just
+the subset this fork happens to call today. A fork owns its vocabulary, and a new
+call site should not have to come back and edit the block.
+
+### 8.7 A proof file names one fork
+
+A proof file imports and opens only the fork whose theorems it states. The class
+split enforces most of this on its own: a Gloas function constrains
+`[Gloas.Preset]`, so a `Fulu.minimal` injected against it does not typecheck. The
+rest is name discipline, and the acceptance grep is
+
+```bash
+grep -rln "EthCLSpecs.Fulu" packages/EthCLSpecs/EthCLSpecs/Proofs
+```
+
+which should hit only Fulu-subject proofs and declared boundary proofs.
+
+The one sanctioned exception mirrors the spec-side boundary: a proof *about*
+boundary code names both forks because its subject does.
+`Proofs/InitializePtcWindow.lean` characterizes `computePtcFromFulu`, which reads
+a Fulu pre-state, so it imports both, opens the downgrade bridge, and says so in
+its module docstring. A file taking that exception must declare it there.
 
 ---
 

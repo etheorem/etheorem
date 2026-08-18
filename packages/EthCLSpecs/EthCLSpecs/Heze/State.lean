@@ -13,7 +13,6 @@ The `Containers.InclusionList` import is the load-order entry: it transitively p
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Heze
 

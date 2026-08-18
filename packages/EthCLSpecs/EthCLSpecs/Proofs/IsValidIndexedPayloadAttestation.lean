@@ -5,7 +5,7 @@ import SizzLean.Proofs.SSZListGetElem
 # `EthCLSpecs.Proofs.IsValidIndexedPayloadAttestation`: a two-layer characterization
 
 An exact backend-generic characterization of
-`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:424-435`).
+`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:422-433`).
 
 **Layer 1** (`isValidIndexedPayloadAttestation_eq_true_iff_checks`) restates the
 function's `if` / `||` / `!` control flow as a plain conjunction, one conjunct per
@@ -42,8 +42,8 @@ namespace EthCLSpecs.Proofs
 
 open EthCLLib.Spec (CryptoBackend HasherTag blsFastAggregateVerify computeSigningRoot)
 open scoped EthCLLib.Spec
-open EthCLSpecs.Fulu (Preset ValidatorIndex)
-open EthCLSpecs.Fulu.Const (domainPtcAttester)
+open EthCLSpecs.Gloas (Preset ValidatorIndex)
+open EthCLSpecs.Gloas.Const (domainPtcAttester)
 open EthCLSpecs.Gloas
   (State IndexedPayloadAttestation isValidIndexedPayloadAttestation getDomain computeEpochAtSlot)
 open SizzLean.Proofs (sszListMap_getElem!_eq_attachMap)

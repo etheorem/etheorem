@@ -39,7 +39,7 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLSpecs.Gloas (Store updateCheckpoints Checkpoint)
-open EthCLSpecs.Fulu (Preset)
+open EthCLSpecs.Gloas (Preset)
 open EthCLLib.Spec (MapKind HasherTag)
 
 /-! Every theorem below is stated about one arbitrary Store and one arbitrary pair of

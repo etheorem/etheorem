@@ -1,5 +1,4 @@
 import EthCLSpecs.Heze.EpochProcessing
-import EthCLSpecs.Gloas.Operations
 
 /-!
 # `EthCLSpecs.Heze.Operations`: the inherited operation handlers (Gloas over Heze state)
@@ -14,16 +13,14 @@ declaration forms (`forkdef` / `forkcontainer` / `forkstruct`, `SPEC_AUTHORING_M
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Heze
 
 state_section
 
-/-- `withdrawal_credentials[12:]` as a 20-byte execution address. Restated from Gloas
-(a plain `def` rather than an inheritable `forkdef`). -/
-private def addressOfCred (wc : Bytes32) : ExecutionAddress := Vector.ofFn (fun i : Fin 20 => wc[12 + i.val])
-
+-- `addressOfCred` reads `withdrawal_credentials[12:]` as a 20-byte execution
+-- address; `strictlySorted` and `zeroRoot` are the parent's operation helpers.
+inherit addressOfCred strictlySorted zeroRoot
 inherit isSlashableAttestationData
 inherit isValidIndexedAttestation
 inherit isValidSwitchToCompoundingRequest

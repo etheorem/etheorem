@@ -1,5 +1,4 @@
 import EthCLSpecs.Heze.Operations
-import EthCLSpecs.Gloas.Withdrawals
 
 /-!
 # `EthCLSpecs.Heze.Withdrawals`: the inherited builder-aware withdrawal sweep
@@ -14,7 +13,6 @@ state before the sweep helpers that use them.
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Heze
 
@@ -38,7 +36,8 @@ subtraction whose underflow raises `ValueError`, uncaught by the reference runne
 See `Gloas.balanceAfterWithdrawals`.
 
 The `withdrawn` accumulator folds through `checkedAdd`, as in Fulu and Gloas; pyspec's
-`sum(...)` raises during its own accumulation. See `Fulu.balanceAfterWithdrawals`. -/
+`sum(...)` raises during its own accumulation. See the ancestors' twins of this
+function, which the lineage replays unchanged. -/
 def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
     StateTransition Gwei := do
   let withdrawn ← ws.foldlM (init := (0 : Gwei)) fun acc w =>

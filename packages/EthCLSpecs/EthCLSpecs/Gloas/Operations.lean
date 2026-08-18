@@ -1,6 +1,4 @@
 import EthCLSpecs.Gloas.EpochProcessing
-import EthCLSpecs.Fulu.Operations
-import EthCLSpecs.Fulu.Transition
 
 /-!
 # `EthCLSpecs.Gloas.Operations`: the inherited (non-ePBS) operation handlers
@@ -20,13 +18,13 @@ The ePBS-modified and ePBS-new handlers are the Gloas-specific port (not here).
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
 
 state_section
 
 -- Operation-level validity helpers (no committee dependency).
+inherit strictlySorted zeroRoot
 inherit isSlashableAttestationData
 inherit isValidIndexedAttestation
 inherit isValidSwitchToCompoundingRequest
@@ -99,7 +97,7 @@ forkdef getIndexForNewBuilder (state : State) : BuilderIndex := Id.run do
     if (bs[i]?.getD default).withdrawableEpoch ≤ epoch && (bs[i]?.getD default).balance == 0 then return UInt64.ofNat i
   return UInt64.ofNat bs.size
 /-- `withdrawal_credentials[12:]` as a 20-byte execution address. -/
-private def addressOfCred (wc : Bytes32) : ExecutionAddress := Vector.ofFn (fun i : Fin 20 => wc[12 + i.val])
+forkdef addressOfCred (wc : Bytes32) : ExecutionAddress := Vector.ofFn (fun i : Fin 20 => wc[12 + i.val])
 
 /-- `add_builder_to_registry` (EIP-8282): set-or-append a `Builder` at the recyclable
 index with the supplied `version` / `executionAddress`. -/
