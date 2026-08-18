@@ -61,14 +61,15 @@ is the *why* so edge cases can be judged on principle, not by pattern-matching.
 
   Explain non-obvious *inferences* with the same rigor as non-obvious idioms.
   Lean infers a lot, types, terms, instances, motives, and most of it is
-  unremarkable, but some of it is load-bearing and not recoverable from
+  unremarkable, but some of it decides what the code means and is not
+  recoverable from
   reading the surface code: `let x : ConcreteType := y` coercions that force
   defeq reduction across a mutual-block boundary; dependent pattern
   destructures (`vs.1` / `vs.2` on a `Prod`-chain that came from unfolding
   an `interp` arm); named-argument typeclass synthesis (`(H := H)` when the
   parameter is a phantom tag the methods don't consume); the inferred
   `Fin n` parameter of a `Vector.ofFn` lambda; the synthesised bound proof
-  inside `b[i]'h`. When the inference is the load-bearing thing a reader
+  inside `b[i]'h`. When the inference is the thing a reader
   needs to follow, name what Lean inferred and *why* in a one-line comment,
   don't restate types the RHS already makes obvious. Type-annotate
   intermediate `let` / `have` bindings whose type changes the meaning of
@@ -115,7 +116,7 @@ is the *why* so edge cases can be judged on principle, not by pattern-matching.
   a missed implicit is paid forever.
 - **Stringly-typed is a smell.** Tag SSZ kinds with an inductive
   (`SSZType.uint64 | .vector … | .container …`), not with `String`. If
-  you find yourself comparing strings in load-bearing code, the type is
+  you find yourself comparing strings in code that decides behavior, the type is
   asking to be promoted.
 
 These map onto the usual references: Fowler's *Refactoring* (smells), Hunt &
@@ -400,7 +401,7 @@ The repo's own terms of art stay as well, and they mean one thing each:
 
 Rule 5 bans the jargon that replaces a plain word for no gain. Examples,
 and the list is open: `ride along`, `ride on`, `load-bearing`, `sanctioned`
-(write "allowed"), `verdict` (write "result"), `plumbing`, `baked in`,
+(write "allowed"), `verdict` (write "answer"), `plumbing`, `baked in`,
 `escape hatch`, `under the hood`, `blast radius`, `paper over`, `canary`.
 It also bans borrowed Latin (`inter alia`, `a priori`, `vice versa`) where
 English does the job.

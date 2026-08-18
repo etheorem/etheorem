@@ -12,7 +12,7 @@ three things the per-fork tier split needs (`FRAMEWORK_ARCHITECTURE.md` §4):
 2. **Proof fields ride along.** A well-formedness field replays into the child's
    class, and its `by decide` assignment re-proves against the *child's* value,
    so an overridden number gets a fresh proof with nothing restated.
-3. **Symbolic cap defeq across the bridge.** This is the load-bearing one. With
+3. **Symbolic cap defeq across the bridge.** This is the one that matters most. With
    the preset still a variable, a vector width computed through the parent's
    class must be definitionally the width computed through the child's, or the
    fork upgrade (which copies parent-shaped fields into child-shaped ones before

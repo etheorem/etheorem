@@ -368,7 +368,7 @@ inherit notifyPtcMessages
 inherit onBlock
 inherit verifyExecutionPayloadEnvelopeSignature
 
--- Three verdicts on this fork's paths belong to something outside the vector: the EL's
+-- Three answers on this fork's paths belong to something outside the vector: the EL's
 -- `is_inclusion_list_satisfied` (`heze/fork-choice.md:54-62`) and
 -- `verify_and_notify_new_payload`, plus `is_data_available`'s sidecar retrieval. All three
 -- enter through the framework seams in `EthCLLib.Spec.Engine`, which is where the
@@ -386,7 +386,7 @@ inherit verifyExecutionPayloadEnvelope
 
 /-- `is_inclusion_list_satisfied(execution_payload, inclusion_list_transactions)`
 (`consensus-specs/specs/heze/fork-choice.md:54-62`): the `ExecutionEngine` predicate deciding
-whether a payload includes the required inclusion-list transactions. Its verdict is
+whether a payload includes the required inclusion-list transactions. Its answer is
 EL-implementation-defined (the Engine API answers it against an external EL), so it reads the
 `[ExecutionEngine]` seam rather than a fixed value; the default and the trust boundary are
 documented on `EthCLLib.Spec.ExecutionEngine`. -/
@@ -401,7 +401,7 @@ forkdef isInclusionListSatisfied (payload : ExecutionPayload) (ilTxs : Array Tra
 inclusion-list constraints for `root`. Pure here (returns the updated store); the spec mutates
 in place. `get_inclusion_list_store()` is `store.inclusionListStore`; the required
 transactions are read for the previous slot (`state.slot - 1`) at the default `only_timely =
-True`, and the EL verdict comes from `isInclusionListSatisfied`, which reads the
+True`, and the EL answer comes from `isInclusionListSatisfied`, which reads the
 `[ExecutionEngine]` seam (the spec's `execution_engine` argument, modeled injectably). -/
 forkdef recordPayloadInclusionListSatisfaction (store : Store map) (state : State) (root : Root)
     (payload : ExecutionPayload) : StoreTransition (Store map) := do
@@ -421,7 +421,7 @@ forkdef recordPayloadInclusionListSatisfaction (store : Store map) (state : Stat
 `consensus-specs/specs/heze/fork-choice.md:273-300`): the Gloas body with one added step,
 `record_payload_inclusion_list_satisfaction` is called on the verified envelope *before* the
 payload is stored (`fork-choice.md:295`), so `should_extend_payload` can later read the
-recorded verdict. `state` is the pre-verify `block_states[root]`, as in the spec; the warm
+recorded answer. `state` is the pre-verify `block_states[root]`, as in the spec; the warm
 state from `verify_execution_payload_envelope` is kept only for `blockStates`. -/
 forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) : StoreTransition Unit := do
   let store ← get

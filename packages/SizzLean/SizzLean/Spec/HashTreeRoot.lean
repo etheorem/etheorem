@@ -224,7 +224,7 @@ private def zeroHashAtDepth (H : Type) [Hasher H] (d : Nat) : ByteArray :=
 
 /-- Pair adjacent chunks at tree level `lvl`, using `ZERO_HASHES[lvl]`
 as the right sibling for an odd-length tail. The level argument is
-load-bearing for correctness: at level `k`, the phantom right
+required for correctness: at level `k`, the phantom right
 sibling of a lone-tail interior node is an all-zero subtree of
 depth `k`, whose root is `ZERO_HASHES[k]`, *not* `zero32` (which
 would be wrong for `k > 0`).

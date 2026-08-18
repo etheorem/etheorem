@@ -66,7 +66,7 @@ unsafe def opensslLinkArgs : Array String :=
 appended to `cShimFlags` so the C shims find `<openssl/evp.h>`. On
 Debian / Ubuntu the headers live at `/usr/include` and no explicit
 `-I` is needed; on macOS Homebrew openssl@3 is keg-only and the `.pc`
-file's `-I/opt/homebrew/opt/openssl@3/include` is load-bearing. Empty
+file's `-I/opt/homebrew/opt/openssl@3/include` is required. Empty
 fallback keeps Debian working when pkg-config is missing. -/
 unsafe def opensslCFlags : Array String :=
   runPkgConfig #["--cflags", "libcrypto"] #[]

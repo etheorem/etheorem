@@ -12,7 +12,7 @@ signature under `DOMAIN_INCLUSION_LIST_COMMITTEE`. `blsVerifySigned` is the resi
 boundary (the `[CryptoBackend]` seam), as for every other signature predicate; no pure assertion
 pins it. FOCIL adds no state transition, so this is a predicate rather than a transition step,
 though it throws on an out-of-range `validator_index` (the spec's `state.validators[index]`
-`IndexError`) rather than returning a verdict there.
+`IndexError`) rather than returning an answer there.
 -/
 
 set_option autoImplicit false
@@ -30,7 +30,7 @@ message's epoch. Mirrors the Python step-for-step: read `message`, the validator
 `validator_index`, the domain, `compute_signing_root(message, domain)`, then `bls.Verify`.
 
 The signature check itself, `blsVerifySigned`, goes through the `[CryptoBackend]` seam
-(`FRAMEWORK_ARCHITECTURE.md` §1), and no build-enforced pin fixes its verdict. That is the
+(`FRAMEWORK_ARCHITECTURE.md` §1), and no build-enforced pin fixes its answer. That is the
 same trust boundary every signature predicate keeps (Gloas's bid and builder-deposit
 signatures included).
 
@@ -49,7 +49,7 @@ forkdef isValidInclusionListSignature (state : State) (signed : SignedInclusionL
   let message := signed.message
   let index := message.validatorIndex
   -- `validator_index` arrives off the wire, so the spec's `state.validators[index]` raises
-  -- `IndexError` for an out-of-range index rather than yielding a verdict: `sszGetIdx`
+  -- `IndexError` for an out-of-range index rather than yielding an answer: `sszGetIdx`
   -- (→ `outOfBounds`), the monadic safe read, in place of an `if index < size` guard that would
   -- mask the raise as a `false` and read the `Inhabited` default (zero-pubkey) validator.
   let validator ← sszGetIdx (sszGet state validators) index.toNat

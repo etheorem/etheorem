@@ -55,7 +55,7 @@ even before any instance is defined. The class opens as an instance
 binder and both fields project cleanly.
 
 The `(H := H)` named-argument form on `Hasher.combine` and
-`Hasher.hash` is *load-bearing*: because `H` is a
+`Hasher.hash` is *required*: because `H` is a
 phantom tag (it doesn't appear in either method's argument or
 result types), instance synthesis can't recover it from `b₁ b₂`.
 Naming it explicitly resolves the ambiguity. Downstream files

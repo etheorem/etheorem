@@ -330,7 +330,7 @@ Four habits, three to keep and one to drop:
   `-- Validator sweep (Capella).` pair in `getExpectedWithdrawals`
   (`EthCLSpecs/Fulu/Withdrawals.lean:getExpectedWithdrawals`) is the model. Two comments, two
   phases.
-- **Explain a load-bearing inference.** The `sszGetIdx` comments say why an index
+- **Explain an inference that changes the meaning.** The `sszGetIdx` comments say why an index
   read must reject instead of masking. The cache-root comment in `Node.ofSubtrees`
   (`SizzLean/Cache/MerkleTree/Build.lean:Node.ofSubtrees`) says why the root is computed inline.
   Neither fact is recoverable from the surface code. CLAUDE.md asks for exactly
@@ -381,7 +381,7 @@ forkdef advanceStoreTime (store : Store map) (time : UInt64) : Store map :=
 
 The giant fuel argument becomes a named `fuel`, the duplicated `tickSlot` formula
 collapses to one `targetSlot`, and the comment records the invariant that makes the
-dedup safe. That invariant is the kind of load-bearing inference CLAUDE.md asks to
+dedup safe. That invariant is the kind of inference CLAUDE.md asks to
 be spelled out, since a reader cannot tell from the old code that the inner
 recompute was redundant.
 

@@ -140,7 +140,7 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     | .syncAggregate         => (decodeOp (@SyncAggregate P) opBytes).map processSyncAggregate
     | .withdrawals           => (decodeOp (@ExecutionPayload P) opBytes).map processWithdrawals
     -- The standalone execution_payload op runs the in-block handler, gated on the
-    -- mocked execution-engine verdict (`execution.yaml`): a `false` verdict is the
+    -- mocked execution-engine answer (`execution.yaml`): a `false` answer is the
     -- spec's `assert verify_and_notify_new_payload(...)` failing, so the op rejects.
     | .executionPayload      => (decodeOp (@BeaconBlockBody P) opBytes).map (fun body => do
         assert cmeta.executionValid

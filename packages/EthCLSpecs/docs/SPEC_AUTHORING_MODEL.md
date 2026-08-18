@@ -583,7 +583,7 @@ overridden constant, must resolve to the child fork's version.
 
 Containers and structures follow the same two cases as functions. An unchanged
 one is `inherit`ed; a changed or new one is declared in full. There is no
-field-merge or append form. SSZ field order is load-bearing, so a fork that
+field-merge or append form. SSZ field order decides the encoding, so a fork that
 changes a container restates its complete field list, explicit on the page and
 checked by conformance, rather than computing the order from a parent. A full
 declaration regenerates the SSZ instances over its field list.

@@ -2,7 +2,7 @@
 # `EthCLLib.Spec.Engine`: the `[ExecutionEngine]` seam
 
 The spec's `ExecutionEngine` predicates are Engine-API calls answered by an
-external execution layer (EL), so their verdicts are EL-implementation-defined
+external execution layer (EL), so their answers are EL-implementation-defined
 and cannot be modeled as fixed values without hiding the trust boundary. Like
 `[CryptoBackend]` one file over, this is an injection seam, a typeclass
 boundary where the consumer picks the implementation (`FRAMEWORK_ARCHITECTURE.md`
@@ -24,7 +24,7 @@ One deliberate difference from `CryptoBackend`: that seam ships named backends
 (`ffi` / `verifyOff` / `symbolic`) a consumer must inject, so a forgotten
 injection is a compile error; this one registers the optimistic mock as a
 global instance, so every conformance path works with zero wiring. The cost is
-that a consumer wiring a real EL verdict must remember the local override,
+that a consumer wiring a real EL answer must remember the local override,
 nothing forces it.
 
 ## Two classes, one boundary
@@ -56,7 +56,7 @@ set_option autoImplicit false
 
 namespace EthCLLib.Spec
 
-/-- The execution-layer seam: `ExecutionEngine` predicates whose verdict an
+/-- The execution-layer seam: `ExecutionEngine` predicates whose answer an
 external EL owns. Generic over the fork's payload / transaction / execution-request
 types (they are fork-namespaced or shared types a framework class cannot name
 concretely).
@@ -89,7 +89,7 @@ class ExecutionEngine (Payload : Type) (Tx : Type) (Requests : Type) where
 
 /-- The default engine: the optimistic always-`true` mock, the residual EL trust
 boundary of every engine-gated spec branch. Generic, so it serves every fork; a
-consumer wanting a real (or refuting) verdict overrides `[ExecutionEngine]`
+consumer wanting a real (or refuting) answer overrides `[ExecutionEngine]`
 locally with a `letI` at the concrete fork types. -/
 instance instExecutionEngineOptimistic {Payload Tx Requests : Type} :
     ExecutionEngine Payload Tx Requests where

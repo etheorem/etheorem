@@ -129,7 +129,7 @@ reference them rather than re-deriving them.
 | Dependency | Why | Gates |
 |---|---|---|
 | The SizzLean preset-resolved symbolic-cap derive blocks `forkcontainer` | a container is `[Preset]`-parameterized and its field widths are `Const.*` projections that stay symbolic until the preset resolves; `SSZRepr` has to derive over those caps and reduce once `[Preset]` is concrete | the container front-end (Phase 1) |
-| The three spikes gate building on the mechanisms they confirm | the fork-inheritance replay, the `[CryptoBackend]` instance, and vector acquisition plus SSZ decode are load-bearing pieces chosen but not yet exercised; a wrong assumption found after the framework is built is expensive to unwind | `forkdef` / `forkcontainer` / `inherit`, every crypto-gated step, and the whole harness input edge (Phase 1 onward) |
+| The three spikes gate building on the mechanisms they confirm | the fork-inheritance replay, the `[CryptoBackend]` instance, and vector acquisition plus SSZ decode are essential pieces chosen but not yet exercised; a wrong assumption found after the framework is built is expensive to unwind | `forkdef` / `forkcontainer` / `inherit`, every crypto-gated step, and the whole harness input edge (Phase 1 onward) |
 | The walking skeleton must be green before Fulu broadens | one green format end-to-end through the per-worker Lean server proves the framework, the harness, the crypto seam, and the inheritance on the smallest surface; broadening onto unproven plumbing multiplies debugging cost | the full Fulu port (Phase 2) |
 | Mainnet performance is smoke-tested once the core transition is green | "both presets from day one" is true at the type level; performance is not, mainnet states are far larger and exercise the cache and FFI hasher on bigger trees | the mainnet hardening (Phase 4) |
 
@@ -247,7 +247,7 @@ works.
 
 ### 1.1 The framework skeleton (`EthCLLib`)
 
-**Goal.** Stand up the framework's load-bearing core: the parts every later step and
+**Goal.** Stand up the framework's core: the parts every later step and
 container depend on, and nothing more.
 
 **Deliverables.**

@@ -1,7 +1,7 @@
 """The pyspec test: one parametrized test per vector case.
 
 The harness builds a request from the case on disk and submits it to the
-worker's Lean server; the server returns the driver's classify verdict. The
+worker's Lean server; the server returns the driver's classify result. The
 assertion follows the reject-faithfulness audit (`SPECS_ARCHITECTURE.md` §10.2):
 
 - `bug` (`outOfBounds` / `missingKey` on well-formed input, or a server crash) is

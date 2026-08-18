@@ -210,7 +210,7 @@ where the surviving order then feeds the equivocating-index merge. -/
 `ys`'s order with each candidate tested against the running result. So `xs` is copied as is (its
 own duplicates, if any, preserved) and `ys` contributes each new value once. Names the
 insertion-order-preserving merge `on_attester_slashing` folds new equivocators onto
-`store.equivocating_indices`. The resulting order is load-bearing: it feeds the fork-choice
+`store.equivocating_indices`. The resulting order matters: it feeds the fork-choice
 weight computation, so the fold keeps the first-seen position rather than re-sorting. -/
 @[inline] def arrayUnion {α : Type} [BEq α] (xs ys : Array α) : Array α :=
   ys.foldl (init := xs) fun acc i => if acc.contains i then acc else acc.push i

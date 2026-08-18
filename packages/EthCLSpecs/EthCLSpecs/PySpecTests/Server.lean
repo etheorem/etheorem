@@ -73,7 +73,7 @@ private def buildRequest (fields : Array String) : IO CaseRequest := do
   let inputPaths  := if fields[7]!.isEmpty then #[] else (fields[7]!.splitOn ",").toArray
   let forkBlock   := (dashToNone fields[8]!).map (·.toNat!)
   -- Optional 10th field: `execution_valid` for `operations/execution_payload` (the
-  -- mocked EL verdict); absent ⇒ `true`.
+  -- mocked EL answer); absent ⇒ `true`.
   let executionValid := (fields[9]?.getD "1") == "1"
 
   let mut inputs : Array ByteArray := #[]
@@ -191,7 +191,7 @@ private def handleForkChoice (iface : ForkInterface) (fields : Array String) : I
       | .spec (.missingKey _)    => "missing store key"
       | .spec (.decodeFailure d) => d
       | .spec (.transition te)   => reprStr te).replace "\t" " " |>.replace "\n" " "
-    -- Route the verdict through `RunError.classify` (which recurses into `.transition`), so a
+    -- Route the answer through `RunError.classify` (which recurses into `.transition`), so a
     -- nested state-transition `.todo` / `.outOfScope` reached on a fork-choice step reports as
     -- xfail / skip rather than a bug. Everything else (decode/container bug, unexpected assert,
     -- missing key, uncaught fault) is a bug on the fork-choice path; per-step `valid:false`

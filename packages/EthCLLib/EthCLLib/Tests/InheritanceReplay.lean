@@ -4,7 +4,7 @@ import EthCLLib.Spec.Forms
 # `EthCLLib.Tests.InheritanceReplay`: the inheritance-replay self-test
 
 Graduates the Phase 0.2 spike into `EthCLLib` (`PLAN.md` §0.2, §1.1 acceptance).
-It confirms the one load-bearing property of *the inheritance mechanism*: an
+It confirms the one essential property of *the inheritance mechanism*: an
 inherited caller late-binds to the **child's** override of a sibling, the
 open-recursion case a symbol-level copy or alias gets wrong.
 

@@ -13,7 +13,7 @@ author's side.
 A consensus spec sits at a small intersection. A reader fluent in the Python
 `pyspec` may not have written a Lean macro; a reader fluent in Lean may not know
 what a hash-tree-root is. This document teaches both sides as it goes. Where a
-Lean idiom is load-bearing, it gets a sentence the first time it appears; where
+Lean idiom carries the meaning, it gets a sentence the first time it appears; where
 a spec term needs grounding, it gets one too.
 
 The framework owns the plumbing. It owns the arithmetic, the SSZ machinery, the
@@ -272,8 +272,8 @@ pipeline can `inherit` it.
 
 Containers and structures follow the same two cases as functions. An unchanged one
 is `inherit`ed; a changed or new one is declared in full. There is no field-merge
-form, no append form, and no macro-level `extends`. SSZ field order is
-load-bearing for serialization and Merkleization, so a fork that changes a
+form, no append form, and no macro-level `extends`. SSZ field order decides
+the serialization and the Merkleization, so a fork that changes a
 container restates its complete field list. The order stays explicit on the page
 and checked by conformance, rather than computed from a parent by some merge rule
 the reader cannot see. A full declaration regenerates the SSZ instances over its
@@ -528,7 +528,7 @@ keeping with the project's stringly-typed-is-a-smell principle. The two exceptio
 are `assert`'s `descr` (rendered from the asserted expression's syntax) and
 `todo`'s `what`. Both are diagnostic strings, printed only on a vector mismatch and
 never branched on, since the vectors record valid-or-invalid and never a reason.
-The error *constructor* is what is load-bearing, and the pyspec harness reads
+The error *constructor* is what counts, and the pyspec harness reads
 it in its classify mode:
 
 | Constructor | Classify-mode meaning |
@@ -789,7 +789,7 @@ The access primitives are SizzLean's generic macros, used directly.
 | `sszModify state field[i]! := g` / `… as x => body` | `state.field[i] = g(state.field[i])` | read-modify-write of one path, named once; `:= g` applies a function, `as x => body` binds the current value (`fun`-free, for `{ x with … }`); sugar over `sszUpdate … := … (sszGet …)` |
 | `modifyState fun state => …` | several `state.field = …` lines | updates several fields of the threaded state at once |
 | `getStateRoot` | `hash_tree_root(state)` | the Merkle root of the threaded state, keeping the cache-warmed box (`stateRoot` returns the root with the box for a non-monadic context, `stateRoot!` discards it, terminal-only) |
-| `sszGetIdx (sszGet state F) i` / `xs[i]!` | `xs[i]` | element read; a load-bearing (data-derived) index uses `sszGetIdx`, surfacing `outOfBounds idx bound`, never a crash; a statically-bounded or `assert`-guarded index uses the total `xs[i]!` |
+| `sszGetIdx (sszGet state F) i` / `xs[i]!` | `xs[i]` | element read; a data-derived index uses `sszGetIdx`, surfacing `outOfBounds idx bound`, never a crash; a statically-bounded or `assert`-guarded index uses the total `xs[i]!` |
 
 ```lean
 def incrementSlot : StateTransition Unit := do
@@ -800,7 +800,7 @@ def checkSlot (expected : Slot) : StateTransition Unit := do
   assert (sszGet state slot == expected)
 ```
 
-Indexed access carries a deliberate split. A field projection stays pure. A load-bearing
+Indexed access carries a deliberate split. A field projection stays pure. A data-derived
 index, one a data field supplies with no structural bound, reads through `sszGetIdx` (or
 `bitlistGetIdx` for a `Bitlist`) and returns through the error channel, surfacing
 `outOfBounds idx bound` rather than a panic, with a single `liftErr` adapter joining the two
@@ -1250,7 +1250,7 @@ Seven anti-patterns the framework avoids in every definition, in order of severi
    equivalence axioms are only the concrete-bytes fallback. A spec function that
    itself calls some other extern-opaque primitive would force compiler axioms into
    every proof above it.
-5. **A load-bearing `arr[i]!` in a monadic step.** A data-derived index (a validator /
+5. **A data-derived `arr[i]!` in a monadic step.** A data-derived index (a validator /
    committee / queue index an operation supplies) with no structural bound reads through
    `sszGetIdx`, surfacing `outOfBounds idx bound` (§7), so a bad index lands in the
    `likelyBug` bucket and a proof need not unfold through the `Inhabited` default. Total

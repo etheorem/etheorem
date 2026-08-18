@@ -29,7 +29,7 @@ Lake `extern_lib` / vendored-C-build toolchain is already familiar.
 
 ## Stage 0: Cross-package linking spike
 
-**Goal.** Settle the one load-bearing unknown before any code moves: does
+**Goal.** Settle the one blocking unknown before any code moves: does
 Lake propagate a package's `extern_lib` / `moreLinkArgs` to a *dependent*
 package's link step? The answer decides whether `LeanHazmatSha256` can be
 the single OpenSSL pkg-config home (with `SizzLean` inheriting the link

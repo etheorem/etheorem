@@ -29,7 +29,7 @@ fraction of slot time on hashing.
 The Tree layer is the cache. Each `pair` node remembers its root; an
 incremental `setAt` only invalidates the spine, leaving the rest of
 the tree's roots intact. The contract, that the cached root equals
-the spec root, is the load-bearing property tested by the
+the spec root, is the property tested by the
 `TreeBackedCoherence` and `TreeBackedSetField` gates.
 
 ## Lean idioms used here

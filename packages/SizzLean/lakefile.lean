@@ -149,7 +149,7 @@ lean_lib SizzLeanTests where
 -- Each scenario's measurement column lives in its own
 -- `SizzLeanBench/Scenarios/<Name>.lean` file.
 --
--- `precompileModules := true` is load-bearing for the bench: without
+-- `precompileModules := true` is required for the bench: without
 -- it, the scenario for-loops and the `runBench` driver run as
 -- bytecode through Lean's interpreter even though `ssz_bench` is a
 -- native binary, measuring the interpreter, not the library. With

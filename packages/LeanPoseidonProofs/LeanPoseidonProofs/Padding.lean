@@ -15,7 +15,7 @@ The argument (mapped to `List` via `Array.toList_inj`): `pad xs` is
 element** is the marker `1` (if `k = 0`) or a pad `0` (if `k = 1`); since
 `1 ≠ 0`, equal outputs force equal `k`, and with the equal total length this
 forces `|xs| = |ys|`. Equal prefix lengths then strip the shared suffix
-(`List.append_inj_left`). `1 ≠ 0` is the load-bearing field fact.
+(`List.append_inj_left`). `1 ≠ 0` is the field fact the argument turns on.
 -/
 
 set_option autoImplicit false

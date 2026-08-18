@@ -74,7 +74,7 @@ spec text, so exhausting it is a work-queue item, and `todo` is the class that r
 fuel-out on a `valid: false` step would pass green on a bound we know is wrong. That is the
 same reason `decodeFailure` stays out of `StoreTransitionError.isExpectedRejection`. Both
 current call sites are `on_tick`, whose steps carry no `valid` flag and always run
-`expectedValid := true`, so no verdict rides on this today. The class keeps it that way for
+`expectedValid := true`, so nothing depends on this today. The class keeps it that way for
 the next caller. -/
 def fuelIterateM! {α : Type} {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
     [SpecReject E] (fuel : Nat) (a : α) (what : String) (step : α → m (Step α α)) : m α := do

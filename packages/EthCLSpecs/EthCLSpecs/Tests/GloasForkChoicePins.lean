@@ -177,8 +177,8 @@ example : pinEnvelopeSigBuilderOob = true := by native_decide
 
 /-! ### The execution-layer seams, refuted
 
-Both verdicts default to `true`, so every conformance vector runs the accepting branch and
-the refuting one is dead to the suite. These pin that the branch exists and that the verdict
+Both answers default to `true`, so every conformance vector runs the accepting branch and
+the refuting one is dead to the suite. These pin that the branch exists and that the answer
 comes from the seam: the same call under the two instances, once each way. `pinRecordRefuted`
 does this for Heze's FOCIL gate; this is the pair for Gloas's two.
 
@@ -187,7 +187,7 @@ every other assert on the envelope path, so a handler-level pin would match on a
 shares with the asserts around it and pass whether or not the seam was consulted. The
 handler wiring is a one-line `assert` over the wrapper each pin drives. -/
 
-/-- The pair of engine verdicts under the optimistic default. Pure `Bool`s off the seam, no
+/-- The pair of engine answers under the optimistic default. Pure `Bool`s off the seam, no
 hashing, so kernel `#guard` closes them. -/
 private def pinEngineOptimistic : Bool × Bool :=
   letI : Preset := minimal

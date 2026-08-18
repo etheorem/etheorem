@@ -45,11 +45,11 @@ exercises it, and the pyspec conformance runs answer every engine call through t
 `is_inclusion_list_satisfied = true` default, so the discriminating `false` branch is
 otherwise dead code. This pin drives the predicate on a minimal `Store` directly; the four
 verified/recorded combinations are enumerated one per `#guard` below, each with its expected
-verdict beside it. Everything is hash-free (`is_payload_verified` is a `payloads` membership
+answer beside it. Everything is hash-free (`is_payload_verified` is a `payloads` membership
 test, no `htr`), so kernel `#guard` per the hash-tactic rule.
 
 The pin fixes the recorded bit by hand rather than through the engine, so the
-`isInclusionListSatisfied` verdict itself is out of its reach; `pinRecordRefuted` below
+`isInclusionListSatisfied` answer itself is out of its reach; `pinRecordRefuted` below
 drives that refuting branch through the record path into this gate. -/
 
 /-- The pins' concrete fork-choice monad: the minimal preset over the deterministic
@@ -88,42 +88,42 @@ private def pinPilsStore (payloadPresent : Bool) (recorded : Option Bool) :
       | none   => FcMap.empty
     inclusionListStore := InclusionListStore.empty }
 
-/-- What `pinPils` observed: the predicate's verdict, or which class of throw rejected it.
+/-- What `pinPils` observed: the predicate's answer, or which class of throw rejected it.
 
 Naming the class is the point. Folding every `.error` to a single marker pins only *that* a
 throw happened, so a regression from the spec's `assert` to an uncaught `.missingKey` would
 still satisfy the pin, and that swap is exactly the difference between a faithful rejection and
 a bug. `pinCommitteeThrows` below holds the same line from the other side, asserting a reject is
 *not* an expected rejection. -/
-private inductive PilsVerdict where
+private inductive PilsAnswer where
   /-- The predicate ran clean and answered `b`. -/
-  | verdict (b : Bool)
+  | answer (b : Bool)
   /-- The spec's `assert root ∈ payload_inclusion_list_satisfaction` fired: the expected reject. -/
   | assertReject
   /-- Any other throw (a bare `.missingKey` read, a decode miss). Never expected at this gate. -/
   | otherReject
   deriving DecidableEq
 
-/-- The predicate's verdict on `pinPilsStore payloadPresent recorded`. The `letI`s re-supply the
+/-- The predicate's answer on `pinPilsStore payloadPresent recorded`. The `letI`s re-supply the
 preset / hasher the `forkdef` parameters want (Lean re-synthesizes them rather than reading the
 store's fixed type), the same pattern the `InclusionListStore` pins in this file use. -/
-private def pinPils (payloadPresent : Bool) (recorded : Option Bool) : PilsVerdict :=
+private def pinPils (payloadPresent : Bool) (recorded : Option Bool) : PilsAnswer :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let store := pinPilsStore payloadPresent recorded
   -- Run the predicate concretely and match on *which* reject fired: `.assert` is the spec's
   -- own guard, anything else is our bug.
   match (isPayloadInclusionListSatisfied (map := treeMap) store pinPilsRoot : PinM Bool).run store with
-  | .ok b _              => .verdict b
+  | .ok b _              => .answer b
   | .error (.assert _) _ => .assertReject
   | .error _ _           => .otherReject
 
 -- verified + recorded `false` ⇒ `false` (do not extend this payload).
-#guard pinPils true (some false) = .verdict false
+#guard pinPils true (some false) = .answer false
 -- verified + recorded `true` ⇒ `true`.
-#guard pinPils true (some true) = .verdict true
+#guard pinPils true (some true) = .answer true
 -- unverified (root ∉ payloads) ⇒ `false`, even with the satisfaction bit recorded `true`.
-#guard pinPils false (some true) = .verdict false
+#guard pinPils false (some true) = .answer false
 -- verified but no recorded entry ⇒ the spec's `assert root ∈ payload_inclusion_list_satisfaction`
 -- now *rejects* (a state the invariant rules out) rather than reading a `lookupD` default. The
 -- `.assertReject` (over a bare "it threw") is what a regression to `.missingKey` would break.
@@ -131,14 +131,14 @@ private def pinPils (payloadPresent : Bool) (recorded : Option Bool) : PilsVerdi
 -- unverified AND no recorded entry ⇒ still the spec's assert, because
 -- `assert root in store.payload_inclusion_list_satisfaction` precedes the verified check
 -- (`heze/fork-choice.md:199-212`). A model that tested `is_payload_verified` first would answer
--- `.verdict false` here, and the other three quadrants could not tell the difference.
+-- `.answer false` here, and the other three quadrants could not tell the difference.
 #guard pinPils false none = .assertReject
 
 /-! ### Build-enforced pins (vectorless): the FOCIL fork-choice helpers
 
 `get_inclusion_list_due_ms`, `record_payload_inclusion_list_satisfaction`, and `on_inclusion_list`
 ship no conformance vector either. These drive them end-to-end so a future edit can't regress them
-silently: the deadline constant, the recorded EL verdict, and the timeliness bit `on_inclusion_list`
+silently: the deadline constant, the recorded EL answer, and the timeliness bit `on_inclusion_list`
 threads into `process_inclusion_list`. -/
 
 /-- `get_inclusion_list_due_ms = INCLUSION_LIST_DUE_BPS * SLOT_DURATION_MS // BASIS_POINTS`. Under
@@ -189,13 +189,13 @@ private def pinPopulatedState : @EthCLSpecs.Heze.BeaconState minimal :=
   let vals := (Array.replicate Const.slotsPerEpoch activeValidator).foldl (·.push ·) base.validators
   { base with slot := 1, validators := vals }
 
-/-- `record_payload_inclusion_list_satisfaction` records the engine verdict at `root`: with
+/-- `record_payload_inclusion_list_satisfaction` records the engine answer at `root`: with
 the optimistic default (`isInclusionListSatisfied = true`) it writes `true`. `slot := 1` clears the
 `state.slot != 0` underflow throw, and the populated validator set (`pinPopulatedState`)
 gives `slot - 1` a non-empty beacon committee, so the record path runs end-to-end through
-`getInclusionListCommittee` without hitting its empty-committee throw. The recorded verdict is
+`getInclusionListCommittee` without hitting its empty-committee throw. The recorded answer is
 `true` regardless of the required transactions (the optimistic oracle ignores `ilTxs`), so what
-this pin fixes is the record path writing the verdict at the right key.
+this pin fixes is the record path writing the answer at the right key.
 
 Lean mechanics: the forkdef wants the boxed `State` (`State = SSZ.Box HasherTag.H
 BeaconState`), so `state` is a `FastBox` of `pinPopulatedState`. `FastBox` is
@@ -212,13 +212,13 @@ private def pinRecordSatisfied : Option Bool :=
   | .error _ _  => none
 example : pinRecordSatisfied = some true := by native_decide
 
-/-- The recorded verdict and the gate's answer, or the reject that fired. Keeping `threw`
+/-- The recorded bit and the gate's answer, or the reject that fired. Keeping `threw`
 separate is the whole point: the *gate* arm is where a tuple collapses, since a throw from
 `isPayloadInclusionListSatisfied` would hand back `(some false, false)`, byte-identical to the
 legitimate refusal this pin exists to check. The record-path arm was already distinguishable
 (`(none, false)`); this makes both so. -/
-private inductive RecordVerdict where
-  /-- The record path completed: the stored bit and the gate's verdict. -/
+private inductive RecordAnswer where
+  /-- The record path completed: the stored bit and the gate's answer. -/
   | recorded (value : Option Bool) (gate : Bool)
   /-- Either the record path or the gate rejected. -/
   | threw
@@ -229,10 +229,10 @@ private inductive RecordVerdict where
 default (`EthCLLib.Spec.Engine` documents the design). The record path writes `false` at a
 *verified* `root`, and `isPayloadInclusionListSatisfied` then refuses to extend it. That
 covers the branch every conformance vector leaves dead, end-to-end: oracle → recorded
-verdict → gate. `pinPilsStore true none` puts `root ∈ payloads`, so the membership check
+answer → gate. `pinPilsStore true none` puts `root ∈ payloads`, so the membership check
 passes and the recorded bit is what decides. `State` is FFI-backed (`FastBox`), so
 `native_decide`. -/
-private def pinRecordRefuted : RecordVerdict :=
+private def pinRecordRefuted : RecordAnswer :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag

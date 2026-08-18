@@ -1,7 +1,7 @@
 """The ssz_generic pyspec test: one parametrized test per vector case.
 
 The harness builds a request from the case on disk and submits it to the worker's
-`ssz_generic_runner`; the runner returns its classify verdict. The assertion
+`ssz_generic_runner`; the runner returns its classify result. The assertion
 follows the same model as the EthCLSpecs harness:
 
 - a shape outside SizzLean's `SSZType` universe (the progressive / stable /
