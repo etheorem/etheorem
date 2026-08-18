@@ -24,8 +24,13 @@ in a `mutual` block, same shape as `Spec/Serialize.lean`'s
 * **`bitlist cap`**: `⌈(cap + 1)/8⌉`, the `+1` is the trailing
   delimiter bit. See `Spec/Serialize.lean`'s `bitlistToBytes`.
 * **`vector t n`**: `n` elements, each at most `maxByteLength t`.
+  If `t` is variable-size the wire form also carries an offset
+  table, so the bound is `n * (BYTES_PER_LENGTH_OFFSET +
+  maxByteLength t)` rather than `n * maxByteLength t`.
 * **`list t cap`**: `cap` elements (the *cap*, not the actual length,
-  this is a static upper bound), each at most `maxByteLength t`.
+  this is a static upper bound), each at most `maxByteLength t`,
+  plus the same per-element offset-table term when `t` is
+  variable-size.
 * **`container fs`**: sum of per-field contributions. Fixed-size
   fields contribute their own `maxByteLength`. Variable-size fields
   contribute `BYTES_PER_LENGTH_OFFSET + maxByteLength` (one
@@ -52,8 +57,12 @@ from the schema `s`. -/
 def SSZType.maxByteLength : SSZType → Nat
   | .uintN n      => (n + 7) / 8
   | .bool         => 1
-  | .vector t n   => SSZType.maxByteLength t * n
-  | .list t cap   => cap * SSZType.maxByteLength t
+  | .vector t n   =>
+      if t.isFixedSize then SSZType.maxByteLength t * n
+      else n * (BYTES_PER_LENGTH_OFFSET + SSZType.maxByteLength t)
+  | .list t cap   =>
+      if t.isFixedSize then cap * SSZType.maxByteLength t
+      else cap * (BYTES_PER_LENGTH_OFFSET + SSZType.maxByteLength t)
   | .bitvector n  => (n + 7) / 8
   | .bitlist cap  => (cap + 1 + 7) / 8
   | .container fs => SSZType.maxByteLengthFields fs

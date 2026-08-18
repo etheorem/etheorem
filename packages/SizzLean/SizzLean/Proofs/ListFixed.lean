@@ -113,7 +113,8 @@ theorem decode_encode_listFixed
   simp only [h_arr_sz, dite_true]
 
 /-- Size bound for `.list t cap`. `(serialize …).size = xs.val.size * sz`;
-`maxByteLength = cap * maxByteLength t`.
+`maxByteLength = cap * maxByteLength t` (the fixed-element
+branch of the bound).
 
 For the empty list (`xs.val.size = 0`) the bound is trivial: LHS
 is 0. For a non-empty list, we use `xs.val[0]` to derive
@@ -139,7 +140,7 @@ theorem encode_size_le_max_listFixed
     rw [serializeFixedElems_size_aux t t.fixedByteSize h_size_t xs.val.toList, h_list_len]
   rw [h_size]
   show xs.val.size * t.fixedByteSize ≤ SSZType.maxByteLength (.list t cap)
-  simp only [SSZType.maxByteLength]
+  simp only [SSZType.maxByteLength, h_t_fixed, if_true]
   -- Case-split on `xs.val.size = 0` to avoid needing an `Inhabited` instance.
   by_cases h_empty : xs.val.size = 0
   · rw [h_empty]; simp
