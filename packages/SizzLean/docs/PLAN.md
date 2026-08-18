@@ -247,7 +247,7 @@ spec functions in Phase 3.
 The cached Merkle-tree work (`Tree`, `TreeBacked`) that originally
 lived here as the "production-primitives track" has moved to
 Phase 4. It's a *performance* layer, asserted equivalent to the
-spec rather than load-bearing for correctness, so it earns its
+spec rather than required for correctness, so it earns its
 keep after empirical conformance validates the spec it sits on
 top of. Same "validate first, then build" principle the proof
 work in Stage 18 follows.
@@ -438,7 +438,7 @@ several independent satellites:
   serialise. `Node` is the library; `setAt` works on it; `TreeBacked`
   is the user-facing scaffold (14a); `Node.ofShape` makes the cache
   *useful* (14b); cached `setField` / `setIndex` (14c) is the
-  load-bearing operation; **`sszUpdate t with f := v, g := w`
+  central operation; **`sszUpdate t with f := v, g := w`
   syntax (14d)** ships the ergonomic surface plus a per-statement
   batched walker (`setManyAt`). This whole chain lands before any
   perf work because the perf optimisations in Stage 17 all assume
@@ -964,7 +964,7 @@ gates moved from `packages/SizzLean/SizzLeanTests/` to a *separate*
 `lean_lib SizzLeanTests` at namespace `Tests.*`.
 Default `lake build` builds only the library proper (the
 in-file NIST §B gates in `Hasher/Sha256Spec.lean` plus structural
-lemmas stay there, they're load-bearing for the spec's
+lemmas stay there, they're required for the spec's
 correctness at definition time). `lake build SizzLeanTests`
 runs the full empirical suite (CAVP, randomised property tests,
 `TreeBacked` coherence sweeps). Lets day-to-day iteration stay

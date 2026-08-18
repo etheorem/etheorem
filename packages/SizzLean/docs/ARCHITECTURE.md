@@ -718,8 +718,8 @@ common case of "fix one hasher across many content types" becomes
 
 The two type names are *the same type* (`CachedSSZ` is an `abbrev`
 over `TreeBacked`). `TreeBacked` is the *internal* spelling used
-inside `packages/SizzLean/SizzLean/Cache/TreeBacked.lean` where the Merkle tree is
-load-bearing (gindex paths, `setManyAt` walker, cache slots);
+inside `packages/SizzLean/SizzLean/Cache/TreeBacked.lean` where the Merkle tree does
+the work (gindex paths, `setManyAt` walker, cache slots);
 `CachedSSZ` is the *external* spelling the library presents to
 users who care about "a cached SSZ value" and not the underlying
 tree. The update surface `sszUpdate` lives under `packages/SizzLean/SizzLean/Cache/`
@@ -1304,7 +1304,7 @@ graph LR
   invariant maintained by smart constructors, not a kernel-checked
   proposition).
 - The deriving handler's emitted iso (it produces `rfl` proofs, which
-  *are* kernel-checked; the metaprogramming itself is not load-bearing).
+  *are* kernel-checked; the metaprogramming itself is not trusted).
 - Eth-types instances (just `deriving SSZRepr` on plain structures).
 - Conformance vectors (test data; their results funnel through
   `native_decide` so each *axiom* is in TCB, but the vectors themselves
@@ -1456,10 +1456,10 @@ This document is binding on layout and dependencies. CLAUDE.md is binding
 on style and discipline: imports first; `set_option autoImplicit false`
 per file; PascalCase for types, lowerCamelCase for defs; namespacing
 under `SizzLean.*`; no committed `#eval` / `#check` / `#print`
-(`example : … := by …` and `#guard` are the load-bearing alternatives);
+(`example : … := by …` and `#guard` are the alternatives);
 structural recursion or `termination_by` over `partial def`.
 
-The load-bearing convention specific to this library is **literate by
+The main convention specific to this library is **literate by
 default**:
 
 - Every `*.lean` file under `SizzLean/` opens with a `/-! … -/` module

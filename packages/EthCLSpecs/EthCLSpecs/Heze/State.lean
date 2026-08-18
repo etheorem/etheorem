@@ -7,7 +7,7 @@ At alpha.11 Heze does not change `BeaconState`, so `inherit BeaconState` replays
 field block here unchanged. `state_preamble` declares the boxed `State` and `modifyState`.
 The `Containers.InclusionList` import is the load-order entry: it transitively pulls
 `Heze.Inherited` (the inherited containers) and the `fork Heze from Gloas` lineage that
-`inherit` resolves against. It is load-bearing; do not drop it.
+`inherit` resolves against. It is required; do not drop it.
 -/
 
 set_option autoImplicit false

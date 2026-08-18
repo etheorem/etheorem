@@ -115,7 +115,7 @@ the two sides are definitionally equal; `rfl` is rejected by
 elaboration otherwise. Type equality is propositional (not
 `Decidable`) in Lean 4, so the `example := rfl` form is the
 correct idiom here; CLAUDE.md explicitly lists it as the
-load-bearing alternative to forbidden
+alternative to forbidden
 `#eval` / `#check` / `#print`.
 
 Under the hood, `rfl` here is `@rfl Type (SSZType.interp …)`. Lean

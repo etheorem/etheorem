@@ -13,7 +13,7 @@ and the outcome is classified into one of the error model's buckets.
 The reject-faithfulness audit (`SPECS_ARCHITECTURE.md` §10.2) is encoded in
 `classify`:
 
-| Vector | Result | Verdict |
+| Vector | Outcome | Result |
 |---|---|---|
 | valid (`post` present) | root matches | pass |
 | valid | any error, or wrong root | fail |
@@ -54,7 +54,7 @@ structure CaseRequest where
   caseMeta : CaseMeta
   deriving Inhabited
 
-/-- The driver's verdict for one case. `passed` is whether the outcome matched
+/-- The driver's result for one case. `passed` is whether the outcome matched
 the vector's valid/invalid marking; `bucket` is the reporting bucket (a passing
 case is `passing` or `expectedRejection`; a failure carries its smell); `flagged`
 marks an invalid vector rejected by a bug-smell rather than a clean `assert`. -/

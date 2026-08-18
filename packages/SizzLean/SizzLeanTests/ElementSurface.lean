@@ -13,7 +13,7 @@ Two groups:
   so the three reads behave like `Array`'s: `xs[i]'h` reads with an in-bounds
   proof, `xs[i]?` is a real bounds check (`none` past the end), and `xs[i]!`
   returns the element type's `default` past the end. The `?` / proof forms are
-  the load-bearing gate here: the previous `fun _ _ => True` predicate made
+  the real gate here: the previous `fun _ _ => True` predicate made
   `xs[i]?` *always* `some`, so a past-the-end read never reported `none`.
 * **Collection surface.** `toArray` / `toList` / `foldl` / `map` / `mapCap` / `push` /
   `any` / `all` / `findIdx?` / `contains` and the `for x in xs` (`ForIn`) loop on

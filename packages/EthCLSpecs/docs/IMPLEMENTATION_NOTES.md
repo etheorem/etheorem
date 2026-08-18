@@ -209,7 +209,7 @@ with no G1 add/neg and no precomputed-aggregate dependency.
 ## Engine seam
 
 `EthCLLib.Spec.Engine` is the execution-layer sibling of the crypto seam: a spec
-function whose verdict belongs to an external execution client routes through a
+function whose answer belongs to an external execution client routes through a
 typeclass. Unlike `CryptoBackend` these ship a global default, the optimistic instance
 answering the constant `true` (the seam table in `FRAMEWORK_ARCHITECTURE.md` §1). A
 local `letI` overrides it.
@@ -256,7 +256,7 @@ runner selects fork × preset (`pyspec_server [fork] [preset]`).
 ## State access, indexing, and the error model
 
 Reads and writes go through `sszGet` / `sszUpdate`. The index accessor is chosen by three
-questions: is the index _load-bearing_ (data-derived and not otherwise bounded), has a
+questions: is the index _data-derived_ (supplied by a data field and not otherwise bounded), has a
 validation already proved it in range, and is a reject channel in scope (a monadic step or
 an `Except` query) at the read.
 
@@ -577,15 +577,15 @@ MIN_VALIDATOR_WITHDRAWABILITY_DELAY < 2^64` before the write, so an over-range c
   `sanity/blocks`. The timestamp is `compute_time_at_slot(state, state.slot)`, the
   millisecond form every other clock site in the tree reads, and the standalone
   `operations/execution_payload` format threads the
-  test's `execution.yaml` engine verdict via `CaseMeta.executionValid` to model an
+  test's `execution.yaml` engine answer via `CaseMeta.executionValid` to model an
   engine rejection. The blob-parameter bound is enforced where the operation format
   supplies it. The skip is safe for the in-scope corpus by audit, not just by
   assumption: every invalid `sanity/blocks` / `finality` / `random` case (82, across
   both presets and both forks) rejects through a consensus `assert` the in-block
   pipeline models, signatures, blob-count limits, payload-attestation checks, the
   execution-requests root, slot / parent consistency, duplicate operations, the state
-  root, so none reaches a clean run that an engine verdict alone would have rejected.
-  An invalid block that depended on the engine verdict would run clean and surface as a
+  root, so none reaches a clean run that an engine answer alone would have rejected.
+  An invalid block that depended on the engine answer would run clean and surface as a
   `likelyBug` "expected a rejection but ran clean", not a silent pass.
 
 `CryptoBackend.aggregatePubkeys` exists because `get_next_sync_committee` needs BLS
@@ -665,7 +665,7 @@ and the diff is confined to the fork-choice inclusion-list layer. FOCIL ships no
 behavioral conformance vector at the alpha.11 pin, so the divergences below are anchored
 to the pinned spec text and the `EthCLSpecs/Heze/ForkChoice.lean` pins.
 
-- **`is_inclusion_list_satisfied`** (`heze/fork-choice.md:54-62`) defers its verdict to
+- **`is_inclusion_list_satisfied`** (`heze/fork-choice.md:54-62`) defers its answer to
   `ExecutionEngine.is_inclusion_list_satisfied`, an Engine-API call against an external
   execution client. This harness has no execution layer, so the call goes through the
   `[ExecutionEngine]` typeclass (the Engine seam above), whose default instance answers
@@ -756,7 +756,7 @@ was a real reject-faithfulness gap until set per preset:
 `pyspec_server` is a long-lived, crash-tolerant loop (a malformed request reports failed
 and the loop continues), one per `pytest-xdist` worker via the `conftest.py` session
 fixture (re-spawn on death). `harness.py` does acquisition / walk / snappy / request
-encoding; `test_pyspec.py` is the reject-faithfulness verdict. The server emits one
+encoding; `test_pyspec.py` is the reject-faithfulness check. The server emits one
 tab-separated line per case, so two detail sources that could embed a newline and
 desync the worker are flattened at the chokepoint: `EthCLLib.Spec.sanitizeDescr` takes
 the first trimmed line of an `assert` descriptor, and `CaseResult.render` flattens any

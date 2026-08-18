@@ -832,7 +832,7 @@ forkdef verifyExecutionPayloadEnvelopeSignature (state : State) (signedEnv : Sig
   pure (blsVerify pubkey signingRoot signedEnv.signature)
 
 -- The envelope path crosses the execution layer twice: `verify_and_notify_new_payload`
--- inside the verification, and `is_data_available` at the handler. Both verdicts belong to
+-- inside the verification, and `is_data_available` at the handler. Both answers belong to
 -- something outside the vector, so both enter through the framework seams in
 -- `EthCLLib.Spec.Engine` (which carries the optimistic-default rationale for each) rather
 -- than being written as constants here. Scoped to the two declarations that need them; at
@@ -841,7 +841,7 @@ section EngineSeam
 variable [ExecutionEngine ExecutionPayload Transaction ExecutionRequests] [DataAvailability]
 
 /-- `verify_and_notify_new_payload(new_payload_request)` (`gloas/fork-choice.md:657-666`):
-the EL's verdict on the revealed payload. Reads the `[ExecutionEngine]` seam; the trust
+the EL's answer on the revealed payload. Reads the `[ExecutionEngine]` seam; the trust
 boundary and the always-`true` default are documented on `EthCLLib.Spec.ExecutionEngine`,
 including why the commitments reach it unmapped by
 `kzg_commitment_to_versioned_hash`. -/
@@ -859,14 +859,14 @@ forkdef verifyAndNotifyNewPayload (payload : ExecutionPayload)
 /-- `is_data_available(beacon_block_root)` (`gloas/fork-choice.md:243-257`): whether the
 block's column sidecars retrieve and verify. Gloas modified the Fulu signature to take a
 root and retrieve the sidecars itself, through a function the spec marks implementation
-and context dependent, so the verdict reads the `[DataAvailability]` seam. Fulu's own
+and context dependent, so the answer reads the `[DataAvailability]` seam. Fulu's own
 `isDataAvailable` is unaffected: it is handed the columns the step lists and checks them
 for real. -/
 forkdef isDataAvailable (beaconBlockRoot : Root) : Bool :=
   DataAvailability.isDataAvailable beaconBlockRoot
 
 /-- `verify_execution_payload_envelope`: the consensus-side envelope checks, closing with
-the EL's `verify_and_notify_new_payload` verdict. Returns the cache-warmed
+the EL's `verify_and_notify_new_payload` answer. Returns the cache-warmed
 state (the `hashTreeRoot` computed for the block-root check) in
 `Except StoreTransitionError`; the handler stores it back so the warm tree is kept
 rather than thrown away. -/
@@ -900,7 +900,7 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
   assert (payload.timestamp == expectedTime)
   assert (htr payload.withdrawals == htr (sszGet state payloadExpectedWithdrawals))
 
-  -- The EL verdict, last as in the spec. `bid.blobKzgCommitments` supplies the request's
+  -- The EL answer, last as in the spec. `bid.blobKzgCommitments` supplies the request's
   -- versioned hashes (unmapped, see the seam's docstring); the parent root and the
   -- execution requests come off the envelope.
   assert (verifyAndNotifyNewPayload payload bid.blobKzgCommitments.toArray

@@ -15,7 +15,7 @@ siblings by section title so the links resolve.
 A consensus spec sits at a small intersection. A reader fluent in the Python
 `pyspec` may not have written Lean; a reader fluent in Lean may not know what
 `process_epoch` does. This document teaches both sides as it goes. Where a spec
-term needs grounding it gets a sentence; where a Lean idiom is load-bearing it
+term needs grounding it gets a sentence; where a Lean idiom carries the meaning it
 gets one too.
 
 The thesis it earns: the spec author writes consensus logic and nothing else.
@@ -424,8 +424,8 @@ container front-end owns why these stay non-SSZ.
 
 Fork-incremental declaration follows two cases, the same two that functions follow.
 An unchanged container is `inherit`ed, not rewritten in the fork. A changed or new
-one is declared in full. There is no append form. SSZ field order is load-bearing
-for serialization and Merkleization, so a fork that changes a container restates
+one is declared in full. There is no append form. SSZ field order decides the serialization
+and the Merkleization, so a fork that changes a container restates
 its complete field list explicitly on the page, checked by conformance, rather
 than merging onto a parent by a rule the reader cannot see.
 
@@ -904,7 +904,7 @@ not built. Both presets run; mainnet runs on demand rather than on every CI pass
 
 The audit reads the classify-mode bucket of the error model against each vector's
 valid-or-invalid marking. The vectors are the operational reference, so matching the
-verdict is necessary but not sufficient; the audit checks that the spec rejects at
+answer is necessary but not sufficient; the audit checks that the spec rejects at
 the same point and for the same reason the upstream pyspec does.
 
 | Vector marking | Faithful result | A failure |

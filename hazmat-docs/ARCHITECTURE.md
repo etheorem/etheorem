@@ -497,11 +497,11 @@ This document is binding on layout and dependencies for the LeanHazmat family.
 CLAUDE.md is binding on style and discipline: imports first; `set_option
 autoImplicit false` per file; PascalCase for types, lowerCamelCase for defs;
 namespacing under `LeanHazmat.<Family>`; no committed `#eval` / `#check` / `#print`
-(`example : … := by …` and `#guard` are the load-bearing alternatives);
+(`example : … := by …` and `#guard` are the alternatives);
 structural recursion or `termination_by` over `partial def`. Where the two
 overlap, CLAUDE.md wins on form and this document wins on architectural substance.
 
-The load-bearing convention is **literate by default**:
+The main convention is **literate by default**:
 
 - Every `*.lean` file opens with a `/-! … -/` module docstring framing it for a
   reader who knows one side of the FFI/crypto divide but not the other.

@@ -310,7 +310,7 @@ def build_request(case: Case, tmpdir: Path) -> str:
     blocks_count = int(meta.get("blocks_count", len(blocks)))
     fork_epoch = meta.get("fork_epoch", None)
     fork_block = meta.get("fork_block", None)
-    # operations/execution_payload carries the execution-engine verdict in execution.yaml.
+    # operations/execution_payload carries the execution-engine answer in execution.yaml.
     execution_valid = 1
     if case.runner == "operations" and case.handler == "execution_payload":
         ev_path = case.path / "execution.yaml"

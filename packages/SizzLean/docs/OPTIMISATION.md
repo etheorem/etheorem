@@ -346,7 +346,7 @@ element.
 
 ### Coherence invariant and its safety net
 
-The single load-bearing invariant on the cache layer:
+The single invariant on the cache layer:
 
 > For every `t : TreeBacked H T`, `t.hashTreeRootCached =
 > SSZ.hashTreeRoot H t.view`.

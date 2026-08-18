@@ -62,7 +62,7 @@ structure CaseMeta where
   pre-fork block. `none` ⇒ every block is post-fork. -/
   forkBlock : Option Nat := none
   /-- `execution.yaml`'s `execution_valid` for `operations/execution_payload`: the
-  mocked execution-engine verdict. `true` for every other format. -/
+  mocked execution-engine answer. `true` for every other format. -/
   executionValid : Bool := true
   deriving Inhabited, Repr
 

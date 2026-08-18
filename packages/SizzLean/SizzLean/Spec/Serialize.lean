@@ -16,7 +16,7 @@ Per spec *§Serialization, Basic types*, every multi-byte integer
 carries the eight least-significant bits. `uint16LE`, `uint32LE`,
 `uint64LE` below emit exactly this layout.
 
-## Container offset arithmetic: the load-bearing fiddly bit
+## Container offset arithmetic: the fiddly bit
 
 A container with fields `f₁..fₖ` is encoded as a *fixed-size prefix*
 followed by a *variable-size body region*. Each fixed-size field

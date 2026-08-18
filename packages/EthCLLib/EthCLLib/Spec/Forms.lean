@@ -89,7 +89,7 @@ def elabForkdef : CommandElab := fun stx => do
 /-- `forkabbrev name … := …`, shaped exactly like `abbrev`. Used for the fork's
 type aliases (`Slot`, `Gwei`, `Root`, …) and for every `Const` entry.
 
-The abbrev-ness is load-bearing, not cosmetic: `@[reducible]` is what lets
+The abbrev-ness does real work here: `@[reducible]` is what lets
 SSZRepr instance synthesis see through `Root` to `Vector UInt8 32`, and what lets
 a symbolic list cap `Const.validatorRegistryLimit` reduce to a literal once a
 concrete `Preset` is injected. Replay re-emits an `abbrev` for the same reason. -/

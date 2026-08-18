@@ -237,7 +237,7 @@ parameterised exactly like the structure. The binder name is the
 parameter's `userName`, which is also how the field-type Syntax below
 refers to it (delaboration renders an fvar by its `userName`), so the
 two line up by name on re-elaboration. Preserving `[]` for an instance
-parameter (e.g. `[Preset]`) is load-bearing: it keeps that parameter a
+parameter (e.g. `[Preset]`) is required: it keeps that parameter a
 *local instance* so the field shapes' preset-resolved projections and
 any nested `SSZRepr` synthesis still find it.
 

@@ -759,7 +759,7 @@ This document is binding on layout and dependencies. CLAUDE.md is binding
 on style and discipline: imports first; `set_option autoImplicit false`
 per file; PascalCase for types, lowerCamelCase for defs; namespacing under
 `LeanPoseidon.*` (and `LeanPoseidonProofs.*`); no committed `#eval` / `#check` /
-`#print` (`example : … := by …` and `#guard` are the load-bearing
+`#print` (`example : … := by …` and `#guard` are the
 alternatives); structural recursion or `termination_by` over `partial def`.
 
 **Literate by default.** Every `*.lean` file opens with a `/-! … -/`

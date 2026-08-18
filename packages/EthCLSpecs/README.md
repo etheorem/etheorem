@@ -95,7 +95,7 @@ the lineage edge.
 
 **Validated against the real vectors.** The full in-scope suite passes at both
 the `minimal` and `mainnet` presets, for all three forks (Fulu, Gloas, Heze),
-pinned to release `v1.7.0-alpha.11`. The verdict model is honest. An out-of-range read or a crash
+pinned to release `v1.7.0-alpha.11`. The error model is honest. An out-of-range read or a crash
 is a hard failure, and an unimplemented branch is a visible `xfail`. Every
 passing vector reflects a real match or a faithful rejection.
 
