@@ -337,9 +337,78 @@ sets; Fulu is authored as the accumulated base.
 - Don't bump `lean-toolchain` casually, it cascades through CI and any deps.
 - Don't leave `sorry` in committed code without a `TODO` and a tracking note.
 
-## Writing Style & Structural Constraints for Documentation
+## Writing Style & Structural Constraints
 
-Applies to comments in code and in other documentation files. Also, when writting in github issues and PRs.
+Covers every word you write for this project: comments in code,
+documentation files, commit messages, GitHub issues and PRs, and replies to
+the user in conversation. One standard everywhere, so prose does not change
+register when it moves from a chat reply into a docstring.
+
+### Simplified Technical English
+
+Write Simplified Technical English. The working core of it:
+
+- **One word, one meaning.** Pick a term for a thing and keep it. `container`,
+  `chunk`, `merkleization`, `fork body` mean what the spec and the
+  ARCHITECTURE docs say they mean, in every file. Do not reach for a synonym
+  to avoid repeating a word.
+- **One instruction per sentence.** Split a sentence that carries two
+  independent claims.
+- **Short sentences.** Twenty words is a good limit for a statement, and
+  twenty-five for a description. Longer needs a reason.
+- **Say who acts.** Name the subject that performs the action: "the deriving
+  handler emits the instance", "the driver replays the vector".
+- **Keep the articles.** Write "the cache layer", not "cache layer".
+- **No noun stacks.** Three nouns in a row is the limit. Break "beacon state
+  transition test vector driver" into a phrase with a preposition.
+
+### Orwell's six rules
+
+From *Politics and the English Language*, and they outrank any stylistic
+instinct to the contrary:
+
+1. Never use a metaphor, simile, or other figure of speech which you are
+   used to seeing in print.
+2. Never use a long word where a short one will do.
+3. If it is possible to cut a word out, always cut it out.
+4. Never use the passive where you can use the active.
+5. Never use a foreign phrase, a scientific word, or a jargon word if you
+   can think of an everyday English equivalent.
+6. Break any of these rules sooner than say anything outright barbarous.
+
+Rule 5 does not ban this project's vocabulary. Four domains meet here, and
+each brings terms that no everyday word replaces:
+
+- **Lean and type theory:** `defeq`, `whnf`, `motive`, `elaborator`,
+  `reducible`, `opaque`, `typeclass`, `instance`, `coercion`, `universe`,
+  `olean`, `axiom`, `kernel`, `termination_by`. Metaprogramming `splice`
+  (the `$x` in a syntax quotation) belongs here too.
+- **SSZ:** `merkleization`, `hashTreeRoot`, `chunk`, `zero hash`,
+  `generalized index`, `offset`, `bitlist`, `bitvector`, `container`,
+  `selector`, `mix_in_length`, `fixed-size` / `variable-size`.
+- **Consensus specs:** `slot`, `epoch`, `checkpoint`, `attestation`,
+  `committee`, `validator`, `withdrawal`, `churn limit`, `justification`,
+  `finalization`, `shuffling`, `RANDAO`, `Gwei`, `preset`, `pyspec`, and
+  the fork names.
+- **Crypto and FFI:** `FFI`, `@[extern]`, `shim`, `boxed` / `unboxed`,
+  `endianness`, `blst`, `c-kzg`, `BLS12-381`, `G1` / `G2`, `pairing`,
+  `field element`, `commitment`, `trusted setup`, `TCB`, `hazmat`.
+
+The repo's own terms of art stay as well, and they mean one thing each:
+`seam` (a typeclass the fork body calls out through), `tier`, `pin`,
+`gate`, `fixture`, `conformance`, `differential test`, `oracle`.
+
+Rule 5 bans the jargon that replaces a plain word for no gain. Examples,
+and the list is open: `ride along`, `ride on`, `load-bearing`, `sanctioned`
+(write "allowed"), `verdict` (write "result"), `plumbing`, `baked in`,
+`escape hatch`, `under the hood`, `blast radius`, `paper over`, `canary`.
+It also bans borrowed Latin (`inter alia`, `a priori`, `vice versa`) where
+English does the job.
+
+Rule 6 is the only exemption, and it is narrow. Clarity outranks the other
+five. A passive is right when the actor is unknown or beside the point
+("the block was rejected by the gate" reads worse than "the gate rejected
+the block", but "the `.olean` is rebuilt on every toolchain bump" is fine).
 
 ### Sentence Construction (Hard Enforcement)
 
