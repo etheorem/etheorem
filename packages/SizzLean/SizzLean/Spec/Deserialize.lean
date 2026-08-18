@@ -171,15 +171,23 @@ the head of a *variable-size-element collection* (`vector` / `list`
 wire form is `[ off₀ off₁ … off_{n-1} | body₀ body₁ … ]`, where each
 `off_i` is a `uint32`-LE and the count `n` is recovered from
 `off₀ / 4` (the first body starts where the offset table ends).
-`extractCollOffsets` reads `count` offsets starting at `off`. -/
-private def extractCollOffsets (b : ByteArray) :
+`extractCollOffsets` reads `count` offsets starting at `off`.
+
+`protected` (was `private`): the variable-element collection
+roundtrip proof reasons through this walker's branches, so it must
+be reachable, but it is proof-internal, not part of the general
+`SizzLean.Spec` surface. Same convention as `extractFieldOffsets`;
+the proof file names it with an explicit
+`open SizzLean.Spec (extractCollOffsets)`. -/
+protected def extractCollOffsets (b : ByteArray) :
     (count : Nat) → (off : Nat) → Except SSZError (List Nat)
   | 0,     _   => .ok []
   | k + 1, off =>
       match readUInt32LE b off with
       | .none => .error .tooShort
       | .some o =>
-          match extractCollOffsets b k (off + BYTES_PER_LENGTH_OFFSET) with
+          match SizzLean.Spec.extractCollOffsets b k
+              (off + BYTES_PER_LENGTH_OFFSET) with
           | .ok rest  => .ok (o.toNat :: rest)
           | .error e  => .error e
 
@@ -352,7 +360,7 @@ def SSZType.deserialize : (s : SSZType) → ByteArray → Except SSZError (s.int
         -- `n` entries. First offset must equal `n * 4`.
         if b.size < n * BYTES_PER_LENGTH_OFFSET then .error .tooShort
         else
-          match extractCollOffsets b n 0 with
+          match SizzLean.Spec.extractCollOffsets b n 0 with
           | .error e => .error e
           | .ok offs =>
               match SSZType.deserializeVarElems t offs b.size b with
@@ -392,7 +400,7 @@ def SSZType.deserialize : (s : SSZType) → ByteArray → Except SSZError (s.int
                 let count := firstOffN / BYTES_PER_LENGTH_OFFSET
                 if count > cap then .error .outOfRange
                 else
-                  match extractCollOffsets b count 0 with
+                  match SizzLean.Spec.extractCollOffsets b count 0 with
                   | .error e => .error e
                   | .ok offs =>
                       match SSZType.deserializeVarElems t offs b.size b with
