@@ -42,6 +42,7 @@ does not exceed the builder's balance and the bid fits in the remainder.
 These are the literal `UInt64` values computed by the implementation; no
 claim is made that pending-obligation accumulation is overflow-free or that
 `builderIndex` identifies a registered builder. -/
+@[characterizes EthCLSpecs.Gloas.canBuilderCoverBid]
 theorem canBuilderCoverBid_iff [Preset] [HasherTag] :
     ∀ (state : Gloas.State) (builderIndex : BuilderIndex) (bidAmount : Gwei),
       canBuilderCoverBid state builderIndex bidAmount = true ↔

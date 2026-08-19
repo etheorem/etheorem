@@ -115,6 +115,7 @@ assert followed by the six operation-family folds in implementation order. The
 deposit-gate error and successful-run characterizations follow from this
 equation. Handlers stay opaque and may modify state; this theorem does not claim
 that other state fields remain unchanged. -/
+@[characterizes EthCLSpecs.Gloas.processOperations]
 theorem processOperations_eq_seq :
     ∀ (body : BeaconBlockBody),
       processOperations (StateTransition := GloasRun) body = (do
@@ -216,6 +217,7 @@ six operation-family loops succeed sequentially, each from the preceding loop's
 resulting state. Five existential intermediate states; `post` is the supplied
 final state. Handlers stay opaque, so this is a coordinator sequencing
 characterization rather than complete correctness of operation processing. -/
+@[characterizes EthCLSpecs.Gloas.processOperations]
 theorem processOperations_run_ok_iff :
     ∀ (body : BeaconBlockBody) (pre post : State),
       (processOperations (StateTransition := GloasRun) body).run pre =

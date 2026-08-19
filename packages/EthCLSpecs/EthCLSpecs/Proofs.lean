@@ -22,6 +22,13 @@ types, never mathlib. A theorem that turns out to need mathlib moves to the stan
 `LeanPoseidonProofs` containment pattern. Mathlib never reaches this library,
 the framework, the runner, or the conformance path.
 
+A theorem that states its subject's main contract carries
+`@[characterizes <function>]` (`EthCLLib.Internal.ProofLedger`). The tag is a
+claim, so the attribute rejects a target no `forkdef` declared and a target the
+statement never mentions. `just proof-coverage` counts the tags, audits every
+theorem's axioms, and its committed baseline fails the build when a claim
+disappears. Supporting lemmas stay untagged and count as touched.
+
 Re-exports:
 
 * `EthCLSpecs.Proofs.BuilderIndex`: the builder-index flag round-trip

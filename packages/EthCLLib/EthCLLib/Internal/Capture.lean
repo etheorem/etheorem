@@ -250,4 +250,79 @@ def mergedTier (env : Environment) (fork key : Name) : Array Syntax :=
     | some cap => mergeTierEntries acc cap.val.getArgs
     | none     => acc
 
+/-! ## The spec-function surface
+
+A *spec function* is a constant that a `forkdef` produced. The proof-coverage
+report (`scripts/ProofCoverage.lean`) counts those constants, and the
+`characterizes` attribute (`EthCLLib.Internal.ProofLedger`) refuses a tag whose
+target is not one, so both need the same answer to "is this name a spec
+function?". The queries below are that single answer.
+
+A fork ships two groups of spec functions. Its *authored diff* is what its own
+source declares, one `.def_` capture each. Its *effective surface* adds every
+ancestor declaration the fork re-elaborated through `inherit`, which lands as a
+fresh constant in the fork's own namespace under the same residual name. The
+effective surface is what the fork actually runs, so it is the denominator the
+report divides by.
+-/
+
+/-- The nearest registered fork namespace that prefixes `n`, paired with `n`'s
+name relative to it. `EthCLSpecs.Gloas.getPtc` yields
+`(EthCLSpecs.Gloas, getPtc)`.
+
+Nearest wins, the rule `splitAtFork` uses, so a fork nested inside another fork
+claims its own declarations. A name that no fork prefixes, or a fork namespace
+itself, yields `none`. -/
+def specFunctionOwner? (env : Environment) (n : Name) : Option (Name × Name) :=
+  (lineageExt.getState env).foldl (init := none) fun best (f, _) =>
+    if f.isPrefixOf n && f != n then
+      match best with
+      | some (bf, _) => if bf.isPrefixOf f then some (f, n.replacePrefix f .anonymous) else best
+      | none         => some (f, n.replacePrefix f .anonymous)
+    else best
+
+/-- Did some `forkdef` in `fork`'s lineage declare the residual name `name`? -/
+def lineageDeclaresDef (env : Environment) (fork name : Name) : Bool :=
+  (lineageChain env fork).any fun a =>
+    match lookupCapture env a name with
+    | some cap => cap.kind == .def_
+    | none     => false
+
+/-- Is `n` a spec function: a constant in the environment that a `forkdef`
+somewhere in its fork's lineage declared? -/
+def isSpecFunction (env : Environment) (n : Name) : Bool :=
+  match specFunctionOwner? env n with
+  | none                 => false
+  | some (fork, residual) => env.contains n && lineageDeclaresDef env fork residual
+
+/-- `fork`'s effective surface: every spec function the fork ships, its own
+`forkdef`s plus the ancestors' `forkdef`s it re-elaborated, as full constant
+names.
+
+A capture with no matching constant is dropped, which is how a declaration the
+fork never inherited stays out of the count. -/
+def specFunctions (env : Environment) (fork : Name) : NameSet :=
+  let caps := captureExt.getState env
+  (lineageChain env fork).foldl (init := {}) fun acc a =>
+    caps.foldl (init := acc) fun acc cap =>
+      let full := fork ++ cap.name
+      if cap.forkNs == a && cap.kind == .def_ && env.contains full then
+        acc.insert full
+      else acc
+
+/-- `fork`'s authored diff: the spec functions the fork's own source declares.
+A subset of `specFunctions env fork`. -/
+def authoredSpecFunctions (env : Environment) (fork : Name) : NameSet :=
+  (captureExt.getState env).foldl (init := {}) fun acc cap =>
+    let full := fork ++ cap.name
+    if cap.forkNs == fork && cap.kind == .def_ && env.contains full then
+      acc.insert full
+    else acc
+
+/-- Every registered fork, in declaration order. A child fork replays its
+parent's captures, so it is declared after its parent, and a lineage therefore
+reads root first. The report iterates this to build its per-fork table. -/
+def registeredForks (env : Environment) : Array Name :=
+  (lineageExt.getState env).map (·.1)
+
 end EthCLLib.Internal

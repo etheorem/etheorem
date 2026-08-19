@@ -204,6 +204,7 @@ arbitrary input state: it always succeeds, and the result satisfies
 `ProcessBuilderPendingPaymentsPost`. Combines `builderPendingWithdrawalsLoop_run`
 (the withdrawals loop) with `shiftWindow`'s direct application (the payment-window
 shift), the two effects the module docstring describes. -/
+@[characterizes EthCLSpecs.Gloas.processBuilderPendingPayments]
 theorem processBuilderPendingPayments_run [Preset] [HasherTag] (before : State) :
     ∃ after : State,
       (processBuilderPendingPayments : GloasRun Unit).run before = .ok ((), after) ∧

@@ -57,6 +57,7 @@ is the original state with only `builders[builderIndex.toNat]!` updated through
 `sszModify`; every other top-level field is carried through. For an out-of-range
 index the underlying list write is a no-op, although the cached representation
 need not be structurally identical to the pre-state. -/
+@[characterizes EthCLSpecs.Gloas.initiateBuilderExit]
 theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
     ∀ (state : State) (builderIndex : BuilderIndex),
       (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state =

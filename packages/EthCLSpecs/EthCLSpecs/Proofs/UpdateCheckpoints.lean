@@ -56,6 +56,7 @@ This is the frame condition the two branch characterizations below do not carry.
 They project one field each, so on their own they leave open whether the function
 also disturbs `time`, `equivocatingIndices`, or any of the maps. A caller
 threading a Store through a fork-choice transition needs to know it does not. -/
+@[characterizes EthCLSpecs.Gloas.updateCheckpoints]
 theorem updateCheckpoints_eq :
     updateCheckpoints store j f =
       { store with

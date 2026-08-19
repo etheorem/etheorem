@@ -107,6 +107,7 @@ private theorem indexedPayloadAttestation_indicesInRange_iff
 indices, and the configured `[CryptoBackend]` returning `true` on the
 implementation's exact aggregate-verification call. The in-range conjunct binds its
 proof so the pubkey array can be read in bounds; see the module docstring. -/
+@[characterizes EthCLSpecs.Gloas.isValidIndexedPayloadAttestation]
 theorem isValidIndexedPayloadAttestation_eq_true_iff [Preset] [HasherTag] [CryptoBackend]
     (state : State) (a : IndexedPayloadAttestation) :
     isValidIndexedPayloadAttestation state a = true ↔
