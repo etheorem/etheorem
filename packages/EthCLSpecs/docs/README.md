@@ -35,3 +35,11 @@ plus the invariant lemmas they rest on.
 
 [CONSENSUS_PROOF_CANDIDATES.md](CONSENSUS_PROOF_CANDIDATES.md) is a shortlist of Lean
 theorem candidates across the Fulu and Gloas specs, to help contributors pick proof targets.
+It is also the ledger `just proof-coverage` cross-checks: a row reads **Proved** once a
+theorem discharges it, and the report warns where the rows and the `@[characterizes …]`
+tags disagree.
+
+`proof-coverage.baseline` is the machine-written half, one line per covered spec function
+and per admitted SSZ arm. `just proof-coverage-check` demands exact equality with it, so a
+lost proof fails the build and a new proof fails until its author commits the bump. Never
+edit it by hand; `just proof-coverage-update` rewrites it.

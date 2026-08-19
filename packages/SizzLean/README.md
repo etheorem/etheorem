@@ -189,6 +189,15 @@ The three central theorems, `decode_encode` (roundtrip),
 `SSZType.BasicSupported` cut (`Spec/BasicSupported.lean`).
 Per-constructor breakdown:
 
+`just proof-coverage` computes the same coverage from the built
+`.olean`s, one column per fragment of the `SSZType` universe, by
+reading `BasicSupported`'s constructors. Its committed baseline
+records how many arms each property admits, so dropping a
+constructor turns `just proof-coverage-check` red. The table below
+is the finer, hand-kept reading of the same facts, per constructor
+and with the proof technique for each arm.
+
+
 | `SSZType` constructor | `decode_encode` | `serialize_injective` | `encode_size_le_max` | Notes |
 |---|:---:|:---:|:---:|---|
 | `.uintN 8` | ✅ | ✅ | ✅ | closes by `rfl` after one `unfold` |

@@ -167,6 +167,15 @@ jobs:
           build-args: 'pyspec_server'
       - name: EthCL self-tests (lake build of the test libs)
         run: just ethcl-test
+      - name: Proof-coverage ratchet (fork bodies + SSZ properties)
+        # Reads the `.olean`s the build just produced: every `forkdef` is the
+        # denominator, a theorem statement that mentions one is the touched
+        # tier, a `@[characterizes f]` tag is the characterized tier. Exact
+        # equality against the committed baseline, both directions, so a lost
+        # proof and an uncommitted new proof both turn the job red. The step
+        # also audits every theorem's axioms, which is where a committed
+        # `sorry` would surface. Costs seconds; it elaborates nothing.
+        run: just proof-coverage-check
       - name: Install Python dependencies
         run: just setup-python
       - name: EthCLSpecs pyspec smoke gate (minimal, both forks)

@@ -28,6 +28,17 @@ Do not refresh a span by hand. The rows are only worth trusting if they are all
 checked at once, and a hand edit that skips the checker is how the table ends up
 mixing fresh rows with stale ones again.
 
+## What the coverage report reads
+
+`just proof-coverage` reads this file as the ledger's forward half. A row counts
+as proved when its Rationale opens with **Proved**, and the Location column's
+leading path component names the fork, so `getPtc` in a `Gloas/…` row resolves to
+`EthCLSpecs.Gloas.getPtc`. The report warns when a proved row carries no
+`@[characterizes …]` tag on any theorem, and when a tagged function has no proved
+row here. Both warnings are advisory. The report never fails on this file, since
+the rows are prose and a table the script cannot parse is still a table a person
+can read.
+
 ---
 
 ## Round-trip and conversion properties
@@ -39,6 +50,7 @@ under a stated precondition.
 | Function                              | Location                    | Rationale                                                                                                                                                                                                                                                                                  |
 | ------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `convertBuilderIndexToValidatorIndex` | `Gloas/Operations.lean:456` | **Proved**, see `EthCLSpecs/Proofs/BuilderIndex.lean`. Round-trips with `toBuilderIndex` on any `bi` that does not already carry the `BUILDER_INDEX_FLAG` bit, since `toBuilderIndex` always clears that bit, the round trip holds only under that precondition, not as a free identity. |
+| `toBuilderIndex`                      | `Gloas/Operations.lean:54`  | **Proved**, see `EthCLSpecs/Proofs/BuilderIndex.lean`. Clears the `BUILDER_INDEX_FLAG` bit, so it inverts `convertBuilderIndexToValidatorIndex` on any index that already carries the flag; the companion direction is the row above. |
 
 ---
 
@@ -55,7 +67,7 @@ bounded walk to finish.
 | `getExpectedWithdrawals`                | `Gloas/Withdrawals.lean:171-179`    | The withdrawals returned by its four phases combined never exceed `MAX_WITHDRAWALS_PER_PAYLOAD`                                                    |
 | `initiateBuilderExit`                   | `Gloas/Operations.lean:88-91`       | **Proved**, see `EthCLSpecs/Proofs/InitiateBuilderExit.lean`. `initiateBuilderExit_run_eq` is the whole-transition equation; its exact in-range/out-of-range effect on the builder registry is characterized; no-wrap is conditional for an arbitrary `Config` and proved unconditionally for both shipped Gloas preset/config pairs |
 | `processBuilderExitRequest`             | `Gloas/Operations.lean:194-204`     | On its successful builder-exit branch, the index supplied to `initiateBuilderExit` is in range; under either shipped Gloas preset/config pair, the selected builder receives the intended non-wrapping future `withdrawableEpoch`. All non-matching or ineligible branches leave the builder registry unchanged |
-| `getPtc`                                | `Gloas/Operations.lean:389-406`     | **Proved**, see `EthCLSpecs/Proofs/GetPtc.lean`. Its computed offset into `ptcWindow` stays in range under the two guarded call patterns covered here: `data.slot + 1 == state.slot` and the fork-choice replay callers' `slot == curSlot` |
+| `getPtc`                                | `Gloas/Operations.lean:389-406`     | **Proved**, see `EthCLSpecs/Proofs/GetPtc.lean`. Its computed offset into `ptcWindow` stays in range under the two guarded call patterns covered here: `data.slot + 1 == state.slot` and the fork-choice replay callers' `slot == curSlot`. Both bounds are stated over `getPtcElseOffset`, a restatement of the else-branch arithmetic, so no theorem statement mentions `getPtc` itself and the coverage report leaves it at the touched tier |
 | `getPendingBalanceToWithdrawForBuilder` | `Gloas/Operations.lean:61-65`       | Under an explicit bound preventing overflow across both sequential `UInt64` folds, its result agrees with the unbounded `Nat` sum of the matching pending-withdrawal and pending-payment amounts |
 | `canBuilderCoverBid`                    | `Gloas/Operations.lean:460-463`     | **Proved**, see `EthCLSpecs/Proofs/CanBuilderCoverBid.lean`. Its `Bool` result is characterized exactly against the implementation's computed `minBalance`. Proving that queuing an accepted bid preserves `MIN_DEPOSIT_AMOUNT` + pending obligations ≤ builder balance is the caller-level follow-up, and needs pending-total no-overflow and ring-cell freshness hypotheses |
 | `applyWithdrawals`                      | `Gloas/Withdrawals.lean:184-194`    | A builder-flagged withdrawal decreases the builder's balance by at most its own balance, so the balance never goes negative                        |

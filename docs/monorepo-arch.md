@@ -41,7 +41,7 @@ poseidon-proofs`).
 ├── README.md / CLAUDE.md             # repo-wide overview + style/discipline conventions
 ├── docs/                             # repo-wide design docs (this file)
 ├── Justfile                          # task runner over the umbrella
-├── scripts/                          # shared Python harness deps (requirements.txt)
+├── scripts/                          # harness deps + the repo-wide check/report scripts
 └── packages/
     ├── LeanSha256/                   # also published standalone — see "The LeanSha256 mirror"
     │   ├── lakefile.toml             # pure Lean, no C; carries the name/version/license the mirror ships
@@ -297,7 +297,9 @@ see `just --list` for the full set.
 * `lakefile.toml`: umbrella declaration.
 * `lean-toolchain`: pinned toolchain.
 * `lake-manifest.json`: pinned external deps for the umbrella.
-* `scripts/`: shared Python dependency pins (`requirements.txt`)
+* `scripts/`: shared Python dependency pins (`requirements.txt`), the two
+  Python checkers (`check_citations.py`, `check_constant_tiers.py`), and
+  `ProofCoverage.lean`, the Lean proof-coverage report and ratchet
   for the per-package pytest pyspec harnesses.
 * `docs/`: repo-wide design docs (this file). Distinct from the
   per-subpackage `packages/<Pkg>/docs/` below.

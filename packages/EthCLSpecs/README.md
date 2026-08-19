@@ -113,6 +113,49 @@ just ethcl-pyspec-full                # the full sweep: both presets, all three 
 
 CI runs the dev-subset smoke gate. The full multi-preset sweep runs on demand.
 
+## Verification status
+
+Both tables are generated from the built `.olean`s by
+`just proof-coverage-update`. `just proof-coverage-check` fails the build when
+they drift from the proofs, in either direction.
+
+A **spec function** is a constant a `forkdef` declared. *Touched* means a theorem
+statement under `EthCLSpecs.Proofs` mentions the function. *Characterized* means
+a `@[characterizes …]` tag claims the theorem states the function's main
+contract, a claim the attribute validates where the proof is written. A fork's
+denominator is its effective surface: the spec functions its own source declares
+plus every ancestor `forkdef` it re-elaborated through `inherit`. The *Authored*
+column is the fork's own diff, for scale.
+
+<!-- proof-coverage:begin -->
+| Fork | Characterized | Touched | Spec functions | Authored |
+| --- | --- | --- | --- | --- |
+| `EthCLSpecs.Fulu` | 0 | 2 | 158 | 158 |
+| `EthCLSpecs.Gloas` | 8 | 21 | 209 | 109 |
+| `EthCLSpecs.Heze` | 0 | 0 | 218 | 12 |
+| **Total** | 8 | 23 | 585 | 279 |
+
+| Axiom | Theorems resting on it |
+| --- | --- |
+| `propext` | 45 |
+| `Classical.choice` | 40 |
+| `Quot.sound` | 44 |
+| `Lean.ofReduceBool` | 0 |
+| `Lean.trustCompiler` | 0 |
+| `SizzLean.sha256Hash_eq_spec` | 0 |
+| `SizzLean.sha256Combine_eq_spec` | 0 |
+| `<theorem>._native.bv_decide.ax_* (bv_decide certificate)` | 3 |
+<!-- proof-coverage:end -->
+
+The axiom table is the whole trust base of these proofs. Any axiom outside it
+fails the run, `sorryAx` above all. `EthCLLib` carries no coverage number: it is
+elaborators and an effect monad, and its correctness claim is that the replayed
+forks build and pass conformance.
+
+[`docs/CONSENSUS_PROOF_CANDIDATES.md`](docs/CONSENSUS_PROOF_CANDIDATES.md) is the
+forward half. The tables above record what is proved; that ledger records what we
+intend to prove next, and `just proof-coverage` cross-checks the two.
+
 ## Documentation
 
 The design is written down under [`docs/`](docs/):

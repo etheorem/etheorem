@@ -141,7 +141,7 @@ its mathlib dependency never touches the root build.
 ├── README.md / CLAUDE.md        # Repo-wide overview + conventions.
 ├── docs/                        # Repo-wide docs (monorepo-arch.md, CODING_STYLE.md).
 ├── hazmat-docs/                 # LeanHazmat family design (ARCHITECTURE.md, PLAN.md).
-├── scripts/                     # requirements.txt (pyspec-harness Python deps).
+├── scripts/                     # requirements.txt (pyspec-harness Python deps), the checkers, ProofCoverage.lean.
 ├── packages/
 │   ├── LeanSha256/              # Pure-Lean SHA-256 reference; no FFI. Published standalone via a mirror.
 │   │   └── lakefile.toml, LeanSha256.lean / LeanSha256/ / cavp/ / LeanSha256Tests/ / README.md
