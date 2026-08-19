@@ -2,6 +2,7 @@ import EthCLLib.Proofs.MerkleBranch
 import EthCLLib.Proofs.MerkleShape
 import SizzLean.Spec.GeneralizedIndex
 import SizzLean.Proofs.ShapeWidth
+import SizzLean.Proofs.ShapeAgreement
 
 /-!
 # `EthCLLib.Proofs.GeneralizedIndexBranch`: completeness at a generalized index
@@ -16,6 +17,10 @@ addresses, a container field.
 
 Completeness only: the check accepts every honest opening. Rejecting a forged
 branch is binding, which has no sound statement under a real 64-to-32 `combine`.
+
+Statements come in two spellings: over `Node.merkleRoot` of the built tree, and
+over `SSZType.hashTreeRoot`. `merkleRoot_ofShape_eq_hashTreeRoot`
+(`SizzLean/Proofs/ShapeAgreement.lean`) is the step between them.
 
 ## The zero-table hypothesis
 
@@ -119,13 +124,12 @@ theorem ofShape_container_isOpenable [HasherTag] [CombineWidth32 HasherTag.H]
 
 /-- **Completeness at a container field's generalized index.** Opening
 `Node.ofShape` for a container at the gindex `get_generalized_index` assigns
-field `k`, and the check accepts. The leaf there is field `k`'s own sub-tree
-root, which is what `hash_tree_root` of that field is.
+field `k`, and the check accepts.
 
-Three spec call sites verify this shape directly:
-`verify_data_column_sidecar_inclusion_proof` (leaf
-`hash_tree_root(sidecar.kzg_commitments)`, a composite list field's root),
-`EXECUTION_PAYLOAD_GINDEX`, and the two sync-committee gindices. -/
+This theorem states the leaf with `honestLeaf`, a tree-vocabulary opener.
+`isValidMerkleBranch_complete_containerField_specLeaf` below restates that leaf
+as field `k`'s `hash_tree_root`. A spec call site holds it in that second
+form. -/
 theorem isValidMerkleBranch_complete_containerField
     [HasherTag] [CombineWidth32 HasherTag.H]
     (hzero : ∀ d, IsPerfect HasherTag.H (zeroLeaf HasherTag.H d) d)
@@ -179,28 +183,39 @@ holds a container sub-tree. Opening that sub-tree at its own field `k₂` compos
 with the outer path by `IsOpenable.trans`, at the concatenated index
 `k₁ * 2 ^ d₂ + k₂` the gindex builder produces.
 
-**`hsub` is the one unproven step here.** It says the outer tree's field-`k₁`
-sub-tree is the inner value's own `ofShape` tree. Stating it generically is the
-obstacle. `SSZType.interpFields` is a bare right-nested `Prod` chain with no
-accessor. "Field `k₁` of `vs`" therefore needs a dependent projection at type
-`(fs.getD k₁ .bool).interp`. That is new API, and not a lemma. A caller at a
-concrete container discharges `hsub` by `rfl`.
+`nodeAt_ofShape_container` supplies the tree step. The outer tree's field-`k₁`
+sub-tree *is* the field value's own `ofShape` tree.
 
-`k₁` needs no range bound, since `ofSubtrees` pads every position. -/
+The caller owes two facts about the schema, and none about the tree. Field
+`k₁`'s type is the container `gs` (`hfield`), and its value is `ws` (`hval`).
+Both are `rfl` / `HEq.refl` at any concrete container, and neither mentions
+`nodeAt`.
+
+`hval` is a `HEq` because `SSZType.fieldAt fs vs k₁ hk₁` has type
+`(fs[k₁]).interp`. That becomes `interpFields gs` only once `hfield` applies, so
+`congr` on `Node.ofShape` relates the two, and `Eq` does not.
+
+`hk₁ : k₁ < fs.length` is what lets the statement name field `k₁` at all. The
+one-step witness needs no such bound, since `ofSubtrees` pads every position. -/
 theorem ofShape_container_isOpenable₂ [HasherTag] [CombineWidth32 HasherTag.H]
     (hzero : ∀ d, IsPerfect HasherTag.H (zeroLeaf HasherTag.H d) d)
-    (fs : List SSZType) (vs : SSZType.interpFields fs) (k₁ : Nat)
+    (fs : List SSZType) (vs : SSZType.interpFields fs)
+    (k₁ : Nat) (hk₁ : k₁ < fs.length)
     (gs : List SSZType) (ws : SSZType.interpFields gs) (k₂ : Nat)
     (hk₂ : k₂ < gs.length)
-    (hsub : nodeAt (Node.ofShape HasherTag.H (.container fs) vs)
-              (chunkDepth fs.length) k₁
-            = Node.ofShape HasherTag.H (.container gs) ws) :
+    (hfield : fs[k₁] = .container gs)
+    (hval : HEq (SSZType.fieldAt fs vs k₁ hk₁) ws) :
     IsOpenable HasherTag.H (Node.ofShape HasherTag.H (.container fs) vs)
       (chunkDepth fs.length + chunkDepth gs.length)
       (k₁ * 2 ^ chunkDepth gs.length + k₂) := by
   refine IsOpenable.trans
     (ofShape_container_isOpenable' hzero fs vs k₁) ?_
     (Nat.lt_of_lt_of_le hk₂ (le_two_pow_chunkDepth gs.length))
+  have hsub : nodeAt (Node.ofShape HasherTag.H (.container fs) vs)
+        (chunkDepth fs.length) k₁
+      = Node.ofShape HasherTag.H (.container gs) ws := by
+    rw [nodeAt_ofShape_container HasherTag.H fs vs k₁ hk₁]
+    congr 1
   rw [hsub]
   exact ofShape_container_isOpenable' hzero gs ws k₂
 
@@ -251,16 +266,16 @@ Stated at the raw `(depth, index)` pair. `getGeneralizedIndex_container_field₂
 above is the arithmetic half. It shows the gindex those constants carry composes
 to exactly this depth and index. Neither constant appears here, and the concrete
 field lists never appear either, so the `#guard`ed arithmetic below is what ties
-the two together. Inherits `hsub` from the witness. -/
+the two together. Inherits the two schema facts from the witness. -/
 theorem isValidMerkleBranch_complete_containerField₂
     [HasherTag] [CombineWidth32 HasherTag.H]
     (hzero : ∀ d, IsPerfect HasherTag.H (zeroLeaf HasherTag.H d) d)
-    (fs : List SSZType) (vs : SSZType.interpFields fs) (k₁ : Nat)
+    (fs : List SSZType) (vs : SSZType.interpFields fs)
+    (k₁ : Nat) (hk₁ : k₁ < fs.length)
     (gs : List SSZType) (ws : SSZType.interpFields gs) (k₂ : Nat)
     (hk₂ : k₂ < gs.length)
-    (hsub : nodeAt (Node.ofShape HasherTag.H (.container fs) vs)
-              (chunkDepth fs.length) k₁
-            = Node.ofShape HasherTag.H (.container gs) ws) :
+    (hfield : fs[k₁] = .container gs)
+    (hval : HEq (SSZType.fieldAt fs vs k₁ hk₁) ws) :
     isValidMerkleBranch
         (honestLeaf HasherTag.H (Node.ofShape HasherTag.H (.container fs) vs)
           (chunkDepth fs.length + chunkDepth gs.length)
@@ -274,7 +289,133 @@ theorem isValidMerkleBranch_complete_containerField₂
           (Node.ofShape HasherTag.H (.container fs) vs)))
       = true :=
   isValidMerkleBranch_complete
-    (ofShape_container_isOpenable₂ hzero fs vs k₁ gs ws k₂ hk₂ hsub)
+    (ofShape_container_isOpenable₂ hzero fs vs k₁ hk₁ gs ws k₂ hk₂
+      hfield hval)
+
+/-- **The same, at the gindex a caller holds.** The statement quantifies over the
+`g` that `get_generalized_index` produced. `gindexSplit_container_field₂` supplies
+the depth and the index.
+
+`isValidMerkleBranch_complete_containerField` is the one-step form. -/
+theorem isValidMerkleBranch_complete_containerField₂_gindex
+    [HasherTag] [CombineWidth32 HasherTag.H]
+    (hzero : ∀ d, IsPerfect HasherTag.H (zeroLeaf HasherTag.H d) d)
+    (fs : List SSZType) (vs : SSZType.interpFields fs)
+    (k₁ : Nat) (hk₁ : k₁ < fs.length)
+    (gs : List SSZType) (ws : SSZType.interpFields gs) (k₂ : Nat)
+    (hk₂ : k₂ < gs.length)
+    (hfield : fs[k₁] = .container gs)
+    (hval : HEq (SSZType.fieldAt fs vs k₁ hk₁) ws)
+    (g : GeneralizedIndex)
+    (hg : getGeneralizedIndex (.container fs) [.field k₁, .field k₂] = .ok g) :
+    isValidMerkleBranch
+        (honestLeaf HasherTag.H (Node.ofShape HasherTag.H (.container fs) vs)
+          (floorLog2 g) (getSubtreeIndex g))
+        (honestBranch HasherTag.H (Node.ofShape HasherTag.H (.container fs) vs)
+          (floorLog2 g) (getSubtreeIndex g))
+        (floorLog2 g) (getSubtreeIndex g)
+        (bytesToRoot (Node.merkleRoot HasherTag.H
+          (Node.ofShape HasherTag.H (.container fs) vs)))
+      = true := by
+  obtain ⟨hdep, hidx⟩ := gindexSplit_container_field₂ hk₁ hk₂ hfield hg
+  rw [hdep, hidx]
+  exact isValidMerkleBranch_complete_containerField₂ hzero fs vs k₁ hk₁ gs ws k₂ hk₂
+    hfield hval
+
+/-! ### Restated over the spec's roots
+
+Everything above concludes about `Node.merkleRoot` of a built tree, which is our
+construction rather than the spec's. `merkleRoot_ofShape_eq_hashTreeRoot` says
+that root *is* the container's `hash_tree_root`, so the same theorems restate
+against the spec function, which is what a client computes. -/
+
+/-- **The verified root is the container's own `hash_tree_root`.** -/
+theorem isValidMerkleBranch_complete_containerField_specRoot
+    [HasherTag] [CombineWidth32 HasherTag.H]
+    (hzt : ∀ d, Node.rootOf HasherTag.H (zeroLeaf HasherTag.H d)
+            = zeroHashAtDepth HasherTag.H d)
+    (hzero : ∀ d, IsPerfect HasherTag.H (zeroLeaf HasherTag.H d) d)
+    (fs : List SSZType) (vs : SSZType.interpFields fs) (k : Nat)
+    (g : GeneralizedIndex)
+    (hg : getGeneralizedIndex (.container fs) [.field k] = .ok g)
+    (hk : k < fs.length) :
+    isValidMerkleBranch
+        (honestLeaf HasherTag.H (Node.ofShape HasherTag.H (.container fs) vs)
+          (floorLog2 g) (getSubtreeIndex g))
+        (honestBranch HasherTag.H (Node.ofShape HasherTag.H (.container fs) vs)
+          (floorLog2 g) (getSubtreeIndex g))
+        (floorLog2 g) (getSubtreeIndex g)
+        (bytesToRoot (SSZType.hashTreeRoot HasherTag.H (.container fs) vs))
+      = true := by
+  rw [← merkleRoot_ofShape_eq_hashTreeRoot HasherTag.H hzt (.container fs) vs]
+  exact isValidMerkleBranch_complete_containerField hzero fs vs k g hg hk
+
+/-- **The opened leaf is the field's own `hash_tree_root`.**
+
+* `leafAt_eq_rootOf_nodeAt` moves from the leaf opener to the node opener.
+* `nodeAt_ofShape_container` identifies that node as field `k`'s tree.
+* `rootOf_ofShape_eq_hashTreeRoot` turns its root into the spec function. -/
+theorem honestLeaf_ofShape_container [HasherTag]
+    (hzt : ∀ d, Node.rootOf HasherTag.H (zeroLeaf HasherTag.H d)
+            = zeroHashAtDepth HasherTag.H d)
+    (fs : List SSZType) (vs : SSZType.interpFields fs) (k : Nat) (hk : k < fs.length) :
+    honestLeaf HasherTag.H (Node.ofShape HasherTag.H (.container fs) vs)
+        (chunkDepth fs.length) k
+      = bytesToRoot (SSZType.hashTreeRoot HasherTag.H fs[k] (SSZType.fieldAt fs vs k hk)) := by
+  unfold honestLeaf
+  rw [leafAt_eq_rootOf_nodeAt, nodeAt_ofShape_container HasherTag.H fs vs k hk,
+    rootOf_ofShape_eq_hashTreeRoot HasherTag.H hzt]
+
+/-- **Completeness with both sides in the spec's vocabulary.** The leaf is field
+`k`'s `hash_tree_root`. The root is the container's `hash_tree_root`.
+
+Spec call sites carry this shape. `verify_data_column_sidecar_inclusion_proof`
+passes `hash_tree_root(sidecar.kzg_commitments)` against `body_root`. The
+light-client `EXECUTION_PAYLOAD` and sync-committee proofs pass a field root
+against the body or state root. -/
+theorem isValidMerkleBranch_complete_containerField_specLeaf
+    [HasherTag] [CombineWidth32 HasherTag.H]
+    (hzt : ∀ d, Node.rootOf HasherTag.H (zeroLeaf HasherTag.H d)
+            = zeroHashAtDepth HasherTag.H d)
+    (hzero : ∀ d, IsPerfect HasherTag.H (zeroLeaf HasherTag.H d) d)
+    (fs : List SSZType) (vs : SSZType.interpFields fs) (k : Nat)
+    (g : GeneralizedIndex)
+    (hg : getGeneralizedIndex (.container fs) [.field k] = .ok g)
+    (hk : k < fs.length) :
+    isValidMerkleBranch
+        (bytesToRoot (SSZType.hashTreeRoot HasherTag.H fs[k] (SSZType.fieldAt fs vs k hk)))
+        (honestBranch HasherTag.H (Node.ofShape HasherTag.H (.container fs) vs)
+          (floorLog2 g) (getSubtreeIndex g))
+        (floorLog2 g) (getSubtreeIndex g)
+        (bytesToRoot (SSZType.hashTreeRoot HasherTag.H (.container fs) vs))
+      = true := by
+  obtain ⟨hdep, hidx⟩ := gindexSplit_container_field hk hg
+  rw [← honestLeaf_ofShape_container hzt fs vs k hk, ← hdep, ← hidx]
+  exact isValidMerkleBranch_complete_containerField_specRoot hzt hzero fs vs k g hg hk
+
+/-- **The same statement at the shipped hasher, with no hypotheses left.**
+`rootOf_zeroLeaf_eq_zeroHashAtDepth_sha256` closes `hzt`, and
+`zeroLeaf_isPerfect_sha256` closes `hzero`.
+
+**Axiom use**: `sha256Combine_eq_spec` (`Hasher/Sha256Equiv.lean`), through both
+dischargers. The zero tower is memoised from the FFI `sha256Combine`. -/
+theorem isValidMerkleBranch_complete_containerField_specRoot_sha256
+    (fs : List SSZType) (vs : SSZType.interpFields fs) (k : Nat)
+    (g : GeneralizedIndex)
+    (hg : getGeneralizedIndex (.container fs) [.field k] = .ok g)
+    (hk : k < fs.length) :
+    @isValidMerkleBranch fastHasherTag
+        (honestLeaf Sha256 (Node.ofShape Sha256 (.container fs) vs)
+          (floorLog2 g) (getSubtreeIndex g))
+        (honestBranch Sha256 (Node.ofShape Sha256 (.container fs) vs)
+          (floorLog2 g) (getSubtreeIndex g))
+        (floorLog2 g) (getSubtreeIndex g)
+        (bytesToRoot (SSZType.hashTreeRoot Sha256 (.container fs) vs))
+      = true := by
+  haveI : CombineWidth32 fastHasherTag.H := inferInstanceAs (CombineWidth32 Sha256)
+  exact @isValidMerkleBranch_complete_containerField_specRoot fastHasherTag _
+    rootOf_zeroLeaf_eq_zeroHashAtDepth_sha256 zeroLeaf_isPerfect_sha256
+    fs vs k g hg hk
 
 /-! **Pin: the light-client gindices decompose as the spec says.** Values from
 `consensus-specs` (`altair/`, `capella/` and `electra/light-client/sync-protocol.md`).
