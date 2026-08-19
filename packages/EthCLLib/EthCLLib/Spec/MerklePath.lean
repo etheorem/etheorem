@@ -40,4 +40,14 @@ theorem routeRight_eq_div_mod (index i : Nat) :
   show ((index >>> i) &&& 1 == 1) = (index / 2 ^ i % 2 == 1)
   rw [Nat.shiftRight_eq_div_pow, Nat.and_one_is_mod]
 
+/-- `routeRight` is core's `Nat.testBit`. A bridge rather than a definitional
+change, so the spec-facing spelling stays while the index-splitting lemmas in
+`EthCLLib/Proofs/MerkleOpening.lean` reach core's bit lemmas. -/
+theorem routeRight_eq_testBit (index i : Nat) :
+    routeRight index i = Nat.testBit index i := by
+  rw [routeRight_eq_div_mod, Nat.testBit_eq_decide_div_mod_eq]
+  cases Nat.mod_two_eq_zero_or_one (index / 2 ^ i) with
+  | inl h => simp [h]
+  | inr h => simp [h]
+
 end EthCLLib.Spec

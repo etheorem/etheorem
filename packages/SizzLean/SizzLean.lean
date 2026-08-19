@@ -2,6 +2,7 @@ import SizzLean.Repr.Class
 import SizzLean.Repr.Instances
 import SizzLean.Repr.Deriving
 import SizzLean.Spec.SSZError
+import SizzLean.Spec.GeneralizedIndex
 import SizzLean.Hasher.Class
 import SizzLean.Hasher.Sha256
 import SizzLean.Hasher.Sha256Spec
@@ -16,6 +17,7 @@ import SizzLean.Proofs.SSZListPush
 import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.Perfect
+import SizzLean.Proofs.ShapeWidth
 
 /-!
 # `SizzLean`: library root
@@ -31,6 +33,9 @@ their own code. They map one-to-one onto the sections of
   and the `deriving SSZRepr` handler.
 * `Spec/SSZError`: the deserialise-error sum returned by
   `SSZ.deserialize`.
+* `Spec/GeneralizedIndex`: `get_generalized_index` over `SSZType`,
+  the gindex arithmetic around it, and the `GIndexError` sum it
+  returns.
 * `Hasher/Class`, `Hasher/Sha256`, `Hasher/Sha256Spec`: the
   `Hasher` typeclass and its two shipping instances. The FFI
   `Sha256` instance delegates to the `LeanHazmatSha256` package

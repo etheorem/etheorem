@@ -1,4 +1,5 @@
 import SizzLean.Cache.MerkleTree.Merkle
+import SizzLean.Cache.MerkleTree.Build
 import SizzLean.Hasher.CombineWidth
 
 /-!
@@ -74,6 +75,11 @@ theorem merkleRoot_pair (H : Type) [Hasher H] {l r : Node} {c : Option ByteArray
       rw [Node.merkleRoot_pair_some H l r root]
       exact hc root rfl
 
+/-- `Node.merkleRoot` on a leaf returns the leaf bytes. Local alias for
+`Node.merkleRoot_leaf`, which sits beside the definition. -/
+theorem merkleRoot_leaf (H : Type) [Hasher H] (b : ByteArray) :
+    Node.merkleRoot H (.leaf b) = b := Node.merkleRoot_leaf H b
+
 /-- `Node.rootOf` agrees with `Node.merkleRoot` on **every** `Node`, with no
 shape or cache-validity hypothesis: the two are the same structural recursion.
 Neither inspects whether a populated cache slot is honest, so this holds for a
@@ -108,6 +114,90 @@ theorem merkleRoot_size (H : Type) [Hasher H] [CombineWidth32 H] :
   | leaf b hsz => simpa [Node.merkleRoot_leaf] using hsz
   | @pair l r d c hl hr hc ihl ihr =>
       rw [merkleRoot_pair H hc]
+      exact CombineWidth32.size _ _
+
+/-- The `zeroLeaf` pad's root is 32 bytes. `hzero` supplies the width through
+`merkleRoot_size`. -/
+theorem rootOf_zeroLeaf_size_of_isPerfect (H : Type) [Hasher H] [CombineWidth32 H]
+    (hzero : ∀ d, IsPerfect H (zeroLeaf H d) d) (d : Nat) :
+    (Node.rootOf H (zeroLeaf H d)).size = 32 := by
+  rw [rootOf_eq_merkleRoot]
+  exact merkleRoot_size H (hzero d)
+
+/-! ### Trees the builders produce -/
+
+/-- The `hc` obligation for a node the builders cached honestly. Every
+constructor in `Cache/MerkleTree/Build.lean` fills the slot with
+`combine (rootOf l) (rootOf r)`, which `rootOf_eq_merkleRoot` turns into
+`combine (merkleRoot l) (merkleRoot r)`. -/
+theorem cached_root_honest (H : Type) [Hasher H] (l r : Node) :
+    ∀ root,
+      some (Hasher.combine (H := H) (Node.rootOf H l) (Node.rootOf H r)) = some root →
+        root = Hasher.combine (H := H) (Node.merkleRoot H l) (Node.merkleRoot H r) := by
+  intro root heq
+  rw [Option.some.injEq] at heq
+  rw [← heq]
+  simp only [rootOf_eq_merkleRoot]
+
+/-- `zeroLeaf` trees are perfect for any hasher whose `combine` agrees with the
+FFI `sha256Combine` that populated the memo. `hcomb` is `rfl` for `Sha256`.
+
+**Axiom use**: inherits `sha256Combine_eq_spec` (`Hasher/Sha256Equiv.lean`)
+through `zeroHashAt_size`, at every hasher. -/
+theorem zeroLeaf_isPerfect_of_combine (H : Type) [Hasher H]
+    (hcomb : ∀ a b, Hasher.combine (H := H) a b = LeanHazmat.Sha256.sha256Combine a b) :
+    ∀ (d : Nat), IsPerfect H (zeroLeaf H d) d := by
+  intro d
+  induction d with
+  | zero =>
+      rw [zeroLeaf_zero]
+      exact .leaf _ (zeroHashAt_size H 0)
+  | succ k ih =>
+      have hkp : IsPerfect H (zeroLeaf H k) k := ih
+      -- The depth-`k` zero subtree's root is the table entry, carried by the
+      -- leaf's own bytes or by the pair's pre-filled cache slot.
+      have hroot : Node.merkleRoot H (zeroLeaf H k) = zeroHashAt H k := by
+        cases k with
+        | zero => rw [zeroLeaf_zero, merkleRoot_leaf]
+        | succ j =>
+            rw [zeroLeaf_succ, Node.merkleRoot_pair_some]
+      rw [zeroLeaf_succ]
+      refine .pair hkp hkp ?_
+      intro root heq
+      rw [Option.some.injEq] at heq
+      rw [← heq, hroot, hcomb, zeroHashAt_succ H k]
+
+/-- `zeroLeaf` perfection at `Sha256`, where `combine` is `sha256Combine` and
+`hcomb` is `rfl`. Discharges the `hzero` hypothesis the padded-tree theorems
+carry.
+
+**Axiom use**: inherits `sha256Combine_eq_spec` (`Hasher/Sha256Equiv.lean`)
+through `zeroHashAt_size`. -/
+theorem zeroLeaf_isPerfect_sha256 (d : Nat) :
+    IsPerfect Sha256 (zeroLeaf Sha256 d) d :=
+  zeroLeaf_isPerfect_of_combine Sha256 (fun _ _ => rfl) d
+
+/-- Every `ofSubtrees` tree has a 32-byte root, given its sub-trees do. Interior
+levels are `combine` outputs, 32 by `CombineWidth32`. Depth 0 is either a
+supplied sub-tree or the `zeroLeaf` pad, whose width comes from `hzero`. A single
+`cases` on the depth, no induction. -/
+theorem merkleRoot_ofSubtrees_size (H : Type) [Hasher H] [CombineWidth32 H]
+    (hzero : ∀ d, IsPerfect H (zeroLeaf H d) d) :
+    ∀ (depth : Nat) (subs : List Node),
+      (∀ s ∈ subs, (Node.rootOf H s).size = 32) →
+      (Node.merkleRoot H (Node.ofSubtrees H subs depth)).size = 32 := by
+  intro depth subs hsz
+  cases depth with
+  | zero =>
+      cases subs with
+      | nil => exact merkleRoot_size H (hzero 0)
+      | cons s tl =>
+          rw [show Node.ofSubtrees H (s :: tl) 0 = s from rfl, ← rootOf_eq_merkleRoot]
+          exact hsz s (by simp)
+  | succ d =>
+      unfold Node.ofSubtrees
+      simp only [List.splitAt_eq]
+      rw [merkleRoot_pair H (cached_root_honest H _ _)]
       exact CombineWidth32.size _ _
 
 end SizzLean.Cache.MerkleTree

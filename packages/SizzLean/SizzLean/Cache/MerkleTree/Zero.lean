@@ -2,6 +2,7 @@ import SizzLean.Hasher.Class
 import SizzLean.Hasher.Sha256
 import LeanHazmatSha256
 import SizzLean.Cache.MerkleTree.Node
+import SizzLean.Hasher.Sha256Equiv
 
 /-!
 # `SizzLean.Cache.MerkleTree.Zero`: the zero-hash tower and the depth-padding leaf
@@ -223,5 +224,65 @@ def Node.ofLeaves (H : Type) [Hasher H] (leaves : List ByteArray)
       let root := Hasher.combine (H := H)
         (Node.rootOf H leftNode) (Node.rootOf H rightNode)
       .pair leftNode rightNode (some root)
+
+/-! ### Zero-table facts for the shape proofs
+
+`zeroHashes` and `zeroHashRec` are `private`, so the shape proofs work against
+these instead. -/
+
+/-- The memo table reads back its own recurrence at every in-range depth. -/
+private theorem zeroHashes_get (d : Nat) (h : d < 100) :
+    zeroHashes.get ⟨d, h⟩ = zeroHashRec d := by
+  simp [zeroHashes, Vector.get]
+
+/-- `zeroHashAt` is the recurrence at every depth: inside the table by lookup,
+past it by the fallback. `[Hasher H]` never enters: the memo is
+Sha256-specific. -/
+private theorem zeroHashAt_eq (H : Type) [Hasher H] (d : Nat) :
+    zeroHashAt H d = zeroHashRec d := by
+  unfold zeroHashAt
+  split
+  · rename_i h
+    exact zeroHashes_get d h
+  · rfl
+
+/-- Every entry of the recurrence is 32 bytes. The step rewrites the FFI combine
+to the pure-Lean reference through `sha256Combine_eq_spec`. -/
+private theorem zeroHashRec_size : ∀ (d : Nat), (zeroHashRec d).size = 32
+  | 0 => rfl
+  | d + 1 => by
+      show (LeanHazmat.Sha256.sha256Combine (zeroHashRec d) (zeroHashRec d)).size = 32
+      rw [sha256Combine_eq_spec]
+      exact LeanSha256.combine_size_eq_32 _ _
+
+/-- `zeroLeaf` at depth 0 is the zero-chunk leaf, stated through `zeroHashAt` so
+the tower lemmas chain without a detour through `zero32`. -/
+theorem zeroLeaf_zero (H : Type) [Hasher H] :
+    zeroLeaf H 0 = .leaf (zeroHashAt H 0) := by
+  rw [zeroHashAt_eq H 0]
+  rfl
+
+/-- `zeroLeaf` at a positive depth: the cached pair of two depth-`d` zero
+subtrees, the slot holding the table entry. -/
+theorem zeroLeaf_succ (H : Type) [Hasher H] (d : Nat) :
+    zeroLeaf H (d + 1)
+      = .pair (zeroLeaf H d) (zeroLeaf H d) (some (zeroHashAt H (d + 1))) := rfl
+
+/-- Each entry is the FFI combine of the previous entry with itself. Checks
+`zeroLeaf`'s pre-filled slots. -/
+theorem zeroHashAt_succ (H : Type) [Hasher H] (d : Nat) :
+    zeroHashAt H (d + 1)
+      = LeanHazmat.Sha256.sha256Combine (zeroHashAt H d) (zeroHashAt H d) := by
+  rw [zeroHashAt_eq H (d + 1), zeroHashAt_eq H d]
+  rfl
+
+/-- Every zero-hash is 32 bytes.
+
+**Axiom use**: carries `sha256Combine_eq_spec` (`Hasher/Sha256Equiv.lean`)
+through `zeroHashRec_size`. -/
+theorem zeroHashAt_size (H : Type) [Hasher H] (d : Nat) :
+    (zeroHashAt H d).size = 32 := by
+  rw [zeroHashAt_eq H d]
+  exact zeroHashRec_size d
 
 end SizzLean.Cache.MerkleTree
