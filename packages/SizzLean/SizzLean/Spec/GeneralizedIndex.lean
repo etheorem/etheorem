@@ -37,9 +37,14 @@ container field, one step and two. That covers the light-client
 `EXECUTION_BLOCK_HASH` gindices and the Fulu data column sidecar's
 `blob_kzg_commitments` proof.
 
+Those results are about `SSZType.hashTreeRoot`, the function a client calls, via
+`merkleRoot_ofShape_eq_hashTreeRoot` (`Proofs/ShapeAgreement.lean`).
+
 A path crossing a composite *list* element (the Deneb blob sidecar's
 `blob_kzg_commitments[i]`) is out of reach. It needs an openability lemma for the
 mix-in-length level, which the tree vocabulary does not carry.
+
+The `.length` step has no completeness counterpart either.
 -/
 
 set_option autoImplicit false

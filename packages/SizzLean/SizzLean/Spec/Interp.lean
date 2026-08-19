@@ -132,4 +132,25 @@ example : SSZType.interp (.uintN 32)       = UInt32        := rfl
 -- `Vector Bool 3`. The kernel performs both reductions to close `rfl`.
 example : SSZType.interp (.vector .bool 3) = Vector Bool 3 := rfl
 
+/-- Project field `k` out of a container value.
+
+`interpFields fs` is a right-nested `Prod` chain built by recursion on `fs`, so
+no generic projection exists. Each component's *type* depends on which field the
+caller names. This definition therefore recurses on `fs` and `k` together. Its
+result type mentions the indexed `(fs[k]).interp`, which is why the bound is a
+parameter and not a `getD`-style default.
+
+In-range only, deliberately. Out-of-range positions of a container tree are
+`ofSubtrees` padding, and the Merkle leaf bridge needs a `zeroLeaf` there rather
+than a junk field value. A total version with a default would export a
+meaningless answer at exactly the positions that need a different lemma.
+
+The empty-list case is absent because `hk : k < ([] : List SSZType).length` has
+no inhabitant, and Lean's pattern compiler sees that. -/
+def SSZType.fieldAt : (fs : List SSZType) → SSZType.interpFields fs →
+    (k : Nat) → (hk : k < fs.length) → (fs[k]).interp
+  | _ :: _,  vs, 0,     _  => vs.1
+  | _ :: ts, vs, k + 1, hk => SSZType.fieldAt ts vs.2 k (by
+      simp only [List.length_cons] at hk; omega)
+
 end SizzLean.Spec

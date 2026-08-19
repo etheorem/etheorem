@@ -68,10 +68,11 @@ open SizzLean
 
 /-- 32-byte all-zero `ByteArray`. The leaf at every depth-`0`
 position of an all-zero subtree. Identical to `Spec.zero32`, kept
-here as a small private duplicate rather than importing the
-spec-internal helper because the Tree layer is meant to stand
-alone (so a future caller could load it without the spec). -/
-private def zero32 : ByteArray :=
+here as a small duplicate rather than importing the spec-internal
+helper because the Tree layer is meant to stand alone (so a future
+caller could load it without the spec). Public so the tower bridge
+can state `Cache.zero32 = Spec.zero32`. -/
+def zero32 : ByteArray :=
   let rec build : Nat → ByteArray → ByteArray
     | 0,     acc => acc
     | k + 1, acc => build k (acc.push 0)
@@ -267,6 +268,13 @@ subtrees, the slot holding the table entry. -/
 theorem zeroLeaf_succ (H : Type) [Hasher H] (d : Nat) :
     zeroLeaf H (d + 1)
       = .pair (zeroLeaf H d) (zeroLeaf H d) (some (zeroHashAt H (d + 1))) := rfl
+
+/-- The tower's base is the zero chunk. Exported because `zeroHashes` and the
+recurrence behind it are private, so an importer cannot reduce `zeroHashAt H 0`
+without indexing the `Vector.ofFn` table by hand. -/
+theorem zeroHashAt_zero (H : Type) [Hasher H] : zeroHashAt H 0 = zero32 := by
+  rw [zeroHashAt_eq H 0]
+  rfl
 
 /-- Each entry is the FFI combine of the previous entry with itself. Checks
 `zeroLeaf`'s pre-filled slots. -/

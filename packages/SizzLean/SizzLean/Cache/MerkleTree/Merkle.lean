@@ -106,17 +106,9 @@ inner `Vector UInt8 32` (= `Bytes32`) is a 32-byte basic-byte
 vector whose HTR is `zero32` when all-zero, identical to a `zero32`
 leaf in our tree. The outer `Vector ... n` then merkleizes the
 element roots at `chunkDepth n` depth, padding with `ZERO_HASHES`.
-This matches `Node.ofLeaves H (List.replicate n zeroBytes32) d`
+This matches `Node.ofLeaves H (List.replicate n zero32) d`
 when `2^d ≥ n`.
 -/
-
-/-- 32-byte all-zero `ByteArray`. Mirrors `Tree.Zero.zero32` but kept
-local because the latter is `private`. -/
-private def zeroBytes32 : ByteArray :=
-  let rec build : Nat → ByteArray → ByteArray
-    | 0,     acc => acc
-    | k + 1, acc => build k (acc.push 0)
-  build 32 ByteArray.empty
 
 /-- A `Vector UInt8 32` of all-zero bytes, the SSZ-side
 representation of the zero leaf. -/
@@ -126,7 +118,7 @@ private def zeroBytes32Vec : Vector UInt8 32 :=
 -- 4 zero leaves at depth 2, the simplest non-trivial case.
 example :
     (Node.ofLeaves Sha256
-        [zeroBytes32, zeroBytes32, zeroBytes32, zeroBytes32] 2).merkleRoot Sha256
+        [zero32, zero32, zero32, zero32] 2).merkleRoot Sha256
       =
     SizzLean.SSZ.hashTreeRoot Sha256
         (Vector.replicate 4 zeroBytes32Vec) := by
@@ -135,7 +127,7 @@ example :
 -- 8 zero leaves at depth 3, exact power-of-two, no zero-padding.
 example :
     (Node.ofLeaves Sha256
-        (List.replicate 8 zeroBytes32) 3).merkleRoot Sha256
+        (List.replicate 8 zero32) 3).merkleRoot Sha256
       =
     SizzLean.SSZ.hashTreeRoot Sha256
         (Vector.replicate 8 zeroBytes32Vec) := by

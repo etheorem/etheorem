@@ -1,4 +1,5 @@
 import EthCLLib.Proofs.MerkleBranch
+import EthCLLib.Proofs.MerkleShape
 import SizzLean.Spec.GeneralizedIndex
 import SizzLean.Proofs.ShapeWidth
 

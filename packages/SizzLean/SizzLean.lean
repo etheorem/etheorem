@@ -18,6 +18,8 @@ import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.Perfect
 import SizzLean.Proofs.ShapeWidth
+import SizzLean.Proofs.Merkleize
+import SizzLean.Proofs.ShapeAgreement
 
 /-!
 # `SizzLean`: library root
@@ -71,12 +73,13 @@ uses or by sibling packages (`EthCLSpecs` reaches into
 handler infrastructure). They are deliberately not listed here so
 this file reads as the user's mental model of the library.
 
-The `Proofs.SSZList*` modules are imported above to keep their
-native initializers in SizzLean's precompiled plugin. Their current EthCLSpecs
-consumers reach them by a qualified-path import; without these root imports, Lake
-emits the `.olean` but omits the module from the native plugin graph, causing
-plugin resolution to fail at runtime (`undefined symbol: initialize_SizzLean_…`).
-Any further `Proofs/` module that a sibling package imports needs the same line.
+The `Proofs/` modules listed above are imported to keep their native
+initializers in SizzLean's precompiled plugin. Their current EthCLSpecs and
+EthCLLib consumers reach them by a qualified-path import; without these root
+imports, Lake emits the `.olean` but omits the module from the native plugin
+graph, causing plugin resolution to fail at runtime
+(`undefined symbol: initialize_SizzLean_…`). Any further `Proofs/` module that a
+sibling package imports needs the same line.
 
 Acceptance / property-test gates live in a separate `lean_lib`
 (`SizzLeanTests`); the default `lake build` skips them and they
