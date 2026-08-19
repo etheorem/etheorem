@@ -947,8 +947,8 @@ dependency level, not the spec level. SizzLean's cache-coherence test proves
 handle the hasher, so there is no spec-level fast-equals-pure theorem to prove. The
 specs inherit the gap-closing from the dependency.
 
-Both machines are pinned this way. `Proofs/Run.lean` names the pure monad for the state
-machine; `Proofs/ForkChoiceRun.lean` names it for the store machine and proves a
+Both machines are pinned this way. `Proofs/Gloas/Run.lean` names the pure monad for the state
+machine; `Proofs/Gloas/ForkChoiceRun.lean` names it for the store machine and proves a
 fork-choice `forkdef` at it. A handler that runs the state machine picks up its nested
 monad from `NestedStateMachine` (`FRAMEWORK_ARCHITECTURE.md` §7.2), keyed on the store's
 own monad, so pinning the pure store monad pins the pure state monad with it and no fast

@@ -73,7 +73,7 @@ lint:
     fi
 
 # Resolve every `File.lean:start-end` citation in
-# `packages/EthCLSpecs/docs/CONSENSUS_PROOF_CANDIDATES.md` and the
+# `packages/EthCLSpecs/docs/PROOF_LEDGER.md` and the
 # `EthCLSpecs/Proofs/` module docstrings against the declaration it names, and
 # fail on a mismatch. Spans rot silently whenever a cited file grows above the
 # declaration, and refreshing them per-PR leaves the table mixing fresh and
@@ -120,22 +120,22 @@ proof-coverage-build:
 proof-coverage: proof-coverage-build
     lake env lean --run scripts/ProofCoverage.lean
 
-# The ratchet. Exact equality against
-# `packages/EthCLSpecs/docs/proof-coverage.baseline`, in both directions: a lost
-# proof fails, and a new proof fails until its author commits the bump. A
-# floor-only count would miss a swap of one proof for another. The CI `ethcl` job
-# runs this after the build.
+# The ratchet. Exact equality against the committed baselines, one per package
+# (`packages/EthCLSpecs/docs/` for the fork bodies, `packages/SizzLean/docs/` for
+# the SSZ properties), in both directions: a lost proof fails, and a new proof
+# fails until its author commits the bump. A floor-only count would miss a swap of
+# one proof for another. The CI `ethcl` job runs this after the build.
 
 # Fail when proof coverage drifts from the committed baseline
 [group('general')]
 proof-coverage-check: proof-coverage-build
     lake env lean --run scripts/ProofCoverage.lean -- --check
 
-# Rewrite the baseline and the generated block in the `EthCLSpecs` README from
+# Rewrite both baselines and the generated block in the `EthCLSpecs` README from
 # the current build. Run it in the PR that adds or removes a proof, and commit
 # the diff; that diff is the coverage change, under review.
 
-# Rewrite the proof-coverage baseline and README block
+# Rewrite the proof-coverage baselines and README block
 [group('general')]
 proof-coverage-update: proof-coverage-build
     lake env lean --run scripts/ProofCoverage.lean -- --update

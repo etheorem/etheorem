@@ -1,9 +1,9 @@
 import EthCLSpecs.Gloas.EpochProcessing
-import EthCLSpecs.Proofs.Run
+import EthCLSpecs.Proofs.Gloas.Run
 import SizzLean.Proofs.SSZListPush
 
 /-!
-# `EthCLSpecs.Proofs.BuilderPendingPayments`: the builder-payment epoch substep
+# `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: the builder-payment epoch substep
 
 `EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:234-253`)
 modifies two fields sequentially within one state transition. This file characterizes
@@ -36,7 +36,7 @@ about how this substep's effect interacts with `settleBuilderPayment` or
 `processProposerSlashing`, the other paths that clear a `BuilderPendingPayment` before
 this substep ever runs.
 
-See `EthCLSpecs/docs/CONSENSUS_PROOF_CANDIDATES.md`, "Safety and invariant preservation".
+See `EthCLSpecs/docs/PROOF_LEDGER.md`, Gloas "Safety and invariant preservation".
 
 Every theorem below states its state-level conclusions through `sszGet`, never through
 bare `State` equality: `State`'s cache overlay accumulates one pending write per
@@ -47,7 +47,7 @@ the relevant fields through `sszGet`.
 
 set_option autoImplicit false
 
-namespace EthCLSpecs.Proofs
+namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec
 open EthCLSpecs.Gloas
@@ -277,4 +277,4 @@ theorem processBuilderPendingPayments_run_of_fits [Preset] [HasherTag] (before :
   unfold expectedWithdrawals
   exact sszListFoldlPush_val_of_fits _ _ hfits
 
-end EthCLSpecs.Proofs
+end EthCLSpecs.Proofs.Gloas

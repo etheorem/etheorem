@@ -1,0 +1,11 @@
+# Proof-coverage baseline. Rewrite with `just proof-coverage-update`.
+# Every line is a claim `just proof-coverage-check` enforces exactly.
+decode_encode basic-arms 7
+decode_encode bit-shapes 2
+decode_encode fixed-composites 3
+encode_size_le_max basic-arms 7
+encode_size_le_max bit-shapes 2
+encode_size_le_max fixed-composites 3
+serialize_injective basic-arms 7
+serialize_injective bit-shapes 2
+serialize_injective fixed-composites 3

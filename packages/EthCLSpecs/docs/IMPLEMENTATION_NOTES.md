@@ -782,18 +782,18 @@ conditional design described in `SPECS_ARCHITECTURE.md` §11.3 and the
 `LeanPoseidonProofs` containment pattern. No current proof requires that
 separation.
 
-- **`Proofs/BuilderIndex.lean`** establishes three `bv_decide` theorems over
+- **`Proofs/Gloas/BuilderIndex.lean`** establishes three `bv_decide` theorems over
   `isBuilderIndex`, `toBuilderIndex`, and `convertBuilderIndexToValidatorIndex`,
   proving the builder-index flag round-trip and tagging properties.
 
-- **`Proofs/GetPtc.lean`** proves `getPtc`'s `else`-branch offset into
+- **`Proofs/Gloas/GetPtc.lean`** proves `getPtc`'s `else`-branch offset into
   `ptcWindow` stays in range for its two guarded call sites:
   `getPtcElseOffset_lt_next_slot` under `process_payload_attestation`'s guarantee
   (`data.slot + 1 == state.slot`), and `getPtcElseOffset_lt_same_slot` under
   the fork-choice replay callers' exact-equality guarantee (`slot ==
   curSlot`). Both via `UInt64`/`Nat` bridging lemmas and `omega`, no mathlib.
 
-- **`Proofs/BuilderPendingPayments.lean`** proves `processBuilderPendingPayments`'s
+- **`Proofs/Gloas/BuilderPendingPayments.lean`** proves `processBuilderPendingPayments`'s
   local before/after behavior for one call: the withdrawals loop reduces to a
   bounded `SSZList.push` fold over the qualifying previous-epoch payments' withdrawals,
   in slot order, and the payment window shifts down by `SLOTS_PER_EPOCH`. A
@@ -802,7 +802,7 @@ separation.
   anything about `settleBuilderPayment` / `processProposerSlashing`, the other paths
   that clear a `BuilderPendingPayment`.
 
-- **`Proofs/CanBuilderCoverBid.lean`** characterizes `canBuilderCoverBid`'s
+- **`Proofs/Gloas/CanBuilderCoverBid.lean`** characterizes `canBuilderCoverBid`'s
   `Bool` result exactly: `canBuilderCoverBid_iff` states the guard in the
   implementation's own `UInt64` `builderBalance` / `minBalance` terms;
   `canBuilderCoverBid_iff_toNat_add_le` restates it over `Nat` as a single
@@ -810,12 +810,12 @@ separation.
   total/default indexing semantics, including fallback behavior for an
   out-of-range `builderIndex`.
 
-- **`Proofs/InitializePtcWindow.lean`** establishes three `simp`-closed theorems
+- **`Proofs/Gloas/InitializePtcWindow.lean`** establishes three `simp`-closed theorems
   over `initializePtcWindow`: its two index regions (the empty first-epoch
   placeholder and the remainder computed via `computePtcFromFulu`), plus a
   `default` corollary for the first region.
 
-- **`Proofs/InitiateBuilderExit.lean`** gives the whole-transition
+- **`Proofs/Gloas/InitiateBuilderExit.lean`** gives the whole-transition
   `initiateBuilderExit_run_eq` equation and projects it onto the builder registry
   as one unconditional `SSZList.set!`. The in-range and out-of-range theorems read
   that projection through `SizzLean.Proofs.SSZListSet`, so the range split happens
@@ -823,22 +823,22 @@ separation.
   withdrawability-delay addition does not wrap for the shipped minimal and
   mainnet configurations.
 
-- **`Proofs/Run.lean`** names `GloasRun`, the `EStateM StateTransitionError State`
+- **`Proofs/Gloas/Run.lean`** names `GloasRun`, the `EStateM StateTransitionError State`
   the Gloas proofs pin their `forkdef` bodies to. `StateTransition` is a parameter
   of a fork body, so every run theorem has to fix it; this fixes it once.
 
-- **`Proofs/IsValidIndexedPayloadAttestation.lean`** proves a two-layer,
+- **`Proofs/Gloas/IsValidIndexedPayloadAttestation.lean`** proves a two-layer,
   backend-generic characterization of `isValidIndexedPayloadAttestation`. Layer 1
   mirrors the implementation's literal validation gates, `validators[i.toNat]!`
   included. Layer 2 restates them semantically and binds the in-range proof in an
   `∃`, so its pubkey array reads the registry through `Array.attach` and no
   panicking index survives into the public statement. No mathlib.
 
-- **`Proofs/ProcessOperations.lean`** places its public declarations in
+- **`Proofs/Gloas/ProcessOperations.lean`** places its public declarations in
   `EthCLSpecs.Proofs.Gloas`. It characterizes Gloas `processOperations` at
   `GloasRun`; handlers and later failure postconditions remain opaque.
 
-- **`Proofs/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
+- **`Proofs/Gloas/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
   single record update, which doubles as the frame condition that no other Store
   field moves. On top of it sit unchanged-or-advances characterizations for the
   justified and finalized checkpoints, plus monotonicity corollaries proving that
@@ -846,4 +846,4 @@ separation.
   core `UInt64` ordering lemmas. Their theorems live in `EthCLSpecs.Proofs.Gloas`
   rather than the flat `EthCLSpecs.Proofs`, since Fulu declares the same function.
 
-- **`CONSENSUS_PROOF_CANDIDATES.md`** tracks candidate consensus proof targets.
+- **`PROOF_LEDGER.md`** tracks candidate consensus proof targets and their status.

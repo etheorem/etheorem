@@ -637,7 +637,7 @@ which should hit only Fulu-subject proofs and declared boundary proofs.
 
 The one sanctioned exception mirrors the spec-side boundary: a proof *about*
 boundary code names both forks because its subject does.
-`Proofs/InitializePtcWindow.lean` characterizes `computePtcFromFulu`, which reads
+`Proofs/Gloas/InitializePtcWindow.lean` characterizes `computePtcFromFulu`, which reads
 a Fulu pre-state, so it imports both, opens the downgrade bridge, and says so in
 its module docstring. A file taking that exception must declare it there.
 

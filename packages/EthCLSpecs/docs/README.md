@@ -33,13 +33,14 @@ and the shape it will take, so a later pass picks each one up whole. The current
 the provability of the pure indexed reads: a proof parameter or a refined index-list type,
 plus the invariant lemmas they rest on.
 
-[CONSENSUS_PROOF_CANDIDATES.md](CONSENSUS_PROOF_CANDIDATES.md) is a shortlist of Lean
-theorem candidates across the Fulu and Gloas specs, to help contributors pick proof targets.
-It is also the ledger `just proof-coverage` cross-checks: a row reads **Proved** once a
-theorem discharges it, and the report warns where the rows and the `@[characterizes …]`
-tags disagree.
+[PROOF_LEDGER.md](PROOF_LEDGER.md) is the proof ledger: one row per candidate spec
+function, grouped by fork and by the kind of theorem it asks for, with the property
+wanted, a status, and what tracks it. It is the forward half of proof coverage, and
+`just proof-coverage` cross-checks it: the report warns when a `proved` row carries no
+`@[characterizes …]` tag, and when a tagged function has no `proved` row.
 
-`proof-coverage.baseline` is the machine-written half, one line per covered spec function
-and per admitted SSZ arm. `just proof-coverage-check` demands exact equality with it, so a
-lost proof fails the build and a new proof fails until its author commits the bump. Never
-edit it by hand; `just proof-coverage-update` rewrites it.
+`proof-coverage.baseline` is the machine-written half, one line per covered spec
+function. `just proof-coverage-check` demands exact equality with it, so a lost proof
+fails the build and a new proof fails until its author commits the bump. Never edit it by
+hand; `just proof-coverage-update` rewrites it. `SizzLean` keeps its own baseline for the
+SSZ properties, under that package's `docs/`.

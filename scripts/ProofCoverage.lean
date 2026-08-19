@@ -88,14 +88,17 @@ namespace ProofCoverage
 Every path is relative to the repo root, which is where the `just` recipes run
 the script from. -/
 
-/-- The committed baseline the ratchet compares against. -/
-def baselinePath : System.FilePath := "packages/EthCLSpecs/docs/proof-coverage.baseline"
+/-- The fork bodies' committed baseline, one line per covered spec function. -/
+def forkBaselinePath : System.FilePath :=
+  "packages/EthCLSpecs/docs/proof-coverage.baseline"
 
-/-- The human-maintained ledger of proposed and finished proofs. The report
-cross-checks it loosely, and `CONSENSUS_PROOF_CANDIDATES.md` is the file that
-already holds those rows, so the ledger needs no second home. -/
-def ledgerPath : System.FilePath :=
-  "packages/EthCLSpecs/docs/CONSENSUS_PROOF_CANDIDATES.md"
+/-- The SSZ library's committed baseline, one line per green matrix cell. Each
+package owns the claims made about it, so the two files never mix. -/
+def sszBaselinePath : System.FilePath :=
+  "packages/SizzLean/docs/proof-coverage.baseline"
+
+/-- The human-maintained ledger of proposed and finished proofs. -/
+def ledgerPath : System.FilePath := "packages/EthCLSpecs/docs/PROOF_LEDGER.md"
 
 /-- The README whose verification-status block the report regenerates. -/
 def readmePath : System.FilePath := "packages/EthCLSpecs/README.md"
@@ -539,10 +542,21 @@ def buildReport (env : Environment) : Report :=
         if surfaced.contains target then none
         else some s!"`characterizes` tag on {thm} names {target}, which no fork's \
           surface holds. Did the function move fork?")
-    ++ tags.filterMap (fun (thm, _) =>
-        if forkThms.any (·.name == thm) then none
-        else some s!"`characterizes` tag on {thm} sits outside {forkProofsRoot}, so \
-          the report would count a claim it cannot grade.")
+    ++ tags.filterMap (fun (thm, target) =>
+        -- One directory per fork: a claim about `EthCLSpecs.Gloas.f` belongs in a
+        -- module under `EthCLSpecs.Proofs.Gloas`, the rule `Proofs.lean` states.
+        let expected := match specFunctionOwner? env target with
+          | some (fork, _) => fork.replacePrefix specsRoot forkProofsRoot
+          | none           => forkProofsRoot
+        match forkThms.find? (·.name == thm) with
+        | none =>
+          some s!"`characterizes` tag on {thm} sits outside {forkProofsRoot}, so \
+            the report would count a claim it cannot grade."
+        | some t =>
+          if expected.isPrefixOf t.module then none
+          else some s!"`characterizes` tag on {thm} claims {target}, whose fork's \
+            proofs live under {expected}, and the theorem sits in {t.module}. One \
+            directory per fork.")
   { forks, matrix
     forkTrust    := trustBase env forkAudit
     sszTrust     := trustBase env sszAudit
@@ -613,31 +627,48 @@ enforce. `LeanPoseidon` proves `permute_eq_permuteRef` in the standalone
 outside this run; `packages/LeanPoseidon/docs/PLAN.md` Phase 3 tracks it.
 "
 
-/-! ## The baseline
+/-! ## The baselines
 
-One line per covered spec function, one per green matrix cell. Functions, never
-theorem names, so splitting or renaming a theorem does not churn the file while
-coverage holds. -/
+One committed file per package, because a package owns the claims made about it.
+The fork bodies' file lists covered spec functions, the SSZ library's file lists
+green matrix cells. Both list what is claimed, never the theorem names that
+claim it, so splitting or renaming a theorem does not churn a file while coverage
+holds. -/
 
-/-- The two comment lines at the head of the baseline file. -/
+/-- One committed baseline: where it lives and what it must hold. -/
+structure Baseline where
+  /-- The file, relative to the repo root. -/
+  path : System.FilePath
+  /-- The claims, sorted, one per line. -/
+  claims : Array String
+
+/-- The two comment lines at the head of every baseline file. -/
 def baselineHeader : Array String :=
   #["# Proof-coverage baseline. Rewrite with `just proof-coverage-update`.",
     "# Every line is a claim `just proof-coverage-check` enforces exactly."]
 
-/-- The baseline's data lines, sorted. -/
-def baselineLines (report : Report) : Array String :=
-  let forkLines := report.forks.flatMap fun r =>
-    r.touched.map fun fn =>
-      let tier := if r.characterized.contains fn then "tier2" else "tier1"
-      s!"{tier} {fn}"
-  let sszLines := report.matrix.flatMap fun r =>
-    (fragments.zip r.cells).filterMap fun (f, arms) =>
-      if arms == 0 then none else some s!"sizzlean {r.property.key} {f.key} {arms}"
-  (forkLines ++ sszLines).qsort (· < ·)
+/-- The fork bodies' claims: the tier each covered spec function reached. -/
+def forkBaseline (report : Report) : Baseline :=
+  { path   := forkBaselinePath
+    claims := (report.forks.flatMap fun r =>
+      r.touched.map fun fn =>
+        let tier := if r.characterized.contains fn then "tier2" else "tier1"
+        s!"{tier} {fn}").qsort (· < ·) }
 
-/-- The baseline file's whole text. -/
-def renderBaseline (report : Report) : String :=
-  String.intercalate "\n" (baselineHeader ++ baselineLines report).toList ++ "\n"
+/-- The SSZ library's claims: how many arms each property admits per fragment. -/
+def sszBaseline (report : Report) : Baseline :=
+  { path   := sszBaselinePath
+    claims := (report.matrix.flatMap fun r =>
+      (fragments.zip r.cells).filterMap fun (f, arms) =>
+        if arms == 0 then none else some s!"{r.property.key} {f.key} {arms}").qsort (· < ·) }
+
+/-- Every baseline the run maintains. -/
+def baselines (report : Report) : Array Baseline :=
+  #[forkBaseline report, sszBaseline report]
+
+/-- A baseline file's whole text. -/
+def renderBaseline (baseline : Baseline) : String :=
+  String.intercalate "\n" (baselineHeader ++ baseline.claims).toList ++ "\n"
 
 /-- The lines of a baseline file, comments and blanks dropped. -/
 def parseBaseline (text : String) : Array String :=
@@ -647,11 +678,11 @@ def parseBaseline (text : String) : Array String :=
 
 /-! ## The ledger cross-check
 
-`docs/CONSENSUS_PROOF_CANDIDATES.md` is the ledger: one row per candidate spec
-function, its rationale, and the words `**Proved**` once a theorem discharges it.
-The cross-check reads those rows and warns where they and the `characterizes`
-tags disagree. It only ever warns: the ledger is prose, and a table this script
-cannot parse is still a table a person can read.
+`docs/PROOF_LEDGER.md` is the ledger: one row per candidate spec function, its
+location, the property it should carry, its status, and what tracks it. The
+cross-check reads those rows and warns where they and the `characterizes` tags
+disagree. It only ever warns: the ledger is prose, and a table this script cannot
+parse is still a table a person can read.
 -/
 
 /-- One parsed ledger row. -/
@@ -664,29 +695,27 @@ structure LedgerRow where
 /-- Strip backticks and surrounding space from a table cell. -/
 def plainCell (cell : String) : String := trim (cell.replace "`" "")
 
-/-- Does `haystack` hold `needle`? -/
-def holds (haystack needle : String) : Bool := (haystack.splitOn needle).length > 1
-
 /-- Every ledger row, resolved against the fork it cites.
 
-A row's second cell cites the spec body it lives in
-(`` `Gloas/Operations.lean:456` ``), and the leading path component is the fork,
+The row's five cells are Function, Location, Property, Status, Tracking. The
+Location cell cites the spec body the function lives in
+(`` `Gloas/Operations.lean:456` ``), and its leading path component is the fork,
 so `` `getPtc` `` in that row resolves to `EthCLSpecs.Gloas.getPtc`. Header rows,
-separator rows, and prose all fail one of the shape tests, so none of them needs
-a special case. -/
+separator rows, the column key, and prose all fail one of the shape tests, so
+none of them needs a special case. -/
 def parseLedger (text : String) : Array LedgerRow :=
   (text.splitOn "\n").toArray.filterMap fun line =>
     let line := trim line
     if !line.startsWith "|" then none else
       let cells := (line.splitOn "|").toArray
-      if cells.size < 5 then none else
+      if cells.size < 6 then none else
         let name := trim cells[1]!
         let location := plainCell cells[2]!
         if !name.startsWith "`" then none else
           match location.splitOn "/" with
           | fork :: _ :: _ =>
             some { function := specsRoot ++ fork.toName ++ (plainCell name).toName
-                   proved   := holds cells[3]! "**Proved**" }
+                   proved   := plainCell cells[4]! == "proved" }
           | _ => none
 
 /-- What the ledger and the computed coverage disagree about.
@@ -766,16 +795,17 @@ def baselineDrift (committed computed : Array String) : Array String :=
 cannot slip through a floor-only count. -/
 def runCheck (report : Report) : IO UInt32 := do
   let mut failed := false
-  if ← baselinePath.pathExists then
-    let drift := baselineDrift (parseBaseline (← IO.FS.readFile baselinePath))
-                               (baselineLines report)
-    unless drift.isEmpty do
+  for baseline in baselines report do
+    if ← baseline.path.pathExists then
+      let drift := baselineDrift (parseBaseline (← IO.FS.readFile baseline.path))
+                                 baseline.claims
+      unless drift.isEmpty do
+        failed := true
+        IO.eprintln s!"{baseline.path} and the build disagree:"
+        for line in drift do IO.eprintln s!"  {line}"
+    else
       failed := true
-      IO.eprintln s!"{baselinePath} and the build disagree:"
-      for line in drift do IO.eprintln s!"  {line}"
-  else
-    failed := true
-    IO.eprintln s!"{baselinePath} is missing. Run `just proof-coverage-update`."
+      IO.eprintln s!"{baseline.path} is missing. Run `just proof-coverage-update`."
   match readmeBlock (← IO.FS.readFile readmePath) with
   | .error e => failed := true; IO.eprintln e
   | .ok block =>
@@ -786,14 +816,15 @@ def runCheck (report : Report) : IO UInt32 := do
     IO.eprintln "Restore the proofs, or run `just proof-coverage-update` and commit \
       the bump under review."
     return 1
-  IO.println s!"Proof coverage matches the baseline: \
-    {(baselineLines report).size} claims."
+  let claims := (baselines report).foldl (· + ·.claims.size) 0
+  IO.println s!"Proof coverage matches the baselines: {claims} claims."
   return 0
 
-/-- Rewrite the two generated files. -/
+/-- Rewrite the generated files: a baseline per package, and the README block. -/
 def runUpdate (report : Report) : IO UInt32 := do
-  IO.FS.writeFile baselinePath (renderBaseline report)
-  IO.println s!"wrote {baselinePath}: {(baselineLines report).size} claims."
+  for baseline in baselines report do
+    IO.FS.writeFile baseline.path (renderBaseline baseline)
+    IO.println s!"wrote {baseline.path}: {baseline.claims.size} claims."
   match spliceReadme (← IO.FS.readFile readmePath) (renderReadmeBlock report) with
   | .error e => IO.eprintln e; return 1
   | .ok text =>

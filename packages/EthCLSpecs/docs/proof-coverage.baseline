@@ -1,14 +1,5 @@
 # Proof-coverage baseline. Rewrite with `just proof-coverage-update`.
 # Every line is a claim `just proof-coverage-check` enforces exactly.
-sizzlean decode_encode basic-arms 7
-sizzlean decode_encode bit-shapes 2
-sizzlean decode_encode fixed-composites 3
-sizzlean encode_size_le_max basic-arms 7
-sizzlean encode_size_le_max bit-shapes 2
-sizzlean encode_size_le_max fixed-composites 3
-sizzlean serialize_injective basic-arms 7
-sizzlean serialize_injective bit-shapes 2
-sizzlean serialize_injective fixed-composites 3
 tier1 EthCLSpecs.Fulu.computeStartSlotAtEpoch
 tier1 EthCLSpecs.Fulu.currentEpochOf
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot

@@ -152,9 +152,9 @@ fails the run, `sorryAx` above all. `EthCLLib` carries no coverage number: it is
 elaborators and an effect monad, and its correctness claim is that the replayed
 forks build and pass conformance.
 
-[`docs/CONSENSUS_PROOF_CANDIDATES.md`](docs/CONSENSUS_PROOF_CANDIDATES.md) is the
-forward half. The tables above record what is proved; that ledger records what we
-intend to prove next, and `just proof-coverage` cross-checks the two.
+[`docs/PROOF_LEDGER.md`](docs/PROOF_LEDGER.md) is the forward half. The tables
+above record what is proved; the ledger records what we intend to prove next, one
+row per candidate spec function, and `just proof-coverage` cross-checks the two.
 
 ## Documentation
 

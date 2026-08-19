@@ -1,8 +1,8 @@
 import EthCLSpecs.Gloas.Transition
-import EthCLSpecs.Proofs.Run
+import EthCLSpecs.Proofs.Gloas.Run
 
 /-!
-# `EthCLSpecs.Proofs.ProcessOperations`: Gloas coordinator sequencing
+# `EthCLSpecs.Proofs.Gloas.ProcessOperations`: Gloas coordinator sequencing
 
 Public declarations live in `EthCLSpecs.Proofs.Gloas`. At `GloasRun`, the
 runner every Gloas proof here pins to, they establish three facts about Gloas

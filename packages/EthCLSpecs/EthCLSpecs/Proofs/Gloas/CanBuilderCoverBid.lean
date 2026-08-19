@@ -1,7 +1,7 @@
 import EthCLSpecs.Gloas.Operations
 
 /-!
-# `EthCLSpecs.Proofs.CanBuilderCoverBid`: Boolean characterization
+# `EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid`: Boolean characterization
 
 `EthCLSpecs.Gloas.canBuilderCoverBid` is a pure `Bool` predicate used by
 `processExecutionPayloadBid` before queuing a `BuilderPendingPayment`. This
@@ -25,13 +25,13 @@ Two theorems:
 A private `le_sub_iff_toNat_add_le` carries the `UInt64`-to-`Nat` step the second
 theorem needs, keeping the spec-level statements free of the arithmetic detour.
 
-See `EthCLSpecs/docs/CONSENSUS_PROOF_CANDIDATES.md`, "Bounds and termination
+See `EthCLSpecs/docs/PROOF_LEDGER.md`, Gloas "Bounds and termination
 properties".
 -/
 
 set_option autoImplicit false
 
-namespace EthCLSpecs.Proofs
+namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag)
 open EthCLSpecs.Gloas (BuilderIndex Gwei Preset)
@@ -91,4 +91,4 @@ theorem canBuilderCoverBid_iff_toNat_add_le [Preset] [HasherTag] :
     have h_min := UInt64.le_iff_toNat_le.mpr (Nat.le_trans (Nat.le_add_right _ _) h)
     exact ⟨h_min, (le_sub_iff_toNat_add_le h_min).mpr h⟩
 
-end EthCLSpecs.Proofs
+end EthCLSpecs.Proofs.Gloas

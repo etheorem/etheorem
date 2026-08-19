@@ -2,7 +2,7 @@ import EthCLSpecs.Gloas.Operations
 import SizzLean.Proofs.SSZListGetElem
 
 /-!
-# `EthCLSpecs.Proofs.IsValidIndexedPayloadAttestation`: a two-layer characterization
+# `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: a two-layer characterization
 
 An exact backend-generic characterization of
 `EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:422-433`).
@@ -38,7 +38,7 @@ call returning `true`, not a cryptographic soundness claim. No mathlib.
 
 set_option autoImplicit false
 
-namespace EthCLSpecs.Proofs
+namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (CryptoBackend HasherTag blsFastAggregateVerify computeSigningRoot)
 open scoped EthCLLib.Spec
@@ -132,4 +132,4 @@ theorem isValidIndexedPayloadAttestation_eq_true_iff [Preset] [HasherTag] [Crypt
   · rintro ⟨hRange, hVerify⟩
     exact ⟨hRange, by rwa [sszListMap_getElem!_eq_attachMap _ _ _ _ hRange]⟩
 
-end EthCLSpecs.Proofs
+end EthCLSpecs.Proofs.Gloas

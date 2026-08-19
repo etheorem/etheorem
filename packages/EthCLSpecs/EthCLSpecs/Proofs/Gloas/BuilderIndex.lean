@@ -2,7 +2,7 @@ import EthCLSpecs.Gloas.Operations
 import Std.Tactic.BVDecide
 
 /-!
-# `EthCLSpecs.Proofs.BuilderIndex`: the builder-index flag round-trip
+# `EthCLSpecs.Proofs.Gloas.BuilderIndex`: the builder-index flag round-trip
 
 `EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex` sets the
 `BUILDER_INDEX_FLAG` bit and `EthCLSpecs.Gloas.toBuilderIndex` clears it, both
@@ -16,12 +16,13 @@ than the raw `&&&` expression it unfolds to.
 All three proofs unfold to the raw `UInt64` bitwise expression and close with
 `bv_decide`, no mathlib needed.
 
-See `EthCLSpecs/docs/CONSENSUS_PROOF_CANDIDATES.md`, "New Gloas functionality".
+See `EthCLSpecs/docs/PROOF_LEDGER.md`, Gloas "Round-trip and conversion
+properties".
 -/
 
 set_option autoImplicit false
 
-namespace EthCLSpecs.Proofs
+namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLSpecs.Gloas (BuilderIndex ValidatorIndex)
 open EthCLSpecs.Gloas (isBuilderIndex toBuilderIndex convertBuilderIndexToValidatorIndex)
@@ -72,4 +73,4 @@ theorem isBuilderIndex_convertBuilderIndexToValidatorIndex :
   simp only [bne_iff_ne, ne_eq]
   bv_decide
 
-end EthCLSpecs.Proofs
+end EthCLSpecs.Proofs.Gloas
