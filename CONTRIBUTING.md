@@ -133,6 +133,43 @@ in detail. The short version:
 Read `CLAUDE.md`'s *Principles* and *Conventions* sections
 before sending non-trivial PRs.
 
+## Adding a proof
+
+Proofs sit beside the specs, one directory per fork. A theorem about an
+`EthCLSpecs.Gloas` declaration goes in
+`packages/EthCLSpecs/EthCLSpecs/Proofs/Gloas/`, in the
+`EthCLSpecs.Proofs.Gloas` namespace. Each fork re-elaborates every inherited
+declaration into its own namespace, so a proof about `Gloas.f` claims nothing
+about `Heze.f`, and the per-fork directory is what keeps the two claims apart.
+
+1. **Take a row from the ledger.**
+   [`packages/EthCLSpecs/docs/PROOF_LEDGER.md`](packages/EthCLSpecs/docs/PROOF_LEDGER.md)
+   lists the candidates, grouped by fork and by the kind of theorem each one
+   asks for. Set the row to `in progress`, or add a row if your target is not
+   listed yet.
+2. **Write the theorem.** One module per subject, a module docstring that frames
+   it against the spec section it is about. A docstring that cites a line span
+   into a fork body (`Gloas/Operations.lean:88-91`) is checked: run
+   `just check-citations`, and `--fix` rewrites a stale span.
+3. **Tag it if it states the contract.** `@[characterizes EthCLSpecs.Gloas.f]`
+   claims that the theorem states `f`'s main contract. The attribute rejects a
+   target no `forkdef` declared, a target your statement never mentions, and a
+   tag written outside the target fork's directory. Supporting lemmas stay
+   untagged; they still count as touched.
+4. **Flip the ledger row** to `proved`, and name the pull request and the module
+   in its Tracking cell. A row stays in the ledger for its whole life.
+5. **Run `just proof-coverage-update` and commit the diff.** It rewrites the two
+   baselines and the two README blocks. That diff is the coverage change, so it
+   belongs in the pull request with the proof. CI never writes it for you.
+6. **Read the report.** `just proof-coverage` prints the tiers per fork, the
+   axioms every theorem rests on, and warnings where the ledger and the tags
+   disagree. `just proof-coverage-check` is the exact command CI runs.
+
+Two rules the tooling enforces rather than asks for. Committed `sorry` fails
+`just lint`, and a proof resting on any axiom outside the allowed classes fails
+`just proof-coverage`, by name. Neither is a style preference; both are the
+trust base staying honest.
+
 ## Pull requests
 
 - Keep the diff focused. One PR per logical change.
@@ -140,6 +177,9 @@ before sending non-trivial PRs.
 - New SSZ-shape coverage adds a `native_decide` or property test
   per shape; new tactic / proof code adds an `example` block that
   the typechecker keeps honest.
+- If the change adds, removes, or retargets a proof, run
+  `just proof-coverage-update` and commit the diff, and update the row in
+  `docs/PROOF_LEDGER.md`. See *Adding a proof* above.
 - If the change touches the spec → cache equivalence path
   (cache invariants, deriving handler, pyspec gates),
   re-run `just ethcl-pyspec` and note the
