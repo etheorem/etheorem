@@ -100,8 +100,11 @@ def sszBaselinePath : System.FilePath :=
 /-- The human-maintained ledger of proposed and finished proofs. -/
 def ledgerPath : System.FilePath := "packages/EthCLSpecs/docs/PROOF_LEDGER.md"
 
-/-- The README whose verification-status block the report regenerates. -/
+/-- The `EthCLSpecs` README, which carries the fork-body tables. -/
 def readmePath : System.FilePath := "packages/EthCLSpecs/README.md"
+
+/-- The repo README, which carries the one-screen rollup across the packages. -/
+def rootReadmePath : System.FilePath := "README.md"
 
 /-- The `SizzLean` package directory, the root a module path is relative to. -/
 def sizzleanPackageDir : System.FilePath := "packages/SizzLean"
@@ -575,6 +578,44 @@ def renderReadmeBlock (report : Report) : String :=
   String.intercalate "\n\n"
     [renderForkTable report.forks, renderTrustBase report.forkTrust]
 
+/-- The rollup: one row per package, for a reader who wants the whole picture on
+one screen.
+
+"What is there to prove" differs per package, so a single ratio across the
+monorepo would be dishonest. Each row says what a proof covers in that package
+before it says where the package stands, and the two packages with nothing to
+cover say so in the same table rather than going unmentioned.
+
+The arm count is the largest a property row admits. Every property gated by the
+same predicate admits the same arms, so the number reads as "the size of the
+universe fragment the finished properties cover", and a property gated by a
+narrower predicate cannot inflate it. -/
+def renderRollup (report : Report) : String :=
+  let characterized := report.forks.foldl (· + ·.characterized.size) 0
+  let touched       := report.forks.foldl (· + ·.touched.size) 0
+  let surface       := report.forks.foldl (· + ·.surface.size) 0
+  let sszDone       := report.matrix.countP fun r => r.cells.any (· != 0)
+  let sszArms       := report.matrix.foldl (init := 0) fun best r =>
+    max best (r.cells.foldl (· + ·) 0)
+  let openRows      := report.matrix.filterMap fun r =>
+    if r.cells.all (· == 0) then some r.property.label else none
+  table #["Package", "What a proof covers here", "Where it stands"] #[
+    #["`EthCLSpecs`", "the spec functions the fork bodies declare",
+      s!"{characterized} characterized, {touched} touched, of {surface}"],
+    #["`SizzLean`", "SSZ properties over the whole `SSZType` universe, gated by a predicate",
+      s!"{sszDone} of {report.matrix.size} properties, over {sszArms} admitted arms; open: {String.intercalate ", " openRows.toList}"],
+    #["`LeanSha256`, `LeanHazmat*`", "nothing to cover: `@[extern]` bindings, and a spec side pinned by the NIST CAVP vectors",
+      "2 named equivalence axioms: `sha256Hash_eq_spec`, `sha256Combine_eq_spec`"],
+    #["`LeanPoseidon`", "`permute_eq_permuteRef`, in the standalone `LeanPoseidonProofs` package",
+      "outside this run: it pins mathlib of its own"],
+    #["`EthCLLib`", "out of scope: elaborators and an effect monad",
+      "the replay tests and the pyspec vectors are its claim"]]
+
+/-- The README blocks the run maintains, each paired with the file that holds
+it. -/
+def readmeTargets (report : Report) : Array (System.FilePath × String) :=
+  #[(readmePath, renderReadmeBlock report), (rootReadmePath, renderRollup report)]
+
 /-- The full report, for a person reading a terminal. -/
 def renderReport (report : Report) : String :=
   let tierLists := report.forks.foldl (init := "") fun acc r =>
@@ -616,15 +657,13 @@ The SSZ proof set:
 
 {renderTrustBase report.sszTrust}
 
-`LeanSha256` and the `LeanHazmat` families carry no coverage ratio by design.
-The hazmat packages are `@[extern] opaque` bindings, so there is no Lean body to
-prove anything about, and `LeanSha256`'s own claim is empirical (the NIST CAVP
-vectors). What they contribute is the two named equivalence axioms above.
-`EthCLLib` is out of scope: its correctness claim is that the replayed forks
-build and pass conformance, which the replay tests and the pyspec vectors
-enforce. `LeanPoseidon` proves `permute_eq_permuteRef` in the standalone
-`LeanPoseidonProofs` package, which pins mathlib outside the umbrella and so
-outside this run; `packages/LeanPoseidon/docs/PLAN.md` Phase 3 tracks it.
+## Across the packages
+
+{renderRollup report}
+
+`packages/LeanPoseidon/docs/PLAN.md` Phase 3 tracks the Poseidon2 proof, and
+`packages/EthCLSpecs/docs/PROOF_LEDGER.md` is the forward half for the fork
+bodies: every candidate spec function, the property wanted, and its status.
 "
 
 /-! ## The baselines
@@ -739,24 +778,25 @@ def ledgerWarnings (env : Environment) (report : Report) (rows : Array LedgerRow
 
 /-! ## The README block -/
 
-/-- Replace the README's generated block, or report why it cannot be found. -/
-def spliceReadme (text : String) (block : String) : Except String String :=
+/-- Replace a README's generated block, or report why it cannot be found. -/
+def spliceReadme (path : System.FilePath) (text block : String) :
+    Except String String :=
   match text.splitOn readmeBeginMarker with
   | [before, rest] =>
     match rest.splitOn readmeEndMarker with
     | [_, after] =>
       .ok (before ++ readmeBeginMarker ++ "\n" ++ block ++ "\n" ++ readmeEndMarker ++ after)
-    | _ => .error s!"{readmePath} needs exactly one {readmeEndMarker}."
-  | _ => .error s!"{readmePath} needs exactly one {readmeBeginMarker}."
+    | _ => .error s!"{path} needs exactly one {readmeEndMarker}."
+  | _ => .error s!"{path} needs exactly one {readmeBeginMarker}."
 
-/-- The block the README carries today. -/
-def readmeBlock (text : String) : Except String String :=
+/-- The block a README carries today. -/
+def readmeBlock (path : System.FilePath) (text : String) : Except String String :=
   match text.splitOn readmeBeginMarker with
   | [_, rest] =>
     match rest.splitOn readmeEndMarker with
     | [block, _] => .ok (trim block)
-    | _ => .error s!"{readmePath} needs exactly one {readmeEndMarker}."
-  | _ => .error s!"{readmePath} needs exactly one {readmeBeginMarker}."
+    | _ => .error s!"{path} needs exactly one {readmeEndMarker}."
+  | _ => .error s!"{path} needs exactly one {readmeBeginMarker}."
 
 /-! ## The three modes -/
 
@@ -806,12 +846,13 @@ def runCheck (report : Report) : IO UInt32 := do
     else
       failed := true
       IO.eprintln s!"{baseline.path} is missing. Run `just proof-coverage-update`."
-  match readmeBlock (← IO.FS.readFile readmePath) with
-  | .error e => failed := true; IO.eprintln e
-  | .ok block =>
-    unless block == trim (renderReadmeBlock report) do
-      failed := true
-      IO.eprintln s!"{readmePath}'s verification-status block is stale."
+  for (path, block) in readmeTargets report do
+    match readmeBlock path (← IO.FS.readFile path) with
+    | .error e => failed := true; IO.eprintln e
+    | .ok carried =>
+      unless carried == trim block do
+        failed := true
+        IO.eprintln s!"{path}'s verification-status block is stale."
   if failed then
     IO.eprintln "Restore the proofs, or run `just proof-coverage-update` and commit \
       the bump under review."
@@ -825,12 +866,14 @@ def runUpdate (report : Report) : IO UInt32 := do
   for baseline in baselines report do
     IO.FS.writeFile baseline.path (renderBaseline baseline)
     IO.println s!"wrote {baseline.path}: {baseline.claims.size} claims."
-  match spliceReadme (← IO.FS.readFile readmePath) (renderReadmeBlock report) with
-  | .error e => IO.eprintln e; return 1
-  | .ok text =>
-    IO.FS.writeFile readmePath text
-    IO.println s!"wrote {readmePath}'s verification-status block."
-    return 0
+  let mut failed := false
+  for (path, block) in readmeTargets report do
+    match spliceReadme path (← IO.FS.readFile path) block with
+    | .error e => failed := true; IO.eprintln e
+    | .ok text =>
+      IO.FS.writeFile path text
+      IO.println s!"wrote {path}'s verification-status block."
+  return if failed then 1 else 0
 
 /-- Print the report, and the ledger's disagreements as warnings. -/
 def runReport (env : Environment) (report : Report) : IO UInt32 := do
