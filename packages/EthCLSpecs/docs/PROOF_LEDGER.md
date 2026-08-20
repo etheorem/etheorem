@@ -20,8 +20,15 @@ reading across the Gloas specification and its supporting libraries.
 | Status | `proposed`, `in progress`, `proved`, or `out of scope`. |
 | Tracking | The pull request that landed or is landing the proof, and the module holding it. |
 
-`out of scope` carries its reason in the Property cell, cryptographic
-assumptions being the standing case.
+A row stays here for its whole life. It opens as `proposed`, and the pull
+request that discharges it flips the status and bumps the baseline in the same
+diff, so the ledger reads as the full list of candidates and the baseline reads
+as the subset that is done.
+
+`in progress` covers a theorem being written and one that is partly landed
+alike. The Property cell then says what is landed and what is open, which is the
+case `getPtc` shows. `out of scope` carries its reason in the Property cell,
+cryptographic assumptions being the standing case.
 
 ## The Location column
 
@@ -79,7 +86,7 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | `getExpectedWithdrawals` | `Gloas/Withdrawals.lean:171-179` | The withdrawals returned by its four phases combined never exceed `MAX_WITHDRAWALS_PER_PAYLOAD` | proposed |  |
 | `initiateBuilderExit` | `Gloas/Operations.lean:88-91` | `initiateBuilderExit_run_eq` is the whole-transition equation; its exact in-range/out-of-range effect on the builder registry is characterized; no-wrap is conditional for an arbitrary `Config` and proved unconditionally for both shipped Gloas preset/config pairs | proved | #39, `Proofs/Gloas/InitiateBuilderExit.lean` |
 | `processBuilderExitRequest` | `Gloas/Operations.lean:194-204` | On its successful builder-exit branch, the index supplied to `initiateBuilderExit` is in range; under either shipped Gloas preset/config pair, the selected builder receives the intended non-wrapping future `withdrawableEpoch`. All non-matching or ineligible branches leave the builder registry unchanged | proposed |  |
-| `getPtc` | `Gloas/Operations.lean:389-406` | Its computed offset into `ptcWindow` stays in range under the two guarded call patterns covered here: `data.slot + 1 == state.slot` and the fork-choice replay callers' `slot == curSlot`. Both bounds are stated over `getPtcElseOffset`, a restatement of the else-branch arithmetic, so no theorem statement mentions `getPtc` itself and the coverage report leaves it at the touched tier | proved | `4b4b78a`, `Proofs/Gloas/GetPtc.lean` |
+| `getPtc` | `Gloas/Operations.lean:389-406` | Its computed offset into `ptcWindow` stays in range under the two guarded call patterns: `data.slot + 1 == state.slot` and the fork-choice replay callers' `slot == curSlot`. Landed so far: both bounds, stated over `getPtcElseOffset`, a restatement of the else-branch arithmetic. Open: a statement about `getPtc` itself, which is what would carry a `characterizes` tag and move the function past the touched tier | in progress | `4b4b78a`, `Proofs/Gloas/GetPtc.lean` |
 | `getPendingBalanceToWithdrawForBuilder` | `Gloas/Operations.lean:61-65` | Under an explicit bound preventing overflow across both sequential `UInt64` folds, its result agrees with the unbounded `Nat` sum of the matching pending-withdrawal and pending-payment amounts | proposed |  |
 | `canBuilderCoverBid` | `Gloas/Operations.lean:460-463` | Its `Bool` result is characterized exactly against the implementation's computed `minBalance`. Proving that queuing an accepted bid preserves `MIN_DEPOSIT_AMOUNT` + pending obligations ≤ builder balance is the caller-level follow-up, and needs pending-total no-overflow and ring-cell freshness hypotheses | proved | #36, `Proofs/Gloas/CanBuilderCoverBid.lean` |
 | `applyWithdrawals` | `Gloas/Withdrawals.lean:184-194` | A builder-flagged withdrawal decreases the builder's balance by at most its own balance, so the balance never goes negative | proposed |  |
@@ -144,7 +151,7 @@ Functions whose entire purpose is the Fulu-to-Gloas upgrade itself: preserving s
 | --- | --- | --- | --- | --- |
 | `upgradeToGloas` | `Gloas/Upgrade.lean:109-164` | Preserves inherited state while correctly initializing the new ePBS state | proposed |  |
 | `computePtcFromFulu` | `Gloas/Upgrade.lean:43-51` | Agrees with `Gloas.computePtc` once the state is upgraded | proposed |  |
-| `initializePtcWindow` | `Gloas/Upgrade.lean:58-68` | The first `SLOTS_PER_EPOCH` entries are the empty committee, and every remaining entry equals `computePtcFromFulu` at the slot computed by `initializePtcWindow` | proved | #26, `Proofs/Gloas/InitializePtcWindow.lean` |
+| `initializePtcWindow` | `Gloas/Upgrade.lean:58-68` | The first `SLOTS_PER_EPOCH` entries are the empty committee, and every remaining entry equals `computePtcFromFulu` at the slot computed by `initializePtcWindow` . A plain `def` inside the fork body rather than a `forkdef`, so it is no spec function and the coverage report's denominator never holds it | proved | #26, `Proofs/Gloas/InitializePtcWindow.lean` |
 
 ### Candidates needing a sharper statement
 
