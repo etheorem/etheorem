@@ -2,7 +2,7 @@ import EthCLLib.Spec.Arith
 import EthCLSpecs.Gloas.EpochProcessing
 
 /-!
-# `EthCLSpecs.Proofs.GetPtc`: the `get_ptc` else-branch offset bound
+# `EthCLSpecs.Proofs.Gloas.GetPtc`: the `get_ptc` else-branch offset bound
 
 `EthCLSpecs.Gloas.getPtc` (`Gloas/Operations.lean:389-406`) reads the cached
 Payload Timeliness Committee for a slot out of the `ptcWindow` ring buffer. Its
@@ -32,7 +32,7 @@ core `Init.Data.UInt` plus `omega`.
 
 set_option autoImplicit false
 
-namespace EthCLSpecs.Proofs
+namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (uint64ModOfNatToNatLt)
 open EthCLSpecs.Gloas (Slot Preset computeEpochAtSlot)
@@ -85,4 +85,4 @@ theorem getPtcElseOffset_lt_same_slot [Preset] (slot : Slot) :
   rw [UInt64.sub_self, UInt64.zero_add, UInt64.one_mul, UInt64.toNat_add, hspe]
   omega
 
-end EthCLSpecs.Proofs
+end EthCLSpecs.Proofs.Gloas

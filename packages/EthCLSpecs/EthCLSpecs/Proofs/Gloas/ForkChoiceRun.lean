@@ -1,14 +1,15 @@
 import EthCLSpecs.Gloas.ForkChoice
-import EthCLSpecs.Proofs.InitiateBuilderExit
-import EthCLSpecs.Proofs.BuilderPendingPayments
+import EthCLSpecs.Proofs.Gloas.InitiateBuilderExit
+import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 
 /-!
-# `EthCLSpecs.Proofs.ForkChoiceRun`: the fork-choice store monad these proofs would run at
+# `EthCLSpecs.Proofs.Gloas.ForkChoiceRun`: the fork-choice store monad these proofs would run at
 
-`Proofs/Run.lean` names the monad for the *state* machine. This names the one for the
+`Proofs/Gloas/Run.lean` names the monad for the *state* machine. This names the one for the
 *store* machine, and proves a fork-choice `forkdef` at it.
 
-Nothing here is a fork-choice proof yet; `CONSENSUS_PROOF_CANDIDATES.md` queues seven.
+Nothing here is a fork-choice proof yet; `PROOF_LEDGER.md` queues five under Gloas
+"Fork-choice correctness".
 This file establishes the two things such a proof needs.
 
 **A store monad with no `EStateM` in it.** `getSlotsSinceGenesis_run_of_time_eq_genesis`
@@ -29,7 +30,7 @@ own.
 
 set_option autoImplicit false
 
-namespace EthCLSpecs.Proofs
+namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag StoreTransitionError MapKind FcMap NestedStateMachine
   runNestedStateTransition runNestedStateTransition_of_ok)
@@ -90,7 +91,7 @@ store machine is function application, and there is nothing left here to state a
 theorem of the Gloas spec.
 
 These are `example`s rather than named theorems for that reason: they claim nothing about
-Gloas that `Proofs/InitiateBuilderExit.lean` and `Proofs/BuilderPendingPayments.lean` do
+Gloas that `Proofs/Gloas/InitiateBuilderExit.lean` and `Proofs/Gloas/BuilderPendingPayments.lean` do
 not already claim. They are here so the build keeps the composition honest, and so a
 reader looking for "how do I use a step's theorem inside a fork-choice proof" finds the
 two lines that answer it.
@@ -128,4 +129,4 @@ example [Preset] [HasherTag] {m : Type → Type} [Monad m]
     let ⟨post, hrun, hpost⟩ := processBuilderPendingPayments_run pre
     ⟨post, runNestedStateTransition_of_ok hrun, hpost⟩
 
-end EthCLSpecs.Proofs
+end EthCLSpecs.Proofs.Gloas

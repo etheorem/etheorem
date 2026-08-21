@@ -1,7 +1,7 @@
 import EthCLSpecs.Gloas.Upgrade
 
 /-!
-# `EthCLSpecs.Proofs.InitializePtcWindow`: the seeded PTC window's two regions
+# `EthCLSpecs.Proofs.Gloas.InitializePtcWindow`: the seeded PTC window's two regions
 
 `EthCLSpecs.Gloas.initializePtcWindow` (`Gloas/Upgrade.lean`) builds the
 Fulu → Gloas fork transition's cached `ptcWindow` as one `Vector.ofFn` over
@@ -21,7 +21,7 @@ both sides, the same bridge `Gloas/Upgrade.lean` itself opens.
 
 set_option autoImplicit false
 
-namespace EthCLSpecs.Proofs
+namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag)
 open EthCLSpecs.Gloas (Preset initializePtcWindow computePtcFromFulu)
@@ -69,4 +69,4 @@ theorem initializePtcWindow_lt_default [Preset] [HasherTag] :
   intro state i h
   exact initializePtcWindow_lt state i h
 
-end EthCLSpecs.Proofs
+end EthCLSpecs.Proofs.Gloas

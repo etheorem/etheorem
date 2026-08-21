@@ -6,7 +6,9 @@
 > project, not an EF release.** The libraries here pass the
 > upstream consensus-spec test corpus and ship the three central
 > SSZ theorems on a `BasicSupported` cut, but production-grade
-> stability and a stable release line are not implied.
+> stability and a stable release line are not implied. What is
+> proved, package by package, is in [Verification
+> status](#verification-status).
 
 A Lean 4 implementation of the Ethereum consensus specification for the Fulu
 and Gloas forks. It is executable. The SSZ container types, the full
@@ -299,3 +301,30 @@ Pinned at consensus-spec-tests
   signing helpers) xfail as out of scope. Earlier forks (Phase 0 through
   Electra) are not covered: EthCLSpecs authors Fulu as the accumulated base,
   not a per-fork container set.
+
+## Verification status
+
+Conformance says the code matches the upstream vectors. This says what is
+*proved*. `just proof-coverage` computes the whole picture from the built
+`.olean`s, and `just proof-coverage-check` fails the build when the numbers
+drift from the proofs, in either direction. What "there is to prove" differs per
+package, so each row says what a proof covers there before it says where the
+package stands.
+
+<!-- proof-coverage:begin -->
+| Package | What a proof covers here | Where it stands |
+| --- | --- | --- |
+| `EthCLSpecs` | the spec functions the fork bodies declare | 8 characterized, 23 touched, of 585 |
+| `SizzLean` | SSZ properties over the whole `SSZType` universe, gated by a predicate | 3 of 5 properties, over 12 admitted arms; open: any `hashTreeRoot` property, cached tree ≡ uncached `hashTreeRoot` |
+| `LeanSha256`, `LeanHazmat*` | nothing to cover: `@[extern]` bindings, and a spec side pinned by the NIST CAVP vectors | 2 named equivalence axioms: `sha256Hash_eq_spec`, `sha256Combine_eq_spec` |
+| `LeanPoseidon` | `permute_eq_permuteRef`, in the standalone `LeanPoseidonProofs` package | outside this run: it pins mathlib of its own |
+| `EthCLLib` | out of scope: elaborators and an effect monad | the replay tests and the pyspec vectors are its claim |
+<!-- proof-coverage:end -->
+
+Detail lives with the package: the per-fork table and the axiom trust base in
+[`packages/EthCLSpecs/README.md`](packages/EthCLSpecs/README.md#verification-status),
+the per-constructor SSZ table in
+[`packages/SizzLean/README.md`](packages/SizzLean/README.md#proof-coverage). What
+we intend to prove next is
+[`packages/EthCLSpecs/docs/PROOF_LEDGER.md`](packages/EthCLSpecs/docs/PROOF_LEDGER.md),
+one row per candidate spec function.

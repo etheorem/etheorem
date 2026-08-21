@@ -141,7 +141,7 @@ its mathlib dependency never touches the root build.
 ├── README.md / CLAUDE.md        # Repo-wide overview + conventions.
 ├── docs/                        # Repo-wide docs (monorepo-arch.md, CODING_STYLE.md).
 ├── hazmat-docs/                 # LeanHazmat family design (ARCHITECTURE.md, PLAN.md).
-├── scripts/                     # requirements.txt (pyspec-harness Python deps).
+├── scripts/                     # requirements.txt (pyspec-harness Python deps), the checkers, ProofCoverage.lean.
 ├── packages/
 │   ├── LeanSha256/              # Pure-Lean SHA-256 reference; no FFI. Published standalone via a mirror.
 │   │   └── lakefile.toml, LeanSha256.lean / LeanSha256/ / cavp/ / LeanSha256Tests/ / README.md
@@ -215,6 +215,27 @@ relevant ARCHITECTURE.md wins on substance and CLAUDE.md wins on form.
   intermediates, section comments, when to split), see
   [`docs/CODING_STYLE.md`](docs/CODING_STYLE.md). That file shows; this file
   states the rule.
+
+### Adding a proof to a fork body
+
+Follow the procedure in [`CONTRIBUTING.md`](CONTRIBUTING.md), *Adding a
+proof*. Three parts of it are binding here, because the build enforces
+them and a near miss wastes a rebuild:
+
+- **One directory per fork.** A theorem about an `EthCLSpecs.Gloas`
+  declaration goes in `EthCLSpecs/Proofs/Gloas/`, namespace
+  `EthCLSpecs.Proofs.Gloas`. Each fork re-elaborates its inherited
+  declarations, so `Fulu.f` and `Gloas.f` are separate constants and a
+  proof about one says nothing about the other.
+- **`@[characterizes f]` is a claim, not a label.** Tag a theorem only
+  when it states `f`'s main contract. The attribute rejects a target no
+  `forkdef` declared, a target the statement never mentions, and a tag
+  written outside the target fork's directory. Supporting lemmas stay
+  untagged and still count as touched.
+- **Regenerate.** `just proof-coverage-update` rewrites the two baselines
+  and the two README blocks; commit that diff with the proof.
+  `just proof-coverage-check` is what CI runs, and it fails on a new proof
+  as readily as on a lost one.
 
 ### Proofs involving SSZ hashes
 

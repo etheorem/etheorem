@@ -1,0 +1,25 @@
+# Proof-coverage baseline. Rewrite with `just proof-coverage-update`.
+# Every line is a claim `just proof-coverage-check` enforces exactly.
+tier1 EthCLSpecs.Fulu.computeStartSlotAtEpoch
+tier1 EthCLSpecs.Fulu.currentEpochOf
+tier1 EthCLSpecs.Gloas.computeEpochAtSlot
+tier1 EthCLSpecs.Gloas.currentEpochOf
+tier1 EthCLSpecs.Gloas.getCurrentSlot
+tier1 EthCLSpecs.Gloas.getDomain
+tier1 EthCLSpecs.Gloas.getPendingBalanceToWithdrawForBuilder
+tier1 EthCLSpecs.Gloas.getSlotsSinceGenesis
+tier1 EthCLSpecs.Gloas.isBuilderIndex
+tier1 EthCLSpecs.Gloas.processAttestation
+tier1 EthCLSpecs.Gloas.processAttesterSlashing
+tier1 EthCLSpecs.Gloas.processBlsToExecutionChange
+tier1 EthCLSpecs.Gloas.processPayloadAttestation
+tier1 EthCLSpecs.Gloas.processProposerSlashing
+tier1 EthCLSpecs.Gloas.processVoluntaryExit
+tier2 EthCLSpecs.Gloas.canBuilderCoverBid
+tier2 EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex
+tier2 EthCLSpecs.Gloas.initiateBuilderExit
+tier2 EthCLSpecs.Gloas.isValidIndexedPayloadAttestation
+tier2 EthCLSpecs.Gloas.processBuilderPendingPayments
+tier2 EthCLSpecs.Gloas.processOperations
+tier2 EthCLSpecs.Gloas.toBuilderIndex
+tier2 EthCLSpecs.Gloas.updateCheckpoints

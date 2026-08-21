@@ -1,9 +1,9 @@
 import EthCLSpecs.Gloas.Operations
-import EthCLSpecs.Proofs.Run
+import EthCLSpecs.Proofs.Gloas.Run
 import SizzLean.Proofs.SSZListSet
 
 /-!
-# `EthCLSpecs.Proofs.InitiateBuilderExit`: `initiateBuilderExit`'s effect on the builder registry
+# `EthCLSpecs.Proofs.Gloas.InitiateBuilderExit`: `initiateBuilderExit`'s effect on the builder registry
 
 `initiateBuilderExit_run_eq` is the whole-transition equation (the run equals the
 source-level `sszModify` on `builders`). `initiateBuilderExit_run_builders` projects it
@@ -34,7 +34,7 @@ left to `processBuilderExitRequest`'s own theorem.
 
 set_option autoImplicit false
 
-namespace EthCLSpecs.Proofs
+namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag)
 open EthCLSpecs.Gloas (Preset Config BuilderIndex Epoch)
@@ -57,6 +57,7 @@ is the original state with only `builders[builderIndex.toNat]!` updated through
 `sszModify`; every other top-level field is carried through. For an out-of-range
 index the underlying list write is a no-op, although the cached representation
 need not be structurally identical to the pre-state. -/
+@[characterizes EthCLSpecs.Gloas.initiateBuilderExit]
 theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
     ∀ (state : State) (builderIndex : BuilderIndex),
       (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state =
@@ -244,4 +245,4 @@ theorem initiateBuilderExit_run_inRange_no_wrap_mainnet [HasherTag] :
     UInt64.toNat_div, UInt64.toNat_ofNat', hspe, hdelay, Nat.reducePow, Nat.reduceMod]
   omega
 
-end EthCLSpecs.Proofs
+end EthCLSpecs.Proofs.Gloas

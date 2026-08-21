@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check the `File.lean:start-end` citations that point into the spec bodies.
 
-Two documents cite spec declarations by line span: the candidate table in
-`packages/EthCLSpecs/docs/CONSENSUS_PROOF_CANDIDATES.md`, and the module
+Two documents cite spec declarations by line span: the ledger tables in
+`packages/EthCLSpecs/docs/PROOF_LEDGER.md`, and the module
 docstrings under `packages/EthCLSpecs/EthCLSpecs/Proofs/`. Nothing checked
 them, so they rotted whenever a cited file grew above the declaration. An audit
 of the 37 rows in the table once found 16 stale, the worst landing a reader 187
@@ -31,7 +31,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 SPEC_ROOT = REPO / "packages" / "EthCLSpecs" / "EthCLSpecs"
-CANDIDATES = REPO / "packages" / "EthCLSpecs" / "docs" / "CONSENSUS_PROOF_CANDIDATES.md"
+LEDGER = REPO / "packages" / "EthCLSpecs" / "docs" / "PROOF_LEDGER.md"
 PROOFS_DIR = SPEC_ROOT / "Proofs"
 
 # A citation: a backticked `Fork/File.lean:12` or `Fork/File.lean:12-34`.
@@ -105,10 +105,10 @@ class Citation:
         return f"`{self.path}:{span}`"
 
 
-def collect_from_candidates() -> list[Citation]:
-    """Citations in the candidate table. The row's first cell names the function."""
+def collect_from_ledger() -> list[Citation]:
+    """Citations in the ledger tables. The row's first cell names the function."""
     found = []
-    for n, line in enumerate(CANDIDATES.read_text().splitlines(), start=1):
+    for n, line in enumerate(LEDGER.read_text().splitlines(), start=1):
         if not line.lstrip().startswith("|"):
             continue
         cells = line.split("|")
@@ -116,7 +116,7 @@ def collect_from_candidates() -> list[Citation]:
         if not names:
             continue
         for m in CITATION.finditer(line):
-            found.append(Citation(CANDIDATES, n, names[0], m))
+            found.append(Citation(LEDGER, n, names[0], m))
     return found
 
 
@@ -129,7 +129,7 @@ def collect_from_proofs() -> list[Citation]:
     appears on the declaration line.
     """
     found = []
-    for path in sorted(PROOFS_DIR.glob("*.lean")):
+    for path in sorted(PROOFS_DIR.rglob("*.lean")):
         lines = path.read_text().splitlines()
         for n, line in enumerate(lines, start=1):
             for m in CITATION.finditer(line):
@@ -149,7 +149,7 @@ def main() -> int:
                     help="rewrite stale spans in place instead of only reporting")
     args = ap.parse_args()
 
-    citations = collect_from_candidates() + collect_from_proofs()
+    citations = collect_from_ledger() + collect_from_proofs()
     stale: list[tuple[Citation, tuple[int, int]]] = []
     unresolved: list[Citation] = []
 

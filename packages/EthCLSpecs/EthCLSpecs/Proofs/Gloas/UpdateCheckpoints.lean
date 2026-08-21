@@ -1,7 +1,7 @@
 import EthCLSpecs.Gloas.ForkChoice
 
 /-!
-# `EthCLSpecs.Proofs.UpdateCheckpoints`: checkpoint monotonicity
+# `EthCLSpecs.Proofs.Gloas.UpdateCheckpoints`: checkpoint monotonicity
 
 `EthCLSpecs.Gloas.updateCheckpoints` replaces the Store's justified and finalized
 checkpoints only when the corresponding candidate has a strictly greater epoch.
@@ -13,10 +13,10 @@ All current updates to these fields use this function; `getForkchoiceStore` init
 the fields directly and is outside this claim. The separate Fulu declaration is also
 out of scope.
 
-`updateCheckpoints` is declared identically in both forks, so unlike the Gloas-only
-subjects of the sibling proof modules these theorem names would collide with a Fulu
-companion. They live in `EthCLSpecs.Proofs.Gloas`, mirroring the `EthCLSpecs.Gloas`
-namespace the subject itself sits in, leaving `EthCLSpecs.Proofs.Fulu` free.
+`updateCheckpoints` is declared identically in both forks, and each fork elaborates
+its own constant. This file proves the Gloas one. The Fulu companion would be a
+separate theorem about a separate constant, and the per-fork directory is what
+keeps the two apart.
 
 ## The shared proof shape
 
@@ -31,7 +31,7 @@ project either checkpoint field until both branches are settled. Dropping either
 the definition's `let` into `have store := ...`, which `split` refuses to see
 through ("Could not split an `if` or `match` expression in the goal").
 
-See `EthCLSpecs/docs/CONSENSUS_PROOF_CANDIDATES.md`, "Monotonicity properties".
+See `EthCLSpecs/docs/PROOF_LEDGER.md`, Gloas "Monotonicity properties".
 -/
 
 set_option autoImplicit false
@@ -56,6 +56,7 @@ This is the frame condition the two branch characterizations below do not carry.
 They project one field each, so on their own they leave open whether the function
 also disturbs `time`, `equivocatingIndices`, or any of the maps. A caller
 threading a Store through a fork-choice transition needs to know it does not. -/
+@[characterizes EthCLSpecs.Gloas.updateCheckpoints]
 theorem updateCheckpoints_eq :
     updateCheckpoints store j f =
       { store with

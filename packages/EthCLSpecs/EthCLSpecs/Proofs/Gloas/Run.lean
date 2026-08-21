@@ -1,7 +1,7 @@
 import EthCLSpecs.Gloas.State
 
 /-!
-# `EthCLSpecs.Proofs.Run`: the Gloas state-transition runner these proofs run against
+# `EthCLSpecs.Proofs.Gloas.Run`: the Gloas state-transition runner these proofs run against
 
 A theorem about a `forkdef`'s effect has to pin down the monad the spec body is
 elaborated into, since `StateTransition` is a parameter of the fork body rather than a
@@ -37,7 +37,7 @@ under fork choice too. Carrying one over is function application:
 
 set_option autoImplicit false
 
-namespace EthCLSpecs.Proofs
+namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag StateTransitionError)
 open EthCLSpecs.Gloas (Preset)
@@ -94,4 +94,4 @@ theorem GloasRun.except_bind_ok {ε α β : Type} (a : α) (f : α → Except ε
 theorem GloasRun.except_bind_error {ε α β : Type} (e : ε) (f : α → Except ε β) :
     (Except.error e : Except ε α) >>= f = .error e := rfl
 
-end EthCLSpecs.Proofs
+end EthCLSpecs.Proofs.Gloas

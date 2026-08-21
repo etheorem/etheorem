@@ -73,7 +73,7 @@ lint:
     fi
 
 # Resolve every `File.lean:start-end` citation in
-# `packages/EthCLSpecs/docs/CONSENSUS_PROOF_CANDIDATES.md` and the
+# `packages/EthCLSpecs/docs/PROOF_LEDGER.md` and the
 # `EthCLSpecs/Proofs/` module docstrings against the declaration it names, and
 # fail on a mismatch. Spans rot silently whenever a cited file grows above the
 # declaration, and refreshing them per-PR leaves the table mixing fresh and
@@ -100,6 +100,45 @@ check-citations args="":
 [group('general')]
 check-constants args="":
     python3 scripts/check_constant_tiers.py {{ args }}
+
+# How much of the executable spec is formally verified, read out of the built
+# `.olean`s: every `forkdef` is the denominator, a theorem statement that mentions
+# one puts it at the touched tier, and a `@[characterizes f]` tag puts it at the
+# characterized tier. The report also audits every theorem's axioms and prints the
+# `SizzLean` property matrix. Needs `lake build EthCLSpecs` first; it reads the
+# compiled environment, so it costs seconds and never elaborates a proof again.
+
+# Build the two libraries whose `.olean`s the report reads. Up to date, this
+# costs a second; from cold it is the ordinary build. All three proof-coverage
+# recipes depend on it, so the report can never read a stale environment.
+[private]
+proof-coverage-build:
+    lake build SizzLean EthCLSpecs
+
+# Report proof coverage of the fork bodies and the SSZ properties
+[group('general')]
+proof-coverage: proof-coverage-build
+    lake env lean --run scripts/ProofCoverage.lean
+
+# The ratchet. Exact equality against the committed baselines, one per package
+# (`packages/EthCLSpecs/docs/` for the fork bodies, `packages/SizzLean/docs/` for
+# the SSZ properties), in both directions: a lost proof fails, and a new proof
+# fails until its author commits the bump. A floor-only count would miss a swap of
+# one proof for another. The CI `ethcl` job runs this after the build.
+
+# Fail when proof coverage drifts from the committed baseline
+[group('general')]
+proof-coverage-check: proof-coverage-build
+    lake env lean --run scripts/ProofCoverage.lean -- --check
+
+# Rewrite both baselines and the generated block in the `EthCLSpecs` README from
+# the current build. Run it in the PR that adds or removes a proof, and commit
+# the diff; that diff is the coverage change, under review.
+
+# Rewrite the proof-coverage baselines and README block
+[group('general')]
+proof-coverage-update: proof-coverage-build
+    lake env lean --run scripts/ProofCoverage.lean -- --update
 
 # Check the *build-time native* dependencies only: `pkg-config` (used
 # by lakefile.lean to discover OpenSSL link/cflags) + OpenSSL 3.x (the
