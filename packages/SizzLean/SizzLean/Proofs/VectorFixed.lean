@@ -98,11 +98,11 @@ theorem decode_encode_vectorFixed
     simp [Array.toArray_toList]
 
 /-- Size bound for `.vector t n` with `t` fixed-size, `n > 0`.
-The serialized buffer has size `n * t.fixedByteSize`, which
-is ≤ `maxByteLength (.vector t n) = n * maxByteLength t` (the
-fixed-element branch of the bound). The
-`n > 0` precondition lets us pick `v[0]` as a witness for
-deriving `fixedByteSize t ≤ maxByteLength t`. -/
+The serialized buffer has size `n * t.fixedByteSize`. That is
+≤ `maxByteLength (.vector t n)`, which takes the fixed-element
+branch `n * maxByteLength t` here. The `n > 0` precondition lets
+us pick `v[0]` as a witness for deriving
+`fixedByteSize t ≤ maxByteLength t`. -/
 theorem encode_size_le_max_vectorFixed
     (t : SSZType) (n : Nat) (h_pos : 0 < n)
     (h_t : SSZType.BasicSupported t)

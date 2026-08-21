@@ -112,9 +112,9 @@ theorem decode_encode_listFixed
     rw [List.size_toArray, h_list_len]; exact xs.property
   simp only [h_arr_sz, dite_true]
 
-/-- Size bound for `.list t cap`. `(serialize …).size = xs.val.size * sz`;
-`maxByteLength = cap * maxByteLength t` (the fixed-element
-branch of the bound).
+/-- Size bound for `.list t cap`. `(serialize …).size = xs.val.size * sz`.
+`maxByteLength` takes the fixed-element branch `cap * maxByteLength t`
+here.
 
 For the empty list (`xs.val.size = 0`) the bound is trivial: LHS
 is 0. For a non-empty list, we use `xs.val[0]` to derive
