@@ -9,6 +9,7 @@ import SizzLean.Proofs.VectorFixed
 import SizzLean.Proofs.ListFixed
 import SizzLean.Proofs.ContainerFixed
 import SizzLean.Proofs.ContainerVar
+import SizzLean.Proofs.CollectionVar
 import SizzLean.Proofs.SizeBound
 import SizzLean.Proofs.FixedElems
 import SizzLean.Proofs.BitPack
@@ -26,6 +27,7 @@ theorem. Per-arm proofs live in sibling modules:
 | `.bool` | `Proofs/Bool.lean` |
 | `.vectorFixed t n` | `Proofs/VectorFixed.lean` |
 | `.listFixed t cap` | `Proofs/ListFixed.lean` |
+| `.vectorVar t n` / `.listVar t cap` | `Proofs/CollectionVar.lean` |
 | `.bitvector n` / `.bitlist cap` | `Proofs/BitPack.lean` |
 | `.containerFixed fs` (helpers) | `Proofs/ContainerFixed.lean` |
 | `.containerVar fs` (groundwork) | `Proofs/ContainerVar.lean` |
@@ -87,7 +89,9 @@ The `containerVar` arm imports `Proofs/SizeBound.lean` and calls
 per-field size bound. That bound, plus the schema-level
 `maxByteLengthFields fs < MAX_LENGTH` guard on
 `BasicSupported.containerVar`, is how the offsets are shown not
-to overflow `uint32`. The dependence is one-way
+to overflow `uint32`. The `vectorVar` / `listVar` arms make the
+same call at element granularity (`fun y => encode_size_le_max h_t y`).
+The dependence is one-way
 (`decode_encode` → `encode_size_le_max`) and costs no axioms: the
 size theorem's footprint is only `propext` and `Quot.sound`.
 -/
@@ -132,9 +136,17 @@ theorem decode_encode : ∀ {s : SSZType}, SSZType.BasicSupported s →
   | _, .vectorFixed (t := t) (n := n) h_pos h_t h_t_fixed, v =>
       decode_encode_vectorFixed t n h_pos h_t h_t_fixed
         (fun y => decode_encode h_t y) v
+  | _, .vectorVar (t := t) (n := n) h_pos h_t h_var h_max_lt, v =>
+      decode_encode_vectorVar t n h_pos h_var h_max_lt
+        (fun y => decode_encode h_t y)
+        (fun y => encode_size_le_max h_t y) v
   | _, .listFixed (t := t) (cap := cap) h_t h_t_fixed h_sz_pos, xs =>
       decode_encode_listFixed t cap h_t h_t_fixed h_sz_pos
         (fun y => decode_encode h_t y) xs
+  | _, .listVar (t := t) (cap := cap) h_t h_var h_max_lt, xs =>
+      decode_encode_listVar t cap h_var h_max_lt
+        (fun y => decode_encode h_t y)
+        (fun y => encode_size_le_max h_t y) xs
   | _, .bitvector (n := n) h_pos, bv => decode_encode_bitvector n h_pos bv
   | _, .bitlist (cap := cap), xs => decode_encode_bitlist cap xs
   | _, .containerFixed (fs := fs) h_fs, vs => by

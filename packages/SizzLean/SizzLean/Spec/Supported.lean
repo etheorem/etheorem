@@ -76,17 +76,30 @@ inductive SSZType.Supported : SSZType → Prop
   | bool           : SSZType.Supported .bool
   | bitvector      : ∀ {n : Nat}, SSZType.Supported (.bitvector n)
   | bitlist        : ∀ {cap : Nat}, SSZType.Supported (.bitlist cap)
-  /-- `vector` decode handles only fixed-size element types; the
-  variable-size offset-table read is not implemented. The
-  `isFixedSize = true` witness mirrors `listFixed`. -/
+  /-- `vector` decode of a fixed-size element type. The
+  `isFixedSize = true` witness routes encode / decode onto
+  `serializeFixedElems` / `deserializeFixedElems`. -/
   | vectorFixed    : ∀ {t : SSZType} {n : Nat},
                      SSZType.Supported t → t.isFixedSize = true →
                      SSZType.Supported (.vector t n)
-  /-- `list` decode is implemented for fixed-size element types.
-  The `isFixedSize = true` witness on `t` is what makes the
+  /-- `vector` decode of a variable-size element type, via the
+  offset-table path (`serializeVarElemsAux` /
+  `deserializeVarElems`). The `isFixedSize = false` witness
+  routes encode / decode onto that path. -/
+  | vectorVar      : ∀ {t : SSZType} {n : Nat},
+                     SSZType.Supported t → t.isFixedSize = false →
+                     SSZType.Supported (.vector t n)
+  /-- `list` decode of a fixed-size element type. The
+  `isFixedSize = true` witness on `t` is what makes the
   Roundtrip proof discharge for this arm. -/
   | listFixed      : ∀ {t : SSZType} {cap : Nat},
                      SSZType.Supported t → t.isFixedSize = true →
+                     SSZType.Supported (.list t cap)
+  /-- `list` decode of a variable-size element type, via the
+  offset-table path. Empty lists are the empty buffer; non-empty
+  lists recover `count` from `off₀ / 4`. -/
+  | listVar        : ∀ {t : SSZType} {cap : Nat},
+                     SSZType.Supported t → t.isFixedSize = false →
                      SSZType.Supported (.list t cap)
   /-- `container` decode is implemented for all-fixed-size
   field lists. -/
@@ -151,8 +164,20 @@ inductive SSZType.SupportedBounded : SSZType → Prop
   | vectorFixed    : ∀ {t : SSZType} {n : Nat},
                      SSZType.SupportedBounded t → t.isFixedSize = true →
                      SSZType.SupportedBounded (.vector t n)
+  /-- Mirrors `Supported.vectorVar`: a vector of bounded
+  variable-size elements is itself bounded (the static max is
+  `n * (4 + maxByteLength t)`). -/
+  | vectorVar      : ∀ {t : SSZType} {n : Nat},
+                     SSZType.SupportedBounded t → t.isFixedSize = false →
+                     SSZType.SupportedBounded (.vector t n)
   | listFixed      : ∀ {t : SSZType} {cap : Nat},
                      SSZType.SupportedBounded t → t.isFixedSize = true →
+                     SSZType.SupportedBounded (.list t cap)
+  /-- Mirrors `Supported.listVar`: a capped list of bounded
+  variable-size elements is itself bounded (the static max is
+  `cap * (4 + maxByteLength t)`). -/
+  | listVar        : ∀ {t : SSZType} {cap : Nat},
+                     SSZType.SupportedBounded t → t.isFixedSize = false →
                      SSZType.SupportedBounded (.list t cap)
   | containerFixed : ∀ {fs : List SSZType},
                      SSZType.SupportedBoundedFieldsFixed fs →

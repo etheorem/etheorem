@@ -313,4 +313,58 @@ example :
                     (.cons (.listFixed .uintN32 rfl (by decide)) .nil))
                   (by decide) (by decide)) emptyListContainer
 
+/-! ### Variable-element collection arm examples (`vectorVar` / `listVar`)
+
+`BasicSupported` also covers `.vector t n` / `.list t cap` when
+`t` is variable-size, decoded through the offset-table path
+(`Proofs/CollectionVar.lean`). The witness for `vectorVar` is
+`0 < n`, `BasicSupported t`, `t.isFixedSize = false`, and
+`maxByteLength (.vector t n) < MAX_LENGTH`. `listVar` drops the
+positivity precondition (the empty list is the empty buffer). -/
+
+/-- Homogeneous variable elements, `n > 0`: two `.bitlist 8`. -/
+example (v : SSZType.interp (.vector (.bitlist 8) 2)) :
+    SSZType.deserialize (.vector (.bitlist 8) 2)
+        (SSZType.serialize (.vector (.bitlist 8) 2) v) =
+      Except.ok (v, (SSZType.serialize (.vector (.bitlist 8) 2) v).size) :=
+  decode_encode (.vectorVar (by decide) .bitlist rfl (by decide)) v
+
+/-- Count recovered from the first offset: `.list (.bitlist 8) 4`. -/
+example (xs : SSZType.interp (.list (.bitlist 8) 4)) :
+    SSZType.deserialize (.list (.bitlist 8) 4)
+        (SSZType.serialize (.list (.bitlist 8) 4) xs) =
+      Except.ok (xs, (SSZType.serialize (.list (.bitlist 8) 4) xs).size) :=
+  decode_encode (.listVar .bitlist rfl (by decide)) xs
+
+/-- Empty-list / empty-buffer identity. -/
+private def emptyBitlistList : SSZType.interp (.list (.bitlist 8) 4) :=
+  ⟨#[], by decide⟩
+
+example :
+    SSZType.deserialize (.list (.bitlist 8) 4)
+        (SSZType.serialize (.list (.bitlist 8) 4) emptyBitlistList) =
+      Except.ok (emptyBitlistList,
+        (SSZType.serialize (.list (.bitlist 8) 4) emptyBitlistList).size) :=
+  decode_encode (.listVar .bitlist rfl (by decide)) emptyBitlistList
+
+/-- Nested variable collection: `.vector (.list (.uintN 8) 4) 2`. -/
+example (v : SSZType.interp (.vector (.list (.uintN 8) 4) 2)) :
+    SSZType.deserialize (.vector (.list (.uintN 8) 4) 2)
+        (SSZType.serialize (.vector (.list (.uintN 8) 4) 2) v) =
+      Except.ok (v, (SSZType.serialize (.vector (.list (.uintN 8) 4) 2) v).size) :=
+  decode_encode (.vectorVar (by decide)
+                  (.listFixed .uintN8 rfl (by decide)) rfl (by decide)) v
+
+/-- Variable-element container: `.list (.container [.uintN 8, .bitlist 8]) 2`. -/
+example (xs : SSZType.interp (.list (.container [.uintN 8, .bitlist 8]) 2)) :
+    SSZType.deserialize (.list (.container [.uintN 8, .bitlist 8]) 2)
+        (SSZType.serialize (.list (.container [.uintN 8, .bitlist 8]) 2) xs) =
+      Except.ok (xs,
+        (SSZType.serialize (.list (.container [.uintN 8, .bitlist 8]) 2) xs).size) :=
+  decode_encode (.listVar
+                  (.containerVar
+                    (.cons .uintN8 (.cons .bitlist .nil))
+                    (by decide) (by decide))
+                  rfl (by decide)) xs
+
 end SizzLeanTests.ReprExamples

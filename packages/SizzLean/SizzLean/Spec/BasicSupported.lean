@@ -1,7 +1,7 @@
 import SizzLean.Spec.Type
 import SizzLean.Spec.Serialize  -- for isFixedSize / allFixedSize
 import SizzLean.Spec.Supported  -- for the subset theorem below
-import SizzLean.Spec.MaxByteLength  -- for the containerVar overflow guard
+import SizzLean.Spec.MaxByteLength  -- for the overflow guard on containerVar / vectorVar / listVar
 import SizzLean.Spec.Constants  -- for MAX_LENGTH
 
 /-!
@@ -32,11 +32,13 @@ Proofs/ reaches over to discharge the theorems).
   `Nat`-digit induction on the `natToLEBytes` / `readNatLE` codec,
   with no `bv_decide` axiom).
 * **Bool**: `.bool` (closed by `cases`, in `Proofs/Bool.lean`).
-* **Composites**: `.vector t n` / `.list t cap` /
-  `.container fs` over fixed-size element / field types
-  (closed in `Proofs/{VectorFixed,ListFixed,ContainerFixed}.lean`
-  via mutual induction with the shared prereq
-  `Proofs/SerializeSize.lean`).
+* **Composites**: `.vector t n` / `.list t cap` over
+  fixed-size element types (closed in
+  `Proofs/{VectorFixed,ListFixed}.lean`) and over variable-size
+  element types (closed in `Proofs/CollectionVar.lean` via the
+  offset-table codec); `.container fs` over fixed-size field
+  types (closed in `Proofs/ContainerFixed.lean` via mutual
+  induction with the shared prereq `Proofs/SerializeSize.lean`).
 * **Bit shapes**: `.bitvector n` (with `0 < n`) and
   `.bitlist cap` (closed in `Proofs/BitPack.lean` via the
   bit-packing inverse `packBitsLE_unpackBitsLEAux_inverse` plus
@@ -74,15 +76,29 @@ whose static max exceeds `MAX_LENGTH` (real `BeaconState` /
 `BeaconBlockBody` shapes among them) stay outside `BasicSupported`;
 etheorem#61 tracks the value-level relaxation.
 
-## Why `0 < n` on `vectorFixed` / `bitvector`
+## Why `vectorVar` / `listVar` carry `maxByteLength s < MAX_LENGTH`
 
-The spec rejects `n = 0` at *decode* time for both shapes
+Same uint32-overflow guard as `containerVar`. Variable-element
+collections write a running offset per element, seeded at
+`n * BYTES_PER_LENGTH_OFFSET` (vectors) or recovered from
+`off₀ / 4` (lists). Every offset is bounded by the total encoded
+size, which `Proofs/CollectionVar.lean`'s size walker bounds by
+`maxByteLength s`, so bounding *that* by `MAX_LENGTH = 2 ^ 32`
+keeps every offset's `UInt32` round-trip exact. Schemas whose
+static max exceeds `MAX_LENGTH` (large-cap lists of variable
+elements among them) stay outside `BasicSupported`; etheorem#61
+tracks the value-level relaxation.
+
+## Why `0 < n` on `vectorFixed` / `vectorVar` / `bitvector`
+
+The spec rejects `n = 0` at *decode* time for these shapes
 (`ssz_generic/basic_vector/invalid/vec_*_0` and
 `ssz_generic/bitvector/invalid/bitvec_0` test cases), so the
 universal roundtrip would fail in those constructors. The
 precondition is carried at the `BasicSupported` layer rather than
 tightening `Supported` itself, which would be a more invasive
-spec adjustment.
+spec adjustment. `listVar` has no positivity precondition: the
+empty list is the empty buffer.
 
 -/
 
@@ -125,6 +141,15 @@ inductive SSZType.BasicSupported : SSZType → Prop
   | vectorFixed : ∀ {t : SSZType} {n : Nat},
                   0 < n → SSZType.BasicSupported t → t.isFixedSize = true →
                   SSZType.BasicSupported (.vector t n)
+  /-- Fixed-length vector with variable-size element type and
+  non-empty length. Decoded via the offset-table path
+  (`Proofs/CollectionVar.lean`). The `n > 0` precondition mirrors
+  the spec's zero-length rejection; `maxByteLength (.vector t n) <
+  MAX_LENGTH` is the uint32-overflow guard, same as `containerVar`. -/
+  | vectorVar : ∀ {t : SSZType} {n : Nat},
+                0 < n → SSZType.BasicSupported t → t.isFixedSize = false →
+                SSZType.maxByteLength (.vector t n) < MAX_LENGTH →
+                SSZType.BasicSupported (.vector t n)
   /-- Variable-length list (up to `cap`) with fixed-size element
   type and positive element size. The `0 < t.fixedByteSize`
   precondition rules out the `.container []`-element pathology
@@ -134,6 +159,16 @@ inductive SSZType.BasicSupported : SSZType → Prop
                 SSZType.BasicSupported t → t.isFixedSize = true →
                 0 < t.fixedByteSize →
                 SSZType.BasicSupported (.list t cap)
+  /-- Variable-length list (up to `cap`) with variable-size element
+  type. Decoded via the offset-table path; the empty list is the
+  empty buffer. No `0 < t.fixedByteSize` (that pathology is
+  specific to the fixed-element list decoder). The
+  `maxByteLength (.list t cap) < MAX_LENGTH` precondition is the
+  uint32-overflow guard. -/
+  | listVar : ∀ {t : SSZType} {cap : Nat},
+              SSZType.BasicSupported t → t.isFixedSize = false →
+              SSZType.maxByteLength (.list t cap) < MAX_LENGTH →
+              SSZType.BasicSupported (.list t cap)
   /-- Bit-packed fixed-width vector. The `n > 0` precondition
   mirrors the spec's zero-length rejection, same as `vectorFixed`.
   Roundtrip closes in `Proofs/BitPack.lean`. -/
@@ -193,8 +228,10 @@ The module docstring's claim that `BasicSupported` is a subset of
 turns the claim into a build-enforced invariant: each
 `BasicSupported` constructor maps to its `Supported` counterpart,
 dropping the proof-only preconditions (`0 < n` on `vectorFixed` /
-`bitvector`, `0 < t.fixedByteSize` on `listFixed`) that
-`BasicSupported` carries and `Supported` does not. -/
+`vectorVar` / `bitvector`, `0 < t.fixedByteSize` on `listFixed`,
+`maxByteLength s < MAX_LENGTH` on `vectorVar` / `listVar` /
+`containerVar`) that `BasicSupported` carries and `Supported` does
+not. -/
 
 mutual
 
@@ -214,8 +251,12 @@ theorem SSZType.supported_of_basicSupported : ∀ {s : SSZType},
   | _, .bool => .bool
   | _, .vectorFixed _h_pos h_t h_t_fixed =>
       .vectorFixed (SSZType.supported_of_basicSupported h_t) h_t_fixed
+  | _, .vectorVar _h_pos h_t h_var _h_max =>
+      .vectorVar (SSZType.supported_of_basicSupported h_t) h_var
   | _, .listFixed h_t h_t_fixed _h_sz_pos =>
       .listFixed (SSZType.supported_of_basicSupported h_t) h_t_fixed
+  | _, .listVar h_t h_var _h_max =>
+      .listVar (SSZType.supported_of_basicSupported h_t) h_var
   | _, .bitvector _h_pos => .bitvector
   | _, .bitlist => .bitlist
   | _, .containerFixed h_fs =>

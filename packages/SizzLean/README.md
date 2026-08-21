@@ -6,9 +6,10 @@
 > project, not an EF release.** The library passes the upstream
 > consensus-spec test corpus and the three central theorems are
 > landed on the `BasicSupported` cut, which now covers mixed-field
-> containers whose schema max stays under `MAX_LENGTH` (remaining
-> open work toward the universally-quantified `Supported` form is
-> tracked in [`docs/PLAN.md`](docs/PLAN.md) Phase 5). Reviews,
+> containers and variable-element `vector` / `list` whose schema
+> max stays under `MAX_LENGTH` (remaining open work toward the
+> universally-quantified `Supported` form is tracked in
+> [`docs/PLAN.md`](docs/PLAN.md) Phase 5). Reviews,
 > issues, and pull requests are welcome; production-grade stability
 > and a stable release line are not implied.
 
@@ -64,11 +65,10 @@ theorems.
   `uintN 8 / 16 / 32 / 64 / 128 / 256`, `bool`, fixed-size
   `vector` and `list`, `bitvector`, `bitlist`, and `container`
   over any field list (fixed-only, or mixed fixed/variable via
-  the offset-table codec), with two exceptions still open:
-  `vector` / `list` over a variable-size element type, and
-  mixed-field containers whose schema-level
-  `maxByteLengthFields fs` is not strictly below `MAX_LENGTH`
-  (the uint32-offset guard; real `BeaconState` /
+  the offset-table codec), and `vector` / `list` over a
+  variable-size element type, with one exception still open:
+  schemas whose static `maxByteLength` is not strictly below
+  `MAX_LENGTH` (the uint32-offset guard; real `BeaconState` /
   `BeaconBlockBody` shapes sit outside it, see
   [etheorem#61](https://github.com/etheorem/etheorem/issues/61)).
   See [Proof coverage](#proof-coverage) for the per-constructor
@@ -215,8 +215,10 @@ per constructor and with the proof technique for each arm.
 | `.uintN 128` | ✅ ⁵ | ✅ ⁵ | ✅ | `Nat`-digit induction on the `natToLEBytes` / `readNatLE` codec; no `bv_decide` axiom |
 | `.uintN 256` | ✅ ⁵ | ✅ ⁵ | ✅ | same codec proof as `.uintN 128` (e.g. `base_fee_per_gas`) |
 | `.bool` | ✅ | ✅ | ✅ | exhaustive `cases` + `rfl` |
-| `.vector t n` | ✅ ² | ✅ ² | ✅ ² | needs `0 < n` + `BasicSupported t` + `t.isFixedSize = true` |
-| `.list t cap` | ✅ ³ | ✅ ³ | ✅ ³ | needs `BasicSupported t` + `t.isFixedSize = true` + `0 < t.fixedByteSize` |
+| `.vector t n`, fixed-size `t` | ✅ ² | ✅ ² | ✅ ² | needs `0 < n` + `BasicSupported t` + `t.isFixedSize = true` |
+| `.vector t n`, variable-size `t` | ✅ ⁶ | ✅ ⁶ | ✅ | needs `0 < n` + `BasicSupported t` + `t.isFixedSize = false` + `maxByteLength (.vector t n) < MAX_LENGTH`; offset-table codec, `Proofs/CollectionVar.lean` |
+| `.list t cap`, fixed-size `t` | ✅ ³ | ✅ ³ | ✅ ³ | needs `BasicSupported t` + `t.isFixedSize = true` + `0 < t.fixedByteSize` |
+| `.list t cap`, variable-size `t` | ✅ ⁶ | ✅ ⁶ | ✅ | needs `BasicSupported t` + `t.isFixedSize = false` + `maxByteLength (.list t cap) < MAX_LENGTH`; offset-table codec, empty list is the empty buffer |
 | `.bitvector n` | ✅ ⁴ | ✅ ⁴ | ✅ | needs `0 < n`; bit-packing inverse in `Proofs/BitPack.lean` |
 | `.bitlist cap` | ✅ ⁴ | ✅ ⁴ | ✅ | bit-packing inverse + `msbPos` delimiter recovery |
 | `.container fs`, all fields fixed-size | ✅ ² | ✅ ² | ✅ ² | see [per-field type](#container-fs-per-field-type) |
@@ -241,13 +243,11 @@ little-endian codec inverse `readNatLE (natToLEBytes w n) 0 w =
 n mod 256ʷ` by induction on the width (the digit step is
 `Nat.mod_mul`). Unlike the narrow arms they use no `bv_decide`, so
 they add **no axioms** beyond the standard kernel three.
-⁶ Mixed-field containers (`containerVar`, `Proofs/ContainerVar.lean`
-+ `Proofs/Roundtrip.lean`'s `decode_encode_containerVar_aux`) decode
-through the offset table: fixed fields read straight from the
-prefix, variable fields read from `[offset, nextOffset)` slices.
-The one `uint32` codec bridge lemma (offset placeholders round-trip
-through `UInt32`) uses `bv_decide`; every other step is `Nat`/
-`ByteArray` reasoning, so the arm's trust footprint is that one
+⁶ Mixed-field containers (`containerVar`) and variable-element
+collections (`vectorVar` / `listVar`) decode through an offset
+table. The one `uint32` codec bridge lemma (offset placeholders
+round-trip through `UInt32`) uses `bv_decide`; every other step is
+`Nat` / `ByteArray` reasoning, so those arms share that one
 `bv_decide` axiom plus the standard kernel three.
 
 `serialize_injective` is a direct corollary of `decode_encode`
@@ -271,7 +271,7 @@ offset-table walker). Allowed and excluded field types:
 |---|:---:|---|
 | `.uintN 8 / 16 / 32 / 64 / 128 / 256` | ✅ | basic + fixed |
 | `.bool` | ✅ | basic + fixed |
-| `.vector t' n` (with `n > 0`, fixed-size `t'`, `BasicSupported t'`) | ✅ | nested vector, `(.vector t' n).isFixedSize = t'.isFixedSize` |
+| `.vector t' n` (with `n > 0`, `BasicSupported t'`) | ✅ ᵛ* | nested vector; ᵛ* when `t'` is variable-size (`vectorVar`), since `(.vector t' n).isFixedSize = t'.isFixedSize` |
 | `.list t' cap` (with fixed-size `t'`, `BasicSupported t'`, `0 < t'.fixedByteSize`) | ✅ ᵛ | variable-size field, needs `containerVar` |
 | `.container fs'` (with `BasicSupported (.container fs')`, via `containerFixed` / `containerVar`) | ✅ ᵛ* | nested container; ᵛ* when the nested shape itself uses `containerVar` |
 | `.bitvector n` (with `n > 0`) | ✅ | bit-packed + fixed, `(.bitvector n).fixedByteSize = ⌈n/8⌉` |
@@ -287,25 +287,25 @@ allows.
 
 In one line: containers with any field drawn from `{uintN8,
 uintN16, uintN32, uintN64, uintN128, uintN256, bool, vectorFixed,
-listFixed, bitvector, bitlist, container (recursively)}` are
-proved, whether every field is fixed-size or the list mixes fixed-
-and variable-size fields, provided a `containerVar` schema also
-satisfies `maxByteLengthFields fs < MAX_LENGTH`.
+vectorVar, listFixed, listVar, bitvector, bitlist, container
+(recursively)}` are proved, whether every field is fixed-size or
+the list mixes fixed- and variable-size fields, provided a
+`containerVar` / `vectorVar` / `listVar` schema also satisfies
+`maxByteLength s < MAX_LENGTH`.
 
 ### Track in progress
 
 **Phase 5 formal-verification widening:** the three central
 theorems (roundtrip, non-malleability, size bound) are landed on
 the `BasicSupported` cut, which now covers `uintN 8 / 16 / 32 /
-64 / 128 / 256`, `bool`, `vector` and `list` over fixed-size
-elements, `bitvector`, `bitlist`, and `container` over any field
-list (fixed-only, recursively, or mixed fixed/variable via the
-offset-table codec).
-Two gaps remain toward a universal statement over
-`SSZType.Supported`: `vector` / `list` over a variable-size
-element type (`vectorVar` / `listVar`, no proof arm yet), and the
-schema-level `maxByteLengthFields fs < MAX_LENGTH` guard on
-`containerVar` (see [etheorem#61](https://github.com/etheorem/etheorem/issues/61)
+64 / 128 / 256`, `bool`, `vector` and `list` over fixed-size or
+variable-size elements, `bitvector`, `bitlist`, and `container`
+over any field list (fixed-only, recursively, or mixed
+fixed/variable via the offset-table codec).
+One gap remains toward a universal statement over
+`SSZType.Supported`: the schema-level `maxByteLength s < MAX_LENGTH`
+guard on `containerVar` / `vectorVar` / `listVar` (see
+[etheorem#61](https://github.com/etheorem/etheorem/issues/61)
 for the value-level relaxation). The library itself is complete
 for every shape; this track only closes the proof obligation.
 
