@@ -1483,7 +1483,7 @@ with hand-written `BitVec` proofs (substantially more code).
 
 **Risk.** Lowered from the original "highest in project" since
 the composite arms (general `vector` / `list` / `container`,
-fixed-field and now mixed-field) and both bit arms are now shipped
+fixed-size and variable-size) and both bit arms are now shipped
 without the predicted research-grade difficulty. The mutual-block
 trick, first on `(BasicSupported, BasicSupportedFieldsFixed)` and
 then reused on `(BasicSupported, BasicSupportedFields)` for

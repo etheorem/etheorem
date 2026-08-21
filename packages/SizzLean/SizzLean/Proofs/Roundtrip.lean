@@ -48,12 +48,12 @@ recursive calls are written.
 
 ## The three-way mutual block
 
-For composite arms (`vectorFixed`, `listFixed`), `decode_encode`
-hands the per-arm helper a closure
+For composite arms (`vectorFixed`, `listFixed`, `vectorVar`,
+`listVar`), `decode_encode` hands the per-arm helper a closure
 `fun y => decode_encode h_t y`. The checker accepts this because
 `h_t` is the case-split's sub-witness, a *strict subterm* of the
-outer `h_sup`, extracted by the `BasicSupported.vectorFixed`
-pattern, so each recursive call descends.
+outer `h_sup`, extracted by the matching `BasicSupported`
+constructor, so each recursive call descends.
 
 For the `containerFixed` and `containerVar` arms, the helper would
 need `∀ t ∈ fs, decode_encode_t`. A closure abstracting `t`

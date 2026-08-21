@@ -54,9 +54,11 @@ them):
 2. **Encoder accounting** (`size_serializeVarElemsAux_offs`):
    `(serializeVarElemsAux t xs varOff).1.size = xs.length * 4`.
    Independent of `varOff` and of the bodies. At the encoder's seed
-   `varOff = n * 4`, the first encoded offset is `n * 4`. The vector
-   decoder takes `count = n` from the schema. The later roundtrip
-   proof uses the encoder's canonical offset.
+   `varOff = n * 4`, that first offset is where the first body
+   starts, immediately after the `n`-entry table. The list decoder
+   recovers `count` from `off₀ / 4` (so `count = xs.length` on
+   encoder output). The vector decoder takes `count = n` from the
+   schema. Its roundtrip uses the encoder's canonical first offset.
 3. **Size walker** (`size_serializeVarElemsAux_le_max`):
    `(serializeVarElemsAux t xs varOff).1.size + .2.size ≤
    xs.length * (BYTES_PER_LENGTH_OFFSET + maxByteLength t)`.

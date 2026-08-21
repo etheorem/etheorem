@@ -231,8 +231,10 @@ uint32-offset bridge, `decode_encode`'s and
 four `bv_decide` axioms plus the standard kernel axioms
 (`propext`, `Classical.choice`, `Quot.sound`); `encode_size_le_max`
 adds none.
-² Recurses on the element type's `BasicSupported` witness via
-the mutual `decode_encode` ↔ `decode_encode_containerFixed_aux`
+² Recurses on the element or field type's `BasicSupported`
+witness. Vector and list arms pass `fun y => decode_encode h_t y`
+into a parameterised helper. The `containerFixed` arm uses the
+mutual `decode_encode` ↔ `decode_encode_containerFixed_aux`
 block.
 ³ Same recursion shape as `.vector`.
 ⁴ Byte-level bit identities close by kernel `decide` over the
@@ -272,7 +274,7 @@ offset-table walker). Allowed and excluded field types:
 | `.uintN 8 / 16 / 32 / 64 / 128 / 256` | ✅ | basic + fixed |
 | `.bool` | ✅ | basic + fixed |
 | `.vector t' n` (with `n > 0`, `BasicSupported t'`) | ✅ ᵛ* | nested vector; ᵛ* when `t'` is variable-size (`vectorVar`), since `(.vector t' n).isFixedSize = t'.isFixedSize` |
-| `.list t' cap` (with fixed-size `t'`, `BasicSupported t'`, `0 < t'.fixedByteSize`) | ✅ ᵛ | variable-size field, needs `containerVar` |
+| `.list t' cap` (with `BasicSupported t'`) | ✅ ᵛ | variable-size field, needs `containerVar`; `listFixed` when `t'` is fixed-size with `0 < t'.fixedByteSize`, `listVar` when `t'` is variable-size |
 | `.container fs'` (with `BasicSupported (.container fs')`, via `containerFixed` / `containerVar`) | ✅ ᵛ* | nested container; ᵛ* when the nested shape itself uses `containerVar` |
 | `.bitvector n` (with `n > 0`) | ✅ | bit-packed + fixed, `(.bitvector n).fixedByteSize = ⌈n/8⌉` |
 | `.bitlist cap` | ✅ ᵛ | bit-packed, variable-size field, needs `containerVar` |
