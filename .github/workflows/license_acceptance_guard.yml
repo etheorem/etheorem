@@ -1,0 +1,55 @@
+name: License acceptance guard
+
+# Blocks merge when the pull request description does not accept the
+# project licence. The PR template ships the acceptance line already
+# ticked, so this job guards against the two ways it stops being true: a
+# contributor unticks the box, or deletes the line. Pair it with a
+# branch-protection rule on the base branch that requires the `check` job
+# below to be green before a PR can merge; the workflow alone only
+# produces a status check, the rule is what enforces it.
+
+on:
+  pull_request:
+    # `edited` matters here: a contributor who restores the line after
+    # opening the PR must get a fresh, green run without pushing a commit.
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require licence acceptance in the PR description
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          # Read the body from the REST API, not from the event payload: on
+          # a re-run the payload holds the description as it was when the
+          # event fired, and the API always holds the current text.
+          body=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.body // ""')
+
+          # The acceptance line, as the PR template writes it:
+          #
+          #     - [x] I have read and accepted LICENSE (LGPL version 3), NOTICE and CLA in the root of this project.
+          #
+          # The pattern tolerates leading whitespace, `*` or `-` as the list
+          # marker, `x` or `X` in the box, and any wording after "accepted",
+          # so a reworded template still passes. An unticked box fails, and
+          # so does a description with the line deleted.
+          ACCEPT_RE='^[[:space:]]*[-*][[:space:]]+\[[xX]\][[:space:]]+I have read and accepted'
+
+          # GitHub serves the body with CRLF line endings; strip the CR so
+          # the anchors match.
+          if printf '%s\n' "$body" | tr -d '\r' | grep -qE "$ACCEPT_RE"; then
+            echo "Licence acceptance found in the PR description."
+            exit 0
+          fi
+
+          echo "::error title=Licence not accepted::The PR description must accept the project licence. The pull request template ships this line ticked under the 'LICENSE (LGPL version 3)' heading. Restore it, ticked, in your description: '- [x] I have read and accepted LICENSE (LGPL version 3), NOTICE and CLA in the root of this project.'"
+          exit 1
