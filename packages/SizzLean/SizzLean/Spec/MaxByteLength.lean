@@ -58,7 +58,7 @@ def SSZType.maxByteLength : SSZType → Nat
   | .uintN n      => (n + 7) / 8
   | .bool         => 1
   | .vector t n   =>
-      if t.isFixedSize then SSZType.maxByteLength t * n
+      if t.isFixedSize then n * SSZType.maxByteLength t
       else n * (BYTES_PER_LENGTH_OFFSET + SSZType.maxByteLength t)
   | .list t cap   =>
       if t.isFixedSize then cap * SSZType.maxByteLength t

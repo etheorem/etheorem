@@ -99,7 +99,7 @@ theorem decode_encode_vectorFixed
 
 /-- Size bound for `.vector t n` with `t` fixed-size, `n > 0`.
 The serialized buffer has size `n * t.fixedByteSize`, which
-is ≤ `maxByteLength (.vector t n) = maxByteLength t * n` (the
+is ≤ `maxByteLength (.vector t n) = n * maxByteLength t` (the
 fixed-element branch of the bound). The
 `n > 0` precondition lets us pick `v[0]` as a witness for
 deriving `fixedByteSize t ≤ maxByteLength t`. -/
@@ -132,7 +132,6 @@ theorem encode_size_le_max_vectorFixed
   rw [h_size]
   show n * t.fixedByteSize ≤ SSZType.maxByteLength (.vector t n)
   simp only [SSZType.maxByteLength, h_t_fixed, if_true]
-  rw [Nat.mul_comm (SSZType.maxByteLength t) n]
   exact Nat.mul_le_mul_left n h_fixed_le_max
 
 end SizzLean.Proofs
