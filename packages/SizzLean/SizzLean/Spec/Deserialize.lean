@@ -169,9 +169,10 @@ protected def extractFieldOffsets (b : ByteArray) :
 the head of a *variable-size-element collection* (`vector` / `list`
 / `progList` whose element type is variable-size). The collection's
 wire form is `[ off₀ off₁ … off_{n-1} | body₀ body₁ … ]`, where each
-`off_i` is a `uint32`-LE and the count `n` is recovered from
-`off₀ / 4` (the first body starts where the offset table ends).
-`extractCollOffsets` reads `count` offsets starting at `off`.
+`off_i` is a `uint32`-LE. Vectors take the count from the schema.
+Non-empty lists recover it from `off₀ / 4`; the encoder puts the
+first body after the offset table. `extractCollOffsets` reads the
+supplied `count` offsets starting at `off`.
 
 `protected` (was `private`): the variable-element collection
 roundtrip proof reasons through this walker's branches, so it must
@@ -356,8 +357,8 @@ def SSZType.deserialize : (s : SSZType) → ByteArray → Except SSZError (s.int
             if h : arr.size = n then .ok (⟨arr, h⟩, used)
             else .error .tooShort
       else
-        -- Variable-size element vector: the offset table has exactly
-        -- `n` entries. First offset must equal `n * 4`.
+        -- Variable-size element vector: read the schema's `n` offsets.
+        -- The body walker checks each resulting slice against `b.size`.
         if b.size < n * BYTES_PER_LENGTH_OFFSET then .error .tooShort
         else
           match SizzLean.Spec.extractCollOffsets b n 0 with

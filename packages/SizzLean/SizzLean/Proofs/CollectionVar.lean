@@ -20,12 +20,11 @@ a follow-up, once this file's lemmas are available to build on and
 once `containerVar` is on `main` (the `BasicSupported` matchers grow
 two constructors; that arm must already be exhaustive).
 
-Homogeneous collections, so this is closer to `Proofs/FixedElems.lean`
-than to `Proofs/ContainerVar.lean`: one element type `t`, induction
-on the element list. No new heterogeneous mutual predicate. The
-uint32 codec bridge (`readUInt32LE_uint32LE_append`,
-`readUInt32LE_append_shift`, `toNat_toUInt32_of_lt`) is reused from
-`ContainerVar` rather than re-proved.
+Homogeneous collections have one element type `t`, so the proof
+inducts on the element list as `Proofs/FixedElems.lean` does. The
+existing uint32 codec bridge from `ContainerVar`
+(`readUInt32LE_uint32LE_append`, `readUInt32LE_append_shift`,
+`toNat_toUInt32_of_lt`) supplies the byte-level inverse.
 
 ## Wire format (what the lemmas below characterize)
 
@@ -59,9 +58,10 @@ them):
    order). Homogeneous analogue of `varOffsetsOf`.
 2. **Encoder accounting** (`size_serializeVarElemsAux_offs`):
    `(serializeVarElemsAux t xs varOff).1.size = xs.length * 4`.
-   Independent of `varOff` and of the bodies. The vector decoder's
-   first-offset guard (`off₀ = n * 4`) is this fact at the
-   encoder's seed `varOff = n * 4`.
+   Independent of `varOff` and of the bodies. At the encoder's seed
+   `varOff = n * 4`, the first encoded offset is `n * 4`. The vector
+   decoder takes `count = n` from the schema. The later roundtrip
+   proof uses the encoder's canonical offset.
 3. **Size walker** (`size_serializeVarElemsAux_le_max`):
    `(serializeVarElemsAux t xs varOff).1.size + .2.size ≤
    xs.length * (BYTES_PER_LENGTH_OFFSET + maxByteLength t)`.
@@ -81,10 +81,9 @@ them):
 
 ## Trust
 
-Every lemma here closes with the three standard kernel axioms.
-The uint32 bridge it cites from `ContainerVar` is one `bv_decide`
-call, the same trust class as the narrow `uintN` arms in
-`Proofs/UInt.lean`.
+The lemmas use at most the standard kernel axioms. The uint32 bridge
+from `ContainerVar` carries one `bv_decide` certificate, the same
+trust class as the narrow `uintN` arms in `Proofs/UInt.lean`.
 -/
 
 set_option autoImplicit false
@@ -123,9 +122,9 @@ theorem collOffsetsOf_length
 
 /-- The first placeholder a non-empty collection writes is the
 seeded `varOff`. At the encoder's call site that seed is
-`xs.length * BYTES_PER_LENGTH_OFFSET`, which is the vector
-decoder's first-offset guard and the list decoder's
-`count = firstOff / 4` recovery. -/
+`xs.length * BYTES_PER_LENGTH_OFFSET`. The vector roundtrip uses
+this canonical encoder value. The list decoder uses it to recover
+`count = firstOff / 4`. -/
 theorem collOffsetsOf_head_cons
     (t : SSZType) (x : t.interp) (xs : List t.interp) (varOff : Nat) :
     (collOffsetsOf t (x :: xs) varOff).head? = some varOff := rfl
@@ -139,7 +138,7 @@ theorem collOffsetsOf_head_cons
 theorem size_serializeVarElemsAux_offs
     (t : SSZType) (xs : List t.interp) (varOff : Nat) :
     (SSZType.serializeVarElemsAux t xs varOff).1.size =
-      xs.length * SizzLean.Spec.BYTES_PER_LENGTH_OFFSET := by
+      xs.length * BYTES_PER_LENGTH_OFFSET := by
   induction xs generalizing varOff with
   | nil =>
     unfold SSZType.serializeVarElemsAux
@@ -152,8 +151,7 @@ theorem size_serializeVarElemsAux_offs
               (varOff + (SSZType.serialize t x).size)).1 := by
       simp only [SSZType.serializeVarElemsAux]
     rw [h_enc, ByteArray.size_append, size_uint32LE, ih, List.length_cons]
-    have hBPLO : SizzLean.Spec.BYTES_PER_LENGTH_OFFSET = 4 := rfl
-    rw [hBPLO, Nat.add_mul, Nat.one_mul, Nat.add_comm]
+    simp only [BYTES_PER_LENGTH_OFFSET, Nat.add_mul, Nat.one_mul, Nat.add_comm]
 
 /-- Reading the first offset placeholder back off the front of a
 non-empty collection's own encoded output recovers the seeded
@@ -190,7 +188,7 @@ theorem size_serializeVarElemsAux_le_max
       (SSZType.serialize t y).size ≤ SSZType.maxByteLength t) :
     (SSZType.serializeVarElemsAux t xs varOff).1.size +
       (SSZType.serializeVarElemsAux t xs varOff).2.size ≤
-      xs.length * (SizzLean.Spec.BYTES_PER_LENGTH_OFFSET +
+      xs.length * (BYTES_PER_LENGTH_OFFSET +
         SSZType.maxByteLength t) := by
   induction xs generalizing varOff with
   | nil =>
@@ -213,8 +211,7 @@ theorem size_serializeVarElemsAux_le_max
         size_uint32LE]
     have h_tail := ih (varOff + (SSZType.serialize t x).size)
     have h_head := h_max x
-    have hBPLO : SizzLean.Spec.BYTES_PER_LENGTH_OFFSET = 4 := rfl
-    rw [hBPLO] at h_tail ⊢
+    simp only [BYTES_PER_LENGTH_OFFSET] at h_tail ⊢
     rw [List.length_cons, Nat.add_mul, Nat.one_mul]
     omega
 
@@ -345,8 +342,8 @@ theorem extractCollOffsets_serializeVarElemsAux
       rw [hshift, readUInt32LE_uint32LE_append]
     rw [h_read]
     dsimp only
-    have hBPLO : SizzLean.Spec.BYTES_PER_LENGTH_OFFSET = 4 := rfl
-    rw [hBPLO, show pre.size + 4 = (pre ++ uint32LE (Nat.toUInt32 varOff)).size
+    rw [show BYTES_PER_LENGTH_OFFSET = 4 from rfl,
+        show pre.size + 4 = (pre ++ uint32LE (Nat.toUInt32 varOff)).size
           from h_presize.symm, h_ih]
     dsimp only
     have h_toNat : (Nat.toUInt32 varOff).toNat = varOff :=
