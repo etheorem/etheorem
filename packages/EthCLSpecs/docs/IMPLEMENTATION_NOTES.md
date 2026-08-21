@@ -823,9 +823,15 @@ separation.
   withdrawability-delay addition does not wrap for the shipped minimal and
   mainnet configurations.
 
-- **`Proofs/Gloas/Run.lean`** names `GloasRun`, the `EStateM StateTransitionError State`
-  the Gloas proofs pin their `forkdef` bodies to. `StateTransition` is a parameter
-  of a fork body, so every run theorem has to fix it; this fixes it once.
+- **`Proofs/Gloas/Run.lean`** names `GloasRun`, the pure `StateT`/`Except`
+  state-transition monad the Gloas proofs pin their `forkdef` bodies to.
+  `StateTransition` is a parameter of a fork body, so every run theorem has to fix
+  it; this fixes it once.
+
+- **`Proofs/StoreRun.lean`** names `ForkChoiceStoreRun`, the shared pure
+  store-machine runner every fork's fork-choice proofs pin at that fork's
+  `Store`. It sits beside the per-fork directories because the runner is a monad
+  over an arbitrary store type and so belongs to no fork.
 
 - **`Proofs/Gloas/IsValidIndexedPayloadAttestation.lean`** proves a two-layer,
   backend-generic characterization of `isValidIndexedPayloadAttestation`. Layer 1
@@ -837,6 +843,18 @@ separation.
 - **`Proofs/Gloas/ProcessOperations.lean`** places its public declarations in
   `EthCLSpecs.Proofs.Gloas`. It characterizes Gloas `processOperations` at
   `GloasRun`; handlers and later failure postconditions remain opaque.
+
+- **`Proofs/Heze/ShouldExtendPayload.lean`** places its theorem in
+  `EthCLSpecs.Proofs.Heze`, since `shouldExtendPayload` exists in both Gloas
+  and Heze. `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied` proves
+  only this FOCIL-gate claim at `ForkChoiceStoreRun (Store map)`: under
+  successful preliminary lookup/slot checks, a verified payload with a present
+  recorded `false` satisfaction verdict is rejected by the Heze FOCIL gate, with
+  the pure runner state unchanged. It is not complete correctness of
+  `shouldExtendPayload`. The recorded verdict is an assumption, so payload/verdict
+  pairing and exact agreement of the recorded verdict with
+  `isInclusionListSatisfied` remain follow-up candidates in
+  `PROOF_LEDGER.md`.
 
 - **`Proofs/Gloas/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
   single record update, which doubles as the frame condition that no other Store

@@ -6,7 +6,8 @@ import EthCLSpecs.Gloas.State
 A theorem about a `forkdef`'s effect has to pin down the monad the spec body is
 elaborated into, since `StateTransition` is a parameter of the fork body rather than a
 fixed type. Every Gloas proof in this directory pins the same one, so it is named once
-here and instantiated at each theorem through `(StateTransition := GloasRun)`.
+here and instantiated at each theorem through `(StateTransition := GloasRun)`. The store
+machine's counterpart is `ForkChoiceStoreRun`, in `Proofs/StoreRun.lean`.
 
 ## Which monad, and why not the fast one
 

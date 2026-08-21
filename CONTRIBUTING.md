@@ -156,8 +156,24 @@ about `Heze.f`, and the per-fork directory is what keeps the two claims apart.
    target no `forkdef` declared, a target your statement never mentions, and a
    tag written outside the target fork's directory. Supporting lemmas stay
    untagged; they still count as touched.
-4. **Flip the ledger row** to `proved`, and name the pull request and the module
-   in its Tracking cell. A row stays in the ledger for its whole life.
+4. **Flip the ledger row**, and name the pull request and the module in its
+   Tracking cell. A row stays in the ledger for its whole life.
+
+   Set `proved` when the theorem states what the row asks for. Set
+   `in progress` when it lands part of that claim. The split follows step 3. A
+   theorem that states the function's contract carries a `@[characterizes]` tag,
+   and its row reads `proved`. A theorem that states one branch, one call
+   pattern, or a restatement of a helper carries no tag, and its row stays
+   `in progress`.
+
+   A partly landed row then says in its Property cell what is landed and what is
+   open, so the next author reads the remainder off the row. `getPtc` and
+   `shouldExtendPayload` are the two worked cases.
+
+   `just proof-coverage` cross-checks the status against the tags. It warns when
+   a `proved` row carries no tag, and when a tagged function has no `proved`
+   row. Both warnings are advisory, and both say the same thing: the status and
+   the tag disagree, so one of them is wrong.
 5. **Run `just proof-coverage-update` and commit the diff.** It rewrites the two
    baselines and the two README blocks. That diff is the coverage change, so it
    belongs in the pull request with the proof. CI never writes it for you.

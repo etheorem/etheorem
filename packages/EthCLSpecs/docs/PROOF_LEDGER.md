@@ -26,9 +26,13 @@ diff, so the ledger reads as the full list of candidates and the baseline reads
 as the subset that is done.
 
 `in progress` covers a theorem being written and one that is partly landed
-alike. The Property cell then says what is landed and what is open, which is the
-case `getPtc` shows. `out of scope` carries its reason in the Property cell,
-cryptographic assumptions being the standing case.
+alike. A theorem lands partly when it states one branch, one call pattern, or a
+restatement of a helper rather than the whole claim the row asks for. It then
+carries no `@[characterizes]` tag, and the Property cell says what is landed and
+what is open. `getPtc` and `shouldExtendPayload` are the two cases that show it.
+
+`out of scope` carries its reason in the Property cell, cryptographic
+assumptions being the standing case.
 
 ## The Location column
 
@@ -179,10 +183,20 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 
 ## Heze
 
-No rows yet. Heze is a twelve-declaration diff over Gloas, and its own
-declarations have not been read for proof candidates. Every Gloas row above
-applies to Heze's re-elaboration of that declaration as a separate claim about a
-separate constant.
+Heze is a twelve-declaration diff over Gloas, and only its FOCIL gate has been
+read for proof candidates so far. Every Gloas row above applies to Heze's
+re-elaboration of that declaration as a separate claim about a separate
+constant.
+
+### Fork-choice correctness
+
+Properties specific to the fork-choice store and the LMD-GHOST tree: agreement between two ways of computing the same relation, preconditions gating block/attestation acceptance, and correctness of the store's own bookkeeping.
+
+| Function | Location | Property | Status | Tracking |
+| --- | --- | --- | --- | --- |
+| `shouldExtendPayload` | `Heze/ForkChoice.lean:320-342` | Under successful preliminary lookup and slot checks, a verified payload with a recorded `false` inclusion-list satisfaction verdict is rejected by the FOCIL gate, with the pure runner state unchanged. This is not complete correctness of `shouldExtendPayload`: the later Gloas accept and reject paths and the missing-record `assert` branch stay out of scope, and the two write-path rows below stay open | in progress | #63, `Proofs/Heze/ShouldExtendPayload.lean` |
+| `recordPayloadInclusionListSatisfaction` | `Heze/ForkChoice.lean:406-418` | The value inserted at `root` equals `isInclusionListSatisfied payload ilTxs`. Its `false` corollary discharges the recorded-unsatisfaction hypothesis of `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied` | proposed |  |
+| `onExecutionPayloadEnvelope` | `Heze/ForkChoice.lean:426-448` | After a successful envelope acceptance, `payloads[root]` and `payloadInclusionListSatisfaction[root]` are written together for the same `root`, so a verified payload is paired with some recorded satisfaction verdict | proposed |  |
 
 ---
 

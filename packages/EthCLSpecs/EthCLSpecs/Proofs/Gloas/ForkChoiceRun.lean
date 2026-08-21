@@ -1,12 +1,15 @@
 import EthCLSpecs.Gloas.ForkChoice
+import EthCLSpecs.Proofs.StoreRun
 import EthCLSpecs.Proofs.Gloas.InitiateBuilderExit
 import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.ForkChoiceRun`: the fork-choice store monad these proofs would run at
 
-`Proofs/Gloas/Run.lean` names the monad for the *state* machine. This names the one for the
-*store* machine, and proves a fork-choice `forkdef` at it.
+`Proofs/Gloas/Run.lean` names the monad for the *state* machine (`GloasRun`), and
+`Proofs/StoreRun.lean` names the fork-generic one for the *store* machine
+(`ForkChoiceStoreRun`). This file specializes the latter to Gloas's `Store` as
+`GloasStoreRun`, and proves a fork-choice `forkdef` at it.
 
 Nothing here is a fork-choice proof yet; `PROOF_LEDGER.md` queues five under Gloas
 "Fork-choice correctness".
@@ -40,15 +43,10 @@ open EthCLSpecs.Gloas (Store getSlotsSinceGenesis getCurrentSlot State currentEp
 open SizzLean.Repr
 open SizzLean.Cache
 
-/-- The store machine's pure monad: `StateT` over `Except`, threading the fork-choice
-`Store` and rejecting with `StoreTransitionError`. The store-side counterpart of
-`GloasRun`, and the store-side reading of `SPECS_ARCHITECTURE.md` §11.1.
-
-Parameterized by the map backing rather than fixed to `treeMap`: the backing is a
-separate axis of the fast/pure duality from the monad, and a theorem that does not
-read a map should not pin one. -/
+/-- Gloas specialization of `ForkChoiceStoreRun`: pure `StateT`/`Except` over
+`Gloas.Store`, parameterized by the map backing rather than fixed to `treeMap`. -/
 abbrev GloasStoreRun [Preset] [HasherTag] (map : MapKind) : Type → Type :=
-  StateT (Store map) (Except StoreTransitionError)
+  ForkChoiceStoreRun (Store map)
 
 /-- **A fork-choice `forkdef`, at the pure store monad.** `get_slots_since_genesis` on a
 store whose clock has not advanced past genesis returns `0`, leaving the store alone.
