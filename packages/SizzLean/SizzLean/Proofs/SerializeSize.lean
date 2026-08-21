@@ -155,6 +155,10 @@ theorem size_serialize_eq_fixedByteSize :
     show (SSZType.serialize (.container fs) vs).size = SSZType.fixedByteSize (.container fs)
     unfold SSZType.serialize
     simp [h_fields.1, h_fields.2, SSZType.fixedByteSize]
+  | containerVar _ h_not_fixed _ =>
+    -- `(.container fs).isFixedSize = allFixedSize fs = false`;
+    -- `h_fixed : false = true` is absurd, same shape as `listFixed` / `bitlist`.
+    simp [SSZType.isFixedSize, h_not_fixed] at h_fixed
 
 /-- For `BasicSupportedFieldsFixed fs`, `serializeFieldsAux` produces
 a fixed-prefix output of size `fixedByteSizeFields fs` *and* an

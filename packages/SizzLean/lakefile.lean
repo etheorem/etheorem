@@ -24,14 +24,22 @@ import Lake
 open Lake DSL System
 
 /-- Auto-discover lib contents one directory level deep. See the
-umbrella's `docs/monorepo-arch.md` for the layout context. -/
+umbrella's `docs/monorepo-arch.md` for the layout context.
+
+`srcDir` must be absolute. Lake loads this file with the *workspace*
+root as the working directory, not the package root, so a relative
+path resolves against the umbrella and finds nothing. A missing
+directory is a configuration error rather than an empty library, so
+it panics instead of returning no globs: an empty result builds only
+the modules the root re-exports, and every proof module no sibling
+imports goes silently unbuilt. -/
 unsafe def globsUnder
     (srcDir : System.FilePath) (rootName : Lean.Name)
     (exclude : Array String := #[]) : Array Glob :=
   Id.run <| unsafeBaseIO do
     let entries ← (System.FilePath.readDir srcDir).toBaseIO
     let .ok entries := entries
-      | return #[]
+      | panic! s!"globsUnder: cannot read {srcDir}"
     let mut out : Array Glob := #[]
     for e in entries do
       let name := e.fileName
@@ -134,7 +142,7 @@ lean_lib SizzLean where
   precompileModules := true
   globs :=
     #[.one `SizzLean] ++
-    unsafe globsUnder ("SizzLean" : FilePath) `SizzLean
+    unsafe globsUnder (__dir__ / "SizzLean") `SizzLean
 
 -- Tests live at the package root level (sibling of `SizzLean/`),
 -- forming a separate `SizzLeanTests.*` module hierarchy. The `SizzLeanTests.lean`

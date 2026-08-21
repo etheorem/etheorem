@@ -315,7 +315,7 @@ package stands.
 | Package | What a proof covers here | Where it stands |
 | --- | --- | --- |
 | `EthCLSpecs` | the spec functions the fork bodies declare | 8 characterized, 23 touched, of 585 |
-| `SizzLean` | SSZ properties over the whole `SSZType` universe, gated by a predicate | 3 of 5 properties, over 12 admitted arms; open: any `hashTreeRoot` property, cached tree ≡ uncached `hashTreeRoot` |
+| `SizzLean` | SSZ properties over the whole `SSZType` universe, gated by a predicate | 3 of 5 properties, over 13 admitted arms; open: any `hashTreeRoot` property, cached tree ≡ uncached `hashTreeRoot` |
 | `LeanSha256`, `LeanHazmat*` | nothing to cover: `@[extern]` bindings, and a spec side pinned by the NIST CAVP vectors | 2 named equivalence axioms: `sha256Hash_eq_spec`, `sha256Combine_eq_spec` |
 | `LeanPoseidon` | `permute_eq_permuteRef`, in the standalone `LeanPoseidonProofs` package | outside this run: it pins mathlib of its own |
 | `EthCLLib` | out of scope: elaborators and an effect monad | the replay tests and the pyspec vectors are its claim |

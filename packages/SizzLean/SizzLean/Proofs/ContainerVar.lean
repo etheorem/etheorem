@@ -4,18 +4,20 @@ import SizzLean.Spec.MaxByteLength
 import Std.Tactic.BVDecide
 
 /-!
-# `SizzLean.Proofs.ContainerVar`: groundwork for mixed-field `.container fs`
+# `SizzLean.Proofs.ContainerVar`: mixed-field `.container fs` lemmas
 
-Mixed-field containers (at least one variable-size field, `list` /
-`bitlist`) are the flagship remaining gap in `SSZType.Supported`:
-the codec ([`Spec/Serialize.lean`](../Spec/Serialize.lean)'s
+The codec ([`Spec/Serialize.lean`](../Spec/Serialize.lean)'s
 `serializeFieldsAux`, [`Spec/Deserialize.lean`](../Spec/Deserialize.lean)'s
-non-`allFixedSize` `.container` branch) fully implements the
-offset-table wire format, but no `BasicSupported` constructor
-claims it yet, and no theorem closes it. This module lays the
-groundwork; the predicates (`containerVar` on `BasicSupported` /
-`Supported` / `SupportedBounded`) and the roundtrip walker land in
-a follow-up, once this file's lemmas are available to build on.
+non-`allFixedSize` `.container` branch) implements the offset-table
+wire format for containers with at least one variable-size field
+(`list` / `bitlist`). This module holds the lemmas that format
+needs: the uint32 offset codec bridge, ByteArray extract helpers,
+encoder-size accounting, the offset-extraction inverse, and the
+extract-split / running-offset facts the roundtrip walker in
+`Proofs/Roundtrip.lean` (`decode_encode_containerVar_aux`) consumes.
+The `containerVar` constructor on `BasicSupported` /
+`Supported` / `SupportedBounded` and the walker itself live with
+the central theorems; the lemmas here are their ground.
 
 ## Wire format (what the lemmas below characterize)
 
@@ -49,19 +51,18 @@ plumbing `def`s of item 3 that thread per-field data through them):
    read an offset placeholder embedded partway through a buffer.
    Same trust class as the narrow `uintN` arms: one `bv_decide`.
 2. **Extract-middle** (`extract_middle`): slicing the middle piece
-   out of a three-way `ByteArray` append, the lemma the (later)
-   roundtrip walker needs to identify `b.extract curOff nextOff`
-   with a variable field's serialized body.
+   out of a three-way `ByteArray` append, identifying
+   `b.extract curOff nextOff` with a variable field's serialized
+   body.
 3. **Field-list plumbing devices** (`FieldsFixedSizeOk`,
    `FieldsMaxSizeOk`, `varOffsetsOf`): the per-field correctness
    facts the accounting lemmas below need, threaded alongside `vs`
    the way `serializeFixedElems_size_aux` threads a per-element size
    fact, but for a *heterogeneous* field list, so the natural shape
    is a structural `def` (not an `inductive`) recursing on `fs` and
-   `vs` in lockstep. Kept local to this file rather than exported to
-   `Spec/`: once `BasicSupportedFields` lands (the real,
-   proof-carrying pointwise predicate), each is a one-line corollary
-   of it, and the dedicated file that adds it will make that link.
+   `vs` in lockstep. `fieldsFixedSizeOk_of_basicSupportedFields` in
+   `Proofs/Roundtrip.lean` turns each into a one-line corollary of
+   `BasicSupportedFields`.
 4. **Encoder accounting** (`size_serializeFieldsAux_fixedSection`):
    `(serializeFieldsAux fs vs varOff).1.size = fixedSectionSizeFields fs`.
 5. **Size walker** (`size_serializeFieldsAux_le_maxByteLengthFields`):
@@ -76,6 +77,13 @@ plumbing `def`s of item 3 that thread per-field data through them):
    (`varOffsetsOf`). The hard direction; see its docstring for why
    the invariant is *simpler* than it first looks (it never has to
    track where the variable region physically sits).
+7. **Extract-split** (`extract_split`) and **running-offset
+   lookahead** (`varOffsetsOf_head_getD`): peel one field's
+   contribution off an *abstract* buffer characterized by `extract`
+   equalities, rather than a literal append chain (unlike 6 above,
+   `deserializeVarFields`'s buffer parameter never changes
+   syntactically across the walk). Consumed by
+   `decode_encode_containerVar_aux` in `Proofs/Roundtrip.lean`.
 
 ## Trust
 
@@ -430,5 +438,103 @@ theorem extractFieldOffsets_serializeFieldsAux :
         toNat_toUInt32_of_lt varOff (by omega)
       rw [h_toNat]
       simp only [varOffsetsOf, h_fixed', if_false, Bool.false_eq_true]
+
+/-! ### Roundtrip-walker helpers
+
+Two more facts the roundtrip walker
+(`decode_encode_containerVar_aux`, in `Proofs/Roundtrip.lean`'s
+mutual block) consumes. Both concern an *abstract* buffer `b`
+characterized by `extract` equalities rather than a literal append
+chain, which is the shape `deserializeVarFields`'s own recursion
+needs: unlike the encoder's recursive calls, its buffer parameter
+never changes syntactically across the walk, only the `prefixOff` /
+`varOffs` / `bufEnd` positions into it do. -/
+
+/-- **Extract-split**: given that `b`'s slice `[p, q)` equals a
+two-way append `u ++ v`, both halves recover as the corresponding
+sub-`extract`s of `b` itself. This is the composition workhorse the
+roundtrip walker uses to peel one field's contribution off an
+*invariant* extract equality (as opposed to `extract_middle`, which
+peels a literal append chain apart): at each induction step, the
+outer hypothesis "`b`'s fixed/variable slice matches the encoder's
+`.1`/`.2`" decomposes into the same fact for the head field plus the
+same shape of fact for the tail, without ever having to know how `b`
+itself was built. -/
+theorem extract_split {b : ByteArray} {p q : Nat} {u v : ByteArray}
+    (h : b.extract p q = u ++ v) (hpq : p ≤ q) (hqb : q ≤ b.size) :
+    b.extract p (p + u.size) = u ∧ b.extract (p + u.size) q = v := by
+  have hsize : (b.extract p q).size = u.size + v.size := by
+    rw [h, ByteArray.size_append]
+  rw [ByteArray.size_extract, Nat.min_eq_left hqb] at hsize
+  have hpu : p + u.size ≤ q := by omega
+  have hsplit :
+      b.extract p q = b.extract p (p + u.size) ++ b.extract (p + u.size) q :=
+    ByteArray.extract_eq_extract_append_extract (p + u.size) (by omega) hpu
+  have heq : b.extract p (p + u.size) ++ b.extract (p + u.size) q = u ++ v := by
+    rw [← hsplit]; exact h
+  have hLsize : (b.extract p (p + u.size)).size = u.size := by
+    rw [ByteArray.size_extract, Nat.min_eq_left (by omega)]
+    omega
+  exact (ByteArray.append_eq_append_iff_of_size_eq_left hLsize).mp heq
+
+/-- **Running-offset lookahead**: the "next offset, or `bufEnd` if
+none remain" that `deserializeVarFields` computes
+(`restOffs.head?.getD bufEnd`) always lands on the running `varOff`
+itself, whether or not `fs` has a further variable field. If `fs`'s
+first variable field is at the head, `varOffsetsOf`'s list starts
+with `varOff` directly. If `fs` has no variable field at all, the
+list is empty and `.getD` falls back to `bufEnd`, which the
+hypothesis pins to `varOff` exactly (no variable bytes remain, so
+the running offset never advances past it). Either way the answer
+is `varOff`, which is what lets the roundtrip walker identify a
+variable field's own body slice as `[varOff, varOff + bodySize)`
+regardless of how many more fields (of either kind) follow it. -/
+theorem varOffsetsOf_head_getD :
+    ∀ (fs : List SSZType) (vs : SSZType.interpFields fs) (varOff bufEnd : Nat),
+    bufEnd = varOff + (SSZType.serializeFieldsAux fs vs varOff).2.size →
+    (varOffsetsOf fs vs varOff).head?.getD bufEnd = varOff
+  | [], _, varOff, bufEnd, h => by
+      unfold SSZType.serializeFieldsAux at h
+      simp only [ByteArray.size_empty, Nat.add_zero] at h
+      unfold varOffsetsOf
+      simpa using h
+  | t :: ts, vs, varOff, _, h => by
+      unfold varOffsetsOf
+      by_cases h_fixed : t.isFixedSize = true
+      · simp only [h_fixed, if_true]
+        apply varOffsetsOf_head_getD ts vs.2 varOff
+        have h_enc2 :
+            (SSZType.serializeFieldsAux (t :: ts) vs varOff).2 =
+              (SSZType.serializeFieldsAux ts vs.2 varOff).2 := by
+          show (SSZType.serializeFieldsAux (t :: ts) vs varOff).2 = _
+          simp only [SSZType.serializeFieldsAux, h_fixed, if_true]
+        rw [h_enc2] at h
+        exact h
+      · have h_fixed' : t.isFixedSize = false := by
+          cases hc : t.isFixedSize <;> simp_all
+        simp only [h_fixed', if_false, Bool.false_eq_true]
+        rfl
+
+/-- Converse direction: an *empty* `varOffsetsOf` list means every
+field of `fs` was fixed-size (`varOffsetsOf` only ever produces a
+`nil` output by recursing through the fixed branch all the way to
+the end). Used at the top level of the roundtrip walker to rule out
+the degenerate "no variable fields" case, which `containerVar`'s
+`allFixedSize fs = false` hypothesis already excludes. -/
+theorem allFixedSize_of_varOffsetsOf_eq_nil :
+    ∀ (fs : List SSZType) (vs : SSZType.interpFields fs) (varOff : Nat),
+    varOffsetsOf fs vs varOff = [] → SSZType.allFixedSize fs = true
+  | [], _, _, _ => rfl
+  | t :: ts, vs, varOff, h => by
+      unfold varOffsetsOf at h
+      by_cases h_fixed : t.isFixedSize = true
+      · simp only [h_fixed, if_true] at h
+        unfold SSZType.allFixedSize
+        simp only [h_fixed, Bool.true_and]
+        exact allFixedSize_of_varOffsetsOf_eq_nil ts vs.2 varOff h
+      · have h_fixed' : t.isFixedSize = false := by
+          cases hc : t.isFixedSize <;> simp_all
+        simp only [h_fixed', if_false, Bool.false_eq_true] at h
+        exact absurd h (List.cons_ne_nil _ _)
 
 end SizzLean.Proofs

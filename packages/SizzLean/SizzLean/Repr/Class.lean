@@ -42,11 +42,15 @@ The library's `decode_encode` proof currently covers the
 * `.uintN 8 / 16 / 32 / 64` and `.uintN 128 / 256`, `.bool`:
   basic primitives (the wide integers close by the `Nat`-digit
   codec proof in `Proofs/UIntWide.lean`).
-* `.vector t n` / `.list t cap` / `.container fs`: general
-  composites over fixed-size element / field types
-  (`BasicSupported t` with `t.isFixedSize = true`).
+* `.vector t n` / `.list t cap`: composites over fixed-size
+  element types (`BasicSupported t` with `t.isFixedSize = true`).
 * `.bitvector n` (`0 < n`) / `.bitlist cap`: bit-packed shapes,
   closed by the bit-packing inverse in `Proofs/BitPack.lean`.
+* `.container fs`: any field list whose fields are themselves
+  `BasicSupported`, either all fixed-size (`containerFixed`) or
+  mixed fixed/variable via the offset-table codec (`containerVar`,
+  with `allFixedSize fs = false` and
+  `maxByteLengthFields fs < MAX_LENGTH`).
 * `.container [.bool, .bool]`: concrete two-`Bool` container,
   exposed as a `def`-level alias of `containerFixed (.cons .bool
   rfl (.cons .bool rfl .nil))` so the hand-written `Pair` example
@@ -54,11 +58,11 @@ The library's `decode_encode` proof currently covers the
 
 The user-surface corollary inherits that gate: a user type whose
 shape sits inside `BasicSupported` enjoys verified roundtrip; a
-user type whose shape is outside it (mixed fixed/variable-size
-container fields) enjoys total `serialize` / `deserialize` (the
-spec functions are total) but no verified roundtrip. The gate is
-honest about scope and grows automatically as the proof set
-widens.
+user type whose shape is outside it (variable-element `vector` /
+`list`, or a mixed-field container whose schema max exceeds
+`MAX_LENGTH`) enjoys total `serialize` / `deserialize` (the spec
+functions are total) but no verified roundtrip. The gate is honest
+about scope and grows automatically as the proof set widens.
 
 ## Lean idioms used here (annotated on first appearance)
 
