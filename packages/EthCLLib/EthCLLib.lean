@@ -1,6 +1,7 @@
 import EthCLLib.Internal.Capture
 import EthCLLib.Internal.ProofLedger
 import EthCLLib.Spec
+import EthCLLib.Proofs
 import EthCLLib.PySpecTests.Interface
 import EthCLLib.PySpecTests.Driver
 
