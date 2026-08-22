@@ -5,6 +5,7 @@ import EthCLLib.Tests.TierMerge
 import EthCLLib.Tests.CryptoBackendSpike
 import EthCLLib.Tests.ContainerForm
 import EthCLLib.Tests.FrameworkUtils
+import EthCLLib.Tests.MerkleWitness
 import EthCLLib.Tests.PreambleSection
 
 /-!
