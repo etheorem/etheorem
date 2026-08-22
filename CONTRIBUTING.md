@@ -225,3 +225,14 @@ pinned toolchain on every PR.
 The project is licensed under LGPL-3.0-or-later (see
 [`LICENSE`](LICENSE)). By contributing, you agree that your
 contributions are licensed under the same terms.
+
+Every pull request states that agreement in its own description. The
+pull request template ends with the acceptance line, already ticked:
+
+```
+- [x] I have read and accepted LICENSE (LGPL version 3), NOTICE and CLA in the root of this project.
+```
+
+Leave that line in place. The `License acceptance guard` workflow reads
+the description and fails if the line is unticked or deleted. Restore it
+and the check re-runs on the edit; no new commit is needed.
