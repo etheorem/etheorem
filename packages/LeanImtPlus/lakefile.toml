@@ -1,0 +1,29 @@
+name = "LeanImtPlus"
+license = "LGPL-3.0-only"
+licenseFiles = ["../../LICENSE"]
+moreLeancArgs = ["-march=native"]
+defaultTargets = ["LeanImtPlus"]
+
+[[require]]
+name = "LeanSha256"
+path = "../LeanSha256"
+
+[[require]]
+name = "LeanHazmatSha256"
+path = "../LeanHazmatSha256"
+
+[[require]]
+name = "LeanPoseidon"
+path = "../LeanPoseidon"
+
+# Keep the generic core independent from native backends at link time.
+# Precompiling this aggregate would make Lake link every extern_lib owned
+# by adapter dependencies, including LeanPoseidon's test-only Rust oracle.
+[[lean_lib]]
+name = "LeanImtPlus"
+globs = ["LeanImtPlus.*"]
+
+[[lean_lib]]
+name = "LeanImtPlusTests"
+roots = ["LeanImtPlusTests"]
+globs = ["LeanImtPlusTests.*"]

@@ -6,6 +6,7 @@ name = "Etheorem"
 #
 # Common targets (build by name from the repo root):
 #   lake build LeanSha256
+#   lake build LeanImtPlus             # hash-generic LeanIMT+ tree + pure SHA adapter
 #   lake build LeanHazmatSha256        # consensus crypto — FFI families
 #   lake build LeanHazmatBls           #   (need `just hazmat-bls-vendor` / `hazmat-kzg-vendor`)
 #   lake build LeanHazmatKzg
@@ -25,6 +26,10 @@ name = "Etheorem"
 [[require]]
 name = "LeanSha256"
 path = "packages/LeanSha256"
+
+[[require]]
+name = "LeanImtPlus"
+path = "packages/LeanImtPlus"
 
 # LeanHazmat — FFI crypto family (hazmat-docs/ARCHITECTURE.md).
 # Consensus families ship first; execution-layer families are deferred.

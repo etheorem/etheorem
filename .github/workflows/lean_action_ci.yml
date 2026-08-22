@@ -42,7 +42,8 @@ jobs:
   test:
     # In-Lean property tests: SHA-256 NIST CAVP vectors against both
     # the pure-Lean spec (LeanSha256) and the OpenSSL FFI shim
-    # (LeanHazmatSha256), the FFI ≡ spec equivalence cross-checks, SSZ
+    # (LeanHazmatSha256), LeanIMT+ pure/FFI SHA-256 and Poseidon2 gates, the FFI ≡ spec
+    # equivalence cross-checks, SSZ
     # and SSZ library gates (Merkle PRNG, cache machinery on example
     # containers). All fire as `native_decide` examples via `lake build`.
     # The libraries themselves build transitively, so this job subsumes
