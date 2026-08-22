@@ -142,8 +142,8 @@ column is the fork's own diff, for scale.
 | `Quot.sound` | 45 |
 | `Lean.ofReduceBool` | 0 |
 | `Lean.trustCompiler` | 0 |
-| `SizzLean.sha256Hash_eq_spec` | 0 |
-| `SizzLean.sha256Combine_eq_spec` | 0 |
+| `SizzLean.Hasher.sha256Hash_eq_spec` | 0 |
+| `SizzLean.Hasher.sha256Combine_eq_spec` | 0 |
 | `<theorem>._native.bv_decide.ax_* (bv_decide certificate)` | 3 |
 <!-- proof-coverage:end -->
 
