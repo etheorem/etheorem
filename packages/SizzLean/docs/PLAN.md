@@ -1489,6 +1489,69 @@ corollary without rework. The README's
 [Proof coverage](../README.md#proof-coverage) section carries
 the per-constructor table users see.
 
+### Beyond the three central theorems
+
+Stage 18 covers serialization. Merkleization has no proved
+result yet.
+
+**Merkleization agreement.** Prove `Node.merkleRootWithCache`
+(`Cache/MerkleTree/Merkle.lean`) equal to `hashTreeRoot`
+(`Spec/HashTreeRoot.lean`). Stage 12 checks that the two agree on
+three fixtures by `native_decide`. There is no proof. Without
+one, a theorem about the cached tree's root says nothing about
+the root the spec computes.
+
+The spec merkleizer folds breadth-first with
+level-indexed zero padding while the cached builder splits
+depth-first, so the induction carries a level offset. It needs no
+depth bound beyond that. `zeroHashAt` memoises the first 100
+depths and runs the same `zeroHashRec` recurrence past them. The
+two towers therefore agree at every depth, including the
+cap-derived depths (`list`, `bitlist`) that reach furthest.
+
+Dafny left `hash()` uninterpreted and could only
+differential-test this property. `LeanSha256` and the named
+FFI-equivalence axioms under `Hasher/` make a proof against a
+concrete hash possible.
+
+**Zero tower, padding and chunking.** `zeroHashes`
+(`Cache/MerkleTree/Zero.lean`), `padToChunk`, `chunkDepth` and
+`mixInLength` (`Spec/HashTreeRoot.lean`). Padding and chunking
+are the structural difference between the two merkleizers, so
+these are steps inside the agreement proof. Dafny proved the equivalent
+chunk-count and length bookkeeping, which is the one part of
+merkleization it did reach.
+
+**Generalized-index library.** Decompose `getGeneralizedIndex`
+and `getSubtreeIndex` (`Spec/GeneralizedIndex.lean`) into the
+`(depth, index)` pair the merkleization theorems take. Every
+Merkle-proof consumer needs it. Light-client header branches
+address leaves by generalized index rather than raw tree
+position. The blob and data-column sidecar inclusion proofs do
+the same.
+`kzgCommitmentsInclusionProof`
+(`EthCLSpecs/Fulu/Blocks.lean:63`) is the sidecar case, not
+modeled yet. Deposits are the exception. Their index is a plain
+tree position.
+
+**Branch completeness.** Prove that `isValidMerkleBranch`
+(`EthCLLib/Spec/SigningRoot.lean:68`) accepts the honest opening
+of a SizzLean tree. Dafny never implemented the function, so
+there is no prior statement to reuse. `processDeposit` needs a
+mix-in-length variant. Stated general over depth, that variant
+also serves the sidecar proofs above.
+
+Two gaps separate that from the shipped call sites. Each call site
+checks a branch taken off the wire.
+`EthCLSpecs/Fulu/Operations.lean:225` checks it against the
+deposit contract's incremental tree, which is not an `ofShape`
+tree. The wire value therefore needs its own connection to the
+tree the theorem describes. The light-client sites call
+`is_valid_normalized_merkle_branch`, which pads a short branch
+with a zero prefix. `isValidMerkleBranch` rejects any branch
+whose length differs from the depth, so those openings need the
+normalized form modeled first.
+
 ---
 
 ## Cross-cutting concerns (apply to every stage)
