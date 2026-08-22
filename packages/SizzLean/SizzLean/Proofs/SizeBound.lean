@@ -10,6 +10,7 @@ import SizzLean.Proofs.VectorFixed
 import SizzLean.Proofs.ListFixed
 import SizzLean.Proofs.ContainerFixed
 import SizzLean.Proofs.ContainerVar
+import SizzLean.Proofs.CollectionVar
 import SizzLean.Proofs.BitPack
 
 /-!
@@ -55,8 +56,14 @@ theorem encode_size_le_max : ∀ {s : SSZType}, SSZType.BasicSupported s →
   | _, .vectorFixed (t := t) (n := n) h_pos h_t h_t_fixed, v =>
       encode_size_le_max_vectorFixed t n h_pos h_t h_t_fixed
         (fun y => encode_size_le_max h_t y) v
+  | _, .vectorVar (t := t) (n := n) _h_pos h_t h_var _h_max_lt, v =>
+      encode_size_le_max_vectorVar t n h_var
+        (fun y => encode_size_le_max h_t y) v
   | _, .listFixed (t := t) (cap := cap) h_t h_t_fixed _h_sz_pos, xs =>
       encode_size_le_max_listFixed t cap h_t h_t_fixed
+        (fun y => encode_size_le_max h_t y) xs
+  | _, .listVar (t := t) (cap := cap) h_t h_var _h_max_lt, xs =>
+      encode_size_le_max_listVar t cap h_var
         (fun y => encode_size_le_max h_t y) xs
   | _, .bitvector (n := n) _h_pos, bv => encode_size_le_max_bitvector n bv
   | _, .bitlist (cap := cap), xs => encode_size_le_max_bitlist cap xs

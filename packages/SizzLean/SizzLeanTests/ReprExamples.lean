@@ -13,27 +13,27 @@ hand-written instance on a two-field `Pair` structure and its
 corresponding piece of library machinery is correct, so a green
 build is a passed gate.
 
-Lives in `SizzLeanTests/` rather than `SizzLean/Repr/` so the
-fixture structures (`Pair`, `DPair`) don't ride along on every
-`import SizzLean`, they're acceptance tests, not part of the
-user-facing surface.
+This module lives in `SizzLeanTests/`. The fixture structures
+(`Pair`, `DPair`) stay off the user-facing `import SizzLean`
+surface.
 
 ## Why `Pair {a b : Bool}` as the example
 
 `SSZ.roundtrip` is gated by `SSZType.BasicSupported r.shape`
-(`Repr/Class.lean`); `BasicSupported` covers the four
-native-width integers (`.uintN 8` / `16` / `32` / `64`), `.bool`,
-the bit shapes, and the fixed-size composites (see
-`Spec/BasicSupported.lean`). The smallest non-trivial user
-structure that lives in `BasicSupported` is a two-`Bool`
-container, exactly the `Pair` defined below.
+(`Repr/Class.lean`). `BasicSupported` covers all six `uintN`
+widths, `.bool`, the bit shapes, fixed-element and
+variable-element collections, and fixed-field or mixed-field
+containers. See `Spec/BasicSupported.lean`. The smallest
+non-trivial user structure in this set is the two-`Bool`
+container `Pair` below.
 
 The integer examples after the `Pair` block exercise the four
 `uintN` arms of `BasicSupported`: thin wrappers around
 `UInt8` / `UInt16` / `UInt32` / `UInt64`, each closing
-`SSZ.roundtrip` via the corresponding constructor. Composite
-arms (`vectorFixed`, `listFixed`, `containerFixed`) are exercised
-further down at the spec-level `decode_encode`.
+`SSZ.roundtrip` via the corresponding constructor. The composite
+constructors (`vectorFixed`, `vectorVar`, `listFixed`, `listVar`,
+`containerFixed`, `containerVar`) are exercised further down at
+the spec-level `decode_encode`.
 -/
 
 set_option autoImplicit false
@@ -138,11 +138,11 @@ example (x : BitVec 256) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
 
 /-! ### Composite arm examples
 
-`BasicSupported` also covers general `vectorFixed`, `listFixed`,
-and `containerFixed`. Each arm carries small side-conditions
-(`0 < n` for vectors, `0 < t.fixedByteSize` for lists, an
-`allFixedSize` field list for containers); the witnesses are
-constructed inline below.
+`BasicSupported` covers fixed-element and variable-element
+collections plus fixed-field and mixed-field containers. Their
+witnesses carry the relevant positivity, fixed-size, field-list,
+and offset-bound conditions. The examples construct those
+witnesses inline.
 
 These examples exercise the *spec-level* `decode_encode` rather
 than the user-surface `SSZ.roundtrip`. The user-surface path
@@ -312,5 +312,59 @@ example :
                   (.cons .uintN8
                     (.cons (.listFixed .uintN32 rfl (by decide)) .nil))
                   (by decide) (by decide)) emptyListContainer
+
+/-! ### Variable-element collection arm examples (`vectorVar` / `listVar`)
+
+`BasicSupported` also covers `.vector t n` / `.list t cap` when
+`t` is variable-size, decoded through the offset-table path
+(`Proofs/CollectionVar.lean`). The witness for `vectorVar` is
+`0 < n`, `BasicSupported t`, `t.isFixedSize = false`, and
+`maxByteLength (.vector t n) < MAX_LENGTH`. `listVar` drops the
+positivity precondition (the empty list is the empty buffer). -/
+
+/-- Homogeneous variable elements, `n > 0`: two `.bitlist 8`. -/
+example (v : SSZType.interp (.vector (.bitlist 8) 2)) :
+    SSZType.deserialize (.vector (.bitlist 8) 2)
+        (SSZType.serialize (.vector (.bitlist 8) 2) v) =
+      Except.ok (v, (SSZType.serialize (.vector (.bitlist 8) 2) v).size) :=
+  decode_encode (.vectorVar (by decide) .bitlist rfl (by decide)) v
+
+/-- Count recovered from the first offset: `.list (.bitlist 8) 4`. -/
+example (xs : SSZType.interp (.list (.bitlist 8) 4)) :
+    SSZType.deserialize (.list (.bitlist 8) 4)
+        (SSZType.serialize (.list (.bitlist 8) 4) xs) =
+      Except.ok (xs, (SSZType.serialize (.list (.bitlist 8) 4) xs).size) :=
+  decode_encode (.listVar .bitlist rfl (by decide)) xs
+
+/-- Empty-list / empty-buffer identity. -/
+private def emptyBitlistList : SSZType.interp (.list (.bitlist 8) 4) :=
+  ⟨#[], by decide⟩
+
+example :
+    SSZType.deserialize (.list (.bitlist 8) 4)
+        (SSZType.serialize (.list (.bitlist 8) 4) emptyBitlistList) =
+      Except.ok (emptyBitlistList,
+        (SSZType.serialize (.list (.bitlist 8) 4) emptyBitlistList).size) :=
+  decode_encode (.listVar .bitlist rfl (by decide)) emptyBitlistList
+
+/-- Nested variable collection: `.vector (.list (.uintN 8) 4) 2`. -/
+example (v : SSZType.interp (.vector (.list (.uintN 8) 4) 2)) :
+    SSZType.deserialize (.vector (.list (.uintN 8) 4) 2)
+        (SSZType.serialize (.vector (.list (.uintN 8) 4) 2) v) =
+      Except.ok (v, (SSZType.serialize (.vector (.list (.uintN 8) 4) 2) v).size) :=
+  decode_encode (.vectorVar (by decide)
+                  (.listFixed .uintN8 rfl (by decide)) rfl (by decide)) v
+
+/-- Variable-element container: `.list (.container [.uintN 8, .bitlist 8]) 2`. -/
+example (xs : SSZType.interp (.list (.container [.uintN 8, .bitlist 8]) 2)) :
+    SSZType.deserialize (.list (.container [.uintN 8, .bitlist 8]) 2)
+        (SSZType.serialize (.list (.container [.uintN 8, .bitlist 8]) 2) xs) =
+      Except.ok (xs,
+        (SSZType.serialize (.list (.container [.uintN 8, .bitlist 8]) 2) xs).size) :=
+  decode_encode (.listVar
+                  (.containerVar
+                    (.cons .uintN8 (.cons .bitlist .nil))
+                    (by decide) (by decide))
+                  rfl (by decide)) xs
 
 end SizzLeanTests.ReprExamples
