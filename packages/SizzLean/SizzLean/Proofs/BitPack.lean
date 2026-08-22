@@ -2,6 +2,7 @@ import SizzLean.Spec.Supported
 import SizzLean.Spec.BasicSupported
 import SizzLean.Spec.MaxByteLength
 import SizzLean.Proofs.SimpAttrs
+import SizzLean.Proofs.Util
 
 /-!
 # `SizzLean.Proofs.BitPack`: the bit-packing inverse and the bit-shape arms
@@ -75,17 +76,10 @@ open SizzLean.Spec
 -- bring them into scope; request the two decoders explicitly.
 open SizzLean.Spec (deserializeBitvector deserializeBitlist)
 
-/-! ### ByteArray indexing bridges -/
+/-! ### ByteArray indexing bridges
 
-/-- `get!` agrees with the bounds-checked `b[i]` when in range.
-`get!` unfolds to `b.data[i]!`, whose panicking branch is
-irrelevant here; `getElem!_pos` (core) discharges it against the
-supplied bound. -/
-theorem get!_eq_getElem (b : ByteArray) (i : Nat) (h : i < b.size) :
-    b.get! i = b[i] := by
-  show b.data[i]! = b[i]
-  rw [ByteArray.getElem_eq_getElem_data]
-  exact getElem!_pos b.data i h
+`get!_eq_getElem` comes from `SizzLean.Proofs.Util`, in this same namespace, so
+the uses below read unqualified. -/
 
 /-- Reading index 0 of a single-byte array returns that byte. -/
 theorem get!_push_zero (x : UInt8) : (ByteArray.empty.push x).get! 0 = x := by
