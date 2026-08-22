@@ -405,57 +405,59 @@ theorem deserializeVarElems_collOffsetsOf
     unfold collOffsetsOf SSZType.deserializeVarElems
     rfl
   | cons x xs ih =>
-    intro varOff b bufEnd h_ve h_vb h_V
-    have h_enc2 :
+    intro varOff b bufEnd hVarOffLeEnd hEndLeSize hBodyRegion
+    have hBodySerialize :
         (SSZType.serializeVarElemsAux t (x :: xs) varOff).2 =
           SSZType.serialize t x ++
             (SSZType.serializeVarElemsAux t xs
               (varOff + (SSZType.serialize t x).size)).2 := by
       simp only [SSZType.serializeVarElemsAux]
-    rw [h_enc2] at h_V
-    have hq : varOff + (SSZType.serialize t x).size ≤ bufEnd := by
-      have hVsize : (b.extract varOff bufEnd).size =
+    rw [hBodySerialize] at hBodyRegion
+    have hHeadEndLe : varOff + (SSZType.serialize t x).size ≤ bufEnd := by
+      have hBodySize : (b.extract varOff bufEnd).size =
           (SSZType.serialize t x).size +
             (SSZType.serializeVarElemsAux t xs
               (varOff + (SSZType.serialize t x).size)).2.size := by
-        rw [h_V, ByteArray.size_append]
-      rw [ByteArray.size_extract, Nat.min_eq_left h_vb] at hVsize
+        rw [hBodyRegion, ByteArray.size_append]
+      rw [ByteArray.size_extract, Nat.min_eq_left hEndLeSize] at hBodySize
       omega
-    have h_split :=
+    have hSplit :=
       extract_split (b := b) (p := varOff) (q := bufEnd)
         (u := SSZType.serialize t x)
         (v := (SSZType.serializeVarElemsAux t xs
           (varOff + (SSZType.serialize t x).size)).2)
-        h_V (by omega) h_vb
-    have h_body : b.extract varOff (varOff + (SSZType.serialize t x).size) =
-        SSZType.serialize t x := h_split.1
-    have h_V' :
+        hBodyRegion (by omega) hEndLeSize
+    have hHeadBody : b.extract varOff (varOff + (SSZType.serialize t x).size) =
+        SSZType.serialize t x := hSplit.1
+    have hTailBody :
         b.extract (varOff + (SSZType.serialize t x).size) bufEnd =
           (SSZType.serializeVarElemsAux t xs
-            (varOff + (SSZType.serialize t x).size)).2 := h_split.2
-    have h_bufEnd_eq :
+            (varOff + (SSZType.serialize t x).size)).2 := hSplit.2
+    have hBufEndEq :
         bufEnd = (varOff + (SSZType.serialize t x).size) +
           (SSZType.serializeVarElemsAux t xs
             (varOff + (SSZType.serialize t x).size)).2.size := by
-      have h_sz := congrArg ByteArray.size h_V'
-      rw [ByteArray.size_extract, Nat.min_eq_left h_vb] at h_sz
+      have hSize := congrArg ByteArray.size hTailBody
+      rw [ByteArray.size_extract, Nat.min_eq_left hEndLeSize] at hSize
       omega
-    have h_nextOff :
+    have hNextOff :
         (collOffsetsOf t xs (varOff + (SSZType.serialize t x).size)).head?.getD bufEnd =
           varOff + (SSZType.serialize t x).size :=
       collOffsetsOf_head_getD t xs (varOff + (SSZType.serialize t x).size) bufEnd
-        h_bufEnd_eq
-    have h_de := h_decode_encode_t x
+        hBufEndEq
+    have hElementRoundtrip := h_decode_encode_t x
+
     unfold collOffsetsOf
     unfold SSZType.deserializeVarElems
-    rw [h_nextOff]
-    have h_guard : ¬ (varOff > varOff + (SSZType.serialize t x).size ||
+    rw [hNextOff]
+    have hSliceGuard : ¬ (varOff > varOff + (SSZType.serialize t x).size ||
         varOff + (SSZType.serialize t x).size > bufEnd) := by
       simp only [Bool.or_eq_true, decide_eq_true_eq, not_or]
       omega
-    simp only [h_guard]
-    rw [h_body, h_de]
-    rw [ih (varOff + (SSZType.serialize t x).size) b bufEnd (by omega) h_vb h_V']
+    simp only [hSliceGuard]
+    rw [hHeadBody, hElementRoundtrip]
+    rw [ih (varOff + (SSZType.serialize t x).size) b bufEnd
+      (by omega) hEndLeSize hTailBody]
     rfl
 
 /-- Size bound for `.vector t n` with `t` variable-size. Unfolds
@@ -470,17 +472,17 @@ theorem encode_size_le_max_vectorVar
     (SSZType.serialize (.vector t n) v).size ≤
       SSZType.maxByteLength (.vector t n) := by
   have h_len : v.toList.length = n := by rw [Vector.length_toList]
+  let varOff : Nat := v.toList.length * BYTES_PER_LENGTH_OFFSET
   have h_serialize_eq :
       SSZType.serialize (.vector t n) v =
-        (SSZType.serializeVarElemsAux t v.toList
-          (v.toList.length * BYTES_PER_LENGTH_OFFSET)).1 ++
-        (SSZType.serializeVarElemsAux t v.toList
-          (v.toList.length * BYTES_PER_LENGTH_OFFSET)).2 := by
+        (SSZType.serializeVarElemsAux t v.toList varOff).1 ++
+          (SSZType.serializeVarElemsAux t v.toList varOff).2 := by
     unfold SSZType.serialize
     simp only [h_var, if_false, Bool.false_eq_true]
+    rfl
   rw [h_serialize_eq, ByteArray.size_append]
   have h := size_serializeVarElemsAux_le_maxByteLength_vector t n v.toList
-      (v.toList.length * BYTES_PER_LENGTH_OFFSET) h_var h_len h_max_t
+      varOff h_var h_len h_max_t
   exact h
 
 /-- Size bound for `.list t cap` with `t` variable-size. Empty
@@ -496,17 +498,17 @@ theorem encode_size_le_max_listVar
       SSZType.maxByteLength (.list t cap) := by
   have h_len : xs.val.toList.length ≤ cap := by
     simpa using xs.property
+  let varOff : Nat := xs.val.toList.length * BYTES_PER_LENGTH_OFFSET
   have h_serialize_eq :
       SSZType.serialize (.list t cap) xs =
-        (SSZType.serializeVarElemsAux t xs.val.toList
-          (xs.val.toList.length * BYTES_PER_LENGTH_OFFSET)).1 ++
-        (SSZType.serializeVarElemsAux t xs.val.toList
-          (xs.val.toList.length * BYTES_PER_LENGTH_OFFSET)).2 := by
+        (SSZType.serializeVarElemsAux t xs.val.toList varOff).1 ++
+          (SSZType.serializeVarElemsAux t xs.val.toList varOff).2 := by
     unfold SSZType.serialize
     simp only [h_var, if_false, Bool.false_eq_true]
+    rfl
   rw [h_serialize_eq, ByteArray.size_append]
   exact size_serializeVarElemsAux_le_maxByteLength_list t cap xs.val.toList
-    (xs.val.toList.length * BYTES_PER_LENGTH_OFFSET) h_var h_len h_max_t
+    varOff h_var h_len h_max_t
 
 /-- Roundtrip for `.vector t n` with `t` variable-size and `n > 0`.
 Parameterised by the element-type roundtrip and the element-type
@@ -526,10 +528,11 @@ theorem decode_encode_vectorVar
     SSZType.deserialize (.vector t n) (SSZType.serialize (.vector t n) v) =
       .ok (v, (SSZType.serialize (.vector t n) v).size) := by
   have h_len : v.toList.length = n := by rw [Vector.length_toList]
-  have hBPLO : BYTES_PER_LENGTH_OFFSET = 4 := rfl
   let varOff : Nat := n * BYTES_PER_LENGTH_OFFSET
   have h_varOff : v.toList.length * BYTES_PER_LENGTH_OFFSET = varOff := by
     rw [h_len]
+
+  -- Pin the encoder output to its offset table and body region.
   have h_serialize_eq :
       SSZType.serialize (.vector t n) v =
         (SSZType.serializeVarElemsAux t v.toList varOff).1 ++
@@ -544,10 +547,12 @@ theorem decode_encode_vectorVar
       (SSZType.serialize (.vector t n) v).size =
         varOff + (SSZType.serializeVarElemsAux t v.toList varOff).2.size := by
     rw [h_serialize_eq, ByteArray.size_append, h_offs_size]
+
+  -- Bound every running offset by the UInt32 range.
   have h_bound :=
     size_serializeVarElemsAux_le_maxByteLength_vector t n v.toList varOff
       h_var h_len h_max_t
-  have hML : MAX_LENGTH = 2 ^ 32 := rfl
+  have hMaxLength : MAX_LENGTH = 2 ^ 32 := rfl
   have h_uint32_bound :
       varOff + (SSZType.serializeVarElemsAux t v.toList varOff).2.size < 2 ^ 32 := by
     have h_le :
@@ -555,7 +560,10 @@ theorem decode_encode_vectorVar
           (SSZType.serializeVarElemsAux t v.toList varOff).2.size ≤
           SSZType.maxByteLength (.vector t n) := h_bound
     rw [h_offs_size] at h_le
+    -- `hMaxLength` unfolds `MAX_LENGTH` so `omega` can join `h_le` with `h_max_lt`.
     omega
+
+  -- Recover the encoder's offsets and body slice.
   have h_offs :
       extractCollOffsets (SSZType.serialize (.vector t n) v) n 0 =
         .ok (collOffsetsOf t v.toList varOff) := by
@@ -563,7 +571,7 @@ theorem decode_encode_vectorVar
       extractCollOffsets_serializeVarElemsAux t v.toList varOff ByteArray.empty
         h_uint32_bound (SSZType.serializeVarElemsAux t v.toList varOff).2
     simpa [ByteArray.empty_append, h_serialize_eq, h_len] using h_pre
-  have h_V :
+  have hBodyRegion :
       (SSZType.serialize (.vector t n) v).extract varOff
           (SSZType.serialize (.vector t n) v).size =
         (SSZType.serializeVarElemsAux t v.toList varOff).2 := by
@@ -573,7 +581,9 @@ theorem decode_encode_vectorVar
     deserializeVarElems_collOffsetsOf t h_decode_encode_t v.toList varOff
       (SSZType.serialize (.vector t n) v)
       (SSZType.serialize (.vector t n) v).size
-      (by omega) (by omega) h_V
+      (by omega) (by omega) hBodyRegion
+
+  -- Discharge the decoder's schema and size guards.
   have hn : ¬ n = 0 := Nat.ne_of_gt h_pos
   have h_ge : ¬ (SSZType.serialize (.vector t n) v).size < n * BYTES_PER_LENGTH_OFFSET := by
     rw [h_bsize]; omega
@@ -587,6 +597,7 @@ theorem decode_encode_vectorVar
   have h_sz_arr : v.toList.toArray.size = n := by
     rw [List.size_toArray, h_len]
   simp only [h_sz_arr, dite_true]
+  -- The decoder rebuilds the vector through `toList.toArray`.
   cases v with
   | mk arr h =>
     simp [Array.toArray_toList]
@@ -618,6 +629,7 @@ theorem decode_encode_listVar
           (xs.val.toList.length * BYTES_PER_LENGTH_OFFSET)).2 := by
     unfold SSZType.serialize
     simp only [h_var, if_false, Bool.false_eq_true]
+
   by_cases h_empty : xs.val.size = 0
   · -- Empty list: encoder writes the empty buffer; decoder's
     -- `b.size = 0` branch recovers `⟨#[], _⟩`.
@@ -636,6 +648,7 @@ theorem decode_encode_listVar
     have hx : xs = ⟨#[], by simp⟩ := Subtype.ext h_arr
     rw [hx]
   · -- Non-empty: first offset is n * 4, count = n, then the walker.
+    -- Expose the first element so the decoder can read `off₀`.
     have h_pos : 0 < xs.val.size := Nat.pos_of_ne_zero h_empty
     have h_cons : ∃ x ys, xs.val.toList = x :: ys := by
       cases hxs : xs.val.toList with
@@ -646,6 +659,8 @@ theorem decode_encode_listVar
       | cons x ys => exact ⟨x, ys, rfl⟩
     obtain ⟨x, ys, h_cons_eq⟩ := h_cons
     let varOff : Nat := xs.val.toList.length * BYTES_PER_LENGTH_OFFSET
+
+    -- Pin the encoder output and its total size.
     have h_offs_size :
         (SSZType.serializeVarElemsAux t xs.val.toList varOff).1.size = varOff :=
       size_serializeVarElemsAux_offs t xs.val.toList varOff
@@ -653,10 +668,12 @@ theorem decode_encode_listVar
         (SSZType.serialize (.list t cap) xs).size =
           varOff + (SSZType.serializeVarElemsAux t xs.val.toList varOff).2.size := by
       rw [h_serialize_eq, ByteArray.size_append, h_offs_size]
+
+    -- Bound every running offset by the UInt32 range.
     have h_bound :=
       size_serializeVarElemsAux_le_maxByteLength_list t cap xs.val.toList varOff
         h_var h_len_le h_max_t
-    have hML : MAX_LENGTH = 2 ^ 32 := rfl
+    have hMaxLength : MAX_LENGTH = 2 ^ 32 := rfl
     have h_uint32_bound :
         varOff + (SSZType.serializeVarElemsAux t xs.val.toList varOff).2.size < 2 ^ 32 := by
       have h_le :
@@ -664,7 +681,10 @@ theorem decode_encode_listVar
             (SSZType.serializeVarElemsAux t xs.val.toList varOff).2.size ≤
             SSZType.maxByteLength (.list t cap) := h_bound
       rw [h_offs_size] at h_le
+      -- `hMaxLength` unfolds `MAX_LENGTH` so `omega` can join `h_le` with `h_max_lt`.
       omega
+
+    -- Recover the element count from the first encoded offset.
     have h_first :=
       readUInt32LE_serializeVarElemsAux_cons t x ys varOff
     have h_cons_enc :
@@ -680,15 +700,16 @@ theorem decode_encode_listVar
       toNat_toUInt32_of_lt varOff (by omega)
     have h_mod : varOff % BYTES_PER_LENGTH_OFFSET = 0 := by
       unfold varOff
-      have hBPLO : BYTES_PER_LENGTH_OFFSET = 4 := rfl
-      rw [hBPLO]
+      rw [show BYTES_PER_LENGTH_OFFSET = 4 from rfl]
       exact Nat.mul_mod_left _ _
     have h_div : varOff / BYTES_PER_LENGTH_OFFSET = xs.val.toList.length := by
       unfold varOff
-      have hBPLO : BYTES_PER_LENGTH_OFFSET = 4 := rfl
-      have hpos : 0 < BYTES_PER_LENGTH_OFFSET := by rw [hBPLO]; decide
+      have hOffsetWidth : BYTES_PER_LENGTH_OFFSET = 4 := rfl
+      have hpos : 0 < BYTES_PER_LENGTH_OFFSET := by rw [hOffsetWidth]; decide
       exact Nat.mul_div_cancel _ hpos
     have h_count_le : ¬ xs.val.toList.length > cap := Nat.not_lt.mpr h_len_le
+
+    -- Recover the encoder's offsets and body slice.
     have h_offs :
         extractCollOffsets (SSZType.serialize (.list t cap) xs)
             (varOff / BYTES_PER_LENGTH_OFFSET) 0 =
@@ -698,7 +719,7 @@ theorem decode_encode_listVar
         extractCollOffsets_serializeVarElemsAux t xs.val.toList varOff ByteArray.empty
           h_uint32_bound (SSZType.serializeVarElemsAux t xs.val.toList varOff).2
       simpa [ByteArray.empty_append, h_serialize_eq] using h_pre
-    have h_V :
+    have hBodyRegion :
         (SSZType.serialize (.list t cap) xs).extract varOff
             (SSZType.serialize (.list t cap) xs).size =
           (SSZType.serializeVarElemsAux t xs.val.toList varOff).2 := by
@@ -708,7 +729,9 @@ theorem decode_encode_listVar
       deserializeVarElems_collOffsetsOf t h_decode_encode_t xs.val.toList varOff
         (SSZType.serialize (.list t cap) xs)
         (SSZType.serialize (.list t cap) xs).size
-        (by omega) (by omega) h_V
+        (by omega) (by omega) hBodyRegion
+
+    -- Discharge the decoder's size and capacity guards.
     have h_sz_pos : ¬ (SSZType.serialize (.list t cap) xs).size = 0 := by
       rw [h_bsize]
       have hpos : 0 < varOff := by

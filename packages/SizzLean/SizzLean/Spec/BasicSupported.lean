@@ -86,7 +86,7 @@ size, which `Proofs/CollectionVar.lean`'s size walker bounds by
 `maxByteLength s`, so bounding *that* by `MAX_LENGTH = 2 ^ 32`
 keeps every offset's `UInt32` round-trip exact. Schemas whose
 static max exceeds `MAX_LENGTH` (large-cap lists of variable
-elements among them) stay outside `BasicSupported`; etheorem#61
+elements among them) stay outside `BasicSupported`; etheorem#77
 tracks the value-level relaxation.
 
 ## Why `0 < n` on `vectorFixed` / `vectorVar` / `bitvector`
@@ -95,10 +95,9 @@ The spec rejects `n = 0` at *decode* time for these shapes
 (`ssz_generic/basic_vector/invalid/vec_*_0` and
 `ssz_generic/bitvector/invalid/bitvec_0` test cases), so the
 universal roundtrip would fail in those constructors. The
-precondition is carried at the `BasicSupported` layer rather than
-tightening `Supported` itself, which would be a more invasive
-spec adjustment. `listVar` has no positivity precondition: the
-empty list is the empty buffer.
+`BasicSupported` layer carries the precondition. `Supported`
+remains the structural codec predicate. `listVar` has no
+positivity precondition: the empty list is the empty buffer.
 
 -/
 

@@ -166,7 +166,7 @@ inductive SSZType.SupportedBounded : SSZType → Prop
                      SSZType.SupportedBounded (.vector t n)
   /-- Mirrors `Supported.vectorVar`: a vector of bounded
   variable-size elements is itself bounded (the static max is
-  `n * (4 + maxByteLength t)`). -/
+  `n * (BYTES_PER_LENGTH_OFFSET + maxByteLength t)`). -/
   | vectorVar      : ∀ {t : SSZType} {n : Nat},
                      SSZType.SupportedBounded t → t.isFixedSize = false →
                      SSZType.SupportedBounded (.vector t n)
@@ -175,7 +175,7 @@ inductive SSZType.SupportedBounded : SSZType → Prop
                      SSZType.SupportedBounded (.list t cap)
   /-- Mirrors `Supported.listVar`: a capped list of bounded
   variable-size elements is itself bounded (the static max is
-  `cap * (4 + maxByteLength t)`). -/
+  `cap * (BYTES_PER_LENGTH_OFFSET + maxByteLength t)`). -/
   | listVar        : ∀ {t : SSZType} {cap : Nat},
                      SSZType.SupportedBounded t → t.isFixedSize = false →
                      SSZType.SupportedBounded (.list t cap)

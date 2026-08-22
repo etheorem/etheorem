@@ -54,10 +54,6 @@ The library's `decode_encode` proof currently covers the
   mixed fixed/variable via the offset-table codec (`containerVar`,
   with `allFixedSize fs = false` and
   `maxByteLengthFields fs < MAX_LENGTH`).
-* `.container [.bool, .bool]`: concrete two-`Bool` container,
-  exposed as a `def`-level alias of `containerFixed (.cons .bool
-  rfl (.cons .bool rfl .nil))` so the hand-written `Pair` example
-  can name the witness directly.
 
 The user-surface corollary inherits that gate: a user type whose
 shape sits inside `BasicSupported` enjoys verified roundtrip; a

@@ -7,9 +7,9 @@
 > consensus-spec test corpus and the three central theorems are
 > landed on the `BasicSupported` cut, which now covers mixed-field
 > containers and variable-element `vector` / `list` whose schema
-> max stays under `MAX_LENGTH` (remaining open work toward the
-> universally-quantified `Supported` form is tracked in
-> [`docs/PLAN.md`](docs/PLAN.md) Phase 5). Reviews,
+> max stays under `MAX_LENGTH`. The theorem gate remains
+> `BasicSupported`; [`docs/PLAN.md`](docs/PLAN.md) Phase 5 tracks
+> further widening. Reviews,
 > issues, and pull requests are welcome; production-grade stability
 > and a stable release line are not implied.
 
@@ -66,11 +66,12 @@ theorems.
   `vector` and `list`, `bitvector`, `bitlist`, and `container`
   over any field list (fixed-only, or mixed fixed/variable via
   the offset-table codec), and `vector` / `list` over a
-  variable-size element type, with one exception still open:
-  schemas whose static `maxByteLength` is not strictly below
-  `MAX_LENGTH` (the uint32-offset guard; real `BeaconState` /
-  `BeaconBlockBody` shapes sit outside it, see
-  [etheorem#61](https://github.com/etheorem/etheorem/issues/61)).
+  variable-size element type. Variable-offset constructors carry
+  a static `maxByteLength < MAX_LENGTH` guard. Value-level
+  relaxations are tracked for
+  [`containerVar`](https://github.com/etheorem/etheorem/issues/61)
+  and for
+  [`vectorVar` / `listVar`](https://github.com/etheorem/etheorem/issues/77).
   See [Proof coverage](#proof-coverage) for the per-constructor
   table.
 
@@ -255,10 +256,9 @@ round-trip through `UInt32`) uses `bv_decide`; every other step is
 `serialize_injective` is a direct corollary of `decode_encode`
 (via `Except.ok.inj` + `Prod.mk.inj`), so its coverage tracks
 `decode_encode` exactly. It says distinct values produce distinct
-encodings; it does not say the decoder rejects every non-canonical
-byte sequence (offset tables that tile a buffer differently, for
-instance). The `ssz_generic containers/invalid` vectors are the
-current cover for that direction.
+encodings. Decoder canonicity is a separate property. The
+`ssz_generic containers/invalid` vectors currently cover that
+direction.
 
 #### `.container fs`: per-field type
 
@@ -304,12 +304,14 @@ the `BasicSupported` cut, which now covers `uintN 8 / 16 / 32 /
 variable-size elements, `bitvector`, `bitlist`, and `container`
 over any field list (fixed-only, recursively, or mixed
 fixed/variable via the offset-table codec).
-One gap remains toward a universal statement over
-`SSZType.Supported`: the schema-level `maxByteLength s < MAX_LENGTH`
-guard on `containerVar` / `vectorVar` / `listVar` (see
-[etheorem#61](https://github.com/etheorem/etheorem/issues/61)
-for the value-level relaxation). The library itself is complete
-for every shape; this track only closes the proof obligation.
+Every current `BasicSupported` constructor has all three theorem
+arms. `SSZType.Supported` remains broader: it admits zero-width
+schemas that the decoder rejects, and it omits the proof guards
+carried by `BasicSupported`. Further widening includes value-level
+offset guards for
+[`containerVar`](https://github.com/etheorem/etheorem/issues/61)
+and
+[`vectorVar` / `listVar`](https://github.com/etheorem/etheorem/issues/77).
 
 See [`docs/PLAN.md`](docs/PLAN.md) for the staged plan and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design
@@ -441,9 +443,8 @@ subpackages stay on declarative TOML.
   `Proofs/Roundtrip.lean`, `Proofs/Injective.lean`, and
   `Proofs/SizeBound.lean` respectively. All three are landed on
   the `SSZType.BasicSupported` cut (defined in
-  `Spec/BasicSupported.lean`); the universally-quantified
-  `Supported` form is open work, see
-  [`docs/PLAN.md`](docs/PLAN.md) Phase 5.
+  `Spec/BasicSupported.lean`). `Supported` remains a broader
+  codec predicate; see [`docs/PLAN.md`](docs/PLAN.md) Phase 5.
 * `Conformance/`: SSZ-library property-test gates (Sha256
   vectors, hasher equivalence, `setAt` randomised tests, cache
   machinery on example containers).

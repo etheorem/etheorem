@@ -13,27 +13,27 @@ hand-written instance on a two-field `Pair` structure and its
 corresponding piece of library machinery is correct, so a green
 build is a passed gate.
 
-Lives in `SizzLeanTests/` rather than `SizzLean/Repr/` so the
-fixture structures (`Pair`, `DPair`) don't ride along on every
-`import SizzLean`, they're acceptance tests, not part of the
-user-facing surface.
+This module lives in `SizzLeanTests/`. The fixture structures
+(`Pair`, `DPair`) stay off the user-facing `import SizzLean`
+surface.
 
 ## Why `Pair {a b : Bool}` as the example
 
 `SSZ.roundtrip` is gated by `SSZType.BasicSupported r.shape`
-(`Repr/Class.lean`); `BasicSupported` covers the four
-native-width integers (`.uintN 8` / `16` / `32` / `64`), `.bool`,
-the bit shapes, and the fixed-size composites (see
-`Spec/BasicSupported.lean`). The smallest non-trivial user
-structure that lives in `BasicSupported` is a two-`Bool`
-container, exactly the `Pair` defined below.
+(`Repr/Class.lean`). `BasicSupported` covers all six `uintN`
+widths, `.bool`, the bit shapes, fixed-element and
+variable-element collections, and fixed-field or mixed-field
+containers. See `Spec/BasicSupported.lean`. The smallest
+non-trivial user structure in this set is the two-`Bool`
+container `Pair` below.
 
 The integer examples after the `Pair` block exercise the four
 `uintN` arms of `BasicSupported`: thin wrappers around
 `UInt8` / `UInt16` / `UInt32` / `UInt64`, each closing
-`SSZ.roundtrip` via the corresponding constructor. Composite
-arms (`vectorFixed`, `listFixed`, `containerFixed`) are exercised
-further down at the spec-level `decode_encode`.
+`SSZ.roundtrip` via the corresponding constructor. The composite
+constructors (`vectorFixed`, `vectorVar`, `listFixed`, `listVar`,
+`containerFixed`, `containerVar`) are exercised further down at
+the spec-level `decode_encode`.
 -/
 
 set_option autoImplicit false
@@ -138,11 +138,11 @@ example (x : BitVec 256) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
 
 /-! ### Composite arm examples
 
-`BasicSupported` also covers general `vectorFixed`, `listFixed`,
-and `containerFixed`. Each arm carries small side-conditions
-(`0 < n` for vectors, `0 < t.fixedByteSize` for lists, an
-`allFixedSize` field list for containers); the witnesses are
-constructed inline below.
+`BasicSupported` covers fixed-element and variable-element
+collections plus fixed-field and mixed-field containers. Their
+witnesses carry the relevant positivity, fixed-size, field-list,
+and offset-bound conditions. The examples construct those
+witnesses inline.
 
 These examples exercise the *spec-level* `decode_encode` rather
 than the user-surface `SSZ.roundtrip`. The user-surface path
