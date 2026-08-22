@@ -11,16 +11,20 @@ method; the resulting post root is compared against the vector's expected root,
 and the outcome is classified into one of the error model's buckets.
 
 The reject-faithfulness audit (`SPECS_ARCHITECTURE.md` §10.2) is encoded in
-`classify`:
+`classify` and in the case's own `RunnerCaughtSet`, which names the reference
+wrapper that scores it:
 
 | Vector | Outcome | Result |
 |---|---|---|
 | valid (`post` present) | root matches | pass |
 | valid | any error, or wrong root | fail |
-| invalid (`post` absent) | `assert` reject | pass |
-| invalid | `outOfBounds` reject (caught `IndexError`) | pass, **flagged** (bug-smell) |
+| invalid (`post` absent) | `assert` reject, `expect_assertion_error` case | pass |
+| invalid | `assert` reject, `except ValueError` case | fail, **flagged** (the reference re-raises "expected ValueError") |
+| invalid | `outOfBounds` reject (caught `IndexError`), `expect_assertion_error` case | pass, **flagged** (bug-smell) |
+| invalid | `outOfBounds` reject, `except ValueError` case | fail, **flagged** (bug-smell) |
 | invalid | `decode` failure (our decoder, not a raise) | fail, **flagged** (bug-smell) |
-| invalid | `arithmetic` reject (uncaught `ValueError` / `ZeroDivisionError`) | fail (the reference does not catch it) |
+| invalid | `arithmetic` reject, `expect_assertion_error` case | fail (the reference does not catch it) |
+| invalid | `arithmetic` reject, `except ValueError` case | pass (that wrapper catches it) |
 | invalid | `todo` reject | fail (an unimplemented path is not a validation) |
 | invalid | ran clean | fail (should have rejected) |
 
@@ -117,6 +121,48 @@ def dispatch [ForkInterface] (req : CaseRequest) :
   | "transition", _     => ForkInterface.runTransition req.pre req.inputs req.caseMeta
   | r, h                => .error (.spec (.todo s!"format '{r}/{h}' not wired in the driver"))
 
+/-- The caught set for a case-path `(runner, handler)` pair.
+
+The reference writes each wrapper inside one test function. Almost every test uses
+`expect_assertion_error`. One test writes its own `except ValueError`:
+`test_invalid_large_withdrawable_epoch`, under `epoch_processing` / `registry_updates`. The match
+below names both case-path segments for that reason. A key on the runner segment alone would put
+every other `epoch_processing` handler in the same set.
+
+This pair holds one post-less case in the pinned corpus. `test_pyspec.py` asserts that, and the
+assertion is what catches a second post-less vector under the same pair.
+
+The two strings are wire data, and `Spec/Errors.lean` carries no wire vocabulary, so they are
+read here. `dispatch` reads the handler names at the same boundary. -/
+def RunnerCaughtSet.ofCase : String → String → RunnerCaughtSet
+  | "epoch_processing", "registry_updates" => .valueError
+  | _,                  _                  => .assertionAndIndex
+
+/-- The pass/fail answer for an invalid vector that rejected. `caught` names the reference
+wrapper that scores the case.
+
+The reject is faithful when the wrapper catches it. `admits` decides that. An unadmitted
+reject must report a bucket that reads as a failure. `.assert` classifies as
+`.expectedRejection`, and `ClassifyBucket.tag` maps that to `"reject"`, so `render` would
+print a `fail` row under the pass tag. An `.outOfBounds` keeps the bug-smell marker in both
+branches. `admits` is false for `.todo` and `.outOfScope` under either set, so those two rows
+ignore it.
+
+`classify` never answers `.passing`. The last row says so, rather than let a wildcard pass an
+invalid vector. Split out of `runCase` so `#guard` can pin the table without a `ForkInterface`
+or a decoded state. -/
+def classifyReject (caught : RunnerCaughtSet) (e : StateTransitionError) : CaseResult :=
+  match e.classify, caught.admits e with
+  | .todo,              _     => { passed := false, bucket := .todo,              detail := reprStr e }
+  | .outOfScope,        _     => { passed := false, bucket := .outOfScope,        detail := reprStr e }
+  | .expectedRejection, true  => { passed := true,  bucket := .expectedRejection, detail := reprStr e }
+  | .expectedRejection, false => { passed := false, bucket := .likelyBug,         detail := reprStr e, flagged := true }
+  | .likelyBug,         true  => { passed := true,  bucket := .likelyBug,         detail := reprStr e, flagged := true }
+  | .likelyBug,         false => { passed := false, bucket := .likelyBug,         detail := reprStr e, flagged := true }
+  | .uncaughtFault,     true  => { passed := true,  bucket := .expectedRejection, detail := reprStr e }
+  | .uncaughtFault,     false => { passed := false, bucket := .uncaughtFault,     detail := reprStr e }
+  | .passing,           _     => { passed := false, bucket := .likelyBug,         detail := "unreachable classify" }
+
 /-- Run one case and classify it. The fork-agnostic core of `PySpecTests`.
 
 `rewards` has its own shape (compare several `Deltas` blobs, not a post root): the
@@ -162,18 +208,6 @@ def runCase [ForkInterface] (req : CaseRequest) : CaseResult :=
     -- Still flagged, so the wire keeps the smell marker.
     { passed := false, bucket := .likelyBug, detail := s!"decode failed: {what}",
       flagged := true }
-  | .error (.spec e), none =>
-    -- Invalid vector that rejected: faithful iff the reject is one the reference catches.
-    -- An `assert` (AssertionError) is the clean expected rejection; a caught bug-smell
-    -- (`outOfBounds` = IndexError) still counts as rejected but is flagged. An `uncaughtFault`
-    -- (a `ValueError` / `ZeroDivisionError` the reference propagates, not catches) fails, as do
-    -- a `todo` / `outOfScope` (not a validation), each reporting as its own bucket.
-    match e.classify with
-    | .expectedRejection => { passed := true,  bucket := .expectedRejection, detail := reprStr e }
-    | .likelyBug         => { passed := true,  bucket := .likelyBug, detail := reprStr e, flagged := true }
-    | .uncaughtFault     => { passed := false, bucket := .uncaughtFault, detail := reprStr e }
-    | .todo              => { passed := false, bucket := .todo, detail := reprStr e }
-    | .outOfScope        => { passed := false, bucket := .outOfScope, detail := reprStr e }
-    | .passing           => { passed := false, bucket := .likelyBug, detail := "unreachable classify" }
+  | .error (.spec e), none => classifyReject (RunnerCaughtSet.ofCase req.runner req.handler) e
 
 end EthCLLib.PySpecTests

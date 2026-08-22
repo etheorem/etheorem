@@ -533,10 +533,11 @@ it in its classify mode:
 
 | Constructor | Classify-mode meaning |
 |---|---|
-| `assert` | an expected rejection; a vector marked invalid should hit one |
+| `assert` | an expected rejection, unless the case's own wrapper catches only `ValueError` (`SPECS_ARCHITECTURE.md` §10.2) |
 | `todo` | an unimplemented branch; flagged out-of-scope, not counted as a rejection |
 | `outOfBounds` / `decodeFailure` | a smell; the spec should not hit these on well-formed input, so they surface as likely bugs |
-| `missingKey` / `arithmetic` | a fault the reference propagates rather than catches, so it never counts as a rejection |
+| `missingKey` | a fault the reference propagates rather than catches, so it never counts as a rejection |
+| `arithmetic` | the same, except under a case whose own wrapper catches `ValueError` (`SPECS_ARCHITECTURE.md` §10.2) |
 
 ### 6.1 `todo` as the deferral work-queue
 
@@ -1162,8 +1163,10 @@ The report distinguishes the classify buckets from the error model: a passing
 case, an expected rejection (`assert` against an invalid vector), an out-of-scope
 deferral (`todo`), a likely bug (`outOfBounds` / `decodeFailure` on well-formed
 input), and an uncaught fault (`missingKey` / `arithmetic`, which the reference
-propagates). A `todo` that a vector actually reaches fails loudly rather than passing
-silently, which is the deferral safety net at work.
+propagates). Whether a reject passes its invalid vector is read from the case's own
+`RunnerCaughtSet` (§6), so an `.arithmetic` fault passes under `epoch_processing` /
+`registry_updates` and fails everywhere else. A `todo` that a vector actually reaches fails
+loudly rather than passing silently, which is the deferral safety net at work.
 
 ---
 

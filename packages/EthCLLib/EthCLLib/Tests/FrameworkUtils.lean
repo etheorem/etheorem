@@ -14,6 +14,7 @@ the caching backend (Phase 4).
 set_option autoImplicit false
 
 open EthCLLib.Spec
+open EthCLLib.PySpecTests
 open SizzLean.Hasher
 
 namespace EthCLLib.Tests.FrameworkUtils
@@ -45,6 +46,50 @@ vectors, so these guards are the only thing exercising the throw. -/
 #guard (checkedAdd 0xffffffffffffffff 1 "o" : Except StateTransitionError UInt64) matches .error (.arithmetic _)
 #guard (checkedMul 0x8000000000000000 4 "o" : Except StateTransitionError UInt64) matches .error (.arithmetic _)
 #guard (checkedSub 3 5 "u" : Except StoreTransitionError UInt64) matches .error (.transition (.arithmetic _))
+
+/-! ## The per-case caught set (`RunnerCaughtSet`)
+
+One test, under `epoch_processing` / `registry_updates`, scores its invalid vector with its own
+`except ValueError` wrapper. There the `.arithmetic` fault is the expected rejection, and an
+`assert` is not. Every other case uses `expect_assertion_error`, whose set is `AssertionError`
+and `IndexError`. The guards pin both sets and the pair that selects them. -/
+
+#guard RunnerCaughtSet.ofCase "epoch_processing" "registry_updates" == .valueError
+#guard RunnerCaughtSet.ofCase "epoch_processing" "slashings" == .assertionAndIndex
+#guard RunnerCaughtSet.ofCase "operations" "deposit" == .assertionAndIndex
+#guard RunnerCaughtSet.ofCase "sanity" "blocks" == .assertionAndIndex
+
+#guard RunnerCaughtSet.assertionAndIndex.admits (.assert "x") == true
+#guard RunnerCaughtSet.assertionAndIndex.admits (.outOfBounds 0 0) == true
+#guard RunnerCaughtSet.assertionAndIndex.admits (.arithmetic "x") == false
+
+#guard RunnerCaughtSet.valueError.admits (.arithmetic "x") == true
+#guard RunnerCaughtSet.valueError.admits (.assert "x") == false
+#guard RunnerCaughtSet.valueError.admits (.outOfBounds 0 0) == false
+
+/-! ### The reject table (`classifyReject`)
+
+`admits` answers whether the wrapper catches a reject. `classifyReject` turns that answer into
+a pass or a fail. The guards above pin the first. These pin the second, one row each. -/
+
+#guard (classifyReject .assertionAndIndex (.assert "x")).passed == true
+#guard (classifyReject .assertionAndIndex (.assert "x")).bucket == .expectedRejection
+#guard (classifyReject .assertionAndIndex (.outOfBounds 0 0)).passed == true
+#guard (classifyReject .assertionAndIndex (.outOfBounds 0 0)).flagged == true
+#guard (classifyReject .assertionAndIndex (.arithmetic "x")).passed == false
+#guard (classifyReject .assertionAndIndex (.arithmetic "x")).bucket == .uncaughtFault
+
+#guard (classifyReject .valueError (.arithmetic "x")).passed == true
+#guard (classifyReject .valueError (.arithmetic "x")).bucket == .expectedRejection
+#guard (classifyReject .valueError (.assert "x")).passed == false
+#guard (classifyReject .valueError (.assert "x")).bucket == .likelyBug
+#guard (classifyReject .valueError (.outOfBounds 0 0)).passed == false
+#guard (classifyReject .valueError (.outOfBounds 0 0)).bucket == .likelyBug
+
+#guard (classifyReject .valueError (.todo "x")).bucket == .todo
+#guard (classifyReject .assertionAndIndex (.todo "x")).bucket == .todo
+#guard (classifyReject .valueError (.outOfScope "x")).bucket == .outOfScope
+#guard (classifyReject .assertionAndIndex (.outOfScope "x")).bucket == .outOfScope
 
 /-! ## Fuel exhaustion: a deferral, never an expected rejection
 

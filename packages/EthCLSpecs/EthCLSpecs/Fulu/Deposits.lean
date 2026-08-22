@@ -54,7 +54,7 @@ pubkey with a valid proof-of-possession, add it to the registry. -/
 forkdef applyPendingDeposit (deposit : PendingDeposit) : StateTransition Unit := do
   let state ← get
   match validatorIndexByPubkey? state deposit.pubkey with
-  | some vi => modifyState fun state => increaseBalance state (UInt64.ofNat vi) deposit.amount
+  | some vi => set (← increaseBalance state (UInt64.ofNat vi) deposit.amount)
   | none    =>
       if isValidDepositSignature deposit.pubkey deposit.withdrawalCredentials deposit.amount deposit.signature then
         addValidatorToRegistry deposit.pubkey deposit.withdrawalCredentials deposit.amount
