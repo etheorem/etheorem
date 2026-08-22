@@ -64,6 +64,31 @@ call sites that just need the digest. -/
 def Node.merkleRoot (H : Type) [Hasher H] (n : Node) : ByteArray :=
   (n.merkleRootWithCache H).1
 
+/-! ### The three arms, stated before the seal
+
+`Node.merkleRoot` and `Node.rootOf` are the same structural recursion
+(`Proofs/Perfect.lean`'s `rootOf_eq_merkleRoot`), and they carry the same
+unfolding hazard. Both are therefore sealed. `Node.merkleRootWithCache` is the
+recursion, and `Node.merkleRoot` returns its first component, so the seal covers
+both. See `Cache/MerkleTree/Zero.lean`'s `Node.rootOf` for the reasoning and for
+why the attribute sits after the equations. -/
+
+/-- `merkleRoot` on a leaf is the leaf's bytes. -/
+theorem Node.merkleRoot_leaf (H : Type) [Hasher H] (b : ByteArray) :
+    Node.merkleRoot H (.leaf b) = b := rfl
+
+/-- A populated cache slot comes back as it stands, honest or not. -/
+theorem Node.merkleRoot_pair_some (H : Type) [Hasher H]
+    (l r : Node) (root : ByteArray) :
+    Node.merkleRoot H (.pair l r (some root)) = root := rfl
+
+/-- An empty slot recurses and combines. -/
+theorem Node.merkleRoot_pair_none (H : Type) [Hasher H] (l r : Node) :
+    Node.merkleRoot H (.pair l r none)
+      = Hasher.combine (H := H) (Node.merkleRoot H l) (Node.merkleRoot H r) := rfl
+
+attribute [irreducible] Node.merkleRoot Node.merkleRootWithCache
+
 /-! ### Acceptance: cached path matches the spec oracle
 
 Two small hand-built trees, each compared against

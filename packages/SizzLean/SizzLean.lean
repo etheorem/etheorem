@@ -15,6 +15,7 @@ import SizzLean.Cache.Update
 import SizzLean.Proofs.SSZListPush
 import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.SSZListSet
+import SizzLean.Proofs.Perfect
 
 /-!
 # `SizzLean`: library root
