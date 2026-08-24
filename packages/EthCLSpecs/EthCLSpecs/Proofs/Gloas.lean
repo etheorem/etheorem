@@ -3,7 +3,8 @@ import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 import EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid
 import EthCLSpecs.Proofs.Gloas.ForkChoiceRun
 import EthCLSpecs.Proofs.Gloas.GetPtc
-import EthCLSpecs.Proofs.Gloas.InitializePtcWindow
+-- TODO(this branch): restored in the InitializePtcWindow re-statement task.
+-- import EthCLSpecs.Proofs.Gloas.InitializePtcWindow
 import EthCLSpecs.Proofs.Gloas.InitiateBuilderExit
 import EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation
 import EthCLSpecs.Proofs.Gloas.ProcessOperations

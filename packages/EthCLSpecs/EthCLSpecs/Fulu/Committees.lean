@@ -128,9 +128,9 @@ forkdef computeBalanceWeightedSelection (state : State) (indices : Array Validat
 
 /-- `compute_proposer_indices`: one balance-weighted proposer per slot in `epoch`. -/
 forkdef computeProposerIndices (state : State) (epoch : Epoch) (seed : Bytes32)
-    (indices : Array ValidatorIndex) : Array ValidatorIndex :=
-  let startSlot := computeStartSlotAtEpoch epoch
-  (Array.range Const.slotsPerEpoch).map (fun i =>
+    (indices : Array ValidatorIndex) : StateTransition (Array ValidatorIndex) := do
+  let startSlot ← liftErr (computeStartSlotAtEpoch epoch)
+  pure <| (Array.range Const.slotsPerEpoch).map (fun i =>
     let sd := sha (seed ++ uint64ToBytes (startSlot + UInt64.ofNat i))
     (computeBalanceWeightedSelection state indices sd 1 true)[0]!)
 
@@ -139,7 +139,8 @@ forkdef getBeaconProposerIndex (state : State) : ValidatorIndex :=
   vmodGet (sszGet state proposerLookahead) (sszGet state slot) Const.slotsPerEpoch
 
 /-- `get_beacon_proposer_indices(state, epoch)`: the per-slot proposers for `epoch`. -/
-forkdef getBeaconProposerIndices (state : State) (epoch : Epoch) : Array ValidatorIndex :=
+forkdef getBeaconProposerIndices (state : State) (epoch : Epoch) :
+    StateTransition (Array ValidatorIndex) :=
   computeProposerIndices state epoch (getSeed state epoch Const.domainBeaconProposer)
     (getActiveValidatorIndices state epoch)
 
