@@ -1,6 +1,7 @@
 import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Codec
 import EthCLSpecs.Proofs.Fulu.Run
+import EthCLSpecs.Proofs.Fulu.Time
 
 /-!
 # `EthCLSpecs.Proofs.Fulu`: the Fulu fork's theorems (index)
@@ -23,4 +24,7 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Codec`: the `BasicSupported` gate by kernel `decide`, roundtrip, and
   non-malleability (`serialize_injective`) for `BeaconState`, `BeaconBlockBody`, `BeaconBlock`,
   and `SignedBeaconBlock` at the two shipped presets.
+* `EthCLSpecs.Proofs.Fulu.Time`: `computeEpochAtSlot` is monotone in the slot, and
+  `computeStartSlotAtEpoch` cannot fault on an epoch a slot division bounds. Their round trip is
+  the identity, conditional at a symbolic preset and closed at both shipped presets.
 -/
