@@ -267,7 +267,7 @@ forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
   let nextEpoch := currentEpochOf state + 1
   let avail := (sszGet state depositBalanceToConsume) + getActivationExitChurnLimit state
-  let finalizedSlot := computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
+  let finalizedSlot ← liftErr (computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch)
   let deposits := (sszGet state pendingDeposits).toArray
   let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
 
@@ -401,12 +401,20 @@ proposers and append the freshly-computed proposers for
 `current_epoch + MIN_SEED_LOOKAHEAD + 1`. -/
 forkdef processProposerLookahead : StateTransition Unit := do
   let state ← get
-  let newProposers := getBeaconProposerIndices state (currentEpochOf state + Const.minSeedLookahead + 1)
   let old := sszGet state proposerLookahead
+  -- Two writes: pyspec assigns the shifted slice before the call that can fault.
   set (sszUpdate state with proposerLookahead :=
     Vector.ofFn (fun i : Fin (2 * Const.slotsPerEpoch) =>
       if i.val < Const.slotsPerEpoch then vget old (i.val + Const.slotsPerEpoch)
-      else newProposers[i.val - Const.slotsPerEpoch]!))
+      else vget old i.val))
+  let shifted ← get
+  let newProposers ←
+    getBeaconProposerIndices shifted (currentEpochOf shifted + Const.minSeedLookahead + 1)
+  modifyState fun state =>
+    sszUpdate state with proposerLookahead :=
+      Vector.ofFn (fun i : Fin (2 * Const.slotsPerEpoch) =>
+        if i.val < Const.slotsPerEpoch then vget (sszGet state proposerLookahead) i.val
+        else newProposers[i.val - Const.slotsPerEpoch]!)
 
 end
 

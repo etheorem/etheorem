@@ -3,18 +3,18 @@ import EthCLSpecs.Fulu.State
 /-!
 # `EthCLSpecs.Fulu.Time`: slot / epoch accessors (load order row 20)
 
-The time-domain helpers (`SPECS_ARCHITECTURE.md` §3.1 row 20). State-free
-conversions are pure (`computeEpochAtSlot`, `computeStartSlotAtEpoch`,
-`computeActivationExitEpoch`); accessors that read the threaded state come in two
-shapes, the monadic `getCurrentEpoch` / `getPreviousEpoch` and the pure
-`currentEpochOf` / `previousEpochOf` (functions of the boxed state, for the
-`modifyState` / `Id.run` bodies the epoch substeps build), the state-free-pure /
+The time-domain helpers (`SPECS_ARCHITECTURE.md` §3.1 row 20). `computeEpochAtSlot`
+and `computeActivationExitEpoch` are state-free and pure. Accessors that read the
+threaded state come in two shapes, the monadic `getCurrentEpoch` / `getPreviousEpoch`
+and the pure `currentEpochOf` / `previousEpochOf` (functions of the boxed state, for
+the `modifyState` / `Id.run` bodies the epoch substeps build), the state-free-pure /
 state-reading-monadic split of §5. They are `forkdef`s so a later fork can
 `inherit` them.
 
-`computeTimeAtSlot` is the one helper here that can fault, so it returns an
-`Except` over the state it is handed. The block pipeline and the fork-choice
-store both reach it through `liftErr`, which keeps the clock in one declaration.
+`computeStartSlotAtEpoch` and `computeTimeAtSlot` are the two helpers here that can
+fault, so each returns an `Except`. The first is state-free and faults on its multiply.
+The second is handed the state. The block pipeline and the fork-choice store both reach
+`computeTimeAtSlot` through `liftErr`, which keeps the clock in one declaration.
 -/
 
 set_option autoImplicit false
@@ -28,8 +28,19 @@ state_section
 /-- `compute_epoch_at_slot(slot)` = `slot // SLOTS_PER_EPOCH`. Pure. -/
 forkdef computeEpochAtSlot (slot : Slot) : Epoch := slot / UInt64.ofNat Const.slotsPerEpoch
 
-/-- `compute_start_slot_at_epoch(epoch)` = `epoch * SLOTS_PER_EPOCH`. Pure. -/
-forkdef computeStartSlotAtEpoch (epoch : Epoch) : Slot := epoch * UInt64.ofNat Const.slotsPerEpoch
+/-- `compute_start_slot_at_epoch(epoch)` = `epoch * SLOTS_PER_EPOCH`
+(`phase0/beacon-chain.md:918`). The pyspec multiplies two bare `uint64` values. Remerkleable
+re-runs its bound check on the product and raises `ValueError` above `2 ^ 64`. The runner does
+not catch that fault. So the multiply is `checkedMul`, and the reject is `.arithmetic`.
+
+Most callers pass an epoch that `computeEpochAtSlot` produced. The fault cannot occur there,
+because `(s / n) * n ≤ s` for every `n`. `EthCLSpecs.Proofs.Fulu.Time` proves this. The other
+callers pass a checkpoint epoch from a deserialized state. The spec does not bound that epoch.
+
+The return type is a bare `Except`, which follows `computeTimeAtSlot` below. -/
+forkdef computeStartSlotAtEpoch (epoch : Epoch) : Except StateTransitionError Slot :=
+  checkedMul epoch (UInt64.ofNat Const.slotsPerEpoch)
+    "compute_start_slot_at_epoch: epoch * SLOTS_PER_EPOCH"
 
 /-- `compute_activation_exit_epoch(epoch)`. Pure. -/
 forkdef computeActivationExitEpoch (e : Epoch) : Epoch := e + 1 + Const.maxSeedLookahead

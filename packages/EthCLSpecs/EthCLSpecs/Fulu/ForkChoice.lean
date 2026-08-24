@@ -141,8 +141,9 @@ forkdef getAncestor (store : Store map) (root : Root) (slot : Slot) : StoreTrans
 
 /-- `get_checkpoint_block`. -/
 forkdef getCheckpointBlock (store : Store map) (root : Root) (epoch : Epoch) :
-    StoreTransition Root :=
-  getAncestor store root (computeStartSlotAtEpoch epoch)
+    StoreTransition Root := do
+  let epochFirstSlot ← liftErr (computeStartSlotAtEpoch epoch)
+  getAncestor store root epochFirstSlot
 
 /-! ## Weights and head -/
 
@@ -436,13 +437,16 @@ forkdef onTickPerSlot (store : Store map) (time : UInt64) : StoreTransition (Sto
   let store := { store with time := time }
   let currentSlot ← getCurrentSlot store
   let store := if currentSlot > previousSlot then { store with proposerBoostRoot := fcZeroRoot } else store
-  pure <| if currentSlot > previousSlot && computeSlotsSinceEpochStart currentSlot == 0 then
+  let slotsSinceEpochStart ← computeSlotsSinceEpochStart currentSlot
+  pure <| if currentSlot > previousSlot && slotsSinceEpochStart == 0 then
     updateCheckpoints store store.unrealizedJustifiedCheckpoint store.unrealizedFinalizedCheckpoint
   else store
 where
   -- `slot - compute_start_slot_at_epoch(compute_epoch_at_slot(slot))`: the epoch-start slot is
   -- always `≤ slot`, so this `uint64` subtraction cannot underflow; a bare `-`, not `checkedSub`.
-  computeSlotsSinceEpochStart (slot : Slot) : UInt64 := slot - computeStartSlotAtEpoch (computeEpochAtSlot slot)
+  computeSlotsSinceEpochStart (slot : Slot) : StoreTransition UInt64 := do
+    let epochFirstSlot ← liftErr (computeStartSlotAtEpoch (computeEpochAtSlot slot))
+    pure (slot - epochFirstSlot)
 
 /-- `on_tick`: advance the store clock to `time`. Each `on_tick_per_slot` commits before the
 next iteration, because pyspec calls it against the live store and a raise partway through the
@@ -480,7 +484,9 @@ proposer shuffling. Monadic to bind the throwing `getAncestor`. -/
 forkdef getDependentRoot (store : Store map) (root : Root) : StoreTransition Root := do
   let epoch ← getCurrentStoreEpoch store
   if epoch ≤ Const.minSeedLookahead then pure fcZeroRoot
-  else getAncestor store root (computeStartSlotAtEpoch (epoch - Const.minSeedLookahead) - 1)
+  else
+    let dependentSlot ← liftErr (computeStartSlotAtEpoch (epoch - Const.minSeedLookahead))
+    getAncestor store root (dependentSlot - 1)
 
 /-! ## Data availability (PeerDAS, EIP-7594) -/
 
@@ -531,7 +537,7 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) (columns : Array DataColumnSid
     "block.parent_root in store.block_states"
   let currentSlot ← getCurrentSlot store
   assert (currentSlot ≥ block.slot)
-  let finalizedSlot := computeStartSlotAtEpoch store.finalizedCheckpoint.epoch
+  let finalizedSlot ← liftErr (computeStartSlotAtEpoch store.finalizedCheckpoint.epoch)
   assert (block.slot > finalizedSlot)
   assert (store.finalizedCheckpoint.root == (← getCheckpointBlock store block.parentRoot store.finalizedCheckpoint.epoch))
   -- Data availability (EIP-7594). The spec's `on_block` (`fulu/fork-choice.md:70`) calls
@@ -587,7 +593,7 @@ forkdef storeTargetCheckpointState (store : Store map) (target : Checkpoint) :
   if FcMap.contains store.checkpointStates target then pure store
   else
     let base ← FcMap.getOrThrow store.blockStates target.root
-    let targetSlot := computeStartSlotAtEpoch target.epoch
+    let targetSlot ← liftErr (computeStartSlotAtEpoch target.epoch)
     let advanced ←
       if (sszGet base slot) < targetSlot then
         runNestedStateTransition base (processSlots targetSlot)
