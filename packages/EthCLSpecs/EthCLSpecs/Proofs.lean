@@ -3,6 +3,7 @@ import EthCLSpecs.Proofs.Gloas
 import EthCLSpecs.Proofs.Heze
 import EthCLSpecs.Proofs.Run
 import EthCLSpecs.Proofs.StoreRun
+import EthCLSpecs.Proofs.Support
 
 /-!
 # `EthCLSpecs.Proofs`: consensus-spec theorems (index)
@@ -45,4 +46,6 @@ Re-exports:
 * `EthCLSpecs.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine
   runner every fork's fork-choice proofs pin at that fork's `Store`, and the
   store-specific `throwArithmetic_run` equation.
+* `EthCLSpecs.Proofs.Support`: fork-independent helper lemmas about the Lean
+  library, which a fork's proof directory imports when it needs one.
 -/
