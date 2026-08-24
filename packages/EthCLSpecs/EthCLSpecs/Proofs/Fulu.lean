@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Run
+import EthCLSpecs.Proofs.Fulu.Time
 
 /-!
 # `EthCLSpecs.Proofs.Fulu`: the Fulu fork's theorems (index)
@@ -19,4 +20,7 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Balances`: `increaseBalance` and `decreaseBalance`, each with an exact
   run equation and an out-of-range reject, plus `increaseBalance`'s overflow reject and its
   exact stored sum, and `decreaseBalance`'s truncating difference.
+* `EthCLSpecs.Proofs.Fulu.Time`: `computeEpochAtSlot` is monotone in the slot, and
+  `computeStartSlotAtEpoch` cannot fault on an epoch a slot division bounds. Their round trip is
+  the identity, conditional at a symbolic preset and closed at both shipped presets.
 -/
