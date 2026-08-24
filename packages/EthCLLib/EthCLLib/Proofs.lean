@@ -3,6 +3,7 @@ import EthCLLib.Proofs.EngineLaws
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
+import EthCLLib.Proofs.OfFnM
 import EthCLLib.Proofs.Run
 import EthCLLib.Proofs.StoreRun
 
@@ -32,6 +33,8 @@ Re-exports:
   The order laws of `instOrdVectorUInt8` that the
   `treeMap` instance needs at `Root` sit in `EthCLLib.Spec.FiniteMap`.
 * `EthCLLib.Proofs.MerkleBranch`: what `isValidMerkleBranch` accepts.
+* `EthCLLib.Proofs.OfFnM`: `ofFnM_eq_ok_ofFn`, which collapses an
+  all-succeeding `Vector.ofFnM` in `Except` to the pure `Vector.ofFn`.
 * `EthCLLib.Proofs.Run`: the `StateT`-over-`Except` run facts every pure runner
   shares (`run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
   `except_bind_error`, the `ofExcept` and `liftErr` run equations), plus the pure
