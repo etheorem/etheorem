@@ -54,9 +54,12 @@ forkdef getBlockRootAtSlot (state : State) (s : Slot) : StateTransition Root := 
   assert (sszGet state slot ≤ bound)
   pure (vmodGet (sszGet state blockRoots) s Const.slotsPerHistoricalRoot)
 
-/-- `get_block_root` (the epoch's first slot). -/
-forkdef getBlockRoot (state : State) (epoch : Epoch) : StateTransition Root :=
-  getBlockRootAtSlot state (epoch * UInt64.ofNat Const.slotsPerEpoch)
+/-- `get_block_root` (the epoch's first slot), `phase0/beacon-chain.md:1011`. The pyspec reaches
+the start slot through `compute_start_slot_at_epoch`. This calls that helper instead of
+repeating the multiply, so the fault stays in one declaration. -/
+forkdef getBlockRoot (state : State) (epoch : Epoch) : StateTransition Root := do
+  let epochFirstSlot ← liftErr (computeStartSlotAtEpoch epoch)
+  getBlockRootAtSlot state epochFirstSlot
 
 /-- `get_pending_balance_to_withdraw`. -/
 forkdef getPendingBalanceToWithdraw (state : State) (vi : ValidatorIndex) : Gwei :=
