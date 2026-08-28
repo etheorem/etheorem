@@ -351,7 +351,8 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   -- Write back the (possibly weight-updated) payment, as the spec does unconditionally.
   stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := { payment0 with weight := weight }
   let proposerDenom := (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
-  stateAcc := increaseBalance stateAcc (getBeaconProposerIndex stateAcc) (UInt64.ofNat (proposerNum / proposerDenom))
+  stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc)
+    (UInt64.ofNat (proposerNum / proposerDenom))
   set stateAcc
 where
   /-- Walk the committee bits: each referenced committee index is in range and

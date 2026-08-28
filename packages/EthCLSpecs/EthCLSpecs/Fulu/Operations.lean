@@ -187,7 +187,8 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
 
   -- Pay the proposer the accumulated weight.
   let proposerDenom := (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
-  stateAcc := increaseBalance stateAcc (getBeaconProposerIndex stateAcc) (UInt64.ofNat (proposerNum / proposerDenom))
+  stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc)
+    (UInt64.ofNat (proposerNum / proposerDenom))
   set stateAcc
 where
   /-- Fold over the attestation's committee indices: each must be below `count` and

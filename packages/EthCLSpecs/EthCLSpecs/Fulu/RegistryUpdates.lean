@@ -106,20 +106,21 @@ forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : 
 /-! ## Validator-lifecycle mutators -/
 
 /-- `initiate_validator_exit`. The `withdrawable_epoch = exit_epoch +
-MIN_VALIDATOR_WITHDRAWABILITY_DELAY` sum is checked against the `uint64` bound:
-the pyspec raises (and the case is invalid) when it overflows, where Lean's
-`UInt64` would wrap silently, so the bound is asserted explicitly. -/
+MIN_VALIDATOR_WITHDRAWABILITY_DELAY` sum is a bare `uint64` addition in the pyspec, so an
+overflow raises `ValueError` there. `checkedAdd` models the addition and reports the
+`.arithmetic` uncaught fault. `test_invalid_large_withdrawable_epoch` catches that raise in its
+own `except ValueError` and scores it as the expected outcome
+(`RunnerCaughtSet.valueError`). -/
 forkdef initiateValidatorExit (i : ValidatorIndex) : StateTransition Unit := do
   let state ← get
   let validator ← sszGetIdx (sszGet state validators) i.toNat
   if !hasNotInitiatedExit validator then pure ()
   else
     let exitEpoch ← computeExitEpochAndUpdateChurn validator.effectiveBalance
-    assert (exitEpoch.toNat + Const.minValidatorWithdrawabilityDelay.toNat < 2 ^ 64)
+    let withdrawableEpoch ← checkedAdd exitEpoch Const.minValidatorWithdrawabilityDelay
+      "initiate_validator_exit: exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY"
     modifyState fun state => modValidator state i fun validator =>
-      { validator with
-          exitEpoch := exitEpoch,
-          withdrawableEpoch := exitEpoch + UInt64.ofNat (Const.minValidatorWithdrawabilityDelay.toNat) }
+      { validator with exitEpoch := exitEpoch, withdrawableEpoch := withdrawableEpoch }
 
 /-- `slash_validator` (whistleblower = proposer). -/
 forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
@@ -137,15 +138,15 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
         withdrawableEpoch := umax validator.withdrawableEpoch (epoch + UInt64.ofNat Const.epochsPerSlashingsVector) }
   let state := sszUpdate state with
     slashings[slashIdx]! := (vget (sszGet state slashings) slashIdx + validator.effectiveBalance)
-  let state := decreaseBalance state i (validator.effectiveBalance / UInt64.ofNat Const.minSlashingPenaltyQuotientElectra)
+  let state ← decreaseBalance state i (validator.effectiveBalance / UInt64.ofNat Const.minSlashingPenaltyQuotientElectra)
   set state
 
   -- Pay the proposer its share of the whistleblower reward, then the remainder.
   let proposerIdx := getBeaconProposerIndex (← get)
   let whistleblowerReward := validator.effectiveBalance / UInt64.ofNat Const.whistleblowerRewardQuotientElectra
   let proposerReward := whistleblowerReward * UInt64.ofNat Const.proposerWeight / UInt64.ofNat Const.weightDenominator
-  modifyState fun state => increaseBalance state proposerIdx proposerReward
-  modifyState fun state => increaseBalance state proposerIdx (whistleblowerReward - proposerReward)
+  let state ← increaseBalance state proposerIdx proposerReward
+  set (← increaseBalance state proposerIdx (whistleblowerReward - proposerReward))
 
 /-! ## Compounding / consolidation balance moves -/
 
