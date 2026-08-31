@@ -278,7 +278,7 @@ says so in its docstring. -/
 def allowedAxioms : Array Name :=
   #[`propext, `Classical.choice, `Quot.sound,
     `Lean.ofReduceBool, `Lean.trustCompiler,
-    `SizzLean.sha256Hash_eq_spec, `SizzLean.sha256Combine_eq_spec]
+    `SizzLean.Hasher.sha256Hash_eq_spec, `SizzLean.Hasher.sha256Combine_eq_spec]
 
 /-- The axioms `n`'s proof rests on, transitively. -/
 def axiomsOf (env : Environment) (n : Name) : Array Name :=
