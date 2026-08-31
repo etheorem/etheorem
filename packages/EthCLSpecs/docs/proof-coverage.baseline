@@ -16,7 +16,10 @@ tier1 EthCLSpecs.Gloas.processPayloadAttestation
 tier1 EthCLSpecs.Gloas.processProposerSlashing
 tier1 EthCLSpecs.Gloas.processVoluntaryExit
 tier1 EthCLSpecs.Heze.getCurrentSlot
+tier1 EthCLSpecs.Heze.getInclusionListTransactions
+tier1 EthCLSpecs.Heze.isInclusionListSatisfied
 tier1 EthCLSpecs.Heze.isPayloadVerified
+tier1 EthCLSpecs.Heze.recordPayloadInclusionListSatisfaction
 tier1 EthCLSpecs.Heze.shouldExtendPayload
 tier2 EthCLSpecs.Gloas.canBuilderCoverBid
 tier2 EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex

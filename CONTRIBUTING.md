@@ -167,8 +167,16 @@ about `Heze.f`, and the per-fork directory is what keeps the two claims apart.
    `in progress`.
 
    A partly landed row then says in its Property cell what is landed and what is
-   open, so the next author reads the remainder off the row. `getPtc` and
-   `shouldExtendPayload` are the two worked cases.
+   open, in the fixed shape `Landed: … Open: …`. The next author reads the
+   remainder off the row, and a grep for `Open:` lists every ledger entry that
+   still owes work. `getPtc`, `shouldExtendPayload`, and
+   `recordPayloadInclusionListSatisfaction` are the worked cases.
+
+   Touched does not imply a row. A helper that only another function's theorem
+   reads, `isInclusionListSatisfied` inside the
+   `recordPayloadInclusionListSatisfaction` theorem for example, counts as
+   touched in the baseline and needs no row. The ledger lists functions someone
+   intends to prove directly.
 
    `just proof-coverage` cross-checks the status against the tags. It warns when
    a `proved` row carries no tag, and when a tagged function has no `proved`

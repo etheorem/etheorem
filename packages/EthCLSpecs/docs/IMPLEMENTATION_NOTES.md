@@ -845,16 +845,31 @@ separation.
   `GloasRun`; handlers and later failure postconditions remain opaque.
 
 - **`Proofs/Heze/ShouldExtendPayload.lean`** places its theorem in
-  `EthCLSpecs.Proofs.Heze`, since `shouldExtendPayload` exists in both Gloas
+  `EthCLSpecs.Proofs.Heze` because `shouldExtendPayload` exists in both Gloas
   and Heze. `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied` proves
-  only this FOCIL-gate claim at `ForkChoiceStoreRun (Store map)`: under
-  successful preliminary lookup/slot checks, a verified payload with a present
-  recorded `false` satisfaction verdict is rejected by the Heze FOCIL gate, with
-  the pure runner state unchanged. It is not complete correctness of
-  `shouldExtendPayload`. The recorded verdict is an assumption, so payload/verdict
-  pairing and exact agreement of the recorded verdict with
-  `isInclusionListSatisfied` remain follow-up candidates in
-  `PROOF_LEDGER.md`.
+  the FOCIL rejection case at `ForkChoiceStoreRun (Store map)`. If the initial
+  block lookup and slot checks succeed, Heze rejects a verified payload when
+  the queried root has a recorded `false` inclusion-list satisfaction result.
+  The runner state remains unchanged. The theorem does not cover the later
+  fork-choice checks inherited from Gloas or the case where no result has been
+  recorded. It assumes that the recorded result is present and does not prove
+  that it belongs to the matching payload. The successful path that records
+  the result of `isInclusionListSatisfied` is proved in
+  `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`. Ensuring that the
+  payload and its result are recorded under the same root remains tracked by
+  the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+
+- **`Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`** proves
+  `recordPayloadInclusionListSatisfaction_run_eq` in
+  `EthCLSpecs.Proofs.Heze`. When `state.slot` is nonzero and timely
+  transaction collection for the previous slot succeeds (the default
+  `onlyTimely := true`), the recorder returns `store` with
+  `payloadInclusionListSatisfaction[root]` set to
+  `isInclusionListSatisfied payload ilTxs`. It leaves the runner state exactly
+  as transaction collection returned it. The recorded result may be either
+  `true` or `false`. The theorem does not cover slot zero or
+  transaction-collection failures. What a subsequent lookup returns remains
+  tracked by the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
 
 - **`Proofs/Gloas/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
   single record update, which doubles as the frame condition that no other Store

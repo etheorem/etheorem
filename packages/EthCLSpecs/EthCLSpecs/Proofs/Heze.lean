@@ -1,3 +1,4 @@
+import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 
 /-!
@@ -15,6 +16,10 @@ Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction`: the
+  successful-run write of `recordPayloadInclusionListSatisfaction`
+  (`recordPayloadInclusionListSatisfaction_run_eq`), proved with
+  `ForkChoiceStoreRun`.
 * `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: Heze's verified,
   recorded-unsatisfied FOCIL rejection theorem
   (`shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`), proved with
