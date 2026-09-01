@@ -158,7 +158,7 @@ private theorem collectStep_run_error_of_missing
   simp [collectStep, hmem, honly, FcMap.getOrThrow, FcMap.getOrThrowKey, hnone]
   rfl
 
-private theorem collectStep_run_ok_of_skip
+private theorem collectStep_run_ok_of_doesNotError
     {map : MapKind} [Preset] [FcMap map] {σ : Type}
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
     (onlyTimely : Bool) (acc : Array Transaction)
@@ -186,7 +186,7 @@ private theorem collectStep_run_ok_of_skip
   · simp only [collectStep, hcont]
     exact ⟨acc, rfl⟩
 
-private theorem foldlM_collectStep_run_ok_of_all_skip
+private theorem foldlM_collectStep_run_ok_of_all_doNotError
     {map : MapKind} [Preset] [FcMap map] {σ : Type}
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
     (onlyTimely : Bool) (honly : onlyTimely = true)
@@ -202,7 +202,7 @@ private theorem foldlM_collectStep_run_ok_of_all_skip
     exact ⟨acc, rfl⟩
   | cons a rest ih =>
     obtain ⟨acc1, hstep⟩ :=
-      collectStep_run_ok_of_skip (σ := σ) equivocators timeliness onlyTimely acc a s honly
+      collectStep_run_ok_of_doesNotError (σ := σ) equivocators timeliness onlyTimely acc a s honly
         (hall a List.mem_cons_self)
     rw [List.foldlM_cons, ForkChoiceStoreRun.run_bind, hstep, ForkChoiceStoreRun.except_bind_ok]
     exact ih (fun x hx => hall x (List.mem_cons.mpr (Or.inr hx))) acc1
@@ -242,7 +242,7 @@ theorem collectInclusionListTransactions_run_error_of_first_missing
     simp only [hget']
     rw [List.foldlM_append, ForkChoiceStoreRun.run_bind]
     obtain ⟨acc', hpre⟩ :=
-      foldlM_collectStep_run_ok_of_all_skip (σ := σ) equivocators timeliness onlyTimely honly
+      foldlM_collectStep_run_ok_of_all_doNotError (σ := σ) equivocators timeliness onlyTimely honly
         (entries.toList.take i)
         (fun x hx => by
           obtain ⟨j, hj, rfl⟩ := (List.mem_take_iff_getElem).1 hx
