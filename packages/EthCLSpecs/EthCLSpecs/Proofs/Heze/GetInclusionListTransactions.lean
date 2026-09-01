@@ -38,14 +38,18 @@ private theorem throwArithmetic_run {σ α : Type} (descr : String) (s : σ) :
       = .error (.transition (.arithmetic descr)) :=
   rfl
 
+section
+variable {σ : Type} [Preset]
+section
+variable [HasherTag]
+
 /-- Complete `.run` equation of `getInclusionListCommittee`. The concatenated
 indices expression is the one in the source. An empty array throws the
 empty-committee arithmetic error. A nonempty array returns `cyclicSample` of
 that array and leaves the runner state unchanged. The committee accessor does
 not read the runner state, so the equation holds for an arbitrary `σ`. -/
 @[characterizes EthCLSpecs.Heze.getInclusionListCommittee]
-theorem getInclusionListCommittee_run_eq
-    {σ : Type} [Preset] [HasherTag] :
+theorem getInclusionListCommittee_run_eq :
     ∀ (state : State) (slot : Slot) (runnerStore : σ),
       let indices :=
         (Array.range (getCommitteeCountPerSlot state (computeEpochAtSlot slot))).foldl
@@ -67,7 +71,6 @@ theorem getInclusionListCommittee_run_eq
 
 /-- Exact empty-committee error of `getInclusionListCommittee`. -/
 theorem getInclusionListCommittee_run_error_of_empty
-    {σ : Type} [Preset] [HasherTag]
     (state : State) (slot : Slot) (runnerStore : σ)
     (h : ((Array.range (getCommitteeCountPerSlot state (computeEpochAtSlot slot))).foldl
         (fun acc i => acc ++ getBeaconCommittee state slot i)
@@ -78,10 +81,18 @@ theorem getInclusionListCommittee_run_error_of_empty
           "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee")) := by
   simp only [getInclusionListCommittee_run_eq, h, beq_iff_eq, ite_true]
 
+end
+end
+
+section
+variable {map : MapKind} [Preset]
+section
+variable [FcMap map]
+
 /-- `entry` does not fail a timeliness read. An equivocator entry skips the
 lookup. A non-equivocator entry whose list root is already in `timeliness`
 performs a successful lookup. -/
-def timelinessEntryDoesNotError {map : MapKind} [Preset] [FcMap map]
+def timelinessEntryDoesNotError
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
     (entry : Root × InclusionList) : Prop :=
   equivocators.contains entry.2.validatorIndex = true
@@ -94,7 +105,7 @@ key. Prefix entries do not fail that read. This entry is not from an equivocator
 `entries` is the array produced by
 `FcMap.fold (fun acc ilRoot il => acc.push (ilRoot, il)) #[] inclusionLists`.
 The predicate does not assume a generic fold order. -/
-def FirstReachableMissingTimeliness {map : MapKind} [Preset] [FcMap map]
+def FirstReachableMissingTimeliness
     (entries : Array (Root × InclusionList))
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
     (ilRoot : Root) : Prop :=
@@ -106,9 +117,12 @@ def FirstReachableMissingTimeliness {map : MapKind} [Preset] [FcMap map]
       ∧ equivocators.contains il.validatorIndex = false
       ∧ FcMap.lookup timeliness ilRoot = none
 
+section
+variable {σ : Type}
+
 /-- One step of the `collectInclusionListTransactions` `foldlM` body, at the
 fork-choice store runner. The step does not read the runner state. -/
-private def collectStep {map : MapKind} [Preset] [FcMap map] {σ : Type}
+private def collectStep
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
     (onlyTimely : Bool) :
     Array Transaction → Root × InclusionList →
@@ -121,7 +135,6 @@ private def collectStep {map : MapKind} [Preset] [FcMap map] {σ : Type}
       if timely then pure (acc ++ il.transactions.toArray) else pure acc
 
 private theorem collectInclusionListTransactions_eq
-    {map : MapKind} [Preset] [FcMap map] {σ : Type}
     (inclusionLists : map Root InclusionList)
     (equivocators : Array ValidatorIndex)
     (timeliness : map Root Bool)
@@ -135,7 +148,6 @@ private theorem collectInclusionListTransactions_eq
   rfl
 
 private theorem collectStep_run_error_of_missing
-    {map : MapKind} [Preset] [FcMap map] {σ : Type}
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
     (onlyTimely : Bool) (acc : Array Transaction)
     (ilRoot : Root) (il : InclusionList) (s : σ)
@@ -151,7 +163,6 @@ private theorem collectStep_run_error_of_missing
   rfl
 
 private theorem collectStep_run_ok_of_doesNotError
-    {map : MapKind} [Preset] [FcMap map] {σ : Type}
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
     (onlyTimely : Bool) (acc : Array Transaction)
     (entry : Root × InclusionList) (s : σ)
@@ -179,7 +190,6 @@ private theorem collectStep_run_ok_of_doesNotError
     exact ⟨acc, rfl⟩
 
 private theorem foldlM_collectStep_run_ok_of_all_doNotError
-    {map : MapKind} [Preset] [FcMap map] {σ : Type}
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
     (onlyTimely : Bool) (honly : onlyTimely = true)
     (l : List (Root × InclusionList))
@@ -205,7 +215,6 @@ private theorem foldlM_collectStep_run_ok_of_all_doNotError
 The collector does not read the runner state, so the equation holds for an
 arbitrary `σ`. -/
 theorem collectInclusionListTransactions_run_error_of_first_missing
-    {map : MapKind} [Preset] [FcMap map] {σ : Type}
     (inclusionLists : map Root InclusionList)
     (equivocators : Array ValidatorIndex)
     (timeliness : map Root Bool)
@@ -250,11 +259,18 @@ theorem collectInclusionListTransactions_run_error_of_first_missing
   rw [hfold]
   exact ForkChoiceStoreRun.except_bind_error _ _
 
+end
+end
+
+section
+variable [HasherTag]
+section
+variable [FcMap map]
+
 /-- `.run` of `getInclusionListTransactions` is the committee run bound to
 collection at the committee's stored lists. -/
 @[characterizes EthCLSpecs.Heze.getInclusionListTransactions]
 theorem getInclusionListTransactions_run_eq
-    {map : MapKind} [Preset] [HasherTag] [FcMap map]
     (store : InclusionListStore map) (state : State) (slot : Slot)
     (onlyTimely : Bool) (runnerStore : Store map) :
     (getInclusionListTransactions
@@ -273,7 +289,6 @@ theorem getInclusionListTransactions_run_eq
 
 /-- A committee error is the transaction-collection error. -/
 theorem getInclusionListTransactions_run_error_of_committee
-    {map : MapKind} [Preset] [HasherTag] [FcMap map]
     (store : InclusionListStore map) (state : State) (slot : Slot)
     (onlyTimely : Bool) (runnerStore : Store map)
     (err : StoreTransitionError)
@@ -289,7 +304,6 @@ theorem getInclusionListTransactions_run_error_of_committee
 /-- A collection error after a successful committee run is the
 transaction-collection error. -/
 theorem getInclusionListTransactions_run_error_of_collect
-    {map : MapKind} [Preset] [HasherTag] [FcMap map]
     (store : InclusionListStore map) (state : State) (slot : Slot)
     (onlyTimely : Bool) (runnerStore postCommitteeStore : Store map)
     (committee : Vector ValidatorIndex inclusionListCommitteeSize)
@@ -308,5 +322,9 @@ theorem getInclusionListTransactions_run_error_of_collect
         store state slot onlyTimely).run runnerStore
       = .error err := by
   rw [getInclusionListTransactions_run_eq, hok, ForkChoiceStoreRun.except_bind_ok, herr]
+
+end
+end
+end
 
 end EthCLSpecs.Proofs.Heze
