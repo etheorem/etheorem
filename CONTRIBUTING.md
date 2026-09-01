@@ -169,8 +169,7 @@ about `Heze.f`, and the per-fork directory is what keeps the two claims apart.
    A partly landed row then says in its Property cell what is landed and what is
    open, in the fixed shape `Landed: … Open: …`. The next author reads the
    remainder off the row, and a grep for `Open:` lists every ledger entry that
-   still owes work. `getPtc`, `shouldExtendPayload`, and
-   `recordPayloadInclusionListSatisfaction` are the worked cases.
+   still owes work. `getPtc` and `shouldExtendPayload` are the worked cases.
 
    Touched does not imply a row. A helper that only another function's theorem
    reads, `isInclusionListSatisfied` inside the
