@@ -76,15 +76,7 @@ theorem getInclusionListCommittee_run_error_of_empty
         (StoreTransition := ForkChoiceStoreRun σ) state slot).run runnerStore
       = .error (.transition (.arithmetic
           "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee")) := by
-  have heq := getInclusionListCommittee_run_eq (σ := σ) state slot runnerStore
-  rw [heq]
-  split
-  · rfl
-  · rename_i hne
-    have hbeq : ((Array.foldl (fun acc i => acc ++ getBeaconCommittee state slot i) #[]
-        (Array.range (getCommitteeCountPerSlot state (computeEpochAtSlot slot)))).size == 0) = true :=
-      beq_iff_eq.mpr h
-    exact (hne hbeq).elim
+  simp only [getInclusionListCommittee_run_eq, h, beq_iff_eq, ite_true]
 
 /-- `entry` does not fail a timeliness read. An equivocator entry skips the
 lookup. A non-equivocator entry whose list root is already in `timeliness`
