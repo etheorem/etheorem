@@ -13,8 +13,9 @@ error, a predicate for the first reachable missing timeliness key in the
 `FcMap.fold` entries array, and how both classes of collector error propagate
 through `getInclusionListTransactions`.
 
-`collectInclusionListTransactions` is a plain `def`. Helper theorems stay
-untagged.
+`getInclusionListCommittee_run_eq` and `getInclusionListTransactions_run_eq`
+are the principal equations. Error corollaries and helpers stay untagged.
+`collectInclusionListTransactions` is a plain `def`.
 -/
 
 set_option autoImplicit false
@@ -42,6 +43,7 @@ indices expression is the one in the source. An empty array throws the
 empty-committee arithmetic error. A nonempty array returns `cyclicSample` of
 that array and leaves the runner state unchanged. The committee accessor does
 not read the runner state, so the equation holds for an arbitrary `σ`. -/
+@[characterizes EthCLSpecs.Heze.getInclusionListCommittee]
 theorem getInclusionListCommittee_run_eq
     {σ : Type} [Preset] [HasherTag] :
     ∀ (state : State) (slot : Slot) (runnerStore : σ),
@@ -258,7 +260,8 @@ theorem collectInclusionListTransactions_run_error_of_first_missing
 
 /-- `.run` of `getInclusionListTransactions` is the committee run bound to
 collection at the committee's stored lists. -/
-private theorem getInclusionListTransactions_run
+@[characterizes EthCLSpecs.Heze.getInclusionListTransactions]
+theorem getInclusionListTransactions_run_eq
     {map : MapKind} [Preset] [HasherTag] [FcMap map]
     (store : InclusionListStore map) (state : State) (slot : Slot)
     (onlyTimely : Bool) (runnerStore : Store map) :
@@ -289,7 +292,7 @@ theorem getInclusionListTransactions_run_error_of_committee
         (StoreTransition := ForkChoiceStoreRun (Store map))
         store state slot onlyTimely).run runnerStore
       = .error err := by
-  rw [getInclusionListTransactions_run, herr, ForkChoiceStoreRun.except_bind_error]
+  rw [getInclusionListTransactions_run_eq, herr, ForkChoiceStoreRun.except_bind_error]
 
 /-- A collection error after a successful committee run is the
 transaction-collection error. -/
@@ -312,6 +315,6 @@ theorem getInclusionListTransactions_run_error_of_collect
         (StoreTransition := ForkChoiceStoreRun (Store map))
         store state slot onlyTimely).run runnerStore
       = .error err := by
-  rw [getInclusionListTransactions_run, hok, ForkChoiceStoreRun.except_bind_ok, herr]
+  rw [getInclusionListTransactions_run_eq, hok, ForkChoiceStoreRun.except_bind_ok, herr]
 
 end EthCLSpecs.Proofs.Heze
