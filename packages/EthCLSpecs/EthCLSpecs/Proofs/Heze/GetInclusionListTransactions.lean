@@ -92,7 +92,7 @@ variable [FcMap map]
 /-- `entry` does not fail a timeliness read. An equivocator entry skips the
 lookup. A non-equivocator entry whose list root is already in `timeliness`
 performs a successful lookup. -/
-def timelinessEntryDoesNotError
+private def timelinessEntryDoesNotError
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
     (entry : Root × InclusionList) : Prop :=
   equivocators.contains entry.2.validatorIndex = true
