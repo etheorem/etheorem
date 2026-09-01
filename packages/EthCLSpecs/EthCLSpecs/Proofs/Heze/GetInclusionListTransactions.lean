@@ -10,8 +10,8 @@ transactions. The inner walk is `collectInclusionListTransactions`.
 
 This module proves the committee run equation, the empty-committee arithmetic
 error, a predicate for the first reachable missing timeliness key in the
-`FcMap.fold` entries array, and how both classes of collector error propagate
-through `getInclusionListTransactions`.
+`FcMap.fold` entries array, and how committee-construction and collector errors
+propagate through `getInclusionListTransactions`.
 
 `getInclusionListCommittee_run_eq` and `getInclusionListTransactions_run_eq`
 are the principal equations.
