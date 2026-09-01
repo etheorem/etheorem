@@ -37,5 +37,6 @@ Re-exports:
 * `EthCLSpecs.Proofs.Gloas`: the Gloas fork's theorems, one module per subject.
 * `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems, one module per subject.
 * `EthCLSpecs.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine
-  runner every fork's fork-choice proofs pin at that fork's `Store`.
+  runner every fork's fork-choice proofs pin at that fork's `Store`, and the
+  generic `StateT`/`Except` `.run` lemmas.
 -/

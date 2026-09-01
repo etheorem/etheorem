@@ -1,5 +1,4 @@
 import EthCLSpecs.Heze.ForkChoice
-import EthCLSpecs.Proofs.Gloas.Run
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.StoreRun
 
@@ -46,7 +45,6 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs.Heze
 
 open EthCLSpecs.Proofs (ForkChoiceStoreRun)
-open EthCLSpecs.Proofs.Gloas (GloasRun)
 open EthCLLib.Spec (HasherTag MapKind FcMap checkedSub ExecutionEngine throwArithmetic
   StoreTransitionError htr)
 open EthCLSpecs.Heze (Preset Store State Root ValidatorIndex
@@ -137,7 +135,7 @@ theorem recordPayloadInclusionListSatisfaction_run
     have hthrow := throwArithmetic_run (α := UInt64)
       "record_payload_inclusion_list_satisfaction: Slot(state.slot - 1)" runnerStore
     rw [hthrow]
-    exact GloasRun.except_bind_error _ _
+    exact ForkChoiceStoreRun.except_bind_error _ _
   · simp [recordPayloadInclusionListSatisfaction, checkedSub, hslot]
     cases htxs : (getInclusionListTransactions
         (StoreTransition := ForkChoiceStoreRun (Store map))

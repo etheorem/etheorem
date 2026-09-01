@@ -826,12 +826,14 @@ separation.
 - **`Proofs/Gloas/Run.lean`** names `GloasRun`, the pure `StateT`/`Except`
   state-transition monad the Gloas proofs pin their `forkdef` bodies to.
   `StateTransition` is a parameter of a fork body, so every run theorem has to fix
-  it; this fixes it once.
+  it; this fixes it once. Its `.run` / `Except.bind` names are aliases of the
+  shared lemmas in `Proofs/StoreRun.lean`.
 
 - **`Proofs/StoreRun.lean`** names `ForkChoiceStoreRun`, the shared pure
   store-machine runner every fork's fork-choice proofs pin at that fork's
-  `Store`. It sits beside the per-fork directories because the runner is a monad
-  over an arbitrary store type and so belongs to no fork.
+  `Store`. It also holds the generic `StateT`/`Except` `.run` lemmas. It sits
+  beside the per-fork directories because the runner is a monad over an
+  arbitrary store type and so belongs to no fork.
 
 - **`Proofs/Gloas/IsValidIndexedPayloadAttestation.lean`** proves a two-layer,
   backend-generic characterization of `isValidIndexedPayloadAttestation`. Layer 1
