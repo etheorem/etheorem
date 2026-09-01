@@ -19,8 +19,9 @@ Re-exports:
 
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
   equations for `getInclusionListCommittee` and
-  `getInclusionListTransactions`, plus the missing-timeliness predicate on
-  the `FcMap.fold` entries array.
+  `getInclusionListTransactions`
+  (`getInclusionListCommittee_run_eq`, `getInclusionListTransactions_run_eq`),
+  plus the missing-timeliness predicate on the `FcMap.fold` entries array.
 * `EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction`: the
   complete run of `recordPayloadInclusionListSatisfaction`
   (`recordPayloadInclusionListSatisfaction_run`), proved with

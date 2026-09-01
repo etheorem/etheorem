@@ -19,8 +19,6 @@ tier1 EthCLSpecs.Heze.computeEpochAtSlot
 tier1 EthCLSpecs.Heze.getBeaconCommittee
 tier1 EthCLSpecs.Heze.getCommitteeCountPerSlot
 tier1 EthCLSpecs.Heze.getCurrentSlot
-tier1 EthCLSpecs.Heze.getInclusionListCommittee
-tier1 EthCLSpecs.Heze.getInclusionListTransactions
 tier1 EthCLSpecs.Heze.isInclusionListSatisfied
 tier1 EthCLSpecs.Heze.isPayloadVerified
 tier1 EthCLSpecs.Heze.shouldExtendPayload
@@ -32,4 +30,6 @@ tier2 EthCLSpecs.Gloas.processBuilderPendingPayments
 tier2 EthCLSpecs.Gloas.processOperations
 tier2 EthCLSpecs.Gloas.toBuilderIndex
 tier2 EthCLSpecs.Gloas.updateCheckpoints
+tier2 EthCLSpecs.Heze.getInclusionListCommittee
+tier2 EthCLSpecs.Heze.getInclusionListTransactions
 tier2 EthCLSpecs.Heze.recordPayloadInclusionListSatisfaction

@@ -862,15 +862,20 @@ separation.
   the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
 
 - **`Proofs/Heze/GetInclusionListTransactions.lean`** proves the collector
-  run equations used by the recorder characterization. `getInclusionListCommittee_run_eq`
-  is the complete committee `.run` equation on the concatenated
-  `getBeaconCommittee` indices. The empty array throws the exact
-  empty-committee arithmetic error. `FirstReachableMissingTimeliness`
-  names the first reachable missing timeliness key in the `FcMap.fold`
-  entries array. When `onlyTimely = true`, that predicate implies
-  `.error (.missingKey ilRoot)`. Committee and collection errors
-  propagate through `getInclusionListTransactions`. Helper theorems
-  stay untagged. `collectInclusionListTransactions` is a plain `def`.
+  run equations used by the recorder characterization.
+  `getInclusionListCommittee_run_eq` is the complete committee `.run`
+  equation on the concatenated `getBeaconCommittee` indices, tagged
+  `@[characterizes EthCLSpecs.Heze.getInclusionListCommittee]`.
+  `getInclusionListTransactions_run_eq` is the whole-operation bind of
+  that committee run to collection at the committee's stored lists, tagged
+  `@[characterizes EthCLSpecs.Heze.getInclusionListTransactions]`.
+  The empty array throws the exact empty-committee arithmetic error.
+  `FirstReachableMissingTimeliness` names the first reachable missing
+  timeliness key in the `FcMap.fold` entries array. When `onlyTimely = true`,
+  that predicate implies `.error (.missingKey ilRoot)`. Committee and
+  collection errors propagate through `getInclusionListTransactions`.
+  Those error corollaries stay untagged.
+  `collectInclusionListTransactions` is a plain `def`.
 
 - **`Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`** proves
   `recordPayloadInclusionListSatisfaction_run` in
