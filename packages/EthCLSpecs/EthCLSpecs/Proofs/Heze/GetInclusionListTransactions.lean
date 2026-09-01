@@ -14,7 +14,7 @@ error, a predicate for the first reachable missing timeliness key in the
 through `getInclusionListTransactions`.
 
 `getInclusionListCommittee_run_eq` and `getInclusionListTransactions_run_eq`
-are the principal equations. Error corollaries and helpers stay untagged.
+are the principal equations.
 `collectInclusionListTransactions` is a plain `def`.
 -/
 
@@ -287,7 +287,8 @@ theorem getInclusionListTransactions_run_eq
   simp only [getInclusionListTransactions]
   rw [ForkChoiceStoreRun.run_bind]
 
-/-- A committee error is the transaction-collection error. -/
+/-- If committee construction returns `err`,
+`getInclusionListTransactions` returns the same error. -/
 theorem getInclusionListTransactions_run_error_of_committee
     (store : InclusionListStore map) (state : State) (slot : Slot)
     (onlyTimely : Bool) (runnerStore : Store map)
@@ -301,8 +302,8 @@ theorem getInclusionListTransactions_run_error_of_committee
       = .error err := by
   rw [getInclusionListTransactions_run_eq, herr, ForkChoiceStoreRun.except_bind_error]
 
-/-- A collection error after a successful committee run is the
-transaction-collection error. -/
+/-- If collection returns `err` after committee construction succeeds,
+`getInclusionListTransactions` returns the same error. -/
 theorem getInclusionListTransactions_run_error_of_collect
     (store : InclusionListStore map) (state : State) (slot : Slot)
     (onlyTimely : Bool) (runnerStore postCommitteeStore : Store map)
