@@ -30,9 +30,8 @@ alike. A theorem lands partly when it states one branch, one call pattern, or a
 restatement of a helper rather than the whole claim the row asks for. It then
 carries no `@[characterizes]` tag, and its Property cell carries the fixed
 shape `Landed: … Open: …`: what the landed theorem establishes, then the
-remainder a `characterizes` theorem would have to cover. `getPtc`,
-`shouldExtendPayload`, and `recordPayloadInclusionListSatisfaction` are the
-cases that show it.
+remainder a `characterizes` theorem would have to cover. `getPtc` and
+`shouldExtendPayload` are the cases that show it.
 
 `out of scope` carries its reason in the Property cell, cryptographic
 assumptions being the standing case.
@@ -263,7 +262,7 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
 | `shouldExtendPayload` | `Heze/ForkChoice.lean:320-342` | Landed: under successful preliminary lookup and slot checks, a verified payload with a recorded `false` inclusion-list satisfaction verdict is rejected by the FOCIL gate, with the pure runner state unchanged. Open: the later Gloas accept and reject paths, the missing-record `assert` branch, and the payload/verdict pairing tracked under `onExecutionPayloadEnvelope` | in progress | #63, `Proofs/Heze/ShouldExtendPayload.lean` |
-| `recordPayloadInclusionListSatisfaction` | `Heze/ForkChoice.lean:406-418` | Landed: for successful runs, the recorder stores `isInclusionListSatisfied payload ilTxs` at `root` when `state.slot` is nonzero and timely transaction collection for the previous slot succeeds (the default `onlyTimely := true`), and it leaves the runner state exactly as transaction collection returned it. The recorded result may be either `true` or `false`. Open: the slot-zero case and the transaction-collection failures, including an empty committee or a missing timeliness entry. A later proof must also cover these error paths before the theorem can carry the `characterizes` tag and the function can move beyond the `touched` tier | in progress | #82, `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean` |
+| `recordPayloadInclusionListSatisfaction` | `Heze/ForkChoice.lean:406-418` | Complete `.run` equation at `ForkChoiceStoreRun (Store map)`: slot-zero checked-sub arithmetic error; empty-committee and missing-timeliness collector errors; arbitrary collector-error propagation; successful collection recording `isInclusionListSatisfied payload ilTxs` at `root` and preserving the collector's runner state | proved | follow-up to #82, `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`, `Proofs/Heze/GetInclusionListTransactions.lean` (successful-path origin #82) |
 | `onExecutionPayloadEnvelope` | `Heze/ForkChoice.lean:426-448` | After a successful envelope acceptance, `payloads[root]` and `payloadInclusionListSatisfaction[root]` are written together for the same `root`, so a verified payload is paired with some recorded satisfaction verdict. Open: formally prove this same-root pairing and show that looking up the recorded result can return `false`, as required by `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`. The generic `FcMap` interface provides no rule connecting `insert` with `lookup`. The same-root proof also cannot use the existing `treeMap` lookup theorem, which requires a `TransCmp Root` instance that `Root` does not have | proposed |  |
 | `isPayloadInclusionListSatisfied` | `Heze/ForkChoice.lean:305` | EIP-7805 FOCIL: a payload is accepted only when it carries every transaction that a timely inclusion list requires | proposed |  |
 | `processInclusionList` | `Heze/ForkChoice.lean:170` | At most one stored list per validator per committee, asserted in its docstring and not proved. A conflicting second list leaves the stored list untouched and records the sender as an equivocator for that committee. The handler then ignores later lists from that validator on entry | proposed |  |

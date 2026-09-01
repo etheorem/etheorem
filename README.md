@@ -324,7 +324,7 @@ package stands.
 <!-- proof-coverage:begin -->
 | Package | What a proof covers here | Where it stands |
 | --- | --- | --- |
-| `EthCLSpecs` | the spec functions the fork bodies declare | 8 characterized, 29 touched, of 585 |
+| `EthCLSpecs` | the spec functions the fork bodies declare | 9 characterized, 33 touched, of 585 |
 | `SizzLean` | SSZ properties over the whole `SSZType` universe, gated by a predicate | 5 of 5 properties, over 15 admitted arms; none open |
 | `LeanSha256`, `LeanHazmat*` | nothing to cover: `@[extern]` bindings, and a spec side pinned by the NIST CAVP vectors | 3 named equivalence axioms: `sha256Hash_eq_spec`, `sha256Combine_eq_spec`, `sha256BatchCombine_eq_spec` |
 | `LeanPoseidon` | `permute_eq_permuteRef`, in the standalone `LeanPoseidonProofs` package | outside this run: it pins mathlib of its own |

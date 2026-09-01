@@ -859,17 +859,36 @@ separation.
   payload and its result are recorded under the same root remains tracked by
   the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
 
+- **`Proofs/Heze/GetInclusionListTransactions.lean`** proves the collector
+  run equations used by the recorder characterization. `getInclusionListCommittee_run_eq`
+  is the complete committee `.run` equation on the concatenated
+  `getBeaconCommittee` indices. The empty array throws the exact
+  empty-committee arithmetic error. `FirstReachableMissingTimeliness`
+  names the first reachable missing timeliness key in the `FcMap.fold`
+  entries array. When `onlyTimely = true`, that predicate implies
+  `.error (.missingKey ilRoot)`. Committee and collection errors
+  propagate through `getInclusionListTransactions`. Helper theorems
+  stay untagged. `collectInclusionListTransactions` is a plain `def`.
+
 - **`Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`** proves
-  `recordPayloadInclusionListSatisfaction_run_eq` in
-  `EthCLSpecs.Proofs.Heze`. When `state.slot` is nonzero and timely
-  transaction collection for the previous slot succeeds (the default
-  `onlyTimely := true`), the recorder returns `store` with
+  `recordPayloadInclusionListSatisfaction_run` in
+  `EthCLSpecs.Proofs.Heze` and tags it
+  `@[characterizes EthCLSpecs.Heze.recordPayloadInclusionListSatisfaction]`.
+  The equation is complete at `ForkChoiceStoreRun (Store map)`. Slot zero
+  returns the checked-sub arithmetic error. Otherwise the result matches
+  on `getInclusionListTransactions` at the previous slot with
+  `onlyTimely := true`. A collector error is returned unchanged. A
+  successful collection returns `store` with
   `payloadInclusionListSatisfaction[root]` set to
-  `isInclusionListSatisfied payload ilTxs`. It leaves the runner state exactly
-  as transaction collection returned it. The recorded result may be either
-  `true` or `false`. The theorem does not cover slot zero or
-  transaction-collection failures. What a subsequent lookup returns remains
-  tracked by the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+  `isInclusionListSatisfied payload ilTxs`, paired with the collector's
+  runner state. Public corollaries name slot zero, an arbitrary collector
+  error, an empty committee, and a missing timeliness key. The last two
+  follow from `Proofs/Heze/GetInclusionListTransactions.lean`.
+  `recordPayloadInclusionListSatisfaction_run_eq` restates the successful
+  branch with an arbitrary `postRunnerStore`. The generic `FcMap`
+  interface does not specify how insert affects a later lookup. What a
+  subsequent lookup returns remains tracked by the
+  `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
 
 - **`Proofs/Gloas/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
   single record update, which doubles as the frame condition that no other Store
