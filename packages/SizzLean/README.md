@@ -2,8 +2,9 @@
 
 # SizzLean: serialization, part of a well verified breakfast.
 
-> **Status: early-stage, experimental, single-developer; personal
-> project, not an EF release.** The library passes the upstream
+> **Status: early-stage, experimental; an independent project with
+> contributors from the Ethereum Protocol Fellowship and the Invisible
+> Garden Fellowship; not an EF release.** The library passes the upstream
 > consensus-spec test corpus and the three central theorems are
 > landed on the `BasicSupported` cut, which now covers mixed-field
 > containers whose schema max stays under `MAX_LENGTH` (remaining

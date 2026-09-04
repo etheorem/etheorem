@@ -1,8 +1,10 @@
 # EthCLSpecs
 
-> **Status: experimental, single-developer; personal project, not an EF
-> release. Validated against the pyspec test vectors for three
-> forks (Fulu, Gloas, Heze); machine-checked proofs are future work.**
+> **Status: experimental; an independent project with contributors
+> from the Ethereum Protocol Fellowship and the Invisible Garden
+> Fellowship; not an EF release.** Validated against the pyspec test
+> vectors for three forks (Fulu, Gloas, Heze); machine-checked proofs
+> are future work.**
 
 A Lean 4 implementation of the Ethereum consensus specification for the Fulu,
 Gloas, and Heze forks. It is executable. The SSZ container types, the full

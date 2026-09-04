@@ -605,7 +605,7 @@ def renderRollup (report : Report) : String :=
     #["`SizzLean`", "SSZ properties over the whole `SSZType` universe, gated by a predicate",
       s!"{sszDone} of {report.matrix.size} properties, over {sszArms} admitted arms; open: {String.intercalate ", " openRows.toList}"],
     #["`LeanSha256`, `LeanHazmat*`", "nothing to cover: `@[extern]` bindings, and a spec side pinned by the NIST CAVP vectors",
-      "2 named equivalence axioms: `sha256Hash_eq_spec`, `sha256Combine_eq_spec`"],
+      "3 named equivalence axioms: `sha256Hash_eq_spec`, `sha256Combine_eq_spec`, `sha256BatchCombine_eq_spec`"],
     #["`LeanPoseidon`", "`permute_eq_permuteRef`, in the standalone `LeanPoseidonProofs` package",
       "outside this run: it pins mathlib of its own"],
     #["`EthCLLib`", "out of scope: elaborators and an effect monad",

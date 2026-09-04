@@ -2,8 +2,9 @@
 
 # Etheorem
 
-> **Status: early-stage, experimental, single-developer; personal
-> project, not an EF release.** The libraries here pass the
+> **Status: early-stage, experimental; an independent project with
+> contributors from the Ethereum Protocol Fellowship and the Invisible
+> Garden Fellowship; not an EF release.** The libraries here pass the
 > upstream consensus-spec test corpus and ship the three central
 > SSZ theorems on a `BasicSupported` cut, but production-grade
 > stability and a stable release line are not implied. What is
@@ -316,7 +317,7 @@ package stands.
 | --- | --- | --- |
 | `EthCLSpecs` | the spec functions the fork bodies declare | 8 characterized, 29 touched, of 585 |
 | `SizzLean` | SSZ properties over the whole `SSZType` universe, gated by a predicate | 3 of 5 properties, over 13 admitted arms; open: any `hashTreeRoot` property, cached tree ≡ uncached `hashTreeRoot` |
-| `LeanSha256`, `LeanHazmat*` | nothing to cover: `@[extern]` bindings, and a spec side pinned by the NIST CAVP vectors | 2 named equivalence axioms: `sha256Hash_eq_spec`, `sha256Combine_eq_spec` |
+| `LeanSha256`, `LeanHazmat*` | nothing to cover: `@[extern]` bindings, and a spec side pinned by the NIST CAVP vectors | 3 named equivalence axioms: `sha256Hash_eq_spec`, `sha256Combine_eq_spec`, `sha256BatchCombine_eq_spec` |
 | `LeanPoseidon` | `permute_eq_permuteRef`, in the standalone `LeanPoseidonProofs` package | outside this run: it pins mathlib of its own |
 | `EthCLLib` | out of scope: elaborators and an effect monad | the replay tests and the pyspec vectors are its claim |
 <!-- proof-coverage:end -->
