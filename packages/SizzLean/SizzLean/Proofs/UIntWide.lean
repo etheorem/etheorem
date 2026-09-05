@@ -4,6 +4,7 @@ import SizzLean.Spec.Supported
 import SizzLean.Spec.BasicSupported
 import SizzLean.Spec.MaxByteLength
 import SizzLean.Proofs.SimpAttrs
+import SizzLean.Proofs.Util
 
 /-!
 # `SizzLean.Proofs.UIntWide`: `decode_encode` and size bound for `uintN 128 / 256`
@@ -80,18 +81,11 @@ open SizzLean.Spec (natToLEBytes readNatLE readNatLEAux)
 
 /-! ### ByteArray indexing bridges
 
-`get!` (total) is convenient for stating byte facts without bounds
-proofs; the reader fold uses the bounds-checked `b[i]'h`. These three
-bridge the two forms and read a pushed byte back. -/
-
-/-- `get!` agrees with the bounds-checked `b[i]` when in range.
-`get!` unfolds to `b.data[i]!`, whose panic branch is discharged by
-`getElem!_pos` against the supplied bound. -/
-theorem get!_eq_getElem (b : ByteArray) (i : Nat) (h : i < b.size) :
-    b.get! i = b[i] := by
-  show b.data[i]! = b[i]
-  rw [ByteArray.getElem_eq_getElem_data]
-  exact getElem!_pos b.data i h
+`get!` is total, so it states byte facts without bounds proofs. The
+reader fold uses the bounds-checked `b[i]'h`. The two lemmas below
+bridge the forms and read a pushed byte back, on top of
+`get!_eq_getElem` from `SizzLean.Proofs.Util`. That lemma sits in this
+same namespace, so the uses below read unqualified. -/
 
 /-- Reading a pushed byte below the push point ignores it. -/
 theorem get!_push_lt (a : ByteArray) (b : UInt8) (i : Nat) (h : i < a.size) :

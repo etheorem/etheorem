@@ -96,4 +96,24 @@ example : (@computeDomain fastHasherTag ⟨#[0,0,0,1]⟩ v0 r0).toArray.size = 3
 example : @isValidMerkleBranch fastHasherTag r0 #[] 0 0 r0 = true := by native_decide
 example : @isValidMerkleBranch fastHasherTag r0 #[] 0 0 (Vector.replicate 32 1) = false := by native_decide
 
+-- The length guard (`depth != len(branch)`) rejects on either mismatch, before
+-- the walk hashes anything. The second case is the one a defaulting read would
+-- get wrong: at depth 0 the walk never touches the extra sibling, so it would
+-- reconstruct `r0` and accept.
+example : @isValidMerkleBranch fastHasherTag r0 #[] 1 0 r0 = false := by native_decide
+example : @isValidMerkleBranch fastHasherTag r0 #[r0] 0 0 r0 = false := by native_decide
+
+-- `computeMerkleBranchRoot` reports an out-of-range sibling read as an
+-- `IndexError` carrying the real index and bound. The walk reads levels 0 and 1
+-- from the two siblings, then asks for level 2 against a size-2 array. Only a
+-- direct caller reaches this arm; `isValidMerkleBranch`'s guard runs first.
+--
+-- The result is projected to a `Nat` pair because `Except IndexError (Vector
+-- UInt8 32)` carries no `DecidableEq` instance, so the equation cannot be
+-- stated on the `Except` value itself.
+example :
+    (match @computeMerkleBranchRoot fastHasherTag r0 #[r0, r0] 3 0 with
+     | .error (.indexError idx bound) => some (idx, bound)
+     | .ok _ => none) = some (2, 2) := by native_decide
+
 end EthCLLib.Tests.FrameworkUtils

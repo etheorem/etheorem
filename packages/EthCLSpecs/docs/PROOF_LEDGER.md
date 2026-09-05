@@ -76,7 +76,11 @@ Three claims rest on another row:
 
 - The committee partition rests on the shuffle bijection.
 - Plausible liveness rests on accountable safety.
-- Both `processDeposit` rows rest on the Merkle branch check that
+- Both `processDeposit` rows rest on the Merkle branch check. Its proof module is
+  [`EthCLLib/Proofs/MerkleBranch.lean`](../../EthCLLib/EthCLLib/Proofs/MerkleBranch.lean),
+  which reduces `isValidMerkleBranch` past its length guard to a fold of `branch`
+  over `leaf`. Reading that fold as a statement about a cached SSZ tree still needs
+  the merkleization agreement that
   [`../../SizzLean/docs/PLAN.md`](../../SizzLean/docs/PLAN.md) Phase 5 tracks.
 
 ---

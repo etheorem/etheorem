@@ -1,6 +1,7 @@
 import EthCLLib.Internal.Capture
 import EthCLLib.Internal.ProofLedger
 import EthCLLib.Spec
+import EthCLLib.Proofs
 import EthCLLib.PySpecTests.Interface
 import EthCLLib.PySpecTests.Driver
 
@@ -16,7 +17,8 @@ the generic `PySpecTests` driver. It names no fork; a separate package
 
 The author-facing surface is gathered under `EthCLLib.Spec`, so a spec file
 opens exactly one namespace (`open EthCLLib.Spec`). Internals live under
-`EthCLLib.Internal`; the generic pyspec driver under `EthCLLib.PySpecTests`.
+`EthCLLib.Internal`; the generic pyspec driver under `EthCLLib.PySpecTests`;
+the theorems about the `Spec` functions under `EthCLLib.Proofs`.
 
 One internal module is author-facing all the same: `Internal.ProofLedger` defines
 the `characterizes` attribute a proof carries to claim it states a spec
