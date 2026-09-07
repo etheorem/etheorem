@@ -117,6 +117,25 @@ def natToChunk (n : Nat) : ByteArray :=
     | k + 1, m, acc => go k (m / 256) (acc.push (Nat.toUInt8 (m % 256)))
   go BYTES_PER_CHUNK n .empty
 
+/-- `natToChunk` emits exactly `BYTES_PER_CHUNK` bytes. The mix-in-length width
+proofs read the length chunk's root through this (`Proofs/ShapeWidth.lean`). -/
+theorem natToChunk_size (n : Nat) : (natToChunk n).size = 32 := by
+  -- Generalise over the accumulator: `k` steps add exactly `k` bytes.
+  have go_size : ∀ (k m : Nat) (acc : ByteArray),
+      (natToChunk.go k m acc).size = acc.size + k := by
+    intro k
+    induction k with
+    | zero => intro m acc; rfl
+    | succ j ih =>
+        intro m acc
+        show (natToChunk.go j (m / 256) (acc.push (Nat.toUInt8 (m % 256)))).size
+            = acc.size + (j + 1)
+        rw [ih, ByteArray.size_push]
+        omega
+  show (natToChunk.go BYTES_PER_CHUNK n .empty).size = 32
+  rw [go_size]
+  rfl
+
 /-- Split a `ByteArray` into a list of 32-byte chunks, right-padding
 the final chunk with zeros if its length is not a multiple of
 `BYTES_PER_CHUNK`. Empty input yields the empty list. The result is
@@ -313,6 +332,39 @@ def chunkDepth (n : Nat) : Nat :=
         if cur ≥ n then acc
         else go f (acc + 1) (cur * 2)
   go n 0 1
+
+/-- The loop invariant behind `le_two_pow_chunkDepth`. `chunkDepth.go` carries
+`acc` levels bought and `cur` leaf capacity. `cur = 2 ^ acc` ties them, and
+`n ≤ cur + fuel` says the remaining fuel closes the gap. Induction on `fuel`. -/
+private theorem chunkDepth_go_le (n : Nat) :
+    ∀ (fuel acc cur : Nat), cur = 2 ^ acc → n ≤ cur + fuel →
+      n ≤ 2 ^ chunkDepth.go n fuel acc cur := by
+  intro fuel
+  induction fuel with
+  | zero =>
+      intro acc cur hcur hle
+      subst hcur
+      simpa [chunkDepth.go] using hle
+  | succ f ih =>
+      intro acc cur hcur hle
+      have hcur1 : 1 ≤ cur := by subst hcur; exact Nat.one_le_two_pow
+      simp only [chunkDepth.go]
+      split
+      · -- `cur ≥ n` stops the loop at `acc`, and `cur` is `2 ^ acc`.
+        rename_i hge
+        subst hcur
+        omega
+      · rename_i hlt
+        refine ih (acc + 1) (cur * 2) ?_ ?_
+        · rw [hcur, Nat.pow_succ]
+        · omega
+
+/-- **`chunkDepth` reaches its argument.** `n ≤ 2 ^ chunkDepth n`, so a list of
+`n` items fits the balanced tree `chunkDepth n` levels deep. This is the
+capacity bound `ofSubtrees_isOpenable` (`Proofs/Perfect.lean`) asks for, and
+`Node.ofShape` places container fields at `chunkDepth`-derived depths. -/
+theorem le_two_pow_chunkDepth (n : Nat) : n ≤ 2 ^ chunkDepth n :=
+  chunkDepth_go_le n n 0 1 rfl (by omega)
 
 /-! ### Mix-in helpers -/
 

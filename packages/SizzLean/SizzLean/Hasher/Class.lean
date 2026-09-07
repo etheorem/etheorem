@@ -63,4 +63,16 @@ Naming it explicitly resolves the ambiguity. Downstream files
 example {H : Type} [Hasher H] (b₁ b₂ : ByteArray) : ByteArray :=
   Hasher.combine (H := H) (Hasher.hash (H := H) b₁) b₂
 
+/-- The 32-byte-output contract of `Hasher.combine`, as a class the Merkle-proof
+lemmas take instead of threading `∀ a b, (combine a b).size = 32` through every
+statement.
+
+The class introduces no axiom of its own. Discharging the binder pulls in
+whatever the chosen instance rests on, so add an instance resting on an
+`@[extern]` bridge deliberately. `Prop` rather than `Type` keeps the witness
+proof-irrelevant and erased from compiled code. -/
+class CombineWidth32 (H : Type) [Hasher H] : Prop where
+  /-- `combine` returns exactly 32 bytes on any two inputs. -/
+  size : ∀ a b : ByteArray, (Hasher.combine (H := H) a b).size = 32
+
 end SizzLean
