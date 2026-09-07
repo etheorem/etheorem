@@ -857,9 +857,14 @@ separation.
   recorded. It assumes that the recorded result is present and does not prove
   that it belongs to the matching payload. The successful path that records
   the result of `isInclusionListSatisfied` is proved in
-  `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`. Ensuring that the
-  payload and its result are recorded under the same root remains tracked by
-  the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+  `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`. The successful
+  handler path that writes `blockStates`, `payloads`, and
+  `payloadInclusionListSatisfaction` at the same
+  `signedEnv.message.beaconBlockRoot` is proved in
+  `Proofs/Heze/OnExecutionPayloadEnvelope.lean`. Looking up that recorded
+  result, including a later `false` used by
+  `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`, remains tracked
+  by the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
 
 - **`Proofs/Heze/GetInclusionListTransactions.lean`** proves the collector
   run equations used by the recorder characterization.
@@ -893,9 +898,23 @@ separation.
   follow from `Proofs/Heze/GetInclusionListTransactions.lean`.
   `recordPayloadInclusionListSatisfaction_run_eq` restates the successful
   branch with an arbitrary `postRunnerStore`. The generic `FcMap`
-  interface does not specify how insert affects a later lookup. What a
-  subsequent lookup returns remains tracked by the
-  `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+  interface does not specify how insert affects a later lookup.
+
+- **`Proofs/Heze/OnExecutionPayloadEnvelope.lean`** proves
+  `onExecutionPayloadEnvelope_run_eq` in `EthCLSpecs.Proofs.Heze`. When the
+  `blockStates` lookup, data-availability check,
+  `verifyExecutionPayloadEnvelope state signedEnv = .ok warm`, nonzero
+  `state.slot`, and timely collection all succeed, the handler returns the
+  original store with three inserts at `signedEnv.message.beaconBlockRoot`:
+  `blockStates` to `warm`, `payloads` to the envelope, and
+  `payloadInclusionListSatisfaction` to
+  `isInclusionListSatisfied envelope.payload ilTxs`. The proof reuses
+  `recordPayloadInclusionListSatisfaction_run_eq`. The final `set` keeps the
+  recorder's explicit store and discards its intermediate runner state. An
+  insert may overwrite a prior entry at that root. The theorem does not
+  conclude a later lookup or `isPayloadVerified` on the final store, because
+  `FcMap` has no insert/lookup or insert/contains law. Rejection paths stay
+  open, so the theorem carries no `characterizes` tag.
 
 - **`Proofs/Gloas/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
   single record update, which doubles as the frame condition that no other Store

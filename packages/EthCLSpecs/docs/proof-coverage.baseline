@@ -19,9 +19,12 @@ tier1 EthCLSpecs.Heze.computeEpochAtSlot
 tier1 EthCLSpecs.Heze.getBeaconCommittee
 tier1 EthCLSpecs.Heze.getCommitteeCountPerSlot
 tier1 EthCLSpecs.Heze.getCurrentSlot
+tier1 EthCLSpecs.Heze.isDataAvailable
 tier1 EthCLSpecs.Heze.isInclusionListSatisfied
 tier1 EthCLSpecs.Heze.isPayloadVerified
+tier1 EthCLSpecs.Heze.onExecutionPayloadEnvelope
 tier1 EthCLSpecs.Heze.shouldExtendPayload
+tier1 EthCLSpecs.Heze.verifyExecutionPayloadEnvelope
 tier2 EthCLSpecs.Gloas.canBuilderCoverBid
 tier2 EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex
 tier2 EthCLSpecs.Gloas.initiateBuilderExit
