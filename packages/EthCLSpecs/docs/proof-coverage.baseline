@@ -2,6 +2,7 @@
 # Every line is a claim `just proof-coverage-check` enforces exactly.
 tier1 EthCLSpecs.Fulu.computeStartSlotAtEpoch
 tier1 EthCLSpecs.Fulu.currentEpochOf
+tier1 EthCLSpecs.Fulu.modBalance
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot
 tier1 EthCLSpecs.Gloas.currentEpochOf
 tier1 EthCLSpecs.Gloas.getCurrentSlot
@@ -21,6 +22,8 @@ tier1 EthCLSpecs.Heze.isInclusionListSatisfied
 tier1 EthCLSpecs.Heze.isPayloadVerified
 tier1 EthCLSpecs.Heze.recordPayloadInclusionListSatisfaction
 tier1 EthCLSpecs.Heze.shouldExtendPayload
+tier2 EthCLSpecs.Fulu.decreaseBalance
+tier2 EthCLSpecs.Fulu.increaseBalance
 tier2 EthCLSpecs.Gloas.canBuilderCoverBid
 tier2 EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex
 tier2 EthCLSpecs.Gloas.initiateBuilderExit
