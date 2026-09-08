@@ -135,8 +135,14 @@ theorem size_serialize_eq_fixedByteSize :
     -- Reduce `(.vector t n).fixedByteSize` to `t.fixedByteSize * n`, then mul_comm.
     simp only [SSZType.fixedByteSize]
     rw [Nat.mul_comm]
+  | vectorVar _ _ h_var _ =>
+    -- `(.vector t n).isFixedSize = t.isFixedSize = false`; absurd.
+    simp [SSZType.isFixedSize, h_var] at h_fixed
   | listFixed _ _ =>
     -- `(.list t cap).isFixedSize = false`; `h_fixed : false = true` is absurd.
+    simp [SSZType.isFixedSize] at h_fixed
+  | listVar _ _ _ =>
+    -- `(.list t cap).isFixedSize = false`; absurd like `listFixed`.
     simp [SSZType.isFixedSize] at h_fixed
   | bitvector _h_pos =>
     rename_i n
