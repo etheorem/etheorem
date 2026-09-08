@@ -14,11 +14,12 @@ the *constructor* (its classify mode), which is typed:
 
 | Constructor | Classify-mode meaning |
 |---|---|
-| `assert` | an expected rejection; an invalid vector should hit one |
+| `assert` | an expected rejection, unless the case's own wrapper catches only `ValueError` |
 | `todo` | an unimplemented branch we intend to fill; a work-queue item, reported `xfail` |
 | `outOfScope` | a branch we deliberately do not model; reported `skip`, not counted as work |
 | `outOfBounds` / `decodeFailure` | a smell; well-formed input should not hit these, though the reference catches `IndexError` |
-| `missingKey` / `arithmetic` | a fault the reference propagates rather than catches, so it never rejects a vector |
+| `missingKey` | a fault the reference propagates rather than catches, so it never rejects a vector |
+| `arithmetic` | the same, except under a case whose own wrapper catches `ValueError` |
 
 `todo` and `outOfScope` both name a branch that does not run, the distinction is
 intent: a `todo` is expected to pass once the work-queue reaches it, an
@@ -49,7 +50,8 @@ inductive StateTransitionError where
   `expect_assertion_error` does NOT catch (it catches only `AssertionError` and `IndexError`,
   `context.py:424-435`). So it is not an expected rejection but a genuine error, distinct from a
   guarded `assert`: it `classify`s as `ClassifyBucket.uncaughtFault`, so an invalid vector that
-  rejects this way FAILS rather than passing. `descr` names the faulting op, diagnostic only. The
+  rejects this way fails, unless the case's own wrapper catches `ValueError` (`RunnerCaughtSet`).
+  `descr` names the faulting op, diagnostic only. The
   standing case is `get_balance_after_withdrawals`' `state.balances[i] - withdrawn`
   (`capella/beacon-chain.md:378`), a bare subtraction. On the store machine the same fault rides
   in wrapped as `.transition (.arithmetic …)`, e.g. Heze's `Slot(state.slot - 1)` underflow and
@@ -89,23 +91,25 @@ from its diagnostic string. -/
 inductive ClassifyBucket where
   /-- The case matched (a valid vector's post-state root, or expected output). -/
   | passing
-  /-- An `assert` reject; correct for a vector marked invalid. -/
+  /-- A reject the case's own wrapper catches; correct for a vector marked invalid. Usually an
+  `assert`, and an `.arithmetic` fault under a wrapper that catches `ValueError`. -/
   | expectedRejection
   /-- A `todo` reject; an unimplemented work-queue branch. Reported `xfail`. -/
   | todo
   /-- An `outOfScope` reject; a branch we deliberately do not model. Reported `skip`. -/
   | outOfScope
   /-- An `outOfBounds` / `decodeFailure` reject; a likely framework or spec bug. For an invalid
-  vector, an `outOfBounds` (`IndexError`) still counts as a rejection the reference accepts
-  (`context.py`'s `expect_assertion_error` catches `IndexError`), so the driver passes it
-  (flagged). -/
+  vector, an `outOfBounds` (`IndexError`) counts as a rejection where the case's own wrapper
+  catches it (`context.py`'s `expect_assertion_error` does), so the driver passes it (flagged).
+  Under a wrapper that catches only `ValueError` it fails, still flagged. -/
   | likelyBug
   /-- An uncaught Python fault the reference runner does NOT catch (a `uint64` `ValueError` from
   `.arithmetic`, a `ZeroDivisionError`, or a bare-`Dict` `KeyError` from `.missingKey`). Reports
-  as a bug like `likelyBug`, but unlike `likelyBug` it is never a valid rejection of an invalid
-  vector: the reference would propagate it as a genuine error, so the driver fails an invalid
-  vector that rejects this way rather than passing it. This is the reporting-side counterpart of
-  `isExpectedRejection` excluding `.missingKey` and `.transition (.arithmetic …)`. -/
+  as a bug like `likelyBug`. It is a valid rejection only where the case's own wrapper catches
+  the fault. Under `expect_assertion_error` the reference propagates it as a genuine error, so
+  the driver fails the vector; under a wrapper that catches `ValueError` an `.arithmetic` fault
+  passes instead. This is the reporting-side counterpart of `isExpectedRejection` excluding
+  `.missingKey` and `.transition (.arithmetic …)`. -/
   | uncaughtFault
   deriving Inhabited, Repr, DecidableEq
 
@@ -171,6 +175,45 @@ this from `isExpectedRejection`. -/
 def StoreTransitionError.isIndexMiss : StoreTransitionError → Bool
   | .transition (.outOfBounds _ _) => true
   | _ => false
+
+/-- The Python exceptions a case's reference wrapper catches. This decides which rejects
+count as an invalid vector's expected raise. It is the state machine's counterpart to
+`FcStepKind` (`PySpecTests/Interface.lean`), which answers the same question one level down, per
+fork-choice step.
+
+The pinned reference holds two sets. It scores almost every invalid vector through
+`expect_assertion_error` (`context.py:424-435`), which catches `AssertionError` and `IndexError`.
+One test never reaches that helper. `test_invalid_large_withdrawable_epoch`
+(`test/phase0/epoch_processing/test_process_registry_updates.py`) writes its own
+`except ValueError`. It raises `AssertionError("expected ValueError")` when no `ValueError`
+arrives. So that test passes on the uncaught `uint64` fault.
+
+`admits` matches every reject constructor. `FcStepKind` closes on a wildcard. This one does not,
+so a new constructor breaks the build here. -/
+inductive RunnerCaughtSet where
+  /-- `expect_assertion_error`: `AssertionError` and `IndexError`. -/
+  | assertionAndIndex
+  /-- `test_invalid_large_withdrawable_epoch`'s own `except ValueError` wrapper. -/
+  | valueError
+  deriving DecidableEq, Repr
+
+/-- Whether `e` is the expected raise of an invalid vector under this caught set.
+
+`.assert` is the `AssertionError` and `.outOfBounds` is the `IndexError`, so
+`expect_assertion_error` takes both. `.arithmetic` is the `ValueError`. `expect_assertion_error`
+lets it escape, and the `except ValueError` wrapper catches it. `.todo` and `.outOfScope` record
+our own deferrals, and the reference raises neither. -/
+def RunnerCaughtSet.admits : RunnerCaughtSet → StateTransitionError → Bool
+  | .assertionAndIndex, .assert _        => true
+  | .assertionAndIndex, .outOfBounds _ _ => true
+  | .assertionAndIndex, .arithmetic _    => false
+  | .assertionAndIndex, .todo _          => false
+  | .assertionAndIndex, .outOfScope _    => false
+  | .valueError,        .arithmetic _    => true
+  | .valueError,        .assert _        => false
+  | .valueError,        .outOfBounds _ _ => false
+  | .valueError,        .todo _          => false
+  | .valueError,        .outOfScope _    => false
 
 /-- Build the `assert` / `todo` reject of an error type from its diagnostic descriptor.
 The `assert` macro and the `todo` helper resolve `E` from the section's monad, so the
