@@ -8,6 +8,7 @@ import EthCLSpecs.Proofs.Gloas.InitiateBuilderExit
 import EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation
 import EthCLSpecs.Proofs.Gloas.ProcessOperations
 import EthCLSpecs.Proofs.Gloas.Run
+import EthCLSpecs.Proofs.Gloas.Time
 import EthCLSpecs.Proofs.Gloas.UpdateCheckpoints
 
 /-!
@@ -55,6 +56,9 @@ Re-exports:
   opaque and may modify state.
 * `EthCLSpecs.Proofs.Gloas.Run`: `GloasRun`, the state-transition monad every Gloas
   proof in this directory pins its theorems to.
+* `EthCLSpecs.Proofs.Gloas.Time`: the inherited `computeEpochAtSlot` and
+  `computeStartSlotAtEpoch` at Gloas. Each theorem takes the Fulu proof term
+  through the `Downgrade` bridge.
 * `EthCLSpecs.Proofs.Gloas.UpdateCheckpoints`: `Gloas.updateCheckpoints` checkpoint
   monotonicity, the justified/finalized epoch never decreases. Its theorems sit
   in `EthCLSpecs.Proofs.Gloas`, since `updateCheckpoints` exists in both forks.
