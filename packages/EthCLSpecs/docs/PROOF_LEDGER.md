@@ -227,7 +227,7 @@ Functions whose entire purpose is the Fulu-to-Gloas upgrade itself: preserving s
 | --- | --- | --- | --- | --- |
 | `upgradeToGloas` | `Gloas/Upgrade.lean:83-149` | Preserves inherited state while correctly initializing the new ePBS state | proposed |  |
 | `computePtcFromFulu` | removed | Out of scope: removed at v1.7.0-beta.4. `upgrade_to_gloas` now builds the window over the Gloas post-state with Gloas's own `compute_ptc`, so no Fulu-side twin is left to agree with it | out of scope |  |
-| `initializePtcWindow` | `Gloas/Operations.lean:198-210` | Each entry is an `Except` carrying its own two faults: the entry's checked add `current_epoch + e` rejects with the `.arithmetic` fault exactly at `current_epoch = UINT64_MAX`, and the `compute_ptc` read rejects a slot with no committee members; `completeUpgradeToGloas` maps the entries in index order, so the first rejecting slot surfaces. `initializePtcWindow_eq` states the whole vector equation and carries the `@[characterizes]` tag; `initializePtcWindow_getElem` joins the two regions at the element level. A `forkdef` over the Gloas state since v1.7.0-beta.4, so it is a spec function in the coverage report's denominator; alpha.12 kept it a plain `def` over the Fulu pre-state. The window's slots are exact below the same `2 ^ 59` epoch bound the `computeEpochAtSlot` row records, because the slots come from `computeStartSlotAtEpoch`'s bare multiply; at the bound the multiply wraps where the spec raises | proved | #26, `Proofs/Gloas/InitializePtcWindow.lean` |
+| `initializePtcWindow` | `Gloas/Operations.lean:198-210` | Each entry is an `Except` carrying its own three faults: the entry's checked add `current_epoch + e` rejects with the `.arithmetic` fault exactly at `current_epoch = UINT64_MAX`, the start slot's checked multiply rejects with `.arithmetic` where the spec raises, and the `compute_ptc` read rejects a slot with no committee members; `completeUpgradeToGloas` maps the entries in index order, so the first rejecting slot surfaces. `initializePtcWindow_eq` states the whole vector equation and carries the `@[characterizes]` tag; `initializePtcWindow_getElem` joins the two regions at the element level. A `forkdef` over the Gloas state since v1.7.0-beta.4, so it is a spec function in the coverage report's denominator; alpha.12 kept it a plain `def` over the Fulu pre-state | proved | #26, `Proofs/Gloas/InitializePtcWindow.lean` |
 
 ### Candidates needing a sharper statement
 
@@ -248,8 +248,8 @@ Functions whose natural theorem is an inverse relationship with another Fulu fun
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `computeEpochAtSlot` | `Fulu/Time.lean:33` | `computeEpochAtSlot (computeStartSlotAtEpoch e) = e`, for `e < 2^59`. The raw `UInt64` multiply wraps above `2^59`, so the identity needs that bound | proposed |  |
-| `computeStartSlotAtEpoch` | `Fulu/Time.lean:36` | The same identity, seen from this side. The round trip is the row above | proposed |  |
+| `computeEpochAtSlot` | `Fulu/Time.lean:29` | `computeEpochAtSlot (computeStartSlotAtEpoch e) = e`, conditional on `e * SLOTS_PER_EPOCH < 2^64` at a symbolic preset. Closed unconditionally at both shipped presets, for `e < 2^61` at minimal and `e < 2^59` at mainnet | proved | `Proofs/Fulu/Time.lean` |
+| `computeStartSlotAtEpoch` | `Fulu/Time.lean:41-43` | The same identity, seen from this side. The round trip is the row above | proved | `Proofs/Fulu/Time.lean` |
 
 ### Bounds and termination properties
 
@@ -265,6 +265,9 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | `processRegistryUpdates` | `Fulu/EpochProcessing.lean:179` | The registry never exceeds `VALIDATOR_REGISTRY_LIMIT` | proposed |  |
 | `getBeaconCommittee` | `Fulu/Committees.lean:82` | An active-validator count in `[32, 2^22]` implies every committee size is in `(0, MAX_VALIDATORS_PER_COMMITTEE]`. Dafny proves the same bound in `ActiveValidatorBounds` | proposed |  |
 | `computeBalanceWeightedSelection` | `Fulu/Committees.lean:117` | An `.ok` result holds exactly `size` indices, and the run rejects with `.arithmetic` at the `2**64` counter bound. `cbwsAux` is well-founded, so `rfl` and `decide` do not unfold it, and the proof goes through `cbwsAux.induct` and its equation lemmas | proposed |  |
+| `computeStartSlotAtEpoch` | `Fulu/Time.lean:41-43` | The function multiplies an epoch back to a slot. It faults with `.arithmetic` above `2^64`. It never faults on an epoch derived from a slot. The claim is open where the caller supplies the epoch | proved | `Proofs/Fulu/Time.lean` |
+| `computeStartSlotAtEpoch` | `Gloas/EpochProcessing.lean:34` | The Fulu claims, restated at Gloas's own constant. Each theorem takes the Fulu proof term through the `Downgrade` bridge | proved | `Proofs/Gloas/Time.lean` |
+| `computeStartSlotAtEpoch` | `Heze/EpochProcessing.lean:24` | The same claims at Heze's constant. The bridge reaches one fork up, so the proof terms come from Gloas | proved | `Proofs/Heze/Time.lean` |
 
 ### Safety and invariant preservation
 
@@ -279,6 +282,14 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | `processRegistryUpdates` | `Fulu/EpochProcessing.lean:179` | One third of a joint claim with `initiateValidatorExit` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
 | `initiateValidatorExit` | `Fulu/RegistryUpdates.lean:114` | One third of a joint claim with `processRegistryUpdates` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
 | `computeExitEpochAndUpdateChurn` | `Fulu/RegistryUpdates.lean:78` | One third of a joint claim with `processRegistryUpdates` and `initiateValidatorExit`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
+
+### Monotonicity properties
+
+Functions whose output only moves in one direction as their input grows or accumulates: never decreasing, never shrinking, never losing a previously-added element.
+
+| Function | Location | Property | Status | Tracking |
+| --- | --- | --- | --- | --- |
+| `computeEpochAtSlot` | `Fulu/Time.lean:29` | The epoch never decreases as the slot grows. A `uint64` division by a positive constant, so the proof needs no preset bound | proved | `Proofs/Fulu/Time.lean` |
 
 ### State-transition correctness
 
