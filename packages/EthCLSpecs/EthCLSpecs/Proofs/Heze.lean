@@ -11,6 +11,7 @@ import EthCLSpecs.Proofs.Heze.PayloadTiebreak
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
+import EthCLSpecs.Proofs.Heze.Time
 
 /-!
 # `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems (index)
@@ -94,4 +95,7 @@ Re-exports:
   existing recorded-unsatisfied FOCIL rejection
   (`shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`), and the
   named prefix, FOCIL, vote, and inherited-Gloas-tail corollaries.
+* `EthCLSpecs.Proofs.Heze.Time`: the inherited `computeEpochAtSlot` and
+  `computeStartSlotAtEpoch` at Heze. The `Downgrade` bridge reaches one fork up,
+  so each theorem takes the Gloas proof term.
 -/
