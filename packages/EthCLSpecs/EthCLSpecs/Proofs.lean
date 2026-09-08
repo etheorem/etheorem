@@ -1,3 +1,4 @@
+import EthCLSpecs.Proofs.Fulu
 import EthCLSpecs.Proofs.Gloas
 import EthCLSpecs.Proofs.Heze
 import EthCLSpecs.Proofs.Run
@@ -35,6 +36,7 @@ target fork's directory.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Fulu`: the Fulu fork's theorems, one module per subject.
 * `EthCLSpecs.Proofs.Gloas`: the Gloas fork's theorems, one module per subject.
 * `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems, one module per subject.
 * `EthCLSpecs.Proofs.Run`: `run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
