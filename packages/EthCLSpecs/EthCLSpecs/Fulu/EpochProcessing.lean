@@ -146,12 +146,14 @@ forkdef getInactivityPenaltyDeltas (state : State) : Array Gwei := Id.run do
       penalties := penalties.set! i (UInt64.ofNat (num / denom))
   return penalties
 
-/-- Apply per-validator `(rewards, penalties)` to balances. -/
-forkdef applyDeltas (rewards penalties : Array Gwei) (state : State) : State := Id.run do
+/-- Apply per-validator `(rewards, penalties)` to balances. `increaseBalance` rejects on a
+`uint64` overflow, so the fold runs in `StateTransition`. -/
+forkdef applyDeltas (rewards penalties : Array Gwei) (state : State) :
+    StateTransition State := do
   let mut state := state
   for i in [0 : (sszGet state validators).size] do
-    state := increaseBalance state (UInt64.ofNat i) (rewards[i]!)
-    state := decreaseBalance state (UInt64.ofNat i) (penalties[i]!)
+    state ← increaseBalance state (UInt64.ofNat i) (rewards[i]!)
+    state ← decreaseBalance state (UInt64.ofNat i) (penalties[i]!)
   return state
 
 /-- `process_rewards_and_penalties`. -/
@@ -164,8 +166,8 @@ forkdef processRewardsAndPenalties : StateTransition Unit := do
     let zeros := Array.replicate (sszGet state validators).size (0 : Gwei)
 
     for (rewards, penalties) in flagDeltas do
-      modifyState (applyDeltas rewards penalties)
-    modifyState (applyDeltas zeros inactPenalties)
+      set (← applyDeltas rewards penalties (← get))
+    set (← applyDeltas zeros inactPenalties (← get))
 
 /-! ## Registry updates -/
 
@@ -198,13 +200,12 @@ forkdef processSlashings : StateTransition Unit := do
   let increment := Const.effectiveBalanceIncrementG
   let penaltyPerIncrement := adjusted / (totalBalance / increment)
 
-  modifyState fun state => Id.run do
-    let mut state := state
-    for i in [0 : (sszGet state validators).size] do
-      let validator := sszGet state validators[i]!
-      if validator.slashed && epoch + (UInt64.ofNat Const.epochsPerSlashingsVector / 2) == validator.withdrawableEpoch then
-        state := decreaseBalance state (UInt64.ofNat i) (penaltyPerIncrement * (validator.effectiveBalance / increment))
-    return state
+  let mut state := state
+  for i in [0 : (sszGet state validators).size] do
+    let validator := sszGet state validators[i]!
+    if validator.slashed && epoch + (UInt64.ofNat Const.epochsPerSlashingsVector / 2) == validator.withdrawableEpoch then
+      state ← decreaseBalance state (UInt64.ofNat i) (penaltyPerIncrement * (validator.effectiveBalance / increment))
+  set state
 
 /-! ## Pending deposits (Electra deposit queue) -/
 
@@ -300,7 +301,8 @@ forkdef pcLoop (cons : Array PendingConsolidation) (nextEpoch : Epoch) : StateTr
       else
         let srcBal ← sszGetIdx (sszGet state balances) pc.sourceIndex.toNat
         let amt := umin srcBal src.effectiveBalance
-        modifyState fun state => increaseBalance (decreaseBalance state pc.sourceIndex amt) pc.targetIndex amt
+        let state ← decreaseBalance state pc.sourceIndex amt
+        set (← increaseBalance state pc.targetIndex amt)
         return .next (npc + 1)
 
 /-- `process_pending_consolidations`. -/
