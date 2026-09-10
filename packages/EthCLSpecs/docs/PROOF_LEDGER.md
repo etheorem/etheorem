@@ -30,8 +30,9 @@ alike. A theorem lands partly when it states one branch, one call pattern, or a
 restatement of a helper rather than the whole claim the row asks for. It then
 carries no `@[characterizes]` tag, and its Property cell carries the fixed
 shape `Landed: … Open: …`: what the landed theorem establishes, then the
-remainder a `characterizes` theorem would have to cover. `getPtc` and
-`shouldExtendPayload` are the cases that show it.
+remainder a `characterizes` theorem would have to cover. `getPtc`,
+`shouldExtendPayload`, and `onExecutionPayloadEnvelope` are the cases
+that show it.
 
 `out of scope` carries its reason in the Property cell, cryptographic
 assumptions being the standing case.
