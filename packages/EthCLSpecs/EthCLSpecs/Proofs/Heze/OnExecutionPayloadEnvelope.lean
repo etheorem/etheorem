@@ -43,7 +43,7 @@ namespace EthCLSpecs.Proofs.Heze
 
 open EthCLSpecs.Proofs (ForkChoiceStoreRun)
 open EthCLLib.Spec (HasherTag MapKind FcMap ExecutionEngine DataAvailability CryptoBackend)
-open EthCLSpecs.Heze (Preset Config Store State Root ExecutionPayload ExecutionRequests
+open EthCLSpecs.Heze (Preset Config Store State ExecutionPayload ExecutionRequests
   Transaction SignedExecutionPayloadEnvelope onExecutionPayloadEnvelope
   verifyExecutionPayloadEnvelope getInclusionListTransactions isInclusionListSatisfied
   isDataAvailable)
@@ -59,7 +59,7 @@ inserts and unit. The root and payload come from `signedEnv.message`.
 `warm` is the value of that `verifyExecutionPayloadEnvelope` success premise.
 The theorem does not mention `isPayloadVerified` on the resulting store.
 -/
-theorem onExecutionPayloadEnvelope_run_eq
+theorem onExecutionPayloadEnvelope_run_eq_of_success
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
     [DataAvailability] [CryptoBackend] :
