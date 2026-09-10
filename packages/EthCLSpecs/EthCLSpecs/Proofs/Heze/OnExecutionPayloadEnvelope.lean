@@ -5,36 +5,28 @@ import EthCLSpecs.Proofs.StoreRun
 /-!
 # Accepting an execution payload envelope
 
-Heze's `onExecutionPayloadEnvelope` (`Heze/ForkChoice.lean:426-448`) verifies a
-revealed payload envelope and records it. After the block-state lookup, the
-data-availability check, `verifyExecutionPayloadEnvelope`, and inclusion-list
-recording succeed, the handler writes three maps at
-`signedEnv.message.beaconBlockRoot`.
+Heze's `onExecutionPayloadEnvelope` (`Heze/ForkChoice.lean:426-448`)
+verifies and records a revealed payload envelope. This module proves its
+successful-path `ForkChoiceStoreRun` equation.
 
-This module proves that successful run as one `ForkChoiceStoreRun` equation.
-The final store is the original store with:
+After the block-state lookup, data-availability check, envelope verification,
+and inclusion-list collection succeed, the final runner state is the original
+store with three `FcMap.insert` operations at
+`signedEnv.message.beaconBlockRoot`:
 
-- `blockStates[root]` updated to the warm state returned by
-  `verifyExecutionPayloadEnvelope`;
-- `payloads[root]` updated to the envelope;
-- `payloadInclusionListSatisfaction[root]` updated to
-  `isInclusionListSatisfied envelope.payload ilTxs`.
+- `blockStates` receives the warm state returned by verification;
+- `payloads` receives `signedEnv.message`;
+- `payloadInclusionListSatisfaction` receives
+  `isInclusionListSatisfied signedEnv.message.payload ilTxs`.
 
-The three inserts use the same root. That is the structural same-root pairing.
-An insert replaces a prior entry at that root when one exists. The theorem
-does not claim the key was absent.
+The inserts may overwrite existing entries. The proof composes
+`recordPayloadInclusionListSatisfaction_run_eq`; the handler's final `set`
+overwrites the collector's intermediate runner state with the updated explicit
+store.
 
-`FcMap` has no insert/lookup law and no insert/contains law. The theorem
-therefore does not conclude that a later lookup returns the written value, and
-it does not conclude `isPayloadVerified` on the final store.
-`isPayloadVerified` is `FcMap.contains` on `payloads`.
-
-The proof reuses `recordPayloadInclusionListSatisfaction_run_eq`. The recorder
-returns an updated explicit store and a collector runner state. The handler's
-final `set` keeps the explicit store and discards that runner state.
-
-Slot zero, a missing block-state entry, a failed data-availability check, a
-failed `verifyExecutionPayloadEnvelope`, and a collector error stay open.
+Because `FcMap` provides neither insert/lookup nor insert/contains laws, the
+theorem makes no subsequent-lookup or `isPayloadVerified` claim. Rejection
+paths remain open.
 -/
 
 set_option autoImplicit false
@@ -49,17 +41,12 @@ open EthCLSpecs.Heze (Preset Config Store State ExecutionPayload ExecutionReques
   isDataAvailable)
 
 /--
-If `blockStates` holds `state` at `signedEnv.message.beaconBlockRoot`, data
-availability holds at that root,
-`verifyExecutionPayloadEnvelope state signedEnv = .ok warm`, `state.slot` is
-nonzero, and timely inclusion-list collection succeeds, then
-`onExecutionPayloadEnvelope` returns the original store with three same-root
-inserts and unit. The root and payload come from `signedEnv.message`.
-
-`warm` is the value of that `verifyExecutionPayloadEnvelope` success premise.
-The theorem does not mention `isPayloadVerified` on the resulting store.
+Successful-path run equation for `onExecutionPayloadEnvelope`. When the
+handler's lookup and checks succeed and timely inclusion-list collection
+returns `ilTxs`, the final store contains the three structural same-root
+inserts described above.
 -/
-theorem onExecutionPayloadEnvelope_run_eq_of_success
+theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
     [DataAvailability] [CryptoBackend] :
