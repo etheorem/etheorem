@@ -72,7 +72,7 @@ theorem onExecutionPayloadEnvelope_run_eq
       isDataAvailable signedEnv.message.beaconBlockRoot = true →
       verifyExecutionPayloadEnvelope state signedEnv = .ok warm →
       sszGet state slot ≠ 0 →
-      (getInclusionListTransactions (map := map)
+      (getInclusionListTransactions
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store.inclusionListStore state (sszGet state slot - 1)
           (onlyTimely := true)).run store
