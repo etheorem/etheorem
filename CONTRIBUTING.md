@@ -170,7 +170,7 @@ about `Heze.f`, and the per-fork directory is what keeps the two claims apart.
    open, in the fixed shape `Landed: … Open: …`. The next author reads the
    remainder off the row, and a grep for `Open:` lists every ledger entry that
    still owes work. `getPtc`, `shouldExtendPayload`, and
-   `recordPayloadInclusionListSatisfaction` are the worked cases.
+   `onExecutionPayloadEnvelope` are the worked cases.
 
    Touched does not imply a row. A helper that only another function's theorem
    reads, `isInclusionListSatisfied` inside the

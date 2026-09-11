@@ -826,12 +826,14 @@ separation.
 - **`Proofs/Gloas/Run.lean`** names `GloasRun`, the pure `StateT`/`Except`
   state-transition monad the Gloas proofs pin their `forkdef` bodies to.
   `StateTransition` is a parameter of a fork body, so every run theorem has to fix
-  it; this fixes it once.
+  it; this fixes it once. Its `.run` / `Except.bind` names are aliases of the
+  shared lemmas in `Proofs/StoreRun.lean`.
 
 - **`Proofs/StoreRun.lean`** names `ForkChoiceStoreRun`, the shared pure
   store-machine runner every fork's fork-choice proofs pin at that fork's
-  `Store`. It sits beside the per-fork directories because the runner is a monad
-  over an arbitrary store type and so belongs to no fork.
+  `Store`. It also holds the generic `StateT`/`Except` `.run` lemmas. It sits
+  beside the per-fork directories because the runner is a monad over an
+  arbitrary store type and so belongs to no fork.
 
 - **`Proofs/Gloas/IsValidIndexedPayloadAttestation.lean`** proves a two-layer,
   backend-generic characterization of `isValidIndexedPayloadAttestation`. Layer 1
@@ -855,21 +857,57 @@ separation.
   recorded. It assumes that the recorded result is present and does not prove
   that it belongs to the matching payload. The successful path that records
   the result of `isInclusionListSatisfied` is proved in
-  `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`. Ensuring that the
-  payload and its result are recorded under the same root remains tracked by
-  the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+  `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`. The successful
+  handler path that writes `blockStates`, `payloads`, and
+  `payloadInclusionListSatisfaction` at the same
+  `signedEnv.message.beaconBlockRoot` is proved in
+  `Proofs/Heze/OnExecutionPayloadEnvelope.lean`. Looking up that recorded
+  result, including a later `false` used by
+  `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`, remains tracked
+  by the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+
+- **`Proofs/Heze/GetInclusionListTransactions.lean`** proves the collector
+  run equations used by the recorder characterization.
+  `getInclusionListCommittee_run_eq` is the complete committee `.run`
+  equation on the concatenated `getBeaconCommittee` indices, tagged
+  `@[characterizes EthCLSpecs.Heze.getInclusionListCommittee]`.
+  `getInclusionListTransactions_run_eq` is the whole-operation bind of
+  that committee run to collection at the committee's stored lists, tagged
+  `@[characterizes EthCLSpecs.Heze.getInclusionListTransactions]`.
+  The empty array throws the exact empty-committee arithmetic error.
+  `FirstReachableMissingTimeliness` names the first reachable missing
+  timeliness key in the `FcMap.fold` entries array. When `onlyTimely = true`,
+  that predicate implies `.error (.missingKey ilRoot)`. Committee and
+  collection errors propagate through `getInclusionListTransactions`.
+  Those error corollaries stay untagged.
+  `collectInclusionListTransactions` is a plain `def`.
 
 - **`Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`** proves
-  `recordPayloadInclusionListSatisfaction_run_eq` in
-  `EthCLSpecs.Proofs.Heze`. When `state.slot` is nonzero and timely
-  transaction collection for the previous slot succeeds (the default
-  `onlyTimely := true`), the recorder returns `store` with
+  `recordPayloadInclusionListSatisfaction_run` in
+  `EthCLSpecs.Proofs.Heze` and tags it
+  `@[characterizes EthCLSpecs.Heze.recordPayloadInclusionListSatisfaction]`.
+  The equation is complete at `ForkChoiceStoreRun (Store map)`. Slot zero
+  returns the checked-sub arithmetic error. Otherwise the result matches
+  on `getInclusionListTransactions` at the previous slot with
+  `onlyTimely := true`. A collector error is returned unchanged. A
+  successful collection returns `store` with
   `payloadInclusionListSatisfaction[root]` set to
-  `isInclusionListSatisfied payload ilTxs`. It leaves the runner state exactly
-  as transaction collection returned it. The recorded result may be either
-  `true` or `false`. The theorem does not cover slot zero or
-  transaction-collection failures. What a subsequent lookup returns remains
-  tracked by the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+  `isInclusionListSatisfied payload ilTxs`, paired with the collector's
+  runner state. Public corollaries name slot zero, an arbitrary collector
+  error, an empty committee, and a missing timeliness key. The last two
+  follow from `Proofs/Heze/GetInclusionListTransactions.lean`.
+  `recordPayloadInclusionListSatisfaction_run_eq` restates the successful
+  branch with an arbitrary `postRunnerStore`. The generic `FcMap`
+  interface does not specify how insert affects a later lookup.
+
+- **`Proofs/Heze/OnExecutionPayloadEnvelope.lean`** proves the successful-run
+  equation for Heze’s `onExecutionPayloadEnvelope` at
+  `ForkChoiceStoreRun (Store map)`. After the block-state lookup,
+  data-availability check, payload verification, and timely inclusion-list
+  collection succeed, the handler inserts the warm state, envelope, and
+  inclusion-list result at the same beacon-block root. See the
+  `onExecutionPayloadEnvelope` row in `PROOF_LEDGER.md` for the remaining
+  obligations.
 
 - **`Proofs/Gloas/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
   single record update, which doubles as the frame condition that no other Store
