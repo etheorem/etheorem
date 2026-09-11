@@ -18,9 +18,12 @@ reverse dependency.
 
 ## Implementation notes
 
-* Constants and state words are `BitVec 32`. Addition in `BitVec 32`
-  is mod 2³² by construction, matching FIPS 180-4 §4.1.2.
-* `Array (BitVec 32)` (rather than `Vector (BitVec 32) _`) avoids
+* Constants and state words are `UInt32`. Addition in `UInt32` is
+  mod 2³² by construction, matching FIPS 180-4 §4.1.2. Compiled
+  code runs `UInt32` as an unboxed machine word. The kernel still
+  reduces it (`UInt32` is a structure over `BitVec 32`), so
+  `decide` keeps working on the shape lemmas.
+* `Array UInt32` (rather than `Vector UInt32 _`) avoids
   size-proof obligations on the message schedule and round state.
   Out-of-bounds indexing via `arr[i]!` is sound by construction,
   every access sits in `[0, 64)` for the schedule and `[0, 8)` for
@@ -73,7 +76,7 @@ namespace LeanSha256
 hash values H₀ (square roots of the first 8 primes). Both literal
 arrays of the canonical 32-bit big-endian fractional parts. -/
 
-private def kConstants : Array (BitVec 32) := #[
+private def kConstants : Array UInt32 := #[
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
   0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
   0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
@@ -91,35 +94,41 @@ private def kConstants : Array (BitVec 32) := #[
   0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
   0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]
 
-private def h0Constants : Array (BitVec 32) := #[
+private def h0Constants : Array UInt32 := #[
   0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
   0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
 
 /-! ## §4.1.2 bitwise round functions
 
 Identifiers match FIPS 180-4 (Ch, Maj, Σ₀, Σ₁, σ₀, σ₁). All operate
-on `BitVec 32` so `^^^`, `&&&`, `+` are the standard 32-bit XOR /
-AND / mod-2³² ADD operations. `rotateRight` and `ushiftRight` are
-the built-in Lean `BitVec` primitives, same as the spec's `ROTR`
-and `SHR`. -/
+on `UInt32` so `^^^`, `&&&`, `+` are the standard 32-bit XOR /
+AND / mod-2³² ADD operations. `>>>` is the spec's `SHR`. Lean core
+has no `UInt32.rotateRight`, so `rotr` writes the spec's `ROTR`
+the way FIPS 180-4 §3.2 defines it, from two shifts and an OR.
+`UInt32` shifts take the amount mod 32, so `32 - n` stays in range
+for every `n` in `[1, 31]`. -/
 
-private def ch (x y z : BitVec 32) : BitVec 32 :=
+/-- `ROTR n x` from FIPS 180-4 §3.2: `(x >>> n) ||| (x <<< (32 - n))`. -/
+private def rotr (x : UInt32) (n : UInt32) : UInt32 :=
+  (x >>> n) ||| (x <<< (32 - n))
+
+private def ch (x y z : UInt32) : UInt32 :=
   (x &&& y) ^^^ ((~~~ x) &&& z)
 
-private def maj (x y z : BitVec 32) : BitVec 32 :=
+private def maj (x y z : UInt32) : UInt32 :=
   (x &&& y) ^^^ (x &&& z) ^^^ (y &&& z)
 
-private def bigSigma0 (x : BitVec 32) : BitVec 32 :=
-  x.rotateRight 2 ^^^ x.rotateRight 13 ^^^ x.rotateRight 22
+private def bigSigma0 (x : UInt32) : UInt32 :=
+  rotr x 2 ^^^ rotr x 13 ^^^ rotr x 22
 
-private def bigSigma1 (x : BitVec 32) : BitVec 32 :=
-  x.rotateRight 6 ^^^ x.rotateRight 11 ^^^ x.rotateRight 25
+private def bigSigma1 (x : UInt32) : UInt32 :=
+  rotr x 6 ^^^ rotr x 11 ^^^ rotr x 25
 
-private def smallSigma0 (x : BitVec 32) : BitVec 32 :=
-  x.rotateRight 7 ^^^ x.rotateRight 18 ^^^ x.ushiftRight 3
+private def smallSigma0 (x : UInt32) : UInt32 :=
+  rotr x 7 ^^^ rotr x 18 ^^^ (x >>> 3)
 
-private def smallSigma1 (x : BitVec 32) : BitVec 32 :=
-  x.rotateRight 17 ^^^ x.rotateRight 19 ^^^ x.ushiftRight 10
+private def smallSigma1 (x : UInt32) : UInt32 :=
+  rotr x 17 ^^^ rotr x 19 ^^^ (x >>> 10)
 
 /-! ## §5.2 message-schedule expansion
 
@@ -138,8 +147,8 @@ the previous four (at offsets `-2`, `-7`, `-15`, `-16`). -/
 one Array-push and a recursive call on a strictly smaller `steps`.
 This is intentionally *not* `partial def` so the size-preservation
 lemma below can unfold the body during a proof. -/
-private def extendSchedule (acc : Array (BitVec 32))
-    (steps : Nat) : Array (BitVec 32) :=
+private def extendSchedule (acc : Array UInt32)
+    (steps : Nat) : Array UInt32 :=
   match steps with
   | 0     => acc
   | k + 1 =>
@@ -149,14 +158,14 @@ private def extendSchedule (acc : Array (BitVec 32))
         smallSigma0 acc[t - 15]! + acc[t - 16]!
       extendSchedule (acc.push next) k
 
-private def messageSchedule (block : Array (BitVec 32)) :
-    Array (BitVec 32) :=
+private def messageSchedule (block : Array UInt32) :
+    Array UInt32 :=
   extendSchedule block 48
 
 /-! ## §6.2 compression function
 
 64 rounds on a working state `(a, b, c, d, e, f, g, h)` carried as
-an `Array (BitVec 32)` of size 8, element `i` is the `i`-th state
+an `Array UInt32` of size 8, element `i` is the `i`-th state
 word. Each round:
 
 ```
@@ -168,8 +177,8 @@ T2 = Σ₀(a) + Maj(a, b, c)
 After 64 rounds, add the working state to the input hash
 componentwise (mod 2³²) and return the result. -/
 
-private def oneRound (state : Array (BitVec 32)) (w k : BitVec 32) :
-    Array (BitVec 32) :=
+private def oneRound (state : Array UInt32) (w k : UInt32) :
+    Array UInt32 :=
   let a := state[0]!
   let b := state[1]!
   let c := state[2]!
@@ -182,11 +191,11 @@ private def oneRound (state : Array (BitVec 32)) (w k : BitVec 32) :
   let t2 := bigSigma0 a + maj a b c
   #[t1 + t2, a, b, c, d + t1, e, f, g]
 
-private def compressBlock (hIn : Array (BitVec 32))
-    (block : Array (BitVec 32)) : Array (BitVec 32) :=
+private def compressBlock (hIn : Array UInt32)
+    (block : Array UInt32) : Array UInt32 :=
   let schedule := messageSchedule block
   -- 64 rounds, folding the working state.
-  let finalState : Array (BitVec 32) :=
+  let finalState : Array UInt32 :=
     Nat.fold 64 (fun t _ s =>
       oneRound s schedule[t]! kConstants[t]!) hIn
   -- Add working state to input hash componentwise (mod 2³²).
@@ -223,27 +232,27 @@ private def pad (input : ByteArray) : ByteArray :=
 
 Big-endian: bytes `[b₀, b₁, b₂, b₃]` ↦ word `b₀·2²⁴ + b₁·2¹⁶ + b₂·2⁸ + b₃`.
 Inverse used to pack the final 8-word hash state into a 32-byte digest.
+
+Both directions stay on machine words. `UInt8.toUInt32` widens and
+`UInt32.toUInt8` keeps the low byte, so no `Nat` is built at the
+block boundary.
 -/
 
-private def bytesToWordBE (b0 b1 b2 b3 : UInt8) : BitVec 32 :=
-  BitVec.ofNat 32 (
-    b0.toNat * 0x1000000 +
-    b1.toNat * 0x10000 +
-    b2.toNat * 0x100 +
-    b3.toNat)
+private def bytesToWordBE (b0 b1 b2 b3 : UInt8) : UInt32 :=
+  (b0.toUInt32 <<< 24) ||| (b1.toUInt32 <<< 16) |||
+  (b2.toUInt32 <<< 8)  ||| b3.toUInt32
 
-private def wordToBytesBE (w : BitVec 32) : ByteArray :=
-  let n := w.toNat
+private def wordToBytesBE (w : UInt32) : ByteArray :=
   ByteArray.mk #[
-    Nat.toUInt8 ((n >>> 24) &&& 0xff),
-    Nat.toUInt8 ((n >>> 16) &&& 0xff),
-    Nat.toUInt8 ((n >>> 8)  &&& 0xff),
-    Nat.toUInt8 ( n         &&& 0xff)]
+    (w >>> 24).toUInt8,
+    (w >>> 16).toUInt8,
+    (w >>> 8).toUInt8,
+    w.toUInt8]
 
 /-- Extract the 16 32-bit words of block `blockIdx` from `padded`.
 Caller must ensure `padded.size ≥ (blockIdx + 1) * 64`. -/
 private def extractBlock (padded : ByteArray) (blockIdx : Nat) :
-    Array (BitVec 32) :=
+    Array UInt32 :=
   Array.ofFn (n := 16) (fun j =>
     let off := blockIdx * 64 + j.val * 4
     bytesToWordBE
@@ -252,7 +261,7 @@ private def extractBlock (padded : ByteArray) (blockIdx : Nat) :
       padded[off + 2]!
       padded[off + 3]!)
 
-private def packState (state : Array (BitVec 32)) : ByteArray :=
+private def packState (state : Array UInt32) : ByteArray :=
   state.foldl (fun acc w => acc ++ wordToBytesBE w) ByteArray.empty
 
 /-! ## Top-level digest
@@ -345,26 +354,29 @@ Each lemma is `rfl` because the implementations are written exactly
 in the FIPS form. The theorem ensures any future refactor that
 changes the shape is caught at proof check time. -/
 
-theorem ch_eq_fips (x y z : BitVec 32) :
+theorem ch_eq_fips (x y z : UInt32) :
     ch x y z = (x &&& y) ^^^ ((~~~ x) &&& z) := rfl
 
-theorem maj_eq_fips (x y z : BitVec 32) :
+theorem maj_eq_fips (x y z : UInt32) :
     maj x y z = (x &&& y) ^^^ (x &&& z) ^^^ (y &&& z) := rfl
 
-theorem bigSigma0_eq_fips (x : BitVec 32) :
-    bigSigma0 x = x.rotateRight 2 ^^^ x.rotateRight 13 ^^^ x.rotateRight 22 :=
+theorem rotr_eq_fips (x n : UInt32) :
+    rotr x n = (x >>> n) ||| (x <<< (32 - n)) := rfl
+
+theorem bigSigma0_eq_fips (x : UInt32) :
+    bigSigma0 x = rotr x 2 ^^^ rotr x 13 ^^^ rotr x 22 :=
   rfl
 
-theorem bigSigma1_eq_fips (x : BitVec 32) :
-    bigSigma1 x = x.rotateRight 6 ^^^ x.rotateRight 11 ^^^ x.rotateRight 25 :=
+theorem bigSigma1_eq_fips (x : UInt32) :
+    bigSigma1 x = rotr x 6 ^^^ rotr x 11 ^^^ rotr x 25 :=
   rfl
 
-theorem smallSigma0_eq_fips (x : BitVec 32) :
-    smallSigma0 x = x.rotateRight 7 ^^^ x.rotateRight 18 ^^^ x.ushiftRight 3 :=
+theorem smallSigma0_eq_fips (x : UInt32) :
+    smallSigma0 x = rotr x 7 ^^^ rotr x 18 ^^^ (x >>> 3) :=
   rfl
 
-theorem smallSigma1_eq_fips (x : BitVec 32) :
-    smallSigma1 x = x.rotateRight 17 ^^^ x.rotateRight 19 ^^^ x.ushiftRight 10 :=
+theorem smallSigma1_eq_fips (x : UInt32) :
+    smallSigma1 x = rotr x 17 ^^^ rotr x 19 ^^^ (x >>> 10) :=
   rfl
 
 /-! ### §4.2.2 constant sizes + boundary entries
@@ -376,11 +388,11 @@ miscopied first or last value flips the boundary check. -/
 theorem kConstants_size : kConstants.size = 64 := by decide
 theorem h0Constants_size : h0Constants.size = 8 := by decide
 
-theorem kConstants_first : kConstants[0]! = (0x428a2f98 : BitVec 32) := by decide
-theorem kConstants_last  : kConstants[63]! = (0xc67178f2 : BitVec 32) := by decide
+theorem kConstants_first : kConstants[0]! = (0x428a2f98 : UInt32) := by decide
+theorem kConstants_last  : kConstants[63]! = (0xc67178f2 : UInt32) := by decide
 
-theorem h0Constants_first : h0Constants[0]! = (0x6a09e667 : BitVec 32) := by decide
-theorem h0Constants_last  : h0Constants[7]! = (0x5be0cd19 : BitVec 32) := by decide
+theorem h0Constants_first : h0Constants[0]! = (0x6a09e667 : UInt32) := by decide
+theorem h0Constants_last  : h0Constants[7]! = (0x5be0cd19 : UInt32) := by decide
 
 /-! ### Byte-helper output sizes
 
@@ -391,7 +403,7 @@ Both follow by `rfl` because each is `ByteArray.mk` of a fixed-size
 theorem uint64ToBytesBE_size (n : Nat) :
     (uint64ToBytesBE n).size = 8 := rfl
 
-theorem wordToBytesBE_size (w : BitVec 32) :
+theorem wordToBytesBE_size (w : UInt32) :
     (wordToBytesBE w).size = 4 := rfl
 
 /-! ### `extendSchedule` size
@@ -399,7 +411,7 @@ theorem wordToBytesBE_size (w : BitVec 32) :
 Each step pushes one element, so the result has size `acc.size +
 steps`. Proven by structural induction on `steps`. -/
 
-theorem extendSchedule_size (acc : Array (BitVec 32)) (steps : Nat) :
+theorem extendSchedule_size (acc : Array UInt32) (steps : Nat) :
     (extendSchedule acc steps).size = acc.size + steps := by
   induction steps generalizing acc with
   | zero => rfl
@@ -410,17 +422,17 @@ theorem extendSchedule_size (acc : Array (BitVec 32)) (steps : Nat) :
 
 /-! ### `messageSchedule` and `compressBlock` sizes -/
 
-theorem messageSchedule_size (block : Array (BitVec 32))
+theorem messageSchedule_size (block : Array UInt32)
     (hSz : block.size = 16) :
     (messageSchedule block).size = 64 := by
   show (extendSchedule block 48).size = 64
   rw [extendSchedule_size]; omega
 
-theorem oneRound_size (state : Array (BitVec 32)) (w k : BitVec 32) :
+theorem oneRound_size (state : Array UInt32) (w k : UInt32) :
     (oneRound state w k).size = 8 := rfl
 
-theorem compressBlock_size (hIn : Array (BitVec 32))
-    (block : Array (BitVec 32)) :
+theorem compressBlock_size (hIn : Array UInt32)
+    (block : Array UInt32) :
     (compressBlock hIn block).size = 8 := by
   unfold compressBlock
   simp [Array.size_ofFn]
@@ -449,7 +461,7 @@ across each iteration: starting from the empty `ByteArray`
 (size 0), each step appends 4 bytes (`wordToBytesBE`), so after
 `state.size` steps the size is `state.size * 4`. -/
 
-theorem packState_size (state : Array (BitVec 32)) :
+theorem packState_size (state : Array UInt32) :
     (packState state).size = state.size * 4 := by
   unfold packState
   exact Array.foldl_induction

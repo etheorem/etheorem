@@ -1077,7 +1077,7 @@ concrete in the current plan.
 ### 9.2 Phase 2: pure-Lean `Sha256Spec` (deferred)
 
 A pure-Lean SHA-256 reference (compression function + message schedule +
-Merkle-Damgård padding, all in `BitVec 32` arithmetic, the kind of code
+Merkle-Damgård padding, all in `UInt32` arithmetic, the kind of code
 `bv_decide` is built for) becomes worth writing if and when:
 
 - A theorem appears that needs to reduce inside a hash (e.g. proving a
