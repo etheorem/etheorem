@@ -16,11 +16,7 @@ import SizzLeanTests.IndexErrorPayload
 import SizzLeanTests.InfallibleIndex
 import SizzLeanTests.Modify
 import SizzLeanTests.Sha256BatchEquivalence
--- `HashConsCoherence` gates the standalone hash-cons primitive; it
--- is kept on disk but not in the default test build because the
--- smart constructor is not wired into `Node.ofShape` / `setAt` /
--- `merkleRootWithCache`, so the user-facing `SSZ.FastBox` /
--- `TreeBacked` path doesn't exercise it.
+import SizzLeanTests.HashConsCoherence
 import SizzLeanTests.SerializeCacheCoherence
 import SizzLeanTests.ZeroHashDepth
 
@@ -49,7 +45,9 @@ lake build SizzLeanTests
   property tests (`SetAtRandom.lean`).
 * **Cache machinery on example containers**: `TreeBacked`
   coherence (`hashTreeRootCached = SSZ.hashTreeRoot`),
-  `sszUpdate` multi-field batched updates, vector-index `sszUpdate`.
+  `sszUpdate` multi-field batched updates, vector-index `sszUpdate`,
+  and the hash-cons opt-in (`HashConsCoherence.lean`: root
+  coherence with `consing := true` plus the shape rule).
   Containers used as test fixtures are defined locally in
   `ExampleContainers.lean`, small SSZ-shaped types analogous to
   `Fork` / `SignedBeaconBlockHeader` / `HistoricalBatch`

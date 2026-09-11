@@ -134,6 +134,26 @@ map is always applied first. The two-state shape is named:
 * `pending`:  gindex → replacement subtree, accumulated since
               the last `commit`.
 
+## Hash-consing (opt-in)
+
+With `consing := true` the fresh cells a box allocates go through
+the global hash-cons cache, so subtrees another resident tree
+already holds are shared instead of copied. Three sites allocate
+fresh cells on the cached path, and the flag covers all three:
+
+* the initial `Node.ofShape` build inside `treeBase`, consed once
+  by `Node.consTree` when the thunk is forced;
+* each pending subtree at commit, consed by `Node.consTree` before
+  `commitAndHash` installs it;
+* the spine cells `commitAndHash` allocates, consed one by one via
+  its own `consing` flag.
+
+Nothing else allocates on this path. `merkleRootWithCache` only
+allocates for `.pair _ _ none` cells, and the builders above
+pre-fill every root, so the top-level read hits in O(1). With the
+flag off, all three sites run exactly as before; the flag is the
+only change to the default configuration.
+
 ## File placement
 
 This file lives under `SizzLean/Cache/` alongside its sibling
@@ -225,6 +245,14 @@ structure TreeBacked (H : Type) (T : Type) [Hasher H] [SSZRepr T] where
   parent/child overlapping writes consistent. See
   `PendingWrite`. -/
   pending : Std.TreeMap Nat (PendingWrite T) := {}
+  /-- Whether fresh tree cells go through the hash-cons cache
+  (`MerkleTree/HashCons.lean`). Off by default: a single resident
+  state gets no hits and pays a lookup per cell. A workload that
+  keeps many similar states resident sets it at construction
+  (`SSZ.FastBox v (consing := true)`), and every later
+  `sszUpdate` on the box keeps the choice. See the *Hash-consing*
+  section below for what the flag covers. -/
+  consing : Bool := false
 
 /-- `CachedSSZ H T` is the *public-facing* name for a cached SSZ-
 encoded value of `T` hashed with `H`. Implementation-wise it is
@@ -255,12 +283,19 @@ private def gindexOfBits (bits : List Bool) : Nat :=
 pinned into the result's type. The initial tree is deferred
 inside `treeBase : Thunk Node`. The `Node.ofShape` build runs
 on the first `hashTreeRoot` call and is memoised by the `Thunk`
-for all subsequent accesses. -/
-def ofValue (H : Type) [Hasher H] {T : Type} [r : SSZRepr T] (v : T) :
-    TreeBacked H T :=
+for all subsequent accesses.
+
+`consing` opts the box into the hash-cons cache; the fresh build
+is then consed inside the same thunk, so the shared cells replace
+the fresh ones before anything else sees the tree. -/
+def ofValue (H : Type) [Hasher H] {T : Type} [r : SSZRepr T] (v : T)
+    (consing : Bool := false) : TreeBacked H T :=
   { view := v
-    treeBase := Thunk.mk (fun _ => Node.ofShape H r.shape (r.toRepr v))
-    pending := {} }
+    treeBase := Thunk.mk (fun _ =>
+      let fresh := Node.ofShape H r.shape (r.toRepr v)
+      if consing then Node.consTree fresh else fresh)
+    pending := {}
+    consing := consing }
 
 /-- Accumulate one tree-side write into `pending` and update
 `view` eagerly. The `PendingWrite` closure is invoked against
@@ -273,9 +308,7 @@ a result we'd compute and discard. -/
 def addPending {H T : Type} [Hasher H] [SSZRepr T]
     (t : TreeBacked H T) (g : Nat) (d : PendingWrite T) (newView : T) :
     TreeBacked H T :=
-  { view := newView
-    treeBase := t.treeBase
-    pending := t.pending.insert g d }
+  { t with view := newView, pending := t.pending.insert g d }
 
 /-- Accumulate many tree-side writes in one go. The macro emits
 this for multi-clause `sszUpdate` statements; the clauses are
@@ -286,9 +319,7 @@ def addPendingMany {H T : Type} [Hasher H] [SSZRepr T]
     TreeBacked H T :=
   let newPending := updates.foldl (init := t.pending) fun acc (bits, d) =>
     acc.insert (gindexOfBits bits) d
-  { view := newView
-    treeBase := t.treeBase
-    pending := newPending }
+  { t with view := newView, pending := newPending }
 
 /-- Cached Merkle root of `t`, plus an updated `TreeBacked` that
 *commits the read*: `pending` is materialised into `treeBase` via
@@ -327,9 +358,13 @@ def hashTreeRootCached {H T : Type} [Hasher H] [SSZRepr T]
       -- replacement" rule then drops the redundant child entry
       -- without loss of information.
       let updates := t.pending.toList.filterMap fun (g, d) =>
-        (d t.view).map fun n => (gindexBits g, n)
+        -- With consing on, each fresh subtree is consed before the
+        -- spine walk installs it; the walk then conses its own
+        -- spine cells through the same flag.
+        (d t.view).map fun n =>
+          (gindexBits g, if t.consing then Node.consTree n else n)
       if updates.isEmpty then base.merkleRootWithCache H
-      else base.commitAndHash H updates
+      else Node.commitAndHash H t.consing base updates
   (root, { t with
             treeBase := Thunk.pure cachedTree,
             pending := {} })
@@ -398,10 +433,11 @@ or the `hashTreeRootCached` suffix. -/
 namespace CachedSSZ
 
 /-- Build a `CachedSSZ H T` from a plain `T`. Alias of
-`TreeBacked.ofValue` exposed on the user-facing namespace. -/
-def ofValue (H : Type) [Hasher H] {T : Type} [SSZRepr T] (v : T) :
-    CachedSSZ H T :=
-  TreeBacked.ofValue H v
+`TreeBacked.ofValue` exposed on the user-facing namespace, with
+the same `consing` opt-in. -/
+def ofValue (H : Type) [Hasher H] {T : Type} [SSZRepr T] (v : T)
+    (consing : Bool := false) : CachedSSZ H T :=
+  TreeBacked.ofValue H v consing
 
 /-- Cached Merkle root of `s`. Same as `TreeBacked.hashTreeRootCached`;
 the alias drops the `Cached` suffix so the call mirrors

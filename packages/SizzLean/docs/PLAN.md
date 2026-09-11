@@ -1264,39 +1264,36 @@ assertion). The honest answer is the latter. The batched
 primitive is a performance shim, not part of the verified
 core. Same Stage 15 follow-up as the scalar axioms.
 
-#### Stage 17c: Hash-consing (bounded-LRU): **library primitive shipped; not on user interface**
+#### Stage 17c: Hash-consing (bounded cache): **shipped; default off**
 
-**Goal.** Dedupe identical populated subtrees across the tree (and
-across multiple `TreeBacked` values) via a weak `HashMap (Hash32)
-Node`, complementing `ZERO_HASHES`'s zero-subtree deduplication.
+**Goal.** Dedupe identical populated subtrees across multiple
+`TreeBacked` values via a global `HashMap (Hash32) Node`,
+complementing `ZERO_HASHES`'s zero-subtree deduplication.
 
-**Deliverables (shipped as library primitives, not wired into the cached path).**
-- `SizzLean/MerkleTree/HashCons.lean`: per-thread bounded-LRU
-  cache; `Node.mkPair : Node → Node → Option ByteArray → Node`
-  smart constructor that interns identical subtrees.
-- *(Not yet)* `Node.merkleRootWithCache` calling `Node.mkPair`
-  at cache-fill sites. Integration is gated on workload evidence.
+**Deliverables (shipped).**
+- `SizzLean/Cache/MerkleTree/HashCons.lean`: the bounded cache
+  (wipe-all eviction, default capacity 4096, hit / miss counters),
+  `Node.consCell` / `Node.mkPair` in `BaseIO`, and the pure
+  `Node.consTree` / `Node.consPair` wrappers (`@[implemented_by]`).
+  A hit is accepted only for a shape-equal cell (`Node.shapeEq`).
+- The `consing` flag on `TreeBacked`, set at construction
+  (`SSZ.FastBox v (consing := true)` and the other cached
+  constructors) and carried through `sszUpdate`. With it on, the
+  initial build, each pending subtree, and the commit spine go
+  through the cache. `SSZ.FastBox v` stays consing-off.
+- `ssz_multistate` (`SizzLeanBench/MultiState.lean`): N resident
+  states, consing off versus on, distinct cells counted.
+- `SizzLeanTests/HashConsCoherence.lean`: root coherence with
+  consing on, and the shape rule on the block-versus-header case.
 
-**Default-OFF when integrated.** When this is eventually wired
-into the default cached path (i.e. into `box.hashTreeRoot`'s
-`merkleRootWithCache` walk so the user no longer has to know
-about consing), the **default configuration must keep consing
-off**, with an explicit `Box`-construction opt-in for workloads
-that benefit (multi-tree archival, gossip aggregation across
-many similar blocks). Reason: the standing micro-bench on the
-scenarios fixture set showed consing slowed the typical
-ValidatorSet root by ~9× per call (cache-lookup overhead per
-pair × no inter-tree subtree redundancy in the workload).
-Defaulting it on would regress every non-archival scenario; the
-inversion-of-control fix is opt-in at `SSZ.FastBox` construction,
-e.g. `SSZ.FastBox v (consing := true)`, so a `SSZ.FastBox v`
-call retains the current (consing-off) behaviour.
+**Why default off.** A single resident state gets no hits and
+pays a lookup per fresh cell. The win is inter-tree: many similar
+states resident at once. See `OPTIMISATION.md`, Stage 17c, for
+the measured cell counts.
 
-**Risk.** Medium. Lean's runtime reference-counting interacts with
-weak references non-trivially; getting the lifecycle right needs
-care. The default-OFF stance lowers the cost of getting this
-imperfect on first integration. Pathological workloads can be
-moved off the opt-in flag without affecting everyone else.
+**Deferred.** Weak references. Lean 4 has no weak-ref API, so the
+bounded map with wipe-all eviction stays; the swap would be local
+to `HashCons.lean`.
 
 #### Stage 17d: Profiling-guided `@[specialize]`: **shipped**
 

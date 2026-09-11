@@ -195,6 +195,15 @@ lean_exe ssz_profile where
   root := `SizzLeanBench.ProfileMain
   supportInterpreter := true
 
+-- The Stage 17c multi-state heap bench. `SizzLeanBench/MultiStateMain.lean`
+-- builds N resident states with hash-consing off and on and reports the
+-- distinct tree cells each configuration keeps. Separate from `ssz_bench`
+-- so the scenarios TSV keeps its row set. Same `supportInterpreter`
+-- rationale as `ssz_bench`.
+lean_exe ssz_multistate where
+  root := `SizzLeanBench.MultiStateMain
+  supportInterpreter := true
+
 -- The `ssz_generic` upstream-vector pyspec server. `SszGenericRunner.lean`
 -- exposes `def main` running a stdin/stdout request loop the SizzLean pytest
 -- harness (`packages/SizzLean/PySpecTests/`) drives. It exercises the `SSZType`
