@@ -237,24 +237,29 @@ build expects:
 
 - **Linux (Debian/Ubuntu, including CI):** `libssl-dev` for the headers
   (`/usr/include/openssl/evp.h`) and the versioned `libcrypto.so.3`
-  shared library, plus `pkg-config`. Install via:
+  shared library, plus `pkg-config`. On x86_64 also `nasm`, which
+  assembles the vendored ISA-L multi-buffer SHA-256 lanes behind
+  `sha256BatchCombine`. Install via:
 
   ```bash
-  sudo apt-get install libssl-dev pkg-config
+  sudo apt-get install libssl-dev pkg-config nasm
   ```
 
 - **macOS:** `openssl@3` + `pkg-config` via Homebrew (the `pkg-config`
-  discovery handles the keg-only include/lib paths).
+  discovery handles the keg-only include/lib paths). No assembler: the
+  batched combine takes the OpenSSL loop there.
 
 Run `just doctor-native` to verify the build-time native deps
-(`cc`, `git`, `pkg-config`, OpenSSL 3.x).
+(`cc`, `git`, `pkg-config`, OpenSSL 3.x, and `nasm` on x86_64 Linux).
 
-**Vendored crypto (the LeanHazmat BLS / KZG families).** `LeanHazmatBls`
-(blst) and `LeanHazmatKzg` (c-kzg-4844) wrap *vendored* native libraries,
-fetched at pinned tags by `just hazmat-bls-vendor` / `just hazmat-kzg-vendor` into
-gitignored `vendor/` trees before `lake build` (never git submodules; see
+**Vendored crypto (the LeanHazmat families).** `LeanHazmatSha256`
+(ISA-L crypto, x86_64 Linux only), `LeanHazmatBls` (blst) and
+`LeanHazmatKzg` (c-kzg-4844) wrap *vendored* native libraries, fetched
+at pinned tags by `just hazmat-sha256-vendor` / `just hazmat-bls-vendor`
+/ `just hazmat-kzg-vendor` into gitignored `vendor/` trees before
+`lake build` (never git submodules; see
 [`hazmat-docs/ARCHITECTURE.md`](hazmat-docs/ARCHITECTURE.md) §6). `just
-build` runs both vendor steps for you. The C / C++ compilers are invoked
+build` runs the vendor steps for you. The C / C++ compilers are invoked
 through the Lean toolchain's `cc` wrapper, no separate configuration
 required.
 

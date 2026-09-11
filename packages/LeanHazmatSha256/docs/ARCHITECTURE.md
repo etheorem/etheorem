@@ -9,7 +9,8 @@ one way it is special among the LeanHazmat families.
 ## What this package is
 
 The FFI binding for **NIST FIPS 180-4 SHA-256**, wrapping the system
-OpenSSL `libcrypto` behind three `@[extern] opaque` primitives in the
+OpenSSL `libcrypto`, and on x86_64 Linux the vendored Intel ISA-L
+multi-buffer engine, behind three `@[extern] opaque` primitives in the
 `LeanHazmat.Sha256` namespace:
 
 | Primitive | Meaning | C symbol |
@@ -22,14 +23,33 @@ These are the SSZ-merkleization hot path: `hash_tree_root`,
 `compute_shuffled_index`, RANDAO mixing, and deposit Merkle proofs all
 bottom out in SHA-256.
 
-## Backend & why
+## Backends & why
 
-OpenSSL `libcrypto`, discovered via `pkg-config` (cross-family
-ARCHITECTURE.md §5/§6). It carries SHA-NI assembly, the fastest
-option on the merkleization hot path, and is a *system* library, so
-there is nothing to vendor and no vendored-source audit burden. This
-is the one consensus family that needs **no** vendoring, which is why
-PLAN.md sequences it first as the cross-package de-risk.
+**OpenSSL `libcrypto`**, discovered via `pkg-config` (cross-family
+ARCHITECTURE.md §5/§6), backs `sha256Hash` and `sha256Combine` on
+every host. It carries SHA-NI and ARMv8 SHA-Ext assembly, the fastest
+single-stream option on the merkleization hot path, and is a *system*
+library, so it adds no vendored-source audit burden.
+
+**Intel ISA-L crypto** (`sha256_mb`, BSD-3-Clause, vendored at a
+pinned tag by `just hazmat-sha256-vendor`) backs `sha256BatchCombine`
+on x86_64 Linux. OpenSSL's public EVP API hashes one buffer per call,
+so it cannot fill SIMD lanes; ISA-L's job manager hashes 4 (SSE) /
+8 (AVX2) / 16 (AVX-512) buffers in lock-step, or two streams on
+SHA-NI parts, and picks the widest path the CPU supports through
+CPUID at run time. The shim keeps the manager's scratch per thread,
+so even a one-pair batch beats a fresh EVP context. Measured on a
+SHA-NI + AVX2 host, a 128-pair level drops from about 35 µs to about
+13 µs per call, and a 1024-pair level from about 274 µs to about 85 µs.
+Every other host (ARM64, macOS, anything without `nasm`-buildable
+x86_64 lanes) keeps the OpenSSL EVP loop for the batch: on ARMv8
+SHA-Ext CPUs that loop is already hardware single-stream, and the
+batch only amortises the per-call overhead.
+
+The choice is made once, in `lakefile.lean` (`useIsal`), and reaches
+`csrc/sha256_batch.c` as a single define, so the compiled code and
+the archive contents cannot disagree. The Lean surface and the
+equivalence tests are identical on both backends.
 
 ## The double life (cross-family ARCHITECTURE.md §9)
 
@@ -48,9 +68,10 @@ standalone as a mirror.
 
 `@[extern] opaque` means the kernel never reduces a hash; the compiler
 emits a direct call to the C symbol at runtime. The single empirical
-trust assumption is **that the linked OpenSSL implements NIST FIPS
-180-4 SHA-256**. It is validated two ways, both under this package's
-own test lib (no external dependency):
+trust assumption is **that the linked backend (OpenSSL, and ISA-L for
+the batch on x86_64 Linux) implements NIST FIPS 180-4 SHA-256**. It is
+validated two ways, both under this package's own test lib (no
+external dependency):
 
 * `LeanHazmatSha256Tests/Cavp.lean`: the full NIST CAVP byte-oriented
   suite (129 vectors) run against `sha256Hash` via `native_decide`.
@@ -59,7 +80,12 @@ own test lib (no external dependency):
 
 The FFI ≡ pure-Lean equivalence (the evidence backing the SizzLean
 axioms) is cross-checked in `SizzLeanTests` because it needs both this
-package and `LeanSha256`.
+package and `LeanSha256`. `Sha256BatchEquivalence` runs against
+whichever batch backend the build host compiled in, so CI (x86_64
+Linux) exercises the ISA-L lanes and a macOS or ARM64 build exercises
+the OpenSSL loop. The ISA-L path sits in the same trust position as
+the OpenSSL shim: one more vendored implementation of the same
+deterministic byte function, validated by the same cases.
 
 Each `native_decide` call adds one `Lean.ofReduceBool` axiom; that is
 acceptable on the KAT path and forbidden on the proof path (cross-family
@@ -77,12 +103,18 @@ new coverage over the byte-oriented vectors.
 
 ## Build & linking
 
-`lakefile.lean` (procedural, required for C compilation and
-`pkg-config` discovery, which the declarative TOML form cannot
-express). The two shim `.c` files compile to one static archive
-`libleanhazmat_sha256`. Lake links that archive into any precompiled
-library or executable that transitively `require`s this package
-(`SizzLean`, and downstream exes). The OpenSSL `-lcrypto` *flag* does
+`lakefile.lean` (procedural, required for C compilation,
+`pkg-config` discovery, and the delegated ISA-L build, which the
+declarative TOML form cannot express). The two shim `.c` files
+compile to one static archive `libleanhazmat_sha256`. On x86_64 Linux
+the lakefile first runs ISA-L's own `Makefile.unx` for the one
+`sha256_mb` unit (cross-family ARCHITECTURE.md §6: delegate to the
+vendored build rather than re-derive its flags) and folds the
+resulting objects into that same archive, so dependents see one
+self-contained library and no new link flag on any platform. Lake
+links the archive into any precompiled library or executable that
+transitively `require`s this package (`SizzLean`, and downstream
+exes). The OpenSSL `-lcrypto` *flag* does
 **not** propagate across `require` (PLAN.md Stage 0), so every
 exe-hosting dependent, `SizzLean`, `EthCLSpecs`, keeps its own
 minimal pkg-config discovery; this package keeps its own for its test

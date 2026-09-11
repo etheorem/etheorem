@@ -25,14 +25,14 @@ default:
 
 # Compile every library: the SSZ chain (LeanSha256 → SizzLean → EthCLLib →
 # EthCLSpecs), the LeanHazmat FFI crypto families, and the standalone
-# LeanPoseidon island. The vendored families (LeanHazmatBls, LeanHazmatKzg) need
-# their `hazmat-*-vendor` recipes first; the dependencies run them (idempotent)
-# before building. `lake build EthCLSpecs` pulls in EthCLLib + SizzLean
-# transitively.
+# LeanPoseidon island. The vendored families (LeanHazmatSha256's ISA-L on
+# x86_64 Linux, LeanHazmatBls, LeanHazmatKzg) need their `hazmat-*-vendor`
+# recipes first; the dependencies run them (idempotent) before building.
+# `lake build EthCLSpecs` pulls in EthCLLib + SizzLean transitively.
 
 # Build all packages
 [group('general')]
-build: hazmat-bls-vendor hazmat-kzg-vendor
+build: hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor
     lake build LeanSha256
     lake build LeanHazmatSha256
     lake build LeanHazmatBls
@@ -188,21 +188,33 @@ doctor-native:
       miss "libcrypto         (OpenSSL 3.x development headers + shared library)"
     fi
 
+    # x86_64 Linux only: LeanHazmatSha256 builds the vendored ISA-L
+    # `sha256_mb` unit (the multi-buffer SHA-256 lanes are nasm
+    # assembly). Every other host takes the OpenSSL loop and needs no
+    # assembler.
+    if [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "x86_64" ]; then
+      if command -v nasm >/dev/null 2>&1; then
+        info "nasm              ($(nasm -v 2>&1 | head -1))"
+      else
+        miss "nasm              (assembles the vendored ISA-L SHA-256 multi-buffer lanes; x86_64 Linux only)"
+      fi
+    fi
+
     if [ "$fail" -ne 0 ]; then
       echo
       echo "Some required build-time deps are missing. Install hints:"
       case "$(uname -s)" in
         Linux)
           if [ -r /etc/os-release ] && grep -qE '^ID(_LIKE)?=.*(debian|ubuntu)' /etc/os-release; then
-            echo "  Debian / Ubuntu : sudo apt install libssl-dev pkg-config"
+            echo "  Debian / Ubuntu : sudo apt install libssl-dev pkg-config nasm"
           elif [ -r /etc/os-release ] && grep -qE '^ID(_LIKE)?=.*(fedora|rhel|centos)' /etc/os-release; then
-            echo "  Fedora / RHEL   : sudo dnf install openssl-devel pkgconf-pkg-config"
+            echo "  Fedora / RHEL   : sudo dnf install openssl-devel pkgconf-pkg-config nasm"
           elif [ -r /etc/os-release ] && grep -qE '^ID(_LIKE)?=.*arch' /etc/os-release; then
-            echo "  Arch            : sudo pacman -S openssl pkgconf"
+            echo "  Arch            : sudo pacman -S openssl pkgconf nasm"
           elif [ -r /etc/os-release ] && grep -qE '^ID(_LIKE)?=.*alpine' /etc/os-release; then
-            echo "  Alpine          : sudo apk add openssl-dev pkgconf"
+            echo "  Alpine          : sudo apk add openssl-dev pkgconf nasm"
           else
-            echo "  Linux           : install OpenSSL 3.x development headers + pkg-config"
+            echo "  Linux           : install OpenSSL 3.x development headers + pkg-config (+ nasm on x86_64)"
           fi
           ;;
         Darwin)
@@ -458,9 +470,32 @@ leansha256-bump-patch:
 # lives here.
 # ═════════════════════════════════════════════════════════════════════════
 
-# Full NIST CAVP byte-oriented SHA-256 vectors against the OpenSSL FFI shim (LeanHazmatSha256) — 129 cases + the combine/batch anchor KAT, all via native_decide
+# ISA-L crypto pin: tag v2.26.1. Only its `sha256_mb` unit is built (the
+# multi-buffer SHA-256 engine behind `sha256BatchCombine` on x86_64 Linux;
+# every other host keeps the OpenSSL loop and never reads this tree). The
+# lakefile drives ISA-L's own `Makefile.unx`, which needs `nasm` on PATH
+# (`just doctor-native` checks).
+
+isal_tag := "v2.26.1"
+
+# Vendor ISA-L crypto (multi-buffer SHA-256) for LeanHazmatSha256 — shallow clone at the pinned tag
 [group('hazmat')]
-hazmat-sha256-test:
+hazmat-sha256-vendor:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir="packages/LeanHazmatSha256/vendor/isa-l_crypto"
+    if [ -d "$dir/.git" ]; then
+      echo "isa-l_crypto already vendored at $dir ($(git -C "$dir" describe --tags 2>/dev/null || echo unknown))"
+      exit 0
+    fi
+    rm -rf "$dir"
+    mkdir -p "$(dirname "$dir")"
+    git clone --depth 1 --branch "{{ isal_tag }}" https://github.com/intel/isa-l_crypto "$dir"
+    echo "vendored isa-l_crypto {{ isal_tag }} -> $dir"
+
+# Full NIST CAVP byte-oriented SHA-256 vectors against the FFI shim (LeanHazmatSha256) — 129 cases + the combine/batch anchor KAT, all via native_decide. Needs `just hazmat-sha256-vendor` on x86_64 Linux (run via the dependency).
+[group('hazmat')]
+hazmat-sha256-test: hazmat-sha256-vendor
     lake build LeanHazmatSha256Tests
 
 # Re-generate the NIST CAVP vector table (OpenSSL FFI shim) from `packages/LeanHazmatSha256/cavp/*.rsp`. Stdlib-only Python; no .venv needed.

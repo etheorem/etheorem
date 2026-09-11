@@ -1,19 +1,24 @@
 # LeanHazmatSha256
 
 Lean 4 FFI bindings for NIST FIPS 180-4 SHA-256, wrapping the system
-OpenSSL `libcrypto`. Part of the
+OpenSSL `libcrypto`, plus Intel ISA-L crypto's multi-buffer engine for
+the batched combine on x86_64 Linux. Part of the
 [LeanHazmat](../../hazmat-docs/ARCHITECTURE.md) FFI crypto family, the FFI
 counterpart to the pure-Lean reference [`LeanSha256`](../LeanSha256).
 
 ## Setup
 
-Only the system OpenSSL `libcrypto` (3.x), discovered via `pkg-config`. No
-vendoring.
+The system OpenSSL `libcrypto` (3.x), discovered via `pkg-config`, on
+every host. On x86_64 Linux the batched combine also builds the vendored
+ISA-L `sha256_mb` unit, which needs `nasm`; `just hazmat-sha256-vendor`
+fetches the pinned source into the gitignored `vendor/` tree. Every
+other host uses OpenSSL alone.
 
 ```bash
-# Debian/Ubuntu:  sudo apt install libssl-dev pkg-config
-# Fedora:         sudo dnf install openssl-devel pkgconf-pkg-config
+# Debian/Ubuntu:  sudo apt install libssl-dev pkg-config nasm
+# Fedora:         sudo dnf install openssl-devel pkgconf-pkg-config nasm
 # macOS:          brew install openssl@3 pkg-config
+just hazmat-sha256-vendor      # x86_64 Linux only; no-op elsewhere is fine
 lake build LeanHazmatSha256
 ```
 

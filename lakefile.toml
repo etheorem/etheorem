@@ -7,8 +7,8 @@ name = "Etheorem"
 # Common targets (build by name from the repo root):
 #   lake build LeanSha256
 #   lake build LeanHazmatSha256        # consensus crypto — FFI families
-#   lake build LeanHazmatBls           #   (need `just hazmat-bls-vendor` / `hazmat-kzg-vendor`)
-#   lake build LeanHazmatKzg
+#   lake build LeanHazmatBls           #   (need `just hazmat-sha256-vendor` (x86_64 Linux) /
+#   lake build LeanHazmatKzg           #    `hazmat-bls-vendor` / `hazmat-kzg-vendor`)
 #   lake build SizzLean
 #   lake build EthCLLib / EthCLSpecs   # consensus-spec framework + Fulu/Gloas bodies
 #   lake build LeanPoseidon
@@ -28,8 +28,9 @@ path = "packages/LeanSha256"
 
 # LeanHazmat — FFI crypto family (hazmat-docs/ARCHITECTURE.md).
 # Consensus families ship first; execution-layer families are deferred.
-# SHA-256 leads: it needs no vendoring, so it de-risks the per-family
-# model. `SizzLean` requires it for the FFI hash path.
+# SHA-256 leads. `SizzLean` requires it for the FFI hash path. On x86_64
+# Linux it vendors ISA-L crypto for the batched combine (`just
+# hazmat-sha256-vendor`, needs `nasm`); elsewhere it is OpenSSL only.
 [[require]]
 name = "LeanHazmatSha256"
 path = "packages/LeanHazmatSha256"

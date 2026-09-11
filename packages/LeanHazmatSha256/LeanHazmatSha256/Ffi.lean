@@ -91,13 +91,16 @@ array has the same length, with `output[i] = SHA-256(lefts[i] ++
 rights[i])`. The C shim panics if the input lengths disagree.
 
 Runtime implementation is `csrc/sha256_batch.c`'s
-`lean_hazmat_sha256_batch_combine`, currently a scalar loop sharing
-one `EVP_MD_CTX` across the pairs, swappable for SHA-NI / AVX-512
-later without changing the FFI surface. Amortising the context
-allocation across the whole pair array is the win over calling
-`sha256Combine` in a Lean-level loop.
+`lean_hazmat_sha256_batch_combine`. On x86_64 Linux it feeds the pairs
+to Intel ISA-L's `sha256_mb` multi-buffer engine, which hashes 4 / 8 /
+16 buffers in lock-step (SSE / AVX2 / AVX-512, chosen by CPUID at run
+time); everywhere else it is a loop sharing one `EVP_MD_CTX` across
+the pairs. The lakefile picks the backend and the FFI surface does
+not change. Either way, one C call per Merkle level is the win over
+calling `sha256Combine` in a Lean-level loop.
 
-**Trust assumption:** same as `sha256Combine`. Pointwise agreement
+**Trust assumption:** same as `sha256Combine`, with ISA-L in the same
+position as OpenSSL on the x86_64 Linux batch path. Pointwise agreement
 with the pure-Lean reference is asserted by SizzLean's
 `sha256BatchCombine_eq_spec` axiom and validated by
 `SizzLeanTests/Sha256BatchEquivalence.lean`; the self-contained
