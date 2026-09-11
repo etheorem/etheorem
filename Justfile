@@ -428,6 +428,18 @@ sizzlean-bench:
       packages/SizzLean/.lake/build/bin/ssz_bench \
         | tee "packages/SizzLean/bench/$ts.tsv"
 
+# Stage 17c heap bench: N resident states, hash-consing off vs on. Reports
+# distinct tree cells (deterministic, allocator-independent) per config.
+
+# Build + run the multi-state hash-consing heap bench; TSV → packages/SizzLean/bench/multistate-<timestamp>.tsv
+[group('sizzlean')]
+sizzlean-bench-multistate:
+    @mkdir -p packages/SizzLean/bench
+    @ts=$(date -u +%Y%m%dT%H%M%SZ); \
+      lake build ssz_multistate && \
+      packages/SizzLean/.lake/build/bin/ssz_multistate \
+        | tee "packages/SizzLean/bench/multistate-$ts.tsv"
+
 # Aligned column output for readability; falls back to plain diff if
 # `column` is unavailable.
 

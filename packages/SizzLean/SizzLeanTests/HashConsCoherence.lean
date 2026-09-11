@@ -1,87 +1,177 @@
 import SizzLean.Hasher.Sha256
-import LeanHazmatSha256
-import SizzLean.Cache.MerkleTree.Node
-import SizzLean.Cache.MerkleTree.Merkle
+import SizzLean.Cache.Box
+import SizzLean.Cache.Update
 import SizzLean.Cache.MerkleTree.HashCons
+import SizzLeanTests.ExampleContainers
 
 /-!
-# `SizzLeanTests.HashConsCoherence`: hash-consing smoke gates
+# `SizzLeanTests.HashConsCoherence`: hash-consing gates
 
-The hash-cons cache is a *performance* optimisation, not a
-correctness one. Its safety guarantee:
+The hash-cons cache (`SizzLean/Cache/MerkleTree/HashCons.lean`) is a
+memory optimisation. Its safety contract has two halves:
 
-    Node.mkPair l r (some r₀) roots to the same digest as
-    .pair l r (some r₀) for every (l, r, r₀) triple.
+1. **Root coherence.** A box built with `consing := true` roots to
+   the same digest as the spec oracle, before and after
+   `sszUpdate`. Sharing a cell must never change a root.
+2. **The shape rule.** A cache hit is accepted only for a
+   shape-equal cell. SSZ gives a container and the vector of its
+   field roots the same root, so without the rule a tree holding a
+   nested container could be swapped for one holding that
+   container's root as a single leaf. A later write into the nested
+   container would then stop at the leaf and be dropped.
 
-i.e. the smart constructor is structurally identical to the raw
-`.pair` allocation; the only difference is allocation identity
-(cache hits return the same `Node` cell).
+Both halves run through the user-facing `SSZ.FastBox` surface, so
+the gates exercise the integration and not only the primitive.
 
-`Node.mkPair` returns `BaseIO Node` (the cache update is a side
-effect on the global ref), so the test cases run inside an
-`IO Unit` driver rather than as `native_decide` examples. The
-driver fires at build time only, the file is part of
-`SizzLeanTests`, which is built via `lake build SizzLeanTests`
-or `just sizzlean-test`.
+## Evaluation
 
-## Coverage
-
-1. **Fresh insertion has the right merkle root.** `mkPair l r
-   (some r₀)` followed by `merkleRoot` yields `r₀`.
-2. **Cache hit on repeat.** Calling `mkPair l r (some r₀)` twice
-   in a row produces nodes whose roots agree.
-3. **`none` case bypasses the cache.** `mkPair l r none` is
-   observationally `.pair l r none`.
+The checks are pure `Bool` functions closed by `native_decide`,
+like the sibling `TreeBackedCoherence` gates. The consing entry
+points are `@[implemented_by]` wrappers over a global `IO.Ref`, so
+the compiled evaluation `native_decide` runs is exactly what a
+program sees. Lean evaluates `let` bindings in order, and each
+step below feeds a value into the next, so the sequence the shape
+rule depends on is fixed by data flow and not only by source order.
 -/
 
 set_option autoImplicit false
 
 namespace SizzLeanTests.HashConsCoherence
 
-open SizzLean.Cache.MerkleTree
--- `Sha256` (the FFI Hasher tag) from `SizzLean.Hasher`; the
--- `sha256Combine` primitive from `LeanHazmat` (LeanHazmatSha256).
-open SizzLean.Hasher LeanHazmat.Sha256
+open SizzLean
+open SizzLean.Cache
+open SizzLean.Cache.MerkleTree (HashCons.statsSnapshot)
+open SizzLean.Hasher
+open SizzLeanTests.ExampleContainers
 
-private def l : Node := .leaf (ByteArray.mk (Array.replicate 32 0xaa))
-private def r : Node := .leaf (ByteArray.mk (Array.replicate 32 0xbb))
+/-- The `BeaconBlockHeader` analogue of `NestedExample`: the same
+two fields, with the nested container replaced by its root. Both
+containers have the same `hashTreeRoot` when `messageRoot` is the
+root of `message`. -/
+structure SummaryExample where
+  messageRoot : ExRoot
+  signature   : Vector UInt8 96
+deriving Inhabited, DecidableEq, SSZRepr
 
-private def combinedRoot : ByteArray :=
-  sha256Combine (ByteArray.mk (Array.replicate 32 0xaa))
-                (ByteArray.mk (Array.replicate 32 0xbb))
+private def inner : InnerExample :=
+  { slot   := 7
+    marker := 11
+    rootA  := Vector.ofFn (fun (i : Fin 32) => Nat.toUInt8 i.val)
+    rootB  := Vector.ofFn (fun (i : Fin 32) => Nat.toUInt8 (i.val + 32))
+    rootC  := Vector.ofFn (fun (i : Fin 32) => Nat.toUInt8 (i.val + 64)) }
 
-/-- Build-time driver that fires the three coherence cases. A
-divergence panics with a diagnostic to stderr and exits non-zero,
-which makes the build fail. -/
-def runCoherenceCases : IO Unit := do
-  HashCons.clear
+private def sig : Vector UInt8 96 :=
+  Vector.ofFn (fun (i : Fin 96) => Nat.toUInt8 (i.val * 3))
 
-  -- Case 1: fresh insertion roots to the expected combined digest.
-  let n₁ ← Node.mkPair l r (some combinedRoot)
-  if n₁.merkleRoot Sha256 ≠ combinedRoot then
-    IO.eprintln "HashConsCoherence case 1 failed: mkPair root mismatch"
-    IO.Process.exit 1
+private def nested : NestedExample :=
+  { message := inner, signature := sig }
 
-  -- Case 2: cache hit on repeat (root unchanged).
-  let n₂ ← Node.mkPair l r (some combinedRoot)
-  if n₁.merkleRoot Sha256 ≠ n₂.merkleRoot Sha256 then
-    IO.eprintln "HashConsCoherence case 2 failed: mkPair repeat divergence"
-    IO.Process.exit 1
+private def batch : BatchExample :=
+  let mkRoot (k : Nat) : ExRoot :=
+    Vector.ofFn (fun (i : Fin 32) => Nat.toUInt8 ((i.val + k) % 256))
+  { rootsA := Vector.ofFn (fun (i : Fin 8) => mkRoot (i.val * 7))
+    rootsB := Vector.ofFn (fun (i : Fin 8) => mkRoot (i.val * 13 + 100)) }
 
-  -- Case 3: none case bypasses the cache and returns plain .pair.
-  let n₃ ← Node.mkPair l r none
-  let expected : Node := .pair l r none
-  if (n₃.merkleRoot Sha256) ≠ (expected.merkleRoot Sha256) then
-    IO.eprintln "HashConsCoherence case 3 failed: none case divergence"
-    IO.Process.exit 1
+/-- Turn a 32-byte digest into the `ExRoot` vector form. -/
+private def toExRoot (b : ByteArray) : ExRoot :=
+  Vector.ofFn (fun (i : Fin 32) => b.get! i.val)
 
-/-! At elaboration time, runCoherenceCases is defined but does
-not yet fire, the test fires when an executable (e.g. the bench
-driver) calls it. The build-time gate is structural: this file
-must elaborate without errors.
+/-- The summary whose root equals `nested`'s root. -/
+private def summary : SummaryExample :=
+  { messageRoot := toExRoot (SSZ.hashTreeRoot Sha256 inner), signature := sig }
 
-For an actually-fires-at-build-time variant, see
-`SizzLeanBench.HashCons` which calls this driver via the bench
-exe. -/
+/-! ## Gate 1: root coherence with consing on -/
+
+example :
+    (SSZ.FastBox nested (consing := true)).hashTreeRoot.1
+      = SSZ.hashTreeRoot Sha256 nested := by native_decide
+
+example :
+    (SSZ.FastBox batch (consing := true)).hashTreeRoot.1
+      = SSZ.hashTreeRoot Sha256 batch := by native_decide
+
+/-- Two consing boxes over the same value, then an update on the
+second. The second box's tree is a cache hit on the first's, and
+the update must still land. The hit counter has to move between
+the two root reads, which is the positive evidence that the boxes
+went through the cache at all.
+
+Each flag depends on the previous step's output, so the steps run
+in this order, and no flag folds to a constant: the compiler would
+otherwise merge `a` and `b` into one box and `b` would never build
+a tree of its own. -/
+private def sharedThenUpdated : Bool :=
+  let a := SSZ.FastBox nested (consing := true)
+  let (rootA, _) := a.hashTreeRoot
+  let (_, hitsBefore, _) := HashCons.statsSnapshot rootA.size
+  let b := SSZ.FastBox nested (consing := hitsBefore + rootA.size > 0)
+  let (rootB, b) := b.hashTreeRoot
+  let (_, hitsAfter, _) := HashCons.statsSnapshot (rootB.size + 1)
+  let b := sszUpdate b with message.slot := 99
+  let expected := SSZ.hashTreeRoot Sha256 { nested with message.slot := 99 }
+  rootA == rootB && hitsAfter > hitsBefore && b.hashTreeRoot.1 == expected
+
+example : sharedThenUpdated = true := by native_decide
+
+/-! ## Gate 2: the shape rule
+
+The summary goes into the cache first. The block built next has
+the same top root, so its top cell is a same-root lookup against
+the summary's cell. The shape rule must reject that hit: the block
+then keeps its own tree and the write into `message` lands. -/
+
+private def summaryEqualsNested : Bool :=
+  SSZ.hashTreeRoot Sha256 summary == SSZ.hashTreeRoot Sha256 nested
+
+example : summaryEqualsNested = true := by native_decide
+
+private def shapeRuleHolds : Bool :=
+  let s := SSZ.FastBox summary (consing := true)
+  let (rootS, _) := s.hashTreeRoot
+  -- The block's flag depends on `rootS`, so the summary's tree is
+  -- in the cache before the block's tree is built.
+  let block := SSZ.FastBox nested (consing := rootS.size == 32)
+  let (rootBlock, block) := block.hashTreeRoot
+  let block := sszUpdate block with message.marker := 4242
+  let expected := SSZ.hashTreeRoot Sha256 { nested with message.marker := 4242 }
+  rootS == rootBlock && block.hashTreeRoot.1 == expected
+
+example : shapeRuleHolds = true := by native_decide
+
+/-- The reverse order: the block is cached first, then the summary
+is built. The summary's write into `messageRoot` must land on a
+leaf, so a hit that handed it the block's subtree would break the
+root. -/
+private def shapeRuleHoldsReversed : Bool :=
+  let block := SSZ.FastBox nested (consing := true)
+  let (rootBlock, _) := block.hashTreeRoot
+  let s := SSZ.FastBox summary (consing := rootBlock.size == 32)
+  let (rootS, s) := s.hashTreeRoot
+  let newRoot : ExRoot := Vector.replicate 32 0x5a
+  let s := sszUpdate s with messageRoot := newRoot
+  let expected := SSZ.hashTreeRoot Sha256 { summary with messageRoot := newRoot }
+  rootS == rootBlock && s.hashTreeRoot.1 == expected
+
+example : shapeRuleHoldsReversed = true := by native_decide
+
+/-! ## Gate 3: the primitive on its own
+
+`Node.mkPair` is the `BaseIO` form kept for callers that hold a
+root in hand. The pure `consPair` and `consTree` wrappers are what
+the gates above exercise; this one checks the primitive keeps the
+root and passes `none` cells through. -/
+
+open SizzLean.Cache.MerkleTree in
+private def primitiveRoots : Bool :=
+  let l : Node := .leaf (ByteArray.mk (Array.replicate 32 0xaa))
+  let r : Node := .leaf (ByteArray.mk (Array.replicate 32 0xbb))
+  let root := Hasher.combine (H := Sha256)
+    (ByteArray.mk (Array.replicate 32 0xaa)) (ByteArray.mk (Array.replicate 32 0xbb))
+  let consed := Node.consPair l r root
+  let plain : Node := .pair l r none
+  consed.merkleRoot Sha256 == root && plain.merkleRoot Sha256 == root
+    && (Node.consTree plain).merkleRoot Sha256 == root
+
+example : primitiveRoots = true := by native_decide
 
 end SizzLeanTests.HashConsCoherence

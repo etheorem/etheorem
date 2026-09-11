@@ -8,6 +8,7 @@ import SizzLeanBench.Scenarios.ColdRootLarge
 import SizzLeanBench.Scenarios.BatchedWritesLarge
 import SizzLeanBench.Scenarios.BlockProcessingLarge
 import SizzLeanBench.Scenarios.FuluStateTransition
+import SizzLeanBench.MultiState
 
 /-!
 # `SizzLeanBench`: microbenchmark library root
@@ -34,11 +35,15 @@ construction differs. After construction, the user writes
 | **pure** | (none, plain `T`) | `SSZ.hashTreeRoot Sha256 v` / `SSZ.serialize v` / `{ v with f := x }`. No library wrappers. |
 | **cached** | `SSZ.FastBox v` | Every transparent optimisation (pending overlay, root Thunk memo, bytes Thunk memo, `@[specialize]`) fires automatically. |
 
-There is no "Cached + Batch" or "Cached + Consing" column.
-Both ship as *library primitives* (`sha256BatchCombine`,
-`Node.mkPair`) but are not invoked from `merkleRootWithCache`'s
-recursive walk or from `Node.ofShape` / `setAt`. They are not
-on the user's normal interface, so they stay out of the bench.
+There is no "Cached + Batch" column: `sha256BatchCombine` ships
+as a library primitive that `merkleRootWithCache` does not call.
+Hash-consing is an opt-in on the cached constructor
+(`SSZ.FastBox v (consing := true)`), and a single resident state
+gains nothing from it, so it stays out of this grid too. Its own
+bench is `ssz_multistate` (`SizzLeanBench/MultiState.lean`, run
+via `just sizzlean-bench-multistate`), which keeps many similar
+states resident and counts the distinct cells each configuration
+holds.
 
 ## Three fixtures
 

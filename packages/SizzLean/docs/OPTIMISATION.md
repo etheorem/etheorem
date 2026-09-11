@@ -387,7 +387,7 @@ Five sub-stages with a microbenchmark in
 | 17b.0 | Batched FFI primitive `sha256BatchCombine` + named axiom | **shipped** |
 | 17b.1 | Multi-buffer inner loop in the C shim (ISA-L on x86_64 Linux) | **shipped** |
 | 17b.2 | Rank-frontier Lean walker that batches `sha256BatchCombine` by readiness rank | **not done** |
-| 17c | Hash-consing primitive (`Node.mkPair`) | **library primitive shipped; not on default cached path** |
+| 17c | Hash-consing on the cached path, opt-in at `Box` construction | **shipped; default off** |
 | 17d | `@[specialize]` on the three SSZ surfaces | **shipped** |
 | 17e | Fused commit walk (`Node.commitAndHash`) + pre-cached `Node.ofShape` builders | **shipped** |
 
@@ -428,10 +428,12 @@ because there's only one root read. The SHA-256 work itself is
 the dominant cost, the same in both paths.
 
 `@[specialize]` (17d) fires in both columns (compile-time, can't
-be toggled at runtime). 17b batched SHA-256 and 17c hash-consing
-are *not* exercised by the default cached path. They're opt-in
-through separate APIs (`sha256BatchCombine` / `Node.mkPair`); see
-their dedicated bench files for in-isolation measurements.
+be toggled at runtime). 17b batched SHA-256 is *not* exercised by
+the default cached path; it is opt-in through `sha256BatchCombine`.
+17c hash-consing is on the cached path but off by default;
+`SSZ.FastBox v (consing := true)` turns it on per box, and its
+own bench (`ssz_multistate`) measures the multi-state workload it
+exists for.
 
 The ordering below is the default sequence (highest-impact-
 first per Lighthouse's Milhouse benchmarks and Lodestar's
@@ -854,54 +856,83 @@ underfilled tail off the SIMD path. 17b.1 owns where that
 threshold sits; 17b.2 owns producing buckets big enough to clear
 it.
 
-### Stage 17c: Hash-consing: **library primitive shipped; not on user interface**
+### Stage 17c: Hash-consing: **shipped; default off, opt-in at `Box` construction**
 
-**Shipped as a library primitive (not wired into the cached
-path).** A global `IO.Ref`-backed bounded-LRU cache
+**What ships.** A global `IO.Ref`-backed bounded cache
 (`SizzLean/Cache/MerkleTree/HashCons.lean`, default capacity
-4096) plus the `Node.mkPair` smart constructor that consults
-the cache. On a cache hit (same 32-byte root previously seen),
-returns the cached `Node` cell; on a miss, allocates fresh and
-inserts. `Node.mkPair` is opt-in. Existing `.pair`
-allocations in `setAt` / `Build.lean` / etc. continue
-unchanged, and `merkleRootWithCache` does **not** call into the
-consing cache. The user-facing `box.hashTreeRoot` therefore sees
-no consing today; this counts as in-flight Stage 17c work.
+4096, wipe-all eviction) keyed by 32-byte root, and a per-box
+toggle: `SSZ.FastBox v (consing := true)` (also on `CachedBox`,
+`CachedSSZ.ofValue`, `TreeBacked.ofValue`, and the two cached
+`deserialize` helpers). `SSZ.FastBox v` stays consing-off. The
+flag is stored on the `TreeBacked` and follows the box through
+every `sszUpdate`.
 
-**Measured result.** On the smart-constructor call:
+**Where the cache is consulted.** The three sites that allocate
+fresh cells on the cached path, and only when the flag is on:
 
-| Path | Time |
-|---|---|
-| `Node.mkPair` cache hit | ~180 ns |
-| `Node.mkPair` cache miss (fresh insert) | ~230 ns |
+* the initial `Node.ofShape` build inside `treeBase`, consed by
+  `Node.consTree` when the thunk is forced;
+* each pending subtree at commit, consed by `Node.consTree`
+  before `commitAndHash` installs it;
+* the spine cells `commitAndHash` allocates, through its own
+  `consing` flag and `Node.consPair`.
 
-The standing micro-bench on the scenarios fixture set (single
-root on `ValidatorSet16`, no inter-tree subtree redundancy)
-showed consing **slowed every root call by ~9×**. The
-cache-lookup overhead per pair is paid on every interior node,
-and the workload offers no hits to amortise it. The win shape
-ChainSafe documents (~30% heap reduction) only materialises on
-multi-tree archival / gossip-aggregation workloads where many
-similar block-states are kept resident.
+`merkleRootWithCache`, `setAt`, `Build.lean`, `Sha256Spec`, the
+uncached flavour, and plain `T` are untouched. With the flag off
+the three sites run exactly as before. The two pure entry points
+are `@[implemented_by]` wrappers over the `BaseIO` primitive; the
+kernel sees the identity and the plain allocation.
 
-**Default-OFF when integrated.** When this is eventually wired
-into the default cached path so the user no longer has to know
-about consing, the **default configuration must keep consing
-off**, with an explicit `Box`-construction opt-in for workloads
-that benefit. Concretely: `SSZ.FastBox v` continues to return a
-consing-off Box; `SSZ.FastBox v (consing := true)` (or a similar
-named-argument toggle on the construction site) is the
-opt-in for archival / gossip-aggregation use. Defaulting it on
-would regress every non-archival scenario by the ~9× factor
-above.
+**The shape rule.** Equal roots do not imply equal shapes: a
+container and the vector of its field roots merkleize to the same
+root (`BeaconBlock` versus `BeaconBlockHeader`), and a same-root
+cell of the wrong shape would swallow later writes at a leaf. A
+hit is accepted only when `Node.shapeEq` holds, leaf against leaf
+and pair against pair at every position, with a pointer
+short-circuit so the check is O(1) once children were consed
+first. `SizzLeanTests/HashConsCoherence.lean` gates both the root
+coherence and the shape rule through `SSZ.FastBox`.
 
-Also deferred: weak-reference semantics. Lean 4 doesn't expose
-a weak-ref API; the bounded-LRU fallback (wipe-all eviction
-when capacity is hit) is what ships. For workloads that justify
-weak refs, the swap is local to `HashCons.lean`.
+**Measured result.** `ssz_multistate` (`just
+sizzlean-bench-multistate`) keeps `N` fresh `ValidatorSet256`
+states resident, each one validator away from a shared base, and
+counts the distinct tree cells the `N` trees reach:
+
+| N | consing off: pairs / leaves | consing on: pairs / leaves | est. bytes off → on |
+|---|---|---|---|
+| 1 | 2303 / 2304 | 2041 / 1787 | 405 KB → 341 KB |
+| 10 | 23030 / 23040 | 2123 / 1794 | 4.05 MB → 350 KB |
+| 50 | 115150 / 115200 | 2445 / 1794 | 20.3 MB → 383 KB |
+| 100 | 230300 / 230400 | 2846 / 1794 | 40.5 MB → 425 KB |
+
+Resident cells grow by about eight pairs per extra state with
+consing on (one validator subtree plus one spine), against 2303
+pairs per state without. The first state pays the cold fill,
+about 2.2× its consing-off build time on the bench host; from
+then on a top-level hit skips the whole subtree below it, and the
+100-state run lands within a few percent of consing off. The
+cache capacity has to fit the workload: the bench raises it to
+2^20 because the default 4096 is smaller than one of these trees.
+
+The cache lives in a global `IO.Ref`, and the runtime marks every
+value stored into such a ref as shared between threads. The map
+is therefore a `Lean.PersistentHashMap`, whose insert path-copies
+in O(log n) whether or not it is shared; a `Std.HashMap` in the
+same position copied its bucket array on every insert and made
+the cold fill quadratic. The consed cells carry the same marking,
+so later touches on them count references atomically.
+
+The scenarios bench (`ssz_bench`) is the guard that the default
+path is unchanged; its rows carry no consing column because a
+single resident state gains nothing from it.
+
+**Deferred.** Weak-reference semantics. Lean 4 has no weak-ref
+API, so the bounded map with wipe-all eviction stays. For
+workloads that justify weak refs, the swap is local to
+`HashCons.lean`.
 
 **Original design notes follow**, the prior-art map and the
-weak-ref design discussion both still apply to the follow-up.
+weak-ref design discussion both still apply.
 
 **What it does.** Dedupe identical populated subtrees globally
 via a weak `HashMap (Hash32) Node`. Complements `ZERO_HASHES`'s
@@ -1148,7 +1179,7 @@ optimisation preserves that property:
 |---|---|
 | 17a Overlay | Touches `TreeBacked` directly. `UncachedSSZ` has no spine to defer; plain `T` doesn't have a pending-writes map either. |
 | 17b Batched SHA-256 | Wired as an `@[implemented_by]` swap on `merkleRootWithCache` (or behind `Hasher Sha256`). The abstract `Hasher` typeclass and the `Sha256Spec` instance are unchanged. |
-| 17c Hash-consing | Operates on `Node` allocations. The pure spec path doesn't allocate `Node`s, it hashes through the `SSZType` recursion directly. |
+| 17c Hash-consing | Operates on `Node` allocations behind a per-box flag. The pure spec path doesn't allocate `Node`s, it hashes through the `SSZType` recursion directly. |
 | 17d `@[specialize]` | Compile-time recommendation. Lean's kernel sees the unspecialised definition for proof reduction; `rfl` / `decide` close identically before and after. |
 | 17e Serialised cache | Slot on `TreeBacked` only. `UncachedSSZ` doesn't have it; `SSZ.serialize` on plain `T` doesn't consult it. |
 

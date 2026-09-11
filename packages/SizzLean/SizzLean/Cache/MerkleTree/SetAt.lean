@@ -2,6 +2,7 @@ import SizzLean.Hasher.Class
 import SizzLean.Cache.MerkleTree.Node
 import SizzLean.Cache.MerkleTree.Zero
 import SizzLean.Cache.MerkleTree.Merkle
+import SizzLean.Cache.MerkleTree.HashCons
 
 /-!
 # `SizzLean.Cache.MerkleTree.SetAt`: generalized-index updates
@@ -212,8 +213,14 @@ recursive `rootOf` on them is O(1) at the top.
 
 The result is observationally equivalent to
 `(n.setManyAt updates).merkleRootWithCache H`, just allocated
-half as many spine pairs. -/
-partial def Node.commitAndHash (H : Type) [Hasher H] :
+half as many spine pairs.
+
+`consing` routes each fresh spine cell through `Node.consPair`
+(the hash-cons cache, `MerkleTree/HashCons.lean`) so a spine that
+another resident tree already holds is shared instead of copied.
+Off by default; `TreeBacked.hashTreeRootCached` passes the box's
+own flag. With it off, this walk allocates exactly as before. -/
+partial def Node.commitAndHash (H : Type) [Hasher H] (consing : Bool := false) :
     Node → List (List Bool × Node) → ByteArray × Node
   | n, [] =>
       -- No updates: fall through to `merkleRootWithCache` which
@@ -247,11 +254,12 @@ partial def Node.commitAndHash (H : Type) [Hasher H] :
             | _             => none
           let (rootL, l') := match lefts with
             | []     => (Node.rootOf H l, l)
-            | _ :: _ => Node.commitAndHash H l lefts
+            | _ :: _ => Node.commitAndHash H consing l lefts
           let (rootR, r') := match rights with
             | []     => (Node.rootOf H r, r)
-            | _ :: _ => Node.commitAndHash H r rights
+            | _ :: _ => Node.commitAndHash H consing r rights
           let root := Hasher.combine (H := H) rootL rootR
-          (root, .pair l' r' (some root))
+          if consing then (root, Node.consPair l' r' root)
+          else (root, .pair l' r' (some root))
 
 end SizzLean.Cache.MerkleTree

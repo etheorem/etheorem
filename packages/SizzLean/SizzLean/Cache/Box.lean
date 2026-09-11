@@ -85,10 +85,11 @@ namespace Box
 /-- Wrap a value in the cached flavour with an explicit hasher.
 The user-facing smart constructors `SSZ.FastBox` (Sha256-pinned)
 and `SSZ.CachedBox` (hasher-explicit) are the more ergonomic
-entry points. -/
-private def ofCached (H : Type) [Hasher H] {T : Type} [SSZRepr T] (v : T) :
-    Box H T :=
-  .cached (TreeBacked.ofValue H v)
+entry points. `consing` is the hash-cons opt-in
+(`Cache/TreeBacked.lean`, *Hash-consing*). -/
+private def ofCached (H : Type) [Hasher H] {T : Type} [SSZRepr T] (v : T)
+    (consing : Bool := false) : Box H T :=
+  .cached (TreeBacked.ofValue H v consing)
 
 /-- Wrap a value in the uncached flavour with an explicit hasher.
 The user-facing smart constructors `SSZ.PureBox` (Sha256-pinned)
@@ -166,15 +167,29 @@ substitutable when a spec function takes a single
   right names when the hasher is the variable: writing
   `FastBox Sha256Spec` would contradict itself (`Fast` already
   implies FFI), but `CachedBox Sha256Spec` reads cleanly.
+
+### The `consing` opt-in
+
+The two cached constructors take a named `consing : Bool` that
+defaults to `false`. `SSZ.FastBox v (consing := true)` routes the
+box's fresh tree cells through the hash-cons cache
+(`MerkleTree/HashCons.lean`), so many similar states kept resident
+share their common subtrees. A single state gains nothing and pays
+a lookup per cell, which is why the default stays off. The choice
+is made once at construction and follows the box through every
+`sszUpdate`. The uncached constructors have no such flag: they
+never allocate tree cells.
 -/
 
 /-- Build a *cached* `SSZ.Box` over Sha256, the production
 flavour. Wraps the value in the structurally-shared Merkle tree,
 hashed via the FFI SHA-256 instance, so subsequent root reads
 are O(1) and `sszUpdate`s rehash only the path from a changed
-field to the root. -/
-abbrev FastBox {T : Type} [SSZRepr T] (v : T) : Box Sha256 T :=
-  Box.ofCached Sha256 v
+field to the root. `consing := true` opts into the hash-cons
+cache; see *The `consing` opt-in* above. -/
+abbrev FastBox {T : Type} [SSZRepr T] (v : T) (consing : Bool := false) :
+    Box Sha256 T :=
+  Box.ofCached Sha256 v consing
 
 /-- Build an *uncached* `SSZ.Box` over Sha256, the proof
 flavour. Just stores the view; `hashTreeRoot` runs through the
@@ -188,10 +203,11 @@ the structurally-shared Merkle tree, with the caller-chosen
 `Hasher` instance at every hash site. Use this when a spec
 function is written generic in `H` and a call site needs a
 non-default hasher (e.g. `Sha256Spec` for kernel-reducible
-proofs of concrete root bytes, or a future Poseidon2 instance). -/
-abbrev CachedBox (H : Type) [Hasher H] {T : Type} [SSZRepr T] (v : T) :
-    Box H T :=
-  Box.ofCached H v
+proofs of concrete root bytes, or a future Poseidon2 instance).
+`consing := true` opts into the hash-cons cache, as for `FastBox`. -/
+abbrev CachedBox (H : Type) [Hasher H] {T : Type} [SSZRepr T] (v : T)
+    (consing : Bool := false) : Box H T :=
+  Box.ofCached H v consing
 
 /-- Uncached `SSZ.Box` over an explicit hasher. Just stores the
 view; `hashTreeRoot` runs through the spec each call, with the
@@ -213,10 +229,10 @@ Each helper preserves the `Except` shape, a malformed buffer
 short-circuits to `.error e` without constructing a Box. -/
 
 /-- Deserialise SSZ bytes straight into a `FastBox`. The IO-side
-companion to `SSZ.FastBox v`. -/
-def FastBox.deserialize {T : Type} [SSZRepr T] (b : ByteArray) :
-    Except SSZError (Box Sha256 T) :=
-  (SSZ.deserialize b).map FastBox
+companion to `SSZ.FastBox v`, with the same `consing` opt-in. -/
+def FastBox.deserialize {T : Type} [SSZRepr T] (b : ByteArray)
+    (consing : Bool := false) : Except SSZError (Box Sha256 T) :=
+  (SSZ.deserialize b).map fun v => FastBox v consing
 
 /-- Deserialise SSZ bytes straight into a `PureBox`. The IO-side
 companion to `SSZ.PureBox v`. -/
@@ -227,8 +243,8 @@ def PureBox.deserialize {T : Type} [SSZRepr T] (b : ByteArray) :
 /-- Deserialise SSZ bytes straight into a `CachedBox` with the
 given hasher. The IO-side companion to `SSZ.CachedBox H v`. -/
 def CachedBox.deserialize (H : Type) [Hasher H] {T : Type} [SSZRepr T]
-    (b : ByteArray) : Except SSZError (Box H T) :=
-  (SSZ.deserialize b).map (CachedBox H)
+    (b : ByteArray) (consing : Bool := false) : Except SSZError (Box H T) :=
+  (SSZ.deserialize b).map fun v => CachedBox H v consing
 
 /-- Deserialise SSZ bytes straight into an `UncachedBox` with the
 given hasher. The IO-side companion to `SSZ.UncachedBox H v`. -/

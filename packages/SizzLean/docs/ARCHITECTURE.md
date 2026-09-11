@@ -809,16 +809,14 @@ unchanged user surface (`box.hashTreeRoot`, `box.serialize`,
   call, faster underneath. The cross-platform SIMD shim
   (Stage 17b.1) keeps the Lean surface and the trust boundary
   identical across architectures.
-* **Off by default when integrated** (explicit opt-in at
-  `Box` construction): hash-consing (Stage 17c). The standing
-  micro-bench evidence is that the typical workload (one
-  resident state, no inter-tree subtree redundancy) pays a
-  ~9× per-root penalty for consing. The fix is the same shape
-  the user already uses for `H`: pick at construction, then
-  forget. The default `SSZ.FastBox v` remains consing-off; an
-  opt-in constructor variant (e.g. `SSZ.FastBox v
-  (consing := true)`) is what archival / gossip-aggregation
-  callers reach for.
+* **Off by default, opt-in at `Box` construction**:
+  hash-consing (Stage 17c). The typical workload (one resident
+  state, no inter-tree subtree redundancy) gets no hits and pays
+  a lookup per fresh cell. The toggle has the same shape the
+  user already uses for `H`: pick at construction, then forget.
+  `SSZ.FastBox v` is consing-off; `SSZ.FastBox v (consing :=
+  true)` is what archival / gossip-aggregation callers reach for,
+  and the flag follows the box through every `sszUpdate`.
 
 The principle: the user picks `H` and any opt-in optimisations
 once at construction; downstream code uses uniform method names

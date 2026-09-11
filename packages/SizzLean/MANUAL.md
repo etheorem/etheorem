@@ -608,6 +608,16 @@ let b := SSZ.FastBox f0
 #eval b.hashTreeRoot
 ```
 
+`consing := true` opts the box into the hash-cons cache, so many
+similar states kept resident share their common subtrees. The
+flag is set once and follows the box through every `sszUpdate`.
+Leave it off for a single resident state: there is nothing to
+share, and each fresh cell then pays a cache lookup.
+
+```lean
+let archived := SSZ.FastBox f0 (consing := true)
+```
+
 #### `SSZ.PureBox`
 
 Sha256-pinned uncached smart constructor. The proof-side
@@ -625,7 +635,8 @@ example : b.view = f0 := by rfl
 Hasher-explicit cached smart constructor, like `FastBox` but
 the caller picks the `Hasher`. The right entry point when a
 spec function is written generic in `H` and you want the cached
-flavour with a non-default hasher.
+flavour with a non-default hasher. Takes the same `consing`
+opt-in as `FastBox`.
 
 ```lean
 #eval (SSZ.CachedBox Sha256Spec f0).hashTreeRoot
