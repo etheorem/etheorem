@@ -111,13 +111,14 @@ theorem onExecutionPayloadEnvelope_run
 theorem onExecutionPayloadEnvelope_run_error_of_missing_block_state
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    [DataAvailability] [CryptoBackend]
-    (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope)
-    (hlookup : FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = none) :
-    (onExecutionPayloadEnvelope (map := map)
-        (StoreTransition := ForkChoiceStoreRun (Store map))
-        signedEnv).run store
-      = .error (.assert "envelope.beacon_block_root in store.block_states") := by
+    [DataAvailability] [CryptoBackend] :
+    ∀ (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope),
+      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = none →
+      (onExecutionPayloadEnvelope (map := map)
+          (StoreTransition := ForkChoiceStoreRun (Store map))
+          signedEnv).run store
+        = .error (.assert "envelope.beacon_block_root in store.block_states") := by
+  intro store signedEnv hlookup
   rw [onExecutionPayloadEnvelope_run]
   simp [hlookup]
 
@@ -125,14 +126,15 @@ theorem onExecutionPayloadEnvelope_run_error_of_missing_block_state
 theorem onExecutionPayloadEnvelope_run_error_of_data_unavailable
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    [DataAvailability] [CryptoBackend]
-    (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope) (state : State)
-    (hlookup : FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state)
-    (hda : isDataAvailable signedEnv.message.beaconBlockRoot = false) :
-    (onExecutionPayloadEnvelope (map := map)
-        (StoreTransition := ForkChoiceStoreRun (Store map))
-        signedEnv).run store
-      = .error (.assert "(isDataAvailable envelope.beaconBlockRoot)") := by
+    [DataAvailability] [CryptoBackend] :
+    ∀ (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope) (state : State),
+      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state →
+      isDataAvailable signedEnv.message.beaconBlockRoot = false →
+      (onExecutionPayloadEnvelope (map := map)
+          (StoreTransition := ForkChoiceStoreRun (Store map))
+          signedEnv).run store
+        = .error (.assert "(isDataAvailable envelope.beaconBlockRoot)") := by
+  intro store signedEnv state hlookup hda
   rw [onExecutionPayloadEnvelope_run]
   simp [hlookup, hda]
 
@@ -140,16 +142,17 @@ theorem onExecutionPayloadEnvelope_run_error_of_data_unavailable
 theorem onExecutionPayloadEnvelope_run_error_of_verify
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    [DataAvailability] [CryptoBackend]
-    (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope)
-    (state : State) (err : StoreTransitionError)
-    (hlookup : FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state)
-    (hda : isDataAvailable signedEnv.message.beaconBlockRoot = true)
-    (hverif : verifyExecutionPayloadEnvelope state signedEnv = .error err) :
-    (onExecutionPayloadEnvelope (map := map)
-        (StoreTransition := ForkChoiceStoreRun (Store map))
-        signedEnv).run store
-      = .error err := by
+    [DataAvailability] [CryptoBackend] :
+    ∀ (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope)
+      (state : State) (err : StoreTransitionError),
+      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state →
+      isDataAvailable signedEnv.message.beaconBlockRoot = true →
+      verifyExecutionPayloadEnvelope state signedEnv = .error err →
+      (onExecutionPayloadEnvelope (map := map)
+          (StoreTransition := ForkChoiceStoreRun (Store map))
+          signedEnv).run store
+        = .error err := by
+  intro store signedEnv state err hlookup hda hverif
   rw [onExecutionPayloadEnvelope_run]
   simp [hlookup, hda, hverif]
 
@@ -157,21 +160,22 @@ theorem onExecutionPayloadEnvelope_run_error_of_verify
 theorem onExecutionPayloadEnvelope_run_error_of_record
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    [DataAvailability] [CryptoBackend]
-    (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope)
-    (state warm : State) (err : StoreTransitionError)
-    (hlookup : FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state)
-    (hda : isDataAvailable signedEnv.message.beaconBlockRoot = true)
-    (hverif : verifyExecutionPayloadEnvelope state signedEnv = .ok warm)
-    (hrec : (recordPayloadInclusionListSatisfaction
-        (StoreTransition := ForkChoiceStoreRun (Store map))
-        store state signedEnv.message.beaconBlockRoot
-        signedEnv.message.payload).run store
-      = .error err) :
-    (onExecutionPayloadEnvelope (map := map)
-        (StoreTransition := ForkChoiceStoreRun (Store map))
-        signedEnv).run store
-      = .error err := by
+    [DataAvailability] [CryptoBackend] :
+    ∀ (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope)
+      (state warm : State) (err : StoreTransitionError),
+      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state →
+      isDataAvailable signedEnv.message.beaconBlockRoot = true →
+      verifyExecutionPayloadEnvelope state signedEnv = .ok warm →
+      (recordPayloadInclusionListSatisfaction
+          (StoreTransition := ForkChoiceStoreRun (Store map))
+          store state signedEnv.message.beaconBlockRoot
+          signedEnv.message.payload).run store
+        = .error err →
+      (onExecutionPayloadEnvelope (map := map)
+          (StoreTransition := ForkChoiceStoreRun (Store map))
+          signedEnv).run store
+        = .error err := by
+  intro store signedEnv state warm err hlookup hda hverif hrec
   rw [onExecutionPayloadEnvelope_run]
   simp [hlookup, hda, hverif, hrec]
 
