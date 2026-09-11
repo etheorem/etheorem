@@ -861,10 +861,11 @@ separation.
   handler path that writes `blockStates`, `payloads`, and
   `payloadInclusionListSatisfaction` at the same
   `signedEnv.message.beaconBlockRoot` is proved in
-  `Proofs/Heze/OnExecutionPayloadEnvelope.lean`. Looking up that recorded
-  result, including a later `false` used by
-  `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`, remains tracked
-  by the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+  `Proofs/Heze/OnExecutionPayloadEnvelope.lean`. Lookup-after-insert,
+  contains-after-insert, and composition of a handler-produced store with
+  `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied` remain open on
+  this row in `PROOF_LEDGER.md`, because the generic `FcMap` interface
+  provides no insert/lookup or insert/contains law.
 
 - **`Proofs/Heze/GetInclusionListTransactions.lean`** proves the collector
   run equations used by the recorder characterization.
@@ -900,14 +901,22 @@ separation.
   branch with an arbitrary `postRunnerStore`. The generic `FcMap`
   interface does not specify how insert affects a later lookup.
 
-- **`Proofs/Heze/OnExecutionPayloadEnvelope.lean`** proves the successful-run
-  equation for Heze’s `onExecutionPayloadEnvelope` at
-  `ForkChoiceStoreRun (Store map)`. After the block-state lookup,
-  data-availability check, payload verification, and timely inclusion-list
-  collection succeed, the handler inserts the warm state, envelope, and
-  inclusion-list result at the same beacon-block root. See the
-  `onExecutionPayloadEnvelope` row in `PROOF_LEDGER.md` for the remaining
-  obligations.
+- **`Proofs/Heze/OnExecutionPayloadEnvelope.lean`** proves
+  `onExecutionPayloadEnvelope_run` in `EthCLSpecs.Proofs.Heze` and tags it
+  `@[characterizes EthCLSpecs.Heze.onExecutionPayloadEnvelope]`. The
+  equation is complete at `ForkChoiceStoreRun (Store map)`. Missing
+  `blockStates` and failed data availability are `.assert` errors.
+  Verification and recorder errors propagate unchanged. On recorder
+  success the handler's final `set` writes `blockStates` and `payloads`
+  on the recorder's explicitly returned store and discards the
+  recorder-produced runner state. `.error err` contains no post-state.
+  `onExecutionPayloadEnvelope_run_eq_of_successful_checks` restates the
+  successful branch as the original store updated by three same-root
+  `FcMap.insert` expressions. The recorder's slot-zero and collector
+  outcomes remain characterized by
+  `recordPayloadInclusionListSatisfaction_run`. See the
+  `shouldExtendPayload` row in `PROOF_LEDGER.md` for lookup-after-insert
+  and related obligations.
 
 - **`Proofs/Gloas/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
   single record update, which doubles as the frame condition that no other Store

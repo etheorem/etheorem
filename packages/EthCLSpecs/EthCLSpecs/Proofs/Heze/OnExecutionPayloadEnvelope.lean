@@ -16,8 +16,9 @@ propagate unchanged. No handler `set` has executed on those paths, and
 `.error err` contains no post-state.
 
 The recorder does not mutate the runner with `set`. On success it returns an
-explicitly updated `Store` value. The handler uses that returned value as the
-base of its final `set`, discarding the recorder-produced runner state.
+explicitly updated `Store` value with `pure`. The handler uses that returned
+value as the base of its final `set`, discarding the recorder-produced runner
+state.
 
 Lookup-after-insert, contains-after-insert, `isPayloadVerified`, and
 composition with `shouldExtendPayload` remain separate semantic obligations.
