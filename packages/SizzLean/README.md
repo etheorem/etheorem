@@ -383,14 +383,19 @@ You need two system packages:
 * **`pkg-config`:** the canonical Unix discovery tool the build
   uses to find the above.
 
+On x86_64 Linux a third one, **`nasm`**, assembles the vendored
+ISA-L multi-buffer SHA-256 lanes that `LeanHazmatSha256` builds for
+`sha256BatchCombine` (`just hazmat-sha256-vendor` fetches the pinned
+source). Other hosts take the OpenSSL loop and need no assembler.
+
 | Platform | One-liner |
 |---|---|
-| Debian / Ubuntu | `sudo apt install libssl-dev pkg-config` |
-| Fedora / RHEL   | `sudo dnf install openssl-devel pkgconf-pkg-config` |
-| Arch            | `sudo pacman -S openssl pkgconf` |
-| Alpine          | `sudo apk add openssl-dev pkgconf` |
+| Debian / Ubuntu | `sudo apt install libssl-dev pkg-config nasm` |
+| Fedora / RHEL   | `sudo dnf install openssl-devel pkgconf-pkg-config nasm` |
+| Arch            | `sudo pacman -S openssl pkgconf nasm` |
+| Alpine          | `sudo apk add openssl-dev pkgconf nasm` |
 | macOS (Homebrew) | `brew install openssl@3 pkg-config` |
-| NixOS           | add `openssl pkg-config` to your `shell.nix` / `flake.nix` |
+| NixOS           | add `openssl pkg-config nasm` to your `shell.nix` / `flake.nix` |
 
 To verify your machine is set up, both system deps and the Lean
 toolchain, run from the umbrella root:

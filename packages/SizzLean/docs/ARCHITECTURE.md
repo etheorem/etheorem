@@ -1099,7 +1099,7 @@ the verification frontier needs it, not before.
 | `Hasher/Sha256.lean`     | `@[extern] opaque sha256Combine` + `instance Hasher Sha256` + Lake C shim. | 1 |
 | `Hasher/Sha256Spec.lean` | Pure-Lean SHA-256 reference; tightens TCB by replacing the FFI assertion with a kernel-checked `@[csimp]`. | 2 (deferred) |
 | `Hasher/Sha256Equiv.lean` | Two axioms naming the empirical FFI ≡ pure-Lean SHA-256 equivalence (`sha256Hash_eq_spec`, `sha256Combine_eq_spec`). Promotes the conformance-validated assertion to an auditable Lean axiom; replaceable by a `@[csimp]`-proved theorem in Phase 4. | 2 |
-| `Hasher/Sha256Batch.lean` | Stage 17b: FFI batched-combine primitive `sha256BatchCombine` for an `Array (ByteArray × ByteArray)` of sibling pairs, plus the third equivalence axiom `sha256BatchCombine_eq_spec`. The C shim ships in `csrc/sha256_batch.c` (scalar EVP loop with shared context); the SIMD path (SHA-NI / AVX-512) plugs into the same FFI surface as a follow-up. | 2 |
+| `Hasher/Sha256Batch.lean` | Stage 17b: FFI batched-combine primitive `sha256BatchCombine` for an `Array (ByteArray × ByteArray)` of sibling pairs, plus the third equivalence axiom `sha256BatchCombine_eq_spec`. The C shim ships in `LeanHazmatSha256/csrc/sha256_batch.c`: Intel ISA-L's multi-buffer engine on x86_64 Linux (Stage 17b.1), the OpenSSL EVP loop with a shared context elsewhere, behind one FFI surface. | 2 |
 
 ### 9.4 Batched-combine plan (Stage 17b.1): Option A, single Sha256 tag
 
@@ -1148,20 +1148,20 @@ Surfacing the ISA choice as a tag would:
 * push hardware-availability decisions to the Lean type level
   when they belong to a runtime CPUID check in the C shim.
 
-The C shim handles dispatch internally: runtime CPUID picks
-SHA-NI / AVX-512 / scalar at startup and stashes the chosen
-function pointer. Lean code stays at `[Hasher Sha256]`; the user
-gets the fastest available implementation transparently. A
-build-time `--scalar-only` flag stays available for environments
-that need to disable runtime SIMD.
+The C shim handles dispatch internally: on x86_64 Linux ISA-L's
+CPUID dispatch picks the AVX-512 / AVX2 / SSE / SHA-NI lanes at run
+time; other hosts compile the OpenSSL loop. Lean code stays at
+`[Hasher Sha256]`; the user gets the fastest available
+implementation transparently.
 
 **Implementation order (do not skip ahead).** The work is layered
 so each step lands a measurable win and the typeclass extension
 doesn't precede a use-case that validates it:
 
-1. **C-side AVX-512 inner loop** in `csrc/sha256_batch.c`. No
-   Lean change. `sha256BatchCombine`'s FFI surface stays
-   identical; any existing caller benefits immediately.
+1. **C-side multi-buffer inner loop** in `csrc/sha256_batch.c`
+   (Stage 17b.1, shipped: ISA-L on x86_64 Linux). No Lean change.
+   `sha256BatchCombine`'s FFI surface stays identical; any
+   existing caller benefits immediately.
 2. **Refactor `merkleRootWithCache` / `commitAndHash` to
    level-order** with `sha256BatchCombine` called directly (no
    typeclass change yet: hardcode `Sha256`'s batched primitive).
@@ -1278,14 +1278,14 @@ graph LR
   `SizzLeanTests/Sha256BatchEquivalence.lean` (7 cases including
   empty / single / 8-pair). Cleared by the same Phase 4 `@[csimp]`
   follow-up as the scalar pair. The C shim is intentionally
-  architecture-aware: the shipped scalar EVP loop is the
-  portability floor (Stage 17b.0); the planned SIMD/hardware-SHA
-  path (Stage 17b.1) dispatches per architecture via a single
-  `#ifdef __x86_64__` block inside `csrc/sha256_batch.c`. On x86_64
-  it links Intel **ISA-L** (BSD-3-Clause; auto-dispatches
-  AVX-512 / AVX2 / SSE via CPUID, covering Intel and AMD); on
-  ARM64 it falls back to OpenSSL, which already uses ARMv8 SHA-Ext
-  on Apple Silicon and Graviton 3+. Importantly, **the Lean-side
+  architecture-aware: the OpenSSL EVP loop is the portability
+  floor (Stage 17b.0); the multi-buffer path (Stage 17b.1) is
+  selected per build host by `LeanHazmatSha256/lakefile.lean` and
+  reaches `csrc/sha256_batch.c` as one define. On x86_64 Linux it
+  compiles in vendored Intel **ISA-L** (BSD-3-Clause; auto-dispatches
+  AVX-512 / AVX2 / SSE / SHA-NI lanes via CPUID, covering Intel and
+  AMD); every other host keeps OpenSSL, which already uses ARMv8
+  SHA-Ext on Apple Silicon and Graviton 3+. Importantly, **the Lean-side
   surface is unchanged across architectures**: the
   `sha256BatchCombine` signature, the
   `sha256BatchCombine_eq_spec` axiom, and the

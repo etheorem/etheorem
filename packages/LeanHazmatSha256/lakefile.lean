@@ -2,8 +2,10 @@
 --
 -- Uses `lakefile.lean` rather than `lakefile.toml` because the FFI
 -- SHA-256 shims (`csrc/sha256_*.c`) need procedural build targets
--- (`buildO` over `.c` files) and `pkg-config`-driven OpenSSL
--- discovery, neither of which the declarative TOML form can express.
+-- (`buildO` over `.c` files), `pkg-config`-driven OpenSSL discovery,
+-- and, on x86_64 Linux, a delegated build of the vendored ISA-L
+-- `sha256_mb` unit; the declarative TOML form can express none of
+-- these.
 --
 -- Per hazmat-docs/ARCHITECTURE.md §3.3 the pkg-config / glob helpers
 -- below are deliberately *duplicated* across family lakefiles rather
@@ -109,24 +111,110 @@ target sha256_shim.o pkg : FilePath := do
   let leanInclude ← getLeanIncludeDir
   buildO obj (← inputTextFile src) (cShimFlags leanInclude) #[] "cc" getLeanTrace
 
+/-! ## Batched combine backend: ISA-L on x86_64 Linux, OpenSSL elsewhere
+
+`csrc/sha256_batch.c` has two backends behind one symbol. On x86_64
+Linux it uses Intel ISA-L crypto's `sha256_mb` multi-buffer engine
+(4 / 8 / 16 lanes, CPUID-dispatched at run time); everywhere else it
+keeps the OpenSSL EVP loop. This lakefile makes that choice once, in
+`useIsal`, and passes it to the C file as `-DLEAN_HAZMAT_SHA256_ISAL`,
+so the compiled code and the archive contents cannot disagree.
+
+ISA-L is vendored (`just hazmat-sha256-vendor`, pinned tag, gitignored
+`vendor/isa-l_crypto/`), like blst and c-kzg. Its SHA-256 lanes are
+`nasm` assembly, so the x86_64 Linux build needs `nasm` on `PATH`
+(`just doctor-native` checks). Per hazmat-docs/ARCHITECTURE.md §6 the
+Lake target delegates to ISA-L's own `Makefile.unx` for the one
+`sha256_mb` unit rather than re-deriving its flags; the resulting
+objects are folded into this package's single archive, so no new link
+flag is needed here or in any dependent package. -/
+
+/-- Use the ISA-L backend on x86_64 Linux only. ISA-L's `sha256_mb`
+also builds on macOS x86_64, but that target is not worth a second
+assembler configuration; it takes the OpenSSL loop. -/
+def useIsal : Bool :=
+  System.Platform.target.startsWith "x86_64"
+    && !System.Platform.isWindows && !System.Platform.isOSX
+
+/-- The vendored ISA-L crypto checkout (absent until `just
+hazmat-sha256-vendor` runs). -/
+def isalDir (pkg : Package) : FilePath := pkg.dir / "vendor" / "isa-l_crypto"
+
+/-- Extra C flags for `sha256_batch.c` when the ISA-L backend is on:
+the backend switch plus the vendored public headers
+(`<isa-l_crypto/sha256_mb.h>`). -/
+def isalShimFlags (pkg : Package) : Array String :=
+  if useIsal then
+    #["-DLEAN_HAZMAT_SHA256_ISAL", "-I", (isalDir pkg / "include").toString]
+  else
+    #[]
+
+-- Build ISA-L's `sha256_mb` unit through its own `Makefile.unx`
+-- (`units=sha256_mb lib`), in place under `vendor/isa-l_crypto/bin/`.
+-- `CC=cc -fPIC` because the archive is linked into precompiled shared
+-- libraries; ISA-L's plain `lib` target compiles its C without PIC.
+-- ISA-L's own runtime CPUID dispatch keeps the objects portable, so
+-- no `-march` is passed. The job's trace is `make.inc` (it carries the
+-- ISA-L version); `make` does its own incremental work per file.
+-- Returns the unit's archive; the `extern_lib` below folds the
+-- objects next to it into the family archive.
+target isal_sha256_mb.a pkg : FilePath := do
+  let dir := isalDir pkg
+  let makefile := dir / "Makefile.unx"
+  unless (← makefile.pathExists) do
+    error s!"ISA-L crypto not vendored — run `just hazmat-sha256-vendor` (expected {makefile})"
+  let archive := dir / "bin" / "isa-l_crypto.a"
+  let makeInc ← inputTextFile (dir / "make.inc")
+  buildFileAfterDep archive makeInc fun _ => do
+    -- `quiet`: ISA-L echoes one line per file; keep that out of the
+    -- default build log (Lake would replay it on every build).
+    proc (quiet := true) {
+      cmd := "make"
+      cwd := dir
+      args := #["-f", "Makefile.unx", "units=sha256_mb", "lib", "CC=cc -fPIC", "-j4"]
+    }
+
+/-- The object files ISA-L's `make lib` left next to its archive. Only
+the requested unit was built, so every `.o` under `bin/` belongs to
+`sha256_mb`. -/
+def isalObjects (archive : FilePath) : IO (Array FilePath) := do
+  let some bin := archive.parent
+    | throw <| IO.userError s!"ISA-L archive has no parent directory: {archive}"
+  let entries ← bin.readDir
+  return entries.filterMap fun e =>
+    if e.path.extension == some "o" then some e.path else none
+
 -- Batched SHA-256 sibling combine. Same compilation shape as
--- `sha256_shim.o`; the two `.o` files are linked into one static lib
--- (below) so a single `extern_lib` carries the whole family.
+-- `sha256_shim.o`, plus the backend switch from `isalShimFlags`; the
+-- `.o` files are linked into one static lib (below) so a single
+-- `extern_lib` carries the whole family.
 target sha256_batch.o pkg : FilePath := do
   let src := pkg.dir / "csrc" / "sha256_batch.c"
   let obj := pkg.buildDir / "csrc" / "sha256_batch.o"
   let leanInclude ← getLeanIncludeDir
-  buildO obj (← inputTextFile src) (cShimFlags leanInclude) #[] "cc" getLeanTrace
+  let flags := cShimFlags leanInclude ++ isalShimFlags pkg
+  buildO obj (← inputTextFile src) flags #[] "cc" getLeanTrace
 
 -- The family's native archive. Lake links this `.a` into any
 -- precompiled library or executable that (transitively) `require`s
 -- this package. That is how SizzLean's hash path, and downstream
--- exes, pick up the OpenSSL-backed symbols.
+-- exes, pick up the native symbols. On x86_64 Linux the ISA-L
+-- `sha256_mb` objects are folded into the same archive, so dependents
+-- see one self-contained library on every platform.
 extern_lib libleanhazmat_sha256 pkg := do
   let shimFile  ← sha256_shim.o.fetch
   let batchFile ← sha256_batch.o.fetch
-  let name := nameToStaticLib "leanhazmat_sha256"
-  buildStaticLib (pkg.staticLibDir / name) #[shimFile, batchFile]
+  let lib := pkg.staticLibDir / nameToStaticLib "leanhazmat_sha256"
+  if useIsal then
+    let isalArchive ← isal_sha256_mb.a.fetch
+    let deps := Job.collectArray #[shimFile, batchFile, isalArchive] "objs"
+    deps.mapM fun files => do
+      let art ← buildArtifactUnlessUpToDate lib (ext := "a") (restore := true) do
+        let isalObjs ← isalObjects files[2]!
+        compileStaticLib lib (#[files[0]!, files[1]!] ++ isalObjs) (← getLeanAr)
+      return art.path
+  else
+    buildStaticLib lib #[shimFile, batchFile]
 
 @[default_target]
 lean_lib LeanHazmatSha256 where

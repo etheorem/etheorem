@@ -273,7 +273,7 @@ The other near-misses:
 
 | Family → package | Backend | Lang | Source | Rationale |
 | --- | --- | --- | --- | --- |
-| SHA-256 → `…Sha256` | OpenSSL `libcrypto` | C | system (pkg-config) | SHA-NI assembly, fastest on the SSZ merkleization hot path; system lib (no vendored maintenance); blst's SHA-256 is not stable public API. Reversible behind SizzLean's `Hasher` seam. |
+| SHA-256 → `…Sha256` | OpenSSL `libcrypto`; Intel ISA-L crypto `sha256_mb` for the batched combine on x86_64 Linux | C (+ nasm asm) | system (pkg-config); ISA-L vendored | SHA-NI / ARMv8 SHA-Ext assembly, fastest single-stream on the SSZ merkleization hot path; system lib (no vendored maintenance); blst's SHA-256 is not stable public API. ISA-L is the one public multi-buffer SHA-256 API (OpenSSL's is private to its TLS ciphers), so the level-batched combine vendors it on x86_64. Reversible behind SizzLean's `Hasher` seam. |
 | BLS12-381 → `…Bls` | `blst` | C + asm | vendored | The field reference implementation; covers consensus BLS *and* every EIP-2537 EL precompile. |
 | KZG → `…Kzg` | `c-kzg-4844` | C | vendored | The consensus reference; covers blob/commitment/proof, Fulu PeerDAS cells, and the EIP-4844 point-eval precompile. Built on blst (§4). |
 | secp256k1 → `…Secp256k1` | `libsecp256k1` | C | system if present, else vendored | bitcoin-core's reference; ecRecover. |

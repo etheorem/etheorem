@@ -385,8 +385,8 @@ Five sub-stages with a microbenchmark in
 |---|---|---|
 | 17a | Pending overlay (closure-based, read-from-view at commit) | **shipped** |
 | 17b.0 | Batched FFI primitive `sha256BatchCombine` + named axiom | **shipped** |
-| 17b.1 | AVX-512 / SHA-NI inner loop in the C shim | **not done** (FFI surface ready; swap is C-side only) |
-| 17b.2 | Rank-frontier Lean walker that batches `sha256BatchCombine` by readiness rank | **not done** (depends on 17b.1 to be worth wiring) |
+| 17b.1 | Multi-buffer inner loop in the C shim (ISA-L on x86_64 Linux) | **shipped** |
+| 17b.2 | Rank-frontier Lean walker that batches `sha256BatchCombine` by readiness rank | **not done** |
 | 17c | Hash-consing primitive (`Node.mkPair`) | **library primitive shipped; not on default cached path** |
 | 17d | `@[specialize]` on the three SSZ surfaces | **shipped** |
 | 17e | Fused commit walk (`Node.commitAndHash`) + pre-cached `Node.ofShape` builders | **shipped** |
@@ -396,8 +396,8 @@ crossed in two directions: the benches now show *which* of the
 shipped optimisations deliver real wins (17a + 17e together are
 the headline cache-vs-pure ratio on realistic workloads, see
 S6/S7 in the bench) and *which* ship infrastructure pending a
-follow-up to light up (17b.1 / 17b.2, needs the SIMD inner loop
-and the rank-frontier walker). Each section below records both the
+follow-up to light up (17b.0 + 17b.1, the batched primitive and
+its multi-buffer shim, wait on the 17b.2 rank-frontier walker). Each section below records both the
 design and the measured result; the per-sub-stage details
 remain accurate as implementation references. They document what
 the optimisation does, the data structure it needs, the prior
@@ -655,57 +655,58 @@ the FFI columns measures the FFI's value at hash work. Proofs
 about state-transition functions don't pay this cost because
 they reduce structurally and don't actually compute hashes.
 
-#### Stage 17b.1: Cross-platform SIMD shim: **not done**
+#### Stage 17b.1: Cross-platform SIMD shim: **shipped**
 
-**Goal.** Replace the scalar EVP loop inside
-`csrc/sha256_batch.c` with a per-architecture dispatch that uses
-real SIMD or hardware-SHA where available. Single C shim, one
-library per architecture; the Lean-side surface
-(`sha256BatchCombine`) and the axiom (`sha256BatchCombine_eq_spec`)
-are unchanged.
+**What shipped.** `LeanHazmatSha256/csrc/sha256_batch.c` carries two
+backends behind the one `lean_hazmat_sha256_batch_combine` symbol,
+and `LeanHazmatSha256/lakefile.lean` picks one per build host
+(`useIsal`) and passes the choice to the C file as a single define:
 
-* **x86_64 (Intel + AMD)**: link **Intel ISA-L**
-  (BSD-3-Clause, Intel-maintained, ships in Debian/Ubuntu /
-  RHEL / Alpine as `libisal-crypto-dev`). Its `sha256_mb` API
-  hashes 4 (SSE) / 8 (AVX2) / 16 (AVX-512) buffers in parallel,
-  auto-dispatched via CPUID at runtime. Works identically on
-  AMD CPUs that support the same SIMD ISA (Zen 1+ for AVX2,
-  Zen 4+ for AVX-512).
-* **ARM64 (Apple Silicon, AWS Graviton, ARM servers)**: fall
-  back to **OpenSSL** (already in our link line). OpenSSL's EVP
-  path uses ARMv8 SHA-Ext on supported CPUs (every Apple
-  M-series chip, Graviton 3+, etc.), each single-pair hash is
-  already ~30–50 ns. The "batched" path on ARM is a tight loop
-  over fast single-pair calls; the function-call amortisation
-  is the win, ~1.5×, not the 8–16× of x86 SIMD.
-* **Fallback** (older ARM without SHA-Ext, RISC-V, etc.):
-  OpenSSL EVP loop. Same code path as the ARM64 case.
+* **x86_64 Linux (Intel + AMD)**: Intel **ISA-L crypto** `sha256_mb`
+  (BSD-3-Clause), vendored at a pinned tag by
+  `just hazmat-sha256-vendor` and built through ISA-L's own
+  `Makefile.unx` for the one `sha256_mb` unit (needs `nasm`). Its
+  job manager hashes 4 (SSE) / 8 (AVX2) / 16 (AVX-512) buffers in
+  lock-step, or two streams on SHA-NI parts, auto-dispatched via
+  CPUID at run time. The shim concatenates each pair into a 64-byte
+  lane buffer, submits with `ISAL_HASH_ENTIRE`, drains, and
+  serialises the eight host-order digest words big-endian. The
+  manager's scratch lives per thread, so even one pair goes through
+  ISA-L. The ISA-L objects are folded into the family's single
+  archive, so no dependent package gains a link flag.
+* **Everything else** (ARM64, macOS, other): the OpenSSL EVP loop,
+  two `EVP_DigestUpdate` calls per pair on one shared context. On
+  ARMv8 SHA-Ext CPUs (Apple M-series, Graviton 3+) OpenSSL already
+  uses the hardware instructions, so this is hardware single-stream
+  and the batch amortises the per-call overhead.
 
-```c
-// csrc/sha256_batch.c
-#if defined(__x86_64__) || defined(_M_X64)
-  #include <isa-l_crypto/sha256_mb.h>
-  // ISA-L multi-buffer: submit N pairs, flush, collect digests.
-#else
-  // OpenSSL EVP loop — hardware-SHA on ARMv8 SHA-Ext CPUs.
-#endif
-```
+ISA-L is used because OpenSSL's public EVP API hashes one buffer per
+call and cannot fill SIMD lanes; its internal `sha256_multi_block` is
+private to the TLS stitched ciphers. Distributions do not package
+ISA-L crypto (Debian's `libisal` is the storage library, without
+`sha256_mb`), so it is vendored like blst and c-kzg.
 
-`lakefile.lean` conditionally appends `-lisal_crypto` to
-`moreLinkArgs` when the target triple starts with `x86_64`.
+**Measured** (`sha256BatchCombine`, one call, 32-byte siblings; x86_64
+Linux, SHA-NI + AVX2, no AVX-512; scalar = the OpenSSL loop on the
+same host):
 
-| Architecture | Expected `sha256BatchCombine` (128 pairs) | Speedup over scalar |
-|---|---|---|
-| x86_64 with AVX-512 | ~3 µs | ~13× |
-| x86_64 with AVX2 | ~5 µs | ~8× |
-| x86_64 with SSE4.2 + SHA-NI | ~10 µs | ~4× |
-| ARM64 with ARMv8 SHA-Ext | ~25–30 µs | ~1.5× (amortisation only) |
-| ARM64 / other without hardware SHA | ~40 µs | 1× (no change) |
+| Pairs | OpenSSL loop | ISA-L | Speedup |
+|---|---|---|---|
+| 1 | ~1.7 µs | ~0.6 µs | ~2.7× |
+| 16 | ~6.9 µs | ~4.2 µs | ~1.6× |
+| 128 | ~35 µs | ~13 µs | ~2.8× |
+| 1024 | ~274 µs | ~85 µs | ~3.2× |
+
+Expected on other hosts, not measured: AVX-512 parts fill 16 lanes
+and should sit nearer ~13× on the 128-pair row; ARM64 with SHA-Ext
+keeps the ~1.5× amortisation win of the loop; hosts without hardware
+SHA are unchanged.
 
 **Trust footprint.** No change. The named axiom
-`sha256BatchCombine_eq_spec` still asserts pointwise agreement
-with the pure-Lean reference; the equivalence test re-runs
-identically.
+`sha256BatchCombine_eq_spec` still asserts pointwise agreement with
+the pure-Lean reference, and `Sha256BatchEquivalence` runs the same
+cases against whichever backend the build host compiled in. ISA-L
+sits in the same trust position as the OpenSSL shim.
 
 #### Stage 17b.2: Rank-frontier batched walker: **not done; depends on 17b.1**
 
@@ -792,17 +793,18 @@ path's default walk, or `@[implemented_by]` on
 calls, plus one rebuild, against today's single fused recursion
 in `commitAndHash`. The extra descent and the id-indexed array
 buy full batches on a pure-functional tree. They are dead weight
-until the shim underneath is genuinely parallel, which is why
-this waits on 17b.1.
+until the shim underneath is genuinely parallel, which 17b.1
+delivered on x86_64 Linux.
 
 After this lands, the scenarios bench's `S1`/`S3`/`S4`/`S6`
 ValidatorSet rows should drop on x86 with AVX-512 (approx 3–5×
 faster cached column) and modestly on ARM (~1.5×).
 
-**Dependency on 17b.1.** Without the SIMD shim the rank walker
-delivers zero measurable improvement; the scalar-shim bench
-confirmed it (FFI batched ≈ FFI scalar at ~40 µs / 128 pairs).
-Worth wiring only once 17b.1 ships.
+**Dependency on 17b.1.** The rank walker only pays off over a
+genuinely parallel shim: on the OpenSSL loop, FFI batched ≈ FFI
+scalar at ~40 µs / 128 pairs. With 17b.1 shipped (~13 µs / 128
+pairs on a SHA-NI + AVX2 host, see above), the walker is now the
+open piece.
 
 **Prior art.**
 

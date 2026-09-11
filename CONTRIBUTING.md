@@ -12,15 +12,16 @@ correctness on the verified core. Contributions are welcome.
 curl https://elan.lean-lang.org/elan-init.sh -sSf | sh
 
 # 2. Install native deps.
-# Linux (Debian/Ubuntu):
-sudo apt-get install libssl-dev pkg-config
+# Linux (Debian/Ubuntu; nasm is for x86_64 only):
+sudo apt-get install libssl-dev pkg-config nasm
 # macOS:
 brew install openssl@3 pkg-config
 
-# 3. Clone and build.
+# 3. Clone and build. `just build` first vendors the pinned native
+#    crypto sources (ISA-L, blst, c-kzg) into gitignored `vendor/` trees.
 git clone https://github.com/etheorem/etheorem
 cd etheorem
-lake build
+just build
 ```
 
 The pinned toolchain in `lean-toolchain` is picked up by elan

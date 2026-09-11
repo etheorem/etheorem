@@ -1156,8 +1156,9 @@ exposes the win through the user interface.
 
 ##### Stage 17b.0: FFI primitive + Lean wrapper + axiom: **shipped**
 
-**What's in the library.** `csrc/sha256_batch.c` (scalar EVP
-loop), `SizzLean/Hasher/Sha256Batch.lean` (`@[extern] opaque
+**What's in the library.** `csrc/sha256_batch.c` (the OpenSSL EVP
+loop; 17b.1 adds the ISA-L backend on x86_64 Linux),
+`SizzLean/Hasher/Sha256Batch.lean` (`@[extern] opaque
 sha256BatchCombine : @& Array ByteArray → @& Array ByteArray →
 Array ByteArray`), named axiom `sha256BatchCombine_eq_spec`,
 empirical-equivalence test in `SizzLeanTests/Sha256BatchEquivalence.lean`
@@ -1171,64 +1172,36 @@ amortisation we ship saves ~10 ns / pair; the compression
 itself is ~300 ns / pair. The math doesn't move until the
 compression itself is vectorised. **That's 17b.1's job.**
 
-##### Stage 17b.1: Cross-platform SIMD shim: **not done**
+##### Stage 17b.1: Cross-platform SIMD shim: **shipped**
 
-**Goal.** Replace the scalar EVP loop in `csrc/sha256_batch.c`
-with a per-architecture dispatch that uses real SIMD/hardware
-SHA where available. Single shim, one library per architecture:
+Two backends behind the one symbol in
+`LeanHazmatSha256/csrc/sha256_batch.c`; `LeanHazmatSha256/lakefile.lean`
+picks per build host (`useIsal`) and passes the choice as one define:
 
-* **x86_64 (Intel + AMD)**: link **Intel ISA-L** (BSD-3-Clause,
-  Intel-maintained, ships in Debian/Ubuntu / RHEL / Alpine as
-  `libisal-crypto-dev`). Its `sha256_mb` API hashes 4 (SSE) / 8
-  (AVX2) / 16 (AVX-512) buffers in parallel, auto-dispatched
-  via CPUID at runtime. Works identically on AMD CPUs that
-  support the same SIMD ISA (Zen 1+ for AVX2, Zen 4+ for
-  AVX-512).
-* **ARM64 (Apple Silicon, AWS Graviton, ARM servers)**: fall
-  back to **OpenSSL** (already in our link line). OpenSSL's
-  EVP path uses ARMv8 SHA-Ext on supported CPUs (every Apple
-  M-series chip, Graviton 3+, etc.). Each single-pair hash is
-  already ~30–50 ns. The "batched" path on ARM is a tight loop
-  over fast single-pair calls; the function-call amortisation
-  is the win, ~1.5×, not the 8–16× of x86 SIMD.
-* **Fallback** (older ARM without SHA-Ext, RISC-V, etc.):
-  OpenSSL EVP loop. Same code path as the ARM64 case.
+* **x86_64 Linux (Intel + AMD)**: Intel **ISA-L crypto** `sha256_mb`
+  (BSD-3-Clause), vendored at a pinned tag (`just
+  hazmat-sha256-vendor`) and built through its own `Makefile.unx`
+  for the `sha256_mb` unit (needs `nasm`). 4 (SSE) / 8 (AVX2) / 16
+  (AVX-512) lanes, or two SHA-NI streams, CPUID-dispatched at run
+  time. Objects fold into the family archive; no new link flag
+  anywhere.
+* **Everything else** (ARM64, macOS, other): the OpenSSL EVP loop.
+  Hardware single-stream on ARMv8 SHA-Ext; the batch amortises the
+  per-call overhead.
 
-**File layout** (no new Lean files; just C + lakefile):
+**File layout** (no new Lean files): the C shim, the lakefile target,
+the `hazmat-sha256-vendor` recipe, and `nasm` in `doctor-native` and
+CI.
 
-```c
-// csrc/sha256_batch.c
-#if defined(__x86_64__) || defined(_M_X64)
-  #include <isa-l_crypto/sha256_mb.h>
-  // ISA-L multi-buffer impl: submit N pairs to the ctx manager,
-  // flush, collect digests
-#else
-  // OpenSSL EVP loop — hardware-SHA on ARMv8 SHA-Ext CPUs
-#endif
-```
-
-`lakefile.lean`: conditionally append `-lisal_crypto` to
-`moreLinkArgs` when the target triple starts with `x86_64`.
-
-**Measured-after target** (per the existing
-`Sha256BatchEquivalence` fixture, 128 pairs):
-
-| Architecture | Expected `sha256BatchCombine` (128 pairs) | Speedup over scalar |
-|---|---|---|
-| x86_64 with AVX-512 | ~3 µs | ~13× |
-| x86_64 with AVX2 | ~5 µs | ~8× |
-| x86_64 with SSE4.2 + SHA-NI | ~10 µs | ~4× |
-| ARM64 with ARMv8 SHA-Ext | ~25–30 µs | ~1.5× (amortisation only) |
-| ARM64 / other without hardware SHA | ~40 µs | 1× (no change) |
-
-**Risk.** Low–medium. ISA-L is mature; the failure modes are
-build-system (linking on macOS-arm64 where ISA-L isn't
-available, handled by the `#if`-arch dispatch).
+**Measured** on a SHA-NI + AVX2 x86_64 host, 32-byte siblings, one
+call: 128 pairs ~35 µs → ~13 µs (~2.8×); 1024 pairs ~274 µs → ~85 µs
+(~3.2×); one pair ~1.7 µs → ~0.6 µs. The full table is in
+OPTIMISATION.md §Stage 17b.1.
 
 **Trust footprint.** No change. The named axiom
-`sha256BatchCombine_eq_spec` continues to assert pointwise
-agreement with the pure-Lean reference; the equivalence test
-re-runs identically.
+`sha256BatchCombine_eq_spec` continues to assert pointwise agreement
+with the pure-Lean reference; the equivalence test runs the same cases
+against whichever backend the build host compiled in.
 
 ##### Stage 17b.2: Rank-frontier batched walker in Lean: **not done; depends on 17b.1**
 
@@ -1280,11 +1253,10 @@ and reserves `sha256BatchCombine` for the wide ranks; 17b.1 owns
 where that threshold sits, 17b.2 owns producing buckets big
 enough to clear it. Reference: `gohashtree`'s `HashChunks` shape.
 
-**Dependency on 17b.1.** Without the SIMD shim, integrating
-this delivers zero measurable improvement on the scenarios
-bench (the bench data on the scalar shim confirmed this: FFI
-batched ≈ FFI scalar at ~40 µs / 128 pairs). 17b.2 is only
-worth doing once 17b.1 ships.
+**Dependency on 17b.1.** The walker only pays off over a
+genuinely parallel shim: on the OpenSSL loop, FFI batched ≈ FFI
+scalar at ~40 µs / 128 pairs. 17b.1 has shipped (~13 µs / 128
+pairs on a SHA-NI + AVX2 host), so 17b.2 is the open piece.
 
 **Dependency on Stage 15.** The batched primitive needs a
 parallel `@[csimp]` proof (or stays in the TCB behind its own
@@ -1584,5 +1556,5 @@ normalized form modeled first.
 | 1: Spec foundation | Stages 1–6 | complete (proof scaffolding lands here; the `BasicSupported` predicate has since widened, see the Stage 18 row) |
 | 2: User surface | Stages 7–9 | complete |
 | 3: Application + empirical validation | Stages 10–11, **11.1** | **complete.** `ssz_generic`: **1865/1865 cases pass**. `ssz_static` (minimal preset, full `--all` sweep): **38991/38991 cases pass** across all seven mainline forks (`phase0`, `altair`, `bellatrix`, `capella`, `deneb`, `electra`, `fulu`), zero failures, zero skipped. Conformance pinned at consensus-spec-tests **v1.6.0-beta.0** in `scripts/run_conformance.py` so the Fulu / Gloas containers track the post-v1.5.0 main-branch spec (Fulu BeaconState is now its own struct with `proposer_lookahead`; Gloas BeaconState is its own struct with the nine EIP-7732 ePBS fields). Preset duplication is eliminated by the `ssz_struct_for_presets` macro (`packages/LeanEthCS/LeanEthCS/PresetStruct.lean`); preset-sensitive containers are written once with `@@CONST` / `@%TypeName` placeholders and emitted twice (`.Minimal` / `.Mainnet`). Mainnet validated at `--limit 2` across all forks (1641/1641); mainnet `--all` is a `workflow_dispatch` button. CLI dispatch uses the `<preset>/<fork>:<type>` identifier scheme (legacy `<fork>:<type>` defaults to minimal). **CI integration**: `.github/workflows/lean_action_ci.yml` runs the conformance script at `--limit 1` on every push/PR. **Stage 11.1, harness modernisation:** `eth_ssz_vector_runner batch` mode (one process spawn per sweep, tab-separated request/response over stdin/stdout, ~70× speedup on `ssz_generic`); `tqdm` progress bar; per-fork explicit `Inherited.lean` re-exports in LeanEthCS killing the inheritance heuristic in the dispatcher; Tests/ rename to package-prefixed `SizzLeanTests/` / `LeanSha256Tests/` for umbrella-build namespace disambiguation. EIP-7441 (Whisk) deferred per scope; EIP-7732 (ePBS) Gloas containers tracked (BeaconState shape implemented; supporting types `Builder`, `BuilderPendingPayment`, `BuilderPendingWithdrawal`, and `ExecutionPayloadBid` ship in `Forks/Gloas/`). |
-| 4: Production primitives + deferred hardening | Stages 12, 13, 14a–d, **14e**, 15, 17a–e (Stage 16 dropped, see note) | **Cache backbone + ergonomic surface + Sha256Spec green: 14a–e + 15 in.** Stage 12: three hand-built trees match `Spec.SSZType.hashTreeRoot` via `native_decide`. Stage 13: 200-case randomized property test (`gindexBits` on `List Bool` so the Nimbus Feb-2025 gindex bug class is unrepresentable). Stage 14a: `TreeBacked` scaffold. Stage 14b: `Node.ofShape` produces interior-populated trees byte-identical to the spec; coherence verified on 8 composite types. Stage 14c: cached `setField` operations; property tests pass for 100 + 30 mutations. Stage 14d: `Node.setManyAt` batched walker (100-case property test on disjoint distinct paths) plus `sszUpdate t with f := v, g.h := w, vec[i] := x` term-elaborated syntax (50-case flat-multi + 20-case nested-path + 30-case vector-index + 30-case alias-coverage gates). Index syntax handles both `Vector` and `SSZList` with composite element types; the list path emits the `[false]` mix-in-length prefix automatically. `TreeBacked H T` / `CachedSSZ H T` pin the hasher in the *type*, picked once at `TreeBacked.ofValue` time, then inferred by every downstream `sszUpdate` / `hashTreeRootCached` call; mixing hashers within one cached value is a type error. Two exploratory pieces were tried and removed: a `derive_tree_setters` macro and `TreeBacked/Container.lean` (hand-written setters obsoleted by `sszUpdate`'s index syntax). **Stage 14e, `SSZ.Box` union + curated public surface:** closed inductive over the two cache flavours with four smart constructors (`SSZ.FastBox` / `SSZ.PureBox` Sha256-pinned, `SSZ.CachedBox` / `SSZ.UncachedBox` hasher-explicit); `sszUpdate` extended with two-arm box dispatch; read-side `sszGet b a.b[i].c` macro mirrors `sszUpdate`'s path syntax and expands to `b.view.a.b[i].c` so user code never types `.view`; `CachedSSZ.ofValue` / `.hashTreeRoot` user-facing aliases. Stage 15: pure-Lean `Sha256Spec` ships as a kernel-reducible Lean SHA-256 implementation, validated empirically against the FFI on 185 cases (5 NIST + 100 random combine + 80 random hash). **Stage 17a (pending overlay):** `pending : Std.TreeMap Nat (PendingWrite T)` where `PendingWrite T = T → Option Node` is a closure that reads the current `view` at commit time and returns `none` for view-side no-op writes (OOB index updates). Cross-statement batching is automatic and free; closure-based read-from-view keeps overlapping parent/child writes mutually consistent. **Stage 17b:** batched SHA-256 FFI primitive (`sha256BatchCombine`) shipped with named axiom and equivalence tests; scalar inner loop in `csrc/sha256_batch.c` for now (AVX-512 swap is 17b.1 follow-up, keeps the FFI surface identical). **Stage 17c:** bounded-LRU hash-consing primitive (`Node.mkPair`) shipped opt-in; default cached path bypasses it. **Stage 17d:** `@[specialize]` on the three `SSZ.serialize/deserialize/hashTreeRoot` surfaces. **Stage 17e:** `Node.commitAndHash` fuses commit + root walk into a single spine walk; `Node.ofShape`'s builders (`ofLeaves`, `ofSubtrees`, `mixInLength`) pre-fill `(some root)` cache slots at construction so `merkleRootWithCache` on a fresh subtree short-circuits in O(1) at the top. **Bench (`packages/SizzLean/SizzLeanBench/`, run via `just sizzlean-bench`):** seven scenarios S1–S7 across small (`Validator` / `ValidatorSet16`), large (`ValidatorSet256`), and realistic (`SizzLeanBench.Fulu.BeaconState`, mainnet preset, ~1024 validators) fixtures. Headline rows: **S6 BlockProcessingLarge** ~2.4× cached vs pure; **S7 FuluStateTransition** ~2.0× cached vs pure. S7's Fulu types live in `SizzLeanBench/Fulu.lean` as a bench-local reference copy so `SizzLeanBench` doesn't need a LeanEthCS dependency (`LeanEthCS` already depends on `SizzLean`, so the reverse would close a cycle). |
+| 4: Production primitives + deferred hardening | Stages 12, 13, 14a–d, **14e**, 15, 17a–e (Stage 16 dropped, see note) | **Cache backbone + ergonomic surface + Sha256Spec green: 14a–e + 15 in.** Stage 12: three hand-built trees match `Spec.SSZType.hashTreeRoot` via `native_decide`. Stage 13: 200-case randomized property test (`gindexBits` on `List Bool` so the Nimbus Feb-2025 gindex bug class is unrepresentable). Stage 14a: `TreeBacked` scaffold. Stage 14b: `Node.ofShape` produces interior-populated trees byte-identical to the spec; coherence verified on 8 composite types. Stage 14c: cached `setField` operations; property tests pass for 100 + 30 mutations. Stage 14d: `Node.setManyAt` batched walker (100-case property test on disjoint distinct paths) plus `sszUpdate t with f := v, g.h := w, vec[i] := x` term-elaborated syntax (50-case flat-multi + 20-case nested-path + 30-case vector-index + 30-case alias-coverage gates). Index syntax handles both `Vector` and `SSZList` with composite element types; the list path emits the `[false]` mix-in-length prefix automatically. `TreeBacked H T` / `CachedSSZ H T` pin the hasher in the *type*, picked once at `TreeBacked.ofValue` time, then inferred by every downstream `sszUpdate` / `hashTreeRootCached` call; mixing hashers within one cached value is a type error. Two exploratory pieces were tried and removed: a `derive_tree_setters` macro and `TreeBacked/Container.lean` (hand-written setters obsoleted by `sszUpdate`'s index syntax). **Stage 14e, `SSZ.Box` union + curated public surface:** closed inductive over the two cache flavours with four smart constructors (`SSZ.FastBox` / `SSZ.PureBox` Sha256-pinned, `SSZ.CachedBox` / `SSZ.UncachedBox` hasher-explicit); `sszUpdate` extended with two-arm box dispatch; read-side `sszGet b a.b[i].c` macro mirrors `sszUpdate`'s path syntax and expands to `b.view.a.b[i].c` so user code never types `.view`; `CachedSSZ.ofValue` / `.hashTreeRoot` user-facing aliases. Stage 15: pure-Lean `Sha256Spec` ships as a kernel-reducible Lean SHA-256 implementation, validated empirically against the FFI on 185 cases (5 NIST + 100 random combine + 80 random hash). **Stage 17a (pending overlay):** `pending : Std.TreeMap Nat (PendingWrite T)` where `PendingWrite T = T → Option Node` is a closure that reads the current `view` at commit time and returns `none` for view-side no-op writes (OOB index updates). Cross-statement batching is automatic and free; closure-based read-from-view keeps overlapping parent/child writes mutually consistent. **Stage 17b:** batched SHA-256 FFI primitive (`sha256BatchCombine`) shipped with named axiom and equivalence tests; the inner loop in `csrc/sha256_batch.c` is Intel ISA-L's multi-buffer engine on x86_64 Linux (17b.1) and the OpenSSL loop elsewhere, behind one FFI surface. **Stage 17c:** bounded-LRU hash-consing primitive (`Node.mkPair`) shipped opt-in; default cached path bypasses it. **Stage 17d:** `@[specialize]` on the three `SSZ.serialize/deserialize/hashTreeRoot` surfaces. **Stage 17e:** `Node.commitAndHash` fuses commit + root walk into a single spine walk; `Node.ofShape`'s builders (`ofLeaves`, `ofSubtrees`, `mixInLength`) pre-fill `(some root)` cache slots at construction so `merkleRootWithCache` on a fresh subtree short-circuits in O(1) at the top. **Bench (`packages/SizzLean/SizzLeanBench/`, run via `just sizzlean-bench`):** seven scenarios S1–S7 across small (`Validator` / `ValidatorSet16`), large (`ValidatorSet256`), and realistic (`SizzLeanBench.Fulu.BeaconState`, mainnet preset, ~1024 validators) fixtures. Headline rows: **S6 BlockProcessingLarge** ~2.4× cached vs pure; **S7 FuluStateTransition** ~2.0× cached vs pure. S7's Fulu types live in `SizzLeanBench/Fulu.lean` as a bench-local reference copy so `SizzLeanBench` doesn't need a LeanEthCS dependency (`LeanEthCS` already depends on `SizzLean`, so the reverse would close a cycle). |
 | 5: Complete formal verification | Stage 18 | **in progress.** All current `BasicSupported` constructors have `decode_encode`, `serialize_injective`, and `encode_size_le_max` arms. This includes fixed-element and variable-element collections, bit shapes, and fixed-field or mixed-field containers. `decode_encode` has four `bv_decide` certificates. `encode_size_le_max` has no nonstandard axioms. Value-level offset-guard widening remains for `containerVar` (etheorem#61) and `vectorVar` / `listVar` (etheorem#77). See the Stage 18 section and the README proof table. |
