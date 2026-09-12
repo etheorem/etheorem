@@ -416,23 +416,23 @@ def toolchain_versions(interpreter: Path) -> dict[str, str]:
     }
 
 
-def render_cold_table(cold: dict[str, dict[str, float]]) -> list[str]:
-    """The cold path: bytes to a first root, phase by phase.
+def render_phase_table(
+    cold: dict[str, dict[str, float]],
+    data: dict[tuple[str, str], dict[str, float]],
+) -> list[str]:
+    """Every merkleization phase in one table, cold and warm.
 
-    The total is what settles the question the phase split raises. An
-    implementation that hashed during decode would carry the cost in
-    `Deserialize` and show a cheap `First root`; the total prices the whole
-    path either way.
+    The first three columns are the cold path, and their total settles a
+    question the first-root column alone would hide: an implementation that
+    hashed while it decoded would carry the cost in `Deserialize` and show a
+    cheap `First root`. The last two columns are the same tree rooted again
+    after each scenario's writes, which is where a cache shows up.
     """
     lines = [
         "| Implementation | Deserialize | Wrap | First root | Bytes to first root |"
-        " vs SizzLean Fast |",
-        "|---|---:|---:|---:|---:|---:|",
+        " Second root, one write | Second root, a thousand writes |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ]
-    baseline = None
-    if "sizzlean-fast" in cold:
-        baseline = sum(cold["sizzlean-fast"][phase] for phase in COLD_PHASES)
-
     for impl in IMPLS:
         row = cold.get(impl)
         if row is None:
@@ -442,10 +442,16 @@ def render_cold_table(cold: dict[str, dict[str, float]]) -> list[str]:
         # A zero wrap means the library has no wrapping step at all, which a
         # dash says better than "0 ns" does.
         wrap = show_ns(row["wrap_ns"]) if row["wrap_ns"] > 0 else "—"
-        ratio = show_ratio(total, baseline) if baseline else "n/a"
+        second = [
+            show_ns(data[(impl, scenario)]["root2_ns"])
+            if (impl, scenario) in data
+            else "n/a"
+            for scenario in SCENARIOS
+        ]
         lines.append(
             f"| {label} | {show_ns(row['deser_ns'])} | {wrap} |"
-            f" {show_ns(row['root1_ns'])} | **{show_ns(total)}** | {ratio} |"
+            f" {show_ns(row['root1_ns'])} | **{show_ns(total)}** |"
+            f" {second[0]} | {second[1]} |"
         )
     return lines
 
@@ -562,22 +568,29 @@ def render(
     lines.append(f"| After the thousand writes | `{roots.get('update1000/root2', '')}` |")
     lines.append("")
 
-    lines.append("## From bytes to a first root")
+    lines.append("## Every phase, side by side")
     lines.append("")
     lines.append(
-        "The cold path, phase by phase. Neither the write count nor the writes "
-        "themselves can touch these three, so both scenarios' samples are "
-        "pooled here."
+        "The first three columns are the cold path. No write can touch them, "
+        "so both scenarios' samples are pooled, which doubles the sample count "
+        "behind each number. The last two columns root the same tree again "
+        "after each scenario's writes."
     )
     lines.append("")
-    lines += render_cold_table(cold)
+    lines += render_phase_table(cold, data)
     lines.append("")
     lines.append(
-        "The split answers a question the first-root column alone would hide. "
-        "An implementation is free to hash while it decodes, and one that did "
-        "would show a heavy **Deserialize** and a cheap **First root**. "
-        "**Bytes to first root** prices the whole path, so it holds wherever "
-        "each library chooses to do the work."
+        "Splitting the decode out answers a question the first-root column "
+        "alone would hide. An implementation is free to hash while it decodes, "
+        "and one that did would show a heavy **Deserialize** and a cheap "
+        "**First root**. **Bytes to first root** prices the whole path, so it "
+        "holds wherever each library chooses to do the work."
+    )
+    lines.append("")
+    lines.append(
+        "The two right-hand columns are where a cache shows up. A library that "
+        "keeps no Merkle tree pays the first root's price again; one that keeps "
+        "a tree rehashes only the paths the writes changed."
     )
     lines.append("")
 
