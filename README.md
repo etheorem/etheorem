@@ -293,10 +293,16 @@ just sizzlean-pyspec-full    # every in-scope wire-format vector
 ### Coverage
 
 Pinned at consensus-spec-tests
-[v1.7.0-alpha.11](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.11).
+[v1.7.0-alpha.11](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.11),
+except `ssz_generic`, which is frozen at
+[v1.7.0-alpha.13](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.13).
+That is the last release carrying those vectors: consensus-specs removed the SSZ
+specification and the `ssz_generic` tests in `v1.7.0-alpha.14`, and the
+specification now lives in [`ethereum/ssz-specs`](https://github.com/ethereum/ssz-specs),
+which ships its own JSON vector archive per release.
 
-- **`ssz_generic`** (SizzLean): 2188 in-scope cases pass across every handler
-  (uints, basic_vector, bitvector, bitlist, boolean, containers). The 292
+- **`ssz_generic`** (SizzLean): 2215 in-scope cases pass across every handler
+  (uints, basic_vector, bitvector, bitlist, boolean, containers). The 294
   EIP-7495 / 7916 / 8016 progressive / stable / compatible cases are out of
   SizzLean's `SSZType` universe and xfail. The test-only container shapes
   (`VarTestStruct`, `ComplexTestStruct`, `BitsStruct`, …) are hard-coded in

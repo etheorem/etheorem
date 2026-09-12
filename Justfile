@@ -431,7 +431,8 @@ sizzlean-pyspec-smoke: _ensure-venv
     cd packages/SizzLean/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=2
 
 # Full sweep: every in-scope wire-format vector (the out-of-scope progressive
-# forms xfail). 2188 passed / 292 xfailed at the pin.
+# forms xfail). 2215 passed / 294 xfailed at the pin (`v1.7.0-alpha.13`, frozen; see
+# `packages/SizzLean/PySpecTests/harness.py`).
 
 # Full ssz_generic pyspec sweep: every in-scope wire-format vector
 [group('sizzlean')]

@@ -27,9 +27,16 @@ from urllib.request import urlopen
 import cramjam
 import yaml
 
-# The pinned release (matches EthCLSpecs.Fulu.Interface.pyspecPinnedVersion and
-# the EthCLSpecs harness). `ssz_generic` ships in the `general` archive.
-PINNED_VERSION = "v1.7.0-alpha.11"
+# The pinned release. `ssz_generic` ships in the `general` archive.
+#
+# This pin is frozen and no longer follows the EthCLSpecs pin. `consensus-specs`
+# removed the SSZ specification and the `ssz_generic` tests in `v1.7.0-alpha.14`
+# ("Remove SSZ specifications" #5523, "Remove SSZ generic tests" #5524), so
+# `general.tar.gz` from that tag onward carries only the BLS vectors.
+# `v1.7.0-alpha.13` is the last release that ships `ssz_generic`. The SSZ
+# specification and its vectors now live in `ethereum/ssz-specs`, which
+# publishes its own JSON test-vector archive per release.
+PINNED_VERSION = "v1.7.0-alpha.13"
 CACHE_DIR = Path.home() / ".cache" / "sizzlean"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
