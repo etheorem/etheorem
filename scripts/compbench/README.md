@@ -58,13 +58,14 @@ Only SizzLean has a wrapping step, the `Box` constructor. The other two root
 the decoded value directly and report a zero there, so the deserialize
 columns compare like with like.
 
-The report puts all five in one table. The first three make the cold path,
-totalled as **bytes to first root**. That total settles a question the
-first-root column alone would hide: an implementation is free to hash while
-it decodes, and one that did would show a heavy deserialize and a cheap first
-root. The total prices the whole path wherever the work happens. The second
-root appears once per scenario, in the same table, which is where a Merkle
-cache shows up against a library that recomputes.
+The report has one table per scenario, and each carries all five phases plus
+two totals. **Bytes to first root** sums the three cold phases, which settles
+a question the first-root column alone would hide: an implementation is free
+to hash while it decodes, and one that did would show a heavy deserialize and
+a cheap first root. **Writes + second root** sums the two warm phases, which
+is what a slot costs once the value is resident. The two tables repeat the
+cold phases, since those are the same work either way; the numbers should
+agree to within the run's noise.
 
 `update1` writes one field, `slot`. `update1000` writes 1000 fields, spread
 over four shapes: 250 validator records, 250 packed balances, 250

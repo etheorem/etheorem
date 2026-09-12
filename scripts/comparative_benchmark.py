@@ -88,14 +88,14 @@ IMPL_LABELS = {
 SCENARIOS = ["update1", "update1000"]
 
 SCENARIO_TITLES = {
-    "update1": "One write",
-    "update1000": "A thousand writes",
+    "update1": "Scenario 1: one write",
+    "update1000": "Scenario 2: a thousand writes",
 }
 
 SCENARIO_BLURBS = {
-    "update1": "bump `slot` by one, then root again.",
+    "update1": "Bump `slot` by one, then root again.",
     "update1000": (
-        "write 1000 fields, then root again. The writes are spread over four "
+        "Write 1000 fields, then root again. The writes are spread over four "
         "shapes: 250 validator records, 250 packed balances, 250 "
         "`block_roots` entries, and 250 `randao_mixes` entries. Spreading "
         "them matters, because a thousand writes into one list would share "
@@ -307,25 +307,6 @@ def medians(rows: list[dict]) -> dict[tuple[str, str], dict[str, float]]:
     return grouped
 
 
-def cold_medians(rows: list[dict]) -> dict[str, dict[str, float]]:
-    """Median nanoseconds per implementation for the cold-path phases.
-
-    Deserializing, wrapping and the first root all happen before any write,
-    so the scenario cannot change them. Both scenarios' samples are pooled,
-    which doubles the sample count behind each number.
-    """
-    grouped: dict[str, dict[str, float]] = {}
-    for impl in IMPLS:
-        samples = [r for r in rows if r["impl"] == impl]
-        if not samples:
-            continue
-        grouped[impl] = {
-            key: statistics.median(float(s[key]) for s in samples)
-            for key in COLD_PHASES
-        }
-    return grouped
-
-
 def check_roots(rows: list[dict], fixture: Fixture) -> dict[str, str]:
     """Check that every harness produced the same two roots.
 
@@ -418,89 +399,53 @@ def toolchain_versions(interpreter: Path) -> dict[str, str]:
     }
 
 
-def render_phase_table(
-    cold: dict[str, dict[str, float]],
-    data: dict[tuple[str, str], dict[str, float]],
+def render_scenario_table(
+    scenario: str, data: dict[tuple[str, str], dict[str, float]]
 ) -> list[str]:
-    """Every measured phase in one table, cold and warm.
+    """Every phase of one scenario, with both totals.
 
-    The first three columns are the cold path, and their total settles a
-    question the first-root column alone would hide: an implementation that
-    hashed while it decoded would carry the cost in `Deserialize` and show a
-    cheap `First root`. The four right-hand columns are each scenario's
-    writes and the root that follows them, which is where a cache shows up.
+    **Bytes to first root** sums the three cold phases. It settles a question
+    the first-root column alone would hide: an implementation that hashed
+    while it decoded would carry the cost in `Deserialize` and show a cheap
+    `First root`, and the sum prices the whole path either way.
+
+    **Writes + second root** sums the two warm phases. It is what a slot
+    costs once the value is resident, and the ratio column compares it
+    against SizzLean's cached path.
     """
     lines = [
-        "| Implementation | Deserialize | Wrap | First root | Bytes to first root |"
-        " Writes ×1 | Root after ×1 | Writes ×1000 | Root after ×1000 |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Implementation | Configuration | Deserialize | Wrap | First root |"
+        " Bytes to first root | Writes | Second root | Writes + second root |"
+        " vs SizzLean Fast |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
+    baseline = None
+    key = ("sizzlean-fast", scenario)
+    if key in data:
+        baseline = data[key]["update_ns"] + data[key]["root2_ns"]
+
     for impl in IMPLS:
-        row = cold.get(impl)
+        row = data.get((impl, scenario))
         if row is None:
             continue
-        label, _ = IMPL_LABELS[impl]
-        total = sum(row[phase] for phase in COLD_PHASES)
+        label, configuration = IMPL_LABELS[impl]
+        cold = sum(row[phase] for phase in COLD_PHASES)
+        warm = row["update_ns"] + row["root2_ns"]
         # A zero wrap means the library has no wrapping step at all, which a
         # dash says better than "0 ns" does.
         wrap = show_ns(row["wrap_ns"]) if row["wrap_ns"] > 0 else "—"
-        warm: list[str] = []
-        for scenario in SCENARIOS:
-            sample = data.get((impl, scenario))
-            if sample is None:
-                warm += ["n/a", "n/a"]
-            else:
-                warm += [show_ns(sample["update_ns"]), show_ns(sample["root2_ns"])]
+        ratio = show_ratio(warm, baseline) if baseline else "n/a"
         lines.append(
-            f"| {label} | {show_ns(row['deser_ns'])} | {wrap} |"
-            f" {show_ns(row['root1_ns'])} | **{show_ns(total)}** |"
-            f" {warm[0]} | {warm[1]} | {warm[2]} | {warm[3]} |"
+            f"| {label} | {configuration} | {show_ns(row['deser_ns'])} | {wrap} |"
+            f" {show_ns(row['root1_ns'])} | **{show_ns(cold)}** |"
+            f" {show_ns(row['update_ns'])} | {show_ns(row['root2_ns'])} |"
+            f" **{show_ns(warm)}** | {ratio} |"
         )
-    return lines
-
-
-def render_slot_table(data: dict[tuple[str, str], dict[str, float]]) -> list[str]:
-    """What a slot costs: the writes plus the root that follows them.
-
-    Each cell adds two columns of the phase table, so nothing new is
-    measured here. The table exists because the sum is the number a
-    consensus client reads, and because the ratio wants a column of its own.
-    """
-    lines = [
-        "| Implementation | Configuration | One write | vs SizzLean Fast |"
-        " A thousand writes | vs SizzLean Fast |",
-        "|---|---|---:|---:|---:|---:|",
-    ]
-    baselines = {}
-    for scenario in SCENARIOS:
-        sample = data.get(("sizzlean-fast", scenario))
-        if sample is not None:
-            baselines[scenario] = sample["update_ns"] + sample["root2_ns"]
-
-    for impl in IMPLS:
-        label, configuration = IMPL_LABELS[impl]
-        cells: list[str] = []
-        for scenario in SCENARIOS:
-            sample = data.get((impl, scenario))
-            if sample is None:
-                cells += ["n/a", "n/a"]
-                continue
-            total = sample["update_ns"] + sample["root2_ns"]
-            baseline = baselines.get(scenario)
-            cells += [
-                f"**{show_ns(total)}**",
-                show_ratio(total, baseline) if baseline else "n/a",
-            ]
-        if cells:
-            lines.append(
-                f"| {label} | {configuration} | " + " | ".join(cells) + " |"
-            )
     return lines
 
 
 def render(
     data: dict[tuple[str, str], dict[str, float]],
-    cold: dict[str, dict[str, float]],
     roots: dict[str, str],
     fixture: Fixture,
     reps: int,
@@ -566,10 +511,11 @@ def render(
         "one repetition into the next."
     )
     lines.append("")
-    lines.append("Two scenarios differ only in the writes:")
-    lines.append("")
-    for scenario in SCENARIOS:
-        lines.append(f"* **{SCENARIO_TITLES[scenario]}**: {SCENARIO_BLURBS[scenario]}")
+    lines.append(
+        "The two scenarios below differ only in the writes. Every other phase "
+        "is the same work, so the two tables report it twice and the numbers "
+        "should agree to within the run's noise."
+    )
     lines.append("")
 
     lines.append("## The control: the roots agree")
@@ -587,17 +533,16 @@ def render(
     lines.append(f"| After the thousand writes | `{roots.get('update1000/root2', '')}` |")
     lines.append("")
 
-    lines.append("## Every phase, side by side")
-    lines.append("")
-    lines.append(
-        "The first three columns are the cold path. No write can touch them, "
-        "so both scenarios' samples are pooled, which doubles the sample count "
-        "behind each number. The four right-hand columns are each scenario's "
-        "writes and the root that follows them."
-    )
-    lines.append("")
-    lines += render_phase_table(cold, data)
-    lines.append("")
+    for scenario in SCENARIOS:
+        if not any((impl, scenario) in data for impl in IMPLS):
+            continue
+        lines.append(f"## {SCENARIO_TITLES[scenario]}")
+        lines.append("")
+        lines.append(SCENARIO_BLURBS[scenario])
+        lines.append("")
+        lines += render_scenario_table(scenario, data)
+        lines.append("")
+
     lines.append(
         "Splitting the decode out answers a question the first-root column "
         "alone would hide. An implementation is free to hash while it decodes, "
@@ -607,33 +552,22 @@ def render(
     )
     lines.append("")
     lines.append(
-        "The `Root after` columns are where a cache shows up. A library that "
-        "keeps no Merkle tree pays the first root's price again; one that keeps "
-        "a tree rehashes only the paths the writes changed. Read them with the "
-        "`Writes` column beside them: a cache that makes the second root cheap "
-        "has to earn back whatever its writes cost."
+        "**Second root** is where a Merkle cache shows up. A library that keeps "
+        "no tree pays the first root's price again; one that keeps a tree "
+        "rehashes only the paths the writes changed. Read it with **Writes** "
+        "beside it: a cache that makes the second root cheap has to earn back "
+        "whatever its writes cost."
     )
-    lines.append("")
-
-    lines.append("## What a slot costs")
-    lines.append("")
-    lines.append(
-        "The writes plus the root that follows them, which is the work a "
-        "consensus client does every slot. Each cell adds two columns of the "
-        "table above."
-    )
-    lines.append("")
-    lines += render_slot_table(data)
     lines.append("")
 
     lines.append("## Reading the numbers")
     lines.append("")
     lines.append(
         "Two totals carry the report. **Bytes to first root** is what a cold "
-        "start costs, from a buffer on disk to a root. **What a slot costs** is "
-        "the price once the value is resident, which is the number a consensus "
-        "client reads most often. The phase columns say where each total comes "
-        "from."
+        "start costs, from a buffer on disk to a root. **Writes + second root** "
+        "is what a slot costs once the value is resident, which is the number a "
+        "consensus client reads most often. The phase columns say where each "
+        "total comes from."
     )
     lines.append("")
     lines.append(
@@ -723,7 +657,6 @@ def main() -> int:
         roots = check_roots(rows, fixture)
         report = render(
             medians(rows),
-            cold_medians(rows),
             roots,
             fixture,
             args.reps,
