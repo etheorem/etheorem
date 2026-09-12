@@ -15,6 +15,11 @@
 # `PYTEST_JOBS=2 just ethcl-pyspec-full`.
 pytest_jobs := env_var_or_default("PYTEST_JOBS", "auto")
 
+# The vector `just ethcl-profile` profiles when the caller names none: the Gloas
+# mainnet `sanity/blocks` case the OPTIMISATION.md Stage 17d row table was
+# measured on. Any extracted vector directory holding a `pre.ssz_snappy` works.
+default_profile_case := env_var("HOME") + "/.cache/sizzlean/v1.7.0-alpha.11-mainnet/tests/mainnet/gloas/sanity/blocks/pyspec_tests/full_random_operations_0"
+
 # List every recipe with its description
 default:
     @just --list --unsorted
@@ -357,6 +362,30 @@ ethcl-pyspec-full: _ensure-venv
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n {{ pytest_jobs }} --preset=mainnet --fork=fulu
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n {{ pytest_jobs }} --preset=mainnet --fork=gloas
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n {{ pytest_jobs }} --preset=mainnet --fork=heze
+
+# The Stage 17d container profile: which consensus container types dominate
+# encode / decode / root cost on a real mainnet state transition. Runs the
+# `specs_profile` exe over one upstream vector, at the mainnet preset, and
+# writes a TSV in the same column shape `just sizzlean-bench` emits, so
+# `just sizzlean-bench-diff` compares a profile pair directly.
+#
+# `case` is a vector directory under the harness cache
+# (`~/.cache/sizzlean/<tag>-mainnet/tests/mainnet/<fork>/...`); the default is
+# the Gloas `sanity/blocks` case the OPTIMISATION.md row table was measured on.
+# The archive must already be extracted: run any `ethcl-pyspec` recipe once
+# first, which downloads it.
+
+# Profile the consensus container types over one pyspec vector; TSV → packages/SizzLean/bench/specs-profile-<timestamp>.tsv
+[group('ethcl')]
+ethcl-profile case=default_profile_case: _ensure-venv
+    @mkdir -p packages/SizzLean/bench
+    @ts=$(date -u +%Y%m%dT%H%M%SZ); \
+      tmp=$(mktemp -d); \
+      paths=$({{ justfile_directory() }}/.venv/bin/python scripts/prepare_profile_vector.py "{{ case }}" "$tmp"); \
+      lake build specs_profile && \
+      packages/EthCLSpecs/.lake/build/bin/specs_profile $paths \
+        | tee "packages/SizzLean/bench/specs-profile-$ts.tsv"; \
+      rm -rf "$tmp"
 
 # ═════════════════════════════════════════════════════════════════════════
 # SizzLean — SSZ library

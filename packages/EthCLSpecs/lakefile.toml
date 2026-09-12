@@ -36,3 +36,19 @@ supportInterpreter = true
 [[lean_lib]]
 name = "EthCLSpecsTests"
 roots = ["EthCLSpecs.Tests"]
+
+# The Stage 17d pass-2 container profile. Its root module imports both
+# `EthCLSpecs` (for the real fork containers) and `SizzLeanBench.Runner`
+# (for the TSV row shape), the one place the two bench surfaces meet.
+# Precompiled for the same reason `SizzLeanBench` is: without it the
+# sampling loops run as bytecode and the profile measures the interpreter.
+[[lean_lib]]
+name = "EthCLSpecsBench"
+precompileModules = true
+
+# The profile driver. Same `supportInterpreter` rationale as `pyspec_server`:
+# its root is a submodule of a precompiled lib.
+[[lean_exe]]
+name = "specs_profile"
+root = "EthCLSpecsBench.ProfileMain"
+supportInterpreter = true

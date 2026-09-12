@@ -388,7 +388,7 @@ Five sub-stages with a microbenchmark in
 | 17b.1 | Multi-buffer inner loop in the C shim (ISA-L on x86_64 Linux) | **shipped** |
 | 17b.2 | Rank-frontier Lean walker that batches `sha256BatchCombine` by readiness rank | **not done** |
 | 17c | Hash-consing on the cached path, opt-in at `Box` construction | **shipped; default off** |
-| 17d | `@[specialize]` on the three SSZ surfaces | **shipped** |
+| 17d | `@[specialize]` on the three SSZ surfaces | **shipped (pass 1)**; per-type hints profiled and declined (pass 2) |
 | 17e | Fused commit walk (`Node.commitAndHash`) + pre-cached `Node.ofShape` builders | **shipped** |
 
 The measured-need gate that originally fronted Stage 17 has been
@@ -1001,7 +1001,7 @@ currently lacks one. The fallback is a bounded-LRU cache (no
 weak references), which loses the unbounded-archive case but
 keeps the common-case win.
 
-### Stage 17d: Profile-guided `@[specialize]`: **shipped (pass 1)**
+### Stage 17d: Profile-guided `@[specialize]`: **shipped (pass 1); pass 2 measured, no hints kept**
 
 **Shipped.** `@[specialize]` attributes on the three
 deriving-handler-emitted user-facing surfaces in
@@ -1024,11 +1024,115 @@ value, which this single-shot bench doesn't exercise. For the
 ValidatorShape's size, the post-`@[specialize]` baseline is
 recorded; future hint changes compare against these columns.
 
-The pass-2 step (site-local `@[specialize T]` annotations on
-specific hot consensus types like `Validator` /
-`BeaconBlockHeader` / per-fork `BeaconState` variants in
-`EthCLSpecs`) is deferred pending workload-specific profiling
-that says it pays.
+**Pass 2: profiled, and no hint earns its place.** The profiling
+the pass-1 note asked for is now done, on a real workload, and it
+says the hints do not pay. The tool is
+`packages/EthCLSpecs/EthCLSpecsBench/`, driven by
+
+```
+just ethcl-profile            # the Gloas mainnet sanity/blocks case
+just ethcl-profile <case-dir> # any extracted vector directory
+```
+
+It decodes an upstream **Gloas mainnet** `sanity/blocks` vector (a
+3.17 MB `BeaconState`, 256 validators) and times each SSZ operation
+per container type. The TSV it writes shares
+`SizzLeanBench.Runner`'s column shape, so
+`just sizzlean-bench-diff` compares two profiles.
+
+**Where the time goes** (median of 20 samples,
+`bench/specs-profile-20260912T041020Z.tsv`; per-type rows cover 1000
+distinct values):
+
+| Row | Median |
+|---|---|
+| `serialize BeaconState` | 3438.9 ms |
+| `ForkInterface.runBlocks` (whole vector) | 363.0 ms |
+| `ForkInterface.stateRoot BeaconState` | 282.8 ms |
+| `FastBox.hashTreeRoot BeaconState` (first root) | 186.6 ms |
+| `htr BeaconState` (pure) | 164.7 ms |
+| `deserialize BeaconState` | 117.8 ms |
+| `htr Attestation ×1000` | 30.3 ms |
+| `deserialize Attestation ×1000` | 11.4 ms |
+| `serialize Attestation ×1000` | 10.7 ms |
+| `htr Validator ×1000` | 7.5 ms |
+| `htr BeaconBlockHeader ×1000` | 7.3 ms |
+| `serialize BeaconBlockHeader ×1000` | 4.5 ms |
+| `serialize Validator ×1000` | 4.2 ms |
+| `deserialize BeaconBlockHeader ×1000` | 4.3 ms |
+| `deserialize Validator ×1000` | 3.8 ms |
+| `htr Checkpoint ×1000` | 2.2 ms |
+
+**How to read these numbers.** Absolute medians track what else the
+machine is doing: a repeat run with one competing CPU-bound process
+moved every row, touched or not, by about 28%. So compare rows *within*
+one run, and compare a change against a paired run taken back to back
+on the same machine. That is how the hint experiment below was
+measured.
+
+**The dispatch a hint would remove costs nothing measurable.** Two
+rows price it directly. `ForkInterface.stateRoot` runs through the
+seam the pyspec driver uses, where the preset arrives as a runtime
+value and every `SSZRepr` instance resolves through a dictionary. The
+`deserialize BeaconState` and `htr BeaconState` rows do the same two
+operations with the preset as a statically known instance:
+
+| Path | Median |
+|---|---|
+| `deserialize` + `htr`, preset statically known | 117.8 + 164.7 = 282.5 ms |
+| `ForkInterface.stateRoot`, preset injected at runtime | 282.8 ms |
+
+The seam costs 0.3 ms on 282 ms, which is 0.1%. There is no dispatch
+overhead left for a `@[specialize]` hint to remove.
+
+**The hint experiment, and why it was reverted.** The one genuinely
+preset-generic layer in a fork body is the `ForkInterface` implementation
+set, whose members take the preset and the config as explicit value
+arguments. `@[specialize]` on Gloas's `decodeState`, `stateRootImpl`,
+and `runBlocksImpl` is therefore the strongest pass-2 hint available.
+Measured back to back on one machine
+(`bench/specs-profile-20260912T041020Z-specialize-interface-impls.tsv`):
+
+| Row | No hint | Hinted | Change |
+|---|---|---|---|
+| `ForkInterface.stateRoot BeaconState` | 282.8 ms | 281.5 ms | −0.5% |
+| `ForkInterface.runBlocks` (whole vector) | 363.0 ms | 360.0 ms | −0.8% |
+
+Both moves sit inside this machine's run-to-run drift. Rows no hint
+can touch move further across the same pair: `deserialize
+BeaconBlockHeader ×1000` by +4.7%, `deserialize Attestation ×1000` by
+−2.5%. Three repeat runs per configuration put the spread at roughly
+±2%, so a 0.5% move is not a win. Under this section's own rule, keep
+a hint only when it shows a win, the hints are reverted and pass 2
+lands no annotation.
+
+**Why the ceiling is this low.** Pass 1 already removed the
+instance dispatch at the three entry points, and the cost that
+remains inside them is the `SSZType` interpreter walking a *runtime
+value*: `SSZ.hashTreeRoot` dispatches on `r.shape`, a term, not on a
+type. No attribute monomorphises a function over a value argument.
+Removing that layer needs the shape resolved at elaboration time,
+which is a change to the deriving handler's output rather than an
+annotation, and a separate stage.
+
+**What the profile found instead: `serialize` is quadratic in
+element count.** The largest row is not a dispatch cost at all.
+`serialize BeaconState` takes 3.4 s, 21 times the 164.7 ms its
+hash-tree-root costs, for a 3.17 MB value. `SSZType.serializeFixedElems`
+(`Spec/Serialize.lean`) is a right fold of `ByteArray.append`:
+
+```lean
+| t, x :: xs => SSZType.serialize t x ++ SSZType.serializeFixedElems t xs
+```
+
+Every `++` copies the whole accumulated suffix, so a vector of `n`
+fixed-size elements copies `O(n²)` bytes. `BeaconState.randaoMixes` is
+a `Vector Bytes32 65536` at mainnet, which alone accounts for tens of
+gigabytes of copying. The fix is an accumulator that appends into one
+buffer, and it belongs to a SizzLean stage of its own: the function
+carries proof obligations, and the change is library-side, outside
+this sub-stage's scope. Recorded here as the profile's finding, with
+its measurement, rather than folded into pass 2.
 
 **Original design notes follow.**
 
@@ -1247,3 +1351,6 @@ that should be paid for by measured gain.
 | Coherence property test | `SizzLeanTests/TreeBackedCoherence.lean` |
 | Setter / index property tests | `SizzLeanTests/TreeBackedSetField.lean`, `MultiSetterIndex.lean` |
 | Cache research notes (deeper rationale) | [`research/cache-research.md`](research/cache-research.md) |
+| SizzLean microbenchmarks (`just sizzlean-bench`) | `SizzLeanBench/` |
+| Consensus container profile (`just ethcl-profile`) | `packages/EthCLSpecs/EthCLSpecsBench/` |
+| Bench and profile TSVs | `bench/` |
