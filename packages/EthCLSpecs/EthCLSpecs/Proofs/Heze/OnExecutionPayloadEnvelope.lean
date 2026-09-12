@@ -42,8 +42,9 @@ open EthCLSpecs.Heze (Preset Config Store State ExecutionPayload ExecutionReques
 /--
 Complete compositional `.run` equation of `onExecutionPayloadEnvelope`.
 Lookup and availability failures are `.assert` errors. Verification and
-recorder errors propagate unchanged. Recorder success is the handler's final
-`set` on the returned store, discarding the recorder-produced runner state.
+recorder errors propagate unchanged. After recorder success, the handler
+performs its final `set` on the returned store, discarding the
+recorder-produced runner state.
 The recorder's slot-zero, collector-error, and successful outcomes are
 characterized separately by `recordPayloadInclusionListSatisfaction_run`.
 -/
@@ -187,7 +188,7 @@ same-root `FcMap.insert` expressions: warm `blockStates`, the envelope in
 `payloads`, and the inclusion-list result. The inserts may overwrite a prior
 entry.
 -/
-theorem onExecutionPayloadEnvelope_run_eq_of_success
+theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
     [DataAvailability] [CryptoBackend] :

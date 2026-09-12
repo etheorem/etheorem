@@ -32,7 +32,7 @@ Re-exports:
   (`onExecutionPayloadEnvelope_run`), tagged
   `@[characterizes EthCLSpecs.Heze.onExecutionPayloadEnvelope]`, plus
   the four direct error corollaries and the successful-path corollary
-  `onExecutionPayloadEnvelope_run_eq_of_success`, proved with
+  `onExecutionPayloadEnvelope_run_eq_of_successful_checks`, proved with
   `ForkChoiceStoreRun`.
 * `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: Heze's verified,
   recorded-unsatisfied FOCIL rejection theorem
