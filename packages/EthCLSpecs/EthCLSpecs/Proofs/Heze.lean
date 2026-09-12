@@ -1,4 +1,6 @@
+import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
+import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 
 /-!
@@ -16,9 +18,21 @@ Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
+  equations for `getInclusionListCommittee` and
+  `getInclusionListTransactions`
+  (`getInclusionListCommittee_run_eq`, `getInclusionListTransactions_run_eq`),
+  plus the missing-timeliness predicate on the `FcMap.fold` entries array.
 * `EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction`: the
-  successful-run write of `recordPayloadInclusionListSatisfaction`
-  (`recordPayloadInclusionListSatisfaction_run_eq`), proved with
+  complete run of `recordPayloadInclusionListSatisfaction`
+  (`recordPayloadInclusionListSatisfaction_run`), proved with
+  `ForkChoiceStoreRun`.
+* `EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope`: the complete
+  compositional `.run` equation of `onExecutionPayloadEnvelope`
+  (`onExecutionPayloadEnvelope_run`), tagged
+  `@[characterizes EthCLSpecs.Heze.onExecutionPayloadEnvelope]`, plus
+  the four direct error corollaries and the successful-path corollary
+  `onExecutionPayloadEnvelope_run_eq_of_successful_checks`, proved with
   `ForkChoiceStoreRun`.
 * `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: Heze's verified,
   recorded-unsatisfied FOCIL rejection theorem
