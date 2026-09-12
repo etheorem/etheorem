@@ -488,6 +488,43 @@ def render(
         lines.append(f"| {name} | `{version}` |")
     lines.append("")
 
+    lines.append("## How each side is built")
+    lines.append("")
+    lines.append(
+        "Every row is an optimised native binary, or CPython for the row that "
+        "is a Python library. No harness runs through an interpreter that its "
+        "library would not use in production."
+    )
+    lines.append("")
+    lines.append("| Row | Build |")
+    lines.append("|---|---|")
+    lines.append(
+        "| SizzLean, both | `lake build ssz_compbench`. Lake compiles every "
+        "module through C with `clang -O3 -DNDEBUG -march=native`, and the "
+        "package adds `-march=native` on top of Lake's default. `SizzLeanBench` "
+        "sets `precompileModules`, so the scenario code is native rather than "
+        "bytecode the interpreter walks. The exe links Lean's runtime "
+        "statically. |"
+    )
+    lines.append(
+        "| libssz | `cargo build --release` with `lto = \"thin\"` and "
+        "`codegen-units = 1`, the flags libssz's own README reports its numbers "
+        "under. |"
+    )
+    lines.append(
+        "| ssz-specs | CPython, no build step. The library is pure Python and "
+        "ships no compiled extension. |"
+    )
+    lines.append("")
+    lines.append(
+        "One asymmetry is worth naming: Rust does cross-crate inlining under "
+        "thin LTO, and Lake has no cross-module equivalent. It is small. "
+        "Rebuilding the libssz harness without LTO moves its first root from "
+        "9.5 ms to 9.7 ms, inside the run's noise, so it explains none of the "
+        "gap between the compiled rows."
+    )
+    lines.append("")
+
     lines.append("## The fixture")
     lines.append("")
     lines.append(

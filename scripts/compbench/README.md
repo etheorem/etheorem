@@ -29,6 +29,24 @@ The two SizzLean rows differ in one thing, the constructor. Both call the
 same `Box` methods through the same FFI SHA-256, so the pair prices the cache
 and nothing else.
 
+## How each side is built
+
+Every row is an optimised native binary, or CPython for the row that is a
+Python library.
+
+| Row | Build |
+|---|---|
+| SizzLean, both | `lake build ssz_compbench`. Lake compiles every module through C with `clang -O3 -DNDEBUG -march=native`; the SizzLean package adds `-march=native` on top of Lake's default. `SizzLeanBench` sets `precompileModules`, so the scenario code is native, not bytecode the interpreter walks. The exe links Lean's runtime statically. |
+| libssz | `cargo build --release` with `lto = "thin"` and `codegen-units = 1`, the flags libssz's own README reports its numbers under. |
+| ssz-specs | CPython, no build step. The library is pure Python and ships no compiled extension. |
+
+Rust does cross-crate inlining under thin LTO and Lake has no cross-module
+equivalent. The effect is small: rebuilding the libssz harness without LTO
+moves its first root from 9.5 ms to 9.7 ms, inside the run's noise.
+
+Check the Lean flags for yourself with `lake build ssz_compbench --verbose`,
+which prints every `clang` invocation.
+
 ## The fixture
 
 A Fulu `BeaconState` at the mainnet preset: 37 fields, 1024 validators, about
