@@ -2,6 +2,7 @@ import SizzLean.Hasher.Class
 import SizzLean.Hasher.Sha256
 import LeanHazmatSha256
 import SizzLean.Cache.MerkleTree.Node
+import SizzLean.Hasher.Sha256Equiv
 
 /-!
 # `SizzLean.Cache.MerkleTree.Zero`: the zero-hash tower and the depth-padding leaf
@@ -67,10 +68,11 @@ open SizzLean
 
 /-- 32-byte all-zero `ByteArray`. The leaf at every depth-`0`
 position of an all-zero subtree. Identical to `Spec.zero32`, kept
-here as a small private duplicate rather than importing the
-spec-internal helper because the Tree layer is meant to stand
-alone (so a future caller could load it without the spec). -/
-private def zero32 : ByteArray :=
+here as a small duplicate rather than importing the spec-internal
+helper because the Tree layer is meant to stand alone (so a future
+caller could load it without the spec). Public so the tower bridge
+can state `Cache.zero32 = Spec.zero32`. -/
+def zero32 : ByteArray :=
   let rec build : Nat → ByteArray → ByteArray
     | 0,     acc => acc
     | k + 1, acc => build k (acc.push 0)
@@ -141,12 +143,39 @@ slot at construction time.
 Not a substitute for `merkleRootWithCache`, since it doesn't fill
 cache slots in the input tree. Use when you only need the root
 *value* and the input is expected to be already cached (in which
-case it's O(1)). -/
-partial def Node.rootOf (H : Type) [Hasher H] : Node → ByteArray
+case it's O(1)).
+
+**Do not unfold this in a tactic.** Reason about it through
+`rootOf_eq_merkleRoot`, or through the equation lemmas below. See the seal note
+there for what the `@[irreducible]` attribute does and does not stop. -/
+def Node.rootOf (H : Type) [Hasher H] : Node → ByteArray
   | .leaf b               => b
   | .pair _ _ (some r)    => r
   | .pair l r none        =>
       Hasher.combine (H := H) (Node.rootOf H l) (Node.rootOf H r)
+
+/-! ### `Node.rootOf`'s equations, then the seal
+
+The three arms, stated before `Node.rootOf` goes irreducible. Proofs reach the
+recursion through these (or, better, through `rootOf_eq_merkleRoot`) instead of
+unfolding the definition and walking a real tree. -/
+
+/-- A leaf is its own root. -/
+theorem Node.rootOf_leaf (H : Type) [Hasher H] (b : ByteArray) :
+    Node.rootOf H (.leaf b) = b := rfl
+
+/-- A populated cache slot comes back as it stands, with no descent. This arm
+makes `rootOf` O(1) on a committed tree, and it is why `rootOf` cannot notice a
+poisoned cache. -/
+theorem Node.rootOf_pair_some (H : Type) [Hasher H] (l r : Node) (root : ByteArray) :
+    Node.rootOf H (.pair l r (some root)) = root := rfl
+
+/-- An empty cache slot combines the children's roots. -/
+theorem Node.rootOf_pair_none (H : Type) [Hasher H] (l r : Node) :
+    Node.rootOf H (.pair l r none)
+      = Hasher.combine (H := H) (Node.rootOf H l) (Node.rootOf H r) := rfl
+
+attribute [irreducible] Node.rootOf
 
 /-- A `Node` whose root is the all-zero subtree of depth `d`. Used
 by `Node.ofLeaves` to pad the right of an underfilled tree, and by
@@ -196,5 +225,72 @@ def Node.ofLeaves (H : Type) [Hasher H] (leaves : List ByteArray)
       let root := Hasher.combine (H := H)
         (Node.rootOf H leftNode) (Node.rootOf H rightNode)
       .pair leftNode rightNode (some root)
+
+/-! ### Zero-table facts for the shape proofs
+
+`zeroHashes` and `zeroHashRec` are `private`, so the shape proofs work against
+these instead. -/
+
+/-- The memo table reads back its own recurrence at every in-range depth. -/
+private theorem zeroHashes_get (d : Nat) (h : d < 100) :
+    zeroHashes.get ⟨d, h⟩ = zeroHashRec d := by
+  simp [zeroHashes, Vector.get]
+
+/-- `zeroHashAt` is the recurrence at every depth: inside the table by lookup,
+past it by the fallback. `[Hasher H]` never enters: the memo is
+Sha256-specific. -/
+private theorem zeroHashAt_eq (H : Type) [Hasher H] (d : Nat) :
+    zeroHashAt H d = zeroHashRec d := by
+  unfold zeroHashAt
+  split
+  · rename_i h
+    exact zeroHashes_get d h
+  · rfl
+
+/-- Every entry of the recurrence is 32 bytes. The step rewrites the FFI combine
+to the pure-Lean reference through `sha256Combine_eq_spec`. -/
+private theorem zeroHashRec_size : ∀ (d : Nat), (zeroHashRec d).size = 32
+  | 0 => rfl
+  | d + 1 => by
+      show (LeanHazmat.Sha256.sha256Combine (zeroHashRec d) (zeroHashRec d)).size = 32
+      rw [sha256Combine_eq_spec]
+      exact LeanSha256.combine_size_eq_32 _ _
+
+/-- `zeroLeaf` at depth 0 is the zero-chunk leaf, stated through `zeroHashAt` so
+the tower lemmas chain without a detour through `zero32`. -/
+theorem zeroLeaf_zero (H : Type) [Hasher H] :
+    zeroLeaf H 0 = .leaf (zeroHashAt H 0) := by
+  rw [zeroHashAt_eq H 0]
+  rfl
+
+/-- `zeroLeaf` at a positive depth: the cached pair of two depth-`d` zero
+subtrees, the slot holding the table entry. -/
+theorem zeroLeaf_succ (H : Type) [Hasher H] (d : Nat) :
+    zeroLeaf H (d + 1)
+      = .pair (zeroLeaf H d) (zeroLeaf H d) (some (zeroHashAt H (d + 1))) := rfl
+
+/-- The tower's base is the zero chunk. Exported because `zeroHashes` and the
+recurrence behind it are private, so an importer cannot reduce `zeroHashAt H 0`
+without indexing the `Vector.ofFn` table by hand. -/
+theorem zeroHashAt_zero (H : Type) [Hasher H] : zeroHashAt H 0 = zero32 := by
+  rw [zeroHashAt_eq H 0]
+  rfl
+
+/-- Each entry is the FFI combine of the previous entry with itself. Checks
+`zeroLeaf`'s pre-filled slots. -/
+theorem zeroHashAt_succ (H : Type) [Hasher H] (d : Nat) :
+    zeroHashAt H (d + 1)
+      = LeanHazmat.Sha256.sha256Combine (zeroHashAt H d) (zeroHashAt H d) := by
+  rw [zeroHashAt_eq H (d + 1), zeroHashAt_eq H d]
+  rfl
+
+/-- Every zero-hash is 32 bytes.
+
+**Axiom use**: carries `sha256Combine_eq_spec` (`Hasher/Sha256Equiv.lean`)
+through `zeroHashRec_size`. -/
+theorem zeroHashAt_size (H : Type) [Hasher H] (d : Nat) :
+    (zeroHashAt H d).size = 32 := by
+  rw [zeroHashAt_eq H d]
+  exact zeroHashRec_size d
 
 end SizzLean.Cache.MerkleTree

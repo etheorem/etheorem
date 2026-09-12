@@ -49,7 +49,6 @@ namespace SizzLean.Spec
 * `outOfRange`: a length-derived count exceeded the type's static
   capacity (e.g. an offset-table size implied more list elements
   than `cap`).
-
 Tags are added on demand. Decoders introducing a new failure mode
 should extend this inductive rather than reusing an unrelated tag. -/
 inductive SSZError where
