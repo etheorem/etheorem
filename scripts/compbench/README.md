@@ -12,6 +12,12 @@ pinned revisions, emits the shared fixture, runs the three harnesses, checks
 that they agree on the roots, and writes the markdown to
 `packages/SizzLean/bench/comparative-<timestamp>.md`.
 
+That directory is session output and is gitignored. The run kept as the
+reference number lives at
+[`packages/SizzLean/docs/COMPARATIVE_BENCHMARK.md`](../../packages/SizzLean/docs/COMPARATIVE_BENCHMARK.md),
+copied there by hand with a note on the tree and the machine it was taken on.
+Replace that file to move the reference; do not edit its numbers in place.
+
 Nothing has to be installed by hand. The driver needs `lake`, `cargo`, and a
 Python 3.11 or later interpreter on `PATH`; it uses `uv` when it is there and
 falls back to `python3 -m venv` when it is not.
