@@ -1,3 +1,4 @@
+import SizzLeanBench.CompBench.Hashers
 import SizzLeanBench.CompBench.Scenarios
 
 /-!
@@ -8,6 +9,7 @@ The SizzLean side of the comparative benchmark. Two subcommands:
 ```
 ssz_compbench emit <path>          # write the shared fixture's wire bytes
 ssz_compbench run  <path> <reps>   # run the scenarios over those bytes
+ssz_compbench hashers              # price one Merkle step, both FFI paths
 ```
 
 `emit` runs first. It serializes
@@ -21,6 +23,11 @@ from.
 repetition of each configuration and scenario. Every other harness
 prints the same line shape, so the driver reads all three the same
 way. Diagnostics go to stderr, which keeps stdout parseable.
+
+`hashers` prices the two FFI SHA-256 entry points on their own, so a
+reader can multiply by a tree's node count and see how much of a
+root is hashing. It takes no fixture and the driver does not call
+it; run it by hand when a root's cost needs accounting for.
 
 The driver is `scripts/comparative_benchmark.py`.
 -/
@@ -88,6 +95,9 @@ private def run (path : String) (reps : Nat) : IO UInt32 := do
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["emit", path] => emit path
+  | ["hashers"] =>
+    SizzLeanBench.CompBench.Hashers.runAll 100000
+    return 0
   | ["run", path, reps] =>
     match reps.toNat? with
     | some n => run path n
@@ -95,5 +105,6 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln s!"ssz_compbench: repetition count is not a number: {reps}"
       return 1
   | _ =>
-    IO.eprintln "usage: ssz_compbench emit <path> | ssz_compbench run <path> <reps>"
+    IO.eprintln "usage: ssz_compbench emit <path> | ssz_compbench run <path> <reps> \
+      | ssz_compbench hashers"
     return 1

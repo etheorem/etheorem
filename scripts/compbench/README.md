@@ -96,6 +96,27 @@ Each harness runs each scenario 100 times, and the report gives the mean over
 those runs. `--reps` changes the count. Every repetition decodes the buffer
 again, so no cache survives from one repetition into the next.
 
+## Accounting for a root
+
+A first root of a couple of hundred milliseconds can come from the hashing or
+from everything around it, and the two call for opposite fixes. One
+subcommand tells them apart:
+
+```bash
+packages/SizzLean/.lake/build/bin/ssz_compbench hashers
+```
+
+It prices both FFI SHA-256 entry points over the input merkleization feeds
+them, two 32-byte children, then counts the calls one uncached root of the
+fixture makes and multiplies out. The driver does not run it; it takes no
+fixture and answers a question the tables raise rather than one they report.
+
+`SizzLeanBench/CompBench/Hashers.lean` holds it, including the counting
+`Hasher` instance. That instance keeps its tally in an `IO.Ref` reached
+through `unsafeBaseIO`, which is the unsoundness the `Hasher` seam exists to
+keep out of the library. It stays in this bench module; nothing in `SizzLean`
+imports it and no proof mentions it.
+
 ## The control
 
 All three harnesses print the roots they computed, and the driver refuses to
