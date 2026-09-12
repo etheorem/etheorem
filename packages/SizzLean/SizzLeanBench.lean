@@ -9,6 +9,7 @@ import SizzLeanBench.Scenarios.BatchedWritesLarge
 import SizzLeanBench.Scenarios.BlockProcessingLarge
 import SizzLeanBench.Scenarios.FuluStateTransition
 import SizzLeanBench.MultiState
+import SizzLeanBench.CompBench.Scenarios
 
 /-!
 # `SizzLeanBench`: microbenchmark library root
