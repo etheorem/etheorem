@@ -74,8 +74,9 @@ matters. A thousand writes into one list share most of their Merkle path, so
 a cache would pay for one subtree and reuse it; four shapes at four depths
 make the second root walk four separate paths, as a real slot does.
 
-Every repetition decodes the buffer again, so no cache survives from one
-repetition into the next.
+Each harness runs each scenario 100 times, and the report gives the mean over
+those runs. `--reps` changes the count. Every repetition decodes the buffer
+again, so no cache survives from one repetition into the next.
 
 ## The control
 

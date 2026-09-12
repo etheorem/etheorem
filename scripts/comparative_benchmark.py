@@ -7,7 +7,7 @@ runs the three harnesses, checks that they agree on the roots, and renders
 the report.
 
     just sizzlean-comp-benchmark
-    python3 scripts/comparative_benchmark.py --reps 5 --output report.md
+    python3 scripts/comparative_benchmark.py --reps 20 --output report.md
 
 ## What is compared
 
@@ -270,7 +270,7 @@ def parse_lines(stdout: str) -> list[dict]:
     return rows
 
 
-def measure(fixture: Fixture, reps: int, python_reps: int, interpreter: Path) -> list[dict]:
+def measure(fixture: Fixture, reps: int, interpreter: Path) -> list[dict]:
     """Run the three harnesses and collect every sample."""
     rows: list[dict] = []
 
@@ -281,18 +281,21 @@ def measure(fixture: Fixture, reps: int, python_reps: int, interpreter: Path) ->
     rust_exe = RUST_HARNESS_DIR / "target" / "release" / "libssz-compbench"
     rows += parse_lines(run([rust_exe, fixture.path, reps]))
 
-    announce(f"running the ssz-specs harness, {python_reps} repetitions")
-    rows += parse_lines(run([interpreter, PYTHON_HARNESS, fixture.path, python_reps]))
+    announce(f"running the ssz-specs harness, {reps} repetitions")
+    rows += parse_lines(run([interpreter, PYTHON_HARNESS, fixture.path, reps]))
 
     return rows
 
 
-def medians(rows: list[dict]) -> dict[tuple[str, str], dict[str, float]]:
-    """Median nanoseconds per implementation, scenario, and phase.
+def averages(rows: list[dict]) -> dict[tuple[str, str], dict[str, float]]:
+    """Mean nanoseconds per implementation, scenario, and phase.
 
-    The median rather than the mean: one repetition can catch a page fault
-    or a scheduler slice, and the median ignores it without discarding the
-    sample.
+    Every harness runs each scenario 100 times by default, and this is the
+    mean over those runs. A mean counts every repetition, so a slow one, a
+    page fault or a scheduler slice, raises the number rather than being
+    ignored. At 100 repetitions one outlier moves the mean by one percent of
+    its own excess, which is small enough to keep the arithmetic honest and
+    large enough that a real regression cannot hide behind a good median.
     """
     grouped: dict[tuple[str, str], dict[str, float]] = {}
     for impl in IMPLS:
@@ -301,7 +304,7 @@ def medians(rows: list[dict]) -> dict[tuple[str, str], dict[str, float]]:
             if not samples:
                 continue
             grouped[(impl, scenario)] = {
-                key: statistics.median(float(s[key]) for s in samples)
+                key: statistics.fmean(float(s[key]) for s in samples)
                 for key in ALL_PHASES
             }
     return grouped
@@ -449,7 +452,6 @@ def render(
     roots: dict[str, str],
     fixture: Fixture,
     reps: int,
-    python_reps: int,
     versions: dict[str, str],
 ) -> str:
     """The whole report."""
@@ -458,8 +460,8 @@ def render(
     lines.append("")
     lines.append(
         f"*Generated {time.strftime('%Y-%m-%d %H:%M:%S %Z')} on "
-        f"{machine_description()}. Median of {reps} repetitions "
-        f"({python_reps} for ssz-specs).*"
+        f"{machine_description()}. Every number is the mean of {reps} "
+        "repetitions.*"
     )
     lines.append("")
 
@@ -512,9 +514,10 @@ def render(
     )
     lines.append("")
     lines.append(
-        "The two scenarios below differ only in the writes. Every other phase "
-        "is the same work, so the two tables report it twice and the numbers "
-        "should agree to within the run's noise."
+        "Each harness runs each scenario in a loop, and every number below is "
+        "the mean over those runs. The two scenarios differ only in the "
+        "writes. Every other phase is the same work, so the two tables report "
+        "it twice and the numbers should agree to within the run's noise."
     )
     lines.append("")
 
@@ -604,13 +607,10 @@ def main() -> int:
         "results as markdown."
     )
     parser.add_argument(
-        "--reps", type=int, default=5, help="repetitions per compiled harness (default 5)"
-    )
-    parser.add_argument(
-        "--python-reps",
+        "--reps",
         type=int,
-        default=3,
-        help="repetitions for the ssz-specs harness (default 3)",
+        default=100,
+        help="repetitions of each scenario, per harness (default 100)",
     )
     parser.add_argument(
         "--work-dir",
@@ -653,14 +653,13 @@ def main() -> int:
         announce("emitting the fixture")
         fixture = emit_fixture(args.work_dir)
 
-        rows = measure(fixture, args.reps, args.python_reps, interpreter)
+        rows = measure(fixture, args.reps, interpreter)
         roots = check_roots(rows, fixture)
         report = render(
-            medians(rows),
+            averages(rows),
             roots,
             fixture,
             args.reps,
-            args.python_reps,
             toolchain_versions(interpreter),
         )
     except BenchmarkError as error:

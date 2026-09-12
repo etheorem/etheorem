@@ -476,8 +476,9 @@ sizzlean-bench-multistate:
 # the shared 2.9 MB `BeaconState`, runs the three harnesses, checks that they
 # agree on every root, and writes the markdown report. It needs `cargo` and a
 # Python 3.11 or later interpreter besides `lake`; `scripts/compbench/README.md`
-# states the method. Extra arguments pass through, so
-# `just sizzlean-comp-benchmark "--reps 9"` raises the repetition count and
+# states the method. Each harness runs each scenario 100 times and the report
+# gives the mean, which takes about four minutes. Extra arguments pass
+# through, so `just sizzlean-comp-benchmark "--reps 20"` shortens the run and
 # `--skip-build` re-measures without rebuilding.
 
 # Comparative benchmark vs ssz-specs + libssz; markdown → packages/SizzLean/bench/comparative-<timestamp>.md
