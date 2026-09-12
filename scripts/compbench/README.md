@@ -44,14 +44,25 @@ implementation at once.
 
 ## The scenarios
 
-Both run four phases over the fixture, and report each phase separately.
+Both run five phases over the fixture, and report each phase separately.
 
 | Phase | What it times |
 |---|---|
-| Load | wire bytes to a value the library can root |
+| Deserialize | wire bytes to a plain value |
+| Wrap | that value to whatever the library roots |
 | First root | merkleization, from cold |
 | Writes | the scenario's field writes |
 | Second root | merkleization again, after the writes |
+
+Only SizzLean has a wrapping step, the `Box` constructor. The other two root
+the decoded value directly and report a zero there, so the deserialize
+columns compare like with like.
+
+The first three phases make the cold path, and the report totals them as
+**bytes to first root**. The total is what settles a question the first-root
+column alone would hide: an implementation is free to hash while it decodes,
+and one that did would show a heavy deserialize and a cheap first root. The
+total prices the whole path wherever the work happens.
 
 `update1` writes one field, `slot`. `update1000` writes 1000 fields, spread
 over four shapes: 250 validator records, 250 packed balances, 250
@@ -84,8 +95,8 @@ The three harnesses print the same JSON line shape, one line per repetition,
 so the driver reads all three the same way:
 
 ```json
-{"impl": "libssz", "scenario": "update1", "rep": 0, "load_ns": 401721,
- "root1_ns": 9650986, "update_ns": 112, "root2_ns": 8961496,
+{"impl": "libssz", "scenario": "update1", "rep": 0, "deser_ns": 401721,
+ "wrap_ns": 0, "root1_ns": 9650986, "update_ns": 112, "root2_ns": 8961496,
  "root1": "0x…", "root2": "0x…"}
 ```
 

@@ -12,10 +12,19 @@ Both scenarios run the same four phases over the shared
 
 | Phase | What it times |
 |---|---|
-| `load`  | wire bytes to a value the library can root |
+| `deser` | wire bytes to a plain Lean value |
+| `wrap`  | that value to a `Box` |
 | `root1` | the first merkleization, from cold |
 | `update` | the writes |
 | `root2` | the second merkleization, after the writes |
+
+`deser` and `wrap` are separated because only SizzLean has a
+`wrap` step. The other two libraries root the decoded value
+directly, so their harnesses report a zero there and their `deser`
+column compares against ours like with like. The separation also
+answers a question the totals alone would hide: an implementation
+that hashed during decode would show it here, as a `deser` or a
+`wrap` that costs what a root costs.
 
 The two scenarios differ only in the write count.
 
@@ -33,8 +42,8 @@ root walk four separate paths, which is what a real slot does.
 
 A cached box holds its Merkle tree between roots, so its second
 `root1` would be free. Each repetition therefore starts from the
-wire bytes and builds a fresh box. `load` covers that, and the
-number it reports is the honest cost of getting a rootable value
+wire bytes and builds a fresh box. `deser` and `wrap` cover that,
+and together they are the honest cost of getting a rootable value
 out of a buffer.
 
 ## The two configurations
@@ -69,7 +78,8 @@ def writesPerShape : Nat := 250
 /-- The timings one repetition of one scenario produces, in
 nanoseconds. -/
 structure Sample where
-  loadNs   : Nat
+  deserNs  : Nat
+  wrapNs   : Nat
   root1Ns  : Nat
   updateNs : Nat
   root2Ns  : Nat
@@ -158,38 +168,42 @@ code elimination cannot drop the work behind it. -/
   if d == 0 then IO.eprintln "warning: a timed phase produced a zero digest"
   sink.modify (· + d)
 
-/-- Run one repetition and return its four timings plus the two
+/-- Run one repetition and return its five timings plus the two
 roots. `mkBox` picks the configuration; `write` picks the
 scenario. -/
 def runOnce {H : Type} [Hasher H]
     (mkBox : Fulu.BeaconState → SSZ.Box H Fulu.BeaconState)
     (write : SSZ.Box H Fulu.BeaconState → SSZ.Box H Fulu.BeaconState)
     (bytes : ByteArray) (sink : IO.Ref Nat) : IO (Sample × String × String) := do
-  -- Load: wire bytes to a boxed value. The digest reads the sizes
-  -- the decode had to fill, which forces the whole value.
+  -- Deserialize: wire bytes to a plain value. The digest reads the
+  -- sizes the decode had to fill, which forces the whole value.
   let t0 ← IO.monoNanosNow
-  let box ←
+  let value ←
     match (SSZ.deserialize bytes : Except Spec.SSZError Fulu.BeaconState) with
     | .error e => throw (IO.userError s!"fixture did not decode: {repr e}")
-    | .ok v => pure (mkBox v)
-  force sink (box.view.validators.size + box.view.randaoMixes.size
-                + box.view.slot.toNat)
+    | .ok v => pure v
+  force sink (value.validators.size + value.randaoMixes.size + value.slot.toNat)
   let t1 ← IO.monoNanosNow
+  -- Wrap: the value to a `Box`. The cached flavour allocates its
+  -- cell table here; it walks the tree on the first root, not now.
+  let box := mkBox value
+  force sink (box.view.validators.size + box.view.slot.toNat)
+  let t2 ← IO.monoNanosNow
   -- First root, from cold. The cached flavour builds its Merkle
   -- tree here, on the first walk.
   let (root1, box₁) := box.hashTreeRoot
   force sink (digest root1)
-  let t2 ← IO.monoNanosNow
+  let t3 ← IO.monoNanosNow
   -- The writes.
   let box₂ := write box₁
   force sink (box₂.view.slot.toNat + 1)
-  let t3 ← IO.monoNanosNow
+  let t4 ← IO.monoNanosNow
   -- Second root, after the writes.
   let (root2, _) := box₂.hashTreeRoot
   force sink (digest root2)
-  let t4 ← IO.monoNanosNow
-  return ({ loadNs := t1 - t0, root1Ns := t2 - t1
-          , updateNs := t3 - t2, root2Ns := t4 - t3 }
+  let t5 ← IO.monoNanosNow
+  return ({ deserNs := t1 - t0, wrapNs := t2 - t1, root1Ns := t3 - t2
+          , updateNs := t4 - t3, root2Ns := t5 - t4 }
          , rootHex root1, rootHex root2)
 
 end SizzLeanBench.CompBench.Scenarios

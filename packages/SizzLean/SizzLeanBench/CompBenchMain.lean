@@ -40,7 +40,8 @@ private def printLine (impl scenario : String) (rep : Nat) (s : Sample)
     (root1 root2 : String) : IO Unit :=
   IO.println <| String.join
     [ "{\"impl\": \"", impl, "\", \"scenario\": \"", scenario, "\", \"rep\": ", toString rep
-    , ", \"load_ns\": ", toString s.loadNs
+    , ", \"deser_ns\": ", toString s.deserNs
+    , ", \"wrap_ns\": ", toString s.wrapNs
     , ", \"root1_ns\": ", toString s.root1Ns
     , ", \"update_ns\": ", toString s.updateNs
     , ", \"root2_ns\": ", toString s.root2Ns

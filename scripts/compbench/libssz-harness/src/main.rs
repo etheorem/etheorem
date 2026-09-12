@@ -5,8 +5,9 @@
 //! ```
 //!
 //! The harness decodes the `BeaconState` the Lean side emitted, roots it,
-//! applies the scenario's writes, and roots it again, timing each of the four
-//! phases. It prints one JSON object per line on stdout, with the same keys
+//! applies the scenario's writes, and roots it again, timing each of the five
+//! phases. It reports a zero `wrap_ns`: libssz roots the decoded value
+//! directly, with no wrapping step of its own. It prints one JSON object per line on stdout, with the same keys
 //! the Lean and the Python harnesses print, so the driver reads all three the
 //! same way. Diagnostics go to stderr.
 //!
@@ -97,10 +98,13 @@ fn run_once(bytes: &[u8], scenario: &str, rep: usize, write: fn(&mut BeaconState
     black_box(&root2);
     let t4 = Instant::now();
 
+    // `wrap_ns` is zero because libssz has no wrapping step: it roots the
+    // decoded value directly. The key is printed anyway so every harness
+    // emits the same line shape.
     println!(
         "{{\"impl\": \"libssz\", \"scenario\": \"{}\", \"rep\": {}, \
-         \"load_ns\": {}, \"root1_ns\": {}, \"update_ns\": {}, \"root2_ns\": {}, \
-         \"root1\": \"{}\", \"root2\": \"{}\"}}",
+         \"deser_ns\": {}, \"wrap_ns\": 0, \"root1_ns\": {}, \"update_ns\": {}, \
+         \"root2_ns\": {}, \"root1\": \"{}\", \"root2\": \"{}\"}}",
         scenario,
         rep,
         (t1 - t0).as_nanos(),

@@ -3,8 +3,9 @@
     python ssz_specs_harness.py <state.ssz> <reps>
 
 The harness decodes the ``BeaconState`` the Lean side emitted, roots it,
-applies the scenario's writes, and roots it again, timing each of the four
-phases. It prints one JSON object per line on stdout, with the same keys the
+applies the scenario's writes, and roots it again, timing each of the five
+phases. It reports a zero ``wrap_ns``: ssz-specs roots the decoded value
+directly, with no wrapping step of its own. It prints one JSON object per line on stdout, with the same keys the
 Lean and the Rust harnesses print, so the driver reads all three the same
 way. Diagnostics go to stderr.
 
@@ -348,7 +349,11 @@ def run_once(data: bytes, scenario: str, rep: int, write) -> None:
                 "impl": "ssz-specs",
                 "scenario": scenario,
                 "rep": rep,
-                "load_ns": t1 - t0,
+                "deser_ns": t1 - t0,
+                # ssz-specs has no wrapping step: it roots the decoded value
+                # directly. The key is present so every harness emits the
+                # same line shape.
+                "wrap_ns": 0,
                 "root1_ns": t2 - t1,
                 "update_ns": t3 - t2,
                 "root2_ns": t4 - t3,

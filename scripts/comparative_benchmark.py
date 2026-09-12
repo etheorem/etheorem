@@ -20,10 +20,13 @@ the report.
 
 ## What is measured
 
-One `BeaconState` of about 2.9 MB, in four phases: decode the wire bytes,
-root the value, write to it, root it again. Two scenarios differ only in the
-write count, one field against a thousand. `scripts/compbench/README.md`
-states the fixture and the scenarios in full.
+One `BeaconState` of about 2.9 MB, in five phases: deserialize the wire
+bytes, wrap the value (SizzLean only), root it, write to it, root it again.
+The first three make one cold path from bytes to a root, reported in its own
+table so that an implementation which hashes during decode is not credited
+with a cheap root. The last two make the warm path, and the two scenarios
+differ only in the write count, one field against a thousand.
+`scripts/compbench/README.md` states the fixture and the scenarios in full.
 
 ## The control
 
@@ -98,12 +101,14 @@ SCENARIO_BLURBS = {
     ),
 }
 
-PHASES = [
-    ("load_ns", "load"),
-    ("root1_ns", "first root"),
-    ("update_ns", "writes"),
-    ("root2_ns", "second root"),
-]
+#: The cold path: bytes to a first root. These phases do not depend on the
+#: scenario, so their samples are pooled across both.
+COLD_PHASES = ["deser_ns", "wrap_ns", "root1_ns"]
+
+#: The warm path: what a slot costs once the value is resident.
+WARM_PHASES = ["update_ns", "root2_ns"]
+
+ALL_PHASES = COLD_PHASES + WARM_PHASES
 
 
 # ── Running things ───────────────────────────────────────────────────────
@@ -295,8 +300,27 @@ def medians(rows: list[dict]) -> dict[tuple[str, str], dict[str, float]]:
                 continue
             grouped[(impl, scenario)] = {
                 key: statistics.median(float(s[key]) for s in samples)
-                for key, _ in PHASES
+                for key in ALL_PHASES
             }
+    return grouped
+
+
+def cold_medians(rows: list[dict]) -> dict[str, dict[str, float]]:
+    """Median nanoseconds per implementation for the cold-path phases.
+
+    Deserializing, wrapping and the first root all happen before any write,
+    so the scenario cannot change them. Both scenarios' samples are pooled,
+    which doubles the sample count behind each number.
+    """
+    grouped: dict[str, dict[str, float]] = {}
+    for impl in IMPLS:
+        samples = [r for r in rows if r["impl"] == impl]
+        if not samples:
+            continue
+        grouped[impl] = {
+            key: statistics.median(float(s[key]) for s in samples)
+            for key in COLD_PHASES
+        }
     return grouped
 
 
@@ -392,14 +416,48 @@ def toolchain_versions(interpreter: Path) -> dict[str, str]:
     }
 
 
+def render_cold_table(cold: dict[str, dict[str, float]]) -> list[str]:
+    """The cold path: bytes to a first root, phase by phase.
+
+    The total is what settles the question the phase split raises. An
+    implementation that hashed during decode would carry the cost in
+    `Deserialize` and show a cheap `First root`; the total prices the whole
+    path either way.
+    """
+    lines = [
+        "| Implementation | Deserialize | Wrap | First root | Bytes to first root |"
+        " vs SizzLean Fast |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    baseline = None
+    if "sizzlean-fast" in cold:
+        baseline = sum(cold["sizzlean-fast"][phase] for phase in COLD_PHASES)
+
+    for impl in IMPLS:
+        row = cold.get(impl)
+        if row is None:
+            continue
+        label, _ = IMPL_LABELS[impl]
+        total = sum(row[phase] for phase in COLD_PHASES)
+        # A zero wrap means the library has no wrapping step at all, which a
+        # dash says better than "0 ns" does.
+        wrap = show_ns(row["wrap_ns"]) if row["wrap_ns"] > 0 else "—"
+        ratio = show_ratio(total, baseline) if baseline else "n/a"
+        lines.append(
+            f"| {label} | {show_ns(row['deser_ns'])} | {wrap} |"
+            f" {show_ns(row['root1_ns'])} | **{show_ns(total)}** | {ratio} |"
+        )
+    return lines
+
+
 def render_scenario_table(
     scenario: str, data: dict[tuple[str, str], dict[str, float]]
 ) -> list[str]:
-    """The per-phase table for one scenario, plus the summary column."""
+    """The warm path for one scenario: the writes, and the root after them."""
     lines = [
-        "| Implementation | Configuration | Load | First root | Writes | Second root |"
+        "| Implementation | Configuration | Writes | Second root |"
         " Writes + second root | vs SizzLean Fast |",
-        "|---|---|---:|---:|---:|---:|---:|---:|",
+        "|---|---|---:|---:|---:|---:|",
     ]
     baseline = None
     key = ("sizzlean-fast", scenario)
@@ -413,16 +471,16 @@ def render_scenario_table(
         label, configuration = IMPL_LABELS[impl]
         total = row["update_ns"] + row["root2_ns"]
         ratio = show_ratio(total, baseline) if baseline else "n/a"
-        cells = [show_ns(row[phase]) for phase, _ in PHASES]
         lines.append(
-            f"| {label} | {configuration} | {cells[0]} | {cells[1]} | {cells[2]} |"
-            f" {cells[3]} | **{show_ns(total)}** | {ratio} |"
+            f"| {label} | {configuration} | {show_ns(row['update_ns'])} |"
+            f" {show_ns(row['root2_ns'])} | **{show_ns(total)}** | {ratio} |"
         )
     return lines
 
 
 def render(
     data: dict[tuple[str, str], dict[str, float]],
+    cold: dict[str, dict[str, float]],
     roots: dict[str, str],
     fixture: Fixture,
     reps: int,
@@ -472,12 +530,16 @@ def render(
         "harness emits the bytes; the other two decode them."
     )
     lines.append("")
-    lines.append("Each run has four phases:")
+    lines.append("Each run has five phases:")
     lines.append("")
-    lines.append("1. **Load**: wire bytes to a value the library can root.")
-    lines.append("2. **First root**: merkleize, from cold.")
-    lines.append("3. **Writes**: the scenario's field writes.")
-    lines.append("4. **Second root**: merkleize again.")
+    lines.append("1. **Deserialize**: wire bytes to a plain value.")
+    lines.append(
+        "2. **Wrap**: that value to whatever the library roots. Only SizzLean "
+        "has this step; the other two root the decoded value directly."
+    )
+    lines.append("3. **First root**: merkleize, from cold.")
+    lines.append("4. **Writes**: the scenario's field writes.")
+    lines.append("5. **Second root**: merkleize again.")
     lines.append("")
     lines.append(
         "Every repetition decodes the buffer again, so no cache survives from "
@@ -500,6 +562,25 @@ def render(
     lines.append(f"| After the thousand writes | `{roots.get('update1000/root2', '')}` |")
     lines.append("")
 
+    lines.append("## From bytes to a first root")
+    lines.append("")
+    lines.append(
+        "The cold path, phase by phase. Neither the write count nor the writes "
+        "themselves can touch these three, so both scenarios' samples are "
+        "pooled here."
+    )
+    lines.append("")
+    lines += render_cold_table(cold)
+    lines.append("")
+    lines.append(
+        "The split answers a question the first-root column alone would hide. "
+        "An implementation is free to hash while it decodes, and one that did "
+        "would show a heavy **Deserialize** and a cheap **First root**. "
+        "**Bytes to first root** prices the whole path, so it holds wherever "
+        "each library chooses to do the work."
+    )
+    lines.append("")
+
     for scenario in SCENARIOS:
         if not any((impl, scenario) in data for impl in IMPLS):
             continue
@@ -513,9 +594,11 @@ def render(
     lines.append("## Reading the numbers")
     lines.append("")
     lines.append(
-        "**Writes + second root** is the column a consensus client cares about. "
-        "It is the cost of applying a slot's changes and reading the state root "
-        "back. The other columns say where that cost comes from."
+        "Two totals carry the report. **Bytes to first root** is what a cold "
+        "start costs, from a buffer on disk to a root. **Writes + second root** "
+        "is what a slot costs once the value is resident, which is the number a "
+        "consensus client reads most often. The phase columns say where each "
+        "total comes from."
     )
     lines.append("")
     lines.append(
@@ -605,6 +688,7 @@ def main() -> int:
         roots = check_roots(rows, fixture)
         report = render(
             medians(rows),
+            cold_medians(rows),
             roots,
             fixture,
             args.reps,
