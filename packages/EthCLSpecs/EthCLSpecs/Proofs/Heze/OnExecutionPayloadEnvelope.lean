@@ -187,7 +187,7 @@ same-root `FcMap.insert` expressions: warm `blockStates`, the envelope in
 `payloads`, and the inclusion-list result. The inserts may overwrite a prior
 entry.
 -/
-theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks
+theorem onExecutionPayloadEnvelope_run_eq_of_success
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
     [DataAvailability] [CryptoBackend] :
@@ -220,9 +220,19 @@ theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks
                   signedEnv.message.beaconBlockRoot
                   (isInclusionListSatisfied signedEnv.message.payload ilTxs) }) := by
   intro store signedEnv state warm ilTxs postRunnerStore hlookup hda hverif hslot htxs
+  -- `hlookup`, `hda`, and `hverif` discharge the handler prefix;
+  -- `hslot` and `htxs` select the recorder's successful branch.
   rw [onExecutionPayloadEnvelope_run]
-  simp [hlookup, hda, hverif]
-  rw [recordPayloadInclusionListSatisfaction_run_eq (map := map) store store postRunnerStore
-    state signedEnv.message.beaconBlockRoot signedEnv.message.payload ilTxs hslot htxs]
+  simp only [hlookup, hda, ↓reduceIte, hverif]
+  rw [recordPayloadInclusionListSatisfaction_run_eq
+    (map := map)
+    (store := store)
+    (runnerStore := store)
+    (postRunnerStore := postRunnerStore)
+    (state := state)
+    (root := signedEnv.message.beaconBlockRoot)
+    (payload := signedEnv.message.payload)
+    (ilTxs := ilTxs)
+    hslot htxs]
 
 end EthCLSpecs.Proofs.Heze

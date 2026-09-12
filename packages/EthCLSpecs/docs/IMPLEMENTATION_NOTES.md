@@ -910,7 +910,7 @@ separation.
   success the handler's final `set` writes `blockStates` and `payloads`
   on the recorder's explicitly returned store and discards the
   recorder-produced runner state. `.error err` contains no post-state.
-  `onExecutionPayloadEnvelope_run_eq_of_successful_checks` restates the
+  `onExecutionPayloadEnvelope_run_eq_of_success` restates the
   successful branch as the original store updated by three same-root
   `FcMap.insert` expressions. The recorder's slot-zero and collector
   outcomes remain characterized by
