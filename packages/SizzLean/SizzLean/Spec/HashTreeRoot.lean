@@ -501,8 +501,8 @@ def SSZType.hashTreeRootFields (H : Type) [Hasher H] :
 (`vector t n` / `list t cap` with `¬ t.isFixedSize`). Returns the
 list of element roots in order.
 
-Tail-recursive over the element list (the `combineLayerAtAux` /
-`deserializeFixedElems` accumulator pattern). The natural
+Tail-recursive over the element list (the `deserializeFixedElems`
+accumulator pattern). The natural
 `hashTreeRoot … :: hashTreeRootListComposite …` spelling is
 non-tail, the recursive call is the tail of a `cons`, so it holds
 one stack frame per element and overflows the OS-default 8 MB stack

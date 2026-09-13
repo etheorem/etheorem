@@ -14,7 +14,7 @@ EthCLSpecs would create a cycle (`EthCLSpecs` already depends on
 container types here.
 
 The copy is a reference fixture, *not* a spec replica. It tracks
-the Fulu/main-branch `BeaconState` shape (37 fields, including
+the Fulu/main-branch `BeaconState` shape (38 fields, including
 `proposer_lookahead`) at the moment of writing but is **not
 expected to stay in sync** with EthCLSpecs or the upstream spec.
 If you need spec-accurate types use `EthCLSpecs.Fulu.*`.
@@ -175,7 +175,7 @@ structure PendingConsolidation where
 
 /-! ## `BeaconState` (Fulu, mainnet preset)
 
-37 fields total. Preset literals baked in: `SLOTS_PER_HISTORICAL_ROOT
+38 fields total. Preset literals baked in: `SLOTS_PER_HISTORICAL_ROOT
 = 8192`, `EPOCHS_PER_HISTORICAL_VECTOR = 65536`,
 `EPOCHS_PER_SLASHINGS_VECTOR = 8192`,
 `EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH = 64 * 32 = 2048`,

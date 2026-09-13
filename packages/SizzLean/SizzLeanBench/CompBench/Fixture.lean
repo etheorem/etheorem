@@ -31,7 +31,7 @@ state costs.
 
 ## Shape and size
 
-Mainnet preset, Fulu `BeaconState`, 37 fields, 1024 validators.
+Mainnet preset, Fulu `BeaconState`, 38 fields, 1024 validators.
 The `randaoMixes` vector alone is 2 MiB of the roughly 2.9 MB total,
 so the fixture is multi-megabyte without an unrealistic validator
 count.
