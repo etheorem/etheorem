@@ -29,11 +29,12 @@ constant time on a fully-cached tree.
 ## Coherence invariant
 
 `hashTreeRootCached t = SSZ.hashTreeRoot t.view` for every
-`t : TreeBacked H T`. This is *maintained by the smart constructors*,
-not encoded as a Lean proposition. The value/tree coupling can
-diverge under a hand-rolled `TreeBacked.mk` without it being a
-type error. Smart constructors plus the acceptance property test
-(`Conformance/TreeBackedCoherence.lean`) are the discipline.
+`t : TreeBacked H T` a smart constructor built. The kernel-side
+statement for a fresh box is `Proofs/Merkle/CachedSSZ.lean`'s
+`cachedSSZ_hashTreeRoot_ofValue`; the value/tree coupling can still
+diverge under a hand-rolled `TreeBacked.mk` without it being a type
+error, so the smart constructors and the acceptance property test
+(`Conformance/TreeBackedCoherence.lean`) remain the discipline.
 
 ## Hasher pinning + parameter order
 
@@ -270,15 +271,6 @@ abbrev CachedSSZ (H T : Type) [Hasher H] [SSZRepr T] := TreeBacked H T
 
 namespace TreeBacked
 
-/-- Convert a gindex bit-path back to a `Nat` gindex. Used by
-`setAtBits` and `addPendingMany` to project the bit-path
-representation (which the spec functions use) into the
-`pending`-map key space. The conversion is the inverse of
-`gindexBits`: a leading `true` bit marks the implicit `2^depth`,
-the remaining bits are the level-by-level path. -/
-private def gindexOfBits (bits : List Bool) : Nat :=
-  bits.foldl (init := 1) fun acc b => if b then 2 * acc + 1 else 2 * acc
-
 /-- Build a `TreeBacked H T` from a plain `T`. The hasher `H` is
 pinned into the result's type. The initial tree is deferred
 inside `treeBase : Thunk Node`. The `Node.ofShape` build runs
@@ -318,7 +310,7 @@ def addPendingMany {H T : Type} [Hasher H] [SSZRepr T]
     (t : TreeBacked H T) (updates : List (List Bool × PendingWrite T)) (newView : T) :
     TreeBacked H T :=
   let newPending := updates.foldl (init := t.pending) fun acc (bits, d) =>
-    acc.insert (gindexOfBits bits) d
+    acc.insert (MerkleTree.gindexOfBits bits) d
   { t with view := newView, pending := newPending }
 
 /-- Cached Merkle root of `t`, plus an updated `TreeBacked` that
@@ -414,7 +406,7 @@ concatenation of the outer and inner paths. -/
 def setAtBits {H T : Type} [Hasher H] [SSZRepr T]
     (t : TreeBacked H T) (bits : List Bool)
     (newSubtree : PendingWrite T) (newView : T) : TreeBacked H T :=
-  t.addPending (gindexOfBits bits) newSubtree newView
+  t.addPending (MerkleTree.gindexOfBits bits) newSubtree newView
 
 end TreeBacked
 

@@ -1,7 +1,7 @@
 import SizzLean.Spec.Serialize
 import SizzLean.Spec.Deserialize
 import SizzLean.Spec.MaxByteLength
-import Std.Tactic.BVDecide
+import SizzLean.Proofs.UInt
 
 /-!
 # `SizzLean.Proofs.ContainerVar`: mixed-field `.container fs` lemmas
@@ -49,7 +49,8 @@ plumbing `def`s of item 3 that thread per-field data through them):
    `readUInt32LE_append_shift`, `toNat_toUInt32_of_lt`): the
    `uint32LE` / `readUInt32LE` round-trip, and the shift needed to
    read an offset placeholder embedded partway through a buffer.
-   Same trust class as the narrow `uintN` arms: one `bv_decide`.
+   Same digit-codec route as the narrow `uintN` arms, no SAT
+   certificate.
 2. **Extract-middle** (`extract_middle`): slicing the middle piece
    out of a three-way `ByteArray` append, identifying
    `b.extract curOff nextOff` with a variable field's serialized
@@ -87,9 +88,10 @@ plumbing `def`s of item 3 that thread per-field data through them):
 
 ## Trust
 
-Every lemma here closes with the three standard kernel axioms plus
-one `bv_decide` call (`readUInt32LE_uint32LE_append`), the same
-trust class as the narrow `uintN 8/16/32/64` arms in `Proofs/UInt.lean`.
+Every lemma here closes with the three standard kernel axioms only.
+The uint32 codec bridge (`readUInt32LE_uint32LE_append`) routes
+through the `Nat`-digit codec, the same route the narrow
+`uintN 16/32/64` arms in `Proofs/UInt.lean` take.
 -/
 
 set_option autoImplicit false
@@ -102,7 +104,7 @@ open SizzLean.Spec
 -- (proof-internal, kept off the general `SizzLean.Spec` surface, same
 -- convention as `natToLEBytes` / `readNatLE`), so the wildcard `open`
 -- above does not bring it into scope; request it explicitly.
-open SizzLean.Spec (extractFieldOffsets)
+open SizzLean.Spec (extractFieldOffsets natToLEBytes)
 
 /-! ### uint32 offset codec bridge -/
 
@@ -112,31 +114,13 @@ theorem size_uint32LE (x : UInt32) : (uint32LE x).size = 4 := by
   simp [ByteArray.size_push, ByteArray.size_empty]
 
 /-- Reading a `uint32LE`-encoded offset placeholder back off the
-front of a buffer recovers the original value. One `bv_decide` call
-bit-blasts the byte-reassembly identity, same trust class as
-`decode_encode_uintN32` in `Proofs/UInt.lean`. -/
+front of a buffer recovers the original value. The writer is the
+`Nat`-digit codec at width 4 (`serialize_uintN32_eq_natToLEBytes`)
+and the reader folds the digits back
+(`readUInt32LE_append_natToLEBytes`), so no SAT certificate enters. -/
 theorem readUInt32LE_uint32LE_append (x : UInt32) (b : ByteArray) :
     readUInt32LE (uint32LE x ++ b) 0 = some x := by
-  have hsize : (uint32LE x).size = 4 := size_uint32LE x
-  have hbound : (0 : Nat) + 4 ≤ (uint32LE x ++ b).size := by
-    rw [ByteArray.size_append, hsize]; omega
-  unfold readUInt32LE
-  rw [dif_pos hbound]
-  have h0 : (uint32LE x ++ b)[(0 : Nat)]'(by omega) = x.toUInt8 := by
-    rw [ByteArray.getElem_append_left (by rw [hsize]; omega)]
-    unfold uint32LE; rfl
-  have h1 : (uint32LE x ++ b)[(0 : Nat) + 1]'(by omega) = (x >>> 8).toUInt8 := by
-    rw [ByteArray.getElem_append_left (by rw [hsize]; omega)]
-    unfold uint32LE; rfl
-  have h2 : (uint32LE x ++ b)[(0 : Nat) + 2]'(by omega) = (x >>> 16).toUInt8 := by
-    rw [ByteArray.getElem_append_left (by rw [hsize]; omega)]
-    unfold uint32LE; rfl
-  have h3 : (uint32LE x ++ b)[(0 : Nat) + 3]'(by omega) = (x >>> 24).toUInt8 := by
-    rw [ByteArray.getElem_append_left (by rw [hsize]; omega)]
-    unfold uint32LE; rfl
-  simp only [h0, h1, h2, h3]
-  congr 1
-  bv_decide
+  rw [uint32LE_eq_natToLEBytes, readUInt32LE_append_natToLEBytes]
 
 /-- Reading a fixed-width `uint32` at an offset shifted past some
 already-consumed prefix `a` agrees with reading at the unshifted

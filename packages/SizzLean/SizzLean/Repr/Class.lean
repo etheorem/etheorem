@@ -34,10 +34,16 @@ are then thin wrappers; `SSZ.roundtrip` lifts the spec-side
 `decode_encode` (`Proofs/Roundtrip.lean`) to the user type via the
 `from_to` law.
 
-## Why `SSZ.roundtrip` is gated by `BasicSupported r.shape`
+## Why `SSZ.roundtrip` is gated by `BasicSupported r.shape` and `EncodedFits`
 
 The library's `decode_encode` proof currently covers the
-`BasicSupported` subset:
+`BasicSupported` subset, under the value-level guard
+`EncodedFits r.shape (r.toRepr x)` (`Spec/MaxByteLength.lean`): the
+encoding of this value stays below `MAX_LENGTH`, which keeps every
+`uint32` offset placeholder exact. The constructors carry no
+schema-level guard, so shapes like `BeaconState`-scale containers
+are inside the predicate, and the bound sits on the theorem, where
+the actual value is known:
 
 * `.uintN 8 / 16 / 32 / 64` and `.uintN 128 / 256`, `.bool`:
   basic primitives (the wide integers close by the `Nat`-digit
@@ -45,23 +51,21 @@ The library's `decode_encode` proof currently covers the
 * `.vector t n` / `.list t cap`: composites over a
   `BasicSupported` element type, either fixed-size (`vectorFixed` /
   `listFixed`) or variable-size via the offset-table codec
-  (`vectorVar` / `listVar`, with `t.isFixedSize = false` and
-  `maxByteLength s < MAX_LENGTH`; `vectorVar` also carries `0 < n`).
+  (`vectorVar` / `listVar`, with `t.isFixedSize = false`;
+  `vectorVar` also carries `0 < n`).
 * `.bitvector n` (`0 < n`) / `.bitlist cap`: bit-packed shapes,
   closed by the bit-packing inverse in `Proofs/BitPack.lean`.
 * `.container fs`: any field list whose fields are themselves
   `BasicSupported`, either all fixed-size (`containerFixed`) or
   mixed fixed/variable via the offset-table codec (`containerVar`,
-  with `allFixedSize fs = false` and
-  `maxByteLengthFields fs < MAX_LENGTH`).
+  with `allFixedSize fs = false`).
 
 The user-surface corollary inherits that gate: a user type whose
-shape sits inside `BasicSupported` enjoys verified roundtrip; a
-user type whose shape is outside it (a mixed-field container or
-variable-element collection whose schema max exceeds `MAX_LENGTH`)
-enjoys total `serialize` / `deserialize` (the spec functions are
-total) but no verified roundtrip. The gate is honest about scope
-and grows automatically as the proof set widens.
+shape sits inside `BasicSupported` enjoys verified roundtrip for
+every value whose encoding fits below `MAX_LENGTH`; a value whose
+encoding is larger has no such wire form to begin with. The gate
+is honest about scope and grows automatically as the proof set
+widens.
 
 ## Lean idioms used here (annotated on first appearance)
 
@@ -161,7 +165,7 @@ def hashTreeRoot {T : Type} (H : Type) [Hasher H] [r : SSZRepr T]
 
 Given `[SSZRepr T]` with `BasicSupported r.shape`, the
 `SSZ.deserialize ∘ SSZ.serialize` round-trip returns `.ok x` for any
-`x : T`.
+`x : T` whose encoding stays below `MAX_LENGTH`.
 
 The proof unfolds the wrappers, applies the spec-level `decode_encode`
 on `r.toRepr x`, then uses `from_to` to fold the round-tripped
@@ -171,14 +175,19 @@ More directly: `decode_encode` gives `deserialize r.shape
 then maps the `.ok` payload through `fromRepr`, giving
 `.ok (fromRepr (toRepr x)) = .ok x` by `to_from`.
 
-`SSZ.roundtrip` is gated by `BasicSupported r.shape` because that
-is the subset on which the underlying `decode_encode` proof
-currently lives; the gate loosens as the proof set widens. -/
-theorem roundtrip {T : Type} [r : SSZRepr T]
-    (h_sup : SSZType.BasicSupported r.shape) (x : T) :
+The gates: `BasicSupported r.shape`, which is `Supported` plus the
+two zero-width side conditions (`Spec/BasicSupported.lean` records
+that as the predicate's definition), and the value-level size bound
+`h_fits`. The size form is the surface spelling of
+`Spec.EncodedFits r.shape (r.toRepr x)`, the hypothesis
+`decode_encode` carries; the two are interchangeable by
+unfolding, so the Spec layer stays off this surface API. -/
+theorem roundtrip {T : Type} [r : SSZRepr T] (x : T)
+    (h_sup : SSZType.BasicSupported r.shape)
+    (h_fits : (SSZ.serialize x).size < MAX_LENGTH) :
     SSZ.deserialize (SSZ.serialize x) = .ok x := by
   unfold SSZ.deserialize SSZ.serialize
-  rw [Proofs.decode_encode h_sup (r.toRepr x)]
+  rw [Proofs.decode_encode h_sup (r.toRepr x) h_fits]
   -- Goal: `(match .ok (toRepr x, _) with | .ok (y, _) => .ok (fromRepr y) | ...) = .ok x`.
   -- The `match` reduces because the scrutinee is a literal `.ok`;
   -- then `r.to_from` folds `fromRepr (toRepr x)` back to `x`.

@@ -79,9 +79,15 @@ Three claims rest on another row:
 - Both `processDeposit` rows rest on the Merkle branch check. Its proof module is
   [`EthCLLib/Proofs/MerkleBranch.lean`](../../EthCLLib/EthCLLib/Proofs/MerkleBranch.lean),
   which reduces `isValidMerkleBranch` past its length guard to a fold of `branch`
-  over `leaf`. Reading that fold as a statement about a cached SSZ tree still needs
-  the merkleization agreement that
-  [`../../SizzLean/docs/PLAN.md`](../../SizzLean/docs/PLAN.md) Phase 5 tracks.
+  over `leaf`. The theorem to cite is
+  `isValidMerkleBranch_of_foldOpening`: for `index < 2 ^ depth` it accepts the
+  check whenever `branchFold_eq_foldOpening` ties the branch fold to a SizzLean
+  tree's own opening, and `Proofs/Merkle/Opening.lean` proves that opening
+  folds back to the tree's root (`foldOpening_openingAt`, with the
+  mix-in-length variant for list elements). The remaining gap is the tree the
+  deposit branch is checked against: the deposit contract's incremental tree is
+  not an `ofShape` tree, the case the SizzLean ledger's `branch × deposit-tree`
+  row holds out of scope.
 
 ---
 

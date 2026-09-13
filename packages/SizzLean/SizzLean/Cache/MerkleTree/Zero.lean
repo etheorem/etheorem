@@ -17,11 +17,11 @@ The table is **memoised once at module load** into a private
 public accessor `zeroHashAt` reads from the memo via `unsafeBaseIO`;
 the ref is set-once-at-init and never mutated after, so the access is
 morally const. The polymorphic `[Hasher H]` parameter on `zeroHashAt`
-remains as a vestigial signature compatibility marker so callers
-(`zeroLeaf`, `Node.ofLeaves`, …) don't need to change. By the
-`sha256Combine_eq_spec` axiom the bytes returned would be identical
-regardless of which hasher's combine the caller's `[Hasher H]`
-refers to.
+matters in the kernel-visible body `zeroHashRec`, which
+recurses over `Hasher.combine (H := H)`; `Proofs/Merkle/Zero.lean`
+proves it equals the spec tower for every hasher. The runtime
+memo is substituted via `@[implemented_by]` under the swap's side
+condition, that `H`'s combine is SHA-256.
 
 ## Reduction at module-load time
 
@@ -66,25 +66,35 @@ open SizzLean.Hasher
 open SizzLean
 
 /-- 32-byte all-zero `ByteArray`. The leaf at every depth-`0`
-position of an all-zero subtree. Identical to `Spec.zero32`, kept
-here as a small private duplicate rather than importing the
-spec-internal helper because the Tree layer is meant to stand
-alone (so a future caller could load it without the spec). -/
-private def zero32 : ByteArray :=
+position of an all-zero subtree. Identical to `Spec.zero32` (the
+build checks `Cache.zero32 = Spec.zero32` by `rfl` in
+`Proofs/Merkle/Zero.lean`), kept as a duplicate rather than
+importing the spec-internal helper because the Tree layer is meant
+to stand alone (so a future caller could load it without the spec). -/
+def zero32 : ByteArray :=
   let rec build : Nat → ByteArray → ByteArray
     | 0,     acc => acc
     | k + 1, acc => build k (acc.push 0)
   build 32 ByteArray.empty
 
-/-- Pure recurrence for the depth-`d` Sha256 zero-hash. Used only
-at module-load time to populate the memoised table, no runtime
-callers. Calls `LeanHazmat.Sha256.sha256Combine` (the FFI primitive)
-directly rather than going through `Hasher.combine`'s typeclass
-dispatch, since the memo is intentionally Sha256-specific. -/
-private def zeroHashRec : Nat → ByteArray
+/-- Kernel-visible tower: the spec's recurrence over the caller's
+hasher. `zeroHashAt`'s *body* is this definition, so a proof about
+`zeroHashAt` sees the same recurrence `SizzLean.Spec.zeroHashAt`
+states, per depth and for every `H` at once. -/
+def zeroHashRec (H : Type) [Hasher H] : Nat → ByteArray
+  | 0     => zero32
+  | d + 1 => Hasher.combine (H := H) (zeroHashRec H d) (zeroHashRec H d)
+
+/-- The FFI-specific recurrence the memo is populated from. Used
+only at module-load time and in `zeroHashAt`'s past-the-memo
+runtime branch, no proof ever names it. Calls
+`LeanHazmat.Sha256.sha256Combine` (the FFI primitive) directly
+rather than going through `Hasher.combine`'s typeclass dispatch,
+since the memo is intentionally Sha256-specific. -/
+private def zeroHashRecSha256 : Nat → ByteArray
   | 0     => zero32
   | d + 1 =>
-      let z : ByteArray := zeroHashRec d
+      let z : ByteArray := zeroHashRecSha256 d
       LeanHazmat.Sha256.sha256Combine z z
 
 /-- The depth-indexed zero-hash table, lazily populated at module
@@ -92,7 +102,7 @@ load. Held inside an `IO.Ref` so the 100-entry vector is computed
 exactly once per process; readers go through `zeroHashes` (and
 ultimately `zeroHashAt`) which fetch in O(1). -/
 private initialize zeroHashesRef : IO.Ref (Vector ByteArray 100) ←
-  IO.mkRef (Vector.ofFn (fun (i : Fin 100) => zeroHashRec i.val))
+  IO.mkRef (Vector.ofFn (fun (i : Fin 100) => zeroHashRecSha256 i.val))
 
 /-- Runtime impl of `zeroHashes`: reads the memoised vector
 directly from `zeroHashesRef`. Wrapped in `unsafeBaseIO` because
@@ -114,23 +124,32 @@ reader", the same trust class as the `@[extern] opaque sha256Combine`
 that populated the ref. -/
 @[implemented_by zeroHashesUnsafeImpl]
 private def zeroHashes : Vector ByteArray 100 :=
-  Vector.ofFn (fun (i : Fin 100) => zeroHashRec i.val)
+  Vector.ofFn (fun (i : Fin 100) => zeroHashRecSha256 i.val)
+
+/-- Runtime impl of `zeroHashAt`: the memo read below depth 100,
+the FFI recurrence above it. Never runs in the kernel; the kernel
+sees `zeroHashAt`'s own body, the `zeroHashRec H d` recurrence. -/
+private unsafe def zeroHashAtUnsafeImpl (H : Type) [Hasher H] (d : Nat) : ByteArray :=
+  if h : d < 100 then zeroHashes.get ⟨d, h⟩ else zeroHashRecSha256 d
 
 /-- Zero-hash at depth `d`: the root of an all-zero subtree of
-depth `d`. Real trees never leave the memo (SSZ `MAX_LENGTH = 2^32`
-keeps any real tree depth well under 100); past it the same
-recurrence runs uncached, so the answer is the depth-`d` zero root at
-every depth rather than a clamped stand-in.
+depth `d`. The kernel-visible body is `zeroHashRec H d`, the spec's
+own recurrence; the runtime body, substituted via
+`@[implemented_by]`, is the memo read (below 100) with the
+uncached FFI recurrence past it. Real trees never leave the memo
+(SSZ `MAX_LENGTH = 2^32` keeps any real tree depth well under
+100), so the memo and the recurrence agree at every depth a real
+tree reaches.
 
-The `[Hasher H]` parameter is vestigial: the memoised table is
-Sha256-specific and read directly, but by the
-`sha256Combine_eq_spec` axiom the bytes are identical to what any
-equivalent hasher's recurrence would compute. Keeping the
-parameter preserves the existing call-site signatures
-(`zeroLeaf H d`, `Node.ofLeaves H leaves depth`, …) without
-cascading edits. -/
+The swap's side condition: the runtime body computes the same
+bytes as the kernel body only for a hasher whose `combine` is
+SHA-256. That is `Sha256` by definition and `Sha256Spec` by the
+`sha256Combine_eq_spec` axiom; a third hasher instance would be
+trusted through the same entry. The `SizzLeanTests/ZeroHashDepth`
+gate pins the join at depth 100 empirically. -/
+@[implemented_by zeroHashAtUnsafeImpl]
 def zeroHashAt (H : Type) [Hasher H] (d : Nat) : ByteArray :=
-  if h : d < 100 then zeroHashes.get ⟨d, h⟩ else zeroHashRec d
+  zeroHashRec H d
 
 /-- Cheap root lookup that *doesn't* allocate a new cache-filled
 tree. `.leaf b` → `b`; `.pair _ _ (some r)` → `r` in O(1);
@@ -141,8 +160,11 @@ slot at construction time.
 Not a substitute for `merkleRootWithCache`, since it doesn't fill
 cache slots in the input tree. Use when you only need the root
 *value* and the input is expected to be already cached (in which
-case it's O(1)). -/
-partial def Node.rootOf (H : Type) [Hasher H] : Node → ByteArray
+case it's O(1)).
+
+Structural recursion on `Node`, so the kernel gets unfolding
+equations and the proof layer can reason about filled slots. -/
+def Node.rootOf (H : Type) [Hasher H] : Node → ByteArray
   | .leaf b               => b
   | .pair _ _ (some r)    => r
   | .pair l r none        =>

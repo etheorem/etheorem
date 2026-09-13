@@ -1,6 +1,7 @@
 import SizzLean.Repr.Class
 import SizzLean.Repr.Instances
 import SizzLean.Repr.Deriving
+import SizzLean.Proofs.SizeBound
 
 /-!
 # `SizzLeanTests.ReprExamples`: typechecker-honest gates for `SSZRepr`
@@ -72,7 +73,10 @@ field-list witness `cons .bool rfl (cons .bool rfl nil)`. The
 Lean typechecker rejects this `example` if either the iso laws
 fail or the shape sits outside `BasicSupported`. -/
 example (p : Pair) : SSZ.deserialize (SSZ.serialize p) = .ok p :=
-  SSZ.roundtrip (.containerFixed (.cons .bool rfl (.cons .bool rfl .nil))) p
+  SSZ.roundtrip p (.containerFixed (.cons .bool rfl (.cons .bool rfl .nil)))
+    (SizzLean.Proofs.encodedFits_of_maxByteLength_lt
+      (.containerFixed (.cons .bool rfl (.cons .bool rfl .nil)))
+      (SSZRepr.toRepr p) (by decide))
 
 /-! ### `deriving SSZRepr` example
 
@@ -94,7 +98,10 @@ instance. Closes through the same `containerFixed` arm as the
 hand-written `Pair` example, the synthesised `shape` must
 definitionally equal `.container [.bool, .bool]`. -/
 example (p : DPair) : SSZ.deserialize (SSZ.serialize p) = .ok p :=
-  SSZ.roundtrip (.containerFixed (.cons .bool rfl (.cons .bool rfl .nil))) p
+  SSZ.roundtrip p (.containerFixed (.cons .bool rfl (.cons .bool rfl .nil)))
+    (SizzLean.Proofs.encodedFits_of_maxByteLength_lt
+      (.containerFixed (.cons .bool rfl (.cons .bool rfl .nil)))
+      (SSZRepr.toRepr p) (by decide))
 
 /-! ### Integer arm examples: the four `uintN` widths
 
@@ -110,16 +117,20 @@ they are the typechecker-honest gate that the integer support
 holds end-to-end through the user surface. -/
 
 example (x : UInt8) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
-  SSZ.roundtrip .uintN8 x
+  SSZ.roundtrip x .uintN8
+    (SizzLean.Proofs.encodedFits_of_maxByteLength_lt .uintN8 x (by decide))
 
 example (x : UInt16) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
-  SSZ.roundtrip .uintN16 x
+  SSZ.roundtrip x .uintN16
+    (SizzLean.Proofs.encodedFits_of_maxByteLength_lt .uintN16 x (by decide))
 
 example (x : UInt32) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
-  SSZ.roundtrip .uintN32 x
+  SSZ.roundtrip x .uintN32
+    (SizzLean.Proofs.encodedFits_of_maxByteLength_lt .uintN32 x (by decide))
 
 example (x : UInt64) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
-  SSZ.roundtrip .uintN64 x
+  SSZ.roundtrip x .uintN64
+    (SizzLean.Proofs.encodedFits_of_maxByteLength_lt .uintN64 x (by decide))
 
 /-! ### Wide integer arm examples: `uintN 128` and `uintN 256`
 
@@ -127,14 +138,15 @@ The `SSZRepr (BitVec 128)` / `(BitVec 256)` instances
 (`Repr/Instances.lean`) pin the two spec-only widths at shapes
 `.uintN 128` / `.uintN 256` with identity isos. These gates
 compile only if `decode_encode` discharges the wide arms
-(`Proofs/UIntWide.lean`) through the user surface, and, unlike the
-narrow arms, they carry no `bv_decide` axiom. -/
+(`Proofs/UIntWide.lean`) through the user surface. -/
 
 example (x : BitVec 128) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
-  SSZ.roundtrip .uintN128 x
+  SSZ.roundtrip x .uintN128
+    (SizzLean.Proofs.encodedFits_of_maxByteLength_lt .uintN128 x (by decide))
 
 example (x : BitVec 256) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
-  SSZ.roundtrip .uintN256 x
+  SSZ.roundtrip x .uintN256
+    (SizzLean.Proofs.encodedFits_of_maxByteLength_lt .uintN256 x (by decide))
 
 /-! ### Composite arm examples
 
@@ -160,6 +172,7 @@ example (v : Vector UInt64 4) :
         (SSZType.serialize (.vector (.uintN 64) 4) v) =
       Except.ok (v, (SSZType.serialize (.vector (.uintN 64) 4) v).size) :=
   decode_encode (.vectorFixed (by decide) .uintN64 rfl) v
+    (encodedFits_of_maxByteLength_lt (.vectorFixed (by decide) .uintN64 rfl) v (by decide))
 
 /-- Roundtrip for a `SSZ.List UInt32 cap`. The witness:
 `listFixed (h_t := .uintN32) (h_t_fixed := rfl) (h_sz_pos := …)`. -/
@@ -168,6 +181,32 @@ example (xs : { ys : Array UInt32 // ys.size ≤ 100 }) :
         (SSZType.serialize (.list (.uintN 32) 100) xs) =
       Except.ok (xs, (SSZType.serialize (.list (.uintN 32) 100) xs).size) :=
   decode_encode (.listFixed .uintN32 rfl (by decide)) xs
+    (encodedFits_of_maxByteLength_lt (.listFixed .uintN32 rfl (by decide)) xs (by decide))
+
+/-- The etheorem#61 shape: a `uintN 64` field next to a `list` of
+`uintN 64` at cap `2 ^ 40`. The schema's `maxByteLength` is far
+above `MAX_LENGTH`, so the schema-level route to the gate is
+unavailable; the value-level `EncodedFits` is what the theorem
+takes, and this small value satisfies it by evaluation. Exercised
+end to end. -/
+example :
+    SSZType.deserialize (.container [.uintN 64, .list (.uintN 64) (2 ^ 40)])
+        (SSZType.serialize (.container [.uintN 64, .list (.uintN 64) (2 ^ 40)])
+          (42, ⟨#[7], by decide⟩, PUnit.unit)) =
+      Except.ok
+        ((42, ⟨#[7], by decide⟩, PUnit.unit),
+          (SSZType.serialize (.container [.uintN 64, .list (.uintN 64) (2 ^ 40)])
+            (42, ⟨#[7], by decide⟩, PUnit.unit)).size) :=
+  decode_encode
+    (.containerVar (.cons .uintN64 (.cons (.listFixed .uintN64 rfl (by decide)) .nil)) rfl)
+    _ (by
+      rw [EncodedFits]
+      have hML : MAX_LENGTH = 2 ^ 32 := rfl
+      rw [hML]
+      -- the encoding is 20 bytes; the evaluation runs through the
+      -- offset-table writer, so the smoke check goes through the
+      -- compiler, the package's licence for test modules
+      native_decide)
 
 /-- Roundtrip for a general fixed-field container, three uintN
 fields. The `BasicSupportedFieldsFixed` witness is a triple-nested
@@ -180,6 +219,11 @@ example (vs : SSZType.interpFields [.uintN 8, .uintN 16, .uintN 32]) :
                   (.cons .uintN8 rfl
                     (.cons .uintN16 rfl
                       (.cons .uintN32 rfl .nil)))) vs
+    (encodedFits_of_maxByteLength_lt
+      (.containerFixed
+        (.cons .uintN8 rfl
+          (.cons .uintN16 rfl
+            (.cons .uintN32 rfl .nil)))) vs (by decide))
 
 /-! ### Bit-shape arm examples
 
@@ -196,6 +240,7 @@ example (bv : BitVec 10) :
         (SSZType.serialize (.bitvector 10) bv) =
       Except.ok (bv, (SSZType.serialize (.bitvector 10) bv).size) :=
   decode_encode (.bitvector (by decide)) bv
+    (encodedFits_of_maxByteLength_lt (.bitvector (by decide)) bv (by decide))
 
 /-- Roundtrip for a 16-bit (whole-byte) bitvector. -/
 example (bv : BitVec 16) :
@@ -203,6 +248,7 @@ example (bv : BitVec 16) :
         (SSZType.serialize (.bitvector 16) bv) =
       Except.ok (bv, (SSZType.serialize (.bitvector 16) bv).size) :=
   decode_encode (.bitvector (by decide)) bv
+    (encodedFits_of_maxByteLength_lt (.bitvector (by decide)) bv (by decide))
 
 /-- Roundtrip for a bitlist capped at 100 data bits. No side
 condition: the delimiter bit makes every encoding non-empty,
@@ -212,6 +258,7 @@ example (xs : { bs : Array Bool // bs.size ≤ 100 }) :
         (SSZType.serialize (.bitlist 100) xs) =
       Except.ok (xs, (SSZType.serialize (.bitlist 100) xs).size) :=
   decode_encode .bitlist xs
+    (encodedFits_of_maxByteLength_lt .bitlist xs (by decide))
 
 /-- A container carrying a bitvector field: `.bitvector n` is
 fixed-size, so it qualifies under `BasicSupportedFieldsFixed`
@@ -223,6 +270,10 @@ example (vs : SSZType.interpFields [.uintN 8, .bitvector 10]) :
   decode_encode (.containerFixed
                   (.cons .uintN8 rfl
                     (.cons (.bitvector (by decide)) rfl .nil))) vs
+    (encodedFits_of_maxByteLength_lt
+      (.containerFixed
+        (.cons .uintN8 rfl
+          (.cons (.bitvector (by decide)) rfl .nil))) vs (by decide))
 
 /-- A container carrying a `uint256` field alongside a `uint64`,
 the `ExecutionPayload`-style layout that motivated the wide-integer
@@ -235,6 +286,10 @@ example (vs : SSZType.interpFields [.uintN 64, .uintN 256]) :
   decode_encode (.containerFixed
                   (.cons .uintN64 rfl
                     (.cons .uintN256 rfl .nil))) vs
+    (encodedFits_of_maxByteLength_lt
+      (.containerFixed
+        (.cons .uintN64 rfl
+          (.cons .uintN256 rfl .nil))) vs (by decide))
 
 /-! ### Mixed-field container arm examples (`containerVar`)
 
@@ -262,7 +317,12 @@ example (vs : SSZType.interpFields [.uintN 64, .list (.uintN 32) 100]) :
   decode_encode (.containerVar
                   (.cons .uintN64
                     (.cons (.listFixed .uintN32 rfl (by decide)) .nil))
-                  (by decide) (by decide)) vs
+                  (by decide)) vs
+    (encodedFits_of_maxByteLength_lt
+      (.containerVar
+        (.cons .uintN64
+          (.cons (.listFixed .uintN32 rfl (by decide)) .nil))
+        (by decide)) vs (by decide))
 
 /-- Variable field first: `.bitlist 16` precedes a fixed `.uintN 8`,
 so the fixed field's prefix bytes sit *after* the offset placeholder. -/
@@ -272,7 +332,11 @@ example (vs : SSZType.interpFields [.bitlist 16, .uintN 8]) :
       Except.ok (vs, (SSZType.serialize (.container [.bitlist 16, .uintN 8]) vs).size) :=
   decode_encode (.containerVar
                   (.cons .bitlist (.cons .uintN8 .nil))
-                  (by decide) (by decide)) vs
+                  (by decide)) vs
+    (encodedFits_of_maxByteLength_lt
+      (.containerVar
+        (.cons .bitlist (.cons .uintN8 .nil))
+        (by decide)) vs (by decide))
 
 /-- Two variable fields, `.list (.uintN 8) 10` and `.bitlist 8`,
 straddling a fixed `.bool`: the first variable body's end is the
@@ -286,7 +350,12 @@ example (vs : SSZType.interpFields [.list (.uintN 8) 10, .bool, .bitlist 8]) :
   decode_encode (.containerVar
                   (.cons (.listFixed .uintN8 rfl (by decide))
                     (.cons .bool (.cons .bitlist .nil)))
-                  (by decide) (by decide)) vs
+                  (by decide)) vs
+    (encodedFits_of_maxByteLength_lt
+      (.containerVar
+        (.cons (.listFixed .uintN8 rfl (by decide))
+          (.cons .bool (.cons .bitlist .nil)))
+        (by decide)) vs (by decide))
 
 /-- Edge-case value for the empty-list gate below: the trailing
 `.list (.uintN 32) 10` field serializes to an empty body, so its
@@ -311,7 +380,12 @@ example :
   decode_encode (.containerVar
                   (.cons .uintN8
                     (.cons (.listFixed .uintN32 rfl (by decide)) .nil))
-                  (by decide) (by decide)) emptyListContainer
+                  (by decide)) emptyListContainer
+    (encodedFits_of_maxByteLength_lt
+      (.containerVar
+        (.cons .uintN8
+          (.cons (.listFixed .uintN32 rfl (by decide)) .nil))
+        (by decide)) emptyListContainer (by decide))
 
 /-! ### Variable-element collection arm examples (`vectorVar` / `listVar`)
 
@@ -327,14 +401,16 @@ example (v : SSZType.interp (.vector (.bitlist 8) 2)) :
     SSZType.deserialize (.vector (.bitlist 8) 2)
         (SSZType.serialize (.vector (.bitlist 8) 2) v) =
       Except.ok (v, (SSZType.serialize (.vector (.bitlist 8) 2) v).size) :=
-  decode_encode (.vectorVar (by decide) .bitlist rfl (by decide)) v
+  decode_encode (.vectorVar (by decide) .bitlist rfl) v
+    (encodedFits_of_maxByteLength_lt (.vectorVar (by decide) .bitlist rfl) v (by decide))
 
 /-- Count recovered from the first offset: `.list (.bitlist 8) 4`. -/
 example (xs : SSZType.interp (.list (.bitlist 8) 4)) :
     SSZType.deserialize (.list (.bitlist 8) 4)
         (SSZType.serialize (.list (.bitlist 8) 4) xs) =
       Except.ok (xs, (SSZType.serialize (.list (.bitlist 8) 4) xs).size) :=
-  decode_encode (.listVar .bitlist rfl (by decide)) xs
+  decode_encode (.listVar .bitlist rfl) xs
+    (encodedFits_of_maxByteLength_lt (.listVar .bitlist rfl) xs (by decide))
 
 /-- Empty-list / empty-buffer identity. -/
 private def emptyBitlistList : SSZType.interp (.list (.bitlist 8) 4) :=
@@ -345,7 +421,8 @@ example :
         (SSZType.serialize (.list (.bitlist 8) 4) emptyBitlistList) =
       Except.ok (emptyBitlistList,
         (SSZType.serialize (.list (.bitlist 8) 4) emptyBitlistList).size) :=
-  decode_encode (.listVar .bitlist rfl (by decide)) emptyBitlistList
+  decode_encode (.listVar .bitlist rfl) emptyBitlistList
+    (encodedFits_of_maxByteLength_lt (.listVar .bitlist rfl) emptyBitlistList (by decide))
 
 /-- Nested variable collection: `.vector (.list (.uintN 8) 4) 2`. -/
 example (v : SSZType.interp (.vector (.list (.uintN 8) 4) 2)) :
@@ -353,7 +430,9 @@ example (v : SSZType.interp (.vector (.list (.uintN 8) 4) 2)) :
         (SSZType.serialize (.vector (.list (.uintN 8) 4) 2) v) =
       Except.ok (v, (SSZType.serialize (.vector (.list (.uintN 8) 4) 2) v).size) :=
   decode_encode (.vectorVar (by decide)
-                  (.listFixed .uintN8 rfl (by decide)) rfl (by decide)) v
+                  (.listFixed .uintN8 rfl (by decide)) rfl) v
+    (encodedFits_of_maxByteLength_lt
+      (.vectorVar (by decide) (.listFixed .uintN8 rfl (by decide)) rfl) v (by decide))
 
 /-- Variable-element container: `.list (.container [.uintN 8, .bitlist 8]) 2`. -/
 example (xs : SSZType.interp (.list (.container [.uintN 8, .bitlist 8]) 2)) :
@@ -364,7 +443,13 @@ example (xs : SSZType.interp (.list (.container [.uintN 8, .bitlist 8]) 2)) :
   decode_encode (.listVar
                   (.containerVar
                     (.cons .uintN8 (.cons .bitlist .nil))
-                    (by decide) (by decide))
-                  rfl (by decide)) xs
+                    (by decide))
+                  rfl) xs
+    (encodedFits_of_maxByteLength_lt
+      (.listVar
+        (.containerVar
+          (.cons .uintN8 (.cons .bitlist .nil))
+          (by decide))
+        rfl) xs (by decide))
 
 end SizzLeanTests.ReprExamples

@@ -15,6 +15,14 @@ merkleizer, *one* set of proofs that every Ethereum consensus
 type can inherit, plus a production-grade hash-tree-root path that
 runs fast enough to be useful in real workloads.
 
+One scope line runs through the whole document. The proofs cover
+the pure path, the world whose `hashTreeRoot` recomputes from the
+spec on every call. The cached Merkle-tree layer is the execution
+path: the evaluation gates in `SizzLeanTests` and the `ssz_static`
+pyspec sweep check it, and the landed theorems that do reach into
+it (coherence, the builder agreement, the fresh box) are the seed
+of a future cached-path equivalence theorem.
+
 ## Other subpackages, in terms of what SizzLean needs from them
 
 * **`LeanSha256`**: sibling subpackage at
@@ -59,8 +67,10 @@ Vanilla Lean structures cover every consensus type from `phase0` through
 front-end that would otherwise lower EIP-7495 ProgressiveContainer
 profiles; see §8 for the rationale and the re-introduction recipe if a
 future fork adopts EIP-7495. The cached Merkle-tree layer sits
-orthogonally on top of the universe as a production fast path, asserted
-equivalent to the verified spec rather than formally verified itself.
+orthogonally on top of the universe as a production fast path: its
+fresh-box root is proved equal to the spec root and its update path
+is proved root-preserving, while the hash-cons sharing and the
+zero-tower memo stay behind `@[implemented_by]` swaps.
 
 The doc is written to be readable from both ends: a Lean-fluent reader who
 has not internalised the SSZ wire format, and an SSZ-fluent reader who has
@@ -112,15 +122,15 @@ to BeaconState without scaling its proof obligation.
 
 In practice, the proofs widen one constructor at a time. PLAN.md
 Stages 5–6 shipped the proof *infrastructure* (`@[ssz_simp]` set,
-`Supported` predicate, `BasicSupported` dispatch) plus a narrow
-first cut; Phase 3 validated the implementation empirically against
+`Supported` predicate, `BasicSupported` dispatch); Phase 3 validated
+the implementation empirically against
 the pyspec `ethereum/consensus-spec-tests` release vectors;
-Phase 4 built the performance layer on top of the now-known-good
-library; **Phase 5 (Stage 18) widens the three theorems** toward
-complete `BasicSupported` constructor coverage. As of this writing
-`BasicSupported` covers `uintN 8/16/32/64` and `uintN 128/256`
+Phase 4 built the performance layer on top of the known-good
+library; **Phase 5 (Stage 18) closes the three theorems** for every
+`BasicSupported` constructor. `BasicSupported` covers
+`uintN 8/16/32/64` and `uintN 128/256`
 (the wide arms via the `Nat`-digit codec proof in
-`Proofs/UIntWide.lean`, with no `bv_decide` axiom), `bool`,
+`Proofs/UIntWide.lean`), `bool`,
 `vector` and `list` over fixed-size or variable-size element types,
 `bitvector`, `bitlist` (both via the bit-packing inverse in
 `Proofs/BitPack.lean`), and `container` over any field list,
@@ -134,10 +144,14 @@ proofs live in `Proofs/CollectionVar.lean`. See
 `Spec/BasicSupported.lean` and the README's *Proof coverage*
 table. `Supported` remains a structural codec predicate and admits
 zero-width schemas that the decoder rejects. `BasicSupported`
-carries the proof guards. Value-level offset guards remain tracked
-for `containerVar` (etheorem#61) and `vectorVar` / `listVar`
-(etheorem#77). The `SSZ.roundtrip` user-surface corollary mirrors
-the `BasicSupported r.shape` gate. The asterisk on
+carries the proof guards: `Supported` plus the two zero-width side
+conditions, `0 < n` on the vector and bitvector arms and
+`0 < t.fixedByteSize` on `listFixed` (`Spec/BasicSupported.lean`).
+The offset guards are value-level on the theorems:
+`EncodedFits s x` (`Spec/MaxByteLength.lean`) for `containerVar`
+(etheorem#61) and `vectorVar` / `listVar` (etheorem#77). The
+`SSZ.roundtrip` user-surface corollary mirrors both gates. The
+asterisk on
 "verified by inheritance" is intentional and small: passing
 empirical conformance is what points both the Phase 4 performance
 work and the Phase 5 proof work at an implementation already known
@@ -168,8 +182,8 @@ re-introduction recipe.
 
 **Purpose.** The formal source of truth. Every behavioural property of the
 library is stated on this layer; everything else either inherits a proof
-through `SSZRepr` (Layer 3) or is asserted equivalent and validated
-empirically (Layer 4).
+through `SSZRepr` (Layer 3) or is proved equivalent to it in
+`Proofs/` and validated empirically (Layer 4).
 
 Each file in `Spec/` opens with a `/-! … -/` module docstring (Lean's
 syntax for module-level prose) naming the consensus-specs SSZ section it
@@ -280,18 +294,23 @@ assertion to a kernel-checked equality. See §9.
 Three central theorems anchor the library, one per file:
 
 ```lean
-/-- Decoding the encoding of any value yields that value, with no leftover bytes. -/
+/-- Decoding the encoding of any supported, non-degenerate value whose
+encoding stays below `MAX_LENGTH` yields that value, with no leftover bytes. -/
 theorem decode_encode :
-    ∀ (s : SSZType) (x : s.interp),
-      deserialize s (serialize s x) = .ok (x, (serialize s x).size)
+    ∀ (s : SSZType), BasicSupported s → ∀ (x : s.interp),
+      EncodedFits s x →
+        deserialize s (serialize s x) = .ok (x, (serialize s x).size)
 
-/-- Two distinct values never serialise to the same bytes (non-malleability). -/
+/-- Two distinct supported values never serialise to the same bytes
+(non-malleability). -/
 theorem serialize_injective :
-    ∀ (s : SSZType) (x y : s.interp), serialize s x = serialize s y → x = y
+    ∀ (s : SSZType), BasicSupported s → ∀ (x y : s.interp),
+      EncodedFits s x → serialize s x = serialize s y → x = y
 
 /-- The serialised size never exceeds a static, type-determined bound. -/
 theorem encode_size_le_max :
-    ∀ (s : SSZType) (x : s.interp), (serialize s x).size ≤ s.maxByteLength
+    ∀ (s : SSZType), SupportedBounded s → ∀ (x : s.interp),
+      (serialize s x).size ≤ s.maxByteLength
 ```
 
 Each is one induction on `SSZType`. The tactic vocabulary:
@@ -299,9 +318,8 @@ Each is one induction on `SSZType`. The tactic vocabulary:
 - `simp` with a tagged `ssz_simp` set on every `serialize`/`deserialize`
   equation (declared in `Proofs/Simp.lean`), keeping the inductive cases
   closing uniformly.
-- `omega` for `Nat` / `Int` arithmetic on offsets and lengths.
-- `bv_decide` (built into Lean since 4.12; reduces `BitVec` goals to SAT
-  via CaDiCaL) for endianness and bit-packing lemmas.
+- `omega` for `Nat` / `Int` arithmetic on offsets and lengths, and
+  `Nat`-digit proofs for endianness and bit-packing lemmas.
 - `induction` on `SSZType`, `split` to peel apart nested matches in
   `deserialize`, `Aesop` with a small custom rule set for trivial cases.
 - `decide` for closed finite goals; `native_decide` reserved for the
@@ -352,12 +370,15 @@ def SSZ.hashTreeRoot [r : SSZRepr T] [Hasher H] (x : T) : ByteArray :=
   Spec.hashTreeRoot r.shape (r.toRepr x)
 ```
 
-Per-user-type roundtrip is a one-line corollary:
+Per-user-type roundtrip is a one-line corollary under the same
+gates, `BasicSupported r.shape` and the value's encoded size below
+`MAX_LENGTH`:
 
 ```lean
-theorem SSZ.roundtrip [r : SSZRepr T] (a : T) :
-    SSZ.deserialize (SSZ.serialize a) = .ok a := by
-  simp [SSZ.serialize, SSZ.deserialize, decode_encode, r.from_to]
+theorem SSZ.roundtrip [r : SSZRepr T] (x : T)
+    (h_sup : SSZType.BasicSupported r.shape)
+    (h_fits : (SSZ.serialize x).size < MAX_LENGTH) :
+    SSZ.deserialize (SSZ.serialize x) = .ok x
 ```
 
 That `from_to` field is what closes the proof: it converts the round-
@@ -432,9 +453,12 @@ structure Validator where
   deriving SSZRepr
 
 /-- An `example` block keeps the round-trip honest under the typechecker:
-    if the deriving handler ever produces a wrong iso, the build breaks here. -/
-example (h : BeaconBlockHeader) :
-    SSZ.deserialize (SSZ.serialize h) = .ok h := SSZ.roundtrip h
+    if the deriving handler ever produces a wrong iso, the build breaks here.
+    The gates are the shape predicate and the value's encoded size. -/
+example (h : BeaconBlockHeader)
+    (h_sup : BasicSupported (SSZRepr.shape BeaconBlockHeader))
+    (h_fits : (SSZ.serialize h).size < MAX_LENGTH) :
+    SSZ.deserialize (SSZ.serialize h) = .ok h := SSZ.roundtrip h h_sup h_fits
 ```
 
 That is the entire user surface: one keyword per type, no manual
@@ -459,12 +483,22 @@ the spec `hashTreeRoot` recomputes from scratch every call: hashing
 persistent binary tree with cached hashes per interior node, structural
 sharing on update, and re-hashing only the dirty spine after a mutation.
 
-This layer is *intentionally outside* the formal-verification frontier.
-The cache is asserted equivalent to the spec, validated empirically by
-the `ssz_generic` pyspec vectors plus a property test, and exposed
-to users behind a separate type (`TreeBacked T`) so that holding a plain
-`T` and calling the verified `SSZ.hashTreeRoot` remains an option per
-use-site.
+The coherence invariant and the builder agreement are proved:
+`Proofs/Merkle/Coherent.lean` pins `Node.Coherent` and the
+cheap-root identities, and the builder agreement itself,
+`ofShape_root` (`Proofs/Merkle/OfShape.lean`) lifting to
+`cachedSSZ_hashTreeRoot_ofValue` (`Proofs/Merkle/CachedSSZ.lean`),
+is proved for every `BasicSupported` arm. The update path (single
+writes, batched writes, the fused commit, field paths, the
+deferred-update box statement) is out of proof scope with the
+cached-path equivalence theorem: the evaluation gates in
+`SizzLeanTests` and the `ssz_static` pyspec sweep check it, where
+the `@[implemented_by]` swaps and the FFI hasher run. The landed
+coherence and builder theorems are the seed of that equivalence
+theorem. The layer is
+exposed to users behind a separate type (`TreeBacked T`) so that
+holding a plain `T` and calling the verified `SSZ.hashTreeRoot`
+remains an option per use-site.
 
 > **Implementation-level docs.** This section gives the
 > architectural picture: types, key operations, the wrapper, the
@@ -517,32 +551,45 @@ children). A subsequent `merkleRootWithCache` on a fresh
 pair without redoing the depth-first hash walk.
 
 The single optimisation that makes a `List[Validator, 2**40]`
-tractable is precomputing zero-subtree hashes. The table is built
-once at module load via direct `sha256Combine` FFI calls:
+tractable is precomputing zero-subtree hashes. The kernel sees the
+generic recurrence; the memo is populated from the FFI-specific
+twin at module load:
 
 ```lean
-private def zeroHashRec : Nat → ByteArray
+/-- Kernel-visible tower: the spec's recurrence over the caller's hasher. -/
+def zeroHashRec (H : Type) [Hasher H] : Nat → ByteArray
   | 0     => zero32
-  | d + 1 => let z := zeroHashRec d; sha256Combine z z
+  | d + 1 => Hasher.combine (H := H) (zeroHashRec H d) (zeroHashRec H d)
+
+/-- The FFI-specific recurrence the memo is populated from. -/
+private def zeroHashRecSha256 : Nat → ByteArray
+  | 0     => zero32
+  | d + 1 =>
+      let z : ByteArray := zeroHashRecSha256 d
+      LeanHazmat.Sha256.sha256Combine z z
 
 private initialize zeroHashesRef : IO.Ref (Vector ByteArray 100) ←
-  IO.mkRef (Vector.ofFn (fun (i : Fin 100) => zeroHashRec i.val))
+  IO.mkRef (Vector.ofFn (fun (i : Fin 100) => zeroHashRecSha256 i.val))
 
 @[implemented_by zeroHashesUnsafeImpl]
 private def zeroHashes : Vector ByteArray 100 :=
-  Vector.ofFn (fun (i : Fin 100) => zeroHashRec i.val)
+  Vector.ofFn (fun (i : Fin 100) => zeroHashRecSha256 i.val)
 
+@[implemented_by zeroHashAtUnsafeImpl]
 def zeroHashAt (H : Type) [Hasher H] (d : Nat) : ByteArray :=
-  if h : d < 100 then zeroHashes.get ⟨d, h⟩ else zeroHashRec d
+  zeroHashRec H d
 ```
 
-The runtime body of `zeroHashes` (swapped in via `@[implemented_by]`)
-reads from the `initialize`-populated ref via `unsafeBaseIO`; the
-kernel-visible body is the pure recurrence. The `[Hasher H]`
-parameter on `zeroHashAt` is vestigial. It is kept so callers'
-signatures don't change and ignored by the body, because by the
-`sha256Combine_eq_spec` axiom the memoised Sha256 table values
-equal any equivalent hasher's recurrence output.
+`zeroHashAt`'s kernel-visible body is the pure recurrence over
+`Hasher.combine (H := H)`; the runtime body, substituted via
+`@[implemented_by]`, reads the memo below depth 100 and runs the
+FFI recurrence past it. The `[Hasher H]` parameter matters in the
+kernel body: `Proofs/Merkle/Zero.lean` proves the
+recurrence equals the spec tower for every hasher
+(`zeroHashRec_eq_spec`, `cache_zeroHashAt_eq_spec`). The runtime
+memo is substituted under the swap's side condition, that `H`'s
+combine is SHA-256, which holds for `Sha256` by definition and for
+`Sha256Spec` by `sha256Combine_eq_spec`.
 
 The table is 100 entries because `merkle_minimal.py`'s `zerohashes`
 is, and the spec indexes that list directly, so `zerohashes[100]`
@@ -935,7 +982,10 @@ requires).
 | `Cache/TreeBacked.lean`       | `def PendingWrite T := T → Option Node`, `structure TreeBacked H T` (`view`, `treeBase : Thunk Node`, `pending : Std.TreeMap Nat (PendingWrite T)`), `abbrev CachedSSZ` user-facing alias, `addPending` / `addPendingMany` / `hashTreeRootCached`. |
 | `Cache/Uncached.lean`         | `structure UncachedSSZ H T`, a pure-Lean cache shape for proofs. *Internal*: user code reaches it through `SSZ.PureBox` / `SSZ.UncachedBox` or just uses plain `T`; see the module's prominent warning block. |
 | `Cache/Box.lean`              | `inductive SSZ.Box H T`, a closed sum over the two cache flavours + `view` / `hashTreeRoot` projectors + four user-facing smart constructors. Sha256-pinned: `SSZ.FastBox v` (cached) and `SSZ.PureBox v` (uncached). Hasher-explicit: `SSZ.CachedBox H v` and `SSZ.UncachedBox H v`. The lower-level `Box.ofCached` / `Box.ofPure` are `private`; the four `*Box` abbrevs are the entire public surface. |
-| `Cache/Update.lean`           | `sszUpdate t with f.g := v, h := w` write surface (elaborator branches per cache type: cached lowers to `Node.setManyAt` (14d), uncached emits a plain struct rewrite, `SSZ.Box` emits a two-arm match dispatching to both) **plus** the read companion `sszGet t f.g[i].h`, a one-line `macro_rules` rewrite that expands to `t.view.f.g[i].h`, so user code never types `.view`. `PathStep` and `elabSszUpdate` are `private`. |
+| `Cache/Update.lean`           | `sszUpdate t with f.g := v, h := w` write surface (elaborator branches per cache type: cached lowers to `Node.setManyAt` (14d), uncached emits a plain struct rewrite, `SSZ.Box` emits a two-arm match dispatching to both) **plus** the read companion `sszGet t f.g[i].h`, a one-line `macro_rules` rewrite that expands to `t.view.f.g[i].h`, so user code never types `.view`. The elaborator's own `PathStep` inductive (`Cache/Update.lean`,
+a macro-internal syntax carrier, unrelated to
+`Spec/GeneralizedIndex.lean`'s) and `elabSszUpdate` are
+`private`. |
 
 ## 7. Layer 5: Ethereum consensus types (`packages/EthCLLib/`, `packages/EthCLSpecs/`)
 
@@ -1222,6 +1272,16 @@ run against the SSZ Generic Test Suite. Lighthouse runs the analogous
 test against `Vec<T>` reference values via AFL+ fuzzing, and it has
 caught real divergence in production implementations.
 
+The proof side of the duality covers the fresh box:
+`cachedSSZ_hashTreeRoot_ofValue` (`Proofs/Merkle/CachedSSZ.lean`)
+roots a fresh `CachedSSZ` to the spec root for every
+`BasicSupported` arm. The `example` above quantifies over an
+arbitrary `TreeBacked`, which the theorem does not cover; the
+`example` stays in place as the gate on the compiled path, where
+the `@[implemented_by]` swaps and the FFI hasher run. The update
+path is out of proof scope with the cached-path equivalence
+theorem, checked by the evaluation gates.
+
 ## 11. Trust boundary
 
 ```mermaid
@@ -1240,8 +1300,8 @@ graph LR
       R["Layer 3 — SSZRepr<br/>iso laws, rfl proofs"]
     end
 
-    subgraph Asserted["Asserted-Equivalent, Empirically Validated"]
-      C[Layer 4 — TreeBacked + cache]
+    subgraph Asserted["Fresh-Box Root Proved; Execution Path Empirically Validated"]
+      C["Layer 4 — TreeBacked + cache<br/>(fresh-box root proved; update path gated; consing and zero memo trusted)"]
       EI[Layer 5 — Eth-types instances]
       CT["SizzLeanTests + upstream consensus-spec-tests<br/>(native_decide + CLI harness)"]
     end
@@ -1294,23 +1354,30 @@ graph LR
 - Every `native_decide` axiom (one `Lean.ofReduceBool` per invocation in
   Lean 4.29+).
 - Every `@[implemented_by]` swap (compiler trusts the assertion).
-- The `unsafeBaseIO`-backed `zeroHashes` accessor in
-  `Cache/MerkleTree/Zero.lean`. The kernel-visible body is the pure
-  `Vector.ofFn (fun i => zeroHashRec i.val)` recurrence (slow,
-  unmemoised); the runtime body, swapped via `@[implemented_by]`
-  on a `private unsafe def zeroHashesUnsafeImpl`, reads from an
-  `IO.Ref` populated once at module load by an `initialize` block.
-  Trust assumption: *the init action ran before any reader*. Same
-  trust class as the `@[extern] opaque sha256Combine` that
-  populated the ref; both bytes-of-the-table values are validated
-  against the pure-Lean reference by the existing
-  `SizzLeanTests/Sha256Equivalence.lean` suite, since the table is
-  populated by the same `sha256Combine` calls that suite tests.
+- The `@[implemented_by]` swap on `zeroHashAt`
+  (`Cache/MerkleTree/Zero.lean`). The kernel-visible body is
+  `zeroHashRec H d`, the spec's own recurrence over
+  `Hasher.combine`; the runtime body is the memo read below depth
+  100 with the uncached FFI recurrence past it. The swap's side
+  condition: the runtime body computes the same bytes as the kernel
+  body only for a hasher whose `combine` is SHA-256. That is
+  `Sha256` by definition and `Sha256Spec` by the
+  `sha256Combine_eq_spec` axiom; a third hasher instance would be
+  trusted through the same entry. Real trees never leave the memo
+  (SSZ `MAX_LENGTH = 2^32` keeps any real tree depth well under
+  100), so the memo and the recurrence agree at every depth a real
+  tree reaches. The `SizzLeanTests/ZeroHashDepth` gate pins the
+  join at depth 100 empirically.
 
 **Out of TCB:**
-- Layer 4 cache code (operates only on `Node` values; coherence is an
-  invariant maintained by smart constructors, not a kernel-checked
-  proposition).
+- Layer 4 cache code's update path (operates only on `Node` values;
+  coherence is a kernel-checked proposition with its proofs in
+  `Proofs/Merkle/Coherent.lean`; the builder agreement with the
+  spec merkleizer is proved per `BasicSupported` arm in
+  `Proofs/Merkle/OfShape.lean` and lifted to the fresh box in
+  `Proofs/Merkle/CachedSSZ.lean`; the update statements are out of
+  proof scope with the cached-path equivalence theorem, checked by
+  the evaluation gates).
 - The deriving handler's emitted iso (it produces `rfl` proofs, which
   *are* kernel-checked; the metaprogramming itself is not trusted).
 - Eth-types instances (just `deriving SSZRepr` on plain structures).
@@ -1441,7 +1508,9 @@ smart constructors (`SSZ.FastBox` / `SSZ.PureBox` /
 The lower-level spec operations (`SSZType.*`), Merkle-tree
 primitives (`Cache/MerkleTree/*`), `UncachedSSZ`, the
 private-by-attribute helpers (`Box.ofCached`, `Box.ofPure`,
-`PathStep`, `elabSszUpdate`), and the `Proofs/*` artefacts are
+`Cache.Update.lean`'s private `PathStep`, `elabSszUpdate`; the
+spec-side `PathStep` of `Spec/GeneralizedIndex.lean` is public),
+and the `Proofs/*` artefacts are
 deliberately not in the umbrella import list. They remain
 reachable by qualified path for sibling packages (`EthCLSpecs`'s
 `deriving SSZRepr` infrastructure imports `Spec/Serialize` etc.
@@ -1496,10 +1565,10 @@ plans as to the document itself.
 | Phase | Scope | Constraints |
 | --- | --- | --- |
 | **1: Spec foundation** | Layer 1 (Spec, total functions) + Layer 2 proof *scaffolding*: `@[ssz_simp]` set, `Supported` predicate, narrow `BasicSupported`-gated first-cut theorems. | The proof infrastructure lands here; complete proof coverage is deferred to Phase 5 so empirical conformance grounds the proof effort. |
-| **2: User surface** | Layer 3 (`SSZRepr` + deriving handler) and the Day-1 `FFI/Sha256` `@[extern] opaque` instance. | FFI/Sha256 has no dependency on the verification frontier. SHA-256 is opaque from Day 1; its NIST-conformance assertion is in the TCB. The `SSZ.roundtrip` user-surface corollary is gated by `BasicSupported r.shape` until Stage 18 widens it. The cached Merkle-tree work (Layer 4) has moved to Phase 4. |
-| **3: Application + empirical validation** | Layer 5 (Eth types) + `SizzLeanTests/Sha256Vectors` (consumes `ethereum/consensus-spec-tests` release vectors). | Conformance runs against the verified spec functions (`SSZ.hashTreeRoot` from Layer 1, uncached). This is the empirical safety net for both the verified and asserted-equivalent paths, and the gating signal for both Phase 4 (performance) and Phase 5 (proofs): passing here is what makes either investment well-targeted. |
-| **4: Production primitives + deferred hardening** | Layer 4 (`Tree`, `TreeBacked`, the cached Merkle layer); pure-Lean `Hasher/Sha256Spec.lean` + `@[csimp]` (removes the FFI assertion from TCB); performance work (`ViewDU`-style deferred-update overlay, batched SHA-256, hash-consing). | All stages independent and order-agnostic among themselves. The cache layer lands here (not Phase 2) because it's a *performance* layer asserted equivalent to the spec; deferring it past empirical validation means its property tests have a known-good reference oracle (the spec, validated in Phase 3). The Approach C `profile%` macro is not on the plan; see §8 for the rationale (no fork through Gloas uses EIP-7495 / EIP-7916 / EIP-8016 forms). |
-| **5: Complete formal verification** | **Stage 18: close `decode_encode`, `serialize_injective`, and `encode_size_le_max` for each `BasicSupported` constructor.** All current constructors are closed: `uintN 8/16/32/64/128/256`, `bool`, fixed-element and variable-element `vector` / `list`, `bitvector`, `bitlist`, and fixed-field or mixed-field `container`. Value-level offset-guard widening remains for `containerVar` (etheorem#61) and `vectorVar` / `listVar` (etheorem#77). | Positioned last by design: empirical conformance from Phase 3 gives the proofs a known-correct implementation. The publishable non-malleability result states its `BasicSupported` scope and trust footprint directly. |
+| **2: User surface** | Layer 3 (`SSZRepr` + deriving handler) and the Day-1 `FFI/Sha256` `@[extern] opaque` instance. | FFI/Sha256 has no dependency on the verification frontier. SHA-256 is opaque from Day 1; its NIST-conformance assertion is in the TCB. The `SSZ.roundtrip` user-surface corollary is gated by `BasicSupported r.shape` and the value's encoded size below `MAX_LENGTH`. The cached Merkle-tree work (Layer 4) has moved to Phase 4. |
+| **3: Application + empirical validation** | Layer 5 (Eth types) + `SizzLeanTests/Sha256Vectors` (consumes `ethereum/consensus-spec-tests` release vectors). | Conformance runs against the verified spec functions (`SSZ.hashTreeRoot` from Layer 1, uncached). This is the empirical safety net for both the verified and proved-equivalent paths, and the gating signal for both Phase 4 (performance) and Phase 5 (proofs): passing here is what makes either investment well-targeted. |
+| **4: Production primitives + deferred hardening** | Layer 4 (`Tree`, `TreeBacked`, the cached Merkle layer); pure-Lean `Hasher/Sha256Spec.lean` + `@[csimp]` (removes the FFI assertion from TCB); performance work (`ViewDU`-style deferred-update overlay, batched SHA-256, hash-consing). | All stages independent and order-agnostic among themselves. The cache layer lands here (not Phase 2) because it's a *performance* layer proved equivalent to the spec for coherent trees; deferring it past empirical validation means its property tests have a known-good reference oracle (the spec, validated in Phase 3). The Approach C `profile%` macro is not on the plan; see §8 for the rationale (no fork through Gloas uses EIP-7495 / EIP-7916 / EIP-8016 forms). |
+| **5: Complete formal verification** | **Stage 18: close `decode_encode`, `serialize_injective`, and `encode_size_le_max` for each `BasicSupported` constructor.** All current constructors are closed: `uintN 8/16/32/64/128/256`, `bool`, fixed-element and variable-element `vector` / `list`, `bitvector`, `bitlist`, and fixed-field or mixed-field `container`. The offset guards are value-level on the theorems (`EncodedFits`, etheorem#61 and etheorem#77). | Positioned last by design: empirical conformance from Phase 3 gives the proofs a known-correct implementation. The publishable non-malleability result states its `BasicSupported` scope and trust footprint directly. |
 
 The single highest-risk implementation item is gindex arithmetic in
 `Node.setAt`. Mitigation: structural recursion on an explicit `List Bool`

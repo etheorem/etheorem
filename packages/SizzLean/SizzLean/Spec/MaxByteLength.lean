@@ -81,6 +81,48 @@ def SSZType.maxByteLengthFields : List SSZType → Nat
 
 end
 
+/-! ### The value-level guard
+
+`maxByteLength s < MAX_LENGTH` is a schema-level guard: it bounds
+every value of `s` at once, but it fails whole schemas (real
+`BeaconState` shapes among them) whose static maximum exceeds
+`2 ^ 32` even though no producible value does. `EncodedFits` is the
+value-level replacement the `decode_encode` guard-widening rows in
+`packages/SizzLean/docs/PROOF_LEDGER.md` record: a hypothesis on
+the theorem. The encoder writes every
+`uint32` offset placeholder as `Nat.toUInt32` of a running offset,
+and every running offset is bounded by the total encoded size, so
+one bound below `MAX_LENGTH = 2 ^ 32` keeps every placeholder's
+`UInt32` round-trip exact. -/
+
+/-- The encoded size of `x` stays below `MAX_LENGTH`, so every
+`uint32` offset the encoder writes is exact. The value-level
+replacement for the schema-level `maxByteLength s < MAX_LENGTH`
+guard. -/
+def EncodedFits (s : SSZType) (x : s.interp) : Prop :=
+  (SSZType.serialize s x).size < MAX_LENGTH
+
+/-- The encoded size of a two-field container of `uintN 8` values
+is `2`: the kernel reduces the serialized bytes through the
+encoder equations, which `simp` lines up. -/
+example : (SSZType.serialize (.container [.uintN 8, .uintN 8])
+        (1, 2, PUnit.unit)).size = 2 := by
+  simp [SSZType.serialize, SSZType.serializeFieldsAux,
+    SSZType.fixedSectionSizeFields, SSZType.isFixedSize]
+
+/-- And the `EncodedFits` statement for that value holds: the
+encoded size is the `2` the example above computes, and `2 < 2 ^ 32`
+is arithmetic. -/
+example : EncodedFits (.container [.uintN 8, .uintN 8])
+    (1, 2, PUnit.unit) := by
+  have h2 : (SSZType.serialize (.container [.uintN 8, .uintN 8])
+      (1, 2, PUnit.unit)).size = 2 := by
+    simp [SSZType.serialize, SSZType.serializeFieldsAux,
+      SSZType.fixedSectionSizeFields, SSZType.isFixedSize]
+  have hML : MAX_LENGTH = 2 ^ 32 := rfl
+  rw [EncodedFits, hML]
+  omega
+
 /-! ### Worked bounds
 
 Both branches of the `.vector` / `.list` arms, pinned by `rfl` so the
@@ -91,11 +133,12 @@ evaluates the `Nat` multiplication. `SSZType.maxByteLength (.bitlist 8)`
 is `(8 + 1 + 7) / 8 = 2`, the figure the variable-element lines below
 multiply against.
 
-The fixed-element branches are the ones `encode_size_le_max` already
-proves (`Proofs/VectorFixed.lean`, `Proofs/ListFixed.lean`). The
-variable-element branches carry the offset table, and no proof reaches
-them until `BasicSupported` grows its `vectorVar` / `listVar`
-constructors. Until then these examples are their only check. -/
+Both branches are inside the theorem set: `encode_size_le_max`
+covers the fixed-element branches (`Proofs/VectorFixed.lean`,
+`Proofs/ListFixed.lean`) and the variable-element ones
+(`Proofs/CollectionVar.lean`), the latter under the value-level
+`EncodedFits` guard. These examples stay as the drift check on the
+arithmetic itself. -/
 
 -- Fixed-size elements: no offset table, `n` bodies of 1 byte each.
 example : SSZType.maxByteLength (.vector (.uintN 8) 4) = 4  := rfl

@@ -2,6 +2,7 @@ import SizzLean.Repr.Class
 import SizzLean.Repr.Instances
 import SizzLean.Repr.Deriving
 import SizzLean.Spec.SSZError
+import SizzLean.Spec.GeneralizedIndex
 import SizzLean.Hasher.Class
 import SizzLean.Hasher.Sha256
 import SizzLean.Hasher.Sha256Spec
@@ -15,6 +16,8 @@ import SizzLean.Cache.Update
 import SizzLean.Proofs.SSZListPush
 import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.SSZListSet
+import SizzLean.Proofs.Merkle.Gindex
+import SizzLean.Proofs.Merkle.Opening
 
 /-!
 # `SizzLean`: library root

@@ -165,7 +165,7 @@ parameter `H` is a phantom *tag* type. It does not appear in the
 types of `hash` or `combine`, so instance synthesis cannot recover
 it from the call's value arguments. `(H := H)` supplies `H`
 explicitly; the `[Hasher H]` instance binder then resolves. -/
-private def zeroHashAt (H : Type) [Hasher H] : Nat → ByteArray
+def zeroHashAt (H : Type) [Hasher H] : Nat → ByteArray
   | 0     => zero32
   | d + 1 =>
       let z : ByteArray := zeroHashAt H d
@@ -203,25 +203,6 @@ The depth argument (rather than a leaf-count argument) lets us
 short-circuit the all-zero suffix via `ZERO_HASHES_SPEC` instead of
 materialising the padding explicitly. -/
 
-/-- `ZERO_HASHES[d]`, the root of an all-zero subtree of depth `d`,
-computed from the recurrence rather than read out of the table.
-
-The spec indexes a fixed 100-entry list, so `zerohashes[100]` raises
-`IndexError`. This is total at every depth, because the recurrence is
-defined at every depth and Lean has no error channel here: `merkleize`
-returns a `ByteArray`, and threading `Except` through it would reach
-every `SSZRepr` instance in the library for a case no admissible type
-can produce (depth 100 needs `2^100` chunks).
-
-Being total is not the same as inventing a value. Every depth returns
-what the spec's own recurrence defines for it, which is what
-`Cache/MerkleTree`'s `Node.ofLeaves` builds at that depth, so the two
-paths agree at every depth with no side condition. A clamp or a
-`zero32` fallback would break that agreement above the table, which is
-what this replaced. -/
-private def zeroHashAtDepth (H : Type) [Hasher H] (d : Nat) : ByteArray :=
-  zeroHashAt H d
-
 /-- Pair adjacent chunks at tree level `lvl`, using `ZERO_HASHES[lvl]`
 as the right sibling for an odd-length tail. The level argument is
 required for correctness: at level `k`, the phantom right
@@ -246,15 +227,20 @@ deep, which overflows the OS-default 8 MB stack on `BlobSidecar`
 mainnet vectors. The accumulator form keeps the stack flat at the
 cost of one extra `List.reverse` per layer, `O(n)` time, `O(1)`
 stack. -/
-private def combineLayerAtAux (H : Type) [Hasher H] (lvl : Nat) :
+def combineLayerAtAux (H : Type) [Hasher H] (lvl : Nat) :
     List ByteArray → List ByteArray → List ByteArray
   | [],           acc => acc.reverse
   | [x],          acc =>
-      (Hasher.combine (H := H) x (zeroHashAtDepth H lvl) :: acc).reverse
+      (Hasher.combine (H := H) x (zeroHashAt H lvl) :: acc).reverse
   | x :: y :: rs, acc =>
       combineLayerAtAux H lvl rs (Hasher.combine (H := H) x y :: acc)
 
-private def combineLayerAt (H : Type) [Hasher H] (lvl : Nat)
+/-- One step of `merkleizeAt`: the chunk list combined into the
+next level's list, an odd tail paired with the depth-`lvl` zero
+hash. The public wrapper over the accumulator form above; the
+proof-side layer equation is
+`Proofs/Merkle/Naive.lean`'s `combineLayerAt_eq_pairLayer`. -/
+def combineLayerAt (H : Type) [Hasher H] (lvl : Nat)
     (cs : List ByteArray) : List ByteArray :=
   combineLayerAtAux H lvl cs []
 
@@ -262,45 +248,48 @@ private def combineLayerAt (H : Type) [Hasher H] (lvl : Nat)
 subtrees: each level pairs with `ZERO_HASHES[startLvl + k]` on the
 right. Used when the chunk list has reduced to a single item but
 the target depth hasn't been reached. -/
-private def promoteThroughZeros (H : Type) [Hasher H] :
+def promoteThroughZeros (H : Type) [Hasher H] :
     (current : ByteArray) → (startLvl : Nat) → (remaining : Nat) → ByteArray
   | c, _,        0     => c
   | c, startLvl, k + 1 =>
       promoteThroughZeros H
-        (Hasher.combine (H := H) c (zeroHashAtDepth H startLvl))
+        (Hasher.combine (H := H) c (zeroHashAt H startLvl))
         (startLvl + 1) k
 
-/-- Build the Merkle root of a balanced binary tree of `2^depth`
-leaves. `chunks` are the *real* left-aligned leaves; the
-remaining `2^depth - chunks.length` positions are conceptually
-zero, but never materialised. `ZERO_HASHES` short-circuits them
-at the corresponding subtree depth.
+/-- The level-indexed fold behind `merkleize`. `curLvl` is the
+tree level the call sits at, `remaining` the number of levels left
+to build; an odd tail at level `curLvl` pairs with
+`zeroHashAt H curLvl`, so the zero tower's depth is read from
+`curLvl`. `chunks` holds the *real* leaves of the level: the
+positions past `chunks.length` inside the `2 ^ remaining`-leaf
+block are conceptually zero, but never materialised.
 
 This matters for large caps like `VALIDATOR_REGISTRY_LIMIT = 2^40`:
 explicit padding would require `2^40` `zero32` leaves (~35 TB).
 The level-aware combine and the single-leaf promote let us
 process realistic chunk lists (a few dozen entries) in `O(depth)`
 hash steps regardless of the nominal cap. -/
-private def merkleize (H : Type) [Hasher H]
+def merkleizeAt (H : Type) [Hasher H] :
+    List ByteArray → (curLvl : Nat) → (remaining : Nat) → ByteArray
+  | [],   _,      remaining => zeroHashAt H remaining
+  | [c],  curLvl, remaining => promoteThroughZeros H c curLvl remaining
+  -- Levels exhausted with more than one chunk left: the caller asked for a tree too
+  -- shallow to hold its own leaves. `merkleize_chunks` opens with `assert count <=
+  -- limit` and raises here; we return the first chunk, the one arm of this function
+  -- that answers where the spec refuses to. Nothing routes here: `depth` always comes
+  -- from `chunkDepth` of the type's own cap, and a list longer than its cap fails
+  -- deserialization first. Modeling the assert means an error channel through every
+  -- `SSZRepr` instance, which is tracked rather than done.
+  | cs,   _,      0         => cs.head?.getD zero32
+  | cs,   curLvl, remaining + 1 =>
+      merkleizeAt H (combineLayerAt H curLvl cs) (curLvl + 1) remaining
+
+/-- Build the Merkle root of a balanced binary tree of `2^depth`
+leaves: `merkleizeAt` from level 0. Public so the proof layer can
+relate it to the naive depth-first fold. -/
+def merkleize (H : Type) [Hasher H]
     (chunks : List ByteArray) (depth : Nat) : ByteArray :=
-  -- Step down through tree levels until we either reach the target depth (return the
-  -- single root) or run out of items and short-circuit the remaining levels through
-  -- `ZERO_HASHES`. `curLvl` tracks the level so `combineLayerAt` pads an odd tail with
-  -- the zero subtree of the right depth, and `remaining` counts the levels still to go.
-  let rec goAt : List ByteArray → (curLvl : Nat) → (remaining : Nat) → ByteArray
-    | [],   _,      remaining => zeroHashAtDepth H remaining
-    | [c],  curLvl, remaining => promoteThroughZeros H c curLvl remaining
-    -- Levels exhausted with more than one chunk left: the caller asked for a tree too
-    -- shallow to hold its own leaves. `merkleize_chunks` opens with `assert count <=
-    -- limit` and raises here; we return the first chunk, the one arm of this function
-    -- that answers where the spec refuses to. Nothing routes here: `depth` always comes
-    -- from `chunkDepth` of the type's own cap, and a list longer than its cap fails
-    -- deserialization first. Modeling the assert means an error channel through every
-    -- `SSZRepr` instance, which is tracked rather than done.
-    | cs,   _,      0         => cs.head?.getD zero32
-    | cs,   curLvl, remaining + 1 =>
-        goAt (combineLayerAt H curLvl cs) (curLvl + 1) remaining
-  goAt chunks 0 depth
+  merkleizeAt H chunks 0 depth
 
 /-- `⌈log₂ (max 1 n)⌉`, used to derive a tree depth from a leaf
 count. `chunkDepth 0 = 0` (single-leaf tree of `zero32`),
@@ -320,7 +309,7 @@ def chunkDepth (n : Nat) : Nat :=
 a variable-length collection's root is `combine bodyRoot
 (uint64ToChunk count)`, where `count` is the *actual* element /
 bit count of the value (not the cap). -/
-private def mixInLength (H : Type) [Hasher H]
+def mixInLength (H : Type) [Hasher H]
     (root : ByteArray) (n : Nat) : ByteArray :=
   Hasher.combine (H := H) root (natToChunk n)
 
@@ -328,7 +317,7 @@ private def mixInLength (H : Type) [Hasher H]
 root is `combine variantRoot (uint64ToChunk selector)`. The chunk
 encoding is the same as length mix-in, only the semantic role
 differs. -/
-private def mixInSelector (H : Type) [Hasher H]
+def mixInSelector (H : Type) [Hasher H]
     (root : ByteArray) (sel : Nat) : ByteArray :=
   Hasher.combine (H := H) root (natToChunk sel)
 
