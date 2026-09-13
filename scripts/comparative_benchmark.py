@@ -372,6 +372,51 @@ def show_ratio(value: float, baseline: float) -> str:
     return f"{ratio:.2f}×"
 
 
+def checkout_description() -> str:
+    """The SizzLean revision measured, and whether it was the committed one.
+
+    A report that names a revision it did not measure is worse than one that
+    names none, so a dirty tree says so here rather than in a reader's head.
+    """
+    def git(*args: str) -> str:
+        try:
+            out = subprocess.run(
+                ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, timeout=30
+            )
+            return out.stdout.strip() if out.returncode == 0 else ""
+        except (OSError, subprocess.SubprocessError):
+            return ""
+
+    revision = git("rev-parse", "--short", "HEAD") or "unknown"
+    # Only the library and the harnesses can change a number. A dirty README
+    # elsewhere in the monorepo is not worth a caveat.
+    dirty = git("status", "--porcelain", "--", "packages", "scripts")
+    if dirty:
+        changed = len([line for line in dirty.splitlines() if line.strip()])
+        noun = "file" if changed == 1 else "files"
+        return f"`{revision}` plus {changed} uncommitted {noun}"
+    return f"`{revision}`"
+
+
+def load_description(before: float, after: float) -> str:
+    """What else the machine was doing, as one sentence.
+
+    Contention moves every row without touching any code. A run taken beside
+    a busy compiler compares fairly row against row and not at all against
+    another run, and only the load average records which kind this was.
+    """
+    cores = os.cpu_count() or 1
+    peak = max(before, after)
+    busy = f"load average {before:.1f} at the start, {after:.1f} at the end, on {cores} cores"
+    if peak < cores * 0.25:
+        return f"The machine was otherwise idle ({busy})."
+    return (
+        f"**The machine was busy: {busy}.** Rows compare fairly against each "
+        "other, since every harness met the same load, and do not compare "
+        "against a run taken on an idle machine."
+    )
+
+
 def machine_description() -> str:
     """One line naming the machine, so two reports can be told apart."""
     cpu = platform.processor() or platform.machine()
@@ -453,6 +498,7 @@ def render(
     fixture: Fixture,
     reps: int,
     versions: dict[str, str],
+    load: tuple[float, float],
 ) -> str:
     """The whole report."""
     lines: list[str] = []
@@ -464,14 +510,16 @@ def render(
         "repetitions.*"
     )
     lines.append("")
+    lines.append(load_description(*load))
+    lines.append("")
 
     lines.append("## What ran")
     lines.append("")
     lines.append("| Library | Revision | Role |")
     lines.append("|---|---|---|")
     lines.append(
-        "| `packages/SizzLean` | this checkout | the library under test, in two "
-        "configurations |"
+        f"| `packages/SizzLean` | {checkout_description()} | the library under "
+        "test, in two configurations |"
     )
     lines.append(
         f"| [`lambdaclass/libssz`]({LIBSSZ_REPO}) | `{LIBSSZ_REV[:12]}` | "
@@ -690,7 +738,9 @@ def main() -> int:
         announce("emitting the fixture")
         fixture = emit_fixture(args.work_dir)
 
+        load_before = os.getloadavg()[0]
         rows = measure(fixture, args.reps, interpreter)
+        load_after = os.getloadavg()[0]
         roots = check_roots(rows, fixture)
         report = render(
             averages(rows),
@@ -698,6 +748,7 @@ def main() -> int:
             fixture,
             args.reps,
             toolchain_versions(interpreter),
+            (load_before, load_after),
         )
     except BenchmarkError as error:
         print(f"comparative_benchmark: {error}", file=sys.stderr)

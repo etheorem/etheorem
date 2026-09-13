@@ -13,10 +13,19 @@ that they agree on the roots, and writes the markdown to
 `packages/SizzLean/bench/comparative-<timestamp>.md`.
 
 That directory is session output and is gitignored. The run kept as the
-reference number lives at
+reference number is copied to
 [`packages/SizzLean/docs/COMPARATIVE_BENCHMARK.md`](../../packages/SizzLean/docs/COMPARATIVE_BENCHMARK.md),
-copied there by hand with a note on the tree and the machine it was taken on.
-Replace that file to move the reference; do not edit its numbers in place.
+verbatim and with nothing added. Move the reference by replacing that file
+with a newer report; never edit one in place, because a hand-corrected number
+cannot be traced back to a run.
+
+A report says what it was measured on, so a stale or a noisy one gives itself
+away. Its header names the SizzLean revision and counts any uncommitted files
+under `packages/` and `scripts/`, so a report of a dirty tree cannot pass for
+a report of the revision it names. The header also carries the load average at
+both ends of the run: contention moves every row without touching any code, so
+a busy run compares fairly row against row and not at all against a run taken
+on an idle machine.
 
 Nothing has to be installed by hand. The driver needs `lake`, `cargo`, and a
 Python 3.11 or later interpreter on `PATH`; it uses `uv` when it is there and
