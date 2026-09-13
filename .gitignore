@@ -42,6 +42,15 @@ __pycache__/
 # specific file with `git add -f` if you want to lock it in as a
 # reference.
 packages/SizzLean/bench/*.tsv
+# Comparative-benchmark reports, written by `just sizzlean-comp-benchmark`.
+# Same rule: session output, not a curated baseline. `git add -f` one to
+# keep it as a reference.
+packages/SizzLean/bench/comparative-*.md
+
+# The comparative benchmark's Rust harness build directory (cargo). Its
+# `Cargo.lock` is committed, so the pinned libssz and its transitive
+# dependencies are reproducible; only the build output is ignored.
+scripts/compbench/libssz-harness/target/
 
 # Claude Code per-session state
 .claude/

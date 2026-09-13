@@ -213,3 +213,13 @@ lean_exe ssz_multistate where
 lean_exe ssz_generic_runner where
   root := `SszGenericRunner
   supportInterpreter := true
+
+-- The comparative benchmark's SizzLean side. `SizzLeanBench/CompBenchMain.lean`
+-- emits the shared `BeaconState` fixture and runs the two scenarios in the two
+-- configurations, printing one JSON line per repetition. The Rust and the
+-- Python harnesses print the same lines; `scripts/comparative_benchmark.py`
+-- builds all three and renders the markdown. Same `supportInterpreter`
+-- rationale as `ssz_bench`.
+lean_exe ssz_compbench where
+  root := `SizzLeanBench.CompBenchMain
+  supportInterpreter := true

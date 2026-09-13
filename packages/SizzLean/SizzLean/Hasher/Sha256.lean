@@ -45,14 +45,23 @@ backend (e.g. `Sha256Spec`, the pure-Lean reference).
 unambiguously. -/
 inductive Sha256 : Type
 
-/-- The FFI-backed `Hasher Sha256` instance. Both methods delegate to
+/-- The FFI-backed `Hasher Sha256` instance. All three methods delegate to
 the `LeanHazmatSha256` externs (`LeanHazmat.Sha256.sha256Hash` for the
 single-input digest, `LeanHazmat.Sha256.sha256Combine` for the two-input
-inner-Merkle step). The trust assumption (the shim implements NIST
+inner-Merkle step, `LeanHazmat.Sha256.sha256BatchCombine` for a whole
+Merkle level in one call, which reaches Intel ISA-L's multi-buffer
+engine on x86_64 Linux and an OpenSSL loop everywhere else).
+
+The `batchCombine` override carries the law the class docstring
+states: it must agree with the pointwise `combine`. Here that is
+`sha256BatchCombine_eq_spec` and `sha256Combine_eq_spec` naming the
+same pure-Lean reference, so the override adds no trust beyond what
+`combine` already assumed. The trust assumption (the shim implements NIST
 SHA-256) lives with those externs; the FFI ≡ pure-Lean equivalence
 axioms in `Sha256Equiv.lean` make it auditable. -/
 instance : Hasher Sha256 where
-  hash    := LeanHazmat.Sha256.sha256Hash
-  combine := LeanHazmat.Sha256.sha256Combine
+  hash         := LeanHazmat.Sha256.sha256Hash
+  combine      := LeanHazmat.Sha256.sha256Combine
+  batchCombine := LeanHazmat.Sha256.sha256BatchCombine
 
 end SizzLean.Hasher

@@ -470,6 +470,22 @@ sizzlean-bench-multistate:
       packages/SizzLean/.lake/build/bin/ssz_multistate \
         | tee "packages/SizzLean/bench/multistate-$ts.tsv"
 
+# The comparative benchmark against `ethereum/ssz-specs` and
+# `lambdaclass/libssz`. The driver does the whole job: it builds SizzLean's
+# harness, downloads and compiles both comparables at pinned revisions, emits
+# the shared 2.9 MB `BeaconState`, runs the three harnesses, checks that they
+# agree on every root, and writes the markdown report. It needs `cargo` and a
+# Python 3.11 or later interpreter besides `lake`; `scripts/compbench/README.md`
+# states the method. Each harness runs each scenario 100 times and the report
+# gives the mean, which takes about four minutes. Extra arguments pass
+# through, so `just sizzlean-comp-benchmark "--reps 20"` shortens the run and
+# `--skip-build` re-measures without rebuilding.
+
+# Comparative benchmark vs ssz-specs + libssz; markdown → packages/SizzLean/bench/comparative-<timestamp>.md
+[group('sizzlean')]
+sizzlean-comp-benchmark *args:
+    python3 scripts/comparative_benchmark.py {{ args }}
+
 # Aligned column output for readability; falls back to plain diff if
 # `column` is unavailable.
 

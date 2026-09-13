@@ -1,0 +1,25 @@
+# The libssz side of the SizzLean comparative benchmark.
+#
+# The libssz dependency is a pinned git revision, so `cargo build` is the
+# whole download-and-compile step for this comparable. Bump `rev` and the
+# `LIBSSZ_REV` constant in `scripts/comparative_benchmark.py` together; the
+# driver prints the revision it measured into the report.
+[package]
+name = "libssz-compbench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "LGPL-3.0-only"
+
+[dependencies]
+libssz = { git = "https://github.com/lambdaclass/libssz", rev = "36802dd1d3e3a83d95d2ac552647539cbe3f7fd7", features = ["ethereum_types"] }
+libssz-types = { git = "https://github.com/lambdaclass/libssz", rev = "36802dd1d3e3a83d95d2ac552647539cbe3f7fd7" }
+libssz-merkle = { git = "https://github.com/lambdaclass/libssz", rev = "36802dd1d3e3a83d95d2ac552647539cbe3f7fd7", features = ["ethereum_types"] }
+libssz-derive = { git = "https://github.com/lambdaclass/libssz", rev = "36802dd1d3e3a83d95d2ac552647539cbe3f7fd7" }
+ethereum-types = "0.15"
+
+# The benchmark reports what an optimised build does. Thin LTO matches the
+# flags libssz's own README reports its numbers under.
+[profile.release]
+lto = "thin"
+codegen-units = 1
