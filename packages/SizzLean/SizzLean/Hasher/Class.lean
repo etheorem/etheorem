@@ -49,6 +49,22 @@ class Hasher (H : Type) where
   two-block primitive without a redundant copy at every interior
   tree node. -/
   combine : ByteArray → ByteArray → ByteArray
+  /-- One whole Merkle level: digest `lefts[i] ++ rights[i]` for every
+  `i`, and return the results in the same order.
+
+  The default is the pointwise `combine`, so an instance that has
+  nothing better to offer needs to say nothing. An instance backed by a
+  multi-buffer engine overrides it, and then a level costs one call
+  instead of one call per node. `Hasher Sha256` does exactly that.
+
+  **The law an override must keep**: `batchCombine ls rs` agrees with
+  `zipWith combine ls rs` on every input. Nothing in the class forces
+  it, so an override states an obligation. For `Hasher Sha256` the two
+  named axioms in `Hasher/Sha256Equiv.lean` and `Hasher/Sha256Batch.lean`
+  discharge it against the same pure-Lean reference, so the override
+  adds no trust the FFI hasher did not already carry. -/
+  batchCombine : Array ByteArray → Array ByteArray → Array ByteArray :=
+    Array.zipWith combine
 
 /-- Typecheck-only acceptance: `[Hasher H]` is usable downstream
 even before any instance is defined. The class opens as an instance
