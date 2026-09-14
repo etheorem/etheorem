@@ -141,12 +141,39 @@ slot at construction time.
 Not a substitute for `merkleRootWithCache`, since it doesn't fill
 cache slots in the input tree. Use when you only need the root
 *value* and the input is expected to be already cached (in which
-case it's O(1)). -/
-partial def Node.rootOf (H : Type) [Hasher H] : Node → ByteArray
+case it's O(1)).
+
+**Do not unfold this in a tactic.** Reason about it through
+`rootOf_eq_merkleRoot`, or through the equation lemmas below. See the seal note
+there for what the `@[irreducible]` attribute does and does not stop. -/
+def Node.rootOf (H : Type) [Hasher H] : Node → ByteArray
   | .leaf b               => b
   | .pair _ _ (some r)    => r
   | .pair l r none        =>
       Hasher.combine (H := H) (Node.rootOf H l) (Node.rootOf H r)
+
+/-! ### `Node.rootOf`'s equations, then the seal
+
+The three arms, stated before `Node.rootOf` goes irreducible. Proofs reach the
+recursion through these (or, better, through `rootOf_eq_merkleRoot`) instead of
+unfolding the definition and walking a real tree. -/
+
+/-- A leaf is its own root. -/
+theorem Node.rootOf_leaf (H : Type) [Hasher H] (b : ByteArray) :
+    Node.rootOf H (.leaf b) = b := rfl
+
+/-- A populated cache slot comes back as it stands, with no descent. This arm
+makes `rootOf` O(1) on a committed tree, and it is why `rootOf` cannot notice a
+poisoned cache. -/
+theorem Node.rootOf_pair_some (H : Type) [Hasher H] (l r : Node) (root : ByteArray) :
+    Node.rootOf H (.pair l r (some root)) = root := rfl
+
+/-- An empty cache slot combines the children's roots. -/
+theorem Node.rootOf_pair_none (H : Type) [Hasher H] (l r : Node) :
+    Node.rootOf H (.pair l r none)
+      = Hasher.combine (H := H) (Node.rootOf H l) (Node.rootOf H r) := rfl
+
+attribute [irreducible] Node.rootOf
 
 /-- A `Node` whose root is the all-zero subtree of depth `d`. Used
 by `Node.ofLeaves` to pad the right of an underfilled tree, and by
