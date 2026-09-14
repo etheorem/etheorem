@@ -64,6 +64,14 @@ example : gindexBits 6 = [true,  false]           := rfl
 example : gindexBits 7 = [true,  true]            := rfl
 example : gindexBits 8 = [false, false, false]    := rfl
 
+/-- The index of a bit path, the inverse of `gindexBits`: the
+leading `1` bit of the index's binary representation, followed by
+the path bits. The pending-map's key space (see
+`Cache/TreeBacked.lean`) converts tree paths to indices through
+this function. -/
+def gindexOfBits (bits : List Bool) : Nat :=
+  bits.foldl (init := 1) fun acc b => if b then 2 * acc + 1 else 2 * acc
+
 /-- Replace the subtree at the path described by `bits` with
 `newSubtree`. Recursion is *structural on the bit list*, this is
 the mitigation for the Nimbus-class gindex arithmetic bug. The
@@ -211,16 +219,21 @@ should ideally come pre-cached (e.g. from the post-modification
 `Node.ofShape` builders that now embed cache slots) so the
 recursive `rootOf` on them is O(1) at the top.
 
-The result is observationally equivalent to
-`(n.setManyAt updates).merkleRootWithCache H`, just allocated
-half as many spine pairs.
+The result's *root* is the root of
+`(n.setManyAt updates).merkleRootWithCache H`. The returned trees
+differ when an untouched child carries unfilled slots:
+`commitAndHash` reuses the child raw while the cached walk fills
+it. The root claim sits outside the current proof set, out of scope
+with the cache-path equivalence theorem (`consing := true` is a
+runtime optimisation either way); the coherence gates in
+`SizzLeanTests` hold it empirically.
 
 `consing` routes each fresh spine cell through `Node.consPair`
 (the hash-cons cache, `MerkleTree/HashCons.lean`) so a spine that
 another resident tree already holds is shared instead of copied.
 Off by default; `TreeBacked.hashTreeRootCached` passes the box's
 own flag. With it off, this walk allocates exactly as before. -/
-partial def Node.commitAndHash (H : Type) [Hasher H] (consing : Bool := false) :
+def Node.commitAndHash (H : Type) [Hasher H] (consing : Bool := false) :
     Node → List (List Bool × Node) → ByteArray × Node
   | n, [] =>
       -- No updates: fall through to `merkleRootWithCache` which

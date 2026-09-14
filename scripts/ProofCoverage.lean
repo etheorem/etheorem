@@ -100,6 +100,9 @@ def sszBaselinePath : System.FilePath :=
 /-- The human-maintained ledger of proposed and finished proofs. -/
 def ledgerPath : System.FilePath := "packages/EthCLSpecs/docs/PROOF_LEDGER.md"
 
+/-- The SSZ library's human-maintained ledger, keyed on matrix cells. -/
+def sszLedgerPath : System.FilePath := "packages/SizzLean/docs/PROOF_LEDGER.md"
+
 /-- The `EthCLSpecs` README, which carries the fork-body tables. -/
 def readmePath : System.FilePath := "packages/EthCLSpecs/README.md"
 
@@ -603,7 +606,9 @@ def renderRollup (report : Report) : String :=
     #["`EthCLSpecs`", "the spec functions the fork bodies declare",
       s!"{characterized} characterized, {touched} touched, of {surface}"],
     #["`SizzLean`", "SSZ properties over the whole `SSZType` universe, gated by a predicate",
-      s!"{sszDone} of {report.matrix.size} properties, over {sszArms} admitted arms; open: {String.intercalate ", " openRows.toList}"],
+      let openCell := if openRows.isEmpty then "none open"
+        else "open: " ++ String.intercalate ", " openRows.toList
+      s!"{sszDone} of {report.matrix.size} properties, over {sszArms} admitted arms; {openCell}"],
     #["`LeanSha256`, `LeanHazmat*`", "nothing to cover: `@[extern]` bindings, and a spec side pinned by the NIST CAVP vectors",
       "3 named equivalence axioms: `sha256Hash_eq_spec`, `sha256Combine_eq_spec`, `sha256BatchCombine_eq_spec`"],
     #["`LeanPoseidon`", "`permute_eq_permuteRef`, in the standalone `LeanPoseidonProofs` package",
@@ -776,6 +781,83 @@ def ledgerWarnings (env : Environment) (report : Report) (rows : Array LedgerRow
         else some s!"`{fn}` carries a `characterizes` tag, and the ledger has no \
           proved row for it. Add the row so the ledger stays the forward half."
 
+/-! ## The SSZ-ledger cross-check
+
+`packages/SizzLean/docs/PROOF_LEDGER.md` is the same ledger for the SSZ
+library, keyed on `(property, fragment)` cells rather than on spec functions.
+The cross-check reads its matrix rows and warns where they and the computed
+matrix disagree, with the same advisory-only behaviour as the fork pass. Rows
+whose cell slug is outside the matrix (the value-guard rows, the `trust ×`
+and `merkle ×` prerequisites, the update and branch rows) pass by in
+silence, as fork-ledger rows about non-`forkdef` names do.
+-/
+
+/-- One parsed SSZ-ledger row, keyed on the `Cell` column. -/
+structure SszLedgerRow where
+  /-- The cell slug, backticks and space stripped (`decode_encode × basic-arms`). -/
+  cell : String
+  /-- Does the row claim the cell is proved? -/
+  proved : Bool
+
+/-- Every SSZ-ledger row, keyed on the `Cell` column.
+
+The matrix tables hold six columns, so a line splits into eight pieces and
+`cells[1]` is the Cell slug while `cells[5]` is Status. Header rows fail the
+backtick test, separator rows the same, and every narrower table (the column
+key, the fragments, the trust-base listing) fails the width test. -/
+def parseSszLedger (text : String) : Array SszLedgerRow :=
+  (text.splitOn "\n").toArray.filterMap fun line =>
+    let line := trim line
+    if !line.startsWith "|" then none else
+      let cells := (line.splitOn "|").toArray
+      if cells.size < 8 then none else
+        let cell := trim cells[1]!
+        if !cell.startsWith "`" then none else
+          some { cell := plainCell cell, proved := plainCell cells[5]! == "proved" }
+
+/-- Split a cell slug into its `(property, fragment)` pair. -/
+def splitCellSlug (slug : String) : Option (String × String) :=
+  match slug.splitOn "×" with
+  | [a, b] => some (trim a, trim b)
+  | _      => none
+
+/-- What the SSZ ledger and the computed matrix disagree about.
+
+One warning per direction: a `proved` row whose matrix cell is empty, and a
+green cell with no `proved` row. A slug the matrix does not grade passes by
+in silence. -/
+def sszLedgerWarnings (report : Report) (rows : Array SszLedgerRow) : Array String :=
+  let cellOf (propKey fragKey : String) : Option Nat := do
+    let r ← report.matrix.find? fun r => r.property.key == propKey
+    let (_, n) ← (fragments.zip r.cells).find? fun (f, _) => f.key == fragKey
+    return n
+  -- Normalise through `splitCellSlug`, the same pass the first direction
+  -- uses, so a slug with stray spacing still matches the computed cell.
+  let provedSlugs := (rows.filter (·.proved)).filterMap fun row =>
+    match splitCellSlug row.cell with
+    | some (a, b) => some s!"{a} × {b}"
+    | none => none
+  (rows.filterMap fun row =>
+      match splitCellSlug row.cell with
+      | none => none
+      | some (propKey, fragKey) =>
+        match cellOf propKey fragKey with
+        | none => none
+        | some 0 =>
+          if row.proved then
+            some s!"the SSZ ledger marks `{row.cell}` proved, and the matrix cell \
+              is empty. The theorem the row names does not select, or its gating \
+              predicate lost constructors."
+          else none
+        | some _ => none)
+    ++ (report.matrix.flatMap fun r =>
+      (fragments.zip r.cells).filterMap fun (f, n) =>
+        if n == 0 then none else
+          let slug := s!"{r.property.key} × {f.key}"
+          if provedSlugs.contains slug then none
+          else some s!"the matrix cell `{slug}` is green, and the SSZ ledger has \
+            no proved row for it. Add the row so the ledger stays the forward half.")
+
 /-! ## The README block -/
 
 /-- Replace a README's generated block, or report why it cannot be found. -/
@@ -875,7 +957,7 @@ def runUpdate (report : Report) : IO UInt32 := do
       IO.println s!"wrote {path}'s verification-status block."
   return if failed then 1 else 0
 
-/-- Print the report, and the ledger's disagreements as warnings. -/
+/-- Print the report, and both ledgers' disagreements as warnings. -/
 def runReport (env : Environment) (report : Report) : IO UInt32 := do
   IO.println (renderReport report)
   if ← ledgerPath.pathExists then
@@ -883,6 +965,13 @@ def runReport (env : Environment) (report : Report) : IO UInt32 := do
     unless warnings.isEmpty do
       IO.eprintln s!"{ledgerPath} warnings (the ledger is prose; these never fail \
         the run):"
+      for warning in warnings do IO.eprintln s!"  {warning}"
+  if ← sszLedgerPath.pathExists then
+    let warnings := sszLedgerWarnings report
+      (parseSszLedger (← IO.FS.readFile sszLedgerPath))
+    unless warnings.isEmpty do
+      IO.eprintln s!"{sszLedgerPath} warnings (the ledger is prose; these never \
+        fail the run):"
       for warning in warnings do IO.eprintln s!"  {warning}"
   return 0
 

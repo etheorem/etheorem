@@ -20,9 +20,10 @@ same `Except`, and `decode_encode` tells us the decode result is
 ## Scope
 
 Mirrors `Proofs/Roundtrip.lean`'s narrowing. `decode_encode` is
-proved over `BasicSupported`; this file's `serialize_injective`
-inherits that scope and grows mechanically as `BasicSupported`
-extends.
+proved over `BasicSupported` under the value-level `EncodedFits`
+guard; this file's `serialize_injective` inherits scope and guard,
+and the guard on `y` follows from the assumed equality of the
+encodings, so one bound suffices for the pair.
 
 ## Lean idioms used here
 
@@ -56,11 +57,15 @@ The proof script:
 3. Combine with `hy` to get `.ok (x, _) = .ok (y, _)`.
 4. Inject the `.ok` and project on the first pair component. -/
 theorem serialize_injective : ∀ (s : SSZType), SSZType.BasicSupported s →
-    ∀ (x y : s.interp),
+    ∀ (x y : s.interp), EncodedFits s x →
       SSZType.serialize s x = SSZType.serialize s y → x = y := by
-  intro s h_sup x y heq
-  have hx := decode_encode h_sup x
-  have hy := decode_encode h_sup y
+  intro s h_sup x y h_fits heq
+  -- The shared encoding transmits the guard: `y`'s encoding is the
+  -- same buffer, so its size is below `MAX_LENGTH` too.
+  have hy_fits : EncodedFits s y := by
+    rw [EncodedFits, ← heq]; exact h_fits
+  have hx := decode_encode h_sup x h_fits
+  have hy := decode_encode h_sup y hy_fits
   -- hx : deserialize s (serialize s x) = .ok (x, (serialize s x).size)
   -- hy : deserialize s (serialize s y) = .ok (y, (serialize s y).size)
   rw [heq] at hx

@@ -10,7 +10,6 @@ import SizzLean.Proofs.ListFixed
 import SizzLean.Proofs.ContainerFixed
 import SizzLean.Proofs.ContainerVar
 import SizzLean.Proofs.CollectionVar
-import SizzLean.Proofs.SizeBound
 import SizzLean.Proofs.FixedElems
 import SizzLean.Proofs.BitPack
 
@@ -82,22 +81,13 @@ encoder's `(fix ++ .empty)` shape into `fix`).
 `extractFieldOffsets_serializeFieldsAux`, …). This file's mutual
 block holds the two field-walkers.
 
-## Dependence on `encode_size_le_max`
-
-The `containerVar` arm imports `Proofs/SizeBound.lean` and calls
-`encode_size_le_max_containerVarFields_aux` to obtain a
-per-field size bound. That bound, plus the schema-level
-`maxByteLengthFields fs < MAX_LENGTH` guard on
-`BasicSupported.containerVar`, is how the offsets are shown not
-to overflow `uint32`. The `vectorVar` / `listVar` arms make the
-same call at element granularity (`fun y => encode_size_le_max h_t y`).
-The dependence is one-way
-(`decode_encode` → `encode_size_le_max`) and costs no axioms: the
-size theorem's footprint is only `propext` and `Quot.sound`.
+The value-level `EncodedFits` guard on the theorem keeps every
+offset the walker reads
+below `2 ^ 32`; the walker carries `bufEnd < MAX_LENGTH` down the
+descent and derives each field's bound from its slot in the buffer.
 -/
 
 set_option autoImplicit false
-set_option maxHeartbeats 400000000
 
 namespace SizzLean.Proofs
 
@@ -119,39 +109,43 @@ theorem fieldsFixedSizeOk_of_basicSupportedFields :
 
 mutual
 
-/-- Roundtrip over `BasicSupported`. Dispatches to per-arm
-proofs; composite arms call into the mutual partner
-`decode_encode_containerFixed_aux` for field-list induction. -/
+/-- Roundtrip over `BasicSupported`, under the value-level guard
+`EncodedFits s x`: the encoding of *this* value stays below
+`MAX_LENGTH`, which is what keeps every `uint32` offset placeholder
+the encoder writes exact. Dispatches to per-arm proofs; composite
+arms call into the mutual partners for field-list induction. Each
+element or field inherits its own `EncodedFits` from its slot in
+the buffer, a body is an `extract` of the whole, so one bound
+suffices down the whole nesting. -/
 theorem decode_encode : ∀ {s : SSZType}, SSZType.BasicSupported s →
-    ∀ (x : s.interp),
+    ∀ (x : s.interp), EncodedFits s x →
       SSZType.deserialize s (SSZType.serialize s x) =
         .ok (x, (SSZType.serialize s x).size)
-  | _, .uintN8, x => decode_encode_uintN8 x
-  | _, .uintN16, x => decode_encode_uintN16 x
-  | _, .uintN32, x => decode_encode_uintN32 x
-  | _, .uintN64, x => decode_encode_uintN64 x
-  | _, .uintN128, x => decode_encode_uintN128 x
-  | _, .uintN256, x => decode_encode_uintN256 x
-  | _, .bool, b => decode_encode_bool b
-  | _, .vectorFixed (t := t) (n := n) h_pos h_t h_t_fixed, v =>
+  | _, .uintN8, x, _h_fits => decode_encode_uintN8 x
+  | _, .uintN16, x, _h_fits => decode_encode_uintN16 x
+  | _, .uintN32, x, _h_fits => decode_encode_uintN32 x
+  | _, .uintN64, x, _h_fits => decode_encode_uintN64 x
+  | _, .uintN128, x, _h_fits => decode_encode_uintN128 x
+  | _, .uintN256, x, _h_fits => decode_encode_uintN256 x
+  | _, .bool, b, _h_fits => decode_encode_bool b
+  | _, .vectorFixed (t := t) (n := n) h_pos h_t h_t_fixed, v, h_fits =>
       decode_encode_vectorFixed t n h_pos h_t h_t_fixed
-        (fun y => decode_encode h_t y) v
-  | _, .vectorVar (t := t) (n := n) h_pos h_t h_var h_max_lt, v =>
-      decode_encode_vectorVar t n h_pos h_var h_max_lt
-        (fun y => decode_encode h_t y)
-        (fun y => encode_size_le_max h_t y) v
-  | _, .listFixed (t := t) (cap := cap) h_t h_t_fixed h_sz_pos, xs =>
+        (fun y hy => decode_encode h_t y hy) v h_fits
+  | _, .vectorVar (t := t) (n := n) h_pos h_t h_var, v, h_fits =>
+      decode_encode_vectorVar t n h_pos h_var
+        (fun y hy => decode_encode h_t y hy) v h_fits
+  | _, .listFixed (t := t) (cap := cap) h_t h_t_fixed h_sz_pos, xs, h_fits =>
       decode_encode_listFixed t cap h_t h_t_fixed h_sz_pos
-        (fun y => decode_encode h_t y) xs
-  | _, .listVar (t := t) (cap := cap) h_t h_var h_max_lt, xs =>
-      decode_encode_listVar t cap h_var h_max_lt
-        (fun y => decode_encode h_t y)
-        (fun y => encode_size_le_max h_t y) xs
-  | _, .bitvector (n := n) h_pos, bv => decode_encode_bitvector n h_pos bv
-  | _, .bitlist (cap := cap), xs => decode_encode_bitlist cap xs
-  | _, .containerFixed (fs := fs) h_fs, vs => by
+        (fun y hy => decode_encode h_t y hy) xs h_fits
+  | _, .listVar (t := t) (cap := cap) h_t h_var, xs, h_fits =>
+      decode_encode_listVar t cap h_var
+        (fun y hy => decode_encode h_t y hy) xs h_fits
+  | _, .bitvector (n := n) h_pos, bv, _h_fits => decode_encode_bitvector n h_pos bv
+  | _, .bitlist (cap := cap), xs, _h_fits => decode_encode_bitlist cap xs
+  | _, .containerFixed (fs := fs) h_fs, vs, h_fits => by
       -- Reduce the encoder's `(fix, var)` shape to just `fix` (var = .empty for
       -- all-fixed fields), then dispatch into the mutual aux for field-list induction.
+      have hML : MAX_LENGTH = 2 ^ 32 := rfl
       have h_var_empty := (size_serializeFieldsAux_fix h_fs vs
                             (SSZType.fixedSectionSizeFields fs)).2
       have h_fix_size := (size_serializeFieldsAux_fix h_fs vs
@@ -162,30 +156,29 @@ theorem decode_encode : ∀ {s : SSZType}, SSZType.BasicSupported s →
             SSZType.fixedByteSizeFields fs := by
         unfold SSZType.serialize
         simp [h_var_empty, h_fix_size]
+      have h_max : SSZType.fixedByteSizeFields fs < MAX_LENGTH := by
+        have := h_fits
+        rw [EncodedFits, h_serialize_size, hML] at this
+        exact this
       rw [h_serialize_size]
       unfold SSZType.serialize
       simp only [h_var_empty, ByteArray.append_empty]
       unfold SSZType.deserialize
       simp only [h_all_fixed, if_true]
-      exact decode_encode_containerFixed_aux h_fs vs _
-  | _, .containerVar (fs := fs) h_fields h_not_fixed h_max_lt, vs => by
+      exact decode_encode_containerFixed_aux h_fs h_max vs _
+  | _, .containerVar (fs := fs) h_fields h_not_fixed, vs, h_fits => by
       -- Instantiate the offset-table walker at the top: `pre = .empty`,
       -- `prefixOff = 0`, `bufEnd = b.size`. `size_serializeFieldsAux_fixedSection`
       -- (`ContainerVar.lean`) pins the fixed prefix's width to the schema value,
       -- which both extract-invariants below and the pre-extraction inverse
-      -- (`extractFieldOffsets_serializeFieldsAux`) need.
+      -- (`extractFieldOffsets_serializeFieldsAux`) need. The uint32-overflow
+      -- guard comes straight from `h_fits`: the total encoded size is the
+      -- fixed prefix plus the variable region.
       have h_ok := fieldsFixedSizeOk_of_basicSupportedFields h_fields vs
-      have h_maxOk := encode_size_le_max_containerVarFields_aux h_fields vs
       have h_fix_size :
           (SSZType.serializeFieldsAux fs vs (SSZType.fixedSectionSizeFields fs)).1.size =
             SSZType.fixedSectionSizeFields fs :=
         size_serializeFieldsAux_fixedSection fs vs (SSZType.fixedSectionSizeFields fs) h_ok
-      have h_bound :
-          (SSZType.serializeFieldsAux fs vs (SSZType.fixedSectionSizeFields fs)).1.size +
-            (SSZType.serializeFieldsAux fs vs (SSZType.fixedSectionSizeFields fs)).2.size ≤
-            SSZType.maxByteLengthFields fs :=
-        size_serializeFieldsAux_le_maxByteLengthFields fs vs
-          (SSZType.fixedSectionSizeFields fs) h_maxOk
       have h_serialize_eq :
           SSZType.serialize (.container fs) vs =
             (SSZType.serializeFieldsAux fs vs (SSZType.fixedSectionSizeFields fs)).1 ++
@@ -193,17 +186,19 @@ theorem decode_encode : ∀ {s : SSZType}, SSZType.BasicSupported s →
         show SSZType.serialize (.container fs) vs = _
         unfold SSZType.serialize
         rfl
-      have hML : SizzLean.Spec.MAX_LENGTH = 2 ^ 32 := rfl
-      have h_uint32_bound :
-          SSZType.fixedSectionSizeFields fs +
-            (SSZType.serializeFieldsAux fs vs (SSZType.fixedSectionSizeFields fs)).2.size <
-            2 ^ 32 := by
-        omega
+      have hML : MAX_LENGTH = 2 ^ 32 := rfl
       have h_bsize :
           (SSZType.serialize (.container fs) vs).size =
             SSZType.fixedSectionSizeFields fs +
               (SSZType.serializeFieldsAux fs vs (SSZType.fixedSectionSizeFields fs)).2.size := by
         rw [h_serialize_eq, ByteArray.size_append, h_fix_size]
+      have h_uint32_bound :
+          SSZType.fixedSectionSizeFields fs +
+            (SSZType.serializeFieldsAux fs vs (SSZType.fixedSectionSizeFields fs)).2.size <
+            2 ^ 32 := by
+        have := h_fits
+        rw [EncodedFits, h_bsize, hML] at this
+        exact this
       have h_F :
           (SSZType.serialize (.container fs) vs).extract 0
               (0 + SSZType.fixedSectionSizeFields fs) =
@@ -231,9 +226,10 @@ theorem decode_encode : ∀ {s : SSZType}, SSZType.BasicSupported s →
               (SSZType.serialize (.container fs) vs).size = .ok vs :=
         decode_encode_containerVar_aux h_fields vs (SSZType.fixedSectionSizeFields fs)
           (SSZType.serialize (.container fs) vs) 0 (SSZType.serialize (.container fs) vs).size
-          (by rw [Nat.zero_add, h_bsize]; omega)
-          (by rw [h_bsize]; omega)
-          (Nat.le_refl _) h_F h_V
+          (by rw [Nat.zero_add]; exact Nat.le_refl _)
+          (by rw [EncodedFits] at h_fits; rw [hML] at h_fits; exact h_fits)
+          (by rw [h_bsize]; omega) (by rw [h_bsize]; omega)
+          h_F h_V
       rw [h_serialize_eq]
       show SSZType.deserialize (.container fs)
           ((SSZType.serializeFieldsAux fs vs (SSZType.fixedSectionSizeFields fs)).1 ++
@@ -269,23 +265,38 @@ theorem decode_encode : ∀ {s : SSZType}, SSZType.BasicSupported s →
           rw [h_walk]
 
 /-- Field-walker companion: induct on `h_fs` and dispatch
-per-cons-head to `decode_encode`. -/
+per-cons-head to `decode_encode`. Each field's `EncodedFits` comes
+from its own width: a fixed field's encoding is exactly
+`fixedByteSize t`, and the field-list total stays below `MAX_LENGTH`
+by the walker's `h_max`, which the container arm derives from the
+value's own `EncodedFits`. -/
 theorem decode_encode_containerFixed_aux : ∀ {fs : List SSZType}
-    (_h_fs : SSZType.BasicSupportedFieldsFixed fs)
+    (h_fs : SSZType.BasicSupportedFieldsFixed fs)
+    (h_max : SSZType.fixedByteSizeFields fs < MAX_LENGTH)
     (vs : SSZType.interpFields fs) (varOff : Nat),
     SSZType.deserializeFixedFields fs
         (SSZType.serializeFieldsAux fs vs varOff).1 0 =
       .ok (vs, SSZType.fixedByteSizeFields fs)
-  | _, .nil, vs, _ => by
+  | _, .nil, _, vs, _ => by
       unfold SSZType.serializeFieldsAux SSZType.deserializeFixedFields
         SSZType.fixedByteSizeFields
       rcases vs with ⟨⟩
       simp
-  | _, .cons (t := t) (ts := ts) h_t h_t_fixed h_ts, vs, varOff => by
+  | _, .cons (t := t) (ts := ts) h_t h_t_fixed h_ts, h_max, vs, varOff => by
+      have hML : MAX_LENGTH = 2 ^ 32 := rfl
+      have h_split : SSZType.fixedByteSizeFields (t :: ts) =
+          t.fixedByteSize + SSZType.fixedByteSizeFields ts := rfl
       have h_head_size :
           (SSZType.serialize t vs.1).size = t.fixedByteSize :=
         size_serialize_eq_fixedByteSize h_t h_t_fixed vs.1
-      have h_head_de := decode_encode h_t vs.1
+      have h_head_fits : EncodedFits t vs.1 := by
+        rw [EncodedFits, h_head_size, hML]
+        omega
+      have h_max' : SSZType.fixedByteSizeFields ts < MAX_LENGTH := by
+        rw [hML] at h_max ⊢
+        rw [h_split] at h_max
+        omega
+      have h_head_de := decode_encode h_t vs.1 h_head_fits
       have h_enc :
           (SSZType.serializeFieldsAux (t :: ts) vs varOff).1 =
             SSZType.serialize t vs.1 ++
@@ -313,11 +324,11 @@ theorem decode_encode_containerFixed_aux : ∀ {fs : List SSZType}
         have h_eq : 0 + t.fixedByteSize = (SSZType.serialize t vs.1).size + 0 := by
           rw [h_head_size, Nat.add_zero, Nat.zero_add]
         rw [h_eq, deserializeFixedFields_append_shift]
-      rw [h_shift, decode_encode_containerFixed_aux h_ts vs.2 varOff]
+      rw [h_shift, decode_encode_containerFixed_aux h_ts h_max' vs.2 varOff]
       show Except.ok ((vs.1, vs.2), t.fixedByteSize + SSZType.fixedByteSizeFields ts) =
            Except.ok (vs, SSZType.fixedByteSizeFields (t :: ts))
       rw [Prod.eta]
-      rfl
+      rw [← h_split]
 
 /-- Field-walker companion for `containerVar`: the offset-table
 decoder (`SSZType.deserializeVarFields`) recovers exactly the value
@@ -333,33 +344,44 @@ placeholder (variable); `.2`'s head contributes either nothing
 `decode_encode_containerFixed_aux`, `b` itself never changes across
 the recursive calls, only `prefixOff` / `varOff` (folded into the
 `varOffsetsOf` argument) do, matching how
-`SSZType.deserializeVarFields` is actually written. -/
+`SSZType.deserializeVarFields` is actually written.
+
+The guard bookkeeping is value-level: `h_pf` states that the fixed
+prefix fits inside the running offset (true at the top, where
+`varOff` *is* the fixed-section size, and preserved at every step),
+and `h_max` bounds `bufEnd` by `MAX_LENGTH`, which together give
+every field its own `EncodedFits` at its slot in the buffer. -/
 theorem decode_encode_containerVar_aux : ∀ {fs : List SSZType},
     SSZType.BasicSupportedFields fs → ∀ (vs : SSZType.interpFields fs)
     (varOff : Nat) (b : ByteArray) (prefixOff bufEnd : Nat),
-    prefixOff + SSZType.fixedSectionSizeFields fs ≤ b.size →
+    prefixOff + SSZType.fixedSectionSizeFields fs ≤ varOff →
+    bufEnd < MAX_LENGTH →
     varOff ≤ bufEnd → bufEnd ≤ b.size →
     b.extract prefixOff (prefixOff + SSZType.fixedSectionSizeFields fs) =
       (SSZType.serializeFieldsAux fs vs varOff).1 →
     b.extract varOff bufEnd = (SSZType.serializeFieldsAux fs vs varOff).2 →
     SSZType.deserializeVarFields fs b prefixOff (varOffsetsOf fs vs varOff) bufEnd = .ok vs
-  | _, .nil, vs, _varOff, _b, _prefixOff, _bufEnd, _h_pf, _h_ve, _h_vb, _h_F, _h_V => by
+  | _, .nil, vs, _varOff, _b, _prefixOff, _bufEnd, _h_pf, _h_max, _h_ve, _h_vb, _h_F, _h_V => by
       rcases vs with ⟨⟩
       unfold SSZType.deserializeVarFields
       rfl
   | _, .cons (t := t) (ts := ts) h_t h_ts, vs, varOff, b, prefixOff, bufEnd,
-      h_pf, h_ve, h_vb, h_F, h_V => by
+      h_pf, h_max, h_ve, h_vb, h_F, h_V => by
+      have hML : MAX_LENGTH = 2 ^ 32 := rfl
       by_cases h_fixed : t.isFixedSize = true
       · -- Fixed field: `.1`'s head is the field's own bytes; `.2` is untouched.
         have h_head_size : (SSZType.serialize t vs.1).size = t.fixedByteSize :=
           size_serialize_eq_fixedByteSize h_t h_fixed vs.1
+        have h_sect_eq : t.fixedSectionSize = t.fixedByteSize := by
+          unfold SSZType.fixedSectionSize; simp [h_fixed]
+        have h_split_eq : SSZType.fixedSectionSizeFields (t :: ts) =
+            t.fixedByteSize + SSZType.fixedSectionSizeFields ts := by
+          show t.fixedSectionSize + SSZType.fixedSectionSizeFields ts = _
+          rw [h_sect_eq]
         have h_fsz' :
             prefixOff + SSZType.fixedSectionSizeFields (t :: ts) =
               prefixOff + t.fixedByteSize + SSZType.fixedSectionSizeFields ts := by
-          show prefixOff + (t.fixedSectionSize + SSZType.fixedSectionSizeFields ts) = _
-          have h_sect_eq : t.fixedSectionSize = t.fixedByteSize := by
-            unfold SSZType.fixedSectionSize; simp [h_fixed]
-          rw [h_sect_eq]; omega
+          rw [h_split_eq]; omega
         have h_enc :
             (SSZType.serializeFieldsAux (t :: ts) vs varOff).1 =
               SSZType.serialize t vs.1 ++ (SSZType.serializeFieldsAux ts vs.2 varOff).1 := by
@@ -372,13 +394,13 @@ theorem decode_encode_containerVar_aux : ∀ {fs : List SSZType},
           simp only [SSZType.serializeFieldsAux, h_fixed, if_true]
         rw [h_enc, h_fsz'] at h_F
         rw [h_enc2] at h_V
-        have h_pf' : prefixOff + t.fixedByteSize + SSZType.fixedSectionSizeFields ts ≤ b.size := by
+        have h_pf' : prefixOff + t.fixedByteSize + SSZType.fixedSectionSizeFields ts ≤ varOff := by
           rw [← h_fsz']; exact h_pf
         have h_split :=
           extract_split (b := b) (p := prefixOff)
             (q := prefixOff + t.fixedByteSize + SSZType.fixedSectionSizeFields ts)
             (u := SSZType.serialize t vs.1) (v := (SSZType.serializeFieldsAux ts vs.2 varOff).1)
-            h_F (by omega) h_pf'
+            h_F (by omega) (by rw [← h_fsz']; omega)
         rw [h_head_size] at h_split
         have h_chunk : b.extract prefixOff (prefixOff + t.fixedByteSize) =
             SSZType.serialize t vs.1 := h_split.1
@@ -386,7 +408,10 @@ theorem decode_encode_containerVar_aux : ∀ {fs : List SSZType},
             b.extract (prefixOff + t.fixedByteSize)
                 (prefixOff + t.fixedByteSize + SSZType.fixedSectionSizeFields ts) =
               (SSZType.serializeFieldsAux ts vs.2 varOff).1 := h_split.2
-        have h_de := decode_encode h_t vs.1
+        have h_head_fits : EncodedFits t vs.1 := by
+          rw [EncodedFits, h_head_size, hML]
+          omega
+        have h_de := decode_encode h_t vs.1 h_head_fits
         rw [h_head_size] at h_de
         have h_voff : varOffsetsOf (t :: ts) vs varOff = varOffsetsOf ts vs.2 varOff := by
           show (if t.isFixedSize then varOffsetsOf ts vs.2 varOff else _) = _
@@ -399,19 +424,22 @@ theorem decode_encode_containerVar_aux : ∀ {fs : List SSZType},
         rw [h_chunk, h_de]
         simp only [ne_eq, not_true_eq_false, ite_false]
         rw [decode_encode_containerVar_aux h_ts vs.2 varOff b (prefixOff + t.fixedByteSize)
-              bufEnd h_pf' h_ve h_vb h_F' h_V]
+              bufEnd h_pf' h_max h_ve h_vb h_F' h_V]
       · -- Variable field: `.1`'s head is a 4-byte offset placeholder;
         -- `.2`'s head is the field's own body.
         have h_fixed' : t.isFixedSize = false := by
           cases hc : t.isFixedSize <;> simp_all
         have hBPLO : SizzLean.Spec.BYTES_PER_LENGTH_OFFSET = 4 := rfl
+        have h_sect_eq : t.fixedSectionSize = BYTES_PER_LENGTH_OFFSET := by
+          unfold SSZType.fixedSectionSize; simp [h_fixed']
+        have h_split_eq : SSZType.fixedSectionSizeFields (t :: ts) =
+            BYTES_PER_LENGTH_OFFSET + SSZType.fixedSectionSizeFields ts := by
+          show t.fixedSectionSize + SSZType.fixedSectionSizeFields ts = _
+          rw [h_sect_eq]
         have h_fsz' :
             prefixOff + SSZType.fixedSectionSizeFields (t :: ts) =
               prefixOff + 4 + SSZType.fixedSectionSizeFields ts := by
-          show prefixOff + (t.fixedSectionSize + SSZType.fixedSectionSizeFields ts) = _
-          have h_sect_eq : t.fixedSectionSize = BYTES_PER_LENGTH_OFFSET := by
-            unfold SSZType.fixedSectionSize; simp [h_fixed']
-          rw [h_sect_eq, hBPLO]; omega
+          rw [h_split_eq, hBPLO]; omega
         have h_enc :
             (SSZType.serializeFieldsAux (t :: ts) vs varOff).1 =
               uint32LE (Nat.toUInt32 varOff) ++
@@ -429,7 +457,7 @@ theorem decode_encode_containerVar_aux : ∀ {fs : List SSZType},
         rw [h_enc, h_fsz'] at h_F
         rw [h_enc2] at h_V
         have h_offBytes_size : (uint32LE (Nat.toUInt32 varOff)).size = 4 := size_uint32LE _
-        have h_pf' : prefixOff + 4 + SSZType.fixedSectionSizeFields ts ≤ b.size := by
+        have h_pf' : prefixOff + 4 + SSZType.fixedSectionSizeFields ts ≤ varOff := by
           rw [← h_fsz']; exact h_pf
         have h_splitF :=
           extract_split (b := b) (p := prefixOff)
@@ -437,7 +465,7 @@ theorem decode_encode_containerVar_aux : ∀ {fs : List SSZType},
             (u := uint32LE (Nat.toUInt32 varOff))
             (v := (SSZType.serializeFieldsAux ts vs.2
               (varOff + (SSZType.serialize t vs.1).size)).1)
-            h_F (by omega) h_pf'
+            h_F (by omega) (by rw [← h_fsz']; omega)
         rw [h_offBytes_size] at h_splitF
         have h_F' :
             b.extract (prefixOff + 4)
@@ -476,13 +504,16 @@ theorem decode_encode_containerVar_aux : ∀ {fs : List SSZType},
               varOff + (SSZType.serialize t vs.1).size :=
           varOffsetsOf_head_getD ts vs.2 (varOff + (SSZType.serialize t vs.1).size) bufEnd
             h_bufEnd_eq
+        have h_head_fits : EncodedFits t vs.1 := by
+          rw [EncodedFits, hML]
+          omega
         have h_voff :
             varOffsetsOf (t :: ts) vs varOff =
               varOff :: varOffsetsOf ts vs.2 (varOff + (SSZType.serialize t vs.1).size) := by
           show (if t.isFixedSize then _ else
             varOff :: varOffsetsOf ts vs.2 (varOff + (SSZType.serialize t vs.1).size)) = _
           simp [h_fixed']
-        have h_de := decode_encode h_t vs.1
+        have h_de := decode_encode h_t vs.1 h_head_fits
         show SSZType.deserializeVarFields (t :: ts) b prefixOff
             (varOffsetsOf (t :: ts) vs varOff) bufEnd = .ok vs
         rw [h_voff]
@@ -496,7 +527,7 @@ theorem decode_encode_containerVar_aux : ∀ {fs : List SSZType},
         simp only [h_guard]
         rw [h_body, h_de]
         rw [decode_encode_containerVar_aux h_ts vs.2 (varOff + (SSZType.serialize t vs.1).size) b
-              (prefixOff + 4) bufEnd h_pf' hqV h_vb h_F' h_V']
+              (prefixOff + 4) bufEnd (by omega) h_max hqV h_vb h_F' h_V']
         show Except.ok (vs.1, vs.2) = Except.ok vs
         rw [Prod.eta]
 

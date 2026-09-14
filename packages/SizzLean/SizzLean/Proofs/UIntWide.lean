@@ -9,13 +9,7 @@ import SizzLean.Proofs.Util
 /-!
 # `SizzLean.Proofs.UIntWide`: `decode_encode` and size bound for `uintN 128 / 256`
 
-The four narrow integer widths (`uintN 8/16/32/64`, in
-`Proofs/UInt.lean`) serialise through fully-unrolled fixed-width
-LE writers/readers (`uint16LE`, `readUInt16LE`, …) and close by
-`bv_decide`, which bit-blasts the residual `UInt N` identity and
-adds one `Lean.ofReduceBool` axiom per arm.
-
-The two wide widths take a different route. Their `interp` is
+The two wide widths' `interp` is
 `BitVec 128` / `BitVec 256`, and the codec passes through the
 `Nat`-based helpers `natToLEBytes` (encode, `Spec/Serialize.lean`)
 and `readNatLE` / `readNatLEAux` (decode, `Spec/Deserialize.lean`),
@@ -24,9 +18,10 @@ proof is a `Nat` induction on the little-endian digit expansion,
 
   `readNatLE (natToLEBytes w n .empty) 0 w = some (n % 256 ^ w)`,
 
-and it closes with **no `bv_decide` / `native_decide`**: the only
-axioms are the three standard kernel ones. The wide-integer arms
-are therefore axiom-cleaner than the narrow ones.
+and it closes in the kernel: the only
+axioms are the three standard kernel ones. The narrow widths
+(`uintN 8/16/32/64`, in `Proofs/UInt.lean`) route through the
+same codec.
 
 ## Lemma path
 
@@ -239,7 +234,7 @@ theorem size_serialize_uintN256 (x : BitVec 256) :
 /-- Roundtrip for `.uintN 128`. The encoder emits 16 LE bytes of
 `x.toNat`; the decoder reads them back as `x.toNat mod 256^16`, and
 `256^16 = 2^128` with `x.toNat < 2^128` collapses the modulus, so
-`BitVec.ofNat 128 x.toNat = x`. No `bv_decide`. -/
+`BitVec.ofNat 128 x.toNat = x`. -/
 theorem decode_encode_uintN128 (x : BitVec 128) :
     SSZType.deserialize (.uintN 128) (SSZType.serialize (.uintN 128) x) =
       .ok (x, (SSZType.serialize (.uintN 128) x).size) := by
