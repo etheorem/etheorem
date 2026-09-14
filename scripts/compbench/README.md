@@ -27,9 +27,18 @@ both ends of the run: contention moves every row without touching any code, so
 a busy run compares fairly row against row and not at all against a run taken
 on an idle machine.
 
-Nothing has to be installed by hand. The driver needs `lake`, `cargo`, and a
-Python 3.11 or later interpreter on `PATH`; it uses `uv` when it is there and
-falls back to `python3 -m venv` when it is not.
+Neither comparable has to be installed by hand. The driver needs `lake`,
+`cargo`, `git`, and a Python 3.12 or later interpreter on `PATH`; it uses `uv`
+when it is there and falls back to `python3 -m venv` when it is not. On x86_64
+Linux the Lean build also needs `nasm`, because `LeanHazmatSha256` assembles
+the vendored ISA-L SHA-256 lanes; the `just` recipe runs
+`hazmat-sha256-vendor` first, and the driver refuses to build until that
+checkout exists.
+
+Reruns are cheap on the install side. The ssz-specs venv is named after the
+pin, and the driver reads the installed commit back before it measures, so a
+pin bump gets a fresh venv and a report can never name a revision it did not
+run.
 
 ## What is compared
 
@@ -40,9 +49,13 @@ falls back to `python3 -m venv` when it is not.
 | libssz | [`lambdaclass/libssz`](https://github.com/lambdaclass/libssz) | `--release`, thin LTO, no Merkle cache |
 | ssz-specs | [`ethereum/ssz-specs`](https://github.com/ethereum/ssz-specs) | CPython, root memo on |
 
-The two SizzLean rows differ in one thing, the constructor. Both call the
-same `Box` methods through the same FFI SHA-256, so the pair prices the cache
-and nothing else.
+The two SizzLean rows differ in the constructor, and in one consequence of
+it. Both call the same `Box` methods and pin the same FFI SHA-256, but the
+uncached walk hands each Merkle level to `Hasher.batchCombine`, the
+multi-buffer primitive, while the cached walk hashes one node at a time
+through `Hasher.combine`. The Pure row therefore roots with the cheaper
+hasher, and the gap between the rows understates what the cache saves.
+Batching the cached walk is [etheorem#3](https://github.com/etheorem/etheorem/issues/3).
 
 ## How each side is built
 
@@ -52,7 +65,7 @@ Python library.
 | Row | Build |
 |---|---|
 | SizzLean, both | `lake build ssz_compbench`. Lake compiles every module through C with `clang -O3 -DNDEBUG -march=native`; the SizzLean package adds `-march=native` on top of Lake's default. `SizzLeanBench` sets `precompileModules`, so the scenario code is native, not bytecode the interpreter walks. The exe links Lean's runtime statically. |
-| libssz | `cargo build --release` with `lto = "thin"` and `codegen-units = 1`, the flags libssz's own README reports its numbers under. |
+| libssz | `cargo build --release --locked` with `lto = "thin"`, the flag libssz's own README reports its numbers under, plus `codegen-units = 1`. |
 | ssz-specs | CPython, no build step. The library is pure Python and ships no compiled extension. |
 
 Rust does cross-crate inlining under thin LTO and Lake has no cross-module
@@ -64,7 +77,7 @@ which prints every `clang` invocation.
 
 ## The fixture
 
-A Fulu `BeaconState` at the mainnet preset: 37 fields, 1024 validators, about
+A Fulu `BeaconState` at the mainnet preset: 38 fields, 1024 validators, about
 2.9 MB on the wire. `SizzLeanBench.CompBench.Fixture` builds it and the
 `ssz_compbench emit` subcommand writes the bytes; the Rust and the Python
 harnesses decode those very bytes.
@@ -107,6 +120,13 @@ matters. A thousand writes into one list share most of their Merkle path, so
 a cache would pay for one subtree and reuse it; four shapes at four depths
 make the second root walk four separate paths, as a real slot does.
 
+The balances are the one shape the three harnesses write differently. Rust
+and Python write the 250 elements one at a time. SizzLean applies them to the
+array and stores the list in one `sszUpdate` clause, because the update
+macro's index syntax does not reach into a packed list of basic elements. The
+roots agree either way; the cached row's `Writes` and `Second root` columns
+price one subtree rebuild for that shape rather than 250 path rehashes.
+
 Each harness runs each scenario 100 times, and the report gives the mean over
 those runs. `--reps` changes the count. Every repetition decodes the buffer
 again, so no cache survives from one repetition into the next.
@@ -135,9 +155,12 @@ imports it and no proof mentions it.
 ## The control
 
 All three harnesses print the roots they computed, and the driver refuses to
-render a report unless every one of them agrees at every point. The three
-container declarations are written by hand in three languages, so the
-agreement is what shows they describe the same value.
+render a report unless every one of them agrees at every point of every
+repetition. It also refuses when any harness reported fewer repetitions than
+asked, so a harness that crashed after printing nothing cannot drop out of
+the tables in silence. The three container declarations are written by hand
+in three languages, so the agreement is what shows they describe the same
+value.
 
 ## Layout
 
@@ -167,7 +190,9 @@ measure the same code.
   [`libssz-harness/Cargo.toml`](libssz-harness/Cargo.toml) *and* `LIBSSZ_REV`
   in the driver. The driver checks that the two agree and refuses to run when
   they drift apart.
-* **ssz-specs**: change `SSZ_SPECS_REV` in the driver.
+* **ssz-specs**: change `SSZ_SPECS_REV` in the driver. The venv is named
+  after the pin, so the next run installs into a fresh one, and the driver
+  checks the installed commit against the pin before it measures.
 
 A pin bump can break a harness: either library may rename a type or change a
 container. Fix the harness in the same commit, and let the root check confirm

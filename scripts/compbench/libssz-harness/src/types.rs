@@ -115,7 +115,7 @@ pub struct PendingConsolidation {
     pub target_index: u64,
 }
 
-/// The Fulu `BeaconState`, 37 fields at the mainnet preset.
+/// The Fulu `BeaconState`, 38 fields at the mainnet preset.
 #[derive(Clone, Debug, PartialEq, SszEncode, SszDecode, HashTreeRoot)]
 pub struct BeaconState {
     pub genesis_time: u64,

@@ -475,7 +475,9 @@ sizzlean-bench-multistate:
 # harness, downloads and compiles both comparables at pinned revisions, emits
 # the shared 2.9 MB `BeaconState`, runs the three harnesses, checks that they
 # agree on every root, and writes the markdown report. It needs `cargo` and a
-# Python 3.11 or later interpreter besides `lake`; `scripts/compbench/README.md`
+# Python 3.12 or later interpreter besides `lake`; on x86_64 Linux the Lean
+# build also needs `nasm`, for the vendored ISA-L lanes, which is why this
+# recipe runs `hazmat-sha256-vendor` first. `scripts/compbench/README.md`
 # states the method. Each harness runs each scenario 100 times and the report
 # gives the mean, which takes about four minutes. Extra arguments pass
 # through, so `just sizzlean-comp-benchmark "--reps 20"` shortens the run and
@@ -483,7 +485,7 @@ sizzlean-bench-multistate:
 
 # Comparative benchmark vs ssz-specs + libssz; markdown → packages/SizzLean/bench/comparative-<timestamp>.md
 [group('sizzlean')]
-sizzlean-comp-benchmark *args:
+sizzlean-comp-benchmark *args: hazmat-sha256-vendor
     python3 scripts/comparative_benchmark.py {{ args }}
 
 # Aligned column output for readability; falls back to plain diff if

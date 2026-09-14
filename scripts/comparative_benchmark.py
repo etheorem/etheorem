@@ -41,11 +41,13 @@ import argparse
 import json
 import os
 import platform
+import re
 import shutil
 import statistics
 import subprocess
 import sys
 import time
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,6 +64,8 @@ LIBSSZ_REV = "36802dd1d3e3a83d95d2ac552647539cbe3f7fd7"
 
 SSZ_SPECS_REPO = "https://github.com/ethereum/ssz-specs"
 SSZ_SPECS_REV = "2600c0e75a3f296ef2fa4d2d60ea3a69ddc0923e"
+#: ssz-specs declares `requires-python = ">=3.12"` at that revision.
+SSZ_SPECS_PYTHON = (3, 12)
 
 # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -99,12 +103,16 @@ SCENARIO_BLURBS = {
         "shapes: 250 validator records, 250 packed balances, 250 "
         "`block_roots` entries, and 250 `randao_mixes` entries. Spreading "
         "them matters, because a thousand writes into one list would share "
-        "most of their Merkle path."
+        "most of their Merkle path. One asymmetry: the Rust and the Python "
+        "harnesses write the 250 balances one element at a time, while "
+        "SizzLean applies them to the array and stores the list in one "
+        "`sszUpdate` clause, so its cached row rebuilds that subtree once "
+        "rather than rehashing 250 paths."
     ),
 }
 
 #: The cold path: bytes to a first root. These phases do not depend on the
-#: scenario, so their samples are pooled across both.
+#: scenario, so both scenario tables report the same work and should agree.
 COLD_PHASES = ["deser_ns", "wrap_ns", "root1_ns"]
 
 #: The warm path: what a slot costs once the value is resident.
@@ -136,13 +144,18 @@ def run(
     report depends on, so there is nothing useful to carry on with.
     """
     announce("$ " + " ".join(str(part) for part in cmd))
-    result = subprocess.run(
-        [str(part) for part in cmd],
-        cwd=cwd,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [str(part) for part in cmd],
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        # A missing binary, which `--skip-build` can produce, is a failed step
+        # like any other and should read as one rather than as a traceback.
+        raise BenchmarkError(f"could not start {cmd[0]}: {error}") from error
     if result.stderr:
         print(result.stderr, file=sys.stderr, end="", flush=True)
     if result.returncode != 0:
@@ -165,19 +178,43 @@ def check_cargo_pin() -> None:
     would put the wrong revision in the report while measuring another.
     """
     manifest = (RUST_HARNESS_DIR / "Cargo.toml").read_text()
-    if LIBSSZ_REV not in manifest:
+    # Every libssz crate is pinned on its own line, so every `rev` has to
+    # match, not just one of them.
+    revs = set(re.findall(r'rev\s*=\s*"([0-9a-fA-F]+)"', manifest))
+    if revs != {LIBSSZ_REV}:
+        found = ", ".join(sorted(rev[:12] for rev in revs)) or "none"
         raise BenchmarkError(
-            f"LIBSSZ_REV ({LIBSSZ_REV[:12]}) does not appear in "
-            f"{RUST_HARNESS_DIR / 'Cargo.toml'}. Bump both together."
+            f"LIBSSZ_REV ({LIBSSZ_REV[:12]}) and the `rev` pins in "
+            f"{RUST_HARNESS_DIR / 'Cargo.toml'} ({found}) disagree. Bump them together."
         )
 
 
 # ── Build steps ──────────────────────────────────────────────────────────
 
 
+def check_isal_vendored() -> None:
+    """On x86_64 Linux, refuse to build before ISA-L is vendored.
+
+    `LeanHazmatSha256` builds Intel ISA-L's multi-buffer SHA-256 there, from
+    a gitignored checkout that `just hazmat-sha256-vendor` fetches. Lake
+    reports the missing checkout as a failed target deep in its log; this
+    says so up front, with the command that fixes it.
+    """
+    if platform.system() != "Linux" or platform.machine() != "x86_64":
+        return
+    makefile = REPO_ROOT / "packages" / "LeanHazmatSha256" / "vendor" / "isa-l_crypto" / "Makefile.unx"
+    if not makefile.exists():
+        raise BenchmarkError(
+            "ISA-L crypto is not vendored. Run `just hazmat-sha256-vendor` "
+            "(needs `nasm` on PATH), or use `just sizzlean-comp-benchmark`, "
+            "which runs it first."
+        )
+
+
 def build_sizzlean() -> None:
     """Compile the Lean harness."""
     require_tool("lake", "Install the Lean toolchain with elan.")
+    check_isal_vendored()
     run(["lake", "build", "ssz_compbench"], cwd=REPO_ROOT)
     if not LEAN_EXE.exists():
         raise BenchmarkError(f"lake reported success but {LEAN_EXE} is missing")
@@ -188,10 +225,37 @@ def build_libssz() -> None:
 
     Cargo does the download: the harness manifest names the repository and
     the revision, so `cargo build` fetches, pins, and compiles in one step.
+    `--locked` keeps the committed `Cargo.lock` as it is, so the transitive
+    dependencies are the ones the lock names and the build cannot dirty a
+    tracked file.
     """
     require_tool("cargo", "Install Rust with rustup.")
     check_cargo_pin()
-    run(["cargo", "build", "--release"], cwd=RUST_HARNESS_DIR)
+    run(["cargo", "build", "--release", "--locked"], cwd=RUST_HARNESS_DIR)
+
+
+def ssz_specs_venv(work_dir: Path) -> Path:
+    """Where the ssz-specs venv for the current pin lives.
+
+    The directory name carries the pin, so bumping `SSZ_SPECS_REV` lands in
+    a fresh venv instead of an install into one that already holds the old
+    revision under the same package version.
+    """
+    return work_dir / f"ssz-specs-venv-{SSZ_SPECS_REV[:12]}"
+
+
+def installed_ssz_specs_commit(interpreter: Path) -> str:
+    """The commit the venv's `eth-ssz-specs` was installed from, or ""."""
+    probe = (
+        "import importlib.metadata as m, json\n"
+        "d = m.distribution('eth-ssz-specs')\n"
+        "u = d.read_text('direct_url.json')\n"
+        "print(json.loads(u).get('vcs_info', {}).get('commit_id', '') if u else '')\n"
+    )
+    result = subprocess.run(
+        [str(interpreter), "-c", probe], capture_output=True, text=True
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
 
 
 def build_ssz_specs(work_dir: Path) -> Path:
@@ -199,24 +263,46 @@ def build_ssz_specs(work_dir: Path) -> Path:
 
     Returns the interpreter that has it. `uv` is used when present because
     it resolves and installs in about a second; `python3 -m venv` plus pip is
-    the fallback, and installs the same pinned revision.
+    the fallback, and installs the same pinned revision. Either way the
+    installed commit is read back and compared with the pin, so the report
+    cannot name one revision while the numbers came from another.
     """
-    venv = work_dir / "ssz-specs-venv"
+    venv = ssz_specs_venv(work_dir)
     interpreter = venv / "bin" / "python"
     requirement = f"eth-ssz-specs @ git+{SSZ_SPECS_REPO}@{SSZ_SPECS_REV}"
+    wanted = ".".join(str(part) for part in SSZ_SPECS_PYTHON)
 
+    if interpreter.exists() and installed_ssz_specs_commit(interpreter) == SSZ_SPECS_REV:
+        announce(f"ssz-specs {SSZ_SPECS_REV[:12]} is already installed in {venv}")
+        return interpreter
+
+    require_tool("git", "pip and uv clone ssz-specs with it.")
     uv = shutil.which("uv")
     if uv is not None:
-        run([uv, "venv", venv])
+        # `--clear`: since uv 0.10 `uv venv` refuses an existing directory
+        # without it, and a rerun of this driver is the common case.
+        run([uv, "venv", "--clear", "--python", f">={wanted}", venv])
         env = dict(os.environ, VIRTUAL_ENV=str(venv))
         run([uv, "pip", "install", requirement], env=env)
     else:
-        run([sys.executable, "-m", "venv", str(venv)])
+        if sys.version_info < SSZ_SPECS_PYTHON:
+            raise BenchmarkError(
+                f"ssz-specs needs Python {wanted} or later; this driver runs "
+                f"under {platform.python_version()}. Rerun it with a newer "
+                "interpreter, or install `uv` and let it pick one."
+            )
+        run([sys.executable, "-m", "venv", "--clear", str(venv)])
         run([str(interpreter), "-m", "pip", "install", "--quiet", "--upgrade", "pip"])
         run([str(interpreter), "-m", "pip", "install", "--quiet", requirement])
 
     if not interpreter.exists():
         raise BenchmarkError(f"the venv build produced no interpreter at {interpreter}")
+    installed = installed_ssz_specs_commit(interpreter)
+    if installed != SSZ_SPECS_REV:
+        raise BenchmarkError(
+            f"the venv holds ssz-specs at {installed[:12] or 'an unknown revision'}, "
+            f"the pin is {SSZ_SPECS_REV[:12]}"
+        )
     return interpreter
 
 
@@ -240,11 +326,14 @@ def emit_fixture(work_dir: Path) -> Fixture:
     root comparison meaningful.
     """
     path = work_dir / "beacon_state.ssz"
-    result = subprocess.run(
-        [str(LEAN_EXE), "emit", str(path)],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [str(LEAN_EXE), "emit", str(path)],
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        raise BenchmarkError(f"could not start {LEAN_EXE}: {error}") from error
     print(result.stderr, file=sys.stderr, end="", flush=True)
     if result.returncode != 0:
         raise BenchmarkError("the Lean harness could not emit the fixture")
@@ -266,7 +355,10 @@ def parse_lines(stdout: str) -> list[dict]:
         line = line.strip()
         if not line.startswith("{"):
             continue
-        rows.append(json.loads(line))
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError as error:
+            raise BenchmarkError(f"a harness printed a malformed line: {line!r}") from error
     return rows
 
 
@@ -310,33 +402,61 @@ def averages(rows: list[dict]) -> dict[tuple[str, str], dict[str, float]]:
     return grouped
 
 
+def check_complete(rows: list[dict], reps: int) -> None:
+    """Check that every harness reported every repetition of every scenario.
+
+    A harness that exits zero and prints nothing would otherwise vanish from
+    the tables, and the report would still claim that every row agreed. The
+    count has to be exact: a short run hides a crash, a long one a loop bug.
+    """
+    counts = Counter((r["impl"], r["scenario"]) for r in rows)
+    missing = []
+    for impl in IMPLS:
+        for scenario in SCENARIOS:
+            got = counts.get((impl, scenario), 0)
+            if got != reps:
+                missing.append(f"{impl}/{scenario}: {got} of {reps}")
+    if missing:
+        raise BenchmarkError(
+            "not every harness reported every repetition: " + ", ".join(missing)
+        )
+
+
 def check_roots(rows: list[dict], fixture: Fixture) -> dict[str, str]:
-    """Check that every harness produced the same two roots.
+    """Check that every harness produced the same roots, on every repetition.
 
     A report over three libraries that rooted three different values would
     compare nothing, so a mismatch ends the run rather than landing in the
-    markdown as a footnote.
+    markdown as a footnote. The check reads every row: one bad repetition is
+    as disqualifying as a hundred, since the timings pool all of them.
     """
+    roots: dict[str, str] = {}
     for scenario in SCENARIOS:
         for key in ("root1", "root2"):
-            seen = {r["impl"]: r[key] for r in rows if r["scenario"] == scenario}
-            distinct = set(seen.values())
-            if len(distinct) > 1:
-                detail = ", ".join(f"{impl}={root}" for impl, root in sorted(seen.items()))
-                raise BenchmarkError(
-                    f"the harnesses disagree on {scenario}/{key}: {detail}"
+            point = f"{scenario}/{key}"
+            by_impl: dict[str, set[str]] = {}
+            for r in rows:
+                if r["scenario"] == scenario:
+                    by_impl.setdefault(r["impl"], set()).add(r[key])
+            distinct = set().union(*by_impl.values()) if by_impl else set()
+            if len(distinct) != 1:
+                detail = ", ".join(
+                    f"{impl}={'|'.join(sorted(seen))}" for impl, seen in sorted(by_impl.items())
                 )
+                raise BenchmarkError(f"the harnesses disagree on {point}: {detail}")
+            roots[point] = distinct.pop()
 
-    roots = {}
-    for scenario in SCENARIOS:
-        for key in ("root1", "root2"):
-            for row in rows:
-                if row["scenario"] == scenario:
-                    roots[f"{scenario}/{key}"] = row[key]
-                    break
+    # Both scenarios start from the same decoded value, so their first roots
+    # are one number. Two would mean a harness decoded differently per
+    # scenario, which the per-scenario check above cannot see.
+    if roots["update1/root1"] != roots["update1000/root1"]:
+        raise BenchmarkError(
+            "the first root differs between scenarios: "
+            f"update1={roots['update1/root1']}, update1000={roots['update1000/root1']}"
+        )
 
-    first_root = roots.get("update1/root1")
-    if fixture.root and first_root and fixture.root != first_root:
+    first_root = roots["update1/root1"]
+    if fixture.root and fixture.root != first_root:
         raise BenchmarkError(
             f"the emitted fixture roots to {fixture.root} but the harnesses "
             f"report {first_root}"
@@ -555,9 +675,9 @@ def render(
         "statically. |"
     )
     lines.append(
-        "| libssz | `cargo build --release` with `lto = \"thin\"` and "
-        "`codegen-units = 1`, the flags libssz's own README reports its numbers "
-        "under. |"
+        "| libssz | `cargo build --release --locked` with `lto = \"thin\"`, the "
+        "flag libssz's own README reports its numbers under, plus "
+        "`codegen-units = 1`. |"
     )
     lines.append(
         "| ssz-specs | CPython, no build step. The library is pure Python and "
@@ -576,7 +696,7 @@ def render(
     lines.append("## The fixture")
     lines.append("")
     lines.append(
-        f"A Fulu `BeaconState` at the mainnet preset, 37 fields, 1024 validators, "
+        f"A Fulu `BeaconState` at the mainnet preset, 38 fields, 1024 validators, "
         f"**{fixture.size:,} bytes** on the wire. Every collection carries distinct "
         "values, so no implementation gains from a repeated subtree. The Lean "
         "harness emits the bytes; the other two decode them."
@@ -609,9 +729,9 @@ def render(
     lines.append("## The control: the roots agree")
     lines.append("")
     lines.append(
-        "All four harnesses produced the same root at every point. That is the "
-        "evidence they rooted the same value, so the timings compare like with "
-        "like."
+        "All three harnesses, across all four rows, produced the same root at "
+        "every point of every repetition. That is the evidence they rooted the "
+        "same value, so the timings compare like with like."
     )
     lines.append("")
     lines.append("| Point | Root |")
@@ -659,9 +779,14 @@ def render(
     )
     lines.append("")
     lines.append(
-        "The SizzLean pair isolates the cache and nothing else. Both rows run "
-        "the same code through the same FFI SHA-256; only the constructor "
-        "differs, `SSZ.FastBox` against `SSZ.PureBox`."
+        "The SizzLean pair differs in the constructor, `SSZ.FastBox` against "
+        "`SSZ.PureBox`, and in one consequence of it. Both pin the FFI "
+        "SHA-256, but the uncached walk hands each Merkle level to "
+        "`Hasher.batchCombine`, the multi-buffer primitive, while the cached "
+        "walk still hashes one node at a time through `Hasher.combine`. So "
+        "the Pure row's roots carry a cheaper hasher than the Fast row's, "
+        "and the gap between them understates what the cache saves. "
+        "Batching the cached walk is tracked as etheorem#3."
     )
     lines.append("")
     lines.append(
@@ -716,17 +841,21 @@ def main() -> int:
         help="reuse what is already built, for a re-measurement",
     )
     args = parser.parse_args()
+    if args.reps < 1:
+        parser.error("--reps must be at least 1")
 
     args.work_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         if args.skip_build:
             announce("skipping the build steps")
-            interpreter = args.work_dir / "ssz-specs-venv" / "bin" / "python"
+            interpreter = ssz_specs_venv(args.work_dir) / "bin" / "python"
             if not interpreter.exists():
                 raise BenchmarkError(
                     f"--skip-build needs an existing venv at {interpreter}"
                 )
+            if not LEAN_EXE.exists():
+                raise BenchmarkError(f"--skip-build needs an existing {LEAN_EXE}")
         else:
             announce("building the SizzLean harness")
             build_sizzlean()
@@ -741,6 +870,7 @@ def main() -> int:
         load_before = os.getloadavg()[0]
         rows = measure(fixture, args.reps, interpreter)
         load_after = os.getloadavg()[0]
+        check_complete(rows, args.reps)
         roots = check_roots(rows, fixture)
         report = render(
             averages(rows),
