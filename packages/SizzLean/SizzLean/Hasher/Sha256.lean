@@ -1,4 +1,5 @@
-import SizzLean.Hasher.Class
+import SizzLean.Hasher.Sha256Equiv
+import SizzLean.Hasher.Sha256Batch
 import LeanHazmatSha256
 
 /-!
@@ -45,6 +46,30 @@ backend (e.g. `Sha256Spec`, the pure-Lean reference).
 unambiguously. -/
 inductive Sha256 : Type
 
+/-- The batched FFI primitive agrees with the pointwise FFI
+`combine`, which is the law `Hasher.batchCombine_eq` states.
+
+Both axioms rewrite their FFI side to the same pure-Lean reference:
+`sha256BatchCombine_eq_spec` sends the batched call to
+`sha256BatchCombineSpec`, a `zip`-then-`map` over `LeanSha256.combine`,
+and `sha256Combine_eq_spec` sends the scalar call to
+`LeanSha256.combine`. What is left is the plain `Array` identity
+between `zipWith f` and `zip`-then-`map`. `Array.zip` is `zipWith
+Prod.mk` by definition, so unfolding it once lets core's
+`Array.map_zipWith` fuse the `map` into the `zipWith` and close the
+goal. The `show` re-spells the `zip`-then-`map` in the form that
+lemma matches; `sha256BatchCombineSpec` already is that term.
+
+The two axioms are the trust commitment here. Each says OpenSSL (or
+Intel ISA-L, on the batched path) computes NIST SHA-256, the same
+commitment `combine` alone already carried. -/
+theorem batchCombine_eq_of_axioms (ls rs : Array ByteArray) :
+    LeanHazmat.Sha256.sha256BatchCombine ls rs
+      = Array.zipWith LeanHazmat.Sha256.sha256Combine ls rs := by
+  rw [sha256BatchCombine_eq_spec, sha256Combine_eq_spec]
+  show Array.map _ (Array.zip ls rs) = _
+  rw [Array.zip, Array.map_zipWith]
+
 /-- The FFI-backed `Hasher Sha256` instance. All three methods delegate to
 the `LeanHazmatSha256` externs (`LeanHazmat.Sha256.sha256Hash` for the
 single-input digest, `LeanHazmat.Sha256.sha256Combine` for the two-input
@@ -52,16 +77,19 @@ inner-Merkle step, `LeanHazmat.Sha256.sha256BatchCombine` for a whole
 Merkle level in one call, which reaches Intel ISA-L's multi-buffer
 engine on x86_64 Linux and an OpenSSL loop everywhere else).
 
-The `batchCombine` override carries the law the class docstring
-states: it must agree with the pointwise `combine`. Here that is
-`sha256BatchCombine_eq_spec` and `sha256Combine_eq_spec` naming the
-same pure-Lean reference, so the override adds no trust beyond what
-`combine` already assumed. The trust assumption (the shim implements NIST
-SHA-256) lives with those externs; the FFI ≡ pure-Lean equivalence
-axioms in `Sha256Equiv.lean` make it auditable. -/
+The `batchCombine` override owes the class field `batchCombine_eq`,
+which says it must agree with the pointwise `combine`.
+`batchCombine_eq_of_axioms` above pays it from
+`sha256BatchCombine_eq_spec` and `sha256Combine_eq_spec`, which name
+the same pure-Lean reference, so the override adds no trust beyond
+what `combine` already assumed. The trust assumption (the shim
+implements NIST SHA-256) lives with those externs; the FFI ≡ pure-Lean
+equivalence axioms in `Sha256Equiv.lean` and `Sha256Batch.lean` make
+it auditable. -/
 instance : Hasher Sha256 where
   hash         := LeanHazmat.Sha256.sha256Hash
   combine      := LeanHazmat.Sha256.sha256Combine
   batchCombine := LeanHazmat.Sha256.sha256BatchCombine
+  batchCombine_eq := batchCombine_eq_of_axioms
 
 end SizzLean.Hasher

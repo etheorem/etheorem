@@ -34,7 +34,9 @@ Every arm mirrors a corresponding arm of
 
     (Node.ofShape H s x).merkleRoot H = SSZType.hashTreeRoot H s x
 
-verified empirically by `Conformance/TreeBackedCoherence.lean`.
+proved in `Proofs/Merkle/OfShape.lean` (`ofShape_root`,
+`ofShape_coherent`) and exercised by
+`Conformance/TreeBackedCoherence.lean`.
 
 ## Why structural mutual recursion (not higher-order)
 

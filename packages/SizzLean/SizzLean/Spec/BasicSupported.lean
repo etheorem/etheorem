@@ -1,7 +1,6 @@
 import SizzLean.Spec.Type
 import SizzLean.Spec.Serialize  -- for isFixedSize / allFixedSize
 import SizzLean.Spec.Supported  -- for the subset theorem below
-import SizzLean.Spec.MaxByteLength  -- for the overflow guard on containerVar / vectorVar / listVar
 import SizzLean.Spec.Constants  -- for MAX_LENGTH
 
 /-!
@@ -26,11 +25,11 @@ Proofs/ reaches over to discharge the theorems).
 
 ## Coverage
 
-* **Basic integers**: `.uintN 8 / 16 / 32 / 64` (closed in
-  `Proofs/UInt.lean` via `unfold` + `bv_decide`) and
-  `.uintN 128 / 256` (closed in `Proofs/UIntWide.lean` by
-  `Nat`-digit induction on the `natToLEBytes` / `readNatLE` codec,
-  with no `bv_decide` axiom).
+* **Basic integers**: `.uintN 8 / 16 / 32 / 64` and
+  `.uintN 128 / 256`, all closed through the `Nat`-digit
+  `natToLEBytes` / `readNatLE` codec (`Proofs/UInt.lean` routes the
+  narrow widths through the same lemmas `Proofs/UIntWide.lean`
+  proves for the wide ones). No SAT certificate anywhere.
 * **Bool**: `.bool` (closed by `cases`, in `Proofs/Bool.lean`).
 * **Composites**: `.vector t n` / `.list t cap` over
   fixed-size element types (closed in
@@ -61,33 +60,26 @@ not, since the offset table handles both uniformly);
 predicates are mutual with `BasicSupported` because their `cons`
 constructors take a `BasicSupported t` witness for the head.
 
-## Why `containerVar` carries `maxByteLengthFields fs < MAX_LENGTH`
+## Why the constructors carry no `MAX_LENGTH` guard
 
-Every offset the encoder writes into a variable-size container's
-fixed prefix is a `uint32` (`Nat.toUInt32 varOff`, see
-`Spec/Serialize.lean`'s `serializeFieldsAux`); it round-trips
-through `UInt32` exactly only while `varOff < 2 ^ 32`. Every running
-offset is bounded by the total encoded size, which
-`Proofs/ContainerVar.lean`'s size walker bounds by
-`maxByteLengthFields fs`, so bounding *that* by `MAX_LENGTH = 2 ^ 32`
-(a schema-level, decidable-per-concrete-schema check) is what keeps
-every offset's `UInt32` round-trip exact. The cost is that schemas
-whose static max exceeds `MAX_LENGTH` (real `BeaconState` /
-`BeaconBlockBody` shapes among them) stay outside `BasicSupported`;
-etheorem#61 tracks the value-level relaxation.
+Every offset the encoder writes is a `uint32`
+(`Nat.toUInt32 varOff`, see `Spec/Serialize.lean`'s
+`serializeFieldsAux` / `serializeVarElemsAux`), and it round-trips
+through `UInt32` exactly only while the running offset stays below
+`2 ^ 32`. A schema-level guard would exclude whole schemas whose
+*static* maximum exceeds `MAX_LENGTH`, real `BeaconState` /
+`BeaconBlockBody` shapes among them, even when no producible value
+does.
 
-## Why `vectorVar` / `listVar` carry `maxByteLength s < MAX_LENGTH`
-
-Same uint32-overflow guard as `containerVar`. Variable-element
-collections write a running offset per element, seeded at
-`n * BYTES_PER_LENGTH_OFFSET` (vectors) or recovered from
-`off₀ / 4` (lists). Every offset is bounded by the total encoded
-size, which `Proofs/CollectionVar.lean`'s size walker bounds by
-`maxByteLength s`, so bounding *that* by `MAX_LENGTH = 2 ^ 32`
-keeps every offset's `UInt32` round-trip exact. Schemas whose
-static max exceeds `MAX_LENGTH` (large-cap lists of variable
-elements among them) stay outside `BasicSupported`; etheorem#77
-tracks the value-level relaxation.
+The guard lives on the theorems: the
+value-level `EncodedFits s x` (`Spec/MaxByteLength.lean`) says the
+encoding of *this* value stays below `MAX_LENGTH`, and every
+running offset is bounded by the total encoded size, so one
+value-level bound keeps every offset's `UInt32` round-trip exact.
+`decode_encode` and `serialize_injective` carry `EncodedFits` as a
+hypothesis (`Proofs/Roundtrip.lean`, `Proofs/Injective.lean`);
+`SSZ.roundtrip` lifts it to the user surface. The gate-widening
+rows in `packages/SizzLean/docs/PROOF_LEDGER.md` record the change.
 
 ## Why `0 < n` on `vectorFixed` / `vectorVar` / `bitvector`
 
@@ -106,27 +98,29 @@ set_option autoImplicit false
 namespace SizzLean.Spec
 
 mutual
-/-- Narrow correctness-coverage predicate. Each constructor names
-an `SSZType` shape for which all three central theorems
+/-- The proof-coverage predicate: `Supported` plus the two
+zero-width side conditions, `0 < n` on the vector and bitvector
+arms and `0 < t.fixedByteSize` on `listFixed`. Each constructor
+names an `SSZType` shape for which all three central theorems
 (`decode_encode`, `serialize_injective`, `encode_size_le_max`) are
 proved in `Proofs/`. Adding a constructor obliges the proofs to
-extend. -/
+extend. That is this predicate's whole definition; no doc should
+describe a further widening toward `Supported` (see the section at
+the foot of this file). -/
 inductive SSZType.BasicSupported : SSZType → Prop
   /-- Single-byte unsigned integer. `serialize` is `empty.push x`;
   the roundtrip closes by `rfl` after one `unfold`. -/
   | uintN8 : SSZType.BasicSupported (.uintN 8)
-  /-- 16-bit little-endian unsigned integer. Closes via the
-  per-byte indexing chain reduced by `rfl` + `bv_decide` on the
-  residual LE identity. -/
+  /-- 16-bit little-endian unsigned integer. Closes through the
+  `Nat`-digit codec bridge in `Proofs/UInt.lean`. -/
   | uintN16 : SSZType.BasicSupported (.uintN 16)
   /-- 32-bit little-endian unsigned integer. -/
   | uintN32 : SSZType.BasicSupported (.uintN 32)
   /-- 64-bit little-endian unsigned integer. -/
   | uintN64 : SSZType.BasicSupported (.uintN 64)
-  /-- 128-bit little-endian unsigned integer. Unlike the narrow
-  widths, the roundtrip closes by `Nat`-digit induction on the
-  `natToLEBytes` / `readNatLE` codec (`Proofs/UIntWide.lean`), with
-  no `bv_decide` axiom. -/
+  /-- 128-bit little-endian unsigned integer. The roundtrip
+  closes by `Nat`-digit induction on the `natToLEBytes` /
+  `readNatLE` codec (`Proofs/UIntWide.lean`). -/
   | uintN128 : SSZType.BasicSupported (.uintN 128)
   /-- 256-bit little-endian unsigned integer (e.g.
   `ExecutionPayload.base_fee_per_gas`). Same codec proof as
@@ -143,11 +137,11 @@ inductive SSZType.BasicSupported : SSZType → Prop
   /-- Fixed-length vector with variable-size element type and
   non-empty length. Decoded via the offset-table path
   (`Proofs/CollectionVar.lean`). The `n > 0` precondition mirrors
-  the spec's zero-length rejection; `maxByteLength (.vector t n) <
-  MAX_LENGTH` is the uint32-overflow guard, same as `containerVar`. -/
+  the spec's zero-length rejection. The uint32-overflow guard is
+  the theorem-level `EncodedFits`; no constructor hypothesis
+  carries it. -/
   | vectorVar : ∀ {t : SSZType} {n : Nat},
                 0 < n → SSZType.BasicSupported t → t.isFixedSize = false →
-                SSZType.maxByteLength (.vector t n) < MAX_LENGTH →
                 SSZType.BasicSupported (.vector t n)
   /-- Variable-length list (up to `cap`) with fixed-size element
   type and positive element size. The `0 < t.fixedByteSize`
@@ -161,12 +155,11 @@ inductive SSZType.BasicSupported : SSZType → Prop
   /-- Variable-length list (up to `cap`) with variable-size element
   type. Decoded via the offset-table path; the empty list is the
   empty buffer. No `0 < t.fixedByteSize` (that pathology is
-  specific to the fixed-element list decoder). The
-  `maxByteLength (.list t cap) < MAX_LENGTH` precondition is the
-  uint32-overflow guard. -/
+  specific to the fixed-element list decoder). The uint32-overflow
+  guard is the theorem-level `EncodedFits`; no constructor
+  hypothesis carries it. -/
   | listVar : ∀ {t : SSZType} {cap : Nat},
               SSZType.BasicSupported t → t.isFixedSize = false →
-              SSZType.maxByteLength (.list t cap) < MAX_LENGTH →
               SSZType.BasicSupported (.list t cap)
   /-- Bit-packed fixed-width vector. The `n > 0` precondition
   mirrors the spec's zero-length rejection, same as `vectorFixed`.
@@ -184,13 +177,12 @@ inductive SSZType.BasicSupported : SSZType → Prop
   /-- Container with at least one variable-size field
   (`allFixedSize fs = false`), decoded via the offset-table path
   (`Proofs/ContainerVar.lean`, `Proofs/Roundtrip.lean`'s
-  `decode_encode_containerVar_aux`). The `maxByteLengthFields fs <
-  MAX_LENGTH` precondition is the uint32-overflow guard every
-  offset placeholder depends on; see the module docstring. -/
+  `decode_encode_containerVar_aux`). The uint32-overflow guard is
+  the theorem-level `EncodedFits`; no constructor hypothesis
+  carries it; see the module docstring. -/
   | containerVar : ∀ {fs : List SSZType},
                    SSZType.BasicSupportedFields fs →
                    SSZType.allFixedSize fs = false →
-                   SSZType.maxByteLengthFields fs < MAX_LENGTH →
                    SSZType.BasicSupported (.container fs)
 
 /-- Pointwise `BasicSupported ∧ isFixedSize` over a field list.
@@ -220,17 +212,12 @@ end
 
 /-! ### The subset relation, machine-checked
 
-The module docstring's claim that `BasicSupported` is a subset of
-`Supported` used to be prose only, and it silently broke when the
-`uintN 128 / 256` constructors landed on `BasicSupported` before
-`Supported` knew about the wide widths. The mutual theorem below
-turns the claim into a build-enforced invariant: each
-`BasicSupported` constructor maps to its `Supported` counterpart,
+The mutual theorem below is the build-enforced form of the subset
+claim: each `BasicSupported` constructor maps to its `Supported`
+counterpart,
 dropping the proof-only preconditions (`0 < n` on `vectorFixed` /
-`vectorVar` / `bitvector`, `0 < t.fixedByteSize` on `listFixed`,
-`maxByteLength s < MAX_LENGTH` on `vectorVar` / `listVar` /
-`containerVar`) that `BasicSupported` carries and `Supported` does
-not. -/
+`vectorVar` / `bitvector`, `0 < t.fixedByteSize` on `listFixed`)
+that `BasicSupported` carries and `Supported` does not. -/
 
 mutual
 
@@ -250,17 +237,17 @@ theorem SSZType.supported_of_basicSupported : ∀ {s : SSZType},
   | _, .bool => .bool
   | _, .vectorFixed _h_pos h_t h_t_fixed =>
       .vectorFixed (SSZType.supported_of_basicSupported h_t) h_t_fixed
-  | _, .vectorVar _h_pos h_t h_var _h_max =>
+  | _, .vectorVar _h_pos h_t h_var =>
       .vectorVar (SSZType.supported_of_basicSupported h_t) h_var
   | _, .listFixed h_t h_t_fixed _h_sz_pos =>
       .listFixed (SSZType.supported_of_basicSupported h_t) h_t_fixed
-  | _, .listVar h_t h_var _h_max =>
+  | _, .listVar h_t h_var =>
       .listVar (SSZType.supported_of_basicSupported h_t) h_var
   | _, .bitvector _h_pos => .bitvector
   | _, .bitlist => .bitlist
   | _, .containerFixed h_fs =>
       .containerFixed (SSZType.supportedFieldsFixed_of_basicSupportedFieldsFixed h_fs)
-  | _, .containerVar h_fs h_not_fixed _h_max =>
+  | _, .containerVar h_fs h_not_fixed =>
       .containerVar (SSZType.supportedFields_of_basicSupportedFields h_fs) h_not_fixed
 
 /-- Field-list companion: pointwise lift of
@@ -297,5 +284,43 @@ example : SSZType.Supported (.bitvector 0) := .bitvector
 exposes the constructor's `0 < 0` precondition, absurd by `omega`. -/
 example : ¬ SSZType.BasicSupported (.bitvector 0) := fun h => by
   cases h; omega
+
+/-! ### The bounded composition
+
+`BasicSupported` composes into the third predicate without an
+induction of its own: `supported_of_basicSupported` lifts the
+witness to `Supported`, and `supportedBounded_of_supported`
+(`Spec/Supported.lean`) lifts it the rest of the way. With this
+composition in place every gating predicate in the library
+translates into every other, and `encode_size_le_max`'s
+`SupportedBounded` hypothesis is reachable from the proof set's own
+`BasicSupported` witnesses. -/
+
+/-! ## What `BasicSupported` is, by definition
+
+The whole difference between `BasicSupported` and `Supported` is
+the two zero-width side conditions: `0 < n` on the vector and bitvector
+arms, and `0 < t.fixedByteSize` on `listFixed`. That is this
+predicate's definition. `BasicSupported` is `Supported` plus
+non-degeneracy, recorded here so no doc describes a further
+widening toward `Supported` that cannot happen: the roundtrip
+claim is *false* for the zero-width shapes (`Spec/Deserialize.lean`
+rejects them, per the `ssz_generic` invalid vectors), so no proof
+can cover them.
+-/
+
+/-- Every `BasicSupported` shape is `SupportedBounded`, by
+composing the two subset theorems. No induction of its own. -/
+theorem SSZType.supportedBounded_of_basicSupported {s : SSZType}
+    (h : SSZType.BasicSupported s) : SSZType.SupportedBounded s :=
+  SSZType.supportedBounded_of_supported (SSZType.supported_of_basicSupported h)
+
+/-- The shape etheorem#61 quotes: a `uintN 64` field next to
+a `list` of `uintN 64` at cap `2 ^ 40`, whose static
+`maxByteLengthFields` exceeds `2 ^ 32` while every actual value
+stays far below it. Closes by constructors: `containerVar` carries
+no schema-level guard. -/
+example : SSZType.BasicSupported (.container [.uintN 64, .list (.uintN 64) (2 ^ 40)]) :=
+  .containerVar (.cons .uintN64 (.cons (.listFixed .uintN64 rfl (by decide)) .nil)) rfl
 
 end SizzLean.Spec

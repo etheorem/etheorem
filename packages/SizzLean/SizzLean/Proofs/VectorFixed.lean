@@ -44,21 +44,42 @@ open SizzLean.Spec
 
 /-- Roundtrip for `.vector t n` with `t` BasicSupported + fixed
 and `n > 0`. Parameterised by the element-type decode/encode
-roundtrip, the dispatch in `Proofs/Roundtrip.lean` provides it
-via mutual recursion on `BasicSupported`. -/
+roundtrip under the value-level `EncodedFits` guard, which the
+dispatch in `Proofs/Roundtrip.lean` provides via mutual recursion
+on `BasicSupported`. Each element's own `EncodedFits` follows from
+the element's slot in the buffer: a fixed element's encoding is
+`fixedByteSize t` wide, and `n > 0` bounds that width by the total
+encoded size, which `h_fits` keeps below `MAX_LENGTH`. -/
 theorem decode_encode_vectorFixed
     (t : SSZType) (n : Nat) (h_pos : 0 < n)
     (h_t : SSZType.BasicSupported t)
     (h_t_fixed : t.isFixedSize = true)
-    (h_decode_encode_t : ∀ y : t.interp,
+    (h_decode_encode_t : ∀ y : t.interp, EncodedFits t y →
       SSZType.deserialize t (SSZType.serialize t y) =
         .ok (y, (SSZType.serialize t y).size))
-    (v : Vector t.interp n) :
+    (v : Vector t.interp n)
+    (h_fits : EncodedFits (.vector t n) v) :
     SSZType.deserialize (.vector t n) (SSZType.serialize (.vector t n) v) =
       .ok (v, (SSZType.serialize (.vector t n) v).size) := by
   -- Step 1: serialize = serializeFixedElems t v.toList (encoder dispatches on h_t_fixed).
   have h_size_t : ∀ y : t.interp, (SSZType.serialize t y).size = t.fixedByteSize :=
     fun y => size_serialize_eq_fixedByteSize h_t h_t_fixed y
+  have h_sz_max : t.fixedByteSize < MAX_LENGTH := by
+    have hML : MAX_LENGTH = 2 ^ 32 := rfl
+    have h_total :
+        (SSZType.serialize (.vector t n) v).size = n * t.fixedByteSize := by
+      rw [size_serialize_eq_fixedByteSize (.vectorFixed h_pos h_t h_t_fixed)
+          (show SSZType.isFixedSize (.vector t n) = true by
+            unfold SSZType.isFixedSize; exact h_t_fixed) v]
+      show SSZType.fixedByteSize (.vector t n) = n * t.fixedByteSize
+      simp only [SSZType.fixedByteSize]
+      rw [Nat.mul_comm]
+    have hle : t.fixedByteSize ≤ n * t.fixedByteSize :=
+      Nat.le_mul_of_pos_left t.fixedByteSize h_pos
+    have := h_fits
+    rw [EncodedFits, h_total, hML] at this
+    rw [hML]
+    omega
   have h_serialize_eq :
       SSZType.serialize (.vector t n) v =
         SSZType.serializeFixedElems t v.toList := by
@@ -75,7 +96,7 @@ theorem decode_encode_vectorFixed
     rw [Nat.mul_comm]
   -- Step 3: helper turns deserializeFixedElems into .ok (v.toList, n * sz).
   have h_inv := deserializeFixedElems_serializeFixedElems t
-                  h_decode_encode_t h_size_t v.toList
+                  h_decode_encode_t h_size_t h_sz_max v.toList
   -- Now compute the full deserialize. Carefully: use h_total_size to keep
   -- the RHS as `(serialize (.vector t n) v).size`, not `(serializeFixedElems ...).size`.
   rw [show (SSZType.serialize (.vector t n) v).size = n * t.fixedByteSize from h_total_size]

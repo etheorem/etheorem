@@ -135,13 +135,13 @@ theorem size_serialize_eq_fixedByteSize :
     -- Reduce `(.vector t n).fixedByteSize` to `t.fixedByteSize * n`, then mul_comm.
     simp only [SSZType.fixedByteSize]
     rw [Nat.mul_comm]
-  | vectorVar _ _ h_var _ =>
+  | vectorVar _ _ h_var =>
     -- `(.vector t n).isFixedSize = t.isFixedSize = false`; absurd.
     simp [SSZType.isFixedSize, h_var] at h_fixed
   | listFixed _ _ =>
     -- `(.list t cap).isFixedSize = false`; `h_fixed : false = true` is absurd.
     simp [SSZType.isFixedSize] at h_fixed
-  | listVar _ _ _ =>
+  | listVar _ _ =>
     -- `(.list t cap).isFixedSize = false`; absurd like `listFixed`.
     simp [SSZType.isFixedSize] at h_fixed
   | bitvector _h_pos =>
@@ -161,7 +161,7 @@ theorem size_serialize_eq_fixedByteSize :
     show (SSZType.serialize (.container fs) vs).size = SSZType.fixedByteSize (.container fs)
     unfold SSZType.serialize
     simp [h_fields.1, h_fields.2, SSZType.fixedByteSize]
-  | containerVar _ h_not_fixed _ =>
+  | containerVar _ h_not_fixed =>
     -- `(.container fs).isFixedSize = allFixedSize fs = false`;
     -- `h_fixed : false = true` is absurd, same shape as `listFixed` / `bitlist`.
     simp [SSZType.isFixedSize, h_not_fixed] at h_fixed

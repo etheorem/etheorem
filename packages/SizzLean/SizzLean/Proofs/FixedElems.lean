@@ -1,5 +1,6 @@
 import SizzLean.Spec.Supported
 import SizzLean.Spec.BasicSupported
+import SizzLean.Spec.MaxByteLength
 import SizzLean.Proofs.SerializeSize
 
 /-!
@@ -89,11 +90,12 @@ serializer, returning the elements in their original order
 discharges the per-step buffer match. -/
 theorem deserializeFixedElems_eq_of_slice
     (t : SSZType)
-    (h_decode_encode_t : ∀ x : t.interp,
+    (h_decode_encode_t : ∀ x : t.interp, EncodedFits t x →
       SSZType.deserialize t (SSZType.serialize t x) =
         .ok (x, (SSZType.serialize t x).size))
     (h_serialize_size : ∀ x : t.interp,
-      (SSZType.serialize t x).size = t.fixedByteSize) :
+      (SSZType.serialize t x).size = t.fixedByteSize)
+    (h_sz_max : t.fixedByteSize < MAX_LENGTH) :
     ∀ (xs : List t.interp) (b : ByteArray) (off : Nat)
       (acc : List t.interp) (accSz : Nat),
       (∀ i, ∀ h : i < xs.length,
@@ -116,7 +118,10 @@ theorem deserializeFixedElems_eq_of_slice
     have h_chunk : b.extract off (off + t.fixedByteSize) = SSZType.serialize t x := by
       have := h_slice 0 (by simp)
       simp at this; exact this
-    simp only [h_chunk, h_decode_encode_t x, h_serialize_size x, ne_eq,
+    have h_fits : EncodedFits t x := by
+      have hML : MAX_LENGTH = 2 ^ 32 := rfl
+      rw [EncodedFits, h_serialize_size x]; omega
+    simp only [h_chunk, h_decode_encode_t x h_fits, h_serialize_size x, ne_eq,
                not_true_eq_false, ite_false]
     -- Recursive call: deserializeFixedElems t xs'.length b (off + sz) sz (x :: acc) (accSz + sz).
     -- Apply IH on xs' with shifted slice hypothesis.
@@ -166,11 +171,12 @@ with `deserializeFixedElems_eq_of_slice` at `b :=
 serializeFixedElems t xs`, `off := 0`, `acc := []`, `accSz := 0`. -/
 theorem deserializeFixedElems_serializeFixedElems
     (t : SSZType)
-    (h_decode_encode_t : ∀ x : t.interp,
+    (h_decode_encode_t : ∀ x : t.interp, EncodedFits t x →
       SSZType.deserialize t (SSZType.serialize t x) =
         .ok (x, (SSZType.serialize t x).size))
     (h_serialize_size : ∀ x : t.interp,
       (SSZType.serialize t x).size = t.fixedByteSize)
+    (h_sz_max : t.fixedByteSize < MAX_LENGTH)
     (xs : List t.interp) :
     SSZType.deserializeFixedElems t xs.length
         (SSZType.serializeFixedElems t xs) 0 t.fixedByteSize [] 0 =
@@ -184,7 +190,7 @@ theorem deserializeFixedElems_serializeFixedElems
     simp [Nat.zero_add]
     exact extract_serializeFixedElems t t.fixedByteSize h_serialize_size xs i h
   have := deserializeFixedElems_eq_of_slice t h_decode_encode_t h_serialize_size
-            xs (SSZType.serializeFixedElems t xs) 0 [] 0 h_extract
+            h_sz_max xs (SSZType.serializeFixedElems t xs) 0 [] 0 h_extract
   simpa using this
 
 end SizzLean.Proofs
