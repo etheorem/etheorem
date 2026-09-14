@@ -29,6 +29,9 @@ its own subpackage under `packages/`:
 - **`LeanHazmatSha256`** / **`LeanHazmatBls`** / **`LeanHazmatKzg`**: the
   FFI crypto family, one package per primitive wrapping a native library
   (OpenSSL / blst / c-kzg-4844) behind `@[extern]`.
+- **`LeanHazmatXmss`**: an experimental FFI wrapper of xmss-reference for
+  RFC 8391 XMSS-SHA2 hash-based signatures, a post-quantum island the
+  monorepo does not import yet. See [`hazmat-docs/`](hazmat-docs/).
 - **`LeanPoseidon`** (+ **`LeanPoseidonProofs`**): a pure-Lean Poseidon2
   hash, a standalone island parallel to `LeanSha256` that nothing in the
   monorepo imports yet, and its mathlib-isolated equivalence proof. See
@@ -128,7 +131,7 @@ and patterns do elsewhere.
 
 ## Layout
 
-Lake monorepo. Nine subpackages under `packages/`, each with its own
+Lake monorepo. Ten subpackages under `packages/`, each with its own
 lakefile; an umbrella `lakefile.toml` at the root coordinates them via
 `[[require]]` blocks. `LeanPoseidonProofs` stays out of the umbrella so
 its mathlib dependency never touches the root build.
@@ -149,6 +152,7 @@ its mathlib dependency never touches the root build.
 │   │   └── lakefile.lean (C target), csrc/{sha256_shim,sha256_batch}.c / docs/ / README.md
 │   ├── LeanHazmatBls/           # FFI BLS12-381 (blst, vendored). lakefile.lean, csrc/bls_shim.c, docs/.
 │   ├── LeanHazmatKzg/           # FFI KZG / EIP-4844 (c-kzg-4844, vendored). lakefile.lean, csrc/kzg_shim.c, docs/.
+│   ├── LeanHazmatXmss/          # FFI RFC 8391 XMSS-SHA2 (xmss-reference, vendored). Experimental PQ island, not imported. lakefile.lean, csrc/xmss_shim.c, docs/.
 │   ├── SizzLean/                # SSZ library + cache + Hasher seam + FFI ≡ spec equivalence axioms.
 │   │   └── lakefile.lean (pkg-config + glob discovery, no C target), SizzLean/{Spec,Repr,Hasher,Cache,Proofs} / docs/ / Tests/
 │   ├── EthCLLib/                # Consensus-spec framework / DSL. lakefile.toml (declarative).

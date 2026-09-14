@@ -37,6 +37,7 @@ LeanHazmatSha256 ───────┘   (SSZ +       (consensus    (Fulu…H
    (FFI SHA-256)            cache)        framework)    fork bodies)
 
 LeanHazmat* (FFI crypto family):  Sha256 · Bls · Kzg   (consumed à la carte)
+LeanHazmatXmss (FFI RFC 8391 XMSS, experimental PQ island, nothing depends on it yet)
 
 LeanPoseidon (pure Poseidon2, standalone island, nothing depends on it yet)
 ```
@@ -65,7 +66,9 @@ independent build target:
   ship today: `LeanHazmatSha256` (OpenSSL), `LeanHazmatBls` (blst),
   `LeanHazmatKzg` (c-kzg-4844), consumed à la carte. The aggregator
   meta-packages (`LeanHazmatConsensus`, …) and execution-layer families
-  are deferred. See [`hazmat-docs/`](hazmat-docs/).
+  are deferred. `LeanHazmatXmss` (xmss-reference, RFC 8391 XMSS-SHA2) is a
+  separate, experimental post-quantum island, not wired to any fork body
+  and imported by nothing. See [`hazmat-docs/`](hazmat-docs/).
 - **[`packages/LeanPoseidon/`](packages/LeanPoseidon/README.md)**:
   pure-Lean **Poseidon2** algebraic hash (BN254 *and* BLS12-381 scalar
   fields, `t = 3`): the permutation, the 2-to-1 `compress`, and a sponge.

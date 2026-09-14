@@ -281,6 +281,7 @@ The other near-misses:
 | RIPEMD-160 / P-256 / modexp → `…Ripemd160` / `…P256` / `…Modexp` | OpenSSL | C | system | RIPEMD-160 via the 3.x legacy provider; P256VERIFY via NIST P-256; modexp via `BN_mod_exp` (BIGNUM). |
 | Keccak-256 → `…Keccak` | XKCP or a small vetted keccak | C | vendored | *Not* SHA3, different padding; OpenSSL SHA3 will not do. |
 | BLAKE2f → `…Blake2f` | hand-rolled RFC 7693 F-compression | C | in-repo | EIP-152 needs the raw rounds-parametrised `F`; too small to justify a dependency. |
+| XMSS-SHA2 → `…Xmss` | `xmss-reference` | C | vendored | RFC 8391 hash-based one-time signatures; the reference implementation. Post-quantum experiment, outside both the consensus and execution surfaces. Upstream describes itself as for cross-validation and experimenting; the KAT cross-checks against xmss-reference's own `test/vectors.c` reference digests (no official RFC 8391 KATs exist). Links OpenSSL for the SHA-2 hash. |
 
 **Rejected backends.** *constantine* (consolidating BLS + KZG + BN254 onto one
 newer library): fewer deps and a smaller TCB, but it trades the per-domain gold
@@ -324,7 +325,9 @@ This is budgeted for upfront in the BN254 stage.
 ## 7. Crypto surface: consensus layer (Phase 0 → Gloas)
 
 Three families → three packages. Keccak-256 and secp256k1/ECDSA are
-execution-layer only and excluded here.
+execution-layer only and excluded here. `LeanHazmatXmss` (RFC 8391 XMSS) is a
+post-quantum experiment and belongs to neither this surface nor the execution
+surface in §8; it is sequenced separately (§5, §14).
 
 | Family → package | Spec usage | Functions |
 | --- | --- | --- |
@@ -484,6 +487,7 @@ until/unless it is promoted to a mirror, at which point it carries a local
     ├── LeanHazmatModexp/               # execution — OpenSSL BIGNUM               [deferred]
     ├── LeanHazmatP256/                 # execution — OpenSSL (P256VERIFY)         [deferred]
     ├── LeanHazmatExecution/            # aggregator — re-exports EL families (toml)[deferred]
+    ├── LeanHazmatXmss/                 # post-quantum — xmss-reference (vendored)  [experimental]
     └── LeanHazmat/                     # top umbrella — Consensus + Execution (toml)
 ```
 
@@ -529,6 +533,7 @@ a per-family mirror is an optional later step, never a phase gate.
 | --- | --- | --- |
 | **1: Consensus core** | `LeanHazmatSha256` (the SHA-256 migration out of SizzLean) → `LeanHazmatBls` → `LeanHazmatKzg` → `LeanHazmatConsensus`. | SHA-256 goes first as the cross-package de-risk: it exercises the whole per-family machinery (a new package, `SizzLean` requiring it, link-arg behaviour, the axiom split, the test split) on the one family that needs *no* vendoring. Vendoring (and the `just hazmat-*-vendor` harness) enters with BLS. KZG depends on BLS (§4). |
 | **2: Execution layer** | Keccak; secp256k1; BN254 (mcl, the C++ toolchain step); BLAKE2f; the OpenSSL EL shims (RIPEMD-160 / modexp / P256); `LeanHazmatExecution`; the top `LeanHazmat` umbrella. | Independent of one another except where a primitive reuses a consensus package (point-eval, EIP-2537, SHA-256 precompile). Each exposes a *raw* primitive; precompile composition (input parse, gas, output hashing) is the consumer's. |
+| **3: Post-quantum (experimental)** | `LeanHazmatXmss` (RFC 8391 XMSS-SHA2, xmss-reference). | Outside both the consensus and execution surfaces: a forward-looking experiment, not wired to any fork body or EVM precompile. Follows the same per-family shape (vendored source, `just hazmat-xmss-vendor`, `native_decide` KAT), and cross-checks against xmss-reference's own `test/vectors.c` reference digests, since RFC 8391 publishes no official KATs. |
 
 The single highest-risk item in Phase 1 is **cross-package link-arg propagation**:
 whether Lake carries a package's `extern_lib`/`moreLinkArgs` to a dependent's

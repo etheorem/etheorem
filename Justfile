@@ -31,17 +31,19 @@ default:
 # Compile every library: the SSZ chain (LeanSha256 → SizzLean → EthCLLib →
 # EthCLSpecs), the LeanHazmat FFI crypto families, and the standalone
 # LeanPoseidon island. The vendored families (LeanHazmatSha256's ISA-L on
-# x86_64 Linux, LeanHazmatBls, LeanHazmatKzg) need their `hazmat-*-vendor`
-# recipes first; the dependencies run them (idempotent) before building.
+# x86_64 Linux, LeanHazmatBls, LeanHazmatKzg, LeanHazmatXmss) need their
+# `hazmat-*-vendor` recipes first; the dependencies run them (idempotent)
+# before building.
 # `lake build EthCLSpecs` pulls in EthCLLib + SizzLean transitively.
 
 # Build all packages
 [group('general')]
-build: hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor
+build: hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor hazmat-xmss-vendor
     lake build LeanSha256
     lake build LeanHazmatSha256
     lake build LeanHazmatBls
     lake build LeanHazmatKzg
+    lake build LeanHazmatXmss
     lake build SizzLean
     lake build EthCLSpecs
     lake build LeanPoseidon
@@ -61,7 +63,7 @@ build-cli:
 
 # Run every local property-test recipe (all packages)
 [group('general')]
-test: leansha256-test hazmat-sha256-test hazmat-bls-test hazmat-kzg-test sizzlean-test poseidon-test
+test: leansha256-test hazmat-sha256-test hazmat-bls-test hazmat-kzg-test hazmat-xmss-test sizzlean-test poseidon-test
 
 # Reject committed `sorry`, `#eval`, `#check`, `#print` in Lean source
 # per CLAUDE.md. `git grep` searches tracked files only and returns 1
@@ -519,7 +521,7 @@ leansha256-bump-patch:
     python3 packages/LeanSha256/scripts/bump_patch.py
 
 # ═════════════════════════════════════════════════════════════════════════
-# LeanHazmat — FFI crypto families (SHA-256 / BLS / KZG)
+# LeanHazmat — FFI crypto families (SHA-256 / BLS / KZG / XMSS)
 #
 # The vendor recipes shallow-clone a pinned tag into a gitignored `vendor/`
 # tree (hazmat-docs/ARCHITECTURE.md §6); the build itself stays offline. Run
@@ -618,6 +620,37 @@ hazmat-kzg-vendor:
 [group('hazmat')]
 hazmat-kzg-test: hazmat-bls-vendor hazmat-kzg-vendor
     lake build LeanHazmatKzgTests
+
+# xmss-reference pin: commit 171ccbd (2021-03-16). xmss-reference has no
+# formal release tags; we pin by commit hash. randombytes.c is intentionally
+# excluded from compilation — keygen goes through the seeded core path, so the
+# shim carries only a weak randombytes stub for the link (csrc/xmss_shim.c).
+
+xmss_ref_commit := "171ccbd26f098542a67eb5d2b128281c80bd71a6"
+
+# Vendor xmss-reference for LeanHazmatXmss — shallow fetch of the pinned commit
+[group('hazmat')]
+hazmat-xmss-vendor:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir="packages/LeanHazmatXmss/vendor/xmss-reference"
+    if [ -d "$dir/.git" ]; then
+      echo "xmss-reference already vendored at $dir ($(git -C "$dir" log -1 --format='%h %s' 2>/dev/null || echo unknown))"
+      exit 0
+    fi
+    rm -rf "$dir"
+    mkdir -p "$dir"
+    # Shallow fetch by SHA: GitHub serves a single-commit pack, no full history.
+    git -C "$dir" init -q
+    git -C "$dir" remote add origin https://github.com/XMSS/xmss-reference
+    git -C "$dir" fetch -q --depth 1 origin "{{ xmss_ref_commit }}"
+    git -C "$dir" checkout -q FETCH_HEAD
+    echo "vendored xmss-reference {{ xmss_ref_commit }} -> $dir"
+
+# XMSS round-trip KAT (keygen → sign → verify) against the xmss-reference FFI shim. Needs `just hazmat-xmss-vendor` first (run via the dependency).
+[group('hazmat')]
+hazmat-xmss-test: hazmat-xmss-vendor
+    lake build LeanHazmatXmssTests
 
 # ═════════════════════════════════════════════════════════════════════════
 # LeanPoseidon — pure-Lean Poseidon2 (BN254 t=3), standalone island

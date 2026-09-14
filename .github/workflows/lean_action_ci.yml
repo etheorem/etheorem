@@ -62,13 +62,13 @@ jobs:
         # See `pyspec` job below for the rationale.
         run: just doctor-native
       - name: Vendor native crypto sources
-        # ISA-L crypto (LeanHazmatSha256, x86_64 Linux), blst (LeanHazmatBls)
-        # and c-kzg-4844 (LeanHazmatKzg) are vendored, not system packages —
-        # fetch them at their pinned tags before the Lean build. Offline
-        # thereafter. `just test` also self-vendors via the `hazmat-*-test`
-        # recipes; this explicit step keeps the fetch visible and ordered
-        # first.
-        run: just hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor
+        # ISA-L crypto (LeanHazmatSha256, x86_64 Linux), blst (LeanHazmatBls),
+        # c-kzg-4844 (LeanHazmatKzg) and xmss-reference (LeanHazmatXmss) are
+        # vendored, not system packages — fetch them at their pinned revs
+        # before the Lean build. Offline thereafter. `just test` also
+        # self-vendors via the `hazmat-*-test` recipes; this explicit step
+        # keeps the fetch visible and ordered first.
+        run: just hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor hazmat-xmss-vendor
       # Pinned to the commit `v1` resolves to as of 2026-05-10. Bump deliberately.
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
         with:
@@ -176,7 +176,7 @@ jobs:
       - name: Verify build-time native deps
         run: just doctor-native
       - name: Vendor native crypto sources
-        run: just hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor
+        run: just hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor hazmat-xmss-vendor
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
         with:
           lake-package-directory: '.'

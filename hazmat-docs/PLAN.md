@@ -465,6 +465,47 @@ rest reuses the established OpenSSL pkg-config path from Stage 1.
 
 ---
 
+## Phase 3: Post-quantum (experimental)
+
+Outside the consensus (Phase 1) and execution (Phase 2) surfaces: a
+forward-looking experiment, not wired to any fork body or EVM precompile.
+
+### Stage 11: XMSS (`LeanHazmatXmss`)
+
+**Goal.** RFC 8391 XMSS-SHA2 hash-based one-time signatures, wrapping
+XMSS/xmss-reference, for cross-validation and experimenting.
+
+**Deliverables.**
+- `packages/LeanHazmatXmss/`: procedural `lakefile.lean` compiling the simple
+  (non-BDS) xmss-reference core + OID wrapper + shim; links OpenSSL libcrypto
+  (`hash.c` calls `SHA256()`), the Stage 1 pkg-config path.
+- Surface (namespace `LeanHazmat.Xmss`): `paramSizes`, `keygenFromSeed`,
+  `sign`, `verify`. Keygen is seeded (a pure function of `(oid, seed)`), so the
+  FFI declarations are sound and the KAT is reproducible.
+- `just hazmat-xmss-vendor` shallow-fetches the pinned commit (no release tags).
+- `LeanHazmatXmssTests`: a `native_decide` KAT.
+
+**Acceptance.** `lake build LeanHazmatXmss` and `lake build
+LeanHazmatXmssTests` green; `just lint` clean.
+
+**Risk.** Low, and isolated: nothing in the monorepo imports it.
+
+**Trust-pin caveat.** RFC 8391 publishes no official KATs, and there is no
+consensus-spec suite. The KAT cross-checks against xmss-reference's own
+`test/vectors.c` reference digests (same fixed seed), which validates the shim
+against upstream's driver but is still xmss-reference validating itself, not an
+independent third party. This is weaker than the consensus families'
+ground-truth vectors and is recorded as such in the package's
+`docs/ARCHITECTURE.md`.
+
+> **Status: shipped (experimental).** `packages/LeanHazmatXmss/` wraps
+> xmss-reference at commit `171ccbd`; the four-primitive surface builds green
+> and the KAT (upstream `test/vectors.c` pk/sig digests, sizes, public key,
+> signature prefix, round-trip, tamper rejection) passes. Not in the umbrella
+> crypto surface; a standalone island.
+
+---
+
 ## Cross-cutting concerns (apply to every stage)
 
 - **Literate by default** (CLAUDE.md). Every new `*.lean` file opens with a
@@ -497,6 +538,7 @@ rest reuses the established OpenSSL pkg-config path from Stage 1.
 | 1: Consensus core | Stages 1–3 (SHA-256 migration, BLS, KZG) | **done**: all three green; Phase 1 exit gate met |
 | 1: Consensus aggregator | Stage 4 (`LeanHazmatConsensus`) | **deferred**: YAGNI; lands with the other aggregators when a consumer needs a whole layer |
 | 2: Execution layer | Stages 5–10 (Keccak, secp256k1, BN254, BLAKE2f, OpenSSL shims, aggregators) | deferred (out of scope: execution protocol) |
+| 3: Post-quantum (experimental) | Stage 11 (`LeanHazmatXmss`) | **shipped**: RFC 8391 XMSS-SHA2 over xmss-reference; standalone, KAT green, not in the umbrella surface |
 
 **Phase 1's families are complete.** The consensus crypto surface ships as
 three à-la-carte packages: `LeanHazmatSha256` (OpenSSL, the SHA-256
@@ -515,3 +557,10 @@ out of scope for this consensus-first effort. The scaffolding it needs
 already exists. The vendoring harness (`just hazmat-*-vendor`), the per-family
 lakefile shape, the KAT-test pattern, and the cross-package blst-sharing
 wiring are all proven by Phase 1.
+
+Phase 3 (`LeanHazmatXmss`) is **shipped but experimental**: RFC 8391 XMSS-SHA2
+over xmss-reference, built on the same per-family shape Phase 1 proved. It
+belongs to neither the consensus nor the execution surface and nothing imports
+it, a standalone island parallel to the crypto stack. Its KAT pins to the
+reference implementation as a regression oracle, since RFC 8391 has no official
+vectors (Stage 11 caveat).
