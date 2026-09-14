@@ -66,11 +66,17 @@ private def timeCombine (n : Nat) : IO (Nat × Nat) := do
   let t1 ← IO.monoNanosNow
   return (t1 - t0, total)
 
-/-- Time `n` hashes through `sha256BatchCombine`, in batches of
+/-- Time about `n` hashes through `sha256BatchCombine`, in batches of
 `width`. Each batch depends on the one before, so the batches stay
-sequential even though the lanes inside one batch do not. -/
-private def timeBatch (n width : Nat) : IO (Nat × Nat) := do
+sequential even though the lanes inside one batch do not.
+
+Returns the nanoseconds, a digest byte, and the hashes performed.
+`n / width` whole batches are what the loop runs, so the count is
+`n` rounded down to a multiple of `width`, and the per-hash figure
+has to divide by that count rather than by `n`. -/
+private def timeBatch (n width : Nat) : IO (Nat × Nat × Nat) := do
   let batches := n / width
+  let done := batches * width
   let mut lefts : Array ByteArray := Array.replicate width (chunk 0x01)
   let rights : Array ByteArray := Array.replicate width (chunk 0x5a)
   let t0 ← IO.monoNanosNow
@@ -78,7 +84,7 @@ private def timeBatch (n width : Nat) : IO (Nat × Nat) := do
     lefts := LeanHazmat.Sha256.sha256BatchCombine lefts rights
   let total := lefts[0]![0]!.toNat
   let t1 ← IO.monoNanosNow
-  return (t1 - t0, total)
+  return (t1 - t0, total, done)
 
 /-- Print one line: the label, the hashes timed, and the cost per
 hash in nanoseconds. -/
@@ -124,6 +130,8 @@ private opaque countedHashImpl (b : ByteArray) : ByteArray
 @[implemented_by countedCombine]
 private opaque countedCombineImpl (l r : ByteArray) : ByteArray
 
+/-- `batchCombine` keeps the class default, the pointwise `combine`,
+so a level handed to the hasher whole still counts once per node. -/
 private instance : Hasher Counting where
   hash    := countedHashImpl
   combine := countedCombineImpl
@@ -149,12 +157,16 @@ def runAll (hashes : Nat) : IO Unit := do
   let (combineNs, d) ← timeCombine hashes
   sink := sink + d
   report "Hasher.combine (OpenSSL EVP, one at a time)" hashes combineNs
-  let mut bestBatchNs := combineNs
+  -- Per-hash costs, in nanoseconds. The batched rows perform a
+  -- different count each, so each divides by its own.
+  let scalarPerHash := combineNs / hashes
+  let mut bestPerHash := scalarPerHash
   for width in [4, 8, 16, 64, 256] do
-    let (batchNs, d) ← timeBatch hashes width
+    let (batchNs, d, done) ← timeBatch hashes width
     sink := sink + d
-    if batchNs < bestBatchNs then bestBatchNs := batchNs
-    report s!"sha256BatchCombine (ISA-L, {width} per call)" hashes batchNs
+    let perHash := batchNs / done
+    if perHash < bestPerHash then bestPerHash := perHash
+    report s!"sha256BatchCombine (ISA-L, {width} per call)" done batchNs
   if sink == 0 then IO.eprintln "warning: the hasher sink is zero"
 
   let (hashCalls, combineCalls) ← countOneRoot
@@ -165,9 +177,9 @@ def runAll (hashes : Nat) : IO Unit := do
   IO.println s!"  Hasher.combine calls\t{combineCalls}"
   -- The two projections below are the point of the subcommand: they
   -- turn a per-hash figure into a share of the root the report times.
-  let spentMs := (calls * (combineNs / hashes)) / 1000000
-  let batchedMs := (calls * (bestBatchNs / hashes)) / 1000000
-  IO.println s!"  time in the hasher, at {combineNs / hashes} ns/hash\t{spentMs} ms"
-  IO.println s!"  the same calls batched, at {bestBatchNs / hashes} ns/hash\t{batchedMs} ms"
+  let spentMs := (calls * scalarPerHash) / 1000000
+  let batchedMs := (calls * bestPerHash) / 1000000
+  IO.println s!"  time in the hasher, at {scalarPerHash} ns/hash\t{spentMs} ms"
+  IO.println s!"  the same calls batched, at {bestPerHash} ns/hash\t{batchedMs} ms"
 
 end SizzLeanBench.CompBench.Hashers

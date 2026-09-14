@@ -7,8 +7,8 @@ import SizzLeanBench.Timer
 /-!
 # `SizzLeanBench.CompBench.Scenarios`: the two comparative scenarios
 
-Both scenarios run the same four phases over the shared
-`BeaconState` fixture, and both report the four phases separately:
+Both scenarios run the same five phases over the shared
+`BeaconState` fixture, and both report the five phases separately:
 
 | Phase | What it times |
 |---|---|
@@ -55,9 +55,15 @@ Both call the same `Box` methods; only the constructor differs.
 * **Pure**: `SSZ.PureBox`, the uncached path. Every root re-runs
   the spec over the whole value.
 
-Both pin the FFI SHA-256 (`Sha256`), so the pair isolates the
-cache and nothing else. The pure-Lean hasher is a separate
-question that `packages/SizzLean/docs/OPTIMISATION.md` covers.
+Both pin the FFI SHA-256 (`Sha256`), but the two walks reach it
+differently. The uncached spec walk hands each Merkle level to
+`Hasher.batchCombine`, which `Hasher Sha256` routes to the ISA-L
+multi-buffer primitive; the cached walk in `Cache/MerkleTree` still
+hashes one node at a time through `Hasher.combine`. So the Pure row
+roots with the cheaper hasher, and the Fast-against-Pure gap
+understates what the cache saves. Batching the cached walk is
+etheorem#3. The pure-Lean hasher is a separate question that
+`packages/SizzLean/docs/OPTIMISATION.md` covers.
 -/
 
 set_option autoImplicit false
@@ -115,11 +121,10 @@ not cover, so the 250 element writes are applied to the array and
 the result is stored in one clause.
 
 Both reads of the box's contents happen once, before the loops
-that use them. A cached box's `view` reassembles the value from
-its cells, so reading it inside a loop would make the loop
-quadratic and the row would measure that instead of the writes.
-Each field is written once here, so hoisting the read changes no
-result. -/
+that use them, so the loop bodies hold only the writes the row
+times. `view` is a stored field of the box and stays current
+through every write, so the hoisting changes no result; each field
+is written once here in any case. -/
 def writeThousand {H : Type} [Hasher H] (box : SSZ.Box H Fulu.BeaconState) :
     SSZ.Box H Fulu.BeaconState := Id.run do
   let validators := box.view.validators

@@ -249,7 +249,7 @@ class JustificationBits(BitVector):
 
 
 class BeaconState(Container):
-    """The Fulu ``BeaconState``, 37 fields at the mainnet preset."""
+    """The Fulu ``BeaconState``, 38 fields at the mainnet preset."""
 
     genesis_time: Uint64
     genesis_validators_root: Bytes32
