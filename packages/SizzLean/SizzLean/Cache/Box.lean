@@ -114,8 +114,10 @@ The user threads the returned box forward; subsequent reads on it
 hit the `rootMemo` directly. The uncached arm recomputes through
 the spec each call and returns `(root, b)` unchanged (no state).
 
-The two flavours are *observationally* equal on the root,
-that's the coherence invariant validated by
+The two flavours agree on the root, the coherence invariant
+proved for a fresh box in `Proofs/Merkle/CachedSSZ.lean`
+(`cachedSSZ_hashTreeRoot_ofValue`, `box_hashTreeRoot_cached`,
+`box_hashTreeRoot_uncached`) and evaluated by
 `Conformance.TreeBackedCoherence`. -/
 def hashTreeRoot {H T : Type} [Hasher H] [SSZRepr T] :
     Box H T → ByteArray × Box H T

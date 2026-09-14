@@ -1,4 +1,3 @@
-import SizzLean.Hasher.Sha256
 import SizzLean.Hasher.Sha256Spec
 import LeanHazmatSha256
 import LeanSha256.Core

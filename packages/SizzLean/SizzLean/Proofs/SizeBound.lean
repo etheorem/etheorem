@@ -56,13 +56,13 @@ theorem encode_size_le_max : ∀ {s : SSZType}, SSZType.BasicSupported s →
   | _, .vectorFixed (t := t) (n := n) h_pos h_t h_t_fixed, v =>
       encode_size_le_max_vectorFixed t n h_pos h_t h_t_fixed
         (fun y => encode_size_le_max h_t y) v
-  | _, .vectorVar (t := t) (n := n) _h_pos h_t h_var _h_max_lt, v =>
+  | _, .vectorVar (t := t) (n := n) _h_pos h_t h_var, v =>
       encode_size_le_max_vectorVar t n h_var
         (fun y => encode_size_le_max h_t y) v
   | _, .listFixed (t := t) (cap := cap) h_t h_t_fixed _h_sz_pos, xs =>
       encode_size_le_max_listFixed t cap h_t h_t_fixed
         (fun y => encode_size_le_max h_t y) xs
-  | _, .listVar (t := t) (cap := cap) h_t h_var _h_max_lt, xs =>
+  | _, .listVar (t := t) (cap := cap) h_t h_var, xs =>
       encode_size_le_max_listVar t cap h_var
         (fun y => encode_size_le_max h_t y) xs
   | _, .bitvector (n := n) _h_pos, bv => encode_size_le_max_bitvector n bv
@@ -83,7 +83,7 @@ theorem encode_size_le_max : ∀ {s : SSZType}, SSZType.BasicSupported s →
       show SSZType.fixedByteSizeFields fs ≤ SSZType.maxByteLength (.container fs)
       show SSZType.fixedByteSizeFields fs ≤ SSZType.maxByteLengthFields fs
       exact encode_size_le_max_containerFields_aux h_fs vs
-  | _, .containerVar (fs := fs) h_fields _h_not_fixed _h_max_lt, vs => by
+  | _, .containerVar (fs := fs) h_fields _h_not_fixed, vs => by
       -- The encoder's `(fix, var)` pair fits within `maxByteLengthFields fs`
       -- by the size walker (`ContainerVar.lean`), given every field's own
       -- size bound, which the field-walker below derives from `h_fields`.
@@ -129,6 +129,19 @@ theorem encode_size_le_max_containerVarFields_aux : ∀ {fs : List SSZType}
   | _, .cons (t := t) (ts := ts) h_t h_ts, vs => by
       unfold FieldsMaxSizeOk
       exact ⟨encode_size_le_max h_t vs.1, encode_size_le_max_containerVarFields_aux h_ts vs.2⟩
+
+/-- `EncodedFits` holds whenever the schema bound itself is below
+`MAX_LENGTH`. The schema-level guard, recovered as a one-liner over
+the central theorem: for a schema that small, every value fits. -/
+theorem encodedFits_of_maxByteLength_lt {s : SSZType}
+    (h : SSZType.BasicSupported s) (x : s.interp)
+    (hml : SSZType.maxByteLength s < MAX_LENGTH) :
+    EncodedFits s x := by
+  have h1 := encode_size_le_max h x
+  unfold EncodedFits
+  have hML : MAX_LENGTH = 2 ^ 32 := rfl
+  rw [hML] at hml ⊢
+  omega
 
 end
 

@@ -92,8 +92,8 @@ them):
 ## Trust
 
 The lemmas use at most the standard kernel axioms. The uint32 bridge
-from `ContainerVar` carries one `bv_decide` certificate, the same
-trust class as the narrow `uintN` arms in `Proofs/UInt.lean`.
+from `ContainerVar` routes through the `Nat`-digit codec, so no SAT
+certificate enters anywhere in this file.
 -/
 
 set_option autoImplicit false
@@ -375,21 +375,22 @@ mutual block. Uses `extract_split` at each cons, same as the
 variable-field branch of `decode_encode_containerVar_aux`. -/
 theorem deserializeVarElems_collOffsetsOf
     (t : SSZType)
-    (h_decode_encode_t : ∀ y : t.interp,
+    (h_decode_encode_t : ∀ y : t.interp, EncodedFits t y →
       SSZType.deserialize t (SSZType.serialize t y) =
         .ok (y, (SSZType.serialize t y).size)) :
     ∀ (xs : List t.interp) (varOff : Nat) (b : ByteArray) (bufEnd : Nat),
+    bufEnd < MAX_LENGTH →
     varOff ≤ bufEnd → bufEnd ≤ b.size →
     b.extract varOff bufEnd = (SSZType.serializeVarElemsAux t xs varOff).2 →
     SSZType.deserializeVarElems t (collOffsetsOf t xs varOff) bufEnd b = .ok xs := by
   intro xs
   induction xs with
   | nil =>
-    intro varOff b bufEnd _ _ _
+    intro varOff b bufEnd _ _ _ _
     unfold collOffsetsOf SSZType.deserializeVarElems
     rfl
   | cons x xs ih =>
-    intro varOff b bufEnd hVarOffLeEnd hEndLeSize hBodyRegion
+    intro varOff b bufEnd hMax hVarOffLeEnd hEndLeSize hBodyRegion
     have hBodySerialize :
         (SSZType.serializeVarElemsAux t (x :: xs) varOff).2 =
           SSZType.serialize t x ++
@@ -429,7 +430,14 @@ theorem deserializeVarElems_collOffsetsOf
           varOff + (SSZType.serialize t x).size :=
       collOffsetsOf_head_getD t xs (varOff + (SSZType.serialize t x).size) bufEnd
         hBufEndEq
-    have hElementRoundtrip := h_decode_encode_t x
+    -- The head element's own `EncodedFits`: its encoding ends inside
+    -- the body region, which `hMax : bufEnd < MAX_LENGTH` bounds.
+    have h_x_fits : EncodedFits t x := by
+      have hML : MAX_LENGTH = 2 ^ 32 := rfl
+      rw [EncodedFits, hML]
+      omega
+      -- `hMax : bufEnd < MAX_LENGTH` and `hHeadEndLe` bound the encoding.
+    have hElementRoundtrip := h_decode_encode_t x h_x_fits
 
     unfold collOffsetsOf
     unfold SSZType.deserializeVarElems
@@ -441,7 +449,7 @@ theorem deserializeVarElems_collOffsetsOf
     simp only [hSliceGuard]
     rw [hHeadBody, hElementRoundtrip]
     rw [ih (varOff + (SSZType.serialize t x).size) b bufEnd
-      (by omega) hEndLeSize hTailBody]
+      hMax (by omega) hEndLeSize hTailBody]
     rfl
 
 /-- **Shared decode step** for both variable-element collections.
@@ -461,7 +469,7 @@ starts at `varOff`. `h_bound` is the uint32-overflow guard each
 caller derives from its own `maxByteLength` specialization. -/
 theorem decode_serializeVarElemsAux
     (t : SSZType)
-    (h_decode_encode_t : ∀ y : t.interp,
+    (h_decode_encode_t : ∀ y : t.interp, EncodedFits t y →
       SSZType.deserialize t (SSZType.serialize t y) =
         .ok (y, (SSZType.serialize t y).size))
     (xs : List t.interp) (varOff : Nat) (b : ByteArray)
@@ -491,9 +499,12 @@ theorem decode_serializeVarElemsAux
       (SSZType.serializeVarElemsAux t xs varOff).2 := by
     rw [h_bsize, h_ser]
     exact ByteArray.extract_append_eq_right h_offs_size.symm (by rw [h_offs_size])
+  have hML : MAX_LENGTH = 2 ^ 32 := rfl
+  have h_bmax : b.size < MAX_LENGTH := by
+    rw [hML]; omega
   exact ⟨h_bsize, h_offs,
     deserializeVarElems_collOffsetsOf t h_decode_encode_t xs varOff b b.size
-      (by omega) (by omega) h_body⟩
+      h_bmax (by omega) (by omega) h_body⟩
 
 /-- Size bound for `.vector t n` with `t` variable-size. Unfolds
 the encoder's `offs ++ bodies` and cites
@@ -552,13 +563,11 @@ for `containerVar`). -/
 theorem decode_encode_vectorVar
     (t : SSZType) (n : Nat) (h_pos : 0 < n)
     (h_var : t.isFixedSize = false)
-    (h_max_lt : SSZType.maxByteLength (.vector t n) < MAX_LENGTH)
-    (h_decode_encode_t : ∀ y : t.interp,
+    (h_decode_encode_t : ∀ y : t.interp, EncodedFits t y →
       SSZType.deserialize t (SSZType.serialize t y) =
         .ok (y, (SSZType.serialize t y).size))
-    (h_max_t : ∀ y : t.interp,
-      (SSZType.serialize t y).size ≤ SSZType.maxByteLength t)
-    (v : Vector t.interp n) :
+    (v : Vector t.interp n)
+    (h_fits : EncodedFits (.vector t n) v) :
     SSZType.deserialize (.vector t n) (SSZType.serialize (.vector t n) v) =
       .ok (v, (SSZType.serialize (.vector t n) v).size) := by
   have h_len : v.toList.length = n := by rw [Vector.length_toList]
@@ -578,20 +587,19 @@ theorem decode_encode_vectorVar
       (SSZType.serializeVarElemsAux t v.toList varOff).1.size = varOff := by
     rw [size_serializeVarElemsAux_offs, h_len]
 
-  -- Bound every running offset by the UInt32 range.
-  have h_bound :=
-    size_serializeVarElemsAux_le_maxByteLength_vector t n v.toList varOff
-      h_var h_len h_max_t
+  -- The value-level guard bounds every running offset by the UInt32
+  -- range: the total encoded size is the offset table plus the bodies,
+  -- and `h_fits` keeps that below `MAX_LENGTH`.
   have hMaxLength : MAX_LENGTH = 2 ^ 32 := rfl
   have h_uint32_bound :
       varOff + (SSZType.serializeVarElemsAux t v.toList varOff).2.size < 2 ^ 32 := by
-    have h_le :
-        (SSZType.serializeVarElemsAux t v.toList varOff).1.size +
-          (SSZType.serializeVarElemsAux t v.toList varOff).2.size ≤
-          SSZType.maxByteLength (.vector t n) := h_bound
-    rw [h_offs_size] at h_le
-    -- `hMaxLength` unfolds `MAX_LENGTH` so `omega` can join `h_le` with `h_max_lt`.
-    omega
+    have h_bsize :
+        (SSZType.serialize (.vector t n) v).size =
+          varOff + (SSZType.serializeVarElemsAux t v.toList varOff).2.size := by
+      rw [h_serialize_eq, ByteArray.size_append, h_offs_size]
+    have := h_fits
+    rw [EncodedFits, h_bsize, hMaxLength] at this
+    exact this
 
   -- Recover the total size, the encoder's offsets, and the element list.
   obtain ⟨h_bsize, h_offs, h_elems⟩ :=
@@ -628,13 +636,11 @@ does. -/
 theorem decode_encode_listVar
     (t : SSZType) (cap : Nat)
     (h_var : t.isFixedSize = false)
-    (h_max_lt : SSZType.maxByteLength (.list t cap) < MAX_LENGTH)
-    (h_decode_encode_t : ∀ y : t.interp,
+    (h_decode_encode_t : ∀ y : t.interp, EncodedFits t y →
       SSZType.deserialize t (SSZType.serialize t y) =
         .ok (y, (SSZType.serialize t y).size))
-    (h_max_t : ∀ y : t.interp,
-      (SSZType.serialize t y).size ≤ SSZType.maxByteLength t)
-    (xs : { ys : Array t.interp // ys.size ≤ cap }) :
+    (xs : { ys : Array t.interp // ys.size ≤ cap })
+    (h_fits : EncodedFits (.list t cap) xs) :
     SSZType.deserialize (.list t cap) (SSZType.serialize (.list t cap) xs) =
       .ok (xs, (SSZType.serialize (.list t cap) xs).size) := by
   have h_list_len : xs.val.toList.length = xs.val.size := by simp
@@ -684,20 +690,18 @@ theorem decode_encode_listVar
         (SSZType.serializeVarElemsAux t xs.val.toList varOff).1.size = varOff :=
       size_serializeVarElemsAux_offs t xs.val.toList varOff
 
-    -- Bound every running offset by the UInt32 range.
-    have h_bound :=
-      size_serializeVarElemsAux_le_maxByteLength_list t cap xs.val.toList varOff
-        h_var h_len_le h_max_t
+    -- The value-level guard bounds every running offset by the UInt32
+    -- range, same as the vector arm.
     have hMaxLength : MAX_LENGTH = 2 ^ 32 := rfl
     have h_uint32_bound :
         varOff + (SSZType.serializeVarElemsAux t xs.val.toList varOff).2.size < 2 ^ 32 := by
-      have h_le :
-          (SSZType.serializeVarElemsAux t xs.val.toList varOff).1.size +
-            (SSZType.serializeVarElemsAux t xs.val.toList varOff).2.size ≤
-            SSZType.maxByteLength (.list t cap) := h_bound
-      rw [h_offs_size] at h_le
-      -- `hMaxLength` unfolds `MAX_LENGTH` so `omega` can join `h_le` with `h_max_lt`.
-      omega
+      have h_bsize :
+          (SSZType.serialize (.list t cap) xs).size =
+            varOff + (SSZType.serializeVarElemsAux t xs.val.toList varOff).2.size := by
+        rw [h_serialize_eq, ByteArray.size_append, h_offs_size]
+      have := h_fits
+      rw [EncodedFits, h_bsize, hMaxLength] at this
+      exact this
 
     -- Recover the element count from the first encoded offset.
     have h_first :=

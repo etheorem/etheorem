@@ -80,10 +80,9 @@ actually correct on the pyspec consensus-specs test vectors.
 Proving a wrong implementation right is wasted work; we earn the
 right to invest in the universal proofs by passing the tests first.
 
-The cost of this reordering: until Stage 18 lands, `SSZ.roundtrip`
-is gated by `BasicSupported r.shape` and widens one constructor at
-a time. User types whose shape isn't yet covered still get total
-serialize/deserialize and pass conformance. They just don't yet
+The cost of this reordering: `SSZ.roundtrip` is gated by
+`BasicSupported r.shape`. User types whose shape isn't covered get
+total serialize/deserialize and pass conformance. They just don't
 get the verified-by-inheritance corollary.
 
 ### Stage 1: `Hasher` abstraction (class only, no instances)
@@ -246,7 +245,7 @@ spec functions in Phase 3.
 
 The cached Merkle-tree work (`Tree`, `TreeBacked`) that originally
 lived here as the "production-primitives track" has moved to
-Phase 4. It's a *performance* layer, asserted equivalent to the
+Phase 4. It's a *performance* layer, proved equivalent to the
 spec rather than required for correctness, so it earns its
 keep after empirical conformance validates the spec it sits on
 top of. Same "validate first, then build" principle the proof
@@ -275,9 +274,9 @@ deriving handler will recurse on.
 **Acceptance.** A hand-written `instance : SSZRepr Foo` for a small
 example structure compiles, and an `example : deserialize (serialize x) = .ok x`
 closes via `SSZ.roundtrip`. The roundtrip corollary is gated by
-`BasicSupported r.shape` until Stage 18 widens it, so the example
+`BasicSupported r.shape`, so the example
 structure must have a `BasicSupported`-compatible shape (e.g. a
-container of `Bool`s at first). The gate loosens automatically as
+container of `Bool`s). The gate grows automatically as
 Stage 18's proof set grows.
 
 **Risk.** Low to medium. The iso laws (`to_from`, `from_to`) for the
@@ -424,7 +423,7 @@ Performance and hardening work, all gated on Phase 3 having
 established that the spec functions match the consensus-spec test
 vectors. Stages 12–14 (the cached Merkle-tree layer) lived in
 Phase 2 originally; they moved here for the same reason Stage 18
-lives in Phase 5. They're a *performance* layer asserted equivalent
+lives in Phase 5. They're a *performance* layer proved equivalent
 to the spec, so we validate the spec first and then optimise on
 top of a known-correct library. Stage 13 in particular is the
 single highest-risk implementation file in the project (ARCHITECTURE.md
@@ -827,10 +826,13 @@ trim the library's user-facing surface to a small audited set.
   `SizzLeanTests/ReprExamples.lean` so test structures no longer
   ride along on every `import SizzLean`.
 
-* **Other `private` annotations.** `PathStep` and `elabSszUpdate`
-  in `Cache/Update.lean` (the macro's internal AST and term
-  elaborator, registered via the `@[term_elab]` attribute, so
-  `private` doesn't break the macro's wiring). The grep showed
+* **Other `private` annotations.** The elaborator's `PathStep`
+  and `elabSszUpdate` live in `Cache/Update.lean` (the macro's
+  internal AST and term elaborator, registered via the
+  `@[term_elab]` attribute, so `private` doesn't break the macro's
+  wiring). The spec-side `PathStep` of
+  `Spec/GeneralizedIndex.lean` is public: theorems under
+  `Proofs/` name it. The grep showed
   most "internal-looking" Spec helpers (`zero32`, `padToChunk`,
   `chunkDepth`, `bitsToNatLE`, `ZERO_HASHES_SPEC`, …) are used
   cross-file by the Merkle-tree code or by LeanEthCS, so
@@ -1270,7 +1272,7 @@ core. Same Stage 15 follow-up as the scalar axioms.
 `TreeBacked` values via a global `HashMap (Hash32) Node`,
 complementing `ZERO_HASHES`'s zero-subtree deduplication.
 
-**Deliverables (shipped).**
+**Deliverables.**
 - `SizzLean/Cache/MerkleTree/HashCons.lean`: the bounded cache
   (wipe-all eviction, default capacity 4096, hit / miss counters),
   `Node.consCell` / `Node.mkPair` in `BaseIO`, and the pure
@@ -1345,10 +1347,12 @@ plus a fresh `WidthsAndLists` coverage net.
 
 ## Phase 5: Complete formal verification
 
-The closing phase. Widens the three central theorems from the
-Stage 5–6 first cut (`BasicSupported`) to full coverage over
-`SSZType.Supported` / `SupportedBounded`, landing the publishable
+The closing phase. Closes the three central theorems for every
+`BasicSupported` constructor, landing the publishable
 non-malleability artefact described in ARCHITECTURE.md §4.
+`BasicSupported` is `Supported` plus the two zero-width side
+conditions, so the coverage is the codec's own, minus the shapes
+whose roundtrip is false.
 
 Positioned last on purpose. Phase 3 conformance establishes the
 implementation is correct against the spec; Phase 4 ships the
@@ -1357,7 +1361,7 @@ research-grade Lean proof effort. Proving a wrong implementation
 correct is the most expensive failure mode in this project, so
 conformance pays the empirical-validation tax first.
 
-### Stage 18: Complete the three central theorems: **in progress**
+### Stage 18: Complete the three central theorems: **complete**
 
 **Goal.** Close `decode_encode`, `serialize_injective`, and
 `encode_size_le_max` for every constructor admitted by
@@ -1366,12 +1370,12 @@ conformance pays the empirical-validation tax first.
 admit zero-width schemas that the decoder rejects, so they cannot
 gate a universal roundtrip statement as currently defined.
 
-**Current coverage (shipped).**
+**Current coverage.**
 
 | Arm | Status | Proof file |
 |---|---|---|
 | `.uintN 8 / 16 / 32 / 64` | ✅ | `Proofs/UInt.lean` |
-| `.uintN 128 / 256` | ✅ | `Proofs/UIntWide.lean` (`Nat`-digit codec inverse; no `bv_decide` axiom) |
+| `.uintN 128 / 256` | ✅ | `Proofs/UIntWide.lean` (`Nat`-digit codec inverse) |
 | `.bool` | ✅ | `Proofs/Bool.lean` |
 | `.vector t n` (general, `0 < n`, fixed-size `t`) | ✅ | `Proofs/VectorFixed.lean` |
 | `.vector t n` (general, `0 < n`, variable-size `t`) | ✅ | `Proofs/CollectionVar.lean` |
@@ -1388,35 +1392,34 @@ Shared prerequisite shipped: `Proofs/SerializeSize.lean`, the
 prerequisite the composite arms recurse through and is reused by
 the three theorems' composite-arm dispatch.
 
-**Remaining deliverables.**
-- Relax the `containerVar` schema-level offset bound to a
-  value-level condition (etheorem#61). This admits real
-  `BeaconState` / `BeaconBlockBody` values whose static max exceeds
-  `2^32`.
-- Apply the equivalent value-level relaxation to `vectorVar` and
-  `listVar` (etheorem#77).
-- Keep `SSZ.roundtrip` gated by `BasicSupported r.shape`. Any
-  future gate change must preserve the decoder's schema-validity
-  conditions.
+**Close-out.**
+- The `containerVar` offset bound is a value-level condition
+  (etheorem#61), so real `BeaconState` / `BeaconBlockBody` values
+  whose static max exceeds `2^32` are covered.
+- `vectorVar` and `listVar` carry the equivalent value-level
+  relaxation (etheorem#77).
+- `SSZ.roundtrip` stays gated by `BasicSupported r.shape` plus the
+  value-level `EncodedFits` bound. Any future gate change must
+  preserve the decoder's schema-validity conditions.
 
-Shipped since the original scoping:
+Bit shapes:
 `packages/SizzLean/SizzLean/Proofs/BitPack.lean` carries the
 `packBitsLE` / `unpackBitsLEAux` inverse *and* both bit-shape
-arms (the separate BitVector.lean / BitList.lean files proved
-unnecessary; the arm closures are short once the inverse and its
+arms (the arm closures are short once the inverse and its
 finite `decide` companions are in place). The per-byte identities
 (inverse, high-bit vanishing, `msbPos` delimiter recovery) close
 by kernel `decide` over the ≤ 2⁸ chunk shapes; the byte-stream
 lift mirrors `packBitsLE`'s own 8-cons match structure so the
 structural checker accepts the recursion.
 
-Mixed-field containers landed via a new `BasicSupportedFields`
+Mixed-field containers use a `BasicSupportedFields`
 pointwise predicate (every field `BasicSupported`, no
 `isFixedSize` constraint) plus a `containerVar` constructor on
-`BasicSupported` / `Supported` / `SupportedBounded`, each carrying
-`allFixedSize fs = false` and (on `BasicSupported`)
-`maxByteLengthFields fs < MAX_LENGTH`, the uint32-offset-overflow
-guard. The roundtrip walker
+`BasicSupported` / `Supported` / `SupportedBounded`, carrying
+`allFixedSize fs = false`; the uint32-offset-overflow guard is the
+theorem-level `EncodedFits`; no constructor hypothesis carries
+it. The
+roundtrip walker
 (`decode_encode_containerVar_aux`, mutual with `decode_encode` in
 `Proofs/Roundtrip.lean` for the same structural-recursion reason
 as `containerFixed`) threads two `ByteArray.extract` invariants
@@ -1427,37 +1430,36 @@ output, decomposed at each cons step via `Proofs/ContainerVar.lean`'s
 the same change, so the two predicates cannot drift apart on this
 constructor either.
 
-Variable-element `.vector` / `.list` landed via `vectorVar` /
+Variable-element `.vector` / `.list` use `vectorVar` /
 `listVar` constructors on the same three predicates, carrying
 `t.isFixedSize = false` and (on `BasicSupported`) `0 < n` for
-vectors plus `maxByteLength s < MAX_LENGTH` for both. The
+vectors; the overflow guard is the theorem-level `EncodedFits` for
+both. The
 walkers live in `Proofs/CollectionVar.lean` and take the element
 roundtrip as a parameter, so they sit outside the mutual block
 (homogeneous: one `t`, induction on the element list). The
-`supported_of_basicSupported` subset theorem grew matching arms
-in the same change.
+`supported_of_basicSupported` subset theorem has matching arms.
 
 **Current acceptance.** All three theorems cover every current
 `BasicSupported` constructor with no `sorry` and no
 `native_decide` on the proof path. This includes every
 codec-implemented composite constructor under its explicit proof
-guards. `decode_encode` has exactly four
-`_native.bv_decide.ax_*` axioms. Three come from the multi-byte
-`uintN` arms. The fourth comes from the uint32 offset codec bridge
-shared by `containerVar`, `vectorVar`, and `listVar`. The bit arms
-add none. `encode_size_le_max` adds no nonstandard axioms. The
-`bv_decide` certificates are a documented change from the original
-Stage 18 target. Hand-written `BitVec` proofs could remove them.
+guards. The byte identities route through `Nat`-digit codec
+proofs, three for the multi-byte `uintN`
+arms and one for the uint32 offset codec bridge shared by
+`containerVar`, `vectorVar`, and `listVar`. `decode_encode`
+cites only the three standard axioms, and
+`encode_size_le_max` adds no nonstandard axioms.
 
-**Risk.** Lowered from the original "highest in project" since
-the composite arms (general `vector` / `list` / `container`,
-fixed-size and variable-size) and both bit arms are now shipped
-without the predicted research-grade difficulty. The mutual-block
-trick, first on `(BasicSupported, BasicSupportedFieldsFixed)` and
-then reused on `(BasicSupported, BasicSupportedFields)` for
-`containerVar`, resolved the closure-termination issue cleanly
-both times. Remaining risk concentrates in the value-level
-size-guard relaxations (etheorem#61 and etheorem#77).
+**Risk.** The composite arms (general `vector` / `list` /
+`container`, fixed-size and variable-size) and both bit arms
+closed without the predicted research-grade difficulty. The
+mutual-block trick, on
+`(BasicSupported, BasicSupportedFieldsFixed)` and reused on
+`(BasicSupported, BasicSupportedFields)` for
+`containerVar`, resolved the closure-termination issue both
+times. The value-level size-guard relaxations are
+etheorem#61 and etheorem#77.
 
 **Notes.** Each arm's arrival extends `SSZ.roundtrip`
 automatically; downstream Eth-types instances pick up the wider
@@ -1467,15 +1469,45 @@ the per-constructor table users see.
 
 ### Beyond the three central theorems
 
-Stage 18 covers serialization. Merkleization has no proved
-result yet.
+Stage 18 covers serialization. Within the pure-path scope, the
+merkleization groundwork, the `hash-tree-root` row, the
+generalized index, and branch completeness are proved, in the
+parts below. The cached tree beyond the fresh box is the execution
+path, checked by the evaluation gates; the equivalence theorem is
+future work, and the landed coherence and builder theorems are its
+seed. Row-level status lives in
+[`PROOF_LEDGER.md`](PROOF_LEDGER.md).
 
-**Merkleization agreement.** Prove `Node.merkleRootWithCache`
-(`Cache/MerkleTree/Merkle.lean`) equal to `hashTreeRoot`
-(`Spec/HashTreeRoot.lean`). Stage 12 checks that the two agree on
-three fixtures by `native_decide`. There is no proof. Without
-one, a theorem about the cached tree's root says nothing about
-the root the spec computes.
+**Coherence and the cached builders.**
+`Proofs/Merkle/Coherent.lean` proves the coherence invariant's
+four facts, and the builder agreement
+(`ofShape_root` in `Proofs/Merkle/OfShape.lean`, lifted to the
+fresh box by `cachedSSZ_hashTreeRoot_ofValue` in
+`Proofs/Merkle/CachedSSZ.lean`) holds for every `BasicSupported`
+arm. The update statements are out of scope with the equivalence
+theorem; the evaluation gates in `SizzLeanTests` carry them.
+
+**Path bits and openings.**
+`Proofs/Merkle/Gindex.lean` proves the `gindexBits` round trips,
+the `2 ^ depth + index` path spelling, and the per-step
+decomposition `gindexBits_append_step`.
+`Spec/GeneralizedIndex.lean` defines
+`get_generalized_index` (`PathStep`, `SSZType.generalizedIndex`)
+with the container-field, list-element, and length-step lemmas,
+and `gindexBits_generalizedIndex` ties a returned index's bit path
+to the steps. `Proofs/Merkle/Opening.lean`
+defines the pure-path opening `naiveOpeningAt` and `foldOpening`
+and proves the opening of a real tree path folds back to the
+tree's root, with the mix-in-length variant.
+
+**Merkleization agreement.** The cached builder's root
+is proved equal to the spec merkleization for every `BasicSupported`
+arm: `ofShape_root` (`Proofs/Merkle/OfShape.lean`) states the
+per-shape agreement, and `cachedSSZ_hashTreeRoot_ofValue`
+(`Proofs/Merkle/CachedSSZ.lean`) lifts it to the fresh box's
+`hashTreeRoot`. `Proofs/Merkle/Naive.lean` carries
+`merkleize_eq_naiveRoot`, the statement that ties the spec's
+breadth-first fold to the depth-first `naiveRoot`.
 
 The spec merkleizer folds breadth-first with
 level-indexed zero padding while the cached builder splits
@@ -1485,37 +1517,38 @@ depths and runs the same `zeroHashRec` recurrence past them. The
 two towers therefore agree at every depth, including the
 cap-derived depths (`list`, `bitlist`) that reach furthest.
 
-Dafny left `hash()` uninterpreted and could only
-differential-test this property. `LeanSha256` and the named
-FFI-equivalence axioms under `Hasher/` make a proof against a
-concrete hash possible.
+**Zero tower, padding and chunking.** The zero tower is
+proved in `Proofs/Merkle/Zero.lean` (`cache_zeroHashAt_eq_spec`,
+`spec_zeroHashAt_eq_naiveRoot`), and the chunk bookkeeping in
+`Proofs/Merkle/Chunk.lean` (`length_chunkify`, `size_mem_chunkify`,
+`size_padToChunk`, `size_natToChunk`, `le_two_pow_chunkDepth`,
+`chunkDepth_le`). Padding and chunking are the structural
+difference between the two merkleizers, so these are the steps the
+agreement proof walks through.
 
-**Zero tower, padding and chunking.** `zeroHashes`
-(`Cache/MerkleTree/Zero.lean`), `padToChunk`, `chunkDepth` and
-`mixInLength` (`Spec/HashTreeRoot.lean`). Padding and chunking
-are the structural difference between the two merkleizers, so
-these are steps inside the agreement proof. Dafny proved the equivalent
-chunk-count and length bookkeeping, which is the one part of
-merkleization it did reach.
-
-**Generalized-index library.** Decompose `getGeneralizedIndex`
-and `getSubtreeIndex` (`Spec/GeneralizedIndex.lean`) into the
-`(depth, index)` pair the merkleization theorems take. Every
-Merkle-proof consumer needs it. Light-client header branches
-address leaves by generalized index rather than raw tree
-position. The blob and data-column sidecar inclusion proofs do
-the same.
+**Generalized-index library.**
+`Spec/GeneralizedIndex.lean` models `get_generalized_index`
+directly over `SSZType` and a `PathStep` list, one definition
+instead of a `getGeneralizedIndex` / `getSubtreeIndex` pair, with
+the `(depth, index)` decomposition readable off the definition
+equations. Light-client header branches address leaves by
+generalized index rather than raw tree position. The blob and
+data-column sidecar inclusion proofs do the same.
 `kzgCommitmentsInclusionProof`
 (`EthCLSpecs/Fulu/Blocks.lean:63`) is the sidecar case, not
 modeled yet. Deposits are the exception. Their index is a plain
 tree position.
 
-**Branch completeness.** Prove that `isValidMerkleBranch`
-(`EthCLLib/Spec/SigningRoot.lean:68`) accepts the honest opening
-of a SizzLean tree. Dafny never implemented the function, so
-there is no prior statement to reuse. `processDeposit` needs a
-mix-in-length variant. Stated general over depth, that variant
-also serves the sidecar proofs above.
+**Branch completeness.** Proved end to end within scope:
+`Proofs/Merkle/Opening.lean` emits the sibling roots along a
+pure-path tree's path (`naiveOpeningAt`) and folds a real tree
+path back to the tree's root (`foldOpening_openingAt`), with the
+mix-in-length variant `processDeposit` needs. EthCLLib proves
+`routeRight_eq_testBit`, ties `branchFold` to `foldOpening`
+(`branchFold_eq_foldOpening`), and concludes that
+`isValidMerkleBranch` accepts an honest opening
+(`isValidMerkleBranch_of_foldOpening`,
+`EthCLLib/Proofs/MerkleBranch.lean`).
 
 Two gaps separate that from the shipped call sites. Each call site
 checks a branch taken off the wire.
@@ -1554,4 +1587,4 @@ normalized form modeled first.
 | 2: User surface | Stages 7–9 | complete |
 | 3: Application + empirical validation | Stages 10–11, **11.1** | **complete.** `ssz_generic`: **1865/1865 cases pass**. `ssz_static` (minimal preset, full `--all` sweep): **38991/38991 cases pass** across all seven mainline forks (`phase0`, `altair`, `bellatrix`, `capella`, `deneb`, `electra`, `fulu`), zero failures, zero skipped. Conformance pinned at consensus-spec-tests **v1.6.0-beta.0** in `scripts/run_conformance.py` so the Fulu / Gloas containers track the post-v1.5.0 main-branch spec (Fulu BeaconState is now its own struct with `proposer_lookahead`; Gloas BeaconState is its own struct with the nine EIP-7732 ePBS fields). Preset duplication is eliminated by the `ssz_struct_for_presets` macro (`packages/LeanEthCS/LeanEthCS/PresetStruct.lean`); preset-sensitive containers are written once with `@@CONST` / `@%TypeName` placeholders and emitted twice (`.Minimal` / `.Mainnet`). Mainnet validated at `--limit 2` across all forks (1641/1641); mainnet `--all` is a `workflow_dispatch` button. CLI dispatch uses the `<preset>/<fork>:<type>` identifier scheme (legacy `<fork>:<type>` defaults to minimal). **CI integration**: `.github/workflows/lean_action_ci.yml` runs the conformance script at `--limit 1` on every push/PR. **Stage 11.1, harness modernisation:** `eth_ssz_vector_runner batch` mode (one process spawn per sweep, tab-separated request/response over stdin/stdout, ~70× speedup on `ssz_generic`); `tqdm` progress bar; per-fork explicit `Inherited.lean` re-exports in LeanEthCS killing the inheritance heuristic in the dispatcher; Tests/ rename to package-prefixed `SizzLeanTests/` / `LeanSha256Tests/` for umbrella-build namespace disambiguation. EIP-7441 (Whisk) deferred per scope; EIP-7732 (ePBS) Gloas containers tracked (BeaconState shape implemented; supporting types `Builder`, `BuilderPendingPayment`, `BuilderPendingWithdrawal`, and `ExecutionPayloadBid` ship in `Forks/Gloas/`). |
 | 4: Production primitives + deferred hardening | Stages 12, 13, 14a–d, **14e**, 15, 17a–e (Stage 16 dropped, see note) | **Cache backbone + ergonomic surface + Sha256Spec green: 14a–e + 15 in.** Stage 12: three hand-built trees match `Spec.SSZType.hashTreeRoot` via `native_decide`. Stage 13: 200-case randomized property test (`gindexBits` on `List Bool` so the Nimbus Feb-2025 gindex bug class is unrepresentable). Stage 14a: `TreeBacked` scaffold. Stage 14b: `Node.ofShape` produces interior-populated trees byte-identical to the spec; coherence verified on 8 composite types. Stage 14c: cached `setField` operations; property tests pass for 100 + 30 mutations. Stage 14d: `Node.setManyAt` batched walker (100-case property test on disjoint distinct paths) plus `sszUpdate t with f := v, g.h := w, vec[i] := x` term-elaborated syntax (50-case flat-multi + 20-case nested-path + 30-case vector-index + 30-case alias-coverage gates). Index syntax handles both `Vector` and `SSZList` with composite element types; the list path emits the `[false]` mix-in-length prefix automatically. `TreeBacked H T` / `CachedSSZ H T` pin the hasher in the *type*, picked once at `TreeBacked.ofValue` time, then inferred by every downstream `sszUpdate` / `hashTreeRootCached` call; mixing hashers within one cached value is a type error. Two exploratory pieces were tried and removed: a `derive_tree_setters` macro and `TreeBacked/Container.lean` (hand-written setters obsoleted by `sszUpdate`'s index syntax). **Stage 14e, `SSZ.Box` union + curated public surface:** closed inductive over the two cache flavours with four smart constructors (`SSZ.FastBox` / `SSZ.PureBox` Sha256-pinned, `SSZ.CachedBox` / `SSZ.UncachedBox` hasher-explicit); `sszUpdate` extended with two-arm box dispatch; read-side `sszGet b a.b[i].c` macro mirrors `sszUpdate`'s path syntax and expands to `b.view.a.b[i].c` so user code never types `.view`; `CachedSSZ.ofValue` / `.hashTreeRoot` user-facing aliases. Stage 15: pure-Lean `Sha256Spec` ships as a kernel-reducible Lean SHA-256 implementation, validated empirically against the FFI on 185 cases (5 NIST + 100 random combine + 80 random hash). **Stage 17a (pending overlay):** `pending : Std.TreeMap Nat (PendingWrite T)` where `PendingWrite T = T → Option Node` is a closure that reads the current `view` at commit time and returns `none` for view-side no-op writes (OOB index updates). Cross-statement batching is automatic and free; closure-based read-from-view keeps overlapping parent/child writes mutually consistent. **Stage 17b:** batched SHA-256 FFI primitive (`sha256BatchCombine`) shipped with named axiom and equivalence tests; the inner loop in `csrc/sha256_batch.c` is Intel ISA-L's multi-buffer engine on x86_64 Linux (17b.1) and the OpenSSL loop elsewhere, behind one FFI surface. **Stage 17c:** bounded-LRU hash-consing primitive (`Node.mkPair`) shipped opt-in; default cached path bypasses it. **Stage 17d:** `@[specialize]` on the three `SSZ.serialize/deserialize/hashTreeRoot` surfaces. **Stage 17e:** `Node.commitAndHash` fuses commit + root walk into a single spine walk; `Node.ofShape`'s builders (`ofLeaves`, `ofSubtrees`, `mixInLength`) pre-fill `(some root)` cache slots at construction so `merkleRootWithCache` on a fresh subtree short-circuits in O(1) at the top. **Bench (`packages/SizzLean/SizzLeanBench/`, run via `just sizzlean-bench`):** seven scenarios S1–S7 across small (`Validator` / `ValidatorSet16`), large (`ValidatorSet256`), and realistic (`SizzLeanBench.Fulu.BeaconState`, mainnet preset, ~1024 validators) fixtures. Headline rows: **S6 BlockProcessingLarge** ~2.4× cached vs pure; **S7 FuluStateTransition** ~2.0× cached vs pure. S7's Fulu types live in `SizzLeanBench/Fulu.lean` as a bench-local reference copy so `SizzLeanBench` doesn't need a LeanEthCS dependency (`LeanEthCS` already depends on `SizzLean`, so the reverse would close a cycle). |
-| 5: Complete formal verification | Stage 18 | **in progress.** All current `BasicSupported` constructors have `decode_encode`, `serialize_injective`, and `encode_size_le_max` arms. This includes fixed-element and variable-element collections, bit shapes, and fixed-field or mixed-field containers. `decode_encode` has four `bv_decide` certificates. `encode_size_le_max` has no nonstandard axioms. Value-level offset-guard widening remains for `containerVar` (etheorem#61) and `vectorVar` / `listVar` (etheorem#77). See the Stage 18 section and the README proof table. |
+| 5: Complete formal verification | Stage 18 | Stage 18 is **complete**, and Phase 5's extension beyond the three central theorems is **complete within scope**, per the ledger. All current `BasicSupported` constructors have `decode_encode`, `serialize_injective`, and `encode_size_le_max` arms, including fixed-element and variable-element collections, bit shapes, and fixed-field or mixed-field containers. The value-level offset guards (etheorem#61, etheorem#77) sit on the theorems, and the byte identities route through the `Nat`-digit codec. Within scope, the merkleization groundwork, the `hash-tree-root` row, the generalized index, and branch completeness are proved, and the EthCLLib bridge accepts an honest opening. Out of scope: the cached tree is the execution path, checked by the evaluation gates and the `ssz_static` sweep; its landed theorems are the seed of a future equivalence theorem, and the update-path rows are out of scope with it. See the Stage 18 section, the *Beyond the three central theorems* subsection, the ledger's scope paragraph, and the README proof table. |

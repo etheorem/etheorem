@@ -16,18 +16,20 @@ on every `pair` it crosses. If a `pair`'s cache slot is already
 reused unchanged.
 
 This is the production fast path. The spec's
-`SSZType.hashTreeRoot` remains the verified reference;
-`merkleRootWithCache` is asserted equivalent and property-tested
-against it.
+`SSZType.hashTreeRoot` remains the reference; for a coherent tree
+the cached walk returns the structural root, which agrees with the
+spec root by the builder theorems in `Proofs/Merkle/Build.lean` and
+`Proofs/Merkle/OfShape.lean` (`merkleRootWithCache_fst`,
+`ofShape_root`).
 
 ## The trust story
 
-There is no in-kernel proof that
-`merkleRootWithCache = hashTreeRoot`. The pyspec vectors
-validate `hashTreeRoot` against 38991 upstream cases; this file's
-acceptance section re-grounds the equivalence empirically by
-running both paths on the same small trees and asserting byte
-equality. A future `@[csimp]`-style proof of exact equivalence
+For a coherent tree, `(n.merkleRootWithCache H).1 = n.root H` is
+proved (`Proofs/Merkle/Coherent.lean`), and a fresh `ofShape` build
+is coherent with the spec root (`Proofs/Merkle/OfShape.lean`). The
+pyspec vectors validate `hashTreeRoot` against 38991 upstream
+cases; this file's acceptance section also runs both paths
+on the same small trees and asserts byte equality. A future `@[csimp]`-style proof of exact equivalence
 would close the loop entirely, out of scope for the cache layer
 itself; the interesting verification work is on the spec side.
 -/

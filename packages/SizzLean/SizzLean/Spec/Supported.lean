@@ -34,11 +34,12 @@ that names exactly the constructors with real implementations.
   `encode_size_le_max` in `Proofs/SizeBound.lean`, where uncapped
   collections have no sensible finite upper bound. Separation
   rather than reshaping `maxByteLength` to `Option Nat` keeps the
-  three theorem statements parallel. There is a machine-checked
-  `BasicSupported → Supported` theorem in
-  `Spec/BasicSupported.lean`; nothing yet links `SupportedBounded`
-  to either, so its constructors are maintained by hand in
-  parallel with `Supported`.
+  three theorem statements parallel. The pair is machine-checked
+  equivalent: `supportedBounded_of_supported` and
+  `supported_of_supportedBounded` at the foot of this file, plus
+  the `BasicSupported → SupportedBounded` composition
+  `supportedBounded_of_basicSupported` in
+  `Spec/BasicSupported.lean`.
 
 ## Why `Prop`, not `Bool`
 
@@ -150,7 +151,13 @@ phrase their hypothesis as "bounded", and the indirection costs
 nothing. The split also leaves room: any uncapped form (e.g. a
 `progressiveList` arm for EIP-7916) would add a constructor to
 `Supported` but not to `SupportedBounded`, so the predicates would
-diverge without renaming the existing theorems. -/
+diverge without renaming the existing theorems.
+
+`supportedBounded_of_supported` and its converse
+`supported_of_supportedBounded` (at the foot of this file) turn the
+"extensionally equal" claim into a kernel-checked fact, so the
+constructors are under the same drift guard as the
+`BasicSupported → Supported` link. -/
 inductive SSZType.SupportedBounded : SSZType → Prop
   | uintN8         : SSZType.SupportedBounded (.uintN 8)
   | uintN16        : SSZType.SupportedBounded (.uintN 16)
@@ -208,6 +215,126 @@ inductive SSZType.SupportedBoundedFields : List SSZType → Prop
            SSZType.SupportedBounded t →
            SSZType.SupportedBoundedFields ts →
            SSZType.SupportedBoundedFields (t :: ts)
+end
+
+/-! ### The equivalence, machine-checked
+
+The module docstring's claim that `SupportedBounded` is
+extensionally equal to `Supported` is a build-enforced invariant in
+both directions: each `Supported` constructor maps to its
+`SupportedBounded` counterpart and back, so adding a constructor to
+one predicate without the other breaks the build, the same drift
+guard `supported_of_basicSupported` gives the `BasicSupported`
+pair. Every arm is one constructor application: the two predicates
+carry the same fifteen constructors with the same hypotheses, only
+the witness types differ. -/
+
+mutual
+
+/-- Every `Supported` shape is `SupportedBounded`: the bounded
+predicate holds every shape the codec implements today. Structural
+recursion over the `(Supported, SupportedFieldsFixed,
+SupportedFields)` inductive triple, one arm per constructor. -/
+theorem SSZType.supportedBounded_of_supported : ∀ {s : SSZType},
+    SSZType.Supported s → SSZType.SupportedBounded s
+  | _, .uintN8 => .uintN8
+  | _, .uintN16 => .uintN16
+  | _, .uintN32 => .uintN32
+  | _, .uintN64 => .uintN64
+  | _, .uintN128 => .uintN128
+  | _, .uintN256 => .uintN256
+  | _, .bool => .bool
+  | _, .bitvector => .bitvector
+  | _, .bitlist => .bitlist
+  | _, .vectorFixed h_t h_t_fixed =>
+      .vectorFixed (SSZType.supportedBounded_of_supported h_t) h_t_fixed
+  | _, .vectorVar h_t h_var =>
+      .vectorVar (SSZType.supportedBounded_of_supported h_t) h_var
+  | _, .listFixed h_t h_t_fixed =>
+      .listFixed (SSZType.supportedBounded_of_supported h_t) h_t_fixed
+  | _, .listVar h_t h_var =>
+      .listVar (SSZType.supportedBounded_of_supported h_t) h_var
+  | _, .containerFixed h_fs =>
+      .containerFixed (SSZType.supportedBoundedFieldsFixed_of_supportedFieldsFixed h_fs)
+  | _, .containerVar h_fs h_not_fixed =>
+      .containerVar (SSZType.supportedBoundedFields_of_supportedFields h_fs) h_not_fixed
+
+/-- Field-list companion: pointwise lift of
+`supportedBounded_of_supported` over an all-fixed container's field
+list. -/
+theorem SSZType.supportedBoundedFieldsFixed_of_supportedFieldsFixed :
+    ∀ {fs : List SSZType},
+    SSZType.SupportedFieldsFixed fs → SSZType.SupportedBoundedFieldsFixed fs
+  | _, .nil => .nil
+  | _, .cons h_t h_t_fixed h_ts =>
+      .cons (SSZType.supportedBounded_of_supported h_t) h_t_fixed
+        (SSZType.supportedBoundedFieldsFixed_of_supportedFieldsFixed h_ts)
+
+/-- Field-list companion for `containerVar`: pointwise lift of
+`supportedBounded_of_supported` over a mixed container's field list,
+with no `isFixedSize` witness to carry. -/
+theorem SSZType.supportedBoundedFields_of_supportedFields :
+    ∀ {fs : List SSZType},
+    SSZType.SupportedFields fs → SSZType.SupportedBoundedFields fs
+  | _, .nil => .nil
+  | _, .cons h_t h_ts =>
+      .cons (SSZType.supportedBounded_of_supported h_t)
+        (SSZType.supportedBoundedFields_of_supportedFields h_ts)
+
+end
+
+mutual
+
+/-- The converse: every `SupportedBounded` shape is `Supported`.
+Structural recursion over the `(SupportedBounded,
+SupportedBoundedFieldsFixed, SupportedBoundedFields)` inductive
+triple, one arm per constructor. -/
+theorem SSZType.supported_of_supportedBounded : ∀ {s : SSZType},
+    SSZType.SupportedBounded s → SSZType.Supported s
+  | _, .uintN8 => .uintN8
+  | _, .uintN16 => .uintN16
+  | _, .uintN32 => .uintN32
+  | _, .uintN64 => .uintN64
+  | _, .uintN128 => .uintN128
+  | _, .uintN256 => .uintN256
+  | _, .bool => .bool
+  | _, .bitvector => .bitvector
+  | _, .bitlist => .bitlist
+  | _, .vectorFixed h_t h_t_fixed =>
+      .vectorFixed (SSZType.supported_of_supportedBounded h_t) h_t_fixed
+  | _, .vectorVar h_t h_var =>
+      .vectorVar (SSZType.supported_of_supportedBounded h_t) h_var
+  | _, .listFixed h_t h_t_fixed =>
+      .listFixed (SSZType.supported_of_supportedBounded h_t) h_t_fixed
+  | _, .listVar h_t h_var =>
+      .listVar (SSZType.supported_of_supportedBounded h_t) h_var
+  | _, .containerFixed h_fs =>
+      .containerFixed (SSZType.supportedFieldsFixed_of_supportedBoundedFieldsFixed h_fs)
+  | _, .containerVar h_fs h_not_fixed =>
+      .containerVar (SSZType.supportedFields_of_supportedBoundedFields h_fs) h_not_fixed
+
+/-- Field-list companion: pointwise lift of
+`supported_of_supportedBounded` over an all-fixed container's field
+list. -/
+theorem SSZType.supportedFieldsFixed_of_supportedBoundedFieldsFixed :
+    ∀ {fs : List SSZType},
+    SSZType.SupportedBoundedFieldsFixed fs → SSZType.SupportedFieldsFixed fs
+  | _, .nil => .nil
+  | _, .cons h_t h_t_fixed h_ts =>
+      .cons (SSZType.supported_of_supportedBounded h_t) h_t_fixed
+        (SSZType.supportedFieldsFixed_of_supportedBoundedFieldsFixed h_ts)
+
+/-- Field-list companion for `containerVar`: pointwise lift of
+`supported_of_supportedBounded` over a mixed container's field list,
+with no `isFixedSize` witness to carry. -/
+theorem SSZType.supportedFields_of_supportedBoundedFields :
+    ∀ {fs : List SSZType},
+    SSZType.SupportedBoundedFields fs → SSZType.SupportedFields fs
+  | _, .nil => .nil
+  | _, .cons h_t h_ts =>
+      .cons (SSZType.supported_of_supportedBounded h_t)
+        (SSZType.supportedFields_of_supportedBoundedFields h_ts)
+
 end
 
 end SizzLean.Spec
