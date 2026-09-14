@@ -49,6 +49,35 @@ class Hasher (H : Type) where
   two-block primitive without a redundant copy at every interior
   tree node. -/
   combine : ByteArray → ByteArray → ByteArray
+  /-- One whole Merkle level: digest `lefts[i] ++ rights[i]` for every
+  `i`, and return the results in the same order.
+
+  The default is the pointwise `combine`, so an instance that has
+  nothing better to offer needs to say nothing. An instance backed by a
+  multi-buffer engine overrides it, and then a level costs one call
+  instead of one call per node. `Hasher Sha256` does exactly that.
+
+  The law the override must keep is the next field, `batchCombine_eq`.
+  The class carries it, so every instance discharges it and the proof
+  layer may rewrite a batched level back to the pointwise one. -/
+  batchCombine : Array ByteArray → Array ByteArray → Array ByteArray :=
+    Array.zipWith combine
+  /-- `batchCombine` agrees with `zipWith combine` on every input.
+
+  The default proof is `rfl`, which closes the goal for an instance
+  that keeps the default `batchCombine`. An instance that overrides
+  the method owes a real proof here. `Hasher Sha256` pays it from the
+  two named axioms in `Hasher/Sha256Equiv.lean` and
+  `Hasher/Sha256Batch.lean`, so the override adds no trust the FFI
+  hasher did not already carry.
+
+  Stating the law as a field rather than a docstring is what lets
+  `Proofs/Merkle/Naive.lean` prove `combineLayerAt = pairLayer` for a
+  generic `[Hasher H]`: `Spec.combineLayerAt` calls `batchCombine`,
+  and without this field there is no equation to rewrite with. -/
+  batchCombine_eq : ∀ ls rs : Array ByteArray,
+      batchCombine ls rs = Array.zipWith combine ls rs := by
+    intro _ _; rfl
 
 /-- Typecheck-only acceptance: `[Hasher H]` is usable downstream
 even before any instance is defined. The class opens as an instance

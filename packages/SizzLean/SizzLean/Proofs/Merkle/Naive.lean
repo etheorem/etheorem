@@ -70,49 +70,110 @@ open SizzLean.Spec
 
 /-- One pairing layer at level `lvl`, the natural (non-tail)
 spelling: adjacent chunks combine pairwise, an odd tail pairs with
-`zeroHashAt H lvl`. `Spec.combineLayerAt` computes the same list in
-accumulator form; `combineLayerAt_eq_pairLayer` says so. -/
+`zeroHashAt H lvl`. `Spec.combineLayerAt` computes the same list by
+index, in one batched hasher call; `combineLayerAt_eq_pairLayer`
+says so. -/
 def pairLayer (H : Type) [Hasher H] (lvl : Nat) :
     List ByteArray → List ByteArray
   | []           => []
   | [x]          => [Hasher.combine (H := H) x (zeroHashAt H lvl)]
   | x :: y :: rs => Hasher.combine (H := H) x y :: pairLayer H lvl rs
 
-/-- The accumulator form computes the same layer. Length induction,
-because `pairLayer`'s recursion skips one cons. -/
-theorem combineLayerAtAux_eq_pairLayer (H : Type) [Hasher H] (lvl : Nat) :
+/-! ### The batched level equals the plain pairing layer
+
+`Spec.combineLayerAt` does not recurse. It builds two
+index-addressed arrays, `lefts` and `rights`, and hands both to
+`Hasher.batchCombine`. Three steps bring that back to `pairLayer`:
+`Hasher.batchCombine_eq` (the class field every instance pays) turns
+the batched call into `Array.zipWith combine`; `zipWith_ofFn` fuses
+the two `Array.ofFn`s and the `zipWith` into one `List.ofFn`; and
+`ofFn_node_eq_pairLayer` runs the induction. -/
+
+/-- Zipping two `List.ofFn`s of the same length is one `List.ofFn`
+of the zipped function. Plain induction on the length. -/
+theorem zipWith_ofFn {α : Type} (c : α → α → α) :
+    ∀ (n : Nat) (f g : Fin n → α),
+      List.zipWith c (List.ofFn f) (List.ofFn g)
+        = List.ofFn (fun i => c (f i) (g i)) := by
+  intro n
+  induction n with
+  | zero => intro f g; simp
+  | succ n ih => intro f g; simp [List.ofFn_succ, ih]
+
+/-- The level read off by index equals the level read off by
+recursion.
+
+`m` is the node count, `(cs.length + 1) / 2`. It is taken as its own
+argument with an equation rather than written inline, so the
+two-element step can `subst` it into the `k + 1` shape that
+`List.ofFn_succ` needs. The outer `n` is a length bound, because
+`pairLayer` skips two conses per step and structural recursion on
+`cs` alone will not do.
+
+In the two-element step, node `i + 1` of `x :: y :: rs` reads
+positions `2i + 2` and `2i + 3`, which are positions `2i` and
+`2i + 1` of `rs`. A `congrArg` under `List.ofFn` reduces the step to
+that index shift, and the induction hypothesis takes the rest. -/
+theorem ofFn_node_eq_pairLayer (H : Type) [Hasher H] (lvl : Nat) :
     ∀ (n : Nat) (cs : List ByteArray), cs.length ≤ n →
-      ∀ acc : List ByteArray,
-        Spec.combineLayerAtAux H lvl cs acc = acc.reverse ++ pairLayer H lvl cs := by
+      ∀ (m : Nat), m = (cs.length + 1) / 2 →
+        List.ofFn (fun i : Fin m =>
+          Hasher.combine (H := H) cs[2 * i.val]!
+            (if 2 * i.val + 1 < cs.length then cs[2 * i.val + 1]!
+             else zeroHashAt H lvl))
+          = pairLayer H lvl cs := by
   intro n
   induction n with
   | zero =>
-      intro cs hcs acc
+      intro cs hcs m hm
       match cs, hcs with
-      | [], _ => simp [Spec.combineLayerAtAux, pairLayer]
+      | [], _ => subst hm; simp [pairLayer]
   | succ n ih =>
-      intro cs hcs acc
-      cases cs with
-      | nil => simp [Spec.combineLayerAtAux, pairLayer]
-      | cons x cs' =>
-          cases cs' with
-          | nil =>
-              simp only [Spec.combineLayerAtAux, pairLayer, List.reverse_cons]
-          | cons y rs =>
-              have hrs : rs.length ≤ n := by
-                simp only [List.length_cons] at hcs; omega
-              rw [Spec.combineLayerAtAux,
-                  ih rs hrs (Hasher.combine (H := H) x y :: acc)]
-              simp [pairLayer, List.reverse_cons, List.append_assoc]
+      intro cs hcs m hm
+      match cs with
+      | []  => subst hm; simp [pairLayer]
+      | [x] => subst hm; simp [pairLayer]
+      | x :: y :: rs =>
+          have hrs : rs.length ≤ n := by
+            simp only [List.length_cons] at hcs; omega
+          have hm' : m = (rs.length + 1) / 2 + 1 := by
+            simp only [List.length_cons] at hm; omega
+          subst hm'
+          rw [List.ofFn_succ]
+          simp only [pairLayer]
+          -- `congr 1` splits the cons and closes the head on its own:
+          -- node 0 reads positions 0 and 1, which are `x` and `y`.
+          congr 1
+          rw [← ih rs hrs ((rs.length + 1) / 2) rfl]
+          refine congrArg List.ofFn ?_
+          funext i
+          have h2 : 2 * (i.succ : Fin _).val = 2 * i.val + 2 := by
+            simp [Fin.succ]; omega
+          simp only [h2, List.length_cons]
+          -- `congr 1` closes the left sibling on its own. What is
+          -- left is the right sibling's bound, which shifts with the
+          -- index: position `2i + 3` of `x :: y :: rs` is position
+          -- `2i + 1` of `rs`, so the two `if` conditions decide alike.
+          congr 1
+          have hcond : (2 * i.val + 2 + 1 < rs.length + 1 + 1)
+                         = (2 * i.val + 1 < rs.length) := by
+            simp; omega
+          simp [hcond]
 
-/-- `Spec.combineLayerAt` is the plain pairing layer. -/
+/-- `Spec.combineLayerAt` is the plain pairing layer.
+
+The batching is discharged first. `Hasher.batchCombine_eq` is the
+class field every instance pays, so the rewrite assumes nothing
+about `H`. -/
 theorem combineLayerAt_eq_pairLayer (H : Type) [Hasher H] (lvl : Nat)
     (cs : List ByteArray) :
     Spec.combineLayerAt H lvl cs = pairLayer H lvl cs := by
-  show Spec.combineLayerAtAux H lvl cs [] = _
-  have hgen := combineLayerAtAux_eq_pairLayer H lvl cs.length cs (Nat.le_refl _) []
-  rw [hgen]
-  simp
+  rw [Spec.combineLayerAt, Hasher.batchCombine_eq]
+  rw [Array.toList_zipWith, Array.toList_ofFn, Array.toList_ofFn,
+      zipWith_ofFn]
+  simpa using
+    ofFn_node_eq_pairLayer H lvl cs.length cs (Nat.le_refl _)
+      ((cs.length + 1) / 2) (by simp)
 
 /-- One pairing step halves the length, rounding up. Length
 induction, because `pairLayer`'s own recursion skips one cons. -/

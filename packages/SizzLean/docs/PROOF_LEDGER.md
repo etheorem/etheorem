@@ -115,7 +115,15 @@ stated, so the rule is recorded once:
 The package declares three named axioms, `sha256Hash_eq_spec`
 (`Hasher/Sha256Equiv.lean:102-102`), `sha256Combine_eq_spec`
 (`Hasher/Sha256Equiv.lean:109-109`), and `sha256BatchCombine_eq_spec`
-(`Hasher/Sha256Batch.lean:61-62`). No theorem in the proof set uses them. Six
+(`Hasher/Sha256Batch.lean:61-62`). No theorem in the proof set uses them: every
+row is stated over a generic `[Hasher H]`, and the axioms enter only through
+the `Hasher Sha256` instance. That instance now cites two of them. Its
+`batchCombine_eq` field, the class law that the batched level agrees with the
+pointwise `combine`, is proved from `sha256BatchCombine_eq_spec` and
+`sha256Combine_eq_spec` (`Hasher/Sha256.lean`, `batchCombine_eq_of_axioms`).
+Instantiating any merkleization row at `Sha256` therefore picks the two axioms
+up; a theorem stated at `Sha256` should say so, as the CLAUDE.md rule on the
+FFI-equivalence axioms requires. Six
 `@[implemented_by]` swaps sit on the cached path: `zeroHashes`
 (`Cache/MerkleTree/Zero.lean:126-127`), `zeroHashAt`
 (`Cache/MerkleTree/Zero.lean:151-152`), `HashCons.statsSnapshot`

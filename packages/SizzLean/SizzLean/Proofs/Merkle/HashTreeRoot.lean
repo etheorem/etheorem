@@ -1,6 +1,7 @@
 import SizzLean.Spec.HashTreeRoot
 import SizzLean.Spec.Supported
 import SizzLean.Proofs.Merkle.Chunk
+import SizzLean.Proofs.Merkle.Naive
 import SizzLean.Proofs.SerializeSize
 import SizzLean.Proofs.Injective
 
@@ -369,10 +370,23 @@ theorem hashTreeRoot_container_congr (H : Type) [Hasher H] (fs : List SSZType)
 combines the body root with the length chunk, which is `merkleize`
 of the two-chunk list at depth one. This is the spelling the
 `cached-tree` builder agreement reads the list arms' outer level
-through. -/
+through.
+
+`Spec.merkleize` reaches the hasher through `Hasher.batchCombine`,
+which no instance has to compute, so the two sides are not
+definitionally equal. `combineLayerAt_eq_pairLayer` is the step that
+brings the batched level back to the pointwise `combine` this
+theorem needs, and it holds for every instance through the class
+field `Hasher.batchCombine_eq`. -/
 theorem mixInLength_eq_merkleize (H : Type) [Hasher H] (root : ByteArray) (count : Nat) :
     Spec.mixInLength H root count =
-      Spec.merkleize H [root, Spec.natToChunk count] 1 := rfl
+      Spec.merkleize H [root, Spec.natToChunk count] 1 := by
+  -- `rw [Spec.merkleizeAt]` picks the two-or-more-chunks arm, so it
+  -- leaves the two side goals that rule the shorter arms out.
+  rw [Spec.merkleize, Spec.merkleizeAt, combineLayerAt_eq_pairLayer]
+  · rfl
+  · simp
+  · simp
 
 /-- The single-chunk tree at depth zero is the chunk itself: the
 depth-zero base case the basic arms and `merkleize_eq_naiveRoot`

@@ -210,39 +210,48 @@ sibling of a lone-tail interior node is an all-zero subtree of
 depth `k`, whose root is `ZERO_HASHES[k]`, *not* `zero32` (which
 would be wrong for `k > 0`).
 
-The implementation is the tail-recursive accumulator pattern
-(`combineLayerAtAux` builds the result in reverse, the outer
-`combineLayerAt` reverses once at the end). The natural cons-and-
-recurse spelling
+The level is handed to the hasher whole, through
+`Hasher.batchCombine`, rather than one node at a time. An instance
+with a multi-buffer engine behind it then hashes the level in
+parallel SIMD lanes; one without keeps the pointwise `combine`,
+which is the class's default. The two answer alike, which is the
+law `Hasher.batchCombine`'s docstring states.
+
+Splitting the level into two parallel arrays is what the call
+wants. `lefts[i]` and `rights[i]` are the `i`-th node's two
+children, so the odd tail's phantom sibling lands in `rights` like
+any other. Both arrays are built by index rather than by
+consing, which keeps the stack flat: a `ByteVector[BYTES_PER_BLOB]`
+(131072 bytes ⇒ 4096 chunks) opens with a 2048-node level, and the
+cons-and-recurse spelling
 
 ```
 | x :: y :: rs => Hasher.combine (H := H) x y :: combineLayerAt H lvl rs
 ```
 
-is non-tail-recursive, the recursive call is the *tail* of a
-`cons`, so each step pushes a fresh stack frame holding `combine x
-y` until the list bottoms out. For a `ByteVector[BYTES_PER_BLOB]`
-(131072 bytes ⇒ 4096 chunks) the first layer descends 2048 frames
-deep, which overflows the OS-default 8 MB stack on `BlobSidecar`
-mainnet vectors. The accumulator form keeps the stack flat at the
-cost of one extra `List.reverse` per layer, `O(n)` time, `O(1)`
-stack. -/
-def combineLayerAtAux (H : Type) [Hasher H] (lvl : Nat) :
-    List ByteArray → List ByteArray → List ByteArray
-  | [],           acc => acc.reverse
-  | [x],          acc =>
-      (Hasher.combine (H := H) x (zeroHashAt H lvl) :: acc).reverse
-  | x :: y :: rs, acc =>
-      combineLayerAtAux H lvl rs (Hasher.combine (H := H) x y :: acc)
+descends one frame per node, overflowing the OS-default 8 MB stack
+on `BlobSidecar` mainnet vectors.
 
-/-- One step of `merkleizeAt`: the chunk list combined into the
-next level's list, an odd tail paired with the depth-`lvl` zero
-hash. The public wrapper over the accumulator form above; the
-proof-side layer equation is
-`Proofs/Merkle/Naive.lean`'s `combineLayerAt_eq_pairLayer`. -/
+The proof-side layer equation is `Proofs/Merkle/Naive.lean`'s
+`combineLayerAt_eq_pairLayer`. It rewrites the batched call away
+through `Hasher.batchCombine_eq`, the class field that carries the
+law, so the equation holds for every instance and not only for the
+pointwise default. -/
 def combineLayerAt (H : Type) [Hasher H] (lvl : Nat)
     (cs : List ByteArray) : List ByteArray :=
-  combineLayerAtAux H lvl cs []
+  let src : Array ByteArray := cs.toArray
+  -- Nodes at the level above: every pair, plus one for a lone tail.
+  let nodes : Nat := (src.size + 1) / 2
+  let lefts : Array ByteArray :=
+    Array.ofFn (n := nodes) fun i => src[2 * i.val]!
+  -- A lone tail's right sibling is an all-zero subtree of depth
+  -- `lvl`, whose root is `ZERO_HASHES[lvl]`, not `zero32`. At level
+  -- `k > 0` the two differ, and using `zero32` would be wrong.
+  let rights : Array ByteArray :=
+    Array.ofFn (n := nodes) fun i =>
+      let j := 2 * i.val + 1
+      if j < src.size then src[j]! else zeroHashAt H lvl
+  (Hasher.batchCombine (H := H) lefts rights).toList
 
 /-- Promote a single hash up through `remaining` levels of zero
 subtrees: each level pairs with `ZERO_HASHES[startLvl + k]` on the
@@ -482,7 +491,7 @@ def SSZType.hashTreeRootFields (H : Type) [Hasher H] :
 (`vector t n` / `list t cap` with `¬ t.isFixedSize`). Returns the
 list of element roots in order.
 
-Tail-recursive over the element list (the `combineLayerAtAux` /
+Tail-recursive over the element list (the
 `deserializeFixedElems` accumulator pattern). The natural
 `hashTreeRoot … :: hashTreeRootListComposite …` spelling is
 non-tail, the recursive call is the tail of a `cons`, so it holds
