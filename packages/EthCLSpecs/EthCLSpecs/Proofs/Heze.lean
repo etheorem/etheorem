@@ -1,3 +1,4 @@
+import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 
@@ -16,6 +17,11 @@ Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied`: the complete
+  `.run` equation of `isPayloadInclusionListSatisfied`
+  (`isPayloadInclusionListSatisfied_run`), and the four read corollaries
+  for a missing record, an unverified recorded value, a recorded `false`,
+  and a recorded `true` with a verified payload.
 * `EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction`: the
   successful-run write of `recordPayloadInclusionListSatisfaction`
   (`recordPayloadInclusionListSatisfaction_run_eq`), proved with
