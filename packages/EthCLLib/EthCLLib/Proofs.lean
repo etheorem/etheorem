@@ -1,3 +1,4 @@
+import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
 
 /-!
@@ -10,4 +11,11 @@ because each fork re-elaborates its own declarations.
 Nothing here carries `@[characterizes]`. That attribute claims a `forkdef`'s
 contract, and the framework declares no `forkdef`, so `scripts/ProofCoverage.lean`
 counts none of these modules.
+
+Re-exports:
+
+* `EthCLLib.Proofs.LawfulFcMap`: same-key insertion for `FcMap`
+  (`LawfulFcMap`, `FcMap.lookup_insert_self`,
+  `FcMap.contains_insert_self`).
+* `EthCLLib.Proofs.MerkleBranch`: what `isValidMerkleBranch` accepts.
 -/
