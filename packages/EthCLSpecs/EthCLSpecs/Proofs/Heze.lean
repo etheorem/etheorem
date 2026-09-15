@@ -26,8 +26,9 @@ Re-exports:
   successful-run write of `recordPayloadInclusionListSatisfaction`
   (`recordPayloadInclusionListSatisfaction_run_eq`), proved with
   `ForkChoiceStoreRun`.
-* `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: Heze's verified,
-  recorded-unsatisfied FOCIL rejection theorem
-  (`shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`), proved with
-  `ForkChoiceStoreRun`.
+* `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: the complete `.run`
+  equation of `shouldExtendPayload` (`shouldExtendPayload_run`), the
+  existing recorded-unsatisfied FOCIL rejection
+  (`shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`), and the
+  named prefix, FOCIL, vote, and inherited-Gloas-tail corollaries.
 -/
