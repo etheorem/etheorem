@@ -16,6 +16,7 @@ Re-exports:
 
 * `EthCLLib.Proofs.LawfulFcMap`: same-key insertion for `FcMap`
   (`LawfulFcMap`, `FcMap.lookup_insert_self`,
-  `FcMap.contains_insert_self`).
+  `FcMap.contains_insert_self`), with `instLawfulFcMapTreeMap` and
+  `instLawfulFcMapHashMap`.
 * `EthCLLib.Proofs.MerkleBranch`: what `isValidMerkleBranch` accepts.
 -/

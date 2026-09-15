@@ -1,3 +1,5 @@
+import Std.Data.TreeMap.Lemmas
+import Std.Data.HashMap.Lemmas
 import EthCLLib.Spec.FiniteMap
 
 /-!
@@ -7,9 +9,9 @@ import EthCLLib.Spec.FiniteMap
 insertion facts a store postcondition needs: lookup of an inserted key
 returns that value, and the inserted key is present.
 
-The class is parameterized by the map family and the key type. Concrete
-`treeMap` and `hashMap` instances are separate: each key type carries its
-own `TransOrd` or `EquivBEq` / `LawfulHashable` obligations.
+The class is parameterized by the map family and the key type.
+`instLawfulFcMapTreeMap` needs `[Std.TransOrd K]`. `instLawfulFcMapHashMap`
+needs `[EquivBEq K]` and `[LawfulHashable K]`.
 
 `contains` and `lookup` are independent `FcMap` fields. The class
 records that `contains` agrees with `Option.isSome` of `lookup`. The
@@ -51,5 +53,31 @@ class LawfulFcMap (map : MapKind) (K : Type)
     FcMap.contains (FcMap.insert m k v) k = true := by
   rw [LawfulFcMap.contains_eq_isSome_lookup, FcMap.lookup_insert_self]
   rfl
+
+/-- `treeMap` is lawful at keys whose `compare` is a transitive order. -/
+instance instLawfulFcMapTreeMap {K : Type}
+    [Ord K] [BEq K] [Hashable K] [Std.TransOrd K] :
+    LawfulFcMap treeMap K where
+  lookup_insert_self m k v := by
+    simpa only [FcMap.lookup, FcMap.insert, Std.TreeMap.get?_eq_getElem?] using
+      Std.TreeMap.getElem?_insert_self (t := m) (k := k) (v := v)
+  contains_eq_isSome_lookup m k := by
+    simpa only [FcMap.contains, FcMap.lookup, Std.TreeMap.get?_eq_getElem?] using
+      Std.TreeMap.contains_eq_isSome_getElem? (t := m) (a := k)
+
+/-- `hashMap` is lawful at keys whose `BEq` is an equivalence and whose
+hash respects that equality. -/
+instance instLawfulFcMapHashMap {K : Type}
+    [Ord K] [BEq K] [Hashable K] [EquivBEq K] [LawfulHashable K] :
+    LawfulFcMap hashMap K where
+  lookup_insert_self m k v := by
+    simpa only [FcMap.lookup, FcMap.insert, Std.HashMap.get?_eq_getElem?] using
+      Std.HashMap.getElem?_insert_self (m := m) (k := k) (v := v)
+  contains_eq_isSome_lookup m k := by
+    simpa only [FcMap.contains, FcMap.lookup, Std.HashMap.get?_eq_getElem?] using
+      Std.HashMap.contains_eq_isSome_getElem? (m := m) (a := k)
+
+example : LawfulFcMap treeMap (Vector UInt8 32) := inferInstance
+example : LawfulFcMap hashMap (Vector UInt8 32) := inferInstance
 
 end EthCLLib.Proofs
