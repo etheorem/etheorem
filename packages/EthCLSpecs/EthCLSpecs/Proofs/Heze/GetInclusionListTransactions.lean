@@ -1,4 +1,5 @@
 import EthCLSpecs.Heze.ForkChoice
+import EthCLSpecs.Proofs.Run
 import EthCLSpecs.Proofs.StoreRun
 
 /-!
@@ -21,7 +22,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLSpecs.Proofs (ForkChoiceStoreRun)
+open EthCLSpecs.Proofs (ForkChoiceStoreRun run_bind run_pure except_bind_ok except_bind_error)
 open EthCLLib.Spec (HasherTag MapKind FcMap htr StoreTransitionError arrayUnion)
 open EthCLSpecs.Heze (Preset Store State Root Slot ValidatorIndex InclusionList Transaction
   InclusionListStore getInclusionListCommittee getInclusionListTransactions
@@ -56,9 +57,9 @@ theorem getInclusionListCommittee_run_eq :
   intro state slot runnerStore
   simp only [getInclusionListCommittee]
   split
-  · rw [ForkChoiceStoreRun.run_bind, ForkChoiceStoreRun.throwArithmetic_run]
-    exact ForkChoiceStoreRun.except_bind_error _ _
-  · rw [ForkChoiceStoreRun.run_bind, ForkChoiceStoreRun.run_pure, ForkChoiceStoreRun.except_bind_ok, ForkChoiceStoreRun.run_pure]
+  · rw [run_bind, ForkChoiceStoreRun.throwArithmetic_run]
+    exact except_bind_error _ _
+  · rw [run_bind, run_pure, except_bind_ok, run_pure]
 
 /-- Exact empty-committee error of `getInclusionListCommittee`. -/
 theorem getInclusionListCommittee_run_error_of_empty
@@ -197,7 +198,7 @@ private theorem foldlM_collectStep_run_ok_of_all_doNotError
     obtain ⟨acc1, hstep⟩ :=
       collectStep_run_ok_of_doesNotError (σ := σ) equivocators timeliness onlyTimely acc a s honly
         (hall a List.mem_cons_self)
-    rw [List.foldlM_cons, ForkChoiceStoreRun.run_bind, hstep, ForkChoiceStoreRun.except_bind_ok]
+    rw [List.foldlM_cons, run_bind, hstep, except_bind_ok]
     exact ih (fun x hx => hall x (List.mem_cons.mpr (Or.inr hx))) acc1
 
 
@@ -220,7 +221,7 @@ theorem collectInclusionListTransactions_run_error_of_first_missing
         inclusionLists equivocators timeliness onlyTimely).run runnerStore
       = .error (.missingKey ilRoot) := by
   rw [collectInclusionListTransactions_eq]
-  rw [ForkChoiceStoreRun.run_bind]
+  rw [run_bind]
   let entries := FcMap.fold (fun acc ilRoot il => acc.push (ilRoot, il)) #[] inclusionLists
   obtain ⟨i, il, hi, hget, hpref, hnot, hnone⟩ := hfirst
   have hfold :
@@ -232,7 +233,7 @@ theorem collectInclusionListTransactions_run_error_of_first_missing
     have hget' : entries.toList[i]'hi' = (ilRoot, il) := by
       rw [Array.getElem_toList]; exact hget
     simp only [hget']
-    rw [List.foldlM_append, ForkChoiceStoreRun.run_bind]
+    rw [List.foldlM_append, run_bind]
     obtain ⟨acc', hpre⟩ :=
       foldlM_collectStep_run_ok_of_all_doNotError (σ := σ) equivocators timeliness onlyTimely honly
         (entries.toList.take i)
@@ -242,13 +243,13 @@ theorem collectInclusionListTransactions_run_error_of_first_missing
           have := hpref j hj_lt_i
           simpa [Array.getElem_toList] using this)
         #[] runnerStore
-    rw [hpre, ForkChoiceStoreRun.except_bind_ok]
-    rw [List.foldlM_cons, ForkChoiceStoreRun.run_bind,
+    rw [hpre, except_bind_ok]
+    rw [List.foldlM_cons, run_bind,
       collectStep_run_error_of_missing (σ := σ) equivocators timeliness onlyTimely acc' ilRoot il
         runnerStore honly hnot hnone]
-    exact ForkChoiceStoreRun.except_bind_error _ _
+    exact except_bind_error _ _
   rw [hfold]
-  exact ForkChoiceStoreRun.except_bind_error _ _
+  exact except_bind_error _ _
 
 end
 end
@@ -276,7 +277,7 @@ theorem getInclusionListTransactions_run_eq
               (FcMap.lookupD store.equivocators (htr p.1))
               store.inclusionListTimeliness onlyTimely).run p.2 := by
   simp only [getInclusionListTransactions]
-  rw [ForkChoiceStoreRun.run_bind]
+  rw [run_bind]
 
 /-- If committee construction returns `err`,
 `getInclusionListTransactions` returns the same error. -/
@@ -291,7 +292,7 @@ theorem getInclusionListTransactions_run_error_of_committee
         (StoreTransition := ForkChoiceStoreRun (Store map))
         store state slot onlyTimely).run runnerStore
       = .error err := by
-  rw [getInclusionListTransactions_run_eq, herr, ForkChoiceStoreRun.except_bind_error]
+  rw [getInclusionListTransactions_run_eq, herr, except_bind_error]
 
 /-- If collection returns `err` after committee construction succeeds,
 `getInclusionListTransactions` returns the same error. -/
@@ -313,7 +314,7 @@ theorem getInclusionListTransactions_run_error_of_collect
         (StoreTransition := ForkChoiceStoreRun (Store map))
         store state slot onlyTimely).run runnerStore
       = .error err := by
-  rw [getInclusionListTransactions_run_eq, hok, ForkChoiceStoreRun.except_bind_ok, herr]
+  rw [getInclusionListTransactions_run_eq, hok, except_bind_ok, herr]
 
 end
 end

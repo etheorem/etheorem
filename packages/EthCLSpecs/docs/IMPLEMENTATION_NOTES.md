@@ -823,17 +823,27 @@ separation.
   withdrawability-delay addition does not wrap for the shipped minimal and
   mainnet configurations.
 
+- **`Proofs/Run.lean`** names the `StateT`-over-`Except` bind, throw, and
+  `Except` facts every pure runner rewrites with (`run_bind`, `run_pure`,
+  `run_throw`, `except_bind_ok`, `except_bind_error`). They are stated at an
+  arbitrary state and error type, so they apply to `GloasRun` and
+  `ForkChoiceStoreRun`. The module sits beside the per-fork directories
+  because the facts belong to no fork.
+
 - **`Proofs/Gloas/Run.lean`** names `GloasRun`, the pure `StateT`/`Except`
   state-transition monad the Gloas proofs pin their `forkdef` bodies to.
   `StateTransition` is a parameter of a fork body, so every run theorem has to fix
-  it; this fixes it once. Its `.run` / `Except.bind` names are aliases of the
-  shared lemmas in `Proofs/StoreRun.lean`.
+  it; this fixes it once. It re-exports the `Proofs/Run.lean` facts as
+  `GloasRun.run_bind` and friends so Gloas call sites keep a runner-qualified
+  name.
 
 - **`Proofs/StoreRun.lean`** names `ForkChoiceStoreRun`, the shared pure
   store-machine runner every fork's fork-choice proofs pin at that fork's
-  `Store`. It also holds the generic `StateT`/`Except` `.run` lemmas. It sits
-  beside the per-fork directories because the runner is a monad over an
-  arbitrary store type and so belongs to no fork.
+  `Store`. It also holds `ForkChoiceStoreRun.throwArithmetic_run`, the
+  store-specific equation for `throwArithmetic` under the store machine's
+  `.transition` wrapper. The generic `StateT`/`Except` equations live in
+  `Proofs/Run.lean`. It sits beside the per-fork directories because the
+  runner is a monad over an arbitrary store type and so belongs to no fork.
 
 - **`Proofs/Gloas/IsValidIndexedPayloadAttestation.lean`** proves a two-layer,
   backend-generic characterization of `isValidIndexedPayloadAttestation`. Layer 1

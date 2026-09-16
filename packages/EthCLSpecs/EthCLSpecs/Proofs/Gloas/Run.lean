@@ -1,5 +1,5 @@
 import EthCLSpecs.Gloas.State
-import EthCLSpecs.Proofs.StoreRun
+import EthCLSpecs.Proofs.Run
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.Run`: the Gloas state-transition runner these proofs run against
@@ -8,7 +8,7 @@ A theorem about a `forkdef`'s effect has to pin down the monad the spec body is
 elaborated into, since `StateTransition` is a parameter of the fork body rather than a
 fixed type. Every Gloas proof in this directory pins the same one, so it is named once
 here and instantiated at each theorem through `(StateTransition := GloasRun)`. The store
-machine's counterpart is `ForkChoiceStoreRun`, in `Proofs/StoreRun.lean`.
+machine's counterpart is the pure store runner in `Proofs/StoreRun.lean`.
 
 ## Which monad, and why not the fast one
 
@@ -35,6 +35,11 @@ monad it resolves to this one. So every theorem below is a theorem about the ste
 under fork choice too. Carrying one over is function application:
 `runNestedStateTransition_of_ok` (`EthCLLib/Spec/NestedMachine.lean`) takes a step's
 `.run` fact and returns the store-machine statement, for any action.
+
+The `StateT`-over-`Except` bind, throw, and `Except` facts that every run proof rewrites
+with live in `Proofs/Run.lean`, at any state and error type. This file re-exports them
+under `GloasRun` so existing Gloas call sites keep a runner-qualified name. A Heze
+proof imports `Proofs/Run.lean` directly and does not name `GloasRun`.
 -/
 
 set_option autoImplicit false
@@ -44,7 +49,6 @@ namespace EthCLSpecs.Proofs.Gloas
 open EthCLLib.Spec (HasherTag StateTransitionError)
 open EthCLSpecs.Gloas (Preset)
 open EthCLSpecs.Gloas (State)
-open EthCLSpecs.Proofs (ForkChoiceStoreRun)
 
 /-- The monad the Gloas spec bodies are proved at: `StateT` over `Except`, threading the
 boxed Gloas `BeaconState` and rejecting with `StateTransitionError`. `abbrev`
@@ -56,35 +60,32 @@ boxed Gloas `BeaconState` and rejecting with `StateTransitionError`. `abbrev`
 abbrev GloasRun [Preset] [HasherTag] : Type → Type :=
   StateT State (Except StateTransitionError)
 
-/-! ## Running a bind
-
-The `.run` / `Except.bind` lemmas live in `Proofs/StoreRun.lean`, at any `σ` / `ε`.
-The names below keep existing Gloas proofs stable. -/
-
-/-- See `ForkChoiceStoreRun.run_bind`. -/
+/-- `.run` of a bind at `GloasRun`. The statement is `EthCLSpecs.Proofs.run_bind`. -/
 theorem GloasRun.run_bind {σ ε α β : Type} (x : StateT σ (Except ε) α)
     (f : α → StateT σ (Except ε) β) (s : σ) :
     (x >>= f).run s = (x.run s) >>= fun p => (f p.1).run p.2 :=
-  ForkChoiceStoreRun.run_bind x f s
+  EthCLSpecs.Proofs.run_bind x f s
 
-/-- See `ForkChoiceStoreRun.run_pure`. -/
+/-- `.run` of a `pure` at `GloasRun`. The statement is `EthCLSpecs.Proofs.run_pure`. -/
 theorem GloasRun.run_pure {σ ε α : Type} (a : α) (s : σ) :
     (pure a : StateT σ (Except ε) α).run s = .ok (a, s) :=
-  ForkChoiceStoreRun.run_pure a s
+  EthCLSpecs.Proofs.run_pure a s
 
-/-- See `ForkChoiceStoreRun.run_throw`. -/
+/-- `.run` of a `throw` at `GloasRun`. The statement is `EthCLSpecs.Proofs.run_throw`. -/
 theorem GloasRun.run_throw {σ ε α : Type} (e : ε) (s : σ) :
     (throw e : StateT σ (Except ε) α).run s = .error e :=
-  ForkChoiceStoreRun.run_throw e s
+  EthCLSpecs.Proofs.run_throw e s
 
-/-- See `ForkChoiceStoreRun.except_bind_ok`. -/
+/-- `Except`'s bind on the success branch. The statement is
+`EthCLSpecs.Proofs.except_bind_ok`. -/
 theorem GloasRun.except_bind_ok {ε α β : Type} (a : α) (f : α → Except ε β) :
     (Except.ok a : Except ε α) >>= f = f a :=
-  ForkChoiceStoreRun.except_bind_ok a f
+  EthCLSpecs.Proofs.except_bind_ok a f
 
-/-- See `ForkChoiceStoreRun.except_bind_error`. -/
+/-- `Except`'s bind on the error branch. The statement is
+`EthCLSpecs.Proofs.except_bind_error`. -/
 theorem GloasRun.except_bind_error {ε α β : Type} (e : ε) (f : α → Except ε β) :
     (Except.error e : Except ε α) >>= f = .error e :=
-  ForkChoiceStoreRun.except_bind_error e f
+  EthCLSpecs.Proofs.except_bind_error e f
 
 end EthCLSpecs.Proofs.Gloas
