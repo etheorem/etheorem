@@ -23,9 +23,7 @@ without reading the satisfaction map. A missing satisfaction record remains
 the helper's membership assert after verification has passed.
 
 The existing corollary `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`
-is the verified, recorded-`false` FOCIL rejection, specialized at `.run store`.
-Its `hverified` hypothesis records that the FOCIL gate is the rejecting
-branch.
+is the recorded-`false` FOCIL rejection specialized to `.run store`.
 
 After a recorded `true` with a verified payload, the remaining arms are the
 inherited Gloas tail: `payloadTimeliness`, `payloadDataAvailability`, the
@@ -194,8 +192,7 @@ theorem shouldExtendPayload_run
 
 /-! ## Prefix rejects -/
 
-/-- A missing `store.blocks[root]` entry is `missingKey`. The reject carries
-no post-state. -/
+/-- A missing `store.blocks[root]` entry is `missingKey`. -/
 theorem shouldExtendPayload_run_error_of_missing_block
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
     ∀ (store runnerStore : Store map) (root : Root),
@@ -226,8 +223,8 @@ theorem shouldExtendPayload_run_error_of_getCurrentSlot
   rw [shouldExtendPayload_run]
   simp [hblock, hcur]
 
-/-- Overflow of `blocks[root].slot + 1` is the arithmetic fault named by the
-checked add. The reject carries no post-state. -/
+/-- Overflow of `blocks[root].slot + 1` is the arithmetic fault named by
+`checkedAdd`. -/
 theorem shouldExtendPayload_run_error_of_slot_overflow
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
@@ -248,7 +245,7 @@ theorem shouldExtendPayload_run_error_of_slot_overflow
   simp [hblock, hcur, hover]
 
 /-- A successful increment that fails `nextSlot == currentSlot` is the spec's
-slot assertion. The reject carries no post-state. -/
+slot assertion. -/
 theorem shouldExtendPayload_run_error_of_slot_assert
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
@@ -294,7 +291,7 @@ theorem shouldExtendPayload_run_eq_false_of_unverified
   simp [hslot, hverified]
 
 /-- A missing satisfaction record, after verification, is the helper's
-membership assert. The reject carries no post-state. -/
+membership assert. -/
 theorem shouldExtendPayload_run_error_of_missing_focil_record
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
@@ -319,14 +316,9 @@ theorem shouldExtendPayload_run_error_of_missing_focil_record
   simp [hslot, hverified]
   rw [isPayloadInclusionListSatisfied_run_error_of_missing_record store s1 root hlookup]
 
-/-- A verified payload with a recorded `false` inclusion-list satisfaction verdict
-is rejected by Heze's FOCIL gate once the preliminary block/slot checks succeed.
-The result preserves the runner state and short-circuits later logic shared with Gloas.
-
-`hverified` is logically unnecessary for the Boolean conclusion: an unverified
-payload is rejected earlier. It is retained to establish that the FOCIL gate is
-the rejecting branch. The converse is not claimed: `shouldExtendPayload` can also
-return `false` for an unverified payload or because of later Gloas logic. -/
+/-- A verified payload with a recorded `false` inclusion-list satisfaction
+verdict is rejected by the FOCIL gate. `hverified` selects that branch.
+The converse is not claimed. -/
 theorem shouldExtendPayload_run_eq_false_of_recorded_unsatisfied
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
     ∀ (store : Store map) (root : Root) (rootBlock : BeaconBlock),
@@ -423,8 +415,7 @@ private theorem payloadDataAvailability_run_error_of_missing_vote
   simp [payloadDataAvailability, FcMap.getOrAssert, hlookup, GloasRun.run_throw,
     GloasRun.except_bind_error]
 
-/-- A missing timeliness-vote record is the spec's membership assert. The
-reject carries no post-state. -/
+/-- A missing timeliness-vote record is the spec's membership assert. -/
 theorem shouldExtendPayload_run_error_of_missing_timeliness_vote
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
@@ -452,8 +443,7 @@ theorem shouldExtendPayload_run_error_of_missing_timeliness_vote
   rw [htail]
   rw [payloadTimeliness_run_error_of_missing_vote store s1 root htime]
 
-/-- A missing data-availability-vote record is the spec's membership assert.
-The reject carries no post-state. -/
+/-- A missing data-availability-vote record is the spec's membership assert. -/
 theorem shouldExtendPayload_run_error_of_missing_data_availability_vote
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
     ∀ (store runnerStore s1 s3 : Store map) (root : Root) (rootBlock : BeaconBlock)
@@ -525,8 +515,7 @@ theorem shouldExtendPayload_run_eq_true_of_timely_available_or_zero_boost
   rw [htail]
   simp [htime, hda, hacc]
 
-/-- A missing proposer-boost block is `missingKey` of that boost root. The
-reject carries no post-state. -/
+/-- A missing proposer-boost block is `missingKey` of that boost root. -/
 theorem shouldExtendPayload_run_error_of_missing_proposer_block
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
     ∀ (store runnerStore s1 s3 s4 : Store map) (root : Root) (rootBlock : BeaconBlock)
