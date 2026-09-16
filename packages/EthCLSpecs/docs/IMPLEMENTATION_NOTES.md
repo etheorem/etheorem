@@ -844,20 +844,36 @@ separation.
   `EthCLSpecs.Proofs.Gloas`. It characterizes Gloas `processOperations` at
   `GloasRun`; handlers and later failure postconditions remain opaque.
 
-- **`Proofs/Heze/ShouldExtendPayload.lean`** places its theorem in
+- **`Proofs/Heze/IsPayloadInclusionListSatisfied.lean`** places its theorems in
+  `EthCLSpecs.Proofs.Heze`. `isPayloadInclusionListSatisfied_run` is the
+  complete `.run` equation at `ForkChoiceStoreRun (Store map)` and carries
+  `@[characterizes]`. A missing satisfaction key is the membership assert. A
+  recorded value is returned only when the payload is verified, otherwise
+  `false`. The four corollaries name the missing-record reject, an unverified
+  recorded value, a recorded `false`, and a recorded `true` with a verified
+  payload. Success leaves `runnerStore` unchanged. Verdict production and
+  payload/verdict pairing remain later handler work, tracked by the
+  `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+
+- **`Proofs/Heze/ShouldExtendPayload.lean`** places its theorems in
   `EthCLSpecs.Proofs.Heze` because `shouldExtendPayload` exists in both Gloas
-  and Heze. `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied` proves
-  the FOCIL rejection case at `ForkChoiceStoreRun (Store map)`. If the initial
-  block lookup and slot checks succeed, Heze rejects a verified payload when
-  the queried root has a recorded `false` inclusion-list satisfaction result.
-  The runner state remains unchanged. The theorem does not cover the later
-  fork-choice checks inherited from Gloas or the case where no result has been
-  recorded. It assumes that the recorded result is present and does not prove
-  that it belongs to the matching payload. The successful path that records
-  the result of `isInclusionListSatisfied` is proved in
-  `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`. Ensuring that the
-  payload and its result are recorded under the same root remains tracked by
-  the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+  and Heze. `shouldExtendPayload_run` is the complete `.run` equation at
+  `ForkChoiceStoreRun (Store map)` and carries `@[characterizes]`. The
+  right-hand side is the evaluation order: block lookup, `getCurrentSlot`,
+  the slot increment and assertion, `isPayloadVerified`,
+  `isPayloadInclusionListSatisfied`, then the inherited Gloas tail. Named
+  corollaries cover the prefix rejects, the FOCIL gate, the vote membership
+  asserts, and the inherited Gloas accept and reject arms. Successful binds
+  keep the intermediate runner states. A reject returns the error alone.
+  The bind lemmas used here are `GloasRun.run_bind` and the `Except` facts
+  in `Proofs/Gloas/Run.lean`. They are stated at an arbitrary state type, so
+  they apply to `ForkChoiceStoreRun`. On current main, this proof temporarily
+  imports `EthCLSpecs.Proofs.Gloas.Run` for the generic `GloasRun.run_bind`
+  and `Except` lemmas. If #83 lands before this PR is submitted, rebase to
+  the shared `StoreRun` lemmas and remove that import. Handler postconditions
+  that pair `payloads[root]` with the satisfaction entry, and composition of
+  those writes with this read, remain tracked by the
+  `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
 
 - **`Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`** proves
   `recordPayloadInclusionListSatisfaction_run_eq` in

@@ -41,7 +41,6 @@ that write with this read, are later handler postconditions.
 -/
 
 set_option autoImplicit false
-set_option maxHeartbeats 800000
 
 namespace EthCLSpecs.Proofs.Heze
 
@@ -56,16 +55,15 @@ open EthCLSpecs.Heze (Preset Config Store shouldExtendPayload isPayloadInclusion
 /-- `.run` of `throwArithmetic` at `ForkChoiceStoreRun`. `GloasRun.run_throw`
 does not apply: `throwArithmetic` is `liftErr` of a `StateTransitionError`,
 and the store machine wraps that as `.transition`. -/
-private theorem throwArithmetic_run {σ α : Type} (descr : String) (s : σ) :
-    (throwArithmetic (m := ForkChoiceStoreRun σ) (E := StoreTransitionError) descr
-        : ForkChoiceStoreRun σ α).run s
-      = .error (.transition (.arithmetic descr)) :=
+private theorem throwArithmetic_run :
+    ∀ {σ α : Type} (descr : String) (s : σ),
+      (throwArithmetic (m := ForkChoiceStoreRun σ) (E := StoreTransitionError) descr
+          : ForkChoiceStoreRun σ α).run s
+        = .error (.transition (.arithmetic descr)) := by
+  intro σ α descr s
   rfl
 
 /-! ## Complete `.run` equation -/
-
-section
-set_option linter.unusedSimpArgs false
 
 /-- Complete compositional `.run` equation of `shouldExtendPayload` at
 `ForkChoiceStoreRun (Store map)`. The right-hand side is the evaluation
@@ -137,27 +135,27 @@ theorem shouldExtendPayload_run
         (StoreTransition := ForkChoiceStoreRun (Store map))
         store).run runnerStore with
     | error err =>
-      simp [GloasRun.run_bind, hcur, GloasRun.except_bind_error]
+      simp [hcur, GloasRun.except_bind_error]
     | ok p =>
       obtain ⟨currentSlot, s1⟩ := p
-      simp [GloasRun.run_bind, hcur, GloasRun.except_bind_ok]
+      simp [hcur, GloasRun.except_bind_ok]
       by_cases hover : rootBlock.slot + 1 < rootBlock.slot
       · simp [hover, throwArithmetic_run, GloasRun.except_bind_error]
-      · simp [hover, GloasRun.run_pure, GloasRun.except_bind_ok]
+      · simp [hover]
         by_cases hslot : rootBlock.slot + 1 = currentSlot
         · simp [hslot]
           cases hverified : isPayloadVerified store root
-          · simp [hverified]
+          · simp
             rfl
-          · simp [hverified]
+          · simp
             cases hfocil : (isPayloadInclusionListSatisfied
                 (StoreTransition := ForkChoiceStoreRun (Store map))
                 store root).run s1 with
             | error err =>
-              simp [hfocil, GloasRun.except_bind_error]
+              simp [GloasRun.except_bind_error]
             | ok q =>
               obtain ⟨satisfied, s2⟩ := q
-              simp [hfocil, GloasRun.except_bind_ok]
+              simp [GloasRun.except_bind_ok]
               cases satisfied
               · rfl
               · simp
@@ -165,36 +163,34 @@ theorem shouldExtendPayload_run
                     (StoreTransition := ForkChoiceStoreRun (Store map))
                     store root true).run s2 with
                 | error err =>
-                  simp [htime, GloasRun.except_bind_error]
+                  simp [GloasRun.except_bind_error]
                 | ok r =>
                   obtain ⟨payloadIsTimely, s3⟩ := r
-                  simp [htime, GloasRun.except_bind_ok]
+                  simp [GloasRun.except_bind_ok]
                   cases hda : (payloadDataAvailability
                       (StoreTransition := ForkChoiceStoreRun (Store map))
                       store root true).run s3 with
                   | error err =>
-                    simp [hda, GloasRun.except_bind_error]
+                    simp [GloasRun.except_bind_error]
                   | ok s =>
                     obtain ⟨payloadDataIsAvailable, s4⟩ := s
-                    simp [hda, GloasRun.except_bind_ok]
+                    simp [GloasRun.except_bind_ok]
                     by_cases hacc :
                         payloadIsTimely = true ∧ payloadDataIsAvailable = true
                           ∨ store.proposerBoostRoot = fcZeroRoot
                     · simp [hacc]
                       rfl
-                    · simp [hacc, FcMap.getOrThrow, FcMap.getOrThrowKey]
+                    · simp [hacc]
                       cases hpb : FcMap.lookup store.blocks store.proposerBoostRoot with
                       | none =>
                         simp [GloasRun.run_throw, GloasRun.except_bind_error]
                       | some pb =>
-                        simp [hpb, GloasRun.except_bind_ok]
+                        simp
                         by_cases hparent : pb.parentRoot = root
                         · simp [hparent]
                         · simp [hparent]
                           rfl
         · simp [hslot, GloasRun.run_throw, GloasRun.except_bind_error, SpecReject.assert]
-
-end
 
 /-! ## Prefix rejects -/
 
