@@ -15,7 +15,6 @@ propagate through `getInclusionListTransactions`.
 
 `getInclusionListCommittee_run_eq` and `getInclusionListTransactions_run_eq`
 are the principal equations.
-`collectInclusionListTransactions` is a plain `def`.
 -/
 
 set_option autoImplicit false

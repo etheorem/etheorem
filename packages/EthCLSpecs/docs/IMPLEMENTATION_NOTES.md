@@ -875,7 +875,8 @@ separation.
   that predicate implies `.error (.missingKey ilRoot)`. Committee and
   collection errors propagate through `getInclusionListTransactions`.
   Those error corollaries stay untagged.
-  `collectInclusionListTransactions` is a plain `def`.
+  The successful-result characterization of
+  `collectInclusionListTransactions` remains proposed in `PROOF_LEDGER.md`.
 
 - **`Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`** proves
   `recordPayloadInclusionListSatisfaction_run` in
