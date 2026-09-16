@@ -22,20 +22,12 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs.Heze
 
 open EthCLSpecs.Proofs (ForkChoiceStoreRun)
-open EthCLLib.Spec (HasherTag MapKind FcMap throwArithmetic htr StoreTransitionError arrayUnion)
+open EthCLLib.Spec (HasherTag MapKind FcMap htr StoreTransitionError arrayUnion)
 open EthCLSpecs.Heze (Preset Store State Root Slot ValidatorIndex InclusionList Transaction
   InclusionListStore getInclusionListCommittee getInclusionListTransactions
   collectInclusionListTransactions getBeaconCommittee getCommitteeCountPerSlot
   computeEpochAtSlot cyclicSample)
 open EthCLSpecs.Heze.Const (inclusionListCommitteeSize)
-
-/-- `.run` of `throwArithmetic` at the fork-choice store runner. Closes by `rfl`
-without unfolding `liftErr`. -/
-private theorem throwArithmetic_run {σ α : Type} (descr : String) (s : σ) :
-    (throwArithmetic (m := ForkChoiceStoreRun σ) (E := StoreTransitionError) descr
-        : ForkChoiceStoreRun σ α).run s
-      = .error (.transition (.arithmetic descr)) :=
-  rfl
 
 section
 variable {σ : Type} [Preset]
@@ -64,7 +56,7 @@ theorem getInclusionListCommittee_run_eq :
   intro state slot runnerStore
   simp only [getInclusionListCommittee]
   split
-  · rw [ForkChoiceStoreRun.run_bind, throwArithmetic_run]
+  · rw [ForkChoiceStoreRun.run_bind, ForkChoiceStoreRun.throwArithmetic_run]
     exact ForkChoiceStoreRun.except_bind_error _ _
   · rw [ForkChoiceStoreRun.run_bind, ForkChoiceStoreRun.run_pure, ForkChoiceStoreRun.except_bind_ok, ForkChoiceStoreRun.run_pure]
 

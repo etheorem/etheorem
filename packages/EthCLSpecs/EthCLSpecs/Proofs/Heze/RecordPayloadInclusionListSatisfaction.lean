@@ -45,7 +45,7 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs.Heze
 
 open EthCLSpecs.Proofs (ForkChoiceStoreRun)
-open EthCLLib.Spec (HasherTag MapKind FcMap checkedSub ExecutionEngine throwArithmetic
+open EthCLLib.Spec (HasherTag MapKind FcMap checkedSub ExecutionEngine
   StoreTransitionError htr)
 open EthCLSpecs.Heze (Preset Store State Root ValidatorIndex
   ExecutionPayload ExecutionRequests Transaction recordPayloadInclusionListSatisfaction
@@ -91,14 +91,6 @@ theorem recordPayloadInclusionListSatisfaction_run_eq
   simp [recordPayloadInclusionListSatisfaction, checkedSub, hslot, htxs]
   rfl
 
-/-- `.run` of `throwArithmetic` at the fork-choice store runner. Closes by `rfl`
-without unfolding `liftErr`. -/
-private theorem throwArithmetic_run {σ α : Type} (descr : String) (s : σ) :
-    (throwArithmetic (m := ForkChoiceStoreRun σ) (E := StoreTransitionError) descr
-        : ForkChoiceStoreRun σ α).run s
-      = .error (.transition (.arithmetic descr)) :=
-  rfl
-
 /-- Complete `.run` equation of `recordPayloadInclusionListSatisfaction`. Slot
 zero is the checked-sub arithmetic error. Otherwise the result matches on
 transaction collection: an error is returned unchanged, and a successful
@@ -132,7 +124,7 @@ theorem recordPayloadInclusionListSatisfaction_run
   intro store runnerStore state root payload
   by_cases hslot : sszGet state slot = 0
   · simp [recordPayloadInclusionListSatisfaction, checkedSub, hslot]
-    have hthrow := throwArithmetic_run (α := UInt64)
+    have hthrow := ForkChoiceStoreRun.throwArithmetic_run (α := UInt64)
       "record_payload_inclusion_list_satisfaction: Slot(state.slot - 1)" runnerStore
     rw [hthrow]
     exact ForkChoiceStoreRun.except_bind_error _ _

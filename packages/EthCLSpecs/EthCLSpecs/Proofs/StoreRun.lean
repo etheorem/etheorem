@@ -25,7 +25,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs
 
-open EthCLLib.Spec (StoreTransitionError)
+open EthCLLib.Spec (StoreTransitionError throwArithmetic)
 
 /-- Pure runner for fork-choice store proofs: `StateT` over `Except`, threading an
 arbitrary store state `σ` and rejecting with `StoreTransitionError`.
@@ -77,6 +77,17 @@ theorem ForkChoiceStoreRun.except_bind_ok {ε α β : Type} (a : α) (f : α →
 /-- `Except`'s bind on the error branch: the continuation is skipped. -/
 theorem ForkChoiceStoreRun.except_bind_error {ε α β : Type} (e : ε) (f : α → Except ε β) :
     (Except.error e : Except ε α) >>= f = .error e :=
+  rfl
+
+/-- `.run` of `throwArithmetic` at `ForkChoiceStoreRun`. Closes by `rfl`
+without unfolding `liftErr`. -/
+theorem ForkChoiceStoreRun.throwArithmetic_run {σ α : Type}
+    (descr : String) (s : σ) :
+    (throwArithmetic
+        (m := ForkChoiceStoreRun σ)
+        (E := StoreTransitionError)
+        descr : ForkChoiceStoreRun σ α).run s
+      = .error (.transition (.arithmetic descr)) :=
   rfl
 
 end EthCLSpecs.Proofs
