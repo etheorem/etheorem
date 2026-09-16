@@ -64,8 +64,7 @@ theorem isPayloadInclusionListSatisfied_run
     · simp [hverified]
       rfl
 
-/-- A missing satisfaction record is the spec's membership assert. The reject
-carries no post-state. -/
+/-- A missing satisfaction record is the spec's membership assert. -/
 theorem isPayloadInclusionListSatisfied_run_error_of_missing_record
     {map : MapKind} [Preset] [HasherTag] [FcMap map] :
     ∀ (store runnerStore : Store map) (root : Root),
