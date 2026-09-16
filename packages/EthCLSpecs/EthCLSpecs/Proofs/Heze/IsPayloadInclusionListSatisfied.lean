@@ -16,9 +16,7 @@ that is read. `runnerStore` is the runner state. Success leaves
 post-state.
 
 The lookup precedes `isPayloadVerified`. That order is the spec's: the
-membership assert fires even when the payload is unverified. The four
-corollaries name the missing-record reject, an unverified recorded value,
-a recorded `false`, and a recorded `true` with a verified payload.
+membership assert fires even when the payload is unverified.
 
 The helper does not write the store. The recorded satisfaction bit is
 written by `recordPayloadInclusionListSatisfaction`. Pairing of
@@ -37,10 +35,9 @@ open EthCLSpecs.Heze (Preset Store isPayloadInclusionListSatisfied isPayloadVeri
 variable {map : MapKind} [Preset] [HasherTag] [FcMap map]
 
 /-- Complete `.run` equation of `isPayloadInclusionListSatisfied` at
-`ForkChoiceStoreRun (Store map)`. A missing satisfaction key is the spec's
-membership assert. A recorded value is returned only when the payload is
-verified. Otherwise the result is `false`. Success pairs that Boolean with
-the incoming `runnerStore`. -/
+`ForkChoiceStoreRun (Store map)`. Lookup of the satisfaction record
+precedes `isPayloadVerified`, so a missing key is the spec's membership
+assert even when the payload is unverified. -/
 @[characterizes EthCLSpecs.Heze.isPayloadInclusionListSatisfied]
 theorem isPayloadInclusionListSatisfied_run :
     ∀ (store runnerStore : Store map) (root : Root),

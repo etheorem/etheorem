@@ -6,15 +6,18 @@ import EthCLSpecs.Proofs.StoreRun
 /-!
 # `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: Heze's payload-extension decision
 
-Heze's `shouldExtendPayload` follows the Gloas fork-choice decision flow and
-inserts a FOCIL gate after payload verification, before the later timeliness,
-data-availability, and proposer-boost logic.
+Heze's `shouldExtendPayload` inserts a FOCIL gate after payload verification
+and before the timeliness, data-availability, and proposer-boost checks.
 
-This module states the complete `.run` equation at
-`ForkChoiceStoreRun (Store map)`. The explicit argument `store` is the map
-that is read. `runnerStore` is the runner state. Successful binds thread
-intermediate states `s1`, `s2`, `s3`, and `s4`. A reject returns the error
-alone and has no post-state.
+The complete `.run` equation evaluates in this order: block lookup,
+`getCurrentSlot.run`, the `slot + 1` overflow check, the slot assertion,
+`isPayloadVerified`, `isPayloadInclusionListSatisfied.run`, then the
+remaining post-FOCIL checks (`payloadTimeliness`, `payloadDataAvailability`,
+proposer-boost block lookup, and `isParentNodeFull`).
+
+The explicit argument `store` is the map that is read. `runnerStore` is
+the runner state. Successful binds thread intermediate states `s1`, `s2`,
+`s3`, and `s4`. A reject returns the error alone and has no post-state.
 
 `isPayloadInclusionListSatisfied` looks up the satisfaction record, then
 reads `isPayloadVerified`. `shouldExtendPayload` tests `isPayloadVerified`
@@ -22,21 +25,9 @@ before it calls that helper. An unverified payload therefore returns `false`
 without reading the satisfaction map. A missing satisfaction record remains
 the helper's membership assert after verification has passed.
 
-The existing corollary `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`
-is the recorded-`false` FOCIL rejection specialized to `.run store`.
-
-After a recorded `true` with a verified payload, the remaining arms are the
-inherited Gloas tail: `payloadTimeliness`, `payloadDataAvailability`, the
-proposer-boost block lookup, and `isParentNodeFull`.
-
-The bind lemmas used here are `run_throw` and the `Except` facts in
-`EthCLSpecs.Proofs.Run`. They are stated at an arbitrary state type, so
-they apply to `ForkChoiceStoreRun`.
-
-The recorded satisfaction bit is written by
-`recordPayloadInclusionListSatisfaction`. Pairing of `payloads[root]` with
-the satisfaction entry, and composition of that write with this read, live
-on the `onExecutionPayloadEnvelope` ledger row.
+The characterization is this compositional equation. It does not cover
+`recordPayloadInclusionListSatisfaction`, and it does not prove that every
+`false` result comes from a recorded-unsatisfied FOCIL value.
 -/
 
 set_option autoImplicit false
@@ -66,11 +57,7 @@ variable {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
 /-! ## Complete `.run` equation -/
 
 /-- Complete compositional `.run` equation of `shouldExtendPayload` at
-`ForkChoiceStoreRun (Store map)`. The right-hand side is the evaluation
-order: block lookup, `getCurrentSlot.run`, the `slot + 1` overflow check,
-the slot assertion, `isPayloadVerified`, `isPayloadInclusionListSatisfied.run`,
-then the inherited Gloas tail. Successful binds keep `s1` through `s4`.
-A reject is the error unchanged. -/
+`ForkChoiceStoreRun (Store map)`. -/
 @[characterizes EthCLSpecs.Heze.shouldExtendPayload]
 theorem shouldExtendPayload_run :
     ∀ (store runnerStore : Store map) (root : Root),
@@ -331,8 +318,8 @@ theorem shouldExtendPayload_run_eq_false_of_recorded_unsatisfied :
   rw [isPayloadInclusionListSatisfied_run]
   simp [hunsatisfied]
 
-/-- A recorded `true` with a verified payload continues into the inherited
-Gloas tail at `s1`. The helper leaves that runner state unchanged. -/
+/-- A recorded `true` with a verified payload continues into the remaining
+post-FOCIL checks at `s1`. The helper leaves that runner state unchanged. -/
 private theorem shouldExtendPayload_run_eq_of_recorded_satisfied :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
       (currentSlot : Slot),
@@ -378,11 +365,11 @@ private theorem shouldExtendPayload_run_eq_of_recorded_satisfied :
   rw [isPayloadInclusionListSatisfied_run]
   simp [hlookup, hverified]
 
-/-! ## Inherited Gloas tail -/
+/-! ## Remaining post-FOCIL checks -/
 
 omit [Config] in
-/-- The inherited timeliness helper's membership assert on a missing vote
-key. `run_throw` matches this `throw` of a store-machine `.assert`. -/
+/-- `payloadTimeliness` throws its membership assertion when the vote key is
+missing. `run_throw` exposes that store-machine `.assert` under `.run`. -/
 private theorem payloadTimeliness_run_error_of_missing_vote :
     ∀ (store runnerStore : Store map) (root : Root),
       FcMap.lookup store.payloadTimelinessVote root = none →
@@ -395,8 +382,8 @@ private theorem payloadTimeliness_run_error_of_missing_vote :
     except_bind_error]
 
 omit [Config] in
-/-- The inherited data-availability helper's membership assert on a missing
-vote key. -/
+/-- `payloadDataAvailability` throws its membership assertion when the vote key
+is missing. -/
 private theorem payloadDataAvailability_run_error_of_missing_vote :
     ∀ (store runnerStore : Store map) (root : Root),
       FcMap.lookup store.payloadDataAvailabilityVote root = none →
@@ -467,8 +454,9 @@ theorem shouldExtendPayload_run_error_of_missing_data_availability_vote :
   simp [htime]
   rw [payloadDataAvailability_run_error_of_missing_vote store s3 root hda]
 
-/-- The Gloas tail accepts when the payload is timely and available, or when
-the proposer-boost root is unset. The runner state is `s4`. -/
+/-- The remaining post-FOCIL checks accept when the payload is timely and
+available, or when the proposer-boost root is unset. The runner state is
+`s4`. -/
 theorem shouldExtendPayload_run_eq_true_of_timely_available_or_zero_boost :
     ∀ (store runnerStore s1 s3 s4 : Store map) (root : Root) (rootBlock : BeaconBlock)
       (currentSlot : Slot) (payloadIsTimely payloadDataIsAvailable : Bool),
@@ -543,8 +531,8 @@ theorem shouldExtendPayload_run_error_of_missing_proposer_block :
   rw [htail]
   simp [htime, hda, hacc, hpb]
 
-/-- When the boost block's parent is not `root`, the Gloas tail accepts.
-The runner state is `s4`. -/
+/-- When the boost block's parent is not `root`, the remaining post-FOCIL
+checks accept. The runner state is `s4`. -/
 theorem shouldExtendPayload_run_eq_true_of_proposer_parent_ne :
     ∀ (store runnerStore s1 s3 s4 : Store map) (root : Root)
       (rootBlock pb : BeaconBlock) (currentSlot : Slot)
@@ -627,8 +615,8 @@ private theorem shouldExtendPayload_run_eq_of_isParentNodeFull :
   rw [htail]
   simp [htime, hda, hacc, hpb, hparent]
 
-/-- The inherited Gloas rejection: `isParentNodeFull` returns `false`.
-The runner state is that helper's post-state `s5`. -/
+/-- The remaining post-FOCIL checks reject when `isParentNodeFull` returns
+`false`. The runner state is that helper's post-state `s5`. -/
 theorem shouldExtendPayload_run_eq_false_of_parent_node_not_full :
     ∀ (store runnerStore s1 s3 s4 s5 : Store map) (root : Root)
       (rootBlock pb : BeaconBlock) (currentSlot : Slot)
