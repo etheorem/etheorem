@@ -20,9 +20,10 @@ membership assert fires even when the payload is unverified. The four
 corollaries name the missing-record reject, an unverified recorded value,
 a recorded `false`, and a recorded `true` with a verified payload.
 
-The helper does not write the store. Verdict production lives in
-`recordPayloadInclusionListSatisfaction`. Pairing of `payloads[root]` with
-the satisfaction entry is a later handler postcondition.
+The helper does not write the store. The recorded satisfaction bit is
+written by `recordPayloadInclusionListSatisfaction`. Pairing of
+`payloads[root]` with the satisfaction entry lives on the
+`onExecutionPayloadEnvelope` ledger row.
 -/
 
 set_option autoImplicit false

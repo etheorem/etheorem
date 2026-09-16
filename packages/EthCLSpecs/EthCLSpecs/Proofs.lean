@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.Gloas
 import EthCLSpecs.Proofs.Heze
+import EthCLSpecs.Proofs.Run
 import EthCLSpecs.Proofs.StoreRun
 
 /-!
@@ -36,6 +37,9 @@ Re-exports:
 
 * `EthCLSpecs.Proofs.Gloas`: the Gloas fork's theorems, one module per subject.
 * `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems, one module per subject.
+* `EthCLSpecs.Proofs.Run`: `run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
+  and `except_bind_error`, the `StateT`-over-`Except` facts every pure runner
+  shares. Fork-neutral, so Gloas and Heze both import this module.
 * `EthCLSpecs.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine
   runner every fork's fork-choice proofs pin at that fork's `Store`.
 -/

@@ -823,10 +823,19 @@ separation.
   withdrawability-delay addition does not wrap for the shipped minimal and
   mainnet configurations.
 
+- **`Proofs/Run.lean`** names the `StateT`-over-`Except` bind, throw, and
+  `Except` facts every pure runner rewrites with (`run_bind`, `run_pure`,
+  `run_throw`, `except_bind_ok`, `except_bind_error`). They are stated at an
+  arbitrary state and error type, so they apply to `GloasRun` and
+  `ForkChoiceStoreRun`. The module sits beside the per-fork directories
+  because the facts belong to no fork.
+
 - **`Proofs/Gloas/Run.lean`** names `GloasRun`, the pure `StateT`/`Except`
   state-transition monad the Gloas proofs pin their `forkdef` bodies to.
   `StateTransition` is a parameter of a fork body, so every run theorem has to fix
-  it; this fixes it once.
+  it; this fixes it once. It re-exports the `Proofs/Run.lean` facts as
+  `GloasRun.run_bind` and friends so Gloas call sites keep a runner-qualified
+  name.
 
 - **`Proofs/StoreRun.lean`** names `ForkChoiceStoreRun`, the shared pure
   store-machine runner every fork's fork-choice proofs pin at that fork's
@@ -858,8 +867,9 @@ separation.
   recorded value is returned only when the payload is verified, otherwise
   `false`. The four corollaries name the missing-record reject, an unverified
   recorded value, a recorded `false`, and a recorded `true` with a verified
-  payload. Success leaves `runnerStore` unchanged. Verdict production and
-  payload/verdict pairing remain later handler work, tracked by the
+  payload. Success leaves `runnerStore` unchanged. The recorded satisfaction
+  bit is written by `recordPayloadInclusionListSatisfaction`. Same-root pairing
+  of `payloads[root]` with that bit is tracked by the
   `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
 
 - **`Proofs/Heze/ShouldExtendPayload.lean`** places its theorems in
@@ -872,12 +882,9 @@ separation.
   corollaries cover the prefix rejects, the FOCIL gate, the vote membership
   asserts, and the inherited Gloas accept and reject arms. Successful binds
   keep the intermediate runner states. A reject returns the error alone.
-  The bind lemmas used here are `GloasRun.run_bind` and the `Except` facts
-  in `Proofs/Gloas/Run.lean`. They are stated at an arbitrary state type, so
-  they apply to `ForkChoiceStoreRun`. On current main, this proof temporarily
-  imports `EthCLSpecs.Proofs.Gloas.Run` for the generic `GloasRun.run_bind`
-  and `Except` lemmas. If #83 lands before this PR is submitted, rebase to
-  the shared `StoreRun` lemmas and remove that import. Handler postconditions
+  The bind lemmas used here are `run_throw` and the `Except` facts in
+  `Proofs/Run.lean`. They are stated at an arbitrary state type, so they apply
+  to `ForkChoiceStoreRun`. Handler postconditions
   that pair `payloads[root]` with the satisfaction entry, and composition of
   those writes with this read, remain tracked by the
   `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.

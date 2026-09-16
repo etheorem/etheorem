@@ -1,6 +1,6 @@
 import EthCLSpecs.Heze.ForkChoice
-import EthCLSpecs.Proofs.Gloas.Run
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
+import EthCLSpecs.Proofs.Run
 import EthCLSpecs.Proofs.StoreRun
 
 /-!
@@ -29,28 +29,28 @@ After a recorded `true` with a verified payload, the remaining arms are the
 inherited Gloas tail: `payloadTimeliness`, `payloadDataAvailability`, the
 proposer-boost block lookup, and `isParentNodeFull`.
 
-The bind lemmas used here are `GloasRun.run_bind` and the `Except` facts in
-`EthCLSpecs.Proofs.Gloas.Run`. They are stated at an arbitrary state type, so
+The bind lemmas used here are `run_throw` and the `Except` facts in
+`EthCLSpecs.Proofs.Run`. They are stated at an arbitrary state type, so
 they apply to `ForkChoiceStoreRun`.
 
-Verdict production lives in `recordPayloadInclusionListSatisfaction`.
-Pairing of `payloads[root]` with the satisfaction entry, and composition of
-that write with this read, are later handler postconditions.
+The recorded satisfaction bit is written by
+`recordPayloadInclusionListSatisfaction`. Pairing of `payloads[root]` with
+the satisfaction entry, and composition of that write with this read, live
+on the `onExecutionPayloadEnvelope` ledger row.
 -/
 
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLSpecs.Proofs (ForkChoiceStoreRun)
-open EthCLSpecs.Proofs.Gloas (GloasRun)
+open EthCLSpecs.Proofs (ForkChoiceStoreRun run_throw except_bind_ok except_bind_error)
 open EthCLLib.Spec (HasherTag MapKind FcMap checkedAdd throwArithmetic StoreTransitionError
   SpecReject)
 open EthCLSpecs.Heze (Preset Config Store shouldExtendPayload isPayloadInclusionListSatisfied
   isPayloadVerified getCurrentSlot payloadTimeliness payloadDataAvailability isParentNodeFull
   fcZeroRoot Root Slot BeaconBlock)
 
-/-- `.run` of `throwArithmetic` at `ForkChoiceStoreRun`. `GloasRun.run_throw`
+/-- `.run` of `throwArithmetic` at `ForkChoiceStoreRun`. `run_throw`
 does not apply: `throwArithmetic` is `liftErr` of a `StateTransitionError`,
 and the store machine wraps that as `.transition`. -/
 private theorem throwArithmetic_run :
@@ -127,18 +127,18 @@ theorem shouldExtendPayload_run
   simp [shouldExtendPayload, FcMap.getOrThrow, FcMap.getOrThrowKey, checkedAdd]
   cases hblock : FcMap.lookup store.blocks root with
   | none =>
-    simp [GloasRun.run_throw, GloasRun.except_bind_error]
+    simp [run_throw, except_bind_error]
   | some rootBlock =>
     cases hcur : (getCurrentSlot
         (StoreTransition := ForkChoiceStoreRun (Store map))
         store).run runnerStore with
     | error err =>
-      simp [hcur, GloasRun.except_bind_error]
+      simp [hcur, except_bind_error]
     | ok p =>
       obtain ⟨currentSlot, s1⟩ := p
-      simp [hcur, GloasRun.except_bind_ok]
+      simp [hcur, except_bind_ok]
       by_cases hover : rootBlock.slot + 1 < rootBlock.slot
-      · simp [hover, throwArithmetic_run, GloasRun.except_bind_error]
+      · simp [hover, throwArithmetic_run, except_bind_error]
       · simp [hover]
         by_cases hslot : rootBlock.slot + 1 = currentSlot
         · simp [hslot]
@@ -150,10 +150,10 @@ theorem shouldExtendPayload_run
                 (StoreTransition := ForkChoiceStoreRun (Store map))
                 store root).run s1 with
             | error err =>
-              simp [GloasRun.except_bind_error]
+              simp [except_bind_error]
             | ok q =>
               obtain ⟨satisfied, s2⟩ := q
-              simp [GloasRun.except_bind_ok]
+              simp [except_bind_ok]
               cases satisfied
               · rfl
               · simp
@@ -161,18 +161,18 @@ theorem shouldExtendPayload_run
                     (StoreTransition := ForkChoiceStoreRun (Store map))
                     store root true).run s2 with
                 | error err =>
-                  simp [GloasRun.except_bind_error]
+                  simp [except_bind_error]
                 | ok r =>
                   obtain ⟨payloadIsTimely, s3⟩ := r
-                  simp [GloasRun.except_bind_ok]
+                  simp [except_bind_ok]
                   cases hda : (payloadDataAvailability
                       (StoreTransition := ForkChoiceStoreRun (Store map))
                       store root true).run s3 with
                   | error err =>
-                    simp [GloasRun.except_bind_error]
+                    simp [except_bind_error]
                   | ok s =>
                     obtain ⟨payloadDataIsAvailable, s4⟩ := s
-                    simp [GloasRun.except_bind_ok]
+                    simp [except_bind_ok]
                     by_cases hacc :
                         payloadIsTimely = true ∧ payloadDataIsAvailable = true
                           ∨ store.proposerBoostRoot = fcZeroRoot
@@ -181,14 +181,14 @@ theorem shouldExtendPayload_run
                     · simp [hacc]
                       cases hpb : FcMap.lookup store.blocks store.proposerBoostRoot with
                       | none =>
-                        simp [GloasRun.run_throw, GloasRun.except_bind_error]
+                        simp [run_throw, except_bind_error]
                       | some pb =>
                         simp
                         by_cases hparent : pb.parentRoot = root
                         · simp [hparent]
                         · simp [hparent]
                           rfl
-        · simp [hslot, GloasRun.run_throw, GloasRun.except_bind_error, SpecReject.assert]
+        · simp [hslot, run_throw, except_bind_error, SpecReject.assert]
 
 /-! ## Prefix rejects -/
 
@@ -317,7 +317,7 @@ theorem shouldExtendPayload_run_error_of_missing_focil_record
   rw [isPayloadInclusionListSatisfied_run_error_of_missing_record store s1 root hlookup]
 
 /-- A verified payload with a recorded `false` inclusion-list satisfaction
-verdict is rejected by the FOCIL gate. `hverified` selects that branch.
+bit is rejected by the FOCIL gate. `hverified` selects that branch.
 The converse is not claimed. -/
 theorem shouldExtendPayload_run_eq_false_of_recorded_unsatisfied
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
@@ -388,7 +388,7 @@ theorem shouldExtendPayload_run_eq_of_recorded_satisfied
 /-! ## Inherited Gloas tail -/
 
 /-- The inherited timeliness helper's membership assert on a missing vote
-key. `GloasRun.run_throw` matches this `throw` of a store-machine `.assert`. -/
+key. `run_throw` matches this `throw` of a store-machine `.assert`. -/
 private theorem payloadTimeliness_run_error_of_missing_vote
     {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
     ∀ (store runnerStore : Store map) (root : Root),
@@ -398,8 +398,8 @@ private theorem payloadTimeliness_run_error_of_missing_vote
           store root true).run runnerStore
         = .error (.assert "root in store.payload_timeliness_vote") := by
   intro store runnerStore root hlookup
-  simp [payloadTimeliness, FcMap.getOrAssert, hlookup, GloasRun.run_throw,
-    GloasRun.except_bind_error]
+  simp [payloadTimeliness, FcMap.getOrAssert, hlookup, run_throw,
+    except_bind_error]
 
 /-- The inherited data-availability helper's membership assert on a missing
 vote key. -/
@@ -412,8 +412,8 @@ private theorem payloadDataAvailability_run_error_of_missing_vote
           store root true).run runnerStore
         = .error (.assert "root in store.payload_data_availability_vote") := by
   intro store runnerStore root hlookup
-  simp [payloadDataAvailability, FcMap.getOrAssert, hlookup, GloasRun.run_throw,
-    GloasRun.except_bind_error]
+  simp [payloadDataAvailability, FcMap.getOrAssert, hlookup, run_throw,
+    except_bind_error]
 
 /-- A missing timeliness-vote record is the spec's membership assert. -/
 theorem shouldExtendPayload_run_error_of_missing_timeliness_vote
