@@ -34,14 +34,15 @@ open EthCLSpecs.Proofs (ForkChoiceStoreRun)
 open EthCLLib.Spec (HasherTag MapKind FcMap)
 open EthCLSpecs.Heze (Preset Store isPayloadInclusionListSatisfied isPayloadVerified Root)
 
+variable {map : MapKind} [Preset] [HasherTag] [FcMap map]
+
 /-- Complete `.run` equation of `isPayloadInclusionListSatisfied` at
 `ForkChoiceStoreRun (Store map)`. A missing satisfaction key is the spec's
 membership assert. A recorded value is returned only when the payload is
 verified. Otherwise the result is `false`. Success pairs that Boolean with
 the incoming `runnerStore`. -/
 @[characterizes EthCLSpecs.Heze.isPayloadInclusionListSatisfied]
-theorem isPayloadInclusionListSatisfied_run
-    {map : MapKind} [Preset] [HasherTag] [FcMap map] :
+theorem isPayloadInclusionListSatisfied_run :
     ∀ (store runnerStore : Store map) (root : Root),
       (isPayloadInclusionListSatisfied
           (StoreTransition := ForkChoiceStoreRun (Store map))
@@ -66,8 +67,7 @@ theorem isPayloadInclusionListSatisfied_run
       rfl
 
 /-- A missing satisfaction record is the spec's membership assert. -/
-theorem isPayloadInclusionListSatisfied_run_error_of_missing_record
-    {map : MapKind} [Preset] [HasherTag] [FcMap map] :
+theorem isPayloadInclusionListSatisfied_run_error_of_missing_record :
     ∀ (store runnerStore : Store map) (root : Root),
       FcMap.lookup store.payloadInclusionListSatisfaction root = none →
       (isPayloadInclusionListSatisfied
@@ -80,8 +80,7 @@ theorem isPayloadInclusionListSatisfied_run_error_of_missing_record
 
 /-- A recorded satisfaction bit with an unverified payload returns `false`.
 The runner state is unchanged. -/
-theorem isPayloadInclusionListSatisfied_run_eq_false_of_unverified
-    {map : MapKind} [Preset] [HasherTag] [FcMap map] :
+theorem isPayloadInclusionListSatisfied_run_eq_false_of_unverified :
     ∀ (store runnerStore : Store map) (root : Root) (satisfied : Bool),
       FcMap.lookup store.payloadInclusionListSatisfaction root = some satisfied →
       isPayloadVerified store root = false →
@@ -95,8 +94,7 @@ theorem isPayloadInclusionListSatisfied_run_eq_false_of_unverified
 
 /-- A recorded `false` returns `false`, whether or not the payload is
 verified. The runner state is unchanged. -/
-theorem isPayloadInclusionListSatisfied_run_eq_false_of_recorded_unsatisfied
-    {map : MapKind} [Preset] [HasherTag] [FcMap map] :
+theorem isPayloadInclusionListSatisfied_run_eq_false_of_recorded_unsatisfied :
     ∀ (store runnerStore : Store map) (root : Root),
       FcMap.lookup store.payloadInclusionListSatisfaction root = some false →
       (isPayloadInclusionListSatisfied
@@ -109,8 +107,7 @@ theorem isPayloadInclusionListSatisfied_run_eq_false_of_recorded_unsatisfied
 
 /-- A recorded `true` with a verified payload returns `true`. The runner
 state is unchanged. -/
-theorem isPayloadInclusionListSatisfied_run_eq_true_of_recorded_satisfied
-    {map : MapKind} [Preset] [HasherTag] [FcMap map] :
+theorem isPayloadInclusionListSatisfied_run_eq_true_of_recorded_satisfied :
     ∀ (store runnerStore : Store map) (root : Root),
       FcMap.lookup store.payloadInclusionListSatisfaction root = some true →
       isPayloadVerified store root = true →

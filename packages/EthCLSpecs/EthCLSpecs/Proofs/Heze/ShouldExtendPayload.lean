@@ -61,6 +61,8 @@ private theorem throwArithmetic_run :
   intro σ α descr s
   rfl
 
+variable {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
+
 /-! ## Complete `.run` equation -/
 
 /-- Complete compositional `.run` equation of `shouldExtendPayload` at
@@ -70,8 +72,7 @@ the slot assertion, `isPayloadVerified`, `isPayloadInclusionListSatisfied.run`,
 then the inherited Gloas tail. Successful binds keep `s1` through `s4`.
 A reject is the error unchanged. -/
 @[characterizes EthCLSpecs.Heze.shouldExtendPayload]
-theorem shouldExtendPayload_run
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run :
     ∀ (store runnerStore : Store map) (root : Root),
       (shouldExtendPayload
           (StoreTransition := ForkChoiceStoreRun (Store map))
@@ -193,8 +194,7 @@ theorem shouldExtendPayload_run
 /-! ## Prefix rejects -/
 
 /-- A missing `store.blocks[root]` entry is `missingKey`. -/
-theorem shouldExtendPayload_run_error_of_missing_block
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_error_of_missing_block :
     ∀ (store runnerStore : Store map) (root : Root),
       FcMap.lookup store.blocks root = none →
       (shouldExtendPayload
@@ -206,8 +206,7 @@ theorem shouldExtendPayload_run_error_of_missing_block
   simp [hblock]
 
 /-- A `getCurrentSlot` reject is propagated unchanged. -/
-theorem shouldExtendPayload_run_error_of_getCurrentSlot
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_error_of_getCurrentSlot :
     ∀ (store runnerStore : Store map) (root : Root) (rootBlock : BeaconBlock)
       (err : StoreTransitionError),
       FcMap.lookup store.blocks root = some rootBlock →
@@ -225,8 +224,7 @@ theorem shouldExtendPayload_run_error_of_getCurrentSlot
 
 /-- Overflow of `blocks[root].slot + 1` is the arithmetic fault named by
 `checkedAdd`. -/
-theorem shouldExtendPayload_run_error_of_slot_overflow
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_error_of_slot_overflow :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
       (currentSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
@@ -246,8 +244,7 @@ theorem shouldExtendPayload_run_error_of_slot_overflow
 
 /-- A successful increment that fails `nextSlot == currentSlot` is the spec's
 slot assertion. -/
-theorem shouldExtendPayload_run_error_of_slot_assert
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_error_of_slot_assert :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
       (currentSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
@@ -269,8 +266,7 @@ theorem shouldExtendPayload_run_error_of_slot_assert
 
 /-- An unverified payload returns `false` after the block and slot prefix.
 The helper is not called. The runner state is `s1`. -/
-theorem shouldExtendPayload_run_eq_false_of_unverified
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_eq_false_of_unverified :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
       (currentSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
@@ -292,8 +288,7 @@ theorem shouldExtendPayload_run_eq_false_of_unverified
 
 /-- A missing satisfaction record, after verification, is the helper's
 membership assert. -/
-theorem shouldExtendPayload_run_error_of_missing_focil_record
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_error_of_missing_focil_record :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
       (currentSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
@@ -319,8 +314,7 @@ theorem shouldExtendPayload_run_error_of_missing_focil_record
 /-- A verified payload with a recorded `false` inclusion-list satisfaction
 bit is rejected by the FOCIL gate. `hverified` selects that branch.
 The converse is not claimed. -/
-theorem shouldExtendPayload_run_eq_false_of_recorded_unsatisfied
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_eq_false_of_recorded_unsatisfied :
     ∀ (store : Store map) (root : Root) (rootBlock : BeaconBlock),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot (StoreTransition := ForkChoiceStoreRun (Store map)) store).run store
@@ -339,8 +333,7 @@ theorem shouldExtendPayload_run_eq_false_of_recorded_unsatisfied
 
 /-- A recorded `true` with a verified payload continues into the inherited
 Gloas tail at `s1`. The helper leaves that runner state unchanged. -/
-theorem shouldExtendPayload_run_eq_of_recorded_satisfied
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+private theorem shouldExtendPayload_run_eq_of_recorded_satisfied :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
       (currentSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
@@ -387,10 +380,10 @@ theorem shouldExtendPayload_run_eq_of_recorded_satisfied
 
 /-! ## Inherited Gloas tail -/
 
+omit [Config] in
 /-- The inherited timeliness helper's membership assert on a missing vote
 key. `run_throw` matches this `throw` of a store-machine `.assert`. -/
-private theorem payloadTimeliness_run_error_of_missing_vote
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+private theorem payloadTimeliness_run_error_of_missing_vote :
     ∀ (store runnerStore : Store map) (root : Root),
       FcMap.lookup store.payloadTimelinessVote root = none →
       (payloadTimeliness
@@ -401,10 +394,10 @@ private theorem payloadTimeliness_run_error_of_missing_vote
   simp [payloadTimeliness, FcMap.getOrAssert, hlookup, run_throw,
     except_bind_error]
 
+omit [Config] in
 /-- The inherited data-availability helper's membership assert on a missing
 vote key. -/
-private theorem payloadDataAvailability_run_error_of_missing_vote
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+private theorem payloadDataAvailability_run_error_of_missing_vote :
     ∀ (store runnerStore : Store map) (root : Root),
       FcMap.lookup store.payloadDataAvailabilityVote root = none →
       (payloadDataAvailability
@@ -416,8 +409,7 @@ private theorem payloadDataAvailability_run_error_of_missing_vote
     except_bind_error]
 
 /-- A missing timeliness-vote record is the spec's membership assert. -/
-theorem shouldExtendPayload_run_error_of_missing_timeliness_vote
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_error_of_missing_timeliness_vote :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
       (currentSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
@@ -444,8 +436,7 @@ theorem shouldExtendPayload_run_error_of_missing_timeliness_vote
   rw [payloadTimeliness_run_error_of_missing_vote store s1 root htime]
 
 /-- A missing data-availability-vote record is the spec's membership assert. -/
-theorem shouldExtendPayload_run_error_of_missing_data_availability_vote
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_error_of_missing_data_availability_vote :
     ∀ (store runnerStore s1 s3 : Store map) (root : Root) (rootBlock : BeaconBlock)
       (currentSlot : Slot) (payloadIsTimely : Bool),
       FcMap.lookup store.blocks root = some rootBlock →
@@ -478,8 +469,7 @@ theorem shouldExtendPayload_run_error_of_missing_data_availability_vote
 
 /-- The Gloas tail accepts when the payload is timely and available, or when
 the proposer-boost root is unset. The runner state is `s4`. -/
-theorem shouldExtendPayload_run_eq_true_of_timely_available_or_zero_boost
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_eq_true_of_timely_available_or_zero_boost :
     ∀ (store runnerStore s1 s3 s4 : Store map) (root : Root) (rootBlock : BeaconBlock)
       (currentSlot : Slot) (payloadIsTimely payloadDataIsAvailable : Bool),
       FcMap.lookup store.blocks root = some rootBlock →
@@ -516,8 +506,7 @@ theorem shouldExtendPayload_run_eq_true_of_timely_available_or_zero_boost
   simp [htime, hda, hacc]
 
 /-- A missing proposer-boost block is `missingKey` of that boost root. -/
-theorem shouldExtendPayload_run_error_of_missing_proposer_block
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_error_of_missing_proposer_block :
     ∀ (store runnerStore s1 s3 s4 : Store map) (root : Root) (rootBlock : BeaconBlock)
       (currentSlot : Slot) (payloadIsTimely payloadDataIsAvailable : Bool),
       FcMap.lookup store.blocks root = some rootBlock →
@@ -556,8 +545,7 @@ theorem shouldExtendPayload_run_error_of_missing_proposer_block
 
 /-- When the boost block's parent is not `root`, the Gloas tail accepts.
 The runner state is `s4`. -/
-theorem shouldExtendPayload_run_eq_true_of_proposer_parent_ne
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_eq_true_of_proposer_parent_ne :
     ∀ (store runnerStore s1 s3 s4 : Store map) (root : Root)
       (rootBlock pb : BeaconBlock) (currentSlot : Slot)
       (payloadIsTimely payloadDataIsAvailable : Bool),
@@ -598,8 +586,7 @@ theorem shouldExtendPayload_run_eq_true_of_proposer_parent_ne
 
 /-- When the boost block's parent is `root`, the decision is
 `isParentNodeFull.run s4`. -/
-theorem shouldExtendPayload_run_eq_of_isParentNodeFull
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+private theorem shouldExtendPayload_run_eq_of_isParentNodeFull :
     ∀ (store runnerStore s1 s3 s4 : Store map) (root : Root)
       (rootBlock pb : BeaconBlock) (currentSlot : Slot)
       (payloadIsTimely payloadDataIsAvailable : Bool),
@@ -642,8 +629,7 @@ theorem shouldExtendPayload_run_eq_of_isParentNodeFull
 
 /-- The inherited Gloas rejection: `isParentNodeFull` returns `false`.
 The runner state is that helper's post-state `s5`. -/
-theorem shouldExtendPayload_run_eq_false_of_parent_node_not_full
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+theorem shouldExtendPayload_run_eq_false_of_parent_node_not_full :
     ∀ (store runnerStore s1 s3 s4 s5 : Store map) (root : Root)
       (rootBlock pb : BeaconBlock) (currentSlot : Slot)
       (payloadIsTimely payloadDataIsAvailable : Bool),
