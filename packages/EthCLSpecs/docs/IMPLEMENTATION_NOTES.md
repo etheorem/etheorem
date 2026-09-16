@@ -844,6 +844,13 @@ separation.
   `EthCLSpecs.Proofs.Gloas`. It characterizes Gloas `processOperations` at
   `GloasRun`; handlers and later failure postconditions remain opaque.
 
+- **`EthCLLib/Proofs/LawfulFcMap.lean`** places its public declarations in
+  `EthCLLib.Proofs`. It defines the key-indexed `LawfulFcMap map K` interface
+  and generic same-key insertion theorems, with concrete instances for
+  `treeMap` and `hashMap`. The FOCIL handler postconditions that use those
+  laws remain tracked by the `onExecutionPayloadEnvelope` entry in
+  `PROOF_LEDGER.md`.
+
 - **`Proofs/Heze/IsPayloadInclusionListSatisfied.lean`** places its theorems in
   `EthCLSpecs.Proofs.Heze`. `isPayloadInclusionListSatisfied_run` is the
   complete `.run` equation at `ForkChoiceStoreRun (Store map)` and carries
