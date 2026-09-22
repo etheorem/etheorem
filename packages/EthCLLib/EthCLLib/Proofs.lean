@@ -1,4 +1,5 @@
 import EthCLLib.Proofs.MerkleBranch
+import EthCLLib.Proofs.ContainerBranch
 
 /-!
 # `EthCLLib.Proofs`: framework proof modules
