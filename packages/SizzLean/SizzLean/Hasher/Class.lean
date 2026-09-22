@@ -92,4 +92,16 @@ Naming it explicitly resolves the ambiguity. Downstream files
 example {H : Type} [Hasher H] (b₁ b₂ : ByteArray) : ByteArray :=
   Hasher.combine (H := H) (Hasher.hash (H := H) b₁) b₂
 
+/-- `Hasher.combine` returns 32 bytes. The width is a class, so no statement
+carries it as a hypothesis. `Hasher` itself states no width, since the
+merkleization theorems only compare one `combine` call to another.
+`Proofs/Merkle/Opening.lean` needs the width because `isValidMerkleBranch` takes
+its siblings as `Vector UInt8 32`.
+
+`Prop` keeps the witness proof-irrelevant and erased. The class carries no axiom.
+An instance can cite one, and a proof that discharges the binder inherits it. -/
+class CombineWidth32 (H : Type) [Hasher H] : Prop where
+  /-- `combine` returns exactly 32 bytes on any two inputs. -/
+  size : ∀ a b : ByteArray, (Hasher.combine (H := H) a b).size = 32
+
 end SizzLean
