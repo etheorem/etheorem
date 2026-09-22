@@ -35,7 +35,7 @@ of a future cached-path equivalence theorem.
 * **`EthCLLib` / `EthCLSpecs`**: sibling subpackages at
   `../../EthCLLib/` and `../../EthCLSpecs/`. `EthCLLib` is the
   consensus-spec framework on top of SizzLean; `EthCLSpecs` holds
-  the Fulu/Gloas specs and declares its consensus containers
+  the Fulu/Gloas/Heze specs and declares its consensus containers
   in-spec, `deriving SSZRepr` against the types and instances
   SizzLean exports. The arrangement validates that SizzLean's user
   surface is enough to express every consensus container without
@@ -993,7 +993,7 @@ Now **two separate Lake subpackages** (siblings of `packages/SizzLean/`)
 rather than a subdirectory of SizzLean. The dependency chain runs
 `LeanSha256 → SizzLean → EthCLLib → EthCLSpecs`, with each link as a
 `[[require]]` between subpackages. `EthCLLib` is the consensus-spec
-framework; `EthCLSpecs` holds the Fulu/Gloas specs and declares its
+framework; `EthCLSpecs` holds the Fulu/Gloas/Heze specs and declares its
 SSZ containers in-spec. Splitting it out lets the SSZ library be
 reused with a different container set (an EIP-7495 profile, a
 non-consensus user schema) without dragging the consensus-spec
@@ -1481,7 +1481,7 @@ lakefile. `LeanSha256` uses `lakefile.toml` (pure Lean, no FFI);
     │   ├── EthCLLib.lean
     │   └── EthCLLib/                   # Spec/ (forkdef / forkcontainer / forkstruct DSL, Forms)
     │
-    └── EthCLSpecs/                     # Fulu/Gloas specs + in-spec containers; depends on EthCLLib
+    └── EthCLSpecs/                     # Fulu/Gloas/Heze specs + in-spec containers; depends on EthCLLib
         ├── lakefile.toml
         ├── EthCLSpecs.lean
         └── EthCLSpecs/

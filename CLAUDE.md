@@ -2,7 +2,7 @@
 
 A Lean 4 monorepo for Ethereum, built in Lean. The centerpiece is an
 executable implementation of the Ethereum consensus specification for
-the Fulu and Gloas forks. The SSZ containers, the beacon-chain state
+the Fulu, Gloas, and Heze forks. The SSZ containers, the beacon-chain state
 transition, the fork upgrade, and fork choice all run, checked against
 the upstream pyspec
 [`consensus-spec-tests`](https://github.com/ethereum/consensus-spec-tests)
@@ -22,7 +22,7 @@ its own subpackage under `packages/`:
   equivalence axioms).
 - **`EthCLLib`** + **`EthCLSpecs`**: the consensus-spec framework (the
   fork-authoring DSL, the effect monad, the container front-end, the
-  pyspec driver) and the Fulu / Gloas fork bodies built on it, which
+  pyspec driver) and the Fulu / Gloas / Heze fork bodies built on it, which
   declare their containers in-spec.
 - **`LeanSha256`**: pure-Lean SHA-256 reference. NIST CAVP-validated,
   kernel-reducible, no FFI.
@@ -152,8 +152,8 @@ its mathlib dependency never touches the root build.
 │   ├── SizzLean/                # SSZ library + cache + Hasher seam + FFI ≡ spec equivalence axioms.
 │   │   └── lakefile.lean (pkg-config + glob discovery, no C target), SizzLean/{Spec,Repr,Hasher,Cache,Proofs} / docs/ / Tests/
 │   ├── EthCLLib/                # Consensus-spec framework / DSL. lakefile.toml (declarative).
-│   ├── EthCLSpecs/              # Fulu / Gloas fork bodies + the pyspec_server runner.
-│   │   └── lakefile.toml, EthCLSpecs/{Fulu,Gloas,Proofs} / Forms.lean / PySpecTests/ / docs/ / README.md
+│   ├── EthCLSpecs/              # Fulu / Gloas / Heze fork bodies + the pyspec_server runner.
+│   │   └── lakefile.toml, EthCLSpecs/{Fulu,Gloas,Heze,Proofs} / Forms.lean / PySpecTests/ / docs/ / README.md
 │   ├── LeanPoseidon/            # Pure-Lean Poseidon2 (standalone island parallel to LeanSha256).
 │   │   └── lakefile.lean (C ABI shim + cargo zkhash oracle), csrc/ / rust-oracle/ / docs/ / README.md
 │   └── LeanPoseidonProofs/      # Poseidon2 permute ≡ reference proof (mathlib; standalone, NOT in the umbrella).
@@ -325,7 +325,7 @@ Two upstream sources govern behavior. SSZ tracks the
 [consensus-specs SSZ doc](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md);
 the fork bodies track the
 [consensus-specs](https://github.com/ethereum/consensus-specs) pyspec
-for Fulu and Gloas. When an implementation disagrees with the spec, the
+for Fulu, Gloas, and Heze. When an implementation disagrees with the spec, the
 spec wins. We record the discrepancy rather than paper over it.
 
 **SSZ (`SizzLean`).** The `SSZType` universe has seven arms: `uintN`
@@ -336,8 +336,8 @@ and `container`. Each supports `serialize`, `deserialize`, and
 EIP-7495 / 7916 / 8016 progressive types sit outside the universe and
 are out of scope.
 
-**Consensus specs (`EthCLLib` + `EthCLSpecs`).** The Fulu and Gloas
-forks, authored in-spec on the framework: the SSZ containers, the
+**Consensus specs (`EthCLLib` + `EthCLSpecs`).** The Fulu, Gloas, and
+Heze forks, authored in-spec on the framework: the SSZ containers, the
 beacon-chain state transition, the fork upgrade, and fork choice, all
 executable and checked against the pyspec `ssz_static`,
 state-transition, and fork-choice vectors at both presets. Earlier

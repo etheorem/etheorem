@@ -2,7 +2,7 @@
 
 This document is the contract for a Lean 4 library that implements the
 Ethereum consensus specification, the SSZ type system, the state-transition
-function, and fork choice, for the Fulu and Gloas forks. It defines the line
+function, and fork choice, for the Fulu, Gloas, and Heze forks. It defines the line
 between what a spec author writes and what the framework supplies. Read it
 first. The two sibling documents both build on it: `FRAMEWORK_ARCHITECTURE.md`
 implements each row of the contract from below, and `SPECS_ARCHITECTURE.md`

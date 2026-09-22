@@ -2,17 +2,16 @@
 
 # Etheorem
 
-> **Status: early-stage, experimental; an independent project with
-> contributors from the Ethereum Protocol Fellowship and the Invisible
-> Garden Fellowship; not an EF release.** The libraries here pass the
-> upstream consensus-spec test corpus and ship the three central
-> SSZ theorems on a `BasicSupported` cut, but production-grade
-> stability and a stable release line are not implied. What is
-> proved, package by package, is in [Verification
-> status](#verification-status).
+> An independent project with contributors from the Ethereum Protocol
+> Fellowship and the Invisible Garden Fellowship; not an EF release.
+> The libraries here pass the upstream consensus-spec test corpus and
+> ship the three central SSZ theorems on a `BasicSupported` cut. What
+> is proved, package by package, is in [Verification
+> status](#verification-status). Reviews, issues, and pull requests are
+> welcome.
 
-A Lean 4 implementation of the Ethereum consensus specification for the Fulu
-and Gloas forks. It is executable. The SSZ container types, the full
+A Lean 4 implementation of the Ethereum consensus specification for the Fulu,
+Gloas, and Heze forks. It is executable. The SSZ container types, the full
 beacon-chain state transition, the fork upgrade, and fork choice all run, and
 they are checked against the pyspec
 [`consensus-spec-tests`](https://github.com/ethereum/consensus-spec-tests)

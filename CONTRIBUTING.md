@@ -34,7 +34,7 @@ library names and discovery details).
 
 ```bash
 just test                                    # all per-package in-Lean tests
-just ethcl-pyspec                       # consensus-spec-tests ssz_static suite (Fulu/Gloas)
+just ethcl-pyspec                       # consensus-spec-tests ssz_static suite (Fulu/Gloas/Heze)
 just sizzlean-pyspec                 # consensus-spec-tests ssz_generic wire-format suite
 just sizzlean-bench                                   # microbench (S1–S7)
 ```
@@ -105,7 +105,7 @@ A quick orientation map for the most-asked questions:
 - **Upstream-vector harnesses.** Two pytest harnesses drive the
   consensus-spec-tests vectors. The `ssz_static` per-fork
   containers run from `packages/EthCLSpecs/PySpecTests/` against
-  the `pyspec_server` exe (Fulu and Gloas). The fork-agnostic
+  the `pyspec_server` exe (Fulu, Gloas, and Heze). The fork-agnostic
   `ssz_generic` wire-format primitives run from
   `packages/SizzLean/PySpecTests/` against the
   `ssz_generic_runner` exe. The one-command entry points are

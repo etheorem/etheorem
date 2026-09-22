@@ -27,11 +27,12 @@ behavior with the plumbing tucked away.
 
 ## 1. Scope and goals
 
-The library targets two forks in order. Fulu first, as the base. Gloas second,
-as a diff over Fulu through the inheritance mechanism that
-`SPEC_AUTHORING_MODEL.md` defines in its fork-declaration-model section. The
-order is forced. A later fork is delivered as a diff over its parent, and Gloas's
-parent is Fulu, so Fulu has to exist whole before Gloas can diff it.
+The library targets three forks in order. Fulu first, as the base. Gloas
+second, as a diff over Fulu. Heze third, as a diff over Gloas. Each diff runs
+through the inheritance mechanism that `SPEC_AUTHORING_MODEL.md` defines in its
+fork-declaration-model section. The order is forced. A later fork is delivered as
+a diff over its parent, so a parent has to exist whole before its child can diff
+it.
 
 ### 1.1 The surface per fork
 
@@ -46,6 +47,7 @@ that is in scope:
 | the `fork` upgrade and `genesis` construction | |
 | Fulu's PeerDAS additions (EIP-7594) | |
 | Gloas's ePBS additions (EIP-7732) | |
+| Heze's FOCIL additions (EIP-7805) | |
 
 The domain line of the contract's domain-line section sets this boundary. A
 helper that names a consensus concept is spec-owned and in scope; the validator
@@ -99,14 +101,15 @@ exercise, in SizzLean's own pyspec harness.
 
 ---
 
-## 2. The accumulated-Fulu and Gloas-diff strategy
+## 2. The accumulated-Fulu and per-fork-diff strategy
 
 ### 2.1 Fulu is the whole accumulated spec
 
-The conceptual lineage runs Electra to Fulu to Gloas: Fulu is Electra plus
-PeerDAS, Gloas is Fulu plus ePBS. That chain is useful as documentation. The
-implemented diff realizes only part of it. Fulu is the base, authored whole;
-Gloas is the one implemented diff over it.
+The conceptual lineage runs Electra to Fulu to Gloas to Heze: Fulu is Electra
+plus PeerDAS, Gloas is Fulu plus ePBS, Heze is Gloas plus FOCIL. That chain is
+useful as documentation. The implemented diff realizes only part of it. Fulu is
+the base, authored whole; Gloas and Heze are the two implemented diffs over
+it.
 
 "Authored whole" means the whole accumulated spec, not a small Fulu delta. The
 consensus spec is cumulative. By Fulu, the state transition and fork-choice have
@@ -115,7 +118,8 @@ and Capella's execution payload and withdrawals, Deneb's blobs, Electra's churn
 and pending-deposit machinery, then Fulu's PeerDAS on top. None of those forks is
 built as a separate layer. Fulu is the entire accumulated state transition and
 fork-choice as of Fulu, authored as one snapshot. That is the heavy lift. Gloas
-is the comparatively small ePBS diff over that base.
+is the comparatively small ePBS diff over that base, and Heze the smaller FOCIL
+diff over Gloas.
 
 ### 2.2 The port is driven off the generated Python
 
@@ -129,15 +133,15 @@ where the Python is terse.
 The generated module also defines the scope. Whatever it contains is what Fulu
 needs, so there is no manual pruning of which prior-fork machinery to include. The
 Gloas manifest of inherited, overridden, and new declarations is derivable by
-diffing the generated `fulu` and `gloas` Python modules, computed rather than
-hand-derived. The behavioral-conformance freedom that the contract's
+diffing the generated `fulu` and `gloas` Python modules, and the Heze manifest by
+diffing `gloas` against `heze`, computed rather than hand-derived. The behavioral-conformance freedom that the contract's
 authoring-style section grants means the Lean rendering follows what reads
 naturally and answers only to the vectors, so the port re-expresses the Python's
 behavior in idiomatic Lean rather than transcribing its file structure.
 
-### 2.3 The PeerDAS and ePBS surface sketches
+### 2.3 The PeerDAS, ePBS, and FOCIL surface sketches
 
-The two diffs have a recognizable shape.
+The three diffs have a recognizable shape.
 
 Fulu's PeerDAS surface over Electra adds the `DataColumnSidecar` and `MatrixEntry`
 containers, the fork-choice data-availability check `isDataAvailable`, and KZG
@@ -156,6 +160,13 @@ separately under ePBS, so `processBlock` changes its step order), and the
 payload-aware fork-choice fields on the `Store`. Building Fulu first lands the KZG
 primitive and the data-availability surface before ePBS arrives, so Gloas inherits
 both.
+
+Heze's FOCIL diff over Gloas is the thinnest of the three. It adds the
+`InclusionList` container family, the `InclusionListStore` and its helpers folded
+into the fork-choice `Store`, the `on_inclusion_list` handler, and the
+`should_extend_payload` / `on_execution_payload_envelope` overrides. EIP-7805
+changes no state transition, so the spine is the Gloas pipeline re-instantiated
+over Heze types.
 
 ---
 

@@ -51,7 +51,7 @@ way:
   `Hasher` typeclass and the `Sha256` tag, and holds the FFI≡spec equivalence
   axioms. It depends on no other LeanHazmat family.
 * **`EthCLLib` / `EthCLSpecs`**: the consensus-spec framework and the
-  Fulu/Gloas specs built on it; consume `SizzLean`. No direct
+  Fulu/Gloas/Heze specs built on it; consume `SizzLean`. No direct
   LeanHazmat dependency.
 
 See [`../monorepo-arch.md`](../monorepo-arch.md) for the monorepo's overall

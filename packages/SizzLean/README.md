@@ -2,9 +2,9 @@
 
 # SizzLean: serialization, part of a well verified breakfast.
 
-> **Status: early-stage, experimental; an independent project with
-> contributors from the Ethereum Protocol Fellowship and the Invisible
-> Garden Fellowship; not an EF release.** The library passes the upstream
+> An independent project with contributors from the Ethereum Protocol
+> Fellowship and the Invisible Garden Fellowship; not an EF release.
+> The library passes the upstream
 > consensus-spec test corpus and the three central theorems are
 > landed on the `BasicSupported` cut, which now covers mixed-field
 > containers and variable-element `vector` / `list` under the
@@ -12,9 +12,7 @@
 > `MAX_LENGTH`. The theorem gate remains
 > `BasicSupported`; that is the predicate's whole definition, see
 > [`Spec/BasicSupported.lean`](SizzLean/Spec/BasicSupported.lean).
-> Reviews,
-> issues, and pull requests are welcome; production-grade stability
-> and a stable release line are not implied.
+> Reviews, issues, and pull requests are welcome.
 
 A Lean 4 implementation of Ethereum's
 [SSZ](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md)
@@ -138,7 +136,7 @@ theorems.
 
 Provides the SSZ *library*, types and primitives. Consensus-spec
 container definitions live in the sibling `EthCLSpecs` package
-(Fulu and Gloas), built on the `EthCLLib` framework.
+(Fulu, Gloas, and Heze), built on the `EthCLLib` framework.
 
 ## Status
 
@@ -162,7 +160,7 @@ umbrella `just sizzlean-pyspec-full` (wire-format) and
 `just ethcl-pyspec-full` (per-fork containers) targets.
 
 The per-fork consensus-container vectors are covered by the
-`EthCLSpecs` pyspec harness for the Fulu and Gloas forks.
+`EthCLSpecs` pyspec harness for the Fulu, Gloas, and Heze forks.
 Coverage of those forks lives in `EthCLSpecs`, the SSZ library
 itself implements every wire-format type they need.
 
@@ -532,10 +530,10 @@ just leansha256-test
 just sizzlean-pyspec
 # Full `ssz_generic` wire-format sweep:
 just sizzlean-pyspec-full
-# Per-fork `ssz_static` consensus-container suite (Fulu/Gloas),
+# Per-fork `ssz_static` consensus-container suite (Fulu/Gloas/Heze),
 # quick dev subset:
 just ethcl-pyspec
-# The complete in-scope EthCLSpecs sweep (both forks, both presets):
+# The complete in-scope EthCLSpecs sweep (all three forks, both presets):
 just ethcl-pyspec-full
 ```
 

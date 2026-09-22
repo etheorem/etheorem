@@ -415,7 +415,7 @@ Two pytest harnesses drive a CLI runner against the pyspec
 upstream archives. The fork-agnostic `ssz_generic` wire-format
 suite runs from SizzLean against the `ssz_generic_runner` exe;
 the per-fork `ssz_static` consensus-container suite runs from
-EthCLSpecs against the `pyspec_server` exe (Fulu and Gloas).
+EthCLSpecs against the `pyspec_server` exe (Fulu, Gloas, and Heze).
 
 ```bash
 # Generic SSZ wire-format tests (uints, vectors, bitlist, …).
@@ -433,7 +433,7 @@ just ethcl-pyspec
 just sizzlean-pyspec "--subset=0 -n auto"
 just ethcl-pyspec "--fork=gloas"
 
-# The complete in-scope EthCLSpecs sweep (both forks, both presets):
+# The complete in-scope EthCLSpecs sweep (all three forks, both presets):
 just ethcl-pyspec-full
 ```
 

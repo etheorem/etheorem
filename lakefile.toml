@@ -10,7 +10,7 @@ name = "Etheorem"
 #   lake build LeanHazmatBls           #   (need `just hazmat-sha256-vendor` (x86_64 Linux) /
 #   lake build LeanHazmatKzg           #    `hazmat-bls-vendor` / `hazmat-kzg-vendor`)
 #   lake build SizzLean
-#   lake build EthCLLib / EthCLSpecs   # consensus-spec framework + Fulu/Gloas bodies
+#   lake build EthCLLib / EthCLSpecs   # consensus-spec framework + Fulu/Gloas/Heze bodies
 #   lake build LeanPoseidon
 #   lake build SizzLeanTests
 #   lake build LeanHazmatSha256Tests / LeanHazmatBlsTests / LeanHazmatKzgTests

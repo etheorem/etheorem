@@ -370,7 +370,7 @@ Plus the cross-implementation `ssz_static` upstream-vector
 sweep (the `EthCLSpecs` pytest harness in
 `packages/EthCLSpecs/PySpecTests/`), which exercises the
 production cached path against the consensus-spec-tests release
-for the Fulu and Gloas forks.
+for the Fulu, Gloas, and Heze forks.
 
 This is the same safety-net shape `remerkleable` ships
 (`tests/test_roundtrip.py` plus consensus-spec-tests

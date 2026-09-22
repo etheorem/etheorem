@@ -4,7 +4,7 @@ import EthCLLib.Spec
 # `EthCLSpecs.Forms`: spec-local container shorthands
 
 `signedwrapper SignedX wraps X` is the two-field `Signed*` envelope (`message : X`,
-`signature : BLSSignature`) that recurs seven times across both forks, written once. It
+`signature : BLSSignature`) that recurs eight times across the three forks, written once. It
 expands to the framework `forkcontainer`, so the generated type is captured for inheritance
 exactly as a hand-written one would be.
 

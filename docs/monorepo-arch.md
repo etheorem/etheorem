@@ -10,7 +10,7 @@ READMEs and `packages/SizzLean/docs/ARCHITECTURE.md`.
 
 ```
 LeanSha256  ←  SizzLean  ←  EthCLLib  ←  EthCLSpecs        LeanPoseidon
-   (pure)      (SSZ +        (consensus    (Fulu/Gloas        (pure Poseidon2,
+   (pure)      (SSZ +        (consensus    (Fulu…Heze         (pure Poseidon2,
                cache +       framework)     specs +            BN254 t=3,
                FFI hash)                    in-spec            standalone island)
                                             containers)
@@ -69,10 +69,10 @@ poseidon-proofs`).
     │   ├── lakefile.toml             # declarative
     │   ├── EthCLLib.lean
     │   └── EthCLLib/
-    ├── EthCLSpecs/                   # Fulu/Gloas specs + in-spec containers; depends on EthCLLib
+    ├── EthCLSpecs/                   # Fulu/Gloas/Heze specs + in-spec containers; depends on EthCLLib
     │   ├── lakefile.toml             # declarative
     │   ├── EthCLSpecs.lean
-    │   ├── EthCLSpecs/               # Fulu/, Gloas/, Forms.lean
+    │   ├── EthCLSpecs/               # Fulu/, Gloas/, Heze/, Forms.lean
     │   ├── PySpecTests/              # pytest harness for ssz_static + state transition (pyspec_server)
     │   ├── docs/                     # IMPLEMENTATION_NOTES.md, PLAN.md
     │   └── README.md
@@ -102,7 +102,7 @@ SHA-256 in Lean shouldn't have to depend on all of SSZ. The SSZ
 library (`SizzLean`) is reusable beyond Ethereum. Anyone with a
 custom SSZ-shaped schema shouldn't have to pull in
 consensus-spec types. The Ethereum consensus framework
-(`EthCLLib`) and the Fulu/Gloas specs built on it
+(`EthCLLib`) and the Fulu/Gloas/Heze specs built on it
 (`EthCLSpecs`) sit on top of SSZ and don't need to push their
 weight onto SSZ-only consumers. `LeanPoseidon` is a *second*
 pure-crypto primitive, a verified Poseidon2, parallel to

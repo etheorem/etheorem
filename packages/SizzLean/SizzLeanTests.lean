@@ -53,7 +53,7 @@ lake build SizzLeanTests
   `Fork` / `SignedBeaconBlockHeader` / `HistoricalBatch`
   but with no dependency on the consensus container surface.
 
-Eth-driven pyspec (real Fulu / Gloas containers,
+Eth-driven pyspec (real Fulu / Gloas / Heze containers,
 `ssz_static` CLI dispatch) lives in `EthCLSpecs`. The
 two libraries share the same property-test patterns but operate on
 different container surfaces.

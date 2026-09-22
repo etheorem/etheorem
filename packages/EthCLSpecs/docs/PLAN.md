@@ -3,7 +3,7 @@
 This document sequences the work that the three design documents describe.
 `SPEC_AUTHORING_MODEL.md` is the contract between author and framework,
 `FRAMEWORK_ARCHITECTURE.md` builds the framework from below, and
-`SPECS_ARCHITECTURE.md` ports the Fulu and Gloas specs on top. This plan is their
+`SPECS_ARCHITECTURE.md` ports the Fulu, Gloas, and Heze specs on top. This plan is their
 sibling. It turns those decisions into ordered phases, each with concrete
 deliverables and an acceptance criterion that says the phase is done.
 

@@ -32,8 +32,8 @@ open SizzLean.Hasher
 namespace EthCLSpecs.Fulu.Interface
 
 /-- Pinned upstream spec / vectors release (`SPEC_AUTHORING_MODEL.md` §10). The
-latest `consensus-spec-tests` release; confirmed to carry both Fulu and Gloas
-minimal vectors. -/
+latest `consensus-spec-tests` release; confirmed to carry the Fulu, Gloas, and
+Heze minimal vectors. -/
 def pyspecPinnedVersion : String := "v1.7.0-alpha.11"
 
 /-- Decode a `BeaconState` at preset `P` into a `FastBox`, or the runner's `decode`

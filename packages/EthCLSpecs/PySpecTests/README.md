@@ -60,5 +60,5 @@ While the spec port is in progress, in-scope cases that reach an unimplemented
 branch report `xfail` (`todo`) rather than failing, so the run stays green and the
 work-queue stays visible. A vector that reaches a `todo` never passes silently; an
 `outOfBounds` / `missingKey` on well-formed input fails hard as a bug-smell. As the
-Fulu/Gloas ports fill the `todo` stubs (Phase 2+), the `xfail`s become passes with
+Fulu/Gloas/Heze ports fill the `todo` stubs (Phase 2+), the `xfail`s become passes with
 no harness change.
