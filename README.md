@@ -4,8 +4,7 @@
 
 > An independent project with contributors from the Ethereum Protocol
 > Fellowship and the Invisible Garden Fellowship; not an EF release.
-> The libraries here pass the upstream consensus-spec test corpus and
-> ship the three central SSZ theorems on a `BasicSupported` cut. What
+> The libraries here pass the upstream consensus-spec test corpus. What
 > is proved, package by package, is in [Verification
 > status](#verification-status). Reviews, issues, and pull requests are
 > welcome.
