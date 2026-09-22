@@ -269,4 +269,112 @@ theorem isValidMerkleBranch_of_foldOpening [HasherTag]
   show root.toArray[i]! = root.toArray[i]'hlt
   exact getElem!_pos root.toArray i hlt
 
+/-! ### Completeness stated on `Spec.merkleize`
+
+`isValidMerkleBranch_of_foldOpening` takes the reconstruction as a hypothesis,
+and `SizzLean.Proofs.Merkle.foldOpening_openingAt` proves it for
+`Spec.merkleize`. Composing the two leaves a statement with no fold in it: a
+chunk list, a depth, an index, and the check accepts.
+
+The composition costs the widths. `isValidMerkleBranch` takes root-typed
+siblings, so `bytesToRoot` must not drop bytes. `[CombineWidth32 HasherTag.H]`
+and the 32-byte chunks guarantee that. -/
+
+/-- `bytesToRoot` drops nothing from a 32-byte buffer: root-typing and
+converting back returns the same bytes. The width hypotheses below discharge
+this lemma's `hsz`. -/
+theorem vecToBytes_bytesToRoot (b : ByteArray) (hsz : b.size = 32) :
+    vecToBytes (bytesToRoot b) = b := by
+  apply ByteArray.ext
+  apply Array.ext
+  · simp [vecToBytes, bytesToRoot, bytesToVec, hsz]
+  · intro i h1 h2
+    simp only [vecToBytes, bytesToRoot, bytesToVec, Vector.toArray_ofFn,
+      Array.getElem_ofFn, ByteArray.get!]
+    exact getElem!_pos b.data i (by omega)
+
+open SizzLean.Proofs.Merkle in
+/-- **Completeness on the merkleizer.** Open `Spec.merkleize H chunks depth` at
+`index` and `isValidMerkleBranch` accepts.
+
+The check reads its siblings root-typed and bottom-up, so the statement reverses
+`naiveOpeningAt`'s top-down list, and `hleaf` supplies the leaf.
+`isValidMerkleBranch_of_merkleize_idx` below reads it as chunk `index` instead.
+
+`foldOpening_openingAt` discharges `isValidMerkleBranch_of_foldOpening`'s
+reconstruction hypothesis. The leaf, every sibling, and the merkleizer's output
+are 32 bytes, so `bytesToRoot` drops nothing.
+
+**Axiom use**: at `Sha256`, `CombineWidth32` carries `sha256Combine_eq_spec`. At
+`Sha256Spec`, the theorem uses no axiom. -/
+theorem isValidMerkleBranch_of_merkleize [HasherTag] [CombineWidth32 HasherTag.H]
+    (chunks : List ByteArray) (depth index : Nat)
+    (hlen : chunks.length ≤ 2 ^ depth) (hindex : index < 2 ^ depth)
+    (hchunks : ∀ c ∈ chunks, c.size = 32) (leaf : ByteArray)
+    (hleaf : naiveLeafAt HasherTag.H chunks 0 depth
+        (SizzLean.Cache.MerkleTree.gindexBits (2 ^ depth + index)) = some leaf) :
+    isValidMerkleBranch (bytesToRoot leaf)
+        ((naiveOpeningAt HasherTag.H chunks 0 depth
+            (SizzLean.Cache.MerkleTree.gindexBits
+              (2 ^ depth + index))).map bytesToRoot).toArray.reverse
+        depth index
+        (bytesToRoot (SizzLean.Spec.merkleize HasherTag.H chunks depth))
+      = true := by
+  -- The `gindexBits` term is written in full each time: `set` is a mathlib
+  -- tactic, and this package builds without mathlib.
+  have hblen :
+      (SizzLean.Cache.MerkleTree.gindexBits (2 ^ depth + index)).length = depth := by
+    rw [gindexBits_pow_add depth index hindex]; simp
+  -- the path is `depth` bits long, so the opening is `depth` siblings long
+  have hslen :
+      ((naiveOpeningAt HasherTag.H chunks 0 depth
+          (SizzLean.Cache.MerkleTree.gindexBits
+            (2 ^ depth + index))).map bytesToRoot).length = depth := by
+    rw [List.length_map, naiveOpeningAt_length HasherTag.H depth chunks 0 _ hblen]
+  apply isValidMerkleBranch_of_foldOpening (bytesToRoot leaf) _ _ depth index
+    hslen hindex
+  -- root-typing the siblings loses nothing, so the fold sees the opening itself
+  have hmapback :
+      ((naiveOpeningAt HasherTag.H chunks 0 depth
+            (SizzLean.Cache.MerkleTree.gindexBits
+              (2 ^ depth + index))).map bytesToRoot).map vecToBytes
+        = naiveOpeningAt HasherTag.H chunks 0 depth
+            (SizzLean.Cache.MerkleTree.gindexBits (2 ^ depth + index)) := by
+    rw [List.map_map]
+    have hid :
+        (naiveOpeningAt HasherTag.H chunks 0 depth
+            (SizzLean.Cache.MerkleTree.gindexBits (2 ^ depth + index))).map
+              (vecToBytes ∘ bytesToRoot)
+          = (naiveOpeningAt HasherTag.H chunks 0 depth
+              (SizzLean.Cache.MerkleTree.gindexBits (2 ^ depth + index))).map id :=
+      List.map_congr_left fun s hs =>
+        vecToBytes_bytesToRoot s
+          (naiveOpeningAt_size HasherTag.H depth chunks 0 _ s hchunks hs)
+    rw [hid, List.map_id]
+  have hleafsz : leaf.size = 32 :=
+    naiveLeafAt_size HasherTag.H depth chunks 0 _ leaf hchunks hleaf
+  rw [hmapback, vecToBytes_bytesToRoot leaf hleafsz,
+    foldOpening_openingAt HasherTag.H chunks depth hlen _ leaf hleaf]
+  exact (vecToBytes_bytesToRoot _
+    (merkleize_size HasherTag.H chunks depth hlen hchunks)).symm
+
+open SizzLean.Proofs.Merkle in
+/-- **Completeness at an index.** The same result with the leaf read as
+`chunks[index]?`, or as the padding where `index` runs past the last chunk.
+`naiveLeafAt_gindexBits` names the leaf. -/
+theorem isValidMerkleBranch_of_merkleize_idx [HasherTag] [CombineWidth32 HasherTag.H]
+    (chunks : List ByteArray) (depth index : Nat)
+    (hlen : chunks.length ≤ 2 ^ depth) (hindex : index < 2 ^ depth)
+    (hchunks : ∀ c ∈ chunks, c.size = 32) :
+    isValidMerkleBranch (bytesToRoot (chunks[index]?.getD SizzLean.Spec.zero32))
+        ((naiveOpeningAt HasherTag.H chunks 0 depth
+            (SizzLean.Cache.MerkleTree.gindexBits
+              (2 ^ depth + index))).map bytesToRoot).toArray.reverse
+        depth index
+        (bytesToRoot (SizzLean.Spec.merkleize HasherTag.H chunks depth))
+      = true := by
+  refine isValidMerkleBranch_of_merkleize chunks depth index hlen hindex hchunks _ ?_
+  rw [gindexBits_pow_add depth index hindex]
+  exact naiveLeafAt_gindexBits HasherTag.H depth chunks index hindex
+
 end EthCLLib.Proofs
