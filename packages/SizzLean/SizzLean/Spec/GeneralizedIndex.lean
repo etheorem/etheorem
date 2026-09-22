@@ -231,6 +231,21 @@ theorem generalizedIndex_field_top (fs : List SSZType) (k : Nat) (hk : k < fs.le
   simp only [SSZType.generalizedIndex, generalizedIndex_step,
     stepInto_field _ _ hk, Nat.one_mul, generalizedIndexAux_nil]
 
+/-- A field of a field. Field `k₁` of container `fs` is the container `gs`, and the
+path goes on into field `k₂` of `gs`. The outer gindex shifts left by
+`chunkDepth gs.length` bits, and `k₂` fills them.
+
+`hfield` names the type the second step starts from. `stepInto` returns it as
+`fs.get`, so the proof restates it in that form. -/
+theorem generalizedIndex_field_field (fs gs : List SSZType) (k₁ k₂ : Nat)
+    (hk₁ : k₁ < fs.length) (hk₂ : k₂ < gs.length) (hfield : fs[k₁] = container gs) :
+    (container fs).generalizedIndex [.field k₁, .field k₂]
+      = some ((2 ^ chunkDepth fs.length + k₁) * 2 ^ chunkDepth gs.length + k₂) := by
+  have hget : fs.get ⟨k₁, hk₁⟩ = container gs := by simpa using hfield
+  simp only [SSZType.generalizedIndex, generalizedIndex_step,
+    stepInto_field _ _ hk₁, hget, stepInto_field _ _ hk₂, Nat.one_mul,
+    generalizedIndexAux_nil]
+
 /-- A composite-element vector's element `i` sits at slot `i` of the
 element block: `2 ^ chunkDepth n + i`. A basic-element vector packs
 its elements into chunks, so its slot is the chunk index instead
