@@ -74,6 +74,44 @@ theorem except_bind_ok {ε α β : Type} (a : α) (f : α → Except ε β) :
 theorem except_bind_error {ε α β : Type} (e : ε) (f : α → Except ε β) :
     (Except.error e : Except ε α) >>= f = .error e := rfl
 
+/-- `do x` for a lone `for`-loop `x` elaborates as `x >>= fun _ => pure ()`. This lemma
+removes that wrapper. A fact about the bare loop run then connects to a use site that runs
+the bare `forIn` before more code. The wrapper succeeds with the same post-state and
+discards the loop's own value. -/
+theorem run_of_run_seq_pure {ε σ β : Type} (x : StateT σ (Except ε) β) (s0 s1 : σ)
+    (h : (x >>= fun _ => (pure () : StateT σ (Except ε) Unit)).run s0 = .ok ((), s1)) :
+    ∃ a : β, x.run s0 = .ok (a, s1) := by
+  rw [run_bind] at h
+  cases hx : x.run s0 with
+  | ok p =>
+    obtain ⟨a, s⟩ := p
+    rw [hx] at h
+    rw [except_bind_ok, run_pure] at h
+    have h2 : s = s1 := congrArg Prod.snd (Except.ok.inj h)
+    subst h2
+    exact ⟨a, rfl⟩
+  | error e =>
+    rw [hx, except_bind_error] at h
+    cases h
+
+/-- The reject half of `run_of_run_seq_pure`. The `pure ()` wrapper never raises. So when
+`x >>= fun _ => pure ()` rejects, `x` rejects with the same error. -/
+theorem run_of_run_seq_pure_error {ε σ β : Type} (x : StateT σ (Except ε) β)
+    (s0 : σ) (e : ε)
+    (h : (x >>= fun _ => (pure () : StateT σ (Except ε) Unit)).run s0 = .error e) :
+    x.run s0 = .error e := by
+  rw [run_bind] at h
+  cases hx : x.run s0 with
+  | ok p =>
+    obtain ⟨a, s⟩ := p
+    rw [hx] at h
+    rw [except_bind_ok, run_pure] at h
+    cases h
+  | error e' =>
+    rw [hx, except_bind_error] at h
+    injection h with h'
+    rw [h']
+
 /-- `ofExcept` of an `.ok a`: the run succeeds and passes the state through
 unchanged. The run-level shape the loop-body proofs read the spec's indexed reads
 and checked ops at (`liftErr` unfolds to `ofExcept` of the converted value). -/
