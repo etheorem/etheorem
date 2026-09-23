@@ -9,17 +9,17 @@ Heze's `shouldExtendPayload` follows the Gloas fork-choice decision flow but
 inserts a FOCIL gate after payload verification and before the later timeliness,
 data-availability, and proposer-boost logic.
 This module proves that, once the common block/slot prefix succeeds, a verified
-payload with a recorded `false` inclusion-list satisfaction verdict returns `false`
+payload with a recorded `false` inclusion-list satisfaction answer returns `false`
 in the pure fork-choice runner `ForkChoiceStoreRun (Store map)`, leaving its
 runner state unchanged.
 
 The theorem assumes the successful block lookup, current-slot calculation,
-non-overflowing slot increment, and recorded verdict. It needs no
-`[ExecutionEngine]` binder: Heze records the inclusion-list satisfaction verdict
+non-overflowing slot increment, and recorded answer. It needs no
+`[ExecutionEngine]` binder: Heze records the inclusion-list satisfaction answer
 behind that seam in `recordPayloadInclusionListSatisfaction`, while
 `shouldExtendPayload` only reads the stored result through
-`isPayloadInclusionListSatisfied`. Verdict production and correctness, the
-payload/verdict pairing invariant, missing-record behavior, inclusion-list
+`isPayloadInclusionListSatisfied`. Answer production and correctness, the
+payload/answer pairing invariant, missing-record behavior, inclusion-list
 construction or validation, and end-to-end canonicality and liveness stay out of
 scope.
 
@@ -40,7 +40,7 @@ open EthCLSpecs.Fulu (Root)
 open EthCLSpecs.Heze (Preset Config Store shouldExtendPayload isPayloadInclusionListSatisfied
   isPayloadVerified getCurrentSlot BeaconBlock)
 
-/-- A verified payload with a recorded `false` inclusion-list satisfaction verdict
+/-- A verified payload with a recorded `false` inclusion-list satisfaction answer
 is rejected by Heze's FOCIL gate once the preliminary block/slot checks succeed.
 The result preserves the runner state and short-circuits later logic shared with Gloas.
 
