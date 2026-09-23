@@ -1,4 +1,5 @@
 import EthCLSpecs.Proofs.Fulu.Balances
+import EthCLSpecs.Proofs.Fulu.DepositIndex
 import EthCLSpecs.Proofs.Fulu.Run
 
 /-!
@@ -19,4 +20,6 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Balances`: `increaseBalance` and `decreaseBalance`, each with an exact
   run equation and an out-of-range reject, plus `increaseBalance`'s overflow reject and its
   exact stored sum, and `decreaseBalance`'s truncating difference.
+* `EthCLSpecs.Proofs.Fulu.DepositIndex`: `processDeposit` up to `applyDeposit`. The index
+  increment faults only at `2 ^ 64 - 1`, and never under the `processOperations` guard.
 -/
