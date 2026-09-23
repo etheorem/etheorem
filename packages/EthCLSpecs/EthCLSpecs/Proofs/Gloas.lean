@@ -1,3 +1,4 @@
+import EthCLSpecs.Proofs.Gloas.ApplyWithdrawals
 import EthCLSpecs.Proofs.Gloas.BuilderIndex
 import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 import EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid
@@ -27,6 +28,8 @@ and collide with nothing.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Gloas.ApplyWithdrawals`: over any withdrawals array, a successful
+  `applyWithdrawals` run keeps the builder registry's size and never raises a builder balance.
 * `EthCLSpecs.Proofs.Gloas.BuilderIndex`: the builder-index flag round-trip
   (`isBuilderIndex`, `toBuilderIndex`, `convertBuilderIndexToValidatorIndex`).
 * `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: `processBuilderPendingPayments`'s
