@@ -915,4 +915,32 @@ separation.
   core `UInt64` ordering lemmas. Their theorems live in `EthCLSpecs.Proofs.Gloas`
   rather than the flat `EthCLSpecs.Proofs`, since Fulu declares the same function.
 
+- **`Proofs/OrdVector.lean`** proves that the byte-vector order `instOrdVectorUInt8`
+  is reflexive (`compare_vectorUInt8_self`). The fork-choice proofs need it when two
+  nodes have the same root. It lives in the fork-proof tree, so a change to it
+  rebuilds only proof modules.
+
+- **`Proofs/Heze/Run.lean`** names `HezeRun`, the pure `StateT`/`Except` monad for the
+  Heze state-transition proofs. It is the Heze counterpart of `GloasRun`.
+
+- **`Proofs/Heze/BuilderPendingPayments.lean`** ports the Gloas builder-payment proof
+  to the Heze constant, and adds `mem_qualifyingPaymentIndices_iff`: an entry is
+  qualifying if and only if its weight reaches the quorum. It states the clamping
+  append of the model, which differs from pyspec at the list limit ("Gloas diff",
+  open gap).
+
+- **`Proofs/Heze/PayloadTiebreak.lean`** proves that at a block from the previous
+  slot, with a verified payload and a recorded `false` inclusion-list answer, EMPTY
+  wins the payload tiebreak. A restated body of the `getHead` loop then goes to EMPTY.
+  The module docstring lists what the restatement leaves out.
+
+- **`Proofs/Heze/ParentPayloadEmpty.lean`** proves that `processParentExecutionPayload`
+  on the EMPTY edge, with the empty parent requests, does not change the state. It
+  also proves that fork choice calls an edge EMPTY exactly when the two block hashes
+  differ.
+
+- **`Proofs/Heze/CensorshipCost.lean`** states the two facts above side by side for
+  one block (`unsatisfiedPayload_headEmpty_and_emptyChild_unsettled`). The facts are
+  independent. The model does not include the proposer who builds the child.
+
 - **`PROOF_LEDGER.md`** tracks candidate consensus proof targets and their status.
