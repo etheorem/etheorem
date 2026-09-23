@@ -21,12 +21,12 @@ The withdrawals side rests on `progressiveListFoldlPush_val`
 the original list plus every value, in order. Alpha.12 dropped
 `BUILDER_PENDING_WITHDRAWALS_LIMIT`, so there is no capacity clamp to assume.
 
-The window side is a direct instance of `shiftWindow`'s general behavior:
-`expectedPaymentWindow_get_lt` / `expectedPaymentWindow_get_upper` state the two
-index-region facts (old upper half moves down; new upper half is empty).
-`processBuilderPendingPayments` reads `builderPendingPayments` once, before the
-withdrawals loop runs, and the loop never writes that field, so the window
-transformation's input is unaffected by whatever the withdrawals loop did.
+The window side applies the general behavior of `shiftWindow`.
+`expectedPaymentWindow_get_lt` and `expectedPaymentWindow_get_upper` state the two facts
+about index regions: the old upper half moves down, and the new upper half is empty.
+`processBuilderPendingPayments` reads `builderPendingPayments` twice: before the
+withdrawals loop, and again from the state after the loop, as pyspec does. The loop
+does not write that field, so both reads give the same value.
 
 Statements bind plain `BeaconState` values and never bind a boxed `State`. The contract
 `processBuilderPendingPayments_run` states the run at the box, in `.run` form, because
