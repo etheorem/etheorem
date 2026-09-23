@@ -658,6 +658,17 @@ payload-availability bit), and `process_epoch` (builder-pending-payments and
 `process_ptc_window` last). The `transition` format folds pre-fork Fulu blocks, applies
 `upgradeToGloas` plus onboarding at the boundary, then folds post-fork Gloas blocks.
 
+**Open gap: the builder-withdrawal append clamps at the list limit.**
+Three pyspec functions append to `builder_pending_withdrawals`:
+`settle_builder_payment` (`gloas/beacon-chain.md:996-1000`),
+`process_builder_pending_payments` (`:1137-1148`), and `apply_parent_execution_payload`
+(`:1198-1230`). At the list limit (`BUILDER_PENDING_WITHDRAWALS_LIMIT`, `2^20`),
+remerkleable's `append` raises, and the state transition is invalid. The Lean bodies
+append through `appendState`, which uses the clamping `SSZList.push`. At the limit it
+drops the withdrawal and the run succeeds. No conformance vector reaches the limit. The
+gap is in the Gloas body, and Heze inherits it. The theorems
+`processBuilderPendingPayments_run` (Gloas and Heze) state the clamping behavior.
+
 ## Heze diff
 
 EIP-7805 changes no state-transition substep, so Heze inherits the Gloas spine whole
