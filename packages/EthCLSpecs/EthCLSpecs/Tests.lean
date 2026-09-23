@@ -1,4 +1,5 @@
 import EthCLSpecs.Tests.FuluForkChoicePins
+import EthCLSpecs.Tests.GindexPins
 import EthCLSpecs.Tests.GloasForkChoicePins
 import EthCLSpecs.Tests.HezeCommitteesPins
 import EthCLSpecs.Tests.HezeForkChoicePins

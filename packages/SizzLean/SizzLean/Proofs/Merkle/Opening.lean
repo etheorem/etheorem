@@ -211,6 +211,39 @@ theorem foldOpening_mixInLength_merkleize (H : Type) [Hasher H]
   rw [merkleize_eq_naiveRoot H cs d hlen]
   exact foldOpening_mixInLength H cs d count bits leaf hleaf
 
+/-- An opening through two trees is the inner fold fed to the outer one. The list
+runs top down, so the outer tree's siblings and bits come first. The fold sinks
+past them to the inner part, reconstructs the inner root there, and uses that
+root as the outer fold's leaf.
+
+`hlen` pairs every outer sibling with an outer bit. Without it, the outer fold
+stops early and consumes part of the inner opening. -/
+theorem foldOpening_append (H : Type) [Hasher H] (leaf : ByteArray) :
+    ∀ (sibs₁ sibs₂ : List ByteArray) (bits₁ bits₂ : List Bool),
+      sibs₁.length = bits₁.length →
+        foldOpening H leaf (sibs₁ ++ sibs₂) (bits₁ ++ bits₂)
+          = foldOpening H (foldOpening H leaf sibs₂ bits₂) sibs₁ bits₁ := by
+  intro sibs₁
+  induction sibs₁ with
+  | nil =>
+      intro sibs₂ bits₁ bits₂ hlen
+      have hb : bits₁ = [] := List.length_eq_zero_iff.mp hlen.symm
+      subst hb
+      rfl
+  | cons sib sibs ih =>
+      intro sibs₂ bits₁ bits₂ hlen
+      cases bits₁ with
+      | nil => simp at hlen
+      | cons bit bits =>
+          have hrest : sibs.length = bits.length := by simpa using hlen
+          cases bit with
+          | false =>
+              simp only [List.cons_append, foldOpening]
+              rw [ih sibs₂ bits bits₂ hrest]
+          | true =>
+              simp only [List.cons_append, foldOpening]
+              rw [ih sibs₂ bits bits₂ hrest]
+
 /-- The bit path of `2 ^ depth + index` addresses chunk `index`.
 
 `naiveLeafAt` takes a bit path, and a caller has an index.
