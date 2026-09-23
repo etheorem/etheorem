@@ -1,29 +1,30 @@
 import EthCLSpecs.Gloas.Operations
+import EthCLSpecs.Proofs.Gloas.Run
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid`: Boolean characterization
 
-`EthCLSpecs.Gloas.canBuilderCoverBid` is a pure `Bool` predicate used by
-`processExecutionPayloadBid` before queuing a `BuilderPendingPayment`. This
-file characterizes its result exactly using the `builderBalance` and
-`minBalance` values computed by the implementation.
+`EthCLSpecs.Gloas.canBuilderCoverBid` is the check that `processExecutionPayloadBid` asserts
+before it queues a `BuilderPendingPayment`. It returns an `Except`, because two of its steps
+can fault as the pyspec's do: the pending-balance sums, and
+`MIN_DEPOSIT_AMOUNT + pending_withdrawals_amount`.
 
-These are literal `UInt64` values; the theorem does not assert that accumulation
-of pending obligations is overflow-free. Indexing is total, so the theorem also
-holds for out-of-range `builderIndex` values, without claiming that the resulting
-default value represents a registered builder.
+The characterization takes the pending balance as a successful result, and the addition as
+one that stays below `2 ^ 64`. It then gives the `Bool` exactly, in terms of the
+`builderBalance` and `minBalance` values the function computes. Two more theorems give the two
+faults. Indexing is total, so the theorems also hold for an out-of-range `builderIndex`. They
+do not claim that the default value represents a registered builder.
 
-Two theorems:
+The theorems:
 
-* `canBuilderCoverBid_iff`: the exact implementation-level characterization,
-  `UInt64` throughout, guard and subtraction spelled exactly as the function
-  computes them.
-* `canBuilderCoverBid_iff_toNat_add_le`: a semantic characterization relative
-  to that same computed `minBalance`, restated over `Nat` so the guard reads
-  as a single addition-fits-in-balance fact rather than a subtraction.
+* `canBuilderCoverBid_iff`: the exact characterization, `UInt64` throughout, with the guard and
+  the subtraction spelled as the function computes them.
+* `canBuilderCoverBid_iff_toNat_add_le`: the same result over `Nat`, so the guard reads as one
+  addition that fits in the balance.
+* `canBuilderCoverBid_pending_error` and `canBuilderCoverBid_min_overflow`: the two faults.
 
-A private `le_sub_iff_toNat_add_le` carries the `UInt64`-to-`Nat` step the second
-theorem needs, keeping the spec-level statements free of the arithmetic detour.
+A private `le_sub_iff_toNat_add_le` carries the step from `UInt64` to `Nat` that the second
+theorem needs.
 
 See `EthCLSpecs/docs/PROOF_LEDGER.md`, Gloas "Bounds and termination
 properties".
@@ -33,29 +34,71 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (HasherTag)
+open EthCLLib.Spec (HasherTag StateTransitionError checkedAdd throwArithmetic liftErr)
 open EthCLSpecs.Gloas (BuilderIndex Gwei Preset)
 open EthCLSpecs.Gloas (canBuilderCoverBid getPendingBalanceToWithdrawForBuilder)
 
-/-- `canBuilderCoverBid` returns `true` exactly when its computed `minBalance`
-does not exceed the builder's balance and the bid fits in the remainder.
-These are the literal `UInt64` values computed by the implementation; no
-claim is made that pending-obligation accumulation is overflow-free or that
-`builderIndex` identifies a registered builder. -/
+/-- The descriptor of the `MIN_DEPOSIT_AMOUNT` addition. -/
+abbrev minBalanceDescr : String :=
+  "can_builder_cover_bid: MIN_DEPOSIT_AMOUNT + pending_withdrawals_amount"
+
+/-- With a successful pending balance and a `MIN_DEPOSIT_AMOUNT` addition below `2 ^ 64`,
+`canBuilderCoverBid` returns `true` exactly when its computed `minBalance` does not exceed the
+builder's balance and the bid fits in the remainder. No claim is made that `builderIndex`
+identifies a registered builder. -/
 @[characterizes EthCLSpecs.Gloas.canBuilderCoverBid]
 theorem canBuilderCoverBid_iff [Preset] [HasherTag] :
-    ∀ (state : Gloas.State) (builderIndex : BuilderIndex) (bidAmount : Gwei),
-      canBuilderCoverBid state builderIndex bidAmount = true ↔
+    ∀ (state : Gloas.State) (builderIndex : BuilderIndex) (bidAmount pending : Gwei),
+      (getPendingBalanceToWithdrawForBuilder state builderIndex
+          : Except StateTransitionError Gwei) = .ok pending →
+      Gloas.Const.minDepositAmountG.toNat + pending.toNat < 2 ^ 64 →
+      ((canBuilderCoverBid state builderIndex bidAmount : Except StateTransitionError Bool)
+          = .ok true ↔
         let builderBalance := (sszGet state builders[builderIndex.toNat]!).balance
-        let minBalance :=
-          Gloas.Const.minDepositAmountG +
-          getPendingBalanceToWithdrawForBuilder state builderIndex
-        minBalance ≤ builderBalance ∧ bidAmount ≤ builderBalance - minBalance := by
-  intro state builderIndex bidAmount
+        let minBalance := Gloas.Const.minDepositAmountG + pending
+        minBalance ≤ builderBalance ∧ bidAmount ≤ builderBalance - minBalance) := by
+  intro state builderIndex bidAmount pending hpend hmin
+  have hc : ¬ Gloas.Const.minDepositAmountG + pending < Gloas.Const.minDepositAmountG := by
+    rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_add, Nat.mod_eq_of_lt hmin]
+    omega
+  -- Reduce the two binds first, while `hc` still matches the carry test's `UInt64` form.
+  simp only [canBuilderCoverBid, hpend, GloasRun.except_bind_ok, checkedAdd, hc, ite_false]
   -- Both lemmas restate `UInt64`'s `<` / `≤` as `Nat` comparisons on `toNat`,
   -- which is what lets `simp` discharge the guard's `if` and pair the surviving
   -- branch conditions into the conjunction.
-  simp [canBuilderCoverBid, UInt64.lt_iff_toNat_lt, UInt64.le_iff_toNat_le]
+  simp [pure, Except.pure, GloasRun.except_bind_ok, UInt64.lt_iff_toNat_lt,
+    UInt64.le_iff_toNat_le]
+
+/-- **Pending-balance fault.** When the pending-balance sums fault, `canBuilderCoverBid` rejects
+with the same fault. -/
+theorem canBuilderCoverBid_pending_error [Preset] [HasherTag] :
+    ∀ (state : Gloas.State) (builderIndex : BuilderIndex) (bidAmount : Gwei)
+      (err : StateTransitionError),
+      (getPendingBalanceToWithdrawForBuilder state builderIndex
+          : Except StateTransitionError Gwei) = .error err →
+      (canBuilderCoverBid state builderIndex bidAmount : Except StateTransitionError Bool)
+        = .error err := by
+  intro state builderIndex bidAmount err hpend
+  simp [canBuilderCoverBid, hpend]
+  rfl
+
+/-- **Minimum-balance fault.** When `MIN_DEPOSIT_AMOUNT + pending` reaches `2 ^ 64`,
+`canBuilderCoverBid` rejects with `.arithmetic`. The pyspec raises `ValueError` at the same
+point. -/
+theorem canBuilderCoverBid_min_overflow [Preset] [HasherTag] :
+    ∀ (state : Gloas.State) (builderIndex : BuilderIndex) (bidAmount pending : Gwei),
+      (getPendingBalanceToWithdrawForBuilder state builderIndex
+          : Except StateTransitionError Gwei) = .ok pending →
+      2 ^ 64 ≤ Gloas.Const.minDepositAmountG.toNat + pending.toNat →
+      (canBuilderCoverBid state builderIndex bidAmount : Except StateTransitionError Bool)
+        = .error (.arithmetic minBalanceDescr) := by
+  intro state builderIndex bidAmount pending hpend hmin
+  have hc : Gloas.Const.minDepositAmountG + pending < Gloas.Const.minDepositAmountG := by
+    have := UInt64.toNat_lt pending
+    rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_add]
+    omega
+  simp only [canBuilderCoverBid, hpend, GloasRun.except_bind_ok, checkedAdd, hc, ite_true]
+  rfl
 
 /-- The arithmetic bridge behind the `Nat` restatement below: under `b ≤ a`, the
 truncating difference `a - b` bounds `c` exactly when `b + c` fits in `a` over
@@ -67,20 +110,21 @@ private theorem le_sub_iff_toNat_add_le {a b c : UInt64} (h : b ≤ a) :
   have := UInt64.le_iff_toNat_le.mp h
   omega
 
-/-- Equivalent `Nat`-level characterization: `canBuilderCoverBid` accepts
-exactly when the computed `minBalance` plus the bid fits within the builder's
-balance. The addition in this conclusion cannot wrap; `minBalance` itself
-remains the literal `UInt64` value produced by the implementation. -/
+/-- The same characterization over `Nat`: `canBuilderCoverBid` accepts exactly when the
+computed `minBalance` plus the bid fits within the builder's balance. The addition in this
+conclusion cannot wrap. -/
 theorem canBuilderCoverBid_iff_toNat_add_le [Preset] [HasherTag] :
-    ∀ (state : Gloas.State) (builderIndex : BuilderIndex) (bidAmount : Gwei),
-      canBuilderCoverBid state builderIndex bidAmount = true ↔
+    ∀ (state : Gloas.State) (builderIndex : BuilderIndex) (bidAmount pending : Gwei),
+      (getPendingBalanceToWithdrawForBuilder state builderIndex
+          : Except StateTransitionError Gwei) = .ok pending →
+      Gloas.Const.minDepositAmountG.toNat + pending.toNat < 2 ^ 64 →
+      ((canBuilderCoverBid state builderIndex bidAmount : Except StateTransitionError Bool)
+          = .ok true ↔
         let builderBalance := (sszGet state builders[builderIndex.toNat]!).balance
-        let minBalance :=
-          Gloas.Const.minDepositAmountG +
-          getPendingBalanceToWithdrawForBuilder state builderIndex
-        minBalance.toNat + bidAmount.toNat ≤ builderBalance.toNat := by
-  intro state builderIndex bidAmount
-  rw [canBuilderCoverBid_iff]
+        let minBalance := Gloas.Const.minDepositAmountG + pending
+        minBalance.toNat + bidAmount.toNat ≤ builderBalance.toNat) := by
+  intro state builderIndex bidAmount pending hpend hmin
+  rw [canBuilderCoverBid_iff state builderIndex bidAmount pending hpend hmin]
   dsimp only
   constructor
   · rintro ⟨h_min, h_bid⟩
