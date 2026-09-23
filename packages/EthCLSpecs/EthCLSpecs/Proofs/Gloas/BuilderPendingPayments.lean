@@ -26,15 +26,20 @@ not an unconditional theorem.
 The window side is a direct instance of `shiftWindow`'s general behavior:
 `expectedPaymentWindow_get_lt` / `expectedPaymentWindow_get_upper` state the two
 index-region facts (old upper half moves down; new upper half is empty).
-`processBuilderPendingPayments` reads `builderPendingPayments` once, before the
-withdrawals loop runs, and the loop never writes that field, so the window
-transformation's input is unaffected by whatever the withdrawals loop did.
+`processBuilderPendingPayments` reads `builderPendingPayments` twice: before the
+withdrawals loop, and again from the state after the loop, as pyspec does. The loop
+does not write that field. So both reads give the same value.
 
 This file proves only the local before/after behavior of one call, for an arbitrary
 input state. It does not prove protocol-wide exactly-once settlement, and says nothing
 about how this substep's effect interacts with `settleBuilderPayment` or
 `processProposerSlashing`, the other paths that clear a `BuilderPendingPayment` before
 this substep ever runs.
+
+At the list limit (`2^20` withdrawals), pyspec's `append` raises, and the model's
+`SSZList.push` drops the withdrawal. So `processBuilderPendingPayments_run` states the
+model's clamping behavior. `IMPLEMENTATION_NOTES.md`, "Gloas diff", records this open
+gap.
 
 See `EthCLSpecs/docs/PROOF_LEDGER.md`, Gloas "Safety and invariant preservation".
 
