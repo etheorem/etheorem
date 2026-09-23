@@ -1137,6 +1137,10 @@ separation.
   has no fold law. The list-membership lemmas `mem_arrayUnion_iff` and
   `nodup_arrayUnion` live in `EthCLLib/Proofs/Arith.lean`. The alpha.12
   collector and its missing-timeliness corollaries went with the collector.
+  Under `LawfulFcMap` at `ValidatorIndex` keys, `mem_inclusionListItems_iff`
+  says the items are exactly the stored entries of the key, and
+  `mem_getInclusionListTransactions_of_stored` gives each transaction of a
+  timely entry from a non-equivocator.
 
 - **`Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`** proves
   `recordPayloadInclusionListSatisfaction_run` in
