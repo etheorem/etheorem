@@ -226,6 +226,14 @@ Each has a refuting pin over the branch no vector reaches: `pinRecordRefuted`
 (`Heze/ForkChoice.lean`) for the inclusion-list gate, `pinEngineRefuted`
 (`Gloas/ForkChoice.lean`) for the other two.
 
+`EthCLLib.Proofs.EngineLaws` states the EIP-7805 inclusion rule as a `Prop` structure,
+`LawfulInclusionList`, that a theorem takes as an explicit hypothesis. The EL answer is
+`true` exactly when each listed transaction is in the payload or satisfies an omission
+predicate. The payload projection and the omission predicate are parameters, so a
+theorem that assumes the rule names both. The optimistic engine satisfies the rule with
+an omission predicate that is always true. A conclusion that uses the rule is only as
+strong as the predicate the reader supplies.
+
 ## State, presets, and the header macro
 
 `State` is the boxed `SSZ.Box _ BeaconState`. Hashing runs through the `[HasherTag]`
@@ -897,7 +905,7 @@ separation.
   collection errors propagate through `getInclusionListTransactions`.
   Those error corollaries stay untagged.
   The successful-result characterization of
-  `collectInclusionListTransactions` remains proposed in `PROOF_LEDGER.md`.
+  `collectInclusionListTransactions` is in progress in `PROOF_LEDGER.md`.
 
 - **`Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`** proves
   `recordPayloadInclusionListSatisfaction_run` in
@@ -946,6 +954,62 @@ separation.
   its payload (`onExecutionPayloadEnvelope_run_pairing`). It does not cover a failed
   run.
 
+- **`Proofs/Heze/OnInclusionList.lean`** models the inclusion lists that a node
+  receives as an arrival list. Each arrival is a signed list and the time into the
+  current slot at arrival; as in pyspec, the slot of the list does not enter the
+  timeliness. `ilStoreOfArrivals` folds `processInclusionList` over the list from the
+  empty IL store that `getForkchoiceStore` seeds. `honestStored_of_arrivals` proves that
+  an honest list stays stored with the timeliness of its first arrival. A later arrival
+  goes to branch (B) and does not change the stored timeliness. `ArrivalHypotheses`
+  bundles three hypotheses:
+  1. At the committee key of the honest list, no earlier list comes from its validator.
+  2. At that key, each later list from the validator is the honest list.
+     `on_inclusion_list` checks no signature, so the hypothesis also relies on the p2p
+     layer to reject forged lists.
+  3. No later arriving list has the same root. The store keys the timeliness by list root
+     alone, so a collision would overwrite it. The collision resistance of the hash makes
+     this hypothesis hold. An earlier list at the same root does no harm: the first
+     arrival of the honest list takes branch (C) and overwrites it.
+
+  The dichotomy adds a timely first arrival, so the stored timeliness is `true`.
+  Hypotheses 1 and 2 read only the committee key of the honest list. The validator can
+  send lists for other committee keys, and `arrivalHypotheses_two_keys` shows that such
+  a history satisfies the hypotheses. The store key is the list's own
+  `inclusionListCommitteeRoot`; for an honest list it is the `hash_tree_root` of the
+  committee. It carries no slot, and the store keeps every key. On a small validator set,
+  a key can repeat across epochs. A second list from an honest validator under a
+  repeated key then fails hypothesis 2, and pyspec, like the model, marks the validator
+  as an equivocator.
+
+  In the model, only `onInclusionList` writes the IL store. Taking `ilStoreOfArrivals`
+  as the IL store encodes two assumptions: the store started from the seed, and every
+  arrival went through a successful `onInclusionList` run, in order. No theorem proves
+  them over whole traces.
+
+- **`Proofs/Heze/GetInclusionListTransactions.lean`** also proves, under `LawfulFcMap`,
+  that the collection of the inclusion-list transactions succeeds when every stored list
+  has a timeliness entry, and that the result contains each transaction of an honest list
+  (`collectInclusionListTransactions_ok_mem`, `mem_getInclusionListTransactions`). The
+  proof reuses the module's own copy of the loop body. `total_arrivals`
+  (`OnInclusionList.lean`) gives the timeliness entries for every arrival list.
+
+- **`Proofs/Heze/InclusionDichotomy.lean`** composes these with the envelope pairing and
+  `CensorshipCost.lean` (`inclusionList_dichotomy`). The EL assumption is
+  `LawfulInclusionList` (the "Engine seam" section). The `false` answer is about the
+  whole collected list. `inclusionList_missing_tx` states the direction for one
+  transaction, and `inclusionList_missing_tx_cost` takes it to the three facts of
+  `unsatisfiedPayload_cost`. The three theorems take their hypotheses as one
+  `DichotomyHypotheses`. The `false` case gives `UnsatisfiedPayload` at any later store
+  (`LaterStore`) that holds the block and the answer at the block root, whose current
+  slot is the slot after the block, and whose slot increment does not overflow.
+  `unsatisfiedPayload_of_recorded_false` makes that step without the arrival model. The
+  block and answer
+  conditions are per key, so a handler run that writes only other roots keeps them.
+  `onTickPerSlot_run_keeps` (`OnTickPerSlot.lean`) shows that a per-slot tick keeps the
+  `blocks` and `payloadInclusionListSatisfaction` maps. The clock condition holds only
+  in the slot after the block. A second envelope for the same root records the answer
+  again. No theorem covers a whole trace of handler runs.
+
 - **`Proofs/Heze/Run.lean`** names `HezeRun`, the pure `StateT`/`Except` monad for the
   Heze state-transition proofs. It is the Heze counterpart of `GloasRun`.
 
@@ -959,9 +1023,13 @@ separation.
   reaches the quorum (`EpochPaysBidIffQuorum`).
 
 - **`Proofs/Heze/PayloadTiebreak.lean`** proves that at a block from the previous
-  slot, with a verified payload and a recorded `false` inclusion-list answer, EMPTY
-  wins the payload tiebreak. A restated body of the `getHead` loop then goes to EMPTY.
-  The module docstring lists what the restatement leaves out.
+  slot, EMPTY wins the payload tiebreak when the payload is unverified, or verified with
+  a recorded `false` inclusion-list answer. `headLoopBody` names the body of the
+  `getHead` loop, and `getHead_eq_fuelLoop_headLoopBody` ties it to `getHead` by `rfl`,
+  so an edit to the loop fails the build. At the pending node of the block the body
+  returns `.next` of the EMPTY node. `getHead_walk_pending_to_empty` states the walk:
+  when the loop reaches the pending node with fuel left, it continues from the EMPTY
+  node. No theorem proves that the walk reaches the pending node.
 
 - **`Proofs/Heze/ParentPayloadEmpty.lean`** proves that `processParentExecutionPayload`
   on the EMPTY edge, with the empty parent requests, does not change the state. It
@@ -969,14 +1037,12 @@ separation.
   differ.
 
 - **`Proofs/Heze/CensorshipCost.lean`** states the cost of a recorded `false` answer
-  for one block in three facts (`unsatisfiedPayload_cost`). The head step goes to
-  EMPTY. A child on EMPTY settles no payment. At the epoch substep, the bid is paid if
-  and only if its entry reaches the quorum. The first two facts are independent,
-  because the model does not include the proposer who builds the child. The third takes
-  `BidPaymentCarried` as the hypothesis about the blocks between the bid and the
-  substep. A proposer slashing of the block's proposer, or a child on the FULL edge,
-  breaks it. `unsatisfiedPayload_of_el_unsatisfied` derives the payload conditions from
-  the envelope lookups and an EL answer of `false`. It takes the block lookup, the
-  current slot, and the overflow check as hypotheses on the store after the handler.
+  for one block in three facts (`unsatisfiedPayload_cost`). The `getHead` loop continues
+  from EMPTY at the block. A child on EMPTY settles no payment. At the epoch substep, the
+  bid is paid if and only if its entry reaches the quorum. The first two facts are
+  independent, because the model does not include the proposer who builds the child.
+  The third takes `BidPaymentCarried` as the hypothesis about the blocks between the
+  bid and the substep. A proposer slashing of the block's proposer, or a child on the
+  FULL edge, breaks it.
 
 - **`PROOF_LEDGER.md`** tracks candidate consensus proof targets and their status.
