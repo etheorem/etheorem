@@ -11,7 +11,8 @@ data-availability, and proposer-boost logic.
 This module proves that, once the common block/slot prefix succeeds, a verified
 payload with a recorded `false` inclusion-list satisfaction answer returns `false`
 in the pure fork-choice runner `ForkChoiceStoreRun (Store map)`, leaving its
-runner state unchanged.
+runner state unchanged. An unverified payload returns `false` before the FOCIL gate
+(`shouldExtendPayload_run_eq_false_of_unverified`).
 
 The theorem assumes the successful block lookup, current-slot calculation,
 non-overflowing slot increment, and recorded answer. It needs no
@@ -38,7 +39,7 @@ open EthCLSpecs.Fulu (Root)
 -- class, and `Heze.Store` is elaborated against Heze's. The downgrade instances run the
 -- other way, so a Fulu binder would not synthesize here.
 open EthCLSpecs.Heze (Preset Config Store shouldExtendPayload isPayloadInclusionListSatisfied
-  isPayloadVerified getCurrentSlot BeaconBlock)
+  isPayloadVerified getCurrentSlot BeaconBlock Slot)
 
 /-- A verified payload with a recorded `false` inclusion-list satisfaction answer
 is rejected by Heze's FOCIL gate once the preliminary block/slot checks succeed.
@@ -65,6 +66,33 @@ theorem shouldExtendPayload_run_eq_false_of_recorded_unsatisfied
   simp [shouldExtendPayload, isPayloadInclusionListSatisfied, FcMap.getOrThrow,
     FcMap.getOrThrowKey, FcMap.getOrAssert, hblock, checkedAdd, hnooverflow, hverified,
     hunsatisfied, hcurrentslot, except_bind_ok]
+  rfl
+
+/-- An unverified payload returns `false` after the block and slot prefix. The FOCIL
+gate is not reached. The runner state is `s1`, the state after `getCurrentSlot`.
+
+The name and the statement match etheorem/etheorem#102, which proves the same fact
+from its complete `.run` equation. -/
+theorem shouldExtendPayload_run_eq_false_of_unverified
+    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] :
+    ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
+      (currentSlot : Slot),
+      FcMap.lookup store.blocks root = some rootBlock →
+      (getCurrentSlot
+          (StoreTransition := ForkChoiceStoreRun (Store map))
+          store).run runnerStore
+        = .ok (currentSlot, s1) →
+      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
+      rootBlock.slot + 1 = currentSlot →
+      isPayloadVerified store root = false →
+      (shouldExtendPayload
+          (StoreTransition := ForkChoiceStoreRun (Store map))
+          store root).run runnerStore
+        = .ok (false, s1) := by
+  intro store runnerStore s1 root rootBlock currentSlot hblock hcur hnooverflow hslot hverified
+  subst hslot
+  simp [shouldExtendPayload, FcMap.getOrThrow, FcMap.getOrThrowKey, hblock, checkedAdd,
+    hnooverflow, hverified, hcur, except_bind_ok]
   rfl
 
 end EthCLSpecs.Proofs.Heze
