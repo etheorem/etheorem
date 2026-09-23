@@ -28,8 +28,9 @@ state its two outcomes on the uncached box.
 The window side applies the general behavior of `shiftWindow`.
 `expectedPaymentWindow_get_lt` and `expectedPaymentWindow_get_upper` state the two facts
 about index regions: the old upper half moves down, and the new upper half is empty.
-`processBuilderPendingPayments` reads `builderPendingPayments` once, before the loop, and
-the loop never writes that field.
+`processBuilderPendingPayments` reads `builderPendingPayments` twice: before the
+withdrawals loop, and again from the state after the loop, as pyspec does. The loop
+does not write that field, so both reads give the same value.
 
 Statements bind plain `BeaconState` values and never bind a boxed `State`. The contract
 `processBuilderPendingPayments_run` states the run at the box, in `.run` form, because
