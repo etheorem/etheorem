@@ -1,18 +1,18 @@
 import EthCLSpecs.Proofs.Heze.PayloadTiebreak
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
-import EthCLLib.Proofs.LawfulFcMap
 
 /-!
 # `EthCLSpecs.Proofs.Heze.CensorshipCost`: what a failed inclusion list costs
 
 `unsatisfiedPayload_cost` states three facts about one block. It uses
 `PayloadTiebreak.lean`, `ParentPayloadEmpty.lean`, and `BuilderPendingPayments.lean`.
-Take a block from the previous slot with a verified payload whose recorded
-inclusion-list answer is `false`. Then:
+Take a block from the previous slot whose recorded inclusion-list answer is `false`.
+Then:
 
-1. one step of the `getHead` walk at the pending node of the block goes to its EMPTY
-   node. The theorem does not cover the full walk;
+1. whenever the `getHead` loop reaches the pending node of the block with fuel left, it
+   continues from the EMPTY node (`getHead_walk_pending_to_empty`). The theorem does
+   not prove that the walk reaches the pending node;
 2. take any child of the block that fork choice puts under the EMPTY node, with the
    empty parent requests. Process it on a state that caches the bid of the block. Then
    `processParentExecutionPayload` does not change the state, and it does not settle
@@ -33,10 +33,8 @@ it. No theorem here proves the hypothesis from the block transitions.
 
 The answer comes from the `[ExecutionEngine]` seam. The default instance answers `true`
 for every payload, so only a non-default engine gives the recorded `false`.
-`unsatisfiedPayload_of_el_unsatisfied` derives the two payload conditions of
-`UnsatisfiedPayload` from the envelope lookups and that `false` answer, for a list
-`ilTxs` of inclusion-list transactions. It takes the three block conditions as
-hypotheses. No theorem in this module names a specific transaction.
+`InclusionDichotomy.lean` derives `UnsatisfiedPayload` from an honest inclusion list and
+a missing transaction. No theorem in this module names a specific transaction.
 -/
 
 set_option autoImplicit false
@@ -45,15 +43,14 @@ namespace EthCLSpecs.Proofs.Heze
 
 open EthCLSpecs.Proofs (ForkChoiceStoreRun)
 open EthCLLib.Spec
-open EthCLLib.Proofs (LawfulFcMap)
 open EthCLSpecs.Heze (Preset Config Store State Root ForkChoiceNode BeaconBlock
-  ExecutionRequests getCurrentSlot isPayloadVerified getNodeChildren getHead
-  getParentPayloadStatus processParentExecutionPayload processBuilderPendingPayments
-  ExecutionPayload Transaction SignedExecutionPayloadEnvelope isInclusionListSatisfied)
+  ExecutionRequests getCurrentSlot getParentPayloadStatus processParentExecutionPayload
+  processBuilderPendingPayments)
 
 /-- The conditions under which fork choice sees a payload that fails the inclusion
-list. `root` names the block `rootBlock` from the previous slot. The payload of the
-block is verified. The recorded inclusion-list answer for the payload is `false`. -/
+list. `root` names the block `rootBlock` from the previous slot. The recorded
+inclusion-list answer for the payload is `false`. The payload need not be verified:
+the `getHead` loop goes to EMPTY either way. -/
 structure UnsatisfiedPayload {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
     (store : Store map) (root : Root) (rootBlock : BeaconBlock) : Prop where
   /-- The store holds the block at `root`. -/
@@ -64,14 +61,12 @@ structure UnsatisfiedPayload {map : MapKind} [Preset] [HasherTag] [Config] [FcMa
       = .ok (rootBlock.slot + 1, store)
   /-- The slot increment does not overflow. -/
   noOverflow : ¬ (rootBlock.slot + 1 < rootBlock.slot)
-  /-- The payload of the block is verified. -/
-  verified : isPayloadVerified store root = true
   /-- The recorded inclusion-list answer for the payload is `false`. -/
   unsatisfied : FcMap.lookup store.payloadInclusionListSatisfaction root = some false
 
 /-- `UnsatisfiedPayload` has a witness, so the theorem below is not vacuous. The store
 uses the minimal preset and `treeMap`. It holds the default block at the zero root,
-sits in slot `1`, holds a payload for the block, and records the answer `false`. The
+sits in slot `1`, and records the answer `false` for the block. The
 store sets the answer directly, so the witness holds under any `[ExecutionEngine]`
 instance. `pinRecordRefuted` in `Tests/HezeForkChoicePins.lean` reaches a recorded
 `false` through the record path, under an engine that answers `false`. -/
@@ -98,12 +93,12 @@ example :
             checkpointStates := FcMap.empty
             latestMessages := FcMap.empty
             unrealizedJustifications := FcMap.empty
-            payloads := FcMap.insert FcMap.empty root default
+            payloads := FcMap.empty
             payloadTimelinessVote := FcMap.empty
             payloadDataAvailabilityVote := FcMap.empty
             payloadInclusionListSatisfaction := FcMap.insert FcMap.empty root false
             inclusionListStore := EthCLSpecs.Heze.InclusionListStore.empty },
-    root, default, ⟨?_, ?_, by decide, by decide +kernel, by decide +kernel⟩⟩
+    root, default, ⟨?_, ?_, by decide, by decide +kernel⟩⟩
   · -- `simp` closes `compare root root = .eq` through the `LawfulEqOrd` instance of
     -- `EthCLLib/Spec/FiniteMap.lean`.
     simp only [FcMap.lookup, FcMap.insert, FcMap.empty]
@@ -119,8 +114,8 @@ example :
 
 /-- The cost of an unsatisfied payload, in three facts. Let `bid` be the bid of the block.
 
-1. Fork choice drops the payload. One step of the `getHead` walk at the pending node of
-   the block selects the EMPTY node.
+1. Fork choice drops the payload. Whenever the `getHead` loop reaches the pending node of
+   the block with fuel left, it continues from the EMPTY node.
 2. A child on the EMPTY edge does not pay the bid. Take any child of the block that fork
    choice puts under EMPTY, with the empty parent requests. Run
    `processParentExecutionPayload` for the child on a state that caches `bid`. The run does
@@ -139,14 +134,11 @@ theorem unsatisfiedPayload_cost
     {map : MapKind} [Preset] [HasherTag] [Config] [CryptoBackend] [FcMap map]
     (store : Store map) (root : Root) (rootBlock : BeaconBlock) (blocks : Array Root)
     (h : UnsatisfiedPayload store root rootBlock) :
-    (do
-        let children ← getNodeChildren
-          (StoreTransition := ForkChoiceStoreRun (Store map))
-          store blocks (ForkChoiceNode.pending root)
-        children.foldlM (init := children[0]!)
-          (getHead.betterOf (StoreTransition := ForkChoiceStoreRun (Store map)) store)
-      : ForkChoiceStoreRun (Store map) ForkChoiceNode).run store
-      = .ok (ForkChoiceNode.empty root, store) ∧
+    (∀ (fuel : Nat) (exhausted : ForkChoiceNode),
+      (fuelLoop (fuel + 1) (ForkChoiceNode.pending root) exhausted
+          (headLoopBody store blocks)).run store
+        = (fuelLoop fuel (ForkChoiceNode.empty root) exhausted
+            (headLoopBody store blocks)).run store) ∧
     (∀ (child : BeaconBlock) (state : State),
       child.parentRoot = root →
       (getParentPayloadStatus (StoreTransition := ForkChoiceStoreRun (Store map))
@@ -166,8 +158,8 @@ theorem unsatisfiedPayload_cost
         (processBuilderPendingPayments : HezeRun Unit).run epochState = .ok ((), after) ∧
         EpochPaysBidIffQuorum epochState after
           rootBlock.body.signedExecutionPayloadBid.message) := by
-  refine ⟨getHeadStep_run_eq_empty_of_recorded_unsatisfied store blocks root rootBlock
-    h.block h.currentSlot h.noOverflow h.verified h.unsatisfied, ?_,
+  refine ⟨fun fuel exhausted => getHead_walk_pending_to_empty store blocks root rootBlock
+    fuel exhausted h.block h.currentSlot h.noOverflow (fun _ => h.unsatisfied), ?_,
     fun epochState hcarried hfits =>
       processBuilderPendingPayments_run_bid epochState _ hcarried hfits⟩
   intro child state hparent hstatus hcached hreq
@@ -176,36 +168,5 @@ theorem unsatisfiedPayload_cost
   have hne := (getParentPayloadStatus_run_eq_empty_iff store child rootBlock hlookup).mp hstatus
   exact processParentExecutionPayload_run_of_empty_parent state child
     (by rw [hcached]; exact hne) hreq
-
-/-- `UnsatisfiedPayload` holds for the store `post` after the envelope handler when the
-EL answers `false`. `onExecutionPayloadEnvelope_run_pairing` gives `hpayload` and
-`hanswer` for a successful run. `hel` states that the EL answer is `false`. The block
-lookup, the current slot, and the overflow check are hypotheses on `post`. The map must
-satisfy `LawfulFcMap`. -/
-theorem unsatisfiedPayload_of_el_unsatisfied
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] [LawfulFcMap map Root]
-    [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    (post : Store map) (signedEnv : SignedExecutionPayloadEnvelope) (rootBlock : BeaconBlock)
-    (ilTxs : Array Transaction)
-    (hpayload : FcMap.lookup post.payloads signedEnv.message.beaconBlockRoot
-      = some signedEnv.message)
-    (hanswer : FcMap.lookup post.payloadInclusionListSatisfaction
-        signedEnv.message.beaconBlockRoot
-      = some (isInclusionListSatisfied signedEnv.message.payload ilTxs))
-    (hel : isInclusionListSatisfied signedEnv.message.payload ilTxs = false)
-    (hblock : FcMap.lookup post.blocks signedEnv.message.beaconBlockRoot = some rootBlock)
-    (hcurrentslot :
-      (getCurrentSlot (StoreTransition := ForkChoiceStoreRun (Store map)) post).run post
-        = .ok (rootBlock.slot + 1, post))
-    (hnooverflow : ¬ (rootBlock.slot + 1 < rootBlock.slot)) :
-    UnsatisfiedPayload post signedEnv.message.beaconBlockRoot rootBlock where
-  block := hblock
-  currentSlot := hcurrentslot
-  noOverflow := hnooverflow
-  verified := by
-    show FcMap.contains post.payloads _ = true
-    rw [LawfulFcMap.contains_eq_isSome_lookup, hpayload]
-    rfl
-  unsatisfied := by rw [hanswer, hel]
 
 end EthCLSpecs.Proofs.Heze
