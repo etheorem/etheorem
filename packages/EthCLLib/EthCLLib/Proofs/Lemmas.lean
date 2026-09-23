@@ -1,9 +1,11 @@
 /-!
-# `EthCLLib.Proofs.Lemmas`: list lemmas that core Lean lacks
+# `EthCLLib.Proofs.Lemmas`: list and `UInt64` lemmas that core Lean lacks
 
 Core Lean `4.29.1` has no form of `Nodup.map` that needs injectivity only on
 the list. It also has no "same members" form of `Perm` for duplicate-free lists.
-The two theorems here supply these forms for the proof modules beside this one.
+Its `UInt64.ofNat` round-trip states the bound as `UInt64.size`, which `omega`
+does not read. The three theorems here supply these forms for the proof modules
+beside this one.
 -/
 
 set_option autoImplicit false
@@ -26,5 +28,10 @@ theorem nodup_map_of_injOn {α β : Type} {f : α → β} {l : List α} (hl : l.
 theorem perm_of_nodup_of_mem_iff {α : Type} [DecidableEq α] {l₁ l₂ : List α}
     (h₁ : l₁.Nodup) (h₂ : l₂.Nodup) (h : ∀ a, a ∈ l₁ ↔ a ∈ l₂) : l₁.Perm l₂ :=
   List.perm_iff_count.mpr fun a => by rw [h₁.count, h₂.count]; simp only [h a]
+
+/-- `UInt64.ofNat` round-trips below `2 ^ 64`. Core states the bound as
+`UInt64.size`. `omega` can discharge the `2 ^ 64` form. -/
+theorem toNat_ofNat_lt64 {m : Nat} (h : m < 2 ^ 64) : (UInt64.ofNat m).toNat = m :=
+  UInt64.toNat_ofNat_of_lt' h
 
 end EthCLLib.Proofs
