@@ -9,6 +9,7 @@ import EthCLLib.Proofs.MerkleBranch
 import EthCLLib.Proofs.Run
 import EthCLLib.Proofs.StateFree
 import EthCLLib.Proofs.StoreRun
+import EthCLLib.Proofs.SwapOrNot
 
 /-!
 # `EthCLLib.Proofs`: framework proof modules
@@ -56,4 +57,6 @@ Re-exports:
   `runPure_bind_of_keepsUncached`.
 * `EthCLLib.Proofs.KeepsUncachedMemLoop`: the `forIn'` loop lemmas for a
   `for h : i in xs` loop, whose body reads the membership proof `h`.
+* `EthCLLib.Proofs.SwapOrNot`: the swap-or-not shuffle is a permutation. The fork
+  bridges in `EthCLSpecs/Proofs/<Fork>/Shuffle.lean` use its theorems.
 -/
