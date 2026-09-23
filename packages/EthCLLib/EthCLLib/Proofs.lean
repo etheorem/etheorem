@@ -1,4 +1,5 @@
 import EthCLLib.Proofs.Arith
+import EthCLLib.Proofs.EngineLaws
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
@@ -23,6 +24,8 @@ Re-exports:
 
 * `EthCLLib.Proofs.Arith`: what `saturatingSub` computes (`saturatingSub_toNat`,
   `saturatingSub_le`).
+* `EthCLLib.Proofs.EngineLaws`: the EIP-7805 inclusion rule as an assumption on an
+  `ExecutionEngine` (`LawfulInclusionList`).
 * `EthCLLib.Proofs.LawfulFcMap`: the laws of an `FcMap`
   (`LawfulFcMap`, `FcMap.lookup_insert_self`,
   `FcMap.contains_insert_self`, `FcMap.mem_values`), with `instLawfulFcMapTreeMap`.
