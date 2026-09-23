@@ -63,5 +63,5 @@ Re-exports:
   `for h : i in xs` loop, whose body reads the membership proof `h`.
 * `EthCLLib.Proofs.SwapOrNot`: the swap-or-not shuffle is a permutation. The fork
   bridges in `EthCLSpecs/Proofs/<Fork>/Shuffle.lean` use its theorems.
-* `EthCLLib.Proofs.Lemmas`: the list lemmas that core Lean lacks.
+* `EthCLLib.Proofs.Lemmas`: the list and `UInt64` lemmas that core Lean lacks.
 -/

@@ -171,4 +171,61 @@ theorem shuffleNat_perm [HasherTag] {n : Nat} (seed : ByteArray) (R : Nat) :
     exact ⟨unshuffleNat n seed R a, unshuffleNat_lt seed R hn ha,
       shuffleNat_unshuffleNat seed R hn ha⟩
 
+/-! ## The array the fork bodies build -/
+
+/-- One round over the whole array: slot `i` gets round `r` of its old value. -/
+def swapOrNotStep [HasherTag] (n : Nat) (seed : ByteArray) (a : Array UInt64)
+    (r : Nat) : Array UInt64 :=
+  Array.ofFn (n := n) fun i : Fin n => UInt64.ofNat (roundAt n seed r (a[i.val]!).toNat)
+
+/-- `R` rounds starting from the identity array `[0, 1, …, n-1]`. -/
+def swapOrNotArray [HasherTag] (n R : Nat) (seed : ByteArray) : Array UInt64 :=
+  (List.range R).foldl (swapOrNotStep n seed)
+    (Array.ofFn (n := n) fun i : Fin n => UInt64.ofNat i.val)
+
+/-- The array has size `n`, and slot `i` holds `shuffleNat` of `i`. The bound
+`n < 2 ^ 64` keeps `UInt64.ofNat` from wrapping a stored value. -/
+theorem swapOrNotArray_spec [HasherTag] {n : Nat} (seed : ByteArray)
+    (h64 : n < 2 ^ 64) (R : Nat) :
+    (swapOrNotArray n R seed).size = n ∧
+    ∀ i, i < n → ((swapOrNotArray n R seed)[i]!).toNat = shuffleNat n seed R i := by
+  induction R with
+  | zero =>
+    refine ⟨by simp [swapOrNotArray], fun i hi => ?_⟩
+    simp [swapOrNotArray, shuffleNat, hi, toNat_ofNat_lt64 (by omega : i < 2 ^ 64)]
+  | succ R ih =>
+    obtain ⟨hs, hv⟩ := ih
+    -- The fold applies round `R` last.
+    have hstep : swapOrNotArray n (R + 1) seed =
+        swapOrNotStep n seed (swapOrNotArray n R seed) R := by
+      simp [swapOrNotArray, List.range_succ, List.foldl_append]
+    refine ⟨by simp [hstep, swapOrNotStep], fun i hi => ?_⟩
+    have hn : 0 < n := by omega
+    have hlt : roundAt n seed R (shuffleNat n seed R i) < n :=
+      roundAt_lt seed R hn (shuffleNat_lt seed R hn hi)
+    -- `simp` turns `a[i]!` into the bounds-checked `a[i]`. It also turns
+    -- `toNat (ofNat m)` into `m % 2 ^ 64`. The next line puts `hv` in the same
+    -- normal form. `simp` then reduces `m % 2 ^ 64 = m` to `m < 2 ^ 64`.
+    have hv' := hv i hi
+    simp only [getElem!_pos, hs, hi] at hv'
+    simp [hstep, swapOrNotStep, hi, hs, shuffleNat, hv']
+    omega
+
+/-- The array's values are a permutation of `[0, n)`. The fork bridges cite
+this theorem. -/
+theorem swapOrNotArray_perm [HasherTag] {n : Nat} (seed : ByteArray)
+    (h64 : n < 2 ^ 64) (R : Nat) :
+    ((swapOrNotArray n R seed).toList.map UInt64.toNat).Perm (List.range n) := by
+  obtain ⟨hs, hv⟩ := swapOrNotArray_spec seed h64 R
+  -- The array's values, in slot order, are `shuffleNat` over `[0, n)`.
+  have hlist : (swapOrNotArray n R seed).toList.map UInt64.toNat =
+      (List.range n).map (shuffleNat n seed R) := by
+    apply List.ext_getElem
+    · simp [hs]
+    · intro i h1 h2
+      have hi : i < n := by simpa using h2
+      simpa [hs, hi] using hv i hi
+  rw [hlist]
+  exact shuffleNat_perm seed R
+
 end EthCLLib.Proofs
