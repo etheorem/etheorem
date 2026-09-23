@@ -1,5 +1,6 @@
 import EthCLLib.Spec.SigningRoot
 import EthCLLib.Spec.Arith
+import EthCLLib.Proofs.Lemmas
 
 /-!
 # `EthCLLib.Proofs.SwapOrNot`: the swap-or-not shuffle is a permutation
@@ -74,5 +75,100 @@ theorem swapOrNotRound_involutive {n p x : Nat} (b : Nat → Bool)
   · -- Kept: the round leaves `x`, and running it again leaves `x` again.
     have hb' : b (Nat.max x ((p + n - x) % n)) = false := by simpa using hb
     simp [swapOrNotRound, hb']
+
+/-! ## The rounds the fork bodies run -/
+
+/-- Round `r`'s pivot: the first eight bytes of `hash(seed ++ r)`, little-endian,
+reduced mod `n`. -/
+def swapOrNotPivot [HasherTag] (seed : ByteArray) (n r : Nat) : Nat :=
+  le8 (sha (seed.push (UInt8.ofNat r))) % n
+
+/-- Round `r`'s bit at `position`: bit `position % 8` of byte
+`(position % 256) / 8` of `hash(seed ++ r ++ u32le(position / 256))`. -/
+def swapOrNotBit [HasherTag] (seed : ByteArray) (r position : Nat) : Bool :=
+  let source := sha (seed.push (UInt8.ofNat r) ++ u32leBytes (position / 256))
+  let byteVal := (source.get! ((position % 256) / 8)).toNat
+  (byteVal >>> (position % 8)) % 2 == 1
+
+/-- Round `r` as a function on values. -/
+def roundAt [HasherTag] (n : Nat) (seed : ByteArray) (r : Nat) : Nat → Nat :=
+  swapOrNotRound n (swapOrNotPivot seed n r) (swapOrNotBit seed r)
+
+/-- Rounds `0 … R-1` applied to `x`, round `0` first. -/
+def shuffleNat [HasherTag] (n : Nat) (seed : ByteArray) : Nat → Nat → Nat
+  | 0, x => x
+  | R + 1, x => roundAt n seed R (shuffleNat n seed R x)
+
+/-- Rounds `R-1 … 0` applied to `y`, the last round first. Each round is its own
+inverse, so this undoes `shuffleNat`. -/
+def unshuffleNat [HasherTag] (n : Nat) (seed : ByteArray) : Nat → Nat → Nat
+  | 0, y => y
+  | R + 1, y => unshuffleNat n seed R (roundAt n seed R y)
+
+/-- `swapOrNotRound_lt` for the fork bodies' round. -/
+theorem roundAt_lt [HasherTag] {n x : Nat} (seed : ByteArray) (r : Nat)
+    (hn : 0 < n) (hx : x < n) : roundAt n seed r x < n :=
+  swapOrNotRound_lt _ hn hx
+
+/-- `swapOrNotRound_involutive` for the fork bodies' round. -/
+theorem roundAt_involutive [HasherTag] {n x : Nat} (seed : ByteArray) (r : Nat)
+    (hn : 0 < n) (hx : x < n) : roundAt n seed r (roundAt n seed r x) = x :=
+  -- `swapOrNotPivot` reduces the pivot `% n`. That gives the `p < n` bound the
+  -- involution needs.
+  swapOrNotRound_involutive _ (Nat.mod_lt _ hn) hx
+
+/-- The shuffle keeps a value inside `[0, n)`. -/
+theorem shuffleNat_lt [HasherTag] {n x : Nat} (seed : ByteArray) (R : Nat)
+    (hn : 0 < n) (hx : x < n) : shuffleNat n seed R x < n := by
+  induction R with
+  | zero => exact hx
+  | succ R ih => exact roundAt_lt seed R hn ih
+
+/-- The inverse shuffle keeps a value inside `[0, n)`. -/
+theorem unshuffleNat_lt [HasherTag] {n y : Nat} (seed : ByteArray) (R : Nat)
+    (hn : 0 < n) (hy : y < n) : unshuffleNat n seed R y < n := by
+  induction R generalizing y with
+  | zero => exact hy
+  | succ R ih => exact ih (roundAt_lt seed R hn hy)
+
+/-- `unshuffleNat` is a left inverse of `shuffleNat` on `[0, n)`. -/
+theorem unshuffleNat_shuffleNat [HasherTag] {n x : Nat} (seed : ByteArray) (R : Nat)
+    (hn : 0 < n) (hx : x < n) : unshuffleNat n seed R (shuffleNat n seed R x) = x := by
+  induction R with
+  | zero => rfl
+  | succ R ih =>
+    simp only [shuffleNat, unshuffleNat]
+    rw [roundAt_involutive seed R hn (shuffleNat_lt seed R hn hx), ih]
+
+/-- `unshuffleNat` is a right inverse of `shuffleNat` on `[0, n)`. -/
+theorem shuffleNat_unshuffleNat [HasherTag] {n y : Nat} (seed : ByteArray) (R : Nat)
+    (hn : 0 < n) (hy : y < n) : shuffleNat n seed R (unshuffleNat n seed R y) = y := by
+  induction R generalizing y with
+  | zero => rfl
+  | succ R ih =>
+    simp only [shuffleNat, unshuffleNat]
+    rw [ih (roundAt_lt seed R hn hy), roundAt_involutive seed R hn hy]
+
+/-- `shuffleNat` maps `[0, n)` onto itself one to one, so its image of
+`List.range n` is a permutation of `List.range n`. -/
+theorem shuffleNat_perm [HasherTag] {n : Nat} (seed : ByteArray) (R : Nat) :
+    ((List.range n).map (shuffleNat n seed R)).Perm (List.range n) := by
+  rcases Nat.eq_zero_or_pos n with rfl | hn
+  · simp
+  -- The image has no duplicates: `unshuffleNat` undoes `shuffleNat` on `[0, n)`.
+  have hnd : ((List.range n).map (shuffleNat n seed R)).Nodup := by
+    refine nodup_map_of_injOn List.nodup_range ?_
+    intro x hx y hy hxy
+    have h := congrArg (unshuffleNat n seed R) hxy
+    rwa [unshuffleNat_shuffleNat seed R hn (List.mem_range.mp hx),
+      unshuffleNat_shuffleNat seed R hn (List.mem_range.mp hy)] at h
+  refine perm_of_nodup_of_mem_iff hnd List.nodup_range fun a => ?_
+  simp only [List.mem_map, List.mem_range]
+  constructor
+  · rintro ⟨x, hx, rfl⟩
+    exact shuffleNat_lt seed R hn hx
+  · intro ha
+    exact ⟨unshuffleNat n seed R a, unshuffleNat_lt seed R hn ha,
+      shuffleNat_unshuffleNat seed R hn ha⟩
 
 end EthCLLib.Proofs

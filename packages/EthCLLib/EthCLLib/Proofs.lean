@@ -5,6 +5,7 @@ import EthCLLib.Proofs.Frame
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.KeepsUncachedMemLoop
 import EthCLLib.Proofs.LawfulFcMap
+import EthCLLib.Proofs.Lemmas
 import EthCLLib.Proofs.MerkleBranch
 import EthCLLib.Proofs.OfFnM
 import EthCLLib.Proofs.Run
@@ -62,4 +63,5 @@ Re-exports:
   `for h : i in xs` loop, whose body reads the membership proof `h`.
 * `EthCLLib.Proofs.SwapOrNot`: the swap-or-not shuffle is a permutation. The fork
   bridges in `EthCLSpecs/Proofs/<Fork>/Shuffle.lean` use its theorems.
+* `EthCLLib.Proofs.Lemmas`: the list lemmas that core Lean lacks.
 -/
