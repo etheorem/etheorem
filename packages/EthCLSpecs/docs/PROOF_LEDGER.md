@@ -108,7 +108,9 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `computeExitEpochAndUpdateChurn` | `Gloas/EpochProcessing.lean:93-104` | The churn arithmetic this call site performs through `reserveChurn` must not underflow | proposed |  |
+| `computeExitEpochAndUpdateChurn` | `Gloas/EpochProcessing.lean:93-106` | The Gloas override reads `get_exit_churn_limit`. When the activation-exit epoch and the reservation succeed, the run succeeds, and its `balance_to_consume - exit_balance` subtraction cannot fault. Each activation-epoch or reservation fault passes through unchanged | proved | `Proofs/Gloas/Churn.lean` |
+| `reserveChurn` | `Gloas/EpochProcessing.lean:76` | The Fulu claims. The body reads no preset or config value, so each theorem takes the Fulu proof term | proved | `Proofs/Gloas/Churn.lean` |
+| `computeConsolidationEpochAndUpdateChurn` | `Gloas/EpochProcessing.lean:120` | The Fulu claims, at the Gloas consolidation limit. That limit has no `MIN` floor and can be zero, and `reserveChurn` rejects a zero limit | proved | `Proofs/Gloas/Churn.lean` |
 | `getExpectedWithdrawals` | `Gloas/Withdrawals.lean:171-179` | The withdrawals returned by its four phases combined never exceed `MAX_WITHDRAWALS_PER_PAYLOAD` | proposed |  |
 | `initiateBuilderExit` | `Gloas/Operations.lean:88-91` | `initiateBuilderExit_run_eq` is the whole-transition equation; its exact in-range/out-of-range effect on the builder registry is characterized; no-wrap is conditional for an arbitrary `Config` and proved unconditionally for both shipped Gloas preset/config pairs | proved | #39, `Proofs/Gloas/InitiateBuilderExit.lean` |
 | `processBuilderExitRequest` | `Gloas/Operations.lean:194-204` | On its successful builder-exit branch, the index supplied to `initiateBuilderExit` is in range; under either shipped Gloas preset/config pair, the selected builder receives the intended non-wrapping future `withdrawableEpoch`. All non-matching or ineligible branches leave the builder registry unchanged | proposed |  |
@@ -127,8 +129,8 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | --- | --- | --- | --- | --- |
 | `processProposerSlashing` | `Gloas/Operations.lean:211-241` | Payment-voiding must never touch another proposer's `BuilderPendingPayment` | proposed |  |
 | `processAttestation` | `Gloas/Operations.lean:291-370` | Committee-index safety together with builder-payment weight accounting | proposed |  |
-| `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:236-255` | Under an explicit capacity hypothesis, every qualifying previous-epoch payment's withdrawal is appended to `builderPendingWithdrawals` in slot order, and the payment window shifts down by `SLOTS_PER_EPOCH`; this does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
-| `processPtcWindow` | `Gloas/EpochProcessing.lean:274-290` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
+| `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:238-257` | Under an explicit capacity hypothesis, every qualifying previous-epoch payment's withdrawal is appended to `builderPendingWithdrawals` in slot order, and the payment window shifts down by `SLOTS_PER_EPOCH`; this does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
+| `processPtcWindow` | `Gloas/EpochProcessing.lean:276-292` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
 | `applyDepositForBuilder` | `Gloas/Operations.lean:118-126` | A deposit with an invalid signature is neither applied to a builder's balance nor requeued | proposed |  |
 | `processBuilderDepositRequest` | `Gloas/Operations.lean:172-188` | A new builder is onboarded only when its deposit signature is valid | proposed |  |
 | `getIndexedPayloadAttestation` | `Gloas/Operations.lean:412-418` | Preserves `pa.data` and `pa.signature`, and produces the sorted multiset of PTC seats selected by `pa.aggregationBits`. The proof requires `Array.qsort` sortedness and permutation lemmas not currently available in core/Std | proposed |  |
@@ -185,7 +187,7 @@ Functions where the useful theorem hasn't been identified yet, either because th
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `computePtc` | `Gloas/EpochProcessing.lean:261-268` | No standalone theorem has been identified yet. The strongest current candidate is its agreement with `computePtcFromFulu` after state upgrade | proposed |  |
+| `computePtc` | `Gloas/EpochProcessing.lean:263-270` | No standalone theorem has been identified yet. The strongest current candidate is its agreement with `computePtcFromFulu` after state upgrade | proposed |  |
 
 
 ---
@@ -207,7 +209,9 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `reserveChurn` | `Fulu/RegistryUpdates.lean:69-74` | Arithmetic never underflows | proposed |  |
+| `reserveChurn` | `Fulu/RegistryUpdates.lean:82` | It rejects with `.arithmetic` on a zero limit, the pyspec's `ZeroDivisionError`. It rejects with `.arithmetic` when the epoch add, the multiply, or the consumed add reaches `2^64`. Below every bound it returns the exact epoch and consumed total. A successful reservation returns a consumed total at least as large as the balance | proved | `Proofs/Fulu/Churn.lean` |
+| `computeExitEpochAndUpdateChurn` | `Fulu/RegistryUpdates.lean:99` | When the activation-exit epoch and the reservation succeed, the run succeeds, and its `balance_to_consume - exit_balance` subtraction cannot fault. Each activation-epoch or reservation fault passes through unchanged | proved | `Proofs/Fulu/Churn.lean` |
+| `computeConsolidationEpochAndUpdateChurn` | `Fulu/RegistryUpdates.lean:116` | The same claims over the consolidation fields and the consolidation limit | proved | `Proofs/Fulu/Churn.lean` |
 | `increaseBalance` | `Fulu/Balances.lean:43` | The run rejects an index past the end of `balances` with `.outOfBounds`, and an addition that leaves the `uint64` range with `.arithmetic`. In range and below that bound it stores the exact natural-number sum | proved | #80, `Proofs/Fulu/Balances.lean` |
 | `decreaseBalance` | `Fulu/Balances.lean:53` | The run rejects an index past the end of `balances` with `.outOfBounds`. In range it stores the `Nat` difference, which truncates at zero, so the clamp matches the spec and the `uint64` subtraction never wraps | proved | #80, `Proofs/Fulu/Balances.lean` |
 | `processDeposit` | `Fulu/Operations.lean:224` | Neither the incremented deposit index nor the running total balance exceeds `2^64`. Dafny stated both bounds and assumed them through `{:axiom}` lemmas, so Dafny's statements are reusable as a template. Its proofs are not. A sharper bound is open as well. The branch check needs `eth1DepositIndex < 2^32`, which follows from `eth1DepositIndex <= eth1Data.depositCount` together with a bound on `depositCount`. The consensus spec does not bound `depositCount`, since that count arrives from the execution layer. Any statement here is therefore conditional on the deposit contract's depth-32 capacity | proposed |  |
@@ -220,6 +224,9 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | `computeActivationExitEpoch` | `Fulu/Time.lean:54-57` | The function adds `1 + MAX_SEED_LOOKAHEAD` to an epoch. It faults with `.arithmetic` when the sum reaches `2^64`. Below that bound it returns the exact sum. It never faults on an epoch derived from a slot, under a preset bound that both shipped presets satisfy | proved | `Proofs/Fulu/Time.lean` |
 | `computeActivationExitEpoch` | `Gloas/EpochProcessing.lean:45` | The Fulu claims, restated at Gloas's own constants through the `Downgrade` bridge | proved | `Proofs/Gloas/Time.lean` |
 | `computeActivationExitEpoch` | `Heze/EpochProcessing.lean:33` | The same claims at Heze's constants. The proof terms come from Gloas | proved | `Proofs/Heze/Time.lean` |
+| `reserveChurn` | `Heze/EpochProcessing.lean:23` | The Fulu claims at Heze. The proof terms come from Gloas | proved | `Proofs/Heze/Churn.lean` |
+| `computeExitEpochAndUpdateChurn` | `Heze/EpochProcessing.lean:64` | The Gloas claims at Heze, proved again over the Heze `State` | proved | `Proofs/Heze/Churn.lean` |
+| `computeConsolidationEpochAndUpdateChurn` | `Heze/EpochProcessing.lean:70` | The Gloas claims at Heze, proved again over the Heze `State` | proved | `Proofs/Heze/Churn.lean` |
 
 ### Safety and invariant preservation
 
@@ -232,8 +239,8 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | `processDeposit` | `Fulu/Operations.lean:224` | `validators.size = balances.size` holds at the append site, and then holds across the transition. The two overflow bounds are the separate row under Bounds and termination properties | proposed |  |
 | `isSlashableAttestationData` | `Fulu/Operations.lean:38` | Agrees with the spec's slashability condition, a double vote or a surround vote, given the `strictlySorted` well-formedness the caller establishes | proposed |  |
 | `processRegistryUpdates` | `Fulu/EpochProcessing.lean:176` | One third of a joint claim with `initiateValidatorExit` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
-| `initiateValidatorExit` | `Fulu/RegistryUpdates.lean:115` | One third of a joint claim with `processRegistryUpdates` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
-| `computeExitEpochAndUpdateChurn` | `Fulu/RegistryUpdates.lean:78` | One third of a joint claim with `processRegistryUpdates` and `initiateValidatorExit`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
+| `initiateValidatorExit` | `Fulu/RegistryUpdates.lean:140` | One third of a joint claim with `processRegistryUpdates` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
+| `computeExitEpochAndUpdateChurn` | `Fulu/RegistryUpdates.lean:99` | One third of a joint claim with `processRegistryUpdates` and `initiateValidatorExit`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
 
 ### Monotonicity properties
 
