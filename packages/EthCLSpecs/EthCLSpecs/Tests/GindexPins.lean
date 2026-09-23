@@ -1,6 +1,8 @@
 import EthCLSpecs.Fulu.State
 import EthCLSpecs.Gloas.State
 import EthCLSpecs.Gloas.Block
+import EthCLLib.Proofs.ContainerBranch
+import SizzLean.Spec.SupportedCheck
 
 /-!
 # `EthCLSpecs.Tests.GindexPins`: the spec's generalized indices on our schemas
@@ -29,6 +31,14 @@ namespace EthCLSpecs.Tests.GindexPins
 
 open SizzLean
 open SizzLean.Spec
+open SizzLean.Proofs.Merkle
+open EthCLLib.Spec
+open EthCLLib.Proofs
+
+/-- The field list of a container shape, and `[]` for any other shape. -/
+private def fieldsOf : SSZType → List SSZType
+  | .container fs => fs
+  | _ => []
 
 section Fulu
 
@@ -53,6 +63,35 @@ private abbrev fuluBody : SSZType := SSZRepr.shape (T := @BeaconBlockBody mainne
 -- `KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH` is `floorlog2` of the
 -- `blob_kzg_commitments` gindex (field 11).
 #guard (fuluBody.generalizedIndex [.field 11]).map Nat.log2 == some 4
+
+-- The `SSZRepr` instances of the nested containers take the preset as an
+-- instance. The fork presets are plain definitions, so name `mainnet` here.
+attribute [local instance] mainnet
+
+/-- The Fulu `Checkpoint` schema. -/
+private abbrev fuluCheckpoint : SSZType := SSZRepr.shape (T := @Checkpoint mainnet)
+
+/-- The two-step theorem at `FINALIZED_ROOT_GINDEX_ELECTRA`, applied to the real
+schemas. `decide` proves both `checkSupportedFields` results and both field
+bounds. `rfl` proves `hfield`, `hinner`, and the gindex. `hinner` is `rfl`
+because the derived `toRepr` of a `BeaconState` puts the `toRepr` of
+`finalizedCheckpoint` at field 20. -/
+example [HasherTag] [CombineWidth32 HasherTag.H] (s : @BeaconState mainnet) :
+    isValidMerkleBranch
+        (bytesToRoot (fieldRoot HasherTag.H (fieldsOf fuluCheckpoint)
+          (SSZRepr.toRepr s.finalizedCheckpoint) 1))
+        ((containerOpening HasherTag.H (fieldsOf fuluState) (SSZRepr.toRepr s) 20
+            ++ containerOpening HasherTag.H (fieldsOf fuluCheckpoint)
+              (SSZRepr.toRepr s.finalizedCheckpoint) 1).map bytesToRoot).toArray.reverse
+        (Nat.log2 169) (169 % 2 ^ Nat.log2 169)
+        (bytesToRoot (SSZType.hashTreeRoot HasherTag.H (.container (fieldsOf fuluState))
+          (SSZRepr.toRepr s)))
+      = true :=
+  isValidMerkleBranch_of_container₂_gindex
+    (SSZType.supportedFields_of_checkSupportedFields _ (by decide))
+    (SSZType.supportedFields_of_checkSupportedFields _ (by decide))
+    (SSZRepr.toRepr s) (SSZRepr.toRepr s.finalizedCheckpoint) 20 1
+    (by decide) (by decide) rfl rfl 169 rfl
 
 end Fulu
 
