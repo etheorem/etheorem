@@ -357,6 +357,9 @@ sets; Fulu is authored as the accumulated base.
   in one package, so when one procedural target is needed the whole
   config moves to `lakefile.lean` (kept ≤30 lines).
 - Don't bump `lean-toolchain` casually, it cascades through CI and any deps.
+- Don't add a `Claude-Session:` tag (or any AI session link) to a commit
+  message. The `AI co-author guard` workflow fails on it, same as an
+  AI-agent `Co-authored-by` trailer.
 - Don't leave `sorry` in committed code without a `TODO` and a tracking note.
 
 ## Writing Style & Structural Constraints
