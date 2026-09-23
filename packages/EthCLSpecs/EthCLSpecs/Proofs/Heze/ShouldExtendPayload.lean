@@ -356,8 +356,8 @@ theorem shouldExtendPayload_run_error_of_missing_focil_record :
   simp [hverified]
   rw [isPayloadInclusionListSatisfied_run_error_of_missing_record store s1 root hlookup]
 
-/-- A verified payload with a recorded `false` inclusion-list satisfaction
-verdict is rejected by the FOCIL gate. `hverified` selects that branch.
+/-- The FOCIL gate rejects a verified payload with a recorded `false`
+inclusion-list satisfaction answer. `hverified` selects that branch.
 The converse is not claimed. -/
 theorem shouldExtendPayload_run_eq_false_of_recorded_unsatisfied :
     ∀ (store : Store map) (root : Root) (rootBlock : BeaconBlock),
