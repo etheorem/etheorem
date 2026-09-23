@@ -48,32 +48,12 @@ namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec
 open EthCLLib.Proofs (pureState runPure runPure_of_run_ok run_bind run_pure
-  except_bind_ok except_bind_error)
+  except_bind_ok except_bind_error run_of_run_seq_pure)
 open EthCLSpecs.Gloas
 open EthCLSpecs.Gloas (Preset Gwei BeaconState)
 open EthCLSpecs.Gloas.Const (slotsPerEpoch builderPaymentThresholdNumerator
   builderPaymentThresholdDenominator)
 open SizzLean.Proofs (progressiveListFoldlPush_val view_uncachedBox)
-
-/-- `do x` for a lone `for`-loop `x` elaborates as `x >>= fun _ => pure ()`, not as `x`
-itself. Peels that wrapper so a fact about the bare loop run connects to a use site that
-runs the bare `forIn` before more code: the wrapper succeeds with the same post-state, and
-discards the loop's own value. -/
-private theorem run_of_run_seq_pure {ε σ β : Type} (x : StateT σ (Except ε) β) (s0 s1 : σ)
-    (h : (x >>= fun _ => (pure () : StateT σ (Except ε) Unit)).run s0 = .ok ((), s1)) :
-    ∃ a : β, x.run s0 = .ok (a, s1) := by
-  rw [run_bind] at h
-  cases hx : x.run s0 with
-  | ok p =>
-    obtain ⟨a, s⟩ := p
-    rw [hx] at h
-    rw [except_bind_ok, run_pure] at h
-    have h2 : s = s1 := congrArg Prod.snd (Except.ok.inj h)
-    subst h2
-    exact ⟨a, rfl⟩
-  | error e =>
-    rw [hx, except_bind_error] at h
-    cases h
 
 /-! ## The withdrawals loop
 
