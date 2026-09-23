@@ -9,7 +9,7 @@ This module states two facts about one block side by side. It uses
 slot with a verified payload whose recorded inclusion-list answer is `false`. Then:
 
 1. one step of the `getHead` walk at the pending node of the block goes to its EMPTY
-   node; and
+   node, when the EMPTY node is viable; and
 2. take any child of the block that fork choice puts under the EMPTY node, with the
    empty parent requests. Process it on a state that caches the bid of the block. Then
    `processParentExecutionPayload` does not change the state, and it does not settle
@@ -76,9 +76,9 @@ example :
   letI : HasherTag := fastHasherTag
   letI : Config := EthCLSpecs.Heze.minimalConfig
   let root : Root := Vector.replicate 32 0
-  -- Minimal slots last 6000 ms, so `time := 6` with `genesisTime := 0` is slot `1`, the
-  -- slot after the default block's slot `0`.
-  refine ⟨{ time := 6, genesisTime := 0
+  -- Minimal slots last 6000 ms, so `timeMs := 6000` with `genesisTimeMs := 0` is slot
+  -- `1`, the slot after the default block's slot `0`.
+  refine ⟨{ timeMs := 6000, genesisTimeMs := 0
             justifiedCheckpoint := default, finalizedCheckpoint := default
             unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
             proposerBoostRoot := root
@@ -100,25 +100,27 @@ example :
     simp [EmptyCollection.emptyCollection, Std.TreeMap.empty, Std.DTreeMap.empty,
       Std.DTreeMap.Internal.Impl.empty, Std.DTreeMap.Internal.Impl.Const.get?,
       Std.DTreeMap.Internal.Impl.insert]
-  · simp +zetaDelta [getCurrentSlot, EthCLSpecs.Heze.getSlotsSinceGenesis, checkedSub,
-      checkedMul, EthCLSpecs.Heze.Const.slotDurationMs]
+  · simp +zetaDelta [getCurrentSlot, EthCLSpecs.Heze.getSlotsSinceGenesis,
+      EthCLSpecs.Heze.computeSlotAtTimeMs, checkedSub, EthCLSpecs.Heze.Const.slotDurationMs]
     -- The two sides differ only in the slot: `6000 / Config.slotDurationMs` against
     -- `default.slot + 1`. The kernel evaluates both to `1`.
     exact congrArg (fun slot => (.ok (slot, _) : Except _ _)) (by decide +kernel)
 
-/-- Two facts under `UnsatisfiedPayload`. First, the head step at the pending node of
-the block selects the EMPTY node. Second, take any child of the block that fork choice
+/-- Two facts under `UnsatisfiedPayload`. First, let `nodes` be the viable node list of
+the walk, with the EMPTY node in it. The head step at the pending node of the block
+selects the EMPTY node. Second, take any child of the block that fork choice
 puts under EMPTY, with the empty parent requests. Run `processParentExecutionPayload`
 for the child on a state that caches the bid of the block. The run does not change the
 state. The module docstring explains why the two facts are independent. -/
 theorem unsatisfiedPayload_headEmpty_and_emptyChild_unsettled
     {map : MapKind} [Preset] [HasherTag] [Config] [CryptoBackend] [FcMap map]
-    (store : Store map) (root : Root) (rootBlock : BeaconBlock) (blocks : Array Root)
-    (h : UnsatisfiedPayload store root rootBlock) :
+    (store : Store map) (root : Root) (rootBlock : BeaconBlock)
+    (nodes : Array ForkChoiceNode) (h : UnsatisfiedPayload store root rootBlock)
+    (hviable : nodes.contains (ForkChoiceNode.empty root) = true) :
     (do
-        let children ← getNodeChildren
+        let children := (← getNodeChildren
           (StoreTransition := ForkChoiceStoreRun (Store map))
-          store blocks (ForkChoiceNode.pending root)
+          store (ForkChoiceNode.pending root)).filter nodes.contains
         children.foldlM (init := children[0]!)
           (getHead.betterOf (StoreTransition := ForkChoiceStoreRun (Store map)) store)
       : ForkChoiceStoreRun (Store map) ForkChoiceNode).run store
@@ -133,8 +135,8 @@ theorem unsatisfiedPayload_headEmpty_and_emptyChild_unsettled
       (processParentExecutionPayload (StateTransition := HezeRun) child).run
           (pureState preState)
         = .ok ((), pureState preState) := by
-  refine ⟨getHeadStep_run_eq_empty_of_recorded_unsatisfied store blocks root rootBlock
-    h.block h.currentSlot h.noOverflow h.verified h.unsatisfied, ?_⟩
+  refine ⟨getHeadStep_run_eq_empty_of_recorded_unsatisfied store nodes root rootBlock
+    h.block h.currentSlot h.noOverflow h.verified h.unsatisfied hviable, ?_⟩
   intro child preState hparent hstatus hcached hreq
   have hlookup : FcMap.lookup store.blocks child.parentRoot = some rootBlock := by
     rw [hparent]; exact h.block
