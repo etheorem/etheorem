@@ -30,7 +30,7 @@ open EthCLSpecs.Heze (Preset Store State Root Slot ValidatorIndex InclusionList 
   computeEpochAtSlot cyclicSample)
 open EthCLSpecs.Heze.Const (inclusionListCommitteeSize)
 
-section
+section CommitteeRun
 variable {σ : Type} [Preset]
 section
 variable [HasherTag]
@@ -59,7 +59,8 @@ theorem getInclusionListCommittee_run_eq :
   split
   · rw [run_bind, ForkChoiceStoreRun.throwArithmetic_run]
     exact except_bind_error _ _
-  · rw [run_bind, run_pure, except_bind_ok, run_pure]
+  · rw [run_bind, run_pure, except_bind_ok]
+    rw [run_pure]
 
 /-- Exact empty-committee error of `getInclusionListCommittee`. -/
 theorem getInclusionListCommittee_run_error_of_empty
@@ -74,9 +75,9 @@ theorem getInclusionListCommittee_run_error_of_empty
   simp only [getInclusionListCommittee_run_eq, h, beq_iff_eq, ite_true]
 
 end
-end
+end CommitteeRun
 
-section
+section Collector
 variable {map : MapKind} [Preset]
 section
 variable [FcMap map]
@@ -84,7 +85,7 @@ variable [FcMap map]
 /-- `entry` does not fail a timeliness read. An equivocator entry skips the
 lookup. A non-equivocator entry whose list root is already in `timeliness`
 performs a successful lookup. -/
-def timelinessEntryDoesNotError
+def TimelinessEntryDoesNotError
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
     (entry : Root × InclusionList) : Prop :=
   equivocators.contains entry.2.validatorIndex = true
@@ -104,7 +105,7 @@ def FirstReachableMissingTimeliness
   ∃ (i : Nat) (il : InclusionList) (hi : i < entries.size),
     entries[i]'hi = (ilRoot, il)
       ∧ (∀ (j : Nat) (hj : j < i),
-          timelinessEntryDoesNotError equivocators timeliness
+          TimelinessEntryDoesNotError equivocators timeliness
             (entries[j]'(Nat.lt_trans hj hi)))
       ∧ equivocators.contains il.validatorIndex = false
       ∧ FcMap.lookup timeliness ilRoot = none
@@ -159,7 +160,7 @@ private theorem collectStep_run_ok_of_doesNotError
     (onlyTimely : Bool) (acc : Array Transaction)
     (entry : Root × InclusionList) (s : σ)
     (honly : onlyTimely = true)
-    (hok : timelinessEntryDoesNotError equivocators timeliness entry) :
+    (hok : TimelinessEntryDoesNotError equivocators timeliness entry) :
     ∃ acc', (collectStep (σ := σ) equivocators timeliness onlyTimely acc entry).run s
       = .ok (acc', s) := by
   obtain ⟨ilRoot, il⟩ := entry
@@ -185,7 +186,7 @@ private theorem foldlM_collectStep_run_ok_of_all_doNotError
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
     (onlyTimely : Bool) (honly : onlyTimely = true)
     (l : List (Root × InclusionList))
-    (hall : ∀ x ∈ l, timelinessEntryDoesNotError equivocators timeliness x)
+    (hall : ∀ x ∈ l, TimelinessEntryDoesNotError equivocators timeliness x)
     (acc : Array Transaction) (s : σ) :
     ∃ acc',
       (l.foldlM (collectStep (σ := σ) equivocators timeliness onlyTimely) acc).run s
@@ -200,7 +201,6 @@ private theorem foldlM_collectStep_run_ok_of_all_doNotError
         (hall a List.mem_cons_self)
     rw [List.foldlM_cons, run_bind, hstep, except_bind_ok]
     exact ih (fun x hx => hall x (List.mem_cons.mpr (Or.inr hx))) acc1
-
 
 /-- If `onlyTimely = true` and the first reachable missing timeliness key in the
 `FcMap.fold` entries array is `ilRoot`, collection fails with `.missingKey ilRoot`.
@@ -254,7 +254,7 @@ theorem collectInclusionListTransactions_run_error_of_first_missing
 end
 end
 
-section
+section Wrapper
 variable [HasherTag]
 section
 variable [FcMap map]
@@ -317,7 +317,7 @@ theorem getInclusionListTransactions_run_error_of_collect
   rw [getInclusionListTransactions_run_eq, hok, except_bind_ok, herr]
 
 end
-end
-end
+end Wrapper
+end Collector
 
 end EthCLSpecs.Proofs.Heze
