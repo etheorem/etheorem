@@ -1,7 +1,12 @@
 # Proof-coverage baseline. Rewrite with `just proof-coverage-update`.
 # Every line is a claim `just proof-coverage-check` enforces exactly.
+tier1 EthCLSpecs.Fulu.computeCommittee
+tier1 EthCLSpecs.Fulu.computeEpochAtSlot
 tier1 EthCLSpecs.Fulu.computeStartSlotAtEpoch
 tier1 EthCLSpecs.Fulu.currentEpochOf
+tier1 EthCLSpecs.Fulu.getActiveValidatorIndices
+tier1 EthCLSpecs.Fulu.getBeaconCommittee
+tier1 EthCLSpecs.Fulu.getCommitteeCountPerSlot
 tier1 EthCLSpecs.Fulu.modBalance
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot
 tier1 EthCLSpecs.Gloas.currentEpochOf
