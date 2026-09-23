@@ -19,6 +19,9 @@ The runner names remain in their own modules: `GloasRun` is in
 `EthCLSpecs/Proofs/Gloas/Run.lean`, while the fork-neutral `ForkChoiceStoreRun` is
 in `EthCLLib/Proofs/StoreRun.lean`.
 
+Two inversion lemmas start from a successful run. `run_bind_eq_ok` splits a successful
+bind into its two runs. `run_pure_eq_ok` reads the value of a successful `pure`.
+
 ## The pure box: `pureState` and `runPure`
 
 The runners pin the monad. This module also pins the box: a fork-body theorem states
@@ -129,6 +132,25 @@ theorem run_of_run_seq_pure_error {ε σ β : Type} (x : StateT σ (Except ε) �
     rw [hx, except_bind_error] at h
     injection h with h'
     rw [h']
+
+/-- The converse of `run_bind` on a successful run: the first action succeeds, and the
+continuation succeeds from its value and state. -/
+theorem run_bind_eq_ok {σ ε α β : Type} (x : StateT σ (Except ε) α)
+    (f : α → StateT σ (Except ε) β) (s : σ) (r : β × σ)
+    (h : (x >>= f).run s = .ok r) :
+    ∃ a s1, x.run s = .ok (a, s1) ∧ (f a).run s1 = .ok r := by
+  rw [run_bind] at h
+  cases hx : x.run s with
+  | error e => rw [hx] at h; cases h
+  | ok p => rw [hx] at h; exact ⟨p.1, p.2, rfl, h⟩
+
+/-- A successful run of `pure a` returns `a`. -/
+theorem run_pure_eq_ok {σ ε α : Type} (a b : α) (s s' : σ)
+    (h : (pure a : StateT σ (Except ε) α).run s = .ok (b, s')) : b = a := by
+  rw [run_pure] at h
+  injection h with h
+  injection h with h
+  exact h.symm
 
 /-- `ofExcept` of an `.ok a`: the run succeeds and passes the state through
 unchanged. The run-level shape the loop-body proofs read the spec's indexed reads
