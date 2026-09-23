@@ -1,4 +1,5 @@
 import EthCLSpecs.Proofs.Fulu.Balances
+import EthCLSpecs.Proofs.Fulu.CommitteeSize
 import EthCLSpecs.Proofs.Fulu.Run
 
 /-!
@@ -19,4 +20,7 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Balances`: `increaseBalance` and `decreaseBalance`, each with an exact
   run equation and an out-of-range reject, plus `increaseBalance`'s overflow reject and its
   exact stored sum, and `decreaseBalance`'s truncating difference.
+* `EthCLSpecs.Proofs.Fulu.CommitteeSize`: a beacon committee's size is its slice length, at
+  least `1` and at most `⌈n / count⌉`. At both shipped presets that size lies in
+  `(0, MAX_VALIDATORS_PER_COMMITTEE]` over a stated range of active counts.
 -/
