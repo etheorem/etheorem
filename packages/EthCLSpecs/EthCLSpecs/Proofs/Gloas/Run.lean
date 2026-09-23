@@ -37,9 +37,8 @@ under fork choice too. Carrying one over is function application:
 `.run` fact and returns the store-machine statement, for any action.
 
 The `StateT`-over-`Except` bind, throw, and `Except` facts that every run proof rewrites
-with live in `Proofs/Run.lean`, at any state and error type. This file re-exports them
-under `GloasRun` so existing Gloas call sites keep a runner-qualified name. A Heze
-proof imports `Proofs/Run.lean` directly and does not name `GloasRun`.
+with live in `Proofs/Run.lean`, at any state and error type. Gloas and Heze call sites
+both import that module and name those facts directly; this file only names `GloasRun`.
 -/
 
 set_option autoImplicit false
@@ -59,33 +58,5 @@ boxed Gloas `BeaconState` and rejecting with `StateTransitionError`. `abbrev`
 `.ok (a, state')` and a rejecting one reads `.error e`, carrying no state. -/
 abbrev GloasRun [Preset] [HasherTag] : Type → Type :=
   StateT State (Except StateTransitionError)
-
-/-- `.run` of a bind at `GloasRun`. The statement is `EthCLSpecs.Proofs.run_bind`. -/
-theorem GloasRun.run_bind {σ ε α β : Type} (x : StateT σ (Except ε) α)
-    (f : α → StateT σ (Except ε) β) (s : σ) :
-    (x >>= f).run s = (x.run s) >>= fun p => (f p.1).run p.2 :=
-  EthCLSpecs.Proofs.run_bind x f s
-
-/-- `.run` of a `pure` at `GloasRun`. The statement is `EthCLSpecs.Proofs.run_pure`. -/
-theorem GloasRun.run_pure {σ ε α : Type} (a : α) (s : σ) :
-    (pure a : StateT σ (Except ε) α).run s = .ok (a, s) :=
-  EthCLSpecs.Proofs.run_pure a s
-
-/-- `.run` of a `throw` at `GloasRun`. The statement is `EthCLSpecs.Proofs.run_throw`. -/
-theorem GloasRun.run_throw {σ ε α : Type} (e : ε) (s : σ) :
-    (throw e : StateT σ (Except ε) α).run s = .error e :=
-  EthCLSpecs.Proofs.run_throw e s
-
-/-- `Except`'s bind on the success branch. The statement is
-`EthCLSpecs.Proofs.except_bind_ok`. -/
-theorem GloasRun.except_bind_ok {ε α β : Type} (a : α) (f : α → Except ε β) :
-    (Except.ok a : Except ε α) >>= f = f a :=
-  EthCLSpecs.Proofs.except_bind_ok a f
-
-/-- `Except`'s bind on the error branch. The statement is
-`EthCLSpecs.Proofs.except_bind_error`. -/
-theorem GloasRun.except_bind_error {ε α β : Type} (e : ε) (f : α → Except ε β) :
-    (Except.error e : Except ε α) >>= f = .error e :=
-  EthCLSpecs.Proofs.except_bind_error e f
 
 end EthCLSpecs.Proofs.Gloas

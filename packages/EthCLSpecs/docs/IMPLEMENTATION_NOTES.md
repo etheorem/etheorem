@@ -833,9 +833,8 @@ separation.
 - **`Proofs/Gloas/Run.lean`** names `GloasRun`, the pure `StateT`/`Except`
   state-transition monad the Gloas proofs pin their `forkdef` bodies to.
   `StateTransition` is a parameter of a fork body, so every run theorem has to fix
-  it; this fixes it once. It re-exports the `Proofs/Run.lean` facts as
-  `GloasRun.run_bind` and friends so Gloas call sites keep a runner-qualified
-  name.
+  it; this fixes it once. Gloas call sites use the `Proofs/Run.lean` facts
+  (`run_bind` and friends) directly, as Heze does.
 
 - **`Proofs/StoreRun.lean`** names `ForkChoiceStoreRun`, the shared pure
   store-machine runner every fork's fork-choice proofs pin at that fork's

@@ -55,8 +55,8 @@ Re-exports:
   opaque and may modify state.
 * `EthCLSpecs.Proofs.Gloas.Run`: `GloasRun`, the state-transition monad every Gloas
   proof in this directory pins its theorems to. The generic `StateT`-over-`Except`
-  bind and `Except` facts live in `EthCLSpecs.Proofs.Run` and are re-exported here
-  as `GloasRun.run_bind` and friends.
+  bind and `Except` facts live in `EthCLSpecs.Proofs.Run`; both fork directories
+  import that module and name the facts directly.
 * `EthCLSpecs.Proofs.Gloas.UpdateCheckpoints`: `Gloas.updateCheckpoints` checkpoint
   monotonicity, the justified/finalized epoch never decreases. Its theorems sit
   in `EthCLSpecs.Proofs.Gloas`, since `updateCheckpoints` exists in both forks.
