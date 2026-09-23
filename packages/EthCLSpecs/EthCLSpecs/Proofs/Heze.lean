@@ -1,6 +1,7 @@
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
 import EthCLSpecs.Proofs.Heze.CensorshipCost
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
+import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.PayloadTiebreak
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
@@ -32,11 +33,17 @@ Re-exports:
   `false` inclusion-list answer (`unsatisfiedPayload_cost`). The head step goes to
   EMPTY. A child on EMPTY, with the empty parent requests, does not settle the bid. At
   the epoch substep, the bid is paid if and only if its entry reaches the quorum.
+  `unsatisfiedPayload_of_el_unsatisfied` derives the payload conditions from the
+  envelope lookups and an EL answer of `false`. The block conditions are hypotheses.
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
   equations for `getInclusionListCommittee` and
   `getInclusionListTransactions`
   (`getInclusionListCommittee_run_eq`, `getInclusionListTransactions_run_eq`),
   plus the missing-timeliness predicate on the `FcMap.fold` entries array.
+* `EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope`: the store after a successful
+  `onExecutionPayloadEnvelope` (`onExecutionPayloadEnvelope_run_eq`). The envelope and
+  its inclusion-list answer are at the same root
+  (`onExecutionPayloadEnvelope_run_pairing`).
 * `EthCLSpecs.Proofs.Heze.ParentPayloadEmpty`: `processParentExecutionPayload` on
   the EMPTY edge, with the empty parent requests, does not change the state
   (`processParentExecutionPayload_run_of_empty_parent`). Fork choice calls an edge

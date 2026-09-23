@@ -874,12 +874,13 @@ separation.
   the queried root has a recorded `false` inclusion-list satisfaction result.
   The runner state remains unchanged. The theorem does not cover the later
   fork-choice checks inherited from Gloas or the case where no result has been
-  recorded. It assumes that the recorded result is present and does not prove
-  that it belongs to the matching payload. The successful path that records
-  the result of `isInclusionListSatisfied` is proved in
-  `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`. Ensuring that the
-  payload and its result are recorded under the same root remains tracked by
-  the `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+  recorded. It assumes that the recorded result is present, and it does not tie
+  that result to the payload. The successful path that records the result of
+  `isInclusionListSatisfied` is proved in
+  `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`.
+  `Proofs/Heze/OnExecutionPayloadEnvelope.lean` proves that one successful
+  envelope run writes the payload and its result under the same root. No theorem
+  proves that every root in `payloads` has a recorded result.
 
 - **`Proofs/Heze/GetInclusionListTransactions.lean`** proves the collector
   run equations used by the recorder characterization.
@@ -913,10 +914,9 @@ separation.
   error, an empty committee, and a missing timeliness key. The last two
   follow from `Proofs/Heze/GetInclusionListTransactions.lean`.
   `recordPayloadInclusionListSatisfaction_run_eq` restates the successful
-  branch with an arbitrary `postRunnerStore`. The generic `FcMap`
-  interface does not specify how insert affects a later lookup. What a
-  subsequent lookup returns remains tracked by the
-  `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+  branch with an arbitrary `postRunnerStore`.
+  `Proofs/Heze/OnExecutionPayloadEnvelope.lean` proves what a later lookup
+  returns after the envelope handler.
 
 - **`Proofs/Gloas/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
   single record update, which doubles as the frame condition that no other Store
@@ -926,10 +926,25 @@ separation.
   core `UInt64` ordering lemmas. Their theorems live in `EthCLSpecs.Proofs.Gloas`
   rather than the flat `EthCLSpecs.Proofs`, since Fulu declares the same function.
 
-- **`Proofs/OrdVector.lean`** proves that the byte-vector order `instOrdVectorUInt8`
-  is reflexive (`compare_vectorUInt8_self`). The fork-choice proofs need it when two
-  nodes have the same root. It lives in the fork-proof tree, so a change to it
-  rebuilds only proof modules.
+- **`EthCLLib/Proofs/LawfulFcMap.lean`** declares `LawfulFcMap map K`: six laws that
+  relate `lookup` to `empty`, `insert`, `contains`, `fold`, and `keys`. It proves them
+  for `treeMap` at a key with `TransOrd` and `LawfulEqOrd`, and for `hashMap` at a key
+  with `LawfulBEq` and `LawfulHashable`. The file path, the class, and the wrapper
+  names match etheorem/etheorem#102, which has two of the six laws. The extra laws
+  need stronger binders than #102's: `LawfulEqOrd` for `treeMap` and `LawfulBEq` for
+  `hashMap`, where #102 has `TransOrd` alone and `EquivBEq`.
+
+- **`EthCLLib/Spec/FiniteMap.lean`** gains the order laws for `Root`. The block
+  `instOrdVectorUInt8_compare_eq_compareLex` and `instTransOrdVectorUInt8` is the one
+  in #102, at the same place: the byte loop is core's `Vector.compareLex compare`.
+  `instLawfulEqOrdVectorUInt8` follows it. The fork-choice proofs take reflexivity from
+  that instance (`Std.ReflOrd.compare_self`) when two nodes have the same root.
+
+- **`Proofs/Heze/OnExecutionPayloadEnvelope.lean`** gives the store after a successful
+  `onExecutionPayloadEnvelope` (`onExecutionPayloadEnvelope_run_eq`). Under
+  `LawfulFcMap`, a lookup at the root then returns the envelope and the EL answer for
+  its payload (`onExecutionPayloadEnvelope_run_pairing`). It does not cover a failed
+  run.
 
 - **`Proofs/Heze/Run.lean`** names `HezeRun`, the pure `StateT`/`Except` monad for the
   Heze state-transition proofs. It is the Heze counterpart of `GloasRun`.
@@ -960,6 +975,8 @@ separation.
   because the model does not include the proposer who builds the child. The third takes
   `BidPaymentCarried` as the hypothesis about the blocks between the bid and the
   substep. A proposer slashing of the block's proposer, or a child on the FULL edge,
-  breaks it.
+  breaks it. `unsatisfiedPayload_of_el_unsatisfied` derives the payload conditions from
+  the envelope lookups and an EL answer of `false`. It takes the block lookup, the
+  current slot, and the overflow check as hypotheses on the store after the handler.
 
 - **`PROOF_LEDGER.md`** tracks candidate consensus proof targets and their status.

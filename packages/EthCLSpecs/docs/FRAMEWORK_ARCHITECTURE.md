@@ -847,7 +847,7 @@ class FcMap (map : MapKind) where
 the filtered-block-tree among them. Key constraints differ by backing: `hashMap`
 needs `BEq` and `Hashable`, `treeMap` needs `Ord`. The `Ord` requirement is what
 gives the proof-side `treeMap` a deterministic key order, which a proof that
-quantifies over all store keys depends on.
+depends on key order needs.
 
 Two instances ship: `treeMap` (ordered, proof-friendly) and `hashMap` (fast). The
 higher-kinded `MapKind` framing is what lets a single `map` variable abstract over
@@ -1261,8 +1261,10 @@ Seven anti-patterns the framework avoids in every definition, in order of severi
    axiom set with the compiler axiom. Reserve `native_decide` for proofs about
    specific concrete outputs; prove structural `simp` lemmas by `decide` or `rfl`.
 7. **`hashMap`-only in the pure path.** `Std.HashMap` has no guaranteed key order,
-   and a proof that quantifies over all store keys needs `treeMap`. The `FcMap`
-   abstraction supports both, and the pure path uses `treeMap`.
+   so a proof that depends on the order of a fold over the store keys needs
+   `treeMap`. A proof that uses only the `LawfulFcMap` laws, key membership
+   included, holds at both. The `FcMap` abstraction supports both, and the pure
+   path uses `treeMap`.
 
 Two further facts the design records for the eventual proof work. The
 `UInt64`-to-`Nat` correspondence lemmas let arithmetic proofs reason in `Nat` under

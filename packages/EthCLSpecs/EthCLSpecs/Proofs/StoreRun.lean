@@ -14,8 +14,8 @@ is a monad over an arbitrary store type, so it belongs to no fork, and the theor
 that pin it live in `Proofs/Gloas/` and `Proofs/Heze/` alike.
 
 `SPEC_AUTHORING_MODEL.md` sets out a fast/pure duality across four axes, and
-`SPECS_ARCHITECTURE.md` §11.1 states that the fast configuration (`FastBox`,
-`EStateM`, `hashMap`) is never a proof target. This is the pure column's store
+`SPECS_ARCHITECTURE.md` §11.1 states that `FastBox` and `EStateM` are never a proof
+target, and `hashMap` is one only through `LawfulFcMap`. This is the pure column's store
 monad, the store-side counterpart of `Proofs/Gloas/Run.lean`'s `GloasRun`.
 
 The generic `StateT`-over-`Except` bind, pure, throw, and `Except.bind` equations
