@@ -25,7 +25,7 @@ Re-exports:
   recorded-unsatisfied FOCIL rejection theorem
   (`shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`), proved with
   `ForkChoiceStoreRun`.
-* `EthCLSpecs.Proofs.Heze.Time`: the inherited `computeEpochAtSlot` and
-  `computeStartSlotAtEpoch` at Heze. The `Downgrade` bridge reaches one fork up,
+* `EthCLSpecs.Proofs.Heze.Time`: the inherited `computeEpochAtSlot`,
+  `computeStartSlotAtEpoch`, and `computeActivationExitEpoch` at Heze. The `Downgrade` bridge reaches one fork up,
   so each theorem takes the Gloas proof term.
 -/
