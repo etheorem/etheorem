@@ -19,8 +19,10 @@ Values come from the pinned `consensus-specs` (`v1.7.0-alpha.11`):
 The schemas are preset-independent in field count, so the `mainnet` preset
 stands for both.
 
-The branch theorems these gindices feed are `isValidMerkleBranch_of_container_gindex`
-and `isValidMerkleBranch_of_container₂_gindex` (`EthCLLib/Proofs/ContainerBranch.lean`).
+The branch theorems these gindices feed are `isValidMerkleBranch_of_container_gindex`,
+`isValidMerkleBranch_of_container₂_gindex`, and
+`isValidMerkleBranch_of_container₃_gindex` (`EthCLLib/Proofs/ContainerBranch.lean`).
+Two `example`s apply the two-step and three-step forms to real schemas.
 
 The checks run on `lake build EthCLSpecsTests` (`just ethcl-test`).
 -/
@@ -111,9 +113,42 @@ private abbrev gloasBody : SSZType := SSZRepr.shape (T := @BeaconBlockBody mainn
 #guard gloasState.generalizedIndex [.field 22] == some 86
 #guard gloasState.generalizedIndex [.field 23] == some 87
 -- `EXECUTION_BLOCK_HASH_GINDEX_GLOAS`: `signed_execution_payload_bid` (field 10),
--- `message` (field 0), `parent_block_hash` (field 0). A three-step path, past the
--- two-step theorem's reach, so only the gindex is pinned.
+-- `message` (field 0), `parent_block_hash` (field 0).
 #guard gloasBody.generalizedIndex [.field 10, .field 0, .field 0] == some 832
+
+attribute [local instance] mainnet
+
+/-- The Gloas `SignedExecutionPayloadBid` schema: `message`, then `signature`. -/
+private abbrev gloasSignedBid : SSZType :=
+  SSZRepr.shape (T := @SignedExecutionPayloadBid mainnet)
+
+/-- The Gloas `ExecutionPayloadBid` schema. -/
+private abbrev gloasBid : SSZType := SSZRepr.shape (T := @ExecutionPayloadBid mainnet)
+
+/-- The three-step theorem at `EXECUTION_BLOCK_HASH_GINDEX_GLOAS`, applied to the
+real schemas. `decide` proves the three `checkSupportedFields` results and the
+three field bounds. `rfl` proves both `hfield`s, both `hinner`s, and the gindex. -/
+example [HasherTag] [CombineWidth32 HasherTag.H] (b : @BeaconBlockBody mainnet) :
+    isValidMerkleBranch
+        (bytesToRoot (fieldRoot HasherTag.H (fieldsOf gloasBid)
+          (SSZRepr.toRepr b.signedExecutionPayloadBid.message) 0))
+        ((containerOpening HasherTag.H (fieldsOf gloasBody) (SSZRepr.toRepr b) 10
+            ++ containerOpening HasherTag.H (fieldsOf gloasSignedBid)
+              (SSZRepr.toRepr b.signedExecutionPayloadBid) 0
+            ++ containerOpening HasherTag.H (fieldsOf gloasBid)
+              (SSZRepr.toRepr b.signedExecutionPayloadBid.message) 0).map
+            bytesToRoot).toArray.reverse
+        (Nat.log2 832) (832 % 2 ^ Nat.log2 832)
+        (bytesToRoot (SSZType.hashTreeRoot HasherTag.H (.container (fieldsOf gloasBody))
+          (SSZRepr.toRepr b)))
+      = true :=
+  isValidMerkleBranch_of_container₃_gindex
+    (SSZType.supportedFields_of_checkSupportedFields _ (by decide))
+    (SSZType.supportedFields_of_checkSupportedFields _ (by decide))
+    (SSZType.supportedFields_of_checkSupportedFields _ (by decide))
+    (SSZRepr.toRepr b) (SSZRepr.toRepr b.signedExecutionPayloadBid)
+    (SSZRepr.toRepr b.signedExecutionPayloadBid.message) 10 0 0
+    (by decide) (by decide) (by decide) rfl rfl rfl rfl 832 rfl
 
 end Gloas
 

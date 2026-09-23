@@ -9,12 +9,13 @@ container's chunk list is its field roots, so the theorems below read as claims
 about a field: the branch to field `k` verifies against the container's own
 `hashTreeRoot`.
 
-Two depths are covered. `isValidMerkleBranch_of_container` opens one field.
+The theorems cover three depths. `isValidMerkleBranch_of_container` opens one field.
 `isValidMerkleBranch_of_container₂` opens a field of a field, the shape behind
 `FINALIZED_ROOT_GINDEX` (`finalized_checkpoint.root`) and
-`EXECUTION_BLOCK_HASH_GINDEX` (`execution_payload.block_hash`). Its branch is the
-outer opening followed by the inner one, and `foldOpening_append` splits the fold
-at that seam.
+`EXECUTION_BLOCK_HASH_GINDEX` (`execution_payload.block_hash`).
+`isValidMerkleBranch_of_container₃` opens one level further, the shape behind
+`EXECUTION_BLOCK_HASH_GINDEX_GLOAS`. Each branch is the outer opening followed by
+the inner ones, and `foldOpening_append` splits the fold where each opening ends.
 
 The spec's call sites pass `floorlog2(gindex)` and `get_subtree_index(gindex)`,
 which are `Nat.log2 g` and `g % 2 ^ Nat.log2 g`. The `_gindex` forms take the
@@ -164,12 +165,17 @@ theorem isValidMerkleBranch_of_container_gindex [HasherTag] [CombineWidth32 Hash
   rw [log2_two_pow_add hindex, Nat.add_mod_left, Nat.mod_eq_of_lt hindex]
   exact isValidMerkleBranch_of_container hfs vs k hk
 
-/-! ### A field of a field
+/-! ### Fields of fields
 
 The outer container's field `k₁` holds the container `gs` with value `ws`. The
 branch runs through both chunk trees: the outer opening at `k₁`, then the inner
 opening at `k₂`. The index concatenates the two slots, `k₁ * 2 ^ d₂ + k₂`, where
-`d₂` is the inner depth. -/
+`d₂` is the inner depth. A third step repeats the same construction one level
+down.
+
+`foldOpening_containerOpening_append` is the one step the proofs repeat. The
+inner fold returns field `k`'s root, and the outer opening on top of it returns
+the container's root. -/
 
 /-- The composed index fits the composed depth. `k₁` fills at most `2 ^ d₁ - 1`
 blocks of `2 ^ d₂`, and `k₂` stays inside one block. -/
@@ -179,17 +185,45 @@ theorem index_lt_two_pow_add {d₁ d₂ k₁ k₂ : Nat} (h₁ : k₁ < 2 ^ d₁
   calc k₁ * 2 ^ d₂ + k₂ < (k₁ + 1) * 2 ^ d₂ := by rw [Nat.succ_mul]; omega
     _ ≤ 2 ^ d₁ * 2 ^ d₂ := Nat.mul_le_mul_right _ h₁
 
+/-- The gindex builder's `(2 ^ a + x) * 2 ^ b + y` is `2 ^ (a + b)` plus the
+concatenated slot `x * 2 ^ b + y`. -/
+theorem two_pow_add_mul_add (a b x y : Nat) :
+    (2 ^ a + x) * 2 ^ b + y = 2 ^ (a + b) + (x * 2 ^ b + y) := by
+  rw [Nat.add_mul, Nat.pow_add, Nat.add_assoc]
+
 /-- The composed path is the outer field's path followed by the inner field's.
 `gindexBits_append_step` splits the gindex `(2 ^ d₁ + k₁) * 2 ^ d₂ + k₂` there. -/
 theorem gindexBits_two_pow_add_two_pow_add {d₁ d₂ k₁ k₂ : Nat} (h₂ : k₂ < 2 ^ d₂) :
     SizzLean.Cache.MerkleTree.gindexBits (2 ^ (d₁ + d₂) + (k₁ * 2 ^ d₂ + k₂))
       = SizzLean.Cache.MerkleTree.gindexBits (2 ^ d₁ + k₁)
         ++ SizzLean.Cache.MerkleTree.gindexBits (2 ^ d₂ + k₂) := by
-  have hshape : 2 ^ (d₁ + d₂) + (k₁ * 2 ^ d₂ + k₂) = (2 ^ d₁ + k₁) * 2 ^ d₂ + k₂ := by
-    rw [Nat.add_mul, Nat.pow_add, Nat.add_assoc]
   have hpos : 0 < 2 ^ d₁ + k₁ :=
     Nat.lt_of_lt_of_le (Nat.two_pow_pos d₁) (Nat.le_add_right _ _)
-  rw [hshape, gindexBits_append_step hpos h₂, gindexBits_pow_add d₂ k₂ h₂]
+  rw [← two_pow_add_mul_add, gindexBits_append_step hpos h₂, gindexBits_pow_add d₂ k₂ h₂]
+
+/-- A container's root is 32 bytes: it is a `merkleize` of 32-byte field roots. -/
+theorem hashTreeRoot_container_size (H : Type) [Hasher H] [CombineWidth32 H]
+    {fs : List SSZType} (hfs : SSZType.SupportedFields fs) (vs : SSZType.interpFields fs) :
+    (SSZType.hashTreeRoot H (.container fs) vs).size = 32 := by
+  rw [hashTreeRoot_container]
+  exact merkleize_size H _ _
+    (by rw [length_hashTreeRootFields]; exact le_two_pow_chunkDepth fs.length)
+    (hashTreeRootFields_size H hfs vs)
+
+/-- **One container step.** If the inner fold returns field `k`'s root, the branch
+to field `k` on top of it returns the container's root. `foldOpening_append`
+splits the fold where the outer opening ends, and `foldOpening_containerOpening` closes the outer
+part. -/
+theorem foldOpening_containerOpening_append (H : Type) [Hasher H] (fs : List SSZType)
+    (vs : SSZType.interpFields fs) (k : Nat) (hk : k < fs.length)
+    (leaf : ByteArray) (sibs : List ByteArray) (bits : List Bool)
+    (hinner : foldOpening H leaf sibs bits = fieldRoot H fs vs k) :
+    foldOpening H leaf (containerOpening H fs vs k ++ sibs)
+        (SizzLean.Cache.MerkleTree.gindexBits (2 ^ chunkDepth fs.length + k) ++ bits)
+      = SSZType.hashTreeRoot H (.container fs) vs := by
+  rw [foldOpening_append _ _ _ _ _ _
+      (by rw [length_containerOpening H fs vs k hk, length_gindexBits_field fs k hk]),
+    hinner, foldOpening_containerOpening H fs vs k hk]
 
 /-- **A branch to a field of a field verifies.** Open field `k₁` of `fs`, then
 field `k₂` of the container `gs` it holds, and `isValidMerkleBranch` accepts
@@ -198,9 +232,8 @@ against the outer container's `hashTreeRoot`.
 `hinner` says field `k₁` holds the container value `ws`. At a concrete schema,
 `fieldRoot` unfolds to that field's `hashTreeRoot`, so `hinner` closes by `rfl`.
 
-`foldOpening_append` splits the fold at the seam. The inner fold returns `gs`'s
-root, `hinner` turns it into field `k₁`'s root, and the outer fold returns `fs`'s
-root.
+The inner fold returns `gs`'s root, `hinner` turns it into field `k₁`'s root,
+and `foldOpening_containerOpening_append` returns `fs`'s root.
 
 **Axiom use**: at `Sha256`, `CombineWidth32` carries `sha256Combine_eq_spec`. At
 `Sha256Spec`, the theorem uses no axiom. -/
@@ -223,36 +256,19 @@ theorem isValidMerkleBranch_of_container₂ [HasherTag] [CombineWidth32 HasherTa
     Nat.lt_of_lt_of_le hk₁ (le_two_pow_chunkDepth fs.length)
   have h₂ : k₂ < 2 ^ chunkDepth gs.length :=
     Nat.lt_of_lt_of_le hk₂ (le_two_pow_chunkDepth gs.length)
-  have hlen₁ := length_containerOpening HasherTag.H fs vs k₁ hk₁
-  have hlen₂ := length_containerOpening HasherTag.H gs ws k₂ hk₂
-  -- Every sibling on either side is 32 bytes, so root-typing them loses nothing.
-  have hsibs : ∀ s ∈ containerOpening HasherTag.H fs vs k₁
-      ++ containerOpening HasherTag.H gs ws k₂, s.size = 32 := by
+  refine isValidMerkleBranch_of_foldOpening_bytes _ _ _ _ _
+    (fieldRoot_size HasherTag.H hgs ws k₂ hk₂)
+    (hashTreeRoot_container_size HasherTag.H hfs vs) ?_ ?_ (index_lt_two_pow_add h₁ h₂) ?_
+  · -- Every sibling on either side is 32 bytes.
     intro s hs
     rcases List.mem_append.mp hs with hs | hs
     · exact size_mem_containerOpening HasherTag.H hfs vs k₁ s hs
     · exact size_mem_containerOpening HasherTag.H hgs ws k₂ s hs
-  have hmapback : ((containerOpening HasherTag.H fs vs k₁
-        ++ containerOpening HasherTag.H gs ws k₂).map bytesToRoot).map vecToBytes
-      = containerOpening HasherTag.H fs vs k₁ ++ containerOpening HasherTag.H gs ws k₂ := by
-    rw [List.map_map]
-    exact (List.map_congr_left fun s hs => vecToBytes_bytesToRoot s (hsibs s hs)).trans
-      (List.map_id' _)
-  -- The outer container's root is a `merkleize` of 32-byte chunks.
-  have hroot : (SSZType.hashTreeRoot HasherTag.H (.container fs) vs).size = 32 := by
-    rw [hashTreeRoot_container]
-    exact merkleize_size HasherTag.H _ _
-      (by rw [length_hashTreeRootFields]; exact le_two_pow_chunkDepth fs.length)
-      (hashTreeRootFields_size HasherTag.H hfs vs)
-  apply isValidMerkleBranch_of_foldOpening _ _ _ _ _
-    (by rw [List.length_map, List.length_append, hlen₁, hlen₂])
-    (index_lt_two_pow_add h₁ h₂)
-  rw [hmapback, vecToBytes_bytesToRoot _ (fieldRoot_size HasherTag.H hgs ws k₂ hk₂),
-    gindexBits_two_pow_add_two_pow_add h₂,
-    foldOpening_append _ _ _ _ _ _ (by rw [hlen₁, length_gindexBits_field fs k₁ hk₁]),
-    foldOpening_containerOpening HasherTag.H gs ws k₂ hk₂, ← hinner,
-    foldOpening_containerOpening HasherTag.H fs vs k₁ hk₁]
-  exact (vecToBytes_bytesToRoot _ hroot).symm
+  · rw [List.length_append, length_containerOpening HasherTag.H fs vs k₁ hk₁,
+      length_containerOpening HasherTag.H gs ws k₂ hk₂]
+  · rw [gindexBits_two_pow_add_two_pow_add h₂,
+      foldOpening_containerOpening_append HasherTag.H fs vs k₁ hk₁ _ _ _ ?_]
+    rw [foldOpening_containerOpening HasherTag.H gs ws k₂ hk₂, hinner]
 
 /-- **The same, at the gindex a caller holds.** `g` is what `get_generalized_index`
 returns for the two-step path, and the check runs at `floorlog2(g)` and
@@ -280,14 +296,109 @@ theorem isValidMerkleBranch_of_container₂_gindex [HasherTag] [CombineWidth32 H
   have h₂ : k₂ < 2 ^ chunkDepth gs.length :=
     Nat.lt_of_lt_of_le hk₂ (le_two_pow_chunkDepth gs.length)
   have hidx := index_lt_two_pow_add h₁ h₂
-  have hshape : (2 ^ chunkDepth fs.length + k₁) * 2 ^ chunkDepth gs.length + k₂
-      = 2 ^ (chunkDepth fs.length + chunkDepth gs.length)
-        + (k₁ * 2 ^ chunkDepth gs.length + k₂) := by
-    rw [Nat.add_mul, Nat.pow_add, Nat.add_assoc]
   rw [generalizedIndex_field_field fs gs k₁ k₂ hk₁ hk₂ hfield, Option.some.injEq,
-    hshape] at hg
+    two_pow_add_mul_add] at hg
   subst hg
   rw [log2_two_pow_add hidx, Nat.add_mod_left, Nat.mod_eq_of_lt hidx]
   exact isValidMerkleBranch_of_container₂ hfs hgs vs ws k₁ k₂ hk₁ hk₂ hinner
+
+/-- **A branch through three containers verifies.** Field `k₁` of `fs` holds the
+container `gs`, field `k₂` of `gs` holds the container `hs`, and the branch ends
+at field `k₃` of `hs`. This is the shape of `EXECUTION_BLOCK_HASH_GINDEX_GLOAS`:
+`signed_execution_payload_bid`, then `message`, then `parent_block_hash`.
+
+`hinner₁` and `hinner₂` name the two nested values, as `hinner` does in
+`isValidMerkleBranch_of_container₂`. `foldOpening_containerOpening_append`
+applies twice, once per outer container.
+
+**Axiom use**: at `Sha256`, `CombineWidth32` carries `sha256Combine_eq_spec`. At
+`Sha256Spec`, the theorem uses no axiom. -/
+theorem isValidMerkleBranch_of_container₃ [HasherTag] [CombineWidth32 HasherTag.H]
+    {fs gs hs : List SSZType} (hfs : SSZType.SupportedFields fs)
+    (hgs : SSZType.SupportedFields gs) (hhs : SSZType.SupportedFields hs)
+    (vs : SSZType.interpFields fs) (ws : SSZType.interpFields gs)
+    (us : SSZType.interpFields hs)
+    (k₁ k₂ k₃ : Nat) (hk₁ : k₁ < fs.length) (hk₂ : k₂ < gs.length) (hk₃ : k₃ < hs.length)
+    (hinner₁ : fieldRoot HasherTag.H fs vs k₁
+      = SSZType.hashTreeRoot HasherTag.H (.container gs) ws)
+    (hinner₂ : fieldRoot HasherTag.H gs ws k₂
+      = SSZType.hashTreeRoot HasherTag.H (.container hs) us) :
+    isValidMerkleBranch
+        (bytesToRoot (fieldRoot HasherTag.H hs us k₃))
+        ((containerOpening HasherTag.H fs vs k₁
+            ++ containerOpening HasherTag.H gs ws k₂
+            ++ containerOpening HasherTag.H hs us k₃).map bytesToRoot).toArray.reverse
+        (chunkDepth fs.length + chunkDepth gs.length + chunkDepth hs.length)
+        ((k₁ * 2 ^ chunkDepth gs.length + k₂) * 2 ^ chunkDepth hs.length + k₃)
+        (bytesToRoot (SSZType.hashTreeRoot HasherTag.H (.container fs) vs))
+      = true := by
+  have h₁ : k₁ < 2 ^ chunkDepth fs.length :=
+    Nat.lt_of_lt_of_le hk₁ (le_two_pow_chunkDepth fs.length)
+  have h₂ : k₂ < 2 ^ chunkDepth gs.length :=
+    Nat.lt_of_lt_of_le hk₂ (le_two_pow_chunkDepth gs.length)
+  have h₃ : k₃ < 2 ^ chunkDepth hs.length :=
+    Nat.lt_of_lt_of_le hk₃ (le_two_pow_chunkDepth hs.length)
+  have h₁₂ := index_lt_two_pow_add h₁ h₂
+  refine isValidMerkleBranch_of_foldOpening_bytes _ _ _ _ _
+    (fieldRoot_size HasherTag.H hhs us k₃ hk₃)
+    (hashTreeRoot_container_size HasherTag.H hfs vs)
+    ?_ ?_ (index_lt_two_pow_add h₁₂ h₃) ?_
+  · -- Every sibling in the three openings is 32 bytes.
+    intro s hs'
+    rcases List.mem_append.mp hs' with hs' | hs'
+    · rcases List.mem_append.mp hs' with hs' | hs'
+      · exact size_mem_containerOpening HasherTag.H hfs vs k₁ s hs'
+      · exact size_mem_containerOpening HasherTag.H hgs ws k₂ s hs'
+    · exact size_mem_containerOpening HasherTag.H hhs us k₃ s hs'
+  · rw [List.length_append, List.length_append,
+      length_containerOpening HasherTag.H fs vs k₁ hk₁,
+      length_containerOpening HasherTag.H gs ws k₂ hk₂,
+      length_containerOpening HasherTag.H hs us k₃ hk₃]
+  · -- The path splits into the three fields' paths. Regroup both lists to the
+    -- right so each container step peels one opening and one path off the front.
+    rw [gindexBits_two_pow_add_two_pow_add h₃, gindexBits_two_pow_add_two_pow_add h₂,
+      List.append_assoc, List.append_assoc,
+      foldOpening_containerOpening_append HasherTag.H fs vs k₁ hk₁ _ _ _ ?_]
+    rw [foldOpening_containerOpening_append HasherTag.H gs ws k₂ hk₂ _ _ _ ?_, hinner₁]
+    rw [foldOpening_containerOpening HasherTag.H hs us k₃ hk₃, hinner₂]
+
+/-- **The same, at the gindex a caller holds.** `hfield₁` and `hfield₂` give the
+inner steps their types, and `generalizedIndex_field_field_field` then computes
+`g`. -/
+theorem isValidMerkleBranch_of_container₃_gindex [HasherTag] [CombineWidth32 HasherTag.H]
+    {fs gs hs : List SSZType} (hfs : SSZType.SupportedFields fs)
+    (hgs : SSZType.SupportedFields gs) (hhs : SSZType.SupportedFields hs)
+    (vs : SSZType.interpFields fs) (ws : SSZType.interpFields gs)
+    (us : SSZType.interpFields hs)
+    (k₁ k₂ k₃ : Nat) (hk₁ : k₁ < fs.length) (hk₂ : k₂ < gs.length) (hk₃ : k₃ < hs.length)
+    (hfield₁ : fs[k₁] = .container gs) (hfield₂ : gs[k₂] = .container hs)
+    (hinner₁ : fieldRoot HasherTag.H fs vs k₁
+      = SSZType.hashTreeRoot HasherTag.H (.container gs) ws)
+    (hinner₂ : fieldRoot HasherTag.H gs ws k₂
+      = SSZType.hashTreeRoot HasherTag.H (.container hs) us)
+    (g : Nat)
+    (hg : (SSZType.container fs).generalizedIndex [.field k₁, .field k₂, .field k₃]
+      = some g) :
+    isValidMerkleBranch
+        (bytesToRoot (fieldRoot HasherTag.H hs us k₃))
+        ((containerOpening HasherTag.H fs vs k₁
+            ++ containerOpening HasherTag.H gs ws k₂
+            ++ containerOpening HasherTag.H hs us k₃).map bytesToRoot).toArray.reverse
+        (Nat.log2 g) (g % 2 ^ Nat.log2 g)
+        (bytesToRoot (SSZType.hashTreeRoot HasherTag.H (.container fs) vs))
+      = true := by
+  have h₁ : k₁ < 2 ^ chunkDepth fs.length :=
+    Nat.lt_of_lt_of_le hk₁ (le_two_pow_chunkDepth fs.length)
+  have h₂ : k₂ < 2 ^ chunkDepth gs.length :=
+    Nat.lt_of_lt_of_le hk₂ (le_two_pow_chunkDepth gs.length)
+  have h₃ : k₃ < 2 ^ chunkDepth hs.length :=
+    Nat.lt_of_lt_of_le hk₃ (le_two_pow_chunkDepth hs.length)
+  have hidx := index_lt_two_pow_add (index_lt_two_pow_add h₁ h₂) h₃
+  rw [generalizedIndex_field_field_field fs gs hs k₁ k₂ k₃ hk₁ hk₂ hk₃ hfield₁ hfield₂,
+    Option.some.injEq, two_pow_add_mul_add, two_pow_add_mul_add] at hg
+  subst hg
+  rw [log2_two_pow_add hidx, Nat.add_mod_left, Nat.mod_eq_of_lt hidx]
+  exact isValidMerkleBranch_of_container₃ hfs hgs hhs vs ws us k₁ k₂ k₃ hk₁ hk₂ hk₃
+    hinner₁ hinner₂
 
 end EthCLLib.Proofs
