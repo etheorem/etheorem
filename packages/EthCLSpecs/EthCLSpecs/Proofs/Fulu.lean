@@ -23,4 +23,6 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Time`: `computeEpochAtSlot` is monotone in the slot, and
   `computeStartSlotAtEpoch` cannot fault on an epoch a slot division bounds. Their round trip is
   the identity, conditional at a symbolic preset and closed at both shipped presets.
+  `computeActivationExitEpoch` faults exactly when its sum reaches `2 ^ 64`, and it cannot fault
+  on a slot-derived epoch at either shipped preset.
 -/
