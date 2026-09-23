@@ -44,6 +44,7 @@ import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.RootFrames
 import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
+import EthCLSpecs.Proofs.Heze.Shuffle
 import EthCLSpecs.Proofs.Heze.SlotsIncrease
 import EthCLSpecs.Proofs.Heze.SyncFrame
 import EthCLSpecs.Proofs.Heze.Time
@@ -275,6 +276,9 @@ Re-exports:
   existing recorded-unsatisfied FOCIL rejection
   (`shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`), and the
   named prefix, FOCIL, vote, and inherited-Gloas-tail corollaries.
+* `EthCLSpecs.Proofs.Heze.Shuffle`: the inherited `computeShuffledPermutation`
+  returns a permutation of `[0, n)` whenever it does not raise
+  (`computeShuffledPermutation_perm`).
 * `EthCLSpecs.Proofs.Heze.SlotsIncrease`: block slots increase along parent links at the
   end of a trace from the anchor store, or two distinct headers or blocks share a root
   (`NodeTrace.slotInv`). The argument uses the header check of `processBlockHeader` and

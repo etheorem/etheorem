@@ -11,6 +11,7 @@ import EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation
 import EthCLSpecs.Proofs.Gloas.PendingBalanceForBuilder
 import EthCLSpecs.Proofs.Gloas.ProcessOperations
 import EthCLSpecs.Proofs.Gloas.Run
+import EthCLSpecs.Proofs.Gloas.Shuffle
 import EthCLSpecs.Proofs.Gloas.Time
 import EthCLSpecs.Proofs.Gloas.UpdateCheckpoints
 
@@ -69,6 +70,9 @@ Re-exports:
   proof in this directory pins its theorems to. The generic `StateT`-over-`Except`
   bind and `Except` facts live in `EthCLLib.Proofs.Run`; both fork directories
   import that module and name the facts directly.
+* `EthCLSpecs.Proofs.Gloas.Shuffle`: the inherited `computeShuffledPermutation`
+  returns a permutation of `[0, n)` whenever it does not raise
+  (`computeShuffledPermutation_perm`).
 * `EthCLSpecs.Proofs.Gloas.Time`: the inherited `computeEpochAtSlot`,
   `computeStartSlotAtEpoch`, and `computeActivationExitEpoch` at Gloas. Each theorem takes the Fulu proof term
   through the `Downgrade` bridge.
