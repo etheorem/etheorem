@@ -130,7 +130,9 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `computeExitEpochAndUpdateChurn` | `Gloas/EpochProcessing.lean:93-104` | The churn arithmetic this call site performs through `reserveChurn` must not underflow | proposed |  |
+| `computeExitEpochAndUpdateChurn` | `Gloas/EpochProcessing.lean:93-106` | The Gloas override reads `get_exit_churn_limit`. When the activation-exit epoch and the reservation succeed, the run succeeds, and its `balance_to_consume - exit_balance` subtraction cannot fault. Each activation-epoch or reservation fault passes through unchanged | proved | `Proofs/Gloas/Churn.lean` |
+| `reserveChurn` | `Gloas/EpochProcessing.lean:76` | The Fulu claims. The body reads no preset or config value, so each theorem takes the Fulu proof term | proved | `Proofs/Gloas/Churn.lean` |
+| `computeConsolidationEpochAndUpdateChurn` | `Gloas/EpochProcessing.lean:120` | The Fulu claims, at the Gloas consolidation limit. That limit has no `MIN` floor and can be zero, and `reserveChurn` rejects a zero limit | proved | `Proofs/Gloas/Churn.lean` |
 | `getExpectedWithdrawals` | `Gloas/Withdrawals.lean:171-179` | The withdrawals returned by its four phases combined never exceed `MAX_WITHDRAWALS_PER_PAYLOAD` | proposed |  |
 | `initiateBuilderExit` | `Gloas/Operations.lean:88-91` | `initiateBuilderExit_run_eq` is the whole-transition equation; its exact in-range/out-of-range effect on the builder registry is characterized; no-wrap is conditional for an arbitrary `Config` and proved unconditionally for both shipped Gloas preset/config pairs | proved | #39, `Proofs/Gloas/InitiateBuilderExit.lean` |
 | `processBuilderExitRequest` | `Gloas/Operations.lean:192-202` | On its successful builder-exit branch, the index supplied to `initiateBuilderExit` is in range. Under either shipped Gloas preset/config pair, the selected builder receives the intended non-wrapping future `withdrawableEpoch`. All non-matching or ineligible branches leave the builder registry unchanged | proposed |  |
@@ -229,7 +231,9 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `reserveChurn` | `Fulu/RegistryUpdates.lean:69-74` | Arithmetic never underflows | proposed |  |
+| `reserveChurn` | `Fulu/RegistryUpdates.lean:82` | It rejects with `.arithmetic` on a zero limit, the pyspec's `ZeroDivisionError`. It rejects with `.arithmetic` when the epoch add, the multiply, or the consumed add reaches `2^64`. Below every bound it returns the exact epoch and consumed total. A successful reservation returns a consumed total at least as large as the balance | proved | `Proofs/Fulu/Churn.lean` |
+| `computeExitEpochAndUpdateChurn` | `Fulu/RegistryUpdates.lean:99` | When the activation-exit epoch and the reservation succeed, the run succeeds, and its `balance_to_consume - exit_balance` subtraction cannot fault. Each activation-epoch or reservation fault passes through unchanged | proved | `Proofs/Fulu/Churn.lean` |
+| `computeConsolidationEpochAndUpdateChurn` | `Fulu/RegistryUpdates.lean:116` | The same claims over the consolidation fields and the consolidation limit | proved | `Proofs/Fulu/Churn.lean` |
 | `modBalance` | `Fulu/Balances.lean:29` | On the pure box, the write through the infallible `[i]!` index is one plain record update: `modBalance (pureState state) i f = pureState { state with balances := state.balances.set! i.toNat (f state.balances[i.toNat]!) }`. This is the whole contract; the two mutators below build on it | proved | follow-up to #80, `Proofs/Fulu/Balances.lean` |
 | `increaseBalance` | `Fulu/Balances.lean:43` | The run rejects an index past the end of `balances` with `.outOfBounds`, and an addition that leaves the `uint64` range with `.arithmetic`. In range and below that bound it returns the input value with exactly that one balance written, and that balance is the exact natural-number sum | proved | #80, `Proofs/Fulu/Balances.lean` |
 | `decreaseBalance` | `Fulu/Balances.lean:53` | The run rejects an index past the end of `balances` with `.outOfBounds`. In range it returns the input value with exactly the clamped difference written; the `Nat` difference truncates at zero, so the clamp matches the spec and the `uint64` subtraction never wraps | proved | #80, `Proofs/Fulu/Balances.lean` |
@@ -243,6 +247,9 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | `computeActivationExitEpoch` | `Fulu/Time.lean:54-57` | The function adds `1 + MAX_SEED_LOOKAHEAD` to an epoch. It faults with `.arithmetic` when the sum reaches `2^64`. Below that bound it returns the exact sum. It never faults on an epoch derived from a slot, under a preset bound that both shipped presets satisfy | proved | `Proofs/Fulu/Time.lean` |
 | `computeActivationExitEpoch` | `Gloas/EpochProcessing.lean:45` | The Fulu claims, restated at Gloas's own constants through the `Downgrade` bridge | proved | `Proofs/Gloas/Time.lean` |
 | `computeActivationExitEpoch` | `Heze/EpochProcessing.lean:33` | The same claims at Heze's constants. The proof terms come from Gloas | proved | `Proofs/Heze/Time.lean` |
+| `reserveChurn` | `Heze/EpochProcessing.lean:23` | The Fulu claims at Heze. The proof terms come from Gloas | proved | `Proofs/Heze/Churn.lean` |
+| `computeExitEpochAndUpdateChurn` | `Heze/EpochProcessing.lean:64` | The Gloas claims at Heze, proved again over the Heze `State` | proved | `Proofs/Heze/Churn.lean` |
+| `computeConsolidationEpochAndUpdateChurn` | `Heze/EpochProcessing.lean:70` | The Gloas claims at Heze, proved again over the Heze `State` | proved | `Proofs/Heze/Churn.lean` |
 
 ### Safety and invariant preservation
 
