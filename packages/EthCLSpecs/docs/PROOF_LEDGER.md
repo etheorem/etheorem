@@ -240,6 +240,9 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | `computeStartSlotAtEpoch` | `Fulu/Time.lean:41-43` | The function multiplies an epoch back to a slot. It faults with `.arithmetic` above `2^64`. It never faults on an epoch derived from a slot. The claim is open where the caller supplies the epoch | proved | `Proofs/Fulu/Time.lean` |
 | `computeStartSlotAtEpoch` | `Gloas/EpochProcessing.lean:34` | The Fulu claims, restated at Gloas's own constant. Each theorem takes the Fulu proof term through the `Downgrade` bridge | proved | `Proofs/Gloas/Time.lean` |
 | `computeStartSlotAtEpoch` | `Heze/EpochProcessing.lean:24` | The same claims at Heze's constant. The bridge reaches one fork up, so the proof terms come from Gloas | proved | `Proofs/Heze/Time.lean` |
+| `computeActivationExitEpoch` | `Fulu/Time.lean:54-57` | The function adds `1 + MAX_SEED_LOOKAHEAD` to an epoch. It faults with `.arithmetic` when the sum reaches `2^64`. Below that bound it returns the exact sum. It never faults on an epoch derived from a slot, under a preset bound that both shipped presets satisfy | proved | `Proofs/Fulu/Time.lean` |
+| `computeActivationExitEpoch` | `Gloas/EpochProcessing.lean:45` | The Fulu claims, restated at Gloas's own constants through the `Downgrade` bridge | proved | `Proofs/Gloas/Time.lean` |
+| `computeActivationExitEpoch` | `Heze/EpochProcessing.lean:33` | The same claims at Heze's constants. The proof terms come from Gloas | proved | `Proofs/Heze/Time.lean` |
 
 ### Safety and invariant preservation
 
