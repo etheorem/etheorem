@@ -3,6 +3,7 @@
 tier1 EthCLSpecs.Fulu.computeStartSlotAtEpoch
 tier1 EthCLSpecs.Fulu.currentEpochOf
 tier1 EthCLSpecs.Fulu.modBalance
+tier1 EthCLSpecs.Gloas.applyWithdrawals
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot
 tier1 EthCLSpecs.Gloas.currentEpochOf
 tier1 EthCLSpecs.Gloas.getCurrentSlot
