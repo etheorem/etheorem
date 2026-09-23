@@ -14,8 +14,8 @@ machine's counterpart is the pure store runner in `Proofs/StoreRun.lean`.
 
 `SPEC_AUTHORING_MODEL.md` sets out a fast/pure duality across four axes, and names
 `StateT State (Except StateTransitionError)` as the proving column's effect monad;
-`SPECS_ARCHITECTURE.md` §11.1 states that the fast configuration (`FastBox`, `EStateM`,
-`hashMap`) is never a proof target. This is that monad.
+`SPECS_ARCHITECTURE.md` §11.1 states that `FastBox` and `EStateM` are never a proof
+target, and `hashMap` is one only through `LawfulFcMap`. This is that monad.
 
 No fork body names it. The three raw constraints `state_section` emits (`Monad`,
 `MonadStateOf State`, `MonadExceptOf StateTransitionError`) all resolve for `StateT` over
