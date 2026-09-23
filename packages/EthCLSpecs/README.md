@@ -135,14 +135,14 @@ column is the fork's own diff, for scale.
 | --- | --- | --- | --- | --- |
 | `EthCLSpecs.Fulu` | 2 | 5 | 158 | 158 |
 | `EthCLSpecs.Gloas` | 8 | 21 | 209 | 109 |
-| `EthCLSpecs.Heze` | 4 | 20 | 218 | 12 |
-| **Total** | 14 | 46 | 585 | 279 |
+| `EthCLSpecs.Heze` | 4 | 27 | 218 | 12 |
+| **Total** | 14 | 53 | 585 | 279 |
 
 | Axiom | Theorems resting on it |
 | --- | --- |
-| `propext` | 105 |
-| `Classical.choice` | 92 |
-| `Quot.sound` | 102 |
+| `propext` | 155 |
+| `Classical.choice` | 127 |
+| `Quot.sound` | 151 |
 | `Lean.ofReduceBool` | 0 |
 | `Lean.trustCompiler` | 0 |
 | `SizzLean.Hasher.sha256Hash_eq_spec` | 0 |
