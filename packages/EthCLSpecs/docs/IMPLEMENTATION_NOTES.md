@@ -936,7 +936,7 @@ separation.
   collection errors propagate through `getInclusionListTransactions`.
   Those error corollaries stay untagged.
   The successful-result characterization of
-  `collectInclusionListTransactions` remains proposed in `PROOF_LEDGER.md`.
+  `collectInclusionListTransactions` is in progress in `PROOF_LEDGER.md`.
 
 - **`Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`** proves
   `recordPayloadInclusionListSatisfaction_run` in
