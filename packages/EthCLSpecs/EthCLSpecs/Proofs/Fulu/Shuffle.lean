@@ -4,7 +4,7 @@ import EthCLLib.Proofs.SwapOrNot
 /-!
 # `EthCLSpecs.Proofs.Fulu.Shuffle`: `computeShuffledPermutation` is a permutation
 
-`EthCLSpecs.Fulu.computeShuffledPermutation` (`Fulu/Committees.lean:32-53`) is
+`EthCLSpecs.Fulu.computeShuffledPermutation` (`Fulu/Committees.lean:55-87`) is
 `compute_shuffled_permutation` (`phase0/beacon-chain.md:819-842`).
 
 The body raises where the pyspec raises. With no rounds it returns the identity, and no
