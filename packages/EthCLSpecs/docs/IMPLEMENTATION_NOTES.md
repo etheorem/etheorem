@@ -658,6 +658,28 @@ payload-availability bit), and `process_epoch` (builder-pending-payments and
 `process_ptc_window` last). The `transition` format folds pre-fork Fulu blocks, applies
 `upgradeToGloas` plus onboarding at the boundary, then folds post-fork Gloas blocks.
 
+**Open gap: the builder-withdrawal append clamps at the list limit.**
+`process_builder_pending_payments` (`gloas/beacon-chain.md:1137-1148`) appends to
+`builder_pending_withdrawals`. At the list limit (`BUILDER_PENDING_WITHDRAWALS_LIMIT`,
+`2^20`), remerkleable's `append` raises, and the state transition is invalid. The Lean
+body appends through `appendState`, which uses the clamping `SSZList.push`. At the limit
+it drops the withdrawal and the run succeeds. No conformance vector reaches the limit.
+The gap is in the Gloas body, and Heze inherits it. The theorems
+`processBuilderPendingPayments_run` (Gloas and Heze) state the clamping behavior. The fix
+makes the append throw at the limit and re-proves both theorems. It is planned as a
+separate change.
+
+**Open gap: the builder-payment quorum wraps on overflow.**
+`get_builder_payment_quorum_threshold` (`gloas/beacon-chain.md:891-897`) multiplies the
+per-slot balance by `BUILDER_PAYMENT_THRESHOLD_NUMERATOR` (`6`) as a `uint64`. When the
+per-slot balance is more than `2^64 / 6` Gwei, remerkleable raises, and the state
+transition is invalid. The Lean body of `processBuilderPendingPayments` computes the
+same product in `UInt64`, which wraps. So the run continues with a wrong quorum. No
+conformance vector reaches the overflow. The gap is in the Gloas body, and Heze inherits
+it. The theorems `processBuilderPendingPayments_run` (Gloas and Heze) state the wrapping
+behavior. The fix makes the product a checked multiplication. It belongs to the same
+change as the append fix.
+
 ## Heze diff
 
 EIP-7805 changes no state-transition substep, so Heze inherits the Gloas spine whole
