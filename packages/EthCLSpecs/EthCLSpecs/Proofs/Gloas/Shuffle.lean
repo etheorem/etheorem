@@ -5,7 +5,7 @@ import EthCLLib.Proofs.SwapOrNot
 # `EthCLSpecs.Proofs.Gloas.Shuffle`: `computeShuffledPermutation` is a permutation
 
 Gloas inherits `computeShuffledPermutation` from Fulu
-(`Gloas/EpochProcessing.lean:187`). Gloas therefore elaborates its own constant
+(`Gloas/EpochProcessing.lean:193`). Gloas therefore elaborates its own constant
 from the Fulu body. The bridge and the proof are the Fulu ones in
 `EthCLSpecs.Proofs.Fulu.Shuffle`, restated for the Gloas constant. The Fulu module
 docstring gives the success conditions and their reasons.
