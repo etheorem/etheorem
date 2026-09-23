@@ -78,7 +78,8 @@ assigned exit epoch and advancing the bookkeeping. -/
 forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Epoch := do
   let state ← get
   let currentEpoch := computeEpochAtSlot (sszGet state slot)
-  let earliest := umax (sszGet state earliestExitEpoch) (computeActivationExitEpoch currentEpoch)
+  let activationExitEpoch ← liftErr (computeActivationExitEpoch currentEpoch)
+  let earliest := umax (sszGet state earliestExitEpoch) activationExitEpoch
   let perEpochChurn := getActivationExitChurnLimit state
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
 
@@ -91,8 +92,8 @@ forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Ep
 `compute_exit_epoch_and_update_churn`, reserving consolidation churn. -/
 forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : StateTransition Epoch := do
   let state ← get
-  let earliest := umax (sszGet state earliestConsolidationEpoch)
-    (computeActivationExitEpoch (currentEpochOf state))
+  let activationExitEpoch ← liftErr (computeActivationExitEpoch (currentEpochOf state))
+  let earliest := umax (sszGet state earliestConsolidationEpoch) activationExitEpoch
   let perEpoch := getConsolidationChurnLimit state
   let consume := if (sszGet state earliestConsolidationEpoch) < earliest then perEpoch
                  else (sszGet state consolidationBalanceToConsume)

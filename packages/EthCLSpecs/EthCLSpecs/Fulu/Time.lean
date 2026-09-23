@@ -4,16 +4,17 @@ import EthCLSpecs.Fulu.State
 # `EthCLSpecs.Fulu.Time`: slot / epoch accessors (load order row 20)
 
 The time-domain helpers (`SPECS_ARCHITECTURE.md` §3.1 row 20). `computeEpochAtSlot`
-and `computeActivationExitEpoch` are state-free and pure. Accessors that read the
+is state-free and pure. Accessors that read the
 threaded state come in two shapes, the monadic `getCurrentEpoch` / `getPreviousEpoch`
 and the pure `currentEpochOf` / `previousEpochOf` (functions of the boxed state, for
 the `modifyState` / `Id.run` bodies the epoch substeps build), the state-free-pure /
 state-reading-monadic split of §5. They are `forkdef`s so a later fork can
 `inherit` them.
 
-`computeStartSlotAtEpoch` and `computeTimeAtSlot` are the two helpers here that can
-fault, so each returns an `Except`. The first is state-free and faults on its multiply.
-The second is handed the state. The block pipeline and the fork-choice store both reach
+`computeStartSlotAtEpoch`, `computeActivationExitEpoch`, and `computeTimeAtSlot` are the
+three helpers here that can fault, so each returns an `Except`. The first two are
+state-free. The first faults on its multiply, and the second on its additions. The third
+is handed the state. The block pipeline and the fork-choice store both reach
 `computeTimeAtSlot` through `liftErr`, which keeps the clock in one declaration.
 -/
 
@@ -42,8 +43,18 @@ forkdef computeStartSlotAtEpoch (epoch : Epoch) : Except StateTransitionError Sl
   checkedMul epoch (UInt64.ofNat Const.slotsPerEpoch)
     "compute_start_slot_at_epoch: epoch * SLOTS_PER_EPOCH"
 
-/-- `compute_activation_exit_epoch(epoch)`. Pure. -/
-forkdef computeActivationExitEpoch (e : Epoch) : Epoch := e + 1 + Const.maxSeedLookahead
+/-- `compute_activation_exit_epoch(epoch)` = `epoch + 1 + MAX_SEED_LOOKAHEAD`
+(`phase0/beacon-chain.md:928`). The pyspec adds on bare `uint64` values, and remerkleable
+raises `ValueError` when a sum passes `2 ^ 64 - 1`. So each addition is `checkedAdd`, in the
+spec's order, and the reject is `.arithmetic`.
+
+Every caller passes the current epoch, which `computeEpochAtSlot` produced. That epoch is at
+most `(2 ^ 64 - 1) / SLOTS_PER_EPOCH`, so the fault cannot occur there.
+`EthCLSpecs.Proofs.Fulu.Time` proves this. -/
+forkdef computeActivationExitEpoch (e : Epoch) : Except StateTransitionError Epoch := do
+  let next ← checkedAdd e 1 "compute_activation_exit_epoch: epoch + 1"
+  checkedAdd next Const.maxSeedLookahead
+    "compute_activation_exit_epoch: epoch + 1 + MAX_SEED_LOOKAHEAD"
 
 /-- `compute_time_at_slot(state, slot)` = `genesis_time + (slot - GENESIS_SLOT) *
 SLOT_DURATION_MS // 1000` (`phase0/beacon-chain.md:900`). The pinned spec text flags the
