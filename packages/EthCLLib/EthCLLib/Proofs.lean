@@ -2,6 +2,7 @@ import EthCLLib.Proofs.ArrayUnion
 import EthCLLib.Proofs.Checked
 import EthCLLib.Proofs.EngineLaws
 import EthCLLib.Proofs.Frame
+import EthCLLib.Proofs.IndicesWhere
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.KeepsUncachedMemLoop
 import EthCLLib.Proofs.LawfulFcMap
@@ -64,4 +65,6 @@ Re-exports:
 * `EthCLLib.Proofs.SwapOrNot`: the swap-or-not shuffle is a permutation. The fork
   bridges in `EthCLSpecs/Proofs/<Fork>/Shuffle.lean` use its theorems.
 * `EthCLLib.Proofs.Lemmas`: the list and `UInt64` lemmas that core Lean lacks.
+* `EthCLLib.Proofs.IndicesWhere`: the registry walk `indicesWhere` returns distinct
+  indices.
 -/
