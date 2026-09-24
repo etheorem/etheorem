@@ -1,5 +1,7 @@
 import EthCLLib.Proofs.ArrayUnion
 import EthCLLib.Proofs.Checked
+import EthCLLib.Proofs.CheckedOps
+import EthCLLib.Proofs.CommitteePartition
 import EthCLLib.Proofs.EngineLaws
 import EthCLLib.Proofs.Frame
 import EthCLLib.Proofs.IndicesWhere
@@ -67,4 +69,5 @@ Re-exports:
 * `EthCLLib.Proofs.Lemmas`: the list and `UInt64` lemmas that core Lean lacks.
 * `EthCLLib.Proofs.IndicesWhere`: the registry walk `indicesWhere` returns distinct
   indices.
+* `EthCLLib.Proofs.CommitteePartition`: committee slices cover a shuffled list once.
 -/

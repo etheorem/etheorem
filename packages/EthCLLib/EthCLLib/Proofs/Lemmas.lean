@@ -3,9 +3,9 @@
 
 Core Lean `4.29.1` has no form of `Nodup.map` that needs injectivity only on
 the list. It also has no "same members" form of `Perm` for duplicate-free lists.
-Its `UInt64.ofNat` round-trip states the bound as `UInt64.size`, which `omega`
-does not read. The three theorems here supply these forms for the proof modules
-beside this one.
+It has no membership congruence for `flatMap`. Its `UInt64.ofNat` round-trip
+states the bound as `UInt64.size`, which `omega` does not read. The theorems here
+supply these forms for the proof modules beside this one.
 -/
 
 set_option autoImplicit false
@@ -28,6 +28,15 @@ theorem nodup_map_of_injOn {α β : Type} {f : α → β} {l : List α} (hl : l.
 theorem perm_of_nodup_of_mem_iff {α : Type} [DecidableEq α] {l₁ l₂ : List α}
     (h₁ : l₁.Nodup) (h₂ : l₂.Nodup) (h : ∀ a, a ∈ l₁ ↔ a ∈ l₂) : l₁.Perm l₂ :=
   List.perm_iff_count.mpr fun a => by rw [h₁.count, h₂.count]; simp only [h a]
+
+/-- `flatMap` over a list reads its function only at the list's members. -/
+theorem flatMap_congr_mem {α β : Type} {l : List α} {f g : α → List β}
+    (h : ∀ a ∈ l, f a = g a) : l.flatMap f = l.flatMap g := by
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+    simp only [List.flatMap_cons]
+    rw [h a (.head _), ih fun x hx => h x (.tail _ hx)]
 
 /-- `UInt64.ofNat` round-trips below `2 ^ 64`. Core states the bound as
 `UInt64.size`. `omega` can discharge the `2 ^ 64` form. -/
