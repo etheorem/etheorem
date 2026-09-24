@@ -658,6 +658,28 @@ payload-availability bit), and `process_epoch` (builder-pending-payments and
 `process_ptc_window` last). The `transition` format folds pre-fork Fulu blocks, applies
 `upgradeToGloas` plus onboarding at the boundary, then folds post-fork Gloas blocks.
 
+**Open gap: the builder-withdrawal append clamps at the list limit.**
+`process_builder_pending_payments` (`gloas/beacon-chain.md:1137-1148`) appends to
+`builder_pending_withdrawals`. At the list limit (`BUILDER_PENDING_WITHDRAWALS_LIMIT`,
+`2^20`), remerkleable's `append` raises, and the state transition is invalid. The Lean
+body appends through `appendState`, which uses the clamping `SSZList.push`. At the limit
+it drops the withdrawal and the run succeeds. No conformance vector reaches the limit.
+The gap is in the Gloas body, and Heze inherits it. The theorems
+`processBuilderPendingPayments_run` (Gloas and Heze) state the clamping behavior. The fix
+makes the append throw at the limit and re-proves both theorems. It is planned as a
+separate change.
+
+**Open gap: the builder-payment quorum wraps on overflow.**
+`get_builder_payment_quorum_threshold` (`gloas/beacon-chain.md:891-897`) multiplies the
+per-slot balance by `BUILDER_PAYMENT_THRESHOLD_NUMERATOR` (`6`) as a `uint64`. When the
+per-slot balance is more than `2^64 / 6` Gwei, remerkleable raises, and the state
+transition is invalid. The Lean body of `processBuilderPendingPayments` computes the
+same product in `UInt64`, which wraps. So the run continues with a wrong quorum. No
+conformance vector reaches the overflow. The gap is in the Gloas body, and Heze inherits
+it. The theorems `processBuilderPendingPayments_run` (Gloas and Heze) state the wrapping
+behavior. The fix makes the product a checked multiplication. It belongs to the same
+change as the append fix.
+
 ## Heze diff
 
 EIP-7805 changes no state-transition substep, so Heze inherits the Gloas spine whole
@@ -914,5 +936,33 @@ separation.
   neither recorded epoch decreases. The proofs use ordinary case analysis and
   core `UInt64` ordering lemmas. Their theorems live in `EthCLSpecs.Proofs.Gloas`
   rather than the flat `EthCLSpecs.Proofs`, since Fulu declares the same function.
+
+- **`Proofs/OrdVector.lean`** proves that the byte-vector order `instOrdVectorUInt8`
+  is reflexive (`compare_vectorUInt8_self`). The fork-choice proofs need it when two
+  nodes have the same root. It lives in the fork-proof tree, not in `EthCLLib`, so a
+  change to it rebuilds only proof modules.
+
+- **`Proofs/Heze/Run.lean`** names `HezeRun`, the pure `StateT`/`Except` monad for the
+  Heze state-transition proofs. It is the Heze counterpart of `GloasRun`.
+
+- **`Proofs/Heze/BuilderPendingPayments.lean`** ports the Gloas builder-payment proof
+  to the Heze constant, and adds `mem_qualifyingPaymentIndices_iff`: an entry is
+  qualifying if and only if its weight reaches the quorum. It states the clamping
+  append of the model, which differs from pyspec at the list limit ("Gloas diff",
+  open gap).
+
+- **`Proofs/Heze/PayloadTiebreak.lean`** proves that at a block from the previous
+  slot, with a verified payload and a recorded `false` inclusion-list answer, EMPTY
+  wins the payload tiebreak. A restated body of the `getHead` loop then goes to EMPTY.
+  The module docstring lists what the restatement leaves out.
+
+- **`Proofs/Heze/ParentPayloadEmpty.lean`** proves that `processParentExecutionPayload`
+  on the EMPTY edge, with the empty parent requests, does not change the state. It
+  also proves that fork choice calls an edge EMPTY exactly when the two block hashes
+  differ.
+
+- **`Proofs/Heze/CensorshipCost.lean`** states the two facts above side by side for
+  one block (`unsatisfiedPayload_headEmpty_and_emptyChild_unsettled`). The facts are
+  independent. The model does not include the proposer who builds the child.
 
 - **`PROOF_LEDGER.md`** tracks candidate consensus proof targets and their status.

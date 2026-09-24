@@ -1,69 +1,89 @@
-import EthCLSpecs.Gloas.EpochProcessing
-import EthCLSpecs.Proofs.Gloas.Run
+import EthCLSpecs.Heze.EpochProcessing
+import EthCLSpecs.Proofs.Heze.Run
 import SizzLean.Proofs.SSZListPush
 
 /-!
-# `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: the builder-payment epoch substep
+# `EthCLSpecs.Proofs.Heze.BuilderPendingPayments`: the builder-payment epoch substep
 
-`EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:234-253`)
-modifies two fields sequentially within one state transition. This file characterizes
-those effects independently and combines them into one theorem about the function.
-When invoked by the epoch substep, it feeds every qualifying previous-epoch payment's
-withdrawal, in slot order, through the bounded `SSZList.push`; under an explicit
-capacity hypothesis, every qualifying withdrawal is appended. It then shifts the
-payment window down by `SLOTS_PER_EPOCH`, padding the vacated half with empties.
+Heze inherits `processBuilderPendingPayments` from Gloas
+(`Heze/EpochProcessing.lean:110`). The inheritance makes a new constant,
+`EthCLSpecs.Heze.processBuilderPendingPayments`, so the Gloas theorem in
+`Proofs/Gloas/BuilderPendingPayments.lean` does not cover it. This module ports that
+proof to the Heze constant. It also adds a per-entry fact,
+`mem_qualifyingPaymentIndices_iff`: an entry is qualifying if and only if its weight
+reaches the quorum. With the capacity hypothesis of
+`processBuilderPendingPayments_run_of_fits`, the function queues the withdrawal of each
+qualifying entry. Without that hypothesis, the clamp below can drop it. After a child
+block on the EMPTY edge, this substep is the remaining path for a bid.
 
-The withdrawals side rests on two pieces: a pure fact about `SSZList.push`'s clamp
-(iterating it over a list of values ends at the original list plus the clamped
-prefix that fits, unconditionally, proved generically in
-`SizzLean.Proofs.SSZListPush`), and the loop's own reduction to that list, in
-iteration order. No capacity-headroom invariant is assumed or proved here; the
-"every qualifying withdrawal is appended" statement above is a corollary of the
-unconditional clamp fact under an explicit
-`original.size + qualifying.length ≤ builderPendingWithdrawalsLimit` hypothesis,
-not an unconditional theorem.
+The function changes two fields, one after the other, in one state transition. This
+file proves each change on its own, then joins them into one theorem about the
+function. The function pushes the withdrawal of each qualifying payment from the
+previous epoch through the bounded `SSZList.push`, in slot order. Under an explicit
+capacity hypothesis, it appends every qualifying withdrawal. Then it shifts the payment
+window down by `SLOTS_PER_EPOCH` and fills the empty half with empty payments.
 
-The window side is a direct instance of `shiftWindow`'s general behavior:
-`expectedPaymentWindow_get_lt` / `expectedPaymentWindow_get_upper` state the two
-index-region facts (old upper half moves down; new upper half is empty).
+**Known differences from pyspec.** There are two. `processBuilderPendingPayments_run`
+states the model's behavior in both cases.
+
+1. At the list limit (`2^20` withdrawals), pyspec's `builder_pending_withdrawals.append`
+   raises, and the state transition is invalid. The model's `SSZList.push` drops the
+   withdrawal and the run succeeds.
+2. The quorum is `(total / SLOTS_PER_EPOCH) * 6 / 10` in `UInt64`. When the per-slot
+   balance is more than `2^64 / 6` Gwei, the product overflows. pyspec's `uint64`
+   raises. The model's product wraps, and the run continues with a wrong quorum.
+
+No conformance vector reaches either case. `IMPLEMENTATION_NOTES.md`, "Gloas diff",
+records both as open gaps. The Gloas theorem has the same differences.
+
+The withdrawals side has two parts:
+
+1. a pure fact about the clamp in `SSZList.push`: a fold of `push` over a list gives
+   the original list plus the prefix that fits. This fact has no condition, and
+   `SizzLean.Proofs.SSZListPush` proves it for all lists;
+2. the reduction of the loop to that fold, in iteration order.
+
+This file does not assume or prove a capacity invariant. The claim that every
+qualifying withdrawal is appended is a corollary of the clamp fact. It needs the
+explicit hypothesis `original.size + qualifying.length ≤ builderPendingWithdrawalsLimit`.
+
+The window side applies the general behavior of `shiftWindow`.
+`expectedPaymentWindow_get_lt` and `expectedPaymentWindow_get_upper` state the two
+facts about index regions. The old upper half moves down. The new upper half is empty.
 `processBuilderPendingPayments` reads `builderPendingPayments` twice: before the
 withdrawals loop, and again from the state after the loop, as pyspec does. The loop
 does not write that field. So both reads give the same value.
 
-This file proves only the local before/after behavior of one call, for an arbitrary
-input state. It does not prove protocol-wide exactly-once settlement, and says nothing
-about how this substep's effect interacts with `settleBuilderPayment` or
-`processProposerSlashing`, the other paths that clear a `BuilderPendingPayment` before
-this substep ever runs.
+This file proves only the local effect of one call, for any input state. It does not
+prove that each payment settles exactly once across the protocol. It does not relate
+this substep to `settleBuilderPayment` or `processProposerSlashing`. Those two paths can
+clear a `BuilderPendingPayment` before this substep runs.
 
-At the list limit (`2^20` withdrawals), pyspec's `append` raises, and the model's
-`SSZList.push` drops the withdrawal. So `processBuilderPendingPayments_run` states the
-model's clamping behavior. `IMPLEMENTATION_NOTES.md`, "Gloas diff", records this open
-gap.
+See `EthCLSpecs/docs/PROOF_LEDGER.md`, section "Heze".
 
-See `EthCLSpecs/docs/PROOF_LEDGER.md`, Gloas "Safety and invariant preservation".
-
-Every theorem below states its state-level conclusions through `sszGet`, never through
-bare `State` equality: `State`'s cache overlay accumulates one pending write per
-`sszUpdate` call. Raw state equality is unnecessary here; each theorem records only
-the relevant fields through `sszGet`.
+Every theorem below states its conclusions about the state through `sszGet`, for the
+two fields the function changes. None of them uses equality of whole `State` values.
+The cache overlay of a `State` adds one pending write for each `sszUpdate` call, so two
+states with equal fields can differ as values. The theorems state no frame condition
+for the other fields.
 
 -/
 
 set_option autoImplicit false
 
-namespace EthCLSpecs.Proofs.Gloas
+namespace EthCLSpecs.Proofs.Heze
 
 open EthCLLib.Spec
-open EthCLSpecs.Gloas
-open EthCLSpecs.Gloas (Preset Gwei)
-open EthCLSpecs.Gloas.Const (slotsPerEpoch builderPaymentThresholdNumerator
+open EthCLSpecs.Heze
+open EthCLSpecs.Heze (Preset Gwei)
+open EthCLSpecs.Heze.Const (slotsPerEpoch builderPaymentThresholdNumerator
   builderPaymentThresholdDenominator builderPendingWithdrawalsLimit)
-open SizzLean.Proofs (sszListFoldlPush_val sszListFoldlPush_val_of_fits)
+open EthCLSpecs.Proofs (run_bind run_pure)
+open SizzLean.Proofs (sszListFoldlPush_val_of_fits)
 
-/-- `do x` for a lone `for`-loop `x` elaborates as `x >>= fun _ => pure ()`, not as `x`
-itself. Peels that wrapper so a fact about the ascribed loop connects to a use site
-that runs the bare `forIn` before more code. -/
+/-- For a single `for` loop `x`, `do x` elaborates as `x >>= fun _ => pure ()`. This
+lemma removes that wrapper. A fact about the loop then applies at a use site that runs
+the bare `forIn` before more code. -/
 private theorem run_of_run_seq_pure {ε σ : Type} (x : StateT σ (Except ε) PUnit) (s0 s1 : σ)
     (h : (x >>= fun _ => (pure () : StateT σ (Except ε) Unit)).run s0 = .ok ((), s1)) :
     x.run s0 = .ok (PUnit.unit, s1) := by
@@ -76,12 +96,12 @@ private theorem run_of_run_seq_pure {ε σ : Type} (x : StateT σ (Except ε) PU
     simpa only [run_pure] using h
   | error e => rw [hx] at h; simp at h
 
-/-- The withdrawals loop's own reduction: the conditional `appendState` loop always
-succeeds, and its observable effects reduce to a pure `SSZList.push` fold over the
-qualifying indices (`sszListFoldlPush_val` characterizes the clamp).
-`builderPendingPayments` is untouched. `cond` is a `Prop` with a `Decidable`
-instance, matching the production `p.weight ≥ quorum` guard. Field agreement is
-via `sszGet`. -/
+/-- The reduction of the withdrawals loop. The loop of conditional `appendState` calls
+always succeeds. Its effect on the state is a pure `SSZList.push` fold over the
+qualifying indices (`sszListFoldlPush_val` states the clamp). The loop does not change
+`builderPendingPayments`. `cond` is a `Prop` with a `Decidable` instance, the same as
+the guard `p.weight ≥ quorum` in the spec body. The theorem compares fields through
+`sszGet`. -/
 private theorem builderPendingWithdrawalsLoop_run [Preset] [HasherTag] (n : Nat)
     (cond : Nat → Prop) [DecidablePred cond]
     (val : Nat → BuilderPendingWithdrawal) (state0 : State) :
@@ -89,7 +109,7 @@ private theorem builderPendingWithdrawalsLoop_run [Preset] [HasherTag] (n : Nat)
       (do for i in [0:n] do
             if cond i then
               appendState builderPendingWithdrawals (val i)
-          : GloasRun Unit).run state0 = .ok ((), resultState) ∧
+          : HezeRun Unit).run state0 = .ok ((), resultState) ∧
       sszGet resultState builderPendingWithdrawals =
         (((List.range n).filter fun i => decide (cond i)).map val).foldl
           (fun l w => l.push w) (sszGet state0 builderPendingWithdrawals) ∧
@@ -102,7 +122,7 @@ private theorem builderPendingWithdrawalsLoop_run [Preset] [HasherTag] (n : Nat)
   | nil => exact ⟨state0, rfl, by simp, rfl⟩
   | cons i rest ih =>
     by_cases h : cond i
-    · have hstep : (appendState builderPendingWithdrawals (val i) : GloasRun Unit).run state0 =
+    · have hstep : (appendState builderPendingWithdrawals (val i) : HezeRun Unit).run state0 =
           .ok ((), sszUpdate state0 with
             builderPendingWithdrawals := (sszGet state0 builderPendingWithdrawals).push (val i)) := by
         cases state0 <;> rfl
@@ -136,39 +156,45 @@ private theorem builderPendingWithdrawalsLoop_run [Preset] [HasherTag] (n : Nat)
         rw [hw, hfilter]
       · exact hp
 
-/-- `processBuilderPendingPayments`'s quorum threshold, factored out for reuse between
-`qualifyingBuilderWithdrawals`, `expectedWithdrawals`, and their theorems. -/
+/-- The quorum threshold of `processBuilderPendingPayments`. It is a separate
+definition, so `qualifyingPaymentIndices`, `expectedWithdrawals`, and their theorems
+use one copy. -/
 def builderPaymentQuorum [Preset] [HasherTag] (state : State) : Gwei :=
   (getTotalActiveBalance state / UInt64.ofNat slotsPerEpoch) *
     builderPaymentThresholdNumerator / builderPaymentThresholdDenominator
 
-/-- The previous-epoch payments whose weight clears `builderPaymentQuorum`, mapped to
-their withdrawals, in slot order, before `SSZList.push`'s capacity clamp. -/
+/-- The indices `i < SLOTS_PER_EPOCH` of the payments from the previous epoch whose
+weight reaches `builderPaymentQuorum`, in slot order. -/
+def qualifyingPaymentIndices [Preset] [HasherTag] (state : State) : List Nat :=
+  (List.range slotsPerEpoch).filter fun i =>
+    decide ((vget (sszGet state builderPendingPayments) i).weight ≥ builderPaymentQuorum state)
+
+/-- The withdrawals of the qualifying payments from the previous epoch, in slot order,
+before the capacity clamp of `SSZList.push`. -/
 def qualifyingBuilderWithdrawals [Preset] [HasherTag] (state : State) :
     List BuilderPendingWithdrawal :=
-  let payments := sszGet state builderPendingPayments
-  ((List.range slotsPerEpoch).filter
-      fun i => decide ((vget payments i).weight ≥ builderPaymentQuorum state)).map
-    fun i => (vget payments i).withdrawal
+  (qualifyingPaymentIndices state).map fun i =>
+    (vget (sszGet state builderPendingPayments) i).withdrawal
 
-/-- The `builderPendingWithdrawals` value `processBuilderPendingPayments` produces:
-`qualifyingBuilderWithdrawals`, folded through `SSZList.push` from the field's current
-value. `sszListFoldlPush_val` and `sszListFoldlPush_val_of_fits` characterize this
-fold's clamping behavior. -/
+/-- The value of `builderPendingWithdrawals` after `processBuilderPendingPayments`. It
+is `qualifyingBuilderWithdrawals`, folded through `SSZList.push`, from the current
+value of the field. `sszListFoldlPush_val` and `sszListFoldlPush_val_of_fits` state
+the clamp behavior of this fold. -/
 def expectedWithdrawals [Preset] [HasherTag] (state : State) :
     SSZList BuilderPendingWithdrawal builderPendingWithdrawalsLimit :=
   (qualifyingBuilderWithdrawals state).foldl (fun l w => l.push w)
     (sszGet state builderPendingWithdrawals)
 
-/-- The `builderPendingPayments` value `processBuilderPendingPayments` produces: the
-field's current value shifted down by `SLOTS_PER_EPOCH` and padded with empties. -/
+/-- The value of `builderPendingPayments` after `processBuilderPendingPayments`. It is
+the current value of the field, shifted down by `SLOTS_PER_EPOCH`, with empty payments
+in the upper half. -/
 def expectedPaymentWindow [Preset] [HasherTag] (state : State) :
     Vector BuilderPendingPayment (2 * slotsPerEpoch) :=
   shiftWindow (sszGet state builderPendingPayments) slotsPerEpoch slotsPerEpoch
     (fun _ => (default : BuilderPendingPayment))
 
-/-- Lower half of `expectedPaymentWindow`: each index `i < slotsPerEpoch` copies the
-old upper half at `i + slotsPerEpoch`. -/
+/-- The lower half of `expectedPaymentWindow`. Each index `i < slotsPerEpoch` holds the
+old entry at `i + slotsPerEpoch`. -/
 theorem expectedPaymentWindow_get_lt [Preset] [HasherTag] (state : State)
     (i : Nat) (hi : i < slotsPerEpoch) :
     vget (expectedPaymentWindow state) i =
@@ -182,8 +208,8 @@ theorem expectedPaymentWindow_get_lt [Preset] [HasherTag] (state : State)
   rw [getElem!_pos _ i hsz]
   simp [Vector.toArray_ofFn, Array.getElem_ofFn, hi]
 
-/-- Upper half of `expectedPaymentWindow`: each index in
-`[slotsPerEpoch, 2 * slotsPerEpoch)` is the empty `BuilderPendingPayment`. -/
+/-- The upper half of `expectedPaymentWindow`. Each index in
+`[slotsPerEpoch, 2 * slotsPerEpoch)` holds the empty `BuilderPendingPayment`. -/
 theorem expectedPaymentWindow_get_upper [Preset] [HasherTag] (state : State)
     (i : Nat) (hi : slotsPerEpoch ≤ i) (hi' : i < 2 * slotsPerEpoch) :
     vget (expectedPaymentWindow state) i = (default : BuilderPendingPayment) := by
@@ -196,23 +222,23 @@ theorem expectedPaymentWindow_get_upper [Preset] [HasherTag] (state : State)
   rw [getElem!_pos _ i hsz]
   simp [Vector.toArray_ofFn, Array.getElem_ofFn, Nat.not_lt.mpr hi]
 
-/-- The postcondition `processBuilderPendingPayments_run` establishes: `after`'s two
-touched fields equal `expectedWithdrawals` / `expectedPaymentWindow` of `before`. Named
-so a later capacity-guarded corollary can restate the withdrawals half without
-re-deriving the window half. -/
+/-- The postcondition of `processBuilderPendingPayments_run`. The two changed fields of
+`after` equal `expectedWithdrawals before` and `expectedPaymentWindow before`. It has a
+name, so the capacity corollary can restate the withdrawals half and reuse the window
+half. -/
 def ProcessBuilderPendingPaymentsPost [Preset] [HasherTag] (before after : State) : Prop :=
   sszGet after builderPendingWithdrawals = expectedWithdrawals before ∧
   sszGet after builderPendingPayments = expectedPaymentWindow before
 
-/-- `processBuilderPendingPayments`'s two-field successful-run postcondition, for an
-arbitrary input state: it always succeeds, and the result satisfies
-`ProcessBuilderPendingPaymentsPost`. Combines `builderPendingWithdrawalsLoop_run`
-(the withdrawals loop) with `shiftWindow`'s direct application (the payment-window
-shift), the two effects the module docstring describes. -/
-@[characterizes EthCLSpecs.Gloas.processBuilderPendingPayments]
+/-- For any input state, `processBuilderPendingPayments` succeeds, and the result
+satisfies `ProcessBuilderPendingPaymentsPost`. The proof joins
+`builderPendingWithdrawalsLoop_run` (the withdrawals loop) and the direct application
+of `shiftWindow` (the window shift). The module docstring describes these two
+effects. -/
+@[characterizes EthCLSpecs.Heze.processBuilderPendingPayments]
 theorem processBuilderPendingPayments_run [Preset] [HasherTag] (before : State) :
     ∃ after : State,
-      (processBuilderPendingPayments : GloasRun Unit).run before = .ok ((), after) ∧
+      (processBuilderPendingPayments : HezeRun Unit).run before = .ok ((), after) ∧
       ProcessBuilderPendingPaymentsPost before after := by
   obtain ⟨resultState, hrun, hw, hp⟩ :=
     builderPendingWithdrawalsLoop_run slotsPerEpoch
@@ -239,7 +265,7 @@ theorem processBuilderPendingPayments_run [Preset] [HasherTag] (before : State) 
           sszUpdate state with builderPendingPayments :=
             shiftWindow (sszGet state builderPendingPayments) slotsPerEpoch slotsPerEpoch
               (fun _ => (default : BuilderPendingPayment))
-        : GloasRun Unit).run before =
+        : HezeRun Unit).run before =
         .ok ((), sszUpdate resultState with builderPendingPayments :=
           shiftWindow (sszGet resultState builderPendingPayments) slotsPerEpoch slotsPerEpoch
             (fun _ => (default : BuilderPendingPayment)))
@@ -251,7 +277,8 @@ theorem processBuilderPendingPayments_run [Preset] [HasherTag] (before : State) 
         sszGet resultState builderPendingWithdrawals := by
       cases resultState <;> rfl
     rw [hgetW, hw]
-    unfold expectedWithdrawals qualifyingBuilderWithdrawals builderPaymentQuorum
+    unfold expectedWithdrawals qualifyingBuilderWithdrawals qualifyingPaymentIndices
+      builderPaymentQuorum
     rfl
   · have hgetP : sszGet (sszUpdate resultState with builderPendingPayments :=
         shiftWindow (sszGet resultState builderPendingPayments) slotsPerEpoch slotsPerEpoch
@@ -263,15 +290,15 @@ theorem processBuilderPendingPayments_run [Preset] [HasherTag] (before : State) 
     unfold expectedPaymentWindow
     rfl
 
-/-- Capacity-guarded corollary of `processBuilderPendingPayments_run`: under an
-explicit headroom hypothesis, every qualifying withdrawal is appended in slot order,
-with no `SSZList.push` clamp. The payment-window half is unchanged from
+/-- The capacity corollary of `processBuilderPendingPayments_run`. Under an explicit
+capacity hypothesis, the function appends every qualifying withdrawal in slot order,
+and the `SSZList.push` clamp does not apply. The window half is the same as in
 `ProcessBuilderPendingPaymentsPost`. -/
 theorem processBuilderPendingPayments_run_of_fits [Preset] [HasherTag] (before : State)
     (hfits : (sszGet before builderPendingWithdrawals).val.size +
       (qualifyingBuilderWithdrawals before).length ≤ builderPendingWithdrawalsLimit) :
     ∃ after : State,
-      (processBuilderPendingPayments : GloasRun Unit).run before = .ok ((), after) ∧
+      (processBuilderPendingPayments : HezeRun Unit).run before = .ok ((), after) ∧
       (sszGet after builderPendingWithdrawals).val =
         (sszGet before builderPendingWithdrawals).val ++
           (qualifyingBuilderWithdrawals before).toArray ∧
@@ -282,4 +309,16 @@ theorem processBuilderPendingPayments_run_of_fits [Preset] [HasherTag] (before :
   unfold expectedWithdrawals
   exact sszListFoldlPush_val_of_fits _ _ hfits
 
-end EthCLSpecs.Proofs.Gloas
+/-- Take an entry `i` in the previous-epoch half of the payment window. Entry `i` is
+qualifying if and only if its weight reaches the quorum. This lemma is about the
+proof-side filter `qualifyingPaymentIndices` only. Under the capacity hypothesis of
+`processBuilderPendingPayments_run_of_fits`, the function appends the withdrawal of
+entry `i` exactly when entry `i` is qualifying. At the list limit, the clamp can drop
+the withdrawal of a qualifying entry. -/
+theorem mem_qualifyingPaymentIndices_iff [Preset] [HasherTag] (state : State) (i : Nat)
+    (hi : i < slotsPerEpoch) :
+    i ∈ qualifyingPaymentIndices state ↔
+      (vget (sszGet state builderPendingPayments) i).weight ≥ builderPaymentQuorum state := by
+  simp [qualifyingPaymentIndices, List.mem_filter, List.mem_range, hi]
+
+end EthCLSpecs.Proofs.Heze
