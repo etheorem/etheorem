@@ -2,6 +2,7 @@ import EthCLSpecs.Heze.ForkChoice
 import EthCLLib.Proofs.Run
 import EthCLLib.Proofs.StoreRun
 import EthCLLib.Proofs.Arith
+import EthCLLib.Proofs.LawfulFcMap
 import SizzLean.Proofs.UncachedBox
 
 /-!
@@ -24,6 +25,12 @@ carries it, and the result holds no duplicate. `FcMap` gives no law relating `fo
 map's contents, so the contract is stated over `inclusionListItems`, the fold's output, which
 is what the spec's loop iterates.
 
+Under the `LawfulFcMap` laws at `ValidatorIndex` keys, the items are exactly the stored
+entries (`mem_inclusionListItems_iff`). So the module also proves what an honest list
+contributes. `mem_getInclusionListTransactions_of_stored`: take an entry stored for the
+key and a validator, timely, from a validator that is not an equivocator for the key.
+Each transaction of its list is in the result.
+
 Statements bind plain `BeaconState` values; the committee reader receives `pureState state`,
 the uncached box, and never a boxed `State` of its own.
 -/
@@ -40,7 +47,7 @@ open EthCLSpecs.Heze (Preset Store State BeaconState Root Slot ValidatorIndex In
   getInclusionListTransactions inclusionListItems isCountedInclusionList countedInclusionLists
   getBeaconCommittee getCommitteeCountPerSlot computeEpochAtSlot cyclicSample)
 open EthCLSpecs.Heze.Const (inclusionListCommitteeSize)
-open EthCLLib.Proofs (pureState)
+open EthCLLib.Proofs (pureState LawfulFcMap)
 
 section CommitteeRun
 variable {σ : Type} [Preset]
@@ -149,6 +156,52 @@ theorem not_mem_getInclusionListTransactions_of_equivocators (store : InclusionL
   rintro ⟨item, hmem, hequiv, _, htx⟩
   rw [h item hmem htx] at hequiv
   exact Bool.noConfusion hequiv
+
+/-- The entries stored under the key `(slot, dependent_root)`, or the empty map when the key
+has none: the spec's `defaultdict` read of `inclusion_lists[key]`. The `ILStore` namespace
+continues in `OnInclusionList.lean`, which imports this module. -/
+def ILStore.entriesAt (s : InclusionListStore map) (key : Slot × Root) :
+    map ValidatorIndex InclusionListEntry :=
+  (FcMap.lookup s.inclusionLists key).getD FcMap.empty
+
+/-- The entry stored under the key `key` for the validator `vi`. -/
+def ILStore.entryAt (s : InclusionListStore map) (key : Slot × Root) (vi : ValidatorIndex) :
+    Option InclusionListEntry :=
+  FcMap.lookup (ILStore.entriesAt s key) vi
+
+section
+variable [LawfulFcMap map ValidatorIndex]
+
+/-- The items of a key are exactly its stored entries. `inclusionListItems` folds the
+entries of the key into an array, and the fold law of `LawfulFcMap` says that the fold
+lists each entry. -/
+theorem mem_inclusionListItems_iff (s : InclusionListStore map) (slot : Slot)
+    (dependentRoot : Root) (vi : ValidatorIndex) (e : InclusionListEntry) :
+    (vi, e) ∈ inclusionListItems s slot dependentRoot ↔
+      ILStore.entryAt s (slot, dependentRoot) vi = some e := by
+  unfold inclusionListItems ILStore.entryAt ILStore.entriesAt
+  rw [← Array.mem_toList_iff]
+  exact LawfulFcMap.mem_fold_push _ vi e
+
+/-- The timely inclusion-list transactions for a key contain each transaction of an honest
+list. The hypotheses are:
+
+1. the entry `e` is stored under `(slot, dependentRoot)` for the validator `vi`;
+2. the entry is timely;
+3. `vi` is not an equivocator for the key. -/
+theorem mem_getInclusionListTransactions_of_stored (s : InclusionListStore map) (slot : Slot)
+    (dependentRoot : Root) (vi : ValidatorIndex) (e : InclusionListEntry)
+    (hstored : ILStore.entryAt s (slot, dependentRoot) vi = some e)
+    (htimely : e.timely = true)
+    (hhonest : (FcMap.lookupD s.equivocators (slot, dependentRoot)).contains vi = false) :
+    ∀ tx ∈ e.signedInclusionList.message.transactions.toArray,
+      tx ∈ getInclusionListTransactions s slot dependentRoot (onlyTimely := true) := by
+  intro tx htx
+  rw [mem_getInclusionListTransactions_iff]
+  exact ⟨(vi, e), (mem_inclusionListItems_iff s slot dependentRoot vi e).mpr hstored, hhonest,
+    fun _ => htimely, htx⟩
+
+end
 
 end Transactions
 
