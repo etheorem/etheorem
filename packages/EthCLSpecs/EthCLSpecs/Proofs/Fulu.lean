@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Churn
+import EthCLSpecs.Proofs.Fulu.Committees
 import EthCLSpecs.Proofs.Fulu.Run
 import EthCLSpecs.Proofs.Fulu.Shuffle
 import EthCLSpecs.Proofs.Fulu.Time
@@ -25,6 +26,9 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Churn`: where `reserveChurn` faults, and the exact epoch and consumed
   total it returns below every bound. A successful reservation covers the balance, so the exit
   and consolidation callers never fault on their subtraction.
+* `EthCLSpecs.Proofs.Fulu.Committees`: one epoch's beacon committees are a permutation of the
+  active set (`getBeaconCommittee_partition`), and no validator sits in two of them
+  (`getBeaconCommittee_nodup`).
 * `EthCLSpecs.Proofs.Fulu.Shuffle`: `computeShuffledPermutation` returns a permutation of
   `[0, n)` whenever it does not raise (`computeShuffledPermutation_perm`).
 * `EthCLSpecs.Proofs.Fulu.Time`: `computeEpochAtSlot` is monotone in the slot, and
