@@ -103,9 +103,9 @@ private theorem run_bind_unit_ok_iff :
   | ok p =>
     obtain ⟨u, s'⟩ := p
     cases u
-    simp [hx, GloasRun.except_bind_ok]
+    simp [hx, except_bind_ok]
   | error e =>
-    simp [hx, GloasRun.except_bind_error]
+    simp [hx, except_bind_error]
 
 section
 variable [Config] [CryptoBackend]
@@ -150,7 +150,7 @@ theorem processOperations_nonempty_deposits_error :
   rw [processOperations_eq_seq]
   have hfalse : (body.deposits.size == 0) = false :=
     beq_eq_false_iff_ne.2 hne
-  simp [hfalse, GloasRun.run_throw, GloasRun.except_bind_error, SpecReject.assert]
+  simp [hfalse, run_throw, except_bind_error, SpecReject.assert]
 
 /-- The six family folds as a single `GloasRun` action. -/
 private abbrev processOperationsLoops
@@ -247,7 +247,7 @@ theorem processOperations_run_ok_iff :
     cases hbeq : body.deposits.size == 0 with
     | false =>
       rw [processOperations_eq_seq] at hok
-      simp [hbeq, GloasRun.run_throw, GloasRun.except_bind_error,
+      simp [hbeq, run_throw, except_bind_error,
         SpecReject.assert] at hok
     | true =>
       refine ⟨beq_iff_eq.mp hbeq, ?_⟩

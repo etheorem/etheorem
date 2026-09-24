@@ -1,4 +1,5 @@
 import EthCLSpecs.Gloas.State
+import EthCLSpecs.Proofs.Run
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.Run`: the Gloas state-transition runner these proofs run against
@@ -7,7 +8,7 @@ A theorem about a `forkdef`'s effect has to pin down the monad the spec body is
 elaborated into, since `StateTransition` is a parameter of the fork body rather than a
 fixed type. Every Gloas proof in this directory pins the same one, so it is named once
 here and instantiated at each theorem through `(StateTransition := GloasRun)`. The store
-machine's counterpart is `ForkChoiceStoreRun`, in `Proofs/StoreRun.lean`.
+machine's counterpart is the pure store runner in `Proofs/StoreRun.lean`.
 
 ## Which monad, and why not the fast one
 
@@ -34,6 +35,10 @@ monad it resolves to this one. So every theorem below is a theorem about the ste
 under fork choice too. Carrying one over is function application:
 `runNestedStateTransition_of_ok` (`EthCLLib/Spec/NestedMachine.lean`) takes a step's
 `.run` fact and returns the store-machine statement, for any action.
+
+The `StateT`-over-`Except` bind, throw, and `Except` facts that every run proof rewrites
+with live in `Proofs/Run.lean`, at any state and error type. Gloas and Heze call sites
+both import that module and name those facts directly; this file only names `GloasRun`.
 -/
 
 set_option autoImplicit false
@@ -53,46 +58,5 @@ boxed Gloas `BeaconState` and rejecting with `StateTransitionError`. `abbrev`
 `.ok (a, state')` and a rejecting one reads `.error e`, carrying no state. -/
 abbrev GloasRun [Preset] [HasherTag] : Type → Type :=
   StateT State (Except StateTransitionError)
-
-/-! ## Running a bind
-
-`EStateM` ships `run_bind` / `run_pure` as `simp` lemmas; the `StateT`-over-`Except`
-stack does not, because both steps are definitional there (`StateT.run x s` is `x s`,
-and `StateT.bind` threads the pair through `Except`'s own bind). Every proof in this
-directory needs the same two rewrites, so they are stated once here rather than as a
-`simp [StateT.bind, Bind.bind, ...]` unfolding repeated per call site. Both close by
-`rfl`; they exist to be `rw`/`simp` targets with a readable right-hand side.
-
-Stated at any `σ` / `ε` rather than at `State` / `StateTransitionError`: nothing in
-either proof is specific to the fork's state, and the general form applies to the
-`PUnit`-valued loop bodies without an instantiation dance. -/
-
-/-- `.run` of a bind: run the first action, and on success run the continuation from the
-value and state it produced. The `Except` bind on the right short-circuits a reject. -/
-theorem GloasRun.run_bind {σ ε α β : Type} (x : StateT σ (Except ε) α)
-    (f : α → StateT σ (Except ε) β) (s : σ) :
-    (x >>= f).run s = (x.run s) >>= fun p => (f p.1).run p.2 := rfl
-
-/-- `.run` of a `pure`: the value paired with the state, unchanged. -/
-theorem GloasRun.run_pure {σ ε α : Type} (a : α) (s : σ) :
-    (pure a : StateT σ (Except ε) α).run s = .ok (a, s) := rfl
-
-/-- `.run` of a `throw`: the error alone. This is where the two monads part company.
-`EStateM`'s throw carries the state it had reached, which is what the pyspec runner needs
-and what a proof about a rejecting path then has to say something about. Here a reject is
-just the error, so a theorem about one has no post-state to characterize. -/
-theorem GloasRun.run_throw {σ ε α : Type} (e : ε) (s : σ) :
-    (throw e : StateT σ (Except ε) α).run s = .error e := rfl
-
-/-- `Except`'s bind on the success branch, the step that fires after
-`GloasRun.run_bind` on a run known to have succeeded. Core has no `simp` lemma
-in this shape, and unfolding `Bind.bind` / `Except.bind` at each call site
-obscures what is being rewritten. -/
-theorem GloasRun.except_bind_ok {ε α β : Type} (a : α) (f : α → Except ε β) :
-    (Except.ok a : Except ε α) >>= f = f a := rfl
-
-/-- `Except`'s bind on the error branch: the continuation is skipped. -/
-theorem GloasRun.except_bind_error {ε α β : Type} (e : ε) (f : α → Except ε β) :
-    (Except.error e : Except ε α) >>= f = .error e := rfl
 
 end EthCLSpecs.Proofs.Gloas

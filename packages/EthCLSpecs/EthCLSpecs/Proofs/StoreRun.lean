@@ -1,4 +1,5 @@
 import EthCLLib.Spec
+import EthCLSpecs.Proofs.Run
 
 /-!
 # `EthCLSpecs.Proofs.StoreRun`: the fork-choice store runner these proofs run against
@@ -16,13 +17,19 @@ that pin it live in `Proofs/Gloas/` and `Proofs/Heze/` alike.
 `SPECS_ARCHITECTURE.md` §11.1 states that the fast configuration (`FastBox`,
 `EStateM`, `hashMap`) is never a proof target. This is the pure column's store
 monad, the store-side counterpart of `Proofs/Gloas/Run.lean`'s `GloasRun`.
+
+The generic `StateT`-over-`Except` bind, pure, throw, and `Except.bind` equations
+live in `Proofs/Run.lean`. This file keeps the `ForkChoiceStoreRun` abbreviation
+and the store-specific `throwArithmetic_run` equation: `throwArithmetic` lifts a
+`StateTransitionError` that the store machine wraps as `.transition`, so the
+generic `run_throw` does not apply.
 -/
 
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs
 
-open EthCLLib.Spec (StoreTransitionError)
+open EthCLLib.Spec (StoreTransitionError throwArithmetic)
 
 /-- Pure runner for fork-choice store proofs: `StateT` over `Except`, threading an
 arbitrary store state `σ` and rejecting with `StoreTransitionError`.
@@ -33,5 +40,16 @@ the same shared name. `abbrev` (reducible) so a goal mentioning it unifies with 
 spelled-out `StateT σ (Except StoreTransitionError)`. -/
 abbrev ForkChoiceStoreRun (σ : Type) : Type → Type :=
   StateT σ (Except StoreTransitionError)
+
+/-- `.run` of `throwArithmetic` at `ForkChoiceStoreRun`. Closes by `rfl`
+without unfolding `liftErr`. -/
+theorem ForkChoiceStoreRun.throwArithmetic_run {σ α : Type}
+    (descr : String) (s : σ) :
+    (throwArithmetic
+        (m := ForkChoiceStoreRun σ)
+        (E := StoreTransitionError)
+        descr : ForkChoiceStoreRun σ α).run s
+      = .error (.transition (.arithmetic descr)) :=
+  rfl
 
 end EthCLSpecs.Proofs

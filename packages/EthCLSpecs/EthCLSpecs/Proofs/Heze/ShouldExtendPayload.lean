@@ -1,5 +1,5 @@
 import EthCLSpecs.Heze.ForkChoice
-import EthCLSpecs.Proofs.Gloas.Run
+import EthCLSpecs.Proofs.Run
 import EthCLSpecs.Proofs.StoreRun
 
 /-!
@@ -31,8 +31,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLSpecs.Proofs (ForkChoiceStoreRun)
-open EthCLSpecs.Proofs.Gloas (GloasRun)
+open EthCLSpecs.Proofs (ForkChoiceStoreRun except_bind_ok)
 open EthCLLib.Spec (HasherTag MapKind FcMap checkedAdd)
 open EthCLSpecs.Fulu (Root)
 -- `Preset` and `Config` come from Heze, not Fulu: `forkpreset` gives each fork its own
@@ -65,7 +64,7 @@ theorem shouldExtendPayload_run_eq_false_of_recorded_unsatisfied
   -- Targeted unfold of the FOCIL gate; residual goal is definitional.
   simp [shouldExtendPayload, isPayloadInclusionListSatisfied, FcMap.getOrThrow,
     FcMap.getOrThrowKey, FcMap.getOrAssert, hblock, checkedAdd, hnooverflow, hverified,
-    hunsatisfied, hcurrentslot, Gloas.GloasRun.except_bind_ok]
+    hunsatisfied, hcurrentslot, except_bind_ok]
   rfl
 
 end EthCLSpecs.Proofs.Heze

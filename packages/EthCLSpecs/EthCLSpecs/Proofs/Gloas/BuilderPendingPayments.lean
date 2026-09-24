@@ -62,13 +62,13 @@ that runs the bare `forIn` before more code. -/
 private theorem run_of_run_seq_pure {ε σ : Type} (x : StateT σ (Except ε) PUnit) (s0 s1 : σ)
     (h : (x >>= fun _ => (pure () : StateT σ (Except ε) Unit)).run s0 = .ok ((), s1)) :
     x.run s0 = .ok (PUnit.unit, s1) := by
-  rw [GloasRun.run_bind] at h
+  rw [run_bind] at h
   cases hx : x.run s0 with
   | ok p =>
     obtain ⟨a, s⟩ := p
     rw [hx] at h
     cases a
-    simpa only [GloasRun.run_pure] using h
+    simpa only [run_pure] using h
   | error e => rw [hx] at h; simp at h
 
 /-- The withdrawals loop's own reduction: the conditional `appendState` loop always
@@ -105,7 +105,7 @@ private theorem builderPendingWithdrawalsLoop_run [Preset] [HasherTag] (n : Nat)
         builderPendingWithdrawals := (sszGet state0 builderPendingWithdrawals).push (val i))
       refine ⟨resultState, ?_, ?_, ?_⟩
       · rw [List.forIn_cons]
-        simp only [h, if_pos, GloasRun.run_bind, hstep]
+        simp only [h, if_pos, run_bind, hstep]
         exact hrun
       · have hgetW : sszGet (sszUpdate state0 with
             builderPendingWithdrawals := (sszGet state0 builderPendingWithdrawals).push (val i))
@@ -123,7 +123,7 @@ private theorem builderPendingWithdrawalsLoop_run [Preset] [HasherTag] (n : Nat)
     · obtain ⟨resultState, hrun, hw, hp⟩ := ih state0
       refine ⟨resultState, ?_, ?_, ?_⟩
       · rw [List.forIn_cons]
-        simp only [h, GloasRun.run_bind, GloasRun.run_pure]
+        simp only [h, run_bind, run_pure]
         exact hrun
       · have hfilter : (List.filter (fun i => decide (cond i)) (i :: rest)) =
             List.filter (fun i => decide (cond i)) rest := by
@@ -238,7 +238,7 @@ theorem processBuilderPendingPayments_run [Preset] [HasherTag] (before : State) 
         .ok ((), sszUpdate resultState with builderPendingPayments :=
           shiftWindow (sszGet resultState builderPendingPayments) slotsPerEpoch slotsPerEpoch
             (fun _ => (default : BuilderPendingPayment)))
-    simp only [GloasRun.run_bind, builderPaymentQuorum, hbare]
+    simp only [run_bind, builderPaymentQuorum, hbare]
     cases resultState <;> rfl
   · have hgetW : sszGet (sszUpdate resultState with builderPendingPayments :=
         shiftWindow (sszGet resultState builderPendingPayments) slotsPerEpoch slotsPerEpoch
