@@ -39,7 +39,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLSpecs.Proofs (ForkChoiceStoreRun compare_vectorUInt8_self)
+open EthCLSpecs.Proofs (ForkChoiceStoreRun)
 open EthCLLib.Spec
 open EthCLSpecs.Heze (Preset Config Store State Root ForkChoiceNode BeaconBlock
   ExecutionRequests getCurrentSlot isPayloadVerified getNodeChildren getHead
@@ -98,12 +98,13 @@ example :
             payloadInclusionListSatisfaction := FcMap.insert FcMap.empty root false
             inclusionListStore := EthCLSpecs.Heze.InclusionListStore.empty },
     root, default, ⟨?_, ?_, by decide, by decide +kernel, by decide +kernel⟩⟩
-  · have hcmp : compare root root = .eq := compare_vectorUInt8_self root
+  · -- `simp` closes `compare root root = .eq` through the `LawfulEqOrd` instance of
+    -- `EthCLLib/Spec/FiniteMap.lean`.
     simp only [FcMap.lookup, FcMap.insert, FcMap.empty]
     unfold Std.TreeMap.get? Std.TreeMap.insert Std.DTreeMap.Const.get? Std.DTreeMap.insert
     simp [EmptyCollection.emptyCollection, Std.TreeMap.empty, Std.DTreeMap.empty,
       Std.DTreeMap.Internal.Impl.empty, Std.DTreeMap.Internal.Impl.Const.get?,
-      Std.DTreeMap.Internal.Impl.insert, hcmp]
+      Std.DTreeMap.Internal.Impl.insert]
   · simp +zetaDelta [getCurrentSlot, EthCLSpecs.Heze.getSlotsSinceGenesis, checkedSub,
       checkedMul, EthCLSpecs.Heze.Const.slotDurationMs]
     -- The two sides differ only in the slot: `6000 / Config.slotDurationMs` against
