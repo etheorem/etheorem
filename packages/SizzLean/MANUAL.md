@@ -314,13 +314,24 @@ Three idioms work:
 
    ```lean
    example (p : Pair) : SSZ.deserialize (SSZ.serialize p) = .ok p :=
-     SSZ.roundtrip
-       (.containerFixed (.cons .uintN64 rfl (.cons .uintN32 rfl .nil))) p
+     SSZ.roundtrip p (by decide)
+       (SizzLean.Proofs.encodedFits_of_maxByteLength_lt
+         (by decide) (SSZRepr.toRepr p) (by decide))
    ```
 
-   The trade-off: you supply the `BasicSupported`-shape witness
-   by hand (the `.containerFixed …` term). For ad-hoc smoke
-   tests, this is more typing than most users want.
+   `SSZ.roundtrip` takes two hypotheses. The first is the
+   `BasicSupported` gate on the schema. `BasicSupported` is
+   decidable (`Spec/BasicSupportedDecide.lean`), so `by decide`
+   proves it for any closed schema, a 38-field `BeaconState`
+   included. The second is the size bound
+   `(SSZ.serialize p).size < MAX_LENGTH`. For a fixed-size schema
+   `encodedFits_of_maxByteLength_lt` derives it from the schema's
+   maximum size, as above. For a variable-size schema it is a fact
+   about the value, so you pass it in as a hypothesis.
+
+   `SSZ.serialize_injective` takes the same two hypotheses and
+   proves non-malleability: two values with the same encoding are
+   equal.
 
 2. **`Bool`-shaped predicate**: convert the round-trip to a
    computation that returns `Bool`, then gate on `= true`. `Bool`
@@ -344,8 +355,8 @@ Three idioms work:
    runs `SSZ.roundtrip` over every `BasicSupported` shape on the
    built-in types and the example containers in `ReprExamples.lean`.
    The three central theorems
-   (`SSZ.decode_encode` / `SSZ.serialize_injective` /
-   `SSZ.encode_size_le_max`) are proved universally over
+   (`Proofs.decode_encode` / `Proofs.serialize_injective` /
+   `Proofs.encode_size_le_max`) are proved universally over
    `SSZType.BasicSupported`, so the round-trip property is
    already a theorem of the library for every container whose
    shape sits in `BasicSupported`, with no per-container assertion

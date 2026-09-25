@@ -1,3 +1,4 @@
+import EthCLSpecs.Proofs.Heze.Codec
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
@@ -17,6 +18,10 @@ Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Heze.Codec`: the `BasicSupported` gate by kernel `decide`, roundtrip,
+  and non-malleability (`serialize_injective`) for `BeaconState`, `BeaconBlockBody`,
+  `BeaconBlock`, and `SignedBeaconBlock` at the two shipped presets, and for
+  `SignedInclusionList` at every preset.
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
   equations for `getInclusionListCommittee` and
   `getInclusionListTransactions`

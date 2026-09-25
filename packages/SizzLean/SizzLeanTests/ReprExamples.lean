@@ -103,6 +103,26 @@ example (p : DPair) : SSZ.deserialize (SSZ.serialize p) = .ok p :=
       (.containerFixed (.cons .bool rfl (.cons .bool rfl .nil)))
       (SSZRepr.toRepr p) (by decide))
 
+/-! ### Deciding the gate
+
+`SizzLean.Spec.BasicSupportedDecide` makes `BasicSupported` decidable, so `by decide` builds
+the witness the two examples above spell out. The kernel unfolds the derived `shape` and runs
+the check. This is how a caller discharges the gate for a schema with many fields. -/
+
+/-- The derived `DPair` schema passes the gate by `decide`. -/
+example : SizzLean.Spec.SSZType.BasicSupported (SSZRepr.shape (T := DPair)) := by decide
+
+/-- Roundtrip on `DPair` with both hypotheses closed by `decide`. The size bound holds for
+every value, because a fixed-size schema's `maxByteLength` is its exact size. -/
+example (p : DPair) : SSZ.deserialize (SSZ.serialize p) = .ok p :=
+  SSZ.roundtrip p (by decide)
+    (SizzLean.Proofs.encodedFits_of_maxByteLength_lt (by decide) (SSZRepr.toRepr p) (by decide))
+
+/-- Non-malleability on `DPair`: two values with the same encoding are equal. -/
+example (p q : DPair) (h : SSZ.serialize p = SSZ.serialize q) : p = q :=
+  SSZ.serialize_injective (by decide)
+    (SizzLean.Proofs.encodedFits_of_maxByteLength_lt (by decide) (SSZRepr.toRepr p) (by decide)) h
+
 /-! ### Integer arm examples: the four `uintN` widths
 
 Each `example` exercises one of the four `uintN` constructors of
