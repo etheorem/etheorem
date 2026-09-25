@@ -1,4 +1,5 @@
 import EthCLSpecs.Proofs.Fulu.Balances
+import EthCLSpecs.Proofs.Fulu.Codec
 import EthCLSpecs.Proofs.Fulu.Run
 
 /-!
@@ -19,4 +20,7 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Balances`: `increaseBalance` and `decreaseBalance`, each with an exact
   run equation and an out-of-range reject, plus `increaseBalance`'s overflow reject and its
   exact stored sum, and `decreaseBalance`'s truncating difference.
+* `EthCLSpecs.Proofs.Fulu.Codec`: the `BasicSupported` gate by kernel `decide`, roundtrip, and
+  non-malleability (`serialize_injective`) for `BeaconState`, `BeaconBlockBody`, `BeaconBlock`,
+  and `SignedBeaconBlock` at the two shipped presets.
 -/

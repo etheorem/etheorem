@@ -6,14 +6,17 @@ import SizzLean.Spec.Serialize
 import SizzLean.Spec.Deserialize
 import SizzLean.Spec.HashTreeRoot
 import SizzLean.Spec.BasicSupported
+import SizzLean.Spec.BasicSupportedDecide
 import SizzLean.Proofs.Roundtrip
+import SizzLean.Proofs.Injective
 
 /-!
 # `SizzLean.Repr.Class`: `SSZRepr` typeclass + thin user-facing wrappers
 
 The `SSZRepr` class declaration plus the `SSZ.serialize` /
 `SSZ.deserialize` / `SSZ.hashTreeRoot` user-facing wrappers and
-the `SSZ.roundtrip` per-user-type corollary.
+two per-user-type corollaries: `SSZ.roundtrip` and the
+non-malleability theorem `SSZ.serialize_injective`.
 
 ARCHITECTURE.md §5.1 specifies the class:
 
@@ -66,6 +69,12 @@ every value whose encoding fits below `MAX_LENGTH`; a value whose
 encoding is larger has no such wire form to begin with. The gate
 is honest about scope and grows automatically as the proof set
 widens.
+
+The caller discharges the schema gate with `by decide`.
+`Spec/BasicSupportedDecide.lean` makes `BasicSupported` decidable,
+and the kernel unfolds a derived `shape` to a closed `SSZType`, so
+the check runs at elaboration time. The size bound is a fact about
+one value, so the caller supplies it.
 
 ## Lean idioms used here (annotated on first appearance)
 
@@ -192,6 +201,22 @@ theorem roundtrip {T : Type} [r : SSZRepr T] (x : T)
   -- The `match` reduces because the scrutinee is a literal `.ok`;
   -- then `r.to_from` folds `fromRepr (toRepr x)` back to `x`.
   simp [r.to_from]
+
+/-- Per-user-type non-malleability: two values of `T` with the same
+encoding are equal.
+
+The spec-level `serialize_injective` gives `toRepr x = toRepr y`, and
+`to_from` carries that back to `x = y`. The gates are the ones
+`roundtrip` takes: `BasicSupported r.shape`, which `by decide` closes on
+any closed shape (`Spec/BasicSupportedDecide.lean`), and the size bound
+on `x`. One bound is enough, since `y` shares `x`'s encoding. -/
+theorem serialize_injective {T : Type} [r : SSZRepr T] {x y : T}
+    (h_sup : SSZType.BasicSupported r.shape)
+    (h_fits : (SSZ.serialize x).size < MAX_LENGTH)
+    (h_eq : SSZ.serialize x = SSZ.serialize y) : x = y := by
+  have h_repr : r.toRepr x = r.toRepr y :=
+    Proofs.serialize_injective r.shape h_sup (r.toRepr x) (r.toRepr y) h_fits h_eq
+  rw [← r.to_from x, ← r.to_from y, h_repr]
 
 end SSZ
 
