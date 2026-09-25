@@ -1,6 +1,7 @@
 import EthCLSpecs.Proofs.Heze.PayloadTiebreak
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
+import EthCLLib.Proofs.LawfulFcMap
 
 /-!
 # `EthCLSpecs.Proofs.Heze.CensorshipCost`: what a failed inclusion list costs
@@ -31,19 +32,24 @@ block's proposer, which clears the entry, and a child on the FULL edge, which se
 it. No theorem here proves the hypothesis from the block transitions.
 
 The answer comes from the `[ExecutionEngine]` seam. The default instance answers `true`
-for every payload, so only a non-default engine gives the recorded `false`. No theorem
-in this module names a transaction.
+for every payload, so only a non-default engine gives the recorded `false`.
+`unsatisfiedPayload_of_el_unsatisfied` derives the two payload conditions of
+`UnsatisfiedPayload` from the envelope lookups and that `false` answer, for a list
+`ilTxs` of inclusion-list transactions. It takes the three block conditions as
+hypotheses. No theorem in this module names a specific transaction.
 -/
 
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLSpecs.Proofs (ForkChoiceStoreRun compare_vectorUInt8_self)
+open EthCLSpecs.Proofs (ForkChoiceStoreRun)
 open EthCLLib.Spec
+open EthCLLib.Proofs (LawfulFcMap)
 open EthCLSpecs.Heze (Preset Config Store State Root ForkChoiceNode BeaconBlock
   ExecutionRequests getCurrentSlot isPayloadVerified getNodeChildren getHead
-  getParentPayloadStatus processParentExecutionPayload processBuilderPendingPayments)
+  getParentPayloadStatus processParentExecutionPayload processBuilderPendingPayments
+  ExecutionPayload Transaction SignedExecutionPayloadEnvelope isInclusionListSatisfied)
 
 /-- The conditions under which fork choice sees a payload that fails the inclusion
 list. `root` names the block `rootBlock` from the previous slot. The payload of the
@@ -98,12 +104,13 @@ example :
             payloadInclusionListSatisfaction := FcMap.insert FcMap.empty root false
             inclusionListStore := EthCLSpecs.Heze.InclusionListStore.empty },
     root, default, ⟨?_, ?_, by decide, by decide +kernel, by decide +kernel⟩⟩
-  · have hcmp : compare root root = .eq := compare_vectorUInt8_self root
+  · -- `simp` closes `compare root root = .eq` through the `LawfulEqOrd` instance of
+    -- `EthCLLib/Spec/FiniteMap.lean`.
     simp only [FcMap.lookup, FcMap.insert, FcMap.empty]
     unfold Std.TreeMap.get? Std.TreeMap.insert Std.DTreeMap.Const.get? Std.DTreeMap.insert
     simp [EmptyCollection.emptyCollection, Std.TreeMap.empty, Std.DTreeMap.empty,
       Std.DTreeMap.Internal.Impl.empty, Std.DTreeMap.Internal.Impl.Const.get?,
-      Std.DTreeMap.Internal.Impl.insert, hcmp]
+      Std.DTreeMap.Internal.Impl.insert]
   · simp +zetaDelta [getCurrentSlot, EthCLSpecs.Heze.getSlotsSinceGenesis, checkedSub,
       checkedMul, EthCLSpecs.Heze.Const.slotDurationMs]
     -- The two sides differ only in the slot: `6000 / Config.slotDurationMs` against
@@ -169,5 +176,36 @@ theorem unsatisfiedPayload_cost
   have hne := (getParentPayloadStatus_run_eq_empty_iff store child rootBlock hlookup).mp hstatus
   exact processParentExecutionPayload_run_of_empty_parent state child
     (by rw [hcached]; exact hne) hreq
+
+/-- `UnsatisfiedPayload` holds for the store `post` after the envelope handler when the
+EL answers `false`. `onExecutionPayloadEnvelope_run_pairing` gives `hpayload` and
+`hanswer` for a successful run. `hel` states that the EL answer is `false`. The block
+lookup, the current slot, and the overflow check are hypotheses on `post`. The map must
+satisfy `LawfulFcMap`. -/
+theorem unsatisfiedPayload_of_el_unsatisfied
+    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map] [LawfulFcMap map Root]
+    [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
+    (post : Store map) (signedEnv : SignedExecutionPayloadEnvelope) (rootBlock : BeaconBlock)
+    (ilTxs : Array Transaction)
+    (hpayload : FcMap.lookup post.payloads signedEnv.message.beaconBlockRoot
+      = some signedEnv.message)
+    (hanswer : FcMap.lookup post.payloadInclusionListSatisfaction
+        signedEnv.message.beaconBlockRoot
+      = some (isInclusionListSatisfied signedEnv.message.payload ilTxs))
+    (hel : isInclusionListSatisfied signedEnv.message.payload ilTxs = false)
+    (hblock : FcMap.lookup post.blocks signedEnv.message.beaconBlockRoot = some rootBlock)
+    (hcurrentslot :
+      (getCurrentSlot (StoreTransition := ForkChoiceStoreRun (Store map)) post).run post
+        = .ok (rootBlock.slot + 1, post))
+    (hnooverflow : ¬ (rootBlock.slot + 1 < rootBlock.slot)) :
+    UnsatisfiedPayload post signedEnv.message.beaconBlockRoot rootBlock where
+  block := hblock
+  currentSlot := hcurrentslot
+  noOverflow := hnooverflow
+  verified := by
+    show FcMap.contains post.payloads _ = true
+    rw [LawfulFcMap.contains_eq_isSome_lookup, hpayload]
+    rfl
+  unsatisfied := by rw [hanswer, hel]
 
 end EthCLSpecs.Proofs.Heze

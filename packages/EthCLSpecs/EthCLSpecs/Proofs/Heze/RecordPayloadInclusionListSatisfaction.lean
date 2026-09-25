@@ -36,16 +36,14 @@ two follow from the collector theorems in
 `recordPayloadInclusionListSatisfaction_run_eq` states the successful branch
 with an arbitrary `postRunnerStore`, derived from the principal equation.
 
-The last two corollaries take their hypotheses over `FcMap.fold` output and
-over a committee `.run` result at the generic `FcMap` interface. That
-interface provides no fold law and no lookup law, so a caller at generic
-`map` cannot discharge either hypothesis. Fix a concrete map first, as
-`Tests/HezeForkChoicePins.lean` does with `treeMap`, and read each hypothesis
-off that map's own theorems.
+The missing-timeliness corollary takes its hypothesis over `FcMap.fold` output:
+it names the first missing key in fold order. `LawfulFcMap` gives lookup and
+membership laws at a generic `map`, but it states no fold order, so a caller
+discharges the hypothesis at a concrete map.
 
 The theorems do not prove that a subsequent lookup returns the recorded
-value, because the generic `FcMap` interface does not provide an insert/lookup
-law.
+value. `OnExecutionPayloadEnvelope.lean` proves that lookup for the envelope
+handler, with the `LawfulFcMap` laws.
 -/
 
 set_option autoImplicit false

@@ -1,5 +1,4 @@
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
-import EthCLSpecs.Proofs.OrdVector
 
 /-!
 # `EthCLSpecs.Proofs.Heze.PayloadTiebreak`: a failed inclusion list loses the payload tiebreak
@@ -38,8 +37,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLSpecs.Proofs (ForkChoiceStoreRun compare_vectorUInt8_self run_bind run_pure
-  except_bind_ok)
+open EthCLSpecs.Proofs (ForkChoiceStoreRun run_bind run_pure except_bind_ok)
 open EthCLLib.Spec (HasherTag MapKind FcMap checkedAdd)
 open EthCLSpecs.Heze (Preset Config Store Root ForkChoiceNode BeaconBlock getCurrentSlot
   isPayloadVerified isPreviousSlotPayloadDecision getPayloadStatusTiebreaker getWeight
@@ -111,8 +109,9 @@ theorem getWeight_run_of_previous_slot_decision :
 
 /-- `betterOf` keeps the EMPTY node against itself and against the FULL node. These are
 the two comparisons that the `getHead` fold makes, because the fold starts from the
-EMPTY node. The two weights are `0`. The two roots are equal
-(`compare_vectorUInt8_self`). The EMPTY tiebreaker `1` is greater than the FULL
+EMPTY node. The two weights are `0`. The two roots are equal, and the byte-vector order
+is reflexive (`Std.ReflOrd.compare_self`, through the `LawfulEqOrd` instance of
+`EthCLLib/Spec/FiniteMap.lean`). The EMPTY tiebreaker `1` is greater than the FULL
 tiebreaker `0`. -/
 theorem betterOf_run_eq_empty_of_recorded_unsatisfied :
     ∀ (store : Store map) (root : Root) (rootBlock : BeaconBlock),
@@ -139,7 +138,7 @@ theorem betterOf_run_eq_empty_of_recorded_unsatisfied :
   -- constructors folded, and `hwE` / `htE` / `hwF` / `htF` still match.
   have hrootE : (ForkChoiceNode.empty root).root = root := rfl
   have hrootF : (ForkChoiceNode.full root).root = root := rfl
-  have hcmp : compare root root = Ordering.eq := compare_vectorUInt8_self root
+  have hcmp : compare root root = Ordering.eq := Std.ReflOrd.compare_self
   simp only [List.mem_cons, List.mem_nil_iff, or_false] at hother
   rcases hother with rfl | rfl <;>
     simp only [getHead.betterOf, run_bind, hwE, hwF, htE, htF,

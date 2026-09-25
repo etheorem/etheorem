@@ -951,8 +951,10 @@ getter-setter laws hold by `rfl`), the pure `StateTransition` monad (`StateT` ov
 `Except`), and `treeMap` (clean insert and lookup laws, relevant only to fork-choice proofs, since
 the state-transition machine holds no map).
 
-The fast configuration (`FastBox`, `EStateM`, `hashMap`) is never a proof target.
-Conformance establishes it empirically. The fast-versus-pure gap is closed at the
+`FastBox` and `EStateM` are never a proof target. `hashMap` is a proof target only
+through `LawfulFcMap` (`EthCLLib/Proofs/LawfulFcMap.lean`). A proof that uses only
+those laws holds at both maps. A proof that depends on the order of a fold needs
+`treeMap`. Conformance establishes the fast configuration empirically. The fast-versus-pure gap is closed at the
 dependency level, not the spec level. SizzLean's cache-coherence test proves
 `FastBox` equals `PureBox` on the hash-tree-root, and the FFI-equivalence axioms
 handle the hasher, so there is no spec-level fast-equals-pure theorem to prove. The
