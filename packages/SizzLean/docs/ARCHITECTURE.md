@@ -365,7 +365,8 @@ wrappers:
 def SSZ.serialize    [r : SSZRepr T] (x : T) : ByteArray := Spec.serialize    r.shape (r.toRepr x)
 def SSZ.deserialize  [r : SSZRepr T] (b : ByteArray) : Except SSZError T :=
   match Spec.deserialize r.shape b with
-  | .ok (y, _) => .ok (r.fromRepr y) | .error e => .error e
+  | .ok (y, n) => if n = b.size then .ok (r.fromRepr y) else .error .trailingBytes
+  | .error e => .error e
 def SSZ.hashTreeRoot [r : SSZRepr T] [Hasher H] (x : T) : ByteArray :=
   Spec.hashTreeRoot r.shape (r.toRepr x)
 ```

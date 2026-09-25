@@ -132,6 +132,25 @@ example (x : UInt64) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
   SSZ.roundtrip x .uintN64
     (SizzLean.Proofs.encodedFits_of_maxByteLength_lt .uintN64 x (by decide))
 
+/-! ### Extra unused bytes
+
+`SSZ.deserialize` is a whole-value decode. Extra bytes after a
+fixed-size value are `.trailingBytes` (etheorem#118). The spec
+decoder returns a consumed count so a longer buffer can be parsed
+as a subterm; the user wrapper requires that count to equal the
+buffer size. -/
+
+open SizzLean.Spec
+
+/-- Eight little-endian bytes for `1`, plus one extra byte. The spec
+decoder consumes 8 and would return the value; the user wrapper
+rejects the leftover. The goal is `Bool` so `native_decide` finds a
+`Decidable` instance; `Except` equality is not in core Lean. -/
+example :
+    (match SSZ.deserialize (T := UInt64) ⟨#[1, 0, 0, 0, 0, 0, 0, 0, 7]⟩ with
+      | .error .trailingBytes => true
+      | _ => false) = true := by native_decide
+
 /-! ### Wide integer arm examples: `uintN 128` and `uintN 256`
 
 The `SSZRepr (BitVec 128)` / `(BitVec 256)` instances
