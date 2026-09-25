@@ -126,7 +126,7 @@ forkdef processWithdrawals (payload : ExecutionPayload) : StateTransition Unit :
   let nvals := (sszGet state validators).size
   let mut stateAcc := state
   for w in expected do
-    stateAcc := decreaseBalance stateAcc w.validatorIndex w.amount
+    stateAcc ← decreaseBalance stateAcc w.validatorIndex w.amount
 
   if expected.size != 0 then
     stateAcc := sszUpdate stateAcc with nextWithdrawalIndex := (expected[expected.size - 1]!).index + 1

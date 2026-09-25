@@ -921,14 +921,17 @@ the same point and for the same reason the upstream pyspec does.
 | Vector marking | Faithful result | A failure |
 |---|---|---|
 | valid | the matching post-state by root | any error (`assert`, `outOfBounds`, `todo`); an `outOfBounds` here is the framework's bug-smell |
-| invalid | a faithful `assert` rejection | a `todo` (an unimplemented path is not a validation, so it fails and points to work) |
+| invalid | the rejection the case's own reference wrapper catches | a `todo` (an unimplemented path is not a validation, so it fails and points to work) |
 
 A valid vector must produce the matching post-state by root. Any error is a failure,
 and an `outOfBounds` on a valid vector is the bug-smell of the error model, surfacing
 a likely framework or spec bug rather than a validation. An invalid vector must be
-rejected by `assert`, the faithful rejection. A `todo` is never a faithful rejection;
+rejected the way its own reference wrapper expects, which `RunnerCaughtSet` records
+(`FRAMEWORK_ARCHITECTURE.md` §6). Under `expect_assertion_error` that is an `assert` or a
+caught `outOfBounds`; under the `except ValueError` wrapper it is the `.arithmetic` fault.
+A `todo` is never a faithful rejection;
 an unimplemented path is not a validation, so a `todo` on an invalid vector fails and
-points to the work. An `outOfBounds` or `missingKey` counts as rejected but is
+points to the work. A caught `outOfBounds` counts as rejected but is
 flagged, and the audit confirms the spec rejects at the same point and for the same
 reason pyspec does, never by a coincidental downstream bounds error that happens to
 land on a rejected vector. That mechanism check is where spec-faithfulness lives,

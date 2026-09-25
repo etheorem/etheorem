@@ -189,7 +189,7 @@ forkdef applyWithdrawals (withdrawals : Array Withdrawal) : StateTransition Unit
       let b ← sszGetIdx (sszGet stateAcc builders) builderIndex.toNat
       stateAcc := sszUpdate stateAcc with builders[builderIndex.toNat]! := { b with balance := b.balance - umin w.amount b.balance }
     else
-      stateAcc := decreaseBalance stateAcc w.validatorIndex w.amount
+      stateAcc ← decreaseBalance stateAcc w.validatorIndex w.amount
 
   set stateAcc
 

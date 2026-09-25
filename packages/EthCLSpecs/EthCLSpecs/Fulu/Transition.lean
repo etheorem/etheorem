@@ -157,19 +157,18 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let validators := (sszGet state validators).toArray
 
   -- Reward participants (and the proposer), penalize non-participants.
-  modifyState fun state => Id.run do
-    let mut state := state
-    for h : i in [0:Const.syncCommitteeSize] do
-      let pk := syncCommittee.pubkeys[i]
-      match validators.findIdx? (·.pubkey == pk) with
-      | some pIdx =>
-        if bitGet bits i then
-          state := increaseBalance state (UInt64.ofNat pIdx) participantReward
-          state := increaseBalance state proposerIdx proposerReward
-        else
-          state := decreaseBalance state (UInt64.ofNat pIdx) participantReward
-      | none => pure ()
-    return state
+  let mut state := state
+  for h : i in [0:Const.syncCommitteeSize] do
+    let pk := syncCommittee.pubkeys[i]
+    match validators.findIdx? (·.pubkey == pk) with
+    | some pIdx =>
+      if bitGet bits i then
+        state ← increaseBalance state (UInt64.ofNat pIdx) participantReward
+        state ← increaseBalance state proposerIdx proposerReward
+      else
+        state ← decreaseBalance state (UInt64.ofNat pIdx) participantReward
+    | none => pure ()
+  set state
 
 /-- `process_execution_payload`: the consistency checks against the previous
 header and the current RANDAO / slot time, then cache the new header. The
