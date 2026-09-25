@@ -140,9 +140,9 @@ column is the fork's own diff, for scale.
 
 | Axiom | Theorems resting on it |
 | --- | --- |
-| `propext` | 70 |
-| `Classical.choice` | 59 |
-| `Quot.sound` | 68 |
+| `propext` | 109 |
+| `Classical.choice` | 97 |
+| `Quot.sound` | 107 |
 | `Lean.ofReduceBool` | 0 |
 | `Lean.trustCompiler` | 0 |
 | `SizzLean.Hasher.sha256Hash_eq_spec` | 0 |
