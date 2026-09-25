@@ -73,9 +73,9 @@ author how to state it. `EthCLSpecs/Proofs/` splits per fork the same way.
 
 Four claims rest on another row:
 
-- The Heze theorem `unsatisfiedPayload_headEmpty_and_emptyChild_unsettled` rests on
-  the Heze `shouldExtendPayload`, `getPayloadStatusTiebreaker`,
-  `getParentPayloadStatus`, and `processParentExecutionPayload` rows.
+- The Heze theorem `unsatisfiedPayload_cost` rests on the Heze `shouldExtendPayload`,
+  `getPayloadStatusTiebreaker`, `getParentPayloadStatus`,
+  `processParentExecutionPayload`, and `processBuilderPendingPayments` rows.
 - The committee partition rests on the shuffle bijection.
 - Plausible liveness rests on accountable safety.
 - Both `processDeposit` rows rest on the Merkle branch check. Its proof module is
@@ -258,20 +258,23 @@ declarations that the gate reaches have been read for proof candidates. Every Gl
 row above applies to Heze's re-elaboration of that declaration as a separate claim
 about a separate constant.
 
-`Proofs/Heze/CensorshipCost.lean` states two independent facts about a block from the
-previous slot whose payload is verified and whose recorded inclusion-list answer is
-`false` (`unsatisfiedPayload_headEmpty_and_emptyChild_unsettled`):
+`Proofs/Heze/CensorshipCost.lean` states the cost for a block from the previous slot
+whose payload is verified and whose recorded inclusion-list answer is `false`, in three
+facts (`unsatisfiedPayload_cost`):
 
 - one `getHead` step at the pending node of the block goes to EMPTY;
 - any child on the EMPTY edge, with the empty parent requests, leaves the bid
-  unsettled in `processParentExecutionPayload`.
+  unsettled in `processParentExecutionPayload`;
+- at the epoch substep, where the entry for the slot of the bid still carries its
+  withdrawal (`BidPaymentCarried`), the substep queues the bid if and only if the entry
+  reaches the quorum (`processBuilderPendingPayments_run_bid`).
 
 No theorem connects the child to the head step, because the model does not include
 the proposer. The default `[ExecutionEngine]` answers `true` for every payload, so a
-recorded `false` needs a non-default engine. The `processBuilderPendingPayments` row
-covers the epoch path that remains for the bid, and the composed theorem does not use
-it. The theorems are not invariants over whole traces, so they do not prove that no
-other path pays the bid. `processProposerSlashing` can also clear the pending payment.
+recorded `false` needs a non-default engine. `BidPaymentCarried` is a hypothesis about
+the blocks between the bid and the epoch substep. A proposer slashing of the block's
+proposer clears the entry, and a child on the FULL edge settles it. No theorem proves
+the hypothesis from the block transitions.
 
 ### Safety and invariant preservation
 
@@ -279,7 +282,7 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `processBuilderPendingPayments` | `Heze/EpochProcessing.lean:110` | The Heze port of the Gloas row. The function shifts the payment window down by `SLOTS_PER_EPOCH`. Under an explicit capacity hypothesis, it appends the withdrawal of every qualifying payment from the previous epoch to `builderPendingWithdrawals`, in slot order. An entry is qualifying if and only if its weight reaches the quorum (`mem_qualifyingPaymentIndices_iff`). This row does not prove that each payment settles exactly once across the protocol | proved | `Proofs/Heze/BuilderPendingPayments.lean` |
+| `processBuilderPendingPayments` | `Heze/EpochProcessing.lean:110` | The Heze port of the Gloas row. The function shifts the payment window down by `SLOTS_PER_EPOCH`. Under an explicit capacity hypothesis, it appends the withdrawal of every qualifying payment from the previous epoch to `builderPendingWithdrawals`, in slot order. An entry is qualifying if and only if its weight reaches the quorum (`mem_qualifyingPaymentIndices_iff`). For one bid whose entry still carries its withdrawal, the substep queues that withdrawal if and only if the entry reaches the quorum (`processBuilderPendingPayments_run_bid`). This row does not prove that each payment settles exactly once across the protocol | proved | `Proofs/Heze/BuilderPendingPayments.lean` |
 
 ### State-transition correctness
 

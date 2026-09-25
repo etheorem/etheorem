@@ -15,6 +15,7 @@ tier1 EthCLSpecs.Gloas.processBlsToExecutionChange
 tier1 EthCLSpecs.Gloas.processPayloadAttestation
 tier1 EthCLSpecs.Gloas.processProposerSlashing
 tier1 EthCLSpecs.Gloas.processVoluntaryExit
+tier1 EthCLSpecs.Heze.builderPaymentIndex
 tier1 EthCLSpecs.Heze.computeEpochAtSlot
 tier1 EthCLSpecs.Heze.getBeaconCommittee
 tier1 EthCLSpecs.Heze.getCommitteeCountPerSlot

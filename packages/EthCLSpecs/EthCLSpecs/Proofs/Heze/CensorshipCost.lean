@@ -1,31 +1,34 @@
 import EthCLSpecs.Proofs.Heze.PayloadTiebreak
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
+import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
 
 /-!
-# `EthCLSpecs.Proofs.Heze.CensorshipCost`: a failed inclusion list costs the payload
+# `EthCLSpecs.Proofs.Heze.CensorshipCost`: what a failed inclusion list costs
 
-This module states two facts about one block side by side. It uses
-`PayloadTiebreak.lean` and `ParentPayloadEmpty.lean`. Take a block from the previous
-slot with a verified payload whose recorded inclusion-list answer is `false`. Then:
+`unsatisfiedPayload_cost` states three facts about one block. It uses
+`PayloadTiebreak.lean`, `ParentPayloadEmpty.lean`, and `BuilderPendingPayments.lean`.
+Take a block from the previous slot with a verified payload whose recorded
+inclusion-list answer is `false`. Then:
 
 1. one step of the `getHead` walk at the pending node of the block goes to its EMPTY
-   node; and
+   node. The theorem does not cover the full walk;
 2. take any child of the block that fork choice puts under the EMPTY node, with the
    empty parent requests. Process it on a state that caches the bid of the block. Then
    `processParentExecutionPayload` does not change the state, and it does not settle
-   the bid of the block.
+   the bid of the block;
+3. at the epoch substep that judges the payment of the bid, the withdrawal of the bid
+   is queued if and only if its entry reaches the quorum.
 
-The two facts are independent. Fact 2 holds for every child on the EMPTY edge, and it
-uses only the block lookup. No theorem here connects the child to the head step. A
-proposer that follows fork choice builds on EMPTY, but the model does not include the
-proposer. A child built on the FULL edge settles the bid through
-`applyParentExecutionPayload`.
+Facts 1 and 2 are independent. Fact 2 holds for every child on the EMPTY edge, and it
+uses only the block lookup. A proposer that follows fork choice builds on EMPTY, but the
+model does not include the proposer. A child built on the FULL edge settles the bid
+through `applyParentExecutionPayload`.
 
-The theorem also does not cover the full `getHead` walk or later blocks. After a child
-on the EMPTY edge, the epoch substep `processBuilderPendingPayments` is the remaining
-path for the bid (`BuilderPendingPayments.lean`). This module does not use that
-theorem. A proof that no other path pays the bid needs an invariant over whole traces.
-`processProposerSlashing` can also clear the pending payment.
+Fact 3 takes one hypothesis about the blocks between the bid and the epoch substep,
+`BidPaymentCarried`: the entry for the slot of the bid still carries the withdrawal of
+the bid when the substep reads it. The hypothesis excludes a proposer slashing of the
+block's proposer, which clears the entry, and a child on the FULL edge, which settles
+it. No theorem here proves the hypothesis from the block transitions.
 
 The answer comes from the `[ExecutionEngine]` seam. The default instance answers `true`
 for every payload, so only a non-default engine gives the recorded `false`. No theorem
@@ -40,7 +43,7 @@ open EthCLSpecs.Proofs (ForkChoiceStoreRun compare_vectorUInt8_self)
 open EthCLLib.Spec
 open EthCLSpecs.Heze (Preset Config Store State Root ForkChoiceNode BeaconBlock
   ExecutionRequests getCurrentSlot isPayloadVerified getNodeChildren getHead
-  getParentPayloadStatus processParentExecutionPayload)
+  getParentPayloadStatus processParentExecutionPayload processBuilderPendingPayments)
 
 /-- The conditions under which fork choice sees a payload that fails the inclusion
 list. `root` names the block `rootBlock` from the previous slot. The payload of the
@@ -107,12 +110,25 @@ example :
     -- `default.slot + 1`. The kernel evaluates both to `1`.
     exact congrArg (fun slot => (.ok (slot, _) : Except _ _)) (by decide +kernel)
 
-/-- Two facts under `UnsatisfiedPayload`. First, the head step at the pending node of
-the block selects the EMPTY node. Second, take any child of the block that fork choice
-puts under EMPTY, with the empty parent requests. Run `processParentExecutionPayload`
-for the child on a state that caches the bid of the block. The run does not change the
-state. The module docstring explains why the two facts are independent. -/
-theorem unsatisfiedPayload_headEmpty_and_emptyChild_unsettled
+/-- The cost of an unsatisfied payload, in three facts. Let `bid` be the bid of the block.
+
+1. Fork choice drops the payload. One step of the `getHead` walk at the pending node of
+   the block selects the EMPTY node.
+2. A child on the EMPTY edge does not pay the bid. Take any child of the block that fork
+   choice puts under EMPTY, with the empty parent requests. Run
+   `processParentExecutionPayload` for the child on a state that caches `bid`. The run does
+   not change the state, so it settles no payment.
+3. The builder still pays if the block reached the quorum. Take the state at the epoch
+   substep that judges the payment of `bid`, where the payment is carried
+   (`BidPaymentCarried`) and the qualifying withdrawals fit under the list limit. Then
+   `processBuilderPendingPayments` succeeds and queues the withdrawal of `bid` if and only
+   if the entry reaches the quorum (`EpochPaysBidIffQuorum`).
+
+The weight of the entry counts same-slot attestations for the beacon block
+(`process_attestation`). The theorem takes the weight as it finds it, and it does not
+relate the weight to the inclusion-list answer. `BidPaymentCarried` is the assumption
+about the blocks between the child and the epoch substep. -/
+theorem unsatisfiedPayload_cost
     {map : MapKind} [Preset] [HasherTag] [Config] [CryptoBackend] [FcMap map]
     (store : Store map) (root : Root) (rootBlock : BeaconBlock) (blocks : Array Root)
     (h : UnsatisfiedPayload store root rootBlock) :
@@ -124,7 +140,7 @@ theorem unsatisfiedPayload_headEmpty_and_emptyChild_unsettled
           (getHead.betterOf (StoreTransition := ForkChoiceStoreRun (Store map)) store)
       : ForkChoiceStoreRun (Store map) ForkChoiceNode).run store
       = .ok (ForkChoiceNode.empty root, store) ∧
-    ∀ (child : BeaconBlock) (state : State),
+    (∀ (child : BeaconBlock) (state : State),
       child.parentRoot = root →
       (getParentPayloadStatus (StoreTransition := ForkChoiceStoreRun (Store map))
           store child).run store
@@ -133,9 +149,20 @@ theorem unsatisfiedPayload_headEmpty_and_emptyChild_unsettled
         = rootBlock.body.signedExecutionPayloadBid.message →
       htr child.body.parentExecutionRequests = htr (default : ExecutionRequests) →
       (processParentExecutionPayload (StateTransition := HezeRun) child).run state
-        = .ok ((), state) := by
+        = .ok ((), state)) ∧
+    (∀ epochState : State,
+      BidPaymentCarried epochState rootBlock.body.signedExecutionPayloadBid.message →
+      (sszGet epochState builderPendingWithdrawals).val.size +
+          (qualifyingBuilderWithdrawals epochState).length
+        ≤ EthCLSpecs.Heze.Const.builderPendingWithdrawalsLimit →
+      ∃ after : State,
+        (processBuilderPendingPayments : HezeRun Unit).run epochState = .ok ((), after) ∧
+        EpochPaysBidIffQuorum epochState after
+          rootBlock.body.signedExecutionPayloadBid.message) := by
   refine ⟨getHeadStep_run_eq_empty_of_recorded_unsatisfied store blocks root rootBlock
-    h.block h.currentSlot h.noOverflow h.verified h.unsatisfied, ?_⟩
+    h.block h.currentSlot h.noOverflow h.verified h.unsatisfied, ?_,
+    fun epochState hcarried hfits =>
+      processBuilderPendingPayments_run_bid epochState _ hcarried hfits⟩
   intro child state hparent hstatus hcached hreq
   have hlookup : FcMap.lookup store.blocks child.parentRoot = some rootBlock := by
     rw [hparent]; exact h.block

@@ -25,11 +25,13 @@ Re-exports:
 * `EthCLSpecs.Proofs.Heze.BuilderPendingPayments`: the Heze port of the epoch
   substep for builder payments (`processBuilderPendingPayments_run`), and the
   per-entry quorum condition (`mem_qualifyingPaymentIndices_iff`), proved with
-  `HezeRun`.
-* `EthCLSpecs.Proofs.Heze.CensorshipCost`: two independent facts about a block with
-  a recorded `false` inclusion-list answer
-  (`unsatisfiedPayload_headEmpty_and_emptyChild_unsettled`). The head step goes to
-  EMPTY. A child on EMPTY, with the empty parent requests, does not settle the bid.
+  `HezeRun`. When the payment of a bid is carried to the substep
+  (`BidPaymentCarried`), the substep queues the bid if and only if its entry reaches
+  the quorum (`processBuilderPendingPayments_run_bid`).
+* `EthCLSpecs.Proofs.Heze.CensorshipCost`: three facts about a block with a recorded
+  `false` inclusion-list answer (`unsatisfiedPayload_cost`). The head step goes to
+  EMPTY. A child on EMPTY, with the empty parent requests, does not settle the bid. At
+  the epoch substep, the bid is paid if and only if its entry reaches the quorum.
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
   equations for `getInclusionListCommittee` and
   `getInclusionListTransactions`
