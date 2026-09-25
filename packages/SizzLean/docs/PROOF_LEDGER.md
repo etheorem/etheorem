@@ -344,6 +344,9 @@ opening satisfies that fold.
 - [`../../EthCLSpecs/docs/PROOF_LEDGER.md`](../../EthCLSpecs/docs/PROOF_LEDGER.md)
   is the fork-body ledger. Its `processDeposit` rows depend on the branch rows
   here.
+- [`NON_MALLEABILITY.md`](NON_MALLEABILITY.md) is the write-up of the
+  `serialize_injective` rows: what they prove, why each guard is there,
+  and the open decoder-canonicity and trailing-byte gaps.
 - etheorem#61, etheorem#77 (the guard widening), etheorem#76 (this file and the
   script work that reads it).
 - ConsenSys `eth2.0-dafny` proved chunk-count and length bookkeeping for its
