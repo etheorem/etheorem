@@ -142,11 +142,12 @@ def RunnerCaughtSet.ofCase : String → String → RunnerCaughtSet
 wrapper that scores the case.
 
 The reject is faithful when the wrapper catches it. `admits` decides that. An unadmitted
-reject must report a bucket that reads as a failure. `.assert` classifies as
-`.expectedRejection`, and `ClassifyBucket.tag` maps that to `"reject"`, so `render` would
-print a `fail` row under the pass tag. An `.outOfBounds` keeps the bug-smell marker in both
+reject fails the case, and its bucket must read as a failure too. An `.assert` classifies as
+`.expectedRejection`, and `ClassifyBucket.tag` renders that bucket as `"reject"`, the tag a
+passing row carries. The unadmitted `.assert` arm therefore reports `.likelyBug`, whose tag
+reads as a failure. An `.outOfBounds` keeps `.likelyBug` and the smell marker in both
 branches. `admits` is false for `.todo` and `.outOfScope` under either set, so those two rows
-ignore it.
+keep their own buckets.
 
 `classify` never answers `.passing`. The last row says so, rather than let a wildcard pass an
 invalid vector. Split out of `runCase` so `#guard` can pin the table without a `ForkInterface`
