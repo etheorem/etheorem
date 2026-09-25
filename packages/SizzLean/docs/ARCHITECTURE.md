@@ -386,6 +386,22 @@ tripped representation `r.toRepr (r.fromRepr ...)` back to the user type.
 This is the single architectural payoff that makes the universe approach
 worth the indirection.
 
+Non-malleability lifts the same way. `SSZ.serialize_injective` takes the
+same two gates and concludes `x = y` from
+`SSZ.serialize x = SSZ.serialize y`. Its proof applies the spec-level
+`serialize_injective` to the two representations, then the `to_from` law
+maps the equality back to the user type.
+
+The schema gate costs the caller nothing. `Spec/BasicSupportedDecide.lean`
+defines a `Bool` check that mirrors the predicate one arm at a time. It
+proves the check sound and complete, and registers the `Decidable`
+instance. `by decide` then proves `BasicSupported r.shape` for any closed
+schema: the kernel unfolds the derived `shape` and runs the check. The
+fork bodies discharge the gate this way for the real `BeaconState`,
+`BeaconBlockBody`, `BeaconBlock`, and `SignedBeaconBlock`
+(`EthCLSpecs/Proofs/<Fork>/Codec.lean`). The size bound stays with the
+caller, because it depends on the value.
+
 ### 5.2 The `deriving` handler
 
 `Repr/Deriving.lean` is the densest metaprogramming file in the project
@@ -454,11 +470,11 @@ structure Validator where
 
 /-- An `example` block keeps the round-trip honest under the typechecker:
     if the deriving handler ever produces a wrong iso, the build breaks here.
-    The gates are the shape predicate and the value's encoded size. -/
+    The gates are the shape predicate, which `decide` proves, and the
+    value's encoded size. -/
 example (h : BeaconBlockHeader)
-    (h_sup : BasicSupported (SSZRepr.shape BeaconBlockHeader))
     (h_fits : (SSZ.serialize h).size < MAX_LENGTH) :
-    SSZ.deserialize (SSZ.serialize h) = .ok h := SSZ.roundtrip h h_sup h_fits
+    SSZ.deserialize (SSZ.serialize h) = .ok h := SSZ.roundtrip h (by decide) h_fits
 ```
 
 That is the entire user surface: one keyword per type, no manual
@@ -471,7 +487,7 @@ CLAUDE.md's literate-by-default principle.
 
 | File | Role |
 | --- | --- |
-| `Repr/Class.lean`     | `class SSZRepr T` plus thin user-facing wrappers `SSZ.serialize` / `SSZ.deserialize` / `SSZ.hashTreeRoot` and the `SSZ.roundtrip` corollary. |
+| `Repr/Class.lean`     | `class SSZRepr T` plus thin user-facing wrappers `SSZ.serialize` / `SSZ.deserialize` / `SSZ.hashTreeRoot` and the `SSZ.roundtrip` and `SSZ.serialize_injective` corollaries. |
 | `Repr/Instances.lean` | `SSZRepr` instances for primitives (`UInt8/16/32/64`, `Bool`, `BitVec`) and composites (`Vector`, `SSZ.List`, `Bitvector`, `Bitlist`). |
 | `Repr/Deriving.lean`  | The `registerDerivingHandler` that synthesises `SSZRepr` for any user `structure`. |
 
