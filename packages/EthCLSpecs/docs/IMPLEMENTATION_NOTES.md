@@ -943,6 +943,11 @@ separation.
   to the Heze constant, and adds `mem_qualifyingPaymentIndices_iff`: an entry is
   qualifying if and only if its weight reaches the quorum. As in pyspec, the substep
   raises `.listFull` when the qualifying withdrawals do not fit under the list limit.
+  `processBuilderPendingPayments_run_bid` states the substep for one bid.
+  When the entry for the slot of the bid still carries the withdrawal of the bid
+  (`BidPaymentCarried`), the substep appends that entry if and only if it reaches the
+  quorum (`EpochPaysBidIffQuorum`). The claim is about the entry: below the quorum, an
+  equal withdrawal from another entry can still be in the list.
 
 - **`Proofs/Heze/PayloadTiebreak.lean`** proves that at a block from the previous
   slot, with a verified payload and a recorded `false` inclusion-list answer, EMPTY
@@ -954,8 +959,13 @@ separation.
   also proves that fork choice calls an edge EMPTY exactly when the two block hashes
   differ.
 
-- **`Proofs/Heze/CensorshipCost.lean`** states the two facts above side by side for
-  one block (`unsatisfiedPayload_headEmpty_and_emptyChild_unsettled`). The facts are
-  independent. The model does not include the proposer who builds the child.
+- **`Proofs/Heze/CensorshipCost.lean`** states the cost of a recorded `false` answer
+  for one block in three facts (`unsatisfiedPayload_cost`). The head step goes to
+  EMPTY. A child on EMPTY settles no payment. At the epoch substep, the bid is paid if
+  and only if its entry reaches the quorum. The first two facts are independent,
+  because the model does not include the proposer who builds the child. The third takes
+  `BidPaymentCarried` as the hypothesis about the blocks between the bid and the
+  substep. A proposer slashing of the block's proposer, or a child on the FULL edge,
+  breaks it.
 
 - **`PROOF_LEDGER.md`** tracks candidate consensus proof targets and their status.
