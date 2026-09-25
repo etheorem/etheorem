@@ -340,6 +340,11 @@ ever proved it. Stating, proving, and shipping it as a Lean 4 artefact is
 the standard the EF should hold itself to and is worth aiming at a
 top-tier security venue on its own merits.
 
+[`NON_MALLEABILITY.md`](NON_MALLEABILITY.md) states the scope exactly.
+`serialize_injective` rules out two values with one encoding. The
+converse, that the decoder accepts only canonical bytes, is open: the
+decoder accepts a non-canonical offset today (etheorem#81).
+
 ## 5. Layer 3: `SSZRepr` and the deriving handler (`packages/SizzLean/SizzLean/Repr/`)
 
 This is the layer the library's users actually touch.
