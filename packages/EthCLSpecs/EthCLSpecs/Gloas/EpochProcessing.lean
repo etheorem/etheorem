@@ -93,7 +93,8 @@ forkdef getActivationChurnLimit (state : State) : Gwei :=
 forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Epoch := do
   let state ← get
   let currentEpoch := computeEpochAtSlot (sszGet state slot)
-  let earliest := umax (sszGet state earliestExitEpoch) (computeActivationExitEpoch currentEpoch)
+  let activationExitEpoch ← liftErr (computeActivationExitEpoch currentEpoch)
+  let earliest := umax (sszGet state earliestExitEpoch) activationExitEpoch
   let perEpochChurn := getExitChurnLimit state
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
   let (ee, ebtc) := reserveChurn exitBalance consume perEpochChurn earliest

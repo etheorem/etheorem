@@ -175,7 +175,7 @@ forkdef processRewardsAndPenalties : StateTransition Unit := do
 churn-unlimited activations in one pass). -/
 forkdef processRegistryUpdates : StateTransition Unit := do
   let currentEpoch := currentEpochOf (← get)
-  let activationEpoch := computeActivationExitEpoch currentEpoch
+  let activationEpoch ← liftErr (computeActivationExitEpoch currentEpoch)
   let n := (sszGet (← get) validators).size
 
   for idx in [0 : n] do
