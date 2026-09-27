@@ -56,16 +56,18 @@ committees; the next `(1 + MIN_SEED_LOOKAHEAD)` epochs hold `compute_ptc` for ea
 slot. `MIN_SEED_LOOKAHEAD` is `1`, so the window is `3 * SLOTS_PER_EPOCH` long,
 matching the `ptcWindow` field's declared length. -/
 def initializePtcWindow [Preset] [HasherTag] (state : Fulu.State) :
-    Vector (Vector ValidatorIndex Const.ptcSize) (3 * Const.slotsPerEpoch) :=
+    Except StateTransitionError
+      (Vector (Vector ValidatorIndex Const.ptcSize) (3 * Const.slotsPerEpoch)) :=
   let currentEpoch := Fulu.currentEpochOf state
   let emptyCommittee : Vector ValidatorIndex Const.ptcSize := Vector.replicate Const.ptcSize 0
-  Vector.ofFn fun i : Fin (3 * Const.slotsPerEpoch) =>
-    if i.val < Const.slotsPerEpoch then emptyCommittee
+  Vector.ofFnM fun i : Fin (3 * Const.slotsPerEpoch) =>
+    if i.val < Const.slotsPerEpoch then pure emptyCommittee
     else
       let j := i.val - Const.slotsPerEpoch
       let epoch := currentEpoch + UInt64.ofNat (j / Const.slotsPerEpoch)
-      let startSlot := Fulu.computeStartSlotAtEpoch epoch
-      computePtcFromFulu state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch))
+      do
+        let startSlot ← Fulu.computeStartSlotAtEpoch epoch
+        pure (computePtcFromFulu state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch)))
 
 /-! ## Component-container conversion at the fork boundary
 
@@ -107,60 +109,62 @@ fork version is a config value, not a preset one. The builder onboarding step
 (`onboard_builders_from_pending_deposits`) runs after this in the runner, since it
 needs the Gloas builder-registry helpers. -/
 def upgradeToGloas [Preset] [HasherTag] (gloasForkVersion : Version) (pre : Fulu.BeaconState) :
-    Gloas.BeaconState :=
+    Except StateTransitionError Gloas.BeaconState := do
   let epoch : Epoch := pre.slot / UInt64.ofNat Const.slotsPerEpoch
-  { genesisTime                   := pre.genesisTime
-    genesisValidatorsRoot         := pre.genesisValidatorsRoot
-    slot                          := pre.slot
-    forkData                      :=
-      { previousVersion := pre.forkData.currentVersion
-        currentVersion  := gloasForkVersion
-        epoch           := epoch }
-    latestBlockHeader             := cvBeaconBlockHeader pre.latestBlockHeader
-    blockRoots                    := pre.blockRoots
-    stateRoots                    := pre.stateRoots
-    historicalRoots               := pre.historicalRoots
-    eth1Data                      := cvEth1Data pre.eth1Data
-    eth1DataVotes                 := pre.eth1DataVotes.mapCap cvEth1Data
-    eth1DepositIndex              := pre.eth1DepositIndex
-    validators                    := pre.validators.mapCap cvValidator
-    balances                      := pre.balances
-    randaoMixes                   := pre.randaoMixes
-    slashings                     := pre.slashings
-    previousEpochParticipation    := pre.previousEpochParticipation
-    currentEpochParticipation     := pre.currentEpochParticipation
-    justificationBits             := pre.justificationBits
-    previousJustifiedCheckpoint   := cvCheckpoint pre.previousJustifiedCheckpoint
-    currentJustifiedCheckpoint    := cvCheckpoint pre.currentJustifiedCheckpoint
-    finalizedCheckpoint           := cvCheckpoint pre.finalizedCheckpoint
-    inactivityScores              := pre.inactivityScores
-    currentSyncCommittee          := cvSyncCommittee pre.currentSyncCommittee
-    nextSyncCommittee             := cvSyncCommittee pre.nextSyncCommittee
-    latestExecutionPayloadBid     :=
-      { (default : Gloas.ExecutionPayloadBid) with
-          blockHash             := pre.latestExecutionPayloadHeader.blockHash
-          gasLimit              := pre.latestExecutionPayloadHeader.gasLimit
-          executionRequestsRoot := htr (default : Gloas.ExecutionRequests) }
-    nextWithdrawalIndex           := pre.nextWithdrawalIndex
-    nextWithdrawalValidatorIndex  := pre.nextWithdrawalValidatorIndex
-    historicalSummaries           := pre.historicalSummaries.mapCap cvHistoricalSummary
-    depositRequestsStartIndex     := pre.depositRequestsStartIndex
-    depositBalanceToConsume       := pre.depositBalanceToConsume
-    exitBalanceToConsume          := pre.exitBalanceToConsume
-    earliestExitEpoch             := pre.earliestExitEpoch
-    consolidationBalanceToConsume := pre.consolidationBalanceToConsume
-    earliestConsolidationEpoch    := pre.earliestConsolidationEpoch
-    pendingDeposits               := pre.pendingDeposits.mapCap cvPendingDeposit
-    pendingPartialWithdrawals     := pre.pendingPartialWithdrawals.mapCap cvPendingPartialWithdrawal
-    pendingConsolidations         := pre.pendingConsolidations.mapCap cvPendingConsolidation
-    proposerLookahead             := pre.proposerLookahead
-    builders                      := default
-    nextWithdrawalBuilderIndex    := 0
-    executionPayloadAvailability  := ⟨BitVec.allOnes _⟩
-    builderPendingPayments        := Vector.replicate (2 * Const.slotsPerEpoch) default
-    builderPendingWithdrawals     := default
-    latestBlockHash               := pre.latestExecutionPayloadHeader.blockHash
-    payloadExpectedWithdrawals    := default
-    ptcWindow                     := initializePtcWindow (SSZ.CachedBox HasherTag.H pre) }
+  let ptcWindow ← initializePtcWindow (SSZ.CachedBox HasherTag.H pre)
+  pure <|
+    { genesisTime                   := pre.genesisTime
+      genesisValidatorsRoot         := pre.genesisValidatorsRoot
+      slot                          := pre.slot
+      forkData                      :=
+        { previousVersion := pre.forkData.currentVersion
+          currentVersion  := gloasForkVersion
+          epoch           := epoch }
+      latestBlockHeader             := cvBeaconBlockHeader pre.latestBlockHeader
+      blockRoots                    := pre.blockRoots
+      stateRoots                    := pre.stateRoots
+      historicalRoots               := pre.historicalRoots
+      eth1Data                      := cvEth1Data pre.eth1Data
+      eth1DataVotes                 := pre.eth1DataVotes.mapCap cvEth1Data
+      eth1DepositIndex              := pre.eth1DepositIndex
+      validators                    := pre.validators.mapCap cvValidator
+      balances                      := pre.balances
+      randaoMixes                   := pre.randaoMixes
+      slashings                     := pre.slashings
+      previousEpochParticipation    := pre.previousEpochParticipation
+      currentEpochParticipation     := pre.currentEpochParticipation
+      justificationBits             := pre.justificationBits
+      previousJustifiedCheckpoint   := cvCheckpoint pre.previousJustifiedCheckpoint
+      currentJustifiedCheckpoint    := cvCheckpoint pre.currentJustifiedCheckpoint
+      finalizedCheckpoint           := cvCheckpoint pre.finalizedCheckpoint
+      inactivityScores              := pre.inactivityScores
+      currentSyncCommittee          := cvSyncCommittee pre.currentSyncCommittee
+      nextSyncCommittee             := cvSyncCommittee pre.nextSyncCommittee
+      latestExecutionPayloadBid     :=
+        { (default : Gloas.ExecutionPayloadBid) with
+            blockHash             := pre.latestExecutionPayloadHeader.blockHash
+            gasLimit              := pre.latestExecutionPayloadHeader.gasLimit
+            executionRequestsRoot := htr (default : Gloas.ExecutionRequests) }
+      nextWithdrawalIndex           := pre.nextWithdrawalIndex
+      nextWithdrawalValidatorIndex  := pre.nextWithdrawalValidatorIndex
+      historicalSummaries           := pre.historicalSummaries.mapCap cvHistoricalSummary
+      depositRequestsStartIndex     := pre.depositRequestsStartIndex
+      depositBalanceToConsume       := pre.depositBalanceToConsume
+      exitBalanceToConsume          := pre.exitBalanceToConsume
+      earliestExitEpoch             := pre.earliestExitEpoch
+      consolidationBalanceToConsume := pre.consolidationBalanceToConsume
+      earliestConsolidationEpoch    := pre.earliestConsolidationEpoch
+      pendingDeposits               := pre.pendingDeposits.mapCap cvPendingDeposit
+      pendingPartialWithdrawals     := pre.pendingPartialWithdrawals.mapCap cvPendingPartialWithdrawal
+      pendingConsolidations         := pre.pendingConsolidations.mapCap cvPendingConsolidation
+      proposerLookahead             := pre.proposerLookahead
+      builders                      := default
+      nextWithdrawalBuilderIndex    := 0
+      executionPayloadAvailability  := ⟨BitVec.allOnes _⟩
+      builderPendingPayments        := Vector.replicate (2 * Const.slotsPerEpoch) default
+      builderPendingWithdrawals     := default
+      latestBlockHash               := pre.latestExecutionPayloadHeader.blockHash
+      payloadExpectedWithdrawals    := default
+      ptcWindow                     := ptcWindow }
 
 end EthCLSpecs.Gloas
