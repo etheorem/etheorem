@@ -56,22 +56,43 @@ forkdef getConsolidationChurnLimit (state : State) : Gwei :=
 
 /-! ## Churn reservation -/
 
-/-- The Electra churn-reservation arithmetic core shared by
-`compute_exit_epoch_and_update_churn` and `compute_consolidation_epoch_and_update_churn`:
-given the `balance` to reserve, the churn already `consume`d this epoch, the `perEpoch` churn
-limit, and the `earliest` candidate epoch, return the assigned epoch and the new consumed total.
-When `balance` fits in the remaining budget (`balance ≤ consume`) the epoch and consumption are
-unchanged; otherwise the leftover is spread forward by the ceiling-division
-`(balanceToProcess - 1) / perEpoch + 1`, the `-1 … +1` rounding the quotient up. Pure on
-`UInt64` (`Epoch`/`Gwei` are both `UInt64`), so the same byte arithmetic runs for Fulu's
-exit/consolidation churn and Gloas's overrides; the per-fork state reads and the `state` write
-stay in the callers. -/
-forkdef reserveChurn (balance consume perEpoch earliest : Gwei) : Epoch × Gwei :=
+/-- The Electra churn-reservation arithmetic that `compute_exit_epoch_and_update_churn` and
+`compute_consolidation_epoch_and_update_churn` share. The inputs are the `balance` to reserve,
+the churn already `consume`d this epoch, the `perEpoch` churn limit, and the `earliest`
+candidate epoch. The result is the assigned epoch and the new consumed total.
+
+When `balance ≤ consume`, the balance fits in the remaining budget, and both values stay
+unchanged. Otherwise the ceiling division `(balanceToProcess - 1) / perEpoch + 1` spreads the
+rest over later epochs. The `- 1 … + 1` rounds the quotient up.
+
+`Epoch` and `Gwei` are both `UInt64`, so the same arithmetic serves the Fulu exit churn, the
+consolidation churn, and the Gloas override. The callers read the per-fork state and write it.
+
+The pyspec runs every step on remerkleable `uint64` values, so each step can raise. Four steps
+can fault, and the body checks each one in the spec's order:
+
+1. `// per_epoch_churn` raises `ZeroDivisionError` on a zero limit.
+2. `earliest_epoch += additional_epochs` raises `ValueError` past `2 ^ 64 - 1`.
+3. `additional_epochs * per_epoch_churn` raises `ValueError` past `2 ^ 64 - 1`.
+4. `balance_to_consume += …` raises `ValueError` past `2 ^ 64 - 1`.
+
+Each fault is `.arithmetic`. The other steps stay raw, because they cannot fault. The guard
+`balance > consume` makes `balance - consume` at least `1`, so the `- 1` cannot underflow. The
+quotient is at most `2 ^ 64 - 2`, so the `+ 1` cannot overflow. -/
+forkdef reserveChurn (balance consume perEpoch earliest : Gwei) :
+    Except StateTransitionError (Epoch × Gwei) := do
   if balance > consume then
     let balanceToProcess := balance - consume
+    if perEpoch == 0 then
+      throwArithmetic "reserve_churn: (balance_to_process - 1) // per_epoch_churn"
     let additional := (balanceToProcess - 1) / perEpoch + 1
-    (earliest + additional, consume + additional * perEpoch)
-  else (earliest, consume)
+    let epoch ← checkedAdd earliest additional "reserve_churn: earliest_epoch += additional_epochs"
+    let added ← checkedMul additional perEpoch
+      "reserve_churn: additional_epochs * per_epoch_churn"
+    let consumed ← checkedAdd consume added
+      "reserve_churn: balance_to_consume += additional_epochs * per_epoch_churn"
+    pure (epoch, consumed)
+  else pure (earliest, consume)
 
 /-- `compute_exit_epoch_and_update_churn`: reserve exit churn, returning the
 assigned exit epoch and advancing the bookkeeping. -/
@@ -83,9 +104,11 @@ forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Ep
   let perEpochChurn := getActivationExitChurnLimit state
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
 
-  let (ee, ebtc) := reserveChurn exitBalance consume perEpochChurn earliest
+  let (ee, ebtc) ← liftErr (reserveChurn exitBalance consume perEpochChurn earliest)
+  let remaining ← checkedSub ebtc exitBalance
+    "compute_exit_epoch_and_update_churn: exit_balance_to_consume - exit_balance"
   modifyState fun state =>
-    sszUpdate state with exitBalanceToConsume := ebtc - exitBalance, earliestExitEpoch := ee
+    sszUpdate state with exitBalanceToConsume := remaining, earliestExitEpoch := ee
   return ee
 
 /-- `compute_consolidation_epoch_and_update_churn`: the consolidation analogue of
@@ -98,9 +121,11 @@ forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : 
   let consume := if (sszGet state earliestConsolidationEpoch) < earliest then perEpoch
                  else (sszGet state consolidationBalanceToConsume)
 
-  let (ee, cbtc) := reserveChurn consolidationBalance consume perEpoch earliest
+  let (ee, cbtc) ← liftErr (reserveChurn consolidationBalance consume perEpoch earliest)
+  let remaining ← checkedSub cbtc consolidationBalance
+    "compute_consolidation_epoch_and_update_churn: consolidation_balance_to_consume - consolidation_balance"
   modifyState fun state =>
-    sszUpdate state with consolidationBalanceToConsume := cbtc - consolidationBalance,
+    sszUpdate state with consolidationBalanceToConsume := remaining,
                      earliestConsolidationEpoch := ee
   return ee
 
