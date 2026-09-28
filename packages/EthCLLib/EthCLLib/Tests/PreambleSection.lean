@@ -13,7 +13,9 @@ the behavior is checked at build (`FRAMEWORK_ARCHITECTURE.md` §14):
 - a step writes `modifyState fun state => sszUpdate state with …` with **no**
   `(state : State)` annotation, the payoff of the concrete-domain `modifyState`, and
   it both typechecks and *runs* at the fast config;
-- `appendState` appends to a list with room and raises `.listFull` on a full one;
+- `appendState` appends to a list with room and raises `.listFull` on a full one, and
+  `setOrAppendState` appends, overwrites, or raises `.outOfBounds`, as the spec's
+  `set_or_append_list` does;
 - `fork_choice_section` opens its section and establishes the store-machine variables.
 -/
 
@@ -66,6 +68,10 @@ def setFlag (v : UInt64) : StateTransition Unit :=
 def appendX (v : UInt64) : StateTransition Unit :=
   appendState xs v
 
+/-- The spec's `set_or_append_list(state.xs, i, v)`. -/
+def setOrAppendX (i : Nat) (v : UInt64) : StateTransition Unit :=
+  setOrAppendState xs i v
+
 end   -- closes the section opened by `state_section`
 
 /-! ## The steps run at the fast config -/
@@ -95,7 +101,7 @@ example :
      | .error _ _ => 0)
       = 9 := by native_decide
 
-/-! ## `appendState` against the list limit
+/-! ## `appendState` and `setOrAppendState` against the list limit
 
 `xs` starts as `[1]` with a limit of 2. Each test runs a step and reports either the
 resulting list or the reject. -/
@@ -120,6 +126,15 @@ example : runXs (appendX 5) = .inl #[1, 5] := by native_decide
 
 /-- An append to a full list raises `.listFull`, as remerkleable's `List.append` does. -/
 example : runXs (do appendX 5; appendX 6) = .inr (.listFull "xs") := by native_decide
+
+/-- `set_or_append_list` at the length appends. -/
+example : runXs (setOrAppendX 1 5) = .inl #[1, 5] := by native_decide
+
+/-- `set_or_append_list` inside the list overwrites. -/
+example : runXs (setOrAppendX 0 9) = .inl #[9] := by native_decide
+
+/-- `set_or_append_list` past the end raises the spec's `IndexError`, `.outOfBounds`. -/
+example : runXs (setOrAppendX 3 9) = .inr (.outOfBounds 3 1) := by native_decide
 
 end ListLimit
 

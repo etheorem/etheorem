@@ -199,4 +199,29 @@ macro_rules
           | some s' => $modifyId:ident fun _ => s'
           | none => throwListFull $field)
 
+/-! ## `setOrAppendState`: the spec's `set_or_append_list` on a state field -/
+
+/-- `setOrAppendState f i v`: the spec's `set_or_append_list(state.f, i, v)`
+(`altair/beacon-chain.md:253-257`). When `i` is the length of the list it appends, through
+`appendState`, so a full list raises `.listFull`. When `i` is inside the list it overwrites
+entry `i`. Past the end, the spec's `list[index] = value` raises `IndexError`, which becomes
+the `.outOfBounds` reject through `liftErr`. `i` is a `Nat`. `v` is bound once, before the
+branch, as pyspec evaluates `value` once before the call. -/
+scoped syntax (name := setOrAppendStateStx) "setOrAppendState " ident ppSpace term:max ppSpace term : term
+
+macro_rules
+  | `(setOrAppendState $head:ident $i $v) => do
+      let stateId  := mkIdent `State
+      let modifyId := mkIdent `modifyState
+      let clause ← `(sszUpdateClause| $head:ident[i]! := v)
+      `(do
+          let v := $v
+          let s ← getThe $stateId
+          let i : Nat := $i
+          let n := (sszGet s $head:ident).val.size
+          if i == n then appendState $head:ident v
+          else if i < n then $modifyId:ident fun state => sszUpdate state with $clause
+          else liftErr (Except.error (SizzLean.Cache.IndexError.indexError i n)
+            : Except SizzLean.Cache.IndexError PUnit))
+
 end EthCLLib.Spec
