@@ -27,14 +27,20 @@ forkdef getValidatorFromDeposit (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gw
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
   { v with effectiveBalance := umin (amount - amount % Const.effectiveBalanceIncrementG) (getMaxEffectiveBalance v) }
 
-/-- `add_validator_to_registry`: append a fresh validator and its parallel records. The
-five appends run in spec order, and each raises `.listFull` at the registry limit. -/
+/-- `add_validator_to_registry` (`electra/beacon-chain.md:1602-1612`): write a fresh
+validator and its parallel records at `get_index_for_new_validator`, the length of
+`validators`. Each write is `set_or_append_list`, in spec order. On a state whose parallel
+lists match `validators` in length, every write appends, and an append to a full list
+raises `.listFull`. -/
 forkdef addValidatorToRegistry (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) : StateTransition Unit := do
-  appendState validators (getValidatorFromDeposit pubkey wc amount)
-  appendState balances amount
-  appendState previousEpochParticipation 0
-  appendState currentEpochParticipation 0
-  appendState inactivityScores 0
+  let state ← get
+  -- `get_index_for_new_validator(state)`: `len(state.validators)`.
+  let index := (sszGet state validators).val.size
+  setOrAppendState validators index (getValidatorFromDeposit pubkey wc amount)
+  setOrAppendState balances index amount
+  setOrAppendState previousEpochParticipation index 0
+  setOrAppendState currentEpochParticipation index 0
+  setOrAppendState inactivityScores index 0
 
 /-- `is_valid_deposit_signature`: the proof-of-possession check. The domain is
 fixed (`compute_domain(DOMAIN_DEPOSIT)`, the genesis fork version and a zero
