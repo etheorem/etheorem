@@ -533,8 +533,8 @@ Mutating steps are likewise monad actions in `StateTransition`, written in a
 section opened by `state_section`. A step uses the closed set of primitives from
 the contract's step-writing-primitives section: `assert`, `sszGet`, `sszUpdate`,
 `modifyState`, `appendState` (the spec's `List.append` on a list field: it raises
-`.listFull` on a full list, over SizzLean's checked `SSZList.push?`), indexed access,
-and do-block sequencing.
+`.listFull` on a full list, over SizzLean's checked `SSZList.push?`), `setOrAppendState`
+(the spec's `set_or_append_list`), indexed access, and do-block sequencing.
 
 The step-composition model is the same. A pipeline like `processBlock` or
 `processEpoch` is itself a `forkdef` whose do-block calls its sub-steps in order.
