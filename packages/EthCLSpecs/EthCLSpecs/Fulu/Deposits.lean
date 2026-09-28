@@ -27,15 +27,14 @@ forkdef getValidatorFromDeposit (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gw
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
   { v with effectiveBalance := umin (amount - amount % Const.effectiveBalanceIncrementG) (getMaxEffectiveBalance v) }
 
-/-- `add_validator_to_registry`: append a fresh validator and its parallel records. -/
-forkdef addValidatorToRegistry (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) : StateTransition Unit :=
-  modifyState fun state =>
-    sszUpdate state with
-      validators := (sszGet state validators).push (getValidatorFromDeposit pubkey wc amount),
-      balances := (sszGet state balances).push amount,
-      previousEpochParticipation := (sszGet state previousEpochParticipation).push 0,
-      currentEpochParticipation := (sszGet state currentEpochParticipation).push 0,
-      inactivityScores := (sszGet state inactivityScores).push 0
+/-- `add_validator_to_registry`: append a fresh validator and its parallel records. The
+five appends run in spec order, and each raises `.listFull` at the registry limit. -/
+forkdef addValidatorToRegistry (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) : StateTransition Unit := do
+  appendState validators (getValidatorFromDeposit pubkey wc amount)
+  appendState balances amount
+  appendState previousEpochParticipation 0
+  appendState currentEpochParticipation 0
+  appendState inactivityScores 0
 
 /-- `is_valid_deposit_signature`: the proof-of-possession check. The domain is
 fixed (`compute_domain(DOMAIN_DEPOSIT)`, the genesis fork version and a zero

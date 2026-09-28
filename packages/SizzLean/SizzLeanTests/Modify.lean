@@ -110,13 +110,26 @@ example :
 example : UncachedSSZ Sha256 S := sszModify (UncachedSSZ.ofValue Sha256 s0) xs[1]! := (fun w => w + 5)
 example : TreeBacked Sha256 S := sszModify (TreeBacked.ofValue Sha256 s0) xs[2]! as v => v + 1
 
-/-! ## `sszAppend` appends to a list field (cap-clamping `SSZList.push`) -/
+/-! ## `sszAppend?` appends to a list field that has room
 
-example : SSZ.Box Sha256 S := sszAppend (SSZ.FastBox s0) xs 99
+It returns `Option` of the box. `s0.xs` holds 3 of 8, so the append succeeds. `full`
+holds 2 of 2, so the append returns `none`. -/
+
+example : Option (SSZ.Box Sha256 S) := sszAppend? (SSZ.FastBox s0) xs 99
 
 example :
-    ((sszAppend (SSZ.FastBox s0) xs 99).hashTreeRoot).1
-      = SSZ.hashTreeRoot Sha256 ({ s0 with xs := s0.xs.push 99 } : S) := by
+    ((sszAppend? (SSZ.FastBox s0) xs 99).map (·.hashTreeRoot.1))
+      = some (SSZ.hashTreeRoot Sha256
+          ({ s0 with xs := ⟨#[10, 20, 30, 99], by decide⟩ } : S)) := by
+  native_decide
+
+/-- A list field at its capacity. -/
+structure Full where
+  xs : SSZList UInt64 2
+deriving DecidableEq, Inhabited, SSZRepr
+
+example : (sszAppend? (SSZ.FastBox ({ xs := ⟨#[1, 2], by decide⟩ } : Full)) xs 3).isNone
+    = true := by
   native_decide
 
 end SizzLeanTests.Modify

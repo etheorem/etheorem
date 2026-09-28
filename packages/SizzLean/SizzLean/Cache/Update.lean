@@ -352,16 +352,22 @@ macro_rules
           (let $x := sszGet $t $head:ident $segs:sszUpdateSegment*; $body))
       `(sszUpdate $t with $clause)
 
-/-- Append `v` to a list field of a boxed value, naming the field once:
-`sszAppend s f v` is the cap-clamping push, sugar for `sszModify s f as l => l.push v`
-(so `sszUpdate s with f := (sszGet s f).push v`). The non-monadic boxed-state append; the
-monadic state-threading wrapper is the spec's `appendState`. -/
+/-- Append `v` to a list field of a boxed value, naming the field once. `sszAppend? s f v`
+is `some` of the updated box when the list has room, and `none` when it is full. It
+expands to `SSZList.push?` on `sszGet s f`, then `sszUpdate s with f := …` on the longer
+list. The `none` branch is where the spec's `List.append` raises, so the caller decides
+the reject. The monadic state-threading wrapper is the spec's `appendState`, which throws
+on `none`. -/
 syntax (name := sszAppendStx)
-    "sszAppend " term:max ident sszUpdateSegment* ppSpace term:max : term
+    "sszAppend? " term:max ident sszUpdateSegment* ppSpace term:max : term
 
+-- Build the write clause in its own `sszUpdateClause` quotation, for the same reason as
+-- `sszModify` above.
 macro_rules
-  | `(sszAppend $t $head:ident $segs:sszUpdateSegment* $v:term) =>
-      `(sszModify $t $head:ident $segs:sszUpdateSegment* as l => l.push $v)
+  | `(sszAppend? $t $head:ident $segs:sszUpdateSegment* $v:term) => do
+      let clause ← `(sszUpdateClause| $head:ident $segs:sszUpdateSegment* := l)
+      `(((sszGet $t $head:ident $segs:sszUpdateSegment*).push? $v).map
+          fun l => sszUpdate $t with $clause)
 
 /-- Which cache flavour the macro is targeting. The elaborator
 picks this from the base term's type and branches the emission. -/

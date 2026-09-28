@@ -192,12 +192,21 @@ abbrev SSZList.set! {α : Type} {cap : Nat}
       simp [Array.set!_eq_setIfInBounds]
     rw [h]; exact xs.property⟩
 
-/-- Append `x`, clamping at the cap: a list at capacity is returned unchanged (a valid
-consensus list never overflows, so the clamp branch is unreachable on well-formed input).
-The cap-respecting append on the type itself, so a downstream `sszAppend` / `appendState`
-needs no separate push helper. -/
-def SSZList.push {α : Type} {cap : Nat} (xs : SSZList α cap) (x : α) : SSZList α cap :=
-  if h : xs.val.size < cap then ⟨xs.val.push x, by rw [Array.size_push]; omega⟩ else xs
+/-- Append `x` to a list that has room. The caller proves `h : xs.val.size < cap`, so no
+call site can append to a full list by accident. The SSZ spec's `List.append` raises on a
+full list (remerkleable: "list is maximum capacity"). A silent no-op in its place would
+turn that raise into a successful run. `push?` is the checked form for callers that must
+handle the full case. -/
+def SSZList.push {α : Type} {cap : Nat} (xs : SSZList α cap) (x : α)
+    (h : xs.val.size < cap) : SSZList α cap :=
+  ⟨xs.val.push x, by rw [Array.size_push]; omega⟩
+
+/-- Append `x` if the list has room: `some` of the longer list, or `none` when `xs` is
+full. The `none` branch is where the spec's `List.append` raises, so a caller maps it to
+its own reject. -/
+def SSZList.push? {α : Type} {cap : Nat} (xs : SSZList α cap) (x : α) :
+    Option (SSZList α cap) :=
+  if h : xs.val.size < cap then some (xs.push x h) else none
 
 /-- `GetElem` instance for `SSZList`, with the faithful validity predicate
 `fun xs i => i < xs.size`. So the three element reads behave like `Array`'s:
