@@ -538,6 +538,7 @@ it in its classify mode:
 | `outOfBounds` / `decodeFailure` | a smell; the spec should not hit these on well-formed input, so they surface as likely bugs |
 | `missingKey` | a fault the reference propagates rather than catches, so it never counts as a rejection |
 | `arithmetic` | the same, except under a case whose own wrapper catches `ValueError` (`SPECS_ARCHITECTURE.md` §10.2) |
+| `listFull` | an append to a full list; remerkleable raises a bare `Exception`, which no wrapper catches, so it never counts as a rejection |
 
 ### 6.1 `todo` as the deferral work-queue
 
@@ -737,7 +738,7 @@ def onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
 
 The primitives a step uses are a small, closed set: `assert` and the proof-returning
 `assertH`, `modifyState`, `set`, `throw`, `todo`, the `sszGet` / `sszUpdate` access pair,
-and the reject-reads `sszGetIdx` / `bitlistGetIdx`. Anything outside this set should not
+the list append `appendState`, and the reject-reads `sszGetIdx` / `bitlistGetIdx`. Anything outside this set should not
 appear in a step body.
 
 ---
@@ -1162,8 +1163,8 @@ and the pytest fixture managing the subprocess.
 The report distinguishes the classify buckets from the error model: a passing
 case, an expected rejection (`assert` against an invalid vector), an out-of-scope
 deferral (`todo`), a likely bug (`outOfBounds` / `decodeFailure` on well-formed
-input), and an uncaught fault (`missingKey` / `arithmetic`, which the reference
-propagates). Whether a reject passes its invalid vector is read from the case's own
+input), and an uncaught fault (`missingKey` / `arithmetic` / `listFull`, which the
+reference propagates). Whether a reject passes its invalid vector is read from the case's own
 `RunnerCaughtSet` (§6), so an `.arithmetic` fault passes under `epoch_processing` /
 `registry_updates` and fails everywhere else. A `todo` that a vector actually reaches fails
 loudly rather than passing silently, which is the deferral safety net at work.

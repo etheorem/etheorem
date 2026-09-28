@@ -278,7 +278,8 @@ forkdef processDepositRequest (dr : DepositRequest) : StateTransition Unit := do
     if (sszGet state depositRequestsStartIndex) == Const.unsetDepositRequestsStartIndex then
       sszUpdate state with depositRequestsStartIndex := dr.index
     else state
-  modifyState fun state => sszAppend state pendingDeposits
+  let state ← get
+  appendState pendingDeposits
     { pubkey := dr.pubkey, withdrawalCredentials := dr.withdrawalCredentials, amount := dr.amount,
       signature := dr.signature, slot := sszGet state slot }
 

@@ -20,6 +20,7 @@ the *constructor* (its classify mode), which is typed:
 | `outOfBounds` / `decodeFailure` | a smell; well-formed input should not hit these, though the reference catches `IndexError` |
 | `missingKey` | a fault the reference propagates rather than catches, so it never rejects a vector |
 | `arithmetic` | the same, except under a case whose own wrapper catches `ValueError` |
+| `listFull` | a fault no wrapper catches: remerkleable raises a bare `Exception` |
 
 `todo` and `outOfScope` both name a branch that does not run, the distinction is
 intent: a `todo` is expected to pass once the work-queue reaches it, an
@@ -57,6 +58,14 @@ inductive StateTransitionError where
   in wrapped as `.transition (.arithmetic …)`, e.g. Heze's `Slot(state.slot - 1)` underflow and
   `get_inclusion_list_committee`'s `indices[i % len(indices)]` on an empty committee. -/
   | arithmetic (descr : String)
+  /-- An append to a full SSZ list. remerkleable's `List.append` raises a bare
+  `Exception("list is maximum capacity, cannot append")` (`complex.py`, `List.append`). That is
+  not an `AssertionError`, an `IndexError`, or a `ValueError`, so no reference wrapper catches it:
+  it `classify`s as `ClassifyBucket.uncaughtFault`, and no `RunnerCaughtSet` admits it. `field`
+  names the list, diagnostic only. Every `appendState` in the fork bodies can raise it,
+  except where a spec-mirrored length guard runs first (`pending_partial_withdrawals`,
+  `pending_consolidations`). -/
+  | listFull (field : String)
   deriving Inhabited, Repr, DecidableEq
 
 /-- The fork-choice store machine's reject type.
@@ -104,7 +113,8 @@ inductive ClassifyBucket where
   Under a wrapper that catches only `ValueError` it fails, still flagged. -/
   | likelyBug
   /-- An uncaught Python fault the reference runner does NOT catch (a `uint64` `ValueError` from
-  `.arithmetic`, a `ZeroDivisionError`, or a bare-`Dict` `KeyError` from `.missingKey`). Reports
+  `.arithmetic`, a `ZeroDivisionError`, a bare-`Dict` `KeyError` from `.missingKey`, or the bare
+  `Exception` of an append to a full list from `.listFull`). Reports
   as a bug like `likelyBug`. It is a valid rejection only where the case's own wrapper catches
   the fault. Under `expect_assertion_error` the reference propagates it as a genuine error, so
   the driver fails the vector; under a wrapper that catches `ValueError` an `.arithmetic` fault
@@ -134,6 +144,7 @@ def StateTransitionError.classify : StateTransitionError → ClassifyBucket
   | .outOfScope _    => .outOfScope
   | .outOfBounds _ _ => .likelyBug
   | .arithmetic _    => .uncaughtFault
+  | .listFull _      => .uncaughtFault
 
 /-- Classify a store-transition reject by its constructor. A wrapped nested
 state failure classifies by the inner reject. -/
@@ -202,16 +213,19 @@ inductive RunnerCaughtSet where
 `.assert` is the `AssertionError` and `.outOfBounds` is the `IndexError`, so
 `expect_assertion_error` takes both. `.arithmetic` is the `ValueError`. `expect_assertion_error`
 lets it escape, and the `except ValueError` wrapper catches it. `.todo` and `.outOfScope` record
-our own deferrals, and the reference raises neither. -/
+our own deferrals, and the reference raises neither. `.listFull` is a bare `Exception`, which
+neither set catches. -/
 def RunnerCaughtSet.admits : RunnerCaughtSet → StateTransitionError → Bool
   | .assertionAndIndex, .assert _        => true
   | .assertionAndIndex, .outOfBounds _ _ => true
   | .assertionAndIndex, .arithmetic _    => false
+  | .assertionAndIndex, .listFull _      => false
   | .assertionAndIndex, .todo _          => false
   | .assertionAndIndex, .outOfScope _    => false
   | .valueError,        .arithmetic _    => true
   | .valueError,        .assert _        => false
   | .valueError,        .outOfBounds _ _ => false
+  | .valueError,        .listFull _      => false
   | .valueError,        .todo _          => false
   | .valueError,        .outOfScope _    => false
 
@@ -340,5 +354,14 @@ and the truncating `a * b / a` fails to recover `b`). Mirrors remerkleable's `ui
 @[inline] def checkedMul {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
     [ErrorConv StateTransitionError E] (a b : UInt64) (descr : String) : m UInt64 :=
   if a != 0 && a * b / a != b then throwArithmetic descr else pure (a * b)
+
+/-! ## Appends to a full list -/
+
+/-- Raise the `.listFull` fault for the list `field`. Like `throwArithmetic`, the
+`[ErrorConv StateTransitionError E]` bound lets one definition serve both machines. The
+state-threading `appendState` is its caller. -/
+@[inline] def throwListFull {m : Type → Type u} {α E : Type} [Monad m] [MonadExcept E m]
+    [ErrorConv StateTransitionError E] (field : String) : m α :=
+  liftErr (E := StateTransitionError) (.error (.listFull field))
 
 end EthCLLib.Spec
