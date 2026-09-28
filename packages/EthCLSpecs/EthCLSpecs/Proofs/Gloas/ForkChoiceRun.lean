@@ -38,7 +38,7 @@ namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag StoreTransitionError MapKind FcMap NestedStateMachine
   runNestedStateTransition runNestedStateTransition_of_ok)
-open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState)
+open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState BuilderPendingWithdrawal)
 open EthCLSpecs.Gloas (Store getSlotsSinceGenesis getCurrentSlot State currentEpochOf
   initiateBuilderExit processBuilderPendingPayments)
 open EthCLLib.Proofs (pureState ForkChoiceStoreRun)
@@ -123,15 +123,21 @@ example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
 
 /-- `processBuilderPendingPayments_run` likewise, and this is the one that shows the point:
 its proof rests on a `List.forIn` induction over the withdrawals loop, and that induction is
-not re-entered here. -/
+not re-entered here. Like the theorem, the example takes the written list `withdrawals`
+and the hypothesis `hw` that it is the old list followed by the qualifying withdrawals. -/
 example [Preset] [HasherTag] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
-    ∀ (preState : BeaconState),
+    ∀ (preState : BeaconState)
+      (withdrawals : SSZList BuilderPendingWithdrawal
+        EthCLSpecs.Gloas.Const.builderPendingWithdrawalsLimit),
+      withdrawals.val = preState.builderPendingWithdrawals.val ++
+          (qualifyingBuilderWithdrawals preState).toArray →
       runNestedStateTransition (pureState preState)
           (processBuilderPendingPayments (StateTransition := GloasRun))
         = (pure (pureState { preState with
-              builderPendingWithdrawals := expectedWithdrawals preState,
+              builderPendingWithdrawals := withdrawals,
               builderPendingPayments := expectedPaymentWindow preState }) : m State) :=
-  fun preState => runNestedStateTransition_of_ok (processBuilderPendingPayments_run preState)
+  fun preState withdrawals hw =>
+    runNestedStateTransition_of_ok ((processBuilderPendingPayments_run preState).1 withdrawals hw)
 
 end EthCLSpecs.Proofs.Gloas

@@ -13,6 +13,7 @@ the behavior is checked at build (`FRAMEWORK_ARCHITECTURE.md` §14):
 - a step writes `modifyState fun state => sszUpdate state with …` with **no**
   `(state : State)` annotation, the payoff of the concrete-domain `modifyState`, and
   it both typechecks and *runs* at the fast config;
+- `appendState` appends to a list with room and raises `.listFull` on a full one;
 - `fork_choice_section` opens its section and establishes the store-machine variables.
 -/
 
@@ -35,10 +36,12 @@ class Config where
 
 @[reducible] def mini : Preset := {}
 
-/-- A two-field toy container standing in for a fork's `BeaconState`. -/
+/-- A toy container standing in for a fork's `BeaconState`. `xs` is a list field with a
+limit of 2, small enough that a test can fill it. -/
 forkcontainer Toy where
   slot : UInt64
   flag : UInt64
+  xs   : SSZList UInt64 2
 
 /-! ## The once-per-fork preamble -/
 
@@ -59,6 +62,10 @@ def bumpSlot : StateTransition Unit :=
 def setFlag (v : UInt64) : StateTransition Unit :=
   modifyState fun state => sszUpdate state with flag := v
 
+/-- The spec's `state.xs.append(v)`. -/
+def appendX (v : UInt64) : StateTransition Unit :=
+  appendState xs v
+
 end   -- closes the section opened by `state_section`
 
 /-! ## The steps run at the fast config -/
@@ -68,7 +75,8 @@ typed annotation-free. -/
 example :
     (letI : Preset := mini
      letI : HasherTag := fastHasherTag
-     let box0 : @State mini fastHasherTag := SSZ.CachedBox Sha256 ({ slot := 41, flag := 7 } : @Toy mini)
+     let box0 : @State mini fastHasherTag :=
+       SSZ.CachedBox Sha256 ({ slot := 41, flag := 7, xs := ⟨#[1], by decide⟩ } : @Toy mini)
      let action : EStateM StateTransitionError (@State mini fastHasherTag) Unit := bumpSlot
      match action.run box0 with
      | .ok _ st   => sszGet st slot
@@ -79,12 +87,41 @@ example :
 example :
     (letI : Preset := mini
      letI : HasherTag := fastHasherTag
-     let box0 : @State mini fastHasherTag := SSZ.CachedBox Sha256 ({ slot := 41, flag := 7 } : @Toy mini)
+     let box0 : @State mini fastHasherTag :=
+       SSZ.CachedBox Sha256 ({ slot := 41, flag := 7, xs := ⟨#[1], by decide⟩ } : @Toy mini)
      let action : EStateM StateTransitionError (@State mini fastHasherTag) Unit := setFlag 9
      match action.run box0 with
      | .ok _ st   => sszGet st flag
      | .error _ _ => 0)
       = 9 := by native_decide
+
+/-! ## `appendState` against the list limit
+
+`xs` starts as `[1]` with a limit of 2. Each test runs a step and reports either the
+resulting list or the reject. -/
+
+section ListLimit
+
+local instance : Preset := mini
+local instance : HasherTag := fastHasherTag
+
+/-- Run `action` from `xs = [1]`. The result is `.inl` of the list, or `.inr` of the
+reject. `Sum` has `DecidableEq`, so `native_decide` can compare it. -/
+def runXs (action : EStateM StateTransitionError State Unit) :
+    Array UInt64 ⊕ StateTransitionError :=
+  let box0 : State :=
+    SSZ.CachedBox Sha256 ({ slot := 41, flag := 7, xs := ⟨#[1], by decide⟩ } : Toy)
+  match action.run box0 with
+  | .ok _ st   => .inl (sszGet st xs).toArray
+  | .error e _ => .inr e
+
+/-- An append with room: `[1] → [1, 5]`. -/
+example : runXs (appendX 5) = .inl #[1, 5] := by native_decide
+
+/-- An append to a full list raises `.listFull`, as remerkleable's `List.append` does. -/
+example : runXs (do appendX 5; appendX 6) = .inr (.listFull "xs") := by native_decide
+
+end ListLimit
 
 /-! ## A fork-choice section (the macro opens the `section`) -/
 
