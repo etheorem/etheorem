@@ -29,10 +29,11 @@ Re-exports:
 
 * `EthCLSpecs.Proofs.Gloas.BuilderIndex`: the builder-index flag round-trip
   (`isBuilderIndex`, `toBuilderIndex`, `convertBuilderIndexToValidatorIndex`).
-* `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: `processBuilderPendingPayments`'s
-  withdrawal-queuing and payment-window-shift postcondition
-  (`processBuilderPendingPayments_run`, plus
-  `processBuilderPendingPayments_run_of_fits`).
+* `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: both outcomes of
+  `processBuilderPendingPayments` (`processBuilderPendingPayments_run`). When the qualifying
+  withdrawals fit, it appends them and shifts the payment window
+  (`processBuilderPendingPayments_run_of_fits`); otherwise it raises `.listFull`
+  (`processBuilderPendingPayments_run_of_overflow`).
 * `EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid`: the exact `Bool`-vs-`UInt64`-inequality
   characterization of `canBuilderCoverBid`.
 * `EthCLSpecs.Proofs.Gloas.GetPtc`: `getPtc`'s else-branch `ptcWindow` offset bound,

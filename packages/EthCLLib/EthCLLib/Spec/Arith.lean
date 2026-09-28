@@ -180,7 +180,15 @@ downstream total write hits. -/
 def sszDrop {α : Type} {cap : Nat} (xs : SSZList α cap) (k : Nat) : SSZList α cap :=
   ⟨xs.val.extract k xs.val.size, by have := xs.property; simp only [Array.size_extract]; omega⟩
 
-/-- Replace an `SSZList`'s contents, clamping length at capacity. -/
+/-- Replace an `SSZList`'s contents, clamping length at capacity.
+
+pyspec's `List[T, N](...)` raises on too many elements, and this clamp does not. The clamp
+never engages, because every caller builds an array whose length is bounded for every
+decodable input. A rebuild of a list from its own elements (`pending_deposits`) is no longer
+than the original. A per-validator list has `len(state.validators)` entries, and the decode
+bounds that by the same limit. Attesting indices and expected withdrawals are bounded by their
+own loops. A new caller must keep that property. A plain append goes through `appendState`,
+which raises `.listFull` as the spec does. -/
 def sszOfArray {α : Type} {cap : Nat} (a : Array α) : SSZList α cap :=
   if h : a.size ≤ cap then ⟨a, h⟩
   else ⟨a.extract 0 cap, by simp only [Array.size_extract]; omega⟩

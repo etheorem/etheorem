@@ -175,20 +175,28 @@ def elabForkChoiceSection : CommandElab := fun stx => do
 
 /-! ## `appendState`: append to a list field of the threaded state -/
 
-/-- `appendState f v`: append `v` to the threaded state's list field `f`, the monadic
-state-threading wrapper over SizzLean's `sszAppend`. Expands to
-`modifyState fun state => sszAppend state f v`, so the per-fork `modifyState` (a use-site
-identifier, resolved to the running fork's) threads the box and `sszAppend` does the
-cap-clamping push. The append value `v` is evaluated under the `state` binder, so a `v` that
-reads `state` keeps the explicit `modifyState fun state => sszAppend state f …` form instead. -/
+/-- `appendState f v`: the spec's `state.f.append(v)`. It appends `v` to the threaded
+state's list field `f`, or raises the `.listFull` fault when the list is at its limit, as
+remerkleable's `List.append` does. The expansion reads the state and runs SizzLean's
+`sszAppend?` on it. `some` of the updated state goes back through the per-fork
+`modifyState` (a use-site identifier, resolved to the running fork's). `none` becomes
+`throwListFull`.
+
+The macro's own read is hygienic, so `v` cannot see it. A `state` that `v` names is the
+caller's binding, and it can predate a write the caller made since. A `v` that must read
+the current state reads it inline, with `(← get)`. -/
 scoped syntax (name := appendStateStx) "appendState " ident ppSpace term : term
 
 macro_rules
   | `(appendState $head:ident $v) => do
-      -- Expand straight to `sszModify`'s `as` form rather than `sszAppend`'s surface: a
-      -- bare `$v` after `sszAppend state $head` would be misread as a path segment, whereas
-      -- the `as` keyword stops the segment parse cleanly. (Both are the cap-clamping push.)
+      let stateId  := mkIdent `State
       let modifyId := mkIdent `modifyState
-      `($modifyId fun state => sszModify state $head:ident as l => l.push $v)
+      let field    := Syntax.mkStrLit head.getId.toString
+      -- `($v)`: `sszAppend?` takes the value as a `term:max`.
+      `(do
+          let s ← getThe $stateId
+          match sszAppend? s $head:ident ($v) with
+          | some s' => $modifyId:ident fun _ => s'
+          | none => throwListFull $field)
 
 end EthCLLib.Spec

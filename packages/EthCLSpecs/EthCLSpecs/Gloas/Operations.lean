@@ -108,10 +108,10 @@ forkdef addBuilderToRegistry (pubkey : BLSPubkey) (version : UInt8) (executionAd
   let b : Builder :=
     { pubkey, version, executionAddress, balance := amount,
       depositEpoch := computeEpochAtSlot slot, withdrawableEpoch := Const.farFutureEpoch }
-  modifyState fun state =>
-    if idx < (sszGet state builders).size then
-      sszUpdate state with builders[idx]! := b
-    else sszAppend state builders b
+  let n := (sszGet state builders).size
+  if idx < n then
+    modifyState fun state => sszUpdate state with builders[idx]! := b
+  else appendState builders b
 /-- `apply_deposit_for_builder` (retained as a helper; the spec inlines it into
 `onboard_builders_from_pending_deposits`): top up an existing builder, or add a new one
 with a valid proof-of-possession, stamped `PAYLOAD_BUILDER_VERSION`. -/
