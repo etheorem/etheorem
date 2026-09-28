@@ -738,7 +738,8 @@ def onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
 
 The primitives a step uses are a small, closed set: `assert` and the proof-returning
 `assertH`, `modifyState`, `set`, `throw`, `todo`, the `sszGet` / `sszUpdate` access pair,
-the list append `appendState`, and the reject-reads `sszGetIdx` / `bitlistGetIdx`. Anything outside this set should not
+the list writes `appendState` / `setOrAppendState`, and the reject-reads `sszGetIdx` /
+`bitlistGetIdx`. Anything outside this set should not
 appear in a step body.
 
 ---

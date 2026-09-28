@@ -410,6 +410,7 @@ equivalent.
 | `sszUpdate state with field := value` | `state.field = value` | Writes `field`, returning a new box; carries the size-proof discharge and cache maintenance. |
 | `modifyState fun state => …` | several `state.field = …` lines | Updates several fields of the threaded state at once. |
 | `appendState field v` | `state.field.append(v)` | Appends `v` to a list field of the threaded state; on a full list it throws `StateTransitionError.listFull`, as the spec's append raises. |
+| `setOrAppendState field i v` | `set_or_append_list(state.field, i, v)` | Appends `v` when `i` is the list's length, overwrites entry `i` inside the list, and throws `outOfBounds` past the end. |
 | `getStateRoot` | `hash_tree_root(state)` | Takes the threaded state's Merkle root, keeping the cache-warmed box so a later root reuses the tree. |
 | `sszGetIdx xs i` / `bitlistGetIdx bs i` | `xs[i]` | Reads element `i` of an untrusted or parameter index; an out-of-range index surfaces as the typed reject `outOfBounds idx bound` through `liftErr`, never a crash. |
 | `xs[i]'h.down`, after `let h ← assertH (i < size)` | `xs[i]` | Proof-carrying read of an index a validation has checked; total, no reject branch, the bad index rejected at the `assertH`. |
