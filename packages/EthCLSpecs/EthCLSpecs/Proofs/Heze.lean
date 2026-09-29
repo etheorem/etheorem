@@ -13,6 +13,7 @@ import EthCLSpecs.Proofs.Heze.OnTickPerSlot
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.PayloadTiebreak
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
+import EthCLSpecs.Proofs.Heze.RootFrames
 import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 import EthCLSpecs.Proofs.Heze.Time
@@ -109,6 +110,12 @@ Re-exports:
   complete run of `recordPayloadInclusionListSatisfaction`
   (`recordPayloadInclusionListSatisfaction_run`), proved with
   `ForkChoiceStoreRun`.
+* `EthCLSpecs.Proofs.Heze.RootFrames`: each handler keeps the block, the envelope, and
+  the answer at a root `r`, unless it writes another value there
+  (`HandlerEvent.run_keeps_rootView`). A trace after the envelope handler, with no second
+  envelope for `r`, gives `LaterStore` (`NodeTrace.laterStore`). Traces split and join
+  (`NodeTrace.split`, `NodeTrace.append`). `inclusionList_missing_tx_trace` states the
+  missing-transaction result over such a trace.
 * `EthCLSpecs.Proofs.Heze.Run`: `HezeRun`, the runner for Heze state transitions.
 * `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: the complete `.run`
   equation of `shouldExtendPayload` (`shouldExtendPayload_run`), the

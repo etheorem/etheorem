@@ -17,10 +17,14 @@ proofs walk the handler body one bind at a time, and the tactic `keeps_solve` do
 
 ## The tactic
 
-`keeps_step` applies one rule of `EthCLLib/Proofs/Frame.lean` to the goal, in a fixed order:
+The tactic takes any field `f`. `RootFrames.lean` uses it for the lookups at one root.
+`keeps_step` applies one rule of `EthCLLib/Proofs/Frame.lean` to the goal, in a fixed
+order:
 
-1. A side goal `st.inclusionListStore = v` closes by a hypothesis from a `get`, or by the
-   checkpoint lemmas below and then a hypothesis.
+1. A side goal `f st = v` closes by a hypothesis from a `get`. The checkpoint lemmas below
+   first turn a checkpoint update into a record update, so the hypothesis applies. For a
+   per-key frame, an insert into the map closes by `lookup_insert_keep`, with a hypothesis
+   for each of its two premises.
 2. `get`, `set`, `pure`, `throw`, and `ofExcept` have their own rules.
 3. The loop rules come before the bind rules. A bind rule can also match the unfolded
    body of a loop, and then the loop rule never fires.
@@ -46,22 +50,48 @@ open EthCLSpecs.Heze (Preset Config Store InclusionListStore Attestation Atteste
   ExecutionRequests Transaction onTick onBlock onAttestation onAttesterSlashing
   onPayloadAttestationMessage onExecutionPayloadEnvelope)
 
-/-- `updateCheckpoints` writes only the two checkpoints. -/
-theorem updateCheckpoints_ilStore {map : MapKind} [EthCLSpecs.Heze.Preset] [HasherTag]
+/-- `updateCheckpoints` is a record update of the two checkpoints. So a frame side goal
+about another field closes by a hypothesis. -/
+theorem updateCheckpoints_eq {map : MapKind} [EthCLSpecs.Heze.Preset] [HasherTag]
     [EthCLSpecs.Heze.Config] [FcMap map] (st : Store map)
     (j f : EthCLSpecs.Heze.Checkpoint) :
-    (EthCLSpecs.Heze.updateCheckpoints st j f).inclusionListStore = st.inclusionListStore := by
+    EthCLSpecs.Heze.updateCheckpoints st j f
+      = { st with
+          justifiedCheckpoint :=
+            if j.epoch > st.justifiedCheckpoint.epoch then j else st.justifiedCheckpoint
+          finalizedCheckpoint :=
+            if f.epoch > st.finalizedCheckpoint.epoch then f else st.finalizedCheckpoint } := by
   simp only [EthCLSpecs.Heze.updateCheckpoints]
   (repeat' split) <;> rfl
 
-/-- `updateUnrealizedCheckpoints` writes only the two unrealized checkpoints. -/
-theorem updateUnrealizedCheckpoints_ilStore {map : MapKind} [EthCLSpecs.Heze.Preset] [HasherTag]
+/-- `updateUnrealizedCheckpoints` is a record update of the two unrealized checkpoints. -/
+theorem updateUnrealizedCheckpoints_eq {map : MapKind} [EthCLSpecs.Heze.Preset] [HasherTag]
     [EthCLSpecs.Heze.Config] [FcMap map] (st : Store map)
     (j f : EthCLSpecs.Heze.Checkpoint) :
-    (EthCLSpecs.Heze.updateUnrealizedCheckpoints st j f).inclusionListStore
-      = st.inclusionListStore := by
+    EthCLSpecs.Heze.updateUnrealizedCheckpoints st j f
+      = { st with
+          unrealizedJustifiedCheckpoint :=
+            if j.epoch > st.unrealizedJustifiedCheckpoint.epoch then j
+            else st.unrealizedJustifiedCheckpoint
+          unrealizedFinalizedCheckpoint :=
+            if f.epoch > st.unrealizedFinalizedCheckpoint.epoch then f
+            else st.unrealizedFinalizedCheckpoint } := by
   simp only [EthCLSpecs.Heze.updateUnrealizedCheckpoints]
   (repeat' split) <;> rfl
+
+/-- An insert keeps the lookup at `r` when it writes another key, or when it writes the
+value that the lookup already returns. This closes the side goal of a per-key frame at a
+`set` that inserts into the map. -/
+theorem lookup_insert_keep {map : MapKind} [FcMap map] {K V : Type} [Ord K] [BEq K]
+    [Hashable K] [EthCLLib.Proofs.LawfulFcMap map K] {m : map K V} {k r : K}
+    {x : V} {v : Option V} (hm : FcMap.lookup m r = v) (h : k ≠ r ∨ v = some x) :
+    FcMap.lookup (FcMap.insert m k x) r = v := by
+  rcases h with hne | hv
+  · rw [EthCLLib.Proofs.LawfulFcMap.lookup_insert_ne m k r x hne, hm]
+  · by_cases hk : k = r
+    · subst hk
+      rw [EthCLLib.Proofs.LawfulFcMap.lookup_insert_self, hv]
+    · rw [EthCLLib.Proofs.LawfulFcMap.lookup_insert_ne m k r x hk, hm]
 
 /-- A `for` loop over an SSZ list keeps `f` when each body run keeps it. The loop runs
 over the underlying array (`SizzLean/Repr/Instances.lean`). -/
@@ -131,9 +161,12 @@ macro_rules
   | `(tactic| keeps_solve) => `(tactic| (repeat' keeps_step) <;> done)
 macro_rules
   | `(tactic| keeps_step) => `(tactic| first
+      | with_reducible_and_instances
+          refine EthCLSpecs.Proofs.Heze.lookup_insert_keep ?_ ?_
       | assumption
-      | rw [EthCLSpecs.Proofs.Heze.updateCheckpoints_ilStore]
-      | rw [EthCLSpecs.Proofs.Heze.updateUnrealizedCheckpoints_ilStore]
+      | exact Or.inl ‹_›
+      | rw [EthCLSpecs.Proofs.Heze.updateCheckpoints_eq]
+      | rw [EthCLSpecs.Proofs.Heze.updateUnrealizedCheckpoints_eq]
       | with_reducible_and_instances
           refine EthCLLib.Proofs.KeepsAt.get_bind fun _ _ => ?_
       | with_reducible_and_instances refine EthCLLib.Proofs.KeepsAt.set_bind _ ?_ ?_

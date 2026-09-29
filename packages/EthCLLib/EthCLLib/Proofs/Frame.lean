@@ -24,7 +24,8 @@ and the third. A bind whose first action returns a state value with `f = v` pass
 fact to the continuation, which then writes the value with `set`.
 
 The loop rules (`fuelLoop`, `fuelIterateM!`, `forIn`, `foldlM`) take a frame fact for one
-step and give it for the loop.
+step and give it for the loop. `KeepsAt.prod` joins the frame facts of two fields into a
+frame fact for the pair.
 -/
 
 set_option autoImplicit false
@@ -62,6 +63,15 @@ theorem run_set_state_eq (t s : σ) (a : PUnit) (s' : σ)
 theorem KeepsAt.of_resets {f : σ → β} {v : β} {x : StateT σ (Except ε) α}
     (h : Resets f v x) : KeepsAt f v x :=
   fun s a s' _ hrun => h s a s' hrun
+
+/-- A run that keeps two fields keeps the pair of them. -/
+theorem KeepsAt.prod {δ : Type} {f : σ → β} {g : σ → δ} {v : β} {w : δ}
+    {x : StateT σ (Except ε) α} (hf : KeepsAt f v x) (hg : KeepsAt g w x) :
+    KeepsAt (fun s => (f s, g s)) (v, w) x := by
+  intro s a s' hs hrun
+  injection hs with hs1 hs2
+  show (f s', g s') = (v, w)
+  rw [hf s a s' hs1 hrun, hg s a s' hs2 hrun]
 
 /-- `pure` keeps every field. -/
 theorem KeepsAt.pure {f : σ → β} {v : β} (a : α) :

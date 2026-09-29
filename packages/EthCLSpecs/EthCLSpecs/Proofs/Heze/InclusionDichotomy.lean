@@ -35,8 +35,9 @@ So a handler run that writes only other roots keeps them, by
 `LawfulFcMap.lookup_insert_ne`. `onTickPerSlot_run_keeps` shows that a per-slot tick
 writes neither the `blocks` nor the `payloadInclusionListSatisfaction` map. The clock
 condition holds only in the slot after the block. A second envelope for `r` writes the
-answer at `r` again from the IL store of that moment, so the answer can change. No
-theorem here covers a whole trace of handler runs.
+answer at `r` again from the IL store of that moment, so the answer can change.
+`RootFrames.lean` derives `LaterStore` from a trace of handler runs with no second
+envelope for `r` (`NodeTrace.laterStore`).
 
 The theorem states each assumption as a hypothesis. `OnInclusionList.lean` explains the
 arrival model: the IL store is the result of the arrival list, from the seed of
