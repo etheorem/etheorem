@@ -8,6 +8,7 @@ import SizzLean.Hasher.Sha256
 import SizzLean.Hasher.Sha256Spec
 import SizzLean.Hasher.Sha256Equiv
 import SizzLean.Hasher.Sha256Batch
+import SizzLean.Hasher.CombineWidth
 import SizzLean.Cache.MerkleTree.HashCons
 import SizzLean.Cache.TreeBacked
 import SizzLean.Cache.Box
@@ -50,6 +51,10 @@ their own code. They map one-to-one onto the sections of
   reduce. The SizzLean-side trust-boundary inventory is recoverable
   via `grep -rEn '^axiom '` over `packages/SizzLean` (the `@[extern]`
   bindings live in `packages/LeanHazmatSha256`).
+* `Hasher/CombineWidth`: the `CombineWidth32` instances for both
+  hashers. The class itself is in `Hasher/Class`. The `Sha256`
+  instance cites `sha256Combine_eq_spec`. The `Sha256Spec` instance
+  cites no axiom.
 * `Cache/TreeBacked`: `CachedSSZ`, the cached-only one-flavour
   type, with `CachedSSZ.ofValue` and `CachedSSZ.hashTreeRoot`.
 * `Cache/Box`: `SSZ.Box`, the closed union of cached + uncached
