@@ -1,6 +1,7 @@
 import EthCLLib.Proofs.ArrayUnion
 import EthCLLib.Proofs.Checked
 import EthCLLib.Proofs.EngineLaws
+import EthCLLib.Proofs.Frame
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
@@ -30,6 +31,8 @@ Re-exports:
   `Nat`, and `checkedMul_of_lt` / `checkedMul_of_ge` give the two outcomes from a `Nat` bound.
 * `EthCLLib.Proofs.EngineLaws`: the EIP-7805 inclusion rule as an assumption on an
   `ExecutionEngine` (`LawfulInclusionList`).
+* `EthCLLib.Proofs.Frame`: the frame rules (`KeepsAt`, `Resets`, `Returns`) that
+  prove a store run leaves one field alone, one bind at a time.
 * `EthCLLib.Proofs.LawfulFcMap`: the laws of an `FcMap`
   (`LawfulFcMap`, `FcMap.lookup_insert_self`,
   `FcMap.contains_insert_self`, `FcMap.mem_values`), with `instLawfulFcMapTreeMap`.
