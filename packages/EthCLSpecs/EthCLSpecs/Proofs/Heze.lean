@@ -6,6 +6,7 @@ import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.HandlerFrames
 import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
+import EthCLSpecs.Proofs.Heze.ILStoreOrder
 import EthCLSpecs.Proofs.Heze.InclusionDichotomy
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
 import EthCLSpecs.Proofs.Heze.KeepsUncached
@@ -67,7 +68,10 @@ Re-exports:
   `getInclusionListTransactions`
   (`getInclusionListCommittee_run_eq`, `getInclusionListTransactions_run_eq`),
   plus the missing-timeliness predicate on the `FcMap.fold` entries array. Under
-  `LawfulFcMap`, a successful collection keeps each transaction of an honest list
+  `LawfulFcMap`, a successful collection holds exactly the transactions of the stored,
+  timely lists from validators that are not equivocators
+  (`collectInclusionListTransactions_ok_mem_iff`, `getInclusionListTransactions_ok_mem_iff`).
+  So it keeps each transaction of an honest list
   (`collectInclusionListTransactions_ok_mem`, `mem_getInclusionListTransactions`).
 * `EthCLSpecs.Proofs.Heze.HandlerFrames`: the six handlers other than `onInclusionList`
   keep the IL store (`onBlock_keeps_ilStore` and the rest), with the `keeps_solve`
@@ -78,6 +82,12 @@ Re-exports:
   below it (`getHead_run_avoids_full`). For a missing transaction under
   `DichotomyHypotheses`, the same holds at every `LaterStore`
   (`inclusionList_missing_tx_head_avoids_full`).
+* `EthCLSpecs.Proofs.Heze.ILStoreOrder`: the IL store after an arrival list in closed
+  form (`ilStoreOfArrivals_describes`). The collected transactions depend only on the
+  timeliness of the first arrival of each list
+  (`getInclusionListTransactions_order_independent`), so the recorded answer does too
+  (`recordPayloadInclusionListSatisfaction_order_independent`,
+  `NodeTrace.answer_order_independent`).
 * `EthCLSpecs.Proofs.Heze.InclusionDichotomy`: for one honest inclusion-list
   transaction, the envelope handler records one of two answers
   (`inclusionList_dichotomy`). With `true`, the payload includes the transaction or the

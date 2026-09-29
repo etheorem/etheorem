@@ -25,10 +25,12 @@ Statements bind plain `BeaconState` values; the two state readers receive
 collector theorems below never touch a state, so they stay as they are.
 
 Under the `LawfulFcMap` laws, the module also proves what a successful collection
-returns. `collectInclusionListTransactions_ok_mem`: when every stored list has a
-timeliness entry, collection succeeds. Take a list with timeliness `true` from a
-validator that is not an equivocator. Each transaction of that list is in the result.
-`mem_getInclusionListTransactions` states the same through the committee lookup.
+returns. `collectInclusionListTransactions_ok_mem_iff`: when every stored list has a
+timeliness entry, collection succeeds. A transaction is in the result exactly when a
+stored list carries it (`EntryCollects`). That list has timeliness `true`, and its
+validator is not an equivocator. `collectInclusionListTransactions_ok_mem` is the one
+direction that the honest-list proofs use. `getInclusionListTransactions_ok_mem_iff` and
+`mem_getInclusionListTransactions` state the same through the committee lookup.
 -/
 
 set_option autoImplicit false
@@ -107,6 +109,30 @@ theorem getInclusionListCommittee_run_error_of_empty
       = .error (.transition (.arithmetic
           "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee")) := by
   simp only [getInclusionListCommittee_run_eq, hok, h, beq_iff_eq, ite_true]
+
+/-- The committee run does not read the runner state, so a result at one runner is the
+result at any runner, of any type. -/
+theorem getInclusionListCommittee_run_ok_transfer {τ : Type} (state : BeaconState)
+    (slot : Slot) (s : σ) (t : τ) (committee : Vector ValidatorIndex inclusionListCommitteeSize)
+    (h : (getInclusionListCommittee (StoreTransition := ForkChoiceStoreRun σ)
+        (pureState state) slot).run s = .ok (committee, s)) :
+    (getInclusionListCommittee (StoreTransition := ForkChoiceStoreRun τ)
+        (pureState state) slot).run t = .ok (committee, t) := by
+  rw [getInclusionListCommittee_run_eq] at h ⊢
+  cases hidx : slotCommitteeIndices state slot with
+  | error e =>
+    rw [hidx] at h
+    cases h
+  | ok indices =>
+    rw [hidx] at h
+    simp only at h ⊢
+    split at h
+    · cases h
+    · rename_i hne
+      rw [if_neg hne]
+      injection h with h
+      injection h with h
+      rw [h]
 
 end
 end CommitteeRun
@@ -192,20 +218,26 @@ private theorem collectStep_run_error_of_missing
   simp only [FcMap.getOrThrow, FcMap.getOrThrowKey, hnone]
   rfl
 
+/-- The entry `e` adds `tx` to the collection. Three conditions hold:
+
+- The validator of `e` is not an equivocator.
+- The timeliness of `e` is `true`.
+- `tx` is a transaction of `e`. -/
+def EntryCollects (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
+    (e : Root × InclusionList) (tx : Transaction) : Prop :=
+  equivocators.contains e.2.validatorIndex = false ∧
+    FcMap.lookup timeliness e.1 = some true ∧ tx ∈ e.2.transactions.toArray
+
 /-- One step at `onlyTimely := true` on an entry that does not fail a timeliness read.
-The step succeeds without a change to the runner state. The result contains the start
-value. It also contains the transactions of the entry when the validator is not an
-equivocator and the timeliness is `true`. -/
+The step succeeds without a change to the runner state. A transaction is in the result
+exactly when it is in the start value or the entry collects it. -/
 private theorem collectStep_run_ok_of_doesNotError
     (equivocators : Array ValidatorIndex) (timeliness : map Root Bool)
     (acc : Array Transaction) (entry : Root × InclusionList) (s : σ)
     (hok : TimelinessEntryDoesNotError equivocators timeliness entry) :
     ∃ acc', (collectStep (σ := σ) equivocators timeliness true acc entry).run s
         = .ok (acc', s) ∧
-      (∀ tx ∈ acc, tx ∈ acc') ∧
-      (equivocators.contains entry.2.validatorIndex = false →
-        FcMap.lookup timeliness entry.1 = some true →
-        ∀ tx ∈ entry.2.transactions.toArray, tx ∈ acc') := by
+      ∀ tx, tx ∈ acc' ↔ tx ∈ acc ∨ EntryCollects equivocators timeliness entry tx := by
   obtain ⟨ilRoot, il⟩ := entry
   cases hcont : equivocators.contains il.validatorIndex
   · -- Not an equivocator, so `hok` gives the timeliness entry `b`.
@@ -213,52 +245,40 @@ private theorem collectStep_run_ok_of_doesNotError
       rcases hok with hmem | hsome
       · exact nomatch hcont.symm.trans hmem
       · exact Option.isSome_iff_exists.mp hsome
-    refine ⟨if b then acc ++ il.transactions.toArray else acc, ?_, ?_, ?_⟩
+    refine ⟨if b then acc ++ il.transactions.toArray else acc, ?_, ?_⟩
     · simp only [collectStep, hcont]
       simp only [FcMap.getOrThrow, FcMap.getOrThrowKey, hb]
       cases b <;> rfl
-    · intro tx htx
-      cases b
-      · exact htx
-      · exact Array.mem_append_left _ htx
-    · intro _ htrue tx htx
-      rw [hb] at htrue
-      cases htrue
-      exact Array.mem_append_right _ htx
+    · intro tx
+      cases b <;> simp only [EntryCollects, hcont, hb] <;> simp [Array.mem_append]
   · -- An equivocator: the step skips the entry.
-    refine ⟨acc, ?_, fun _ h => h, fun hne => nomatch hne⟩
+    refine ⟨acc, ?_, fun tx => by simp only [EntryCollects, hcont]; simp⟩
     simp only [collectStep, hcont]
     rfl
 
 /-- The loop at `onlyTimely := true` succeeds on a list of entries when no entry fails a
-timeliness read. The result contains the start value. It also contains the transactions
-of each entry whose validator is not an equivocator and whose timeliness is `true`. The
-runner state does not change. -/
+timeliness read. A transaction is in the result exactly when it is in the start value or
+some entry collects it. The runner state does not change. -/
 private theorem collectLoop_ok (equivocators : Array ValidatorIndex)
     (timeliness : map Root Bool) (s : σ) :
     ∀ (es : List (Root × InclusionList)) (acc : Array Transaction),
       (∀ e ∈ es, TimelinessEntryDoesNotError equivocators timeliness e) →
       ∃ out, (es.foldlM (collectStep (σ := σ) equivocators timeliness true) acc).run s
           = .ok (out, s) ∧
-        (∀ tx ∈ acc, tx ∈ out) ∧
-        ∀ e ∈ es, equivocators.contains e.2.validatorIndex = false →
-          FcMap.lookup timeliness e.1 = some true →
-          ∀ tx ∈ e.2.transactions.toArray, tx ∈ out := by
+        ∀ tx, tx ∈ out ↔ tx ∈ acc ∨ ∃ e ∈ es, EntryCollects equivocators timeliness e tx := by
   intro es
   induction es with
-  | nil => intro acc _; exact ⟨acc, rfl, fun _ h => h, by simp⟩
+  | nil => intro acc _; exact ⟨acc, rfl, by simp⟩
   | cons e es ih =>
     intro acc hall
-    obtain ⟨acc', hstep, hsub, hnew⟩ := collectStep_run_ok_of_doesNotError (σ := σ)
+    obtain ⟨acc', hstep, hacc'⟩ := collectStep_run_ok_of_doesNotError (σ := σ)
       equivocators timeliness acc e s (hall e List.mem_cons_self)
-    obtain ⟨out, hrun, hacc, hmem⟩ := ih acc' (fun e' he' => hall e' (by simp [he']))
-    refine ⟨out, ?_, fun tx htx => hacc tx (hsub tx htx), ?_⟩
+    obtain ⟨out, hrun, hout⟩ := ih acc' (fun e' he' => hall e' (by simp [he']))
+    refine ⟨out, ?_, fun tx => ?_⟩
     · rw [List.foldlM_cons, run_bind, hstep, except_bind_ok]
       exact hrun
-    · intro e' he' hne htrue tx htx
-      rcases List.mem_cons.mp he' with rfl | he'
-      · exact hacc tx (hnew hne htrue tx htx)
-      · exact hmem e' he' hne htrue tx htx
+    · rw [hout tx, hacc' tx]
+      simp only [List.mem_cons, or_and_right, exists_or, exists_eq_left, or_assoc]
 
 /-- If `onlyTimely = true` and the first reachable missing timeliness key in the
 `FcMap.fold` entries array is `ilRoot`, collection fails with `.missingKey ilRoot`.
@@ -293,7 +313,7 @@ theorem collectInclusionListTransactions_run_error_of_first_missing
       rw [Array.getElem_toList]; exact hget
     simp only [hget']
     rw [List.foldlM_append, run_bind]
-    obtain ⟨acc', hpre, -, -⟩ :=
+    obtain ⟨acc', hpre, -⟩ :=
       collectLoop_ok (σ := σ) equivocators timeliness runnerStore (entries.toList.take i) #[]
         (fun x hx => by
           obtain ⟨j, hj, rfl⟩ := (List.mem_take_iff_getElem).1 hx
@@ -312,6 +332,42 @@ section
 variable [LawfulFcMap map Root]
 
 /-- `collectInclusionListTransactions` at `onlyTimely := true` succeeds when every stored
+list has a timeliness entry. A transaction is in the result exactly when some entry
+`(ilRoot, il)` of `lists` collects it (`EntryCollects`). The runner state does not
+change. The result order follows the fold order of the map. This statement does not fix
+that order. -/
+theorem collectInclusionListTransactions_ok_mem_iff (lists : map Root InclusionList)
+    (equivocators : Array ValidatorIndex) (timeliness : map Root Bool) (s : σ)
+    (htotal : TimelinessTotal lists timeliness) :
+    ∃ ilTxs, (collectInclusionListTransactions (StoreTransition := ForkChoiceStoreRun σ)
+        lists equivocators timeliness true).run s = .ok (ilTxs, s) ∧
+      ∀ tx, tx ∈ ilTxs ↔ ∃ (ilRoot : Root) (il : InclusionList),
+        FcMap.lookup lists ilRoot = some il ∧
+        EntryCollects equivocators timeliness (ilRoot, il) tx := by
+  -- The entries of the fold are exactly the stored pairs (`LawfulFcMap.mem_fold_push`).
+  let entries : Array (Root × InclusionList) :=
+    FcMap.fold (fun acc ilRoot il => acc.push (ilRoot, il)) #[] lists
+  have hentries : ∀ e, e ∈ entries.toList ↔ FcMap.lookup lists e.1 = some e.2 := by
+    rintro ⟨r, il⟩
+    exact LawfulFcMap.mem_fold_push lists r il
+  obtain ⟨out, hrun, hout⟩ := collectLoop_ok equivocators timeliness s entries.toList #[]
+    (fun e he => Or.inr (htotal e.1 e.2 ((hentries e).mp he)))
+  refine ⟨arrayUnion #[] out, ?_, fun tx => ?_⟩
+  · have hloop : (entries.foldlM (collectStep (σ := σ) equivocators timeliness true) #[]).run s
+        = .ok (out, s) := by
+      rw [← Array.foldlM_toList]
+      exact hrun
+    rw [collectInclusionListTransactions_eq, run_bind, hloop, except_bind_ok, run_pure]
+  · rw [mem_arrayUnion, hout tx]
+    constructor
+    · rintro (h | h | ⟨e, he, hc⟩)
+      · simp at h
+      · simp at h
+      · exact ⟨e.1, e.2, (hentries e).mp he, hc⟩
+    · rintro ⟨ilRoot, il, hl, hc⟩
+      exact Or.inr (Or.inr ⟨(ilRoot, il), (hentries _).mpr hl, hc⟩)
+
+/-- `collectInclusionListTransactions` at `onlyTimely := true` succeeds when every stored
 list has a timeliness entry. Take a list `il` that is stored at `ilRoot`, has timeliness
 `true`, and has a validator that is not in `equivocators`. Then each transaction of `il` is
 in the result. The runner state does not change. -/
@@ -324,23 +380,10 @@ theorem collectInclusionListTransactions_ok_mem (lists : map Root InclusionList)
         equivocators.contains il.validatorIndex = false →
         FcMap.lookup timeliness ilRoot = some true →
         ∀ tx ∈ il.transactions.toArray, tx ∈ ilTxs := by
-  -- The entries of the fold are exactly the stored pairs (`LawfulFcMap.mem_fold_push`).
-  let entries : Array (Root × InclusionList) :=
-    FcMap.fold (fun acc ilRoot il => acc.push (ilRoot, il)) #[] lists
-  have hentries : ∀ e, e ∈ entries.toList ↔ FcMap.lookup lists e.1 = some e.2 := by
-    rintro ⟨r, il⟩
-    exact LawfulFcMap.mem_fold_push lists r il
-  obtain ⟨out, hrun, -, hmem⟩ := collectLoop_ok equivocators timeliness s entries.toList #[]
-    (fun e he => Or.inr (htotal e.1 e.2 ((hentries e).mp he)))
-  refine ⟨arrayUnion #[] out, ?_, ?_⟩
-  · have hloop : (entries.foldlM (collectStep (σ := σ) equivocators timeliness true) #[]).run s
-        = .ok (out, s) := by
-      rw [← Array.foldlM_toList]
-      exact hrun
-    rw [collectInclusionListTransactions_eq, run_bind, hloop, except_bind_ok, run_pure]
-  · intro ilRoot il hlookup hne htrue tx htx
-    rw [mem_arrayUnion]
-    exact Or.inr (hmem (ilRoot, il) ((hentries _).mpr hlookup) hne htrue tx htx)
+  obtain ⟨ilTxs, hrun, hmem⟩ :=
+    collectInclusionListTransactions_ok_mem_iff lists equivocators timeliness s htotal
+  exact ⟨ilTxs, hrun, fun ilRoot il hl hne htrue tx htx =>
+    (hmem tx).mpr ⟨ilRoot, il, hl, hne, htrue, htx⟩⟩
 
 end
 
@@ -451,6 +494,31 @@ theorem mem_getInclusionListTransactions {σ : Type} (ils : InclusionListStore m
     (ILStore.listsAt ils (htr committee))
     (FcMap.lookupD ils.equivocators (htr committee)) ils.inclusionListTimeliness s htotal
   refine ⟨ilTxs, ?_, hmem ilRoot il hstored hhonest htimely⟩
+  simp only [getInclusionListTransactions]
+  rw [run_bind, hcommittee, except_bind_ok]
+  exact hrun
+
+/-- The members of the inclusion-list transactions for `slot`. Take a committee run that
+returns `committee`. Every list stored under `htr committee` has a timeliness entry. Then
+the collection succeeds. A transaction is in the result exactly when a list stored under
+that key collects it (`EntryCollects`). -/
+theorem getInclusionListTransactions_ok_mem_iff {σ : Type} (ils : InclusionListStore map)
+    (state : BeaconState) (slot : Slot) (s : σ)
+    (committee : Vector ValidatorIndex inclusionListCommitteeSize)
+    (hcommittee : (getInclusionListCommittee (StoreTransition := ForkChoiceStoreRun σ)
+        (pureState state) slot).run s = .ok (committee, s))
+    (htotal : TimelinessTotal (ILStore.listsAt ils (htr committee))
+        ils.inclusionListTimeliness) :
+    ∃ ilTxs, (getInclusionListTransactions (StoreTransition := ForkChoiceStoreRun σ)
+        ils (pureState state) slot (onlyTimely := true)).run s = .ok (ilTxs, s) ∧
+      ∀ tx, tx ∈ ilTxs ↔ ∃ (ilRoot : Root) (il : InclusionList),
+        ILStore.storedAt ils (htr committee) ilRoot = some il ∧
+        EntryCollects (FcMap.lookupD ils.equivocators (htr committee))
+          ils.inclusionListTimeliness (ilRoot, il) tx := by
+  obtain ⟨ilTxs, hrun, hmem⟩ := collectInclusionListTransactions_ok_mem_iff
+    (ILStore.listsAt ils (htr committee))
+    (FcMap.lookupD ils.equivocators (htr committee)) ils.inclusionListTimeliness s htotal
+  refine ⟨ilTxs, ?_, hmem⟩
   simp only [getInclusionListTransactions]
   rw [run_bind, hcommittee, except_bind_ok]
   exact hrun

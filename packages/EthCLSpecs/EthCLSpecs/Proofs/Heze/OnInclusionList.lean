@@ -43,8 +43,9 @@ entry. The collection of the inclusion-list transactions throws without it
 The fold invariants and their step lemmas live in the namespace `ILStore`.
 
 The proofs use two `==` facts. `Transaction` is a subtype of `Array UInt8`, so its `==`
-comes from `DecidableEq` and is lawful. `InclusionList` has a derived structural `BEq`,
-and the `ReflBEq` instance below makes it reflexive (`beq_self_eq_true`).
+comes from `DecidableEq` and is lawful. `InclusionList` has a derived structural `BEq`.
+The `ReflBEq` instance below makes it reflexive (`beq_self_eq_true`), and the `LawfulBEq`
+instance makes `==` agree with `=`.
 -/
 
 set_option autoImplicit false
@@ -73,6 +74,26 @@ def ilDueMs [Config] : UInt64 :=
   match getInclusionListDueMs with
   | .ok d => d
   | .error _ => 0
+
+/-- The derived `==` on `InclusionList` compares the four fields in order. `rfl` closes it
+once both sides are constructors, because the derived function matches on them. -/
+theorem inclusionList_beq_eq [Preset] (a b : InclusionList) :
+    (a == b) = (a.slot == b.slot && (a.validatorIndex == b.validatorIndex &&
+      (a.inclusionListCommitteeRoot == b.inclusionListCommitteeRoot &&
+      a.transactions == b.transactions))) := by
+  cases a; cases b; rfl
+
+/-- `==` on `InclusionList` is lawful. Core's `LawfulBEq` handler fails on the
+`transactions` field, an `SSZList` (a `Subtype` over `Array`). So the proof unfolds `==`
+with `inclusionList_beq_eq`, and `beq_iff_eq` rewrites each field. -/
+instance [Preset] : LawfulBEq InclusionList where
+  rfl {a} := beq_self_eq_true a
+  eq_of_beq {a b} h := by
+    rw [inclusionList_beq_eq] at h
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨h1, h2, h3, h4⟩ := h
+    cases a; cases b
+    simp_all
 
 /-- Take a store where the time into the slot is `t`, and a config where the deadline does
 not raise. Then `onInclusionList` replaces the IL store with the result of
