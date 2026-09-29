@@ -22,6 +22,14 @@ The runner names remain in their own modules: `GloasRun` is in
 `EthCLSpecs/Proofs/Gloas/Run.lean`, while the fork-neutral `ForkChoiceStoreRun` is
 in `EthCLLib/Proofs/StoreRun.lean`.
 
+Two inversion lemmas start from a successful run. `run_bind_eq_ok` splits a successful
+bind into its two runs. `run_pure_eq_ok` reads the value of a successful `pure`. Three
+invariant lemmas carry a property through a loop:
+
+- `forIn_run_inv`, for a `for` loop over a list.
+- `foldlM_run_mem`, for a fold whose step returns one of its arguments.
+- `fuelLoop_run_inv`, for `fuelLoop`.
+
 ## The pure box: `pureState` and `runPure`
 
 The runners pin the monad. This module also pins the box: a fork-body theorem states
@@ -115,6 +123,77 @@ theorem run_of_run_seq_pure_error {ε σ β : Type} (x : StateT σ (Except ε) �
     injection h with h'
     rw [h']
 
+/-- The converse of `run_bind` on a successful run: the first action succeeds, and the
+continuation succeeds from its value and state. -/
+theorem run_bind_eq_ok {σ ε α β : Type} (x : StateT σ (Except ε) α)
+    (f : α → StateT σ (Except ε) β) (s : σ) (r : β × σ)
+    (h : (x >>= f).run s = .ok r) :
+    ∃ a s1, x.run s = .ok (a, s1) ∧ (f a).run s1 = .ok r := by
+  rw [run_bind] at h
+  cases hx : x.run s with
+  | error e => rw [hx] at h; cases h
+  | ok p => rw [hx] at h; exact ⟨p.1, p.2, rfl, h⟩
+
+/-- A successful run of `pure a` returns `a`. -/
+theorem run_pure_eq_ok {σ ε α : Type} (a b : α) (s s' : σ)
+    (h : (pure a : StateT σ (Except ε) α).run s = .ok (b, s')) : b = a := by
+  rw [run_pure] at h
+  injection h with h
+  injection h with h
+  exact h.symm
+
+/-- An invariant of a `for` loop over a list. The loop starts from an accumulator that
+satisfies `P`. Each body run takes an accumulator that satisfies `P` to a step whose
+value satisfies `P`. The step can continue (`yield`) or stop (`done`). Then a successful
+run of the loop returns an accumulator that satisfies `P`. -/
+theorem forIn_run_inv {σ ε α β : Type} (P : β → Prop)
+    (f : α → β → StateT σ (Except ε) (ForInStep β)) :
+    ∀ (l : List α),
+      (∀ a ∈ l, ∀ (r : β) (s s' : σ) (st : ForInStep β),
+        P r → (f a r).run s = .ok (st, s') → P st.value) →
+      ∀ (init : β) (s s' : σ) (r : β),
+        P init → (forIn l init f).run s = .ok (r, s') → P r := by
+  intro l
+  induction l with
+  | nil =>
+    intro _ init s s' r hinit h
+    rw [List.forIn_nil, run_pure] at h
+    injection h with h
+    injection h with h
+    exact h ▸ hinit
+  | cons a rest ih =>
+    intro hstep init s s' r hinit h
+    rw [List.forIn_cons] at h
+    obtain ⟨st, s1, hbody, hrest⟩ := run_bind_eq_ok _ _ _ _ h
+    have hst := hstep a List.mem_cons_self init s s1 st hinit hbody
+    cases st with
+    | done b =>
+      have hr := run_pure_eq_ok b r s1 s' hrest
+      exact hr ▸ hst
+    | yield b =>
+      exact ih (fun a' ha' => hstep a' (List.mem_cons_of_mem a ha')) b s1 s' r hst hrest
+
+/-- A left fold whose step `f` returns one of its two arguments. A successful run
+returns the initial value or an element of the list. -/
+theorem foldlM_run_mem {σ ε α : Type} (f : α → α → StateT σ (Except ε) α)
+    (hf : ∀ (a b x : α) (s s' : σ), (f a b).run s = .ok (x, s') → x = a ∨ x = b) :
+    ∀ (l : List α) (init x : α) (s s' : σ),
+      (l.foldlM f init).run s = .ok (x, s') → x = init ∨ x ∈ l := by
+  intro l
+  induction l with
+  | nil =>
+    intro init x s s' h
+    exact Or.inl (run_pure_eq_ok init x s s' h)
+  | cons a rest ih =>
+    intro init x s s' h
+    rw [List.foldlM_cons] at h
+    obtain ⟨y, s1, hy, hrest⟩ := run_bind_eq_ok _ _ _ _ h
+    rcases ih y x s1 s' hrest with hx | hx
+    · rcases hf init a y s s1 hy with hy' | hy'
+      · exact Or.inl (hx.trans hy')
+      · exact Or.inr (hx ▸ hy' ▸ List.mem_cons_self)
+    · exact Or.inr (List.mem_cons_of_mem a hx)
+
 /-- One iteration of `fuelLoop` with fuel left. When the step at `init` returns
 `.next b` and the state `s'`, the loop continues from `b` in `s'`, with one unit of
 fuel less. -/
@@ -124,6 +203,38 @@ theorem fuelLoop_run_of_next {σ ε β α : Type} (fuel : Nat) (init : β) (exha
     (EthCLLib.Spec.fuelLoop (fuel + 1) init exhausted step).run s
       = (EthCLLib.Spec.fuelLoop fuel b exhausted step).run s' := by
   simp only [EthCLLib.Spec.fuelLoop, run_bind, h, except_bind_ok]
+
+/-- An invariant of `fuelLoop`. `P` holds of the loop value, and `Q` holds of the result.
+Three conditions:
+
+- A `.next` step keeps `P`.
+- A `.done` step from a value that satisfies `P` returns a result that satisfies `Q`.
+- The fuel-out value `exhausted` satisfies `Q`.
+
+Then a successful run of the loop from a value that satisfies `P` returns a result that
+satisfies `Q`. -/
+theorem fuelLoop_run_inv {σ ε β α : Type} (P : β → Prop) (Q : α → Prop) (exhausted : α)
+    (step : β → StateT σ (Except ε) (EthCLLib.Spec.Step β α))
+    (hnext : ∀ (b b' : β) (s s' : σ), P b → (step b).run s = .ok (.next b', s') → P b')
+    (hdone : ∀ (b : β) (a : α) (s s' : σ), P b → (step b).run s = .ok (.done a, s') → Q a)
+    (hexhausted : Q exhausted) :
+    ∀ (fuel : Nat) (init : β) (s s' : σ) (a : α),
+      P init → (EthCLLib.Spec.fuelLoop fuel init exhausted step).run s = .ok (a, s') → Q a := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro init s s' a _ h
+    simp only [EthCLLib.Spec.fuelLoop] at h
+    exact (run_pure_eq_ok exhausted a s s' h) ▸ hexhausted
+  | succ fuel ih =>
+    intro init s s' a hinit h
+    simp only [EthCLLib.Spec.fuelLoop] at h
+    obtain ⟨st, s1, hstep, hrest⟩ := run_bind_eq_ok _ _ _ _ h
+    cases st with
+    | done d =>
+      have ha := run_pure_eq_ok d a s1 s' hrest
+      exact ha ▸ hdone init d s s1 hinit hstep
+    | next b => exact ih b s1 s' a (hnext init b s s1 hinit hstep) hrest
 
 /-- `ofExcept` of an `.ok a`: the run succeeds and passes the state through
 unchanged. The run-level shape the loop-body proofs read the spec's indexed reads
