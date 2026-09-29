@@ -3,6 +3,7 @@ import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
 import EthCLSpecs.Proofs.Heze.CensorshipCost
 import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
+import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
 import EthCLSpecs.Proofs.Heze.InclusionDichotomy
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
 import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
@@ -53,6 +54,12 @@ Re-exports:
   Under `LawfulFcMap`, the items of a key are its stored entries
   (`mem_inclusionListItems_iff`), and a timely entry from a non-equivocator gives each
   of its transactions (`mem_getInclusionListTransactions_of_stored`).
+* `EthCLSpecs.Proofs.Heze.HeadAvoidsFull`: the node tree (`NodeEdge`, `NodeBelow`).
+  Take a block from the previous slot with an unverified payload or a recorded `false`
+  answer, whose FULL node is viable only with its EMPTY node (`EmptyViableWithFull`).
+  The head that `getHead` returns is not the FULL node of the block and not below it
+  (`getHead_run_avoids_full`). For a missing transaction under `DichotomyHypotheses`,
+  the same holds at every such `LaterStore` (`inclusionList_missing_tx_head_avoids_full`).
 * `EthCLSpecs.Proofs.Heze.InclusionDichotomy`: for one honest inclusion-list
   transaction, the envelope handler records one of two answers
   (`inclusionList_dichotomy`). With `true`, the payload includes the transaction or the
@@ -93,7 +100,8 @@ Re-exports:
   `headLoopBody` to EMPTY (`getHeadStep_run_eq_empty_of_recorded_unsatisfied`), proved
   with `ForkChoiceStoreRun`. `getHead_eq_fuelLoop_headLoopBody` ties the body to
   `getHead` by `rfl`, and `getHead_walk_pending_to_empty` takes the walk from the
-  pending node to the EMPTY node when the EMPTY node is viable.
+  pending node to the EMPTY node when the EMPTY node is viable. The step lemmas hold at
+  any runner state (`getCurrentSlot_run_state`).
 * `EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction`: the
   complete run of `recordPayloadInclusionListSatisfaction`
   (`recordPayloadInclusionListSatisfaction_run`), proved with
