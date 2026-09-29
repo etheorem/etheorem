@@ -40,7 +40,8 @@ theorem here covers a whole trace of handler runs.
 
 The theorem states each assumption as a hypothesis. `OnInclusionList.lean` explains the
 arrival model: the IL store is the result of the arrival list, from the seed of
-`getForkchoiceStore`. The EL satisfies `LawfulInclusionList` for the payload transactions
+`getForkchoiceStore`. `NodeTrace.lean` derives this model from a trace of handler runs
+(`NodeTrace.ilStore`). The EL satisfies `LawfulInclusionList` for the payload transactions
 and for an `isValidOmission` that the reader supplies. The result for the `true` answer
 is only as strong as that predicate.
 -/

@@ -2,9 +2,11 @@ import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
 import EthCLSpecs.Proofs.Heze.CensorshipCost
 import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
+import EthCLSpecs.Proofs.Heze.HandlerFrames
 import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
 import EthCLSpecs.Proofs.Heze.InclusionDichotomy
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
+import EthCLSpecs.Proofs.Heze.NodeTrace
 import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 import EthCLSpecs.Proofs.Heze.OnInclusionList
 import EthCLSpecs.Proofs.Heze.OnTickPerSlot
@@ -50,6 +52,9 @@ Re-exports:
   plus the missing-timeliness predicate on the `FcMap.fold` entries array. Under
   `LawfulFcMap`, a successful collection keeps each transaction of an honest list
   (`collectInclusionListTransactions_ok_mem`, `mem_getInclusionListTransactions`).
+* `EthCLSpecs.Proofs.Heze.HandlerFrames`: the six handlers other than `onInclusionList`
+  keep the IL store (`onBlock_keeps_ilStore` and the rest), with the `keeps_solve`
+  tactic that walks a handler body.
 * `EthCLSpecs.Proofs.Heze.HeadAvoidsFull`: the node tree (`NodeEdge`, `NodeBelow`).
   Take a block from the previous slot with an unverified payload or a recorded `false`
   answer. The head that `getHead` returns is not the FULL node of the block and not
@@ -69,6 +74,10 @@ Re-exports:
   (`isPayloadInclusionListSatisfied_run`), and the four read corollaries
   for a missing record, an unverified recorded value, a recorded `false`,
   and a recorded `true` with a verified payload.
+* `EthCLSpecs.Proofs.Heze.NodeTrace`: the successful handler runs of one node
+  (`NodeTrace`). From a seed with the empty IL store, such as the anchor store of
+  `getForkchoiceStore`, the IL store is `ilStoreOfArrivals` of the arrivals of the trace
+  (`NodeTrace.ilStore`).
 * `EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope`: the complete
   compositional `.run` equation of `onExecutionPayloadEnvelope`
   (`onExecutionPayloadEnvelope_run`), tagged
