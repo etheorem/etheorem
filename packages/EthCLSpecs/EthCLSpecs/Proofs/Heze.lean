@@ -7,6 +7,7 @@ import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.HandlerFrames
 import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
+import EthCLSpecs.Proofs.Heze.ILStoreOrder
 import EthCLSpecs.Proofs.Heze.InclusionDichotomy
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
 import EthCLSpecs.Proofs.Heze.KeepsUncached
@@ -82,6 +83,12 @@ Re-exports:
   The head that `getHead` returns is not the FULL node of the block and not below it
   (`getHead_run_avoids_full`). For a missing transaction under `DichotomyHypotheses`,
   the same holds at every such `LaterStore` (`inclusionList_missing_tx_head_avoids_full`).
+* `EthCLSpecs.Proofs.Heze.ILStoreOrder`: the IL store after an arrival list in closed
+  form (`ilStoreOfArrivals_describes`). The collected transactions depend only on the
+  timeliness of the first arrival of each list
+  (`getInclusionListTransactions_order_independent`), so the recorded answer does too
+  (`recordPayloadInclusionListSatisfaction_order_independent`,
+  `NodeTrace.answer_order_independent`).
 * `EthCLSpecs.Proofs.Heze.InclusionDichotomy`: for one honest inclusion-list
   transaction, the envelope handler records one of two answers
   (`inclusionList_dichotomy`). With `true`, the payload includes the transaction or the

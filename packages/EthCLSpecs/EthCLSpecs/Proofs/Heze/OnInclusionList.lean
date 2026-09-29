@@ -36,7 +36,8 @@ entry and changes nothing. Thus the store keeps an honest list that first arrive
 late, even when a copy arrives on time later. This is the spec behavior.
 
 The proofs use the `==` on `InclusionList`, a derived structural `BEq`. The `ReflBEq`
-instance below makes it reflexive (`beq_self_eq_true`).
+instance below makes it reflexive (`beq_self_eq_true`), and the `LawfulBEq` instance makes
+`==` agree with `=`.
 -/
 
 set_option autoImplicit false
@@ -196,6 +197,26 @@ theorem onInclusionList_run_ok (store s' : Store map) (signed : SignedInclusionL
     exact htail _ h
 
 end Handler
+
+/-- The derived `==` on `InclusionList` compares the four fields in order. `rfl` closes it
+once both sides are constructors, because the derived function matches on them. -/
+theorem inclusionList_beq_eq [Preset] (a b : InclusionList) :
+    (a == b) = (a.slot == b.slot && (a.validatorIndex == b.validatorIndex &&
+      (a.dependentRoot == b.dependentRoot &&
+      a.transactions == b.transactions))) := by
+  cases a; cases b; rfl
+
+/-- `==` on `InclusionList` is lawful. Core's `LawfulBEq` handler fails on the
+`transactions` field, an `SSZList` (a `Subtype` over `Array`). So the proof unfolds `==`
+with `inclusionList_beq_eq`, and `beq_iff_eq` rewrites each field. -/
+instance [Preset] : LawfulBEq InclusionList where
+  rfl {a} := beq_self_eq_true a
+  eq_of_beq {a b} h := by
+    rw [inclusionList_beq_eq] at h
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨h1, h2, h3, h4⟩ := h
+    cases a; cases b
+    simp_all
 
 section
 variable {map : MapKind} [Preset] [HasherTag] [FcMap map]
