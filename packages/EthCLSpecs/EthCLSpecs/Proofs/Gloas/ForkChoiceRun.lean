@@ -114,17 +114,20 @@ example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
 
 /-- `processBuilderPendingPayments_run` likewise, and this is the one that shows the point:
 its proof rests on a `List.forIn` induction over the withdrawals loop, and that induction is
-not re-entered here. -/
+not re-entered here. The capacity premise comes along unchanged. -/
 example [Preset] [HasherTag] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
     ∀ pre : State,
+      (sszGet pre builderPendingWithdrawals).val.size +
+          (qualifyingBuilderWithdrawals pre).length ≤
+        EthCLSpecs.Gloas.Const.builderPendingWithdrawalsLimit →
       ∃ post : State,
         runNestedStateTransition pre
             (processBuilderPendingPayments (StateTransition := GloasRun))
           = (pure post : m State) ∧
         ProcessBuilderPendingPaymentsPost pre post :=
-  fun pre =>
-    let ⟨post, hrun, hpost⟩ := processBuilderPendingPayments_run pre
+  fun pre hfits =>
+    let ⟨post, hrun, hpost⟩ := (processBuilderPendingPayments_run pre).1 hfits
     ⟨post, runNestedStateTransition_of_ok hrun, hpost⟩
 
 end EthCLSpecs.Proofs.Gloas

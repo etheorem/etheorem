@@ -19,8 +19,9 @@ Two groups:
   `any` / `all` / `findIdx?` / `contains` and the `for x in xs` (`ForIn`) loop on
   `SSZList`, plus `Bitlist.size` / `Bitlist.toArray`. Each delegates to the
   underlying `Array`, so each gate is that it reduces to the `Array` answer.
-  `push` (cap-clamping append) and `mapCap` (cap-preserving map) carry a size
-  proof, so both their below-cap and at-cap behaviour is gated.
+  `push` takes a proof that the list has room, and `push?` returns `none` on a
+  full list. The gates cover `push` below the cap, `push?` below and at the cap,
+  and `mapCap` (cap-preserving map).
 * **Byte-vector coercion.** The `CoeOut (Vector UInt8 n) ByteArray` instance, fired
   at a type ascription and at a `ByteArray`-typed function argument.
 
@@ -48,7 +49,7 @@ open SizzLean SizzLean.Repr
 
 private def xs : SSZList UInt64 8 := ⟨#[10, 20, 30], by decide⟩
 private def bs : Bitlist 8 := ⟨#[true, false, true], by decide⟩
-/-- A list already at capacity, for the `push` clamp branch. -/
+/-- A list already at capacity, for the full-list branch of `push?`. -/
 private def full3 : SSZList UInt64 3 := ⟨#[1, 2, 3], by decide⟩
 /-- A fixed-length byte vector, for the `Vector UInt8 n → ByteArray` coercion. -/
 private def v4 : Vector UInt8 4 := ⟨#[1, 2, 3, 4], by decide⟩
@@ -110,17 +111,17 @@ example :
         acc := acc + x
       return acc) = 60 := by native_decide
 
-/-! ## `SSZList.push`: cap-clamping append
+/-! ## `SSZList.push` and `SSZList.push?`: the checked append
 
-Below capacity it appends (`xs` is 3 of 8); at capacity it returns the list unchanged
-(`full3` is 3 of 3), so the `if size < cap` clamp branch never overflows. -/
+`push` takes a proof that the list has room, so it has no full-list branch. `push?`
+appends below capacity (`xs` is 3 of 8) and returns `none` at capacity (`full3` is 3 of
+3), where the spec's `List.append` raises. -/
 
-/-- Append below capacity grows the list by one. -/
-example : (xs.push 99).toArray = #[10, 20, 30, 99] := by native_decide
-example : (xs.push 99).val.size = 4 := by native_decide
-/-- At capacity, `push` clamps: the list is returned unchanged. -/
-example : (full3.push 99).toArray = #[1, 2, 3] := by native_decide
-example : (full3.push 99).val.size = 3 := by native_decide
+/-- Append below capacity grows the list by one. The room proof is a `decide` on sizes. -/
+example : (xs.push 99 (by decide)).toArray = #[10, 20, 30, 99] := by native_decide
+example : (xs.push? 99).map (·.toArray) = some #[10, 20, 30, 99] := by native_decide
+/-- At capacity, `push?` refuses the append. -/
+example : (full3.push? 99).isNone = true := by native_decide
 
 /-! ## `SSZList.mapCap`: cap-preserving map
 

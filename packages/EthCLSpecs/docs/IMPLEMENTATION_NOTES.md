@@ -400,8 +400,11 @@ concerns map on: `Preset` / `Monad` / `Box` → `Spec.State` + `Spec.Header`; `M
 `Spec.Arith` carries `umax` / `umin` / `isqrt`, type-directed `uintToBytes`, byte
 conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet` /
 `umodIdx` (ring-buffer read / write index), `sszDrop` / `sszOfArray`, `bitGet` / `bitSet`,
-and `hasFlag` / `addFlag`. The cap-clamping append moved to SizzLean (`SSZList.push`,
-with `sszAppend` / `appendState` on top), so the old `sszPush` is gone. `Spec.State`
+and `hasFlag` / `addFlag`. The append lives in SizzLean: `SSZList.push` takes a proof
+that the list has room, and `SSZList.push?` / `sszAppend?` return `none` on a full list.
+`appendState` (`Spec.Header`) turns that `none` into the `.listFull` fault, the spec's
+`List.append` raise, and `setOrAppendState` models `set_or_append_list` on top of it. The
+old `sszPush` is gone. `Spec.State`
 carries `getStateRoot` / `stateRoot` / `stateRoot!`. `Spec.RunState` carries
 `MonadRunState`, the class saying a state-machine monad can be run from a starting state,
 and `runToRoot` (run a boxed-state action to its post-root, generic over that class, the
@@ -793,14 +796,13 @@ separation.
   the fork-choice replay callers' exact-equality guarantee (`slot ==
   curSlot`). Both via `UInt64`/`Nat` bridging lemmas and `omega`, no mathlib.
 
-- **`Proofs/Gloas/BuilderPendingPayments.lean`** proves `processBuilderPendingPayments`'s
-  local before/after behavior for one call: the withdrawals loop reduces to a
-  bounded `SSZList.push` fold over the qualifying previous-epoch payments' withdrawals,
-  in slot order, and the payment window shifts down by `SLOTS_PER_EPOCH`. A
-  capacity-guarded corollary derives the full, unclamped append under an explicit
-  headroom hypothesis. It does not prove protocol-wide exactly-once settlement or say
-  anything about `settleBuilderPayment` / `processProposerSlashing`, the other paths
-  that clear a `BuilderPendingPayment`.
+- **`Proofs/Gloas/BuilderPendingPayments.lean`** proves both outcomes of one
+  `processBuilderPendingPayments` call. When the qualifying previous-epoch withdrawals
+  fit under the list limit, the run succeeds, appends them in slot order, and shifts the
+  payment window down by `SLOTS_PER_EPOCH`. When they do not fit, the run raises
+  `.listFull`, as pyspec's append raises. It does not prove protocol-wide exactly-once
+  settlement or say anything about `settleBuilderPayment` / `processProposerSlashing`,
+  the other paths that clear a `BuilderPendingPayment`.
 
 - **`Proofs/Gloas/CanBuilderCoverBid.lean`** characterizes `canBuilderCoverBid`'s
   `Bool` result exactly: `canBuilderCoverBid_iff` states the guard in the

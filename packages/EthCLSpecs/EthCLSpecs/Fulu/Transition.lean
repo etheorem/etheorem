@@ -114,17 +114,14 @@ forkdef processRandao (body : BeaconBlockBody) : StateTransition Unit := do
 /-- `process_eth1_data`: append the vote and adopt it once it has a majority over
 the voting period. -/
 forkdef processEth1Data (body : BeaconBlockBody) : StateTransition Unit := do
-  let state ← get
-  let votes := (sszGet state eth1DataVotes).push body.eth1Data
-  let target := htr body.eth1Data
-  let cnt := votes.foldl (fun acc e => if htr e == target then acc + 1 else acc) 0
+  appendState eth1DataVotes body.eth1Data
 
-  modifyState fun state => Id.run do
-    let mut state := state
-    state := sszUpdate state with eth1DataVotes := votes
-    if cnt * 2 > Const.epochsPerEth1VotingPeriod * Const.slotsPerEpoch then
-      state := sszUpdate state with eth1Data := body.eth1Data
-    return state
+  let state ← get
+  let target := htr body.eth1Data
+  let cnt := (sszGet state eth1DataVotes).foldl
+    (fun acc e => if htr e == target then acc + 1 else acc) 0
+  if cnt * 2 > Const.epochsPerEth1VotingPeriod * Const.slotsPerEpoch then
+    modifyState fun state => sszUpdate state with eth1Data := body.eth1Data
 
 /-- `process_sync_aggregate`: verify the aggregate signature over the previous
 slot's block root, then apply participant / proposer rewards and non-participant
