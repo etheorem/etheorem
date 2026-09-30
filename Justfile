@@ -5,8 +5,8 @@
 #
 # Global recipes (build / test / lint / doctor / setup) come first and carry
 # no prefix. Package-specific recipes are prefixed by their package
-# (`leansha256-`, `hazmat-*-`, `sizzlean-`, `ethcl-`, `poseidon-`) and tagged
-# with a `[group(...)]` so `just --list` sections them.
+# (`leansha256-`, `hazmat-*-`, `sizzlean-`, `ethcl-`, `poseidon-`, `rlp-`) and
+# tagged with a `[group(...)]` so `just --list` sections them.
 #
 # The pyspec recipes need a Python venv. Run `just setup-python` once first.
 
@@ -44,6 +44,7 @@ build: hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor hazmat-keccak-ve
     lake build SizzLean
     lake build EthCLSpecs
     lake build LeanPoseidon
+    lake build LeanRlp
 
 # Compile the pyspec runners the pytest harnesses drive: `pyspec_server`
 # (EthCLSpecs state transition / fork choice / ssz_static) and
@@ -55,13 +56,13 @@ build-cli:
     lake build pyspec_server ssz_generic_runner
 
 # All local tests, SHA-256 spec + FFI CAVP + BLS + KZG KATs + the seven
-# execution-layer family KATs + SSZ library gates + Poseidon2 anchor KAT.
-# The consensus-spec libraries (EthCLLib / EthCLSpecs) have their own
-# `ethcl-test` recipe and CI job.
+# execution-layer family KATs + SSZ library gates + Poseidon2 anchor KAT
+# + the RLP gate builds. The consensus-spec libraries (EthCLLib / EthCLSpecs)
+# have their own `ethcl-test` recipe and CI job.
 
 # Run every local property-test recipe (all packages)
 [group('general')]
-test: leansha256-test hazmat-sha256-test hazmat-bls-test hazmat-kzg-test hazmat-keccak-test hazmat-secp256k1-test hazmat-bn254-test hazmat-blake2f-test hazmat-ripemd160-test hazmat-modexp-test hazmat-p256-test sizzlean-test poseidon-test
+test: leansha256-test hazmat-sha256-test hazmat-bls-test hazmat-kzg-test hazmat-keccak-test hazmat-secp256k1-test hazmat-bn254-test hazmat-blake2f-test hazmat-ripemd160-test hazmat-modexp-test hazmat-p256-test sizzlean-test poseidon-test rlp-test
 
 # Reject committed `sorry`, `#eval`, `#check`, `#print` in Lean source
 # per CLAUDE.md. `git grep` searches tracked files only and returns 1
@@ -900,3 +901,24 @@ poseidon-proofs:
 [group('poseidon')]
 poseidon-gen-params:
     python3 packages/LeanPoseidon/scripts/gen_poseidon_params.py
+
+# ═════════════════════════════════════════════════════════════════════════
+# LeanRlp — execution-layer RLP codec, standalone island
+# ═════════════════════════════════════════════════════════════════════════
+
+# Building the core library. Nothing in the monorepo depends on
+# LeanRlp yet (standalone island), so unlike the SSZ-chain libs it
+# is not built transitively. The gate library is still empty at the
+# scaffold stage; Stage 1 fills `LeanRlpTests` with the
+# known-answer gates and the non-canonical-input checks
+# (packages/LeanRlp/docs/PLAN.md).
+
+# Build the LeanRlp library
+[group('rlp')]
+rlp-build:
+    lake build LeanRlp
+
+# Build the LeanRlp gate library (known answers land in Stage 1)
+[group('rlp')]
+rlp-test:
+    lake build LeanRlpTests
