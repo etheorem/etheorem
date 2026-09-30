@@ -12,6 +12,7 @@ name = "Etheorem"
 #   lake build SizzLean
 #   lake build EthCLLib / EthCLSpecs   # consensus-spec framework + Fulu/Gloas/Heze bodies
 #   lake build LeanPoseidon
+#   lake build LeanRlp                 # execution-layer RLP codec
 #   lake build SizzLeanTests
 #   lake build LeanHazmatSha256Tests / LeanHazmatBlsTests / LeanHazmatKzgTests
 #   lake build pyspec_server           # EthCLSpecs runner (state transition / fork choice / ssz_static)
@@ -77,3 +78,12 @@ path = "packages/EthCLSpecs"
 [[require]]
 name = "LeanPoseidon"
 path = "packages/LeanPoseidon"
+
+# LeanRlp — the execution layer's RLP codec (packages/LeanRlp/docs/
+# ARCHITECTURE.md). A standalone island like LeanPoseidon: it
+# requires no other Etheorem package, holds no hash class, and
+# defines no hash entry point; consumers hash `Rlp.encode` output
+# through the shared `Hasher` class (planned for `EthCommon`).
+[[require]]
+name = "LeanRlp"
+path = "packages/LeanRlp"

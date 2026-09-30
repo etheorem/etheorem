@@ -3,6 +3,13 @@
  "packages":
  [{"type": "path",
    "scope": "",
+   "name": "LeanRlp",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "packages/LeanRlp",
+   "configFile": "lakefile.toml"},
+  {"type": "path",
+   "scope": "",
    "name": "LeanPoseidon",
    "manifestFile": "lake-manifest.json",
    "inherited": false,

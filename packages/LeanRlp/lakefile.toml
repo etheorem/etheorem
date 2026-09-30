@@ -1,0 +1,30 @@
+name = "LeanRlp"
+version = "0.1.0"
+description = "Recursive-Length Prefix (RLP) codec for the Ethereum execution layer: total encoder, total strict decoder, derived record codecs, round-trip and canonical-form proofs."
+keywords = ["rlp", "ethereum", "execution-layer", "lean4", "serialization"]
+# SPDX identifier. The `LICENSE` file at this package's root is a
+# pinned copy of the umbrella's `LICENSE` (LGPL-3.0-only), the same
+# pattern `LeanSha256` uses: shipping it locally keeps the package
+# self-contained when subtree-split out to its own repository. The
+# umbrella copy at the repo root remains the upstream source of
+# truth. Reservoir expects a single-identifier SPDX expression.
+license = "LGPL-3.0-only"
+licenseFiles = ["LICENSE"]
+defaultTargets = ["LeanRlp"]
+
+[[lean_lib]]
+name = "LeanRlp"
+
+# Canonicality, known-answer, and EEST-derived gates live at the
+# package root under `LeanRlpTests/`, a separate `LeanRlpTests.*`
+# module hierarchy (package-prefixed, like `LeanSha256Tests`, so the
+# umbrella build never confuses the two test libs). Build explicitly
+# via `lake build LeanRlpTests` or `just rlp-test`.
+[[lean_lib]]
+name = "LeanRlpTests"
+roots = ["LeanRlpTests"]
+globs = ["LeanRlpTests.*"]
+
+# `Runner/` holds the `rlp_vectors` executable (the RLPTests driver,
+# PLAN.md Stage 2). Lake needs no target for it until the sources
+# exist; Stage 2 adds the `[[lean_exe]]` block.
