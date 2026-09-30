@@ -25,7 +25,6 @@ tier1 EthCLSpecs.Heze.isDataAvailable
 tier1 EthCLSpecs.Heze.isInclusionListSatisfied
 tier1 EthCLSpecs.Heze.isParentNodeFull
 tier1 EthCLSpecs.Heze.isPayloadVerified
-tier1 EthCLSpecs.Heze.onExecutionPayloadEnvelope
 tier1 EthCLSpecs.Heze.payloadDataAvailability
 tier1 EthCLSpecs.Heze.payloadTimeliness
 tier1 EthCLSpecs.Heze.verifyExecutionPayloadEnvelope
@@ -42,5 +41,6 @@ tier2 EthCLSpecs.Gloas.updateCheckpoints
 tier2 EthCLSpecs.Heze.getInclusionListCommittee
 tier2 EthCLSpecs.Heze.getInclusionListTransactions
 tier2 EthCLSpecs.Heze.isPayloadInclusionListSatisfied
+tier2 EthCLSpecs.Heze.onExecutionPayloadEnvelope
 tier2 EthCLSpecs.Heze.recordPayloadInclusionListSatisfaction
 tier2 EthCLSpecs.Heze.shouldExtendPayload
