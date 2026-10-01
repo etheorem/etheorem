@@ -54,7 +54,8 @@ open EthCLLib.Proofs (pureState KeepsUncached ReturnsUncached KeepsUncachedFrom
   keepsUncached_get keepsUncachedFrom_bind
   keepsUncached_liftErr keepsUncached_dite keepsUncached_forIn_range
   keepsUncached_ite keepsUncachedFrom_ite keepsUncachedFrom_pure keepsUncachedFrom_throw
-  keepsUncachedFrom_liftErr keepsUncachedFrom_dite keepsUncachedFrom_set keepsUncachedFrom_get
+  keepsUncachedFrom_liftErr keepsUncachedFrom_sszOfArrayM keepsUncachedFrom_dite
+  keepsUncachedFrom_set keepsUncachedFrom_get
   keepsUncachedFrom_get_bind keepsUncachedFrom_throw_bind keepsUncachedFrom_forIn_array_of_keeps
   keepsUncachedFrom_forIn_array_bind_P keepsUncachedFrom_forIn_range_bind_run_inv
   returnsUncached_bind returnsUncachedFrom_bind keepsUncached_iff_forall_from
@@ -395,7 +396,10 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) :
                     · exact keepsUncachedFrom_liftErr (T := BeaconState) (v := midState₉)
                         (ε := EthCLLib.Spec.StateTransitionError) (ε' := EthCLLib.Spec.IndexError)
                         (α := Array EthCLSpecs.Gloas.ValidatorIndex) _
-                    · refine keepsUncachedFrom_bind ?gG (fun _ midState₁₁ => ?_)
+                    · -- `sszOfArrayM` builds the attesting-index list, or raises `.listFull`.
+                      refine keepsUncachedFrom_bind (keepsUncachedFrom_sszOfArrayM _ _ _)
+                        (fun _ midStateL => ?_)
+                      refine keepsUncachedFrom_bind ?gG (fun _ midState₁₁ => ?_)
                       · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _)
                           (fun _ => keepsUncachedFrom_throw _ _)
                       · refine keepsUncachedFrom_bind ?ssL (fun sameSlot midState₁₂ => ?_)

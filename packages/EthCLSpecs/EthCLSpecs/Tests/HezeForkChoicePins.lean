@@ -297,10 +297,13 @@ private def pinTx (b : UInt8) : Transaction := sszOfArray #[b]
 
 /-- An inclusion list from validator `v` over committee `pinKey`, carrying `txs`. The `letI`
 fixes the preset so the anonymous constructor can synthesize it (a return-type annotation alone
-does not flow into instance resolution for `{ … }`). -/
-private def pinIL (v : ValidatorIndex) (txs : Array Transaction) : @InclusionList minimal :=
+does not flow into instance resolution for `{ … }`). The pins pass at most two transactions,
+and `h` carries that bound to `sszOfArray`, far under `MAX_TRANSACTIONS_PER_PAYLOAD`. -/
+private def pinIL (v : ValidatorIndex) (txs : Array Transaction)
+    (h : txs.size ≤ 2 := by decide) : @InclusionList minimal :=
   letI : Preset := minimal
-  { slot := 0, validatorIndex := v, inclusionListCommitteeRoot := pinKey, transactions := sszOfArray txs }
+  { slot := 0, validatorIndex := v, inclusionListCommitteeRoot := pinKey,
+    transactions := sszOfArray txs (Nat.le_trans h (by decide)) }
 
 /-- Number of inclusion lists stored under `pinKey`. The `letI`s supply the store's preset /
 hasher for the field projection (Lean re-synthesizes them rather than reading the argument's

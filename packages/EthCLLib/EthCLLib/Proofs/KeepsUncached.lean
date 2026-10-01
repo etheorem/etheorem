@@ -1,4 +1,5 @@
 import EthCLLib.Spec.State
+import EthCLLib.Spec.Header
 import EthCLLib.Proofs.Run
 import SizzLean.Proofs.UncachedBox
 
@@ -18,7 +19,8 @@ The predicate is generic over the SSZ value type `T`, the error `ε`, and the
 result `α`, the same way `runPure` is. The closure lemmas cover the constructs the
 spec bodies use: `pure`, `throw`, `bind`, `get`, `set` of a rebuilt box,
 `modify` through a writer that maps `pureState v` to `pureState` of a value (the
-shape `modBalance_pureState` supplies), `liftErr` and `assert`-shaped gates, `if`,
+shape `modBalance_pureState` supplies), `liftErr` and `assert`-shaped gates, the
+checked list constructor `sszOfArrayM`, `if`,
 and the `for` / `forM` folds over `List`, `Array`, and `SSZList`. A `match` on a
 plain value reduces to its branch by `cases` on the scrutinee, and
 `keepsUncached_congr` carries the fact across such a reduction.
@@ -179,6 +181,18 @@ theorem keepsUncached_liftErr {T ε ε' α : Type} [SSZRepr T] [HasherTag] [Erro
     subst h2
     rfl
 
+/-- `sszOfArrayM`, the spec's `List[T, N](a)`, returns the list or raises `.listFull`
+through `throwListFull`, a `liftErr`. Neither branch writes the state. -/
+theorem keepsUncached_sszOfArrayM {T ε α : Type} [SSZRepr T] [HasherTag]
+    [ErrorConv StateTransitionError ε] {cap : Nat} (field : String) (a : Array α) :
+    KeepsUncached (sszOfArrayM (m := StateT (SSZ.Box HasherTag.H T) (Except ε)) (cap := cap)
+      field a) := by
+  unfold sszOfArrayM
+  split
+  · exact keepsUncached_pure _
+  · unfold throwListFull
+    exact keepsUncached_liftErr _
+
 /-- `dite` keeps the flavour when both branches do. `if` and the `assert` /
 `assertH` expansions are special cases. -/
 theorem keepsUncached_dite {T ε α : Type} [SSZRepr T] [HasherTag] {c : Prop} [Decidable c]
@@ -294,6 +308,7 @@ macro_rules
         | (apply keepsUncached_forM_array; intro a; keeps_uncached)
         | refine keepsUncached_bind ?_ (fun a => ?_)
         | exact keepsUncached_liftErr _
+        | exact keepsUncached_sszOfArrayM _ _
         | split)
 
 /-! ## Flavour from one start, and through local bindings
@@ -374,6 +389,13 @@ theorem keepsUncachedFrom_liftErr {T ε ε' α : Type} [SSZRepr T] [HasherTag] [
     injection h1 with _ h2
     subst h2
     rfl
+
+/-- Per-start leaves: `sszOfArrayM`. -/
+theorem keepsUncachedFrom_sszOfArrayM {T ε α : Type} [SSZRepr T] [HasherTag]
+    [ErrorConv StateTransitionError ε] {cap : Nat} (v : T) (field : String) (a : Array α) :
+    KeepsUncachedFrom v (sszOfArrayM (m := StateT (SSZ.Box HasherTag.H T) (Except ε))
+      (cap := cap) field a) :=
+  keepsUncached_iff_forall_from.mp (keepsUncached_sszOfArrayM field a) v
 
 /-- Per-start leaves: `dite`. -/
 theorem keepsUncachedFrom_dite {T ε α : Type} [SSZRepr T] [HasherTag] {v : T} {c : Prop}

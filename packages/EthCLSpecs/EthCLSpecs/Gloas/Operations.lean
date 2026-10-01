@@ -143,7 +143,9 @@ forkdef onboardBuildersFromPendingDeposits : StateTransition Unit := do
     else
       applyDepositForBuilder d.pubkey d.withdrawalCredentials d.amount d.signature d.slot
 
-  modifyState fun state => sszUpdate state with pendingDeposits := sszOfArray kept
+  let keptList : SSZList PendingDeposit Const.pendingDepositsLimit ←
+    sszOfArrayM "pendingDeposits" kept
+  modifyState fun state => sszUpdate state with pendingDeposits := keptList
 
 /-! ## EIP-8282 builder-request handlers
 
@@ -312,7 +314,8 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
   let indexedAttestation : IndexedAttestation :=
-    { attestingIndices := sszOfArray ((← liftErr (getAttestingIndices state att)).qsort (· < ·)),
+    { attestingIndices := ← sszOfArrayM "attestingIndices"
+        ((← liftErr (getAttestingIndices state att)).qsort (· < ·)),
       data := att.data, signature := att.signature }
   assert (isValidIndexedAttestation state indexedAttestation)
 
@@ -410,8 +413,8 @@ forkdef getIndexedPayloadAttestation (state : State) (pa : PayloadAttestation) :
   let ptc ← getPtc state pa.data.slot
   let attesting := (Array.range Const.ptcSize).foldl
     (fun acc i => if bitGet pa.aggregationBits i then acc.push (vget ptc i) else acc) (#[] : Array ValidatorIndex)
-  pure { attestingIndices := sszOfArray (attesting.qsort (· < ·)), data := pa.data,
-         signature := pa.signature }
+  pure { attestingIndices := ← sszOfArrayM "attestingIndices" (attesting.qsort (· < ·)),
+         data := pa.data, signature := pa.signature }
 
 /-- `is_valid_indexed_payload_attestation`: non-empty, *non-strictly* sorted indices
 (the PTC can repeat a validator), in range, with a valid `DOMAIN_PTC_ATTESTER`

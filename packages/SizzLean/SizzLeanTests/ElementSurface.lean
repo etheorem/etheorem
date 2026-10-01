@@ -123,6 +123,13 @@ example : (xs.push? 99).map (·.toArray) = some #[10, 20, 30, 99] := by native_d
 /-- At capacity, `push?` refuses the append. -/
 example : (full3.push? 99).isNone = true := by native_decide
 
+/-- `ofArray?` builds a list from an array that fits, up to the capacity itself, and
+returns `none` for one element more, where the spec's `List[T, N](...)` raises. -/
+example : ((SSZList.ofArray? #[1, 2, 3] : Option (SSZList UInt64 3)).map (·.toArray))
+    = some #[1, 2, 3] := by native_decide
+example : (SSZList.ofArray? #[1, 2, 3, 4] : Option (SSZList UInt64 3)).isNone = true := by
+  native_decide
+
 /-! ## `SSZList.mapCap`: cap-preserving map
 
 Unlike `SSZList.map` (which drops to a bare `Array`), `mapCap` stays an `SSZList` at the
