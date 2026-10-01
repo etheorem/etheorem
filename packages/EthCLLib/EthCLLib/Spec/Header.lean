@@ -224,4 +224,21 @@ macro_rules
           else liftErr (Except.error (SizzLean.Cache.IndexError.indexError i n)
             : Except SizzLean.Cache.IndexError PUnit))
 
+/-! ## `sszOfArrayM`: the spec's `List[T, N](a)` on an array of any size -/
+
+universe u
+
+/-- `sszOfArrayM field a`: the spec's `List[T, N](a)`, for an array whose size depends on
+the input. It returns the list when `a` fits under the limit `cap`, the one the expected
+type fixes. Otherwise it raises the `.listFull` fault, as remerkleable's `List`
+constructor raises a bare `Exception` on too many elements. `field` names the list,
+diagnostic only. The `[ErrorConv StateTransitionError E]` bound lets one definition serve
+both machines. An array of fixed size uses the proof-carrying `sszOfArray` instead. -/
+@[inline] def sszOfArrayM {m : Type → Type u} {α E : Type} {cap : Nat} [Monad m]
+    [MonadExcept E m] [ErrorConv StateTransitionError E] (field : String) (a : Array α) :
+    m (SizzLean.Repr.SSZList α cap) :=
+  match SizzLean.Repr.SSZList.ofArray? a with
+  | some l => pure l
+  | none   => throwListFull field
+
 end EthCLLib.Spec

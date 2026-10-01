@@ -120,7 +120,11 @@ partials, and advance the sweep cursor. -/
 forkdef processWithdrawals (payload : ExecutionPayload) : StateTransition Unit := do
   let state ← get
   let (expected, processedPartial) ← getExpectedWithdrawals state
-  let expectedList : SSZList Withdrawal Const.maxWithdrawalsPerPayload := sszOfArray expected
+  -- `payload.withdrawals == expected.withdrawals`: remerkleable's `View.__eq__` coerces the
+  -- Python list through the `List` constructor, which raises on too many elements, then
+  -- compares roots.
+  let expectedList : SSZList Withdrawal Const.maxWithdrawalsPerPayload ←
+    sszOfArrayM "withdrawals" expected
   assert (htr expectedList == htr payload.withdrawals)
 
   let nvals := (sszGet state validators).size
