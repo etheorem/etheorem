@@ -49,7 +49,7 @@ namespace EthCLSpecs.Proofs.Heze
 
 open EthCLLib.Spec
 open EthCLLib.Proofs (ForkChoiceStoreRun LawfulFcMap LawfulInclusionList pureState)
-open EthCLSpecs.Heze (Preset Config Store BeaconState Root Slot InclusionList InclusionListStore
+open EthCLSpecs.Heze (Preset Config Store State BeaconState Root Slot InclusionList InclusionListStore
   SignedInclusionList Transaction ValidatorIndex ExecutionPayload ExecutionRequests
   processInclusionList getInclusionListCommittee
   getInclusionListTransactions isInclusionListSatisfied recordPayloadInclusionListSatisfaction)

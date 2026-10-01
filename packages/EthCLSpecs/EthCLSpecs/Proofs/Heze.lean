@@ -3,6 +3,7 @@ import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
 import EthCLSpecs.Proofs.Heze.CensorshipCost
 import EthCLSpecs.Proofs.Heze.CheckpointOrd
 import EthCLSpecs.Proofs.Heze.Churn
+import EthCLSpecs.Proofs.Heze.ClockedTrace
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.HandlerFrames
 import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
@@ -17,6 +18,7 @@ import EthCLSpecs.Proofs.Heze.KeepsUncached.Slots
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Withdrawals
 import EthCLSpecs.Proofs.Heze.StorePure
 import EthCLSpecs.Proofs.Heze.NodeTrace
+import EthCLSpecs.Proofs.Heze.NodeViews
 import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 import EthCLSpecs.Proofs.Heze.OnInclusionList
 import EthCLSpecs.Proofs.Heze.OnTickPerSlot
@@ -63,6 +65,11 @@ Re-exports:
   `instLawfulEqOrdCheckpoint`), so `treeMap` meets the map laws at `Checkpoint`.
 * `EthCLSpecs.Proofs.Heze.Churn`: the inherited `reserveChurn`, which takes the Gloas proof
   terms, and run theorems for the two inherited churn callers.
+* `EthCLSpecs.Proofs.Heze.ClockedTrace`: a node trace on the wall clock
+  (`ClockedTrace`). The current slot and the time into the slot in terms of the wall time
+  (`slotStartMs_le_of_getCurrentSlot`, `timeIntoSlotMs_lt_of_window`). A state at a root
+  comes from an `onBlock` event that passed its clock check
+  (`NodeTrace.blockStates_origin`, `onBlock_run_ok_currentSlot`).
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
   equations for `getInclusionListCommittee` and
   `getInclusionListTransactions`
@@ -114,6 +121,10 @@ Re-exports:
   (`NodeTrace`). From a seed with the empty IL store, such as the anchor store of
   `getForkchoiceStore`, the IL store is `ilStoreOfArrivals` of the arrivals of the trace
   (`NodeTrace.ilStore`).
+* `EthCLSpecs.Proofs.Heze.NodeViews`: every honest node that handles an envelope for the
+  root `r`, on a payload that omits a transaction of the honest list, records `false`
+  (`honestNode_records_false`, `honestNodes_record_false`). The answer at `r` then never
+  holds `true` (`honestNode_answer_ne_true`).
 * `EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope`: the complete
   compositional `.run` equation of `onExecutionPayloadEnvelope`
   (`onExecutionPayloadEnvelope_run`), tagged
