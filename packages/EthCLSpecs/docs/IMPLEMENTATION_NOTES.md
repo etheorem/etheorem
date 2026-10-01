@@ -403,8 +403,10 @@ conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet` 
 and `hasFlag` / `addFlag`. The append lives in SizzLean: `SSZList.push` takes a proof
 that the list has room, and `SSZList.push?` / `sszAppend?` return `none` on a full list.
 `appendState` (`Spec.Header`) turns that `none` into the `.listFull` fault, the spec's
-`List.append` raise, and `setOrAppendState` models `set_or_append_list` on top of it. The
-old `sszPush` is gone. `Spec.State`
+`List.append` raise, and `setOrAppendState` models `set_or_append_list` on top of it.
+`sszOfArray` takes a proof that its array fits. `sszOfArrayM` (`Spec.Header`) is the
+spec's `List[T, N](a)` for an array of any size: it raises `.listFull` on too many
+elements, over SizzLean's `SSZList.ofArray?`. The old `sszPush` is gone. `Spec.State`
 carries `getStateRoot` / `stateRoot` / `stateRoot!`. `Spec.RunState` carries
 `MonadRunState`, the class saying a state-machine monad can be run from a starting state,
 and `runToRoot` (run a boxed-state action to its post-root, generic over that class, the

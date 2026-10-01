@@ -13,9 +13,9 @@ the behavior is checked at build (`FRAMEWORK_ARCHITECTURE.md` §14):
 - a step writes `modifyState fun state => sszUpdate state with …` with **no**
   `(state : State)` annotation, the payoff of the concrete-domain `modifyState`, and
   it both typechecks and *runs* at the fast config;
-- `appendState` appends to a list with room and raises `.listFull` on a full one, and
+- `appendState` appends to a list with room and raises `.listFull` on a full one,
   `setOrAppendState` appends, overwrites, or raises `.outOfBounds`, as the spec's
-  `set_or_append_list` does;
+  `set_or_append_list` does, and `sszOfArrayM` raises `.listFull` on too many elements;
 - `fork_choice_section` opens its section and establishes the store-machine variables.
 -/
 
@@ -71,6 +71,11 @@ def appendX (v : UInt64) : StateTransition Unit :=
 /-- The spec's `set_or_append_list(state.xs, i, v)`. -/
 def setOrAppendX (i : Nat) (v : UInt64) : StateTransition Unit :=
   setOrAppendState xs i v
+
+/-- The spec's `state.xs = List[uint64, 2](a)`, through `sszOfArrayM`. -/
+def setXs (a : Array UInt64) : StateTransition Unit := do
+  let l : SSZList UInt64 2 ← sszOfArrayM "xs" a
+  modifyState fun state => sszUpdate state with xs := l
 
 end   -- closes the section opened by `state_section`
 
@@ -135,6 +140,12 @@ example : runXs (setOrAppendX 0 9) = .inl #[9] := by native_decide
 
 /-- `set_or_append_list` past the end raises the spec's `IndexError`, `.outOfBounds`. -/
 example : runXs (setOrAppendX 3 9) = .inr (.outOfBounds 3 1) := by native_decide
+
+/-- An array up to the limit becomes the list. -/
+example : runXs (setXs #[4, 5]) = .inl #[4, 5] := by native_decide
+
+/-- An array over the limit raises `.listFull`, as remerkleable's `List` constructor does. -/
+example : runXs (setXs #[4, 5, 6]) = .inr (.listFull "xs") := by native_decide
 
 end ListLimit
 

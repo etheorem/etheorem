@@ -208,6 +208,13 @@ def SSZList.push? {α : Type} {cap : Nat} (xs : SSZList α cap) (x : α) :
     Option (SSZList α cap) :=
   if h : xs.val.size < cap then some (xs.push x h) else none
 
+/-- Build a list from an array, if the array fits: `some` of the list when
+`a.size ≤ cap`, or `none` when it is too long. The SSZ spec's `List[T, N](...)` raises on
+too many elements (remerkleable: "too many list inputs"), so the `none` branch is where
+the caller raises. `cap` is not read off an argument, so the expected type fixes it. -/
+def SSZList.ofArray? {α : Type} {cap : Nat} (a : Array α) : Option (SSZList α cap) :=
+  if h : a.size ≤ cap then some ⟨a, h⟩ else none
+
 /-- `GetElem` instance for `SSZList`, with the faithful validity predicate
 `fun xs i => i < xs.size`. So the three element reads behave like `Array`'s:
 `xs[i]?` is a real bounds check (`none` past the end), `xs[i]!` returns the

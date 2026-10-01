@@ -538,7 +538,7 @@ it in its classify mode:
 | `outOfBounds` / `decodeFailure` | a smell; the spec should not hit these on well-formed input, so they surface as likely bugs |
 | `missingKey` | a fault the reference propagates rather than catches, so it never counts as a rejection |
 | `arithmetic` | the same, except under a case whose own wrapper catches `ValueError` (`SPECS_ARCHITECTURE.md` §10.2) |
-| `listFull` | an append to a full list; remerkleable raises a bare `Exception`, which no wrapper catches, so it never counts as a rejection |
+| `listFull` | a list over its limit, from an append or a constructor; remerkleable raises a bare `Exception`, which no wrapper catches, so it never counts as a rejection |
 
 ### 6.1 `todo` as the deferral work-queue
 
@@ -738,7 +738,7 @@ def onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
 
 The primitives a step uses are a small, closed set: `assert` and the proof-returning
 `assertH`, `modifyState`, `set`, `throw`, `todo`, the `sszGet` / `sszUpdate` access pair,
-the list writes `appendState` / `setOrAppendState`, and the reject-reads `sszGetIdx` /
+the list writes `appendState` / `setOrAppendState` / `sszOfArrayM`, and the reject-reads `sszGetIdx` /
 `bitlistGetIdx`. Anything outside this set should not
 appear in a step body.
 

@@ -720,7 +720,8 @@ forkdef onPayloadAttestationMessage (msg : PayloadAttestationMessage) (isFromBlo
       let currentSlot ← getCurrentSlot store
       assert (data.slot == currentSlot)
       let indexed : IndexedPayloadAttestation :=
-        { attestingIndices := sszOfArray #[msg.validatorIndex], data := data, signature := msg.signature }
+        { attestingIndices := ← sszOfArrayM "attestingIndices" #[msg.validatorIndex], data := data,
+          signature := msg.signature }
       assert (isValidIndexedPayloadAttestation state indexed)
       set (← recordPtcVotes store data ptcIndices)
 
@@ -1011,7 +1012,9 @@ forkdef onAttestation (att : Attestation) (isFromBlock : Bool) : StoreTransition
   set store
   let targetState ← FcMap.getOrThrowKey store.checkpointStates att.data.target att.data.target.root
   let attesting := (← liftErr (getAttestingIndices targetState att)).qsort (· < ·)
-  let indexedAttestation : IndexedAttestation := { attestingIndices := sszOfArray attesting, data := att.data, signature := att.signature }
+  let indexedAttestation : IndexedAttestation :=
+    { attestingIndices := ← sszOfArrayM "attestingIndices" attesting, data := att.data,
+      signature := att.signature }
   assert (isValidIndexedAttestation targetState indexedAttestation)
 
   set (updateLatestMessages store attesting att)

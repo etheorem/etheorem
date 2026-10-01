@@ -161,7 +161,8 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
     | some f => pure f
     | none   => throw (StateTransitionError.assert "is_matching_source")
   let indexedAttestation : IndexedAttestation :=
-    { attestingIndices := sszOfArray ((← liftErr (getAttestingIndices state att)).qsort (· < ·)),
+    { attestingIndices := ← sszOfArrayM "attestingIndices"
+        ((← liftErr (getAttestingIndices state att)).qsort (· < ·)),
       data := att.data, signature := att.signature }
   assert (isValidIndexedAttestation state indexedAttestation)
 

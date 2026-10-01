@@ -5,7 +5,7 @@ import SizzLean.Proofs.SSZListPush
 /-!
 # `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: the builder-payment epoch substep
 
-`EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:234-253`)
+`EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:236-255`)
 changes two fields, one after the other, in one state transition. It appends the
 withdrawal of each qualifying payment from the previous epoch to
 `builderPendingWithdrawals`, in slot order, through `appendState`. Then it shifts the

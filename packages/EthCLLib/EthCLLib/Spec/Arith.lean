@@ -13,10 +13,11 @@ total balance), narrowed back with an exact conversion, never a reject.
 through `UIntToBytes`, removing the 4-versus-8-byte serialization bug class by
 never letting the author pick the width by hand.
 
-The collection helpers (`sszDrop` / `sszOfArray`, `vget`,
-`bitGet` / `bitSet`) are total: a write past capacity clamps, an out-of-range read
-returns the default, so a spec step stays total (the pure-config requirement) with
-no panic. Element reads and writes on a boxed-state field go through SizzLean's
+The collection helpers (`sszDrop`, `vget`, `bitGet` / `bitSet`) are total: a bit write
+past the end changes nothing, an out-of-range read returns the default, so a spec step
+stays total (the pure-config requirement) with no panic. `sszOfArray` takes a proof that
+the array fits. A list whose length is known only at run time goes through
+`sszOfArrayM` (`Spec.Header`), which raises as the spec's `List[T, N](...)` does. Element reads and writes on a boxed-state field go through SizzLean's
 `sszGet`/`sszUpdate` index forms (`f[i]!` total, `f[i]` reject-on-miss) directly.
 -/
 
@@ -180,19 +181,13 @@ downstream total write hits. -/
 def sszDrop {α : Type} {cap : Nat} (xs : SSZList α cap) (k : Nat) : SSZList α cap :=
   ⟨xs.val.extract k xs.val.size, by have := xs.property; simp only [Array.size_extract]; omega⟩
 
-/-- Replace an `SSZList`'s contents. An array longer than the capacity is truncated to its
-first `cap` elements.
-
-pyspec's `List[T, N](...)` raises on too many elements, and this truncation does not. No
-caller reaches the truncation, because every caller builds an array whose length is bounded
-for every decodable input. A rebuild of a list from its own elements (`pending_deposits`) is no longer
-than the original. A per-validator list has `len(state.validators)` entries, and the decode
-bounds that by the same limit. Attesting indices and expected withdrawals are bounded by their
-own loops. A new caller must keep that property. A plain append goes through `appendState`,
-which raises `.listFull` as the spec does. -/
-def sszOfArray {α : Type} {cap : Nat} (a : Array α) : SSZList α cap :=
-  if h : a.size ≤ cap then ⟨a, h⟩
-  else ⟨a.extract 0 cap, by simp only [Array.size_extract]; omega⟩
+/-- An `SSZList` from an array that fits, the spec's `List[T, N](a)`. The caller proves
+`a.size ≤ cap`, so this form has no failure branch. The default proof closes the cases
+where the size is fixed, such as `#[]`. An array whose size depends on the input goes
+through `sszOfArrayM`, which raises on too many elements as pyspec does. -/
+def sszOfArray {α : Type} {cap : Nat} (a : Array α)
+    (h : a.size ≤ cap := by first | (simp <;> decide) | decide) : SSZList α cap :=
+  ⟨a, h⟩
 
 /-- The indices of `xs` whose element (with its position) satisfies `p`, as `uint64`s. Names
 the `mut out / for i / push (UInt64.ofNat i)` accumulator that the registry walks

@@ -643,7 +643,9 @@ forkdef onAttestation (att : Attestation) (isFromBlock : Bool) : StoreTransition
   set store
   let targetState ← FcMap.getOrThrowKey store.checkpointStates att.data.target att.data.target.root
   let attesting := (← liftErr (getAttestingIndices targetState att)).qsort (· < ·)
-  let indexedAttestation : IndexedAttestation := { attestingIndices := sszOfArray attesting, data := att.data, signature := att.signature }
+  let indexedAttestation : IndexedAttestation :=
+    { attestingIndices := ← sszOfArrayM "attestingIndices" attesting, data := att.data,
+      signature := att.signature }
   assert (isValidIndexedAttestation targetState indexedAttestation)
 
   set (updateLatestMessages store attesting att)

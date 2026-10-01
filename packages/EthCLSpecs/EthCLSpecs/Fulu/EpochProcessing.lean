@@ -269,10 +269,12 @@ forkdef processPendingDeposits : StateTransition Unit := do
   let avail := (sszGet state depositBalanceToConsume) + getActivationExitChurnLimit state
   let finalizedSlot := computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
   let deposits := (sszGet state pendingDeposits).toArray
-  let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
 
+  let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
+  let remaining : SSZList PendingDeposit Const.pendingDepositsLimit ←
+    sszOfArrayM "pendingDeposits" (deposits.extract scan.ndi deposits.size ++ scan.postpone)
   modifyState fun state => sszUpdate state with
-    pendingDeposits := sszOfArray (deposits.extract scan.ndi deposits.size ++ scan.postpone),
+    pendingDeposits := remaining,
     depositBalanceToConsume := if scan.churnReached then avail - scan.processed else 0
 
 /-! ## Pending consolidations -/
@@ -378,10 +380,12 @@ forkdef processParticipationFlagUpdates : StateTransition Unit := do
   let state ← get
   let current := sszGet state currentEpochParticipation
   let count := (sszGet state validators).size
+  let zeros : SSZList ParticipationFlags Const.validatorRegistryLimit ←
+    sszOfArrayM "currentEpochParticipation" (Array.replicate count (0 : ParticipationFlags))
   modifyState fun state =>
     sszUpdate state with
       previousEpochParticipation := current,
-      currentEpochParticipation  := sszOfArray (Array.replicate count (0 : ParticipationFlags))
+      currentEpochParticipation  := zeros
 
 /-! ## Sync-committee rotation & proposer lookahead (shuffle-dependent) -/
 
