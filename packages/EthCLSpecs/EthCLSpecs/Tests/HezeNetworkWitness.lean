@@ -1,5 +1,6 @@
 import EthCLSpecs.Tests.HezeWitnessSeams
 import EthCLSpecs.Proofs.Heze.HonestDuties
+import EthCLSpecs.Proofs.Heze.TraceRun
 
 /-!
 # `EthCLSpecs.Tests.HezeNetworkWitness`: the network theorem has a witness
@@ -146,16 +147,150 @@ def seed : Except StoreTransitionError (Store treeMap) :=
 def blockRunOk : Bool :=
   match seed with
   | .error _ => false
-  | .ok s0 =>
-    let run : ForkChoiceStoreRun (Store treeMap) Unit := do
-      EthCLSpecs.Heze.onTick (map := treeMap)
-        (StoreTransition := ForkChoiceStoreRun (Store treeMap)) 6
-      EthCLSpecs.Heze.onBlock (map := treeMap)
-        (StoreTransition := ForkChoiceStoreRun (Store treeMap)) signedR
-    (run.run s0).toBool
+  | .ok s0 => (runTrace s0 [.handler (.tick 6), .handler (.block signedR)]).toBool
 
 -- The transition of `r` succeeds, and `onBlock` accepts `r` at the first tick of slot 1.
 #guard postR.toBool
 #guard blockRunOk
+
+/-- The inclusion-list committee of slot `0`, as a state at `r` gives it. -/
+def committee : Vector EthCLSpecs.Heze.ValidatorIndex
+    EthCLSpecs.Heze.Const.inclusionListCommitteeSize :=
+  (committeeOf postState 0).getD default
+
+/-- The one transaction of the honest list. -/
+def tx : Transaction := sszOfArray #[1]
+
+/-- A signed list of slot `0` from `validator`, under the committee key `key`, with the
+one transaction `t`. The signature is empty. -/
+def mkList (validator : UInt64) (key : Root) (t : Transaction) :
+    EthCLSpecs.Heze.SignedInclusionList :=
+  { message :=
+      { slot := 0, validatorIndex := validator, inclusionListCommitteeRoot := key
+        transactions := sszOfArray #[t] }
+    signature := default }
+
+/-- The signed honest list: validator `0`, under the key of `committee`, with `tx`. -/
+def signedIl : EthCLSpecs.Heze.SignedInclusionList := mkList 0 (htr committee) tx
+
+/-- The honest list. -/
+def il : EthCLSpecs.Heze.InclusionList := signedIl.message
+
+/-- Adversary list 1: validator `1`, with another transaction. -/
+def advX : EthCLSpecs.Heze.SignedInclusionList := mkList 1 (htr committee) (sszOfArray #[2])
+
+/-- Adversary list 2, first copy: validator `2`. -/
+def advY₁ : EthCLSpecs.Heze.SignedInclusionList := mkList 2 (htr committee) (sszOfArray #[3])
+
+/-- Adversary list 2, second copy: validator `2` again, with another transaction. -/
+def advY₂ : EthCLSpecs.Heze.SignedInclusionList := mkList 2 (htr committee) (sszOfArray #[4])
+
+/-- Adversary list 3: validator `3`. The nodes receive it after the IL due time. -/
+def advZ : EthCLSpecs.Heze.SignedInclusionList := mkList 3 (htr committee) (sszOfArray #[5])
+
+/-- Adversary list 4: the honest validator under another committee root. -/
+def advW : EthCLSpecs.Heze.SignedInclusionList := mkList 0 default (sszOfArray #[6])
+
+/-- The self-build envelope of `r`. The payload carries no transactions, so it leaves out
+`tx`. -/
+def envelope : EthCLSpecs.Heze.SignedExecutionPayloadEnvelope :=
+  { message :=
+      { payload := { (default : ExecutionPayload) with
+          slotNumber := 1, timestamp := 6, parentHash := h1, blockHash := h2 }
+        executionRequests := default
+        builderIndex := builderIndexSelfBuild
+        beaconBlockRoot := rootR
+        parentBeaconBlockRoot := genesisRoot }
+    signature := default }
+
+/-- The send time of `il`, in wall milliseconds. Genesis is at time `0`. -/
+def tSend : Nat := 500
+
+/-- The delivery bound of `il`, in milliseconds. -/
+def Δ : Nat := 1000
+
+/-- The trace of node `A`. Each event carries its wall time. `A` receives `il` at 600 and
+the envelope in slot `1`. -/
+def tevsA : List (TraceEvent × Nat) :=
+  [ (.handler (.tick 0), 500), (.inclusionList signedIl, 600), (.inclusionList advX, 700),
+    (.inclusionList advY₁, 800), (.inclusionList advY₂, 850), (.inclusionList advW, 900),
+    (.handler (.tick 5), 5000), (.inclusionList advZ, 5000),
+    (.handler (.tick 6), 6000), (.handler (.block signedR), 6000),
+    (.handler (.tick 7), 7000), (.handler (.envelope envelope), 7000),
+    (.handler (.tick 12), 12000) ]
+
+/-- The trace of node `B`. `B` receives the lists in another order, and `il` at 1400. It
+never receives the envelope. -/
+def tevsB : List (TraceEvent × Nat) :=
+  [ (.handler (.tick 0), 500), (.inclusionList advW, 600), (.inclusionList advX, 700),
+    (.handler (.tick 1), 1400), (.inclusionList signedIl, 1400),
+    (.inclusionList advY₂, 1500), (.inclusionList advY₁, 1500),
+    (.handler (.tick 5), 5000), (.inclusionList advZ, 5000),
+    (.handler (.tick 6), 6000), (.handler (.block signedR), 6000),
+    (.handler (.tick 12), 12000) ]
+
+/-- The hypotheses of `HonestView` that a computation decides, at the seed `s0` and the
+trace `tevs`. The clock and the facts at `r` share one pass (`traceAll`). -/
+def viewB (s0 : Store treeMap) (tevs : List (TraceEvent × Nat)) : Bool :=
+  (runTrace s0 (tevs.map Prod.fst)).toBool &&
+  decide (tevs.Pairwise (fun a b => a.2 ≤ b.2)) &&
+  traceAll (rootFactsB rootR 1 committee) (fun x m => decide (ClockAt x.1 x.2 m)) tevs [] s0 &&
+  (FcMap.lookup s0.blockStates rootR).isNone &&
+  (FcMap.lookup s0.payloadInclusionListSatisfaction rootR).isNone &&
+  (FcMap.lookup s0.payloads rootR).isNone &&
+  honestListB tevs il tSend Δ &&
+  handlersAll tevs (fun e => match e with
+    | .envelope env =>
+      !(env.message.beaconBlockRoot == rootR) ||
+      !(env.message.payload.transactions.toArray.contains tx)
+    | _ => true) &&
+  handlersAll tevs (fun e => decide (e.NotAtAnchorParent genesisBlock)) &&
+  !(genesisBlock.parentRoot == htr genesisBlock)
+
+/-- The checks at both nodes, from the seed. -/
+def nodeChecks : Bool :=
+  match seed with
+  | .ok s0 => viewB s0 tevsA && viewB s0 tevsB
+  | .error _ => false
+
+-- Both nodes meet every decidable hypothesis of `HonestView`.
+#guard nodeChecks
+
+/-- The seed exists. -/
+theorem seed_ok : ∃ s0 : Store treeMap, seed = .ok s0 := by
+  have hb : seed.toBool = true := by native_decide
+  cases h : seed with
+  | ok s0 => exact ⟨s0, rfl⟩
+  | error e => rw [h] at hb; simp [Except.toBool] at hb
+
+/-- `viewB` gives `HonestView` at the store where the trace ends. -/
+theorem honestView_of_check {s0 : Store treeMap} (hseed : seed = .ok s0)
+    {tevs : List (TraceEvent × Nat)} (h : viewB s0 tevs = true) :
+    ∃ (arr : List (EthCLSpecs.Heze.SignedInclusionList × UInt64)) (s : Store treeMap),
+      runTrace s0 (tevs.map Prod.fst) = .ok (arr, s) ∧
+      HonestView s0 s tevs arr rootR 1 committee il tSend Δ
+        (fun p => p.transactions.toArray) (fun _ _ => False) tx genesisBlock := by
+  simp only [viewB, Bool.and_eq_true] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hrun, hmono⟩, hpass⟩, hanchor⟩, hans⟩, hpay⟩, hlist⟩, homits⟩, hnap⟩,
+    hparent⟩ := h
+  cases hr : runTrace s0 (tevs.map Prod.fst) with
+  | error e => rw [hr] at hrun; simp [Except.toBool] at hrun
+  | ok res =>
+    obtain ⟨arr, s⟩ := res
+    refine ⟨arr, s, rfl, ?_⟩
+    exact
+      { clocked := ClockedTrace.of_check hr (of_decide_eq_true hmono) hpass
+        seedIl := getForkchoiceStore_ilStore _ _ _ hseed
+        root := RootFacts.of_check hanchor (BlockStatesPure.anchor _ _ _ hseed) hpass
+        answer0 := Option.isNone_iff_eq_none.mp hans
+        payload0 := Option.isNone_iff_eq_none.mp hpay
+        list := HonestList.of_check hlist
+        omits := fun env w hm hroot' => by
+          have := handlersAll_spec homits _ w hm
+          refine ⟨fun hmem => ?_, id⟩
+          simp [hroot'] at this
+          exact this hmem
+        slotInv0 := SlotInv.anchor _ _ _ hseed (by simpa using hparent)
+        noAnchorParent := fun e w hm => of_decide_eq_true (handlersAll_spec hnap e w hm) }
 
 end EthCLSpecs.Tests.HezeNetworkWitness
