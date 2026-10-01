@@ -27,7 +27,8 @@ handles a message. This is the clock of an honest node.
   is past the start of slot `n`. `timeIntoSlotMs_lt_of_window`: an arrival in the first
   `due` milliseconds of a slot is timely. The seconds round the wall time down, so the
   rounding cannot make an arrival late. The lemma needs a slot length of whole seconds.
-  Both presets have one (6000 ms and 12000 ms).
+  Both presets have one (6000 ms and 12000 ms). `getCurrentSlot_run_eq_of_window`: a wall
+  time in slot `k` gives the current slot `k`.
 - `onBlock_run_ok_currentSlot`: a successful `onBlock` passed its clock check.
   `NodeTrace.blockStates_origin`: a state at a root comes from an `onBlock` event on a
   block with that root.
@@ -303,6 +304,96 @@ theorem timeIntoSlotMs_lt_of_window (st s s' : Store map) (t due : UInt64) (w k 
     omega
   rw [hsplit, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt (by omega)]
   omega
+
+omit [Preset] [HasherTag] [Config] in
+/-- When `e * 1000` fits in `UInt64`, the truncating product divides back to `1000`. The
+converse of `toNat_mul_1000_lt`. -/
+theorem mul_1000_div_self (e : UInt64) (he : e ≠ 0) (hfit : e.toNat * 1000 < 2 ^ 64) :
+    e * 1000 / e = 1000 := by
+  apply UInt64.toNat_inj.mp
+  have hpos : 0 < e.toNat := by
+    rcases Nat.eq_zero_or_pos e.toNat with h0 | h0
+    · exact absurd (UInt64.toNat_inj.mp (by simpa using h0)) he
+    · exact h0
+  rw [UInt64.toNat_div, UInt64.toNat_mul]
+  simp only [UInt64.reduceToNat]
+  rw [Nat.mod_eq_of_lt hfit, Nat.mul_comm, Nat.mul_div_cancel _ hpos]
+
+omit [Preset] [HasherTag] [Config] in
+/-- A window of wall milliseconds, read in whole seconds. The bounds are whole seconds, so
+the rounding of `w / 1000` keeps `w` inside. -/
+theorem window_seconds (g m d w : Nat) (hlo : g * 1000 + m * 1000 ≤ w)
+    (hhi : w < g * 1000 + (m * 1000 + d * 1000)) :
+    g + m ≤ w / 1000 ∧ w / 1000 < g + m + d := by
+  omega
+
+omit [Preset] [HasherTag] [Config] in
+/-- A window `[s, s + due)` that holds `t + Δ`, with `due ≤ D`, has a positive length `D`. -/
+theorem pos_of_window (s t Δ due D : Nat) (hlo : s ≤ t) (hhi : t + Δ < s + due)
+    (hdue : due ≤ D) : 0 < D := by
+  omega
+
+/-- `getCurrentSlot` succeeds when the store time is not before genesis and the
+milliseconds since genesis fit in `UInt64`. It reads nothing else, so the runner state stays
+the same. The converse of `getCurrentSlot_run_ok`. -/
+theorem getCurrentSlot_run_exists (st s : Store map) (hle : st.genesisTime ≤ st.time)
+    (hfit : (st.time - st.genesisTime).toNat * 1000 < 2 ^ 64) :
+    ∃ cs, (getCurrentSlot (StoreTransition := ForkChoiceStoreRun (Store map)) st).run s
+      = .ok (cs, s) := by
+  simp only [getCurrentSlot, EthCLSpecs.Heze.getSlotsSinceGenesis, checkedSub, checkedMul]
+  split
+  · rename_i hg
+    exact absurd hle (UInt64.not_le.mpr hg)
+  · simp only [pure_bind]
+    split
+    · rename_i hm
+      exfalso
+      simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hm
+      exact hm.2 (mul_1000_div_self _ hm.1 hfit)
+    · exact ⟨_, rfl⟩
+
+/-- The current slot from the wall clock. The store time is the wall time `w` in whole
+seconds, and `w` lies in slot `k`: at or after its start, before the start of slot
+`k + 1`. The slot length is a whole number of seconds. `hsec` keeps the milliseconds since
+genesis inside `UInt64`. Then `getCurrentSlot` returns `k`. -/
+theorem getCurrentSlot_run_eq_of_window (st s : Store map) (w k : Nat)
+    (htime : st.time.toNat = w / 1000) (hDdiv : 1000 ∣ slotDurationMs.toNat)
+    (hlo : slotStartMs st.genesisTime k ≤ w) (hhi : w < slotStartMs st.genesisTime (k + 1))
+    (hsec : w / 1000 ≤ maxMsSeconds) :
+    ∃ cs : UInt64, cs.toNat = k ∧
+      (getCurrentSlot (StoreTransition := ForkChoiceStoreRun (Store map)) st).run s
+        = .ok (cs, s) := by
+  unfold maxMsSeconds at hsec
+  obtain ⟨d, hd⟩ := hDdiv
+  unfold slotStartMs at hlo hhi
+  rw [hd] at hlo hhi
+  -- Name the start of slot `k` in seconds since genesis, `m = k * d`, so `omega` sees
+  -- linear terms only.
+  have e1 : k * (1000 * d) = k * d * 1000 := by rw [Nat.mul_comm 1000 d, ← Nat.mul_assoc]
+  have e2 : (k + 1) * (1000 * d) = k * d * 1000 + d * 1000 := by
+    rw [Nat.add_mul, Nat.one_mul, e1, Nat.mul_comm 1000 d]
+  rw [e1] at hlo
+  rw [e2] at hhi
+  generalize hm : k * d = m at hlo hhi
+  -- The window in whole seconds: `g + m ≤ w / 1000 < g + m + d`.
+  obtain ⟨hlo', hhi'⟩ := window_seconds _ m d w hlo hhi
+  have hle : st.genesisTime ≤ st.time := by
+    rw [UInt64.le_iff_toNat_le, htime]
+    omega
+  have he : (st.time - st.genesisTime).toNat = w / 1000 - st.genesisTime.toNat := by
+    rw [UInt64.toNat_sub_of_le _ _ hle, htime]
+  have hfit : (st.time - st.genesisTime).toNat * 1000 < 2 ^ 64 := by
+    rw [he]
+    omega
+  obtain ⟨cs, hrun⟩ := getCurrentSlot_run_exists st s hle hfit
+  refine ⟨cs, ?_, hrun⟩
+  obtain ⟨-, -, hcs⟩ := getCurrentSlot_run_ok st s s cs hrun
+  rw [hcs, he, hd, Nat.mul_comm 1000 d, Nat.mul_div_mul_right _ _ (by decide : 0 < 1000)]
+  apply Nat.div_eq_of_lt_le
+  · rw [hm]
+    omega
+  · rw [Nat.add_mul, Nat.one_mul, hm]
+    omega
 
 end Clock
 

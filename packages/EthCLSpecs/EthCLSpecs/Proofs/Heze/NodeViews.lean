@@ -422,28 +422,39 @@ theorem honestNode_records_false
     · exact hmissing h
     · exact hinvalid h
 
+/-- A handler event other than an envelope for `r` keeps the lookups at `r` of `payloads`
+and of the answer map. -/
+theorem HandlerEvent.run_keeps_payloadAnswer (r : Root) (e : HandlerEvent)
+    (henv : e.NotEnvelopeAt r) {pre post : Store map}
+    (h : (HandlerEvent.run (map := map) e).run pre = .ok ((), post)) :
+    (FcMap.lookup post.payloads r, FcMap.lookup post.payloadInclusionListSatisfaction r)
+      = (FcMap.lookup pre.payloads r, FcMap.lookup pre.payloadInclusionListSatisfaction r) := by
+  cases e with
+  | tick time =>
+    exact congrArg Prod.snd (onTick_keeps_rootView r (rootView r pre) time pre () post rfl h)
+  | block sb => exact onBlock_keeps_payloadAnswer r _ sb pre () post rfl h
+  | attestation att isFromBlock =>
+    exact congrArg Prod.snd
+      (onAttestation_keeps_rootView r (rootView r pre) att isFromBlock pre () post rfl h)
+  | attesterSlashing asl =>
+    exact congrArg Prod.snd
+      (onAttesterSlashing_keeps_rootView r (rootView r pre) asl pre () post rfl h)
+  | payloadAttestation msg isFromBlock =>
+    exact congrArg Prod.snd
+      (onPayloadAttestationMessage_keeps_rootView r (rootView r pre) msg isFromBlock pre ()
+        post rfl h)
+  | envelope signedEnv =>
+    have hp := onExecutionPayloadEnvelope_keeps_payload r _ signedEnv henv pre () post rfl h
+    have ha := onExecutionPayloadEnvelope_keeps_answer r _ signedEnv henv pre () post rfl h
+    simp only at hp ha
+    rw [hp, ha]
+
 /-- A handler event other than an envelope for `r` keeps the answer at `r`. -/
 theorem HandlerEvent.run_keeps_answer (r : Root) (e : HandlerEvent) (henv : e.NotEnvelopeAt r)
     {pre post : Store map} (h : (HandlerEvent.run (map := map) e).run pre = .ok ((), post)) :
     FcMap.lookup post.payloadInclusionListSatisfaction r
-      = FcMap.lookup pre.payloadInclusionListSatisfaction r := by
-  cases e with
-  | tick time =>
-    exact congrArg (fun v => v.2.2) (onTick_keeps_rootView r (rootView r pre) time pre () post rfl h)
-  | block sb =>
-    exact congrArg Prod.snd (onBlock_keeps_payloadAnswer r _ sb pre () post rfl h)
-  | attestation att isFromBlock =>
-    exact congrArg (fun v => v.2.2)
-      (onAttestation_keeps_rootView r (rootView r pre) att isFromBlock pre () post rfl h)
-  | attesterSlashing asl =>
-    exact congrArg (fun v => v.2.2)
-      (onAttesterSlashing_keeps_rootView r (rootView r pre) asl pre () post rfl h)
-  | payloadAttestation msg isFromBlock =>
-    exact congrArg (fun v => v.2.2)
-      (onPayloadAttestationMessage_keeps_rootView r (rootView r pre) msg isFromBlock pre () post
-        rfl h)
-  | envelope signedEnv =>
-    exact onExecutionPayloadEnvelope_keeps_answer r _ signedEnv henv pre () post rfl h
+      = FcMap.lookup pre.payloadInclusionListSatisfaction r :=
+  congrArg Prod.snd (HandlerEvent.run_keeps_payloadAnswer r e henv h)
 
 /-- The answer at `r` never holds `true` at the honest node, when every envelope for `r`
 that the node handles omits `tx` with no valid omission. The seed holds no answer at `r`.

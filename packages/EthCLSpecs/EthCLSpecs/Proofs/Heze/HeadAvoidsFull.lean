@@ -56,6 +56,12 @@ same node. `getHead_run_avoids_full` assumes that this node is not below the FUL
 whose block has a slot no greater than the slot of the block is not below the FULL node.
 `SlotsIncrease.lean` proves `SlotsIncrease` along a trace of handler runs.
 
+A store with no block at the root needs no slot fact. Every edge into the pending node of
+the root comes from the block at the root, so the walk never reaches the pending or the
+FULL node (`getHead_run_avoids_full_of_no_block`). `getHead_run_status` proves that the
+head has one of the three statuses: the walk starts at a pending node, and every edge ends
+at an EMPTY, FULL, or pending node.
+
 ## What the theorems say about the chain
 
 `nodeBelow_full_of_full_child` shows that the relation covers the case that matters: a
@@ -503,5 +509,135 @@ theorem inclusionList_missing_tx_head_avoids_full [LawfulFcMap map Root]
       runnerStore s' head hhead⟩
 
 end
+
+section Walk
+variable {map : MapKind} [Preset] [HasherTag] [FcMap map]
+
+open EthCLSpecs.Heze.Const (payloadStatusPending payloadStatusEmpty payloadStatusFull)
+
+/-- A successful `getParentPayloadStatus` run read the parent block from the store. -/
+theorem getParentPayloadStatus_run_parent (store s s' : Store map) (b : BeaconBlock)
+    (v : UInt8)
+    (h : (getParentPayloadStatus (StoreTransition := ForkChoiceStoreRun (Store map))
+      store b).run s = .ok (v, s')) :
+    ∃ pb, FcMap.lookup store.blocks b.parentRoot = some pb := by
+  simp only [getParentPayloadStatus, FcMap.getOrThrow, FcMap.getOrThrowKey] at h
+  split at h
+  · rename_i pb hpb
+    exact ⟨pb, hpb⟩
+  · simp only [run_bind] at h
+    cases h
+
+/-- An edge into the pending node of `r` comes from the block at `r`. -/
+theorem NodeEdge.block_of_pending (store : Store map) (p : ForkChoiceNode) (r : Root)
+    (h : NodeEdge store p (.pending r)) : ∃ b, FcMap.lookup store.blocks r = some b := by
+  rcases NodeEdge.cases_on_child store p _ h with ⟨_, hc | hc⟩ | ⟨root, b, _, _, hc, hb, -⟩
+  · exact absurd (congrArg ForkChoiceNode.payloadStatus hc) payloadStatus_empty_ne_pending.symm
+  · exact absurd (congrArg ForkChoiceNode.payloadStatus hc) payloadStatus_full_ne_pending.symm
+  · have hr : r = root := congrArg ForkChoiceNode.root hc
+    exact ⟨b, hr ▸ hb⟩
+
+/-- An edge out of a decided node comes from a block whose parent block the store holds. So
+with no block at `r`, the FULL node of `r` has no child, and nothing lies strictly below
+it. -/
+theorem NodeBelow.eq_full_of_no_block (store : Store map) (r : Root)
+    (hnone : FcMap.lookup store.blocks r = none) (n : ForkChoiceNode)
+    (h : NodeBelow store (.full r) n) : n = .full r := by
+  induction h with
+  | refl => rfl
+  | step p c _ hpc ih =>
+    subst ih
+    exfalso
+    rcases NodeEdge.cases_on_child store _ c hpc with
+      ⟨hp, -⟩ | ⟨root, b, s, s', -, -, hparent, hstatus⟩
+    · exact payloadStatus_full_ne_pending (congrArg ForkChoiceNode.payloadStatus hp)
+    · obtain ⟨pb, hpb⟩ := getParentPayloadStatus_run_parent store s s' b _ hstatus
+      rw [show b.parentRoot = r from hparent, hnone] at hpb
+      cases hpb
+
+/-- A node has one of the three payload statuses. -/
+def ValidStatus (n : ForkChoiceNode) : Prop :=
+  n.payloadStatus = payloadStatusPending ∨ n.payloadStatus = payloadStatusEmpty ∨
+    n.payloadStatus = payloadStatusFull
+
+/-- Every edge ends at a node with one of the three statuses. -/
+theorem NodeEdge.validStatus (store : Store map) (p c : ForkChoiceNode)
+    (h : NodeEdge store p c) : ValidStatus c := by
+  rcases NodeEdge.cases_on_child store p c h with ⟨-, hc | hc⟩ | ⟨root, -, -, -, hc, -⟩
+  · exact Or.inr (Or.inl (by rw [hc]; rfl))
+  · exact Or.inr (Or.inr (by rw [hc]; rfl))
+  · exact Or.inl (by rw [hc]; rfl)
+
+variable [Config]
+
+/-- The `getHead` loop never visits the pending or the FULL node of `r` when the store has
+no block at `r`. Neither the start node nor the fuel-out node is one of these two. -/
+theorem headLoop_run_avoids_root_of_no_block (store : Store map) (blocks : Array Root)
+    (r : Root) (hnone : FcMap.lookup store.blocks r = none)
+    (fuel : Nat) (start exhausted head : ForkChoiceNode) (s s' : Store map)
+    (hstart : start ≠ .pending r ∧ start ≠ .full r)
+    (hexhausted : exhausted ≠ .pending r ∧ exhausted ≠ .full r)
+    (hrun : (fuelLoop fuel start exhausted (headLoopBody store blocks)).run s
+      = .ok (head, s')) :
+    head ≠ .pending r ∧ head ≠ .full r := by
+  refine fuelLoop_run_inv (fun n => n ≠ .pending r ∧ n ≠ .full r)
+    (fun n => n ≠ .pending r ∧ n ≠ .full r) exhausted _ ?_ ?_ hexhausted fuel start s s'
+    head hstart hrun
+  · intro n c t t' hn hstep
+    have hedge := headLoopBody_run_next_edge store t t' blocks n c hstep
+    refine ⟨fun hc => ?_, fun hc => ?_⟩
+    · -- An edge into the pending node of `r` needs the block at `r`.
+      subst hc
+      obtain ⟨b, hb⟩ := NodeEdge.block_of_pending store n r hedge
+      rw [hnone] at hb
+      cases hb
+    · -- The only parent of the FULL node of `r` is the pending node of `r`.
+      subst hc
+      exact hn.1 (NodeEdge.parent_unique store n _ _ hedge (NodeEdge.full r))
+  · intro n d t t' hn hstep
+    rw [headLoopBody_run_done store t t' blocks n d hstep]
+    exact hn
+
+/-- `getHead` avoids the FULL node of `r` and every node below it when the store has no
+block at `r`. The store holds the justified block, so the walk starts at another root. -/
+theorem getHead_run_avoids_full_of_no_block (store : Store map) (r : Root)
+    (hnone : FcMap.lookup store.blocks r = none) (jb : BeaconBlock)
+    (hj : FcMap.lookup store.blocks store.justifiedCheckpoint.root = some jb)
+    (runnerStore s' : Store map) (head : ForkChoiceNode)
+    (hrun : (getHead (StoreTransition := ForkChoiceStoreRun (Store map)) store).run runnerStore
+      = .ok (head, s')) :
+    ¬ NodeBelow store (.full r) head := by
+  rw [getHead_eq_fuelLoop_headLoopBody] at hrun
+  obtain ⟨blocks, s1, -, hloop⟩ := run_bind_eq_ok _ _ _ _ hrun
+  have hne : store.justifiedCheckpoint.root ≠ r := by
+    intro heq
+    rw [heq, hnone] at hj
+    cases hj
+  have hstart : ForkChoiceNode.pending store.justifiedCheckpoint.root ≠ .pending r ∧
+      ForkChoiceNode.pending store.justifiedCheckpoint.root ≠ .full r :=
+    ⟨fun h => hne (congrArg ForkChoiceNode.root h),
+      fun h => payloadStatus_full_ne_pending (congrArg ForkChoiceNode.payloadStatus h).symm⟩
+  have hhead := headLoop_run_avoids_root_of_no_block store blocks r hnone _ _ _ head s1 s'
+    hstart hstart hloop
+  intro hbelow
+  exact hhead.2 (NodeBelow.eq_full_of_no_block store r hnone head hbelow)
+
+/-- The head that `getHead` returns has one of the three payload statuses. The walk starts
+at a pending node, and every step follows an edge. -/
+theorem getHead_run_status (store runnerStore s' : Store map) (head : ForkChoiceNode)
+    (hrun : (getHead (StoreTransition := ForkChoiceStoreRun (Store map)) store).run runnerStore
+      = .ok (head, s')) :
+    ValidStatus head := by
+  rw [getHead_eq_fuelLoop_headLoopBody] at hrun
+  obtain ⟨blocks, s1, -, hloop⟩ := run_bind_eq_ok _ _ _ _ hrun
+  have hstart : ValidStatus (.pending store.justifiedCheckpoint.root) := Or.inl rfl
+  refine fuelLoop_run_inv ValidStatus ValidStatus _ _ ?_ ?_ hstart _ _ s1 s' head hstart hloop
+  · intro n c t t' _ hstep
+    exact NodeEdge.validStatus store n c (headLoopBody_run_next_edge store t t' blocks n c hstep)
+  · intro n d t t' hn hstep
+    rw [headLoopBody_run_done store t t' blocks n d hstep]
+    exact hn
+
+end Walk
 
 end EthCLSpecs.Proofs.Heze

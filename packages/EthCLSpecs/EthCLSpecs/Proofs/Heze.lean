@@ -7,6 +7,8 @@ import EthCLSpecs.Proofs.Heze.ClockedTrace
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.HandlerFrames
 import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
+import EthCLSpecs.Proofs.Heze.HonestDuties
+import EthCLSpecs.Proofs.Heze.HonestHead
 import EthCLSpecs.Proofs.Heze.ILStoreOrder
 import EthCLSpecs.Proofs.Heze.InclusionDichotomy
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
@@ -88,7 +90,20 @@ Re-exports:
   answer. The head that `getHead` returns is not the FULL node of the block and not
   below it (`getHead_run_avoids_full`). For a missing transaction under
   `DichotomyHypotheses`, the same holds at every `LaterStore`
-  (`inclusionList_missing_tx_head_avoids_full`).
+  (`inclusionList_missing_tx_head_avoids_full`). Without the block at `r`, the walk never
+  reaches the pending node of `r` (`getHead_run_avoids_full_of_no_block`).
+* `EthCLSpecs.Proofs.Heze.HonestDuties`: the duties of slot `n + 1` on a head that avoids
+  the FULL node of `r`. `shouldBuildOnFull` rejects a pending head and answers `false` at
+  an EMPTY head. No honest vote is `(r, 1)` (`honestAttestation_ne_full`). An honest block
+  (`HonestProposal`) has a parent root other than `r`. Or its head is the EMPTY node of `r`,
+  and `processParentExecutionPayload` leaves the state unchanged, so the block settles no
+  builder payment (`honestProposal_avoids_full`). `HonestProposal` covers a proposer that
+  builds on the `getHead` head, without a proposer re-org. `honestNodes_duties_avoid_full`
+  states the three facts for every honest node of a network.
+* `EthCLSpecs.Proofs.Heze.HonestHead`: the head of an honest node in slot `n + 1` avoids
+  the FULL node of `r` and every node below it, or a root collision exists
+  (`honestNode_head_avoids_full`). The current slot comes from the wall clock
+  (`getCurrentSlot_run_eq_of_window`, `ClockedTrace`).
 * `EthCLSpecs.Proofs.Heze.ILStoreOrder`: the IL store after an arrival list in closed
   form (`ilStoreOfArrivals_describes`). The collected transactions depend only on the
   timeliness of the first arrival of each list
