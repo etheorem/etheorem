@@ -134,6 +134,72 @@ private def pinPils (payloadPresent : Bool) (recorded : Option Bool) : PilsAnswe
 -- `.answer false` here, and the other three quadrants could not tell the difference.
 #guard pinPils false none = .assertReject
 
+/-! ### Build-enforced pins (vectorless): `should_build_on_full`
+
+Only the proposer calls `should_build_on_full`, so no conformance vector reaches it. These
+pins drive every branch on `pinPilsStore` with the default block (slot `0`) at
+`pinPilsRoot`. Minimal slots last 6000 ms, so `time := 6` is slot `1`, the slot after the
+block, and `time := 12` is slot `2`. By default the vote maps hold an empty vote array at
+the root, so neither PTC count passes its threshold. Two pins fill one vote array with `9`
+votes against the payload, one above the minimal threshold `PTC_SIZE / 2 = 8`. Everything
+is hash-free, so the pins use kernel `#guard`. -/
+
+/-- What `pinBuildOnFull` observed: the answer, or which class of throw rejected it. -/
+private inductive BuildAnswer where
+  /-- The function ran clean and answered `b`. -/
+  | answer (b : Bool)
+  /-- The spec's `assert head.payload_status != PAYLOAD_STATUS_PENDING` fired. -/
+  | assertReject
+  /-- Any other throw, such as the missing-block read. -/
+  | otherReject
+  deriving DecidableEq
+
+/-- `should_build_on_full` at the node of `pinPilsRoot` with payload status `status`, in a
+store at `time`. `withBlock` puts the default block at `pinPilsRoot`, and `payloadPresent`
+puts its payload in `payloads`. `lateVotes` and `unavailableVotes` set the number of `false`
+votes in the timeliness and the data-availability vote arrays. -/
+private def pinBuildOnFull (time : UInt64) (withBlock payloadPresent : Bool)
+    (status : UInt8) (lateVotes unavailableVotes : Nat := 0) : BuildAnswer :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let head : ForkChoiceNode := { root := pinPilsRoot, payloadStatus := status }
+  let base := pinPilsStore payloadPresent none
+  let store : Store treeMap :=
+    { base with
+      time := time
+      blocks := if withBlock then FcMap.insert FcMap.empty pinPilsRoot default else FcMap.empty
+      payloadTimelinessVote :=
+        FcMap.insert FcMap.empty pinPilsRoot (Array.replicate lateVotes (some false))
+      payloadDataAvailabilityVote :=
+        FcMap.insert FcMap.empty pinPilsRoot (Array.replicate unavailableVotes (some false)) }
+  match (shouldBuildOnFull (map := treeMap) store head : PinM Bool).run store with
+  | .ok b _              => .answer b
+  | .error (.assert _) _ => .assertReject
+  | .error _ _           => .otherReject
+
+-- A pending head fails the opening assert.
+#guard pinBuildOnFull 6 true true Const.payloadStatusPending = .assertReject
+-- A head with no block fails the `store.blocks[head.root]` read, and not the assert.
+#guard pinBuildOnFull 6 false true Const.payloadStatusFull = .otherReject
+-- A node from an earlier slot follows its own status.
+#guard pinBuildOnFull 12 true true Const.payloadStatusFull = .answer true
+#guard pinBuildOnFull 12 true true Const.payloadStatusEmpty = .answer false
+-- An EMPTY node from the previous slot: never FULL.
+#guard pinBuildOnFull 6 true true Const.payloadStatusEmpty = .answer false
+-- A FULL node from the previous slot with a verified payload and no PTC vote against it.
+#guard pinBuildOnFull 6 true true Const.payloadStatusFull = .answer true
+-- The same node with no payload: `payload_timeliness(…, timely=False)` holds, so `false`.
+#guard pinBuildOnFull 6 true false Const.payloadStatusFull = .answer false
+-- A verified payload that the PTC voted late: `payload_timeliness(…, timely=False)` holds.
+-- With the flag flipped, the count of `true` votes is `0`, and the answer would be `true`.
+#guard pinBuildOnFull 6 true true Const.payloadStatusFull (lateVotes := 9) = .answer false
+-- A verified, timely payload that the PTC voted unavailable:
+-- `payload_data_availability(…, available=False)` holds. Without that check, or with its
+-- flag flipped, the answer would be `true`.
+#guard pinBuildOnFull 6 true true Const.payloadStatusFull (unavailableVotes := 9)
+  = .answer false
+
 /-! ### Build-enforced pins (vectorless): the FOCIL fork-choice helpers
 
 `get_inclusion_list_due_ms`, `record_payload_inclusion_list_satisfaction`, and `on_inclusion_list`

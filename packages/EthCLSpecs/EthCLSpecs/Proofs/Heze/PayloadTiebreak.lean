@@ -18,7 +18,7 @@ attestation weights decide, and the tiebreaker is the payload status itself. On 
 tie there, FULL (`1`) wins against EMPTY (`0`). Without a verified payload, the pending
 node has only its EMPTY child.
 
-`headLoopBody` names the loop body of `getHead` (`Gloas/ForkChoice.lean:559-594`), and
+`headLoopBody` names the loop body of `getHead` (`Gloas/ForkChoice.lean:574-609`), and
 `getHead_eq_fuelLoop_headLoopBody` shows by `rfl` that `getHead` runs `fuelLoop` over it.
 An edit to the loop breaks the build here. `getHeadStep_run_eq_empty_of_recorded_unsatisfied`
 states that the body at the pending node returns `.next` of the EMPTY node.
