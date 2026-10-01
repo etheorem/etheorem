@@ -426,8 +426,9 @@ The repo's own terms of art stay as well, and they mean one thing each:
 Rule 5 bans the jargon that replaces a plain word for no gain. Examples,
 and the list is open: `ride along`, `ride on`, `load-bearing`, `sanctioned`
 (write "allowed"), `verdict` (write "answer"), `plumbing`, `baked in`,
-`escape hatch`, `under the hood`, `blast radius`, `paper over`, `canary`.
-It also bans borrowed Latin (`inter alia`, `a priori`, `vice versa`) where
+`escape hatch`, `under the hood`, `blast radius`, `paper over`, `canary`,
+`clamp` (name the operation: "truncates to the first `n` elements", "caps
+at `UINT64_MAX`", "floors at zero"). It also bans borrowed Latin (`inter alia`, `a priori`, `vice versa`) where
 English does the job.
 
 Rule 6 is the only exemption, and it is narrow. Clarity outranks the other
