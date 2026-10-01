@@ -306,6 +306,21 @@ theorem run_liftErr_of_error {σ ε' ε α : Type} [ErrorConv ε' ε] {e : ε}
   rw [h]
   exact run_ofExcept_error sb
 
+/-- A successful `liftErr` run reads an `.ok` value and keeps the state. -/
+theorem run_liftErr_eq_ok {σ ε' ε α : Type} [ErrorConv ε' ε] (x : Except ε' α)
+    (sb s : σ) (a : α)
+    (h : (liftErr (m := StateT σ (Except ε)) (E := ε') (F := ε) x).run sb = .ok (a, s)) :
+    x = .ok a ∧ s = sb := by
+  cases x with
+  | error e =>
+    rw [run_liftErr_of_error _ sb rfl] at h
+    cases h
+  | ok a' =>
+    rw [run_liftErr_of_ok _ sb rfl] at h
+    injection h with h
+    injection h with h1 h2
+    exact ⟨by rw [h1], h2.symm⟩
+
 /-! ## The pure box and the pure runner
 
 `pureState` and `runPure` are generic over the SSZ value type `T`, so one copy serves

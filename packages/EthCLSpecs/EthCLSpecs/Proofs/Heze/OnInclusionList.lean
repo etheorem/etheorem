@@ -68,22 +68,6 @@ def InclusionListTimely (store : Store map) (slot : Slot) : Prop :=
     ∃ t d, (getTimeIntoSlotMs (StoreTransition := ForkChoiceStoreRun (Store map)) store).run
         store = .ok (t, store) ∧ getInclusionListDueMs = .ok d ∧ t < d
 
-omit [Preset] [HasherTag] [Config] in
-/-- A successful `liftErr` run reads an `.ok` value and keeps the state. -/
-private theorem run_liftErr_eq_ok {σ ε' ε α : Type} [ErrorConv ε' ε] (x : Except ε' α)
-    (sb s : σ) (a : α)
-    (h : (liftErr (m := StateT σ (Except ε)) (E := ε') (F := ε) x).run sb = .ok (a, s)) :
-    x = .ok a ∧ s = sb := by
-  cases x with
-  | error e =>
-    rw [run_liftErr_of_error _ sb rfl] at h
-    cases h
-  | ok a' =>
-    rw [run_liftErr_of_ok _ sb rfl] at h
-    injection h with h
-    injection h with h1 h2
-    exact ⟨by rw [h1], h2.symm⟩
-
 omit [FcMap map] in
 /-- `getCurrentSlot` reads no runner state. -/
 theorem getCurrentSlot_stateFree (store : Store map) :
