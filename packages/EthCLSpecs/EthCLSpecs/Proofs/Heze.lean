@@ -32,6 +32,7 @@ import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 import EthCLSpecs.Proofs.Heze.SlotsIncrease
 import EthCLSpecs.Proofs.Heze.Time
+import EthCLSpecs.Proofs.Heze.TraceRun
 
 /-!
 # `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems (index)
