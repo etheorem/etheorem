@@ -22,13 +22,21 @@ The runner names remain in their own modules: `GloasRun` is in
 `EthCLSpecs/Proofs/Gloas/Run.lean`, while the fork-neutral `ForkChoiceStoreRun` is
 in `EthCLLib/Proofs/StoreRun.lean`.
 
-Two inversion lemmas start from a successful run. `run_bind_eq_ok` splits a successful
-bind into its two runs. `run_pure_eq_ok` reads the value of a successful `pure`. Three
-invariant lemmas carry a property through a loop:
+Nine inversion lemmas start from a successful run. `run_bind_eq_ok` splits a successful
+bind into its two runs. `run_pure_eq_ok` reads the value of a successful `pure`, and
+`run_pure_eq_ok_state` reads its end state too. `run_get_bind_eq_ok` and
+`run_assert_bind_eq_ok` remove a leading read or `assert`. `run_ite_eq_ok` and
+`run_dite_eq_ok` pick the branch of an `if`. `run_modifyThe_eq_ok` gives the state after
+a write. `run_ofExcept_eq_ok` reads a lifted `Except` value. Three invariant lemmas carry
+a property through a loop:
 
 - `forIn_run_inv`, for a `for` loop over a list.
 - `foldlM_run_mem`, for a fold whose step returns one of its arguments.
 - `fuelLoop_run_inv`, for `fuelLoop`.
+
+The `_run_inv_state` forms (`forIn_run_inv_state`, `foldlM_run_inv_state`,
+`fuelLoop_run_inv_state`, and their array and range forms) take an invariant of the
+accumulator and the threaded state together.
 
 ## The pure box: `pureState` and `runPure`
 
@@ -160,6 +168,25 @@ theorem run_assert_bind_eq_ok {σ ε β : Type} {c : Prop} [Decidable c] (e : ε
   · rw [if_neg hc] at h
     cases h
 
+/-- A successful run of an `if` is a successful run of the branch its condition picks.
+The lemma replaces `split at h`, which gives the join points of the branches new names. -/
+theorem run_ite_eq_ok {σ ε α : Type} {c : Prop} [Decidable c] {x y : StateT σ (Except ε) α}
+    {s : σ} {r : α × σ} (h : (if c then x else y).run s = .ok r) :
+    (c ∧ x.run s = .ok r) ∨ (¬c ∧ y.run s = .ok r) := by
+  by_cases hc : c
+  · rw [if_pos hc] at h
+    exact .inl ⟨hc, h⟩
+  · rw [if_neg hc] at h
+    exact .inr ⟨hc, h⟩
+
+/-- A successful `modifyThe σ g` ends in `g` of the state it read. A fork's `modifyState`
+unfolds to this action. -/
+theorem run_modifyThe_eq_ok {σ ε : Type} {g : σ → σ} {s s' : σ} {a : PUnit}
+    (h : (modifyThe σ g : StateT σ (Except ε) PUnit).run s = .ok (a, s')) : s' = g s := by
+  injection h with h
+  injection h with _ h
+  exact h.symm
+
 /-- An invariant of a `for` loop over a list. The loop starts from an accumulator that
 satisfies `P`. Each body run takes an accumulator that satisfies `P` to a step whose
 value satisfies `P`. The step can continue (`yield`) or stop (`done`). Then a successful
@@ -190,6 +217,167 @@ theorem forIn_run_inv {σ ε α β : Type} (P : β → Prop)
       exact hr ▸ hst
     | yield b =>
       exact ih (fun a' ha' => hstep a' (List.mem_cons_of_mem a ha')) b s1 s' r hst hrest
+
+/-- A successful run of a dependent `if` is a successful run of the branch its condition
+picks. -/
+theorem run_dite_eq_ok {σ ε α : Type} {c : Prop} [Decidable c]
+    {x : c → StateT σ (Except ε) α} {y : ¬c → StateT σ (Except ε) α} {s : σ} {r : α × σ}
+    (h : (dite c x y).run s = .ok r) :
+    (∃ hc : c, (x hc).run s = .ok r) ∨ (∃ hc : ¬c, (y hc).run s = .ok r) := by
+  by_cases hc : c
+  · rw [dif_pos hc] at h
+    exact .inl ⟨hc, h⟩
+  · rw [dif_neg hc] at h
+    exact .inr ⟨hc, h⟩
+
+/-- A successful run of `pure a` returns `a` and leaves the state unchanged. -/
+theorem run_pure_eq_ok_state {σ ε α : Type} {a b : α} {s s' : σ}
+    (h : (pure a : StateT σ (Except ε) α).run s = .ok (b, s')) : b = a ∧ s' = s := by
+  rw [run_pure] at h
+  injection h with h
+  injection h with h1 h2
+  exact ⟨h1.symm, h2.symm⟩
+
+/-- A successful run of a lifted `Except` value: the value is `.ok a`, and the state is
+unchanged. `liftErr` and the checked arithmetic of the spec unfold to this action. -/
+theorem run_ofExcept_eq_ok {σ ε α : Type} {e : Except ε α} {a : α} {s s' : σ}
+    (h : (MonadExcept.ofExcept e : StateT σ (Except ε) α).run s = .ok (a, s')) :
+    e = .ok a ∧ s' = s := by
+  cases e with
+  | error err => cases h
+  | ok b =>
+    injection h with h
+    injection h with h1 h2
+    exact ⟨congrArg Except.ok h1, h2.symm⟩
+
+/-- An invariant of a `for` loop over a list that also reads the threaded state. The
+predicate `P` holds of the accumulator and the state together. Each body run takes a pair
+that satisfies `P` to a step whose value and end state satisfy `P`. Then a successful run of
+the loop ends in a pair that satisfies `P`. `forIn_run_inv` is the case where `P` ignores the
+state. -/
+theorem forIn_run_inv_state {σ ε α β : Type} (P : β → σ → Prop)
+    {f : α → β → StateT σ (Except ε) (ForInStep β)} {l : List α}
+    (hstep : ∀ a ∈ l, ∀ (r : β) (s : σ) (st : ForInStep β) (s' : σ),
+      P r s → (f a r).run s = .ok (st, s') → P st.value s')
+    {init : β} {s : σ} {r : β} {s' : σ} (hinit : P init s)
+    (h : (forIn l init f).run s = .ok (r, s')) : P r s' := by
+  induction l generalizing init s with
+  | nil =>
+    obtain ⟨h1, h2⟩ := run_pure_eq_ok_state h
+    exact h1 ▸ h2 ▸ hinit
+  | cons a rest ih =>
+    rw [List.forIn_cons] at h
+    obtain ⟨st, s1, hbody, hrest⟩ := run_bind_eq_ok _ _ _ _ h
+    have hst := hstep a List.mem_cons_self init s st s1 hinit hbody
+    cases st with
+    | done b =>
+      obtain ⟨h1, h2⟩ := run_pure_eq_ok_state hrest
+      exact h1 ▸ h2 ▸ hst
+    | yield b =>
+      exact ih (fun a' ha' => hstep a' (List.mem_cons_of_mem a ha')) hst hrest
+
+/-- `forIn_run_inv_state` for a loop that binds a membership proof, `for h : a in l`. -/
+theorem forIn'_run_inv_state {σ ε α β : Type} (P : β → σ → Prop) {l : List α}
+    {f : (a : α) → a ∈ l → β → StateT σ (Except ε) (ForInStep β)}
+    (hstep : ∀ a (ha : a ∈ l) (r : β) (s : σ) (st : ForInStep β) (s' : σ),
+      P r s → (f a ha r).run s = .ok (st, s') → P st.value s')
+    {init : β} {s : σ} {r : β} {s' : σ} (hinit : P init s)
+    (h : (forIn' l init f).run s = .ok (r, s')) : P r s' := by
+  induction l generalizing init s with
+  | nil =>
+    obtain ⟨h1, h2⟩ := run_pure_eq_ok_state h
+    exact h1 ▸ h2 ▸ hinit
+  | cons a rest ih =>
+    rw [List.forIn'_cons] at h
+    obtain ⟨st, s1, hbody, hrest⟩ := run_bind_eq_ok _ _ _ _ h
+    have hst := hstep a _ init s st s1 hinit hbody
+    cases st with
+    | done b =>
+      obtain ⟨h1, h2⟩ := run_pure_eq_ok_state hrest
+      exact h1 ▸ h2 ▸ hst
+    | yield b =>
+      exact ih (fun a' ha' => hstep a' _) hst hrest
+
+/-- `forIn_run_inv_state` for a loop over an array. -/
+theorem forIn_array_run_inv_state {σ ε α β : Type} (P : β → σ → Prop)
+    {f : α → β → StateT σ (Except ε) (ForInStep β)} {xs : Array α}
+    (hstep : ∀ a ∈ xs.toList, ∀ (r : β) (s : σ) (st : ForInStep β) (s' : σ),
+      P r s → (f a r).run s = .ok (st, s') → P st.value s')
+    {init : β} {s : σ} {r : β} {s' : σ} (hinit : P init s)
+    (h : (forIn xs init f).run s = .ok (r, s')) : P r s' := by
+  rw [← Array.forIn_toList] at h
+  exact forIn_run_inv_state P hstep hinit h
+
+/-- `forIn_run_inv_state` for a loop over a range. -/
+theorem forIn_range_run_inv_state {σ ε β : Type} (P : β → σ → Prop)
+    {f : Nat → β → StateT σ (Except ε) (ForInStep β)} {rg : Std.Legacy.Range}
+    (hstep : ∀ a ∈ List.range' rg.start rg.size rg.step, ∀ (r : β) (s : σ) (st : ForInStep β)
+      (s' : σ), P r s → (f a r).run s = .ok (st, s') → P st.value s')
+    {init : β} {s : σ} {r : β} {s' : σ} (hinit : P init s)
+    (h : (forIn rg init f).run s = .ok (r, s')) : P r s' := by
+  rw [Std.Legacy.Range.forIn_eq_forIn_range'] at h
+  exact forIn_run_inv_state P hstep hinit h
+
+/-- `forIn'_run_inv_state` for a loop over a range. -/
+theorem forIn'_range_run_inv_state {σ ε β : Type} (P : β → σ → Prop) {rg : Std.Legacy.Range}
+    {f : (a : Nat) → a ∈ rg → β → StateT σ (Except ε) (ForInStep β)}
+    (hstep : ∀ a (ha : a ∈ rg) (r : β) (s : σ) (st : ForInStep β) (s' : σ),
+      P r s → (f a ha r).run s = .ok (st, s') → P st.value s')
+    {init : β} {s : σ} {r : β} {s' : σ} (hinit : P init s)
+    (h : (forIn' rg init f).run s = .ok (r, s')) : P r s' := by
+  rw [Std.Legacy.Range.forIn'_eq_forIn'_range'] at h
+  exact forIn'_run_inv_state P (fun a _ => hstep a _) hinit h
+
+/-- An invariant of a left fold over a list that also reads the threaded state. -/
+theorem foldlM_run_inv_state {σ ε α β : Type} (P : β → σ → Prop)
+    {f : β → α → StateT σ (Except ε) β} {l : List α}
+    (hstep : ∀ a ∈ l, ∀ (r : β) (s : σ) (r' : β) (s' : σ),
+      P r s → (f r a).run s = .ok (r', s') → P r' s')
+    {init : β} {s : σ} {r : β} {s' : σ} (hinit : P init s)
+    (h : (l.foldlM f init).run s = .ok (r, s')) : P r s' := by
+  induction l generalizing init s with
+  | nil =>
+    obtain ⟨h1, h2⟩ := run_pure_eq_ok_state h
+    exact h1 ▸ h2 ▸ hinit
+  | cons a rest ih =>
+    rw [List.foldlM_cons] at h
+    obtain ⟨b, s1, h1, h2⟩ := run_bind_eq_ok _ _ _ _ h
+    exact ih (fun a' ha' => hstep a' (List.mem_cons_of_mem a ha'))
+      (hstep a List.mem_cons_self init s b s1 hinit h1) h2
+
+/-- `foldlM_run_inv_state` for a fold over an array. -/
+theorem foldlM_array_run_inv_state {σ ε α β : Type} (P : β → σ → Prop)
+    {f : β → α → StateT σ (Except ε) β} {xs : Array α}
+    (hstep : ∀ a ∈ xs.toList, ∀ (r : β) (s : σ) (r' : β) (s' : σ),
+      P r s → (f r a).run s = .ok (r', s') → P r' s')
+    {init : β} {s : σ} {r : β} {s' : σ} (hinit : P init s)
+    (h : (xs.foldlM f init).run s = .ok (r, s')) : P r s' := by
+  rw [← Array.foldlM_toList] at h
+  exact foldlM_run_inv_state P hstep hinit h
+
+/-- An invariant of `fuelLoop` that also reads the threaded state. `P` holds of the loop
+value and the state, and `Q` holds of the result and the state. -/
+theorem fuelLoop_run_inv_state {σ ε β α : Type} (P : β → σ → Prop) (Q : α → σ → Prop)
+    {exhausted : α} {step : β → StateT σ (Except ε) (EthCLLib.Spec.Step β α)}
+    (hnext : ∀ (b b' : β) (s s' : σ), P b s → (step b).run s = .ok (.next b', s') → P b' s')
+    (hdone : ∀ (b : β) (a : α) (s s' : σ), P b s → (step b).run s = .ok (.done a, s') →
+      Q a s')
+    (hexhausted : ∀ (b : β) (s : σ), P b s → Q exhausted s)
+    {fuel : Nat} {init : β} {s : σ} {a : α} {s' : σ} (hinit : P init s)
+    (h : (EthCLLib.Spec.fuelLoop fuel init exhausted step).run s = .ok (a, s')) : Q a s' := by
+  induction fuel generalizing init s with
+  | zero =>
+    simp only [EthCLLib.Spec.fuelLoop] at h
+    obtain ⟨h1, h2⟩ := run_pure_eq_ok_state h
+    exact h1 ▸ h2 ▸ hexhausted init s hinit
+  | succ fuel ih =>
+    simp only [EthCLLib.Spec.fuelLoop] at h
+    obtain ⟨st, s1, hstep, hrest⟩ := run_bind_eq_ok _ _ _ _ h
+    cases st with
+    | done d =>
+      obtain ⟨h1, h2⟩ := run_pure_eq_ok_state hrest
+      exact h1 ▸ h2 ▸ hdone init d s s1 hinit hstep
+    | next b => exact ih (hnext init b s s1 hinit hstep) hrest
 
 /-- A left fold whose step `f` returns one of its two arguments. A successful run
 returns the initial value or an element of the list. -/
@@ -303,6 +491,12 @@ fork's `State` boxes over. An `abbrev`, so `pureState v` and `SSZ.UncachedBox
 HasherTag.H v` unify directly. -/
 abbrev pureState {T : Type} [SSZRepr T] [HasherTag] (v : T) : SSZ.Box HasherTag.H T :=
   SSZ.UncachedBox HasherTag.H v
+
+/-- Two uncached boxes are equal only when their values are. The view of `pureState v`
+is `v` by definition. -/
+theorem pureState_inj {T : Type} [SSZRepr T] [HasherTag] {a b : T}
+    (h : pureState a = pureState b) : a = b :=
+  congrArg SSZ.Box.view h
 
 /-- Run a state step on the uncached box of `v`, and return the value it produces: the
 result paired with the post-state's view. This is the value-level reading of a run; the

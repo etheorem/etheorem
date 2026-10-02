@@ -26,6 +26,9 @@ fact to the continuation, which then writes the value with `set`.
 The loop rules (`fuelLoop`, `fuelIterateM!`, `forIn`, `foldlM`) take a frame fact for one
 step and give it for the loop. `KeepsAt.prod` joins the frame facts of two fields into a
 frame fact for the pair.
+
+`view_forIn_list`, `view_forIn_array`, and `view_forIn_range` keep a view through a pure
+`Id` loop over state values, the loops that state-transition bodies run inside a write.
 -/
 
 set_option autoImplicit false
@@ -269,6 +272,44 @@ theorem KeepsAt.forIn_array {f : σ → β} {v : β} {δ : Type}
     KeepsAt f v (forIn xs init body) := by
   rw [← Array.forIn_toList]
   exact KeepsAt.forIn_list body hbody xs.toList init
+
+/-- The value of a `yield` step. Rewriting with this lemma keeps the `match` of
+`ForInStep.value` out of the goal, so `split` sees the branches of the loop body. -/
+theorem forInStep_value_yield {α : Type} (a : α) : (ForInStep.yield a).value = a := rfl
+
+/-- The value of a `done` step. -/
+theorem forInStep_value_done {α : Type} (a : α) : (ForInStep.done a).value = a := rfl
+
+/-- A pure `for` loop over a list keeps `f` of its accumulator when each body step does.
+Epoch substeps run such loops inside `modifyState`. -/
+theorem view_forIn_list {δ : Type} (f : σ → β) (body : δ → σ → Id (ForInStep σ))
+    (hbody : ∀ d a, f (body d a).run.value = f a) :
+    ∀ (l : List δ) (init : σ), f (forIn l init body).run = f init := by
+  intro l
+  induction l with
+  | nil => intro init; rfl
+  | cons d rest ih =>
+    intro init
+    rw [List.forIn_cons]
+    have hd := hbody d init
+    revert hd
+    cases body d init with
+    | done a => intro hd; exact hd
+    | yield a => intro hd; rw [← hd]; exact ih a
+
+/-- `view_forIn_list` for a loop over an array. -/
+theorem view_forIn_array {δ : Type} (f : σ → β) (body : δ → σ → Id (ForInStep σ))
+    (hbody : ∀ d a, f (body d a).run.value = f a) (xs : Array δ) (init : σ) :
+    f (forIn xs init body).run = f init := by
+  rw [← Array.forIn_toList]
+  exact view_forIn_list f body hbody xs.toList init
+
+/-- `view_forIn_list` for a loop over a range. -/
+theorem view_forIn_range (f : σ → β) (body : Nat → σ → Id (ForInStep σ))
+    (hbody : ∀ d a, f (body d a).run.value = f a) (r : Std.Legacy.Range) (init : σ) :
+    f (forIn r init body).run = f init := by
+  rw [Std.Legacy.Range.forIn_eq_forIn_range']
+  exact view_forIn_list f body hbody _ init
 
 end
 
