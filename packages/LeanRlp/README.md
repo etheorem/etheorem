@@ -12,10 +12,15 @@ the codec.
 
 ## Status
 
-Scaffold (PLAN.md Stage 0b). The module layout and the design docs
-are in place; the codec code lands stage by stage. Read
+The package holds the item codec: `Item`, the two-arm tree; a total
+encoder; a total, strict decoder on a fuel argument with a depth
+bound; the canonical-form `DecodeError`; the known-answer gates
+of `LeanRlpTests.Known`; and the decoder's fuel and header theorems
+in `Proofs.Fuel`, gated in `Proofs.Axioms`. The nine codec theorems
+of ARCHITECTURE.md §5, the schema layer, and the user surface follow
+in later stages of the plan. Read
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the binding design
-and [docs/PLAN.md](docs/PLAN.md) for the staging.
+and [docs/PLAN.md](docs/PLAN.md) for the staging and the status.
 
 ## Build
 
@@ -23,6 +28,7 @@ From the monorepo root:
 
 ```sh
 lake build LeanRlp         # the library
+just rlp-build             # the library and the axiom gate
 lake build LeanRlpTests    # the gates (separate lean_lib)
 just rlp-test              # the same, via Just
 ```
@@ -45,7 +51,8 @@ structure Withdrawal where
 ```
 
 and gets `Rlp.encode` and `Rlp.decode`, with the round trip proved.
-Until then the module stubs state what each file will hold.
+Until Stage 5, the item layer is the surface: `Spec.encode` and
+`Spec.decode` over `Item`.
 
 ## Scope
 

@@ -11,7 +11,7 @@ import LeanRlp.Schema.Type
 
 The typed codec (`toItem`, `fromItem`) and its two theorems are
 written once over this map, so a new arm in `RlpType` is one new case
-in each function and one new proof case, never a rewrite (OCP).
+in each function and one new proof case (OCP).
 
 Filled in PLAN.md Stage 4.
 -/

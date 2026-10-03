@@ -686,17 +686,17 @@ poseidon-gen-params:
 
 # Building the core library. Nothing in the monorepo depends on
 # LeanRlp yet (standalone island), so unlike the SSZ-chain libs it
-# is not built transitively. The gate library is still empty at the
-# scaffold stage; Stage 1 fills `LeanRlpTests` with the
-# known-answer gates and the non-canonical-input checks
-# (packages/LeanRlp/docs/PLAN.md).
+# is not built transitively. The Proofs modules sit outside the
+# root's import closure, so the build names the axiom gate module
+# too. `LeanRlpTests` holds the known-answer gates and the
+# non-canonical-input checks (packages/LeanRlp/docs/PLAN.md).
 
-# Build the LeanRlp library
+# Build the LeanRlp library and its axiom gate
 [group('rlp')]
 rlp-build:
-    lake build LeanRlp
+    lake build LeanRlp LeanRlp.Proofs.Axioms
 
-# Build the LeanRlp gate library (known answers land in Stage 1)
+# Build the LeanRlp gate library
 [group('rlp')]
 rlp-test:
     lake build LeanRlpTests

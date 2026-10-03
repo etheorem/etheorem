@@ -8,7 +8,7 @@ Emits an `RlpRepr` instance for a structure from the field
 instances in declaration order: `shape := .struct [...]`, `toRepr`
 and `fromRepr` as the positional pair, `wellFormed` by `decide`,
 and the two laws from the field laws. A flat structure closes each
-law by `rfl`; a structure with `RlpRepr` fields closes it by
+law by `rfl`; a structure with `RlpRepr` fields closes them by
 rewriting with their `to_from` laws, in the pattern of SizzLean's
 deriving handler (ARCHITECTURE.md §2.3). A derived instance carries
 a verified round trip with no proof written by hand.

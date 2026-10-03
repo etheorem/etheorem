@@ -19,12 +19,39 @@ One reason, one constructor (ARCHITECTURE.md §6):
 
 `EthELLib` maps the canonical rejections to EEST exception names.
 LeanRlp knows no EEST name.
-
-Filled in PLAN.md Stage 1.
 -/
 
 set_option autoImplicit false
 
 namespace LeanRlp.Spec
+
+/-- One reason a byte sequence is not a canonical RLP item, with the
+byte offset the decoder was at when the reason fired. -/
+inductive DecodeError where
+  | truncated (offset : Nat)
+  | nonCanonicalByte (offset : Nat)
+  | nonCanonicalLength (offset : Nat)
+  | listOverrun (offset : Nat)
+  | trailingBytes (offset : Nat)
+  | tooDeep (offset : Nat)
+  | outOfFuel (offset : Nat)
+  deriving DecidableEq, Repr
+
+/-- Decidable equality on `Except`. Core has no instance for it on
+the pinned toolchain. The gates decide `decode … = …` with it.
+Scoped to this namespace, so an importer opts in by opening
+`LeanRlp.Spec`.
+TODO: delete this instance when a toolchain bump adds a core
+`DecidableEq (Except ε α)`. -/
+scoped instance instDecidableEqExcept {ε α : Type} [DecidableEq ε] [DecidableEq α] :
+    DecidableEq (Except ε α)
+  | .error e, .error e' =>
+    if h : e = e' then .isTrue (by rw [h])
+    else .isFalse (fun h' => h (Except.error.inj h'))
+  | .ok a, .ok a' =>
+    if h : a = a' then .isTrue (by rw [h])
+    else .isFalse (fun h' => h (Except.ok.inj h'))
+  | .error _, .ok _ => .isFalse (by intro h; cases h)
+  | .ok _, .error _ => .isFalse (by intro h; cases h)
 
 end LeanRlp.Spec

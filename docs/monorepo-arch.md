@@ -9,10 +9,10 @@ READMEs and `packages/SizzLean/docs/ARCHITECTURE.md`.
 ## Subpackages under one umbrella
 
 ```
-LeanSha256  ←  SizzLean  ←  EthCLLib  ←  EthCLSpecs        LeanPoseidon
-   (pure)      (SSZ +        (consensus    (Fulu…Heze         (pure Poseidon2,
-               cache +       framework)     specs +            BN254 t=3,
-               FFI hash)                    in-spec            standalone island)
+LeanSha256  ←  SizzLean  ←  EthCLLib  ←  EthCLSpecs        LeanPoseidon      LeanRlp
+   (pure)      (SSZ +        (consensus    (Fulu…Heze         (pure Poseidon2,  (RLP codec,
+               cache +       framework)     specs +            BN254 t=3,        standalone
+               FFI hash)                    in-spec            standalone island) island)
                                             containers)
 ```
 
@@ -21,6 +21,11 @@ chain: it is a second pure-crypto primitive, parallel to `LeanSha256`,
 that nothing in the monorepo imports (and which imports nothing from it).
 The umbrella `[[require]]`s it so `lake build` builds it, but there is no
 edge into the SSZ side, see `packages/LeanPoseidon/docs/ARCHITECTURE.md`.
+
+`LeanRlp` gives the execution layer the same island shape: a standalone
+RLP codec that requires no other Etheorem package and that nothing in
+the monorepo imports yet. The umbrella `[[require]]`s it so `lake
+build` builds it, see `packages/LeanRlp/docs/ARCHITECTURE.md`.
 
 A fifth package, **`LeanPoseidonProofs`**, hangs off `LeanPoseidon` (it
 `[[require]]`s the core + **mathlib**) and holds the machine-checked
@@ -87,6 +92,14 @@ poseidon-proofs`).
     │   ├── LeanPoseidonTests/        # Kat, Ffi, Differential
     │   ├── FuzzMain.lean             # poseidon_fuzz exe root
     │   └── README.md
+    ├── LeanRlp/                      # execution-layer RLP codec, standalone island
+    │   ├── lakefile.toml             # declarative
+    │   ├── LeanRlp.lean              # library root
+    │   ├── LeanRlp/                  # Spec/, Schema/, Repr/, Proofs/
+    │   ├── LeanRlpTests.lean         # gate library root, a separate lean_lib
+    │   ├── LeanRlpTests/             # known-answer + canonical-form gates
+    │   ├── docs/                     # ARCHITECTURE.md, PLAN.md
+    │   └── README.md
     └── LeanPoseidonProofs/           # standalone, NOT in the umbrella (mathlib-isolated)
         ├── lakefile.toml             # require ../LeanPoseidon + mathlib @ v4.29.1
         ├── lake-manifest.json        # committed — pins mathlib (+ transitive) revs
@@ -109,7 +122,9 @@ pure-crypto primitive, a verified Poseidon2, parallel to
 `LeanSha256` rather than in the SSZ chain: it is a standalone
 island that nothing here imports yet (a future SSZ↔Poseidon2
 hasher bridge is deliberately deferred until EIP-7864 settles a
-hash and an encoding). Splitting also lets each piece publish on
+hash and an encoding). `LeanRlp` gives the execution layer the
+same island shape: a standalone RLP codec that future execution
+packages will consume. Splitting also lets each piece publish on
 its own cadence later.
 
 **An umbrella.** While the layers

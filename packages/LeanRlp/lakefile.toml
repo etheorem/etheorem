@@ -15,7 +15,7 @@ defaultTargets = ["LeanRlp"]
 [[lean_lib]]
 name = "LeanRlp"
 
-# Canonicality, known-answer, and EEST-derived gates live at the
+# The known-answer, fixture, and real-shape gates live at the
 # package root under `LeanRlpTests/`, a separate `LeanRlpTests.*`
 # module hierarchy (package-prefixed, like `LeanSha256Tests`, so the
 # umbrella build never confuses the two test libs). Build explicitly
