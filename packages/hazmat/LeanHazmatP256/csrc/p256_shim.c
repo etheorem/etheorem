@@ -28,7 +28,7 @@
 // a **private** `OSSL_LIB_CTX` with `default` loaded, set up once
 // (`pthread_once`, safe from any thread). An explicit provider load
 // elsewhere in the process disables the automatic default-provider
-// load for the process's default context; against that context every
+// load for the process's default context. Against that context, every
 // fetch (key import, verify) would fail and every signature would
 // read as invalid, with no error channel on a `Bool`. The private
 // context pins our providers and leaves the process's default
@@ -65,7 +65,7 @@ static OSSL_LIB_CTX *ctx_instance = NULL;
 
 static void p256_ctx_init(void) {
     // Every OpenSSL call below queues errors on the *thread's* error
-    // queue (per-thread, not per-library-context) when it fails. Mark
+    // queue when it fails. Mark
     // before the first call and pop on every exit path, so the shim
     // removes exactly what it added; unlike a blanket ERR_clear_error,
     // any earlier unread errors on the queue survive.
@@ -152,11 +152,10 @@ LEAN_EXPORT uint8_t lean_hazmat_p256_verify(
     if (lean_sarray_size(qy_arr)  != FIELD_LEN) return 0;
 
     // Every OpenSSL call below can queue an error on the *thread's*
-    // error queue when it fails (the queue is per-thread, not
-    // per-library-context): a key that fails the `EVP_PKEY_fromdata`
-    // import, a failed verification, an allocation failure.
-    // Precompile input reaches those paths at will, and a later
-    // libcrypto consumer on this thread must not read our stale
+    // error queue when it fails: a key that fails the
+    // `EVP_PKEY_fromdata` import, a failed verification, an allocation
+    // failure. Precompile input reaches those paths at will, and a
+    // later libcrypto consumer on this thread must not read our stale
     // entries. Mark / pop removes exactly what this call added,
     // leaving any earlier unread errors alone. The length guards
     // above and the context lookup queue nothing on this thread's

@@ -3,9 +3,9 @@
 //
 // Where RIPEMD-160 lives changed across OpenSSL 3.x: 3.0.0-3.0.6 ship
 // it only in the **legacy provider**; from 3.0.7 the **default**
-// provider carries it. The legacy provider is not loaded by default,
-// and an explicit provider load disables OpenSSL's automatic
-// default-provider load for the context, so loading `legacy` into the
+// provider carries it. OpenSSL does not load the legacy provider by
+// default, and an explicit provider load disables the automatic
+// default-provider load for that context. Loading `legacy` into the
 // *default* library context would break unrelated OpenSSL consumers
 // in the same process. This shim therefore creates a **private**
 // `OSSL_LIB_CTX`, loads `default` into it (required) and `legacy`
@@ -51,7 +51,7 @@ static OSSL_LIB_CTX *ctx_instance = NULL;
 
 static void ripemd_ctx_init(void) {
     // Every OpenSSL call below queues errors on the *thread's* error
-    // queue (per-thread, not per-library-context) when it fails. Mark
+    // queue when it fails. Mark
     // before the first call and pop on every exit path, so the shim
     // removes exactly what it added; unlike a blanket ERR_clear_error,
     // any earlier unread errors on the queue survive.
@@ -113,10 +113,10 @@ LEAN_EXPORT lean_obj_res lean_hazmat_ripemd160_hash(
     const uint8_t *in = lean_sarray_cptr(in_arr);
     size_t in_len = lean_sarray_size(in_arr);
 
-    // A failed digest fetch queues errors on the thread's error queue
-    // (per-thread, not per-context), and precompile input reaches the
-    // failure path at will; a later libcrypto consumer on this thread
-    // must not read our stale entries. Mark / pop removes exactly what
+    // A failed digest fetch queues errors on the thread's error queue,
+    // and precompile input reaches the failure path at will. A later
+    // libcrypto consumer on this thread must not read our stale
+    // entries. Mark / pop removes exactly what
     // this call added, leaving any earlier unread errors alone. The
     // context lookup queues nothing, so it stays before the mark.
     ERR_set_mark();

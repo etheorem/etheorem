@@ -13,8 +13,8 @@ namespace. Part of the
 `import LeanHazmatKeccak` brings the public surface into scope:
 
 * `keccak256`: 32-byte digest, rate 136, original Keccak `0x01`
-  padding. **Not** SHA3-256 (different padding, a different function
-  on every input).
+  padding. SHA3-256 pads with `0x06`, so the two differ on every
+  input.
 
 See [`LeanHazmatKeccak/Ffi.lean`](LeanHazmatKeccak/Ffi.lean) for the
 binding and its trust assumption, and

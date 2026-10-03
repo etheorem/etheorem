@@ -72,11 +72,11 @@ jobs:
         # ISA-L crypto (LeanHazmatSha256, x86_64 Linux), blst
         # (LeanHazmatBls), c-kzg-4844 (LeanHazmatKzg), keccak-tiny
         # (LeanHazmatKeccak), libsecp256k1 (LeanHazmatSecp256k1), and
-        # herumi/mcl (LeanHazmatBn254) are vendored, not system
-        # packages; fetch them at their pinned tags / rev before the
-        # Lean build. Offline thereafter. `just test` also self-vendors
-        # via the `hazmat-*-test` recipes; this explicit step keeps the
-        # fetch visible and ordered first.
+        # herumi/mcl (LeanHazmatBn254) are vendored upstream sources;
+        # no system packages supply them. Fetch them at their pinned
+        # tags / rev before the Lean build. Offline thereafter. `just test`
+        # also self-vendors via the `hazmat-*-test` recipes; this explicit
+        # step keeps the fetch visible and ordered first.
         run: just hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor hazmat-keccak-vendor hazmat-secp256k1-vendor hazmat-bn254-vendor
       # Pinned to the commit `v1` resolves to as of 2026-05-10. Bump deliberately.
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9

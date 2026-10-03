@@ -23,9 +23,10 @@
 //   * zero result → the single zero byte `00` (the minimal big-endian
 //     form; an *empty* output stays reserved for the error sentinel).
 //
-// Note the inputs here are *exact* byte strings: `BN_bin2bn` converts
-// every byte it is given, so the EIP-198 "excess data is ignored" and
-// right-padding rules are the caller's parse, not this primitive's.
+// The inputs here are *exact* byte strings: `BN_bin2bn` converts
+// every byte it is given. The caller's parse applies the EIP-198
+// "excess data is ignored" and right-padding rules before the
+// primitive runs.
 //
 // Every entry point the Lean side declares `@[extern]` lives here
 // (LeanHazmatModexp/Ffi.lean). Inputs are borrowed (`b_lean_obj_arg`
@@ -77,7 +78,8 @@ LEAN_EXPORT lean_obj_res lean_hazmat_modexp(
 {
     // `BN_bin2bn` takes an `int` length, and `lean_sarray_size` is
     // `size_t`. Reject lengths above `INT_MAX` instead of truncating
-    // (a wrapped length would produce a wrong answer, not an error).
+    // (a wrapped length would silently produce a wrong answer instead
+    // of an error).
     size_t nb = lean_sarray_size(base_arr);
     size_t ne = lean_sarray_size(exp_arr);
     size_t nm = lean_sarray_size(mod_arr);
@@ -86,10 +88,9 @@ LEAN_EXPORT lean_obj_res lean_hazmat_modexp(
         nm > (size_t)INT_MAX) return mk_error();
 
     // Every OpenSSL call below can queue an error on the *thread's*
-    // error queue when it fails (the queue is per-thread, not
-    // per-anything-else), and precompile input reaches the failure
-    // paths at will; a later libcrypto consumer on this thread must
-    // not read our stale entries. Mark / pop removes exactly what
+    // error queue when it fails, and precompile input reaches the
+    // failure paths at will. A later libcrypto consumer on this thread
+    // must not read our stale entries. Mark / pop removes exactly what
     // this call added, leaving any earlier unread errors alone. The
     // length guards above queue nothing, so they stay before the mark.
     ERR_set_mark();

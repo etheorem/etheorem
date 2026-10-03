@@ -22,7 +22,7 @@ The EIP-197 pairing check composes in the caller:
 `gtIsOne (finalExp (millerLoopVec pairs))`. Input parse, gas, and the
 `0x…01` output encoding stay with the consumer. Validation semantics at
 the boundary: coordinates ≥ p and off-curve points are rejected;
-G2 additionally checks the order-r subgroup (`mclBn_verifyOrderG2(1)`,
+G2 also checks the order-r subgroup (`mclBn_verifyOrderG2(1)`,
 pinned by the init-once), which is EIP-197's membership rule; scalars are
 reduced mod the group order (EIP-196 allows any 256-bit value).
 

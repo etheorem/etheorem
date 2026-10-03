@@ -16,9 +16,9 @@ and stays independent of `LeanHazmatKeccak`.
 ## Encodings
 
 * The message hash and both signature scalars are 32-byte big-endian.
-* The public key is 64 bytes, uncompressed `x ‖ y`, big-endian (the
-  EL's point encoding), **not** the 33/65-byte serialized forms
-  libsecp256k1's own API surfaces; the shim converts at the boundary.
+* The public key is 64 bytes, uncompressed `x ‖ y`, big-endian, the
+  EL's point encoding. The shim converts from the 33/65-byte
+  serialized forms libsecp256k1's own API surfaces.
 * `recId` is libsecp256k1's recovery id, 0-3: bit 0 is the
   y-coordinate parity of `R`, bit 1 an r-overflow flag. The EL
   transaction `v` maps in the caller: legacy `v ∈ {27, 28}` →

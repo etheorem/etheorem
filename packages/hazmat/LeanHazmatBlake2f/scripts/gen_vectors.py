@@ -143,7 +143,8 @@ PUBLISHED = [
 
 # The two nonzero-counter cases committed in
 # `LeanHazmatBlake2fTests/Vectors.lean`: the same `h` / `m` block, both
-# counter words nonzero, (12 rounds, final) and (1 round, not final).
+# counter words nonzero, (12 rounds, final flag true) and (1 round,
+# final flag false).
 T0_NONZERO = 0x1122334455667788
 T1_NONZERO = 0x99AABBCCDDEEFF00
 COMMITTED = [

@@ -1,8 +1,8 @@
 # LeanHazmat: Implementation Plan
 
-This document sequences the work that
-[`ARCHITECTURE.md`](ARCHITECTURE.md) describes, the plan for the
-LeanHazmat package family. Each stage has a goal, the concrete
+This document is the plan for the LeanHazmat package family. It sequences the
+work that [`ARCHITECTURE.md`](ARCHITECTURE.md) describes. Each stage has a
+goal, the concrete
 deliverables it ships, an acceptance criterion (one observable that
 says the stage is done), and notes on dependencies, parallelism, and
 risk.
@@ -11,8 +11,9 @@ The phases run **consensus first, execution second**: Phase 1 delivers
 the three consensus families (SHA-256, BLS, KZG) and their aggregator;
 Phase 2 delivers the execution-layer families and completes the
 aggregator surface. SHA-256 goes first because it is the one family
-that needs *no* vendoring, so it de-risks the whole per-family
-machinery before any native library has to be vendored and compiled. That machinery covers a new package, `SizzLean`
+that needs *no* vendoring; it exercises the whole per-family
+machinery before any native library has to be vendored and compiled.
+That machinery covers a new package, `SizzLean`
 consuming it across the package boundary, link-arg behaviour, and the
 equivalence-axiom split. Both phases are complete (see the status snapshot
 at the bottom and the per-stage records).
@@ -24,8 +25,8 @@ is "done" when it builds green from the umbrella, its byte-level KAT
 later step** per [`ARCHITECTURE.md`](ARCHITECTURE.md) §11, outside the phase
 gates.
 
-No time estimates, these depend on developer capacity and how much of the
-Lake `extern_lib` / vendored-C-build toolchain is already familiar.
+There are no time estimates. They depend on developer capacity and on how much
+of the Lake `extern_lib` / vendored-C-build toolchain is already familiar.
 
 ---
 
@@ -49,9 +50,9 @@ args) or whether each downstream package must re-run its own discovery.
 **Acceptance.** The experiment builds (or fails to link) decisively, and
 the propagation question is answered in writing.
 
-**Risk.** Low, it is a probe, discarded after. The prior evidence points
+**Risk.** Low, a probe discarded afterwards. The prior evidence points
 to **no** propagation: `packages/EthCLSpecs/lakefile.toml` hand-mirrors
-`-l:libcrypto.so.3` rather than inheriting it from `SizzLean`.
+`-lcrypto` rather than inheriting it from `SizzLean`.
 
 **Notes.** If propagation works, Stage 1 lets `SizzLean` (and the consensus
 packages) drop their OpenSSL args entirely. If not, both keep a minimal pkg-config
@@ -62,12 +63,13 @@ discovery, accepted, per the no-shared-lakefile-code decision
 > propagates `extern_lib` **archives** but **not** `moreLinkArgs`
 > across `require`. Confirmed two ways against the migrated tree:
 > (1) `LeanEthCS`'s `eth_ssz_vector_runner` and `SizzLean`'s `ssz_bench`
-> both link cleanly. The `libleanhazmat_sha256.a` archive is pulled in
+> both link cleanly. (`LeanEthCS` and its runner exe were later renamed
+> to `EthCLSpecs` and `pyspec_server`.) The `libleanhazmat_sha256.a` archive is pulled in
 > transitively, carrying the `lean_hazmat_sha256_*` symbols and the
 > `__libc_csu_*` stubs; (2) temporarily blanking `SizzLean`'s
 > `moreLinkArgs` makes `ssz_bench` fail at link with
 > `undefined symbol: EVP_DigestFinal_ex` (and friends) *referenced from
-> that very archive*, i.e. the archive crossed the package boundary
+> that very archive*, that is, the archive crossed the package boundary
 > but the `-lcrypto` flag did not. **Decision:** each exe-hosting
 > dependent keeps its own OpenSSL discovery. `SizzLean` keeps its
 > `pkg-config` `lakefile.lean` (it also still needs procedural
@@ -81,7 +83,8 @@ discovery, accepted, per the no-shared-lakefile-code decision
 > portable `-lcrypto` plus Homebrew's `-L` paths, so the same
 > independent, hardcoded re-supply this stage decided on now resolves
 > on macOS too. The propagation finding and the decision to re-supply
-> independently are unchanged, only the literal flag each package hardcodes.
+> independently are unchanged; only the literal flag each package hardcodes
+> differs.
 
 ---
 
@@ -146,8 +149,8 @@ shape) and the three-file axiom/extern split are the fiddly parts; the
 axioms must still name the *moved* externs.
 
 **Notes.** No vendoring: `LeanHazmatSha256`'s only native dependency is the
-system `libcrypto`, already pkg-config-discovered. This stage is the
-cross-package de-risk for everything after it.
+system `libcrypto`, already pkg-config-discovered. This stage settles
+the cross-package risk for everything after it.
 
 > **Status: done (verified).** `packages/hazmat/LeanHazmatSha256/` ships the three
 > externs (namespace `LeanHazmat`, C symbols renamed `lean_ssz_*` →
@@ -175,7 +178,7 @@ the vendored-library build harness that every later vendored family reuses.
   one `c-kzg-4844` expects, so Stage 3 can share it
   ([`ARCHITECTURE.md`](ARCHITECTURE.md) §4).
 - A Lake target compiling blst (delegating to blst's own `build.sh` /
-  `server.c` amalgamation, not re-deriving its flags) → `extern_lib`.
+  `server.c` amalgamation instead of re-deriving its flags) → `extern_lib`.
 - `csrc/bls_shim.c` + `@[extern] opaque` decls (namespace `LeanHazmat`) for
   the consensus BLS surface: `Sign`, `Verify`, `Aggregate`,
   `AggregateVerify`, `FastAggregateVerify`, `eth_aggregate_pubkeys`,
@@ -204,8 +207,8 @@ pubkey/sig group choice) are all new surface.
 > into gitignored `vendor/blst/`. The lakefile compiles blst's own
 > `src/server.c` amalgamation + `build/assembly.S` directly as `buildO`
 > targets with `-D__BLST_PORTABLE__` (portable archive; the flags mirror
-> blst's default `CFLAGS` minus `-Werror`), the plan's "server.c
-> amalgamation" path; `--recursive` is unnecessary (blst has no
+> blst's default `CFLAGS` minus `-Werror`), taking the plan's "server.c
+> amalgamation" path. `--recursive` is unnecessary (blst has no
 > submodules). The surface is `sign` / `skToPk` / `verify` / `keyValidate`
 > / `aggregate` / `ethAggregatePubkeys` / `aggregateVerify` /
 > `fastAggregateVerify` / `ethFastAggregateVerify` (`skToPk` added for
@@ -223,7 +226,7 @@ pubkey/sig group choice) are all new surface.
 ### Stage 3: KZG (`LeanHazmatKzg` → `LeanHazmatBls`)
 
 **Goal.** Wrap `c-kzg-4844` behind `@[extern]` bindings, building it against
-`LeanHazmatBls`'s blst (not c-kzg's bundled copy), with the trusted setup
+`LeanHazmatBls`'s blst (instead of c-kzg's bundled copy), with the trusted setup
 loaded at init.
 
 **Deliverables.**
@@ -279,16 +282,16 @@ does not, bump Bls's pin to c-kzg's expectation.
 >   (`-l:libleanhazmat_bls.so` + `-rpath`), exactly mirroring how the
 >   SHA-256 family's `.so` reaches `libcrypto`. Because that link
 >   reference is invisible to Lake's scheduler, a clean parallel build
->   would race (KZG's `.so` linking before Bls's `.so` exists); the KZG
+>   would race (KZG's `.so` linking before Bls's `.so` exists). The KZG
 >   `extern_lib` therefore folds Bls's shared-lib build into its own
->   dependency trace with `Job.zipWith` (`findExternLib? `libleanhazmat_bls`),
->   making the ordering explicit, verified by repeated from-clean builds.
+>   dependency trace with `Job.zipWith` (`findExternLib? "libleanhazmat_bls"`),
+>   making the ordering explicit. Repeated from-clean builds verified it.
 >   This was the high-risk wiring item; resolving it is what makes
 >   precompiled cross-package FFI work under one shared blst.
 
 ---
 
-### Stage 4: Consensus aggregator (`LeanHazmatConsensus`), DEFERRED
+### Stage 4: Consensus aggregator (`LeanHazmatConsensus`)
 
 **Goal.** A single meta-package re-exporting the three consensus families.
 
@@ -336,10 +339,11 @@ the consumer's concern.
 - `packages/hazmat/LeanHazmatKeccak/` scaffold; `just hazmat-keccak-vendor`
   (coruus/keccak-tiny, pinned by commit rev, fetched and checked back).
 - `csrc/keccak_shim.c` + `@[extern] opaque keccak256` (namespace
-  `LeanHazmat`). **Keccak padding, not SHA3**, distinct domain separation.
+  `LeanHazmat`). **The original Keccak padding** (SHA3 pads with 0x06),
+  distinct domain separation.
 - `LeanHazmatKeccakTests`: KAT including the empty-input and known-vector
   digests; an EVM-style address-derivation example documented as
-  *consumer-side* composition, not part of the primitive.
+  *consumer-side* composition outside the primitive.
 - Umbrella `[[require]]`.
 
 **Acceptance.** `lake build` green; KAT passes; `keccak256 ""` matches the
@@ -354,7 +358,7 @@ correctness is well-pinned by vectors.
 > delimiter-parametrized sponge is exactly what raw Keccak needs). Upstream
 > tags no releases, so the pin is the commit rev `64b66475…`, fetched by
 > rev and checked back by `just hazmat-keccak-vendor`. Ethereum's Keccak-256
-> is the 0x01-padding sponge at rate 136, **not** SHA3, so the shim
+> is the 0x01-padding sponge at rate 136 (SHA3 pads with 0x06), so the shim
 > translation unit `#include`s the vendored `.c` unmodified (its sponge is
 > `static`) and calls it with the original Keccak delimiter; a `memset_s`
 > macro maps glibc's missing Annex K function to `memset` before the
@@ -376,8 +380,8 @@ correctness is well-pinned by vectors.
   hazmat-secp256k1-vendor` (bitcoin-core `libsecp256k1` v0.8.0, vendored,
   pinned tag + rev, fetched and checked back).
 - `csrc/secp256k1_shim.c` + `@[extern] opaque ecdsaRecover` (namespace
-  `LeanHazmat`) returning the **raw** recovered public key, *not* the
-  `0x01` precompile output (keccak + truncate stays with the caller).
+  `LeanHazmat`) returning the **raw** recovered public key; the
+  `0x01` precompile output (keccak + truncate) stays with the caller.
 - `LeanHazmatSecp256k1Tests`: KAT for recovery against known
   message/signature/pubkey triples.
 - Umbrella `[[require]]`.
@@ -400,10 +404,10 @@ self-test once); no system-library branch remains.
 > Context: `secp256k1_context_static` (recovery
 > and verification need no signing tables), gated on one
 > `secp256k1_selftest` call. Surface: `ecdsaRecover` (→ the raw 64-byte
-> `x ‖ y` public key, *not* the precompile output) and `ecdsaVerify`.
+> `x ‖ y` public key) and `ecdsaVerify`.
 > One policy choice recorded in the shim: `secp256k1_ecdsa_verify` rejects
 > high-`s` (Bitcoin's anti-malleability rule), so `ecdsaVerify` normalizes
-> `s` in place, `(r, s)` and `(r, n - s)` have identical validity, and the
+> `s` in place. `(r, s)` and `(r, n - s)` have identical validity, and the
 > raw primitive carries no policy. KAT passes: the EIP-155 example
 > transaction recovers its published key byte-for-byte (and
 > `LeanHazmatKeccakTests` checks the derived sender address), a second
@@ -431,16 +435,17 @@ toolchain step.
 **Acceptance.** `lake build` green (C++ link included); pairing KAT passes.
 
 **Risk.** Medium-high. This is the only C++ family. Compiler selection, name
-mangling via `extern "C"`, and stdlib linking are new build shape.
+mangling via `extern "C"`, and stdlib linking are a new build shape.
 
 > **Status: done (verified).** `packages/hazmat/LeanHazmatBn254/` wraps herumi
 > **mcl v4.10**, vendored (`just hazmat-bn254-vendor`). Build shape
 > (settled by experiment, recorded in the lakefile): mcl's whole `mclBn*`
 > C API comes out of ONE translation unit, `src/fp.cpp`, compiled with
 > `-DMCL_FP_BIT=256 -DMCL_FR_BIT=256` (the `src/bn_c256.cpp` in the tree
-> is an empty placeholder) and `-DMCL_BINT_ASM=0` (upstream's default
-> bignum primitives need x64 assembly or LLVM-IR objects; the generic C
-> path keeps the archive portable and dependency-free), no GMP. The shim
+> is an empty placeholder), no GMP. `-DMCL_BINT_ASM=0` selects the
+> generic C bignum path: upstream's default bignum primitives need x64
+> assembly or LLVM-IR objects, while the generic path keeps the archive
+> portable and dependency-free. The shim
 > is `.cpp` with `extern "C"` entry points exposing the raw primitives:
 > `g1Add` / `g1Mul` (EIP-196), `g2Add` / `g2Mul` (EIP-197), and the
 > pairing pieces `millerLoopVec` / `finalExp` / `gtIsOne`, the EIP-197
@@ -478,7 +483,7 @@ mangling via `extern "C"`, and stdlib linking are new build shape.
 
 **Deliverables.**
 - `packages/hazmat/LeanHazmatBlake2f/` scaffold; `csrc/blake2f_shim.c`, an
-  in-repo, rounds-parametrised `F` compression (no vendored library).
+  in-repo, rounds-parametrized `F` compression (no vendored library).
 - `@[extern] opaque blake2fCompress` (namespace `LeanHazmat`).
 - `LeanHazmatBlake2fTests`: KAT against the EIP-152 test vectors (including
   the rounds=0 and large-rounds edge cases).
@@ -487,19 +492,20 @@ mangling via `extern "C"`, and stdlib linking are new build shape.
 **Acceptance.** `lake build` green; EIP-152 vectors pass.
 
 **Risk.** Low-medium. Small, self-contained; correctness is fully pinned by
-the EIP vectors. (Confirm hand-roll beats pulling `libb2`, the open item.)
+the EIP vectors. (Confirm the hand-roll instead of pulling in `libb2`, the
+open item.)
 
 > **Status: done (verified).** `packages/hazmat/LeanHazmatBlake2f/` ships the
 > hand-rolled RFC 7693 `F` compression in `csrc/blake2f_shim.c` (the
-> open item resolved: no library exposes raw `F`, and ~60 lines do not
-> justify a vendored dependency; the hand-roll was confirmed). Surface:
+> open item is resolved: no library exposes raw `F`, and ~60 lines do not
+> justify a vendored dependency). Surface:
 > `blake2fCompress (rounds) (h) (m) (t0) (t1) (last)`, the raw
 > rounds-parametrized primitive; the 213-byte EIP-152 input parse is
 > decoded in the *test*, mirroring the raw-primitives rule. KAT passes:
 > EIP-152 test vectors 4–8 byte-for-byte (rounds 0, 1, 12, and
 > `0xffffffff`, both final-block flags) plus the wrong-length sentinels.
 > The `0xffffffff`-rounds case runs ~4 · 10⁹ rounds in the FFI and
-> dominates the suite (~50 s), acceptable for an explicit-only test lib.
+> dominates the suite (~50 s); the suite is explicit-only for that reason.
 
 ---
 
@@ -511,9 +517,9 @@ linking the system `libcrypto`.
 **Deliverables.**
 - `packages/hazmat/LeanHazmatRipemd160/`: `@[extern] opaque ripemd160`; the
   shim loads OpenSSL 3.x's **default provider** (required) and **legacy
-  provider** (best-effort, for 3.0.0-3.0.6) into a **private
+  provider** (best-effort, for 3.0.0-3.0.6) once into a **private
   `OSSL_LIB_CTX`** (leaving the process's default context untouched),
-  once, with a load-failure path.
+  with a load-failure path.
 - `packages/hazmat/LeanHazmatModexp/`: `@[extern] opaque modExp` over
   `BN_mod_exp` (BIGNUM); raw modular exponentiation, with input parsing and
   the EIP-2565/7883 gas schedule left to the caller.
@@ -524,7 +530,7 @@ linking the system `libcrypto`.
 **Acceptance.** `lake build` green; each package's KAT passes (RIPEMD-160
 known digests; modexp known triples; P256VERIFY EIP-7951 vectors).
 
-**Risk.** Low-medium. The legacy-provider loading is the one gotcha; the
+**Risk.** Low-medium. The legacy-provider loading is the one difficulty; the
 rest reuses the established OpenSSL pkg-config path from Stage 1.
 
 > **Status: done (verified).** All three packages follow the
@@ -532,8 +538,8 @@ rest reuses the established OpenSSL pkg-config path from Stage 1.
 > - `LeanHazmatRipemd160`: `EVP_Q_digest` over "RIPEMD-160" against a
 >   **private `OSSL_LIB_CTX`** with `default` + `legacy` loaded (the
 >   process's default context stays untouched; setup via `pthread_once`,
->   a failed setup is not retried) and surfaced as the empty
->   `ByteArray`, the load-failure path the plan called out. KAT passes:
+>   a failed setup is not retried). A load failure surfaces as the empty
+>   `ByteArray`, the path the plan called out. KAT passes:
 >   the nine published vectors (verified against `openssl dgst -rmd160`
 >   at authoring time), including the million-`a` case.
 > - `LeanHazmatModexp`: `BN_mod_exp` over big-endian byte strings, the
@@ -598,7 +604,7 @@ one package per family, with `LeanHazmatConsensus` / `LeanHazmatExecution`
 - **KAT vectors pinned to the latest official release.** Each family's test
   vectors track the latest consensus-specs / EIP / reference release; bumping
   spec coverage means bumping the pinned vector tag in lockstep.
-- **Vendoring pinned to tags, fetched shallow, never submodules.** `just
+- **Vendoring pinned to tags, fetched shallow, with no submodules.** `just
   hazmat-<family>-vendor` records an exact tag + rev; `vendor/` is gitignored; the
   build itself stays offline.
 - **No `sorry` in committed code.** A `TODO` + tracking note is acceptable for
@@ -609,7 +615,7 @@ one package per family, with `LeanHazmatConsensus` / `LeanHazmatExecution`
   reduce concrete FFI bytes.
 - **Configure, don't integrate.** C compilation is Lake `target` /
   `extern_lib` (delegating to a vendored library's own build where
-  non-trivial), never a standalone Makefile.
+  non-trivial), with no standalone Makefile.
 
 ## Status snapshot
 

@@ -4,11 +4,11 @@
 
 LeanHazmat is the FFI crypto surface for the *Etheorem* monorepo: a **family of
 Lean 4 packages** that wrap battle-tested native cryptographic libraries behind
-`@[extern]` bindings, one package per primitive family, each carrying a
+`@[extern]` bindings, one package per primitive family. Each package carries a
 documented trust boundary. It covers **all** the cryptography the Ethereum
-protocol needs, **consensus *and* execution layer**, but ships as independent
-per-family packages rather than one monolith (see §3 for why this is the
-decision everything else builds on).
+protocol needs, **consensus *and* execution layer**, and ships as independent
+per-family packages (see §3 for why this is the decision everything else
+builds on).
 
 It is the FFI counterpart to the pure-Lean reference library `LeanSha256` (a
 sibling subpackage at [`packages/LeanSha256/`](../../../packages/LeanSha256/)).
@@ -18,13 +18,14 @@ links compiled native code and validates it against official test vectors.
 *and* an FFI binding (`LeanHazmatSha256`), joined by an equivalence axiom that
 lives in `SizzLean`, the one layer entitled to import both (§9).
 
-The name "hazmat" is the cryptographers' idiom (cf. pyca/cryptography's `hazmat`
-module) for raw, low-level primitives deliberately placed behind a safety
-boundary, exactly the FFI trust framing this family is built around. It carries
-no Ethereum reference, per the project's naming constraint.
+The name "hazmat" is the cryptographers' idiom for raw, low-level
+primitives deliberately placed behind a safety boundary (as in
+pyca/cryptography's `hazmat` module), exactly the FFI trust framing this
+family is built around. It carries no Ethereum reference, per the project's
+naming constraint.
 
-**Scope is crypto-only.** LeanHazmat is *not* an FFI SSZ backend. SizzLean's
-*verified* SSZ stays the single source of truth; an FFI SSZ would undermine the
+**Scope is crypto-only.** SizzLean's *verified* SSZ stays the single source
+of truth for serialization; an FFI SSZ would undermine the
 formal-verification goal, and there is no standout C SSZ library worth the trust
 cost. (If an FFI SSZ seam is ever wanted, it is a `.ffi` arm on `SSZ.Box`
 validated by an equivalence axiom, a SizzLean concern that stays outside LeanHazmat.)
@@ -33,8 +34,8 @@ This document is written to be read from both ends: a Lean-fluent reader who has
 not internalised the Ethereum crypto stack, and a crypto/protocol-fluent reader
 who has not written Lean. Where either side names something the other has not
 seen, the first occurrence is glossed. This mirrors CLAUDE.md's "Literate by
-default" stance and is binding on the implementation files this document plans,
-not only on the document.
+default" stance and is binding on this document and on the implementation
+files it plans.
 
 ### Sibling subpackages, in terms of dependency direction
 
@@ -47,11 +48,11 @@ way:
   on it. The *equivalence axioms* tying the FFI SHA-256 to the spec live in
   `SizzLean`, the only layer that legitimately imports both.
 * **`SizzLean`**: the SSZ library. After the SHA-256 migration (§9) it
-  `require`s `LeanHazmatSha256` (FFI hash) **and** `LeanSha256` (spec), owns the
-  `Hasher` typeclass and the `Sha256` tag, and holds the FFI≡spec equivalence
-  axioms. It depends on no other LeanHazmat family.
+  `require`s `LeanHazmatSha256` (FFI hash) **and** `LeanSha256` (spec). It
+  owns the `Hasher` typeclass and the `Sha256` tag, and holds the FFI≡spec
+  equivalence axioms. It depends on no other LeanHazmat family.
 * **`EthCLLib` / `EthCLSpecs`**: the consensus-spec framework and the
-  Fulu/Gloas/Heze specs built on it; consume `SizzLean`. No direct
+  Fulu/Gloas/Heze specs built on it; they consume `SizzLean`. No direct
   LeanHazmat dependency.
 
 See [`docs/monorepo-arch.md`](../../../docs/monorepo-arch.md) for the monorepo's overall
@@ -60,8 +61,8 @@ shape and [`packages/SizzLean/docs/ARCHITECTURE.md`](../../../packages/SizzLean/
 
 ## 2. Architecture at a glance
 
-The defining decision is that LeanHazmat is **not one package**. Each crypto
-family is its own Lake package, self-contained, so a consumer compiles **only
+The defining decision is **one Lake package per crypto family**. Each
+package is self-contained, so a consumer compiles **only
 what it `require`s**. The families are grouped by protocol layer behind two
 aggregator meta-packages, with a top umbrella over both.
 
@@ -105,13 +106,13 @@ graph TD
 (Arrows read *dependency → dependent*, matching SizzLean's diagrams: `A --> B`
 means "B `require`s A".)
 
-**What per-family packaging buys, and why a monolith is wrong.** Lake links
+**What per-family packaging buys.** Lake links
 *all* of a package's `extern_lib`s together into any precompiled library or
-executable that depends on that package; it cannot tell which `@[extern]` symbol
+executable that depends on that package. It cannot tell which `@[extern]` symbol
 lives in which archive, so it links them all. A single `LeanHazmat` package
 owning every C library would therefore force **every** consumer to compile
-**every** library. Notably, `SizzLean` `require`s the SHA-256 family, and the
-whole repo builds on `SizzLean`, so a monolith would make every clean build of
+**every** library. Notably, `SizzLean` `require`s the SHA-256 family and the
+whole repo builds on `SizzLean`. A monolith would make every clean build of
 the repository compile blst, c-kzg, mcl, secp256k1, and keccak even though only
 SHA-256 is wanted. Per-family packaging is what keeps the common build path
 (LeanSha256 → SizzLean → EthCLLib → EthCLSpecs) at *one* cheap system-linked
@@ -120,13 +121,14 @@ dependency. See §3.1.
 **What "no shared code" buys.** Every family package is self-contained, with zero
 internal dependencies (the one exception in §4). That makes each one
 independently mirror-publishable to its own repo with no dangling dependency,
-the `LeanSha256` property, which is the unit Reservoir indexes (§11).
+the `LeanSha256` property. That standalone repo is the unit Reservoir
+indexes (§11).
 
-**The brand survives decomposition.** Splitting into many packages does not
-fracture the API: every family lives under the shared `LeanHazmat` brand
+**The brand survives decomposition.** Splitting into many packages keeps one
+API surface: every family lives under the shared `LeanHazmat` brand
 namespace (each in its own `LeanHazmat.<Family>` sub-namespace,
 `LeanHazmat.Bls.sign`, `LeanHazmat.Kzg.verifyBlobKzgProof`, …) regardless of
-which package ships it, and the aggregator meta-packages
+which package ships it. The aggregator meta-packages
 (`LeanHazmatConsensus`, `LeanHazmatExecution`, `LeanHazmat`) re-export the
 families for consumers who want a whole layer at once (§3.4).
 
@@ -142,8 +144,8 @@ which in turn follows **vendored vs. system**:
   what per-family isolation exists to contain. Each gets its own package.
 - **OpenSSL-backed shims**: SHA-256, RIPEMD-160, P-256, modexp are ~zero-
   compile, a small `.c` shim linking the *system* `libcrypto.so`, nothing heavy
-  built from source. They are still per-family, but for **API clarity and
-  independent mirror-ability**, not compile isolation.
+  built from source. They are still per-family; for them the split serves
+  **API clarity and independent mirror-ability**.
 
 The cost is one-time and Lake-cached: once a vendored library is compiled to a
 `.a` archive, Lake's trace system skips it on every subsequent build. The
@@ -190,7 +192,7 @@ dependency:
 - A byte-level KAT test harness is likewise copied into each family's test lib.
 
 The one cross-package coupling that *is* allowed is a `require` to share a heavy
-vendored library, see §4. It is the sole exception; everything else is
+vendored library; see §4. It is the sole exception; everything else is
 independent.
 
 **Namespace vs. module-root.** The package, library, and module-root name is
@@ -203,7 +205,7 @@ so the qualified name reflects which family a symbol comes from and bare
 names don't collide across families. The module path and namespace are
 decoupled the way SizzLean decouples the file path
 `SizzLean/Hasher/Sha256.lean` from its `SizzLean.Hasher` namespace: the
-import name reflects the *package* (`LeanHazmatBls`), the declaration names
+import name reflects the *package* (`LeanHazmatBls`); the declaration names
 reflect the *brand + family* (`LeanHazmat.Bls`).
 
 ### 3.4 Aggregator libraries
@@ -246,23 +248,24 @@ Aggregator packages drop `csrc/`, `vendor/`, and `data/`, and use a declarative
 
 The default is independence; a family may `require` another **only** when it
 structurally needs that family's *heavy vendored library*, so a single compiled
-copy is shared instead of being built twice. Surveying the whole surface,
+copy is shared instead of being built twice. Across the whole surface,
 **exactly one pair qualifies.**
 
 - **`LeanHazmatKzg` → `LeanHazmatBls`** (shares **blst**). c-kzg-4844 is built on
   top of blst, which `LeanHazmatBls` already owns. So `LeanHazmatBls` is the
   **single blst owner**, pinned to the rev c-kzg-4844 expects; `LeanHazmatKzg`
   links Bls's blst archive and compiles only c-kzg's own `.c` sources against it
-  (*not* c-kzg's bundled `--recursive` blst). Accepted tradeoff: `LeanHazmatKzg`
+  (c-kzg's bundled `--recursive` blst stays unfetched). Accepted tradeoff: `LeanHazmatKzg`
   is then the one family that is not zero-dependency, so a standalone Kzg mirror
   must also pull Bls.
 
 No other pair qualifies, and what keeps the list at one is a standing principle:
 
-> **LeanHazmat exposes raw primitives, not assembled precompiles.**
+> **LeanHazmat exposes raw primitives. Precompile assembly stays with
+> the consumer.**
 
-The EL precompiles that *compose* primitives are the **consumer's** job, not
-LeanHazmat's. Examples are ecRecover (`0x01`) = secp256k1-recover **+** keccak256
+The EL precompiles that *compose* primitives are the **consumer's** job.
+Examples are ecRecover (`0x01`) = secp256k1-recover **+** keccak256
 + truncate, and modexp's length-prefixed input parse + gas schedule. So
 `LeanHazmatSecp256k1` exposes raw ECDSA recovery (→ public key) and does *not*
 depend on `LeanHazmatKeccak`; address derivation lives in the caller. Holding
@@ -286,12 +289,13 @@ The other near-misses:
 | secp256k1 → `…Secp256k1` | `libsecp256k1` | C | vendored (v0.8.0) | bitcoin-core's reference; ecRecover. Recovery is a compile-time module (`-DENABLE_MODULE_RECOVERY`) in v0.8.0. |
 | BN254 / alt_bn128 → `…Bn254` | `herumi/mcl` | C++ | vendored (v4.10) | Reference for alt_bn128 add/mul/pairing. Whole `mclBn*` API out of one TU (`src/fp.cpp`), portable bignum (`-DMCL_BINT_ASM=0`), no GMP. |
 | RIPEMD-160 / P-256 / modexp → `…Ripemd160` / `…P256` / `…Modexp` | OpenSSL | C | system | RIPEMD-160 via the default provider (legacy on 3.0.0-3.0.6); P256VERIFY via NIST P-256; modexp via `BN_mod_exp` (BIGNUM). |
-| Keccak-256 → `…Keccak` | keccak-tiny (single file, CC0, pinned rev) | C | vendored | *Not* SHA3, different padding; OpenSSL SHA3 will not do. The shim `#include`s the vendored `.c` to reach its delimiter-parametrized sponge. |
-| BLAKE2f → `…Blake2f` | hand-rolled RFC 7693 F-compression | C | in-repo | EIP-152 needs the raw rounds-parametrised `F`; too small to justify a dependency. |
+| Keccak-256 → `…Keccak` | keccak-tiny (single file, CC0, pinned rev) | C | vendored | The original Keccak padding (SHA3 pads differently), so OpenSSL SHA3 does not fit. The shim `#include`s the vendored `.c` to reach its delimiter-parametrized sponge. |
+| BLAKE2f → `…Blake2f` | hand-rolled RFC 7693 F-compression | C | in-repo | EIP-152 needs the raw rounds-parametrized `F`; too small to justify a dependency. |
 
 **Rejected backends.** *constantine* (consolidating BLS + KZG + BN254 onto one
-newer library): fewer deps and a smaller TCB, but it trades the per-domain gold
-standards for a single less-proven library. *GMP* for modexp: a new system
+newer library): fewer dependencies and a smaller TCB, but it trades the
+per-domain reference implementations for a single less-proven library.
+*GMP* for modexp: a new system
 dependency that only wins for very large exponents; `BN_mod_exp` reuses OpenSSL,
 already present.
 
@@ -315,7 +319,7 @@ deliberately omits `--recursive`: c-kzg's bundled blst is not fetched, and
 the families share `LeanHazmatBls`'s blst instead. The *build* itself stays offline and
 hermetic, no network mid-build.
 
-**Compile via Lake targets, never a standalone Makefile.** Per CLAUDE.md's
+**Compile via Lake targets, with no standalone Makefile.** Per CLAUDE.md's
 "configure, don't integrate": the C compilation is expressed as Lake `target` +
 `extern_lib` declarations (the SizzLean `sha256_shim.o` → `libssz_sha256` shape
 is the template). Where a vendored library has a non-trivial build of its own,
@@ -324,7 +328,7 @@ than re-deriving its compiler flags. We do not author a parallel orchestration
 Makefile.
 
 **No git submodules.** The pin lives in the `just hazmat-<family>-vendor` recipe (tag +
-recorded rev), not as a tracked submodule gitlink. This keeps `vendor/` out of
+recorded rev) instead of a tracked submodule gitlink. This keeps `vendor/` out of
 the repo's git history entirely and avoids submodule UX for contributors.
 
 **C++ toolchain note.** `LeanHazmatBn254` (herumi/mcl) is the one family
@@ -349,8 +353,8 @@ execution-layer only and excluded here.
 
 ## 8. Crypto surface: execution layer
 
-Dominated by **precompiles**, plus two non-precompile workhorses (Keccak-256, and
-the bignum behind modexp). Several EL items **reuse** consensus packages and cost
+Dominated by **precompiles**, plus the two most-used non-precompile
+primitives (Keccak-256, and the bignum behind modexp). Several EL items **reuse** consensus packages and cost
 zero new dependencies: SHA-256 (`0x02`) → `…Sha256`; KZG point-eval (`0x0a`) →
 `…Kzg`; EIP-2537 BLS → `…Bls`. Per the §4 principle, each package exposes the raw
 primitive; the precompile's input parsing, gas, and output composition stay with
@@ -358,12 +362,12 @@ the consumer.
 
 | EL primitive → package | Used by | Library | vs. consensus stack |
 | --- | --- | --- | --- |
-| **Keccak-256** → `…Keccak` | KECCAK256 opcode, addresses, storage slots, MPT trie, RLP | keccak-tiny (vendored, pinned rev) | 🆕 new, *not* SHA3 |
+| **Keccak-256** → `…Keccak` | KECCAK256 opcode, addresses, storage slots, MPT trie, RLP | keccak-tiny (vendored, pinned rev) | 🆕 new; original Keccak padding, distinct from SHA3 |
 | **ecRecover** (`0x01`) → `…Secp256k1` | tx sender recovery | `libsecp256k1` (vendored, v0.8.0) | 🆕 new |
 | SHA-256 (`0x02`) → *reuse `…Sha256`* | precompile | OpenSSL | ✅ have |
 | **RIPEMD-160** (`0x03`) → `…Ripemd160` | precompile | OpenSSL (3.x default or legacy provider) | ♻️ same lib |
 | **modexp** (`0x05`, EIP-2565/7883) → `…Modexp` | precompile | OpenSSL `BN_mod_exp` | ♻️ reuse BIGNUM |
-| **bn254** add/mul/pairing (`0x06/07/08`, EIP-196/197/1108) → `…Bn254` | alt_bn128 precompiles | `herumi/mcl` (vendored, v4.10) | 🆕 new, BN254, *not* BLS12-381 |
+| **bn254** add/mul/pairing (`0x06/07/08`, EIP-196/197/1108) → `…Bn254` | alt_bn128 precompiles | `herumi/mcl` (vendored, v4.10) | 🆕 new; BN254, a curve distinct from BLS12-381 |
 | **BLAKE2f** (`0x09`, EIP-152) → `…Blake2f` | precompile | hand-rolled RFC 7693 | 🆕 small |
 | **KZG point eval** (`0x0a`, EIP-4844) → *reuse `…Kzg`* | precompile | c-kzg-4844 | ✅ have |
 | **BLS12-381** G1/G2 (EIP-2537, Pectra) → *reuse `…Bls`* | precompiles | blst | ✅ have |
@@ -444,19 +448,19 @@ graph LR
   EIP/KAT/spec vectors. Each `@[extern] opaque` carries a docstring naming the
   empirical assumption it rests on, and all are visible under `#axioms`.
 
-This asymmetry is intentional: SHA-256 is in the SSZ proof path (so the spec +
-axioms earn their keep), while the rest sit at the protocol boundary where a
-kernel-checkable reference would be a large independent project for little proof
-benefit today.
+This asymmetry is intentional: SHA-256 is in the SSZ proof path, so the spec
+and the axioms justify the added work. The rest sit at the protocol boundary,
+where a kernel-checkable reference would be a large independent project for
+little proof benefit today.
 
 ## 11. Distribution / mirroring
 
 Distribution is **one mirror repo per *published* package**, deferred and opt-in
-per family. Reservoir (the Lean package index) indexes repository **roots**, not
-monorepo subdirectories, so a family is invisible to it until it has its own repo
+per family. Reservoir (the Lean package index) indexes repository **roots**, so
+a monorepo subdirectory stays invisible until the family has its own repo
 at `etheorem/LeanHazmat<Family>`. The flat layout (§3.2) exists precisely so that
 `git subtree split --prefix=packages/hazmat/LeanHazmat<Family>` projects cleanly to that
-repo; `packages/LeanSha256/` and `.github/workflows/mirror-leansha256.yml` are
+repo; `packages/LeanSha256/` and `.github/workflows/mirror-leansha256.yml` form
 the reference implementation.
 
 Two things keep this cheap and optional:
@@ -505,7 +509,7 @@ until/unless it is promoted to a mirror, at which point it carries a local
 
 `import LeanHazmatSha256` brings the `LeanHazmat.Sha256.*` names
 (`LeanHazmat.Sha256.sha256Hash`, …) into scope; the package name is the import
-unit, the namespace is the brand + family sub-namespace (§3.3).
+unit; the namespace is the brand + family sub-namespace (§3.3).
 
 ## 13. Conventions
 
@@ -526,8 +530,8 @@ The main convention is **literate by default**:
   rests on (which library, which spec/EIP/KAT validates it). A future reader
   inspecting `#axioms` should find the context there.
 - Non-obvious Lean idioms (`@[extern]`, `@&` borrowed args, `opaque`,
-  `native_decide`'s axiom) are annotated the first time they appear in a module,
-  not the fifth; same for crypto terms a Lean-fluent reader won't recognise
+  `native_decide`'s axiom) are annotated at their first appearance in a module;
+  the same goes for crypto terms a Lean-fluent reader won't recognise
   (ciphersuite, G1/G2, trusted setup, the default and legacy providers).
 - `example` / `#guard` blocks accompany the user-facing API at every family; the
   typechecker keeps them honest in a way prose cannot.
@@ -539,12 +543,12 @@ the cross-family view those single-family docs hang under.
 ## 14. Sequencing
 
 **Consensus first, execution second.** Each phase is a green-build checkpoint;
-a per-family mirror is an optional later step, never a phase gate. Both phases
+a per-family mirror is an optional later step outside the phase gates. Both phases
 are complete; the per-stage records in PLAN.md carry the verified decisions.
 
 | Phase | Scope | Constraints |
 | --- | --- | --- |
-| **1: Consensus core** | `LeanHazmatSha256` (the SHA-256 migration out of SizzLean) → `LeanHazmatBls` → `LeanHazmatKzg` → `LeanHazmatConsensus`. | SHA-256 goes first as the cross-package de-risk: it exercises the whole per-family machinery (a new package, `SizzLean` requiring it, link-arg behaviour, the axiom split, the test split) on the one family that needs *no* vendoring. Vendoring (and the `just hazmat-*-vendor` harness) enters with BLS. KZG depends on BLS (§4). |
+| **1: Consensus core** | `LeanHazmatSha256` (the SHA-256 migration out of SizzLean) → `LeanHazmatBls` → `LeanHazmatKzg` → `LeanHazmatConsensus`. | SHA-256 goes first as the low-risk cross-package trial: it exercises the whole per-family machinery (a new package, `SizzLean` requiring it, link-arg behaviour, the axiom split, the test split) on the one family that needs *no* vendoring. Vendoring (and the `just hazmat-*-vendor` harness) enters with BLS. KZG depends on BLS (§4). |
 | **2: Execution layer** | Keccak; secp256k1; BN254 (mcl, the C++ toolchain step); BLAKE2f; the OpenSSL EL shims (RIPEMD-160 / modexp / P256); `LeanHazmatExecution`; the top `LeanHazmat` umbrella. | Independent of one another except where a primitive reuses a consensus package (point-eval, EIP-2537, SHA-256 precompile). Each exposes a *raw* primitive; precompile composition (input parse, gas, output hashing) is the consumer's. |
 
 The single highest-risk item in Phase 1 is **cross-package link-arg propagation**:

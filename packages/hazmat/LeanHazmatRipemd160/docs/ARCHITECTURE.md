@@ -22,7 +22,7 @@ The system OpenSSL `libcrypto`, no vendoring. Discovery via
 duplicated per §3.3, with the explicit `-L<libdir>` that Lean's `lld`
 needs).
 
-**The provider story is the one gotcha** (the plan's open item):
+**The provider loading is the one difficulty** (the plan's open item):
 OpenSSL 3.0.0-3.0.6 keep RIPEMD-160 in the legacy provider only, and
 loading `legacy` into the process's *default* context would disable the
 automatic default-provider load for the whole process. The shim
@@ -39,7 +39,7 @@ algorithm. Every entry point returns the empty
 No pure-Lean reference exists; the binding is an opaque `@[extern]`
 boundary. The empirical trust assumption is *that the linked OpenSSL
 libcrypto implements RIPEMD-160 correctly, through whichever provider
-supplies it*, every KAT exercises exactly that fetching path. Validated
+supplies it*; every KAT exercises exactly that fetching path. Validated
 by `LeanHazmatRipemd160Tests` against the nine published RIPEMD-160
 vectors (empty, `"a"`, `"abc"`, `"message digest"`, the two standard
 padded strings, the alphabet, `8 × "1234567890"`, and the million-`a`

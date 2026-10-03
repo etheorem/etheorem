@@ -5,9 +5,9 @@
 //   * ecdsaRecover : (msgHash, r, s, recId) → 64-byte public key
 //     (uncompressed x ‖ y, big-endian), the primitive behind the
 //     ecRecover precompile (0x01) and transaction sender recovery.
-//     The precompile *output* (keccak256(pubkey)[12:32]) is NOT
-//     computed here: address derivation is the caller's composition,
-//     and this package deliberately does not depend on LeanHazmatKeccak.
+//     The precompile *output* (keccak256(pubkey)[12:32]) stays with
+//     the caller: address derivation is the caller's composition, and
+//     this package deliberately does not depend on LeanHazmatKeccak.
 //   * ecdsaVerify : (msgHash, r, s, pubkey) → Bool, plain ECDSA
 //     verification against a 64-byte uncompressed public key.
 //

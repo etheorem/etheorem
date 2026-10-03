@@ -285,8 +285,9 @@ example : pairingCheck #[probeA] #[g2Inf] = some true := by native_decide
 
 /-- A bad point *inside* the pair array is rejected with the empty
 sentinel, which the composition reports as `none` (the EIP-197
-precompile must fail, not answer "not one"). Pair 1 is the true
-check's `(2·P1, 3·P2)`; pair 2's G1 half is off-curve. -/
+precompile must fail on invalid input; a bare `false` would read as a
+completed negative check). Pair 1 is the true check's `(2·P1, 3·P2)`;
+pair 2's G1 half is off-curve. -/
 example : pairingCheck #[trueA1, g1Bad] #[trueB1, trueB2] = none := by
   native_decide
 

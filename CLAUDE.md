@@ -29,10 +29,10 @@ its own subpackage under `packages/`:
 - **`LeanHazmat<Family>`** (`Sha256`, `Bls`, `Kzg`, `Keccak`,
   `Secp256k1`, `Bn254`, `Blake2f`, `Ripemd160`, `Modexp`, `P256`): the
   FFI crypto family, one package per primitive wrapping a native
-  library (OpenSSL / blst / c-kzg-4844 / keccak-tiny / libsecp256k1 /
-  mcl; Blake2f is an in-repo RFC 7693 shim with no library) behind
-  `@[extern]`, plus the aggregator meta-packages (`LeanHazmatConsensus`,
-  `LeanHazmatExecution`, top `LeanHazmat`). See
+  library behind `@[extern]` (OpenSSL / blst / c-kzg-4844 /
+  keccak-tiny / libsecp256k1 / mcl; Blake2f is an in-repo RFC 7693
+  shim with no library), plus the aggregator meta-packages
+  (`LeanHazmatConsensus`, `LeanHazmatExecution`, top `LeanHazmat`). See
   [`packages/hazmat/docs/ARCHITECTURE.md`](packages/hazmat/docs/ARCHITECTURE.md).
 - **`LeanPoseidon`** (+ **`LeanPoseidonProofs`**): a pure-Lean Poseidon2
   hash, a standalone island parallel to `LeanSha256` that nothing in the

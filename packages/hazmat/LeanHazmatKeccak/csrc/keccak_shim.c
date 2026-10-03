@@ -1,10 +1,10 @@
 // LeanHazmatKeccak: C shim wrapping the vendored coruus/keccak-tiny
 // for the Ethereum execution-layer Keccak-256 primitive.
 //
-// Ethereum's Keccak-256 is **not** SHA3-256: the padding byte is 0x01
-// (the original Keccak padding), not FIPS 202's 0x06, so OpenSSL's
-// SHA3 functions and keccak-tiny's `sha3_256` both compute the wrong
-// function for the EVM. keccak-tiny's generic sponge, the static
+// Ethereum's Keccak-256 pads with 0x01, the original Keccak padding;
+// FIPS 202's SHA3-256 pads with 0x06. OpenSSL's SHA3 functions and
+// keccak-tiny's `sha3_256` therefore compute the SHA3 function, the
+// wrong one for the EVM. keccak-tiny's generic sponge, the static
 //   hash(out, outlen, in, inlen, rate, delim)
 // in the vendored file, takes the delimiter as a parameter, which is
 // exactly what Keccak-256 needs: rate 136 (200 - 2*32), delim 0x01.

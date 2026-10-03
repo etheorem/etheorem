@@ -22,12 +22,11 @@ The two are decoupled exactly as SizzLean decouples the file path
 
 Where RIPEMD-160 lives changed across OpenSSL 3.x: 3.0.0-3.0.6 ship it
 only in the **legacy provider**; from 3.0.7 the default provider
-carries it. The shim creates a **private** `OSSL_LIB_CTX`, loads
-`default` (required) and `legacy` (best-effort) into it, and lets the
-digest fetch decide (loading into the process's default context would
-disable the automatic default-provider load process-wide), via
-`pthread_once`; a setup that cannot load `default` returns the empty
-`ByteArray`.
+carries it. The shim creates a **private** `OSSL_LIB_CTX` under
+`pthread_once` and loads `default` (required) and `legacy`
+(best-effort) into it. Loading into the process's default context
+would disable the automatic default-provider load process-wide. A
+setup that cannot load `default` returns the empty `ByteArray`.
 
 ## Trust boundary (ARCHITECTURE.md §10)
 
@@ -59,8 +58,9 @@ implementation is `csrc/ripemd160_shim.c`'s
 against a private context (the legacy provider loads best-effort; the
 default provider carries RIPEMD-160 from OpenSSL 3.0.7 on).
 
-This is the execution-layer precompile 0x03's primitive, **not** a
-general-purpose recommendation (RIPEMD-160 is legacy everywhere else).
+This primitive exists for the execution-layer precompile 0x03;
+RIPEMD-160 is legacy everywhere else, so nothing here recommends it
+for new designs.
 
 Empty `ByteArray` if no provider supplies RIPEMD-160 or the
 digest fails.

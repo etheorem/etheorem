@@ -49,8 +49,8 @@ blake2fCompress : UInt32 → ByteArray → ByteArray → UInt64 → UInt64 → B
 ```
 
 Empty `ByteArray` on a wrong `h` / `m` length. `native_decide` runs the
-primitive at build time (see the README of any family for the
-compiled-code caveat).
+primitive at build time; the compiled-code caveat in
+[`LeanHazmatSha256`'s README](../LeanHazmatSha256/README.md) applies.
 
 ## Tests
 

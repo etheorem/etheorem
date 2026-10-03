@@ -32,8 +32,8 @@
 //     consumer needs (finalExp / gtIsOne are the only GT consumers).
 //
 // Validation: point deserialization checks coordinates < p and the
-// curve equation (mclBnG1_isValid / mclBnG2_isValid); G2 additionally
-// checks the order-r subgroup (`mclBn_verifyOrderG2(1)`, pinned by
+// curve equation (mclBnG1_isValid / mclBnG2_isValid); G2 also checks
+// the order-r subgroup (`mclBn_verifyOrderG2(1)`, pinned by
 // `bn254_init_once`), which is EIP-197's membership rule. G1 skips the
 // order check (cofactor 1, so on-curve implies in-group; see the
 // initializer comment). Any failure yields the empty

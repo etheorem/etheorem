@@ -7,13 +7,12 @@ slot hashing, the MPT trie, and RLP hashing. Wraps the vendored
 implementation. Part of the
 [LeanHazmat](../docs/ARCHITECTURE.md) FFI crypto family.
 
-## Keccak-256, not SHA3-256
+## Keccak-256 uses the original Keccak padding
 
-Ethereum's digest uses the **original Keccak padding** (`0x01`), not
-FIPS 202's `0x06`. The two differ on every input, so no SHA3
-implementation substitutes, the reason OpenSSL SHA3 was rejected. The
-shim calls keccak-tiny's delimiter-parametrized sponge with rate 136
-and delimiter `0x01`.
+Ethereum's digest uses the **original Keccak padding** (`0x01`); FIPS
+202's SHA3-256 pads with `0x06`. The two differ on every input, so the
+plan rejects OpenSSL SHA3 here. The shim calls keccak-tiny's
+delimiter-parametrized sponge with rate 136 and delimiter `0x01`.
 
 ## Setup
 

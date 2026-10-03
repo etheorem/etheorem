@@ -17,8 +17,8 @@ Raw secp256k1 ECDSA recovery and verification in namespace
 | `ecdsaVerify` | `lean_hazmat_secp256k1_ecdsa_verify` |
 
 Encodings: message hash and scalars are 32-byte big-endian; the public
-key is the 64-byte uncompressed `x ‖ y` (the EL's point encoding, the
-shim converts at the boundary, not the caller); `recId` is
+key is the 64-byte uncompressed `x ‖ y` (the EL's point encoding; the
+shim does the conversion); `recId` is
 libsecp256k1's recovery id (bit 0 = y parity, bit 1 = r-overflow), with
 the `v` → `recId` mapping documented on the binding.
 

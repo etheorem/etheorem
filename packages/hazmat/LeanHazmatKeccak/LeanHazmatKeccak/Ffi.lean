@@ -20,14 +20,13 @@ two are decoupled exactly as SizzLean decouples the file path
 `SizzLean/Hasher/Sha256.lean` from its `SizzLean.Hasher` namespace
 (ARCHITECTURE.md §3.3).
 
-## Keccak-256, not SHA3-256
+## Keccak-256 uses the original Keccak padding
 
-Ethereum's digest uses the **original Keccak padding** (`0x01`), not
-FIPS 202's `0x06`. The two functions differ on every input, so no
-SHA3 implementation substitutes for this one (the reason the plan
-rejects OpenSSL SHA3). The vendored keccak-tiny implements the
-Keccak-f[1600] permutation and a delimiter-parametrized sponge; the
-shim calls the sponge with rate 136 and delimiter `0x01`.
+Ethereum's digest uses the **original Keccak padding** (`0x01`); FIPS
+202's SHA3-256 pads with `0x06`. The two functions differ on every
+input, so the plan rejects OpenSSL SHA3 here. The vendored keccak-tiny
+implements the Keccak-f[1600] permutation and a delimiter-parametrized
+sponge; the shim calls the sponge with rate 136 and delimiter `0x01`.
 
 ## Trust boundary (ARCHITECTURE.md §10)
 
@@ -61,8 +60,8 @@ original Keccak `0x01` padding). Runtime implementation is
 `csrc/keccak_shim.c`'s `lean_hazmat_keccak256_hash`, which drives the
 vendored keccak-tiny sponge.
 
-This is the EVM's hash function, **not** SHA3-256 (different padding,
-so a different function on every input).
+This is the EVM's hash function; SHA3-256 pads with `0x06`, so the
+two differ on every input.
 
 **Trust assumption:** the vendored coruus/keccak-tiny (rev
 `64b66475…`) implements Keccak-f[1600] and the sponge correctly.

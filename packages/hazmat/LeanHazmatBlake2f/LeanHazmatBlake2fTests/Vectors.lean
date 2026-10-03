@@ -192,7 +192,7 @@ example : blake2fCompress 12 (inputtwelveRounds.extract 4 68)
       "9441d136c83f0d15dde62f7f3b57e2d6d41dc9e20d04e85fc004bd93a71ca29e") := by
   native_decide
 
-/-- 1 round, not final, same nonzero counter. -/
+/-- 1 round, final flag false, same nonzero counter. -/
 example : blake2fCompress 1 (inputtwelveRounds.extract 4 68)
       (inputtwelveRounds.extract 68 196) 0x1122334455667788 0x99aabbccddeeff00 false =
     hex ("76df1abdd8ee76fca0705e6216b426f7aaedfef4459e2984151adf57bc634043" ++
