@@ -21,7 +21,7 @@ package, `LeanHazmatKeccak`; §3 places the instances. A consumer
 hashes an encoding by calling `Hasher.hash` on the `Rlp.encode`
 output. `forkrlp` is an `EthELLib` form that wraps this package's
 deriving handler. Trailing optional fields (a record that admits
-20, 21 or 23 fields) constrain consumers: each fork declares its
+20, 21, or 23 fields) constrain consumers: each fork declares its
 full field list through that form, and LeanRlp decodes exactly the
 declared shape.
 
@@ -36,18 +36,21 @@ list payload below 2^64 bytes; the round-trip theorems take it as a
 hypothesis. List payloads need the bound as much as strings do: a
 list payload of 2^64 bytes overflows the long-form header byte.
 
-The decoder is one function family, `decodeHeader` over `decode`
-and `decodePrefix`. Termination sits on a fuel argument: each item
-node and each list element uses one unit, and a sufficiency lemma
-certifies the fuel the public entry points pass, so `outOfFuel` is
+The decoder is one function family: `decodeHeader` serves `decode`
+and `decodePrefix`. Termination is structural on a fuel argument:
+each item node and each list element uses one unit, and a sufficiency
+lemma certifies the fuel the public entry points pass, so `outOfFuel` is
 a dead branch for them. `input.size` needs a proof before it can
 serve as the fuel: under that measure, a two-byte input can use
-three units. The decoder also carries a depth bound from Stage 1
-on, and a nest deeper than the bound fails with `tooDeep`, before
-it can exhaust the native stack. The default bound is 1024.
-Consensus structures nest a handful of levels, and the fixtures sit
-far below it. The reference oracle carries no limit, so this bound
-is a recorded discrepancy, and Stage 2 keeps its random generator
+three units, one for the list node, one for the loop iteration,
+and one for the element node. The decoder also carries a depth
+bound, and a nest deeper than the bound fails with `tooDeep`,
+before it can exhaust the native stack. The default bound is 1024. A
+budget of zero rejects every list, including the empty list, so a
+caller that passes depth 0 decodes strings only. Execution-layer
+structures nest a handful of levels, and the fixtures sit far
+below it. The reference oracle carries no limit, so this bound is
+a recorded discrepancy, and Stage 2 keeps its random generator
 under the bound.
 
 The decoder is strict at the item layer, and each canonical rule is
@@ -57,15 +60,21 @@ one `DecodeError` constructor:
 * long form only for payloads above 55 bytes (`nonCanonicalLength`);
 * minimally encoded length, no leading zero (`nonCanonicalLength`);
 * the payload fully inside its parent (`truncated`, `listOverrun`);
+  an element whose header promises more than the input holds
+  reports `truncated`, and an element that decodes past its
+  parent's payload reports `listOverrun`; the loop decodes an
+  element in full before the comparison, so a crossing element can
+  also report a reason from inside itself, such as
+  `nonCanonicalByte`;
 * all of the input consumed (`trailingBytes`).
 
 Structural recursion reduces in the kernel, so gate goals over the
 byte operations reduce under `decide`. A probe on the pinned
 toolchain confirms reduction for `extract`, `++`, and indexing;
-`native_decide` is the fallback if a full gate stalls. Equality on
-`Item` does not derive, because the type nests through `List`;
-Stage 1 adds a hand-written `DecidableEq Item`, and the known-answer
-gates use it.
+`native_decide` is the fallback, and six gates take it (§10).
+Equality on `Item` does not derive, because the type nests through
+`List`; `Item` carries a hand-written `DecidableEq`, and the
+known-answer gates use it.
 
 ### 2.2 `Schema`: wire shapes
 
@@ -156,6 +165,12 @@ theorem 7's hypothesis class. A lemma beside theorem 1 says every
 decoded item is `Encodable` and within the depth bound, because the
 decoder reads at most eight length bytes and enforces the bound.
 
+Beside the nine, `Proofs/Fuel.lean` holds the decoder's fuel and
+header theorems: a successful header names a payload fully inside
+the input, every decoded item covers at least one input byte, and
+`outOfFuel` is a dead branch at both public entry points. Stage 3's
+proofs stand on them, and the axiom gate reads the file.
+
 `Proofs/Axioms.lean` holds each theorem to `propext`,
 `Classical.choice`, and `Quot.sound` at most. The package declares
 no opaque constant and no axiom of its own.
@@ -176,9 +191,9 @@ knows no EEST name.
 * Known answers: the RLP specification's examples, plus the
   non-canonical inputs below. The consensus fixtures exercise none
   of them, so codec strictness has no upstream vector, and this
-  package gates it itself. The five item-layer inputs are Stage 1
-  gates, each to its `DecodeError` constructor; the scalar row is a
-  schema-layer error, gated in Stage 4.
+package gates it itself. `LeanRlpTests.Known` gates the five
+item-layer inputs, each to its `DecodeError` constructor; the
+  scalar row is a schema-layer error, a Stage 4 gate.
 
   | input | meaning | layer |
   |---|---|---|
@@ -215,8 +230,8 @@ packages/LeanRlp/
 │   ├── Spec/                    # Scalar, Item, Encode, Error, Decode
 │   ├── Schema/                  # Type, Interp, Error, ToItem, FromItem
 │   ├── Repr/                    # Class, Instances, Deriving
-│   └── Proofs/                  # Scalar, Header, Roundtrip, Canonical,
-│                                #   Size, Schema, Axioms
+│   └── Proofs/                  # Scalar, Fuel, Header, Roundtrip,
+│                                #   Canonical, Size, Schema, Axioms
 ├── LeanRlpTests.lean            # gates, separate lean_lib
 ├── LeanRlpTests/                # gate modules
 ├── Runner/                      # rlp_vectors executable (Stage 2)
@@ -230,8 +245,10 @@ packages/LeanRlp/
   `ByteArray.extract` and `++` than for `List`. Stage 3 may need a
   small lemma file that moves facts through `ByteArray.data`.
 * **Kernel reduction.** The known-answer gates run under `decide`,
-  and core `ByteArray` lemmas are thin. Stage 1 probes the cost on
-  the first gate; `native_decide` is the stated fallback.
+  and core `ByteArray` lemmas are thin. Five gates exceed the
+  heartbeat budget, and the tail-call gate needs compiled
+  evaluation. All six run on the compiler fallback, `native_decide`;
+  `LeanRlpTests.Known` names them.
 * **Nested inductive.** `Item` nests through `List`, so the encoder
   and the proofs run as a mutual pair over `Item` and `List Item`.
 * **`interp` cost.** A value goes to `interp`, then to `Item`, then

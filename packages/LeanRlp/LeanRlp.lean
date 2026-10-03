@@ -35,9 +35,10 @@ Three layers, each its own module subtree:
   `deriving RlpRepr` handler, and `Rlp.encode` / `Rlp.decode`.
 
 The theorems live under `LeanRlp.Proofs` (not re-exported here):
-round trip, canonical form, injectivity, size, and the schema
-isomorphism laws. The axiom gate `Proofs/Axioms.lean` holds each of
-them to `propext`, `Classical.choice`, and `Quot.sound` at most.
+the decoder's fuel and header theorems, round trip, canonical form,
+injectivity, size, and the schema isomorphism laws. The axiom gate
+`Proofs/Axioms.lean` holds each of them to `propext`,
+`Classical.choice`, and `Quot.sound` at most.
 
 Out of scope, by design: Keccak (its own Hazmat package,
 `LeanHazmatKeccak`), the `Hasher` class (planned for `EthCommon`),

@@ -6,8 +6,9 @@ import LeanRlp.Spec.Item
 
 Theorem 4 (ARCHITECTURE.md §5): `(encode t).size = t.encodedSize`,
 where `encodedSize` is the structural size function over the `Item`
-tree. EIP-7934's block size limit reads this, and the size pre-pass
-of the Stage 7 one-buffer encoder is proved against it.
+tree. The EIP-7934 block size limit applies to this count, and
+Stage 7 proves the size pre-pass of the one-buffer encoder
+against it.
 
 Filled in PLAN.md Stage 3.
 -/

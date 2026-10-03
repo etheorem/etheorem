@@ -40,6 +40,7 @@ packages/hazmat/ (FFI crypto family group):
   aggregators: LeanHazmatConsensus · LeanHazmatExecution · LeanHazmat
 
 LeanPoseidon (pure Poseidon2, standalone island, nothing depends on it yet)
+LeanRlp (execution-layer RLP codec, standalone island, nothing depends on it yet)
 ```
 
 Lake subpackages under `packages/` (the LeanHazmat families grouped
@@ -82,6 +83,13 @@ independent build target:
   core needs no Rust. A sibling **`LeanPoseidonProofs`** package (mathlib,
   standalone) proves `permute = permuteRef` (the shipped fast layers equal
   the textbook dense reference) with a clean axiom footprint.
+- **[`packages/LeanRlp/`](packages/LeanRlp/README.md)**: the
+  Recursive-Length Prefix (RLP) codec for the execution layer. A
+  *standalone island* depending on nothing in the monorepo, and
+  nothing depends on it yet. A total encoder, a total strict
+  decoder, `deriving RlpRepr` record codecs, and the round-trip,
+  canonical-form, and injectivity theorems behind a clean axiom
+  gate.
 
 The umbrella `lakefile.toml` declares no Lean libraries of its own. It
 just coordinates the subpackages via `[[require]]` blocks
@@ -139,6 +147,9 @@ Per-subpackage design docs live next to the code they describe:
   and the bench-gating story.
 - [`packages/SizzLean/docs/research/`](packages/SizzLean/docs/research/):
   background research (`pre-research.md`, `cache-research.md`).
+- [`packages/LeanRlp/docs/ARCHITECTURE.md`](packages/LeanRlp/docs/ARCHITECTURE.md):
+  the RLP codec's binding design; [`PLAN.md`](packages/LeanRlp/docs/PLAN.md)
+  sequences the stages.
 - [`packages/<Pkg>/README.md`](packages/): per-subpackage READMEs.
 
 Repo-wide docs:
@@ -206,6 +217,7 @@ lake build EthCLSpecs       # consensus spec (Fulu / Gloas / Heze); pulls in Eth
 lake build SizzLean         # SSZ library (serialize / deserialize / Merkleization)
 lake build LeanSha256       # pure-Lean SHA-256 reference
 lake build LeanPoseidon     # standalone Poseidon2 island (fires its anchor KAT)
+lake build LeanRlp          # execution-layer RLP codec (standalone island)
 
 # Test suites (per package, run on demand):
 lake build EthCLLibTests EthCLSpecsTests   # framework + spec self-tests
