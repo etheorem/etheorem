@@ -1,4 +1,4 @@
-# Etheorem — task runner.
+# Etheorem, task runner.
 #
 # Run `just` (no args) to list every available recipe, grouped by package.
 # Each recipe's comment line is its description in `just --list`.
@@ -25,23 +25,22 @@ default:
     @just --list --unsorted
 
 # ═════════════════════════════════════════════════════════════════════════
-# General — cross-package build, test, lint, and environment recipes
+# General, cross-package build, test, lint, and environment recipes
 # ═════════════════════════════════════════════════════════════════════════
 
 # Compile every library: the SSZ chain (LeanSha256 → SizzLean → EthCLLib →
-# EthCLSpecs), the LeanHazmat FFI crypto families, and the standalone
-# LeanPoseidon island. The vendored families (LeanHazmatSha256's ISA-L on
-# x86_64 Linux, LeanHazmatBls, LeanHazmatKzg) need their `hazmat-*-vendor`
-# recipes first; the dependencies run them (idempotent) before building.
-# `lake build EthCLSpecs` pulls in EthCLLib + SizzLean transitively.
+# EthCLSpecs), the LeanHazmat FFI crypto families (consensus + execution),
+# the aggregators, and the standalone LeanPoseidon island. The vendored
+# families need their `hazmat-*-vendor` recipes first; the dependencies run
+# them (idempotent) before building. `lake build EthCLSpecs` pulls in
+# EthCLLib + SizzLean transitively; `lake build LeanHazmat` pulls every
+# crypto family + both aggregators.
 
 # Build all packages
 [group('general')]
-build: hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor
+build: hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor hazmat-keccak-vendor hazmat-secp256k1-vendor hazmat-bn254-vendor
     lake build LeanSha256
-    lake build LeanHazmatSha256
-    lake build LeanHazmatBls
-    lake build LeanHazmatKzg
+    lake build LeanHazmat
     lake build SizzLean
     lake build EthCLSpecs
     lake build LeanPoseidon
@@ -55,18 +54,19 @@ build: hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor
 build-cli:
     lake build pyspec_server ssz_generic_runner
 
-# All local tests — SHA-256 spec + FFI CAVP + BLS + KZG KATs + SSZ library gates
-# + Poseidon2 anchor KAT. The consensus-spec libraries (EthCLLib / EthCLSpecs)
-# have their own `ethcl-test` recipe and CI job.
+# All local tests, SHA-256 spec + FFI CAVP + BLS + KZG KATs + the seven
+# execution-layer family KATs + SSZ library gates + Poseidon2 anchor KAT.
+# The consensus-spec libraries (EthCLLib / EthCLSpecs) have their own
+# `ethcl-test` recipe and CI job.
 
 # Run every local property-test recipe (all packages)
 [group('general')]
-test: leansha256-test hazmat-sha256-test hazmat-bls-test hazmat-kzg-test sizzlean-test poseidon-test
+test: leansha256-test hazmat-sha256-test hazmat-bls-test hazmat-kzg-test hazmat-keccak-test hazmat-secp256k1-test hazmat-bn254-test hazmat-blake2f-test hazmat-ripemd160-test hazmat-modexp-test hazmat-p256-test sizzlean-test poseidon-test
 
 # Reject committed `sorry`, `#eval`, `#check`, `#print` in Lean source
 # per CLAUDE.md. `git grep` searches tracked files only and returns 1
-# when no matches — avoids `xargs -r grep`'s empty-input ambiguity (which
-# exits 0). The CI `lint` job calls this recipe verbatim.
+# when no matches. That avoids `xargs -r grep`'s empty-input ambiguity
+# (which exits 0). The CI `lint` job calls this recipe verbatim.
 
 # Lint Lean sources for forbidden tokens (sorry / #eval / #check / #print)
 [group('general')]
@@ -145,20 +145,30 @@ proof-coverage-check: proof-coverage-build
 proof-coverage-update: proof-coverage-build
     lake env lean --run scripts/ProofCoverage.lean -- --update
 
-# Check the *build-time native* dependencies only: `pkg-config` (used
-# by lakefile.lean to discover OpenSSL link/cflags) + OpenSSL 3.x (the
-# library the SHA-256 FFI shim links to). Designed to run on a fresh
-# CI runner *before* the Lean toolchain action installs elan/lake/lean,
-# so it deliberately ignores those. Local devs usually want the
-# fuller `just doctor` below.
+# Check the *build-time native* dependencies. The default profile (`all`)
+# probes everything the family builds need: `cc` and `git`, `pkg-config` +
+# OpenSSL 3.x (which the lakefiles discover via `pkg-config`), the
+# RIPEMD-160 capability (LeanHazmatRipemd160), a C++ compiler
+# (LeanHazmatBn254), and `nasm` on x86_64 Linux (LeanHazmatSha256's
+# ISA-L unit). The `consensus` profile drops the two execution-only
+# probes (the RIPEMD-160 capability and the C++ compiler) for jobs whose
+# build never compiles those families.
+# Designed to run on a fresh CI runner *before* the Lean toolchain action
+# installs elan/lake/lean, so it deliberately ignores those. Local devs
+# usually want the fuller `just doctor` below.
 
-# Verify build-time native deps (pkg-config + OpenSSL 3.x — for CI)
+# Verify build-time native deps (profile: all | consensus, default all)
 [group('general')]
-doctor-native:
+doctor-native profile="all":
     #!/usr/bin/env bash
     set -u
+    case "{{ profile }}" in
+      all|consensus) ;;
+      *) echo "unknown profile '{{ profile }}' (all | consensus)" >&2; exit 2 ;;
+    esac
     fail=0
     info() { printf "  ok   %s\n"   "$1"; }
+    warn() { printf "  WARN %s\n"   "$1" >&2; }
     miss() { printf "  MISS %s\n"   "$1" >&2; fail=1; }
 
     echo "checking build-time native dependencies"
@@ -167,7 +177,49 @@ doctor-native:
     if command -v cc >/dev/null 2>&1; then
       info "cc                ($(cc --version 2>&1 | head -1))"
     else
-      miss "cc                (C compiler — builds the SHA-256 / blst FFI shims)"
+      miss "cc                (C compiler, builds every LeanHazmat FFI shim)"
+    fi
+
+    # LeanHazmatRipemd160 needs its digest computable by the linked
+    # libcrypto. Probe in the shim's own order: the default provider
+    # first (3.0.7+ serve RIPEMD-160 there), then the legacy module
+    # named explicitly (3.0.0-3.0.6 keep it there; the CLI never
+    # auto-loads it, so a plain probe would report MISS on hosts where
+    # the shim itself would succeed). The `consensus` profile skips the
+    # probe (no Ripemd160 in that build).
+    if [ "{{ profile }}" = "all" ]; then
+      cli=""
+    if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libcrypto 2>/dev/null; then
+      cand="$(pkg-config --variable=exec_prefix libcrypto 2>/dev/null)/bin/openssl"
+      [ -x "$cand" ] && cli="$cand"
+    fi
+    if [ -z "$cli" ] && command -v openssl >/dev/null 2>&1; then
+      cli="openssl"
+    fi
+    if [ -n "$cli" ]; then
+      if printf '' | "$cli" dgst -rmd160 >/dev/null 2>&1; then
+        info "ripemd160         (served by the default provider; LeanHazmatRipemd160 needs it)"
+      elif printf '' | "$cli" dgst -rmd160 -provider default -provider legacy >/dev/null 2>&1; then
+        info "ripemd160         (served via the legacy provider module; LeanHazmatRipemd160 loads it itself)"
+      else
+        miss "ripemd160         (not computable; OpenSSL 3.0.0-3.0.6 need the legacy provider module installed, 3.0.7+ serve it by default)"
+      fi
+    else
+      warn "ripemd160         (no openssl CLI to probe; the build needs RIPEMD-160 servable by the pkg-config libcrypto)"
+    fi
+    fi
+
+    # LeanHazmatBn254 compiles vendored mcl (the one C++ family) with
+    # its C++ runtime compiled out; only a C++ *compiler* is needed,
+    # and the check is Linux-only (the macOS build is untested; see
+    # packages/hazmat/LeanHazmatBn254/docs/ARCHITECTURE.md). The `consensus`
+    # profile skips the probe (no Bn254 in that build).
+    if [ "{{ profile }}" = "all" ] && [ "$(uname -s)" = "Linux" ]; then
+      if command -v c++ >/dev/null 2>&1; then
+        info "c++               ($(c++ --version 2>&1 | head -1))"
+      else
+        miss "c++               (C++ compiler, builds the vendored mcl for LeanHazmatBn254)"
+      fi
     fi
 
     if command -v git >/dev/null 2>&1; then
@@ -187,7 +239,7 @@ doctor-native:
       info "libcrypto         (${v})"
       major=${v%%.*}
       if [ -z "${major}" ] || [ "${major}" -lt 3 ] 2>/dev/null; then
-        miss "libcrypto         < 3.0 — SizzLean expects OpenSSL 3.x"
+        miss "libcrypto         < 3.0, SizzLean expects OpenSSL 3.x"
       fi
     else
       miss "libcrypto         (OpenSSL 3.x development headers + shared library)"
@@ -211,15 +263,15 @@ doctor-native:
       case "$(uname -s)" in
         Linux)
           if [ -r /etc/os-release ] && grep -qE '^ID(_LIKE)?=.*(debian|ubuntu)' /etc/os-release; then
-            echo "  Debian / Ubuntu : sudo apt install libssl-dev pkg-config nasm"
+            echo "  Debian / Ubuntu : sudo apt install libssl-dev pkg-config nasm g++"
           elif [ -r /etc/os-release ] && grep -qE '^ID(_LIKE)?=.*(fedora|rhel|centos)' /etc/os-release; then
-            echo "  Fedora / RHEL   : sudo dnf install openssl-devel pkgconf-pkg-config nasm"
+            echo "  Fedora / RHEL   : sudo dnf install openssl-devel pkgconf-pkg-config nasm gcc-c++"
           elif [ -r /etc/os-release ] && grep -qE '^ID(_LIKE)?=.*arch' /etc/os-release; then
-            echo "  Arch            : sudo pacman -S openssl pkgconf nasm"
+            echo "  Arch            : sudo pacman -S openssl pkgconf nasm gcc"
           elif [ -r /etc/os-release ] && grep -qE '^ID(_LIKE)?=.*alpine' /etc/os-release; then
-            echo "  Alpine          : sudo apk add openssl-dev pkgconf nasm"
+            echo "  Alpine          : sudo apk add openssl-dev pkgconf nasm g++"
           else
-            echo "  Linux           : install OpenSSL 3.x development headers + pkg-config (+ nasm on x86_64)"
+            echo "  Linux           : install OpenSSL 3.x development headers + pkg-config + a C++ toolchain (+ nasm on x86_64)"
           fi
           ;;
         Darwin)
@@ -263,7 +315,7 @@ doctor: doctor-native
     done
 
     echo
-    echo "[ pyspec harness — only needed for the *-pyspec* pytest recipes ]"
+    echo "[ pyspec harness, only needed for the *-pyspec* pytest recipes ]"
     for cmd in python3 uv; do
       if command -v "$cmd" >/dev/null 2>&1; then
         info "$(printf '%-17s' "$cmd") ($("$cmd" --version 2>&1 | head -1))"
@@ -309,12 +361,12 @@ _ensure-venv:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ ! -x "{{ justfile_directory() }}/.venv/bin/python" ]; then
-      echo "no Python venv found — provisioning via \`just setup-python\`"
+      echo "no Python venv found, provisioning via \`just setup-python\`"
       just setup-python
     fi
 
 # ═════════════════════════════════════════════════════════════════════════
-# EthCLSpecs — consensus-spec framework + Fulu / Gloas / Heze fork bodies
+# EthCLSpecs, consensus-spec framework + Fulu / Gloas / Heze fork bodies
 #
 # EthCLLib + EthCLSpecs (the consensus-spec framework + Fulu/Gloas bodies). The
 # `*Tests` libs carry the framework + spec `#guard` / `native_decide` self-tests
@@ -388,7 +440,7 @@ ethcl-profile case=default_profile_case: _ensure-venv
       rm -rf "$tmp"
 
 # ═════════════════════════════════════════════════════════════════════════
-# SizzLean — SSZ library
+# SizzLean, SSZ library
 #
 # The ssz_generic pyspec recipes are driven by the SizzLean pytest harness
 # (`packages/SizzLean/PySpecTests/`) + `ssz_generic_runner`, against the
@@ -401,7 +453,7 @@ ethcl-profile case=default_profile_case: _ensure-venv
 # ═════════════════════════════════════════════════════════════════════════
 
 # `SizzLeanTests.PendingListShrink` Cases 4/5/7 deliberately drive
-# OOB `SSZList.set!` writes — `Array.set!` prints a panic message
+# OOB `SSZList.set!` writes. `Array.set!` prints a panic message
 # on stderr before returning the array unchanged, so `lake build`
 # surfaces a few `info: …Error: index out of bounds` lines from
 # native_decide evaluation. The banner below primes readers; the
@@ -439,9 +491,9 @@ sizzlean-pyspec-smoke: _ensure-venv
 sizzlean-pyspec-full: _ensure-venv
     cd packages/SizzLean/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0
 
-# Microbenchmarks — measure-then-optimise gates for Stage 17. Output also
+# Microbenchmarks, measure-then-optimise gates for Stage 17. Output also
 # prints to stdout so you can pipe / inspect inline. The bench is run from the
-# compiled native binary at `packages/SizzLean/.lake/build/bin/ssz_bench` —
+# compiled native binary at `packages/SizzLean/.lake/build/bin/ssz_bench`.
 # `lake build` produces it, then we exec it directly (rather than via
 # `lake exe`) so there's no ambiguity that we're measuring the compiled binary,
 # not any wrapper. The library `SizzLeanBench` is built with
@@ -497,10 +549,10 @@ sizzlean-bench-diff before after:
     @diff -u {{ before }} {{ after }} | column -t -s $'\t' || diff -u {{ before }} {{ after }}
 
 # ═════════════════════════════════════════════════════════════════════════
-# LeanSha256 — pure-Lean SHA-256 reference (no FFI)
+# LeanSha256, pure-Lean SHA-256 reference (no FFI)
 # ═════════════════════════════════════════════════════════════════════════
 
-# Full NIST CAVP byte-oriented SHA-256 vectors against the pure-Lean SPEC — 129 cases via native_decide, ~108s (the 3 anchor FIPS 180-4 §B gates already fire on `lake build LeanSha256` itself; this adds the full upstream suite)
+# Full NIST CAVP byte-oriented SHA-256 vectors against the pure-Lean SPEC, 129 cases via native_decide, ~108s (the 3 anchor FIPS 180-4 §B gates already fire on `lake build LeanSha256` itself; this adds the full upstream suite)
 [group('leansha256')]
 leansha256-test:
     lake build LeanSha256Tests
@@ -511,7 +563,7 @@ leansha256-gen-cavp:
     .venv/bin/python packages/LeanSha256/scripts/gen_sha256_cavp.py
 
 # Bump LeanSha256's patch (Z) version, commit, and create the release tag.
-# Does not push — prints the exact `git push` commands at the end. The
+# Does not push. Prints the exact `git push` commands at the end. The
 # mirror workflow translates the tag to `vX.Y.Z` on the downstream repo.
 # Stdlib-only Python; no .venv needed.
 
@@ -521,70 +573,97 @@ leansha256-bump-patch:
     python3 packages/LeanSha256/scripts/bump_patch.py
 
 # ═════════════════════════════════════════════════════════════════════════
-# LeanHazmat — FFI crypto families (SHA-256 / BLS / KZG)
+# LeanHazmat, FFI crypto families (consensus + execution layer)
 #
-# The vendor recipes shallow-clone a pinned tag into a gitignored `vendor/`
-# tree (hazmat-docs/ARCHITECTURE.md §6); the build itself stays offline. Run
-# the relevant `hazmat-*-vendor` recipe once before building a vendored family
-# (and as a CI step before the Lean build). Never a git submodule — the pin
-# lives here.
+# The vendor recipes shallow-clone a pinned tag (or rev) into a gitignored
+# `vendor/` tree (packages/hazmat/docs/ARCHITECTURE.md §6); the build itself stays
+# offline. Run the relevant `hazmat-*-vendor` recipe once before building a
+# vendored family (and as a CI step before the Lean build). Never a git
+# submodule. The pin lives here. The OpenSSL-backed families (Sha256,
+# Ripemd160, Modexp, P256) and the in-repo Blake2f shim vendor nothing.
 # ═════════════════════════════════════════════════════════════════════════
 
-# ISA-L crypto pin: tag v2.26.1. Only its `sha256_mb` unit is built (the
-# multi-buffer SHA-256 engine behind `sha256BatchCombine` on x86_64 Linux;
-# every other host keeps the OpenSSL loop and never reads this tree). The
-# lakefile drives ISA-L's own `Makefile.unx`, which needs `nasm` on PATH
-# (`just doctor-native` checks).
+# ISA-L crypto pin: tag v2.26.1 (commit
+# c353c2d021c03cfc6180ddf9e28a24b3b61e9760). Only its `sha256_mb` unit
+# is built (the multi-buffer SHA-256 engine behind `sha256BatchCombine`
+# on x86_64 Linux; every other host keeps the OpenSSL loop and never
+# reads this tree). The recipe checks the vendored checkout's HEAD
+# against this rev, so a stale tree from an older pin re-fetches
+# instead of passing. The lakefile drives ISA-L's own `Makefile.unx`,
+# which needs `nasm` on PATH (`just doctor-native` checks), and traces
+# the `.pin` file so a re-vendor rebuilds.
 
 isal_tag := "v2.26.1"
+isal_rev := "c353c2d021c03cfc6180ddf9e28a24b3b61e9760"
 
-# Vendor ISA-L crypto (multi-buffer SHA-256) for LeanHazmatSha256 — shallow clone at the pinned tag
+# Vendor ISA-L crypto (multi-buffer SHA-256) for LeanHazmatSha256, shallow clone at the pinned tag
 [group('hazmat')]
 hazmat-sha256-vendor:
     #!/usr/bin/env bash
     set -euo pipefail
-    dir="packages/LeanHazmatSha256/vendor/isa-l_crypto"
+    dir="packages/hazmat/LeanHazmatSha256/vendor/isa-l_crypto"
     if [ -d "$dir/.git" ]; then
-      echo "isa-l_crypto already vendored at $dir ($(git -C "$dir" describe --tags 2>/dev/null || echo unknown))"
-      exit 0
+      rev=$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo unknown)
+      if [ "$rev" = "{{ isal_rev }}" ]; then
+        printf '%s\n' "{{ isal_rev }}" > "$dir/.pin"
+        echo "isa-l_crypto already vendored at $dir ({{ isal_tag }})"
+        exit 0
+      fi
+      echo "isa-l_crypto vendored at wrong rev ($rev), re-fetching" >&2
+      rm -rf "$dir"
     fi
-    rm -rf "$dir"
     mkdir -p "$(dirname "$dir")"
     git clone --depth 1 --branch "{{ isal_tag }}" https://github.com/intel/isa-l_crypto "$dir"
+    rev=$(git -C "$dir" rev-parse HEAD)
+    [ "$rev" = "{{ isal_rev }}" ] || { echo "fetched $rev, expected {{ isal_rev }}" >&2; exit 1; }
+    printf '%s\n' "{{ isal_rev }}" > "$dir/.pin"
     echo "vendored isa-l_crypto {{ isal_tag }} -> $dir"
 
-# Full NIST CAVP byte-oriented SHA-256 vectors against the FFI shim (LeanHazmatSha256) — 129 cases + the combine/batch anchor KAT, all via native_decide. Needs `just hazmat-sha256-vendor` on x86_64 Linux (run via the dependency).
+# Full NIST CAVP byte-oriented SHA-256 vectors against the FFI shim (LeanHazmatSha256), 129 cases + the combine/batch anchor KAT, all via native_decide. Needs `just hazmat-sha256-vendor` on x86_64 Linux (run via the dependency).
 [group('hazmat')]
 hazmat-sha256-test: hazmat-sha256-vendor
     lake build LeanHazmatSha256Tests
 
-# Re-generate the NIST CAVP vector table (OpenSSL FFI shim) from `packages/LeanHazmatSha256/cavp/*.rsp`. Stdlib-only Python; no .venv needed.
+# Re-generate the NIST CAVP vector table (OpenSSL FFI shim) from `packages/hazmat/LeanHazmatSha256/cavp/*.rsp`. Stdlib-only Python; no .venv needed.
 [group('hazmat')]
 hazmat-sha256-gen-cavp:
-    python3 packages/LeanHazmatSha256/scripts/gen_cavp.py
+    python3 packages/hazmat/LeanHazmatSha256/scripts/gen_cavp.py
 
-# blst pin: tag v0.3.16 (commit e7f90de5…). This is exactly the rev
-# c-kzg-4844 v2.1.7 expects for its blst submodule, so LeanHazmatKzg can
-# build c-kzg against THIS blst (hazmat-docs/ARCHITECTURE.md §4).
+# blst pin: tag v0.3.16 (commit
+# e7f90de551e8df682f3cc99067d204d8b90d27ad). This is exactly the rev
+# c-kzg-4844 v0.2.1 expects for its blst submodule, so LeanHazmatKzg
+# can build c-kzg against THIS blst (packages/hazmat/docs/ARCHITECTURE.md
+# §4). The recipe checks the vendored checkout's HEAD against this
+# rev, so a stale tree from an older pin re-fetches instead of
+# passing; the lakefiles trace the `.pin` file.
 
 blst_tag := "v0.3.16"
+blst_rev := "e7f90de551e8df682f3cc99067d204d8b90d27ad"
 
-# Vendor blst (BLS12-381) for LeanHazmatBls — shallow clone at the pinned tag
+# Vendor blst (BLS12-381) for LeanHazmatBls, shallow clone at the pinned tag
 [group('hazmat')]
 hazmat-bls-vendor:
     #!/usr/bin/env bash
     set -euo pipefail
-    dir="packages/LeanHazmatBls/vendor/blst"
+    dir="packages/hazmat/LeanHazmatBls/vendor/blst"
     if [ -d "$dir/.git" ]; then
-      echo "blst already vendored at $dir ($(git -C "$dir" describe --tags 2>/dev/null || echo unknown))"
-      exit 0
+      rev=$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo unknown)
+      if [ "$rev" = "{{ blst_rev }}" ]; then
+        printf '%s\n' "{{ blst_rev }}" > "$dir/.pin"
+        echo "blst already vendored at $dir ({{ blst_tag }})"
+        exit 0
+      fi
+      echo "blst vendored at wrong rev ($rev), re-fetching" >&2
+      rm -rf "$dir"
     fi
-    rm -rf "$dir"
     mkdir -p "$(dirname "$dir")"
     git clone --depth 1 --branch "{{ blst_tag }}" https://github.com/supranational/blst "$dir"
+    rev=$(git -C "$dir" rev-parse HEAD)
+    [ "$rev" = "{{ blst_rev }}" ] || { echo "fetched $rev, expected {{ blst_rev }}" >&2; exit 1; }
+    printf '%s\n' "{{ blst_rev }}" > "$dir/.pin"
     echo "vendored blst {{ blst_tag }} -> $dir"
 
-# Consensus BLS Known-Answer-Tests against the blst FFI shim (LeanHazmatBls) — consensus-spec sign/verify anchors + self-contained aggregate round-trips. Needs `just hazmat-bls-vendor` first (run via the dependency).
+# Consensus BLS Known-Answer-Tests against the blst FFI shim (LeanHazmatBls), consensus-spec sign/verify anchors + self-contained aggregate round-trips. Needs `just hazmat-bls-vendor` first (run via the dependency).
 [group('hazmat')]
 hazmat-bls-test: hazmat-bls-vendor
     lake build LeanHazmatBlsTests
@@ -595,44 +674,187 @@ hazmat-bls-test: hazmat-bls-vendor
 # fetch c-kzg's --recursive blst.
 
 ckzg_tag := "v2.1.7"
+ckzg_rev := "9f4bcc83cbb17b3dbc3432de7320790968143ab9"
 
-# Vendor c-kzg-4844 (KZG / EIP-4844) for LeanHazmatKzg — shallow clone, no submodules
+# Vendor c-kzg-4844 (KZG / EIP-4844) for LeanHazmatKzg, shallow clone, no submodules
 [group('hazmat')]
 hazmat-kzg-vendor:
     #!/usr/bin/env bash
     set -euo pipefail
-    dir="packages/LeanHazmatKzg/vendor/c-kzg-4844"
+    dir="packages/hazmat/LeanHazmatKzg/vendor/c-kzg-4844"
     if [ -d "$dir/.git" ]; then
-      echo "c-kzg already vendored at $dir ($(git -C "$dir" describe --tags 2>/dev/null || echo unknown))"
-      exit 0
+      rev=$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo unknown)
+      if [ "$rev" = "{{ ckzg_rev }}" ]; then
+        printf '%s\n' "{{ ckzg_rev }}" > "$dir/.pin"
+        echo "c-kzg already vendored at $dir ({{ ckzg_tag }})"
+        exit 0
+      fi
+      echo "c-kzg vendored at wrong rev ($rev), re-fetching" >&2
+      rm -rf "$dir"
     fi
-    rm -rf "$dir"
     mkdir -p "$(dirname "$dir")"
-    # No --recursive: c-kzg's bundled blst is deliberately NOT fetched; we
-    # build against LeanHazmatBls's blst (hazmat-docs/ARCHITECTURE.md §4).
+    # No --recursive: c-kzg's bundled blst is deliberately not fetched;
+    # the build links LeanHazmatBls's blst instead (ARCHITECTURE.md 4).
     git clone --depth 1 --branch "{{ ckzg_tag }}" https://github.com/ethereum/c-kzg-4844 "$dir"
+    rev=$(git -C "$dir" rev-parse HEAD)
+    [ "$rev" = "{{ ckzg_rev }}" ] || { echo "fetched $rev, expected {{ ckzg_rev }}" >&2; exit 1; }
+    printf '%s\n' "{{ ckzg_rev }}" > "$dir/.pin"
+
     # The trusted setup is embedded into the shim at build time from
     # data/trusted_setup.txt; refresh that committed copy from the pin.
-    cp "$dir/src/trusted_setup.txt" packages/LeanHazmatKzg/data/trusted_setup.txt
-    echo "vendored c-kzg {{ ckzg_tag }} -> $dir (trusted setup copied to data/)"
+    cp "$dir/src/trusted_setup.txt" packages/hazmat/LeanHazmatKzg/data/trusted_setup.txt
+    echo "vendored c-kzg {{ ckzg_tag }} -> $dir"
 
-# KZG Known-Answer / round-trip tests against the c-kzg-4844 FFI shim (LeanHazmatKzg) — EIP-4844 commit/prove/verify + Fulu cell & recovery round-trips. Needs both vendor recipes (c-kzg builds against Bls's blst).
+# KZG Known-Answer / round-trip tests against the c-kzg-4844 FFI shim (LeanHazmatKzg), EIP-4844 commit/prove/verify + Fulu cell & recovery round-trips. Needs both vendor recipes (c-kzg builds against Bls's blst).
 [group('hazmat')]
 hazmat-kzg-test: hazmat-bls-vendor hazmat-kzg-vendor
     lake build LeanHazmatKzgTests
 
+# ── Execution-layer families (packages/hazmat/docs/PLAN.md Phase 2) ────────────
+
+# keccak-tiny pin: no upstream tags, so the pin is the commit rev. The
+# vendor recipe fetches exactly this rev and checks it back.
+
+keccak_tiny_rev := "64b6647514212b76ae7bca0dea9b7b197d1d8186"
+
+# Vendor keccak-tiny (Keccak-256) for LeanHazmatKeccak, shallow fetch of the pinned rev
+[group('hazmat')]
+hazmat-keccak-vendor:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir="packages/hazmat/LeanHazmatKeccak/vendor/keccak-tiny"
+    if [ -d "$dir/.git" ]; then
+      rev=$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo unknown)
+      if [ "$rev" = "{{ keccak_tiny_rev }}" ]; then
+        printf '%s\n' "{{ keccak_tiny_rev }}" > "$dir/.pin"
+        echo "keccak-tiny already vendored at $dir ($rev)"
+        exit 0
+      fi
+      echo "keccak-tiny vendored at wrong rev ($rev), re-fetching" >&2
+      rm -rf "$dir"
+    fi
+    mkdir -p "$(dirname "$dir")"
+    # Upstream tags no releases, so fetch the pinned rev directly
+    # (GitHub allows fetch-by-SHA) and check it out detached.
+    git init -q "$dir"
+    git -C "$dir" remote add origin https://github.com/coruus/keccak-tiny
+    git -C "$dir" fetch -q --depth 1 origin "{{ keccak_tiny_rev }}"
+    git -C "$dir" checkout -q --detach FETCH_HEAD
+    rev=$(git -C "$dir" rev-parse HEAD)
+    [ "$rev" = "{{ keccak_tiny_rev }}" ] || { echo "fetched $rev, expected {{ keccak_tiny_rev }}" >&2; exit 1; }
+    printf '%s\n' "{{ keccak_tiny_rev }}" > "$dir/.pin"
+    echo "vendored keccak-tiny {{ keccak_tiny_rev }} -> $dir"
+
+# Keccak-256 Known-Answer-Tests against the keccak-tiny FFI shim (LeanHazmatKeccak), EVM canonical constants + published vectors + the EIP-155 address-derivation composition. Needs `just hazmat-keccak-vendor` (run via the dependency).
+[group('hazmat')]
+hazmat-keccak-test: hazmat-keccak-vendor
+    lake build LeanHazmatKeccakTests
+
+# libsecp256k1 pin: tag v0.8.0 (commit
+# 6e2c8bc4ecdc6e71dbe7a368f360d8d453ce435d). The recipe checks the
+# vendored checkout's HEAD against this rev, so a stale tree from an
+# older pin (or an interrupted clone) re-fetches instead of passing.
+
+secp256k1_tag := "v0.8.0"
+secp256k1_rev := "6e2c8bc4ecdc6e71dbe7a368f360d8d453ce435d"
+
+# Vendor libsecp256k1 (secp256k1 ECDSA) for LeanHazmatSecp256k1, shallow clone at the pinned tag
+[group('hazmat')]
+hazmat-secp256k1-vendor:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir="packages/hazmat/LeanHazmatSecp256k1/vendor/secp256k1"
+    if [ -d "$dir/.git" ]; then
+      rev=$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo unknown)
+      if [ "$rev" = "{{ secp256k1_rev }}" ]; then
+        printf '%s\n' "{{ secp256k1_rev }}" > "$dir/.pin"
+        echo "libsecp256k1 already vendored at $dir ({{ secp256k1_tag }})"
+        exit 0
+      fi
+      echo "libsecp256k1 vendored at wrong rev ($rev), re-fetching" >&2
+      rm -rf "$dir"
+    fi
+    mkdir -p "$(dirname "$dir")"
+    git clone --depth 1 --branch "{{ secp256k1_tag }}" https://github.com/bitcoin-core/secp256k1 "$dir"
+    rev=$(git -C "$dir" rev-parse HEAD)
+    [ "$rev" = "{{ secp256k1_rev }}" ] || { echo "fetched $rev, expected {{ secp256k1_rev }}" >&2; exit 1; }
+    printf '%s\n' "{{ secp256k1_rev }}" > "$dir/.pin"
+    echo "vendored libsecp256k1 {{ secp256k1_tag }} -> $dir"
+
+# secp256k1 Known-Answer-Tests against the libsecp256k1 FFI shim (LeanHazmatSecp256k1), the EIP-155 example transaction + deterministic second signature + negatives. Needs `just hazmat-secp256k1-vendor` (run via the dependency).
+[group('hazmat')]
+hazmat-secp256k1-test: hazmat-secp256k1-vendor
+    lake build LeanHazmatSecp256k1Tests
+
+# mcl pin: tag v4.10 (commit
+# cbb18eb08b86129cf936a6436b5e6c68a2ce8ddf; herumi/mcl, the alt_bn128
+# reference). The recipe checks the vendored checkout's HEAD against
+# this rev, so a stale tree from an older pin re-fetches instead of
+# passing.
+
+bn254_tag := "v4.10"
+bn254_rev := "cbb18eb08b86129cf936a6436b5e6c68a2ce8ddf"
+
+# Vendor herumi/mcl (BN254 / alt_bn128) for LeanHazmatBn254, shallow clone at the pinned tag
+[group('hazmat')]
+hazmat-bn254-vendor:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir="packages/hazmat/LeanHazmatBn254/vendor/mcl"
+    if [ -d "$dir/.git" ]; then
+      rev=$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo unknown)
+      if [ "$rev" = "{{ bn254_rev }}" ]; then
+        printf '%s\n' "{{ bn254_rev }}" > "$dir/.pin"
+        echo "mcl already vendored at $dir ({{ bn254_tag }})"
+        exit 0
+      fi
+      echo "mcl vendored at wrong rev ($rev), re-fetching" >&2
+      rm -rf "$dir"
+    fi
+    mkdir -p "$(dirname "$dir")"
+    git clone --depth 1 --branch "{{ bn254_tag }}" https://github.com/herumi/mcl "$dir"
+    rev=$(git -C "$dir" rev-parse HEAD)
+    [ "$rev" = "{{ bn254_rev }}" ] || { echo "fetched $rev, expected {{ bn254_rev }}" >&2; exit 1; }
+    printf '%s\n' "{{ bn254_rev }}" > "$dir/.pin"
+    echo "vendored mcl {{ bn254_tag }} -> $dir"
+
+# BN254 Known-Answer-Tests against the mcl FFI shim (LeanHazmatBn254), EIP-196/197 point arithmetic + pairing checks (py_ecc ground truth) + negatives. Needs `just hazmat-bn254-vendor` (run via the dependency). The one C++ family: needs a C++ compiler.
+[group('hazmat')]
+hazmat-bn254-test: hazmat-bn254-vendor
+    lake build LeanHazmatBn254Tests
+
+# BLAKE2f Known-Answer-Tests against the in-repo RFC 7693 shim (LeanHazmatBlake2f), the EIP-152 vectors (rounds 0, 1, 12, 0xffffffff). Nothing to vendor.
+[group('hazmat')]
+hazmat-blake2f-test:
+    lake build LeanHazmatBlake2fTests
+
+# RIPEMD-160 Known-Answer-Tests against the OpenSSL shim (LeanHazmatRipemd160), the nine published vectors incl. the million-`a` case. Nothing to vendor.
+[group('hazmat')]
+hazmat-ripemd160-test:
+    lake build LeanHazmatRipemd160Tests
+
+# modexp Known-Answer-Tests against the OpenSSL BIGNUM shim (LeanHazmatModexp), the EIP-198 worked examples + fixed modular-arithmetic cases. Nothing to vendor.
+[group('hazmat')]
+hazmat-modexp-test:
+    lake build LeanHazmatModexpTests
+
+# P256VERIFY Known-Answer-Tests against the OpenSSL shim (LeanHazmatP256), official EIP-7951 vectors (Project Wycheproof) + negatives. Nothing to vendor.
+[group('hazmat')]
+hazmat-p256-test:
+    lake build LeanHazmatP256Tests
+
 # ═════════════════════════════════════════════════════════════════════════
-# LeanPoseidon — pure-Lean Poseidon2 (BN254 t=3), standalone island
+# LeanPoseidon, pure-Lean Poseidon2 (BN254 t=3), standalone island
 # ═════════════════════════════════════════════════════════════════════════
 
 # Building the core fires the in-file anchor-KAT `native_decide` gate
 # (input [0,1,2] → the known BN254 t=3 Poseidon2 output). Nothing in
 # the monorepo depends on LeanPoseidon (standalone island), so unlike
-# the SSZ-chain libs it isn't built transitively — this recipe is how
+# the SSZ-chain libs it isn't built transitively. This recipe is how
 # the anchor gate fires in `test` / CI. No Rust. Analogous to
 # LeanSha256's 3 FIPS §B gates firing on `lake build LeanSha256`.
 
-# LeanPoseidon core build — fires the Poseidon2 anchor KAT (no Rust)
+# LeanPoseidon core build, fires the Poseidon2 anchor KAT (no Rust)
 [group('poseidon')]
 poseidon-test:
     lake build LeanPoseidon
@@ -661,7 +883,7 @@ poseidon-fuzz:
 # The mathlib proofs: `permute = permuteRef` (fast layers = dense reference),
 # `permute` is a bijection, `pad` is injective, `compress` is not injective,
 # and the round-count `#guard`s. Lives in the standalone `LeanPoseidonProofs`
-# package — the monorepo's only mathlib dependency, built on its own so the
+# package, the monorepo's only mathlib dependency, built on its own so the
 # core and all other recipes stay mathlib-free. `cache get` fetches mathlib's
 # prebuilt oleans (the v4.29.1 pin matches the repo toolchain), so nothing is
 # compiled from scratch. Kept out of `test`/`build` (heavy; needs the cache).

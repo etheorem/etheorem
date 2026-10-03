@@ -6,7 +6,7 @@
 -- which the declarative TOML form can express.
 --
 -- The FFI SHA-256 binding itself no longer lives here: it was moved
--- to the `LeanHazmatSha256` package (hazmat-docs/ARCHITECTURE.md §9,
+-- to the `LeanHazmatSha256` package (packages/hazmat/docs/ARCHITECTURE.md §9,
 -- PLAN.md Stage 1). SizzLean now `require`s that package for the FFI
 -- shim and keeps only the *spec-side* machinery, the `Hasher`
 -- typeclass, the `Sha256` tag + instance, and the FFI ≡ pure-Lean
@@ -127,7 +127,7 @@ package SizzLean where
 
 -- The pure-Lean SHA-256 spec. SizzLean is the layer that imports
 -- both this and the FFI binding below, and holds the equivalence
--- axioms tying them together (hazmat-docs/ARCHITECTURE.md §9).
+-- axioms tying them together (packages/hazmat/docs/ARCHITECTURE.md §9).
 require LeanSha256 from "../LeanSha256"
 
 -- The FFI SHA-256 binding (OpenSSL `libcrypto`). Provides the
@@ -135,7 +135,7 @@ require LeanSha256 from "../LeanSha256"
 -- externs that the `Hasher Sha256` instance and the equivalence
 -- axioms delegate to. Its `extern_lib` archive is linked
 -- transitively into SizzLean's executables.
-require LeanHazmatSha256 from "../LeanHazmatSha256"
+require LeanHazmatSha256 from "../hazmat/LeanHazmatSha256"
 
 @[default_target]
 lean_lib SizzLean where

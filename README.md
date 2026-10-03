@@ -34,12 +34,16 @@ LeanSha256 ─────────────┐
 LeanHazmatSha256 ───────┘   (SSZ +       (consensus    (Fulu…Heze
    (FFI SHA-256)            cache)        framework)    fork bodies)
 
-LeanHazmat* (FFI crypto family):  Sha256 · Bls · Kzg   (consumed à la carte)
+packages/hazmat/ (FFI crypto family group):
+  consensus:   Sha256 · Bls · Kzg
+  execution:   Keccak · Secp256k1 · Bn254 · Blake2f · Ripemd160 · Modexp · P256
+  aggregators: LeanHazmatConsensus · LeanHazmatExecution · LeanHazmat
 
 LeanPoseidon (pure Poseidon2, standalone island, nothing depends on it yet)
 ```
 
-Lake subpackages under `packages/`, each with its own lakefile and
+Lake subpackages under `packages/` (the LeanHazmat families grouped
+under `packages/hazmat/`), each with its own lakefile and
 independent build target:
 
 - **[`packages/EthCLLib/`](packages/EthCLLib/)** +
@@ -57,13 +61,17 @@ independent build target:
   macro, plus the `Hasher` typeclass + `Sha256` instance (delegating to
   the `LeanHazmatSha256` FFI binding) and the FFI ≡ spec equivalence
   axioms, the one layer importing both the FFI binding and the spec.
-- **[`packages/LeanHazmat*/`](hazmat-docs/ARCHITECTURE.md)**: the FFI
+- **[`packages/hazmat/LeanHazmat*/`](packages/hazmat/docs/ARCHITECTURE.md)**: the FFI
   crypto family: one package per primitive family wrapping a
-  battle-tested native library behind `@[extern]`. Consensus families
-  ship today: `LeanHazmatSha256` (OpenSSL), `LeanHazmatBls` (blst),
-  `LeanHazmatKzg` (c-kzg-4844), consumed à la carte. The aggregator
-  meta-packages (`LeanHazmatConsensus`, …) and execution-layer families
-  are deferred. See [`hazmat-docs/`](hazmat-docs/).
+  battle-tested native library behind `@[extern]`. Consensus:
+  `LeanHazmatSha256` (OpenSSL), `LeanHazmatBls` (blst),
+  `LeanHazmatKzg` (c-kzg-4844). Execution: `LeanHazmatKeccak`
+  (keccak-tiny), `LeanHazmatSecp256k1` (libsecp256k1),
+  `LeanHazmatBn254` (mcl), `LeanHazmatBlake2f` (in-repo RFC 7693),
+  `LeanHazmatRipemd160` / `LeanHazmatModexp` / `LeanHazmatP256`
+  (OpenSSL). Aggregators: `LeanHazmatConsensus`,
+  `LeanHazmatExecution`, and the top `LeanHazmat` umbrella. See
+  [`packages/hazmat/docs/`](packages/hazmat/docs/).
 - **[`packages/LeanPoseidon/`](packages/LeanPoseidon/README.md)**:
   pure-Lean **Poseidon2** algebraic hash (BN254 *and* BLS12-381 scalar
   fields, `t = 3`): the permutation, the 2-to-1 `compress`, and a sponge.
@@ -228,9 +236,9 @@ toolchain via `leanprover/lean-action`.
 
 ### Native dependencies
 
-The FFI SHA-256 shim (`packages/LeanHazmatSha256/csrc/sha256_shim.c`,
+The FFI SHA-256 shim (`packages/hazmat/LeanHazmatSha256/csrc/sha256_shim.c`,
 used by SizzLean's hash path) links against OpenSSL's `libcrypto`,
-discovered via `pkg-config` (Debian/Ubuntu fallback baked in). The Lake
+discovered via `pkg-config` (with a Debian/Ubuntu fallback). The Lake
 build expects:
 
 - **Linux (Debian/Ubuntu, including CI):** `libssl-dev` for the headers
@@ -248,18 +256,24 @@ build expects:
   batched combine takes the OpenSSL loop there.
 
 Run `just doctor-native` to verify the build-time native deps
-(`cc`, `git`, `pkg-config`, OpenSSL 3.x, and `nasm` on x86_64 Linux).
+(`cc`, `c++`, `git`, `pkg-config`, OpenSSL 3.x, and `nasm` on x86_64
+Linux).
 
-**Vendored crypto (the LeanHazmat families).** `LeanHazmatSha256`
-(ISA-L crypto, x86_64 Linux only), `LeanHazmatBls` (blst) and
-`LeanHazmatKzg` (c-kzg-4844) wrap *vendored* native libraries, fetched
-at pinned tags by `just hazmat-sha256-vendor` / `just hazmat-bls-vendor`
-/ `just hazmat-kzg-vendor` into gitignored `vendor/` trees before
-`lake build` (never git submodules; see
-[`hazmat-docs/ARCHITECTURE.md`](hazmat-docs/ARCHITECTURE.md) §6). `just
-build` runs the vendor steps for you. The C / C++ compilers are invoked
-through the Lean toolchain's `cc` wrapper, no separate configuration
-required.
+**Vendored crypto (the LeanHazmat families).** Six families wrap
+*vendored* native libraries, fetched at pinned tags or revs into
+gitignored `vendor/` trees before `lake build` (never git submodules;
+see [`packages/hazmat/docs/ARCHITECTURE.md`](packages/hazmat/docs/ARCHITECTURE.md)
+§6): `LeanHazmatSha256` (ISA-L crypto, x86_64 Linux only),
+`LeanHazmatBls` (blst), `LeanHazmatKzg` (c-kzg-4844),
+`LeanHazmatKeccak` (keccak-tiny), `LeanHazmatSecp256k1`
+(libsecp256k1), and `LeanHazmatBn254` (mcl, the one C++ build).
+`just hazmat-sha256-vendor`, `hazmat-bls-vendor`, `hazmat-kzg-vendor`,
+`hazmat-keccak-vendor`, `hazmat-secp256k1-vendor`, and
+`hazmat-bn254-vendor` fetch them; `just build` runs the vendor steps
+for you. The C / C++ compilers are invoked through the Lean toolchain's
+`cc` wrapper; building `LeanHazmatBn254` needs a `c++` compiler on the
+path, and `just doctor-native` checks for it. The remaining families
+(Blake2f, Ripemd160, Modexp, P256) vendor nothing.
 
 ## Pyspec harnesses
 

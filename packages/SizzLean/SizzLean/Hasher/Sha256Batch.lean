@@ -13,7 +13,7 @@ FFI primitive `LeanHazmat.Sha256.sha256BatchCombine` (in the
 The FFI binding itself lives in `LeanHazmatSha256`; this file holds
 only the reference def and the axiom, because the axiom needs *both*
 the FFI binding and the `LeanSha256` spec in scope, and SizzLean is
-the one layer entitled to import both (hazmat-docs/ARCHITECTURE.md §9).
+the one layer entitled to import both (packages/hazmat/docs/ARCHITECTURE.md §9).
 
 ## The batched primitive (recap)
 

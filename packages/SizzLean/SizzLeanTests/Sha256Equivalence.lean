@@ -8,7 +8,7 @@ The empirical equivalence gate: the pure-Lean spec (`LeanSha256`) and
 the FFI binding (`LeanHazmat.Sha256.sha256Hash` / `sha256Combine`) agree
 byte-for-byte on every input class reachable from real workloads. This
 is one of the two cross-checks that need *both* packages in scope, so
-it lives in `SizzLeanTests` (hazmat-docs/ARCHITECTURE.md §9); it is the
+it lives in `SizzLeanTests` (packages/hazmat/docs/ARCHITECTURE.md §9); it is the
 empirical evidence behind the `sha256Hash_eq_spec` /
 `sha256Combine_eq_spec` axioms.
 

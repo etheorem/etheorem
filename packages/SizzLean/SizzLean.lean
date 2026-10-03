@@ -37,7 +37,7 @@ their own code. They map one-to-one onto the sections of
   `Hasher` typeclass and its two shipping instances. The FFI
   `Sha256` instance delegates to the `LeanHazmatSha256` package
   (`LeanHazmat.Sha256.sha256Hash` / `sha256Combine`); the bindings
-  themselves no longer live in SizzLean (hazmat-docs/ARCHITECTURE.md
+  themselves no longer live in SizzLean (packages/hazmat/docs/ARCHITECTURE.md
   §9), only the typeclass glue.
 * `Hasher/Sha256Batch`: the pure-Lean reference
   (`sha256BatchCombineSpec`) and the `sha256BatchCombine_eq_spec`
@@ -49,7 +49,7 @@ their own code. They map one-to-one onto the sections of
   `Sha256Batch`), rewrite-targets for proofs that need FFI hashes to
   reduce. The SizzLean-side trust-boundary inventory is recoverable
   via `grep -rEn '^axiom '` over `packages/SizzLean` (the `@[extern]`
-  bindings live in `packages/LeanHazmatSha256`).
+  bindings live in `packages/hazmat/LeanHazmatSha256`).
 * `Cache/TreeBacked`: `CachedSSZ`, the cached-only one-flavour
   type, with `CachedSSZ.ofValue` and `CachedSSZ.hashTreeRoot`.
 * `Cache/Box`: `SSZ.Box`, the closed union of cached + uncached

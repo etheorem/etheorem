@@ -1,0 +1,45 @@
+name = "LeanHazmatExecution"
+
+# The execution-layer LeanHazmat aggregator: one `require` that pulls
+# in and re-exports the seven EL crypto families. Pure TOML, no C
+# (packages/hazmat/docs/ARCHITECTURE.md §3.4). Families stay consumable on their
+# own; this meta-package is the whole-layer convenience.
+
+# Keccak-256 (keccak-tiny, vendored): the EL's most-used hash.
+[[require]]
+name = "LeanHazmatKeccak"
+path = "../LeanHazmatKeccak"
+
+# secp256k1 ECDSA recovery / verification (libsecp256k1, vendored):
+# ecRecover's primitive.
+[[require]]
+name = "LeanHazmatSecp256k1"
+path = "../LeanHazmatSecp256k1"
+
+# alt_bn128 / BN254 (herumi/mcl, vendored, C++): EIP-196/197/1108.
+[[require]]
+name = "LeanHazmatBn254"
+path = "../LeanHazmatBn254"
+
+# BLAKE2f (in-repo RFC 7693 shim, no library): EIP-152.
+[[require]]
+name = "LeanHazmatBlake2f"
+path = "../LeanHazmatBlake2f"
+
+# RIPEMD-160 (OpenSSL, default or legacy provider): precompile 0x03.
+[[require]]
+name = "LeanHazmatRipemd160"
+path = "../LeanHazmatRipemd160"
+
+# Modular exponentiation (OpenSSL BIGNUM): precompile 0x05.
+[[require]]
+name = "LeanHazmatModexp"
+path = "../LeanHazmatModexp"
+
+# NIST P-256 verification (OpenSSL): EIP-7951 P256VERIFY.
+[[require]]
+name = "LeanHazmatP256"
+path = "../LeanHazmatP256"
+
+[[lean_lib]]
+name = "LeanHazmatExecution"

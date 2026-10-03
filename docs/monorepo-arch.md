@@ -53,9 +53,23 @@ poseidon-proofs`).
     │   ├── LeanSha256Tests/          # in-Lean conformance gates
     │   ├── scripts/                  # bump_patch.py (release tag), gen_sha256_cavp.py
     │   └── README.md                 # "issues belong in the umbrella" mirror notice
+    ├── hazmat/                       # the LeanHazmat FFI crypto family group (no lakefile of its own)
+    │   ├── docs/                     # cross-family design of record: ARCHITECTURE.md, PLAN.md
+    │   ├── LeanHazmatSha256/         # FFI SHA-256 (OpenSSL; ISA-L batched combine on x86_64 Linux)
+    │   ├── LeanHazmatBls/            # FFI BLS12-381 (blst, vendored); the family's single blst owner
+    │   ├── LeanHazmatKzg/            # FFI KZG / EIP-4844 (c-kzg-4844, vendored; shares …Bls's blst)
+    │   ├── LeanHazmatConsensus/      # aggregator: re-exports the three consensus families (toml, no C)
+    │   ├── LeanHazmatKeccak/         # FFI Keccak-256 (keccak-tiny, vendored by rev)
+    │   ├── LeanHazmatSecp256k1/      # FFI secp256k1 ECDSA recovery (libsecp256k1 v0.8.0, vendored)
+    │   ├── LeanHazmatBn254/          # FFI BN254 / alt_bn128 (mcl v4.10, vendored; the one C++ build)
+    │   ├── LeanHazmatBlake2f/        # FFI BLAKE2f (in-repo RFC 7693 shim, no library)
+    │   ├── LeanHazmatRipemd160/      # FFI RIPEMD-160 (OpenSSL 3, default or legacy provider)
+    │   ├── LeanHazmatModexp/         # FFI modexp (OpenSSL BIGNUM)
+    │   ├── LeanHazmatP256/           # FFI P256VERIFY (OpenSSL, NIST P-256)
+    │   ├── LeanHazmatExecution/      # aggregator: re-exports the seven EL families (toml, no C)
+    │   └── LeanHazmat/               # top umbrella: Consensus + Execution in one require (toml, no C)
     ├── SizzLean/
-    │   ├── lakefile.lean             # procedural — needed for the FFI C-shim target
-    │   ├── csrc/                     # sha256_shim.c, sha256_batch.c
+    │   ├── lakefile.lean             # procedural, pkg-config link args + glob discovery
     │   ├── docs/                     # ARCHITECTURE.md, PLAN.md, OPTIMISATION.md, research/
     │   ├── SizzLean.lean
     │   ├── SizzLean/                 # Spec/, Repr/, Hasher/, Cache/, Proofs/
@@ -126,19 +140,33 @@ the consensus packages may follow the same pattern. Either way the umbrella
 stays the single source of truth. This is a development
 monorepo.
 
-**`SizzLean` and `LeanPoseidon` keep `lakefile.lean`; the others use
-TOML.** Lake allows either form, but `lakefile.toml` is purely
+**The `hazmat/` group.** The thirteen LeanHazmat family packages share
+one naming scheme, one vendor discipline, and one trust-boundary doc, so
+they live in one group directory instead of cluttering the top level.
+The group directory carries no lakefile of its own. The umbrella
+`[[require]]`s each family by its `packages/hazmat/<Name>` path, the
+families reference each other as siblings (`../LeanHazmatBls`), and
+`SizzLean` and `EthCLLib` reach in with `../hazmat/<Name>`. The group's
+design of record is
+[`packages/hazmat/docs/ARCHITECTURE.md`](../packages/hazmat/docs/ARCHITECTURE.md).
+
+**A package with a native build target keeps `lakefile.lean`; pure-Lean
+packages use TOML.** Lake allows either form, but `lakefile.toml` is purely
 declarative, it can't express a build target that compiles a `.c` file or
-shells `cargo`. The FFI SHA-256 shim in `packages/SizzLean/csrc/` needs a
-procedural target (`buildO` over the `.c` file plus an `extern_lib`
-declaration linking to `libcrypto`), so `SizzLean`'s lakefile stays
-`.lean`; likewise `LeanPoseidon`'s differential-test oracle needs a `cargo`
-target + a C ABI shim + their `extern_lib`s. `LeanSha256` is pure-Lean (no
-FFI) and the consensus packages (`EthCLLib`, `EthCLSpecs`) just consume
-`SizzLean`; all use the simpler `lakefile.toml`.
+shells `cargo`. The FFI SHA-256 shim and its `buildO` + `extern_lib`
+targets live in `packages/hazmat/LeanHazmatSha256/`. `SizzLean`'s
+lakefile stays `.lean` for two needs the TOML form cannot express:
+the `pkg-config`-driven OpenSSL link-arg discovery (needed to link
+`libcrypto` for its own executables) and the one-directory-deep glob
+auto-discovery of its `lean_lib` contents; likewise `LeanPoseidon`'s
+differential-test oracle needs a `cargo` target + a C ABI shim + their
+`extern_lib`s. In the `hazmat/` group the ten families that compile a
+C/C++ shim keep `lakefile.lean` for the same reason, while the three
+aggregators (no code, no C) use `lakefile.toml`, as do the pure-Lean
+`LeanSha256`, `EthCLLib`, `EthCLSpecs`, and `LeanPoseidonProofs`.
 
 The procedural form on `SizzLean` is kept to the minimum: only
-the C-shim target and the `extern_lib` block. Everything else
+the link-arg discovery and the glob discovery. Everything else
 (package metadata, `lean_lib` declarations, dependencies)
 remains declarative-style data, just expressed in Lean
 syntax.
@@ -154,13 +182,20 @@ syntax.
   (`SizzLeanTests`, `SizzLeanBench`, `LeanSha256Tests`) so a
   multi-package umbrella build doesn't collide on a bare `Tests`
   module name.
+* **The `hazmat/` group directory is the one exception** to
+  "directory name = package name": it is a plain container with no
+  lakefile, and every package inside it keeps the four-way name
+  match.
 
 ## Where each piece lives
 
 * The **FFI SHA-256 shim** (`csrc/sha256_shim.c` +
-  `csrc/sha256_batch.c`) is in `SizzLean` because that's the
-  package whose `Hasher/Sha256.lean` declares the `@[extern]`
-  bindings that consume the C symbols.
+  `csrc/sha256_batch.c`) is in `LeanHazmatSha256` because that
+  package owns the `@[extern]` bindings for the C symbols.
+  `SizzLean`'s `Hasher/Sha256.lean` consumes them through its
+  `require` of the package and keeps the `Hasher` seam plus the
+  FFI ≡ pure-Lean equivalence axioms, the one place that imports
+  both sides.
 * The **NIST CAVP test-vector fixtures** are in `LeanSha256`'s
   `cavp/` directory because `LeanSha256/Nist.lean` loads them at
   build time.
@@ -268,6 +303,7 @@ lake build LeanSha256
 lake build SizzLean
 lake build EthCLLib
 lake build EthCLSpecs
+lake build LeanHazmat               # every crypto family + both aggregators
 
 # In-Lean test suites (run on demand):
 lake build LeanSha256Tests
@@ -312,5 +348,8 @@ Repo-wide design docs live in the root `docs/` (this file).
 Per-subpackage design docs live under `packages/<Pkg>/docs/`
 (`SizzLean` carries ARCHITECTURE / PLAN / OPTIMISATION /
 research; `EthCLSpecs` carries IMPLEMENTATION_NOTES / PLAN).
-When the other subpackages grow their own design notes, they
+The hazmat group keeps the crypto family's cross-family design
+under `packages/hazmat/docs/` (ARCHITECTURE / PLAN), one level
+above the packages it describes. When the other subpackages grow
+their own design notes, they
 follow the same convention.

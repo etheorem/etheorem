@@ -24,12 +24,12 @@ path = "../SizzLean"
 # BLS verify / aggregate behind the [CryptoBackend] seam.
 [[require]]
 name = "LeanHazmatBls"
-path = "../LeanHazmatBls"
+path = "../hazmat/LeanHazmatBls"
 
 # KZG cell-proof-batch verification behind the [CryptoBackend] seam.
 [[require]]
 name = "LeanHazmatKzg"
-path = "../LeanHazmatKzg"
+path = "../hazmat/LeanHazmatKzg"
 
 [[lean_lib]]
 name = "EthCLLib"

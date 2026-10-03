@@ -15,7 +15,7 @@ in scope picks this up at instance synthesis.
 
 The `@[extern] opaque` SHA-256 bindings themselves no longer live
 here: they were migrated to the standalone `LeanHazmatSha256` package
-(hazmat-docs/ARCHITECTURE.md §9, PLAN.md Stage 1) so the FFI surface
+(packages/hazmat/docs/ARCHITECTURE.md §9, PLAN.md Stage 1) so the FFI surface
 ships independently of the SSZ library. SizzLean keeps only the
 *spec-side* glue, this `Sha256` tag and instance, plus the
 FFI ≡ pure-Lean equivalence axioms in `Sha256Equiv.lean` /
