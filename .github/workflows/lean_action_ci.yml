@@ -42,7 +42,9 @@ jobs:
   test:
     # In-Lean property tests: SHA-256 NIST CAVP vectors against both
     # the pure-Lean spec (LeanSha256) and the OpenSSL FFI shim
-    # (LeanHazmatSha256), the FFI ≡ spec equivalence cross-checks, SSZ
+    # (LeanHazmatSha256), the FFI ≡ spec equivalence cross-checks, the
+    # BLS / KZG KATs, the seven execution-layer family KATs (Keccak,
+    # secp256k1, BN254, BLAKE2f, RIPEMD-160, modexp, P256VERIFY), SSZ
     # and SSZ library gates (Merkle PRNG, cache machinery on example
     # containers). All fire as `native_decide` examples via `lake build`.
     # The libraries themselves build transitively, so this job subsumes
@@ -52,23 +54,30 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v3
-      - name: Install nasm
+      - name: Install nasm and the C++ toolchain
         # The runner is x86_64 Linux, where LeanHazmatSha256 assembles the
         # vendored ISA-L multi-buffer SHA-256 lanes with `nasm`. The image
-        # does not ship it. Installed before `doctor-native` so that check
-        # sees the real state.
-        run: sudo apt-get install -y nasm
+        # does not ship it. `g++` compiles the vendored mcl for
+        # LeanHazmatBn254 (the one C++ family; the build compiles the C++
+        # runtime out, so no static libstdc++ is needed). Installed before
+        # `doctor-native` so that check sees the real state.
+        run: sudo apt-get install -y nasm g++
       - name: Verify build-time native deps
-        # See `pyspec` job below for the rationale.
+        # The full `all` profile: this job builds every family, so the
+        # execution-only checks (the RIPEMD-160 capability, the C++
+        # compiler) apply here. See the `pyspec` job below for the
+        # rationale.
         run: just doctor-native
       - name: Vendor native crypto sources
-        # ISA-L crypto (LeanHazmatSha256, x86_64 Linux), blst (LeanHazmatBls)
-        # and c-kzg-4844 (LeanHazmatKzg) are vendored, not system packages —
-        # fetch them at their pinned tags before the Lean build. Offline
-        # thereafter. `just test` also self-vendors via the `hazmat-*-test`
-        # recipes; this explicit step keeps the fetch visible and ordered
-        # first.
-        run: just hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor
+        # ISA-L crypto (LeanHazmatSha256, x86_64 Linux), blst
+        # (LeanHazmatBls), c-kzg-4844 (LeanHazmatKzg), keccak-tiny
+        # (LeanHazmatKeccak), libsecp256k1 (LeanHazmatSecp256k1), and
+        # herumi/mcl (LeanHazmatBn254) are vendored, not system
+        # packages; fetch them at their pinned tags / rev before the
+        # Lean build. Offline thereafter. `just test` also self-vendors
+        # via the `hazmat-*-test` recipes; this explicit step keeps the
+        # fetch visible and ordered first.
+        run: just hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor hazmat-keccak-vendor hazmat-secp256k1-vendor hazmat-bn254-vendor
       # Pinned to the commit `v1` resolves to as of 2026-05-10. Bump deliberately.
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
         with:
@@ -107,16 +116,19 @@ jobs:
         # See the `test` job.
         run: sudo apt-get install -y nasm
       - name: Verify build-time native deps
-        # `just doctor-native` probes pkg-config + libcrypto (the
-        # native deps `lakefile.lean` consumes via `pkg-config --libs
-        # libcrypto`) plus `nasm` on x86_64 Linux, and prints actionable
-        # platform install hints if anything is missing. Runs *before*
+        # `just doctor-native consensus` probes cc + git + pkg-config +
+        # libcrypto (the native deps the lakefiles consume via
+        # `pkg-config --libs libcrypto`) plus `nasm` on x86_64 Linux,
+        # and prints actionable platform install hints if anything is
+        # missing. The `consensus` profile skips the execution-only
+        # checks (the RIPEMD-160 capability, the C++ compiler): this
+        # job's build never compiles those families. Runs *before*
         # lean-action so a missing OpenSSL surfaces here (~1 s) rather
         # than as a cryptic linker error 30 s into `lake build`. Uses
         # the `-native` variant (not full `just doctor`) because the
-        # Lean toolchain isn't installed yet at this point — lean-action
+        # Lean toolchain isn't installed yet at this point; lean-action
         # does that next.
-        run: just doctor-native
+        run: just doctor-native consensus
       - name: Vendor native crypto sources
         # `ssz_generic_runner` links LeanHazmatSha256, which on this runner
         # builds the vendored ISA-L unit.
@@ -174,7 +186,11 @@ jobs:
       - name: Install nasm
         run: sudo apt-get install -y nasm
       - name: Verify build-time native deps
-        run: just doctor-native
+        # The `consensus` profile: this job's build (pyspec_server →
+        # EthCLSpecs → the consensus families) needs no RIPEMD-160
+        # capability and no C++ compiler. See the `pyspec` job for the
+        # rationale.
+        run: just doctor-native consensus
       - name: Vendor native crypto sources
         run: just hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9

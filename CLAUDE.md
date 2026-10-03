@@ -26,9 +26,14 @@ its own subpackage under `packages/`:
   declare their containers in-spec.
 - **`LeanSha256`**: pure-Lean SHA-256 reference. NIST CAVP-validated,
   kernel-reducible, no FFI.
-- **`LeanHazmatSha256`** / **`LeanHazmatBls`** / **`LeanHazmatKzg`**: the
-  FFI crypto family, one package per primitive wrapping a native library
-  (OpenSSL / blst / c-kzg-4844) behind `@[extern]`.
+- **`LeanHazmat<Family>`** (`Sha256`, `Bls`, `Kzg`, `Keccak`,
+  `Secp256k1`, `Bn254`, `Blake2f`, `Ripemd160`, `Modexp`, `P256`): the
+  FFI crypto family, one package per primitive wrapping a native
+  library (OpenSSL / blst / c-kzg-4844 / keccak-tiny / libsecp256k1 /
+  mcl; Blake2f is an in-repo RFC 7693 shim with no library) behind
+  `@[extern]`, plus the aggregator meta-packages (`LeanHazmatConsensus`,
+  `LeanHazmatExecution`, top `LeanHazmat`). See
+  [`packages/hazmat/docs/ARCHITECTURE.md`](packages/hazmat/docs/ARCHITECTURE.md).
 - **`LeanPoseidon`** (+ **`LeanPoseidonProofs`**): a pure-Lean Poseidon2
   hash, a standalone island parallel to `LeanSha256` that nothing in the
   monorepo imports yet, and its mathlib-isolated equivalence proof. See
@@ -128,10 +133,12 @@ and patterns do elsewhere.
 
 ## Layout
 
-Lake monorepo. Nine subpackages under `packages/`, each with its own
-lakefile; an umbrella `lakefile.toml` at the root coordinates them via
-`[[require]]` blocks. `LeanPoseidonProofs` stays out of the umbrella so
-its mathlib dependency never touches the root build.
+Lake monorepo. `packages/` holds six standalone subpackages and the
+`hazmat/` group, thirteen LeanHazmat crypto-family packages plus the
+cross-family docs under `packages/hazmat/docs/`. Each package has its
+own lakefile; an umbrella `lakefile.toml` at the root coordinates them
+via `[[require]]` blocks. `LeanPoseidonProofs` stays out of the umbrella
+so its mathlib dependency never touches the root build.
 
 ```
 .
@@ -140,15 +147,26 @@ its mathlib dependency never touches the root build.
 ├── Justfile                     # Task runner over the umbrella (`just --list`).
 ├── README.md / CLAUDE.md        # Repo-wide overview + conventions.
 ├── docs/                        # Repo-wide docs (monorepo-arch.md, CODING_STYLE.md).
-├── hazmat-docs/                 # LeanHazmat family design (ARCHITECTURE.md, PLAN.md).
 ├── scripts/                     # requirements.txt (pyspec-harness Python deps), the checkers, ProofCoverage.lean.
 ├── packages/
 │   ├── LeanSha256/              # Pure-Lean SHA-256 reference; no FFI. Published standalone via a mirror.
 │   │   └── lakefile.toml, LeanSha256.lean / LeanSha256/ / cavp/ / LeanSha256Tests/ / README.md
-│   ├── LeanHazmatSha256/        # FFI SHA-256 (OpenSSL libcrypto); owns the C SHA-256 shim.
-│   │   └── lakefile.lean (C target), csrc/{sha256_shim,sha256_batch}.c / docs/ / README.md
-│   ├── LeanHazmatBls/           # FFI BLS12-381 (blst, vendored). lakefile.lean, csrc/bls_shim.c, docs/.
-│   ├── LeanHazmatKzg/           # FFI KZG / EIP-4844 (c-kzg-4844, vendored). lakefile.lean, csrc/kzg_shim.c, docs/.
+│   ├── hazmat/                  # The LeanHazmat FFI crypto family group + its cross-family docs.
+│   │   ├── docs/                # LeanHazmat family design (ARCHITECTURE.md, PLAN.md).
+│   │   ├── LeanHazmatSha256/    # FFI SHA-256 (OpenSSL libcrypto); owns the C SHA-256 shim.
+│   │   │   └── lakefile.lean (C target), csrc/{sha256_shim,sha256_batch}.c / docs/ / README.md
+│   │   ├── LeanHazmatBls/       # FFI BLS12-381 (blst, vendored). lakefile.lean, csrc/bls_shim.c, docs/.
+│   │   ├── LeanHazmatKzg/       # FFI KZG / EIP-4844 (c-kzg-4844, vendored). lakefile.lean, csrc/kzg_shim.c, docs/.
+│   │   ├── LeanHazmatConsensus/ # Aggregator: re-exports the three consensus families (toml, no C).
+│   │   ├── LeanHazmatKeccak/    # FFI Keccak-256 (keccak-tiny, vendored by rev). csrc/keccak_shim.c.
+│   │   ├── LeanHazmatSecp256k1/ # FFI secp256k1 ECDSA recovery (libsecp256k1 v0.8.0, vendored).
+│   │   ├── LeanHazmatBn254/     # FFI BN254 / alt_bn128 (mcl v4.10, vendored, the one C++ build).
+│   │   ├── LeanHazmatBlake2f/   # FFI BLAKE2f (in-repo RFC 7693 shim, no library).
+│   │   ├── LeanHazmatRipemd160/ # FFI RIPEMD-160 (OpenSSL 3, default or legacy provider).
+│   │   ├── LeanHazmatModexp/    # FFI modexp (OpenSSL BIGNUM).
+│   │   ├── LeanHazmatP256/      # FFI P256VERIFY (OpenSSL, NIST P-256).
+│   │   ├── LeanHazmatExecution/ # Aggregator: re-exports the seven EL families (toml, no C).
+│   │   └── LeanHazmat/          # Top umbrella: Consensus + Execution (toml, no C).
 │   ├── SizzLean/                # SSZ library + cache + Hasher seam + FFI ≡ spec equivalence axioms.
 │   │   └── lakefile.lean (pkg-config + glob discovery, no C target), SizzLean/{Spec,Repr,Hasher,Cache,Proofs} / docs/ / Tests/
 │   ├── EthCLLib/                # Consensus-spec framework / DSL. lakefile.toml (declarative).
@@ -180,7 +198,7 @@ The SSZ library's design is under
 design (the `SSZType` universe, `SSZRepr` typeclass + deriving handler,
 cached Merkle tree, FFI SHA-256, trust boundary) and
 [`PLAN.md`](packages/SizzLean/docs/PLAN.md) sequences its stages. The
-FFI crypto families are documented in [`hazmat-docs/`](hazmat-docs/);
+FFI crypto families are documented in [`packages/hazmat/docs/`](packages/hazmat/docs/);
 the monorepo's physical layout in
 [`docs/monorepo-arch.md`](docs/monorepo-arch.md). This file (CLAUDE.md)
 is binding on style, conventions, and discipline across all
@@ -352,10 +370,13 @@ sets; Fulu is authored as the accumulated base.
   and dependencies stay minimal and declarative. `lakefile.lean` is
   permitted *only* for build targets the declarative form cannot
   express (C-source compilation, code generation, dynamic git
-  targets). Stage 9's `sha256_shim` C build is the standing example.
+  targets). The `LeanHazmatSha256` shim C build is the standing
+  example.
   Lake doesn't support both `lakefile.toml` and `lakefile.lean`
   in one package, so when one procedural target is needed the whole
-  config moves to `lakefile.lean` (kept ≤30 lines).
+  config moves to `lakefile.lean`. Keep the procedural surface
+  minimal there: the targets, their flags, and their traces, and
+  nothing else. No general-purpose scripting on the side.
 - Don't bump `lean-toolchain` casually, it cascades through CI and any deps.
 - Don't add a `Claude-Session:` tag (or any AI session link) to a commit
   message. The `AI co-author guard` workflow fails on it, same as an

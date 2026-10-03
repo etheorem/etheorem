@@ -21,7 +21,7 @@ These, together with `sha256BatchCombine_eq_spec` in
 `Sha256Batch.lean`, are the SHA-256 *bridge*. They live in SizzLean
 because SizzLean is the one layer entitled to import both the FFI
 binding (`LeanHazmatSha256`) and the spec (`LeanSha256`); neither
-package leaks into the other (hazmat-docs/ARCHITECTURE.md §9).
+package leaks into the other (packages/hazmat/docs/ARCHITECTURE.md §9).
 
 ## Why axioms (and not theorems)
 

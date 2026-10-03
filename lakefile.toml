@@ -1,61 +1,130 @@
 name = "Etheorem"
 
 # Umbrella package coordinating the subpackages. It declares no Lean
-# library of its own — building the umbrella delegates to the
+# library of its own. Building the umbrella delegates to the
 # sub-packages via the `[[require]]` blocks below.
 #
 # Common targets (build by name from the repo root):
 #   lake build LeanSha256
-#   lake build LeanHazmatSha256        # consensus crypto — FFI families
-#   lake build LeanHazmatBls           #   (need `just hazmat-sha256-vendor` (x86_64 Linux) /
-#   lake build LeanHazmatKzg           #    `hazmat-bls-vendor` / `hazmat-kzg-vendor`)
+#   lake build LeanHazmatSha256        # consensus crypto, the FFI families
+#   lake build LeanHazmatBls
+#   lake build LeanHazmatKzg
+#   lake build LeanHazmatKeccak        # execution crypto, the FFI families
+#   lake build LeanHazmatSecp256k1
+#   lake build LeanHazmatBn254
+#   lake build LeanHazmatBlake2f
+#   lake build LeanHazmatRipemd160
+#   lake build LeanHazmatModexp
+#   lake build LeanHazmatP256
+#   lake build LeanHazmatConsensus     # aggregators: require + re-export, no C
+#   lake build LeanHazmatExecution
+#   lake build LeanHazmat              # the top umbrella
 #   lake build SizzLean
 #   lake build EthCLLib / EthCLSpecs   # consensus-spec framework + Fulu/Gloas/Heze bodies
 #   lake build LeanPoseidon
 #   lake build SizzLeanTests
 #   lake build LeanHazmatSha256Tests / LeanHazmatBlsTests / LeanHazmatKzgTests
+#   lake build LeanHazmatKeccakTests / LeanHazmatSecp256k1Tests / LeanHazmatBn254Tests
+#   lake build LeanHazmatBlake2fTests / LeanHazmatRipemd160Tests / LeanHazmatModexpTests
+#   lake build LeanHazmatP256Tests
 #   lake build pyspec_server           # EthCLSpecs runner (state transition / fork choice / ssz_static)
 #   lake build ssz_generic_runner      # SizzLean runner (ssz_generic wire-format suite)
 #
+# The vendored families (Sha256 on x86_64 Linux, Bls, Kzg, Keccak,
+# Secp256k1, Bn254) need their `just hazmat-<family>-vendor` fetch
+# before `lake build`. The recipes live in the Justfile. Blake2f,
+# Ripemd160, Modexp, and P256 vendor nothing.
+#
 # Or per-package: `cd packages/<Name> && lake build`.
-# The LeanHazmat aggregator meta-packages (LeanHazmatConsensus,
-# LeanHazmatExecution, top LeanHazmat umbrella) + the execution-layer
-# families are deferred (see hazmat-docs/PLAN.md).
 
 [[require]]
 name = "LeanSha256"
 path = "packages/LeanSha256"
 
-# LeanHazmat — FFI crypto family (hazmat-docs/ARCHITECTURE.md).
-# Consensus families ship first; execution-layer families are deferred.
-# SHA-256 leads. `SizzLean` requires it for the FFI hash path. On x86_64
-# Linux it vendors ISA-L crypto for the batched combine (`just
-# hazmat-sha256-vendor`, needs `nasm`); elsewhere it is OpenSSL only.
+# LeanHazmat: the FFI crypto family (packages/hazmat/docs/ARCHITECTURE.md).
+# SHA-256 leads (the consensus migration; `SizzLean` requires it for the
+# FFI hash path). On x86_64 Linux it vendors ISA-L crypto for the batched
+# combine (`just hazmat-sha256-vendor`, needs `nasm`); elsewhere it is
+# OpenSSL only.
 [[require]]
 name = "LeanHazmatSha256"
-path = "packages/LeanHazmatSha256"
+path = "packages/hazmat/LeanHazmatSha256"
 
 # BLS12-381 (blst, vendored). Needs `just hazmat-bls-vendor` before `lake build`.
-# Single blst owner for the family — LeanHazmatKzg shares this blst.
+# Single blst owner for the family: LeanHazmatKzg shares this blst.
 [[require]]
 name = "LeanHazmatBls"
-path = "packages/LeanHazmatBls"
+path = "packages/hazmat/LeanHazmatBls"
 
 # KZG / EIP-4844 + Fulu (c-kzg-4844, vendored against LeanHazmatBls's blst).
 # Needs `just hazmat-bls-vendor` AND `just hazmat-kzg-vendor` before `lake build`.
 [[require]]
 name = "LeanHazmatKzg"
-path = "packages/LeanHazmatKzg"
+path = "packages/hazmat/LeanHazmatKzg"
 
-# (The LeanHazmatConsensus aggregator over the three families is deferred —
-# YAGNI until a consumer needs a whole crypto layer in one require; see
-# hazmat-docs/PLAN.md Stage 4. The families are consumed à la carte today.)
+# ── LeanHazmat execution-layer families (packages/hazmat/docs/PLAN.md Phase 2) ──
+# Each is an independent package; the vendored ones need their
+# `hazmat-*-vendor` fetch before `lake build` (recipes in the Justfile).
+#
+# Keccak-256 (keccak-tiny, vendored): the EL's most-used primitive.
+[[require]]
+name = "LeanHazmatKeccak"
+path = "packages/hazmat/LeanHazmatKeccak"
+
+# secp256k1 ECDSA recovery / verification (libsecp256k1, vendored):
+# the ecRecover primitive.
+[[require]]
+name = "LeanHazmatSecp256k1"
+path = "packages/hazmat/LeanHazmatSecp256k1"
+
+# alt_bn128 / BN254 (herumi/mcl, vendored, the family's one C++ build):
+# EIP-196/197/1108.
+[[require]]
+name = "LeanHazmatBn254"
+path = "packages/hazmat/LeanHazmatBn254"
+
+# BLAKE2f (in-repo RFC 7693 shim, no library, nothing to vendor): EIP-152.
+[[require]]
+name = "LeanHazmatBlake2f"
+path = "packages/hazmat/LeanHazmatBlake2f"
+
+# RIPEMD-160 (system libcrypto, default or legacy provider): precompile 0x03.
+[[require]]
+name = "LeanHazmatRipemd160"
+path = "packages/hazmat/LeanHazmatRipemd160"
+
+# Modular exponentiation (system libcrypto BIGNUM): precompile 0x05.
+[[require]]
+name = "LeanHazmatModexp"
+path = "packages/hazmat/LeanHazmatModexp"
+
+# NIST P-256 verification (system libcrypto): EIP-7951 P256VERIFY.
+[[require]]
+name = "LeanHazmatP256"
+path = "packages/hazmat/LeanHazmatP256"
+
+# ── LeanHazmat aggregators (packages/hazmat/docs/ARCHITECTURE.md §3.4) ─────────────────────────────────────
+# Meta-packages over the families, no code and no C: `require` + re-export.
+# Consensus: SHA-256 + BLS + KZG.
+[[require]]
+name = "LeanHazmatConsensus"
+path = "packages/hazmat/LeanHazmatConsensus"
+
+# Execution: Keccak + Secp256k1 + Bn254 + Blake2f + Ripemd160 + Modexp + P256.
+[[require]]
+name = "LeanHazmatExecution"
+path = "packages/hazmat/LeanHazmatExecution"
+
+# The top umbrella: consensus + execution in one require.
+[[require]]
+name = "LeanHazmat"
+path = "packages/hazmat/LeanHazmat"
 
 [[require]]
 name = "SizzLean"
 path = "packages/SizzLean"
 
-# EthCLLib — the consensus-spec framework / DSL (the capturing fork forms, the
+# EthCLLib: the consensus-spec framework / DSL (the capturing fork forms, the
 # header macros, the effect monad, the tier and error systems, the container
 # front-end, the crypto seam, the fork-interface typeclass, the generic
 # PySpecTests driver). Builds on SizzLean + LeanHazmatBls/Kzg.
@@ -63,7 +132,7 @@ path = "packages/SizzLean"
 name = "EthCLLib"
 path = "packages/EthCLLib"
 
-# EthCLSpecs — the fork bodies (EthCLSpecs.Fulu, later .Gloas) implementing the
+# EthCLSpecs: the fork bodies (EthCLSpecs.Fulu, later .Gloas) implementing the
 # fork interface, plus the `pyspec_server` runner. The deferred
 # proofs package (EthCLProofs, + mathlib) stays out of the umbrella, the
 # LeanPoseidonProofs containment pattern.

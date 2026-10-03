@@ -202,7 +202,7 @@ def check_isal_vendored() -> None:
     """
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         return
-    makefile = REPO_ROOT / "packages" / "LeanHazmatSha256" / "vendor" / "isa-l_crypto" / "Makefile.unx"
+    makefile = REPO_ROOT / "packages" / "hazmat" / "LeanHazmatSha256" / "vendor" / "isa-l_crypto" / "Makefile.unx"
     if not makefile.exists():
         raise BenchmarkError(
             "ISA-L crypto is not vendored. Run `just hazmat-sha256-vendor` "

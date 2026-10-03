@@ -1,0 +1,24 @@
+name = "LeanHazmatConsensus"
+
+# The consensus-layer LeanHazmat aggregator: one `require` that pulls in
+# and re-exports the three consensus crypto families. Pure TOML, no C
+# (packages/hazmat/docs/ARCHITECTURE.md §3.4). Families stay consumable on their
+# own; this meta-package is the whole-layer convenience.
+
+# FFI SHA-256 (OpenSSL, system libcrypto): SSZ merkleization's hash.
+[[require]]
+name = "LeanHazmatSha256"
+path = "../LeanHazmatSha256"
+
+# BLS12-381 signatures (blst, vendored). The single blst owner.
+[[require]]
+name = "LeanHazmatBls"
+path = "../LeanHazmatBls"
+
+# KZG / EIP-4844 + Fulu (c-kzg-4844, vendored; shares …Bls's blst).
+[[require]]
+name = "LeanHazmatKzg"
+path = "../LeanHazmatKzg"
+
+[[lean_lib]]
+name = "LeanHazmatConsensus"

@@ -1,0 +1,15 @@
+name = "LeanHazmat"
+
+# The top LeanHazmat umbrella: consensus + execution crypto in one
+# `require`. Pure TOML, no C (packages/hazmat/docs/ARCHITECTURE.md §3.4).
+
+[[require]]
+name = "LeanHazmatConsensus"
+path = "../LeanHazmatConsensus"
+
+[[require]]
+name = "LeanHazmatExecution"
+path = "../LeanHazmatExecution"
+
+[[lean_lib]]
+name = "LeanHazmat"
