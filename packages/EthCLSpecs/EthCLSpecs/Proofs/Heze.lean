@@ -32,6 +32,7 @@ import EthCLSpecs.Proofs.Heze.RootFrames
 import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 import EthCLSpecs.Proofs.Heze.SlotsIncrease
+import EthCLSpecs.Proofs.Heze.SyncFrame
 import EthCLSpecs.Proofs.Heze.Time
 import EthCLSpecs.Proofs.Heze.TraceRun
 
@@ -198,6 +199,9 @@ Re-exports:
   inversions of `onBlock` and the envelope handler return the stored states as plain
   values (`onBlock_run_ok`, `onExecutionPayloadEnvelope_run_ok`). The predicates are in
   `….StorePure.Basic`.
+* `EthCLSpecs.Proofs.Heze.SyncFrame`: the `sync_frame` tactic, the frame fact of a
+  `processSyncAggregate` run for a view. It names the join point after the key choice, so
+  `frame_invert` inverts it once.
 * `EthCLSpecs.Proofs.Heze.Time`: the inherited `computeEpochAtSlot`,
   `computeStartSlotAtEpoch`, and `computeActivationExitEpoch` at Heze. The `Downgrade`
   bridge reaches one fork up, so each theorem takes the Gloas proof term.

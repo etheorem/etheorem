@@ -1,6 +1,7 @@
 import EthCLSpecs.Heze.Transition
 import EthCLSpecs.Proofs.Heze.HandlerFrames
 import EthCLSpecs.Proofs.Heze.FrameInvert
+import EthCLSpecs.Proofs.Heze.SyncFrame
 
 /-!
 # `EthCLSpecs.Proofs.Heze.PaymentFrame`: the functions that keep the payment window
@@ -329,6 +330,288 @@ theorem processEpoch_eq :
 @[frame] theorem processEpochSuffix_frame {t t' : BeaconState} {a : Unit}
     (h : processEpochSuffix.run (pureState t) = .ok (a, pureState t')) :
     windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-! ## The block functions
+
+`processBlock` runs the functions below. Each one that does not write the window keeps
+`windowView`. The writers keep `spineView`. -/
+
+/-- `slashValidator` keeps the tracked fields. -/
+@[frame] theorem slashValidator_frame {t t' : BeaconState} {a : PUnit} {i : ValidatorIndex}
+    (h : (EthCLSpecs.Heze.slashValidator (StateTransition := HezeRun) i).run (pureState t)
+      = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `balanceAfterWithdrawals` reads the state only. -/
+@[frame] theorem balanceAfterWithdrawals_frame {u t t' : BeaconState} {a : _}
+    {vi : ValidatorIndex} {ws : Array EthCLSpecs.Heze.Withdrawal}
+    (h : (EthCLSpecs.Heze.balanceAfterWithdrawals (StateTransition := HezeRun) (pureState u)
+      vi ws).run (pureState t) = .ok (a, pureState t')) :
+    (pureState t').view = (pureState t).view := by
+  frame_invert h
+
+/-- `getBuilderWithdrawals` reads the state only. -/
+@[frame] theorem getBuilderWithdrawals_frame {t t' : BeaconState} {a : _}
+    {wi : EthCLSpecs.Heze.WithdrawalIndex} {prior : Array EthCLSpecs.Heze.Withdrawal}
+    (h : (EthCLSpecs.Heze.getBuilderWithdrawals (StateTransition := HezeRun) wi prior).run
+      (pureState t) = .ok (a, pureState t')) :
+    (pureState t').view = (pureState t).view := by
+  frame_invert h
+
+/-- `getPendingPartialWithdrawals` reads the state only. -/
+@[frame] theorem getPendingPartialWithdrawals_frame {t t' : BeaconState} {a : _}
+    {wi : EthCLSpecs.Heze.WithdrawalIndex} {prior : Array EthCLSpecs.Heze.Withdrawal}
+    (h : (EthCLSpecs.Heze.getPendingPartialWithdrawals (StateTransition := HezeRun) wi
+      prior).run (pureState t) = .ok (a, pureState t')) :
+    (pureState t').view = (pureState t).view := by
+  frame_invert h
+
+/-- `getBuildersSweepWithdrawals` reads the state only. -/
+@[frame] theorem getBuildersSweepWithdrawals_frame {t t' : BeaconState} {a : _}
+    {wi : EthCLSpecs.Heze.WithdrawalIndex} {prior : Array EthCLSpecs.Heze.Withdrawal}
+    (h : (EthCLSpecs.Heze.getBuildersSweepWithdrawals (StateTransition := HezeRun) wi
+      prior).run (pureState t) = .ok (a, pureState t')) :
+    (pureState t').view = (pureState t).view := by
+  frame_invert h
+
+/-- `getValidatorsSweepWithdrawals` reads the state only. -/
+@[frame] theorem getValidatorsSweepWithdrawals_frame {t t' : BeaconState} {a : _}
+    {wi : EthCLSpecs.Heze.WithdrawalIndex} {prior : Array EthCLSpecs.Heze.Withdrawal}
+    (h : (EthCLSpecs.Heze.getValidatorsSweepWithdrawals (StateTransition := HezeRun) wi
+      prior).run (pureState t) = .ok (a, pureState t')) :
+    (pureState t').view = (pureState t).view := by
+  frame_invert h
+
+/-- `applyWithdrawals` writes the balances of validators and builders only. -/
+@[frame] theorem applyWithdrawals_frame {t t' : BeaconState} {a : PUnit}
+    {ws : Array EthCLSpecs.Heze.Withdrawal}
+    (h : (EthCLSpecs.Heze.applyWithdrawals (StateTransition := HezeRun) ws).run (pureState t)
+      = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `getExpectedWithdrawals` reads the state only. -/
+@[frame] theorem getExpectedWithdrawals_frame {t t' : BeaconState} {a : _}
+    (h : (EthCLSpecs.Heze.getExpectedWithdrawals (StateTransition := HezeRun)).run
+      (pureState t) = .ok (a, pureState t')) :
+    (pureState t').view = (pureState t).view := by
+  frame_invert h
+
+/-- `processWithdrawals` keeps the tracked fields. It writes the balances, the withdrawal
+cursors, the expected withdrawals, and the two withdrawal queues. -/
+@[frame] theorem processWithdrawals_frame {t t' : BeaconState} {a : PUnit}
+    (h : (EthCLSpecs.Heze.processWithdrawals (StateTransition := HezeRun)).run (pureState t)
+      = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `processRandao` keeps the tracked fields. It writes one RANDAO mix. -/
+@[frame] theorem processRandao_frame {t t' : BeaconState} {a : PUnit}
+    {body : EthCLSpecs.Heze.BeaconBlockBody}
+    (h : (EthCLSpecs.Heze.processRandao (StateTransition := HezeRun) body).run (pureState t)
+      = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `processSyncAggregate` keeps the tracked fields. It writes the balances. The join point
+after its key choice needs `sync_frame` (`SyncFrame.lean`). -/
+@[frame] theorem processSyncAggregate_frame {t t' : BeaconState} {a : PUnit}
+    {agg : EthCLSpecs.Heze.SyncAggregate}
+    (h : (EthCLSpecs.Heze.processSyncAggregate (StateTransition := HezeRun) agg).run
+      (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  sync_frame windowView h
+
+/-- `processAttesterSlashing` keeps the tracked fields. -/
+@[frame] theorem processAttesterSlashing_frame {t t' : BeaconState} {a : PUnit}
+    {asl : EthCLSpecs.Heze.AttesterSlashing}
+    (h : (EthCLSpecs.Heze.processAttesterSlashing (StateTransition := HezeRun) asl).run
+      (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `processVoluntaryExit` keeps the tracked fields. -/
+@[frame] theorem processVoluntaryExit_frame {t t' : BeaconState} {a : PUnit}
+    {sve : EthCLSpecs.Heze.SignedVoluntaryExit}
+    (h : (EthCLSpecs.Heze.processVoluntaryExit (StateTransition := HezeRun) sve).run
+      (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `processBlsToExecutionChange` keeps the tracked fields. -/
+@[frame] theorem processBlsToExecutionChange_frame {t t' : BeaconState} {a : PUnit}
+    {sbc : EthCLSpecs.Heze.SignedBLSToExecutionChange}
+    (h : (EthCLSpecs.Heze.processBlsToExecutionChange (StateTransition := HezeRun) sbc).run
+      (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `getPtc` reads the state only. -/
+@[frame] theorem getPtc_frame {u t t' : BeaconState} {a : _} {slot : Slot}
+    (h : (EthCLSpecs.Heze.getPtc (StateTransition := HezeRun) (pureState u) slot).run
+      (pureState t) = .ok (a, pureState t')) :
+    (pureState t').view = (pureState t).view := by
+  frame_invert h
+
+/-- `getIndexedPayloadAttestation` reads the state only. -/
+@[frame] theorem getIndexedPayloadAttestation_frame {u t t' : BeaconState} {a : _}
+    {pa : EthCLSpecs.Heze.PayloadAttestation}
+    (h : (EthCLSpecs.Heze.getIndexedPayloadAttestation (StateTransition := HezeRun)
+      (pureState u) pa).run (pureState t) = .ok (a, pureState t')) :
+    (pureState t').view = (pureState t).view := by
+  frame_invert h
+
+/-- `processPayloadAttestation` reads the state only. -/
+@[frame] theorem processPayloadAttestation_frame {t t' : BeaconState} {a : PUnit}
+    {pa : EthCLSpecs.Heze.PayloadAttestation}
+    (h : (EthCLSpecs.Heze.processPayloadAttestation (StateTransition := HezeRun) pa).run
+      (pureState t) = .ok (a, pureState t')) :
+    (pureState t').view = (pureState t).view := by
+  frame_invert h
+
+/-- `queueExcessActiveBalance` keeps the tracked fields. -/
+@[frame] theorem queueExcessActiveBalance_frame {t t' : BeaconState} {a : PUnit}
+    {i : ValidatorIndex}
+    (h : (EthCLSpecs.Heze.queueExcessActiveBalance (StateTransition := HezeRun) i).run
+      (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `switchToCompoundingValidator` keeps the tracked fields. -/
+@[frame] theorem switchToCompoundingValidator_frame {t t' : BeaconState} {a : PUnit}
+    {i : ValidatorIndex}
+    (h : (EthCLSpecs.Heze.switchToCompoundingValidator (StateTransition := HezeRun) i).run
+      (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `computeConsolidationEpochAndUpdateChurn` keeps the tracked fields. -/
+@[frame] theorem computeConsolidationEpochAndUpdateChurn_frame {t t' : BeaconState} {a : _}
+    {b : Gwei}
+    (h : (EthCLSpecs.Heze.computeConsolidationEpochAndUpdateChurn (StateTransition := HezeRun)
+      b).run (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `initiateBuilderExit` keeps the tracked fields. -/
+@[frame] theorem initiateBuilderExit_frame {t t' : BeaconState} {a : PUnit}
+    {i : EthCLSpecs.Heze.BuilderIndex}
+    (h : (EthCLSpecs.Heze.initiateBuilderExit (StateTransition := HezeRun) i).run
+      (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `addBuilderToRegistry` keeps the tracked fields. -/
+@[frame] theorem addBuilderToRegistry_frame {t t' : BeaconState} {a : PUnit}
+    {pk : EthCLSpecs.Heze.BLSPubkey} {ver : UInt8} {addr : EthCLSpecs.Heze.ExecutionAddress}
+    {amount : Gwei} {slot : Slot}
+    (h : (EthCLSpecs.Heze.addBuilderToRegistry (StateTransition := HezeRun)
+      pk ver addr amount slot).run (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `processDepositRequest` keeps the tracked fields. -/
+@[frame] theorem processDepositRequest_frame {t t' : BeaconState} {a : PUnit}
+    {dr : EthCLSpecs.Heze.DepositRequest}
+    (h : (EthCLSpecs.Heze.processDepositRequest (StateTransition := HezeRun) dr).run
+      (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `processWithdrawalRequest` keeps the tracked fields. -/
+@[frame] theorem processWithdrawalRequest_frame {t t' : BeaconState} {a : PUnit}
+    {wr : EthCLSpecs.Heze.WithdrawalRequest}
+    (h : (EthCLSpecs.Heze.processWithdrawalRequest (StateTransition := HezeRun) wr).run
+      (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `processConsolidationRequest` keeps the tracked fields. -/
+@[frame] theorem processConsolidationRequest_frame {t t' : BeaconState} {a : PUnit}
+    {req : EthCLSpecs.Heze.ConsolidationRequest}
+    (h : (EthCLSpecs.Heze.processConsolidationRequest (StateTransition := HezeRun) req).run
+      (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `processBuilderDepositRequest` keeps the tracked fields. -/
+@[frame] theorem processBuilderDepositRequest_frame {t t' : BeaconState} {a : PUnit}
+    {req : EthCLSpecs.Heze.BuilderDepositRequest}
+    (h : (EthCLSpecs.Heze.processBuilderDepositRequest (StateTransition := HezeRun) req).run
+      (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `processBuilderExitRequest` keeps the tracked fields. -/
+@[frame] theorem processBuilderExitRequest_frame {t t' : BeaconState} {a : PUnit}
+    {req : EthCLSpecs.Heze.BuilderExitRequest}
+    (h : (EthCLSpecs.Heze.processBuilderExitRequest (StateTransition := HezeRun) req).run
+      (pureState t) = .ok (a, pureState t')) :
+    windowView (pureState t') = windowView (pureState t) := by
+  frame_invert h
+
+/-- `settleBuilderPayment` keeps the spine fields. It writes one entry of the window and
+the builder withdrawal queue. -/
+@[frame] theorem settleBuilderPayment_frame_spine {t t' : BeaconState} {a : PUnit} {i : Nat}
+    (h : (EthCLSpecs.Heze.settleBuilderPayment (StateTransition := HezeRun) i).run
+      (pureState t) = .ok (a, pureState t')) :
+    spineView (pureState t') = spineView (pureState t) := by
+  frame_invert h
+
+/-- `processProposerSlashing` keeps the spine fields. It clears one entry of the window. -/
+@[frame] theorem processProposerSlashing_frame_spine {t t' : BeaconState} {a : PUnit}
+    {ps : EthCLSpecs.Heze.ProposerSlashing}
+    (h : (EthCLSpecs.Heze.processProposerSlashing (StateTransition := HezeRun) ps).run
+      (pureState t) = .ok (a, pureState t')) :
+    spineView (pureState t') = spineView (pureState t) := by
+  frame_invert h
+
+/-- `applyParentExecutionPayload` keeps the spine fields. It settles one entry of the
+window and writes `latestBlockHash` and `executionPayloadAvailability`. The cached bid
+stays. -/
+@[frame] theorem applyParentExecutionPayload_frame_spine {t t' : BeaconState} {a : PUnit}
+    {requests : EthCLSpecs.Heze.ExecutionRequests}
+    (h : (EthCLSpecs.Heze.applyParentExecutionPayload (StateTransition := HezeRun)
+      requests).run (pureState t) = .ok (a, pureState t')) :
+    spineView (pureState t') = spineView (pureState t) := by
+  frame_invert h
+
+/-- `processParentExecutionPayload` keeps the spine fields. -/
+@[frame] theorem processParentExecutionPayload_frame_spine {t t' : BeaconState} {a : PUnit}
+    {block : EthCLSpecs.Heze.BeaconBlock}
+    (h : (EthCLSpecs.Heze.processParentExecutionPayload (StateTransition := HezeRun)
+      block).run (pureState t) = .ok (a, pureState t')) :
+    spineView (pureState t') = spineView (pureState t) := by
+  frame_invert h
+
+/-- `isAttestationSameSlot` reads the state only. -/
+@[frame] theorem isAttestationSameSlot_frame {u t t' : BeaconState} {a : _}
+    {data : EthCLSpecs.Heze.AttestationData}
+    (h : (EthCLSpecs.Heze.isAttestationSameSlot (StateTransition := HezeRun) (pureState u)
+      data).run (pureState t) = .ok (a, pureState t')) :
+    (pureState t').view = (pureState t).view := by
+  frame_invert h
+
+/-- `getAttestationParticipationFlagIndices` reads the state only. -/
+@[frame] theorem getAttestationParticipationFlagIndices_frame {u t t' : BeaconState} {a : _}
+    {data : EthCLSpecs.Heze.AttestationData} {d : UInt64}
+    (h : (EthCLSpecs.Heze.getAttestationParticipationFlagIndices (StateTransition := HezeRun)
+      (pureState u) data d).run (pureState t) = .ok (a, pureState t')) :
+    (pureState t').view = (pureState t).view := by
+  frame_invert h
+
+set_option maxHeartbeats 1000000 in
+/-- `processAttestation` keeps the spine fields. It writes the participation flags, one
+entry of the window, and the balance of the proposer. The body threads the state through
+two nested loops, next to counters. The inversion needs more than the default heartbeat
+limit. -/
+@[frame] theorem processAttestation_frame_spine {t t' : BeaconState} {a : PUnit}
+    {att : EthCLSpecs.Heze.Attestation}
+    (h : (EthCLSpecs.Heze.processAttestation (StateTransition := HezeRun) att).run
+      (pureState t) = .ok (a, pureState t')) :
+    spineView (pureState t') = spineView (pureState t) := by
   frame_invert h
 
 end
