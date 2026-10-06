@@ -1321,6 +1321,49 @@ theorem bidPaymentCarried_of_run (sbR : SignedBeaconBlock) (v : Bool)
   rw [hpay]
   exact hentry
 
+/-- The run of `steps` as a function, with the slot bound checked at each slot step. The
+states are plain values: each step runs on the uncached box of the value, and the next
+value is the view of the box that the step returns. -/
+def runChain (hi : Nat) : List ChainStep → BeaconState → Option BeaconState
+  | [], st => some st
+  | .slot :: rest, st =>
+    if (sszGet (pureState st) slot).toNat < hi then
+      match slotIteration.run (pureState st) with
+      | .ok ((), st1) => runChain hi rest st1.view
+      | .error _ => none
+    else none
+  | .block sb v :: rest, st =>
+    match (blockStep sb v).run (pureState st) with
+    | .ok ((), st1) => runChain hi rest st1.view
+    | .error _ => none
+
+/-- A successful `runChain` is a `ChainRun`. -/
+theorem ChainRun.of_runChain {hi : Nat} :
+    ∀ (steps : List ChainStep) (st st' : BeaconState), runChain hi steps st = some st' →
+      ChainRun hi steps st st'
+  | [], st, st', h => by
+    cases h
+    exact .nil st
+  | .slot :: rest, st, st', h => by
+    simp only [runChain] at h
+    split at h
+    · rename_i hlt
+      split at h
+      · rename_i st1 hstep
+        have hp := keepsUncached_slotIteration st () st1 hstep
+        rw [hp] at hstep
+        exact .slot hlt (slotIteration_slotStep hstep) (ChainRun.of_runChain rest _ st' h)
+      · cases h
+    · cases h
+  | .block sb v :: rest, st, st', h => by
+    simp only [runChain] at h
+    split at h
+    · rename_i st1 hstep
+      have hp := keepsUncached_blockStep sb v st () st1 hstep
+      rw [hp] at hstep
+      exact .block sb v (blockStep_blockStep hstep) (ChainRun.of_runChain rest _ st' h)
+    · cases h
+
 end
 
 end EthCLSpecs.Proofs.Heze
