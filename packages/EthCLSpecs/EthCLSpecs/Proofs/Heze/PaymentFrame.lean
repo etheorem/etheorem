@@ -27,7 +27,8 @@ fact, so a writer proof can call every function below.
 
 A helper that takes the state as an argument and returns a state value (`increaseBalance`,
 `decreaseBalance`, `applyDeltas`) has a `_ret` lemma too: the value it returns has the view
-of its argument.
+of its argument. `processAttestation` writes the window, so its frame lemma is in
+`PaymentWriters.lean`.
 -/
 
 set_option autoImplicit false
@@ -600,18 +601,6 @@ stays. -/
     (h : (EthCLSpecs.Heze.getAttestationParticipationFlagIndices (StateTransition := HezeRun)
       (pureState u) data d).run (pureState t) = .ok (a, pureState t')) :
     (pureState t').view = (pureState t).view := by
-  frame_invert h
-
-set_option maxHeartbeats 1000000 in
-/-- `processAttestation` keeps the spine fields. It writes the participation flags, one
-entry of the window, and the balance of the proposer. The body threads the state through
-two nested loops, next to counters. The inversion needs more than the default heartbeat
-limit. -/
-@[frame] theorem processAttestation_frame_spine {t t' : BeaconState} {a : PUnit}
-    {att : EthCLSpecs.Heze.Attestation}
-    (h : (EthCLSpecs.Heze.processAttestation (StateTransition := HezeRun) att).run
-      (pureState t) = .ok (a, pureState t')) :
-    spineView (pureState t') = spineView (pureState t) := by
   frame_invert h
 
 end
