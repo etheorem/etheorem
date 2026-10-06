@@ -67,7 +67,8 @@ Re-exports:
   `false` inclusion-list answer (`unsatisfiedPayload_cost`). The `getHead` loop
   continues from EMPTY at the block. A child on EMPTY, with the empty parent requests,
   does not settle the bid. At the epoch substep, the entry of the bid is appended if and
-  only if it reaches the quorum.
+  only if it reaches the quorum. `unsatisfiedPayload_cost_of_run` states the three facts
+  with the third one over the chain from the block to the substep.
 * `EthCLSpecs.Proofs.Heze.CheckpointOrd`: the derived order on `Checkpoint` is transitive
   and returns `.eq` only on equal checkpoints (`instTransOrdCheckpoint`,
   `instLawfulEqOrdCheckpoint`), so `treeMap` meets the map laws at `Checkpoint`.
