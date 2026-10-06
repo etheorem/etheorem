@@ -77,7 +77,11 @@ Seven claims rest on another row:
 
 - The Heze theorem `unsatisfiedPayload_cost` rests on the Heze `shouldExtendPayload`,
   `getPayloadStatusTiebreaker`, `getParentPayloadStatus`,
-  `processParentExecutionPayload`, and `processBuilderPendingPayments` rows.
+  `processParentExecutionPayload`, and `processBuilderPendingPayments` rows. Its form
+  over the chain, `unsatisfiedPayload_cost_of_run`, also rests on the
+  `processBlockHeader` row. It takes the chain as `BlockStep` and `ChainRun`
+  hypotheses. `stateTransition_chainRun` from the `stateTransition` row gives these
+  hypotheses for a run of `stateTransition`, but the theorem does not use it.
 - The Heze `getPayloadStatusTiebreaker` row rests on the Heze `shouldExtendPayload`
   row.
 - The `onExecutionPayloadEnvelope` row rests on the
@@ -302,8 +306,34 @@ No theorem connects the child to the loop, because the model does not include th
 proposer. The default `[ExecutionEngine]` answers `true` for every payload, so a
 recorded `false` needs a non-default engine. `BidPaymentCarried` is a hypothesis about
 the blocks between the bid and the epoch substep. A proposer slashing of the block's
-proposer clears the entry, and a child on the FULL edge settles it. No theorem proves
-the hypothesis from the block transitions.
+proposer clears the entry, and a child on the FULL edge settles it.
+`unsatisfiedPayload_cost_of_run` derives the hypothesis from the chain and states the
+three facts with it. The first block after the bid takes the EMPTY edge. No block carries
+a proposer slashing at the slot of the bid whose proposer is the proposer of the bid's
+block.
+
+`Proofs/Heze/PaymentFrame.lean` proves that the spec functions between the bid and the
+epoch substep keep the state slot, the slot of the latest block header, the cached bid,
+and the payment window (`windowView`), or the first three for a function that writes the
+window (`spineView`). Each lemma takes a run between two plain states, and the tactic
+`frame_invert` (`Proofs/Heze/FrameInvert.lean`) inverts the run one action at a time.
+
+`Proofs/Heze/PaymentWriters.lean` states four writers of the window at one index:
+`processExecutionPayloadBid`, `processAttestation`, `processProposerSlashing`, and
+`settleBuilderPayment` with `applyParentExecutionPayload`. Each lemma gives the
+withdrawal and the recorded proposer at every index. The fifth writer, the epoch
+substep, has its lemmas in `Proofs/Heze/BuilderPendingPayments.lean`. Those lemmas state
+the substep on `pureState` of a value. Every spec function of the run keeps the uncached
+box (`Proofs/Heze/KeepsUncached/`), so the states of the run are plain values and the chain
+applies those lemmas directly. The index facts say when two slots share an index
+(`builderPaymentIndex_inj`).
+
+`Proofs/Heze/PaymentCarried.lean` decomposes `stateTransition` into slot steps and a
+block step (`stateTransition_chainRun`) and proves the invariant `PaymentTracked` along
+such a run. `bidPaymentCarried_of_run` concludes `BidPaymentCarried` at the state that
+`processBuilderPendingPayments` reads. The witness `paymentWitness`
+(`Tests/HezePaymentWitness.lean`) checks every hypothesis on a concrete chain at the
+minimal preset.
 
 `Proofs/Heze/InclusionDichotomy.lean` connects one honest inclusion-list transaction to
 these facts (`inclusionList_dichotomy`). The envelope handler succeeds, and one of two
@@ -365,9 +395,9 @@ The block/slot/epoch-processing spine and the properties that follow directly fr
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `processBlockHeader` | `Heze/Operations.lean:30` | Landed: a successful run checked the header of the state it read. The block has a greater slot, and the parent root of the block is the root of that header (`processBlockHeader_run_ok`). Open: the other asserts and the header write | in progress | `Proofs/Heze/SlotsIncrease.lean` |
-| `stateTransition` | `Heze/Transition.lean:30` | Landed: a successful run passes through a successful `processBlockHeader` run, so some state on the way has a header with a smaller slot than the block, and the parent root of the block is the root of that header (`stateTransition_run_header`). Open: the composition of `processSlots`, `processBlock`, and the root check | in progress | `Proofs/Heze/SlotsIncrease.lean` |
-| `processParentExecutionPayload` | `Heze/Operations.lean:66` | Landed: on the EMPTY edge (the child bid does not extend the cached parent block hash) with the empty parent requests, the run succeeds and returns the input state, so it settles no builder payment. Open: the FULL edge through `applyParentExecutionPayload`, and the two `assert` rejects | in progress | #113, `Proofs/Heze/ParentPayloadEmpty.lean` |
+| `processBlockHeader` | `Heze/Operations.lean:30` | Landed: a successful run checked the header of the state it read. The block has a greater slot, and the parent root of the block is the root of that header (`processBlockHeader_run_ok`). The block is for the state slot and by the proposer of the state, the new header has the block's slot, and the slot, the cached bid, and the payment window stay (`processBlockHeader_run_spine`). Open: the reject paths | in progress | `Proofs/Heze/SlotsIncrease.lean`, `Proofs/Heze/PaymentWriters.lean` |
+| `stateTransition` | `Heze/Transition.lean:30` | Landed: a successful run passes through a successful `processBlockHeader` run, so some state on the way has a header with a smaller slot than the block, and the parent root of the block is the root of that header (`stateTransition_run_header`). A successful run is a run of `processSlots` to the block's slot, then the block step: the signature check, `processBlock`, and the root check (`stateTransition_split`). `processSlots` is one slot step per slot (`processSlots_chainRun`). Open: the reject paths | in progress | `Proofs/Heze/SlotsIncrease.lean`, `Proofs/Heze/PaymentCarried.lean` |
+| `processParentExecutionPayload` | `Heze/Operations.lean:66` | Landed: on the EMPTY edge (the child bid does not extend the cached parent block hash) with the empty parent requests, the run succeeds and returns the input state, so it settles no builder payment. On either edge, a successful run keeps the slot, the header slot, and the cached bid. It keeps the withdrawal and the recorded proposer of every window entry but the entry at the index of the cached bid's slot in the half its epoch picks (`processParentExecutionPayload_run_withdrawal`). The row says nothing about the weights. Open: the request loops beyond the window, and the two `assert` rejects | in progress | #113, `Proofs/Heze/ParentPayloadEmpty.lean`, `Proofs/Heze/PaymentWriters.lean` |
 
 ### Fork-choice correctness
 

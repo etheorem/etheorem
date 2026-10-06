@@ -79,6 +79,9 @@ Re-exports:
   (`slotStartMs_le_of_getCurrentSlot`, `timeIntoSlotMs_lt_of_window`). A state at a root
   comes from an `onBlock` event that passed its clock check
   (`NodeTrace.blockStates_origin`, `onBlock_run_ok_currentSlot`).
+* `EthCLSpecs.Proofs.Heze.FrameInvert`: the `frame_invert` tactic. From a run between two
+  plain states, it proves that the run keeps a view, one action at a time. It closes a
+  call of a spec function by a `@[frame]` lemma of that function, and a loop by an invariant.
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
   equations for `getInclusionListCommittee` and
   `getInclusionListTransactions`
@@ -178,6 +181,20 @@ Re-exports:
   `getHead` by `rfl`, and `getHead_walk_pending_to_empty` takes the walk from the
   pending node to the EMPTY node. The step lemmas hold at any runner state
   (`getCurrentSlot_run_state`).
+* `EthCLSpecs.Proofs.Heze.PaymentCarried`: `stateTransition` as slot steps and a block
+  step (`ChainRun`, `stateTransition_chainRun`). Along such a run, the entry of a bid keeps
+  its withdrawal until the epoch substep that judges it (`bidPaymentCarried_of_run`),
+  when the first child takes the EMPTY edge and no block slashes the bid's proposer at the
+  bid's slot. The states of a run are plain values, and each step runs on their uncached
+  boxes. `runChain` computes a run.
+* `EthCLSpecs.Proofs.Heze.PaymentFrame`: the spec functions between a bid and its epoch
+  substep keep the slot, the header slot, the cached bid, and the payment window
+  (`windowView`), or the first three (`spineView`). Each frame lemma states the view of a
+  run between plain states, and `frame_invert` (`FrameInvert`) proves it by run inversion.
+* `EthCLSpecs.Proofs.Heze.PaymentWriters`: the writers of the payment window at one index
+  (`processExecutionPayloadBid_run_payment`, `processAttestation_run_withdrawal`,
+  `processProposerSlashing_run_withdrawal`, `processParentExecutionPayload_run_withdrawal`),
+  and the index facts (`builderPaymentIndex_inj`).
 * `EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction`: the
   complete run of `recordPayloadInclusionListSatisfaction`
   (`recordPayloadInclusionListSatisfaction_run`), proved with
