@@ -2,6 +2,7 @@ import EthCLSpecs.Gloas.ForkChoice
 import EthCLSpecs.Proofs.StoreRun
 import EthCLSpecs.Proofs.Gloas.InitiateBuilderExit
 import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
+import EthCLSpecs.Proofs.Run
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.ForkChoiceRun`: the fork-choice store monad these proofs would run at
@@ -40,6 +41,7 @@ open EthCLLib.Spec (HasherTag StoreTransitionError MapKind FcMap NestedStateMach
 open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState)
 open EthCLSpecs.Gloas (Store getSlotsSinceGenesis getCurrentSlot State currentEpochOf
   initiateBuilderExit processBuilderPendingPayments)
+open EthCLSpecs.Proofs (pureState)
 open SizzLean.Repr
 open SizzLean.Cache
 
@@ -124,14 +126,12 @@ its proof rests on a `List.forIn` induction over the withdrawals loop, and that 
 not re-entered here. -/
 example [Preset] [HasherTag] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
-    ∀ pre : State,
-      ∃ post : State,
-        runNestedStateTransition pre
-            (processBuilderPendingPayments (StateTransition := GloasRun))
-          = (pure post : m State) ∧
-        ProcessBuilderPendingPaymentsPost pre post :=
-  fun pre =>
-    let ⟨post, hrun, hpost⟩ := processBuilderPendingPayments_run pre
-    ⟨post, runNestedStateTransition_of_ok hrun, hpost⟩
+    ∀ (v : BeaconState),
+      runNestedStateTransition (pureState v)
+          (processBuilderPendingPayments (StateTransition := GloasRun))
+        = (pure (pureState { v with
+              builderPendingWithdrawals := expectedWithdrawals v,
+              builderPendingPayments := expectedPaymentWindow v }) : m State) :=
+  fun v => runNestedStateTransition_of_ok (processBuilderPendingPayments_run v)
 
 end EthCLSpecs.Proofs.Gloas
