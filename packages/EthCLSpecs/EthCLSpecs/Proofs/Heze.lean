@@ -26,6 +26,7 @@ import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 import EthCLSpecs.Proofs.Heze.OnInclusionList
 import EthCLSpecs.Proofs.Heze.OnTickPerSlot
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
+import EthCLSpecs.Proofs.Heze.PayloadRace
 import EthCLSpecs.Proofs.Heze.PayloadTiebreak
 import EthCLSpecs.Proofs.Heze.PaymentCarried
 import EthCLSpecs.Proofs.Heze.PaymentFrame
@@ -49,6 +50,10 @@ included, so a theorem here is about the Heze constant and about no other fork's
 `shouldExtendPayload` is the case that shows it. Gloas declares it and Heze
 overrides it with the FOCIL gate, so the Gloas theorems say nothing about the
 Heze constant.
+
+`PayloadRace` is the exception. It states an abstract model of the weight race at one
+block, and no theorem about a Heze declaration. Later branches
+refine the model to `getAttestationScore` and `getHead`.
 
 Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
@@ -174,6 +179,11 @@ Re-exports:
   (`processParentExecutionPayload_run_of_empty_parent`). Fork choice calls an edge
   EMPTY exactly when the two block hashes differ
   (`getParentPayloadStatus_run_eq_empty_iff`).
+* `EthCLSpecs.Proofs.Heze.PayloadRace`: the race between the EMPTY and the FULL node of a
+  block from slot `N + 2` on. The model has validators, latest messages, and views
+  (`sideWeight`, `ViewOk`). While the honest balance that has voted is more than the
+  adversarial balance plus the boost, every allowed view puts EMPTY strictly ahead
+  (`race_empty_persists`).
 * `EthCLSpecs.Proofs.Heze.PayloadTiebreak`: the payload tiebreak at a block from
   the previous slot, the zero weights, `betterOf`, and the `getHead` loop body
   `headLoopBody` to EMPTY (`getHeadStep_run_eq_empty_of_recorded_unsatisfied`), proved

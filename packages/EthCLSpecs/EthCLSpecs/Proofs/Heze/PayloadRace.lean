@@ -167,4 +167,110 @@ theorem latestSide_ne_full (votes : Nat → Bool) (choice : Nat → Side) (lo : 
     · exact latestSide_ne_full votes choice lo s
         (fun t h1 h2 h3 => h t h1 (Nat.lt_succ_of_lt h2) h3)
 
+/-- In an allowed view, EMPTY holds at least the honest balance that has voted. -/
+theorem honestVoted_le_empty (vs : List Validator) (choice : Validator → Nat → Side)
+    (lo s : Nat) (view : Validator → Side) (hview : ViewOk vs choice lo s view)
+    (hhon : HonestEmpty vs choice lo s) :
+    honestVoted vs lo s ≤ sideWeight vs view .empty := by
+  unfold honestVoted votedBalance
+  apply balanceSum_filter_mono
+  intro w hw hp
+  simp only [Bool.and_eq_true, beq_iff_eq] at hp
+  rw [(hview w hw).1 hp.1, latestSide_empty _ _ _ _ (hhon w hw hp.1) hp.2]
+  simp
+
+/-- In an allowed view, FULL holds at most the adversarial balance that has voted. -/
+theorem full_le_advVoted (vs : List Validator) (choice : Validator → Nat → Side)
+    (lo s : Nat) (view : Validator → Side) (hview : ViewOk vs choice lo s view)
+    (hhon : HonestEmpty vs choice lo s) :
+    sideWeight vs view .full ≤ advVoted vs lo s := by
+  unfold advVoted votedBalance
+  apply balanceSum_filter_mono
+  intro w hw hp
+  simp only [decide_eq_true_eq] at hp
+  have hvot := (hview w hw).2 hp
+  cases hh : w.honest
+  · simp [hvot]
+  · exact absurd ((hview w hw).1 hh ▸ hp) (latestSide_ne_full _ _ _ _ (hhon w hw hh))
+
+/-- The counting step. When every honest vote is on `empty` and the counting inequality
+holds, every allowed view puts EMPTY ahead. -/
+theorem emptyAhead_of_count (vs : List Validator) (choice : Validator → Nat → Side)
+    (lo s boost : Nat) (view : Validator → Side) (hview : ViewOk vs choice lo s view)
+    (hhon : HonestEmpty vs choice lo s)
+    (hcount : advVoted vs lo s + boost < honestVoted vs lo s) :
+    EmptyAhead vs view boost := by
+  have h1 := honestVoted_le_empty vs choice lo s view hview hhon
+  have h2 := full_le_advVoted vs choice lo s view hview hhon
+  unfold EmptyAhead
+  omega
+
+/-- One slot of the induction. An honest validator of slot `s` sees EMPTY ahead in its
+view, so it votes `empty`. -/
+theorem honestEmpty_step (vs : List Validator) (choice : Validator → Nat → Side)
+    (lo s boost : Nat) (view : Validator → Nat → Validator → Side)
+    (hviews : ∀ v ∈ vs, v.honest = true → ViewOk vs choice lo s (view v s))
+    (hfollow : ∀ v ∈ vs, v.honest = true → v.votes s = true →
+      EmptyAhead vs (view v s) boost → choice v s = .empty)
+    (hcount : advVoted vs lo s + boost < honestVoted vs lo s)
+    (hhon : HonestEmpty vs choice lo s) :
+    HonestEmpty vs choice lo (s + 1) := by
+  intro w hw hh t h1 h2 h3
+  by_cases ht : t = s
+  · subst ht
+    exact hfollow w hw hh h3
+      (emptyAhead_of_count vs choice lo t boost _ (hviews w hw hh) hhon hcount)
+  · exact hhon w hw hh t h1 (by omega) h3
+
+/-- The hypotheses of the race other than the counting inequality. -/
+structure RaceHypotheses (vs : List Validator) (choice : Validator → Nat → Side)
+    (lo hi boost : Nat) (view : Validator → Nat → Validator → Side) : Prop where
+  /-- Every honest vote of slot `lo = N + 1` is on `empty`. Tier T1 proves only that no
+  honest vote of slot `N + 1` is on `full`. The vote is on `empty` when the honest head
+  reaches `pending r`, and the setting of the module assumes that for every honest head
+  of the window. -/
+  first : ∀ v ∈ vs, v.honest = true → v.votes lo = true → choice v lo = .empty
+  /-- The view of each honest validator in slot `s` is allowed (`ViewOk`). Synchrony
+  gives this. -/
+  views : ∀ v ∈ vs, v.honest = true → ∀ s, lo < s → s ≤ hi →
+    ViewOk vs choice lo s (view v s)
+  /-- An honest validator votes `empty` when its view puts EMPTY ahead. In the setting
+  of the module, its head reaches `pending r`, and the walk takes the heavier child. -/
+  follow : ∀ v ∈ vs, v.honest = true → ∀ s, lo < s → s < hi → v.votes s = true →
+    EmptyAhead vs (view v s) boost → choice v s = .empty
+
+/-- The outcome of the race at each slot `s` of `(lo, hi]`: every honest vote before `s`
+is on `empty`, and every allowed view puts EMPTY ahead. -/
+def RaceOutcome (vs : List Validator) (choice : Validator → Nat → Side)
+    (lo hi boost : Nat) : Prop :=
+  ∀ s, lo < s → s ≤ hi → HonestEmpty vs choice lo s ∧
+    ∀ view' : Validator → Side, ViewOk vs choice lo s view' → EmptyAhead vs view' boost
+
+/-- EMPTY stays ahead at `r` in every slot of `(lo, hi]`. The hypothesis `hcount` is the
+counting inequality: in every slot `s` of `(lo, hi]`, the honest balance that has voted
+in `[lo, s)` is more than the adversarial balance that has voted there, plus `boost`. -/
+theorem race_empty_persists (vs : List Validator) (choice : Validator → Nat → Side)
+    (lo hi boost : Nat) (view : Validator → Nat → Validator → Side)
+    (h : RaceHypotheses vs choice lo hi boost view)
+    (hcount : ∀ s, lo < s → s ≤ hi → advVoted vs lo s + boost < honestVoted vs lo s) :
+    RaceOutcome vs choice lo hi boost := by
+  intro s hs hsh
+  induction s with
+  | zero => omega
+  | succ s ih =>
+    have hhon : HonestEmpty vs choice lo (s + 1) := by
+      by_cases hsl : s = lo
+      · subst hsl
+        intro w hw hh t h1 h2 h3
+        have : t = s := by omega
+        subst this
+        exact h.first w hw hh h3
+      · have ⟨hprev, _⟩ := ih (by omega) (by omega)
+        exact honestEmpty_step vs choice lo s boost view
+          (fun v hv hh => h.views v hv hh s (by omega) (by omega))
+          (fun v hv hh hvote => h.follow v hv hh s (by omega) (by omega) hvote)
+          (hcount s (by omega) (by omega)) hprev
+    exact ⟨hhon, fun view' hv =>
+      emptyAhead_of_count vs choice lo (s + 1) boost view' hv hhon (hcount _ hs hsh)⟩
+
 end EthCLSpecs.Proofs.Heze.PayloadRace
