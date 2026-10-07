@@ -33,6 +33,7 @@ import EthCLSpecs.Proofs.Heze.OnTickPerSlot
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.PayloadRace
 import EthCLSpecs.Proofs.Heze.PayloadRaceBounds
+import EthCLSpecs.Proofs.Heze.PayloadRaceExec
 import EthCLSpecs.Proofs.Heze.PayloadRaceRefines
 import EthCLSpecs.Proofs.Heze.PayloadRaceWalk
 import EthCLSpecs.Proofs.Heze.PayloadTiebreak
@@ -63,7 +64,7 @@ Heze constant.
 `PayloadRace` and `PayloadRaceBounds` are the exception. They state an abstract model of
 the weight race at one block and no theorem about a Heze declaration.
 `PayloadRaceRefines` ties the model to `getAttestationScore`, and `PayloadRaceWalk` ties it
-to the `getHead` walk.
+to the `getHead` walk. `PayloadRaceExec` states the result on the executable spec.
 
 Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
@@ -224,6 +225,10 @@ Re-exports:
   from honest proposers (`race_empty_persists_honest_proposers`). With the boost of
   `PROPOSER_SCORE_BOOST = 40`, one committee needs more than 70 % honest balance
   (`seventy_percent`).
+* `EthCLSpecs.Proofs.Heze.PayloadRaceExec`: tier T2 on the executable spec
+  (`race_empty_persists_exec`). `RaceSetting` puts every honest head of the window strictly
+  below `pending r`. Under it and the counting inequality, each of these heads lies below
+  `empty r` and not below `full r`, or a root collision exists.
 * `EthCLSpecs.Proofs.Heze.PayloadRaceRefines`: the score of `full r` and of `empty r` is
   `sideWeight` of that side, over the active unslashed validators and the side the store
   gives each one (`score_full_refines`, `score_empty_refines`). One supported node is never
