@@ -11,6 +11,7 @@ import EthCLSpecs.Proofs.Heze.HandlerFrames
 import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
 import EthCLSpecs.Proofs.Heze.HonestDuties
 import EthCLSpecs.Proofs.Heze.HonestHead
+import EthCLSpecs.Proofs.Heze.HonestVoteSide
 import EthCLSpecs.Proofs.Heze.ILStoreOrder
 import EthCLSpecs.Proofs.Heze.InclusionDichotomy
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
@@ -132,6 +133,12 @@ Re-exports:
   the FULL node of `r` and every node below it, or a root collision exists
   (`honestNode_head_avoids_full`). The current slot comes from the wall clock
   (`getCurrentSlot_run_eq_of_window`, `ClockedTrace`).
+* `EthCLSpecs.Proofs.Heze.HonestVoteSide`: an honest vote on a head below `empty r` puts
+  its validator on `empty` in `storeSide` (`honest_supported_below_empty`,
+  `storeSide_empty_of_below`). The `getAncestor` walk from a node below `empty r` returns
+  `empty r`, and its fuel is enough because the chain roots are distinct keys
+  (`getAncestor_run_below_empty`). The chain moves to a second store that holds the same
+  blocks (`NodeBelow.transfer`).
 * `EthCLSpecs.Proofs.Heze.ILStoreOrder`: the IL store after an arrival list in closed
   form (`ilStoreOfArrivals_describes`). The collected transactions depend only on the
   timeliness of the first arrival of each list
