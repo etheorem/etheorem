@@ -27,6 +27,7 @@ import EthCLSpecs.Proofs.Heze.OnInclusionList
 import EthCLSpecs.Proofs.Heze.OnTickPerSlot
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.PayloadRace
+import EthCLSpecs.Proofs.Heze.PayloadRaceBounds
 import EthCLSpecs.Proofs.Heze.PayloadTiebreak
 import EthCLSpecs.Proofs.Heze.PaymentCarried
 import EthCLSpecs.Proofs.Heze.PaymentFrame
@@ -51,9 +52,8 @@ included, so a theorem here is about the Heze constant and about no other fork's
 overrides it with the FOCIL gate, so the Gloas theorems say nothing about the
 Heze constant.
 
-`PayloadRace` is the exception. It states an abstract model of the weight race at one
-block, and no theorem about a Heze declaration. Later branches
-refine the model to `getAttestationScore` and `getHead`.
+`PayloadRace` and `PayloadRaceBounds` are the exception. They state an abstract model of
+the weight race at one block and no theorem about a Heze declaration.
 
 Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
@@ -184,6 +184,11 @@ Re-exports:
   (`sideWeight`, `ViewOk`). While the honest balance that has voted is more than the
   adversarial balance plus the boost, every allowed view puts EMPTY strictly ahead
   (`race_empty_persists`).
+* `EthCLSpecs.Proofs.Heze.PayloadRaceBounds`: the counting inequality of
+  `race_empty_persists` from uniform committees (`race_empty_persists_of_fraction`) and
+  from honest proposers (`race_empty_persists_honest_proposers`). With the boost of
+  `PROPOSER_SCORE_BOOST = 40`, one committee needs more than 70 % honest balance
+  (`seventy_percent`).
 * `EthCLSpecs.Proofs.Heze.PayloadTiebreak`: the payload tiebreak at a block from
   the previous slot, the zero weights, `betterOf`, and the `getHead` loop body
   `headLoopBody` to EMPTY (`getHeadStep_run_eq_empty_of_recorded_unsatisfied`), proved
