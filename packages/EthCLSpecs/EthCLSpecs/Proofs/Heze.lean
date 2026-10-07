@@ -45,6 +45,7 @@ import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 import EthCLSpecs.Proofs.Heze.SlotsIncrease
 import EthCLSpecs.Proofs.Heze.SyncFrame
 import EthCLSpecs.Proofs.Heze.Time
+import EthCLSpecs.Proofs.Heze.TraceFacts
 import EthCLSpecs.Proofs.Heze.TraceRun
 
 /-!
@@ -283,6 +284,10 @@ Re-exports:
 * `EthCLSpecs.Proofs.Heze.Time`: the inherited `computeEpochAtSlot`,
   `computeStartSlotAtEpoch`, and `computeActivationExitEpoch` at Heze. The `Downgrade`
   bridge reaches one fork up, so each theorem takes the Gloas proof term.
+* `EthCLSpecs.Proofs.Heze.TraceFacts`: a key of the block map stays a key along a trace
+  (`NodeTrace.blocks_persist`). An attestation event of a clocked trace ran at a current
+  slot no greater than the current slot of a later query (`ClockedTrace.attestation_slot_le`).
+  An honest signer of a trace is an honest signer of each prefix (`HonestSigner.prefix`).
 * `EthCLSpecs.Proofs.Heze.TraceRun`: a node trace as a function. `runTrace` runs the
   handlers of a trace, and a trace exists exactly when it succeeds
   (`NodeTrace.iff_runTrace`), so a trace is a function of its events (`NodeTrace.det`).
