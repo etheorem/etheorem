@@ -5,6 +5,7 @@ import EthCLSpecs.Proofs.Heze.CensorshipCost
 import EthCLSpecs.Proofs.Heze.CheckpointOrd
 import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.ClockedTrace
+import EthCLSpecs.Proofs.Heze.Equivocators
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.HandlerFrames
 import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
@@ -89,6 +90,11 @@ Re-exports:
   (`slotStartMs_le_of_getCurrentSlot`, `timeIntoSlotMs_lt_of_window`). A state at a root
   comes from an `onBlock` event that passed its clock check
   (`NodeTrace.blockStates_origin`, `onBlock_run_ok_currentSlot`).
+* `EthCLSpecs.Proofs.Heze.Equivocators`: only `onAttesterSlashing` adds to
+  `equivocatingIndices`, and only an index that both attestations carry and whose
+  slashing passes its checks (`onAttesterSlashing_run_ok`, `onAttesterSlashing_new_member`).
+  Along a trace from the anchor, an index that no slashing of the trace marks is never in
+  the set (`honest_not_equivocating`).
 * `EthCLSpecs.Proofs.Heze.FrameInvert`: the `frame_invert` tactic. From a run between two
   plain states, it proves that the run keeps a view, one action at a time. It closes a
   call of a spec function by a `@[frame]` lemma of that function, and a loop by an invariant.
