@@ -6,6 +6,7 @@ import EthCLSpecs.Proofs.Heze.CheckpointOrd
 import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.ClockedTrace
 import EthCLSpecs.Proofs.Heze.Equivocators
+import EthCLSpecs.Proofs.Heze.FullSupport
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.HandlerFrames
 import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
@@ -103,6 +104,10 @@ Re-exports:
 * `EthCLSpecs.Proofs.Heze.FrameInvert`: the `frame_invert` tactic. From a run between two
   plain states, it proves that the run keeps a view, one action at a time. It closes a
   call of a spec function by a `@[frame]` lemma of that function, and a loop by an invariant.
+* `EthCLSpecs.Proofs.Heze.FullSupport`: `getAncestor` returns an ancestor of its start
+  node (`getAncestor_run_above`). So the store puts an index on `full` only when the
+  supported node of its latest message lies below `full r` (`storeSide_full_below`). That
+  message is from a slot after the slot of `r` (`fullSupport_slot_gt`).
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
   equations for `getInclusionListCommittee` and
   `getInclusionListTransactions`
