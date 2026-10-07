@@ -31,6 +31,7 @@ import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.PayloadRace
 import EthCLSpecs.Proofs.Heze.PayloadRaceBounds
 import EthCLSpecs.Proofs.Heze.PayloadRaceRefines
+import EthCLSpecs.Proofs.Heze.PayloadRaceWalk
 import EthCLSpecs.Proofs.Heze.PayloadTiebreak
 import EthCLSpecs.Proofs.Heze.PaymentCarried
 import EthCLSpecs.Proofs.Heze.PaymentFrame
@@ -57,7 +58,8 @@ Heze constant.
 
 `PayloadRace` and `PayloadRaceBounds` are the exception. They state an abstract model of
 the weight race at one block and no theorem about a Heze declaration.
-`PayloadRaceRefines` ties the model to `getAttestationScore`.
+`PayloadRaceRefines` ties the model to `getAttestationScore`, and `PayloadRaceWalk` ties it
+to the `getHead` walk.
 
 Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
@@ -204,6 +206,11 @@ Re-exports:
   `sideWeight` of that side, over the active unslashed validators and the side the store
   gives each one (`score_full_refines`, `score_empty_refines`). One supported node is never
   under both children (`supportsVal_full_empty_exclusive`).
+* `EthCLSpecs.Proofs.Heze.PayloadRaceWalk`: off the decision slot, weight decides the walk at
+  `pending r`. When EMPTY is strictly ahead (`WeightAhead`), the loop body steps to
+  `empty r` (`headLoopBody_run_pending_of_ahead`). The scores and a bound on the proposer
+  score give `WeightAhead` (`weightAhead_of_scores`). The head avoids `full r`, and a head
+  strictly below `pending r` is below `empty r` (`getHead_run_below_empty`).
 * `EthCLSpecs.Proofs.Heze.PayloadTiebreak`: the payload tiebreak at a block from
   the previous slot, the zero weights, `betterOf`, and the `getHead` loop body
   `headLoopBody` to EMPTY (`getHeadStep_run_eq_empty_of_recorded_unsatisfied`), proved
