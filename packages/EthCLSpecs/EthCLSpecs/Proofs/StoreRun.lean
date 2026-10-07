@@ -19,7 +19,10 @@ that pin it live in `Proofs/Gloas/` and `Proofs/Heze/` alike.
 monad, the store-side counterpart of `Proofs/Gloas/Run.lean`'s `GloasRun`.
 
 The generic `StateT`-over-`Except` bind, pure, throw, and `Except.bind` equations
-live in `Proofs/Run.lean`. This file keeps the `ForkChoiceStoreRun` abbreviation
+live in `Proofs/Run.lean`. The same module pins the box on the state side: a
+state-transition theorem states its run on `pureState v`, the uncached box, and that
+`.run` fact is what the nested-machine bridge consumes unchanged. This file keeps the
+`ForkChoiceStoreRun` abbreviation
 and the store-specific `throwArithmetic_run` equation: `throwArithmetic` lifts a
 `StateTransitionError` that the store machine wraps as `.transition`, so the
 generic `run_throw` does not apply.

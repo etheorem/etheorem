@@ -37,7 +37,7 @@ namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag StoreTransitionError MapKind FcMap NestedStateMachine
   runNestedStateTransition runNestedStateTransition_of_ok)
-open EthCLSpecs.Gloas (Preset Config BuilderIndex)
+open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState)
 open EthCLSpecs.Gloas (Store getSlotsSinceGenesis getCurrentSlot State currentEpochOf
   initiateBuilderExit processBuilderPendingPayments)
 open SizzLean.Repr
@@ -86,7 +86,9 @@ theorem getCurrentSlot_run_of_time_eq_genesis
 `EthCLLib/Spec/NestedMachine.lean` proves once, for every action, that the bridge hands a
 successful run's post-state back with `pure`. So carrying a state-machine fact into the
 store machine is function application, and there is nothing left here to state as a
-theorem of the Gloas spec.
+theorem of the Gloas spec. The fact must be a `.run` fact: a contract theorem states
+`act.run (pureState v) = .ok (a, pureState w)` (`Proofs/Run.lean`), and the `runPure`
+value-level reading of the same contract hides the box, so it cannot feed the bridge.
 
 These are `example`s rather than named theorems for that reason: they claim nothing about
 Gloas that `Proofs/Gloas/InitiateBuilderExit.lean` and `Proofs/Gloas/BuilderPendingPayments.lean` do
@@ -99,18 +101,23 @@ the pure one", which `instNestedPure` supplies for `GloasStoreRun map` and for e
 store monad in that column. No store value appears; a state transition's effect does not
 depend on one. -/
 
-/-- `initiateBuilderExit_run_eq` crossing the bridge, by application. -/
+/-- `initiateBuilderExit_run_eq` crossing the bridge, by application. The contract is a
+`.run` fact on `pureState v`, exactly the shape `runNestedStateTransition_of_ok` consumes. -/
 example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
-    ∀ (pre : State) (builderIndex : BuilderIndex),
-      runNestedStateTransition pre
+    ∀ (v : BeaconState) (builderIndex : BuilderIndex),
+      runNestedStateTransition (pureState v)
           (initiateBuilderExit (StateTransition := GloasRun) builderIndex)
-        = (pure (sszModify pre builders[builderIndex.toNat]! as b =>
-            { b with withdrawableEpoch :=
-                currentEpochOf pre + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay })
-          : m State) :=
-  fun pre builderIndex =>
-    runNestedStateTransition_of_ok (initiateBuilderExit_run_eq pre builderIndex)
+        = (pure (pureState
+          { v with builders :=
+              (v.builders.set! builderIndex.toNat
+                { v.builders[builderIndex.toNat]! with
+                  withdrawableEpoch :=
+                    currentEpochOf (pureState v)
+                      + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay }) })
+            : m State) :=
+  fun v builderIndex =>
+    runNestedStateTransition_of_ok (initiateBuilderExit_run_eq v builderIndex)
 
 /-- `processBuilderPendingPayments_run` likewise, and this is the one that shows the point:
 its proof rests on a `List.forIn` induction over the withdrawals loop, and that induction is
