@@ -29,6 +29,7 @@ import EthCLSpecs.Proofs.Heze.OnTickPerSlot
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.PayloadRace
 import EthCLSpecs.Proofs.Heze.PayloadRaceBounds
+import EthCLSpecs.Proofs.Heze.PayloadRaceRefines
 import EthCLSpecs.Proofs.Heze.PayloadTiebreak
 import EthCLSpecs.Proofs.Heze.PaymentCarried
 import EthCLSpecs.Proofs.Heze.PaymentFrame
@@ -55,6 +56,7 @@ Heze constant.
 
 `PayloadRace` and `PayloadRaceBounds` are the exception. They state an abstract model of
 the weight race at one block and no theorem about a Heze declaration.
+`PayloadRaceRefines` ties the model to `getAttestationScore`.
 
 Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
@@ -192,6 +194,10 @@ Re-exports:
   from honest proposers (`race_empty_persists_honest_proposers`). With the boost of
   `PROPOSER_SCORE_BOOST = 40`, one committee needs more than 70 % honest balance
   (`seventy_percent`).
+* `EthCLSpecs.Proofs.Heze.PayloadRaceRefines`: the score of `full r` and of `empty r` is
+  `sideWeight` of that side, over the active unslashed validators and the side the store
+  gives each one (`score_full_refines`, `score_empty_refines`). One supported node is never
+  under both children (`supportsVal_full_empty_exclusive`).
 * `EthCLSpecs.Proofs.Heze.PayloadTiebreak`: the payload tiebreak at a block from
   the previous slot, the zero weights, `betterOf`, and the `getHead` loop body
   `headLoopBody` to EMPTY (`getHeadStep_run_eq_empty_of_recorded_unsatisfied`), proved
