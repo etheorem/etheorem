@@ -724,7 +724,9 @@ What the bridge preserves is proved with it, once for every action.
 store-machine statement `runNestedStateTransition pre step = pure post`, with `_of_error`
 and the two `eval` siblings covering the rest. Carrying a state-machine theorem into a
 fork-choice proof is then function application, which is what the two `example`s at the
-end of `Proofs/Gloas/ForkChoiceRun.lean` show.
+end of `Proofs/Gloas/ForkChoiceRun.lean` show. The fact must be a `.run` fact: the pure
+theorems state the run on `pureState v` (`EthCLSpecs/Proofs/Run.lean`), and their
+`runPure` value-level reading hides the box, so it cannot feed the bridge.
 
 ```lean
 def onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do

@@ -1,20 +1,23 @@
 import EthCLSpecs.Gloas.Operations
 import EthCLSpecs.Proofs.Gloas.Run
+import EthCLSpecs.Proofs.Run
+import SizzLean.Proofs.UncachedBox
 import SizzLean.Proofs.SSZListSet
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.InitiateBuilderExit`: `initiateBuilderExit`'s effect on the builder registry
 
-`initiateBuilderExit_run_eq` is the whole-transition equation (the run equals the
-source-level `sszModify` on `builders`). `initiateBuilderExit_run_builders` projects it
-onto the builder registry as a single `SSZList.set!`, and holds for every index. The
-in-range and out-of-range theorems read that one equation through
-`SizzLean.Proofs.SSZListSet`.
+`initiateBuilderExit_run_eq` is the whole-transition contract: the run on the uncached
+box of `v` returns the uncached box of `{ v with builders := … }`, the source-level
+write on `builders`, as one value. The contract states the run at the box, in `.run`
+form, because that is the shape the fork-choice bridge consumes. The readings state the
+`runPure` form, which `runPure_of_run_ok` derives from the contract.
+`initiateBuilderExit_run_inRange` reads it through `SizzLean.Proofs.SSZListSet` as the
+per-index reads, and `initiateBuilderExit_run_outOfRange` reads it as the no-op it is:
+for an out-of-range index the run returns `v` itself.
 
-Postconditions on the registry are stated through `sszGet`, the *observable* read. The
-cached (`TreeBacked`) and uncached flavours of `State` agree observationally while
-differing structurally, so an out-of-range run has to be framed as agreement on
-`sszGet builders` and cannot be claimed as `state' = state`.
+Statements bind plain `BeaconState` values and never bind a boxed `State`, so no
+theorem branches on the box flavour.
 
 The out-of-range case is Lean-only behavior with no PySpec counterpart. The pinned
 Gloas spec uses equivalent indexing syntax, yet the Python runtime rejects an
@@ -37,102 +40,76 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag)
-open EthCLSpecs.Gloas (Preset Config BuilderIndex Epoch)
+open EthCLSpecs.Gloas (Preset Config BuilderIndex Epoch BeaconState)
 open EthCLSpecs.Gloas (minimal mainnet minimalConfig mainnetConfig)
-open EthCLSpecs.Gloas (initiateBuilderExit State currentEpochOf)
+open EthCLSpecs.Gloas (initiateBuilderExit currentEpochOf)
 open SizzLean.Proofs (sszListSet!_size sszListSet!_getElem!_self sszListSet!_getElem!_ne
-  sszListSet!_eq_of_size_le)
-open SizzLean.Repr
-open SizzLean.Cache
+  sszListSet!_eq_of_size_le view_uncachedBox)
 
-/-! ## The concrete-run theorems
+/-! ## The whole-transition equation
 
-`initiateBuilderExit_run_eq` is the whole-transition equation: the run equals
-`.ok ((), _)` of the source-level `sszModify` on `builders`. `initiateBuilderExit_run_builders`
-projects that onto the registry, and the in-range / out-of-range theorems read the
-projection through the `SSZList.set!` lemmas. -/
+`initiateBuilderExit_run_eq` is the contract: the run returns `v` with only
+`builders[builderIndex.toNat]!` written. `initiateBuilderExit_run_inRange` and
+`initiateBuilderExit_run_outOfRange` read that one equation through the `SSZList.set!`
+lemmas, so the range split happens at the read. -/
 
-/-- Exact whole-transition equation for `initiateBuilderExit`. The returned state
-is the original state with only `builders[builderIndex.toNat]!` updated through
-`sszModify`; every other top-level field is carried through. For an out-of-range
-index the underlying list write is a no-op, although the cached representation
-need not be structurally identical to the pre-state. -/
+/-- Exact whole-transition equation for `initiateBuilderExit`, at the box the pure
+configuration runs: the step on `pureState v` returns the uncached box of the original
+value with only `builders[builderIndex.toNat]!` written through the source-level write.
+Stated at the box level so the fork-choice bridge consumes it by application;
+`runPure_of_run_ok` derives the `runPure` form. For an out-of-range index the underlying
+list write is a no-op, so the whole result is the input value
+(`initiateBuilderExit_run_outOfRange`). -/
 @[characterizes EthCLSpecs.Gloas.initiateBuilderExit]
 theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
-    ∀ (state : State) (builderIndex : BuilderIndex),
-      (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state =
-        .ok ((), sszModify state builders[builderIndex.toNat]! as b =>
-          { b with withdrawableEpoch :=
-              currentEpochOf state + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay }) := by
-  intro state builderIndex
+    ∀ (v : BeaconState) (builderIndex : BuilderIndex),
+      (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run (pureState v)
+        = .ok ((), pureState
+          { v with builders :=
+              (v.builders.set! builderIndex.toNat
+                { v.builders[builderIndex.toNat]! with
+                  withdrawableEpoch :=
+                    currentEpochOf (pureState v)
+                      + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay }) }) := by
+  intro v builderIndex
   rfl
 
-/-- **The registry effect, at every index.** The post-state's `builders` is the
-pre-state's with one `SSZList.set!` applied, writing `currentEpochOf` read from the
-*pre*-state (the `do`-block's `← get` runs before the write) plus
-`MIN_BUILDER_WITHDRAWABILITY_DELAY`. No range hypothesis: `set!` is total, and past
-the end it is the identity. The two theorems below read this equation through
-`SSZList.set!`'s own lemmas, so the range split happens once, at the read. This
-characterizes no other top-level `BeaconState` field. -/
-theorem initiateBuilderExit_run_builders [Preset] [HasherTag] [Config] :
-    ∀ (state : State) (builderIndex : BuilderIndex),
-      ∃ state' : State,
-        (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-            = .ok ((), state')
-        ∧ sszGet state' builders
-            = (sszGet state builders).set! builderIndex.toNat
-                { sszGet state builders[builderIndex.toNat]! with
-                  withdrawableEpoch :=
-                    currentEpochOf state
-                      + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay } := by
-  intro state builderIndex
-  refine ⟨_, initiateBuilderExit_run_eq state builderIndex, ?_⟩
-  -- `State` is `SSZ.Box`'s two-constructor sum; both flavours' `.view` reduce the
-  -- emitted write to the same `SSZList.set!`.
-  rcases state with t | t <;> rfl
-
-/-- **In range.** Running `initiateBuilderExit builderIndex` never rejects, and
-`builders[builderIndex.toNat]!.withdrawableEpoch` becomes the pre-state's
-`currentEpochOf` plus `MIN_BUILDER_WITHDRAWABILITY_DELAY`, with every other builder and
-the registry's `.size` unchanged. The index-level convenience form of
-`initiateBuilderExit_run_builders`. -/
+/-- **In range.** Running `initiateBuilderExit builderIndex` never rejects, and the
+written builder reads back with `withdrawableEpoch` set to the pre-state's
+`currentEpochOf` plus `MIN_BUILDER_WITHDRAWABILITY_DELAY`, while every other builder and
+the registry's `.size` are unchanged. The index-level reading of
+`initiateBuilderExit_run_eq` through `SSZList.set!`'s own lemmas. -/
 theorem initiateBuilderExit_run_inRange [Preset] [HasherTag] [Config] :
-    ∀ (state : State) (builderIndex : BuilderIndex),
-      builderIndex.toNat < (sszGet state builders).size →
-      ∃ state' : State,
-        (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-            = .ok ((), state')
-        ∧ sszGet state' builders[builderIndex.toNat]!
-            = { sszGet state builders[builderIndex.toNat]! with
+    ∀ (v : BeaconState) (builderIndex : BuilderIndex),
+      builderIndex.toNat < v.builders.size →
+      ∃ w : BeaconState,
+        runPure (initiateBuilderExit (StateTransition := GloasRun) builderIndex) v
+            = .ok ((), w)
+        ∧ w.builders[builderIndex.toNat]!
+            = { v.builders[builderIndex.toNat]! with
                 withdrawableEpoch :=
-                  currentEpochOf state + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay }
+                  currentEpochOf (pureState v)
+                    + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay }
         ∧ (∀ j : Nat, j ≠ builderIndex.toNat →
-              sszGet state' builders[j]! = sszGet state builders[j]!)
-        ∧ (sszGet state' builders).size = (sszGet state builders).size := by
-  intro state builderIndex hidx
-  obtain ⟨state', hrun, hbuilders⟩ := initiateBuilderExit_run_builders state builderIndex
-  refine ⟨state', hrun, ?_, fun j hj => ?_, ?_⟩
-  · rw [hbuilders]; exact sszListSet!_getElem!_self _ _ _ hidx
-  · rw [hbuilders]; exact sszListSet!_getElem!_ne _ _ _ _ (Ne.symm hj)
-  · rw [hbuilders]; exact sszListSet!_size _ _ _
+              w.builders[j]! = v.builders[j]!)
+        ∧ w.builders.size = v.builders.size := by
+  intro v builderIndex hidx
+  refine ⟨_, runPure_of_run_ok (initiateBuilderExit_run_eq v builderIndex), ?_, fun j hj => ?_, ?_⟩
+  · exact sszListSet!_getElem!_self _ _ _ hidx
+  · exact sszListSet!_getElem!_ne _ _ _ _ (Ne.symm hj)
+  · exact sszListSet!_size _ _ _
 
 /-- **Out of range.** Running `initiateBuilderExit builderIndex` still never rejects
-(`[i]!` is total), and the whole observable registry is carried through unchanged: the
-write is a genuine no-op at the `SSZList` level, so no read at any index, nor `.size`,
-can tell the two states' registries apart. Stated as `sszGet` agreement because
-`state' = state` is false for the cached flavour; see the module docstring. -/
+(`[i]!` is total), and the write is a genuine no-op: the run returns the pre-state
+value itself, so no read of any field can tell the two apart. -/
 theorem initiateBuilderExit_run_outOfRange [Preset] [HasherTag] [Config] :
-    ∀ (state : State) (builderIndex : BuilderIndex),
-      ¬ builderIndex.toNat < (sszGet state builders).size →
-      ∃ state' : State,
-        (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-            = .ok ((), state')
-        ∧ sszGet state' builders = sszGet state builders := by
-  intro state builderIndex hidx
-  obtain ⟨state', hrun, hbuilders⟩ := initiateBuilderExit_run_builders state builderIndex
-  refine ⟨state', hrun, ?_⟩
-  rw [hbuilders]
-  exact sszListSet!_eq_of_size_le _ _ _ (Nat.le_of_not_lt hidx)
+    ∀ (v : BeaconState) (builderIndex : BuilderIndex),
+      ¬ builderIndex.toNat < v.builders.size →
+      runPure (initiateBuilderExit (StateTransition := GloasRun) builderIndex) v
+        = .ok ((), v) := by
+  intro v builderIndex hidx
+  rw [runPure_of_run_ok (initiateBuilderExit_run_eq v builderIndex),
+    sszListSet!_eq_of_size_le _ _ _ (Nat.le_of_not_lt hidx)]
 
 /-! ## Generic conditional no-overflow
 
@@ -144,7 +121,7 @@ necessarily **conditional**. Its condition is a hypothesis the caller must estab
 elsewhere, say from a slot/epoch bound on `mainnet`, since the function itself carries
 no run-time guard. -/
 
-/-- Core Lean's `UInt64.toNat_add` gives `(a + b).toNat = (a.toNat + b.toNat) % 2 ^ 64`
+/-- Core's `UInt64.toNat_add` gives `(a + b).toNat = (a.toNat + b.toNat) % 2 ^ 64`
 unconditionally; under the stated bound, `Nat.mod_eq_of_lt` drops the `%` and the
 `UInt64` sum's `.toNat` is exactly the `Nat` sum, with no wraparound. -/
 private theorem epoch_add_minBuilderWithdrawabilityDelay_no_wrap [Config] {epoch : Epoch} :
@@ -155,35 +132,35 @@ private theorem epoch_add_minBuilderWithdrawabilityDelay_no_wrap [Config] {epoch
   simp [UInt64.toNat_add, Nat.mod_eq_of_lt h]
 
 /-- **Function-level corollary.** Chaining `initiateBuilderExit_run_inRange`'s
-written-field equation with `epoch_add_minBuilderWithdrawabilityDelay_no_wrap`: under
+written-builder equation with `epoch_add_minBuilderWithdrawabilityDelay_no_wrap`: under
 the epoch-bound hypothesis (read from the *pre*-state's `currentEpochOf`, as in the
 unconditional in-range theorem), the post-state builder's `withdrawableEpoch.toNat` is
 exactly the natural-number sum `currentEpochOf(pre-state).toNat +
 MIN_BUILDER_WITHDRAWABILITY_DELAY.toNat`, with no silent wrap through `2 ^ 64`. -/
 theorem initiateBuilderExit_run_inRange_no_wrap [Preset] [HasherTag] [Config] :
-    ∀ (state : State) (builderIndex : BuilderIndex),
-      builderIndex.toNat < (sszGet state builders).size →
-      (currentEpochOf state).toNat
+    ∀ (v : BeaconState) (builderIndex : BuilderIndex),
+      builderIndex.toNat < v.builders.size →
+      (currentEpochOf (pureState v)).toNat
           + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay.toNat < 2 ^ 64 →
-      ∃ state' : State,
-        (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-            = .ok ((), state')
-        ∧ (sszGet state' builders[builderIndex.toNat]!).withdrawableEpoch.toNat
-            = (currentEpochOf state).toNat
+      ∃ w : BeaconState,
+        runPure (initiateBuilderExit (StateTransition := GloasRun) builderIndex) v
+            = .ok ((), w)
+        ∧ w.builders[builderIndex.toNat]!.withdrawableEpoch.toNat
+            = (currentEpochOf (pureState v)).toNat
               + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay.toNat := by
-  intro state builderIndex hidx hbound
-  obtain ⟨state', hrun, hview, -, -⟩ := initiateBuilderExit_run_inRange state builderIndex hidx
-  exact ⟨state', hrun,
+  intro v builderIndex hidx hbound
+  obtain ⟨w, hrun, hview, -, -⟩ := initiateBuilderExit_run_inRange v builderIndex hidx
+  exact ⟨w, hrun,
     by rw [hview]; exact epoch_add_minBuilderWithdrawabilityDelay_no_wrap hbound⟩
 
 /-! ## Shipped preset/config pairs: unconditional
 
 `initiateBuilderExit_run_inRange_no_wrap`'s `hbound` premise is conditional because a
 `[Config]` instance is free, in general, to pick `minBuilderWithdrawabilityDelay` large
-enough to make `currentEpochOf state + minBuilderWithdrawabilityDelay` overflow
+enough to make `currentEpochOf v + minBuilderWithdrawabilityDelay` overflow
 `2 ^ 64`. The two pairs the repository actually ships (the minimal and mainnet
 preset/config pairs used by the shipped Gloas interfaces) don't: `slotsPerEpoch` bounds
-`currentEpochOf state` well below `2 ^ 64` for *any* `state.slot : UInt64`, so the sum
+`currentEpochOf v` well below `2 ^ 64` for *any* `v.slot : UInt64`, so the sum
 with the concrete `minBuilderWithdrawabilityDelay` (`2` on minimal, `8192` on mainnet)
 can never reach `2 ^ 64`.
 Each corollary below discharges `hbound` from that arithmetic fact alone, with no epoch
@@ -193,54 +170,54 @@ transition. -/
 
 /-- **Minimal preset/config (`minimal`, `minimalConfig`), unconditional.**
 `slotsPerEpoch = 8`, `minBuilderWithdrawabilityDelay = 2`:
-`currentEpochOf state ≤ (2 ^ 64 - 1) / 8`, so the sum with `2` is nowhere near
-`2 ^ 64`, for every `state`. -/
+`currentEpochOf v ≤ (2 ^ 64 - 1) / 8`, so the sum with `2` is nowhere near
+`2 ^ 64`, for every `v`. -/
 theorem initiateBuilderExit_run_inRange_no_wrap_minimal [HasherTag] :
     letI : Preset := minimal
     letI : Config := minimalConfig
-    ∀ (state : State) (builderIndex : BuilderIndex),
-      builderIndex.toNat < (sszGet state builders).size →
-      ∃ state' : State,
-        (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-            = .ok ((), state')
-        ∧ (sszGet state' builders[builderIndex.toNat]!).withdrawableEpoch.toNat
-            = (currentEpochOf state).toNat
+    ∀ (v : BeaconState) (builderIndex : BuilderIndex),
+      builderIndex.toNat < v.builders.size →
+      ∃ w : BeaconState,
+        runPure (initiateBuilderExit (StateTransition := GloasRun) builderIndex) v
+            = .ok ((), w)
+        ∧ w.builders[builderIndex.toNat]!.withdrawableEpoch.toNat
+            = (currentEpochOf (pureState v)).toNat
               + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay.toNat := by
   letI : Preset := minimal
   letI : Config := minimalConfig
-  intro state builderIndex hidx
-  refine @initiateBuilderExit_run_inRange_no_wrap minimal _ minimalConfig state builderIndex hidx ?_
-  have hslot := UInt64.toNat_lt (sszGet state slot)
+  intro v builderIndex hidx
+  refine @initiateBuilderExit_run_inRange_no_wrap minimal _ minimalConfig v builderIndex hidx ?_
+  have hslot := UInt64.toNat_lt v.slot
   have hspe : (@Preset.slotsPerEpoch minimal : Nat) = 8 := rfl
   have hdelay : (@Config.minBuilderWithdrawabilityDelay minimalConfig).toNat = 2 := rfl
-  simp only [currentEpochOf, EthCLSpecs.Gloas.computeEpochAtSlot,
+  simp only [currentEpochOf, view_uncachedBox, EthCLSpecs.Gloas.computeEpochAtSlot,
     EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay, EthCLSpecs.Gloas.Const.slotsPerEpoch,
     UInt64.toNat_div, UInt64.toNat_ofNat', hspe, hdelay, Nat.reducePow, Nat.reduceMod]
   omega
 
 /-- **Mainnet preset/config (`mainnet`, `mainnetConfig`), unconditional.**
 `slotsPerEpoch = 32`, `minBuilderWithdrawabilityDelay = 8192`:
-`currentEpochOf state ≤ (2 ^ 64 - 1) / 32`, so the sum with `8192` is nowhere near
-`2 ^ 64`, for every `state`. -/
+`currentEpochOf v ≤ (2 ^ 64 - 1) / 32`, so the sum with `8192` is nowhere near
+`2 ^ 64`, for every `v`. -/
 theorem initiateBuilderExit_run_inRange_no_wrap_mainnet [HasherTag] :
     letI : Preset := mainnet
     letI : Config := mainnetConfig
-    ∀ (state : State) (builderIndex : BuilderIndex),
-      builderIndex.toNat < (sszGet state builders).size →
-      ∃ state' : State,
-        (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-            = .ok ((), state')
-        ∧ (sszGet state' builders[builderIndex.toNat]!).withdrawableEpoch.toNat
-            = (currentEpochOf state).toNat
+    ∀ (v : BeaconState) (builderIndex : BuilderIndex),
+      builderIndex.toNat < v.builders.size →
+      ∃ w : BeaconState,
+        runPure (initiateBuilderExit (StateTransition := GloasRun) builderIndex) v
+            = .ok ((), w)
+        ∧ w.builders[builderIndex.toNat]!.withdrawableEpoch.toNat
+            = (currentEpochOf (pureState v)).toNat
               + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay.toNat := by
   letI : Preset := mainnet
   letI : Config := mainnetConfig
-  intro state builderIndex hidx
-  refine @initiateBuilderExit_run_inRange_no_wrap mainnet _ mainnetConfig state builderIndex hidx ?_
-  have hslot := UInt64.toNat_lt (sszGet state slot)
+  intro v builderIndex hidx
+  refine @initiateBuilderExit_run_inRange_no_wrap mainnet _ mainnetConfig v builderIndex hidx ?_
+  have hslot := UInt64.toNat_lt v.slot
   have hspe : (@Preset.slotsPerEpoch mainnet : Nat) = 32 := rfl
   have hdelay : (@Config.minBuilderWithdrawabilityDelay mainnetConfig).toNat = 8192 := rfl
-  simp only [currentEpochOf, EthCLSpecs.Gloas.computeEpochAtSlot,
+  simp only [currentEpochOf, view_uncachedBox, EthCLSpecs.Gloas.computeEpochAtSlot,
     EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay, EthCLSpecs.Gloas.Const.slotsPerEpoch,
     UInt64.toNat_div, UInt64.toNat_ofNat', hspe, hdelay, Nat.reducePow, Nat.reduceMod]
   omega

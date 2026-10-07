@@ -34,7 +34,11 @@ resolves a handler's nested state machine from the store's monad, and at the pur
 monad it resolves to this one. So every theorem below is a theorem about the step running
 under fork choice too. Carrying one over is function application:
 `runNestedStateTransition_of_ok` (`EthCLLib/Spec/NestedMachine.lean`) takes a step's
-`.run` fact and returns the store-machine statement, for any action.
+`.run` fact and returns the store-machine statement, for any action. This is why a
+contract theorem states the run on `pureState v`, at the box, in `.run` form: that is
+the shape the bridge consumes. `runPure` (`Proofs/Run.lean`) pins the box and gives the
+value-level reading of the same contract; a theorem never runs an action on a `State`
+it bound itself.
 
 The `StateT`-over-`Except` bind, throw, and `Except` facts that every run proof rewrites
 with live in `Proofs/Run.lean`, at any state and error type. Gloas and Heze call sites

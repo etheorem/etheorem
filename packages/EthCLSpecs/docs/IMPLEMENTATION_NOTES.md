@@ -816,10 +816,12 @@ separation.
   `default` corollary for the first region.
 
 - **`Proofs/Gloas/InitiateBuilderExit.lean`** gives the whole-transition
-  `initiateBuilderExit_run_eq` equation and projects it onto the builder registry
-  as one unconditional `SSZList.set!`. The in-range and out-of-range theorems read
-  that projection through `SizzLean.Proofs.SSZListSet`, so the range split happens
-  at the read rather than in a second transition proof. It also proves that the
+  `initiateBuilderExit_run_eq` contract at the box: the run on `pureState v` returns
+  `pureState` of a value whose `builders` carries one unconditional `SSZList.set!`
+  write. The in-range and out-of-range theorems state the `runPure` form of that
+  contract and read it through `SizzLean.Proofs.SSZListSet`, so the range split happens
+  at the read rather than in a second transition proof; out of range the run returns
+  the pre-state value itself. It also proves that the
   withdrawability-delay addition does not wrap for the shipped minimal and
   mainnet configurations.
 
@@ -827,7 +829,16 @@ separation.
   `Except` facts every pure runner rewrites with (`run_bind`, `run_pure`,
   `run_throw`, `except_bind_ok`, `except_bind_error`). They are stated at an
   arbitrary state and error type, so they apply to `GloasRun` and
-  `ForkChoiceStoreRun`. The module sits beside the per-fork directories
+  `ForkChoiceStoreRun`. The same module pins the box:
+  `pureState v` is the uncached box of the plain value, `runPure act v` runs an
+  action on it and returns the result as a value. A contract theorem states the
+  run at the box level, `act.run (pureState v) = .ok (a, pureState w)`, which
+  the nested-machine bridge consumes by application, and `runPure_of_run_ok`
+  derives the `runPure` form from it. `runPure_eq`, `runPure_pure`,
+  `runPure_throw` are the remaining `rfl` facts proofs rewrite with. There is
+  no `runPure_bind`: a bind law would have to know every intermediate box is
+  uncached, so a composite body goes through `runPure_eq` to the box level.
+  The module sits beside the per-fork directories
   because the facts belong to no fork.
 
 - **`Proofs/Gloas/Run.lean`** names `GloasRun`, the pure `StateT`/`Except`

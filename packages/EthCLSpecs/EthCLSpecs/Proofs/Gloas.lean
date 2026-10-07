@@ -41,9 +41,9 @@ Re-exports:
   (`getPtcElseOffset_lt_same_slot`).
 * `EthCLSpecs.Proofs.Gloas.InitializePtcWindow`: the seeded `ptcWindow`'s two
   regions (`initializePtcWindow`).
-* `EthCLSpecs.Proofs.Gloas.InitiateBuilderExit`: `initiateBuilderExit_run_eq`, its
-  builder-registry `SSZList.set!` projection, and the in-range / out-of-range
-  reads of that projection, with conditional and shipped-configuration no-wrap
+* `EthCLSpecs.Proofs.Gloas.InitiateBuilderExit`: `initiateBuilderExit_run_eq`, the
+  whole-transition equation over the plain `BeaconState`, with the in-range /
+  out-of-range reads of that equation and conditional and shipped-configuration no-wrap
   corollaries for the written `withdrawableEpoch`.
 * `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: literal and semantic
   characterizations of `isValidIndexedPayloadAttestation`, including its adjacent
