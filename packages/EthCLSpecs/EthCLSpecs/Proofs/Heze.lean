@@ -1,3 +1,4 @@
+import EthCLSpecs.Proofs.Heze.AttestationScore
 import EthCLSpecs.Proofs.Heze.BlockRoot
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
 import EthCLSpecs.Proofs.Heze.CensorshipCost
@@ -59,6 +60,8 @@ Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Heze.AttestationScore`: the Heze `getAttestationScore` is the `Nat` sum
+  of the effective balances of the counted active indices (`getAttestationScore_run_ok`).
 * `EthCLSpecs.Proofs.Heze.BlockRoot`: a block root is the root of its header
   (`htr_eq_htr_headerOf`), under the hypothesis that every `combine` returns 32 bytes.
   The root of a 32-byte vector is its bytes (`hashTreeRoot_bytes32`).
