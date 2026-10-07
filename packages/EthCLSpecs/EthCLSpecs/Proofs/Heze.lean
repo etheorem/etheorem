@@ -23,6 +23,7 @@ import EthCLSpecs.Proofs.Heze.KeepsUncached.Slots
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Withdrawals
 import EthCLSpecs.Proofs.Heze.ListLengths
 import EthCLSpecs.Proofs.Heze.StorePure
+import EthCLSpecs.Proofs.Heze.LatestMessages
 import EthCLSpecs.Proofs.Heze.NodeTrace
 import EthCLSpecs.Proofs.Heze.NodeViews
 import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
@@ -167,6 +168,14 @@ Re-exports:
   `processEpoch`, and for `processSlots` and `stateTransition`
   (`keepsUncached_stateTransition`). A run of the state transition that starts on an
   uncached box ends on an uncached box.
+* `EthCLSpecs.Proofs.Heze.LatestMessages`: only `onAttestation` writes the latest messages
+  (`onAttestation_run_ok`). An entry at the end of a trace comes from an attestation event of
+  the trace. That event checked the block and the slot of the vote (`NodeTrace.latest_source`,
+  `AttWrite`). The slot of an entry never decreases (`NodeTrace.latest_mono`). Under
+  `QsortMem`, an event delivers the vote of each attesting index that is not an equivocator
+  (`onAttestation_delivers`). An attesting index is in a committee of the vote slot that the
+  committee bits name, and `getBeaconCommittee` returns that committee as `.ok`
+  (`getAttestingIndices_mem`).
 * `EthCLSpecs.Proofs.Heze.ListLengths`: along a chain run, the balances, the two
   participation lists, and the inactivity scores keep the length of `validators` when they
   have it at the start (`ChainRun.listLengths`). Each spec function on the way has a lemma
