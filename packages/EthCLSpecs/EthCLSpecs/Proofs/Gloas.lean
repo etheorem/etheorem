@@ -1,3 +1,4 @@
+import EthCLSpecs.Proofs.Gloas.AttestationScore
 import EthCLSpecs.Proofs.Gloas.BuilderIndex
 import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 import EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid
@@ -30,6 +31,9 @@ and collide with nothing.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Gloas.AttestationScore`: `getAttestationScore` is the `Nat` sum of the
+  effective balances of the counted active indices (`getAttestationScore_run_ok`). The fold
+  is restated with the per-index test `supports`, which reads no runner state.
 * `EthCLSpecs.Proofs.Gloas.BuilderIndex`: the builder-index flag round-trip
   (`isBuilderIndex`, `toBuilderIndex`, `convertBuilderIndexToValidatorIndex`).
 * `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: both outcomes of
