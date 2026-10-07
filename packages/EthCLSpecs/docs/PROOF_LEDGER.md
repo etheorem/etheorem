@@ -168,7 +168,7 @@ Functions whose output only moves in one direction as their input grows or accum
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
 | `getWeight` | `Gloas/ForkChoice.lean:424-436` | Weight only grows as more attestations accumulate for a node | proposed |  |
-| `onAttesterSlashing` | `Gloas/ForkChoice.lean:1031-1041` | The set of equivocating indices only grows, never shrinks | proposed |  |
+| `onAttesterSlashing` | `Gloas/ForkChoice.lean:1031-1041` | The set of equivocating indices only grows | proposed |  |
 | `updateCheckpoints` | `Gloas/ForkChoice.lean:576-578` | Each justified/finalized checkpoint either remains unchanged or advances to its candidate, so its epoch never decreases, and no other Store field moves | proved | #30, `Proofs/Gloas/UpdateCheckpoints.lean` |
 
 ### State-transition correctness

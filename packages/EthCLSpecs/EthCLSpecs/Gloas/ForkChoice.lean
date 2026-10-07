@@ -315,22 +315,31 @@ callers inherit the same rounding. -/
 forkdef committeeWeight (state : State) : Gwei :=
   getTotalActiveBalance state / UInt64.ofNat Const.slotsPerEpoch
 
-/-- `calculate_committee_fraction(state, committee_percent)`. -/
-forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) : Gwei :=
-  committeeWeight state * committeePercent / 100
+/-- `calculate_committee_fraction(state, committee_percent)`. The product
+`committee_weight * committee_percent` is a `uint64` op that raises past `2^64`, so it is
+`checkedMul`, and the function throws. -/
+forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) :
+    StoreTransition Gwei := do
+  let product ← checkedMul (committeeWeight state) committeePercent
+    "calculate_committee_fraction: committee_weight * committee_percent"
+  pure (product / 100)
 
-/-- `get_proposer_score`. -/
+/-- `get_proposer_score`. The product `committee_weight * PROPOSER_SCORE_BOOST` is a `uint64`
+op that raises past `2^64`, so it is `checkedMul`. -/
 forkdef getProposerScore (store : Store map) : StoreTransition Gwei := do
   -- `checkpoint_states` is `Checkpoint`-keyed, so `getOrThrowKey` with the checkpoint's
   -- own root as the (diagnostic) error key; the spec reads it as a plain `Dict`.
   let state ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  pure (committeeWeight state * UInt64.ofNat Const.proposerScoreBoost / 100)
+  let product ← checkedMul (committeeWeight state) (UInt64.ofNat Const.proposerScoreBoost)
+    "get_proposer_score: committee_weight * PROPOSER_SCORE_BOOST"
+  pure (product / 100)
 
 /-- `get_attestation_score(store, node, state)`: the effective balance of the
 unslashed active validators whose supported node is an ancestor of `node`. The validator
-reads are at active-validator indices (in range by construction); the fold is monadic only
-to bind `getSupportedNode` / `isAncestor`, which can reject. -/
+reads use active-validator indices, so they are in range by construction. The fold is
+monadic because `getSupportedNode` and `isAncestor` can reject. The sum uses `checkedAdd`,
+because pyspec's `Gwei(sum(...))` raises `ValueError` past `2^64`. -/
 forkdef getAttestationScore (store : Store map) (node : ForkChoiceNode) (state : State) :
     StoreTransition Gwei := do
   let active := getActiveValidatorIndices state (currentEpochOf state)
@@ -344,7 +353,8 @@ forkdef getAttestationScore (store : Store map) (node : ForkChoiceNode) (state :
         if store.equivocatingIndices.contains i then pure acc
         else
           let supported ← getSupportedNode store lm
-          if ← isAncestor store supported node then pure (acc + (validators[idx]!).effectiveBalance)
+          if ← isAncestor store supported node then
+            checkedAdd acc (validators[idx]!).effectiveBalance "get_attestation_score: sum"
           else pure acc
 
 /-- `is_head_weak(store, head_root)`: the head's attestation weight, including the
@@ -352,9 +362,10 @@ equivocator weight from its slot's committees, is below the reorg threshold. -/
 forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool := do
   let justifiedState ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
+  -- pyspec computes the threshold before the head reads, so its overflow raises first.
+  let reorgThreshold ← calculateCommitteeFraction justifiedState Const.reorgHeadWeightThreshold
   let headState ← FcMap.getOrThrow store.blockStates headRoot
   let headBlock ← FcMap.getOrThrow store.blocks headRoot
-  let reorgThreshold := calculateCommitteeFraction justifiedState Const.reorgHeadWeightThreshold
   let epoch := computeEpochAtSlot headBlock.slot
   let headNode : ForkChoiceNode := .pending headRoot
   let baseWeight ← getAttestationScore store headNode justifiedState
@@ -367,11 +378,15 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
   -- `getActiveValidatorIndices` on the same state it reads, so they are in range.
   let headWeight ← (List.range (getCommitteeCountPerSlot headState epoch)).foldlM (init := baseWeight) fun acc index => do
     let committee := getBeaconCommittee headState headBlock.slot index
-    committee.foldlM (init := acc) fun a i =>
+    -- Python sums the equivocator balances of the committee as `Gwei(sum(...))`. Then it
+    -- adds that sum with `head_weight +=`. Both `uint64` ops raise past `2^64`, so the model
+    -- checks both, in the same order.
+    let equivocatorWeight ← committee.foldlM (init := (0 : Gwei)) fun a i =>
       if store.equivocatingIndices.contains i then do
         let v ← sszGetIdx validators i.toNat
-        pure (a + v.effectiveBalance)
+        checkedAdd a v.effectiveBalance "is_head_weak: sum of equivocator balances"
       else pure a
+    checkedAdd acc equivocatorWeight "is_head_weak: head_weight += equivocator weight"
   pure (headWeight < reorgThreshold)
 
 /-- `is_parent_strong(store, root)`: the parent node's attestation weight exceeds the
@@ -379,8 +394,9 @@ reorg parent threshold. -/
 forkdef isParentStrong (store : Store map) (root : Root) : StoreTransition Bool := do
   let justifiedState ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
+  -- pyspec computes the threshold before the block read, so its overflow raises first.
+  let parentThreshold ← calculateCommitteeFraction justifiedState Const.reorgParentWeightThreshold
   let block ← FcMap.getOrThrow store.blocks root
-  let parentThreshold := calculateCommitteeFraction justifiedState Const.reorgParentWeightThreshold
   -- The spec scores the parent at PENDING "regardless of its payload status"
   -- (`ForkChoiceNode(root=block.parent_root, payload_status=PAYLOAD_STATUS_PENDING)`);
   -- it never calls `get_parent_payload_status` here, so no `blocks[parent_root]` read
@@ -432,7 +448,7 @@ forkdef getWeight (store : Store map) (node : ForkChoiceNode) : StoreTransition 
       let proposerBoostNode : ForkChoiceNode := .pending store.proposerBoostRoot
       if ← isAncestor store proposerBoostNode node then
         let proposerScore ← getProposerScore store
-        pure (attestationScore + proposerScore)
+        checkedAdd attestationScore proposerScore "get_weight: attestation_score + proposer_score"
       else pure attestationScore
 
 /-! ## Filtered block tree + head -/

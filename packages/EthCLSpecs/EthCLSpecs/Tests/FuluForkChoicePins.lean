@@ -169,4 +169,28 @@ private def pinProposerHeadBoostRejects : Bool :=
   | _ => false
 example : pinProposerHeadBoostRejects = true := by native_decide
 
+/-- `getWeight` rejects (`.arithmetic`) when the attestation sum passes `2^64`. Two active
+validators of effective balance `2^63` both hold a latest message for `pinRoot`, so the
+second `checkedAdd` of the fold overflows. pyspec's `Gwei(sum(...))` raises `ValueError`
+there, uncaught by the reference runner. A wrapping fold would return `0`. `State` is
+FFI-backed, so the pin uses `native_decide`. -/
+private def pinWeightOverflowThrows : Bool :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let v : Validator :=
+    { (default : Validator) with exitEpoch := Const.farFutureEpoch, effectiveBalance := 2 ^ 63 }
+  let bs : @EthCLSpecs.Fulu.BeaconState minimal :=
+    { (default : @EthCLSpecs.Fulu.BeaconState minimal) with validators := sszOfArray #[v, v] }
+  let state : State := SSZ.FastBox bs
+  let message : LatestMessage := { epoch := 0, root := pinRoot }
+  let store := { pinStore with
+      blocks := FcMap.insert FcMap.empty pinRoot (default : @EthCLSpecs.Fulu.BeaconBlock minimal)
+      checkpointStates := FcMap.insert FcMap.empty pinStore.justifiedCheckpoint state
+      latestMessages := FcMap.insert (FcMap.insert FcMap.empty 0 message) 1 message }
+  match (getWeight (map := treeMap) store pinRoot : PinM Gwei).run store with
+  | .error (.transition (.arithmetic _)) _ => true
+  | _ => false
+example : pinWeightOverflowThrows = true := by native_decide
+
 end EthCLSpecs.Tests.FuluForkChoicePins

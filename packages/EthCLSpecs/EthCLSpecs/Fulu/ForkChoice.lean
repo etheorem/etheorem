@@ -154,11 +154,14 @@ both callers inherit the same rounding. -/
 forkdef committeeWeight (state : State) : Gwei :=
   getTotalActiveBalance state / UInt64.ofNat Const.slotsPerEpoch
 
-/-- `get_proposer_score`. -/
+/-- `get_proposer_score`. The product `committee_weight * PROPOSER_SCORE_BOOST` is a `uint64`
+op that raises past `2^64`, so it is `checkedMul`. -/
 forkdef getProposerScore (store : Store map) : StoreTransition Gwei := do
   let state ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  pure (committeeWeight state * UInt64.ofNat Const.proposerScoreBoost / 100)
+  let product ← checkedMul (committeeWeight state) (UInt64.ofNat Const.proposerScoreBoost)
+    "get_proposer_score: committee_weight * PROPOSER_SCORE_BOOST"
+  pure (product / 100)
 
 /-- `get_weight(store, root)`: attestation balance for `root`, plus the proposer
 boost if `root` is an ancestor of the boosted block. The `checkpoint_states` /
@@ -173,13 +176,10 @@ forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := do
   -- branch outright on a zero boost root. Hoisting the read made an empty-`latest_messages`
   -- store, exactly what `get_forkchoice_store` hands back, raise `.missingKey` where the
   -- reference returns `Gwei(0)`. The Gloas twin already defers it.
-  -- Two non-conversions here are deliberate, since the reads and sums around them did convert.
-  -- `validators[idx]!` stays unchecked: `idx` comes from `getActiveValidatorIndices` on the same
-  -- `state` the array belongs to, so it is in range by construction, and the Gloas
-  -- `getAttestationScore` fold keeps it for that reason too. The two `Gwei` sums below stay bare
-  -- `+` rather than `checkedAdd` because they are operands of the weight path, which converts as
-  -- one piece: `getTotalBalance` underneath still wraps, so checking these alone would move a
-  -- wrong number around instead of catching it.
+  -- `validators[idx]!` stays unchecked. `idx` comes from `getActiveValidatorIndices` on the
+  -- same `state`, so it is in range by construction. The Gloas `getAttestationScore` fold keeps
+  -- it for the same reason. The two `Gwei` sums below use `checkedAdd`: pyspec raises
+  -- `ValueError` past `2^64`.
   let active := getActiveValidatorIndices state (currentEpochOf state)
   let validators := sszGet state validators
   let attestationScore ← active.foldlM (init := (0 : Gwei)) fun acc i => do
@@ -192,14 +192,16 @@ forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := do
         else
           let block ← FcMap.getOrThrow store.blocks root
           let anc ← getAncestor store lm.root block.slot
-          if anc == root then pure (acc + (validators[idx]!).effectiveBalance) else pure acc
+          if anc == root then
+            checkedAdd acc (validators[idx]!).effectiveBalance "get_attestation_score: sum"
+          else pure acc
   if store.proposerBoostRoot == fcZeroRoot then pure attestationScore
   else
     let block ← FcMap.getOrThrow store.blocks root
     let anc ← getAncestor store store.proposerBoostRoot block.slot
     if anc == root then
       let ps ← getProposerScore store
-      pure (attestationScore + ps)
+      checkedAdd attestationScore ps "get_weight: attestation_score + proposer_score"
     else pure attestationScore
 
 /-- `filter_block_tree`: collect the viable branches into `acc` (a key set),
@@ -290,9 +292,14 @@ where
 
 /-! ## Proposer-head reorg logic (`get_proposer_head`) -/
 
-/-- `calculate_committee_fraction`: a percentage of the per-slot committee weight. -/
-forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) : Gwei :=
-  committeeWeight state * committeePercent / 100
+/-- `calculate_committee_fraction`: a percentage of the per-slot committee weight. The
+product `committee_weight * committee_percent` is a `uint64` op that raises past `2^64`, so
+it is `checkedMul`, and the function throws. -/
+forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) :
+    StoreTransition Gwei := do
+  let product ← checkedMul (committeeWeight state) committeePercent
+    "calculate_committee_fraction: committee_weight * committee_percent"
+  pure (product / 100)
 
 /-- `is_head_late`: the head block did not arrive before the attestation deadline.
 `store.block_timeliness[head_root]` is a raising `Dict` read. -/
@@ -331,8 +338,10 @@ forkdef isProposingOnTime (store : Store map) : StoreTransition Bool := do
 forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool := do
   let js ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
+  -- pyspec computes the threshold before the weight, so its overflow raises first.
+  let threshold ← calculateCommitteeFraction js Const.reorgHeadWeightThreshold
   let hw ← getWeight store headRoot
-  pure (hw < calculateCommitteeFraction js Const.reorgHeadWeightThreshold)
+  pure (hw < threshold)
 
 /-- `is_parent_strong`: the head's parent weight exceeds the reorg-parent threshold.
 Phase0 `is_parent_strong` reads `store.blocks[root].parent_root` (raising) and scores
@@ -341,9 +350,11 @@ synthetic PENDING node with no block read, so no throw belongs on that path. -/
 forkdef isParentStrong (store : Store map) (root : Root) : StoreTransition Bool := do
   let js ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
+  -- pyspec computes the threshold before the block read, so its overflow raises first.
+  let threshold ← calculateCommitteeFraction js Const.reorgParentWeightThreshold
   let b ← FcMap.getOrThrow store.blocks root
   let pw ← getWeight store b.parentRoot
-  pure (pw > calculateCommitteeFraction js Const.reorgParentWeightThreshold)
+  pure (pw > threshold)
 
 /-- `is_proposer_equivocation`: more than one block from the head's proposer at its
 slot. `store.blocks[root]` raises on a miss. -/
