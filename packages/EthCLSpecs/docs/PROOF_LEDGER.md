@@ -403,10 +403,24 @@ wrote it, and that event checked the block and the slot of the vote.
 `Proofs/Heze/FullSupport.lean` shows that a validator on `full` has a latest message from a
 slot after the slot of `r`. `Proofs/Heze/PayloadRaceExec.lean` composes the pieces into
 `race_empty_persists_exec`. `RaceSetting` puts every honest head of the window strictly below
-`pending r`. Under it and the counting inequality of `race_empty_persists`, each of these
-heads lies below `empty r` and not below `full r`, or a root collision exists. The sort in
-`on_attestation` is the hypothesis `QsortMem`, because core Lean states no lemma about
-`Array.qsort`.
+`pending r`. Every proposer score is the proposer score of the justified state
+(`Proofs/Heze/ProposerScore.lean`). Under the setting and the counting inequality of
+`race_empty_persists`, each of these heads lies below `empty r` and not below `full r`, or a
+root collision exists. The sort in `on_attestation` is the hypothesis `QsortMem`, because
+core Lean states no lemma about `Array.qsort`.
+
+`Proofs/Heze/PayloadRaceDecision.lean` replaces two premises of `race_empty_persists_exec`
+with other premises. Under the premises of tier T1 (`DecisionSetting`), the honest heads of
+slot `N + 1` avoid `full r`, or a root collision exists (`RaceSetting.Core.first_of_decision`).
+`Proofs/Heze/PayloadRaceCount.lean` derives the counting inequality from the committees of
+the vote slots (`RaceCommittees`). Each validator votes in at most one of these slots. The
+first committee beats the proposer score, and each later committee has at least as much
+honest as adversarial balance. `race_empty_persists_composed` states tier T2 under
+`RaceSetting.Core`, `DecisionSetting`, and `RaceCommittees`. For a window inside one epoch
+whose committees are the `.ok` committees of one state (`EpochCommittees`), the committee
+partition of `getBeaconCommittee` gives "at most one slot" (`EpochCommittees.oneVoteIn`).
+`EpochCommittees` carries the three preset facts of the partition as fields.
+`RaceCommittees.of_epoch` keeps only the two balance conditions as premises.
 
 The theorem has these hypotheses, bundled as `DichotomyHypotheses`:
 
