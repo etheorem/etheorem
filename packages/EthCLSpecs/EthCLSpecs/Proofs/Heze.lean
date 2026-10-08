@@ -35,6 +35,7 @@ import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.PayloadRace
 import EthCLSpecs.Proofs.Heze.PayloadRaceBounds
 import EthCLSpecs.Proofs.Heze.PayloadRaceCount
+import EthCLSpecs.Proofs.Heze.PayloadRaceDecision
 import EthCLSpecs.Proofs.Heze.PayloadRaceExec
 import EthCLSpecs.Proofs.Heze.PayloadRaceRefines
 import EthCLSpecs.Proofs.Heze.PayloadRaceWalk
@@ -68,7 +69,8 @@ Heze constant.
 `PayloadRace` and `PayloadRaceBounds` are the exception. They state an abstract model of
 the weight race at one block and no theorem about a Heze declaration.
 `PayloadRaceRefines` ties the model to `getAttestationScore`, and `PayloadRaceWalk` ties it
-to the `getHead` walk. `PayloadRaceExec` states the result on the executable spec.
+to the `getHead` walk. `PayloadRaceExec` states the result on the executable spec, and
+`PayloadRaceDecision` joins it to tier T1.
 
 Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
@@ -97,9 +99,10 @@ Re-exports:
 * `EthCLSpecs.Proofs.Heze.Churn`: the inherited `reserveChurn`, which takes the Gloas proof
   terms, and run theorems for the two inherited churn callers.
 * `EthCLSpecs.Proofs.Heze.ClockedTrace`: a node trace on the wall clock
-  (`ClockedTrace`). The current slot and the time into the slot in terms of the wall time
-  (`slotStartMs_le_of_getCurrentSlot`, `timeIntoSlotMs_lt_of_window`). A state at a root
-  comes from an `onBlock` event that passed its clock check
+  (`ClockedTrace`). It states the current slot and the time into the slot in terms of the
+  wall time (`slotStartMs_le_of_getCurrentSlot`, `slot_window_of_getCurrentSlot`,
+  `timeIntoSlotMs_lt_of_window`). A state at a root comes from an `onBlock` event that
+  passed its clock check
   (`NodeTrace.blockStates_origin`, `onBlock_run_ok_currentSlot`).
 * `EthCLSpecs.Proofs.Heze.Committees`: the inherited committee functions
   partition the active set per epoch (`getBeaconCommittee_partition`).
@@ -239,10 +242,15 @@ Re-exports:
   (`EpochCommittees.oneVoteIn`, `RaceCommittees.of_epoch`). More than
   70 % honest balance in the first committee gives the second condition
   (`raceCommittees_first_of_fraction`).
+* `EthCLSpecs.Proofs.Heze.PayloadRaceDecision`: tier T2 with the decision slot and the count
+  discharged (`race_empty_persists_composed`). `DecisionSetting` holds the premises of tier
+  T1. Under it, the honest heads of slot `N + 1` avoid `full r`, or a root collision exists
+  (`RaceSetting.Core.first_of_decision`).
 * `EthCLSpecs.Proofs.Heze.PayloadRaceExec`: tier T2 on the executable spec
-  (`race_empty_persists_exec`). `RaceSetting` puts every honest head of the window strictly
-  below `pending r`. Under it and the counting inequality, each of these heads lies below
-  `empty r` and not below `full r`, or a root collision exists.
+  (`race_empty_persists_exec`). `RaceSetting.Core` puts every honest head of the window
+  strictly below `pending r`, and `RaceSetting` adds the first slot. Under it and the
+  counting inequality, each of these heads lies below `empty r` and not below `full r`, or
+  a root collision exists.
 * `EthCLSpecs.Proofs.Heze.PayloadRaceRefines`: the score of `full r` and of `empty r` is
   `sideWeight` of that side, over the active unslashed validators and the side the store
   gives each one (`score_full_refines`, `score_empty_refines`). One supported node is never
