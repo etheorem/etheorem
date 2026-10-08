@@ -146,32 +146,15 @@ open EthCLLib.Proofs (ForkChoiceStoreRun.throwArithmetic_run run_bind run_pure
 
 omit [Preset] [HasherTag] [Config] in
 /-- The overflow guard of `checkedMul e 1000`: `e` is zero, or the truncating product
-divides back to `1000`. Then `e * 1000` fits in `UInt64`. -/
+divides back to `1000`. Then `e * 1000` fits in `UInt64` (`toNat_mul_of_guard`). -/
 theorem toNat_mul_1000_lt (e : UInt64) (h : e = 0 ∨ e * 1000 / e = 1000) :
     e.toNat * 1000 < 2 ^ 64 := by
-  rcases h with h | h
-  · simp [h]
-  · have hpos : 0 < e.toNat := by
-      rcases Nat.eq_zero_or_pos e.toNat with h0 | h0
-      · have : e = 0 := UInt64.toNat_inj.mp (by simpa using h0)
-        subst this
-        simp at h
-      · exact h0
-    have hn := congrArg UInt64.toNat h
-    simp only [UInt64.toNat_div, UInt64.toNat_mul] at hn
-    -- `p` is the truncated product. It divides back to `1000`, so it is at least
-    -- `1000 * e`, and it never exceeds the true product.
-    generalize hp : e.toNat * (1000 : UInt64).toNat % 2 ^ 64 = p at hn
-    have hlo : 1000 * e.toNat ≤ p := by
-      have := (Nat.le_div_iff_mul_le hpos).mp (Nat.le_of_eq hn.symm)
-      simpa [Nat.mul_comm] using this
-    have hhi : p ≤ e.toNat * 1000 := by
-      rw [← hp]
-      exact Nat.le_trans (Nat.mod_le _ _) (by simp)
-    have hlt : p < 2 ^ 64 := by
-      rw [← hp]
-      exact Nat.mod_lt _ (by decide)
-    omega
+  have hg : ¬ ((e != 0 && e * 1000 / e != 1000) = true) := by
+    rcases h with h | h <;> simp [h]
+  have hmul := EthCLLib.Proofs.toNat_mul_of_guard e 1000 hg
+  have hlt := (e * 1000).toNat_lt
+  rw [hmul] at hlt
+  exact hlt
 
 /-- A successful `timeIntoSlotMs` read: the store time is not before genesis, and the value
 is the elapsed milliseconds modulo the slot length. -/
