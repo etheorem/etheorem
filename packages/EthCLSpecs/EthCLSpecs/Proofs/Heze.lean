@@ -34,6 +34,7 @@ import EthCLSpecs.Proofs.Heze.OnTickPerSlot
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.PayloadRace
 import EthCLSpecs.Proofs.Heze.PayloadRaceBounds
+import EthCLSpecs.Proofs.Heze.PayloadRaceCount
 import EthCLSpecs.Proofs.Heze.PayloadRaceExec
 import EthCLSpecs.Proofs.Heze.PayloadRaceRefines
 import EthCLSpecs.Proofs.Heze.PayloadRaceWalk
@@ -230,6 +231,14 @@ Re-exports:
   from honest proposers (`race_empty_persists_honest_proposers`). With the boost of
   `PROPOSER_SCORE_BOOST = 40`, one committee needs more than 70 % honest balance
   (`seventy_percent`).
+* `EthCLSpecs.Proofs.Heze.PayloadRaceCount`: the counting inequality of
+  `race_empty_persists_exec` from the committees of the window (`RaceCommittees.count`).
+  Each validator votes in at most one slot. The first committee beats the proposer score,
+  and each later committee has at least as much honest as adversarial balance. For a window
+  inside one epoch, the committee partition gives the first condition
+  (`EpochCommittees.oneVoteIn`, `RaceCommittees.of_epoch`). More than
+  70 % honest balance in the first committee gives the second condition
+  (`raceCommittees_first_of_fraction`).
 * `EthCLSpecs.Proofs.Heze.PayloadRaceExec`: tier T2 on the executable spec
   (`race_empty_persists_exec`). `RaceSetting` puts every honest head of the window strictly
   below `pending r`. Under it and the counting inequality, each of these heads lies below
