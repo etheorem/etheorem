@@ -70,7 +70,7 @@ theorem verifyExecutionPayloadEnvelope_pureState :
 omit [DataAvailability] in
 /-- A successful verification on `pureState v` returns `pureState v`: the
 `isOk` reading of `verifyExecutionPayloadEnvelope_pureState`. -/
-theorem verifyExecutionPayloadEnvelope_pureState_of_isOk :
+private theorem verifyExecutionPayloadEnvelope_pureState_of_isOk :
     ∀ (v : BeaconState) (signedEnv : SignedExecutionPayloadEnvelope),
       (verifyExecutionPayloadEnvelope (pureState v) signedEnv).isOk = true →
       verifyExecutionPayloadEnvelope (pureState v) signedEnv = .ok (pureState v) := by

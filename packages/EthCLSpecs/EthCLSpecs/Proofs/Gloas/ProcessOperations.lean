@@ -167,7 +167,7 @@ theorem processOperations_nonempty_deposits_error :
 set_option linter.unusedSectionVars false in
 /-- The six family loops keep the flavour, one fact per loop, each through
 `keepsUncached_forM_array` and its handler's own `KeepsUncached` lemma. -/
-theorem keepsUncached_forM_proposerSlashings [Preset] [HasherTag] [Config] [CryptoBackend]
+private theorem keepsUncached_forM_proposerSlashings [Preset] [HasherTag] [Config] [CryptoBackend]
     (body : BeaconBlockBody) :
     KeepsUncached (processOperationsForM body.proposerSlashings processProposerSlashing) :=
   keepsUncached_forM_array processProposerSlashing
@@ -175,7 +175,7 @@ theorem keepsUncached_forM_proposerSlashings [Preset] [HasherTag] [Config] [Cryp
 
 set_option linter.unusedSectionVars false in
 set_option linter.unusedSectionVars false in
-theorem keepsUncached_forM_attesterSlashings [Preset] [HasherTag] [Config] [CryptoBackend]
+private theorem keepsUncached_forM_attesterSlashings [Preset] [HasherTag] [Config] [CryptoBackend]
     (body : BeaconBlockBody) :
     KeepsUncached (processOperationsForM body.attesterSlashings processAttesterSlashing) :=
   keepsUncached_forM_array processAttesterSlashing
@@ -183,7 +183,7 @@ theorem keepsUncached_forM_attesterSlashings [Preset] [HasherTag] [Config] [Cryp
 
 set_option linter.unusedSectionVars false in
 set_option linter.unusedSectionVars false in
-theorem keepsUncached_forM_attestations [Preset] [HasherTag] [Config] [CryptoBackend]
+private theorem keepsUncached_forM_attestations [Preset] [HasherTag] [Config] [CryptoBackend]
     (body : BeaconBlockBody) :
     KeepsUncached (processOperationsForM body.attestations processAttestation) :=
   keepsUncached_forM_array processAttestation
@@ -191,7 +191,7 @@ theorem keepsUncached_forM_attestations [Preset] [HasherTag] [Config] [CryptoBac
 
 set_option linter.unusedSectionVars false in
 set_option linter.unusedSectionVars false in
-theorem keepsUncached_forM_voluntaryExits [Preset] [HasherTag] [Config] [CryptoBackend]
+private theorem keepsUncached_forM_voluntaryExits [Preset] [HasherTag] [Config] [CryptoBackend]
     (body : BeaconBlockBody) :
     KeepsUncached (processOperationsForM body.voluntaryExits processVoluntaryExit) :=
   keepsUncached_forM_array processVoluntaryExit
@@ -199,7 +199,7 @@ theorem keepsUncached_forM_voluntaryExits [Preset] [HasherTag] [Config] [CryptoB
 
 set_option linter.unusedSectionVars false in
 set_option linter.unusedSectionVars false in
-theorem keepsUncached_forM_blsToExecutionChanges [Preset] [HasherTag] [Config] [CryptoBackend]
+private theorem keepsUncached_forM_blsToExecutionChanges [Preset] [HasherTag] [Config] [CryptoBackend]
     (body : BeaconBlockBody) :
     KeepsUncached (processOperationsForM body.blsToExecutionChanges
       processBlsToExecutionChange) :=
@@ -208,7 +208,7 @@ theorem keepsUncached_forM_blsToExecutionChanges [Preset] [HasherTag] [Config] [
 
 set_option linter.unusedSectionVars false in
 set_option linter.unusedSectionVars false in
-theorem keepsUncached_forM_payloadAttestations [Preset] [HasherTag] [Config] [CryptoBackend]
+private theorem keepsUncached_forM_payloadAttestations [Preset] [HasherTag] [Config] [CryptoBackend]
     (body : BeaconBlockBody) :
     KeepsUncached (processOperationsForM body.payloadAttestations processPayloadAttestation) :=
   keepsUncached_forM_array processPayloadAttestation
