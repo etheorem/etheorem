@@ -948,11 +948,10 @@ separation.
   recorder-produced runner state. `.error err` contains no post-state.
   `onExecutionPayloadEnvelope_run_eq_of_successful_checks` restates the
   successful branch as the original store updated by three same-root
-  `FcMap.insert` expressions. The recorder's slot-zero and collector
-  outcomes remain characterized by
-  `recordPayloadInclusionListSatisfaction_run`. See the
-  `onExecutionPayloadEnvelope` row in `PROOF_LEDGER.md` for lookup-after-insert
-  and composition with the read-side theorems.
+  `FcMap.insert` expressions. `recordPayloadInclusionListSatisfaction_run`
+  characterizes the recorder's slot-zero and collector outcomes. The
+  `proposed` `onExecutionPayloadEnvelope` row in `PROOF_LEDGER.md` lists
+  lookup-after-insert and composition with the read-side theorems.
 
 - **`Proofs/Gloas/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
   single record update, which doubles as the frame condition that no other Store

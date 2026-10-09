@@ -22,9 +22,8 @@ value as the base of its final `set`, discarding the recorder-produced runner
 state.
 
 Lookup-after-insert, contains-after-insert, `isPayloadVerified`, and
-composition with `shouldExtendPayload` remain separate semantic obligations.
-The generic `FcMap` interface provides no insert/lookup or insert/contains
-law.
+composition with `shouldExtendPayload` remain open. The generic `FcMap`
+interface provides no insert/lookup or insert/contains law.
 -/
 
 set_option autoImplicit false
@@ -50,8 +49,8 @@ Lookup and availability failures are `.assert` errors. Verification and
 recorder errors propagate unchanged. After recorder success, the handler
 performs its final `set` on the returned store, discarding the
 recorder-produced runner state.
-The recorder's slot-zero, collector-error, and successful outcomes are
-characterized separately by `recordPayloadInclusionListSatisfaction_run`.
+`recordPayloadInclusionListSatisfaction_run` characterizes the recorder's
+slot-zero, collector-error, and successful outcomes.
 -/
 @[characterizes EthCLSpecs.Heze.onExecutionPayloadEnvelope]
 theorem onExecutionPayloadEnvelope_run :
