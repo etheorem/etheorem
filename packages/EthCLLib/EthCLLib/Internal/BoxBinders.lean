@@ -8,7 +8,7 @@ import EthCLLib.Internal.Capture
 a statement binds `v : BeaconState`, never a boxed `State`. This module is the
 walk behind the check that enforces the rule. The proof-coverage report
 (`scripts/ProofCoverage.lean`) runs it over every fork-body theorem, and the
-fixture pins (`EthCLSpecs.Tests.BoxBinderPins`) run it over eleven statements
+fixture pins (`EthCLSpecs.Tests.BoxBinderPins`) run it over thirteen statements
 of known answers, so the walk cannot rot to "always pass" unnoticed.
 
 A statement enters the scope of the check when it names a constant under a
@@ -132,13 +132,23 @@ where
       | .letE _ _ _ b _ => isPropShapedAux env fuel b
       | _ => false
 
+/-- The logical connectives whose arguments are propositions. The walk descends
+into the arguments of one of these in proposition position; every other
+application head walks its arguments as program values, so a function type
+passed as an explicit type argument is never read as a quantifier. Implication
+needs no entry here: `p → q` is a `forallE`, and the `forallE` case already
+carries proposition position through its body. -/
+def propConnectives : Array Name := #[`And, `Or, `Iff, `Not]
+
 /-- The boxed-state quantifiers of a theorem statement, in walk order.
 
 `e` is the statement of a theorem, so the walk starts in proposition position
 and tracks the position structurally from there: a `forallE` body stays in
 proposition position, an `Exists` body is one by construction, and a
 hypothesis is entered only when `isPropShaped` confirmed it as a proposition.
-Lambdas inside program terms stay closed. -/
+The arguments of a logical connective (`propConnectives`) stay in proposition
+position; the arguments of any other application are program values, even in
+proposition position. Lambdas inside program terms stay closed. -/
 def boxQuantifiers (env : Environment) (e : Expr) : Array (Name × Expr) :=
   boxQuantifiersAux env 400 e true #[]
 where
@@ -164,11 +174,13 @@ where
             | _ => acc
           | none => acc
         else
-          -- A logical connective's arguments are propositions or program
-          -- values; both are walked, and the lambda case closes program text.
-          let acc := boxQuantifiersAux env fuel e.getAppFn inProp acc
+          -- Arguments of a logical connective are propositions; arguments of
+          -- anything else are program values, even in proposition position.
+          -- Both are walked, and the lambda case closes program text.
+          let inArg := inProp && propConnectives.any (e.getAppFn.isConstOf ·)
+          let acc := boxQuantifiersAux env fuel e.getAppFn inArg acc
           e.getAppArgs.foldl (init := acc) fun acc a =>
-            boxQuantifiersAux env fuel a inProp acc
+            boxQuantifiersAux env fuel a inArg acc
       | .lam _ _ _ _ => acc
       | .letE _ _ v b _ =>
         boxQuantifiersAux env fuel b inProp (boxQuantifiersAux env fuel v inProp acc)
