@@ -139,9 +139,10 @@ def forkProofsRoot : Name := `EthCLSpecs.Proofs
 /-- The module prefix that makes a theorem part of the SSZ proof set. -/
 def sszProofsRoot : Name := `SizzLean.Proofs
 
-/-- The module prefix of the framework's generic proof toolkit: the runners' run
-facts, the pure box helpers, and the flavour-preservation lemmas the fork proofs
-build on. It feeds the axiom audit only. The coverage tiers, the `characterizes`
+/-- The module prefix of the framework's proof modules: the generic toolkit the
+fork proofs build on (the runners' run facts, the pure box helpers, and the
+flavour-preservation lemmas), plus the framework's own spec proofs
+(`LawfulFcMap`, `MerkleBranch`). It feeds the axiom audit only. The coverage tiers, the `characterizes`
 checks, and the plain-value check grade fork-body proofs, and the framework
 declares no `forkdef`, so none of them applies to these modules. -/
 def frameworkProofsRoot : Name := `EthCLLib.Proofs
@@ -178,8 +179,8 @@ def trim (s : String) : String := s.trimAscii.toString
 
 /-! ## Loading the environment
 
-The report needs the fork bodies, their proofs, the framework's generic proof
-toolkit, and the `SizzLean` proofs. The `SizzLean` proof modules have no
+The report needs the fork bodies, their proofs, the framework's proof modules,
+and the `SizzLean` proofs. The `SizzLean` proof modules have no
 aggregator module, so the script discovers them from the directory and imports
 each one. -/
 
@@ -240,7 +241,7 @@ def isWritten (env : Environment) (name : Name) : Bool :=
 
 /-- Every written theorem whose module sits under one of `roots`, in one pass
 over the environment. The pass is the expensive part of the report, so the
-fork-body tiers, the toolkit axiom audit, and the `SizzLean` matrix share it. -/
+fork-body tiers, the framework axiom audit, and the `SizzLean` matrix share it. -/
 def writtenTheorems (env : Environment) (roots : Array Name) : Array Thm := Id.run do
   let mut thms : Array Thm := #[]
   for (name, info) in env.constants.toList do
@@ -297,7 +298,7 @@ def gradeForks (env : Environment) (thms : Array Thm) : Array ForkRow :=
 /-! ## The axiom audit
 
 Every written theorem in all three proof sets, the fork bodies, the framework's
-generic toolkit, and the SSZ library, must rest on the classes below and nothing
+proof modules, and the SSZ library, must rest on the classes below and nothing
 else. `sorryAx` is what this catches above all, and the same walk feeds the
 trust-base listing in the report. -/
 
@@ -580,14 +581,14 @@ structure Report where
   forkTrust : Array (String × Nat)
   /-- The trust base of the SSZ proof set. -/
   sszTrust : Array (String × Nat)
-  /-- The trust base of the framework's generic proof toolkit. -/
-  toolkitTrust : Array (String × Nat)
+  /-- The trust base of the framework's proof modules. -/
+  frameworkTrust : Array (String × Nat)
   /-- How many written theorems the fork-body proof set holds. -/
   forkTheorems : Nat
   /-- How many written theorems the SSZ proof set holds. -/
   sszTheorems : Nat
-  /-- How many written theorems the framework's generic toolkit holds. -/
-  toolkitTheorems : Nat
+  /-- How many written theorems the framework's proof modules hold. -/
+  frameworkTheorems : Nat
   /-- Every `characterizes` tag, as `(theorem, function)`. -/
   tags : Array (Name × Name)
   /-- Every `box_generic` tag, as `(theorem, reason)`. -/
@@ -600,17 +601,17 @@ def buildReport (env : Environment) : Report :=
   let thms := writtenTheorems env #[forkProofsRoot, sszProofsRoot, frameworkProofsRoot]
   let forkThms := under thms forkProofsRoot
   let sszThms := under thms sszProofsRoot
-  let toolkitThms := under thms frameworkProofsRoot
+  let frameworkThms := under thms frameworkProofsRoot
   let forkAudit := auditAxioms env forkThms
   let sszAudit := auditAxioms env sszThms
-  let toolkitAudit := auditAxioms env toolkitThms
+  let frameworkAudit := auditAxioms env frameworkThms
   let forks := gradeForks env forkThms
   let matrix := gradeSsz env sszThms
   let tags := characterizations env
   let boxTags := boxGenerics env
   let surfaced := forks.foldl (init := #[]) fun acc r => acc ++ r.surface
   let problems :=
-    (axiomViolations env (forkAudit ++ sszAudit ++ toolkitAudit)).map (fun (thm, bad) =>
+    (axiomViolations env (forkAudit ++ sszAudit ++ frameworkAudit)).map (fun (thm, bad) =>
         s!"{thm} rests on an axiom outside the allowed classes: {bad.toList}")
     ++ boxBinderProblems env forkThms
     ++ matrix.filterMap (fun r =>
@@ -639,10 +640,10 @@ def buildReport (env : Environment) : Report :=
   { forks, matrix
     forkTrust    := trustBase env forkAudit
     sszTrust     := trustBase env sszAudit
-    toolkitTrust := trustBase env toolkitAudit
+    frameworkTrust := trustBase env frameworkAudit
     forkTheorems := forkThms.size
     sszTheorems  := sszThms.size
-    toolkitTheorems := toolkitThms.size
+    frameworkTheorems := frameworkThms.size
     tags, boxTags, problems }
 
 /-- The block the `EthCLSpecs` README carries between its markers: the fork
@@ -734,10 +735,11 @@ The fork-body proof set:
 
 {renderTrustBase report.forkTrust}
 
-The framework's generic proof toolkit under {frameworkProofsRoot}
-({report.toolkitTheorems} written theorems), audited with the same classes:
+The framework's proof modules under {frameworkProofsRoot}, the generic toolkit
+plus `LawfulFcMap` and `MerkleBranch` ({report.frameworkTheorems} written
+theorems), audited with the same classes:
 
-{renderTrustBase report.toolkitTrust}
+{renderTrustBase report.frameworkTrust}
 
 The SSZ proof set:
 
