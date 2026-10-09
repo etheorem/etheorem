@@ -1,3 +1,4 @@
+import EthCLSpecs.Tests.BoxBinderPins
 import EthCLSpecs.Tests.FuluForkChoicePins
 import EthCLSpecs.Tests.GloasForkChoicePins
 import EthCLSpecs.Tests.HezeCommitteesPins

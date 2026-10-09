@@ -8,7 +8,7 @@ import EthCLLib.Internal.Capture
 a statement binds `v : BeaconState`, never a boxed `State`. This module is the
 walk behind the check that enforces the rule. The proof-coverage report
 (`scripts/ProofCoverage.lean`) runs it over every fork-body theorem, and the
-fixture pins (`EthCLSpecs.Tests.BoxBinderPins`) run it over thirteen statements
+fixture pins (`EthCLSpecs.Tests.BoxBinderPins`) run it over fourteen statements
 of known answers, so the walk cannot rot to "always pass" unnoticed.
 
 A statement enters the scope of the check when it names a constant under a
@@ -143,8 +143,10 @@ def propConnectives : Array Name := #[`And, `Or, `Iff, `Not]
 /-- The boxed-state quantifiers of a theorem statement, in walk order.
 
 `e` is the statement of a theorem, so the walk starts in proposition position
-and tracks the position structurally from there: a `forallE` body stays in
-proposition position, an `Exists` body is one by construction, and a
+and tracks the position structurally from there: a `forallE` body keeps the
+position its binder was reached in, so a curried function type in a value
+position reports none of its binders, an `Exists` body is a proposition by
+construction, and a
 hypothesis is entered only when `isPropShaped` confirmed it as a proposition.
 The arguments of a logical connective (`propConnectives`) stay in proposition
 position; the arguments of any other application are program values, even in
@@ -160,7 +162,7 @@ where
       | .forallE n t b _ =>
         let acc :=
           if inProp && isBoxType env t then acc.push (n, t) else acc
-        let acc := boxQuantifiersAux env fuel b true acc
+        let acc := boxQuantifiersAux env fuel b inProp acc
         if isPropShaped env t then boxQuantifiersAux env fuel t true acc else acc
       | .app _ _ =>
         let e := e.consumeMData.headBeta

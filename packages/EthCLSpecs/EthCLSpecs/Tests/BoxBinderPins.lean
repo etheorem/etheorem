@@ -28,6 +28,9 @@ this module instead of passing quietly:
 * `functionEquation` states an equation between functions over `State`, so the
   equation's type argument is a function type in a value position; the walk
   reads value arguments as program values, so it passes.
+* `curriedEquation` states an equation between curried functions over
+  `State`; the inner arrow of a function type in a value position stays a
+  value, so it passes.
 * `connectiveNested` puts a `∀ s : State` under `True ∧ _`; a connective's
   arguments stay in proposition position, so `s` draws one finding.
 
@@ -40,7 +43,7 @@ binds the box, so it is accepted, and `markedBindsNone` fails as stale.
 `outOfScopeMarker` is marked but names no fork constant, so the check never
 applies to it and the marker is stale.
 
-The gate at the bottom runs the walk and the verdict on all thirteen fixtures
+The gate at the bottom runs the walk and the verdict on all fourteen fixtures
 and throws on any mismatched answer, so `lake build EthCLSpecsTests` is the
 gate. `run_cmd` runs at elaboration time, prints nothing, and a `throwError`
 in it fails the build.
@@ -61,6 +64,13 @@ open EthCLLib.Internal (boxQuantifiers boxCheckScopes namesFork boxGenerics)
 open EthCLSpecs.Gloas (Preset State BeaconState modifyState)
 open EthCLSpecs.Heze (Store)
 open EthCLSpecs.Proofs.Gloas (GloasRun)
+
+section Fixtures
+
+-- Each fixture binds variables its body never reads: the walk looks at the
+-- binder shapes only, so the bodies stay `True` or `rfl`. The unused-variable
+-- linter would flag every one of them, so it is off for this section alone.
+set_option linter.unusedVariables false
 
 /-- In scope, and binds the boxed `State`: one finding. -/
 theorem bindsState [Preset] [HasherTag] :
@@ -119,6 +129,12 @@ finding. -/
 theorem functionEquation [Preset] [HasherTag] :
     ∀ (f : State → State), f = f := fun _ => rfl
 
+/-- In scope. The equation's type argument is a curried function type over
+`State`, in a value position. A `forallE` body keeps the position its binder was
+reached in, so the inner arrow is a value too. No finding. -/
+theorem curriedEquation [Preset] [HasherTag] :
+    ∀ (f : State → State → State), f = f := fun _ => rfl
+
 /-- In scope. A connective's arguments stay in proposition position, so the
 `∀ s : State` under the conjunction draws one finding, `s`. -/
 theorem connectiveNested [Preset] [HasherTag] :
@@ -141,9 +157,11 @@ stale. -/
 @[box_generic "stale on purpose: this fixture is out of the check's scope"]
 theorem outOfScopeMarker : True := trivial
 
+end Fixtures
+
 end EthCLSpecs.Tests.BoxBinderPins
 
-/-! The gate: run the walk and the verdict on all thirteen fixtures and throw
+/-! The gate: run the walk and the verdict on all fourteen fixtures and throw
 on any mismatched answer. `#guard` cannot reach the environment a reducible
 unfolding needs, and a committed `#eval` fails `just lint`, so the gate is a
 `run_cmd`: it runs at elaboration time, prints nothing, and a `throwError` in
@@ -172,6 +190,7 @@ run_cmd do
     (`predicateParam,    0, false, false),
     (`predicateBody,     1, false, true),
     (`functionEquation,  0, false, false),
+    (`curriedEquation,   0, false, false),
     (`connectiveNested,  1, false, true),
     (`markedBindsBox,    1, true,  false),
     (`markedBindsNone,   0, true,  true),
