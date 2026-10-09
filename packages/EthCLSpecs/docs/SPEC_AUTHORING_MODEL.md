@@ -150,7 +150,7 @@ named configurations.
 | Effect monad | `EStateM StateTransitionError State` | `StateT State (Except StateTransitionError)` |
 | Hasher | `Sha256` (FFI, opaque) | `Sha256Spec` (pure-Lean, kernel-reducible) |
 | Fork-choice map | `hashMap` | `treeMap` |
-| Box flavour | `FastBox` (cached, `= CachedBox Sha256`) | `UncachedBox Sha256Spec` (uncached) |
+| Box flavour | `FastBox` (cached, `= CachedBox Sha256`) | `UncachedBox HasherTag.H` (uncached) |
 
 The effect-monad row covers both machines. A fork-choice handler runs the state
 machine through `runNestedStateTransition`, and `NestedStateMachine`
@@ -382,8 +382,9 @@ The second is the cache flavour. The flavour constructors are `CachedBox H` (cac
 and `UncachedBox H` (uncached), generic over the hasher tag, both producing
 `Box H BeaconState`. They differ in flavour, not in type. SizzLean's `FastBox` and
 `PureBox` are the `Sha256`-pinned aliases (`FastBox = CachedBox Sha256`), so the fast
-configuration is `FastBox` and the pure configuration, whose hasher is `Sha256Spec`,
-is `UncachedBox Sha256Spec`. The flavour is chosen once, at the anchor where the state
+configuration is `FastBox` and the pure configuration is the uncached constructor at
+the generic hasher tag, `UncachedBox HasherTag.H`
+(`SPECS_ARCHITECTURE.md` §11.1). The flavour is chosen once, at the anchor where the state
 is first built: cached for runner speed, uncached so the getter-setter laws hold by
 `rfl` with no cache-coherence obligation in the proofs.
 
@@ -651,7 +652,7 @@ Four layers, by owner and run-time.
 |---|---|---|---|
 | **Framework** | the framework | n/a (it is the machinery) | everything; invisible to the author |
 | **Spec body** | the author | both configurations | `[Preset]`, `[HasherTag]`, the monad (and `map` in fork-choice) |
-| **Theorems module** | the author, per fork | the pure configuration | nothing; it pins `pure` and states properties |
+| **Theorems module** | the author, per fork | the pure configuration | nothing; it pins `pure` and states properties. Statements bind plain values (`SPECS_ARCHITECTURE.md` §11.1) |
 | **`PySpecTests`** | the framework | the fast configuration | nothing; fork-agnostic, drives the fork interface |
 
 The framework provides the machinery and is invisible to the author. The spec

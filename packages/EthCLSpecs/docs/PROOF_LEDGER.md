@@ -8,7 +8,9 @@ function. A candidate is a function with a clear invariant, safety property,
 algebraic law, monotonicity property, or other proof-worthy claim. The list is a
 shortlist, not a classification of the fork's surface: Gloas introduces 62 new
 functions and overrides 46 inherited ones, and the rows below were found by
-reading across the Gloas specification and its supporting libraries.
+reading across the Gloas specification and its supporting libraries. A Property
+cell describes a claim over plain values, so a whole-state claim is the default
+(`SPECS_ARCHITECTURE.md` §11.1).
 
 ## The columns
 

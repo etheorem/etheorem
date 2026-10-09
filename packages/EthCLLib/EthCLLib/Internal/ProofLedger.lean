@@ -108,8 +108,8 @@ def characterizations (env : Environment) : Array (Name × Name) :=
 
 /-! ## The `box_generic` attribute
 
-The pure-state-theorems plan keeps fork-body theorems over plain values, and the
-plain-value check (`EthCLLib.Internal.BoxBinders` run by
+`SPECS_ARCHITECTURE.md` §11.1 keeps fork-body theorems over plain values, and
+the plain-value check (`EthCLLib.Internal.BoxBinders` run by
 `scripts/ProofCoverage.lean`) rejects a statement that quantifies over the
 boxed `State`. A theorem that must quantify over the box carries
 `@[box_generic "reason"]`:

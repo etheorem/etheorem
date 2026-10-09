@@ -32,10 +32,13 @@ effect.
 
 This module is box-level infrastructure. Its lemmas quantify over boxes by
 design, in their hypotheses and conclusions: they are claims about the box
-flavour itself. The pure-theorems plan's rule 1, which keeps fork-body theorem
-statements over plain values, does not apply here, because these lemmas mention
-no spec function; the planned Phase 3 check scopes itself to fork-body theorems
-for the same reason.
+flavour itself. The plain-value rule (`SPECS_ARCHITECTURE.md` §11.1) keeps
+fork-body theorem statements over plain values, and it does not apply here.
+The check scopes itself to theorems whose statement names a fork constant,
+these lemmas mention none, and the same holds for the generic lemmas in
+`Proofs/Run.lean`, so the scope leaves both alone and none needs the
+`box_generic` marker. A box-level lemma that later names a fork constant
+enters the scope and carries the marker.
 -/
 
 set_option autoImplicit false
