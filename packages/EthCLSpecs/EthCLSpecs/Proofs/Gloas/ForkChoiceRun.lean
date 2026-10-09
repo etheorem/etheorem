@@ -1,13 +1,14 @@
 import EthCLSpecs.Gloas.ForkChoice
-import EthCLSpecs.Proofs.StoreRun
+import EthCLLib.Proofs.StoreRun
 import EthCLSpecs.Proofs.Gloas.InitiateBuilderExit
 import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
+import EthCLLib.Proofs.Run
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.ForkChoiceRun`: the fork-choice store monad these proofs would run at
 
 `Proofs/Gloas/Run.lean` names the monad for the *state* machine (`GloasRun`), and
-`Proofs/StoreRun.lean` names the fork-generic one for the *store* machine
+`EthCLLib/Proofs/StoreRun.lean` names the fork-generic one for the *store* machine
 (`ForkChoiceStoreRun`). This file specializes the latter to Gloas's `Store` as
 `GloasStoreRun`, and proves a fork-choice `forkdef` at it.
 
@@ -37,9 +38,10 @@ namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag StoreTransitionError MapKind FcMap NestedStateMachine
   runNestedStateTransition runNestedStateTransition_of_ok)
-open EthCLSpecs.Gloas (Preset Config BuilderIndex)
+open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState)
 open EthCLSpecs.Gloas (Store getSlotsSinceGenesis getCurrentSlot State currentEpochOf
   initiateBuilderExit processBuilderPendingPayments)
+open EthCLLib.Proofs (pureState ForkChoiceStoreRun)
 open SizzLean.Repr
 open SizzLean.Cache
 
@@ -86,7 +88,9 @@ theorem getCurrentSlot_run_of_time_eq_genesis
 `EthCLLib/Spec/NestedMachine.lean` proves once, for every action, that the bridge hands a
 successful run's post-state back with `pure`. So carrying a state-machine fact into the
 store machine is function application, and there is nothing left here to state as a
-theorem of the Gloas spec.
+theorem of the Gloas spec. The fact must be a `.run` fact: a contract theorem states
+`act.run (pureState preState) = .ok (a, pureState postState)` (`EthCLLib/Proofs/Run.lean`),
+and the `runPure` value-level reading of the same contract hides the box, so it cannot feed the bridge.
 
 These are `example`s rather than named theorems for that reason: they claim nothing about
 Gloas that `Proofs/Gloas/InitiateBuilderExit.lean` and `Proofs/Gloas/BuilderPendingPayments.lean` do
@@ -99,32 +103,35 @@ the pure one", which `instNestedPure` supplies for `GloasStoreRun map` and for e
 store monad in that column. No store value appears; a state transition's effect does not
 depend on one. -/
 
-/-- `initiateBuilderExit_run_eq` crossing the bridge, by application. -/
+/-- `initiateBuilderExit_run_eq` crossing the bridge, by application. The contract is a
+`.run` fact on `pureState preState`, exactly the shape `runNestedStateTransition_of_ok` consumes. -/
 example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
-    ∀ (pre : State) (builderIndex : BuilderIndex),
-      runNestedStateTransition pre
+    ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
+      runNestedStateTransition (pureState preState)
           (initiateBuilderExit (StateTransition := GloasRun) builderIndex)
-        = (pure (sszModify pre builders[builderIndex.toNat]! as b =>
-            { b with withdrawableEpoch :=
-                currentEpochOf pre + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay })
-          : m State) :=
-  fun pre builderIndex =>
-    runNestedStateTransition_of_ok (initiateBuilderExit_run_eq pre builderIndex)
+        = (pure (pureState
+          { preState with builders :=
+              (preState.builders.set! builderIndex.toNat
+                { preState.builders[builderIndex.toNat]! with
+                  withdrawableEpoch :=
+                    currentEpochOf (pureState preState)
+                      + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay }) })
+            : m State) :=
+  fun preState builderIndex =>
+    runNestedStateTransition_of_ok (initiateBuilderExit_run_eq preState builderIndex)
 
 /-- `processBuilderPendingPayments_run` likewise, and this is the one that shows the point:
 its proof rests on a `List.forIn` induction over the withdrawals loop, and that induction is
 not re-entered here. -/
 example [Preset] [HasherTag] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
-    ∀ pre : State,
-      ∃ post : State,
-        runNestedStateTransition pre
-            (processBuilderPendingPayments (StateTransition := GloasRun))
-          = (pure post : m State) ∧
-        ProcessBuilderPendingPaymentsPost pre post :=
-  fun pre =>
-    let ⟨post, hrun, hpost⟩ := processBuilderPendingPayments_run pre
-    ⟨post, runNestedStateTransition_of_ok hrun, hpost⟩
+    ∀ (preState : BeaconState),
+      runNestedStateTransition (pureState preState)
+          (processBuilderPendingPayments (StateTransition := GloasRun))
+        = (pure (pureState { preState with
+              builderPendingWithdrawals := expectedWithdrawals preState,
+              builderPendingPayments := expectedPaymentWindow preState }) : m State) :=
+  fun preState => runNestedStateTransition_of_ok (processBuilderPendingPayments_run preState)
 
 end EthCLSpecs.Proofs.Gloas

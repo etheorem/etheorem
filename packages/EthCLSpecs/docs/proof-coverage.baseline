@@ -2,13 +2,22 @@
 # Every line is a claim `just proof-coverage-check` enforces exactly.
 tier1 EthCLSpecs.Fulu.computeStartSlotAtEpoch
 tier1 EthCLSpecs.Fulu.currentEpochOf
-tier1 EthCLSpecs.Fulu.modBalance
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot
+tier1 EthCLSpecs.Gloas.computeExitEpochAndUpdateChurn
 tier1 EthCLSpecs.Gloas.currentEpochOf
+tier1 EthCLSpecs.Gloas.decreaseBalance
+tier1 EthCLSpecs.Gloas.getAttestationParticipationFlagIndices
+tier1 EthCLSpecs.Gloas.getBlockRoot
+tier1 EthCLSpecs.Gloas.getBlockRootAtSlot
 tier1 EthCLSpecs.Gloas.getCurrentSlot
 tier1 EthCLSpecs.Gloas.getDomain
+tier1 EthCLSpecs.Gloas.getIndexedPayloadAttestation
 tier1 EthCLSpecs.Gloas.getPendingBalanceToWithdrawForBuilder
+tier1 EthCLSpecs.Gloas.getPtc
 tier1 EthCLSpecs.Gloas.getSlotsSinceGenesis
+tier1 EthCLSpecs.Gloas.increaseBalance
+tier1 EthCLSpecs.Gloas.initiateValidatorExit
+tier1 EthCLSpecs.Gloas.isAttestationSameSlot
 tier1 EthCLSpecs.Gloas.isBuilderIndex
 tier1 EthCLSpecs.Gloas.processAttestation
 tier1 EthCLSpecs.Gloas.processAttesterSlashing
@@ -16,6 +25,7 @@ tier1 EthCLSpecs.Gloas.processBlsToExecutionChange
 tier1 EthCLSpecs.Gloas.processPayloadAttestation
 tier1 EthCLSpecs.Gloas.processProposerSlashing
 tier1 EthCLSpecs.Gloas.processVoluntaryExit
+tier1 EthCLSpecs.Gloas.slashValidator
 tier1 EthCLSpecs.Heze.computeEpochAtSlot
 tier1 EthCLSpecs.Heze.fcZeroRoot
 tier1 EthCLSpecs.Heze.getBeaconCommittee
@@ -30,6 +40,7 @@ tier1 EthCLSpecs.Heze.payloadTimeliness
 tier1 EthCLSpecs.Heze.verifyExecutionPayloadEnvelope
 tier2 EthCLSpecs.Fulu.decreaseBalance
 tier2 EthCLSpecs.Fulu.increaseBalance
+tier2 EthCLSpecs.Fulu.modBalance
 tier2 EthCLSpecs.Gloas.canBuilderCoverBid
 tier2 EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex
 tier2 EthCLSpecs.Gloas.initiateBuilderExit

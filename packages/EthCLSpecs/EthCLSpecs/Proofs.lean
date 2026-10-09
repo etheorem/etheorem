@@ -1,8 +1,6 @@
 import EthCLSpecs.Proofs.Fulu
 import EthCLSpecs.Proofs.Gloas
 import EthCLSpecs.Proofs.Heze
-import EthCLSpecs.Proofs.Run
-import EthCLSpecs.Proofs.StoreRun
 
 /-!
 # `EthCLSpecs.Proofs`: consensus-spec theorems (index)
@@ -39,10 +37,7 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu`: the Fulu fork's theorems, one module per subject.
 * `EthCLSpecs.Proofs.Gloas`: the Gloas fork's theorems, one module per subject.
 * `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems, one module per subject.
-* `EthCLSpecs.Proofs.Run`: `run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
-  and `except_bind_error`, the `StateT`-over-`Except` facts every pure runner
-  shares. Fork-neutral, so Gloas and Heze both import this module.
-* `EthCLSpecs.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine
-  runner every fork's fork-choice proofs pin at that fork's `Store`, and the
-  store-specific `throwArithmetic_run` equation.
+
+The generic proof toolkit, the run facts and the pure box helpers the fork
+proofs name directly, lives in the framework, under `EthCLLib.Proofs`.
 -/

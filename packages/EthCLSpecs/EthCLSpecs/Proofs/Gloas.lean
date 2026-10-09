@@ -41,9 +41,9 @@ Re-exports:
   (`getPtcElseOffset_lt_same_slot`).
 * `EthCLSpecs.Proofs.Gloas.InitializePtcWindow`: the seeded `ptcWindow`'s two
   regions (`initializePtcWindow`).
-* `EthCLSpecs.Proofs.Gloas.InitiateBuilderExit`: `initiateBuilderExit_run_eq`, its
-  builder-registry `SSZList.set!` projection, and the in-range / out-of-range
-  reads of that projection, with conditional and shipped-configuration no-wrap
+* `EthCLSpecs.Proofs.Gloas.InitiateBuilderExit`: `initiateBuilderExit_run_eq`, the
+  whole-transition equation over the plain `BeaconState`, with the in-range /
+  out-of-range reads of that equation and conditional and shipped-configuration no-wrap
   corollaries for the written `withdrawableEpoch`.
 * `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: literal and semantic
   characterizations of `isValidIndexedPayloadAttestation`, including its adjacent
@@ -55,7 +55,7 @@ Re-exports:
   opaque and may modify state.
 * `EthCLSpecs.Proofs.Gloas.Run`: `GloasRun`, the state-transition monad every Gloas
   proof in this directory pins its theorems to. The generic `StateT`-over-`Except`
-  bind and `Except` facts live in `EthCLSpecs.Proofs.Run`; both fork directories
+  bind and `Except` facts live in `EthCLLib.Proofs.Run`; both fork directories
   import that module and name the facts directly.
 * `EthCLSpecs.Proofs.Gloas.UpdateCheckpoints`: `Gloas.updateCheckpoints` checkpoint
   monotonicity, the justified/finalized epoch never decreases. Its theorems sit

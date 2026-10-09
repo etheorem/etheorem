@@ -237,7 +237,7 @@ relevant ARCHITECTURE.md wins on substance and CLAUDE.md wins on form.
 ### Adding a proof to a fork body
 
 Follow the procedure in [`CONTRIBUTING.md`](CONTRIBUTING.md), *Adding a
-proof*. Three parts of it are binding here, because the build enforces
+proof*. Four parts of it are binding here, because the build enforces
 them and a near miss wastes a rebuild:
 
 - **One directory per fork.** A theorem about an `EthCLSpecs.Gloas`
@@ -250,6 +250,12 @@ them and a near miss wastes a rebuild:
   `forkdef` declared, a target the statement never mentions, and a tag
   written outside the target fork's directory. Supporting lemmas stay
   untagged and still count as touched.
+- **State theorems over plain values.** Bind `v : BeaconState`, never a boxed
+  `State`, and read runs through `runPure` / `pureState`
+  (`SPECS_ARCHITECTURE.md` §11.1). The proof-coverage check rejects a
+  statement that quantifies over the box unless the theorem carries
+  `@[box_generic "reason"]`, which is a claim about the box and not a way
+  around the check.
 - **Regenerate.** `just proof-coverage-update` rewrites the two baselines
   and the two README blocks; commit that diff with the proof.
   `just proof-coverage-check` is what CI runs, and it fails on a new proof

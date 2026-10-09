@@ -1,5 +1,5 @@
 import EthCLSpecs.Gloas.State
-import EthCLSpecs.Proofs.Run
+import EthCLLib.Proofs.Run
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.Run`: the Gloas state-transition runner these proofs run against
@@ -8,7 +8,7 @@ A theorem about a `forkdef`'s effect has to pin down the monad the spec body is
 elaborated into, since `StateTransition` is a parameter of the fork body rather than a
 fixed type. Every Gloas proof in this directory pins the same one, so it is named once
 here and instantiated at each theorem through `(StateTransition := GloasRun)`. The store
-machine's counterpart is the pure store runner in `Proofs/StoreRun.lean`.
+machine's counterpart is the pure store runner in `EthCLLib/Proofs/StoreRun.lean`.
 
 ## Which monad, and why not the fast one
 
@@ -34,10 +34,14 @@ resolves a handler's nested state machine from the store's monad, and at the pur
 monad it resolves to this one. So every theorem below is a theorem about the step running
 under fork choice too. Carrying one over is function application:
 `runNestedStateTransition_of_ok` (`EthCLLib/Spec/NestedMachine.lean`) takes a step's
-`.run` fact and returns the store-machine statement, for any action.
+`.run` fact and returns the store-machine statement, for any action. This is why a
+contract theorem states the run on `pureState preState`, at the box, in `.run` form: that is
+the shape the bridge consumes. `runPure` (`EthCLLib/Proofs/Run.lean`) pins the box and gives the
+value-level reading of the same contract; a theorem never runs an action on a `State`
+it bound itself.
 
 The `StateT`-over-`Except` bind, throw, and `Except` facts that every run proof rewrites
-with live in `Proofs/Run.lean`, at any state and error type. Gloas and Heze call sites
+with live in `EthCLLib/Proofs/Run.lean`, at any state and error type. Gloas and Heze call sites
 both import that module and name those facts directly; this file only names `GloasRun`.
 -/
 

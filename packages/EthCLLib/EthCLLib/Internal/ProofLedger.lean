@@ -106,4 +106,83 @@ initialize registerBuiltinAttribute {
 def characterizations (env : Environment) : Array (Name × Name) :=
   characterizesExt.getState env
 
+/-! ## The `box_generic` attribute
+
+`SPECS_ARCHITECTURE.md` §11.1 keeps fork-body theorems over plain values, and
+the plain-value check (`EthCLLib.Internal.BoxBinders` run by
+`scripts/ProofCoverage.lean`) rejects a statement that quantifies over the
+boxed `State`. A theorem that must quantify over the box carries
+`@[box_generic "reason"]`:
+
+```lean
+@[box_generic "a box-level flavour fact; the seed of a cached ≡ pure equivalence"]
+theorem …
+```
+
+Two theorem kinds justify the marker. The first is a fact about the box
+itself, such as a lemma that relates a run on a cached box to a run on
+`pureState v`; such a lemma is the seed of a future cached ≡ pure equivalence,
+and it cannot avoid a `Box` binder. The second is a fact that holds for any
+flavour at no extra cost, where the author wants the stronger claim on
+purpose. A reviewer rejects a reason that names neither kind.
+
+Four safeguards keep the marker from becoming the default. The reason is
+required and non-empty (here). A stale marker fails: the check rejects a
+marked theorem that binds no `Box` (the script). The report lists every marked
+theorem with its reason, in its own section (the script). And the baseline
+records the marked theorems by name, so a new marker shows as a baseline diff
+a reviewer must accept (the script).
+
+The storage and the global-only rule are the `characterizes` pattern: the tags
+reach the `.olean` through a `SimplePersistentEnvExtension`, and `local` and
+`scoped` are rejected so the script reads every marker from an imported
+environment. -/
+
+/-- Every `box_generic` tag, as `(theoremName, reason)` pairs.
+
+An `Array` (not a map) keeps the merge across imports trivial, the same choice
+`characterizesExt` makes. -/
+initialize boxGenericExt :
+    SimplePersistentEnvExtension (Name × String) (Array (Name × String)) ←
+  registerSimplePersistentEnvExtension {
+    addEntryFn    := Array.push
+    addImportedFn := fun arrs => arrs.foldl (· ++ ·) #[]
+  }
+
+/-- The reason string of a `box_generic` application, when the syntax carries
+one non-empty string literal. -/
+private def boxGenericReason? (stx : Syntax) : Option String :=
+  stx.getArgs.findSome? fun arg =>
+    match arg.isStrLit? with
+    | some r => if r.isEmpty then none else some r
+    | none   => none
+
+/-- The parsed form of `@[box_generic "reason"]`: the `str` argument. -/
+syntax (name := box_generic) "box_generic " str : attr
+
+/-- `@[box_generic "reason"]` on a fork-body theorem says the theorem
+quantifies over the SSZ box on purpose, and the reason says which of the two
+theorem kinds justifies it. The plain-value check accepts the theorem and
+records the marker; a marked theorem that binds no `Box` fails as stale. -/
+initialize registerBuiltinAttribute {
+  name            := `box_generic
+  descr           := "this fork-body theorem quantifies over the SSZ box on purpose, \
+                      with a reason naming the theorem kind that justifies it"
+  applicationTime := .afterTypeChecking
+  add             := fun thm stx kind => do
+    unless kind == AttributeKind.global do
+      throwError "`box_generic` is a global attribute; `local` and `scoped` would \
+        hide the claim from the proof-coverage check."
+    match boxGenericReason? stx with
+    | none =>
+      throwError "`box_generic` needs a non-empty reason string naming the theorem \
+        kind that justifies it, for example `@[box_generic \"a box-level flavour \
+        fact\"]`."
+    | some reason => modifyEnv fun env => boxGenericExt.addEntry env (thm, reason)
+}
+
+/-- Every `box_generic` tag in the environment. -/
+def boxGenerics (env : Environment) : Array (Name × String) :=
+  boxGenericExt.getState env
+
 end EthCLLib.Internal

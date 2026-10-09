@@ -1,4 +1,6 @@
 import EthCLSpecs.Gloas.Operations
+import EthCLLib.Proofs.Run
+import SizzLean.Proofs.UncachedBox
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid`: Boolean characterization
@@ -12,6 +14,9 @@ These are literal `UInt64` values; the theorem does not assert that accumulation
 of pending obligations is overflow-free. Indexing is total, so the theorem also
 holds for out-of-range `builderIndex` values, without claiming that the resulting
 default value represents a registered builder.
+
+Statements bind plain `BeaconState` values; the state readers and the spec
+functions receive `pureState state`, and the reads spell `state.builders[i]!`.
 
 Two theorems:
 
@@ -34,8 +39,9 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag)
-open EthCLSpecs.Gloas (BuilderIndex Gwei Preset)
+open EthCLSpecs.Gloas (BeaconState BuilderIndex Gwei Preset)
 open EthCLSpecs.Gloas (canBuilderCoverBid getPendingBalanceToWithdrawForBuilder)
+open EthCLLib.Proofs (pureState)
 
 /-- `canBuilderCoverBid` returns `true` exactly when its computed `minBalance`
 does not exceed the builder's balance and the bid fits in the remainder.
@@ -44,12 +50,12 @@ claim is made that pending-obligation accumulation is overflow-free or that
 `builderIndex` identifies a registered builder. -/
 @[characterizes EthCLSpecs.Gloas.canBuilderCoverBid]
 theorem canBuilderCoverBid_iff [Preset] [HasherTag] :
-    ∀ (state : Gloas.State) (builderIndex : BuilderIndex) (bidAmount : Gwei),
-      canBuilderCoverBid state builderIndex bidAmount = true ↔
-        let builderBalance := (sszGet state builders[builderIndex.toNat]!).balance
+    ∀ (state : BeaconState) (builderIndex : BuilderIndex) (bidAmount : Gwei),
+      canBuilderCoverBid (pureState state) builderIndex bidAmount = true ↔
+        let builderBalance := state.builders[builderIndex.toNat]!.balance
         let minBalance :=
           Gloas.Const.minDepositAmountG +
-          getPendingBalanceToWithdrawForBuilder state builderIndex
+          getPendingBalanceToWithdrawForBuilder (pureState state) builderIndex
         minBalance ≤ builderBalance ∧ bidAmount ≤ builderBalance - minBalance := by
   intro state builderIndex bidAmount
   -- Both lemmas restate `UInt64`'s `<` / `≤` as `Nat` comparisons on `toNat`,
@@ -72,12 +78,12 @@ exactly when the computed `minBalance` plus the bid fits within the builder's
 balance. The addition in this conclusion cannot wrap; `minBalance` itself
 remains the literal `UInt64` value produced by the implementation. -/
 theorem canBuilderCoverBid_iff_toNat_add_le [Preset] [HasherTag] :
-    ∀ (state : Gloas.State) (builderIndex : BuilderIndex) (bidAmount : Gwei),
-      canBuilderCoverBid state builderIndex bidAmount = true ↔
-        let builderBalance := (sszGet state builders[builderIndex.toNat]!).balance
+    ∀ (state : BeaconState) (builderIndex : BuilderIndex) (bidAmount : Gwei),
+      canBuilderCoverBid (pureState state) builderIndex bidAmount = true ↔
+        let builderBalance := state.builders[builderIndex.toNat]!.balance
         let minBalance :=
           Gloas.Const.minDepositAmountG +
-          getPendingBalanceToWithdrawForBuilder state builderIndex
+          getPendingBalanceToWithdrawForBuilder (pureState state) builderIndex
         minBalance.toNat + bidAmount.toNat ≤ builderBalance.toNat := by
   intro state builderIndex bidAmount
   rw [canBuilderCoverBid_iff]

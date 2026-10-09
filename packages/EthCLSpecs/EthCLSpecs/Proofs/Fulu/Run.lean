@@ -7,6 +7,10 @@ import EthCLSpecs.Fulu.State
 to pin the monad the body elaborates into. Every Fulu proof in this directory pins the runner
 named here, through `(StateTransition := FuluRun)`. `SPECS_ARCHITECTURE.md` §11.1 names the
 pure configuration this runner belongs to.
+
+The box is pinned in the framework, in `EthCLLib/Proofs/Run.lean`: a theorem states its run on `pureState preState`,
+the uncached box of the plain value, and `runPure` gives the value-level reading. A theorem
+never runs an action on a `State` it bound itself.
 -/
 
 set_option autoImplicit false

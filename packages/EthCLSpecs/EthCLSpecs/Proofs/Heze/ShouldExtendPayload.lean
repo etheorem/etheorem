@@ -1,7 +1,7 @@
 import EthCLSpecs.Heze.ForkChoice
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
-import EthCLSpecs.Proofs.Run
-import EthCLSpecs.Proofs.StoreRun
+import EthCLLib.Proofs.Run
+import EthCLLib.Proofs.StoreRun
 
 /-!
 # `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: Heze's payload-extension decision
@@ -40,7 +40,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLSpecs.Proofs (ForkChoiceStoreRun run_throw except_bind_ok except_bind_error)
+open EthCLLib.Proofs (ForkChoiceStoreRun run_throw except_bind_ok except_bind_error)
 open EthCLLib.Spec (HasherTag MapKind FcMap checkedAdd throwArithmetic StoreTransitionError
   SpecReject)
 open EthCLSpecs.Heze (Preset Config Store shouldExtendPayload isPayloadInclusionListSatisfied
