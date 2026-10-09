@@ -68,7 +68,7 @@ namespace EthCLLib.Internal
 
 /-- The head that ends the walk with a finding: the boxed state, in either
 flavour. -/
-def boxHeadName : Name := `SizzLean.Cache.SSZ.Box
+private def boxHeadName : Name := `SizzLean.Cache.SSZ.Box
 
 /-- Is the head of `t` the boxed state, after unfolding reducible constants?
 
@@ -76,7 +76,7 @@ def boxHeadName : Name := `SizzLean.Cache.SSZ.Box
 `headBeta` and applications; a reducible definition head unfolds to its body
 with the arguments spliced in, which is how the fork `State` abbrev meets
 `boxHeadName`. -/
-def isBoxType (env : Environment) (t : Expr) : Bool :=
+private def isBoxType (env : Environment) (t : Expr) : Bool :=
   isBoxTypeAux env 20 t
 where
   isBoxTypeAux (env : Environment) : Nat → Expr → Bool
@@ -104,7 +104,7 @@ exotic hypothesis; a wrong `true` would be a false finding, so the walk keeps
 the undecided cases out. Loose bvars are safe, since no type is inferred.
 A sort is never a proposition, so `Prop` itself answers `false`, which is what
 keeps the domain of a `P : State → Prop` parameter out of the walk. -/
-def isPropShaped (env : Environment) (t : Expr) : Bool :=
+private def isPropShaped (env : Environment) (t : Expr) : Bool :=
   isPropShapedAux env 20 t
 where
   /-- The result sort of a constant's type: strip the domains, then read the
@@ -144,7 +144,7 @@ application head walks its arguments as program values, so a function type
 passed as an explicit type argument is never read as a quantifier. Implication
 needs no entry here: `p → q` is a `forallE`, and the `forallE` case already
 carries proposition position through its body. -/
-def propConnectives : Array Name := #[`And, `Or, `Iff, `Not]
+private def propConnectives : Array Name := #[`And, `Or, `Iff, `Not]
 
 /-- The boxed-state quantifiers of a theorem statement, in walk order.
 
