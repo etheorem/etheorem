@@ -1,3 +1,4 @@
+import EthCLLib.Spec.Errors
 import EthCLLib.Spec.Hasher
 
 /-!
@@ -37,7 +38,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs
 
-open EthCLLib.Spec (HasherTag)
+open EthCLLib.Spec (HasherTag ErrorConv liftErr)
 open SizzLean (SSZRepr)
 open SizzLean.Cache
 
@@ -67,6 +68,40 @@ theorem except_bind_ok {ε α β : Type} (a : α) (f : α → Except ε β) :
 /-- `Except`'s bind on the error branch: the continuation is skipped. -/
 theorem except_bind_error {ε α β : Type} (e : ε) (f : α → Except ε β) :
     (Except.error e : Except ε α) >>= f = .error e := rfl
+
+/-- `ofExcept` of an `.ok a`: the run succeeds and passes the state through
+unchanged. The run-level shape the loop-body proofs read the spec's indexed reads
+and checked ops at (`liftErr` unfolds to `ofExcept` of the converted value). -/
+theorem run_ofExcept_ok {σ ε α : Type} {a : α} (sb : σ) :
+    (MonadExcept.ofExcept (ε := ε) (m := StateT σ (Except ε))
+      (Except.ok a : Except ε α)).run sb = .ok (a, sb) := rfl
+
+/-- `ofExcept` of an `.error e`: the run rejects with the error alone, no state. -/
+theorem run_ofExcept_error {σ ε α : Type} {e : ε} (sb : σ) :
+    (MonadExcept.ofExcept (ε := ε) (m := StateT σ (Except ε))
+      (Except.error e : Except ε α)).run sb = .error e := rfl
+
+/-- `liftErr` of an `Except` value whose converted form is `.ok a`: the run
+succeeds and passes the state through unchanged. -/
+theorem run_liftErr_of_ok {σ ε' ε α : Type} [ErrorConv ε' ε] {a : α}
+    (x : Except ε' α) (sb : σ)
+    (h : Except.mapError (ErrorConv.conv (F := ε)) x = Except.ok a) :
+    (liftErr (m := StateT σ (Except ε)) (E := ε') (F := ε) x).run sb = .ok (a, sb) := by
+  show (MonadExcept.ofExcept (ε := ε) (m := StateT σ (Except ε))
+    (Except.mapError ErrorConv.conv x)).run sb = _
+  rw [h]
+  exact run_ofExcept_ok sb
+
+/-- `liftErr` of an `Except` value whose converted form is `.error e`: the run
+rejects with the converted error alone, no state. -/
+theorem run_liftErr_of_error {σ ε' ε α : Type} [ErrorConv ε' ε] {e : ε}
+    (x : Except ε' α) (sb : σ)
+    (h : Except.mapError (ErrorConv.conv (F := ε)) x = Except.error e) :
+    (liftErr (m := StateT σ (Except ε)) (E := ε') (F := ε) x).run sb = .error e := by
+  show (MonadExcept.ofExcept (ε := ε) (m := StateT σ (Except ε))
+    (Except.mapError ErrorConv.conv x)).run sb = _
+  rw [h]
+  exact run_ofExcept_error sb
 
 /-! ## The pure box and the pure runner
 
