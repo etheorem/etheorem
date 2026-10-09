@@ -949,7 +949,8 @@ anti-patterns of that layer avoided in every definition.
 ### 11.1 Proofs run at the pure config only
 
 When proofs start, they run only at the pure configuration of the contract's
-one-spec-body-two-configurations duality: `UncachedBox Sha256Spec` (uncached, so the
+one-spec-body-two-configurations duality: the pure box over the generic hasher
+tag (`SSZ.UncachedBox HasherTag.H`, uncached, so the
 getter-setter laws hold by `rfl`), the pure `StateTransition` monad (`StateT` over
 `Except`), and `treeMap` (clean insert and lookup laws, relevant only to fork-choice proofs, since
 the state-transition machine holds no map).
@@ -967,6 +968,40 @@ fork-choice `forkdef` at it. A handler that runs the state machine picks up its 
 monad from `NestedStateMachine` (`FRAMEWORK_ARCHITECTURE.md` §7.2), keyed on the store's
 own monad, so pinning the pure store monad pins the pure state monad with it and no fast
 configuration reaches a fork-choice proof.
+
+#### 11.1.1 Statements bind plain values
+
+A fork-body theorem states its claim over plain values. It binds `v : BeaconState`,
+never a boxed `State`, and it reads fields directly, `v.slot` rather than
+`sszGet state slot`. A successful run states its result as one whole value, not
+field by field, since two boxes that carry the same value can still differ.
+
+The box lives in two helpers, `pureState` and `runPure`
+(`EthCLSpecs/Proofs/Run.lean`). `pureState v` is the uncached box of `v`, and it
+is the only box constructor a statement names. `runPure act v` runs a step on
+that box and reads the post-state's value. A contract theorem states the run at
+the box, `act.run (pureState v) = .ok (a, pureState w)`, because that `.run`
+shape is what the fork-choice bridge consumes. A reading theorem states the
+`runPure` form, `runPure act v = .ok (a, w)`, which `runPure_of_run_ok` derives
+from the contract. The hasher stays generic (`[HasherTag]`); §11.2 says when a
+goal pins it.
+
+The box is the one axis no type pins, so a check pins it.
+`scripts/ProofCoverage.lean` walks every theorem under `EthCLSpecs.Proofs`
+whose statement names a fork constant, and a statement that quantifies over
+the box fails the run. `just proof-coverage-check` is the command CI runs,
+and `just proof-coverage` prints the findings.
+
+A theorem that must quantify over the box carries `@[box_generic "reason"]`,
+and the check accepts it. Two theorem kinds justify the marker. The first is a
+fact about the box itself, such as a lemma that relates a run on a cached box
+to a run on `pureState v`; such a lemma is the seed of a future cached ≡ pure
+equivalence, and it cannot avoid a `Box` binder. The second is a fact that
+holds for any flavour at no extra cost, where the author wants the stronger
+claim on purpose. The check rejects a marked theorem that binds no box, the
+report lists every marker with its reason, and the baseline records markers by
+name, so a new marker reaches the reviewer as a baseline diff. A reviewer
+rejects a reason that names neither kind.
 
 ### 11.2 The hasher is per goal
 

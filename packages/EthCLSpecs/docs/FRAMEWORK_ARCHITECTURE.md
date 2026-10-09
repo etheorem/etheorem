@@ -54,7 +54,7 @@ These seams carry the design.
 | Execution engine | `[ExecutionEngine Payload Tx Requests]` | the `execution_engine.*` methods (`is_inclusion_list_satisfied`, `verify_and_notify_new_payload`) | optimistic global instance | a local refuting/real instance |
 | Data availability | `[DataAvailability]` | `is_data_available` from Gloas on, whose sidecar retrieval the spec leaves implementation-defined | optimistic global instance | a local refuting/real instance |
 | Finite-map backing | `{map : MapKind} [FcMap map]` | the fork-choice store's maps | `hashMap` | `treeMap` |
-| Box flavour | smart constructor at the anchor | cache strategy of the boxed state | `FastBox` (cached, `= CachedBox Sha256`) | `UncachedBox Sha256Spec` (uncached) |
+| Box flavour | smart constructor at the anchor | cache strategy of the boxed state | `FastBox` (cached, `= CachedBox Sha256`) | `UncachedBox HasherTag.H` (uncached) |
 | Effect monad | `{StateTransition : Type → Type}` | the state-threading effect | `EStateM` | `StateT ∘ Except` |
 
 Most of these hide completely behind instance resolution or a constructor choice
@@ -772,7 +772,8 @@ The second is the cache flavour. The flavour constructors are `CachedBox H` (cac
 and `UncachedBox H` (uncached), generic over the hasher tag, both producing
 `Box H BeaconState`. SizzLean's `FastBox` and `PureBox` are the `Sha256`-pinned
 aliases (`FastBox = CachedBox Sha256`), so the fast configuration is `FastBox` and the
-pure configuration, whose hasher is `Sha256Spec`, is `UncachedBox Sha256Spec`. They
+pure configuration is the uncached constructor at the generic hasher tag,
+`UncachedBox HasherTag.H` (`SPECS_ARCHITECTURE.md` §11.1). They
 differ in flavour, not in type. The flavour is chosen once, at the anchor where the
 state is first built: cached for runner speed, uncached so the getter-setter laws hold
 by `rfl` with no cache-coherence obligation in the proofs.
@@ -1244,7 +1245,7 @@ Seven anti-patterns the framework avoids in every definition, in order of severi
 2. **`partial def` for any spec function.** The kernel assigns it an opaque
    constant, so `simp [f]` does nothing. Use fuel-bounded recursion instead.
 3. **`@[irreducible]` on the uncached `Box` instance.** The pure config's box is
-   `UncachedBox Sha256Spec`, where `sszGet` is a field projection and `sszUpdate` a
+   `UncachedBox HasherTag.H`, where `sszGet` is a field projection and `sszUpdate` a
    record update, both reduce definitionally and the getter-setter laws hold by
    `rfl`. If the dispatching instance is irreducible, the kernel stops at the dispatch
    and never reaches the reducible projection underneath. Keep the uncached box

@@ -152,6 +152,47 @@ about `Heze.f`, and the per-fork directory is what keeps the two claims apart.
    it against the spec section it is about. A docstring that cites a line span
    into a fork body (`Gloas/Operations.lean:88-91`) is checked: run
    `just check-citations`, and `--fix` rewrites a stale span.
+
+   #### State the theorem over plain values
+
+   `SPECS_ARCHITECTURE.md` §11.1 states the rule in full. The short form:
+
+   - Bind `v : BeaconState`, never a boxed `State`.
+   - The box lives in the helpers: `runPure act v` for a reading, `pureState v`
+     where a statement must name the box, which is only in a contract's `.run`
+     form.
+   - State a successful run's result as one whole value, not field by field.
+   - Read fields directly, `v.slot`, not `sszGet state slot`.
+   - Keep the hasher generic (`[HasherTag]`); pin it only when the statement
+     carries concrete hash bytes.
+
+   Before and after, for `initiateBuilderExit_run_outOfRange`:
+
+   ```lean
+   -- before
+   theorem initiateBuilderExit_run_outOfRange [Preset] [HasherTag] [Config] :
+       ∀ (state : State) (builderIndex : BuilderIndex),
+         ¬ builderIndex.toNat < (sszGet state builders).size →
+         ∃ state' : State,
+           (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
+               = .ok ((), state')
+           ∧ sszGet state' builders = sszGet state builders
+
+   -- after
+   theorem initiateBuilderExit_run_outOfRange [Preset] [HasherTag] [Config] :
+       ∀ (v : BeaconState) (builderIndex : BuilderIndex),
+         ¬ builderIndex.toNat < v.builders.size →
+         runPure (initiateBuilderExit (StateTransition := GloasRun) builderIndex) v
+           = .ok ((), v)
+   ```
+
+   A theorem that must quantify over the box carries
+   `@[box_generic "reason"]`, and the proof-coverage check accepts it. The
+   reason is required and names one of two theorem kinds: a fact about the box
+   itself, such as a lemma that relates a run on a cached box to a run on
+   `pureState v`, or a fact that holds for any flavour at no extra cost,
+   stated strongly on purpose. The baseline diff shows every new marker to the
+   reviewer, and a marked theorem that binds no box fails as stale.
 3. **Tag it if it states the contract.** `@[characterizes EthCLSpecs.Gloas.f]`
    claims that the theorem states `f`'s main contract. The attribute rejects a
    target no `forkdef` declared, a target your statement never mentions, and a
@@ -190,10 +231,12 @@ about `Heze.f`, and the per-fork directory is what keeps the two claims apart.
    axioms every theorem rests on, and warnings where the ledger and the tags
    disagree. `just proof-coverage-check` is the exact command CI runs.
 
-Two rules the tooling enforces rather than asks for. Committed `sorry` fails
-`just lint`, and a proof resting on any axiom outside the allowed classes fails
-`just proof-coverage`, by name. Neither is a style preference; both are the
-trust base staying honest.
+Three rules the tooling enforces rather than asks for. Committed `sorry` fails
+`just lint`. A proof resting on any axiom outside the allowed classes fails
+`just proof-coverage`, by name. A fork-body theorem that binds a boxed `State`
+fails `just proof-coverage` unless it carries `@[box_generic "reason"]`
+(`SPECS_ARCHITECTURE.md` §11.1). None of the three is a style preference; all
+are the trust base staying honest.
 
 ## Pull requests
 

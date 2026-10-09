@@ -540,27 +540,18 @@ unless it carries `@[box_generic]`, and a marked statement that quantifies
 over no box fails as stale. One line per offending theorem: the theorem, the
 first offending binder, its type, and the pointer to `CONTRIBUTING.md`. -/
 
-/-- The plain-value binder check, as problem lines. -/
+/-- The plain-value binder check over the fork-body proof set.
+
+Every fork-body theorem, private ones included, goes through
+`boxBinderProblem?`, the one verdict the fixture pins test directly: the
+marker is decided first, so a marked theorem that is out of scope or binds no
+box fails as stale, and an unmarked theorem draws a finding when it is in
+scope and quantifies over the box. One line per offending theorem. -/
 def boxBinderProblems (env : Environment) (forkThms : Array Thm) : Array String :=
   let scopes := boxCheckScopes env
   let marked := (boxGenerics env).foldl (init := ({} : NameSet)) fun acc (thm, _) =>
     acc.insert thm
-  forkThms.filterMap fun t =>
-    if !namesFork scopes t.type then none
-    else
-      let hits := boxQuantifiers env t.type
-      let thm := userName t.name
-      match hits.isEmpty, marked.contains t.name with
-      | false, false =>
-        let (binder, binderType) := hits[0]!
-        some s!"{thm} binds {binder} : {toString binderType}, a boxed state. A \
-          fork-body theorem quantifies over plain values. See CONTRIBUTING.md, \
-          *Adding a proof*. To claim the box on purpose, tag the theorem \
-          `@[box_generic \"reason\"]`."
-      | true, true =>
-        some s!"{thm} carries `@[box_generic]` but binds no boxed state, so the \
-          marker is stale. Drop it. See CONTRIBUTING.md, *Adding a proof*."
-      | _, _ => none
+  forkThms.filterMap fun t => boxBinderProblem? env scopes marked t.name t.type
 
 /-! ## The computed report
 
