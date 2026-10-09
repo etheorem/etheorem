@@ -68,14 +68,28 @@ private theorem sszList_getElem?_eq_getElem! {α : Type} [Inhabited α] {cap : N
   show xs.val[i]? = some (xs.val[i]'h)
   exact Array.getElem?_eq_getElem h
 
+/-- `modBalance`'s whole contract at the pure box: the `sszModify state
+balances[i.toNat]! := f` expansion writes `set!` with `f` applied to the old
+element, so the writer lands as one plain record update. This is the shape the
+two mutator contracts below close into, and the fact a proof that runs a
+`State → State` writer on `pureState v` reaches for. -/
+@[characterizes EthCLSpecs.Fulu.modBalance]
+theorem modBalance_pureState [Preset] [HasherTag] :
+    ∀ (v : BeaconState) (i : ValidatorIndex) (f : Gwei → Gwei),
+      modBalance (pureState v) i f =
+        pureState { v with balances := v.balances.set! i.toNat (f v.balances[i.toNat]!) } :=
+  fun _ _ _ => rfl
+
 /-! ## `increaseBalance` -/
 
 /-- **Exact run equation.** The run is `sszGetIdx`'s range check, then `checkedAdd`'s carry
 check, and nothing else. Past the end of `balances` it rejects with `.outOfBounds`, the
 `IndexError` the pyspec's list read raises. In range it rejects with the `.arithmetic` fault
 when the sum wraps below the balance, the unsigned carry test. Otherwise it returns the new
-state, `u` with that one balance written, and leaves the threaded state `v` unchanged.
-Stated at the box level so the fork-choice bridge consumes it by application. -/
+state, `modBalance (pureState u) i …`, the source's own write, and leaves the threaded state
+`v` unchanged. Stated at the box level so the fork-choice bridge consumes it by application;
+`modBalance_pureState` turns the written state into the plain record update
+(`increaseBalance_run_no_wrap`). -/
 @[characterizes EthCLSpecs.Fulu.increaseBalance]
 theorem increaseBalance_run_eq [Preset] [HasherTag] :
     ∀ (u v : BeaconState) (i : ValidatorIndex) (delta : Gwei),
@@ -86,8 +100,7 @@ theorem increaseBalance_run_eq [Preset] [HasherTag] :
             if balance + delta < balance then
               .error (.arithmetic descr)
             else
-              .ok (pureState
-                { u with balances := u.balances.set! i.toNat (balance + delta) },
+              .ok (modBalance (pureState u) i (fun _ => balance + delta),
                 pureState v)) := by
   intro u v i delta
   unfold increaseBalance sszGetIdx checkedAdd
@@ -163,7 +176,7 @@ theorem increaseBalance_run_no_wrap [Preset] [HasherTag] :
     omega
   rw [runPure_eq, increaseBalance_run_eq u v i delta, sszList_getElem?_eq_getElem! _ _ hidx]
   simp only
-  rw [if_neg hcarry]
+  rw [if_neg hcarry, modBalance_pureState]
   rfl
 
 /-! ## `decreaseBalance`
@@ -174,9 +187,10 @@ writes a clamped difference. The clamp is the pyspec's own
 index read is the only reject. -/
 
 /-- **Exact run equation.** Past the end of `balances` the run rejects with `.outOfBounds`. In
-range it returns the new state, `u` with the clamped difference written, and leaves the
-threaded state `v` unchanged. Stated at the box level so the fork-choice bridge consumes it
-by application. -/
+range it returns the new state, `modBalance (pureState u) i …`, the source's own write with
+the clamped difference, and leaves the threaded state `v` unchanged. Stated at the box level
+so the fork-choice bridge consumes it by application; `modBalance_pureState` turns the
+written state into the plain record update (`decreaseBalance_run_no_underflow`). -/
 @[characterizes EthCLSpecs.Fulu.decreaseBalance]
 theorem decreaseBalance_run_eq [Preset] [HasherTag] :
     ∀ (u v : BeaconState) (i : ValidatorIndex) (delta : Gwei),
@@ -184,9 +198,8 @@ theorem decreaseBalance_run_eq [Preset] [HasherTag] :
         = (match u.balances.val[i.toNat]? with
           | none => .error (.outOfBounds i.toNat u.balances.size)
           | some balance =>
-            .ok (pureState
-              { u with balances :=
-                  u.balances.set! i.toNat (if delta > balance then 0 else balance - delta) },
+            .ok (modBalance (pureState u) i
+                (fun _ => if delta > balance then 0 else balance - delta),
               pureState v)) := by
   intro u v i delta
   unfold decreaseBalance sszGetIdx
@@ -229,6 +242,8 @@ theorem decreaseBalance_run_no_underflow [Preset] [HasherTag] :
           v) := by
   intro u v i delta hidx
   rw [runPure_eq, decreaseBalance_run_eq u v i delta, sszList_getElem?_eq_getElem! _ _ hidx]
+  simp only
+  rw [modBalance_pureState]
   rfl
 
 end EthCLSpecs.Proofs.Fulu
