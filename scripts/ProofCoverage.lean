@@ -1,4 +1,5 @@
 import Lean
+import EthCLLib.Internal.BoxBinders
 import EthCLLib.Internal.Capture
 import EthCLLib.Internal.ProofLedger
 
@@ -17,8 +18,9 @@ lake env lean --run scripts/ProofCoverage.lean -- --update  # rewrite the baseli
 
 The script imports the built environment and reads it. Nothing here scrapes
 source text for declaration names: `captureExt` already records every `forkdef`
-into the `.olean`, and `characterizesExt` records every `@[characterizes]` tag,
-so the names are exact and a rename can never rot them. The one filesystem read
+into the `.olean`, `characterizesExt` records every `@[characterizes]` tag, and
+`boxGenericExt` records every `@[box_generic]` marker, so the names are exact
+and a rename can never rot them. The one filesystem read
 is module *discovery* under `packages/SizzLean/SizzLean/Proofs/`, so a new proof
 module joins the report without an edit here.
 
@@ -40,6 +42,19 @@ A **spec function** is a constant a `forkdef` produced. Each one sits in a tier:
 The headline is the tier 2 count; tier 1 stands beside it. A report of "has some
 theorem" alone would score one offset bound the same as a full
 characterization.
+
+## The plain-value check
+
+A fork-body theorem quantifies over plain values: it binds `v : BeaconState`,
+never a boxed `State` (`EthCLLib.Internal.BoxBinders` holds the rule and the
+walk). The report runs the walk over every theorem under `EthCLSpecs.Proofs`
+whose statement names a fork constant, and a theorem that quantifies over the
+box fails the run unless it carries `@[box_generic "reason"]`, the marker for
+a claim about the box itself. A marked theorem that binds no box fails as
+stale. The report lists every marked theorem with its reason, and the baseline
+records them by name, so a new marker reaches the reviewer as a baseline diff.
+The fixture pins in `EthCLSpecs.Tests.BoxBinderPins` hold the walk to eight
+statements of known answers.
 
 ## The denominator, per fork
 
@@ -143,6 +158,9 @@ def sortNames (ns : Array Name) : Array Name :=
 
 /-- The printed form of a name, in backticks, for the markdown tables. -/
 def code (n : Name) : String := s!"`{n}`"
+
+/-- The user-facing form of a declaration name: a private prefix unwrapped. -/
+def userName (n : Name) : Name := (privateToUserName? n).getD n
 
 /-- ASCII whitespace off both ends. `String.trim` is deprecated in favour of
 `String.trimAscii`, which answers with a `String.Slice`. -/
@@ -502,6 +520,48 @@ def renderTrustBase (rows : Array (String × Nat)) : String :=
   table #["Axiom", "Theorems resting on it"]
     (rows.map fun (cls, n) => #[s!"`{cls}`", toString n])
 
+/-- The plain-value exceptions section: every `box_generic` marker with its
+reason. An empty list prints the rule instead of an empty table. -/
+def renderBoxGeneric (boxTags : Array (Name × String)) : String :=
+  let header := "## Plain-value exceptions"
+  if boxTags.isEmpty then
+    s!"{header}\n\nNone. Every fork-body theorem quantifies over plain values. \
+      `@[box_generic \"reason\"]` marks the documented exception: a fact about \
+      the box itself, or a stronger any-flavour claim made on purpose."
+  else
+    s!"{header}\n\n" ++ table #["Theorem", "Reason"]
+      (boxTags.map fun (thm, reason) => #[code (userName thm), reason])
+
+/-! ## The plain-value check
+
+Every fork-body theorem in scope, private ones included, walks through
+`boxQuantifiers`. A statement that quantifies over the boxed `State` fails
+unless it carries `@[box_generic]`, and a marked statement that quantifies
+over no box fails as stale. One line per offending theorem: the theorem, the
+first offending binder, its type, and the pointer to `CONTRIBUTING.md`. -/
+
+/-- The plain-value binder check, as problem lines. -/
+def boxBinderProblems (env : Environment) (forkThms : Array Thm) : Array String :=
+  let scopes := boxCheckScopes env
+  let marked := (boxGenerics env).foldl (init := ({} : NameSet)) fun acc (thm, _) =>
+    acc.insert thm
+  forkThms.filterMap fun t =>
+    if !namesFork scopes t.type then none
+    else
+      let hits := boxQuantifiers env t.type
+      let thm := userName t.name
+      match hits.isEmpty, marked.contains t.name with
+      | false, false =>
+        let (binder, binderType) := hits[0]!
+        some s!"{thm} binds {binder} : {toString binderType}, a boxed state. A \
+          fork-body theorem quantifies over plain values. See CONTRIBUTING.md, \
+          *Adding a proof*. To claim the box on purpose, tag the theorem \
+          `@[box_generic \"reason\"]`."
+      | true, true =>
+        some s!"{thm} carries `@[box_generic]` but binds no boxed state, so the \
+          marker is stale. Drop it. See CONTRIBUTING.md, *Adding a proof*."
+      | _, _ => none
+
 /-! ## The computed report
 
 One structure holds everything the three modes read, so the report, the README
@@ -523,6 +583,8 @@ structure Report where
   sszTheorems : Nat
   /-- Every `characterizes` tag, as `(theorem, function)`. -/
   tags : Array (Name × Name)
+  /-- Every `box_generic` tag, as `(theorem, reason)`. -/
+  boxTags : Array (Name × String)
   /-- Why the run must fail. Empty on a healthy repo. -/
   problems : Array String
 
@@ -536,10 +598,12 @@ def buildReport (env : Environment) : Report :=
   let forks := gradeForks env forkThms
   let matrix := gradeSsz env sszThms
   let tags := characterizations env
+  let boxTags := boxGenerics env
   let surfaced := forks.foldl (init := #[]) fun acc r => acc ++ r.surface
   let problems :=
     (axiomViolations env (forkAudit ++ sszAudit)).map (fun (thm, bad) =>
         s!"{thm} rests on an axiom outside the allowed classes: {bad.toList}")
+    ++ boxBinderProblems env forkThms
     ++ matrix.filterMap (fun r =>
         if r.unclassified.isEmpty then none
         else some s!"property `{r.property.key}` admits arms no fragment claims: \
@@ -568,7 +632,7 @@ def buildReport (env : Environment) : Report :=
     sszTrust     := trustBase env sszAudit
     forkTheorems := forkThms.size
     sszTheorems  := sszThms.size
-    tags, problems }
+    tags, boxTags, problems }
 
 /-- The block the `EthCLSpecs` README carries between its markers: the fork
 table and the fork-body trust base.
@@ -645,6 +709,7 @@ main contract. Tier 0 is every spec function, the denominator.
 
 {report.forkTheorems} written theorems under {forkProofsRoot}.
 {tierLists}
+{renderBoxGeneric report.boxTags}
 ## SSZ properties (SizzLean)
 
 {renderMatrix report.matrix}
@@ -691,13 +756,17 @@ def baselineHeader : Array String :=
   #["# Proof-coverage baseline. Rewrite with `just proof-coverage-update`.",
     "# Every line is a claim `just proof-coverage-check` enforces exactly."]
 
-/-- The fork bodies' claims: the tier each covered spec function reached. -/
+/-- The fork bodies' claims: the tier each covered spec function reached, plus
+every `box_generic` marker by name, so a new marker reaches the reviewer as a
+baseline diff. -/
 def forkBaseline (report : Report) : Baseline :=
   { path   := forkBaselinePath
     claims := (report.forks.flatMap fun r =>
-      r.touched.map fun fn =>
-        let tier := if r.characterized.contains fn then "tier2" else "tier1"
-        s!"{tier} {fn}").qsort (· < ·) }
+        r.touched.map fun fn =>
+          let tier := if r.characterized.contains fn then "tier2" else "tier1"
+          s!"{tier} {fn}").append
+      (report.boxTags.map fun (thm, _) => s!"box_generic {userName thm}")
+      |>.qsort (· < ·) }
 
 /-- The SSZ library's claims: how many arms each property admits per fragment. -/
 def sszBaseline (report : Report) : Baseline :=
