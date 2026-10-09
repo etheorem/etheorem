@@ -971,19 +971,21 @@ configuration reaches a fork-choice proof.
 
 #### 11.1.1 Statements bind plain values
 
-A fork-body theorem states its claim over plain values. It binds `v : BeaconState`,
-never a boxed `State`, and it reads fields directly, `v.slot` rather than
-`sszGet state slot`. A successful run states its result as one whole value, not
+A fork-body theorem states its claim over plain values. It binds a plain
+`BeaconState`, never a boxed `State`, and it reads fields directly, `state.slot`
+rather than `sszGet state slot`. A theorem about a step names the input value
+`preState` and the result value `postState`. A theorem that only reads the value
+names it `state`. A successful run states its result as one whole value, not
 field by field, since two boxes that carry the same value can still differ.
 
 The box lives in two helpers, `pureState` and `runPure`
-(`EthCLLib/Proofs/Run.lean`, the framework's generic proof toolkit). `pureState v`
-is the uncached box of `v`, and it
-is the only box constructor a statement names. `runPure act v` runs a step on
+(`EthCLLib/Proofs/Run.lean`, the framework's generic proof toolkit). `pureState state`
+is the uncached box of `state`, and it
+is the only box constructor a statement names. `runPure act preState` runs a step on
 that box and reads the post-state's value. A contract theorem states the run at
-the box, `act.run (pureState v) = .ok (a, pureState w)`, because that `.run`
+the box, `act.run (pureState preState) = .ok (a, pureState postState)`, because that `.run`
 shape is what the fork-choice bridge consumes. A reading theorem states the
-`runPure` form, `runPure act v = .ok (a, w)`, which `runPure_of_run_ok` derives
+`runPure` form, `runPure act preState = .ok (a, postState)`, which `runPure_of_run_ok` derives
 from the contract. The hasher stays generic (`[HasherTag]`); §11.2 says when a
 goal pins it.
 
@@ -996,7 +998,7 @@ and `just proof-coverage` prints the findings.
 A theorem that must quantify over the box carries `@[box_generic "reason"]`,
 and the check accepts it. Two theorem kinds justify the marker. The first is a
 fact about the box itself, such as a lemma that relates a run on a cached box
-to a run on `pureState v`; such a lemma is the seed of a future cached ≡ pure
+to a run on `pureState preState`; such a lemma is the seed of a future cached ≡ pure
 equivalence, and it cannot avoid a `Box` binder. The second is a fact that
 holds for any flavour at no extra cost, where the author wants the stronger
 claim on purpose. The check rejects a marked theorem that binds no box, the

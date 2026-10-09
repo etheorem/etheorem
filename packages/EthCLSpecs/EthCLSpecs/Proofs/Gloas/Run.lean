@@ -35,7 +35,7 @@ monad it resolves to this one. So every theorem below is a theorem about the ste
 under fork choice too. Carrying one over is function application:
 `runNestedStateTransition_of_ok` (`EthCLLib/Spec/NestedMachine.lean`) takes a step's
 `.run` fact and returns the store-machine statement, for any action. This is why a
-contract theorem states the run on `pureState v`, at the box, in `.run` form: that is
+contract theorem states the run on `pureState preState`, at the box, in `.run` form: that is
 the shape the bridge consumes. `runPure` (`EthCLLib/Proofs/Run.lean`) pins the box and gives the
 value-level reading of the same contract; a theorem never runs an action on a `State`
 it bound itself.

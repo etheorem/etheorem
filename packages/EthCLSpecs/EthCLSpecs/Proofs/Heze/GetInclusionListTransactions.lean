@@ -19,7 +19,7 @@ propagate through `getInclusionListTransactions`.
 are the principal equations.
 
 Statements bind plain `BeaconState` values; the two state readers receive
-`pureState v`, the uncached box, and never a boxed `State` of their own. The
+`pureState state`, the uncached box, and never a boxed `State` of their own. The
 collector theorems below never touch a state, so they stay as they are.
 -/
 
@@ -48,19 +48,19 @@ that array and leaves the runner state unchanged. The committee accessor does
 not read the runner state, so the equation holds for an arbitrary `σ`. -/
 @[characterizes EthCLSpecs.Heze.getInclusionListCommittee]
 theorem getInclusionListCommittee_run_eq :
-    ∀ (v : BeaconState) (slot : Slot) (runnerStore : σ),
+    ∀ (state : BeaconState) (slot : Slot) (runnerStore : σ),
       let indices :=
-        (Array.range (getCommitteeCountPerSlot (pureState v) (computeEpochAtSlot slot))).foldl
-          (fun acc i => acc ++ getBeaconCommittee (pureState v) slot i)
+        (Array.range (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))).foldl
+          (fun acc i => acc ++ getBeaconCommittee (pureState state) slot i)
           (#[] : Array ValidatorIndex)
       (getInclusionListCommittee
-          (StoreTransition := ForkChoiceStoreRun σ) (pureState v) slot).run runnerStore =
+          (StoreTransition := ForkChoiceStoreRun σ) (pureState state) slot).run runnerStore =
         if indices.size == 0 then
           .error (.transition (.arithmetic
             "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"))
         else
           .ok (cyclicSample indices inclusionListCommitteeSize, runnerStore) := by
-  intro v slot runnerStore
+  intro state slot runnerStore
   simp only [getInclusionListCommittee]
   split
   · rw [run_bind, ForkChoiceStoreRun.throwArithmetic_run]
@@ -70,12 +70,12 @@ theorem getInclusionListCommittee_run_eq :
 
 /-- Exact empty-committee error of `getInclusionListCommittee`. -/
 theorem getInclusionListCommittee_run_error_of_empty
-    (v : BeaconState) (slot : Slot) (runnerStore : σ)
-    (h : ((Array.range (getCommitteeCountPerSlot (pureState v) (computeEpochAtSlot slot))).foldl
-        (fun acc i => acc ++ getBeaconCommittee (pureState v) slot i)
+    (state : BeaconState) (slot : Slot) (runnerStore : σ)
+    (h : ((Array.range (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))).foldl
+        (fun acc i => acc ++ getBeaconCommittee (pureState state) slot i)
         (#[] : Array ValidatorIndex)).size = 0) :
     (getInclusionListCommittee
-        (StoreTransition := ForkChoiceStoreRun σ) (pureState v) slot).run runnerStore
+        (StoreTransition := ForkChoiceStoreRun σ) (pureState state) slot).run runnerStore
       = .error (.transition (.arithmetic
           "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee")) := by
   simp only [getInclusionListCommittee_run_eq, h, beq_iff_eq, ite_true]
@@ -269,14 +269,14 @@ variable [FcMap map]
 collection at the committee's stored lists. -/
 @[characterizes EthCLSpecs.Heze.getInclusionListTransactions]
 theorem getInclusionListTransactions_run_eq
-    (store : InclusionListStore map) (v : BeaconState) (slot : Slot)
+    (store : InclusionListStore map) (state : BeaconState) (slot : Slot)
     (onlyTimely : Bool) (runnerStore : Store map) :
     (getInclusionListTransactions
         (StoreTransition := ForkChoiceStoreRun (Store map))
-        store (pureState v) slot onlyTimely).run runnerStore
+        store (pureState state) slot onlyTimely).run runnerStore
       = ((getInclusionListCommittee
             (StoreTransition := ForkChoiceStoreRun (Store map))
-            (pureState v) slot).run runnerStore) >>= fun p =>
+            (pureState state) slot).run runnerStore) >>= fun p =>
           (collectInclusionListTransactions
               (StoreTransition := ForkChoiceStoreRun (Store map))
               ((FcMap.lookup store.inclusionLists (htr p.1)).getD FcMap.empty)
@@ -288,27 +288,27 @@ theorem getInclusionListTransactions_run_eq
 /-- If committee construction returns `err`,
 `getInclusionListTransactions` returns the same error. -/
 theorem getInclusionListTransactions_run_error_of_committee
-    (store : InclusionListStore map) (v : BeaconState) (slot : Slot)
+    (store : InclusionListStore map) (state : BeaconState) (slot : Slot)
     (onlyTimely : Bool) (runnerStore : Store map)
     (err : StoreTransitionError)
     (herr : (getInclusionListCommittee
-        (StoreTransition := ForkChoiceStoreRun (Store map)) (pureState v) slot).run runnerStore
+        (StoreTransition := ForkChoiceStoreRun (Store map)) (pureState state) slot).run runnerStore
       = .error err) :
     (getInclusionListTransactions
         (StoreTransition := ForkChoiceStoreRun (Store map))
-        store (pureState v) slot onlyTimely).run runnerStore
+        store (pureState state) slot onlyTimely).run runnerStore
       = .error err := by
   rw [getInclusionListTransactions_run_eq, herr, except_bind_error]
 
 /-- If collection returns `err` after committee construction succeeds,
 `getInclusionListTransactions` returns the same error. -/
 theorem getInclusionListTransactions_run_error_of_collect
-    (store : InclusionListStore map) (v : BeaconState) (slot : Slot)
+    (store : InclusionListStore map) (state : BeaconState) (slot : Slot)
     (onlyTimely : Bool) (runnerStore postCommitteeStore : Store map)
     (committee : Vector ValidatorIndex inclusionListCommitteeSize)
     (err : StoreTransitionError)
     (hok : (getInclusionListCommittee
-        (StoreTransition := ForkChoiceStoreRun (Store map)) (pureState v) slot).run runnerStore
+        (StoreTransition := ForkChoiceStoreRun (Store map)) (pureState state) slot).run runnerStore
       = .ok (committee, postCommitteeStore))
     (herr : (collectInclusionListTransactions
         (StoreTransition := ForkChoiceStoreRun (Store map))
@@ -318,7 +318,7 @@ theorem getInclusionListTransactions_run_error_of_collect
       = .error err) :
     (getInclusionListTransactions
         (StoreTransition := ForkChoiceStoreRun (Store map))
-        store (pureState v) slot onlyTimely).run runnerStore
+        store (pureState state) slot onlyTimely).run runnerStore
       = .error err := by
   rw [getInclusionListTransactions_run_eq, hok, except_bind_ok, herr]
 

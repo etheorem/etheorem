@@ -33,7 +33,7 @@ literal gates is that layer's entire job, and the implementation panics-by-defau
 there.
 
 Statements bind plain `BeaconState` values; the state readers and the spec
-functions receive `pureState v`, and the reads spell `v.validators`.
+functions receive `pureState state`, and the reads spell `state.validators`.
 
 **Shared scope.** Sortedness is deliberately adjacent and non-strict (the PTC can
 repeat a validator). This module does not assert uniqueness, full `List.Pairwise`
@@ -59,17 +59,17 @@ open SizzLean.Proofs (sszListMap_getElem!_eq_attachMap)
 /-- Exact backend-generic characterization using the function's literal
 `Array.all` validation gates. -/
 theorem isValidIndexedPayloadAttestation_eq_true_iff_checks [Preset] [HasherTag] [CryptoBackend]
-    (v : BeaconState) (a : IndexedPayloadAttestation) :
-    isValidIndexedPayloadAttestation (pureState v) a = true ↔
+    (state : BeaconState) (a : IndexedPayloadAttestation) :
+    isValidIndexedPayloadAttestation (pureState state) a = true ↔
       let idx := a.attestingIndices.toArray
-      let validators := v.validators
+      let validators := state.validators
       idx.size ≠ 0 ∧
       (Array.range (idx.size - 1)).all
           (fun i => idx[i]?.getD default ≤ idx[i + 1]?.getD default) = true ∧
       idx.all (fun i => i.toNat < validators.size) = true ∧
       blsFastAggregateVerify (idx.map (fun i => (validators[i.toNat]!).pubkey))
         (computeSigningRoot a.data
-          (getDomain (pureState v) domainPtcAttester (computeEpochAtSlot a.data.slot)))
+          (getDomain (pureState state) domainPtcAttester (computeEpochAtSlot a.data.slot)))
         a.signature = true := by
   simp [isValidIndexedPayloadAttestation, and_assoc]
 
@@ -115,17 +115,17 @@ implementation's exact aggregate-verification call. The in-range conjunct binds 
 proof so the pubkey array can be read in bounds; see the module docstring. -/
 @[characterizes EthCLSpecs.Gloas.isValidIndexedPayloadAttestation]
 theorem isValidIndexedPayloadAttestation_eq_true_iff [Preset] [HasherTag] [CryptoBackend]
-    (v : BeaconState) (a : IndexedPayloadAttestation) :
-    isValidIndexedPayloadAttestation (pureState v) a = true ↔
+    (state : BeaconState) (a : IndexedPayloadAttestation) :
+    isValidIndexedPayloadAttestation (pureState state) a = true ↔
       let idx := a.attestingIndices.toArray
-      let validators := v.validators
+      let validators := state.validators
       idx.size ≠ 0 ∧
       (∀ i (h : i + 1 < idx.size), idx[i]'(by omega) ≤ idx[i + 1]'h) ∧
       ∃ hRange : ∀ i ∈ idx, i.toNat < validators.size,
         blsFastAggregateVerify
           (idx.attach.map (fun i => (validators[i.1.toNat]'(hRange i.1 i.2)).pubkey))
           (computeSigningRoot a.data
-            (getDomain (pureState v) domainPtcAttester (computeEpochAtSlot a.data.slot)))
+            (getDomain (pureState state) domainPtcAttester (computeEpochAtSlot a.data.slot)))
           a.signature = true := by
   rw [isValidIndexedPayloadAttestation_eq_true_iff_checks]
   simp only [indexedPayloadAttestation_adjacentNondecreasing_iff,

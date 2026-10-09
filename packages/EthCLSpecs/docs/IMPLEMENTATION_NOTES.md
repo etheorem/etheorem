@@ -816,7 +816,7 @@ separation.
   `default` corollary for the first region.
 
 - **`Proofs/Gloas/InitiateBuilderExit.lean`** gives the whole-transition
-  `initiateBuilderExit_run_eq` contract at the box: the run on `pureState v` returns
+  `initiateBuilderExit_run_eq` contract at the box: the run on `pureState preState` returns
   `pureState` of a value whose `builders` carries one unconditional `SSZList.set!`
   write. The in-range and out-of-range theorems state the `runPure` form of that
   contract and read it through `SizzLean.Proofs.SSZListSet`, so the range split happens

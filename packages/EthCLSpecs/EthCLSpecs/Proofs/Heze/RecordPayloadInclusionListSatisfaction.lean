@@ -49,7 +49,7 @@ value, because the generic `FcMap` interface does not provide an insert/lookup
 law.
 
 Statements bind plain `BeaconState` values; the state reader and every store
-function that takes a state receive `pureState v`, and the reads spell `v.slot`.
+function that takes a state receive `pureState state`, and the reads spell `state.slot`.
 The store binders (`store`, `runnerStore`, and friends) stay, since a `Store`
 is not a box.
 -/
@@ -77,18 +77,18 @@ keeps the collector's runner state. -/
 theorem recordPayloadInclusionListSatisfaction_run
     {map : MapKind} [Preset] [HasherTag] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests] :
-    ∀ (store runnerStore : Store map) (v : BeaconState) (root : Root)
+    ∀ (store runnerStore : Store map) (state : BeaconState) (root : Root)
       (payload : ExecutionPayload),
       (recordPayloadInclusionListSatisfaction
           (StoreTransition := ForkChoiceStoreRun (Store map))
-          store (pureState v) root payload).run runnerStore =
-        if v.slot = 0 then
+          store (pureState state) root payload).run runnerStore =
+        if state.slot = 0 then
           .error (.transition (.arithmetic
             "record_payload_inclusion_list_satisfaction: Slot(state.slot - 1)"))
         else
           match (getInclusionListTransactions
               (StoreTransition := ForkChoiceStoreRun (Store map))
-              store.inclusionListStore (pureState v) (v.slot - 1)
+              store.inclusionListStore (pureState state) (state.slot - 1)
               (onlyTimely := true)).run runnerStore with
           | .error err => .error err
           | .ok (ilTxs, postRunnerStore) =>
@@ -98,8 +98,8 @@ theorem recordPayloadInclusionListSatisfaction_run
                   FcMap.insert store.payloadInclusionListSatisfaction root
                     (isInclusionListSatisfied payload ilTxs) },
               postRunnerStore) := by
-  intro store runnerStore v root payload
-  by_cases hslot : v.slot = 0
+  intro store runnerStore state root payload
+  by_cases hslot : state.slot = 0
   · simp [recordPayloadInclusionListSatisfaction, checkedSub, hslot]
     have hthrow := ForkChoiceStoreRun.throwArithmetic_run (α := UInt64)
       "record_payload_inclusion_list_satisfaction: Slot(state.slot - 1)" runnerStore
@@ -108,7 +108,7 @@ theorem recordPayloadInclusionListSatisfaction_run
   · simp [recordPayloadInclusionListSatisfaction, checkedSub, hslot]
     cases htxs : (getInclusionListTransactions
         (StoreTransition := ForkChoiceStoreRun (Store map))
-        store.inclusionListStore (pureState v) (v.slot - 1)).run runnerStore with
+        store.inclusionListStore (pureState state) (state.slot - 1)).run runnerStore with
     | error err =>
       rfl
     | ok p =>
@@ -125,24 +125,24 @@ theorem recordPayloadInclusionListSatisfaction_run_eq
     {map : MapKind} [Preset] [HasherTag] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests] :
     ∀ (store runnerStore postRunnerStore : Store map)
-      (v : BeaconState) (root : Root)
+      (state : BeaconState) (root : Root)
       (payload : ExecutionPayload) (ilTxs : Array Transaction),
-      v.slot ≠ 0 →
+      state.slot ≠ 0 →
       (getInclusionListTransactions
           (StoreTransition := ForkChoiceStoreRun (Store map))
-          store.inclusionListStore (pureState v) (v.slot - 1)
+          store.inclusionListStore (pureState state) (state.slot - 1)
           (onlyTimely := true)).run runnerStore
         = .ok (ilTxs, postRunnerStore) →
       (recordPayloadInclusionListSatisfaction
           (StoreTransition := ForkChoiceStoreRun (Store map))
-          store (pureState v) root payload).run runnerStore
+          store (pureState state) root payload).run runnerStore
         = .ok (
             { store with
               payloadInclusionListSatisfaction :=
                 FcMap.insert store.payloadInclusionListSatisfaction root
                   (isInclusionListSatisfied payload ilTxs) },
             postRunnerStore) := by
-  intro store runnerStore postRunnerStore v root payload ilTxs hslot htxs
+  intro store runnerStore postRunnerStore state root payload ilTxs hslot htxs
   rw [recordPayloadInclusionListSatisfaction_run]
   simp [hslot, htxs]
 
@@ -150,12 +150,12 @@ theorem recordPayloadInclusionListSatisfaction_run_eq
 theorem recordPayloadInclusionListSatisfaction_run_error_of_slot_zero
     {map : MapKind} [Preset] [HasherTag] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    (store runnerStore : Store map) (v : BeaconState) (root : Root)
+    (store runnerStore : Store map) (state : BeaconState) (root : Root)
     (payload : ExecutionPayload)
-    (hslot : v.slot = 0) :
+    (hslot : state.slot = 0) :
     (recordPayloadInclusionListSatisfaction
         (StoreTransition := ForkChoiceStoreRun (Store map))
-        store (pureState v) root payload).run runnerStore
+        store (pureState state) root payload).run runnerStore
       = .error (.transition (.arithmetic
           "record_payload_inclusion_list_satisfaction: Slot(state.slot - 1)")) := by
   rw [recordPayloadInclusionListSatisfaction_run]
@@ -165,17 +165,17 @@ theorem recordPayloadInclusionListSatisfaction_run_error_of_slot_zero
 theorem recordPayloadInclusionListSatisfaction_run_error_of_collect
     {map : MapKind} [Preset] [HasherTag] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    (store runnerStore : Store map) (v : BeaconState) (root : Root)
+    (store runnerStore : Store map) (state : BeaconState) (root : Root)
     (payload : ExecutionPayload) (err : StoreTransitionError)
-    (hslot : v.slot ≠ 0)
+    (hslot : state.slot ≠ 0)
     (herr : (getInclusionListTransactions
         (StoreTransition := ForkChoiceStoreRun (Store map))
-        store.inclusionListStore (pureState v) (v.slot - 1)
+        store.inclusionListStore (pureState state) (state.slot - 1)
         (onlyTimely := true)).run runnerStore
       = .error err) :
     (recordPayloadInclusionListSatisfaction
         (StoreTransition := ForkChoiceStoreRun (Store map))
-        store (pureState v) root payload).run runnerStore
+        store (pureState state) root payload).run runnerStore
       = .error err := by
   rw [recordPayloadInclusionListSatisfaction_run]
   simp [hslot, herr]
@@ -184,39 +184,39 @@ theorem recordPayloadInclusionListSatisfaction_run_error_of_collect
 theorem recordPayloadInclusionListSatisfaction_run_error_of_empty_committee
     {map : MapKind} [Preset] [HasherTag] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    (store runnerStore : Store map) (v : BeaconState) (root : Root)
+    (store runnerStore : Store map) (state : BeaconState) (root : Root)
     (payload : ExecutionPayload)
-    (hslot : v.slot ≠ 0)
-    (hempty : ((Array.range (getCommitteeCountPerSlot (pureState v)
-        (computeEpochAtSlot (v.slot - 1)))).foldl
-        (fun acc i => acc ++ getBeaconCommittee (pureState v) (v.slot - 1) i)
+    (hslot : state.slot ≠ 0)
+    (hempty : ((Array.range (getCommitteeCountPerSlot (pureState state)
+        (computeEpochAtSlot (state.slot - 1)))).foldl
+        (fun acc i => acc ++ getBeaconCommittee (pureState state) (state.slot - 1) i)
         (#[] : Array ValidatorIndex)).size = 0) :
     (recordPayloadInclusionListSatisfaction
         (StoreTransition := ForkChoiceStoreRun (Store map))
-        store (pureState v) root payload).run runnerStore
+        store (pureState state) root payload).run runnerStore
       = .error (.transition (.arithmetic
           "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee")) := by
   have hcomm :=
-    getInclusionListCommittee_run_error_of_empty (σ := Store map) v (v.slot - 1)
+    getInclusionListCommittee_run_error_of_empty (σ := Store map) state (state.slot - 1)
       runnerStore hempty
   have htxs :=
     getInclusionListTransactions_run_error_of_committee (map := map) store.inclusionListStore
-      v (v.slot - 1) true runnerStore _ hcomm
+      state (state.slot - 1) true runnerStore _ hcomm
   exact recordPayloadInclusionListSatisfaction_run_error_of_collect
-    store runnerStore v root payload _ hslot htxs
+    store runnerStore state root payload _ hslot htxs
 
 /-- Missing-timeliness collector error, derived from the collector theorems. -/
 theorem recordPayloadInclusionListSatisfaction_run_error_of_missing_timeliness
     {map : MapKind} [Preset] [HasherTag] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    (store runnerStore postCommitteeStore : Store map) (v : BeaconState) (root : Root)
+    (store runnerStore postCommitteeStore : Store map) (state : BeaconState) (root : Root)
     (payload : ExecutionPayload)
     (committee : Vector ValidatorIndex inclusionListCommitteeSize)
     (ilRoot : Root)
-    (hslot : v.slot ≠ 0)
+    (hslot : state.slot ≠ 0)
     (hok : (getInclusionListCommittee
         (StoreTransition := ForkChoiceStoreRun (Store map))
-        (pureState v) (v.slot - 1)).run runnerStore
+        (pureState state) (state.slot - 1)).run runnerStore
       = .ok (committee, postCommitteeStore))
     (hfirst : FirstReachableMissingTimeliness
         (FcMap.fold (fun acc ilRoot il => acc.push (ilRoot, il)) #[]
@@ -225,7 +225,7 @@ theorem recordPayloadInclusionListSatisfaction_run_error_of_missing_timeliness
         store.inclusionListStore.inclusionListTimeliness ilRoot) :
     (recordPayloadInclusionListSatisfaction
         (StoreTransition := ForkChoiceStoreRun (Store map))
-        store (pureState v) root payload).run runnerStore
+        store (pureState state) root payload).run runnerStore
       = .error (.missingKey ilRoot) := by
   have hcol :=
     collectInclusionListTransactions_run_error_of_first_missing (map := map) (σ := Store map)
@@ -234,9 +234,9 @@ theorem recordPayloadInclusionListSatisfaction_run_error_of_missing_timeliness
       store.inclusionListStore.inclusionListTimeliness true ilRoot postCommitteeStore rfl hfirst
   have htxs :=
     getInclusionListTransactions_run_error_of_collect (map := map) store.inclusionListStore
-      v (v.slot - 1) true runnerStore postCommitteeStore committee
+      state (state.slot - 1) true runnerStore postCommitteeStore committee
       (.missingKey ilRoot) hok hcol
   exact recordPayloadInclusionListSatisfaction_run_error_of_collect
-    store runnerStore v root payload _ hslot htxs
+    store runnerStore state root payload _ hslot htxs
 
 end EthCLSpecs.Proofs.Heze

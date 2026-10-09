@@ -16,7 +16,7 @@ holds for out-of-range `builderIndex` values, without claiming that the resultin
 default value represents a registered builder.
 
 Statements bind plain `BeaconState` values; the state readers and the spec
-functions receive `pureState v`, and the reads spell `v.builders[i]!`.
+functions receive `pureState state`, and the reads spell `state.builders[i]!`.
 
 Two theorems:
 
@@ -50,14 +50,14 @@ claim is made that pending-obligation accumulation is overflow-free or that
 `builderIndex` identifies a registered builder. -/
 @[characterizes EthCLSpecs.Gloas.canBuilderCoverBid]
 theorem canBuilderCoverBid_iff [Preset] [HasherTag] :
-    ∀ (v : BeaconState) (builderIndex : BuilderIndex) (bidAmount : Gwei),
-      canBuilderCoverBid (pureState v) builderIndex bidAmount = true ↔
-        let builderBalance := v.builders[builderIndex.toNat]!.balance
+    ∀ (state : BeaconState) (builderIndex : BuilderIndex) (bidAmount : Gwei),
+      canBuilderCoverBid (pureState state) builderIndex bidAmount = true ↔
+        let builderBalance := state.builders[builderIndex.toNat]!.balance
         let minBalance :=
           Gloas.Const.minDepositAmountG +
-          getPendingBalanceToWithdrawForBuilder (pureState v) builderIndex
+          getPendingBalanceToWithdrawForBuilder (pureState state) builderIndex
         minBalance ≤ builderBalance ∧ bidAmount ≤ builderBalance - minBalance := by
-  intro v builderIndex bidAmount
+  intro state builderIndex bidAmount
   -- Both lemmas restate `UInt64`'s `<` / `≤` as `Nat` comparisons on `toNat`,
   -- which is what lets `simp` discharge the guard's `if` and pair the surviving
   -- branch conditions into the conjunction.
@@ -78,14 +78,14 @@ exactly when the computed `minBalance` plus the bid fits within the builder's
 balance. The addition in this conclusion cannot wrap; `minBalance` itself
 remains the literal `UInt64` value produced by the implementation. -/
 theorem canBuilderCoverBid_iff_toNat_add_le [Preset] [HasherTag] :
-    ∀ (v : BeaconState) (builderIndex : BuilderIndex) (bidAmount : Gwei),
-      canBuilderCoverBid (pureState v) builderIndex bidAmount = true ↔
-        let builderBalance := v.builders[builderIndex.toNat]!.balance
+    ∀ (state : BeaconState) (builderIndex : BuilderIndex) (bidAmount : Gwei),
+      canBuilderCoverBid (pureState state) builderIndex bidAmount = true ↔
+        let builderBalance := state.builders[builderIndex.toNat]!.balance
         let minBalance :=
           Gloas.Const.minDepositAmountG +
-          getPendingBalanceToWithdrawForBuilder (pureState v) builderIndex
+          getPendingBalanceToWithdrawForBuilder (pureState state) builderIndex
         minBalance.toNat + bidAmount.toNat ≤ builderBalance.toNat := by
-  intro v builderIndex bidAmount
+  intro state builderIndex bidAmount
   rw [canBuilderCoverBid_iff]
   dsimp only
   constructor

@@ -78,7 +78,7 @@ theorem bindsState [Preset] [HasherTag] :
 
 /-- In scope, and binds the plain value: no finding. -/
 theorem bindsPlain [Preset] [HasherTag] :
-    ∀ (v : BeaconState), True := fun _ => trivial
+    ∀ (state : BeaconState), True := fun _ => trivial
 
 /-- In scope. The statement carries the spec's own write, the `modifyState`
 lambda over the state with an `sszUpdate` expansion inside. The monad is pinned
@@ -86,7 +86,7 @@ by ascription, because `state_preamble` emits `modifyState` with hygiene-mangled
 binder names, so a named argument cannot reach the monad parameter. The lambda
 is program text inside an equation, so the walk reports nothing. -/
 theorem lambdaInProgram [Preset] [HasherTag] :
-    ∀ (v : BeaconState),
+    ∀ (preState : BeaconState),
       ((modifyState fun state =>
           sszUpdate state with builderPendingPayments :=
             sszGet state builderPendingPayments) : GloasRun PUnit)
@@ -98,7 +98,7 @@ theorem lambdaInProgram [Preset] [HasherTag] :
 /-- In scope. The boxed `State` quantifier sits inside a hypothesis, one
 `forallE` below the theorem's own binder: still one finding. -/
 theorem nestedForall [Preset] [HasherTag] :
-    ∀ (v : BeaconState), (∀ (s : State), True) → True := fun _ _ => trivial
+    ∀ (state : BeaconState), (∀ (s : State), True) → True := fun _ _ => trivial
 
 /-- In scope. A `Store` binder holds a `State` inside a field type; the walk
 reads the head only, and the head is `Store`. No finding. -/
@@ -138,7 +138,7 @@ theorem curriedEquation [Preset] [HasherTag] :
 /-- In scope. A connective's arguments stay in proposition position, so the
 `∀ s : State` under the conjunction draws one finding, `s`. -/
 theorem connectiveNested [Preset] [HasherTag] :
-    ∀ (v : BeaconState), True ∧ ∀ (s : State), True :=
+    ∀ (state : BeaconState), True ∧ ∀ (s : State), True :=
   fun _ => ⟨trivial, fun _ => trivial⟩
 
 /-- The marker on a theorem that binds the box: the check accepts it. -/
@@ -149,7 +149,7 @@ theorem markedBindsBox [Preset] [HasherTag] :
 /-- The marker on a theorem that binds no box: the check fails it as stale. -/
 @[box_generic "stale on purpose: this fixture must draw the stale-marker finding"]
 theorem markedBindsNone [Preset] [HasherTag] :
-    ∀ (v : BeaconState), True := fun _ => trivial
+    ∀ (state : BeaconState), True := fun _ => trivial
 
 /-- The marker on a theorem that names no fork constant: the check never
 applies to such a theorem, so the marker can never be graded, and it fails as
