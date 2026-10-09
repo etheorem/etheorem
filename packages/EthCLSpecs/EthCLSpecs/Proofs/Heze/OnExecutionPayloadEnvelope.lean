@@ -40,6 +40,10 @@ open EthCLSpecs.Heze (Preset Config Store State ExecutionPayload ExecutionReques
   getInclusionListTransactions isInclusionListSatisfied
   isDataAvailable)
 
+variable {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
+  [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
+  [DataAvailability] [CryptoBackend]
+
 /--
 Complete compositional `.run` equation of `onExecutionPayloadEnvelope`.
 Lookup and availability failures are `.assert` errors. Verification and
@@ -50,10 +54,7 @@ The recorder's slot-zero, collector-error, and successful outcomes are
 characterized separately by `recordPayloadInclusionListSatisfaction_run`.
 -/
 @[characterizes EthCLSpecs.Heze.onExecutionPayloadEnvelope]
-theorem onExecutionPayloadEnvelope_run
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
-    [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    [DataAvailability] [CryptoBackend] :
+theorem onExecutionPayloadEnvelope_run :
     ∀ (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope),
       (onExecutionPayloadEnvelope (map := map)
           (StoreTransition := ForkChoiceStoreRun (Store map))
@@ -63,7 +64,10 @@ theorem onExecutionPayloadEnvelope_run
         | none =>
             .error (.assert "envelope.beacon_block_root in store.block_states")
         | some state =>
-            if isDataAvailable signedEnv.message.beaconBlockRoot then
+            -- The reject sits next to its guard, in the handler's `assert` order.
+            if !isDataAvailable signedEnv.message.beaconBlockRoot then
+              .error (.assert "(isDataAvailable envelope.beaconBlockRoot)")
+            else
               match verifyExecutionPayloadEnvelope state signedEnv with
               | .error e => .error e
               | .ok warm =>
@@ -81,23 +85,21 @@ theorem onExecutionPayloadEnvelope_run
                           payloads :=
                             FcMap.insert recordedStore.payloads
                               signedEnv.message.beaconBlockRoot
-                              signedEnv.message })
-            else
-              .error (.assert "(isDataAvailable envelope.beaconBlockRoot)") := by
+                              signedEnv.message }) := by
   intro store signedEnv
   simp [onExecutionPayloadEnvelope, FcMap.getOrAssert]
-  cases hlookup : FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot with
+  cases FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot with
   | none =>
     rfl
   | some state =>
     by_cases hda : isDataAvailable signedEnv.message.beaconBlockRoot
     · simp [hda]
-      cases hverif : verifyExecutionPayloadEnvelope state signedEnv with
+      cases verifyExecutionPayloadEnvelope state signedEnv with
       | error e =>
         exact run_throw e store
       | ok warm =>
         simp
-        cases hrec : (recordPayloadInclusionListSatisfaction
+        cases (recordPayloadInclusionListSatisfaction
             (StoreTransition := ForkChoiceStoreRun (Store map))
             store state signedEnv.message.beaconBlockRoot
             signedEnv.message.payload).run store with
@@ -110,10 +112,7 @@ theorem onExecutionPayloadEnvelope_run
       rfl
 
 /-- Missing `blockStates` entry is the handler's first `.assert` error. -/
-theorem onExecutionPayloadEnvelope_run_error_of_missing_block_state
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
-    [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    [DataAvailability] [CryptoBackend] :
+theorem onExecutionPayloadEnvelope_run_error_of_missing_block_state :
     ∀ (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope),
       FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = none →
       (onExecutionPayloadEnvelope (map := map)
@@ -125,10 +124,7 @@ theorem onExecutionPayloadEnvelope_run_error_of_missing_block_state
   simp [hlookup]
 
 /-- Failed data-availability check is the handler's second `.assert` error. -/
-theorem onExecutionPayloadEnvelope_run_error_of_data_unavailable
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
-    [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    [DataAvailability] [CryptoBackend] :
+theorem onExecutionPayloadEnvelope_run_error_of_data_unavailable :
     ∀ (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope) (state : State),
       FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state →
       isDataAvailable signedEnv.message.beaconBlockRoot = false →
@@ -141,10 +137,7 @@ theorem onExecutionPayloadEnvelope_run_error_of_data_unavailable
   simp [hlookup, hda]
 
 /-- A verification error is the handler's result. -/
-theorem onExecutionPayloadEnvelope_run_error_of_verify
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
-    [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    [DataAvailability] [CryptoBackend] :
+theorem onExecutionPayloadEnvelope_run_error_of_verify :
     ∀ (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope)
       (state : State) (err : StoreTransitionError),
       FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state →
@@ -159,10 +152,7 @@ theorem onExecutionPayloadEnvelope_run_error_of_verify
   simp [hlookup, hda, hverif]
 
 /-- A recorder error is the handler's result. -/
-theorem onExecutionPayloadEnvelope_run_error_of_record
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
-    [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    [DataAvailability] [CryptoBackend] :
+theorem onExecutionPayloadEnvelope_run_error_of_record :
     ∀ (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope)
       (state warm : State) (err : StoreTransitionError),
       FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state →
@@ -189,10 +179,7 @@ same-root `FcMap.insert` expressions: warm `blockStates`, the envelope in
 `payloads`, and the inclusion-list result. The inserts may overwrite a prior
 entry.
 -/
-theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks
-    {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
-    [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-    [DataAvailability] [CryptoBackend] :
+theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks :
     ∀ (store : Store map)
       (signedEnv : SignedExecutionPayloadEnvelope)
       (state warm : State)
@@ -225,16 +212,7 @@ theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks
   -- `hlookup`, `hda`, and `hverif` discharge the handler prefix;
   -- `hslot` and `htxs` select the recorder's successful branch.
   rw [onExecutionPayloadEnvelope_run]
-  simp only [hlookup, hda, ↓reduceIte, hverif]
-  rw [recordPayloadInclusionListSatisfaction_run_eq
-    (map := map)
-    (store := store)
-    (runnerStore := store)
-    (postRunnerStore := postRunnerStore)
-    (state := state)
-    (root := signedEnv.message.beaconBlockRoot)
-    (payload := signedEnv.message.payload)
-    (ilTxs := ilTxs)
-    hslot htxs]
+  simp [hlookup, hda, hverif,
+    recordPayloadInclusionListSatisfaction_run_eq _ _ _ _ _ _ _ hslot htxs]
 
 end EthCLSpecs.Proofs.Heze
