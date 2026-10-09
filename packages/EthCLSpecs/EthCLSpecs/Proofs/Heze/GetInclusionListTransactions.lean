@@ -1,6 +1,6 @@
 import EthCLSpecs.Heze.ForkChoice
-import EthCLSpecs.Proofs.Run
-import EthCLSpecs.Proofs.StoreRun
+import EthCLLib.Proofs.Run
+import EthCLLib.Proofs.StoreRun
 import SizzLean.Proofs.UncachedBox
 
 /-!
@@ -27,14 +27,14 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLSpecs.Proofs (ForkChoiceStoreRun run_bind run_pure except_bind_ok except_bind_error)
+open EthCLLib.Proofs (ForkChoiceStoreRun run_bind run_pure except_bind_ok except_bind_error)
 open EthCLLib.Spec (HasherTag MapKind FcMap htr StoreTransitionError arrayUnion)
 open EthCLSpecs.Heze (Preset Store State BeaconState Root Slot ValidatorIndex InclusionList
   Transaction InclusionListStore getInclusionListCommittee getInclusionListTransactions
   collectInclusionListTransactions getBeaconCommittee getCommitteeCountPerSlot
   computeEpochAtSlot cyclicSample)
 open EthCLSpecs.Heze.Const (inclusionListCommitteeSize)
-open EthCLSpecs.Proofs (pureState)
+open EthCLLib.Proofs (pureState)
 
 section CommitteeRun
 variable {σ : Type} [Preset]

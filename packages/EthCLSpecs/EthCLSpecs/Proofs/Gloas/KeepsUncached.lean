@@ -1,5 +1,5 @@
 import EthCLLib.Spec
-import EthCLSpecs.Proofs.KeepsUncached
+import EthCLLib.Proofs.KeepsUncached
 import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Gloas.Run
 import EthCLSpecs.Gloas.EpochProcessing
@@ -9,7 +9,7 @@ import SizzLean.Proofs.UncachedBox
 /-!
 # `EthCLSpecs.Proofs.Gloas.KeepsUncached`: the Gloas handlers never leave the uncached box
 
-`KeepsUncached` (`Proofs/KeepsUncached.lean`) is the property behind `runPure`'s
+`KeepsUncached` (`EthCLLib/Proofs/KeepsUncached.lean`) is the property behind `runPure`'s
 conditional bind law: a successful run that starts on `pureState v` ends on an
 uncached box. This file discharges it for the Gloas handlers the per-step split
 of `processOperations_run_ok_iff` builds on. All six `processOperations`
@@ -49,8 +49,9 @@ open EthCLSpecs.Gloas (Preset Config ValidatorIndex Gwei Epoch Slot Attestation 
   getIndexedPayloadAttestation getPtc increaseBalance decreaseBalance slashValidator
   modBalance getBlockRootAtSlot getBlockRoot isAttestationSameSlot
   getAttestationParticipationFlagIndices builderPaymentIndex)
-open EthCLSpecs.Proofs (pureState KeepsUncached ReturnsUncached KeepsUncachedFrom
+open EthCLLib.Proofs (pureState KeepsUncached ReturnsUncached KeepsUncachedFrom
   keepsUncached_pure keepsUncached_throw keepsUncached_bind keepsUncached_modify
+  keepsUncached_get keepsUncachedFrom_bind
   keepsUncached_liftErr keepsUncached_dite keepsUncached_forIn_range
   keepsUncached_ite keepsUncachedFrom_ite keepsUncachedFrom_pure keepsUncachedFrom_throw
   keepsUncachedFrom_liftErr keepsUncachedFrom_dite keepsUncachedFrom_set keepsUncachedFrom_get

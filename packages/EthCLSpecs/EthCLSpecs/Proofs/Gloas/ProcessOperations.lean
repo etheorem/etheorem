@@ -1,7 +1,7 @@
 import EthCLSpecs.Gloas.Transition
 import EthCLSpecs.Proofs.Gloas.KeepsUncached
 import EthCLSpecs.Proofs.Gloas.Run
-import EthCLSpecs.Proofs.Run
+import EthCLLib.Proofs.Run
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.ProcessOperations`: Gloas coordinator sequencing
@@ -48,7 +48,8 @@ open EthCLSpecs.Gloas (
   State BeaconState BeaconBlockBody processOperations
   processProposerSlashing processAttesterSlashing processAttestation
   processVoluntaryExit processBlsToExecutionChange processPayloadAttestation)
-open EthCLSpecs.Proofs (runPure runPure_eq KeepsUncached
+open EthCLLib.Proofs (runPure runPure_eq KeepsUncached pureState
+  run_bind run_throw except_bind_ok except_bind_error
   keepsUncached_forM_array runPure_bind_of_keepsUncached)
 open SizzLean.Proofs (view_uncachedBox)
 

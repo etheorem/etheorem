@@ -1,5 +1,5 @@
 import EthCLSpecs.Gloas.Operations
-import EthCLSpecs.Proofs.Run
+import EthCLLib.Proofs.Run
 import SizzLean.Proofs.UncachedBox
 
 /-!
@@ -41,7 +41,7 @@ namespace EthCLSpecs.Proofs.Gloas
 open EthCLLib.Spec (HasherTag)
 open EthCLSpecs.Gloas (BeaconState BuilderIndex Gwei Preset)
 open EthCLSpecs.Gloas (canBuilderCoverBid getPendingBalanceToWithdrawForBuilder)
-open EthCLSpecs.Proofs (pureState)
+open EthCLLib.Proofs (pureState)
 
 /-- `canBuilderCoverBid` returns `true` exactly when its computed `minBalance`
 does not exceed the builder's balance and the bid fits in the remainder.

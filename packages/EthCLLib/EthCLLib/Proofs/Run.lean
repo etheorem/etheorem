@@ -2,7 +2,7 @@ import EthCLLib.Spec.Errors
 import EthCLLib.Spec.Hasher
 
 /-!
-# `EthCLSpecs.Proofs.Run`: the monad facts and the pure box the pure runners share
+# `EthCLLib.Proofs.Run`: the monad facts and the pure box the pure runners share
 
 `EStateM` ships `run_bind` / `run_pure` as `simp` lemmas. The `StateT`-over-`Except`
 stack does not, because both steps are definitional there (`StateT.run x s` is `x s`,
@@ -15,9 +15,9 @@ All five close by `rfl`. They exist to be `rw`/`simp` targets with a readable ri
 side. Stated at any `σ` / `ε`: nothing in either proof is specific to a fork's state,
 and the general form applies to `GloasRun` and `ForkChoiceStoreRun` alike.
 
-The runner names remain in their existing modules: `GloasRun` is in
-`Proofs/Gloas/Run.lean`, while the fork-neutral `ForkChoiceStoreRun` is in
-`Proofs/StoreRun.lean`.
+The runner names remain in their own modules: `GloasRun` is in
+`EthCLSpecs/Proofs/Gloas/Run.lean`, while the fork-neutral `ForkChoiceStoreRun` is
+in `EthCLLib/Proofs/StoreRun.lean`.
 
 ## The pure box: `pureState` and `runPure`
 
@@ -36,7 +36,7 @@ composite body goes through `runPure_eq` to the box level, where `run_bind` and
 
 set_option autoImplicit false
 
-namespace EthCLSpecs.Proofs
+namespace EthCLLib.Proofs
 
 open EthCLLib.Spec (HasherTag ErrorConv liftErr)
 open SizzLean (SSZRepr)
@@ -152,4 +152,4 @@ theorem runPure_pure {T ε α : Type} [SSZRepr T] [HasherTag] (a : α) (v : T) :
 theorem runPure_throw {T ε α : Type} [SSZRepr T] [HasherTag] (e : ε) (v : T) :
     (runPure (throw e : StateT (SSZ.Box HasherTag.H T) (Except ε) α) v) = .error e := rfl
 
-end EthCLSpecs.Proofs
+end EthCLLib.Proofs

@@ -1,6 +1,6 @@
 import EthCLSpecs.Gloas.Operations
 import EthCLSpecs.Proofs.Gloas.Run
-import EthCLSpecs.Proofs.Run
+import EthCLLib.Proofs.Run
 import SizzLean.Proofs.UncachedBox
 import SizzLean.Proofs.SSZListSet
 
@@ -40,6 +40,7 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag)
+open EthCLLib.Proofs (pureState runPure runPure_of_run_ok)
 open EthCLSpecs.Gloas (Preset Config BuilderIndex Epoch BeaconState)
 open EthCLSpecs.Gloas (minimal mainnet minimalConfig mainnetConfig)
 open EthCLSpecs.Gloas (initiateBuilderExit currentEpochOf)

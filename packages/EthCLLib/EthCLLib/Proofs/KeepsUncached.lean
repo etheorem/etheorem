@@ -1,9 +1,9 @@
 import EthCLLib.Spec.State
-import EthCLSpecs.Proofs.Run
+import EthCLLib.Proofs.Run
 import SizzLean.Proofs.UncachedBox
 
 /-!
-# `EthCLSpecs.Proofs.KeepsUncached`: actions that never leave the uncached box
+# `EthCLLib.Proofs.KeepsUncached`: actions that never leave the uncached box
 
 `runPure` reads only the post-state's *view*, which is why it has no bind law in
 general: an action run on the uncached box of `v` may land on a *cached* box, and
@@ -25,7 +25,7 @@ plain value reduces to its branch by `cases` on the scrutinee, and
 
 `KeepsUncached` is a claim about the *box flavour a run threads*, not about
 behavior: it says nothing about which value the run writes or whether it rejects.
-The fork-body lemmas that discharge it (`Proofs/Gloas/ProcessOperations.lean` and
+The fork-body lemmas that discharge it (`EthCLSpecs/Proofs/Gloas/ProcessOperations.lean` and
 siblings) are therefore supporting facts, untagged, and each one is a
 construction over these closure lemmas rather than an unfolding of the fork body's
 effect.
@@ -34,16 +34,17 @@ This module is box-level infrastructure. Its lemmas quantify over boxes by
 design, in their hypotheses and conclusions: they are claims about the box
 flavour itself. The plain-value rule (`SPECS_ARCHITECTURE.md` §11.1) keeps
 fork-body theorem statements over plain values, and it does not apply here.
-The check scopes itself to theorems whose statement names a fork constant,
-these lemmas mention none, and the same holds for the generic lemmas in
-`Proofs/Run.lean`, so the scope leaves both alone and none needs the
-`box_generic` marker. A box-level lemma that later names a fork constant
-enters the scope and carries the marker.
+The check walks the theorems under `EthCLSpecs.Proofs`, and this module sits in
+the framework, under `EthCLLib.Proofs`, so the walk never visits it. The scope
+rule would spare these lemmas regardless: their statements name no fork
+constant, and the same holds for the generic lemmas in `EthCLLib/Proofs/Run.lean`.
+A theorem under `EthCLSpecs.Proofs` whose statement names a fork constant and
+quantifies over the box is the case the `box_generic` marker is for.
 -/
 
 set_option autoImplicit false
 
-namespace EthCLSpecs.Proofs
+namespace EthCLLib.Proofs
 
 open EthCLLib.Spec (HasherTag ErrorConv)
 open EthCLLib.Spec
@@ -792,4 +793,4 @@ theorem runPure_bind_of_keepsUncached {T ε α β : Type} [SSZRepr T] [HasherTag
     simp only [Except.map, except_bind_ok, runPure_eq]
     rfl
 
-end EthCLSpecs.Proofs
+end EthCLLib.Proofs

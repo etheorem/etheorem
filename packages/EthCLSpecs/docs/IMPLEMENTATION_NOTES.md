@@ -825,7 +825,8 @@ separation.
   withdrawability-delay addition does not wrap for the shipped minimal and
   mainnet configurations.
 
-- **`Proofs/Run.lean`** names the `StateT`-over-`Except` bind, throw, and
+- **`EthCLLib/Proofs/Run.lean`** (framework package) names the `StateT`-over-`Except`
+  bind, throw, and
   `Except` facts every pure runner rewrites with (`run_bind`, `run_pure`,
   `run_throw`, `except_bind_ok`, `except_bind_error`). They are stated at an
   arbitrary state and error type, so they apply to `GloasRun` and
@@ -838,22 +839,23 @@ separation.
   `runPure_throw` are the remaining `rfl` facts proofs rewrite with. There is
   no `runPure_bind`: a bind law would have to know every intermediate box is
   uncached, so a composite body goes through `runPure_eq` to the box level.
-  The module sits beside the per-fork directories
+  The module lives in the framework's generic proof toolkit,
   because the facts belong to no fork.
 
 - **`Proofs/Gloas/Run.lean`** names `GloasRun`, the pure `StateT`/`Except`
   state-transition monad the Gloas proofs pin their `forkdef` bodies to.
   `StateTransition` is a parameter of a fork body, so every run theorem has to fix
-  it; this fixes it once. Gloas call sites use the `Proofs/Run.lean` facts
+  it; this fixes it once. Gloas call sites use the `EthCLLib/Proofs/Run.lean` facts
   (`run_bind` and friends) directly, as Heze does.
 
-- **`Proofs/StoreRun.lean`** names `ForkChoiceStoreRun`, the shared pure
+- **`EthCLLib/Proofs/StoreRun.lean`** (framework package) names `ForkChoiceStoreRun`, the shared pure
   store-machine runner every fork's fork-choice proofs pin at that fork's
   `Store`. It also holds `ForkChoiceStoreRun.throwArithmetic_run`, the
   store-specific equation for `throwArithmetic` under the store machine's
   `.transition` wrapper. The generic `StateT`/`Except` equations live in
-  `Proofs/Run.lean`. It sits beside the per-fork directories because the
-  runner is a monad over an arbitrary store type and so belongs to no fork.
+  `EthCLLib/Proofs/Run.lean`. The module lives in the framework's generic
+  proof toolkit because the runner is a monad over an arbitrary store type
+  and so belongs to no fork.
 
 - **`Proofs/Gloas/IsValidIndexedPayloadAttestation.lean`** proves a two-layer,
   backend-generic characterization of `isValidIndexedPayloadAttestation`. Layer 1
@@ -899,8 +901,8 @@ separation.
   rejects a verified payload when the queried root has a recorded `false`
   inclusion-list satisfaction result, and the runner state remains
   unchanged. The bind lemmas it cites are the fork-neutral `run_throw`,
-  `except_bind_ok`, and `except_bind_error` in `Proofs/Run.lean`, plus
-  `ForkChoiceStoreRun.throwArithmetic_run` in `Proofs/StoreRun.lean`. They
+  `except_bind_ok`, and `except_bind_error` in `EthCLLib/Proofs/Run.lean`, plus
+  `ForkChoiceStoreRun.throwArithmetic_run` in `EthCLLib/Proofs/StoreRun.lean`. They
   are stated at an arbitrary state type, so they apply to
   `ForkChoiceStoreRun`. The successful path that records
   the result of `isInclusionListSatisfied` is proved in

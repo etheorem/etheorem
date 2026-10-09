@@ -1,14 +1,14 @@
 import EthCLSpecs.Gloas.ForkChoice
-import EthCLSpecs.Proofs.StoreRun
+import EthCLLib.Proofs.StoreRun
 import EthCLSpecs.Proofs.Gloas.InitiateBuilderExit
 import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
-import EthCLSpecs.Proofs.Run
+import EthCLLib.Proofs.Run
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.ForkChoiceRun`: the fork-choice store monad these proofs would run at
 
 `Proofs/Gloas/Run.lean` names the monad for the *state* machine (`GloasRun`), and
-`Proofs/StoreRun.lean` names the fork-generic one for the *store* machine
+`EthCLLib/Proofs/StoreRun.lean` names the fork-generic one for the *store* machine
 (`ForkChoiceStoreRun`). This file specializes the latter to Gloas's `Store` as
 `GloasStoreRun`, and proves a fork-choice `forkdef` at it.
 
@@ -41,7 +41,7 @@ open EthCLLib.Spec (HasherTag StoreTransitionError MapKind FcMap NestedStateMach
 open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState)
 open EthCLSpecs.Gloas (Store getSlotsSinceGenesis getCurrentSlot State currentEpochOf
   initiateBuilderExit processBuilderPendingPayments)
-open EthCLSpecs.Proofs (pureState)
+open EthCLLib.Proofs (pureState ForkChoiceStoreRun)
 open SizzLean.Repr
 open SizzLean.Cache
 
@@ -89,7 +89,7 @@ theorem getCurrentSlot_run_of_time_eq_genesis
 successful run's post-state back with `pure`. So carrying a state-machine fact into the
 store machine is function application, and there is nothing left here to state as a
 theorem of the Gloas spec. The fact must be a `.run` fact: a contract theorem states
-`act.run (pureState v) = .ok (a, pureState w)` (`Proofs/Run.lean`), and the `runPure`
+`act.run (pureState v) = .ok (a, pureState w)` (`EthCLLib/Proofs/Run.lean`), and the `runPure`
 value-level reading of the same contract hides the box, so it cannot feed the bridge.
 
 These are `example`s rather than named theorems for that reason: they claim nothing about

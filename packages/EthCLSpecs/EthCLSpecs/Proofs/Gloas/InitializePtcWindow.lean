@@ -1,5 +1,5 @@
 import EthCLSpecs.Gloas.Upgrade
-import EthCLSpecs.Proofs.Run
+import EthCLLib.Proofs.Run
 import SizzLean.Proofs.UncachedBox
 
 /-!
@@ -32,7 +32,7 @@ namespace EthCLSpecs.Proofs.Gloas
 open EthCLLib.Spec (HasherTag)
 open EthCLSpecs.Gloas (Preset initializePtcWindow computePtcFromFulu)
 open EthCLSpecs.Fulu (computeStartSlotAtEpoch currentEpochOf)
-open EthCLSpecs.Proofs (pureState)
+open EthCLLib.Proofs (pureState)
 open SizzLean.Proofs (view_uncachedBox)
 open scoped EthCLSpecs.Gloas.Downgrade
 

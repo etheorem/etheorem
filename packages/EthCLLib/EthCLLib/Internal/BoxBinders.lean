@@ -11,6 +11,12 @@ walk behind the check that enforces the rule. The proof-coverage report
 fixture pins (`EthCLSpecs.Tests.BoxBinderPins`) run it over fourteen statements
 of known answers, so the walk cannot rot to "always pass" unnoticed.
 
+The walk visits the fork-body proof set only, the theorems under
+`EthCLSpecs.Proofs`. The framework's generic proof toolkit lives under
+`EthCLLib.Proofs`, so the box-level lemmas there sit outside the walk and carry
+no `@[box_generic]` marker; their location, not only the statement scope rule,
+is what keeps them out.
+
 A statement enters the scope of the check when it names a constant under a
 registered fork's namespace (`boxCheckScopes` below). Within scope, the walk
 reports every *quantifier* whose bound type is the boxed state:

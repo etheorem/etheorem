@@ -977,7 +977,8 @@ never a boxed `State`, and it reads fields directly, `v.slot` rather than
 field by field, since two boxes that carry the same value can still differ.
 
 The box lives in two helpers, `pureState` and `runPure`
-(`EthCLSpecs/Proofs/Run.lean`). `pureState v` is the uncached box of `v`, and it
+(`EthCLLib/Proofs/Run.lean`, the framework's generic proof toolkit). `pureState v`
+is the uncached box of `v`, and it
 is the only box constructor a statement names. `runPure act v` runs a step on
 that box and reads the post-state's value. A contract theorem states the run at
 the box, `act.run (pureState v) = .ok (a, pureState w)`, because that `.run`

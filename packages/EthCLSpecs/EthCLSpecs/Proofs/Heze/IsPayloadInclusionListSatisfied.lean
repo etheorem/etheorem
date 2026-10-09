@@ -1,5 +1,5 @@
 import EthCLSpecs.Heze.ForkChoice
-import EthCLSpecs.Proofs.StoreRun
+import EthCLLib.Proofs.StoreRun
 
 /-!
 # `EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied`: the FOCIL read helper
@@ -28,7 +28,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLSpecs.Proofs (ForkChoiceStoreRun)
+open EthCLLib.Proofs (ForkChoiceStoreRun)
 open EthCLLib.Spec (HasherTag MapKind FcMap)
 open EthCLSpecs.Heze (Preset Store isPayloadInclusionListSatisfied isPayloadVerified Root)
 

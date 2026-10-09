@@ -8,7 +8,7 @@ to pin the monad the body elaborates into. Every Fulu proof in this directory pi
 named here, through `(StateTransition := FuluRun)`. `SPECS_ARCHITECTURE.md` §11.1 names the
 pure configuration this runner belongs to.
 
-The box is pinned next door, in `Proofs/Run.lean`: a theorem states its run on `pureState v`,
+The box is pinned in the framework, in `EthCLLib/Proofs/Run.lean`: a theorem states its run on `pureState v`,
 the uncached box of the plain value, and `runPure` gives the value-level reading. A theorem
 never runs an action on a `State` it bound itself.
 -/

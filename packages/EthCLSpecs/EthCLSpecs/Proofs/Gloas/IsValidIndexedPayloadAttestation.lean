@@ -1,5 +1,5 @@
 import EthCLSpecs.Gloas.Operations
-import EthCLSpecs.Proofs.Run
+import EthCLLib.Proofs.Run
 import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.UncachedBox
 
@@ -51,7 +51,7 @@ open EthCLSpecs.Gloas (Preset ValidatorIndex BeaconState)
 open EthCLSpecs.Gloas.Const (domainPtcAttester)
 open EthCLSpecs.Gloas
   (IndexedPayloadAttestation isValidIndexedPayloadAttestation getDomain computeEpochAtSlot)
-open EthCLSpecs.Proofs (pureState)
+open EthCLLib.Proofs (pureState)
 open SizzLean.Proofs (sszListMap_getElem!_eq_attachMap)
 
 /-! ## Layer 1: the literal characterization -/

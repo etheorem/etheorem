@@ -1,6 +1,6 @@
 import EthCLSpecs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Run
-import EthCLSpecs.Proofs.Run
+import EthCLLib.Proofs.Run
 import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.UncachedBox
 
@@ -48,7 +48,7 @@ namespace EthCLSpecs.Proofs.Fulu
 open EthCLLib.Spec (HasherTag StateTransitionError checkedAdd sszGetIdx)
 open EthCLSpecs.Fulu (Preset BeaconState State ValidatorIndex Gwei increaseBalance decreaseBalance
   modBalance)
-open EthCLSpecs.Proofs (pureState runPure)
+open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok)
 open SizzLean.Proofs (sszListSet!_getElem!_self view_uncachedBox)
 open SizzLean.Repr
 open SizzLean.Cache

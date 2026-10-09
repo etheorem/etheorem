@@ -1,7 +1,7 @@
 import EthCLSpecs.Heze.ForkChoice
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
-import EthCLSpecs.Proofs.Run
-import EthCLSpecs.Proofs.StoreRun
+import EthCLLib.Proofs.Run
+import EthCLLib.Proofs.StoreRun
 
 /-!
 # Accepting an execution payload envelope
@@ -39,7 +39,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLSpecs.Proofs (ForkChoiceStoreRun run_throw except_bind_error pureState)
+open EthCLLib.Proofs (ForkChoiceStoreRun run_throw except_bind_error pureState)
 open EthCLLib.Spec (HasherTag MapKind FcMap ExecutionEngine DataAvailability CryptoBackend
   StoreTransitionError)
 open EthCLSpecs.Heze (Preset Config Store BeaconState ExecutionPayload ExecutionRequests

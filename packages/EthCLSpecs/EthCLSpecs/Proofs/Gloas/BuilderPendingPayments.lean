@@ -1,6 +1,6 @@
 import EthCLSpecs.Gloas.EpochProcessing
 import EthCLSpecs.Proofs.Gloas.Run
-import EthCLSpecs.Proofs.Run
+import EthCLLib.Proofs.Run
 import SizzLean.Proofs.SSZListPush
 import SizzLean.Proofs.UncachedBox
 
@@ -51,6 +51,8 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec
+open EthCLLib.Proofs (pureState runPure runPure_of_run_ok run_bind run_pure
+  except_bind_ok except_bind_error)
 open EthCLSpecs.Gloas
 open EthCLSpecs.Gloas (Preset Gwei BeaconState)
 open EthCLSpecs.Gloas.Const (slotsPerEpoch builderPaymentThresholdNumerator

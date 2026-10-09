@@ -1,7 +1,7 @@
 import EthCLSpecs.Heze.ForkChoice
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
-import EthCLSpecs.Proofs.Run
-import EthCLSpecs.Proofs.StoreRun
+import EthCLLib.Proofs.Run
+import EthCLLib.Proofs.StoreRun
 import SizzLean.Proofs.UncachedBox
 
 /-!
@@ -58,7 +58,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLSpecs.Proofs (ForkChoiceStoreRun except_bind_error)
+open EthCLLib.Proofs (ForkChoiceStoreRun except_bind_error)
 open EthCLLib.Spec (HasherTag MapKind FcMap checkedSub ExecutionEngine
   StoreTransitionError htr)
 open EthCLSpecs.Heze (Preset Store State BeaconState Root ValidatorIndex
@@ -66,7 +66,7 @@ open EthCLSpecs.Heze (Preset Store State BeaconState Root ValidatorIndex
   getInclusionListTransactions getInclusionListCommittee
   isInclusionListSatisfied getBeaconCommittee getCommitteeCountPerSlot computeEpochAtSlot)
 open EthCLSpecs.Heze.Const (inclusionListCommitteeSize)
-open EthCLSpecs.Proofs (pureState)
+open EthCLLib.Proofs (pureState)
 
 /-- Complete `.run` equation of `recordPayloadInclusionListSatisfaction`. Slot
 zero is the checked-sub arithmetic error. Otherwise the result matches on
