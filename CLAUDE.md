@@ -237,7 +237,7 @@ relevant ARCHITECTURE.md wins on substance and CLAUDE.md wins on form.
 ### Adding a proof to a fork body
 
 Follow the procedure in [`CONTRIBUTING.md`](CONTRIBUTING.md), *Adding a
-proof*. Three parts of it are binding here, because the build enforces
+proof*. Four parts of it are binding here, because the build enforces
 them and a near miss wastes a rebuild:
 
 - **One directory per fork.** A theorem about an `EthCLSpecs.Gloas`

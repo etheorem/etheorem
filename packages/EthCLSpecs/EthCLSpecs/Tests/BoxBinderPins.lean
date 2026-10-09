@@ -25,6 +25,11 @@ this module instead of passing quietly:
 * `predicateBody` takes a predicate parameter and quantifies over `State` with
   a bound variable at the body's head; proposition position carries the walk
   through, so `s` draws one finding.
+* `functionEquation` states an equation between functions over `State`, so the
+  equation's type argument is a function type in a value position; the walk
+  reads value arguments as program values, so it passes.
+* `connectiveNested` puts a `∀ s : State` under `True ∧ _`; a connective's
+  arguments stay in proposition position, so `s` draws one finding.
 
 Each fixture names a fork constant, so each is in scope: a failing fixture that
 is out of scope would pass for the wrong reason. Four more fixtures pin the
@@ -35,7 +40,7 @@ binds the box, so it is accepted, and `markedBindsNone` fails as stale.
 `outOfScopeMarker` is marked but names no fork constant, so the check never
 applies to it and the marker is stale.
 
-The gate at the bottom runs the walk and the verdict on all eleven fixtures
+The gate at the bottom runs the walk and the verdict on all thirteen fixtures
 and throws on any mismatched answer, so `lake build EthCLSpecsTests` is the
 gate. `run_cmd` runs at elaboration time, prints nothing, and a `throwError`
 in it fails the build.
@@ -107,6 +112,19 @@ structurally, so `s` still draws one finding. -/
 theorem predicateBody [Preset] [HasherTag] :
     ∀ (P : State → Prop) (s : State), P s → True := fun _ _ _ => trivial
 
+/-- In scope. The equation's type argument is a function type over `State`, in
+a value position: an equation is no logical connective, so the walk reads its
+arguments as program values and never enters the function type's domain. No
+finding. -/
+theorem functionEquation [Preset] [HasherTag] :
+    ∀ (f : State → State), f = f := fun _ => rfl
+
+/-- In scope. A connective's arguments stay in proposition position, so the
+`∀ s : State` under the conjunction draws one finding, `s`. -/
+theorem connectiveNested [Preset] [HasherTag] :
+    ∀ (v : BeaconState), True ∧ ∀ (s : State), True :=
+  fun _ => ⟨trivial, fun _ => trivial⟩
+
 /-- The marker on a theorem that binds the box: the check accepts it. -/
 @[box_generic "a box-level flavour fact; the seed of a cached ≡ pure equivalence"]
 theorem markedBindsBox [Preset] [HasherTag] :
@@ -125,8 +143,8 @@ theorem outOfScopeMarker : True := trivial
 
 end EthCLSpecs.Tests.BoxBinderPins
 
-/-! The gate: run the walk and the verdict on all eleven fixtures and throw on
-any mismatched answer. `#guard` cannot reach the environment a reducible
+/-! The gate: run the walk and the verdict on all thirteen fixtures and throw
+on any mismatched answer. `#guard` cannot reach the environment a reducible
 unfolding needs, and a committed `#eval` fails `just lint`, so the gate is a
 `run_cmd`: it runs at elaboration time, prints nothing, and a `throwError` in
 it fails the build. -/
@@ -153,6 +171,8 @@ run_cmd do
     (`functionBinder,    0, false, false),
     (`predicateParam,    0, false, false),
     (`predicateBody,     1, false, true),
+    (`functionEquation,  0, false, false),
+    (`connectiveNested,  1, false, true),
     (`markedBindsBox,    1, true,  false),
     (`markedBindsNone,   0, true,  true),
     (`outOfScopeMarker,  0, true,  true)] do
