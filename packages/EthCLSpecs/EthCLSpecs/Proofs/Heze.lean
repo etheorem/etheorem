@@ -33,9 +33,13 @@ Re-exports:
   complete run of `recordPayloadInclusionListSatisfaction`
   (`recordPayloadInclusionListSatisfaction_run`), proved with
   `ForkChoiceStoreRun`.
-* `EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope`: the successful-path
-  structural same-root insert equation for `onExecutionPayloadEnvelope`
-  (`onExecutionPayloadEnvelope_run_eq_of_successful_checks`), proved with `ForkChoiceStoreRun`.
+* `EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope`: the complete
+  compositional `.run` equation of `onExecutionPayloadEnvelope`
+  (`onExecutionPayloadEnvelope_run`), tagged
+  `@[characterizes EthCLSpecs.Heze.onExecutionPayloadEnvelope]`, plus
+  the four direct error corollaries and the successful-path corollary
+  `onExecutionPayloadEnvelope_run_eq_of_successful_checks`, proved with
+  `ForkChoiceStoreRun`.
 * `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: the complete `.run`
   equation of `shouldExtendPayload` (`shouldExtendPayload_run`), the
   existing recorded-unsatisfied FOCIL rejection
