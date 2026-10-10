@@ -374,10 +374,13 @@ _ensure-venv:
 # building them fires the gates.
 # ═════════════════════════════════════════════════════════════════════════
 
-# EthCLLib + EthCLSpecs self-tests (framework + fork spec gates)
+# EthCLLib + EthCLSpecs self-tests (framework + fork spec gates), plus the
+# theorem-vector generator libraries and exe, whose `#guard` pins and
+# outDir check run at build time
 [group('ethcl')]
 ethcl-test:
     lake build EthCLLib EthCLLibTests EthCLSpecs EthCLSpecsTests
+    lake build EthCLLibTheoremVectors EthCLSpecsTheoremVectors theorem_vectors
 
 # EthCLSpecs upstream-vector pyspec run via the per-worker Lean server. Defaults
 # to the dev subset (a few cases per handler) on Fulu minimal; pass pytest args
@@ -438,6 +441,29 @@ ethcl-profile case=default_profile_case: _ensure-venv
       packages/EthCLSpecs/.lake/build/bin/specs_profile $paths \
         | tee "packages/SizzLean/bench/specs-profile-$ts.tsv"; \
       rm -rf "$tmp"
+
+# Generate the records (runs the generator files), render, check, report.
+# The exe answers `not implemented` while the harness phases are unwritten,
+# so this recipe fails until they land.
+
+# Build the generator libraries and run the harness over the output tree
+[group('ethcl')]
+theorem-vectors:
+    lake build EthCLSpecsTheoremVectors
+    lake exe theorem_vectors render
+    lake exe theorem_vectors check
+    lake exe theorem_vectors report
+
+# Remove the output tree and the generator modules' build outputs, so the
+# next build regenerates. Lake tracks the generator modules, and removing
+# their build outputs is what forces the regeneration; the output tree is
+# plain files Lake never sees.
+
+# Remove the theorem-vector output tree and the generator modules' build outputs
+[group('ethcl')]
+theorem-vectors-clean:
+    rm -rf packages/EthCLSpecs/theorem_vectors
+    rm -rf packages/EthCLSpecs/.lake/build/lib/lean/EthCLSpecs/TheoremVectors/Generators
 
 # ═════════════════════════════════════════════════════════════════════════
 # SizzLean, SSZ library

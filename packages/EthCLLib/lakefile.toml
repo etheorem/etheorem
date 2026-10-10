@@ -31,6 +31,17 @@ path = "../hazmat/LeanHazmatBls"
 name = "LeanHazmatKzg"
 path = "../hazmat/LeanHazmatKzg"
 
+# Plausible: the property-based-testing library. Only the theorem-vector
+# generator's framework half uses it (`SampleableExt`, `Shrinkable`, `Gen`).
+# No shipped module imports anything under `EthCLLib.TheoremVectors`, so the
+# dependency stays off the `EthCLLib` link line (ARCHITECTURE.md §2.2). The
+# tag sits one patch behind the toolchain; a toolchain bump moves the tag
+# with it (§2.4).
+[[require]]
+name = "plausible"
+git = "https://github.com/leanprover-community/plausible"
+rev = "v4.29.0"
+
 [[lean_lib]]
 name = "EthCLLib"
 
@@ -42,3 +53,10 @@ name = "EthCLLib"
 [[lean_lib]]
 name = "EthCLLibTests"
 roots = ["EthCLLib.Tests"]
+
+# The theorem-vector generator's framework half (ARCHITECTURE.md §4.1
+# lists its modules). Excluded from the shipped EthCLLib library, which
+# globs only its own root, the way EthCLLibTests is (§2.3).
+[[lean_lib]]
+name = "EthCLLibTheoremVectors"
+roots = ["EthCLLib.TheoremVectors"]

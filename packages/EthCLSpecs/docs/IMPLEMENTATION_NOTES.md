@@ -975,3 +975,73 @@ separation.
   rather than the flat `EthCLSpecs.Proofs`, since Fulu declares the same function.
 
 - **`PROOF_LEDGER.md`** tracks candidate consensus proof targets and their status.
+
+## Theorem vectors
+
+Deviations found while building the generator's scaffolding, against
+`mb/theorems-vec/ARCHITECTURE.md`. That file is a per-developer document
+until the final stage moves it into this directory, so the `ARCHITECTURE.md`
+citations in the new modules dangle until then. The section references
+below follow the same file.
+
+- **`WitnessSourceTag.reused` names its field `preset`.** The §5.4 sketch
+  writes `reused (from : PresetId)`, and `from` is a Lean keyword, so the
+  identifier cannot parse. The field carries the same fact.
+
+- **The lakefile's outDir option carries the `weak.` prefix.** §2.3's
+  snippet sets `theorem_vectors.outDir` directly, and the `lean` front end
+  rejects that `-D` at startup, before any module registers the option.
+  Lake passes the lakefile name to the flag verbatim, so the lakefile sets
+  `weak.theorem_vectors.outDir`, the form Lean adopts once the registering
+  module is imported. The value and the mechanism are the design's; the
+  prefix exists because the option registers inside the library.
+
+- **The outDir option registers in `EthCLLib.TheoremVectors.Types`, and
+  the repository-root path stands in two places.** §4.1 assigns the
+  options to `Command.lean`, which the reader stage adds. The registration
+  lands in Types for now, because the lakefile's weak setting applies when
+  the option's module is imported, and Types is the one module every
+  generator module reaches. The lakefile pins the path, and the spec-half
+  root's `outDir` constant reads the option and fails the build on any
+  other value, so the build keeps the two equal. `Main` takes its `--out`
+  default from the constant, because an exe root builds under the exe's
+  own configuration and never sees the lib's `leanOptions`. The path is
+  relative to the repository root, so a per-package invocation resolves it
+  against the subpackage directory and lands under
+  `packages/EthCLSpecs/packages/`, which `.gitignore` carries; the
+  lakefile comment states the root-only assumption.
+
+- **A per-package `lake` run can adopt plausible's toolchain pin.** The
+  `plausible` repository pins `v4.29.0`, one patch behind the root
+  toolchain. On a per-package invocation that fetches the dependency into
+  an empty manifest, Lake writes a `packages/<pkg>/lean-toolchain` with
+  that pin, and the subpackage then builds under it. Root and CI
+  invocations read the root pin and never write the file. `.gitignore`
+  carries the path for the two packages that reach the dependency, so a
+  stray file cannot be committed; the tracked pins of `LeanSha256` and
+  `LeanPoseidonProofs` belong to those packages' standalone releases and
+  stay committed. This is the §2.4 version-drift risk seen from the
+  subpackage side.
+
+- **`ShapeTag.tag` and `PresetId.ofTag?` sit in `Types.lean` beside the
+  sketches.** The record and outcome writers need the wire strings of a
+  shape, and the exe's `--preset` flag needs the reader side of
+  `PresetId.tag`; §5 sketches only `PresetId.tag`. The type stays the one
+  canonical home of its wire form.
+
+- **`Yaml` carries a `raw` leaf.** §5.6 stores a scalar as its pre-rendered
+  literal, and the function format writes that literal into an inputs map,
+  where the quoting rules would wrap a decimal literal in quotes to keep a
+  consumer's parser from coercing it. The `raw` arm marks a leaf the
+  caller already shaped, and the writer emits it verbatim. The record
+  layer decides whether a literal is raw or quoted.
+
+- **`meta.yaml` goes out in flow form, and hex values go out quoted.**
+  §12.3 says the upstream vectors write `meta.yaml` in block style byte
+  for byte, and §13.3 shows a hex value unquoted. The cached upstream
+  corpus shows both wrong: a Gloas `epoch_processing` `meta.yaml` is the
+  one-line flow map `{bls_setting: 1}`, and `roots.yaml` carries
+  `root: '0xc292…'` in single quotes. The writer matches the corpus:
+  `renderFlowDoc` writes `meta.yaml`, and the `hex` leaf renders
+  single-quoted, which also keeps a consumer's parser from reading a root
+  as an integer. A plain `0x…` in the function format would coerce.

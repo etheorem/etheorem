@@ -209,6 +209,8 @@ lake build LeanPoseidon     # standalone Poseidon2 island (fires its anchor KAT)
 
 # Test suites (per package, run on demand):
 lake build EthCLLibTests EthCLSpecsTests   # framework + spec self-tests
+lake build EthCLLibTheoremVectors EthCLSpecsTheoremVectors   # theorem-vector generator libs (fires the build-time pins)
+lake build theorem_vectors                  # the generator's command-line harness exe
 lake build SizzLeanTests
 lake build LeanSha256Tests
 lake build LeanPoseidonTests # committed Poseidon2 KATs (no Rust)

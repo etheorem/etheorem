@@ -156,11 +156,13 @@ jobs:
 
   ethcl:
     # EthCLLib (framework) + EthCLSpecs (Fulu / Gloas) acceptance. `just
-    # ethcl-test` builds all four libs, firing the framework + spec
-    # `#guard` / `native_decide` self-tests (inheritance replay, the crypto
+    # ethcl-test` builds the shipped libs and their self-test libs, plus the
+    # theorem-vector generator libraries and exe, firing the framework +
+    # spec `#guard` / `native_decide` self-tests (inheritance replay, the crypto
     # seam, the running step, map-backing equivalence, the signing-root and
-    # Merkle-branch primitives, the walking-skeleton discharge). Then the
-    # `pytest-xdist` pyspec smoke gate runs the dev subset at minimal for
+    # Merkle-branch primitives, the walking-skeleton discharge) and the
+    # generator's build-time pins. Then the `pytest-xdist` pyspec smoke
+    # gate runs the dev subset at minimal for
     # both forks through the per-worker `pyspec_server`. The consensus formats are
     # green for both forks (Fulu incl. PeerDAS data availability, standalone
     # execution_payload, and get_proposer_head; Gloas the full EIP-7732 ePBS spine,

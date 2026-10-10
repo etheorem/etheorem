@@ -52,3 +52,26 @@ precompileModules = true
 name = "specs_profile"
 root = "EthCLSpecsBench.ProfileMain"
 supportInterpreter = true
+
+# The generator's spec half: fork bindings, state builders, seeds, and the
+# generator files whose elaboration writes the records. Not precompiled. The
+# output directory is fixed here so the command never depends on the working
+# directory Lake gives it (ARCHITECTURE.md §2.3). The path is relative to the
+# repository root, which is where Lake and the just recipes run; a per-package
+# invocation writes under the subpackage instead. The `weak.` prefix defers
+# the setting until the module that registers the option is imported, since
+# the `lean` front end rejects a `-D` for an option it has not seen yet.
+[[lean_lib]]
+name = "EthCLSpecsTheoremVectors"
+roots = ["EthCLSpecs.TheoremVectors"]
+leanOptions = [{ name = "weak.theorem_vectors.outDir", value = "packages/EthCLSpecs/theorem_vectors" }]
+
+# The command-line harness over the records: render, check, report. Its
+# root builds under the exe's own configuration, so the `leanOptions` of
+# the library above do not reach it; the exe takes the output path from
+# the spec-half root's `outDir` constant instead of the option. The root
+# sits in the un-precompiled library above, so it needs no
+# `supportInterpreter` shim (ARCHITECTURE.md §2.3).
+[[lean_exe]]
+name = "theorem_vectors"
+root = "EthCLSpecs.TheoremVectors.Main"
