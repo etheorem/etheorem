@@ -45,29 +45,16 @@ open Lean
 
 namespace EthCLLib.TheoremVectors
 
-/-! ## Leaf instances -/
-
-/-- The presets write their tags, the same strings the paths use. -/
-instance : ToJson PresetId where
-  toJson p := .str p.tag
-
-instance : FromJson PresetId where
-  fromJson? j := do
-    let s ← j.getStr?
-    match PresetId.ofTag? s with
-    | some p => pure p
-    | none => throw s!"unknown preset tag '{s}'"
-
 /-! ## Origin and status -/
 
 /-- How the theorem came to the generator's attention (§16.1): a named line,
-a `@[theorem_vectors]` tag, a `characterizes` claim, the stage-1 `probe`
-clause, or a `skip` line. -/
+a `@[theorem_vectors]` tag, a `characterizes` claim, the `survey` clause, or
+a `skip` line. -/
 inductive OutcomeOrigin where
   | named
   | tagged
   | characterized
-  | probe
+  | survey
   | skipped
   deriving DecidableEq, Repr, Inhabited
 
@@ -76,7 +63,7 @@ def OutcomeOrigin.tag : OutcomeOrigin → String
   | .named         => "named"
   | .tagged        => "tagged"
   | .characterized => "characterized"
-  | .probe         => "probe"
+  | .survey        => "survey"
   | .skipped       => "skipped"
 
 instance : ToJson OutcomeOrigin where
@@ -89,22 +76,22 @@ instance : FromJson OutcomeOrigin where
     | "named"         => return .named
     | "tagged"        => return .tagged
     | "characterized" => return .characterized
-    | "probe"         => return .probe
+    | "survey"        => return .survey
     | "skipped"       => return .skipped
     | _ => throw s!"unknown origin '{s}'"
 
 /-- One run's status (§16.1). `written` records exist; `skipped` marks a
 run that found no vector, with the reason alongside; `outOfScope`, `unsat`,
-and `unsupported` carry their §18 meanings. `pending` is the stage-1
-placeholder the later stages replace. -/
+and `unsupported` carry their §18 meanings. `unselected` is the `survey`
+clause's answer: the theorem was read and listed, and nothing ran. -/
 inductive RunStatus where
   | written
   | skipped
   | outOfScope
   | unsat
   | unsupported
-  | pending
-  deriving DecidableEq, Repr, Inhabited
+  | unselected
+  deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- The wire tag of a status. -/
 def RunStatus.tag : RunStatus → String
@@ -113,7 +100,7 @@ def RunStatus.tag : RunStatus → String
   | .outOfScope  => "outOfScope"
   | .unsat       => "unsat"
   | .unsupported => "unsupported"
-  | .pending     => "pending"
+  | .unselected  => "unselected"
 
 instance : ToJson RunStatus where
   toJson s := .str s.tag
@@ -127,7 +114,7 @@ instance : FromJson RunStatus where
     | "outOfScope"  => return .outOfScope
     | "unsat"       => return .unsat
     | "unsupported" => return .unsupported
-    | "pending"     => return .pending
+    | "unselected"  => return .unselected
     | _ => throw s!"unknown run status '{s}'"
 
 /-! ## The outcome -/
@@ -135,10 +122,11 @@ instance : FromJson RunStatus where
 /-- One per-preset run's result line inside an outcome (§16.1). The
 optional fields fill as the pipeline grows: `records` and `seconds` when a
 run writes records, `source` and `hint` when a witness search picks a
-source, `reason` when a run explains itself. -/
+source, `reason` when a run explains itself. A survey run carries no
+preset (§16.1), so the field is optional. -/
 structure RunOutcome where
-  /-- The preset the run fixed. -/
-  preset  : PresetId
+  /-- The preset the run fixed, when the run ran per preset. -/
+  preset  : Option PresetId := none
   /-- The run's status. -/
   status  : RunStatus
   /-- How many records the run wrote. -/
@@ -151,7 +139,7 @@ structure RunOutcome where
   seconds : Option Float := none
   /-- The reason a run reports, when it has one. -/
   reason  : Option String := none
-  deriving ToJson, FromJson, Repr, Inhabited
+  deriving ToJson, FromJson, Repr, BEq, Inhabited
 
 /-- The per-theorem outcome the command writes and the report folds
 (§16.1). -/

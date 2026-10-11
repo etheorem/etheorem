@@ -1143,7 +1143,7 @@ the same file.
 
 - **The generator commands reserve their keywords for files that open
   `EthCLLib.TheoremVectors`.** Lean's parser reserves the atoms of a
-  command syntax (`skip`, `characterized`, `tagged`, `probe`,
+  command syntax (`skip`, `characterized`, `tagged`, `survey`,
   `presets`), and a file that opens the namespace cannot use them as
   identifiers. The generator files never do; `Command.lean` spells its
   own locals around the reservation (`ps`, `charSet`, `presetIds`), and
@@ -1158,3 +1158,136 @@ the same file.
   `renderFlowDoc` writes `meta.yaml`, and the `hex` leaf renders
   single-quoted, which also keeps a consumer's parser from reading a root
   as an integer. A plain `0x…` in the function format would coerce.
+
+## Theorem vectors, stage 2
+
+Deviations found while building the probe, the executor, the records, the
+function format, and the search wiring, against
+`THEOREM_VECTORS_ARCHITECTURE.md` and the plan's stage 2.
+
+- **The window theorems run from seeded inputs, not `default` inputs.**
+  The plan's stage-2 acceptance names `initializePtcWindow_lt`,
+  `initializePtcWindow_lt_default`, and `getPtcElseOffset_lt_same_slot`
+  writing records from `default` inputs. The first two take a
+  `Fulu.BeaconState`, and the default state's validator set is empty and
+  all-inactive (its `exitEpoch` is `0`), so `computePtcFromFulu`'s
+  balance-weighted selection (`Committees.lean`'s `cbwsAux`) can never
+  fill its target size and burns the full 10,000,000 iteration fuel per
+  empty committee, once per window slot. One evaluation ran past 25
+  minutes without finishing. The seed `activeState` supplies 64
+  max-balance active validators, whose committee fills the selection in
+  a few dozen iterations; each evaluation then takes ~0.2 s. The two
+  theorems carry named lines with `(state := …)` seeds and write with
+  source `seed`; `getPtcElseOffset_lt_same_slot` still writes from
+  `default` inputs with source `base`. Stage 6's `built` source inherits
+  the fact: §9.2's source order runs the base source before the built
+  one, so a state-input theorem whose `default` run burns the fuel bound
+  would hang the search before a builder ever ran; the base source needs
+  a cost guard for container inputs, or the built source moves ahead of
+  it. `FUTURE_WORK.md` tracks that guard.
+
+- **The seed grammar splits into seeded and seedless rules.** §14.3's
+  grammar sketches one `theorem_vectors[!] <ident> [with …]` form. An
+  `optional("with")` inside the rule shifts the child indices between
+  its two spellings, so the elab cannot read the seeds and the presets
+  clause at fixed positions; the parser carries two rules per strictness
+  instead, with the seeds and presets at fixed indices.
+
+- **The probe term is built as an `Expr` tree, not as source text.**
+  §11.2 says the builder writes source text, parses it, and elaborates
+  it under `binding.opens`. Direct construction produces the same closed
+  term without a stringly-typed intermediate, and the instance-binder
+  substitution is a mechanical `Expr` rewrite either way. The term still
+  obeys §11.2's two rules: the `Except` matching lives in the
+  precompiled helpers (`runProbeOk`, `runProbeError`, `eqRunResult`,
+  `boundRunResult`), and the term is evaluated once per statement and
+  preset with the case index as a runtime argument.
+
+- **One `ScalarCodec` class fronts the wire encoding, and `Fin` rides
+  the `uintN 64` little-endian encoding of `Fin.val`.** §9.1 sends every
+  input across the boundary as SSZ bytes, but a `Fin`-typed input (the
+  window offset of `initializePtcWindow_lt`) has no `SSZRepr` instance
+  and cannot: a total decode from bytes cannot respect `Fin`'s bound.
+  The codec carries `encode` / `decode` / `default` per type; `Fin n`'s
+  codec takes the remainder and proves the bound with `Nat.mod_lt`,
+  which is why the `n = 0` case answers `none`. The encoding is the same
+  scalar family §9.4's bit-vector source puts `Fin n` in. `default` is a
+  codec field rather than an `Inhabited` instance because `Fin`'s
+  default needs `0 < n` and no `NeZero (3 * slotsPerEpoch)` exists to
+  synthesize; the codec's own `n` pattern match carries the proof.
+
+- **`ProbeResult` carries the inputs' literals and splits the roots.**
+  §5.5's sketch has `output`, `expected`, `agree`, and one `roots` list.
+  The record layer (§12.2) writes a decimal literal for a scalar and a
+  root for a container, and it needs to know which one each value is; a
+  `Nat`-typed bound output (`getPtcElseOffset`) has no SSZ root at all,
+  and its output file holds the literal's UTF-8 bytes. `ProbeResult`
+  adds `literal`, `inputLiterals`, and `outputRoot`, and `inputRoots`
+  entries are optional.
+
+- **`Probe.defaults` is a field.** §11.1's sketch lists no defaults, but
+  §9.4's base source proposes the serialized `default` of every input as
+  its candidate. The base source holds no compiled code of its own, so
+  the probe bakes the serialization in at build time.
+
+- **`Probe.ofStatement` returns `Except String`, and the reason is a
+  skipped run.** §18 treats the probe's own failures as build errors,
+  but three of its inputs are facts about the theorem: a shape the
+  stage-2 executor does not run yet (`.iffTrue` in stage 3, `.runOk` /
+  `.runError` in stage 7), type parameters the command cannot fix, a
+  missing wire codec or recordable output form, and a dependent input
+  type the flat decode cannot express. Those answer `.error reason` and
+  the command reports a skipped run; an evaluation failure still throws.
+
+- **`Statement` hands its caller the telescope's free variables.** §11.2
+  substitutes the instance binders with the binding's constants, which
+  needs the instance fvars, and abstracts the value binders with
+  `mkLambdaFVars`, which needs the value fvars. The reader's fold now
+  passes a `StatementCtx` (statement plus both fvar arrays) instead of
+  the bare `Statement`; the pins updated with it.
+
+- **An `unsupported` outcome's shape field writes `unsupported`.** The
+  §16.1 example leaves the field's value for that case unspecified;
+  `Shape.wire` answers `unsupported` and the run's `reason` carries the
+  reader's or executor's explanation, box lemma reasons included.
+
+- **A survey outcome carries one run with no preset.** §16.1 says the
+  survey line has one run with status `unselected` (or `unsupported`
+  with the reader's reason) and no preset field, so `RunOutcome.preset`
+  is an `Option PresetId` and the report prints an empty preset cell for
+  it.
+
+- **The format registry lives in `Formats/Function.lean`.** §13.1 places
+  `Formats.all` in `Format.lean`, but the registry holds the function
+  format and `Formats/Function.lean` imports `Format`, so the registry
+  there would be circular. The registry grows where the formats live;
+  stage 7's pyspec format appends its value beside the function one.
+
+- **The exe's `check` passes with the function format alone.** §13.1's
+  `CheckResult.noConsumer` is the function format's whole answer, so
+  `check` runs the registry over the rendered vectors and exits 0 until
+  the pyspec format's `runCase` consumer lands in stage 7.
+
+- **The record JSON's field names differ from §12.2's sketch in three
+  places.** The structure's field is `thm`, not `theorem` (a Lean
+  keyword), the case index writes `case`, and the payload nests under
+  `value`, because the scalar's literal and the container's root share
+  one field slot (§12.2 sketches flat `ssz` / `root` / `scalar` keys
+  beside the name). The record reader and writer agree with each other;
+  a consumer reads records through neither.
+
+- **The function format accepts only records with a target.** §13.3 says
+  the format accepts every record, but its `function` field names the
+  function a client exposes, and a record without a target has none to
+  name; the fallback wrote the theorem's name into the field. A rejected
+  record stays in `records/` (§13.2), and `getPtcElseOffset`'s bound
+  records, whose target is none, render nowhere in stage 2.
+
+- **`VectorFormat.render` takes the output's bytes.** §13.1's sketch
+  passes the record and the input bytes alone, and §13.3 promises a
+  container output's `ssz` as its hex; with only the input bytes the
+  function format had no bytes for the output and wrote `ssz: '0x'`.
+  The render seam carries the `ReadBack` output bytes beside the inputs,
+  and the render and check passes hand the rendered paths over through
+  `<out>/formats/manifest.json`, so §13.2's "check receives what render
+  returned" holds across the two subcommands.

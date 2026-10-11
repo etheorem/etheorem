@@ -5,16 +5,18 @@ import EthCLLib.TheoremVectors.Outcome
 # `EthCLLib.TheoremVectors.Report`: `report.md`
 
 The report pass (`THEOREM_VECTORS_ARCHITECTURE.md` §16.2): the exe's `report` subcommand
-folds the outcome files into one Markdown file with one table per fork. The
-table is the review surface, so a reader sees which theorems produce
+folds the outcome files into one Markdown file with one table per fork.
+The table is the review surface, so a reader sees which theorems produce
 vectors, which do not, and why. The columns are the §16.2 columns; the
-stage-1 report leaves `Source`, `Hint`, `Records`, `Formats`, and `Seconds`
-empty, because the stages that fill them have not landed.
+`Formats` cell stays empty until the pyspec check lands in stage 7.
 
-A run that carries a reason writes it in its status cell, which is where
-the reader's `.unsupported` reasons show. The theorem list with block
-inputs follows each table (§16.2's closing list); the records-no-format
-list prints `(none)` until the formats land.
+The summary line above the tables counts the theorems with outcomes, the
+box lemmas (§7.3), and the theorems with block inputs (§16.2, and decision
+point A's outcome in the plan), so the other `.unsupported` rows read as
+the shape gaps they are. A run that carries a reason writes it in its
+status cell. The theorem list with block inputs follows each table (§16.2's
+closing list); the records-no-format list prints `(none)` until a format
+check fails in a later stage.
 -/
 
 set_option autoImplicit false
@@ -40,6 +42,17 @@ private def optCell : Option String → String
   | some s => s
   | none => ""
 
+/-- The preset cell; a survey run carries no preset (§16.1). -/
+private def presetCell (run : RunOutcome) : String :=
+  match run.preset with
+  | some p => p.tag
+  | none => ""
+
+/-- Is the outcome a box lemma? The reader's reason names the family
+(§7.3), and the run carries it. -/
+private def isBoxLemma (o : Outcome) : Bool :=
+  o.runs.any fun r => r.reason.any fun reason => reason.startsWith "box lemma"
+
 /-- The block-input list under a fork's table (§16.2). -/
 private def blockInputSection (os : Array Outcome) : String :=
   let withBlocks := os.filter fun o => !o.blockInputs.isEmpty
@@ -60,15 +73,24 @@ private def forkSection (forkTag : String) (os : Array Outcome) : String :=
     "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n" ++
     String.join (rows.toList.map fun r =>
       s!"| `{r.outcome.theorem}` | {r.outcome.origin.tag} | {r.outcome.shape} \
-         | {r.run.preset.tag} | {statusCell r.run} | {optCell r.run.source} \
-         | {optCell r.run.hint} | {r.run.records} | | |\n")
+         | {presetCell r.run} | {statusCell r.run} | {optCell r.run.source} \
+         | {optCell r.run.hint} | {r.run.records} | | \
+         {optCell (r.run.seconds.map toString)} |\n")
   "## " ++ forkTag ++ "\n\n" ++ table ++ blockInputSection os ++ "\n\n"
 
-/-- The report text for every fork with outcomes, fork tags in name order. -/
+/-- The report text for every fork with outcomes, fork tags in name order
+(§16.2). The summary counts the theorems with outcomes, the box lemmas,
+and the theorems with block inputs. -/
 def Report.render (forks : Array (String × Array Outcome)) : String :=
   let total := forks.foldl (init := 0) fun acc (_, os) => acc + os.size
+  let boxLemmas := forks.foldl (init := 0) fun acc (_, os) =>
+    acc + (os.filter isBoxLemma).size
+  let withBlocks := forks.foldl (init := 0) fun acc (_, os) =>
+    acc + (os.filter fun o => !o.blockInputs.isEmpty).size
   "# Theorem vectors report\n\n" ++
-    s!"{total} theorems with outcomes.\n\n" ++
+    s!"{total} theorems with outcomes; {boxLemmas} box lemmas (§7.3, \
+      no shape can express them); {withBlocks} theorems with block \
+      inputs (§1.2, base source only).\n\n" ++
     String.join (forks.toList.map fun (forkTag, os) => forkSection forkTag os) ++
     "## Records no format accepted\n\n(none)\n"
 

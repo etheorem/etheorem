@@ -489,11 +489,18 @@ inductive Failure where
 ```lean
 /-- What one probe run produced. All values cross the boundary as SSZ bytes. -/
 structure ProbeResult where
-  output   : ByteArray          -- `f x`, or the post-state, serialized
-  expected : ByteArray          -- `e x`, serialized; empty for `.bound`
-  agree    : Bool               -- `f x == e x`, or the bound holds
-  roots    : Array ByteArray    -- hashTreeRoot of each input, then the output
+  output        : ByteArray                -- `f x`, or the post-state, serialized
+  expected      : ByteArray                -- `e x`, serialized; empty for `.bound`
+  agree         : Bool                     -- `f x == e x`, or the bound holds
+  literal       : Option String            -- the output's literal, when it has `ToString`
+  inputLiterals : Array (Option String)    -- one per input, in binder order
+  inputRoots    : Array (Option ByteArray) -- hashTreeRoot per input, where the type is SSZ
+  outputRoot    : Option ByteArray         -- hashTreeRoot of the output, when its type is SSZ
 ```
+
+The literals and the optional roots answer the record layer's question of
+scalar or container (§12.2). A `Nat`-typed bound output has a literal and
+no root, and its `output.ssz` holds the literal's UTF-8 bytes.
 
 ### 5.6 Records
 
@@ -632,7 +639,10 @@ and `specFunctionOwner?`. The head of the left side itself is often not the
 target: in `(initializePtcWindow (pureState state))[i] = …` the head is
 `GetElem.getElem` and the target is `initializePtcWindow`.
 
-A conclusion with no spec function on its left side is `.unsupported`.
+A conclusion with no spec function on its left side has no target. The
+theorem still runs when its shape matches, and a format that needs a
+target rejects its records (§13.3). `getPtcElseOffset_lt_same_slot` is one:
+a `.bound` over a helper the proof file defines.
 
 ### 7.3 Shape matching
 
@@ -794,8 +804,17 @@ case's conjunction, compiled. It never throws: a decode failure is `false`.
 ### 9.4 The core sources
 
 **Base.** Serialize `default` for every input and check. This is the one
-source that runs on a theorem with a block input. `initializePtcWindow_lt`
-passes here: `i = 0` satisfies `i.val < slotsPerEpoch`.
+source that runs on a theorem with a block input.
+`getPtcElseOffset_lt_same_slot` passes here: `slot = 0` has no hypothesis
+to fail.
+
+The `default` state is never a candidate. Neither the base source nor the
+seed fill proposes `default` for an input of the binding's `stateType`.
+The spec is not defined on the empty, all-inactive validator set:
+`computePtcFromFulu`'s balance-weighted selection runs to its fuel bound
+on it, minutes per committee, and no result follows. A state input comes
+from a seed, a hint (§9.8), or the built source (§9.9). A theorem with an
+unseeded state input gets `nothing` from both sources.
 
 **Bit-vector.** Applies when every input has a type in `{UInt8, UInt16,
 UInt32, UInt64, Bool, Fin n}` or an SSZ alias of one (`Slot`, `Epoch`,
@@ -823,8 +842,10 @@ each side of the bound.
 **Seed.** Applies when the line names seeds (§14.3). A seed fixes some inputs
 to author-written terms. The source serializes them through the probe
 (`probe.seeds`) and hands the partial assignment to the bit-vector source for
-the rest. A seed that fails the check is a build error, because the author
-claimed it works.
+the rest. The seed is one assignment and the prepare pass may split the
+theorem into several cases (§8.2), so the author's claim is per theorem: a
+seed that passes no case is a build error, and a case the seed fails falls
+through to the next source like any other candidate.
 
 ### 9.5 Generation
 
@@ -1115,6 +1136,9 @@ structure Probe where
   reads  : Array ByteArray → Array ByteArray
   /-- The author seeds, serialized, with their input positions. -/
   seeds  : Array (Nat × ByteArray)
+  /-- The serialized `default` of every input, in binder order: the base
+  source's candidate (§9.4). Empty bytes for a type with no default. -/
+  defaults : Array ByteArray
   /-- Run the named builder (an index into the binding's catalog) and
   serialize the state it produces. -/
   build  : (builder : Nat) → Knobs → ByteArray
@@ -1124,11 +1148,15 @@ structure Probe where
 
 ### 11.2 Term construction
 
-`Probe.lean` builds the term as source text, parses it, and elaborates it
-under `binding.opens`, with the instance binders bound by `letI` to the
-binding's constants. The decode of each input goes through `SSZRepr` at the
-input's type, which is known as an `Expr` from the statement. The output is
-serialized the same way.
+`Probe.lean` builds the term as an `Expr` tree inside the reader's
+telescope scope. `mkLambdaFVars` abstracts the value binders, and a
+substitution replaces the instance binders with the binding's constants for
+the preset (§10). The decode of each input goes through `ScalarCodec` at
+the input's type, which is known as an `Expr` from the statement. The class
+fronts `SSZRepr` for every SSZ type and adds `Fin n` as the `uintN 64`
+encoding of `Fin.val`, which no `SSZRepr` can carry because a decode must
+respect the bound. The output is serialized the same way, or as the UTF-8
+bytes of its literal when its type has `ToString` and no `SSZRepr`.
 
 Two rules apply to the evaluated term. It contains no
 `match` on `Except` or `EStateM.Result`; it calls precompiled helpers in the
@@ -1155,8 +1183,10 @@ them equal, so the difference is a compiler, FFI, or serialization defect.
 ### 11.4 Roots
 
 `run` returns `hashTreeRoot` for every SSZ input and for the output, under the
-bound hasher. The records carry the roots so a format can refer to a value
-without decoding it.
+bound hasher: the binding's `hasherTag` constant, whether or not the theorem
+binds a `[HasherTag]`. The records carry the roots so a format can refer to a
+value without decoding it. An SSZ value with no root is a build error, never
+an empty root.
 
 ---
 
@@ -1191,15 +1221,17 @@ removed. `<case>` is the zero-padded case index. `_t` and `_f` mark the
   "source": "random",
   "inputs": [
     { "name": "state", "type": "EthCLSpecs.Gloas.BeaconState",
-      "ssz": "state.ssz", "root": "0x…" },
+      "value": { "root": "0x…" } },
     { "name": "builderIndex", "type": "EthCLSpecs.Gloas.BuilderIndex",
-      "ssz": "builderIndex.ssz", "scalar": "3" },
+      "value": { "scalar": "3" } },
     { "name": "bidAmount", "type": "EthCLSpecs.Gloas.Gwei",
-      "ssz": "bidAmount.ssz", "scalar": "32000000000" } ],
-  "output": { "name": "output", "type": "Bool", "ssz": "output.ssz", "scalar": "true" } }
+      "value": { "scalar": "32000000000" } } ],
+  "output": { "name": "output", "type": "Bool", "value": { "scalar": "true" } },
+  "error": null }
 ```
 
-Every value has an `ssz` file. A container adds `root`, a scalar adds
+Every value has an `ssz` side file named by the binder. The payload nests
+under `value`, one of two forms: a container's `root`, or a scalar's
 `scalar` as a string, so a `UInt64` never meets a JSON reader's integer
 range. A `.runError` record has `error` in place of `output`.
 
@@ -1290,9 +1322,16 @@ for record in records/**:
 
 A record no format accepts stays in `records/` and the report lists it.
 
+`render` and `check` are two invocations of the exe (§15), so `render`
+writes the rendered paths per record and format to
+`<outDir>/formats/manifest.json`, and `check` reads them back: check
+receives what render returned.
+
 ### 13.3 The function format
 
-Accepts every record. Writes one self-contained file per vector:
+Accepts every record with a target: the `function` field names the function
+a client exposes, and a record without a target has none to name. Writes
+one self-contained file per vector:
 
 ```
 <outDir>/formats/function/<fork>/<preset>/<target>/<thm>_<case>[_t|_f].yaml

@@ -1,5 +1,6 @@
 import EthCLLib.TheoremVectors.Tests.Attribute
 import EthCLLib.TheoremVectors.Tests.Command
+import EthCLLib.TheoremVectors.Tests.Probe
 
 /-!
 # `EthCLLib.TheoremVectors.Tests`: the generator's framework-half tests
@@ -10,3 +11,5 @@ toy fork binding. Distinct from the spec-half pins
 Built as the second root of the `EthCLLibTheoremVectors` library, so
 `lake build EthCLLibTheoremVectors` runs them.
 -/
+
+set_option autoImplicit false

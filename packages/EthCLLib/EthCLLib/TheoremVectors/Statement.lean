@@ -98,7 +98,7 @@ structure Input where
   type     : Expr
   /-- `true` for the `(...)` form, `false` for the `{...}` form. -/
   explicit : Bool
-  deriving Repr
+  deriving Repr, Inhabited
 
 /-- One instance binder and the seam it belongs to (`THEOREM_VECTORS_ARCHITECTURE.md` §5.2).
 The four known seams are the ones the generator binds per preset; an
@@ -229,6 +229,16 @@ private partial def findTargetIn (env : Environment) (binding : ForkBinding)
 
 /-! ## Shape matching (§7.3) -/
 
+/-- Is the conclusion's head a framework box predicate (`THEOREM_VECTORS_ARCHITECTURE.md`
+§7.3, rule 7)? A theorem whose conclusion states `KeepsUncached`,
+`KeepsUncachedFrom`, or `ReturnsUncached` is a box lemma: it states a fact
+about the box discipline of a spec function, and no input and output pair
+expresses it. -/
+private def isBoxLemmaHead (c : Name) : Bool :=
+  c == `EthCLLib.Proofs.KeepsUncached
+    || c == `EthCLLib.Proofs.KeepsUncachedFrom
+    || c == `EthCLLib.Proofs.ReturnsUncached
+
 /-- The plain value under a `pureState` or `SSZ.UncachedBox` wrapper, the
 two spellings a contract theorem uses for its pre- and post-state. -/
 private def pureBox? (e : Expr) : Option Expr :=
@@ -358,7 +368,10 @@ private def runErrorStateT? (body : Expr) (preId? : Option FVarId) :
 
 /-- Shape matching in §7.3's order: `.iffTrue`, `.runOk` in its two forms,
 `.runError`, `.eq`, `.bound`, then `.unsupported` with the conclusion's
-head constant in the reason. -/
+head constant in the reason. A conclusion whose head is a framework box
+predicate (`KeepsUncached`, `KeepsUncachedFrom`, `ReturnsUncached`) is a
+box lemma (§7.3, rule 7): the reason reads `box lemma: <head>`, and the
+report counts these apart from the other `.unsupported` reasons (§16.2). -/
 private def matchShape (body : Expr) (preId? : Option FVarId)
     (binderIds : Array FVarId) : Shape :=
   match body.getAppFn with
@@ -382,7 +395,7 @@ private def matchShape (body : Expr) (preId? : Option FVarId)
         -- rule 4
         .runError act pre err
       else
-        -- rule 5, then rule 6
+        -- rule 5, then rule 6, then rule 7
         match eqSides? body with
         | some (lhs, rhs) => .eq lhs rhs
         | none =>
@@ -391,6 +404,8 @@ private def matchShape (body : Expr) (preId? : Option FVarId)
             if (c == ``LT.lt || c == ``LE.le) && args.size ≥ 4 then
               let rel : BoundRel := if c == ``LT.lt then .lt else .le
               .bound args[2]! rel args[3]!
+            else if isBoxLemmaHead c then
+              .unsupported s!"box lemma: {c}"
             else
               .unsupported s!"unsupported conclusion: head `{c}`"
   | _ => .unsupported "unsupported conclusion: not an application"
@@ -420,7 +435,21 @@ private def isTypeLevelBinder (type : Expr) : MetaM Bool := do
     | _ => e
   return (peel t).isSort
 
-/-- Read one theorem into a `Statement` and fold `k` over it (§7). Errors
+/-- What the reader hands its caller: the parsed statement plus the free
+variables the binder walk introduced, so the probe can substitute the
+instance binders and abstract the value binders (`THEOREM_VECTORS_ARCHITECTURE.md` §11.2).
+The variables are telescope-local: like the statement's expressions, they
+are valid only inside the reader's fold. -/
+structure StatementCtx where
+  /-- The parsed theorem. -/
+  stmt       : Statement
+  /-- One free variable per value input, aligned with `stmt.inputs`. -/
+  inputFvars : Array Expr
+  /-- One free variable per instance binder, aligned with
+  `stmt.instances`. -/
+  instFvars  : Array Expr
+
+/-- Read one theorem into a `StatementCtx` and fold `k` over it (§7). Errors
 when the name does not resolve or is not a theorem; the failure policy
 makes both build errors (`THEOREM_VECTORS_ARCHITECTURE.md` §18).
 
@@ -429,10 +458,10 @@ the binder walk introduces the theorem's free variables with a local
 context that `forallTelescope` restores once its callback returns, so a
 `Statement` carried out of `k` would name free variables no later step can
 see. Every consumer therefore folds to its wire form inside `k`: the
-command derives the outcome and writes it, the pins assert on the reader's
-answer. -/
+command derives the outcome and writes it, the probe builds and evaluates
+its term, the pins assert on the reader's answer. -/
 def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
-    (k : Statement → MetaM α) : MetaM α := do
+    (k : StatementCtx → MetaM α) : MetaM α := do
   let env ← getEnv
   let some info := env.find? thmName
     | throwError "theorem_vectors: `{thmName}` does not resolve"
@@ -440,7 +469,9 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
     | throwError "theorem_vectors: `{thmName}` is not a theorem"
   Meta.forallTelescope v.type fun fvars body => do
     let mut instances : Array (Name × InstanceKind) := #[]
+    let mut instFvars : Array Expr := #[]
     let mut inputs : Array Input := #[]
+    let mut inputFvars : Array Expr := #[]
     let mut typeBinders : Array Name := #[]
     let mut preId? : Option FVarId := none
     let mut binderIds : Array FVarId := #[]
@@ -450,6 +481,7 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
       binderIds := binderIds.push d.fvarId
       if d.binderInfo matches .instImplicit then
         instances := instances.push (d.userName.eraseMacroScopes, instanceKindOf d.type)
+        instFvars := instFvars.push f
       else if ← Meta.isProp d.type then
         hyps := hyps.push d.type
       else if ← isTypeLevelBinder d.type then
@@ -461,6 +493,7 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
         inputs := inputs.push
           { name := d.userName.eraseMacroScopes, type := d.type
             explicit := d.binderInfo matches .default }
+        inputFvars := inputFvars.push f
         -- the pre-state convention: the first value binder, which every
         -- contract in the corpus spells `preState` or `state`
         if preId?.isNone then preId? := some d.fvarId
@@ -480,6 +513,7 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
         if shape matches .unsupported _ then shape
         else .unsupported s!"unknown instance seam on binder `{n}`: `{c}`"
       | _ => shape
-    k { thm := thmName, instances, inputs, typeBinders, hyps, target, shape }
+    k { stmt := { thm := thmName, instances, inputs, typeBinders, hyps, target, shape }
+        inputFvars, instFvars }
 
 end EthCLLib.TheoremVectors

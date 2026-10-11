@@ -3,6 +3,16 @@ import EthCLLib.TheoremVectors.Yaml
 import EthCLLib.TheoremVectors.ForkBinding
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Scope
+import EthCLLib.TheoremVectors.Prepare
+import EthCLLib.TheoremVectors.Preset
+import EthCLLib.TheoremVectors.Probe
+import EthCLLib.TheoremVectors.Execute
+import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Base
+import EthCLLib.TheoremVectors.Witness.Seed
+import EthCLLib.TheoremVectors.Record
+import EthCLLib.TheoremVectors.Format
+import EthCLLib.TheoremVectors.Formats.Function
 import EthCLLib.TheoremVectors.Outcome
 import EthCLLib.TheoremVectors.Report
 import EthCLLib.TheoremVectors.Command
@@ -18,10 +28,12 @@ files.
 
 These modules hold the core types (§5), the client-facing YAML writer
 (§12.3), the fork binding seam (§6), the statement reader (§7), the scope
-walk (§7.4), the outcome lines (§16.1), the report (§16.2), and the
-generator commands (§14). The module map (§4.1) places the prepare pass,
-the witness sources, the probe, the executor, the records, and the formats
-beside them as the library grows.
+walk (§7.4), the prepare pass (§8), the preset binding (§10), the probe
+and the executor (§11), the witness search's seed and base sources (§9.2,
+§9.4), the records (§12), the function format (§13.3), the outcome lines
+(§16.1), the report (§16.2), and the generator commands (§14). The module
+map (§4.1) places the bit-vector, built, and random sources, the hints,
+and the pyspec format beside them as their stages land.
 
 No shipped module imports anything under `EthCLLib.TheoremVectors`, so the
 `Plausible` dependency and the generator stay off the `EthCLLib` link line

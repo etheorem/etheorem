@@ -52,6 +52,18 @@ def PresetId.ofTag? : String → Option PresetId
   | "mainnet" => some .mainnet
   | _         => none
 
+/-- The presets write their tags, the same strings the paths and the wire
+files use. -/
+instance : ToJson PresetId where
+  toJson p := .str p.tag
+
+instance : FromJson PresetId where
+  fromJson? j := do
+    let s ← j.getStr?
+    match PresetId.ofTag? s with
+    | some p => pure p
+    | none => throw s!"unknown preset tag '{s}'"
+
 /-! ## Shapes and sources -/
 
 /-- The direction of a `.bound` conclusion (`THEOREM_VECTORS_ARCHITECTURE.md` §5.3):
@@ -81,6 +93,16 @@ def ShapeTag.tag : ShapeTag → String
   | .runOk    => "runOk"
   | .runError => "runError"
 
+/-- Read a shape back from its wire tag. The record reader goes through
+this. -/
+def ShapeTag.ofTag? : String → Option ShapeTag
+  | "eq"       => some .eq
+  | "iffTrue"  => some .iffTrue
+  | "bound"    => some .bound
+  | "runOk"    => some .runOk
+  | "runError" => some .runError
+  | _          => none
+
 /-- Which witness source proposed a candidate (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4).
 The sources run in a fixed order, cheapest first, and the record names the
 one that won. `.reused` marks a scalar witness carried over from an earlier
@@ -97,6 +119,28 @@ inductive WitnessSourceTag where
   | hinted (orig : WitnessSourceTag)
   deriving BEq, Repr, Inhabited
 
+/-- The wire tag of a source, as the records and outcome files write it
+(§16.1's `source` field). -/
+def WitnessSourceTag.tag : WitnessSourceTag → String
+  | .base      => "base"
+  | .bitVec    => "bitVec"
+  | .built     => "built"
+  | .random    => "random"
+  | .seed      => "seed"
+  | .reused p  => s!"reused-{p.tag}"
+  | .hinted o  => s!"hinted-{o.tag}"
+
+/-- Read a source back from its wire tag. The record reader goes through
+this; a `.hinted` tag reads back as its original source, which the record
+of a replayed hint corrects at write time. -/
+def WitnessSourceTag.ofTag? : String → Option WitnessSourceTag
+  | "base"   => some .base
+  | "bitVec" => some .bitVec
+  | "built"  => some .built
+  | "random" => some .random
+  | "seed"   => some .seed
+  | _        => none
+
 /-- Why a case produced no vector (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4). `unsat` means
 the solver proved the hypotheses vacuous, `notFound` that every source ran
 out, and `outOfScope` that a block input is in play and the base source
@@ -106,6 +150,13 @@ inductive Failure where
   | notFound (tried : Array WitnessSourceTag)
   | outOfScope (inputs : Array Name)
   deriving BEq, Repr, Inhabited
+
+/-! ## Assignments -/
+
+/-- A closed value for every input, in binder order, as SSZ bytes
+(`THEOREM_VECTORS_ARCHITECTURE.md` §5.4). The byte boundary (§9.1) makes this the
+only form a candidate takes between the sources and the probe. -/
+abbrev Assignment := Array ByteArray
 
 /-! ## Record payloads -/
 
@@ -120,6 +171,57 @@ inductive ValueData where
   /-- A scalar: its decimal (or boolean) literal for the reader. -/
   | scalar (literal : String)
   deriving BEq, Inhabited
+
+/-- A byte string as the records write a root: `0x` and two lowercase hex
+digits per byte. One spelling for every wire file, so a root reads back the
+same way everywhere. -/
+def hexOf (bytes : ByteArray) : String :=
+  let digit (d : Nat) : Char :=
+    "0123456789abcdef".toList[d]!
+  "0x" ++ String.ofList (bytes.toList.flatMap fun b =>
+    [digit (b.toNat / 16), digit (b.toNat % 16)])
+
+/-- Read a `0x…` root back, two hex digits per byte. -/
+def hexBytes? (s : String) : Option ByteArray :=
+  let hexVal (c : Char) : Option Nat :=
+    if c.isDigit then some (c.toNat - '0'.toNat)
+    else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+    else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
+    else none
+  let cs := s.toList
+  if cs.take 2 == ['0', 'x'] && (cs.length - 2) % 2 == 0 then
+    let digits := cs.drop 2
+    let rec pairs (ds : List Char) : Option (List Nat) :=
+      match ds with
+      | [] => some []
+      | [_] => none
+      | a :: b :: rest =>
+        match hexVal a, hexVal b, pairs rest with
+        | some va, some vb, some rest' => some ((16 * va + vb) :: rest')
+        | _, _, _ => none
+    (pairs digits).map
+      (fun bs => ByteArray.mk (bs.toArray.map UInt8.ofNat))
+  else none
+
+/-- The JSON forms of the payload (`THEOREM_VECTORS_ARCHITECTURE.md` §12.2): an SSZ value
+writes its root as `0x…`, a scalar its literal. The side file's name rides
+the value's own `name` field, so neither form repeats it. -/
+instance : ToJson ValueData where
+  toJson
+    | .ssz root => Lean.Json.mkObj [("root", Lean.Json.str (hexOf root))]
+    | .scalar lit => Lean.Json.mkObj [("scalar", Lean.Json.str lit)]
+
+instance : FromJson ValueData where
+  fromJson? j := do
+    match j.getObjVal? "root" with
+    | .ok r =>
+      let rs ← r.getStr?
+      match hexBytes? rs with
+      | some b => return .ssz b
+      | none => throw s!"cannot read a root from '{rs}'"
+    | .error _ =>
+      let lit ← j.getObjValAs? String "scalar"
+      return .scalar lit
 
 /-! ## State-builder knobs -/
 

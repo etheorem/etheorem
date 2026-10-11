@@ -38,9 +38,9 @@ registered fork's proof namespace. -/
 @[theorem_vectors] theorem callee_touched :
     EthCLLib.Tests.InheritanceReplay.Base.callee = 1 := rfl
 
-/-- Probe-only: the probe clause selects every public theorem under the
+/-- Survey-only: the survey clause selects every public theorem under the
 fork's proof namespace that no other clause or line selected. -/
-theorem callee_probe : EthCLLib.Tests.InheritanceReplay.Base.callee = 1 := rfl
+theorem callee_survey : EthCLLib.Tests.InheritanceReplay.Base.callee = 1 := rfl
 
 end EthCLLib.Proofs.Base
 
@@ -50,7 +50,8 @@ open EthCLLib.TheoremVectors
 theorem_vectors_fork EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding
 
 theorem_vectors characterized
-theorem_vectors probe
+theorem_vectors tagged
+theorem_vectors survey
 
 theorem_vectors! callee_eq presets minimal
 theorem_vectors skip callee_skipped "covered by callee_eq"
@@ -68,23 +69,30 @@ private def readOutcome (thmLocal : String) : Lean.Elab.Command.CommandElabM Out
   liftIO <| Outcome.read path
 
 -- The command surface's answers: named wins over characterized, the skip
--- excludes and records, `!` carries strictness, and the probe takes only
--- the residual.
+-- excludes and records, `!` carries strictness, tagged discovery claims
+-- its theorem, and the survey takes only the residual.
 run_cmd do
   let named ← readOutcome "callee_eq"
   unless named.origin == .named do
     throwError s!"toy named line: origin is {named.origin.tag}, expected named"
-  unless named.runs.any fun r => r.preset == .minimal && r.status == .pending do
-    throwError "toy named line: expected one pending minimal run"
+  unless named.runs.any fun r => r.preset == some .minimal
+      && r.status == .written do
+    throwError "toy named line: expected one written minimal run"
   let skipped ← readOutcome "callee_skipped"
   unless skipped.origin == .skipped do
     throwError s!"toy skip line: origin is {skipped.origin.tag}, expected skipped"
   let touched ← readOutcome "callee_touched"
-  unless touched.origin == .probe do
-    throwError s!"toy probe: origin is {touched.origin.tag}, expected probe"
-  let residual ← readOutcome "callee_probe"
-  unless residual.origin == .probe do
-    throwError s!"toy probe: origin is {residual.origin.tag}, expected probe"
+  unless touched.origin == .tagged do
+    throwError s!"toy tagged: origin is {touched.origin.tag}, expected tagged"
+  unless touched.runs.all fun r => r.status == .written do
+    throwError "toy tagged: expected written runs"
+  let residual ← readOutcome "callee_survey"
+  unless residual.origin == .survey do
+    throwError s!"toy survey: origin is {residual.origin.tag}, expected survey"
+  unless residual.runs.size == 1
+      && residual.runs[0]! == { preset := none, status := .unselected } do
+    throwError s!"toy survey: expected one unselected run, got \
+      {repr residual.runs}"
   let dir := (".lake/build/test-theorem-vectors" : System.FilePath) /
     "outcomes" / "toybase"
   let files ← dir.readDir

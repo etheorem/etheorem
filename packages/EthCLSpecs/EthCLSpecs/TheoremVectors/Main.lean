@@ -1,4 +1,7 @@
 import EthCLSpecs.TheoremVectors
+import EthCLLib.TheoremVectors.Format
+import EthCLLib.TheoremVectors.Formats.Function
+import EthCLLib.TheoremVectors.Record
 
 /-!
 # `EthCLSpecs.TheoremVectors.Main`: the command-line harness
@@ -7,21 +10,18 @@ The `theorem_vectors` executable (`THEOREM_VECTORS_ARCHITECTURE.md` §15). It ne
 elaborates a theorem; the records on disk are its input. Four subcommands:
 
 - `render [--fork <tag>] [--preset <id>] [--format <name>] [--out <dir>]`
-  turns every record into every format that accepts it;
-- `check` replays the rendered vectors through each format's consumer;
-- `report [--out <dir>]` folds the outcome files into `report.md`;
+  turns every record into every format that accepts it (phase C1, §13.2);
+- `check [--fork <tag>] [--preset <id>] [--format <name>] [--out <dir>]`
+  replays the rendered vectors through each format's consumer (C2); the
+  function format answers `noConsumer`, so `check` passes until the pyspec
+  format's `runCase` consumer lands in stage 7;
+- `report [--out <dir>]` folds the outcome files into `report.md` (C3);
 - `list [--out <dir>]` prints one line per record.
-
-Stage 1 wires `report` (§16.2) and answers `render`, `check`, and `list`
-over the records tree, which stage 1 leaves empty: they walk the tree,
-report what they find, and exit 0, so the `theorem-vectors` recipe runs
-green. §15's real bodies for those three land with the records (stage 2)
-and the pyspec check (stage 7); `IMPLEMENTATION_NOTES.md` records the
-staging deviation.
 -/
 
 set_option autoImplicit false
 
+open Lean
 open EthCLLib.TheoremVectors
 
 namespace EthCLSpecs.TheoremVectors.Main
@@ -105,21 +105,64 @@ end
 def outRoot (opts : Options) : System.FilePath :=
   (opts.out.getD EthCLSpecs.TheoremVectors.outDir)
 
-/-- Count the records on disk, `<fork>/<preset>/<thm>/<case>/record.json`.
-Returns `none` when the records root does not exist. -/
-private partial def countRecords (dir : System.FilePath) : IO (Option Nat) := do
-  unless ← dir.isDir do
-    return none
+/-- The render environment the exe builds: the bindings table from
+`Bindings.lean` (§15). -/
+def renderEnv (out : System.FilePath) : RenderEnv where
+  outDir := out
+  bindings := EthCLSpecs.TheoremVectors.Bindings.ofTag
+
+/-- Does the record pass the exe's selection flags? -/
+def selects (opts : Options) (r : VectorRecord) : Bool :=
+  (opts.fork.all fun f => r.fork == f)
+    && (opts.preset.all fun p => r.preset == p)
+
+/-- One rendered vector, as the manifest between the render and check
+passes holds (§13.2: check receives what render returned). -/
+structure Rendered where
+  /-- The record directory the vector came from. -/
+  recordPath : String
+  /-- The format's registry name. -/
+  format : String
+  /-- The files the format wrote. -/
+  paths : Array String
+  deriving ToJson, FromJson
+
+/-- Walk the records tree and render every selected record through every
+accepting format (§13.2). Writes `<out>/formats/manifest.json`, the list
+of rendered vectors the `check` subcommand replays, and returns the count
+of rendered files. -/
+def renderRecords (opts : Options) (out : System.FilePath) : IO Nat := do
+  let env := renderEnv out
+  let forkTags ← match opts.fork with
+    | some f => pure #[f]
+    | none => do
+      let root := Record.dir out
+      if ← root.isDir then (← root.readDir).mapM (fun e => pure e.fileName)
+      else pure #[]
+  let ps : Array PresetId :=
+    match opts.preset with
+    | some p => #[p]
+    | none => #[.minimal, .mainnet]
   let mut n := 0
-  for entry in ← dir.readDir do
-    let path := entry.path
-    if ← path.isDir then
-      match ← countRecords path with
-      | some k => n := n + k
-      | none => pure ()
-    else if entry.fileName == "record.json" then
-      n := n + 1
-  return some n
+  let mut rendered : Array Rendered := #[]
+  for forkTag in forkTags do
+    for p in ps do
+      for (path, rb) in ← Record.readAll out forkTag p do
+        unless selects opts rb.record do continue
+        for f in Formats.all do
+          if (opts.format.all fun name => f.name == name)
+              && f.accepts rb.record then
+            let paths ← f.render env rb.record rb.inputBytes rb.outputBytes
+            n := n + paths.size
+            rendered := rendered.push
+              { recordPath := path.toString, format := f.name,
+                paths := paths.map (·.toString) }
+            for q in paths do
+              IO.println s!"theorem_vectors render: {f.name} {q}"
+  IO.FS.createDirAll (out / "formats")
+  IO.FS.writeFile (out / "formats" / "manifest.json")
+    ((toJson rendered).render.pretty (width := 100) ++ "\n")
+  return n
 
 /-- Walk the records tree and print one line per record, for scripts
 (§15's `list`). -/
@@ -132,6 +175,19 @@ private partial def listRecords (dir : System.FilePath) : IO Unit := do
       listRecords path
     else if path.fileName == "record.json" then
       IO.println path.toString
+
+/-- Read the manifest the render pass wrote (§13.2). A missing manifest
+means nothing was rendered. -/
+def readManifest (out : System.FilePath) : IO (Array Rendered) := do
+  let path := out / "formats" / "manifest.json"
+  unless ← path.pathExists do
+    return #[]
+  match Json.parse (← IO.FS.readFile path) with
+  | .error e => throw (IO.userError s!"cannot read {path}: {e}")
+  | .ok j =>
+    match fromJson? (α := Array Rendered) j with
+    | .ok rs => return rs
+    | .error e => throw (IO.userError s!"cannot read {path}: {e}")
 
 /-- Run a parsed subcommand. -/
 def runSub (sc : Subcommand) (opts : Options) : IO UInt32 := do
@@ -146,19 +202,39 @@ def runSub (sc : Subcommand) (opts : Options) : IO UInt32 := do
     listRecords (out / "records")
     return 0
   | .render =>
-    match ← countRecords (out / "records") with
-    | none => IO.println s!"theorem_vectors render: no records under \
-        {out}/records"
-    | some n => IO.eprintln s!"theorem_vectors render: {n} records found, \
-        but no format is registered yet (stage 2); the records stay in \
-        place (§18)"
+    let n ← renderRecords opts out
+    IO.println s!"theorem_vectors render: rendered {n} files"
     return 0
   | .check =>
-    match ← countRecords (out / "records") with
-    | none => IO.println s!"theorem_vectors check: no records under \
-        {out}/records"
-    | some n => IO.println s!"theorem_vectors check: {n} records, no \
-        consumer check registered yet (stage 7)"
+    -- phase C2 (§13.2, §13.5): every registered format's consumer replays
+    -- what the render pass returned, through the manifest. The function
+    -- format answers `noConsumer`, so the check passes over it; the
+    -- pyspec format's `runCase` consumer lands in stage 7.
+    let env := renderEnv out
+    let rendered ← readManifest out
+    let mut nChecked := 0
+    let mut failures : Array String := #[]
+    for r in rendered do
+      unless opts.format.all (fun name => name == r.format) do
+        continue
+      let some f := Formats.all.find? (·.name == r.format)
+        | throw (IO.userError s!"theorem_vectors check: unknown format \
+          {r.format} in the manifest")
+      let rb ← Record.read r.recordPath
+      unless selects opts rb.record do continue
+      let checkResult ← f.check env rb.record
+        (r.paths.map System.FilePath.mk)
+      match checkResult with
+      | .passed => nChecked := nChecked + 1
+      | .noConsumer => pure ()
+      | .failed detail =>
+        failures := failures.push s!"{f.name} {r.recordPath}: {detail}"
+    IO.println s!"theorem_vectors check: {nChecked} passed, \
+      {failures.size} failed"
+    unless failures.isEmpty do
+      for f in failures do
+        IO.eprintln s!"theorem_vectors check: {f}"
+      return 1
     return 0
 
 /-- Parse the invocation, then run the subcommand. -/

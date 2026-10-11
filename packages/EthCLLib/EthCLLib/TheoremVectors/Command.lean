@@ -3,6 +3,14 @@ import EthCLLib.TheoremVectors.Types
 import EthCLLib.TheoremVectors.ForkBinding
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Scope
+import EthCLLib.TheoremVectors.Prepare
+import EthCLLib.TheoremVectors.Preset
+import EthCLLib.TheoremVectors.Probe
+import EthCLLib.TheoremVectors.Execute
+import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Base
+import EthCLLib.TheoremVectors.Witness.Seed
+import EthCLLib.TheoremVectors.Record
 import EthCLLib.TheoremVectors.Outcome
 import EthCLLib.Internal.ProofLedger
 
@@ -16,9 +24,9 @@ theorem_vectors_fork EthCLSpecs.TheoremVectors.Bindings.Gloas.gloas
 
 theorem_vectors characterized
 theorem_vectors tagged
-theorem_vectors probe
+theorem_vectors survey
 theorem_vectors canBuilderCoverBid_iff with (state := Seeds.Gloas.coverBidState)
-theorem_vectors! processBuilderPendingPayments_run presets minimal mainnet
+theorem_vectors getPtcElseOffset_lt_same_slot presets minimal mainnet
 theorem_vectors skip processOperations_run_ok_iff "block input, needs a body builder"
 ```
 
@@ -40,24 +48,17 @@ overrode it. One order rule follows from the line-at-a-time passes: a
 `skip` validates against the clauses above it, so a `skip` line must
 follow the discovery clause that selects its theorem.
 
-**Stage 1.** A theorem's run is phase A only: read the statement (§7),
-classify its scope, write the outcome with status `unsupported` where the
-reader gave a reason and the placeholder `pending` otherwise, and log one
-info line. No witness is searched. Stage 2 fills the search and the real
-statuses.
+**Stage 2.** A named or discovered theorem's run wires phases B1 through
+B8 end to end for one preset: the prepare pass (§8.4's first form) builds
+one case, the probe compiles (§11.2), the seed and base sources search
+(§9.2, §9.4), the executor records `.eq` and `.bound` runs (§11.3), the
+record round-trips (§12.5), and the outcome carries the real statuses.
+`survey` runs phase A alone, with status `unselected` (§14.3), so the
+report shows the whole corpus without searching anything.
 
-Two spellings deviate from §14.3's grammar, both recorded in
-`IMPLEMENTATION_NOTES.md`:
-
-- the `probe` clause. The plan's stage 1 reads, classifies, and lists every
-  public theorem of the fork (its goal, its acceptance, and decision point
-  A all need the whole corpus), and §14.3's discovery grammar has no
-  whole-corpus clause. `probe` selects every public theorem under the
-  fork's proof namespace that no other clause or line selects, with origin
-  `probe`. The generator files drop it when stage 2 wires the search, and
-  the `probe` origin value goes unused with it.
-- an `unsupported` outcome's shape field writes `unsupported`, because the
-  §16.1 example leaves the field's value for that case unspecified.
+One deviation from the sketch is recorded in `IMPLEMENTATION_NOTES.md`:
+an `unsupported` outcome's shape field writes `unsupported`, because the
+§16.1 example leaves the field's value for that case unspecified.
 
 ## Lean idioms annotated
 
@@ -67,7 +68,8 @@ Two spellings deviate from §14.3's grammar, both recorded in
   lines invisible to its importers.
 - A `command` elaborator (`CommandElabM`) runs at `lake build` time with
   the full environment, which is why the pass can read theorem types
-  (`Statement.read` runs `MetaM` under `liftTermElabM`) and write files.
+  (`Statement.readIn` runs `MetaM` under `liftTermElabM`), elaborate seed
+  terms, and write the records and outcomes to disk.
 - `resolveGlobalConstNoOverload` resolves a line's identifier through the
   file's `open`s; a named line falls back to the fork's proof namespace
   when the bare name does not resolve (§14.3).
@@ -90,9 +92,10 @@ inductive LineKind where
   /-- `theorem_vectors tagged`: every `@[theorem_vectors]` theorem under
   the fork's proof namespace. -/
   | tagged
-  /-- `theorem_vectors probe`: the stage-1 sizing clause, every public
-  theorem under the fork's proof namespace. See the module docstring. -/
-  | probe
+  /-- `theorem_vectors survey`: every public theorem under the fork's
+  proof namespace that no other clause or line selects, phase A alone
+  (§14.3). -/
+  | survey
   /-- A named line, with the seeds its `with` spelled. -/
   | named (thm : Name) (strict : Bool) (seeds : Array (Name × Syntax))
   /-- A `skip` line, with its reason. -/
@@ -104,7 +107,7 @@ seeds and `Syntax` has no decidable equality. -/
 private def LineKind.sameKind : LineKind → LineKind → Bool
   | .characterized, .characterized => true
   | .tagged, .tagged => true
-  | .probe, .probe => true
+  | .survey, .survey => true
   | .named .., .named .. => true
   | .skipped .., .skipped .. => true
   | _, _ => false
@@ -158,22 +161,32 @@ scoped syntax (name := tvCharacterizedCmd)
 scoped syntax (name := tvTaggedCmd)
   "theorem_vectors " "tagged" optional("presets " ident+) : command
 
-scoped syntax (name := tvProbeCmd)
-  "theorem_vectors " "probe" optional("presets " ident+) : command
+-- the survey takes no `presets` clause: nothing runs per preset (§14.3)
+scoped syntax (name := tvSurveyCmd)
+  "theorem_vectors " "survey" : command
 
 scoped syntax (name := tvSkipCmd)
   "theorem_vectors " "skip" ident str : command
 
 -- the strict marker rides on the identifier token: the lexer reads
 -- `theorem_vectors!` as one ident, so this atom and the plain form's
--- leading atom never collide, and the children sit at the same indices
+-- leading atom never collide. The seeded and seedless forms are separate
+-- rules, so the seeds and the presets clause sit at fixed indices.
 scoped syntax (name := tvNamedStrictCmd)
-  "theorem_vectors!" ident many("(" ident " := " term ")")
+  "theorem_vectors!" ident "with" many("(" ident " := " term ")")
   optional("presets " ident+) : command
 
+-- §14.3 defines seeds only through `with`, so the seedless rules take
+-- no seed group: a bare `(input := term)` group is a parse error.
+scoped syntax (name := tvNamedStrictNoSeedCmd)
+  "theorem_vectors!" ident optional("presets " ident+) : command
+
 scoped syntax (name := tvNamedCmd)
-  "theorem_vectors " ident many("(" ident " := " term ")")
+  "theorem_vectors " ident "with" many("(" ident " := " term ")")
   optional("presets " ident+) : command
+
+scoped syntax (name := tvNamedNoSeedCmd)
+  "theorem_vectors " ident optional("presets " ident+) : command
 
 /-- Every ident in a syntax subtree, in source order. The `presets` clauses
 reach this through one access path whatever `optional` wrapped them in. -/
@@ -241,8 +254,7 @@ private def resolveThmName (binding : ForkBinding) (ident : Syntax) :
 /-! ## The selection -/
 
 /-- The theorem names one clause kind selects, from the environment's tags
-and constants. `probe` enumerates the public theorems under the fork's
-proof namespace (§14.1, §14.3, and the module docstring). -/
+and constants (§14.1, §14.3). -/
 private def discoverySet (env : Environment) (binding : ForkBinding) :
     LineKind → NameSet
   | .characterized =>
@@ -255,7 +267,7 @@ private def discoverySet (env : Environment) (binding : ForkBinding) :
     let proofNs := EthCLLib.Internal.proofNamespaceOf binding.fork
     (EthCLLib.Internal.theoremVectorTags env).foldl (init := {}) fun acc thm =>
       if proofNs.isPrefixOf thm then acc.insert thm else acc
-  | .probe =>
+  | .survey =>
     let proofNs := EthCLLib.Internal.proofNamespaceOf binding.fork
     env.constants.fold (init := ({} : NameSet)) fun acc n info =>
       if proofNs.isPrefixOf n && info matches .thmInfo _ && !n.isInternal then
@@ -270,41 +282,233 @@ private def outDirOf : CommandElabM System.FilePath := do
   | some v => return v.str
   | none => return theorem_vectors.outDir.defValue
 
-/-- The stage-1 run of one theorem: phase A only (the module docstring).
-Reads the statement, classifies the scope, writes the outcome, and logs
-one info line. The whole fold runs inside the reader's telescope scope
-(`Statement.readIn`), because the statement's expressions cannot leave it. -/
+/-- The wire tag of a statement's shape, for the record's `shape` field
+(§5.6). An unsupported statement never reaches a record; the `none` case
+is unreachable there. -/
+private def shapeTagOf (shape : Shape) : Option ShapeTag :=
+  match shape with
+  | .eq .. => some .eq
+  | .iffTrue .. => some .iffTrue
+  | .bound .. => some .bound
+  | .runOk .. => some .runOk
+  | .runError .. => some .runError
+  | .unsupported _ => none
+
+/-- The report line for one search failure (§18's reported facts). A
+`notFound` on a theorem with block inputs is §18's `outOfScope`: only the
+base source may run, it ran, and it failed (§1.2). -/
+private def failureOf (blockInputs : Array Name) : Failure →
+    RunStatus × String
+  | .unsat => (.unsat, "unsat: the hypotheses are vacuous")
+  | .notFound tried =>
+    if blockInputs.isEmpty then
+      (.skipped, s!"notFound after {String.intercalate ", "
+        (tried.toList.map (·.tag))}")
+    else
+      (.outOfScope, s!"outOfScope: block inputs {String.intercalate ", "
+        (blockInputs.toList.map (·.toString))} and the base source \
+        failed ({String.intercalate ", " (tried.toList.map (·.tag))})")
+  | .outOfScope inputs =>
+    (.outOfScope, s!"outOfScope: block inputs {String.intercalate ", "
+      (inputs.toList.map (·.toString))} and the base source failed")
+
+/-- One phase-B run of one theorem at one preset (`THEOREM_VECTORS_ARCHITECTURE.md`
+§3's B1 through B8). Runs inside the reader's telescope scope: the seed
+terms still carry the telescope's instance variables, and the probe builds
+from the statement's expressions. -/
+private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
+    (thmLocal : String) (seedTerms : Array (Nat × Expr))
+    (p : PresetId) (ctx : StatementCtx) (cases : Array Case) :
+    MetaM RunOutcome := do
+  let stmt := ctx.stmt
+  let startMs ← IO.monoMsNow
+  -- B0: the executor runs `.eq` and `.bound` in stage 2 (§11.3)
+  if let some stage := Execute.handles? stmt.shape then
+    return { preset := some p, status := .skipped, reason := some stage }
+  if cases.isEmpty then
+    return { preset := some p, status := .skipped,
+             reason := some "the prepare pass produced no case" }
+  -- B1: the probe for this preset (§10, §11). An `.error` answer is a
+  -- skip reason, a fact about the theorem or the shape.
+  let (info, probe) ← match ← Probe.ofStatement binding p ctx cases seedTerms with
+    | .ok r => pure r
+    | .error reason =>
+      return { preset := some p, status := .skipped, reason := some reason }
+  -- B3: the search, seed before base (§9.2, §9.4); a block input leaves
+  -- only the base source running (§1.2)
+  let sources : Array WitnessSource :=
+    if stmt.blockInputs.isEmpty then #[seedSource, baseSource]
+    else #[baseSource]
+  let searchCtx : SearchCtx := { probe, info, binding, preset := p }
+  let some shapeTag := shapeTagOf stmt.shape
+    | return { preset := some p, status := .unsupported,
+               reason := some "unsupported shape" }
+  let mut written : Nat := 0
+  let mut source? : Option String := none
+  let mut failures : Array (Nat × RunStatus × String) := #[]
+  for c in cases do
+    match ← searchCase sources searchCtx stmt c with
+    | .error failure =>
+      let (status, text) := failureOf stmt.blockInputs failure
+      failures := failures.push (c.index, status, text)
+    | .ok (a, won) =>
+      -- B5: run, and execute the shape's row (§11.3). A disagreement or a
+      -- probe failure is a build error, per §18.
+      let r ← match probe.run a with
+        | .ok r => pure r
+        | .error e =>
+          throwError "theorem_vectors: the probe failed to run \
+            `{stmt.thm}`: {e}"
+      let (outVal, errVal) ← Execute.output stmt.thm stmt.shape info r
+      let inputVals : Array VectorValue :=
+        (Array.range info.inputNames.size).map fun i =>
+          VectorValue.ofRun info.inputNames[i]! info.inputTypes[i]!
+            (r.inputLiterals.getD i none) (r.inputRoots.getD i none)
+      let record : VectorRecord :=
+        { thm := stmt.thm, fork := binding.tag, preset := p,
+          target := stmt.target, shape := shapeTag,
+          caseIndex := c.index, side := c.side,
+          inputs := inputVals, output := outVal, error := errVal,
+          source := won }
+      -- B6: write the record (§12.1, §12.4); the assignment's bytes are
+      -- the record's bytes
+      let dir := Record.caseDir outDir binding.tag p thmLocal c.index c.side
+      Record.write outDir binding.tag record thmLocal a (some r.output)
+      -- B7: read the directory back and run the probe on the stored bytes
+      -- (§12.5). This checks the SSZ round trip of every value and the
+      -- record writer itself; a mismatch is a build error (§18).
+      let rb ← Record.read dir
+      match probe.run rb.inputBytes with
+      | .error e =>
+        throwError "theorem_vectors: the read-back of `{stmt.thm}` case \
+          {c.index} failed to decode: {e}"
+      | .ok r2 =>
+        unless compareBytes r2.output (rb.outputBytes.getD emptyBytes) do
+          throwError "theorem_vectors: the read-back of `{stmt.thm}` case \
+            {c.index} disagrees with the recorded output (§12.5): \
+            recorded {EthCLLib.TheoremVectors.hexOf
+              (rb.outputBytes.getD emptyBytes)}, \
+            fresh {EthCLLib.TheoremVectors.hexOf r2.output}"
+      -- §14.3: one info line per record, with the path
+      logInfo m!"theorem_vectors [{binding.tag}] {stmt.thm}: record \
+        {dir}"
+      written := written + 1
+      if source?.isNone then source? := some won.tag
+  let endMs ← IO.monoMsNow
+  let seconds := some ((endMs - startMs).toFloat / 1000.0)
+  let failureText := String.intercalate "; "
+    (failures.toList.map fun (i, _, text) => s!"case {i}: {text}")
+  if written > 0 then
+    return { preset := some p, status := .written, records := written,
+             source := source?, seconds,
+             reason := if failures.isEmpty then none
+                       else some failureText }
+  else
+    -- every case failed: the status is the §18 fact the failures name
+    let status : RunStatus :=
+      if failures.any fun (_, st, _) => st == .unsat then .unsat
+      else if failures.any fun (_, st, _) => st == .outOfScope then
+        .outOfScope
+      else .skipped
+    return { preset := some p, status, reason := some failureText }
+
+/-- The stage-2 run of one theorem: phase A, then phases B1 through B8 per
+preset (§3, and the module docstring). The whole fold runs inside the
+reader's telescope scope (`Statement.readIn`), because the statement's
+expressions and the seed terms cannot leave it. -/
 private def runTheorem (binding : ForkBinding) (origin : OutcomeOrigin)
-    (strict : Bool) (thm : Name) (ps : Array PresetId) :
-    CommandElabM Unit := do
+    (strict : Bool) (thm : Name) (ps : Array PresetId)
+    (seedStx : Array (Name × Syntax)) : CommandElabM Unit := do
   let proofNs := EthCLLib.Internal.proofNamespaceOf binding.fork
   let localName := thm.replacePrefix proofNs .anonymous
   let outDir ← outDirOf
   liftTermElabM do
-    Statement.readIn binding thm fun stmt => do
-      let stmt ← Scope.classify binding stmt
-      let (status, reason) :=
-        match stmt.shape.reason? with
-        | some r => (RunStatus.unsupported, some r)
-        | none => (RunStatus.pending, none)
-      let runs := ps.map fun p =>
-        { preset := p, status, reason }
-      let outcome : Outcome :=
-        { «theorem» := thm, target := stmt.target, shape := stmt.shape.wire,
-          origin, blockInputs := stmt.blockInputs, cases := 0, runs }
-      Outcome.write outDir binding.tag outcome localName.toString
-      logInfo m!"theorem_vectors [{binding.tag}] {thm}: shape \
-        {stmt.shape.wire}, {status.tag}, origin {origin.tag}"
-      -- §18: a claim the author made fails hard; the placeholder does not
-      if strict && status matches .unsupported then
-        throwError "theorem_vectors: `{thm}` carries a claim (`!` or \
-          `@[theorem_vectors]`) and the reader reported: \
-          {reason.getD "unsupported"}"
+    Statement.readIn binding thm fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      -- phase A: an unsupported statement is a reported skip (§7.5, §18)
+      match stmt.shape.reason? with
+      | some r =>
+        -- §16.1: a survey line (no presets) carries one run with no
+        -- preset field; a per-preset line carries one run per preset
+        let runs := if ps.isEmpty then
+          #[{ preset := none, status := .unsupported, reason := some r }]
+        else
+          ps.map fun p =>
+            { preset := some p, status := .unsupported, reason := some r }
+        let outcome : Outcome :=
+          { «theorem» := thm, target := stmt.target, shape := "unsupported",
+            origin, blockInputs := stmt.blockInputs, cases := 0, runs }
+        Outcome.write outDir binding.tag outcome localName.toString
+        logInfo m!"theorem_vectors [{binding.tag}] {thm}: \
+          unsupported ({r})"
+        -- §18: a claim the author made fails hard
+        if strict then
+          throwError "theorem_vectors: `{thm}` carries a claim (`!` or \
+            `@[theorem_vectors]`) and the reader reported: {r}"
+      | none =>
+        -- phase A: prepare (§8.4's first form)
+        let (cases, dropped) ← Prepare.pass stmt
+        -- the author seeds (§14.3: "[Preset]-generic, elaborated at each
+        -- preset"): each term elaborates against its input's type inside
+        -- the telescope, so the theorem's own instances fill the seed's
+        -- instance binders and `substInstances` fixes them per preset. A
+        -- seed for an input the theorem does not have is an error here,
+        -- and a seed of the wrong type is an elaboration error at the
+        -- clause: §18's build error for an author claim.
+        let seedTerms ← seedStx.mapM fun (n, stx) => do
+          match stmt.inputs.findIdx? (fun i => i.name == n) with
+          | none =>
+            throwError "theorem_vectors: the seed names input `{n}`, \
+              which `{thm}` does not have (§14.3)"
+          | some i => do
+            let t := stmt.inputs[i]!.type
+            -- the expected type fills the seed's `[Preset]`-generic
+            -- instance binders from the telescope; the check below holds
+            -- the §18 line: a seed of the wrong type is an error at the
+            -- clause, because the author claimed it works
+            let term ←
+              (Lean.Elab.Term.withoutErrToSorry
+                (Lean.Elab.Term.elabTermAndSynthesize stx (some t))).run'
+            let term ← Lean.instantiateMVars term
+            unless ← Meta.isDefEq (← Meta.inferType term) t do
+              throwError "theorem_vectors: the seed for `{n}` of \
+                `{thm}` does not have the input's type (§14.3)"
+            pure (i, term)
+        -- phases B1 through B8, per preset in the line's list
+        let runs ← ps.mapM fun p =>
+          runPreset binding outDir localName.toString seedTerms p ctx cases
+        -- §18: a strict claim that skipped fails hard; a non-strict line
+        -- warns
+        -- §18: `unsat` is always reported and never an error; the
+        -- other three are skips, and a claim the author made fails hard
+        for run in runs do
+          if run.status matches .unsupported | .skipped | .outOfScope then
+            let msg := m!"theorem_vectors [{binding.tag}] {thm} at \
+              {run.preset.getD PresetId.minimal |>.tag}: {run.status.tag} \
+              ({run.reason.getD "no reason"})"
+            if strict then
+              throwError "{msg}"
+            else
+              logWarning msg
+        -- §16.1: the survey's one unselected run
+        let runs := if runs.isEmpty then
+          #[{ preset := none, status := .unselected }]
+        else runs
+        let outcome : Outcome :=
+          { «theorem» := thm, target := stmt.target,
+            shape := stmt.shape.wire, origin,
+            blockInputs := stmt.blockInputs, cases := cases.size, runs }
+        Outcome.write outDir binding.tag outcome localName.toString
+        logInfo m!"theorem_vectors [{binding.tag}] {thm}: shape \
+          {stmt.shape.wire}, {cases.size} case(s), origin {origin.tag}"
+        -- §8.4: a dropped case is reported
+        for d in dropped do
+          logWarning m!"theorem_vectors [{binding.tag}] {thm}: {d}"
 
 /-! ## The whole-file precedence pass -/
 
 /-- The outcome a `skip` line records: origin `skipped` with the line's
-reason, one placeholder run per default preset. -/
+reason, one skipped run per default preset. -/
 private def recordSkip (binding : ForkBinding) (thm : Name)
     (reason : String) : CommandElabM Unit := do
   let proofNs := EthCLLib.Internal.proofNamespaceOf binding.fork
@@ -313,7 +517,7 @@ private def recordSkip (binding : ForkBinding) (thm : Name)
   let outcome : Outcome :=
     { «theorem» := thm, target := none, shape := "unsupported",
       origin := .skipped, blockInputs := #[], cases := 0,
-      runs := #[{ preset := .minimal, status := .skipped,
+      runs := #[{ preset := some .minimal, status := .skipped,
                   reason := some reason }] }
   Outcome.write outDir binding.tag outcome localName.toString
 
@@ -367,23 +571,22 @@ private def runPass : CommandElabM Unit := do
   let rawTag :=
     if (discLines .tagged).isEmpty then NameSet.empty
     else discoverySet env binding .tagged
-  let rawProbe :=
-    if (discLines .probe).isEmpty then NameSet.empty
-    else discoverySet env binding .probe
+  let rawSurvey :=
+    if (discLines .survey).isEmpty then NameSet.empty
+    else discoverySet env binding .survey
   let charPs := ((discLines .characterized).getD 0 #[PresetId.minimal])
   let tagPs := ((discLines .tagged).getD 0 #[PresetId.minimal])
-  let probePs := ((discLines .probe).getD 0 #[PresetId.minimal])
   -- a skip for a theorem no discovery clause selects is an error (§14.3);
   -- the test reads the raw sets, because the selection below removes what
   -- the skip excludes
   for (thm, _) in skipList do
     unless rawChar.contains thm || rawTag.contains thm
-        || rawProbe.contains thm do
+        || rawSurvey.contains thm do
       throwError "theorem_vectors: `skip {thm}` selects a theorem no \
         discovery clause selects (§14.3)"
   -- selection with §14.3's precedence: a named line wins over discovery,
   -- a skip excludes a theorem from discovery, a tagged theorem's claim
-  -- outranks its characterization, and the probe takes the residual
+  -- outranks its characterization, and the survey takes the residual
   let keep (thm : Name) : Bool :=
     !namedSet.contains thm && !skipSet.contains thm
   let sel : Array (Name × OutcomeOrigin × Bool × Array PresetId) :=
@@ -393,9 +596,9 @@ private def runPass : CommandElabM Unit := do
         if keep thm && !rawTag.contains thm then
           acc.push (thm, .characterized, false, charPs)
         else acc) ++
-      (rawProbe.foldl (init := (#[] : Array (Name × OutcomeOrigin × Bool × Array PresetId))) fun acc thm =>
+      (rawSurvey.foldl (init := (#[] : Array (Name × OutcomeOrigin × Bool × Array PresetId))) fun acc thm =>
         if keep thm && !rawTag.contains thm && !rawChar.contains thm then
-          acc.push (thm, .probe, false, probePs)
+          acc.push (thm, .survey, false, #[])
         else acc)
       |>.qsort fun a b => a.1.toString < b.1.toString
   -- execute: named lines first, in file order; then the discovered set in
@@ -403,16 +606,17 @@ private def runPass : CommandElabM Unit := do
   -- skipped; each run records itself at once, so a repeated pass neither
   -- repeats it nor loses it.
   let runOnce (thm : Name) (origin : OutcomeOrigin) (strict : Bool)
-      (ps : Array PresetId) : CommandElabM Unit := do
+      (ps : Array PresetId) (seeds : Array (Name × Syntax)) :
+      CommandElabM Unit := do
     let key := execKey origin ps
     let env ← getEnv
     unless (executed.getState env).any fun (t, k) => t == thm && k == key do
       modifyEnv (executed.addEntry · (thm, key))
-      runTheorem binding origin strict thm ps
-  for (thm, strict, _, ps) in named do
-    runOnce thm .named strict ps
+      runTheorem binding origin strict thm ps seeds
+  for (thm, strict, seeds, ps) in named do
+    runOnce thm .named strict ps seeds
   for (thm, origin, strict, ps) in sel do
-    runOnce thm origin strict ps
+    runOnce thm origin strict ps #[]
   -- a skipped theorem records its outcome too (§14.3)
   for (thm, reason) in skipList do
     recordSkip binding thm reason
@@ -463,8 +667,14 @@ def elabTvCharacterized : CommandElab := elabTvDiscovery .characterized
 @[command_elab tvTaggedCmd]
 def elabTvTagged : CommandElab := elabTvDiscovery .tagged
 
-@[command_elab tvProbeCmd]
-def elabTvProbe : CommandElab := elabTvDiscovery .probe
+@[command_elab tvSurveyCmd]
+def elabTvSurvey : CommandElab := fun _stx => do
+  let env ← getEnv
+  let some _ := forkHeader.getState env
+    | throwError "theorem_vectors: no `theorem_vectors_fork` header precedes \
+        this line; the header must come first in the file"
+  modifyEnv (generatorLines.addEntry · { kind := .survey })
+  runPass
 
 /-- The seeds of a named line, as `(input, term)` pairs in source order.
 The seed shape is `"(" ident " := " term ")`, wrapped by `many`'s node and
@@ -479,29 +689,47 @@ private partial def parseSeeds (stx : Syntax) : Array (Name × Syntax) :=
     else #[]
   (stx.getArgs.flatMap parseSeeds) ++ here
 
-/-- The named-line elaborator shared by the plain and `!` forms. The two
-rules' leading tokens differ (`theorem_vectors` against the single token
-`theorem_vectors!`), so the children sit at the same indices. -/
+/-- The seeded named lines' elab: the ident sits at 1, the `with` atom at
+2, the seed group at 3, the presets clause at 4. -/
 private def elabNamedLine (strict : Bool) : CommandElab := fun stx => do
   let env ← getEnv
-  let some _ := forkHeader.getState env
+  let some bindingName := forkHeader.getState env
     | throwError "theorem_vectors: no `theorem_vectors_fork` header precedes \
         this line; the header must come first in the file"
   -- resolve through the binding for the proof-namespace fallback
-  let some bindingName := forkHeader.getState env
-    | unreachable!
   let binding ← evalForkBinding bindingName
   let thm ← resolveThmName binding stx[1]
-  let seeds := parseSeeds stx[2]
-  let ps ← parsePresets stx[3]
+  let seeds := parseSeeds stx[3]
+  let ps ← parsePresets stx[4]
   modifyEnv (generatorLines.addEntry ·
     { kind := .named thm strict seeds, presetIds := ps })
+  runPass
+
+/-- The seedless named lines' elab: the ident sits at 1, the presets
+clause at 2, and there are no seeds (§14.3 defines seeds only through
+`with`). -/
+private def elabNamedNoSeedLine (strict : Bool) : CommandElab := fun stx => do
+  let env ← getEnv
+  let some bindingName := forkHeader.getState env
+    | throwError "theorem_vectors: no `theorem_vectors_fork` header precedes \
+        this line; the header must come first in the file"
+  let binding ← evalForkBinding bindingName
+  let thm ← resolveThmName binding stx[1]
+  let ps ← parsePresets stx[2]
+  modifyEnv (generatorLines.addEntry ·
+    { kind := .named thm strict #[], presetIds := ps })
   runPass
 
 @[command_elab tvNamedStrictCmd]
 def elabTvNamedStrict : CommandElab := elabNamedLine true
 
+@[command_elab tvNamedStrictNoSeedCmd]
+def elabTvNamedStrictNoSeed : CommandElab := elabNamedNoSeedLine true
+
 @[command_elab tvNamedCmd]
 def elabTvNamed : CommandElab := elabNamedLine false
+
+@[command_elab tvNamedNoSeedCmd]
+def elabTvNamedNoSeed : CommandElab := elabNamedNoSeedLine false
 
 end EthCLLib.TheoremVectors

@@ -255,6 +255,21 @@ Each record reads back and passes the read-back check. The function format
 renders each one, and `report.md` lists them with status `written` and
 source `base`. `just theorem-vectors` is green.
 
+*Outcome.* Six records at `minimal`, five function files, the recipe green
+in seven seconds. `getPtcElseOffset_lt_same_slot` writes from `default`
+inputs with source `base`. The two window theorems write from seeds with
+source `seed`, because the `default` state has no active validator and
+`computePtcFromFulu` runs to its fuel bound on it; `initializePtcWindow_ge`
+writes from a seed too. The design changes that followed sit in
+`THEOREM_VECTORS_ARCHITECTURE.md`: the `default` state is never a
+candidate and the seed's claim is per theorem (§9.4), a theorem with no
+target still runs (§7.2) and the function format rejects its records
+(§13.3), the probe term is an `Expr` tree over `ScalarCodec` (§11.2) with
+a `defaults` field (§11.1) and the record layer's literals and roots in
+`ProbeResult` (§5.5), the roots come from the binding's hasher (§11.4),
+the record's payload nests under `value` (§12.2), and `render` hands
+`check` a manifest (§13.2). Stage 3 step 7 carries the source changes.
+
 ---
 
 ## Stage 3: prepare pass and the bit-vector source
@@ -276,6 +291,11 @@ spec predicates split into cases, and `.iffTrue` gives two vectors.
    cases and the equality case lands on the boundary. A toy theorem with an
    unsatisfiable hypothesis reports `unsat` and writes no record. A
    `.toNat` hypothesis rewrites to `UInt64` form.
+7. `Witness/Base.lean` and `Witness/Seed.lean`, from the stage 2 outcome:
+   neither proposes `default` for an input of the binding's `stateType`,
+   and the seed's build error fires when the seed passes no case (§9.4).
+   The `FUTURE_WORK.md` entry on a base-source cost guard goes away with
+   it.
 
 **Acceptance.** `getPtcElseOffset_lt_next_slot` writes a vector with no
 seed. `canBuilderCoverBid_iff` writes two vectors from a state seed with

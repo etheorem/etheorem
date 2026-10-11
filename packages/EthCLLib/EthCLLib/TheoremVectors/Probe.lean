@@ -1,0 +1,649 @@
+import Lean
+import SizzLean
+import EthCLLib.Spec.Hasher
+import EthCLLib.TheoremVectors.Types
+import EthCLLib.TheoremVectors.ForkBinding
+import EthCLLib.TheoremVectors.Statement
+import EthCLLib.TheoremVectors.Prepare
+import EthCLLib.TheoremVectors.Preset
+
+/-!
+# `EthCLLib.TheoremVectors.Probe`: the compiled face of one statement at one preset
+
+The probe (`THEOREM_VECTORS_ARCHITECTURE.md` §11) is one closed term per statement and
+preset, evaluated once with `evalExpr`, whose runtime type is the `Probe`
+structure of this module: every later operation is a call on the resulting
+value, with SSZ bytes in and SSZ bytes out (§9.1's byte boundary).
+
+The term builder (§11.2) substitutes the instance binders with the binding's
+constants (§10, through `Preset.constOf`), decodes each input through its
+`ScalarCodec`, and hands the decoded values to the prepared conjunction's
+`decide` (§8.4) and to the shape's terms. Two §11.2 rules shape the term: it
+contains no `match` on `Except` or `EStateM.Result`, because the probe's glue
+runs interpreted and a `match` there can trip matcher realization, so the
+`Except`-matching lives in the helpers above (`runProbeOk`, `runProbeError`,
+and the result assemblers); and it is elaborated once per statement and
+preset, with the case index as a runtime argument, so the search loop never
+re-elaborates.
+
+`sample`, `shrink`, `reads`, and `build` answer empty until their stages land
+(the plan's stages 4 and 6); `defaults` holds the serialized `default` of
+every input, which the base source (§9.4) hands to `check` as its candidate.
+`defaults` is a field the §11.1 sketch does not list; the base source needs
+it and no other probe function supplies it.
+
+Three deviations from the sketch carry their reasons, all recorded in
+`IMPLEMENTATION_NOTES.md`:
+
+- the term is built as an `Expr` tree, not as source text. §11.2 says the
+  builder writes source text, parses it, and elaborates it under
+  `binding.opens`; direct construction achieves the same closed term without
+  a stringly-typed intermediate, and the substitution of the instance
+  binders (§11.2) is a mechanical `Expr` rewrite either way.
+- `ProbeResult` carries the inputs' literals and splits the roots into
+  `inputRoots` and `outputRoot`. The record layer (§12.2) writes a decimal
+  literal for a scalar and a root for a container, and it needs to know
+  which one each value is; a `Nat`-typed bound output has no SSZ root at
+  all.
+- one `ScalarCodec` class fronts the wire encoding. A `Fin`-typed input
+  (`initializePtcWindow_lt`'s window offset) has no `SSZRepr` instance,
+  because a total decode from bytes cannot respect `Fin`'s bound; its codec
+  is the `uintN 64` little-endian encoding of `Fin.val`, the same scalar
+  family §9.4's bit-vector source puts `Fin n` in.
+
+## Lean idioms annotated
+
+- `Meta.evalExpr` adds the term as a definition and runs it. It is `unsafe`
+  because the caller asserts the value's type; the wrapper below follows the
+  `implemented_by` shape `Command.lean` uses for `evalConst`.
+- `mkLambdaFVars` abstracts free variables into a `fun` chain. The builder
+  works inside the reader's telescope scope (`Statement.readIn`), where the
+  statement's expressions still mention the theorem's free variables; each
+  `mkLambdaFVars` call binds one of them, so the finished term is closed
+  once the instance variables are replaced with the binding's constants.
+- A raw `Expr` built by hand is never elaborated again: `evalExpr` typechecks
+  it, so a builder mistake surfaces as an evaluation error naming the term.
+-/
+
+set_option autoImplicit false
+
+open Lean
+open SizzLean (SSZRepr)
+
+namespace EthCLLib.TheoremVectors
+
+/-! ## The precompiled helpers (§11.2) -/
+
+/-- The bytes nothing records. -/
+def emptyBytes : ByteArray := ByteArray.mk #[]
+
+/-- The byte comparison the `.eq` shapes run on (`THEOREM_VECTORS_ARCHITECTURE.md` §11.3):
+one place, so the agreement rule stays a fact of the framework half. -/
+def compareBytes (a b : ByteArray) : Bool := a == b
+
+/-- The `.ok` side of a run's result, matched outside the term (§11.2).
+Stage 7's `.runOk` executor calls it; the stage-2 shapes never do. -/
+def runProbeOk {ε α σ : Type} (r : Except ε (α × σ)) : Option (α × σ) :=
+  match r with
+  | .ok p => some p
+  | .error _ => none
+
+/-- The `.error` side of a run's result, matched outside the term (§11.2).
+Stage 7's `.runError` executor calls it. -/
+def runProbeError {ε α σ : Type} (r : Except ε (α × σ)) : Option ε :=
+  match r with
+  | .error e => some e
+  | .ok _ => none
+
+/-! ## The wire codec of one input (§9.1) -/
+
+/-- The byte codec of one input value (`THEOREM_VECTORS_ARCHITECTURE.md` §9.1). Every
+input type has one, because every input crosses the byte boundary twice:
+serialized into a candidate, decoded inside `check` and `run`.
+
+`default` is the base source's candidate value (§9.4), `none` when the
+type has no total default. `Fin n` is why the field exists: its default
+`⟨0, _⟩` needs `0 < n`, which an `Inhabited` instance cannot carry (there
+is no `NeZero (3 * slotsPerEpoch)` to synthesize), and the codec's own
+`n` pattern match can. -/
+class ScalarCodec (T : Type) where
+  encode : T → ByteArray
+  decode : ByteArray → Option T
+  /-- The `default` the base source serializes, when the type has one. -/
+  default : Option T := none
+
+instance {T : Type} [SSZRepr T] [Inhabited T] : ScalarCodec T where
+  encode := SizzLean.SSZ.serialize
+  decode := fun b =>
+    match SizzLean.SSZ.deserialize b with
+    | .ok x => some x
+    | .error _ => none
+  default := some Inhabited.default
+
+/-- The little-endian `uintN 64` read of eight bytes, `none` when the bytes
+fall short. -/
+private def uint64OfBytesLE (b : ByteArray) : Option UInt64 :=
+  if b.size < 8 then none
+  else
+    let byte (i : Nat) : UInt64 :=
+      if h : i < b.size then UInt64.ofNat (b.get i h).toNat else 0
+    some <| (List.range 8).foldl (fun acc i =>
+      acc ||| (byte i <<< UInt64.ofNat (8 * i))) 0
+
+/-- The little-endian `uintN 64` write of a `UInt64`. -/
+def uint64BytesLE (v : UInt64) : ByteArray :=
+  ByteArray.mk <| (List.range 8).toArray.map fun i =>
+    UInt8.ofNat ((v >>> UInt64.ofNat (8 * i)).toNat % 256)
+
+/-- The decode of one input from the probe's byte array: the precompiled
+face of the byte boundary (§9.1, §9.3). A missing slice or a failed decode
+answers `none`, and the check reads that as `false` (§9.3). -/
+def decodeInput {T : Type} [ScalarCodec T] (bytes : Array ByteArray)
+    (i : Nat) : Option T :=
+  match bytes[i]? with
+  | some b => ScalarCodec.decode b
+  | none => none
+
+/-- `Fin n` rides the same scalar family §9.4's bit-vector source puts it
+in: the `uintN 64` little-endian encoding of `Fin.val`. `SSZRepr (Fin n)`
+cannot exist, because a total decode would have to turn every byte string
+into a value below `n`; the codec takes the remainder and proves the bound
+with `Nat.mod_lt`, which is why the `n = 0` case answers `none`. -/
+instance {n : Nat} : ScalarCodec (Fin n) where
+  encode x := uint64BytesLE (UInt64.ofNat x.val)
+  decode b := do
+    let v ← uint64OfBytesLE b
+    match n with
+    | 0 => none
+    | k + 1 => some ⟨v.toNat % (k + 1), Nat.mod_lt _ (Nat.succ_pos k)⟩
+  default :=
+    match n with
+    | 0 => none
+    | k + 1 => some ⟨0, Nat.succ_pos k⟩
+
+/-! ## What one run produced (§5.5) -/
+
+/-- What one probe run produced (`THEOREM_VECTORS_ARCHITECTURE.md` §5.5, extended). All
+values cross the boundary as SSZ bytes; the literals and the optional roots
+are the record layer's (§12.2) answer to "scalar or container" and to a
+`Nat`-typed output with no SSZ root. -/
+structure ProbeResult where
+  /-- `f x`, or the bound's decimal literal, serialized. -/
+  output   : ByteArray
+  /-- `e x`, serialized; empty for `.bound`. -/
+  expected : ByteArray
+  /-- `f x == e x`, or the bound holds. -/
+  agree    : Bool
+  /-- The output's literal, when its type carries `ToString`. -/
+  literal  : Option String
+  /-- The inputs' literals, in binder order, where the type carries
+  `ToString`. -/
+  inputLiterals : Array (Option String)
+  /-- `hashTreeRoot` of each input, in binder order, where the type has an
+  `SSZRepr`. -/
+  inputRoots : Array (Option ByteArray)
+  /-- `hashTreeRoot` of the output, when its type has an `SSZRepr`. -/
+  outputRoot : Option ByteArray
+
+/-- The `.eq` run result: the byte comparison inside compiled code, so the
+term computes each side once (§11.3). -/
+def eqRunResult (out expected : ByteArray) (literal : Option String)
+    (outputRoot : Option ByteArray) (inputLiterals : Array (Option String))
+    (inputRoots : Array (Option ByteArray)) : Except String ProbeResult :=
+  .ok { output := out, expected := expected, agree := compareBytes out expected,
+        literal, inputLiterals, inputRoots, outputRoot }
+
+/-- The `.bound` run result: the bound already decided inside the term, the
+literal the only record (`THEOREM_VECTORS_ARCHITECTURE.md` §11.3). -/
+def boundRunResult (out : ByteArray) (agree : Bool) (literal : Option String)
+    (inputLiterals : Array (Option String))
+    (inputRoots : Array (Option ByteArray)) : Except String ProbeResult :=
+  .ok { output := out, expected := emptyBytes, agree, literal, inputLiterals,
+        inputRoots, outputRoot := none }
+
+/-! ## The probe (§11.1) and its build-time description -/
+
+/-- The compiled face of one statement at one preset (`THEOREM_VECTORS_ARCHITECTURE.md`
+§11.1). -/
+structure Probe where
+  /-- `decide (P x)` for one case, on decoded inputs. -/
+  check  : (caseIndex : Nat) → Array ByteArray → Bool
+  /-- Draw the container inputs; scalars come back as zero bytes. Empty
+  until stage 4. -/
+  sample : (seed size : Nat) → Array ByteArray
+  /-- Shrink candidates for the container inputs. Empty until stage 4. -/
+  shrink : Array ByteArray → Array (Array ByteArray)
+  /-- The container-only subterms of the hypotheses, evaluated and
+  serialized. Empty until stage 4. -/
+  reads  : Array ByteArray → Array ByteArray
+  /-- The author seeds, serialized, with their input positions (§9.4). -/
+  seeds  : Array (Nat × ByteArray)
+  /-- The serialized `default` of every input, in binder order: the base
+  source's candidate (§9.4). -/
+  defaults : Array ByteArray
+  /-- Run the named builder (an index into the binding's catalog) and
+  serialize the state it produces. Empty until stage 6. -/
+  build  : (builder : Nat) → Knobs → ByteArray
+  /-- `f x`, `e x`, the comparison, the roots. -/
+  run    : Array ByteArray → Except String ProbeResult
+
+/-- What the probe knows at build time and the record layer needs on disk
+(§12.2): the binder names and the wire type of each input and of the
+output. Scalar-ness rides the run's literals (§12.2 writes a literal
+where the type carries `ToString`, which `ProbeResult` already answers). -/
+structure ProbeInfo where
+  /-- The binder names, in binder order. -/
+  inputNames  : Array Name
+  /-- The head constant of each input's type, `anonymous` when the type has
+  no constant head. -/
+  inputTypes  : Array Name
+  /-- The head constant of the output's type. -/
+  outputType  : Name
+  deriving Inhabited
+
+/-- The head constant of a type, for the record's `type` field (§12.2). -/
+private def typeNameOf (t : Expr) : Name :=
+  match t.getAppFn with
+  | .const c _ => c
+  | _ => .anonymous
+
+/-- Probe construction for a shape the stage-2 executor does not run yet:
+`.iffTrue` lands in stage 3, `.runOk` and `.runError` in stage 7. -/
+private def unsupportedShapeError {α : Type} (shape : Shape) : MetaM α :=
+  throwError "theorem_vectors: the probe does not run the {shape.wire} \
+    shape yet; the plan stages it later"
+
+/-! ## Small term builders -/
+
+section TermBuilders
+
+/-- `@Option.map α β f o`. -/
+private def optMap (α β : Expr) (f o : Expr) : Expr :=
+  mkAppN (.const ``Option.map [levelZero, levelZero]) #[α, β, f, o]
+
+/-- `@Option.getD α o fallback`. -/
+private def optGetD (α : Expr) (o fallback : Expr) : Expr :=
+  mkAppN (.const ``Option.getD [levelZero]) #[α, o, fallback]
+
+/-- `@Option.some α a`. -/
+private def optSome (α a : Expr) : Expr :=
+  mkAppN (.const ``Option.some [levelZero]) #[α, a]
+
+/-- `@Option.none α`. -/
+private def optNone (α : Expr) : Expr :=
+  mkAppN (.const ``Option.none [levelZero]) #[α]
+
+/-- `@cond α b a b'`. -/
+private def mkCond (α b a b' : Expr) : Expr :=
+  mkAppN (.const ``cond [levelOne]) #[α, b, a, b']
+
+/-- `@Decidable.decide p inst`. -/
+private def mkDecide (p inst : Expr) : Expr :=
+  mkAppN (.const ``Decidable.decide []) #[p, inst]
+
+/-- `[e₀, …]` as an `Array α`, through `List.toArray`. -/
+private def mkArrayLit (α : Expr) (elems : Array Expr) : Expr :=
+  let list := elems.foldr (fun e acc => mkAppN (.const ``List.cons [levelZero]) #[α, e, acc])
+    (mkAppN (.const ``List.nil [levelZero]) #[α])
+  mkAppN (.const ``List.toArray [levelZero]) #[α, list]
+
+/-- `@ScalarCodec.encode T inst x`. -/
+private def encodeCall (T inst x : Expr) : Expr :=
+  mkAppN (.const ``ScalarCodec.encode []) #[T, inst, x]
+
+/-- `@decodeInput T inst bytes i`: the precompiled decode of one input's
+slice of the byte array, so the term carries no `Array`-access instance
+terms (§11.2). -/
+private def decodeCall (T inst bytes : Expr) (i : Expr) : Expr :=
+  mkAppN (.const ``decodeInput []) #[T, inst, bytes, i]
+
+/-- `@ToString.toString T inst x`. -/
+private def toStringCall (T inst x : Expr) : Expr :=
+  mkAppN (.const ``ToString.toString [levelZero]) #[T, inst, x]
+
+/-- `String.toUTF8 s`. -/
+private def toUtf8 (s : Expr) : Expr := mkApp (.const ``String.toUTF8 []) s
+
+/-- The `i`-th projection of a right-associated `Prod` chain. -/
+private partial def tupProj (xs : Expr) (i : Nat) : Expr :=
+  if i == 0 then .proj `Prod 0 xs else tupProj (.proj `Prod 1 xs) (i - 1)
+
+/-- The right-associated `Prod` type over `ts`, `PUnit` for none. -/
+private def tupType (ts : Array Expr) : Expr :=
+  ts.foldr (fun t acc => mkApp2 (.const ``Prod [levelZero, levelZero]) t acc) (.const ``PUnit [levelOne])
+
+/-- The zero value of `tupType ts`, holding the `fᵢ` themselves. -/
+private def tupVal (ts fs : Array Expr) : Expr :=
+  let rec goTy (i : Nat) : Expr :=
+    if i >= ts.size then .const ``PUnit [levelOne]
+    else mkApp2 (.const ``Prod [levelZero, levelZero]) ts[i]! (goTy (i + 1))
+  let rec goVal (i : Nat) : Expr :=
+    if i >= fs.size then .const ``PUnit.unit [levelOne]
+    else mkAppN (.const ``Prod.mk [levelZero, levelZero]) #[ts[i]!, goTy (i + 1), fs[i]!, goVal (i + 1)]
+  goVal 0
+
+/-- The empty `Array α` term. -/
+private def emptyArray (α : Expr) : Expr :=
+  mkAppN (.const ``Array.empty [levelZero]) #[α]
+
+/-- A one-argument constant function, the shape the stub probe functions
+take until their stages land. -/
+private def stub1 (argTy res : Expr) : Expr :=
+  .lam `_ argTy res .default
+
+/-- A two-argument constant function. -/
+private def stub2 (aTy bTy res : Expr) : Expr :=
+  .lam `_ aTy (.lam `_ bTy res .default) .default
+
+/-- The instance fvar → binding-constant substitution over a finished term
+(§11.2). The telescope's instance variables are the only fvars left in the
+term once every value binder is abstracted. -/
+private def substInstances (ctx : StatementCtx) (consts : Array Name)
+    (term : Expr) : Expr :=
+  term.replace fun e => match e with
+    | .fvar id =>
+      match ctx.instFvars.findIdx? (fun g => g.fvarId! == id) with
+      | some i => if i < consts.size then some (mkConst consts[i]!) else none
+      | none => none
+    | _ => none
+
+end TermBuilders
+
+/-- The unsafe evaluation of the probe term (`THEOREM_VECTORS_ARCHITECTURE.md` §11.2),
+behind the same `implemented_by` shape `Command.lean` uses for the
+binding. -/
+private unsafe def evalProbeImpl (value : Expr) : MetaM Probe :=
+  Lean.Meta.evalExpr Probe (.const ``EthCLLib.TheoremVectors.Probe []) value
+
+/-- The opaque face of the probe evaluation. -/
+@[implemented_by evalProbeImpl]
+private opaque evalProbeCore (value : Expr) : MetaM Probe
+
+/-- The `.eq` run body under the `xs` binder: serialize both sides at the
+output's type, or, when the type has no `SSZRepr`, fall back to the UTF-8
+bytes of the literal (`Nat`-typed outputs). Each side computes once, as
+`eqRunResult`'s arguments (§11.3). `none` when the output type records no
+way; the caller reports a skipped run, because the shape ran but the
+record layer has no form for the answer. -/
+private def eqRunBody (lhs rhs : Expr)
+    (underXs : Expr → Expr) (outTy : Expr)
+    (outRepr? : Option Expr) (outHash : Option (Expr × Expr))
+    (outToString? : Option Expr)
+    (inputLits inputRoots : Array Expr) : MetaM (Option Expr) := do
+  let render (e : Expr) : MetaM (Option Expr) :=
+    match outRepr? with
+    | some inst =>
+      pure (some (mkAppN (.const ``SizzLean.SSZ.serialize [])
+        #[outTy, inst, underXs e]))
+    | none =>
+      match outToString? with
+      | some inst => pure (some (toUtf8 (toStringCall outTy inst (underXs e))))
+      | none => pure none
+  let some outT ← render lhs | return none
+  let some expT ← render rhs | return none
+  let litT := match outToString? with
+    | some inst =>
+      optSome (.const ``String []) (toStringCall outTy inst (underXs lhs))
+    | none => optNone (.const ``String [])
+  let rootT :=
+    match outRepr?, outHash with
+    | some inst, some (h, hasher) =>
+      optSome (.const ``ByteArray [])
+        (mkAppN (.const ``SizzLean.SSZ.hashTreeRoot [])
+          #[outTy, h, hasher, inst, underXs lhs])
+    | _, _ => optNone (.const ``ByteArray [])
+  pure (some (mkAppN (.const ``eqRunResult [])
+    #[outT, expT, litT, rootT,
+      mkArrayLit (mkApp (.const ``Option [levelZero]) (.const ``String []))
+        inputLits,
+      mkArrayLit (mkApp (.const ``Option [levelZero])
+        (.const ``ByteArray [])) inputRoots]))
+
+/-- The `.bound` run body under the `xs` binder: decide the comparison with
+the instance built for it, and record the literal
+(`THEOREM_VECTORS_ARCHITECTURE.md` §11.3). `none` when the literal has no
+`ToString`, which the caller reports as a skipped run. -/
+private def boundRunBody (lhs b : Expr) (rel : BoundRel)
+    (cmpDec cmpExpr : Expr) (underXs : Expr → Expr) (outTy : Expr)
+    (outToString? : Option Expr)
+    (inputLits inputRoots : Array Expr) : Option Expr :=
+  match outToString? with
+  | none => none
+  | some outToString =>
+    let cmpExpr := underXs cmpExpr
+    let agree := mkDecide cmpExpr (underXs cmpDec)
+    let lit := toStringCall outTy outToString (underXs lhs)
+    some (mkAppN (.const ``boundRunResult [])
+      #[toUtf8 lit, agree, optSome (.const ``String []) lit,
+        mkArrayLit (mkApp (.const ``Option [levelZero]) (.const ``String []))
+          inputLits,
+        mkArrayLit (mkApp (.const ``Option [levelZero])
+          (.const ``ByteArray [])) inputRoots])
+
+/-- Build and evaluate the probe for one statement at one preset (§11.2).
+Runs inside the reader's telescope scope: the statement's expressions and
+`ctx`'s free variables are telescope-local. `seedTerms` pairs each author
+seed term with its input position, the terms still holding the telescope's
+instance variables.
+
+Returns the build-time description the record layer reads, plus the
+evaluated probe. An `.error` answer is a skip reason, a fact about the
+theorem or the shape (`ScalarCodec`, `ToString`, or the render form
+missing); a thrown error is machinery (`§18`: the probe's own failures are
+never facts about the theorem). -/
+def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
+    (ctx : StatementCtx) (cases : Array Case)
+    (seedTerms : Array (Nat × Expr)) :
+    MetaM (Except String (ProbeInfo × Probe)) := do
+  let stmt := ctx.stmt
+  let shape := stmt.shape
+  unless shape matches .eq .. || shape matches .bound .. do
+    return .error s!"the probe does not run the {shape.wire} shape yet; \
+      the plan stages it later"
+  unless stmt.typeBinders.isEmpty do
+    return .error s!"the command cannot fix the type parameters \
+      {stmt.typeBinders} yet"
+  -- §10: the instance constants this preset fixes, substituted for the
+  -- telescope's instance variables at the end
+  let instConsts ← ctx.stmt.instances.mapM fun (_, kind) =>
+    match Preset.constOf binding presetId kind with
+    | .ok c => pure c
+    | .error e => throwError e
+  -- synthesize what the term needs while the telescope's variables are in
+  -- context; every result still mentions them and is substituted at the end
+  let inputTys ← ctx.inputFvars.mapM (Meta.inferType ·)
+  let codecInsts? ← inputTys.mapM fun t =>
+    (try some <$> Meta.synthInstance (mkApp (.const ``ScalarCodec []) t)
+      catch _ => pure none)
+  let toStringInsts? ← inputTys.mapM fun t =>
+    (try some <$> Meta.synthInstance (mkApp (.const ``ToString [levelZero]) t)
+      catch _ => pure none)
+  let rootInsts? ← inputTys.mapM fun t =>
+    (try some <$> Meta.synthInstance (mkApp (.const ``SizzLean.SSZRepr []) t)
+      catch _ => pure none)
+  -- an input without a codec cannot cross the byte boundary, which is a
+  -- scope miss (§1.2), reported as a skip
+  let some codecInsts ← pure (codecInsts?.mapM id)
+    | do
+      let i? := codecInsts?.findIdx? Option.isNone
+      let name : Name :=
+        match i? with
+        | some i => match stmt.inputs[i]? with
+          | some inp => inp.name
+          | none => Name.anonymous
+        | none => Name.anonymous
+      return .error s!"input {name} has no wire codec; the theorem is \
+        out of scope (§1.2)"
+  -- the hash-tag instance for the roots; a theorem that binds no
+  -- `[HasherTag]` gets no roots, which the record layer writes as none
+  let hasherTag? ←
+    (try some <$> Meta.synthInstance (.const `EthCLLib.Spec.HasherTag [])
+      catch _ => pure none)
+  let hashPair? : Option (Expr × Expr) ←
+    match hasherTag? with
+    | none => pure none
+    | some tag => do
+      let h := mkApp (.const `EthCLLib.Spec.HasherTag.H []) tag
+      let hasher? ← (try some <$>
+        Meta.synthInstance (mkApp (.const ``SizzLean.Hasher []) h)
+        catch _ => pure none)
+      pure (hasher?.map fun i => (h, i))
+  -- the shape's sides and the output type
+  let outTerm ← match shape with
+    | .eq lhs _ => pure lhs
+    | .bound lhs _ _ => pure lhs
+    | _ => unsupportedShapeError shape
+  let outTy ← Meta.inferType outTerm
+  let outToString? ←
+    (try some <$> Meta.synthInstance (mkApp (.const ``ToString [levelZero]) outTy)
+      catch _ => pure none)
+  let outRepr? ←
+    (try some <$> Meta.synthInstance (mkApp (.const ``SizzLean.SSZRepr []) outTy)
+      catch _ => pure none)
+  -- the `.bound` comparison needs its own `Decidable`, over the statement's
+  -- own relation (§11.3: `lhs rel b` holds), with the type's `LT` / `LE`
+  -- instance synthesized, not `Nat`'s
+  let cmp? : Option (Expr × Expr) ← match shape with
+    | .bound lhs rel b => do
+      let relCls := match rel with
+        | .lt => .const ``LT [levelZero]
+        | .le => .const ``LE [levelZero]
+      let relInst? ← (try some <$> Meta.synthInstance (mkApp relCls outTy)
+        catch _ => pure none)
+      let some relInst := relInst? | pure none
+      let cmp := match rel with
+        | .lt => mkAppN (.const ``LT.lt [levelZero]) #[outTy, relInst, lhs, b]
+        | .le => mkAppN (.const ``LE.le [levelZero]) #[outTy, relInst, lhs, b]
+      match ← (try some <$> Meta.synthInstance (mkApp (.const ``Decidable []) cmp)
+          catch _ => pure none) with
+      | some dec => pure (some (cmp, dec))
+      | none => pure none
+    | _ => pure none
+  -- a dependent input type would break the flat `Prod` decode; the corpus
+  -- has none, and the skip says so plainly
+  let inputIds := ctx.inputFvars.map (fun f => f.fvarId!)
+  for j in [0:inputTys.size] do
+    if (inputIds.take j).any (fun id => inputTys[j]!.containsFVar id) then
+      return .error s!"input {j} has a type that depends on an earlier \
+        input, which the flat decode cannot express"
+
+  Meta.withLocalDeclD `bytes (mkApp (.const ``Array [levelZero]) (.const ``ByteArray [])) fun bytes => do
+    -- the decode chain: `fun bytes => bind (codec bytes 0) fun x₀ => … some tuple`
+    let tupTy := tupType inputTys
+    let mut cur := optSome tupTy (tupVal inputTys ctx.inputFvars)
+    for i in [0:ctx.inputFvars.size] do
+      let j := ctx.inputFvars.size - 1 - i
+      let lam ← Meta.mkLambdaFVars #[ctx.inputFvars[j]!] cur
+      let di := decodeCall inputTys[j]! codecInsts[j]! bytes (mkRawNatLit j)
+      cur := mkAppN (.const ``Option.bind [levelZero, levelZero]) #[inputTys[j]!, tupTy, di, lam]
+    let decoder ← Meta.mkLambdaFVars #[bytes] cur
+    let decoderApp := mkApp decoder bytes
+
+    Meta.withLocalDeclD `xs tupTy fun xs => do
+      let projOfIdx (i : Nat) : Expr := tupProj xs i
+      let underXs (e : Expr) : Expr :=
+        e.replace fun s => match s with
+          | .fvar id =>
+            ctx.inputFvars.findIdx? (fun g => g.fvarId! == id)
+              |>.map (fun i => projOfIdx i)
+          | _ => none
+      -- the case lambdas: `fun x₀ … xₙ => decide conj`
+      let caseLams ← cases.mapM fun c =>
+        Meta.mkLambdaFVars ctx.inputFvars (mkDecide c.conj c.decidable)
+      Meta.withLocalDeclD `caseIndex (.const ``Nat []) fun ci => do
+        -- the case dispatch: `cond (caseIndex == j) (caseⱼ …) …`, `false`
+        -- at the leaf, so an index past the cases answers false (§9.3)
+        let projTerms := Array.range ctx.inputFvars.size |>.map projOfIdx
+        let mut dispatch := mkConst ``Bool.false
+        for j in [0:caseLams.size] do
+          let applied := mkAppN caseLams[j]! projTerms
+          dispatch := mkCond (.const ``Bool [])
+            (mkAppN (.const ``Nat.beq []) #[ci, mkRawNatLit j]) applied dispatch
+        let checkBody := optGetD (.const ``Bool [])
+          (optMap tupTy (.const ``Bool [])
+            (← Meta.mkLambdaFVars #[xs] dispatch) decoderApp)
+          (mkConst ``Bool.false)
+        let checkFn ← Meta.mkLambdaFVars #[ci, bytes] checkBody
+
+        -- the run body under `xs` (§11.3)
+        let exTy := mkAppN (.const ``Except [levelZero, levelZero]) #[.const ``String [],
+          .const ``EthCLLib.TheoremVectors.ProbeResult []]
+        let resultTy := Expr.const ``EthCLLib.TheoremVectors.ProbeResult []
+        -- `Except.error` carries `{ε α : Type}` as implicits
+        let decodeFailed := mkAppN (.const ``Except.error [levelZero, levelZero])
+          #[.const ``String [], resultTy,
+            mkStrLit "theorem_vectors: a record input failed to decode"]
+        -- per-input literal and root terms, computed inside the run body
+        let inputLits := (Array.zip (Array.zip inputTys toStringInsts?)
+          (Array.range ctx.inputFvars.size)).map fun ((t, inst?), j) =>
+          match inst? with
+          | some inst =>
+            optSome (.const ``String []) (toStringCall t inst (projOfIdx j))
+          | none => optNone (.const ``String [])
+        let inputRoots := (Array.zip (Array.zip inputTys rootInsts?)
+          (Array.range ctx.inputFvars.size)).map fun ((t, inst?), j) =>
+          match inst?, hashPair? with
+          | some inst, some (h, hasher) =>
+            optSome (.const ``ByteArray [])
+              (mkAppN (.const ``SizzLean.SSZ.hashTreeRoot [])
+                #[t, h, hasher, inst, projOfIdx j])
+          | _, _ => optNone (.const ``ByteArray [])
+        let bodyOpt ← match shape with
+          | .eq lhs rhs =>
+            eqRunBody lhs rhs underXs outTy outRepr? hashPair?
+              outToString? inputLits inputRoots
+          | .bound lhs rel b =>
+            let some (cmp, cmpDec) := cmp?
+              | return .error "the bound has no `Decidable` instance"
+            pure (boundRunBody lhs b rel cmpDec cmp underXs outTy
+              outToString? inputLits inputRoots)
+          | _ => unsupportedShapeError shape
+        let some body := bodyOpt
+          | return .error "the output type has neither an `SSZRepr` nor a \
+              `ToString` instance, so there is nothing to record"
+        let runBody := optGetD exTy
+          (optMap tupTy exTy (← Meta.mkLambdaFVars #[xs] body) decoderApp)
+          decodeFailed
+        let runFn ← Meta.mkLambdaFVars #[bytes] runBody
+
+        -- the seeds, serialized in compiled code (§9.4). Each seed term
+        -- already carries the telescope's instances (§14.3: elaborated in
+        -- the telescope), which `substInstances` fixes per preset.
+        let seedsLit : Array Expr ← seedTerms.mapM fun (pos, sterm) => do
+          let t ← Meta.inferType sterm
+          let inst ← Meta.synthInstance (mkApp (.const ``ScalarCodec []) t)
+          pure (mkAppN (.const ``Prod.mk [levelZero, levelZero])
+            #[.const ``Nat [], .const ``ByteArray [],
+              mkRawNatLit pos, encodeCall t inst sterm])
+        -- the defaults: the base source's candidate (§9.4). A type with no
+        -- total default (`Fin 0`) encodes the empty byte string, which the
+        -- check rejects, so the base source fails that case honestly.
+        let defaultsLit := mkArrayLit (.const ``ByteArray [])
+          ((Array.zip inputTys codecInsts).map fun (t, codec) =>
+            optGetD (.const ``ByteArray [])
+              (mkAppN (.const ``Option.map [levelZero, levelZero])
+                #[t, .const ``ByteArray [],
+                  mkAppN (.const ``ScalarCodec.encode []) #[t, codec],
+                  mkAppN (.const ``ScalarCodec.default []) #[t, codec]])
+              (mkConst ``emptyBytes []))
+        let term := mkAppN (.const ``Probe.mk [])
+          #[checkFn,
+            stub2 (.const ``Nat []) (.const ``Nat [])
+              (emptyArray (.const ``ByteArray [])),
+            stub1 (mkApp (.const ``Array [levelZero]) (.const ``ByteArray []))
+              (emptyArray (mkApp (.const ``Array [levelZero]) (.const ``ByteArray []))),
+            stub1 (mkApp (.const ``Array [levelZero]) (.const ``ByteArray []))
+              (emptyArray (.const ``ByteArray [])),
+            mkArrayLit (mkApp2 (.const ``Prod [levelZero, levelZero]) (.const ``Nat [])
+              (.const ``ByteArray [])) seedsLit,
+            defaultsLit,
+            stub2 (.const ``Nat []) (.const ``Knobs []) (mkConst ``emptyBytes []),
+            runFn]
+        let face ← evalProbeCore (substInstances ctx instConsts term)
+        let info : ProbeInfo :=
+          { inputNames := stmt.inputs.map (·.name)
+            inputTypes := inputTys.map typeNameOf
+            outputType := typeNameOf outTy }
+        return .ok (info, face)
+
+end EthCLLib.TheoremVectors

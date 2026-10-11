@@ -55,8 +55,8 @@ reader's answer misses. -/
 private def pin (binding : ForkBinding) (thm : Name) (e : Expect) :
     CommandElabM Unit := do
   let got ← liftTermElabM do
-    Statement.readIn binding thm fun stmt => do
-      let stmt ← Scope.classify binding stmt
+    Statement.readIn binding thm fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
       return (stmt.target, stmt.shape.wire,
         stmt.blockInputs.map (·.toString),
         stmt.inputs.map (·.name.toString))
@@ -160,5 +160,12 @@ run_cmd do
       shape := "unsupported"
       blockInputs := #["store"]
       inputs := #["store"] }
+  -- a box lemma names its family in the reason (§7.3, rule 7), which the
+  -- report counts apart from the other unsupported reasons
+  pin gloas `EthCLSpecs.Proofs.Gloas.keepsUncached_getBlockRoot
+    { target := some `EthCLSpecs.Gloas.getBlockRoot
+      shape := "unsupported"
+      blockInputs := #[]
+      inputs := #["state", "epoch"] }
 
 end EthCLSpecs.Tests.TheoremVectorsPins
