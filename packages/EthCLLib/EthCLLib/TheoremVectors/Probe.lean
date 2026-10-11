@@ -77,6 +77,11 @@ namespace EthCLLib.TheoremVectors
 /-- The bytes nothing records. -/
 def emptyBytes : ByteArray := ByteArray.mk #[]
 
+/-- The one-byte SSZ form of a `Bool`, the `.iffTrue` run's output shape
+(`THEOREM_VECTORS_ARCHITECTURE.md` §11.3): the same byte SSZ's `bool` serialize writes. -/
+def boolBytes (b : Bool) : ByteArray :=
+  ByteArray.mk #[b.toUInt8]
+
 /-- The byte comparison the `.eq` shapes run on (`THEOREM_VECTORS_ARCHITECTURE.md` §11.3):
 one place, so the agreement rule stays a fact of the framework half. -/
 def compareBytes (a b : ByteArray) : Bool := a == b
@@ -112,18 +117,22 @@ class ScalarCodec (T : Type) where
   /-- The `default` the base source serializes, when the type has one. -/
   default : Option T := none
 
-instance {T : Type} [SSZRepr T] [Inhabited T] : ScalarCodec T where
+instance {T : Type} [r : SSZRepr T] [Inhabited T] : ScalarCodec T where
   encode := SizzLean.SSZ.serialize
   decode := fun b =>
-    match SizzLean.SSZ.deserialize b with
-    | .ok x => some x
+    -- the strict read (§9.3): the shape decode reports the bytes it
+    -- consumed, and a record whose side file the type does not fill
+    -- exactly is corrupt
+    match SizzLean.Spec.SSZType.deserialize r.shape b with
+    | .ok (y, n) => if n == b.size then some (r.fromRepr y) else none
     | .error _ => none
   default := some Inhabited.default
 
-/-- The little-endian `uintN 64` read of eight bytes, `none` when the bytes
-fall short. -/
+/-- The little-endian `uintN 64` read of eight bytes, `none` when the byte
+string is not exactly eight wide. A wider string would decode by its low
+bytes and hide a corrupt record from the read-back check (§9.3). -/
 private def uint64OfBytesLE (b : ByteArray) : Option UInt64 :=
-  if b.size < 8 then none
+  if b.size != 8 then none
   else
     let byte (i : Nat) : UInt64 :=
       if h : i < b.size then UInt64.ofNat (b.get i h).toNat else 0
@@ -144,18 +153,19 @@ def decodeInput {T : Type} [ScalarCodec T] (bytes : Array ByteArray)
   | some b => ScalarCodec.decode b
   | none => none
 
-/-- `Fin n` rides the same scalar family §9.4's bit-vector source puts it
+/-- `Fin n` uses the same scalar family §9.4's bit-vector source puts it
 in: the `uintN 64` little-endian encoding of `Fin.val`. `SSZRepr (Fin n)`
 cannot exist, because a total decode would have to turn every byte string
-into a value below `n`; the codec takes the remainder and proves the bound
-with `Nat.mod_lt`, which is why the `n = 0` case answers `none`. -/
+into a value below `n`; a value at or above `n` is a corrupt record, so the
+decode answers `none` and the check reads that as `false` (§9.3). -/
 instance {n : Nat} : ScalarCodec (Fin n) where
   encode x := uint64BytesLE (UInt64.ofNat x.val)
   decode b := do
     let v ← uint64OfBytesLE b
     match n with
     | 0 => none
-    | k + 1 => some ⟨v.toNat % (k + 1), Nat.mod_lt _ (Nat.succ_pos k)⟩
+    | k + 1 =>
+      if h : v.toNat < k + 1 then some ⟨v.toNat, h⟩ else none
   default :=
     match n with
     | 0 => none
@@ -228,27 +238,23 @@ structure Probe where
   run    : Array ByteArray → Except String ProbeResult
 
 /-- What the probe knows at build time and the record layer needs on disk
-(§12.2): the binder names and the wire type of each input and of the
-output. Scalar-ness rides the run's literals (§12.2 writes a literal
-where the type carries `ToString`, which `ProbeResult` already answers). -/
+(§12.2): the binder names and the type of each input and of the output,
+rendered with the preset's constants substituted, which is the form §12.2's
+`type` field writes. Scalar-ness comes from the run's literals (§12.2
+writes a literal where the type carries `ToString`, which `ProbeResult`
+already answers). -/
 structure ProbeInfo where
   /-- The binder names, in binder order. -/
   inputNames  : Array Name
-  /-- The head constant of each input's type, `anonymous` when the type has
-  no constant head. -/
-  inputTypes  : Array Name
-  /-- The head constant of the output's type. -/
-  outputType  : Name
+  /-- Each input's type, rendered (§12.2): `Fin (3 * slotsPerEpoch)`,
+  `EthCLSpecs.Gloas.BeaconState`. -/
+  inputTypes  : Array String
+  /-- The output's type, rendered. -/
+  outputType  : String
   deriving Inhabited
 
-/-- The head constant of a type, for the record's `type` field (§12.2). -/
-private def typeNameOf (t : Expr) : Name :=
-  match t.getAppFn with
-  | .const c _ => c
-  | _ => .anonymous
-
-/-- Probe construction for a shape the stage-2 executor does not run yet:
-`.iffTrue` lands in stage 3, `.runOk` and `.runError` in stage 7. -/
+/-- Probe construction for a shape the stage-3 executor does not run yet:
+`.runOk` and `.runError` land in stage 7. -/
 private def unsupportedShapeError {α : Type} (shape : Shape) : MetaM α :=
   throwError "theorem_vectors: the probe does not run the {shape.wire} \
     shape yet; the plan stages it later"
@@ -349,6 +355,13 @@ private def substInstances (ctx : StatementCtx) (consts : Array Name)
 
 end TermBuilders
 
+/-- The rendered form of a type expression, with the telescope's instance
+variables replaced by the preset's constants (§10): the client-facing
+spelling the record's `type` fields write (§12.2). -/
+private def renderedType (ctx : StatementCtx) (consts : Array Name)
+    (t : Expr) : MetaM String := do
+  toString <$> Meta.ppExpr (substInstances ctx consts t)
+
 /-- The unsafe evaluation of the probe term (`THEOREM_VECTORS_ARCHITECTURE.md` §11.2),
 behind the same `implemented_by` shape `Command.lean` uses for the
 binding. -/
@@ -402,9 +415,11 @@ private def eqRunBody (lhs rhs : Expr)
 /-- The `.bound` run body under the `xs` binder: decide the comparison with
 the instance built for it, and record the literal
 (`THEOREM_VECTORS_ARCHITECTURE.md` §11.3). `none` when the literal has no
-`ToString`, which the caller reports as a skipped run. -/
-private def boundRunBody (lhs b : Expr) (rel : BoundRel)
-    (cmpDec cmpExpr : Expr) (underXs : Expr → Expr) (outTy : Expr)
+`ToString`, which the caller reports as a skipped run. The comparison and
+its `Decidable` instance arrive prebuilt (`cmpDec`, `cmpExpr`); the bound
+and its relation live inside them. -/
+private def boundRunBody (lhs : Expr) (cmpDec cmpExpr : Expr)
+    (underXs : Expr → Expr) (outTy : Expr)
     (outToString? : Option Expr)
     (inputLits inputRoots : Array Expr) : Option Expr :=
   match outToString? with
@@ -419,6 +434,34 @@ private def boundRunBody (lhs b : Expr) (rel : BoundRel)
           inputLits,
         mkArrayLit (mkApp (.const ``Option [levelZero])
           (.const ``ByteArray [])) inputRoots])
+
+/-- The `.iffTrue` run body under the `xs` binder (§11.3): `lhs` is the
+function's `Bool` result, so the output byte is `lhs` itself; the expected
+byte is `decide q`, carried by the `Decidable` instance the builder
+synthesized (§8.4). -/
+private def iffTrueRunBody (lhs q qDec : Expr)
+    (underXs : Expr → Expr) (outToString : Expr)
+    (outRepr? : Option Expr) (outHash : Option (Expr × Expr))
+    (inputLits inputRoots : Array Expr) : Expr :=
+  let boolTy := .const ``Bool []
+  let outVal := underXs lhs
+  let decideQ := mkDecide (underXs q) (underXs qDec)
+  let lit := optSome (.const ``String []) (toStringCall boolTy outToString outVal)
+  let root :=
+    match outRepr?, outHash with
+    | some inst, some (h, hasher) =>
+      optSome (.const ``ByteArray [])
+        (mkAppN (.const ``SizzLean.SSZ.hashTreeRoot [])
+          #[boolTy, h, hasher, inst, outVal])
+    | _, _ => optNone (.const ``ByteArray [])
+  mkAppN (.const ``eqRunResult [])
+    #[mkApp (.const ``boolBytes []) outVal,
+      mkApp (.const ``boolBytes []) decideQ,
+      lit, root,
+      mkArrayLit (mkApp (.const ``Option [levelZero]) (.const ``String []))
+        inputLits,
+      mkArrayLit (mkApp (.const ``Option [levelZero])
+        (.const ``ByteArray [])) inputRoots]
 
 /-- Build and evaluate the probe for one statement at one preset (§11.2).
 Runs inside the reader's telescope scope: the statement's expressions and
@@ -437,7 +480,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
     MetaM (Except String (ProbeInfo × Probe)) := do
   let stmt := ctx.stmt
   let shape := stmt.shape
-  unless shape matches .eq .. || shape matches .bound .. do
+  unless shape matches .eq .. || shape matches .bound .. || shape matches .iffTrue .. do
     return .error s!"the probe does not run the {shape.wire} shape yet; \
       the plan stages it later"
   unless stmt.typeBinders.isEmpty do
@@ -474,26 +517,47 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
         | none => Name.anonymous
       return .error s!"input {name} has no wire codec; the theorem is \
         out of scope (§1.2)"
-  -- the hash-tag instance for the roots; a theorem that binds no
-  -- `[HasherTag]` gets no roots, which the record layer writes as none
-  let hasherTag? ←
-    (try some <$> Meta.synthInstance (.const `EthCLLib.Spec.HasherTag [])
+  -- §11.4: the roots come from the binding's hasher, whether or not the
+  -- theorem binds a `[HasherTag]`. The binding's tag is a runtime name, so
+  -- the environment check below turns a misspelling into a machinery
+  -- error; the elaborator checks the double-backtick framework names.
+  unless (← getEnv).contains binding.hasherTag do
+    throwError "theorem_vectors: the binding's hasher \
+      `{binding.hasherTag}` does not resolve (§11.4)"
+  let tag : Expr := .const binding.hasherTag []
+  let h : Expr := mkApp (.const ``EthCLLib.Spec.HasherTag.H []) tag
+  let hasher? : Option Expr ←
+    (try some <$> Meta.synthInstance (mkApp (.const ``SizzLean.Hasher []) h)
       catch _ => pure none)
-  let hashPair? : Option (Expr × Expr) ←
-    match hasherTag? with
-    | none => pure none
-    | some tag => do
-      let h := mkApp (.const `EthCLLib.Spec.HasherTag.H []) tag
-      let hasher? ← (try some <$>
-        Meta.synthInstance (mkApp (.const ``SizzLean.Hasher []) h)
-        catch _ => pure none)
-      pure (hasher?.map fun i => (h, i))
+  let hashPair? : Option (Expr × Expr) := hasher?.map fun i => (h, i)
   -- the shape's sides and the output type
   let outTerm ← match shape with
     | .eq lhs _ => pure lhs
     | .bound lhs _ _ => pure lhs
+    | .iffTrue lhs _ => pure lhs
     | _ => unsupportedShapeError shape
-  let outTy ← Meta.inferType outTerm
+  -- the `.iffTrue` right side needs `Decidable` for its decision (§11.3).
+  -- The side's `let`s zeta away first: a `Decidable` cannot be synthesized
+  -- for a proposition hidden behind a scratch `let`
+  -- (`canBuilderCoverBid_iff`'s right side carries three). The left side is
+  -- the function's own `Bool` and needs none.
+  let iffDecs? : Option (Expr × Expr × Expr) ← match shape with
+    | .iffTrue lhs0 q0 => do
+      let lhs := Prepare.zeta lhs0
+      let q := Prepare.zeta q0
+      let qDec? ← (try some <$> Meta.synthInstance (mkApp (.const ``Decidable []) q)
+        catch _ => pure none)
+      match qDec? with
+      | some qDec => pure (some (lhs, q, qDec))
+      | none =>
+        return .error "the `.iffTrue` conclusion has no `Decidable` \
+          instance for its right side"
+    | _ => pure none
+  let outTy ←
+    if shape matches .iffTrue .. then
+      pure (.const ``Bool [])
+    else
+      Meta.inferType outTerm
   let outToString? ←
     (try some <$> Meta.synthInstance (mkApp (.const ``ToString [levelZero]) outTy)
       catch _ => pure none)
@@ -592,11 +656,19 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
           | .eq lhs rhs =>
             eqRunBody lhs rhs underXs outTy outRepr? hashPair?
               outToString? inputLits inputRoots
-          | .bound lhs rel b =>
+          | .bound lhs _ _ =>
             let some (cmp, cmpDec) := cmp?
               | return .error "the bound has no `Decidable` instance"
-            pure (boundRunBody lhs b rel cmpDec cmp underXs outTy
+            pure (boundRunBody lhs cmpDec cmp underXs outTy
               outToString? inputLits inputRoots)
+          | .iffTrue _ _ =>
+            let some (lhs, q, qDec) := iffDecs?
+              | return .error "the `.iffTrue` conclusion has no `Decidable` \
+                  instance for its right side"
+            let some outToString := outToString?
+              | return .error "the output type has no `ToString` instance"
+            pure (some (iffTrueRunBody lhs q qDec underXs outToString
+              outRepr? hashPair? inputLits inputRoots))
           | _ => unsupportedShapeError shape
         let some body := bodyOpt
           | return .error "the output type has neither an `SSZRepr` nor a \
@@ -640,10 +712,11 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
             stub2 (.const ``Nat []) (.const ``Knobs []) (mkConst ``emptyBytes []),
             runFn]
         let face ← evalProbeCore (substInstances ctx instConsts term)
+        let inputTypes ← inputTys.mapM (renderedType ctx instConsts)
         let info : ProbeInfo :=
           { inputNames := stmt.inputs.map (·.name)
-            inputTypes := inputTys.map typeNameOf
-            outputType := typeNameOf outTy }
+            inputTypes
+            outputType := ← renderedType ctx instConsts outTy }
         return .ok (info, face)
 
 end EthCLLib.TheoremVectors

@@ -19,11 +19,12 @@ JSON reader's integer range. The writer and the reader move bytes and names
 and hold no fork knowledge (§12.4). The read-back check (§12.5) runs in the
 command, which owns the probe the check needs.
 
-The on-disk JSON differs from §12.2's sketch in three field names, the
-reasons recorded in `IMPLEMENTATION_NOTES.md`: `thm` (the record
-structure's field name; §12.2 writes `theorem`, a Lean keyword), `case`
-for the case index, and the payload nested under `value`, because the
-scalar's literal and the container's root share one field slot.
+The on-disk JSON differs from §12.2's sketch in two field names, the
+reasons recorded in `IMPLEMENTATION_NOTES.md`: `case` for the case index,
+and the payload nested under `value`, because the scalar's literal and the
+container's root share one field slot. The `theorem` field spells with
+French quotes in Lean, `«theorem»`, and the derived JSON writes the wire
+spelling §12.2 fixes.
 
 ## Lean idioms annotated
 
@@ -62,19 +63,23 @@ instance : FromJson WitnessSourceTag where
 /-! ## The record -/
 
 /-- One recorded value (`THEOREM_VECTORS_ARCHITECTURE.md` §5.6): the binder name, the
-spec type's constant, and the payload form §5.6's `ValueData` picks. -/
+spec type as the probe rendered it (§12.2), and the payload form §5.6's
+`ValueData` picks. -/
 structure VectorValue where
   /-- The binder name, or `output`. -/
   name  : Name
-  /-- The spec type's constant, such as `EthCLSpecs.Gloas.BeaconState`. -/
-  type  : Name
+  /-- The spec type, rendered: `EthCLSpecs.Gloas.BeaconState`,
+  `Fin (3 * slotsPerEpoch)`. -/
+  type  : String
   value : ValueData
   deriving ToJson, FromJson
 
 /-- One record directory's content (`THEOREM_VECTORS_ARCHITECTURE.md` §5.6). -/
 structure VectorRecord where
-  /-- The theorem's full constant name. -/
-  thm       : Name
+  /-- The theorem's full constant name. `theorem` is a keyword, so the
+  field carries French quotes and the derived JSON writes the wire spelling
+  §12.2 fixes. -/
+  «theorem»   : Name
   /-- The binding's tag, such as `"gloas"`. -/
   fork      : String
   /-- The preset the run fixed. -/
@@ -99,12 +104,17 @@ structure VectorRecord where
 
 /-- Build one recorded value from a run's outputs (`THEOREM_VECTORS_ARCHITECTURE.md`
 §12.2): a literal records as a scalar, everything else as an SSZ value with
-its root. -/
-def VectorValue.ofRun (name : Name) (typeName : Name)
-    (literal? : Option String) (root? : Option ByteArray) : VectorValue :=
+its root. §11.4: an SSZ value with no root is a build error, never an empty
+root. -/
+def VectorValue.ofRun (name : Name) (typeName : String)
+    (literal? : Option String) (root? : Option ByteArray) : MetaM VectorValue := do
   match literal? with
-  | some lit => { name, type := typeName, value := .scalar lit }
-  | none => { name, type := typeName, value := .ssz (root?.getD ByteArray.empty) }
+  | some lit => pure { name, type := typeName, value := .scalar lit }
+  | none =>
+    let some root := root?
+      | throwError "theorem_vectors: `{name}` of `{typeName}` has no SSZ \
+          form and no Merkle root, so there is nothing to record (§11.4)"
+    pure { name, type := typeName, value := .ssz root }
 
 /-! ## The paths (§12.1) -/
 

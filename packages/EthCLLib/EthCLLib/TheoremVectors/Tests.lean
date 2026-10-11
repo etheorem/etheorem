@@ -1,6 +1,7 @@
 import EthCLLib.TheoremVectors.Tests.Attribute
 import EthCLLib.TheoremVectors.Tests.Command
 import EthCLLib.TheoremVectors.Tests.Probe
+import EthCLLib.TheoremVectors.Tests.BitVec
 
 /-!
 # `EthCLLib.TheoremVectors.Tests`: the generator's framework-half tests

@@ -303,6 +303,23 @@ solved scalars. `isValidIndexedPayloadAttestation_eq_true_iff_checks`
 splits into one case per check, and each case with a satisfiable
 conjunction writes a record. The report shows source `bitVec` for the first.
 
+*Outcome.* Twelve records at `minimal`, ten function files, the recipe
+green in seconds. The first acceptance theorem writes from the solver
+with no seed. `canBuilderCoverBid_iff` writes its true side and both
+false-side cases once the seed state holds a builder below the floor;
+the review fix put one at index 0.
+`isValidIndexedPayloadAttestation_eq_true_iff_checks` splits into five
+cases and writes the true side; its false sides need containers the seed
+does not vary, and stage 4's random source takes them. The design changes
+that followed sit in `THEOREM_VECTORS_ARCHITECTURE.md`: the per-line
+source list (§9.2), the read grounding and the coupled-scalar grid
+(§9.4), the partial seed's handoff (§9.4), and the unfold's body cutoff
+(§8.1). The review fixes landed beside them: the positional order of the
+generator lines with its error (§14.3), the heartbeat budget per run
+(§14.4), and the `bne` / `ne` unfold lemmas that bring
+`convertBuilderIndexToValidatorIndex_toBuilderIndex` to the solver. Stage
+4 step 7 carries the remaining source change.
+
 ---
 
 ## Stage 4: generation, the random source, shrink
@@ -323,9 +340,17 @@ conjunction writes a record. The report shows source `bitVec` for the first.
 6. Tests: the generic instance produces a decodable `BeaconState` at
    minimal for a fixed seed, and the same seed gives the same bytes. Shrink
    on a toy container reaches a smaller value that still passes a toy check.
+7. `Witness/BitVec.lean`, from the stage 3 outcome: a `Fin n` input enters
+   the solver as a `UInt64` with the bound `x < n` (§9.4), so a coupled or
+   free `Fin` scalar no longer drops out of the search in silence. The
+   solver's `Fin` values stay below `n`; the strict decode of §9.3
+   refuses the rest.
 
-**Acceptance.** `canBuilderCoverBid_iff` writes its two vectors with no
-seed, source `random`, and the shrunk state is smaller than the first draw.
+**Acceptance.** `canBuilderCoverBid_iff` writes its three cases with no
+seed, source `random`, and the shrunk state is smaller than the first
+draw. `isValidIndexedPayloadAttestation_eq_true_iff_checks` writes three
+of its four false-side cases from draws; the signature gate's negation
+never holds under the verify-off backend (§8.1) and stays `notFound`.
 The report records the seconds per record.
 
 ---

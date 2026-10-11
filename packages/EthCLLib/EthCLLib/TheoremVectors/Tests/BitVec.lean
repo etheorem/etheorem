@@ -1,0 +1,326 @@
+import Lean
+import EthCLLib.Spec.Hasher
+import EthCLLib.TheoremVectors.Statement
+import EthCLLib.TheoremVectors.Scope
+import EthCLLib.TheoremVectors.Prepare
+import EthCLLib.TheoremVectors.Probe
+import EthCLLib.TheoremVectors.Execute
+import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Base
+import EthCLLib.TheoremVectors.Witness.Seed
+import EthCLLib.TheoremVectors.Witness.BitVec
+import EthCLLib.TheoremVectors.Tests.ToyFork
+
+/-!
+# `EthCLLib.TheoremVectors.Tests.BitVec`: the prepare pass and the solver
+
+Build-gate checks for stage 3 (`THEOREM_VECTORS_ARCHITECTURE.md` §8.2, §9.4):
+a hypothesis `a < b ∨ a = b` splits into two cases; the solver's witness for
+an equality disjunct lands on the boundary; an unsatisfiable hypothesis
+answers `unsat` and proposes no candidate; a `.toNat` hypothesis rewrites
+to `UInt64` form, which is what makes it solvable; a seed that makes
+the residual formula unsatisfiable answers `notFound`, never `unsat`,
+because the vacuity the solver proved is a fact about one seed; a split
+past the cap falls back to the unsplit hypothesis with a note (§8.2); and
+a case with no `Decidable` instance is reported and dropped (§8.4). The
+drives run the search loop's sources over the toy fork's scalar theorems.
+
+## Lean idioms annotated
+
+- The drives run inside `run_cmd` with `liftTermElabM`, because the reader,
+  the prepare pass, and the solver are `MetaM`.
+- Every drive folds inside the reader's telescope scope
+  (`Statement.readIn`), because the statement, the cases, and the free
+  variables cannot leave it.
+- `searchCase` answers `Except Failure`; the drive pattern-matches the
+  answer, so a source that silently finds nothing fails the test instead
+  of passing it.
+-/
+
+set_option autoImplicit false
+
+open Lean
+open EthCLLib.Spec (HasherTag)
+
+namespace EthCLLib.TheoremVectors.Tests.BitVec
+
+/-- The toy function under test. -/
+def toyFun (x : UInt64) : UInt64 := x + 3
+
+/-- The split pin's theorem: one hypothesis, two disjuncts. -/
+theorem toySplit [HasherTag] (a b : UInt64) (_h : a < b ∨ a = b) :
+    toyFun a = a + 3 := rfl
+
+/-- The solver's drive theorem: the split plus a bound `default` fails, so
+the bit-vector source must find both cases' witnesses, and the equality
+case's witness lands on the boundary. -/
+theorem toySplitSolve [HasherTag] (a b : UInt64) (_h : (a < b ∨ a = b) ∧ 0 < b) :
+    toyFun a = a + 3 := rfl
+
+/-- The unsat pin's theorem: no `UInt64` satisfies `a < a`. -/
+theorem toyUnsat [HasherTag] (a _b : UInt64) (_h : a < a) :
+    toyFun a = a + 3 := rfl
+
+/-- The `.toNat` pin's theorem: the hypothesis is `Nat`-level, the bridge
+set rewrites it to `a + 1 = b`, and the solver reads `UInt64` form. -/
+theorem toyToNat [HasherTag] (a b : UInt64) (_h : a.toNat + 1 = b.toNat) :
+    toyFun a = a + 3 := rfl
+
+/-- The seeded-handoff pin's theorem, over a toy binding whose state type
+is `UInt64`: the seed fixes `s` to `0`, which makes the residual
+hypothesis `a < s` hold for no `a` at that seed, while other seeds admit
+witnesses. The case is `notFound` at the seed, never `unsat` -- the
+vacuity the solver proved is a fact about one seed, not the theorem. -/
+theorem toySeeded [HasherTag] (s : UInt64) (a : UInt64) (_h : a < s) :
+    toyFun a = a + 3 := rfl
+
+/-- The cap-fallback pin's theorem: seventeen disjuncts, one past the
+default cap (§8.2). The prepare pass keeps the unsplit hypothesis and
+reports the fallback. -/
+theorem toyManyCases [HasherTag] (a : UInt64)
+    (h : a = 0 ∨ a = 1 ∨ a = 2 ∨ a = 3 ∨ a = 4 ∨ a = 5 ∨ a = 6 ∨ a = 7 ∨
+         a = 8 ∨ a = 9 ∨ a = 10 ∨ a = 11 ∨ a = 12 ∨ a = 13 ∨ a = 14 ∨
+         a = 15 ∨ a = 16) :
+    toyFun a = a + 3 := by
+  cases h <;> simp [toyFun]
+
+/-- The dropped-case pin's theorem: the hypothesis is a proposition
+variable, which carries no `Decidable` instance, so the prepare pass
+reports the case and drops it (§8.4). -/
+theorem toyNoDecidable [HasherTag] (q : Prop) (_hq : q) : toyFun 0 = 3 := rfl
+
+/-- A type alias the way the fork bodies spell one (`Gwei` for `UInt64`). -/
+abbrev toyWei : Type := UInt64
+
+/-- A read whose type is the alias: the grounding gate's own example. -/
+def toyBal (_ : UInt64) : toyWei := 3
+
+/-- The alias-read pin's theorem: the seed fixes `s`, the read `toyBal s`
+has the alias type, and the source must ground it. A gate that names only
+the bare scalar types refuses the read, the solver abstracts it into a
+spurious model, and the case reads `notFound` (§9.4). -/
+theorem toyAliasRead [HasherTag] (s a : UInt64) (_h : toyBal s ≤ a) :
+    toyFun a = a + 3 := rfl
+
+/-- The little-endian read of a scalar's eight wire bytes, for the
+boundary assertions. -/
+private def leOf (b : ByteArray) : Nat :=
+  (Array.range 8).foldl (fun acc i =>
+    acc + (if h : i < b.size then (b.get i h).toNat * 2 ^ (8 * i) else 0)) 0
+
+/-- The search context one drive needs, from the reader's scope. -/
+private def searchCtxOf (binding : ForkBinding) (stmt : Statement)
+    (ctx : StatementCtx) (info : ProbeInfo) (probe : Probe) : MetaM SearchCtx := do
+  let instConsts ← stmt.instances.mapM fun (_, kind) =>
+    match Preset.constOf binding .minimal kind with
+    | .ok c => pure c
+    | .error e => throwError e
+  return {
+    probe := probe, info := info, binding := binding, preset := PresetId.minimal,
+    inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
+    instConsts := instConsts, seedTerms := #[] }
+
+end EthCLLib.TheoremVectors.Tests.BitVec
+
+open Lean.Elab.Command
+open EthCLLib.TheoremVectors
+open EthCLLib.TheoremVectors.Tests.BitVec in
+run_cmd do
+  liftTermElabM do
+    let binding := EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding
+    -- ── the split pin: `a < b ∨ a = b` is two cases, neither an iff side
+    Statement.readIn binding `EthCLLib.TheoremVectors.Tests.BitVec.toySplit fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, dropped) ← Prepare.pass stmt
+      unless dropped.isEmpty do
+        throwError "toySplit: the prepare pass dropped a note"
+      unless cases.size == 2 do
+        throwError s!"toySplit: expected two prepared cases, got {cases.size}"
+      unless cases.all (fun c => c.side.isNone) do
+        throwError "toySplit: the cases carry iff sides"
+    -- ── the solver's drive: both cases found, the equality case on the
+    -- boundary
+    Statement.readIn binding `EthCLLib.TheoremVectors.Tests.BitVec.toySplitSolve fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 2 do
+        throwError s!"toySplitSolve: expected two prepared cases, got {cases.size}"
+      let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[] with
+        | .ok r => pure r
+        | .error e => throwError s!"toySplitSolve: the probe refused to build: {e}"
+      let sctx ← searchCtxOf binding stmt ctx info probe
+      let sources : Array WitnessSource := #[baseSource, bitVecSource]
+      let (ltCase, eqCase) :=
+        if cases[0]!.hyps[0]!.isAppOf ``LT.lt then
+          (cases[0]!, cases[1]!)
+        else
+          (cases[1]!, cases[0]!)
+      for c in [ltCase, eqCase] do
+        match ← searchCase sources sctx stmt c with
+        | .ok (a, won) =>
+          unless won == .bitVec do
+            throwError s!"toySplitSolve case {c.index}: expected the \
+              bit-vector source to win, got {won.tag}"
+          unless probe.check c.index a do
+            throwError s!"toySplitSolve case {c.index}: the candidate \
+              failed the check"
+          unless a.size == 2 && leOf a[1]! ≥ 1 do
+            throwError s!"toySplitSolve case {c.index}: the witness \
+              ({leOf a[0]!}, {leOf a[1]!}) missed its window"
+          if c.index == eqCase.index then
+            unless leOf a[0]! == leOf a[1]! do
+              throwError s!"toySplitSolve case {c.index}: the equality \
+                case's witness is not on the boundary"
+          else
+            unless leOf a[0]! < leOf a[1]! do
+              throwError s!"toySplitSolve case {c.index}: the witness is \
+                not below its bound"
+        | .error f =>
+          throwError s!"toySplitSolve case {c.index}: {repr f}"
+    -- ── the unsat pin: the solver proves the case vacuous, no candidate
+    Statement.readIn binding `EthCLLib.TheoremVectors.Tests.BitVec.toyUnsat fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"toyUnsat: expected one prepared case, got {cases.size}"
+      let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[] with
+        | .ok r => pure r
+        | .error e => throwError s!"toyUnsat: the probe refused to build: {e}"
+      let sctx ← searchCtxOf binding stmt ctx info probe
+      let sources : Array WitnessSource := #[baseSource, bitVecSource]
+      match ← searchCase sources sctx stmt cases[0]! with
+      | .ok _ => throwError "toyUnsat: the search found a witness"
+      | .error .unsat => pure ()
+      | .error f => throwError s!"toyUnsat: {repr f}"
+    -- ── the `.toNat` pin: the bridge rewrite exposes `UInt64` form, and
+    -- the solver solves it
+    Statement.readIn binding `EthCLLib.TheoremVectors.Tests.BitVec.toyToNat fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"toyToNat: expected one prepared case, got {cases.size}"
+      -- the rewritten hypothesis names no `.toNat` any more
+      unless !(cases[0]!.conj.getUsedConstants.contains `UInt64.toNat) do
+        throwError "toyToNat: the conjunction still names `UInt64.toNat`"
+      let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[] with
+        | .ok r => pure r
+        | .error e => throwError s!"toyToNat: the probe refused to build: {e}"
+      let sctx ← searchCtxOf binding stmt ctx info probe
+      let sources : Array WitnessSource := #[baseSource, bitVecSource]
+      match ← searchCase sources sctx stmt cases[0]! with
+      | .ok (a, won) =>
+        unless won == .bitVec && probe.check 0 a do
+          throwError "toyToNat: the bit-vector source's candidate failed"
+        unless leOf a[0]! + 1 == leOf a[1]! do
+          throwError s!"toyToNat: the witness ({leOf a[0]!}, {leOf a[1]!}) \
+            does not satisfy a + 1 = b"
+      | .error f => throwError s!"toyToNat: {repr f}"
+    -- ── the seeded-handoff pin: the seed fixes `s` to 0, the residual
+    -- `a < s` is unsatisfiable at that seed, and the case is `notFound`,
+    -- never `unsat` (§9.4: the vacuity is about one seed). The base
+    -- source refuses the state input, so the search runs seed then the
+    -- bit-vector handoff alone.
+    let stateBinding : ForkBinding :=
+        { EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding with
+            stateType := `UInt64 }
+    Statement.readIn stateBinding `EthCLLib.TheoremVectors.Tests.BitVec.toySeeded fun ctx => do
+      let stmt ← Scope.classify stateBinding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"toySeeded: expected one prepared case, got {cases.size}"
+      -- the seed term `0`, elaborated in the telescope like a `with` term
+      let stx ← `(term| 0)
+      let seedTerm ← (Lean.Elab.Term.withoutErrToSorry
+        (Lean.Elab.Term.elabTermAndSynthesize stx (some (.const ``UInt64 [])))).run'
+      let seedTerm ← Lean.instantiateMVars seedTerm
+      let (info, probe) ← match ← Probe.ofStatement stateBinding .minimal ctx cases #[(0, seedTerm)] with
+        | .ok r => pure r
+        | .error e => throwError s!"toySeeded: the probe refused to build: {e}"
+      let instConsts ← stmt.instances.mapM fun (_, kind) =>
+        match Preset.constOf stateBinding .minimal kind with
+        | .ok c => pure c
+        | .error e => throwError e
+      let sctx : SearchCtx :=
+        { probe, info, binding := stateBinding, preset := PresetId.minimal,
+          inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
+          instConsts := instConsts, seedTerms := #[(0, seedTerm)] }
+      -- §9.4: the base source's `applies` refuses the state input, so
+      -- the search loop never proposes the `default` state
+      if baseSource.applies sctx stmt cases[0]! then
+        throwError "toySeeded: base should refuse the state input"
+      -- §9.4: the seed source refuses a partial seed that leaves the
+      -- state input to the `default` fill
+      if seedSource.applies sctx stmt cases[0]! then
+        throwError "toySeeded: the seed source should refuse a partial \
+          seed over an unseeded state input"
+      -- seed then bit-vector: the case ends notFound
+      let sources : Array WitnessSource := #[seedSource, bitVecSource]
+      match ← searchCase sources sctx stmt cases[0]! with
+      | .ok _ => throwError "toySeeded: the search found a witness at an \
+          unsatisfiable seed"
+      | .error .unsat => throwError "toySeeded: the case reported unsat, \
+          but the vacuity is about one seed"
+      | .error (.notFound _ _) => pure ()
+      | .error f => throwError s!"toySeeded: {repr f}"
+    -- ── the cap-fallback pin: seventeen disjuncts pass the cap, the pass
+    -- keeps the unsplit hypothesis, and the note reports the fallback
+    -- (§8.2)
+    Statement.readIn binding `EthCLLib.TheoremVectors.Tests.BitVec.toyManyCases fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, dropped) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"toyManyCases: expected one fallback case, got \
+          {cases.size}"
+      unless dropped.size == 1 && dropped[0]!.contains "case cap" do
+        throwError s!"toyManyCases: expected the cap note, got {repr dropped}"
+      unless cases[0]!.hyps.size == 1 do
+        throwError "toyManyCases: the fallback lost the unsplit hypothesis"
+      -- the fallback case still carries its `Decidable` instance and
+      -- solves
+      unless cases[0]!.hyps[0]!.getUsedConstants.contains ``Or do
+        throwError "toyManyCases: the unsplit hypothesis lost its disjuncts"
+    -- ── the dropped-case pin: no `Decidable` instance for the case's
+    -- conjunction, so the pass reports the case and drops it (§8.4)
+    Statement.readIn binding `EthCLLib.TheoremVectors.Tests.BitVec.toyNoDecidable fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, dropped) ← Prepare.pass stmt
+      unless cases.isEmpty do
+        throwError s!"toyNoDecidable: expected no cases, got {cases.size}"
+      unless dropped.size == 1
+          && dropped[0]!.contains "no `Decidable` instance" do
+        throwError s!"toyNoDecidable: expected the drop note, got \
+          {repr dropped}"
+    -- ── the alias-read pin: the seeded read's type is the alias, and the
+    -- source grounds it to the literal, so the solver takes the residual
+    -- formula and the check accepts its model (§9.4)
+    Statement.readIn binding `EthCLLib.TheoremVectors.Tests.BitVec.toyAliasRead fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"toyAliasRead: expected one prepared case, got \
+          {cases.size}"
+      let stx ← `(term| 0)
+      let seedTerm ← (Lean.Elab.Term.withoutErrToSorry
+        (Lean.Elab.Term.elabTermAndSynthesize stx (some (.const ``UInt64 [])))).run'
+      let seedTerm ← Lean.instantiateMVars seedTerm
+      let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[(0, seedTerm)] with
+        | .ok r => pure r
+        | .error e => throwError s!"toyAliasRead: the probe refused to build: {e}"
+      let instConsts ← stmt.instances.mapM fun (_, kind) =>
+        match Preset.constOf binding .minimal kind with
+        | .ok c => pure c
+        | .error e => throwError e
+      let sctx : SearchCtx :=
+        { probe, info, binding, preset := PresetId.minimal,
+          inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
+          instConsts := instConsts, seedTerms := #[(0, seedTerm)] }
+      let sources : Array WitnessSource := #[seedSource, bitVecSource]
+      match ← searchCase sources sctx stmt cases[0]! with
+      | .ok (a, won) =>
+        unless won == .bitVec do
+          throwError s!"toyAliasRead: expected the bit-vector source to \
+            win, got {won.tag}"
+        unless probe.check cases[0]!.index a do
+          throwError "toyAliasRead: the candidate failed the check"
+      | .error f =>
+        throwError s!"toyAliasRead: the search found no witness: {repr f}"

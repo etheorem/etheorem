@@ -702,14 +702,21 @@ A hypothesis stated through a spec predicate, such as
 and to a random filter alike. The pass runs `simp only` with three lemma sets:
 
 - the equation lemmas of every spec predicate the hypothesis names, found
-  through the capture extension;
+  through the capture extension, when the predicate's body is small
+  (under 100 expression nodes). A body that folds over a state container
+  unfolds into a term the simp walk cannot finish, so the pass leaves it
+  as one atom, and the bit-vector source grounds the closed call in
+  compiled code instead (§9.4);
 - the `UInt64`-to-`Nat` bridge lemmas the proofs already use
   (`UInt64.lt_iff_toNat_lt`, `UInt64.le_iff_toNat_le`, and their siblings),
   oriented back toward `UInt64` form;
 - `Bool` normalization (`decide_eq_true_eq`, `Bool.and_eq_true`, and the rest).
 
 Crypto predicates stay as they are. Under the verify-off backend the probe
-evaluates them, so the solver never needs to see inside one.
+evaluates them, so the solver never needs to see inside one. A case that
+negates a crypto gate is unsatisfiable under that backend. The solver
+never sees inside the gate, so the case reports `notFound`, never
+`unsat`.
 
 ### 8.2 Split
 
@@ -771,12 +778,14 @@ structure WitnessSource where
 `SearchCtx` carries the probe, the binding, the preset, the seed options, and
 the author seeds for this line. `SearchM` is `MetaM` with a budget counter.
 
-The sources run in this order: hint (§9.8), seed, base, bit-vector, built
-(§9.9), random. The seed source comes before the base source for two
-reasons. The author chose those inputs, and a `default` witness would ignore
-that choice. And a seed that fails the check is a build error, which only
-fires when the seed runs; a `default` witness that passed first would hide a
-stale seed. The rest is cheapest first.
+The full order is hint (§9.8), seed, base, bit-vector, built (§9.9),
+random, and the command assembles the list per line. A line with seeds
+runs seed then bit-vector, with no base source: the author chose those
+inputs, and a `default` witness would ignore that choice, for the cases
+the seed wins and for the cases it fails alike. A line without seeds runs
+base then bit-vector. A theorem with a block input runs base alone (§1.2).
+The hint source comes first on every list, and the built and random
+sources follow the bit-vector source. The rest is cheapest first.
 
 `Witness/Source.lean` holds the loop:
 
@@ -793,13 +802,17 @@ return .error (.notFound tried)
 ```
 
 A source that cannot produce a candidate the check accepts has produced
-nothing. The check is the single arbiter.
+nothing. The check is the single arbiter. `notFound` names every source
+that ran on the case, whether or not it proposed a candidate.
 
 ### 9.3 The check
 
 `probe.check : Nat → Array ByteArray → Bool` takes the case index and the
 assignment, decodes the assignment, and evaluates `decide (P x)` for that
-case's conjunction, compiled. It never throws: a decode failure is `false`.
+case's conjunction, compiled. It never throws: a decode failure is
+`false`. The decode is strict, so a corrupt record fails: a byte string
+of a width other than the type's, and a `Fin n` value at or above `n`,
+decode to `none`.
 
 ### 9.4 The core sources
 
@@ -816,16 +829,40 @@ on it, minutes per committee, and no result follows. A state input comes
 from a seed, a hint (§9.8), or the built source (§9.9). A theorem with an
 unseeded state input gets `nothing` from both sources.
 
-**Bit-vector.** Applies when every input has a type in `{UInt8, UInt16,
-UInt32, UInt64, Bool, Fin n}` or an SSZ alias of one (`Slot`, `Epoch`,
+**Bit-vector.** Applies when every unseeded input has a type in `{UInt8,
+UInt16, UInt32, UInt64, Bool}` or an SSZ alias of one (`Slot`, `Epoch`,
 `Gwei`, `ValidatorIndex`, …), and every hypothesis is a bit-vector formula
-after the prepare pass. The source poses `¬P` and calls `bvDecide'` from
+after the prepare pass. A `Fin n` input enters as a `UInt64` with the
+bound `x < n`, the probe's own codec (§11.2), once stage 4's bridge lands;
+until then the source reports the input and answers `nothing`. The
+source poses `¬P` and calls `bvDecide'` from
 `Lean.Elab.Tactic.BVDecide.Frontend`, whose result type is
 `MetaM (Except CounterExample Result)`. A `CounterExample` carries
 `equations : Array (Expr × BVExpr.PackedBitVec)`. Each equation pairs an
 input with a value, and the source serializes each value to its SSZ width.
 A `Result` means `¬P` is a theorem, so the source returns `Failure.unsat`
 and the loop stops: no later source can find what does not exist.
+
+Before the call, the source grounds every maximal closed scalar subterm
+of the hypotheses in compiled code and substitutes the literal: a read of
+a seeded input (`coverBidState.builders[0]!.balance`), a preset constant
+(`UInt64.ofNat slotsPerEpoch`), a crypto gate under the verify-off
+backend. The solver abstracts an unreduced constant as an opaque atom and
+returns a model around it, which the check rejects; the grounding keeps
+the formula over the free scalars alone. It runs before and after the
+unfold, so the unfold's products ground too.
+
+With seeds, the source takes the handoff of the seed source. The seeds fix
+the containers. A scalar that sits inside a computation over a seeded
+input is *coupled* (the builder index of `canBuilderCoverBid_iff`, a read
+index), and the source walks it over a grid of its 64 smallest values,
+128 grid points per case at most. At each point the seeded reads are
+closed, the grounding turns them into literals, and the solver takes the
+remaining free scalars. A `¬P` proof at one grid point is a fact about
+that point, so the source moves to the next and answers `nothing` when
+every point fails. Only the seedless solve, where the formula carries the
+whole case, answers `unsat`. A coupled scalar the grid misses falls to a
+later source.
 
 **Random plus solve.** Applies when at least one input is a container and the
 remaining inputs are scalars. The probe draws the container inputs with their
@@ -840,12 +877,16 @@ builder's balance and pending total, and the solver picks a `bidAmount` on
 each side of the bound.
 
 **Seed.** Applies when the line names seeds (§14.3). A seed fixes some inputs
-to author-written terms. The source serializes them through the probe
-(`probe.seeds`) and hands the partial assignment to the bit-vector source for
-the rest. The seed is one assignment and the prepare pass may split the
-theorem into several cases (§8.2), so the author's claim is per theorem: a
-seed that passes no case is a build error, and a case the seed fails falls
-through to the next source like any other candidate.
+to author-written terms, serialized through the probe (`probe.seeds`).
+When the seeds cover every input, the candidate is the seeds themselves,
+checked like any other. When they cover a strict subset, the source
+answers `nothing` and the bit-vector source takes the partial assignment
+for the rest. The seed is one assignment and the prepare pass may split
+the theorem into several cases (§8.2), so the author's claim is per
+theorem: a fully covering seed that wins no case is a build error, and a
+case the seed fails falls through to the next source like any other
+candidate. A partial seed carries no claim of that strength; when no
+source finds a witness around it, the case reports `notFound`.
 
 ### 9.5 Generation
 
@@ -1431,18 +1472,20 @@ fork it drives on the first line.
 ```lean
 theorem_vectors_fork Bindings.gloas
 
+-- named lines: overrides and additions
+theorem_vectors canBuilderCoverBid_iff with (state := Seeds.Gloas.coverBidState)
+theorem_vectors! processBuilderPendingPayments_run presets minimal mainnet
+theorem_vectors initializePtcWindow_lt_default
+
+-- exclusions: theorems the clauses must not select
+theorem_vectors skip processOperations_run_ok_iff "block input, needs a body builder"
+
 -- discovery: every theorem of the fork that carries the tag
 theorem_vectors characterized
 theorem_vectors tagged
 
 -- the survey: every other public theorem of the fork, read and listed
 theorem_vectors survey
-
--- named lines: overrides and additions
-theorem_vectors canBuilderCoverBid_iff with (state := Seeds.Gloas.coverBidState)
-theorem_vectors! processBuilderPendingPayments_run presets minimal mainnet
-theorem_vectors initializePtcWindow_lt_default
-theorem_vectors skip processOperations_run_ok_iff "block input, needs a body builder"
 ```
 
 Grammar:
@@ -1473,23 +1516,34 @@ theorem_vectors skip <ident> <string>
 - `presets` lists the presets to run. The default is `minimal`.
 - `!` turns every skip into an error. A tagged theorem is strict without it.
 - `skip` excludes a theorem from discovery and records the reason in the
-  outcome file. A `skip` for a theorem no discovery clause selects is an
-  error, so a stale exclusion is visible.
+  outcome file. A `skip` validates against the potential selection, the
+  tags of §14.1 and the fork's proof namespace, so a stale exclusion is
+  still visible and the line can sit above the clauses it excludes from.
 
-**Precedence.** The file is read whole before any theorem runs. A named line
-wins over discovery for the same theorem, and one theorem runs once, so an
-override never produces a second record set. Two named lines for one theorem
-are an error. The outcome line records the origin: `named`, `tagged`,
-`characterized`, `skipped`, or `survey`.
+**Precedence.** Each line elaborates as its own command, in file order. A
+named line wins over discovery for the same theorem, and one theorem runs
+once, so an override never produces a second record set. Two named lines
+for one theorem are an error, and so are a named line and a skip line for
+one theorem: the skip would overwrite the named run's outcome. The
+outcome line records the origin:
+`named`, `tagged`, `characterized`, `skipped`, or `survey`.
 
-**Order.** Named lines run first, in file order, then the discovered set in
-name order. A discovery clause before the named lines is fine; precedence
-does not depend on position.
+**Order.** The named lines and the `skip` lines come before the discovery
+clauses in the file. Named lines run in file order, then the discovered
+set in name order, with the skips and named lines removed. A named line
+or a `skip` line after a discovery clause that already ran its theorem is
+an error, and the message says to move the line up: a discovery run of
+that theorem would run it without the seeds, warn, and then run it again,
+or run it and lose the exclusion. A line a precedence rule rejects leaves
+no state: the elaborator records it only after its pass succeeded, so a
+later line meets only the lines above it that passed.
 
-Each theorem runs phases A and B (§3) and writes records, then one outcome
-line (§16). Per record the command logs one info message with the path. Per
-skipped preset it logs one warning with the reason, or an error for a strict
-theorem.
+Each per-preset run of phases B1 through B8 (§3) carries its own
+heartbeat budget (`theorem_vectors.maxHeartbeats`, §14.4), which the
+command sets around it. The run writes records, then one outcome line
+(§16). Per record the command logs one info message with the path. Per
+skipped preset it logs one warning with the reason, or an error for a
+strict theorem.
 
 **What this buys.** A new `@[characterizes]` proof gets a vector attempt on
 the next build, and the report lists it with its outcome. An author who wants
@@ -1504,6 +1558,7 @@ theorem that needs more gets a named line.
 | --- | --- | --- |
 | `theorem_vectors.outDir` | `theorem_vectors` | the output root; the lakefile fixes it |
 | `theorem_vectors.maxCases` | 16 | the DNF cap (§8.2) |
+| `theorem_vectors.maxHeartbeats` | 1000000 | the heartbeat budget per run, in the units `set_option maxHeartbeats` takes; the command multiplies by 1000 for the reader field |
 | `theorem_vectors.randomDraws` | 64 | redraws for the random source |
 | `theorem_vectors.randomSize` | 8 | `Gen`'s size parameter |
 | `theorem_vectors.shrinkSteps` | 200 | the shrink budget |
@@ -1676,12 +1731,15 @@ path as the upstream corpus.
 | --- | --- | --- |
 | theorem name does not resolve | A1 | error |
 | two named lines for one theorem | A0 | error |
-| `skip` for a theorem no discovery clause selects | A0 | error |
+| `skip` for a theorem no discovery clause could select | A0 | error |
+| named or skip line below the clause that ran its theorem | A0 | error |
+| a named line and a skip line for one theorem | A0 | error |
 | `.unsupported` shape | A1 | skip (error under `!` or `@[theorem_vectors]`) |
 | block input, base source fails | B3 | `outOfScope` skip (error under `!` or the tag) |
 | solver proves `¬P` | B3 | `unsat` skip, always reported |
 | sources exhausted | B3 | `notFound` skip (error under `!` or the tag) |
-| seed fails the check | B3 | error |
+| fully covering seed wins no case | B3 | error |
+| partial seed, no source finds a witness | B3 | `notFound` skip |
 | hint fails the check, mode `use` | B3 | full search, `hint: failed` in the outcome |
 | hint missing or fails, mode `require` | B3 | error |
 | `agree = false` | B5 | error, both values printed |

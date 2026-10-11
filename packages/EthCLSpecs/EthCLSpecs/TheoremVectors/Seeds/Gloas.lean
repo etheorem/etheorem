@@ -22,6 +22,17 @@ Two seeds serve the window theorems:
   selection within the bound, so the loop never spins), which makes the
   base source's default candidate unevaluatable for the window theorems;
   an active committee fills in a few dozen iterations.
+
+Three seeds serve the stage-3 acceptance theorems:
+
+- `coverBidState` puts one builder below `minDepositAmountG` and the rest
+  at a 32 ETH balance over an empty pending queue, so the false side's
+  floor case holds at index 0 and the solver's model picks any builder
+  above the floor for the other cases.
+- `iPacState` and `iPacAttestation` carry 64 validators and two in-range
+  increasing attesting indices, so `isValidIndexedPayloadAttestation`'s
+  true-side conjunction holds and the false-side cases report the seed's
+  answer per check.
 -/
 
 set_option autoImplicit false
@@ -74,5 +85,58 @@ def activeState [Preset] : EthCLSpecs.Fulu.BeaconState :=
     (Array.range 64).foldl (fun xs _ => xs.push 32000000000) default
   ({ (default : EthCLSpecs.Fulu.BeaconState) with validators := vs, balances := bs } :
     EthCLSpecs.Fulu.BeaconState)
+
+/-! ## The stage-3 seeds -/
+
+/-- The registered builder of `coverBidState` above the floor: every
+registry entry past index 0 holds one, so the read at any such index
+answers the same balance. -/
+def coverBuilder [Preset] : EthCLSpecs.Gloas.Builder :=
+  { (default : EthCLSpecs.Gloas.Builder) with balance := 32000000000 }
+
+/-- The seed state for `canBuilderCoverBid_iff`: index 0 holds the default
+builder, whose balance is below `minDepositAmountG`, so the false side's
+floor case holds at that grid point; the other 63 entries hold the 32 ETH
+builder over an empty pending queue. The solver returns a model. Boundary
+values are the shrink's job (stage 4). -/
+def coverBidState [Preset] : EthCLSpecs.Gloas.BeaconState :=
+  let bs : SizzLean.Repr.SSZList EthCLSpecs.Gloas.Builder
+      EthCLSpecs.Gloas.Const.builderRegistryLimit :=
+    (Array.range 63).foldl (fun xs _ => xs.push coverBuilder)
+      ((default : SizzLean.Repr.SSZList EthCLSpecs.Gloas.Builder
+          EthCLSpecs.Gloas.Const.builderRegistryLimit).push default)
+  { (default : EthCLSpecs.Gloas.BeaconState) with builders := bs }
+
+/-- A Gloas validator at the maximum effective balance, the registry entry
+`iPacState` holds 64 of. -/
+def iPacValidator [Preset] : EthCLSpecs.Gloas.Validator :=
+  { pubkey := Vector.replicate 48 0
+    withdrawalCredentials := Vector.replicate 32 0
+    effectiveBalance := 32000000000
+    slashed := false
+    activationEligibilityEpoch := 0
+    activationEpoch := 0
+    exitEpoch := EthCLSpecs.Gloas.Const.farFutureEpoch
+    withdrawableEpoch := EthCLSpecs.Gloas.Const.farFutureEpoch }
+
+/-- The seed state for `isValidIndexedPayloadAttestation_eq_true_iff_checks`:
+64 registered validators, so indices `5` and `9` are in range. -/
+def iPacState [Preset] : EthCLSpecs.Gloas.BeaconState :=
+  let v := iPacValidator
+  let vs : SizzLean.Repr.SSZList EthCLSpecs.Gloas.Validator
+      EthCLSpecs.Gloas.Const.validatorRegistryLimit :=
+    (Array.range 64).foldl (fun xs _ => xs.push v) default
+  { (default : EthCLSpecs.Gloas.BeaconState) with validators := vs }
+
+/-- The seed attestation for `isValidIndexedPayloadAttestation_eq_true_iff_checks`:
+two in-range increasing indices, so every gate holds and the true-side
+conjunction is satisfiable at the seed. The signature is the zero value,
+which the verify-off backend accepts. -/
+def iPacAttestation [Preset] : EthCLSpecs.Gloas.IndexedPayloadAttestation :=
+  let idx : SizzLean.Repr.SSZList EthCLSpecs.Gloas.ValidatorIndex
+      EthCLSpecs.Gloas.Const.ptcSize :=
+    ((default : SizzLean.Repr.SSZList EthCLSpecs.Gloas.ValidatorIndex
+        EthCLSpecs.Gloas.Const.ptcSize).push 5).push 9
+  { attestingIndices := idx, data := default, signature := default }
 
 end EthCLSpecs.TheoremVectors.Seeds.Gloas

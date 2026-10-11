@@ -15,8 +15,9 @@ box lemmas (§7.3), and the theorems with block inputs (§16.2, and decision
 point A's outcome in the plan), so the other `.unsupported` rows read as
 the shape gaps they are. A run that carries a reason writes it in its
 status cell. The theorem list with block inputs follows each table (§16.2's
-closing list); the records-no-format list prints `(none)` until a format
-check fails in a later stage.
+closing list), and the records-no-format list names the record directories
+no registered format accepted, which the exe collects from the records
+tree (§16.2).
 -/
 
 set_option autoImplicit false
@@ -78,10 +79,18 @@ private def forkSection (forkTag : String) (os : Array Outcome) : String :=
          {optCell (r.run.seconds.map toString)} |\n")
   "## " ++ forkTag ++ "\n\n" ++ table ++ blockInputSection os ++ "\n\n"
 
+/-- The records-no-format section (§16.2): one line per record directory no
+format accepted, `(none)` when every record rendered. -/
+private def unformattedSection (paths : Array String) : String :=
+  "## Records no format accepted\n\n" ++
+    (if paths.isEmpty then "(none)\n"
+     else String.intercalate "\n" (paths.toList.map fun p => s!"- `{p}`") ++ "\n")
+
 /-- The report text for every fork with outcomes, fork tags in name order
 (§16.2). The summary counts the theorems with outcomes, the box lemmas,
 and the theorems with block inputs. -/
-def Report.render (forks : Array (String × Array Outcome)) : String :=
+def Report.render (forks : Array (String × Array Outcome))
+    (unformatted : Array String) : String :=
   let total := forks.foldl (init := 0) fun acc (_, os) => acc + os.size
   let boxLemmas := forks.foldl (init := 0) fun acc (_, os) =>
     acc + (os.filter isBoxLemma).size
@@ -92,16 +101,18 @@ def Report.render (forks : Array (String × Array Outcome)) : String :=
       no shape can express them); {withBlocks} theorems with block \
       inputs (§1.2, base source only).\n\n" ++
     String.join (forks.toList.map fun (forkTag, os) => forkSection forkTag os) ++
-    "## Records no format accepted\n\n(none)\n"
+    unformattedSection unformatted
 
 /-- Collect every fork's outcomes from the output tree and write
-`<outDir>/report.md`. Returns the fork sections the report holds. -/
-def Report.write (outDir : System.FilePath) : IO Nat := do
+`<outDir>/report.md`. `unformatted` carries the record directories no
+format accepted, which the exe collects from the records tree (§16.2).
+Returns the fork sections the report holds. -/
+def Report.write (outDir : System.FilePath) (unformatted : Array String) : IO Nat := do
   let forkTags ← Outcome.forks outDir
   let mut forks : Array (String × Array Outcome) := #[]
   for forkTag in forkTags do
     forks := forks.push (forkTag, ← Outcome.readFork outDir forkTag)
-  IO.FS.writeFile (outDir / "report.md") (Report.render forks)
+  IO.FS.writeFile (outDir / "report.md") (Report.render forks unformatted)
   return forks.size
 
 end EthCLLib.TheoremVectors

@@ -12,8 +12,8 @@ demands: the kernel proved `f x = e x` for every `x`, so a disagreement
 between the compiled sides is a compiler, FFI, or serialization defect, and
 both values print.
 
-Stage 2 carries the `.eq` and `.bound` rows; `.iffTrue` lands in stage 3
-and `.runOk` / `.runError` in stage 7. `handles` names the stage each
+Stage 3 carries the `.eq`, `.bound`, and `.iffTrue` rows; `.runOk` and
+`.runError` land in stage 7. `handles` names the stage each
 not-yet-executable shape waits for, and the command reports a skipped run
 with that reason instead of searching a witness it could not record.
 -/
@@ -24,13 +24,12 @@ open Lean
 
 namespace EthCLLib.TheoremVectors
 
-/-- The stage that executes the shape, when stage 2's executor does not.
+/-- The stage that executes the shape, when stage 3's executor does not.
 `none` means the shape runs here. An `.unsupported` statement never
 reaches this test: the reader's reason reports it before phase B. -/
 def Execute.handles? (shape : Shape) : Option String :=
   match shape with
-  | .eq .. | .bound .. => none
-  | .iffTrue .. => some "the `.iffTrue` executor lands in stage 3"
+  | .eq .. | .bound .. | .iffTrue .. => none
   | .runOk .. => some "the `.runOk` executor lands in stage 7"
   | .runError .. => some "the `.runError` executor lands in stage 7"
   | .unsupported _ => none
@@ -47,11 +46,11 @@ def Execute.output (thm : Name) (shape : Shape) (info : ProbeInfo)
       the kernel proved them equal, so this is a compiler, FFI, or \
       serialization defect"
   match shape with
-  | .eq .. | .bound .. =>
-    pure (some (VectorValue.ofRun `output info.outputType
-      r.literal r.outputRoot), none)
+  | .eq .. | .bound .. | .iffTrue .. =>
+    let out ← VectorValue.ofRun `output info.outputType r.literal r.outputRoot
+    pure (some out, none)
   | _ =>
-    -- `Probe.ofStatement` refuses to build these shapes in stage 2; the
+    -- `Probe.ofStatement` refuses to build these shapes in stage 3; the
     -- arms keep the match exhaustive for the later stages
     pure (none, none)
 

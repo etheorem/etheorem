@@ -100,23 +100,3 @@ until the lemmas and the threading land together, so the build stays clean throu
 local-discharge shapes (loop, `size - 1`, `vget`) need no lemma and could land sooner; they
 are grouped into the same pass so the read surface changes once. Every total read is correct
 already; each gains a proof when the pass runs.
-
-## Theorem vectors: a cost guard for the base source on container inputs
-
-The generator's witness-source order (THEOREM_VECTORS_ARCHITECTURE.md §9.2) runs the base
-source before the bit-vector, built, and random sources. On a theorem that
-takes a `BeaconState`, the base source's candidate is the serialized
-`default` state, and running the spec on that state can burn the
-balance-weighted selection's 10,000,000 iteration fuel bound per empty
-committee (`Committees.lean`'s `cbwsAux`; the default state's validator
-set is empty and all-inactive, so no committee ever fills). Stage 2
-worked around this for the window theorems with the `activeState` seed
-(IMPLEMENTATION_NOTES.md, theorem vectors, stage 2), and stage 6's
-`built` source will produce reachable states for the rest, but the base
-source runs first in the fixed order and would still hang on any
-state-input theorem the seeds and builders do not cover. The base source
-needs a cost guard for container inputs: either a wall-clock budget on
-its `check` call, or a rule that a theorem whose inputs reach the state
-container skips the base source unless the state input is seeded. Neither
-is a stage; the guard lands beside whichever source ordering stage 6
-settles on.

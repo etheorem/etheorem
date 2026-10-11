@@ -1,6 +1,7 @@
 import Lean
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Scope
+import EthCLLib.TheoremVectors.Prepare
 import EthCLSpecs.Proofs.Gloas
 import EthCLSpecs.Proofs.Fulu
 import EthCLSpecs.TheoremVectors.Bindings.Gloas
@@ -10,10 +11,13 @@ import EthCLSpecs.TheoremVectors.Bindings.Fulu
 # `EthCLSpecs.Tests.TheoremVectorsPins`: the statement reader's known answers
 
 Spec-half pins for the theorem-vector generator's statement reader
-(`THEOREM_VECTORS_ARCHITECTURE.md` §7; the plan's stage 1, step 9). Ten theorems with known
-shapes run through `Statement.readIn` and `Scope.classify`, and each pin
-checks the reader's answer: target, shape, block inputs, and the input
-names in binder order.
+(`THEOREM_VECTORS_ARCHITECTURE.md` §7; the plan's stage 1, step 9) and, since
+stage 3, its prepare pass (§8). Ten theorems with known shapes run through
+`Statement.readIn` and `Scope.classify`, and each pin checks the reader's
+answer: target, shape, block inputs, and the input names in binder order.
+Three stage-3 acceptance theorems then run through `Prepare.pass`, and
+each pin checks the split's answer: the case count, the sides, and the
+conjunctions' shape-relevant constants.
 
 The ten cover the pin list the plan names: one `.iffTrue`
 (`canBuilderCoverBid_iff`), one `.runOk` in each of its two forms
@@ -167,5 +171,38 @@ run_cmd do
       shape := "unsupported"
       blockInputs := #[]
       inputs := #["state", "epoch"] }
+
+  -- ── The prepare pass's answers for the three stage-3 acceptance
+  -- theorems (§8). Each pin folds inside the reader's telescope scope,
+  -- because the statement and its cases cannot leave it.
+
+  let prepareCases (thm : Name) : CommandElabM (Nat × Array (Option Bool)) :=
+    liftTermElabM do
+      Statement.readIn gloas thm fun ctx => do
+        let stmt ← Scope.classify gloas ctx.stmt
+        let (cases, dropped) ← Prepare.pass stmt
+        unless dropped.isEmpty do
+          throwError s!"pin {thm}: the prepare pass dropped \
+            {dropped.size} note(s): {repr dropped}"
+        return (cases.size, cases.map (·.side))
+  -- the slot-successor bound: one case over the two rewritten hypotheses
+  let (n, sides) ← prepareCases `EthCLSpecs.Proofs.Gloas.getPtcElseOffset_lt_next_slot
+  unless n == 1 && sides == #[none] do
+    throwError s!"pin getPtcElseOffset_lt_next_slot: {n} case(s) with \
+      sides {repr sides}, expected one unsplit case"
+  -- the builder-cover bound: the true side's conjunction is one case, the
+  -- false side's De Morgan is two
+  let (n, sides) ← prepareCases `EthCLSpecs.Proofs.Gloas.canBuilderCoverBid_iff
+  unless n == 3 && sides == #[some true, some false, some false] do
+    throwError s!"pin canBuilderCoverBid_iff: {n} case(s) with sides \
+      {repr sides}, expected three (one per side pair)"
+  -- the payload-attestation gates: one true-side case, one false-side
+  -- case per check
+  let (n, sides) ← prepareCases
+    `EthCLSpecs.Proofs.Gloas.isValidIndexedPayloadAttestation_eq_true_iff_checks
+  unless n == 5 && sides.countP (· == some false) == 4 do
+    throwError s!"pin isValidIndexedPayloadAttestation_eq_true_iff_checks: \
+      {n} case(s) with sides {repr sides}, expected five (one true side, \
+      one per check)"
 
 end EthCLSpecs.Tests.TheoremVectorsPins

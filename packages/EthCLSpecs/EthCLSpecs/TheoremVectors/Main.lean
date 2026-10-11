@@ -42,20 +42,36 @@ def Subcommand.ofString? : String → Option Subcommand
   | "list"   => some .list
   | _        => none
 
-/-- The flag names the subcommand takes: `render` and `check` take all
-four, `report` and `list` take only `--out`. -/
-def Subcommand.flags : Subcommand → List String
-  | .render | .check => ["--fork", "--preset", "--format", "--out"]
-  | .report | .list  => ["--out"]
+/-- The flags the subcommands share. -/
+inductive Flag where
+  | fork
+  | preset
+  | format
+  | out
+  deriving DecidableEq, Repr, Inhabited
 
-/-- The flags the subcommands share. An `out` of `none` means
-`EthCLSpecs.TheoremVectors.outDir`, the path the lakefile pins
-(`THEOREM_VECTORS_ARCHITECTURE.md` §2.3, §15). -/
+/-- Read a flag from its command-line spelling. -/
+def Flag.ofString? : String → Option Flag
+  | "--fork"   => some .fork
+  | "--preset" => some .preset
+  | "--format" => some .format
+  | "--out"    => some .out
+  | _          => none
+
+/-- The flags each subcommand takes: `render` and `check` take all four,
+`report` and `list` take only `--out`. -/
+def Subcommand.flags : Subcommand → List Flag
+  | .render | .check => [.fork, .preset, .format, .out]
+  | .report | .list  => [.out]
+
+/-- The flags a subcommand parsed (`THEOREM_VECTORS_ARCHITECTURE.md` §15).
+`out` defaults to `EthCLSpecs.TheoremVectors.outDir`, the path the lakefile
+pins (§2.3, §15). -/
 structure Options where
   fork   : Option String := none
   preset : Option PresetId := none
   format : Option String := none
-  out    : Option String := none
+  out    : String := EthCLSpecs.TheoremVectors.outDir
   deriving Repr
 
 /-- The usage text, printed on a malformed invocation. -/
@@ -70,10 +86,10 @@ def usage : String :=
 
 mutual
 /-- Parse the flag list: every flag takes exactly one value, and a
-repeated flag keeps its last occurrence. An unknown flag, a missing value,
+repeated flag keeps its first occurrence. An unknown flag, a missing value,
 a value that starts with `--`, or a preset name outside `minimal` /
 `mainnet` fails. -/
-def parseOptions (allowed : List String) : List String → Option Options
+def parseOptions (allowed : List Flag) : List String → Option Options
   | [] => some {}
   | [_] => none
   | flag :: value :: rest =>
@@ -81,29 +97,30 @@ def parseOptions (allowed : List String) : List String → Option Options
     else parseFlag allowed flag value rest
 
 /-- One flag with its value, and the tail still to parse. -/
-def parseFlag (allowed : List String) (flag value : String)
+def parseFlag (allowed : List Flag) (flag value : String)
     (rest : List String) : Option Options :=
-  if flag == "--fork" && allowed.contains "--fork" then
-    (parseOptions allowed rest).map fun o =>
-      { o with fork := o.fork.orElse fun _ => some value }
-  else if flag == "--preset" && allowed.contains "--preset" then
-    match PresetId.ofTag? value with
-    | none => none
-    | some p => (parseOptions allowed rest).map fun o =>
-      { o with preset := o.preset.orElse fun _ => some p }
-  else if flag == "--format" && allowed.contains "--format" then
-    (parseOptions allowed rest).map fun o =>
-      { o with format := o.format.orElse fun _ => some value }
-  else if flag == "--out" && allowed.contains "--out" then
-    (parseOptions allowed rest).map fun o =>
-      { o with out := o.out.orElse fun _ => some value }
-  else none
+  match Flag.ofString? flag with
+  | none => none
+  | some f =>
+    if !allowed.contains f then none
+    else
+      match f with
+      | .fork =>
+        (parseOptions allowed rest).map fun o => { o with fork := some value }
+      | .preset =>
+        match PresetId.ofTag? value with
+        | none => none
+        | some p =>
+          (parseOptions allowed rest).map fun o => { o with preset := some p }
+      | .format =>
+        (parseOptions allowed rest).map fun o => { o with format := some value }
+      | .out =>
+        (parseOptions allowed rest).map fun o => { o with out := value }
 end
 
-/-- The output root for a subcommand: `--out`, or the spec-half root's
-`outDir` constant (§15). -/
-def outRoot (opts : Options) : System.FilePath :=
-  (opts.out.getD EthCLSpecs.TheoremVectors.outDir)
+/-- The output root for a subcommand: the parsed `--out`, or the spec-half
+root's `outDir` constant when the flag is absent (§15). -/
+def outRoot (opts : Options) : System.FilePath := opts.out
 
 /-- The render environment the exe builds: the bindings table from
 `Bindings.lean` (§15). -/
@@ -189,12 +206,31 @@ def readManifest (out : System.FilePath) : IO (Array Rendered) := do
     | .ok rs => return rs
     | .error e => throw (IO.userError s!"cannot read {path}: {e}")
 
+/-- The record directories no registered format accepted (§16.2's list).
+The report subcommand walks the records tree and asks every format's
+`accepts`. -/
+def unacceptedRecords (out : System.FilePath) : IO (Array String) := do
+  let root := Record.dir out
+  unless ← root.isDir do
+    return #[]
+  let mut acc : Array String := #[]
+  for forkEntry in ← root.readDir do
+    unless ← forkEntry.path.isDir do continue
+    for presetEntry in ← forkEntry.path.readDir do
+      let some p := PresetId.ofTag? presetEntry.fileName | continue
+      unless ← presetEntry.path.isDir do continue
+      for (path, rb) in ← Record.readAll out forkEntry.fileName p do
+        unless Formats.all.any (fun f => f.accepts rb.record) do
+          acc := acc.push path.toString
+  return acc
+
 /-- Run a parsed subcommand. -/
 def runSub (sc : Subcommand) (opts : Options) : IO UInt32 := do
   let out := outRoot opts
   match sc with
   | .report =>
     let nForks ← EthCLLib.TheoremVectors.Report.write out
+      (← unacceptedRecords out)
     IO.println s!"theorem_vectors report: wrote {out}/report.md \
       ({nForks} forks)"
     return 0

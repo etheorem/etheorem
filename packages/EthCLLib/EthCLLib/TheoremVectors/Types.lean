@@ -26,6 +26,26 @@ register_option theorem_vectors.outDir : String := {
   descr    := "the output root the theorem-vector generator writes into"
 }
 
+/-- The DNF split's disjunct cap (`THEOREM_VECTORS_ARCHITECTURE.md` §8.2, the
+option table in §14.4). A theorem whose unfolded hypotheses split into more
+disjuncts than this falls back to one case with the unsplit hypothesis, and
+the pass reports the fallback (§8.2). -/
+register_option theorem_vectors.maxCases : Nat := {
+  defValue := 16
+  descr    := "the cap on the prepare pass's DNF disjuncts per theorem"
+}
+
+/-- The heartbeat budget one theorem's run gets (`THEOREM_VECTORS_ARCHITECTURE.md`
+§14.3, the option table in §14.4). The command sets it around each run, so
+one line's solver calls and compiled-read evaluations never share a budget
+with the theorems beside it. -/
+register_option theorem_vectors.maxHeartbeats : Nat := {
+  defValue := 1000000
+  descr    := "the heartbeat budget the command sets around each run, in \
+    the units `set_option maxHeartbeats` takes (the context value is this \
+    times 1000)"
+}
+
 namespace EthCLLib.TheoremVectors
 
 /-! ## Presets -/
@@ -144,10 +164,11 @@ def WitnessSourceTag.ofTag? : String → Option WitnessSourceTag
 /-- Why a case produced no vector (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4). `unsat` means
 the solver proved the hypotheses vacuous, `notFound` that every source ran
 out, and `outOfScope` that a block input is in play and the base source
-failed (§1.2). -/
+failed (§1.2). A `notFound` carries the details the sources reported: the
+atoms the solver abstracted, an input type outside its domain (§9.4). -/
 inductive Failure where
   | unsat
-  | notFound (tried : Array WitnessSourceTag)
+  | notFound (tried : Array WitnessSourceTag) (details : Array String := #[])
   | outOfScope (inputs : Array Name)
   deriving BEq, Repr, Inhabited
 
@@ -204,8 +225,8 @@ def hexBytes? (s : String) : Option ByteArray :=
   else none
 
 /-- The JSON forms of the payload (`THEOREM_VECTORS_ARCHITECTURE.md` §12.2): an SSZ value
-writes its root as `0x…`, a scalar its literal. The side file's name rides
-the value's own `name` field, so neither form repeats it. -/
+writes its root as `0x…`, a scalar its literal. The side file's name comes
+from the value's own `name` field, so neither form repeats it. -/
 instance : ToJson ValueData where
   toJson
     | .ssz root => Lean.Json.mkObj [("root", Lean.Json.str (hexOf root))]

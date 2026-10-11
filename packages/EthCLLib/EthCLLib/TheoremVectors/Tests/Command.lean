@@ -9,8 +9,10 @@ import EthCLLib.PySpecTests.Interface
 
 Build-gate checks for the command surface (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), over
 the toy fork `EthCLLib.Tests.InheritanceReplay.Base`: one line of each
-kind, with the outcomes read back and asserted, and the two `#guard_msgs`
-rejections (a stale `skip`, a duplicated named line).
+kind, with the outcomes read back and asserted, and the `#guard_msgs`
+rejections (a `skip` below the clause that ran its theorem, a stale
+`skip`, a named line below a clause that ran its theorem, a named line
+and a skip line on one theorem, and a duplicated named line).
 
 The scratch output tree lives under this package's `.lake/build`, so the
 gitignore carries it and the final `run_cmd` removes it.
@@ -49,12 +51,14 @@ open EthCLLib.TheoremVectors
 
 theorem_vectors_fork EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding
 
+-- §14.3's positional order: the named lines and the `skip` lines precede
+-- the discovery clauses, so the clauses never run an excluded theorem.
+theorem_vectors! callee_eq presets minimal
+theorem_vectors skip callee_skipped "covered by callee_eq"
+
 theorem_vectors characterized
 theorem_vectors tagged
 theorem_vectors survey
-
-theorem_vectors! callee_eq presets minimal
-theorem_vectors skip callee_skipped "covered by callee_eq"
 
 namespace EthCLLib.TheoremVectors.Tests.Command
 
@@ -99,15 +103,38 @@ run_cmd do
   unless files.size == 4 do
     throwError s!"toy outcomes: {files.size} files, expected exactly 4"
 
+-- Two named lines for one theorem are an error. The guard sits first on
+-- purpose: under a record-then-run pass the rejected line would stay in
+-- the store and every later guard would fail with this message instead
+-- of its own.
+/-- error: theorem_vectors: two named lines select `EthCLLib.Proofs.Base.callee_eq`; one theorem runs once (§14.3) -/
+#guard_msgs (error) in
+theorem_vectors callee_eq
+
+-- A `skip` line below a discovery clause that already ran its theorem is
+-- an error (§14.3): the clause's run came without the exclusion.
+/-- error: theorem_vectors: `EthCLLib.Proofs.Base.callee_touched` already ran under a discovery clause above this skip line; move the skip line above the discovery clauses (§14.3) -/
+#guard_msgs (error) in
+theorem_vectors skip callee_touched "covered above"
+
 -- A `skip` of a theorem no discovery clause selects is an error.
 /-- error: theorem_vectors: `skip EthCLLib.TheoremVectors.Tests.Command.unrelated` selects a theorem no discovery clause selects (§14.3) -/
 #guard_msgs (error) in
 theorem_vectors skip EthCLLib.TheoremVectors.Tests.Command.unrelated "stale"
 
--- Two named lines for one theorem are an error.
-/-- error: theorem_vectors: two named lines select `EthCLLib.Proofs.Base.callee_eq`; one theorem runs once (§14.3) -/
+-- A named line after a discovery clause that already ran its theorem is
+-- an error (§14.3): the discovery run had no seeds and warned. The
+-- survey clause ran `callee_survey` above, so the named line here must
+-- move up.
+/-- error: theorem_vectors: `EthCLLib.Proofs.Base.callee_survey` already ran under a discovery clause above this line; move the named line above the discovery clauses (§14.3) -/
 #guard_msgs (error) in
-theorem_vectors callee_eq
+theorem_vectors callee_survey
+
+-- A named line and a skip line for one theorem contradict: the skip
+-- would overwrite the named run's outcome (§14.3).
+/-- error: theorem_vectors: `EthCLLib.Proofs.Base.callee_eq` has a named line and a skip line; one or the other (§14.3) -/
+#guard_msgs (error) in
+theorem_vectors skip callee_eq "covered by the named line"
 
 -- Remove the scratch output tree.
 run_cmd do

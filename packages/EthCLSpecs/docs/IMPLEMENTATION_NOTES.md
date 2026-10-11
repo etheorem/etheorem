@@ -1182,9 +1182,10 @@ function format, and the search wiring, against
   `default` inputs with source `base`. Stage 6's `built` source inherits
   the fact: §9.2's source order runs the base source before the built
   one, so a state-input theorem whose `default` run burns the fuel bound
-  would hang the search before a builder ever ran; the base source needs
-  a cost guard for container inputs, or the built source moves ahead of
-  it. `FUTURE_WORK.md` tracks that guard.
+  would hang the search before a builder ever ran. §9.4's state rule now
+  answers it: neither the base source nor the seed fill proposes
+  `default` for the binding's state type, and the `FUTURE_WORK.md` entry
+  on a cost guard is retired.
 
 - **The seed grammar splits into seeded and seedless rules.** §14.3's
   grammar sketches one `theorem_vectors[!] <ident> [with …]` form. An
@@ -1203,18 +1204,22 @@ function format, and the search wiring, against
   `boundRunResult`), and the term is evaluated once per statement and
   preset with the case index as a runtime argument.
 
-- **One `ScalarCodec` class fronts the wire encoding, and `Fin` rides
+- **One `ScalarCodec` class fronts the wire encoding, and `Fin` uses
   the `uintN 64` little-endian encoding of `Fin.val`.** §9.1 sends every
   input across the boundary as SSZ bytes, but a `Fin`-typed input (the
   window offset of `initializePtcWindow_lt`) has no `SSZRepr` instance
   and cannot: a total decode from bytes cannot respect `Fin`'s bound.
-  The codec carries `encode` / `decode` / `default` per type; `Fin n`'s
-  codec takes the remainder and proves the bound with `Nat.mod_lt`,
-  which is why the `n = 0` case answers `none`. The encoding is the same
-  scalar family §9.4's bit-vector source puts `Fin n` in. `default` is a
-  codec field rather than an `Inhabited` instance because `Fin`'s
-  default needs `0 < n` and no `NeZero (3 * slotsPerEpoch)` exists to
-  synthesize; the codec's own `n` pattern match carries the proof.
+  The codec carries `encode` / `decode` / `default` per type. Both
+  decodes are strict, and the check reads a failed decode as `false`
+  (§9.3), so a corrupt record cannot pass a value as in range. The
+  `SSZRepr` decode answers `none` unless the shape decode consumed the
+  whole side file. `Fin n`'s decode answers `none` for a value at or
+  above `n`, and for any byte string that is not exactly eight wide.
+  The encoding is the same scalar family §9.4's bit-vector source puts
+  `Fin n` in. `default` is a codec field rather than an `Inhabited`
+  instance because `Fin`'s default needs `0 < n` and no
+  `NeZero (3 * slotsPerEpoch)` exists to synthesize; the codec's own
+  `n` pattern match carries the proof.
 
 - **`ProbeResult` carries the inputs' literals and splits the roots.**
   §5.5's sketch has `output`, `expected`, `agree`, and one `roots` list.
@@ -1268,13 +1273,26 @@ function format, and the search wiring, against
   `check` runs the registry over the rendered vectors and exits 0 until
   the pyspec format's `runCase` consumer lands in stage 7.
 
-- **The record JSON's field names differ from §12.2's sketch in three
-  places.** The structure's field is `thm`, not `theorem` (a Lean
-  keyword), the case index writes `case`, and the payload nests under
+- **The record JSON's field names differ from §12.2's sketch in two
+  places.** The case index writes `case`, and the payload nests under
   `value`, because the scalar's literal and the container's root share
   one field slot (§12.2 sketches flat `ssz` / `root` / `scalar` keys
-  beside the name). The record reader and writer agree with each other;
-  a consumer reads records through neither.
+  beside the name). The record's theorem field spells `«theorem»` in Lean,
+  a keyword, and the derived JSON writes the wire spelling §12.2 fixes.
+  The record reader and writer agree with each other; a consumer reads
+  records through neither.
+
+- **The wrong-expected test's subject is a `def` with an
+  `implemented_by` implementation.**
+  The plan's stage-2 step 12 sketches a wrong expected value built through
+  an `opaque`; an opaque cannot serve, because the kernel never unfolds it
+  and so can prove no wrong equality about it, and a false axiom would
+  put an unsound constant in the environment. The test's `toyWrongFun`
+  carries the kernel body `x + 4` and an `implemented_by` implementation
+  `x + 3`: the kernel proves `toyWrongFun x = x + 4` with `rfl`, and the
+  compiled code the probe runs answers `x + 3`, which is the
+  compiler-defect class the agreement check exists for, with no axiom in
+  the environment.
 
 - **The function format accepts only records with a target.** §13.3 says
   the format accepts every record, but its `function` field names the
@@ -1291,3 +1309,156 @@ function format, and the search wiring, against
   and the render and check passes hand the rendered paths over through
   `<out>/formats/manifest.json`, so §13.2's "check receives what render
   returned" holds across the two subcommands.
+
+## Theorem vectors, stage 3
+
+- **The base source stays out of a seeded line's source list.** §9.2's
+  fixed order puts base between seed and bit-vector. A seeded line's
+  `default` candidate ignores the author's chosen inputs, which is the
+  very reason §9.2 gives for running seed first, so the command assembles
+  seed then bit-vector for a seeded line, base then bit-vector for a
+  seedless one, and base alone for a block-input theorem. §9.4's seed
+  path already ends at "hands the partial assignment to the bit-vector
+  source"; base was never in it.
+
+- **A seed the check rejects answers per case, and the build error is
+  line-level.** §18 makes a failing seed a build error, written when a
+  theorem prepared one case. A multi-case theorem's seed may satisfy the
+  case it was written for while another disjunct rejects it, so the seed
+  source answers `nothing` for the cases it fails, and the command errors
+  only when a fully-covering seed wins no case of the run. A partially
+  covering seed carries no claim of that strength.
+
+- **The bit-vector source's seed handoff evaluates the seeded reads in
+  compiled code over a coupled-scalar grid.** §9.4 says the seed source
+  "hands the partial assignment to the bit-vector source for the rest",
+  and stage 4 stages `reads` for the random source's version of the same
+  step. The handoff needs the reads now: a seeded hypothesis such as
+  `coverBidState.builders[builderIndex]!.balance` couples a scalar with
+  the seeded state, and no source can solve it while the read stays
+  symbolic. The source fixes each coupled scalar (one that co-occurs
+  with a seeded input in a hypothesis) over a bounded value grid, 64
+  values per scalar capped at 128 fixed points per case, evaluates each
+  fixed point's closed seeded reads through `evalExpr`, and hands the
+  residual formula over the free scalars to `bvDecide'`. The probe's
+  `reads` field stays empty until stage 4, where the random source
+  reuses this module's walk. Grid values are the small values a scalar
+  index into a seeded container takes in practice; a coupled scalar
+  beyond the grid falls to a later source or a seed.
+
+- **A per-grid-point `unsat` is not the case's answer.** §9.4 returns
+  `Failure.unsat` when the solver proves `¬P`, which stops the search.
+  Under the coupled grid, `¬P` is proven only at one fixed point of the
+  coupled scalars, so the source continues the grid and answers
+  `nothing` when every point fails. A seeded theorem whose residual
+  formula carries no coupled scalar stays in the same position: its
+  reads hold the seed's values, so an `unsat` there is a fact about one
+  seed, and the source answers `nothing`. Only the seedless pure scalar
+  solve, where the formula carries the whole case, returns `unsat`.
+  Inside the grid the source also runs the check on each candidate
+  before it returns, so a rejected point moves the walk to the next
+  grid point instead of ending it.
+
+- **The DNF split is a structural walk, not a simp pass.** §8.2 puts the
+  unfolded conjunction in disjunctive normal form. The walk pushes `∨`
+  outward and applies De Morgan over `∧` one `¬` at a time, and it never
+  enters a quantifier, so an `Array.all` gate stays one conjunct and a
+  gate-per-check theorem splits per gate, not per element.
+
+- **The unfold's `UInt64` bridge lemmas are the pass's own restatements.**
+  §8.1 orients the proofs' `Nat`-level bridge lemmas back toward
+  `UInt64` form. The four restatements live in `Prepare.lean`
+  (`uint64_toNat_lt_iff` and siblings) so the simp set carries the
+  rewritten direction directly; `a.toNat + n = b.toNat` for `n > 1` has
+  no sound `UInt64` image (the addition can overflow) and stays out of
+  reach, as the plan's risk note predicts.
+
+- **The prepare pass's `simp only` is per hypothesis and recoverable.**
+  The pass unfolds with the equation lemmas of the captured spec
+  functions that hypothesis names, so a theorem whose hypotheses name no
+  fork function pays nothing. A simp failure leaves the hypothesis as it
+  was; the split and the decidability check then answer on the ununfolded
+  form, which is what the report shows.
+
+- **The unfold only takes spec functions with a small body.** §8.1 says
+  the pass unfolds every captured spec predicate the hypothesis names. A
+  forkdef whose body folds over a state container (a pending-balance sum)
+  unfolds into a term whose simp walk spends the command's heartbeats
+  without exposing one comparison, and a `deterministic timeout` is not
+  something the pass can catch. The pass therefore unfolds only
+  definitions under 100 expression nodes; the big ones reach the solver
+  through the bit-vector source's compiled evaluation instead, which
+  grounds the whole closed call in one `evalExpr`. `computeEpochAtSlot`
+  (a division) unfolds; `getPendingBalanceToWithdrawForBuilder` (two
+  folds) does not. The plan's "unfolding blows up" risk names the
+  phenomenon; this is the guard for it.
+
+- **The search's read grounding covers every closed scalar subterm.**
+  What began as §9.4's seeded-read substitution grew one step: preset
+  constants (`UInt64.ofNat slotsPerEpoch`) and crypto gates under the
+  verify-off backend ground the same way, because the solver's own
+  preprocessing treats an un-reduced constant as an opaque atom and
+  returns a spurious model around it (the plan's stage-3 risk note
+  predicted the symptom; the constant was the cause). The grounding runs
+  twice per hypothesis, before and after the unfold, so the unfold's
+  products ground too. A subterm under a lambda carries loose bound
+  variables and stays.
+
+- **The bit-vector source poses its goal in a context of the fresh
+  scalars alone.** §9.4 poses `¬P`. The goal is built with
+  `mkFreshExprMVarAt` over a local context holding only the free
+  scalars: `bv_decide` reflects every proposition it finds in the goal's
+  context, and the reader telescope's own hypotheses are the
+  un-substituted forms, which would hand the solver a formula about
+  variables the candidate never carries.
+
+- **Each run carries its own heartbeat budget from an option.** One
+  line's search runs up to 128 solver calls and two rounds of
+  compiled-read evaluations, which spends the default per-command budget
+  many times over. The command sets `theorem_vectors.maxHeartbeats`
+  (default 1000000) around each run by writing both `Core.Context`
+  reader fields, `maxHeartbeats` times 1000 and `initHeartbeats` at the
+  run's start, so the budget is per run and the generator file sets no
+  `set_option`. An earlier revision raised the file's `maxHeartbeats`
+  instead and claimed a reader-field change inside the run could not
+  raise it; that claim was wrong, and the reader fields take the change.
+
+- **The witness sources' `applies` reads the search context.** §9.2's
+  sketch types `applies : Statement → Case → Bool`. §9.4's state rule is
+  a statement of the state test over the input types, and it needs the
+  binding's `stateType`, which only the `SearchCtx` carries, so the seam
+  is `applies : SearchCtx → Statement → Case → Bool`. The base source's
+  state test and the seed source's two tests (seeds present, no unseeded
+  state input) sit there, where the search loop reads them.
+
+- **A source's `nothing` carries a detail, and `notFound` reports it.**
+  §9.2 says `notFound` names every source that ran; the reason also names
+  what the sources learned: the atoms the solver abstracted when a model
+  was spurious, and a `Fin`-typed input the solver's domain does not take
+  yet (§9.4 stages the bridge in stage 4). `SearchStep.nothing` carries
+  the detail and `Failure.notFound` collects it; the report line prints
+  it beside the source list.
+
+- **The record's `type` fields carry the rendered type.** §12.2's example
+  shows constants (`EthCLSpecs.Gloas.BeaconState`), and the stage-2 build
+  kept only the head constant, which writes `Fin` for the window offset
+  and `Vector` for the window entry. `ProbeInfo` stores each type rendered
+  with the preset's constants substituted, and `VectorValue.type` is that
+  string, so the client-facing field names the spec type.
+
+- **The generator's named lines and skip lines precede its discovery
+  clauses.** §14.3's positional order: each line elaborates as its own
+  command, so a discovery clause above a named line runs the theorem once
+  without the seeds and warns, and the named line runs it again; above a
+  skip line, the clause's pass runs the theorem and the skip can only
+  replace the outcome. A named line or a skip line whose theorem a
+  discovery clause already ran is an error whose message names the fix.
+  A skip validates against the potential selection, the tags of §14.1
+  and the fork's proof namespace. The line can sit above the clauses it
+  excludes from, and a stale exclusion is still visible.
+
+- **Each run wipes its theorem's record directory first.** §14.3's
+  precedence lets a named line re-run a theorem a discovery clause
+  already ran in an earlier same-file pass; the cases the override does
+  not reproduce must not linger, so `runPreset` removes
+  `records/<fork>/<preset>/<thm>/` before its cases search.

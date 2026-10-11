@@ -49,12 +49,11 @@ root. -/
 def valueYaml (v : VectorValue) (bytes : ByteArray) : Yaml :=
   match v.value with
   | .scalar lit => literalYaml lit
-  | .ssz root =>
-    .map #[("ssz", .hex bytes), ("root", .str (hexOf root))]
+  | .ssz root => .map #[("ssz", .hex bytes), ("root", .hex root)]
 
 /-- The file's name for a case, `<thm>_<case>[_t|_f].yaml` (§13.3). -/
 def Formats.functionFileName (r : VectorRecord) : String :=
-  r.thm.toString ++ "_" ++ toString r.caseIndex ++
+  r.«theorem».toString ++ "_" ++ toString r.caseIndex ++
     (match r.side with
      | some true => "_t"
      | some false => "_f"
@@ -68,7 +67,7 @@ def Formats.function : VectorFormat where
   name := "function"
   accepts r := r.target.isSome
   render env r inputBytes outputBytes := do
-    let targetDir := (r.target.getD r.thm).toString
+    let targetDir := (r.target.getD r.«theorem»).toString
     let dir := env.outDir / "formats" / "function" / r.fork / r.preset.tag /
       targetDir
     IO.FS.createDirAll dir
@@ -83,8 +82,8 @@ def Formats.function : VectorFormat where
       | some v, none => valueYaml v (ByteArray.mk #[])
     let doc : Yaml :=
       .map #[
-        ("theorem", .str r.thm.toString),
-        ("function", .str (r.target.getD r.thm).toString),
+        ("theorem", .str r.«theorem».toString),
+        ("function", .str (r.target.getD r.«theorem»).toString),
         ("fork", .str r.fork),
         ("preset", .str r.preset.tag),
         ("shape", .str r.shape.tag),
