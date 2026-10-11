@@ -245,7 +245,7 @@ same command. Phase C runs over the records of every run, in the exe.
 ```
 generator file  (theorem_vectors_fork header, discovery clauses, named lines)
         │
- A0 Select    read the whole file; resolve discovery, overrides, skips   §14.3
+ A0 Select    read the whole file; resolve discovery, survey, overrides, skips   §14.3
         │
 ════════╪═══ Phase A: per theorem, at elaboration time ═══════════════════════
         ▼
@@ -646,6 +646,14 @@ After the telescope, the body is matched in this order:
 6. `LT.lt lhs b` → `.bound lhs .lt b`; `LE.le lhs b` → `.bound lhs .le b`
 7. anything else → `.unsupported` with the head constant in the reason
 
+Rule 7 names one family: a conclusion whose head is a framework predicate
+under `EthCLLib.Proofs` (`KeepsUncached`, `KeepsUncachedFrom`,
+`ReturnsUncached`) is a box lemma. It states a fact about the box
+discipline of a spec function, and no input and output pair expresses it.
+The reason reads `box lemma: <head>`, and the report counts these apart
+from the other `.unsupported` reasons (§16.2), because they are not a gap
+in the shape set.
+
 The `.runOk` match requires `pre` to be one of the inputs and `post` to be a
 closed term over the inputs. A theorem whose post-state is an existential
 (`∃ s', …`) is `.unsupported`, because the executor cannot evaluate `e x`.
@@ -666,6 +674,7 @@ fields of a structure type and into the element type of `Vector`, `Array`,
 | Finding | Reported as |
 | --- | --- |
 | `.unsupported` shape | a skip with the reason, in the outcome line |
+| a box lemma (§7.3) | a skip with the reason `box lemma: <head>`, counted apart |
 | non-empty `blockInputs` | scope restriction: only the base source runs |
 | an `.other` instance binder | a skip: the command cannot bind an unknown seam |
 | a function-typed input | a skip |
@@ -1387,6 +1396,9 @@ theorem_vectors_fork Bindings.gloas
 theorem_vectors characterized
 theorem_vectors tagged
 
+-- the survey: every other public theorem of the fork, read and listed
+theorem_vectors survey
+
 -- named lines: overrides and additions
 theorem_vectors canBuilderCoverBid_iff with (state := Seeds.Gloas.coverBidState)
 theorem_vectors! processBuilderPendingPayments_run presets minimal mainnet
@@ -1399,6 +1411,7 @@ Grammar:
 ```
 theorem_vectors characterized [presets <presetId>+]
 theorem_vectors tagged        [presets <presetId>+]
+theorem_vectors survey
 theorem_vectors[!] <ident> [with (<input> := <term>)+] [presets <presetId>+]
 theorem_vectors skip <ident> <string>
 ```
@@ -1408,6 +1421,12 @@ theorem_vectors skip <ident> <string>
   `@[theorem_vectors]` theorem under the fork's proof namespace. Each runs
   with the default budget, the default seeds (none), and the clause's preset
   list.
+- `survey` takes every public theorem under the fork's proof namespace that
+  no other clause or line selects, runs phase A alone (§3), and writes an
+  outcome line with status `unselected`. It never searches a witness and
+  never writes a record. It exists so the report shows the whole corpus: a
+  reader sees which theorems the lines leave out and what the reader made
+  of them. It takes no `presets` clause, because nothing runs per preset.
 - `<ident>` resolves to a theorem in the environment, under the fork's proof
   namespace or fully qualified.
 - `with` names seeds: one term per input, `[Preset]`-generic, elaborated at
@@ -1422,7 +1441,7 @@ theorem_vectors skip <ident> <string>
 wins over discovery for the same theorem, and one theorem runs once, so an
 override never produces a second record set. Two named lines for one theorem
 are an error. The outcome line records the origin: `named`, `tagged`,
-`characterized`, or `skipped`.
+`characterized`, `skipped`, or `survey`.
 
 **Order.** Named lines run first, in file order, then the discovered set in
 name order. A discovery clause before the named lines is fine; precedence
@@ -1513,8 +1532,11 @@ The command writes one file per theorem:
       "reason": "notFound after base, bitVec, built, random" } ] }
 ```
 
-`origin` is one of `named`, `tagged`, `characterized`, `skipped`. `status` is
-one of `written`, `skipped`, `outOfScope`, `unsat`, `unsupported`. `hint` is
+`origin` is one of `named`, `tagged`, `characterized`, `skipped`, `survey`.
+`status` is one of `written`, `skipped`, `outOfScope`, `unsat`,
+`unsupported`, `unselected`. A `survey` line has one run with status
+`unselected`, or `unsupported` with the reader's reason, and no preset
+field. `hint` is
 one of `replayed`, `stale-replayed`, `failed`, `stale-failed`, `missing`,
 `ignored`. The file is JSON (§12.3).
 
@@ -1527,8 +1549,11 @@ one table per fork:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
 followed by a list of records no format accepted and a list of theorems with
-block inputs. The report is the review surface: a reader sees which theorems
-produce vectors, which do not, and why.
+block inputs. The summary line above the tables counts the theorems with
+outcomes, the box lemmas (§7.3), and the theorems with block inputs, so
+the other `.unsupported` rows read as the shape gaps they are. The report
+is the review surface: a reader sees which theorems produce vectors, which
+do not, and why.
 
 ---
 
@@ -1676,6 +1701,12 @@ matches, so a missing arm is a build error.
   them, and the output tree caches their bytes.
 - **Probe.** The compiled face of one statement at one preset: check, sample,
   shrink, reads, seeds, build, run.
+- **Survey.** The generator clause that reads every public theorem the
+  other lines leave out and lists it with status `unselected`. It never
+  searches a witness.
+- **Box lemma.** A theorem whose conclusion is a framework predicate about
+  the box discipline (`KeepsUncached`, `ReturnsUncached`). No vector
+  expresses it, and the report counts it apart.
 - **Binding.** The `ForkBinding` value through which the framework half sees
   a fork.
 - **Record.** The general vector on disk: `record.json` plus SSZ files.

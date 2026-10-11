@@ -1,10 +1,11 @@
 # Theorem vectors: implementation plan
 
 This file sequences the work that builds the generator
-`THEOREM_VECTORS_ARCHITECTURE.md` describes. Each stage ends in a green build, a committed diff, and an
-acceptance check a reviewer can run. Section numbers in parentheses refer to
-`THEOREM_VECTORS_ARCHITECTURE.md`. The stages are in dependency order, and a later stage
-never reopens an earlier one's acceptance.
+`THEOREM_VECTORS_ARCHITECTURE.md` describes. Each stage ends in a green build,
+a committed diff, and an acceptance check a reviewer can run. Section numbers
+in parentheses refer to `THEOREM_VECTORS_ARCHITECTURE.md`. The stages are in
+dependency order, and a later stage never reopens an earlier one's
+acceptance.
 
 Contents:
 
@@ -35,7 +36,7 @@ Gloas gets the first binding, generator file, and builder catalog. Fulu and
 Heze follow in stage 9, once the stage 1 report shows which of their
 theorems are in scope.
 
-The block-input rule (`ARCHITECTURE.md` §1.2) drops these files from the
+The block-input rule (`THEOREM_VECTORS_ARCHITECTURE.md` §1.2) drops these files from the
 corpus today:
 
 | Fork | File | Block input |
@@ -66,7 +67,7 @@ hypotheses accept a `default` block gets a vector that way.
   `EthCLSpecs` imports anything under `*.TheoremVectors`. The one exception
   is the marker attribute in `EthCLLib.Internal.ProofLedger` (stage 1).
 - **Every module opens with a module docstring** that names the section of
-  `ARCHITECTURE.md` it implements, sets `autoImplicit false`, and wraps its
+  `THEOREM_VECTORS_ARCHITECTURE.md` it implements, sets `autoImplicit false`, and wraps its
   declarations in `EthCLLib.TheoremVectors` or `EthCLSpecs.TheoremVectors`.
 - **No `sorry`, no committed `#eval`.** Assertions are `#guard` or `example`.
 - **Tests sit beside the code.** Framework-half tests under
@@ -74,7 +75,7 @@ hypotheses accept a `default` block gets a vector that way.
   pins under `EthCLSpecs/Tests/TheoremVectorsPins.lean` run over real
   theorems with known answers.
 - **Deviations go in `IMPLEMENTATION_NOTES.md`**, under a theorem-vectors
-  heading, in the same commit that makes them. `ARCHITECTURE.md` changes
+  heading, in the same commit that makes them. `THEOREM_VECTORS_ARCHITECTURE.md` changes
   only when the design changes, in its own commit, with the reason.
 - **The manifest moves with the dependency.** The stage that adds the
   `plausible` require runs `lake update` and commits the root
@@ -163,7 +164,7 @@ outside the repository.
 ## Stage 1: reader, selection, report
 
 **Goal.** Every public theorem in `Proofs/` is read, classified, and listed
-in a report. No witness is searched. This is the cheap probe that sizes the
+in a report. No witness is searched. This is the cheap pass that sizes the
 rest.
 
 **Steps.**
@@ -234,6 +235,14 @@ on disk, the record reads back, and the function format renders it.
 10. `Seeds/Gloas.lean` with one seed, and the named lines in
     `Generators/Gloas.lean` for the acceptance theorems.
 11. `Command.lean`: phases B1 through B8 wired end to end for one preset.
+    From decision point A: `Statement.lean` writes the box-lemma reason
+    (§7.3), `Report.lean` writes the summary counts (§16.2), and
+    `Generators/Gloas.lean` carries `skip` lines with reasons for the four
+    existentials (`initiateBuilderExit_run_inRange` and its three
+    variants). The stage-1 `probe` clause becomes `survey` (§14.3): the
+    same selection, phase A alone, status `unselected` in place of
+    `pending`, no `presets` clause, origin `survey`. The `pending` status
+    goes away with it, since every run now has a real status.
 12. Tests: a toy fork binding under `EthCLLib/TheoremVectors/Tests/` with
     two theorems, one `.eq` over `UInt64` and one `.bound`, run through the
     probe and the record round trip. A pin that a deliberately wrong
@@ -441,6 +450,17 @@ read-back, or a failed pyspec check.
 **A, after stage 1.** If more than half of the in-scope theorems come out
 `.unsupported`, the `Shape` set grows before stage 2 starts. Theorems with a
 block input do not count toward that half.
+
+*Outcome, from the stage 1 report (96 theorems: 8 Fulu, 49 Gloas, 39
+Heze).* 50 theorems have no block input. 23 of them are `.unsupported`,
+and 17 of the 23 are box lemmas (`KeepsUncached`, `ReturnsUncached`),
+which no shape can express. Among the 33 that remain, 6 are
+`.unsupported`: 4 existentials over a run's result, 1 function-typed
+input, 1 unknown instance seam (`FcMap`). The shape set does not grow.
+Stage 2 adds the box-lemma reason (§7.3) and the report's summary counts
+(§16.2), and the generator files `skip` the existentials with reasons.
+The `FcMap` seam stays unbound: every theorem that binds it also takes a
+`Store`, so §1.2 puts it out of scope before the seam matters.
 
 **B, during stage 4.** If the generic `SampleableExt` instance does not fall
 out of SizzLean's type description, stop and choose between hand-written
