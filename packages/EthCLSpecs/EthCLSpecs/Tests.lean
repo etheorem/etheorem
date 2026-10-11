@@ -3,6 +3,7 @@ import EthCLSpecs.Tests.FuluForkChoicePins
 import EthCLSpecs.Tests.GloasForkChoicePins
 import EthCLSpecs.Tests.HezeCommitteesPins
 import EthCLSpecs.Tests.HezeForkChoicePins
+import EthCLSpecs.Tests.TheoremVectorsPins
 import EthCLSpecs.Tests.WalkingSkeleton
 
 /-!

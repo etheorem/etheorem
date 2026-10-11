@@ -6,7 +6,7 @@ import EthCLLib.PySpecTests.Interface
 # `EthCLLib.TheoremVectors.ForkBinding`: the fork binding seam
 
 `ForkBinding` is the one type through which the framework half sees a fork
-(`ARCHITECTURE.md` §6). It plays the role `ForkInterface` plays for the
+(`THEOREM_VECTORS_ARCHITECTURE.md` §6). It plays the role `ForkInterface` plays for the
 pyspec runner: a fork supplies one value, and the generator consumes it. A
 new fork needs one binding and one generator file, with no edit in the
 framework half.
@@ -23,7 +23,7 @@ open Lean
 
 namespace EthCLLib.TheoremVectors
 
-/-- The instance constants one preset fixes (`ARCHITECTURE.md` §6). -/
+/-- The instance constants one preset fixes (`THEOREM_VECTORS_ARCHITECTURE.md` §6). -/
 structure PresetInstances where
   /-- The fork's `Preset` value for the entry, `EthCLSpecs.Gloas.minimal`. -/
   preset : Name
@@ -31,7 +31,7 @@ structure PresetInstances where
   config : Name
   deriving Inhabited, Repr
 
-/-- The fork facts the generator runs on (`ARCHITECTURE.md` §6). One value
+/-- The fork facts the generator runs on (`THEOREM_VECTORS_ARCHITECTURE.md` §6). One value
 per fork, written in the spec half and read with `evalConst`. -/
 structure ForkBinding where
   /-- The fork namespace, `EthCLSpecs.Gloas`. The reader checks a theorem's

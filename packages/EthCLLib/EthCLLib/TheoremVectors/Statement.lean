@@ -1,0 +1,485 @@
+import Lean
+import EthCLLib.TheoremVectors.Types
+import EthCLLib.TheoremVectors.ForkBinding
+import EthCLLib.Internal.Capture
+
+/-!
+# `EthCLLib.TheoremVectors.Statement`: the statement reader
+
+The reader turns a theorem's type into a `Statement` (`THEOREM_VECTORS_ARCHITECTURE.md` §7):
+the binder walk with its three-way classification (§7.1), target discovery
+through the capture extension (§7.2), and shape matching over the conclusion
+(§7.3, in that section's order). The reader keeps every instance binder free;
+the generator command fixes them per preset later.
+
+The scope walk over input types lives in `Scope.lean` (§7.4); the reporting
+folds of §7.5 split the same way. The unknown-instance fold fires here,
+because §7.1 already classified the binder. The function-input fold fires in
+`Scope.lean`, because only the scope walk sees input types.
+
+Two readings deviate from the sketches and carry their reasons:
+
+- `target` is an `Option Name`. §7.2 says a conclusion with no spec function
+  on its left side is `.unsupported`, but `getPtcElseOffset_lt_next_slot` is
+  exactly that theorem, and the plan's stage 3 acceptance makes it write a
+  vector. The walk still fills `target` when it finds a spec function, and a
+  theorem whose conclusion matches no shape is `.unsupported` by §7.3's rule
+  7 regardless.
+- The `.runOk` match requires `pre` to be one of the inputs and `post` to
+  mention only inputs (§7.3). A failure to meet that requirement makes the
+  arm not fire, and matching falls through to the next rule, which is how a
+  contract whose right side is a `match` lands on `.eq`.
+
+## Lean idioms annotated
+
+- `forallTelescope` walks the theorem's `∀` chain and hands the tactic the
+  free variables plus the conclusion. The `Prop` binders among them are the
+  hypotheses, so the walk is also where the reader sorts binders.
+- `LocalDecl.binderInfo` tells the three binder kinds apart: `.instImplicit`
+  is the `[...]` form, `.default` the explicit `(...)`, and `.implicit` /
+  `.strictImplicit` the `{...}` form.
+- `getAppFn` / `getAppArgs` see through an n-ary application spine, which is
+  how the matcher names the head constant of `f a b` without unfolding `f`.
+-/
+
+set_option autoImplicit false
+
+open Lean
+
+namespace EthCLLib.TheoremVectors
+
+/-! ## The data model (§5.2, §5.3) -/
+
+-- §5.3 defines `BoundRel` next to `Shape`; stage 0 put it in `Types.lean`
+-- with the records' wire vocabulary.
+
+/-- The conclusion forms the reader accepts (`THEOREM_VECTORS_ARCHITECTURE.md` §5.3). Each
+carries the terms the executor evaluates, with the binders still free. -/
+inductive Shape where
+  /-- `lhs = rhs`. One vector; `rhs` pins the output. -/
+  | eq (lhs rhs : Expr)
+  /-- `lhs = true ↔ q`. Two vectors, one per side of `q`. -/
+  | iffTrue (lhs q : Expr)
+  /-- `lhs < b` or `lhs ≤ b`. One vector; the bound is checked. -/
+  | bound (lhs : Expr) (rel : BoundRel) (b : Expr)
+  /-- `act.run (pureState pre) = .ok (ret, pureState post)`, or the
+  `runPure` reading `runPure act pre = .ok (ret, post)`. One vector; the
+  post-state is the output. -/
+  | runOk (act pre ret post : Expr)
+  /-- `act.run (pureState pre) = .error err`. One vector with no
+  post-state. -/
+  | runError (act pre err : Expr)
+  /-- Anything else, with the reason. -/
+  | unsupported (reason : String)
+  deriving Repr
+
+/-- The wire tag of a shape, as the outcome files write it. The tags come
+from `ShapeTag.tag`, the one home of the wire strings (§5.3); an
+unsupported statement writes `unsupported` in the shape field and carries
+the reason in its run entry. -/
+def Shape.wire : Shape → String
+  | .eq _ _          => ShapeTag.tag .eq
+  | .iffTrue _ _     => ShapeTag.tag .iffTrue
+  | .bound _ _ _     => ShapeTag.tag .bound
+  | .runOk _ _ _ _   => ShapeTag.tag .runOk
+  | .runError _ _ _  => ShapeTag.tag .runError
+  | .unsupported _   => "unsupported"
+
+/-- The `.unsupported` reason, when the shape is unsupported. -/
+def Shape.reason? : Shape → Option String
+  | .unsupported r => some r
+  | _ => none
+
+/-- One value binder of the theorem, explicit or implicit. -/
+structure Input where
+  /-- The binder's user-facing name. -/
+  name     : Name
+  /-- The binder's type, with the instance binders still free. -/
+  type     : Expr
+  /-- `true` for the `(...)` form, `false` for the `{...}` form. -/
+  explicit : Bool
+  deriving Repr
+
+/-- One instance binder and the seam it belongs to (`THEOREM_VECTORS_ARCHITECTURE.md` §5.2).
+The four known seams are the ones the generator binds per preset; an
+unknown class is `.other` and the reader reports it (§7.5). -/
+inductive InstanceKind where
+  | preset
+  | config
+  | hasherTag
+  | cryptoBackend
+  /-- An instance binder the generator cannot bind. -/
+  | other (className : Name)
+  deriving Repr
+
+/-- The parsed theorem: what the reader found, in binder order
+(`THEOREM_VECTORS_ARCHITECTURE.md` §5.2). `blockInputs` starts empty; `Scope.classify`
+fills it (§7.4). -/
+structure Statement where
+  /-- The theorem's full constant name. -/
+  thm       : Name
+  /-- Instance binders as `(binder name, seam)` pairs, in binder order. -/
+  instances : Array (Name × InstanceKind)
+  /-- Value binders, explicit and implicit, in binder order. -/
+  inputs    : Array Input
+  /-- Type-parameter binders (`{σ : Type}`, `{map : MapKind}`): neither
+  instances nor producible values; the fork binding fixes them. -/
+  typeBinders : Array Name
+  /-- `Prop` binders, in binder order; each entry is the proposition itself. -/
+  hyps      : Array Expr
+  /-- The spec function under test, when the conclusion's left side names
+  one the binding's fork owns (§7.2). -/
+  target    : Option Name
+  /-- The matched conclusion form (§7.3). -/
+  shape     : Shape
+  /-- Inputs out of scope by the block-input rule (§1.2); `Scope.classify`
+  fills it. -/
+  blockInputs : Array Name := #[]
+  deriving Repr
+
+/-! ## Binder classification (§7.1) -/
+
+/-- The seam of an instance binder, from the class the binder's type names.
+The four known seams match on the class name's last component, because each
+fork declares its own `Preset` and `Config` classes and the theorem binds
+the fork's, not a shared one. -/
+private def instanceKindOf (type : Expr) : InstanceKind :=
+  -- `componentsRev` heads with the name's last atom: `Preset` for
+  -- `EthCLSpecs.Gloas.Preset`
+  match type.getAppFn with
+  | .const c _ =>
+    match c.componentsRev.headD .anonymous with
+    | `Preset        => .preset
+    | `Config        => .config
+    | `HasherTag     => .hasherTag
+    | `CryptoBackend => .cryptoBackend
+    | _              => .other c
+  | _ => .other Name.anonymous
+
+/-! ## Target discovery (§7.2) -/
+
+/-- Is the constant `c` a function the binding's fork owns? §7.2's two
+queries combine here: `specFunctionOwner?` gives fork ownership, and the
+candidate must name a function, not a type. The `forkdef` narrowing of
+`isSpecFunction` alone would drop the fork-upgrade file's boundary
+functions, which are plain `def`s (`initializePtcWindow` among them) and
+§7.2's own example names one as the target. Ownership plus
+"elaborates to a definition, and not a projection accessor" keeps the
+fork's containers, its `forkstruct` types, and their field accessors out
+of the walk while keeping every callable fork function in. -/
+private def isOwnedSpecFunction (env : Environment) (binding : ForkBinding)
+    (c : Name) : Bool :=
+  if (EthCLLib.Internal.specFunctionOwner? env c).map (·.1) != some binding.fork then
+    false
+  else if env.isProjectionFn c then
+    -- a structure accessor names a field, not a function under test:
+    -- `store.justifiedCheckpoint.epoch`'s `Checkpoint.epoch` must not
+    -- become the target of the monotonicity bound over it
+    false
+  else
+    match env.find? c with
+    | some (.defnInfo _) | some (.opaqueInfo _) => true
+    | _ => false
+
+/-- The left side of a conclusion: the first operand of an equation, an
+`↔`'s equation's first operand, or the first operand of a comparison.
+`none` when the conclusion has none of those heads. -/
+private partial def conclusionLhs? (body : Expr) : Option Expr :=
+  match body.getAppFn, body.getAppArgs with
+  | .const c _, args =>
+    if c == ``Eq && args.size ≥ 2 then some args[1]!
+    else if c == ``Iff && args.size ≥ 1 then conclusionLhs? args[0]!
+    else if (c == ``LT.lt || c == ``LE.le) && args.size ≥ 3 then some args[2]!
+    else none
+  | _, _ => none
+
+/-- Pre-order walk over `e` for the first application whose head is a spec
+function the binding's fork owns. This is what finds
+`initializePtcWindow` under the `GetElem.getElem` head of
+`(initializePtcWindow (pureState state))[i]` (§7.2).
+
+Type and instance arguments stay out of the walk: `@StateT.run σ m α act s`
+carries the boxed state type in `σ`, and pre-order over it would name the
+fork's `State` abbreviation, not the action under test;
+`(x)[i]`'s spine carries the `GetElem` instance for the fork's container,
+and pre-order over that would name the fork's instance constant. An
+argument is skipped when `inferType` answers a sort (a type argument) or
+`isClass?` answers a class name (an instance argument); the term
+arguments (the action, the collection, the pre-state) are what the walk
+descends into. -/
+private partial def findTargetIn (env : Environment) (binding : ForkBinding)
+    (e : Expr) : MetaM (Option Name) :=
+  match e with
+  | .const c _ => pure (if isOwnedSpecFunction env binding c then some c else none)
+  | .app f a => do
+    let inF ← findTargetIn env binding f
+    match inF with
+    | some _ => pure inF
+    | none => do
+      let aType ← Meta.inferType a
+      if aType.isSort then pure none
+      else if (← Meta.isClass? aType).isSome then pure none
+      else findTargetIn env binding a
+  | .mdata _ b => findTargetIn env binding b
+  | .proj _ _ b => findTargetIn env binding b
+  -- `lam` and `letE` stay out: a left side under a binder is not an
+  -- application the executor could call, and instantiating the binder
+  -- here would drag the walk past the term it was given
+  | _ => pure none
+
+/-! ## Shape matching (§7.3) -/
+
+/-- The plain value under a `pureState` or `SSZ.UncachedBox` wrapper, the
+two spellings a contract theorem uses for its pre- and post-state. -/
+private def pureBox? (e : Expr) : Option Expr :=
+  match e.getAppFn with
+  | .const c _ =>
+    if c == `EthCLLib.Proofs.pureState || c == `SizzLean.Cache.SSZ.UncachedBox then
+      e.getAppArgs.back?
+    else none
+  | _ => none
+
+/-- The value under an `Except.ok`, when `e` is one. -/
+private def exceptOk? (e : Expr) : Option Expr :=
+  match e.getAppFn with
+  | .const c _ => if c == ``Except.ok then e.getAppArgs.back? else none
+  | _ => none
+
+/-- The error under an `Except.error`, when `e` is one. -/
+private def exceptError? (e : Expr) : Option Expr :=
+  match e.getAppFn with
+  | .const c _ => if c == ``Except.error then e.getAppArgs.back? else none
+  | _ => none
+
+/-- The two halves of a `Prod.mk`, when `e` is one. -/
+private def prodMk? (e : Expr) : Option (Expr × Expr) :=
+  match e.getAppFn, e.getAppArgs with
+  | .const c _, args =>
+    if c == ``Prod.mk && args.size ≥ 2 then
+      some (args[args.size - 2]!, args[args.size - 1]!)
+    else none
+  | _, _ => none
+
+/-- The equation's two sides, when `body` is an `Eq` application. -/
+private def eqSides? (body : Expr) : Option (Expr × Expr) :=
+  match body.getAppFn, body.getAppArgs with
+  | .const c _, args =>
+    if c == ``Eq && args.size ≥ 2 then some (args[1]!, args[2]!) else none
+  | _, _ => none
+
+/-- Every fvar id in `e`, each once. -/
+private partial def collectFVarIds (e : Expr) (acc : Array FVarId) : Array FVarId :=
+  match e with
+  | .fvar id => if acc.contains id then acc else acc.push id
+  | .app f a => collectFVarIds a (collectFVarIds f acc)
+  | .lam _ t b _ => collectFVarIds b (collectFVarIds t acc)
+  | .letE _ t v b _ => collectFVarIds b (collectFVarIds v (collectFVarIds t acc))
+  | .forallE _ t b _ => collectFVarIds b (collectFVarIds t acc)
+  | .mdata _ b => collectFVarIds b acc
+  | .proj _ _ b => collectFVarIds b acc
+  | _ => acc
+
+/-- Every fvar of `e` is one the theorem binds? The `.runOk` match
+requires the post-state to be a closed term over the inputs (§7.3). The
+binders include the instance binders, because the box wrappers take
+`[SSZRepr T]` and `[HasherTag]` implicitly: the post-state's `pureState`
+applications carry those fvars, and phase B fixes them like every other
+instance binder (§10). What the check rules out is a term over locals the
+theorem does not bind, an existential's body or a proof's subterm. -/
+private def overBindersOnly (e : Expr) (binderIds : Array FVarId) : Bool :=
+  (collectFVarIds e #[]).all binderIds.contains
+
+/-- The `lhs = true` left side of an `.iffTrue` conclusion. -/
+private def eqTrueLhs? (body : Expr) : Option Expr := do
+  let (lhs, rhs) ← eqSides? body
+  match rhs.getAppFn with
+  | .const c _ => if c == ``Bool.true then some lhs else none
+  | _ => none
+
+/-- The `.runOk` reading of a `StateT.run` equation: the action runs on the
+box of `pre` and returns `(ret, pureState post)` (§7.3, form 2). Fires only
+when `pre` is one of the inputs and `post` mentions only binders. -/
+private def runOkStateT? (body : Expr) (preId? : Option FVarId)
+    (binderIds : Array FVarId) :
+    Option (Expr × Expr × Expr × Expr) := do
+  let (lhs, rhs) ← eqSides? body
+  match lhs.getAppFn, lhs.getAppArgs with
+  | .const c _, args =>
+    if c != ``StateT.run then none
+    else do
+      let act ← args[args.size - 2]?
+      let st ← args[args.size - 1]?
+      let pre ← pureBox? st
+      let preId ← preId?
+      unless pre.fvarId? == some preId do none
+      let value ← exceptOk? rhs
+      let (ret, postBox) ← prodMk? value
+      let post ← pureBox? postBox
+      unless overBindersOnly post binderIds do none
+      some (act, pre, ret, post)
+  | _, _ => none
+
+/-- The `.runOk` reading of a `runPure` equation (§7.3, form 3): the
+post-state arrives as the plain value, with no box wrapper to strip. -/
+private def runOkRunPure? (body : Expr) (preId? : Option FVarId)
+    (binderIds : Array FVarId) :
+    Option (Expr × Expr × Expr × Expr) := do
+  let (lhs, rhs) ← eqSides? body
+  match lhs.getAppFn, lhs.getAppArgs with
+  | .const c _, args =>
+    if c != `EthCLLib.Proofs.runPure then none
+    else do
+      let act ← args[args.size - 2]?
+      let pre ← args[args.size - 1]?
+      let preId ← preId?
+      unless pre.fvarId? == some preId do none
+      let value ← exceptOk? rhs
+      let (ret, post) ← prodMk? value
+      unless overBindersOnly post binderIds do none
+      some (act, pre, ret, post)
+  | _, _ => none
+
+/-- The `.runError` reading of a `StateT.run` equation (§7.3, form 4). -/
+private def runErrorStateT? (body : Expr) (preId? : Option FVarId) :
+    Option (Expr × Expr × Expr) := do
+  let (lhs, rhs) ← eqSides? body
+  match lhs.getAppFn, lhs.getAppArgs with
+  | .const c _, args =>
+    if c != ``StateT.run then none
+    else do
+      let act ← args[args.size - 2]?
+      let st ← args[args.size - 1]?
+      let pre ← pureBox? st
+      let preId ← preId?
+      unless pre.fvarId? == some preId do none
+      let err ← exceptError? rhs
+      some (act, pre, err)
+  | _, _ => none
+
+/-- Shape matching in §7.3's order: `.iffTrue`, `.runOk` in its two forms,
+`.runError`, `.eq`, `.bound`, then `.unsupported` with the conclusion's
+head constant in the reason. -/
+private def matchShape (body : Expr) (preId? : Option FVarId)
+    (binderIds : Array FVarId) : Shape :=
+  match body.getAppFn with
+  | .const cHead _ =>
+    if cHead == ``Iff then
+      -- rule 1: `lhs = true ↔ q`
+      match body.getAppArgs[0]?, body.getAppArgs[1]? with
+      | some side, some q =>
+        match eqTrueLhs? side with
+        | some lhs => .iffTrue lhs q
+        | none => .unsupported "unsupported conclusion: `↔` whose left side is not `… = true`"
+      | _, _ => .unsupported "unsupported conclusion: head `Iff`"
+    else
+      if let some (act, pre, ret, post) := runOkStateT? body preId? binderIds then
+        -- rule 2
+        .runOk act pre ret post
+      else if let some (act, pre, ret, post) := runOkRunPure? body preId? binderIds then
+        -- rule 3
+        .runOk act pre ret post
+      else if let some (act, pre, err) := runErrorStateT? body preId? then
+        -- rule 4
+        .runError act pre err
+      else
+        -- rule 5, then rule 6
+        match eqSides? body with
+        | some (lhs, rhs) => .eq lhs rhs
+        | none =>
+          match cHead, body.getAppArgs with
+          | c, args =>
+            if (c == ``LT.lt || c == ``LE.le) && args.size ≥ 4 then
+              let rel : BoundRel := if c == ``LT.lt then .lt else .le
+              .bound args[2]! rel args[3]!
+            else
+              .unsupported s!"unsupported conclusion: head `{c}`"
+  | _ => .unsupported "unsupported conclusion: not an application"
+
+/-! ## The reader -/
+
+/-- Zeta-reduce the leading `let`s of a conclusion. A theorem may spell a
+scratch value between its hypotheses and its conclusion
+(`getInclusionListCommittee_run_eq` names `indices` there), and
+`forallTelescope` stops at the `let`, handing the matcher a `letE` where
+it expects the conclusion's head. Instantiating the value into the body
+is the whole reduction; the reader's shapes match over what is left. -/
+private partial def zetaLets (body : Expr) : Expr :=
+  match body with
+  | .letE _ _ v b _ => zetaLets (b.instantiate1 v)
+  | _ => body
+
+/-- Is the binder's type a sort or an arrow into a sort? A binder such as
+`{σ : Type}` or `{map : MapKind}` names a type parameter the fork binding
+fixes, not a value any source could produce; it is neither an instance
+nor an input. -/
+private def isTypeLevelBinder (type : Expr) : MetaM Bool := do
+  let t ← Meta.withReducible (Meta.whnf type)
+  let rec peel (e : Expr) : Expr :=
+    match e with
+    | .forallE _ _ b _ => peel b
+    | _ => e
+  return (peel t).isSort
+
+/-- Read one theorem into a `Statement` and fold `k` over it (§7). Errors
+when the name does not resolve or is not a theorem; the failure policy
+makes both build errors (`THEOREM_VECTORS_ARCHITECTURE.md` §18).
+
+`k` runs inside the telescope's scope, and the statement cannot escape it:
+the binder walk introduces the theorem's free variables with a local
+context that `forallTelescope` restores once its callback returns, so a
+`Statement` carried out of `k` would name free variables no later step can
+see. Every consumer therefore folds to its wire form inside `k`: the
+command derives the outcome and writes it, the pins assert on the reader's
+answer. -/
+def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
+    (k : Statement → MetaM α) : MetaM α := do
+  let env ← getEnv
+  let some info := env.find? thmName
+    | throwError "theorem_vectors: `{thmName}` does not resolve"
+  let .thmInfo v := info
+    | throwError "theorem_vectors: `{thmName}` is not a theorem"
+  Meta.forallTelescope v.type fun fvars body => do
+    let mut instances : Array (Name × InstanceKind) := #[]
+    let mut inputs : Array Input := #[]
+    let mut typeBinders : Array Name := #[]
+    let mut preId? : Option FVarId := none
+    let mut binderIds : Array FVarId := #[]
+    let mut hyps : Array Expr := #[]
+    for f in fvars do
+      let d ← Meta.getFVarLocalDecl f
+      binderIds := binderIds.push d.fvarId
+      if d.binderInfo matches .instImplicit then
+        instances := instances.push (d.userName.eraseMacroScopes, instanceKindOf d.type)
+      else if ← Meta.isProp d.type then
+        hyps := hyps.push d.type
+      else if ← isTypeLevelBinder d.type then
+        -- a type parameter the fork binding fixes (`{σ : Type}`,
+        -- `{map : MapKind}`): not a class, so §7.1's instance arm does not
+        -- take it, and not a value any source could produce
+        typeBinders := typeBinders.push d.userName.eraseMacroScopes
+      else
+        inputs := inputs.push
+          { name := d.userName.eraseMacroScopes, type := d.type
+            explicit := d.binderInfo matches .default }
+        -- the pre-state convention: the first value binder, which every
+        -- contract in the corpus spells `preState` or `state`
+        if preId?.isNone then preId? := some d.fvarId
+    let body := zetaLets body
+    let target ← match conclusionLhs? body with
+      | none => pure none
+      | some lhs => findTargetIn env binding lhs
+    let shape := matchShape body preId? binderIds
+    -- §7.5: an instance binder on an unknown seam is a skip, because the
+    -- command cannot bind it. The fold keeps an already-unsupported reason,
+    -- the same precedence §7.3's rule 7 has over the folds. Hygienic
+    -- instance names lose their macro scopes, so the report shows the
+    -- binder's source-level name.
+    let shape :=
+      match instances.find? fun (_, k) => k matches .other _ with
+      | some (n, .other c) =>
+        if shape matches .unsupported _ then shape
+        else .unsupported s!"unknown instance seam on binder `{n}`: `{c}`"
+      | _ => shape
+    k { thm := thmName, instances, inputs, typeBinders, hyps, target, shape }
+
+end EthCLLib.TheoremVectors

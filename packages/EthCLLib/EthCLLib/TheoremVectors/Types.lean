@@ -3,7 +3,7 @@ import Lean
 /-!
 # `EthCLLib.TheoremVectors.Types`: the core data model
 
-The scalar data model of the theorem-vector generator (`ARCHITECTURE.md`
+The scalar data model of the theorem-vector generator (`THEOREM_VECTORS_ARCHITECTURE.md`
 §5, with the `Knobs` state-builder interface from §9.9). Every type here
 lives in the framework half and names no fork: the record layer persists
 them as JSON through `Lean.Json`, and the fork binding carries them across
@@ -15,7 +15,7 @@ set_option autoImplicit false
 open Lean
 
 /-- The output root the generator commands write into, the one option the
-lakefile fixes (`ARCHITECTURE.md` §2.3; the option table in §14.4 gives
+lakefile fixes (`THEOREM_VECTORS_ARCHITECTURE.md` §2.3; the option table in §14.4 gives
 the default). It registers here because every generator module imports
 this module through some path, so Lake's weak `-D` setting reaches every
 module that reads the option at elaboration time. An exe root builds
@@ -30,7 +30,7 @@ namespace EthCLLib.TheoremVectors
 
 /-! ## Presets -/
 
-/-- The presets a run can fix (`ARCHITECTURE.md` §5.1). The generator, the
+/-- The presets a run can fix (`THEOREM_VECTORS_ARCHITECTURE.md` §5.1). The generator, the
 records, and the output paths all take the preset from this inductive; the
 fork binding maps each one to the fork's own `Preset` and `Config`
 instances. -/
@@ -54,7 +54,7 @@ def PresetId.ofTag? : String → Option PresetId
 
 /-! ## Shapes and sources -/
 
-/-- The direction of a `.bound` conclusion (`ARCHITECTURE.md` §5.3):
+/-- The direction of a `.bound` conclusion (`THEOREM_VECTORS_ARCHITECTURE.md` §5.3):
 `lhs < b` or `lhs ≤ b`. -/
 inductive BoundRel where
   | lt
@@ -62,7 +62,7 @@ inductive BoundRel where
   deriving DecidableEq, Repr, Inhabited
 
 /-- The conclusion form of a theorem in the tags the records and outcomes
-write (`ARCHITECTURE.md` §5.3). The `Shape` terms themselves live with the
+write (`THEOREM_VECTORS_ARCHITECTURE.md` §5.3). The `Shape` terms themselves live with the
 statement reader. -/
 inductive ShapeTag where
   | eq
@@ -81,7 +81,7 @@ def ShapeTag.tag : ShapeTag → String
   | .runOk    => "runOk"
   | .runError => "runError"
 
-/-- Which witness source proposed a candidate (`ARCHITECTURE.md` §5.4).
+/-- Which witness source proposed a candidate (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4).
 The sources run in a fixed order, cheapest first, and the record names the
 one that won. `.reused` marks a scalar witness carried over from an earlier
 preset (§10), `.hinted` a witness rebuilt from a committed hint (§9.8). -/
@@ -97,7 +97,7 @@ inductive WitnessSourceTag where
   | hinted (orig : WitnessSourceTag)
   deriving BEq, Repr, Inhabited
 
-/-- Why a case produced no vector (`ARCHITECTURE.md` §5.4). `unsat` means
+/-- Why a case produced no vector (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4). `unsat` means
 the solver proved the hypotheses vacuous, `notFound` that every source ran
 out, and `outOfScope` that a block input is in play and the base source
 failed (§1.2). -/
@@ -109,7 +109,7 @@ inductive Failure where
 
 /-! ## Record payloads -/
 
-/-- The payload form of one recorded value (`ARCHITECTURE.md` §5.6). An
+/-- The payload form of one recorded value (`THEOREM_VECTORS_ARCHITECTURE.md` §5.6). An
 `.ssz` value carries its Merkle root in the record and its bytes in a side
 file; a `.scalar` carries its literal for the reader and keeps its SSZ bytes
 in the same side file, so the read-back needs no type width. -/
@@ -123,7 +123,7 @@ inductive ValueData where
 
 /-! ## State-builder knobs -/
 
-/-- The knobs one state-builder step fixes (`ARCHITECTURE.md` §9.9). One
+/-- The knobs one state-builder step fixes (`THEOREM_VECTORS_ARCHITECTURE.md` §9.9). One
 framework type, so the `built` source can walk a builder grid without
 naming a fork. The defaults are the cheapest grid step: a small genesis
 committee at slot 0 with no queue. -/

@@ -59,4 +59,4 @@ roots = ["EthCLLib.Tests"]
 # globs only its own root, the way EthCLLibTests is (§2.3).
 [[lean_lib]]
 name = "EthCLLibTheoremVectors"
-roots = ["EthCLLib.TheoremVectors"]
+roots = ["EthCLLib.TheoremVectors", "EthCLLib.TheoremVectors.Tests"]

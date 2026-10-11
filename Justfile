@@ -443,8 +443,9 @@ ethcl-profile case=default_profile_case: _ensure-venv
       rm -rf "$tmp"
 
 # Generate the records (runs the generator files), render, check, report.
-# The exe answers `not implemented` while the harness phases are unwritten,
-# so this recipe fails until they land.
+# Stage 1: the build runs the reader over every public theorem and the
+# exe folds the outcomes into report.md; render and check answer over the
+# still-empty records tree (§15's bodies land at stages 2 and 7).
 
 # Build the generator libraries and run the harness over the output tree
 [group('ethcl')]

@@ -1,20 +1,27 @@
 import EthCLLib.TheoremVectors
+import EthCLSpecs.TheoremVectors.Bindings
+import EthCLSpecs.TheoremVectors.Generators.Fulu
+import EthCLSpecs.TheoremVectors.Generators.Gloas
+import EthCLSpecs.TheoremVectors.Generators.Heze
 
 /-!
 # `EthCLSpecs.TheoremVectors`: the theorem-vector generator's spec half
 
-Library root (`ARCHITECTURE.md` §2.1, §4.2). The spec half supplies every
+Library root (`THEOREM_VECTORS_ARCHITECTURE.md` §2.1, §4.2). The spec half supplies every
 fork fact the framework half asks for: one `ForkBinding` value per fork,
 the state-builder catalogs, the author seeds, the committed hints, and the
 generator files whose elaboration writes the records. §4.2 places each
-of those in its own module under this root.
+of those in its own module under this root. Stage 1 carries the bindings
+and the generator files; the builders, seeds, and hints arrive with their
+stages. The generator commands in this root run at `lake build` time, so
+building this library is what writes the outcome files the report folds.
 -/
 
 set_option autoImplicit false
 
 namespace EthCLSpecs.TheoremVectors
 
-/-- The output root every command writes into (`ARCHITECTURE.md` §2.3).
+/-- The output root every command writes into (`THEOREM_VECTORS_ARCHITECTURE.md` §2.3).
 The path is relative to the repository root, which is where Lake and the
 just recipes run it; the exe's `--out` default comes from this constant,
 and the check below holds the lakefile to the same path. -/
@@ -23,7 +30,7 @@ def outDir : String := "packages/EthCLSpecs/theorem_vectors"
 /-! ## The output-root pin
 
 The lakefile fixes `theorem_vectors.outDir` for this library with a `weak.`
-`-D` setting (`ARCHITECTURE.md` §2.3), which the reader adopts once the
+`-D` setting (`THEOREM_VECTORS_ARCHITECTURE.md` §2.3), which the reader adopts once the
 module that registers the option is imported. The check fires at build
 time, so a lakefile that drops the setting or a constant that drifts from
 it fails here instead of letting the records land under a default

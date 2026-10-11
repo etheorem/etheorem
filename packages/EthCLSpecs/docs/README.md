@@ -28,6 +28,11 @@ and resolved vector-level gaps, keyed by vector id. Deliberate implementation
 divergences that no vector observes belong in `IMPLEMENTATION_NOTES.md` instead,
 catalogued per fork.
 
+The theorem-vector generator has its own pair. [THEOREM_VECTORS_ARCHITECTURE.md](THEOREM_VECTORS_ARCHITECTURE.md)
+is the generator's design of record, and [THEOREM_VECTORS_PLAN.md](THEOREM_VECTORS_PLAN.md)
+sequences its stages. Deviations from them go in `IMPLEMENTATION_NOTES.md` under the
+theorem-vectors heading, like every other deviation.
+
 [FUTURE_WORK.md](FUTURE_WORK.md) records deferred changes: what is left, why it waits,
 and the shape it will take, so a later pass picks each one up whole. The current entry is
 the provability of the pure indexed reads: a proof parameter or a refined index-list type,

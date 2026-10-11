@@ -185,4 +185,75 @@ initialize registerBuiltinAttribute {
 def boxGenerics (env : Environment) : Array (Name × String) :=
   boxGenericExt.getState env
 
+/-! ## The `theorem_vectors` attribute
+
+The theorem-vector generator (`EthCLLib.TheoremVectors`) selects theorems two
+ways: through `characterizes`, which already lives here, and through its own
+marker. `@[theorem_vectors]` is that marker (`THEOREM_VECTORS_ARCHITECTURE.md` §14.1). It
+carries no code and no argument. It says: this theorem, whether or not it is a
+contract, must produce vectors. The tags reach the generator through
+`theoremVectorsExt`, a `SimplePersistentEnvExtension` like `characterizesExt`,
+so the discovery clause reads them out of an imported environment with no
+source scraping.
+
+The marker imports nothing from the generator. The `Proofs/` modules already
+import this module for `characterizes`, so `Plausible` and the probe stay out
+of the shipped libraries (§2.2).
+
+Three checks gate a tag. The first two are the claim checks `characterizes`
+runs, minus the target checks a targetless tag cannot make: the attribute is
+global only, so the coverage-style enumeration sees every tag, and the marked
+declaration is a theorem. The third is §14.1's namespace rule: the theorem
+must sit under a registered fork's proof namespace, `EthCLSpecs.Proofs.Gloas`
+for the Gloas fork and so on, which is where the generator's discovery clause
+looks. -/
+
+/-- The proof namespace of a registered fork: `EthCLSpecs.Proofs.Gloas` for
+`EthCLSpecs.Gloas`. The repository's layout rule, one directory per fork
+under `Proofs`, read mechanically: the fork's root, `Proofs`, and the fork's
+own name component. The attribute's namespace check and the generator's
+`tagged` and `probe` discovery clauses all go through this one derivation. -/
+def proofNamespaceOf (fork : Name) : Name :=
+  let comps := fork.componentsRev
+  (comps.getLast?.getD Name.anonymous) ++ `Proofs ++ comps.headD .anonymous
+
+/-- Every `theorem_vectors` tag, as an `Array` of theorem names. An `Array`
+(not a map) keeps the merge across imports trivial, the same choice
+`characterizesExt` makes. -/
+initialize theoremVectorsExt :
+    SimplePersistentEnvExtension Name (Array Name) ←
+  registerSimplePersistentEnvExtension {
+    addEntryFn    := Array.push
+    addImportedFn := fun arrs => arrs.foldl (· ++ ·) #[]
+  }
+
+/-- Every `theorem_vectors` tag in the environment. -/
+def theoremVectorTags (env : Environment) : Array Name :=
+  theoremVectorsExt.getState env
+
+/-- `@[theorem_vectors]` on a theorem marks it for the theorem-vector
+generator. The theorem must sit under a registered fork's proof namespace,
+and the tag takes no argument. -/
+initialize registerBuiltinAttribute {
+  name            := `theorem_vectors
+  descr           := "this theorem must produce theorem vectors"
+  applicationTime := .afterTypeChecking
+  add             := fun thm stx kind => do
+    unless kind == AttributeKind.global do
+      throwError "`theorem_vectors` is a global attribute; `local` and `scoped` \
+        would hide the tag from the generator's discovery clause."
+    unless stx[1].getOptional?.isNone do
+      throwError "`theorem_vectors` takes no argument; discovery reads the \
+        proof ledger, not the tag."
+    let env ← getEnv
+    unless env.find? thm matches some (.thmInfo _) do
+      throwError "`theorem_vectors` marks a theorem; `{thm}` is not one."
+    unless (registeredForks env).any fun fork =>
+        (proofNamespaceOf fork).isPrefixOf thm do
+      throwError "`theorem_vectors` must sit under a registered fork's proof \
+        namespace (`EthCLSpecs.Proofs.<Fork>`), and `{thm}` sits under none. \
+        Move the theorem into its fork's proof directory, or drop the tag."
+    modifyEnv fun env => theoremVectorsExt.addEntry env thm
+}
+
 end EthCLLib.Internal

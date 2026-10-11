@@ -978,11 +978,9 @@ separation.
 
 ## Theorem vectors
 
-Deviations found while building the generator's scaffolding, against
-`mb/theorems-vec/ARCHITECTURE.md`. That file is a per-developer document
-until the final stage moves it into this directory, so the `ARCHITECTURE.md`
-citations in the new modules dangle until then. The section references
-below follow the same file.
+Deviations found while building the generator's scaffolding and its stage 1,
+against `THEOREM_VECTORS_ARCHITECTURE.md`. The section references below follow
+the same file.
 
 - **`WitnessSourceTag.reused` names its field `preset`.** The §5.4 sketch
   writes `reused (from : PresetId)`, and `from` is a Lean keyword, so the
@@ -1035,6 +1033,121 @@ below follow the same file.
   consumer's parser from coercing it. The `raw` arm marks a leaf the
   caller already shaped, and the writer emits it verbatim. The record
   layer decides whether a literal is raw or quoted.
+
+- **Stage 1 adds the `probe` discovery clause, and a fifth origin value
+  `probe` beside it.** §14.3's discovery grammar has `characterized` and
+  `tagged` only, and no clause selects the whole corpus. The plan's stage
+  1 reads, classifies, and lists every public theorem of the three forks
+  (its goal, its acceptance, and decision point A all need that), so
+  `Command.lean` adds `theorem_vectors probe`: it selects every public
+  theorem under the fork's proof namespace that no other clause or line
+  selects, and the outcome lines carry origin `probe`. The generator
+  files drop the clause when stage 2 wires the search; the origin value
+  goes unused with it.
+
+- **`Statement.readIn` folds over the statement instead of returning
+  it.** §7 reads a theorem type into a `Statement`; the sketch implies a
+  plain function. `forallTelescope` declares the theorem's free
+  variables with a local context it restores once its callback returns,
+  so a `Statement` carried out of the walk would name free variables no
+  later step can see (`whnf` inside `Scope.classify` fails with
+  `unknown free variable`). The reader takes a continuation and every
+  consumer folds to its wire form inside it.
+
+- **Target discovery keeps fork ownership, adds "callable definition,
+  not a projection", and skips type and instance arguments.** §7.2 says
+  the target is the first left-side application whose head
+  `Capture.isSpecFunction` answers true for. Three corpus facts widen
+  and narrow that test. The fork-upgrade file declares its boundary
+  functions as plain `def`s (`initializePtcWindow` among them), and
+  §7.2's own example names one as the target, so the `forkdef`-only test
+  loses real targets; ownership by the fork plus a definition kind keeps
+  them. The fork's `State` abbreviation is a plain definition too, and
+  pre-order over `@StateT.run σ m α act s` reaches it through the
+  `σ` argument before the action, so type arguments stay out of the
+  walk; the same spine carries the fork's `GetElem` instance for
+  `(x)[i]`, so instance arguments stay out too. And a monotonicity
+  bound over `store.justifiedCheckpoint.epoch` would name the field
+  accessor `Checkpoint.epoch`, so projection accessors stay out.
+
+- **`Outcome`'s theorem field carries French quotes.** `theorem` is a
+  keyword; the field is `«theorem»`, and the derived JSON instances
+  keep §16.1's wire spelling.
+
+- **The exe's `render`, `check`, and `list` answer over the records tree
+  from stage 1.** §15 stages their real bodies at stage 2 (`render`,
+  `list`) and stage 7 (`check`), and the plan's rule lets the
+  `theorem-vectors` recipe stay red until stage 2. Stage 1's acceptance
+  runs the same recipe, so the three subcommands walk the (empty)
+  records tree, report what they find, and exit 0; the walk functions
+  are the ones stages 2 and 7 fill in.
+
+- **`EthCLLib.TheoremVectors.Tests` is a second root of its library.**
+  §4.1's module map places the framework-half tests under
+  `EthCLLib/TheoremVectors/Tests/`, and the plan's stage 1 adds the
+  attribute test there. A `lean_lib` builds its roots, so the lakefile
+  lists the test root beside the library root; the shipped `EthCLLib`
+  library still globs only its own root.
+
+- **The command reads the binding through `opaque` + `implemented_by`.**
+  §6 says the command reads the binding with `evalConst`. In this
+  toolchain `Lean.evalConst` is `unsafe`, and a safe elaborator cannot
+  call it. The reader follows the `#eval` machinery's shape
+  (`Lean.Elab.elabEvalCore`): a safe `opaque` whose body never runs,
+  with an `@[implemented_by]` unsafe implementation that evaluates the
+  constant. The spec-half pins reuse the same pair.
+
+- **The reader zeta-reduces a leading `let` in the conclusion.** §7.3's
+  matcher sees the conclusion as `forallTelescope` hands it over, and
+  `getInclusionListCommittee_run_eq` names a scratch value (`indices`)
+  between its hypotheses and its conclusion, so the matcher receives a
+  `letE` and answers `unsupported: not an application` for a
+  `characterizes` claim. The reader instantiates the `let`'s value into
+  its body before matching; nothing else about the conclusion moves.
+
+- **Type-parameter binders are their own `Statement` field, not inputs.**
+  §5.2's `Statement` has instance binders, inputs, and hypotheses; the
+  corpus also binds `{σ : Type}` and `{map : MapKind}`, implicit
+  non-`Prop` binders that are neither classes nor producible values.
+  §7.1's table would call them inputs, and §7.4's walk would then report
+  `map` as function-typed (`MapKind` unfolds to a `Type`-level arrow),
+  folding every `Store` theorem to `.unsupported` for a binder the fork
+  binding fixes anyway. The reader classifies such binders (a sort, or an
+  arrow into a sort, after `whnf`) into a `typeBinders` field beside the
+  inputs; phase B fixes them like the instances.
+
+- **The `.runOk` closed-post-state check allows every telescope binder,
+  and `pre` must be the first value binder.** §7.3 says the match
+  requires `pre` to be one of the inputs and `post` to be a closed term
+  over the inputs. The box wrappers take `[SSZRepr T]` and `[HasherTag]`
+  implicitly, so the post-state's `pureState` applications carry
+  instance fvars; rejecting them would reject every contract in the
+  corpus. The check allows all telescope binders (instances included,
+  fixed per preset in phase B) and rules out only locals the theorem
+  does not bind. `pre` is pinned to the first value binder, which every
+  corpus contract spells `preState` or `state`, so a record update over
+  a later store cannot satisfy the match by accident.
+
+- **The command clears a fork's outcome subtree at its header.** §16.2
+  folds whatever outcome files exist, and a theorem the generator lines
+  no longer name would keep its stale row until someone ran
+  `theorem-vectors-clean`. The header command removes
+  `<outDir>/outcomes/<fork>/` before the pass runs, so `report.md`
+  always reflects the current lines.
+
+- **The report's hygienic binder names lose their macro scopes.** The
+  instance binders of §7.1 arrive with generated names
+  (`inst._@.…_hyg.9`), and the unknown-seam reason wrote them raw into
+  the outcome and the report. `Statement.readIn` erases macro scopes on
+  the names it records; the class name keeps its full spelling.
+
+- **The generator commands reserve their keywords for files that open
+  `EthCLLib.TheoremVectors`.** Lean's parser reserves the atoms of a
+  command syntax (`skip`, `characterized`, `tagged`, `probe`,
+  `presets`), and a file that opens the namespace cannot use them as
+  identifiers. The generator files never do; `Command.lean` spells its
+  own locals around the reservation (`ps`, `charSet`, `presetIds`), and
+  the shipped libraries never open the namespace.
 
 - **`meta.yaml` goes out in flow form, and hex values go out quoted.**
   §12.3 says the upstream vectors write `meta.yaml` in block style byte

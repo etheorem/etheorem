@@ -1,7 +1,7 @@
 /-!
 # `EthCLLib.TheoremVectors.Yaml`: the client-facing YAML writer
 
-The writer for the two YAML files a consumer reads (`ARCHITECTURE.md`
+The writer for the two YAML files a consumer reads (`THEOREM_VECTORS_ARCHITECTURE.md`
 §12.3): a pyspec case's `meta.yaml` (§13.4) and the function format (§13.3).
 `meta.yaml` goes out as one flow line, the form the cached upstream corpus
 writes, and the function format goes out in block style per §13.3. The
@@ -56,7 +56,7 @@ set_option autoImplicit false
 
 namespace EthCLLib.TheoremVectors
 
-/-- One YAML value in the writer's grammar (`ARCHITECTURE.md` §12.3). -/
+/-- One YAML value in the writer's grammar (`THEOREM_VECTORS_ARCHITECTURE.md` §12.3). -/
 inductive Yaml where
   /-- `true` or `false`. -/
   | bool (b : Bool)
@@ -354,7 +354,7 @@ def Yaml.render (v : Yaml) : String :=
 
 /-! ## Pins -/
 
-/-- The `meta.yaml` of a pyspec case (`ARCHITECTURE.md` §13.4), the two
+/-- The `meta.yaml` of a pyspec case (`THEOREM_VECTORS_ARCHITECTURE.md` §13.4), the two
 keys the format writes, in the upstream flow form. -/
 private def metaDoc : Yaml :=
   .map #[
@@ -362,7 +362,7 @@ private def metaDoc : Yaml :=
     ("theorem", .str "EthCLSpecs.Proofs.Gloas.processBuilderPendingPayments_run")
   ]
 
-/-- One function-format file (`ARCHITECTURE.md` §13.3): flat scalars, the
+/-- One function-format file (`THEOREM_VECTORS_ARCHITECTURE.md` §13.3): flat scalars, the
 inputs map with an SSZ value and its root inline, and the output literal. -/
 private def functionDoc : Yaml :=
   .map #[
@@ -381,7 +381,7 @@ private def functionDoc : Yaml :=
   ]
 
 /-- A `steps`-shaped list of maps, the layout a later format writes
-(`ARCHITECTURE.md` §12.3): a map value under a dash-item entry, a list
+(`THEOREM_VECTORS_ARCHITECTURE.md` §12.3): a map value under a dash-item entry, a list
 value under another, and a sibling entry after both. -/
 private def stepsDoc : Yaml :=
   .map #[
