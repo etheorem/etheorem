@@ -30,15 +30,17 @@ plan's "`default` inputs" acceptance). The seed terms are `[Preset]`-generic
 and elaborate inside the theorem's telescope, so a `presets` clause can run
 them at any preset.
 
-The stage-3 lines run without a `default` witness:
+These lines run without a `default` witness:
 
 - `getPtcElseOffset_lt_next_slot` takes no seed; the bit-vector source
   solves the slot pair.
-- `canBuilderCoverBid_iff` takes the builder-registry state; the solver
-  walks the coupled builder index and picks each side's `bidAmount`.
-- `isValidIndexedPayloadAttestation_eq_true_iff_checks` takes the state and
-  the attestation; its checks split into one case per gate, and the seed
-  answers each case.
+- `canBuilderCoverBid_iff` takes no seed; the random source draws the
+  state, walks the coupled builder index, and the solver picks each
+  side's `bidAmount` (§9.4).
+- `isValidIndexedPayloadAttestation_eq_true_iff_checks` keeps its state
+  and attestation seeds, which win the true side; its false-side cases
+  need containers the seed does not vary, and the random source draws
+  them after the seed and the bit-vector handoff fail (§9.2, §9.4).
 -/
 
 set_option autoImplicit false
@@ -57,8 +59,7 @@ theorem_vectors initializePtcWindow_lt_default with
   (i := EthCLSpecs.TheoremVectors.Seeds.Gloas.windowZero)
 theorem_vectors getPtcElseOffset_lt_same_slot
 theorem_vectors getPtcElseOffset_lt_next_slot
-theorem_vectors canBuilderCoverBid_iff with
-  (state := EthCLSpecs.TheoremVectors.Seeds.Gloas.coverBidState)
+theorem_vectors canBuilderCoverBid_iff
 theorem_vectors isValidIndexedPayloadAttestation_eq_true_iff_checks with
   (state := EthCLSpecs.TheoremVectors.Seeds.Gloas.iPacState)
   (a := EthCLSpecs.TheoremVectors.Seeds.Gloas.iPacAttestation)

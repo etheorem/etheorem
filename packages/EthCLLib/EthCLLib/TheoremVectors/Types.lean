@@ -46,6 +46,40 @@ register_option theorem_vectors.maxHeartbeats : Nat := {
     times 1000)"
 }
 
+/-- The random source's redraw budget (`THEOREM_VECTORS_ARCHITECTURE.md`
+§9.4, the option table in §14.4): how many draws one case's search tries
+before it answers `notFound`. -/
+register_option theorem_vectors.randomDraws : Nat := {
+  defValue := 64
+  descr    := "the redraw budget of the random source, per case"
+}
+
+/-- The `Gen` size parameter the random source draws with (§14.4). It
+bounds the lists a draw produces, under the shapes' SSZ limits. -/
+register_option theorem_vectors.randomSize : Nat := {
+  defValue := 8
+  descr    := "the `Gen` size parameter of the random source's draws"
+}
+
+/-- The shrink loop's step budget (`THEOREM_VECTORS_ARCHITECTURE.md` §9.6,
+the option table in §14.4). A witness from the random source shrinks
+until no candidate passes the check or the budget runs out. The default
+is small, because the probe's `check` runs the case's compiled `decide`
+over a drawn state, and the interpreter bills every run of it; the
+length cuts sit first in each call's candidate list, so the first steps
+buy the size. -/
+register_option theorem_vectors.shrinkSteps : Nat := {
+  defValue := 40
+  descr    := "the shrink budget of the random source, per witness"
+}
+
+/-- The random draw seed (§14.4). The same seed and size draw the same
+bytes, so a build is reproducible; a hint (§9.8) replays it exactly. -/
+register_option theorem_vectors.seed : Nat := {
+  defValue := 0
+  descr    := "the random seed of the random source's draws"
+}
+
 namespace EthCLLib.TheoremVectors
 
 /-! ## Presets -/

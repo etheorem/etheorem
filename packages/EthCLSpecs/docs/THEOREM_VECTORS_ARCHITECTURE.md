@@ -298,6 +298,7 @@ warning into an error.
 | Module | Responsibility | Depends on |
 | --- | --- | --- |
 | `Types.lean` | `PresetId`, `ShapeTag`, `WitnessSourceTag`, `Failure`, `ValueData`, `BoundRel`, `Knobs` | Lean core |
+| `Scalar.lean` | the scalar kinds, their wire widths, and their literal forms | Lean core |
 | `ForkBinding.lean` | the `ForkBinding` structure and `PresetInstances` | `Types`, `PySpecTests.Interface` |
 | `Statement.lean` | `Statement`, `Shape`, the reader over a theorem type | `Types`, `Internal.Capture` |
 | `Scope.lean` | the block-input walk over input types | `Statement`, `ForkBinding` |
@@ -310,7 +311,7 @@ warning into an error.
 | `Witness/Built.lean` | the state-builder source, the knob grid, the built-state cache | `Witness.Source`, `Witness.BitVec` |
 | `Witness/Random.lean` | the random-state-plus-solve source | `Witness.Source`, `Witness.BitVec` |
 | `Witness/Seed.lean` | the author-seed source | `Witness.Source` |
-| `Witness/Shrink.lean` | the shrink loop | `Witness.Source` |
+| `Witness/Shrink.lean` | the shrink loop | `Probe`, `Prepare` |
 | `Witness/Hint.lean` | the hint schema, reader, writer, fingerprint, and the hint source | `Witness.Source`, `Lean.Json` |
 | `Preset.lean` | bind one preset, the reuse check | `Probe`, `ForkBinding` |
 | `Execute.lean` | per-shape outcome from probe runs, the agreement check | `Probe` |
@@ -833,8 +834,10 @@ unseeded state input gets `nothing` from both sources.
 UInt16, UInt32, UInt64, Bool}` or an SSZ alias of one (`Slot`, `Epoch`,
 `Gwei`, `ValidatorIndex`, …), and every hypothesis is a bit-vector formula
 after the prepare pass. A `Fin n` input enters as a `UInt64` with the
-bound `x < n`, the probe's own codec (§11.2), once stage 4's bridge lands;
-until then the source reports the input and answers `nothing`. The
+bound `x < n`, the probe's own codec (§11.2); the corpus's `Nat`-form
+comparisons over a `Fin.val` side bridge to the stand-in's `UInt64` form
+in the same step, and a comparison the bridge cannot express stays for an
+honest reflection failure. The
 source poses `¬P` and calls `bvDecide'` from
 `Lean.Elab.Tactic.BVDecide.Frontend`, whose result type is
 `MetaM (Except CounterExample Result)`. A `CounterExample` carries
@@ -911,7 +914,7 @@ report records the time per record so mainnet cost stays visible.
 After a witness from the random source passes, `Witness/Shrink.lean` asks
 `probe.shrink a` for smaller candidates, in `Shrinkable` order, and keeps the
 first one that passes the check. It repeats until no candidate passes or the
-budget (`theorem_vectors.shrinkSteps`, default 200) runs out. Scalars found
+budget (`theorem_vectors.shrinkSteps`, default 40) runs out. Scalars found
 by the solver are not shrunk, because a solver value is a boundary point and
 shrinking would move it. A state from the built source is shrunk by its
 knobs and never by its fields (§9.9).
@@ -1561,7 +1564,7 @@ theorem that needs more gets a named line.
 | `theorem_vectors.maxHeartbeats` | 1000000 | the heartbeat budget per run, in the units `set_option maxHeartbeats` takes; the command multiplies by 1000 for the reader field |
 | `theorem_vectors.randomDraws` | 64 | redraws for the random source |
 | `theorem_vectors.randomSize` | 8 | `Gen`'s size parameter |
-| `theorem_vectors.shrinkSteps` | 200 | the shrink budget |
+| `theorem_vectors.shrinkSteps` | 40 | the shrink budget |
 | `theorem_vectors.seed` | 0 | the random seed, so a build is reproducible |
 | `theorem_vectors.hints` | `use` | `use`, `ignore`, or `require` (§9.8) |
 | `theorem_vectors.builtSteps` | 6 at minimal, 3 at mainnet | how far down the builder grid the `built` source walks (§9.9) |

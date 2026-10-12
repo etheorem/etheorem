@@ -153,14 +153,24 @@ theorem uint64_toNat_add_one_eq {a b : UInt64} :
     rw [← h3]
     exact h1
 
-/-- Zeta-reduce the leading `let`s of a term. A side or hypothesis may name
-scratch values between itself and its comparisons
-(`canBuilderCoverBid_iff`'s right side does); substituting the values is the
-whole reduction. Public, because the probe's `.iffTrue` run needs the same
-reduction before it synthesizes the sides' `Decidable` instances. -/
+/-- Zeta-reduce the `let`s of a term, through the applications. A side
+or hypothesis may name scratch values between itself and its comparisons
+(`canBuilderCoverBid_iff`'s right side does); substituting the values is
+the whole reduction. The random source's read substitution runs the same
+reduction over the hypotheses it substitutes, so its plan entries match
+the terms they replace (§9.4). A `let` value used many times
+duplicates once per use, and the pass calls this on every hypothesis,
+so a hypothesis with a large scratch value grows by that factor before
+the unfold; the corpus's scratch values are small. Public, because the
+probe's `.iffTrue` run needs the same reduction before it synthesizes
+the sides' `Decidable` instances. -/
 partial def Prepare.zeta (e : Expr) : Expr :=
   match e with
   | .letE _ _ v b _ => Prepare.zeta (b.instantiate1 v)
+  | .app f a => .app (Prepare.zeta f) (Prepare.zeta a)
+  | .lam n t b bi => .lam n (Prepare.zeta t) (Prepare.zeta b) bi
+  | .mdata m b => .mdata m (Prepare.zeta b)
+  | .proj s i b => .proj s i (Prepare.zeta b)
   | _ => e
 
 /-- The size of an expression, one node each. -/

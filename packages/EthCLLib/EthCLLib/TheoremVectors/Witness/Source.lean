@@ -14,12 +14,12 @@ nothing. The loop walks the sources in §9.2's fixed order, and the command
 assembles that order per theorem: a line with seeds runs seed (§9.4) then
 bit-vector (§9.4), a line without seeds runs base (§9.4) then bit-vector,
 and a theorem with a block input runs base alone (§1.2). The hint source
-(§9.8) prepends itself in stage 5; the built and random sources slot in
-with their stages.
+(§9.8) prepends itself in stage 5; the built source slots in with its
+stage, and the random source and the shrink are in.
 
-`SearchM` is `MetaM` at this stage. §9.2 gives it a budget counter, which
-the random source's redraw loop (§9.4) needs; stage 4 widens the
-abbreviation when that lands.
+`SearchM` is `MetaM`: §9.2's budget counter stayed unnecessary, because
+the redraw loop's budget is the `randomDraws` option per case and the
+per-run heartbeat budget bounds the whole.
 
 ## Lean idioms annotated
 
@@ -71,10 +71,16 @@ structure SearchCtx where
   /-- The author seed terms of this line, with their input positions
   (§14.3). Empty when the line named none. -/
   seedTerms  : Array (Nat × Expr)
+  /-- The random source's draws, memoized by draw index: a draw is a
+  pure function of the seed, the size, and the index (§9.4), so the
+  cases of one theorem at one preset share them. The ref holds one slot
+  per draw index; `none` is not yet drawn. -/
+  drawMemo : IO.Ref (Array (Option (Array ByteArray)))
 
-/-- The search monad: `MetaM` with no state of its own yet. The budget
-counter of §9.2 arrives with the random source's redraw loop (§9.4), which
-is stage 4. -/
+/-- The search monad: `MetaM`. §9.2's budget counter stayed
+unnecessary: the redraw loop's budget is `theorem_vectors.randomDraws`
+per case, the solver's fragment caps the grid, and the per-run heartbeat
+budget (§14.3) bounds the whole. -/
 abbrev SearchM (α : Type) : Type := MetaM α
 
 /-- One strategy that proposes witnesses (`THEOREM_VECTORS_ARCHITECTURE.md` §9.2). -/

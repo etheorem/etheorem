@@ -1,7 +1,9 @@
 import Lean
+import EthCLLib.TheoremVectors.Probe
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Scope
 import EthCLLib.TheoremVectors.Prepare
+import EthCLLib.TheoremVectors.Sampleable
 import EthCLSpecs.Proofs.Gloas
 import EthCLSpecs.Proofs.Fulu
 import EthCLSpecs.TheoremVectors.Bindings.Gloas
@@ -165,9 +167,11 @@ run_cmd do
       blockInputs := #["store"]
       inputs := #["store"] }
   -- a box lemma names its family in the reason (§7.3, rule 7), which the
-  -- report counts apart from the other unsupported reasons
+  -- report counts apart from the other unsupported reasons; the target
+  -- walk reads the conclusion's left side (§7.2), and a box lemma's
+  -- conclusion names no function under test, so the target is none
   pin gloas `EthCLSpecs.Proofs.Gloas.keepsUncached_getBlockRoot
-    { target := some `EthCLSpecs.Gloas.getBlockRoot
+    { target := none
       shape := "unsupported"
       blockInputs := #[]
       inputs := #["state", "epoch"] }
@@ -204,5 +208,26 @@ run_cmd do
     throwError s!"pin isValidIndexedPayloadAttestation_eq_true_iff_checks: \
       {n} case(s) with sides {repr sides}, expected five (one true side, \
       one per check)"
+
+  -- ── The generic draw's answers (§9.5): the same seed draws the same
+  -- state twice, and the drawn bytes pass the state's own strict decode.
+  -- The draw runs through the generic `SSZRepr` instance at the minimal
+  -- preset.
+  liftTermElabM do
+    let g : Plausible.Gen (@EthCLSpecs.Gloas.BeaconState EthCLSpecs.Gloas.minimal) :=
+      Plausible.SampleableExt.interpSample _
+    let some drawn1 := EthCLLib.TheoremVectors.runDrawPure 7 8 g
+      | throwError "pin draw: the generator failed"
+    let some drawn2 := EthCLLib.TheoremVectors.runDrawPure 7 8 g
+      | throwError "pin draw: the generator failed"
+    let b1 := SizzLean.SSZ.serialize drawn1
+    let b2 := SizzLean.SSZ.serialize drawn2
+    unless EthCLLib.TheoremVectors.compareBytes b1 b2 do
+      throwError "pin draw: the same seed drew different bytes (§9.5)"
+    match SizzLean.SSZ.deserialize (T :=
+        @EthCLSpecs.Gloas.BeaconState EthCLSpecs.Gloas.minimal) b1 with
+    | .ok _ => pure ()
+    | .error e =>
+      throwError s!"pin draw: the drawn bytes did not decode: {repr e}"
 
 end EthCLSpecs.Tests.TheoremVectorsPins

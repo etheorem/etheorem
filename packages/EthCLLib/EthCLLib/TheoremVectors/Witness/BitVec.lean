@@ -1,6 +1,7 @@
 import Lean
 import Lean.Elab.Tactic.BVDecide
 import EthCLLib.TheoremVectors.Types
+import EthCLLib.TheoremVectors.Scalar
 import EthCLLib.TheoremVectors.ForkBinding
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Prepare
@@ -19,7 +20,7 @@ solver's atoms with values, the reader unwraps the `UIntX.toBitVec` /
 `BitVec.ofBool` wrappers, and the values become the scalar inputs of a
 candidate the loop's check still decides.
 
-Two forms of the handoff live here:
+Three forms of the solve live here, one entry point:
 
 - **Pure scalar.** Every input scalar and no seeds: the prepared hypotheses
   go to the solver as they are.
@@ -31,12 +32,22 @@ Two forms of the handoff live here:
   scalar type, the source evaluates them in compiled code and substitutes
   the literals, and the solver takes the remaining free scalars. The grid
   holds the small values a scalar index into a seeded container takes in
-  practice (the builder index of `canBuilderCoverBid_iff` among them); a
-  scalar the grid misses falls to a later source or to the random source's
-  stage. The check stays the single arbiter throughout: a candidate from
-  any fixed point counts only when the compiled `decide` accepts it, and a
+  practice; a scalar the grid misses falls to a later source. The check
+  stays the single arbiter throughout: a candidate from any fixed point
+  counts only when the compiled `decide` accepts it, and a
   per-fixed-point `unsat` never reports the case vacuous, because another
   grid point may satisfy it.
+- **The `Fin` bridge.** A free `Fin n` input enters the solver as a
+  `UInt64` stand-in with the bound `u < n` posed as a hypothesis of the
+  goal, so the solver's model stays in range; the `Fin.val` reads rewrite
+  to the stand-in, and the candidate's value crosses the byte boundary
+  through `Fin`'s own codec, whose strict decode refuses what slipped
+  past (§9.3, §9.4).
+
+The random source (§9.4) drives the same entry point with its drawn
+containers in the `drawn` overlay: the seeds' positions stay the probe's,
+and the drawn bytes stand in for the containers, so a drawn state grounds
+the same reads a seed would.
 
 ## Lean idioms annotated
 
@@ -46,7 +57,9 @@ Two forms of the handoff live here:
   the `opaque` face is what interpreted code sees.
 - `mkFreshExprMVar` inside `withLocalDeclD` gives the goal the free scalars
   as its local context, which is what `bv_decide`'s reflection and its
-  counterexample equations name.
+  counterexample equations name; the reflection takes every proposition in
+  the goal's context, which is how the `Fin` stand-ins' bound enters the
+  formula.
 - `Expr.replace` with a `none`-returning function is a bottom-up rewrite:
   the instance substitution below rewrites only the free variables it
   knows and leaves every other node to the recursion.
@@ -124,33 +137,6 @@ private unsafe def evalUInt64Impl (e : Expr) : MetaM UInt64 :=
 
 @[implemented_by evalUInt64Impl] private opaque evalUInt64Op (e : Expr) : MetaM UInt64
 
-/-! ## Scalar analysis -/
-
-/-- The scalar shape of an input type, after the reducible aliases
-(`Slot`, `Gwei`, and the other SSZ aliases) reduce. -/
-private inductive ScalarKind where
-  | bool
-  | nat
-  | uint (width : Nat)
-  | fin (n : Expr)
-
-/-- The scalar kind of a type, `none` for everything the solver's wire form
-does not cover. -/
-private def scalarKind (ty : Expr) : MetaM (Option ScalarKind) := do
-  let t ← Meta.withReducible (Meta.whnf ty)
-  match t with
-  | .const c _ =>
-    match c with
-    | ``Bool   => return some .bool
-    | ``Nat    => return some .nat
-    | ``UInt64 => return some (.uint 64)
-    | ``UInt32 => return some (.uint 32)
-    | ``UInt16 => return some (.uint 16)
-    | ``UInt8  => return some (.uint 8)
-    | _        => return none
-  | .app (.const ``Fin _) n => return some (.fin n)
-  | _ => return none
-
 /-- The values one coupled scalar walks in the grid (§9.4): the small values
 a scalar index into a seeded container takes in practice. -/
 def gridValuesPerScalar : Nat := 64
@@ -161,7 +147,7 @@ def gridPointCap : Nat := 128
 
 /-- The values one coupled scalar walks in the grid: the small values a
 scalar index into a seeded container takes in practice. -/
-private def gridValues (k : ScalarKind) : MetaM (Array Nat) := do
+def gridValues (k : ScalarKind) : MetaM (Array Nat) := do
   match k with
   | .bool => pure #[0, 1]
   | .uint _ | .nat => pure (Array.range gridValuesPerScalar)
@@ -169,56 +155,7 @@ private def gridValues (k : ScalarKind) : MetaM (Array Nat) := do
     let nVal ← try evalNatOp n catch _ => pure 0
     pure (Array.range (min nVal gridValuesPerScalar))
 
-/-- The little-endian `uintN` bytes of `v` at byte width `w`, the SSZ wire
-form of the scalar family (§9.4's "serialization of each value to its SSZ
-width"). -/
-private def leBytes (w : Nat) (v : Nat) : ByteArray :=
-  ByteArray.mk ((Array.range w).map fun i =>
-    UInt8.ofNat ((v / 2 ^ (8 * i)) % 256))
-
-/-- The SSZ bytes of one scalar value at its input type (§9.4). -/
-private def scalarBytes (k : ScalarKind) (v : Nat) : ByteArray :=
-  match k with
-  | .bool => leBytes 1 (v % 2)
-  | .nat | .uint 64 => leBytes 8 v
-  | .uint 32 => leBytes 4 v
-  | .uint 16 => leBytes 2 v
-  | .uint 8 => leBytes 1 v
-  | .uint _ => leBytes 8 v
-  | .fin _ => leBytes 8 v
-
-/-- The literal term of one scalar value at its input type: the form a
-coupled scalar takes when the source fixes it in the hypotheses. `none`
-when the type has no literal form the substitution can write. -/
-private def literalTerm (ty : Expr) (v : Nat) : MetaM (Option Expr) := do
-  match ← scalarKind ty with
-  | some .bool => return some (.const (if v == 0 then ``Bool.false else ``Bool.true) [])
-  | some .nat => return some (mkRawNatLit v)
-  | some (.uint _) =>
-    let lit := mkRawNatLit v
-    let inst? ← try
-      some <$> Meta.synthInstance
-        (mkAppN (.const ``OfNat [levelZero]) #[ty, lit])
-    catch _ =>
-      pure none
-    match inst? with
-    | some inst => return some (mkAppN (.const ``OfNat.ofNat [levelZero]) #[ty, lit, inst])
-    | none => return none
-  | _ => return none
-
 /-! ## The term walk -/
-
-/-- Every fvar id in `e`, each once. -/
-private partial def collectFVarIds (e : Expr) (acc : Array FVarId) : Array FVarId :=
-  match e with
-  | .fvar id => if acc.contains id then acc else acc.push id
-  | .app f a => collectFVarIds a (collectFVarIds f acc)
-  | .lam _ t b _ => collectFVarIds b (collectFVarIds t acc)
-  | .letE _ t v b _ => collectFVarIds b (collectFVarIds v (collectFVarIds t acc))
-  | .forallE _ t b _ => collectFVarIds b (collectFVarIds t acc)
-  | .mdata _ b => collectFVarIds b acc
-  | .proj _ _ b => collectFVarIds b acc
-  | _ => acc
 
 /-- Free-variable substitution. -/
 private def substFvars (e : Expr) (sub : Array (FVarId × Expr)) : Expr :=
@@ -321,9 +258,12 @@ private partial def eliminateReads (freeIds : Array FVarId)
     return e
   let tryLiteral : MetaM (Option Expr) := do
     let ids := collectFVarIds e #[]
-    -- a term under a lambda carries loose bound variables, which no
-    -- compiled evaluation can run; the caller descends into it instead
-    if ids.any freeIds.contains || e.hasLooseBVars then
+    -- a term is evaluable only when it names no variable at all: an
+    -- `evalExpr` on a free variable (a fresh scalar's own fvar, or a
+    -- drawn container's variable) throws. A term under a lambda carries
+    -- loose bound variables, which no compiled evaluation can run; the
+    -- caller descends into it instead
+    unless ids.isEmpty && !e.hasLooseBVars do
       return none
     let ty ← Meta.inferType e
     scalarLiteralOfTerm (instSub e) ty
@@ -380,50 +320,67 @@ private def unwrapAtom (e : Expr) : Option FVarId :=
 
 /-! ## The solve -/
 
-/-- What one solve attempt answered. -/
-private inductive SolveAnswer where
-  /-- A candidate assignment: seeds, fixed coupled values, solved values.
-  `abstracted` names the atoms the solver left opaque, when the model did
-  not cover every equation; a candidate the check rejects was spurious, and
-  the atoms say which lemma the formula missed. -/
+/-- What one solve attempt answered. The random source drives the same
+entry point, so the answer type is the shared face. -/
+inductive SolveAnswer where
+  /-- A candidate assignment: seeds, drawn containers, fixed coupled
+  values, solved values. `abstracted` names the atoms the solver left
+  opaque, when the model did not cover every equation; a candidate the
+  check rejects was spurious, and the atoms say which lemma the formula
+  missed. -/
   | solved (a : Assignment) (abstracted : Array String := #[])
   /-- The solver proved this fixed point's conjunction unsatisfiable. -/
   | unsat
   /-- The reflection or an evaluation failed; the answer is no answer. -/
   | stuck (detail : Option String := none)
 
-/-- The candidate's bytes for every input: the seeds' bytes from the probe
-for the seeded positions, the fixed and solved scalars from their kinds,
-and the zero scalar for what neither touched. -/
+/-- The candidate's bytes for every input: the drawn bytes for the drawn
+containers, which win over the seeds, since on a seeded line's failing
+case a draw replaces the author's choice (§9.2); then the seeds' bytes
+from the probe, the fixed and solved scalars from their kinds, and the
+zero scalar for what neither touched. -/
 private def buildAssignment (ctx : SearchCtx) (stmt : Statement)
-    (fixed solved : Array (Nat × Nat)) : MetaM (Option Assignment) := do
+    (drawn : Array (Nat × ByteArray)) (fixed solved : Array (Nat × Nat)) :
+    MetaM (Option Assignment) := do
   let chosen := fixed ++ solved
   let mut a : Array ByteArray := #[]
   for i in [0:stmt.inputs.size] do
-    match ctx.probe.seeds.find? fun (p, _) => p == i with
+    match drawn.find? fun (p, _) => p == i with
     | some (_, b) => a := a.push b
     | none =>
-      let ty := stmt.inputs[i]!.type
-      match ← scalarKind ty with
-      | none => return none
-      | some k =>
-        let v := (chosen.find? fun (p, _) => p == i).map (·.2) |>.getD 0
-        a := a.push (scalarBytes k v)
+      match ctx.probe.seeds.find? fun (p, _) => p == i with
+      | some (_, b) => a := a.push b
+      | none =>
+        let ty := stmt.inputs[i]!.type
+        match ← scalarKind ty with
+        | none => return none
+        | some k =>
+          let v := (chosen.find? fun (p, _) => p == i).map (·.2) |>.getD 0
+          a := a.push (scalarBytes k v)
   return some a
 
-/-- One solve attempt at one substitution state: substitute the seeds and
-the fixed coupled values, unfold (§8.1), evaluate the seeded reads, and
-pose the negated conjunction to the solver (§9.4). `fixedVals` carries the
-same positions as `fixed` with the values the terms spell, so the
-candidate names what the formula was solved against. When the grounding
-leaves no free scalar in the formula, the conjunction decides without the
-solver. If the decision itself fails, the candidate goes to the loop's
-check unevaluated when every input is seeded or fixed; otherwise the
-answer is no answer (§9.3). -/
-private def solveOnce (ctx : SearchCtx) (stmt : Statement) (c : Case)
+/-- One solve attempt at one substitution state: substitute the seeds, the
+drawn containers, and the fixed coupled values, unfold (§8.1), evaluate
+the closed reads, and pose the negated conjunction to the solver (§9.4).
+`hyps` carries the case's conjunctions' parts, already read-substituted
+when the caller grounds container reads (§9.4's random source).
+`fixedVals` carries the same positions as `fixed` with the values the
+terms spell, so the candidate names what the formula was solved against.
+`unfold` runs §8.1's pass: the seed handoff needs it, because a seed term
+is a spec call whose equations expose the arithmetic; the random source
+skips it, because its reads grounding already replaced the calls with
+literals and a second unfold over a drawn state's hypotheses would burn
+the run's budget per grid point. When the grounding leaves no free
+scalar in the formula, the candidate goes to the probe's `check`, the
+compiled `decide` of the case's own conjunction, which answers without a
+`Decidable` synthesis over the grounded form; `true` is the point's
+witness and `false` its unsat (§9.3). -/
+def solveOnce (ctx : SearchCtx) (stmt : Statement) (caseIndex : Nat)
+    (unfold : Bool) (caseHyps : Array Expr) (drawn : Array (Nat × ByteArray))
     (fixed : Array (Nat × Expr)) (fixedVals : Array (Nat × Nat)) :
     MetaM SolveAnswer := do
-  let taken := (ctx.seedTerms.map (·.1)) ++ (fixed.map (·.1))
+  let taken := (ctx.seedTerms.map (·.1)) ++ (drawn.map (·.1)) ++
+    (fixed.map (·.1))
   let free : Array Nat :=
     (Array.range stmt.inputs.size).filter (fun i => !taken.contains i)
   -- the instance substitution (§11.2): the preset's constants for the
@@ -438,58 +395,162 @@ private def solveOnce (ctx : SearchCtx) (stmt : Statement) (c : Case)
       | _ => none
   -- the free scalars' types carry the substitution too: a type such as
   -- `Fin (3 * slotsPerEpoch)` names an instance variable the goal's fresh
-  -- context does not hold (§9.4)
-  let freeTys := free.map (fun i => instSub (stmt.inputs[i]!.type))
+  -- context does not hold (§9.4). A free `Fin n` input stands in as a
+  -- `UInt64` with the bound `u < n` (§9.4): the solver's fragment takes
+  -- the integer, and the bound keeps the model in range
+  let finBounds : Array (Nat × Expr) ← free.filterMapM fun i => do
+    match ← scalarKind (instSub (stmt.inputs[i]!.type)) with
+    | some (.fin n) => pure (some (i, instSub n))
+    | _ => pure none
+  let finPos : Array Nat := finBounds.map (·.1)
+  let freeTys := free.map fun i =>
+    if finPos.contains i then mkConst ``UInt64 []
+    else instSub (stmt.inputs[i]!.type)
   withFreshScalars freeTys fun fresh => do
+    let ltUInt64 ← Meta.synthInstance
+      (mkApp (.const ``LT [levelZero]) (.const ``UInt64 []))
+    -- the stand-ins' bounds: `u < n`, in the stand-ins' `free`-aligned
+    -- order
+    let bounds : Array Expr ←
+      ((free.zip fresh).filter fun (i, _) => finPos.contains i).filterMapM
+        fun (i, u) => do
+          let some n := (finBounds.find? fun (p, _) => p == i).map (·.2)
+            | pure none
+          let bound0 := mkAppN (.const ``LT.lt [levelZero])
+            #[.const ``UInt64 [], ltUInt64, u,
+              mkApp (.const ``UInt64.ofNat []) n]
+          eliminateReads (fresh.map (·.fvarId!)) instSub bound0
+    -- the substitution the formula reads: a seed the draw replaced
+    -- leaves, since the candidate carries the drawn bytes and the
+    -- leftover subterm must ground at the draw, not at the author's
+    -- term; then the fixed coupled scalars; then the non-`Fin` free
+    -- scalars, whose stand-ins the substitution writes in directly (a
+    -- `Fin` input's own variable stays, and its `Fin.val` reads rewrite
+    -- to the stand-in below)
     let sub : Array (FVarId × Expr) :=
-      ((ctx.seedTerms ++ fixed).filterMap fun (pos, t) => do
-          let f ← ctx.inputFvars[pos]?
-          some (f.fvarId!, t)) ++
-        (free.zip fresh).map fun (i, f) => (ctx.inputFvars[i]!.fvarId!, f)
+      (((ctx.seedTerms.filter fun (pos, _) =>
+            !(drawn.any fun (p, _) => p == pos)) ++
+          fixed).filterMap fun (pos, t) => do
+            let f ← ctx.inputFvars[pos]?
+            some (f.fvarId!, t)) ++
+        ((free.zip fresh).filter fun (i, _) => !finPos.contains i).map
+          fun (i, f) => (ctx.inputFvars[i]!.fvarId!, f)
     let freeIds := fresh.map (·.fvarId!)
+    -- `Fin.val i` reads rewrite to the stand-in (§9.4). The corpus states
+    -- its `Fin` bounds at the `Nat` level (`1 < i.val`), and the solver's
+    -- fragment takes `UInt64` comparisons alone, so a `Nat`-form
+    -- comparison over one `Fin.val` side bridges to the stand-in's
+    -- `UInt64` form at the same time; the other side must be closed, and
+    -- a comparison the bridge cannot express stays for an honest
+    -- reflection failure. The closed side's `UInt64.ofNat` truncates a
+    -- `Nat` bound at or above `2 ^ 64`; the corpus's `Fin` bounds are
+    -- small, and a truncated bound would show as a false `unsat`.
+    let ofNatT (x : Expr) : Expr := mkApp (.const ``UInt64.ofNat []) x
+    -- the stand-in of one `Fin` input: `fresh` aligns with `free`, so the
+    -- lookup walks the pair, never the `Fin`-only positions
+    let finU (id : FVarId) : Option Expr :=
+      ((free.zip fresh).find? fun (p, _) =>
+        ctx.inputFvars[p]!.fvarId! == id).map (·.2)
+    let uint64Ty := .const ``UInt64 []
+    let finFvarIds : Array FVarId :=
+      finPos.map (fun p => ctx.inputFvars[p]!.fvarId!)
+    -- `@Fin.val n i`'s own variable: the app spine carries the width
+    -- first, the variable second
+    let finValOf? (t : Expr) : Option FVarId :=
+      if t.isAppOf ``Fin.val then
+        t.getAppArgs[1]?.bind (·.fvarId?)
+      else none
+    let mkCmp (head : Name) (a b : Expr) : MetaM (Option Expr) := do
+      -- the rebuilt comparison is `UInt64`-typed, so a `Nat`-level head
+      -- becomes its `LT` / `LE` reading
+      let head := if head == ``Nat.lt then ``LT.lt else
+        if head == ``Nat.le then ``LE.le else head
+      if head == ``Eq then
+        return some (mkAppN (.const ``Eq [levelOne]) #[uint64Ty, a, b])
+      let inst ← Meta.synthInstance
+        (mkApp (.const (if head == ``LE.le then ``LE else ``LT) [levelZero])
+          uint64Ty)
+      return some (mkAppN (.const head [levelZero]) #[uint64Ty, inst, a, b])
+    let rec bridgeFinCmp (e : Expr) : MetaM (Option Expr) := do
+      let fn := e.getAppFn
+      match fn with
+      | .const c _ =>
+        unless c == ``LT.lt || c == ``LE.le || c == ``Eq ||
+            c == ``Nat.lt || c == ``Nat.le do
+          return none
+        let args := e.getAppArgs
+        -- `@LT.lt Nat inst x y` carries the type as the first argument;
+        -- `Nat.lt x y` carries none
+        unless args.size ≥ 2 do
+          return none
+        unless c == ``Nat.lt || c == ``Nat.le ||
+            args[0]! == .const ``Nat [] do
+          return none
+        let x := args[args.size - 2]!
+        let y := args[args.size - 1]!
+        match finValOf? x, finValOf? y with
+        | none, some fid =>
+          let some u := finU fid | return none
+          if (collectFVarIds x #[]).any finFvarIds.contains then return none
+          mkCmp c (ofNatT x) u
+        | some fid, none =>
+          let some u := finU fid | return none
+          if (collectFVarIds y #[]).any finFvarIds.contains then return none
+          mkCmp c u (ofNatT y)
+        | _, _ => return none
+      | _ => return none
+    let rec rewFin (e : Expr) : MetaM Expr := do
+      match ← bridgeFinCmp e with
+      | some e' => return e'
+      | none =>
+        match e with
+        | .app f a => return .app (← rewFin f) (← rewFin a)
+        | .lam n t b bi => return .lam n (← rewFin t) (← rewFin b) bi
+        | .letE n t v b bi =>
+          return .letE n (← rewFin t) (← rewFin v) (← rewFin b) bi
+        | .mdata m b => return .mdata m (← rewFin b)
+        | .proj s i b => return .proj s i (← rewFin b)
+        -- a bare `Fin.val` read outside a bridged comparison stays, and
+        -- the reflection's honest failure reports it
+        | _ => return e
     let mut hyps : Array Expr := #[]
-    for h in c.hyps do
+    for h in caseHyps do
       -- ground the closed reads first, so the unfold sees arithmetic and
       -- not a spec call whose equations would unfold into a fold (§9.4),
       -- then ground the preset constants the unfold exposes
-      let h0 := instSub (substFvars h sub)
+      let h0 ← rewFin (instSub (substFvars h sub))
       let h1 ← eliminateReads freeIds instSub h0
-      let h2 ← Prepare.unfoldHyp h1
+      let h2 ← if unfold then Prepare.unfoldHyp h1 else pure h1
       hyps := hyps.push (← eliminateReads freeIds instSub h2)
-    let conj := conjunction hyps
+    -- the solver's fragment carries no `True`: a conjunct the unfold
+    -- trivialized drops here, so the goal's shape stays in the fragment
+    let hypsLive := hyps.filter (· != .const ``True [])
+    let conj := conjunction hypsLive
     -- the grounding may close the formula even when free inputs remain
-    -- (a disjunct that mentions none of them): the goal then decides
-    -- without a solver, and bv_decide refuses an atom-free goal (§9.4).
-    -- A synthesis or an evaluation failure falls back to the candidate
-    -- and the loop's check when no free scalar remains (§9.3); the
-    -- original conjunction's `Decidable` instance, which the prepare pass
-    -- built (§8.4), decides there.
+    -- (a disjunct that mentions none of them): the candidate then goes
+    -- to the probe's `check`, the compiled `decide` of the case's own
+    -- conjunction at these bytes. `true` is the point's witness and
+    -- `false` its unsat; a `Decidable` synthesis over the grounded form
+    -- would whnf a large prop per point, which is the search's own
+    -- budget burn (§9.3, §9.4)
     if !(collectFVarIds conj #[]).any freeIds.contains then
-      let decided? : Option Bool ← try
-        let dec ← Meta.synthInstance (mkApp (.const ``Decidable []) conj)
-        some <$> evalBoolOp (mkAppN (.const ``Decidable.decide []) #[conj, dec])
-      catch _ => pure none
-      match decided? with
-      | some true =>
-        match ← buildAssignment ctx stmt fixedVals #[] with
-        | some a => return .solved a
-        | none => return .stuck none
-      | some false => return .unsat
-      | none =>
-        -- the candidate and the loop's check answer when every input is
-        -- seeded or fixed; otherwise the answer is no answer
-        if free.isEmpty then
-          match ← buildAssignment ctx stmt fixedVals #[] with
-          | some a => return .solved a
-          | none => return .stuck none
-        return .stuck none
+      match ← buildAssignment ctx stmt drawn fixedVals #[] with
+      | some a =>
+        if ctx.probe.check caseIndex a then return .solved a
+        else return .unsat
+      | none => return .stuck none
     -- the goal's context holds the fresh scalars alone: bv_decide's
     -- reflection takes every hypothesis of the goal's context, and the
     -- reader telescope's own hypotheses are the un-substituted forms the
-    -- goal must not see (§9.4 poses `¬P` and nothing else)
+    -- goal must not see (§9.4 poses `¬P` and nothing else). The `Fin`
+    -- stand-ins' bounds sit inside the conjunction, as conjuncts: the
+    -- preprocessor normalizes the goal's own formula, and a bound that
+    -- lived in the context would reify as an unconnected `Bool` atom,
+    -- leaving the stand-in unbounded (§9.4).
+    let conjFull := conjunction (hypsLive ++ bounds)
     let decls ← fresh.mapM Meta.getFVarLocalDecl
     let lctx := decls.foldl (init := {}) fun l d => l.addDecl d
-    let g ← Meta.mkFreshExprMVarAt lctx {} (mkNot conj)
+    let g ← Meta.mkFreshExprMVarAt lctx {} (mkNot conjFull)
     let answer? ← try
       some <$> bvDecideCore g.mvarId!
     catch _ => pure none
@@ -508,7 +569,7 @@ private def solveOnce (ctx : SearchCtx) (stmt : Statement) (c : Case)
             abstracted := abstracted.push (toString (← Meta.ppExpr atom))
         | none =>
           abstracted := abstracted.push (toString (← Meta.ppExpr atom))
-      match ← buildAssignment ctx stmt fixedVals solvedVals with
+      match ← buildAssignment ctx stmt drawn fixedVals solvedVals with
       | some a => return .solved a abstracted
       | none => return .stuck none
     | some (.ok _) => return .unsat
@@ -519,8 +580,9 @@ topmost seeded-mentioning subterm of `e`, where the logical and comparison
 connectives stay transparent. `bidAmount ≤ builders[i]!.balance - min`
 names `builderIndex` this way (it sits inside the subtraction over the
 seeded state) and leaves `bidAmount` free for the solver, because
-`bidAmount` is a comparison operand, not a read index. -/
-private partial def topSeededScalarIds (seededIds : Array FVarId) (e : Expr)
+`bidAmount` is a comparison operand, not a read index. The random source
+runs the same walk over its drawn containers (§9.4). -/
+partial def topSeededScalarIds (seededIds : Array FVarId) (e : Expr)
     (acc : Array FVarId) : Array FVarId :=
   let isConnective : Bool :=
     match e.getAppFn with
@@ -540,25 +602,28 @@ private partial def topSeededScalarIds (seededIds : Array FVarId) (e : Expr)
 values, capped so the source stays bounded (§9.4's handoff). Every
 coupled scalar stays in every point: the cap truncates after each fold,
 so a cut grid explores the earlier scalars' low values across the later
-scalars' low values. -/
-private def coupledGrid (kinds : Array (Option ScalarKind)) (coupled : Array Nat) :
-    MetaM (Array (Array (Nat × Nat))) := do
+scalars' low values. `valuesCap` bounds each scalar's values from above
+when the containers in play are known to be drawn (`randomSize`, §9.4);
+`0` means no bound, the seed handoff's case, where the seeded
+containers are the author's. -/
+def coupledGrid (kinds : Array (Option ScalarKind)) (coupled : Array Nat)
+    (valuesCap : Nat) : MetaM (Array (Array (Nat × Nat))) := do
   let mut acc : Array (Array (Nat × Nat)) := #[#[]]
   for i in coupled do
     let vals ← match kinds[i]? with
       | some (some k) => gridValues k
       | _ => pure (Array.range gridValuesPerScalar)
+    let vals := if valuesCap == 0 then vals
+      else vals.filter (· < valuesCap)
     acc := (acc.flatMap fun c => vals.map (fun v => c.push (i, v))).take gridPointCap
   return acc
 
-/-- The `Fin n` message of §9.4: the solver's domain stages the bridge in
-stage 4, and until then the source names the input instead of failing the
-reflection silently. -/
-private def finDetail (stmt : Statement) (positions : Array Nat) : String :=
-  let names := String.intercalate ", "
-    (positions.toList.map (fun i => stmt.inputs[i]!.name.toString))
-  s!"input {names} has a `Fin` type, which the solver does not take yet \
-    (§9.4; stage 4 carries the bridge)"
+/-- The no-literal-form message: a coupled scalar the grid fixed to a
+value whose literal term the substitution cannot write (a `Fin` whose
+bound does not reduce, §9.4). -/
+private def literalDetail (stmt : Statement) (position : Nat) : String :=
+  s!"input {stmt.inputs[position]!.name} has no literal form for the \
+    coupled grid (§9.4)"
 
 /-- The bit-vector source (§9.4). Applies to a theorem without block
 inputs; the search answers `nothing` when the residual inputs carry a
@@ -579,14 +644,6 @@ def bitVecSource : WitnessSource where
     unless residualKinds.all (·.isSome) do
       -- a residual container input: no bit-vector solve
       return .nothing
-    -- §9.4 stages the `Fin n` bridge; the input reports itself instead of
-    -- failing the reflection into a silent `stuck`
-    let fins := residual.filter fun i =>
-      match kinds[i]? with
-      | some (some (.fin _)) => true
-      | _ => false
-    if !fins.isEmpty then
-      return .nothing (some (finDetail stmt fins))
     -- §9.4: the coupled scalars sit inside a computation over a seeded
     -- input (a read index); the comparison operands stay free
     let seededIds := ctx.seedTerms.filterMap fun (pos, _) => do
@@ -602,7 +659,7 @@ def bitVecSource : WitnessSource where
       -- `unsat` (§9.4). A seeded theorem never takes this branch: its
       -- reads hold the seed's values, so an `unsat` there is a fact about
       -- one seed, and the grid below answers `nothing` for it.
-      match ← solveOnce ctx stmt c #[] #[] with
+      match ← solveOnce ctx stmt c.index true c.hyps #[] #[] #[] with
       | .solved a abstracted =>
         -- the loop's check is the single arbiter (§9.3); a rejected
         -- candidate was a spurious model, and the abstracted atoms name
@@ -618,20 +675,20 @@ def bitVecSource : WitnessSource where
     -- walk the grid, the solver takes the rest. A per-grid-point `unsat`
     -- is not the case's answer; another point may satisfy it.
     let mut details : Array String := #[]
-    for fixedStx in ← coupledGrid kinds coupled do
+    for fixedStx in ← coupledGrid kinds coupled 0 do
       let mut fixed : Array (Nat × Expr) := #[]
       let mut fixable := true
       for (i, v) in fixedStx do
         match ← literalTerm stmt.inputs[i]!.type v with
         | some t => fixed := fixed.push (i, t)
         | none =>
-          -- a coupled scalar whose type has no literal form yet
-          let note := finDetail stmt #[i]
+          -- a coupled scalar whose type has no literal form
+          let note := literalDetail stmt i
           unless details.contains note do
             details := details.push note
           fixable := false
       if fixable then
-        match ← solveOnce ctx stmt c fixed fixedStx with
+        match ← solveOnce ctx stmt c.index true c.hyps #[] fixed fixedStx with
         | .solved a abstracted =>
           -- the loop's check is the single arbiter (§9.3); a rejected
           -- candidate sends the walk to the next grid point, and the

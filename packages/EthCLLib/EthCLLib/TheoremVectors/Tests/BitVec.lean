@@ -118,7 +118,7 @@ private def searchCtxOf (binding : ForkBinding) (stmt : Statement)
   return {
     probe := probe, info := info, binding := binding, preset := PresetId.minimal,
     inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-    instConsts := instConsts, seedTerms := #[] }
+    instConsts := instConsts, seedTerms := #[], drawMemo := ← IO.mkRef #[] }
 
 end EthCLLib.TheoremVectors.Tests.BitVec
 
@@ -243,7 +243,7 @@ run_cmd do
       let sctx : SearchCtx :=
         { probe, info, binding := stateBinding, preset := PresetId.minimal,
           inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-          instConsts := instConsts, seedTerms := #[(0, seedTerm)] }
+          instConsts := instConsts, seedTerms := #[(0, seedTerm)], drawMemo := ← IO.mkRef #[] }
       -- §9.4: the base source's `applies` refuses the state input, so
       -- the search loop never proposes the `default` state
       if baseSource.applies sctx stmt cases[0]! then
@@ -313,7 +313,7 @@ run_cmd do
       let sctx : SearchCtx :=
         { probe, info, binding, preset := PresetId.minimal,
           inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-          instConsts := instConsts, seedTerms := #[(0, seedTerm)] }
+          instConsts := instConsts, seedTerms := #[(0, seedTerm)], drawMemo := ← IO.mkRef #[] }
       let sources : Array WitnessSource := #[seedSource, bitVecSource]
       match ← searchCase sources sctx stmt cases[0]! with
       | .ok (a, won) =>
@@ -324,3 +324,107 @@ run_cmd do
           throwError "toyAliasRead: the candidate failed the check"
       | .error f =>
         throwError s!"toyAliasRead: the search found no witness: {repr f}"
+
+namespace EthCLLib.TheoremVectors.Tests.BitVec
+
+/-- The `Fin` bridge's theorem (§9.4): the input is a `Fin`, the bound
+rejects the base source's zero, and the solver's stand-in must land in
+`[2, 5)`. -/
+theorem toyFinBound [HasherTag] (i : Fin 5) (h : 1 < i.val) :
+    i.val + 1 ≤ 5 := by omega
+
+/-- The stand-in lookup's pin (§9.4): a free scalar precedes the `Fin`
+in binder order, so the bridge must walk `free`'s pairs and not the
+`Fin`-only positions when it names the stand-in. -/
+theorem toyFinAfterScalar [HasherTag] (s : UInt64) (i : Fin 5)
+    (h : 1 < i.val) : i.val + 1 ≤ 5 := by omega
+
+/-- The bridge's equality pin (§9.4): the hypothesis is a `Nat`-form
+equality over the `Fin.val` read, which bridges to the stand-in's
+`UInt64` equality. -/
+theorem toyFinEq [HasherTag] (i : Fin 5) (h : i.val = 3) :
+    i.val + 1 = 4 := by omega
+
+end EthCLLib.TheoremVectors.Tests.BitVec
+
+open Lean.Elab.Command
+open EthCLLib.TheoremVectors
+open EthCLLib.TheoremVectors.Tests.BitVec in
+run_cmd do
+  liftTermElabM do
+    let binding := EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding
+    -- ── the `Fin` bridge pin: the solver takes the input as a `UInt64`
+    -- with the bound `u < n`, the candidate decodes through `Fin`'s own
+    -- codec, and the check holds
+    Statement.readIn binding `EthCLLib.TheoremVectors.Tests.BitVec.toyFinBound fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"toyFinBound: expected one prepared case, got {cases.size}"
+      let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[] with
+        | .ok r => pure r
+        | .error e => throwError s!"toyFinBound: the probe refused to build: {e}"
+      let sctx ← searchCtxOf binding stmt ctx info probe
+      let sources : Array WitnessSource := #[baseSource, bitVecSource]
+      match ← searchCase sources sctx stmt cases[0]! with
+      | .ok (a, won) =>
+        unless won == .bitVec do
+          throwError s!"toyFinBound: expected the bit-vector source to \
+            win, got {won.tag}"
+        unless probe.check cases[0]!.index a do
+          throwError "toyFinBound: the candidate failed the check"
+        let v := leOf a[0]!
+        unless 1 < v && v < 5 do
+          throwError s!"toyFinBound: the witness value {v} left its window"
+      | .error f =>
+        throwError s!"toyFinBound: the search found no witness: {repr f}"
+    -- ── the stand-in lookup's pin: the same drive with a free scalar
+    -- ahead of the `Fin` in binder order
+    Statement.readIn binding `EthCLLib.TheoremVectors.Tests.BitVec.toyFinAfterScalar fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"toyFinAfterScalar: expected one prepared case, got {cases.size}"
+      let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[] with
+        | .ok r => pure r
+        | .error e => throwError s!"toyFinAfterScalar: the probe refused to build: {e}"
+      let sctx ← searchCtxOf binding stmt ctx info probe
+      let sources : Array WitnessSource := #[baseSource, bitVecSource]
+      match ← searchCase sources sctx stmt cases[0]! with
+      | .ok (a, won) =>
+        unless won == .bitVec do
+          throwError s!"toyFinAfterScalar: expected the bit-vector source \
+            to win, got {won.tag}"
+        unless probe.check cases[0]!.index a do
+          throwError "toyFinAfterScalar: the candidate failed the check"
+        let v := leOf a[1]!
+        unless 1 < v && v < 5 do
+          throwError s!"toyFinAfterScalar: the witness value {v} left its \
+            window"
+      | .error f =>
+        throwError s!"toyFinAfterScalar: the search found no witness: {repr f}"
+    -- ── the equality pin: the hypothesis is a `Nat`-form equality over
+    -- the `Fin.val` read, and the bridge's `UInt64` equality carries it
+    Statement.readIn binding `EthCLLib.TheoremVectors.Tests.BitVec.toyFinEq fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"toyFinEq: expected one prepared case, got {cases.size}"
+      let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[] with
+        | .ok r => pure r
+        | .error e => throwError s!"toyFinEq: the probe refused to build: {e}"
+      let sctx ← searchCtxOf binding stmt ctx info probe
+      let sources : Array WitnessSource := #[baseSource, bitVecSource]
+      match ← searchCase sources sctx stmt cases[0]! with
+      | .ok (a, won) =>
+        unless won == .bitVec do
+          throwError s!"toyFinEq: expected the bit-vector source to win, \
+            got {won.tag}"
+        unless probe.check cases[0]!.index a do
+          throwError "toyFinEq: the candidate failed the check"
+        let v := leOf a[0]!
+        unless v == 3 do
+          throwError s!"toyFinEq: the witness value {v} missed the \
+            equality"
+      | .error f =>
+        throwError s!"toyFinEq: the search found no witness: {repr f}"

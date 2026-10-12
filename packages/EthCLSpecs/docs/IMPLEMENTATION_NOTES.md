@@ -1462,3 +1462,121 @@ function format, and the search wiring, against
   already ran in an earlier same-file pass; the cases the override does
   not reproduce must not linger, so `runPreset` removes
   `records/<fork>/<preset>/<thm>/` before its cases search.
+
+## Theorem vectors, stage 4
+
+- **The generic `SampleableExt` instance fell out of SizzLean's type
+  description.** This answers the plan's decision point B: no
+  hand-written per-container generators and no extension to the
+  description were needed. The instance maps a type with `SSZRepr` to
+  its shape's `interp` image (`proxy`) through `fromRepr` (`interp`),
+  and the draw and the shrink walk the description shape by shape
+  (`genShape`, `shrinkShape` in `Sampleable.lean`). The wide `uintN`
+  widths reduce on their literals, and Fulu's state carries one
+  (`baseFeePerGas : BitVec 256`), so `128` and `256` draw, shrink, and
+  print like any `BitVec`. Any other width is the one gap:
+  `interp (.uintN n)` is stuck for a symbolic width, so no
+  `BitVec`-typed value has the interp type there, and the draw fails
+  honestly while the shrink proposes nothing.
+
+- **The scalar draws mix small and boundary-scale values.** §9.5 hands
+  the scalars to Plausible's draw, whose `UInt64` stays inside the size
+  parameter, and a protocol scalar's interesting values sit on both
+  sides of constants such as `minDepositAmountG`. The hand-written
+  `UInt64` instance draws small most of the time and full-range
+  otherwise; the other widths keep Plausible's.
+
+- **The draw's seed is hashed before `mkStdGen`.** The generator state
+  over small seeds is near-linear in the seed, and the draws' seeds are
+  small integers over `theorem_vectors.seed`, the draw index, and the
+  input position. Raw, they repeat values across draws: every drawn
+  attestation's index list held the same length, which no honest draw
+  would. The probe hashes each position's seed with `mixHash seed
+  (i + 1)` and `runDrawPure` hashes again, so no two positions and no
+  two draws share a generator state; the draw stays pure, and the same
+  seed and size draw the same bytes.
+
+- **The probe's `reads` takes the case index.** §11.1's sketch types it
+  `Array ByteArray → Array ByteArray`; the reads are one case's
+  hypotheses' subterms, and §9.2 already gave `check` the same
+  parameter. The probe builds the reads per case from the same walk
+  (`containerReads`) the random source substitutes with, which is what
+  keeps the serialized values aligned with the subterms they replace.
+
+- **The random source's container reads are the maximal subterms with a
+  scalar literal form that mention a container input.** §9.4 says
+  "every maximal subterm of the hypotheses that mentions only container
+  inputs". The literal-form requirement is what makes the substitution
+  a literal the solver reads, and it covers the gates that mention only
+  containers (their `… = true` propositions) the same way. The walk
+  never enters a lambda or a `let` body, because a term under a binder
+  has no runtime value to evaluate at; the hypotheses arrive
+  zeta-reduced, the same form the walk saw.
+
+- **The random source runs on seeded lines too, and the draw wins over
+  the seeds.** §9.2 places the built and random sources after the
+  bit-vector source on every list, so a case the seed fails reaches the
+  draws. The candidate's byte overlay therefore reads the drawn bytes
+  before the probe's seeds: on a case the seed won, the loop never gets
+  there, and on a case it failed, the draw is the witness and the
+  record's `source` says so.
+
+- **A point whose reads misground still cannot write a wrong vector.**
+  A draw's shapes are random, so a read can index a drawn container past
+  its end (a `!`-read). Lean's panic answers the read with its type's
+  default and prints to the build log; the grounded formula is then
+  wrong, the point's candidate fails the check, and the loop moves on.
+  The cost is one wasted solve plus a panic line per misgrounded point,
+  which the grid's drawn-bound cap and the drawn lists' short lengths
+  bound.
+
+- **The `Fin` stand-in's bound is a conjunct of the goal.** §9.4 enters
+  a free `Fin n` input as a `UInt64` with the bound `x < n`. Spelled as
+  a context hypothesis, the bound reifies as an unconnected `Bool` atom,
+  because the preprocessor normalizes the goal's own formula alone, and
+  the model came back unbounded. As a conjunct the bound normalizes with
+  the rest, and the strict `Fin` decode refuses whatever slipped past
+  (§9.3). The corpus states its `Fin` bounds at the `Nat` level
+  (`i.val < slotsPerEpoch`), and the solver's fragment takes `UInt64`
+  comparisons alone, so the bridge rewrites a `Nat`-form comparison over
+  one `Fin.val` side to the stand-in's `UInt64` form in the same step; a
+  comparison it cannot express stays, and the reflection's failure
+  reports the case as `notFound` rather than solving an unbounded
+  stand-in.
+
+- **One `probe.shrink` call is walked past the first passing
+  candidate.** §9.6 keeps the first candidate that passes and repeats
+  by re-asking. Each repeat re-decodes the witness's containers, and
+  the re-decode of a drawn state is the loop's own cost, so the loop
+  keeps every passing candidate of one call before it re-asks: each
+  accepted improvement still consumes one `theorem_vectors.shrinkSteps`
+  step, and every candidate passed the check. The shape shrinkers also
+  propose a lean candidate list per step (two length cuts and one
+  element cut per list; a container's length cuts come before its fixed
+  fields' element cuts), because a drawn state's forty fields would
+  otherwise flood the loop with candidates. Two guards keep the walk
+  honest: a candidate is accepted only when its wire size does not
+  exceed the current witness's, since the list was built from the
+  pre-cut witness and its later entries would otherwise walk a length
+  cut straight back, and the length cuts sit first, so a smaller state
+  is what the budget buys first.
+
+- **The sources' `applies` test for a container is conservative.** The
+  seam runs pure and cannot reduce the reducible aliases (`Gwei` for
+  `UInt64`), so an alias reads as a container there and the search
+  answers `nothing` for such a theorem: the draw face (`scalarKind`, in
+  `MetaM`) classifies the alias as a scalar and no container input
+  remains. `SearchStep.nothing` carries no detail for this case, since
+  the source that refused is the source that misread.
+
+- **§9.2's `SearchM` budget counter never landed.** The sketch gives the
+  search monad a budget counter for the redraw loop; the loop's budget
+  is the `randomDraws` option per case, the solver's fragment caps the
+  grid, and the per-run heartbeat budget (§14.3) bounds the whole, so
+  `SearchM` stayed `MetaM`. The stage-4 run also corrected one stale
+  expectation in the pins lib (which the stage recipe does not build):
+  `EthCLSpecs.Tests.TheoremVectorsPins` expected the box lemma
+  `keepsUncached_getBlockRoot` to name `getBlockRoot` as its target;
+  §7.2's walk reads the conclusion's left side, and a box lemma's
+  conclusion names no function under test, so the reader's answer is
+  `none`, and the pin now expects that.

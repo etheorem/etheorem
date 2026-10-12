@@ -2,6 +2,8 @@ import Lean
 import SizzLean
 import EthCLLib.Spec.Hasher
 import EthCLLib.TheoremVectors.Types
+import EthCLLib.TheoremVectors.Scalar
+import EthCLLib.TheoremVectors.Sampleable
 import EthCLLib.TheoremVectors.ForkBinding
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Prepare
@@ -26,11 +28,16 @@ and the result assemblers); and it is elaborated once per statement and
 preset, with the case index as a runtime argument, so the search loop never
 re-elaborates.
 
-`sample`, `shrink`, `reads`, and `build` answer empty until their stages land
-(the plan's stages 4 and 6); `defaults` holds the serialized `default` of
+`sample` and `shrink` draw and shrink the container inputs through the
+`Sampleable` generators (§9.5, §9.6); `reads` evaluates one case's
+container-reading subterms at the candidate's bytes (§9.4). `build`
+answers empty until stage 6; `defaults` holds the serialized `default` of
 every input, which the base source (§9.4) hands to `check` as its candidate.
 `defaults` is a field the §11.1 sketch does not list; the base source needs
-it and no other probe function supplies it.
+it and no other probe function supplies it. `reads` takes the case index,
+which the §11.1 sketch leaves off its one-line type; the reads are the
+case's hypotheses' subterms, and §9.2 already gave `check` the same
+parameter (`IMPLEMENTATION_NOTES.md` records the deviation).
 
 Three deviations from the sketch carry their reasons, all recorded in
 `IMPLEMENTATION_NOTES.md`:
@@ -171,6 +178,34 @@ instance {n : Nat} : ScalarCodec (Fin n) where
     | 0 => none
     | k + 1 => some ⟨0, Nat.succ_pos k⟩
 
+/-! ## The draw and the shrink (§9.4, §9.6) -/
+
+/-- One drawn input's wire bytes (§9.4): the `SampleableExt` draw at this
+position's seed, serialized. `emptyBytes` when the draw failed or the
+strict decode would refuse the value, so a failed draw is an honest
+no-candidate rather than a corrupt one (§9.3). -/
+def sampleOne {T : Type} [ScalarCodec T] [Plausible.SampleableExt T]
+    (seed size : Nat) : ByteArray :=
+  match runDrawPure seed size (Plausible.SampleableExt.interpSample T) with
+  | some x => ScalarCodec.encode x
+  | none => emptyBytes
+
+/-- The shrink candidates one container input contributes (§9.6): one
+`shrinkShape` step on the value's shape representation, serialized, the
+other inputs' bytes unchanged. A corrupt entry decodes to nothing and
+contributes no candidate (§9.3). -/
+def shrinkReplace {T : Type} [ScalarCodec T] (r : SSZRepr T)
+    (bytes : Array ByteArray) (i : Nat) : Array (Array ByteArray) :=
+  match bytes[i]? with
+  | some b =>
+    match ScalarCodec.decode b with
+    | none => #[]
+    | some x =>
+      ((shrinkShape (@SSZRepr.shape T r) (r.toRepr x)).toArray.map fun p =>
+          ScalarCodec.encode (r.fromRepr p)).map fun b' =>
+        if h2 : i < bytes.size then bytes.set (Fin.mk i h2) b' else bytes
+  | none => #[]
+
 /-! ## What one run produced (§5.5) -/
 
 /-- What one probe run produced (`THEOREM_VECTORS_ARCHITECTURE.md` §5.5, extended). All
@@ -218,14 +253,14 @@ def boundRunResult (out : ByteArray) (agree : Bool) (literal : Option String)
 structure Probe where
   /-- `decide (P x)` for one case, on decoded inputs. -/
   check  : (caseIndex : Nat) → Array ByteArray → Bool
-  /-- Draw the container inputs; scalars come back as zero bytes. Empty
-  until stage 4. -/
+  /-- Draw the container inputs; scalars come back as their zero
+  encodings (§9.4). -/
   sample : (seed size : Nat) → Array ByteArray
-  /-- Shrink candidates for the container inputs. Empty until stage 4. -/
+  /-- Shrink candidates for the container inputs (§9.6). -/
   shrink : Array ByteArray → Array (Array ByteArray)
-  /-- The container-only subterms of the hypotheses, evaluated and
-  serialized. Empty until stage 4. -/
-  reads  : Array ByteArray → Array ByteArray
+  /-- The container-reading subterms of one case's hypotheses, evaluated
+  at the candidate's bytes and serialized, in the walk's order (§9.4). -/
+  reads  : (caseIndex : Nat) → Array ByteArray → Array ByteArray
   /-- The author seeds, serialized, with their input positions (§9.4). -/
   seeds  : Array (Nat × ByteArray)
   /-- The serialized `default` of every input, in binder order: the base
@@ -328,16 +363,8 @@ private def tupVal (ts fs : Array Expr) : Expr :=
     else mkAppN (.const ``Prod.mk [levelZero, levelZero]) #[ts[i]!, goTy (i + 1), fs[i]!, goVal (i + 1)]
   goVal 0
 
-/-- The empty `Array α` term. -/
-private def emptyArray (α : Expr) : Expr :=
-  mkAppN (.const ``Array.empty [levelZero]) #[α]
-
-/-- A one-argument constant function, the shape the stub probe functions
-take until their stages land. -/
-private def stub1 (argTy res : Expr) : Expr :=
-  .lam `_ argTy res .default
-
-/-- A two-argument constant function. -/
+/-- A two-argument constant function, the shape the not-yet-landed
+`build` field takes until stage 6. -/
 private def stub2 (aTy bTy res : Expr) : Expr :=
   .lam `_ aTy (.lam `_ bTy res .default) .default
 
@@ -462,6 +489,58 @@ private def iffTrueRunBody (lhs q qDec : Expr)
         inputLits,
       mkArrayLit (mkApp (.const ``Option [levelZero])
         (.const ``ByteArray [])) inputRoots]
+
+/-! ## The container reads (§9.4) -/
+
+
+/-- The pre-order read walk over one hypothesis (§9.4). A node that
+mentions a container input stops the descent when its type carries a
+scalar literal form: it joins the plan, and its compiled value takes its
+place in the residual formula. A node that mentions no container input
+stays in the residual formula for the solver. The walk never enters a
+lambda or a `let` body, because a term under a binder has no runtime
+value to evaluate at. Both the probe's `reads` face and the random
+source's substitution walk this same function, which is what keeps the
+serialized reads aligned with the subterms they replace. -/
+private partial def collectReads (containerIds : Array FVarId) (e : Expr)
+    (acc : Array Expr) : MetaM (Array Expr) := do
+  if !(collectFVarIds e #[]).any containerIds.contains then
+    return acc
+  match ← scalarKind (← Meta.inferType e) with
+  | some _ => return acc.push e
+  | none =>
+    match e with
+    | .app f a =>
+      collectReads containerIds a (← collectReads containerIds f acc)
+    | .mdata _ b => collectReads containerIds b acc
+    | .proj _ _ b => collectReads containerIds b acc
+    | _ => return acc
+
+/-- The reads of one case's hypotheses, in walk order (§9.4). -/
+def containerReads (containerIds : Array FVarId) (hyps : Array Expr) :
+    MetaM (Array Expr) :=
+  hyps.foldlM (fun acc h => collectReads containerIds (Prepare.zeta h) acc) #[]
+
+/-- The wire bytes one read's value takes, at the read's scalar type
+(§9.4). `none` when the type carries no scalar literal form, which the
+walk never produces. A `Nat` read travels through `UInt64.ofNat`, so a
+value at or above `2 ^ 64` truncates; the check evaluates the real
+value, and a misgrounded point's candidate fails it (§9.3). -/
+private def readEncodeTerm (ty : Expr) (v : Expr) : MetaM (Option Expr) := do
+  match ← scalarKind ty with
+  | some .bool => pure (some (mkApp (.const ``boolBytes []) v))
+  | some .nat => pure (some (mkApp (.const ``uint64BytesLE [])
+      (mkApp (.const ``UInt64.ofNat []) v)))
+  | some (.uint 64) => pure (some (mkApp (.const ``uint64BytesLE []) v))
+  | some (.uint 32) => pure (some (mkAppN (.const ``leBytes [])
+      #[mkRawNatLit 4, mkApp (.const ``UInt32.toNat []) v]))
+  | some (.uint 16) => pure (some (mkAppN (.const ``leBytes [])
+      #[mkRawNatLit 2, mkApp (.const ``UInt16.toNat []) v]))
+  | some (.uint 8) => pure (some (mkAppN (.const ``leBytes [])
+      #[mkRawNatLit 1, mkApp (.const ``UInt8.toNat []) v]))
+  | some (.fin n) => pure (some (mkAppN (.const ``leBytes [])
+      #[mkRawNatLit 8, mkAppN (.const ``Fin.val []) #[n, v]]))
+  | _ => pure none
 
 /-- Build and evaluate the probe for one statement at one preset (§11.2).
 Runs inside the reader's telescope scope: the statement's expressions and
@@ -678,6 +757,35 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
           decodeFailed
         let runFn ← Meta.mkLambdaFVars #[bytes] runBody
 
+        -- §9.4: the container reads. Per case, the plan the walk produces;
+        -- the probe evaluates it at the candidate's bytes, so the random
+        -- source's substitution and the compiled values stay aligned.
+        let containerFlags : Array (Option FVarId) ←
+          (Array.range ctx.inputFvars.size).mapM fun i => do
+            if (← scalarKind inputTys[i]!).isNone then
+              pure (some ctx.inputFvars[i]!.fvarId!)
+            else pure none
+        let containerIds : Array FVarId := containerFlags.filterMap id
+        let arrTy := mkApp (.const ``Array [levelZero]) (.const ``ByteArray [])
+        let mut readsDispatch :=
+          mkAppN (.const ``Array.empty [levelZero]) #[.const ``ByteArray []]
+        for j in [0:cases.size] do
+          let plan ← containerReads containerIds cases[j]!.hyps
+          let encodes : Array Expr ← plan.mapM fun r => do
+            let v := underXs r
+            let some enc ← readEncodeTerm (← Meta.inferType r) v
+              | throwError "theorem_vectors: a container read has no \
+                  scalar wire form (§9.4)"
+            pure enc
+          let readsCase := optGetD arrTy
+            (optMap tupTy arrTy (← Meta.mkLambdaFVars #[xs]
+              (mkArrayLit (.const ``ByteArray []) encodes)) decoderApp)
+            (mkAppN (.const ``Array.empty [levelZero]) #[.const ``ByteArray []])
+          readsDispatch := mkCond arrTy
+            (mkAppN (.const ``Nat.beq []) #[ci, mkRawNatLit j]) readsCase
+            readsDispatch
+        let readsFn ← Meta.mkLambdaFVars #[ci, bytes] readsDispatch
+
         -- the seeds, serialized in compiled code (§9.4). Each seed term
         -- already carries the telescope's instances (§14.3: elaborated in
         -- the telescope), which `substInstances` fixes per preset.
@@ -698,14 +806,77 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
                   mkAppN (.const ``ScalarCodec.encode []) #[t, codec],
                   mkAppN (.const ``ScalarCodec.default []) #[t, codec]])
               (mkConst ``emptyBytes []))
+        -- §9.4: the draw and the shrink. A scalar position answers its
+        -- default encoding, the zero entry the solver replaces; a
+        -- container position draws through its `SampleableExt` instance
+        -- (§9.5), each at `mixHash seed (i + 1)` so no two positions and
+        -- no two draws share a generator state, and contributes one
+        -- `shrinkReplace` step (§9.6).
+        let sampleFnE : Except String Expr ←
+          Meta.withLocalDeclD `seed (.const ``Nat []) fun seedV =>
+            Meta.withLocalDeclD `size (.const ``Nat []) fun sizeV => do
+              let mut entries : Array Expr := #[]
+              for i in [0:inputTys.size] do
+                let t := inputTys[i]!
+                let codec := codecInsts[i]!
+                if (← scalarKind t).isSome then
+                  entries := entries.push
+                    (optGetD (.const ``ByteArray [])
+                      (mkAppN (.const ``Option.map [levelZero, levelZero])
+                        #[t, .const ``ByteArray [],
+                          mkAppN (.const ``ScalarCodec.encode []) #[t, codec],
+                          mkAppN (.const ``ScalarCodec.default []) #[t, codec]])
+                      (mkConst ``emptyBytes []))
+                else
+                  let sampRes ← Meta.trySynthInstance
+                    (mkApp (.const ``Plausible.SampleableExt [levelOne, levelZero]) t)
+                  let some samp := sampRes.toOption
+                    | return .error s!"input {stmt.inputs[i]!.name} has no \
+                        draw (§9.5); the theorem is out of scope (§1.2)"
+                  entries := entries.push
+                    (mkAppN (.const ``EthCLLib.TheoremVectors.sampleOne [])
+                      #[t, codec, samp,
+                        -- `mixHash` spreads the seed and the position
+                        -- apart: `seed + d + i` and `seed + d + i' + 1`
+                        -- would share a generator state across draws
+                        mkApp (.const ``UInt64.toNat [])
+                          (mkAppN (.const ``mixHash [])
+                            #[mkApp (.const ``UInt64.ofNat []) seedV,
+                              mkApp (.const ``UInt64.ofNat [])
+                                (mkRawNatLit (i + 1))]),
+                        sizeV])
+              return .ok (← Meta.mkLambdaFVars #[seedV, sizeV]
+                (mkArrayLit (.const ``ByteArray []) entries))
+        let sampleFn ←
+          match sampleFnE with
+          | .ok f => pure f
+          | .error e => return .error e
+        let shrinkFnE : Except String Expr ←
+          Meta.withLocalDeclD `shrinkIn arrTy fun bV => do
+            let mut acc := mkAppN (.const ``Array.empty [levelZero]) #[arrTy]
+            for i in [0:inputTys.size] do
+              let t := inputTys[i]!
+              unless (← scalarKind t).isNone do continue
+              let codec := codecInsts[i]!
+              -- the codec's generic instance carries `[SSZRepr T]
+              -- [Inhabited T]`, so a container with a codec has the
+              -- `SSZRepr` the shrink's `shrinkShape` walks
+              let rRes ← Meta.trySynthInstance
+                (mkApp (.const ``SizzLean.SSZRepr []) t)
+              let some r := rRes.toOption
+                | return .error s!"input {stmt.inputs[i]!.name} has no \
+                    shape description to shrink (§9.6)"
+              acc := mkAppN (.const ``Array.append [levelZero])
+                #[arrTy, acc,
+                  mkAppN (.const ``EthCLLib.TheoremVectors.shrinkReplace [])
+                    #[t, codec, r, bV, mkRawNatLit i]]
+            return .ok (← Meta.mkLambdaFVars #[bV] acc)
+        let shrinkFn ←
+          match shrinkFnE with
+          | .ok f => pure f
+          | .error e => return .error e
         let term := mkAppN (.const ``Probe.mk [])
-          #[checkFn,
-            stub2 (.const ``Nat []) (.const ``Nat [])
-              (emptyArray (.const ``ByteArray [])),
-            stub1 (mkApp (.const ``Array [levelZero]) (.const ``ByteArray []))
-              (emptyArray (mkApp (.const ``Array [levelZero]) (.const ``ByteArray []))),
-            stub1 (mkApp (.const ``Array [levelZero]) (.const ``ByteArray []))
-              (emptyArray (.const ``ByteArray [])),
+          #[checkFn, sampleFn, shrinkFn, readsFn,
             mkArrayLit (mkApp2 (.const ``Prod [levelZero, levelZero]) (.const ``Nat [])
               (.const ``ByteArray [])) seedsLit,
             defaultsLit,

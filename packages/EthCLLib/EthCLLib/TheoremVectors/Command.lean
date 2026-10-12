@@ -11,6 +11,8 @@ import EthCLLib.TheoremVectors.Witness.Source
 import EthCLLib.TheoremVectors.Witness.Base
 import EthCLLib.TheoremVectors.Witness.Seed
 import EthCLLib.TheoremVectors.Witness.BitVec
+import EthCLLib.TheoremVectors.Witness.Random
+import EthCLLib.TheoremVectors.Witness.Shrink
 import EthCLLib.TheoremVectors.Record
 import EthCLLib.TheoremVectors.Outcome
 import EthCLLib.Internal.ProofLedger
@@ -366,7 +368,8 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     | .error e => throwError e
   let searchCtx : SearchCtx :=
     { probe, info, binding, preset := p, inputFvars := ctx.inputFvars,
-      instFvars := ctx.instFvars, instConsts, seedTerms }
+      instFvars := ctx.instFvars, instConsts, seedTerms,
+      drawMemo := ← IO.mkRef #[] }
   -- a fresh record directory per run: an overriding line's pass replaces
   -- the records an earlier pass wrote for the same theorem (§14.3)
   let thmDir := Record.thmDir outDir binding.tag p thmLocal
@@ -374,14 +377,16 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     IO.FS.removeDirAll thmDir
   -- B3: the search (§9.2, §9.4). A line with seeds runs seed then the
   -- bit-vector handoff: a `default` candidate would ignore the author's
-  -- seeded inputs. Without seeds, base then bit-vector. A block input
-  -- leaves only the base source running (§1.2); the base source itself
-  -- never proposes `default` for the fork's state (§9.4), so a state
-  -- theorem without seeds runs the bit-vector source alone.
+  -- seeded inputs. Without seeds, base then bit-vector. The random
+  -- source follows the bit-vector source on every list (§9.2): on a case
+  -- the seed fails, a draw beats no witness. A block input leaves only
+  -- the base source running (§1.2); the base source itself never
+  -- proposes `default` for the fork's state (§9.4), so a state theorem
+  -- without seeds runs the bit-vector source alone.
   let sources : Array WitnessSource :=
     if !stmt.blockInputs.isEmpty then #[baseSource]
-    else if seedTerms.isEmpty then #[baseSource, bitVecSource]
-    else #[seedSource, bitVecSource]
+    else if seedTerms.isEmpty then #[baseSource, bitVecSource, randomSource]
+    else #[seedSource, bitVecSource, randomSource]
   let some shapeTag := shapeTagOf stmt.shape
     | return { preset := some p, status := .unsupported,
                reason := some "unsupported shape" }
@@ -395,6 +400,14 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       let (status, text) := failureOf stmt.blockInputs failure
       failures := failures.push (c.index, status, text)
     | .ok (a, won) =>
+      -- §9.6: a witness from the random source shrinks while the check
+      -- holds, within the step budget. The other sources' witnesses are
+      -- the author's seeds, the defaults, and the solver's boundary
+      -- values, and shrinking moves all three.
+      let a ← if won == WitnessSourceTag.random then do
+        let steps := theorem_vectors.shrinkSteps.get (← getOptions)
+        shrinkWitness probe c steps a
+      else pure a
       -- B5: run, and execute the shape's row (§11.3). A disagreement or a
       -- probe failure is a build error, per §18.
       let r ← match probe.run a with

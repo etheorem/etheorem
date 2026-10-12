@@ -99,7 +99,8 @@ private def roundTrip (thm : Name) (dir : System.FilePath) :
     let searchCtx : SearchCtx :=
       { probe, info, binding, preset := .minimal,
         inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-        instConsts := #[], seedTerms := #[] }
+        instConsts := #[], seedTerms := #[],
+        drawMemo := ← IO.mkRef #[] }
     let won ← match ← searchCase sources searchCtx stmt c with
       | .ok (a, tag) =>
         unless tag == WitnessSourceTag.base do
