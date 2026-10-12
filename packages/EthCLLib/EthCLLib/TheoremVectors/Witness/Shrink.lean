@@ -60,6 +60,11 @@ def shrinkWitness (probe : Probe) (c : Case) (steps : Nat)
       if budget == 0 then break
       let candSize := assignmentSize cand
       if candSize > size then continue
+      -- §9.4, the stage-4 outcome: a candidate whose length cuts moved a
+      -- collection below a scalar's index fails the bounds gate before
+      -- the check, so the shrink's reads never run past an end
+      unless (probe.safe c.index cand).all (· == true) do
+        continue
       unless probe.check c.index cand do
         continue
       current := cand

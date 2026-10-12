@@ -80,6 +80,27 @@ register_option theorem_vectors.seed : Nat := {
   descr    := "the random seed of the random source's draws"
 }
 
+/-- The hint mode (§9.8, the option table in §14.4): `use` reads the
+committed hints and searches around them, `ignore` searches everything,
+and `require` turns a missing or failing hint into a build error. The
+`THEOREM_VECTORS_HINTS` variable reads ahead of this option, which is how
+the rebuild recipe overrides it without touching the declarative
+lakefile. -/
+register_option theorem_vectors.hints : String := {
+  defValue := "use"
+  descr    := "the hint source's mode: use, ignore, or require"
+}
+
+/-- The committed hints root (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8), the
+directory holding one `<fork>/<thm>.json` file per fork and theorem. The
+lakefile fixes it the way it fixes `theorem_vectors.outDir`, with the same
+repository-root-relative spelling; the empty default means the fork
+commits no hints, and the hint source never applies. -/
+register_option theorem_vectors.hintsDir : String := {
+  defValue := ""
+  descr    := "the committed hints root the hint source reads"
+}
+
 namespace EthCLLib.TheoremVectors
 
 /-! ## Presets -/
@@ -184,16 +205,29 @@ def WitnessSourceTag.tag : WitnessSourceTag → String
   | .reused p  => s!"reused-{p.tag}"
   | .hinted o  => s!"hinted-{o.tag}"
 
-/-- Read a source back from its wire tag. The record reader goes through
-this; a `.hinted` tag reads back as its original source, which the record
-of a replayed hint corrects at write time. -/
-def WitnessSourceTag.ofTag? : String → Option WitnessSourceTag
+/-- The five plain source tags, the leaves of the compound spellings. -/
+private def plainSourceTag? : String → Option WitnessSourceTag
   | "base"   => some .base
   | "bitVec" => some .bitVec
   | "built"  => some .built
   | "random" => some .random
   | "seed"   => some .seed
   | _        => none
+
+/-- Read a source back from its wire tag. The record reader goes through
+this. The compound tags read back in full: `hinted-<orig>` is the
+`.hinted orig` a replayed hint writes (§9.8), and `reused-<preset>` the
+`.reused preset` a reused witness writes (§10). -/
+def WitnessSourceTag.ofTag? (s : String) : Option WitnessSourceTag :=
+  match plainSourceTag? s with
+  | some t => some t
+  | none =>
+    -- both prefixes are seven characters
+    if s.startsWith "hinted-" then
+      (plainSourceTag? (s.drop 7).toString).map .hinted
+    else if s.startsWith "reused-" then
+      (PresetId.ofTag? (s.drop 7).toString).map .reused
+    else none
 
 /-- Why a case produced no vector (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4). `unsat` means
 the solver proved the hypotheses vacuous, `notFound` that every source ran

@@ -36,6 +36,7 @@ inductive ScalarKind where
   | uint (width : Nat)
   /-- `Fin n`, the `uintN 64` encoding of `Fin.val` (§11.2). -/
   | fin (n : Expr)
+  deriving Repr, BEq
 
 /-- The scalar kind of a type, `none` for everything the solver's wire
 form does not cover: the container types, and anything else. -/

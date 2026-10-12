@@ -1,0 +1,8 @@
+{"theorem": "EthCLSpecs.Proofs.Gloas.getPtcElseOffset_lt_next_slot",
+ "fingerprint": "0x66958bdd015ebe96",
+ "entries":
+ [{"source": "bitVec",
+   "scalars": {"slot": "0", "curSlot": "1"},
+   "preset": "minimal",
+   "fingerprint": "0x66958bdd015ebe96",
+   "case": 0}]}

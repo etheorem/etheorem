@@ -69,6 +69,14 @@ theorem toyBoxBound [HasherTag] (b : ToyBox) (h : b.tag < 10) :
   show b.tag.toNat < 1000
   omega
 
+/-- The two-read drive theorem: one maximal container-mentioning subterm
+holding two guarded reads, the entry shape the read bounds' fold exists
+for (§9.4, the stage-4 outcome). The conclusion is reflexive, so the
+probe's answer rides on the hypothesis alone. -/
+theorem toyTwoReads [HasherTag] (b : ToyBox)
+    (_h : b.items[0]! + b.items[1]! < 100) :
+    toyTag b = toyTag b := rfl
+
 /-- A toy binding whose state type is the toy container. -/
 def toyBoxBinding : ForkBinding :=
   { EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding with
@@ -141,3 +149,43 @@ run_cmd do
             ({shrunk[0]!.size} against {a[0]!.size})"
       | .error f =>
         throwError s!"the random source found no witness: {repr f}"
+    -- ── the two-read entry (§9.4, the stage-4 outcome): one maximal
+    -- container-mentioning subterm holding two guarded reads, whose
+    -- checks fold innermost first, and a drawn list gates both
+    Statement.readIn binding
+      `EthCLLib.TheoremVectors.Tests.Random.toyTwoReads fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"toyTwoReads: expected one case, got {cases.size}"
+      let c := cases[0]!
+      let (info, probe) ← builtProbe ctx cases
+      -- the defaults leave both reads past an empty drawn list's end: the
+      -- gate answers false, and the compiled reads never evaluate
+      unless !(probe.safe c.index probe.defaults).all (· == true) do
+        throwError "toyTwoReads: the empty default should fail the gate"
+      -- the search wins: a draw with both reads in range passes the gate
+      -- and the check, and the gate rejects the short draws without
+      -- evaluating them
+      let sctx2 : SearchCtx :=
+        { probe := probe, info := info, binding := binding,
+          preset := PresetId.minimal, inputFvars := ctx.inputFvars,
+          instFvars := ctx.instFvars,
+          instConsts := ← stmt.instances.mapM fun (_, kind) =>
+            match Preset.constOf binding .minimal kind with
+            | .ok c => pure c
+            | .error e => throwError e,
+          seedTerms := #[], drawMemo := ← IO.mkRef #[] }
+      let sources2 : Array WitnessSource := #[baseSource, bitVecSource, randomSource]
+      match ← searchCase sources2 sctx2 stmt c with
+      | .ok (a, won) =>
+        unless won == .random do
+          throwError s!"toyTwoReads: expected the random source to win, \
+            got {won.tag}"
+        unless (probe.safe c.index a).all (· == true) do
+          throwError "toyTwoReads: the winning candidate passed an unsafe \
+            gate"
+        unless probe.check c.index a do
+          throwError "toyTwoReads: the winning candidate failed the check"
+      | .error f =>
+        throwError s!"toyTwoReads: the search found nothing: {repr f}"

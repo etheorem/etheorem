@@ -353,6 +353,23 @@ of its four false-side cases from draws; the signature gate's negation
 never holds under the verify-off backend (§8.1) and stays `notFound`.
 The report records the seconds per record.
 
+**Outcome.** Commit `c1dd12d`, with `52dbd4f` for the design. The
+acceptance holds: `canBuilderCoverBid_iff` writes its three cases from
+draws with no seed, the shrunk state is 15493 bytes against the 17635 of
+the first draw, `isValidIndexedPayloadAttestation_eq_true_iff_checks`
+writes three false sides from draws and reports the signature gate's
+negation as `notFound after seed, bitVec, random`, and the report shows
+the seconds per record. 15 records and 14 function files. The clean
+recipe runs in 52 seconds, 50 of them the Gloas generator, against 11 at
+stage 3. Decision point B closed: the generic instance fell out of the
+type description. Four design changes: the random source's read set is
+the container-mentioning subterms with a scalar literal form, the draws
+are shared across a theorem's cases, the shrink keeps every passing
+candidate of one call under a wire-size bound, and `SearchM` stays
+`MetaM`. Two shortfalls carry into stage 5 steps 7 and 8: a read past a
+drawn list's end panics in compiled code, 152 times per clean build, and
+the sources' pure `applies` test misreads an alias as a container.
+
 ---
 
 ## Stage 5: hints
@@ -376,12 +393,45 @@ runs no search.
    a hint with a wrong scalar fails the check, the search runs, and the
    outcome says `failed`; `require` mode errors on a missing hint;
    `ignore` mode produces the same witness as the hint for a fixed seed.
+7. `Witness/Random.lean`, from the stage 4 outcome: no read past a drawn
+   list's end reaches compiled code. The coupled grid takes its bound from
+   the drawn list's length, or the reads plan evaluates the bound before
+   the read; a clean build prints no panic, and the per-record seconds
+   drop with the wasted solves.
+8. `Statement.lean` or `Scope.lean`, from the stage 4 outcome: the reader
+   records each input's scalar kind once, in `MetaM`, and the sources'
+   `applies` tests read it, so an alias never reads as a container and
+   `scalarKind` runs once per input instead of once per source and case.
+9. `Justfile`: the `theorem-vectors` recipe builds `EthCLLibTheoremVectors`
+   and `EthCLSpecs.Tests.TheoremVectorsPins` before the generator, so the
+   toy tests and the pins run with the recipe.
 
 **Acceptance.** After `just theorem-vectors-hints-update` and a commit,
 `just theorem-vectors-clean` followed by `just theorem-vectors` writes the
 same records as before, and every outcome shows `hint: replayed`. Changing
-one hint's scalar by hand leads to `failed` on that case and `replayed` on
-the rest.
+one hint's scalar by hand to a value the case rejects leads to `failed` on
+that case and `replayed` on the rest.
+
+**Outcome.** Commit `4543c8a`, with `60a13d5` for the design. The
+acceptance holds: the committed Gloas hints cover the ten theorems that
+wrote records, a clean build replays all ten (`hint: replayed`), an
+`ignore` build writes the same records byte for byte except the `source`
+field (`hinted-<orig>` against `<orig>`) and the same hint files, a
+hand-edited scalar the case rejects turns the run's field to `failed`
+while the other nine replay, and `require` passes on the committed
+corpus. A clean build prints no panic, the shortfall step 7 carried.
+Steps 7 to 9 landed: the probe's `safe` face, the statement's scalar-kind
+table, and the recipe that builds the tests and the pins. The clean
+recipe still runs in 50 seconds, because the two state theorems cost 20
+seconds each in every mode: `canBuilderCoverBid_iff`'s replay runs the
+shrink again, and with the shrink budget at zero it replays in 0.9
+seconds; the payload attestation theorem's case 4 is `notFound`, which
+no entry records, so every build searches it for 64 draws. Both carry
+into stage 6 steps 8 and 9. Design changes: the hints root is the
+lakefile option `theorem_vectors.hintsDir`, the candidate carries the tag
+the record names, the fingerprint is per entry, every run writes its
+file and a replay re-records the entry it consumed, and `require`
+enforces per case.
 
 ---
 
@@ -405,6 +455,17 @@ random source runs, and the state is built once per build.
    `stateRoot`, and `advanced` at the first epoch boundary has a slot equal
    to `slotsPerEpoch`. The cache returns the same bytes on a second call
    and rebuilds when the stamp file changes.
+8. `Witness/Hint.lean` and `Witness/Shrink.lean`, from the stage 5
+   outcome: a random entry records the shrink's path, the indices of the
+   accepted candidates in each `probe.shrink` call, and the replay checks
+   those candidates alone instead of walking every call's list. The
+   replay of `canBuilderCoverBid_iff` drops from 20 seconds to about one.
+9. `Witness/Hint.lean`, from the stage 5 outcome: a case every source
+   failed records a `notFound` entry under the run's fingerprint, and
+   `use` mode skips the search for such an entry while it is not stale.
+   The rebuild recipe refreshes it, and the outcome's `hint` field still
+   reads `replayed`. The payload attestation theorem's case 4 stops
+   costing 20 seconds per build.
 
 **Acceptance.** `canBuilderCoverBid_iff` writes its two vectors with source
 `built` before the random source runs. A second build reads the state from

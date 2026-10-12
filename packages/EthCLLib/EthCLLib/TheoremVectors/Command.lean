@@ -8,6 +8,7 @@ import EthCLLib.TheoremVectors.Preset
 import EthCLLib.TheoremVectors.Probe
 import EthCLLib.TheoremVectors.Execute
 import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Hint
 import EthCLLib.TheoremVectors.Witness.Base
 import EthCLLib.TheoremVectors.Witness.Seed
 import EthCLLib.TheoremVectors.Witness.BitVec
@@ -70,6 +71,17 @@ report shows the whole corpus without searching anything.
 One deviation from the sketch is recorded in `IMPLEMENTATION_NOTES.md`:
 an `unsupported` outcome's shape field writes `unsupported`, because the
 §16.1 example leaves the field's value for that case unspecified.
+
+**Stage 5.** The hint source (§9.8) prepends itself to every list: the
+run resolves the mode (`THEOREM_VECTORS_HINTS` ahead of the
+`theorem_vectors.hints` option), loads the committed file, and hands the
+source a log ref. A winning case records its hint entry, where a replay
+re-records the entry it consumed, and the run merges its entries into
+`<outDir>/hints/<fork>/<thm>.json`. The outcome line folds the log
+into its `hint` field. Mode `require` errors on a case whose hint
+failed the check or whose witness came from a search, which is the
+committed file's broken promise; a case that finds no witness at all
+falls through, because no entry could have existed for it.
 
 ## Lean idioms annotated
 
@@ -293,6 +305,31 @@ private def outDirOf : CommandElabM System.FilePath := do
   | some v => return v.str
   | none => return theorem_vectors.outDir.defValue
 
+/-- The committed hints root: the lakefile's weak setting, or the empty
+default that means the fork commits no hints (§9.8). -/
+private def hintsRootOf : CommandElabM String := do
+  match ((← getOptions).get? `theorem_vectors.hintsDir : Option Lean.DataValue) with
+  | some v => return v.str
+  | none => return theorem_vectors.hintsDir.defValue
+
+/-- The hint mode (§9.8): the `THEOREM_VECTORS_HINTS` variable reads
+ahead of the `theorem_vectors.hints` option, which is how the rebuild
+recipe overrides a declarative lakefile (§17.2). A set variable wins even
+when it holds an unknown value, so a typo in the recipe is a build error
+and never a silent `use`. -/
+private def hintModeOf : CommandElabM HintMode := do
+  let envVal ← IO.getEnv "THEOREM_VECTORS_HINTS"
+  let opts ← getOptions
+  let raw :=
+    match envVal with
+    | some v => v
+    | none => theorem_vectors.hints.get opts
+  match HintMode.ofTag? raw with
+  | some m => pure m
+  | none =>
+    throwError "theorem_vectors: `{raw}` is not a hint mode; the values \
+      are `use`, `ignore`, and `require` (§9.8)"
+
 /-- The wire tag of a statement's shape, for the record's `shape` field
 (§5.6). An unsupported statement never reaches a record; the `none` case
 is unreachable there. -/
@@ -338,13 +375,25 @@ private def withRunHeartbeats {α : Type} (x : MetaM α) : MetaM α := do
   withTheReader Lean.Core.Context (fun ctx =>
       { ctx with maxHeartbeats := budget, initHeartbeats := now }) x
 
+/-- Does this winning source's witness go through the shrink loop? A
+random-source witness does, and so does its replayed hint (§9.8: shrink
+replays from the same draw). The other sources' witnesses are the
+author's seeds, the defaults, and the solver's boundary values, and
+shrinking moves all three. -/
+private def shrinkableSource : WitnessSourceTag → Bool
+  | .random => true
+  | .hinted (.random) => true
+  | _ => false
+
 /-- One phase-B run of one theorem at one preset (`THEOREM_VECTORS_ARCHITECTURE.md`
 §3's B1 through B8). Runs inside the reader's telescope scope: the seed
 terms still carry the telescope's instance variables, and the probe builds
-from the statement's expressions. -/
+from the statement's expressions. The hint mode and the committed hint
+file come from the run (`runTheorem` resolved both once per theorem). -/
 private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     (thmLocal : String) (seedTerms : Array (Nat × Expr))
-    (p : PresetId) (ctx : StatementCtx) (cases : Array Case) :
+    (p : PresetId) (ctx : StatementCtx) (cases : Array Case)
+    (mode : HintMode) (hintFile? : Option HintFile) :
     MetaM RunOutcome := do
   let stmt := ctx.stmt
   let startMs ← IO.monoMsNow
@@ -370,12 +419,19 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     { probe, info, binding, preset := p, inputFvars := ctx.inputFvars,
       instFvars := ctx.instFvars, instConsts, seedTerms,
       drawMemo := ← IO.mkRef #[] }
+  -- §9.8: the hint source runs first on every list. The log ref collects
+  -- what one attempt did per case, which the outcome's `hint` field folds
+  -- up and which the `require` mode's error reads.
+  let fingerprint := Hint.fingerprint stmt.thm info
+  let hintLog ← IO.mkRef (#[] : Array (Nat × HintAttempt))
+  let hintSrc := Hint.source mode hintFile? fingerprint hintLog
   -- a fresh record directory per run: an overriding line's pass replaces
   -- the records an earlier pass wrote for the same theorem (§14.3)
   let thmDir := Record.thmDir outDir binding.tag p thmLocal
   if ← thmDir.isDir then
     IO.FS.removeDirAll thmDir
-  -- B3: the search (§9.2, §9.4). A line with seeds runs seed then the
+  -- B3: the search (§9.2, §9.4). The hint source prepends itself on every
+  -- list, `ignore` included off it. A line with seeds runs seed then the
   -- bit-vector handoff: a `default` candidate would ignore the author's
   -- seeded inputs. Without seeds, base then bit-vector. The random
   -- source follows the bit-vector source on every list (§9.2): on a case
@@ -383,31 +439,85 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   -- the base source running (§1.2); the base source itself never
   -- proposes `default` for the fork's state (§9.4), so a state theorem
   -- without seeds runs the bit-vector source alone.
-  let sources : Array WitnessSource :=
+  let baseSources : Array WitnessSource :=
     if !stmt.blockInputs.isEmpty then #[baseSource]
     else if seedTerms.isEmpty then #[baseSource, bitVecSource, randomSource]
     else #[seedSource, bitVecSource, randomSource]
+  let sources : Array WitnessSource :=
+    if mode == .ignore then baseSources else #[hintSrc] ++ baseSources
   let some shapeTag := shapeTagOf stmt.shape
     | return { preset := some p, status := .unsupported,
                reason := some "unsupported shape" }
+  -- §9.8: mode `require` turns a failing hint into the build error the
+  -- mode promises. A case that found no witness carries no claim the mode
+  -- can enforce (§9.4: the seed's claim is the author's; a case no source
+  -- wins reports `notFound`), so it falls through; a case that won from a
+  -- source other than the hint, or whose hint the check rejected, is the
+  -- error, because the committed file promised this case a witness
+  let enforceRequireHint (c : Case) (win? : Option Bool) : MetaM Unit := do
+    if mode == .require then
+      let logged ← hintLog.get
+      let attempt? := logged.find? fun (i, _) => i == c.index
+      let hintFailed := attempt?.any fun (_, a) =>
+        a == .failed || a == .staleFailed
+      let hintReplayed := attempt?.any fun (_, a) =>
+        a == .replayed || a == .staleReplayed
+      let wrong := hintFailed ||
+        (win?.getD false && !hintReplayed)
+      if wrong then
+        throwError "theorem_vectors: mode `require`: the hint for case \
+          {c.index} of `{stmt.thm}` at {p.tag} is missing or failed the \
+          check (§9.8)"
   let mut written : Nat := 0
   let mut source? : Option String := none
   let mut seedWon := false
+  let mut hintEntries : Array HintEntry := #[]
+  let mut freshWins : Nat := 0
   let mut failures : Array (Nat × RunStatus × String) := #[]
   for c in cases do
     match ← searchCase sources searchCtx stmt c with
     | .error failure =>
+      enforceRequireHint c none
       let (status, text) := failureOf stmt.blockInputs failure
       failures := failures.push (c.index, status, text)
     | .ok (a, won) =>
+      enforceRequireHint c (some (!(won matches .hinted _)))
+      -- §9.8: the hint entry records the pre-shrink assignment, whose
+      -- container bytes the draw memo still holds; the solver's scalars
+      -- are the shrink's boundary, so the entry is the shrunk witness's
+      -- too
+      let seedOpt := theorem_vectors.seed.get (← getOptions)
+      let sizeOpt := theorem_vectors.randomSize.get (← getOptions)
+      -- §9.8: a replay re-records the entry it consumed, so the file a
+      -- replayed build writes is the file it read; a fresh win records
+      -- the candidate the search found (before the shrink, whose
+      -- container cuts the draw memo does not hold)
+      let entry? ←
+        match won with
+        | .hinted _ =>
+          -- a replay re-records the entry it consumed, stamped with the
+          -- current fingerprint: the replay is the refresh (§9.8)
+          pure (match hintFile? with
+            | none => none
+            | some f =>
+              (Hint.entryFor f p c.index c.side).map
+                fun e => { e with fingerprint := some fingerprint })
+        | _ => Hint.entryOf searchCtx stmt c a won seedOpt sizeOpt fingerprint
       -- §9.6: a witness from the random source shrinks while the check
-      -- holds, within the step budget. The other sources' witnesses are
-      -- the author's seeds, the defaults, and the solver's boundary
-      -- values, and shrinking moves all three.
-      let a ← if won == WitnessSourceTag.random then do
+      -- holds, within the step budget, and so does its replayed hint
+      -- (§9.8: shrink replays from the same draw), which is what keeps
+      -- the replay's records byte-identical. The other sources'
+      -- witnesses are the author's seeds, the defaults, and the solver's
+      -- boundary values, and shrinking moves all three.
+      let shrinkable := shrinkableSource won
+      let a ← if shrinkable then do
         let steps := theorem_vectors.shrinkSteps.get (← getOptions)
         shrinkWitness probe c steps a
       else pure a
+      unless won matches .hinted _ do
+        freshWins := freshWins + 1
+      if let some e := entry? then
+        hintEntries := hintEntries.push e
       -- B5: run, and execute the shape's row (§11.3). A disagreement or a
       -- probe failure is a build error, per §18.
       let r ← match probe.run a with
@@ -449,10 +559,29 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       logInfo m!"theorem_vectors [{binding.tag}] {stmt.thm}: record \
         {dir}"
       written := written + 1
-      if source?.isNone then source? := some won.tag
-      if won == WitnessSourceTag.seed then seedWon := true
+      -- §16.1 pairs the run's source with its hint answer: the origin
+      -- the hint replayed, the record's own field carrying the
+      -- `.hinted` wrapper (§5.4)
+      let sourceTag := match won with
+        | .hinted o => o.tag
+        | t => t.tag
+      if source?.isNone then source? := some sourceTag
+      -- a replayed seed counts for §18's seed claim, the same way its
+      -- original win did (§9.8)
+      if won == .seed || won matches .hinted (.seed) then
+        seedWon := true
   let endMs ← IO.monoMsNow
   let seconds := some ((endMs - startMs).toFloat / 1000.0)
+  -- §9.8: the run's entries merge into the output tree's hint file, and
+  -- the outcome line folds the attempts into its `hint` field
+  let hintField := Hint.runHintField mode hintFile? p cases.size freshWins
+    (← hintLog.get)
+  -- §9.8: the run's entries merge into the output tree's hint file,
+  -- whether or not the run won anything: an overriding line that wins
+  -- nothing replaces the preset's stored entries with none, so a
+  -- survey's candidate never outlives the line that overrode it
+  Hint.mergeWrite outDir binding.tag thmLocal p
+    { «theorem» := stmt.thm, fingerprint, entries := hintEntries }
   -- §18: a fully-covering seed that wins no case breaks the build, because
   -- the author claimed it works; a partial failure falls through (§9.4)
   if !seedTerms.isEmpty && seedTerms.size == stmt.inputs.size && !seedWon then
@@ -462,7 +591,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     (failures.toList.map fun (i, _, text) => s!"case {i}: {text}")
   if written > 0 then
     return { preset := some p, status := .written, records := written,
-             source := source?, seconds,
+             source := source?, hint := hintField, seconds,
              reason := if failures.isEmpty then none
                        else some failureText }
   else
@@ -472,7 +601,8 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       else if failures.any fun (_, st, _) => st == .outOfScope then
         .outOfScope
       else .skipped
-    return { preset := some p, status, reason := some failureText }
+    return { preset := some p, status, hint := hintField,
+             reason := some failureText }
 
 /-- The stage-2 run of one theorem: phase A, then phases B1 through B8 per
 preset (§3, and the module docstring). The whole fold runs inside the
@@ -484,6 +614,13 @@ private def runTheorem (binding : ForkBinding) (origin : OutcomeOrigin)
   let proofNs := EthCLLib.Internal.proofNamespaceOf binding.fork
   let localName := thm.replacePrefix proofNs .anonymous
   let outDir ← outDirOf
+  -- §9.8: the hint mode and the committed file resolve once per theorem
+  -- and pass down to every preset's run
+  let mode ← hintModeOf
+  let hintFile? : Option HintFile ← do
+    let root ← hintsRootOf
+    if root.isEmpty then pure none
+    else liftIO <| Hint.read? (Hint.file root binding.tag localName.toString)
   liftTermElabM do
     Statement.readIn binding thm fun ctx => do
       let stmt ← Scope.classify binding ctx.stmt
@@ -540,7 +677,8 @@ private def runTheorem (binding : ForkBinding) (origin : OutcomeOrigin)
         -- its own heartbeat budget (§14.3)
         let runs ← ps.mapM fun p =>
           withRunHeartbeats
-            (runPreset binding outDir localName.toString seedTerms p ctx cases)
+            (runPreset binding outDir localName.toString seedTerms p ctx cases
+              mode hintFile?)
         -- §18: a strict claim that skipped fails hard; a non-strict line
         -- warns
         -- §18: `unsat` is always reported and never an error; the
@@ -743,6 +881,11 @@ def elabTvFork : CommandElab := fun stx => do
   let forkRecords := EthCLLib.TheoremVectors.Record.dir outDir / binding.tag
   if ← forkRecords.isDir then
     IO.FS.removeDirAll forkRecords
+  -- §9.8: the hints subtree clears with the outcomes, so the update
+  -- recipe never copies a theorem's stale file over the committed one
+  let forkHints := EthCLLib.TheoremVectors.Hint.dir outDir binding.tag
+  if ← forkHints.isDir then
+    IO.FS.removeDirAll forkHints
   runPass (generatorLines.getState (← getEnv))
 
 @[command_elab tvSkipCmd]

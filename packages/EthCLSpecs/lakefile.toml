@@ -64,7 +64,12 @@ supportInterpreter = true
 [[lean_lib]]
 name = "EthCLSpecsTheoremVectors"
 roots = ["EthCLSpecs.TheoremVectors"]
-leanOptions = [{ name = "weak.theorem_vectors.outDir", value = "packages/EthCLSpecs/theorem_vectors" }]
+leanOptions = [
+  { name = "weak.theorem_vectors.outDir", value = "packages/EthCLSpecs/theorem_vectors" },
+  # The committed hints the hint source reads (ARCHITECTURE.md §9.8); the
+  # update recipe copies the output tree's hints over this directory.
+  { name = "weak.theorem_vectors.hintsDir", value = "packages/EthCLSpecs/EthCLSpecs/TheoremVectors/Hints" },
+]
 
 # The command-line harness over the records: render, check, report. Its
 # root builds under the exe's own configuration, so the `leanOptions` of

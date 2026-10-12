@@ -1,5 +1,6 @@
 import Lean
 import EthCLLib.TheoremVectors.Types
+import EthCLLib.TheoremVectors.Scalar
 import EthCLLib.TheoremVectors.ForkBinding
 import EthCLLib.Internal.Capture
 
@@ -130,6 +131,13 @@ structure Statement where
   /-- The spec function under test, when the conclusion's left side names
   one the binding's fork owns (§7.2). -/
   target    : Option Name
+  /-- The scalar kind of each input, in binder order, `none` for a
+  container (`§9.4`). The reader computes it once, in `MetaM`, because
+  the kind needs a reducible `whnf` that a pure `applies` test cannot
+  run; the sources' `applies` tests and the probe read this field, which
+  is what keeps an alias (`Gwei` for `UInt64`) reading as a container in
+  a pure test (§9.4). -/
+  scalarKinds : Array (Option ScalarKind)
   /-- The matched conclusion form (§7.3). -/
   shape     : Shape
   /-- Inputs out of scope by the block-input rule (§1.2); `Scope.classify`
@@ -276,18 +284,6 @@ private def eqSides? (body : Expr) : Option (Expr × Expr) :=
   | .const c _, args =>
     if c == ``Eq && args.size ≥ 2 then some (args[1]!, args[2]!) else none
   | _, _ => none
-
-/-- Every fvar id in `e`, each once. -/
-private partial def collectFVarIds (e : Expr) (acc : Array FVarId) : Array FVarId :=
-  match e with
-  | .fvar id => if acc.contains id then acc else acc.push id
-  | .app f a => collectFVarIds a (collectFVarIds f acc)
-  | .lam _ t b _ => collectFVarIds b (collectFVarIds t acc)
-  | .letE _ t v b _ => collectFVarIds b (collectFVarIds v (collectFVarIds t acc))
-  | .forallE _ t b _ => collectFVarIds b (collectFVarIds t acc)
-  | .mdata _ b => collectFVarIds b acc
-  | .proj _ _ b => collectFVarIds b acc
-  | _ => acc
 
 /-- Every fvar of `e` is one the theorem binds? The `.runOk` match
 requires the post-state to be a closed term over the inputs (§7.3). The
@@ -501,6 +497,10 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
     let target ← match conclusionLhs? body with
       | none => pure none
       | some lhs => findTargetIn env binding lhs
+    -- the scalar kinds, once per input: the sources' `applies` tests and
+    -- the probe read this table, so an alias never reads as a container
+    -- and the reducible `whnf` never runs twice (§9.4)
+    let scalarKinds ← inputs.mapM fun i => scalarKind i.type
     let shape := matchShape body preId? binderIds
     -- §7.5: an instance binder on an unknown seam is a skip, because the
     -- command cannot bind it. The fold keeps an already-unsupported reason,
@@ -513,7 +513,7 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
         if shape matches .unsupported _ then shape
         else .unsupported s!"unknown instance seam on binder `{n}`: `{c}`"
       | _ => shape
-    k { stmt := { thm := thmName, instances, inputs, typeBinders, hyps, target, shape }
+    k { stmt := { thm := thmName, instances, inputs, typeBinders, hyps, target, scalarKinds, shape }
         inputFvars, instFvars }
 
 end EthCLLib.TheoremVectors

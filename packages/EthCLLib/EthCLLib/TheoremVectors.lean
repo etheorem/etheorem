@@ -14,6 +14,7 @@ import EthCLLib.TheoremVectors.Witness.Base
 import EthCLLib.TheoremVectors.Witness.Seed
 import EthCLLib.TheoremVectors.Witness.BitVec
 import EthCLLib.TheoremVectors.Witness.Random
+import EthCLLib.TheoremVectors.Witness.Hint
 import EthCLLib.TheoremVectors.Witness.Shrink
 import EthCLLib.TheoremVectors.Record
 import EthCLLib.TheoremVectors.Format

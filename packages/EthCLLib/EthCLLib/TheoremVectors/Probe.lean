@@ -261,6 +261,13 @@ structure Probe where
   /-- The container-reading subterms of one case's hypotheses, evaluated
   at the candidate's bytes and serialized, in the walk's order (§9.4). -/
   reads  : (caseIndex : Nat) → Array ByteArray → Array ByteArray
+  /-- Whether every guarded read inside the case's read plan stays
+  inside its collection at the candidate's bytes, one answer per plan
+  entry (`§9.4`, the stage-4 outcome). A candidate the face answers
+  `false` for never reaches `check`, so the plan's compiled reads never
+  run past a drawn or shrunken list's end and no panic prints. The face
+  evaluates the indexes and the lengths alone, which cannot panic. -/
+  safe   : (caseIndex : Nat) → Array ByteArray → Array Bool
   /-- The author seeds, serialized, with their input positions (§9.4). -/
   seeds  : Array (Nat × ByteArray)
   /-- The serialized `default` of every input, in binder order: the base
@@ -286,6 +293,15 @@ structure ProbeInfo where
   inputTypes  : Array String
   /-- The output's type, rendered. -/
   outputType  : String
+  /-- The rendered statement parts the hint fingerprint folds (§9.8):
+  the hypotheses and the conclusion's sides. The rendering substitutes
+  the preset's constants, whose names are the same at every preset. -/
+  stmtParts   : Array String := #[]
+  /-- Each input's wire-description hash, one rendered decimal per
+  input, empty for a scalar (§9.8). Unlike `stmtParts`, these move with
+  the preset, because a derived container's caps are the preset's, so
+  the fingerprint lives on the hint entry, per preset. -/
+  shapeParts  : Array String := #[]
   deriving Inhabited
 
 /-- Probe construction for a shape the stage-3 executor does not run yet:
@@ -542,6 +558,112 @@ private def readEncodeTerm (ty : Expr) (v : Expr) : MetaM (Option Expr) := do
       #[mkRawNatLit 8, mkAppN (.const ``Fin.val []) #[n, v]]))
   | _ => pure none
 
+/-- The wire description's hash, for the hint fingerprint (§9.8): a new
+field in a container changes its `SSZType` description, which changes
+this hash, and that is what marks a fork's random hints stale after a
+spec change. -/
+def shapeHash (T : Type) [SizzLean.SSZRepr T] : UInt64 :=
+  hash (SizzLean.SSZRepr.shape (T := T))
+
+/-- Compiled evaluation of one input's shape hash, for the fingerprint. -/
+private unsafe def evalShapeHashImpl (e : Expr) : MetaM UInt64 :=
+  Lean.Meta.evalExpr UInt64 (.const ``UInt64 []) e
+
+@[implemented_by evalShapeHashImpl]
+private opaque evalShapeHashOp (e : Expr) : MetaM UInt64
+
+/-! ## The read bounds (§9.4, the stage-4 outcome) -/
+
+/-- The compiled term for a collection's element count, `none` when the
+type carries none. The corpus's collections are `SSZList` / `Bitlist`
+subtypes over `Array`, plus the plain `Array` and `List` themselves; the
+`Subtype` arm reads `Array.size` through `Subtype.val`. -/
+private def lengthTermOf (coll : Expr) : MetaM (Option Expr) := do
+  let ty ← Meta.withReducible (Meta.whnf (← Meta.inferType coll))
+  match ty with
+  | .app (.const ``Array _) elem =>
+    pure (some (mkAppN (.const ``Array.size [levelZero]) #[elem, coll]))
+  | .app (.const ``List _) elem =>
+    pure (some (mkAppN (.const ``List.length [levelZero]) #[elem, coll]))
+  | .app (.app (.const ``Subtype _) A) _ =>
+    match ← Meta.withReducible (Meta.whnf A) with
+    | .app (.const ``Array _) elem =>
+      -- the buffer projection of the subtype, read structurally: a raw
+      -- `Subtype.val` application is sensitive to the projection's
+      -- binder order, and `.proj` is not
+      let val : Expr := .proj `Subtype 0 coll
+      pure (some (mkAppN (.const ``Array.size [levelZero]) #[elem, val]))
+    | _ => pure none
+  | _ => pure none
+
+/-- The guarded reads one plan entry makes: every read whose value comes
+out of an indexed collection, paired with its collection and index
+(`§9.4`'s `!`-reads, the reads whose compiled evaluation can run past a
+drawn list's end). Only the panic-capable reads gate: a `!`-read's
+compiled form is `GetElem?.getElem!`, whose `none` branch panics; a
+`?`-read answers `none` and a proof-carrying `xs[i]'h` read cannot run
+past the end, so neither gates. An
+index must be a `Nat`-typed term, which is what the `Nat.lt` bound
+compiles against; an index of another type leaves that read ungated.
+
+The walk collects in post-order, innermost first, so the safe term can
+nest the inner reads' checks inside the outer ones: an outer read whose
+index contains an inner read only evaluates its index when the inner
+read's check passed. -/
+private partial def detectReadBounds (r : Expr)
+    (acc : Array (Expr × Expr)) : MetaM (Array (Expr × Expr)) := do
+  let acc ←
+    match r with
+    | .app f a => detectReadBounds a (← detectReadBounds f acc)
+    | .mdata _ b => detectReadBounds b acc
+    | .proj _ _ b => detectReadBounds b acc
+    | _ => pure acc
+  let guarded :=
+    match r.getAppFn with
+    | .const c _ => c == ``GetElem?.getElem!
+    | _ => false
+  if guarded then
+    let args := r.getAppArgs
+    if args.size ≥ 2 then
+      let coll := args[args.size - 2]!
+      let idx := args.back!
+      let idxTy ← Meta.withReducible (Meta.whnf (← Meta.inferType idx))
+      if idxTy == .const ``Nat [] then
+        if (← lengthTermOf coll).isSome then
+          return acc.push (coll, idx)
+  return acc
+
+/-- The read bound of one plan entry, one `Bool` term over the checks of
+all its guarded reads (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4, the stage-4 outcome).
+The checks fold innermost first, and each fold step selects the next
+check through a lambda and applies it at once, so the accumulator is
+always a `Bool` and the compiled term evaluates an outer read's index
+only when the inner reads' checks passed. That matters because the
+compiler evaluates arguments strictly: an outer index that contains an
+inner read must not run before the inner read's check answered, or the
+panic the gate was built to prevent would move inside the face. -/
+private def entrySafeTerm (checks : Array Expr) : Expr :=
+  let unitTy := .const ``Unit []
+  -- a raw, non-dependent arrow: the bound name is never referenced
+  let funTy := .forallE `_u unitTy (.const ``Bool []) .default
+  let step (c acc : Expr) : Expr :=
+    -- `cond` picks one of the two lambdas, and applying the picked one
+    -- evaluates only that side's body
+    mkApp (mkCond funTy c
+      (.lam `_t unitTy acc .default)
+      (.lam `_f unitTy (mkConst ``Bool.false) .default)) (mkConst ``Unit.unit)
+  checks.foldr step (mkConst ``Bool.true)
+
+/-- The conclusion's sides, the terms a changed conclusion changes
+(§9.8's fingerprint names the statement). -/
+def shapeTermsOf : Shape → Array Expr
+  | .eq a b => #[a, b]
+  | .iffTrue a b => #[a, b]
+  | .bound a _ b => #[a, b]
+  | .runOk a p r p2 => #[a, p, r, p2]
+  | .runError a p e => #[a, p, e]
+  | .unsupported _ => #[]
+
 /-- Build and evaluate the probe for one statement at one preset (§11.2).
 Runs inside the reader's telescope scope: the statement's expressions and
 `ctx`'s free variables are telescope-local. `seedTerms` pairs each author
@@ -760,15 +882,21 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
         -- §9.4: the container reads. Per case, the plan the walk produces;
         -- the probe evaluates it at the candidate's bytes, so the random
         -- source's substitution and the compiled values stay aligned.
-        let containerFlags : Array (Option FVarId) ←
-          (Array.range ctx.inputFvars.size).mapM fun i => do
-            if (← scalarKind inputTys[i]!).isNone then
-              pure (some ctx.inputFvars[i]!.fvarId!)
-            else pure none
+        -- the statement's own kind table, the reader computed once (§9.4)
+        let containerFlags : Array (Option FVarId) :=
+          (Array.range ctx.inputFvars.size).map fun i =>
+            if stmt.scalarKinds[i]?.join.isNone then
+              some ctx.inputFvars[i]!.fvarId!
+            else none
         let containerIds : Array FVarId := containerFlags.filterMap id
         let arrTy := mkApp (.const ``Array [levelZero]) (.const ``ByteArray [])
+        let boolArrTy := mkApp (.const ``Array [levelZero]) (.const ``Bool [])
         let mut readsDispatch :=
           mkAppN (.const ``Array.empty [levelZero]) #[.const ``ByteArray []]
+        let mut safeDispatch :=
+          mkAppN (.const ``Array.empty [levelZero]) #[.const ``Bool []]
+        -- one plan per case: the reads' wire values and the read bounds
+        -- walk the same subterms, so both dispatches build from it
         for j in [0:cases.size] do
           let plan ← containerReads containerIds cases[j]!.hyps
           let encodes : Array Expr ← plan.mapM fun r => do
@@ -784,7 +912,30 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
           readsDispatch := mkCond arrTy
             (mkAppN (.const ``Nat.beq []) #[ci, mkRawNatLit j]) readsCase
             readsDispatch
+          -- §9.4, from the stage-4 outcome: the read bounds. Per read,
+          -- whether the read's `!`-index stays inside its collection at
+          -- the candidate's bytes. A point or candidate the face answers
+          -- `false` for never reaches the compiled `reads` or `check`, so
+          -- no panic reaches compiled code. The face is pure over the
+          -- decoded inputs, so the sources can gate on it before they
+          -- evaluate anything else.
+          let checks : Array Expr ← plan.mapM fun r => do
+            entrySafeTerm <$> (← detectReadBounds r #[]).mapM fun (coll, idx) => do
+              let some lenT ← lengthTermOf (underXs coll)
+                | pure (mkConst ``Bool.true)
+              let idxT := underXs idx
+              pure (mkDecide (mkAppN (.const ``LT.lt [levelZero])
+                #[.const ``Nat [], .const ``instLTNat [], idxT, lenT])
+                (mkAppN (.const ``Nat.decLt []) #[idxT, lenT]))
+          let safeCase := optGetD boolArrTy
+            (optMap tupTy boolArrTy (← Meta.mkLambdaFVars #[xs]
+              (mkArrayLit (.const ``Bool []) checks)) decoderApp)
+            (mkAppN (.const ``Array.empty [levelZero]) #[.const ``Bool []])
+          safeDispatch := mkCond boolArrTy
+            (mkAppN (.const ``Nat.beq []) #[ci, mkRawNatLit j]) safeCase
+            safeDispatch
         let readsFn ← Meta.mkLambdaFVars #[ci, bytes] readsDispatch
+        let safeFn ← Meta.mkLambdaFVars #[ci, bytes] safeDispatch
 
         -- the seeds, serialized in compiled code (§9.4). Each seed term
         -- already carries the telescope's instances (§14.3: elaborated in
@@ -819,7 +970,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
               for i in [0:inputTys.size] do
                 let t := inputTys[i]!
                 let codec := codecInsts[i]!
-                if (← scalarKind t).isSome then
+                if (stmt.scalarKinds[i]?.join).isSome then
                   entries := entries.push
                     (optGetD (.const ``ByteArray [])
                       (mkAppN (.const ``Option.map [levelZero, levelZero])
@@ -856,7 +1007,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
             let mut acc := mkAppN (.const ``Array.empty [levelZero]) #[arrTy]
             for i in [0:inputTys.size] do
               let t := inputTys[i]!
-              unless (← scalarKind t).isNone do continue
+              unless stmt.scalarKinds[i]?.join.isNone do continue
               let codec := codecInsts[i]!
               -- the codec's generic instance carries `[SSZRepr T]
               -- [Inhabited T]`, so a container with a codec has the
@@ -876,7 +1027,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
           | .ok f => pure f
           | .error e => return .error e
         let term := mkAppN (.const ``Probe.mk [])
-          #[checkFn, sampleFn, shrinkFn, readsFn,
+          #[checkFn, sampleFn, shrinkFn, readsFn, safeFn,
             mkArrayLit (mkApp2 (.const ``Prod [levelZero, levelZero]) (.const ``Nat [])
               (.const ``ByteArray [])) seedsLit,
             defaultsLit,
@@ -884,10 +1035,33 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
             runFn]
         let face ← evalProbeCore (substInstances ctx instConsts term)
         let inputTypes ← inputTys.mapM (renderedType ctx instConsts)
+        -- §9.8: the fingerprint's statement parts. The hypotheses and the
+        -- conclusion's sides render with the preset's constants
+        -- substituted, and every input with a wire description
+        -- contributes its shape hash, so a new container field changes
+        -- the fingerprint and the fork's random hints go stale at once
+        let hypParts : Array String ← stmt.hyps.mapM (renderedType ctx instConsts)
+        let concParts : Array String ←
+          (shapeTermsOf shape).mapM (renderedType ctx instConsts)
+        let shapeHashes : Array (Option String) ←
+          (Array.zip inputTys rootInsts?).mapM fun (t, r?) => do
+            match r? with
+            | none => pure none
+            | some r =>
+              -- the telescope's instance variables leave first: the
+              -- shape hash evaluates in compiled code, which needs a
+              -- closed term (§11.2's substitution)
+              let t' := substInstances ctx instConsts t
+              let r' := substInstances ctx instConsts r
+              pure (some (toString (← evalShapeHashOp
+                (mkAppN (.const ``shapeHash []) #[t', r']))))
+        let shapeParts : Array String := shapeHashes.map (fun o? => o?.getD "")
         let info : ProbeInfo :=
           { inputNames := stmt.inputs.map (·.name)
             inputTypes
-            outputType := ← renderedType ctx instConsts outTy }
+            outputType := ← renderedType ctx instConsts outTy
+            stmtParts := hypParts ++ concParts
+            shapeParts }
         return .ok (info, face)
 
 end EthCLLib.TheoremVectors

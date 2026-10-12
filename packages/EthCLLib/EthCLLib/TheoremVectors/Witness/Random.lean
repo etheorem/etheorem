@@ -48,19 +48,6 @@ open Lean
 
 namespace EthCLLib.TheoremVectors
 
-/-- The conservative pure test for a scalar input type: the head constants
-the solver's wire form covers, plus `Fin`. `applies` runs pure, so it
-cannot reduce the reducible aliases (`Gwei` for `UInt64`); an alias reads
-as a container here, and the search answers `nothing` for such a theorem,
-because the draw face (`scalarKind`, in `MetaM`) classifies the alias as
-a scalar and no container input remains. -/
-private def scalarHeadOrFin (ty : Expr) : Bool :=
-  match ty.getAppFn with
-  | .const c _ =>
-    c == ``Bool || c == ``Nat || c == ``UInt64 || c == ``UInt32 ||
-    c == ``UInt16 || c == ``UInt8 || c == ``Fin
-  | _ => false
-
 /-- The reads' bytes at one solve point, layered like the candidate's own
 overlay (`buildAssignment`): the drawn containers, then the probe's
 seeds, then the coupled scalars at their grid values, then the zero
@@ -125,6 +112,11 @@ private def runPoint (ctx : SearchCtx) (stmt : Statement) (c : Case)
     (fixed : Array (Nat × Expr)) (fixedVals : Array (Nat × Nat)) :
     MetaM (Option Assignment) := do
   let bytes ← readsBytesAt ctx stmt drawn fixedVals
+  -- §9.4, from the stage-4 outcome: a point whose `!`-reads run past a
+  -- drawn list's end is skipped before anything evaluates them, so no
+  -- panic reaches compiled code and no wasted solve bills the budget
+  unless (ctx.probe.safe c.index bytes).all (· == true) do
+    return none
   let taken := (ctx.probe.seeds.map (·.1)) ++ (drawn.map (·.1)) ++
     (fixedVals.map (·.1))
   if !((Array.range stmt.inputs.size).any fun i => !taken.contains i) then
@@ -141,11 +133,12 @@ private def runPoint (ctx : SearchCtx) (stmt : Statement) (c : Case)
 /-- One draw of the redraw loop (§9.4): walk the coupled scalars' grid
 over the drawn containers, and hand each fixed point's residual to the
 solver. A per-point `unsat` is a fact about the point, so the walk
-continues, the seed handoff's rule. `kinds` and `coupled` come from the
-case alone and the caller computes them once. A coupled scalar whose
-literal term the substitution cannot write makes every grid point
-unfixable; the note names it, the same answer the bit-vector source's
-`literalDetail` carries. -/
+continues, the seed handoff's rule; a point whose reads run past a drawn
+list's end is skipped at the gate inside `runPoint`. `kinds` and
+`coupled` come from the case alone and the caller computes them once. A
+coupled scalar whose literal term the substitution cannot write makes
+every grid point unfixable; the note names it, the same answer the
+bit-vector source's `literalDetail` carries. -/
 private def tryDraw (ctx : SearchCtx) (stmt : Statement) (c : Case)
     (containerIds : Array FVarId) (plan : Array Expr)
     (kinds : Array (Option ScalarKind)) (coupled : Array Nat)
@@ -181,34 +174,33 @@ private def tryDraw (ctx : SearchCtx) (stmt : Statement) (c : Case)
 container and no block input is in play; the search answers `nothing`
 when the container test was an alias (§9.4), and after
 `theorem_vectors.randomDraws` failed draws. The draws run from the run's
-`theorem_vectors.seed`, so a build is reproducible (§14.4). -/
+`theorem_vectors.seed`, so a build is reproducible (§14.4). The
+container test reads the statement's own scalar-kind table, which the
+reader computed through the reducible `whnf`, so an alias (`Gwei` for
+`UInt64`) never reads as a container (§9.4). -/
 def randomSource : WitnessSource where
   tag := .random
   applies _ stmt _ :=
     stmt.blockInputs.isEmpty &&
-    (Array.range stmt.inputs.size).any
-      (fun i => !scalarHeadOrFin stmt.inputs[i]!.type)
+    stmt.scalarKinds.any (·.isNone)
   search ctx stmt c := do
     let drawBudget := theorem_vectors.randomDraws.get (← getOptions)
     let size := theorem_vectors.randomSize.get (← getOptions)
     let seed := theorem_vectors.seed.get (← getOptions)
-    let containerFlags : Array (Option FVarId) ←
-      (Array.range stmt.inputs.size).mapM fun i => do
-        if (← scalarKind stmt.inputs[i]!.type).isNone then
-          pure (some ctx.inputFvars[i]!.fvarId!)
-        else pure none
+    let kinds := stmt.scalarKinds
+    let containerFlags : Array (Option FVarId) :=
+      (Array.range stmt.inputs.size).map fun i =>
+        if kinds[i]?.any (·.isSome) then none
+        else some ctx.inputFvars[i]!.fvarId!
+    -- `applies` read the same kind table, so at least one position is a
+    -- container here
     let containerIds : Array FVarId := containerFlags.filterMap id
-    if containerIds.isEmpty then
-      -- the `applies` test met an alias; the draw face sees only scalars
-      return .nothing
     -- the reads' plan: one walk per case, shared by every draw and grid
     -- point
     let plan ← containerReads containerIds c.hyps
     -- the coupled scalars: the free scalars inside a container-mentioning
     -- subterm, the seed handoff's walk over the drawn containers (§9.4);
     -- computed once, the case's alone
-    let kinds : Array (Option ScalarKind) ←
-      (Array.range stmt.inputs.size).mapM fun i => scalarKind stmt.inputs[i]!.type
     let scalarPos : Array Nat :=
       (Array.range stmt.inputs.size).filter fun i => (kinds[i]?).any (·.isSome)
     let inner : Array FVarId :=

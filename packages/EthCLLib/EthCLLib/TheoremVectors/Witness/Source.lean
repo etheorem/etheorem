@@ -11,11 +11,11 @@ The source interface and the search loop (`THEOREM_VECTORS_ARCHITECTURE.md` §9.
 source proposes one candidate at a time; the probe's `check` (§9.3) is the
 single arbiter, and a source whose candidate the check rejects has produced
 nothing. The loop walks the sources in §9.2's fixed order, and the command
-assembles that order per theorem: a line with seeds runs seed (§9.4) then
-bit-vector (§9.4), a line without seeds runs base (§9.4) then bit-vector,
-and a theorem with a block input runs base alone (§1.2). The hint source
-(§9.8) prepends itself in stage 5; the built source slots in with its
-stage, and the random source and the shrink are in.
+assembles that order per theorem: the hint source (§9.8) runs first on
+every list, then a line with seeds runs seed (§9.4) then bit-vector
+(§9.4), a line without seeds runs base (§9.4) then bit-vector, and a
+theorem with a block input runs base alone (§1.2). The random source and
+the shrink are in; the built source slots in with its stage.
 
 `SearchM` is `MetaM`: §9.2's budget counter stayed unnecessary, because
 the redraw loop's budget is the `randomDraws` option per case and the
@@ -36,8 +36,12 @@ namespace EthCLLib.TheoremVectors
 
 /-- What one source answered (`THEOREM_VECTORS_ARCHITECTURE.md` §9.2). -/
 inductive SearchStep where
-  /-- A candidate; it goes through the probe's `check` before it counts. -/
-  | candidate (a : Assignment)
+  /-- A candidate; it goes through the probe's `check` before it counts.
+  `tag?` names the source the record carries when this candidate wins,
+  `none` for the proposing source's own tag: the hint source (§9.8)
+  proposes under the tag `.hinted orig`, with the origin the committed
+  entry recorded. -/
+  | candidate (a : Assignment) (tag? : Option WitnessSourceTag := none)
   /-- This source has no candidate; try the next. `detail` carries what a
   reader of the report should know: the atoms the solver abstracted, an
   input type outside its domain (§9.4). -/
@@ -118,9 +122,13 @@ def searchCase (sources : Array WitnessSource) (ctx : SearchCtx)
     -- §9.2: the reason names every source that ran
     tried := tried.push source.tag
     match ← source.search ctx stmt c with
-    | .candidate a =>
-      if ctx.probe.check c.index a then
-        return .ok (a, source.tag)
+    | .candidate a tag? =>
+      -- §9.4, the stage-4 outcome: the read-bounds gate runs before the
+      -- check, so a candidate whose reads would run past a container's
+      -- end never reaches the compiled `decide` and no panic prints
+      if (ctx.probe.safe c.index a).all (· == true) then
+        if ctx.probe.check c.index a then
+          return .ok (a, tag?.getD source.tag)
       -- the check is compiled `decide P`; a failed check falls through to
       -- the next source (§9.3)
     | .nothing detail =>

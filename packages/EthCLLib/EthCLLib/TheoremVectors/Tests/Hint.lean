@@ -1,0 +1,334 @@
+import Lean
+import EthCLLib.Spec.Hasher
+import EthCLLib.TheoremVectors.Statement
+import EthCLLib.TheoremVectors.Scope
+import EthCLLib.TheoremVectors.Prepare
+import EthCLLib.TheoremVectors.Probe
+import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Hint
+import EthCLLib.TheoremVectors.Witness.Base
+import EthCLLib.TheoremVectors.Witness.BitVec
+import EthCLLib.TheoremVectors.Witness.Random
+import EthCLLib.TheoremVectors.Witness.Shrink
+import EthCLLib.TheoremVectors.Tests.ToyFork
+import EthCLLib.TheoremVectors.Tests.Random
+
+/-!
+# `EthCLLib.TheoremVectors.Tests.Hint`: the hint schema and the replay
+
+Build-gate checks for stage 5 (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8):
+
+- the fingerprint is a stable `0x…` hash that moves with its input;
+- the hint file round trips through its derived JSON, and the scalars map
+  writes decimal strings;
+- a hint replays a bit-vector witness: the search's first source rebuilds
+  the candidate, the loop's check accepts it, the record's source is
+  `.hinted bitVec`, and the outcome folds the log to `replayed`;
+- a hint with a wrong scalar fails the check, the search runs, and the
+  outcome says `failed`;
+- a stale fingerprint replays under `stale-replayed`;
+- a random witness records its draw key (`seed`, `size`, `draw`), and the
+  replay rebuilds the very draw bytes;
+- `ignore` never applies the hint and the fixed-seed search lands on the
+  same witness the hint recorded;
+- the `hint` field's fold: `missing` with no file, `ignored` in `ignore`
+  mode, `none` when no case ran.
+
+The command-level `require` error sits in `Tests/Command.lean`, where the
+`#guard_msgs` machinery can watch it fail a build.
+
+## Lean idioms annotated
+
+- The drives run inside `run_cmd` with `liftTermElabM` and fold inside the
+  reader's telescope scope, the same shapes the stage-2 to stage-4 test
+  modules use. The scratch hint tree lives under this package's
+  `.lake/build`, which the gitignore carries, and the final step removes
+  it.
+-/
+
+set_option autoImplicit false
+
+open Lean
+open EthCLLib.Spec (HasherTag)
+
+namespace EthCLLib.TheoremVectors.Tests.Hint
+
+/-- The scratch hints root, under the package's gitignored build tree. -/
+def scratchRoot : System.FilePath := ".lake/build/test-theorem-vectors-hints"
+
+/-- The toy binding, whose state type is the toy container, the same
+binding the random test drives. -/
+def hintBinding : ForkBinding :=
+  EthCLLib.TheoremVectors.Tests.Random.toyBoxBinding
+
+/-- The toy function under the scalar pin. -/
+def toyFun (x : UInt64) : UInt64 := x + 3
+
+/-- The scalar pin's theorem: the `default` candidate `(0, 0)` fails the
+hypothesis, so the base source cannot win and the solver must. -/
+theorem toyBound [HasherTag] (a b : UInt64) (_h : a < b ∧ 0 < b) :
+    toyFun a = a + 3 := rfl
+
+/-- The little-endian read of a scalar's eight wire bytes. -/
+private def leOf (b : ByteArray) : Nat :=
+  (Array.range 8).foldl (fun acc i =>
+    acc + (if h : i < b.size then (b.get i h).toNat * 2 ^ (8 * i) else 0)) 0
+
+/-- The search context one drive needs, from the reader's scope. -/
+private def searchCtxOf (stmt : Statement) (ctx : StatementCtx)
+    (info : ProbeInfo) (probe : Probe) : MetaM SearchCtx := do
+  let instConsts ← stmt.instances.mapM fun (_, kind) =>
+    match Preset.constOf hintBinding .minimal kind with
+    | .ok c => pure c
+    | .error e => throwError e
+  return {
+    probe := probe, info := info, binding := hintBinding,
+    preset := PresetId.minimal,
+    inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
+    instConsts := instConsts, seedTerms := #[], drawMemo := ← IO.mkRef #[] }
+
+/-- The evaluated probe for one drive theorem. -/
+private def builtProbe (ctx : StatementCtx) (cases : Array Case) :
+    MetaM (ProbeInfo × Probe) := do
+  match ← Probe.ofStatement hintBinding .minimal ctx cases #[] with
+  | .ok r => pure r
+  | .error e => throwError s!"the probe refused to build: {e}"
+
+/-- Write one theorem's hint file into the scratch tree. -/
+private def writeHints (thmLocal : String) (fp : String)
+    (entries : Array HintEntry) : IO Unit :=
+  Hint.write (Hint.file scratchRoot "toybase" thmLocal)
+    { «theorem» := `EthCLLib.TheoremVectors.Tests.Hint.toy, fingerprint := fp, entries := entries }
+
+/-- The scratch file of one theorem, read back. -/
+private def readHints (thmLocal : String) : IO (Option HintFile) :=
+  Hint.read? (Hint.file scratchRoot "toybase" thmLocal)
+
+end EthCLLib.TheoremVectors.Tests.Hint
+
+open Lean.Elab.Command
+open EthCLLib.TheoremVectors
+open EthCLLib.TheoremVectors.Tests.Hint in
+run_cmd do
+  liftTermElabM do
+    -- ── the fingerprint pins: a stable `0x…` hash that moves with its
+    -- input
+    unless (fingerprintOf "abc").startsWith "0x" do
+      throwError "the fingerprint is not a `0x…` hash"
+    unless fingerprintOf "abc" == fingerprintOf "abc" do
+      throwError "the fingerprint is not stable"
+    unless fingerprintOf "abc" != fingerprintOf "abd" do
+      throwError "the fingerprint ignores its input"
+    -- ── the JSON pins: the file round trips, and the scalars map writes
+    -- decimal strings, never bare numbers (§9.8)
+    let scalars : HintScalars := { scalars := #[("bidAmount", 32000000001)] }
+    unless toJson scalars == Json.mkObj [("bidAmount", Json.str "32000000001")] do
+      throwError s!"the scalars map is not decimal strings: {toJson scalars}"
+    let entry : HintEntry := { preset := .minimal, «case» := 0, side := some true, source := .random, seed := some 7, size := some 8, draw := some 3, scalars := scalars }
+    let f : HintFile := { «theorem» := `T, fingerprint := "0x01", entries := #[entry] }
+    match fromJson? (α := HintFile) (toJson f) with
+    | .ok f2 =>
+      unless f2 == f do
+        throwError s!"the hint JSON round trip changed the file: {repr f2}"
+    | .error e => throwError s!"the hint JSON round trip failed to parse: {e}"
+    -- ── the `hint` field's fold
+    unless Hint.runHintField .use none .minimal 1 0 #[] == some "missing" do
+      throwError "no file should fold to `missing`"
+    unless Hint.runHintField .ignore none .minimal 1 0 #[] == some "ignored" do
+      throwError "mode `ignore` should fold to `ignored`"
+    unless Hint.runHintField .use none .minimal 0 0 #[] == none do
+      throwError "no case should fold to no field"
+    let emptyFile : HintFile := { «theorem» := `T, fingerprint := "", entries := #[] }
+    unless Hint.runHintField .use (some emptyFile) .minimal 1 0 #[] ==
+        some "missing" do
+      throwError "a file without entries should fold to `missing`"
+    unless Hint.runHintField .use (some f) .minimal 1 1 #[] ==
+        some "missing" do
+      throwError "a fresh win beside replays should fold to `missing`"
+
+    -- ── the bit-vector replay: search, record, replay, and the record's
+    -- source is `.hinted bitVec`
+    Statement.readIn hintBinding `EthCLLib.TheoremVectors.Tests.Hint.toyBound
+      fun ctx => do
+      let stmt ← Scope.classify hintBinding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"toyBound: expected one case, got {cases.size}"
+      let c := cases[0]!
+      let (info, probe) ← builtProbe ctx cases
+      let fp := Hint.fingerprint stmt.thm info
+      -- the search without hints: the base defaults fail, the solver wins
+      let sctx ← searchCtxOf stmt ctx info probe
+      let (a0, won0) ← match ← searchCase #[baseSource, bitVecSource] sctx stmt c with
+        | .ok r => pure r
+        | .error f => throwError s!"toyBound: the search found nothing: {repr f}"
+      unless won0 == .bitVec do
+        throwError s!"toyBound: expected the bit-vector source to win, \
+          got {won0.tag}"
+      unless leOf a0[0]! < leOf a0[1]! && leOf a0[1]! ≥ 1 do
+        throwError s!"toyBound: the witness ({leOf a0[0]!}, {leOf a0[1]!}) \
+          missed its window"
+      -- the entry the command would write
+      let some e ← Hint.entryOf sctx stmt c a0 won0 0 8 fp
+        | throwError "toyBound: the winning witness produced no hint entry"
+      unless e.source == .bitVec do
+        throwError s!"toyBound: the entry names {e.source.tag}, expected bitVec"
+      unless e.scalars.scalars.any fun (n, _) => n == "a" do
+        throwError "toyBound: the entry holds no scalar for `a`"
+      -- the replay: the hint source runs first and wins under `.hinted`
+      writeHints "toyBound" fp #[e]
+      let some file ← readHints "toyBound"
+        | throwError "toyBound: the hint file did not read back"
+      let log ← IO.mkRef (#[] : Array (Nat × HintAttempt))
+      let hintSrc := Hint.source .use (some file) fp log
+      let sctx2 ← searchCtxOf stmt ctx info probe
+      match ← searchCase #[hintSrc, baseSource, bitVecSource] sctx2 stmt c with
+      | .ok (a1, won1) =>
+        unless won1 matches .hinted (.bitVec) do
+          throwError s!"toyBound: expected a hinted replay, got {won1.tag}"
+        unless probe.check c.index a1 do
+          throwError "toyBound: the replayed candidate failed the check"
+        unless a1 == a0 do
+          throwError "toyBound: the replay differs from the searched witness"
+      | .error f =>
+        throwError s!"toyBound: the replay found nothing: {repr f}"
+      let logV ← log.get
+      unless logV == #[(c.index, .replayed)] do
+        throwError s!"toyBound: expected one replayed attempt, got {repr logV}"
+      unless Hint.runHintField .use (some file) .minimal cases.size 0 logV ==
+          some "replayed" do
+        throwError "toyBound: the outcome should say `replayed`"
+      -- a wrong scalar: the hint fails, the search runs, the outcome says
+      -- `failed`
+      let zeroed := e.scalars.scalars.map fun (n, _) => (n, 0)
+      let wrong : HintEntry := { e with scalars := { scalars := zeroed } }
+      writeHints "toyBound" fp #[wrong]
+      let some wrongFile ← readHints "toyBound"
+        | throwError "toyBound: the wrong-scalar file did not read back"
+      let log3 ← IO.mkRef (#[] : Array (Nat × HintAttempt))
+      let hint3 := Hint.source .use (some wrongFile) fp log3
+      let sctx3 ← searchCtxOf stmt ctx info probe
+      match ← searchCase #[hint3, baseSource, bitVecSource] sctx3 stmt c with
+      | .ok (_, won3) =>
+        unless won3 == .bitVec do
+          throwError s!"toyBound: after the failed hint the search should \
+            win again, got {won3.tag}"
+      | .error f =>
+        throwError s!"toyBound: after the failed hint the search found \
+          nothing: {repr f}"
+      let log3V ← log3.get
+      unless log3V == #[(c.index, HintAttempt.failed)] do
+        throwError s!"toyBound: expected one failed attempt, got {repr log3V}"
+      unless Hint.runHintField .use (some wrongFile) .minimal cases.size 0
+          log3V == some "failed" do
+        throwError "toyBound: the outcome should say `failed`"
+      -- a stale fingerprint: the replay still answers, under
+      -- `stale-replayed`. The entry carries the operative fingerprint,
+      -- so the stale stamp goes on it.
+      let staleE : HintEntry := { e with fingerprint := some "0xdeadbeef" }
+      writeHints "toyBound" "0xdeadbeef" #[staleE]
+      let some staleFile ← readHints "toyBound"
+        | throwError "toyBound: the stale file did not read back"
+      let log4 ← IO.mkRef (#[] : Array (Nat × HintAttempt))
+      let hint4 := Hint.source .use (some staleFile) fp log4
+      let sctx4 ← searchCtxOf stmt ctx info probe
+      match ← searchCase #[hint4, baseSource, bitVecSource] sctx4 stmt c with
+      | .ok (_, won4) =>
+        unless won4 matches .hinted (.bitVec) do
+          throwError s!"toyBound: the stale hint should replay, got {won4.tag}"
+      | .error f =>
+        throwError s!"toyBound: the stale hint did not replay: {repr f}"
+      let log4V ← log4.get
+      unless log4V == #[(c.index, HintAttempt.staleReplayed)] do
+        throwError s!"toyBound: expected one stale-replayed attempt, got \
+          {repr log4V}"
+      unless Hint.runHintField .use (some staleFile) .minimal cases.size 0
+          log4V == some "stale-replayed" do
+        throwError "toyBound: the outcome should say `stale-replayed`"
+
+    -- ── the random replay: the entry records the draw key, and the replay
+    -- rebuilds the very draw bytes; `ignore` searches and lands on the
+    -- same witness
+    Statement.readIn hintBinding
+      `EthCLLib.TheoremVectors.Tests.Random.toyBoxBound fun ctx => do
+      let stmt ← Scope.classify hintBinding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"toyBoxBound: expected one case, got {cases.size}"
+      let c := cases[0]!
+      let (info, probe) ← builtProbe ctx cases
+      let fp := Hint.fingerprint stmt.thm info
+      -- the search without hints: the base source refuses the state type,
+      -- the random source wins (the random test pins the same answer)
+      let sctx ← searchCtxOf stmt ctx info probe
+      let (a0, won0) ←
+        match ← searchCase #[baseSource, bitVecSource, randomSource] sctx stmt c with
+        | .ok r => pure r
+        | .error f => throwError s!"toyBoxBound: the search found nothing: {repr f}"
+      unless won0 == .random do
+        throwError s!"toyBoxBound: expected the random source to win, \
+          got {won0.tag}"
+      -- the entry records the draw key: seed, size, draw
+      let some e ← Hint.entryOf sctx stmt c a0 won0 0 8 fp
+        | throwError "toyBoxBound: the winning draw produced no hint entry"
+      unless e.source == .random do
+        throwError s!"toyBoxBound: the entry names {e.source.tag}, expected random"
+      unless e.seed == some 0 && e.size == some 8 && e.draw.isSome do
+        throwError s!"toyBoxBound: the draw key is incomplete: \
+          {repr e.seed} {repr e.size} {repr e.draw}"
+      -- a draw is a pure function of the seed, the size, and the index,
+      -- so the replay rebuilds the same container bytes from the entry's
+      -- key (§9.8)
+      let raw := probe.sample (e.seed.getD 0 + e.draw.getD 0) (e.size.getD 8)
+      unless raw == a0 do
+        throwError "toyBoxBound: the draw does not replay from its key"
+      -- the replay
+      writeHints "toyBoxBound" fp #[e]
+      let some file ← readHints "toyBoxBound"
+        | throwError "toyBoxBound: the hint file did not read back"
+      let log ← IO.mkRef (#[] : Array (Nat × HintAttempt))
+      let sctx2 ← searchCtxOf stmt ctx info probe
+      let hintSrc := Hint.source .use (some file) fp log
+      let a1 ←
+        match ← searchCase #[hintSrc, baseSource, bitVecSource, randomSource]
+            sctx2 stmt c with
+        | .ok (a, won) =>
+          unless won matches .hinted (.random) do
+            throwError s!"toyBoxBound: expected a hinted replay, got {won.tag}"
+          pure a
+        | .error f =>
+          throwError s!"toyBoxBound: the replay found nothing: {repr f}"
+      unless a1 == a0 do
+        throwError "toyBoxBound: the replay differs from the searched draw"
+      -- the replayed candidate survives the same shrink loop the original
+      -- did, which keeps the records byte-identical (§9.8)
+      let shrunk0 ← shrinkWitness probe c 40 a0
+      let shrunk1 ← shrinkWitness probe c 40 a1
+      unless shrunk1 == shrunk0 do
+        throwError "toyBoxBound: the replay's shrink diverged from the \
+          original's"
+      -- `ignore`: the hint never applies, and the fixed-seed search lands
+      -- on the same witness
+      let logIg ← IO.mkRef (#[] : Array (Nat × HintAttempt))
+      let hintIg := Hint.source .ignore (some file) fp logIg
+      let sctx3 ← searchCtxOf stmt ctx info probe
+      match ← searchCase #[hintIg, baseSource, bitVecSource, randomSource]
+          sctx3 stmt c with
+      | .ok (a2, won2) =>
+        unless won2 == .random do
+          throwError s!"toyBoxBound: mode `ignore` should search, got \
+            {won2.tag}"
+        unless a2 == a0 do
+          throwError "toyBoxBound: mode `ignore` drew a different witness \
+            for the fixed seed"
+      | .error f =>
+        throwError s!"toyBoxBound: mode `ignore` found nothing: {repr f}"
+      let logIgV ← logIg.get
+      unless logIgV.isEmpty do
+        throwError "toyBoxBound: mode `ignore` logged a hint attempt"
+      unless Hint.runHintField .ignore (some file) .minimal cases.size 0
+          logIgV == some "ignored" do
+        throwError "toyBoxBound: the outcome should say `ignored`"
+
+    -- the scratch tree goes away
+    IO.FS.removeDirAll scratchRoot

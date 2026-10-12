@@ -764,7 +764,9 @@ fork type, and a `ByteArray` names none.
 ```lean
 /-- What one source answered. -/
 inductive SearchStep where
-  | candidate (a : Assignment)   -- goes through the probe's check before it counts
+  | candidate (a : Assignment) (tag? : Option WitnessSourceTag := none)
+      -- goes through the probe's check before it counts; `tag?` names the
+      -- source the record carries, `none` for the proposing source's own
   | nothing                      -- this source has no candidate; try the next
   | unsat                        -- the source proved `¬P`; stop the loop
 
@@ -777,7 +779,9 @@ structure WitnessSource where
 ```
 
 `SearchCtx` carries the probe, the binding, the preset, the seed options, and
-the author seeds for this line. `SearchM` is `MetaM` with a budget counter.
+the author seeds for this line, and the draw memo of the random source.
+`SearchM` is `MetaM`. The redraw loop's budget is the `randomDraws` option
+per case, and the per-run heartbeat budget (§14.3) bounds the rest.
 
 The full order is hint (§9.8), seed, base, bit-vector, built (§9.9),
 random, and the command assembles the list per line. A line with seeds
@@ -848,7 +852,7 @@ and the loop stops: no later source can find what does not exist.
 
 Before the call, the source grounds every maximal closed scalar subterm
 of the hypotheses in compiled code and substitutes the literal: a read of
-a seeded input (`coverBidState.builders[0]!.balance`), a preset constant
+a seeded or drawn input (`state.builders[0]!.balance`), a preset constant
 (`UInt64.ofNat slotsPerEpoch`), a crypto gate under the verify-off
 backend. The solver abstracts an unreduced constant as an opaque atom and
 returns a model around it, which the check rejects; the grounding keeps
@@ -867,17 +871,31 @@ every point fails. Only the seedless solve, where the formula carries the
 whole case, answers `unsat`. A coupled scalar the grid misses falls to a
 later source.
 
-**Random plus solve.** Applies when at least one input is a container and the
-remaining inputs are scalars. The probe draws the container inputs with their
-`SampleableExt` instances (`probe.sample seed size`), serialized. The source
-then collects every maximal subterm of the hypotheses that mentions only
-container inputs, evaluates each one through `probe.reads`, and substitutes
-the literal. What remains is a bit-vector formula over the scalar inputs, and
-the bit-vector source solves it. The loop redraws up to
-`theorem_vectors.randomDraws` (default 64) times when the solver reports
-`¬P` for that draw. `canBuilderCoverBid_iff` is the target: a draw fixes the
-builder's balance and pending total, and the solver picks a `bidAmount` on
-each side of the bound.
+**Random plus solve.** Applies when at least one input is a container and
+no block input is in play. It runs after the bit-vector source on every
+list, seeded lines included, and on a case the seed fails the drawn bytes
+replace the author's seed in the candidate. The probe draws the container
+inputs with their `SampleableExt` instances (`probe.sample seed size`),
+serialized; draw `k` of a theorem is a pure function of the seed, the
+size, and `k`, and the theorem's cases share it. The source then collects
+every maximal subterm of the hypotheses that mentions a container input
+and has a scalar literal form, evaluates each one through `probe.reads`
+at the draw, and substitutes the literal. A scalar that indexes a drawn
+container is coupled, and it walks the grid of the seed handoff bounded by
+the drawn list's length; a read past a drawn list's end is never
+evaluated: the probe's `safe` face (§11.1) answers, per read of the plan,
+whether the index stays inside its collection at the candidate's bytes,
+and every source, the solver's fixed points, and the shrink gate on it
+before the compiled `reads` or `check` runs. What remains is a bit-vector
+formula over the scalar inputs,
+and the solver takes it with no unfold, because the grounding already
+replaced the spec calls. A per-point `¬P` is a fact about that draw and
+point, never the case's `unsat`. The loop redraws up to
+`theorem_vectors.randomDraws` (default 64) times when no point of a draw
+gives a candidate the check accepts, and answers `nothing` after the
+last. `canBuilderCoverBid_iff` is the target: a draw fixes the builder's
+balance and pending total, and the solver picks a `bidAmount` on each
+side of the bound.
 
 **Seed.** Applies when the line names seeds (§14.3). A seed fixes some inputs
 to author-written terms, serialized through the probe (`probe.seeds`).
@@ -895,13 +913,21 @@ source finds a witness around it, the case reports `notFound`.
 
 `Sampleable.lean` supplies the instances the probe needs:
 
-- hand-written `SampleableExt` and `Shrinkable` for `UInt8` through `UInt64`,
-  `Bool`, `Fin n`, and fixed-width `ByteArray`;
+- hand-written `SampleableExt` instances for `UInt8` through `UInt64` and
+  `Bool`; `UInt64` draws a small value most of the time and a full-range
+  value otherwise, so a draw reaches both sides of a protocol constant
+  such as `minDepositAmountG`;
 - one generic instance for every type with `SSZRepr`, driven by SizzLean's
   type description: each field by its own instance, each list bounded by its
   SSZ limit and by `Gen`'s size parameter, each fixed-length vector at its
   length, and the value rebuilt through the same structure the `SSZRepr`
   instance walks.
+
+The draw runs in the probe's compiled `sample` face (§11.1). Each input
+position's seed is hashed with the position, and each draw's seed with the
+draw index, before it reaches the generator, so no two positions and no
+two draws share a generator state, and the same `theorem_vectors.seed`
+and size draw the same bytes.
 
 The generic instance is what makes a `BeaconState` an input the search
 produces on its own. A mainnet state has fixed-length vectors a minimal state
@@ -912,11 +938,17 @@ report records the time per record so mainnet cost stays visible.
 ### 9.6 Shrink
 
 After a witness from the random source passes, `Witness/Shrink.lean` asks
-`probe.shrink a` for smaller candidates, in `Shrinkable` order, and keeps the
-first one that passes the check. It repeats until no candidate passes or the
-budget (`theorem_vectors.shrinkSteps`, default 40) runs out. Scalars found
-by the solver are not shrunk, because a solver value is a boundary point and
-shrinking would move it. A state from the built source is shrunk by its
+`probe.shrink a` for candidates, one shape step per container input: a
+list's length cuts first (the half prefix, then the last element dropped),
+then one element cut per field, so a smaller state is what the budget
+buys first. The loop walks one call's whole list and keeps every
+candidate that passes the check and whose wire size does not exceed the
+current witness's; each kept candidate costs one step. It asks again
+from the kept witness until no candidate passes or the budget
+(`theorem_vectors.shrinkSteps`, default 40) runs out. The budget is
+small because every candidate costs one compiled `decide` over a decoded
+state. Scalars found by the solver are not shrunk, because a solver value
+is a boundary point and shrinking would move it. A state from the built source is shrunk by its
 knobs and never by its fields (§9.9).
 
 ### 9.7 Further sources
@@ -960,8 +992,15 @@ commit.
 | corpus state, when it exists | the vector path and the state root |
 
 The random draw replays from the seed, size, and index, because `Gen` is a
-pure function of those. Shrink replays from the same draw. The hint skips
-the redraw loop and the solver, which is where the cost is.
+pure function of those. The entry records the candidate before the shrink,
+and the replayed candidate goes through the same shrink loop (§9.6), which
+keeps the records byte-identical across builds. The hint skips the redraw
+loop and the solver. It does not skip the shrink, and for a state theorem
+the shrink is the replay's whole cost: `canBuilderCoverBid_iff` replays in
+20 seconds with the default budget and in under one second with the
+budget at zero. The plan's stage 6 records the shrink's path in the entry, the
+accepted candidates' indices per call, so a replay checks those
+candidates alone.
 
 **Where hints live.** In the spec half, committed:
 
@@ -973,17 +1012,24 @@ EthCLSpecs/TheoremVectors/Hints/<fork>/<thm>.json
 { "theorem": "EthCLSpecs.Proofs.Gloas.canBuilderCoverBid_iff",
   "fingerprint": "0x…",
   "entries": [
-    { "preset": "minimal", "case": 0, "side": true,
+    { "preset": "minimal", "case": 0, "side": true, "fingerprint": "0x…",
       "source": "random", "seed": 7, "size": 8, "draw": 3,
       "scalars": { "builderIndex": "3", "bidAmount": "32000000000" } },
-    { "preset": "minimal", "case": 0, "side": false,
+    { "preset": "minimal", "case": 1, "side": false, "fingerprint": "0x…",
       "source": "random", "seed": 7, "size": 8, "draw": 3,
       "scalars": { "builderIndex": "3", "bidAmount": "40000000001" } } ] }
 ```
 
-The fingerprint is a hash of the statement and the input type names. Scalars
-are decimal strings, because a `UInt64` can exceed the integer range a JSON
-reader is sure to keep. The file is JSON (§12.3): the generator is its only
+The fingerprint is FNV-1a over the theorem's name, the rendered input and
+output types, the hypotheses and the conclusion's sides as the probe
+rendered them, and the `SSZType` shape hash of every container input. The
+shape hashes move with the preset, because a derived container's caps are
+the preset's, so each entry carries the fingerprint of the run that wrote
+it; the file-level field repeats the last run's and decides nothing. A
+case index is one DNF disjunct of the prepare pass (§8.2), so the two
+sides of an `.iffTrue` never share one. Scalars are decimal strings,
+because a `UInt64` can exceed the integer range a JSON reader is sure to
+keep. The file is JSON (§12.3): the generator is its only
 reader, and `Lean.Json` gives both directions from the hint structure's
 derived instances.
 
@@ -993,16 +1039,26 @@ proof-coverage baseline follows. New and replaced hints go to
 copies them over the committed ones. The diff reaches review, so a changed
 witness is visible as a changed hint.
 
+Every run writes its theorem's file, whether or not it won anything: a
+replay re-records the entry it consumed under the current fingerprint,
+so the file a replayed build writes is the file it read, and a run that
+wins nothing replaces its preset's entries with none, so a survey's
+candidate never outlives the line that overrode it. The merge keys on the
+preset, and a second preset's run keeps the first's entries. The update
+recipe copies and never deletes: a theorem that stops winning leaves its
+committed file in place, and the report shows it as `failed` until someone
+removes the file.
+
 **The mode.** One option, `theorem_vectors.hints`:
 
 | Value | Meaning |
 | --- | --- |
 | `use` (default) | read hints; search when one is missing or fails; write new hints to the output tree |
 | `ignore` | search everything; write new hints |
-| `require` | a hint that is missing or fails is an error |
+| `require` | a hint the check rejects, or a case whose witness came from a search, is an error; a case no source wins reports `notFound` as in `use` |
 
-**Staleness.** Each hint file carries a fingerprint, a hash of the theorem's
-statement and of the input type names. A mismatch does not reject the hint,
+**Staleness.** Each entry carries the fingerprint of the run that wrote
+it. A mismatch with the current fingerprint does not reject the hint,
 because the check decides. The outcome line records `hint: stale-replayed`
 or `hint: stale-failed`, so the report shows which hints a spec change
 touched. A new field in `BeaconState` changes every random draw of that
@@ -1176,8 +1232,13 @@ structure Probe where
   sample : (seed size : Nat) → Array ByteArray
   /-- Shrink candidates for the container inputs. -/
   shrink : Array ByteArray → Array (Array ByteArray)
-  /-- The container-only subterms of the hypotheses, evaluated and serialized. -/
-  reads  : Array ByteArray → Array ByteArray
+  /-- One case's container-reading subterms, evaluated at the candidate's
+  bytes and serialized, in the walk's order (§9.4). -/
+  reads  : (caseIndex : Nat) → Array ByteArray → Array ByteArray
+  /-- Per entry of one case's read plan, whether every `!`-read's index
+  stays inside its collection at the candidate's bytes (§9.4). The face
+  evaluates the indexes and the lengths alone, so it cannot panic. -/
+  safe   : (caseIndex : Nat) → Array ByteArray → Array Bool
   /-- The author seeds, serialized, with their input positions. -/
   seeds  : Array (Nat × ByteArray)
   /-- The serialized `default` of every input, in binder order: the base
@@ -1476,7 +1537,8 @@ fork it drives on the first line.
 theorem_vectors_fork Bindings.gloas
 
 -- named lines: overrides and additions
-theorem_vectors canBuilderCoverBid_iff with (state := Seeds.Gloas.coverBidState)
+theorem_vectors isValidIndexedPayloadAttestation_eq_true_iff_checks with
+  (state := Seeds.Gloas.iPacState) (a := Seeds.Gloas.iPacAttestation)
 theorem_vectors! processBuilderPendingPayments_run presets minimal mainnet
 theorem_vectors initializePtcWindow_lt_default
 
@@ -1567,6 +1629,7 @@ theorem that needs more gets a named line.
 | `theorem_vectors.shrinkSteps` | 40 | the shrink budget |
 | `theorem_vectors.seed` | 0 | the random seed, so a build is reproducible |
 | `theorem_vectors.hints` | `use` | `use`, `ignore`, or `require` (§9.8) |
+| `theorem_vectors.hintsDir` | `""` | the committed hints root the hint source reads; the lakefile fixes it, the same repository-root-relative spelling `theorem_vectors.outDir` takes, and the empty default means the fork commits no hints (§9.8) |
 | `theorem_vectors.builtSteps` | 6 at minimal, 3 at mainnet | how far down the builder grid the `built` source walks (§9.9) |
 
 ### 14.5 Concurrency
@@ -1635,7 +1698,12 @@ The command writes one file per theorem:
 `unselected`, or `unsupported` with the reader's reason, and no preset
 field. `hint` is
 one of `replayed`, `stale-replayed`, `failed`, `stale-failed`, `missing`,
-`ignored`. The file is JSON (§12.3).
+`ignored`, one value per run folded from its cases: a failure outranks a
+missing entry, and a missing entry outranks a replay. `missing` also names
+a run where a case won from a search, so a theorem's first build reads
+`missing` until the update recipe runs. `stale-` prefixes the replay or
+the failure the fingerprint touched. `ignored` is mode `ignore`'s answer,
+and a run with no case carries no field. The file is JSON (§12.3).
 
 ### 16.2 `report.md`
 
@@ -1677,6 +1745,7 @@ hints live in the source tree under `EthCLSpecs/TheoremVectors/Hints/`.
 ```
 # Generate the records (runs the generator files), render, check, report
 theorem-vectors:
+    lake build EthCLLibTheoremVectors EthCLSpecs.Tests.TheoremVectorsPins
     lake build EthCLSpecsTheoremVectors
     lake exe theorem_vectors render
     lake exe theorem_vectors check
@@ -1688,9 +1757,11 @@ theorem-vectors-clean:
     rm -rf packages/EthCLSpecs/theorem_vectors
     rm -rf packages/EthCLSpecs/.lake/build/lib/lean/EthCLSpecs/TheoremVectors/Generators
 
-# Copy the hints the last build wrote over the committed ones. Commit the diff.
+# Copy the hints the last build wrote over the committed ones. Commit the
+# diff. A build where nothing won writes no hints directory; the copy skips.
 theorem-vectors-hints-update:
-    cp -r packages/EthCLSpecs/theorem_vectors/hints/. packages/EthCLSpecs/EthCLSpecs/TheoremVectors/Hints/
+    mkdir -p packages/EthCLSpecs/EthCLSpecs/TheoremVectors/Hints
+    if [ -d packages/EthCLSpecs/theorem_vectors/hints ]; then cp -r packages/EthCLSpecs/theorem_vectors/hints/. packages/EthCLSpecs/EthCLSpecs/TheoremVectors/Hints/; fi
 
 # Search everything again, with the committed hints ignored, then update them.
 theorem-vectors-hints-rebuild:
@@ -1699,13 +1770,22 @@ theorem-vectors-hints-rebuild:
     just theorem-vectors-hints-update
 ```
 
-The clean recipe exists because a deleted output directory stays empty until
-the generator modules rebuild. Removing their build outputs forces that. The
-rebuild recipe sets the hint mode through the environment variable
-`THEOREM_VECTORS_HINTS`, which the command reads ahead of the
-`theorem_vectors.hints` option. A declarative `lakefile.toml` cannot pass a
-command-line key to an option, and the variable keeps the lakefile
-declarative.
+The `theorem-vectors` recipe builds the framework-half library and the
+spec-half pins before the generator, so the toy tests and the pins run
+with every vector build. The clean recipe exists because a deleted output
+directory stays empty until the generator modules rebuild. Removing their
+build outputs forces that. The rebuild recipe sets the hint mode through
+the environment variable `THEOREM_VECTORS_HINTS`, which the command reads
+ahead of the `theorem_vectors.hints` option; a set variable that names no
+mode is a build error, so a typo never runs the build in `use` mode. A
+declarative `lakefile.toml` cannot pass a command-line key to an option,
+and the variable keeps the lakefile declarative. The variable is not part of Lake's traces, so a run in
+`ignore` or `require` mode after a plain build sees the generator modules
+up to date and leaves the last build's outcomes; a run in a mode other
+than `use` starts from a clean generator build. The committed hint files
+are outside Lake's traces too, so the build that follows an
+`theorem-vectors-hints-update` run or a hand edit starts from the clean
+recipe as well.
 
 ### 17.3 CI
 
@@ -1744,7 +1824,8 @@ path as the upstream corpus.
 | fully covering seed wins no case | B3 | error |
 | partial seed, no source finds a witness | B3 | `notFound` skip |
 | hint fails the check, mode `use` | B3 | full search, `hint: failed` in the outcome |
-| hint missing or fails, mode `require` | B3 | error |
+| hint fails the check, or a case wins from a search, mode `require` | B3 | error |
+| `THEOREM_VECTORS_HINTS` set to a value that names no mode | A0 | error |
 | `agree = false` | B5 | error, both values printed |
 | read-back mismatch | B7 | error |
 | no format accepts a record | C1 | listed in the report |

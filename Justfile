@@ -447,9 +447,15 @@ ethcl-profile case=default_profile_case: _ensure-venv
 # exe folds the outcomes into report.md; render and check answer over the
 # still-empty records tree (§15's bodies land at stages 2 and 7).
 
+# Build the generator libraries and run the harness over the output tree.
+# The framework-half library builds first, so its toy tests gate the
+# recipe, and the spec-half pins build beside the generator, so both run
+# with every vector build (§17.2).
+
 # Build the generator libraries and run the harness over the output tree
 [group('ethcl')]
 theorem-vectors:
+    lake build EthCLLibTheoremVectors EthCLSpecs.Tests.TheoremVectorsPins
     lake build EthCLSpecsTheoremVectors
     lake exe theorem_vectors render
     lake exe theorem_vectors check
@@ -465,6 +471,27 @@ theorem-vectors:
 theorem-vectors-clean:
     rm -rf packages/EthCLSpecs/theorem_vectors
     rm -rf packages/EthCLSpecs/.lake/build/lib/lean/EthCLSpecs/TheoremVectors/Generators
+
+# Copy the hints the last build wrote over the committed ones. Commit the
+# diff: a changed hint is a changed witness, and that diff is the review.
+# A build where nothing won writes no hints directory; the copy skips.
+
+# Copy the output tree's hints over the committed hints
+[group('ethcl')]
+theorem-vectors-hints-update:
+    mkdir -p packages/EthCLSpecs/EthCLSpecs/TheoremVectors/Hints
+    if [ -d packages/EthCLSpecs/theorem_vectors/hints ]; then cp -r packages/EthCLSpecs/theorem_vectors/hints/. packages/EthCLSpecs/EthCLSpecs/TheoremVectors/Hints/; fi
+
+# Search everything again, with the committed hints ignored, then update
+# them. `THEOREM_VECTORS_HINTS` reads ahead of the `theorem_vectors.hints`
+# option, which keeps the lakefile declarative (§17.2).
+
+# Re-search every witness from scratch, then update the committed hints
+[group('ethcl')]
+theorem-vectors-hints-rebuild:
+    just theorem-vectors-clean
+    THEOREM_VECTORS_HINTS=ignore lake build EthCLSpecsTheoremVectors
+    just theorem-vectors-hints-update
 
 # ═════════════════════════════════════════════════════════════════════════
 # SizzLean, SSZ library

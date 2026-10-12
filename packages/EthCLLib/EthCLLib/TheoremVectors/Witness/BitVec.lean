@@ -379,6 +379,15 @@ def solveOnce (ctx : SearchCtx) (stmt : Statement) (caseIndex : Nat)
     (unfold : Bool) (caseHyps : Array Expr) (drawn : Array (Nat × ByteArray))
     (fixed : Array (Nat × Expr)) (fixedVals : Array (Nat × Nat)) :
     MetaM SolveAnswer := do
+  -- §9.4, from the stage-4 outcome: a fixed point whose reads run past a
+  -- container's end is skipped before the grounding evaluates them, the
+  -- same rule the random source's points follow; the compiled evaluation
+  -- of a seeded read never sees an out-of-range index
+  match ← buildAssignment ctx stmt drawn fixedVals #[] with
+    | some gateBytes =>
+      unless (ctx.probe.safe caseIndex gateBytes).all (· == true) do
+        return .stuck (some "a read is out of range at this fixed point")
+    | none => pure ()
   let taken := (ctx.seedTerms.map (·.1)) ++ (drawn.map (·.1)) ++
     (fixed.map (·.1))
   let free : Array Nat :=
@@ -635,11 +644,11 @@ def bitVecSource : WitnessSource where
     let seededPos := ctx.seedTerms.map (·.1)
     let residual : Array Nat :=
       (Array.range stmt.inputs.size).filter (fun i => !seededPos.contains i)
-    -- one kind per input position, `none` for a seeded or container input
-    let kinds : Array (Option ScalarKind) ←
-      (Array.range stmt.inputs.size).mapM fun i =>
-        if seededPos.contains i then pure none
-        else scalarKind stmt.inputs[i]!.type
+    -- one kind per input position, `none` for a seeded or container input;
+    -- the statement's own table, the reader computed once (§9.4)
+    let kinds : Array (Option ScalarKind) :=
+      (Array.range stmt.inputs.size).map fun i =>
+        if seededPos.contains i then none else stmt.scalarKinds[i]? |>.join
     let residualKinds := residual.filterMap (fun i => kinds[i]?)
     unless residualKinds.all (·.isSome) do
       -- a residual container input: no bit-vector solve

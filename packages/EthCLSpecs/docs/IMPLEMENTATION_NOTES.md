@@ -1580,3 +1580,135 @@ function format, and the search wiring, against
   §7.2's walk reads the conclusion's left side, and a box lemma's
   conclusion names no function under test, so the reader's answer is
   `none`, and the pin now expects that.
+
+## Theorem vectors, stage 5
+
+Deviations found while building the hints (the schema, the fingerprint,
+the hint source, the mode, the committed files, and the recipes) against
+`THEOREM_VECTORS_ARCHITECTURE.md` and the plan's stage 5.
+
+- **The committed hints root rides in the lakefile, beside
+  `theorem_vectors.outDir`.** §9.8 places the committed files in the
+  spec half (`EthCLSpecs/TheoremVectors/Hints/<fork>/<thm>.json`) but
+  gives the hint source, which lives in the framework half, no path to
+  them. The root is build metadata the lakefile already owns (the
+  `outDir` precedent), so `theorem_vectors.hintsDir` registers beside
+  it with the same repository-root-relative spelling and the same empty
+  default, and the `ForkBinding` stays free of build paths. The empty
+  default means the fork commits no hints, which is how the
+  framework-half tests run: they set neither option and the hint source
+  never applies.
+
+- **`SearchStep.candidate` carries an optional tag override.** §9.2's
+  loop names the record after the proposing source's own tag, but
+  §5.4's replayed witness is `.hinted orig`, with the origin the
+  committed entry recorded, and one hint source replays four origins.
+  The candidate now names the tag the record takes, `none` keeping the
+  source's own spelling, and the loop's winner is the override or the
+  source's tag.
+
+- **A replay re-records the entries it consumed.** The command builds
+  each run's hint file from the winning candidates, but a replayed
+  random win cannot rebuild its entry: the random source never ran, so
+  the draw memo is empty and the draw key has no answer. Dropping the
+  entry would lose the random hints at the first replay, and the files
+  would oscillate between builds. A replayed case writes the entry it
+  read, so the file a replayed build writes is the file it read.
+
+- **The replayed witness goes through the shrink loop again.** §9.8
+  says shrink replays from the same draw, and that is what keeps the
+  records byte-identical across a clean rebuild: the entry records the
+  pre-shrink assignment, whose container bytes the draw memo holds and
+  whose scalars the shrink does not move, and the replayed candidate
+  passes through the same `shrinkWitness` call the original did. The
+  records' `.ssz` bytes match the search's build byte for byte; the
+  records' `source` field names `hinted-<orig>`, which is the one
+  intended difference.
+
+- **Mode `require` enforces per case, and a case with no witness falls
+  through.** §9.8's table says "a hint that is missing or fails is an
+  error", but the corpus carries cases no source wins
+  (`isValidIndexedPayloadAttestation_eq_true_iff_checks`'s fourth false
+  side), and no committed file can hold an entry for a case that has no
+  vector. Enforcing on such a case would make §17.3's `require` job
+  unusable, so the mode errors where the promise breaks: a case whose
+  hint the check rejected, and a case whose witness came from a search.
+  A case that found no witness reports `notFound` as it would in `use`
+  mode.
+
+- **The outcome's `hint` field folds the per-case attempts into one
+  per-run value.** §16.1 gives the field one value per run, and a run's
+  cases can disagree. The fold is reader-relevance ordered: a failure
+  outranks a missing entry, a missing entry outranks a replay, and
+  staleness (`stale-`) refines whichever answer it touched. `ignored`
+  is mode `ignore`'s answer, and a run that searched no case carries no
+  field.
+
+- **A set but unknown `THEOREM_VECTORS_HINTS` variable is a build
+  error.** §17.2 has the variable read ahead of the
+  `theorem_vectors.hints` option; a value that names no mode errors
+  instead of falling back, so a typo in the rebuild recipe cannot
+  silently run the build in `use` mode and write half the hints.
+
+- **The fingerprint is FNV-1a over the theorem's name, the probe's
+  rendered types, the statement's parts, and the preset's shape hashes,
+  and it lives on the entry.** §9.8 says "a hash of the statement and
+  the input type names" without fixing the function or the place. The
+  statement's parts are the hypotheses and the conclusion's sides as
+  the probe rendered them; each input with a wire description
+  contributes `hash` of its `SSZType` shape. The shape hashes move with
+  the preset, because a derived container's caps are the preset's, so a
+  file-level fingerprint would mark one preset's entries stale after
+  the other preset's run, and the operative comparison is each entry's
+  own `fingerprint` field, which §9.8's example does not carry. A new
+  `BeaconState` field changes the shape hash and the fork's random
+  hints go stale at once, the way §9.8's staleness paragraph expects. A
+  plain 64-bit hash is enough: the fingerprint only flags staleness,
+  and the check decides either way (§9.8).
+
+- **The run merges its hint file unconditionally.** §9.8's update
+  recipe copies the output tree over the committed files, so an
+  overriding line that wins nothing must replace the preset's stored
+  entries with none; otherwise a survey's candidate would outlive the
+  line that overrode it and the next build would replay it under the
+  override. The merge keys on the preset, so a second preset's entries
+  never clobber the first's.
+
+- **Steps 7 and 8, from the stage-4 outcome: no read past a drawn
+  list's end reaches compiled code, and the scalar kinds are read
+  once.** The probe gains a `safe` face: per case, per read, whether
+  the read's `!`-index stays inside its collection at the candidate's
+  bytes, computed from the index and the collection's element count,
+  which cannot panic. The search loop, the solver's fixed points, the
+  random source's points, the shrink loop, and the hint's rebuilt
+  candidates all gate on it before the compiled `reads` or `check`
+  runs, so the clean build prints no panic and the coupled grid skips
+  an out-of-range point instead of paying for a wasted solve on a
+  misgrounded formula. The statement carries each input's scalar kind,
+  which the reader computed once in `MetaM`, and the sources' `applies`
+  tests read that table, which is also the fix for the stage-4
+  shortfall the conservative head-constant test had: an alias (`Gwei`
+  for `UInt64`) now reads as a scalar in `applies` too.
+
+- **The update recipe copies and never deletes.** §9.8's "one run of
+  the update recipe refreshes them" covers changed and new hints; a
+  theorem that stops winning, or whose name changed, leaves its
+  committed file in place, and in `use` mode that file reads `failed` on
+  every build. Deleting the stale file by hand is the fix, and the
+  report is where a stale one shows.
+
+- **The committed Gloas hints cover the ten theorems that wrote
+  records.** Their sources are the four kinds the stage runs: `base`
+  for `getPtcElseOffset_lt_same_slot`; `bitVec` for
+  `getPtcElseOffset_lt_next_slot`,
+  `convertBuilderIndexToValidatorIndex_toBuilderIndex`,
+  `isBuilderIndex_convertBuilderIndexToValidatorIndex`, and
+  `toBuilderIndex_convertBuilderIndexToValidatorIndex`; `seed` for the
+  two window theorems, `initializePtcWindow_ge`, and
+  `isValidIndexedPayloadAttestation_eq_true_iff_checks`'s true side;
+  and `random` for `canBuilderCoverBid_iff`'s three cases and the
+  payload-attestation theorem's three false sides. A clean build
+  replays all ten (`hint: replayed`), the vector bytes match the
+  search's build, and a hand-edited scalar turns its case's replay into
+  a search and the run's field to `failed` while the other nine
+  replay.

@@ -66,6 +66,12 @@ namespace EthCLLib.TheoremVectors.Tests.Command
 fail against it. -/
 theorem unrelated : 1 = 1 := rfl
 
+/-- Mode `require`'s theorem: declared below the survey clause, so no
+clause ran it and the named line at the file's end is its first run. The
+build holds no committed hint for it, so `require` must fail. -/
+theorem callee_require : EthCLLib.Tests.InheritanceReplay.Base.callee = 1 :=
+  rfl
+
 /-- Read one outcome file back through the derived parser. -/
 private def readOutcome (thmLocal : String) : Lean.Elab.Command.CommandElabM Outcome := do
   let path := (".lake/build/test-theorem-vectors" : System.FilePath) /
@@ -135,6 +141,18 @@ theorem_vectors callee_survey
 /-- error: theorem_vectors: `EthCLLib.Proofs.Base.callee_eq` has a named line and a skip line; one or the other (§14.3) -/
 #guard_msgs (error) in
 theorem_vectors skip callee_eq "covered by the named line"
+
+-- Mode `require` (§9.8): the theorem runs with no committed hint, and the
+-- missing hint is a build error. The theorem is declared below the
+-- survey clause, so the clause's pass never ran it and this named line is
+-- the theorem's first and only run. The `set_option ... in` form keeps
+-- the mode scoped to the guarded command; the guard assumes
+-- `THEOREM_VECTORS_HINTS` is unset, which a developer shell that exports
+-- it breaks.
+/-- error: theorem_vectors: mode `require`: the hint for case 0 of `EthCLLib.TheoremVectors.Tests.Command.callee_require` at minimal is missing or failed the check (§9.8) -/
+#guard_msgs (error) in
+set_option theorem_vectors.hints "require" in
+theorem_vectors EthCLLib.TheoremVectors.Tests.Command.callee_require
 
 -- Remove the scratch output tree.
 run_cmd do

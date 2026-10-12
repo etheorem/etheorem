@@ -49,6 +49,11 @@ def seedSource : WitnessSource where
       return .nothing
     let a := ctx.probe.seeds.foldl (init := ctx.probe.defaults) fun acc (pos, b) =>
       if h : pos < acc.size then acc.set pos b else acc
+    -- §9.4, the stage-4 outcome: the read-bounds gate runs before the
+    -- check, so a seed whose reads run past an end is an honest
+    -- no-candidate and no panic prints
+    unless (ctx.probe.safe c.index a).all (· == true) do
+      return .nothing
     if !ctx.probe.check c.index a then
       -- the case rejects the seed; the line-level error is the command's
       return .nothing
