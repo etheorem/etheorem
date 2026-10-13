@@ -331,18 +331,6 @@ private def hintModeOf : CommandElabM HintMode := do
     throwError "theorem_vectors: `{raw}` is not a hint mode; the values \
       are `use`, `ignore`, and `require` (§9.8)"
 
-/-- The wire tag of a statement's shape, for the record's `shape` field
-(§5.6). An unsupported statement never reaches a record; the `none` case
-is unreachable there. -/
-private def shapeTagOf (shape : Shape) : Option ShapeTag :=
-  match shape with
-  | .eq .. => some .eq
-  | .iffTrue .. => some .iffTrue
-  | .bound .. => some .bound
-  | .runOk .. => some .runOk
-  | .runError .. => some .runError
-  | .unsupported _ => none
-
 /-- The report line for one search failure (§18's reported facts). A
 `notFound` on a theorem with block inputs is §18's `outOfScope`: only the
 base source may run, it ran, and it failed (§1.2). The details the sources
@@ -398,7 +386,10 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     MetaM RunOutcome := do
   let stmt := ctx.stmt
   let startMs ← IO.monoMsNow
-  -- B0: the executor runs `.eq`, `.bound`, and `.iffTrue` (§11.3)
+  -- B0: the executor runs every conclusion shape (§11.3). Phase A
+  -- reports an `.unsupported` statement before phase B starts, so the
+  -- gate answers `none` on every shape today; a future unrunnable shape
+  -- would answer `some` reason here
   if let some stage := Execute.handles? stmt.shape then
     return { preset := some p, status := .skipped, reason := some stage }
   if cases.isEmpty then
@@ -451,7 +442,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     else #[seedSource, bitVecSource, builtSource, randomSource]
   let sources : Array WitnessSource :=
     if mode == .ignore then baseSources else #[hintSrc] ++ baseSources
-  let some shapeTag := shapeTagOf stmt.shape
+  let some shapeTag := Shape.tag? stmt.shape
     | return { preset := some p, status := .unsupported,
                reason := some "unsupported shape" }
   -- §9.8: mode `require` turns a failing hint into the build error the
@@ -619,9 +610,11 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
           inputs := inputVals, output := outVal, error := errVal,
           source := won }
       -- B6: write the record (§12.1, §12.4); the assignment's bytes are
-      -- the record's bytes
+      -- the record's bytes, and a record with no output (`.runError`)
+      -- writes no `output.ssz` (§12.1)
       let dir := Record.caseDir outDir binding.tag p thmLocal c.index c.side
-      Record.write outDir binding.tag record thmLocal a (some r.output)
+      Record.write outDir binding.tag record thmLocal a
+        (record.output.map fun _ => r.output)
       -- B7: read the directory back and run the probe on the stored bytes
       -- (§12.5). This checks the SSZ round trip of every value and the
       -- record writer itself; a mismatch is a build error (§18).

@@ -2,6 +2,7 @@ import Lean
 import SizzLean
 import EthCLLib.Spec.Hasher
 import EthCLLib.Spec.Crypto
+import EthCLLib.Proofs.Run
 import EthCLLib.TheoremVectors.Types
 import EthCLLib.TheoremVectors.Scalar
 import EthCLLib.TheoremVectors.Sampleable
@@ -97,15 +98,19 @@ def boolBytes (b : Bool) : ByteArray :=
 one place, so the agreement rule stays a fact of the framework half. -/
 def compareBytes (a b : ByteArray) : Bool := a == b
 
+/-- The repr comparison the `.runError` shape runs on (`THEOREM_VECTORS_ARCHITECTURE.md`
+§11.3): the string form of `compareBytes`, one place, like its byte form. -/
+def compareRepr (a b : String) : Bool := a == b
+
 /-- The `.ok` side of a run's result, matched outside the term (§11.2).
-Stage 7's `.runOk` executor calls it; the stage-2 shapes never do. -/
+The stage-7 `.runOk` run-body builder calls it. -/
 def runProbeOk {ε α σ : Type} (r : Except ε (α × σ)) : Option (α × σ) :=
   match r with
   | .ok p => some p
   | .error _ => none
 
 /-- The `.error` side of a run's result, matched outside the term (§11.2).
-Stage 7's `.runError` executor calls it. -/
+The stage-7 `.runError` run-body builder calls it. -/
 def runProbeError {ε α σ : Type} (r : Except ε (α × σ)) : Option ε :=
   match r with
   | .error e => some e
@@ -233,6 +238,12 @@ structure ProbeResult where
   inputRoots : Array (Option ByteArray)
   /-- `hashTreeRoot` of the output, when its type has an `SSZRepr`. -/
   outputRoot : Option ByteArray
+  /-- The error's `repr`, for the `.runError` record's `error` value
+  (`THEOREM_VECTORS_ARCHITECTURE.md` §12.2). The record layer needs the
+  string, and no §5.5 field could hold it, so the structure gains the
+  field (`IMPLEMENTATION_NOTES.md` records the deviation). The other
+  shapes keep the default `none`. -/
+  errorRepr : Option String := none
 
 /-- The `.eq` run result: the byte comparison inside compiled code, so the
 term computes each side once (§11.3). -/
@@ -249,6 +260,53 @@ def boundRunResult (out : ByteArray) (agree : Bool) (literal : Option String)
     (inputRoots : Array (Option ByteArray)) : Except String ProbeResult :=
   .ok { output := out, expected := emptyBytes, agree, literal, inputLiterals,
         inputRoots, outputRoot := none }
+
+/-- The `.runOk` run result: the actual post-state bytes against the
+expected post-state bytes, and the actual post-state's root. The
+comparison sits inside the assembler, so the term passes each
+serialization once (§11.3). The literal stays `none`: this assembler
+implements the `.runOk` row's rule, which records the post-state as an
+SSZ value with its root (§11.3, §12.2). The rule lives in this
+assembler; a scalar-typed pre-state would need a new rule. -/
+def runOkResult (out expected : ByteArray)
+    (outputRoot : Option ByteArray) (inputLiterals : Array (Option String))
+    (inputRoots : Array (Option ByteArray)) : Except String ProbeResult :=
+  .ok { output := out, expected, agree := compareBytes out expected,
+        literal := none, inputLiterals, inputRoots, outputRoot }
+
+/-- The `.runOk` miss result: the compiled run rejected where the kernel
+proved `.ok`. `agree` stays `false` on every path; comparing
+`emptyBytes` against `expected` could agree, so the comparison never
+runs. The rejection's repr, when the error type has a `Repr` instance,
+goes in `errorRepr`, and the executor's disagreement print names it
+(`THEOREM_VECTORS_ARCHITECTURE.md` §11.3, §18). -/
+def runOkMiss (expected : ByteArray) (errorRepr : Option String)
+    (inputLiterals : Array (Option String))
+    (inputRoots : Array (Option ByteArray)) : Except String ProbeResult :=
+  .ok { output := emptyBytes, expected, agree := false, literal := none,
+        inputLiterals, inputRoots, outputRoot := none, errorRepr }
+
+/-- The `.runError` run result: no output, the expected error's repr
+bytes as the expected value, the comparison of the two repr strings
+inside the assembler so each repr computes once (§11.3), and the actual
+error's repr string as the record's `error` value (§12.2). -/
+def runErrorResult (actual expected : String)
+    (inputLiterals : Array (Option String))
+    (inputRoots : Array (Option ByteArray)) : Except String ProbeResult :=
+  .ok { output := emptyBytes, expected := String.toUTF8 expected,
+        agree := compareRepr actual expected, literal := none,
+        inputLiterals, inputRoots, outputRoot := none,
+        errorRepr := some actual }
+
+/-- The `.runError` miss result: the compiled run returned cleanly where
+the kernel proved `.error`. `agree` stays `false` on every path, and
+there is no error to repr (`THEOREM_VECTORS_ARCHITECTURE.md` §11.3). -/
+def runErrorMiss (expected : String)
+    (inputLiterals : Array (Option String))
+    (inputRoots : Array (Option ByteArray)) : Except String ProbeResult :=
+  .ok { output := emptyBytes, expected := String.toUTF8 expected,
+        agree := false, literal := none, inputLiterals, inputRoots,
+        outputRoot := none }
 
 /-! ## The probe (§11.1) and its build-time description -/
 
@@ -309,11 +367,11 @@ structure ProbeInfo where
   shapeParts  : Array String := #[]
   deriving Inhabited
 
-/-- Probe construction for a shape the stage-3 executor does not run yet:
-`.runOk` and `.runError` land in stage 7. -/
+/-- Probe construction for a shape no run-body builder covers. The reader
+reports an `.unsupported` statement before phase B, so the arms below keep
+only the match's totality. -/
 private def unsupportedShapeError {α : Type} (shape : Shape) : MetaM α :=
-  throwError "theorem_vectors: the probe does not run the {shape.wire} \
-    shape yet; the plan stages it later"
+  throwError "theorem_vectors: the probe does not run the {shape.wire} shape"
 
 /-! ## Small term builders -/
 
@@ -579,6 +637,153 @@ private def iffTrueRunBody (lhs q qDec : Expr)
         inputLits,
       mkArrayLit (mkApp (.const ``Option [levelZero])
         (.const ``ByteArray [])) inputRoots]
+/-- The error and return types of one run action's `StateT σ (Except ε) α`
+type, the reading both run bodies share (§11.3). `withReducible` unfolds a
+reducible monad abbrev (`GloasRun`) and stops at the `StateT` spine, which
+a full `whnf` would unfold away. A non-`StateT` type is a machinery error:
+the reader's run matches fired on a `StateT.run` application. -/
+private def runSpineOf (act : Expr) (wire : String) : MetaM (Expr × Expr) := do
+  let .app (.app (.app (.const ``StateT _) _) m) retTy :=
+    ← Meta.withReducible (Meta.whnf (← Meta.inferType act))
+    | throwError "theorem_vectors: the {wire} action's type is not a \
+        `StateT` (§11.3)"
+  let .app (.const ``Except _) errTy := ← Meta.whnf m
+    | throwError "theorem_vectors: the {wire} action's monad is not an \
+        `Except` (§11.3)"
+  pure (errTy, retTy)
+
+/-- The `Except String ProbeResult` type the run bodies and the run-body
+assembly answer (`THEOREM_VECTORS_ARCHITECTURE.md` §11.3). One helper,
+so the three build sites cannot drift. -/
+private def probeResultExTy : Expr :=
+  mkAppN (.const ``Except [levelZero, levelZero]) #[.const ``String [],
+    .const ``EthCLLib.TheoremVectors.ProbeResult []]
+
+/-- The `.runOk` run body under the `xs` binder (`THEOREM_VECTORS_ARCHITECTURE.md`
+§11.3): `runPure` (`EthCLLib.Proofs.runPure`) evaluates the run on the
+plain pre-state, the precompiled `runProbeOk` extracts the pair outside
+the term (§11.2), the actual post-state serializes at the pre-state's
+type beside the expected post-state, and the root hashes the actual
+post-state under the binding's hasher (§11.4). Each serialization sits at
+one argument position, and `runOkResult` computes the comparison from its
+own arguments, so the post-state serializes once per run (§11.3). A
+rejected run, which the kernel excluded for the witness, takes
+`runOkMiss`: it keeps `agree := false` and carries the rejection's repr
+in `errorRepr` when the error type has a `Repr` instance, and the
+executor's disagreement check prints that repr beside the two byte
+values (§11.3, §18). Without a `Repr` instance, `errorRepr` stays `none`.
+
+`preTy` and `preRepr` are the pre-state's type and its `SSZRepr`
+instance, the ones the caller synthesized for the shape's `pre`
+expression. `tag` is the binding's hasher-tag constant, the `HasherTag`
+instance `runPure` takes. The run's return value is not recorded;
+§11.3's row names the post-state as the output. -/
+private def runOkRunBody (act pre post : Expr) (underXs : Expr → Expr)
+    (tag preTy preRepr : Expr) (hashPair? : Option (Expr × Expr))
+    (inputLits inputRoots : Array Expr) : MetaM Expr := do
+  let (errTy, retTy) ← runSpineOf (underXs act) ".runOk"
+  -- `runPure`'s spine: `{T ε α} [SSZRepr T] [HasherTag] act v`. The
+  -- `SSZRepr` instance is the pre-state's, which exists because the
+  -- pre-state crossed the byte boundary (§9.1)
+  let runPureApp := mkAppN (.const ``EthCLLib.Proofs.runPure [])
+    #[preTy, errTy, retTy, preRepr, tag, underXs act, underXs pre]
+  let exTy := probeResultExTy
+  let arrLits := mkArrayLit (mkApp (.const ``Option [levelZero])
+    (.const ``String [])) inputLits
+  let arrRoots := mkArrayLit (mkApp (.const ``Option [levelZero])
+    (.const ``ByteArray [])) inputRoots
+  let expSer := mkAppN (.const ``SizzLean.SSZ.serialize [])
+    #[preTy, preRepr, underXs post]
+  let pairTy := mkApp2 (.const ``Prod [levelZero, levelZero]) retTy preTy
+  -- the miss branch carries the rejection's repr when the error type
+  -- has a `Repr` instance; without one it answers `none`
+  let errRepr? ←
+    (try some <$> Meta.synthInstance (mkApp (.const ``Repr [levelZero]) errTy)
+      catch _ => pure none)
+  Meta.withLocalDeclD `runPair pairTy fun p => do
+    -- the post-state is the pair's `.2`: `runPure` returns
+    -- `(result, state)`, and the record's output is the state
+    let actualPost := .proj `Prod 1 p
+    let ser := mkAppN (.const ``SizzLean.SSZ.serialize [])
+      #[preTy, preRepr, actualPost]
+    let root :=
+      match hashPair? with
+      | some (h, hasher) =>
+        optSome (.const ``ByteArray [])
+          (mkAppN (.const ``SizzLean.SSZ.hashTreeRoot [])
+            #[preTy, h, hasher, preRepr, actualPost])
+      | none => optNone (.const ``ByteArray [])
+    let okRes := mkAppN (.const ``runOkResult [])
+      #[ser, expSer, root, arrLits, arrRoots]
+    let missBase := mkAppN (.const ``runOkMiss [])
+      #[expSer, optNone (.const ``String []), arrLits, arrRoots]
+    let missRes ←
+      match errRepr? with
+      | none => pure missBase
+      | some errRepr =>
+        Meta.withLocalDeclD `runErr errTy fun e => do
+          let missErr := mkAppN (.const ``runOkMiss [])
+            #[expSer,
+              optSome (.const ``String [])
+                (mkAppN (.const ``reprStr [levelZero]) #[errTy, errRepr, e]),
+              arrLits, arrRoots]
+          -- the fallback re-applies `runPureApp`, so a rejected run
+          -- evaluates the transition twice; the executor turns a miss
+          -- into the build error, so the extra run never lands in a
+          -- passing record (§11.3, §18)
+          pure (optGetD exTy
+            (optMap errTy exTy
+              (← Meta.mkLambdaFVars #[e] missErr)
+              (mkAppN (.const ``runProbeError []) #[errTy, retTy, preTy,
+                runPureApp]))
+            missBase)
+    pure (optGetD exTy
+      (optMap pairTy exTy
+        (← Meta.mkLambdaFVars #[p] okRes)
+        (mkAppN (.const ``runProbeOk []) #[errTy, retTy, preTy, runPureApp]))
+      missRes)
+
+/-- The `.runError` run body under the `xs` binder (§11.3): the same
+`runPure` evaluation, with `runProbeError` extracting the error outside
+the term (§11.2). The actual error's `reprStr` and the expected error's
+`reprStr` each compute once, `runErrorResult` compares them and records
+the actual one, and the expected repr's UTF-8 bytes are the expected
+value (§12.2). A run that returned cleanly instead, which the kernel
+excluded, takes `runErrorMiss`: `agree := false`, with no error to repr.
+Answers a skip reason when the error type has no `Repr` instance. -/
+private def runErrorRunBody (act pre err : Expr) (underXs : Expr → Expr)
+    (tag preTy preRepr : Expr)
+    (inputLits inputRoots : Array Expr) : MetaM (Except String Expr) := do
+  let (errTy, retTy) ← runSpineOf (underXs act) ".runError"
+  let reprRes? ←
+    (try some <$> Meta.synthInstance (mkApp (.const ``Repr [levelZero]) errTy)
+      catch _ => pure none)
+  let some errRepr := reprRes?
+    | return .error "the `.runError` conclusion's error type has no `Repr` \
+        instance, so there is nothing to record"
+  let runPureApp := mkAppN (.const ``EthCLLib.Proofs.runPure [])
+    #[preTy, errTy, retTy, preRepr, tag, underXs act, underXs pre]
+  let exTy := probeResultExTy
+  let arrLits := mkArrayLit (mkApp (.const ``Option [levelZero])
+    (.const ``String [])) inputLits
+  let arrRoots := mkArrayLit (mkApp (.const ``Option [levelZero])
+    (.const ``ByteArray [])) inputRoots
+  Meta.withLocalDeclD `runErr errTy fun e => do
+    -- each repr string computes once; `runErrorResult` compares its own
+    -- arguments, records the actual one as the `error` value, and writes
+    -- the expected one's UTF-8 bytes as the expected value (§11.3, §12.2)
+    let actualRepr := mkAppN (.const ``reprStr [levelZero]) #[errTy, errRepr, e]
+    let expectedRepr :=
+      mkAppN (.const ``reprStr [levelZero]) #[errTy, errRepr, underXs err]
+    let okRes := mkAppN (.const ``runErrorResult [])
+      #[actualRepr, expectedRepr, arrLits, arrRoots]
+    let missRes := mkAppN (.const ``runErrorMiss [])
+      #[expectedRepr, arrLits, arrRoots]
+    pure (.ok (optGetD exTy
+      (optMap errTy exTy
+        (← Meta.mkLambdaFVars #[e] okRes)
+        (mkAppN (.const ``runProbeError []) #[errTy, retTy, preTy, runPureApp]))
+      missRes))
 
 /-! ## The container reads (§9.4) -/
 
@@ -755,9 +960,10 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
     MetaM (Except String (ProbeInfo × Probe)) := do
   let stmt := ctx.stmt
   let shape := stmt.shape
-  unless shape matches .eq .. || shape matches .bound .. || shape matches .iffTrue .. do
-    return .error s!"the probe does not run the {shape.wire} shape yet; \
-      the plan stages it later"
+  unless shape matches .eq .. || shape matches .bound .. ||
+      shape matches .iffTrue .. || shape matches .runOk .. ||
+      shape matches .runError .. do
+    return .error s!"the probe does not run the {shape.wire} shape"
   unless stmt.typeBinders.isEmpty do
     return .error s!"the command cannot fix the type parameters \
       {stmt.typeBinders} yet"
@@ -805,11 +1011,16 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
     (try some <$> Meta.synthInstance (mkApp (.const ``SizzLean.Hasher []) h)
       catch _ => pure none)
   let hashPair? : Option (Expr × Expr) := hasher?.map fun i => (h, i)
-  -- the shape's sides and the output type
+  -- the shape's sides and the output type. The run shapes' sides are the
+  -- run's parts, and the "output type" is the pre-state's: `.runOk`
+  -- records the post-state at that type, and `.runError` records no
+  -- output at all (§12.1), so the field goes unused there
   let outTerm ← match shape with
     | .eq lhs _ => pure lhs
     | .bound lhs _ _ => pure lhs
     | .iffTrue lhs _ => pure lhs
+    | .runOk _ pre _ _ => pure pre
+    | .runError _ pre _ => pure pre
     | _ => unsupportedShapeError shape
   -- the `.iffTrue` right side needs `Decidable` for its decision (§11.3).
   -- The side's `let`s zeta away first: a `Decidable` cannot be synthesized
@@ -905,8 +1116,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
         let checkFn ← Meta.mkLambdaFVars #[ci, bytes] checkBody
 
         -- the run body under `xs` (§11.3)
-        let exTy := mkAppN (.const ``Except [levelZero, levelZero]) #[.const ``String [],
-          .const ``EthCLLib.TheoremVectors.ProbeResult []]
+        let exTy := probeResultExTy
         let resultTy := Expr.const ``EthCLLib.TheoremVectors.ProbeResult []
         -- `Except.error` carries `{ε α : Type}` as implicits
         let decodeFailed := mkAppN (.const ``Except.error [levelZero, levelZero])
@@ -944,6 +1154,23 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
               | return .error "the output type has no `ToString` instance"
             pure (some (iffTrueRunBody lhs q qDec underXs outToString
               outRepr? hashPair? inputLits inputRoots))
+          | .runOk act pre _ post =>
+            -- `outRepr?` is the pre-state's `SSZRepr` here, the instance
+            -- `runPure` and the post-state's serialization take; it exists
+            -- because the pre-state crossed the byte boundary (§9.1)
+            let some preRepr := outRepr?
+              | return .error "the pre-state has no `SSZRepr` instance, so \
+                  the run's post-state has nothing to record"
+            pure (some (← runOkRunBody act pre post underXs tag outTy
+              preRepr hashPair? inputLits inputRoots))
+          | .runError act pre err =>
+            let some preRepr := outRepr?
+              | return .error "the pre-state has no `SSZRepr` instance, so \
+                  the run has nothing to record"
+            match ← runErrorRunBody act pre err underXs tag outTy preRepr
+                inputLits inputRoots with
+            | .ok b => pure (some b)
+            | .error e => return .error e
           | _ => unsupportedShapeError shape
         let some body := bodyOpt
           | return .error "the output type has neither an `SSZRepr` nor a \

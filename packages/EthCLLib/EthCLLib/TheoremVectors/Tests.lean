@@ -1,10 +1,12 @@
 import EthCLLib.TheoremVectors.Tests.Attribute
 import EthCLLib.TheoremVectors.Tests.Command
 import EthCLLib.TheoremVectors.Tests.Probe
+import EthCLLib.TheoremVectors.Tests.ToyRun
 import EthCLLib.TheoremVectors.Tests.BitVec
 import EthCLLib.TheoremVectors.Tests.Random
 import EthCLLib.TheoremVectors.Tests.Hint
 import EthCLLib.TheoremVectors.Tests.Built
+import EthCLLib.TheoremVectors.Tests.Pyspec
 
 /-!
 # `EthCLLib.TheoremVectors.Tests`: the generator's framework-half tests

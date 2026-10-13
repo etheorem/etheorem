@@ -525,6 +525,25 @@ passes.
 `lake exe theorem_vectors check` passes it through `runCase`, and
 `pytest --vectors` under `PySpecTests` passes it through the server.
 
+*Outcome.* The acceptance holds: the clean recipe renders the case at
+`formats/pyspec/gloas/minimal/epoch_processing/builder_pending_payments/pyspec_tests/processBuilderPendingPayments_run_000`,
+`theorem_vectors check` answers `1 passed, 0 failed` through `runCase`,
+and `pytest --vectors ... --fork=gloas` passes it through the server.
+Both characterized `.runOk` theorems write from the `built` source's
+`genesis` step, `processBuilderPendingPayments_run` in 2.0 seconds and
+`initiateBuilderExit_run_eq` in 2.7, and their committed built hints
+replay on the next clean build. Twelve records, fifteen function files,
+and one pyspec case at minimal; the clean recipe runs in 93 seconds. No
+corpus theorem has the `.runError` shape yet, so its record and render
+path is pinned by the toy tests alone. The design changes that followed
+sit in `IMPLEMENTATION_NOTES.md`: `VectorFormat.accepts` takes the
+`RenderEnv`, because §13.4's acceptance predicate needs the record's
+binding; `ProbeResult` carries the error's `repr`; the harness resolves
+raw `.ssz` beside `.ssz_snappy` and spawns the server from the repository
+root, where the workspace manifest is complete. `initiateBuilderExit`
+has no `handlerOf` entry, so its record renders through the function
+format and no pyspec case.
+
 ---
 
 ## Stage 8: mainnet and witness reuse

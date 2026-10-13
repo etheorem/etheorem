@@ -1,6 +1,7 @@
 import Lean
 import EthCLLib.TheoremVectors.Format
 import EthCLLib.TheoremVectors.Yaml
+import EthCLLib.TheoremVectors.Formats.Pyspec
 
 /-!
 # `EthCLLib.TheoremVectors.Formats.Function`: the function format
@@ -65,7 +66,8 @@ names the function a client exposes, and a record without one has no
 function to name. -/
 def Formats.function : VectorFormat where
   name := "function"
-  accepts r := r.target.isSome
+  -- The env is unused here: §13.3's predicate reads the record alone.
+  accepts _ r := r.target.isSome
   render env r inputBytes outputBytes := do
     let targetDir := (r.target.getD r.«theorem»).toString
     let dir := env.outDir / "formats" / "function" / r.fork / r.preset.tag /
@@ -95,9 +97,9 @@ def Formats.function : VectorFormat where
     return #[file]
   check _ _ _ := pure .noConsumer
 
-/-- The format registry (`THEOREM_VECTORS_ARCHITECTURE.md` §13.1). Stage 2 holds the
-function format alone; the pyspec format appends one value in stage 7. A
-new format is one more value here. -/
-def Formats.all : Array VectorFormat := #[Formats.function]
+/-- The format registry (`THEOREM_VECTORS_ARCHITECTURE.md` §13.1): the
+function format (§13.3) and the pyspec format (§13.4, §13.5). A new
+format is one more value here. -/
+def Formats.all : Array VectorFormat := #[Formats.function, Formats.pyspec]
 
 end EthCLLib.TheoremVectors

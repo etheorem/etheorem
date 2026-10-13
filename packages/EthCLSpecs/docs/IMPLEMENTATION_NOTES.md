@@ -1263,15 +1263,16 @@ function format, and the search wiring, against
   it.
 
 - **The format registry lives in `Formats/Function.lean`.** §13.1 places
-  `Formats.all` in `Format.lean`, but the registry holds the function
-  format and `Formats/Function.lean` imports `Format`, so the registry
-  there would be circular. The registry grows where the formats live;
-  stage 7's pyspec format appends its value beside the function one.
+  `Formats.all` in `Format.lean`, but the registry holds the formats and
+  `Formats/Function.lean` imports `Format`, so the registry there would
+  be circular. The registry grew where the formats live; the pyspec
+  format's value stands beside the function one.
 
-- **The exe's `check` passes with the function format alone.** §13.1's
-  `CheckResult.noConsumer` is the function format's whole answer, so
-  `check` runs the registry over the rendered vectors and exits 0 until
-  the pyspec format's `runCase` consumer lands in stage 7.
+- **The exe's `check` replays through each format's own consumer.**
+  §13.1's `CheckResult.noConsumer` is the function format's whole
+  answer, so `check` runs the registry over the rendered vectors and
+  counts only the pyspec cases, whose `runCase` replay answers
+  `passed` / `failed` (§13.5).
 
 - **The record JSON's field names differ from §12.2's sketch in two
   places.** The case index writes `case`, and the payload nests under
@@ -1825,3 +1826,51 @@ the hint source, the mode, the committed files, and the recipes) against
   to `built` over the `genesis` state, their drawn attestation named
   by the entry's `seed` / `size` / `draw` fields. The drawn containers'
   key is present only when containers beside the state were drawn.
+
+## Theorem vectors, stage 7
+
+Deviations found while building the run shapes (the probe's run-body
+builders, the executor's run rows, and the record's error value) against
+`THEOREM_VECTORS_ARCHITECTURE.md` and the plan's stage 7.
+
+- **`ProbeResult` gains `errorRepr`, defaulted to `none`.** §5.5's sketch
+  carries no field the `.runError` record's `error` value could come
+  from. §11.3's table names the error's `repr` as the shape's answer,
+  and §12.2 records that repr string in the record's `error` field. The
+  run term computes the repr inside compiled code, so the value needs a
+  place in the `ProbeResult`. UTF-8 bytes cannot stand in for the field:
+  the record layer writes the string, so the bytes would need decoding
+  back into a string, or they would lose that the value is a string at
+  all. The other shapes keep the default `none`, so the stage-2
+  assemblers stay unchanged.
+
+- **The run bodies read the run through `runPure`, with the error and
+  return types taken off the action's own `StateT` spine.** §11.3's
+  sketch leaves the type splicing open. A reducible `whnf` unfolds a
+  monad abbrev (`GloasRun`) and stops at the `StateT` spine, which a
+  full `whnf` would unfold away, and the pre-state's own type supplies
+  `runPure`'s `T` with its `SSZRepr` instance, which exists because the
+  pre-state crossed the byte boundary (§9.1). A rejected `.runOk` run,
+  or a clean `.runError` run, assembles `agree := false`, which sends
+  the record into the executor's agreement error with both sides named
+  (§11.3, §18): the kernel excluded the case for the witness, so the
+  mismatch is a compiler, FFI, or serialization defect.
+
+- **`accepts` takes the render environment.** §13.1's sketch types
+  `accepts : VectorRecord → Bool`, and §13.4's acceptance predicate needs
+  the record's fork binding: the handler lookup, the state-type check. A
+  record names its fork by tag, and only the environment resolves the tag
+  to a binding, so the field takes the `RenderEnv`. The report's
+  records-no-format list stays truthful, because acceptance stays complete.
+
+- **The harness reads raw `.ssz` beside `.ssz_snappy`.** §17.4 says
+  harness.py "accepts `.ssz` where it finds no `.ssz_snappy`". The resolver
+  prefers the snappy file. It skips decompression for a raw one. The rule
+  covers every blob the harness reads. The generated cases exercise only
+  the epoch-processing pair. `--vectors` collects the rendered tree and
+  skips the archive, so a vectors run needs no download. The server spawn
+  moved to the repository root, where Lake and the just recipes run. The
+  subpackage manifest stopped carrying the workspace's full require set
+  when stage 0 added `plausible`, and `lake exe` refused to start from the
+  subpackage. The raw blob's path in the request is absolute, so the
+  server's own working directory no longer matters.

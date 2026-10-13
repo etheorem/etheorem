@@ -43,8 +43,11 @@ structure RenderEnv where
 structure VectorFormat where
   /-- The registry name, and the `--format` flag's value. -/
   name    : String
-  /-- Does this format accept the record? -/
-  accepts : VectorRecord → Bool
+  /-- Does this format accept the record? The record names its fork by
+  tag, and only the render environment resolves the tag to a binding, so
+  the field takes the `RenderEnv` (the notes record the deviation from
+  §13.1's one-argument sketch). -/
+  accepts : RenderEnv → VectorRecord → Bool
   /-- Render one record into the consumer's layout: the input bytes in
   binder order, then the output's bytes when the record carries an output
   (the `ReadBack` bytes, so a container output renders its own hex and

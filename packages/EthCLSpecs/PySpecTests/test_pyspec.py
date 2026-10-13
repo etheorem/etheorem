@@ -35,6 +35,9 @@ def test_value_error_scope(request):
     The walk ignores `--subset`, because the claim covers the whole corpus.
     """
     cfg = request.config
+    if cfg.getoption("--vectors") is not None:
+        pytest.skip("the audit reads the upstream archive's caught-set pairing; "
+                    "a --vectors run collects generated cases only")
     preset = cfg.getoption("--preset")
     fork = cfg.getoption("--fork")
     root = ensure_archive(cfg.getoption("--tag"), preset)

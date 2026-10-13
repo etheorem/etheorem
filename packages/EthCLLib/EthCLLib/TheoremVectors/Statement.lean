@@ -86,6 +86,17 @@ def Shape.wire : Shape → String
   | .runError _ _ _  => ShapeTag.tag .runError
   | .unsupported _   => "unsupported"
 
+/-- The record's shape tag (`THEOREM_VECTORS_ARCHITECTURE.md` §5.6): the `ShapeTag`
+form of the wire mapping above. An `.unsupported` statement never reaches
+a record; the `none` case is unreachable there. -/
+def Shape.tag? : Shape → Option ShapeTag
+  | .eq ..           => some .eq
+  | .iffTrue ..      => some .iffTrue
+  | .bound ..        => some .bound
+  | .runOk ..        => some .runOk
+  | .runError ..     => some .runError
+  | .unsupported _   => none
+
 /-- The `.unsupported` reason, when the shape is unsupported. -/
 def Shape.reason? : Shape → Option String
   | .unsupported r => some r

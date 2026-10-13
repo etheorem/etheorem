@@ -13,8 +13,8 @@ elaborates a theorem; the records on disk are its input. Four subcommands:
   turns every record into every format that accepts it (phase C1, §13.2);
 - `check [--fork <tag>] [--preset <id>] [--format <name>] [--out <dir>]`
   replays the rendered vectors through each format's consumer (C2); the
-  function format answers `noConsumer`, so `check` passes until the pyspec
-  format's `runCase` consumer lands in stage 7;
+  function format answers `noConsumer`, and the pyspec format replays
+  its cases through `runCase` (§13.5);
 - `report [--out <dir>]` folds the outcome files into `report.md` (C3);
 - `list [--out <dir>]` prints one line per record.
 -/
@@ -168,7 +168,7 @@ def renderRecords (opts : Options) (out : System.FilePath) : IO Nat := do
         unless selects opts rb.record do continue
         for f in Formats.all do
           if (opts.format.all fun name => f.name == name)
-              && f.accepts rb.record then
+              && f.accepts env rb.record then
             let paths ← f.render env rb.record rb.inputBytes rb.outputBytes
             n := n + paths.size
             rendered := rendered.push
@@ -210,6 +210,7 @@ def readManifest (out : System.FilePath) : IO (Array Rendered) := do
 The report subcommand walks the records tree and asks every format's
 `accepts`. -/
 def unacceptedRecords (out : System.FilePath) : IO (Array String) := do
+  let env := renderEnv out
   let root := Record.dir out
   unless ← root.isDir do
     return #[]
@@ -220,7 +221,7 @@ def unacceptedRecords (out : System.FilePath) : IO (Array String) := do
       let some p := PresetId.ofTag? presetEntry.fileName | continue
       unless ← presetEntry.path.isDir do continue
       for (path, rb) in ← Record.readAll out forkEntry.fileName p do
-        unless Formats.all.any (fun f => f.accepts rb.record) do
+        unless Formats.all.any (fun f => f.accepts env rb.record) do
           acc := acc.push path.toString
   return acc
 
@@ -244,8 +245,8 @@ def runSub (sc : Subcommand) (opts : Options) : IO UInt32 := do
   | .check =>
     -- phase C2 (§13.2, §13.5): every registered format's consumer replays
     -- what the render pass returned, through the manifest. The function
-    -- format answers `noConsumer`, so the check passes over it; the
-    -- pyspec format's `runCase` consumer lands in stage 7.
+    -- format answers `noConsumer`; the pyspec format replays its cases
+    -- through the pyspec driver.
     let env := renderEnv out
     let rendered ← readManifest out
     let mut nChecked := 0

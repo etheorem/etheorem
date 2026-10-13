@@ -8,6 +8,10 @@ one tab-separated request line per case, one result line back.
 
 A worker holds one long-lived server (`ServerClient`) and re-spawns it if it
 dies, so the in-flight case reports failed rather than hanging the worker.
+
+Blob reads resolve `.ssz_snappy` first and fall back to the raw `.ssz` beside
+it, so the theorem-vector generator's rendered tree (raw `.ssz`, no snappy)
+runs through the same code path as the upstream archive.
 """
 
 from __future__ import annotations
@@ -140,6 +144,37 @@ def walk_cases(extract_root: Path, preset: str, fork: str,
                                case_dir.name, case_dir)
 
 
+def walk_vector_cases(root: Path, preset: Optional[str] = None,
+                      fork: Optional[str] = None) -> Iterator[Case]:
+    """Yield cases under the theorem-vector generator's rendered
+    `formats/pyspec` tree, laid out as
+    `<root>/<fork>/<preset>/<runner>/<handler>/pyspec_tests/<case>/`.
+
+    The rendered tree is already curated: the generator only writes cases in
+    scope, so there is no `limit_per_handler` cap and no `IN_SCOPE_RUNNERS`
+    filter here. `preset` / `fork`, when given, drop the other forks or
+    presets from the walk. The order is fork, preset, runner, handler, then
+    sorted case names, all deterministic.
+    """
+    if not root.is_dir():
+        raise FileNotFoundError(f"--vectors root not found: {root}")
+    for fork_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        if fork is not None and fork_dir.name != fork:
+            continue
+        for preset_dir in sorted(p for p in fork_dir.iterdir() if p.is_dir()):
+            if preset is not None and preset_dir.name != preset:
+                continue
+            for runner_dir in sorted(p for p in preset_dir.iterdir() if p.is_dir()):
+                for handler_dir in sorted(p for p in runner_dir.iterdir() if p.is_dir()):
+                    suite_dir = handler_dir / "pyspec_tests"
+                    if not suite_dir.is_dir():
+                        continue
+                    for case_dir in sorted(p for p in suite_dir.iterdir() if p.is_dir()):
+                        yield Case(preset_dir.name, fork_dir.name, runner_dir.name,
+                                   handler_dir.name, "pyspec_tests",
+                                   case_dir.name, case_dir)
+
+
 def _decompress_to(tmpdir: Path, src: Path) -> Path:
     """Snappy-decompress an `.ssz_snappy` blob to a temp file; return its path."""
     raw = src.read_bytes()
@@ -147,6 +182,39 @@ def _decompress_to(tmpdir: Path, src: Path) -> Path:
     dst = tmpdir / (src.stem + ".ssz")
     dst.write_bytes(out)
     return dst
+
+
+def _resolve_blob(case_dir: Path, name: str) -> Optional[Path]:
+    """Locate an SSZ blob by its suffix-less name: `.ssz_snappy` when present,
+    otherwise the raw `.ssz` beside it. `None` when neither suffix exists."""
+    snappy = case_dir / f"{name}.ssz_snappy"
+    if snappy.exists():
+        return snappy
+    raw = case_dir / f"{name}.ssz"
+    if raw.exists():
+        return raw
+    return None
+
+
+def _load_blob(tmpdir: Path, src: Path) -> Path:
+    """Return a path the Lean server can read the blob's bytes from. The
+    helper decompresses an `.ssz_snappy` source to a temp file and passes a
+    raw `.ssz` source through (the server reads the bytes from the path
+    either way). The passthrough is absolute, so the path survives the
+    server's own working directory."""
+    if src.suffix == ".ssz_snappy":
+        return _decompress_to(tmpdir, src)
+    return src.resolve()
+
+
+def _load_case_blob(tmpdir: Path, case_dir: Path, name: str) -> Path:
+    """`_resolve_blob` + `_load_blob` for a required blob; raise when neither
+    suffix exists."""
+    src = _resolve_blob(case_dir, name)
+    if src is None:
+        raise FileNotFoundError(
+            f"no {name}.ssz_snappy or {name}.ssz under {case_dir}")
+    return _load_blob(tmpdir, src)
 
 
 def parse_meta(case: Case) -> dict:
@@ -160,41 +228,41 @@ def _build_fork_choice_request(case: Case, tmpdir: Path) -> str:
     """Encode a `fork_choice` request: the anchor state in `pre`, and an
     `inputs` pair `anchorBlockPath,scriptPath`. The script is one line per
     `steps.yaml` entry, with `block` / `attestation` / `attester_slashing` steps
-    referencing decompressed SSZ files by path, and `checks` split into one line
+    referencing resolved SSZ files by path, and `checks` split into one line
     per key. `get_proposer_head` emits a dedicated `get_proposer_head <root>`
     step; `should_override_forkchoice_update` emits `unsupported
     should_override_forkchoice_update`, so that case reports `todo` (an xfail).
     Sibling keys in the same checks entry still emit their own lines. Any key or
     nested subkey we don't model becomes `unsupported <key>`, keeping the xfail
     reason accurate instead of silently dropping the check."""
-    anchor_state = _decompress_to(tmpdir, case.path / "anchor_state.ssz_snappy")
-    anchor_block = _decompress_to(tmpdir, case.path / "anchor_block.ssz_snappy")
+    anchor_state = _load_case_blob(tmpdir, case.path, "anchor_state")
+    anchor_block = _load_case_blob(tmpdir, case.path, "anchor_block")
     steps = yaml.safe_load((case.path / "steps.yaml").read_text())
 
-    def decomp(name: str) -> Path:
-        return _decompress_to(tmpdir, case.path / f"{name}.ssz_snappy")
+    def resolve(name: str) -> Path:
+        return _load_case_blob(tmpdir, case.path, name)
 
     lines: list[str] = []
     for s in steps:
         if "tick" in s:
             lines.append(f"tick {int(s['tick'])}")
         elif "block" in s:
-            # PeerDAS data-availability columns (EIP-7594): decompress the listed
+            # PeerDAS data-availability columns (EIP-7594): resolve the listed
             # DataColumnSidecar files and pass them as a comma-separated 4th token
             # (`-` when none). The Lean runner verifies them via is_data_available.
-            cols = [str(decomp(name)) for name in s.get("columns", [])]
+            cols = [str(resolve(name)) for name in s.get("columns", [])]
             col_field = ",".join(cols) if cols else "-"
-            lines.append(f"block {decomp(s['block'])} {1 if s.get('valid', True) else 0} {col_field}")
+            lines.append(f"block {resolve(s['block'])} {1 if s.get('valid', True) else 0} {col_field}")
         elif "attestation" in s:
-            lines.append(f"attestation {decomp(s['attestation'])} {1 if s.get('valid', True) else 0}")
+            lines.append(f"attestation {resolve(s['attestation'])} {1 if s.get('valid', True) else 0}")
         elif "attester_slashing" in s:
-            lines.append(f"attester_slashing {decomp(s['attester_slashing'])} {1 if s.get('valid', True) else 0}")
+            lines.append(f"attester_slashing {resolve(s['attester_slashing'])} {1 if s.get('valid', True) else 0}")
         elif "execution_payload" in s:
             # Gloas (EIP-7732): a SignedExecutionPayloadEnvelope for on_execution_payload_envelope.
-            lines.append(f"execution_payload {decomp(s['execution_payload'])} {1 if s.get('valid', True) else 0}")
+            lines.append(f"execution_payload {resolve(s['execution_payload'])} {1 if s.get('valid', True) else 0}")
         elif "payload_attestation_message" in s:
             lines.append(
-                f"payload_attestation_message {decomp(s['payload_attestation_message'])} "
+                f"payload_attestation_message {resolve(s['payload_attestation_message'])} "
                 f"{1 if s.get('valid', True) else 0}")
         elif "checks" in s:
             c = s["checks"]
@@ -254,41 +322,52 @@ def _build_fork_choice_request(case: Case, tmpdir: Path) -> str:
 
 def _build_ssz_static_request(case: Case, tmpdir: Path) -> str:
     """Encode an `ssz_static` request: the container type name (the handler path
-    segment), the decompressed `serialized.ssz` path, and the expected
+    segment), the resolved `serialized.ssz` path, and the expected
     hash-tree-root from `roots.yaml`. The Lean server decodes the bytes as that
     fork's container, compares the root, and checks the round-trip re-serialization."""
-    serialized = _decompress_to(tmpdir, case.path / "serialized.ssz_snappy")
+    serialized = _load_case_blob(tmpdir, case.path, "serialized")
     roots = yaml.safe_load((case.path / "roots.yaml").read_text())
     return "\t".join(["ssz_static", case.handler, str(serialized), roots["root"]])
 
 
 def build_request(case: Case, tmpdir: Path) -> str:
-    """Decompress the case's SSZ blobs and encode the tab-separated request line
-    the Lean server reads. `post` is `-` when the case has no `post` (an invalid
+    """Resolve the case's SSZ blobs (`.ssz_snappy` preferred, the raw `.ssz`
+    beside it otherwise) and encode the tab-separated request line the Lean
+    server reads. `post` is `-` when the case has no `post` (an invalid
     vector); `inputs` are the `blocks_N` (or the single operation) in order."""
     if case.runner == "fork_choice":
         return _build_fork_choice_request(case, tmpdir)
     if case.runner == "ssz_static":
         return _build_ssz_static_request(case, tmpdir)
     meta = parse_meta(case)
-    pre = _decompress_to(tmpdir, case.path / "pre.ssz_snappy") if (case.path / "pre.ssz_snappy").exists() else None
-    post_src = case.path / "post.ssz_snappy"
-    post = _decompress_to(tmpdir, post_src) if post_src.exists() else None
+    pre_src = _resolve_blob(case.path, "pre")
+    pre = _load_blob(tmpdir, pre_src) if pre_src is not None else None
+    post_src = _resolve_blob(case.path, "post")
+    post = _load_blob(tmpdir, post_src) if post_src is not None else None
 
     # Format-specific inputs.
     inputs: list[Path] = []
-    blocks = sorted(case.path.glob("blocks_*.ssz_snappy"),
-                    key=lambda p: int(p.stem.split("_")[1].split(".")[0]))
-    for b in blocks:
-        inputs.append(_decompress_to(tmpdir, b))
-    # operations/* carry a single named operand file (e.g. attestation.ssz_snappy);
-    # pick the one snappy blob that is not pre/post/blocks.
+    # The `blocks_N` blobs, in index order. Both suffixes feed one name set, so
+    # a blob present under both resolves through the `.ssz_snappy` preference.
+    # The union assumes the stems match: `.ssz_snappy` holds no interior dot,
+    # so `Path.stem` strips it whole and the stem equals the `.ssz` file's stem.
+    block_names = sorted(
+        {p.stem for p in case.path.glob("blocks_*.ssz_snappy")}
+        | {p.stem for p in case.path.glob("blocks_*.ssz")},
+        key=lambda name: int(name.split("_")[1].split(".")[0]))
+    for name in block_names:
+        inputs.append(_load_case_blob(tmpdir, case.path, name))
+    # operations/* carry a single named operand file (e.g. attestation.ssz);
+    # pick each blob that is not pre/post/blocks, preferring `.ssz_snappy`
+    # when both suffixes exist.
     if case.runner == "operations":
-        for f in sorted(case.path.glob("*.ssz_snappy")):
-            stem = f.stem
+        operands: dict[str, Path] = {}
+        for f in sorted(case.path.glob("*.ssz_snappy")) + sorted(case.path.glob("*.ssz")):
+            operands.setdefault(f.stem, f)
+        for stem in sorted(operands):
             if stem in ("pre", "post") or stem.startswith("blocks_"):
                 continue
-            inputs.append(_decompress_to(tmpdir, f))
+            inputs.append(_load_blob(tmpdir, operands[stem]))
     # sanity/slots: `slots.yaml` holds a plain integer slot count. Pass it as
     # big-endian bytes (the driver decodes inputs[0] big-endian into the count).
     if case.runner == "sanity" and case.handler == "slots":
@@ -302,12 +381,12 @@ def build_request(case: Case, tmpdir: Path) -> str:
     # order the runner returns them: source, target, head, inactivity-penalty.
     if case.runner == "rewards":
         for name in ("source_deltas", "target_deltas", "head_deltas", "inactivity_penalty_deltas"):
-            f = case.path / f"{name}.ssz_snappy"
-            if f.exists():
-                inputs.append(_decompress_to(tmpdir, f))
+            src = _resolve_blob(case.path, name)
+            if src is not None:
+                inputs.append(_load_blob(tmpdir, src))
 
     bls_setting = int(meta.get("bls_setting", 1))
-    blocks_count = int(meta.get("blocks_count", len(blocks)))
+    blocks_count = int(meta.get("blocks_count", len(block_names)))
     fork_epoch = meta.get("fork_epoch", None)
     fork_block = meta.get("fork_block", None)
     # operations/execution_payload carries the execution-engine answer in execution.yaml.
@@ -358,12 +437,15 @@ class ServerClient:
         cmd = ["lake", "exe", "pyspec_server", self.fork, self.preset]
         # The server reads ETHCL_DISABLE_CRYPTO_CACHE once at startup; set it to turn
         # the BLS-verify memo off (the plain FFI backend) for cache-on vs cache-off runs.
+        # Spawn from the repository root, where Lake and the just recipes run
+        # (the root manifest carries the workspace's full require set; the
+        # SizzLean harness spawns the same way).
         env = os.environ.copy()
         if self.no_crypto_cache:
             env["ETHCL_DISABLE_CRYPTO_CACHE"] = "1"
         self.proc = subprocess.Popen(
             cmd,
-            cwd=str(self.repo_root / "packages" / "EthCLSpecs"),
+            cwd=str(self.repo_root),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, bufsize=1, env=env,
         )

@@ -1487,7 +1487,9 @@ runner already reads (§12.3).
 `check` builds a `CaseRequest` from the rendered files, with `post = none`
 for an invalid case, and calls `EthCLLib.PySpecTests.runCase` with the
 `ForkInterface` from `binding.interface preset`. A `CaseResult` with
-`passed = false` is `CheckResult.failed` with the driver's detail line. This
+`passed = false` is `CheckResult.failed` with the driver's detail line. A
+flagged pass fails the same way: a bug-smell reject never ships green,
+whether or not the record's error column holds the same class. This
 replays the vector through the same path the upstream vectors take.
 
 ---
