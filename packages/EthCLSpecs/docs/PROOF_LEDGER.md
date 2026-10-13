@@ -73,7 +73,7 @@ author how to state it. `EthCLSpecs/Proofs/` splits per fork the same way.
 
 ## Dependencies between rows
 
-Six claims rest on another row:
+Seven claims rest on another row:
 
 - The Heze theorem `unsatisfiedPayload_cost` rests on the Heze `shouldExtendPayload`,
   `getPayloadStatusTiebreaker`, `getParentPayloadStatus`,
@@ -82,6 +82,9 @@ Six claims rest on another row:
   row.
 - The `onExecutionPayloadEnvelope` row rests on the
   `recordPayloadInclusionListSatisfaction` row.
+- The Heze theorem `inclusionList_dichotomy` rests on the `processInclusionList`,
+  `collectInclusionListTransactions`, and `onExecutionPayloadEnvelope` rows. Its
+  corollary `inclusionList_missing_tx_cost` also rests on `unsatisfiedPayload_cost`.
 - The committee partition rests on the shuffle bijection.
 - Plausible liveness rests on accountable safety.
 - Both `processDeposit` rows rest on the Merkle branch check. Its proof module is
@@ -279,24 +282,63 @@ row above applies to Heze's re-elaboration of that declaration as a separate cla
 about a separate constant.
 
 `Proofs/Heze/CensorshipCost.lean` states the cost for a block from the previous slot
-whose payload is verified and whose recorded inclusion-list answer is `false`, in three
-facts (`unsatisfiedPayload_cost`):
+whose recorded inclusion-list answer is `false`, in three facts
+(`unsatisfiedPayload_cost`):
 
-- one `getHead` step at the pending node of the block goes to EMPTY;
+- when the `getHead` loop reaches the pending node of the block with fuel left, it
+  continues from the EMPTY node (`getHead_walk_pending_to_empty`);
 - any child on the EMPTY edge, with the empty parent requests, leaves the bid
   unsettled in `processParentExecutionPayload`;
 - at the epoch substep, where the entry for the slot of the bid still carries its
   withdrawal (`BidPaymentCarried`), the substep appends that entry if and only if it
   reaches the quorum (`processBuilderPendingPayments_run_bid`).
 
-No theorem connects the child to the head step, because the model does not include
-the proposer. The default `[ExecutionEngine]` answers `true` for every payload, so a
-recorded `false` needs a non-default engine. `unsatisfiedPayload_of_el_unsatisfied`
-derives the payload conditions from the envelope lookups and that `false` answer. The
-block conditions stay hypotheses. `BidPaymentCarried` is a hypothesis about the blocks
-between the bid and the epoch substep. A proposer slashing of the block's proposer
-clears the entry, and a child on the FULL edge settles it. No theorem proves the
-hypothesis from the block transitions.
+No theorem connects the child to the loop, because the model does not include the
+proposer. The default `[ExecutionEngine]` answers `true` for every payload, so a
+recorded `false` needs a non-default engine. `BidPaymentCarried` is a hypothesis about
+the blocks between the bid and the epoch substep. A proposer slashing of the block's
+proposer clears the entry, and a child on the FULL edge settles it. No theorem proves
+the hypothesis from the block transitions.
+
+`Proofs/Heze/InclusionDichotomy.lean` connects one honest inclusion-list transaction to
+these facts (`inclusionList_dichotomy`). The envelope handler succeeds, and one of two
+cases holds:
+
+- the EL answer is `true`, and the transaction is in the payload or the EL omits it
+  validly;
+- the EL answer is `false`, and `UnsatisfiedPayload` holds at every later store
+  (`LaterStore`) that holds the block at its root, keeps the answer at that root, whose current slot is the
+  slot after the block, and whose slot increment does not overflow.
+
+A `false` answer can come from another list's transaction.
+`unsatisfiedPayload_of_recorded_false` gives `UnsatisfiedPayload` from a `LaterStore`
+and a recorded `false`, without the arrival model. `inclusionList_missing_tx` states the direction for one transaction: a missing
+transaction with no valid omission gives the answer `false`.
+`inclusionList_missing_tx_cost` takes that answer to the three facts of
+`unsatisfiedPayload_cost`. The block and answer conditions on the later store are per key, so a handler run
+that writes only other roots keeps them, and `onTickPerSlot_run_keeps` shows that a
+per-slot tick keeps the `blocks` and `payloadInclusionListSatisfaction` maps. The clock
+condition holds only in the slot after the block. A second envelope for the same root
+records the answer again.
+
+The theorem has these hypotheses, bundled as `DichotomyHypotheses`:
+
+- the envelope handler succeeds: the block state is present, the data is available, the
+  envelope verification succeeds, and the state slot is not zero;
+- the committee lookup succeeds, and the list carries the key of that committee;
+- the IL store is the result of the arrival list, from the seed of `getForkchoiceStore`;
+- at the committee key of the list, the first arrival from its validator is the list,
+  and it is timely;
+- at that key, the validator signs no second list;
+- no later arriving list has the same root, which the collision resistance of the hash
+  gives;
+- the EL satisfies `LawfulInclusionList` for an omission predicate that the reader
+  supplies.
+
+`arrivalHypotheses_two_keys` shows that the arrival hypotheses hold for a validator that
+sits on two committees with different keys. The key carries no slot, so on a small
+validator set it can repeat across epochs, and a second honest list under it fails the
+hypotheses.
 
 ### Safety and invariant preservation
 
@@ -304,7 +346,7 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `processBuilderPendingPayments` | `Heze/EpochProcessing.lean:110` | The Heze port of the Gloas row. The function shifts the payment window down by `SLOTS_PER_EPOCH`. Under an explicit capacity hypothesis, it appends the withdrawal of every qualifying payment from the previous epoch to `builderPendingWithdrawals`, in slot order. An entry is qualifying if and only if its weight reaches the quorum (`mem_qualifyingPaymentIndices_iff`). When the qualifying withdrawals do not fit under the list limit, the run raises `.listFull`. For one bid whose entry still carries its withdrawal, the substep queues that withdrawal if and only if the entry reaches the quorum (`processBuilderPendingPayments_run_bid`). This row does not prove that each payment settles exactly once across the protocol | proved | `Proofs/Heze/BuilderPendingPayments.lean` |
+| `processBuilderPendingPayments` | `Heze/EpochProcessing.lean:110` | The Heze port of the Gloas row. The function shifts the payment window down by `SLOTS_PER_EPOCH`. Under an explicit capacity hypothesis, it appends the withdrawal of every qualifying payment from the previous epoch to `builderPendingWithdrawals`, in slot order. An entry is qualifying if and only if its weight reaches the quorum (`mem_qualifyingPaymentIndices_iff`). When the qualifying withdrawals do not fit under the list limit, the run raises `.listFull`. For one bid whose entry still carries its withdrawal, the substep appends that entry if and only if it reaches the quorum (`processBuilderPendingPayments_run_bid`). This row does not prove that each payment settles exactly once across the protocol | proved | #113, `Proofs/Heze/BuilderPendingPayments.lean` |
 
 ### State-transition correctness
 
@@ -312,7 +354,7 @@ The block/slot/epoch-processing spine and the properties that follow directly fr
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `processParentExecutionPayload` | `Heze/Operations.lean:65` | Landed: on the EMPTY edge (the child bid does not extend the cached parent block hash) with the empty parent requests, the run succeeds and returns the input state, so it settles no builder payment. Open: the FULL edge through `applyParentExecutionPayload`, and the two `assert` rejects | in progress | `Proofs/Heze/ParentPayloadEmpty.lean` |
+| `processParentExecutionPayload` | `Heze/Operations.lean:65` | Landed: on the EMPTY edge (the child bid does not extend the cached parent block hash) with the empty parent requests, the run succeeds and returns the input state, so it settles no builder payment. Open: the FULL edge through `applyParentExecutionPayload`, and the two `assert` rejects | in progress | #113, `Proofs/Heze/ParentPayloadEmpty.lean` |
 
 ### Fork-choice correctness
 
@@ -323,14 +365,15 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
 | `shouldExtendPayload` | `Heze/ForkChoice.lean:320-342` | The complete `.run` equation at `ForkChoiceStoreRun (Store map)`: block lookup, `getCurrentSlot`, the slot increment and assertion, `isPayloadVerified`, `isPayloadInclusionListSatisfied`, then the inherited Gloas tail. Named corollaries cover the prefix rejects, the FOCIL gate (unverified, missing record, recorded `false`, recorded `true`), the vote membership asserts, and the inherited Gloas accept and reject arms. Successful binds keep the intermediate runner states. A reject returns the error alone. `onExecutionPayloadEnvelope_run_pairing` exposes the inserted payload and inclusion-list answer after one envelope run. Three obligations remain open. One composes those writes with this read-side equation. One carries a successful envelope run to the extension decision. One is the store invariant that every root in `payloads` has a recorded answer. See the second `onExecutionPayloadEnvelope` row for those obligations | proved | `Proofs/Heze/ShouldExtendPayload.lean` |
 | `getInclusionListCommittee` | `Heze/ForkChoice.lean:204-212` | Complete `.run` equation at `ForkChoiceStoreRun σ`: empty concatenated indices throw the arithmetic error; a nonempty array returns `cyclicSample` of those indices and leaves the runner state unchanged | proved | follow-up to #82, `Proofs/Heze/GetInclusionListTransactions.lean` |
 | `getInclusionListTransactions` | `Heze/ForkChoice.lean:222-230` | Whole-operation `.run` equation at `ForkChoiceStoreRun (Store map)`: the committee run bound to collection at the committee's stored lists. Empty-committee and missing-timeliness errors follow as untagged corollaries | proved | follow-up to #82, `Proofs/Heze/GetInclusionListTransactions.lean` |
-| `collectInclusionListTransactions` | `Heze/ForkChoice.lean:135-152` | The collected set: an equivocator's entry contributes nothing; at `onlyTimely = true` an entry contributes exactly when its stored timeliness is `true`; at `onlyTimely = false` every non-equivocator entry contributes; the result is `arrayUnion` of the contributions, so it contains no duplicates. `getInclusionListTransactions_run_eq` fixes the arguments passed to the collector but leaves the returned array unconstrained | proposed |  |
+| `collectInclusionListTransactions` | `Heze/ForkChoice.lean:135-152` | Landed: at `onlyTimely = true`, when every stored list has a timeliness entry, the collection succeeds without a change to the runner state, and each transaction of a stored list with timeliness `true` from a non-equivocator is in the result (`collectInclusionListTransactions_ok_mem`). `mem_getInclusionListTransactions` states the same through the committee lookup. Open: the converse (each result transaction comes from such a list), an equivocator's entry contributing nothing, the `onlyTimely = false` call, and the absence of duplicates from `arrayUnion` | in progress | #115, `Proofs/Heze/GetInclusionListTransactions.lean` |
 | `recordPayloadInclusionListSatisfaction` | `Heze/ForkChoice.lean:406-418` | Complete `.run` equation at `ForkChoiceStoreRun (Store map)`: slot-zero checked-sub arithmetic error; empty-committee and missing-timeliness collector errors; arbitrary collector-error propagation; successful collection recording `isInclusionListSatisfied payload ilTxs` at `root` and preserving the collector's runner state | proved | follow-up to #82, `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`, `Proofs/Heze/GetInclusionListTransactions.lean` (successful-path origin #82) |
 | `onExecutionPayloadEnvelope` | `Heze/ForkChoice.lean:426-448` | `onExecutionPayloadEnvelope_run` is the complete compositional `.run` equation at `ForkChoiceStoreRun (Store map)`: missing `blockStates` is `.assert "envelope.beacon_block_root in store.block_states"`; failed data availability is `.assert "(isDataAvailable envelope.beaconBlockRoot)"`; verification and recorder errors propagate unchanged; success is the handler's final `set` of `blockStates` and `payloads` on the recorder's explicitly returned store, discarding the recorder-produced runner state. `onExecutionPayloadEnvelope_run_of_pureState` restates the whole equation over a plain block state `state`, stored as `pureState state`, and `onExecutionPayloadEnvelope_run_eq_of_successful_checks` restates the successful branch as the original store updated by three same-root `FcMap.insert` expressions. `verifyExecutionPayloadEnvelope_pureState` proves that a successful verification on `pureState state` returns `pureState state`, so the corollaries ask only that the verification succeeds | proved | #92, `Proofs/Heze/OnExecutionPayloadEnvelope.lean` (successful-path origin #84) |
-| `onExecutionPayloadEnvelope` | `Heze/ForkChoice.lean:426-448` | Postconditions on the final store of `onExecutionPayloadEnvelope_run_eq_of_successful_checks`. Landed: under `LawfulFcMap`, a lookup at the block root `r` of the envelope returns the envelope and the EL answer for its payload (`onExecutionPayloadEnvelope_run_pairing`). When the EL answers `false`, `unsatisfiedPayload_of_el_unsatisfied` gives the payload conditions of `shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`. The block conditions stay hypotheses. The laws hold for `treeMap` and `hashMap` at `Root` keys (`EthCLLib/Proofs/LawfulFcMap.lean`, with the order laws in `EthCLLib/Spec/FiniteMap.lean`). Open: the composition with the read-side characterizations `isPayloadInclusionListSatisfied_run` and `shouldExtendPayload_run`. Also open: the end-to-end corollary from a successful envelope run to the extension decision | in progress | `Proofs/Heze/OnExecutionPayloadEnvelope.lean`, `Proofs/Heze/CensorshipCost.lean` |
+| `onExecutionPayloadEnvelope` | `Heze/ForkChoice.lean:426-448` | Postconditions on the final store of `onExecutionPayloadEnvelope_run_eq_of_successful_checks`. Landed: under `LawfulFcMap`, a lookup at the block root `r` of the envelope returns the envelope and the EL answer for its payload (`onExecutionPayloadEnvelope_run_pairing`). With the answer `false`, `inclusionList_dichotomy` gives `UnsatisfiedPayload` at any later store that holds the block and the answer at `r` (`LaterStore`). `unsatisfiedPayload_of_recorded_false` makes that step without the arrival model. The laws hold for `treeMap` and `hashMap` at `Root` keys (`EthCLLib/Proofs/LawfulFcMap.lean`, with the order laws in `EthCLLib/Spec/FiniteMap.lean`). Open: the composition with the read-side characterizations `isPayloadInclusionListSatisfied_run` and `shouldExtendPayload_run`. Also open: the end-to-end corollary from a successful envelope run to the extension decision | in progress | `Proofs/Heze/OnExecutionPayloadEnvelope.lean`, `Proofs/Heze/InclusionDichotomy.lean` |
 | `isPayloadInclusionListSatisfied` | `Heze/ForkChoice.lean:305` | The complete `.run` equation at `ForkChoiceStoreRun (Store map)`: a missing satisfaction key is the membership assert; a recorded value is returned only when the payload is verified, otherwise `false`. Corollaries name the missing-record reject, an unverified recorded value, a recorded `false`, and a recorded `true` with a verified payload. Success leaves `runnerStore` unchanged. `onExecutionPayloadEnvelope_run_pairing` pairs the recorded answer with the payload after one envelope run | proved | `Proofs/Heze/IsPayloadInclusionListSatisfied.lean` |
-| `getPayloadStatusTiebreaker` | `Heze/ForkChoice.lean:344` | Landed: at a block from the previous slot, the EMPTY node scores `1`. The FULL node scores `0` when the payload is verified and its recorded inclusion-list answer is `false`. Both nodes have weight `0`, so `betterOf` keeps EMPTY. A restated body of the `getHead` loop then goes to EMPTY. Open: the FULL score `2` path. The other FULL score `0` paths: an unverified payload, and an answer `true` for a payload that is not both timely and available, with a proposer-boost block that is a child of the block on its EMPTY edge. Blocks that are not from the previous slot. The reachable rejects. The full `getHead` walk, and a statement about `getHead` itself in place of the restated loop body | in progress | `Proofs/Heze/PayloadTiebreak.lean` |
-| `getParentPayloadStatus` | `Heze/ForkChoice.lean:284` | Landed: when the parent block is in the store, the status is EMPTY exactly when the child bid's `parentBlockHash` differs from the parent bid's `blockHash`. Open: a theorem that equal hashes give `.ok payloadStatusFull` (the landed `iff` only rules out EMPTY), and the missing-parent reject | in progress | `Proofs/Heze/ParentPayloadEmpty.lean` |
-| `processInclusionList` | `Heze/ForkChoice.lean:170` | At most one stored list per validator per committee, asserted in its docstring and not proved. A conflicting second list leaves the stored list untouched and records the sender as an equivocator for that committee. The handler then ignores later lists from that validator on entry | proposed |  |
+| `getPayloadStatusTiebreaker` | `Heze/ForkChoice.lean:344` | Landed: at a block from the previous slot, the EMPTY node scores `1`. The FULL node scores `0` when the payload is unverified, or verified with the recorded inclusion-list answer `false`. Both nodes have weight `0`, so `betterOf` keeps EMPTY. The body of the `getHead` loop (`headLoopBody`, tied to `getHead` by `rfl` in `getHead_eq_fuelLoop_headLoopBody`) then returns `.next` of the EMPTY node, so the walk continues from EMPTY when it reaches the pending node (`getHead_walk_pending_to_empty`). Open: the FULL score `2` path. The other FULL score `0` path: an answer `true` for a payload that is not both timely and available, with a proposer-boost block that is a child of the block on its EMPTY edge. Blocks that are not from the previous slot. The reachable rejects. That the `getHead` walk reaches the pending node of the block | in progress | #113, `Proofs/Heze/PayloadTiebreak.lean` |
+| `getParentPayloadStatus` | `Heze/ForkChoice.lean:284` | Landed: when the parent block is in the store, the status is EMPTY exactly when the child bid's `parentBlockHash` differs from the parent bid's `blockHash`. Open: a theorem that equal hashes give `.ok payloadStatusFull` (the landed `iff` only rules out EMPTY), and the missing-parent reject | in progress | #113, `Proofs/Heze/ParentPayloadEmpty.lean` |
+| `processInclusionList` | `Heze/ForkChoice.lean:170` | Landed: the function has three results (`processInclusionList_cases`). It returns the store unchanged, or it adds the sender to the equivocators at the committee key, or it stores the list at its root with the given timeliness. Under `ArrivalHypotheses` (no earlier list from the validator at the committee key, only the one list from it after, no root collision), a fold over an arrival list keeps its list stored with the timeliness of the first arrival, and keeps the validator out of the equivocators (`honestStored_of_arrivals`). Open: which inputs select each branch. A conflicting second list from a validator leaves the stored list in place and adds the validator to the equivocators, and a list from a known equivocator leaves the store unchanged. The invariant for every validator at once, that at most one stored list per validator per committee exists. The docstring asserts it, and no theorem proves it | in progress | #115, `Proofs/Heze/OnInclusionList.lean` |
+| `onInclusionList` | `Heze/ForkChoice.lean:518` | Landed: when the time into the slot is `t`, the handler replaces the IL store with `processInclusionList` on the list, with timeliness `t < getInclusionListDueMs` (`onInclusionList_run_eq`). Open: the reject path, where `timeIntoSlotMs` fails because `store.time` is before `store.genesisTime` | in progress | #115, `Proofs/Heze/OnInclusionList.lean` |
 
 ---
 
