@@ -34,6 +34,8 @@ Re-exports:
   `false` inclusion-list answer (`unsatisfiedPayload_cost`). The head step goes to
   EMPTY. A child on EMPTY, with the empty parent requests, does not settle the bid. At
   the epoch substep, the bid is paid if and only if its entry reaches the quorum.
+  `unsatisfiedPayload_of_el_unsatisfied` derives the payload conditions from the
+  envelope lookups and an EL answer of `false`. The block conditions are hypotheses.
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
   equations for `getInclusionListCommittee` and
   `getInclusionListTransactions`
@@ -50,7 +52,9 @@ Re-exports:
   `@[characterizes EthCLSpecs.Heze.onExecutionPayloadEnvelope]`, plus
   the four direct error corollaries and the successful-path corollary
   `onExecutionPayloadEnvelope_run_eq_of_successful_checks`, proved with
-  `ForkChoiceStoreRun`.
+  `ForkChoiceStoreRun`. Under `LawfulFcMap`, the envelope and its
+  inclusion-list answer are at the same root
+  (`onExecutionPayloadEnvelope_run_pairing`).
 * `EthCLSpecs.Proofs.Heze.ParentPayloadEmpty`: `processParentExecutionPayload` on
   the EMPTY edge, with the empty parent requests, does not change the state
   (`processParentExecutionPayload_run_of_empty_parent`). Fork choice calls an edge

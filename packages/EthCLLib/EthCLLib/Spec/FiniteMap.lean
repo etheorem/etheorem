@@ -242,6 +242,14 @@ instance instTransOrdVectorUInt8 {n : Nat} : TransOrd (Vector UInt8 n) where
       (cmp := Vector.compareLex (compare : UInt8 → UInt8 → Ordering))
       (a := a) (b := b) (c := c) hab hbc
 
+/-- `instOrdVectorUInt8` returns `.eq` only on equal vectors. Core proves it for
+`Vector.compareLex compare`, and `instOrdVectorUInt8_compare_eq_compareLex` moves it to
+the byte loop. `treeMap`'s lookup laws need it to turn "the keys compare equal" into
+`k = k'`. -/
+instance instLawfulEqOrdVectorUInt8 {n : Nat} : LawfulEqOrd (Vector UInt8 n) :=
+  show LawfulEqCmp (compare : Vector UInt8 n → Vector UInt8 n → Ordering) from
+    instOrdVectorUInt8_compare_eq_compareLex ▸ inferInstance
+
 end instOrdVectorUInt8_lawful
 
 /-- The kind of a finite-map *family*: `key type → value type → concrete map`,

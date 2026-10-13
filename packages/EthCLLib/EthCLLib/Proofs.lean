@@ -20,10 +20,11 @@ counts none of these modules; it audits their axioms through this same root.
 
 Re-exports:
 
-* `EthCLLib.Proofs.LawfulFcMap`: same-key insertion for `FcMap`
+* `EthCLLib.Proofs.LawfulFcMap`: the laws of an `FcMap`
   (`LawfulFcMap`, `FcMap.lookup_insert_self`,
-  `FcMap.contains_insert_self`), with `instLawfulFcMapTreeMap` and
-  `instLawfulFcMapHashMap`.
+  `FcMap.contains_insert_self`, `FcMap.mem_values`), with `instLawfulFcMapTreeMap`
+  and `instLawfulFcMapHashMap`. The order laws of `instOrdVectorUInt8` that the
+  `treeMap` instance needs at `Root` sit in `EthCLLib.Spec.FiniteMap`.
 * `EthCLLib.Proofs.MerkleBranch`: what `isValidMerkleBranch` accepts.
 * `EthCLLib.Proofs.Run`: the `StateT`-over-`Except` run facts every pure runner
   shares (`run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,

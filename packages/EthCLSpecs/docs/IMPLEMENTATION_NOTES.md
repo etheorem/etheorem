@@ -873,11 +873,19 @@ separation.
   `GloasRun`; handlers and later failure postconditions remain opaque.
 
 - **`EthCLLib/Proofs/LawfulFcMap.lean`** places its public declarations in
-  `EthCLLib.Proofs`. It defines the key-indexed `LawfulFcMap map K` interface
-  and generic same-key insertion theorems, with concrete instances for
-  `treeMap` and `hashMap`. The FOCIL handler postconditions that use those
-  laws remain tracked by the `onExecutionPayloadEnvelope` entry in
-  `PROOF_LEDGER.md`.
+  `EthCLLib.Proofs`. It declares `LawfulFcMap map K`: six laws that relate
+  `lookup` to `empty`, `insert`, `contains`, `fold`, and `keys`. It proves them
+  for `treeMap` at a key with `TransOrd` and `LawfulEqOrd`, and for `hashMap` at a
+  key with `LawfulBEq` and `LawfulHashable`. `lookup_insert_ne` and the
+  enumeration laws turn "compares equal" into `k = k'`, so the instances need
+  `LawfulEqOrd` for `treeMap` and `LawfulBEq` for `hashMap`.
+
+- **`EthCLLib/Spec/FiniteMap.lean`** holds the order laws for `Root`.
+  `instOrdVectorUInt8_compare_eq_compareLex` shows that the byte loop is core's
+  `Vector.compareLex compare`. `instTransOrdVectorUInt8` and
+  `instLawfulEqOrdVectorUInt8` follow from it. The fork-choice proofs take
+  reflexivity from the `TransOrd` instance (`Std.ReflCmp.compare_self`) when two
+  nodes have the same root.
 
 - **`Proofs/Heze/IsPayloadInclusionListSatisfied.lean`** places its theorems in
   `EthCLSpecs.Proofs.Heze`. `isPayloadInclusionListSatisfied_run` is the
@@ -886,9 +894,10 @@ separation.
   recorded value is returned only when the payload is verified, otherwise
   `false`. The four corollaries name the missing-record reject, an unverified
   recorded value, a recorded `false`, and a recorded `true` with a verified
-  payload. Success leaves `runnerStore` unchanged. Verdict production and
-  payload/verdict pairing remain later handler work, tracked by the
-  `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+  payload. Success leaves `runnerStore` unchanged.
+  `onExecutionPayloadEnvelope_run_pairing` pairs the recorded answer with the
+  payload after one envelope run. The `onExecutionPayloadEnvelope` entry in
+  `PROOF_LEDGER.md` tracks the composition with this read.
 
 - **`Proofs/Heze/ShouldExtendPayload.lean`** places its theorems in
   `EthCLSpecs.Proofs.Heze` because `shouldExtendPayload` exists in both Gloas
@@ -914,10 +923,11 @@ separation.
   handler path that writes `blockStates`, `payloads`, and
   `payloadInclusionListSatisfaction` at the same
   `signedEnv.message.beaconBlockRoot` is proved in
-  `Proofs/Heze/OnExecutionPayloadEnvelope.lean`. Handler postconditions
-  that pair `payloads[root]` with the satisfaction entry, and composition of
-  those writes with this read, remain tracked by the
-  `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
+  `Proofs/Heze/OnExecutionPayloadEnvelope.lean`. Under `LawfulFcMap`,
+  `onExecutionPayloadEnvelope_run_pairing` pairs `payloads[root]` with the
+  satisfaction entry after one envelope run. No theorem proves that every root
+  in `payloads` has a recorded result. The `onExecutionPayloadEnvelope` entry
+  in `PROOF_LEDGER.md` tracks the composition of those writes with this read.
 
 - **`Proofs/Heze/GetInclusionListTransactions.lean`** proves the collector
   run equations used by the recorder characterization.
@@ -966,9 +976,11 @@ separation.
   `onExecutionPayloadEnvelope_run_eq_of_successful_checks` restates the
   successful branch as the original store updated by three same-root
   `FcMap.insert` expressions. `recordPayloadInclusionListSatisfaction_run`
-  characterizes the recorder's slot-zero and collector outcomes. The
-  `proposed` `onExecutionPayloadEnvelope` row in `PROOF_LEDGER.md` lists
-  lookup-after-insert and composition with the read-side theorems.
+  characterizes the recorder's slot-zero and collector outcomes. Under
+  `LawfulFcMap`, `onExecutionPayloadEnvelope_run_pairing` proves that a later
+  lookup at the root returns the envelope and the EL answer for its payload.
+  The second `onExecutionPayloadEnvelope` row in `PROOF_LEDGER.md` lists
+  composition with the read-side theorems.
 
 - **`Proofs/Gloas/UpdateCheckpoints.lean`** rewrites Gloas's `updateCheckpoints` as a
   single record update, which doubles as the frame condition that no other Store
@@ -1008,6 +1020,8 @@ separation.
   because the model does not include the proposer who builds the child. The third takes
   `BidPaymentCarried` as the hypothesis about the blocks between the bid and the
   substep. A proposer slashing of the block's proposer, or a child on the FULL edge,
-  breaks it.
+  breaks it. `unsatisfiedPayload_of_el_unsatisfied` derives the payload conditions from
+  the envelope lookups and an EL answer of `false`. It takes the block lookup, the
+  current slot, and the overflow check as hypotheses on the store after the handler.
 
 - **`PROOF_LEDGER.md`** tracks candidate consensus proof targets and their status.
