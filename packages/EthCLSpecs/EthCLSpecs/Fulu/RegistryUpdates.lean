@@ -162,9 +162,8 @@ forkdef queueExcessActiveBalance (i : ValidatorIndex) : StateTransition Unit := 
     let pendingDeposit : PendingDeposit :=
       { pubkey := validator.pubkey, withdrawalCredentials := validator.withdrawalCredentials, amount := excess,
         signature := Const.g2PointAtInfinity, slot := Const.genesisSlot }
-    modifyState fun state =>
-      let state := modBalance state i (fun _ => Const.minActivationBalance)
-      sszAppend state pendingDeposits pendingDeposit
+    modifyState fun state => modBalance state i (fun _ => Const.minActivationBalance)
+    appendState pendingDeposits pendingDeposit
 
 /-- `switch_to_compounding_validator`: flip the credential prefix to compounding and
 queue any excess active balance. -/

@@ -104,14 +104,10 @@ index with the supplied `version` / `executionAddress`. -/
 forkdef addBuilderToRegistry (pubkey : BLSPubkey) (version : UInt8) (executionAddress : ExecutionAddress)
     (amount : Gwei) (slot : Slot) : StateTransition Unit := do
   let state ← get
-  let idx := (getIndexForNewBuilder state).toNat
   let b : Builder :=
     { pubkey, version, executionAddress, balance := amount,
       depositEpoch := computeEpochAtSlot slot, withdrawableEpoch := Const.farFutureEpoch }
-  modifyState fun state =>
-    if idx < (sszGet state builders).size then
-      sszUpdate state with builders[idx]! := b
-    else sszAppend state builders b
+  setOrAppendState builders (getIndexForNewBuilder state).toNat b
 /-- `apply_deposit_for_builder` (retained as a helper; the spec inlines it into
 `onboard_builders_from_pending_deposits`): top up an existing builder, or add a new one
 with a valid proof-of-possession, stamped `PAYLOAD_BUILDER_VERSION`. -/
@@ -147,7 +143,9 @@ forkdef onboardBuildersFromPendingDeposits : StateTransition Unit := do
     else
       applyDepositForBuilder d.pubkey d.withdrawalCredentials d.amount d.signature d.slot
 
-  modifyState fun state => sszUpdate state with pendingDeposits := sszOfArray kept
+  let keptList : SSZList PendingDeposit Const.pendingDepositsLimit ←
+    sszOfArrayM "pendingDeposits" kept
+  modifyState fun state => sszUpdate state with pendingDeposits := keptList
 
 /-! ## EIP-8282 builder-request handlers
 
@@ -316,7 +314,8 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
   let indexedAttestation : IndexedAttestation :=
-    { attestingIndices := sszOfArray ((← liftErr (getAttestingIndices state att)).qsort (· < ·)),
+    { attestingIndices := ← sszOfArrayM "attestingIndices"
+        ((← liftErr (getAttestingIndices state att)).qsort (· < ·)),
       data := att.data, signature := att.signature }
   assert (isValidIndexedAttestation state indexedAttestation)
 
@@ -414,8 +413,8 @@ forkdef getIndexedPayloadAttestation (state : State) (pa : PayloadAttestation) :
   let ptc ← getPtc state pa.data.slot
   let attesting := (Array.range Const.ptcSize).foldl
     (fun acc i => if bitGet pa.aggregationBits i then acc.push (vget ptc i) else acc) (#[] : Array ValidatorIndex)
-  pure { attestingIndices := sszOfArray (attesting.qsort (· < ·)), data := pa.data,
-         signature := pa.signature }
+  pure { attestingIndices := ← sszOfArrayM "attestingIndices" (attesting.qsort (· < ·)),
+         data := pa.data, signature := pa.signature }
 
 /-- `is_valid_indexed_payload_attestation`: non-empty, *non-strictly* sorted indices
 (the PTC can repeat a validator), in range, with a valid `DOMAIN_PTC_ATTESTER`

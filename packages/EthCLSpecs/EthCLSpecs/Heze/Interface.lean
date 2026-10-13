@@ -112,15 +112,18 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
   letI : Preset := P
   letI : Config := C
   letI : HasherTag := fastHasherTag
-  let mkDeltas : Array Gwei × Array Gwei → ByteArray := fun rp =>
-    SSZ.serialize ({ rewards := sszOfArray rp.1, penalties := sszOfArray rp.2 } : Deltas)
+  -- `Deltas(rewards=…, penalties=…)` builds two `List`s, which raise on too many elements.
+  let mkDeltas : Array Gwei × Array Gwei → Except StateTransitionError ByteArray := fun rp => do
+    pure (SSZ.serialize ({ rewards := ← sszOfArrayM "rewards" rp.1,
+                           penalties := ← sszOfArrayM "penalties" rp.2 } : Deltas))
   let n := (sszGet state validators).size
   let zeros := Array.replicate n (0 : Gwei)
   RunError.ofSpec do
     let d0 ← liftErr (getFlagIndexDeltas state 0)
     let d1 ← liftErr (getFlagIndexDeltas state 1)
     let d2 ← liftErr (getFlagIndexDeltas state 2)
-    pure #[mkDeltas d0, mkDeltas d1, mkDeltas d2, mkDeltas (zeros, getInactivityPenaltyDeltas state)]
+    pure #[← mkDeltas d0, ← mkDeltas d1, ← mkDeltas d2,
+      ← mkDeltas (zeros, getInactivityPenaltyDeltas state)]
 
 /-- Decode a plain (non-boxed) SSZ operation value. -/
 private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :

@@ -205,8 +205,10 @@ forkdef processPendingDeposits : StateTransition Unit := do
   let deposits := (sszGet state pendingDeposits).toArray
 
   let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
+  let remaining : SSZList PendingDeposit Const.pendingDepositsLimit ←
+    sszOfArrayM "pendingDeposits" (deposits.extract scan.ndi deposits.size ++ scan.postpone)
   modifyState fun state => sszUpdate state with
-    pendingDeposits := sszOfArray (deposits.extract scan.ndi deposits.size ++ scan.postpone),
+    pendingDeposits := remaining,
     depositBalanceToConsume := if scan.churnReached then avail - scan.processed else 0
 
 inherit pcLoop

@@ -47,6 +47,17 @@ vectors, so these guards are the only thing exercising the throw. -/
 #guard (checkedMul 0x8000000000000000 4 "o" : Except StateTransitionError UInt64) matches .error (.arithmetic _)
 #guard (checkedSub 3 5 "u" : Except StoreTransitionError UInt64) matches .error (.transition (.arithmetic _))
 
+/-! ## Appends to a full list: the `.listFull` fault
+
+`throwListFull` stands for remerkleable's `List.append` raise on a full list, a bare `Exception`.
+Like `.arithmetic`, it arrives as `.listFull` on the state machine and as
+`.transition (.listFull …)` on the store machine, and it is an uncaught fault that no wrapper
+admits. -/
+#guard (throwListFull "xs" : Except StateTransitionError Unit) matches .error (.listFull _)
+#guard (throwListFull "xs" : Except StoreTransitionError Unit) matches .error (.transition (.listFull _))
+#guard StateTransitionError.classify (.listFull "xs") == .uncaughtFault
+#guard StoreTransitionError.isExpectedRejection (.transition (.listFull "xs")) == false
+
 /-! ## The per-case caught set (`RunnerCaughtSet`)
 
 One test, under `epoch_processing` / `registry_updates`, scores its invalid vector with its own
@@ -62,10 +73,12 @@ and `IndexError`. The guards pin both sets and the pair that selects them. -/
 #guard RunnerCaughtSet.assertionAndIndex.admits (.assert "x") == true
 #guard RunnerCaughtSet.assertionAndIndex.admits (.outOfBounds 0 0) == true
 #guard RunnerCaughtSet.assertionAndIndex.admits (.arithmetic "x") == false
+#guard RunnerCaughtSet.assertionAndIndex.admits (.listFull "x") == false
 
 #guard RunnerCaughtSet.valueError.admits (.arithmetic "x") == true
 #guard RunnerCaughtSet.valueError.admits (.assert "x") == false
 #guard RunnerCaughtSet.valueError.admits (.outOfBounds 0 0) == false
+#guard RunnerCaughtSet.valueError.admits (.listFull "x") == false
 
 /-! ### The reject table (`classifyReject`)
 
@@ -85,6 +98,11 @@ a pass or a fail. The guards above pin the first. These pin the second, one row 
 #guard (classifyReject .valueError (.assert "x")).bucket == .likelyBug
 #guard (classifyReject .valueError (.outOfBounds 0 0)).passed == false
 #guard (classifyReject .valueError (.outOfBounds 0 0)).bucket == .likelyBug
+
+#guard (classifyReject .assertionAndIndex (.listFull "x")).passed == false
+#guard (classifyReject .assertionAndIndex (.listFull "x")).bucket == .uncaughtFault
+#guard (classifyReject .valueError (.listFull "x")).passed == false
+#guard (classifyReject .valueError (.listFull "x")).bucket == .uncaughtFault
 
 #guard (classifyReject .valueError (.todo "x")).bucket == .todo
 #guard (classifyReject .assertionAndIndex (.todo "x")).bucket == .todo

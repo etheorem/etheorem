@@ -175,20 +175,70 @@ def elabForkChoiceSection : CommandElab := fun stx => do
 
 /-! ## `appendState`: append to a list field of the threaded state -/
 
-/-- `appendState f v`: append `v` to the threaded state's list field `f`, the monadic
-state-threading wrapper over SizzLean's `sszAppend`. Expands to
-`modifyState fun state => sszAppend state f v`, so the per-fork `modifyState` (a use-site
-identifier, resolved to the running fork's) threads the box and `sszAppend` does the
-cap-clamping push. The append value `v` is evaluated under the `state` binder, so a `v` that
-reads `state` keeps the explicit `modifyState fun state => sszAppend state f …` form instead. -/
+/-- `appendState f v`: the spec's `state.f.append(v)`. It appends `v` to the threaded
+state's list field `f`, or raises the `.listFull` fault when the list is at its limit, as
+remerkleable's `List.append` does. The expansion reads the state and runs SizzLean's
+`sszAppend?` on it. `some` of the updated state goes back through the per-fork
+`modifyState` (a use-site identifier, resolved to the running fork's). `none` becomes
+`throwListFull`.
+
+The macro's own read is hygienic, so `v` cannot see it. A `state` that `v` names is the
+caller's binding, and it can predate a write the caller made since. A `v` that must read
+the current state reads it inline, with `(← get)`. -/
 scoped syntax (name := appendStateStx) "appendState " ident ppSpace term : term
 
 macro_rules
   | `(appendState $head:ident $v) => do
-      -- Expand straight to `sszModify`'s `as` form rather than `sszAppend`'s surface: a
-      -- bare `$v` after `sszAppend state $head` would be misread as a path segment, whereas
-      -- the `as` keyword stops the segment parse cleanly. (Both are the cap-clamping push.)
+      let stateId  := mkIdent `State
       let modifyId := mkIdent `modifyState
-      `($modifyId fun state => sszModify state $head:ident as l => l.push $v)
+      let field    := Syntax.mkStrLit head.getId.toString
+      -- `($v)`: `sszAppend?` takes the value as a `term:max`.
+      `(do
+          let s ← getThe $stateId
+          match sszAppend? s $head:ident ($v) with
+          | some s' => $modifyId:ident fun _ => s'
+          | none => throwListFull $field)
+
+/-! ## `setOrAppendState`: the spec's `set_or_append_list` on a state field -/
+
+/-- `setOrAppendState f i v`: the spec's `set_or_append_list(state.f, i, v)`
+(`altair/beacon-chain.md:253-257`). When `i` is the length of the list it appends, through
+`appendState`, so a full list raises `.listFull`. When `i` is inside the list it overwrites
+entry `i`. Past the end, the spec's `list[index] = value` raises `IndexError`, which becomes
+the `.outOfBounds` reject through `liftErr`. `i` is a `Nat`. `v` is bound once, before the
+branch, as pyspec evaluates `value` once before the call. -/
+scoped syntax (name := setOrAppendStateStx) "setOrAppendState " ident ppSpace term:max ppSpace term : term
+
+macro_rules
+  | `(setOrAppendState $head:ident $i $v) => do
+      let stateId  := mkIdent `State
+      let modifyId := mkIdent `modifyState
+      let clause ← `(sszUpdateClause| $head:ident[i]! := v)
+      `(do
+          let v := $v
+          let s ← getThe $stateId
+          let i : Nat := $i
+          let n := (sszGet s $head:ident).val.size
+          if i == n then appendState $head:ident v
+          else if i < n then $modifyId:ident fun state => sszUpdate state with $clause
+          else liftErr (Except.error (SizzLean.Cache.IndexError.indexError i n)
+            : Except SizzLean.Cache.IndexError PUnit))
+
+/-! ## `sszOfArrayM`: the spec's `List[T, N](a)` on an array of any size -/
+
+universe u
+
+/-- `sszOfArrayM field a`: the spec's `List[T, N](a)`, for an array whose size depends on
+the input. It returns the list when `a` fits under the limit `cap`, the one the expected
+type fixes. Otherwise it raises the `.listFull` fault, as remerkleable's `List`
+constructor raises a bare `Exception` on too many elements. `field` names the list,
+diagnostic only. The `[ErrorConv StateTransitionError E]` bound lets one definition serve
+both machines. An array of fixed size uses the proof-carrying `sszOfArray` instead. -/
+@[inline] def sszOfArrayM {m : Type → Type u} {α E : Type} {cap : Nat} [Monad m]
+    [MonadExcept E m] [ErrorConv StateTransitionError E] (field : String) (a : Array α) :
+    m (SizzLean.Repr.SSZList α cap) :=
+  match SizzLean.Repr.SSZList.ofArray? a with
+  | some l => pure l
+  | none   => throwListFull field
 
 end EthCLLib.Spec
