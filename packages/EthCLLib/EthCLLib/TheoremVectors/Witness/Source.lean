@@ -14,8 +14,9 @@ nothing. The loop walks the sources in §9.2's fixed order, and the command
 assembles that order per theorem: the hint source (§9.8) runs first on
 every list, then a line with seeds runs seed (§9.4) then bit-vector
 (§9.4), a line without seeds runs base (§9.4) then bit-vector, and a
-theorem with a block input runs base alone (§1.2). The random source and
-the shrink are in; the built source slots in with its stage.
+theorem with a block input runs base alone (§1.2). The built source
+(§9.9) follows the bit-vector source, and the random source and the
+shrink close the list.
 
 `SearchM` is `MetaM`: §9.2's budget counter stayed unnecessary, because
 the redraw loop's budget is the `randomDraws` option per case and the
@@ -80,6 +81,19 @@ structure SearchCtx where
   cases of one theorem at one preset share them. The ref holds one slot
   per draw index; `none` is not yet drawn. -/
   drawMemo : IO.Ref (Array (Option (Array ByteArray)))
+  /-- The output root, where the built source's cache lives
+  (`<outDir>/built/`, §9.9). -/
+  outDir : System.FilePath
+  /-- The binding module's cache stamp (§9.9): the `.trace` text the
+  built source stores beside every cached state and compares before it
+  reads one. Computed once per theorem, beside the committed hint
+  file. -/
+  builtStamp : String
+  /-- The fork's first epoch boundary in preset units (§9.9), for the
+  built grid's boundary steps. Evaluated once per run from the fork's
+  own constant; the default is the upstream minimal value 8, which the
+  toy forks' tests take. -/
+  epochBoundary : Nat := 8
 
 /-- The search monad: `MetaM`. §9.2's budget counter stayed
 unnecessary: the redraw loop's budget is `theorem_vectors.randomDraws`

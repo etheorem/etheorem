@@ -1,5 +1,6 @@
 import EthCLLib.TheoremVectors
 import EthCLSpecs.TheoremVectors.Bindings
+import EthCLSpecs.TheoremVectors.Builders.Gloas
 import EthCLSpecs.TheoremVectors.Generators.Fulu
 import EthCLSpecs.TheoremVectors.Generators.Gloas
 import EthCLSpecs.TheoremVectors.Generators.Heze
@@ -11,10 +12,9 @@ Library root (`THEOREM_VECTORS_ARCHITECTURE.md` §2.1, §4.2). The spec half sup
 fork fact the framework half asks for: one `ForkBinding` value per fork,
 the state-builder catalogs, the author seeds, the committed hints, and the
 generator files whose elaboration writes the records. §4.2 places each
-of those in its own module under this root. Stage 1 carries the bindings
-and the generator files; the builders, seeds, and hints arrive with their
-stages. The generator commands in this root run at `lake build` time, so
-building this library is what writes the outcome files the report folds.
+of those in its own module under this root. The generator commands run
+at `lake build` time, so building this library is what writes the
+outcome files the report folds.
 -/
 
 set_option autoImplicit false

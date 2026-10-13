@@ -472,6 +472,31 @@ random source runs, and the state is built once per build.
 the cache, and the report's seconds drop. The vector's state passes the
 pyspec server's decode (`pyspec_server stateroot gloas <state.ssz>`).
 
+*Outcome.* The acceptance holds on today's three-case split: the true
+side and one false side of `canBuilderCoverBid_iff` write with source
+`built` from the `withQueue` grid step (16 validators, slot 40, queue 4,
+two builders onboarded by the spec's own onboarding step), and one false
+side falls through to the random source, the draw satisfying where
+the grid did not. The replayed vectors' states decode through
+`pyspec_server stateroot gloas`. Steps 8 and 9 landed: a random entry
+carries its shrink path and its replay walks the recorded candidates
+alone, and a case every source failed records a `notFound` entry whose
+non-stale replay skips the search, the re-recorded entry keeping the
+skip stable across builds and update runs. A cold build replays the
+built witness in 29 seconds and runs the recipe in 56, and the second
+build reads every state from the cache, the built witness dropping to
+15 seconds and the recipe to 25. Decision point C, measured: `advanced`
+at the first epoch boundary builds in seconds, the same order as a
+pyspec `epoch_processing` case at minimal, so the six-step grid stays;
+the per-preset `builtSteps` cap (3 at mainnet) already bounds the
+mainnet grid. The design changes that followed sit in
+`IMPLEMENTATION_NOTES.md`: the builders carry the seams their bodies use
+beside `[Preset] [Config]`, the grid's epoch boundary is the fork's own
+`Const.slotsPerEpoch` read through the binding, `Witness/Built.lean`
+imports `Witness.Random` for the shared point loop, the cache stamp is
+the binding module's trace, and a built hint's replay fetches its bytes
+through the cache.
+
 ---
 
 ## Stage 7: run shapes and the pyspec format

@@ -126,7 +126,8 @@ run_cmd do
         { probe := probe, info := info, binding := binding,
           preset := PresetId.minimal, inputFvars := ctx.inputFvars,
           instFvars := ctx.instFvars, instConsts := instConsts,
-          seedTerms := #[], drawMemo := ← IO.mkRef #[] }
+          seedTerms := #[], drawMemo := ← IO.mkRef #[],
+          outDir := Tests.ToyFork.scratchOutDir, builtStamp := "" }
       let c := cases[0]!
       match ← searchCase sources sctx stmt c with
       | .ok (a, won) =>
@@ -136,7 +137,7 @@ run_cmd do
           throwError "the random witness failed the check"
         -- ── the shrink pin (§9.6): a smaller value or smaller bytes,
         -- and the check still holds
-        let shrunk ← shrinkWitness probe c 200 a
+        let shrunk ← shrinkWitness probe c.index 200 a
         unless probe.check c.index shrunk do
           throwError "the shrunk witness failed the check"
         let leOf (b : ByteArray) : Nat :=
@@ -175,7 +176,8 @@ run_cmd do
             match Preset.constOf binding .minimal kind with
             | .ok c => pure c
             | .error e => throwError e,
-          seedTerms := #[], drawMemo := ← IO.mkRef #[] }
+          seedTerms := #[], drawMemo := ← IO.mkRef #[],
+          outDir := Tests.ToyFork.scratchOutDir, builtStamp := "" }
       let sources2 : Array WitnessSource := #[baseSource, bitVecSource, randomSource]
       match ← searchCase sources2 sctx2 stmt c with
       | .ok (a, won) =>

@@ -1,13 +1,16 @@
 import Lean
 import EthCLLib.TheoremVectors.Probe
+import EthCLLib.TheoremVectors.Witness.Built
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Scope
 import EthCLLib.TheoremVectors.Prepare
 import EthCLLib.TheoremVectors.Sampleable
+import EthCLSpecs.Gloas.Interface
 import EthCLSpecs.Proofs.Gloas
 import EthCLSpecs.Proofs.Fulu
 import EthCLSpecs.TheoremVectors.Bindings.Gloas
 import EthCLSpecs.TheoremVectors.Bindings.Fulu
+import EthCLSpecs.TheoremVectors.Builders.Gloas
 
 /-!
 # `EthCLSpecs.Tests.TheoremVectorsPins`: the statement reader's known answers
@@ -19,7 +22,8 @@ stage 3, its prepare pass (§8). Ten theorems with known shapes run through
 answer: target, shape, block inputs, and the input names in binder order.
 Three stage-3 acceptance theorems then run through `Prepare.pass`, and
 each pin checks the split's answer: the case count, the sides, and the
-conjunctions' shape-relevant constants.
+conjunctions' shape-relevant constants. Stage 4's draw pin and stage 6's
+state-builder pins close the file.
 
 The ten cover the pin list the plan names: one `.iffTrue`
 (`canBuilderCoverBid_iff`), one `.runOk` in each of its two forms
@@ -229,5 +233,102 @@ run_cmd do
     | .ok _ => pure ()
     | .error e =>
       throwError s!"pin draw: the drawn bytes did not decode: {repr e}"
+
+/-- One builder pin: serialize the state and decode it through the fork's
+own `stateRoot`, failing with the builder's name when it does not. -/
+private def pinStateRoot (name : String) (bytes : ByteArray) :
+    MetaM Unit := do
+  match EthCLSpecs.Gloas.Interface.gloasInterface.stateRoot bytes with
+  | .ok _ => pure ()
+  | .error e =>
+    throwError s!"pin {name}: the state did not decode through the \
+      fork's stateRoot: {repr e}"
+
+/-- The binding's minimal instance set, the one every record writes at.
+File-level definitions carry the local instance attribute; the drive's
+`letI` binders left the statements after them without the earlier
+statements' locals and instances under this module's build, and the
+pins need both across statements. `local` scopes the four to this file, so no other test
+module inherits them. The hasher needs no entry: the builders pin it
+locally, and the serialize and `stateRoot` reads take no tag. -/
+@[reducible] private def tvMinimalPreset : EthCLSpecs.Gloas.Preset :=
+  EthCLSpecs.Gloas.minimal
+@[reducible] private def tvMinimalConfig : EthCLSpecs.Gloas.Config :=
+  EthCLSpecs.Gloas.minimalConfig
+@[reducible] private def tvVerifyOff : EthCLLib.Spec.CryptoBackend :=
+  EthCLLib.Spec.CryptoBackend.verifyOff
+/-- The parent fork's config, for the previous version the `upgraded`
+pin reads; a distinct class from the Gloas one, so the two locals do not
+compete. -/
+@[reducible] private def tvFuluConfig : EthCLSpecs.Fulu.Config :=
+  EthCLSpecs.Fulu.minimalConfig
+attribute [local instance] tvMinimalPreset tvMinimalConfig tvVerifyOff tvFuluConfig
+
+-- The state builders' answers (§9.9, the plan's stage 6, step 7): every
+-- catalog builder's state decodes through the fork's own `stateRoot`,
+-- `advanced` at the first epoch boundary lands on the boundary slot,
+-- `upgraded` carries the fork version and the chain's genesis version as
+-- the previous one, and `withQueue` leaves builders in the registry the
+-- onboarding step put there and validator deposits in the queue it kept.
+-- The instances are the binding's minimal set, which is the preset every
+-- record writes at; the pins run at elaboration time through the
+-- compiled fork body, the way the draw pin above does.
+open EthCLLib.Spec in
+run_cmd do
+  liftTermElabM do
+    -- the grid's epoch boundary reads the fork's constant through the
+    -- framework's own face, at both presets: minimal 8, mainnet 32, so a
+    -- silent fallback to 8 cannot hide a broken read
+    let gloas : ForkBinding ←
+      readBinding (`EthCLSpecs.TheoremVectors.Bindings.Gloas.gloas)
+    unless (← Built.epochBoundaryOf gloas .minimal) == 8 do
+      throwError "pin epoch boundary: minimal is not 8"
+    unless (← Built.epochBoundaryOf gloas .mainnet) == 32 do
+      throwError "pin epoch boundary: mainnet is not 32"
+    let boundary : Nat := EthCLSpecs.Gloas.Const.slotsPerEpoch
+    -- `genesis`: decodes, and every validator is active from the genesis
+    -- epoch
+    let stG := EthCLSpecs.TheoremVectors.Builders.Gloas.genesis
+      { validators := 8, balance := 32000000000 }
+    pinStateRoot "genesis" (SizzLean.SSZ.serialize stG)
+    unless stG.validators.val.size == 8 &&
+        (stG.validators.val.all fun v =>
+          v.activationEpoch == EthCLSpecs.Gloas.Const.genesisEpoch) do
+      throwError "pin genesis: the registry is not eight active validators"
+    -- `advanced` at the first epoch boundary: the slot is the boundary,
+    -- which is the plan's pin. The plain value's own field projection
+    -- reads the slot; `sszGet` reads a box.
+    let stA := EthCLSpecs.TheoremVectors.Builders.Gloas.advanced
+      { validators := 8, slot := boundary }
+    pinStateRoot "advanced" (SizzLean.SSZ.serialize stA)
+    unless stA.slot == UInt64.ofNat boundary do
+      throwError s!"pin advanced: slot is {stA.slot}, expected {boundary}"
+    -- `upgraded`: the fork version is the config's, and the previous
+    -- version is the chain's genesis fork version, the one the parent's
+    -- config names
+    let stU := EthCLSpecs.TheoremVectors.Builders.Gloas.upgraded
+      { validators := 8, slot := boundary }
+    pinStateRoot "upgraded" (SizzLean.SSZ.serialize stU)
+    unless stU.forkData.currentVersion ==
+        EthCLSpecs.Gloas.Const.gloasForkVersion do
+      throwError "pin upgraded: the fork version is not the config's"
+    unless stU.forkData.previousVersion ==
+        EthCLSpecs.Fulu.Const.genesisForkVersion do
+      throwError "pin upgraded: the previous version is not the \
+chain's genesis fork version"
+    -- `withQueue` at the grid's queue step, the table's literal slot
+    -- 40: two builder deposits reached the registry at the deposit
+    -- balance, two validator deposits stayed queued
+    let stQ := EthCLSpecs.TheoremVectors.Builders.Gloas.withQueue
+      { validators := 16, slot := 40, queue := 4 }
+    pinStateRoot "withQueue" (SizzLean.SSZ.serialize stQ)
+    unless stQ.builders.val.size == 2 do
+      throwError s!"pin withQueue: {stQ.builders.val.size} builders in the \
+        registry, expected two"
+    unless stQ.builders.val.all fun b => b.balance == 32000000000 do
+      throwError "pin withQueue: a builder's balance is not the deposit's"
+    unless stQ.pendingDeposits.val.size == 2 do
+      throwError s!"pin withQueue: {stQ.pendingDeposits.val.size} deposits \
+        stayed queued, expected two"
 
 end EthCLSpecs.Tests.TheoremVectorsPins

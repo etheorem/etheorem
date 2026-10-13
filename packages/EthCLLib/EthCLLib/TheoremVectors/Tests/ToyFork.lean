@@ -30,4 +30,8 @@ def toyBinding : EthCLLib.TheoremVectors.ForkBinding where
   handlerOf := fun _ => none
   interface := fun _ => none
 
+/-- The scratch output root the test drives share, under this package's
+gitignored build tree. -/
+def scratchOutDir : System.FilePath := ".lake/build/test-theorem-vectors"
+
 end EthCLLib.TheoremVectors.Tests.ToyFork

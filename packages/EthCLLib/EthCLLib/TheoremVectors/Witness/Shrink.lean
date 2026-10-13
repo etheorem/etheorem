@@ -44,33 +44,81 @@ namespace EthCLLib.TheoremVectors
 private def assignmentSize (a : Assignment) : Nat :=
   a.foldl (fun acc b => acc + b.size) 0
 
-/-- The shrink loop (§9.6). Returns the smallest passing witness found
-within the step budget; a witness whose first shrink step fails comes
-back unchanged. Each step is one accepted candidate. -/
-def shrinkWitness (probe : Probe) (c : Case) (steps : Nat)
-    (a : Assignment) : MetaM Assignment := do
+/-- The shrink loop with its path recorded (§9.6, the plan's stage-6
+step 8): one entry per `probe.shrink` call, holding the indices of the
+candidates that call accepted, in list order. The trace is what a
+hinted replay walks, so the replay runs one `probe.shrink` call per
+recorded call and checks the recorded candidates alone, instead of
+walking every call's full list. -/
+def shrinkTraceWitness (probe : Probe) (caseIndex : Nat) (steps : Nat)
+    (a : Assignment) : MetaM (Assignment × Array (Array Nat)) := do
   let mut current := a
   let mut size := assignmentSize a
   let mut budget := steps
   let mut progress := true
+  let mut trace : Array (Array Nat) := #[]
   while progress && budget > 0 do
     let candidates := probe.shrink current
     progress := false
-    for cand in candidates do
+    let mut accepted : Array Nat := #[]
+    for (cand, i) in candidates.zipIdx do
       if budget == 0 then break
       let candSize := assignmentSize cand
       if candSize > size then continue
       -- §9.4, the stage-4 outcome: a candidate whose length cuts moved a
       -- collection below a scalar's index fails the bounds gate before
       -- the check, so the shrink's reads never run past an end
-      unless (probe.safe c.index cand).all (· == true) do
+      unless (probe.safe caseIndex cand).all (· == true) do
         continue
-      unless probe.check c.index cand do
+      unless probe.check caseIndex cand do
         continue
       current := cand
       size := candSize
       budget := budget - 1
       progress := true
-  return current
+      accepted := accepted.push i
+    unless accepted.isEmpty do
+      trace := trace.push accepted
+  return (current, trace)
+
+/-- The shrink loop (§9.6). Returns the smallest passing witness found
+within the step budget; a witness whose first shrink step fails comes
+back unchanged. Each step is one accepted candidate. -/
+def shrinkWitness (probe : Probe) (caseIndex : Nat) (steps : Nat)
+    (a : Assignment) : MetaM Assignment := do
+  let (a, _) ← shrinkTraceWitness probe caseIndex steps a
+  return a
+
+/-- The hinted replay of a recorded shrink path (§9.6, the plan's
+stage-6 step 8): one `probe.shrink` call per recorded call, taking and
+checking the recorded candidates alone. A recorded call whose list does
+not reach a recorded index, or whose recorded candidate fails the check,
+answers `none`, and the caller re-derives the endpoint with the full
+walk: the replayed draw still stands, and a call's candidates all derive
+from the call's own witness, so the walk lands on the same endpoint the
+original reached and the refreshed entry records its own path. -/
+def shrinkReplayWitness (probe : Probe) (caseIndex : Nat)
+    (trace : Array (Array Nat)) (a : Assignment) :
+    MetaM (Option Assignment) := do
+  let mut current := a
+  let mut size := assignmentSize a
+  for call in trace do
+    let candidates := probe.shrink current
+    let mut stepped := false
+    for i in call do
+      let some cand := candidates[i]? | return none
+      -- the recorded step's own acceptance rule, re-checked: the wire
+      -- size did not grow and the compiled `decide` still holds
+      if assignmentSize cand > size then return none
+      unless (probe.safe caseIndex cand).all (· == true) do
+        return none
+      unless probe.check caseIndex cand do
+        return none
+      current := cand
+      size := assignmentSize cand
+      stepped := true
+    unless stepped do
+      return none
+  return some current
 
 end EthCLLib.TheoremVectors

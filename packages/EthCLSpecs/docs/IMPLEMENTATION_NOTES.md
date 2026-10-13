@@ -672,7 +672,7 @@ to the pinned spec text and the `EthCLSpecs/Heze/ForkChoice.lean` pins.
   the constant `true`. That default is the execution-layer trust boundary of the FOCIL
   gate. No conformance vector reaches the discriminating `false` branch.
 
-- **The `InclusionListStore` rides inside the fork-choice `Store` as a field.** The
+- **The `InclusionListStore` is a field of the fork-choice `Store`.** The
   spec keeps it as a process-lifetime singleton reached through
   `get_inclusion_list_store()` (`heze/inclusion-list.md:28-38`), and this framework has no
   ambient singleton to hang it off. Behavior is identical. The rationale lives on the
@@ -1587,7 +1587,7 @@ Deviations found while building the hints (the schema, the fingerprint,
 the hint source, the mode, the committed files, and the recipes) against
 `THEOREM_VECTORS_ARCHITECTURE.md` and the plan's stage 5.
 
-- **The committed hints root rides in the lakefile, beside
+- **The committed hints root lives in the lakefile, beside
   `theorem_vectors.outDir`.** §9.8 places the committed files in the
   spec half (`EthCLSpecs/TheoremVectors/Hints/<fork>/<thm>.json`) but
   gives the hint source, which lives in the framework half, no path to
@@ -1712,3 +1712,116 @@ the hint source, the mode, the committed files, and the recipes) against
   search's build, and a hand-edited scalar turns its case's replay into
   a search and the run's field to `failed` while the other nine
   replay.
+
+- **The built source's knobs, per stage 6.** §9.9's builder sketch names
+  the catalog constants `[Preset] → [Config] → Knobs → BeaconState`,
+  and the Gloas builders carry the seams their bodies use beside those
+  two: `[CryptoBackend]` where a spec signature check reaches the seam,
+  and a local `letI : HasherTag := fastHasherTag` pin, the way the fork
+  interface pins it, because the run needs one concrete hasher and an
+  abstract binder gives none. The probe applies a builder across
+  whichever of the four seams its signature actually names
+  (`applyAcrossInstances`), so the catalog's shape stays the design's
+  for the caller.
+
+- **The grid's epoch boundary reads the fork's constant.** §9.9's second
+  and third grid steps are "the first epoch boundary", and the framework
+  half cannot name a fork constant. `Built.epochBoundaryOf` spells the
+  fork's `Const.slotsPerEpoch` from the binding's fork name, evaluates
+  it compiled at the run's preset, and takes the upstream minimal value
+  8 when the constant is missing or does not reduce. The binding gains
+  no field.
+
+- **`Witness/Built.lean` imports `Witness.Random`.** §9.9 runs "the same
+  loop the random source runs over a draw", and that loop
+  (`tryDraw`, `casePlanOf`, `drawAt`) lives in Random, so the built
+  source drives it there instead of copying it. §4.1's dependency column
+  names `Witness.Source` and `Witness.BitVec` only; the third import is
+  the shared loop.
+
+- **A built hint's replay goes through the cache.** §9.8's table gives
+  the built row "the builder name, the knobs, and the solved scalars";
+  the replay fetches those bytes through `Built.cachedBytes`, the same
+  cache face the source's walk uses, so a builder runs at most once per
+  build per grid step across the search, the hint derivation, and the
+  replay. Without this, a replayed built witness reran the builder in
+  every theorem that held one.
+
+- **The cache stamp is the binding module's trace, per run.** §9.9
+  stamps each cache entry with "the Lake trace of the fork's `Builders`
+  module". The binding module is the stamp's source instead, because a
+  builder's bytes also depend on the crypto seam the binding fixes
+  (`withQueue` runs deposit-signature checks through it), and the
+  Builders module does not import the binding. The binding's trace folds
+  the Builders module's artifacts beside the fork body and the seams, so
+  everything the bytes depend on invalidates the stamp. The command
+  reads it once per theorem (the binding constant's parent) and hands it
+  down in `SearchCtx`, beside the output root the cache lives under and
+  the grid's epoch boundary; three stage-6 additions to that structure.
+
+- **`genesis` sets `eth1_deposit_index` to the deposit count.** The
+  pyspec helper the catalog row cites leaves the index at 0; a state
+  whose registry already holds every deposit has processed them, so the
+  builder writes the count, the value `initialize_beacon_state_from_eth1`
+  gave the same field back when genesis states carried it.
+
+- **The fork record's versions, per builder.** §9.9's `genesis` row
+  says "the way the pyspec's `create_genesis_state` does", and that
+  helper sets the fork's own version on both sides of the record. The
+  Gloas builders follow it: `genesis`, `advanced`, and `withQueue`
+  carry the fork's own version on both sides, and only `upgraded`'s
+  record names two versions, its `previous_version` reading the chain's
+  genesis fork version from the parent's config. A client that reads
+  `previous_version` of a `genesis` vector's state as the true parent
+  version reads the Gloas version instead.
+
+- **`withQueue` fills the deposit queue only.** §9.9's catalog row
+  lists "pending deposits, withdrawals, or builder payments"; the Gloas
+  builder appends and drains pending deposits alone, which is the queue
+  the onboarding step reads and the registry content the corpus's
+  theorems need. Withdrawals and builder payments wait for a theorem
+  that reads them.
+
+- **A built hint's stability claim holds for one-container statements.**
+  §9.9 says the built hint "stays valid across `Plausible` versions,
+  because no generator is involved". That holds when the statement's
+  only container is the state; a statement with containers beside it
+  draws them, and the built entry carries those containers' `seed` /
+  `size` / `draw` key beside the builder and knobs, so such an entry is
+  as generator-bound as a random one. The Gloas corpus holds one such
+  theorem, and the report shows it.
+
+- **The shrink trace and the notFound entry, per stage 6 steps 8 and
+  9.** A random entry carries its shrink path, one index list per
+  accepted `probe.shrink` call, and its replay walks those candidates
+  alone, one call per recorded entry, instead of walking every call's
+  full list. A case every source failed records a `notFound` entry
+  under the run's fingerprint, and `use` and `require` modes skip that
+  case's search while the fingerprint stands; `ignore` mode searches
+  and rewrites. The payload-attestation theorem's unsatisfiable case
+  stops paying its grid walk per build, which is what keeps the clean
+  recipe near one minute. The skip keys on the fingerprint alone, and
+  the fingerprint covers the statement and the input shapes. A raised
+  `randomDraws`, a new `with` clause, or a builder fix that makes a
+  recorded case satisfiable does not re-search it. A fully covering
+  seed added to a theorem whose cases all read `notFound` hits the
+  seed-claim error until one rebuild recipe run refreshes the entries.
+
+- **The stage-6 pins carry file-level instances.** The pins' drive needs
+  the binding's minimal instances across many `do` statements, and a
+  `letI` inside the lifted block left the statements after it without
+  the earlier statements' locals and instances under this module's
+  build. The pins declare four private instances at file level (the
+  binding's preset, config, and crypto seam, plus the parent fork's
+  config for the `upgraded` pin) and tag them
+  `attribute [local instance]`, so no other test module inherits them.
+
+- **The committed Gloas hints, after stage 6.** `canBuilderCoverBid_iff`'s
+  true side and one false side hold `source: "built"`, the builder
+  `withQueue` at the grid's queue step (16 validators, slot 40, queue 4),
+  with the solved scalars; its other false side is `random`, because
+  the built grid's walk did not satisfy that case and the draw did. Two
+  of the payload-attestation theorem's false sides moved from `random`
+  to `built` over the `genesis` state, their drawn attestation named
+  by the entry's `seed` / `size` / `draw` fields. The drawn containers'
+  key is present only when containers beside the state were drawn.

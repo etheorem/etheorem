@@ -5,6 +5,7 @@ import EthCLLib.TheoremVectors.Record
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Probe
 import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Built
 
 /-!
 # `EthCLLib.TheoremVectors.Witness.Hint`: the hint source
@@ -25,13 +26,17 @@ The file is one JSON document per theorem and fork:
       "scalars": { "builderIndex": "3", "bidAmount": "32000000000" } } ] }
 ```
 
-Only what the search decided goes in, never the witness bytes: the base
-and seed sources need nothing beyond their tag, the bit-vector source
-needs the scalar literals, and the random source needs the generator
-seed, the size, and the draw index, because a draw is a pure function of
-those three and `Gen` replays it. Shrink replays from the same draw, so
-the replayed candidate goes through the same shrink loop the original
-did and the records stay byte-identical.
+Only what the search decided goes in, never the witness bytes. The
+base and seed sources need nothing beyond their tag. The bit-vector
+source needs the scalar literals. The random source needs the generator
+seed, the size, and the draw index, because a draw is a pure function
+of those three and `Gen` replays it. The built source needs the builder
+name and the knobs, because the cached bytes rebuild from them (§9.9);
+when a statement holds containers beside its state, its built entry
+carries the drawn containers' key as a random entry does. A random
+entry also carries the shrink path the walk accepted (§9.6), whose
+replay walks the recorded candidates alone. The full loop runs for a
+traceless entry, and for a recorded path that no longer replays.
 
 The source runs first on every list (§9.2). The command loads the
 committed file, computes the fingerprint, and hands both to `source`
@@ -114,7 +119,7 @@ instance : FromJson HintScalars where
 
 /-- What one hint entry holds (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8). The optional fields
 fill for the sources that need them: the random source's `seed`, `size`,
-and `draw`. -/
+and `draw`; the built source's `builder` and `knobs`. -/
 structure HintEntry where
   /-- The preset the entry replays at. -/
   preset : PresetId
@@ -130,8 +135,29 @@ structure HintEntry where
   size   : Option Nat := none
   /-- The random draw's index in the redraw loop (§9.8). -/
   draw   : Option Nat := none
+  /-- The built source's builder display name (§9.8, §9.9). -/
+  builder : Option String := none
+  /-- The built source's knobs (§9.8, §9.9). -/
+  knobs  : Option Knobs := none
   /-- The scalar literals the search chose. -/
   scalars : HintScalars := {}
+  /-- The random source's shrink path (§9.6, the plan's stage-6 step 8):
+  one entry per accepted `probe.shrink` call, holding the indices of the
+  candidates that call accepted. The replay walks these instead of the
+  calls' full lists. -/
+  shrink : Option (Array (Array Nat)) := none
+  /-- The sources the search tried on a case none of them satisfied
+  (the plan's stage-6 step 9). An entry this field holds records the
+  case's empty answer: `use` and `require` modes skip the search for it
+  while it is not stale, and the search runs when it is. Its `source`
+  field is the placeholder `.base`, because no witness exists for the
+  entry to name; the `notFound` list is the entry's content, and
+  `notFoundReason` carries the failure text the fresh run reported, so
+  a replayed outcome reads like the searched one. -/
+  notFound : Option (Array String) := none
+  /-- The failure text the fresh run reported, for the replayed
+  outcome's reason. -/
+  notFoundReason : Option String := none
   /-- The preset's fingerprint when the entry was written (§9.8). The
   shape hashes in a fingerprint move with the preset, because a derived
   container's caps are the preset's, and the file carries one
@@ -149,7 +175,11 @@ instance : ToJson HintEntry where
     Json.mkObj (Json.opt "preset" (some e.preset) ++ Json.opt "case" (some e.«case») ++
       Json.opt "side" e.side ++ Json.opt "source" (some e.source) ++
       Json.opt "seed" e.seed ++ Json.opt "size" e.size ++
-      Json.opt "draw" e.draw ++ Json.opt "scalars" (some e.scalars) ++
+      Json.opt "draw" e.draw ++
+      Json.opt "builder" e.builder ++ Json.opt "knobs" e.knobs ++
+      Json.opt "scalars" (some e.scalars) ++
+      Json.opt "shrink" e.shrink ++ Json.opt "notFound" e.notFound ++
+      Json.opt "notFoundReason" e.notFoundReason ++
       Json.opt "fingerprint" e.fingerprint)
 
 /-- One theorem's hint file (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8): the theorem's full
@@ -242,13 +272,12 @@ def Hint.mergeWrite (outDir : System.FilePath) (forkTag : String)
 /-! ## Rebuild: the candidate from an entry -/
 
 /-- The source a hint entry records, with a replayed entry's own wrapper
-unwrapped. `none` for a source this module cannot rebuild (the built
-source lands in stage 6, the reused source in stage 8); the search runs
-for such an entry (§9.8). -/
+unwrapped. `none` for a source this module cannot rebuild (the reused
+source lands in stage 8); the search runs for such an entry (§9.8). -/
 private def entrySource (t : WitnessSourceTag) : Option WitnessSourceTag :=
   match t with
   | .hinted o => some o
-  | .built | .reused _ => none
+  | .reused _ => none
   | t => some t
 
 /-- The scalar value a hint entry fixes for one input position, `0` when
@@ -310,6 +339,46 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
         match ← scalarByte i with
         | none => return none
         | some b => a := a.push b
+    -- the pre-shrink candidate: the recorded shrink path, when the
+    -- entry carries one, walks in the command's shrink step (the plan's
+    -- stage-6 step 8), the same place the original walk ran, so the
+    -- path applies once and the candidate the hint source checks is the
+    -- one the original search checked
+    pure (some a)
+  | .built =>
+    -- §9.9: the built bytes at the statement's one state input, through
+    -- the cache the search used, the other containers drawn from the
+    -- entry's key when it carries one, the scalars from the entry
+    let some name := e.builder | return none
+    let some k := e.knobs | return none
+    let some statePos := (Array.range stmt.inputs.size).find?
+        (fun i => isStateType ctx.binding stmt.inputs[i]!.type) |
+      return none
+    -- the entry's key samples directly, never through the run's memo:
+    -- the memo assumes the run's own seed and size, and the entry's may
+    -- differ (§9.8)
+    let drawn : Array (Nat × ByteArray) ← do
+      match e.seed, e.size, e.draw with
+      | some seed, some size, some draw =>
+        let raw := ctx.probe.sample (seed + draw) size
+        pure ((Array.range stmt.inputs.size).filterMap fun i =>
+          if i == statePos || (stmt.scalarKinds[i]? |>.join).isSome then none
+          else some (i, raw.getD i emptyBytes))
+      | _, _, _ => pure #[]
+    let builtBytes ← Built.cachedBytes ctx name k
+    let mut a : Array ByteArray := #[]
+    for i in [0:stmt.inputs.size] do
+      if i == statePos then
+        a := a.push builtBytes
+      else match drawn.find? fun (p, _) => p == i with
+        | some (_, b) => a := a.push b
+        | none =>
+          if seeded.contains i then
+            a := a.push (seedBytes i)
+          else
+            match ← scalarByte i with
+            | none => return none
+            | some b => a := a.push b
     pure (some a)
   | _ => return none
 
@@ -373,6 +442,30 @@ def Hint.entryOf (ctx : SearchCtx) (stmt : Statement) (c : Case)
       | return none
     let some scalars ← scalarsOf stmt a | return none
     pure (some { head with seed := some seedOpt, size := some sizeOpt, draw := some draw, scalars := scalars })
+  | .built => do
+    -- §9.8, §9.9: the builder name, the knobs, the solved scalars, and
+    -- the other containers' draw key when the statement has containers
+    -- beside the state. The search drew them at draw 0, so the key is
+    -- the run's own seed and size with draw 0.
+    let some statePos := (Array.range stmt.inputs.size).find?
+        (fun i => isStateType ctx.binding stmt.inputs[i]!.type) | return none
+    let cap ← builtStepsOf ctx.preset
+    let some (name, k) ← Built.findStep ctx cap a statePos | return none
+    let some scalars ← scalarsOf stmt a | return none
+    let hasOthers := (Array.range stmt.inputs.size).any fun i =>
+      i != statePos && (stmt.scalarKinds[i]? |>.join).isNone
+    -- the draw key is present only when containers beside the state
+    -- were drawn; in this position an `if` term does not parse as a
+    -- structure field value, so the three optionals bind first
+    let keySeed : Option Nat := if hasOthers then some seedOpt else none
+    let keySize : Option Nat := if hasOthers then some sizeOpt else none
+    let keyDraw : Option Nat := if hasOthers then some 0 else none
+    -- one `with` clause per line: at this column the with-form instance
+    -- does not continue across a newline
+    let entry0 : HintEntry := { head with builder := some name, knobs := some k }
+    let entry1 : HintEntry := { entry0 with seed := keySeed, size := keySize, draw := keyDraw }
+    let entry : HintEntry := { entry1 with scalars := scalars }
+    pure (some entry)
   | _ => return none
 
 /-! ## What one attempt did -/
@@ -444,7 +537,10 @@ def Hint.source (mode : HintMode) (file? : Option HintFile)
       | some f =>
         match Hint.entryFor f ctx.preset c.index c.side with
         | none => false
-        | some e => (entrySource e.source).isSome)
+        -- a notFound entry records the case's empty answer; the
+        -- command's case loop answers it before the sources run (the
+        -- plan's stage-6 step 9)
+        | some e => e.notFound.isNone && (entrySource e.source).isSome)
   search ctx stmt c := do
     let some f := file? | return .nothing
     let some e := Hint.entryFor f ctx.preset c.index c.side

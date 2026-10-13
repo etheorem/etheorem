@@ -1,6 +1,7 @@
 import Lean
 import SizzLean
 import EthCLLib.Spec.Hasher
+import EthCLLib.Spec.Crypto
 import EthCLLib.TheoremVectors.Types
 import EthCLLib.TheoremVectors.Scalar
 import EthCLLib.TheoremVectors.Sampleable
@@ -30,9 +31,12 @@ re-elaborates.
 
 `sample` and `shrink` draw and shrink the container inputs through the
 `Sampleable` generators (§9.5, §9.6); `reads` evaluates one case's
-container-reading subterms at the candidate's bytes (§9.4). `build`
-answers empty until stage 6; `defaults` holds the serialized `default` of
-every input, which the base source (§9.4) hands to `check` as its candidate.
+container-reading subterms at the candidate's bytes (§9.4). `build` runs
+the binding's named builders (§9.9), dispatching on the catalog index and
+serializing through the state input's codec, and answers empty bytes for
+a statement with no state input; `defaults` holds the serialized
+`default` of every input, which the base source (§9.4) hands to `check`
+as its candidate.
 `defaults` is a field the §11.1 sketch does not list; the base source needs
 it and no other probe function supplies it. `reads` takes the case index,
 which the §11.1 sketch leaves off its one-line type; the reads are the
@@ -274,7 +278,8 @@ structure Probe where
   source's candidate (§9.4). -/
   defaults : Array ByteArray
   /-- Run the named builder (an index into the binding's catalog) and
-  serialize the state it produces. Empty until stage 6. -/
+  serialize the state it produces; empty bytes when the statement has no
+  state input for a builder to fill (§9.9). -/
   build  : (builder : Nat) → Knobs → ByteArray
   /-- `f x`, `e x`, the comparison, the roots. -/
   run    : Array ByteArray → Except String ProbeResult
@@ -379,8 +384,8 @@ private def tupVal (ts fs : Array Expr) : Expr :=
     else mkAppN (.const ``Prod.mk [levelZero, levelZero]) #[ts[i]!, goTy (i + 1), fs[i]!, goVal (i + 1)]
   goVal 0
 
-/-- A two-argument constant function, the shape the not-yet-landed
-`build` field takes until stage 6. -/
+/-- A two-argument constant function, the shape the `build` field keeps
+when the statement has no state input for a builder to fill. -/
 private def stub2 (aTy bTy res : Expr) : Expr :=
   .lam `_ aTy (.lam `_ bTy res .default) .default
 
@@ -395,6 +400,75 @@ private def substInstances (ctx : StatementCtx) (consts : Array Name)
       | some i => if i < consts.size then some (mkConst consts[i]!) else none
       | none => none
     | _ => none
+
+/-- Apply a fork constant to `args` across its leading instance binders
+(§9.9): every instance-implicit binder whose type names one of the four
+seams the binding fixes takes the binding's constant for this preset, and
+the explicit `args` fill the explicit binders in order. `none` when the
+constant does not resolve, a binder names an unknown seam, or the binders
+outrun the arguments. This is how the framework half reaches the
+catalog's builders (`Builders.Gloas.advanced`), constants that carry the
+`[Preset] [Config]` binders the fork body runs under, plus
+`[HasherTag]` or `[CryptoBackend]` where the constant's own body uses
+them (the catalog's builders pin the hasher locally, so the binder
+appears only where a body names it). The fork's `Const.slotsPerEpoch`,
+which the grid's epoch boundary reads, is a zero-argument constant the
+built source applies by hand, outside this walk. -/
+-- `partial` because the walk instantiates each binder's body before it
+-- descends (`instantiate1`), which hides the subterm the structural
+-- recursion would need.
+partial def applyAcrossInstances (binding : ForkBinding)
+    (presetId : PresetId) (constName : Name) (args : Array Expr) :
+    MetaM (Option Expr) := do
+  let some ci := (← getEnv).find? constName | return none
+  go constName ci.type #[] args.toList
+where
+  /-- The seam table: the binding constant one instance binder's type
+  fixes, `none` for a binder the binding cannot fill. -/
+  instConstOf (d : Expr) : Option Name :=
+    match d.getAppFn with
+    | .const c _ =>
+      -- the per-fork classes carry the fork's namespace; the two framework
+      -- seams are shared constants
+      if c == binding.fork ++ `Preset then
+        (Preset.constOf binding presetId .preset).toOption
+      else if c == binding.fork ++ `Config then
+        (Preset.constOf binding presetId .config).toOption
+      else if c == ``EthCLLib.Spec.HasherTag then some binding.hasherTag
+      else if c == ``EthCLLib.Spec.CryptoBackend then some binding.crypto
+      else none
+    | _ => none
+
+  /-- The walk: fill each instance binder from the seam table, fill each
+  explicit binder from `rest`, and apply what accumulated once the
+  telescope ends. -/
+  go (constName : Name) (t : Expr) (applied : Array Expr)
+      (rest : List Expr) : MetaM (Option Expr) := do
+    match t with
+    | .forallE _ d b bi =>
+      if bi.isInstImplicit then
+        let some n := instConstOf d | return none
+        -- the next binder's type may name this one; instantiate before
+        -- the walk descends, so no loose bvar reaches the checks
+        go constName (b.instantiate1 (mkConst n []))
+          (applied.push (mkConst n [])) rest
+      else if bi.isExplicit then
+        match rest with
+        | [] => return none
+        | a :: more =>
+          -- the argument must fit the binder, so a catalog constant
+          -- with an argument type other than the caller's answers none
+          -- and the caller's own error names it (§9.9)
+          unless ← Meta.isDefEq d (← Meta.inferType a) do
+            return none
+          go constName (b.instantiate1 a) (applied.push a) more
+      else
+        -- an implicit-implicit binder is not a seam and not an
+        -- application argument; the catalog's builders have none
+        return none
+    | _ =>
+      if rest.isEmpty then pure (some (mkAppN (mkConst constName []) applied))
+      else pure none
 
 end TermBuilders
 
@@ -1026,12 +1100,62 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
           match shrinkFnE with
           | .ok f => pure f
           | .error e => return .error e
+        -- §9.9: the builder face. The dispatch over the binding's catalog
+        -- runs the named builder with the preset's instances bound and
+        -- serializes the state it produces through the state input's codec.
+        -- A statement with no state input keeps the empty stub: the built
+        -- source applies to exactly one state input, so the face is never
+        -- called on it.
+        let statePos? := (Array.range inputTys.size).find? fun i =>
+          match inputTys[i]!.getAppFn with
+          | .const c _ => c == binding.stateType
+          | _ => false
+        let buildFn ← match statePos? with
+          | none =>
+            pure (stub2 (.const ``Nat []) (.const ``Knobs [])
+              (mkConst ``emptyBytes []))
+          | some statePos => do
+            -- the state position's codec, and its type, carry the
+            -- telescope's instance variables; the builder applications
+            -- name the binding's constants, so both go through the same
+            -- substitution the finished term gets, here, where the
+            -- encode's type argument must match the applied builder's
+            -- result type (§11.2's substitution)
+            let stateTy := substInstances ctx instConsts inputTys[statePos]!
+            let stateCodec := substInstances ctx instConsts codecInsts[statePos]!
+            Meta.withLocalDeclD `builderIx (.const ``Nat []) fun bIx =>
+              Meta.withLocalDeclD `knobsV (.const ``Knobs []) fun knobsV => do
+                let mut dispatch : Expr := mkConst ``emptyBytes []
+                for i in [0:binding.builders.size] do
+                  let (_, bConst) := binding.builders[i]!
+                  unless (← getEnv).contains bConst do
+                    throwError "theorem_vectors: the `{binding.tag}` binding's \
+                      builder `{bConst}` does not resolve; is the fork's \
+                      Builders module imported? (§9.9)"
+                  let some app ← applyAcrossInstances binding presetId bConst
+                      #[knobsV] |
+                    throwError "theorem_vectors: the `{binding.tag}` binding's \
+                      builder `{bConst}` does not take the fork's instances and \
+                      a `Knobs` argument (§9.9)"
+                  let resTy ← Meta.inferType app
+                  unless (match resTy.getAppFn with
+                      | .const c _ => c == binding.stateType
+                      | _ => false) do
+                    throwError "theorem_vectors: the `{binding.tag}` binding's \
+                      builder `{bConst}` produces \
+                      `{← Meta.ppExpr resTy}`, not the fork's \
+                      state container (§9.9)"
+                  let ser := encodeCall stateTy stateCodec app
+                  dispatch := mkCond (.const ``ByteArray [])
+                    (mkAppN (.const ``Nat.beq []) #[bIx, mkRawNatLit i]) ser
+                    dispatch
+                Meta.mkLambdaFVars #[bIx, knobsV] dispatch
         let term := mkAppN (.const ``Probe.mk [])
           #[checkFn, sampleFn, shrinkFn, readsFn, safeFn,
             mkArrayLit (mkApp2 (.const ``Prod [levelZero, levelZero]) (.const ``Nat [])
               (.const ``ByteArray [])) seedsLit,
             defaultsLit,
-            stub2 (.const ``Nat []) (.const ``Knobs []) (mkConst ``emptyBytes []),
+            buildFn,
             runFn]
         let face ← evalProbeCore (substInstances ctx instConsts term)
         let inputTypes ← inputTys.mapM (renderedType ctx instConsts)

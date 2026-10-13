@@ -105,7 +105,11 @@ private opaque bvDecideCore (g : MVarId) :
 private unsafe def evalNatImpl (e : Expr) : MetaM Nat :=
   Lean.Meta.evalExpr Nat (.const ``Nat []) e
 
-@[implemented_by evalNatImpl] private opaque evalNatOp (e : Expr) : MetaM Nat
+/-- The compiled face of a closed `Nat` evaluation (§9.4's read
+grounding; the built source reads the fork's `slotsPerEpoch` through
+it, which is what puts the grid's first epoch boundary in preset units
+without naming a fork). -/
+@[implemented_by evalNatImpl] opaque evalNatOp (e : Expr) : MetaM Nat
 
 /-- Compiled evaluation of a closed `Bool` term. -/
 private unsafe def evalBoolImpl (e : Expr) : MetaM Bool :=

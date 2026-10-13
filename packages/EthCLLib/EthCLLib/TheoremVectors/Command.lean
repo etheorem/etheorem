@@ -12,6 +12,7 @@ import EthCLLib.TheoremVectors.Witness.Hint
 import EthCLLib.TheoremVectors.Witness.Base
 import EthCLLib.TheoremVectors.Witness.Seed
 import EthCLLib.TheoremVectors.Witness.BitVec
+import EthCLLib.TheoremVectors.Witness.Built
 import EthCLLib.TheoremVectors.Witness.Random
 import EthCLLib.TheoremVectors.Witness.Shrink
 import EthCLLib.TheoremVectors.Record
@@ -391,7 +392,7 @@ terms still carry the telescope's instance variables, and the probe builds
 from the statement's expressions. The hint mode and the committed hint
 file come from the run (`runTheorem` resolved both once per theorem). -/
 private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
-    (thmLocal : String) (seedTerms : Array (Nat × Expr))
+    (thmLocal : String) (seedTerms : Array (Nat × Expr)) (builtStamp : String)
     (p : PresetId) (ctx : StatementCtx) (cases : Array Case)
     (mode : HintMode) (hintFile? : Option HintFile) :
     MetaM RunOutcome := do
@@ -415,10 +416,13 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     match Preset.constOf binding p kind with
     | .ok c => pure c
     | .error e => throwError e
+  -- §9.9: the grid's boundary steps run at the fork's own first epoch
+  -- boundary, evaluated once per preset run
+  let epochBoundary ← Built.epochBoundaryOf binding p
   let searchCtx : SearchCtx :=
     { probe, info, binding, preset := p, inputFvars := ctx.inputFvars,
       instFvars := ctx.instFvars, instConsts, seedTerms,
-      drawMemo := ← IO.mkRef #[] }
+      drawMemo := ← IO.mkRef #[], outDir, builtStamp, epochBoundary }
   -- §9.8: the hint source runs first on every list. The log ref collects
   -- what one attempt did per case, which the outcome's `hint` field folds
   -- up and which the `require` mode's error reads.
@@ -433,16 +437,18 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   -- B3: the search (§9.2, §9.4). The hint source prepends itself on every
   -- list, `ignore` included off it. A line with seeds runs seed then the
   -- bit-vector handoff: a `default` candidate would ignore the author's
-  -- seeded inputs. Without seeds, base then bit-vector. The random
-  -- source follows the bit-vector source on every list (§9.2): on a case
-  -- the seed fails, a draw beats no witness. A block input leaves only
-  -- the base source running (§1.2); the base source itself never
-  -- proposes `default` for the fork's state (§9.4), so a state theorem
-  -- without seeds runs the bit-vector source alone.
+  -- seeded inputs. Without seeds, base then bit-vector. The built source
+  -- (§9.9) follows the bit-vector source, before the random source: a
+  -- reachable built state is worth more to a client than a drawn one.
+  -- A block input leaves only the base source running (§1.2); the base
+  -- source itself never proposes `default` for the fork's state (§9.4),
+  -- so a state theorem without seeds runs the bit-vector, built, and
+  -- random sources in that order.
   let baseSources : Array WitnessSource :=
     if !stmt.blockInputs.isEmpty then #[baseSource]
-    else if seedTerms.isEmpty then #[baseSource, bitVecSource, randomSource]
-    else #[seedSource, bitVecSource, randomSource]
+    else if seedTerms.isEmpty then
+      #[baseSource, bitVecSource, builtSource, randomSource]
+    else #[seedSource, bitVecSource, builtSource, randomSource]
   let sources : Array WitnessSource :=
     if mode == .ignore then baseSources else #[hintSrc] ++ baseSources
   let some shapeTag := shapeTagOf stmt.shape
@@ -475,11 +481,54 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   let mut freshWins : Nat := 0
   let mut failures : Array (Nat × RunStatus × String) := #[]
   for c in cases do
+    -- the plan's stage-6 step 9: a notFound entry the run's own
+    -- fingerprint covers is the run's own past answer, so `use` and
+    -- `require` modes take it and skip the search; a stale one, or
+    -- `ignore` mode, searches
+    let skippedNotFound : Option HintEntry := do
+      guard (mode != .ignore)
+      let f ← hintFile?
+      let e ← Hint.entryFor f p c.index c.side
+      guard (e.notFound.isSome && (e.fingerprint.getD f.fingerprint) == fingerprint)
+      pure e
+    if let some e := skippedNotFound then
+      -- the replayed answer: the hint log's `.replayed` folds the
+      -- outcome's `hint` field to `replayed`, and the failure reads as
+      -- the search's own. The consumed entry re-records into the run's
+      -- file, so the skip survives the update recipe instead of living
+      -- one build.
+      hintLog.set ((← hintLog.get) ++ #[(c.index, HintAttempt.replayed)])
+      hintEntries := hintEntries.push e
+      let tried := (e.notFound.getD #[]).filterMap WitnessSourceTag.ofTag?
+      let (status, text) := failureOf stmt.blockInputs (.notFound tried #[])
+      let reason := (e.notFoundReason.getD text)
+      failures := failures.push (c.index, status,
+        s!"{reason} (replayed from the hint)")
+      continue
     match ← searchCase sources searchCtx stmt c with
     | .error failure =>
       enforceRequireHint c none
       let (status, text) := failureOf stmt.blockInputs failure
       failures := failures.push (c.index, status, text)
+      -- the plan's stage-6 step 9: a case every source failed records
+      -- the fact, so the next build skips its search while the
+      -- fingerprint stands. The search ran, so the answer is the run's
+      -- own fact, and `ignore` mode records it the way it records found
+      -- entries, which keeps the rebuild recipe's output in step with
+      -- the committed files. A block input's case records none: its
+      -- search is the one base check, there is nothing to skip, and
+      -- §1.2 already reports it.
+      match failure with
+      | .notFound tried _ =>
+        if stmt.blockInputs.isEmpty then
+          let entry : HintEntry :=
+            { preset := p, «case» := c.index, side := c.side,
+              source := .base,
+              notFound := some (tried.map (·.tag)),
+              notFoundReason := some text,
+              fingerprint := some fingerprint }
+          hintEntries := hintEntries.push entry
+      | _ => pure ()
     | .ok (a, won) =>
       enforceRequireHint c (some (!(won matches .hinted _)))
       -- §9.8: the hint entry records the pre-shrink assignment, whose
@@ -508,12 +557,45 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       -- (§9.8: shrink replays from the same draw), which is what keeps
       -- the replay's records byte-identical. The other sources'
       -- witnesses are the author's seeds, the defaults, and the solver's
-      -- boundary values, and shrinking moves all three.
+      -- boundary values, and shrinking moves all three. A replayed
+      -- random entry carries its shrink path (the plan's stage-6 step
+      -- 8), and the replay walks the recorded candidates alone.
       let shrinkable := shrinkableSource won
+      let mut shrinkTrace? : Option (Array (Array Nat)) := none
       let a ← if shrinkable then do
         let steps := theorem_vectors.shrinkSteps.get (← getOptions)
-        shrinkWitness probe c steps a
+        match won with
+        | .hinted _ =>
+          let recorded := do
+            let f ← hintFile?
+            (Hint.entryFor f p c.index c.side).bind (·.shrink)
+          match recorded with
+          | some trace =>
+            let r ← shrinkReplayWitness probe c.index trace a
+            match r with
+            | some shrunk =>
+              shrinkTrace? := some trace
+              pure shrunk
+            | none =>
+              -- a recorded path the candidate list no longer reaches:
+              -- the replayed draw stands, the full walk re-derives the
+              -- endpoint, and the refreshed entry records the walk's own
+              -- path
+              let (shrunk, tr) ← shrinkTraceWitness probe c.index steps a
+              shrinkTrace? := some tr
+              pure shrunk
+          | none =>
+            let (shrunk, tr) ← shrinkTraceWitness probe c.index steps a
+            shrinkTrace? := some tr
+            pure shrunk
+        | _ =>
+          let (shrunk, tr) ← shrinkTraceWitness probe c.index steps a
+          shrinkTrace? := some tr
+          pure shrunk
       else pure a
+      let entry? := match entry? with
+        | some e => some { e with shrink := shrinkTrace? }
+        | none => none
       unless won matches .hinted _ do
         freshWins := freshWins + 1
       if let some e := entry? then
@@ -607,8 +689,12 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
 /-- The stage-2 run of one theorem: phase A, then phases B1 through B8 per
 preset (§3, and the module docstring). The whole fold runs inside the
 reader's telescope scope (`Statement.readIn`), because the statement's
-expressions and the seed terms cannot leave it. -/
-private def runTheorem (binding : ForkBinding) (origin : OutcomeOrigin)
+expressions and the seed terms cannot leave it. `binding` is the header's
+value and `bindingName` its constant, whose parent names the module the
+built cache's stamp reads (§9.9); the binding value carries no name of
+its own. -/
+private def runTheorem (binding : ForkBinding) (bindingName : Name)
+    (origin : OutcomeOrigin)
     (strict : Bool) (thm : Name) (ps : Array PresetId)
     (seedStx : Array (Name × Syntax)) : CommandElabM Unit := do
   let proofNs := EthCLLib.Internal.proofNamespaceOf binding.fork
@@ -621,6 +707,12 @@ private def runTheorem (binding : ForkBinding) (origin : OutcomeOrigin)
     let root ← hintsRootOf
     if root.isEmpty then pure none
     else liftIO <| Hint.read? (Hint.file root binding.tag localName.toString)
+  -- §9.9: the built source's cache stamp, the binding module's trace
+  -- text, read once per theorem. The binding module imports the fork's
+  -- Builders module, so its trace folds the builders' artifacts beside
+  -- the fork body and the crypto seams the binding names, and a change
+  -- to any of them invalidates the cache at once.
+  let builtStamp ← liftIO (Built.stampOfBinding bindingName)
   liftTermElabM do
     Statement.readIn binding thm fun ctx => do
       let stmt ← Scope.classify binding ctx.stmt
@@ -677,8 +769,8 @@ private def runTheorem (binding : ForkBinding) (origin : OutcomeOrigin)
         -- its own heartbeat budget (§14.3)
         let runs ← ps.mapM fun p =>
           withRunHeartbeats
-            (runPreset binding outDir localName.toString seedTerms p ctx cases
-              mode hintFile?)
+            (runPreset binding outDir localName.toString seedTerms builtStamp p
+              ctx cases mode hintFile?)
         -- §18: a strict claim that skipped fails hard; a non-strict line
         -- warns
         -- §18: `unsat` is always reported and never an error; the
@@ -846,7 +938,7 @@ private def runPass (lines : Array Line) : CommandElabM Unit := do
     let env ← getEnv
     unless (executed.getState env).any fun (t, k) => t == thm && k == key do
       modifyEnv (executed.addEntry · (thm, key))
-      runTheorem binding origin strict thm ps seeds
+      runTheorem binding bindingName origin strict thm ps seeds
   for (thm, strict, seeds, ps) in named do
     runOnce thm .named strict ps seeds
   for (thm, origin, strict, ps) in sel do

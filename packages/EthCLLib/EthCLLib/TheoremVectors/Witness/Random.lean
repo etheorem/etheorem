@@ -106,7 +106,8 @@ rejected candidate and a per-point `unsat` are the same no-answer
 with them. When the bytes already cover every input (a theorem whose
 inputs are containers alone), the reads grounding and the solver have
 nothing to do, and the point's answer is the check on the bytes
-directly. -/
+directly. The built source (§9.9) reaches it through `tryDraw` at each
+grid step, with the built state in the `drawn` overlay. -/
 private def runPoint (ctx : SearchCtx) (stmt : Statement) (c : Case)
     (plan : Array Expr) (drawn : Array (Nat × ByteArray))
     (fixed : Array (Nat × Expr)) (fixedVals : Array (Nat × Nat)) :
@@ -138,16 +139,20 @@ list's end is skipped at the gate inside `runPoint`. `kinds` and
 `coupled` come from the case alone and the caller computes them once. A
 coupled scalar whose literal term the substitution cannot write makes
 every grid point unfixable; the note names it, the same answer the
-bit-vector source's `literalDetail` carries. -/
-private def tryDraw (ctx : SearchCtx) (stmt : Statement) (c : Case)
-    (containerIds : Array FVarId) (plan : Array Expr)
+bit-vector source's `literalDetail` carries. The built source (§9.9)
+drives this at each grid step with the built state as the one drawn
+container, the same loop §9.9 names. -/
+def tryDraw (ctx : SearchCtx) (stmt : Statement) (c : Case)
+    (valuesCap : Nat) (containerIds : Array FVarId) (plan : Array Expr)
     (kinds : Array (Option ScalarKind)) (coupled : Array Nat)
     (drawn : Array (Nat × ByteArray)) : MetaM (Option Assignment) := do
-  -- every container in play is drawn, and `drawBounded` caps a drawn
-  -- list at `randomSize` elements, so a coupled scalar at or past that
-  -- bound indexes out of range at every point of its grid: the walk
-  -- caps the values there (§9.4)
-  let valuesCap := theorem_vectors.randomSize.get (← getOptions)
+  -- every container in play is drawn for the random source, and
+  -- `drawBounded` caps a drawn list at `randomSize` elements, so a
+  -- coupled scalar at or past that bound indexes out of range at every
+  -- point of its grid: the random source caps the values there (§9.4).
+  -- The built source's state is not drawn and its registries hold what
+  -- the grid's knobs built, so it passes `0`, no cap, and the safe
+  -- gate skips the points whose index runs past the built list
   if coupled.isEmpty then
     runPoint ctx stmt c plan drawn #[] #[]
   else do
@@ -170,14 +175,79 @@ private def tryDraw (ctx : SearchCtx) (stmt : Statement) (c : Case)
     -- same answer the bit-vector source's `literalDetail` carries
     return none
 
+/-! ## The per-case plan the draw-driven sources share -/
+
+/-- The per-case pieces the two draw-driven sources share (§9.4, §9.9):
+the container positions with their free variables, the reads' plan, and
+the coupled scalars. The random source draws over them and the built
+source overlays a built state, and both walk the same plan, which is what
+keeps the read substitution aligned with the compiled values (§9.4). -/
+structure CasePlan where
+  /-- The container positions, in binder order. -/
+  containers : Array Nat
+  /-- Their free variables, aligned with `containers`. -/
+  containerIds : Array FVarId
+  /-- The container-reading subterms of the case's hypotheses, in walk
+  order (§9.4). -/
+  plan : Array Expr
+  /-- The free scalars inside a container-mentioning subterm (§9.4's
+  coupled walk). -/
+  coupled : Array Nat
+
+/-- The plan of one case: the container test reads the statement's own
+scalar-kind table, which the reader computed through the reducible
+`whnf`, so an alias (`Gwei` for `UInt64`) never reads as a container
+(§9.4). -/
+def casePlanOf (ctx : SearchCtx) (stmt : Statement) (c : Case) :
+    MetaM CasePlan := do
+  let kinds := stmt.scalarKinds
+  let containerFlags : Array (Option FVarId) :=
+    (Array.range stmt.inputs.size).map fun i =>
+      if kinds[i]?.any (·.isSome) then none
+      else some ctx.inputFvars[i]!.fvarId!
+  let containerIds : Array FVarId := containerFlags.filterMap id
+  -- the reads' plan: one walk per case, shared by every draw and grid
+  -- point
+  let plan ← containerReads containerIds c.hyps
+  -- the coupled scalars: the free scalars inside a container-mentioning
+  -- subterm, the seed handoff's walk over the drawn containers (§9.4);
+  -- computed once, the case's alone
+  let scalarPos : Array Nat :=
+    (Array.range stmt.inputs.size).filter fun i => (kinds[i]?).any (·.isSome)
+  let inner : Array FVarId :=
+    c.hyps.foldl (fun acc h => topSeededScalarIds containerIds h acc) #[]
+  let coupled := scalarPos.filter fun i =>
+    inner.contains (ctx.inputFvars[i]!.fvarId!)
+  let containers : Array Nat :=
+    (Array.range containerFlags.size).filter fun i =>
+      containerFlags[i]?.any (·.isSome)
+  return { containers, containerIds, plan, coupled }
+
+/-- The memoized raw draw at one index (§9.4): a draw is a pure function
+of the seed, the size, and the index, and the cases of one theorem share
+the memo. The built source reads draw 0 for its non-state containers
+through the same entry, so a built witness's drawn bytes and a random
+witness's agree position by position (§9.9). -/
+def drawAt (ctx : SearchCtx) (seed size draw : Nat) : MetaM (Array ByteArray) := do
+  let slot ← ctx.drawMemo.get
+  if h : draw < slot.size then
+    match slot[draw] with
+    | some b => pure b
+    | none =>
+      let b := ctx.probe.sample (seed + draw) size
+      let i : Fin slot.size := ⟨draw, h⟩
+      ctx.drawMemo.set (slot.set i b)
+      pure b
+  else
+    let b := ctx.probe.sample (seed + draw) size
+    ctx.drawMemo.set (slot ++ #[some b])
+    pure b
+
 /-- The random source (§9.4). Applies when at least one input is a
 container and no block input is in play; the search answers `nothing`
 when the container test was an alias (§9.4), and after
 `theorem_vectors.randomDraws` failed draws. The draws run from the run's
-`theorem_vectors.seed`, so a build is reproducible (§14.4). The
-container test reads the statement's own scalar-kind table, which the
-reader computed through the reducible `whnf`, so an alias (`Gwei` for
-`UInt64`) never reads as a container (§9.4). -/
+`theorem_vectors.seed`, so a build is reproducible (§14.4). -/
 def randomSource : WitnessSource where
   tag := .random
   applies _ stmt _ :=
@@ -188,48 +258,17 @@ def randomSource : WitnessSource where
     let size := theorem_vectors.randomSize.get (← getOptions)
     let seed := theorem_vectors.seed.get (← getOptions)
     let kinds := stmt.scalarKinds
-    let containerFlags : Array (Option FVarId) :=
-      (Array.range stmt.inputs.size).map fun i =>
-        if kinds[i]?.any (·.isSome) then none
-        else some ctx.inputFvars[i]!.fvarId!
     -- `applies` read the same kind table, so at least one position is a
     -- container here
-    let containerIds : Array FVarId := containerFlags.filterMap id
-    -- the reads' plan: one walk per case, shared by every draw and grid
-    -- point
-    let plan ← containerReads containerIds c.hyps
-    -- the coupled scalars: the free scalars inside a container-mentioning
-    -- subterm, the seed handoff's walk over the drawn containers (§9.4);
-    -- computed once, the case's alone
-    let scalarPos : Array Nat :=
-      (Array.range stmt.inputs.size).filter fun i => (kinds[i]?).any (·.isSome)
-    let inner : Array FVarId :=
-      c.hyps.foldl (fun acc h => topSeededScalarIds containerIds h acc) #[]
-    let coupled := scalarPos.filter fun i =>
-      inner.contains (ctx.inputFvars[i]!.fvarId!)
-    let containers : Array Nat :=
-      (Array.range containerFlags.size).filter fun i =>
-        containerFlags[i]?.any (·.isSome)
+    let cp ← casePlanOf ctx stmt c
     for draw in [0:drawBudget] do
       -- one draw per index for the whole theorem: a draw is a pure
       -- function of the seed, the size, and the index, and the cases
       -- share the memo (§9.4)
-      let slot ← ctx.drawMemo.get
-      let rawBytes ←
-        if h : draw < slot.size then
-          match slot[draw] with
-          | some b => pure b
-          | none =>
-            let b := ctx.probe.sample (seed + draw) size
-            let i : Fin slot.size := ⟨draw, h⟩
-            ctx.drawMemo.set (slot.set i b)
-            pure b
-        else
-          let b := ctx.probe.sample (seed + draw) size
-          ctx.drawMemo.set (slot ++ #[some b])
-          pure b
-      let drawn := containers.map fun i => (i, rawBytes.getD i emptyBytes)
-      match ← tryDraw ctx stmt c containerIds plan kinds coupled drawn with
+      let rawBytes ← drawAt ctx seed size draw
+      let drawn := cp.containers.map fun i => (i, rawBytes.getD i emptyBytes)
+      match ← tryDraw ctx stmt c size cp.containerIds
+          cp.plan kinds cp.coupled drawn with
       | some a => return .candidate a
       | none => pure ()
     return .nothing

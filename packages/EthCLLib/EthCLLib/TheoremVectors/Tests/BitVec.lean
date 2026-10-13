@@ -118,7 +118,9 @@ private def searchCtxOf (binding : ForkBinding) (stmt : Statement)
   return {
     probe := probe, info := info, binding := binding, preset := PresetId.minimal,
     inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-    instConsts := instConsts, seedTerms := #[], drawMemo := ← IO.mkRef #[] }
+    instConsts := instConsts, seedTerms := #[],
+    drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
+    builtStamp := "" }
 
 end EthCLLib.TheoremVectors.Tests.BitVec
 
@@ -243,7 +245,9 @@ run_cmd do
       let sctx : SearchCtx :=
         { probe, info, binding := stateBinding, preset := PresetId.minimal,
           inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-          instConsts := instConsts, seedTerms := #[(0, seedTerm)], drawMemo := ← IO.mkRef #[] }
+          instConsts := instConsts, seedTerms := #[(0, seedTerm)],
+          drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
+          builtStamp := "" }
       -- §9.4: the base source's `applies` refuses the state input, so
       -- the search loop never proposes the `default` state
       if baseSource.applies sctx stmt cases[0]! then
@@ -313,7 +317,9 @@ run_cmd do
       let sctx : SearchCtx :=
         { probe, info, binding, preset := PresetId.minimal,
           inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-          instConsts := instConsts, seedTerms := #[(0, seedTerm)], drawMemo := ← IO.mkRef #[] }
+          instConsts := instConsts, seedTerms := #[(0, seedTerm)],
+          drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
+          builtStamp := "" }
       let sources : Array WitnessSource := #[seedSource, bitVecSource]
       match ← searchCase sources sctx stmt cases[0]! with
       | .ok (a, won) =>

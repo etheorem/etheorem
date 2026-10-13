@@ -29,6 +29,10 @@ Build-gate checks for stage 5 (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8):
 - a stale fingerprint replays under `stale-replayed`;
 - a random witness records its draw key (`seed`, `size`, `draw`), and the
   replay rebuilds the very draw bytes;
+- a random entry carries the shrink path (§9.6, the plan's stage-6 step
+  8), the traced replay's endpoint matches the original's, the walk
+  re-records the same path, a bogus trace fails the replay, and a
+  traceless entry replays through the full walk;
 - `ignore` never applies the hint and the fixed-seed search lands on the
   same witness the hint recorded;
 - the `hint` field's fold: `missing` with no file, `ignored` in `ignore`
@@ -85,7 +89,9 @@ private def searchCtxOf (stmt : Statement) (ctx : StatementCtx)
     probe := probe, info := info, binding := hintBinding,
     preset := PresetId.minimal,
     inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-    instConsts := instConsts, seedTerms := #[], drawMemo := ← IO.mkRef #[] }
+    instConsts := instConsts, seedTerms := #[],
+    drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
+    builtStamp := "" }
 
 /-- The evaluated probe for one drive theorem. -/
 private def builtProbe (ctx : StatementCtx) (cases : Array Case) :
@@ -282,8 +288,17 @@ run_cmd do
       let raw := probe.sample (e.seed.getD 0 + e.draw.getD 0) (e.size.getD 8)
       unless raw == a0 do
         throwError "toyBoxBound: the draw does not replay from its key"
-      -- the replay
-      writeHints "toyBoxBound" fp #[e]
+      -- the shrink path the command records for the entry (the plan's
+      -- stage-6 step 8), and its endpoint
+      let (shrunk0, tr0) ← shrinkTraceWitness probe c.index 40 a0
+      unless shrunk0 == a0 || !tr0.isEmpty do
+        throwError "toyBoxBound: the shrink recorded no path for a \
+          smaller witness"
+      -- the replay, with the trace in the entry: the hint source hands
+      -- back the pre-shrink draw, and the recorded path walks it to the
+      -- same endpoint the original reached
+      let traced : HintEntry := { e with shrink := some tr0 }
+      writeHints "toyBoxBound" fp #[traced]
       let some file ← readHints "toyBoxBound"
         | throwError "toyBoxBound: the hint file did not read back"
       let log ← IO.mkRef (#[] : Array (Nat × HintAttempt))
@@ -300,13 +315,44 @@ run_cmd do
           throwError s!"toyBoxBound: the replay found nothing: {repr f}"
       unless a1 == a0 do
         throwError "toyBoxBound: the replay differs from the searched draw"
-      -- the replayed candidate survives the same shrink loop the original
-      -- did, which keeps the records byte-identical (§9.8)
-      let shrunk0 ← shrinkWitness probe c 40 a0
-      let shrunk1 ← shrinkWitness probe c 40 a1
+      let some shrunk1 ← shrinkReplayWitness probe c.index tr0 a1
+        | throwError "toyBoxBound: the recorded path did not replay"
       unless shrunk1 == shrunk0 do
-        throwError "toyBoxBound: the replay's shrink diverged from the \
-          original's"
+        throwError "toyBoxBound: the traced replay's endpoint differs from \
+          the original's"
+      -- the walk re-records the same path from the same draw, so the
+      -- refreshed entry is the entry the replay consumed (§9.8)
+      let (_, tr1) ← shrinkTraceWitness probe c.index 40 a1
+      unless tr1 == tr0 do
+        throwError "toyBoxBound: the replay re-recorded a different path"
+      -- a recorded path the candidate list does not reach fails at the
+      -- command's shrink step, which falls back to the full walk and
+      -- records its own path; the pre-shrink replay itself still passes
+      -- the check, because the check is the same `decide` the original
+      -- run answered
+      let bogus? ← shrinkReplayWitness probe c.index #[#[999]] a0
+      unless bogus?.isNone do
+        throwError "toyBoxBound: a bogus trace replayed"
+      -- a traceless entry replays through the full walk, the stage-5
+      -- rule for entries written before the trace existed
+      writeHints "toyBoxBound" fp #[e]
+      let some file2 ← readHints "toyBoxBound"
+        | throwError "toyBoxBound: the hint file did not read back"
+      let log2 ← IO.mkRef (#[] : Array (Nat × HintAttempt))
+      let sctx4 ← searchCtxOf stmt ctx info probe
+      let hintSrc2 := Hint.source .use (some file2) fp log2
+      let a2 ←
+        match ← searchCase #[hintSrc2, baseSource, bitVecSource, randomSource]
+            sctx4 stmt c with
+        | .ok (a, won) => pure (a, won)
+        | .error f =>
+          throwError s!"toyBoxBound: the traceless replay found nothing: {repr f}"
+      unless a2.1 == a0 && (a2.2 matches .hinted (.random)) do
+        throwError "toyBoxBound: the traceless replay diverged"
+      let shrunk2 ← shrinkWitness probe c.index 40 a2.1
+      unless shrunk2 == shrunk0 do
+        throwError "toyBoxBound: the traceless replay's shrink diverged from \
+          the original's"
       -- `ignore`: the hint never applies, and the fixed-seed search lands
       -- on the same witness
       let logIg ← IO.mkRef (#[] : Array (Nat × HintAttempt))

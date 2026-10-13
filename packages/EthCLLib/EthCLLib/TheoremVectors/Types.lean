@@ -101,6 +101,19 @@ register_option theorem_vectors.hintsDir : String := {
   descr    := "the committed hints root the hint source reads"
 }
 
+/-- How far down the builder grid the `built` source walks
+(`THEOREM_VECTORS_ARCHITECTURE.md` §9.9, the option table in §14.4). The
+default `0` means the preset's own cap, `6` at minimal and `3` at
+mainnet, the values §14.4's table fixes: mainnet's spec runs go over
+65536-long vectors, and the two 16-validator slot-40 states and the
+64-validator slot-40 one are what mainnet's cap cuts. A positive value
+applies at both presets. -/
+register_option theorem_vectors.builtSteps : Nat := {
+  defValue := 0
+  descr    := "the cap on the built source's builder grid; 0 takes the \
+    preset's default (6 at minimal, 3 at mainnet)"
+}
+
 namespace EthCLLib.TheoremVectors
 
 /-! ## Presets -/
@@ -324,5 +337,22 @@ structure Knobs where
   balance    : Nat := 32000000000
   queue      : Nat := 0
   deriving Repr, BEq, Hashable, Inhabited
+
+/-- The knobs' JSON, as the built hint row writes them (§9.8). The values
+are grid constants the generator picked, small enough for a JSON
+integer; a solved scalar is the value that needs a decimal string. They
+write as numbers the way a hint's `seed`, `size`, and `draw` do. -/
+instance : ToJson Knobs where
+  toJson k :=
+    Json.mkObj [("validators", k.validators), ("slot", k.slot),
+      ("balance", k.balance), ("queue", k.queue)]
+
+instance : FromJson Knobs where
+  fromJson? j := do
+    let validators ← j.getObjValAs? Nat "validators"
+    let slot ← j.getObjValAs? Nat "slot"
+    let balance ← j.getObjValAs? Nat "balance"
+    let queue ← j.getObjValAs? Nat "queue"
+    return { validators, slot, balance, queue }
 
 end EthCLLib.TheoremVectors

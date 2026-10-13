@@ -13,6 +13,7 @@ import EthCLLib.TheoremVectors.Witness.Source
 import EthCLLib.TheoremVectors.Witness.Base
 import EthCLLib.TheoremVectors.Witness.Seed
 import EthCLLib.TheoremVectors.Witness.BitVec
+import EthCLLib.TheoremVectors.Witness.Built
 import EthCLLib.TheoremVectors.Witness.Random
 import EthCLLib.TheoremVectors.Witness.Hint
 import EthCLLib.TheoremVectors.Witness.Shrink
@@ -36,11 +37,10 @@ These modules hold the core types (§5), the client-facing YAML writer
 (§12.3), the fork binding seam (§6), the statement reader (§7), the scope
 walk (§7.4), the prepare pass (§8), the preset binding (§10), the probe
 and the executor (§11), the witness search's seed, base, bit-vector,
-random, and shrink pieces (§9.2, §9.4, §9.6), the records
+built, random, and shrink pieces (§9.2, §9.4, §9.6, §9.9), the records
 (§12), the function format (§13.3), the outcome lines
 (§16.1), the report (§16.2), and the generator commands (§14). The module
-map (§4.1) places the built source, the hints, and the pyspec format
-beside them as their stages land.
+map (§4.1) places the pyspec format beside them as its stage lands.
 
 No shipped module imports anything under `EthCLLib.TheoremVectors`, so the
 `Plausible` dependency and the generator stay off the `EthCLLib` link line
