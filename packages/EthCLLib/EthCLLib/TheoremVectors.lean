@@ -10,6 +10,7 @@ import EthCLLib.TheoremVectors.Preset
 import EthCLLib.TheoremVectors.Probe
 import EthCLLib.TheoremVectors.Execute
 import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Reuse
 import EthCLLib.TheoremVectors.Witness.Base
 import EthCLLib.TheoremVectors.Witness.Seed
 import EthCLLib.TheoremVectors.Witness.BitVec

@@ -6,7 +6,11 @@ import EthCLLib.TheoremVectors.Tests.BitVec
 import EthCLLib.TheoremVectors.Tests.Random
 import EthCLLib.TheoremVectors.Tests.Hint
 import EthCLLib.TheoremVectors.Tests.Built
+import EthCLLib.TheoremVectors.Tests.BuiltDrive
 import EthCLLib.TheoremVectors.Tests.Pyspec
+import EthCLLib.TheoremVectors.Tests.Reuse
+import EthCLLib.TheoremVectors.Tests.ReuseFork
+import EthCLLib.TheoremVectors.Tests.Support
 
 /-!
 # `EthCLLib.TheoremVectors.Tests`: the generator's framework-half tests

@@ -252,13 +252,24 @@ def builtSource : WitnessSource where
     let cp ← casePlanOf ctx stmt c
     -- every other container input draws the random source's draw 0, the
     -- same memo, so a built witness's drawn bytes and a random one's
-    -- agree position by position (§9.9)
+    -- agree position by position (§9.9). A statement whose state is the
+    -- only container input draws nothing; the draw's bytes go unused.
+    -- The draw is not free: `drawVector` recurses per element
+    -- (Sampleable.lean), and a mainnet state's fixed vectors, a
+    -- 65536-element `randao_mixes` and 8192-element roots, overflow the
+    -- interpreter's recursion cap. A state-only statement must never
+    -- draw. The residual case, a mainnet state beside another container
+    -- input, still draws and still hits the cap; no corpus theorem
+    -- reaches it.
     let seed := theorem_vectors.seed.get (← getOptions)
     let size := theorem_vectors.randomSize.get (← getOptions)
-    let raw0 ← drawAt ctx seed size 0
-    let others : Array (Nat × ByteArray) :=
-      cp.containers.filterMap fun i =>
-        if i == statePos then none else some (i, raw0.getD i emptyBytes)
+    let otherPos : Array Nat := cp.containers.filter (· != statePos)
+    let others : Array (Nat × ByteArray) ←
+      if otherPos.isEmpty then
+        pure #[]
+      else do
+        let raw0 ← drawAt ctx seed size 0
+        pure (otherPos.map fun i => (i, raw0.getD i emptyBytes))
     -- the cache reads carry the run's stamp (§9.9)
     let mut built : Nat := 0
     for step in [0:steps] do

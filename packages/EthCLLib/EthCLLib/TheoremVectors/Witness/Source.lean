@@ -12,11 +12,11 @@ source proposes one candidate at a time; the probe's `check` (§9.3) is the
 single arbiter, and a source whose candidate the check rejects has produced
 nothing. The loop walks the sources in §9.2's fixed order, and the command
 assembles that order per theorem: the hint source (§9.8) runs first on
-every list, then a line with seeds runs seed (§9.4) then bit-vector
-(§9.4), a line without seeds runs base (§9.4) then bit-vector, and a
-theorem with a block input runs base alone (§1.2). The built source
-(§9.9) follows the bit-vector source, and the random source and the
-shrink close the list.
+every list, the reuse source (§10) follows it, then a line with seeds runs
+seed (§9.4) then bit-vector (§9.4), a line without seeds runs base (§9.4)
+then bit-vector, and a theorem with a block input runs base alone (§1.2).
+The built source (§9.9) follows the bit-vector source, and the random
+source and the shrink close the list.
 
 `SearchM` is `MetaM`: §9.2's budget counter stayed unnecessary, because
 the redraw loop's budget is the `randomDraws` option per case and the
@@ -49,6 +49,21 @@ inductive SearchStep where
   | nothing (detail : Option String := none)
   /-- The source proved the hypotheses vacuous; stop the loop. -/
   | unsat
+
+/-- One case's winning witness from a preset earlier in the line's
+preset list (§10), the reuse source's input. The command fills the
+search context's table only when the statement passed
+`Preset.presetFree`, so a nonempty table implies the type check. -/
+structure ReuseWin where
+  /-- The zero-based case index the win belongs to. -/
+  caseIndex  : Nat
+  /-- The `.iffTrue` side, when the shape is `.iffTrue`. -/
+  side       : Option Bool
+  /-- The assignment that passed the check, post-shrink. -/
+  assignment : Assignment
+  /-- The preset the witness was won at; the record names it in
+  `reused-<preset>`. -/
+  fromPreset : PresetId
 
 /-- One run of the search: the probe, its build-time description, the
 binding, the preset, and the telescope's free variables with this line's
@@ -94,6 +109,14 @@ structure SearchCtx where
   own constant; the default is the upstream minimal value 8, which the
   toy forks' tests take. -/
   epochBoundary : Nat := 8
+  /-- One case's winning witness from a preset earlier in the line's
+  preset list (§10), the reuse source's input. Every construction site
+  names the table. An empty table means no earlier preset won anything,
+  or that the statement is preset-bound. The command fills the table
+  only when the statement passed `Preset.presetFree`, so a nonempty
+  table implies the type check: an entry here says the assignment's
+  every byte position is a scalar, free of the preset. -/
+  earlierWins : Array ReuseWin
 
 /-- The search monad: `MetaM`. §9.2's budget counter stayed
 unnecessary: the redraw loop's budget is `theorem_vectors.randomDraws`

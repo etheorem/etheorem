@@ -12,6 +12,7 @@ import EthCLLib.TheoremVectors.Witness.Random
 import EthCLLib.TheoremVectors.Witness.Shrink
 import EthCLLib.TheoremVectors.Tests.ToyFork
 import EthCLLib.TheoremVectors.Tests.Random
+import EthCLLib.TheoremVectors.Tests.Support
 
 /-!
 # `EthCLLib.TheoremVectors.Tests.Hint`: the hint schema and the replay
@@ -72,26 +73,6 @@ def toyFun (x : UInt64) : UInt64 := x + 3
 hypothesis, so the base source cannot win and the solver must. -/
 theorem toyBound [HasherTag] (a b : UInt64) (_h : a < b ∧ 0 < b) :
     toyFun a = a + 3 := rfl
-
-/-- The little-endian read of a scalar's eight wire bytes. -/
-private def leOf (b : ByteArray) : Nat :=
-  (Array.range 8).foldl (fun acc i =>
-    acc + (if h : i < b.size then (b.get i h).toNat * 2 ^ (8 * i) else 0)) 0
-
-/-- The search context one drive needs, from the reader's scope. -/
-private def searchCtxOf (stmt : Statement) (ctx : StatementCtx)
-    (info : ProbeInfo) (probe : Probe) : MetaM SearchCtx := do
-  let instConsts ← stmt.instances.mapM fun (_, kind) =>
-    match Preset.constOf hintBinding .minimal kind with
-    | .ok c => pure c
-    | .error e => throwError e
-  return {
-    probe := probe, info := info, binding := hintBinding,
-    preset := PresetId.minimal,
-    inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-    instConsts := instConsts, seedTerms := #[],
-    drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
-    builtStamp := "" }
 
 /-- The evaluated probe for one drive theorem. -/
 private def builtProbe (ctx : StatementCtx) (cases : Array Case) :
@@ -164,15 +145,16 @@ run_cmd do
       let (info, probe) ← builtProbe ctx cases
       let fp := Hint.fingerprint stmt.thm info
       -- the search without hints: the base defaults fail, the solver wins
-      let sctx ← searchCtxOf stmt ctx info probe
+      let sctx ← Tests.Support.searchCtxOf hintBinding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let (a0, won0) ← match ← searchCase #[baseSource, bitVecSource] sctx stmt c with
         | .ok r => pure r
         | .error f => throwError s!"toyBound: the search found nothing: {repr f}"
       unless won0 == .bitVec do
         throwError s!"toyBound: expected the bit-vector source to win, \
           got {won0.tag}"
-      unless leOf a0[0]! < leOf a0[1]! && leOf a0[1]! ≥ 1 do
-        throwError s!"toyBound: the witness ({leOf a0[0]!}, {leOf a0[1]!}) \
+      unless Tests.Support.leOf a0[0]! < Tests.Support.leOf a0[1]! && Tests.Support.leOf a0[1]! ≥ 1 do
+        throwError s!"toyBound: the witness ({Tests.Support.leOf a0[0]!}, {Tests.Support.leOf a0[1]!}) \
           missed its window"
       -- the entry the command would write
       let some e ← Hint.entryOf sctx stmt c a0 won0 0 8 fp
@@ -187,7 +169,8 @@ run_cmd do
         | throwError "toyBound: the hint file did not read back"
       let log ← IO.mkRef (#[] : Array (Nat × HintAttempt))
       let hintSrc := Hint.source .use (some file) fp log
-      let sctx2 ← searchCtxOf stmt ctx info probe
+      let sctx2 ← Tests.Support.searchCtxOf hintBinding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       match ← searchCase #[hintSrc, baseSource, bitVecSource] sctx2 stmt c with
       | .ok (a1, won1) =>
         unless won1 matches .hinted (.bitVec) do
@@ -213,7 +196,8 @@ run_cmd do
         | throwError "toyBound: the wrong-scalar file did not read back"
       let log3 ← IO.mkRef (#[] : Array (Nat × HintAttempt))
       let hint3 := Hint.source .use (some wrongFile) fp log3
-      let sctx3 ← searchCtxOf stmt ctx info probe
+      let sctx3 ← Tests.Support.searchCtxOf hintBinding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       match ← searchCase #[hint3, baseSource, bitVecSource] sctx3 stmt c with
       | .ok (_, won3) =>
         unless won3 == .bitVec do
@@ -237,7 +221,8 @@ run_cmd do
         | throwError "toyBound: the stale file did not read back"
       let log4 ← IO.mkRef (#[] : Array (Nat × HintAttempt))
       let hint4 := Hint.source .use (some staleFile) fp log4
-      let sctx4 ← searchCtxOf stmt ctx info probe
+      let sctx4 ← Tests.Support.searchCtxOf hintBinding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       match ← searchCase #[hint4, baseSource, bitVecSource] sctx4 stmt c with
       | .ok (_, won4) =>
         unless won4 matches .hinted (.bitVec) do
@@ -266,7 +251,8 @@ run_cmd do
       let fp := Hint.fingerprint stmt.thm info
       -- the search without hints: the base source refuses the state type,
       -- the random source wins (the random test pins the same answer)
-      let sctx ← searchCtxOf stmt ctx info probe
+      let sctx ← Tests.Support.searchCtxOf hintBinding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let (a0, won0) ←
         match ← searchCase #[baseSource, bitVecSource, randomSource] sctx stmt c with
         | .ok r => pure r
@@ -302,7 +288,8 @@ run_cmd do
       let some file ← readHints "toyBoxBound"
         | throwError "toyBoxBound: the hint file did not read back"
       let log ← IO.mkRef (#[] : Array (Nat × HintAttempt))
-      let sctx2 ← searchCtxOf stmt ctx info probe
+      let sctx2 ← Tests.Support.searchCtxOf hintBinding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let hintSrc := Hint.source .use (some file) fp log
       let a1 ←
         match ← searchCase #[hintSrc, baseSource, bitVecSource, randomSource]
@@ -339,7 +326,8 @@ run_cmd do
       let some file2 ← readHints "toyBoxBound"
         | throwError "toyBoxBound: the hint file did not read back"
       let log2 ← IO.mkRef (#[] : Array (Nat × HintAttempt))
-      let sctx4 ← searchCtxOf stmt ctx info probe
+      let sctx4 ← Tests.Support.searchCtxOf hintBinding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let hintSrc2 := Hint.source .use (some file2) fp log2
       let a2 ←
         match ← searchCase #[hintSrc2, baseSource, bitVecSource, randomSource]
@@ -357,7 +345,8 @@ run_cmd do
       -- on the same witness
       let logIg ← IO.mkRef (#[] : Array (Nat × HintAttempt))
       let hintIg := Hint.source .ignore (some file) fp logIg
-      let sctx3 ← searchCtxOf stmt ctx info probe
+      let sctx3 ← Tests.Support.searchCtxOf hintBinding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       match ← searchCase #[hintIg, baseSource, bitVecSource, randomSource]
           sctx3 stmt c with
       | .ok (a2, won2) =>

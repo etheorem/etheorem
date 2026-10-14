@@ -1,8 +1,13 @@
 {"theorem": "EthCLSpecs.Proofs.Gloas.initializePtcWindow_lt",
- "fingerprint": "0x850896e149518a9e",
+ "fingerprint": "0x4ba4af03b9c0af9e",
  "entries":
  [{"source": "seed",
    "scalars": {},
    "preset": "minimal",
    "fingerprint": "0x850896e149518a9e",
+   "case": 0},
+  {"source": "seed",
+   "scalars": {},
+   "preset": "mainnet",
+   "fingerprint": "0x4ba4af03b9c0af9e",
    "case": 0}]}

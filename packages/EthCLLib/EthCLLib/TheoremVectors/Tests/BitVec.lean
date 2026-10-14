@@ -10,6 +10,7 @@ import EthCLLib.TheoremVectors.Witness.Base
 import EthCLLib.TheoremVectors.Witness.Seed
 import EthCLLib.TheoremVectors.Witness.BitVec
 import EthCLLib.TheoremVectors.Tests.ToyFork
+import EthCLLib.TheoremVectors.Tests.Support
 
 /-!
 # `EthCLLib.TheoremVectors.Tests.BitVec`: the prepare pass and the solver
@@ -102,26 +103,6 @@ spurious model, and the case reads `notFound` (§9.4). -/
 theorem toyAliasRead [HasherTag] (s a : UInt64) (_h : toyBal s ≤ a) :
     toyFun a = a + 3 := rfl
 
-/-- The little-endian read of a scalar's eight wire bytes, for the
-boundary assertions. -/
-private def leOf (b : ByteArray) : Nat :=
-  (Array.range 8).foldl (fun acc i =>
-    acc + (if h : i < b.size then (b.get i h).toNat * 2 ^ (8 * i) else 0)) 0
-
-/-- The search context one drive needs, from the reader's scope. -/
-private def searchCtxOf (binding : ForkBinding) (stmt : Statement)
-    (ctx : StatementCtx) (info : ProbeInfo) (probe : Probe) : MetaM SearchCtx := do
-  let instConsts ← stmt.instances.mapM fun (_, kind) =>
-    match Preset.constOf binding .minimal kind with
-    | .ok c => pure c
-    | .error e => throwError e
-  return {
-    probe := probe, info := info, binding := binding, preset := PresetId.minimal,
-    inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-    instConsts := instConsts, seedTerms := #[],
-    drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
-    builtStamp := "" }
-
 end EthCLLib.TheoremVectors.Tests.BitVec
 
 open Lean.Elab.Command
@@ -150,7 +131,8 @@ run_cmd do
       let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[] with
         | .ok r => pure r
         | .error e => throwError s!"toySplitSolve: the probe refused to build: {e}"
-      let sctx ← searchCtxOf binding stmt ctx info probe
+      let sctx ← Tests.Support.searchCtxOf binding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let sources : Array WitnessSource := #[baseSource, bitVecSource]
       let (ltCase, eqCase) :=
         if cases[0]!.hyps[0]!.isAppOf ``LT.lt then
@@ -166,15 +148,15 @@ run_cmd do
           unless probe.check c.index a do
             throwError s!"toySplitSolve case {c.index}: the candidate \
               failed the check"
-          unless a.size == 2 && leOf a[1]! ≥ 1 do
+          unless a.size == 2 && Tests.Support.leOf a[1]! ≥ 1 do
             throwError s!"toySplitSolve case {c.index}: the witness \
-              ({leOf a[0]!}, {leOf a[1]!}) missed its window"
+              ({Tests.Support.leOf a[0]!}, {Tests.Support.leOf a[1]!}) missed its window"
           if c.index == eqCase.index then
-            unless leOf a[0]! == leOf a[1]! do
+            unless Tests.Support.leOf a[0]! == Tests.Support.leOf a[1]! do
               throwError s!"toySplitSolve case {c.index}: the equality \
                 case's witness is not on the boundary"
           else
-            unless leOf a[0]! < leOf a[1]! do
+            unless Tests.Support.leOf a[0]! < Tests.Support.leOf a[1]! do
               throwError s!"toySplitSolve case {c.index}: the witness is \
                 not below its bound"
         | .error f =>
@@ -188,7 +170,8 @@ run_cmd do
       let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[] with
         | .ok r => pure r
         | .error e => throwError s!"toyUnsat: the probe refused to build: {e}"
-      let sctx ← searchCtxOf binding stmt ctx info probe
+      let sctx ← Tests.Support.searchCtxOf binding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let sources : Array WitnessSource := #[baseSource, bitVecSource]
       match ← searchCase sources sctx stmt cases[0]! with
       | .ok _ => throwError "toyUnsat: the search found a witness"
@@ -207,14 +190,15 @@ run_cmd do
       let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[] with
         | .ok r => pure r
         | .error e => throwError s!"toyToNat: the probe refused to build: {e}"
-      let sctx ← searchCtxOf binding stmt ctx info probe
+      let sctx ← Tests.Support.searchCtxOf binding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let sources : Array WitnessSource := #[baseSource, bitVecSource]
       match ← searchCase sources sctx stmt cases[0]! with
       | .ok (a, won) =>
         unless won == .bitVec && probe.check 0 a do
           throwError "toyToNat: the bit-vector source's candidate failed"
-        unless leOf a[0]! + 1 == leOf a[1]! do
-          throwError s!"toyToNat: the witness ({leOf a[0]!}, {leOf a[1]!}) \
+        unless Tests.Support.leOf a[0]! + 1 == Tests.Support.leOf a[1]! do
+          throwError s!"toyToNat: the witness ({Tests.Support.leOf a[0]!}, {Tests.Support.leOf a[1]!}) \
             does not satisfy a + 1 = b"
       | .error f => throwError s!"toyToNat: {repr f}"
     -- ── the seeded-handoff pin: the seed fixes `s` to 0, the residual
@@ -242,12 +226,14 @@ run_cmd do
         match Preset.constOf stateBinding .minimal kind with
         | .ok c => pure c
         | .error e => throwError e
+      -- `Support.searchCtxOf` carries no seed terms; this drive seeds
+      -- input 0, so the construction stays inline
       let sctx : SearchCtx :=
         { probe, info, binding := stateBinding, preset := PresetId.minimal,
           inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
           instConsts := instConsts, seedTerms := #[(0, seedTerm)],
           drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
-          builtStamp := "" }
+          builtStamp := "", earlierWins := #[] }
       -- §9.4: the base source's `applies` refuses the state input, so
       -- the search loop never proposes the `default` state
       if baseSource.applies sctx stmt cases[0]! then
@@ -314,12 +300,14 @@ run_cmd do
         match Preset.constOf binding .minimal kind with
         | .ok c => pure c
         | .error e => throwError e
+      -- `Support.searchCtxOf` carries no seed terms; this drive seeds
+      -- input 0, so the construction stays inline
       let sctx : SearchCtx :=
         { probe, info, binding, preset := PresetId.minimal,
           inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
           instConsts := instConsts, seedTerms := #[(0, seedTerm)],
           drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
-          builtStamp := "" }
+          builtStamp := "", earlierWins := #[] }
       let sources : Array WitnessSource := #[seedSource, bitVecSource]
       match ← searchCase sources sctx stmt cases[0]! with
       | .ok (a, won) =>
@@ -342,7 +330,7 @@ theorem toyFinBound [HasherTag] (i : Fin 5) (h : 1 < i.val) :
 /-- The stand-in lookup's pin (§9.4): a free scalar precedes the `Fin`
 in binder order, so the bridge must walk `free`'s pairs and not the
 `Fin`-only positions when it names the stand-in. -/
-theorem toyFinAfterScalar [HasherTag] (s : UInt64) (i : Fin 5)
+theorem toyFinAfterScalar [HasherTag] (_s : UInt64) (i : Fin 5)
     (h : 1 < i.val) : i.val + 1 ≤ 5 := by omega
 
 /-- The bridge's equality pin (§9.4): the hypothesis is a `Nat`-form
@@ -370,7 +358,8 @@ run_cmd do
       let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[] with
         | .ok r => pure r
         | .error e => throwError s!"toyFinBound: the probe refused to build: {e}"
-      let sctx ← searchCtxOf binding stmt ctx info probe
+      let sctx ← Tests.Support.searchCtxOf binding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let sources : Array WitnessSource := #[baseSource, bitVecSource]
       match ← searchCase sources sctx stmt cases[0]! with
       | .ok (a, won) =>
@@ -379,7 +368,7 @@ run_cmd do
             win, got {won.tag}"
         unless probe.check cases[0]!.index a do
           throwError "toyFinBound: the candidate failed the check"
-        let v := leOf a[0]!
+        let v := Tests.Support.leOf a[0]!
         unless 1 < v && v < 5 do
           throwError s!"toyFinBound: the witness value {v} left its window"
       | .error f =>
@@ -394,7 +383,8 @@ run_cmd do
       let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[] with
         | .ok r => pure r
         | .error e => throwError s!"toyFinAfterScalar: the probe refused to build: {e}"
-      let sctx ← searchCtxOf binding stmt ctx info probe
+      let sctx ← Tests.Support.searchCtxOf binding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let sources : Array WitnessSource := #[baseSource, bitVecSource]
       match ← searchCase sources sctx stmt cases[0]! with
       | .ok (a, won) =>
@@ -403,7 +393,7 @@ run_cmd do
             to win, got {won.tag}"
         unless probe.check cases[0]!.index a do
           throwError "toyFinAfterScalar: the candidate failed the check"
-        let v := leOf a[1]!
+        let v := Tests.Support.leOf a[1]!
         unless 1 < v && v < 5 do
           throwError s!"toyFinAfterScalar: the witness value {v} left its \
             window"
@@ -419,7 +409,8 @@ run_cmd do
       let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[] with
         | .ok r => pure r
         | .error e => throwError s!"toyFinEq: the probe refused to build: {e}"
-      let sctx ← searchCtxOf binding stmt ctx info probe
+      let sctx ← Tests.Support.searchCtxOf binding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let sources : Array WitnessSource := #[baseSource, bitVecSource]
       match ← searchCase sources sctx stmt cases[0]! with
       | .ok (a, won) =>
@@ -428,7 +419,7 @@ run_cmd do
             got {won.tag}"
         unless probe.check cases[0]!.index a do
           throwError "toyFinEq: the candidate failed the check"
-        let v := leOf a[0]!
+        let v := Tests.Support.leOf a[0]!
         unless v == 3 do
           throwError s!"toyFinEq: the witness value {v} missed the \
             equality"

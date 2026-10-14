@@ -21,7 +21,11 @@ Each theorem's run carries its own heartbeat budget from the
 its own.
 
 The named lines carry the stage-2 acceptance theorems and the stage-3
-ones. The window theorems run `computePtcFromFulu` over the state, and
+ones, and stage 8 runs four of them at both presets: the three stage-2
+lines and `processBuilderPendingPayments_run`, whose mainnet run wins
+from the built source and whose pyspec case the check replays through
+the mainnet interface. The window theorems run `computePtcFromFulu` over
+the state, and
 `default`'s empty validator set drives the balance-weighted selection into
 its fuel bound, so the seed `activeState` supplies 64 active validators
 instead; the window offsets pin the smallest index of the region each
@@ -54,10 +58,12 @@ theorem_vectors_fork EthCLSpecs.TheoremVectors.Bindings.Gloas.gloas
 theorem_vectors initializePtcWindow_lt with
   (state := EthCLSpecs.TheoremVectors.Seeds.Gloas.activeState)
   (i := EthCLSpecs.TheoremVectors.Seeds.Gloas.windowZero)
+  presets minimal mainnet
 theorem_vectors initializePtcWindow_lt_default with
   (state := EthCLSpecs.TheoremVectors.Seeds.Gloas.activeState)
   (i := EthCLSpecs.TheoremVectors.Seeds.Gloas.windowZero)
-theorem_vectors getPtcElseOffset_lt_same_slot
+  presets minimal mainnet
+theorem_vectors getPtcElseOffset_lt_same_slot presets minimal mainnet
 theorem_vectors getPtcElseOffset_lt_next_slot
 theorem_vectors canBuilderCoverBid_iff
 theorem_vectors isValidIndexedPayloadAttestation_eq_true_iff_checks with
@@ -66,6 +72,10 @@ theorem_vectors isValidIndexedPayloadAttestation_eq_true_iff_checks with
 theorem_vectors initializePtcWindow_ge with
   (state := EthCLSpecs.TheoremVectors.Seeds.Gloas.activeState)
   (i := EthCLSpecs.TheoremVectors.Seeds.Gloas.windowEpoch)
+-- The stage-8 acceptance theorem: the one characterized `.runOk` with a
+-- pyspec handler, run at both presets. A named line wins over the
+-- `characterized` clause, which stays minimal-only.
+theorem_vectors processBuilderPendingPayments_run presets minimal mainnet
 
 -- §14.3: the named lines and the skip lines precede the discovery
 -- clauses. A line below a clause that already ran its theorem is an error.

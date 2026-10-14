@@ -33,7 +33,10 @@ seed, the size, and the draw index, because a draw is a pure function
 of those three and `Gen` replays it. The built source needs the builder
 name and the knobs, because the cached bytes rebuild from them (§9.9);
 when a statement holds containers beside its state, its built entry
-carries the drawn containers' key as a random entry does. A random
+carries the drawn containers' key as a random entry does. A reused
+entry (§10) needs the scalar table alone, because the reuse source
+proposes only for a statement whose every input is a scalar, and the
+table rebuilds the carried witness at the later preset. A random
 entry also carries the shrink path the walk accepted (§9.6), whose
 replay walks the recorded candidates alone. The full loop runs for a
 traceless entry, and for a recorded path that no longer replays.
@@ -272,13 +275,36 @@ def Hint.mergeWrite (outDir : System.FilePath) (forkTag : String)
 /-! ## Rebuild: the candidate from an entry -/
 
 /-- The source a hint entry records, with a replayed entry's own wrapper
-unwrapped. `none` for a source this module cannot rebuild (the reused
-source lands in stage 8); the search runs for such an entry (§9.8). -/
+unwrapped. `none` for the reused source, which `Hint.rebuild` and
+`Hint.entryOf` match on the entry's tag directly, before this unwrap
+runs. -/
 private def entrySource (t : WitnessSourceTag) : Option WitnessSourceTag :=
   match t with
   | .hinted o => some o
   | .reused _ => none
   | t => some t
+
+/-- The entry's source with every replay wrapper unwrapped. A
+hand-edited entry can nest the wrapper; the wire reader parses any
+depth (`WitnessSourceTag.ofTag?` recurses on `hinted-`), so the
+rebuild reads through all of them. -/
+private def plainSourceOf : WitnessSourceTag → WitnessSourceTag
+  | .hinted o => plainSourceOf o
+  | t => t
+
+/-- Can the hint machinery attempt an entry with this tag at all? True
+for the five plain sources, for a replayed `.hinted` entry, and for a
+`.reused` entry, whose scalar table `Hint.rebuild` reads alone. A
+wrapped `.hinted (.reused p)` entry answers `true` too, and
+`Hint.rebuild` rebuilds it from the same table. This is the source's
+`applies` test, and only the tag-level gate: `rebuild`'s `none`
+answers for missing data (a draw key, a builder name, a scalar read)
+are the honest failures. `entrySource` alone would turn a committed
+reused entry into a missing hint, which would churn the witness the
+entry already fixed (§10). -/
+def Hint.rebuildable : WitnessSourceTag → Bool
+  | .reused _ => true
+  | t => (entrySource t).isSome
 
 /-- The scalar value a hint entry fixes for one input position, `0` when
 the entry holds no value for it: the candidate's builder wrote the same
@@ -291,11 +317,15 @@ private def entryScalar (e : HintEntry) (stmt : Statement) (i : Nat) : Nat :=
 The overlay follows the winning assignment's construction: the drawn
 containers win over the seeds in a random replay, the seeds win at the
 positions they fix in a bit-vector replay, and the hint's scalars fill
-the solver's choices. `none` when the entry does not describe a candidate
+the solver's choices. A reused entry (§10) rebuilds every input from the
+entry's scalar table alone, because the reuse source proposes only for a
+statement whose every input is a scalar. The replay wrapper counts as
+the form under it at any depth, so `.hinted (.reused p)` rebuilds from
+the same table and a doubly wrapped entry reaches the source under
+both wrappers. `none` when the entry does not describe a candidate
 this module can rebuild. -/
 def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
     MetaM (Option Assignment) := do
-  let some src := entrySource e.source | return none
   let seeded := ctx.probe.seeds.map (·.1)
   let seedBytes (i : Nat) : ByteArray :=
     (ctx.probe.seeds.find? fun (p, _) => p == i).map (·.2) |>.getD emptyBytes
@@ -304,7 +334,22 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
     match stmt.scalarKinds[i]? |>.join with
     | none => return none
     | some k => return some (scalarBytes k (scalarVal i))
-  match src with
+  -- the entry's source with every replay wrapper unwrapped, at any
+  -- depth: a hand-edited entry can nest `.hinted`, and the rebuilt
+  -- candidate still goes through the search loop's `safe` and `check`
+  -- gates. `.hinted (.hinted .base)` therefore rebuilds the base
+  -- defaults, a hand-edit-only shape whose candidate the check
+  -- arbitrates.
+  match plainSourceOf e.source with
+  | .reused _ =>
+    -- §10: the scalar table is the whole entry; a position with no
+    -- scalar kind or no bytes is an entry the table cannot rebuild
+    let mut a : Array ByteArray := #[]
+    for i in [0:stmt.inputs.size] do
+      match ← scalarByte i with
+      | none => return none
+      | some b => a := a.push b
+    pure (some a)
   | .base => pure (some ctx.probe.defaults)
   | .seed =>
     pure (some (ctx.probe.seeds.foldl (init := ctx.probe.defaults)
@@ -380,7 +425,9 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
             | none => return none
             | some b => a := a.push b
     pure (some a)
-  | _ => return none
+  -- totality only: `plainSourceOf` never returns a `.hinted` tag, so
+  -- this arm is unreachable
+  | .hinted _ => return none
 
 /-! ## Build: the entry from a winning assignment -/
 
@@ -421,52 +468,64 @@ private def containerPositions (stmt : Statement) : Array Nat :=
   (Array.range stmt.inputs.size).filter fun i => stmt.scalarKinds[i]?.join.isNone
 
 /-- The hint entry a winning candidate records (§9.8), unwrapping a
-replayed `.hinted` tag back to the source the hint already recorded.
-`none` when the source carries no rebuildable data yet or a scalar read
-failed. -/
+replayed `.hinted` tag back to the source the hint already recorded. A
+reused win (§10) records a `.reused` entry, whose scalar table is the
+whole rebuild input. `none` when the source carries no rebuildable data
+yet or a scalar read failed. -/
 def Hint.entryOf (ctx : SearchCtx) (stmt : Statement) (c : Case)
     (a : Assignment) (won : WitnessSourceTag) (seedOpt sizeOpt : Nat)
     (fingerprint : String) : MetaM (Option HintEntry) := do
-  let some src := entrySource won | return none
-  let head : HintEntry :=
-    { preset := ctx.preset, «case» := c.index, side := c.side, source := src,
-      fingerprint := some fingerprint }
-  match src with
-  | .base | .seed => pure (some head)
-  | .bitVec => do
+  match won with
+  | .reused p => do
+    -- §10: the scalar table is the entry's whole content; the reuse
+    -- source proposes only for a statement whose every input is a
+    -- scalar, so the table rebuilds the candidate exactly
     let some scalars ← scalarsOf stmt a | return none
+    let head : HintEntry :=
+      { preset := ctx.preset, «case» := c.index, side := c.side,
+        source := .reused p, fingerprint := some fingerprint }
     pure (some { head with scalars := scalars })
-  | .random => do
-    let containers := containerPositions stmt
-    let some draw := findDrawIndex (← ctx.drawMemo.get) containers a
-      | return none
-    let some scalars ← scalarsOf stmt a | return none
-    pure (some { head with seed := some seedOpt, size := some sizeOpt, draw := some draw, scalars := scalars })
-  | .built => do
-    -- §9.8, §9.9: the builder name, the knobs, the solved scalars, and
-    -- the other containers' draw key when the statement has containers
-    -- beside the state. The search drew them at draw 0, so the key is
-    -- the run's own seed and size with draw 0.
-    let some statePos := (Array.range stmt.inputs.size).find?
-        (fun i => isStateType ctx.binding stmt.inputs[i]!.type) | return none
-    let cap ← builtStepsOf ctx.preset
-    let some (name, k) ← Built.findStep ctx cap a statePos | return none
-    let some scalars ← scalarsOf stmt a | return none
-    let hasOthers := (Array.range stmt.inputs.size).any fun i =>
-      i != statePos && (stmt.scalarKinds[i]? |>.join).isNone
-    -- the draw key is present only when containers beside the state
-    -- were drawn; in this position an `if` term does not parse as a
-    -- structure field value, so the three optionals bind first
-    let keySeed : Option Nat := if hasOthers then some seedOpt else none
-    let keySize : Option Nat := if hasOthers then some sizeOpt else none
-    let keyDraw : Option Nat := if hasOthers then some 0 else none
-    -- one `with` clause per line: at this column the with-form instance
-    -- does not continue across a newline
-    let entry0 : HintEntry := { head with builder := some name, knobs := some k }
-    let entry1 : HintEntry := { entry0 with seed := keySeed, size := keySize, draw := keyDraw }
-    let entry : HintEntry := { entry1 with scalars := scalars }
-    pure (some entry)
-  | _ => return none
+  | _ =>
+    let some src := entrySource won | return none
+    let head : HintEntry :=
+      { preset := ctx.preset, «case» := c.index, side := c.side, source := src,
+        fingerprint := some fingerprint }
+    match src with
+    | .base | .seed => pure (some head)
+    | .bitVec => do
+      let some scalars ← scalarsOf stmt a | return none
+      pure (some { head with scalars := scalars })
+    | .random => do
+      let containers := containerPositions stmt
+      let some draw := findDrawIndex (← ctx.drawMemo.get) containers a
+        | return none
+      let some scalars ← scalarsOf stmt a | return none
+      pure (some { head with seed := some seedOpt, size := some sizeOpt, draw := some draw, scalars := scalars })
+    | .built => do
+      -- §9.8, §9.9: the builder name, the knobs, the solved scalars, and
+      -- the other containers' draw key when the statement has containers
+      -- beside the state. The search drew them at draw 0, so the key is
+      -- the run's own seed and size with draw 0.
+      let some statePos := (Array.range stmt.inputs.size).find?
+          (fun i => isStateType ctx.binding stmt.inputs[i]!.type) | return none
+      let cap ← builtStepsOf ctx.preset
+      let some (name, k) ← Built.findStep ctx cap a statePos | return none
+      let some scalars ← scalarsOf stmt a | return none
+      let hasOthers := (Array.range stmt.inputs.size).any fun i =>
+        i != statePos && (stmt.scalarKinds[i]? |>.join).isNone
+      -- the draw key is present only when containers beside the state
+      -- were drawn; in this position an `if` term does not parse as a
+      -- structure field value, so the three optionals bind first
+      let keySeed : Option Nat := if hasOthers then some seedOpt else none
+      let keySize : Option Nat := if hasOthers then some sizeOpt else none
+      let keyDraw : Option Nat := if hasOthers then some 0 else none
+      -- one `with` clause per line: at this column the with-form instance
+      -- does not continue across a newline
+      let entry0 : HintEntry := { head with builder := some name, knobs := some k }
+      let entry1 : HintEntry := { entry0 with seed := keySeed, size := keySize, draw := keyDraw }
+      let entry : HintEntry := { entry1 with scalars := scalars }
+      pure (some entry)
+    | _ => return none
 
 /-! ## What one attempt did -/
 
@@ -540,7 +599,7 @@ def Hint.source (mode : HintMode) (file? : Option HintFile)
         -- a notFound entry records the case's empty answer; the
         -- command's case loop answers it before the sources run (the
         -- plan's stage-6 step 9)
-        | some e => e.notFound.isNone && (entrySource e.source).isSome)
+        | some e => e.notFound.isNone && Hint.rebuildable e.source)
   search ctx stmt c := do
     let some f := file? | return .nothing
     let some e := Hint.entryFor f ctx.preset c.index c.side
@@ -567,10 +626,15 @@ def Hint.source (mode : HintMode) (file? : Option HintFile)
             | true => .staleReplayed
           log.set ((← log.get) ++ #[(c.index, ok)])
           -- the replayed winner: the record's source names the hint with
-          -- the source it replays, unwrapped once, so a hand-edited
-          -- `hinted-x` entry still writes a tag the record reader reads
-          -- back (§9.8)
-          let orig := (entrySource e.source).getD .base
+          -- the source it replays. A reused entry (§10) replays as
+          -- `.hinted (.reused p)`, which keeps §9.8's promise that a
+          -- committed second-preset entry replays under a tag the
+          -- record reader reads back; a hand-edited `hinted-x` entry
+          -- unwraps once, the same as before
+          let orig : WitnessSourceTag :=
+            match e.source with
+            | .reused p => .reused p
+            | t => (entrySource t).getD .base
           return .candidate a (some (.hinted orig))
       log.set ((← log.get) ++ #[(c.index, attempt)])
       return .nothing

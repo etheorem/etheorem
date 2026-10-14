@@ -8,6 +8,7 @@ import EthCLLib.TheoremVectors.Preset
 import EthCLLib.TheoremVectors.Probe
 import EthCLLib.TheoremVectors.Execute
 import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Reuse
 import EthCLLib.TheoremVectors.Witness.Hint
 import EthCLLib.TheoremVectors.Witness.Base
 import EthCLLib.TheoremVectors.Witness.Seed
@@ -381,8 +382,8 @@ from the statement's expressions. The hint mode and the committed hint
 file come from the run (`runTheorem` resolved both once per theorem). -/
 private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     (thmLocal : String) (seedTerms : Array (Nat × Expr)) (builtStamp : String)
-    (p : PresetId) (ctx : StatementCtx) (cases : Array Case)
-    (mode : HintMode) (hintFile? : Option HintFile) :
+    (winsRef : IO.Ref (Array ReuseWin)) (p : PresetId) (ctx : StatementCtx)
+    (cases : Array Case) (mode : HintMode) (hintFile? : Option HintFile) :
     MetaM RunOutcome := do
   let stmt := ctx.stmt
   let startMs ← IO.monoMsNow
@@ -410,10 +411,17 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   -- §9.9: the grid's boundary steps run at the fork's own first epoch
   -- boundary, evaluated once per preset run
   let epochBoundary ← Built.epochBoundaryOf binding p
+  -- §10: the preset-free type check gates witness reuse. The command
+  -- fills the search context's table only when every input type is free
+  -- of the preset, so a nonempty table implies the check; a preset-bound
+  -- statement always searches fresh, which is always correct
+  let presetFree := Preset.presetFree (← getEnv) binding ctx
+  let wins ← if presetFree then winsRef.get else pure #[]
   let searchCtx : SearchCtx :=
     { probe, info, binding, preset := p, inputFvars := ctx.inputFvars,
       instFvars := ctx.instFvars, instConsts, seedTerms,
-      drawMemo := ← IO.mkRef #[], outDir, builtStamp, epochBoundary }
+      drawMemo := ← IO.mkRef #[], outDir, builtStamp, epochBoundary,
+      earlierWins := wins }
   -- §9.8: the hint source runs first on every list. The log ref collects
   -- what one attempt did per case, which the outcome's `hint` field folds
   -- up and which the `require` mode's error reads.
@@ -426,22 +434,31 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   if ← thmDir.isDir then
     IO.FS.removeDirAll thmDir
   -- B3: the search (§9.2, §9.4). The hint source prepends itself on every
-  -- list, `ignore` included off it. A line with seeds runs seed then the
-  -- bit-vector handoff: a `default` candidate would ignore the author's
-  -- seeded inputs. Without seeds, base then bit-vector. The built source
-  -- (§9.9) follows the bit-vector source, before the random source: a
-  -- reachable built state is worth more to a client than a drawn one.
-  -- A block input leaves only the base source running (§1.2); the base
-  -- source itself never proposes `default` for the fork's state (§9.4),
-  -- so a state theorem without seeds runs the bit-vector, built, and
-  -- random sources in that order.
+  -- list, `ignore` included off it. §10 puts the reuse source immediately
+  -- after the hint source, so a committed second-preset hint replays as
+  -- `.hinted (.reused p)` while a fresh run wins as
+  -- `.reused p` and writes that entry. A line with seeds runs seed then
+  -- the bit-vector handoff: a `default` candidate would ignore the
+  -- author's seeded inputs. Without seeds, base then bit-vector. The
+  -- built source (§9.9) follows the bit-vector source, before the random
+  -- source: a reachable built state is worth more to a client than a
+  -- drawn one. A block input leaves only the base source running (§1.2);
+  -- the base source itself never proposes `default` for the fork's state
+  -- (§9.4), so a state theorem without seeds runs the bit-vector, built,
+  -- and random sources in that order. The reuse source's `applies` gates
+  -- on empty block inputs itself, so the block-input list stays base
+  -- alone.
   let baseSources : Array WitnessSource :=
     if !stmt.blockInputs.isEmpty then #[baseSource]
     else if seedTerms.isEmpty then
       #[baseSource, bitVecSource, builtSource, randomSource]
     else #[seedSource, bitVecSource, builtSource, randomSource]
   let sources : Array WitnessSource :=
-    if mode == .ignore then baseSources else #[hintSrc] ++ baseSources
+    -- `ignore` runs no hint, so the reuse source leads the list; §9.8's
+    -- "search everything" covers reuse, and a `use` build must read the
+    -- same second-preset entries an `ignore` build writes (§9.8)
+    if mode == .ignore then #[reuseSource] ++ baseSources
+    else #[hintSrc, reuseSource] ++ baseSources
   let some shapeTag := Shape.tag? stmt.shape
     | return { preset := some p, status := .unsupported,
                reason := some "unsupported shape" }
@@ -584,6 +601,18 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
           shrinkTrace? := some tr
           pure shrunk
       else pure a
+      -- §10: the final assignment that passed the check goes into the
+      -- ref, so a later preset of this line proposes it through the
+      -- reuse source. A `.reused` win lands here too: it passed this
+      -- preset's check, so the next preset may try the same bytes, and
+      -- that preset's own check arbitrates. The push runs only for a
+      -- preset-free statement: the read side gates on the same flag, so
+      -- a preset-bound win would sit in the ref with no reader and only
+      -- cost memory.
+      if presetFree then
+        winsRef.set ((← winsRef.get).push
+          { caseIndex := c.index, side := c.side, assignment := a,
+            fromPreset := p })
       let entry? := match entry? with
         | some e => some { e with shrink := shrinkTrace? }
         | none => none
@@ -759,11 +788,16 @@ private def runTheorem (binding : ForkBinding) (bindingName : Name)
                 `{thm}` does not have the input's type (§14.3)"
             pure (i, term)
         -- phases B1 through B8, per preset in the line's list, each under
-        -- its own heartbeat budget (§14.3)
-        let runs ← ps.mapM fun p =>
-          withRunHeartbeats
-            (runPreset binding outDir localName.toString seedTerms builtStamp p
-              ctx cases mode hintFile?)
+        -- its own heartbeat budget (§14.3). §10: the fold carries one
+        -- earlier-wins ref across the line's presets, so a witness won at
+        -- an earlier preset proposes at a later one when the preset-free
+        -- type check and the later preset's check both pass.
+        let winsRef ← IO.mkRef (#[] : Array ReuseWin)
+        let runs ← ps.foldlM (init := #[]) fun acc p => do
+          let r ← withRunHeartbeats
+            (runPreset binding outDir localName.toString seedTerms builtStamp
+              winsRef p ctx cases mode hintFile?)
+          pure (acc.push r)
         -- §18: a strict claim that skipped fails hard; a non-strict line
         -- warns
         -- §18: `unsat` is always reported and never an error; the

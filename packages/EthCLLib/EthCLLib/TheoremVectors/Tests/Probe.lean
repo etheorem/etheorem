@@ -103,12 +103,16 @@ private def roundTrip (thm : Name) (dir : System.FilePath) :
     let (info, probe) := (← builtProbe thm binding ctx cases)
     let c := cases[0]!
     let sources : Array WitnessSource := #[baseSource]
+    -- `Support.searchCtxOf` does not fit: the context pins
+    -- `instConsts := #[]` on purpose, the base-source-only round trip
+    -- never substitutes an instance, and the helper computes the
+    -- constants through `Preset.constOf`
     let searchCtx : SearchCtx :=
       { probe, info, binding, preset := .minimal,
         inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
         instConsts := #[], seedTerms := #[],
         drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
-        builtStamp := "" }
+        builtStamp := "", earlierWins := #[] }
     let won ← match ← searchCase sources searchCtx stmt c with
       | .ok (a, tag) =>
         unless tag == WitnessSourceTag.base do

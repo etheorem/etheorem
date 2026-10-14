@@ -227,20 +227,30 @@ private def plainSourceTag? : String → Option WitnessSourceTag
   | "seed"   => some .seed
   | _        => none
 
+/-- The tag reader's recursion core, over the tag's characters. The
+`hinted-` prefix recurses, so nested compound tags parse; the `reused-`
+prefix reads a preset, which is a leaf. The plain tags are the last arm.
+The structural recursion runs on the character list, which avoids a
+size-of proof over this toolchain's `Slice`-returning `String.drop`. -/
+private def ofTagChars : List Char → Option WitnessSourceTag
+  | 'h' :: 'i' :: 'n' :: 't' :: 'e' :: 'd' :: '-' :: rest =>
+    (ofTagChars rest).map .hinted
+  | 'r' :: 'e' :: 'u' :: 's' :: 'e' :: 'd' :: '-' :: rest =>
+    (PresetId.ofTag? (String.ofList rest)).map .reused
+  | cs => plainSourceTag? (String.ofList cs)
+
 /-- Read a source back from its wire tag. The record reader goes through
-this. The compound tags read back in full: `hinted-<orig>` is the
-`.hinted orig` a replayed hint writes (§9.8), and `reused-<preset>` the
-`.reused preset` a reused witness writes (§10). -/
+this. The compound tags read back in full and recursively:
+`hinted-<orig>` is the `.hinted orig` a replayed hint writes (§9.8), and
+`reused-<preset>` the `.reused preset` a reused witness writes (§10), so
+`hinted-reused-minimal` reads back as `.hinted (.reused .minimal)`. -/
 def WitnessSourceTag.ofTag? (s : String) : Option WitnessSourceTag :=
-  match plainSourceTag? s with
-  | some t => some t
-  | none =>
-    -- both prefixes are seven characters
-    if s.startsWith "hinted-" then
-      (plainSourceTag? (s.drop 7).toString).map .hinted
-    else if s.startsWith "reused-" then
-      (PresetId.ofTag? (s.drop 7).toString).map .reused
-    else none
+  ofTagChars s.toList
+
+#guard WitnessSourceTag.ofTag? "hinted-reused-minimal" ==
+  some (.hinted (.reused .minimal))
+#guard WitnessSourceTag.ofTag? "reused-mainnet" == some (.reused .mainnet)
+#guard WitnessSourceTag.ofTag? "hinted-bitVec" == some (.hinted .bitVec)
 
 /-- Why a case produced no vector (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4). `unsat` means
 the solver proved the hypotheses vacuous, `notFound` that every source ran

@@ -1874,3 +1874,33 @@ builders, the executor's run rows, and the record's error value) against
   when stage 0 added `plausible`, and `lake exe` refused to start from the
   subpackage. The raw blob's path in the request is absolute, so the
   server's own working directory no longer matters.
+
+## Theorem vectors, stage 8
+
+- **The reuse source sits immediately after the hint source.** §3's B2
+  sketch placed witness reuse ahead of the whole search. §9.8's replay
+  promise needs the other order: a committed
+  second-preset hint must replay as `.hinted (.reused p)`, and a fresh
+  run must win as `.reused p` and write that entry, which only happens
+  when the hint source tries first and the reuse source follows it. The
+  source's candidate still goes through the search loop's `safe` and
+  `check` gates, so a rejected carryover falls through to the fresh
+  search. The source also skips a line with author seeds, so a
+  fully-covering seed wins its own case at every preset and §18's seed
+  claim stays checkable.
+
+- **The built source draws only when a container sits beside the
+  state.** §9.9 says "any other container input is drawn the way the
+  random source draws it", and the first implementation took that as an
+  unconditional draw 0 before the grid walk, even for a statement whose
+  other-container set is empty. For such a statement the bytes are
+  unused, and the draw itself is not free at mainnet. `drawN` and
+  `drawVector` recurse per element, and a mainnet `BeaconState`'s
+  65536-element `randao_mixes` overflows the interpreter's recursion
+  cap inside the draw. The built source now computes the container
+  positions beside the state first and draws only when one exists, so a
+  state-only statement draws nothing. The random source's own loop
+  keeps the old shape, because no corpus theorem reaches it at mainnet.
+  Two limits carry in `STAGE8_DEFERRED.md`: a mainnet state beside
+  another container input still overflows the draw, and the random
+  source's loop has no mainnet cap.

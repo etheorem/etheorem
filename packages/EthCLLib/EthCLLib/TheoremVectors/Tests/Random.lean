@@ -12,6 +12,7 @@ import EthCLLib.TheoremVectors.Witness.BitVec
 import EthCLLib.TheoremVectors.Witness.Random
 import EthCLLib.TheoremVectors.Witness.Shrink
 import EthCLLib.TheoremVectors.Tests.ToyFork
+import EthCLLib.TheoremVectors.Tests.Support
 
 /-!
 # `EthCLLib.TheoremVectors.Tests.Random`: the draw, the random source, the shrink
@@ -118,16 +119,8 @@ run_cmd do
       -- ── the random source's drive (§9.4): no seed, the base source
       -- refuses the state-typed container, the random source wins
       let sources : Array WitnessSource := #[baseSource, bitVecSource, randomSource]
-      let instConsts ← stmt.instances.mapM fun (_, kind) =>
-        match Preset.constOf binding .minimal kind with
-        | .ok c => pure c
-        | .error e => throwError e
-      let sctx : SearchCtx :=
-        { probe := probe, info := info, binding := binding,
-          preset := PresetId.minimal, inputFvars := ctx.inputFvars,
-          instFvars := ctx.instFvars, instConsts := instConsts,
-          seedTerms := #[], drawMemo := ← IO.mkRef #[],
-          outDir := Tests.ToyFork.scratchOutDir, builtStamp := "" }
+      let sctx ← Tests.Support.searchCtxOf binding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let c := cases[0]!
       match ← searchCase sources sctx stmt c with
       | .ok (a, won) =>
@@ -140,11 +133,7 @@ run_cmd do
         let shrunk ← shrinkWitness probe c.index 200 a
         unless probe.check c.index shrunk do
           throwError "the shrunk witness failed the check"
-        let leOf (b : ByteArray) : Nat :=
-          (Array.range 8).foldl (fun acc i =>
-            acc + (if h : i < b.size then (b.get i h).toNat * 2 ^ (8 * i)
-              else 0)) 0
-        unless leOf shrunk[0]! < leOf a[0]!
+        unless Tests.Support.leOf shrunk[0]! < Tests.Support.leOf a[0]!
             || shrunk[0]!.size < a[0]!.size do
           throwError s!"the shrunk container is not smaller \
             ({shrunk[0]!.size} against {a[0]!.size})"
@@ -168,16 +157,8 @@ run_cmd do
       -- the search wins: a draw with both reads in range passes the gate
       -- and the check, and the gate rejects the short draws without
       -- evaluating them
-      let sctx2 : SearchCtx :=
-        { probe := probe, info := info, binding := binding,
-          preset := PresetId.minimal, inputFvars := ctx.inputFvars,
-          instFvars := ctx.instFvars,
-          instConsts := ← stmt.instances.mapM fun (_, kind) =>
-            match Preset.constOf binding .minimal kind with
-            | .ok c => pure c
-            | .error e => throwError e,
-          seedTerms := #[], drawMemo := ← IO.mkRef #[],
-          outDir := Tests.ToyFork.scratchOutDir, builtStamp := "" }
+      let sctx2 ← Tests.Support.searchCtxOf binding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let sources2 : Array WitnessSource := #[baseSource, bitVecSource, randomSource]
       match ← searchCase sources2 sctx2 stmt c with
       | .ok (a, won) =>

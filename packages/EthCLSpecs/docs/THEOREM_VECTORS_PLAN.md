@@ -567,6 +567,28 @@ report shows per theorem whether the mainnet witness was reused or searched.
 `processBuilderPendingPayments_run` passes the server at both presets. The
 report's seconds per mainnet record are in the stage's commit body.
 
+*Outcome.* The acceptance holds. `getPtcElseOffset_lt_same_slot` carries its
+minimal witness to mainnet: every input type is free of the preset, the
+carried bytes pass the mainnet check, and the record names `reused-minimal`.
+The two window theorems win from their seeds at mainnet, about 9.4 seconds
+each, their state types being preset-bound. `processBuilderPendingPayments_run`
+wins from the `built` source's `genesis` step at mainnet in 18.8 seconds. A
+clean rebuild replays all four (`hinted-reused-minimal`, `hinted-seed`,
+`hinted-built`), every record byte-identical to the searched run apart from
+the `source` field, and the `builder_pending_payments` case passes `runCase`
+and the server at both presets. The mainnet cap held: the built cache holds
+exactly one mainnet entry, the genesis step, so the 3-step cap cut nothing
+the walk reached. The built seconds and the one cache entry are the
+measurement §14.4's mainnet cap rests on. Commits: `7e52ceb` (the
+preset-free check and the reuse path), `b8d3e99` (the two-preset toy fork
+and the reuse tests), `c5f5b37` with `1dbcb8b` (the built source's draw
+guard, which the mainnet run exposed), `adb13a8` (the generator lines and
+the committed mainnet hints). The reuse source sits after the hint source,
+a recorded deviation from §3's B2 sketch (`IMPLEMENTATION_NOTES.md`). Two
+mainnet draw limits carry in `STAGE8_DEFERRED.md`: a mainnet state beside
+another container input still overflows the draw, and the random source's
+loop has no mainnet cap.
+
 ---
 
 ## Stage 9: the other forks, CI, documentation
