@@ -1,0 +1,21 @@
+{"theorem": "EthCLSpecs.Proofs.Fulu.increaseBalance_run_no_wrap",
+ "fingerprint": "0xad20a4bbe1fe3211",
+ "entries":
+ [{"source": "random",
+   "size": 8,
+   "shrink":
+   [[0, 3, 17, 20, 805, 831, 1552],
+    [0, 3, 17, 20, 805],
+    [0, 3, 17, 666],
+    [0, 3, 20, 804, 812, 1104],
+    [0, 3, 20, 804, 828, 1547],
+    [0, 3, 20, 804],
+    [0, 3, 229],
+    [0, 5, 16, 662],
+    [0]],
+   "seed": 0,
+   "scalars": {"i": "0", "delta": "0"},
+   "preset": "minimal",
+   "fingerprint": "0xad20a4bbe1fe3211",
+   "draw": 1,
+   "case": 0}]}

@@ -91,11 +91,16 @@ structure SearchCtx where
   /-- The author seed terms of this line, with their input positions
   (§14.3). Empty when the line named none. -/
   seedTerms  : Array (Nat × Expr)
-  /-- The random source's draws, memoized by draw index: a draw is a
-  pure function of the seed, the size, and the index (§9.4), so the
-  cases of one theorem at one preset share them. The ref holds one slot
-  per draw index; `none` is not yet drawn. -/
-  drawMemo : IO.Ref (Array (Option (Array ByteArray)))
+  /-- The random source's draws, memoized per position: a draw is a
+  pure function of the seed, the size, the index, and the position (§9.4),
+  so the cases of one theorem at one preset share them. The ref holds one
+  slot per draw index. A slot is `none` until a call samples the draw's
+  first position. The slot's inner array then holds one `Option ByteArray`
+  per input position reached so far, `none` for a position no call has
+  requested. A caller that needs a subset of a draw's positions (§9.9's
+  built source, the side containers beside the state) samples those
+  alone. -/
+  drawMemo : IO.Ref (Array (Option (Array (Option ByteArray))))
   /-- The output root, where the built source's cache lives
   (`<outDir>/built/`, §9.9). -/
   outDir : System.FilePath
@@ -134,14 +139,6 @@ structure WitnessSource where
   applies : SearchCtx → Statement → Case → Bool
   /-- Produce one answer. -/
   search  : SearchCtx → Statement → Case → SearchM SearchStep
-
-/-- Is the input type the binding's state container? §9.4's rule: no source
-proposes `default` for it, so a source that would fill the input from the
-serialized defaults answers `nothing`. -/
-def isStateType (binding : ForkBinding) (t : Expr) : Bool :=
-  match t.getAppFn with
-  | .const c _ => c == binding.stateType
-  | _ => false
 
 /-- The search loop over one case (`THEOREM_VECTORS_ARCHITECTURE.md` §9.2). A
 candidate the check rejects falls through to the next source; an `unsat`

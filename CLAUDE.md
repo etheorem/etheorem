@@ -261,6 +261,21 @@ them and a near miss wastes a rebuild:
   `just proof-coverage-check` is what CI runs, and it fails on a new proof
   as readily as on a lost one.
 
+The theorem-vector generator reads the same proofs, and the same rule holds
+there: a tag is a claim. `@[characterizes f]` claims the theorem states
+`f`'s contract. `@[theorem_vectors]` claims the theorem is a vector target.
+The `tagged` clause selects tagged theorems and runs them strict: one that
+wins no vector fails the build, the way a `theorem_vectors!` line does. The
+fork's generator file
+(`EthCLSpecs/TheoremVectors/Generators/<Fork>.lean`) decides what runs. A
+named line selects a theorem, and it can carry a seed or a preset choice.
+The `characterized` clause runs the search on the contract theorems. The
+`survey` clause lists the rest with their outcomes in
+`theorem_vectors/report.md`, with no search. `just theorem-vectors` writes
+the records. When a witness changes, `just theorem-vectors-hints-update`
+copies the new hints over the committed ones; commit that diff with the
+proof.
+
 ### Proofs involving SSZ hashes
 
 Pick the tactic by what the goal needs and which hasher tag is in

@@ -25,11 +25,13 @@ Two readings deviate from the sketches and carry their reasons:
   exactly that theorem, and the plan's stage 3 acceptance makes it write a
   vector. The walk still fills `target` when it finds a spec function, and a
   theorem whose conclusion matches no shape is `.unsupported` by §7.3's rule
-  7 regardless.
-- The `.runOk` match requires `pre` to be one of the inputs and `post` to
-  mention only inputs (§7.3). A failure to meet that requirement makes the
-  arm not fire, and matching falls through to the next rule, which is how a
-  contract whose right side is a `match` lands on `.eq`.
+  8 regardless.
+- The run matches require the run's state to be one of the statement's
+  state-typed value binders, the binders whose type names
+  `binding.stateType`; the `.runOk` post-state must mention only inputs
+  (§7.3). A failure to meet that requirement makes the arm not fire, and
+  matching falls through to the next rule, which is how a contract whose
+  right side is a `match` lands on `.eq`.
 
 ## Lean idioms annotated
 
@@ -67,8 +69,8 @@ inductive Shape where
   `runPure` reading `runPure act pre = .ok (ret, post)`. One vector; the
   post-state is the output. -/
   | runOk (act pre ret post : Expr)
-  /-- `act.run (pureState pre) = .error err`. One vector with no
-  post-state. -/
+  /-- `act.run (pureState pre) = .error err`, or the `runPure` reading
+  `runPure act pre = .error err`. One vector with no post-state. -/
   | runError (act pre err : Expr)
   /-- Anything else, with the reason. -/
   | unsupported (reason : String)
@@ -249,7 +251,7 @@ private partial def findTargetIn (env : Environment) (binding : ForkBinding)
 /-! ## Shape matching (§7.3) -/
 
 /-- Is the conclusion's head a framework box predicate (`THEOREM_VECTORS_ARCHITECTURE.md`
-§7.3, rule 7)? A theorem whose conclusion states `KeepsUncached`,
+§7.3, rule 8)? A theorem whose conclusion states `KeepsUncached`,
 `KeepsUncachedFrom`, or `ReturnsUncached` is a box lemma: it states a fact
 about the box discipline of a spec function, and no input and output pair
 expresses it. -/
@@ -315,8 +317,9 @@ private def eqTrueLhs? (body : Expr) : Option Expr := do
 
 /-- The `.runOk` reading of a `StateT.run` equation: the action runs on the
 box of `pre` and returns `(ret, pureState post)` (§7.3, form 2). Fires only
-when `pre` is one of the inputs and `post` mentions only binders. -/
-private def runOkStateT? (body : Expr) (preId? : Option FVarId)
+when `pre` is one of the state-typed binders and `post` mentions only
+binders. -/
+private def runOkStateT? (body : Expr) (preIds : Array FVarId)
     (binderIds : Array FVarId) :
     Option (Expr × Expr × Expr × Expr) := do
   let (lhs, rhs) ← eqSides? body
@@ -327,8 +330,7 @@ private def runOkStateT? (body : Expr) (preId? : Option FVarId)
       let act ← args[args.size - 2]?
       let st ← args[args.size - 1]?
       let pre ← pureBox? st
-      let preId ← preId?
-      unless pre.fvarId? == some preId do none
+      unless pre.fvarId?.any preIds.contains do none
       let value ← exceptOk? rhs
       let (ret, postBox) ← prodMk? value
       let post ← pureBox? postBox
@@ -338,7 +340,7 @@ private def runOkStateT? (body : Expr) (preId? : Option FVarId)
 
 /-- The `.runOk` reading of a `runPure` equation (§7.3, form 3): the
 post-state arrives as the plain value, with no box wrapper to strip. -/
-private def runOkRunPure? (body : Expr) (preId? : Option FVarId)
+private def runOkRunPure? (body : Expr) (preIds : Array FVarId)
     (binderIds : Array FVarId) :
     Option (Expr × Expr × Expr × Expr) := do
   let (lhs, rhs) ← eqSides? body
@@ -348,8 +350,7 @@ private def runOkRunPure? (body : Expr) (preId? : Option FVarId)
     else do
       let act ← args[args.size - 2]?
       let pre ← args[args.size - 1]?
-      let preId ← preId?
-      unless pre.fvarId? == some preId do none
+      unless pre.fvarId?.any preIds.contains do none
       let value ← exceptOk? rhs
       let (ret, post) ← prodMk? value
       unless overBindersOnly post binderIds do none
@@ -357,7 +358,7 @@ private def runOkRunPure? (body : Expr) (preId? : Option FVarId)
   | _, _ => none
 
 /-- The `.runError` reading of a `StateT.run` equation (§7.3, form 4). -/
-private def runErrorStateT? (body : Expr) (preId? : Option FVarId) :
+private def runErrorStateT? (body : Expr) (preIds : Array FVarId) :
     Option (Expr × Expr × Expr) := do
   let (lhs, rhs) ← eqSides? body
   match lhs.getAppFn, lhs.getAppArgs with
@@ -367,19 +368,36 @@ private def runErrorStateT? (body : Expr) (preId? : Option FVarId) :
       let act ← args[args.size - 2]?
       let st ← args[args.size - 1]?
       let pre ← pureBox? st
-      let preId ← preId?
-      unless pre.fvarId? == some preId do none
+      unless pre.fvarId?.any preIds.contains do none
+      let err ← exceptError? rhs
+      some (act, pre, err)
+  | _, _ => none
+
+/-- The `.runError` reading of a `runPure` equation (§7.3, form 5). It
+mirrors `runOkRunPure?` on the error side: the value under the run
+arrives as the plain binder, with no box wrapper to strip. -/
+private def runErrorRunPure? (body : Expr) (preIds : Array FVarId) :
+    Option (Expr × Expr × Expr) := do
+  let (lhs, rhs) ← eqSides? body
+  match lhs.getAppFn, lhs.getAppArgs with
+  | .const c _, args =>
+    if c != `EthCLLib.Proofs.runPure then none
+    else do
+      let act ← args[args.size - 2]?
+      let pre ← args[args.size - 1]?
+      unless pre.fvarId?.any preIds.contains do none
       let err ← exceptError? rhs
       some (act, pre, err)
   | _, _ => none
 
 /-- Shape matching in §7.3's order: `.iffTrue`, `.runOk` in its two forms,
-`.runError`, `.eq`, `.bound`, then `.unsupported` with the conclusion's
-head constant in the reason. A conclusion whose head is a framework box
-predicate (`KeepsUncached`, `KeepsUncachedFrom`, `ReturnsUncached`) is a
-box lemma (§7.3, rule 7): the reason reads `box lemma: <head>`, and the
-report counts these apart from the other `.unsupported` reasons (§16.2). -/
-private def matchShape (body : Expr) (preId? : Option FVarId)
+`.runError` in its two forms, `.eq`, `.bound`, then `.unsupported` with the
+conclusion's head constant in the reason. A conclusion whose head is a
+framework box predicate (`KeepsUncached`, `KeepsUncachedFrom`,
+`ReturnsUncached`) is a box lemma (§7.3, rule 8): the reason reads
+`box lemma: <head>`, and the report counts these apart from the other
+`.unsupported` reasons (§16.2). -/
+private def matchShape (body : Expr) (preIds : Array FVarId)
     (binderIds : Array FVarId) : Shape :=
   match body.getAppFn with
   | .const cHead _ =>
@@ -392,17 +410,20 @@ private def matchShape (body : Expr) (preId? : Option FVarId)
         | none => .unsupported "unsupported conclusion: `↔` whose left side is not `… = true`"
       | _, _ => .unsupported "unsupported conclusion: head `Iff`"
     else
-      if let some (act, pre, ret, post) := runOkStateT? body preId? binderIds then
+      if let some (act, pre, ret, post) := runOkStateT? body preIds binderIds then
         -- rule 2
         .runOk act pre ret post
-      else if let some (act, pre, ret, post) := runOkRunPure? body preId? binderIds then
+      else if let some (act, pre, ret, post) := runOkRunPure? body preIds binderIds then
         -- rule 3
         .runOk act pre ret post
-      else if let some (act, pre, err) := runErrorStateT? body preId? then
+      else if let some (act, pre, err) := runErrorStateT? body preIds then
         -- rule 4
         .runError act pre err
+      else if let some (act, pre, err) := runErrorRunPure? body preIds then
+        -- rule 5
+        .runError act pre err
       else
-        -- rule 5, then rule 6, then rule 7
+        -- rule 6, then rule 7, then rule 8
         match eqSides? body with
         | some (lhs, rhs) => .eq lhs rhs
         | none =>
@@ -480,7 +501,7 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
     let mut inputs : Array Input := #[]
     let mut inputFvars : Array Expr := #[]
     let mut typeBinders : Array Name := #[]
-    let mut preId? : Option FVarId := none
+    let mut preIds : Array FVarId := #[]
     let mut binderIds : Array FVarId := #[]
     let mut hyps : Array Expr := #[]
     for f in fvars do
@@ -501,9 +522,12 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
           { name := d.userName.eraseMacroScopes, type := d.type
             explicit := d.binderInfo matches .default }
         inputFvars := inputFvars.push f
-        -- the pre-state convention: the first value binder, which every
-        -- contract in the corpus spells `preState` or `state`
-        if preId?.isNone then preId? := some d.fvarId
+        -- the run's state, by type: every value binder whose type names
+        -- the binding's state container is a candidate store (§7.3). The
+        -- Fulu balance theorems bind two `BeaconState` values and read
+        -- one, threading the other, so the position of the binder cannot
+        -- pick the store
+        if isStateType binding d.type then preIds := preIds.push d.fvarId
     let body := zetaLets body
     let target ← match conclusionLhs? body with
       | none => pure none
@@ -512,10 +536,10 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
     -- the probe read this table, so an alias never reads as a container
     -- and the reducible `whnf` never runs twice (§9.4)
     let scalarKinds ← inputs.mapM fun i => scalarKind i.type
-    let shape := matchShape body preId? binderIds
+    let shape := matchShape body preIds binderIds
     -- §7.5: an instance binder on an unknown seam is a skip, because the
     -- command cannot bind it. The fold keeps an already-unsupported reason,
-    -- the same precedence §7.3's rule 7 has over the folds. Hygienic
+    -- the same precedence §7.3's rule 8 has over the folds. Hygienic
     -- instance names lose their macro scopes, so the report shows the
     -- binder's source-level name.
     let shape :=

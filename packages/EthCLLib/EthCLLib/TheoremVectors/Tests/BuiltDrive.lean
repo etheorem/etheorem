@@ -6,6 +6,7 @@ import EthCLLib.TheoremVectors.Prepare
 import EthCLLib.TheoremVectors.Probe
 import EthCLLib.TheoremVectors.Witness.Source
 import EthCLLib.TheoremVectors.Witness.Built
+import EthCLLib.TheoremVectors.Witness.Hint
 import EthCLLib.TheoremVectors.Tests.ToyFork
 import EthCLLib.TheoremVectors.Tests.Random
 import EthCLLib.TheoremVectors.Tests.Support
@@ -37,14 +38,27 @@ Two drives run the same built win at minimal:
   memo held draw 0.
 - the state beside a second container input: the search still wins
   `.built`, the state slot still carries the builder's bytes, and the
-  memo now holds draw 0's bytes, whose list slot the candidate carries.
+  memo's draw-0 slot holds the side position's bytes alone: `none` at
+  the state position, and at the side position the bytes `sampleAt`
+  produces. The state's draw never evaluates.
+
+A third drive runs the completion path the first two only pin as
+halves: `builtSource` leaves draw 0's slot partial, then `randomSource`
+runs on the same `SearchCtx`, draws at index 0, completes the slot, and
+wins. The hint entry the win records (`Hint.entryOf`) must name the
+completed slot, so its draw key is draw 0.
+
+A fourth pin sits beside drive two: the `sample` and `sampleAt` faces
+agree byte for byte at every position of the toy statement, which is the
+invariant the per-position memo rests on (§9.4, §9.9).
 
 ## Lean idioms annotated
 
 - The drives run inside `run_cmd` with `liftTermElabM` and fold inside
   the reader's telescope scope (`Statement.readIn`), the same shapes the
   stage-4 to stage-6 test modules use.
-- The module imports `Tests/Random.lean` for the `ToyBox` container, the
+- The module imports `Tests/Random.lean` for the `ToyBox` container and
+  `Witness/Hint.lean` for the entry the completion drive reads back, the
   `Tests/Hint.lean` precedent for one test module importing another.
 - The built cache writes under this module's own scratch root, which the
   last pass removes; no other test's cache tree sees the entries.
@@ -90,6 +104,13 @@ def toyBuiltFun2 (b : Tests.Random.ToyBox)
 state, so the built source's draw guard keeps the draw. -/
 theorem toyBuiltThm2 (b : Tests.Random.ToyBox)
     (xs : SizzLean.Repr.SSZList UInt64 4) (_h : b.tag < 100) :
+    toyBuiltFun2 b xs = b.tag := rfl
+
+/-- The completion drive's theorem: the hypothesis reads the drawn
+container and holds of every draw, so the random source's first draw
+wins and the slot that win completes is draw 0's. -/
+theorem toyBuiltThm3 (b : Tests.Random.ToyBox)
+    (xs : SizzLean.Repr.SSZList UInt64 4) (_h : b.tag ≤ b.tag) :
     toyBuiltFun2 b xs = b.tag := rfl
 
 end EthCLLib.TheoremVectors.Tests.BuiltDrive
@@ -171,21 +192,104 @@ run_cmd do
         | .error e =>
           throwError s!"toyBuiltThm2: the built bytes did not decode: \
             {repr e}"
-        -- the guard kept the draw: the memo holds exactly draw 0, and
-        -- the candidate's list slot carries its bytes
+        -- the guard kept the side draw: the memo holds exactly draw 0,
+        -- the state position's entry is `none`, and the side position's
+        -- entry is the bytes `sampleAt` produces, which the candidate's
+        -- list slot carries
         let memo ← sctx.drawMemo.get
         unless memo.size == 1 && memo[0]!.isSome do
           throwError s!"toyBuiltThm2: the draw memo holds {memo.size} \
             slots, expected one drawn slot"
         let seed := theorem_vectors.seed.get (← getOptions)
         let size := theorem_vectors.randomSize.get (← getOptions)
-        unless memo[0]! == some (probe.sample seed size) do
-          throwError "toyBuiltThm2: the memo's entry is not draw 0"
-        unless a[1]! == (memo[0]!.getD #[]).getD 1 emptyBytes do
+        -- the two sample faces agree byte for byte at every position,
+        -- the invariant the per-position draw rests on
+        let full := probe.sample seed size
+        for i in [0:full.size] do
+          unless probe.sampleAt seed size i == full[i]! do
+            throwError s!"toyBuiltThm2: sampleAt {i} disagrees with the \
+              sample face at that position"
+        -- past the inputs the per-position face answers the empty bytes
+        unless probe.sampleAt seed size full.size == emptyBytes do
+          throwError "toyBuiltThm2: sampleAt past the inputs did not \
+            answer the empty bytes"
+        let slot := memo[0]!.getD #[]
+        unless slot[0]?.join.isNone do
+          throwError "toyBuiltThm2: the memo holds bytes for the state \
+            position; the built draw must sample the side positions alone"
+        unless slot[1]?.join == some (probe.sampleAt seed size 1) do
+          throwError "toyBuiltThm2: the memo's side entry is not draw 0's \
+            bytes at position 1"
+        unless a[1]! == probe.sampleAt seed size 1 do
           throwError "toyBuiltThm2: the list slot does not carry the \
             drawn bytes"
       | .error f =>
         throwError s!"toyBuiltThm2: the built source found nothing: \
+          {repr f}"
+    -- ── drive three, the completion path: the built source leaves draw
+    -- 0's slot partial, a random win on the same context completes it,
+    -- and the hint entry the win records names the completed slot's
+    -- draw key (§9.4, §9.8)
+    Statement.readIn binding
+      `EthCLLib.TheoremVectors.Tests.BuiltDrive.toyBuiltThm3 fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"toyBuiltThm3: expected one case, got {cases.size}"
+      let c := cases[0]!
+      let (info, probe) ←
+        match ← Probe.ofStatement binding .minimal ctx cases #[] with
+        | .ok r => pure r
+        | .error e =>
+          throwError s!"toyBuiltThm3: the probe refused to build: {e}"
+      let sctx ← Tests.Support.searchCtxOf toyBuiltBinding .minimal
+        scratchRoot "" stmt ctx info probe
+      let seed := theorem_vectors.seed.get (← getOptions)
+      let size := theorem_vectors.randomSize.get (← getOptions)
+      -- the built half: the win leaves draw 0's slot partial, the state
+      -- position `none`, the side position `some`
+      match ← searchCase #[builtSource] sctx stmt c with
+      | .ok (_, won) =>
+        unless won == .built do
+          throwError s!"toyBuiltThm3: expected a `.built` win, got \
+            {won.tag}"
+      | .error f =>
+        throwError s!"toyBuiltThm3: the built source found nothing: \
+          {repr f}"
+      -- the random half on the same context: its draw at index 0
+      -- completes the slot, and the always-true read lets that draw win
+      match ← searchCase #[randomSource] sctx stmt c with
+      | .ok (a, won) =>
+        unless won == .random do
+          throwError s!"toyBuiltThm3: expected a `.random` win, got \
+            {won.tag}"
+        -- the completed slot: the state position holds bytes now, and
+        -- the side position's entry is unchanged
+        let memo ← sctx.drawMemo.get
+        unless memo.size ≥ 1 && memo[0]!.isSome do
+          throwError "toyBuiltThm3: the draw memo lost draw 0's slot"
+        let slot := memo[0]!.getD #[]
+        unless slot[0]?.join.isSome do
+          throwError "toyBuiltThm3: draw 0's state position is still \
+            empty; the random draw did not complete the slot"
+        unless slot[1]?.join == some (probe.sampleAt seed size 1) do
+          throwError "toyBuiltThm3: draw 0's side entry changed under \
+            the random draw"
+        -- the hint entry the win records: `findDrawIndex` matches the
+        -- completed slot, so the draw key is draw 0
+        let some e ← Hint.entryOf sctx stmt c a won seed size
+          (Hint.fingerprint stmt.thm info)
+          | throwError "toyBuiltThm3: the random win produced no hint \
+            entry; the completed slot did not match"
+        unless e.source == .random do
+          throwError s!"toyBuiltThm3: the entry names {e.source.tag}, \
+            expected random"
+        unless e.seed == some seed && e.size == some size &&
+            e.draw == some 0 do
+          throwError s!"toyBuiltThm3: the draw key is not the completed \
+            slot's: {repr e.seed} {repr e.size} {repr e.draw}"
+      | .error f =>
+        throwError s!"toyBuiltThm3: the random source found nothing: \
           {repr f}"
 
 -- the scratch tree goes away

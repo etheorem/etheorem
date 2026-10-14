@@ -401,15 +401,16 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
       return none
     -- the entry's key samples directly, never through the run's memo:
     -- the memo assumes the run's own seed and size, and the entry's may
-    -- differ (§9.8)
-    let drawn : Array (Nat × ByteArray) ← do
+    -- differ (§9.8). The side containers draw per position through the
+    -- probe's `sampleAt` face, so the replay never samples the state
+    -- position's draw (§9.9), whatever preset the entry replays at.
+    let drawn : Array (Nat × ByteArray) :=
       match e.seed, e.size, e.draw with
       | some seed, some size, some draw =>
-        let raw := ctx.probe.sample (seed + draw) size
-        pure ((Array.range stmt.inputs.size).filterMap fun i =>
+        (Array.range stmt.inputs.size).filterMap fun i =>
           if i == statePos || (stmt.scalarKinds[i]? |>.join).isSome then none
-          else some (i, raw.getD i emptyBytes))
-      | _, _, _ => pure #[]
+          else some (i, ctx.probe.sampleAt (seed + draw) size i)
+      | _, _, _ => #[]
     let builtBytes ← Built.cachedBytes ctx name k
     let mut a : Array ByteArray := #[]
     for i in [0:stmt.inputs.size] do
@@ -433,18 +434,25 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
 
 /-- The draw index whose raw bytes the winning assignment carries at the
 container positions, found in the search's draw memo (§9.4). The memo
-holds every draw of the theorem's run, and a draw is a pure function of
-the seed, the size, and the index, so the index is the hint's replay
-key. The caller reads the memo and runs this before the shrink, whose
-candidates the memo does not hold. -/
-private def findDrawIndex (slots : Array (Option (Array ByteArray)))
+holds every draw of the theorem's run, one `Option ByteArray` per
+sampled position. A draw is a pure function of the seed, the size, the
+index, and the position, so the index is the hint's replay key. A
+slot qualifies only when it holds bytes for every container position and
+they all match. The random source samples every container position of
+its draws from index 0 up, so the winning slot is complete by the time a
+random win exists. A slot with a gap is not the winner's (§9.4). The
+caller reads the memo and runs this before the shrink, whose candidates
+the memo does not hold. -/
+private def findDrawIndex (slots : Array (Option (Array (Option ByteArray))))
     (containers : Array Nat) (a : Assignment) : Option Nat :=
   slots.findIdx? fun slot? =>
     match slot? with
     | none => false
     | some raw =>
       containers.all fun i =>
-        (raw.getD i emptyBytes) == (a.getD i emptyBytes)
+        match raw[i]? with
+        | some (some b) => b == (a.getD i emptyBytes)
+        | _ => false
 
 /-- The scalar literals of a winning assignment (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8):
 one entry per scalar input, read back from the candidate's wire bytes

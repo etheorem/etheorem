@@ -16,9 +16,12 @@ lift to the flagged `outOfBounds` bucket (§13.5).
 
 The conclusion shapes are the reader's run forms. `toyRunOk` states
 `act.run (pureState pre) = .ok (ret, pureState post)` (form 2), with the
-pre-state the theorem's first value binder and the post-state a term over
+pre-state a state-typed value binder and the post-state a term over
 the binders alone, which is what §7.3's match requires. `toyRunError`
-states the error form (form 4). Beside the clean fixtures, the module
+states the error form (form 4). Two `runPure`-form theorems beside them
+carry the value-level readings: `toyRunPureOkSecond` states form 3 over
+two state binders and runs on the second, which pins §7.3's type rule,
+and `toyRunPureError` states form 5. Beside the clean fixtures, the module
 holds the two disagreement fixtures the stage-7 pins drive
 (`THEOREM_VECTORS_ARCHITECTURE.md` §18): `toyWrongRunOk`, whose compiled
 implementation rejects where the kernel's body returns `.ok`, and
@@ -45,7 +48,7 @@ set_option autoImplicit false
 open SizzLean (SSZRepr)
 open SizzLean.Cache
 open EthCLLib.Spec (HasherTag arrGetIdx IndexError)
-open EthCLLib.Proofs (pureState)
+open EthCLLib.Proofs (pureState runPure)
 
 namespace EthCLLib.TheoremVectors.Tests.ToyRun
 
@@ -96,6 +99,21 @@ def toyIndexMiss [HasherTag] (i : Nat) :
 rejects with `IndexError.indexError 5 1`. -/
 theorem toyIndexMissRun [HasherTag] (s : ToyState) :
     (toyIndexMiss 5).run (pureState s) = .error (IndexError.indexError 5 1) :=
+  rfl
+
+/-- The `runPure`-form `.runOk` reading over two state binders (§7.3,
+form 3): the run's store is the second binder, `s`, and the first one,
+`_other`, threads beside it untouched. §7.3's type rule picks the store
+whatever the binder's position; the Fulu balance theorems state the
+same shape over two `BeaconState` binders. -/
+theorem toyRunPureOkSecond [HasherTag] (_other s : ToyState) :
+    runPure (toySetBal 42) s = .ok ((), { s with bal := 42 }) :=
+  rfl
+
+/-- The `runPure`-form `.runError` reading (§7.3, form 5): the error
+carries no post-state, and the store arrives as the plain binder. -/
+theorem toyRunPureError [HasherTag] (s : ToyState) :
+    runPure toyFail s = .error "boom" :=
   rfl
 
 /-! ## The disagreement fixtures (§18) -/

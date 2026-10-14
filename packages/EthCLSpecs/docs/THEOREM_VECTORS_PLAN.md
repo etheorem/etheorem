@@ -601,7 +601,10 @@ documentation names the generator.
 1. `Builders/Fulu.lean` and `Builders/Heze.lean`, with their `builders`
    lists. Fulu has no `upgraded` row.
 2. `Generators/Fulu.lean` and `Generators/Heze.lean`: named lines, seeds,
-   and `skip` lines with reasons for the block-input theorems.
+   and `skip` lines with reasons for the block-input theorems. The Fulu
+   lines need the reader's store rule to identify the run's state by type
+   and the `runPure`-form `.runError` reading, both demanded by the Fulu
+   corpus's two-state theorems.
 3. `Hints/fulu/` and `Hints/heze/` from the update recipe.
 4. `.github/workflows`: the `theorem-vectors` job (§17.3), with the output
    tree uploaded as an artifact.
@@ -614,6 +617,32 @@ documentation names the generator.
 **Acceptance.** `just theorem-vectors` is green for all three forks. CI
 runs the job and fails on a strict skip, a failed agreement check, a failed
 read-back, or a failed pyspec check.
+
+*Outcome.* The acceptance holds. Twenty-five records write from a clean
+run, sixteen Gloas and nine Fulu, and a second clean run replays all
+twenty-five from the committed hints, byte for byte except the `source`
+field. Fulu writes its five balance branch theorems (four at both
+presets through seeds, `no_wrap` at minimal through the random source);
+its two `_run_eq` contracts stay `.eq` skips, their `match` right sides
+claiming no run shape and their boxed output types nothing to record.
+Heze writes none: both in-scope theorems take a `runnerStore` whose type
+is the theorem's own `σ`, and the rest of its corpus sits behind the
+block-input rule and the `FcMap` / `ExecutionEngine` seams, each with
+its reason in the report. The Fulu lines forced two reader changes the
+plan's step 2 now names: the run's state is identified by type, not by
+position, and `.runError` reads the `runPure` form. Two carried items
+from `STAGE8_DEFERRED.md` landed first, so no mainnet line could reach
+the overflow they guard: the built source draws its side containers
+alone, and the random source caps itself at mainnet over a state-typed
+container. The builders landed for all three forks; Fulu's catalog is
+`genesis` and `advanced`, Heze's fills the four rows behind a
+config-tier `hezeForkVersion`, a product-lead decision and a deliberate
+shipped-file exception the notes record. Heze's catalog serves no
+theorem today. CI gains the `theorem-vectors` job with the artifact.
+The design documents moved with the code that changed them: §7.3's
+store rule and form list, §5.3's `Shape` sketch, §9.4's cap sentence,
+§11.1's `sampleAt` face. `STAGE9_DEFERRED.md` closes every finding
+closed or drops it with its reason.
 
 ---
 

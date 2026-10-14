@@ -51,6 +51,7 @@ index and the knobs, so cache hits and rebuilds differ by content. -/
 def toyProbe : Probe where
   check _ _ := true
   sample _ _ := #[]
+  sampleAt _ _ _ := emptyBytes
   shrink _ := #[]
   reads _ _ := #[]
   safe _ _ := #[]

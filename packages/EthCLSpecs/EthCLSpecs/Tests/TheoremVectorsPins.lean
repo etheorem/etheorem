@@ -6,11 +6,16 @@ import EthCLLib.TheoremVectors.Scope
 import EthCLLib.TheoremVectors.Prepare
 import EthCLLib.TheoremVectors.Sampleable
 import EthCLSpecs.Gloas.Interface
+import EthCLSpecs.Fulu.Interface
+import EthCLSpecs.Heze.Interface
 import EthCLSpecs.Proofs.Gloas
 import EthCLSpecs.Proofs.Fulu
 import EthCLSpecs.TheoremVectors.Bindings.Gloas
 import EthCLSpecs.TheoremVectors.Bindings.Fulu
+import EthCLSpecs.TheoremVectors.Bindings.Heze
 import EthCLSpecs.TheoremVectors.Builders.Gloas
+import EthCLSpecs.TheoremVectors.Builders.Fulu
+import EthCLSpecs.TheoremVectors.Builders.Heze
 
 /-!
 # `EthCLSpecs.Tests.TheoremVectorsPins`: the statement reader's known answers
@@ -170,7 +175,7 @@ run_cmd do
       shape := "unsupported"
       blockInputs := #["store"]
       inputs := #["store"] }
-  -- a box lemma names its family in the reason (§7.3, rule 7), which the
+  -- a box lemma names its family in the reason (§7.3, rule 8), which the
   -- report counts apart from the other unsupported reasons; the target
   -- walk reads the conclusion's left side (§7.2), and a box lemma's
   -- conclusion names no function under test, so the target is none
@@ -234,11 +239,14 @@ run_cmd do
     | .error e =>
       throwError s!"pin draw: the drawn bytes did not decode: {repr e}"
 
-/-- One builder pin: serialize the state and decode it through the fork's
-own `stateRoot`, failing with the builder's name when it does not. -/
-private def pinStateRoot (name : String) (bytes : ByteArray) :
-    MetaM Unit := do
-  match EthCLSpecs.Gloas.Interface.gloasInterface.stateRoot bytes with
+/-- One builder pin: serialize the state and decode it through the fork
+interface's own `stateRoot`, failing with the builder's name when it
+does not. The interface is the per-fork value the call site names
+(`gloasInterface`, `fuluInterface`, `hezeInterface`); the per-fork pin
+blocks below stay separate. -/
+private def pinStateRoot (iface : EthCLLib.PySpecTests.ForkInterface)
+    (name : String) (bytes : ByteArray) : MetaM Unit := do
+  match iface.stateRoot bytes with
   | .ok _ => pure ()
   | .error e =>
     throwError s!"pin {name}: the state did not decode through the \
@@ -262,17 +270,46 @@ pin reads; a distinct class from the Gloas one, so the two locals do not
 compete. -/
 @[reducible] private def tvFuluConfig : EthCLSpecs.Fulu.Config :=
   EthCLSpecs.Fulu.minimalConfig
-attribute [local instance] tvMinimalPreset tvMinimalConfig tvVerifyOff tvFuluConfig
+/-- The Fulu preset, beside its config: Fulu's catalog builds under it. -/
+@[reducible] private def tvFuluPreset : EthCLSpecs.Fulu.Preset :=
+  EthCLSpecs.Fulu.minimal
+/-- The Heze preset, for Heze's catalog; the fork's `upgraded` reaches
+the Gloas spine through the `Downgrade` bridge. -/
+@[reducible] private def tvHezePreset : EthCLSpecs.Heze.Preset :=
+  EthCLSpecs.Heze.minimal
+/-- The Heze config, whose `hezeForkVersion` the fork record pins read. -/
+@[reducible] private def tvHezeConfig : EthCLSpecs.Heze.Config :=
+  EthCLSpecs.Heze.minimalConfig
+attribute [local instance] tvMinimalPreset tvMinimalConfig tvVerifyOff
+  tvFuluConfig tvFuluPreset tvHezePreset tvHezeConfig
 
--- The state builders' answers (§9.9, the plan's stage 6, step 7): every
--- catalog builder's state decodes through the fork's own `stateRoot`,
--- `advanced` at the first epoch boundary lands on the boundary slot,
--- `upgraded` carries the fork version and the chain's genesis version as
--- the previous one, and `withQueue` leaves builders in the registry the
--- onboarding step put there and validator deposits in the queue it kept.
--- The instances are the binding's minimal set, which is the preset every
--- record writes at; the pins run at elaboration time through the
--- compiled fork body, the way the draw pin above does.
+-- The state builders' answers (§9.9, the plan's stage 6, step 7, and
+-- stage 9): every fork's catalog runs, each builder's state decodes
+-- through its fork's own `stateRoot`, `advanced` at the first epoch
+-- boundary lands on the boundary slot, `upgraded` carries the fork
+-- version with the previous one its fork boundary gives, and `withQueue`
+-- leaves
+-- builders in the registry the onboarding step put there and validator
+-- deposits in the queue it kept. The instances are each binding's
+-- minimal set, the preset every record writes at; the pins run at
+-- elaboration time, the way the draw pin above does.
+--
+-- Expected noise: this block's checks force the builders' interpreted
+-- evaluation, and every `advanced`/`withQueue` run crosses an epoch
+-- boundary. `process_epoch` reads the per-validator lists
+-- `inactivityScores` (`EpochProcessing.lean`) and the participation
+-- flags (`Accessors.lean`, `getUnslashedParticipatingIndices`) with
+-- `!`, and the `genesis` builder leaves those lists at `default`,
+-- empty. Each read past the end prints one `PANIC at outOfBounds` line,
+-- answers `default`, and drops the write-back, so the built states
+-- carry the empty lists through. The pins ask for a strict decode and
+-- coarse shape only, which the empty lists satisfy, and the committed
+-- built hints replay through the same builders, so the answers this
+-- block checks are the ones the generator records. Sizing the lists in
+-- `genesis` would change every built state's bytes and churn the hints,
+-- so the block leaves the builders alone. The count scales with the
+-- registry length times the epoch boundaries the grid's slots cross;
+-- the `just theorem-vectors` recipe banners it.
 open EthCLLib.Spec in
 run_cmd do
   liftTermElabM do
@@ -290,7 +327,8 @@ run_cmd do
     -- epoch
     let stG := EthCLSpecs.TheoremVectors.Builders.Gloas.genesis
       { validators := 8, balance := 32000000000 }
-    pinStateRoot "genesis" (SizzLean.SSZ.serialize stG)
+    pinStateRoot EthCLSpecs.Gloas.Interface.gloasInterface "genesis"
+      (SizzLean.SSZ.serialize stG)
     unless stG.validators.val.size == 8 &&
         (stG.validators.val.all fun v =>
           v.activationEpoch == EthCLSpecs.Gloas.Const.genesisEpoch) do
@@ -300,7 +338,8 @@ run_cmd do
     -- reads the slot; `sszGet` reads a box.
     let stA := EthCLSpecs.TheoremVectors.Builders.Gloas.advanced
       { validators := 8, slot := boundary }
-    pinStateRoot "advanced" (SizzLean.SSZ.serialize stA)
+    pinStateRoot EthCLSpecs.Gloas.Interface.gloasInterface "advanced"
+      (SizzLean.SSZ.serialize stA)
     unless stA.slot == UInt64.ofNat boundary do
       throwError s!"pin advanced: slot is {stA.slot}, expected {boundary}"
     -- `upgraded`: the fork version is the config's, and the previous
@@ -308,7 +347,8 @@ run_cmd do
     -- config names
     let stU := EthCLSpecs.TheoremVectors.Builders.Gloas.upgraded
       { validators := 8, slot := boundary }
-    pinStateRoot "upgraded" (SizzLean.SSZ.serialize stU)
+    pinStateRoot EthCLSpecs.Gloas.Interface.gloasInterface "upgraded"
+      (SizzLean.SSZ.serialize stU)
     unless stU.forkData.currentVersion ==
         EthCLSpecs.Gloas.Const.gloasForkVersion do
       throwError "pin upgraded: the fork version is not the config's"
@@ -321,7 +361,8 @@ chain's genesis fork version"
     -- balance, two validator deposits stayed queued
     let stQ := EthCLSpecs.TheoremVectors.Builders.Gloas.withQueue
       { validators := 16, slot := 40, queue := 4 }
-    pinStateRoot "withQueue" (SizzLean.SSZ.serialize stQ)
+    pinStateRoot EthCLSpecs.Gloas.Interface.gloasInterface "withQueue"
+      (SizzLean.SSZ.serialize stQ)
     unless stQ.builders.val.size == 2 do
       throwError s!"pin withQueue: {stQ.builders.val.size} builders in the \
         registry, expected two"
@@ -330,5 +371,102 @@ chain's genesis fork version"
     unless stQ.pendingDeposits.val.size == 2 do
       throwError s!"pin withQueue: {stQ.pendingDeposits.val.size} deposits \
         stayed queued, expected two"
+
+    -- ── Fulu's catalog answers (§9.9): the base fork's two rows. The
+    -- boundary read goes through the framework's own face, so a silent
+    -- fallback to 8 cannot hide a broken read there either.
+    let fulu : ForkBinding ←
+      readBinding (`EthCLSpecs.TheoremVectors.Bindings.Fulu.fulu)
+    unless (← Built.epochBoundaryOf fulu .minimal) == 8 do
+      throwError "pin epoch boundary: fulu minimal is not 8"
+    let fuluBoundary : Nat := EthCLSpecs.Fulu.Const.slotsPerEpoch
+    -- `genesis`: decodes, every validator is active from the genesis
+    -- epoch, and the fork record names the chain's genesis version on
+    -- both sides, Fulu being the base fork
+    let stGF := EthCLSpecs.TheoremVectors.Builders.Fulu.genesis
+      { validators := 8, balance := 32000000000 }
+    pinStateRoot EthCLSpecs.Fulu.Interface.fuluInterface "fulu genesis"
+      (SizzLean.SSZ.serialize stGF)
+    unless stGF.validators.val.size == 8 &&
+        (stGF.validators.val.all fun v =>
+          v.activationEpoch == EthCLSpecs.Fulu.Const.genesisEpoch) do
+      throwError "pin fulu genesis: the registry is not eight active \
+        validators"
+    unless stGF.forkData.previousVersion == stGF.forkData.currentVersion &&
+        stGF.forkData.currentVersion ==
+          EthCLSpecs.Fulu.Const.genesisForkVersion do
+      throwError "pin fulu genesis: the fork record does not name the \
+        chain's genesis version on both sides"
+    -- `advanced` at the first epoch boundary: the slot is the boundary
+    let stAF := EthCLSpecs.TheoremVectors.Builders.Fulu.advanced
+      { validators := 8, slot := fuluBoundary }
+    pinStateRoot EthCLSpecs.Fulu.Interface.fuluInterface "fulu advanced"
+      (SizzLean.SSZ.serialize stAF)
+    unless stAF.slot == UInt64.ofNat fuluBoundary do
+      throwError s!"pin fulu advanced: slot is {stAF.slot}, \
+        expected {fuluBoundary}"
+
+    -- ── Heze's catalog answers (§9.9): the same four rows Gloas walks.
+    -- The boundary read goes through the framework's own face.
+    let heze : ForkBinding ←
+      readBinding (`EthCLSpecs.TheoremVectors.Bindings.Heze.heze)
+    unless (← Built.epochBoundaryOf heze .minimal) == 8 do
+      throwError "pin epoch boundary: heze minimal is not 8"
+    let hezeBoundary : Nat := EthCLSpecs.Heze.Const.slotsPerEpoch
+    -- `genesis`: decodes, every validator is active from the genesis
+    -- epoch, and the fork record names the config's `hezeForkVersion` on
+    -- both sides, the seam the catalog reads
+    let stGH := EthCLSpecs.TheoremVectors.Builders.Heze.genesis
+      { validators := 8, balance := 32000000000 }
+    pinStateRoot EthCLSpecs.Heze.Interface.hezeInterface "heze genesis"
+      (SizzLean.SSZ.serialize stGH)
+    unless stGH.validators.val.size == 8 &&
+        (stGH.validators.val.all fun v =>
+          v.activationEpoch == EthCLSpecs.Heze.Const.genesisEpoch) do
+      throwError "pin heze genesis: the registry is not eight active \
+        validators"
+    unless stGH.forkData.previousVersion == stGH.forkData.currentVersion &&
+        stGH.forkData.currentVersion ==
+          EthCLSpecs.Heze.Const.hezeForkVersion do
+      throwError "pin heze genesis: the fork record does not name the \
+        config's heze version on both sides"
+    -- `advanced` at the first epoch boundary: the slot is the boundary
+    let stAH := EthCLSpecs.TheoremVectors.Builders.Heze.advanced
+      { validators := 8, slot := hezeBoundary }
+    pinStateRoot EthCLSpecs.Heze.Interface.hezeInterface "heze advanced"
+      (SizzLean.SSZ.serialize stAH)
+    unless stAH.slot == UInt64.ofNat hezeBoundary do
+      throwError s!"pin heze advanced: slot is {stAH.slot}, \
+        expected {hezeBoundary}"
+    -- `upgraded`: the current version is the config's Heze version, and
+    -- the previous version is the Gloas version the pre-state carries
+    let stUH := EthCLSpecs.TheoremVectors.Builders.Heze.upgraded
+      { validators := 8, slot := hezeBoundary }
+    pinStateRoot EthCLSpecs.Heze.Interface.hezeInterface "heze upgraded"
+      (SizzLean.SSZ.serialize stUH)
+    unless stUH.forkData.currentVersion ==
+        EthCLSpecs.Heze.Const.hezeForkVersion do
+      throwError "pin heze upgraded: the fork version is not the \
+        config's"
+    unless stUH.forkData.previousVersion ==
+        EthCLSpecs.Gloas.Const.gloasForkVersion do
+      throwError "pin heze upgraded: the previous version is not the \
+        Gloas version the pre-state carries"
+    -- `withQueue` at the grid's queue step, the table's literal slot
+    -- 40: the same knobs the Gloas pin runs, so the same two builder
+    -- deposits reach the registry and two validator deposits stay queued
+    let stQH := EthCLSpecs.TheoremVectors.Builders.Heze.withQueue
+      { validators := 16, slot := 40, queue := 4 }
+    pinStateRoot EthCLSpecs.Heze.Interface.hezeInterface "heze withQueue"
+      (SizzLean.SSZ.serialize stQH)
+    unless stQH.builders.val.size == 2 do
+      throwError s!"pin heze withQueue: {stQH.builders.val.size} builders \
+        in the registry, expected two"
+    unless stQH.builders.val.all fun b => b.balance == 32000000000 do
+      throwError "pin heze withQueue: a builder's balance is not the \
+        deposit's"
+    unless stQH.pendingDeposits.val.size == 2 do
+      throwError s!"pin heze withQueue: {stQH.pendingDeposits.val.size} \
+        deposits stayed queued, expected two"
 
 end EthCLSpecs.Tests.TheoremVectorsPins

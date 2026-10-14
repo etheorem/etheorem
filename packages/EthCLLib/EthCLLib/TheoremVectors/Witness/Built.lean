@@ -252,15 +252,16 @@ def builtSource : WitnessSource where
     let cp ← casePlanOf ctx stmt c
     -- every other container input draws the random source's draw 0, the
     -- same memo, so a built witness's drawn bytes and a random one's
-    -- agree position by position (§9.9). A statement whose state is the
-    -- only container input draws nothing; the draw's bytes go unused.
-    -- The draw is not free: `drawVector` recurses per element
-    -- (Sampleable.lean), and a mainnet state's fixed vectors, a
-    -- 65536-element `randao_mixes` and 8192-element roots, overflow the
-    -- interpreter's recursion cap. A state-only statement must never
-    -- draw. The residual case, a mainnet state beside another container
-    -- input, still draws and still hits the cap; no corpus theorem
-    -- reaches it.
+    -- agree position by position (§9.9). The draw samples the side
+    -- positions alone, through the probe's per-position `sampleAt` face.
+    -- Position `i`'s bytes depend only on the seed, the size, and `i`,
+    -- so the side bytes are the `sample` face's entries, and the state's
+    -- draw never evaluates. A statement whose state is the only
+    -- container input draws nothing. The draw is not free:
+    -- `drawVector` recurses per element (Sampleable.lean), and a mainnet
+    -- state's fixed vectors, a 65536-element `randao_mixes` and
+    -- 8192-element roots, overflow the interpreter's recursion cap. No
+    -- grid step may sample the state position, whatever sits beside it.
     let seed := theorem_vectors.seed.get (← getOptions)
     let size := theorem_vectors.randomSize.get (← getOptions)
     let otherPos : Array Nat := cp.containers.filter (· != statePos)
@@ -268,8 +269,8 @@ def builtSource : WitnessSource where
       if otherPos.isEmpty then
         pure #[]
       else do
-        let raw0 ← drawAt ctx seed size 0
-        pure (otherPos.map fun i => (i, raw0.getD i emptyBytes))
+        let raw0 ← drawAt ctx seed size 0 otherPos
+        pure (otherPos.zip raw0)
     -- the cache reads carry the run's stamp (§9.9)
     let mut built : Nat := 0
     for step in [0:steps] do
@@ -284,7 +285,7 @@ def builtSource : WitnessSource where
         let drawn := others.push (statePos, bytes)
         -- `0`: no coupled-values cap, the built registries hold what
         -- the knobs built, and the safe gate skips out-of-range points
-        match ← tryDraw ctx stmt c 0 cp.containerIds cp.plan stmt.scalarKinds
+        match ← tryDraw ctx stmt c 0 cp.plan stmt.scalarKinds
             cp.coupled drawn with
         | some a => return .candidate a
         | none => pure ()

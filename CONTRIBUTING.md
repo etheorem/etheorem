@@ -229,6 +229,21 @@ about `Heze.f`, and the per-fork directory is what keeps the two claims apart.
 6. **Read the report.** `just proof-coverage` prints the tiers per fork, the
    axioms every theorem rests on, and warnings where the ledger and the tags
    disagree. `just proof-coverage-check` is the exact command CI runs.
+7. **Expect the theorem vectors.** The generator reads every public theorem of
+   the fork's proof namespace. `@[characterizes f]` claims the theorem states
+   `f`'s contract. `@[theorem_vectors]` claims the theorem is a vector target.
+   The `tagged` clause selects tagged theorems and runs them strict: one that
+   wins no vector fails the build, the way a `theorem_vectors!` line does.
+   The fork's generator file
+   (`EthCLSpecs/TheoremVectors/Generators/<Fork>.lean`) decides what runs. A
+   named line selects a theorem, and it can carry a seed or a preset choice.
+   The `characterized` clause runs the search on the contract theorems. The
+   `survey` clause lists the rest with their outcomes in
+   `theorem_vectors/report.md`, with no search. `just theorem-vectors` writes
+   the records. When a witness changes, run `just theorem-vectors-hints-update`
+   and commit the hint diff with the proof.
+   `THEOREM_VECTORS_ARCHITECTURE.md` §14 and `THEOREM_VECTORS_PLAN.md` describe
+   the design.
 
 Three rules the tooling enforces rather than asks for. Committed `sorry` fails
 `just lint`. A proof resting on any axiom outside the allowed classes fails

@@ -62,16 +62,20 @@ reason.
 ## Task 3: the Gloas theorems at both presets
 
 1. **The built source's guarded draw still samples the state when
-   another container input sits beside it.** CARRIED TO STAGE 9. The
-   fix needs a draw that samples the non-state containers alone, a
-   probe-face change, and no corpus theorem reaches the case today.
-   Stage 9's forks must not run a mainnet line whose theorem reaches
-   it before the fix lands.
+   another container input sits beside it.** CLOSED, stage 9. The probe
+   grew a `sampleAt` face, one position's draw, the memo holds bytes per
+   position, and the built source and the built replay pass the side
+   container positions alone, so the state's draw never evaluates. The
+   constraint held: no line ran the case before the fix landed.
+   `IMPLEMENTATION_NOTES.md`, stage 9, records the change.
 
-2. **The random source's own draw loop has no mainnet cap.** CARRIED TO
-   STAGE 9. Same overflow root; no corpus theorem runs the random
-   source at mainnet. A cap or a per-position draw belongs there before
-   a line runs one.
+2. **The random source's own draw loop has no mainnet cap.** CLOSED,
+   stage 9. `randomSource.search` answers `nothing` with a reason that
+   names the cap when the preset is mainnet and a container input's type
+   is the binding's state type, before any draw runs. `Tests/Random.lean`
+   pins both directions and the predicate keying. The Fulu generators
+   were written after the cap, so no line runs the random source at
+   mainnet over a state container.
 
 3. **The guard has no direct toy-level pin, and the fix commit's
    message overstates the toy tests' coverage.** CLOSED, cleanup batch

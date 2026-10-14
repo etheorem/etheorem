@@ -1904,3 +1904,104 @@ builders, the executor's run rows, and the record's error value) against
   Two limits carry in `STAGE8_DEFERRED.md`: a mainnet state beside
   another container input still overflows the draw, and the random
   source's loop has no mainnet cap.
+
+## Theorem vectors, stage 9
+
+- **The reader identifies the run's state by type, and the `runPure`-form
+  `.runError` reading exists.** The binder walk pinned the run's store to
+  the first value binder, and `.runError` had only the `StateT.run`
+  reading, so every reading rejected the Fulu balance theorems: each binds
+  two `BeaconState` values, the run's store is the second, and the five
+  branch theorems state the `runPure` form. The walk now collects every
+  value binder whose type names the binding's `stateType`, and the three
+  old readings accept the equation's store when it is one of them; the new
+  `runErrorRunPure?` reading mirrors `runOkRunPure?` on the error side.
+  The shared predicate `isStateType` moved from `Witness/Source.lean` down
+  to `ForkBinding.lean`, below `Statement.lean` in the import graph, so
+  the reader and the sources keep one definition. The Gloas corpus is
+  unchanged: its run theorems bind one state, in the first position, so
+  the two rules agree on every one of them, and the Gloas records matched
+  the previous build byte for byte. The Fulu report's five branch
+  theorems now read `runOk` and `runError`, survey-listed and unselected
+  until a generator line claims them.
+- **The probe grows a `sampleAt` face, a deviation from §11.1's face
+  table.** `sampleAt : (seed size pos : Nat) → ByteArray` sits beside
+  `sample` and answers one input position's draw alone. A position's
+  bytes depend only on the seed, the size, and the position (`mixHash
+  seed (i + 1)` inside `sampleOne`). The assembler emits both faces from
+  the same per-position terms, so `sample s size` at a position equals
+  `sampleAt s size i` for it byte for byte, and `Tests/BuiltDrive.lean`
+  pins the agreement. The architecture's §11.1 table gained the face with
+  the reader change at the top of this section.
+- **The draw memo holds bytes per position, and the built source draws
+  the side containers alone.** §9.4 memoized a draw as one array of
+  every position's bytes, and the built source read draw 0 out of it.
+  That full draw sampled the state whenever a container sat beside the
+  state, the limit `STAGE8_DEFERRED.md` carried. The memo's slot now
+  holds one `Option ByteArray` per input position, `none` for a position
+  no call requested. `drawAt` takes the caller's positions and samples
+  those alone. The built source and the built hint's replay pass the
+  side container positions, so the built path never samples the state
+  position. The random source keeps sampling every container position of
+  its draws, and the seed arithmetic is unchanged, so every byte a record
+  carries stays the same. The committed records tree is byte-identical
+  before and after the change.
+- **The built hint's replay samples per position through `sampleAt`.**
+  The `.built` arm of `Hint.rebuild` drew a full `sample` array for the
+  entry's draw key and read the side positions out of it, the same
+  state-sampling cost the search path carried. It now draws each side
+  container position through the new face. The replay still samples
+  directly from the entry's key, never through the run's memo (§9.8's
+  rule). The committed `isValidIndexedPayloadAttestation_eq_true_iff_checks`
+  built entries carry draw keys, so the corpus exercises the path, and
+  their records replayed byte-identically. No corpus theorem reaches a
+  mainnet state beside a side container, so the overflow case itself
+  still has no run behind it; the toy pins in `Tests/BuiltDrive.lean`
+  carry it until one does.
+- **The random source caps itself at mainnet over a state-typed
+  container input.** This fixes the random-source draw item, the second
+  task-3 item `STAGE8_DEFERRED.md` carried to stage 9. A draw keeps a
+  fixed-length vector's preset length, and a mainnet `BeaconState`'s
+  65536-element `randao_mixes` overflows the interpreter's recursion
+  cap inside `drawVector`. One draw would fail the elaboration and the
+  build. After the case plan, `randomSource.search` answers
+  `nothing` with a reason that names the cap when the preset is mainnet
+  and a container input's type is the binding's state type, before any
+  draw runs. Mainnet lines whose container inputs are all size-capped
+  lists still draw, and minimal is unchanged. The architecture's §9.4
+  gained the cap's sentence with the reader change at the top of this
+  section. `Tests/Random.lean` pins
+  the two directions over the toy state container, and the same
+  statement over a `Nat` state type at mainnet.
+- **`hezeForkVersion` joins the config tier, a shipped-file exception.**
+  The tier table in `scripts/constant_tiers.json` already classifies
+  upstream `HEZE_FORK_VERSION` as Config-tier, and the product lead took
+  the option to model it that way, so the `[Config]`-generic builder
+  bodies of `TheoremVectors/Builders/Heze.lean` can write the fork
+  record. `Heze/Constants.lean` carries the field beside its pinned
+  plain defs, which stay untouched: the interface keeps passing
+  `hezeForkVersionMinimal` / `hezeForkVersionMainnet` to the runner. Two
+  `#guard`s pin the tier value's bytes to each plain def at the pinned
+  config, so a drift between the two spellings is a build failure.
+- **The Fulu catalog is the identity layer's one home, and Gloas's
+  `upgraded` calls it.** The index-derived helpers (`pubkeyOf`,
+  `credentialsOf`, `builderPubkeyBase`, `builderPubkeyOf`) moved from
+  private copies in `Builders/Gloas.lean` to public declarations in
+  `Builders/Fulu.lean`, the module every fork's catalog names. Gloas's
+  catalog lost its private Fulu block and its `upgraded` builds on the
+  public `Builders.Fulu.advanced`. Gloas's builder output bytes are
+  unchanged; the built cache rebuilt once on the module stamp change and
+  every committed built hint replayed byte-identically.
+- **Heze's catalog fills the four rows.** `genesis` writes the config's
+  `hezeForkVersion` on both sides of the fork record, `advanced` runs the
+  inherited `processSlots`, `upgraded` sends `Builders.Gloas.advanced`
+  through `upgradeToHeze` under the `Downgrade` bridge, and `withQueue`
+  drains pending deposits through the inherited
+  `onboardBuildersFromPendingDeposits` with the even/odd
+  builder/validator deposit split Gloas's row runs. The version seam
+  above is what let the `[Config]`-generic bodies write the fork record.
+  The `genesis` rows keep one version on both sides of the fork record,
+  the fork's own at Gloas and Heze and the chain's genesis version at
+  Fulu; the pinned pyspec's `create_genesis_state` names the parent
+  fork's version as the previous one, so the docstrings name the
+  builder's choice instead of claiming the helper's authority.

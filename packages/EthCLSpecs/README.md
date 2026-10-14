@@ -116,6 +116,35 @@ just ethcl-pyspec-full                # the full sweep: both presets, all three 
 
 CI runs the dev-subset smoke gate. The full multi-preset sweep runs on demand.
 
+## Theorem vectors
+
+The theorem-vector generator turns the proofs under `EthCLSpecs.Proofs` into
+executable test vectors. Each fork's generator file
+(`EthCLSpecs/TheoremVectors/Generators/<Fork>.lean`) selects theorems by name
+and through discovery clauses. The search tries to find a concrete input for
+each theorem the generator file runs. The record states what the compiled
+implementation computes at that input. Records land under `theorem_vectors/`,
+which is gitignored. CI runs the recipe as its `theorem-vectors` job and
+uploads the output tree as an artifact.
+
+```bash
+just theorem-vectors               # generate, render, check, report
+just theorem-vectors-clean         # remove the output tree, force a fresh run
+just theorem-vectors-hints-update  # copy new hints over the committed ones
+```
+
+A search can be slow, so a run records how it found each witness in a hint.
+The committed hints live in `EthCLSpecs/TheoremVectors/Hints/`, and the next
+build replays them without searching. When a witness changes, run
+`just theorem-vectors-hints-update` and commit the hint diff.
+
+`theorem_vectors/report.md` lists every public theorem of each fork with its
+outcome, so it shows which proofs produce vectors and why the rest do not.
+The design of record is
+[`docs/THEOREM_VECTORS_ARCHITECTURE.md`](docs/THEOREM_VECTORS_ARCHITECTURE.md).
+[`docs/THEOREM_VECTORS_PLAN.md`](docs/THEOREM_VECTORS_PLAN.md) sequences the
+stages that built it.
+
 ## Verification status
 
 Both tables are generated from the built `.olean`s by

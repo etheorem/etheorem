@@ -15,8 +15,9 @@ on:
 # can't drift on what they actually run. Adding or renaming a recipe
 # updates both sides at once. The only steps that don't go through
 # `just` are toolchain installers (elan, uv, python, the `just`
-# binary itself) and the `actions/cache` declaration, which is a
-# GitHub Actions concern with no local-dev analogue.
+# binary itself) and the `actions/cache` / `actions/upload-artifact`
+# declarations, which are GitHub Actions concerns with no local-dev
+# analogue.
 
 jobs:
   lint:
@@ -267,3 +268,45 @@ jobs:
           auto-config: false
       - name: Build the fast≡reference equivalence proof (mathlib cache + build)
         run: just poseidon-proofs
+
+  theorem-vectors:
+    # Theorem-test-vector generation, end to end (THEOREM_VECTORS_ARCHITECTURE.md
+    # §17.3). `needs: [ethcl]` places the job after the `ethcl` build, so a
+    # build break surfaces there first. The recipe rebuilds everything it
+    # needs: the two generator libraries, the exe, then render + check +
+    # report. So the job needs no `build-args`. `auto-config: false` installs
+    # the toolchain only; the recipe drives the build (the `poseidon-proofs`
+    # job is the precedent). The native steps mirror the `ethcl` job's.
+    # The generators link the same FFI families, and the
+    # `consensus` doctor profile skips the execution-only probes. Hints stay
+    # in the default `use` mode. A stale or failed hint does not fail the
+    # job; the report lists it. A job that wants to catch unreviewed witness
+    # churn would run with `THEOREM_VECTORS_HINTS=require` instead. The
+    # output tree is gitignored, so the artifact is the only way to read a
+    # run's vectors and report per commit.
+    needs: [ethcl]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v3
+      - name: Install nasm
+        # See the `ethcl` job.
+        run: sudo apt-get install -y nasm
+      - name: Verify build-time native deps
+        # See the `ethcl` job.
+        run: just doctor-native consensus
+      - name: Vendor native crypto sources
+        # See the `ethcl` job.
+        run: just hazmat-sha256-vendor hazmat-bls-vendor hazmat-kzg-vendor
+      # Pinned to the commit `v1` resolves to as of 2026-05-10. Bump deliberately.
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: '.'
+          auto-config: false
+      - name: Generate the theorem vectors
+        run: just theorem-vectors
+      - name: Upload the vector output tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: theorem-vectors
+          path: packages/EthCLSpecs/theorem_vectors/

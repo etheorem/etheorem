@@ -29,7 +29,11 @@ disagreement constructions live beside the clean fixtures in
 `ToyRun.lean`, and this module pins that their miss paths
 (`runOkMiss` / `runErrorMiss`, §18) trip the executor's build error:
 a rejecting `.runOk` run, with the run's repr named in the message, and
-a clean `.runError` run.
+a clean `.runError` run. The same drive pins the reader's store rule at
+the toy level (§7.3): the two state binders of `toyRunPureOkSecond` read
+`.runOk` with the second as the store, `toyRunPureError` reads the
+`runPure`-form `.runError`, and a run whose store is a plain value binder
+falls to `.eq`.
 
 The scratch output tree lives under this package's `.lake/build`, so the
 gitignore carries it and the final `run_cmd` removes it.
@@ -90,10 +94,11 @@ private def builtProbe (thm : Name) (binding : ForkBinding)
 the base candidate, run, execute the shape's row (§11.3), write the
 record, read it back, and re-run the probe on the stored bytes
 (`THEOREM_VECTORS_ARCHITECTURE.md` §12.5). Returns the record the round
-trip verified. -/
-private def roundTrip (thm : Name) (dir : System.FilePath) :
-    MetaM VectorRecord := do
-  let binding := EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding
+trip verified. The binding is a parameter: the run-shape drives pass the
+toy run binding, whose state type matches the toy state, so the reader's
+run shapes fire (§7.3). -/
+private def roundTrip (thm : Name) (binding : ForkBinding)
+    (dir : System.FilePath) : MetaM VectorRecord := do
   Statement.readIn binding thm fun ctx => do
     let stmt ← Scope.classify binding ctx.stmt
     let (cases, dropped) ← Prepare.pass stmt
@@ -113,15 +118,25 @@ private def roundTrip (thm : Name) (dir : System.FilePath) :
         instConsts := #[], seedTerms := #[],
         drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
         builtStamp := "", earlierWins := #[] }
-    let won ← match ← searchCase sources searchCtx stmt c with
-      | .ok (a, tag) =>
-        unless tag == WitnessSourceTag.base do
-          throwError s!"{thm}: expected the base source to win"
-        match probe.run a with
-        | .ok r => pure (a, r)
+    -- §9.4: the base source never proposes the binding's state. A
+    -- statement over the state takes the probe's defaults here, the same
+    -- candidate the base source would hand out for a scalar theorem; the
+    -- search's own answers are the other test drives' subject
+    let won ←
+      if baseSource.applies searchCtx stmt c then
+        match ← searchCase sources searchCtx stmt c with
+        | .ok (a, tag) =>
+          unless tag == WitnessSourceTag.base do
+            throwError s!"{thm}: expected the base source to win"
+          match probe.run a with
+          | .ok r => pure (a, r)
+          | .error e => throwError s!"{thm}: the probe failed to run: {e}"
+        | .error failure =>
+          throwError s!"{thm}: the base source found no candidate: {repr failure}"
+      else
+        match probe.run probe.defaults with
+        | .ok r => pure (probe.defaults, r)
         | .error e => throwError s!"{thm}: the probe failed to run: {e}"
-      | .error failure =>
-        throwError s!"{thm}: the base source found no candidate: {repr failure}"
     let (a, r) := won
     let (outVal, errVal) ← Execute.output thm stmt.shape info r
     let some shapeTag := Shape.tag? stmt.shape
@@ -136,6 +151,8 @@ private def roundTrip (thm : Name) (dir : System.FilePath) :
         caseIndex := c.index, side := c.side,
         inputs := inputVals,
         output := outVal, error := errVal,
+        -- the source field is a record-round-trip label here: on the
+        -- defaults branch no source ran, and nothing below reads it
         source := WitnessSourceTag.base }
     -- a record with no output (`.runError`) writes no `output.ssz` (§12.1)
     Record.write dir binding.tag record thm.toString a
@@ -177,9 +194,10 @@ private def expectAgreementFailure (thm : Name) : MetaM Unit := do
 compiled run rejects where the kernel proved `.ok`, so the executor must
 throw, and the message must carry the run's rejection repr beside the two
 byte values (`Execute.lean`'s disagreement print, fed by `runOkMiss`'s
-`errorRepr`). -/
+`errorRepr`). The binding is the toy run binding, whose state type matches
+the toy state, so the reader's run shapes fire (§7.3). -/
 private def expectRunOkMiss (thm : Name) : MetaM Unit := do
-  let binding := EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding
+  let binding := EthCLLib.TheoremVectors.Tests.ToyFork.toyRunBinding
   Statement.readIn binding thm fun ctx => do
     let stmt ← Scope.classify binding ctx.stmt
     let (cases, _) ← Prepare.pass stmt
@@ -211,9 +229,10 @@ private def expectRunOkMiss (thm : Name) : MetaM Unit := do
 /-- The `.runError` ran-clean pin (§18): the compiled run returns cleanly
 where the kernel proved `.error`, so the executor must throw for it too.
 The miss assembler `runErrorMiss` keeps `agree := false` and carries no
-repr, so the message names none. -/
+repr, so the message names none. The binding is the toy run binding, for
+the reader's run shapes as above. -/
 private def expectRunErrorMiss (thm : Name) : MetaM Unit := do
-  let binding := EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding
+  let binding := EthCLLib.TheoremVectors.Tests.ToyFork.toyRunBinding
   Statement.readIn binding thm fun ctx => do
     let stmt ← Scope.classify binding ctx.stmt
     let (cases, _) ← Prepare.pass stmt
@@ -243,19 +262,23 @@ open EthCLLib.TheoremVectors.Tests.Probe in
 run_cmd do
   liftTermElabM do
     let dir : System.FilePath := ".lake/build/test-theorem-vectors-probe"
-    let eqRecord ← roundTrip `EthCLLib.TheoremVectors.Tests.Probe.toyEq dir
+    let toyBinding := EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding
+    let toyRunBinding := EthCLLib.TheoremVectors.Tests.ToyFork.toyRunBinding
+    let eqRecord ← roundTrip `EthCLLib.TheoremVectors.Tests.Probe.toyEq toyBinding dir
     unless eqRecord.output.any fun v => v.value == .scalar "3" do
       throwError "toyEq: expected the scalar output 3"
     unless eqRecord.inputs.any fun v => v.value == .scalar "0" do
       throwError "toyEq: expected the scalar input 0"
-    let boundRecord ← roundTrip `EthCLLib.TheoremVectors.Tests.Probe.toyBound dir
+    let boundRecord ← roundTrip `EthCLLib.TheoremVectors.Tests.Probe.toyBound toyBinding dir
     unless boundRecord.shape == .bound do
       throwError s!"toyBound: expected the bound shape, got {boundRecord.shape.tag}"
     unless boundRecord.output.any fun v => v.value == .scalar "3" do
       throwError "toyBound: expected the literal output 3"
     -- the run shapes (§11.3): `.runOk` records the post-state as an SSZ
-    -- value with its root, `.runError` the error's repr with no output
-    let okRecord ← roundTrip `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunOk dir
+    -- value with its root, `.runError` the error's repr with no output.
+    -- The drives run under the toy run binding: its state type is the toy
+    -- state, so the reader's run shapes fire (§7.3)
+    let okRecord ← roundTrip `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunOk toyRunBinding dir
     unless okRecord.shape == .runOk do
       throwError s!"toyRunOk: expected the runOk shape, got {okRecord.shape.tag}"
     unless okRecord.error.isNone do
@@ -276,7 +299,7 @@ run_cmd do
         (uint64BytesLE 42) do
       throwError "toyRunOk: output.ssz is not the post-state with balance 42"
     let errThm := `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunError
-    let errRecord ← roundTrip errThm dir
+    let errRecord ← roundTrip errThm toyRunBinding dir
     unless errRecord.shape == .runError do
       throwError s!"toyRunError: expected the runError shape, got \
         {errRecord.shape.tag}"
@@ -292,6 +315,25 @@ run_cmd do
     let entries ← errDir.readDir
     unless entries.all fun e => e.fileName != "output.ssz" do
       throwError "toyRunError: the record directory wrote an `output.ssz`"
+    -- the two-state reading through the full pipeline (§11.3): the
+    -- two-state binder theorem runs on the second state, the defaults
+    -- branch fills both inputs, and the recorded post-state is the
+    -- second input's bytes. The Fulu balance theorems state the same
+    -- shape, so the path is the one their generator lines will take
+    let twoRecord ← roundTrip
+      `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunPureOkSecond toyRunBinding dir
+    unless twoRecord.shape == .runOk do
+      throwError s!"toyRunPureOkSecond: expected the runOk shape, got \
+        {twoRecord.shape.tag}"
+    unless twoRecord.inputs.size == 2 do
+      throwError s!"toyRunPureOkSecond: expected two input values, got \
+        {twoRecord.inputs.size}"
+    let some outVal := twoRecord.output
+      | throwError "toyRunPureOkSecond: expected an output value"
+    let .ssz postRoot := outVal.value
+      | throwError "toyRunPureOkSecond: expected an SSZ output value"
+    unless !postRoot.isEmpty do
+      throwError "toyRunPureOkSecond: the output value carries no root"
     -- the strict decodes (§9.3): a corrupt record answers `none`, and the
     -- read-back check reads that as a failed decode
     unless (decodeInput (T := Fin 3) #[uint64BytesLE 5] 0).isNone do
@@ -314,4 +356,37 @@ run_cmd do
     -- the kernel proved `.error` throws as well
     expectRunOkMiss `EthCLLib.TheoremVectors.Tests.ToyRun.toyWrongRunOk
     expectRunErrorMiss `EthCLLib.TheoremVectors.Tests.ToyRun.toyCleanRunError
+    -- the reader's store rule at the toy level (§7.3): the run's state is
+    -- one of the state-typed value binders, and the type identifies it
+    -- whatever the binder's position
+    Statement.readIn toyRunBinding
+        `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunPureOkSecond fun ctx => do
+      let stmt ← Scope.classify toyRunBinding ctx.stmt
+      match stmt.shape with
+      | .runOk _ pre _ _ =>
+        let some second := ctx.inputFvars[1]?
+          | throwError "toyRunPureOkSecond: the statement has no second \
+            input binder"
+        -- the store is the second of the two state binders
+        unless pre == second do
+          throwError "toyRunPureOkSecond: the run's store is not the \
+            second state binder"
+      | _ =>
+        throwError s!"toyRunPureOkSecond: expected the runOk shape, got \
+          {stmt.shape.wire}"
+    Statement.readIn toyRunBinding
+        `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunPureError fun ctx => do
+      let stmt ← Scope.classify toyRunBinding ctx.stmt
+      unless stmt.shape matches .runError _ _ _ do
+        throwError s!"toyRunPureError: expected the runError shape, got \
+          {stmt.shape.wire}"
+    -- the negative: under a binding whose state type is not the toy
+    -- state, the run's store is a plain value binder, the run shapes
+    -- reject, and matching falls to `.eq`
+    Statement.readIn toyBinding
+        `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunOk fun ctx => do
+      let stmt ← Scope.classify toyBinding ctx.stmt
+      unless stmt.shape matches .eq _ _ do
+        throwError s!"toyRunOk at the toy binding: expected the eq \
+          fallback, got {stmt.shape.wire}"
     IO.FS.removeDirAll dir

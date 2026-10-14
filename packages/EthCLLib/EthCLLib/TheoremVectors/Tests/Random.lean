@@ -26,7 +26,11 @@ Build-gate checks for stage 4 (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4, §9.5,
   draws, grounds the hypothesis's container read, and hands the case to
   the loop's check;
 - the shrink (§9.6) reaches a witness whose bytes are smaller than the
-  first draw's, and the check still holds.
+  first draw's, and the check still holds;
+- the mainnet cap (§9.4): a state-typed container input at mainnet
+  answers `nothing` before any draw, the same statement at minimal
+  still draws, and the same statement over a `Nat` state type still
+  draws at mainnet, so the cap keys on the state type alone.
 
 The toy binding's `stateType` is the toy container itself, so the base
 source refuses it the way it refuses the fork's state (§9.4), and the
@@ -84,10 +88,13 @@ def toyBoxBinding : ForkBinding :=
       stateType := `EthCLLib.TheoremVectors.Tests.Random.ToyBox }
 
 /-- The evaluated probe for the drive theorem, with a skip reason turned
-into the test failure it is. -/
-private def builtProbe (ctx : StatementCtx) (cases : Array Case) :
-    MetaM (ProbeInfo × Probe) := do
-  match ← Probe.ofStatement toyBoxBinding .minimal ctx cases #[] with
+into the test failure it is. The theorem binds no preset seam, so the
+probe builds the same at both presets, and both toy bindings declare an
+empty `builders` catalog, so the builder face's state dispatch is the
+empty stub under either one. -/
+private def builtProbe (b : ForkBinding) (ctx : StatementCtx)
+    (cases : Array Case) (p : PresetId) : MetaM (ProbeInfo × Probe) := do
+  match ← Probe.ofStatement b p ctx cases #[] with
   | .ok r => pure r
   | .error e => throwError s!"the probe refused to build: {e}"
 
@@ -106,7 +113,7 @@ run_cmd do
       let (cases, dropped) ← Prepare.pass stmt
       unless cases.size == 1 && dropped.isEmpty do
         throwError s!"expected one prepared case, got {cases.size}"
-      let (info, probe) ← builtProbe ctx cases
+      let (info, probe) ← builtProbe toyBoxBinding ctx cases .minimal
       let drawn1 := probe.sample 7 8
       let drawn2 := probe.sample 7 8
       unless (drawn1.zip drawn2).all fun (a, b) => compareBytes a b do
@@ -149,7 +156,7 @@ run_cmd do
       unless cases.size == 1 do
         throwError s!"toyTwoReads: expected one case, got {cases.size}"
       let c := cases[0]!
-      let (info, probe) ← builtProbe ctx cases
+      let (info, probe) ← builtProbe toyBoxBinding ctx cases .minimal
       -- the defaults leave both reads past an empty drawn list's end: the
       -- gate answers false, and the compiled reads never evaluate
       unless !(probe.safe c.index probe.defaults).all (· == true) do
@@ -172,3 +179,58 @@ run_cmd do
           throwError "toyTwoReads: the winning candidate failed the check"
       | .error f =>
         throwError s!"toyTwoReads: the search found nothing: {repr f}"
+    -- ── the mainnet cap (§9.4): the toy state is the statement's
+    -- container input, so at mainnet the random source answers
+    -- `nothing` before any draw runs, and at minimal the same statement
+    -- still draws
+    Statement.readIn binding
+      `EthCLLib.TheoremVectors.Tests.Random.toyBoxBound fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (cases, _) ← Prepare.pass stmt
+      unless cases.size == 1 do
+        throwError s!"cap drive: expected one case, got {cases.size}"
+      let c := cases[0]!
+      -- the cap direction: mainnet, no draw, the reason names the cap
+      let (infoM, probeM) ← builtProbe toyBoxBinding ctx cases .mainnet
+      let sctxM ← Tests.Support.searchCtxOf binding .mainnet
+        Tests.ToyFork.scratchOutDir "" stmt ctx infoM probeM
+      match ← randomSource.search sctxM stmt c with
+      | .nothing (some r) =>
+        unless r.contains "mainnet cap" do
+          throwError s!"cap drive: the mainnet reason does not name the \
+            cap: {r}"
+      | _ =>
+        throwError "cap drive: expected `.nothing` at mainnet"
+      unless (← sctxM.drawMemo.get).isEmpty do
+        throwError "cap drive: the mainnet cap drew anyway, the memo is \
+          not empty"
+      -- the negative direction: minimal, the same statement draws
+      let (info, probe) ← builtProbe toyBoxBinding ctx cases .minimal
+      let sctx ← Tests.Support.searchCtxOf binding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
+      match ← randomSource.search sctx stmt c with
+      | .candidate a =>
+        unless probe.check c.index a do
+          throwError "cap drive: the minimal draw failed the check"
+      | _ =>
+        throwError "cap drive: expected a draw at minimal"
+      if (← sctx.drawMemo.get).isEmpty then
+        throwError "cap drive: the minimal drive did not draw, the memo \
+          stayed empty"
+      -- the cap keys on the state type alone: the same statement over a
+      -- binding whose state type is `Nat` still draws at mainnet
+      let (infoP, probeP) ← builtProbe Tests.ToyFork.toyBinding ctx cases
+        .mainnet
+      let sctxP ← Tests.Support.searchCtxOf Tests.ToyFork.toyBinding .mainnet
+        Tests.ToyFork.scratchOutDir "" stmt ctx infoP probeP
+      match ← randomSource.search sctxP stmt c with
+      | .candidate a =>
+        if (← sctxP.drawMemo.get).isEmpty then
+          throwError "cap drive: the `Nat` state type's mainnet drive \
+            left the memo empty"
+        unless probeP.check c.index a do
+          throwError "cap drive: the `Nat` state type's draw failed the \
+            check"
+      | _ =>
+        throwError "cap drive: expected a draw at mainnet over the \
+          `Nat` state type"

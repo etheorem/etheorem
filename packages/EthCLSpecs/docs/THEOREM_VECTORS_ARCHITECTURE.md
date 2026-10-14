@@ -446,7 +446,8 @@ inductive Shape where
   reading `runPure act pre = .ok (ret, post)`. One vector; the post-state is
   the output. -/
   | runOk (act pre ret post : Expr)
-  /-- `act.run (pureState pre) = .error err`. One vector with no post-state. -/
+  /-- `act.run (pureState pre) = .error err`, or the `runPure` reading
+  `runPure act pre = .error err`. One vector with no post-state. -/
   | runError (act pre err : Expr)
   /-- Anything else, with the reason. -/
   | unsupported (reason : String)
@@ -653,11 +654,12 @@ After the telescope, the body is matched in this order:
 2. `Eq (StateT.run act (pureState pre)) (Except.ok (ret, pureState post))` → `.runOk`
 3. `Eq (runPure act pre) (Except.ok (ret, post))` → `.runOk`
 4. `Eq (StateT.run act (pureState pre)) (Except.error err)` → `.runError`
-5. `Eq lhs rhs` → `.eq lhs rhs`
-6. `LT.lt lhs b` → `.bound lhs .lt b`; `LE.le lhs b` → `.bound lhs .le b`
-7. anything else → `.unsupported` with the head constant in the reason
+5. `Eq (runPure act pre) (Except.error err)` → `.runError`
+6. `Eq lhs rhs` → `.eq lhs rhs`
+7. `LT.lt lhs b` → `.bound lhs .lt b`; `LE.le lhs b` → `.bound lhs .le b`
+8. anything else → `.unsupported` with the head constant in the reason
 
-Rule 7 names one family: a conclusion whose head is a framework predicate
+Rule 8 names one family: a conclusion whose head is a framework predicate
 under `EthCLLib.Proofs` (`KeepsUncached`, `KeepsUncachedFrom`,
 `ReturnsUncached`) is a box lemma. It states a fact about the box
 discipline of a spec function, and no input and output pair expresses it.
@@ -665,11 +667,16 @@ The reason reads `box lemma: <head>`, and the report counts these apart
 from the other `.unsupported` reasons (§16.2), because they are not a gap
 in the shape set.
 
-The `.runOk` match requires `pre` to be one of the inputs and `post` to be a
-closed term over the inputs. A theorem whose post-state is an existential
-(`∃ s', …`) is `.unsupported`, because the executor cannot evaluate `e x`.
-The repository's contract theorems state the whole post-state as a value
-(`SPECS_ARCHITECTURE.md` §11.1.1), so this covers them.
+The run matches, forms 2 through 5, require the run's state to be one of
+the statement's state-typed value inputs. A state-typed value binder is a
+binder whose type names the binding's `stateType`. The `.runOk` post-state
+must be a closed term over the inputs. A theorem whose post-state is an
+existential (`∃ s', …`) is `.unsupported`, because the executor cannot
+evaluate `e x`. The repository's contract theorems state the whole
+post-state as a value (`SPECS_ARCHITECTURE.md` §11.1.1), so this covers
+them. A theorem may bind several states: the Fulu balance theorems read
+one and thread another, so the type identifies the run's state whatever
+the binder's position.
 
 ### 7.4 The scope walk
 
@@ -895,7 +902,9 @@ point, never the case's `unsat`. The loop redraws up to
 gives a candidate the check accepts, and answers `nothing` after the
 last. `canBuilderCoverBid_iff` is the target: a draw fixes the builder's
 balance and pending total, and the solver picks a `bidAmount` on each
-side of the bound.
+side of the bound. At mainnet the source answers `nothing` before any
+draw when a container input's type is the binding's state type, because a
+mainnet state's fixed-length vectors overflow the draw's recursion.
 
 **Seed.** Applies when the line names seeds (§14.3). A seed fixes some inputs
 to author-written terms, serialized through the probe (`probe.seeds`).
@@ -1230,6 +1239,10 @@ structure Probe where
   check  : (caseIndex : Nat) → Array ByteArray → Bool
   /-- Draw the container inputs; scalars come back as zero bytes. -/
   sample : (seed size : Nat) → Array ByteArray
+  /-- One input position's draw alone. The bytes depend on the seed, the
+  size, and the position, so the built source and a hint's replay sample
+  the side containers without sampling the state (§9.4). -/
+  sampleAt : (seed size pos : Nat) → ByteArray
   /-- Shrink candidates for the container inputs. -/
   shrink : Array ByteArray → Array (Array ByteArray)
   /-- One case's container-reading subterms, evaluated at the candidate's

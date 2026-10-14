@@ -37,31 +37,33 @@ the binding's named builders (§9.9), dispatching on the catalog index and
 serializing through the state input's codec, and answers empty bytes for
 a statement with no state input; `defaults` holds the serialized
 `default` of every input, which the base source (§9.4) hands to `check`
-as its candidate.
-`defaults` is a field the §11.1 sketch does not list; the base source needs
-it and no other probe function supplies it. `reads` takes the case index,
-which the §11.1 sketch leaves off its one-line type; the reads are the
-case's hypotheses' subterms, and §9.2 already gave `check` the same
-parameter (`IMPLEMENTATION_NOTES.md` records the deviation).
+as its candidate. The §11.1 sketch's face table lists every field of the
+structure above, `defaults` and the `reads` case index included. The base
+source needs `defaults`, and no other probe function supplies it. §9.2
+already gave `check` the same case index, and the reads are the case's
+hypotheses' subterms. `IMPLEMENTATION_NOTES.md` records, stage by stage,
+the fields whose sketches predated them.
 
-Three deviations from the sketch carry their reasons, all recorded in
-`IMPLEMENTATION_NOTES.md`:
+Three design points this module contributed to the sketches carry their
+reasons; `IMPLEMENTATION_NOTES.md` records the stage at which each was a
+deviation:
 
-- the term is built as an `Expr` tree, not as source text. §11.2 says the
-  builder writes source text, parses it, and elaborates it under
-  `binding.opens`; direct construction achieves the same closed term without
-  a stringly-typed intermediate, and the substitution of the instance
-  binders (§11.2) is a mechanical `Expr` rewrite either way.
+- the term is built as an `Expr` tree. §11.2 states the construction: the
+  direct build, `mkLambdaFVars` abstracting the value binders, and a
+  substitution that replaces the instance binders, itself a mechanical
+  `Expr` rewrite. Direct construction achieves the same closed term
+  without a stringly-typed intermediate.
 - `ProbeResult` carries the inputs' literals and splits the roots into
-  `inputRoots` and `outputRoot`. The record layer (§12.2) writes a decimal
-  literal for a scalar and a root for a container, and it needs to know
-  which one each value is; a `Nat`-typed bound output has no SSZ root at
-  all.
-- one `ScalarCodec` class fronts the wire encoding. A `Fin`-typed input
-  (`initializePtcWindow_lt`'s window offset) has no `SSZRepr` instance,
-  because a total decode from bytes cannot respect `Fin`'s bound; its codec
-  is the `uintN 64` little-endian encoding of `Fin.val`, the same scalar
-  family §9.4's bit-vector source puts `Fin n` in.
+  `inputRoots` and `outputRoot` (§5.5's sketch lists the fields). The
+  record layer (§12.2) writes a decimal literal for a scalar and a root
+  for a container, and it needs to know which one each value is; a
+  `Nat`-typed bound output has no SSZ root at all.
+- one `ScalarCodec` class fronts the wire encoding (§11.2 names the
+  class). A `Fin`-typed input (`initializePtcWindow_lt`'s window offset)
+  has no `SSZRepr` instance, because a total decode from bytes cannot
+  respect `Fin`'s bound; its codec is the `uintN 64` little-endian
+  encoding of `Fin.val`, the same scalar family §9.4's bit-vector source
+  puts `Fin n` in.
 
 ## Lean idioms annotated
 
@@ -318,6 +320,15 @@ structure Probe where
   /-- Draw the container inputs; scalars come back as their zero
   encodings (§9.4). -/
   sample : (seed size : Nat) → Array ByteArray
+  /-- Draw one input position alone (§9.4): the same bytes the `sample`
+  face's array carries at that position, computed while the other
+  positions' draws stay unevaluated. A position's draw depends only on
+  the seed, the size, and the position (`mixHash seed (i + 1)` inside
+  `sampleOne`), so the two faces agree byte for byte at every position.
+  The built source reads its side containers through this face, so a
+  statement whose state sits beside another container input never
+  samples the state's draw (§9.9). -/
+  sampleAt : (seed size pos : Nat) → ByteArray
   /-- Shrink candidates for the container inputs (§9.6). -/
   shrink : Array ByteArray → Array (Array ByteArray)
   /-- The container-reading subterms of one case's hypotheses, evaluated
@@ -1263,8 +1274,11 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
         -- container position draws through its `SampleableExt` instance
         -- (§9.5), each at `mixHash seed (i + 1)` so no two positions and
         -- no two draws share a generator state, and contributes one
-        -- `shrinkReplace` step (§9.6).
-        let sampleFnE : Except String Expr ←
+        -- `shrinkReplace` step (§9.6). Both sample faces walk the same
+        -- per-position terms, so `sample` at a position and `sampleAt`
+        -- for it agree byte for byte, which is what lets the memo and
+        -- the per-position draws share entries (§9.4).
+        let sampleFns : Except String (Expr × Expr) ←
           Meta.withLocalDeclD `seed (.const ``Nat []) fun seedV =>
             Meta.withLocalDeclD `size (.const ``Nat []) fun sizeV => do
               let mut entries : Array Expr := #[]
@@ -1297,10 +1311,22 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
                               mkApp (.const ``UInt64.ofNat [])
                                 (mkRawNatLit (i + 1))]),
                         sizeV])
-              return .ok (← Meta.mkLambdaFVars #[seedV, sizeV]
-                (mkArrayLit (.const ``ByteArray []) entries))
-        let sampleFn ←
-          match sampleFnE with
+              let sampleFn ← Meta.mkLambdaFVars #[seedV, sizeV]
+                (mkArrayLit (.const ``ByteArray []) entries)
+              -- the per-position face (§9.9): the dispatch answers entry
+              -- `pos`'s own term, `emptyBytes` past the inputs. `cond` is
+              -- `@[macro_inline]`, so the compiled term is a match and the
+              -- untaken arms' draws never run.
+              Meta.withLocalDeclD `pos (.const ``Nat []) fun posV => do
+                let mut dispatch := mkConst ``emptyBytes []
+                for j in [0:entries.size] do
+                  dispatch := mkCond (.const ``ByteArray [])
+                    (mkAppN (.const ``Nat.beq []) #[posV, mkRawNatLit j])
+                    entries[j]! dispatch
+                let sampleAtFn ← Meta.mkLambdaFVars #[seedV, sizeV, posV] dispatch
+                return .ok (sampleFn, sampleAtFn)
+        let (sampleFn, sampleAtFn) ←
+          match sampleFns with
           | .ok f => pure f
           | .error e => return .error e
         let shrinkFnE : Except String Expr ←
@@ -1378,7 +1404,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
                     dispatch
                 Meta.mkLambdaFVars #[bIx, knobsV] dispatch
         let term := mkAppN (.const ``Probe.mk [])
-          #[checkFn, sampleFn, shrinkFn, readsFn, safeFn,
+          #[checkFn, sampleFn, sampleAtFn, shrinkFn, readsFn, safeFn,
             mkArrayLit (mkApp2 (.const ``Prod [levelZero, levelZero]) (.const ``Nat [])
               (.const ``ByteArray [])) seedsLit,
             defaultsLit,

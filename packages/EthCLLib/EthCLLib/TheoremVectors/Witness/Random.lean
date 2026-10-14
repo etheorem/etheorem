@@ -143,7 +143,7 @@ bit-vector source's `literalDetail` carries. The built source (§9.9)
 drives this at each grid step with the built state as the one drawn
 container, the same loop §9.9 names. -/
 def tryDraw (ctx : SearchCtx) (stmt : Statement) (c : Case)
-    (valuesCap : Nat) (containerIds : Array FVarId) (plan : Array Expr)
+    (valuesCap : Nat) (plan : Array Expr)
     (kinds : Array (Option ScalarKind)) (coupled : Array Nat)
     (drawn : Array (Nat × ByteArray)) : MetaM (Option Assignment) := do
   -- every container in play is drawn for the random source, and
@@ -178,15 +178,13 @@ def tryDraw (ctx : SearchCtx) (stmt : Statement) (c : Case)
 /-! ## The per-case plan the draw-driven sources share -/
 
 /-- The per-case pieces the two draw-driven sources share (§9.4, §9.9):
-the container positions with their free variables, the reads' plan, and
-the coupled scalars. The random source draws over them and the built
-source overlays a built state, and both walk the same plan, which is what
-keeps the read substitution aligned with the compiled values (§9.4). -/
+the container positions, the reads' plan, and the coupled scalars. The
+random source draws over them and the built source overlays a built
+state, and both walk the same plan, which is what keeps the read
+substitution aligned with the compiled values (§9.4). -/
 structure CasePlan where
   /-- The container positions, in binder order. -/
   containers : Array Nat
-  /-- Their free variables, aligned with `containers`. -/
-  containerIds : Array FVarId
   /-- The container-reading subterms of the case's hypotheses, in walk
   order (§9.4). -/
   plan : Array Expr
@@ -221,32 +219,55 @@ def casePlanOf (ctx : SearchCtx) (stmt : Statement) (c : Case) :
   let containers : Array Nat :=
     (Array.range containerFlags.size).filter fun i =>
       containerFlags[i]?.any (·.isSome)
-  return { containers, containerIds, plan, coupled }
+  return { containers, plan, coupled }
 
-/-- The memoized raw draw at one index (§9.4): a draw is a pure function
-of the seed, the size, and the index, and the cases of one theorem share
-the memo. The built source reads draw 0 for its non-state containers
-through the same entry, so a built witness's drawn bytes and a random
-witness's agree position by position (§9.9). -/
-def drawAt (ctx : SearchCtx) (seed size draw : Nat) : MetaM (Array ByteArray) := do
-  let slot ← ctx.drawMemo.get
-  if h : draw < slot.size then
-    match slot[draw] with
-    | some b => pure b
-    | none =>
-      let b := ctx.probe.sample (seed + draw) size
-      let i : Fin slot.size := ⟨draw, h⟩
-      ctx.drawMemo.set (slot.set i b)
-      pure b
-  else
-    let b := ctx.probe.sample (seed + draw) size
-    ctx.drawMemo.set (slot ++ #[some b])
-    pure b
+/-- The memoized raw draw at one index, per position (§9.4): a draw is a
+pure function of the seed, the size, the index, and the position, and the
+cases of one theorem share the memo. The caller names the positions it
+needs, and the draw samples and memoizes those alone, so a source that
+reads a subset of a draw's positions never pays for the rest. The built
+source (§9.9) reads draw 0 for its non-state containers through the same
+entries, so a built witness's drawn bytes and a random witness's agree
+position by position, and the built path never samples a mainnet state
+position there. Entry `k` of the answer holds the bytes of
+`positions[k]`. -/
+def drawAt (ctx : SearchCtx) (seed size draw : Nat)
+    (positions : Array Nat) : MetaM (Array ByteArray) := do
+  -- the outer array grows to the requested index, one `none` slot per
+  -- draw no call has reached yet
+  let old ← ctx.drawMemo.get
+  let slots := old ++
+    Array.replicate (draw + 1 - old.size)
+      (none : Option (Array (Option ByteArray)))
+  let inner0 : Array (Option ByteArray) := slots[draw]?.join.getD #[]
+  let mut inner := inner0
+  let mut out : Array ByteArray := #[]
+  let mut sampled := false
+  for p in positions do
+    match inner[p]? with
+    | some (some b) => out := out.push b
+    | _ =>
+      sampled := true
+      let b := ctx.probe.sampleAt (seed + draw) size p
+      -- grow the inner array to the new position, `none` entries for the
+      -- positions in between, then write the sampled bytes
+      if p >= inner.size then
+        inner := inner ++ Array.replicate (p + 1 - inner.size)
+          (none : Option ByteArray)
+      inner := inner.set! p (some b)
+      out := out.push b
+  -- a call whose positions the slot already holds leaves the memo alone
+  if sampled then
+    ctx.drawMemo.set (slots.set! draw (some inner))
+  pure out
 
 /-- The random source (§9.4). Applies when at least one input is a
 container and no block input is in play; the search answers `nothing`
 when the container test was an alias (§9.4), and after
-`theorem_vectors.randomDraws` failed draws. The draws run from the run's
+`theorem_vectors.randomDraws` failed draws. At mainnet the search also
+answers `nothing` before any draw when a container input is the
+binding's state type: the cap keeps the fixed vectors' recursion cost
+off the draw loop (§9.4). The draws run from the run's
 `theorem_vectors.seed`, so a build is reproducible (§14.4). -/
 def randomSource : WitnessSource where
   tag := .random
@@ -261,13 +282,27 @@ def randomSource : WitnessSource where
     -- `applies` read the same kind table, so at least one position is a
     -- container here
     let cp ← casePlanOf ctx stmt c
+    -- the mainnet cap (§9.4): a draw keeps a fixed-length vector's
+    -- preset length, and a mainnet state's 65536-element `randao_mixes`
+    -- overflows the interpreter's recursion cap inside `drawVector`
+    -- (§9.5). The state type is the input whose fixed vectors reach
+    -- those lengths, so the cap keys on it and answers before any draw
+    -- of the state runs.
+    if ctx.preset == .mainnet &&
+        cp.containers.any fun i =>
+          isStateType ctx.binding stmt.inputs[i]!.type then
+      return .nothing
+        (some s!"mainnet cap: the state-typed container input's fixed \
+          vectors exceed the draw's recursion cap, so no draw ran")
     for draw in [0:drawBudget] do
       -- one draw per index for the whole theorem: a draw is a pure
-      -- function of the seed, the size, and the index, and the cases
-      -- share the memo (§9.4)
-      let rawBytes ← drawAt ctx seed size draw
-      let drawn := cp.containers.map fun i => (i, rawBytes.getD i emptyBytes)
-      match ← tryDraw ctx stmt c size cp.containerIds
+      -- function of the seed, the size, the index, and the position,
+      -- and the cases share the memo (§9.4). The draw samples the
+      -- statement's container positions alone; the scalars' entries of
+      -- the full `sample` face are defaults no caller reads.
+      let rawBytes ← drawAt ctx seed size draw cp.containers
+      let drawn := cp.containers.zip rawBytes
+      match ← tryDraw ctx stmt c size
           cp.plan kinds cp.coupled drawn with
       | some a => return .candidate a
       | none => pure ()

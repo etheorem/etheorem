@@ -5,7 +5,8 @@ import EthCLSpecs.Heze.Types
 
 Heze's three constant tiers, written as a diff over Gloas exactly as
 `Gloas/Constants.lean` is a diff over Fulu. EIP-7805 (FOCIL) adds one preset
-field and two flat constants, and leaves the config tier alone; everything else
+field and two flat constants, and the fork-version seam adds
+`HEZE_FORK_VERSION` to the config tier; everything else
 arrives by lineage merge (the tier classes and their value sets) or by `inherit`
 (the `Const` entries), replayed into this namespace so Heze body code writes
 `Const.slotsPerEpoch` with no ancestor namespace in sight. A tier form with no
@@ -31,11 +32,16 @@ forkpreset where
   slot. -/
   inclusionListCommitteeSize : Nat
 
-/-- The one config value EIP-7805 adds. The lineage's fields merge in. -/
+/-- The one config value EIP-7805 adds, plus `HEZE_FORK_VERSION`. The
+lineage's fields merge in. -/
 forkconfig where
   /-- `INCLUSION_LIST_DUE_BPS` (~67% of the slot): the timeliness deadline for an
   inclusion list, in basis points of the slot. -/
   inclusionListDueBps : UInt64
+  /-- `HEZE_FORK_VERSION`. The interface keeps its pinned plain defs below; the
+  config tier carries the same value, so the `[Config]`-generic builder bodies
+  (`TheoremVectors/Builders/Heze.lean`) can read it. -/
+  hezeForkVersion : Version
 
 namespace Const
 section
@@ -50,6 +56,10 @@ forkabbrev inclusionListCommitteeSize : Nat := Preset.inclusionListCommitteeSize
 forkabbrev domainInclusionListCommittee : ByteArray := ⟨#[0x10, 0, 0, 0]⟩
 -- `consensus-specs/specs/heze/fork-choice.md:38`.
 forkabbrev inclusionListDueBps : UInt64 := Config.inclusionListDueBps
+-- The fork version in the config tier: a `[Config]`-generic body (the
+-- state-builder catalog, `TheoremVectors/Builders/Heze.lean`) reads it for the
+-- fork record. The interface keeps its pinned plain defs below.
+forkabbrev hezeForkVersion : Version := Config.hezeForkVersion
 
 -- Gloas's entries, replayed here in Gloas's own order (its additions, then the
 -- Fulu surface it replays) so each body reaches its dependencies. The list is the
@@ -138,20 +148,29 @@ inherit validModulusEpochsPerHistoricalVector
 
 -- Each value set is declared here too, so `Heze.minimal` and friends are this
 -- fork's own, typed at this fork's classes, and the runner injects them without
--- naming an ancestor. Only the FOCIL field needs a value; the rest merge in.
--- `INCLUSION_LIST_COMMITTEE_SIZE` is `2**4` in both preset files at the pin.
+-- naming an ancestor. `INCLUSION_LIST_COMMITTEE_SIZE` is `2**4` in both preset
+-- files at the pin, and each config pins its own fork version.
 forkpresetvalues minimal where
   inclusionListCommitteeSize := 16
 forkpresetvalues mainnet where
   inclusionListCommitteeSize := 16
 forkconfigvalues minimalConfig where
   inclusionListDueBps := 6667
+  hezeForkVersion := ⟨#[0x08, 0x00, 0x00, 0x01], by decide⟩
 forkconfigvalues mainnetConfig where
   inclusionListDueBps := 6667
+  hezeForkVersion := ⟨#[0x08, 0x00, 0x00, 0x00], by decide⟩
 
 /-- `HEZE_FORK_VERSION` at the `minimal` config (`0x08000001`). -/
 def hezeForkVersionMinimal : Version := ⟨#[0x08, 0x00, 0x00, 0x01], by decide⟩
 /-- `HEZE_FORK_VERSION` at the `mainnet` config (`0x08000000`). -/
 def hezeForkVersionMainnet : Version := ⟨#[0x08, 0x00, 0x00, 0x00], by decide⟩
+
+-- The two spellings of `HEZE_FORK_VERSION` name the same bytes at each
+-- config: the tier value (what a `[Config]`-generic body reads) and the
+-- pinned plain def (what the interface passes the runner). A drift
+-- between them is a build failure here.
+#guard @Const.hezeForkVersion minimalConfig == hezeForkVersionMinimal
+#guard @Const.hezeForkVersion mainnetConfig == hezeForkVersionMainnet
 
 end EthCLSpecs.Heze

@@ -1,6 +1,8 @@
 import EthCLLib.TheoremVectors
 import EthCLSpecs.TheoremVectors.Bindings
+import EthCLSpecs.TheoremVectors.Builders.Fulu
 import EthCLSpecs.TheoremVectors.Builders.Gloas
+import EthCLSpecs.TheoremVectors.Builders.Heze
 import EthCLSpecs.TheoremVectors.Generators.Fulu
 import EthCLSpecs.TheoremVectors.Generators.Gloas
 import EthCLSpecs.TheoremVectors.Generators.Heze

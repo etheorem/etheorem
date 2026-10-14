@@ -1,0 +1,13 @@
+{"theorem": "EthCLSpecs.Proofs.Fulu.decreaseBalance_run_outOfRange",
+ "fingerprint": "0x13969f118b2afeb6",
+ "entries":
+ [{"source": "seed",
+   "scalars": {},
+   "preset": "minimal",
+   "fingerprint": "0x47bc868506585347",
+   "case": 0},
+  {"source": "seed",
+   "scalars": {},
+   "preset": "mainnet",
+   "fingerprint": "0x13969f118b2afeb6",
+   "case": 0}]}
