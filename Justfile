@@ -63,6 +63,15 @@ build-cli:
 [group('general')]
 test: leansha256-test hazmat-sha256-test hazmat-bls-test hazmat-kzg-test hazmat-keccak-test hazmat-secp256k1-test hazmat-bn254-test hazmat-blake2f-test hazmat-ripemd160-test hazmat-modexp-test hazmat-p256-test sizzlean-test poseidon-test
 
+# Compile both benchmark libraries and their four executables. CI calls this
+# after the consensus self-tests, so it reuses the compiled spec libraries.
+# The command checks API compatibility without running the sampling loops.
+
+# Build the benchmark tools without running them
+[group('general')]
+bench-build:
+    lake build SizzLeanBench ssz_bench ssz_profile ssz_multistate EthCLSpecsBench specs_profile
+
 # Reject committed `sorry`, `#eval`, `#check`, `#print` in Lean source
 # per CLAUDE.md. `git grep` searches tracked files only and returns 1
 # when no matches. That avoids `xargs -r grep`'s empty-input ambiguity
