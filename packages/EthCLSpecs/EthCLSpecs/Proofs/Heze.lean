@@ -44,6 +44,7 @@ import EthCLSpecs.Proofs.Heze.PaymentCarried
 import EthCLSpecs.Proofs.Heze.PaymentFrame
 import EthCLSpecs.Proofs.Heze.PaymentWriters
 import EthCLSpecs.Proofs.Heze.ProposerScore
+import EthCLSpecs.Proofs.Heze.RaceCheck
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.RootFrames
 import EthCLSpecs.Proofs.Heze.Run
@@ -284,6 +285,10 @@ Re-exports:
 * `EthCLSpecs.Proofs.Heze.ProposerScore`: a successful `getProposerScore` run returns
   `proposerScoreOf` of the justified checkpoint state (`getProposerScore_run_eq`). So the
   proposer score is one value per justified state.
+* `EthCLSpecs.Proofs.Heze.RaceCheck`: the premises of `race_empty_persists_composed` as
+  computations. When every vote finds its target in the store before it, the checkpoint
+  states stay those of the seed (`NodeTrace.checkpointStates_eq`). `deliver_of_check`,
+  `HeadRun.Ok.of_check`, and `honestSigner_of_check` give premises from checks.
 * `EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction`: the
   complete run of `recordPayloadInclusionListSatisfaction`
   (`recordPayloadInclusionListSatisfaction_run`), proved with
