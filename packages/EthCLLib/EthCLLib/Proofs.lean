@@ -8,6 +8,7 @@ import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
 import EthCLLib.Proofs.OfFnM
 import EthCLLib.Proofs.Run
+import EthCLLib.Proofs.StateFree
 import EthCLLib.Proofs.StoreRun
 
 /-!
@@ -46,9 +47,12 @@ Re-exports:
   shares (`run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
   `except_bind_error`, the `ofExcept` and `liftErr` run equations), plus the pure
   box helpers `pureState` and `runPure` and their lemmas.
+* `EthCLLib.Proofs.StateFree`: the rules for a run that reads no runner state, and the
+  tactic `free_solve` that applies them to a fork-choice query.
 * `EthCLLib.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine runner
-  every fork's fork-choice proofs pin at that fork's `Store`, and the
-  store-specific `throwArithmetic_run` equation.
+  every fork's fork-choice proofs pin at that fork's `Store`, the
+  store-specific `throwArithmetic_run` equation, and `toNat_add_of_not_lt` for a
+  `checkedAdd` that does not raise.
 * `EthCLLib.Proofs.KeepsUncached`: the box-flavour predicates (`KeepsUncached`,
   `KeepsUncachedFrom`, `ReturnsUncached`, `RunPassesP`), their closure and loop
   lemmas, the indexed-read run equations, and the conditional bind law
