@@ -22,6 +22,7 @@ Contents:
 - Stage 7: run shapes and the pyspec format
 - Stage 8: mainnet and witness reuse
 - Stage 9: the other forks, CI, documentation
+- Stage 10: client conformance
 - Decision points
 - Risks
 
@@ -105,6 +106,8 @@ hypotheses accept a `default` block gets a vector that way.
  8 mainnet, witness reuse
  │
  9 other forks, CI, documentation
+ │
+ 10 client conformance
 ```
 
 Stages 5 and 6 depend on stage 4 and on nothing else, so they can proceed in
@@ -646,6 +649,87 @@ closed or drops it with its reason.
 
 ---
 
+## Stage 10: client conformance
+
+**Goal.** The function-format vectors run against a real consensus
+client. The first client is Prysm; another is acceptable if Prysm
+cannot take the fork set at its pin (decision point D). The issues the
+run surfaces get fixed in the generator or recorded as client-side
+divergences, and nothing stays silent.
+
+The function format is the surface a client consumes (§13.3): one
+self-contained YAML file per vector, `function` naming the target,
+inputs as SSZ hex with roots beside scalar literals, and the expected
+output. Its `check` answers `noConsumer` today, and the plan's risk
+list has said since stage 2 what that means: the format tests nothing
+until a client wires it up. This stage wires one.
+
+**Steps.**
+
+1. Pin a client release and survey it. Read the pinned client's spec
+   implementations and build the coverage table: which of the function
+   format's targets the client implements, per fork and preset. The
+   table lives beside the harness and states, per target, one of:
+   implemented, not implemented at this pin, or fork not supported at
+   this pin. The survey is the stage's scope: unimplemented targets
+   stay tabled skips, never failures, and never silently dropped.
+2. Make the records name the function the way a client names it. The
+   record's `function` field carries the Lean constant's name today,
+   which no client spells. The forkdefs already name their pyspec
+   functions in their docstrings; promote that to data: a `specName`
+   field on the target the reader already found, carried into the
+   record and the function-format file, keyed to the spec's own snake
+   case. The harness maps on it. `Statement.lean`, `Record.lean`,
+   `Formats/Function.lean`, and a dev entry in `IMPLEMENTATION_NOTES.md`
+   if the promotion deviates from §7.2's sketch.
+3. The harness. A small Go module beside the packages (`clients/prysm/`,
+   or the chosen client's name), `go.mod` pinned to the surveyed
+   release, with a runner that walks
+   `<outDir>/formats/function/<fork>/<preset>/`: read the YAML,
+   deserialize the SSZ inputs with the client's SSZ library, check each
+   input's root (the cheap gate every record pays), run the mapped
+   function, and compare the output. A target the coverage table maps
+   to nothing is a tabled skip with its reason in the runner's summary.
+   A mismatch is a failure that names the record, the client's answer,
+   and the expected one.
+4. Fix the issues seen, in three buckets with three homes:
+   - a generator or format defect (a record the client cannot parse, a
+     root that disagrees, an encoding asymmetry) is fixed in this
+     repository and the vectors regenerate, under this plan's standing
+     rules;
+   - a harness gap (a target the table lacks, a type the deserializer
+     refuses) is fixed in the harness, and the table grows;
+   - a real divergence, the client computing a different answer from
+     the vector on a record whose inputs both sides parse, is recorded
+     in `DISCREPANCIES.md` under a client-divergence heading with the
+     record's path, the two answers, and the pinned client release.
+     The stage does not close a divergence by bending either side; the
+     audit trail does what the file's header says.
+5. A self-test before the real corpus: one fixture vector with a
+   hand-computed answer (a scalar function at both presets), run
+   through the harness, so a green run means the harness works and not
+   merely that it skipped everything.
+6. `just client-prysm` runs the harness over the current output tree.
+   `just doctor-native` gains the Go probe. CI: one job after
+   `theorem-vectors`, running the recipe; a mismatch fails the job, a
+   tabled skip does not, and the harness's summary rides the log.
+7. The consumer answers back: with a real consumer in reach, §13.3's
+   `check` returns `noConsumer` only for records whose target the
+   coverage table maps to nothing; records the client ran gain the
+   harness's answer in the report (§16.2's Formats column gains a
+   client cell or an equivalent the report already has room for).
+
+**Acceptance.** The harness runs every function-format record of the
+forks the pinned client supports. Every record ends implemented-and-
+passing or tabled-skipped-with-reason; the counts are in the stage's
+commit body. A deliberately corrupted fixture fails the harness. The
+issues seen are fixed or recorded, per the three buckets. `just
+theorem-vectors` stays green, and the records stay byte-identical
+unless a generator-side fix regenerates them, in which case the diff is
+the fix's review surface.
+
+---
+
 ## Decision points
 
 **A, after stage 1.** If more than half of the in-scope theorems come out
@@ -671,6 +755,14 @@ description. Record the choice in `IMPLEMENTATION_NOTES.md`.
 **C, during stage 6.** If `advanced` at the first epoch boundary costs more
 than a pyspec `epoch_processing` case at minimal, cut the grid to `genesis`
 and `advanced` and move the rest behind a named line's seed.
+
+**D, during stage 10.** If the pinned Prysm release implements none or
+almost none of the function format's targets at the fork set's pin
+(Gloas and Heze land in clients late), switch to the client with the
+widest coverage of the three forks and record the choice in
+`IMPLEMENTATION_NOTES.md`. A second switch costs one survey; the
+harness's table and the format do not change, because the spec name,
+not the client, is what the vectors key on.
 
 ---
 
@@ -721,4 +813,11 @@ and `advanced` and move the rest behind a named line's seed.
   they hold knobs and no draw.
 - **Vectors without a consumer.** The function format tests nothing in a
   client until a client wires it up. The pyspec format has a consumer today.
-  Stage 7 earns the most and should not slip behind polish on stages 4 to 6.
+  Stage 7 earned the most and should not slip behind polish on stages 4 to 6;
+  stage 10 wires the client, and until it runs, the function format's
+  `check` answers `noConsumer` and the format's value stays unproven.
+- **A client lags the fork set.** Prysm and the other clients take new
+  forks months after the spec pin, so stage 10's coverage table may
+  table-skip most Gloas and Heze targets at the first pin. The harness
+  is built so a client release bump widens the table; the vectors do
+  not move. Decision point D holds the switch.
