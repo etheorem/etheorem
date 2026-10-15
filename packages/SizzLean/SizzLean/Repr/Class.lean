@@ -143,12 +143,17 @@ def serialize {T : Type} [r : SSZRepr T] (x : T) : ByteArray :=
 
 /-- User-facing deserializer. Decodes against the instance's shape;
 on success, converts back through `fromRepr`; on failure, propagates
-the `SSZError`. `@[specialize]` per `serialize` above. -/
+the `SSZError`. `@[specialize]` per `serialize` above.
+
+The spec decoder returns the count of bytes it consumed, so a longer
+buffer can be parsed as a subterm. This wrapper is a whole-value
+decode: the count must equal `b.size`. Extra unused bytes are
+`.trailingBytes`, the SSZ spec's "Scope" check. See etheorem#118. -/
 @[specialize]
 def deserialize {T : Type} [r : SSZRepr T] (b : ByteArray) :
     Except SSZError T :=
   match SSZType.deserialize r.shape b with
-  | .ok (y, _) => .ok (r.fromRepr y)
+  | .ok (y, n) => if n = b.size then .ok (r.fromRepr y) else .error .trailingBytes
   | .error e   => .error e
 
 /-- User-facing Merkleization. Delegates to the spec-level
@@ -171,9 +176,11 @@ The proof unfolds the wrappers, applies the spec-level `decode_encode`
 on `r.toRepr x`, then uses `from_to` to fold the round-tripped
 representation `toRepr (fromRepr (toRepr x))` back through to `x`.
 More directly: `decode_encode` gives `deserialize r.shape
-(serialize r.shape (toRepr x)) = .ok (toRepr x, _)`; our wrapper
-then maps the `.ok` payload through `fromRepr`, giving
-`.ok (fromRepr (toRepr x)) = .ok x` by `to_from`.
+(serialize r.shape (toRepr x)) = .ok (toRepr x, size)`; the
+consumed count equals the encoding size, so the trailing-byte
+check reduces, and the wrapper maps the `.ok` payload through
+`fromRepr`, giving `.ok (fromRepr (toRepr x)) = .ok x` by
+`to_from`.
 
 The gates: `BasicSupported r.shape`, which is `Supported` plus the
 two zero-width side conditions (`Spec/BasicSupported.lean` records
@@ -188,9 +195,11 @@ theorem roundtrip {T : Type} [r : SSZRepr T] (x : T)
     SSZ.deserialize (SSZ.serialize x) = .ok x := by
   unfold SSZ.deserialize SSZ.serialize
   rw [Proofs.decode_encode h_sup (r.toRepr x) h_fits]
-  -- Goal: `(match .ok (toRepr x, _) with | .ok (y, _) => .ok (fromRepr y) | ...) = .ok x`.
+  -- Goal: `(match .ok (toRepr x, size) with | .ok (y, n) => if n = size then
+  --   .ok (fromRepr y) else .error .trailingBytes | ...) = .ok x`.
   -- The `match` reduces because the scrutinee is a literal `.ok`;
-  -- then `r.to_from` folds `fromRepr (toRepr x)` back to `x`.
+  -- `n = size` is `rfl`; then `r.to_from` folds `fromRepr (toRepr x)`
+  -- back to `x`.
   simp [r.to_from]
 
 end SSZ
