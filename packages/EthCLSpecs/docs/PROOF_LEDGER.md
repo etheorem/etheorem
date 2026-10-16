@@ -373,6 +373,19 @@ more than the adversarial balance that has voted, plus `boost`.
 from honest proposers. With `PROPOSER_SCORE_BOOST = 40`, the first slot needs more than
 70 % honest balance in the committee of `N + 1`.
 
+`Proofs/Heze/PayloadRaceRefines.lean` ties the race model to the executable score. A
+successful run of `getAttestationScore` at `full r` or `empty r` returns `sideWeight` of
+that side, over the active unslashed validators of the state and the side the store gives
+each one. The equations rest on the score characterization of
+`Proofs/Heze/AttestationScore.lean` (and its Gloas copy), and on exclusivity: one supported
+node is never under both children of `pending r`. `Proofs/Heze/Equivocators.lean`
+characterizes `onAttesterSlashing`. Along a trace from the anchor, an index enters
+`equivocatingIndices` only through an attester slashing that carries it in two slashable
+attestations that pass their checks. An index that no such slashing marks is never in the
+set, so `storeSide` does not drop it as an equivocator. `honest_not_equivocating` takes
+"no such slashing marks the index" as the hypothesis `HonestSigner`, and no theorem derives
+it. No theorem yet ties `latestMessages` to the votes of a validator.
+
 The theorem has these hypotheses, bundled as `DichotomyHypotheses`:
 
 - the envelope handler succeeds: the block state is present, the data is available, the
