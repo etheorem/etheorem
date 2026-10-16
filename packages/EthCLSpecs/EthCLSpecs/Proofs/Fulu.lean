@@ -1,4 +1,5 @@
 import EthCLSpecs.Proofs.Fulu.Balances
+import EthCLSpecs.Proofs.Fulu.Churn
 import EthCLSpecs.Proofs.Fulu.Run
 import EthCLSpecs.Proofs.Fulu.Time
 
@@ -20,6 +21,9 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Balances`: `increaseBalance` and `decreaseBalance`, each with an exact
   run equation and an out-of-range reject, plus `increaseBalance`'s overflow reject and its
   exact stored sum, and `decreaseBalance`'s truncating difference.
+* `EthCLSpecs.Proofs.Fulu.Churn`: where `reserveChurn` faults, and the exact epoch and consumed
+  total it returns below every bound. A successful reservation covers the balance, so the exit
+  and consolidation callers never fault on their subtraction.
 * `EthCLSpecs.Proofs.Fulu.Time`: `computeEpochAtSlot` is monotone in the slot, and
   `computeStartSlotAtEpoch` cannot fault on an epoch a slot division bounds. Their round trip is
   the identity, conditional at a symbolic preset and closed at both shipped presets.

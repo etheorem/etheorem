@@ -1,7 +1,9 @@
+import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
+import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 import EthCLSpecs.Proofs.Heze.Time
 
@@ -20,6 +22,8 @@ Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Heze.Churn`: the inherited `reserveChurn`, which takes the Gloas proof
+  terms, and run theorems for the two inherited churn callers.
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
   equations for `getInclusionListCommittee` and
   `getInclusionListTransactions`
@@ -41,6 +45,8 @@ Re-exports:
   the four direct error corollaries and the successful-path corollary
   `onExecutionPayloadEnvelope_run_eq_of_successful_checks`, proved with
   `ForkChoiceStoreRun`.
+* `EthCLSpecs.Proofs.Heze.Run`: `HezeRun`, the state-transition monad the Heze
+  state-transition proofs pin their theorems to.
 * `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: the complete `.run`
   equation of `shouldExtendPayload` (`shouldExtendPayload_run`), the
   existing recorded-unsatisfied FOCIL rejection

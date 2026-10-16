@@ -97,10 +97,12 @@ forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Ep
   let earliest := umax (sszGet state earliestExitEpoch) activationExitEpoch
   let perEpochChurn := getExitChurnLimit state
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
-  let (ee, ebtc) := reserveChurn exitBalance consume perEpochChurn earliest
+  let (ee, ebtc) ← liftErr (reserveChurn exitBalance consume perEpochChurn earliest)
+  let remaining ← checkedSub ebtc exitBalance
+    "compute_exit_epoch_and_update_churn: exit_balance_to_consume - exit_balance"
 
   modifyState fun state =>
-    sszUpdate state with exitBalanceToConsume := ebtc - exitBalance, earliestExitEpoch := ee
+    sszUpdate state with exitBalanceToConsume := remaining, earliestExitEpoch := ee
   return ee
 
 inherit initiateValidatorExit
