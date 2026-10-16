@@ -422,6 +422,11 @@ partition of `getBeaconCommittee` gives "at most one slot" (`EpochCommittees.one
 `EpochCommittees` carries the three preset facts of the partition as fields.
 `RaceCommittees.of_epoch` keeps only the two balance conditions as premises.
 
+`Tests/HezeRaceWitness.lean` shows that the premises of `race_empty_persists_composed` can
+hold together. Two honest nodes at the minimal preset run a window of slots 2 to 4 after a
+block of slot 1. One node holds the payload and receives one adversarial vote for `full r`.
+`raceWitness` checks every premise except `QsortMem` with one `native_decide`.
+
 The theorem has these hypotheses, bundled as `DichotomyHypotheses`:
 
 - the envelope handler succeeds: the block state is present, the data is available, the
