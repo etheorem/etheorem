@@ -140,7 +140,8 @@ inherit getNextSyncCommittee
 only from *unslashed* active validators. This overrides the inherited Fulu version
 (which has no slashed filter); the inherited `process_proposer_lookahead` below
 late-binds its `getBeaconProposerIndices` call to this Gloas copy. -/
-forkdef getBeaconProposerIndices (state : State) (epoch : Epoch) : Array ValidatorIndex :=
+forkdef getBeaconProposerIndices (state : State) (epoch : Epoch) :
+    StateTransition (Array ValidatorIndex) :=
   let validators := sszGet state validators
   let indices := (getActiveValidatorIndices state epoch).filter (fun vi => !(validators[vi.toNat]!).slashed)
   computeProposerIndices state epoch (getSeed state epoch Const.domainBeaconProposer) indices
@@ -201,7 +202,7 @@ forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
   let nextEpoch := currentEpochOf state + 1
   let avail := (sszGet state depositBalanceToConsume) + getActivationChurnLimit state
-  let finalizedSlot := computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
+  let finalizedSlot ← liftErr (computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch)
   let deposits := (sszGet state pendingDeposits).toArray
 
   let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
@@ -271,15 +272,21 @@ state. The window length is `(2 + MIN_SEED_LOOKAHEAD) * SLOTS_PER_EPOCH = 3 *
 SLOTS_PER_EPOCH` (MIN_SEED_LOOKAHEAD = 1). -/
 forkdef processPtcWindow : StateTransition Unit := do
   let state ← get
+  let old := sszGet state ptcWindow
+  -- Two writes: pyspec assigns the shifted slice before the call that can fault.
+  set (sszUpdate state with ptcWindow :=
+    shiftWindow old Const.slotsPerEpoch (2 * Const.slotsPerEpoch)
+      (fun k => vget old (2 * Const.slotsPerEpoch + k)))
+
+  let state ← get
   let nextEpoch := currentEpochOf state + Const.minSeedLookahead + 1
-  let startSlot := computeStartSlotAtEpoch nextEpoch
+  let startSlot ← liftErr (computeStartSlotAtEpoch nextEpoch)
   let fresh : Array (Vector ValidatorIndex Const.ptcSize) :=
     (Array.range Const.slotsPerEpoch).map (fun i => computePtc state (startSlot + UInt64.ofNat i))
 
   modifyState fun state =>
     sszUpdate state with ptcWindow :=
-      shiftWindow (sszGet state ptcWindow) Const.slotsPerEpoch (2 * Const.slotsPerEpoch)
-        (fun k => fresh[k]!)
+      shiftWindow (sszGet state ptcWindow) 0 (2 * Const.slotsPerEpoch) (fun k => fresh[k]!)
 
 end
 

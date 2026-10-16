@@ -198,7 +198,8 @@ first slot, walking from a PENDING node. -/
 forkdef getCheckpointBlock (store : Store map) (root : Root) (epoch : Epoch) :
     StoreTransition Root := do
   let node : ForkChoiceNode := .pending root
-  let ancestor ← getAncestor store node (computeStartSlotAtEpoch epoch)
+  let epochFirstSlot ← liftErr (computeStartSlotAtEpoch epoch)
+  let ancestor ← getAncestor store node epochFirstSlot
   pure ancestor.root
 
 /-- `get_supported_node(store, message)`: the node a latest message supports. A
@@ -220,7 +221,8 @@ forkdef getDependentRoot (store : Store map) (root : Root) : StoreTransition Roo
   if epoch ≤ Const.minSeedLookahead then pure fcZeroRoot
   else
     let node : ForkChoiceNode := .pending root
-    let ancestor ← getAncestor store node (computeStartSlotAtEpoch (epoch - Const.minSeedLookahead) - 1)
+    let dependentSlot ← liftErr (computeStartSlotAtEpoch (epoch - Const.minSeedLookahead))
+    let ancestor ← getAncestor store node (dependentSlot - 1)
     pure ancestor.root
 
 /-! ## Payload-vote predicates -/
@@ -608,12 +610,15 @@ forkdef onTickPerSlot (store : Store map) (time : UInt64) : StoreTransition (Sto
   let store := { store with time := time }
   let currentSlot ← getCurrentSlot store
   let store := if currentSlot > previousSlot then { store with proposerBoostRoot := fcZeroRoot } else store
-  pure <| if currentSlot > previousSlot && computeSlotsSinceEpochStart currentSlot == 0 then
+  let slotsSinceEpochStart ← computeSlotsSinceEpochStart currentSlot
+  pure <| if currentSlot > previousSlot && slotsSinceEpochStart == 0 then
     updateCheckpoints store store.unrealizedJustifiedCheckpoint store.unrealizedFinalizedCheckpoint
   else store
 where
   -- The epoch-start slot is always `≤ slot`, so this `uint64` subtraction cannot underflow.
-  computeSlotsSinceEpochStart (slot : Slot) : UInt64 := slot - computeStartSlotAtEpoch (computeEpochAtSlot slot)
+  computeSlotsSinceEpochStart (slot : Slot) : StoreTransition UInt64 := do
+    let epochFirstSlot ← liftErr (computeStartSlotAtEpoch (computeEpochAtSlot slot))
+    pure (slot - epochFirstSlot)
 
 /-- `on_tick`: advance the store clock to `time`. Each `on_tick_per_slot` commits before the
 next iteration, because pyspec calls it against the live store and a raise partway through the
@@ -767,7 +772,7 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   assert (!parentFull || isPayloadVerified store block.parentRoot)
   let currentSlot ← getCurrentSlot store
   assert (currentSlot ≥ block.slot)
-  let finalizedSlot := computeStartSlotAtEpoch store.finalizedCheckpoint.epoch
+  let finalizedSlot ← liftErr (computeStartSlotAtEpoch store.finalizedCheckpoint.epoch)
   assert (block.slot > finalizedSlot)
   let finalizedBlock ← getCheckpointBlock store block.parentRoot store.finalizedCheckpoint.epoch
   assert (store.finalizedCheckpoint.root == finalizedBlock)
@@ -942,7 +947,7 @@ forkdef storeTargetCheckpointState (store : Store map) (target : Checkpoint) :
     -- `target not in store.checkpoint_states` is a membership guard (faithful), but the
     -- following `store.block_states[target.root]` is a plain `Dict` read that raises.
     let base ← FcMap.getOrThrow store.blockStates target.root
-    let targetSlot := computeStartSlotAtEpoch target.epoch
+    let targetSlot ← liftErr (computeStartSlotAtEpoch target.epoch)
     let advanced ←
       if (sszGet base slot) < targetSlot then
         runNestedStateTransition base (processSlots targetSlot)

@@ -61,10 +61,13 @@ private def runUpgradeImpl (P : Preset) (C : Config) (forkVersion : Version) (pr
   letI : CryptoBackend := CryptoBackend.realBackend
   match SSZ.deserialize (T := Fulu.BeaconState) preBytes with
   | .ok pre  =>
-    let box0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox (upgradeToGloas forkVersion pre)
-    let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit :=
-      onboardBuildersFromPendingDeposits
-    RunError.ofSpec (runToRoot box0 action)
+    match upgradeToGloas forkVersion pre with
+    | .error e => Except.error (RunError.spec e)
+    | .ok post =>
+      let box0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox post
+      let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit :=
+        onboardBuildersFromPendingDeposits
+      RunError.ofSpec (runToRoot box0 action)
   | .error _ => .error (.decode "Fulu BeaconState")
 
 /-- Decode a Gloas `BeaconState` into a `FastBox`, or the runner's `decode` error. -/
@@ -258,16 +261,19 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
     match fuluAction.run fuluBox0 with
     | .error e _ => Except.error (RunError.spec e)
     | .ok _ fuluSt =>
-      let gloasBox0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox (upgradeToGloas forkVersion fuluSt.view)
-      let gloasAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit := do
-        onboardBuildersFromPendingDeposits
-        for sb in gloasBlocks do
-          if (sszGet (← get) slot) < sb.message.slot then Gloas.processSlots sb.message.slot
-          if cmeta.blsSetting != 2 then assert (Gloas.verifyBlockSignature (← get) sb)
-          Gloas.processBlock sb.message
-          let root ← getStateRoot
-          assert (sb.message.stateRoot == bytesToRoot root)
-      RunError.ofSpec (runToRoot gloasBox0 gloasAction)
+      match upgradeToGloas forkVersion fuluSt.view with
+      | .error e => Except.error (RunError.spec e)
+      | .ok post =>
+        let gloasBox0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox post
+        let gloasAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit := do
+          onboardBuildersFromPendingDeposits
+          for sb in gloasBlocks do
+            if (sszGet (← get) slot) < sb.message.slot then Gloas.processSlots sb.message.slot
+            if cmeta.blsSetting != 2 then assert (Gloas.verifyBlockSignature (← get) sb)
+            Gloas.processBlock sb.message
+            let root ← getStateRoot
+            assert (sb.message.stateRoot == bytesToRoot root)
+        RunError.ofSpec (runToRoot gloasBox0 gloasAction)
 
 /-- Run `getHead` over the snapshot store as a pure query (`runQuery` discards the final
 store; `getHead` only reads it). Shared by the `checkHead` / `checkHeadPayloadStatus` arms,
