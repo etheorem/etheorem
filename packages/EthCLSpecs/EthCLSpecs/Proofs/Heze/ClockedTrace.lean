@@ -544,6 +544,12 @@ def ClockAt : TraceEvent → Nat → Store map → Prop
   | .handler (.tick timeMs), w, _ => timeMs.toNat = w
   | _, w, st => st.timeMs.toNat = w
 
+/-- `ClockAt` is an equality of numbers in each case, so it is decidable. -/
+instance ClockAt.decidable (e : TraceEvent) (w : Nat) (st : Store map) :
+    Decidable (ClockAt e w st) := by
+  unfold ClockAt
+  split <;> infer_instance
+
 /-- A node trace on the wall clock. Each event carries its wall time. The wall times do not
 decrease, and each event meets `ClockAt` on the store it runs on. So the node ticks to its
 wall clock before it handles a message. The condition names the store before an event
