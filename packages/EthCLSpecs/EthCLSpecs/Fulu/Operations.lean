@@ -220,13 +220,20 @@ forkdef applyDeposit (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) (sig : 
     appendState pendingDeposits pendingDeposit
 
 /-- `process_deposit`: verify the Merkle branch into `eth1_data.deposit_root`,
-advance `eth1_deposit_index`, then apply. -/
+advance `eth1_deposit_index`, then apply.
+
+The pyspec's `state.eth1_deposit_index += 1` is a `uint64` addition, and remerkleable raises
+`ValueError` past `2 ^ 64 - 1`. So the increment is `checkedAdd`, and the reject is
+`.arithmetic`. `processOperations` calls this function only while the index is below
+`eth1_data.deposit_count`, a `uint64`, so the fault cannot occur there.
+`EthCLSpecs.Proofs.Fulu.DepositIndex` proves this. -/
 forkdef processDeposit (d : Deposit) : StateTransition Unit := do
   let state ← get
   assert (isValidMerkleBranch (htr d.data) d.proof.toArray (Const.depositContractTreeDepth + 1)
     (sszGet state eth1DepositIndex).toNat (sszGet state eth1Data).depositRoot)
 
-  modifyState fun state => sszUpdate state with eth1DepositIndex := (sszGet state eth1DepositIndex) + 1
+  let index ← checkedAdd (sszGet state eth1DepositIndex) 1 "process_deposit: eth1_deposit_index + 1"
+  modifyState fun state => sszUpdate state with eth1DepositIndex := index
   applyDeposit d.data.pubkey d.data.withdrawalCredentials d.data.amount d.data.signature
 
 /-! ## Voluntary exits -/
