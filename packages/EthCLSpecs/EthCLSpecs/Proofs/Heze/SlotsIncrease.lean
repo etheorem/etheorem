@@ -356,6 +356,12 @@ def HandlerEvent.NotAtAnchorParent (a : BeaconBlock) : HandlerEvent → Prop
   | .block sb => htr sb.message ≠ a.parentRoot
   | _ => True
 
+/-- `NotAtAnchorParent` compares two roots, so it is decidable. -/
+instance HandlerEvent.NotAtAnchorParent.decidable (a : BeaconBlock) (e : HandlerEvent) :
+    Decidable (e.NotAtAnchorParent a) := by
+  unfold HandlerEvent.NotAtAnchorParent
+  split <;> infer_instance
+
 variable [Config] [CryptoBackend] {map : MapKind} [FcMap map]
 
 omit [Config] [CryptoBackend] in

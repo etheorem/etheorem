@@ -200,4 +200,10 @@ Re-exports:
 * `EthCLSpecs.Proofs.Heze.Time`: the inherited `computeEpochAtSlot`,
   `computeStartSlotAtEpoch`, and `computeActivationExitEpoch` at Heze. The `Downgrade`
   bridge reaches one fork up, so each theorem takes the Gloas proof term.
+* `EthCLSpecs.Proofs.Heze.TraceRun`: a node trace as a function. `runTrace` runs the
+  handlers of a trace, and a trace exists exactly when it succeeds
+  (`NodeTrace.iff_runTrace`), so a trace is a function of its events (`NodeTrace.det`).
+  `traceAll` checks the stores of a trace in one pass. `ClockedTrace.of_check`,
+  `RootFacts.of_check`, and `HonestList.of_check` derive the hypotheses of the network
+  results from `Bool` checks that `native_decide` closes.
 -/

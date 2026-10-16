@@ -189,6 +189,18 @@ theorem timeIntoSlotMs_run_ok (st s s' : Store map) (t : UInt64)
     injection h with h
     exact h.symm
 
+/-- A successful `timeIntoSlotMs` read leaves the runner state as it was. -/
+theorem timeIntoSlotMs_run_state (st s s' : Store map) (t : UInt64)
+    (h : (timeIntoSlotMs (StoreTransition := ForkChoiceStoreRun (Store map)) st).run s
+      = .ok (t, s')) :
+    s' = s := by
+  simp only [timeIntoSlotMs, checkedSub] at h
+  split at h
+  · cases h
+  · injection h with h
+    injection h with _ h
+    exact h.symm
+
 /-- A successful `getCurrentSlot` read. The store time is not before genesis, and the
 milliseconds since genesis do not overflow. The slot is those milliseconds divided by the
 slot length. -/
@@ -588,6 +600,12 @@ in whole seconds. -/
 def ClockAt : TraceEvent → Nat → Store map → Prop
   | .handler (.tick time), w, _ => time.toNat = w / 1000
   | _, w, st => st.time.toNat = w / 1000
+
+/-- `ClockAt` is an equality of numbers in each case, so it is decidable. -/
+instance ClockAt.decidable (e : TraceEvent) (w : Nat) (st : Store map) :
+    Decidable (ClockAt e w st) := by
+  unfold ClockAt
+  split <;> infer_instance
 
 /-- A node trace on the wall clock. Each event carries its wall time. The wall times do not
 decrease, and each event meets `ClockAt` on the store it runs on. So the node ticks to its
