@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.DepositIndex
+import EthCLSpecs.Proofs.Fulu.RegistrySize
 import EthCLSpecs.Proofs.Fulu.Run
 
 /-!
@@ -22,4 +23,7 @@ Re-exports:
   exact stored sum, and `decreaseBalance`'s truncating difference.
 * `EthCLSpecs.Proofs.Fulu.DepositIndex`: `processDeposit` up to `applyDeposit`. The index
   increment faults only at `2 ^ 64 - 1`, and never under the `processOperations` guard.
+* `EthCLSpecs.Proofs.Fulu.RegistrySize`: `addValidatorToRegistry`'s exact run equation, and
+  `validators.size = balances.size` kept across `addValidatorToRegistry`, `applyDeposit`, and
+  `processDeposit`.
 -/
