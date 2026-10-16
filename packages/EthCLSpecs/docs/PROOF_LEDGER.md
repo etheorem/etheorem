@@ -362,6 +362,17 @@ justified root is not below the FULL node of the block. There the head that `get
 returns is not below that FULL node. So the head does not extend the payload, and a
 block on the FULL edge is never the head.
 
+`Proofs/Heze/PayloadRace.lean` covers the slots after the decision slot on an abstract
+model. From slot `N + 2` on, attestation weight decides between the EMPTY and the FULL
+node of the block. The model has validators with balances and vote slots, a view per
+honest node, and a proposer boost of at most `boost` on FULL. `race_empty_persists`
+proves that every allowed view puts EMPTY strictly ahead in each slot of the window. The
+hypothesis is a counting inequality: the honest balance that has voted since `N + 1` is
+more than the adversarial balance that has voted, plus `boost`.
+`Proofs/Heze/PayloadRaceBounds.lean` derives the inequality from uniform committees and
+from honest proposers. With `PROPOSER_SCORE_BOOST = 40`, the first slot needs more than
+70 % honest balance in the committee of `N + 1`.
+
 The theorem has these hypotheses, bundled as `DichotomyHypotheses`:
 
 - the envelope handler succeeds: the block state is present, the data is available, the
