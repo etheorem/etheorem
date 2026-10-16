@@ -2,6 +2,7 @@
 # Every line is a claim `just proof-coverage-check` enforces exactly.
 tier1 EthCLSpecs.Fulu.computeStartSlotAtEpoch
 tier1 EthCLSpecs.Fulu.currentEpochOf
+tier1 EthCLSpecs.Gloas.applyWithdrawals
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot
 tier1 EthCLSpecs.Gloas.computeExitEpochAndUpdateChurn
 tier1 EthCLSpecs.Gloas.currentEpochOf
