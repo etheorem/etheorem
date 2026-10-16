@@ -6,6 +6,7 @@ import EthCLLib.Tests.CryptoBackendSpike
 import EthCLLib.Tests.ContainerForm
 import EthCLLib.Tests.FrameworkUtils
 import EthCLLib.Tests.PreambleSection
+import EthCLLib.Tests.MerkleWitness
 
 /-!
 # `EthCLLib.Tests`: framework self-tests
