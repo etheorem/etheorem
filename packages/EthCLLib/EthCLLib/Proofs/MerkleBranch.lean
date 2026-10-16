@@ -293,6 +293,27 @@ theorem vecToBytes_bytesToRoot (b : ByteArray) (hsz : b.size = 32) :
       Array.getElem_ofFn, ByteArray.get!]
     exact getElem!_pos b.data i (by omega)
 
+/-- **Branch completeness at the byte level.** The same result with the leaf,
+the siblings, and the root as `ByteArray`s. The widths are hypotheses, so
+`bytesToRoot` drops no bytes, and the check sees the fold's own inputs.
+A caller that computes its reconstruction on bytes uses this form. -/
+theorem isValidMerkleBranch_of_foldOpening_bytes [HasherTag]
+    (leaf root : ByteArray) (sibs : List ByteArray) (depth index : Nat)
+    (hleaf : leaf.size = 32) (hroot : root.size = 32) (hsibs : ∀ s ∈ sibs, s.size = 32)
+    (hsize : sibs.length = depth) (hindex : index < 2 ^ depth)
+    (hrec : SizzLean.Proofs.Merkle.foldOpening (H := HasherTag.H) leaf sibs
+        (SizzLean.Cache.MerkleTree.gindexBits (2 ^ depth + index)) = root) :
+    isValidMerkleBranch (bytesToRoot leaf) (sibs.map bytesToRoot).toArray.reverse
+      depth index (bytesToRoot root) = true := by
+  apply isValidMerkleBranch_of_foldOpening _ _ _ _ _
+    (by rw [List.length_map, hsize]) hindex
+  have hmapback : (sibs.map bytesToRoot).map vecToBytes = sibs := by
+    rw [List.map_map]
+    exact (List.map_congr_left fun s hs => vecToBytes_bytesToRoot s (hsibs s hs)).trans
+      (List.map_id' _)
+  rw [hmapback, vecToBytes_bytesToRoot _ hleaf, hrec]
+  exact (vecToBytes_bytesToRoot _ hroot).symm
+
 open SizzLean.Proofs.Merkle in
 /-- **Completeness on the merkleizer.** Open `Spec.merkleize H chunks depth` at
 `index` and `isValidMerkleBranch` accepts.

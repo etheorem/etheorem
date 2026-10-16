@@ -1,6 +1,7 @@
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
+import EthCLLib.Proofs.ContainerBranch
 import EthCLLib.Proofs.Run
 import EthCLLib.Proofs.StoreRun
 
@@ -25,6 +26,8 @@ Re-exports:
   `FcMap.contains_insert_self`), with `instLawfulFcMapTreeMap` and
   `instLawfulFcMapHashMap`.
 * `EthCLLib.Proofs.MerkleBranch`: what `isValidMerkleBranch` accepts.
+* `EthCLLib.Proofs.ContainerBranch`: `isValidMerkleBranch` accepts a branch to a
+  container field.
 * `EthCLLib.Proofs.Run`: the `StateT`-over-`Except` run facts every pure runner
   shares (`run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
   `except_bind_error`, the `ofExcept` and `liftErr` run equations), plus the pure

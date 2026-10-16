@@ -20,6 +20,7 @@ import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.UncachedBox
 import SizzLean.Proofs.Merkle.Gindex
 import SizzLean.Proofs.Merkle.Opening
+import SizzLean.Proofs.Merkle.Width
 
 /-!
 # `SizzLean`: library root
