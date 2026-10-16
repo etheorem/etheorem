@@ -384,7 +384,25 @@ characterizes `onAttesterSlashing`. Along a trace from the anchor, an index ente
 attestations that pass their checks. An index that no such slashing marks is never in the
 set, so `storeSide` does not drop it as an equivocator. `honest_not_equivocating` takes
 "no such slashing marks the index" as the hypothesis `HonestSigner`, and no theorem derives
-it. No theorem yet ties `latestMessages` to the votes of a validator.
+it.
+
+`Proofs/Heze/PayloadRaceWalk.lean` ties the race to the `getHead` walk. Off the decision
+slot, a weight run returns the score, or the score plus one proposer score. When the EMPTY
+score beats the FULL score plus a bound on every proposer score, the loop body at
+`pending r` steps to `empty r`. A head strictly below `pending r` then lies below `empty r`.
+`Proofs/Heze/HonestVoteSide.lean` shows that an honest vote on a head below `empty r` puts
+its validator on `empty`. The `get_ancestor` walk climbs the parent chain of the head, and
+its fuel is enough, because the roots of the chain are distinct keys of the block map.
+
+`Proofs/Heze/LatestMessages.lean` traces each latest message to the attestation event that
+wrote it, and that event checked the block and the slot of the vote.
+`Proofs/Heze/FullSupport.lean` shows that a validator on `full` has a latest message from a
+slot after the slot of `r`. `Proofs/Heze/PayloadRaceExec.lean` composes the pieces into
+`race_empty_persists_exec`. `RaceSetting` puts every honest head of the window strictly below
+`pending r`. Under it and the counting inequality of `race_empty_persists`, each of these
+heads lies below `empty r` and not below `full r`, or a root collision exists. The sort in
+`on_attestation` is the hypothesis `QsortMem`, because core Lean states no lemma about
+`Array.qsort`.
 
 The theorem has these hypotheses, bundled as `DichotomyHypotheses`:
 
