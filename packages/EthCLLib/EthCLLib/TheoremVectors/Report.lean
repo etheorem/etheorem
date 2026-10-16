@@ -1,5 +1,6 @@
 import Lean
 import EthCLLib.TheoremVectors.Outcome
+import EthCLLib.TheoremVectors.ClientResults
 
 /-!
 # `EthCLLib.TheoremVectors.Report`: `report.md`
@@ -7,8 +8,16 @@ import EthCLLib.TheoremVectors.Outcome
 The report pass (`THEOREM_VECTORS_ARCHITECTURE.md` §16.2): the exe's `report` subcommand
 folds the outcome files into one Markdown file with one table per fork.
 The table is the review surface, so a reader sees which theorems produce
-vectors, which do not, and why. The columns are the §16.2 columns; the
-`Formats` cell stays empty until the pyspec check lands in stage 7.
+vectors, which do not, and why. The columns are the §16.2 columns. The
+Formats cell carries the client harness's answers from
+`<outDir>/client-results.json` (§13.3, §16.2): `prysm passed`,
+`prysm failed`, or `prysm skipped`, joined on the row's fork, preset,
+and theorem. For a theorem's entries the worst answer wins, so a failed
+case is never shown under a pass. The cell prints empty when no entry
+ran the record, which covers the three no-answer states at once: the
+harness never ran, the coverage table maps the target to nothing, or the
+client build table-skipped it. The cell stays terse, so a row can carry
+more format cells beside it later.
 
 The summary line above the tables counts the theorems with outcomes, the
 box lemmas (§7.3), and the theorems with block inputs (§16.2, and decision
@@ -65,8 +74,22 @@ private def blockInputSection (os : Array Outcome) : String :=
         s!"- `{o.theorem}`: {String.intercalate ", "
           (o.blockInputs.toList.map (fun n => s!"`{n}`"))}")
 
+/-- The Formats cell (§16.2): the client harness's answers for the row's
+theorem at the row's preset, under the fork the section names. The worst
+answer wins (`ClientResults.cell`), so a row never shows a pass over a
+failed case. Empty when the run carries no preset (§16.1's survey run)
+or no entry ran the theorem. -/
+private def formatsCell (clients : Array ClientResult) (forkTag : String)
+    (run : RunOutcome) (thm : Name) : String :=
+  match run.preset with
+  | none => ""
+  | some p =>
+    ClientResults.cell (ClientResults.ofThm clients forkTag p.tag
+      thm.toString)
+
 /-- One fork's section: the heading, the table, and the block-input list. -/
-private def forkSection (forkTag : String) (os : Array Outcome) : String :=
+private def forkSection (clients : Array ClientResult) (forkTag : String)
+    (os : Array Outcome) : String :=
   let rows : Array Row :=
     os.flatMap fun o => o.runs.map fun run => { outcome := o, run }
   let table :=
@@ -75,7 +98,8 @@ private def forkSection (forkTag : String) (os : Array Outcome) : String :=
     String.join (rows.toList.map fun r =>
       s!"| `{r.outcome.theorem}` | {r.outcome.origin.tag} | {r.outcome.shape} \
          | {presetCell r.run} | {statusCell r.run} | {optCell r.run.source} \
-         | {optCell r.run.hint} | {r.run.records} | | \
+         | {optCell r.run.hint} | {r.run.records} \
+         | {formatsCell clients forkTag r.run r.outcome.theorem} | \
          {optCell (r.run.seconds.map toString)} |\n")
   "## " ++ forkTag ++ "\n\n" ++ table ++ blockInputSection os ++ "\n\n"
 
@@ -88,9 +112,11 @@ private def unformattedSection (paths : Array String) : String :=
 
 /-- The report text for every fork with outcomes, fork tags in name order
 (§16.2). The summary counts the theorems with outcomes, the box lemmas,
-and the theorems with block inputs. -/
+and the theorems with block inputs. `clients` carries the client
+harness's answers (§13.3); an empty array, the harness-never-ran state,
+leaves every Formats cell empty. -/
 def Report.render (forks : Array (String × Array Outcome))
-    (unformatted : Array String) : String :=
+    (unformatted : Array String) (clients : Array ClientResult) : String :=
   let total := forks.foldl (init := 0) fun acc (_, os) => acc + os.size
   let boxLemmas := forks.foldl (init := 0) fun acc (_, os) =>
     acc + (os.filter isBoxLemma).size
@@ -100,19 +126,24 @@ def Report.render (forks : Array (String × Array Outcome))
     s!"{total} theorems with outcomes; {boxLemmas} box lemmas (§7.3, \
       no shape can express them); {withBlocks} theorems with block \
       inputs (§1.2, base source only).\n\n" ++
-    String.join (forks.toList.map fun (forkTag, os) => forkSection forkTag os) ++
+    String.join (forks.toList.map fun (forkTag, os) =>
+      forkSection clients forkTag os) ++
     unformattedSection unformatted
 
 /-- Collect every fork's outcomes from the output tree and write
 `<outDir>/report.md`. `unformatted` carries the record directories no
 format accepted, which the exe collects from the records tree (§16.2).
-Returns the fork sections the report holds. -/
+The client answers come from the results file the harness wrote
+(§13.3); a missing file, the harness-never-ran state, leaves every
+Formats cell empty. Returns the fork sections the report holds. -/
 def Report.write (outDir : System.FilePath) (unformatted : Array String) : IO Nat := do
   let forkTags ← Outcome.forks outDir
   let mut forks : Array (String × Array Outcome) := #[]
   for forkTag in forkTags do
     forks := forks.push (forkTag, ← Outcome.readFork outDir forkTag)
-  IO.FS.writeFile (outDir / "report.md") (Report.render forks unformatted)
+  let clients ← ClientResults.read outDir
+  IO.FS.writeFile (outDir / "report.md")
+    (Report.render forks unformatted clients)
   return forks.size
 
 end EthCLLib.TheoremVectors

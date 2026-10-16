@@ -84,11 +84,18 @@ forkdef isPendingValidator (pendingDeposits : Array PendingDeposit) (pubkey : BL
     d.pubkey == pubkey && isValidDepositSignature d.pubkey d.withdrawalCredentials d.amount d.signature
 /-- `initiate_builder_exit`. The EL-triggered builder exit, called by
 `process_builder_exit_request` (alpha.11 moved builder exits off `process_voluntary_exit`
-to this path). -/
+to this path). The pyspec's first statement reads `state.builders[builder_index]` as a
+bare list index, so an out-of-range `builderIndex` raises `IndexError` before any write,
+and `process_builder_exit_request`'s callee contract inherits that bound. The read goes
+through `sszGetIdx` for the reason the Fulu balance mutators give: the `[i]!` write
+below would answer `default` and no-op past the end, where the pyspec rejects. -/
 forkdef initiateBuilderExit (builderIndex : BuilderIndex) : StateTransition Unit := do
-  let epoch := currentEpochOf (← get)
+  let state ← get
+  let _builder ← sszGetIdx (sszGet state builders) builderIndex.toNat
+  let epoch := currentEpochOf state
   modifyState fun state =>
-    sszModify state builders[builderIndex.toNat]! as b => { b with withdrawableEpoch := epoch + Const.minBuilderWithdrawabilityDelay }
+    sszModify state builders[builderIndex.toNat]! as b =>
+      { b with withdrawableEpoch := epoch + Const.minBuilderWithdrawabilityDelay }
 /-- `get_index_for_new_builder`: a recyclable slot (withdrawable + zero balance) or the end. -/
 forkdef getIndexForNewBuilder (state : State) : BuilderIndex := Id.run do
   let bs := (sszGet state builders).toArray

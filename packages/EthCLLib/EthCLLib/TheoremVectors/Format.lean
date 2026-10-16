@@ -29,7 +29,8 @@ inductive CheckResult where
   | passed
   /-- The consumer replayed the vector and it failed, with the detail. -/
   | failed (detail : String)
-  /-- The format has no Lean-side consumer to replay with. -/
+  /-- No consumer answered: the format has no Lean-side consumer, or no
+  client ran the record. -/
   | noConsumer
 
 /-- The environment a render pass runs in (§13.1). -/

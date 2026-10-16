@@ -77,6 +77,16 @@ theorem_vectors initializePtcWindow_ge with
 -- `characterized` clause, which stays minimal-only.
 theorem_vectors processBuilderPendingPayments_run presets minimal mainnet
 
+-- The builder-exit contract. The hypothesis reads the index through
+-- `UInt64.toNat`, which the coupled walk and the solver's `UInt64`
+-- fragment do not bridge, so the `built` grid and the random draws can
+-- never fix the index against the built registry. The seeds name the
+-- `withQueue` grid step's state and the index `0`, so the assignment is
+-- complete and the check decides it.
+theorem_vectors initiateBuilderExit_run_eq with
+  (preState := EthCLSpecs.TheoremVectors.Seeds.Gloas.builderState)
+  (builderIndex := (0 : EthCLSpecs.Gloas.BuilderIndex))
+
 -- §14.3: the named lines and the skip lines precede the discovery
 -- clauses. A line below a clause that already ran its theorem is an error.
 theorem_vectors skip initiateBuilderExit_run_inRange

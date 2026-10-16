@@ -150,9 +150,13 @@ proof-coverage-update: proof-coverage-build
 # OpenSSL 3.x (which the lakefiles discover via `pkg-config`), the
 # RIPEMD-160 capability (LeanHazmatRipemd160), a C++ compiler
 # (LeanHazmatBn254), and `nasm` on x86_64 Linux (LeanHazmatSha256's
-# ISA-L unit). The `consensus` profile drops the two execution-only
-# probes (the RIPEMD-160 capability and the C++ compiler) for jobs whose
-# build never compiles those families.
+# ISA-L unit). It also probes `go` at or above the `clients/prysm`
+# module's minimum; only `just client-prysm` compiles that module. The
+# `consensus` profile drops the execution-only probes (the RIPEMD-160
+# capability, the C++ compiler) and the Go probe: the `pyspec`, `ethcl`,
+# and `theorem-vectors` jobs run that profile, their builds compile no
+# execution family and no Go, and a MISS would fail jobs that never
+# need the tool.
 # Designed to run on a fresh CI runner *before* the Lean toolchain action
 # installs elan/lake/lean, so it deliberately ignores those. Local devs
 # usually want the fuller `just doctor` below.
@@ -257,6 +261,29 @@ doctor-native profile="all":
       fi
     fi
 
+    # The stage-10 client harness (`clients/prysm`) is a Go module, and
+    # `just client-prysm` is the only recipe that compiles it. Check
+    # `go` and its version against the module's minimum, the `go 1.26.5`
+    # line in `clients/prysm/go.mod`. The `consensus` profile skips the
+    # probe (no Go in those jobs' builds); see the header comment.
+    if [ "{{ profile }}" = "all" ]; then
+      if command -v go >/dev/null 2>&1; then
+        gv="$(go version 2>&1 | sed -En 's/^go version go([0-9]+)\.([0-9]+)\.([0-9]+).*/\1 \2 \3/p')"
+        if [ -z "$gv" ]; then
+          miss "go                (unparseable \`go version\` output; the clients/prysm module needs go >= 1.26.5)"
+        else
+          set -- $gv
+          if [ "$1" -gt 1 ] || { [ "$1" -eq 1 ] && [ "$2" -gt 26 ]; } || { [ "$1" -eq 1 ] && [ "$2" -eq 26 ] && [ "$3" -ge 5 ]; }; then
+            info "go                ($(go version 2>&1 | head -1))"
+          else
+            miss "go                too old ($(go version 2>&1 | head -1); the clients/prysm module needs go >= 1.26.5)"
+          fi
+        fi
+      else
+        miss "go                (>= 1.26.5, builds the Prysm client harness for \`just client-prysm\`)"
+      fi
+    fi
+
     if [ "$fail" -ne 0 ]; then
       echo
       echo "Some required build-time deps are missing. Install hints:"
@@ -281,6 +308,7 @@ doctor-native profile="all":
           echo "  See packages/SizzLean/README.md → Dependencies for non-Linux/macOS setup"
           ;;
       esac
+      echo "  Go >= 1.26.5    : install from https://go.dev/dl/ (\`just client-prysm\` builds the Prysm harness with it)"
       exit 1
     fi
 
@@ -498,6 +526,41 @@ theorem-vectors-hints-rebuild:
     just theorem-vectors-clean
     THEOREM_VECTORS_HINTS=ignore lake build EthCLSpecsTheoremVectors
     just theorem-vectors-hints-update
+
+# The stage-10 client harness (`clients/prysm`) over the current output
+# tree, once per preset: the mainnet build first, then `-tags minimal`
+# (the README's order). A preset is a Go build tag, so one `go run` per
+# preset is the only way to cover both. The Go caches stay inside
+# `clients/prysm/.go/`, as the harness README documents, and
+# `GOTOOLCHAIN=local` pins the run to the installed toolchain. The
+# recipe fails iff a harness run exits nonzero; a tabled skip exits
+# zero, so a skip never fails the run (the plan's rule). Each build
+# overwrites `client-results.json`, so when both runs pass, the file
+# left in the tree is the minimal run's. The harness runs alone here:
+# the CI job installs no Lean toolchain by design, and the report
+# re-render needs one. `client-prysm-report` renders it.
+
+# Run the Prysm client-conformance harness over the output tree (mainnet then minimal)
+[group('ethcl')]
+client-prysm:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export GOCACHE="{{ justfile_directory() }}/clients/prysm/.go/build"
+    export GOMODCACHE="{{ justfile_directory() }}/clients/prysm/.go/mod"
+    export GOBIN="{{ justfile_directory() }}/clients/prysm/.go/bin"
+    export GOTOOLCHAIN=local
+    cd "{{ justfile_directory() }}/clients/prysm"
+    out="{{ justfile_directory() }}/packages/EthCLSpecs/theorem_vectors"
+    go run . --out "$out"
+    go run -tags minimal . --out "$out"
+
+# Re-render the report with the harness's answers: `lake exe
+# theorem_vectors report` from the repo root, after `client-prysm` ran.
+
+# Re-render the report from the harness's answers (runs the harness first)
+[group('ethcl')]
+client-prysm-report: client-prysm
+    lake exe theorem_vectors report
 
 # ═════════════════════════════════════════════════════════════════════════
 # SizzLean, SSZ library

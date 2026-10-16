@@ -1,0 +1,15 @@
+# Self-test fixture (THEOREM_VECTORS_PLAN.md stage 10, step 5). The record
+# has a hand-computed answer: BuilderIndex(2^40).ToValidatorIndex() sets the
+# BUILDER_INDEX_FLAG bit, and ValidatorIndex(2^40).IsBuilderIndex() answers
+# true. The Go test drives the runner over this tree and over the corrupted
+# copy in testdata-corrupted, so a pass here proves the runner executed the
+# record and matched its hand-computed answer.
+theorem: EthCLSpecs.Proofs.Gloas.isBuilderIndex_fixture
+function: is_builder_index
+fork: gloas
+preset: minimal
+shape: eq
+inputs:
+  bi: 1099511627776
+output: true
+source: fixture

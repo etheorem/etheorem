@@ -11,8 +11,9 @@ run proof needs the same rewrites, so they live once here rather than as a
 `simp [StateT.bind, Bind.bind, ...]` unfolding repeated per call site, and rather than
 under a fork's runner name.
 
-All five close by `rfl`. They exist to be `rw`/`simp` targets with a readable right-hand
-side. Stated at any `σ` / `ε`: nothing in either proof is specific to a fork's state,
+All of these close by `rfl` but the two `liftErr` lemmas. They exist to be
+`rw`/`simp` targets with a readable right-hand side. Stated at any `σ` / `ε`:
+nothing in either proof is specific to a fork's state,
 and the general form applies to `GloasRun` and `ForkChoiceStoreRun` alike.
 
 The runner names remain in their own modules: `GloasRun` is in
@@ -51,6 +52,12 @@ theorem run_bind {σ ε α β : Type} (x : StateT σ (Except ε) α)
 /-- `.run` of a `pure`: the value paired with the state, unchanged. -/
 theorem run_pure {σ ε α : Type} (a : α) (s : σ) :
     (pure a : StateT σ (Except ε) α).run s = .ok (a, s) := rfl
+
+/-- `.run` of `get`: the threaded state paired with itself. The `get`-reading sibling of
+`run_bind` / `run_pure`. -/
+theorem run_get {σ ε : Type} (s : σ) :
+    (get (m := StateT σ (Except ε)) (σ := σ)).run s
+      = (Except.ok (s, s) : Except ε (σ × σ)) := rfl
 
 /-- `.run` of a `throw`: the error alone. This is where the two monads part company.
 `EStateM`'s throw carries the state it had reached, which is what the pyspec runner needs

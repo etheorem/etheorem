@@ -816,12 +816,12 @@ separation.
   `default` corollary for the first region.
 
 - **`Proofs/Gloas/InitiateBuilderExit.lean`** gives the whole-transition
-  `initiateBuilderExit_run_eq` contract at the box: the run on `pureState preState` returns
-  `pureState` of a value whose `builders` carries one unconditional `SSZList.set!`
-  write. The in-range and out-of-range theorems state the `runPure` form of that
-  contract and read it through `SizzLean.Proofs.SSZListSet`, so the range split happens
-  at the read rather than in a second transition proof; out of range the run returns
-  the pre-state value itself. It also proves that the
+  `initiateBuilderExit_run_eq` contract at the box: in range, the run on
+  `pureState preState` returns `pureState` of a value whose `builders` carries one
+  `SSZList.set!` write. The in-range theorem reads it through `SizzLean.Proofs.SSZListSet`,
+  and the out-of-range theorem states the reject: past the end the run answers
+  `.outOfBounds`, the `IndexError` the pyspec's bare `state.builders[builder_index]`
+  read raises. It also proves that the
   withdrawability-delay addition does not wrap for the shipped minimal and
   mainnet configurations.
 
@@ -1274,14 +1274,16 @@ function format, and the search wiring, against
   counts only the pyspec cases, whose `runCase` replay answers
   `passed` / `failed` (§13.5).
 
-- **The record JSON's field names differ from §12.2's sketch in two
-  places.** The case index writes `case`, and the payload nests under
-  `value`, because the scalar's literal and the container's root share
-  one field slot (§12.2 sketches flat `ssz` / `root` / `scalar` keys
-  beside the name). The record's theorem field spells `«theorem»` in Lean,
-  a keyword, and the derived JSON writes the wire spelling §12.2 fixes.
-  The record reader and writer agree with each other; a consumer reads
-  records through neither.
+- **The record JSON's field names differ from §12.2's sketch.** The
+  sketch spells the case index `case`, and the record writes the Lean
+  field name `caseIndex`. The payload nests under `value`, because the
+  scalar's literal and the container's root share one field slot (§12.2
+  sketches flat `ssz` / `root` / `scalar` keys beside the name). The
+  record's theorem field spells `«theorem»` in Lean, a keyword, and the
+  derived JSON writes the wire spelling §12.2 fixes. The sketch names no
+  spec-name field either; the record adds `specName` (the stage-10
+  section records it). The record reader and writer agree with each
+  other; a consumer reads records through neither.
 
 - **The wrong-expected test's subject is a `def` with an
   `implemented_by` implementation.**
@@ -1901,7 +1903,7 @@ builders, the executor's run rows, and the record's error value) against
   positions beside the state first and draws only when one exists, so a
   state-only statement draws nothing. The random source's own loop
   keeps the old shape, because no corpus theorem reaches it at mainnet.
-  Two limits carry in `STAGE8_DEFERRED.md`: a mainnet state beside
+  Two limits carried to stage 9: a mainnet state beside
   another container input still overflows the draw, and the random
   source's loop has no mainnet cap.
 
@@ -1937,7 +1939,7 @@ builders, the executor's run rows, and the record's error value) against
   the side containers alone.** §9.4 memoized a draw as one array of
   every position's bytes, and the built source read draw 0 out of it.
   That full draw sampled the state whenever a container sat beside the
-  state, the limit `STAGE8_DEFERRED.md` carried. The memo's slot now
+  state, the limit stage 8's ledger carried. The memo's slot now
   holds one `Option ByteArray` per input position, `none` for a position
   no call requested. `drawAt` takes the caller's positions and samples
   those alone. The built source and the built hint's replay pass the
@@ -1960,7 +1962,7 @@ builders, the executor's run rows, and the record's error value) against
   carry it until one does.
 - **The random source caps itself at mainnet over a state-typed
   container input.** This fixes the random-source draw item, the second
-  task-3 item `STAGE8_DEFERRED.md` carried to stage 9. A draw keeps a
+  task-3 item stage 8's ledger carried to stage 9. A draw keeps a
   fixed-length vector's preset length, and a mainnet `BeaconState`'s
   65536-element `randao_mixes` overflows the interpreter's recursion
   cap inside `drawVector`. One draw would fail the elaboration and the
@@ -2005,3 +2007,96 @@ builders, the executor's run rows, and the record's error value) against
   Fulu; the pinned pyspec's `create_genesis_state` names the parent
   fork's version as the previous one, so the docstrings name the
   builder's choice instead of claiming the helper's authority.
+
+## Theorem vectors, stage 10
+
+- **The target's pyspec name is data, read off the declaring docstring.**
+  §7.2's sketch names no spec-name field, so the docstring parse is a
+  recorded deviation. The function format's `function:` line names the
+  function a client exposes, and no client spells the Lean constant's
+  name. The spec name opens the declaring `forkdef`'s docstring as a
+  backticked snake-case span, so the reader promotes that spelling at
+  read time. The rule has two parts. The docstring must open with the
+  backticked span. The span's content must be a lowercase snake-case
+  identifier with every char in `[a-z0-9_]`. The identifier runs to the
+  span's end, or to a `(` call form. A span like `initialize_ptc_window(pre)`
+  yields `initialize_ptc_window`. A docstring that opens with prose, or
+  with a span that names no such identifier, answers `none`. The format
+  falls back to the Lean target name. The rule lives in
+  `Statement.lean`, beside target discovery. The reader fills the new
+  `Statement.specName` field, and the record carries it as the wire key
+  `specName`. An inherited target has no docstring, because `inherit`
+  replays the captured `forkdef` as a bare `def`, so its spec name
+  answers `none`. No current record targets an inherited function. The
+  `theorem:` field and the directory naming keep the Lean target name.
+
+- **A `.runOk` record's output is the run's return value when that value
+  is the state.** §11.3's row named the post-state as the output, and the
+  probe recorded the pair's second component, the run's threaded store.
+  That is right for the `StateTransition Unit` steps, whose mutation
+  lives on the store. It is wrong for the value-style mutators:
+  `increaseBalance` takes the state it writes as an argument and returns
+  the mutated one, so the `preState` bystander its theorem threads
+  recorded nothing the theorem states. A client replaying
+  `increase_balance` and comparing outputs would report a false
+  divergence. The new rule lives in `Probe.lean` beside `runOkRunBody`:
+  the record picks the pair's first component when the run's return type
+  names the binding's state container, and the store otherwise. A
+  `Unit`-return run's record is the store pick's bytes. The return
+  type's box wrapping hides the container, because the fork's `State` is
+  a reducible abbrev over `SSZ.Box HasherTag.H BeaconState`, so the
+  state-ness test whnfs the type and strips one `SSZ.Box` layer before
+  it reads the bare container constant. The box carries no `SSZRepr`
+  instance of its own, so the recorded side reads the value through the
+  box's `.view` and serializes at the container's type and instance,
+  the type a client replaying the function holds. The conclusion's
+  `ret` term is the expected side of the agreement check, read through
+  the same box, and the record's output type string names the
+  container. The rendered string is the container's name, the same one
+  the store pick wrote, so the hint fingerprints are unchanged and the
+  committed hints replay. The three Fulu records the rule fires on
+  (`increaseBalance_run_no_wrap`, `decreaseBalance_run_no_underflow` at
+  both presets) carry the mutated state in their `output.ssz` and roots.
+
+- **The `initiateBuilderExit` faithful reject, and the seed that carries
+  its record.** Stage 10's harness probe surfaced the Lean-side gap
+  (`DISCREPANCIES.md`, Gloas): the forkdef's `[i]!` write answered
+  `default` and no-op past the end of `builders`, where the pyspec's bare
+  `state.builders[builder_index]` read raises `IndexError`. The forkdef
+  now reads the registry through `sszGetIdx` and rejects with
+  `.outOfBounds`, `_run_eq` carries the range hypothesis, and the vector
+  regenerates from the `withQueue` seed (`Seeds/Gloas.builderState`).
+  The search alone cannot witness the theorem: the hypothesis reads the
+  index through `UInt64.toNat`, which the coupled walk and the solver's
+  `UInt64` fragment do not bridge.
+
+- **The client's answer is a cross-pass file, and the framework reads it
+  back.** The harness writes `<outDir>/client-results.json` (§13.3): one
+  JSON array, one entry per function-format file it walked, with the
+  file's path relative to the outDir, the fork, the preset, the mapped
+  `specName`, a `status` of `passed` / `failed` / `skipped`, and a
+  detail line. Two readers join against it
+  (`EthCLLib.TheoremVectors.ClientResults`). The function format's
+  `check` strips the rendered file's `outDir` prefix and compares the
+  relative path against each entry's `path`; `passed` passes, `failed`
+  fails with the harness's detail, and `skipped` or no entry answers
+  `noConsumer`. The report's Formats cell joins on (fork, preset,
+  theorem), where the theorem is the entry's file name read backwards
+  through the three suffixes `Formats.functionFileName` and
+  `Record.caseName` write: `.yaml`, the `_t` / `_f` side marker, then
+  the `_<digits>` case index. `noConsumer` and an empty cell now mean
+  no client ran the record: the coverage table maps its target to
+  nothing, the client build table-skipped it, or the harness has not
+  run (a missing results file reads as no entries). A theorem's entries
+  are one per case and side, and the cell shows the worst answer,
+  `failed` over `passed` over `skipped`, so a failed case is never
+  shown under a pass. Staleness rule: a
+  plain `just theorem-vectors` does not run the harness, so its report
+  shows the answers of the last `just client-prysm`. Each harness run
+  overwrites the file. That recipe runs the mainnet build first and the
+  minimal build second, so the file holds the minimal run's answers
+  alone. The report's mainnet rows carry the minimal run's tabled
+  skips, and the mainnet run's own answers live in the recipe's log.
+  The `client-prysm-report` recipe re-renders the report once, after
+  both runs, and `theorem-vectors-clean` removes the file with the
+  tree.

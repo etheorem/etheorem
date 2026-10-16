@@ -634,7 +634,8 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
             (r.inputLiterals.getD i none) (r.inputRoots.getD i none)
       let record : VectorRecord :=
         { «theorem» := stmt.thm, fork := binding.tag, preset := p,
-          target := stmt.target, shape := shapeTag,
+          target := stmt.target, specName := stmt.specName,
+          shape := shapeTag,
           caseIndex := c.index, side := c.side,
           inputs := inputVals, output := outVal, error := errVal,
           source := won }

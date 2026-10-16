@@ -104,10 +104,14 @@ store monad in that column. No store value appears; a state transition's effect 
 depend on one. -/
 
 /-- `initiateBuilderExit_run_eq` crossing the bridge, by application. The contract is a
-`.run` fact on `pureState preState`, exactly the shape `runNestedStateTransition_of_ok` consumes. -/
+`.run` fact on `pureState preState`, exactly the shape `runNestedStateTransition_of_ok`
+consumes. The fact carries the contract's own range hypothesis: past the end of
+`builders` the step rejects, and the bridge propagates that reject through the store
+machine's `transition` wrapper rather than handing back a post-state. -/
 example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
+      builderIndex.toNat < preState.builders.size →
       runNestedStateTransition (pureState preState)
           (initiateBuilderExit (StateTransition := GloasRun) builderIndex)
         = (pure (pureState
@@ -118,8 +122,8 @@ example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
                     currentEpochOf (pureState preState)
                       + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay }) })
             : m State) :=
-  fun preState builderIndex =>
-    runNestedStateTransition_of_ok (initiateBuilderExit_run_eq preState builderIndex)
+  fun preState builderIndex hidx =>
+    runNestedStateTransition_of_ok (initiateBuilderExit_run_eq preState builderIndex hidx)
 
 /-- `processBuilderPendingPayments_run` likewise, and this is the one that shows the point:
 its proof rests on a `List.forIn` induction over the withdrawals loop, and that induction is

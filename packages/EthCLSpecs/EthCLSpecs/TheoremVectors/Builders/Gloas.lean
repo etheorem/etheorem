@@ -58,7 +58,8 @@ carries only the binders its own body names: `[Preset] [Config]`, plus
 
 set_option autoImplicit false
 
-open EthCLLib.Spec
+open EthCLLib.Spec (CryptoBackend HasherTag SSZList StateTransitionError fastHasherTag
+  umin)
 open EthCLLib.TheoremVectors (Knobs)
 open EthCLSpecs.Gloas
 open SizzLean.Cache

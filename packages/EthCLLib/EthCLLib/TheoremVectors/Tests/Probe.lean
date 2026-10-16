@@ -10,6 +10,7 @@ import EthCLLib.TheoremVectors.Witness.Source
 import EthCLLib.TheoremVectors.Witness.Base
 import EthCLLib.TheoremVectors.Tests.ToyFork
 import EthCLLib.TheoremVectors.Tests.ToyRun
+import EthCLLib.Tests.InheritanceReplay
 
 /-!
 # `EthCLLib.TheoremVectors.Tests.Probe`: the probe and the record round trip
@@ -82,6 +83,16 @@ def toyWrongFun (x : UInt64) : UInt64 := x + 4
 compiled code refutes it. -/
 theorem toyWrongEq [HasherTag] (x : UInt64) : toyWrongFun x = x + 4 := rfl
 
+/-- A theorem over the toy fork's `callee`, the forkdef whose docstring
+opens with the backticked spec name. The theorem lives outside the fork's
+proof namespace, so the command tests' survey clause never discovers it. -/
+theorem toyCallee : EthCLLib.Tests.InheritanceReplay.Base.callee = 1 := rfl
+
+/-- A theorem over the toy fork's `caller`, the forkdef whose docstring
+names no pyspec step in the opening span's position: the spec-name rule's
+negative. -/
+theorem toyCaller : EthCLLib.Tests.InheritanceReplay.Base.caller = 11 := rfl
+
 /-- The evaluated probe for one theorem, with a skip reason turned into
 the test failure it is. -/
 private def builtProbe (thm : Name) (binding : ForkBinding)
@@ -147,7 +158,8 @@ private def roundTrip (thm : Name) (binding : ForkBinding)
           (r.inputLiterals.getD i none) (r.inputRoots.getD i none)
     let record : VectorRecord :=
       { «theorem» := stmt.thm, fork := binding.tag, preset := .minimal,
-        target := stmt.target, shape := shapeTag,
+        target := stmt.target, specName := stmt.specName,
+        shape := shapeTag,
         caseIndex := c.index, side := c.side,
         inputs := inputVals,
         output := outVal, error := errVal,
@@ -274,10 +286,11 @@ run_cmd do
       throwError s!"toyBound: expected the bound shape, got {boundRecord.shape.tag}"
     unless boundRecord.output.any fun v => v.value == .scalar "3" do
       throwError "toyBound: expected the literal output 3"
-    -- the run shapes (§11.3): `.runOk` records the post-state as an SSZ
-    -- value with its root, `.runError` the error's repr with no output.
-    -- The drives run under the toy run binding: its state type is the toy
-    -- state, so the reader's run shapes fire (§7.3)
+    -- the run shapes (§11.3): `.runOk` records an SSZ value with its
+    -- root, the run's return value when it is the state and the
+    -- post-state otherwise, and `.runError` the error's repr with no
+    -- output. The drives run under the toy run binding: its state type
+    -- is the toy state, so the reader's run shapes fire (§7.3)
     let okRecord ← roundTrip `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunOk toyRunBinding dir
     unless okRecord.shape == .runOk do
       throwError s!"toyRunOk: expected the runOk shape, got {okRecord.shape.tag}"
@@ -334,6 +347,65 @@ run_cmd do
       | throwError "toyRunPureOkSecond: expected an SSZ output value"
     unless !postRoot.isEmpty do
       throwError "toyRunPureOkSecond: the output value carries no root"
+    -- the value-style `.runOk` (§11.3's output rule): the run returns
+    -- the mutated state, so the record's output is the returned state's
+    -- bytes. The defaults draw both states at balance 0. The action
+    -- writes 1 and leaves the store at 0, so the store pick's bytes
+    -- would read `uint64BytesLE 0`; the pin discriminates the two picks
+    let valRecord ← roundTrip
+      `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunValueOk toyRunBinding dir
+    unless valRecord.shape == .runOk do
+      throwError s!"toyRunValueOk: expected the runOk shape, got \
+        {valRecord.shape.tag}"
+    let some valOut := valRecord.output
+      | throwError "toyRunValueOk: expected an output value"
+    let some stateIn := valRecord.inputs[0]?
+      | throwError "toyRunValueOk: expected a state input value"
+    -- the pre-state's type renders to the same string, so the type pins
+    -- guard the recorded type naming the container alone; the byte pin
+    -- on `output.ssz` below is the one that discriminates the picks
+    unless valOut.type == stateIn.type do
+      throwError s!"toyRunValueOk: expected the output type to name the \
+        container, got {valOut.type}"
+    let valRootOk :=
+      match valOut.value with
+      | .ssz root => !root.isEmpty
+      | _ => false
+    unless valRootOk do
+      throwError "toyRunValueOk: expected the output value to be an SSZ \
+        value with a root"
+    let valFile := Record.caseDir dir valRecord.fork valRecord.preset
+      valRecord.«theorem».toString valRecord.caseIndex valRecord.side
+    unless compareBytes (← IO.FS.readBinFile (valFile / "output.ssz"))
+        (uint64BytesLE 1) do
+      throwError "toyRunValueOk: output.ssz is not the returned state \
+        with balance 1"
+    -- the boxed-value spelling records the container's type and the same
+    -- bytes: the box's `.view` read serializes the wrapped state, and
+    -- the type string names the container the client holds
+    let boxRecord ← roundTrip
+      `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunBoxValueOk toyRunBinding dir
+    unless boxRecord.shape == .runOk do
+      throwError s!"toyRunBoxValueOk: expected the runOk shape, got \
+        {boxRecord.shape.tag}"
+    let some boxOut := boxRecord.output
+      | throwError "toyRunBoxValueOk: expected an output value"
+    unless boxOut.type == valOut.type do
+      throwError s!"toyRunBoxValueOk: expected the output type to name \
+        the container, got {boxOut.type}"
+    let boxRootOk :=
+      match boxOut.value with
+      | .ssz root => !root.isEmpty
+      | _ => false
+    unless boxRootOk do
+      throwError "toyRunBoxValueOk: expected the output value to be an \
+        SSZ value with a root"
+    let boxFile := Record.caseDir dir boxRecord.fork boxRecord.preset
+      boxRecord.«theorem».toString boxRecord.caseIndex boxRecord.side
+    unless compareBytes (← IO.FS.readBinFile (boxFile / "output.ssz"))
+        (uint64BytesLE 1) do
+      throwError "toyRunBoxValueOk: output.ssz is not the returned state \
+        with balance 1"
     -- the strict decodes (§9.3): a corrupt record answers `none`, and the
     -- read-back check reads that as a failed decode
     unless (decodeInput (T := Fin 3) #[uint64BytesLE 5] 0).isNone do
@@ -389,4 +461,30 @@ run_cmd do
       unless stmt.shape matches .eq _ _ do
         throwError s!"toyRunOk at the toy binding: expected the eq \
           fallback, got {stmt.shape.wire}"
+    -- the spec name's promotion (stage 10): the target's docstring names the
+    -- pyspec spelling, and the reader lifts it at read time
+    Statement.readIn toyBinding
+        `EthCLLib.TheoremVectors.Tests.Probe.toyCallee fun ctx => do
+      unless ctx.stmt.target == some `EthCLLib.Tests.InheritanceReplay.Base.callee do
+        throwError "toyCallee: the reader found no target"
+      unless ctx.stmt.specName == some "callee" do
+        throwError s!"toyCallee: expected the spec name `callee`, got \
+          {repr ctx.stmt.specName}"
+    -- a target whose docstring names no identifier in the opening
+    -- span's position answers `none`
+    Statement.readIn toyBinding
+        `EthCLLib.TheoremVectors.Tests.Probe.toyCaller fun ctx => do
+      unless ctx.stmt.target == some `EthCLLib.Tests.InheritanceReplay.Base.caller do
+        throwError "toyCaller: the reader found no target"
+      unless ctx.stmt.specName == none do
+        throwError s!"toyCaller: expected no spec name, got \
+          {repr ctx.stmt.specName}"
+    -- a targetless statement answers `none` whatever its docstrings say
+    Statement.readIn toyBinding
+        `EthCLLib.TheoremVectors.Tests.Probe.toyEq fun ctx => do
+      unless ctx.stmt.target == none do
+        throwError "toyEq: expected no target"
+      unless ctx.stmt.specName == none do
+        throwError s!"toyEq: expected no spec name, got \
+          {repr ctx.stmt.specName}"
     IO.FS.removeDirAll dir

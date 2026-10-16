@@ -1,10 +1,8 @@
 {"theorem": "EthCLSpecs.Proofs.Gloas.initiateBuilderExit_run_eq",
- "fingerprint": "0xe4006ca15a00acff",
+ "fingerprint": "0xe85ae63b7eb0b4bc",
  "entries":
- [{"source": "built",
-   "scalars": {"builderIndex": "0"},
+ [{"source": "seed",
+   "scalars": {},
    "preset": "minimal",
-   "knobs": {"validators": 8, "slot": 0, "queue": 0, "balance": 32000000000},
-   "fingerprint": "0xe4006ca15a00acff",
-   "case": 0,
-   "builder": "genesis"}]}
+   "fingerprint": "0xe85ae63b7eb0b4bc",
+   "case": 0}]}

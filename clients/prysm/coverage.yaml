@@ -1,0 +1,223 @@
+# Prysm coverage table for the function-format theorem vectors
+# (THEOREM_VECTORS_PLAN.md stage 10, step 1).
+#
+# Pin:
+#   client:     Prysm v7.2.1 (release, 2026-10-05)
+#   commit:     fea24b41265542905352ab45fe2291d8eea010cc
+#   module:     github.com/OffchainLabs/prysm/v7
+#   go:         the module requires go >= 1.26.5
+#   surveyed:   2026-10-15, from the pinned release tarball
+#
+# The table is data the harness runner reads. One row per (fork, preset,
+# specName) triple the function format can produce. Status vocabulary is the
+# plan's: implemented, not-implemented (at this pin), fork-not-supported
+# (at this pin). A target with no row, or a row with any other status, is a
+# tabled skip in the runner's summary; a skip never fails the run.
+#
+# Preset: Prysm compiles ONE preset per binary (build tag `minimal` vs
+# `!minimal` selects the fixed-vector lengths of the state protos), so the
+# harness builds and runs once per preset. A row's `preset` is `both` when
+# the mapping holds under either build. A specific preset means only that
+# build's corpus carries the target; the other build table-skips it.
+#
+# Symbols: package path + identifier at the pin. The pin line above goes
+# stale first at a client bump; the symbol paths usually survive it.
+#
+# Args roles (the `args` field): how the runner feeds a record's named
+# inputs to the mapped symbols and what it does with each.
+#   decode-gloas-state, decode-fulu-state   one input's bytes go through
+#     ethpb.BeaconState{Gloas,Fulu}.UnmarshalSSZ, then
+#     state_native.InitializeFromProtoUnsafe{Gloas,Fulu}; the decoded state
+#     is the mapped call's argument
+#   scalar-uint64                           one input's literal, as uint64
+#   ignore                                  root check only, never an argument
+#
+# Compare roles (the `compare` field): what the runner checks.
+#   per-shape                .runOk re-marshals the post state and compares
+#     bytes and root against the record's output; .runError requires the
+#     mapped call to return an error
+#   compare-bool             a Bool result against the output literal
+#   compare-scalar           a uint64 result against the output literal
+#   compare-window-entry     index the upgraded state's PTCWindow() by the
+#     record's scalar input, compare the entry's bytes and root
+#   none                     a skip row; nothing runs
+#
+# When `symbols` lists two symbols, the runner applies them in order,
+# feeding each one's result to the next; this is how a row spells the
+# composition the proved theorem states.
+
+rows:
+  # ── Fulu: both records and both presets map ─────────────────────────────
+  # The record's output carries the mutated argument state (the run's value,
+  # which stage 10's recording fix puts in the record), so `state` decodes
+  # as the call's argument and `preState` is the bystander store.
+  - fork: fulu
+    preset: both
+    specName: increase_balance
+    target: EthCLSpecs.Fulu.increaseBalance
+    status: implemented
+    symbols:
+      - beacon-chain/core/helpers.IncreaseBalance
+    args:
+      state: decode-fulu-state
+      preState: ignore
+      i: scalar-uint64
+      delta: scalar-uint64
+    compare: per-shape
+
+  - fork: fulu
+    preset: both
+    specName: decrease_balance
+    target: EthCLSpecs.Fulu.decreaseBalance
+    status: implemented
+    symbols:
+      - beacon-chain/core/helpers.DecreaseBalance
+    args:
+      state: decode-fulu-state
+      preState: ignore
+      i: scalar-uint64
+      delta: scalar-uint64
+    compare: per-shape
+
+  # ── Gloas: tabled skips at this pin ─────────────────────────────────────
+  # The three Gloas-state rows below map to real symbols at the pin, but
+  # the records cannot run against the client: Prysm v7.2.1 merkleizes the
+  # Gloas container family progressively (EIP-7495, upstream's switch at
+  # v1.7.0-alpha.12), while this repository's pin and vectors are classic.
+  # The root gate fails on every Gloas-state input. Byte-level agreement of
+  # the mapped functions is proven (see DISCREPANCIES.md); etheorem/etheorem#128
+  # tracks the SizzLean progressive forms and the Gloas switch that close
+  # these skips.
+  - fork: gloas
+    preset: both
+    specName: process_builder_pending_payments
+    target: EthCLSpecs.Gloas.processBuilderPendingPayments
+    status: not-implemented
+    reason: >-
+      the client merkleizes Gloas states progressively (EIP-7495) and the
+      vectors are classic, so the root gate cannot pass at this pin; the
+      mapped function agrees at the byte level (DISCREPANCIES.md,
+      etheorem/etheorem#128)
+    symbols:
+      - beacon-chain/core/gloas.ProcessBuilderPendingPayments
+    args:
+      preState: decode-gloas-state
+    compare: none
+
+  - fork: gloas
+    preset: minimal
+    specName: initiate_builder_exit
+    target: EthCLSpecs.Gloas.initiateBuilderExit
+    status: not-implemented
+    reason: >-
+      the client merkleizes Gloas states progressively (EIP-7495) and the
+      vectors are classic, so the root gate cannot pass at this pin;
+      etheorem/etheorem#128
+    symbols:
+      - beacon-chain/core/gloas.InitiateBuilderExit
+    args:
+      preState: decode-gloas-state
+      builderIndex: scalar-uint64
+    compare: none
+
+  - fork: gloas
+    preset: minimal
+    specName: can_builder_cover_bid
+    target: EthCLSpecs.Gloas.canBuilderCoverBid
+    status: not-implemented
+    reason: >-
+      the client merkleizes Gloas states progressively (EIP-7495) and the
+      vectors are classic, so the root gate cannot pass at this pin;
+      etheorem/etheorem#128
+    symbols:
+      - beacon-chain/state.CanBuilderCoverBid   # method on the state.BeaconStateGloas interface
+    args:
+      state: decode-gloas-state
+      builderIndex: scalar-uint64
+      bidAmount: scalar-uint64
+    compare: none
+
+  # The record comes from isBuilderIndex_convertBuilderIndexToValidatorIndex,
+  # whose conclusion composes the conversion ahead of the test, so the row
+  # names both symbols in that order.
+  - fork: gloas
+    preset: minimal
+    specName: is_builder_index
+    target: EthCLSpecs.Gloas.isBuilderIndex
+    status: implemented
+    symbols:
+      - consensus-types/primitives.BuilderIndex.ToValidatorIndex
+      - consensus-types/primitives.ValidatorIndex.IsBuilderIndex
+    args:
+      bi: scalar-uint64
+    compare: compare-bool
+
+  # Round-trip theorems: the conclusion composes both directions, so each
+  # row names both symbols in the theorem's order and expects the input back.
+  - fork: gloas
+    preset: minimal
+    specName: convert_validator_index_to_builder_index
+    target: EthCLSpecs.Gloas.toBuilderIndex
+    status: implemented
+    symbols:
+      - consensus-types/primitives.BuilderIndex.ToValidatorIndex
+      - consensus-types/primitives.ValidatorIndex.ToBuilderIndex
+    args:
+      bi: scalar-uint64
+    compare: compare-scalar
+
+  - fork: gloas
+    preset: minimal
+    specName: convert_builder_index_to_validator_index
+    target: EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex
+    status: implemented
+    symbols:
+      - consensus-types/primitives.ValidatorIndex.ToBuilderIndex
+      - consensus-types/primitives.BuilderIndex.ToValidatorIndex
+    args:
+      vi: scalar-uint64
+    compare: compare-scalar
+
+  - fork: gloas
+    preset: both
+    specName: initialize_ptc_window
+    target: EthCLSpecs.Gloas.initializePtcWindow
+    status: implemented
+    # initializePTCWindow itself is unexported at the pin. UpgradeToGloas is
+    # the public path that computes it, on the same input. The record's
+    # input state is a Fulu state; the runner reads the upgraded state's
+    # PTCWindow().
+    symbols:
+      - beacon-chain/core/gloas.UpgradeToGloas
+      - beacon-chain/state.PTCWindow
+    args:
+      state: decode-fulu-state
+      i: scalar-uint64
+    compare: compare-window-entry
+
+  # ── Gloas: tabled skip ──────────────────────────────────────────────────
+  - fork: gloas
+    preset: minimal
+    specName: is_valid_indexed_payload_attestation
+    target: EthCLSpecs.Gloas.isValidIndexedPayloadAttestation
+    status: not-implemented
+    reason: >-
+      unexported at this pin (validIndexedPayloadAttestation; only the
+      block-level ProcessPayloadAttestations wrapper is public). The
+      record's expected answers are also defined under the generator's
+      verify-off crypto backend. The signature-bearing cases need
+      signature-valid fixtures before any client could run them.
+    args: {}
+    compare: none
+
+  # ── Heze: the fork is absent from the pinned tree ───────────────────────
+  - fork: heze
+    preset: both
+    specName: "*"
+    target: "*"
+    status: fork-not-supported
+    reason: >-
+      no Heze package or spectest exists in Prysm v7.2.1. The fork has no
+      function-format targets today either, so nothing is skipped by it.
+    args: {}
+    compare: none

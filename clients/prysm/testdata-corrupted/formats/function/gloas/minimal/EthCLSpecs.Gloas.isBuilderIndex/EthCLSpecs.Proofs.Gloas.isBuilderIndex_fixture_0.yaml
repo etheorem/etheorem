@@ -1,0 +1,13 @@
+# Corrupted copy of the self-test fixture: the expected answer is flipped
+# to false, so the runner must report a failure that names the client's
+# answer and the expected one. See the minimal fixture in testdata/ for the
+# hand-computed answer.
+theorem: EthCLSpecs.Proofs.Gloas.isBuilderIndex_fixture
+function: is_builder_index
+fork: gloas
+preset: minimal
+shape: eq
+inputs:
+  bi: 1099511627776
+output: false
+source: fixture-corrupted

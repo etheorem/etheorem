@@ -26,7 +26,7 @@ Re-exports:
   `instLawfulFcMapHashMap`.
 * `EthCLLib.Proofs.MerkleBranch`: what `isValidMerkleBranch` accepts.
 * `EthCLLib.Proofs.Run`: the `StateT`-over-`Except` run facts every pure runner
-  shares (`run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
+  shares (`run_bind`, `run_pure`, `run_get`, `run_throw`, `except_bind_ok`,
   `except_bind_error`, the `ofExcept` and `liftErr` run equations), plus the pure
   box helpers `pureState` and `runPure` and their lemmas.
 * `EthCLLib.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine runner

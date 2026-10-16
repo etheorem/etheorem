@@ -21,7 +21,13 @@ namespace EthCLLib.Tests.InheritanceReplay
 
 namespace Base
 fork Base
+/-- `callee`: the toy value under test. The backticked snake-case span
+opens the docstring, which is what the spec-name rule reads
+(`TheoremVectors/Tests/Probe.lean` pins the promotion). -/
 forkdef callee : Nat := 1
+/-- The toy composition value. The docstring opens with prose, so the
+spec-name rule answers `none`; `TheoremVectors/Tests/Probe.lean` pins
+the negative. -/
 forkdef caller : Nat := callee + 10
 end Base
 

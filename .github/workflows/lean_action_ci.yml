@@ -63,6 +63,16 @@ jobs:
         # runtime out, so no static libstdc++ is needed). Installed before
         # `doctor-native` so that check sees the real state.
         run: sudo apt-get install -y nasm g++
+      - uses: actions/setup-go@v5
+        with:
+          # The `all` doctor profile probes `go`, and the runner image's
+          # preinstalled Go is unpinned. Install the clients/prysm
+          # module's own version first, so the probe sees a real,
+          # pinned Go rather than whatever the image ships.
+          go-version-file: clients/prysm/go.mod
+          # The repo root has no go.mod, so setup-go's dependency-cache
+          # step warns on every run, and this job builds no Go anyway.
+          cache: false
       - name: Verify build-time native deps
         # The full `all` profile: this job builds every family, so the
         # execution-only checks (the RIPEMD-160 capability, the C++
@@ -310,3 +320,75 @@ jobs:
         with:
           name: theorem-vectors
           path: packages/EthCLSpecs/theorem_vectors/
+
+  client-prysm:
+    # Stage-10 client conformance (THEOREM_VECTORS_PLAN.md step 6): the
+    # function-format vectors run against Prysm v7.2.1. `needs:
+    # [theorem-vectors]` places the job after generation, and the job
+    # downloads the output tree as an artifact instead of regenerating
+    # it: the generator is the `theorem-vectors` job's full Lean build,
+    # and the plan places this job after it. The upload in the
+    # `theorem-vectors` job uses the directory as its path, so the
+    # artifact root is that directory's contents; the download restores
+    # them directly under `packages/EthCLSpecs/theorem_vectors/`, which
+    # is the layout the harness walks
+    # (`<outDir>/formats/function/<fork>/<preset>/`). The recipe runs
+    # both preset builds. The failure rules are the plan's: a mismatch
+    # fails the job, a tabled skip does not, and the harness's summary
+    # appears in the log. Each build overwrites `client-results.json`. A
+    # green run leaves the minimal build's file in the tree and uploads
+    # nothing. A failed run uploads whichever file the last completed
+    # build wrote, the mainnet answers when the mainnet build failed and
+    # the minimal answers otherwise, so triage reads data, not only the
+    # log. A harness-level failure (exit 2) writes no file itself, and
+    # the upload ignores the miss.
+    needs: [theorem-vectors]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v3
+      - uses: actions/setup-go@v5
+        with:
+          # The version comes from the module's own `go` line; the
+          # doctor probe's 1.26.5 minimum is stated in the recipe.
+          go-version-file: clients/prysm/go.mod
+          # The repo root has no go.mod, so setup-go's dependency-cache
+          # step warns on every run; the harness recipe redirects the
+          # Go caches into the gitignored worktree.
+          cache: false
+      - name: Cache the Go module cache
+        # The recipe points `GOMODCACHE` at `clients/prysm/.go/mod`, which
+        # the worktree wipes between runs; without this step every run
+        # re-downloads the full Prysm module set. Keyed on `go.sum`; a
+        # `restore-keys` fallback reuses the older module set after a
+        # dependency bump. The save runs in a post step gated on job
+        # success, so a red run saves nothing and the next run
+        # re-downloads the modules. Cache declarations are a GitHub
+        # Actions concern with no local analogue; see the workflow header.
+        uses: actions/cache@v4
+        with:
+          path: clients/prysm/.go/mod
+          key: go-modcache-prysm-${{ hashFiles('clients/prysm/go.sum') }}
+          restore-keys: |
+            go-modcache-prysm-
+      - name: Download the theorem-vector output tree
+        uses: actions/download-artifact@v4
+        with:
+          name: theorem-vectors
+          path: packages/EthCLSpecs/theorem_vectors
+      - name: Run the Prysm client-conformance harness
+        id: harness
+        run: just client-prysm
+      - name: Upload the client results
+        # Only a failed harness step needs the artifact for triage; a
+        # green run's answers live in the job log, one line per record
+        # plus counts and skip reasons. An exit-2 harness-level failure
+        # writes no results file; upload-artifact warns by default on
+        # zero matched files, and `ignore` silences that warning in an
+        # already-red job.
+        if: failure() && steps.harness.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-prysm
+          path: packages/EthCLSpecs/theorem_vectors/client-results.json
+          if-no-files-found: ignore

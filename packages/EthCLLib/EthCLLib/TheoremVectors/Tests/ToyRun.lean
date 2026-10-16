@@ -116,6 +116,40 @@ theorem toyRunPureError [HasherTag] (s : ToyState) :
     runPure toyFail s = .error "boom" :=
   rfl
 
+/-! ## The value-style mutators (§11.3's output rule) -/
+
+/-- The value-style toy action, `increaseBalance`'s shape: it takes the
+state it writes as an argument and returns the mutated state as its
+value, while the threaded store passes through untouched. -/
+def toyBumpBal [HasherTag] (st : ToyState) (v : UInt64) :
+    StateT (SSZ.Box HasherTag.H ToyState) (Except String) ToyState :=
+  fun b => .ok ({ st with bal := st.bal + v }, b)
+
+/-- The value-style `.runOk` toy theorem (§7.3, form 3, two state
+binders): the run's return value is the mutated `state`, and the
+threaded `preState` passes through. §11.3's output rule records the
+return value, so the record's output carries the written balance. -/
+theorem toyRunValueOk [HasherTag] (state preState : ToyState) :
+    runPure (toyBumpBal state 1) preState
+      = .ok ({ state with bal := state.bal + 1 }, preState) :=
+  rfl
+
+/-- The boxed-value spelling of `toyBumpBal`: it returns the mutated
+state wrapped in the box, the form the fork's `State` abbrev gives the
+Fulu balance mutators' return values. -/
+def toyBumpBalBox [HasherTag] (st : ToyState) (v : UInt64) :
+    StateT (SSZ.Box HasherTag.H ToyState) (Except String)
+      (SSZ.Box HasherTag.H ToyState) :=
+  fun b => .ok (pureState { st with bal := st.bal + v }, b)
+
+/-- The boxed-value `.runOk` toy theorem: the return value's type is the
+box, so the record picks the pair's `.1` through the box's `.view` read
+and records the container's bytes. -/
+theorem toyRunBoxValueOk [HasherTag] (state preState : ToyState) :
+    runPure (toyBumpBalBox state 1) preState
+      = .ok (pureState { state with bal := state.bal + 1 }, preState) :=
+  rfl
+
 /-! ## The disagreement fixtures (§18) -/
 
 /-- The compiled body of `toyWrongSetBal`: rejects where the kernel's

@@ -19,12 +19,15 @@ JSON reader's integer range. The writer and the reader move bytes and names
 and hold no fork knowledge (§12.4). The read-back check (§12.5) runs in the
 command, which owns the probe the check needs.
 
-The on-disk JSON differs from §12.2's sketch in two field names, the
-reasons recorded in `IMPLEMENTATION_NOTES.md`: `case` for the case index,
-and the payload nested under `value`, because the scalar's literal and the
-container's root share one field slot. The `theorem` field spells with
-French quotes in Lean, `«theorem»`, and the derived JSON writes the wire
-spelling §12.2 fixes.
+The on-disk JSON differs from §12.2's sketch in the field names, the
+reasons recorded in `IMPLEMENTATION_NOTES.md`: the sketch spells the case
+index `case`, and the derived JSON writes the Lean field name
+`caseIndex`; the payload nests under `value`, because the scalar's
+literal and the container's root share one field slot. The `theorem`
+field spells with French quotes in Lean, `«theorem»`, and the derived
+JSON writes the wire spelling §12.2 fixes. The sketch names no spec-name
+field either; the record adds `specName`, the target's pyspec name
+(the stage-10 promotion, recorded in the notes).
 
 ## Lean idioms annotated
 
@@ -86,6 +89,10 @@ structure VectorRecord where
   preset    : PresetId
   /-- The spec function under test, when the reader found one (§7.2). -/
   target    : Option Name
+  /-- The target's pyspec name, when the reader read one off the target's
+  docstring (the stage-10 promotion). The derived JSON writes the wire key
+  `specName`, the way `caseIndex` spells. -/
+  specName  : Option String
   /-- The conclusion's shape. -/
   shape     : ShapeTag
   /-- The zero-based case index. -/

@@ -1,6 +1,7 @@
 import Lean
 import EthCLLib.TheoremVectors.Format
 import EthCLLib.TheoremVectors.Yaml
+import EthCLLib.TheoremVectors.ClientResults
 import EthCLLib.TheoremVectors.Formats.Pyspec
 
 /-!
@@ -10,8 +11,12 @@ The self-contained client-facing layout (`THEOREM_VECTORS_ARCHITECTURE.md` §13.
 accepts the records whose target the reader found: the file's `function`
 field names the function a client exposes, and a record without one has
 no function to name, so the format rejects it. §13.3 says the format
-accepts every record; the notes record the deviation. One YAML file per
-accepted vector:
+accepts every record; the notes record the deviation. The `function`
+field spells the record's `specName`, the target's pyspec name the reader
+read off the docstring (the stage-10 promotion). When `specName` is
+`none`, the field falls back to the Lean target name. The directory
+keeps the Lean target name either way. One YAML file per accepted
+vector:
 
 ```
 <outDir>/formats/function/<fork>/<preset>/<target>/<thm>_<case>[_t|_f].yaml
@@ -19,8 +24,13 @@ accepted vector:
 
 SSZ values go in as single-quoted hex with their root, scalars as literals,
 and the theorem name is the point: the file names the proved property a
-client that exposes the function would replay. Its `check` answers
-`noConsumer`, because no Lean-side consumer drives it yet.
+client that exposes the function would replay. Its `check` joins the
+rendered file against the client harness's results file
+(`ClientResults.lean`): a record the client passed passes, a record the
+client failed fails with the harness's detail line, and `noConsumer` now
+means no client ran the record, either because the coverage table maps
+its target to nothing, the client build table-skipped it, or the harness
+has not run.
 
 ## Lean idioms annotated
 
@@ -60,18 +70,40 @@ def Formats.functionFileName (r : VectorRecord) : String :=
      | some false => "_f"
      | none => "") ++ ".yaml"
 
+/-- §13.3's check: the consumer answers back. The rendered file joins
+against the client harness's results file by its path relative to
+`outDir`, the way the harness spells the entry's `path`. `passed`
+passes; `failed` fails with the harness's detail line; `skipped` and no
+entry answer `noConsumer`, which now means no client ran this record:
+the coverage table maps its target to nothing, the client build
+table-skipped it, or the harness has not run. The function format writes
+exactly one file per record, so the first path is the whole join key. -/
+def Formats.functionCheck (env : RenderEnv) (_r : VectorRecord)
+    (paths : Array System.FilePath) : IO CheckResult := do
+  let rs ← ClientResults.read env.outDir
+  let some file := paths[0]? | return .noConsumer
+  match ClientResults.ofPath? rs env.outDir file with
+  | none => return .noConsumer
+  | some e =>
+    match e.status with
+    | .passed  => return .passed
+    | .failed  => return .failed e.detail
+    | .skipped => return .noConsumer
+
 /-- The function format (`THEOREM_VECTORS_ARCHITECTURE.md` §13.3). It accepts
 the records whose target the reader found: the file's `function` field
 names the function a client exposes, and a record without one has no
-function to name. -/
+function to name. The field carries the record's `specName`, the pyspec
+name. When `specName` is `none`, it falls back to the Lean target name.
+The directory spells the Lean target name either way. -/
 def Formats.function : VectorFormat where
   name := "function"
   -- The env is unused here: §13.3's predicate reads the record alone.
   accepts _ r := r.target.isSome
   render env r inputBytes outputBytes := do
-    let targetDir := (r.target.getD r.«theorem»).toString
+    let targetName := (r.target.getD r.«theorem»).toString
     let dir := env.outDir / "formats" / "function" / r.fork / r.preset.tag /
-      targetDir
+      targetName
     IO.FS.createDirAll dir
     let file := dir / Formats.functionFileName r
     let inputs : Array (String × Yaml) :=
@@ -85,7 +117,7 @@ def Formats.function : VectorFormat where
     let doc : Yaml :=
       .map #[
         ("theorem", .str r.«theorem».toString),
-        ("function", .str (r.target.getD r.«theorem»).toString),
+        ("function", .str (r.specName.getD targetName)),
         ("fork", .str r.fork),
         ("preset", .str r.preset.tag),
         ("shape", .str r.shape.tag),
@@ -95,7 +127,7 @@ def Formats.function : VectorFormat where
       ]
     IO.FS.writeFile file (Yaml.render doc)
     return #[file]
-  check _ _ _ := pure .noConsumer
+  check := Formats.functionCheck
 
 /-- The format registry (`THEOREM_VECTORS_ARCHITECTURE.md` §13.1): the
 function format (§13.3) and the pyspec format (§13.4, §13.5). A new

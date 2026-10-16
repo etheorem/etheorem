@@ -263,13 +263,13 @@ def boundRunResult (out : ByteArray) (agree : Bool) (literal : Option String)
   .ok { output := out, expected := emptyBytes, agree, literal, inputLiterals,
         inputRoots, outputRoot := none }
 
-/-- The `.runOk` run result: the actual post-state bytes against the
-expected post-state bytes, and the actual post-state's root. The
+/-- The `.runOk` run result: the recorded side's bytes against the
+expected side's bytes, and the recorded side's root. The
 comparison sits inside the assembler, so the term passes each
 serialization once (§11.3). The literal stays `none`: this assembler
-implements the `.runOk` row's rule, which records the post-state as an
-SSZ value with its root (§11.3, §12.2). The rule lives in this
-assembler; a scalar-typed pre-state would need a new rule. -/
+implements the `.runOk` row's rule, which records the recorded side as
+an SSZ value with its root (§11.3, §12.2). The rule lives in this
+assembler; a scalar-typed recorded side would need a new rule. -/
 def runOkResult (out expected : ByteArray)
     (outputRoot : Option ByteArray) (inputLiterals : Array (Option String))
     (inputRoots : Array (Option ByteArray)) : Except String ProbeResult :=
@@ -670,27 +670,99 @@ private def probeResultExTy : Expr :=
   mkAppN (.const ``Except [levelZero, levelZero]) #[.const ``String [],
     .const ``EthCLLib.TheoremVectors.ProbeResult []]
 
+/-- The recorded side of a `.runOk` run's result pair when the run's
+return value is the state (`THEOREM_VECTORS_ARCHITECTURE.md` §11.3): `ty`
+and `repr` are the type and the `SSZRepr` instance the value's bytes
+record at, and `viewH?` is the box's hasher type and instance, the pair
+the `.view` read takes when the value is a boxed state. -/
+private structure RunOkValueSide where
+  /-- The type the bytes record at: the container under the box. -/
+  ty     : Expr
+  /-- The `SSZRepr` instance for `ty`. -/
+  repr   : Expr
+  /-- The box's hasher type and its `SizzLean.Hasher` instance, present
+  when the value is a boxed state. -/
+  viewH? : Option (Expr × Expr)
+
+/-- The value pick of a `.runOk` record (`THEOREM_VECTORS_ARCHITECTURE.md`
+§11.3): `some` when the run's return type names the binding's state
+container, `none` when the record keeps the store. The value-style
+mutators are the `some` shape. `increaseBalance` takes the state it
+writes as an argument and returns the mutated one. The `preState`
+bystander its theorem threads records nothing the theorem asserts. A
+`Unit`-return step's mutation lives on the store, so the store pick
+carries that mutation.
+
+The test whnfs the return type first, because the box wrapping hides the
+container: the fork's `State` is a reducible abbrev over
+`SSZ.Box HasherTag.H BeaconState`, so the `SSZ.Box` application must
+surface before `isStateType` reads the bare container constant. A boxed
+value records the container's bytes. The box carries no `SSZRepr`
+instance of its own, so the recorded side reads the value through the
+box's `.view`. The bytes record at the container's type and instance,
+the type a client replaying the function holds. The test strips one
+`SSZ.Box` layer, and a doubly boxed return, or a state container behind
+a non-reducible alias, answers `none` and falls back to the store pick. -/
+private def runOkValueSide? (binding : ForkBinding) (retTy : Expr) :
+    MetaM (Option RunOkValueSide) := do
+  let w ← Meta.withReducible (Meta.whnf retTy)
+  -- the box strip: one `SSZ.Box` layer off, whose first argument is the
+  -- box's hasher type and whose second is the container under it
+  let (bare, boxH?) :=
+    match w.getAppFn, w.getAppArgs with
+    | .const c _, args =>
+      if c == ``SizzLean.Cache.SSZ.Box && args.size ≥ 2 then
+        (args[1]!, some args[0]!)
+      else (w, none)
+    | _, _ => (w, none)
+  unless isStateType binding bare do return none
+  let reprRes? ←
+    (try some <$> Meta.synthInstance (mkApp (.const ``SizzLean.SSZRepr []) bare)
+      catch _ => pure none)
+  let some repr := reprRes?
+    | throwError "theorem_vectors: the run's return value names the state \
+        container, but its type carries no `SSZRepr` instance, so the \
+        value pick has nothing to record (§11.3)"
+  match boxH? with
+  | none => pure (some { ty := bare, repr, viewH? := none })
+  | some hTy =>
+    let hasherRes? ←
+      (try some <$> Meta.synthInstance (mkApp (.const ``SizzLean.Hasher []) hTy)
+        catch _ => pure none)
+    let some hasher := hasherRes?
+      | throwError "theorem_vectors: the boxed state value's hasher \
+          instance did not resolve, so the box's `.view` read has no \
+          `Hasher` instance (§11.3)"
+    pure (some { ty := bare, repr, viewH? := some (hTy, hasher) })
+
 /-- The `.runOk` run body under the `xs` binder (`THEOREM_VECTORS_ARCHITECTURE.md`
 §11.3): `runPure` (`EthCLLib.Proofs.runPure`) evaluates the run on the
 plain pre-state, the precompiled `runProbeOk` extracts the pair outside
-the term (§11.2), the actual post-state serializes at the pre-state's
-type beside the expected post-state, and the root hashes the actual
-post-state under the binding's hasher (§11.4). Each serialization sits at
-one argument position, and `runOkResult` computes the comparison from its
-own arguments, so the post-state serializes once per run (§11.3). A
-rejected run, which the kernel excluded for the witness, takes
-`runOkMiss`: it keeps `agree := false` and carries the rejection's repr
-in `errorRepr` when the error type has a `Repr` instance, and the
-executor's disagreement check prints that repr beside the two byte
-values (§11.3, §18). Without a `Repr` instance, `errorRepr` stays `none`.
+the term (§11.2), and the recorded side's bytes go against the expected
+side's bytes, with the recorded side's root under the binding's hasher
+(§11.4). When `valSide?` is `some`, the recorded side is the run's return
+value, the pair's `.1` read through the box when the value is the fork's
+boxed `State`. The expected side is the conclusion's `ret` term: the
+value-style mutators' theorems state the mutated state as the value and
+leave the threaded store a bystander. When `valSide?` is `none`, the
+recorded side is the pair's `.2`, the store, and the expected side is the
+conclusion's `post` term, both at the pre-state's type. Each
+serialization sits at one argument position, and `runOkResult` computes
+the comparison from its own arguments, so the recorded side serializes
+once per run (§11.3). A rejected run, which the kernel excluded for the
+witness, takes `runOkMiss`: it keeps `agree := false` and carries the
+rejection's repr in `errorRepr` when the error type has a `Repr`
+instance, and the executor's disagreement check prints that repr beside
+the two byte values (§11.3, §18). Without a `Repr` instance,
+`errorRepr` stays `none`.
 
 `preTy` and `preRepr` are the pre-state's type and its `SSZRepr`
 instance, the ones the caller synthesized for the shape's `pre`
 expression. `tag` is the binding's hasher-tag constant, the `HasherTag`
-instance `runPure` takes. The run's return value is not recorded;
-§11.3's row names the post-state as the output. -/
-private def runOkRunBody (act pre post : Expr) (underXs : Expr → Expr)
-    (tag preTy preRepr : Expr) (hashPair? : Option (Expr × Expr))
+instance `runPure` takes. -/
+private def runOkRunBody (act pre ret post : Expr) (underXs : Expr → Expr)
+    (tag preTy preRepr : Expr) (valSide? : Option RunOkValueSide)
+    (hashPair? : Option (Expr × Expr))
     (inputLits inputRoots : Array Expr) : MetaM Expr := do
   let (errTy, retTy) ← runSpineOf (underXs act) ".runOk"
   -- `runPure`'s spine: `{T ε α} [SSZRepr T] [HasherTag] act v`. The
@@ -703,8 +775,24 @@ private def runOkRunBody (act pre post : Expr) (underXs : Expr → Expr)
     (.const ``String [])) inputLits
   let arrRoots := mkArrayLit (mkApp (.const ``Option [levelZero])
     (.const ``ByteArray [])) inputRoots
+  -- the sides the run compares (§11.3): the value pick records and
+  -- expects at the value's type, reading each side through the box; the
+  -- store pick keeps the pre-state's type
+  let (recTy, recRepr, recOf, expectedTerm) :=
+    match valSide? with
+    | some v =>
+      -- the box's `.view` read turns a boxed value into the plain
+      -- container; on an unboxed one it is the identity
+      let viewOf e :=
+        match v.viewH? with
+        | none => e
+        | some (hTy, hasher) =>
+          mkAppN (.const ``SizzLean.Cache.SSZ.Box.view [])
+            #[hTy, v.ty, hasher, v.repr, e]
+      (v.ty, v.repr, viewOf, ret)
+    | none => (preTy, preRepr, fun e => e, post)
   let expSer := mkAppN (.const ``SizzLean.SSZ.serialize [])
-    #[preTy, preRepr, underXs post]
+    #[recTy, recRepr, recOf (underXs expectedTerm)]
   let pairTy := mkApp2 (.const ``Prod [levelZero, levelZero]) retTy preTy
   -- the miss branch carries the rejection's repr when the error type
   -- has a `Repr` instance; without one it answers `none`
@@ -712,17 +800,20 @@ private def runOkRunBody (act pre post : Expr) (underXs : Expr → Expr)
     (try some <$> Meta.synthInstance (mkApp (.const ``Repr [levelZero]) errTy)
       catch _ => pure none)
   Meta.withLocalDeclD `runPair pairTy fun p => do
-    -- the post-state is the pair's `.2`: `runPure` returns
-    -- `(result, state)`, and the record's output is the state
-    let actualPost := .proj `Prod 1 p
+    -- the recorded side: the value pick reads the pair's `.1`, the run's
+    -- return value; the store pick reads the pair's `.2`, the store
+    let recorded := recOf
+      (match valSide? with
+        | some _ => .proj `Prod 0 p
+        | none => .proj `Prod 1 p)
     let ser := mkAppN (.const ``SizzLean.SSZ.serialize [])
-      #[preTy, preRepr, actualPost]
+      #[recTy, recRepr, recorded]
     let root :=
       match hashPair? with
       | some (h, hasher) =>
         optSome (.const ``ByteArray [])
           (mkAppN (.const ``SizzLean.SSZ.hashTreeRoot [])
-            #[preTy, h, hasher, preRepr, actualPost])
+            #[recTy, h, hasher, recRepr, recorded])
       | none => optNone (.const ``ByteArray [])
     let okRes := mkAppN (.const ``runOkResult [])
       #[ser, expSer, root, arrLits, arrRoots]
@@ -1023,9 +1114,11 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
       catch _ => pure none)
   let hashPair? : Option (Expr × Expr) := hasher?.map fun i => (h, i)
   -- the shape's sides and the output type. The run shapes' sides are the
-  -- run's parts, and the "output type" is the pre-state's: `.runOk`
-  -- records the post-state at that type, and `.runError` records no
-  -- output at all (§12.1), so the field goes unused there
+  -- run's parts, and the default "output type" is the pre-state's:
+  -- `.runOk` records the post-state at that type unless the run's return
+  -- value is the state. A state-typed return value records at the
+  -- value's own type. `.runError` records no output at all (§12.1), so
+  -- the field goes unused there
   let outTerm ← match shape with
     | .eq lhs _ => pure lhs
     | .bound lhs _ _ => pure lhs
@@ -1149,14 +1242,16 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
                 #[t, h, hasher, inst, projOfIdx j])
           | _, _ => optNone (.const ``ByteArray [])
         let bodyOpt ← match shape with
-          | .eq lhs rhs =>
-            eqRunBody lhs rhs underXs outTy outRepr? hashPair?
+          | .eq lhs rhs => do
+            let b? ← eqRunBody lhs rhs underXs outTy outRepr? hashPair?
               outToString? inputLits inputRoots
+            pure (b?.map fun b => (b, none))
           | .bound lhs _ _ =>
             let some (cmp, cmpDec) := cmp?
               | return .error "the bound has no `Decidable` instance"
-            pure (boundRunBody lhs cmpDec cmp underXs outTy
-              outToString? inputLits inputRoots)
+            let b? := boundRunBody lhs cmpDec cmp underXs outTy
+              outToString? inputLits inputRoots
+            pure (b?.map fun b => (b, none))
           | .iffTrue _ _ =>
             let some (lhs, q, qDec) := iffDecs?
               | return .error "the `.iffTrue` conclusion has no `Decidable` \
@@ -1164,26 +1259,36 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
             let some outToString := outToString?
               | return .error "the output type has no `ToString` instance"
             pure (some (iffTrueRunBody lhs q qDec underXs outToString
-              outRepr? hashPair? inputLits inputRoots))
-          | .runOk act pre _ post =>
+              outRepr? hashPair? inputLits inputRoots, none))
+          | .runOk act pre ret post =>
             -- `outRepr?` is the pre-state's `SSZRepr` here, the instance
-            -- `runPure` and the post-state's serialization take; it exists
-            -- because the pre-state crossed the byte boundary (§9.1)
+            -- `runPure` and the store pick's serialization take; it
+            -- exists because the pre-state crossed the byte boundary
+            -- (§9.1)
             let some preRepr := outRepr?
               | return .error "the pre-state has no `SSZRepr` instance, so \
                   the run's post-state has nothing to record"
-            pure (some (← runOkRunBody act pre post underXs tag outTy
-              preRepr hashPair? inputLits inputRoots))
+            -- §11.3's output rule: the record picks the run's return
+            -- value when its type names the binding's state container,
+            -- the value-style mutators' shape; the store pick stays for
+            -- the `Unit`-return steps, whose mutation lives on the store
+            let (_, retTy) ← runSpineOf act ".runOk"
+            let valSide? ← runOkValueSide? binding retTy
+            let body ← runOkRunBody act pre ret post underXs tag outTy
+              preRepr valSide? hashPair? inputLits inputRoots
+            -- the recorded type replaces the pre-state's in the record's
+            -- output value, so the type string names the bytes
+            pure (some (body, valSide?.map (fun v => v.ty)))
           | .runError act pre err =>
             let some preRepr := outRepr?
               | return .error "the pre-state has no `SSZRepr` instance, so \
                   the run has nothing to record"
             match ← runErrorRunBody act pre err underXs tag outTy preRepr
                 inputLits inputRoots with
-            | .ok b => pure (some b)
+            | .ok b => pure (some (b, none))
             | .error e => return .error e
           | _ => unsupportedShapeError shape
-        let some body := bodyOpt
+        let some (body, valOutTy?) := bodyOpt
           | return .error "the output type has neither an `SSZRepr` nor a \
               `ToString` instance, so there is nothing to record"
         let runBody := optGetD exTy
@@ -1436,7 +1541,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
         let info : ProbeInfo :=
           { inputNames := stmt.inputs.map (·.name)
             inputTypes
-            outputType := ← renderedType ctx instConsts outTy
+            outputType := ← renderedType ctx instConsts (valOutTy?.getD outTy)
             stmtParts := hypParts ++ concParts
             shapeParts }
         return .ok (info, face)

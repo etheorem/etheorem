@@ -14,14 +14,18 @@ mentioning `xs[i]!` is silent about whether the read landed inside the list, eve
 when a neighbouring hypothesis already settles it, so a reader has to connect the
 two by hand.
 
-`sszListMap_getElem!_eq_attachMap` closes that gap for the common shape: mapping a
-total read across an array of indices. Given that every index is in range, the
-result equals the same map written with `Array.attach`, where each read carries its
-own in-bounds proof. Callers state their theorems in the checked form and rewrite to
-reach the implementation's literal one.
+`sszList_getElem?_eq_getElem!` closes the pointwise gap: in range, the checked
+read yields the total read's element in `some`. `sszListMap_getElem!_eq_attachMap`
+closes the gap for the common shape, mapping a total read across an array of
+indices. Given that every index is in range, the result equals the same map
+written with `Array.attach`, where each read carries its own in-bounds proof.
+The map's callers state their theorems in the checked form and rewrite to reach
+the implementation's literal one.
 
-Generic over the element type, the capacity, the index type, and the projection
-applied after the read; not tied to any particular SSZ container or consensus spec.
+The map lemma is generic over the element type, the capacity, the index type,
+and the projection applied after the read; the pointwise lemma is generic over
+the element type and the capacity. Neither is tied to any particular SSZ
+container or consensus spec.
 -/
 
 set_option autoImplicit false
@@ -29,6 +33,17 @@ set_option autoImplicit false
 namespace SizzLean.Proofs
 
 open SizzLean.Repr
+
+/-- In range, the total `xs[i]!` read carries the same element as the checked
+`xs[i]?` read, wrapped in `some`. Spec code reads through `[i]?` and matches on
+the result, while theorems about it state elements through `[i]!`; each such
+theorem rewrites through this once. -/
+theorem sszList_getElem?_eq_getElem! {α : Type} [Inhabited α] {cap : Nat}
+    (xs : SSZList α cap) (i : Nat) (h : i < xs.size) :
+    xs.val[i]? = some xs[i]! := by
+  rw [getElem!_pos (dom := fun (xs : SSZList α cap) i => i < xs.size) (h := h)]
+  show xs.val[i]? = some (xs.val[i]'h)
+  exact Array.getElem?_eq_getElem h
 
 /-- Mapping a total `xs[·]!` read across `is` equals mapping the checked read across
 `is.attach`, provided every index `is` points at is in range.

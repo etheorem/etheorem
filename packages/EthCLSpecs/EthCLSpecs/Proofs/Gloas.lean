@@ -42,9 +42,9 @@ Re-exports:
 * `EthCLSpecs.Proofs.Gloas.InitializePtcWindow`: the seeded `ptcWindow`'s two
   regions (`initializePtcWindow`).
 * `EthCLSpecs.Proofs.Gloas.InitiateBuilderExit`: `initiateBuilderExit_run_eq`, the
-  whole-transition equation over the plain `BeaconState`, with the in-range /
-  out-of-range reads of that equation and conditional and shipped-configuration no-wrap
-  corollaries for the written `withdrawableEpoch`.
+  whole-transition equation over the plain `BeaconState`, with the in-range reading of
+  that equation, its out-of-range `.outOfBounds` reject, and conditional and
+  shipped-configuration no-wrap corollaries for the written `withdrawableEpoch`.
 * `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: literal and semantic
   characterizations of `isValidIndexedPayloadAttestation`, including its adjacent
   nondecreasing and validator-range checks. The semantic layer indexes the

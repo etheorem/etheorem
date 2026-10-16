@@ -1,32 +1,33 @@
 import EthCLSpecs.Gloas.Operations
 import EthCLSpecs.Proofs.Gloas.Run
 import EthCLLib.Proofs.Run
-import SizzLean.Proofs.UncachedBox
+import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.SSZListSet
+import SizzLean.Proofs.UncachedBox
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.InitiateBuilderExit`: `initiateBuilderExit`'s effect on the builder registry
 
-`initiateBuilderExit_run_eq` is the whole-transition contract: the run on the uncached
-box of `preState` returns the uncached box of `{ preState with builders := … }`, the source-level
-write on `builders`, as one value. The contract states the run at the box, in `.run`
-form, because that is the shape the fork-choice bridge consumes. The readings state the
-`runPure` form, which `runPure_of_run_ok` derives from the contract.
+`initiateBuilderExit_run_eq` is the whole-transition contract: in range, the run on the
+uncached box of `preState` returns the uncached box of `{ preState with builders := … }`,
+the source-level write on `builders`, as one value. The contract states the run at the
+box, in `.run` form, because that is the shape the fork-choice bridge consumes. The
+readings state the `runPure` form, which `runPure_of_run_ok` derives from the contract.
 `initiateBuilderExit_run_inRange` reads it through `SizzLean.Proofs.SSZListSet` as the
-per-index reads, and `initiateBuilderExit_run_outOfRange` reads it as the no-op it is:
-for an out-of-range index the run returns `preState` itself.
+per-index reads, the contract's bound rewrites through `SizzLean.Proofs.SSZListGetElem`'s
+read equation, and `initiateBuilderExit_run_outOfRange` is the reject the contract's
+bound answers: past the end the run rejects with `.outOfBounds`, where the pyspec's bare
+`state.builders[builder_index]` read raises `IndexError` (the directional fix; Lean's old
+`[i]!` write answered `default` and no-op there).
 
 Statements bind plain `BeaconState` values and never bind a boxed `State`, so no
 theorem branches on the box flavour.
 
-The out-of-range case is Lean-only behavior with no PySpec counterpart. The pinned
-Gloas spec uses equivalent indexing syntax, yet the Python runtime rejects an
-out-of-range index where Lean's `[i]!` write is a no-op. Python likewise rejects an
-overflowing unsigned addition where Lean's `UInt64` addition wraps.
-
-No-wrap for the withdrawability-delay sum is conditional for an arbitrary `[Config]`,
-and unconditional for the two shipped Gloas preset/config pairs, with no epoch or slot
-hypothesis from the caller.
+The overflow gap stays open, and the function stays silent there: Python
+rejects an overflowing unsigned addition where Lean's `UInt64` addition
+wraps. No-wrap for the withdrawability-delay sum is conditional for an
+arbitrary `[Config]`, and unconditional for the two shipped Gloas
+preset/config pairs, with no epoch or slot hypothesis from the caller.
 
 Scope is Gloas's `initiateBuilderExit`. Heze inherits the function
 (`Heze/Operations.lean:43`) at its own `State`; these theorems say nothing about that
@@ -39,31 +40,35 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (HasherTag)
-open EthCLLib.Proofs (pureState runPure runPure_of_run_ok)
+open EthCLLib.Spec (HasherTag sszGetIdx)
+open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok run_bind run_get
+  run_pure except_bind_ok)
 open EthCLSpecs.Gloas (Preset Config BuilderIndex Epoch BeaconState)
 open EthCLSpecs.Gloas (minimal mainnet minimalConfig mainnetConfig)
 open EthCLSpecs.Gloas (initiateBuilderExit currentEpochOf)
-open SizzLean.Proofs (sszListSet!_size sszListSet!_getElem!_self sszListSet!_getElem!_ne
-  sszListSet!_eq_of_size_le view_uncachedBox)
+open SizzLean.Proofs (sszList_getElem?_eq_getElem! sszListSet!_size sszListSet!_getElem!_self
+  sszListSet!_getElem!_ne sszListSet!_eq_of_size_le view_uncachedBox)
 
 /-! ## The whole-transition equation
 
-`initiateBuilderExit_run_eq` is the contract: the run returns `preState` with only
-`builders[builderIndex.toNat]!` written. `initiateBuilderExit_run_inRange` and
-`initiateBuilderExit_run_outOfRange` read that one equation through the `SSZList.set!`
-lemmas, so the range split happens at the read. -/
+`initiateBuilderExit_run_eq` is the contract: in range, the run returns `preState` with
+only `builders[builderIndex.toNat]!` written. Past the end the run rejects, so the
+equation carries the range hypothesis; `initiateBuilderExit_run_inRange` reads it through
+the `SSZList.set!` lemmas, and `initiateBuilderExit_run_outOfRange` states the reject
+itself. -/
 
 /-- Exact whole-transition equation for `initiateBuilderExit`, at the box the pure
-configuration runs: the step on `pureState preState` returns the uncached box of the original
-value with only `builders[builderIndex.toNat]!` written through the source-level write.
-Stated at the box level so the fork-choice bridge consumes it by application;
-`runPure_of_run_ok` derives the `runPure` form. For an out-of-range index the underlying
-list write is a no-op, so the whole result is the input value
-(`initiateBuilderExit_run_outOfRange`). -/
+configuration runs: in range, the step on `pureState preState` returns the uncached box
+of the original value with only `builders[builderIndex.toNat]!` written through the
+source-level write. Stated at the box level so the fork-choice bridge consumes it by
+application; `runPure_of_run_ok` derives the `runPure` form. The range hypothesis is the
+contract's own bound: past the end the run rejects with `.outOfBounds`
+(`initiateBuilderExit_run_outOfRange`), where the pyspec's bare
+`state.builders[builder_index]` read raises `IndexError`. -/
 @[characterizes EthCLSpecs.Gloas.initiateBuilderExit]
 theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
+      builderIndex.toNat < preState.builders.size →
       (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run (pureState preState)
         = .ok ((), pureState
           { preState with builders :=
@@ -72,14 +77,21 @@ theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
                   withdrawableEpoch :=
                     currentEpochOf (pureState preState)
                       + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay }) }) := by
-  intro preState builderIndex
+  intro preState builderIndex hidx
+  unfold initiateBuilderExit sszGetIdx
+  -- `run_bind` splits the do-block, `run_get` pairs the read state with itself, and
+  -- beta + `view_uncachedBox` reduce the read to `preState.builders.val[i]?`.
+  simp only [run_bind, run_get, except_bind_ok, view_uncachedBox]
+  rw [sszList_getElem?_eq_getElem! preState.builders builderIndex.toNat hidx]
+  simp [EthCLLib.Spec.liftErr, Except.mapError, MonadExcept.ofExcept]
   rfl
 
-/-- **In range.** Running `initiateBuilderExit builderIndex` never rejects, and the
-written builder reads back with `withdrawableEpoch` set to the pre-state's
-`currentEpochOf` plus `MIN_BUILDER_WITHDRAWABILITY_DELAY`, while every other builder and
-the registry's `.size` are unchanged. The index-level reading of
-`initiateBuilderExit_run_eq` through `SSZList.set!`'s own lemmas. -/
+/-- **In range.** Under the contract's own bound, running
+`initiateBuilderExit builderIndex` never rejects, and the written builder reads back with
+`withdrawableEpoch` set to the pre-state's `currentEpochOf` plus
+`MIN_BUILDER_WITHDRAWABILITY_DELAY`, while every other builder and the registry's `.size`
+are unchanged. The index-level reading of `initiateBuilderExit_run_eq` through
+`SSZList.set!`'s own lemmas. -/
 theorem initiateBuilderExit_run_inRange [Preset] [HasherTag] [Config] :
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
       builderIndex.toNat < preState.builders.size →
@@ -95,22 +107,28 @@ theorem initiateBuilderExit_run_inRange [Preset] [HasherTag] [Config] :
               postState.builders[j]! = preState.builders[j]!)
         ∧ postState.builders.size = preState.builders.size := by
   intro preState builderIndex hidx
-  refine ⟨_, runPure_of_run_ok (initiateBuilderExit_run_eq preState builderIndex), ?_, fun j hj => ?_, ?_⟩
+  refine ⟨_, runPure_of_run_ok (initiateBuilderExit_run_eq preState builderIndex hidx), ?_, fun j hj => ?_, ?_⟩
   · exact sszListSet!_getElem!_self _ _ _ hidx
   · exact sszListSet!_getElem!_ne _ _ _ _ (Ne.symm hj)
   · exact sszListSet!_size _ _ _
 
-/-- **Out of range.** Running `initiateBuilderExit builderIndex` still never rejects
-(`[i]!` is total), and the write is a genuine no-op: the run returns the pre-state
-value itself, so no read of any field can tell the two apart. -/
+/-- **Out of range.** Past the end of `builders` the run rejects with `.outOfBounds` and
+produces no state. The pyspec's `state.builders[builder_index]` is a bare list read there
+and raises `IndexError`, which the reference runner catches. The Fulu balance mutators'
+out-of-range theorems (`Proofs/Fulu/Balances.lean`) state the same reject at the same
+shape. -/
 theorem initiateBuilderExit_run_outOfRange [Preset] [HasherTag] [Config] :
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
       ¬ builderIndex.toNat < preState.builders.size →
       runPure (initiateBuilderExit (StateTransition := GloasRun) builderIndex) preState
-        = .ok ((), preState) := by
+        = .error (.outOfBounds builderIndex.toNat preState.builders.size) := by
   intro preState builderIndex hidx
-  rw [runPure_of_run_ok (initiateBuilderExit_run_eq preState builderIndex),
-    sszListSet!_eq_of_size_le _ _ _ (Nat.le_of_not_lt hidx)]
+  rw [runPure_eq]
+  unfold initiateBuilderExit sszGetIdx
+  simp only [run_bind, run_get, except_bind_ok, view_uncachedBox]
+  rw [Array.getElem?_eq_none_iff.mpr (Nat.le_of_not_lt hidx)]
+  simp [EthCLLib.Spec.liftErr, Except.mapError, MonadExcept.ofExcept]
+  rfl
 
 /-! ## Generic conditional no-overflow
 

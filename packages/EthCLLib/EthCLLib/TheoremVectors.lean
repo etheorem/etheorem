@@ -19,6 +19,7 @@ import EthCLLib.TheoremVectors.Witness.Random
 import EthCLLib.TheoremVectors.Witness.Hint
 import EthCLLib.TheoremVectors.Witness.Shrink
 import EthCLLib.TheoremVectors.Record
+import EthCLLib.TheoremVectors.ClientResults
 import EthCLLib.TheoremVectors.Format
 import EthCLLib.TheoremVectors.Formats.Function
 import EthCLLib.TheoremVectors.Formats.Pyspec
@@ -40,9 +41,9 @@ These modules hold the core types (§5), the client-facing YAML writer
 walk (§7.4), the prepare pass (§8), the preset binding (§10), the probe
 and the executor (§11), the witness search's seed, base, bit-vector,
 built, random, and shrink pieces (§9.2, §9.4, §9.6, §9.9), the records
-(§12), the function format (§13.3), the pyspec format (§13.4, §13.5),
-the outcome lines (§16.1), the report (§16.2), and the generator
-commands (§14).
+(§12), the client harness's results file (§13.3), the function format
+(§13.3), the pyspec format (§13.4, §13.5), the outcome lines (§16.1),
+the report (§16.2), and the generator commands (§14).
 
 No shipped module imports anything under `EthCLLib.TheoremVectors`, so the
 `Plausible` dependency and the generator stay off the `EthCLLib` link line

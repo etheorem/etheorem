@@ -1,0 +1,11 @@
+# Self-test fixture, mainnet preset. See the minimal file for the
+# hand-computed answer.
+theorem: EthCLSpecs.Proofs.Gloas.isBuilderIndex_fixture
+function: is_builder_index
+fork: gloas
+preset: mainnet
+shape: eq
+inputs:
+  bi: 1099511627776
+output: true
+source: fixture

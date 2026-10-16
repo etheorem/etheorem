@@ -39,13 +39,16 @@ four of them on seeds (two on the `Seeds.Fulu` states, two on inline
   container, and stage 8's discipline spends a mainnet run only where the
   run is cheap.
 
-The two `runOk` lines record the run's threaded state alone: the probe
-records the pair's second component, and the run's return value is not
-recorded (§12.2). For these statements the threaded state is `preState`, so
-each record's output holds `preState`'s form; the pre-write balance and
-`delta` appear among the inputs, and the written value appears nowhere in
-the record. The three `runError` lines
-record the error the run returns, which is the whole of what they state.
+The two `runOk` lines record the run's return value. The mutators are
+value-style: each takes the state it writes as an argument and returns
+the mutated one. The record's output is therefore the pair's first
+component, read through the box's `.view` and recorded at the
+container's type. The threaded `preState` is a bystander for these
+statements. The store pick stays for the `Unit`-return steps, whose
+mutation lives on the store (§11.3, §12.2). The pre-write balance and
+`delta` appear among the inputs, and the output holds the written
+balance. The three `runError` lines record the error the run returns,
+which is the whole of what they state.
 
 The two exact run equations (`increaseBalance_run_eq`,
 `decreaseBalance_run_eq`) carry `@[characterizes]`, so the `characterized`

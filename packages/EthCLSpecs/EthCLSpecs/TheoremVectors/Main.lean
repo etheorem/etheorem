@@ -13,9 +13,10 @@ elaborates a theorem; the records on disk are its input. Four subcommands:
   turns every record into every format that accepts it (phase C1, §13.2);
 - `check [--fork <tag>] [--preset <id>] [--format <name>] [--out <dir>]`
   replays the rendered vectors through each format's consumer (C2); the
-  function format answers `noConsumer`, and the pyspec format replays
-  its cases through `runCase` (§13.5);
-- `report [--out <dir>]` folds the outcome files into `report.md` (C3);
+  function format joins the client harness's results file (§13.3), and
+  the pyspec format replays its cases through `runCase` (§13.5);
+- `report [--out <dir>]` folds the outcome files into `report.md` (C3),
+  with the client harness's answers in the Formats cells (§16.2);
 - `list [--out <dir>]` prints one line per record.
 -/
 
@@ -245,8 +246,9 @@ def runSub (sc : Subcommand) (opts : Options) : IO UInt32 := do
   | .check =>
     -- phase C2 (§13.2, §13.5): every registered format's consumer replays
     -- what the render pass returned, through the manifest. The function
-    -- format answers `noConsumer`; the pyspec format replays its cases
-    -- through the pyspec driver.
+    -- format joins the client harness's results file (§13.3), answering
+    -- `noConsumer` for records no client ran; the pyspec format replays
+    -- its cases through the pyspec driver.
     let env := renderEnv out
     let rendered ← readManifest out
     let mut nChecked := 0

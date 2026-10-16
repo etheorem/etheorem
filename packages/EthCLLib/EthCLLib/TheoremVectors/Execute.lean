@@ -13,8 +13,10 @@ between the compiled sides is a compiler, FFI, or serialization defect, and
 both values print.
 
 Every conclusion shape runs: `.eq`, `.bound`, and `.iffTrue` record the
-sides' bytes, `.runOk` records the post-state `runPure` produced, and
-`.runError` records the error's `repr` in place of an output (§11.3).
+sides' bytes, `.runOk` records one side of the run's result pair, and
+`.runError` records the error's `repr` in place of an output (§11.3). The
+`.runOk` recorded side is the run's return value when it is the state,
+and the store `runPure` produced otherwise.
 An `.unsupported` statement never reaches the executor: the reader's
 reason reports it before phase B.
 -/
@@ -52,9 +54,10 @@ def Execute.output (thm : Name) (shape : Shape) (info : ProbeInfo)
       so this is a compiler, FFI, or serialization defect"
   match shape with
   -- `.eq`, `.bound`, and `.iffTrue` record the left side. `.runOk`
-  -- records the post-state as an SSZ value with its root: the row's rule
-  -- sets `literal := none`, and the root carries the value
-  -- (§11.3, §12.2; the rule lives in `runOkResult`, `Probe.lean`)
+  -- records the recorded side as an SSZ value with its root: the row's
+  -- rule sets `literal := none`, and the root carries the value
+  -- (§11.3, §12.2; the rule lives in `runOkResult`, `Probe.lean`, and
+  -- `info.outputType` already names the recorded side's type)
   | .eq .. | .bound .. | .iffTrue .. | .runOk .. =>
     let out ← VectorValue.ofRun `output info.outputType r.literal r.outputRoot
     pure (some out, none)

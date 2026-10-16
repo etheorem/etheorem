@@ -259,7 +259,8 @@ build expects:
 
 Run `just doctor-native` to verify the build-time native deps
 (`cc`, `c++`, `git`, `pkg-config`, OpenSSL 3.x, and `nasm` on x86_64
-Linux).
+Linux), plus `go` >= 1.26.5, needed only by `just client-prysm` and
+the harness.
 
 **Vendored crypto (the LeanHazmat families).** Six families wrap
 *vendored* native libraries, fetched at pinned tags or revs into

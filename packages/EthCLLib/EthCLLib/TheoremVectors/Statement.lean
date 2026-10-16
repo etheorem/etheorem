@@ -18,7 +18,7 @@ folds of §7.5 split the same way. The unknown-instance fold fires here,
 because §7.1 already classified the binder. The function-input fold fires in
 `Scope.lean`, because only the scope walk sees input types.
 
-Two readings deviate from the sketches and carry their reasons:
+Three readings deviate from the sketches and carry their reasons:
 
 - `target` is an `Option Name`. §7.2 says a conclusion with no spec function
   on its left side is `.unsupported`, but `getPtcElseOffset_lt_next_slot` is
@@ -26,12 +26,16 @@ Two readings deviate from the sketches and carry their reasons:
   vector. The walk still fills `target` when it finds a spec function, and a
   theorem whose conclusion matches no shape is `.unsupported` by §7.3's rule
   8 regardless.
+- `specName` reads the target's docstring. §7.2's sketch names no spec-name
+  field, and the pyspec spelling already opens the target declaration's
+  docstring as its backticked snake-case span, so the reader promotes it
+  to data at read time. The notes record the deviation (stage 10).
 - The run matches require the run's state to be one of the statement's
   state-typed value binders, the binders whose type names
-  `binding.stateType`; the `.runOk` post-state must mention only inputs
-  (§7.3). A failure to meet that requirement makes the arm not fire, and
-  matching falls through to the next rule, which is how a contract whose
-  right side is a `match` lands on `.eq`.
+  `binding.stateType`; the `.runOk` returned value and post-state must
+  mention only inputs (§7.3). A failure to meet that requirement makes the
+  arm not fire. Matching falls through to the next rule, which is how a
+  contract whose right side is a `match` lands on `.eq`.
 
 ## Lean idioms annotated
 
@@ -67,7 +71,8 @@ inductive Shape where
   | bound (lhs : Expr) (rel : BoundRel) (b : Expr)
   /-- `act.run (pureState pre) = .ok (ret, pureState post)`, or the
   `runPure` reading `runPure act pre = .ok (ret, post)`. One vector; the
-  post-state is the output. -/
+  recorded output is `ret` when the run's return value is the state, and
+  `post` otherwise (§11.3's output rule). -/
   | runOk (act pre ret post : Expr)
   /-- `act.run (pureState pre) = .error err`, or the `runPure` reading
   `runPure act pre = .error err`. One vector with no post-state. -/
@@ -144,6 +149,16 @@ structure Statement where
   /-- The spec function under test, when the conclusion's left side names
   one the binding's fork owns (§7.2). -/
   target    : Option Name
+  /-- The target's pyspec name, read off the target declaration's
+  docstring (the stage-10 promotion, a recorded deviation from §7.2).
+  The docstring must open with a backticked code span. The span's
+  content must be the identifier, or the identifier followed by a
+  `(pre)`-style call form; `initialize_ptc_window(pre)` yields
+  `initialize_ptc_window`. A missing
+  target, a missing docstring, or an opening span that names no such
+  identifier answers `none`. The function format then falls back to the
+  Lean target name. -/
+  specName  : Option String
   /-- The scalar kind of each input, in binder order, `none` for a
   container (`§9.4`). The reader computes it once, in `MetaM`, because
   the kind needs a reducible `whnf` that a pure `applies` test cannot
@@ -248,6 +263,55 @@ private partial def findTargetIn (env : Environment) (binding : ForkBinding)
   -- here would drag the walk past the term it was given
   | _ => pure none
 
+/-- Does the char open a lowercase snake-case identifier? A letter of
+`[a-z]`. -/
+private def isSnakeHead (c : Char) : Bool := 'a' ≤ c && c ≤ 'z'
+
+/-- May the char appear past the head of a snake-case identifier? -/
+private def isSnakeChar (c : Char) : Bool :=
+  c == '_' || c.isDigit || isSnakeHead c
+
+/-- The leading snake-case run of a span's content, when the content
+starts with one. `initialize_ptc_window(pre)` yields
+`initialize_ptc_window`; `MIN_DEPOSIT_AMOUNT` yields `none`. -/
+private def snakePrefix? (span : String) : Option String := do
+  let c ← span.toList.head?
+  guard (isSnakeHead c)
+  pure (String.ofList (span.toList.takeWhile isSnakeChar))
+
+/-- The snake-case identifier a docstring opens with, when it does. The
+docstring must open with the backticked span, and the span's content must
+be the identifier itself or the identifier followed by a `(` call form.
+`initialize_ptc_window(pre)` yields `initialize_ptc_window`; a span like
+`sszGetIdx`, and a span named mid-sentence, yield `none`. -/
+private def openingSnakeName? (doc : String) : Option String := do
+  let chunks := doc.splitOn "`"
+  -- the docstring opens with the span: the lead-in chunk is empty
+  guard (chunks.head? == some "")
+  let span ← chunks[1]?
+  let name ← snakePrefix? span
+  let rest := span.drop name.length
+  guard (rest.isEmpty || rest.take 1 == "(")
+  pure name
+
+-- the parse's branches, pinned beside the rule (stage 10)
+#guard openingSnakeName? "`initialize_ptc_window(pre)`: the cached PTC window."
+    == some "initialize_ptc_window"
+#guard openingSnakeName? "`callee`: the toy value under test." == some "callee"
+#guard openingSnakeName? "`sszGetIdx` reads the list." == none
+#guard openingSnakeName? "`state.slot` is the slot." == none
+#guard openingSnakeName? "The toy composition value, named `caller`, builds on `callee`."
+    == none
+#guard openingSnakeName? "no code span at all" == none
+#guard openingSnakeName? "`MIN_DEPOSIT_AMOUNT` is a constant." == none
+
+/-- The target's spec name: the snake-case identifier the declaration's
+docstring opens with (the stage-10 promotion). No docstring, or no identifier
+in the opening span's position, answers `none`. -/
+private def specNameOf (env : Environment) (c : Name) : MetaM (Option String) := do
+  let doc? ← findDocString? env c
+  pure (doc?.bind openingSnakeName?)
+
 /-! ## Shape matching (§7.3) -/
 
 /-- Is the conclusion's head a framework box predicate (`THEOREM_VECTORS_ARCHITECTURE.md`
@@ -299,12 +363,15 @@ private def eqSides? (body : Expr) : Option (Expr × Expr) :=
   | _, _ => none
 
 /-- Every fvar of `e` is one the theorem binds? The `.runOk` match
-requires the post-state to be a closed term over the inputs (§7.3). The
-binders include the instance binders, because the box wrappers take
+requires the run's returned value and its post-state to be closed terms
+over the inputs (§7.3). The binders include the instance binders,
+because the box wrappers take
 `[SSZRepr T]` and `[HasherTag]` implicitly: the post-state's `pureState`
 applications carry those fvars, and phase B fixes them like every other
 instance binder (§10). What the check rules out is a term over locals the
-theorem does not bind, an existential's body or a proof's subterm. -/
+theorem does not bind, an existential's body or a proof's subterm. An
+unbound fvar in the returned value would surface as a crash at
+`evalExpr`; the check turns the arm off instead. -/
 private def overBindersOnly (e : Expr) (binderIds : Array FVarId) : Bool :=
   (collectFVarIds e #[]).all binderIds.contains
 
@@ -317,8 +384,8 @@ private def eqTrueLhs? (body : Expr) : Option Expr := do
 
 /-- The `.runOk` reading of a `StateT.run` equation: the action runs on the
 box of `pre` and returns `(ret, pureState post)` (§7.3, form 2). Fires only
-when `pre` is one of the state-typed binders and `post` mentions only
-binders. -/
+when `pre` is one of the state-typed binders and `ret` and `post` mention
+only binders. -/
 private def runOkStateT? (body : Expr) (preIds : Array FVarId)
     (binderIds : Array FVarId) :
     Option (Expr × Expr × Expr × Expr) := do
@@ -334,12 +401,15 @@ private def runOkStateT? (body : Expr) (preIds : Array FVarId)
       let value ← exceptOk? rhs
       let (ret, postBox) ← prodMk? value
       let post ← pureBox? postBox
+      unless overBindersOnly ret binderIds do none
       unless overBindersOnly post binderIds do none
       some (act, pre, ret, post)
   | _, _ => none
 
 /-- The `.runOk` reading of a `runPure` equation (§7.3, form 3): the
-post-state arrives as the plain value, with no box wrapper to strip. -/
+post-state arrives as the plain value, with no box wrapper to strip. Fires
+only when `pre` is one of the state-typed binders and `ret` and `post`
+mention only binders. -/
 private def runOkRunPure? (body : Expr) (preIds : Array FVarId)
     (binderIds : Array FVarId) :
     Option (Expr × Expr × Expr × Expr) := do
@@ -353,6 +423,7 @@ private def runOkRunPure? (body : Expr) (preIds : Array FVarId)
       unless pre.fvarId?.any preIds.contains do none
       let value ← exceptOk? rhs
       let (ret, post) ← prodMk? value
+      unless overBindersOnly ret binderIds do none
       unless overBindersOnly post binderIds do none
       some (act, pre, ret, post)
   | _, _ => none
@@ -532,6 +603,11 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
     let target ← match conclusionLhs? body with
       | none => pure none
       | some lhs => findTargetIn env binding lhs
+    -- the spec name, once per target, at read time: the same `env` lookup
+    -- target discovery used (the stage-10 promotion)
+    let specName ← match target with
+      | some c => specNameOf env c
+      | none => pure none
     -- the scalar kinds, once per input: the sources' `applies` tests and
     -- the probe read this table, so an alias never reads as a container
     -- and the reducible `whnf` never runs twice (§9.4)
@@ -548,7 +624,8 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
         if shape matches .unsupported _ then shape
         else .unsupported s!"unknown instance seam on binder `{n}`: `{c}`"
       | _ => shape
-    k { stmt := { thm := thmName, instances, inputs, typeBinders, hyps, target, scalarKinds, shape }
+    k { stmt := { thm := thmName, instances, inputs, typeBinders, hyps, target,
+                  specName, scalarKinds, shape }
         inputFvars, instFvars }
 
 end EthCLLib.TheoremVectors

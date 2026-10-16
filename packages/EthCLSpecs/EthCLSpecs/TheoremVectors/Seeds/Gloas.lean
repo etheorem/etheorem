@@ -1,5 +1,7 @@
+import EthCLLib.Spec
 import EthCLSpecs.Gloas
 import EthCLSpecs.Fulu
+import EthCLSpecs.TheoremVectors.Builders.Gloas
 
 /-!
 # `EthCLSpecs.TheoremVectors.Seeds.Gloas`: the Gloas author seeds
@@ -31,11 +33,25 @@ Two seeds serve `isValidIndexedPayloadAttestation_eq_true_iff_checks`:
   containers the seed does not vary; the random source draws them
   (§9.2). `canBuilderCoverBid_iff` runs seedless; the random source
   draws its state (§9.4).
+
+One seed serves `initiateBuilderExit_run_eq`:
+
+- `builderState` is the `built` source's `withQueue` grid step (16
+  validators, slot 40, four queued deposits, two builders onboarded by
+  the spec's own onboarding step), so the theorem's in-range hypothesis
+  holds at a registry the spec itself put there. The automatic search
+  cannot witness the theorem: the hypothesis reads the builder index
+  through `UInt64.toNat`, the one spelling the coupled walk and the
+  solver's `UInt64`-comparison fragment do not bridge, so the search can
+  neither couple the index to the built registry nor solve for it. The
+  named line seeds the state and the index (`0`), and a complete
+  assignment goes straight to the check.
 -/
 
 set_option autoImplicit false
 
-open EthCLSpecs.Gloas (Preset)
+open EthCLLib.Spec (CryptoBackend)
+open EthCLSpecs.Gloas (Preset Config)
 open scoped EthCLSpecs.Gloas.Downgrade
 
 namespace EthCLSpecs.TheoremVectors.Seeds.Gloas
@@ -83,6 +99,22 @@ def activeState [Preset] : EthCLSpecs.Fulu.BeaconState :=
     (Array.range 64).foldl (fun xs _ => xs.push 32000000000) default
   ({ (default : EthCLSpecs.Fulu.BeaconState) with validators := vs, balances := bs } :
     EthCLSpecs.Fulu.BeaconState)
+
+/-! ## The builder-registry seed -/
+
+/-- The seed state for `initiateBuilderExit_run_eq`: the `built` source's
+`withQueue` grid step (16 validators, slot 40, queue 4), whose four queued
+deposits drain through `onboardBuildersFromPendingDeposits` into a
+two-builder registry. The theorem's in-range hypothesis holds at the
+registry the spec's own onboarding step put there, and the named line
+seeds the builder index `0` beside it. The crypto backend is the
+binding's verify-off one, pinned locally the way the builders pin the
+hasher, so the seed carries only `[Preset] [Config]`, the binders the
+theorem's telescope fills. -/
+def builderState [Preset] [Config] : EthCLSpecs.Gloas.BeaconState :=
+  letI : CryptoBackend := CryptoBackend.verifyOff
+  EthCLSpecs.TheoremVectors.Builders.Gloas.withQueue
+    { validators := 16, slot := 40, balance := 32000000000, queue := 4 }
 
 /-! ## The payload-attestation seeds -/
 

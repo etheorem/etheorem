@@ -1,6 +1,7 @@
 import EthCLSpecs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Run
 import EthCLLib.Proofs.Run
+import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.UncachedBox
 
@@ -39,7 +40,8 @@ Scope is Fulu's two mutators. Gloas and Heze inherit them at their own `State`, 
 constant, and these theorems say nothing about those instantiations.
 
 `SizzLean.Proofs.SSZListSet` supplies `sszListSet!_getElem!_self`, which reads back the element
-`modBalance` writes.
+`modBalance` writes, and `SizzLean.Proofs.SSZListGetElem` supplies the read equation the
+range hypotheses rewrite through.
 -/
 
 set_option autoImplicit false
@@ -50,7 +52,7 @@ open EthCLLib.Spec (HasherTag StateTransitionError checkedAdd sszGetIdx)
 open EthCLSpecs.Fulu (Preset BeaconState State ValidatorIndex Gwei increaseBalance decreaseBalance
   modBalance)
 open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok)
-open SizzLean.Proofs (sszListSet!_getElem!_self view_uncachedBox)
+open SizzLean.Proofs (sszList_getElem?_eq_getElem! sszListSet!_getElem!_self view_uncachedBox)
 open SizzLean.Repr
 open SizzLean.Cache
 
@@ -58,16 +60,6 @@ open SizzLean.Cache
 theorem below can state the exact error term. `abbrev` (reducible), so it unfolds against the
 string literal in the elaborated body. -/
 abbrev descr : String := "increase_balance: balances[index] + delta"
-
-/-- In range, `sszGetIdx`'s `[i]?` read carries the same element as the total `[i]!` read. The
-run equation matches on `[i]?`, and the theorems below state their balances through `[i]!`, so
-each in-range theorem rewrites through this once. -/
-private theorem sszList_getElem?_eq_getElem! {α : Type} [Inhabited α] {cap : Nat}
-    (xs : SizzLean.Repr.SSZList α cap) (i : Nat) (h : i < xs.size) :
-    xs.val[i]? = some xs[i]! := by
-  rw [getElem!_pos (dom := fun (xs : SizzLean.Repr.SSZList α cap) i => i < xs.size) (h := h)]
-  show xs.val[i]? = some (xs.val[i]'h)
-  exact Array.getElem?_eq_getElem h
 
 /-- `modBalance`'s whole contract at the pure box: the `sszModify state
 balances[i.toNat]! := f` expansion writes `set!` with `f` applied to the old

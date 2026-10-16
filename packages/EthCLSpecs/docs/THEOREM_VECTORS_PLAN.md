@@ -356,8 +356,7 @@ of its four false-side cases from draws; the signature gate's negation
 never holds under the verify-off backend (§8.1) and stays `notFound`.
 The report records the seconds per record.
 
-**Outcome.** Commit `c1dd12d`, with `52dbd4f` for the design. The
-acceptance holds: `canBuilderCoverBid_iff` writes its three cases from
+**Outcome.** The acceptance holds: `canBuilderCoverBid_iff` writes its three cases from
 draws with no seed, the shrunk state is 15493 bytes against the 17635 of
 the first draw, `isValidIndexedPayloadAttestation_eq_true_iff_checks`
 writes three false sides from draws and reports the signature gate's
@@ -415,8 +414,7 @@ same records as before, and every outcome shows `hint: replayed`. Changing
 one hint's scalar by hand to a value the case rejects leads to `failed` on
 that case and `replayed` on the rest.
 
-**Outcome.** Commit `4543c8a`, with `60a13d5` for the design. The
-acceptance holds: the committed Gloas hints cover the ten theorems that
+**Outcome.** The acceptance holds: the committed Gloas hints cover the ten theorems that
 wrote records, a clean build replays all ten (`hint: replayed`), an
 `ignore` build writes the same records byte for byte except the `source`
 field (`hinted-<orig>` against `<orig>`) and the same hint files, a
@@ -582,15 +580,12 @@ the `source` field, and the `builder_pending_payments` case passes `runCase`
 and the server at both presets. The mainnet cap held: the built cache holds
 exactly one mainnet entry, the genesis step, so the 3-step cap cut nothing
 the walk reached. The built seconds and the one cache entry are the
-measurement §14.4's mainnet cap rests on. Commits: `7e52ceb` (the
-preset-free check and the reuse path), `b8d3e99` (the two-preset toy fork
-and the reuse tests), `c5f5b37` with `1dbcb8b` (the built source's draw
-guard, which the mainnet run exposed), `adb13a8` (the generator lines and
-the committed mainnet hints). The reuse source sits after the hint source,
+measurement §14.4's mainnet cap rests on. The reuse source sits after the
+hint source,
 a recorded deviation from §3's B2 sketch (`IMPLEMENTATION_NOTES.md`). Two
-mainnet draw limits carry in `STAGE8_DEFERRED.md`: a mainnet state beside
-another container input still overflows the draw, and the random source's
-loop has no mainnet cap.
+mainnet draw limits carried to stage 9, which landed them: a mainnet state
+beside another container input still overflowed the draw, and the random
+source's loop had no mainnet cap.
 
 ---
 
@@ -634,7 +629,7 @@ block-input rule and the `FcMap` / `ExecutionEngine` seams, each with
 its reason in the report. The Fulu lines forced two reader changes the
 plan's step 2 now names: the run's state is identified by type, not by
 position, and `.runError` reads the `runPure` form. Two carried items
-from `STAGE8_DEFERRED.md` landed first, so no mainnet line could reach
+from stage 8 landed first, so no mainnet line could reach
 the overflow they guard: the built source draws its side containers
 alone, and the random source caps itself at mainnet over a state-typed
 container. The builders landed for all three forks; Fulu's catalog is
@@ -644,8 +639,8 @@ shipped-file exception the notes record. Heze's catalog serves no
 theorem today. CI gains the `theorem-vectors` job with the artifact.
 The design documents moved with the code that changed them: §7.3's
 store rule and form list, §5.3's `Shape` sketch, §9.4's cap sentence,
-§11.1's `sampleAt` face. `STAGE9_DEFERRED.md` closes every finding
-closed or drops it with its reason.
+§11.1's `sampleAt` face. The stage-9 ledger closed every finding
+closed or dropped it with its reason.
 
 ---
 
@@ -727,6 +722,32 @@ issues seen are fixed or recorded, per the three buckets. `just
 theorem-vectors` stays green, and the records stay byte-identical
 unless a generator-side fix regenerates them, in which case the diff is
 the fix's review surface.
+
+*Outcome.* The acceptance holds. The survey pinned Prysm v7.2.1 and mapped
+nine of the function format's ten targets to public symbols; the client
+implements Gloas near mainnet launch, so decision point D never fired. The
+harness runs every record per preset build: minimal 11 passed and 16
+tabled-skipped, mainnet 6 passed and 21 tabled-skipped, a failure the only
+nonzero exit, and the deliberately corrupted fixture fails it. The stage's
+findings landed in three buckets. Generator-side: the records name the
+function the way the client spells it (`specName`, read off the target's
+docstring), and `.runOk` records the run's value state, which the Fulu
+mutator records had lacked (they carried the untouched bystander store).
+Client-side: the records whose input is a Gloas `BeaconState` cannot run at
+this pin, because the client merkleizes the Gloas container family
+progressively (upstream's alpha.12 switch) while the pin and the vectors
+are classic, so those rows table-skip with the reason and the migration is
+tracked as etheorem/etheorem#128; byte-level agreement of the mapped
+functions is proven there. A real divergence against the pyspec itself
+surfaced the same way: the pyspec's `initiate_builder_exit` raises past
+the end of the builder registry where Lean no-opped, fixed faithful-reject
+per the directional policy and recorded as etheorem/etheorem#129, with the
+bid-path class tracked as etheorem/etheorem#130. `just client-prysm` runs
+the harness, the CI job runs the recipe after `theorem-vectors`, and the
+report's Formats column carries the client cell: `noConsumer` now means no
+client ran the record. The review ledgers closed and left the repository;
+the one gated follow-up (the initiateBuilderExit line's second preset)
+lives on #128.
 
 ---
 
