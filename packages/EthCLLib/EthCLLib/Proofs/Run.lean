@@ -142,6 +142,24 @@ theorem run_pure_eq_ok {σ ε α : Type} (a b : α) (s s' : σ)
   injection h with h
   exact h.symm
 
+/-- A successful run of `get` followed by `k` is a run of `k` on the same state. -/
+theorem run_get_bind_eq_ok {σ ε β : Type} (k : σ → StateT σ (Except ε) β) (s : σ)
+    (r : β × σ) (h : ((get : StateT σ (Except ε) σ) >>= k).run s = .ok r) :
+    (k s).run s = .ok r := h
+
+/-- A successful run of an `assert` followed by `k`: the condition holds, and `k` runs on
+the same state. The `assert` macro expands to this `if`. -/
+theorem run_assert_bind_eq_ok {σ ε β : Type} {c : Prop} [Decidable c] (e : ε)
+    (k : PUnit → StateT σ (Except ε) β) (s : σ) (r : β × σ)
+    (h : ((if c then (pure PUnit.unit : StateT σ (Except ε) PUnit) else throw e) >>= k).run s
+      = .ok r) :
+    c ∧ (k PUnit.unit).run s = .ok r := by
+  by_cases hc : c
+  · rw [if_pos hc] at h
+    exact ⟨hc, h⟩
+  · rw [if_neg hc] at h
+    cases h
+
 /-- An invariant of a `for` loop over a list. The loop starts from an accumulator that
 satisfies `P`. Each body run takes an accumulator that satisfies `P` to a step whose
 value satisfies `P`. The step can continue (`yield`) or stop (`done`). Then a successful

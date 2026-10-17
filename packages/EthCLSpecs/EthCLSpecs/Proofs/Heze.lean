@@ -1,5 +1,7 @@
+import EthCLSpecs.Proofs.Heze.BlockRoot
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
 import EthCLSpecs.Proofs.Heze.CensorshipCost
+import EthCLSpecs.Proofs.Heze.CheckpointOrd
 import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.HandlerFrames
@@ -12,6 +14,7 @@ import EthCLSpecs.Proofs.Heze.KeepsUncached.Epoch
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Payload
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Slots
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Withdrawals
+import EthCLSpecs.Proofs.Heze.StorePure
 import EthCLSpecs.Proofs.Heze.NodeTrace
 import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 import EthCLSpecs.Proofs.Heze.OnInclusionList
@@ -22,6 +25,7 @@ import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.RootFrames
 import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
+import EthCLSpecs.Proofs.Heze.SlotsIncrease
 import EthCLSpecs.Proofs.Heze.Time
 
 /-!
@@ -39,6 +43,9 @@ Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Heze.BlockRoot`: a block root is the root of its header
+  (`htr_eq_htr_headerOf`), under the hypothesis that every `combine` returns 32 bytes.
+  The root of a 32-byte vector is its bytes (`hashTreeRoot_bytes32`).
 * `EthCLSpecs.Proofs.Heze.BuilderPendingPayments`: the Heze port of the epoch
   substep for builder payments (`processBuilderPendingPayments_run`), and the
   per-entry quorum condition (`mem_qualifyingPaymentIndices_iff`), proved with
@@ -50,6 +57,9 @@ Re-exports:
   continues from EMPTY at the block. A child on EMPTY, with the empty parent requests,
   does not settle the bid. At the epoch substep, the entry of the bid is appended if and
   only if it reaches the quorum.
+* `EthCLSpecs.Proofs.Heze.CheckpointOrd`: the derived order on `Checkpoint` is transitive
+  and returns `.eq` only on equal checkpoints (`instTransOrdCheckpoint`,
+  `instLawfulEqOrdCheckpoint`), so `treeMap` meets the map laws at `Checkpoint`.
 * `EthCLSpecs.Proofs.Heze.Churn`: the inherited `reserveChurn`, which takes the Gloas proof
   terms, and run theorems for the two inherited churn callers.
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
@@ -137,7 +147,20 @@ Re-exports:
   existing recorded-unsatisfied FOCIL rejection
   (`shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`), and the
   named prefix, FOCIL, vote, and inherited-Gloas-tail corollaries.
+* `EthCLSpecs.Proofs.Heze.SlotsIncrease`: block slots increase along parent links at the
+  end of a trace from the anchor store, or two distinct headers or blocks share a root
+  (`NodeTrace.slotInv`). The argument uses the header check of `processBlockHeader` and
+  the block-root lemma, and needs no frame over the state transition.
+  `inclusionList_missing_tx_anchored` states the missing-transaction result on such a
+  trace, with the justified-root hypothesis reduced to a slot comparison.
+* `EthCLSpecs.Proofs.Heze.StorePure`: every state that the store holds is the uncached box
+  of a plain value, at the end of a trace from the anchor store of `getForkchoiceStore`
+  over an uncached anchor (`StorePure.anchor`, `NodeTrace.storePure`). The `blockStates`
+  half needs only the law of the root map (`NodeTrace.blockStatesPure`). The run
+  inversions of `onBlock` and the envelope handler return the stored states as plain
+  values (`onBlock_run_ok`, `onExecutionPayloadEnvelope_run_ok`). The predicates are in
+  `….StorePure.Basic`.
 * `EthCLSpecs.Proofs.Heze.Time`: the inherited `computeEpochAtSlot`,
-  `computeStartSlotAtEpoch`, and `computeActivationExitEpoch` at Heze. The `Downgrade` bridge reaches one fork up,
-  so each theorem takes the Gloas proof term.
+  `computeStartSlotAtEpoch`, and `computeActivationExitEpoch` at Heze. The `Downgrade`
+  bridge reaches one fork up, so each theorem takes the Gloas proof term.
 -/
