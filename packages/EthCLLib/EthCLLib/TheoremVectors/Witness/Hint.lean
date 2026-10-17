@@ -13,7 +13,7 @@ import EthCLLib.TheoremVectors.Witness.Built
 A hint records how a witness was found, with enough data to rebuild the
 candidate without searching (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8). It is a hint and
 nothing more: the probe's `check` still decides, and a hint the check
-rejects sends the case through the full search.
+rejects sends the disjunct through the full search.
 
 The file is one JSON document per theorem and fork:
 
@@ -21,7 +21,7 @@ The file is one JSON document per theorem and fork:
 { "theorem": "EthCLSpecs.Proofs.Gloas.canBuilderCoverBid_iff",
   "fingerprint": "0x…",
   "entries": [
-    { "preset": "minimal", "case": 0, "side": true,
+    { "preset": "minimal", "disjunctIndex": 0, "side": true,
       "source": "random", "seed": 7, "size": 8, "draw": 3,
       "scalars": { "builderIndex": "3", "bidAmount": "32000000000" } } ] }
 ```
@@ -43,16 +43,17 @@ traceless entry, and for a recorded path that no longer replays.
 
 The source runs first on every list (§9.2). The command loads the
 committed file, computes the fingerprint, and hands both to `source`
-together with a log ref; after the case loop it folds the log into the
+together with a log ref; after the disjunct loop it folds the log into the
 outcome line's `hint` field (§16.1) and merges the run's entries into
 `<outDir>/hints/<fork>/<thm>.json`, which the update recipe copies over
 the committed files.
 
 ## Lean idioms annotated
 
-- `«case»` carries French quotes because `case` is a keyword, the same
-  way `«theorem»` does in the record and outcome structures; the derived
-  JSON writes the wire spelling the §9.8 example fixes.
+- `disjunctIndex` is a legal Lean identifier, so the field carries no
+  French quotes, unlike `«theorem»` in the record and outcome structures;
+  the derived readers take the field's name for the wire key, and the
+  hand-written `ToJson` spells the same key.
 - The scalars map stores decimal *strings*, because a `UInt64` can exceed
   the integer range a JSON reader is sure to keep (§9.8); a small wrapper
   structure carries the map so the derived instances keep the object
@@ -126,8 +127,8 @@ and `draw`; the built source's `builder` and `knobs`. -/
 structure HintEntry where
   /-- The preset the entry replays at. -/
   preset : PresetId
-  /-- The zero-based case index. -/
-  «case» : Nat
+  /-- The zero-based disjunct index. -/
+  disjunctIndex : Nat
   /-- The `.iffTrue` side, when the shape is `.iffTrue`. -/
   side   : Option Bool
   /-- The source whose witness the entry rebuilds. -/
@@ -149,9 +150,9 @@ structure HintEntry where
   candidates that call accepted. The replay walks these instead of the
   calls' full lists. -/
   shrink : Option (Array (Array Nat)) := none
-  /-- The sources the search tried on a case none of them satisfied
+  /-- The sources the search tried on a disjunct none of them satisfied
   (the plan's stage-6 step 9). An entry this field holds records the
-  case's empty answer: `use` and `require` modes skip the search for it
+  disjunct's empty answer: `use` and `require` modes skip the search for it
   while it is not stale, and the search runs when it is. Its `source`
   field is the placeholder `.base`, because no witness exists for the
   entry to name; the `notFound` list is the entry's content, and
@@ -175,7 +176,8 @@ diffs to the fields that changed; a missing key reads back as `null`
 through the derived parser, so the reader stays derived. -/
 instance : ToJson HintEntry where
   toJson e :=
-    Json.mkObj (Json.opt "preset" (some e.preset) ++ Json.opt "case" (some e.«case») ++
+    Json.mkObj (Json.opt "preset" (some e.preset) ++
+      Json.opt "disjunctIndex" (some e.disjunctIndex) ++
       Json.opt "side" e.side ++ Json.opt "source" (some e.source) ++
       Json.opt "seed" e.seed ++ Json.opt "size" e.size ++
       Json.opt "draw" e.draw ++
@@ -186,8 +188,8 @@ instance : ToJson HintEntry where
       Json.opt "fingerprint" e.fingerprint)
 
 /-- One theorem's hint file (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8): the theorem's full
-constant name, the fingerprint, and one entry per preset, case, and side
-the search won. -/
+constant name, the fingerprint, and one entry per preset, disjunct, and
+side the search won. -/
 structure HintFile where
   /-- The theorem's full constant name. `theorem` is a keyword, so the
   field carries French quotes and the derived JSON writes the wire
@@ -195,7 +197,7 @@ structure HintFile where
   «theorem»   : Name
   /-- The fingerprint of the statement and the input type names (§9.8). -/
   fingerprint : String
-  /-- One entry per preset, case, and side. -/
+  /-- One entry per preset, disjunct, and side. -/
   entries     : Array HintEntry
   deriving ToJson, FromJson, Repr, BEq
 
@@ -258,8 +260,9 @@ def Hint.write (path : System.FilePath) (f : HintFile) : IO Unit := do
 
 /-- Merge one run's entries into the output tree's hint file (§9.8). The
 run's entries replace the stored entries of `preset`, because the run
-re-searched every case of the theorem at that preset; the other presets'
-entries stay, so a second preset's run never clobbers the first's. -/
+re-searched every disjunct of the theorem at that preset; the other
+presets' entries stay, so a second preset's run never clobbers the
+first's. -/
 def Hint.mergeWrite (outDir : System.FilePath) (forkTag : String)
     (thmLocal : String) (preset : PresetId) (f : HintFile) : IO Unit := do
   let path := Hint.file (outDir / "hints") forkTag thmLocal
@@ -481,7 +484,7 @@ replayed `.hinted` tag back to the source the hint already recorded. A
 reused win (§10) records a `.reused` entry, whose scalar table is the
 whole rebuild input. `none` when the source carries no rebuildable data
 yet or a scalar read failed. -/
-def Hint.entryOf (ctx : SearchCtx) (stmt : Statement) (c : Case)
+def Hint.entryOf (ctx : SearchCtx) (stmt : Statement) (d : Disjunct)
     (a : Assignment) (won : WitnessSourceTag) (seedOpt sizeOpt : Nat)
     (fingerprint : String) : MetaM (Option HintEntry) := do
   match won with
@@ -491,14 +494,14 @@ def Hint.entryOf (ctx : SearchCtx) (stmt : Statement) (c : Case)
     -- scalar, so the table rebuilds the candidate exactly
     let some scalars ← scalarsOf stmt a | return none
     let head : HintEntry :=
-      { preset := ctx.preset, «case» := c.index, side := c.side,
+      { preset := ctx.preset, disjunctIndex := d.index, side := d.side,
         source := .reused p, fingerprint := some fingerprint }
     pure (some { head with scalars := scalars })
   | _ =>
     let some src := entrySource won | return none
     let head : HintEntry :=
-      { preset := ctx.preset, «case» := c.index, side := c.side, source := src,
-        fingerprint := some fingerprint }
+      { preset := ctx.preset, disjunctIndex := d.index, side := d.side,
+        source := src, fingerprint := some fingerprint }
     match src with
     | .base | .manual => pure (some head)
     | .bitVec => do
@@ -538,7 +541,7 @@ def Hint.entryOf (ctx : SearchCtx) (stmt : Statement) (c : Case)
 
 /-! ## What one attempt did -/
 
-/-- The per-case answer of one hint attempt, which the outcome line's
+/-- The per-disjunct answer of one hint attempt, which the outcome line's
 `hint` field folds up (§16.1). Staleness is the fingerprint's answer;
 the check decides the replay itself: a stale hint that replays is
 `staleReplayed`. -/
@@ -550,39 +553,40 @@ inductive HintAttempt where
   deriving DecidableEq, Repr, Inhabited
 
 /-- The outcome line's `hint` field for one run (§16.1). One value per
-run, so the answers fold by their worst reader-relevant case: a failure
-outranks a missing entry, a missing entry outranks a replay, and
-staleness refines whichever it touched. A case that won from a search is
-missing, whether the file holds other cases' entries or none: the
+run, so the attempts fold to their worst reader-relevant answer: a
+failure outranks a missing entry, a missing entry outranks a replay, and
+staleness refines whichever it touched. A disjunct that won from a search
+is missing, whether the file holds other disjuncts' entries or none: the
 committed file did not cover it, and in `use` mode that is witness churn
-a reader must see. `none` when no case ran. -/
+a reader must see. `none` when no disjunct ran. -/
 def Hint.runHintField (mode : HintMode) (file? : Option HintFile)
-    (preset : PresetId) (caseCount : Nat) (wonFresh : Nat)
+    (preset : PresetId) (disjunctCount : Nat) (wonFresh : Nat)
     (attempts : Array (Nat × HintAttempt)) : Option String :=
-  if caseCount == 0 then none
+  if disjunctCount == 0 then none
   else if mode == .ignore then some "ignored"
   else
     let empty : HintFile := { «theorem» := .anonymous, fingerprint := "", entries := #[] }
-    let entryCases :=
-      ((file?.getD empty).entries.filter (·.preset == preset)).map (·.«case»)
-    if entryCases.isEmpty then some "missing"
+    let entryIndexes :=
+      ((file?.getD empty).entries.filter (·.preset == preset)).map
+        (·.disjunctIndex)
+    if entryIndexes.isEmpty then some "missing"
     else
-      let found := entryCases.filterMap fun i =>
+      let found := entryIndexes.filterMap fun i =>
         attempts.find? fun (j, _) => j == i
       if found.any (·.2 == .staleFailed) then some "stale-failed"
       else if found.any (·.2 == .failed) then some "failed"
-      else if wonFresh > 0 || found.size != entryCases.size then
+      else if wonFresh > 0 || found.size != entryIndexes.size then
         some "missing"
       else if found.any (·.2 == .staleReplayed) then some "stale-replayed"
       else some "replayed"
 
 /-! ## The source -/
 
-/-- The entry one file holds for a preset, case, and side. -/
-def Hint.entryFor (f : HintFile) (preset : PresetId) (caseIndex : Nat)
+/-- The entry one file holds for a preset, disjunct, and side. -/
+def Hint.entryFor (f : HintFile) (preset : PresetId) (disjunctIndex : Nat)
     (side : Option Bool) : Option HintEntry :=
   f.entries.find? fun e =>
-    e.preset == preset && e.«case» == caseIndex && e.side == side
+    e.preset == preset && e.disjunctIndex == disjunctIndex && e.side == side
 
 /-- The hint source (§9.8). `applies` reads the loaded file, so the run
 loads it once and the search never touches the disk. `search` rebuilds
@@ -598,20 +602,20 @@ def Hint.source (mode : HintMode) (file? : Option HintFile)
   -- override, and the tag shows only in a `notFound` reason's tried
   -- list, where it reads as the hint source's attempt
   tag := .hinted .base
-  applies ctx _ c :=
+  applies ctx _ d :=
     mode != .ignore &&
     (match file? with
       | none => false
       | some f =>
-        match Hint.entryFor f ctx.preset c.index c.side with
+        match Hint.entryFor f ctx.preset d.index d.side with
         | none => false
-        -- a notFound entry records the case's empty answer; the
-        -- command's case loop answers it before the sources run (the
-        -- plan's stage-6 step 9)
+        -- a notFound entry records the disjunct's empty answer; the
+        -- command's disjunct loop answers it before the sources run
+        -- (the plan's stage-6 step 9)
         | some e => e.notFound.isNone && Hint.rebuildable e.source)
-  search ctx stmt c := do
+  search ctx stmt d := do
     let some f := file? | return .nothing
-    let some e := Hint.entryFor f ctx.preset c.index c.side
+    let some e := Hint.entryFor f ctx.preset d.index d.side
       | return .nothing
     let stale := (e.fingerprint.getD f.fingerprint) != fingerprint
     let attempt : HintAttempt :=
@@ -620,20 +624,20 @@ def Hint.source (mode : HintMode) (file? : Option HintFile)
       | true => .staleFailed
     match ← Hint.rebuild ctx stmt e with
     | none =>
-      log.set ((← log.get) ++ #[(c.index, attempt)])
+      log.set ((← log.get) ++ #[(d.index, attempt)])
       return .nothing
         (some "the hint's source carries no rebuildable candidate")
     | some a =>
       -- §9.4, the stage-4 outcome: the bounds gate runs before the
       -- check, so a stale hint's rebuilt candidate never sends an
       -- out-of-range read into the compiled `decide`
-      if (ctx.probe.safe c.index a).all (· == true) then
-        if ctx.probe.check c.index a then
+      if (ctx.probe.safe d.index a).all (· == true) then
+        if ctx.probe.check d.index a then
           let ok : HintAttempt :=
             match stale with
             | false => .replayed
             | true => .staleReplayed
-          log.set ((← log.get) ++ #[(c.index, ok)])
+          log.set ((← log.get) ++ #[(d.index, ok)])
           -- the replayed winner: the record's source names the hint with
           -- the source it replays. A reused entry (§10) replays as
           -- `.hinted (.reused p)`, which keeps §9.8's promise that a
@@ -645,7 +649,7 @@ def Hint.source (mode : HintMode) (file? : Option HintFile)
             | .reused p => .reused p
             | t => (entrySource t).getD .base
           return .candidate a (some (.hinted orig))
-      log.set ((← log.get) ++ #[(c.index, attempt)])
+      log.set ((← log.get) ++ #[(d.index, attempt)])
       return .nothing
         (some "the hint's candidate failed the check")
 

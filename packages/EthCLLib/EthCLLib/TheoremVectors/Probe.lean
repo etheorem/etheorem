@@ -27,22 +27,22 @@ contains no `match` on `Except` or `EStateM.Result`, because the probe's glue
 runs interpreted and a `match` there can trip matcher realization, so the
 `Except`-matching lives in the helpers above (`runProbeOk`, `runProbeError`,
 and the result assemblers); and it is elaborated once per statement and
-preset, with the case index as a runtime argument, so the search loop never
-re-elaborates.
+preset, with the disjunct index as a runtime argument, so the search loop
+never re-elaborates.
 
 `sample` and `shrink` draw and shrink the container inputs through the
-`Sampleable` generators (§9.5, §9.6); `reads` evaluates one case's
+`Sampleable` generators (§9.5, §9.6); `reads` evaluates one disjunct's
 container-reading subterms at the candidate's bytes (§9.4). `build` runs
 the binding's named builders (§9.9), dispatching on the catalog index and
 serializing through the state input's codec, and answers empty bytes for
 a statement with no state input; `defaults` holds the serialized
 `default` of every input, which the base source (§9.4) hands to `check`
 as its candidate. The §11.1 sketch's face table lists every field of the
-structure above, `defaults` and the `reads` case index included. The base
-source needs `defaults`, and no other probe function supplies it. §9.2
-already gave `check` the same case index, and the reads are the case's
-hypotheses' subterms. `IMPLEMENTATION_NOTES.md` records, stage by stage,
-the fields whose sketches predated them.
+structure above, `defaults` and the `reads` disjunct index included. The
+base source needs `defaults`, and no other probe function supplies it.
+§9.2 already gave `check` the same disjunct index, and the reads are the
+disjunct's hypotheses' subterms. `IMPLEMENTATION_NOTES.md` records, stage
+by stage, the fields whose sketches predated them.
 
 Three design points this module contributed to the sketches carry their
 reasons; `IMPLEMENTATION_NOTES.md` records the stage at which each was a
@@ -315,8 +315,8 @@ def runErrorMiss (expected : String)
 /-- The compiled face of one statement at one preset (`THEOREM_VECTORS_ARCHITECTURE.md`
 §11.1). -/
 structure Probe where
-  /-- `decide (P x)` for one case, on decoded inputs. -/
-  check  : (caseIndex : Nat) → Array ByteArray → Bool
+  /-- `decide (P x)` for one disjunct, on decoded inputs. -/
+  check  : (disjunctIndex : Nat) → Array ByteArray → Bool
   /-- Draw the container inputs; scalars come back as their zero
   encodings (§9.4). -/
   sample : (seed size : Nat) → Array ByteArray
@@ -331,16 +331,17 @@ structure Probe where
   sampleAt : (seed size pos : Nat) → ByteArray
   /-- Shrink candidates for the container inputs (§9.6). -/
   shrink : Array ByteArray → Array (Array ByteArray)
-  /-- The container-reading subterms of one case's hypotheses, evaluated
-  at the candidate's bytes and serialized, in the walk's order (§9.4). -/
-  reads  : (caseIndex : Nat) → Array ByteArray → Array ByteArray
-  /-- Whether every guarded read inside the case's read plan stays
+  /-- The container-reading subterms of one disjunct's hypotheses,
+  evaluated at the candidate's bytes and serialized, in the walk's order
+  (§9.4). -/
+  reads  : (disjunctIndex : Nat) → Array ByteArray → Array ByteArray
+  /-- Whether every guarded read inside the disjunct's read plan stays
   inside its collection at the candidate's bytes, one answer per plan
   entry (`§9.4`, the stage-4 outcome). A candidate the face answers
   `false` for never reaches `check`, so the plan's compiled reads never
   run past a drawn or shrunken list's end and no panic prints. The face
   evaluates the indexes and the lengths alone, which cannot panic. -/
-  safe   : (caseIndex : Nat) → Array ByteArray → Array Bool
+  safe   : (disjunctIndex : Nat) → Array ByteArray → Array Bool
   /-- The author's manual terms, serialized, with their input positions
   (§9.4). -/
   manuals : Array (Nat × ByteArray)
@@ -914,7 +915,7 @@ private partial def collectReads (containerIds : Array FVarId) (e : Expr)
     | .proj _ _ b => collectReads containerIds b acc
     | _ => return acc
 
-/-- The reads of one case's hypotheses, in walk order (§9.4). -/
+/-- The reads of one disjunct's hypotheses, in walk order (§9.4). -/
 def containerReads (containerIds : Array FVarId) (hyps : Array Expr) :
     MetaM (Array Expr) :=
   hyps.foldlM (fun acc h => collectReads containerIds (Prepare.zeta h) acc) #[]
@@ -1058,7 +1059,7 @@ theorem or the shape (`ScalarCodec`, `ToString`, or the render form
 missing); a thrown error is machinery (`§18`: the probe's own failures are
 never facts about the theorem). -/
 def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
-    (ctx : StatementCtx) (cases : Array Case)
+    (ctx : StatementCtx) (disjuncts : Array Disjunct)
     (manualTerms : Array (Nat × Expr)) :
     MetaM (Except String (ProbeInfo × Probe)) := do
   let stmt := ctx.stmt
@@ -1202,16 +1203,17 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
             ctx.inputFvars.findIdx? (fun g => g.fvarId! == id)
               |>.map (fun i => projOfIdx i)
           | _ => none
-      -- the case lambdas: `fun x₀ … xₙ => decide conj`
-      let caseLams ← cases.mapM fun c =>
-        Meta.mkLambdaFVars ctx.inputFvars (mkDecide c.conj c.decidable)
-      Meta.withLocalDeclD `caseIndex (.const ``Nat []) fun ci => do
-        -- the case dispatch: `cond (caseIndex == j) (caseⱼ …) …`, `false`
-        -- at the leaf, so an index past the cases answers false (§9.3)
+      -- the disjunct lambdas: `fun x₀ … xₙ => decide conj`
+      let disjunctLams ← disjuncts.mapM fun d =>
+        Meta.mkLambdaFVars ctx.inputFvars (mkDecide d.conj d.decidable)
+      Meta.withLocalDeclD `disjunctIndex (.const ``Nat []) fun ci => do
+        -- the disjunct dispatch: `cond (disjunctIndex == j)
+        -- (disjunctⱼ …) …`, `false`
+        -- at the leaf, so an index past the disjuncts answers false (§9.3)
         let projTerms := Array.range ctx.inputFvars.size |>.map projOfIdx
         let mut dispatch := mkConst ``Bool.false
-        for j in [0:caseLams.size] do
-          let applied := mkAppN caseLams[j]! projTerms
+        for j in [0:disjunctLams.size] do
+          let applied := mkAppN disjunctLams[j]! projTerms
           dispatch := mkCond (.const ``Bool [])
             (mkAppN (.const ``Nat.beq []) #[ci, mkRawNatLit j]) applied dispatch
         let checkBody := optGetD (.const ``Bool [])
@@ -1297,9 +1299,9 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
           decodeFailed
         let runFn ← Meta.mkLambdaFVars #[bytes] runBody
 
-        -- §9.4: the container reads. Per case, the plan the walk produces;
-        -- the probe evaluates it at the candidate's bytes, so the random
-        -- source's substitution and the compiled values stay aligned.
+        -- §9.4: the container reads. Per disjunct, the plan the walk
+        -- produces; the probe evaluates it at the candidate's bytes, so
+        -- the random source's substitution and the compiled values stay aligned.
         -- the statement's own kind table, the reader computed once (§9.4)
         let containerFlags : Array (Option FVarId) :=
           (Array.range ctx.inputFvars.size).map fun i =>
@@ -1313,22 +1315,22 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
           mkAppN (.const ``Array.empty [levelZero]) #[.const ``ByteArray []]
         let mut safeDispatch :=
           mkAppN (.const ``Array.empty [levelZero]) #[.const ``Bool []]
-        -- one plan per case: the reads' wire values and the read bounds
-        -- walk the same subterms, so both dispatches build from it
-        for j in [0:cases.size] do
-          let plan ← containerReads containerIds cases[j]!.hyps
+        -- one plan per disjunct: the reads' wire values and the read
+        -- bounds walk the same subterms, so both dispatches build from it
+        for j in [0:disjuncts.size] do
+          let plan ← containerReads containerIds disjuncts[j]!.hyps
           let encodes : Array Expr ← plan.mapM fun r => do
             let v := underXs r
             let some enc ← readEncodeTerm (← Meta.inferType r) v
               | throwError "theorem_vectors: a container read has no \
                   scalar wire form (§9.4)"
             pure enc
-          let readsCase := optGetD arrTy
+          let readsDisjunct := optGetD arrTy
             (optMap tupTy arrTy (← Meta.mkLambdaFVars #[xs]
               (mkArrayLit (.const ``ByteArray []) encodes)) decoderApp)
             (mkAppN (.const ``Array.empty [levelZero]) #[.const ``ByteArray []])
           readsDispatch := mkCond arrTy
-            (mkAppN (.const ``Nat.beq []) #[ci, mkRawNatLit j]) readsCase
+            (mkAppN (.const ``Nat.beq []) #[ci, mkRawNatLit j]) readsDisjunct
             readsDispatch
           -- §9.4, from the stage-4 outcome: the read bounds. Per read,
           -- whether the read's `!`-index stays inside its collection at
@@ -1345,12 +1347,12 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
               pure (mkDecide (mkAppN (.const ``LT.lt [levelZero])
                 #[.const ``Nat [], .const ``instLTNat [], idxT, lenT])
                 (mkAppN (.const ``Nat.decLt []) #[idxT, lenT]))
-          let safeCase := optGetD boolArrTy
+          let safeDisjunct := optGetD boolArrTy
             (optMap tupTy boolArrTy (← Meta.mkLambdaFVars #[xs]
               (mkArrayLit (.const ``Bool []) checks)) decoderApp)
             (mkAppN (.const ``Array.empty [levelZero]) #[.const ``Bool []])
           safeDispatch := mkCond boolArrTy
-            (mkAppN (.const ``Nat.beq []) #[ci, mkRawNatLit j]) safeCase
+            (mkAppN (.const ``Nat.beq []) #[ci, mkRawNatLit j]) safeDisjunct
             safeDispatch
         let readsFn ← Meta.mkLambdaFVars #[ci, bytes] readsDispatch
         let safeFn ← Meta.mkLambdaFVars #[ci, bytes] safeDispatch
@@ -1367,7 +1369,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
               mkRawNatLit pos, encodeCall t inst sterm])
         -- the defaults: the base source's candidate (§9.4). A type with no
         -- total default (`Fin 0`) encodes the empty byte string, which the
-        -- check rejects, so the base source fails that case honestly.
+        -- check rejects, so the base source fails that disjunct honestly.
         let defaultsLit := mkArrayLit (.const ``ByteArray [])
           ((Array.zip inputTys codecInsts).map fun (t, codec) =>
             optGetD (.const ``ByteArray [])

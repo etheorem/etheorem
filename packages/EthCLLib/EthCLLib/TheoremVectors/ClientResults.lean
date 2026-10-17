@@ -9,7 +9,7 @@ The results file the client harness writes (`clients/prysm`),
 one entry per function-format file the harness walked:
 
 ```json
-{ "path": "formats/function/<fork>/<preset>/<Target>/<Thm>_<case>[_t|_f].yaml",
+{ "path": "formats/function/<fork>/<preset>/<Target>/<Thm>_<index>[_t|_f].yaml",
   "fork": "gloas", "preset": "minimal", "specName": "increase_balance",
   "status": "passed", "detail": "post state matched (bytes and root)" }
 ```
@@ -141,12 +141,12 @@ private def dropSuffix (suffix s : String) : String :=
     String.ofList (cs.take (cs.length - sf.length))
   else s
 
-/-- One trailing `_<digits>` case index dropped (§13.3's file-name
+/-- One trailing `_<digits>` disjunct index dropped (§13.3's file-name
 shape). The theorem's own name may carry underscores, so the split reads
 the last segment alone. The digit test runs first as a `Bool`, outside
 the `if`: a `(·.isDigit)` section in an `if` inside a `match` arm
 leaves this elaborator with a stuck universe constraint. -/
-private def dropCaseIndex (stem : String) : String :=
+private def dropDisjunctIndex (stem : String) : String :=
   let parts := stem.splitOn "_"
   let lastIsIndex := match parts.getLast? with
     | some last => 2 ≤ parts.length && !last.isEmpty && last.all Char.isDigit
@@ -155,12 +155,12 @@ private def dropCaseIndex (stem : String) : String :=
 
 /-- The theorem name an entry's path spells: the file's base name
 without the `.yaml` suffix, the `_t` / `_f` side marker, and the trailing
-`_<digits>` case index. The three suffixes are the shapes
-`Formats.functionFileName` and `Record.caseName` write, read back in
+`_<digits>` disjunct index. The three suffixes are the shapes
+`Formats.functionFileName` and `Record.disjunctName` write, read back in
 reverse order. -/
 def ClientResults.thmOfPath (path : String) : String :=
   let base := (path.splitOn "/").getLast?.getD path
-  dropCaseIndex (dropSuffix "_f" (dropSuffix "_t" (dropSuffix ".yaml" base)))
+  dropDisjunctIndex (dropSuffix "_f" (dropSuffix "_t" (dropSuffix ".yaml" base)))
 
 #guard ClientResults.thmOfPath
     "formats/function/gloas/minimal/EthCLSpecs.Gloas.canBuilderCoverBid/EthCLSpecs.Proofs.Gloas.canBuilderCoverBid_iff_0_t.yaml"
@@ -184,8 +184,8 @@ def ClientResults.ofPath? (rs : Array ClientResult)
 
 /-- The entries one (fork, preset, theorem) ran under: every entry whose
 `path` names the theorem, at the fork and preset (§16.2's Formats-cell
-join). A theorem runs once per case and per side, so the answer usually
-holds more than one entry. -/
+join). A theorem runs once per disjunct and per side, so the answer
+usually holds more than one entry. -/
 def ClientResults.ofThm (rs : Array ClientResult)
     (fork preset thm : String) : Array ClientResult :=
   rs.filter fun e => e.fork == fork && e.preset == preset
@@ -197,10 +197,10 @@ def ClientResults.clientTag : String := "prysm"
 
 /-- The Formats cell for one theorem's entries (§16.2): the worst answer
 wins, `failed` over `passed` over `skipped`, so the review surface never
-shows a pass over a failed case. No entry answers the empty cell. A
-passed case outranks a skipped one; today one theorem's entries share
-one coverage row, so a skip and a pass cannot mix, and a per-case
-coverage table would revisit this order. -/
+shows a pass over a failed disjunct. No entry answers the empty cell. A
+passed disjunct outranks a skipped one; today one theorem's entries
+share one coverage row, so a skip and a pass cannot mix, and a
+per-disjunct coverage table would revisit this order. -/
 def ClientResults.cell (es : Array ClientResult) : String :=
   if es.any fun e => e.status == .failed then
     s!"{clientTag} failed"

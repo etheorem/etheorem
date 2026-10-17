@@ -125,8 +125,8 @@ preset-bound, because `slotsPerEpoch`'s own type takes the fork's
 `Preset` class; every `BeaconState` is preset-bound, both through the
 container's fields and through the instance free variables the reader
 left in the type. The check is conservative in one direction: any doubt
-answers `false`, which sends the case to the fresh search, and the fresh
-search is always correct.
+answers `false`, which sends the disjunct to the fresh search, and the
+fresh search is always correct.
 
 `ctx.stmt.inputs[i].type` still mentions the telescope's instance free
 variables, which is why the answer needs `ctx.instFvars` beside the

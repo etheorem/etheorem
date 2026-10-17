@@ -141,10 +141,10 @@ private def readOutcome (thm : Name) : CommandElabM Outcome := do
     "outcomes" / "toypresets" / (localNameOf thm ++ ".json")
   liftIO <| Outcome.read path
 
-/-- One theorem's record directory at one preset, case 0, no side. -/
+/-- One theorem's record directory at one preset, disjunct 0, no side. -/
 private def recordDirOf (thm : Name) (p : EthCLLib.TheoremVectors.PresetId) :
     System.FilePath :=
-  EthCLLib.TheoremVectors.Record.caseDir
+  EthCLLib.TheoremVectors.Record.disjunctDir
     EthCLLib.TheoremVectors.Tests.ReuseFork.scratchOutDir "toypresets" p
     (localNameOf thm) 0 none
 
@@ -302,12 +302,12 @@ run_cmd do
     let thm := `EthCLLib.TheoremVectors.Tests.Reuse.toyReuse
     Statement.readIn binding thm fun ctx => do
       let stmt ← Scope.classify binding ctx.stmt
-      let (cases, _) ← Prepare.pass stmt
-      unless cases.size == 1 do
-        throwError s!"toyReuse: expected one case, got {cases.size}"
-      let c := cases[0]!
+      let (disjuncts, _) ← Prepare.pass stmt
+      unless disjuncts.size == 1 do
+        throwError s!"toyReuse: expected one disjunct, got {disjuncts.size}"
+      let d := disjuncts[0]!
       let (info, probe) ←
-        match ← Probe.ofStatement binding .mainnet ctx cases #[] with
+        match ← Probe.ofStatement binding .mainnet ctx disjuncts #[] with
         | .ok r => pure r
         | .error e => throwError s!"toyReuse: the probe refused to build: {e}"
       let fp := Hint.fingerprint stmt.thm info
@@ -345,7 +345,7 @@ run_cmd do
       -- `.hinted (.reused .minimal)`
       let log ← IO.mkRef (#[] : Array (Nat × HintAttempt))
       let hintSrc := Hint.source .use (some file) fp log
-      match ← searchCase #[hintSrc, baseSource, bitVecSource] sctx stmt c with
+      match ← searchDisjunct #[hintSrc, baseSource, bitVecSource] sctx stmt d with
       | .ok (a, won) =>
         unless won == .hinted (.reused .minimal) do
           throwError s!"toyReuse: expected a `.hinted (.reused .minimal)` \
@@ -356,7 +356,7 @@ run_cmd do
       | .error f =>
         throwError s!"toyReuse: the replay found nothing: {repr f}"
       let logV ← log.get
-      unless logV == #[(c.index, HintAttempt.replayed)] do
+      unless logV == #[(d.index, HintAttempt.replayed)] do
         throwError s!"toyReuse: expected one replayed attempt, got \
           {repr logV}"
 

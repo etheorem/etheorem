@@ -149,7 +149,7 @@ theorem_vectors skip callee_eq "covered by the named line"
 -- the mode scoped to the guarded command; the guard assumes
 -- `THEOREM_VECTORS_HINTS` is unset, which a developer shell that exports
 -- it breaks.
-/-- error: theorem_vectors: mode `require`: the hint for case 0 of `EthCLLib.TheoremVectors.Tests.Command.callee_require` at minimal is missing or failed the check (§9.8) -/
+/-- error: theorem_vectors: mode `require`: the hint for disjunct 0 of `EthCLLib.TheoremVectors.Tests.Command.callee_require` at minimal is missing or failed the check (§9.8) -/
 #guard_msgs (error) in
 set_option theorem_vectors.hints "require" in
 theorem_vectors EthCLLib.TheoremVectors.Tests.Command.callee_require

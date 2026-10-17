@@ -24,7 +24,7 @@ Build-gate checks for stage 4 (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4, §9.5,
   accepts, and the same seed draws the same bytes twice;
 - the random source (§9.4) wins a container theorem with no manual
   terms: it draws, grounds the hypothesis's container read, and hands
-  the case to the loop's check;
+  the disjunct to the loop's check;
 - the shrink (§9.6) reaches a witness whose bytes are smaller than the
   first draw's, and the check still holds;
 - the mainnet cap (§9.4): a state-typed container input at mainnet
@@ -93,8 +93,8 @@ probe builds the same at both presets, and both toy bindings declare an
 empty `builders` catalog, so the builder face's state dispatch is the
 empty stub under either one. -/
 private def builtProbe (b : ForkBinding) (ctx : StatementCtx)
-    (cases : Array Case) (p : PresetId) : MetaM (ProbeInfo × Probe) := do
-  match ← Probe.ofStatement b p ctx cases #[] with
+    (disjuncts : Array Disjunct) (p : PresetId) : MetaM (ProbeInfo × Probe) := do
+  match ← Probe.ofStatement b p ctx disjuncts #[] with
   | .ok r => pure r
   | .error e => throwError s!"the probe refused to build: {e}"
 
@@ -110,10 +110,10 @@ run_cmd do
     -- strict decode accepts them
     Statement.readIn binding `EthCLLib.TheoremVectors.Tests.Random.toyBoxBound fun ctx => do
       let stmt ← Scope.classify binding ctx.stmt
-      let (cases, dropped) ← Prepare.pass stmt
-      unless cases.size == 1 && dropped.isEmpty do
-        throwError s!"expected one prepared case, got {cases.size}"
-      let (info, probe) ← builtProbe toyBoxBinding ctx cases .minimal
+      let (disjuncts, dropped) ← Prepare.pass stmt
+      unless disjuncts.size == 1 && dropped.isEmpty do
+        throwError s!"expected one prepared disjunct, got {disjuncts.size}"
+      let (info, probe) ← builtProbe toyBoxBinding ctx disjuncts .minimal
       let drawn1 := probe.sample 7 8
       let drawn2 := probe.sample 7 8
       unless (drawn1.zip drawn2).all fun (a, b) => compareBytes a b do
@@ -128,17 +128,17 @@ run_cmd do
       let sources : Array WitnessSource := #[baseSource, bitVecSource, randomSource]
       let sctx ← Tests.Support.searchCtxOf binding .minimal
         Tests.ToyFork.scratchOutDir "" stmt ctx info probe
-      let c := cases[0]!
-      match ← searchCase sources sctx stmt c with
+      let d := disjuncts[0]!
+      match ← searchDisjunct sources sctx stmt d with
       | .ok (a, won) =>
         unless won == .random do
           throwError s!"expected the random source to win, got {won.tag}"
-        unless probe.check c.index a do
+        unless probe.check d.index a do
           throwError "the random witness failed the check"
         -- ── the shrink pin (§9.6): a smaller value or smaller bytes,
         -- and the check still holds
-        let shrunk ← shrinkWitness probe c.index 200 a
-        unless probe.check c.index shrunk do
+        let shrunk ← shrinkWitness probe d.index 200 a
+        unless probe.check d.index shrunk do
           throwError "the shrunk witness failed the check"
         unless Tests.Support.leOf shrunk[0]! < Tests.Support.leOf a[0]!
             || shrunk[0]!.size < a[0]!.size do
@@ -152,14 +152,14 @@ run_cmd do
     Statement.readIn binding
       `EthCLLib.TheoremVectors.Tests.Random.toyTwoReads fun ctx => do
       let stmt ← Scope.classify binding ctx.stmt
-      let (cases, _) ← Prepare.pass stmt
-      unless cases.size == 1 do
-        throwError s!"toyTwoReads: expected one case, got {cases.size}"
-      let c := cases[0]!
-      let (info, probe) ← builtProbe toyBoxBinding ctx cases .minimal
+      let (disjuncts, _) ← Prepare.pass stmt
+      unless disjuncts.size == 1 do
+        throwError s!"toyTwoReads: expected one disjunct, got {disjuncts.size}"
+      let d := disjuncts[0]!
+      let (info, probe) ← builtProbe toyBoxBinding ctx disjuncts .minimal
       -- the defaults leave both reads past an empty drawn list's end: the
       -- gate answers false, and the compiled reads never evaluate
-      unless !(probe.safe c.index probe.defaults).all (· == true) do
+      unless !(probe.safe d.index probe.defaults).all (· == true) do
         throwError "toyTwoReads: the empty default should fail the gate"
       -- the search wins: a draw with both reads in range passes the gate
       -- and the check, and the gate rejects the short draws without
@@ -167,15 +167,15 @@ run_cmd do
       let sctx2 ← Tests.Support.searchCtxOf binding .minimal
         Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let sources2 : Array WitnessSource := #[baseSource, bitVecSource, randomSource]
-      match ← searchCase sources2 sctx2 stmt c with
+      match ← searchDisjunct sources2 sctx2 stmt d with
       | .ok (a, won) =>
         unless won == .random do
           throwError s!"toyTwoReads: expected the random source to win, \
             got {won.tag}"
-        unless (probe.safe c.index a).all (· == true) do
+        unless (probe.safe d.index a).all (· == true) do
           throwError "toyTwoReads: the winning candidate passed an unsafe \
             gate"
-        unless probe.check c.index a do
+        unless probe.check d.index a do
           throwError "toyTwoReads: the winning candidate failed the check"
       | .error f =>
         throwError s!"toyTwoReads: the search found nothing: {repr f}"
@@ -186,15 +186,15 @@ run_cmd do
     Statement.readIn binding
       `EthCLLib.TheoremVectors.Tests.Random.toyBoxBound fun ctx => do
       let stmt ← Scope.classify binding ctx.stmt
-      let (cases, _) ← Prepare.pass stmt
-      unless cases.size == 1 do
-        throwError s!"cap drive: expected one case, got {cases.size}"
-      let c := cases[0]!
+      let (disjuncts, _) ← Prepare.pass stmt
+      unless disjuncts.size == 1 do
+        throwError s!"cap drive: expected one disjunct, got {disjuncts.size}"
+      let d := disjuncts[0]!
       -- the cap direction: mainnet, no draw, the reason names the cap
-      let (infoM, probeM) ← builtProbe toyBoxBinding ctx cases .mainnet
+      let (infoM, probeM) ← builtProbe toyBoxBinding ctx disjuncts .mainnet
       let sctxM ← Tests.Support.searchCtxOf binding .mainnet
         Tests.ToyFork.scratchOutDir "" stmt ctx infoM probeM
-      match ← randomSource.search sctxM stmt c with
+      match ← randomSource.search sctxM stmt d with
       | .nothing (some r) =>
         unless r.contains "mainnet cap" do
           throwError s!"cap drive: the mainnet reason does not name the \
@@ -205,12 +205,12 @@ run_cmd do
         throwError "cap drive: the mainnet cap drew anyway, the memo is \
           not empty"
       -- the negative direction: minimal, the same statement draws
-      let (info, probe) ← builtProbe toyBoxBinding ctx cases .minimal
+      let (info, probe) ← builtProbe toyBoxBinding ctx disjuncts .minimal
       let sctx ← Tests.Support.searchCtxOf binding .minimal
         Tests.ToyFork.scratchOutDir "" stmt ctx info probe
-      match ← randomSource.search sctx stmt c with
+      match ← randomSource.search sctx stmt d with
       | .candidate a =>
-        unless probe.check c.index a do
+        unless probe.check d.index a do
           throwError "cap drive: the minimal draw failed the check"
       | _ =>
         throwError "cap drive: expected a draw at minimal"
@@ -219,16 +219,16 @@ run_cmd do
           stayed empty"
       -- the cap keys on the state type alone: the same statement over a
       -- binding whose state type is `Nat` still draws at mainnet
-      let (infoP, probeP) ← builtProbe Tests.ToyFork.toyBinding ctx cases
+      let (infoP, probeP) ← builtProbe Tests.ToyFork.toyBinding ctx disjuncts
         .mainnet
       let sctxP ← Tests.Support.searchCtxOf Tests.ToyFork.toyBinding .mainnet
         Tests.ToyFork.scratchOutDir "" stmt ctx infoP probeP
-      match ← randomSource.search sctxP stmt c with
+      match ← randomSource.search sctxP stmt d with
       | .candidate a =>
         if (← sctxP.drawMemo.get).isEmpty then
           throwError "cap drive: the `Nat` state type's mainnet drive \
             left the memo empty"
-        unless probeP.check c.index a do
+        unless probeP.check d.index a do
           throwError "cap drive: the `Nat` state type's draw failed the \
             check"
       | _ =>

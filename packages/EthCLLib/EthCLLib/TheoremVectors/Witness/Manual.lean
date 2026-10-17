@@ -12,11 +12,11 @@ subset, the source answers `nothing` and the bit-vector source takes the
 handoff: §9.4 hands the partial assignment to the solver for the rest.
 
 The build error of §18 (a manual term the check rejects) is the command's
-line-level call now that theorems split into cases: a term may satisfy the
-case it was written for while another disjunct rejects it. The command
-errors when a fully-covering set of manual terms wins no case of the run
-(§18's "the author claimed it works"), and a case the manual terms alone
-fail falls through to the next source.
+line-level call now that theorems split into disjuncts: a term may satisfy
+the disjunct it was written for while another disjunct rejects it. The
+command errors when a fully-covering set of manual terms wins no disjunct
+of the run (§18's "the author claimed it works"), and a disjunct the
+manual terms alone fail falls through to the next source.
 -/
 
 set_option autoImplicit false
@@ -43,9 +43,9 @@ bit-vector source) sits in `search`, which reads the line's manual terms
 against the statement. -/
 def manualSource : WitnessSource where
   tag := .manual
-  applies (ctx : SearchCtx) (stmt : Statement) (_ : Case) :=
+  applies (ctx : SearchCtx) (stmt : Statement) (_ : Disjunct) :=
     !ctx.probe.manuals.isEmpty && !uncoveredHaveState ctx stmt
-  search ctx stmt c := do
+  search ctx stmt d := do
     unless ctx.manualTerms.size == stmt.inputs.size do
       -- §9.4: a partial set of manual terms goes to the bit-vector
       -- source's handoff
@@ -55,11 +55,11 @@ def manualSource : WitnessSource where
     -- §9.4, the stage-4 outcome: the read-bounds gate runs before the
     -- check, so a manual term whose reads run past an end is an honest
     -- no-candidate and no panic prints
-    unless (ctx.probe.safe c.index a).all (· == true) do
+    unless (ctx.probe.safe d.index a).all (· == true) do
       return .nothing
-    if !ctx.probe.check c.index a then
-      -- the case rejects the manual terms; the line-level error is the
-      -- command's job
+    if !ctx.probe.check d.index a then
+      -- the disjunct rejects the manual terms; the line-level error is
+      -- the command's job
       return .nothing
     return .candidate a
 

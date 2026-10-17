@@ -30,10 +30,10 @@ Two manual inputs serve
 
 - `iPacState` and `iPacAttestation` carry 64 validators and two in-range
   increasing attesting indices, so `isValidIndexedPayloadAttestation`'s
-  true-side conjunction holds at the manual terms. The false-side cases
-  need containers the manual terms do not vary; the random source draws
-  them (§9.2). `canBuilderCoverBid_iff` runs termless; the random source
-  draws its state (§9.4).
+  true-side conjunction holds at the manual terms. The false-side
+  disjuncts need containers the manual terms do not vary; the random
+  source draws them (§9.2). `canBuilderCoverBid_iff` runs termless; the
+  random source draws its state (§9.4).
 
 One manual input serves `initiateBuilderExit_run_eq`:
 

@@ -38,7 +38,7 @@ def toyRecord (specName : Option String) : VectorRecord :=
   { «theorem» := `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunOk,
     fork := "toyrun", preset := .minimal,
     target := some `EthCLLib.TheoremVectors.Tests.ToyRun.toySetBal,
-    specName, shape := .runOk, caseIndex := 0, side := none,
+    specName, shape := .runOk, disjunctIndex := 0, side := none,
     inputs := #[], output := none, error := none, source := .base }
 
 /-- The `function:` line of a rendered file. -/
@@ -51,7 +51,7 @@ private def functionLine (file : System.FilePath) : IO String := do
 
 /-- The rendered file's path for the toy record: the target directory
 keeps the Lean target name, and the file name carries the theorem and the
-case index. -/
+disjunct index. -/
 private def expectedPath : System.FilePath :=
   scratchOut / "formats" / "function" / "toyrun" / "minimal" /
     "EthCLLib.TheoremVectors.Tests.ToyRun.toySetBal" /

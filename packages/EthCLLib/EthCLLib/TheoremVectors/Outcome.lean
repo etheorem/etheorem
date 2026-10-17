@@ -18,17 +18,17 @@ The wire shape:
   "shape": "iffTrue",
   "origin": "named",
   "blockInputs": [],
-  "cases": 2,
+  "disjuncts": 2,
   "runs": [
     { "preset": "minimal", "status": "written", "records": 2,
       "source": "random", "hint": "replayed", "seconds": 4.1 } ] }
 ```
 
-`cases` counts the prepared search problems; stage 1 prepares none, so it
-writes `0` until the prepare pass lands. The run entries carry one status
-per preset; stage 1 writes the placeholder `pending`, or `unsupported`
-where the reader gave a reason, and later stages replace both with real
-outcomes.
+`disjuncts` counts the prepared search problems; stage 1 prepares none, so
+it writes `0` until the prepare pass lands. The run entries carry one
+status per preset; stage 1 writes the placeholder `pending`, or
+`unsupported` where the reader gave a reason, and later stages replace
+both with real outcomes.
 
 ## Lean idioms annotated
 
@@ -154,8 +154,9 @@ structure Outcome where
   origin      : OutcomeOrigin
   /-- The inputs the block-input rule puts out of scope (§1.2). -/
   blockInputs : Array Name
-  /-- How many cases the prepare pass produced; stage 1 prepares none. -/
-  cases       : Nat
+  /-- How many disjuncts the prepare pass produced; stage 1 prepares
+  none. -/
+  disjuncts   : Nat
   /-- One entry per preset the theorem's line runs. -/
   runs        : Array RunOutcome
   deriving ToJson, FromJson, Repr

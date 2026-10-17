@@ -28,7 +28,7 @@ namespace EthCLLib.TheoremVectors
 like any other candidate, and never over the fork's state. -/
 def baseSource : WitnessSource where
   tag := .base
-  applies (ctx : SearchCtx) (stmt : Statement) (_ : Case) :=
+  applies (ctx : SearchCtx) (stmt : Statement) (_ : Disjunct) :=
     !stmt.inputs.any (fun i => isStateType ctx.binding i.type)
   search ctx _ _ := return .candidate ctx.probe.defaults
 

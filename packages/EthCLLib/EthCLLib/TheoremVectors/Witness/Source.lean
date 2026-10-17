@@ -20,7 +20,7 @@ The built source (§9.9) follows the bit-vector source, and the random
 source and the shrink close the list.
 
 `SearchM` is `MetaM`: §9.2's budget counter stayed unnecessary, because
-the redraw loop's budget is the `randomDraws` option per case and the
+the redraw loop's budget is the `randomDraws` option per disjunct and the
 per-run heartbeat budget bounds the whole.
 
 ## Lean idioms annotated
@@ -51,13 +51,13 @@ inductive SearchStep where
   /-- The source proved the hypotheses vacuous; stop the loop. -/
   | unsat
 
-/-- One case's winning witness from a preset earlier in the line's
+/-- One disjunct's winning witness from a preset earlier in the line's
 preset list (§10), the reuse source's input. The command fills the
 search context's table only when the statement passed
 `Preset.presetFree`, so a nonempty table implies the type check. -/
 structure ReuseWin where
-  /-- The zero-based case index the win belongs to. -/
-  caseIndex  : Nat
+  /-- The zero-based disjunct index the win belongs to. -/
+  disjunctIndex  : Nat
   /-- The `.iffTrue` side, when the shape is `.iffTrue`. -/
   side       : Option Bool
   /-- The assignment that passed the check, post-shrink. -/
@@ -94,8 +94,8 @@ structure SearchCtx where
   manualTerms : Array (Nat × Expr)
   /-- The random source's draws, memoized per position: a draw is a
   pure function of the seed, the size, the index, and the position (§9.4),
-  so the cases of one theorem at one preset share them. The ref holds one
-  slot per draw index. A slot is `none` until a call samples the draw's
+  so the disjuncts of one theorem at one preset share them. The ref
+  holds one slot per draw index. A slot is `none` until a call samples the draw's
   first position. The slot's inner array then holds one `Option ByteArray`
   per input position reached so far, `none` for a position no call has
   requested. A caller that needs a subset of a draw's positions (§9.9's
@@ -115,7 +115,7 @@ structure SearchCtx where
   own constant; the default is the upstream minimal value 8, which the
   toy forks' tests take. -/
   epochBoundary : Nat := 8
-  /-- One case's winning witness from a preset earlier in the line's
+  /-- One disjunct's winning witness from a preset earlier in the line's
   preset list (§10), the reuse source's input. Every construction site
   names the table. An empty table means no earlier preset won anything,
   or that the statement is preset-bound. The command fills the table
@@ -126,7 +126,7 @@ structure SearchCtx where
 
 /-- The search monad: `MetaM`. §9.2's budget counter stayed
 unnecessary: the redraw loop's budget is `theorem_vectors.randomDraws`
-per case, the solver's fragment caps the grid, and the per-run heartbeat
+per disjunct, the solver's fragment caps the grid, and the per-run heartbeat
 budget (§14.3) bounds the whole. -/
 abbrev SearchM (α : Type) : Type := MetaM α
 
@@ -134,35 +134,35 @@ abbrev SearchM (α : Type) : Type := MetaM α
 structure WitnessSource where
   /-- The wire tag the record names when this source wins. -/
   tag     : WitnessSourceTag
-  /-- Can this source try this case at all? The search context is in
+  /-- Can this source try this disjunct at all? The search context is in
   scope, so a rule that reads the binding's state type or the probe's
   manual bytes sits here (§9.4's state rule). -/
-  applies : SearchCtx → Statement → Case → Bool
+  applies : SearchCtx → Statement → Disjunct → Bool
   /-- Produce one answer. -/
-  search  : SearchCtx → Statement → Case → SearchM SearchStep
+  search  : SearchCtx → Statement → Disjunct → SearchM SearchStep
 
-/-- The search loop over one case (`THEOREM_VECTORS_ARCHITECTURE.md` §9.2). A
+/-- The search loop over one disjunct (`THEOREM_VECTORS_ARCHITECTURE.md` §9.2). A
 candidate the check rejects falls through to the next source; an `unsat`
 stops the loop, because no later source can find what does not exist. The
 answer carries the winning source's tag, which the record names (§12.2). A
-`notFound` names every source that ran on the case, whether or not it
+`notFound` names every source that ran on the disjunct, whether or not it
 proposed a candidate, and carries the details the sources reported. -/
-def searchCase (sources : Array WitnessSource) (ctx : SearchCtx)
-    (stmt : Statement) (c : Case) :
+def searchDisjunct (sources : Array WitnessSource) (ctx : SearchCtx)
+    (stmt : Statement) (d : Disjunct) :
     SearchM (Except Failure (Assignment × WitnessSourceTag)) := do
   let mut tried : Array WitnessSourceTag := #[]
   let mut details : Array String := #[]
   for source in sources do
-    unless source.applies ctx stmt c do continue
+    unless source.applies ctx stmt d do continue
     -- §9.2: the reason names every source that ran
     tried := tried.push source.tag
-    match ← source.search ctx stmt c with
+    match ← source.search ctx stmt d with
     | .candidate a tag? =>
       -- §9.4, the stage-4 outcome: the read-bounds gate runs before the
       -- check, so a candidate whose reads would run past a container's
       -- end never reaches the compiled `decide` and no panic prints
-      if (ctx.probe.safe c.index a).all (· == true) then
-        if ctx.probe.check c.index a then
+      if (ctx.probe.safe d.index a).all (· == true) then
+        if ctx.probe.check d.index a then
           return .ok (a, tag?.getD source.tag)
       -- the check is compiled `decide P`; a failed check falls through to
       -- the next source (§9.3)

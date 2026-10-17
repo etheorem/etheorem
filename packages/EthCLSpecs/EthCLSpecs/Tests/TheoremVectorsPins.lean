@@ -26,7 +26,7 @@ stage 3, its prepare pass (§8). Ten theorems with known shapes run through
 `Statement.readIn` and `Scope.classify`, and each pin checks the reader's
 answer: target, shape, block inputs, and the input names in binder order.
 Three stage-3 acceptance theorems then run through `Prepare.pass`, and
-each pin checks the split's answer: the case count, the sides, and the
+each pin checks the split's answer: the disjunct count, the sides, and the
 conjunctions' shape-relevant constants. Stage 4's draw pin and stage 6's
 state-builder pins close the file.
 
@@ -187,35 +187,35 @@ run_cmd do
 
   -- ── The prepare pass's answers for the three stage-3 acceptance
   -- theorems (§8). Each pin folds inside the reader's telescope scope,
-  -- because the statement and its cases cannot leave it.
+  -- because the statement and its disjuncts cannot leave it.
 
-  let prepareCases (thm : Name) : CommandElabM (Nat × Array (Option Bool)) :=
+  let prepareDisjuncts (thm : Name) : CommandElabM (Nat × Array (Option Bool)) :=
     liftTermElabM do
       Statement.readIn gloas thm fun ctx => do
         let stmt ← Scope.classify gloas ctx.stmt
-        let (cases, dropped) ← Prepare.pass stmt
+        let (disjuncts, dropped) ← Prepare.pass stmt
         unless dropped.isEmpty do
           throwError s!"pin {thm}: the prepare pass dropped \
             {dropped.size} note(s): {repr dropped}"
-        return (cases.size, cases.map (·.side))
-  -- the slot-successor bound: one case over the two rewritten hypotheses
-  let (n, sides) ← prepareCases `EthCLSpecs.Proofs.Gloas.getPtcElseOffset_lt_next_slot
+        return (disjuncts.size, disjuncts.map (·.side))
+  -- the slot-successor bound: one disjunct over the two rewritten hypotheses
+  let (n, sides) ← prepareDisjuncts `EthCLSpecs.Proofs.Gloas.getPtcElseOffset_lt_next_slot
   unless n == 1 && sides == #[none] do
-    throwError s!"pin getPtcElseOffset_lt_next_slot: {n} case(s) with \
-      sides {repr sides}, expected one unsplit case"
-  -- the builder-cover bound: the true side's conjunction is one case, the
-  -- false side's De Morgan is two
-  let (n, sides) ← prepareCases `EthCLSpecs.Proofs.Gloas.canBuilderCoverBid_iff
+    throwError s!"pin getPtcElseOffset_lt_next_slot: {n} disjunct(s) with \
+      sides {repr sides}, expected one unsplit disjunct"
+  -- the builder-cover bound: the true side's conjunction is one
+  -- disjunct, the false side's De Morgan is two
+  let (n, sides) ← prepareDisjuncts `EthCLSpecs.Proofs.Gloas.canBuilderCoverBid_iff
   unless n == 3 && sides == #[some true, some false, some false] do
-    throwError s!"pin canBuilderCoverBid_iff: {n} case(s) with sides \
+    throwError s!"pin canBuilderCoverBid_iff: {n} disjunct(s) with sides \
       {repr sides}, expected three (one per side pair)"
-  -- the payload-attestation gates: one true-side case, one false-side
-  -- case per check
-  let (n, sides) ← prepareCases
+  -- the payload-attestation gates: one true-side disjunct, one
+  -- false-side disjunct per check
+  let (n, sides) ← prepareDisjuncts
     `EthCLSpecs.Proofs.Gloas.isValidIndexedPayloadAttestation_eq_true_iff_checks
   unless n == 5 && sides.countP (· == some false) == 4 do
     throwError s!"pin isValidIndexedPayloadAttestation_eq_true_iff_checks: \
-      {n} case(s) with sides {repr sides}, expected five (one true side, \
+      {n} disjunct(s) with sides {repr sides}, expected five (one true side, \
       one per check)"
 
   -- ── The generic draw's answers (§9.5): the same seed draws the same

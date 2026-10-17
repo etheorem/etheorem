@@ -5,9 +5,9 @@
    "scalars": {},
    "preset": "minimal",
    "fingerprint": "0x09a229e4b478b926",
-   "case": 0},
+   "disjunctIndex": 0},
   {"source": "reused-minimal",
    "scalars": {"slot": "0"},
    "preset": "mainnet",
    "fingerprint": "0x09a229e4b478b926",
-   "case": 0}]}
+   "disjunctIndex": 0}]}

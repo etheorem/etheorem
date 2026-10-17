@@ -12,8 +12,8 @@ import EthCLLib.TheoremVectors.Witness.Source
 # `EthCLLib.TheoremVectors.Witness.BitVec`: the bit-vector source
 
 The solver-backed witness source (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4). The source
-poses the case's negated conjunction as a goal and calls `bvDecide'` from
-`Lean.Elab.Tactic.BVDecide.Frontend`. A `Result` proves `¬P`, so the case is
+poses the disjunct's negated conjunction as a goal and calls `bvDecide'` from
+`Lean.Elab.Tactic.BVDecide.Frontend`. A `Result` proves `¬P`, so the disjunct is
 vacuous and the source answers `unsat`; no later source can find what does
 not exist. A `CounterExample` is a model of `P`: its equations pair the
 solver's atoms with values, the reader unwraps the `UIntX.toBitVec` /
@@ -36,7 +36,7 @@ Three forms of the solve live here, one entry point:
   falls to a later source. The check
   stays the single arbiter throughout: a candidate from any fixed point
   counts only when the compiled `decide` accepts it, and a
-  per-fixed-point `unsat` never reports the case vacuous, because another
+  per-fixed-point `unsat` never reports the disjunct vacuous, because another
   grid point may satisfy it.
 - **The `Fin` bridge.** A free `Fin n` input enters the solver as a
   `UInt64` stand-in with the bound `u < n` posed as a hypothesis of the
@@ -146,7 +146,7 @@ private unsafe def evalUInt64Impl (e : Expr) : MetaM UInt64 :=
 a scalar index into a manual container takes in practice. -/
 def gridValuesPerScalar : Nat := 64
 
-/-- The grid's point cap (§9.4): the most fixed points one case's handoff
+/-- The grid's point cap (§9.4): the most fixed points one disjunct's handoff
 walks. -/
 def gridPointCap : Nat := 128
 
@@ -341,7 +341,7 @@ inductive SolveAnswer where
 
 /-- The candidate's bytes for every input: the drawn bytes for the drawn
 containers, which win over the manual terms, since on a manual line's
-failing case a draw replaces the author's choice (§9.2); then the manual
+failing disjunct a draw replaces the author's choice (§9.2); then the manual
 terms' bytes from the probe, the fixed and solved scalars from their
 kinds, and the zero scalar for what neither touched. -/
 private def buildAssignment (ctx : SearchCtx) (stmt : Statement)
@@ -368,7 +368,7 @@ private def buildAssignment (ctx : SearchCtx) (stmt : Statement)
 terms, the drawn containers, and the fixed coupled values, unfold (§8.1),
 evaluate the closed reads, and pose the negated conjunction to the
 solver (§9.4).
-`hyps` carries the case's conjunctions' parts, already read-substituted
+`hyps` carries the disjunct's conjunctions' parts, already read-substituted
 when the caller grounds container reads (§9.4's random source).
 `fixedVals` carries the same positions as `fixed` with the values the
 terms spell, so the candidate names what the formula was solved against.
@@ -378,11 +378,11 @@ source skips it, because its reads grounding already replaced the calls
 with literals and a second unfold over a drawn state's hypotheses would
 burn the run's budget per grid point. When the grounding leaves no free
 scalar in the formula, the candidate goes to the probe's `check`, the
-compiled `decide` of the case's own conjunction, which answers without a
+compiled `decide` of the disjunct's own conjunction, which answers without a
 `Decidable` synthesis over the grounded form; `true` is the point's
 witness and `false` its unsat (§9.3). -/
-def solveOnce (ctx : SearchCtx) (stmt : Statement) (caseIndex : Nat)
-    (unfold : Bool) (caseHyps : Array Expr) (drawn : Array (Nat × ByteArray))
+def solveOnce (ctx : SearchCtx) (stmt : Statement) (disjunctIndex : Nat)
+    (unfold : Bool) (disjunctHyps : Array Expr) (drawn : Array (Nat × ByteArray))
     (fixed : Array (Nat × Expr)) (fixedVals : Array (Nat × Nat)) :
     MetaM SolveAnswer := do
   -- §9.4, from the stage-4 outcome: a fixed point whose reads run past a
@@ -391,7 +391,7 @@ def solveOnce (ctx : SearchCtx) (stmt : Statement) (caseIndex : Nat)
   -- of a manual read never sees an out-of-range index
   match ← buildAssignment ctx stmt drawn fixedVals #[] with
     | some gateBytes =>
-      unless (ctx.probe.safe caseIndex gateBytes).all (· == true) do
+      unless (ctx.probe.safe disjunctIndex gateBytes).all (· == true) do
         return .stuck (some "a read is out of range at this fixed point")
     | none => pure ()
   let taken := (ctx.manualTerms.map (·.1)) ++ (drawn.map (·.1)) ++
@@ -529,7 +529,7 @@ def solveOnce (ctx : SearchCtx) (stmt : Statement) (caseIndex : Nat)
         -- the reflection's honest failure reports it
         | _ => return e
     let mut hyps : Array Expr := #[]
-    for h in caseHyps do
+    for h in disjunctHyps do
       -- ground the closed reads first, so the unfold sees arithmetic and
       -- not a spec call whose equations would unfold into a fold (§9.4),
       -- then ground the preset constants the unfold exposes
@@ -543,7 +543,7 @@ def solveOnce (ctx : SearchCtx) (stmt : Statement) (caseIndex : Nat)
     let conj := conjunction hypsLive
     -- the grounding may close the formula even when free inputs remain
     -- (a disjunct that mentions none of them): the candidate then goes
-    -- to the probe's `check`, the compiled `decide` of the case's own
+    -- to the probe's `check`, the compiled `decide` of the disjunct's own
     -- conjunction at these bytes. `true` is the point's witness and
     -- `false` its unsat; a `Decidable` synthesis over the grounded form
     -- would whnf a large prop per point, which is the search's own
@@ -551,7 +551,7 @@ def solveOnce (ctx : SearchCtx) (stmt : Statement) (caseIndex : Nat)
     if !(collectFVarIds conj #[]).any freeIds.contains then
       match ← buildAssignment ctx stmt drawn fixedVals #[] with
       | some a =>
-        if ctx.probe.check caseIndex a then return .solved a
+        if ctx.probe.check disjunctIndex a then return .solved a
         else return .unsat
       | none => return .stuck none
     -- the goal's context holds the fresh scalars alone: bv_decide's
@@ -619,7 +619,7 @@ coupled scalar stays in every point: the cap truncates after each fold,
 so a cut grid explores the earlier scalars' low values across the later
 scalars' low values. `valuesCap` bounds each scalar's values from above
 when the containers in play are known to be drawn (`randomSize`, §9.4);
-`0` means no bound, the manual handoff's case, where the manual
+`0` means no bound, the manual handoff's situation, where the manual
 containers are the author's. -/
 def coupledGrid (kinds : Array (Option ScalarKind)) (coupled : Array Nat)
     (valuesCap : Nat) : MetaM (Array (Array (Nat × Nat))) := do
@@ -646,7 +646,7 @@ container the manual terms do not fix. -/
 def bitVecSource : WitnessSource where
   tag := .bitVec
   applies _ stmt _ := stmt.blockInputs.isEmpty
-  search ctx stmt c := do
+  search ctx stmt d := do
     let manualPos := ctx.manualTerms.map (·.1)
     let residual : Array Nat :=
       (Array.range stmt.inputs.size).filter (fun i => !manualPos.contains i)
@@ -665,22 +665,22 @@ def bitVecSource : WitnessSource where
       let f ← ctx.inputFvars[pos]?
       some f.fvarId!
     let inner : Array FVarId :=
-      c.hyps.foldl (fun acc h => topManualScalarIds manualIds h acc) #[]
+      d.hyps.foldl (fun acc h => topManualScalarIds manualIds h acc) #[]
     let coupled := residual.filter (fun i =>
       inner.contains (ctx.inputFvars[i]!.fvarId!))
     if coupled.isEmpty && ctx.manualTerms.isEmpty then
       -- the pure scalar solve: every input is a free scalar and no
       -- manual term stands in the formula, so a solver proof of `¬P` is
-      -- the case's `unsat` (§9.4). A manual theorem never takes this
+      -- the disjunct's `unsat` (§9.4). A manual theorem never takes this
       -- branch: its reads hold the manual terms' values, so an `unsat`
       -- there is a fact about one manual input, and the grid below
       -- answers `nothing` for it.
-      match ← solveOnce ctx stmt c.index true c.hyps #[] #[] #[] with
+      match ← solveOnce ctx stmt d.index true d.hyps #[] #[] #[] with
       | .solved a abstracted =>
         -- the loop's check is the single arbiter (§9.3); a rejected
         -- candidate was a spurious model, and the abstracted atoms name
         -- the lemma the formula missed (§9.4)
-        if ctx.probe.check c.index a then
+        if ctx.probe.check d.index a then
           return .candidate a
         return .nothing
           (if abstracted.isEmpty then none
@@ -689,7 +689,7 @@ def bitVecSource : WitnessSource where
       | .stuck detail => return .nothing detail
     -- §9.4's handoff: the manual terms fix the containers, the coupled
     -- scalars walk the grid, the solver takes the rest. A per-grid-point
-    -- `unsat` is not the case's answer; another point may satisfy it.
+    -- `unsat` is not the disjunct's answer; another point may satisfy it.
     let mut details : Array String := #[]
     for fixedStx in ← coupledGrid kinds coupled 0 do
       let mut fixed : Array (Nat × Expr) := #[]
@@ -704,12 +704,12 @@ def bitVecSource : WitnessSource where
             details := details.push note
           fixable := false
       if fixable then
-        match ← solveOnce ctx stmt c.index true c.hyps #[] fixed fixedStx with
+        match ← solveOnce ctx stmt d.index true d.hyps #[] fixed fixedStx with
         | .solved a abstracted =>
           -- the loop's check is the single arbiter (§9.3); a rejected
           -- candidate sends the walk to the next grid point, and the
           -- atoms the solver abstracted name the missing lemma (§9.4)
-          if ctx.probe.check c.index a then
+          if ctx.probe.check d.index a then
             return .candidate a
           details := details ++ abstracted
         | .unsat => pure ()

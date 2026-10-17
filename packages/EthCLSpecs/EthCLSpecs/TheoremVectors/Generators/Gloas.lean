@@ -44,7 +44,7 @@ These lines run without a `default` witness:
   side's `bidAmount` (§9.4).
 - `isValidIndexedPayloadAttestation_eq_true_iff_checks` keeps its manual
   state and attestation terms, which win the true side; its false-side
-  cases need containers the manual terms do not vary, and the random
+  disjuncts need containers the manual terms do not vary, and the random
   source draws them after the manual and bit-vector handoffs fail
   (§9.2, §9.4).
 -/

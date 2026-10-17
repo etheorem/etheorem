@@ -19,7 +19,7 @@ keeps the Lean target name either way. One YAML file per accepted
 vector:
 
 ```
-<outDir>/formats/function/<fork>/<preset>/<target>/<thm>_<case>[_t|_f].yaml
+<outDir>/formats/function/<fork>/<preset>/<target>/<thm>_<index>[_t|_f].yaml
 ```
 
 SSZ values go in as single-quoted hex with their root, scalars as literals,
@@ -62,9 +62,11 @@ def valueYaml (v : VectorValue) (bytes : ByteArray) : Yaml :=
   | .scalar lit => literalYaml lit
   | .ssz root => .map #[("ssz", .hex bytes), ("root", .hex root)]
 
-/-- The file's name for a case, `<thm>_<case>[_t|_f].yaml` (§13.3). -/
+/-- The file's name for one record, `<thm>_<index>[_t|_f].yaml`:
+the theorem's local name, the zero-padded disjunct index, and the side
+marker (§13.3). -/
 def Formats.functionFileName (r : VectorRecord) : String :=
-  r.«theorem».toString ++ "_" ++ toString r.caseIndex ++
+  r.«theorem».toString ++ "_" ++ toString r.disjunctIndex ++
     (match r.side with
      | some true => "_t"
      | some false => "_f"

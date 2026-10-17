@@ -12,7 +12,7 @@ import EthCLLib.TheoremVectors.Witness.Source
 The scalar read and the search-context construction the toy drives
 share. A drive that pins a relation over a witness's scalar value reads
 the candidate's bytes through `Support.leOf`, so the pin carries the
-relation the case's hypotheses state and the solver's exact choice
+relation the disjunct's hypotheses state and the solver's exact choice
 stays unpinned. A drive that runs the search
 loop builds its context through `Support.searchCtxOf`, so every
 construction names the binding, the preset, the output root, and the

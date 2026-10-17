@@ -13,7 +13,7 @@ Formats cell carries the client harness's answers from
 `<outDir>/client-results.json` (§13.3, §16.2): `prysm passed`,
 `prysm failed`, or `prysm skipped`, joined on the row's fork, preset,
 and theorem. For a theorem's entries the worst answer wins, so a failed
-case is never shown under a pass. The cell prints empty when no entry
+disjunct is never shown under a pass. The cell prints empty when no entry
 ran the record, which covers the three no-answer states at once: the
 harness never ran, the coverage table maps the target to nothing, or the
 client build table-skipped it. The cell stays terse, so a row can carry
@@ -77,7 +77,7 @@ private def blockInputSection (os : Array Outcome) : String :=
 /-- The Formats cell (§16.2): the client harness's answers for the row's
 theorem at the row's preset, under the fork the section names. The worst
 answer wins (`ClientResults.cell`), so a row never shows a pass over a
-failed case. Empty when the run carries no preset (§16.1's survey run)
+failed disjunct. Empty when the run carries no preset (§16.1's survey run)
 or no entry ran the theorem. -/
 private def formatsCell (clients : Array ClientResult) (forkTag : String)
     (run : RunOutcome) (thm : Name) : String :=

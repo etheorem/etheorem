@@ -21,12 +21,12 @@ At each grid step the source overlays the built bytes on the statement's
 one state input, draws every other container input the way the random
 source draws it (the shared memo, draw 0), and runs the same point loop
 the random source runs over a draw (§9.9: "the same loop"): ground the
-case's container reads at the built bytes, walk the coupled scalars'
+disjunct's container reads at the built bytes, walk the coupled scalars'
 grid, and hand the residual to the solver. The probe's check stays the
 single arbiter.
 
 The grid order is the shrink order (§9.9): the walk stops at the first
-step whose point satisfies the case, so the winner is the cheapest
+step whose point satisfies the disjunct, so the winner is the cheapest
 reachable state the grid found, and a built state is never shrunk by its
 fields, which would break what the builder guaranteed.
 
@@ -47,7 +47,7 @@ once.
   8. (`IMPLEMENTATION_NOTES.md` records the deviation.)
 - `Witness/Built.lean` imports `Witness.Random`, because §9.9 runs "the
   same loop the random source runs over a draw", and that loop
-  (`tryDraw`, `casePlanOf`, `drawAt`) lives there.
+  (`tryDraw`, `disjunctPlanOf`, `drawAt`) lives there.
 - A builder constant carries the fork's own instance binders beside
   `Knobs`, those its body uses (`[Preset] [Config]`, plus
   `[CryptoBackend]` where a signature check reaches the seam), because
@@ -233,8 +233,8 @@ def Built.findStep (ctx : SearchCtx) (cap : Nat) (a : Assignment)
 
 /-- The `built` source (§9.9). Applies when no block input is in play and
 exactly one input has the binding's state type. The walk stops at the
-first grid step whose point satisfies the case, which is the knob shrink:
-cheaper steps ran first and failed (§9.9). -/
+first grid step whose point satisfies the disjunct, which is the knob
+shrink: cheaper steps ran first and failed (§9.9). -/
 def builtSource : WitnessSource where
   tag := .built
   applies ctx stmt _ :=
@@ -242,14 +242,14 @@ def builtSource : WitnessSource where
     !ctx.binding.builders.isEmpty &&
     ((Array.range stmt.inputs.size).filter
       (fun i => isStateType ctx.binding stmt.inputs[i]!.type)).size == 1
-  search ctx stmt c := do
+  search ctx stmt d := do
     let some statePos := (Array.range stmt.inputs.size).find?
         (fun i => isStateType ctx.binding stmt.inputs[i]!.type) |
       return .nothing
     let steps ← builtStepsOf ctx.preset
     let grid := Built.grid ctx.epochBoundary
-    -- the per-case pieces, shared with the random source (§9.4, §9.9)
-    let cp ← casePlanOf ctx stmt c
+    -- the per-disjunct pieces, shared with the random source (§9.4, §9.9)
+    let cp ← disjunctPlanOf ctx stmt d
     -- every other container input draws the random source's draw 0, the
     -- same memo, so a built witness's drawn bytes and a random one's
     -- agree position by position (§9.9). The draw samples the side
@@ -285,13 +285,13 @@ def builtSource : WitnessSource where
         let drawn := others.push (statePos, bytes)
         -- `0`: no coupled-values cap, the built registries hold what
         -- the knobs built, and the safe gate skips out-of-range points
-        match ← tryDraw ctx stmt c 0 cp.plan stmt.scalarKinds
+        match ← tryDraw ctx stmt d 0 cp.plan stmt.scalarKinds
             cp.coupled drawn with
         | some a => return .candidate a
         | none => pure ()
       else
         break
     return .nothing
-      (some s!"no grid step of {built} satisfied the case")
+      (some s!"no grid step of {built} satisfied the disjunct")
 
 end EthCLLib.TheoremVectors

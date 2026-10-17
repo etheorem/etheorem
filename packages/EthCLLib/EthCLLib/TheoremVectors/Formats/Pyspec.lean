@@ -76,7 +76,7 @@ def Formats.pyspecRender (env : RenderEnv) (r : VectorRecord)
   let dir := env.outDir / "formats" / "pyspec" / r.fork / r.preset.tag /
     runner / handler / "pyspec_tests" /
     ((Formats.pyspecThmLocal b r.«theorem»).toString ++ "_" ++
-      Record.caseName r.caseIndex r.side)
+      Record.disjunctName r.disjunctIndex r.side)
   IO.FS.createDirAll dir
   let preFile := dir / "pre.ssz"
   IO.FS.writeBinFile preFile preBytes

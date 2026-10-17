@@ -4,10 +4,10 @@ import EthCLLib.TheoremVectors.Types
 /-!
 # `EthCLLib.TheoremVectors.Record`: the general vector on disk
 
-One record directory per case (`THEOREM_VECTORS_ARCHITECTURE.md` §12.1):
+One record directory per disjunct (`THEOREM_VECTORS_ARCHITECTURE.md` §12.1):
 
 ```
-<outDir>/records/<fork>/<preset>/<thm>/<case>[_t|_f]/
+<outDir>/records/<fork>/<preset>/<thm>/<index>[_t|_f]/
   record.json
   <input>.ssz          one per input, scalars included, named by the binder
   output.ssz           absent for .runError
@@ -20,9 +20,9 @@ and hold no fork knowledge (§12.4). The read-back check (§12.5) runs in the
 command, which owns the probe the check needs.
 
 The on-disk JSON differs from §12.2's sketch in the field names, the
-reasons recorded in `IMPLEMENTATION_NOTES.md`: the sketch spells the case
-index `case`, and the derived JSON writes the Lean field name
-`caseIndex`; the payload nests under `value`, because the scalar's
+reasons recorded in `IMPLEMENTATION_NOTES.md`: the sketch spells the
+disjunct index `case`, and the derived JSON writes the Lean field name
+`disjunctIndex`; the payload nests under `value`, because the scalar's
 literal and the container's root share one field slot. The `theorem`
 field spells with French quotes in Lean, `«theorem»`, and the derived
 JSON writes the wire spelling §12.2 fixes. The sketch names no spec-name
@@ -31,8 +31,8 @@ field either; the record adds `specName`, the target's pyspec name
 
 ## Lean idioms annotated
 
-- The case directory zero-pads the index to three digits, so a directory
-  listing reads in case order.
+- The disjunct directory zero-pads the index to three digits, so a
+  directory listing reads in disjunct order.
 -/
 
 set_option autoImplicit false
@@ -91,12 +91,12 @@ structure VectorRecord where
   target    : Option Name
   /-- The target's pyspec name, when the reader read one off the target's
   docstring (the stage-10 promotion). The derived JSON writes the wire key
-  `specName`, the way `caseIndex` spells. -/
+  `specName`, the way `disjunctIndex` spells. -/
   specName  : Option String
   /-- The conclusion's shape. -/
   shape     : ShapeTag
-  /-- The zero-based case index. -/
-  caseIndex : Nat
+  /-- The zero-based disjunct index. -/
+  disjunctIndex : Nat
   /-- The `.iffTrue` side, when the shape is `.iffTrue`. -/
   side      : Option Bool
   /-- One entry per input, in binder order. -/
@@ -135,22 +135,22 @@ def Record.thmDir (outDir : System.FilePath) (forkTag : String)
     (preset : PresetId) (thmLocal : String) : System.FilePath :=
   Record.dir outDir / forkTag / preset.tag / thmLocal
 
-/-- The case directory's name: the zero-padded case index, `_t` or `_f`
-marking the `.iffTrue` side (§12.1). -/
-def Record.caseName (caseIndex : Nat) (side : Option Bool) : String :=
-  let digits := toString caseIndex
+/-- The disjunct directory's name: the zero-padded disjunct index, `_t` or
+`_f` marking the `.iffTrue` side (§12.1). -/
+def Record.disjunctName (disjunctIndex : Nat) (side : Option Bool) : String :=
+  let digits := toString disjunctIndex
   String.ofList (List.replicate (3 - min 3 digits.length) '0') ++ digits ++
     (match side with
      | some true => "_t"
      | some false => "_f"
      | none => "")
 
-/-- One case's record directory. -/
-def Record.caseDir (outDir : System.FilePath) (forkTag : String)
-    (preset : PresetId) (thmLocal : String) (caseIndex : Nat)
+/-- One disjunct's record directory. -/
+def Record.disjunctDir (outDir : System.FilePath) (forkTag : String)
+    (preset : PresetId) (thmLocal : String) (disjunctIndex : Nat)
     (side : Option Bool) : System.FilePath :=
   Record.thmDir outDir forkTag preset thmLocal /
-    Record.caseName caseIndex side
+    Record.disjunctName disjunctIndex side
 
 /-! ## The writer and the reader (§12.4) -/
 
@@ -161,7 +161,7 @@ SSZ form; the record marks it as a scalar either way. -/
 def Record.write (outDir : System.FilePath) (forkTag : String)
     (r : VectorRecord) (thmLocal : String) (inputBytes : Array ByteArray)
     (outputBytes : Option ByteArray) : IO Unit := do
-  let dir := Record.caseDir outDir forkTag r.preset thmLocal r.caseIndex r.side
+  let dir := Record.disjunctDir outDir forkTag r.preset thmLocal r.disjunctIndex r.side
   IO.FS.createDirAll dir
   IO.FS.writeFile (dir / "record.json")
     ((toJson r).render.pretty (width := 100) ++ "\n")
@@ -198,7 +198,7 @@ def Record.read (dir : System.FilePath) : IO ReadBack := do
       pure none
   return { record := r, inputBytes, outputBytes }
 
-/-- Every record of one fork and preset, in theorem-then-case order
+/-- Every record of one fork and preset, in theorem-then-disjunct order
 (the exe's render and list walks). -/
 partial def Record.readAll (outDir : System.FilePath) (forkTag : String)
     (preset : PresetId) : IO (Array (System.FilePath × ReadBack)) := do
@@ -208,9 +208,9 @@ partial def Record.readAll (outDir : System.FilePath) (forkTag : String)
     return #[]
   for thmEntry in ← root.readDir do
     unless ← thmEntry.path.isDir do continue
-    for caseEntry in ← thmEntry.path.readDir do
-      unless ← caseEntry.path.isDir do continue
-      let path := caseEntry.path
+    for disjunctEntry in ← thmEntry.path.readDir do
+      unless ← disjunctEntry.path.isDir do continue
+      let path := disjunctEntry.path
       unless (← path.readDir).any (·.fileName == "record.json") do continue
       out := out.push (path, ← Record.read path)
   return out.qsort fun a b => a.1.toString < b.1.toString

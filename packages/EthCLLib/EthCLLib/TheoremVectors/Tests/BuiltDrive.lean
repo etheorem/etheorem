@@ -126,22 +126,22 @@ run_cmd do
     Statement.readIn binding
       `EthCLLib.TheoremVectors.Tests.BuiltDrive.toyBuiltThm fun ctx => do
       let stmt ← Scope.classify binding ctx.stmt
-      let (cases, _) ← Prepare.pass stmt
-      unless cases.size == 1 do
-        throwError s!"toyBuiltThm: expected one case, got {cases.size}"
-      let c := cases[0]!
+      let (disjuncts, _) ← Prepare.pass stmt
+      unless disjuncts.size == 1 do
+        throwError s!"toyBuiltThm: expected one disjunct, got {disjuncts.size}"
+      let d := disjuncts[0]!
       let (info, probe) ←
-        match ← Probe.ofStatement binding .minimal ctx cases #[] with
+        match ← Probe.ofStatement binding .minimal ctx disjuncts #[] with
         | .ok r => pure r
         | .error e =>
           throwError s!"toyBuiltThm: the probe refused to build: {e}"
       let sctx ← Tests.Support.searchCtxOf toyBuiltBinding .minimal
         scratchRoot "" stmt ctx info probe
-      match ← searchCase #[builtSource] sctx stmt c with
+      match ← searchDisjunct #[builtSource] sctx stmt d with
       | .ok (a, won) =>
         unless won == .built do
           throwError s!"toyBuiltThm: expected a `.built` win, got {won.tag}"
-        unless probe.check c.index a do
+        unless probe.check d.index a do
           throwError "toyBuiltThm: the built candidate failed the check"
         -- the candidate's state input decodes to the builder's state
         match SizzLean.SSZ.deserialize (T := Tests.Random.ToyBox) a[0]! with
@@ -165,23 +165,23 @@ run_cmd do
     Statement.readIn binding
       `EthCLLib.TheoremVectors.Tests.BuiltDrive.toyBuiltThm2 fun ctx => do
       let stmt ← Scope.classify binding ctx.stmt
-      let (cases, _) ← Prepare.pass stmt
-      unless cases.size == 1 do
-        throwError s!"toyBuiltThm2: expected one case, got {cases.size}"
-      let c := cases[0]!
+      let (disjuncts, _) ← Prepare.pass stmt
+      unless disjuncts.size == 1 do
+        throwError s!"toyBuiltThm2: expected one disjunct, got {disjuncts.size}"
+      let d := disjuncts[0]!
       let (info, probe) ←
-        match ← Probe.ofStatement binding .minimal ctx cases #[] with
+        match ← Probe.ofStatement binding .minimal ctx disjuncts #[] with
         | .ok r => pure r
         | .error e =>
           throwError s!"toyBuiltThm2: the probe refused to build: {e}"
       let sctx ← Tests.Support.searchCtxOf toyBuiltBinding .minimal
         scratchRoot "" stmt ctx info probe
-      match ← searchCase #[builtSource] sctx stmt c with
+      match ← searchDisjunct #[builtSource] sctx stmt d with
       | .ok (a, won) =>
         unless won == .built do
           throwError s!"toyBuiltThm2: expected a `.built` win, got \
             {won.tag}"
-        unless probe.check c.index a do
+        unless probe.check d.index a do
           throwError "toyBuiltThm2: the built candidate failed the check"
         -- the state slot still carries the builder's bytes
         match SizzLean.SSZ.deserialize (T := Tests.Random.ToyBox) a[0]! with
@@ -233,12 +233,12 @@ run_cmd do
     Statement.readIn binding
       `EthCLLib.TheoremVectors.Tests.BuiltDrive.toyBuiltThm3 fun ctx => do
       let stmt ← Scope.classify binding ctx.stmt
-      let (cases, _) ← Prepare.pass stmt
-      unless cases.size == 1 do
-        throwError s!"toyBuiltThm3: expected one case, got {cases.size}"
-      let c := cases[0]!
+      let (disjuncts, _) ← Prepare.pass stmt
+      unless disjuncts.size == 1 do
+        throwError s!"toyBuiltThm3: expected one disjunct, got {disjuncts.size}"
+      let d := disjuncts[0]!
       let (info, probe) ←
-        match ← Probe.ofStatement binding .minimal ctx cases #[] with
+        match ← Probe.ofStatement binding .minimal ctx disjuncts #[] with
         | .ok r => pure r
         | .error e =>
           throwError s!"toyBuiltThm3: the probe refused to build: {e}"
@@ -248,7 +248,7 @@ run_cmd do
       let size := theorem_vectors.randomSize.get (← getOptions)
       -- the built half: the win leaves draw 0's slot partial, the state
       -- position `none`, the side position `some`
-      match ← searchCase #[builtSource] sctx stmt c with
+      match ← searchDisjunct #[builtSource] sctx stmt d with
       | .ok (_, won) =>
         unless won == .built do
           throwError s!"toyBuiltThm3: expected a `.built` win, got \
@@ -258,7 +258,7 @@ run_cmd do
           {repr f}"
       -- the random half on the same context: its draw at index 0
       -- completes the slot, and the always-true read lets that draw win
-      match ← searchCase #[randomSource] sctx stmt c with
+      match ← searchDisjunct #[randomSource] sctx stmt d with
       | .ok (a, won) =>
         unless won == .random do
           throwError s!"toyBuiltThm3: expected a `.random` win, got \
@@ -277,7 +277,7 @@ run_cmd do
             the random draw"
         -- the hint entry the win records: `findDrawIndex` matches the
         -- completed slot, so the draw key is draw 0
-        let some e ← Hint.entryOf sctx stmt c a won seed size
+        let some e ← Hint.entryOf sctx stmt d a won seed size
           (Hint.fingerprint stmt.thm info)
           | throwError "toyBuiltThm3: the random win produced no hint \
             entry; the completed slot did not match"

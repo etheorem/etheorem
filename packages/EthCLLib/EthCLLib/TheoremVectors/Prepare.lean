@@ -22,18 +22,18 @@ sources solve (`THEOREM_VECTORS_ARCHITECTURE.md` §8). One pass, five steps:
    the `Bool` normalization lemmas. Crypto predicates are not captured spec
    functions, so they stay as they are (§8.1).
 4. **Split** (§8.2). The unfolded conjunction goes to disjunctive normal
-   form, one `Case` per disjunct, with a structural walk that pushes `∨`
+   form, one `Disjunct` per DNF disjunct, with a structural walk that pushes `∨`
    out and applies De Morgan one `¬` at a time. The walk never enters a
    quantifier, so a gate such as `∀ i, p i` stays one atom. The disjunct
-   cap is the `theorem_vectors.maxCases` option (§14.4); a theorem over the
-   cap falls back to one case with the unsplit hypothesis and the pass
-   reports the fallback (§8.2).
+   cap is the `theorem_vectors.maxDisjuncts` option (§14.4); a theorem over
+   the cap falls back to one disjunct with the unsplit hypothesis and the
+   pass reports the fallback (§8.2).
 5. **Decidability** (§8.4). Every source ends with `decide` on its
-   candidate, so every case must carry a `Decidable` instance for its
+   candidate, so every disjunct must carry a `Decidable` instance for its
    conjunction. The pass synthesizes it once, at build time, over the
    statement's binders, and stores it beside the conjunction; the probe
-   substitutes the instance binders into it (§11.2). A case whose synthesis
-   fails is reported and dropped (§8.4).
+   substitutes the instance binders into it (§11.2). A disjunct whose
+   synthesis fails is reported and dropped (§8.4).
 
 ## Lean idioms annotated
 
@@ -63,11 +63,11 @@ namespace EthCLLib.TheoremVectors
 (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4). The prepare pass produces one per DNF disjunct,
 times two for `.iffTrue`. The conjunction and its `Decidable` instance sit
 beside the conjuncts so the probe does not re-derive either (§8.4). -/
-structure Case where
-  /-- The case's position, which names its record directory (§12.1). -/
+structure Disjunct where
+  /-- The disjunct's position, which names its record directory (§12.1). -/
   index : Nat
-  /-- The `.iffTrue` side this case serves, when the shape is `.iffTrue`
-  (§8.3). -/
+  /-- The `.iffTrue` side this disjunct serves, when the shape is
+  `.iffTrue` (§8.3). -/
   side  : Option Bool
   /-- The conjuncts, in binder order, binders still free. -/
   hyps  : Array Expr
@@ -242,9 +242,9 @@ names, with the bridge and `Bool` sets. A hypothesis that names no captured
 spec function still goes through the bridge set, whose rewrites need no
 spec function; a simp failure leaves the hypothesis as it was. A
 hypothesis simp closes (its negation followed from the others, or it
-reduced to a contradiction) becomes `False`, so the split keeps the case
-and the search reports it unsatisfiable; a hypothesis simp drops became
-trivial and becomes `True`. -/
+reduced to a contradiction) becomes `False`, so the split keeps the
+disjunct and the search reports it unsatisfiable; a hypothesis simp drops
+became trivial and becomes `True`. -/
 def Prepare.unfoldHyp (e : Expr) : MetaM Expr := do
   let names ← unfoldNames e
   let run : MetaM (Option Expr) := do
@@ -268,13 +268,13 @@ def Prepare.unfoldHyp (e : Expr) : MetaM Expr := do
 disjunct (§8.2). `none` when the split exceeds `cap`. The walk pushes `∨`
 out and applies De Morgan over `∧`; it never enters a quantifier or an
 atom, so a gate stays one conjunct. -/
-private partial def dnfCases (cap : Nat) (e : Expr) : Option (Array (Array Expr)) :=
+private partial def dnfDisjuncts (cap : Nat) (e : Expr) : Option (Array (Array Expr)) :=
   match e.getAppFn, e.getAppArgs with
   | .const c _, args =>
     if c == ``Or && args.size == 2 then
-      match dnfCases cap args[0]! with
+      match dnfDisjuncts cap args[0]! with
       | some x =>
-        match dnfCases cap args[1]! with
+        match dnfDisjuncts cap args[1]! with
         | some y => if x.size + y.size > cap then none else some (x ++ y)
         | none => none
       | none => none
@@ -283,18 +283,18 @@ private partial def dnfCases (cap : Nat) (e : Expr) : Option (Array (Array Expr)
       | .const c' _ =>
         let args' := args[0]!.getAppArgs
         if c' == ``And && args'.size == 2 then
-          match dnfCases cap (mkNot args'[0]!) with
+          match dnfDisjuncts cap (mkNot args'[0]!) with
           | some x =>
-            match dnfCases cap (mkNot args'[1]!) with
+            match dnfDisjuncts cap (mkNot args'[1]!) with
             | some y => if x.size + y.size > cap then none else some (x ++ y)
             | none => none
           | none => none
         else some #[#[e]]
       | _ => some #[#[e]]
     else if c == ``And && args.size == 2 then
-      match dnfCases cap args[0]! with
+      match dnfDisjuncts cap args[0]! with
       | some x =>
-        match dnfCases cap args[1]! with
+        match dnfDisjuncts cap args[1]! with
         | some y =>
           if x.size * y.size > cap then none
           else some (x.flatMap fun xc => y.map (fun yc => xc ++ yc))
@@ -304,11 +304,11 @@ private partial def dnfCases (cap : Nat) (e : Expr) : Option (Array (Array Expr)
   | _, _ => some #[#[e]]
 
 /-- The pass's full form (§8): sides, zeta, unfold, DNF split with the cap,
-and the `Decidable` synthesis of §8.4. Returns the cases, in side order
-(true side first for `.iffTrue`), plus the report lines: the dropped cases'
-reasons and the cap fallback's. -/
-def Prepare.pass (stmt : Statement) : MetaM (Array Case × Array String) := do
-  let cap := theorem_vectors.maxCases.get (← getOptions)
+and the `Decidable` synthesis of §8.4. Returns the disjuncts, in side order
+(true side first for `.iffTrue`), plus the report lines: the dropped
+disjuncts' reasons and the cap fallback's. -/
+def Prepare.pass (stmt : Statement) : MetaM (Array Disjunct × Array String) := do
+  let cap := theorem_vectors.maxDisjuncts.get (← getOptions)
   -- §8.3: the `.iffTrue` sides. `q` carries `let`s in the corpus
   -- (`canBuilderCoverBid_iff`), so zeta applies before anything else.
   let sides : Array (Option Bool × Array Expr) :=
@@ -317,7 +317,7 @@ def Prepare.pass (stmt : Statement) : MetaM (Array Case × Array String) := do
       let q := Prepare.zeta q
       #[(some true, stmt.hyps.push q), (some false, stmt.hyps.push (mkNot q))]
     | _ => #[(none, stmt.hyps)]
-  let mut cases : Array Case := #[]
+  let mut disjuncts : Array Disjunct := #[]
   let mut dropped : Array String := #[]
   let mut capHit := false
   let mut index := 0
@@ -325,9 +325,9 @@ def Prepare.pass (stmt : Statement) : MetaM (Array Case × Array String) := do
     let mut hyps : Array Expr := #[]
     for h in hyps0 do
       hyps := hyps.push (← Prepare.unfoldHyp (Prepare.zeta h))
-    -- §8.2: one case per disjunct; over the cap, the unsplit fallback
+    -- §8.2: the DNF split with the cap; over the cap, the unsplit fallback
     let groups ←
-      match dnfCases (cap - cases.size) (conjunction hyps) with
+      match dnfDisjuncts (cap - disjuncts.size) (conjunction hyps) with
       | some g => pure g
       | none =>
         capHit := true
@@ -337,15 +337,15 @@ def Prepare.pass (stmt : Statement) : MetaM (Array Case × Array String) := do
       match ← (try some <$> Meta.synthInstance (mkApp (.const ``Decidable []) conj)
         catch _ => pure none) with
       | some dec =>
-        cases := cases.push { index, side, hyps := g, conj, decidable := dec }
+        disjuncts := disjuncts.push { index, side, hyps := g, conj, decidable := dec }
         index := index + 1
       | none =>
-        -- §8.4: a case whose synthesis fails is reported and dropped
-        dropped := dropped.push s!"case {index}: no `Decidable` instance for \
-          the hypothesis conjunction"
+        -- §8.4: a disjunct whose synthesis fails is reported and dropped
+        dropped := dropped.push s!"disjunct {index}: no `Decidable` instance \
+          for the hypothesis conjunction"
   if capHit then
-    dropped := dropped.push s!"the DNF split exceeded the case cap ({cap}); \
-      the theorem falls back to the unsplit hypothesis (§8.2)"
-  return (cases, dropped)
+    dropped := dropped.push s!"the DNF split exceeded the disjunct cap \
+      ({cap}); the theorem falls back to the unsplit hypothesis (§8.2)"
+  return (disjuncts, dropped)
 
 end EthCLLib.TheoremVectors

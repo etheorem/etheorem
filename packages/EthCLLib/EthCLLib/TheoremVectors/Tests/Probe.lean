@@ -96,8 +96,9 @@ theorem toyCaller : EthCLLib.Tests.InheritanceReplay.Base.caller = 11 := rfl
 /-- The evaluated probe for one theorem, with a skip reason turned into
 the test failure it is. -/
 private def builtProbe (thm : Name) (binding : ForkBinding)
-    (ctx : StatementCtx) (cases : Array Case) : MetaM (ProbeInfo × Probe) := do
-  match ← Probe.ofStatement binding .minimal ctx cases #[] with
+    (ctx : StatementCtx) (disjuncts : Array Disjunct) :
+    MetaM (ProbeInfo × Probe) := do
+  match ← Probe.ofStatement binding .minimal ctx disjuncts #[] with
   | .ok r => pure r
   | .error e => throwError s!"{thm}: the probe refused to build: {e}"
 
@@ -112,12 +113,12 @@ private def roundTrip (thm : Name) (binding : ForkBinding)
     (dir : System.FilePath) : MetaM VectorRecord := do
   Statement.readIn binding thm fun ctx => do
     let stmt ← Scope.classify binding ctx.stmt
-    let (cases, dropped) ← Prepare.pass stmt
-    unless cases.size == 1 && dropped.isEmpty do
-      throwError s!"{thm}: expected one prepared case, got {cases.size} \
+    let (disjuncts, dropped) ← Prepare.pass stmt
+    unless disjuncts.size == 1 && dropped.isEmpty do
+      throwError s!"{thm}: expected one prepared disjunct, got {disjuncts.size} \
         (dropped {dropped.size})"
-    let (info, probe) := (← builtProbe thm binding ctx cases)
-    let c := cases[0]!
+    let (info, probe) := (← builtProbe thm binding ctx disjuncts)
+    let d := disjuncts[0]!
     let sources : Array WitnessSource := #[baseSource]
     -- `Support.searchCtxOf` does not fit: the context pins
     -- `instConsts := #[]` on purpose, the base-source-only round trip
@@ -134,8 +135,8 @@ private def roundTrip (thm : Name) (binding : ForkBinding)
     -- candidate the base source would hand out for a scalar theorem; the
     -- search's own answers are the other test drives' subject
     let won ←
-      if baseSource.applies searchCtx stmt c then
-        match ← searchCase sources searchCtx stmt c with
+      if baseSource.applies searchCtx stmt d then
+        match ← searchDisjunct sources searchCtx stmt d with
         | .ok (a, tag) =>
           unless tag == WitnessSourceTag.base do
             throwError s!"{thm}: expected the base source to win"
@@ -160,7 +161,7 @@ private def roundTrip (thm : Name) (binding : ForkBinding)
       { «theorem» := stmt.thm, fork := binding.tag, preset := .minimal,
         target := stmt.target, specName := stmt.specName,
         shape := shapeTag,
-        caseIndex := c.index, side := c.side,
+        disjunctIndex := d.index, side := d.side,
         inputs := inputVals,
         output := outVal, error := errVal,
         -- the source field is a record-round-trip label here: on the
@@ -169,8 +170,8 @@ private def roundTrip (thm : Name) (binding : ForkBinding)
     -- a record with no output (`.runError`) writes no `output.ssz` (§12.1)
     Record.write dir binding.tag record thm.toString a
       (record.output.map fun _ => r.output)
-    let rb ← Record.read (Record.caseDir dir binding.tag .minimal
-      thm.toString c.index c.side)
+    let rb ← Record.read (Record.disjunctDir dir binding.tag .minimal
+      thm.toString d.index d.side)
     let r2 ← match probe.run rb.inputBytes with
       | .ok r2 => pure r2
       | .error e => throwError s!"{thm}: the read-back failed to decode: {e}"
@@ -184,8 +185,8 @@ private def expectAgreementFailure (thm : Name) : MetaM Unit := do
   let binding := EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding
   Statement.readIn binding thm fun ctx => do
     let stmt ← Scope.classify binding ctx.stmt
-    let (cases, _) ← Prepare.pass stmt
-    let (_, probe) ← builtProbe thm binding ctx cases
+    let (disjuncts, _) ← Prepare.pass stmt
+    let (_, probe) ← builtProbe thm binding ctx disjuncts
     match probe.run probe.defaults with
     | .ok r =>
       unless !r.agree do
@@ -212,8 +213,8 @@ private def expectRunOkMiss (thm : Name) : MetaM Unit := do
   let binding := EthCLLib.TheoremVectors.Tests.ToyFork.toyRunBinding
   Statement.readIn binding thm fun ctx => do
     let stmt ← Scope.classify binding ctx.stmt
-    let (cases, _) ← Prepare.pass stmt
-    let (_, probe) ← builtProbe thm binding ctx cases
+    let (disjuncts, _) ← Prepare.pass stmt
+    let (_, probe) ← builtProbe thm binding ctx disjuncts
     match probe.run probe.defaults with
     | .ok r =>
       unless !r.agree do
@@ -247,8 +248,8 @@ private def expectRunErrorMiss (thm : Name) : MetaM Unit := do
   let binding := EthCLLib.TheoremVectors.Tests.ToyFork.toyRunBinding
   Statement.readIn binding thm fun ctx => do
     let stmt ← Scope.classify binding ctx.stmt
-    let (cases, _) ← Prepare.pass stmt
-    let (_, probe) ← builtProbe thm binding ctx cases
+    let (disjuncts, _) ← Prepare.pass stmt
+    let (_, probe) ← builtProbe thm binding ctx disjuncts
     match probe.run probe.defaults with
     | .ok r =>
       unless !r.agree do
@@ -306,8 +307,8 @@ run_cmd do
     -- the recorded post-state is `{ bal := 42 }`: the toy state's SSZ form
     -- is its one `UInt64` field, little-endian. The path derives from the
     -- record, so a toy-binding rename cannot break one field silently
-    let okFile := Record.caseDir dir okRecord.fork okRecord.preset
-      okRecord.«theorem».toString okRecord.caseIndex okRecord.side
+    let okFile := Record.disjunctDir dir okRecord.fork okRecord.preset
+      okRecord.«theorem».toString okRecord.disjunctIndex okRecord.side
     unless compareBytes (← IO.FS.readBinFile (okFile / "output.ssz"))
         (uint64BytesLE 42) do
       throwError "toyRunOk: output.ssz is not the post-state with balance 42"
@@ -323,8 +324,8 @@ run_cmd do
       throwError s!"toyRunError: expected the error repr \
         {reprStr "boom"}, got {errRecord.error}"
     -- §12.1: a `.runError` record writes no `output.ssz`
-    let errDir := Record.caseDir dir errRecord.fork errRecord.preset
-      errRecord.«theorem».toString errRecord.caseIndex errRecord.side
+    let errDir := Record.disjunctDir dir errRecord.fork errRecord.preset
+      errRecord.«theorem».toString errRecord.disjunctIndex errRecord.side
     let entries ← errDir.readDir
     unless entries.all fun e => e.fileName != "output.ssz" do
       throwError "toyRunError: the record directory wrote an `output.ssz`"
@@ -374,8 +375,8 @@ run_cmd do
     unless valRootOk do
       throwError "toyRunValueOk: expected the output value to be an SSZ \
         value with a root"
-    let valFile := Record.caseDir dir valRecord.fork valRecord.preset
-      valRecord.«theorem».toString valRecord.caseIndex valRecord.side
+    let valFile := Record.disjunctDir dir valRecord.fork valRecord.preset
+      valRecord.«theorem».toString valRecord.disjunctIndex valRecord.side
     unless compareBytes (← IO.FS.readBinFile (valFile / "output.ssz"))
         (uint64BytesLE 1) do
       throwError "toyRunValueOk: output.ssz is not the returned state \
@@ -400,8 +401,8 @@ run_cmd do
     unless boxRootOk do
       throwError "toyRunBoxValueOk: expected the output value to be an \
         SSZ value with a root"
-    let boxFile := Record.caseDir dir boxRecord.fork boxRecord.preset
-      boxRecord.«theorem».toString boxRecord.caseIndex boxRecord.side
+    let boxFile := Record.disjunctDir dir boxRecord.fork boxRecord.preset
+      boxRecord.«theorem».toString boxRecord.disjunctIndex boxRecord.side
     unless compareBytes (← IO.FS.readBinFile (boxFile / "output.ssz"))
         (uint64BytesLE 1) do
       throwError "toyRunBoxValueOk: output.ssz is not the returned state \

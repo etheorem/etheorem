@@ -64,7 +64,7 @@ meets only the lines above it that passed.
 
 **Stage 2.** A named or discovered theorem's run wires phases B1 through
 B8 end to end for one preset: the prepare pass (§8.4's first form) builds
-one case, the probe compiles (§11.2), the manual and base sources search
+one disjunct, the probe compiles (§11.2), the manual and base sources search
 (§9.2, §9.4), the executor records `.eq` and `.bound` runs (§11.3), the
 record round-trips (§12.5), and the outcome carries the real statuses.
 `survey` runs phase A alone, with status `unselected` (§14.3), so the
@@ -72,17 +72,17 @@ report shows the whole corpus without searching anything.
 
 One deviation from the sketch is recorded in `IMPLEMENTATION_NOTES.md`:
 an `unsupported` outcome's shape field writes `unsupported`, because the
-§16.1 example leaves the field's value for that case unspecified.
+§16.1 example leaves the field's value for that row unspecified.
 
 **Stage 5.** The hint source (§9.8) prepends itself to every list: the
 run resolves the mode (`THEOREM_VECTORS_HINTS` ahead of the
 `theorem_vectors.hints` option), loads the committed file, and hands the
-source a log ref. A winning case records its hint entry, where a replay
+source a log ref. A winning disjunct records its hint entry, where a replay
 re-records the entry it consumed, and the run merges its entries into
 `<outDir>/hints/<fork>/<thm>.json`. The outcome line folds the log
-into its `hint` field. Mode `require` errors on a case whose hint
+into its `hint` field. Mode `require` errors on a disjunct whose hint
 failed the check or whose witness came from a search, which is the
-committed file's broken promise; a case that finds no witness at all
+committed file's broken promise; a disjunct that finds no witness at all
 falls through, because no entry could have existed for it.
 
 ## Lean idioms annotated
@@ -127,7 +127,7 @@ inductive LineKind where
   | skipped (thm : Name) (reason : String)
   deriving Inhabited
 
-/-- Kind equality, spelled out because the named case carries `Syntax`
+/-- Kind equality, spelled out because the named line carries `Syntax`
 manual terms and `Syntax` has no decidable equality. -/
 private def LineKind.sameKind : LineKind → LineKind → Bool
   | .characterized, .characterized => true
@@ -384,7 +384,7 @@ file come from the run (`runTheorem` resolved both once per theorem). -/
 private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     (thmLocal : String) (manualTerms : Array (Nat × Expr)) (builtStamp : String)
     (winsRef : IO.Ref (Array ReuseWin)) (p : PresetId) (ctx : StatementCtx)
-    (cases : Array Case) (mode : HintMode) (hintFile? : Option HintFile) :
+    (disjuncts : Array Disjunct) (mode : HintMode) (hintFile? : Option HintFile) :
     MetaM RunOutcome := do
   let stmt := ctx.stmt
   let startMs ← IO.monoMsNow
@@ -394,12 +394,12 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   -- would answer `some` reason here
   if let some stage := Execute.handles? stmt.shape then
     return { preset := some p, status := .skipped, reason := some stage }
-  if cases.isEmpty then
+  if disjuncts.isEmpty then
     return { preset := some p, status := .skipped,
-             reason := some "the prepare pass produced no case" }
+             reason := some "the prepare pass produced no disjunct" }
   -- B1: the probe for this preset (§10, §11). An `.error` answer is a
   -- skip reason, a fact about the theorem or the shape.
-  let (info, probe) ← match ← Probe.ofStatement binding p ctx cases manualTerms with
+  let (info, probe) ← match ← Probe.ofStatement binding p ctx disjuncts manualTerms with
     | .ok r => pure r
     | .error reason =>
       return { preset := some p, status := .skipped, reason := some reason }
@@ -424,7 +424,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       drawMemo := ← IO.mkRef #[], outDir, builtStamp, epochBoundary,
       earlierWins := wins }
   -- §9.8: the hint source runs first on every list. The log ref collects
-  -- what one attempt did per case, which the outcome's `hint` field folds
+  -- what one attempt did per disjunct, which the outcome's `hint` field folds
   -- up and which the `require` mode's error reads.
   let fingerprint := Hint.fingerprint stmt.thm info
   let hintLog ← IO.mkRef (#[] : Array (Nat × HintAttempt))
@@ -464,15 +464,16 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     | return { preset := some p, status := .unsupported,
                reason := some "unsupported shape" }
   -- §9.8: mode `require` turns a failing hint into the build error the
-  -- mode promises. A case that found no witness carries no claim the mode
-  -- can enforce (§9.4: the manual terms' claim is the author's; a case no
-  -- source wins reports `notFound`), so it falls through; a case that won
+  -- mode promises. A disjunct that found no witness carries no claim the
+  -- mode can enforce (§9.4: the manual terms' claim is the author's; a
+  -- disjunct no source wins reports `notFound`), so it falls through; a
+  -- disjunct that won
   -- from a source other than the hint, or whose hint the check rejected,
-  -- is the error, because the committed file promised this case a witness
-  let enforceRequireHint (c : Case) (win? : Option Bool) : MetaM Unit := do
+  -- is the error, because the committed file promised this disjunct a witness
+  let enforceRequireHint (d : Disjunct) (win? : Option Bool) : MetaM Unit := do
     if mode == .require then
       let logged ← hintLog.get
-      let attempt? := logged.find? fun (i, _) => i == c.index
+      let attempt? := logged.find? fun (i, _) => i == d.index
       let hintFailed := attempt?.any fun (_, a) =>
         a == .failed || a == .staleFailed
       let hintReplayed := attempt?.any fun (_, a) =>
@@ -480,8 +481,8 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       let wrong := hintFailed ||
         (win?.getD false && !hintReplayed)
       if wrong then
-        throwError "theorem_vectors: mode `require`: the hint for case \
-          {c.index} of `{stmt.thm}` at {p.tag} is missing or failed the \
+        throwError "theorem_vectors: mode `require`: the hint for disjunct \
+          {d.index} of `{stmt.thm}` at {p.tag} is missing or failed the \
           check (§9.8)"
   let mut written : Nat := 0
   let mut source? : Option String := none
@@ -489,7 +490,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   let mut hintEntries : Array HintEntry := #[]
   let mut freshWins : Nat := 0
   let mut failures : Array (Nat × RunStatus × String) := #[]
-  for c in cases do
+  for d in disjuncts do
     -- the plan's stage-6 step 9: a notFound entry the run's own
     -- fingerprint covers is the run's own past answer, so `use` and
     -- `require` modes take it and skip the search; a stale one, or
@@ -497,7 +498,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     let skippedNotFound : Option HintEntry := do
       guard (mode != .ignore)
       let f ← hintFile?
-      let e ← Hint.entryFor f p c.index c.side
+      let e ← Hint.entryFor f p d.index d.side
       guard (e.notFound.isSome && (e.fingerprint.getD f.fingerprint) == fingerprint)
       pure e
     if let some e := skippedNotFound then
@@ -506,32 +507,32 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       -- the search's own. The consumed entry re-records into the run's
       -- file, so the skip survives the update recipe instead of living
       -- one build.
-      hintLog.set ((← hintLog.get) ++ #[(c.index, HintAttempt.replayed)])
+      hintLog.set ((← hintLog.get) ++ #[(d.index, HintAttempt.replayed)])
       hintEntries := hintEntries.push e
       let tried := (e.notFound.getD #[]).filterMap WitnessSourceTag.ofTag?
       let (status, text) := failureOf stmt.blockInputs (.notFound tried #[])
       let reason := (e.notFoundReason.getD text)
-      failures := failures.push (c.index, status,
+      failures := failures.push (d.index, status,
         s!"{reason} (replayed from the hint)")
       continue
-    match ← searchCase sources searchCtx stmt c with
+    match ← searchDisjunct sources searchCtx stmt d with
     | .error failure =>
-      enforceRequireHint c none
+      enforceRequireHint d none
       let (status, text) := failureOf stmt.blockInputs failure
-      failures := failures.push (c.index, status, text)
-      -- the plan's stage-6 step 9: a case every source failed records
+      failures := failures.push (d.index, status, text)
+      -- the plan's stage-6 step 9: a disjunct every source failed records
       -- the fact, so the next build skips its search while the
       -- fingerprint stands. The search ran, so the answer is the run's
       -- own fact, and `ignore` mode records it the way it records found
       -- entries, which keeps the rebuild recipe's output in step with
-      -- the committed files. A block input's case records none: its
+      -- the committed files. A block input's disjunct records none: its
       -- search is the one base check, there is nothing to skip, and
       -- §1.2 already reports it.
       match failure with
       | .notFound tried _ =>
         if stmt.blockInputs.isEmpty then
           let entry : HintEntry :=
-            { preset := p, «case» := c.index, side := c.side,
+            { preset := p, disjunctIndex := d.index, side := d.side,
               source := .base,
               notFound := some (tried.map (·.tag)),
               notFoundReason := some text,
@@ -539,7 +540,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
           hintEntries := hintEntries.push entry
       | _ => pure ()
     | .ok (a, won) =>
-      enforceRequireHint c (some (!(won matches .hinted _)))
+      enforceRequireHint d (some (!(won matches .hinted _)))
       -- §9.8: the hint entry records the pre-shrink assignment, whose
       -- container bytes the draw memo still holds; the solver's scalars
       -- are the shrink's boundary, so the entry is the shrunk witness's
@@ -558,9 +559,9 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
           pure (match hintFile? with
             | none => none
             | some f =>
-              (Hint.entryFor f p c.index c.side).map
+              (Hint.entryFor f p d.index d.side).map
                 fun e => { e with fingerprint := some fingerprint })
-        | _ => Hint.entryOf searchCtx stmt c a won seedOpt sizeOpt fingerprint
+        | _ => Hint.entryOf searchCtx stmt d a won seedOpt sizeOpt fingerprint
       -- §9.6: a witness from the random source shrinks while the check
       -- holds, within the step budget, and so does its replayed hint
       -- (§9.8: shrink replays from the same draw), which is what keeps
@@ -578,10 +579,10 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
         | .hinted _ =>
           let recorded := do
             let f ← hintFile?
-            (Hint.entryFor f p c.index c.side).bind (·.shrink)
+            (Hint.entryFor f p d.index d.side).bind (·.shrink)
           match recorded with
           | some trace =>
-            let r ← shrinkReplayWitness probe c.index trace a
+            let r ← shrinkReplayWitness probe d.index trace a
             match r with
             | some shrunk =>
               shrinkTrace? := some trace
@@ -591,15 +592,15 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
               -- the replayed draw stands, the full walk re-derives the
               -- endpoint, and the refreshed entry records the walk's own
               -- path
-              let (shrunk, tr) ← shrinkTraceWitness probe c.index steps a
+              let (shrunk, tr) ← shrinkTraceWitness probe d.index steps a
               shrinkTrace? := some tr
               pure shrunk
           | none =>
-            let (shrunk, tr) ← shrinkTraceWitness probe c.index steps a
+            let (shrunk, tr) ← shrinkTraceWitness probe d.index steps a
             shrinkTrace? := some tr
             pure shrunk
         | _ =>
-          let (shrunk, tr) ← shrinkTraceWitness probe c.index steps a
+          let (shrunk, tr) ← shrinkTraceWitness probe d.index steps a
           shrinkTrace? := some tr
           pure shrunk
       else pure a
@@ -613,7 +614,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       -- cost memory.
       if presetFree then
         winsRef.set ((← winsRef.get).push
-          { caseIndex := c.index, side := c.side, assignment := a,
+          { disjunctIndex := d.index, side := d.side, assignment := a,
             fromPreset := p })
       let entry? := match entry? with
         | some e => some { e with shrink := shrinkTrace? }
@@ -638,13 +639,13 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
         { «theorem» := stmt.thm, fork := binding.tag, preset := p,
           target := stmt.target, specName := stmt.specName,
           shape := shapeTag,
-          caseIndex := c.index, side := c.side,
+          disjunctIndex := d.index, side := d.side,
           inputs := inputVals, output := outVal, error := errVal,
           source := won }
       -- B6: write the record (§12.1, §12.4); the assignment's bytes are
       -- the record's bytes, and a record with no output (`.runError`)
       -- writes no `output.ssz` (§12.1)
-      let dir := Record.caseDir outDir binding.tag p thmLocal c.index c.side
+      let dir := Record.disjunctDir outDir binding.tag p thmLocal d.index d.side
       Record.write outDir binding.tag record thmLocal a
         (record.output.map fun _ => r.output)
       -- B7: read the directory back and run the probe on the stored bytes
@@ -653,12 +654,12 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       let rb ← Record.read dir
       match probe.run rb.inputBytes with
       | .error e =>
-        throwError "theorem_vectors: the read-back of `{stmt.thm}` case \
-          {c.index} failed to decode: {e}"
+        throwError "theorem_vectors: the read-back of `{stmt.thm}` disjunct \
+          {d.index} failed to decode: {e}"
       | .ok r2 =>
         unless compareBytes r2.output (rb.outputBytes.getD emptyBytes) do
-          throwError "theorem_vectors: the read-back of `{stmt.thm}` case \
-            {c.index} disagrees with the recorded output (§12.5): \
+          throwError "theorem_vectors: the read-back of `{stmt.thm}` disjunct \
+            {d.index} disagrees with the recorded output (§12.5): \
             recorded {EthCLLib.TheoremVectors.hexOf
               (rb.outputBytes.getD emptyBytes)}, \
             fresh {EthCLLib.TheoremVectors.hexOf r2.output}"
@@ -681,7 +682,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   let seconds := some ((endMs - startMs).toFloat / 1000.0)
   -- §9.8: the run's entries merge into the output tree's hint file, and
   -- the outcome line folds the attempts into its `hint` field
-  let hintField := Hint.runHintField mode hintFile? p cases.size freshWins
+  let hintField := Hint.runHintField mode hintFile? p disjuncts.size freshWins
     (← hintLog.get)
   -- §9.8: the run's entries merge into the output tree's hint file,
   -- whether or not the run won anything: an overriding line that wins
@@ -689,22 +690,22 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   -- survey's candidate never outlives the line that overrode it
   Hint.mergeWrite outDir binding.tag thmLocal p
     { «theorem» := stmt.thm, fingerprint, entries := hintEntries }
-  -- §18: a fully-covering set of manual terms that wins no case breaks
-  -- the build, because the author claimed it works; a partial failure
-  -- falls through (§9.4)
+  -- §18: a fully-covering set of manual terms that wins no disjunct
+  -- breaks the build, because the author claimed it works; a partial
+  -- failure falls through (§9.4)
   if !manualTerms.isEmpty && manualTerms.size == stmt.inputs.size && !manualWon then
     throwError "theorem_vectors: the manual terms of `{stmt.thm}` win no \
-      case at {p.tag}; fix the manual term or drop the `with` clause \
+      disjunct at {p.tag}; fix the manual term or drop the `with` clause \
       (§9.4, §18)"
   let failureText := String.intercalate "; "
-    (failures.toList.map fun (i, _, text) => s!"case {i}: {text}")
+    (failures.toList.map fun (i, _, text) => s!"disjunct {i}: {text}")
   if written > 0 then
     return { preset := some p, status := .written, records := written,
              source := source?, hint := hintField, seconds,
              reason := if failures.isEmpty then none
                        else some failureText }
   else
-    -- every case failed: the status is the §18 fact the failures name
+    -- every disjunct failed: the status is the §18 fact the failures name
     let status : RunStatus :=
       if failures.any fun (_, st, _) => st == .unsat then .unsat
       else if failures.any fun (_, st, _) => st == .outOfScope then
@@ -755,7 +756,7 @@ private def runTheorem (binding : ForkBinding) (bindingName : Name)
             { preset := some p, status := .unsupported, reason := some r }
         let outcome : Outcome :=
           { «theorem» := thm, target := stmt.target, shape := "unsupported",
-            origin, blockInputs := stmt.blockInputs, cases := 0, runs }
+            origin, blockInputs := stmt.blockInputs, disjuncts := 0, runs }
         Outcome.write outDir binding.tag outcome localName.toString
         logInfo m!"theorem_vectors [{binding.tag}] {thm}: \
           unsupported ({r})"
@@ -765,7 +766,7 @@ private def runTheorem (binding : ForkBinding) (bindingName : Name)
             `@[theorem_vectors]`) and the reader reported: {r}"
       | none =>
         -- phase A: prepare (§8.4's first form)
-        let (cases, dropped) ← Prepare.pass stmt
+        let (disjuncts, dropped) ← Prepare.pass stmt
         -- the author's manual terms (§14.3: "[Preset]-generic,
         -- elaborated at each preset"): each term elaborates against its
         -- input's type inside the telescope, so the theorem's own
@@ -802,7 +803,7 @@ private def runTheorem (binding : ForkBinding) (bindingName : Name)
         let runs ← ps.foldlM (init := #[]) fun acc p => do
           let r ← withRunHeartbeats
             (runPreset binding outDir localName.toString manualTerms builtStamp
-              winsRef p ctx cases mode hintFile?)
+              winsRef p ctx disjuncts mode hintFile?)
           pure (acc.push r)
         -- §18: a strict claim that skipped fails hard; a non-strict line
         -- warns
@@ -824,11 +825,13 @@ private def runTheorem (binding : ForkBinding) (bindingName : Name)
         let outcome : Outcome :=
           { «theorem» := thm, target := stmt.target,
             shape := stmt.shape.wire, origin,
-            blockInputs := stmt.blockInputs, cases := cases.size, runs }
+            blockInputs := stmt.blockInputs, disjuncts := disjuncts.size,
+            runs }
         Outcome.write outDir binding.tag outcome localName.toString
         logInfo m!"theorem_vectors [{binding.tag}] {thm}: shape \
-          {stmt.shape.wire}, {cases.size} case(s), origin {origin.tag}"
-        -- §8.4: a dropped case is reported
+          {stmt.shape.wire}, {disjuncts.size} disjunct(s), origin
+          {origin.tag}"
+        -- §8.4: a dropped disjunct is reported
         for d in dropped do
           logWarning m!"theorem_vectors [{binding.tag}] {thm}: {d}"
 
@@ -843,7 +846,7 @@ private def recordSkip (binding : ForkBinding) (thm : Name)
   let outDir ← outDirOf
   let outcome : Outcome :=
     { «theorem» := thm, target := none, shape := "unsupported",
-      origin := .skipped, blockInputs := #[], cases := 0,
+      origin := .skipped, blockInputs := #[], disjuncts := 0,
       runs := #[{ preset := some .minimal, status := .skipped,
                   reason := some reason }] }
   Outcome.write outDir binding.tag outcome localName.toString

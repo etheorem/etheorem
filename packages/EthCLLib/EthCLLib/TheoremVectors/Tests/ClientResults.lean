@@ -17,7 +17,7 @@ harness-never-ran state), plus the malformed-file error the read
 contract promises. The report's Formats cell (§16.2) is pinned
 over the same entries: `prysm passed`, `prysm failed`, `prysm skipped`,
 and the empty cell for the theorem no entry ran. A theorem with one
-passed and one failed case pins the worst-answer-wins aggregation. The
+passed and one failed disjunct pins the worst-answer-wins aggregation. The
 skipped entry's
 file name carries the `_t` side marker, so the report's join pins the
 side-marker strip in `ClientResults.thmOfPath` too.
@@ -44,7 +44,7 @@ private def toyEnv : RenderEnv where
 
 /-- One toy entry, in the harness's own directory and file-name shapes
 (§13.3): the target directory holds the file, and the file name carries
-the theorem, the case index, and the side marker. -/
+the theorem, the disjunct index, and the side marker. -/
 private def entry (file : String) (status : ClientStatus)
     (detail : String) : ClientResult :=
   { path := s!"formats/function/gloas/minimal/EthCLSpecs.Toy.toyFn/{file}",
@@ -68,7 +68,7 @@ private def toyResults : Array ClientResult :=
 private def toyRecord (thm : Name) (side : Option Bool) : VectorRecord :=
   { «theorem» := thm, fork := "gloas", preset := .minimal,
     target := some `EthCLSpecs.Toy.toyFn, specName := some "toy_fn",
-    shape := .runOk, caseIndex := 0, side, inputs := #[],
+    shape := .runOk, disjunctIndex := 0, side, inputs := #[],
     output := none, error := none, source := .random }
 
 /-- The toy theorems, in the order of `toyResults`' theorems, plus the
@@ -84,16 +84,16 @@ private def toySide (thm : Name) : Option Bool :=
   if thm == `EthCLSpecs.Proofs.Gloas.toySkip then some true else none
 
 /-- The toy files to render, one pair per function-format file: the
-mixed theorem renders two cases, the others one. -/
+mixed theorem renders two disjuncts, the others one. -/
 private def toyFiles : Array (Name × Nat) :=
   #[(`EthCLSpecs.Proofs.Gloas.toyPass, 0), (`EthCLSpecs.Proofs.Gloas.toyFail, 0),
     (`EthCLSpecs.Proofs.Gloas.toySkip, 0), (`EthCLSpecs.Proofs.Gloas.toyMixed, 0),
     (`EthCLSpecs.Proofs.Gloas.toyMixed, 1), (`EthCLSpecs.Proofs.Gloas.toyNone, 0)]
 
 /-- Render one toy function-format file, and return the written path. -/
-private def renderToy (thm : Name) (caseIndex : Nat) : IO System.FilePath := do
+private def renderToy (thm : Name) (disjunctIndex : Nat) : IO System.FilePath := do
   let files ← Formats.function.render toyEnv
-    ({ toyRecord thm (toySide thm) with caseIndex }) #[] none
+    ({ toyRecord thm (toySide thm) with disjunctIndex }) #[] none
   unless files.size == 1 do
     throw (IO.userError s!"toy render: {files.size} files for {thm}, expected 1")
   return files[0]!
@@ -107,10 +107,10 @@ private def showCheck : CheckResult → String
 
 /-- Check one toy record, and fail unless the answer matches the
 expected one, detail included. -/
-private def expectCheck (thm : Name) (caseIndex : Nat)
+private def expectCheck (thm : Name) (disjunctIndex : Nat)
     (file : System.FilePath) (expected : CheckResult) : IO Unit := do
   let res ← Formats.function.check toyEnv
-    ({ toyRecord thm (toySide thm) with caseIndex }) #[file]
+    ({ toyRecord thm (toySide thm) with disjunctIndex }) #[file]
   unless showCheck res == showCheck expected do
     throw (IO.userError s!"toy check {thm}: got {showCheck res}, \
       expected {showCheck expected}")
@@ -134,7 +134,7 @@ run_cmd do
     for ((thm, ci), file) in toyFiles.zip files do
       expectCheck thm ci file .noConsumer
     -- Write the results file, then pin the answers: the three
-    -- statuses, the mixed theorem's two cases, and the no-entry answer.
+    -- statuses, the mixed theorem's two disjuncts, and the no-entry answer.
     IO.FS.writeFile (ClientResults.file toyOut)
       ((toJson toyResults).render.pretty (width := 100) ++ "\n")
     let rs ← ClientResults.read toyOut
@@ -151,12 +151,12 @@ run_cmd do
     -- The report's Formats cell (§16.2): one cell per status, empty for
     -- the theorem no entry ran. The skipped row joins through the `_t`
     -- side marker, which pins `thmOfPath`'s strip. The mixed theorem's
-    -- passed and failed cases aggregate to `prysm failed`, the worst
+    -- passed and failed disjuncts aggregate to `prysm failed`, the worst
     -- answer wins, so the counts are one pass, two fails, one skip.
     let outcomes := toyThms.map fun thm =>
       { «theorem» := thm, target := none, shape := "runOk",
         origin := OutcomeOrigin.named, blockInputs := #[],
-        cases := 1,
+        disjuncts := 1,
         runs := #[{ preset := some .minimal, status := .written,
                     records := 1 }] : Outcome }
     let text := Report.render #[("gloas", outcomes)] #[] rs

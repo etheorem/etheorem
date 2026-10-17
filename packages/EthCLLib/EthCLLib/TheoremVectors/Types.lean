@@ -28,9 +28,9 @@ register_option theorem_vectors.outDir : String := {
 
 /-- The DNF split's disjunct cap (`THEOREM_VECTORS_ARCHITECTURE.md` §8.2, the
 option table in §14.4). A theorem whose unfolded hypotheses split into more
-disjuncts than this falls back to one case with the unsplit hypothesis, and
-the pass reports the fallback (§8.2). -/
-register_option theorem_vectors.maxCases : Nat := {
+disjuncts than this falls back to one disjunct with the unsplit hypothesis,
+and the pass reports the fallback (§8.2). -/
+register_option theorem_vectors.maxDisjuncts : Nat := {
   defValue := 16
   descr    := "the cap on the prepare pass's DNF disjuncts per theorem"
 }
@@ -47,11 +47,11 @@ register_option theorem_vectors.maxHeartbeats : Nat := {
 }
 
 /-- The random source's redraw budget (`THEOREM_VECTORS_ARCHITECTURE.md`
-§9.4, the option table in §14.4): how many draws one case's search tries
-before it answers `notFound`. -/
+§9.4, the option table in §14.4): how many draws one disjunct's search
+tries before it answers `notFound`. -/
 register_option theorem_vectors.randomDraws : Nat := {
   defValue := 64
-  descr    := "the redraw budget of the random source, per case"
+  descr    := "the redraw budget of the random source, per disjunct"
 }
 
 /-- The `Gen` size parameter the random source draws with (§14.4). It
@@ -64,7 +64,7 @@ register_option theorem_vectors.randomSize : Nat := {
 /-- The shrink loop's step budget (`THEOREM_VECTORS_ARCHITECTURE.md` §9.6,
 the option table in §14.4). A witness from the random source shrinks
 until no candidate passes the check or the budget runs out. The default
-is small, because the probe's `check` runs the case's compiled `decide`
+is small, because the probe's `check` runs the disjunct's compiled `decide`
 over a drawn state, and the interpreter bills every run of it; the
 length cuts sit first in each call's candidate list, so the first steps
 buy the size. -/
@@ -254,7 +254,7 @@ def WitnessSourceTag.ofTag? (s : String) : Option WitnessSourceTag :=
 #guard WitnessSourceTag.ofTag? "manual" == some .manual
 #guard WitnessSourceTag.ofTag? "hinted-manual" == some (.hinted .manual)
 
-/-- Why a case produced no vector (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4). `unsat` means
+/-- Why a disjunct produced no vector (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4). `unsat` means
 the solver proved the hypotheses vacuous, `notFound` that every source ran
 out, and `outOfScope` that a block input is in play and the base source
 failed (§1.2). A `notFound` carries the details the sources reported: the
