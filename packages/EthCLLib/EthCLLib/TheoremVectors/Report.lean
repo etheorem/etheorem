@@ -69,7 +69,7 @@ private def blockInputSection (os : Array Outcome) : String :=
   if withBlocks.isEmpty then
     ""
   else
-    "\nTheorems with block inputs (§1.2): only the base source may run.\n\n" ++
+    "\nTheorems with block inputs (§1.2): only the base searcher may run.\n\n" ++
       String.intercalate "\n" (withBlocks.toList.map fun o =>
         s!"- `{o.theorem}`: {String.intercalate ", "
           (o.blockInputs.toList.map (fun n => s!"`{n}`"))}")
@@ -93,11 +93,12 @@ private def forkSection (clients : Array ClientResult) (forkTag : String)
   let rows : Array Row :=
     os.flatMap fun o => o.runs.map fun run => { outcome := o, run }
   let table :=
-    "| Theorem | Origin | Shape | Preset | Status | Source | Hint | Records | Formats | Seconds |\n" ++
+    "| Theorem | Origin | Shape | Preset | Status | Witness searcher | Hint | Records | Formats | Seconds |\n" ++
     "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n" ++
     String.join (rows.toList.map fun r =>
       s!"| `{r.outcome.theorem}` | {r.outcome.origin.tag} | {r.outcome.shape} \
-         | {presetCell r.run} | {statusCell r.run} | {optCell r.run.source} \
+         | {presetCell r.run} | {statusCell r.run} \
+         | {optCell r.run.witnessSearcher} \
          | {optCell r.run.hint} | {r.run.records} \
          | {formatsCell clients forkTag r.run r.outcome.theorem} | \
          {optCell (r.run.seconds.map toString)} |\n")
@@ -125,7 +126,7 @@ def Report.render (forks : Array (String × Array Outcome))
   "# Theorem vectors report\n\n" ++
     s!"{total} theorems with outcomes; {boxLemmas} box lemmas (§7.3, \
       no shape can express them); {withBlocks} theorems with block \
-      inputs (§1.2, base source only).\n\n" ++
+      inputs (§1.2, base searcher only).\n\n" ++
     String.join (forks.toList.map fun (forkTag, os) =>
       forkSection clients forkTag os) ++
     unformattedSection unformatted

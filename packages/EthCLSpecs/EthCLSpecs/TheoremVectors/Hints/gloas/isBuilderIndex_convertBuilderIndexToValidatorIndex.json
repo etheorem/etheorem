@@ -1,7 +1,7 @@
 {"theorem": "EthCLSpecs.Proofs.Gloas.isBuilderIndex_convertBuilderIndexToValidatorIndex",
  "fingerprint": "0xed96c6b0b5a43f5f",
  "entries":
- [{"source": "base",
+ [{"witnessSearcher": "base",
    "scalars": {},
    "preset": "minimal",
    "fingerprint": "0xed96c6b0b5a43f5f",

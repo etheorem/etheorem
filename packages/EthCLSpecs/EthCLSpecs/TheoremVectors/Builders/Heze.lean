@@ -9,7 +9,7 @@ import EthCLSpecs.Heze.Transition
 
 The Heze state-builder catalog of `THEOREM_VECTORS_ARCHITECTURE.md` §9.9: fork
 functions that run the spec itself to produce a reachable state from a few
-knobs, the `built` witness source's raw material. Four builders, cheapest
+knobs, the `built` witness searcher's raw material. Four builders, cheapest
 first:
 
 - `genesis`: the fork's genesis state over `validators` deposits of

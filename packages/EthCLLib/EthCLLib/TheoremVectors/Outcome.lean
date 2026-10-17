@@ -21,7 +21,7 @@ The wire shape:
   "disjuncts": 2,
   "runs": [
     { "preset": "minimal", "status": "written", "records": 2,
-      "source": "random", "hint": "replayed", "seconds": 4.1 } ] }
+      "witnessSearcher": "random", "hint": "replayed", "seconds": 4.1 } ] }
 ```
 
 `disjuncts` counts the prepared search problems; stage 1 prepares none, so
@@ -121,8 +121,8 @@ instance : FromJson RunStatus where
 
 /-- One per-preset run's result line inside an outcome (§16.1). The
 optional fields fill as the pipeline grows: `records` and `seconds` when a
-run writes records, `source` and `hint` when a witness search picks a
-source, `reason` when a run explains itself. A survey run carries no
+run writes records, `witnessSearcher` and `hint` when a witness search
+picks a searcher, `reason` when a run explains itself. A survey run carries no
 preset (§16.1), so the field is optional. -/
 structure RunOutcome where
   /-- The preset the run fixed, when the run ran per preset. -/
@@ -131,9 +131,9 @@ structure RunOutcome where
   status  : RunStatus
   /-- How many records the run wrote. -/
   records : Nat := 0
-  /-- The witness source that won, in its wire form. -/
-  source  : Option String := none
-  /-- What the hint source did, in its wire form (§16.1). -/
+  /-- The witness searcher that won, in its wire form. -/
+  witnessSearcher : Option String := none
+  /-- What the hint searcher did, in its wire form (§16.1). -/
   hint    : Option String := none
   /-- The run's wall-clock seconds. -/
   seconds : Option Float := none

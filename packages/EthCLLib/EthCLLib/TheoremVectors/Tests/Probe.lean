@@ -6,7 +6,7 @@ import EthCLLib.TheoremVectors.Prepare
 import EthCLLib.TheoremVectors.Scope
 import EthCLLib.TheoremVectors.Record
 import EthCLLib.TheoremVectors.Execute
-import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Searcher
 import EthCLLib.TheoremVectors.Witness.Base
 import EthCLLib.TheoremVectors.Tests.ToyFork
 import EthCLLib.TheoremVectors.Tests.ToyRun
@@ -119,9 +119,9 @@ private def roundTrip (thm : Name) (binding : ForkBinding)
         (dropped {dropped.size})"
     let (info, probe) := (← builtProbe thm binding ctx disjuncts)
     let d := disjuncts[0]!
-    let sources : Array WitnessSource := #[baseSource]
+    let searchers : Array WitnessSearcher := #[baseSearcher]
     -- `Support.searchCtxOf` does not fit: the context pins
-    -- `instConsts := #[]` on purpose, the base-source-only round trip
+    -- `instConsts := #[]` on purpose, the base-searcher-only round trip
     -- never substitutes an instance, and the helper computes the
     -- constants through `Preset.constOf`
     let searchCtx : SearchCtx :=
@@ -130,21 +130,21 @@ private def roundTrip (thm : Name) (binding : ForkBinding)
         instConsts := #[], manualTerms := #[],
         drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
         builtStamp := "", earlierWins := #[] }
-    -- §9.4: the base source never proposes the binding's state. A
+    -- §9.4: the base searcher never proposes the binding's state. A
     -- statement over the state takes the probe's defaults here, the same
-    -- candidate the base source would hand out for a scalar theorem; the
+    -- candidate the base searcher would hand out for a scalar theorem; the
     -- search's own answers are the other test drives' subject
     let won ←
-      if baseSource.applies searchCtx stmt d then
-        match ← searchDisjunct sources searchCtx stmt d with
+      if baseSearcher.applies searchCtx stmt d then
+        match ← searchDisjunct searchers searchCtx stmt d with
         | .ok (a, tag) =>
-          unless tag == WitnessSourceTag.base do
-            throwError s!"{thm}: expected the base source to win"
+          unless tag == WitnessSearcherTag.base do
+            throwError s!"{thm}: expected the base searcher to win"
           match probe.run a with
           | .ok r => pure (a, r)
           | .error e => throwError s!"{thm}: the probe failed to run: {e}"
         | .error failure =>
-          throwError s!"{thm}: the base source found no candidate: {repr failure}"
+          throwError s!"{thm}: the base searcher found no candidate: {repr failure}"
       else
         match probe.run probe.defaults with
         | .ok r => pure (probe.defaults, r)
@@ -164,9 +164,9 @@ private def roundTrip (thm : Name) (binding : ForkBinding)
         disjunctIndex := d.index, side := d.side,
         inputs := inputVals,
         output := outVal, error := errVal,
-        -- the source field is a record-round-trip label here: on the
-        -- defaults branch no source ran, and nothing below reads it
-        source := WitnessSourceTag.base }
+        -- the searcher field is a record-round-trip label here: on the
+        -- defaults branch no searcher ran, and nothing below reads it
+        witnessSearcher := WitnessSearcherTag.base }
     -- a record with no output (`.runError`) writes no `output.ssz` (§12.1)
     Record.write dir binding.tag record thm.toString a
       (record.output.map fun _ => r.output)

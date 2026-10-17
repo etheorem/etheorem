@@ -39,7 +39,7 @@ def fulu : ForkBinding where
                   `EthCLSpecs.Fulu.ExecutionPayload,
                   `EthCLSpecs.Fulu.Store]
   opens      := #[`EthCLLib.Spec, `EthCLSpecs.Fulu, `EthCLSpecs.Proofs.Fulu]
-  -- §9.9: the builder catalog, cheapest first. The `built` source walks
+  -- §9.9: the builder catalog, cheapest first. The `built` searcher walks
   -- the display names through the grid.
   builders   := #[("genesis",  `EthCLSpecs.TheoremVectors.Builders.Fulu.genesis),
                   ("advanced", `EthCLSpecs.TheoremVectors.Builders.Fulu.advanced)]

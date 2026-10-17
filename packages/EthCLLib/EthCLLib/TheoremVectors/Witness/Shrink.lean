@@ -7,7 +7,7 @@ import EthCLLib.TheoremVectors.Probe
 /-!
 # `EthCLLib.TheoremVectors.Witness.Shrink`: the shrink loop
 
-The shrink of §9.6: after a witness from the random source passes, ask
+The shrink of §9.6: after a witness from the random searcher passes, ask
 `probe.shrink` for smaller candidates, in `Shrinkable` order, and keep
 the ones that pass the check. Repeat until no candidate passes or
 `theorem_vectors.shrinkSteps` runs out. The scalars the solver chose are

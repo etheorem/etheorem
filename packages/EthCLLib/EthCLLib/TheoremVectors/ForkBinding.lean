@@ -63,9 +63,9 @@ structure ForkBinding where
   interface   : PresetId → Option EthCLLib.PySpecTests.ForkInterface
   deriving Inhabited
 
-/-- Is the input type the binding's state container? §9.4's rule: no source
-proposes `default` for it, so a source that would fill the input from the
-serialized defaults answers `nothing`. §7.3 reads the same predicate over
+/-- Is the input type the binding's state container? §9.4's rule: no
+searcher proposes `default` for it, so a searcher that would fill the
+input from the serialized defaults answers `nothing`. §7.3 reads the same predicate over
 the theorem's value binders: the run's state is one of the state-typed
 binders, and the type identifies the store whatever the binder's
 position. -/

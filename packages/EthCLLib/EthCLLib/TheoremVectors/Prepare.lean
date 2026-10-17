@@ -7,7 +7,7 @@ import EthCLLib.Internal.Capture
 # `EthCLLib.TheoremVectors.Prepare`: the prepare pass
 
 The prepare pass turns a `Statement` into the array of search problems the
-sources solve (`THEOREM_VECTORS_ARCHITECTURE.md` §8). One pass, five steps:
+searchers solve (`THEOREM_VECTORS_ARCHITECTURE.md` §8). One pass, five steps:
 
 1. **Sides** (§8.3). An `.iffTrue` conclusion doubles the problem: one side
    adds `q` to the statement's hypotheses, the other adds `¬q`. Every other
@@ -28,7 +28,7 @@ sources solve (`THEOREM_VECTORS_ARCHITECTURE.md` §8). One pass, five steps:
    cap is the `theorem_vectors.maxDisjuncts` option (§14.4); a theorem over
    the cap falls back to one disjunct with the unsplit hypothesis and the
    pass reports the fallback (§8.2).
-5. **Decidability** (§8.4). Every source ends with `decide` on its
+5. **Decidability** (§8.4). Every searcher ends with `decide` on its
    candidate, so every disjunct must carry a `Decidable` instance for its
    conjunction. The pass synthesizes it once, at build time, over the
    statement's binders, and stores it beside the conjunction; the probe
@@ -156,7 +156,7 @@ theorem uint64_toNat_add_one_eq {a b : UInt64} :
 /-- Zeta-reduce the `let`s of a term, through the applications. A side
 or hypothesis may name scratch values between itself and its comparisons
 (`canBuilderCoverBid_iff`'s right side does); substituting the values is
-the whole reduction. The random source's read substitution runs the same
+the whole reduction. The random searcher's read substitution runs the same
 reduction over the hypotheses it substitutes, so its plan entries match
 the terms they replace (§9.4). A `let` value used many times
 duplicates once per use, and the pass calls this on every hypothesis,
@@ -186,7 +186,7 @@ private partial def exprSize (e : Expr) (acc : Nat) : Nat :=
 
 /-- The body-size cutoff of the unfold (§8.1): a captured spec function
 whose definition exceeds this many expression nodes stays one atom, and the
-bit-vector source grounds the closed call in compiled code instead (§9.4). -/
+bit-vector searcher grounds the closed call in compiled code instead (§9.4). -/
 def unfoldBodyCutoff : Nat := 100
 
 /-- The simp step budget of one hypothesis's unfold (§8.1). The budget keeps
@@ -200,7 +200,7 @@ the ones with a small body. `isSpecFunction` is the forkdef test, so crypto
 predicates and preset constants stay out. A forkdef whose body is a fold
 over a state container (a pending-balance sum, say) unfolds into a term
 whose simp walk burns the command's heartbeats without exposing a single
-comparison, so the pass leaves those to the bit-vector source, which
+comparison, so the pass leaves those to the bit-vector searcher, which
 evaluates the closed call in compiled code instead (§9.4). -/
 private def unfoldNames (e : Expr) : MetaM (Array Name) := do
   let env ← getEnv

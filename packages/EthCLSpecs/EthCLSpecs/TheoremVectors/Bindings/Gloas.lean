@@ -39,7 +39,7 @@ def gloas : ForkBinding where
                   `EthCLSpecs.Gloas.SignedExecutionPayloadEnvelope,
                   `EthCLSpecs.Gloas.Store]
   opens      := #[`EthCLLib.Spec, `EthCLSpecs.Gloas, `EthCLSpecs.Proofs.Gloas]
-  -- §9.9: the builder catalog, cheapest first. The `built` source walks
+  -- §9.9: the builder catalog, cheapest first. The `built` searcher walks
   -- the display names through the grid.
   builders   := #[("genesis",  `EthCLSpecs.TheoremVectors.Builders.Gloas.genesis),
                   ("advanced", `EthCLSpecs.TheoremVectors.Builders.Gloas.advanced),

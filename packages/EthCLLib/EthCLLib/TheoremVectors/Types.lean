@@ -46,23 +46,23 @@ register_option theorem_vectors.maxHeartbeats : Nat := {
     times 1000)"
 }
 
-/-- The random source's redraw budget (`THEOREM_VECTORS_ARCHITECTURE.md`
+/-- The random searcher's redraw budget (`THEOREM_VECTORS_ARCHITECTURE.md`
 §9.4, the option table in §14.4): how many draws one disjunct's search
 tries before it answers `notFound`. -/
 register_option theorem_vectors.randomDraws : Nat := {
   defValue := 64
-  descr    := "the redraw budget of the random source, per disjunct"
+  descr    := "the redraw budget of the random searcher, per disjunct"
 }
 
-/-- The `Gen` size parameter the random source draws with (§14.4). It
+/-- The `Gen` size parameter the random searcher draws with (§14.4). It
 bounds the lists a draw produces, under the shapes' SSZ limits. -/
 register_option theorem_vectors.randomSize : Nat := {
   defValue := 8
-  descr    := "the `Gen` size parameter of the random source's draws"
+  descr    := "the `Gen` size parameter of the random searcher's draws"
 }
 
 /-- The shrink loop's step budget (`THEOREM_VECTORS_ARCHITECTURE.md` §9.6,
-the option table in §14.4). A witness from the random source shrinks
+the option table in §14.4). A witness from the random searcher shrinks
 until no candidate passes the check or the budget runs out. The default
 is small, because the probe's `check` runs the disjunct's compiled `decide`
 over a drawn state, and the interpreter bills every run of it; the
@@ -70,14 +70,14 @@ length cuts sit first in each call's candidate list, so the first steps
 buy the size. -/
 register_option theorem_vectors.shrinkSteps : Nat := {
   defValue := 40
-  descr    := "the shrink budget of the random source, per witness"
+  descr    := "the shrink budget of the random searcher, per witness"
 }
 
 /-- The random draw seed (§14.4). The same seed and size draw the same
 bytes, so a build is reproducible; a hint (§9.8) replays it exactly. -/
 register_option theorem_vectors.seed : Nat := {
   defValue := 0
-  descr    := "the random seed of the random source's draws"
+  descr    := "the random seed of the random searcher's draws"
 }
 
 /-- The hint mode (§9.8, the option table in §14.4): `use` reads the
@@ -88,20 +88,20 @@ the rebuild recipe overrides it without touching the declarative
 lakefile. -/
 register_option theorem_vectors.hints : String := {
   defValue := "use"
-  descr    := "the hint source's mode: use, ignore, or require"
+  descr    := "the hint searcher's mode: use, ignore, or require"
 }
 
 /-- The committed hints root (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8), the
 directory holding one `<fork>/<thm>.json` file per fork and theorem. The
 lakefile fixes it the way it fixes `theorem_vectors.outDir`, with the same
 repository-root-relative spelling; the empty default means the fork
-commits no hints, and the hint source never applies. -/
+commits no hints, and the hint searcher never applies. -/
 register_option theorem_vectors.hintsDir : String := {
   defValue := ""
-  descr    := "the committed hints root the hint source reads"
+  descr    := "the committed hints root the hint searcher reads"
 }
 
-/-- How far down the builder grid the `built` source walks
+/-- How far down the builder grid the `built` searcher walks
 (`THEOREM_VECTORS_ARCHITECTURE.md` §9.9, the option table in §14.4). The
 default `0` means the preset's own cap, `6` at minimal and `3` at
 mainnet, the values §14.4's table fixes: mainnet's spec runs go over
@@ -110,7 +110,7 @@ mainnet, the values §14.4's table fixes: mainnet's spec runs go over
 applies at both presets. -/
 register_option theorem_vectors.builtSteps : Nat := {
   defValue := 0
-  descr    := "the cap on the built source's builder grid; 0 takes the \
+  descr    := "the cap on the built searcher's builder grid; 0 takes the \
     preset's default (6 at minimal, 3 at mainnet)"
 }
 
@@ -152,7 +152,7 @@ instance : FromJson PresetId where
     | some p => pure p
     | none => throw s!"unknown preset tag '{s}'"
 
-/-! ## Shapes and sources -/
+/-! ## Shapes and searchers -/
 
 /-- The direction of a `.bound` conclusion (`THEOREM_VECTORS_ARCHITECTURE.md` §5.3):
 `lhs < b` or `lhs ≤ b`. -/
@@ -191,11 +191,11 @@ def ShapeTag.ofTag? : String → Option ShapeTag
   | "runError" => some .runError
   | _          => none
 
-/-- Which witness source proposed a candidate (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4).
-The sources run in a fixed order, cheapest first, and the record names the
+/-- Which witness searcher proposed a candidate (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4).
+The searchers run in a fixed order, cheapest first, and the record names the
 one that won. `.reused` marks a scalar witness carried over from an earlier
 preset (§10), `.hinted` a witness rebuilt from a committed hint (§9.8). -/
-inductive WitnessSourceTag where
+inductive WitnessSearcherTag where
   | base
   | bitVec
   | built
@@ -203,13 +203,13 @@ inductive WitnessSourceTag where
   | manual
   /-- A scalar witness from the preset it names. -/
   | reused (preset : PresetId)
-  /-- Rebuilt from a committed hint; `orig` is the source the hint recorded. -/
-  | hinted (orig : WitnessSourceTag)
+  /-- Rebuilt from a committed hint; `orig` is the searcher the hint recorded. -/
+  | hinted (orig : WitnessSearcherTag)
   deriving BEq, Repr, Inhabited
 
-/-- The wire tag of a source, as the records and outcome files write it
-(§16.1's `source` field). -/
-def WitnessSourceTag.tag : WitnessSourceTag → String
+/-- The wire tag of a searcher, as the records and outcome files write it
+(§16.1's `witnessSearcher` field). -/
+def WitnessSearcherTag.tag : WitnessSearcherTag → String
   | .base      => "base"
   | .bitVec    => "bitVec"
   | .built     => "built"
@@ -218,8 +218,8 @@ def WitnessSourceTag.tag : WitnessSourceTag → String
   | .reused p  => s!"reused-{p.tag}"
   | .hinted o  => s!"hinted-{o.tag}"
 
-/-- The five plain source tags, the leaves of the compound spellings. -/
-private def plainSourceTag? : String → Option WitnessSourceTag
+/-- The five plain searcher tags, the leaves of the compound spellings. -/
+private def plainSearcherTag? : String → Option WitnessSearcherTag
   | "base"   => some .base
   | "bitVec" => some .bitVec
   | "built"  => some .built
@@ -232,36 +232,37 @@ private def plainSourceTag? : String → Option WitnessSourceTag
 prefix reads a preset, which is a leaf. The plain tags are the last arm.
 The structural recursion runs on the character list, which avoids a
 size-of proof over this toolchain's `Slice`-returning `String.drop`. -/
-private def ofTagChars : List Char → Option WitnessSourceTag
+private def ofTagChars : List Char → Option WitnessSearcherTag
   | 'h' :: 'i' :: 'n' :: 't' :: 'e' :: 'd' :: '-' :: rest =>
     (ofTagChars rest).map .hinted
   | 'r' :: 'e' :: 'u' :: 's' :: 'e' :: 'd' :: '-' :: rest =>
     (PresetId.ofTag? (String.ofList rest)).map .reused
-  | cs => plainSourceTag? (String.ofList cs)
+  | cs => plainSearcherTag? (String.ofList cs)
 
-/-- Read a source back from its wire tag. The record reader goes through
+/-- Read a searcher back from its wire tag. The record reader goes through
 this. The compound tags read back in full and recursively:
 `hinted-<orig>` is the `.hinted orig` a replayed hint writes (§9.8), and
 `reused-<preset>` the `.reused preset` a reused witness writes (§10), so
 `hinted-reused-minimal` reads back as `.hinted (.reused .minimal)`. -/
-def WitnessSourceTag.ofTag? (s : String) : Option WitnessSourceTag :=
+def WitnessSearcherTag.ofTag? (s : String) : Option WitnessSearcherTag :=
   ofTagChars s.toList
 
-#guard WitnessSourceTag.ofTag? "hinted-reused-minimal" ==
+#guard WitnessSearcherTag.ofTag? "hinted-reused-minimal" ==
   some (.hinted (.reused .minimal))
-#guard WitnessSourceTag.ofTag? "reused-mainnet" == some (.reused .mainnet)
-#guard WitnessSourceTag.ofTag? "hinted-bitVec" == some (.hinted .bitVec)
-#guard WitnessSourceTag.ofTag? "manual" == some .manual
-#guard WitnessSourceTag.ofTag? "hinted-manual" == some (.hinted .manual)
+#guard WitnessSearcherTag.ofTag? "reused-mainnet" == some (.reused .mainnet)
+#guard WitnessSearcherTag.ofTag? "hinted-bitVec" == some (.hinted .bitVec)
+#guard WitnessSearcherTag.ofTag? "manual" == some .manual
+#guard WitnessSearcherTag.ofTag? "hinted-manual" == some (.hinted .manual)
 
 /-- Why a disjunct produced no vector (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4). `unsat` means
-the solver proved the hypotheses vacuous, `notFound` that every source ran
-out, and `outOfScope` that a block input is in play and the base source
-failed (§1.2). A `notFound` carries the details the sources reported: the
-atoms the solver abstracted, an input type outside its domain (§9.4). -/
+the solver proved the hypotheses vacuous, `notFound` that every searcher
+ran out, and `outOfScope` that a block input is in play and the base
+searcher failed (§1.2). A `notFound` carries the details the searchers
+reported: the atoms the solver abstracted, an input type outside its
+domain (§9.4). -/
 inductive Failure where
   | unsat
-  | notFound (tried : Array WitnessSourceTag) (details : Array String := #[])
+  | notFound (tried : Array WitnessSearcherTag) (details : Array String := #[])
   | outOfScope (inputs : Array Name)
   deriving BEq, Repr, Inhabited
 
@@ -269,7 +270,7 @@ inductive Failure where
 
 /-- A closed value for every input, in binder order, as SSZ bytes
 (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4). The byte boundary (§9.1) makes this the
-only form a candidate takes between the sources and the probe. -/
+only form a candidate takes between the searchers and the probe. -/
 abbrev Assignment := Array ByteArray
 
 /-! ## Record payloads -/
@@ -340,7 +341,7 @@ instance : FromJson ValueData where
 /-! ## State-builder knobs -/
 
 /-- The knobs one state-builder step fixes (`THEOREM_VECTORS_ARCHITECTURE.md` §9.9). One
-framework type, so the `built` source can walk a builder grid without
+framework type, so the `built` searcher can walk a builder grid without
 naming a fork. The defaults are the cheapest grid step: a small genesis
 committee at slot 0 with no queue. -/
 structure Knobs where

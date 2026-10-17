@@ -4,13 +4,13 @@ import EthCLLib.TheoremVectors.ForkBinding
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Prepare
 import EthCLLib.TheoremVectors.Probe
-import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Searcher
 import EthCLLib.TheoremVectors.Witness.BitVec
 
 /-!
-# `EthCLLib.TheoremVectors.Witness.Random`: the random-plus-solve source
+# `EthCLLib.TheoremVectors.Witness.Random`: the random-plus-solve searcher
 
-The random source of §9.4: draw the container inputs with their
+The random searcher of §9.4: draw the container inputs with their
 `SampleableExt` instances (§9.5), ground the disjunct's container reads at the
 draw, and hand the residual formula over the scalar inputs to the solver.
 The loop redraws up to `theorem_vectors.randomDraws` times when a draw
@@ -20,16 +20,16 @@ grid follows.
 
 The grounding runs through the probe's `reads` face: the probe evaluates
 the disjunct's container-reading subterms at the candidate's bytes, and the
-source substitutes the serialized values as literals, walking the same
+searcher substitutes the serialized values as literals, walking the same
 plan `containerReads` produces. The scalars that sit inside a
 container-reading subterm (`builders[builderIndex]!.balance`'s
 `builderIndex`) are *coupled*: the manual handoff's walk names them, and
 they fix over the value grid, so each read grounds at a known point and
 the solver takes the remaining free scalars.
 
-The source runs after the bit-vector source on every list, manual lines
+The searcher runs after the bit-vector searcher on every list, manual lines
 included (§9.2): on a disjunct the manual terms fail, a draw beats no
-witness, and the record's `source` names the one that won.
+witness, and the record's `witnessSearcher` names the one that won.
 
 ## Lean idioms annotated
 
@@ -106,7 +106,7 @@ rejected candidate and a per-point `unsat` are the same no-answer
 with them. When the bytes already cover every input (a theorem whose
 inputs are containers alone), the reads grounding and the solver have
 nothing to do, and the point's answer is the check on the bytes
-directly. The built source (§9.9) reaches it through `tryDraw` at each
+directly. The built searcher (§9.9) reaches it through `tryDraw` at each
 grid step, with the built state in the `drawn` overlay. -/
 private def runPoint (ctx : SearchCtx) (stmt : Statement) (d : Disjunct)
     (plan : Array Expr) (drawn : Array (Nat × ByteArray))
@@ -139,18 +139,18 @@ list's end is skipped at the gate inside `runPoint`. `kinds` and
 `coupled` come from the disjunct alone and the caller computes them once. A
 coupled scalar whose literal term the substitution cannot write makes
 every grid point unfixable; the note names it, the same answer the
-bit-vector source's `literalDetail` carries. The built source (§9.9)
+bit-vector searcher's `literalDetail` carries. The built searcher (§9.9)
 drives this at each grid step with the built state as the one drawn
 container, the same loop §9.9 names. -/
 def tryDraw (ctx : SearchCtx) (stmt : Statement) (d : Disjunct)
     (valuesCap : Nat) (plan : Array Expr)
     (kinds : Array (Option ScalarKind)) (coupled : Array Nat)
     (drawn : Array (Nat × ByteArray)) : MetaM (Option Assignment) := do
-  -- every container in play is drawn for the random source, and
+  -- every container in play is drawn for the random searcher, and
   -- `drawBounded` caps a drawn list at `randomSize` elements, so a
   -- coupled scalar at or past that bound indexes out of range at every
-  -- point of its grid: the random source caps the values there (§9.4).
-  -- The built source's state is not drawn and its registries hold what
+  -- point of its grid: the random searcher caps the values there (§9.4).
+  -- The built searcher's state is not drawn and its registries hold what
   -- the grid's knobs built, so it passes `0`, no cap, and the safe
   -- gate skips the points whose index runs past the built list
   if coupled.isEmpty then
@@ -172,14 +172,14 @@ def tryDraw (ctx : SearchCtx) (stmt : Statement) (d : Disjunct)
         | none => pure ()
     -- a coupled scalar whose literal term the substitution cannot write
     -- makes every grid point unfixable; the disjunct answers `nothing`, the
-    -- same answer the bit-vector source's `literalDetail` carries
+    -- same answer the bit-vector searcher's `literalDetail` carries
     return none
 
-/-! ## The per-disjunct plan the draw-driven sources share -/
+/-! ## The per-disjunct plan the draw-driven searchers share -/
 
-/-- The per-disjunct pieces the two draw-driven sources share (§9.4, §9.9):
+/-- The per-disjunct pieces the two draw-driven searchers share (§9.4, §9.9):
 the container positions, the reads' plan, and the coupled scalars. The
-random source draws over them and the built source overlays a built
+random searcher draws over them and the built searcher overlays a built
 state, and both walk the same plan, which is what keeps the read
 substitution aligned with the compiled values (§9.4). -/
 structure DisjunctPlan where
@@ -224,9 +224,9 @@ def disjunctPlanOf (ctx : SearchCtx) (stmt : Statement) (d : Disjunct) :
 /-- The memoized raw draw at one index, per position (§9.4): a draw is a
 pure function of the seed, the size, the index, and the position, and the
 disjuncts of one theorem share the memo. The caller names the positions it
-needs, and the draw samples and memoizes those alone, so a source that
+needs, and the draw samples and memoizes those alone, so a searcher that
 reads a subset of a draw's positions never pays for the rest. The built
-source (§9.9) reads draw 0 for its non-state containers through the same
+searcher (§9.9) reads draw 0 for its non-state containers through the same
 entries, so a built witness's drawn bytes and a random witness's agree
 position by position, and the built path never samples a mainnet state
 position there. Entry `k` of the answer holds the bytes of
@@ -261,7 +261,7 @@ def drawAt (ctx : SearchCtx) (seed size draw : Nat)
     ctx.drawMemo.set (slots.set! draw (some inner))
   pure out
 
-/-- The random source (§9.4). Applies when at least one input is a
+/-- The random searcher (§9.4). Applies when at least one input is a
 container and no block input is in play; the search answers `nothing`
 when the container test was an alias (§9.4), and after
 `theorem_vectors.randomDraws` failed draws. At mainnet the search also
@@ -269,7 +269,7 @@ answers `nothing` before any draw when a container input is the
 binding's state type: the cap keeps the fixed vectors' recursion cost
 off the draw loop (§9.4). The draws run from the run's
 `theorem_vectors.seed`, so a build is reproducible (§14.4). -/
-def randomSource : WitnessSource where
+def randomSearcher : WitnessSearcher where
   tag := .random
   applies _ stmt _ :=
     stmt.blockInputs.isEmpty &&

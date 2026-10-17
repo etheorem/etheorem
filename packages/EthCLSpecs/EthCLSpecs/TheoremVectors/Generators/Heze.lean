@@ -13,7 +13,7 @@ and lists every other public theorem of the fork's proof namespace, phase A
 alone (§14.3). The file carries no named lines, because the stage-9 run
 wrote no vector for any Heze theorem.
 
-The file stays short because Heze's corpus cannot reach a source today.
+The file stays short because Heze's corpus cannot reach a searcher today.
 Phase A reports nearly every theorem `unsupported` at the `FcMap` /
 `ExecutionEngine` instance seams, whose binder the reader cannot bind.
 Nearly all of those theorems also take block inputs, such as `Store` or

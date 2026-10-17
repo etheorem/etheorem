@@ -20,7 +20,7 @@ inline `default` terms):
 - The two out-of-range theorems pin both state binders to `default`, whose
   empty balances list makes the `¬ i < size` hypothesis true at `i := 0`,
   and both sides of each equation reduce to the same `.outOfBounds` error.
-  The manual source checks the author's terms and runs no search, so each
+  The manual searcher checks the author's terms and runs no search, so each
   line is cheap and runs at both presets.
 - `decreaseBalance_run_no_underflow` takes `oneBalanceState` with
   `delta := 2`, and `increaseBalance_run_overflow` takes `maxBalanceState`
@@ -29,15 +29,15 @@ inline `default` terms):
   coupled grid caps `delta` below 64. Only the wide arm of the `UInt64`
   draw can land a balance within 64 of `2 ^ 64`, about one value in
   `2 ^ 59`, so the redraw budget never meets one. The manual terms write
-  the lines deterministically, and the manual source is what reaches
-  mainnet, where the random source caps itself over a state-typed
+  the lines deterministically, and the manual searcher is what reaches
+  mainnet, where the random searcher caps itself over a state-typed
   container. It searches nothing, so these lines also run at both
   presets.
-- `increaseBalance_run_no_wrap` takes no manual term. The random source
+- `increaseBalance_run_no_wrap` takes no manual term. The random searcher
   draws the two states, the coupled grid fixes `i` and `delta` at `0`,
   and the
   hypothesis holds at the drawn balances (§9.4). The line runs at minimal
-  only: the random source caps itself at mainnet over a state-typed
+  only: the random searcher caps itself at mainnet over a state-typed
   container, and stage 8's discipline spends a mainnet run only where the
   run is cheap.
 
@@ -58,7 +58,7 @@ clause selects them and the report shows their outcome. Their `.eq`
 reading survives the reader, but the output type is an `Except` over a
 pair of boxed `State` values, and the box has neither an `SSZRepr` nor a
 `ToString` instance, so the recorder skips each run with that reason. No
-source choice or manual term changes an output type, so the file gives
+searcher choice or manual term changes an output type, so the file gives
 the two theorems no named line.
 
 `modBalance_pureState` also carries `@[characterizes]`; its function-typed
@@ -75,7 +75,7 @@ theorem_vectors_fork EthCLSpecs.TheoremVectors.Bindings.Fulu.fulu
 -- §14.3: the named lines precede the discovery clauses. A named line below
 -- a clause that already ran its theorem is an error.
 -- The two out-of-range theorems: `default`'s empty balances list makes
--- `¬ i < size` true at `i := 0`. The manual source checks the terms
+-- `¬ i < size` true at `i := 0`. The manual searcher checks the terms
 -- alone, so both presets are cheap.
 theorem_vectors decreaseBalance_run_outOfRange with
   (state := default)
@@ -91,7 +91,7 @@ theorem_vectors increaseBalance_run_outOfRange with
   presets minimal mainnet
 -- The no-underflow and overflow lines carry manual terms:
 -- `oneBalanceState` with `delta := 2`, and `maxBalanceState` with
--- `delta := 1`. The manual source searches nothing, so both presets
+-- `delta := 1`. The manual searcher searches nothing, so both presets
 -- stay cheap.
 theorem_vectors decreaseBalance_run_no_underflow with
   (state := EthCLSpecs.TheoremVectors.Manual.Fulu.oneBalanceState)
@@ -106,8 +106,8 @@ theorem_vectors increaseBalance_run_overflow with
   (delta := 1)
   presets minimal mainnet
 -- The no-wrap theorem needs only an in-range index, which the random
--- source's coupled grid fixes at `0` over its drawn states; the grid
--- fixes `delta` beside it. The random source caps itself at mainnet over
+-- searcher's coupled grid fixes at `0` over its drawn states; the grid
+-- fixes `delta` beside it. The random searcher caps itself at mainnet over
 -- a state-typed container, so this line stays minimal-only.
 theorem_vectors increaseBalance_run_no_wrap
 

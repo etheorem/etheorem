@@ -69,7 +69,7 @@ private def toyRecord (thm : Name) (side : Option Bool) : VectorRecord :=
   { «theorem» := thm, fork := "gloas", preset := .minimal,
     target := some `EthCLSpecs.Toy.toyFn, specName := some "toy_fn",
     shape := .runOk, disjunctIndex := 0, side, inputs := #[],
-    output := none, error := none, source := .random }
+    output := none, error := none, witnessSearcher := .random }
 
 /-- The toy theorems, in the order of `toyResults`' theorems, plus the
 theorem no entry ran. -/

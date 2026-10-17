@@ -8,4 +8,4 @@ shape: eq
 inputs:
   bi: 1099511627776
 output: false
-source: fixture-corrupted
+witnessSearcher: fixture-corrupted

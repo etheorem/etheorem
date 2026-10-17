@@ -1,7 +1,7 @@
 {"theorem": "EthCLSpecs.Proofs.Gloas.initiateBuilderExit_run_eq",
  "fingerprint": "0xe85ae63b7eb0b4bc",
  "entries":
- [{"source": "manual",
+ [{"witnessSearcher": "manual",
    "scalars": {},
    "preset": "minimal",
    "fingerprint": "0xe85ae63b7eb0b4bc",

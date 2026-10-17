@@ -137,7 +137,7 @@ run_cmd do
       shape := "bound"
       blockInputs := #[]
       inputs := #["slot"] }
-  -- a block input puts the theorem's base-source-only rule in play
+  -- a block input puts the theorem's base-searcher-only rule in play
   pin gloas `EthCLSpecs.Proofs.Gloas.processOperations_eq_seq
     { target := some `EthCLSpecs.Gloas.processOperations
       shape := "eq"

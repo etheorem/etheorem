@@ -4,7 +4,7 @@ import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Scope
 import EthCLLib.TheoremVectors.Prepare
 import EthCLLib.TheoremVectors.Probe
-import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Searcher
 import EthCLLib.TheoremVectors.Witness.Built
 import EthCLLib.TheoremVectors.Witness.Hint
 import EthCLLib.TheoremVectors.Tests.ToyFork
@@ -12,17 +12,17 @@ import EthCLLib.TheoremVectors.Tests.Random
 import EthCLLib.TheoremVectors.Tests.Support
 
 /-!
-# `EthCLLib.TheoremVectors.Tests.BuiltDrive`: the built source's guarded draw
+# `EthCLLib.TheoremVectors.Tests.BuiltDrive`: the built searcher's guarded draw
 
-Build-gate checks for `builtSource.search`'s draw guard
+Build-gate checks for `builtSearcher.search`'s draw guard
 (`THEOREM_VECTORS_ARCHITECTURE.md` §9.9), the toy-level coverage the
 stage-8 review found missing: every other test binding carries an empty
-builder catalog, so the built source never applies at the toy level, and
+builder catalog, so the built searcher never applies at the toy level, and
 a refactor that restored the unconditional draw would fail only in the
 generator's mainnet elaboration, never in a test.
 
 The module carries its own builder and binding. The catalog's display
-name is `"genesis"`, the built grid's first step, because the source
+name is `"genesis"`, the built grid's first step, because the searcher
 walks the fixed grid of display names and skips the steps the catalog
 does not name (`Witness/Built.lean`). The builder is `Knobs → ToyBox`,
 the shape `applyAcrossInstances` applies (`Probe.lean`): one explicit
@@ -43,7 +43,7 @@ Two drives run the same built win at minimal:
   produces. The state's draw never evaluates.
 
 A third drive runs the completion path the first two only pin as
-halves: `builtSource` leaves draw 0's slot partial, then `randomSource`
+halves: `builtSearcher` leaves draw 0's slot partial, then `randomSearcher`
 runs on the same `SearchCtx`, draws at index 0, completes the slot, and
 wins. The hint entry the win records (`Hint.entryOf`) must name the
 completed slot, so its draw key is draw 0.
@@ -91,7 +91,7 @@ def toyBuiltBinding : ForkBinding :=
 def toyBuiltFun (b : Tests.Random.ToyBox) : UInt64 := b.tag
 
 /-- The state-only drive's theorem: the state is the only container
-input, so the built source's draw guard skips the draw. -/
+input, so the built searcher's draw guard skips the draw. -/
 theorem toyBuiltThm (b : Tests.Random.ToyBox) (_h : b.tag < 100) :
     toyBuiltFun b = b.tag := rfl
 
@@ -101,13 +101,13 @@ def toyBuiltFun2 (b : Tests.Random.ToyBox)
     (_xs : SizzLean.Repr.SSZList UInt64 4) : UInt64 := b.tag
 
 /-- The two-container drive's theorem: a drawn list sits beside the
-state, so the built source's draw guard keeps the draw. -/
+state, so the built searcher's draw guard keeps the draw. -/
 theorem toyBuiltThm2 (b : Tests.Random.ToyBox)
     (xs : SizzLean.Repr.SSZList UInt64 4) (_h : b.tag < 100) :
     toyBuiltFun2 b xs = b.tag := rfl
 
 /-- The completion drive's theorem: the hypothesis reads the drawn
-container and holds of every draw, so the random source's first draw
+container and holds of every draw, so the random searcher's first draw
 wins and the slot that win completes is draw 0's. -/
 theorem toyBuiltThm3 (b : Tests.Random.ToyBox)
     (xs : SizzLean.Repr.SSZList UInt64 4) (_h : b.tag ≤ b.tag) :
@@ -137,7 +137,7 @@ run_cmd do
           throwError s!"toyBuiltThm: the probe refused to build: {e}"
       let sctx ← Tests.Support.searchCtxOf toyBuiltBinding .minimal
         scratchRoot "" stmt ctx info probe
-      match ← searchDisjunct #[builtSource] sctx stmt d with
+      match ← searchDisjunct #[builtSearcher] sctx stmt d with
       | .ok (a, won) =>
         unless won == .built do
           throwError s!"toyBuiltThm: expected a `.built` win, got {won.tag}"
@@ -158,7 +158,7 @@ run_cmd do
           throwError "toyBuiltThm: the draw memo is not empty; a \
             state-only statement must never draw"
       | .error f =>
-        throwError s!"toyBuiltThm: the built source found nothing: \
+        throwError s!"toyBuiltThm: the built searcher found nothing: \
           {repr f}"
     -- ── drive two, the guard's nonempty path: a container beside the
     -- state keeps the draw
@@ -176,7 +176,7 @@ run_cmd do
           throwError s!"toyBuiltThm2: the probe refused to build: {e}"
       let sctx ← Tests.Support.searchCtxOf toyBuiltBinding .minimal
         scratchRoot "" stmt ctx info probe
-      match ← searchDisjunct #[builtSource] sctx stmt d with
+      match ← searchDisjunct #[builtSearcher] sctx stmt d with
       | .ok (a, won) =>
         unless won == .built do
           throwError s!"toyBuiltThm2: expected a `.built` win, got \
@@ -224,9 +224,9 @@ run_cmd do
           throwError "toyBuiltThm2: the list slot does not carry the \
             drawn bytes"
       | .error f =>
-        throwError s!"toyBuiltThm2: the built source found nothing: \
+        throwError s!"toyBuiltThm2: the built searcher found nothing: \
           {repr f}"
-    -- ── drive three, the completion path: the built source leaves draw
+    -- ── drive three, the completion path: the built searcher leaves draw
     -- 0's slot partial, a random win on the same context completes it,
     -- and the hint entry the win records names the completed slot's
     -- draw key (§9.4, §9.8)
@@ -248,17 +248,17 @@ run_cmd do
       let size := theorem_vectors.randomSize.get (← getOptions)
       -- the built half: the win leaves draw 0's slot partial, the state
       -- position `none`, the side position `some`
-      match ← searchDisjunct #[builtSource] sctx stmt d with
+      match ← searchDisjunct #[builtSearcher] sctx stmt d with
       | .ok (_, won) =>
         unless won == .built do
           throwError s!"toyBuiltThm3: expected a `.built` win, got \
             {won.tag}"
       | .error f =>
-        throwError s!"toyBuiltThm3: the built source found nothing: \
+        throwError s!"toyBuiltThm3: the built searcher found nothing: \
           {repr f}"
       -- the random half on the same context: its draw at index 0
       -- completes the slot, and the always-true read lets that draw win
-      match ← searchDisjunct #[randomSource] sctx stmt d with
+      match ← searchDisjunct #[randomSearcher] sctx stmt d with
       | .ok (a, won) =>
         unless won == .random do
           throwError s!"toyBuiltThm3: expected a `.random` win, got \
@@ -281,15 +281,15 @@ run_cmd do
           (Hint.fingerprint stmt.thm info)
           | throwError "toyBuiltThm3: the random win produced no hint \
             entry; the completed slot did not match"
-        unless e.source == .random do
-          throwError s!"toyBuiltThm3: the entry names {e.source.tag}, \
+        unless e.witnessSearcher == .random do
+          throwError s!"toyBuiltThm3: the entry names {e.witnessSearcher.tag}, \
             expected random"
         unless e.seed == some seed && e.size == some size &&
             e.draw == some 0 do
           throwError s!"toyBuiltThm3: the draw key is not the completed \
             slot's: {repr e.seed} {repr e.size} {repr e.draw}"
       | .error f =>
-        throwError s!"toyBuiltThm3: the random source found nothing: \
+        throwError s!"toyBuiltThm3: the random searcher found nothing: \
           {repr f}"
 
 -- the scratch tree goes away

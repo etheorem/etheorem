@@ -377,7 +377,7 @@ private def functionDoc : Yaml :=
       ("builderIndex", .int 3),
       ("bidAmount", .int 32000000000)]),
     ("output", .bool true),
-    ("source", .str "random")
+    ("witnessSearcher", .str "random")
   ]
 
 /-- A `steps`-shaped list of maps, the layout a later format writes
@@ -408,7 +408,7 @@ private def stepsDoc : Yaml :=
   "  builderIndex: 3\n" ++
   "  bidAmount: 32000000000\n" ++
   "output: true\n" ++
-  "source: random\n"
+  "witnessSearcher: random\n"
 
 -- the steps shape: dash lines carry no dash on their children
 #guard Yaml.render stepsDoc ==

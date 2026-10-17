@@ -162,7 +162,7 @@ structure Statement where
   /-- The scalar kind of each input, in binder order, `none` for a
   container (`§9.4`). The reader computes it once, in `MetaM`, because
   the kind needs a reducible `whnf` that a pure `applies` test cannot
-  run; the sources' `applies` tests and the probe read this field, which
+  run; the searchers' `applies` tests and the probe read this field, which
   is what keeps an alias (`Gwei` for `UInt64`) reading as a container in
   a pure test (§9.4). -/
   scalarKinds : Array (Option ScalarKind)
@@ -524,7 +524,7 @@ private partial def zetaLets (body : Expr) : Expr :=
 
 /-- Is the binder's type a sort or an arrow into a sort? A binder such as
 `{σ : Type}` or `{map : MapKind}` names a type parameter the fork binding
-fixes, not a value any source could produce; it is neither an instance
+fixes, not a value any searcher could produce; it is neither an instance
 nor an input. -/
 private def isTypeLevelBinder (type : Expr) : MetaM Bool := do
   let t ← Meta.withReducible (Meta.whnf type)
@@ -586,7 +586,7 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
       else if ← isTypeLevelBinder d.type then
         -- a type parameter the fork binding fixes (`{σ : Type}`,
         -- `{map : MapKind}`): not a class, so §7.1's instance arm does not
-        -- take it, and not a value any source could produce
+        -- take it, and not a value any searcher could produce
         typeBinders := typeBinders.push d.userName.eraseMacroScopes
       else
         inputs := inputs.push
@@ -608,7 +608,7 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
     let specName ← match target with
       | some c => specNameOf env c
       | none => pure none
-    -- the scalar kinds, once per input: the sources' `applies` tests and
+    -- the scalar kinds, once per input: the searchers' `applies` tests and
     -- the probe read this table, so an alias never reads as a container
     -- and the reducible `whnf` never runs twice (§9.4)
     let scalarKinds ← inputs.mapM fun i => scalarKind i.type

@@ -1,15 +1,15 @@
 import Lean
-import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Searcher
 
 /-!
-# `EthCLLib.TheoremVectors.Witness.Base`: the `default` source
+# `EthCLLib.TheoremVectors.Witness.Base`: the `default` searcher
 
-The cheapest witness source (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4): serialize `default`
-for every input and check. It is the one source that runs on a theorem with
+The cheapest witness searcher (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4): serialize `default`
+for every input and check. It is the one searcher that runs on a theorem with
 a block input (§1.2). The command assembles it always, and alone when the
 scope walk found a block input.
 
-One exception, from the stage 2 outcome: the source never proposes
+One exception, from the stage 2 outcome: the searcher never proposes
 `default` for the fork's state. The empty state is not a reachable one, and
 on it the spec's own loops run to their fuel bounds, so the candidate
 either fails the check or burns the search; a theorem over the state gets
@@ -24,9 +24,9 @@ open Lean
 
 namespace EthCLLib.TheoremVectors
 
-/-- The `default` source (§9.4): the probe's serialized defaults, checked
+/-- The `default` searcher (§9.4): the probe's serialized defaults, checked
 like any other candidate, and never over the fork's state. -/
-def baseSource : WitnessSource where
+def baseSearcher : WitnessSearcher where
   tag := .base
   applies (ctx : SearchCtx) (stmt : Statement) (_ : Disjunct) :=
     !stmt.inputs.any (fun i => isStateType ctx.binding i.type)

@@ -23,7 +23,7 @@ its own.
 The named lines carry the stage-2 acceptance theorems and the stage-3
 ones, and stage 8 runs four of them at both presets: the three stage-2
 lines and `processBuilderPendingPayments_run`, whose mainnet run wins
-from the built source and whose pyspec case the check replays through
+from the built searcher and whose pyspec case the check replays through
 the mainnet interface. The window theorems run `computePtcFromFulu` over
 the state, and
 `default`'s empty validator set drives the balance-weighted selection into
@@ -38,14 +38,14 @@ them at any preset.
 These lines run without a `default` witness:
 
 - `getPtcElseOffset_lt_next_slot` takes no manual term; the bit-vector
-  source solves the slot pair.
-- `canBuilderCoverBid_iff` takes no manual term; the random source draws
+  searcher solves the slot pair.
+- `canBuilderCoverBid_iff` takes no manual term; the random searcher draws
   the state, walks the coupled builder index, and the solver picks each
   side's `bidAmount` (§9.4).
 - `isValidIndexedPayloadAttestation_eq_true_iff_checks` keeps its manual
   state and attestation terms, which win the true side; its false-side
   disjuncts need containers the manual terms do not vary, and the random
-  source draws them after the manual and bit-vector handoffs fail
+  searcher draws them after the manual and bit-vector handoffs fail
   (§9.2, §9.4).
 -/
 

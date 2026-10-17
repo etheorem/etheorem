@@ -125,7 +125,7 @@ def Formats.function : VectorFormat where
         ("shape", .str r.shape.tag),
         ("inputs", .map inputs),
         ("output", output),
-        ("source", .str r.source.tag)
+        ("witnessSearcher", .str r.witnessSearcher.tag)
       ]
     IO.FS.writeFile file (Yaml.render doc)
     return #[file]

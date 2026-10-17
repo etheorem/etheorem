@@ -4,7 +4,7 @@ import EthCLLib.TheoremVectors.ForkBinding
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Preset
 import EthCLLib.TheoremVectors.Probe
-import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Searcher
 
 /-!
 # `EthCLLib.TheoremVectors.Tests.Support`: the test drives' shared helpers

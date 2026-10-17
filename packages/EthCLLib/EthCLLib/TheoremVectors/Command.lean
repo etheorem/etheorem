@@ -7,7 +7,7 @@ import EthCLLib.TheoremVectors.Prepare
 import EthCLLib.TheoremVectors.Preset
 import EthCLLib.TheoremVectors.Probe
 import EthCLLib.TheoremVectors.Execute
-import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Searcher
 import EthCLLib.TheoremVectors.Witness.Reuse
 import EthCLLib.TheoremVectors.Witness.Hint
 import EthCLLib.TheoremVectors.Witness.Base
@@ -64,8 +64,8 @@ meets only the lines above it that passed.
 
 **Stage 2.** A named or discovered theorem's run wires phases B1 through
 B8 end to end for one preset: the prepare pass (§8.4's first form) builds
-one disjunct, the probe compiles (§11.2), the manual and base sources search
-(§9.2, §9.4), the executor records `.eq` and `.bound` runs (§11.3), the
+one disjunct, the probe compiles (§11.2), the manual and base searchers
+search (§9.2, §9.4), the executor records `.eq` and `.bound` runs (§11.3), the
 record round-trips (§12.5), and the outcome carries the real statuses.
 `survey` runs phase A alone, with status `unselected` (§14.3), so the
 report shows the whole corpus without searching anything.
@@ -74,11 +74,11 @@ One deviation from the sketch is recorded in `IMPLEMENTATION_NOTES.md`:
 an `unsupported` outcome's shape field writes `unsupported`, because the
 §16.1 example leaves the field's value for that row unspecified.
 
-**Stage 5.** The hint source (§9.8) prepends itself to every list: the
+**Stage 5.** The hint searcher (§9.8) prepends itself to every list: the
 run resolves the mode (`THEOREM_VECTORS_HINTS` ahead of the
 `theorem_vectors.hints` option), loads the committed file, and hands the
-source a log ref. A winning disjunct records its hint entry, where a replay
-re-records the entry it consumed, and the run merges its entries into
+searcher a log ref. A winning disjunct records its hint entry, where a
+replay re-records the entry it consumed, and the run merges its entries into
 `<outDir>/hints/<fork>/<thm>.json`. The outcome line folds the log
 into its `hint` field. Mode `require` errors on a disjunct whose hint
 failed the check or whose witness came from a search, which is the
@@ -335,8 +335,8 @@ private def hintModeOf : CommandElabM HintMode := do
 
 /-- The report line for one search failure (§18's reported facts). A
 `notFound` on a theorem with block inputs is §18's `outOfScope`: only the
-base source may run, it ran, and it failed (§1.2). The details the sources
-reported follow the source list. -/
+base searcher may run, it ran, and it failed (§1.2). The details the
+searchers reported follow the searcher list. -/
 private def failureOf (blockInputs : Array Name) : Failure →
     RunStatus × String
   | .unsat => (.unsat, "unsat: the hypotheses are vacuous")
@@ -348,12 +348,12 @@ private def failureOf (blockInputs : Array Name) : Failure →
         (tried.toList.map (·.tag))}{detailText}")
     else
       (.outOfScope, s!"outOfScope: block inputs {String.intercalate ", "
-        (blockInputs.toList.map (·.toString))} and the base source \
+        (blockInputs.toList.map (·.toString))} and the base searcher \
         failed ({String.intercalate ", " (tried.toList.map (·.tag))})\
         {detailText}")
   | .outOfScope inputs =>
     (.outOfScope, s!"outOfScope: block inputs {String.intercalate ", "
-      (inputs.toList.map (·.toString))} and the base source failed")
+      (inputs.toList.map (·.toString))} and the base searcher failed")
 
 /-- One run's heartbeat budget (§14.3, §14.4): the option's value, with the
 heartbeat clock reset at the run's start, so one line's solver calls and
@@ -366,12 +366,12 @@ private def withRunHeartbeats {α : Type} (x : MetaM α) : MetaM α := do
   withTheReader Lean.Core.Context (fun ctx =>
       { ctx with maxHeartbeats := budget, initHeartbeats := now }) x
 
-/-- Does this winning source's witness go through the shrink loop? A
-random-source witness does, and so does its replayed hint (§9.8: shrink
-replays from the same draw). The other sources' witnesses are the
+/-- Does this winning searcher's witness go through the shrink loop? A
+random-searcher witness does, and so does its replayed hint (§9.8: shrink
+replays from the same draw). The other searchers' witnesses are the
 author's manual terms, the defaults, and the solver's boundary values,
 and shrinking moves all three. -/
-private def shrinkableSource : WitnessSourceTag → Bool
+private def shrinkableSearcher : WitnessSearcherTag → Bool
   | .random => true
   | .hinted (.random) => true
   | _ => false
@@ -404,7 +404,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     | .error reason =>
       return { preset := some p, status := .skipped, reason := some reason }
   -- §10: the instance constants this preset fixes, which the bit-vector
-  -- source substitutes into the manual terms and the reads (§11.2)
+  -- searcher substitutes into the manual terms and the reads (§11.2)
   let instConsts ← ctx.stmt.instances.mapM fun (_, kind) =>
     match Preset.constOf binding p kind with
     | .ok c => pure c
@@ -423,52 +423,54 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       instFvars := ctx.instFvars, instConsts, manualTerms,
       drawMemo := ← IO.mkRef #[], outDir, builtStamp, epochBoundary,
       earlierWins := wins }
-  -- §9.8: the hint source runs first on every list. The log ref collects
+  -- §9.8: the hint searcher runs first on every list. The log ref collects
   -- what one attempt did per disjunct, which the outcome's `hint` field folds
   -- up and which the `require` mode's error reads.
   let fingerprint := Hint.fingerprint stmt.thm info
   let hintLog ← IO.mkRef (#[] : Array (Nat × HintAttempt))
-  let hintSrc := Hint.source mode hintFile? fingerprint hintLog
+  let hintSearcher := Hint.searcher mode hintFile? fingerprint hintLog
   -- a fresh record directory per run: an overriding line's pass replaces
   -- the records an earlier pass wrote for the same theorem (§14.3)
   let thmDir := Record.thmDir outDir binding.tag p thmLocal
   if ← thmDir.isDir then
     IO.FS.removeDirAll thmDir
-  -- B3: the search (§9.2, §9.4). The hint source prepends itself on every
-  -- list, `ignore` included off it. §10 puts the reuse source immediately
-  -- after the hint source, so a committed second-preset hint replays as
+  -- B3: the search (§9.2, §9.4). The hint searcher prepends itself on
+  -- every list, `ignore` included off it. §10 puts the reuse searcher
+  -- immediately after the hint searcher, so a committed second-preset
+  -- hint replays as
   -- `.hinted (.reused p)` while a fresh run wins as
   -- `.reused p` and writes that entry. A line with manual terms runs
   -- manual then the bit-vector handoff: a `default` candidate would
   -- ignore the author's fixed inputs. Without manual terms, base then
-  -- bit-vector. The built source (§9.9) follows the bit-vector source,
-  -- before the random source: a reachable built state is worth more to
-  -- a client than a drawn one. A block input leaves only the base source
-  -- running (§1.2); the base source itself never proposes `default` for
-  -- the fork's state (§9.4), so a state theorem without manual terms
-  -- runs the bit-vector, built, and random sources in that order. The
-  -- reuse source's `applies` gates on empty block inputs itself, so the
+  -- bit-vector. The built searcher (§9.9) follows the bit-vector
+  -- searcher, before the random searcher: a reachable built state is worth
+  -- more to a client than a drawn one. A block input leaves only the base
+  -- searcher running (§1.2); the base searcher itself never proposes
+  -- `default` for the fork's state (§9.4), so a state theorem without
+  -- manual terms runs the bit-vector, built, and random searchers in that
+  -- order. The
+  -- reuse searcher's `applies` gates on empty block inputs itself, so the
   -- block-input list stays base alone.
-  let baseSources : Array WitnessSource :=
-    if !stmt.blockInputs.isEmpty then #[baseSource]
+  let baseSearchers : Array WitnessSearcher :=
+    if !stmt.blockInputs.isEmpty then #[baseSearcher]
     else if manualTerms.isEmpty then
-      #[baseSource, bitVecSource, builtSource, randomSource]
-    else #[manualSource, bitVecSource, builtSource, randomSource]
-  let sources : Array WitnessSource :=
-    -- `ignore` runs no hint, so the reuse source leads the list; §9.8's
+      #[baseSearcher, bitVecSearcher, builtSearcher, randomSearcher]
+    else #[manualSearcher, bitVecSearcher, builtSearcher, randomSearcher]
+  let searchers : Array WitnessSearcher :=
+    -- `ignore` runs no hint, so the reuse searcher leads the list; §9.8's
     -- "search everything" covers reuse, and a `use` build must read the
     -- same second-preset entries an `ignore` build writes (§9.8)
-    if mode == .ignore then #[reuseSource] ++ baseSources
-    else #[hintSrc, reuseSource] ++ baseSources
+    if mode == .ignore then #[reuseSearcher] ++ baseSearchers
+    else #[hintSearcher, reuseSearcher] ++ baseSearchers
   let some shapeTag := Shape.tag? stmt.shape
     | return { preset := some p, status := .unsupported,
                reason := some "unsupported shape" }
   -- §9.8: mode `require` turns a failing hint into the build error the
   -- mode promises. A disjunct that found no witness carries no claim the
   -- mode can enforce (§9.4: the manual terms' claim is the author's; a
-  -- disjunct no source wins reports `notFound`), so it falls through; a
+  -- disjunct no searcher wins reports `notFound`), so it falls through; a
   -- disjunct that won
-  -- from a source other than the hint, or whose hint the check rejected,
+  -- from a searcher other than the hint, or whose hint the check rejected,
   -- is the error, because the committed file promised this disjunct a witness
   let enforceRequireHint (d : Disjunct) (win? : Option Bool) : MetaM Unit := do
     if mode == .require then
@@ -485,7 +487,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
           {d.index} of `{stmt.thm}` at {p.tag} is missing or failed the \
           check (§9.8)"
   let mut written : Nat := 0
-  let mut source? : Option String := none
+  let mut searcher? : Option String := none
   let mut manualWon := false
   let mut hintEntries : Array HintEntry := #[]
   let mut freshWins : Nat := 0
@@ -509,19 +511,19 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       -- one build.
       hintLog.set ((← hintLog.get) ++ #[(d.index, HintAttempt.replayed)])
       hintEntries := hintEntries.push e
-      let tried := (e.notFound.getD #[]).filterMap WitnessSourceTag.ofTag?
+      let tried := (e.notFound.getD #[]).filterMap WitnessSearcherTag.ofTag?
       let (status, text) := failureOf stmt.blockInputs (.notFound tried #[])
       let reason := (e.notFoundReason.getD text)
       failures := failures.push (d.index, status,
         s!"{reason} (replayed from the hint)")
       continue
-    match ← searchDisjunct sources searchCtx stmt d with
+    match ← searchDisjunct searchers searchCtx stmt d with
     | .error failure =>
       enforceRequireHint d none
       let (status, text) := failureOf stmt.blockInputs failure
       failures := failures.push (d.index, status, text)
-      -- the plan's stage-6 step 9: a disjunct every source failed records
-      -- the fact, so the next build skips its search while the
+      -- the plan's stage-6 step 9: a disjunct every searcher failed
+      -- records the fact, so the next build skips its search while the
       -- fingerprint stands. The search ran, so the answer is the run's
       -- own fact, and `ignore` mode records it the way it records found
       -- entries, which keeps the rebuild recipe's output in step with
@@ -533,7 +535,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
         if stmt.blockInputs.isEmpty then
           let entry : HintEntry :=
             { preset := p, disjunctIndex := d.index, side := d.side,
-              source := .base,
+              witnessSearcher := .base,
               notFound := some (tried.map (·.tag)),
               notFoundReason := some text,
               fingerprint := some fingerprint }
@@ -562,16 +564,16 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
               (Hint.entryFor f p d.index d.side).map
                 fun e => { e with fingerprint := some fingerprint })
         | _ => Hint.entryOf searchCtx stmt d a won seedOpt sizeOpt fingerprint
-      -- §9.6: a witness from the random source shrinks while the check
+      -- §9.6: a witness from the random searcher shrinks while the check
       -- holds, within the step budget, and so does its replayed hint
       -- (§9.8: shrink replays from the same draw), which is what keeps
-      -- the replay's records byte-identical. The other sources'
+      -- the replay's records byte-identical. The other searchers'
       -- witnesses are the author's manual terms, the defaults, and the
       -- solver's boundary values, and shrinking moves all three. A
       -- replayed random entry carries its shrink path (the plan's
       -- stage-6 step 8), and the replay walks the recorded candidates
       -- alone.
-      let shrinkable := shrinkableSource won
+      let shrinkable := shrinkableSearcher won
       let mut shrinkTrace? : Option (Array (Array Nat)) := none
       let a ← if shrinkable then do
         let steps := theorem_vectors.shrinkSteps.get (← getOptions)
@@ -606,7 +608,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       else pure a
       -- §10: the final assignment that passed the check goes into the
       -- ref, so a later preset of this line proposes it through the
-      -- reuse source. A `.reused` win lands here too: it passed this
+      -- reuse searcher. A `.reused` win lands here too: it passed this
       -- preset's check, so the next preset may try the same bytes, and
       -- that preset's own check arbitrates. The push runs only for a
       -- preset-free statement: the read side gates on the same flag, so
@@ -641,7 +643,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
           shape := shapeTag,
           disjunctIndex := d.index, side := d.side,
           inputs := inputVals, output := outVal, error := errVal,
-          source := won }
+          witnessSearcher := won }
       -- B6: write the record (§12.1, §12.4); the assignment's bytes are
       -- the record's bytes, and a record with no output (`.runError`)
       -- writes no `output.ssz` (§12.1)
@@ -667,13 +669,13 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       logInfo m!"theorem_vectors [{binding.tag}] {stmt.thm}: record \
         {dir}"
       written := written + 1
-      -- §16.1 pairs the run's source with its hint answer: the origin
+      -- §16.1 pairs the run's searcher with its hint answer: the origin
       -- the hint replayed, the record's own field carrying the
       -- `.hinted` wrapper (§5.4)
-      let sourceTag := match won with
+      let searcherTag := match won with
         | .hinted o => o.tag
         | t => t.tag
-      if source?.isNone then source? := some sourceTag
+      if searcher?.isNone then searcher? := some searcherTag
       -- a replayed manual win counts for §18's manual claim, the same
       -- way its original win did (§9.8)
       if won == .manual || won matches .hinted (.manual) then
@@ -701,7 +703,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     (failures.toList.map fun (i, _, text) => s!"disjunct {i}: {text}")
   if written > 0 then
     return { preset := some p, status := .written, records := written,
-             source := source?, hint := hintField, seconds,
+             witnessSearcher := searcher?, hint := hintField, seconds,
              reason := if failures.isEmpty then none
                        else some failureText }
   else
@@ -735,7 +737,7 @@ private def runTheorem (binding : ForkBinding) (bindingName : Name)
     let root ← hintsRootOf
     if root.isEmpty then pure none
     else liftIO <| Hint.read? (Hint.file root binding.tag localName.toString)
-  -- §9.9: the built source's cache stamp, the binding module's trace
+  -- §9.9: the built searcher's cache stamp, the binding module's trace
   -- text, read once per theorem. The binding module imports the fork's
   -- Builders module, so its trace folds the builders' artifacts beside
   -- the fork body and the crypto seams the binding names, and a change

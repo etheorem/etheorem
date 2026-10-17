@@ -6,16 +6,16 @@ import EthCLLib.TheoremVectors.ForkBinding
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Prepare
 import EthCLLib.TheoremVectors.Probe
-import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Searcher
 
 /-!
-# `EthCLLib.TheoremVectors.Witness.BitVec`: the bit-vector source
+# `EthCLLib.TheoremVectors.Witness.BitVec`: the bit-vector searcher
 
-The solver-backed witness source (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4). The source
+The solver-backed witness searcher (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4). The searcher
 poses the disjunct's negated conjunction as a goal and calls `bvDecide'` from
 `Lean.Elab.Tactic.BVDecide.Frontend`. A `Result` proves `¬P`, so the disjunct is
-vacuous and the source answers `unsat`; no later source can find what does
-not exist. A `CounterExample` is a model of `P`: its equations pair the
+vacuous and the searcher answers `unsat`; no later searcher can find
+what does not exist. A `CounterExample` is a model of `P`: its equations pair the
 solver's atoms with values, the reader unwraps the `UIntX.toBitVec` /
 `BitVec.ofBool` wrappers, and the values become the scalar inputs of a
 candidate the loop's check still decides.
@@ -27,13 +27,13 @@ Three forms of the solve live here, one entry point:
 - **The manual handoff.** A line whose manual terms fix the container
   inputs leaves scalar inputs, and the prepared hypotheses still name the
   manual values (`coverBidState.builders[builderIndex]!.balance`). The
-  source fixes each *coupled* scalar, one that co-occurs with a manual
+  searcher fixes each *coupled* scalar, one that co-occurs with a manual
   input, over a bounded value grid. At each fixed point the manual reads
-  become closed terms of scalar type, the source evaluates them in
+  become closed terms of scalar type, the searcher evaluates them in
   compiled code and substitutes the literals, and the solver takes the
   remaining free scalars. The grid holds the small values a scalar index
   into a manual container takes in practice; a scalar the grid misses
-  falls to a later source. The check
+  falls to a later searcher. The check
   stays the single arbiter throughout: a candidate from any fixed point
   counts only when the compiled `decide` accepts it, and a
   per-fixed-point `unsat` never reports the disjunct vacuous, because another
@@ -45,7 +45,7 @@ Three forms of the solve live here, one entry point:
   through `Fin`'s own codec, whose strict decode refuses what slipped
   past (§9.3, §9.4).
 
-The random source (§9.4) drives the same entry point with its drawn
+The random searcher (§9.4) drives the same entry point with its drawn
 containers in the `drawn` overlay: the manual terms' positions stay the
 probe's, and the drawn bytes stand in for the containers, so a drawn
 state grounds the same reads a manual term would.
@@ -75,8 +75,8 @@ namespace EthCLLib.TheoremVectors
 /-! ## The solver call (§9.4) -/
 
 /-- The `bvDecide'` call behind the compiled face below. `TacticContext.new`
-is `TermElabM` and the source runs in `MetaM`, so the context is built here
-with core's fresh names and the same cadical lookup `TacticContext.new`
+is `TermElabM` and the searcher runs in `MetaM`, so the context is built
+here with core's fresh names and the same cadical lookup `TacticContext.new`
 does. -/
 private unsafe def bvDecideImpl (g : MVarId) :
     MetaM (Except Lean.Elab.Tactic.BVDecide.Frontend.CounterExample
@@ -107,7 +107,7 @@ private unsafe def evalNatImpl (e : Expr) : MetaM Nat :=
   Lean.Meta.evalExpr Nat (.const ``Nat []) e
 
 /-- The compiled face of a closed `Nat` evaluation (§9.4's read
-grounding; the built source reads the fork's `slotsPerEpoch` through
+grounding; the built searcher reads the fork's `slotsPerEpoch` through
 it, which is what puts the grid's first epoch boundary in preset units
 without naming a fork). -/
 @[implemented_by evalNatImpl] opaque evalNatOp (e : Expr) : MetaM Nat
@@ -325,7 +325,7 @@ private def unwrapAtom (e : Expr) : Option FVarId :=
 
 /-! ## The solve -/
 
-/-- What one solve attempt answered. The random source drives the same
+/-- What one solve attempt answered. The random searcher drives the same
 entry point, so the answer type is the shared face. -/
 inductive SolveAnswer where
   /-- A candidate assignment: manual terms, drawn containers, fixed
@@ -369,12 +369,12 @@ terms, the drawn containers, and the fixed coupled values, unfold (§8.1),
 evaluate the closed reads, and pose the negated conjunction to the
 solver (§9.4).
 `hyps` carries the disjunct's conjunctions' parts, already read-substituted
-when the caller grounds container reads (§9.4's random source).
+when the caller grounds container reads (§9.4's random searcher).
 `fixedVals` carries the same positions as `fixed` with the values the
 terms spell, so the candidate names what the formula was solved against.
 `unfold` runs §8.1's pass: the manual handoff needs it, because a manual
 term is a spec call whose equations expose the arithmetic; the random
-source skips it, because its reads grounding already replaced the calls
+searcher skips it, because its reads grounding already replaced the calls
 with literals and a second unfold over a drawn state's hypotheses would
 burn the run's budget per grid point. When the grounding leaves no free
 scalar in the formula, the candidate goes to the probe's `check`, the
@@ -387,7 +387,7 @@ def solveOnce (ctx : SearchCtx) (stmt : Statement) (disjunctIndex : Nat)
     MetaM SolveAnswer := do
   -- §9.4, from the stage-4 outcome: a fixed point whose reads run past a
   -- container's end is skipped before the grounding evaluates them, the
-  -- same rule the random source's points follow; the compiled evaluation
+  -- same rule the random searcher's points follow; the compiled evaluation
   -- of a manual read never sees an out-of-range index
   match ← buildAssignment ctx stmt drawn fixedVals #[] with
     | some gateBytes =>
@@ -595,7 +595,7 @@ topmost manual-mentioning subterm of `e`, where the logical and comparison
 connectives stay transparent. `bidAmount ≤ builders[i]!.balance - min`
 names `builderIndex` this way (it sits inside the subtraction over the
 manual state) and leaves `bidAmount` free for the solver, because
-`bidAmount` is a comparison operand, not a read index. The random source
+`bidAmount` is a comparison operand, not a read index. The random searcher
 runs the same walk over its drawn containers (§9.4). -/
 partial def topManualScalarIds (manualIds : Array FVarId) (e : Expr)
     (acc : Array FVarId) : Array FVarId :=
@@ -614,7 +614,7 @@ partial def topManualScalarIds (manualIds : Array FVarId) (e : Expr)
       if acc.contains id then acc else acc.push id) acc
 
 /-- The coupled scalars' grid: the product of each coupled position's
-values, capped so the source stays bounded (§9.4's handoff). Every
+values, capped so the searcher stays bounded (§9.4's handoff). Every
 coupled scalar stays in every point: the cap truncates after each fold,
 so a cut grid explores the earlier scalars' low values across the later
 scalars' low values. `valuesCap` bounds each scalar's values from above
@@ -640,10 +640,10 @@ private def literalDetail (stmt : Statement) (position : Nat) : String :=
   s!"input {stmt.inputs[position]!.name} has no literal form for the \
     coupled grid (§9.4)"
 
-/-- The bit-vector source (§9.4). Applies to a theorem without block
+/-- The bit-vector searcher (§9.4). Applies to a theorem without block
 inputs; the search answers `nothing` when the residual inputs carry a
 container the manual terms do not fix. -/
-def bitVecSource : WitnessSource where
+def bitVecSearcher : WitnessSearcher where
   tag := .bitVec
   applies _ stmt _ := stmt.blockInputs.isEmpty
   search ctx stmt d := do

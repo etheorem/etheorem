@@ -4,11 +4,11 @@ import EthCLLib.TheoremVectors.Scalar
 import EthCLLib.TheoremVectors.Record
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Probe
-import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Searcher
 import EthCLLib.TheoremVectors.Witness.Built
 
 /-!
-# `EthCLLib.TheoremVectors.Witness.Hint`: the hint source
+# `EthCLLib.TheoremVectors.Witness.Hint`: the hint searcher
 
 A hint records how a witness was found, with enough data to rebuild the
 candidate without searching (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8). It is a hint and
@@ -22,27 +22,27 @@ The file is one JSON document per theorem and fork:
   "fingerprint": "0x…",
   "entries": [
     { "preset": "minimal", "disjunctIndex": 0, "side": true,
-      "source": "random", "seed": 7, "size": 8, "draw": 3,
+      "witnessSearcher": "random", "seed": 7, "size": 8, "draw": 3,
       "scalars": { "builderIndex": "3", "bidAmount": "32000000000" } } ] }
 ```
 
 Only what the search decided goes in, never the witness bytes. The
-base and manual sources need nothing beyond their tag. The bit-vector
-source needs the scalar literals. The random source needs the generator
+base and manual searchers need nothing beyond their tag. The bit-vector
+searcher needs the scalar literals. The random searcher needs the generator
 seed, the size, and the draw index, because a draw is a pure function
-of those three and `Gen` replays it. The built source needs the builder
+of those three and `Gen` replays it. The built searcher needs the builder
 name and the knobs, because the cached bytes rebuild from them (§9.9);
 when a statement holds containers beside its state, its built entry
 carries the drawn containers' key as a random entry does. A reused
-entry (§10) needs the scalar table alone, because the reuse source
+entry (§10) needs the scalar table alone, because the reuse searcher
 proposes only for a statement whose every input is a scalar, and the
 table rebuilds the carried witness at the later preset. A random
 entry also carries the shrink path the walk accepted (§9.6), whose
 replay walks the recorded candidates alone. The full loop runs for a
 traceless entry, and for a recorded path that no longer replays.
 
-The source runs first on every list (§9.2). The command loads the
-committed file, computes the fingerprint, and hands both to `source`
+The searcher runs first on every list (§9.2). The command loads the
+committed file, computes the fingerprint, and hands both to `searcher`
 together with a log ref; after the disjunct loop it folds the log into the
 outcome line's `hint` field (§16.1) and merges the run's entries into
 `<outDir>/hints/<fork>/<thm>.json`, which the update recipe copies over
@@ -71,7 +71,7 @@ namespace EthCLLib.TheoremVectors
 
 /-! ## The mode -/
 
-/-- What the hint source does about a missing or failing hint (§9.8). -/
+/-- What the hint searcher does about a missing or failing hint (§9.8). -/
 inductive HintMode where
   /-- Read hints; search when one is missing or fails; write new hints. -/
   | use
@@ -122,8 +122,8 @@ instance : FromJson HintScalars where
     return { scalars := out }
 
 /-- What one hint entry holds (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8). The optional fields
-fill for the sources that need them: the random source's `seed`, `size`,
-and `draw`; the built source's `builder` and `knobs`. -/
+fill for the searchers that need them: the random searcher's `seed`,
+`size`, and `draw`; the built searcher's `builder` and `knobs`. -/
 structure HintEntry where
   /-- The preset the entry replays at. -/
   preset : PresetId
@@ -131,30 +131,30 @@ structure HintEntry where
   disjunctIndex : Nat
   /-- The `.iffTrue` side, when the shape is `.iffTrue`. -/
   side   : Option Bool
-  /-- The source whose witness the entry rebuilds. -/
-  source : WitnessSourceTag
+  /-- The searcher whose witness the entry rebuilds. -/
+  witnessSearcher : WitnessSearcherTag
   /-- The random draw's generator seed (§9.8). -/
   seed   : Option Nat := none
   /-- The random draw's `Gen` size parameter (§9.8). -/
   size   : Option Nat := none
   /-- The random draw's index in the redraw loop (§9.8). -/
   draw   : Option Nat := none
-  /-- The built source's builder display name (§9.8, §9.9). -/
+  /-- The built searcher's builder display name (§9.8, §9.9). -/
   builder : Option String := none
-  /-- The built source's knobs (§9.8, §9.9). -/
+  /-- The built searcher's knobs (§9.8, §9.9). -/
   knobs  : Option Knobs := none
   /-- The scalar literals the search chose. -/
   scalars : HintScalars := {}
-  /-- The random source's shrink path (§9.6, the plan's stage-6 step 8):
+  /-- The random searcher's shrink path (§9.6, the plan's stage-6 step 8):
   one entry per accepted `probe.shrink` call, holding the indices of the
   candidates that call accepted. The replay walks these instead of the
   calls' full lists. -/
   shrink : Option (Array (Array Nat)) := none
-  /-- The sources the search tried on a disjunct none of them satisfied
+  /-- The searchers the search tried on a disjunct none of them satisfied
   (the plan's stage-6 step 9). An entry this field holds records the
-  disjunct's empty answer: `use` and `require` modes skip the search for it
-  while it is not stale, and the search runs when it is. Its `source`
-  field is the placeholder `.base`, because no witness exists for the
+  disjunct's empty answer: `use` and `require` modes skip the search for
+  it while it is not stale, and the search runs when it is. Its
+  `witnessSearcher` field is the placeholder `.base`, because no witness exists for the
   entry to name; the `notFound` list is the entry's content, and
   `notFoundReason` carries the failure text the fresh run reported, so
   a replayed outcome reads like the searched one. -/
@@ -178,7 +178,8 @@ instance : ToJson HintEntry where
   toJson e :=
     Json.mkObj (Json.opt "preset" (some e.preset) ++
       Json.opt "disjunctIndex" (some e.disjunctIndex) ++
-      Json.opt "side" e.side ++ Json.opt "source" (some e.source) ++
+      Json.opt "side" e.side ++
+      Json.opt "witnessSearcher" (some e.witnessSearcher) ++
       Json.opt "seed" e.seed ++ Json.opt "size" e.size ++
       Json.opt "draw" e.draw ++
       Json.opt "builder" e.builder ++ Json.opt "knobs" e.knobs ++
@@ -277,37 +278,37 @@ def Hint.mergeWrite (outDir : System.FilePath) (forkTag : String)
 
 /-! ## Rebuild: the candidate from an entry -/
 
-/-- The source a hint entry records, with a replayed entry's own wrapper
-unwrapped. `none` for the reused source, which `Hint.rebuild` and
-`Hint.entryOf` match on the entry's tag directly, before this unwrap
+/-- The searcher a hint entry records, with a replayed entry's own
+wrapper unwrapped. `none` for the reused searcher, which `Hint.rebuild`
+and `Hint.entryOf` match on the entry's tag directly, before this unwrap
 runs. -/
-private def entrySource (t : WitnessSourceTag) : Option WitnessSourceTag :=
+private def entrySearcher (t : WitnessSearcherTag) : Option WitnessSearcherTag :=
   match t with
   | .hinted o => some o
   | .reused _ => none
   | t => some t
 
-/-- The entry's source with every replay wrapper unwrapped. A
+/-- The entry's searcher with every replay wrapper unwrapped. A
 hand-edited entry can nest the wrapper; the wire reader parses any
-depth (`WitnessSourceTag.ofTag?` recurses on `hinted-`), so the
+depth (`WitnessSearcherTag.ofTag?` recurses on `hinted-`), so the
 rebuild reads through all of them. -/
-private def plainSourceOf : WitnessSourceTag → WitnessSourceTag
-  | .hinted o => plainSourceOf o
+private def plainSearcherOf : WitnessSearcherTag → WitnessSearcherTag
+  | .hinted o => plainSearcherOf o
   | t => t
 
 /-- Can the hint machinery attempt an entry with this tag at all? True
-for the five plain sources, for a replayed `.hinted` entry, and for a
+for the five plain searchers, for a replayed `.hinted` entry, and for a
 `.reused` entry, whose scalar table `Hint.rebuild` reads alone. A
 wrapped `.hinted (.reused p)` entry answers `true` too, and
-`Hint.rebuild` rebuilds it from the same table. This is the source's
+`Hint.rebuild` rebuilds it from the same table. This is the searcher's
 `applies` test, and only the tag-level gate: `rebuild`'s `none`
 answers for missing data (a draw key, a builder name, a scalar read)
-are the honest failures. `entrySource` alone would turn a committed
+are the honest failures. `entrySearcher` alone would turn a committed
 reused entry into a missing hint, which would churn the witness the
 entry already fixed (§10). -/
-def Hint.rebuildable : WitnessSourceTag → Bool
+def Hint.rebuildable : WitnessSearcherTag → Bool
   | .reused _ => true
-  | t => (entrySource t).isSome
+  | t => (entrySearcher t).isSome
 
 /-- The scalar value a hint entry fixes for one input position, `0` when
 the entry holds no value for it: the candidate's builder wrote the same
@@ -321,11 +322,11 @@ The overlay follows the winning assignment's construction: the drawn
 containers win over the manual terms in a random replay, the manual terms
 win at the positions they fix in a bit-vector replay, and the hint's
 scalars fill the solver's choices. A reused entry (§10) rebuilds every
-input from the entry's scalar table alone, because the reuse source
+input from the entry's scalar table alone, because the reuse searcher
 proposes only for a statement whose every input is a scalar. The replay
 wrapper counts as the form under it at any depth, so `.hinted (.reused p)`
 rebuilds from the same table and a doubly wrapped entry reaches the
-source under both wrappers. `none` when the entry does not describe a
+searcher under both wrappers. `none` when the entry does not describe a
 candidate this module can rebuild. -/
 def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
     MetaM (Option Assignment) := do
@@ -337,13 +338,13 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
     match stmt.scalarKinds[i]? |>.join with
     | none => return none
     | some k => return some (scalarBytes k (scalarVal i))
-  -- the entry's source with every replay wrapper unwrapped, at any
+  -- the entry's searcher with every replay wrapper unwrapped, at any
   -- depth: a hand-edited entry can nest `.hinted`, and the rebuilt
   -- candidate still goes through the search loop's `safe` and `check`
   -- gates. `.hinted (.hinted .base)` therefore rebuilds the base
   -- defaults, a hand-edit-only shape whose candidate the check
   -- arbitrates.
-  match plainSourceOf e.source with
+  match plainSearcherOf e.witnessSearcher with
   | .reused _ =>
     -- §10: the scalar table is the whole entry; a position with no
     -- scalar kind or no bytes is an entry the table cannot rebuild
@@ -391,7 +392,7 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
     -- the pre-shrink candidate: the recorded shrink path, when the
     -- entry carries one, walks in the command's shrink step (the plan's
     -- stage-6 step 8), the same place the original walk ran, so the
-    -- path applies once and the candidate the hint source checks is the
+    -- path applies once and the candidate the hint searcher checks is the
     -- one the original search checked
     pure (some a)
   | .built =>
@@ -430,7 +431,7 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
             | none => return none
             | some b => a := a.push b
     pure (some a)
-  -- totality only: `plainSourceOf` never returns a `.hinted` tag, so
+  -- totality only: `plainSearcherOf` never returns a `.hinted` tag, so
   -- this arm is unreachable
   | .hinted _ => return none
 
@@ -442,7 +443,7 @@ holds every draw of the theorem's run, one `Option ByteArray` per
 sampled position. A draw is a pure function of the seed, the size, the
 index, and the position, so the index is the hint's replay key. A
 slot qualifies only when it holds bytes for every container position and
-they all match. The random source samples every container position of
+they all match. The random searcher samples every container position of
 its draws from index 0 up, so the winning slot is complete by the time a
 random win exists. A slot with a gap is not the winner's (§9.4). The
 caller reads the memo and runs this before the shrink, whose candidates
@@ -480,28 +481,28 @@ private def containerPositions (stmt : Statement) : Array Nat :=
   (Array.range stmt.inputs.size).filter fun i => stmt.scalarKinds[i]?.join.isNone
 
 /-- The hint entry a winning candidate records (§9.8), unwrapping a
-replayed `.hinted` tag back to the source the hint already recorded. A
+replayed `.hinted` tag back to the searcher the hint already recorded. A
 reused win (§10) records a `.reused` entry, whose scalar table is the
-whole rebuild input. `none` when the source carries no rebuildable data
+whole rebuild input. `none` when the searcher carries no rebuildable data
 yet or a scalar read failed. -/
 def Hint.entryOf (ctx : SearchCtx) (stmt : Statement) (d : Disjunct)
-    (a : Assignment) (won : WitnessSourceTag) (seedOpt sizeOpt : Nat)
+    (a : Assignment) (won : WitnessSearcherTag) (seedOpt sizeOpt : Nat)
     (fingerprint : String) : MetaM (Option HintEntry) := do
   match won with
   | .reused p => do
     -- §10: the scalar table is the entry's whole content; the reuse
-    -- source proposes only for a statement whose every input is a
+    -- searcher proposes only for a statement whose every input is a
     -- scalar, so the table rebuilds the candidate exactly
     let some scalars ← scalarsOf stmt a | return none
     let head : HintEntry :=
       { preset := ctx.preset, disjunctIndex := d.index, side := d.side,
-        source := .reused p, fingerprint := some fingerprint }
+        witnessSearcher := .reused p, fingerprint := some fingerprint }
     pure (some { head with scalars := scalars })
   | _ =>
-    let some src := entrySource won | return none
+    let some src := entrySearcher won | return none
     let head : HintEntry :=
       { preset := ctx.preset, disjunctIndex := d.index, side := d.side,
-        source := src, fingerprint := some fingerprint }
+        witnessSearcher := src, fingerprint := some fingerprint }
     match src with
     | .base | .manual => pure (some head)
     | .bitVec => do
@@ -580,7 +581,7 @@ def Hint.runHintField (mode : HintMode) (file? : Option HintFile)
       else if found.any (·.2 == .staleReplayed) then some "stale-replayed"
       else some "replayed"
 
-/-! ## The source -/
+/-! ## The searcher -/
 
 /-- The entry one file holds for a preset, disjunct, and side. -/
 def Hint.entryFor (f : HintFile) (preset : PresetId) (disjunctIndex : Nat)
@@ -588,19 +589,19 @@ def Hint.entryFor (f : HintFile) (preset : PresetId) (disjunctIndex : Nat)
   f.entries.find? fun e =>
     e.preset == preset && e.disjunctIndex == disjunctIndex && e.side == side
 
-/-- The hint source (§9.8). `applies` reads the loaded file, so the run
+/-- The hint searcher (§9.8). `applies` reads the loaded file, so the run
 loads it once and the search never touches the disk. `search` rebuilds
 the candidate and checks it with the probe, so the log knows the answer;
 the search loop's own check runs the same pure function again and is the
 single arbiter (§9.3). The mode is the caller's: `ignore` never applies,
-and `require` is the command's error at the loop, because a source's
+and `require` is the command's error at the loop, because a searcher's
 `nothing` cannot fail a build. -/
-def Hint.source (mode : HintMode) (file? : Option HintFile)
+def Hint.searcher (mode : HintMode) (file? : Option HintFile)
     (fingerprint : String) (log : IO.Ref (Array (Nat × HintAttempt))) :
-    WitnessSource where
+    WitnessSearcher where
   -- the tag never names a record: every candidate carries its origin
   -- override, and the tag shows only in a `notFound` reason's tried
-  -- list, where it reads as the hint source's attempt
+  -- list, where it reads as the hint searcher's attempt
   tag := .hinted .base
   applies ctx _ d :=
     mode != .ignore &&
@@ -610,9 +611,9 @@ def Hint.source (mode : HintMode) (file? : Option HintFile)
         match Hint.entryFor f ctx.preset d.index d.side with
         | none => false
         -- a notFound entry records the disjunct's empty answer; the
-        -- command's disjunct loop answers it before the sources run
+        -- command's disjunct loop answers it before the searchers run
         -- (the plan's stage-6 step 9)
-        | some e => e.notFound.isNone && Hint.rebuildable e.source)
+        | some e => e.notFound.isNone && Hint.rebuildable e.witnessSearcher)
   search ctx stmt d := do
     let some f := file? | return .nothing
     let some e := Hint.entryFor f ctx.preset d.index d.side
@@ -626,7 +627,7 @@ def Hint.source (mode : HintMode) (file? : Option HintFile)
     | none =>
       log.set ((← log.get) ++ #[(d.index, attempt)])
       return .nothing
-        (some "the hint's source carries no rebuildable candidate")
+        (some "the hint's searcher carries no rebuildable candidate")
     | some a =>
       -- §9.4, the stage-4 outcome: the bounds gate runs before the
       -- check, so a stale hint's rebuilt candidate never sends an
@@ -638,16 +639,16 @@ def Hint.source (mode : HintMode) (file? : Option HintFile)
             | false => .replayed
             | true => .staleReplayed
           log.set ((← log.get) ++ #[(d.index, ok)])
-          -- the replayed winner: the record's source names the hint with
-          -- the source it replays. A reused entry (§10) replays as
+          -- the replayed winner: the record's `witnessSearcher` names the
+          -- hint with the searcher it replays. A reused entry (§10) replays as
           -- `.hinted (.reused p)`, which keeps §9.8's promise that a
           -- committed second-preset entry replays under a tag the
           -- record reader reads back; a hand-edited `hinted-x` entry
           -- unwraps once, the same as before
-          let orig : WitnessSourceTag :=
-            match e.source with
+          let orig : WitnessSearcherTag :=
+            match e.witnessSearcher with
             | .reused p => .reused p
-            | t => (entrySource t).getD .base
+            | t => (entrySearcher t).getD .base
           return .candidate a (some (.hinted orig))
       log.set ((← log.get) ++ #[(d.index, attempt)])
       return .nothing

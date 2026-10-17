@@ -53,15 +53,15 @@ instance : FromJson ShapeTag where
     | some t => return t
     | none => throw s!"unknown shape tag '{s}'"
 
-instance : ToJson WitnessSourceTag where
+instance : ToJson WitnessSearcherTag where
   toJson s := .str s.tag
 
-instance : FromJson WitnessSourceTag where
+instance : FromJson WitnessSearcherTag where
   fromJson? j := do
     let s ← j.getStr?
-    match WitnessSourceTag.ofTag? s with
+    match WitnessSearcherTag.ofTag? s with
     | some t => return t
-    | none => throw s!"unknown witness source tag '{s}'"
+    | none => throw s!"unknown witness searcher tag '{s}'"
 
 /-! ## The record -/
 
@@ -105,8 +105,8 @@ structure VectorRecord where
   output    : Option VectorValue
   /-- The error's `repr`, `.runError` only. -/
   error     : Option String
-  /-- The witness source that won. -/
-  source    : WitnessSourceTag
+  /-- The witness searcher that won. -/
+  witnessSearcher : WitnessSearcherTag
   deriving ToJson, FromJson
 
 /-- Build one recorded value from a run's outputs (`THEOREM_VECTORS_ARCHITECTURE.md`

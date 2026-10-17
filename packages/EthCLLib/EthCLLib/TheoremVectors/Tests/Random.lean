@@ -6,7 +6,7 @@ import EthCLLib.TheoremVectors.Scope
 import EthCLLib.TheoremVectors.Prepare
 import EthCLLib.TheoremVectors.Probe
 import EthCLLib.TheoremVectors.Execute
-import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Searcher
 import EthCLLib.TheoremVectors.Witness.Base
 import EthCLLib.TheoremVectors.Witness.BitVec
 import EthCLLib.TheoremVectors.Witness.Random
@@ -15,14 +15,14 @@ import EthCLLib.TheoremVectors.Tests.ToyFork
 import EthCLLib.TheoremVectors.Tests.Support
 
 /-!
-# `EthCLLib.TheoremVectors.Tests.Random`: the draw, the random source, the shrink
+# `EthCLLib.TheoremVectors.Tests.Random`: the draw, the random searcher, the shrink
 
 Build-gate checks for stage 4 (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4, §9.5,
 §9.6), over a toy container:
 
 - the generic `SSZRepr` draw (§9.5) produces bytes the strict decode
   accepts, and the same seed draws the same bytes twice;
-- the random source (§9.4) wins a container theorem with no manual
+- the random searcher (§9.4) wins a container theorem with no manual
   terms: it draws, grounds the hypothesis's container read, and hands
   the disjunct to the loop's check;
 - the shrink (§9.6) reaches a witness whose bytes are smaller than the
@@ -33,8 +33,8 @@ Build-gate checks for stage 4 (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4, §9.5,
   draws at mainnet, so the cap keys on the state type alone.
 
 The toy binding's `stateType` is the toy container itself, so the base
-source refuses it the way it refuses the fork's state (§9.4), and the
-random source is what finds the witness.
+searcher refuses it the way it refuses the fork's state (§9.4), and the
+random searcher is what finds the witness.
 
 ## Lean idioms annotated
 
@@ -64,7 +64,7 @@ structure ToyBox where
 /-- The toy function under test. -/
 def toyTag (b : ToyBox) : UInt64 := b.tag
 
-/-- The random source's drive theorem: the hypothesis reads the drawn
+/-- The random searcher's drive theorem: the hypothesis reads the drawn
 container, the conclusion is the bound the executor records. -/
 theorem toyBoxBound [HasherTag] (b : ToyBox) (h : b.tag < 10) :
     toyTag b < 1000 := by
@@ -123,16 +123,16 @@ run_cmd do
         | .ok _ => pure ()
         | .error e =>
           throwError s!"the draw's bytes did not decode: {repr e}"
-      -- ── the random source's drive (§9.4): no manual terms, the base
-      -- source refuses the state-typed container, the random source wins
-      let sources : Array WitnessSource := #[baseSource, bitVecSource, randomSource]
+      -- ── the random searcher's drive (§9.4): no manual terms, the base
+      -- searcher refuses the state-typed container, the random searcher wins
+      let searchers : Array WitnessSearcher := #[baseSearcher, bitVecSearcher, randomSearcher]
       let sctx ← Tests.Support.searchCtxOf binding .minimal
         Tests.ToyFork.scratchOutDir "" stmt ctx info probe
       let d := disjuncts[0]!
-      match ← searchDisjunct sources sctx stmt d with
+      match ← searchDisjunct searchers sctx stmt d with
       | .ok (a, won) =>
         unless won == .random do
-          throwError s!"expected the random source to win, got {won.tag}"
+          throwError s!"expected the random searcher to win, got {won.tag}"
         unless probe.check d.index a do
           throwError "the random witness failed the check"
         -- ── the shrink pin (§9.6): a smaller value or smaller bytes,
@@ -145,7 +145,7 @@ run_cmd do
           throwError s!"the shrunk container is not smaller \
             ({shrunk[0]!.size} against {a[0]!.size})"
       | .error f =>
-        throwError s!"the random source found no witness: {repr f}"
+        throwError s!"the random searcher found no witness: {repr f}"
     -- ── the two-read entry (§9.4, the stage-4 outcome): one maximal
     -- container-mentioning subterm holding two guarded reads, whose
     -- checks fold innermost first, and a drawn list gates both
@@ -166,11 +166,11 @@ run_cmd do
       -- evaluating them
       let sctx2 ← Tests.Support.searchCtxOf binding .minimal
         Tests.ToyFork.scratchOutDir "" stmt ctx info probe
-      let sources2 : Array WitnessSource := #[baseSource, bitVecSource, randomSource]
-      match ← searchDisjunct sources2 sctx2 stmt d with
+      let searchers2 : Array WitnessSearcher := #[baseSearcher, bitVecSearcher, randomSearcher]
+      match ← searchDisjunct searchers2 sctx2 stmt d with
       | .ok (a, won) =>
         unless won == .random do
-          throwError s!"toyTwoReads: expected the random source to win, \
+          throwError s!"toyTwoReads: expected the random searcher to win, \
             got {won.tag}"
         unless (probe.safe d.index a).all (· == true) do
           throwError "toyTwoReads: the winning candidate passed an unsafe \
@@ -180,7 +180,7 @@ run_cmd do
       | .error f =>
         throwError s!"toyTwoReads: the search found nothing: {repr f}"
     -- ── the mainnet cap (§9.4): the toy state is the statement's
-    -- container input, so at mainnet the random source answers
+    -- container input, so at mainnet the random searcher answers
     -- `nothing` before any draw runs, and at minimal the same statement
     -- still draws
     Statement.readIn binding
@@ -194,7 +194,7 @@ run_cmd do
       let (infoM, probeM) ← builtProbe toyBoxBinding ctx disjuncts .mainnet
       let sctxM ← Tests.Support.searchCtxOf binding .mainnet
         Tests.ToyFork.scratchOutDir "" stmt ctx infoM probeM
-      match ← randomSource.search sctxM stmt d with
+      match ← randomSearcher.search sctxM stmt d with
       | .nothing (some r) =>
         unless r.contains "mainnet cap" do
           throwError s!"cap drive: the mainnet reason does not name the \
@@ -208,7 +208,7 @@ run_cmd do
       let (info, probe) ← builtProbe toyBoxBinding ctx disjuncts .minimal
       let sctx ← Tests.Support.searchCtxOf binding .minimal
         Tests.ToyFork.scratchOutDir "" stmt ctx info probe
-      match ← randomSource.search sctx stmt d with
+      match ← randomSearcher.search sctx stmt d with
       | .candidate a =>
         unless probe.check d.index a do
           throwError "cap drive: the minimal draw failed the check"
@@ -223,7 +223,7 @@ run_cmd do
         .mainnet
       let sctxP ← Tests.Support.searchCtxOf Tests.ToyFork.toyBinding .mainnet
         Tests.ToyFork.scratchOutDir "" stmt ctx infoP probeP
-      match ← randomSource.search sctxP stmt d with
+      match ← randomSearcher.search sctxP stmt d with
       | .candidate a =>
         if (← sctxP.drawMemo.get).isEmpty then
           throwError "cap drive: the `Nat` state type's mainnet drive \

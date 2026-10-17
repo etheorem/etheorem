@@ -103,7 +103,7 @@ def toyRunOkRecord : VectorRecord :=
                   value := .ssz (toyRoot toyPre) }],
     output := some { name := `output, type := toyStateType,
                      value := .ssz (toyRoot toyPost) },
-    error := none, source := .base }
+    error := none, witnessSearcher := .base }
 
 /-- The same record with an `.eq` shape: the pyspec format refuses it. -/
 def toyEqRecord : VectorRecord := { toyRunOkRecord with shape := .eq }
@@ -127,7 +127,7 @@ def toyRunErrorRecord : VectorRecord :=
     shape := .runError, disjunctIndex := 0, side := none,
     inputs := #[{ name := `state, type := toyStateType,
                   value := .ssz (toyRoot toyPre) }],
-    output := none, error := some (reprStr "boom"), source := .base }
+    output := none, error := some (reprStr "boom"), witnessSearcher := .base }
 
 /-- The same `.runOk` record with the toy fail action as the target: a
 valid marking (`post.ssz` present) whose dispatch rejects. The driver's
@@ -149,7 +149,7 @@ def toyFlaggedRecord : VectorRecord :=
     inputs := #[{ name := `state, type := toyStateType,
                   value := .ssz (toyRoot toyPre) }],
     output := none, error := some (reprStr (SizzLean.Cache.IndexError.indexError 5 1)),
-    source := .base }
+    witnessSearcher := .base }
 
 /-- One check outcome that must answer `passed`. -/
 private def checkOutcome (label : String) (r : CheckResult) : IO Unit :=

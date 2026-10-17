@@ -36,10 +36,10 @@ container-reading subterms at the candidate's bytes (§9.4). `build` runs
 the binding's named builders (§9.9), dispatching on the catalog index and
 serializing through the state input's codec, and answers empty bytes for
 a statement with no state input; `defaults` holds the serialized
-`default` of every input, which the base source (§9.4) hands to `check`
+`default` of every input, which the base searcher (§9.4) hands to `check`
 as its candidate. The §11.1 sketch's face table lists every field of the
 structure above, `defaults` and the `reads` disjunct index included. The
-base source needs `defaults`, and no other probe function supplies it.
+base searcher needs `defaults`, and no other probe function supplies it.
 §9.2 already gave `check` the same disjunct index, and the reads are the
 disjunct's hypotheses' subterms. `IMPLEMENTATION_NOTES.md` records, stage
 by stage, the fields whose sketches predated them.
@@ -62,7 +62,7 @@ deviation:
   class). A `Fin`-typed input (`initializePtcWindow_lt`'s window offset)
   has no `SSZRepr` instance, because a total decode from bytes cannot
   respect `Fin`'s bound; its codec is the `uintN 64` little-endian
-  encoding of `Fin.val`, the same scalar family §9.4's bit-vector source
+  encoding of `Fin.val`, the same scalar family §9.4's bit-vector searcher
   puts `Fin n` in.
 
 ## Lean idioms annotated
@@ -124,7 +124,7 @@ def runProbeError {ε α σ : Type} (r : Except ε (α × σ)) : Option ε :=
 input type has one, because every input crosses the byte boundary twice:
 serialized into a candidate, decoded inside `check` and `run`.
 
-`default` is the base source's candidate value (§9.4), `none` when the
+`default` is the base searcher's candidate value (§9.4), `none` when the
 type has no total default. `Fin n` is why the field exists: its default
 `⟨0, _⟩` needs `0 < n`, which an `Inhabited` instance cannot carry (there
 is no `NeZero (3 * slotsPerEpoch)` to synthesize), and the codec's own
@@ -132,7 +132,7 @@ is no `NeZero (3 * slotsPerEpoch)` to synthesize), and the codec's own
 class ScalarCodec (T : Type) where
   encode : T → ByteArray
   decode : ByteArray → Option T
-  /-- The `default` the base source serializes, when the type has one. -/
+  /-- The `default` the base searcher serializes, when the type has one. -/
   default : Option T := none
 
 instance {T : Type} [r : SSZRepr T] [Inhabited T] : ScalarCodec T where
@@ -171,7 +171,7 @@ def decodeInput {T : Type} [ScalarCodec T] (bytes : Array ByteArray)
   | some b => ScalarCodec.decode b
   | none => none
 
-/-- `Fin n` uses the same scalar family §9.4's bit-vector source puts it
+/-- `Fin n` uses the same scalar family §9.4's bit-vector searcher puts it
 in: the `uintN 64` little-endian encoding of `Fin.val`. `SSZRepr (Fin n)`
 cannot exist, because a total decode would have to turn every byte string
 into a value below `n`; a value at or above `n` is a corrupt record, so the
@@ -325,7 +325,7 @@ structure Probe where
   positions' draws stay unevaluated. A position's draw depends only on
   the seed, the size, and the position (`mixHash seed (i + 1)` inside
   `sampleOne`), so the two faces agree byte for byte at every position.
-  The built source reads its side containers through this face, so a
+  The built searcher reads its side containers through this face, so a
   statement whose state sits beside another container input never
   samples the state's draw (§9.9). -/
   sampleAt : (seed size pos : Nat) → ByteArray
@@ -346,7 +346,7 @@ structure Probe where
   (§9.4). -/
   manuals : Array (Nat × ByteArray)
   /-- The serialized `default` of every input, in binder order: the base
-  source's candidate (§9.4). -/
+  searcher's candidate (§9.4). -/
   defaults : Array ByteArray
   /-- Run the named builder (an index into the binding's catalog) and
   serialize the state it produces; empty bytes when the statement has no
@@ -484,7 +484,7 @@ catalog's builders (`Builders.Gloas.advanced`), constants that carry the
 them (the catalog's builders pin the hasher locally, so the binder
 appears only where a body names it). The fork's `Const.slotsPerEpoch`,
 which the grid's epoch boundary reads, is a zero-argument constant the
-built source applies by hand, outside this walk. -/
+built searcher applies by hand, outside this walk. -/
 -- `partial` because the walk instantiates each binder's body before it
 -- descends (`instantiate1`), which hides the subterm the structural
 -- recursion would need.
@@ -899,7 +899,7 @@ place in the residual formula. A node that mentions no container input
 stays in the residual formula for the solver. The walk never enters a
 lambda or a `let` body, because a term under a binder has no runtime
 value to evaluate at. Both the probe's `reads` face and the random
-source's substitution walk this same function, which is what keeps the
+searcher's substitution walk this same function, which is what keeps the
 serialized reads aligned with the subterms they replace. -/
 private partial def collectReads (containerIds : Array FVarId) (e : Expr)
     (acc : Array Expr) : MetaM (Array Expr) := do
@@ -1301,7 +1301,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
 
         -- §9.4: the container reads. Per disjunct, the plan the walk
         -- produces; the probe evaluates it at the candidate's bytes, so
-        -- the random source's substitution and the compiled values stay aligned.
+        -- the random searcher's substitution and the compiled values stay aligned.
         -- the statement's own kind table, the reader computed once (§9.4)
         let containerFlags : Array (Option FVarId) :=
           (Array.range ctx.inputFvars.size).map fun i =>
@@ -1337,7 +1337,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
           -- the candidate's bytes. A point or candidate the face answers
           -- `false` for never reaches the compiled `reads` or `check`, so
           -- no panic reaches compiled code. The face is pure over the
-          -- decoded inputs, so the sources can gate on it before they
+          -- decoded inputs, so the searchers can gate on it before they
           -- evaluate anything else.
           let checks : Array Expr ← plan.mapM fun r => do
             entrySafeTerm <$> (← detectReadBounds r #[]).mapM fun (coll, idx) => do
@@ -1367,9 +1367,9 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
           pure (mkAppN (.const ``Prod.mk [levelZero, levelZero])
             #[.const ``Nat [], .const ``ByteArray [],
               mkRawNatLit pos, encodeCall t inst sterm])
-        -- the defaults: the base source's candidate (§9.4). A type with no
+        -- the defaults: the base searcher's candidate (§9.4). A type with no
         -- total default (`Fin 0`) encodes the empty byte string, which the
-        -- check rejects, so the base source fails that disjunct honestly.
+        -- check rejects, so the base searcher fails that disjunct honestly.
         let defaultsLit := mkArrayLit (.const ``ByteArray [])
           ((Array.zip inputTys codecInsts).map fun (t, codec) =>
             optGetD (.const ``ByteArray [])
@@ -1466,7 +1466,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
         -- runs the named builder with the preset's instances bound and
         -- serializes the state it produces through the state input's codec.
         -- A statement with no state input keeps the empty stub: the built
-        -- source applies to exactly one state input, so the face is never
+        -- searcher applies to exactly one state input, so the face is never
         -- called on it.
         let statePos? := (Array.range inputTys.size).find? fun i =>
           match inputTys[i]!.getAppFn with

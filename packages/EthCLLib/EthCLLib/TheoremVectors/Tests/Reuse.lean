@@ -5,7 +5,7 @@ import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Scope
 import EthCLLib.TheoremVectors.Prepare
 import EthCLLib.TheoremVectors.Probe
-import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Searcher
 import EthCLLib.TheoremVectors.Witness.Hint
 import EthCLLib.TheoremVectors.Witness.Base
 import EthCLLib.TheoremVectors.Witness.BitVec
@@ -18,17 +18,17 @@ import EthCLLib.TheoremVectors.Tests.Support
 
 Build-gate checks for §10's witness reuse over a two-preset toy fork
 (`THEOREM_VECTORS_ARCHITECTURE.md` §10), driving the machinery task 1
-landed: `Preset.presetFree`, `reuseSource`, the `.reused` hint arms, and
+landed: `Preset.presetFree`, `reuseSearcher`, the `.reused` hint arms, and
 the command's `winsRef` threading.
 
 The command drive runs three scalar theorems at `minimal mainnet`:
 
 - `toyReuse`'s hypothesis `0 < x ∧ x < P.bound` excludes the base
-  source's serialized default `0`, so the minimal run's witness is the
+  searcher's serialized default `0`, so the minimal run's witness is the
   solver's choice in `[1, 7]`: the minimal record names `bitVec`, and
   its hint entry carries the scalar table. Every value in `[1, 7]`
   satisfies `0 < x ∧ x < 32`, so the mainnet run wins from the reuse
-  source: its record names `reused-minimal`, its bytes equal the
+  searcher: its record names `reused-minimal`, its bytes equal the
   minimal record's, and its hint entry holds the carried scalar table.
   The carry is a solver-chosen nonzero value, so a `scalarsOf` write
   regression that recorded a wrong value cannot pass: the replay drive
@@ -42,8 +42,8 @@ The command drive runs three scalar theorems at `minimal mainnet`:
   no rejected proposal.
 - `toyPresetBound`'s input type names the preset's own constant, so the
   preset-free type check marks the statement preset-bound and the reuse
-  source never proposes at either preset: both runs search. The
-  mainnet run's source names `bitVec` and no `reused-*` tag, the
+  searcher never proposes at either preset: both runs search. The
+  mainnet run's searcher names `bitVec` and no `reused-*` tag, the
   negative pin on `Preset.presetFree`: a check that answered `true`
   universally would carry the minimal witness, because the same bytes
   satisfy `1 < i.val` under both bounds, and name `reused-minimal` at
@@ -51,7 +51,7 @@ The command drive runs three scalar theorems at `minimal mainnet`:
 
 The direct drives then pin the second-preset hint machinery on the files
 the command drive wrote: the mainnet entry rebuilds from its scalar table
-to the minimal record's bytes, and a fresh `Hint.source` replay at mainnet
+to the minimal record's bytes, and a fresh `Hint.searcher` replay at mainnet
 wins with the tag `.hinted (.reused .minimal)` and logs one `replayed`
 attempt.
 
@@ -94,10 +94,10 @@ def reuseFun (x : UInt64) : UInt64 := x
 def reseekFun (x : UInt64) : UInt64 := x
 
 /-- The minimal witness is the solver's choice in `[1, 7]`: the base
-source's serialized default `0` fails `0 < x`, so the bit-vector source
-wins and the minimal entry carries the scalar table. Every value in
+searcher's serialized default `0` fails `0 < x`, so the bit-vector
+searcher wins and the minimal entry carries the scalar table. Every value in
 `[1, 7]` satisfies `0 < x ∧ x < 32`, so the mainnet check accepts the
-carried candidate and the reuse source carries it over unchanged. -/
+carried candidate and the reuse searcher carries it over unchanged. -/
 theorem toyReuse [P : Preset] (x : UInt64) (_h : 0 < x ∧ x < P.bound) :
     reuseFun x = x := rfl
 
@@ -118,7 +118,7 @@ theorem toyReseek [P : Preset] (x : UInt64)
 def presetBoundFun (n : Nat) : Nat := n
 
 /-- The input type names the preset's own constant, so the type check
-marks the statement preset-bound and the reuse source never proposes:
+marks the statement preset-bound and the reuse searcher never proposes:
 both runs search. -/
 theorem toyPresetBound [P : Preset] (i : Fin (2 * P.bound.toNat))
     (_h : 1 < i.val) : presetBoundFun i.val = i.val := rfl
@@ -165,21 +165,21 @@ theorem_vectors EthCLLib.TheoremVectors.Tests.Reuse.toyReseek presets minimal ma
 theorem_vectors EthCLLib.TheoremVectors.Tests.Reuse.toyPresetBound presets minimal mainnet
 
 /-- Read one outcome file back and pin the two runs' shapes: the preset,
-the status, and the source tag each run wrote. -/
-private def pinRuns (o : Outcome) (minimalSource mainnetSource : String) :
+the status, and the searcher tag each run wrote. -/
+private def pinRuns (o : Outcome) (minimalSearcher mainnetSearcher : String) :
     CommandElabM Unit := do
   unless o.runs.size == 2 do
     throwError s!"{o.theorem}: {o.runs.size} runs, expected 2"
   let r0 := o.runs[0]!
   unless r0.preset == some .minimal && r0.status == .written &&
-      r0.source == some minimalSource do
+      r0.witnessSearcher == some minimalSearcher do
     throwError s!"{o.theorem}: the minimal run is {repr r0}, expected \
-      minimal / written / {minimalSource}"
+      minimal / written / {minimalSearcher}"
   let r1 := o.runs[1]!
   unless r1.preset == some .mainnet && r1.status == .written &&
-      r1.source == some mainnetSource do
+      r1.witnessSearcher == some mainnetSearcher do
     throwError s!"{o.theorem}: the mainnet run is {repr r1}, expected \
-      mainnet / written / {mainnetSource}"
+      mainnet / written / {mainnetSearcher}"
 
 -- The command drive's answers: the reuse theorem's minimal witness is
 -- the solver's choice in `[1, 7]` (the base default `0` fails `0 < x`),
@@ -189,8 +189,8 @@ private def pinRuns (o : Outcome) (minimalSource mainnetSource : String) :
 -- theorem's windows are disjoint, so both of its runs searched. The
 -- preset-bound theorem's input type names the preset, so reuse never
 -- proposes for it: both runs searched fresh. The reuse theorem's
--- minimal run is won by the bit-vector source, because the base
--- source's serialized default `0` fails `0 < x`.
+-- minimal run is won by the bit-vector searcher, because the base
+-- searcher's serialized default `0` fails `0 < x`.
 run_cmd do
   pinRuns (← readOutcome `EthCLLib.TheoremVectors.Tests.Reuse.toyReuse)
     "bitVec" "reused-minimal"
@@ -204,18 +204,18 @@ run_cmd do
     "bitVec" "bitVec"
 
   -- ── the records: the reuse theorem's two records carry byte-identical
-  -- witnesses, and the mainnet record's source reads back as
+  -- witnesses, and the mainnet record's searcher reads back as
   -- `.reused .minimal` through the tag reader's `reused-` prefix
   let reuseMin ← liftIO <| Record.read (recordDirOf
     `EthCLLib.TheoremVectors.Tests.Reuse.toyReuse .minimal)
   let reuseMain ← liftIO <| Record.read (recordDirOf
     `EthCLLib.TheoremVectors.Tests.Reuse.toyReuse .mainnet)
-  unless reuseMin.record.source == .bitVec do
-    throwError s!"toyReuse: the minimal record's source is \
-      {reuseMin.record.source.tag}, expected bitVec"
-  unless reuseMain.record.source == .reused .minimal do
-    throwError s!"toyReuse: the mainnet record's source is \
-      {reuseMain.record.source.tag}, expected reused-minimal"
+  unless reuseMin.record.witnessSearcher == .bitVec do
+    throwError s!"toyReuse: the minimal record's searcher is \
+      {reuseMin.record.witnessSearcher.tag}, expected bitVec"
+  unless reuseMain.record.witnessSearcher == .reused .minimal do
+    throwError s!"toyReuse: the mainnet record's searcher is \
+      {reuseMain.record.witnessSearcher.tag}, expected reused-minimal"
   unless reuseMin.inputBytes == reuseMain.inputBytes do
     throwError "toyReuse: the mainnet record's input bytes differ from \
       the minimal record's; the witness did not carry over unchanged"
@@ -234,12 +234,12 @@ run_cmd do
     `EthCLLib.TheoremVectors.Tests.Reuse.toyReseek .minimal)
   let reseekMain ← liftIO <| Record.read (recordDirOf
     `EthCLLib.TheoremVectors.Tests.Reuse.toyReseek .mainnet)
-  unless reseekMin.record.source == .bitVec do
-    throwError s!"toyReseek: the minimal record's source is \
-      {reseekMin.record.source.tag}, expected bitVec"
-  unless reseekMain.record.source == .bitVec do
-    throwError s!"toyReseek: the mainnet record's source is \
-      {reseekMain.record.source.tag}, expected bitVec"
+  unless reseekMin.record.witnessSearcher == .bitVec do
+    throwError s!"toyReseek: the minimal record's searcher is \
+      {reseekMin.record.witnessSearcher.tag}, expected bitVec"
+  unless reseekMain.record.witnessSearcher == .bitVec do
+    throwError s!"toyReseek: the mainnet record's searcher is \
+      {reseekMain.record.witnessSearcher.tag}, expected bitVec"
   unless reseekMin.inputBytes != reseekMain.inputBytes do
     throwError "toyReseek: the mainnet record's input bytes equal the \
       minimal record's; a fresh search should have run"
@@ -267,14 +267,14 @@ run_cmd do
     | throwError "toyReuse: the hint file holds no minimal entry"
   let some reuseMainE := reuseFile.entries.find? fun e => e.preset == .mainnet
     | throwError "toyReuse: the hint file holds no mainnet entry"
-  unless reuseMinE.source == .bitVec do
+  unless reuseMinE.witnessSearcher == .bitVec do
     throwError s!"toyReuse: the minimal entry names \
-      {reuseMinE.source.tag}, expected bitVec"
+      {reuseMinE.witnessSearcher.tag}, expected bitVec"
   unless reuseMinE.scalars.scalars.any fun (n, _) => n == "x" do
     throwError "toyReuse: the minimal entry holds no scalar for `x`"
-  unless reuseMainE.source == .reused .minimal do
+  unless reuseMainE.witnessSearcher == .reused .minimal do
     throwError s!"toyReuse: the mainnet entry names \
-      {reuseMainE.source.tag}, expected reused-minimal"
+      {reuseMainE.witnessSearcher.tag}, expected reused-minimal"
   unless reuseMainE.scalars.scalars.any fun (n, _) => n == "x" do
     throwError "toyReuse: the mainnet entry holds no scalar for `x`"
   let some reseekFile ← liftIO <| readHints
@@ -284,16 +284,16 @@ run_cmd do
     | throwError "toyReseek: the hint file holds no minimal entry"
   let some reseekMainE := reseekFile.entries.find? fun e => e.preset == .mainnet
     | throwError "toyReseek: the hint file holds no mainnet entry"
-  unless reseekMinE.source == .bitVec do
+  unless reseekMinE.witnessSearcher == .bitVec do
     throwError s!"toyReseek: the minimal entry names \
-      {reseekMinE.source.tag}, expected bitVec"
-  unless reseekMainE.source == .bitVec do
+      {reseekMinE.witnessSearcher.tag}, expected bitVec"
+  unless reseekMainE.witnessSearcher == .bitVec do
     throwError s!"toyReseek: the mainnet entry names \
-      {reseekMainE.source.tag}, expected bitVec"
+      {reseekMainE.witnessSearcher.tag}, expected bitVec"
 
 -- The replay drive at mainnet, on the files the command drive wrote: the
 -- mainnet entry's fingerprint matches a fresh probe's, the scalar-table
--- rebuild answers the minimal record's bytes, and the hint source replays
+-- rebuild answers the minimal record's bytes, and the hint searcher replays
 -- the entry under `.hinted (.reused .minimal)` with one `replayed` log
 -- line.
 run_cmd do
@@ -341,11 +341,11 @@ run_cmd do
       unless Tests.Support.leOf mutatedB[0]! == 24 do
         throwError s!"toyReuse: the mutated entry rebuilt \
           {Tests.Support.leOf mutatedB[0]!}, expected 24"
-      -- the replay: the hint source runs first and wins under
+      -- the replay: the hint searcher runs first and wins under
       -- `.hinted (.reused .minimal)`
       let log ← IO.mkRef (#[] : Array (Nat × HintAttempt))
-      let hintSrc := Hint.source .use (some file) fp log
-      match ← searchDisjunct #[hintSrc, baseSource, bitVecSource] sctx stmt d with
+      let hintSearcher := Hint.searcher .use (some file) fp log
+      match ← searchDisjunct #[hintSearcher, baseSearcher, bitVecSearcher] sctx stmt d with
       | .ok (a, won) =>
         unless won == .hinted (.reused .minimal) do
           throwError s!"toyReuse: expected a `.hinted (.reused .minimal)` \

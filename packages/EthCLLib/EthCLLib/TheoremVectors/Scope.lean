@@ -10,7 +10,7 @@ The scope walk over input types (`THEOREM_VECTORS_ARCHITECTURE.md` §7.4). A typ
 scope when its constant applications touch one of the binding's block
 types, directly or through a structure's fields or a container's element
 type; every hit goes in the statement's `blockInputs`, and only the base
-source may run on such a theorem (§1.2). A function-typed input is a
+searcher may run on such a theorem (§1.2). A function-typed input is a
 separate hit and makes the statement `.unsupported` (§7.4), the fold §7.5
 reports as a skip.
 

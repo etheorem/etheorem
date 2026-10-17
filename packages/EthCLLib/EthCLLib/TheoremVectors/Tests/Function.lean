@@ -39,7 +39,7 @@ def toyRecord (specName : Option String) : VectorRecord :=
     fork := "toyrun", preset := .minimal,
     target := some `EthCLLib.TheoremVectors.Tests.ToyRun.toySetBal,
     specName, shape := .runOk, disjunctIndex := 0, side := none,
-    inputs := #[], output := none, error := none, source := .base }
+    inputs := #[], output := none, error := none, witnessSearcher := .base }
 
 /-- The `function:` line of a rendered file. -/
 private def functionLine (file : System.FilePath) : IO String := do

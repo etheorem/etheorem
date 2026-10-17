@@ -22,7 +22,7 @@ Two manual inputs serve the window theorems:
   `computePtcFromFulu`'s balance-weighted selection into its 10,000,000
   iteration fuel bound per empty committee (a valid state fills the
   selection within the bound, so the loop never spins), which makes the
-  base source's default candidate unevaluatable for the window theorems;
+  base searcher's default candidate unevaluatable for the window theorems;
   an active committee fills in a few dozen iterations.
 
 Two manual inputs serve
@@ -32,12 +32,12 @@ Two manual inputs serve
   increasing attesting indices, so `isValidIndexedPayloadAttestation`'s
   true-side conjunction holds at the manual terms. The false-side
   disjuncts need containers the manual terms do not vary; the random
-  source draws them (§9.2). `canBuilderCoverBid_iff` runs termless; the
-  random source draws its state (§9.4).
+  searcher draws them (§9.2). `canBuilderCoverBid_iff` runs termless; the
+  random searcher draws its state (§9.4).
 
 One manual input serves `initiateBuilderExit_run_eq`:
 
-- `builderState` is the `built` source's `withQueue` grid step (16
+- `builderState` is the `built` searcher's `withQueue` grid step (16
   validators, slot 40, four queued deposits, two builders onboarded by
   the spec's own onboarding step), so the theorem's in-range hypothesis
   holds at a registry the spec itself put there. The automatic search
@@ -103,8 +103,8 @@ def activeState [Preset] : EthCLSpecs.Fulu.BeaconState :=
 
 /-! ## The builder-registry manual state -/
 
-/-- The manual state for `initiateBuilderExit_run_eq`: the `built` source's
-`withQueue` grid step (16 validators, slot 40, queue 4), whose four queued
+/-- The manual state for `initiateBuilderExit_run_eq`: the `built`
+searcher's `withQueue` grid step (16 validators, slot 40, queue 4), whose four queued
 deposits drain through `onboardBuildersFromPendingDeposits` into a
 two-builder registry. The theorem's in-range hypothesis holds at the
 registry the spec's own onboarding step put there, and the named line

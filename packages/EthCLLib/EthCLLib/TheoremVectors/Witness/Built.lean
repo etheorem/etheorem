@@ -3,24 +3,24 @@ import EthCLLib.TheoremVectors.Types
 import EthCLLib.TheoremVectors.ForkBinding
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Probe
-import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Searcher
 import EthCLLib.TheoremVectors.Witness.BitVec
 import EthCLLib.TheoremVectors.Witness.Random
 
 /-!
-# `EthCLLib.TheoremVectors.Witness.Built`: the state-builder source
+# `EthCLLib.TheoremVectors.Witness.Built`: the state-builder searcher
 
-The `built` source of §9.9: before the random source draws, the source
-walks the fork binding's builder catalog over a knob grid, cheapest
-first. A builder runs the spec itself, so its state is reachable. The
+The `built` searcher of §9.9: before the random searcher draws, the
+searcher walks the fork binding's builder catalog over a knob grid,
+cheapest first. A builder runs the spec itself, so its state is reachable. The
 invariants the spec maintains hold of it: activation epochs behind the
 slot, a balance list as long as the registry, a queue drained by the
 fork's own onboarding step. A field-by-field draw breaks them.
 
-At each grid step the source overlays the built bytes on the statement's
+At each grid step the searcher overlays the built bytes on the statement's
 one state input, draws every other container input the way the random
-source draws it (the shared memo, draw 0), and runs the same point loop
-the random source runs over a draw (§9.9: "the same loop"): ground the
+searcher draws it (the shared memo, draw 0), and runs the same point loop
+the random searcher runs over a draw (§9.9: "the same loop"): ground the
 disjunct's container reads at the built bytes, walk the coupled scalars'
 grid, and hand the residual to the solver. The probe's check stays the
 single arbiter.
@@ -46,7 +46,7 @@ once.
   compiled; a fork without the constant takes the upstream minimal value
   8. (`IMPLEMENTATION_NOTES.md` records the deviation.)
 - `Witness/Built.lean` imports `Witness.Random`, because §9.9 runs "the
-  same loop the random source runs over a draw", and that loop
+  same loop the random searcher runs over a draw", and that loop
   (`tryDraw`, `disjunctPlanOf`, `drawAt`) lives there.
 - A builder constant carries the fork's own instance binders beside
   `Knobs`, those its body uses (`[Preset] [Config]`, plus
@@ -57,7 +57,7 @@ once.
 
 ## Lean idioms annotated
 
-- `IO` in a source's `search`: `SearchM` is `MetaM`, whose monad stack
+- `IO` in a searcher's `search`: `SearchM` is `MetaM`, whose monad stack
   lifts `IO`, so the cache reads and writes are one `liftIO` away. The
   stamp check is a plain file-text comparison, never parsed.
 - `Name.getPrefix` drops a name's last atom, which turns the binding
@@ -171,7 +171,7 @@ def Built.stateBytes (outDir : System.FilePath) (forkTag : String)
     pure b
 
 /-- The built bytes one catalog entry produces, through the cache, at the
-search context's output root and stamp: the one face the source's walk,
+search context's output root and stamp: the one face the searcher's walk,
 the hint derivation, and the hint replay all call, which is what keeps a
 builder at one run per build per grid step (§9.9). An entry the catalog
 does not name answers the empty bytes, which the check rejects. -/
@@ -207,7 +207,7 @@ its own. -/
 def Built.stampOfBinding (bindingConst : Name) : IO String :=
   Built.stampOf bindingConst.getPrefix
 
-/-! ## The source -/
+/-! ## The searcher -/
 
 /-- The grid step whose built bytes the assignment carries at the state
 position, for the built hint row (§9.8): the builder's catalog display
@@ -231,11 +231,11 @@ def Built.findStep (ctx : SearchCtx) (cap : Nat) (a : Assignment)
       break
   return none
 
-/-- The `built` source (§9.9). Applies when no block input is in play and
+/-- The `built` searcher (§9.9). Applies when no block input is in play and
 exactly one input has the binding's state type. The walk stops at the
 first grid step whose point satisfies the disjunct, which is the knob
 shrink: cheaper steps ran first and failed (§9.9). -/
-def builtSource : WitnessSource where
+def builtSearcher : WitnessSearcher where
   tag := .built
   applies ctx stmt _ :=
     stmt.blockInputs.isEmpty &&
@@ -248,9 +248,9 @@ def builtSource : WitnessSource where
       return .nothing
     let steps ← builtStepsOf ctx.preset
     let grid := Built.grid ctx.epochBoundary
-    -- the per-disjunct pieces, shared with the random source (§9.4, §9.9)
+    -- the per-disjunct pieces, shared with the random searcher (§9.4, §9.9)
     let cp ← disjunctPlanOf ctx stmt d
-    -- every other container input draws the random source's draw 0, the
+    -- every other container input draws the random searcher's draw 0, the
     -- same memo, so a built witness's drawn bytes and a random one's
     -- agree position by position (§9.9). The draw samples the side
     -- positions alone, through the probe's per-position `sampleAt` face.

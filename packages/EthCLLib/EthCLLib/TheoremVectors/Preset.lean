@@ -118,7 +118,7 @@ private def typeIsPresetFree (env : Environment) (binding : ForkBinding)
 
 /-- The preset-free type check (`THEOREM_VECTORS_ARCHITECTURE.md` §10): is every input type
 of the statement free of the preset? The command runs this
-once per preset's run, before the search, and fills the reuse source's
+once per preset's run, before the search, and fills the reuse searcher's
 earlier-wins table only when it answers `true`. Facts worth naming: a
 `Slot` or `UInt64` input is preset-free, and `Fin (3 * slotsPerEpoch)` is
 preset-bound, because `slotsPerEpoch`'s own type takes the fork's

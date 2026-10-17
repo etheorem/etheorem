@@ -1,14 +1,14 @@
 import Lean
-import EthCLLib.TheoremVectors.Witness.Source
+import EthCLLib.TheoremVectors.Witness.Searcher
 
 /-!
-# `EthCLLib.TheoremVectors.Witness.Manual`: the manual source
+# `EthCLLib.TheoremVectors.Witness.Manual`: the manual searcher
 
-The manual source (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4): a named line's
+The manual searcher (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4): a named line's
 `with` clause fixes inputs to author-written terms. When the manual terms
 cover every input, the candidate is the manual bytes overlaid on the
 serialized defaults, checked like any other. When they cover a strict
-subset, the source answers `nothing` and the bit-vector source takes the
+subset, the searcher answers `nothing` and the bit-vector searcher takes the
 handoff: §9.4 hands the partial assignment to the solver for the rest.
 
 The build error of §18 (a manual term the check rejects) is the command's
@@ -16,7 +16,7 @@ line-level call now that theorems split into disjuncts: a term may satisfy
 the disjunct it was written for while another disjunct rejects it. The
 command errors when a fully-covering set of manual terms wins no disjunct
 of the run (§18's "the author claimed it works"), and a disjunct the
-manual terms alone fail falls through to the next source.
+manual terms alone fail falls through to the next searcher.
 -/
 
 set_option autoImplicit false
@@ -33,22 +33,22 @@ private def uncoveredHaveState (ctx : SearchCtx) (stmt : Statement) : Bool :=
   ((Array.range stmt.inputs.size).filter (fun i => !manualPos.contains i)).any
     (fun i => isStateType ctx.binding stmt.inputs[i]!.type)
 
-/-- The manual source (§9.4). Applies when the probe holds serialized
-manual bytes and no *uncovered* input is the fork's state: the source
+/-- The manual searcher (§9.4). Applies when the probe holds serialized
+manual bytes and no *uncovered* input is the fork's state: the searcher
 overlays the manual bytes on the serialized defaults, so an uncovered
 state input would take `default`, which §9.4's rule excludes. A covered
 state input is the author's own term and fills the overlay. The cover
 test (manual terms for every input, or the partial handoff to the
-bit-vector source) sits in `search`, which reads the line's manual terms
+bit-vector searcher) sits in `search`, which reads the line's manual terms
 against the statement. -/
-def manualSource : WitnessSource where
+def manualSearcher : WitnessSearcher where
   tag := .manual
   applies (ctx : SearchCtx) (stmt : Statement) (_ : Disjunct) :=
     !ctx.probe.manuals.isEmpty && !uncoveredHaveState ctx stmt
   search ctx stmt d := do
     unless ctx.manualTerms.size == stmt.inputs.size do
       -- §9.4: a partial set of manual terms goes to the bit-vector
-      -- source's handoff
+      -- searcher's handoff
       return .nothing
     let a := ctx.probe.manuals.foldl (init := ctx.probe.defaults) fun acc (pos, b) =>
       if h : pos < acc.size then acc.set pos b else acc

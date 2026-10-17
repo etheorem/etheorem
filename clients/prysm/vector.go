@@ -132,14 +132,14 @@ func (v *outputValue) UnmarshalYAML(node *yaml.Node) error {
 // vector is one function-format file: a self-contained YAML per vector
 // (THEOREM_VECTORS_ARCHITECTURE.md §13.3).
 type vector struct {
-	Theorem  string                `yaml:"theorem"`
-	Function string                `yaml:"function"`
-	Fork     string                `yaml:"fork"`
-	Preset   string                `yaml:"preset"`
-	Shape    string                `yaml:"shape"`
-	Inputs   map[string]inputValue `yaml:"inputs"`
-	Output   outputValue           `yaml:"output"`
-	Source   string                `yaml:"source"`
+	Theorem         string                `yaml:"theorem"`
+	Function        string                `yaml:"function"`
+	Fork            string                `yaml:"fork"`
+	Preset          string                `yaml:"preset"`
+	Shape           string                `yaml:"shape"`
+	Inputs          map[string]inputValue `yaml:"inputs"`
+	Output          outputValue           `yaml:"output"`
+	WitnessSearcher string                `yaml:"witnessSearcher"`
 }
 
 // loadVector reads one function-format file.

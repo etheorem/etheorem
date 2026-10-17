@@ -1,7 +1,7 @@
 {"theorem": "EthCLSpecs.Proofs.Gloas.canBuilderCoverBid_iff",
  "fingerprint": "0x8c9350a48ebfa638",
  "entries":
- [{"source": "built",
+ [{"witnessSearcher": "built",
    "side": true,
    "scalars": {"builderIndex": "0", "bidAmount": "17179869183"},
    "preset": "minimal",
@@ -9,7 +9,7 @@
    "fingerprint": "0x8c9350a48ebfa638",
    "disjunctIndex": 0,
    "builder": "withQueue"},
-  {"source": "random",
+  {"witnessSearcher": "random",
    "size": 8,
    "side": false,
    "shrink":
@@ -30,7 +30,7 @@
    "fingerprint": "0x8c9350a48ebfa638",
    "draw": 0,
    "disjunctIndex": 1},
-  {"source": "built",
+  {"witnessSearcher": "built",
    "side": false,
    "scalars": {"builderIndex": "0", "bidAmount": "18446744073709551615"},
    "preset": "minimal",

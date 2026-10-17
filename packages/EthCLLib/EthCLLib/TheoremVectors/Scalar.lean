@@ -5,8 +5,8 @@ import Lean
 
 The scalar analysis the witness search shares (`THEOREM_VECTORS_ARCHITECTURE.md`
 §9.4). One place names the scalar kinds, their SSZ wire widths, and the
-literal form each kind takes in a hypothesis; the bit-vector source
-(§9.4), the random source (§9.4), and the probe's container reads (§11.1)
+literal form each kind takes in a hypothesis; the bit-vector searcher
+(§9.4), the random searcher (§9.4), and the probe's container reads (§11.1)
 all read it, so a wire width or a literal form is defined once.
 
 ## Lean idioms annotated
@@ -82,7 +82,7 @@ def ScalarKind.width : ScalarKind → Nat
 
 /-- The little-endian read of a scalar's wire bytes back to `Nat`, `none`
 when the byte string is not exactly the kind's width (§9.3's strict
-decode). The random source reads the probe's serialized container reads
+decode). The random searcher reads the probe's serialized container reads
 back through this (§9.4). -/
 def scalarNatOf (k : ScalarKind) (b : ByteArray) : Option Nat :=
   if b.size != k.width then none
@@ -113,7 +113,7 @@ partial def collectFVarIds (e : Expr) (acc : Array FVarId) : Array FVarId :=
   | _ => acc
 
 /-- The literal form of one scalar value at its input type: the form a
-fixed scalar takes when a source substitutes it into the hypotheses
+fixed scalar takes when a searcher substitutes it into the hypotheses
 (§9.4's read substitution). `none` when the type has no literal form the
 substitution can write: a `Fin` whose bound does not reduce to a literal,
 or a type outside the scalar family. -/
