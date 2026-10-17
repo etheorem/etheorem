@@ -71,7 +71,8 @@ The EMPTY node of the justified root is then not below it either
 (`not_nodeBelow_empty_of_pending`). `not_nodeBelow_full_of_slot_le` gives the assumption
 from slots. It needs `SlotsIncrease`: each block in the store has a greater slot than its
 parent. Then a node whose block has a slot no greater than the slot of the block is not
-below the FULL node. No theorem here proves `SlotsIncrease` from the handlers.
+below the FULL node. `SlotsIncrease.lean` proves `SlotsIncrease` along a trace of handler
+runs.
 
 ## What the theorems say about the chain
 
