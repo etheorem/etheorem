@@ -6,6 +6,12 @@ import EthCLSpecs.Proofs.Heze.HandlerFrames
 import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
 import EthCLSpecs.Proofs.Heze.InclusionDichotomy
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
+import EthCLSpecs.Proofs.Heze.KeepsUncached
+import EthCLSpecs.Proofs.Heze.KeepsUncached.Block
+import EthCLSpecs.Proofs.Heze.KeepsUncached.Epoch
+import EthCLSpecs.Proofs.Heze.KeepsUncached.Payload
+import EthCLSpecs.Proofs.Heze.KeepsUncached.Slots
+import EthCLSpecs.Proofs.Heze.KeepsUncached.Withdrawals
 import EthCLSpecs.Proofs.Heze.NodeTrace
 import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 import EthCLSpecs.Proofs.Heze.OnInclusionList
@@ -75,6 +81,15 @@ Re-exports:
   (`isPayloadInclusionListSatisfied_run`), and the four read corollaries
   for a missing record, an unverified recorded value, a recorded `false`,
   and a recorded `true` with a verified payload.
+* `EthCLSpecs.Proofs.Heze.KeepsUncached`: a run of each Heze operation handler, and of
+  `processOperations`, that starts on an uncached box ends on an uncached box
+  (`keepsUncached_processOperations` and the handler lemmas). `increaseBalance` and
+  `decreaseBalance` also return an uncached box (`returnsUncached_increaseBalance`).
+* `EthCLSpecs.Proofs.Heze.KeepsUncached.Block`, `….Payload`, `….Withdrawals`,
+  `….Epoch`, `….Slots`: the same fact for every substep of `processBlock` and
+  `processEpoch`, and for `processSlots` and `stateTransition`
+  (`keepsUncached_stateTransition`). A run of the state transition that starts on an
+  uncached box ends on an uncached box.
 * `EthCLSpecs.Proofs.Heze.NodeTrace`: the successful handler runs of one node
   (`NodeTrace`). From a seed with the empty IL store, such as the anchor store of
   `getForkchoiceStore`, the IL store is `ilStoreOfArrivals` of the arrivals of the trace
