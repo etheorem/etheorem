@@ -129,7 +129,7 @@ theorem_vectors skip callee_touched "covered above"
 theorem_vectors skip EthCLLib.TheoremVectors.Tests.Command.unrelated "stale"
 
 -- A named line after a discovery clause that already ran its theorem is
--- an error (§14.3): the discovery run had no seeds and warned. The
+-- an error (§14.3): the discovery run had no manual terms and warned. The
 -- survey clause ran `callee_survey` above, so the named line here must
 -- move up.
 /-- error: theorem_vectors: `EthCLLib.Proofs.Base.callee_survey` already ran under a discovery clause above this line; move the named line above the discovery clauses (§14.3) -/

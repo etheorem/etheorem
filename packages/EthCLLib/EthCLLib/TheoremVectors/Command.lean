@@ -11,7 +11,7 @@ import EthCLLib.TheoremVectors.Witness.Source
 import EthCLLib.TheoremVectors.Witness.Reuse
 import EthCLLib.TheoremVectors.Witness.Hint
 import EthCLLib.TheoremVectors.Witness.Base
-import EthCLLib.TheoremVectors.Witness.Seed
+import EthCLLib.TheoremVectors.Witness.Manual
 import EthCLLib.TheoremVectors.Witness.BitVec
 import EthCLLib.TheoremVectors.Witness.Built
 import EthCLLib.TheoremVectors.Witness.Random
@@ -31,7 +31,7 @@ theorem_vectors_fork EthCLSpecs.TheoremVectors.Bindings.Gloas.gloas
 theorem_vectors characterized
 theorem_vectors tagged
 theorem_vectors survey
-theorem_vectors canBuilderCoverBid_iff with (state := Seeds.Gloas.coverBidState)
+theorem_vectors canBuilderCoverBid_iff with (state := Manual.Gloas.coverBidState)
 theorem_vectors getPtcElseOffset_lt_same_slot presets minimal mainnet
 theorem_vectors skip processOperations_run_ok_iff "block input, needs a body builder"
 ```
@@ -54,7 +54,7 @@ overrode it. Two order rules follow from the line-at-a-time passes: a
 `skip` line must precede the discovery clauses that select its theorem, or
 the clause's pass runs the theorem first and the skip can only replace the
 outcome; and a named line must precede the discovery clauses, because a
-clause's pass runs the theorem without the seeds. Each rule is an error
+clause's pass runs the theorem without the manual terms. Each rule is an error
 whose message names the fix. A `skip` validates against the *potential*
 selection of §14.1's tags and the fork's proof namespace, so the line can
 sit above the clauses it excludes from and a stale exclusion is still
@@ -64,7 +64,7 @@ meets only the lines above it that passed.
 
 **Stage 2.** A named or discovered theorem's run wires phases B1 through
 B8 end to end for one preset: the prepare pass (§8.4's first form) builds
-one case, the probe compiles (§11.2), the seed and base sources search
+one case, the probe compiles (§11.2), the manual and base sources search
 (§9.2, §9.4), the executor records `.eq` and `.bound` runs (§11.3), the
 record round-trips (§12.5), and the outcome carries the real statuses.
 `survey` runs phase A alone, with status `unselected` (§14.3), so the
@@ -93,7 +93,7 @@ falls through, because no entry could have existed for it.
   lines invisible to its importers.
 - A `command` elaborator (`CommandElabM`) runs at `lake build` time with
   the full environment, which is why the pass can read theorem types
-  (`Statement.readIn` runs `MetaM` under `liftTermElabM`), elaborate seed
+  (`Statement.readIn` runs `MetaM` under `liftTermElabM`), elaborate manual
   terms, and write the records and outcomes to disk.
 - `resolveGlobalConstNoOverload` resolves a line's identifier through the
   file's `open`s; a named line falls back to the fork's proof namespace
@@ -121,14 +121,14 @@ inductive LineKind where
   proof namespace that no other clause or line selects, phase A alone
   (§14.3). -/
   | survey
-  /-- A named line, with the seeds its `with` spelled. -/
-  | named (thm : Name) (strict : Bool) (seeds : Array (Name × Syntax))
+  /-- A named line, with the manual terms its `with` spelled. -/
+  | named (thm : Name) (strict : Bool) (manuals : Array (Name × Syntax))
   /-- A `skip` line, with its reason. -/
   | skipped (thm : Name) (reason : String)
   deriving Inhabited
 
 /-- Kind equality, spelled out because the named case carries `Syntax`
-seeds and `Syntax` has no decidable equality. -/
+manual terms and `Syntax` has no decidable equality. -/
 private def LineKind.sameKind : LineKind → LineKind → Bool
   | .characterized, .characterized => true
   | .tagged, .tagged => true
@@ -195,22 +195,23 @@ scoped syntax (name := tvSkipCmd)
 
 -- the strict marker lives in the identifier token: the lexer reads
 -- `theorem_vectors!` as one ident, so this atom and the plain form's
--- leading atom never collide. The seeded and seedless forms are separate
--- rules, so the seeds and the presets clause sit at fixed indices.
+-- leading atom never collide. The manual and termless forms are separate
+-- rules, so the manual terms and the presets clause sit at fixed indices.
 scoped syntax (name := tvNamedStrictCmd)
   "theorem_vectors!" ident "with" many("(" ident " := " term ")")
   optional("presets " ident+) : command
 
--- §14.3 defines seeds only through `with`, so the seedless rules take
--- no seed group: a bare `(input := term)` group is a parse error.
-scoped syntax (name := tvNamedStrictNoSeedCmd)
+-- §14.3 defines manual terms only through `with`, so the termless rules
+-- take no manual-term group: a bare `(input := term)` group alone is a
+-- parse error.
+scoped syntax (name := tvNamedStrictNoManualCmd)
   "theorem_vectors!" ident optional("presets " ident+) : command
 
 scoped syntax (name := tvNamedCmd)
   "theorem_vectors " ident "with" many("(" ident " := " term ")")
   optional("presets " ident+) : command
 
-scoped syntax (name := tvNamedNoSeedCmd)
+scoped syntax (name := tvNamedNoManualCmd)
   "theorem_vectors " ident optional("presets " ident+) : command
 
 /-- Every ident in a syntax subtree, in source order. The `presets` clauses
@@ -368,20 +369,20 @@ private def withRunHeartbeats {α : Type} (x : MetaM α) : MetaM α := do
 /-- Does this winning source's witness go through the shrink loop? A
 random-source witness does, and so does its replayed hint (§9.8: shrink
 replays from the same draw). The other sources' witnesses are the
-author's seeds, the defaults, and the solver's boundary values, and
-shrinking moves all three. -/
+author's manual terms, the defaults, and the solver's boundary values,
+and shrinking moves all three. -/
 private def shrinkableSource : WitnessSourceTag → Bool
   | .random => true
   | .hinted (.random) => true
   | _ => false
 
 /-- One phase-B run of one theorem at one preset (`THEOREM_VECTORS_ARCHITECTURE.md`
-§3's B1 through B8). Runs inside the reader's telescope scope: the seed
+§3's B1 through B8). Runs inside the reader's telescope scope: the manual
 terms still carry the telescope's instance variables, and the probe builds
 from the statement's expressions. The hint mode and the committed hint
 file come from the run (`runTheorem` resolved both once per theorem). -/
 private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
-    (thmLocal : String) (seedTerms : Array (Nat × Expr)) (builtStamp : String)
+    (thmLocal : String) (manualTerms : Array (Nat × Expr)) (builtStamp : String)
     (winsRef : IO.Ref (Array ReuseWin)) (p : PresetId) (ctx : StatementCtx)
     (cases : Array Case) (mode : HintMode) (hintFile? : Option HintFile) :
     MetaM RunOutcome := do
@@ -398,12 +399,12 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
              reason := some "the prepare pass produced no case" }
   -- B1: the probe for this preset (§10, §11). An `.error` answer is a
   -- skip reason, a fact about the theorem or the shape.
-  let (info, probe) ← match ← Probe.ofStatement binding p ctx cases seedTerms with
+  let (info, probe) ← match ← Probe.ofStatement binding p ctx cases manualTerms with
     | .ok r => pure r
     | .error reason =>
       return { preset := some p, status := .skipped, reason := some reason }
   -- §10: the instance constants this preset fixes, which the bit-vector
-  -- source substitutes into the seed terms and the reads (§11.2)
+  -- source substitutes into the manual terms and the reads (§11.2)
   let instConsts ← ctx.stmt.instances.mapM fun (_, kind) =>
     match Preset.constOf binding p kind with
     | .ok c => pure c
@@ -419,7 +420,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   let wins ← if presetFree then winsRef.get else pure #[]
   let searchCtx : SearchCtx :=
     { probe, info, binding, preset := p, inputFvars := ctx.inputFvars,
-      instFvars := ctx.instFvars, instConsts, seedTerms,
+      instFvars := ctx.instFvars, instConsts, manualTerms,
       drawMemo := ← IO.mkRef #[], outDir, builtStamp, epochBoundary,
       earlierWins := wins }
   -- §9.8: the hint source runs first on every list. The log ref collects
@@ -437,22 +438,22 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   -- list, `ignore` included off it. §10 puts the reuse source immediately
   -- after the hint source, so a committed second-preset hint replays as
   -- `.hinted (.reused p)` while a fresh run wins as
-  -- `.reused p` and writes that entry. A line with seeds runs seed then
-  -- the bit-vector handoff: a `default` candidate would ignore the
-  -- author's seeded inputs. Without seeds, base then bit-vector. The
-  -- built source (§9.9) follows the bit-vector source, before the random
-  -- source: a reachable built state is worth more to a client than a
-  -- drawn one. A block input leaves only the base source running (§1.2);
-  -- the base source itself never proposes `default` for the fork's state
-  -- (§9.4), so a state theorem without seeds runs the bit-vector, built,
-  -- and random sources in that order. The reuse source's `applies` gates
-  -- on empty block inputs itself, so the block-input list stays base
-  -- alone.
+  -- `.reused p` and writes that entry. A line with manual terms runs
+  -- manual then the bit-vector handoff: a `default` candidate would
+  -- ignore the author's fixed inputs. Without manual terms, base then
+  -- bit-vector. The built source (§9.9) follows the bit-vector source,
+  -- before the random source: a reachable built state is worth more to
+  -- a client than a drawn one. A block input leaves only the base source
+  -- running (§1.2); the base source itself never proposes `default` for
+  -- the fork's state (§9.4), so a state theorem without manual terms
+  -- runs the bit-vector, built, and random sources in that order. The
+  -- reuse source's `applies` gates on empty block inputs itself, so the
+  -- block-input list stays base alone.
   let baseSources : Array WitnessSource :=
     if !stmt.blockInputs.isEmpty then #[baseSource]
-    else if seedTerms.isEmpty then
+    else if manualTerms.isEmpty then
       #[baseSource, bitVecSource, builtSource, randomSource]
-    else #[seedSource, bitVecSource, builtSource, randomSource]
+    else #[manualSource, bitVecSource, builtSource, randomSource]
   let sources : Array WitnessSource :=
     -- `ignore` runs no hint, so the reuse source leads the list; §9.8's
     -- "search everything" covers reuse, and a `use` build must read the
@@ -464,10 +465,10 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
                reason := some "unsupported shape" }
   -- §9.8: mode `require` turns a failing hint into the build error the
   -- mode promises. A case that found no witness carries no claim the mode
-  -- can enforce (§9.4: the seed's claim is the author's; a case no source
-  -- wins reports `notFound`), so it falls through; a case that won from a
-  -- source other than the hint, or whose hint the check rejected, is the
-  -- error, because the committed file promised this case a witness
+  -- can enforce (§9.4: the manual terms' claim is the author's; a case no
+  -- source wins reports `notFound`), so it falls through; a case that won
+  -- from a source other than the hint, or whose hint the check rejected,
+  -- is the error, because the committed file promised this case a witness
   let enforceRequireHint (c : Case) (win? : Option Bool) : MetaM Unit := do
     if mode == .require then
       let logged ← hintLog.get
@@ -484,7 +485,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
           check (§9.8)"
   let mut written : Nat := 0
   let mut source? : Option String := none
-  let mut seedWon := false
+  let mut manualWon := false
   let mut hintEntries : Array HintEntry := #[]
   let mut freshWins : Nat := 0
   let mut failures : Array (Nat × RunStatus × String) := #[]
@@ -564,10 +565,11 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
       -- holds, within the step budget, and so does its replayed hint
       -- (§9.8: shrink replays from the same draw), which is what keeps
       -- the replay's records byte-identical. The other sources'
-      -- witnesses are the author's seeds, the defaults, and the solver's
-      -- boundary values, and shrinking moves all three. A replayed
-      -- random entry carries its shrink path (the plan's stage-6 step
-      -- 8), and the replay walks the recorded candidates alone.
+      -- witnesses are the author's manual terms, the defaults, and the
+      -- solver's boundary values, and shrinking moves all three. A
+      -- replayed random entry carries its shrink path (the plan's
+      -- stage-6 step 8), and the replay walks the recorded candidates
+      -- alone.
       let shrinkable := shrinkableSource won
       let mut shrinkTrace? : Option (Array (Array Nat)) := none
       let a ← if shrinkable then do
@@ -671,10 +673,10 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
         | .hinted o => o.tag
         | t => t.tag
       if source?.isNone then source? := some sourceTag
-      -- a replayed seed counts for §18's seed claim, the same way its
-      -- original win did (§9.8)
-      if won == .seed || won matches .hinted (.seed) then
-        seedWon := true
+      -- a replayed manual win counts for §18's manual claim, the same
+      -- way its original win did (§9.8)
+      if won == .manual || won matches .hinted (.manual) then
+        manualWon := true
   let endMs ← IO.monoMsNow
   let seconds := some ((endMs - startMs).toFloat / 1000.0)
   -- §9.8: the run's entries merge into the output tree's hint file, and
@@ -687,11 +689,13 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   -- survey's candidate never outlives the line that overrode it
   Hint.mergeWrite outDir binding.tag thmLocal p
     { «theorem» := stmt.thm, fingerprint, entries := hintEntries }
-  -- §18: a fully-covering seed that wins no case breaks the build, because
-  -- the author claimed it works; a partial failure falls through (§9.4)
-  if !seedTerms.isEmpty && seedTerms.size == stmt.inputs.size && !seedWon then
-    throwError "theorem_vectors: the author seeds of `{stmt.thm}` win no \
-      case at {p.tag}; fix the seed or drop the `with` clause (§9.4, §18)"
+  -- §18: a fully-covering set of manual terms that wins no case breaks
+  -- the build, because the author claimed it works; a partial failure
+  -- falls through (§9.4)
+  if !manualTerms.isEmpty && manualTerms.size == stmt.inputs.size && !manualWon then
+    throwError "theorem_vectors: the manual terms of `{stmt.thm}` win no \
+      case at {p.tag}; fix the manual term or drop the `with` clause \
+      (§9.4, §18)"
   let failureText := String.intercalate "; "
     (failures.toList.map fun (i, _, text) => s!"case {i}: {text}")
   if written > 0 then
@@ -712,14 +716,14 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
 /-- The stage-2 run of one theorem: phase A, then phases B1 through B8 per
 preset (§3, and the module docstring). The whole fold runs inside the
 reader's telescope scope (`Statement.readIn`), because the statement's
-expressions and the seed terms cannot leave it. `binding` is the header's
+expressions and the manual terms cannot leave it. `binding` is the header's
 value and `bindingName` its constant, whose parent names the module the
 built cache's stamp reads (§9.9); the binding value carries no name of
 its own. -/
 private def runTheorem (binding : ForkBinding) (bindingName : Name)
     (origin : OutcomeOrigin)
     (strict : Bool) (thm : Name) (ps : Array PresetId)
-    (seedStx : Array (Name × Syntax)) : CommandElabM Unit := do
+    (manualStx : Array (Name × Syntax)) : CommandElabM Unit := do
   let proofNs := EthCLLib.Internal.proofNamespaceOf binding.fork
   let localName := thm.replacePrefix proofNs .anonymous
   let outDir ← outDirOf
@@ -762,30 +766,31 @@ private def runTheorem (binding : ForkBinding) (bindingName : Name)
       | none =>
         -- phase A: prepare (§8.4's first form)
         let (cases, dropped) ← Prepare.pass stmt
-        -- the author seeds (§14.3: "[Preset]-generic, elaborated at each
-        -- preset"): each term elaborates against its input's type inside
-        -- the telescope, so the theorem's own instances fill the seed's
-        -- instance binders and `substInstances` fixes them per preset. A
-        -- seed for an input the theorem does not have is an error here,
-        -- and a seed of the wrong type is an elaboration error at the
-        -- clause: §18's build error for an author claim.
-        let seedTerms ← seedStx.mapM fun (n, stx) => do
+        -- the author's manual terms (§14.3: "[Preset]-generic,
+        -- elaborated at each preset"): each term elaborates against its
+        -- input's type inside the telescope, so the theorem's own
+        -- instances fill the term's instance binders and
+        -- `substInstances` fixes them per preset. A term for an input
+        -- the theorem does not have is an error here, and a term of the
+        -- wrong type is an elaboration error at the clause: §18's build
+        -- error for an author claim.
+        let manualTerms ← manualStx.mapM fun (n, stx) => do
           match stmt.inputs.findIdx? (fun i => i.name == n) with
           | none =>
-            throwError "theorem_vectors: the seed names input `{n}`, \
-              which `{thm}` does not have (§14.3)"
+            throwError "theorem_vectors: the manual term names input \
+              `{n}`, which `{thm}` does not have (§14.3)"
           | some i => do
             let t := stmt.inputs[i]!.type
-            -- the expected type fills the seed's `[Preset]`-generic
+            -- the expected type fills the manual term's `[Preset]`-generic
             -- instance binders from the telescope; the check below holds
-            -- the §18 line: a seed of the wrong type is an error at the
-            -- clause, because the author claimed it works
+            -- the §18 line: a manual term of the wrong type is an error
+            -- at the clause, because the author claimed it works
             let term ←
               (Lean.Elab.Term.withoutErrToSorry
                 (Lean.Elab.Term.elabTermAndSynthesize stx (some t))).run'
             let term ← Lean.instantiateMVars term
             unless ← Meta.isDefEq (← Meta.inferType term) t do
-              throwError "theorem_vectors: the seed for `{n}` of \
+              throwError "theorem_vectors: the manual term for `{n}` of \
                 `{thm}` does not have the input's type (§14.3)"
             pure (i, term)
         -- phases B1 through B8, per preset in the line's list, each under
@@ -796,7 +801,7 @@ private def runTheorem (binding : ForkBinding) (bindingName : Name)
         let winsRef ← IO.mkRef (#[] : Array ReuseWin)
         let runs ← ps.foldlM (init := #[]) fun acc p => do
           let r ← withRunHeartbeats
-            (runPreset binding outDir localName.toString seedTerms builtStamp
+            (runPreset binding outDir localName.toString manualTerms builtStamp
               winsRef p ctx cases mode hintFile?)
           pure (acc.push r)
         -- §18: a strict claim that skipped fails hard; a non-strict line
@@ -864,7 +869,7 @@ private def runPass (lines : Array Line) : CommandElabM Unit := do
   -- named lines, in file order; two for one theorem is an error (§14.3)
   let named := lines.filterMap fun l =>
     match l.kind with
-    | .named thm strict seeds => some (thm, strict, seeds, l.presetIds)
+    | .named thm strict manuals => some (thm, strict, manuals, l.presetIds)
     | _ => none
   for i in [0:named.size] do
     for j in [0:named.size] do
@@ -891,9 +896,10 @@ private def runPass (lines : Array Line) : CommandElabM Unit := do
       throwError "theorem_vectors: `{thm}` has a named line and a skip \
         line; one or the other (§14.3)"
   -- §14.3: the named lines come before the discovery clauses. A discovery
-  -- clause above a named line already ran its theorem without the seeds
-  -- and warned; the message names the fix. The same rule holds for a skip
-  -- line: above the clauses, or the clause's pass ran the theorem first.
+  -- clause above a named line already ran its theorem without the manual
+  -- terms and warned; the message names the fix. The same rule holds
+  -- for a skip line: above the clauses, or the clause's pass ran the
+  -- theorem first.
   let discoveryRan (thm : Name) : Bool :=
     (executed.getState env).any fun (t, k) =>
       t == thm && (k.startsWith "tagged:" || k.startsWith "characterized:" ||
@@ -922,8 +928,8 @@ private def runPass (lines : Array Line) : CommandElabM Unit := do
         discovery clause selects (§14.3)"
   -- discovery clauses: a kind contributes only when the file has its
   -- line, and the clause's presets are the line's (§14.3: the clause
-  -- runs "with the default budget, the default seeds (none), and the
-  -- clause's preset list")
+  -- runs with the default budget, no manual terms, and the clause's own
+  -- preset list)
   let discLines (kind : LineKind) : Array (Array PresetId) :=
     lines.filterMap fun l =>
       if l.kind.sameKind kind then some l.presetIds else none
@@ -960,15 +966,15 @@ private def runPass (lines : Array Line) : CommandElabM Unit := do
   -- skipped; each run records itself at once, so a repeated pass neither
   -- repeats it nor loses it.
   let runOnce (thm : Name) (origin : OutcomeOrigin) (strict : Bool)
-      (ps : Array PresetId) (seeds : Array (Name × Syntax)) :
+      (ps : Array PresetId) (manuals : Array (Name × Syntax)) :
       CommandElabM Unit := do
     let key := execKey origin ps
     let env ← getEnv
     unless (executed.getState env).any fun (t, k) => t == thm && k == key do
       modifyEnv (executed.addEntry · (thm, key))
-      runTheorem binding bindingName origin strict thm ps seeds
-  for (thm, strict, seeds, ps) in named do
-    runOnce thm .named strict ps seeds
+      runTheorem binding bindingName origin strict thm ps manuals
+  for (thm, strict, manuals, ps) in named do
+    runOnce thm .named strict ps manuals
   for (thm, origin, strict, ps) in sel do
     runOnce thm origin strict ps #[]
   -- a skipped theorem records its outcome too (§14.3)
@@ -1045,21 +1051,21 @@ def elabTvSurvey : CommandElab := fun _stx => do
         this line; the header must come first in the file"
   addLine { kind := .survey }
 
-/-- The seeds of a named line, as `(input, term)` pairs in source order.
-The seed shape is `"(" ident " := " term ")`, wrapped by `many`'s node and
-possibly by the parser's own group nodes, so the walk keys on the token
-layout and not on a wrapper's kind. -/
-private partial def parseSeeds (stx : Syntax) : Array (Name × Syntax) :=
+/-- The manual terms of a named line, as `(input, term)` pairs in source
+order. The term shape is `"(" ident " := " term ")`, wrapped by `many`'s
+node and possibly by the parser's own group nodes, so the walk keys on
+the token layout and not on a wrapper's kind. -/
+private partial def parseManuals (stx : Syntax) : Array (Name × Syntax) :=
   let here : Array (Name × Syntax) :=
     if stx.getNumArgs ≥ 4
         && stx.getArg 0 matches .atom _ "("
         && stx.getArg 2 matches .atom _ ":=" then
       #[Prod.mk (stx.getArg 1).getId (stx.getArg 3)]
     else #[]
-  (stx.getArgs.flatMap parseSeeds) ++ here
+  (stx.getArgs.flatMap parseManuals) ++ here
 
-/-- The seeded named lines' elab: the ident sits at 1, the `with` atom at
-2, the seed group at 3, the presets clause at 4. -/
+/-- The manual named lines' elab: the ident sits at 1, the `with` atom at
+2, the manual-term group at 3, the presets clause at 4. -/
 private def elabNamedLine (strict : Bool) : CommandElab := fun stx => do
   let env ← getEnv
   let some bindingName := forkHeader.getState env
@@ -1068,14 +1074,14 @@ private def elabNamedLine (strict : Bool) : CommandElab := fun stx => do
   -- resolve through the binding for the proof-namespace fallback
   let binding ← evalForkBinding bindingName
   let thm ← resolveThmName binding stx[1]
-  let seeds := parseSeeds stx[3]
+  let manuals := parseManuals stx[3]
   let ps ← parsePresets stx[4]
-  addLine { kind := .named thm strict seeds, presetIds := ps }
+  addLine { kind := .named thm strict manuals, presetIds := ps }
 
-/-- The seedless named lines' elab: the ident sits at 1, the presets
-clause at 2, and there are no seeds (§14.3 defines seeds only through
-`with`). -/
-private def elabNamedNoSeedLine (strict : Bool) : CommandElab := fun stx => do
+/-- The termless named lines' elab: the ident sits at 1, the presets
+clause at 2, and there are no manual terms (§14.3 defines them only
+through `with`). -/
+private def elabNamedNoManualLine (strict : Bool) : CommandElab := fun stx => do
   let env ← getEnv
   let some bindingName := forkHeader.getState env
     | throwError "theorem_vectors: no `theorem_vectors_fork` header precedes \
@@ -1088,13 +1094,13 @@ private def elabNamedNoSeedLine (strict : Bool) : CommandElab := fun stx => do
 @[command_elab tvNamedStrictCmd]
 def elabTvNamedStrict : CommandElab := elabNamedLine true
 
-@[command_elab tvNamedStrictNoSeedCmd]
-def elabTvNamedStrictNoSeed : CommandElab := elabNamedNoSeedLine true
+@[command_elab tvNamedStrictNoManualCmd]
+def elabTvNamedStrictNoManual : CommandElab := elabNamedNoManualLine true
 
 @[command_elab tvNamedCmd]
 def elabTvNamed : CommandElab := elabNamedLine false
 
-@[command_elab tvNamedNoSeedCmd]
-def elabTvNamedNoSeed : CommandElab := elabNamedNoSeedLine false
+@[command_elab tvNamedNoManualCmd]
+def elabTvNamedNoManual : CommandElab := elabNamedNoManualLine false
 
 end EthCLLib.TheoremVectors

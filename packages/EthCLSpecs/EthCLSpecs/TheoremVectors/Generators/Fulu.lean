@@ -1,7 +1,7 @@
 import EthCLLib.TheoremVectors.Command
 import EthCLSpecs.Proofs.Fulu
 import EthCLSpecs.TheoremVectors.Bindings.Fulu
-import EthCLSpecs.TheoremVectors.Seeds.Fulu
+import EthCLSpecs.TheoremVectors.Manual.Fulu
 
 /-!
 # `EthCLSpecs.TheoremVectors.Generators.Fulu`: the Fulu generator file
@@ -14,26 +14,28 @@ every other public theorem of the fork's proof namespace, phase A alone
 (§14.3).
 
 The five branch theorems of `Proofs/Fulu/Balances.lean` run as named lines,
-four of them on seeds (two on the `Seeds.Fulu` states, two on inline
-`default` terms):
+four of them on manual terms (two on the `Manual.Fulu` states, two on
+inline `default` terms):
 
 - The two out-of-range theorems pin both state binders to `default`, whose
   empty balances list makes the `¬ i < size` hypothesis true at `i := 0`,
   and both sides of each equation reduce to the same `.outOfBounds` error.
-  The seed source checks the author's terms and runs no search, so each
+  The manual source checks the author's terms and runs no search, so each
   line is cheap and runs at both presets.
 - `decreaseBalance_run_no_underflow` takes `oneBalanceState` with
   `delta := 2`, and `increaseBalance_run_overflow` takes `maxBalanceState`
-  with `delta := 1`. An exploratory seedless line answered `notFound` for
+  with `delta := 1`. An exploratory termless line answered `notFound` for
   the no-underflow line within its draw budget. The overflow line's
   coupled grid caps `delta` below 64. Only the wide arm of the `UInt64`
   draw can land a balance within 64 of `2 ^ 64`, about one value in
-  `2 ^ 59`, so the redraw budget never meets one. The seeds write the
-  lines deterministically, and the seed source is what reaches mainnet,
-  where the random source caps itself over a state-typed container. It
-  searches nothing, so these lines also run at both presets.
-- `increaseBalance_run_no_wrap` takes no seed. The random source draws the
-  two states, the coupled grid fixes `i` and `delta` at `0`, and the
+  `2 ^ 59`, so the redraw budget never meets one. The manual terms write
+  the lines deterministically, and the manual source is what reaches
+  mainnet, where the random source caps itself over a state-typed
+  container. It searches nothing, so these lines also run at both
+  presets.
+- `increaseBalance_run_no_wrap` takes no manual term. The random source
+  draws the two states, the coupled grid fixes `i` and `delta` at `0`,
+  and the
   hypothesis holds at the drawn balances (§9.4). The line runs at minimal
   only: the random source caps itself at mainnet over a state-typed
   container, and stage 8's discipline spends a mainnet run only where the
@@ -56,8 +58,8 @@ clause selects them and the report shows their outcome. Their `.eq`
 reading survives the reader, but the output type is an `Except` over a
 pair of boxed `State` values, and the box has neither an `SSZRepr` nor a
 `ToString` instance, so the recorder skips each run with that reason. No
-source choice or seed changes an output type, so the file gives the two
-theorems no named line.
+source choice or manual term changes an output type, so the file gives
+the two theorems no named line.
 
 `modBalance_pureState` also carries `@[characterizes]`; its function-typed
 input `f` has no SSZ form (§1.2), and the clause records the reader's
@@ -73,8 +75,8 @@ theorem_vectors_fork EthCLSpecs.TheoremVectors.Bindings.Fulu.fulu
 -- §14.3: the named lines precede the discovery clauses. A named line below
 -- a clause that already ran its theorem is an error.
 -- The two out-of-range theorems: `default`'s empty balances list makes
--- `¬ i < size` true at `i := 0`. The seed source checks the terms alone,
--- so both presets are cheap.
+-- `¬ i < size` true at `i := 0`. The manual source checks the terms
+-- alone, so both presets are cheap.
 theorem_vectors decreaseBalance_run_outOfRange with
   (state := default)
   (preState := default)
@@ -87,17 +89,18 @@ theorem_vectors increaseBalance_run_outOfRange with
   (i := 0)
   (delta := 0)
   presets minimal mainnet
--- The no-underflow and overflow lines carry seeds: `oneBalanceState`
--- with `delta := 2`, and `maxBalanceState` with `delta := 1`. The seed
--- source searches nothing, so both presets are cheap.
+-- The no-underflow and overflow lines carry manual terms:
+-- `oneBalanceState` with `delta := 2`, and `maxBalanceState` with
+-- `delta := 1`. The manual source searches nothing, so both presets
+-- stay cheap.
 theorem_vectors decreaseBalance_run_no_underflow with
-  (state := EthCLSpecs.TheoremVectors.Seeds.Fulu.oneBalanceState)
+  (state := EthCLSpecs.TheoremVectors.Manual.Fulu.oneBalanceState)
   (preState := default)
   (i := 0)
   (delta := 2)
   presets minimal mainnet
 theorem_vectors increaseBalance_run_overflow with
-  (state := EthCLSpecs.TheoremVectors.Seeds.Fulu.maxBalanceState)
+  (state := EthCLSpecs.TheoremVectors.Manual.Fulu.maxBalanceState)
   (preState := default)
   (i := 0)
   (delta := 1)

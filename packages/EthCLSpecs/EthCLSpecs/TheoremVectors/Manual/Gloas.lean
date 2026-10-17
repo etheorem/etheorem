@@ -4,15 +4,15 @@ import EthCLSpecs.Fulu
 import EthCLSpecs.TheoremVectors.Builders.Gloas
 
 /-!
-# `EthCLSpecs.TheoremVectors.Seeds.Gloas`: the Gloas author seeds
+# `EthCLSpecs.TheoremVectors.Manual.Gloas`: the Gloas manual terms
 
 Author-written input terms (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4, §4.2), `[Preset]`-generic
 so one definition serves every preset a named line lists: the command
 elaborates each `with` term inside the theorem's telescope, where the
-theorem's own instances fill the seed's instance binders. A seed that
+theorem's own instances fill the term's instance binders. A term that
 fails the check is a build error, because the author claimed it works.
 
-Two seeds serve the window theorems:
+Two manual inputs serve the window theorems:
 
 - `windowZero` / `windowEpoch` pin the window index to the smallest entry
   of the region the theorem's hypothesis names, where `default`'s `0`
@@ -25,16 +25,17 @@ Two seeds serve the window theorems:
   base source's default candidate unevaluatable for the window theorems;
   an active committee fills in a few dozen iterations.
 
-Two seeds serve `isValidIndexedPayloadAttestation_eq_true_iff_checks`:
+Two manual inputs serve
+`isValidIndexedPayloadAttestation_eq_true_iff_checks`:
 
 - `iPacState` and `iPacAttestation` carry 64 validators and two in-range
   increasing attesting indices, so `isValidIndexedPayloadAttestation`'s
-  true-side conjunction holds at the seed. The false-side cases need
-  containers the seed does not vary; the random source draws them
-  (§9.2). `canBuilderCoverBid_iff` runs seedless; the random source
+  true-side conjunction holds at the manual terms. The false-side cases
+  need containers the manual terms do not vary; the random source draws
+  them (§9.2). `canBuilderCoverBid_iff` runs termless; the random source
   draws its state (§9.4).
 
-One seed serves `initiateBuilderExit_run_eq`:
+One manual input serves `initiateBuilderExit_run_eq`:
 
 - `builderState` is the `built` source's `withQueue` grid step (16
   validators, slot 40, four queued deposits, two builders onboarded by
@@ -44,7 +45,7 @@ One seed serves `initiateBuilderExit_run_eq`:
   through `UInt64.toNat`, the one spelling the coupled walk and the
   solver's `UInt64`-comparison fragment do not bridge, so the search can
   neither couple the index to the built registry nor solve for it. The
-  named line seeds the state and the index (`0`), and a complete
+  named line fixes the state and the index (`0`), and a complete
   assignment goes straight to the check.
 -/
 
@@ -54,7 +55,7 @@ open EthCLLib.Spec (CryptoBackend)
 open EthCLSpecs.Gloas (Preset Config)
 open scoped EthCLSpecs.Gloas.Downgrade
 
-namespace EthCLSpecs.TheoremVectors.Seeds.Gloas
+namespace EthCLSpecs.TheoremVectors.Manual.Gloas
 
 /-- The smallest offset of `initializePtcWindow`'s first region: the window
 index whose value is `0`, which `initializePtcWindow_lt`'s hypothesis
@@ -87,7 +88,7 @@ def activeValidator [Preset] : EthCLSpecs.Fulu.Validator :=
     exitEpoch := EthCLSpecs.Gloas.Const.farFutureEpoch
     withdrawableEpoch := EthCLSpecs.Gloas.Const.farFutureEpoch }
 
-/-- The seed state for the window theorems: `default` with 64 active
+/-- The manual state for the window theorems: `default` with 64 active
 validators and matching balances. A small active committee keeps the
 spec's balance-weighted selection inside its fuel, which the default
 state's empty validator set cannot. -/
@@ -100,27 +101,27 @@ def activeState [Preset] : EthCLSpecs.Fulu.BeaconState :=
   ({ (default : EthCLSpecs.Fulu.BeaconState) with validators := vs, balances := bs } :
     EthCLSpecs.Fulu.BeaconState)
 
-/-! ## The builder-registry seed -/
+/-! ## The builder-registry manual state -/
 
-/-- The seed state for `initiateBuilderExit_run_eq`: the `built` source's
+/-- The manual state for `initiateBuilderExit_run_eq`: the `built` source's
 `withQueue` grid step (16 validators, slot 40, queue 4), whose four queued
 deposits drain through `onboardBuildersFromPendingDeposits` into a
 two-builder registry. The theorem's in-range hypothesis holds at the
 registry the spec's own onboarding step put there, and the named line
-seeds the builder index `0` beside it. The crypto backend is the
+fixes the builder index `0` beside it. The crypto backend is the
 binding's verify-off one, pinned locally the way the builders pin the
-hasher, so the seed carries only `[Preset] [Config]`, the binders the
-theorem's telescope fills. -/
+hasher, so the manual state carries only `[Preset] [Config]`, the binders
+the theorem's telescope fills. -/
 def builderState [Preset] [Config] : EthCLSpecs.Gloas.BeaconState :=
   letI : CryptoBackend := CryptoBackend.verifyOff
   EthCLSpecs.TheoremVectors.Builders.Gloas.withQueue
     { validators := 16, slot := 40, balance := 32000000000, queue := 4 }
 
-/-! ## The payload-attestation seeds -/
+/-! ## The payload-attestation manual inputs -/
 
 /-- A Gloas validator at the maximum effective balance, the registry entry
 `iPacState` holds 64 of. The window theorems' `activeValidator` is the
-Fulu one; Gloas re-declares its containers, so the attestation seed
+Fulu one; Gloas re-declares its containers, so the manual attestation
 carries its own. -/
 def iPacValidator [Preset] : EthCLSpecs.Gloas.Validator :=
   { pubkey := Vector.replicate 48 0
@@ -132,7 +133,7 @@ def iPacValidator [Preset] : EthCLSpecs.Gloas.Validator :=
     exitEpoch := EthCLSpecs.Gloas.Const.farFutureEpoch
     withdrawableEpoch := EthCLSpecs.Gloas.Const.farFutureEpoch }
 
-/-- The seed state for `isValidIndexedPayloadAttestation_eq_true_iff_checks`:
+/-- The manual state for `isValidIndexedPayloadAttestation_eq_true_iff_checks`:
 64 registered validators, so indices `5` and `9` are in range. -/
 def iPacState [Preset] : EthCLSpecs.Gloas.BeaconState :=
   let v := iPacValidator
@@ -141,10 +142,10 @@ def iPacState [Preset] : EthCLSpecs.Gloas.BeaconState :=
     (Array.range 64).foldl (fun xs _ => xs.push v) default
   { (default : EthCLSpecs.Gloas.BeaconState) with validators := vs }
 
-/-- The seed attestation for `isValidIndexedPayloadAttestation_eq_true_iff_checks`:
+/-- The manual attestation for `isValidIndexedPayloadAttestation_eq_true_iff_checks`:
 two in-range increasing indices, so every gate holds and the true-side
-conjunction is satisfiable at the seed. The signature is the zero value,
-which the verify-off backend accepts. -/
+conjunction is satisfiable at the manual terms. The signature is the zero
+value, which the verify-off backend accepts. -/
 def iPacAttestation [Preset] : EthCLSpecs.Gloas.IndexedPayloadAttestation :=
   let idx : SizzLean.Repr.SSZList EthCLSpecs.Gloas.ValidatorIndex
       EthCLSpecs.Gloas.Const.ptcSize :=
@@ -152,4 +153,4 @@ def iPacAttestation [Preset] : EthCLSpecs.Gloas.IndexedPayloadAttestation :=
         EthCLSpecs.Gloas.Const.ptcSize).push 5).push 9
   { attestingIndices := idx, data := default, signature := default }
 
-end EthCLSpecs.TheoremVectors.Seeds.Gloas
+end EthCLSpecs.TheoremVectors.Manual.Gloas

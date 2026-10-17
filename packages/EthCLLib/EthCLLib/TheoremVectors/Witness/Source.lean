@@ -12,9 +12,10 @@ source proposes one candidate at a time; the probe's `check` (§9.3) is the
 single arbiter, and a source whose candidate the check rejects has produced
 nothing. The loop walks the sources in §9.2's fixed order, and the command
 assembles that order per theorem: the hint source (§9.8) runs first on
-every list, the reuse source (§10) follows it, then a line with seeds runs
-seed (§9.4) then bit-vector (§9.4), a line without seeds runs base (§9.4)
-then bit-vector, and a theorem with a block input runs base alone (§1.2).
+every list, the reuse source (§10) follows it, then a line with manual
+terms runs manual (§9.4) then bit-vector (§9.4), a line without manual
+terms runs base (§9.4) then bit-vector, and a theorem with a block input
+runs base alone (§1.2).
 The built source (§9.9) follows the bit-vector source, and the random
 source and the shrink close the list.
 
@@ -67,13 +68,13 @@ structure ReuseWin where
 
 /-- One run of the search: the probe, its build-time description, the
 binding, the preset, and the telescope's free variables with this line's
-seed terms (§9.2's `SearchCtx`; the seed *options* sit in the probe's
-`seeds` field, which the command fixes at build time).
+manual terms (§9.2's `SearchCtx`; their serialized bytes sit in the
+probe's `manuals` field, which the command fixes at build time).
 
 The free variables are telescope-local: like the statement's expressions,
 they are valid only inside the reader's fold, which the whole search runs
 in. The bit-vector source substitutes the instance variables with the
-preset's constants when it evaluates a seeded term (§11.2's
+preset's constants when it evaluates a manual term (§11.2's
 substitution), so the context carries both sides of that rewrite. -/
 structure SearchCtx where
   probe   : Probe
@@ -88,9 +89,9 @@ structure SearchCtx where
   /-- The instance constant each instance binder fixes at this preset
   (§10), aligned with `stmt.instances`. -/
   instConsts : Array Name
-  /-- The author seed terms of this line, with their input positions
+  /-- The author's manual terms of this line, with their input positions
   (§14.3). Empty when the line named none. -/
-  seedTerms  : Array (Nat × Expr)
+  manualTerms : Array (Nat × Expr)
   /-- The random source's draws, memoized per position: a draw is a
   pure function of the seed, the size, the index, and the position (§9.4),
   so the cases of one theorem at one preset share them. The ref holds one
@@ -135,7 +136,7 @@ structure WitnessSource where
   tag     : WitnessSourceTag
   /-- Can this source try this case at all? The search context is in
   scope, so a rule that reads the binding's state type or the probe's
-  seeds sits here (§9.4's state rule). -/
+  manual bytes sits here (§9.4's state rule). -/
   applies : SearchCtx → Statement → Case → Bool
   /-- Produce one answer. -/
   search  : SearchCtx → Statement → Case → SearchM SearchStep

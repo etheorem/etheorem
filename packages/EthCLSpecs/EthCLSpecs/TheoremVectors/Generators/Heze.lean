@@ -19,7 +19,7 @@ Phase A reports nearly every theorem `unsupported` at the `FcMap` /
 Nearly all of those theorems also take block inputs, such as `Store` or
 `SignedExecutionPayloadEnvelope` (§1.2). Opening the corpus takes both: a
 reader that binds the seams, and a block-input path (a builder that
-produces well-formed blocks, or a seeded store) for the
+produces well-formed blocks, or a store a named line supplies) for the
 `shouldExtendPayload` and `onExecutionPayloadEnvelope` theorems.
 
 The two `getInclusionListCommittee` theorems read past the seams, and the

@@ -200,7 +200,7 @@ inductive WitnessSourceTag where
   | bitVec
   | built
   | random
-  | seed
+  | manual
   /-- A scalar witness from the preset it names. -/
   | reused (preset : PresetId)
   /-- Rebuilt from a committed hint; `orig` is the source the hint recorded. -/
@@ -214,7 +214,7 @@ def WitnessSourceTag.tag : WitnessSourceTag → String
   | .bitVec    => "bitVec"
   | .built     => "built"
   | .random    => "random"
-  | .seed      => "seed"
+  | .manual    => "manual"
   | .reused p  => s!"reused-{p.tag}"
   | .hinted o  => s!"hinted-{o.tag}"
 
@@ -224,7 +224,7 @@ private def plainSourceTag? : String → Option WitnessSourceTag
   | "bitVec" => some .bitVec
   | "built"  => some .built
   | "random" => some .random
-  | "seed"   => some .seed
+  | "manual" => some .manual
   | _        => none
 
 /-- The tag reader's recursion core, over the tag's characters. The
@@ -251,6 +251,8 @@ def WitnessSourceTag.ofTag? (s : String) : Option WitnessSourceTag :=
   some (.hinted (.reused .minimal))
 #guard WitnessSourceTag.ofTag? "reused-mainnet" == some (.reused .mainnet)
 #guard WitnessSourceTag.ofTag? "hinted-bitVec" == some (.hinted .bitVec)
+#guard WitnessSourceTag.ofTag? "manual" == some .manual
+#guard WitnessSourceTag.ofTag? "hinted-manual" == some (.hinted .manual)
 
 /-- Why a case produced no vector (`THEOREM_VECTORS_ARCHITECTURE.md` §5.4). `unsat` means
 the solver proved the hypotheses vacuous, `notFound` that every source ran

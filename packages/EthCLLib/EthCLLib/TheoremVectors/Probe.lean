@@ -341,8 +341,9 @@ structure Probe where
   run past a drawn or shrunken list's end and no panic prints. The face
   evaluates the indexes and the lengths alone, which cannot panic. -/
   safe   : (caseIndex : Nat) → Array ByteArray → Array Bool
-  /-- The author seeds, serialized, with their input positions (§9.4). -/
-  seeds  : Array (Nat × ByteArray)
+  /-- The author's manual terms, serialized, with their input positions
+  (§9.4). -/
+  manuals : Array (Nat × ByteArray)
   /-- The serialized `default` of every input, in binder order: the base
   source's candidate (§9.4). -/
   defaults : Array ByteArray
@@ -1047,9 +1048,9 @@ def shapeTermsOf : Shape → Array Expr
 
 /-- Build and evaluate the probe for one statement at one preset (§11.2).
 Runs inside the reader's telescope scope: the statement's expressions and
-`ctx`'s free variables are telescope-local. `seedTerms` pairs each author
-seed term with its input position, the terms still holding the telescope's
-instance variables.
+`ctx`'s free variables are telescope-local. `manualTerms` pairs each
+author-written manual term with its input position, the terms still
+holding the telescope's instance variables.
 
 Returns the build-time description the record layer reads, plus the
 evaluated probe. An `.error` answer is a skip reason, a fact about the
@@ -1058,7 +1059,7 @@ missing); a thrown error is machinery (`§18`: the probe's own failures are
 never facts about the theorem). -/
 def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
     (ctx : StatementCtx) (cases : Array Case)
-    (seedTerms : Array (Nat × Expr)) :
+    (manualTerms : Array (Nat × Expr)) :
     MetaM (Except String (ProbeInfo × Probe)) := do
   let stmt := ctx.stmt
   let shape := stmt.shape
@@ -1354,10 +1355,11 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
         let readsFn ← Meta.mkLambdaFVars #[ci, bytes] readsDispatch
         let safeFn ← Meta.mkLambdaFVars #[ci, bytes] safeDispatch
 
-        -- the seeds, serialized in compiled code (§9.4). Each seed term
-        -- already carries the telescope's instances (§14.3: elaborated in
-        -- the telescope), which `substInstances` fixes per preset.
-        let seedsLit : Array Expr ← seedTerms.mapM fun (pos, sterm) => do
+        -- the manual terms, serialized in compiled code (§9.4). Each
+        -- manual term already carries the telescope's instances (§14.3:
+        -- elaborated in the telescope), which `substInstances` fixes
+        -- per preset.
+        let manualsLit : Array Expr ← manualTerms.mapM fun (pos, sterm) => do
           let t ← Meta.inferType sterm
           let inst ← Meta.synthInstance (mkApp (.const ``ScalarCodec []) t)
           pure (mkAppN (.const ``Prod.mk [levelZero, levelZero])
@@ -1511,7 +1513,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
         let term := mkAppN (.const ``Probe.mk [])
           #[checkFn, sampleFn, sampleAtFn, shrinkFn, readsFn, safeFn,
             mkArrayLit (mkApp2 (.const ``Prod [levelZero, levelZero]) (.const ``Nat [])
-              (.const ``ByteArray [])) seedsLit,
+              (.const ``ByteArray [])) manualsLit,
             defaultsLit,
             buildFn,
             runFn]

@@ -12,7 +12,7 @@ import EthCLLib.TheoremVectors.Execute
 import EthCLLib.TheoremVectors.Witness.Source
 import EthCLLib.TheoremVectors.Witness.Reuse
 import EthCLLib.TheoremVectors.Witness.Base
-import EthCLLib.TheoremVectors.Witness.Seed
+import EthCLLib.TheoremVectors.Witness.Manual
 import EthCLLib.TheoremVectors.Witness.BitVec
 import EthCLLib.TheoremVectors.Witness.Built
 import EthCLLib.TheoremVectors.Witness.Random
@@ -39,7 +39,7 @@ files.
 These modules hold the core types (§5), the client-facing YAML writer
 (§12.3), the fork binding seam (§6), the statement reader (§7), the scope
 walk (§7.4), the prepare pass (§8), the preset binding (§10), the probe
-and the executor (§11), the witness search's seed, base, bit-vector,
+and the executor (§11), the witness search's manual, base, bit-vector,
 built, random, and shrink pieces (§9.2, §9.4, §9.6, §9.9), the records
 (§12), the client harness's results file (§13.3), the function format
 (§13.3), the pyspec format (§13.4, §13.5), the outcome lines (§16.1),

@@ -33,12 +33,12 @@ def leOf (b : ByteArray) : Nat :=
 
 /-- The search context one toy drive needs
 (`THEOREM_VECTORS_ARCHITECTURE.md` §9.2): the preset's constants
-substituted for the statement's instance binders, no seed terms, a fresh
-draw memo, and an empty reuse table. The caller names the binding, the
-preset, the output root, and the cache stamp; the toy drives stamp `""`,
-because their cache entries live in a scratch tree that dies with the
-drive. A drive that needs more (seed terms, a nonempty reuse table)
-constructs `SearchCtx` inline. -/
+substituted for the statement's instance binders, no manual terms, a
+fresh draw memo, and an empty reuse table. The caller names the binding,
+the preset, the output root, and the cache stamp; the toy drives stamp
+`""`, because their cache entries live in a scratch tree that dies with
+the drive. A drive that needs more (manual terms, a nonempty reuse
+table) constructs `SearchCtx` inline. -/
 def searchCtxOf (binding : ForkBinding) (p : PresetId)
     (outDir : System.FilePath) (builtStamp : String)
     (stmt : Statement) (ctx : StatementCtx) (info : ProbeInfo)
@@ -50,7 +50,7 @@ def searchCtxOf (binding : ForkBinding) (p : PresetId)
   return {
     probe := probe, info := info, binding := binding, preset := p,
     inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-    instConsts := instConsts, seedTerms := #[],
+    instConsts := instConsts, manualTerms := #[],
     drawMemo := ← IO.mkRef #[], outDir, builtStamp,
     earlierWins := #[] }
 

@@ -15,21 +15,21 @@ The random source of §9.4: draw the container inputs with their
 draw, and hand the residual formula over the scalar inputs to the solver.
 The loop redraws up to `theorem_vectors.randomDraws` times when a draw
 fails the case, and answers `nothing` when every draw fails: a per-draw
-`unsat` is a fact about that draw, the same rule the seed handoff's grid
-follows.
+`unsat` is a fact about that draw, the same rule the manual handoff's
+grid follows.
 
 The grounding runs through the probe's `reads` face: the probe evaluates
 the case's container-reading subterms at the candidate's bytes, and the
 source substitutes the serialized values as literals, walking the same
 plan `containerReads` produces. The scalars that sit inside a
 container-reading subterm (`builders[builderIndex]!.balance`'s
-`builderIndex`) are *coupled*: the seed handoff's walk names them, and
+`builderIndex`) are *coupled*: the manual handoff's walk names them, and
 they fix over the value grid, so each read grounds at a known point and
 the solver takes the remaining free scalars.
 
-The source runs after the bit-vector source on every list, seeded lines
-included (§9.2): on a case the seed fails, a draw beats no witness, and
-the record's `source` names the one that won.
+The source runs after the bit-vector source on every list, manual lines
+included (§9.2): on a case the manual terms fail, a draw beats no
+witness, and the record's `source` names the one that won.
 
 ## Lean idioms annotated
 
@@ -50,7 +50,7 @@ namespace EthCLLib.TheoremVectors
 
 /-- The reads' bytes at one solve point, layered like the candidate's own
 overlay (`buildAssignment`): the drawn containers, then the probe's
-seeds, then the coupled scalars at their grid values, then the zero
+manual bytes, then the coupled scalars at their grid values, then the zero
 encodings. This is what the probe's `reads` decodes (§9.4). -/
 private def readsBytesAt (ctx : SearchCtx) (stmt : Statement)
     (drawn : Array (Nat × ByteArray)) (fixedVals : Array (Nat × Nat)) :
@@ -59,7 +59,7 @@ private def readsBytesAt (ctx : SearchCtx) (stmt : Statement)
     match drawn.find? fun (p, _) => p == i with
     | some (_, b) => pure b
     | none =>
-      match ctx.probe.seeds.find? fun (p, _) => p == i with
+      match ctx.probe.manuals.find? fun (p, _) => p == i with
       | some (_, b) => pure b
       | none =>
         match fixedVals.find? fun (p, _) => p == i with
@@ -118,7 +118,7 @@ private def runPoint (ctx : SearchCtx) (stmt : Statement) (c : Case)
   -- panic reaches compiled code and no wasted solve bills the budget
   unless (ctx.probe.safe c.index bytes).all (· == true) do
     return none
-  let taken := (ctx.probe.seeds.map (·.1)) ++ (drawn.map (·.1)) ++
+  let taken := (ctx.probe.manuals.map (·.1)) ++ (drawn.map (·.1)) ++
     (fixedVals.map (·.1))
   if !((Array.range stmt.inputs.size).any fun i => !taken.contains i) then
     -- the bytes are a complete assignment: the check is the answer
@@ -134,7 +134,7 @@ private def runPoint (ctx : SearchCtx) (stmt : Statement) (c : Case)
 /-- One draw of the redraw loop (§9.4): walk the coupled scalars' grid
 over the drawn containers, and hand each fixed point's residual to the
 solver. A per-point `unsat` is a fact about the point, so the walk
-continues, the seed handoff's rule; a point whose reads run past a drawn
+continues, the manual handoff's rule; a point whose reads run past a drawn
 list's end is skipped at the gate inside `runPoint`. `kinds` and
 `coupled` come from the case alone and the caller computes them once. A
 coupled scalar whose literal term the substitution cannot write makes
@@ -208,12 +208,12 @@ def casePlanOf (ctx : SearchCtx) (stmt : Statement) (c : Case) :
   -- point
   let plan ← containerReads containerIds c.hyps
   -- the coupled scalars: the free scalars inside a container-mentioning
-  -- subterm, the seed handoff's walk over the drawn containers (§9.4);
+  -- subterm, the manual handoff's walk over the drawn containers (§9.4);
   -- computed once, the case's alone
   let scalarPos : Array Nat :=
     (Array.range stmt.inputs.size).filter fun i => (kinds[i]?).any (·.isSome)
   let inner : Array FVarId :=
-    c.hyps.foldl (fun acc h => topSeededScalarIds containerIds h acc) #[]
+    c.hyps.foldl (fun acc h => topManualScalarIds containerIds h acc) #[]
   let coupled := scalarPos.filter fun i =>
     inner.contains (ctx.inputFvars[i]!.fvarId!)
   let containers : Array Nat :=

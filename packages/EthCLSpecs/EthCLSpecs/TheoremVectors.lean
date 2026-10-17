@@ -12,9 +12,10 @@ import EthCLSpecs.TheoremVectors.Generators.Heze
 
 Library root (`THEOREM_VECTORS_ARCHITECTURE.md` §2.1, §4.2). The spec half supplies every
 fork fact the framework half asks for: one `ForkBinding` value per fork,
-the state-builder catalogs, the author seeds, the committed hints, and the
-generator files whose elaboration writes the records. §4.2 places each
-of those in its own module under this root. The generator commands run
+the state-builder catalogs, the author's manual terms, the committed
+hints, and the generator files whose elaboration writes the records.
+§4.2 places each of those in its own module under this root. The
+generator commands run
 at `lake build` time, so building this library is what writes the
 outcome files the report folds.
 -/

@@ -1,7 +1,7 @@
 {"theorem": "EthCLSpecs.Proofs.Gloas.isValidIndexedPayloadAttestation_eq_true_iff_checks",
  "fingerprint": "0x29da16f8666a0d98",
  "entries":
- [{"source": "seed",
+ [{"source": "manual",
    "side": true,
    "scalars": {},
    "preset": "minimal",
@@ -51,7 +51,7 @@
    "scalars": {},
    "preset": "minimal",
    "notFoundReason":
-   "notFound after seed, bitVec, built, random (no grid step of 6 satisfied the case; no draw satisfied the case within 64 draws)",
-   "notFound": ["seed", "bitVec", "built", "random"],
+   "notFound after manual, bitVec, built, random (no grid step of 6 satisfied the case; no draw satisfied the case within 64 draws)",
+   "notFound": ["manual", "bitVec", "built", "random"],
    "fingerprint": "0x29da16f8666a0d98",
    "case": 4}]}

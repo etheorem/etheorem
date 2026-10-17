@@ -126,7 +126,7 @@ private def roundTrip (thm : Name) (binding : ForkBinding)
     let searchCtx : SearchCtx :=
       { probe, info, binding, preset := .minimal,
         inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-        instConsts := #[], seedTerms := #[],
+        instConsts := #[], manualTerms := #[],
         drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
         builtStamp := "", earlierWins := #[] }
     -- §9.4: the base source never proposes the binding's state. A

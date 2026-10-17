@@ -22,9 +22,9 @@ Build-gate checks for stage 4 (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4, §9.5,
 
 - the generic `SSZRepr` draw (§9.5) produces bytes the strict decode
   accepts, and the same seed draws the same bytes twice;
-- the random source (§9.4) wins a container theorem with no seed: it
-  draws, grounds the hypothesis's container read, and hands the case to
-  the loop's check;
+- the random source (§9.4) wins a container theorem with no manual
+  terms: it draws, grounds the hypothesis's container read, and hands
+  the case to the loop's check;
 - the shrink (§9.6) reaches a witness whose bytes are smaller than the
   first draw's, and the check still holds;
 - the mainnet cap (§9.4): a state-typed container input at mainnet
@@ -123,8 +123,8 @@ run_cmd do
         | .ok _ => pure ()
         | .error e =>
           throwError s!"the draw's bytes did not decode: {repr e}"
-      -- ── the random source's drive (§9.4): no seed, the base source
-      -- refuses the state-typed container, the random source wins
+      -- ── the random source's drive (§9.4): no manual terms, the base
+      -- source refuses the state-typed container, the random source wins
       let sources : Array WitnessSource := #[baseSource, bitVecSource, randomSource]
       let sctx ← Tests.Support.searchCtxOf binding .minimal
         Tests.ToyFork.scratchOutDir "" stmt ctx info probe

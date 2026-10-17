@@ -13,9 +13,9 @@ One exception, from the stage 2 outcome: the source never proposes
 `default` for the fork's state. The empty state is not a reachable one, and
 on it the spec's own loops run to their fuel bounds, so the candidate
 either fails the check or burns the search; a theorem over the state gets
-its witness from a seed, a builder, or a draw instead. §9.4 states the rule
-over the statement's input types, so it sits in `applies`, where the search
-loop reads it, and `search` proposes the defaults alone.
+its witness from a manual term, a builder, or a draw instead. §9.4 states
+the rule over the statement's input types, so it sits in `applies`, where
+the search loop reads it, and `search` proposes the defaults alone.
 -/
 
 set_option autoImplicit false

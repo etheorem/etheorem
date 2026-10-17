@@ -55,7 +55,7 @@ def toyProbe : Probe where
   shrink _ := #[]
   reads _ _ := #[]
   safe _ _ := #[]
-  seeds := #[]
+  manuals := #[]
   defaults := #[]
   build i k := leBytes 8 (i * 1000 + k.validators + k.slot + k.queue + 1)
   run _ := .error "the toy probe does not run"

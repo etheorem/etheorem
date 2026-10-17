@@ -22,17 +22,18 @@ candidate the loop's check still decides.
 
 Three forms of the solve live here, one entry point:
 
-- **Pure scalar.** Every input scalar and no seeds: the prepared hypotheses
-  go to the solver as they are.
-- **The seed handoff.** A line whose seeds fix the container inputs leaves
-  scalar inputs, and the prepared hypotheses still name the seeded values
-  (`coverBidState.builders[builderIndex]!.balance`). The source fixes each
-  *coupled* scalar, one that co-occurs with a seeded input, over a bounded
-  value grid. At each fixed point the seeded reads become closed terms of
-  scalar type, the source evaluates them in compiled code and substitutes
-  the literals, and the solver takes the remaining free scalars. The grid
-  holds the small values a scalar index into a seeded container takes in
-  practice; a scalar the grid misses falls to a later source. The check
+- **Pure scalar.** Every input scalar and no manual terms: the prepared
+  hypotheses go to the solver as they are.
+- **The manual handoff.** A line whose manual terms fix the container
+  inputs leaves scalar inputs, and the prepared hypotheses still name the
+  manual values (`coverBidState.builders[builderIndex]!.balance`). The
+  source fixes each *coupled* scalar, one that co-occurs with a manual
+  input, over a bounded value grid. At each fixed point the manual reads
+  become closed terms of scalar type, the source evaluates them in
+  compiled code and substitutes the literals, and the solver takes the
+  remaining free scalars. The grid holds the small values a scalar index
+  into a manual container takes in practice; a scalar the grid misses
+  falls to a later source. The check
   stays the single arbiter throughout: a candidate from any fixed point
   counts only when the compiled `decide` accepts it, and a
   per-fixed-point `unsat` never reports the case vacuous, because another
@@ -45,9 +46,9 @@ Three forms of the solve live here, one entry point:
   past (§9.3, §9.4).
 
 The random source (§9.4) drives the same entry point with its drawn
-containers in the `drawn` overlay: the seeds' positions stay the probe's,
-and the drawn bytes stand in for the containers, so a drawn state grounds
-the same reads a seed would.
+containers in the `drawn` overlay: the manual terms' positions stay the
+probe's, and the drawn bytes stand in for the containers, so a drawn
+state grounds the same reads a manual term would.
 
 ## Lean idioms annotated
 
@@ -142,7 +143,7 @@ private unsafe def evalUInt64Impl (e : Expr) : MetaM UInt64 :=
 @[implemented_by evalUInt64Impl] private opaque evalUInt64Op (e : Expr) : MetaM UInt64
 
 /-- The values one coupled scalar walks in the grid (§9.4): the small values
-a scalar index into a seeded container takes in practice. -/
+a scalar index into a manual container takes in practice. -/
 def gridValuesPerScalar : Nat := 64
 
 /-- The grid's point cap (§9.4): the most fixed points one case's handoff
@@ -150,7 +151,7 @@ walks. -/
 def gridPointCap : Nat := 128
 
 /-- The values one coupled scalar walks in the grid: the small values a
-scalar index into a seeded container takes in practice. -/
+scalar index into a manual container takes in practice. -/
 def gridValues (k : ScalarKind) : MetaM (Array Nat) := do
   match k with
   | .bool => pure #[0, 1]
@@ -244,7 +245,7 @@ private def groundsScalar (env : Environment) (e : Expr) : Bool :=
     | some _ => true
 
 /-- Replace every maximal closed subterm of `e` with its compiled value
-(§9.4's read substitution). Seeded reads
+(§9.4's read substitution). Manual reads
 (`coverBidState.builders[0]!.balance`), preset constants
 (`UInt64.ofNat slotsPerEpoch`, whose opaque form the solver would abstract
 into a spurious model), and crypto gates under the verify-off backend all
@@ -327,11 +328,11 @@ private def unwrapAtom (e : Expr) : Option FVarId :=
 /-- What one solve attempt answered. The random source drives the same
 entry point, so the answer type is the shared face. -/
 inductive SolveAnswer where
-  /-- A candidate assignment: seeds, drawn containers, fixed coupled
-  values, solved values. `abstracted` names the atoms the solver left
-  opaque, when the model did not cover every equation; a candidate the
-  check rejects was spurious, and the atoms say which lemma the formula
-  missed. -/
+  /-- A candidate assignment: manual terms, drawn containers, fixed
+  coupled values, solved values. `abstracted` names the atoms the solver
+  left opaque, when the model did not cover every equation; a candidate
+  the check rejects was spurious, and the atoms say which lemma the
+  formula missed. -/
   | solved (a : Assignment) (abstracted : Array String := #[])
   /-- The solver proved this fixed point's conjunction unsatisfiable. -/
   | unsat
@@ -339,10 +340,10 @@ inductive SolveAnswer where
   | stuck (detail : Option String := none)
 
 /-- The candidate's bytes for every input: the drawn bytes for the drawn
-containers, which win over the seeds, since on a seeded line's failing
-case a draw replaces the author's choice (§9.2); then the seeds' bytes
-from the probe, the fixed and solved scalars from their kinds, and the
-zero scalar for what neither touched. -/
+containers, which win over the manual terms, since on a manual line's
+failing case a draw replaces the author's choice (§9.2); then the manual
+terms' bytes from the probe, the fixed and solved scalars from their
+kinds, and the zero scalar for what neither touched. -/
 private def buildAssignment (ctx : SearchCtx) (stmt : Statement)
     (drawn : Array (Nat × ByteArray)) (fixed solved : Array (Nat × Nat)) :
     MetaM (Option Assignment) := do
@@ -352,7 +353,7 @@ private def buildAssignment (ctx : SearchCtx) (stmt : Statement)
     match drawn.find? fun (p, _) => p == i with
     | some (_, b) => a := a.push b
     | none =>
-      match ctx.probe.seeds.find? fun (p, _) => p == i with
+      match ctx.probe.manuals.find? fun (p, _) => p == i with
       | some (_, b) => a := a.push b
       | none =>
         let ty := stmt.inputs[i]!.type
@@ -363,18 +364,19 @@ private def buildAssignment (ctx : SearchCtx) (stmt : Statement)
           a := a.push (scalarBytes k v)
   return some a
 
-/-- One solve attempt at one substitution state: substitute the seeds, the
-drawn containers, and the fixed coupled values, unfold (§8.1), evaluate
-the closed reads, and pose the negated conjunction to the solver (§9.4).
+/-- One solve attempt at one substitution state: substitute the manual
+terms, the drawn containers, and the fixed coupled values, unfold (§8.1),
+evaluate the closed reads, and pose the negated conjunction to the
+solver (§9.4).
 `hyps` carries the case's conjunctions' parts, already read-substituted
 when the caller grounds container reads (§9.4's random source).
 `fixedVals` carries the same positions as `fixed` with the values the
 terms spell, so the candidate names what the formula was solved against.
-`unfold` runs §8.1's pass: the seed handoff needs it, because a seed term
-is a spec call whose equations expose the arithmetic; the random source
-skips it, because its reads grounding already replaced the calls with
-literals and a second unfold over a drawn state's hypotheses would burn
-the run's budget per grid point. When the grounding leaves no free
+`unfold` runs §8.1's pass: the manual handoff needs it, because a manual
+term is a spec call whose equations expose the arithmetic; the random
+source skips it, because its reads grounding already replaced the calls
+with literals and a second unfold over a drawn state's hypotheses would
+burn the run's budget per grid point. When the grounding leaves no free
 scalar in the formula, the candidate goes to the probe's `check`, the
 compiled `decide` of the case's own conjunction, which answers without a
 `Decidable` synthesis over the grounded form; `true` is the point's
@@ -386,18 +388,18 @@ def solveOnce (ctx : SearchCtx) (stmt : Statement) (caseIndex : Nat)
   -- §9.4, from the stage-4 outcome: a fixed point whose reads run past a
   -- container's end is skipped before the grounding evaluates them, the
   -- same rule the random source's points follow; the compiled evaluation
-  -- of a seeded read never sees an out-of-range index
+  -- of a manual read never sees an out-of-range index
   match ← buildAssignment ctx stmt drawn fixedVals #[] with
     | some gateBytes =>
       unless (ctx.probe.safe caseIndex gateBytes).all (· == true) do
         return .stuck (some "a read is out of range at this fixed point")
     | none => pure ()
-  let taken := (ctx.seedTerms.map (·.1)) ++ (drawn.map (·.1)) ++
+  let taken := (ctx.manualTerms.map (·.1)) ++ (drawn.map (·.1)) ++
     (fixed.map (·.1))
   let free : Array Nat :=
     (Array.range stmt.inputs.size).filter (fun i => !taken.contains i)
   -- the instance substitution (§11.2): the preset's constants for the
-  -- telescope's instance variables, which the seeded terms and the reads
+  -- telescope's instance variables, which the manual terms and the reads
   -- carry
   let instSub (e : Expr) : Expr :=
     e.replace fun s =>
@@ -433,15 +435,15 @@ def solveOnce (ctx : SearchCtx) (stmt : Statement) (caseIndex : Nat)
             #[.const ``UInt64 [], ltUInt64, u,
               mkApp (.const ``UInt64.ofNat []) n]
           eliminateReads (fresh.map (·.fvarId!)) instSub bound0
-    -- the substitution the formula reads: a seed the draw replaced
-    -- leaves, since the candidate carries the drawn bytes and the
-    -- leftover subterm must ground at the draw, not at the author's
+    -- the substitution the formula reads: a manual term the draw
+    -- replaced leaves, since the candidate carries the drawn bytes and
+    -- the leftover subterm must ground at the draw, not at the author's
     -- term; then the fixed coupled scalars; then the non-`Fin` free
     -- scalars, whose stand-ins the substitution writes in directly (a
     -- `Fin` input's own variable stays, and its `Fin.val` reads rewrite
     -- to the stand-in below)
     let sub : Array (FVarId × Expr) :=
-      (((ctx.seedTerms.filter fun (pos, _) =>
+      (((ctx.manualTerms.filter fun (pos, _) =>
             !(drawn.any fun (p, _) => p == pos)) ++
           fixed).filterMap fun (pos, t) => do
             let f ← ctx.inputFvars[pos]?
@@ -588,14 +590,14 @@ def solveOnce (ctx : SearchCtx) (stmt : Statement) (caseIndex : Nat)
     | some (.ok _) => return .unsat
     | none => return .stuck none
 
-/-- The scalars a seeded subterm computes over: the free scalars inside the
-topmost seeded-mentioning subterm of `e`, where the logical and comparison
+/-- The scalars a manual subterm computes over: the free scalars inside the
+topmost manual-mentioning subterm of `e`, where the logical and comparison
 connectives stay transparent. `bidAmount ≤ builders[i]!.balance - min`
 names `builderIndex` this way (it sits inside the subtraction over the
-seeded state) and leaves `bidAmount` free for the solver, because
+manual state) and leaves `bidAmount` free for the solver, because
 `bidAmount` is a comparison operand, not a read index. The random source
 runs the same walk over its drawn containers (§9.4). -/
-partial def topSeededScalarIds (seededIds : Array FVarId) (e : Expr)
+partial def topManualScalarIds (manualIds : Array FVarId) (e : Expr)
     (acc : Array FVarId) : Array FVarId :=
   let isConnective : Bool :=
     match e.getAppFn with
@@ -603,10 +605,10 @@ partial def topSeededScalarIds (seededIds : Array FVarId) (e : Expr)
       c == ``And || c == ``Or || c == ``Not || c == ``Eq || c == ``Iff ||
       c == ``Ne || c == ``LT.lt || c == ``LE.le || c == ``GT.gt || c == ``GE.ge
     | _ => false
-  if !((collectFVarIds e #[]).any seededIds.contains) then
+  if !((collectFVarIds e #[]).any manualIds.contains) then
     acc
   else if isConnective then
-    e.getAppArgs.foldl (fun acc a => topSeededScalarIds seededIds a acc) acc
+    e.getAppArgs.foldl (fun acc a => topManualScalarIds manualIds a acc) acc
   else
     (collectFVarIds e #[]).foldl (fun acc id =>
       if acc.contains id then acc else acc.push id) acc
@@ -617,7 +619,7 @@ coupled scalar stays in every point: the cap truncates after each fold,
 so a cut grid explores the earlier scalars' low values across the later
 scalars' low values. `valuesCap` bounds each scalar's values from above
 when the containers in play are known to be drawn (`randomSize`, §9.4);
-`0` means no bound, the seed handoff's case, where the seeded
+`0` means no bound, the manual handoff's case, where the manual
 containers are the author's. -/
 def coupledGrid (kinds : Array (Option ScalarKind)) (coupled : Array Nat)
     (valuesCap : Nat) : MetaM (Array (Array (Nat × Nat))) := do
@@ -640,38 +642,39 @@ private def literalDetail (stmt : Statement) (position : Nat) : String :=
 
 /-- The bit-vector source (§9.4). Applies to a theorem without block
 inputs; the search answers `nothing` when the residual inputs carry a
-container the seeds do not fix. -/
+container the manual terms do not fix. -/
 def bitVecSource : WitnessSource where
   tag := .bitVec
   applies _ stmt _ := stmt.blockInputs.isEmpty
   search ctx stmt c := do
-    let seededPos := ctx.seedTerms.map (·.1)
+    let manualPos := ctx.manualTerms.map (·.1)
     let residual : Array Nat :=
-      (Array.range stmt.inputs.size).filter (fun i => !seededPos.contains i)
-    -- one kind per input position, `none` for a seeded or container input;
-    -- the statement's own table, the reader computed once (§9.4)
+      (Array.range stmt.inputs.size).filter (fun i => !manualPos.contains i)
+    -- one kind per input position, `none` for a manual or container
+    -- input; the statement's own table, the reader computed once (§9.4)
     let kinds : Array (Option ScalarKind) :=
       (Array.range stmt.inputs.size).map fun i =>
-        if seededPos.contains i then none else stmt.scalarKinds[i]? |>.join
+        if manualPos.contains i then none else stmt.scalarKinds[i]? |>.join
     let residualKinds := residual.filterMap (fun i => kinds[i]?)
     unless residualKinds.all (·.isSome) do
       -- a residual container input: no bit-vector solve
       return .nothing
-    -- §9.4: the coupled scalars sit inside a computation over a seeded
+    -- §9.4: the coupled scalars sit inside a computation over a manual
     -- input (a read index); the comparison operands stay free
-    let seededIds := ctx.seedTerms.filterMap fun (pos, _) => do
+    let manualIds := ctx.manualTerms.filterMap fun (pos, _) => do
       let f ← ctx.inputFvars[pos]?
       some f.fvarId!
     let inner : Array FVarId :=
-      c.hyps.foldl (fun acc h => topSeededScalarIds seededIds h acc) #[]
+      c.hyps.foldl (fun acc h => topManualScalarIds manualIds h acc) #[]
     let coupled := residual.filter (fun i =>
       inner.contains (ctx.inputFvars[i]!.fvarId!))
-    if coupled.isEmpty && ctx.seedTerms.isEmpty then
-      -- the pure scalar solve: every input is a free scalar and no seed
-      -- stands in the formula, so a solver proof of `¬P` is the case's
-      -- `unsat` (§9.4). A seeded theorem never takes this branch: its
-      -- reads hold the seed's values, so an `unsat` there is a fact about
-      -- one seed, and the grid below answers `nothing` for it.
+    if coupled.isEmpty && ctx.manualTerms.isEmpty then
+      -- the pure scalar solve: every input is a free scalar and no
+      -- manual term stands in the formula, so a solver proof of `¬P` is
+      -- the case's `unsat` (§9.4). A manual theorem never takes this
+      -- branch: its reads hold the manual terms' values, so an `unsat`
+      -- there is a fact about one manual input, and the grid below
+      -- answers `nothing` for it.
       match ← solveOnce ctx stmt c.index true c.hyps #[] #[] #[] with
       | .solved a abstracted =>
         -- the loop's check is the single arbiter (§9.3); a rejected
@@ -684,9 +687,9 @@ def bitVecSource : WitnessSource where
            else some (String.intercalate "; " abstracted.toList))
       | .unsat => return .unsat
       | .stuck detail => return .nothing detail
-    -- §9.4's handoff: the seeds fix the containers, the coupled scalars
-    -- walk the grid, the solver takes the rest. A per-grid-point `unsat`
-    -- is not the case's answer; another point may satisfy it.
+    -- §9.4's handoff: the manual terms fix the containers, the coupled
+    -- scalars walk the grid, the solver takes the rest. A per-grid-point
+    -- `unsat` is not the case's answer; another point may satisfy it.
     let mut details : Array String := #[]
     for fixedStx in ← coupledGrid kinds coupled 0 do
       let mut fixed : Array (Nat × Expr) := #[]

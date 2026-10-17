@@ -34,22 +34,22 @@ set_option autoImplicit false
 namespace EthCLLib.TheoremVectors
 
 /-- The witness-reuse source (`THEOREM_VECTORS_ARCHITECTURE.md` §10). It applies when the
-statement has no block inputs, every input is a scalar, the line named
-no author seeds, and an earlier preset of this line won this exact
+statement has no block inputs, every input is a scalar, the line named no
+manual terms, and an earlier preset of this line won this exact
 `(case index, side)`; the command filled the context's table only when
 the statement passed `Preset.presetFree`, so a matching entry is
-preset-free by construction. The seed gate keeps §18's claim checkable:
-a fully-covering seed must win its own case at every preset, so a seeded
-line never carries its witness over. The tag is a placeholder that never
-names a record: every candidate carries its own origin in `tag?`, so the
-record names `reused-<fromPreset>`, and the tag shows only in a
-`notFound` reason's tried list. -/
+preset-free by construction. The manual gate keeps §18's claim
+checkable: a fully-covering set of manual terms must win its own case at
+every preset, so a manual line never carries its witness over. The tag is
+a placeholder that never names a record: every candidate carries its own
+origin in `tag?`, so the record names `reused-<fromPreset>`, and the tag
+shows only in a `notFound` reason's tried list. -/
 def reuseSource : WitnessSource where
   tag := .reused PresetId.minimal
   applies ctx stmt c :=
     stmt.blockInputs.isEmpty &&
     (stmt.scalarKinds.all Option.isSome) &&
-    ctx.probe.seeds.isEmpty &&
+    ctx.probe.manuals.isEmpty &&
     ctx.earlierWins.any fun w => w.caseIndex == c.index && w.side == c.side
   search ctx _ c := do
     match ctx.earlierWins.find? fun w => w.caseIndex == c.index && w.side == c.side with

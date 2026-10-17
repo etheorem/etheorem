@@ -7,7 +7,7 @@ import EthCLLib.TheoremVectors.Probe
 import EthCLLib.TheoremVectors.Execute
 import EthCLLib.TheoremVectors.Witness.Source
 import EthCLLib.TheoremVectors.Witness.Base
-import EthCLLib.TheoremVectors.Witness.Seed
+import EthCLLib.TheoremVectors.Witness.Manual
 import EthCLLib.TheoremVectors.Witness.BitVec
 import EthCLLib.TheoremVectors.Tests.ToyFork
 import EthCLLib.TheoremVectors.Tests.Support
@@ -19,10 +19,11 @@ Build-gate checks for stage 3 (`THEOREM_VECTORS_ARCHITECTURE.md` §8.2, §9.4):
 a hypothesis `a < b ∨ a = b` splits into two cases; the solver's witness for
 an equality disjunct lands on the boundary; an unsatisfiable hypothesis
 answers `unsat` and proposes no candidate; a `.toNat` hypothesis rewrites
-to `UInt64` form, which is what makes it solvable; a seed that makes
-the residual formula unsatisfiable answers `notFound`, never `unsat`,
-because the vacuity the solver proved is a fact about one seed; a split
-past the cap falls back to the unsplit hypothesis with a note (§8.2); and
+to `UInt64` form, which is what makes it solvable; a manual term that
+makes the residual formula unsatisfiable answers `notFound`, never
+`unsat`, because the vacuity the solver proved is a fact about one manual
+input; a split past the cap falls back to the unsplit hypothesis with a
+note (§8.2); and
 a case with no `Decidable` instance is reported and dropped (§8.4). The
 drives run the search loop's sources over the toy fork's scalar theorems.
 
@@ -67,12 +68,12 @@ set rewrites it to `a + 1 = b`, and the solver reads `UInt64` form. -/
 theorem toyToNat [HasherTag] (a b : UInt64) (_h : a.toNat + 1 = b.toNat) :
     toyFun a = a + 3 := rfl
 
-/-- The seeded-handoff pin's theorem, over a toy binding whose state type
-is `UInt64`: the seed fixes `s` to `0`, which makes the residual
-hypothesis `a < s` hold for no `a` at that seed, while other seeds admit
-witnesses. The case is `notFound` at the seed, never `unsat` -- the
-vacuity the solver proved is a fact about one seed, not the theorem. -/
-theorem toySeeded [HasherTag] (s : UInt64) (a : UInt64) (_h : a < s) :
+/-- The manual-handoff pin's theorem, over a toy binding whose state type
+is `UInt64`: the manual term fixes `s` to `0`, which makes the residual
+hypothesis `a < s` hold for no `a` at that term. The case is `notFound`
+at the term, never `unsat`: the solver's vacuity proof covers this one
+manual input alone, and other manual inputs admit witnesses. -/
+theorem toyManual [HasherTag] (s : UInt64) (a : UInt64) (_h : a < s) :
     toyFun a = a + 3 := rfl
 
 /-- The cap-fallback pin's theorem: seventeen disjuncts, one past the
@@ -96,10 +97,10 @@ abbrev toyWei : Type := UInt64
 /-- A read whose type is the alias: the grounding gate's own example. -/
 def toyBal (_ : UInt64) : toyWei := 3
 
-/-- The alias-read pin's theorem: the seed fixes `s`, the read `toyBal s`
-has the alias type, and the source must ground it. A gate that names only
-the bare scalar types refuses the read, the solver abstracts it into a
-spurious model, and the case reads `notFound` (§9.4). -/
+/-- The alias-read pin's theorem: the manual term fixes `s`, the read
+`toyBal s` has the alias type, and the source must ground it. A gate that
+names only the bare scalar types refuses the read, the solver abstracts
+it into a spurious model, and the case reads `notFound` (§9.4). -/
 theorem toyAliasRead [HasherTag] (s a : UInt64) (_h : toyBal s ≤ a) :
     toyFun a = a + 3 := rfl
 
@@ -201,57 +202,58 @@ run_cmd do
           throwError s!"toyToNat: the witness ({Tests.Support.leOf a[0]!}, {Tests.Support.leOf a[1]!}) \
             does not satisfy a + 1 = b"
       | .error f => throwError s!"toyToNat: {repr f}"
-    -- ── the seeded-handoff pin: the seed fixes `s` to 0, the residual
-    -- `a < s` is unsatisfiable at that seed, and the case is `notFound`,
-    -- never `unsat` (§9.4: the vacuity is about one seed). The base
-    -- source refuses the state input, so the search runs seed then the
-    -- bit-vector handoff alone.
+    -- ── the manual-handoff pin: the manual term fixes `s` to 0, the
+    -- residual `a < s` is unsatisfiable at that term, and the case is
+    -- `notFound`, never `unsat` (§9.4: the vacuity is about one manual
+    -- input). The base source refuses the state input, so the search
+    -- runs manual then the bit-vector handoff alone.
     let stateBinding : ForkBinding :=
         { EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding with
             stateType := `UInt64 }
-    Statement.readIn stateBinding `EthCLLib.TheoremVectors.Tests.BitVec.toySeeded fun ctx => do
+    Statement.readIn stateBinding `EthCLLib.TheoremVectors.Tests.BitVec.toyManual fun ctx => do
       let stmt ← Scope.classify stateBinding ctx.stmt
       let (cases, _) ← Prepare.pass stmt
       unless cases.size == 1 do
-        throwError s!"toySeeded: expected one prepared case, got {cases.size}"
-      -- the seed term `0`, elaborated in the telescope like a `with` term
+        throwError s!"toyManual: expected one prepared case, got {cases.size}"
+      -- the manual term `0`, elaborated in the telescope like a
+      -- `with` term
       let stx ← `(term| 0)
-      let seedTerm ← (Lean.Elab.Term.withoutErrToSorry
+      let manualTerm ← (Lean.Elab.Term.withoutErrToSorry
         (Lean.Elab.Term.elabTermAndSynthesize stx (some (.const ``UInt64 [])))).run'
-      let seedTerm ← Lean.instantiateMVars seedTerm
-      let (info, probe) ← match ← Probe.ofStatement stateBinding .minimal ctx cases #[(0, seedTerm)] with
+      let manualTerm ← Lean.instantiateMVars manualTerm
+      let (info, probe) ← match ← Probe.ofStatement stateBinding .minimal ctx cases #[(0, manualTerm)] with
         | .ok r => pure r
-        | .error e => throwError s!"toySeeded: the probe refused to build: {e}"
+        | .error e => throwError s!"toyManual: the probe refused to build: {e}"
       let instConsts ← stmt.instances.mapM fun (_, kind) =>
         match Preset.constOf stateBinding .minimal kind with
         | .ok c => pure c
         | .error e => throwError e
-      -- `Support.searchCtxOf` carries no seed terms; this drive seeds
+      -- `Support.searchCtxOf` carries no manual terms; this drive fixes
       -- input 0, so the construction stays inline
       let sctx : SearchCtx :=
         { probe, info, binding := stateBinding, preset := PresetId.minimal,
           inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-          instConsts := instConsts, seedTerms := #[(0, seedTerm)],
+          instConsts := instConsts, manualTerms := #[(0, manualTerm)],
           drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
           builtStamp := "", earlierWins := #[] }
       -- §9.4: the base source's `applies` refuses the state input, so
       -- the search loop never proposes the `default` state
       if baseSource.applies sctx stmt cases[0]! then
-        throwError "toySeeded: base should refuse the state input"
-      -- §9.4: the seed source refuses a partial seed that leaves the
-      -- state input to the `default` fill
-      if seedSource.applies sctx stmt cases[0]! then
-        throwError "toySeeded: the seed source should refuse a partial \
-          seed over an unseeded state input"
-      -- seed then bit-vector: the case ends notFound
-      let sources : Array WitnessSource := #[seedSource, bitVecSource]
+        throwError "toyManual: base should refuse the state input"
+      -- §9.4: the manual source refuses a partial set of manual terms
+      -- that leaves the state input to the `default` fill
+      if manualSource.applies sctx stmt cases[0]! then
+        throwError "toyManual: the manual source should refuse manual \
+          terms over an uncovered state input"
+      -- manual then bit-vector: the case ends notFound
+      let sources : Array WitnessSource := #[manualSource, bitVecSource]
       match ← searchCase sources sctx stmt cases[0]! with
-      | .ok _ => throwError "toySeeded: the search found a witness at an \
-          unsatisfiable seed"
-      | .error .unsat => throwError "toySeeded: the case reported unsat, \
-          but the vacuity is about one seed"
+      | .ok _ => throwError "toyManual: the search found a witness at an \
+          unsatisfiable manual term"
+      | .error .unsat => throwError "toyManual: the case reported unsat, \
+          but the vacuity is about one manual input"
       | .error (.notFound _ _) => pure ()
-      | .error f => throwError s!"toySeeded: {repr f}"
+      | .error f => throwError s!"toyManual: {repr f}"
     -- ── the cap-fallback pin: seventeen disjuncts pass the cap, the pass
     -- keeps the unsplit hypothesis, and the note reports the fallback
     -- (§8.2)
@@ -280,9 +282,9 @@ run_cmd do
           && dropped[0]!.contains "no `Decidable` instance" do
         throwError s!"toyNoDecidable: expected the drop note, got \
           {repr dropped}"
-    -- ── the alias-read pin: the seeded read's type is the alias, and the
-    -- source grounds it to the literal, so the solver takes the residual
-    -- formula and the check accepts its model (§9.4)
+    -- ── the alias-read pin: the manual read's type is the alias, and
+    -- the source grounds it to the literal, so the solver takes the
+    -- residual formula and the check accepts its model (§9.4)
     Statement.readIn binding `EthCLLib.TheoremVectors.Tests.BitVec.toyAliasRead fun ctx => do
       let stmt ← Scope.classify binding ctx.stmt
       let (cases, _) ← Prepare.pass stmt
@@ -290,25 +292,25 @@ run_cmd do
         throwError s!"toyAliasRead: expected one prepared case, got \
           {cases.size}"
       let stx ← `(term| 0)
-      let seedTerm ← (Lean.Elab.Term.withoutErrToSorry
+      let manualTerm ← (Lean.Elab.Term.withoutErrToSorry
         (Lean.Elab.Term.elabTermAndSynthesize stx (some (.const ``UInt64 [])))).run'
-      let seedTerm ← Lean.instantiateMVars seedTerm
-      let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[(0, seedTerm)] with
+      let manualTerm ← Lean.instantiateMVars manualTerm
+      let (info, probe) ← match ← Probe.ofStatement binding .minimal ctx cases #[(0, manualTerm)] with
         | .ok r => pure r
         | .error e => throwError s!"toyAliasRead: the probe refused to build: {e}"
       let instConsts ← stmt.instances.mapM fun (_, kind) =>
         match Preset.constOf binding .minimal kind with
         | .ok c => pure c
         | .error e => throwError e
-      -- `Support.searchCtxOf` carries no seed terms; this drive seeds
+      -- `Support.searchCtxOf` carries no manual terms; this drive fixes
       -- input 0, so the construction stays inline
       let sctx : SearchCtx :=
         { probe, info, binding, preset := PresetId.minimal,
           inputFvars := ctx.inputFvars, instFvars := ctx.instFvars,
-          instConsts := instConsts, seedTerms := #[(0, seedTerm)],
+          instConsts := instConsts, manualTerms := #[(0, manualTerm)],
           drawMemo := ← IO.mkRef #[], outDir := Tests.ToyFork.scratchOutDir,
           builtStamp := "", earlierWins := #[] }
-      let sources : Array WitnessSource := #[seedSource, bitVecSource]
+      let sources : Array WitnessSource := #[manualSource, bitVecSource]
       match ← searchCase sources sctx stmt cases[0]! with
       | .ok (a, won) =>
         unless won == .bitVec do

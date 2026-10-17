@@ -27,7 +27,7 @@ The file is one JSON document per theorem and fork:
 ```
 
 Only what the search decided goes in, never the witness bytes. The
-base and seed sources need nothing beyond their tag. The bit-vector
+base and manual sources need nothing beyond their tag. The bit-vector
 source needs the scalar literals. The random source needs the generator
 seed, the size, and the draw index, because a draw is a pure function
 of those three and `Gen` replays it. The built source needs the builder
@@ -315,20 +315,20 @@ private def entryScalar (e : HintEntry) (stmt : Statement) (i : Nat) : Nat :=
 
 /-- Rebuild the candidate one hint entry recorded (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8).
 The overlay follows the winning assignment's construction: the drawn
-containers win over the seeds in a random replay, the seeds win at the
-positions they fix in a bit-vector replay, and the hint's scalars fill
-the solver's choices. A reused entry (§10) rebuilds every input from the
-entry's scalar table alone, because the reuse source proposes only for a
-statement whose every input is a scalar. The replay wrapper counts as
-the form under it at any depth, so `.hinted (.reused p)` rebuilds from
-the same table and a doubly wrapped entry reaches the source under
-both wrappers. `none` when the entry does not describe a candidate
-this module can rebuild. -/
+containers win over the manual terms in a random replay, the manual terms
+win at the positions they fix in a bit-vector replay, and the hint's
+scalars fill the solver's choices. A reused entry (§10) rebuilds every
+input from the entry's scalar table alone, because the reuse source
+proposes only for a statement whose every input is a scalar. The replay
+wrapper counts as the form under it at any depth, so `.hinted (.reused p)`
+rebuilds from the same table and a doubly wrapped entry reaches the
+source under both wrappers. `none` when the entry does not describe a
+candidate this module can rebuild. -/
 def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
     MetaM (Option Assignment) := do
-  let seeded := ctx.probe.seeds.map (·.1)
-  let seedBytes (i : Nat) : ByteArray :=
-    (ctx.probe.seeds.find? fun (p, _) => p == i).map (·.2) |>.getD emptyBytes
+  let manualPositions := ctx.probe.manuals.map (·.1)
+  let manualBytes (i : Nat) : ByteArray :=
+    (ctx.probe.manuals.find? fun (p, _) => p == i).map (·.2) |>.getD emptyBytes
   let scalarVal (i : Nat) : Nat := entryScalar e stmt i
   let scalarByte (i : Nat) : MetaM (Option ByteArray) := do
     match stmt.scalarKinds[i]? |>.join with
@@ -351,16 +351,16 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
       | some b => a := a.push b
     pure (some a)
   | .base => pure (some ctx.probe.defaults)
-  | .seed =>
-    pure (some (ctx.probe.seeds.foldl (init := ctx.probe.defaults)
+  | .manual =>
+    pure (some (ctx.probe.manuals.foldl (init := ctx.probe.defaults)
       fun acc p =>
         let (pos, b) := p
         acc.setIfInBounds pos b))
   | .bitVec =>
     let mut a : Array ByteArray := #[]
     for i in [0:stmt.inputs.size] do
-      if seeded.contains i then
-        a := a.push (seedBytes i)
+      if manualPositions.contains i then
+        a := a.push (manualBytes i)
       else
         match ← scalarByte i with
         | none => return none
@@ -376,10 +376,11 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
     let mut a : Array ByteArray := #[]
     for i in [0:stmt.inputs.size] do
       if stmt.scalarKinds[i]?.join.isNone then
-        -- the drawn containers win over the seeds (§9.4's overlay)
+        -- the drawn containers win over the manual terms, per the
+        -- §9.4 overlay
         a := a.push (raw.getD i emptyBytes)
-      else if seeded.contains i then
-        a := a.push (seedBytes i)
+      else if manualPositions.contains i then
+        a := a.push (manualBytes i)
       else
         match ← scalarByte i with
         | none => return none
@@ -419,8 +420,8 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
       else match drawn.find? fun (p, _) => p == i with
         | some (_, b) => a := a.push b
         | none =>
-          if seeded.contains i then
-            a := a.push (seedBytes i)
+          if manualPositions.contains i then
+            a := a.push (manualBytes i)
           else
             match ← scalarByte i with
             | none => return none
@@ -499,7 +500,7 @@ def Hint.entryOf (ctx : SearchCtx) (stmt : Statement) (c : Case)
       { preset := ctx.preset, «case» := c.index, side := c.side, source := src,
         fingerprint := some fingerprint }
     match src with
-    | .base | .seed => pure (some head)
+    | .base | .manual => pure (some head)
     | .bitVec => do
       let some scalars ← scalarsOf stmt a | return none
       pure (some { head with scalars := scalars })
