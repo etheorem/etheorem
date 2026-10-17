@@ -3,6 +3,7 @@ import EthCLLib.Proofs.Checked
 import EthCLLib.Proofs.EngineLaws
 import EthCLLib.Proofs.Frame
 import EthCLLib.Proofs.KeepsUncached
+import EthCLLib.Proofs.KeepsUncachedMemLoop
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
 import EthCLLib.Proofs.OfFnM
@@ -52,4 +53,6 @@ Re-exports:
   `KeepsUncachedFrom`, `ReturnsUncached`, `RunPassesP`), their closure and loop
   lemmas, the indexed-read run equations, and the conditional bind law
   `runPure_bind_of_keepsUncached`.
+* `EthCLLib.Proofs.KeepsUncachedMemLoop`: the `forIn'` loop lemmas for a
+  `for h : i in xs` loop, whose body reads the membership proof `h`.
 -/

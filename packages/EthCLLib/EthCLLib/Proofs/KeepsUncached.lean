@@ -16,14 +16,26 @@ an uncached box. Under it the bind law holds
 splits into its steps'.
 
 The predicate is generic over the SSZ value type `T`, the error `ε`, and the
-result `α`, the same way `runPure` is. The closure lemmas cover the constructs the
-spec bodies use: `pure`, `throw`, `bind`, `get`, `set` of a rebuilt box,
-`modify` through a writer that maps `pureState v` to `pureState` of a value (the
-shape `modBalance_pureState` supplies), `liftErr` and `assert`-shaped gates, the
-checked list constructor `sszOfArrayM`, `if`,
-and the `for` / `forM` folds over `List`, `Array`, and `SSZList`. A `match` on a
-plain value reduces to its branch by `cases` on the scrutinee, and
-`keepsUncached_congr` carries the fact across such a reduction.
+result `α`, the same way `runPure` is. The closure lemmas cover these constructs of
+the spec bodies:
+
+* the leaves `pure`, `throw`, `get`, `getStateRoot`, `liftErr`, the checked list
+  constructor `sszOfArrayM`, and `set` of a rebuilt box.
+* `bind`, `if` / `dite` and `assert`-shaped gates.
+* `modify` through a writer that maps `pureState v` to `pureState` of a value (the
+  shape `modBalance_pureState` supplies). A writer that branches on the box or loops
+  over it in `Id` proves that hypothesis through `IsPure`.
+* the `appendState` and `setOrAppendState` expansions.
+* the `for` folds over `List`, `Array`, a range, and `SSZList`, the `forM` fold over
+  `Array`, and `fuelLoop`.
+* actions that return a box (`ReturnsUncached`), with a range loop that returns its
+  box accumulator.
+
+A `match` on a plain value reduces to its branch by `cases` on the scrutinee, and
+`keepsUncached_congr` carries the fact across such a reduction. Under
+`KeepsUncached`, a `runPure` fact and a `.run` fact on `pureState` convert
+(`runPure_iff_run_of_keepsUncached`), and a successful bind splits at a `pureState`
+midpoint (`run_bind_eq_ok_pure`).
 
 `KeepsUncached` is a claim about the *box flavour a run threads*, not about
 behavior: it says nothing about which value the run writes or whether it rejects.
@@ -290,26 +302,19 @@ theorem keepsUncached_forM_array {T ε α : Type} [SSZRepr T] [HasherTag]
     ← Array.foldlM_toList]
   exact keepsUncached_foldlM_list (fun _ a => handler a) (fun _ a => hf a) xs.toList ⟨⟩
 
-/-- One `KeepsUncached` obligation at a time, from the closure lemmas alone: a
-leaf (`pure`, `throw`, `get`, a `liftErr`-shaped read or checked op), a gate or
-`match` (`dite` splitting, `split`), a state write through the record update, a
-loop or fold, or a bind to split. Nothing unfolds a handler body by hand; a
-handler proof is one `unfold` of its body and this tactic. -/
-macro "keeps_uncached" : tactic => `(tactic| fail)
-macro_rules
-  | `(tactic| keeps_uncached) => `(tactic|
-      repeat' first
-        | exact keepsUncached_get
-        | exact keepsUncached_pure _
-        | exact keepsUncached_throw _
-        | refine keepsUncached_dite (fun _ => ?_) (fun _ => ?_)
-        | (apply keepsUncached_modify; intro v; exact ⟨_, by rfl⟩)
-        | (apply keepsUncached_forIn_range; intro i b; keeps_uncached)
-        | (apply keepsUncached_forM_array; intro a; keeps_uncached)
-        | refine keepsUncached_bind ?_ (fun a => ?_)
-        | exact keepsUncached_liftErr _
-        | exact keepsUncached_sszOfArrayM _ _
-        | split)
+/-- `Array.mapM` keeps the flavour when each step does. The run maps the list of the
+array, and each step of that list map is a bind. -/
+theorem keepsUncached_arrayMapM {T ε β γ : Type} [SSZRepr T] [HasherTag]
+    (f : β → StateT (SSZ.Box HasherTag.H T) (Except ε) γ)
+    (hf : ∀ b, KeepsUncached (f b)) (xs : Array β) : KeepsUncached (xs.mapM f) := by
+  rw [Array.mapM_eq_mapM_toList, map_eq_pure_bind]
+  refine keepsUncached_bind ?_ (fun _ => keepsUncached_pure _)
+  generalize xs.toList = l
+  induction l with
+  | nil => exact keepsUncached_pure _
+  | cons b l ih =>
+    rw [List.mapM_cons]
+    exact keepsUncached_bind (hf b) (fun _ => keepsUncached_bind ih (fun _ => keepsUncached_pure _))
 
 /-! ## Flavour from one start, and through local bindings
 
@@ -814,5 +819,483 @@ theorem runPure_bind_of_keepsUncached {T ε α β : Type} [SSZRepr T] [HasherTag
     rw [except_bind_ok, hx v a s h]
     simp only [Except.map, except_bind_ok, runPure_eq]
     rfl
+
+/-- Under `KeepsUncached`, a `runPure` fact and a `.run` fact on the uncached box say
+the same thing. The forward direction is the one a restated theorem needs: it names
+the post-box of a successful run as `pureState w`. -/
+theorem runPure_iff_run_of_keepsUncached {T ε α : Type} [SSZRepr T] [HasherTag]
+    {x : StateT (SSZ.Box HasherTag.H T) (Except ε) α} (hx : KeepsUncached x)
+    (v w : T) (a : α) :
+    runPure x v = .ok (a, w) ↔ x.run (pureState v) = .ok (a, pureState w) := by
+  refine ⟨fun h => ?_, runPure_of_run_ok⟩
+  rw [runPure_eq] at h
+  cases hr : x.run (pureState v) with
+  | error e =>
+    rw [hr] at h
+    cases h
+  | ok p =>
+    obtain ⟨a', s⟩ := p
+    rw [hr] at h
+    injection h with h1
+    injection h1 with ha hs
+    dsimp only at ha hs
+    rw [hx v a' s hr, ha, hs]
+
+/-- A successful bind whose first action keeps the flavour splits at a `pureState`
+midpoint. The first run ends on `pureState w`, and the continuation runs from it. -/
+theorem run_bind_eq_ok_pure {T ε α β : Type} [SSZRepr T] [HasherTag]
+    {x : StateT (SSZ.Box HasherTag.H T) (Except ε) α}
+    {k : α → StateT (SSZ.Box HasherTag.H T) (Except ε) β} (hx : KeepsUncached x)
+    {v : T} {r : β × SSZ.Box HasherTag.H T} (h : (x >>= k).run (pureState v) = .ok r) :
+    ∃ a w, x.run (pureState v) = .ok (a, pureState w) ∧ (k a).run (pureState w) = .ok r := by
+  obtain ⟨a, s1, h1, h2⟩ := run_bind_eq_ok x k (pureState v) r h
+  have hs1 := hx v a s1 h1
+  rw [hs1] at h1 h2
+  exact ⟨a, s1.view, h1, h2⟩
+
+/-! ## `for` over `SSZList`, and `fuelLoop`
+
+`for x in xs` over an `SSZList` runs the `Array` loop on `xs.val`: the `ForIn`
+instance delegates to the array (`SizzLean/Repr/Instances.lean`). Each lemma here is
+the array lemma at `xs.val`, and the two sides agree by unfolding that instance. -/
+
+/-- A `for` loop over an `SSZList` keeps the flavour when every step body does. The
+shape of the six operation loops of `processOperations`. -/
+theorem keepsUncached_forIn_sszList {T ε α β : Type} [SSZRepr T] [HasherTag] {cap : Nat}
+    (f : α → β → StateT (SSZ.Box HasherTag.H T) (Except ε) (ForInStep β))
+    (hf : ∀ a b, KeepsUncached (f a b)) (xs : SizzLean.Repr.SSZList α cap) (init : β) :
+    KeepsUncached (forIn xs init f) :=
+  keepsUncached_forIn_array f hf xs.val init
+
+/-- The `SSZList` form of the invariant loop (`keepsUncachedFrom_forIn_array_inv`). -/
+theorem keepsUncachedFrom_forIn_sszList_inv {T ε α β : Type} [SSZRepr T] [HasherTag]
+    {cap : Nat}
+    (f : α → β → StateT (SSZ.Box HasherTag.H T) (Except ε) (ForInStep β)) (P : β → Prop)
+    (hf : ∀ x b v r s, P b → (f x b).run (pureState v) = .ok (r, s) →
+      s = pureState s.view ∧ P r.value)
+    (xs : SizzLean.Repr.SSZList α cap) :
+    ∀ (init : β) (v : T), P init →
+      KeepsUncachedFrom v (forIn xs init f) ∧
+        ∀ r s, (forIn xs init f).run (pureState v) = .ok (r, s) → P r :=
+  keepsUncachedFrom_forIn_array_inv f P hf xs.val
+
+/-- The `SSZList` form of `keepsUncachedFrom_forIn_array_of_keeps`: no invariant on
+the accumulator. -/
+theorem keepsUncachedFrom_forIn_sszList_of_keeps {T ε α β : Type} [SSZRepr T] [HasherTag]
+    {cap : Nat}
+    (f : α → β → StateT (SSZ.Box HasherTag.H T) (Except ε) (ForInStep β))
+    (hf : ∀ x b v, KeepsUncachedFrom v (f x b))
+    (xs : SizzLean.Repr.SSZList α cap) (init : β) {v : T} :
+    KeepsUncachedFrom v (forIn xs init f) :=
+  keepsUncachedFrom_forIn_array_of_keeps f hf xs.val init
+
+/-- The `SSZList` form of the invariant loop bound to its continuation
+(`keepsUncachedFrom_forIn_array_bind_P`). -/
+theorem keepsUncachedFrom_forIn_sszList_bind_P {T ε α β γ : Type} [SSZRepr T] [HasherTag]
+    {cap : Nat}
+    (f : α → β → StateT (SSZ.Box HasherTag.H T) (Except ε) (ForInStep β))
+    (k : β → StateT (SSZ.Box HasherTag.H T) (Except ε) γ) (P : β → Prop)
+    (hf : ∀ x b v r s, P b → (f x b).run (pureState v) = .ok (r, s) →
+      s = pureState s.view ∧ P r.value)
+    (hk : ∀ b w', P b → KeepsUncachedFrom w' (k b))
+    (xs : SizzLean.Repr.SSZList α cap) (init : β) {v : T} (hinit : P init) :
+    KeepsUncachedFrom v (forIn xs init f >>= k) :=
+  keepsUncachedFrom_forIn_array_bind_P f k P hf hk xs.val init hinit
+
+/-- `fuelLoop` keeps the flavour when every step does. Induction on the fuel: a
+`done` step returns through `pure`, and a `next` step runs the loop with one unit of
+fuel less. The shape of `ppdLoop` and `pcLoop`. -/
+theorem keepsUncached_fuelLoop {T ε δ α : Type} [SSZRepr T] [HasherTag] (exhausted : α)
+    (step : δ → StateT (SSZ.Box HasherTag.H T) (Except ε) (EthCLLib.Spec.Step δ α))
+    (hstep : ∀ b, KeepsUncached (step b)) :
+    ∀ (fuel : Nat) (init : δ),
+      KeepsUncached (EthCLLib.Spec.fuelLoop fuel init exhausted step) := by
+  intro fuel
+  induction fuel with
+  | zero => intro init; exact keepsUncached_pure exhausted
+  | succ fuel ih =>
+    intro init
+    simp only [EthCLLib.Spec.fuelLoop]
+    refine keepsUncached_bind (hstep init) fun st => ?_
+    cases st with
+    | done a => exact keepsUncached_pure a
+    | next b => exact ih b
+
+/-! ## The pure box predicate -/
+
+/-- `IsPure b`: the box `b` is the uncached box of some value. The claim a writer
+fact makes about the box it returns, and the hypothesis of `keepsUncached_modify`
+spelled as a predicate. A writer that branches on the box (`ite`, `dite`) or runs an
+`Id` loop over it proves `IsPure` through the closure lemmas below, where `rfl` alone
+cannot pick the branch. -/
+def IsPure {T : Type} [SSZRepr T] [HasherTag] (b : SSZ.Box HasherTag.H T) : Prop :=
+  ∃ w, b = pureState w
+
+/-! ## `appendState` and `setOrAppendState`
+
+Both macros (`EthCLLib/Spec/Header.lean`) open with `getThe`, so the box the rest
+reads is the start box. On `pureState v`, `sszAppend?` is `Option.map` of an
+`sszUpdate` of `pureState v`, and that update reduces to `pureState` of the record
+update. The lemmas take the field reads and writes as abstract functions, so one
+lemma serves every field. -/
+
+/-- `getThe` at one start hands its continuation the uncached box of that start's
+value. The `getThe` spelling of `keepsUncached_get_bind`, which the two macros
+read the state with. -/
+theorem keepsUncached_getThe_bind {T ε α : Type} [SSZRepr T] [HasherTag]
+    {g : SSZ.Box HasherTag.H T → StateT (SSZ.Box HasherTag.H T) (Except ε) α}
+    (hg : ∀ v, KeepsUncachedFrom v (g (pureState v))) :
+    KeepsUncached ((getThe (SSZ.Box HasherTag.H T) :
+      StateT (SSZ.Box HasherTag.H T) (Except ε) (SSZ.Box HasherTag.H T)) >>= g) := by
+  intro v a s h
+  rw [run_bind, run_getThe, except_bind_ok] at h
+  exact hg v a s h
+
+/-- A box that `Option.map u` returns is pure when `u` returns pure boxes. After
+`get` hands the `appendState` expansion the start box `pureState v`, the `some`
+branch carries the hypothesis `(push? …).map (fun l => sszUpdate (pureState v) with
+f := l) = some s'`, and this lemma names `s'` as pure. -/
+theorem isPure_of_map_eq_some {T L : Type} [SSZRepr T] [HasherTag] {o : Option L}
+    {u : L → SSZ.Box HasherTag.H T} {s' : SSZ.Box HasherTag.H T}
+    (hu : ∀ l, IsPure (u l)) (h : o.map u = some s') : IsPure s' := by
+  obtain ⟨l, -, rfl⟩ := Option.map_eq_some_iff.mp h
+  exact hu l
+
+/-- `modify` through a constant writer `fun _ => s'` keeps the flavour when `s'` is
+pure. The `some` branch of the `appendState` expansion writes this way.
+
+The expansion is a `match` on `sszAppend? s f x`. Lean elaborates each `match` to a
+matcher constant of the declaration that holds it, so a lemma that states the whole
+expansion with a `match` of its own does not unify with the spec's. A proof reads the
+start box with `keepsUncached_get_bind` or `keepsUncached_getThe_bind`, splits the
+spec's `match`, closes the `some` branch with this lemma and `isPure_of_map_eq_some`,
+and closes the `none` branch, a `throwListFull`, with `keepsUncached_liftErr`. -/
+theorem keepsUncached_modify_const {T ε : Type} [SSZRepr T] [HasherTag]
+    (s' : SSZ.Box HasherTag.H T) (hs : IsPure s') :
+    KeepsUncached (modifyThe (SSZ.Box HasherTag.H T) (fun _ => s') :
+      StateT (SSZ.Box HasherTag.H T) (Except ε) PUnit) :=
+  keepsUncached_modify _ (fun _ => hs)
+
+/-- The `setOrAppendState f i x` expansion keeps the flavour. The index `i` and the
+length `n` are reads of the start box. The first branch is an `appendState`, and
+`happ` is its fact. The second branch writes entry `i` through `g`. The third raises
+the `IndexError` through `liftErr`. The expansion holds no `match`, so this lemma
+unifies with it directly. -/
+theorem keepsUncached_setOrAppendState {T ε : Type} [SSZRepr T] [HasherTag]
+    [ErrorConv IndexError ε] (i n : SSZ.Box HasherTag.H T → Nat)
+    (app : SSZ.Box HasherTag.H T → StateT (SSZ.Box HasherTag.H T) (Except ε) PUnit)
+    (happ : ∀ s, KeepsUncached (app s))
+    (g : SSZ.Box HasherTag.H T → SSZ.Box HasherTag.H T → SSZ.Box HasherTag.H T)
+    (hg : ∀ s v, IsPure (g s (pureState v))) :
+    KeepsUncached ((do
+      let s ← getThe (SSZ.Box HasherTag.H T)
+      if i s == n s then app s
+      else if i s < n s then modifyThe (SSZ.Box HasherTag.H T) (g s)
+      else liftErr (Except.error (IndexError.indexError (i s) (n s)) :
+        Except IndexError PUnit)) : StateT (SSZ.Box HasherTag.H T) (Except ε) PUnit) := by
+  refine keepsUncached_getThe_bind (fun w => ?_)
+  refine keepsUncachedFrom_ite (fun _ => keepsUncached_iff_forall_from.mp (happ _) w)
+    (fun _ => ?_)
+  exact keepsUncachedFrom_ite
+    (fun _ => keepsUncached_iff_forall_from.mp (keepsUncached_modify _ (hg _)) w)
+    (fun _ => keepsUncachedFrom_liftErr w _)
+
+/-! ## Writers that branch on the box or loop over it: `IsPure`
+
+`keepsUncached_modify` asks a writer `f` to map `pureState v` to `pureState` of a
+value. A record update closes that by `rfl`. A writer whose body holds an `if` on a
+condition `c` about the box does not: `rfl` cannot pick the branch while `c` is open.
+The closure below proves `IsPure` one construct at a time. `isPure_apply` covers a
+`let`, and an `sszUpdate` of a box that is already pure. `isPure_ite` and
+`isPure_dite` split a branch. The `Id` loop lemmas carry `IsPure` through a
+`for` loop that runs inside the writer. -/
+
+/-- The uncached box of a value is pure. -/
+theorem isPure_pureState {T : Type} [SSZRepr T] [HasherTag] (w : T) :
+    IsPure (pureState w) :=
+  ⟨w, rfl⟩
+
+/-- `if` of two pure boxes is pure. -/
+theorem isPure_ite {T : Type} [SSZRepr T] [HasherTag] {c : Prop} [Decidable c]
+    {x y : SSZ.Box HasherTag.H T} (hx : c → IsPure x) (hy : ¬c → IsPure y) :
+    IsPure (if c then x else y) := by
+  by_cases hc : c
+  · rw [if_pos hc]
+    exact hx hc
+  · rw [if_neg hc]
+    exact hy hc
+
+/-- `dite` of two pure boxes is pure. -/
+theorem isPure_dite {T : Type} [SSZRepr T] [HasherTag] {c : Prop} [Decidable c]
+    {x : c → SSZ.Box HasherTag.H T} {y : ¬c → SSZ.Box HasherTag.H T}
+    (hx : ∀ h : c, IsPure (x h)) (hy : ∀ h : ¬c, IsPure (y h)) :
+    IsPure (dite c x y) := by
+  by_cases hc : c
+  · rw [dif_pos hc]
+    exact hx hc
+  · rw [dif_neg hc]
+    exact hy hc
+
+/-- A box function `g` applied to a pure box is pure when `g` maps every uncached
+box to a pure one. `let y := b; k y` is `k b` up to `zeta`, so this lemma carries a
+`let` (with `g := k`). An `sszUpdate` of a pure box is the case `g := fun s =>
+sszUpdate s with …`, whose premise closes by `fun _ => ⟨_, rfl⟩`. -/
+theorem isPure_apply {T : Type} [SSZRepr T] [HasherTag] {b : SSZ.Box HasherTag.H T}
+    (g : SSZ.Box HasherTag.H T → SSZ.Box HasherTag.H T) (hb : IsPure b)
+    (hg : ∀ w, IsPure (g (pureState w))) : IsPure (g b) := by
+  obtain ⟨w, rfl⟩ := hb
+  exact hg w
+
+/-- `modify` through a writer that maps every uncached box to a pure one. The
+hypothesis of `keepsUncached_modify`, spelled as `IsPure`. -/
+theorem keepsUncached_modify_of_isPure {T ε : Type} [SSZRepr T] [HasherTag]
+    (f : SSZ.Box HasherTag.H T → SSZ.Box HasherTag.H T)
+    (hf : ∀ v : T, IsPure (f (pureState v))) :
+    KeepsUncached (modifyThe (SSZ.Box HasherTag.H T) f :
+      StateT (SSZ.Box HasherTag.H T) (Except ε) PUnit) :=
+  keepsUncached_modify f hf
+
+/-- An invariant of a `for` loop over a list in `Id`. Each body step takes an
+accumulator that satisfies `P` to a step whose value satisfies `P`, so the loop
+result satisfies `P`. The `Id` counterpart of `view_forIn_list`
+(`EthCLLib/Proofs/Frame.lean`), for any invariant. -/
+theorem id_forIn_list_inv {δ β : Type} (P : β → Prop) (body : δ → β → Id (ForInStep β))
+    (hbody : ∀ d b, P b → P (body d b).run.value) :
+    ∀ (l : List δ) (init : β), P init → P (forIn l init body).run := by
+  intro l
+  induction l with
+  | nil => intro init hinit; exact hinit
+  | cons d rest ih =>
+    intro init hinit
+    rw [List.forIn_cons]
+    have hd := hbody d init hinit
+    revert hd
+    cases body d init with
+    | done a => intro hd; exact hd
+    | yield a => intro hd; exact ih a hd
+
+/-- `id_forIn_list_inv` for a loop over an array. -/
+theorem id_forIn_array_inv {δ β : Type} (P : β → Prop) (body : δ → β → Id (ForInStep β))
+    (hbody : ∀ d b, P b → P (body d b).run.value) (xs : Array δ) (init : β)
+    (hinit : P init) : P (forIn xs init body).run := by
+  rw [← Array.forIn_toList]
+  exact id_forIn_list_inv P body hbody xs.toList init hinit
+
+/-- `id_forIn_list_inv` for a loop over a range. -/
+theorem id_forIn_range_inv {β : Type} (P : β → Prop) (body : Nat → β → Id (ForInStep β))
+    (hbody : ∀ d b, P b → P (body d b).run.value) (r : Std.Legacy.Range) (init : β)
+    (hinit : P init) : P (forIn r init body).run := by
+  rw [Std.Legacy.Range.forIn_eq_forIn_range']
+  exact id_forIn_list_inv P body hbody _ init hinit
+
+/-- `id_forIn_list_inv` for a loop over an `SSZList`, through its array. -/
+theorem id_forIn_sszList_inv {δ β : Type} {cap : Nat} (P : β → Prop)
+    (body : δ → β → Id (ForInStep β)) (hbody : ∀ d b, P b → P (body d b).run.value)
+    (xs : SizzLean.Repr.SSZList δ cap) (init : β) (hinit : P init) :
+    P (forIn xs init body).run :=
+  id_forIn_array_inv P body hbody xs.val init hinit
+
+/-- An `Id` loop over a list whose accumulator is the box keeps it pure, when each
+body step maps an uncached box to a pure one. The shape of a `let mut state` loop
+inside a `modifyState` writer. -/
+theorem isPure_id_forIn_list {T δ : Type} [SSZRepr T] [HasherTag]
+    (body : δ → SSZ.Box HasherTag.H T → Id (ForInStep (SSZ.Box HasherTag.H T)))
+    (hbody : ∀ d w, IsPure (body d (pureState w)).run.value)
+    (l : List δ) (init : SSZ.Box HasherTag.H T) (hinit : IsPure init) :
+    IsPure (forIn l init body).run :=
+  id_forIn_list_inv IsPure body
+    (fun d b hb => by obtain ⟨w, rfl⟩ := hb; exact hbody d w) l init hinit
+
+/-- `isPure_id_forIn_list` for a loop over an array. The shape of
+`processInactivityUpdates`. -/
+theorem isPure_id_forIn_array {T δ : Type} [SSZRepr T] [HasherTag]
+    (body : δ → SSZ.Box HasherTag.H T → Id (ForInStep (SSZ.Box HasherTag.H T)))
+    (hbody : ∀ d w, IsPure (body d (pureState w)).run.value)
+    (xs : Array δ) (init : SSZ.Box HasherTag.H T) (hinit : IsPure init) :
+    IsPure (forIn xs init body).run :=
+  id_forIn_array_inv IsPure body
+    (fun d b hb => by obtain ⟨w, rfl⟩ := hb; exact hbody d w) xs init hinit
+
+/-- `isPure_id_forIn_list` for a loop over a range. The shape of
+`processEffectiveBalanceUpdates`. -/
+theorem isPure_id_forIn_range {T : Type} [SSZRepr T] [HasherTag]
+    (body : Nat → SSZ.Box HasherTag.H T → Id (ForInStep (SSZ.Box HasherTag.H T)))
+    (hbody : ∀ d w, IsPure (body d (pureState w)).run.value)
+    (r : Std.Legacy.Range) (init : SSZ.Box HasherTag.H T) (hinit : IsPure init) :
+    IsPure (forIn r init body).run :=
+  id_forIn_range_inv IsPure body
+    (fun d b hb => by obtain ⟨w, rfl⟩ := hb; exact hbody d w) r init hinit
+
+/-! ## A loop that returns the box
+
+`applyDeltas` takes the state as an argument, threads it through a range loop of
+balance writes, and returns it as its value. `ReturnsUncached` is the fact its
+callers bind on. `ReturnsPureVia p` generalizes it to an action whose value carries
+a box at the projection `p`, such as a loop body that returns `ForInStep State`. -/
+
+/-- `act`, run on an uncached box, keeps the flavour of the threaded state, and the
+box at `p` of its value is pure. `ReturnsUncached` is the case `p := id`. -/
+def ReturnsPureVia {T ε α : Type} [SSZRepr T] [HasherTag] (p : α → SSZ.Box HasherTag.H T)
+    (act : StateT (SSZ.Box HasherTag.H T) (Except ε) α) : Prop :=
+  ∀ v a s, act.run (pureState v) = .ok (a, s) → IsPure (p a) ∧ s = pureState s.view
+
+/-- `ReturnsUncached` is `ReturnsPureVia id`. -/
+theorem returnsUncached_of_returnsPureVia {T ε : Type} [SSZRepr T] [HasherTag]
+    {act : StateT (SSZ.Box HasherTag.H T) (Except ε) (SSZ.Box HasherTag.H T)}
+    (h : ReturnsPureVia id act) : ReturnsUncached act :=
+  h
+
+/-- `pure a` returns `a` and keeps the threaded state. -/
+theorem returnsPureVia_pure {T ε α : Type} [SSZRepr T] [HasherTag]
+    {p : α → SSZ.Box HasherTag.H T} (a : α) (ha : IsPure (p a)) :
+    ReturnsPureVia p (pure a : StateT (SSZ.Box HasherTag.H T) (Except ε) α) := by
+  intro v a' s h
+  rw [run_pure] at h
+  injection h with h1
+  injection h1 with h2 h3
+  subst h2
+  subst h3
+  exact ⟨ha, rfl⟩
+
+/-- A bind whose first action keeps the flavour returns what its continuation
+returns. -/
+theorem returnsPureVia_bind_keeps {T ε α β : Type} [SSZRepr T] [HasherTag]
+    {p : β → SSZ.Box HasherTag.H T} {x : StateT (SSZ.Box HasherTag.H T) (Except ε) α}
+    {k : α → StateT (SSZ.Box HasherTag.H T) (Except ε) β}
+    (hx : KeepsUncached x) (hk : ∀ a, ReturnsPureVia p (k a)) :
+    ReturnsPureVia p (x >>= k) := by
+  intro v b s h
+  obtain ⟨a, w, h1, h2⟩ := run_bind_eq_ok_pure hx h
+  exact hk a w b s h2
+
+/-- A bind through an action that returns a box: the bound box is `pureState w`, so
+the continuation's fact at `pureState w` applies. -/
+theorem returnsPureVia_bind_returns {T ε β : Type} [SSZRepr T] [HasherTag]
+    {p : β → SSZ.Box HasherTag.H T}
+    {x : StateT (SSZ.Box HasherTag.H T) (Except ε) (SSZ.Box HasherTag.H T)}
+    {k : SSZ.Box HasherTag.H T → StateT (SSZ.Box HasherTag.H T) (Except ε) β}
+    (hx : ReturnsUncached x) (hk : ∀ w, ReturnsPureVia p (k (pureState w))) :
+    ReturnsPureVia p (x >>= k) := by
+  intro v b s h
+  obtain ⟨a, s1, h1, h2⟩ := run_bind_eq_ok x k (pureState v) (b, s) h
+  obtain ⟨⟨w, hw⟩, hs1⟩ := hx v a s1 h1
+  rw [hw, hs1] at h2
+  exact hk w s1.view b s h2
+
+/-- A `for` loop over a list whose accumulator is the box returns a pure box, when
+the start accumulator is pure and each body maps an uncached accumulator to a step
+whose value is pure. -/
+theorem returnsUncached_forIn_list {T ε δ : Type} [SSZRepr T] [HasherTag]
+    (f : δ → SSZ.Box HasherTag.H T →
+      StateT (SSZ.Box HasherTag.H T) (Except ε) (ForInStep (SSZ.Box HasherTag.H T)))
+    (hf : ∀ d w, ReturnsPureVia ForInStep.value (f d (pureState w)))
+    (l : List δ) (init : SSZ.Box HasherTag.H T) (hinit : IsPure init) :
+    ReturnsUncached (forIn l init f) := by
+  intro v b s h
+  have hf' : ∀ x b v r s, IsPure b → (f x b).run (pureState v) = .ok (r, s) →
+      s = pureState s.view ∧ IsPure r.value := by
+    intro x b' v' r s' hb hrun
+    obtain ⟨w, rfl⟩ := hb
+    obtain ⟨h1, h2⟩ := hf x w v' r s' hrun
+    exact ⟨h2, h1⟩
+  have hpair := keepsUncachedFrom_forIn_list_inv f IsPure hf' l init v hinit
+  exact ⟨hpair.2 b s h, hpair.1 b s h⟩
+
+/-- `returnsUncached_forIn_list` for a loop over a range, the `for i in [0:n]`
+spelling of `applyDeltas`. -/
+theorem returnsUncached_forIn_range {T ε : Type} [SSZRepr T] [HasherTag]
+    (f : Nat → SSZ.Box HasherTag.H T →
+      StateT (SSZ.Box HasherTag.H T) (Except ε) (ForInStep (SSZ.Box HasherTag.H T)))
+    (hf : ∀ d w, ReturnsPureVia ForInStep.value (f d (pureState w)))
+    (r : Std.Legacy.Range) (init : SSZ.Box HasherTag.H T) (hinit : IsPure init) :
+    ReturnsUncached (forIn r init f) := by
+  rw [Std.Legacy.Range.forIn_eq_forIn_range']
+  exact returnsUncached_forIn_list f hf _ init hinit
+
+/-! ## The `is_pure` and `keeps_uncached` tactics -/
+
+/-- Close an `IsPure` goal about a writer's result, or fail and leave the goal as it
+was. The arms are a record update of `pureState w` (`⟨_, rfl⟩`), an `if` or `dite`
+on the box, an `Id` loop over an array, a range, or a list whose accumulator is the
+box, and `split` for a `match`. `split` cannot see an `if` under a `have`, which is
+how a `do` block spells a local binding, so `dsimp only` runs first to inline the
+bindings. `focus … done` makes the tactic all or nothing, so a
+caller's `first` falls through to its next arm when this one cannot close the goal. -/
+macro "is_pure" : tactic => `(tactic| focus
+  repeat' first
+    | exact ⟨_, rfl⟩
+    | refine isPure_ite (fun _ => ?_) (fun _ => ?_)
+    | refine isPure_dite (fun _ => ?_) (fun _ => ?_)
+    | refine isPure_id_forIn_array _ (fun _ _ => ?_) _ _ ?_
+    | refine isPure_id_forIn_range _ (fun _ _ => ?_) _ _ ?_
+    | refine isPure_id_forIn_list _ (fun _ _ => ?_) _ _ ?_
+    | dsimp only
+    | split
+  done)
+
+/-- One `KeepsUncached` obligation at a time, from the closure lemmas alone: a
+leaf (`pure`, `throw`, `get`, a `liftErr`-shaped read or checked op, `set` of a
+rebuilt box), a gate or `match` (`ite`, `dite`, `split`), a state write through
+the record update, through a writer that `is_pure` closes, or through the `some`
+branch of an `appendState`, a loop, fold, or `Array.mapM`,
+a bind to split, or a `get` whose continuation reads the box. That last arm hands
+the continuation `pureState v`, so a final `set (sszUpdate state with …)` reduces
+to `set` of a rebuilt box. Nothing unfolds a handler body by hand; a handler proof
+is one `unfold` of its body and this tactic.
+
+The order of the arms matters. The `get` arm comes before the plain bind arm, which
+would forget that the box `get` returns is the start box. The `set` arm comes last
+but one, because a failed `set` trial unfolds the goal action.
+
+The two `get` arms unify at reducible transparency (`with_reducible`). The reason is
+an inference: at `StateT`, `get >>= fun _ => x` is defeq to `x` by eta, so at the
+default transparency `keepsUncached_get_bind` unifies with every goal, and
+`repeat'` never stops. At reducible transparency the arm fires only on a goal whose
+action is a `get` or `getThe` bind as written.
+
+`keeps_uncached_using [l₁, …]` runs the same loop, and it tries `exact lᵢ` before every
+other arm. A body that calls a function with a lemma of its own needs this form. The
+plain bind arm unifies at the default transparency, so it unfolds a callee such as
+`balanceAfterWithdrawals` to its own body and leaves goals inside that body. With the
+callee lemma in the list, the loop closes the callee goal first. `keeps_uncached` is
+`keeps_uncached_using []`. -/
+syntax "keeps_uncached_using " "[" term,* "]" : tactic
+
+/-- `keeps_uncached_using []`: the closure loop with no callee lemmas. The docstring of
+`keeps_uncached_using` describes the arms. -/
+macro "keeps_uncached" : tactic => `(tactic| keeps_uncached_using [])
+
+macro_rules
+  | `(tactic| keeps_uncached_using [$ls,*]) => do
+    let callees ← ls.getElems.mapM fun l => `(tactic| exact $l)
+    let callee ← if callees.isEmpty then `(tactic| fail)
+      else `(tactic| first $[| $callees:tactic]*)
+    `(tactic|
+      repeat' first
+        | $callee:tactic
+        | exact keepsUncached_get
+        | exact keepsUncached_pure _
+        | exact keepsUncached_throw _
+        | refine keepsUncached_dite (fun _ => ?_) (fun _ => ?_)
+        | refine keepsUncached_ite (fun _ => ?_) (fun _ => ?_)
+        | (apply keepsUncached_modify; intro v; exact ⟨_, by rfl⟩)
+        | (apply keepsUncached_modify_of_isPure; intro v; is_pure)
+        | (refine keepsUncached_modify_const _ (isPure_of_map_eq_some ?_ (by assumption))
+           intro _; exact ⟨_, rfl⟩)
+        | (apply keepsUncached_forIn_range; intro i b; keeps_uncached_using [$ls,*])
+        | (apply keepsUncached_forIn_sszList; intro a b; keeps_uncached_using [$ls,*])
+        | (apply keepsUncached_forIn_array; intro a b; keeps_uncached_using [$ls,*])
+        | (apply keepsUncached_forIn_list; intro a b; keeps_uncached_using [$ls,*])
+        | (apply keepsUncached_forM_array; intro a; keeps_uncached_using [$ls,*])
+        | (apply keepsUncached_arrayMapM; intro a; keeps_uncached_using [$ls,*])
+        | with_reducible
+            refine keepsUncached_get_bind (fun _ => keepsUncached_iff_forall_from.mp ?_ _)
+        | with_reducible
+            refine keepsUncached_getThe_bind (fun _ => keepsUncached_iff_forall_from.mp ?_ _)
+        | refine keepsUncached_bind ?_ (fun a => ?_)
+        | exact keepsUncached_liftErr _
+        | exact keepsUncached_sszOfArrayM _ _
+        | exact keepsUncached_set _
+        | split)
 
 end EthCLLib.Proofs
