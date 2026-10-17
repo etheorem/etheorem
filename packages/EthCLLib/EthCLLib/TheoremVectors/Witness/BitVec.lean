@@ -673,7 +673,7 @@ def bitVecSearcher : WitnessSearcher where
       -- manual term stands in the formula, so a solver proof of `¬P` is
       -- the disjunct's `unsat` (§9.4). A manual theorem never takes this
       -- branch: its reads hold the manual terms' values, so an `unsat`
-      -- there is a fact about one manual input, and the grid below
+      -- there is a fact about one manual term, and the grid below
       -- answers `nothing` for it.
       match ← solveOnce ctx stmt d.index true d.hyps #[] #[] #[] with
       | .solved a abstracted =>

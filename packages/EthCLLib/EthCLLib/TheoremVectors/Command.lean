@@ -195,15 +195,16 @@ scoped syntax (name := tvSkipCmd)
 
 -- the strict marker lives in the identifier token: the lexer reads
 -- `theorem_vectors!` as one ident, so this atom and the plain form's
--- leading atom never collide. The manual and termless forms are separate
--- rules, so the manual terms and the presets clause sit at fixed indices.
+-- leading atom never collide. The with-clause and no-manual-term forms
+-- are separate rules, so the manual terms and the presets clause sit at
+-- fixed indices.
 scoped syntax (name := tvNamedStrictCmd)
   "theorem_vectors!" ident "with" many("(" ident " := " term ")")
   optional("presets " ident+) : command
 
--- §14.3 defines manual terms only through `with`, so the termless rules
--- take no manual-term group: a bare `(input := term)` group alone is a
--- parse error.
+-- §14.3 defines manual terms only through `with`, so the rules for a
+-- line with no manual terms take no manual-term group: a bare
+-- `(input := term)` group alone is a parse error.
 scoped syntax (name := tvNamedStrictNoManualCmd)
   "theorem_vectors!" ident optional("presets " ident+) : command
 
@@ -441,7 +442,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
   -- `.hinted (.reused p)` while a fresh run wins as
   -- `.reused p` and writes that entry. A line with manual terms runs
   -- manual then the bit-vector handoff: a `default` candidate would
-  -- ignore the author's fixed inputs. Without manual terms, base then
+  -- ignore the author's manual terms. Without manual terms, base then
   -- bit-vector. The built searcher (§9.9) follows the bit-vector
   -- searcher, before the random searcher: a reachable built state is worth
   -- more to a client than a drawn one. A block input leaves only the base
@@ -933,8 +934,8 @@ private def runPass (lines : Array Line) : CommandElabM Unit := do
         discovery clause selects (§14.3)"
   -- discovery clauses: a kind contributes only when the file has its
   -- line, and the clause's presets are the line's (§14.3: the clause
-  -- runs with the default budget, no manual terms, and the clause's own
-  -- preset list)
+  -- runs "with the default budget, no manual terms, and the clause's
+  -- preset list")
   let discLines (kind : LineKind) : Array (Array PresetId) :=
     lines.filterMap fun l =>
       if l.kind.sameKind kind then some l.presetIds else none
@@ -1083,9 +1084,9 @@ private def elabNamedLine (strict : Bool) : CommandElab := fun stx => do
   let ps ← parsePresets stx[4]
   addLine { kind := .named thm strict manuals, presetIds := ps }
 
-/-- The termless named lines' elab: the ident sits at 1, the presets
-clause at 2, and there are no manual terms (§14.3 defines them only
-through `with`). -/
+/-- The named lines' elab for a line with no manual terms: the ident
+sits at 1, the presets clause at 2, and there are no manual terms
+(§14.3 defines them only through `with`). -/
 private def elabNamedNoManualLine (strict : Bool) : CommandElab := fun stx => do
   let env ← getEnv
   let some bindingName := forkHeader.getState env

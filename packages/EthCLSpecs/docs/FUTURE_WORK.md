@@ -101,14 +101,15 @@ local-discharge shapes (loop, `size - 1`, `vget`) need no lemma and could land s
 are grouped into the same pass so the read surface changes once. Every total read is correct
 already; each gains a proof when the pass runs.
 
-## Corpus pre-states as a witness source
+## Corpus pre-states as a witness searcher
 
 ### What is left
 
 The pyspec vectors hold thousands of `pre.ssz` states under
-`~/.cache/sizzlean/<tag>-<preset>/` (`THEOREM_VECTORS_ARCHITECTURE.md` §9.7). A source
-reads the states for the fork and the preset. It filters them with the check. It passes
-the survivors to the solver the way the built source passes a built state. The states
+`~/.cache/sizzlean/<tag>-<preset>/` (`THEOREM_VECTORS_ARCHITECTURE.md` §9.7). A
+searcher reads the states for the fork and the preset. It filters them with the
+check. It passes the survivors to the solver the way the built searcher passes a
+built state. The states
 come from disk and need no spec run. Some carry valid signatures and matching hashes.
 That helps the theorems with sparse hypotheses, which the built catalog cannot serve.
 A builder derives its keys from the validator index under the verify-off backend. A
@@ -117,12 +118,12 @@ builder that needs a real signature sits outside the catalog
 
 ### The shape it takes
 
-One more `WitnessSource` value in the list. Nothing else changes. A corpus hint's data is
+One more `WitnessSearcher` value in the list. Nothing else changes. A corpus hint's data is
 the vector path and the state root (§9.8's table), so the hint stays small enough to commit.
 
 ### Why it waits
 
-No stage carries it. The source reads the pyspec vectors from disk, and the
+No stage carries it. The searcher reads the pyspec vectors from disk, and the
 `theorem-vectors` job downloads and pins no vector set today, so the corpus it needs does
 not exist on a CI run. Heze waits one step further. Most of its theorems take a block or
 store input. Block inputs come back with corpus blocks or a block builder, and the risk

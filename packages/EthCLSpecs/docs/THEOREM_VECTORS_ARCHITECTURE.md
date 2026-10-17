@@ -68,10 +68,10 @@ Out of scope, with the reason the reader reports:
 | A function-typed input, such as `f : Gwei → Gwei` | No SSZ form exists for a function. |
 | A conclusion outside the shape set | The reader cannot name the output. |
 
-The scope rule has one exception that costs nothing. The base source (§9.4)
+The scope rule has one exception that costs nothing. The base searcher (§9.4)
 still runs on a theorem with a block input. If `default` satisfies `P`, the
 vector is written. If it does not, the theorem is reported out of scope and no
-other source runs.
+other searcher runs.
 
 The block types are a per-fork fact. The fork binding (§6) names them, so the
 framework half never names a fork type.
@@ -110,7 +110,7 @@ covers it.
 │                               │                                          │
 │                               ▼                                          │
 │  EthCLLib.TheoremVectors      lean_lib EthCLLibTheoremVectors            │
-│    reader, prepare, witness sources, probe, executor, records,           │
+│    reader, prepare, witness searchers, probe, executor, records,         │
 │    formats, report, the generator commands, the ForkBinding seam         │
 │    + require plausible                                                   │
 └──────────────────────────────┬───────────────────────────────────────────┘
@@ -124,7 +124,7 @@ covers it.
 │  EthCLSpecs.TheoremVectors    lean_lib EthCLSpecsTheoremVectors          │
 │    Bindings/   one ForkBinding value per fork                            │
 │    Builders/   the state-builder catalog per fork                        │
-│    Seeds/      author-written input terms                                │
+│    Manual/     author-written input terms                                │
 │    Generators/ one file per fork: discovery clauses and named lines      │
 │    Hints/      the committed hints, one JSON file per theorem            │
 │    Main.lean   lean_exe theorem_vectors: render, check, report           │
@@ -169,9 +169,10 @@ roots = ["EthCLLib.TheoremVectors"]
 `packages/EthCLSpecs/lakefile.toml` gains one library and one executable:
 
 ```toml
-# The generator's spec half: fork bindings, state builders, seeds, and the
-# generator files whose elaboration writes the records. The output directory
-# is fixed here so the command never depends on the working directory Lake
+# The generator's spec half: fork bindings, state builders, manual terms,
+# and the generator files whose elaboration writes the records. The
+# output directory is fixed here so the command never depends on the
+# working directory Lake
 # gives it. The `weak.` prefix defers the setting until the module that
 # registers the option is imported; `lean` rejects a `-D` for an option it
 # has not seen yet.
@@ -251,10 +252,10 @@ generator file  (theorem_vectors_fork header, discovery clauses, named lines)
         ▼
  A1 Read      theorem type → Statement: inputs, hyps, target, shape     §7
         ▼
- A2 Scope     block input? → only the base source may run              §7.4
+ A2 Scope     block input? → only the base searcher may run            §7.4
         ▼
- A3 Prepare   unfold spec predicates, split P into DNF cases,
-              add the Q / ¬Q side for .iffTrue → Array Case             §8
+ A3 Prepare   unfold spec predicates, split P into DNF disjuncts,
+              add the Q / ¬Q side for .iffTrue → Array Disjunct         §8
         │
 ════════╪═══ Phase B: per preset ═════════════════════════════════════════════
         ▼
@@ -263,14 +264,14 @@ generator file  (theorem_vectors_fork header, discovery clauses, named lines)
         ▼
  B2 Reuse     a scalar witness from an earlier preset passes check? → B5 §10
         ▼
- B3 Search    witness sources in order, the committed hint first,
+ B3 Search    witness searchers in order, the committed hint first,
               each candidate through check                              §9
         ▼
  B4 Shrink    smaller inputs while check still holds                    §9.6
         ▼
  B5 Execute   probe.run: f x, e x, compare, serialize, roots            §11
         ▼
- B6 Record    one VectorRecord directory per case, and its hint         §12, §9.8
+ B6 Record    one VectorRecord directory per disjunct, and its hint     §12, §9.8
         ▼
  B7 Verify    read the record back, decode, run f again, compare        §12.5
         ▼
@@ -297,22 +298,22 @@ warning into an error.
 
 | Module | Responsibility | Depends on |
 | --- | --- | --- |
-| `Types.lean` | `PresetId`, `ShapeTag`, `WitnessSourceTag`, `Failure`, `ValueData`, `BoundRel`, `Knobs` | Lean core |
+| `Types.lean` | `PresetId`, `ShapeTag`, `WitnessSearcherTag`, `Failure`, `ValueData`, `BoundRel`, `Knobs` | Lean core |
 | `Scalar.lean` | the scalar kinds, their wire widths, and their literal forms | Lean core |
 | `ForkBinding.lean` | the `ForkBinding` structure and `PresetInstances` | `Types`, `PySpecTests.Interface` |
 | `Statement.lean` | `Statement`, `Shape`, the reader over a theorem type | `Types`, `Internal.Capture` |
 | `Scope.lean` | the block-input walk over input types | `Statement`, `ForkBinding` |
-| `Prepare.lean` | unfold, normalize, DNF split, side cases → `Array Case` | `Statement` |
+| `Prepare.lean` | unfold, normalize, DNF split, sides → `Array Disjunct` | `Statement` |
 | `Sampleable.lean` | `SampleableExt` and `Shrinkable` for scalars and SSZ containers | `Plausible`, `SizzLean` |
 | `Probe.lean` | the `Probe` structure and the term builder that produces it | `Statement`, `Prepare`, `ForkBinding`, `Sampleable` |
-| `Witness/Source.lean` | `WitnessSource`, the search loop, the check | `Probe` |
-| `Witness/Base.lean` | the `default` source | `Witness.Source` |
-| `Witness/BitVec.lean` | the `bvDecide'` source and the counterexample reader | `Witness.Source` |
-| `Witness/Built.lean` | the state-builder source, the knob grid, the built-state cache | `Witness.Source`, `Witness.BitVec` |
-| `Witness/Random.lean` | the random-state-plus-solve source | `Witness.Source`, `Witness.BitVec` |
-| `Witness/Seed.lean` | the author-seed source | `Witness.Source` |
+| `Witness/Searcher.lean` | `WitnessSearcher`, the search loop, the check | `Probe` |
+| `Witness/Base.lean` | the `default` searcher | `Witness.Searcher` |
+| `Witness/BitVec.lean` | the `bvDecide'` searcher and the counterexample reader | `Witness.Searcher` |
+| `Witness/Built.lean` | the state-builder searcher, the knob grid, the built-state cache | `Witness.Searcher`, `Witness.BitVec` |
+| `Witness/Random.lean` | the random-state-plus-solve searcher | `Witness.Searcher`, `Witness.BitVec` |
+| `Witness/Manual.lean` | the manual searcher (the author's manual terms) | `Witness.Searcher` |
 | `Witness/Shrink.lean` | the shrink loop | `Probe`, `Prepare` |
-| `Witness/Hint.lean` | the hint schema, reader, writer, fingerprint, and the hint source | `Witness.Source`, `Lean.Json` |
+| `Witness/Hint.lean` | the hint schema, reader, writer, fingerprint, and the hint searcher | `Witness.Searcher`, `Lean.Json` |
 | `Preset.lean` | bind one preset, the reuse check | `Probe`, `ForkBinding` |
 | `Execute.lean` | per-shape outcome from probe runs, the agreement check | `Probe` |
 | `Record.lean` | `VectorValue`, `VectorRecord`, writer, reader | `Types`, `Lean.Json` |
@@ -340,15 +341,15 @@ it pulls in nothing from the generator (§14.1).
 | --- | --- |
 | `Bindings/Fulu.lean`, `Bindings/Gloas.lean`, `Bindings/Heze.lean` | one `ForkBinding` value per fork |
 | `Bindings.lean` | the table the exe uses: fork tag → `ForkBinding` |
-| `Seeds/Gloas.lean` (and siblings as needed) | author-written input terms, `[Preset]`-generic |
+| `Manual/Gloas.lean` (and siblings as needed) | author-written input terms, `[Preset]`-generic |
 | `Builders/Fulu.lean`, `Builders/Gloas.lean`, `Builders/Heze.lean` | the state-builder catalog per fork (§9.9) |
 | `Generators/Fulu.lean`, `Generators/Gloas.lean`, `Generators/Heze.lean` | the generator lists |
 | `Hints/<fork>/<thm>.json` | the committed hints, one file per theorem (§9.8) |
 | `Main.lean` | the exe: `render`, `check`, `report` |
-| `TheoremVectors.lean` | the library root, imports the bindings, builders, seeds, and generators |
+| `TheoremVectors.lean` | the library root, imports the bindings, builders, manual terms, and generators |
 
 A generator file imports `EthCLSpecs.Proofs.<Fork>`, its fork's binding, and
-its fork's seeds. The binding imports its fork's builders, because it names
+its fork's manual terms. The binding imports its fork's builders, because it names
 them. A generator file imports nothing from another fork.
 
 ### 4.3 Module dependency graph
@@ -458,12 +459,12 @@ inductive ShapeTag where
   deriving DecidableEq, Repr
 ```
 
-### 5.4 Cases, assignments, sources, failures
+### 5.4 Disjuncts, assignments, searchers, failures
 
 ```lean
 /-- One search problem: a conjunction of hypotheses over the inputs. The
 prepare pass produces one per DNF disjunct, times two for `.iffTrue`. -/
-structure Case where
+structure Disjunct where
   index : Nat
   side  : Option Bool          -- `.iffTrue` only
   hyps  : Array Expr           -- conjuncts, binders still free
@@ -471,19 +472,19 @@ structure Case where
 /-- A closed value for every input, in binder order, as SSZ bytes. -/
 abbrev Assignment := Array ByteArray
 
-inductive WitnessSourceTag where
-  | base | bitVec | built | random | seed
+inductive WitnessSearcherTag where
+  | base | bitVec | built | random | manual
   | reused (from : PresetId)
-  /-- Rebuilt from a committed hint; `orig` is the source the hint recorded. -/
-  | hinted (orig : WitnessSourceTag)
+  /-- Rebuilt from a committed hint; `orig` is the searcher the hint recorded. -/
+  | hinted (orig : WitnessSearcherTag)
   deriving Repr
 
 inductive Failure where
   /-- The solver proved `¬P` with no state input in play. The theorem is vacuous. -/
   | unsat
-  /-- Every source ran out. The author should add a seed. -/
-  | notFound (tried : Array WitnessSourceTag)
-  /-- A block input and the base source failed (§1.2). -/
+  /-- Every searcher ran out. The author should add a manual term. -/
+  | notFound (tried : Array WitnessSearcherTag)
+  /-- A block input and the base searcher failed (§1.2). -/
   | outOfScope (inputs : Array Name)
 ```
 
@@ -521,17 +522,17 @@ structure VectorValue where
   value : ValueData
 
 structure VectorRecord where
-  thm       : Name
-  fork      : String               -- the binding's tag, such as "gloas"
-  preset    : PresetId
-  target    : Name
-  shape     : ShapeTag
-  caseIndex : Nat
-  side      : Option Bool
-  inputs    : Array VectorValue
-  output    : Option VectorValue   -- `none` for `.runError`
-  error     : Option String        -- `.runError` only: the error's `repr`
-  source    : WitnessSourceTag
+  thm             : Name
+  fork            : String               -- the binding's tag, such as "gloas"
+  preset          : PresetId
+  target          : Name
+  shape           : ShapeTag
+  disjunctIndex   : Nat
+  side            : Option Bool
+  inputs          : Array VectorValue
+  output          : Option VectorValue   -- `none` for `.runError`
+  error           : Option String        -- `.runError` only: the error's `repr`
+  witnessSearcher : WitnessSearcherTag
 ```
 
 ---
@@ -699,7 +700,7 @@ fields of a structure type and into the element type of `Vector`, `Array`,
 | --- | --- |
 | `.unsupported` shape | a skip with the reason, in the outcome line |
 | a box lemma (§7.3) | a skip with the reason `box lemma: <head>`, counted apart |
-| non-empty `blockInputs` | scope restriction: only the base source runs |
+| non-empty `blockInputs` | scope restriction: only the base searcher runs |
 | an `.other` instance binder | a skip: the command cannot bind an unknown seam |
 | a function-typed input | a skip |
 
@@ -707,7 +708,7 @@ fields of a structure type and into the element type of `Vector`, `Array`,
 
 ## 8. The prepare pass
 
-Input: a `Statement`. Output: `Array Case`.
+Input: a `Statement`. Output: `Array Disjunct`.
 
 ### 8.1 Unfold
 
@@ -719,7 +720,7 @@ and to a random filter alike. The pass runs `simp only` with three lemma sets:
   through the capture extension, when the predicate's body is small
   (under 100 expression nodes). A body that folds over a state container
   unfolds into a term the simp walk cannot finish, so the pass leaves it
-  as one atom, and the bit-vector source grounds the closed call in
+  as one atom, and the bit-vector searcher grounds the closed call in
   compiled code instead (§9.4);
 - the `UInt64`-to-`Nat` bridge lemmas the proofs already use
   (`UInt64.lt_iff_toNat_lt`, `UInt64.le_iff_toNat_le`, and their siblings),
@@ -727,42 +728,42 @@ and to a random filter alike. The pass runs `simp only` with three lemma sets:
 - `Bool` normalization (`decide_eq_true_eq`, `Bool.and_eq_true`, and the rest).
 
 Crypto predicates stay as they are. Under the verify-off backend the probe
-evaluates them, so the solver never needs to see inside one. A case that
-negates a crypto gate is unsatisfiable under that backend. The solver
-never sees inside the gate, so the case reports `notFound`, never
-`unsat`.
+evaluates them, so the solver never needs to see inside one. A disjunct whose gate negates a crypto predicate is unsatisfiable under
+that backend. The solver never sees inside the gate, so the disjunct
+reports `notFound`, never `unsat`.
 
 ### 8.2 Split
 
-The unfolded conjunction is put in disjunctive normal form. Each disjunct
-becomes one `Case`. A hypothesis that unfolds to three branches yields three
-cases, and the case index goes into the record's path. Boundary points fall
-out of the split: `a < b ∨ a = b` gives the solver two goals, and the equality
-case is the boundary.
+The unfolded conjunction is put in disjunctive normal form. Each DNF
+disjunct becomes one `Disjunct`. A hypothesis that unfolds to three
+branches yields three disjuncts, and the disjunct index goes into the
+record's path. Boundary points fall out of the split: `a < b ∨ a = b` gives
+the solver two goals, and the equality disjunct is the boundary.
 
-The pass has a disjunct cap (option `theorem_vectors.maxCases`, default 16).
-A theorem over the cap reports the count and falls back to one case with the
-unsplit hypothesis.
+The pass has a disjunct cap (option `theorem_vectors.maxDisjuncts`, default
+16). A theorem over the cap reports the count and falls back to one
+disjunct with the unsplit hypothesis.
 
 ### 8.3 Sides
 
-For `.iffTrue lhs q`, every case is doubled: one copy adds `q` to its
+For `.iffTrue lhs q`, every disjunct is doubled: one copy adds `q` to its
 hypotheses with `side := some true`, the other adds `¬q` with
 `side := some false`. The witness for the `¬q` side is a witness of the
-negation, which the sources handle the same way.
+negation, which the searchers handle the same way.
 
 ### 8.4 Decidability
 
-Every case must be decidable, because every source ends with `decide` on the
-candidate. The pass synthesizes `Decidable` for the case's conjunction once,
-and a case that fails synthesis is reported and dropped.
+Every disjunct must be decidable, because every searcher ends with `decide`
+on the candidate. The pass synthesizes `Decidable` for the disjunct's
+conjunction once, and a disjunct that fails synthesis is reported and
+dropped.
 
 ---
 
 ## 9. The witness search
 
-Input: the probe for one preset and one `Case`. Output: an `Assignment` or a
-`Failure`. The design of record for the search lives in
+Input: the probe for one preset and one `Disjunct`. Output: an `Assignment`
+or a `Failure`. The design of record for the search lives in
 [THEOREM_VECTORS_SEARCH.md](THEOREM_VECTORS_SEARCH.md), which carries §9's
 subsections under their own numbers; the subsections below state each
 part's rule in one line and point there.
@@ -774,23 +775,23 @@ bytes; a witness is `Array ByteArray`, one entry per input in binder
 order, and the probe (§11) decodes inside compiled code. See the search
 document §1.
 
-### 9.2 The source interface
+### 9.2 The searcher interface
 
-`WitnessSource = tag + applies + search`; the loop walks hint, then
+`WitnessSearcher = tag + applies + search`; the loop walks hint, then
 reuse (§10), then the line's tail, and the check is the single arbiter.
-`notFound` names every source that ran. See §9.2 in the search document.
+`notFound` names every searcher that ran. See §9.2 in the search document.
 
 ### 9.3 The check
 
-`probe.check` is compiled `decide (P x)` per case, never throws, and
+`probe.check` is compiled `decide (P x)` per disjunct, never throws, and
 decodes strictly. See §9.3 in the search document.
 
-### 9.4 The core sources
+### 9.4 The core searchers
 
 Base (never `default` for the state type), bit-vector (grounding, the
-coupled grid, `unsat` only seedless), random plus solve (draws, read
-grounding, the safe face, `randomDraws`, the mainnet cap), seed (the
-per-theorem claim). See §9.4 in the search document.
+coupled grid, `unsat` only on a line with no manual terms), random plus
+solve (draws, read grounding, the safe face, `randomDraws`, the mainnet
+cap), manual (the per-theorem claim). See §9.4 in the search document.
 
 ### 9.5 Generation
 
@@ -802,18 +803,18 @@ generic SSZ-driven instance. See §9.5 in the search document.
 One shape step per container input, the wire-size bound, solver scalars
 not shrunk, built states shrunk by knobs. See §9.6 in the search document.
 
-### 9.7 Further sources
+### 9.7 Further searchers
 
-Corpus pre-states as one more `WitnessSource`. See the search document
+Corpus pre-states as one more `WitnessSearcher`. See the search document
 §7.
 
-### 9.8 Hints: the first source
+### 9.8 Hints: the first searcher
 
 A hint holds how a witness was found, never the bytes: the fingerprint,
 the modes, the staleness spellings, and the merge and update rules. See
 the search document §8.
 
-### 9.9 State builders: the `built` source
+### 9.9 State builders: the `built` searcher
 
 The catalog, the knob grid, the cache with its `.stamp`, shrink by knobs.
 See §9.9 in the search document.
@@ -842,8 +843,8 @@ Scalar witnesses can move. When every input type is free of the preset
 (`Preset.lean` checks that the type's constants do not depend on the fork's
 `Preset` class), the witness from an earlier preset goes through the new
 preset's `probe.check`. A witness that passes is reused, and the record's
-`source` says `.reused minimal`. A witness that fails sends the case to a
-fresh search.
+`witnessSearcher` says `reused-minimal`. A witness that fails sends the
+disjunct to a fresh search.
 
 ---
 
@@ -861,27 +862,27 @@ resulting value with bytes in and bytes out.
 ```lean
 /-- The compiled face of one statement at one preset. -/
 structure Probe where
-  /-- `decide (P x)` for one case, on decoded inputs. -/
-  check  : (caseIndex : Nat) → Array ByteArray → Bool
+  /-- `decide (P x)` for one disjunct, on decoded inputs. -/
+  check  : (disjunctIndex : Nat) → Array ByteArray → Bool
   /-- Draw the container inputs; scalars come back as zero bytes. -/
   sample : (seed size : Nat) → Array ByteArray
   /-- One input position's draw alone. The bytes depend on the seed, the
-  size, and the position, so the built source and a hint's replay sample
+  size, and the position, so the built searcher and a hint's replay sample
   the side containers without sampling the state (§9.4). -/
   sampleAt : (seed size pos : Nat) → ByteArray
   /-- Shrink candidates for the container inputs. -/
   shrink : Array ByteArray → Array (Array ByteArray)
-  /-- One case's container-reading subterms, evaluated at the candidate's
-  bytes and serialized, in the walk's order (§9.4). -/
-  reads  : (caseIndex : Nat) → Array ByteArray → Array ByteArray
-  /-- Per entry of one case's read plan, whether every `!`-read's index
-  stays inside its collection at the candidate's bytes (§9.4). The face
-  evaluates the indexes and the lengths alone, so it cannot panic. -/
-  safe   : (caseIndex : Nat) → Array ByteArray → Array Bool
-  /-- The author seeds, serialized, with their input positions. -/
-  seeds  : Array (Nat × ByteArray)
+  /-- One disjunct's container-reading subterms, evaluated at the
+  candidate's bytes and serialized, in the walk's order (§9.4). -/
+  reads  : (disjunctIndex : Nat) → Array ByteArray → Array ByteArray
+  /-- Per entry of one disjunct's read plan, whether every `!`-read's
+  index stays inside its collection at the candidate's bytes (§9.4). The
+  face evaluates the indexes and the lengths alone, so it cannot panic. -/
+  safe   : (disjunctIndex : Nat) → Array ByteArray → Array Bool
+  /-- The author's manual terms, serialized, with their input positions. -/
+  manuals : Array (Nat × ByteArray)
   /-- The serialized `default` of every input, in binder order: the base
-  source's candidate (§9.4). Empty bytes for a type with no default. -/
+  searcher's candidate (§9.4). Empty bytes for a type with no default. -/
   defaults : Array ByteArray
   /-- Run the named builder (an index into the binding's catalog) and
   serialize the state it produces. -/
@@ -906,7 +907,7 @@ Two rules apply to the evaluated term. It contains no
 `match` on `Except` or `EStateM.Result`; it calls precompiled helpers in the
 framework half (`runProbeOk`, `runProbeError`, `compareBytes`) that do the
 matching. And the term is elaborated once per statement and preset, with the
-case index as a runtime argument, so the search loop never re-elaborates.
+disjunct index as a runtime argument, so the search loop never re-elaborates.
 
 The spec's functions are in a `precompileModules` library, so `f` runs
 native. The probe's own glue is interpreted, and it does little.
@@ -942,15 +943,15 @@ nothing that belongs to one format. Formats read records and nothing else.
 ### 12.1 On disk
 
 ```
-<outDir>/records/<fork>/<preset>/<thm>/<case>[_t|_f]/
+<outDir>/records/<fork>/<preset>/<thm>/<index>[_t|_f]/
   record.json
   <input>.ssz          one per input, scalars included, named by the binder
   output.ssz           absent for .runError
 ```
 
 `<thm>` is the theorem's name with the `EthCLSpecs.Proofs.<Fork>.` prefix
-removed. `<case>` is the zero-padded case index. `_t` and `_f` mark the
-`.iffTrue` side.
+removed. `<index>` is the zero-padded disjunct index. `_t` and `_f` mark
+the `.iffTrue` side.
 
 ### 12.2 `record.json`
 
@@ -961,9 +962,9 @@ removed. `<case>` is the zero-padded case index. `_t` and `_f` mark the
   "target": "EthCLSpecs.Gloas.canBuilderCoverBid",
   "specName": "can_builder_cover_bid",
   "shape": "iffTrue",
-  "case": 0,
+  "disjunctIndex": 0,
   "side": true,
-  "source": "random",
+  "witnessSearcher": "random",
   "inputs": [
     { "name": "state", "type": "EthCLSpecs.Gloas.BeaconState",
       "value": { "root": "0x…" } },
@@ -1081,10 +1082,11 @@ walked, and the function format's `check` and the report read it.
 
 Accepts every record with a target: the `function` field names the function
 a client exposes, and a record without a target has none to name. Writes
-one self-contained file per vector:
+one self-contained file per vector, `<index>` the disjunct index, not
+zero padded:
 
 ```
-<outDir>/formats/function/<fork>/<preset>/<target>/<thm>_<case>[_t|_f].yaml
+<outDir>/formats/function/<fork>/<preset>/<target>/<thm>_<index>[_t|_f].yaml
 ```
 
 ```yaml
@@ -1098,7 +1100,7 @@ inputs:
   builderIndex: 3
   bidAmount: 32000000000
 output: true
-source: random
+witnessSearcher: random
 ```
 
 SSZ values go in as single-quoted hex with their root, scalars as
@@ -1244,7 +1246,7 @@ theorem_vectors_fork Bindings.gloas
 
 -- named lines: overrides and additions
 theorem_vectors isValidIndexedPayloadAttestation_eq_true_iff_checks with
-  (state := Seeds.Gloas.iPacState) (a := Seeds.Gloas.iPacAttestation)
+  (state := Manual.Gloas.iPacState) (a := Manual.Gloas.iPacAttestation)
 theorem_vectors! processBuilderPendingPayments_run presets minimal mainnet
 theorem_vectors initializePtcWindow_lt_default
 
@@ -1272,8 +1274,7 @@ theorem_vectors skip <ident> <string>
 - `characterized` selects every `@[characterizes]` theorem whose target the
   binding's fork owns (`Capture.specFunctionOwner?`). `tagged` selects every
   `@[theorem_vectors]` theorem under the fork's proof namespace. Each runs
-  with the default budget, the default seeds (none), and the clause's preset
-  list.
+  with the default budget, no manual terms, and the clause's preset list.
 - `survey` takes every public theorem under the fork's proof namespace that
   no other clause or line selects, runs phase A alone (§3), and writes an
   outcome line with status `unselected`. It never searches a witness and
@@ -1282,8 +1283,9 @@ theorem_vectors skip <ident> <string>
   of them. It takes no `presets` clause, because nothing runs per preset.
 - `<ident>` resolves to a theorem in the environment, under the fork's proof
   namespace or fully qualified.
-- `with` names seeds: one term per input, `[Preset]`-generic, elaborated at
-  each preset. A seed for an input the theorem does not have is an error.
+- `with` names manual terms: one term per input, `[Preset]`-generic,
+  elaborated at each preset. A manual term for an input the theorem does
+  not have is an error.
 - `presets` lists the presets to run. The default is `minimal`.
 - `!` turns every skip into an error. A tagged theorem is strict without it.
 - `skip` excludes a theorem from discovery and records the reason in the
@@ -1304,10 +1306,10 @@ clauses in the file. Named lines run in file order, then the discovered
 set in name order, with the skips and named lines removed. A named line
 or a `skip` line after a discovery clause that already ran its theorem is
 an error, and the message says to move the line up: a discovery run of
-that theorem would run it without the seeds, warn, and then run it again,
-or run it and lose the exclusion. A line a precedence rule rejects leaves
-no state: the elaborator records it only after its pass succeeded, so a
-later line meets only the lines above it that passed.
+that theorem would run it without the manual terms, warn, and then run
+it again, or run it and lose the exclusion. A line a precedence rule
+rejects leaves no state: the elaborator records it only after its pass
+succeeded, so a later line meets only the lines above it that passed.
 
 Each per-preset run of phases B1 through B8 (§3) carries its own
 heartbeat budget (`theorem_vectors.maxHeartbeats`, §14.4), which the
@@ -1319,7 +1321,7 @@ strict theorem.
 **What this buys.** A new `@[characterizes]` proof gets a vector attempt on
 the next build, and the report lists it with its outcome. An author who wants
 a lemma's vectors adds one tag at the proof. The generator file still shows
-every seed, every strict line, and every exclusion with a reason. Cost stays
+every manual term, every strict line, and every exclusion with a reason. Cost stays
 bounded, because the discovered set runs with the default budget and a
 theorem that needs more gets a named line.
 
@@ -1328,15 +1330,15 @@ theorem that needs more gets a named line.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `theorem_vectors.outDir` | `theorem_vectors` | the output root; the lakefile fixes it |
-| `theorem_vectors.maxCases` | 16 | the DNF cap (§8.2) |
+| `theorem_vectors.maxDisjuncts` | 16 | the DNF cap (§8.2) |
 | `theorem_vectors.maxHeartbeats` | 1000000 | the heartbeat budget per run, in the units `set_option maxHeartbeats` takes; the command multiplies by 1000 for the reader field |
-| `theorem_vectors.randomDraws` | 64 | redraws for the random source |
+| `theorem_vectors.randomDraws` | 64 | redraws for the random searcher |
 | `theorem_vectors.randomSize` | 8 | `Gen`'s size parameter |
 | `theorem_vectors.shrinkSteps` | 40 | the shrink budget |
 | `theorem_vectors.seed` | 0 | the random seed, so a build is reproducible |
 | `theorem_vectors.hints` | `use` | `use`, `ignore`, or `require` (§9.8) |
-| `theorem_vectors.hintsDir` | `""` | the committed hints root the hint source reads; the lakefile fixes it, the same repository-root-relative spelling `theorem_vectors.outDir` takes, and the empty default means the fork commits no hints (§9.8) |
-| `theorem_vectors.builtSteps` | 6 at minimal, 3 at mainnet | how far down the builder grid the `built` source walks (§9.9) |
+| `theorem_vectors.hintsDir` | `""` | the committed hints root the hint searcher reads; the lakefile fixes it, the same repository-root-relative spelling `theorem_vectors.outDir` takes, and the empty default means the fork commits no hints (§9.8) |
+| `theorem_vectors.builtSteps` | 6 at minimal, 3 at mainnet | how far down the builder grid the `built` searcher walks (§9.9) |
 
 ### 14.5 Concurrency
 
@@ -1390,10 +1392,10 @@ The command writes one file per theorem:
   "shape": "iffTrue",
   "origin": "named",
   "blockInputs": [],
-  "cases": 2,
+  "disjuncts": 2,
   "runs": [
     { "preset": "minimal", "status": "written", "records": 2,
-      "source": "random", "hint": "replayed", "seconds": 4.1 },
+      "witnessSearcher": "random", "hint": "replayed", "seconds": 4.1 },
     { "preset": "mainnet", "status": "skipped",
       "reason": "notFound after base, bitVec, built, random" } ] }
 ```
@@ -1404,19 +1406,20 @@ The command writes one file per theorem:
 `unselected`, or `unsupported` with the reader's reason, and no preset
 field. `hint` is
 one of `replayed`, `stale-replayed`, `failed`, `stale-failed`, `missing`,
-`ignored`, one value per run folded from its cases: a failure outranks a
-missing entry, and a missing entry outranks a replay. `missing` also names
-a run where a case won from a search, so a theorem's first build reads
-`missing` until the update recipe runs. `stale-` prefixes the replay or
-the failure the fingerprint touched. `ignored` is mode `ignore`'s answer,
-and a run with no case carries no field. The file is JSON (§12.3).
+`ignored`, one value per run folded from its disjuncts: a failure outranks
+a missing entry, and a missing entry outranks a replay. `missing` also
+names a run where a disjunct won from a search, so a theorem's first build
+reads `missing` until the update recipe runs. `stale-` prefixes the replay
+or the failure the fingerprint touched. `ignored` is mode `ignore`'s
+answer, and a run with no disjunct carries no field. The file is JSON
+(§12.3).
 
 ### 16.2 `report.md`
 
 `report` folds the outcome files and the records into one Markdown file with
 one table per fork:
 
-| Theorem | Origin | Shape | Preset | Status | Source | Hint | Records | Formats | Seconds |
+| Theorem | Origin | Shape | Preset | Status | Witness searcher | Hint | Records | Formats | Seconds |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
 followed by a list of records no format accepted and a list of theorems with
@@ -1437,7 +1440,7 @@ do not, and why.
 
 ```
 packages/EthCLSpecs/theorem_vectors/        gitignored
-  records/<fork>/<preset>/<thm>/<case>/
+  records/<fork>/<preset>/<thm>/<index>/
   outcomes/<fork>/<thm>.json
   hints/<fork>/<thm>.json                  new and replaced hints, for the update recipe
   built/<fork>/<preset>/<builder>/         the built-state cache, bytes and stamps
@@ -1527,13 +1530,13 @@ path as the upstream corpus.
 | named or skip line below the clause that ran its theorem | A0 | error |
 | a named line and a skip line for one theorem | A0 | error |
 | `.unsupported` shape | A1 | skip (error under `!` or `@[theorem_vectors]`) |
-| block input, base source fails | B3 | `outOfScope` skip (error under `!` or the tag) |
+| block input, base searcher fails | B3 | `outOfScope` skip (error under `!` or the tag) |
 | solver proves `¬P` | B3 | `unsat` skip, always reported |
-| sources exhausted | B3 | `notFound` skip (error under `!` or the tag) |
-| fully covering seed wins no case | B3 | error |
-| partial seed, no source finds a witness | B3 | `notFound` skip |
+| searchers exhausted | B3 | `notFound` skip (error under `!` or the tag) |
+| fully covering manual terms win no disjunct | B3 | error |
+| partial manual terms, no searcher finds a witness | B3 | `notFound` skip |
 | hint fails the check, mode `use` | B3 | full search, `hint: failed` in the outcome |
-| hint fails the check, or a case wins from a search, mode `require` | B3 | error |
+| hint fails the check, or a disjunct wins from a search, mode `require` | B3 | error |
 | `THEOREM_VECTORS_HINTS` set to a value that names no mode | A0 | error |
 | `agree = false` | B5 | error, both values printed |
 | read-back mismatch | B7 | error |
@@ -1541,8 +1544,8 @@ path as the upstream corpus.
 | pyspec check fails | C2 | `check` exits 1 |
 | DNF cap hit | A3 | warning, unsplit fallback |
 
-The rule behind the table: a claim the author made (`!`, the tag, a seed)
-fails hard.
+The rule behind the table: a claim the author made (`!`, the tag, a manual
+term) fails hard.
 A fact about the theorem (`unsat`, `notFound`, `unsupported`) is reported. A
 disagreement between the kernel and the compiled code always fails hard.
 
@@ -1556,10 +1559,10 @@ Each row adds code and edits none of the existing pipeline.
 | --- | --- | --- |
 | a fork | `Bindings/<Fork>.lean`, `Generators/<Fork>.lean` | the bindings table |
 | a preset | one `PresetId` constructor, one entry per binding | `Types.lean`, the bindings |
-| a witness source | one `WitnessSource` value | the source list |
+| a witness searcher | one `WitnessSearcher` value | the searcher list |
 | a format | one `VectorFormat` value | `Formats.all` |
 | a shape | one `Shape` constructor, one reader arm, one executor row | `Statement`, `Execute` |
-| a seed | one `def` in `Seeds/<Fork>.lean` | the generator line |
+| a manual term | one `def` in `Manual/<Fork>.lean` | the generator line |
 | a state builder | one `def` in `Builders/<Fork>.lean` | the binding's `builders` list |
 | a theorem | `@[characterizes]` or `@[theorem_vectors]` on the proof, or one named line | nothing else |
 | an exclusion | one `theorem_vectors skip` line with a reason | nothing else |
@@ -1577,20 +1580,25 @@ matches, so a missing arm is a build error.
 - **Statement.** The parsed theorem type: inputs, hypotheses, target, shape.
 - **Shape.** The form of the conclusion. One of `eq`, `iffTrue`, `bound`,
   `runOk`, `runError`.
-- **Case.** One conjunction of hypotheses the search solves, from the DNF
-  split, with a side for `iffTrue`.
+- **Disjunct.** One conjunction of hypotheses the search solves, from the
+  DNF split, with a side for `iffTrue`. Renamed from case (owner decision
+  of 2026-10-16).
 - **Witness.** An assignment of SSZ bytes to every input that passes the
   check.
-- **Witness source.** One strategy that proposes witnesses. The sources run
-  in a fixed order, cheapest first.
+- **Witness searcher.** One strategy that proposes witnesses. The searchers
+  run in a fixed order, cheapest first. Renamed from witness source
+  (owner decision of 2026-10-16).
+- **Manual term.** The author's hand-supplied input term for a generator
+  line, spelled through the `with` clause. Renamed from seed (owner
+  decision of 2026-10-16).
 - **Check.** Compiled `decide P` on a candidate. The single arbiter.
 - **Hint.** A committed note of how a witness was found, enough to rebuild
   the candidate without a search. The check still decides.
 - **State builder.** A fork function that runs the spec to produce a
-  reachable state from a few knobs. The `built` source walks a catalog of
+  reachable state from a few knobs. The `built` searcher walks a catalog of
   them, and the output tree caches their bytes.
-- **Probe.** The compiled face of one statement at one preset: check, sample,
-  shrink, reads, seeds, build, run.
+- **Probe.** The compiled face of one statement at one preset: check,
+  sample, shrink, reads, manuals, defaults, build, run.
 - **Survey.** The generator clause that reads every public theorem the
   other lines leave out and lists it with status `unselected`. It never
   searches a witness.

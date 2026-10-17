@@ -236,7 +236,8 @@ about `Heze.f`, and the per-fork directory is what keeps the two claims apart.
    wins no vector fails the build, the way a `theorem_vectors!` line does.
    The fork's generator file
    (`EthCLSpecs/TheoremVectors/Generators/<Fork>.lean`) decides what runs. A
-   named line selects a theorem, and it can carry a seed or a preset choice.
+   named line selects a theorem, and it can carry manual terms or a preset
+   choice.
    The `characterized` clause runs the search on the contract theorems. The
    `survey` clause lists the rest with their outcomes in
    `theorem_vectors/report.md`, with no search. `just theorem-vectors` writes

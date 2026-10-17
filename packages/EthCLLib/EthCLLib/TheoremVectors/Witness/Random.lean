@@ -49,9 +49,9 @@ open Lean
 namespace EthCLLib.TheoremVectors
 
 /-- The reads' bytes at one solve point, layered like the candidate's own
-overlay (`buildAssignment`): the drawn containers, then the probe's
-manual bytes, then the coupled scalars at their grid values, then the zero
-encodings. This is what the probe's `reads` decodes (§9.4). -/
+overlay (`buildAssignment`): the drawn containers, then the manual
+terms' serialized bytes, then the coupled scalars at their grid values,
+then the zero encodings. This is what the probe's `reads` decodes (§9.4). -/
 private def readsBytesAt (ctx : SearchCtx) (stmt : Statement)
     (drawn : Array (Nat × ByteArray)) (fixedVals : Array (Nat × Nat)) :
     MetaM Assignment :=

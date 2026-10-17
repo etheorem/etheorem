@@ -15,8 +15,8 @@ Contents:
 - Stage 0: scaffolding
 - Stage 1: reader, selection, report
 - Stage 2: probe, executor, records, function format
-- Stage 3: prepare pass and the bit-vector source
-- Stage 4: generation, the random source, shrink
+- Stage 3: prepare pass and the bit-vector searcher
+- Stage 4: generation, the random searcher, shrink
 - Stage 5: hints
 - Stage 6: state builders
 - Stage 7: run shapes and the pyspec format
@@ -49,7 +49,7 @@ corpus today:
 | Heze | `IsPayloadInclusionListSatisfied.lean` | `Store` |
 
 Most Heze theorems take a `Store`, so the Heze generator file starts short.
-The base source still runs on these theorems, and a theorem whose
+The base searcher still runs on these theorems, and a theorem whose
 hypotheses accept a `default` block gets a vector that way.
 
 ---
@@ -93,9 +93,9 @@ hypotheses accept a `default` block gets a vector that way.
  │
  2 probe, executor, records, function format
  │
- 3 prepare pass, bit-vector source
+ 3 prepare pass, bit-vector searcher
  │
- 4 generation, random source, shrink ──────── decision point B
+ 4 generation, random searcher, shrink ──────── decision point B
  │
  ├── 5 hints
  │
@@ -131,7 +131,7 @@ the core types and nothing that runs.
    library with the `theorem_vectors.outDir` option, and the
    `theorem_vectors` exe (§2.3).
 3. `EthCLLib/TheoremVectors/Types.lean`: `PresetId`, `ShapeTag`,
-   `WitnessSourceTag`, `Failure`, `ValueData`, `BoundRel`, `Knobs` (§5).
+   `WitnessSearcherTag`, `Failure`, `ValueData`, `BoundRel`, `Knobs` (§5).
 4. `EthCLLib/TheoremVectors/Yaml.lean`: the YAML writer for the
    client-facing files (§12.3), writer only, with `#guard` pins on the two
    shapes it renders: a `meta.yaml` as one flow line and a function-format
@@ -211,31 +211,32 @@ the reader gave one. The pins pass.
 
 ## Stage 2: probe, executor, records, function format
 
-**Goal.** A theorem with `default` inputs or author seeds produces a record
+**Goal.** A theorem with `default` inputs or the author's manual terms
+produces a record
 on disk, the record reads back, and the function format renders it.
 
 **Steps.**
 
-1. `Prepare.lean`, first form: one `Case` per theorem, the conjunction of
+1. `Prepare.lean`, first form: one `Disjunct` per theorem, the conjunction of
    its hypotheses, plus the `Decidable` synthesis check (§8.4). The unfold
    and split come in stage 3.
 2. `Probe.lean`: the `Probe` structure (§11.1), the term builder (§11.2) with
-   `check`, `seeds`, and `run`. `sample`, `shrink`, `reads`, and `build`
+   `check`, `manuals`, and `run`. `sample`, `shrink`, `reads`, and `build`
    return empty results until their stages. The precompiled helpers
    `runProbeOk`, `runProbeError`, and `compareBytes` live here.
 3. `Execute.lean`: the per-shape outcome for `.eq` and `.bound` (§11.3), the
    agreement check as a build error.
-4. `Witness/Source.lean`: `SearchStep`, `WitnessSource`, `SearchCtx`,
+4. `Witness/Searcher.lean`: `SearchStep`, `WitnessSearcher`, `SearchCtx`,
    `SearchM`, the loop with its fixed order (§9.2), and the `probe.check`
    call.
-5. `Witness/Base.lean` and `Witness/Seed.lean` (§9.4).
+5. `Witness/Base.lean` and `Witness/Manual.lean` (§9.4).
 6. `Preset.lean`, first form: bind the instance binders for one preset
    (§10). Reuse comes in stage 8.
 7. `Record.lean`: `VectorValue`, `VectorRecord`, the directory writer and
    reader (§12.1, §12.4), and the read-back check (§12.5).
 8. `Format.lean` and `Formats/Function.lean` (§13.1, §13.3).
 9. The exe's `render` and `list` (§15).
-10. `Seeds/Gloas.lean` with one seed, and the named lines in
+10. `Manual/Gloas.lean` with one manual term, and the named lines in
     `Generators/Gloas.lean` for the acceptance theorems.
 11. `Command.lean`: phases B1 through B8 wired end to end for one preset.
     From decision point A: `Statement.lean` writes the box-lemma reason
@@ -256,78 +257,82 @@ on disk, the record reads back, and the function format renders it.
 and `getPtcElseOffset_lt_same_slot` write records from `default` inputs.
 Each record reads back and passes the read-back check. The function format
 renders each one, and `report.md` lists them with status `written` and
-source `base`. `just theorem-vectors` is green.
+searcher `base`. `just theorem-vectors` is green.
 
 *Outcome.* Six records at `minimal`, five function files, the recipe green
 in seven seconds. `getPtcElseOffset_lt_same_slot` writes from `default`
-inputs with source `base`. The two window theorems write from seeds with
-source `seed`, because the `default` state has no active validator and
-`computePtcFromFulu` runs to its fuel bound on it; `initializePtcWindow_ge`
-writes from a seed too. The design changes that followed sit in
+inputs with searcher `base`. The two window theorems write from manual
+terms with searcher `manual`, because the `default` state has no active
+validator and `computePtcFromFulu` runs to its fuel bound on it;
+`initializePtcWindow_ge` writes from a manual term too. The design changes that followed sit in
 `THEOREM_VECTORS_ARCHITECTURE.md`: the `default` state is never a
-candidate and the seed's claim is per theorem (§9.4), a theorem with no
-target still runs (§7.2) and the function format rejects its records
+candidate, the manual terms' claim is per theorem (§9.4), a theorem with
+no target still runs (§7.2), and the function format rejects its records
 (§13.3), the probe term is an `Expr` tree over `ScalarCodec` (§11.2) with
 a `defaults` field (§11.1) and the record layer's literals and roots in
 `ProbeResult` (§5.5), the roots come from the binding's hasher (§11.4),
 the record's payload nests under `value` (§12.2), and `render` hands
-`check` a manifest (§13.2). Stage 3 step 7 carries the source changes.
+`check` a manifest (§13.2). Stage 3 step 7 carries the searcher changes.
 
 ---
 
-## Stage 3: prepare pass and the bit-vector source
+## Stage 3: prepare pass and the bit-vector searcher
 
-**Goal.** Scalar theorems get witnesses with no seed, hypotheses through
-spec predicates split into cases, and `.iffTrue` gives two vectors.
+**Goal.** Scalar theorems get witnesses with no manual terms, hypotheses
+through spec predicates split into disjuncts, and `.iffTrue` gives two
+vectors.
 
 **Steps.**
 
 1. `Prepare.lean`, full form: the `simp only` lemma sets (§8.1), the DNF
-   split with the `maxCases` cap (§8.2), the `.iffTrue` sides (§8.3).
+   split with the `maxDisjuncts` cap (§8.2), the `.iffTrue` sides (§8.3).
 2. `Witness/BitVec.lean`: the `bvDecide'` call, the `CounterExample`
    reader, serialization of each value to its SSZ width, the `unsat`
    answer (§9.4).
 3. `Execute.lean`: the `.iffTrue` row (§11.3).
-4. The `Probe` gains the case index on `check` for every case.
-5. Record paths gain the case index and side (§12.1).
+4. The `Probe` gains the disjunct index on `check` for every disjunct.
+5. Record paths gain the disjunct index and side (§12.1).
 6. Tests: a toy theorem with a hypothesis `a < b ∨ a = b` splits into two
-   cases and the equality case lands on the boundary. A toy theorem with an
-   unsatisfiable hypothesis reports `unsat` and writes no record. A
+   disjuncts and the equality disjunct lands on the boundary. A toy
+   theorem with an unsatisfiable hypothesis reports `unsat` and writes
+   no record. A
    `.toNat` hypothesis rewrites to `UInt64` form.
-7. `Witness/Base.lean` and `Witness/Seed.lean`, from the stage 2 outcome:
+7. `Witness/Base.lean` and `Witness/Manual.lean`, from the stage 2 outcome:
    neither proposes `default` for an input of the binding's `stateType`,
-   and the seed's build error fires when the seed passes no case (§9.4).
-   The `FUTURE_WORK.md` entry on a base-source cost guard goes away with
-   it.
+   and the manual terms' build error fires when they pass no disjunct
+   (§9.4). The `FUTURE_WORK.md` entry on a base-searcher cost guard goes
+   away with it.
 
 **Acceptance.** `getPtcElseOffset_lt_next_slot` writes a vector with no
-seed. `canBuilderCoverBid_iff` writes two vectors from a state seed with
-solved scalars. `isValidIndexedPayloadAttestation_eq_true_iff_checks`
-splits into one case per check, and each case with a satisfiable
-conjunction writes a record. The report shows source `bitVec` for the first.
+manual terms. `canBuilderCoverBid_iff` writes two vectors from a manual
+state term with solved scalars.
+`isValidIndexedPayloadAttestation_eq_true_iff_checks` splits into one
+disjunct per check, and each disjunct with a satisfiable conjunction
+writes a record. The report shows searcher `bitVec` for the first.
 
 *Outcome.* Twelve records at `minimal`, ten function files, the recipe
 green in seconds. The first acceptance theorem writes from the solver
-with no seed. `canBuilderCoverBid_iff` writes its true side and both
-false-side cases once the seed state holds a builder below the floor;
-the review fix put one at index 0.
+with no manual terms. `canBuilderCoverBid_iff` writes its true side and
+both false-side disjuncts once the manual state term holds a builder
+below the floor; the review fix put one at index 0.
 `isValidIndexedPayloadAttestation_eq_true_iff_checks` splits into five
-cases and writes the true side; its false sides need containers the seed
-does not vary, and stage 4's random source takes them. The design changes
-that followed sit in `THEOREM_VECTORS_ARCHITECTURE.md`: the per-line
-source list (§9.2), the read grounding and the coupled-scalar grid
-(§9.4), the partial seed's handoff (§9.4), and the unfold's body cutoff
-(§8.1). The review fixes landed beside them: the positional order of the
+disjuncts and writes the true side; its false sides need containers the
+manual terms do not vary, and stage 4's random searcher takes them. The
+design changes that followed sit in `THEOREM_VECTORS_ARCHITECTURE.md`: the
+per-line searcher list (§9.2), the read grounding and the coupled-scalar
+grid (§9.4), the partial manual terms' handoff (§9.4), and the unfold's
+body cutoff (§8.1). The review fixes landed beside them: the positional order of the
 generator lines with its error (§14.3), the heartbeat budget per run
 (§14.4), and the `bne` / `ne` unfold lemmas that bring
 `convertBuilderIndexToValidatorIndex_toBuilderIndex` to the solver. Stage
-4 step 7 carries the remaining source change.
+4 step 7 carries the remaining searcher change.
 
 ---
 
-## Stage 4: generation, the random source, shrink
+## Stage 4: generation, the random searcher, shrink
 
-**Goal.** A theorem over a `BeaconState` gets a witness with no seed.
+**Goal.** A theorem over a `BeaconState` gets a witness with no manual
+terms.
 
 **Steps.**
 
@@ -349,28 +354,30 @@ generator lines with its error (§14.3), the heartbeat budget per run
    solver's `Fin` values stay below `n`; the strict decode of §9.3
    refuses the rest.
 
-**Acceptance.** `canBuilderCoverBid_iff` writes its three cases with no
-seed, source `random`, and the shrunk state is smaller than the first
-draw. `isValidIndexedPayloadAttestation_eq_true_iff_checks` writes three
-of its four false-side cases from draws; the signature gate's negation
+**Acceptance.** `canBuilderCoverBid_iff` writes its three disjuncts with
+no manual terms, searcher `random`, and the shrunk state is smaller than
+the first draw. `isValidIndexedPayloadAttestation_eq_true_iff_checks`
+writes three of its
+four false-side disjuncts from draws; the signature gate's negation
 never holds under the verify-off backend (§8.1) and stays `notFound`.
 The report records the seconds per record.
 
-**Outcome.** The acceptance holds: `canBuilderCoverBid_iff` writes its three cases from
-draws with no seed, the shrunk state is 15493 bytes against the 17635 of
-the first draw, `isValidIndexedPayloadAttestation_eq_true_iff_checks`
-writes three false sides from draws and reports the signature gate's
-negation as `notFound after seed, bitVec, random`, and the report shows
+**Outcome.** The acceptance holds: `canBuilderCoverBid_iff` writes its
+three disjuncts from draws with no manual terms, the shrunk state is 15493
+bytes against the 17635 of the first draw,
+`isValidIndexedPayloadAttestation_eq_true_iff_checks` writes three false
+sides from draws and reports the signature gate's negation as
+`notFound after manual, bitVec, random`; the report shows
 the seconds per record. 15 records and 14 function files. The clean
 recipe runs in 52 seconds, 50 of them the Gloas generator, against 11 at
 stage 3. Decision point B closed: the generic instance fell out of the
-type description. Four design changes: the random source's read set is
+type description. Four design changes: the random searcher's read set is
 the container-mentioning subterms with a scalar literal form, the draws
-are shared across a theorem's cases, the shrink keeps every passing
+are shared across a theorem's disjuncts, the shrink keeps every passing
 candidate of one call under a wire-size bound, and `SearchM` stays
 `MetaM`. Two shortfalls carry into stage 5 steps 7 and 8: a read past a
 drawn list's end panics in compiled code, 152 times per clean build, and
-the sources' pure `applies` test misreads an alias as a container.
+the searchers' pure `applies` test misreads an alias as a container.
 
 ---
 
@@ -382,8 +389,8 @@ runs no search.
 **Steps.**
 
 1. `Witness/Hint.lean`: the hint schema, the fingerprint, the reader and
-   writer, and the hint source (§9.8).
-2. The source order places the hint source first (§9.2).
+   writer, and the hint searcher (§9.8).
+2. The searcher order places the hint searcher first (§9.2).
 3. `Command.lean`: the `theorem_vectors.hints` option, the
    `THEOREM_VECTORS_HINTS` variable read ahead of it, hint writing to
    `<outDir>/hints/`, and the `hint` field on the outcome line.
@@ -401,9 +408,9 @@ runs no search.
    the read; a clean build prints no panic, and the per-record seconds
    drop with the wasted solves.
 8. `Statement.lean` or `Scope.lean`, from the stage 4 outcome: the reader
-   records each input's scalar kind once, in `MetaM`, and the sources'
-   `applies` tests read it, so an alias never reads as a container and
-   `scalarKind` runs once per input instead of once per source and case.
+   records each input's scalar kind once, in `MetaM`, and the searchers'
+   `applies` tests read it, so an alias never reads as a container, and
+   `scalarKind` runs once per input, not once per searcher and disjunct.
 9. `Justfile`: the `theorem-vectors` recipe builds `EthCLLibTheoremVectors`
    and `EthCLSpecs.Tests.TheoremVectorsPins` before the generator, so the
    toy tests and the pins run with the recipe.
@@ -411,14 +418,15 @@ runs no search.
 **Acceptance.** After `just theorem-vectors-hints-update` and a commit,
 `just theorem-vectors-clean` followed by `just theorem-vectors` writes the
 same records as before, and every outcome shows `hint: replayed`. Changing
-one hint's scalar by hand to a value the case rejects leads to `failed` on
-that case and `replayed` on the rest.
+one hint's scalar by hand to a value the disjunct rejects leads to
+`failed` on that disjunct and `replayed` on the rest.
 
 **Outcome.** The acceptance holds: the committed Gloas hints cover the ten theorems that
 wrote records, a clean build replays all ten (`hint: replayed`), an
-`ignore` build writes the same records byte for byte except the `source`
-field (`hinted-<orig>` against `<orig>`) and the same hint files, a
-hand-edited scalar the case rejects turns the run's field to `failed`
+`ignore` build writes the same records byte for byte except the
+`witnessSearcher` field (`hinted-<orig>` against `<orig>`) and the same
+hint files, a hand-edited scalar the disjunct rejects turns the run's
+field to `failed`
 while the other nine replay, and `require` passes on the committed
 corpus. A clean build prints no panic, the shortfall step 7 carried.
 Steps 7 to 9 landed: the probe's `safe` face, the statement's scalar-kind
@@ -426,20 +434,20 @@ table, and the recipe that builds the tests and the pins. The clean
 recipe still runs in 50 seconds, because the two state theorems cost 20
 seconds each in every mode: `canBuilderCoverBid_iff`'s replay runs the
 shrink again, and with the shrink budget at zero it replays in 0.9
-seconds; the payload attestation theorem's case 4 is `notFound`, which
+seconds; the payload attestation theorem's disjunct 4 is `notFound`, which
 no entry records, so every build searches it for 64 draws. Both carry
 into stage 6 steps 8 and 9. Design changes: the hints root is the
 lakefile option `theorem_vectors.hintsDir`, the candidate carries the tag
 the record names, the fingerprint is per entry, every run writes its
 file and a replay re-records the entry it consumed, and `require`
-enforces per case.
+enforces per disjunct.
 
 ---
 
 ## Stage 6: state builders
 
 **Goal.** A theorem over a `BeaconState` gets a reachable state before the
-random source runs, and the state is built once per build.
+random searcher runs, and the state is built once per build.
 
 **Steps.**
 
@@ -448,7 +456,7 @@ random source runs, and the state is built once per build.
    and credentials derived from the validator index.
 2. `Bindings/Gloas.lean`: the `builders` list.
 3. `Probe.lean`: `build`.
-4. `Witness/Built.lean`: the source, the knob grid, knob shrinking, the
+4. `Witness/Built.lean`: the searcher, the knob grid, knob shrinking, the
    cache with its `.trace` stamp (§9.9).
 5. The option `builtSteps` with its per-preset default.
 6. `Witness/Hint.lean`: the built hint row.
@@ -461,28 +469,28 @@ random source runs, and the state is built once per build.
    accepted candidates in each `probe.shrink` call, and the replay checks
    those candidates alone instead of walking every call's list. The
    replay of `canBuilderCoverBid_iff` drops from 20 seconds to about one.
-9. `Witness/Hint.lean`, from the stage 5 outcome: a case every source
-   failed records a `notFound` entry under the run's fingerprint, and
+9. `Witness/Hint.lean`, from the stage 5 outcome: a disjunct every
+   searcher failed records a `notFound` entry under the run's fingerprint, and
    `use` mode skips the search for such an entry while it is not stale.
    The rebuild recipe refreshes it, and the outcome's `hint` field still
-   reads `replayed`. The payload attestation theorem's case 4 stops
+   reads `replayed`. The payload attestation theorem's disjunct 4 stops
    costing 20 seconds per build.
 
-**Acceptance.** `canBuilderCoverBid_iff` writes its two vectors with source
-`built` before the random source runs. A second build reads the state from
+**Acceptance.** `canBuilderCoverBid_iff` writes its two vectors with
+searcher `built` before the random searcher runs. A second build reads the state from
 the cache, and the report's seconds drop. The vector's state passes the
 pyspec server's decode (`pyspec_server stateroot gloas <state.ssz>`).
 
-*Outcome.* The acceptance holds on today's three-case split: the true
-side and one false side of `canBuilderCoverBid_iff` write with source
+*Outcome.* The acceptance holds on today's three-disjunct split: the true
+side and one false side of `canBuilderCoverBid_iff` write with searcher
 `built` from the `withQueue` grid step (16 validators, slot 40, queue 4,
 two builders onboarded by the spec's own onboarding step), and one false
-side falls through to the random source, the draw satisfying where
+side falls through to the random searcher, the draw satisfying where
 the grid did not. The replayed vectors' states decode through
 `pyspec_server stateroot gloas`. Steps 8 and 9 landed: a random entry
 carries its shrink path and its replay walks the recorded candidates
-alone, and a case every source failed records a `notFound` entry whose
-non-stale replay skips the search, the re-recorded entry keeping the
+alone, and a disjunct every searcher failed records a `notFound` entry
+whose non-stale replay skips the search, the re-recorded entry keeping the
 skip stable across builds and update runs. A cold build replays the
 built witness in 29 seconds and runs the recipe in 56, and the second
 build reads every state from the cache, the built witness dropping to
@@ -530,7 +538,7 @@ passes.
 `formats/pyspec/gloas/minimal/epoch_processing/builder_pending_payments/pyspec_tests/processBuilderPendingPayments_run_000`,
 `theorem_vectors check` answers `1 passed, 0 failed` through `runCase`,
 and `pytest --vectors ... --fork=gloas` passes it through the server.
-Both characterized `.runOk` theorems write from the `built` source's
+Both characterized `.runOk` theorems write from the `built` searcher's
 `genesis` step, `processBuilderPendingPayments_run` in 2.0 seconds and
 `initiateBuilderExit_run_eq` in 2.7, and their committed built hints
 replay on the next clean build. Twelve records, fifteen function files,
@@ -555,7 +563,8 @@ witnesses move between presets when they still hold.
 **Steps.**
 
 1. `Preset.lean`: the preset-free type check and the reuse path (§10), with
-   `.reused` as the record's source and a hint for the second preset.
+   `.reused` as the record's `witnessSearcher` and a hint for the second
+   preset.
 2. `Bindings/*`: the `mainnet` entries.
 3. `Generators/Gloas.lean`: `presets minimal mainnet` on the acceptance
    theorems.
@@ -571,21 +580,23 @@ report's seconds per mainnet record are in the stage's commit body.
 *Outcome.* The acceptance holds. `getPtcElseOffset_lt_same_slot` carries its
 minimal witness to mainnet: every input type is free of the preset, the
 carried bytes pass the mainnet check, and the record names `reused-minimal`.
-The two window theorems win from their seeds at mainnet, about 9.4 seconds
+The two window theorems win from their manual terms at mainnet, about 9.4
+seconds
 each, their state types being preset-bound. `processBuilderPendingPayments_run`
-wins from the `built` source's `genesis` step at mainnet in 18.8 seconds. A
-clean rebuild replays all four (`hinted-reused-minimal`, `hinted-seed`,
-`hinted-built`), every record byte-identical to the searched run apart from
-the `source` field, and the `builder_pending_payments` case passes `runCase`
-and the server at both presets. The mainnet cap held: the built cache holds
+wins from the `built` searcher's `genesis` step at mainnet in 18.8
+seconds. A clean rebuild replays all four (`hinted-reused-minimal`,
+`hinted-manual`, `hinted-built`), every record byte-identical to the
+searched run apart from the `witnessSearcher` field, and the
+`builder_pending_payments` case passes `runCase` and the server at both
+presets. The mainnet cap held: the built cache holds
 exactly one mainnet entry, the genesis step, so the 3-step cap cut nothing
 the walk reached. The built seconds and the one cache entry are the
-measurement §14.4's mainnet cap rests on. The reuse source sits after the
-hint source,
+measurement §14.4's mainnet cap rests on. The reuse searcher sits after the
+hint searcher,
 a recorded deviation from §3's B2 sketch (`IMPLEMENTATION_NOTES.md`). Two
 mainnet draw limits carried to stage 9, which landed them: a mainnet state
 beside another container input still overflowed the draw, and the random
-source's loop had no mainnet cap.
+searcher's loop had no mainnet cap.
 
 ---
 
@@ -598,7 +609,8 @@ documentation names the generator.
 
 1. `Builders/Fulu.lean` and `Builders/Heze.lean`, with their `builders`
    lists. Fulu has no `upgraded` row.
-2. `Generators/Fulu.lean` and `Generators/Heze.lean`: named lines, seeds,
+2. `Generators/Fulu.lean` and `Generators/Heze.lean`: named lines, manual
+terms,
    and `skip` lines with reasons for the block-input theorems. The Fulu
    lines need the reader's store rule to identify the run's state by type
    and the `runPure`-form `.runError` reading, both demanded by the Fulu
@@ -606,7 +618,7 @@ documentation names the generator.
 3. `Hints/fulu/` and `Hints/heze/` from the update recipe.
 4. `.github/workflows`: the `theorem-vectors` job (§17.3), with the output
    tree uploaded as an artifact.
-5. Add the corpus pre-state source to `FUTURE_WORK.md`.
+5. Add the corpus pre-state searcher to `FUTURE_WORK.md`.
 6. `packages/EthCLSpecs/README.md`: a short section on the vectors, the
    recipes, and where the output lands.
 7. `CLAUDE.md` and `CONTRIBUTING.md`: a paragraph under *Adding a proof*
@@ -618,9 +630,10 @@ read-back, or a failed pyspec check.
 
 *Outcome.* The acceptance holds. Twenty-five records write from a clean
 run, sixteen Gloas and nine Fulu, and a second clean run replays all
-twenty-five from the committed hints, byte for byte except the `source`
-field. Fulu writes its five balance branch theorems (four at both
-presets through seeds, `no_wrap` at minimal through the random source);
+twenty-five from the committed hints, byte for byte except the
+`witnessSearcher` field. Fulu writes its five balance branch theorems (four at both
+presets through manual terms, `no_wrap` at minimal through the random
+searcher);
 its two `_run_eq` contracts stay `.eq` skips, their `match` right sides
 claiming no run shape and their boxed output types nothing to record.
 Heze writes none: both in-scope theorems take a `runnerStore` whose type
@@ -630,8 +643,8 @@ its reason in the report. The Fulu lines forced two reader changes the
 plan's step 2 now names: the run's state is identified by type, not by
 position, and `.runError` reads the `runPure` form. Two carried items
 from stage 8 landed first, so no mainnet line could reach
-the overflow they guard: the built source draws its side containers
-alone, and the random source caps itself at mainnet over a state-typed
+the overflow they guard: the built searcher draws its side containers
+alone, and the random searcher caps itself at mainnet over a state-typed
 container. The builders landed for all three forks; Fulu's catalog is
 `genesis` and `advanced`, Heze's fills the four rows behind a
 config-tier `hezeForkVersion`, a product-lead decision and a deliberate
@@ -775,7 +788,7 @@ description. Record the choice in `IMPLEMENTATION_NOTES.md`.
 
 **C, during stage 6.** If `advanced` at the first epoch boundary costs more
 than a pyspec `epoch_processing` case at minimal, cut the grid to `genesis`
-and `advanced` and move the rest behind a named line's seed.
+and `advanced` and move the rest behind a named line's manual terms.
 
 **D, during stage 10.** If the pinned Prysm release implements none or
 almost none of the function format's targets at the fork set's pin
@@ -790,7 +803,7 @@ not the client, is what the vectors key on.
 ## Risks
 
 - **Hypotheses in `Nat` form.** Several proofs state bounds through
-  `.toNat`. The bit-vector source needs them in `UInt64` form. The rewrite
+  `.toNat`. The bit-vector searcher needs them in `UInt64` form. The rewrite
   is a fixed `simp` set, but a hypothesis that mixes `Nat` arithmetic with
   no `UInt64` image stays out of reach. Stage 3 reports each one.
 - **Unfolding blows up.** A predicate that unfolds through several layers
@@ -801,15 +814,16 @@ not the client, is what the vectors key on.
   so evaluation is native. The probe's glue is interpreted, and a `match`
   in an interpreted term can trip matcher realization. The probe keeps
   every `match` in precompiled helpers, and stage 2 confirms.
-- **The generic SSZ generator.** The random source rests on one
+- **The generic SSZ generator.** The random searcher rests on one
   `SampleableExt` instance per container, derived from SizzLean's type
   description. If the description is not open enough to drive a generator,
   each container needs a hand-written instance, and `BeaconState` alone has
   dozens of nested types. Decision point B holds this.
 - **Sparse hypotheses.** Random draws do not find a verifying signature or
-  a matching hash. Those theorems need a seed or a builder. If the Gloas
-  list needs more than a handful of seeds, the seed file grows into a
-  library of named states. A later source can solve state fields from the
+  a matching hash. Those theorems need a manual term or a builder. If the
+  Gloas list needs more than a handful of manual terms, the manual-terms
+  file grows into a library of named states. A later searcher can solve
+  state fields from the
   comparison atoms and edit a built or drawn state instead of redrawing
   it.
 - **Plausible version drift.** The tag `v4.29.0` sits one patch behind the

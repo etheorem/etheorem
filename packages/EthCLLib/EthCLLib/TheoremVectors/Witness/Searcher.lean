@@ -134,9 +134,9 @@ abbrev SearchM (α : Type) : Type := MetaM α
 structure WitnessSearcher where
   /-- The wire tag the record names when this searcher wins. -/
   tag     : WitnessSearcherTag
-  /-- Can this searcher try this disjunct at all? The search context is in
-  scope, so a rule that reads the binding's state type or the probe's
-  manual bytes sits here (§9.4's state rule). -/
+  /-- Can this searcher try this disjunct at all? The search context is
+  in scope, so a rule that reads the binding's state type or the manual
+  terms' serialized bytes sits here (§9.4's state rule). -/
   applies : SearchCtx → Statement → Disjunct → Bool
   /-- Produce one answer. -/
   search  : SearchCtx → Statement → Disjunct → SearchM SearchStep

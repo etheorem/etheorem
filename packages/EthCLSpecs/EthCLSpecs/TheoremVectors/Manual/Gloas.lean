@@ -12,7 +12,7 @@ elaborates each `with` term inside the theorem's telescope, where the
 theorem's own instances fill the term's instance binders. A term that
 fails the check is a build error, because the author claimed it works.
 
-Two manual inputs serve the window theorems:
+Two manual terms serve the window theorems:
 
 - `windowZero` / `windowEpoch` pin the window index to the smallest entry
   of the region the theorem's hypothesis names, where `default`'s `0`
@@ -25,17 +25,17 @@ Two manual inputs serve the window theorems:
   base searcher's default candidate unevaluatable for the window theorems;
   an active committee fills in a few dozen iterations.
 
-Two manual inputs serve
+Two manual terms serve
 `isValidIndexedPayloadAttestation_eq_true_iff_checks`:
 
 - `iPacState` and `iPacAttestation` carry 64 validators and two in-range
   increasing attesting indices, so `isValidIndexedPayloadAttestation`'s
   true-side conjunction holds at the manual terms. The false-side
   disjuncts need containers the manual terms do not vary; the random
-  searcher draws them (§9.2). `canBuilderCoverBid_iff` runs termless; the
-  random searcher draws its state (§9.4).
+  searcher draws them (§9.2). `canBuilderCoverBid_iff` runs with no
+  manual terms; the random searcher draws its state (§9.4).
 
-One manual input serves `initiateBuilderExit_run_eq`:
+One manual term serves `initiateBuilderExit_run_eq`:
 
 - `builderState` is the `built` searcher's `withQueue` grid step (16
   validators, slot 40, four queued deposits, two builders onboarded by
@@ -117,7 +117,7 @@ def builderState [Preset] [Config] : EthCLSpecs.Gloas.BeaconState :=
   EthCLSpecs.TheoremVectors.Builders.Gloas.withQueue
     { validators := 16, slot := 40, balance := 32000000000, queue := 4 }
 
-/-! ## The payload-attestation manual inputs -/
+/-! ## The payload-attestation manual terms -/
 
 /-- A Gloas validator at the maximum effective balance, the registry entry
 `iPacState` holds 64 of. The window theorems' `activeValidator` is the

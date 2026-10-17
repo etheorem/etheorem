@@ -24,8 +24,8 @@ inline `default` terms):
   line is cheap and runs at both presets.
 - `decreaseBalance_run_no_underflow` takes `oneBalanceState` with
   `delta := 2`, and `increaseBalance_run_overflow` takes `maxBalanceState`
-  with `delta := 1`. An exploratory termless line answered `notFound` for
-  the no-underflow line within its draw budget. The overflow line's
+  with `delta := 1`. An exploratory line with no manual terms answered
+  `notFound` for the no-underflow line within its draw budget. The overflow line's
   coupled grid caps `delta` below 64. Only the wide arm of the `UInt64`
   draw can land a balance within 64 of `2 ^ 64`, about one value in
   `2 ^ 59`, so the redraw budget never meets one. The manual terms write

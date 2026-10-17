@@ -72,7 +72,7 @@ theorem toyToNat [HasherTag] (a b : UInt64) (_h : a.toNat + 1 = b.toNat) :
 is `UInt64`: the manual term fixes `s` to `0`, which makes the residual
 hypothesis `a < s` hold for no `a` at that term. The disjunct is `notFound`
 at the term, never `unsat`: the solver's vacuity proof covers this one
-manual input alone, and other manual inputs admit witnesses. -/
+manual term alone, and other manual terms admit witnesses. -/
 theorem toyManual [HasherTag] (s : UInt64) (a : UInt64) (_h : a < s) :
     toyFun a = a + 3 := rfl
 
@@ -251,7 +251,7 @@ run_cmd do
       | .ok _ => throwError "toyManual: the search found a witness at an \
           unsatisfiable manual term"
       | .error .unsat => throwError "toyManual: the disjunct reported unsat, \
-          but the vacuity is about one manual input"
+          but the vacuity is about one manual term"
       | .error (.notFound _ _) => pure ()
       | .error f => throwError s!"toyManual: {repr f}"
     -- ── the cap-fallback pin: seventeen disjuncts pass the cap, the pass

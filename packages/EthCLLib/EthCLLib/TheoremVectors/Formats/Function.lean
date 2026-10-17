@@ -63,8 +63,8 @@ def valueYaml (v : VectorValue) (bytes : ByteArray) : Yaml :=
   | .ssz root => .map #[("ssz", .hex bytes), ("root", .hex root)]
 
 /-- The file's name for one record, `<thm>_<index>[_t|_f].yaml`:
-the theorem's local name, the zero-padded disjunct index, and the side
-marker (§13.3). -/
+the theorem's local name, the disjunct index (not zero padded, unlike
+the record directory's), and the side marker (§13.3). -/
 def Formats.functionFileName (r : VectorRecord) : String :=
   r.«theorem».toString ++ "_" ++ toString r.disjunctIndex ++
     (match r.side with

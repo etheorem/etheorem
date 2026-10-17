@@ -982,7 +982,7 @@ Deviations found while building the generator's scaffolding and its stage 1,
 against `THEOREM_VECTORS_ARCHITECTURE.md`. The section references below follow
 the same file.
 
-- **`WitnessSourceTag.reused` names its field `preset`.** The §5.4 sketch
+- **`WitnessSearcherTag.reused` names its field `preset`.** The §5.4 sketch
   writes `reused (from : PresetId)`, and `from` is a Lean keyword, so the
   identifier cannot parse. The field carries the same fact.
 
@@ -1275,10 +1275,13 @@ function format, and the search wiring, against
   `passed` / `failed` (§13.5).
 
 - **The record JSON's field names differ from §12.2's sketch.** The
-  sketch spells the case index `case`, and the record writes the Lean
-  field name `caseIndex`. The payload nests under `value`, because the
-  scalar's literal and the container's root share one field slot (§12.2
-  sketches flat `ssz` / `root` / `scalar` keys beside the name). The
+  sketch originally spelled the disjunct index `case`, and the record
+  wrote the Lean field name `caseIndex`; the rename (owner decision of
+  2026-10-16) moved
+  both to `disjunctIndex`, the spelling the sketch carries today. The
+  payload nests under `value`, because the scalar's literal and the
+  container's root share one field slot (§12.2 sketches flat `ssz` /
+  `root` / `scalar` keys beside the name). The
   record's theorem field spells `«theorem»` in Lean, a keyword, and the
   derived JSON writes the wire spelling §12.2 fixes. The sketch names no
   spec-name field either; the record adds `specName` (the stage-10
@@ -1426,13 +1429,16 @@ function format, and the search wiring, against
   instead and claimed a reader-field change inside the run could not
   raise it; that claim was wrong, and the reader fields take the change.
 
-- **The witness sources' `applies` reads the search context.** §9.2's
+- **The witness searchers' `applies` reads the search context.** §9.2's
   sketch types `applies : Statement → Case → Bool`. §9.4's state rule is
   a statement of the state test over the input types, and it needs the
-  binding's `stateType`, which only the `SearchCtx` carries, so the seam
-  is `applies : SearchCtx → Statement → Case → Bool`. The base source's
-  state test and the seed source's two tests (seeds present, no unseeded
-  state input) sit there, where the search loop reads them.
+  binding's `stateType`, which only the `SearchCtx` carries. The seam
+  started as `applies : SearchCtx → Statement → Case → Bool`; the
+  rename spells it
+  `applies : SearchCtx → Statement → Disjunct → Bool`, the signature the
+  search loop reads today. The base
+  searcher's state test and the manual searcher's two tests (manual terms
+  present, no uncovered state input) sit there.
 
 - **A source's `nothing` carries a detail, and `notFound` reports it.**
   §9.2 says `notFound` names every source that ran; the reason also names
@@ -1522,7 +1528,7 @@ function format, and the search wiring, against
   draws. The candidate's byte overlay therefore reads the drawn bytes
   before the probe's seeds: on a case the seed won, the loop never gets
   there, and on a case it failed, the draw is the witness and the
-  record's `source` says so.
+  record's `witnessSearcher` (at the time spelled `source`) says so.
 
 - **A point whose reads misground still cannot write a wrong vector.**
   A draw's shapes are random, so a read can index a drawn container past
@@ -1625,8 +1631,8 @@ the hint source, the mode, the committed files, and the recipes) against
   whose scalars the shrink does not move, and the replayed candidate
   passes through the same `shrinkWitness` call the original did. The
   records' `.ssz` bytes match the search's build byte for byte; the
-  records' `source` field names `hinted-<orig>`, which is the one
-  intended difference.
+  records' `witnessSearcher` field names `hinted-<orig>`, which is the
+  one intended difference.
 
 - **Mode `require` enforces per case, and a case with no witness falls
   through.** §9.8's table says "a hint that is missing or fails is an
@@ -1737,9 +1743,9 @@ the hint source, the mode, the committed files, and the recipes) against
 
 - **`Witness/Built.lean` imports `Witness.Random`.** §9.9 runs "the same
   loop the random source runs over a draw", and that loop
-  (`tryDraw`, `casePlanOf`, `drawAt`) lives in Random, so the built
-  source drives it there instead of copying it. §4.1's dependency column
-  names `Witness.Source` and `Witness.BitVec` only; the third import is
+  (`tryDraw`, `disjunctPlanOf`, `drawAt`) lives in Random, so the built
+  searcher drives it there instead of copying it. §4.1's dependency column
+  names `Witness.Searcher` and `Witness.BitVec` only; the third import is
   the shared loop.
 
 - **A built hint's replay goes through the cache.** §9.8's table gives
@@ -1918,7 +1924,7 @@ builders, the executor's run rows, and the record's error value) against
   value binder whose type names the binding's `stateType`, and the three
   old readings accept the equation's store when it is one of them; the new
   `runErrorRunPure?` reading mirrors `runOkRunPure?` on the error side.
-  The shared predicate `isStateType` moved from `Witness/Source.lean` down
+  The shared predicate `isStateType` moved from `Witness/Searcher.lean` down
   to `ForkBinding.lean`, below `Statement.lean` in the import graph, so
   the reader and the sources keep one definition. The Gloas corpus is
   unchanged: its run theorems bind one state, in the first position, so
@@ -1966,7 +1972,7 @@ builders, the executor's run rows, and the record's error value) against
   fixed-length vector's preset length, and a mainnet `BeaconState`'s
   65536-element `randao_mixes` overflows the interpreter's recursion
   cap inside `drawVector`. One draw would fail the elaboration and the
-  build. After the case plan, `randomSource.search` answers
+  build. After the disjunct plan, `randomSearcher.search` answers
   `nothing` with a reason that names the cap when the preset is mainnet
   and a container input's type is the binding's state type, before any
   draw runs. Mainnet lines whose container inputs are all size-capped
@@ -2065,7 +2071,8 @@ builders, the executor's run rows, and the record's error value) against
   `state.builders[builder_index]` read raises `IndexError`. The forkdef
   now reads the registry through `sszGetIdx` and rejects with
   `.outOfBounds`, `_run_eq` carries the range hypothesis, and the vector
-  regenerates from the `withQueue` seed (`Seeds/Gloas.builderState`).
+  regenerates from the `withQueue` seed (`Manual/Gloas.builderState`; the
+  stage's run recorded the winner tag as `seed`, today `manual`).
   The search alone cannot witness the theorem: the hypothesis reads the
   index through `UInt64.toNat`, which the coupled walk and the solver's
   `UInt64` fragment do not bridge.
@@ -2083,8 +2090,8 @@ builders, the executor's run rows, and the record's error value) against
   `noConsumer`. The report's Formats cell joins on (fork, preset,
   theorem), where the theorem is the entry's file name read backwards
   through the three suffixes `Formats.functionFileName` and
-  `Record.caseName` write: `.yaml`, the `_t` / `_f` side marker, then
-  the `_<digits>` case index. `noConsumer` and an empty cell now mean
+  `Record.disjunctName` write: `.yaml`, the `_t` / `_f` side marker, then
+  the `_<digits>` disjunct index. `noConsumer` and an empty cell now mean
   no client ran the record: the coverage table maps its target to
   nothing, the client build table-skipped it, or the harness has not
   run (a missing results file reads as no entries). A theorem's entries
@@ -2100,3 +2107,48 @@ builders, the executor's run rows, and the record's error value) against
   The `client-prysm-report` recipe re-renders the report once, after
   both runs, and `theorem-vectors-clean` removes the file with the
   tree.
+
+## Theorem vectors, the vocabulary rename
+
+- **Three words moved, and the wire moved with them.** The product
+  owner decided the rename on 2026-10-16; it landed 2026-10-17 in three
+  tasks (commits `3587ac3`, `5bd7c0b`, `37c222a`). The generator's
+  vocabulary changed accordingly: the author-input strategy "seed"
+  became "manual", the DNF search problem "case" became "disjunct", and
+  the witness strategy "source" became "witness searcher". The code, the
+  tests, this repository's design documents, and the client harness
+  renamed with them. The words "seed" (the random draw seed),
+  "case" (upstream pyspec vocabulary and ordinary English), and
+  "source" (source code and provenance) keep their old senses.
+
+- **The wire carries the new spellings.** The owner decision of
+  2026-10-16 fixed the word choices and the field spellings. Tag values:
+  `manual` and `hinted-manual` (was `seed`, `hinted-seed`). The record's
+  index key: `disjunctIndex` (was the sketch's `case`, then
+  `caseIndex`). The hint entry's index key: `disjunctIndex` too, which
+  unifies the record's and the hint's index on one spelling, a
+  wire-migration decision confirmed when the tasks landed. The outcome's
+  count key: `disjuncts` (was `cases`). The winner field on the record,
+  the outcome run, the function YAML, and the client harness's
+  `vector` struct: `witnessSearcher` (was `source`). The report's
+  column header: `| Witness searcher |`. The option
+  `theorem_vectors.maxCases` is `theorem_vectors.maxDisjuncts`. Tag
+  values `base`, `bitVec`, `built`, `random`, `reused-`, and the hint
+  entry's `"seed"` draw key never moved.
+
+- **Regeneration was the acceptance.** After each task,
+  `just theorem-vectors-hints-rebuild` re-searched every witness from
+  scratch, `just theorem-vectors-hints-update` copied the hints over
+  the committed ones, and `just theorem-vectors` replayed green. The
+  regenerated diff moved only the renamed spellings; every numeric
+  value and every function file stayed byte-identical, and every record
+  directory (`000_t`) and file name stayed the same.
+
+- **Stage narratives predate the rename.** The stage sections of these
+  notes quote, in places, what a run printed at the time, such as the
+  stage-2 record whose winner tag read `seed`, and they state rules in
+  the old vocabulary. They stand as written. The plan is a living
+  document, so its stage sections took the new vocabulary throughout,
+  run-output quotes included (`notFound after manual, bitVec, random`).
+  The entries above that name a moved identifier or wire key carry the
+  new spelling.

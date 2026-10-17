@@ -19,15 +19,16 @@ JSON reader's integer range. The writer and the reader move bytes and names
 and hold no fork knowledge (§12.4). The read-back check (§12.5) runs in the
 command, which owns the probe the check needs.
 
-The on-disk JSON differs from §12.2's sketch in the field names, the
-reasons recorded in `IMPLEMENTATION_NOTES.md`: the sketch spells the
-disjunct index `case`, and the derived JSON writes the Lean field name
-`disjunctIndex`; the payload nests under `value`, because the scalar's
-literal and the container's root share one field slot. The `theorem`
-field spells with French quotes in Lean, `«theorem»`, and the derived
-JSON writes the wire spelling §12.2 fixes. The sketch names no spec-name
-field either; the record adds `specName`, the target's pyspec name
-(the stage-10 promotion, recorded in the notes).
+The on-disk JSON's field names carry a history, recorded in
+`IMPLEMENTATION_NOTES.md`: the sketch originally spelled the disjunct
+index `case`, the record wrote `caseIndex`, and the rename unified both
+on `disjunctIndex` (the owner's wire decision of 2026-10-16), the
+spelling §12.2 carries today. The
+payload nests under `value`, because the scalar's literal and the
+container's root share one field slot. The `theorem` field spells with
+French quotes in Lean, `«theorem»`, and the derived JSON writes the wire
+spelling §12.2 fixes. The record's `specName` field, the target's pyspec
+name, is the stage-10 promotion, recorded in the notes.
 
 ## Lean idioms annotated
 

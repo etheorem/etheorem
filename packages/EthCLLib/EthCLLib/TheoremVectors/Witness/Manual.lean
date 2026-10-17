@@ -6,8 +6,8 @@ import EthCLLib.TheoremVectors.Witness.Searcher
 
 The manual searcher (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4): a named line's
 `with` clause fixes inputs to author-written terms. When the manual terms
-cover every input, the candidate is the manual bytes overlaid on the
-serialized defaults, checked like any other. When they cover a strict
+cover every input, the candidate is the terms' serialized bytes overlaid
+on the serialized defaults, checked like any other. When they cover a strict
 subset, the searcher answers `nothing` and the bit-vector searcher takes the
 handoff: §9.4 hands the partial assignment to the solver for the rest.
 
@@ -33,9 +33,9 @@ private def uncoveredHaveState (ctx : SearchCtx) (stmt : Statement) : Bool :=
   ((Array.range stmt.inputs.size).filter (fun i => !manualPos.contains i)).any
     (fun i => isStateType ctx.binding stmt.inputs[i]!.type)
 
-/-- The manual searcher (§9.4). Applies when the probe holds serialized
-manual bytes and no *uncovered* input is the fork's state: the searcher
-overlays the manual bytes on the serialized defaults, so an uncovered
+/-- The manual searcher (§9.4). Applies when the probe holds the manual
+terms' serialized bytes and no *uncovered* input is the fork's state: the
+searcher overlays those bytes on the serialized defaults, so an uncovered
 state input would take `default`, which §9.4's rule excludes. A covered
 state input is the author's own term and fills the overlay. The cover
 test (manual terms for every input, or the partial handoff to the
