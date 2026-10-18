@@ -183,8 +183,10 @@ Re-exports:
   epoch. The bits shift and get the bit of each justified epoch. The finalized checkpoint
   follows `finalizeRules` (`weighJustificationAndFinalization_run_ok`). Every
   other field keeps its value (`weighJustificationAndFinalization_run_keeps`). A failed run
-  fails in a `getBlockRoot` read (`weighJustificationAndFinalization_run_error`).
-  `processJustificationAndFinalization_run_eq` reduces the outer step to the weigh step.
+  fails in a `getBlockRoot` read or in an overflow
+  (`weighJustificationAndFinalization_run_error`).
+  `processJustificationAndFinalization_run_eq` reduces the outer step to its five reads and
+  the weigh step (`processJustificationAndFinalization_run_ok`).
 * `EthCLSpecs.Proofs.Heze.KeepsUncached`: a run of each Heze operation handler, and of
   `processOperations`, that starts on an uncached box ends on an uncached box
   (`keepsUncached_processOperations` and the handler lemmas). `increaseBalance` and
