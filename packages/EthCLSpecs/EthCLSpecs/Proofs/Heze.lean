@@ -39,6 +39,8 @@ import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 import EthCLSpecs.Proofs.Heze.OnInclusionList
 import EthCLSpecs.Proofs.Heze.OnTickPerSlot
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
+import EthCLSpecs.Proofs.Heze.Participation
+import EthCLSpecs.Proofs.Heze.ParticipationFrame
 import EthCLSpecs.Proofs.Heze.PayloadRace
 import EthCLSpecs.Proofs.Heze.PayloadRaceBounds
 import EthCLSpecs.Proofs.Heze.PayloadRaceCount
@@ -274,6 +276,17 @@ Re-exports:
   (`processParentExecutionPayload_run_of_empty_parent`). Fork choice calls an edge
   EMPTY exactly when the two block hashes differ
   (`getParentPayloadStatus_run_eq_empty_iff`).
+* `EthCLSpecs.Proofs.Heze.Participation`: a target bit that `processAttestation` sets belongs
+  to an attesting index with a matching source and target root
+  (`processAttestation_explained`). With a matching source and target root, the run sets the
+  target bit of each attesting index (`processAttestation_sets_target`). Along a chain run,
+  each target flag of an epoch after the current epoch of the start state comes from an
+  attestation that a block of the run includes (`ChainRun.flag_explained`).
+* `EthCLSpecs.Proofs.Heze.ParticipationFrame`: every function of a slot step and a block step
+  keeps one target bit and the slot (`partView`), except `processAttestation`, the flag
+  rotation, and the deposits. The callers of `addValidatorToRegistry` keep a target bit of
+  `false`. An epoch step clears the current bit, and a previous bit after it was a current
+  bit before it (`processEpoch_part`).
 * `EthCLSpecs.Proofs.Heze.PayloadRace`: the race between the EMPTY and the FULL node of a
   block from slot `N + 2` on. The model has validators, latest messages, and views
   (`sideWeight`, `ViewOk`). While the honest balance that has voted is more than the
