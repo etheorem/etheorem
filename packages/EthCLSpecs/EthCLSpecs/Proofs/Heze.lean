@@ -1,4 +1,5 @@
 import EthCLSpecs.Proofs.Heze.AttestationScore
+import EthCLSpecs.Proofs.Heze.AttesterSlashing
 import EthCLSpecs.Proofs.Heze.BlockChain
 import EthCLSpecs.Proofs.Heze.BlockRoot
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
@@ -85,6 +86,13 @@ Re-exports:
 
 * `EthCLSpecs.Proofs.Heze.AttestationScore`: the Heze `getAttestationScore` is the `Nat` sum
   of the effective balances of the counted active indices (`getAttestationScore_run_ok`).
+* `EthCLSpecs.Proofs.Heze.AttesterSlashing`: the slashing test of two attestation data is a
+  double vote or a surround vote (`isSlashableAttestationData_iff`). Two different data with
+  one target epoch are a double vote, or their roots collide
+  (`isSlashableAttestationData_of_ne`). When the data are slashable, both indexed
+  attestations are valid, and a validator of both lists is slashable, `processAttesterSlashing`
+  does not reject with an assert (`processAttesterSlashing_run_not_assert`, under
+  `QsortMem`). Each of the first three asserts rejects when its condition fails.
 * `EthCLSpecs.Proofs.Heze.BlockChain`: the invariant `CkptInv` along a node trace from the
   anchor store (`NodeTrace.ckptInv`), or a root collision. Each stored state ends a chain
   run from the anchor state over the blocks on the parent links of its root
