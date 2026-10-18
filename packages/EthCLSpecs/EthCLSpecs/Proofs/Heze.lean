@@ -17,6 +17,7 @@ import EthCLSpecs.Proofs.Heze.HonestVoteSide
 import EthCLSpecs.Proofs.Heze.ILStoreOrder
 import EthCLSpecs.Proofs.Heze.InclusionDichotomy
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
+import EthCLSpecs.Proofs.Heze.JustificationAndFinalization
 import EthCLSpecs.Proofs.Heze.KeepsUncached
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Block
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Epoch
@@ -176,6 +177,14 @@ Re-exports:
   (`isPayloadInclusionListSatisfied_run`), and the four read corollaries
   for a missing record, an unverified recorded value, a recorded `false`,
   and a recorded `true` with a verified payload.
+* `EthCLSpecs.Proofs.Heze.JustificationAndFinalization`: what the weigh step of
+  `processJustificationAndFinalization` writes on a plain value. The previous justified
+  checkpoint takes the old current one. The current one takes the checkpoint of a justified
+  epoch. The bits shift and get the bit of each justified epoch. The finalized checkpoint
+  follows `finalizeRules` (`weighJustificationAndFinalization_run_ok`). Every
+  other field keeps its value (`weighJustificationAndFinalization_run_keeps`). A failed run
+  fails in a `getBlockRoot` read (`weighJustificationAndFinalization_run_error`).
+  `processJustificationAndFinalization_run_eq` reduces the outer step to the weigh step.
 * `EthCLSpecs.Proofs.Heze.KeepsUncached`: a run of each Heze operation handler, and of
   `processOperations`, that starts on an uncached box ends on an uncached box
   (`keepsUncached_processOperations` and the handler lemmas). `increaseBalance` and
