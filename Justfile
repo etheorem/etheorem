@@ -483,12 +483,6 @@ ethcl-profile case=default_profile_case: _ensure-venv
 # Build the generator libraries and run the harness over the output tree
 [group('ethcl')]
 theorem-vectors:
-    @echo "  note: the pins build below prints ~400 \"PANIC at outOfBounds\""
-    @echo "  lines from the state builders' interpreted evaluation; the"
-    @echo "  genesis builder leaves the per-validator auxiliary lists empty"
-    @echo "  and each epoch boundary reads past them. They are expected and"
-    @echo "  not failures (see the comment in Tests/TheoremVectorsPins.lean)."
-    @echo "  The final \"Build completed successfully\" line is authoritative."
     lake build EthCLLibTheoremVectors EthCLSpecs.Tests.TheoremVectorsPins
     lake build EthCLSpecsTheoremVectors
     lake exe theorem_vectors render

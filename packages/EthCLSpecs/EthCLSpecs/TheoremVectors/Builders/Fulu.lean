@@ -103,14 +103,15 @@ def genesisValidator [Preset] (index : Nat) (balance : Gwei) : Validator :=
     exitEpoch := Const.farFutureEpoch
     withdrawableEpoch := Const.farFutureEpoch }
 
-/-- `genesis`: the fork's genesis state over `knobs.validators` deposits
-of `knobs.balance`, every validator active. `eth1_data.deposit_count` and
-`eth1_deposit_index` name the same count the registry holds. The fork
-record carries the chain's genesis fork version on both sides. The
-pyspec's `create_genesis_state` names the parent fork's version as the
-previous one and the fork's own as the current one; this builder writes
-the pre-fork record instead, the one version the chain holds before any
-upgrade runs. -/
+/-- `genesis`: the fork's genesis state over `knobs.validators` deposits of
+`knobs.balance`, every validator active. The two participation lists and
+`inactivityScores` hold one zero entry per validator.
+`eth1_data.deposit_count` and `eth1_deposit_index` name the same count
+the registry holds. The fork record carries the chain's genesis fork
+version on both sides. The pyspec's `create_genesis_state` names the
+parent fork's version as the previous one and the fork's own as the
+current one; this builder writes the pre-fork record instead, the one
+version the chain holds before any upgrade runs. -/
 def genesis [Preset] [Config] (knobs : Knobs) : BeaconState :=
   let balance : Gwei := UInt64.ofNat knobs.balance
   let vs : SSZList Validator Const.validatorRegistryLimit :=
@@ -118,9 +119,19 @@ def genesis [Preset] [Config] (knobs : Knobs) : BeaconState :=
       (fun xs i => xs.push (genesisValidator i balance)) default
   let bs : SSZList Gwei Const.validatorRegistryLimit :=
     (Array.range knobs.validators).foldl (fun xs _ => xs.push balance) default
+  -- the per-validator lists the epoch step indexes by validator index:
+  -- one zero entry per validator, the way `create_genesis_state` appends
+  -- one per deposit
+  let flags : SSZList ParticipationFlags Const.validatorRegistryLimit :=
+    vs.mapCap fun _ => 0
+  let scores : SSZList UInt64 Const.validatorRegistryLimit :=
+    vs.mapCap fun _ => 0
   { (default : BeaconState) with
     validators := vs
     balances := bs
+    previousEpochParticipation := flags
+    currentEpochParticipation := flags
+    inactivityScores := scores
     eth1Data := { (default : Eth1Data) with depositCount := UInt64.ofNat knobs.validators }
     eth1DepositIndex := UInt64.ofNat knobs.validators
     forkData :=

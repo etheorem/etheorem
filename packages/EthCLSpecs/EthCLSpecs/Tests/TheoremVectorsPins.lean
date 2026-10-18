@@ -293,23 +293,6 @@ attribute [local instance] tvMinimalPreset tvMinimalConfig tvVerifyOff
 -- deposits in the queue it kept. The instances are each binding's
 -- minimal set, the preset every record writes at; the pins run at
 -- elaboration time, the way the draw pin above does.
---
--- Expected noise: this block's checks force the builders' interpreted
--- evaluation, and every `advanced`/`withQueue` run crosses an epoch
--- boundary. `process_epoch` reads the per-validator lists
--- `inactivityScores` (`EpochProcessing.lean`) and the participation
--- flags (`Accessors.lean`, `getUnslashedParticipatingIndices`) with
--- `!`, and the `genesis` builder leaves those lists at `default`,
--- empty. Each read past the end prints one `PANIC at outOfBounds` line,
--- answers `default`, and drops the write-back, so the built states
--- carry the empty lists through. The pins ask for a strict decode and
--- coarse shape only, which the empty lists satisfy, and the committed
--- built hints replay through the same builders, so the answers this
--- block checks are the ones the generator records. Sizing the lists in
--- `genesis` would change every built state's bytes and churn the hints,
--- so the block leaves the builders alone. The count scales with the
--- registry length times the epoch boundaries the grid's slots cross;
--- the `just theorem-vectors` recipe banners it.
 open EthCLLib.Spec in
 run_cmd do
   liftTermElabM do
