@@ -1,7 +1,10 @@
 import EthCLSpecs.Proofs.Heze.AttestationScore
+import EthCLSpecs.Proofs.Heze.BlockChain
 import EthCLSpecs.Proofs.Heze.BlockRoot
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
 import EthCLSpecs.Proofs.Heze.CensorshipCost
+import EthCLSpecs.Proofs.Heze.CheckpointFrame
+import EthCLSpecs.Proofs.Heze.CheckpointInvariants
 import EthCLSpecs.Proofs.Heze.CheckpointOrd
 import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.ClockedTrace
@@ -11,6 +14,7 @@ import EthCLSpecs.Proofs.Heze.FullSupport
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.HandlerFrames
 import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
+import EthCLSpecs.Proofs.Heze.HeadBelowJustified
 import EthCLSpecs.Proofs.Heze.HonestDuties
 import EthCLSpecs.Proofs.Heze.HonestHead
 import EthCLSpecs.Proofs.Heze.HonestVoteSide
@@ -80,7 +84,14 @@ Re-exports:
 
 * `EthCLSpecs.Proofs.Heze.AttestationScore`: the Heze `getAttestationScore` is the `Nat` sum
   of the effective balances of the counted active indices (`getAttestationScore_run_ok`).
-* `EthCLSpecs.Proofs.Heze.BlockRoot`: a block root is the root of its header
+* `EthCLSpecs.Proofs.Heze.BlockChain`: the invariant `CkptInv` along a node trace from the
+  anchor store (`NodeTrace.ckptInv`), or a root collision. Each stored state ends a chain
+  run from the anchor state over the blocks on the parent links of its root
+  (`AncestorPath`), and the run ends at the block of the state (`EndsAtBlock`). Each of the
+  four store checkpoints is the anchor checkpoint, or comes from such a state or its pull-up
+  (`CheckpointSource`). In both pairs, the finalized epoch
+  is at most the justified epoch. A successful `onBlock` run passed its two acceptance
+  asserts (`onBlock_run_ok_asserts`). a block root is the root of its header
   (`htr_eq_htr_headerOf`), under the hypothesis that every `combine` returns 32 bytes.
   The root of a 32-byte vector is its bytes (`hashTreeRoot_bytes32`).
 * `EthCLSpecs.Proofs.Heze.BuilderPendingPayments`: the Heze port of the epoch
@@ -95,6 +106,16 @@ Re-exports:
   does not settle the bid. At the epoch substep, the entry of the bid is appended if and
   only if it reaches the quorum. `unsatisfiedPayload_cost_of_run` states the three facts
   with the third one over the chain from the block to the substep.
+* `EthCLSpecs.Proofs.Heze.CheckpointFrame`: every function of a slot step and a block
+  step, other than `processJustificationAndFinalization`, keeps the three state checkpoints,
+  the justification bits, and the slot (`processBlock_frame_ord`,
+  `processEpochAfterJF_frame_ord`).
+* `EthCLSpecs.Proofs.Heze.CheckpointInvariants`: a chain run keeps the checkpoint order of
+  a state (`StateCkptOrd`, `ChainRun.stateCkptOrd`), when no slot increment wraps. On an
+  ordered state, `processJustificationAndFinalization` writes a finalized epoch at most
+  the current justified epoch (`processJustificationAndFinalization_run_fin_le`). A handler
+  event, and a trace, raise no epoch of the four store checkpoints
+  (`HandlerEvent.run_ckptGrows`, `NodeTrace.ckptGrows`).
 * `EthCLSpecs.Proofs.Heze.CheckpointOrd`: the derived order on `Checkpoint` is transitive
   and returns `.eq` only on equal checkpoints (`instTransOrdCheckpoint`,
   `instLawfulEqOrdCheckpoint`), so `treeMap` meets the map laws at `Checkpoint`.
@@ -140,6 +161,8 @@ Re-exports:
   `DichotomyHypotheses`, the same holds at every `LaterStore`
   (`inclusionList_missing_tx_head_avoids_full`). Without the block at `r`, the walk never
   reaches the pending node of `r` (`getHead_run_avoids_full_of_no_block`).
+* `EthCLSpecs.Proofs.Heze.HeadBelowJustified`: the head that `getHead` returns lies below
+  the pending node of the justified root (`getHead_run_below_justified`).
 * `EthCLSpecs.Proofs.Heze.HonestDuties`: the duties of slot `n + 1` on a head that avoids
   the FULL node of `r`. `shouldBuildOnFull` rejects a pending head and answers `false` at
   an EMPTY head. No honest vote is `(r, 1)` (`honestAttestation_ne_full`). An honest block
