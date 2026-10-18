@@ -25,6 +25,7 @@ import EthCLSpecs.Proofs.Heze.InclusionDichotomy
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
 import EthCLSpecs.Proofs.Heze.JustificationAndFinalization
 import EthCLSpecs.Proofs.Heze.KeepsUncached
+import EthCLSpecs.Proofs.Heze.KeyFrame
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Block
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Epoch
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Payload
