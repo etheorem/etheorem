@@ -1,3 +1,4 @@
+import EthCLSpecs.Proofs.Fulu.AttesterSlashing
 import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Churn
 import EthCLSpecs.Proofs.Fulu.Committees
@@ -18,6 +19,10 @@ Every declaration here sits in the `EthCLSpecs.Proofs.Fulu` namespace.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Fulu.AttesterSlashing`: the slashing test of two attestation data is a
+  double vote or a surround vote (`isSlashableAttestationData_iff`). Two different data with
+  one target epoch are a double vote, or their roots collide
+  (`isSlashableAttestationData_of_ne`).
 * `EthCLSpecs.Proofs.Fulu.Run`: `FuluRun`, the state-transition monad every Fulu proof in this
   directory pins its theorems to.
 * `EthCLSpecs.Proofs.Fulu.Balances`: `increaseBalance` and `decreaseBalance`, each with an exact
