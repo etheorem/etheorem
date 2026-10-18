@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.Gloas.ActiveIndices
 import EthCLSpecs.Proofs.Gloas.AttestationScore
+import EthCLSpecs.Proofs.Gloas.AttesterSlashing
 import EthCLSpecs.Proofs.Gloas.BuilderIndex
 import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 import EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid
@@ -40,6 +41,9 @@ Re-exports:
 * `EthCLSpecs.Proofs.Gloas.AttestationScore`: `getAttestationScore` is the `Nat` sum of the
   effective balances of the counted active indices (`getAttestationScore_run_ok`). The fold
   is restated with the per-index test `supports`, which reads no runner state.
+* `EthCLSpecs.Proofs.Gloas.AttesterSlashing`: the slashing test of two attestation data is a
+  double vote or a surround vote (`isSlashableAttestationData_iff`). Two different data with
+  one target epoch are a double vote (`isSlashableAttestationData_of_ne`).
 * `EthCLSpecs.Proofs.Gloas.BuilderIndex`: the builder-index flag round-trip
   (`isBuilderIndex`, `toBuilderIndex`, `convertBuilderIndexToValidatorIndex`).
 * `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: `processBuilderPendingPayments`'s
