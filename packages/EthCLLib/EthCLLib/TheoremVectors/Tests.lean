@@ -9,6 +9,7 @@ import EthCLLib.TheoremVectors.Tests.Built
 import EthCLLib.TheoremVectors.Tests.BuiltDrive
 import EthCLLib.TheoremVectors.Tests.Pyspec
 import EthCLLib.TheoremVectors.Tests.Function
+import EthCLLib.TheoremVectors.Tests.Manual
 import EthCLLib.TheoremVectors.Tests.Reuse
 import EthCLLib.TheoremVectors.Tests.ReuseFork
 import EthCLLib.TheoremVectors.Tests.Support

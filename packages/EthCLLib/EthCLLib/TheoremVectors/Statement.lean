@@ -2,6 +2,7 @@ import Lean
 import EthCLLib.TheoremVectors.Types
 import EthCLLib.TheoremVectors.Scalar
 import EthCLLib.TheoremVectors.ForkBinding
+import EthCLLib.Internal.Binders
 import EthCLLib.Internal.Capture
 
 /-!
@@ -522,18 +523,6 @@ private partial def zetaLets (body : Expr) : Expr :=
   | .letE _ _ v b _ => zetaLets (b.instantiate1 v)
   | _ => body
 
-/-- Is the binder's type a sort or an arrow into a sort? A binder such as
-`{σ : Type}` or `{map : MapKind}` names a type parameter the fork binding
-fixes, not a value any searcher could produce; it is neither an instance
-nor an input. -/
-private def isTypeLevelBinder (type : Expr) : MetaM Bool := do
-  let t ← Meta.withReducible (Meta.whnf type)
-  let rec peel (e : Expr) : Expr :=
-    match e with
-    | .forallE _ _ b _ => peel b
-    | _ => e
-  return (peel t).isSort
-
 /-- What the reader hands its caller: the parsed statement plus the free
 variables the binder walk introduced, so the probe can substitute the
 instance binders and abstract the value binders (`THEOREM_VECTORS_ARCHITECTURE.md` §11.2).
@@ -578,17 +567,18 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
     for f in fvars do
       let d ← Meta.getFVarLocalDecl f
       binderIds := binderIds.push d.fvarId
-      if d.binderInfo matches .instImplicit then
+      match ← EthCLLib.Internal.binderRole d with
+      | .instance =>
         instances := instances.push (d.userName.eraseMacroScopes, instanceKindOf d.type)
         instFvars := instFvars.push f
-      else if ← Meta.isProp d.type then
+      | .hypothesis =>
         hyps := hyps.push d.type
-      else if ← isTypeLevelBinder d.type then
+      | .typeParameter =>
         -- a type parameter the fork binding fixes (`{σ : Type}`,
         -- `{map : MapKind}`): not a class, so §7.1's instance arm does not
         -- take it, and not a value any searcher could produce
         typeBinders := typeBinders.push d.userName.eraseMacroScopes
-      else
+      | .input =>
         inputs := inputs.push
           { name := d.userName.eraseMacroScopes, type := d.type
             explicit := d.binderInfo matches .default }

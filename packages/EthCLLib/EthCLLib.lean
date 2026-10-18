@@ -1,5 +1,7 @@
+import EthCLLib.Internal.Binders
 import EthCLLib.Internal.BoxBinders
 import EthCLLib.Internal.Capture
+import EthCLLib.Internal.ManualTerms
 import EthCLLib.Internal.ProofLedger
 import EthCLLib.Spec
 import EthCLLib.Proofs
