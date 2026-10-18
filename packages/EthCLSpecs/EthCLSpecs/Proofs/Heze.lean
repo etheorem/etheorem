@@ -10,6 +10,7 @@ import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.ClockedTrace
 import EthCLSpecs.Proofs.Heze.Committees
 import EthCLSpecs.Proofs.Heze.Equivocators
+import EthCLSpecs.Proofs.Heze.FinalityLock
 import EthCLSpecs.Proofs.Heze.FullSupport
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.HandlerFrames
@@ -134,6 +135,12 @@ Re-exports:
   slashing passes its checks (`onAttesterSlashing_run_ok`, `onAttesterSlashing_new_member`).
   Along a trace from the anchor, an index that no slashing of the trace marks is never in
   the set (`honest_not_equivocating`).
+* `EthCLSpecs.Proofs.Heze.FinalityLock`: under `SlotsIncrease`, the two sides of a block `r`
+  are disjoint (`below_emptySide_not_full`). A checkpoint block on the EMPTY side puts the
+  start of its walk on the EMPTY side (`emptySide_of_checkpointBlock`). Take an honest node
+  whose finalized block is on the EMPTY side of `r`. Each later head is not below `full r`,
+  or a root collision exists, or the later justified checkpoint conflicts with that
+  finalized checkpoint (`honestNode_finality_lock`).
 * `EthCLSpecs.Proofs.Heze.FrameInvert`: the `frame_invert` tactic. From a run between two
   plain states, it proves that the run keeps a view, one action at a time. It closes a
   call of a spec function by a `@[frame]` lemma of that function, and a loop by an invariant.
