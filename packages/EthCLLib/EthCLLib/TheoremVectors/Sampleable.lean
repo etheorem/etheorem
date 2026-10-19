@@ -10,8 +10,8 @@ import EthCLLib.TheoremVectors.Types
 The `SampleableExt` / `Shrinkable` supply of §9.5. Two layers:
 
 - hand-written `SampleableExt` instances for the scalar family (`UInt8`
-  through `UInt64`, `Bool`, `Fin n`, `ByteArray`), so a scalar drawn on
-  its own has one behavior everywhere;
+  through `UInt64`, `Bool`), so a scalar drawn on its own has one
+  behavior everywhere;
 - one generic instance for every type with `SSZRepr`, driven by SizzLean's
   type description: `proxy` is the shape's `interp` image, `interp` is
   `fromRepr`, and the draw and the shrink walk the description
@@ -129,34 +129,6 @@ instance (priority := 2000) Bool.sampleableExt : Plausible.SampleableExt Bool wh
   proxyRepr := inferInstance
   shrink := inferInstance
   sample := inferInstance
-
-/-- `Fin n` draws and shrinks through Plausible's instances, which take
-`Fin (n+1)`; `Fin 0` has no draw, the same gap its codec's `default`
-answers `none` for (§9.1). -/
-instance Fin.sampleableExt {n : Nat} : Plausible.SampleableExt (Fin (n + 1)) where
-  proxy := Fin (n + 1)
-  interp := id
-  proxyRepr := inferInstance
-  shrink := inferInstance
-  sample := inferInstance
-
-/-- A byte string draws `size` random bytes and shrinks by truncation.
-The generator's byte-string inputs come from fixed-width byte vectors,
-whose draws go through the shape layer; this instance is the type's own
-face for the probe's scalar/container test. -/
-instance ByteArray.sampleableExt : Plausible.SampleableExt ByteArray where
-  proxy := ByteArray
-  interp := id
-  proxyRepr := ⟨fun b _ => Std.Format.text (hexOf b)⟩
-  shrink := ⟨fun b =>
-    (Plausible.Nat.shrink b.size).map fun n =>
-      ByteArray.mk (b.data.take n)⟩
-  sample := ⟨do
-    let n ← Gen.getSize
-    let mut b := ByteArray.emptyWithCapacity n
-    for _ in [0:n] do
-      b := b.push (UInt8.ofNat (← Gen.chooseNat))
-    return b⟩
 
 /-! ## The shape layer (§9.5) -/
 
