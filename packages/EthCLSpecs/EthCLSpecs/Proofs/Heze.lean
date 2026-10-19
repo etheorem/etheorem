@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.Heze.AttestationScore
 import EthCLSpecs.Proofs.Heze.AttesterSlashing
+import EthCLSpecs.Proofs.Heze.BalanceMoves
 import EthCLSpecs.Proofs.Heze.BlockChain
 import EthCLSpecs.Proofs.Heze.BlockRoot
 import EthCLSpecs.Proofs.Heze.BlockRootsRun
@@ -11,6 +12,30 @@ import EthCLSpecs.Proofs.Heze.CheckpointOrd
 import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.ClockedTrace
 import EthCLSpecs.Proofs.Heze.Committees
+import EthCLSpecs.Proofs.Heze.DriftAttest
+import EthCLSpecs.Proofs.Heze.DriftBlock
+import EthCLSpecs.Proofs.Heze.DriftBlockStep
+import EthCLSpecs.Proofs.Heze.DriftBound
+import EthCLSpecs.Proofs.Heze.DriftChurn
+import EthCLSpecs.Proofs.Heze.DriftCons
+import EthCLSpecs.Proofs.Heze.DriftDefs
+import EthCLSpecs.Proofs.Heze.DriftDeposits
+import EthCLSpecs.Proofs.Heze.DriftEpoch
+import EthCLSpecs.Proofs.Heze.DriftEpochStep
+import EthCLSpecs.Proofs.Heze.DriftExit
+import EthCLSpecs.Proofs.Heze.DriftInv
+import EthCLSpecs.Proofs.Heze.DriftMath
+import EthCLSpecs.Proofs.Heze.DriftOps
+import EthCLSpecs.Proofs.Heze.DriftParent
+import EthCLSpecs.Proofs.Heze.DriftRequests
+import EthCLSpecs.Proofs.Heze.DriftRewards
+import EthCLSpecs.Proofs.Heze.DriftRun
+import EthCLSpecs.Proofs.Heze.DriftSlash
+import EthCLSpecs.Proofs.Heze.DriftSync
+import EthCLSpecs.Proofs.Heze.DriftTotal
+import EthCLSpecs.Proofs.Heze.DriftWithdraw
+import EthCLSpecs.Proofs.Heze.EbUpdates
+import EthCLSpecs.Proofs.Heze.EconFrame
 import EthCLSpecs.Proofs.Heze.Equivocators
 import EthCLSpecs.Proofs.Heze.FFGRefines
 import EthCLSpecs.Proofs.Heze.FinalityLock
@@ -67,6 +92,7 @@ import EthCLSpecs.Proofs.Heze.RunWeighs
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 import EthCLSpecs.Proofs.Heze.Shuffle
 import EthCLSpecs.Proofs.Heze.SlotsIncrease
+import EthCLSpecs.Proofs.Heze.StakeDrift
 import EthCLSpecs.Proofs.Heze.SyncFrame
 import EthCLSpecs.Proofs.Heze.TargetStake
 import EthCLSpecs.Proofs.Heze.Time
@@ -153,6 +179,18 @@ Re-exports:
   (`NodeTrace.blockStates_origin`, `onBlock_run_ok_currentSlot`).
 * `EthCLSpecs.Proofs.Heze.Committees`: the inherited committee functions
   partition the active set per epoch (`getBeaconCommittee_partition`).
+* The stake-drift modules, which `StakeDrift` assembles. `DriftMath` and `DriftDefs` hold
+  the arithmetic and the reads (`absDiff`, `EbTrack`, `moveN`). `DriftBound` bounds the drift
+  by facts at the end of a run (`drift_le_of_endFacts`). `DriftInv` states the invariant
+  `RunInv` of a run and gives those facts (`RunInv.endFacts`). `DriftTotal` names the reads
+  of the total active balance (`AcKeep`), and `EconFrame` the functions that write no read
+  of the invariant. The writers each keep `RunInv` at a stated cost: `BalanceMoves` for one
+  balance write, `DriftExit`, `DriftSlash` and `DriftOps` for exits and slashings,
+  `DriftChurn` for the churn arithmetic, `DriftCons`, `DriftRequests` and `DriftParent` for
+  the execution requests, `DriftAttest` and `DriftSync` for the rewards of a block,
+  `DriftWithdraw` for the withdrawals, `DriftBlock` and `DriftBlockStep` for a block,
+  `DriftEpoch`, `DriftRewards`, `DriftDeposits` and `EbUpdates` for the epoch writers, and
+  `DriftEpochStep` and `DriftRun` for an epoch, a slot step, and the run (`runAcc_run`).
 * `EthCLSpecs.Proofs.Heze.Equivocators`: only `onAttesterSlashing` adds to
   `equivocatingIndices`, and only an index that both attestations carry and whose
   slashing passes its checks (`onAttesterSlashing_run_ok`, `onAttesterSlashing_new_member`).
@@ -415,6 +453,12 @@ Re-exports:
   the block-root lemma, and needs no frame over the state transition.
   `inclusionList_missing_tx_anchored` states the missing-transaction result on such a
   trace, with the justified-root hypothesis reduced to a slot comparison.
+* `EthCLSpecs.Proofs.Heze.StakeDrift`: the stake drift along a chain run
+  (`chainRun_drift_le`). The run ends at the epoch `E` of its end state, within half a
+  slashings vector of `st₀`, and each state of the run meets `StatePre`. Then the distances of
+  the link stakes, plus the shortfall of the total active balance, are at most
+  `driftBound`. The bound reads `st₀`, the churn bounds, and the bounds of the total active
+  balance, of the effective balances, and of the inactivity scores along the run.
 * `EthCLSpecs.Proofs.Heze.StorePure`: every state that the store holds is the uncached box
   of a plain value, at the end of a trace from the anchor store of `getForkchoiceStore`
   over an uncached anchor (`StorePure.anchor`, `NodeTrace.storePure`). The `blockStates`
