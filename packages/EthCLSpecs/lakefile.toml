@@ -53,7 +53,7 @@ name = "specs_profile"
 root = "EthCLSpecsBench.ProfileMain"
 supportInterpreter = true
 
-# The generator's spec half: fork bindings, state builders, manual terms, and
+# The generator's spec half: fork bindings, state builders, and
 # the generator files whose elaboration writes the records. Not precompiled. The
 # output directory is fixed here so the command never depends on the working
 # directory Lake gives it (ARCHITECTURE.md §2.3). The path is relative to the

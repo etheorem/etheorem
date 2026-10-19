@@ -1,6 +1,7 @@
 import EthCLSpecs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Run
 import EthCLLib.Proofs.Run
+import EthCLLib.Internal.ManualTerms
 import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.UncachedBox
@@ -38,6 +39,17 @@ Scope is Fulu's two mutators. Gloas and Heze inherit them at their own `State`, 
 `increaseBalance` (`Gloas/EpochProcessing.lean:42`) and `increaseBalance`
 (`Heze/EpochProcessing.lean:30`), and likewise for `decreaseBalance`. Each is a separate
 constant, and these theorems say nothing about those instantiations.
+
+Four of the theorems carry the generator's witness terms under them, as
+`theorem_vectors_manual` registrations (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3). A
+witness belongs to its theorem, so it is written under it, the terms elaborate in
+this file's own scope, and an authoring mistake fails this file's build. The two
+out-of-range theorems take `default` for both states, whose empty balances list
+makes `¬ i < size` true at `i := 0`. The no-underflow and overflow theorems need
+terms the search never draws: the coupled grid caps `delta` below 64, and the wide
+`UInt64` draw arm lands a balance within 64 of `2 ^ 64` about one value in
+`2 ^ 59`, so `oneBalanceState` and `maxBalanceState` write those two runs
+deterministically.
 
 `SizzLean.Proofs.SSZListSet` supplies `sszListSet!_getElem!_self`, which reads back the element
 `modBalance` writes, and `SizzLean.Proofs.SSZListGetElem` supplies the read equation the
@@ -133,6 +145,24 @@ theorem increaseBalance_run_outOfRange [Preset] [HasherTag] :
   rw [hnone]
   rfl
 
+-- The generator's witnesses for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), now written under it.
+open EthCLLib.Internal in
+theorem_vectors_manual increaseBalance_run_outOfRange
+  state    := default
+  preState := default
+  i        := 0
+  delta    := 0
+
+/-- A state whose single balance sits one below the `uint64` wrap: paired
+with `delta := 1`, the sum reaches `2 ^ 64` and `checkedAdd`'s carry test
+rejects, which is the run `increaseBalance_run_overflow` states. -/
+private def maxBalanceState [Preset] : BeaconState :=
+  let bs : SSZList Gwei EthCLSpecs.Fulu.Const.validatorRegistryLimit :=
+    ((default : SSZList Gwei EthCLSpecs.Fulu.Const.validatorRegistryLimit).push
+      18446744073709551615)
+  { (default : BeaconState) with balances := bs }
+
 /-- **In range, overflowing.** When the `uint64` sum would wrap, the run rejects with the
 `.arithmetic` fault and produces no state. The pyspec raises `ValueError` at the same point. -/
 theorem increaseBalance_run_overflow [Preset] [HasherTag] :
@@ -152,6 +182,15 @@ theorem increaseBalance_run_overflow [Preset] [HasherTag] :
   simp only
   rw [if_pos hcarry]
   rfl
+
+-- The generator's witnesses for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), now written under it.
+open EthCLLib.Internal in
+theorem_vectors_manual increaseBalance_run_overflow
+  state    := maxBalanceState
+  preState := default
+  i        := 0
+  delta    := 1
 
 /-- **In range, below the bound.** The run succeeds, and the whole-state equation writes the
 sum into that one balance. `UInt64.toNat_add` gives the `% 2 ^ 64` unconditionally, and
@@ -226,6 +265,22 @@ theorem decreaseBalance_run_outOfRange [Preset] [HasherTag] :
   rw [hnone]
   rfl
 
+-- The generator's witnesses for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), now written under it.
+open EthCLLib.Internal in
+theorem_vectors_manual decreaseBalance_run_outOfRange
+  state    := default
+  preState := default
+  i        := 0
+  delta    := 0
+
+/-- A state whose balances list holds the single balance `5`: one in-range
+entry for `decreaseBalance_run_no_underflow` to read and subtract from. -/
+private def oneBalanceState [Preset] : BeaconState :=
+  let bs : SSZList Gwei EthCLSpecs.Fulu.Const.validatorRegistryLimit :=
+    ((default : SSZList Gwei EthCLSpecs.Fulu.Const.validatorRegistryLimit).push 5)
+  { (default : BeaconState) with balances := bs }
+
 /-- **In range, no underflow.** The whole-state equation writes the clamped difference into
 that one balance. `Nat` subtraction truncates at zero, so one equation covers both arms of
 the clamp: that truncation and the spec's `0 if delta > balance` agree. The stored balance's
@@ -247,5 +302,14 @@ theorem decreaseBalance_run_no_underflow [Preset] [HasherTag] :
   simp only
   rw [modBalance_pureState]
   rfl
+
+-- The generator's witnesses for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), now written under it.
+open EthCLLib.Internal in
+theorem_vectors_manual decreaseBalance_run_no_underflow
+  state    := oneBalanceState
+  preState := default
+  i        := 0
+  delta    := 2
 
 end EthCLSpecs.Proofs.Fulu

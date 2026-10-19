@@ -8,17 +8,20 @@ Build-gate checks for the manual-terms command over the toy fork
 `EthCLLib.Tests.InheritanceReplay.Base`, whose proof namespace by the
 repository layout is `EthCLLib.Proofs.Base`:
 
-- the ledger holds the `(theorem, input, holder)` triples the three
+- the ledger holds the `(theorem, input, holder)` triples the four
   registrations spell, in registration and clause order; the registrations
-  cover a typed `let`, an untyped `let`, an ascribed assignment, and an
-  untyped assignment;
+  cover a typed `let`, an untyped `let`, an ascribed assignment, an
+  untyped assignment, and an input whose type names the instance binder;
 - each holder's type is its input's type over the theorem's instance
-  binders: the instance-free holders are plain `Nat`s, and the
-  instance-binder holder is `∀ [Inhabited Nat], Nat`;
+  binders: the instance-free holders are plain `Nat`s, the
+  instance-binder holder is `∀ [Inhabited Nat], Nat`, and the
+  instance-dependent-input holder is `∀ [ToyTy], ToyTy.T`;
 - a holder is compiled code: `native_decide` walks the same compiled-code
   path the probe's `evalExpr` uses, and a holder that was never compiled
   fails there. The pins decide the shared-`let` value and the shared-`let`
-  expression.
+  expression. The instance-dependent-input fixture takes no compiled pin:
+  `ToyTy.T` is an abstract field, so the file spells no decidable equation
+  over it. Its type pin and its ledger triple cover it.
 
 The error paths are pinned the way `Tests/Command.lean` pins its own: an
 unknown label, one input filled twice, a duplicate registration, an input
@@ -41,6 +44,17 @@ theorem toyManualInst [Inhabited Nat] (n : Nat) : n = n := rfl
 /-- The clause-rule control: the registration below fills it through an
 untyped `let` and an ascribed assignment. -/
 theorem toyManualTwo (a : Nat) (b : Nat) : a + b = b + a := Nat.add_comm a b
+
+/-- The instance carrier the fixture's input type names. -/
+class ToyTy where
+  T : Type
+  t : T
+
+/-- The instance-dependent-input fixture: `x`'s type names the instance
+binder, so the command's instance telescope must instantiate the prefix
+over each binder it introduces. A walk that leaks a loose bound variable
+fails here, in the toy, where the failure is cheap to read. -/
+theorem toyInstDep [ToyTy] (x : ToyTy.T) : x = x := rfl
 
 /-- The unknown-label fixture. -/
 theorem toyUnknownLabel (n : Nat) : n = n := rfl
@@ -75,11 +89,15 @@ theorem_vectors_manual toyManualTwo
   a : Nat := k + 1
   b := k * 2
 
+open EthCLLib.Internal in
+theorem_vectors_manual toyInstDep
+  x := ToyTy.t
+
 end EthCLLib.Proofs.Base
 
 namespace EthCLLib.TheoremVectors.Tests.Manual
 
--- the ledger holds exactly the triples the three registrations spelled. A
+-- the ledger holds exactly the triples the four registrations spelled. A
 -- holder constant lives under the module's private prefix, so the expected
 -- name is the public-shaped one through `mkPrivateName`.
 open Lean in
@@ -97,7 +115,9 @@ run_cmd do
       (`EthCLLib.Proofs.Base.toyManualTwo, `a,
         holder `EthCLLib.Proofs.Base.TheoremVectorsManual.toyManualTwo.a),
       (`EthCLLib.Proofs.Base.toyManualTwo, `b,
-        holder `EthCLLib.Proofs.Base.TheoremVectorsManual.toyManualTwo.b)]
+        holder `EthCLLib.Proofs.Base.TheoremVectorsManual.toyManualTwo.b),
+      (`EthCLLib.Proofs.Base.toyInstDep, `x,
+        holder `EthCLLib.Proofs.Base.TheoremVectorsManual.toyInstDep.x)]
   unless got == want do
     throwError s!"the manual-terms ledger holds {got}, expected {want}"
 
@@ -117,6 +137,12 @@ example : Nat :=
 
 example : Nat :=
   EthCLLib.Proofs.Base.TheoremVectorsManual.toyManualTwo.b
+
+-- the instance-dependent-input holder: the input's type names the
+-- instance binder, so the holder quantifies it and the term projects the
+-- field off it
+example : ∀ [EthCLLib.Proofs.Base.ToyTy], EthCLLib.Proofs.Base.ToyTy.T :=
+  EthCLLib.Proofs.Base.TheoremVectorsManual.toyInstDep.x
 
 -- a holder is compiled code: the `n` holder is its `let` value, the `m`
 -- holder its `let` expression

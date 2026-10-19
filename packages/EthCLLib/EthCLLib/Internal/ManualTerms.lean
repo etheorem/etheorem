@@ -176,23 +176,22 @@ private def forallDomain? : Expr → Nat → Option Expr
   | .forallE _ _ b _, n + 1 => forallDomain? b n
   | _, _                    => none
 
+/-- The number of `instImplicit` foralls heading `type`. Walk one has
+already checked that the instance binders form the theorem's binder
+prefix, so this count is the prefix's length. -/
+private def instancePrefixArity : Expr → Nat
+  | .forallE _ _ b bi => if bi matches .instImplicit then instancePrefixArity b + 1 else 0
+  | _ => 0
+
 /-- Walk `type`'s instance-binder prefix: introduce one free variable per
 `instImplicit` binder, keep the binder order, and hand `k` the prefix plus
-the rest of the chain. The first non-instance binder stays unintroduced, so
-the clause terms cannot see it. -/
+the rest of the chain. `forallBoundedTelescope` instantiates the rest of
+the chain over each new free variable, so a later binder's domain names
+the free variables and never a loose bound variable. The first
+non-instance binder stays unintroduced, so the clause terms cannot see it. -/
 private def withInstanceTelescope {α : Type} (type : Expr)
     (k : Array Expr → Expr → MetaM α) : MetaM α :=
-  go type #[]
-where
-  go (type : Expr) (fvars : Array Expr) : MetaM α := do
-    match type with
-    | .forallE name d b bi =>
-      if bi matches .instImplicit then
-        Meta.withLocalDecl name .instImplicit d fun fv =>
-          go b (fvars.push fv)
-      else
-        k fvars type
-    | _ => k fvars type
+  Meta.forallBoundedTelescope type (some (instancePrefixArity type)) k
 
 /-- Elaborate one clause's term against `expectedType?`, the way the
 generator elaborates a `with`-clause manual term: `errToSorry` is off, so

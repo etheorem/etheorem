@@ -1,7 +1,6 @@
 import EthCLLib.TheoremVectors.Command
 import EthCLSpecs.Proofs.Fulu
 import EthCLSpecs.TheoremVectors.Bindings.Fulu
-import EthCLSpecs.TheoremVectors.Manual.Fulu
 
 /-!
 # `EthCLSpecs.TheoremVectors.Generators.Fulu`: the Fulu generator file
@@ -13,33 +12,10 @@ theorems and runs the search on them; the `survey` clause reads and lists
 every other public theorem of the fork's proof namespace, phase A alone
 (§14.3).
 
-The five branch theorems of `Proofs/Fulu/Balances.lean` run as named lines,
-four of them on manual terms (two on the `Manual.Fulu` states, two on
-inline `default` terms):
-
-- The two out-of-range theorems pin both state binders to `default`, whose
-  empty balances list makes the `¬ i < size` hypothesis true at `i := 0`,
-  and both sides of each equation reduce to the same `.outOfBounds` error.
-  The manual searcher checks the author's terms and runs no search, so each
-  line is cheap and runs at both presets.
-- `decreaseBalance_run_no_underflow` takes `oneBalanceState` with
-  `delta := 2`, and `increaseBalance_run_overflow` takes `maxBalanceState`
-  with `delta := 1`. An exploratory line with no manual terms answered
-  `notFound` for the no-underflow line within its draw budget. The overflow line's
-  coupled grid caps `delta` below 64. Only the wide arm of the `UInt64`
-  draw can land a balance within 64 of `2 ^ 64`, about one value in
-  `2 ^ 59`, so the redraw budget never meets one. The manual terms write
-  the lines deterministically, and the manual searcher is what reaches
-  mainnet, where the random searcher caps itself over a state-typed
-  container. It searches nothing, so these lines also run at both
-  presets.
-- `increaseBalance_run_no_wrap` takes no manual term. The random searcher
-  draws the two states, the coupled grid fixes `i` and `delta` at `0`,
-  and the
-  hypothesis holds at the drawn balances (§9.4). The line runs at minimal
-  only: the random searcher caps itself at mainnet over a state-typed
-  container, and stage 8's discipline spends a mainnet run only where the
-  run is cheap.
+The five branch theorems of `Proofs/Fulu/Balances.lean` run as named lines;
+four of them take their witness terms from the `theorem_vectors_manual`
+registrations under the theorems in that file
+(`THEOREM_VECTORS_ARCHITECTURE.md` §14.3).
 
 The two `runOk` lines record the run's return value. The mutators are
 value-style: each takes the state it writes as an argument and returns
@@ -74,37 +50,16 @@ theorem_vectors_fork EthCLSpecs.TheoremVectors.Bindings.Fulu.fulu
 
 -- §14.3: the named lines precede the discovery clauses. A named line below
 -- a clause that already ran its theorem is an error.
--- The two out-of-range theorems: `default`'s empty balances list makes
--- `¬ i < size` true at `i := 0`. The manual searcher checks the terms
--- alone, so both presets are cheap.
-theorem_vectors decreaseBalance_run_outOfRange with
-  (state := default)
-  (preState := default)
-  (i := 0)
-  (delta := 0)
-  presets minimal mainnet
-theorem_vectors increaseBalance_run_outOfRange with
-  (state := default)
-  (preState := default)
-  (i := 0)
-  (delta := 0)
-  presets minimal mainnet
--- The no-underflow and overflow lines carry manual terms:
--- `oneBalanceState` with `delta := 2`, and `maxBalanceState` with
--- `delta := 1`. The manual searcher searches nothing, so both presets
--- stay cheap.
-theorem_vectors decreaseBalance_run_no_underflow with
-  (state := EthCLSpecs.TheoremVectors.Manual.Fulu.oneBalanceState)
-  (preState := default)
-  (i := 0)
-  (delta := 2)
-  presets minimal mainnet
-theorem_vectors increaseBalance_run_overflow with
-  (state := EthCLSpecs.TheoremVectors.Manual.Fulu.maxBalanceState)
-  (preState := default)
-  (i := 0)
-  (delta := 1)
-  presets minimal mainnet
+-- The out-of-range and witness-backed lines take their terms from the
+-- registrations under their theorems in `Proofs/Fulu/Balances.lean`. The
+-- manual searcher checks the terms alone, so both presets are cheap.
+theorem_vectors decreaseBalance_run_outOfRange presets minimal mainnet
+theorem_vectors increaseBalance_run_outOfRange presets minimal mainnet
+-- The no-underflow and overflow lines take their terms from the
+-- registrations under their theorems. The manual searcher searches
+-- nothing, so both presets stay cheap.
+theorem_vectors decreaseBalance_run_no_underflow presets minimal mainnet
+theorem_vectors increaseBalance_run_overflow presets minimal mainnet
 -- The no-wrap theorem needs only an in-range index, which the random
 -- searcher's coupled grid fixes at `0` over its drawn states; the grid
 -- fixes `delta` beside it. The random searcher caps itself at mainnet over
