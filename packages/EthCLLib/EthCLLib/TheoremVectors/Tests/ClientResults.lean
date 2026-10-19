@@ -178,15 +178,21 @@ run_cmd do
     unless countOf "prysm" bare == 0 do
       throw (IO.userError "toy report: empty client array left client cells in")
     -- A present file that does not parse is an error, per the read
-    -- contract: the harness wrote it, so a mismatch is a defect.
+    -- contract: the harness wrote it, so a mismatch is a defect. The
+    -- `cannot read <path>: ` prefix is part of the contract too: the exe's
+    -- error path prints it, and the Justfile's `theorem-vectors-errorpath`
+    -- recipe pins that print end to end.
     IO.FS.writeFile (ClientResults.file toyOut) "{ not json"
-    let malformed ← try
-      let rs' ← ClientResults.read toyOut
-      pure (some rs'.size)
-    catch _ =>
-      pure (none : Option Nat)
-    unless malformed.isNone do
-      throw (IO.userError "toy results: a malformed file read back")
+    let malformed : Option String ← try
+      let _ ← ClientResults.read toyOut
+      pure none
+    catch e =>
+      pure (some (toString e))
+    let some msg := malformed
+      | throw (IO.userError "toy results: a malformed file read back")
+    unless msg.startsWith "cannot read " do
+      throw (IO.userError s!"toy results: the malformed-file error lacks the \
+        `cannot read ` prefix: {msg}")
     -- Remove the scratch output tree.
     IO.FS.removeDirAll toyOut
 

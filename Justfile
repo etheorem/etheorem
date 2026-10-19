@@ -489,6 +489,45 @@ theorem-vectors:
     lake exe theorem_vectors check
     lake exe theorem_vectors report
 
+# An escaping error used to die on SIGSEGV in the runtime's uncaught-exception handler.
+# Guards the malformed-results error path: `check` over a crafted tree must fail with a message and a normal code.
+[group('ethcl')]
+theorem-vectors-errorpath:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{ justfile_directory() }}"
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    # The check pass joins through the manifest (§13.2): the manifest entry
+    # routes it into the function format's read of the results file, the
+    # throw site. The record needs no side files: empty inputs, no output.
+    mkdir -p "$tmp/formats" "$tmp/records/toy/minimal/Toy.thm/000"
+    printf '{' > "$tmp/client-results.json"
+    cat > "$tmp/formats/manifest.json" <<EOF
+    [{"recordPath": "$tmp/records/toy/minimal/Toy.thm/000", "format": "function", "paths": []}]
+    EOF
+    cat > "$tmp/records/toy/minimal/Toy.thm/000/record.json" <<'EOF'
+    {"theorem": "Toy.thm", "fork": "toy", "preset": "minimal", "target": null, "pyspecName": null, "shape": "eq", "disjunctIndex": 0, "side": null, "inputs": [], "output": null, "witnessSearcher": "random"}
+    EOF
+    rc=0
+    lake exe theorem_vectors check --out "$tmp" > /dev/null 2> "$tmp/stderr.txt" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      echo "theorem-vectors-errorpath: check exited 0 over a malformed results file" >&2
+      exit 1
+    fi
+    # A signal death exits 128+N (139 = SIGSEGV, 134 = SIGABRT); the error
+    # path must exit a normal nonzero code instead.
+    if [ "$rc" -ge 128 ]; then
+      echo "theorem-vectors-errorpath: check died on a signal (exit $rc)" >&2
+      exit 1
+    fi
+    if ! grep -q "theorem_vectors: cannot read .*client-results.json" "$tmp/stderr.txt"; then
+      echo "theorem-vectors-errorpath: stderr lacks the 'cannot read' error:" >&2
+      cat "$tmp/stderr.txt" >&2
+      exit 1
+    fi
+    echo "theorem-vectors-errorpath: check failed cleanly over the malformed results file (exit $rc, 'cannot read' on stderr)"
+
 # Remove the output tree and the generator modules' build outputs, so the
 # next build regenerates. Lake tracks the generator modules, and removing
 # their build outputs is what forces the regeneration; the output tree is

@@ -296,6 +296,16 @@ def run (args : List String) : IO UInt32 := do
 
 end EthCLSpecs.TheoremVectors.Main
 
-/-- The executable entry point. -/
-def main (args : List String) : IO UInt32 :=
-  EthCLSpecs.TheoremVectors.Main.run args
+/-- The executable entry point. The catch is the harness's error contract:
+an error escaping `run` prints on stderr under the `theorem_vectors: `
+prefix and exits 1. No error may reach the runtime's default
+uncaught-exception handler instead: on this toolchain that handler dies
+with SIGSEGV for this exe, so an escaping error would end the process with
+no message (exit 139). The catch covers every throw site `run` can reach,
+the reads in the precompiled libraries included. -/
+def main (args : List String) : IO UInt32 := do
+  try
+    EthCLSpecs.TheoremVectors.Main.run args
+  catch e =>
+    IO.eprintln s!"theorem_vectors: {toString e}"
+    return (1 : UInt32)
