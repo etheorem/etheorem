@@ -22,6 +22,9 @@ Build-gate checks for stage 5 (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8):
 - the fingerprint is a stable `0x…` hash that moves with its input;
 - the hint file round trips through its derived JSON, and the scalars map
   writes decimal strings;
+- a file that exists but fails to parse or decode answers `none` and
+  warns on stderr, naming the file and the error; a missing file
+  answers `none` in silence;
 - a hint replays a bit-vector witness: the search's first searcher rebuilds
   the candidate, the loop's check accepts it, the record's searcher is
   `.hinted bitVec`, and the outcome folds the log to `replayed`;
@@ -118,6 +121,58 @@ run_cmd do
       unless f2 == f do
         throwError s!"the hint JSON round trip changed the file: {repr f2}"
     | .error e => throwError s!"the hint JSON round trip failed to parse: {e}"
+    -- ── the unreadable-file pin: a file that exists but does not read
+    -- answers `none` and warns on stderr, naming the file and the
+    -- error; a missing file answers `none` in silence. The capture
+    -- swaps stderr for a buffer-backed stream, so the pin covers the
+    -- printed line itself, not only the message builder's output.
+    unless Hint.readWarning "/x/t.json" "bad json" ==
+        "hint: cannot read /x/t.json: bad json; treating it as missing" do
+      throwError "the read warning's text moved"
+    IO.FS.createDirAll (scratchRoot / "toybase")
+    let badPath := Hint.file scratchRoot "toybase" "broken"
+    let badBody := "{\"theorem\": \"T\","
+    IO.FS.writeFile badPath badBody
+    let badErr := match Json.parse badBody with
+      | .error e => e
+      | .ok _ => "the malformed sample parsed"
+    let badCap ← IO.mkRef ({} : IO.FS.Stream.Buffer)
+    let badAnswer ← IO.withStderr (IO.FS.Stream.ofBuffer badCap) do
+      Hint.read? badPath
+    unless badAnswer.isNone do
+      throwError "the malformed hint file should read as none"
+    unless String.fromUTF8! (← badCap.get).data ==
+        Hint.readWarning badPath badErr ++ "\n" do
+      throwError s!"the malformed hint file warned the wrong line: \
+        {String.fromUTF8! (← badCap.get).data}"
+    -- valid JSON, a document the derived reader refuses: the same
+    -- warning, from the decode arm
+    let shapePath := Hint.file scratchRoot "toybase" "wrongShape"
+    IO.FS.writeFile shapePath "[1, 2]"
+    let shapeErr := match Json.parse "[1, 2]" with
+      | .error e => e
+      | .ok j =>
+        match fromJson? (α := HintFile) j with
+        | .error e => e
+        | .ok _ => "the wrong-shape sample parsed"
+    let shapeCap ← IO.mkRef ({} : IO.FS.Stream.Buffer)
+    let shapeAnswer ← IO.withStderr (IO.FS.Stream.ofBuffer shapeCap) do
+      Hint.read? shapePath
+    unless shapeAnswer.isNone do
+      throwError "the wrong-shape hint file should read as none"
+    unless String.fromUTF8! (← shapeCap.get).data ==
+        Hint.readWarning shapePath shapeErr ++ "\n" do
+      throwError s!"the wrong-shape hint file warned the wrong line: \
+        {String.fromUTF8! (← shapeCap.get).data}"
+    -- a missing file reads as none, with nothing on stderr
+    let missCap ← IO.mkRef ({} : IO.FS.Stream.Buffer)
+    let missAnswer ← IO.withStderr (IO.FS.Stream.ofBuffer missCap) do
+      Hint.read? (Hint.file scratchRoot "toybase" "absent")
+    unless missAnswer.isNone do
+      throwError "the missing hint file should read as none"
+    unless (String.fromUTF8! (← missCap.get).data).isEmpty do
+      throwError s!"the missing hint file should read in silence, warned: \
+        {String.fromUTF8! (← missCap.get).data}"
     -- ── the `hint` field's fold
     unless Hint.runHintField .use none .minimal 1 0 #[] == some "missing" do
       throwError "no file should fold to `missing`"

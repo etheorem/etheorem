@@ -242,18 +242,32 @@ def Hint.file (hintsRoot : System.FilePath) (forkTag : String)
     (thmLocal : String) : System.FilePath :=
   hintsRoot / forkTag / (thmLocal ++ ".json")
 
+/-- The warning line `Hint.read?` prints for a file that exists and does
+not read (§9.8): the path and the reader's error. A pure function, so
+the tests pin the exact text. -/
+def Hint.readWarning (path : System.FilePath) (err : String) : String :=
+  s!"hint: cannot read {path}: {err}; treating it as missing"
+
 /-- Read one hint file back, `none` when the file is missing or does not
 parse. A file the generator wrote either parses or is a stale stray; a
-stray is a missing hint, and the search runs (§9.8: the check decides). -/
+stray is a missing hint, and the search runs (§9.8: the check decides).
+A missing file answers in silence, the normal no-hint answer. A file
+that exists and fails to parse or decode warns on stderr first, with
+the path and the error, so a committed file with a JSON defect does not
+read as a missing hint without a trace. -/
 def Hint.read? (path : System.FilePath) : IO (Option HintFile) := do
   unless ← path.pathExists do
     return none
   match Json.parse (← IO.FS.readFile path) with
-  | .error _ => return none
+  | .error e =>
+    IO.eprintln (Hint.readWarning path e)
+    return none
   | .ok j =>
     match fromJson? (α := HintFile) j with
     | .ok f => return some f
-    | .error _ => return none
+    | .error e =>
+      IO.eprintln (Hint.readWarning path e)
+      return none
 
 /-- Write one hint file, creating the directory. -/
 def Hint.write (path : System.FilePath) (f : HintFile) : IO Unit := do
