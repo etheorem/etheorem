@@ -27,6 +27,9 @@ Build-gate checks for stage 4 (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4, §9.5,
   the disjunct to the loop's check;
 - the shrink (§9.6) reaches a witness whose bytes are smaller than the
   first draw's, and the check still holds;
+- the reads mismatch (§9.4): a probe face whose reads count differs
+  from the plan's answers `.nothing` with the two counts, and the draw
+  loop stops at the first stuck draw;
 - the mainnet cap (§9.4): a state-typed container input at mainnet
   answers `nothing` before any draw, the same statement at minimal
   still draws, and the same statement over a `Nat` state type still
@@ -81,6 +84,18 @@ probe's answer rides on the hypothesis alone. -/
 theorem toyTwoReads [HasherTag] (b : ToyBox)
     (_h : b.items[0]! + b.items[1]! < 100) :
     toyTag b = toyTag b := rfl
+
+/-- The mismatch drive theorem: the spare scalar keeps a free input
+beside the drawn container, so the point takes the solve branch and the
+reads substitution runs (§9.4). The scalar stays outside the hypothesis,
+and the plan reads `b.tag` alone. -/
+theorem toyTagSpare [HasherTag] (b : ToyBox) (n : UInt64)
+    (h : b.tag < 10) : toyTag b < 1000 := by
+  show b.tag < 1000
+  have h' : b.tag.toNat < 10 := UInt64.lt_iff_toNat_lt.mp h
+  rw [UInt64.lt_iff_toNat_lt]
+  show b.tag.toNat < 1000
+  omega
 
 /-- A toy binding whose state type is the toy container. -/
 def toyBoxBinding : ForkBinding :=
@@ -179,6 +194,37 @@ run_cmd do
           throwError "toyTwoReads: the winning candidate failed the check"
       | .error f =>
         throwError s!"toyTwoReads: the search found nothing: {repr f}"
+    -- ── the reads mismatch (§9.4): a probe face whose reads count
+    -- differs from the plan's answers `.nothing` with the two counts,
+    -- and the draw loop stops at the first stuck draw instead of
+    -- solving the unsubstituted hypotheses
+    Statement.readIn binding
+      `EthCLLib.TheoremVectors.Tests.Random.toyTagSpare fun ctx => do
+      let stmt ← Scope.classify binding ctx.stmt
+      let (disjuncts, dropped) ← Prepare.pass stmt
+      unless disjuncts.size == 1 && dropped.isEmpty do
+        throwError s!"mismatch drive: expected one disjunct, got \
+          {disjuncts.size}"
+      let d := disjuncts[0]!
+      let (info, probe) ← builtProbe toyBoxBinding ctx disjuncts .minimal
+      let sctx ← Tests.Support.searchCtxOf binding .minimal
+        Tests.ToyFork.scratchOutDir "" stmt ctx info probe
+      -- the lying face: the reads count is the inputs', the plan's is
+      -- one, and the disagreement is the fault the guard exists for
+      let probeLie : Probe := { probe with reads := fun _ _ => probe.defaults }
+      let sctxLie := { sctx with probe := probeLie }
+      match ← randomSearcher.search sctxLie stmt d with
+      | .nothing (some r) =>
+        unless r == "the probe's reads count (2) differs from the \
+            plan's (1); no substitution ran" do
+          throwError s!"mismatch drive: the reason does not name the \
+            counts: {r}"
+      | _ =>
+        throwError "mismatch drive: expected `.nothing` with the counts"
+      let memoSize := (← sctxLie.drawMemo.get).size
+      unless memoSize == 1 do
+        throwError s!"mismatch drive: the loop did not stop at the first \
+          stuck draw ({memoSize} draw slots ran)"
     -- ── the mainnet cap (§9.4): the toy state is the statement's
     -- container input, so at mainnet the random searcher answers
     -- `nothing` before any draw runs, and at minimal the same statement

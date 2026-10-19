@@ -21,7 +21,10 @@ grid follows.
 The grounding runs through the probe's `reads` face: the probe evaluates
 the disjunct's container-reading subterms at the candidate's bytes, and the
 searcher substitutes the serialized values as literals, walking the same
-plan `containerReads` produces. The scalars that sit inside a
+plan `containerReads` produces. The plan and the face answer the same
+walk, so their counts agree by construction; a count mismatch answers
+`stuck` with the counts, and the searcher reports it instead of solving
+the unsubstituted form (§9.4). The scalars that sit inside a
 container-reading subterm (`builders[builderIndex]!.balance`'s
 `builderIndex`) are *coupled*: the manual handoff's walk names them, and
 they fix over the value grid, so each read grounds at a known point and
@@ -69,6 +72,14 @@ private def readsBytesAt (ctx : SearchCtx) (stmt : Statement)
           | none => pure (ctx.probe.defaults.getD i emptyBytes)
         | none => pure (ctx.probe.defaults.getD i emptyBytes)
 
+/-- The reads mismatch's detail (§9.4): the two counts, and the fact that
+no substitution ran. The plan and the probe's `reads` face walk the same
+disjunct's subterms, so both counts are build-time facts and the mismatch
+is an invariant break no redraw repairs. -/
+def readsCountDetail (readsSize planSize : Nat) : String :=
+  s!"the probe's reads count ({readsSize}) differs from the plan's \
+    ({planSize}); no substitution ran"
+
 /-- The serialized read values, substituted into the disjunct's hypotheses as
 literals (§9.4). The walk is `containerReads`, the same plan the probe's
 `reads` face evaluated, so entry `k` pairs with subterm `k`. A `!`-read
@@ -76,12 +87,18 @@ past a drawn container's end answers its default instead of raising,
 which misgrounds that one point, and the point's candidate fails the
 check in `runPoint`. A read whose value's literal form the type does not
 take leaves its subterm in the formula for the solver. The hypotheses
-arrive zeta-reduced, the same form the walk saw. -/
+arrive zeta-reduced, the same form the walk saw. A count mismatch answers
+no hypotheses and the detail `readsCountDetail` writes: the two counts
+are the same walk's answers, so the substitution cannot run, and the
+point hands the solver nothing rather than the unsubstituted form
+(§9.4). -/
 private def substituteReads (ctx : SearchCtx) (d : Disjunct)
-    (plan : Array Expr) (bytes : Assignment) : MetaM (Array Expr) := do
-  if plan.isEmpty then return d.hyps.map Prepare.zeta
+    (plan : Array Expr) (bytes : Assignment) :
+    MetaM (Option (Array Expr) × Option String) := do
+  if plan.isEmpty then return (some (d.hyps.map Prepare.zeta), none)
   let rs := ctx.probe.reads d.index bytes
-  if rs.size != plan.size then return d.hyps.map Prepare.zeta
+  if rs.size != plan.size then
+    return (none, some (readsCountDetail rs.size plan.size))
   let mut lits : Array (Expr × Expr) := #[]
   for (r, b) in plan.zip rs do
     let ty ← Meta.inferType r
@@ -95,9 +112,10 @@ private def substituteReads (ctx : SearchCtx) (d : Disjunct)
         | some lit => lits := lits.push (r, lit)
         | none => pure ()
   -- each plan entry is maximal, so no entry sits inside another
-  pure (d.hyps.map fun h =>
+  pure (some (d.hyps.map fun h =>
     lits.foldl (fun acc (r, lit) =>
-      acc.replace fun s => if s == r then some lit else none) (Prepare.zeta h))
+      acc.replace fun s => if s == r then some lit else none) (Prepare.zeta h)),
+    none)
 
 /-- One solve point: ground the reads at the given bytes and hand the
 residual to the solver. `some a` means the check accepted `a`; a
@@ -106,30 +124,37 @@ rejected candidate and a per-point `unsat` are the same no-answer
 with them. When the bytes already cover every input (a theorem whose
 inputs are containers alone), the reads grounding and the solver have
 nothing to do, and the point's answer is the check on the bytes
-directly. The built searcher (§9.9) reaches it through `tryDraw` at each
-grid step, with the built state in the `drawn` overlay. -/
+directly. The pair's second slot carries the reads mismatch's stuck
+detail for the caller to report; the other no-answers stay silent, the
+way a per-point `unsat` does (§9.3). The built searcher (§9.9) reaches it
+through `tryDraw` at each grid step, with the built state in the
+`drawn` overlay. -/
 private def runPoint (ctx : SearchCtx) (stmt : Statement) (d : Disjunct)
     (plan : Array Expr) (drawn : Array (Nat × ByteArray))
     (fixed : Array (Nat × Expr)) (fixedVals : Array (Nat × Nat)) :
-    MetaM (Option Assignment) := do
+    MetaM (Option Assignment × Option String) := do
   let bytes ← readsBytesAt ctx stmt drawn fixedVals
   -- §9.4, from the stage-4 outcome: a point whose `!`-reads run past a
   -- drawn list's end is skipped before anything evaluates them, so no
   -- panic reaches compiled code and no wasted solve bills the budget
   unless (ctx.probe.safe d.index bytes).all (· == true) do
-    return none
+    return (none, none)
   let taken := (ctx.probe.manuals.map (·.1)) ++ (drawn.map (·.1)) ++
     (fixedVals.map (·.1))
   if !((Array.range stmt.inputs.size).any fun i => !taken.contains i) then
     -- the bytes are a complete assignment: the check is the answer
-    if ctx.probe.check d.index bytes then pure (some bytes) else pure none
+    if ctx.probe.check d.index bytes then pure (some bytes, none)
+      else pure (none, none)
   else do
-    let hyps ← substituteReads ctx d plan bytes
-    let answer ← solveOnce ctx stmt d.index false hyps drawn fixed fixedVals
-    match answer with
-    | .solved a _ =>
-      if ctx.probe.check d.index a then pure (some a) else pure none
-    | _ => pure none
+    match ← substituteReads ctx d plan bytes with
+    | (none, stuck?) => pure (none, stuck?)
+    | (some hyps, _) =>
+      let answer ← solveOnce ctx stmt d.index false hyps drawn fixed fixedVals
+      match answer with
+      | .solved a _ =>
+        if ctx.probe.check d.index a then pure (some a, none)
+          else pure (none, none)
+      | _ => pure (none, none)
 
 /-- One draw of the redraw loop (§9.4): walk the coupled scalars' grid
 over the drawn containers, and hand each fixed point's residual to the
@@ -139,13 +164,17 @@ list's end is skipped at the gate inside `runPoint`. `kinds` and
 `coupled` come from the disjunct alone and the caller computes them once. A
 coupled scalar whose literal term the substitution cannot write makes
 every grid point unfixable; the note names it, the same answer the
-bit-vector searcher's `literalDetail` carries. The built searcher (§9.9)
-drives this at each grid step with the built state as the one drawn
-container, the same loop §9.9 names. -/
-def tryDraw (ctx : SearchCtx) (stmt : Statement) (d : Disjunct)
+bit-vector searcher's `literalDetail` carries. The pair's second slot
+carries the reads mismatch's stuck detail. Both counts are build-time
+facts, so the first stuck point dooms the walk's remainder, and the draw
+stops at it instead of walking the grid on (§9.4). The built searcher
+(§9.9) drives this at each grid step with the built state as the one
+drawn container, the same loop §9.9 names. -/
+private def tryDrawDetail (ctx : SearchCtx) (stmt : Statement) (d : Disjunct)
     (valuesCap : Nat) (plan : Array Expr)
     (kinds : Array (Option ScalarKind)) (coupled : Array Nat)
-    (drawn : Array (Nat × ByteArray)) : MetaM (Option Assignment) := do
+    (drawn : Array (Nat × ByteArray)) :
+    MetaM (Option Assignment × Option String) := do
   -- every container in play is drawn for the random searcher, and
   -- `drawBounded` caps a drawn list at `randomSize` elements, so a
   -- coupled scalar at or past that bound indexes out of range at every
@@ -168,12 +197,25 @@ def tryDraw (ctx : SearchCtx) (stmt : Statement) (d : Disjunct)
         | none => fixable := false
       if fixable then
         match ← runPoint ctx stmt d plan drawn fixed fixedVals with
-        | some a => return some a
-        | none => pure ()
+        | (some a, _) => return (some a, none)
+        | (none, some detail) =>
+          -- the mismatch's counts are build-time facts, so every later
+          -- grid point answers the same stuck
+          return (none, some detail)
+        | (none, none) => pure ()
     -- a coupled scalar whose literal term the substitution cannot write
     -- makes every grid point unfixable; the disjunct answers `nothing`, the
     -- same answer the bit-vector searcher's `literalDetail` carries
-    return none
+    return (none, none)
+
+/-- `tryDrawDetail` without the detail: the built searcher's face (§9.9).
+Its caller matches `none` alone, the same per-point drop the bit-vector
+grid's stuck answer takes (§9.4). -/
+def tryDraw (ctx : SearchCtx) (stmt : Statement) (d : Disjunct)
+    (valuesCap : Nat) (plan : Array Expr)
+    (kinds : Array (Option ScalarKind)) (coupled : Array Nat)
+    (drawn : Array (Nat × ByteArray)) : MetaM (Option Assignment) := do
+  return (← tryDrawDetail ctx stmt d valuesCap plan kinds coupled drawn).1
 
 /-! ## The per-disjunct plan the draw-driven searchers share -/
 
@@ -264,11 +306,14 @@ def drawAt (ctx : SearchCtx) (seed size draw : Nat)
 /-- The random searcher (§9.4). Applies when at least one input is a
 container and no block input is in play; the search answers `nothing`
 when the container test was an alias (§9.4), and after
-`theorem_vectors.randomDraws` failed draws. At mainnet the search also
-answers `nothing` before any draw when a container input is the
-binding's state type: the cap keeps the fixed vectors' recursion cost
-off the draw loop (§9.4). The draws run from the run's
-`theorem_vectors.seed`, so a build is reproducible (§14.4). -/
+`theorem_vectors.randomDraws` failed draws. A draw whose reads
+substitution answers stuck stops the loop early: the mismatch is a
+build-time invariant no redraw repairs, and the answer carries the
+counts (§9.4). At mainnet the search also answers `nothing` before any
+draw when a container input is the binding's state type: the cap keeps
+the fixed vectors' recursion cost off the draw loop (§9.4). The draws
+run from the run's `theorem_vectors.seed`, so a build is reproducible
+(§14.4). -/
 def randomSearcher : WitnessSearcher where
   tag := .random
   applies _ stmt _ :=
@@ -302,10 +347,15 @@ def randomSearcher : WitnessSearcher where
       -- the full `sample` face are defaults no caller reads.
       let rawBytes ← drawAt ctx seed size draw cp.containers
       let drawn := cp.containers.zip rawBytes
-      match ← tryDraw ctx stmt d size
+      match ← tryDrawDetail ctx stmt d size
           cp.plan kinds cp.coupled drawn with
-      | some a => return .candidate a
-      | none => pure ()
+      | (some a, _) => return .candidate a
+      | (none, some detail) =>
+        -- the reads mismatch's counts are build-time facts, so no
+        -- redraw repairs it: the search answers with the detail and
+        -- leaves the remaining draws unbilled (§9.4)
+        return .nothing (some detail)
+      | (none, none) => pure ()
     return .nothing
       (some s!"no draw satisfied the disjunct within {drawBudget} draws")
 
