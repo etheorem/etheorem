@@ -15,6 +15,10 @@ namespace SizzLean.Proofs
 
 open SizzLean.Repr
 
+/-- `ProgressiveList.push` appends the value to the array. -/
+theorem progressiveListPush_val {α : Type} (xs : ProgressiveList α) (v : α) :
+    (xs.push v).val = xs.val.push v := rfl
+
 /-- Folding `ProgressiveList.push` over a list of values appends every value,
 in order. -/
 theorem progressiveListFoldlPush_val {α : Type} (xs : ProgressiveList α) (vs : List α) :
