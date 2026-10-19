@@ -44,14 +44,14 @@ open EthCLLib.Proofs (pureState runPure runPure_of_run_ok)
 open EthCLSpecs.Gloas (Preset Config BuilderIndex Epoch BeaconState)
 open EthCLSpecs.Gloas (minimal mainnet minimalConfig mainnetConfig)
 open EthCLSpecs.Gloas (initiateBuilderExit currentEpochOf)
-open SizzLean.Proofs (sszListSet!_size sszListSet!_getElem!_self sszListSet!_getElem!_ne
-  sszListSet!_eq_of_size_le view_uncachedBox)
+open SizzLean.Proofs (progressiveListSet!_size progressiveListSet!_getElem!_self
+  progressiveListSet!_getElem!_ne progressiveListSet!_eq_of_size_le view_uncachedBox)
 
 /-! ## The whole-transition equation
 
 `initiateBuilderExit_run_eq` is the contract: the run returns `preState` with only
 `builders[builderIndex.toNat]!` written. `initiateBuilderExit_run_inRange` and
-`initiateBuilderExit_run_outOfRange` read that one equation through the `SSZList.set!`
+`initiateBuilderExit_run_outOfRange` read that one equation through the `ProgressiveList.set!`
 lemmas, so the range split happens at the read. -/
 
 /-- Exact whole-transition equation for `initiateBuilderExit`, at the box the pure
@@ -79,7 +79,7 @@ theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
 written builder reads back with `withdrawableEpoch` set to the pre-state's
 `currentEpochOf` plus `MIN_BUILDER_WITHDRAWABILITY_DELAY`, while every other builder and
 the registry's `.size` are unchanged. The index-level reading of
-`initiateBuilderExit_run_eq` through `SSZList.set!`'s own lemmas. -/
+`initiateBuilderExit_run_eq` through `ProgressiveList.set!`'s own lemmas. -/
 theorem initiateBuilderExit_run_inRange [Preset] [HasherTag] [Config] :
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
       builderIndex.toNat < preState.builders.size →
@@ -96,9 +96,9 @@ theorem initiateBuilderExit_run_inRange [Preset] [HasherTag] [Config] :
         ∧ postState.builders.size = preState.builders.size := by
   intro preState builderIndex hidx
   refine ⟨_, runPure_of_run_ok (initiateBuilderExit_run_eq preState builderIndex), ?_, fun j hj => ?_, ?_⟩
-  · exact sszListSet!_getElem!_self _ _ _ hidx
-  · exact sszListSet!_getElem!_ne _ _ _ _ (Ne.symm hj)
-  · exact sszListSet!_size _ _ _
+  · exact progressiveListSet!_getElem!_self _ _ _ hidx
+  · exact progressiveListSet!_getElem!_ne _ _ _ _ (Ne.symm hj)
+  · exact progressiveListSet!_size _ _ _
 
 /-- **Out of range.** Running `initiateBuilderExit builderIndex` still never rejects
 (`[i]!` is total), and the write is a genuine no-op: the run returns the pre-state
@@ -110,7 +110,7 @@ theorem initiateBuilderExit_run_outOfRange [Preset] [HasherTag] [Config] :
         = .ok ((), preState) := by
   intro preState builderIndex hidx
   rw [runPure_of_run_ok (initiateBuilderExit_run_eq preState builderIndex),
-    sszListSet!_eq_of_size_le _ _ _ (Nat.le_of_not_lt hidx)]
+    progressiveListSet!_eq_of_size_le _ _ _ (Nat.le_of_not_lt hidx)]
 
 /-! ## Generic conditional no-overflow
 
@@ -197,8 +197,8 @@ theorem initiateBuilderExit_run_inRange_no_wrap_minimal [HasherTag] :
   omega
 
 /-- **Mainnet preset/config (`mainnet`, `mainnetConfig`), unconditional.**
-`slotsPerEpoch = 32`, `minBuilderWithdrawabilityDelay = 8192`:
-`currentEpochOf preState ≤ (2 ^ 64 - 1) / 32`, so the sum with `8192` is nowhere near
+`slotsPerEpoch = 32`, `minBuilderWithdrawabilityDelay = 64`:
+`currentEpochOf preState ≤ (2 ^ 64 - 1) / 32`, so the sum with `64` is nowhere near
 `2 ^ 64`, for every `preState`. -/
 theorem initiateBuilderExit_run_inRange_no_wrap_mainnet [HasherTag] :
     letI : Preset := mainnet
@@ -217,7 +217,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap_mainnet [HasherTag] :
   refine @initiateBuilderExit_run_inRange_no_wrap mainnet _ mainnetConfig preState builderIndex hidx ?_
   have hslot := UInt64.toNat_lt preState.slot
   have hspe : (@Preset.slotsPerEpoch mainnet : Nat) = 32 := rfl
-  have hdelay : (@Config.minBuilderWithdrawabilityDelay mainnetConfig).toNat = 8192 := rfl
+  have hdelay : (@Config.minBuilderWithdrawabilityDelay mainnetConfig).toNat = 64 := rfl
   simp only [currentEpochOf, view_uncachedBox, EthCLSpecs.Gloas.computeEpochAtSlot,
     EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay, EthCLSpecs.Gloas.Const.slotsPerEpoch,
     UInt64.toNat_div, UInt64.toNat_ofNat', hspe, hdelay, Nat.reducePow, Nat.reduceMod]

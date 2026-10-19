@@ -34,10 +34,6 @@ forkpreset where
   ptcSize : Nat
   /-- `MAX_BUILDERS_PER_WITHDRAWALS_SWEEP`: builders visited per sweep. -/
   maxBuildersPerWithdrawalsSweep : Nat
-  /-- `BUILDER_REGISTRY_LIMIT`, the builder registry's SSZ list cap. -/
-  builderRegistryLimit : Nat
-  /-- `BUILDER_PENDING_WITHDRAWALS_LIMIT`. -/
-  builderPendingWithdrawalsLimit : Nat
   /-- `MAX_PAYLOAD_ATTESTATIONS` per block. -/
   maxPayloadAttestations : Nat
   /-- EIP-8282 per-payload builder-deposit cap. -/
@@ -72,8 +68,6 @@ variable [Preset] [Config]
 -- below divides this fork's `ptcSize`.
 forkabbrev ptcSize : Nat := Preset.ptcSize
 forkabbrev maxBuildersPerWithdrawalsSweep : Nat := Preset.maxBuildersPerWithdrawalsSweep
-forkabbrev builderRegistryLimit : Nat := Preset.builderRegistryLimit
-forkabbrev builderPendingWithdrawalsLimit : Nat := Preset.builderPendingWithdrawalsLimit
 forkabbrev maxPayloadAttestations : Nat := Preset.maxPayloadAttestations
 forkabbrev maxBuilderDepositRequestsPerPayload : Nat := Preset.maxBuilderDepositRequestsPerPayload
 forkabbrev maxBuilderExitRequestsPerPayload : Nat := Preset.maxBuilderExitRequestsPerPayload
@@ -87,8 +81,8 @@ forkabbrev consolidationChurnLimitQuotient : UInt64 := Config.consolidationChurn
 (`BUILDER_PAYMENT_THRESHOLD_NUMERATOR / …_DENOMINATOR`). -/
 forkabbrev builderPaymentThresholdNumerator : UInt64 := 6
 forkabbrev builderPaymentThresholdDenominator : UInt64 := 10
-/-- `BUILDER_WITHDRAWAL_PREFIX` (`0x03`), the fourth withdrawal-credential prefix. -/
-forkabbrev builderWithdrawalPrefix : UInt8 := 0x03
+/-- `BUILDER_WITHDRAWAL_PREFIX` (`0xB0`), the credential prefix that marks a builder deposit. -/
+forkabbrev builderWithdrawalPrefix : UInt8 := 0xB0
 /-- `PAYLOAD_BUILDER_VERSION = uint8(0)` (EIP-8282): the version stamped on a
 builder onboarded at the fork (`add_builder_to_registry`). -/
 forkabbrev payloadBuilderVersion : UInt8 := 0
@@ -191,20 +185,16 @@ inherit validModulusEpochsPerHistoricalVector
 forkpresetvalues minimal where
   ptcSize := 16
   maxBuildersPerWithdrawalsSweep := 16
-  builderRegistryLimit := 2 ^ 40
-  builderPendingWithdrawalsLimit := 2 ^ 20
   maxPayloadAttestations := 4
-  maxBuilderDepositRequestsPerPayload := 256
+  maxBuilderDepositRequestsPerPayload := 64
   maxBuilderExitRequestsPerPayload := 16
 
 /-- The `mainnet` preset's Gloas entries. -/
 forkpresetvalues mainnet where
   ptcSize := 512
   maxBuildersPerWithdrawalsSweep := 16384
-  builderRegistryLimit := 2 ^ 40
-  builderPendingWithdrawalsLimit := 2 ^ 20
   maxPayloadAttestations := 4
-  maxBuilderDepositRequestsPerPayload := 256
+  maxBuilderDepositRequestsPerPayload := 64
   maxBuilderExitRequestsPerPayload := 16
 
 /-- The `minimal` config's Gloas entries. -/
@@ -225,7 +215,7 @@ forkconfigvalues mainnetConfig where
   gloasForkVersion := ⟨#[0x07, 0, 0, 0], by decide⟩
   churnLimitQuotientGloas := 32768
   maxPerEpochActivationChurnLimitGloas := 256000000000
-  minBuilderWithdrawabilityDelay := 8192
+  minBuilderWithdrawabilityDelay := 64
 
 /-- `GLOAS_FORK_VERSION` at the `minimal` config (`0x07000001`). -/
 def gloasForkVersionMinimal : Version := ⟨#[0x07, 0x00, 0x00, 0x01], by decide⟩

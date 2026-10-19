@@ -2,6 +2,7 @@ import Lean
 import SizzLean.Cache.MerkleTree.Build
 import SizzLean.Cache.MerkleTree.SetAt
 import SizzLean.Repr.Instances
+import SizzLean.Repr.Deriving
 import SizzLean.Cache.TreeBacked
 import SizzLean.Cache.Uncached
 import SizzLean.Cache.Box
@@ -560,11 +561,23 @@ private def walkPath (rootType : Expr) (path : Array PathStep) :
         -- `Vector` is a structure so `whnf` stops at it.
         let curTypeW ←
           if curType.isAppOfArity ``SizzLean.Repr.SSZList 2
-              || curType.isAppOfArity ``Vector 2 then
+              || curType.isAppOfArity ``Vector 2
+              || curType.isAppOfArity ``SizzLean.Repr.ProgressiveList 1
+              || curType.isConstOf ``SizzLean.Repr.ProgressiveBitlist then
             pure curType
           else
             whnf curType
-        if curTypeW.isAppOfArity ``SizzLean.Repr.SSZList 2 then
+        if curTypeW.isAppOfArity ``SizzLean.Repr.ProgressiveList 1
+            || curTypeW.isConstOf ``SizzLean.Repr.ProgressiveBitlist then
+          -- A progressive list's element has no classic gindex. Rebuild the
+          -- whole list field from the updated view; `ofShape` merkleizes it
+          -- progressively. The parent field's own gindex is whatever the
+          -- container arm already accumulated.
+          unless isLast do
+            throwError "sszUpdate: cannot index past a progressive list element '{curTypeW}'"
+          terminalType? := some curTypeW
+          projDrop := 1
+        else if curTypeW.isAppOfArity ``SizzLean.Repr.SSZList 2 then
           let α := curTypeW.appFn!.appArg!
           if ← isCompositeElem α then
             -- The element gindex base is `2 ^ chunkDepth cap` (`gindexBaseForCap`:
@@ -865,14 +878,61 @@ private def buildSszUpdateUncached
       (({ view := $viewLetChain }) :
         _root_.SizzLean.Cache.UncachedSSZ $hashStx $tIdent))
 
-/-- Cached emission path. Walks each clause's path through `T`'s
-nested structure to compute gindex bit-lists and per-clause
-replacement sub-Merkle-trees, then emits one batched
-`Node.setManyAt` call paired with the view-update chain. All the
-Merkle work lives here. -/
+/-- Cached update of a `@[sizzlean_progressive]` container. Field gindices
+in a progressive container are not the classic `2^depth + i` addresses, and
+`ofShape` stores field roots as leaves of `merkleize_progressive`. One pending
+write at the root, rebuilt from the fully updated view, keeps the cached root
+equal to `hashTreeRoot`. -/
+private def buildSszUpdateCachedProgressive
+    (baseStx hashStx : TSyntax `term) (tIdent : Ident) (tType : Expr)
+    (clauses : Array Syntax) : TermElabM (TSyntax `term) := do
+  let mut clausePaths : Array (Array PathStep) := #[]
+  let mut clauseValues : Array (TSyntax `term) := #[]
+  for clauseStx in clauses do
+    let (path, valStx) := parseClause clauseStx
+    clausePaths := clausePaths.push path
+    clauseValues := clauseValues.push valStx
+  let viewIdent : Ident := mkIdent (Name.mkSimple "__ssz_view")
+  let tyStx : TSyntax `term ← PrettyPrinter.delab tType
+  let closureBody ← `(
+    some (_root_.SizzLean.Cache.MerkleTree.Node.ofShape $hashStx
+            (@_root_.SizzLean.SSZRepr.shape $tyStx _)
+            (@_root_.SizzLean.SSZRepr.toRepr $tyStx _ $viewIdent)))
+  let updatesListStx ← `([
+    (([] : List Bool),
+      ((fun ($viewIdent:ident : $tyStx) => $closureBody)
+        : _root_.SizzLean.Cache.PendingWrite $tyStx))])
+  let viewLetChain ← buildViewLetChain clausePaths clauseValues
+  if clausePaths.any (·.any isCheckedIdxStep) then
+    let guard ← buildIndexGuardExcept clausePaths
+    `(
+      let t₀ := $baseStx
+      (($guard).map (fun _ =>
+          ((_root_.SizzLean.Cache.TreeBacked.addPendingMany t₀ $updatesListStx $viewLetChain)
+            : _root_.SizzLean.Cache.TreeBacked $hashStx $tIdent)) :
+        _root_.Except _root_.SizzLean.Cache.IndexError
+          (_root_.SizzLean.Cache.TreeBacked $hashStx $tIdent)))
+  else
+    `(
+      let t₀ := $baseStx
+      ((_root_.SizzLean.Cache.TreeBacked.addPendingMany t₀ $updatesListStx $viewLetChain)
+        : _root_.SizzLean.Cache.TreeBacked $hashStx $tIdent))
+
+/-- Cached emission path. Walks each clause's path through `T`'s nested
+structure to compute gindex bit-lists and per-clause replacement
+sub-Merkle-trees, then emits one batched `Node.setManyAt` call paired with
+the view-update chain. A `@[sizzlean_progressive]` root skips that walk and
+rebuilds the whole node from the updated view. -/
 private def buildSszUpdateCached
     (baseStx hashStx : TSyntax `term) (tIdent : Ident) (tType : Expr)
     (clauses : Array Syntax) : TermElabM (TSyntax `term) := do
+  let env ← getEnv
+  let progressiveRoot :=
+    match tType.getAppFn.constName? with
+    | some n => SizzLean.Repr.Deriving.sizzleanProgressiveAttr.hasTag env n
+    | none => false
+  if progressiveRoot then
+    return ← buildSszUpdateCachedProgressive baseStx hashStx tIdent tType clauses
   let mut clausePaths : Array (Array PathStep) := #[]
   let mut clauseValues : Array (TSyntax `term) := #[]
   let mut updatePairs : Array (TSyntax `term) := #[]

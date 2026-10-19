@@ -16,7 +16,7 @@ stay logged here for the audit trail even when the fix landed in Lean.
 Deliberate implementation divergences that no vector observes live in
 `IMPLEMENTATION_NOTES.md`, catalogued per fork; the FOCIL set is under "Heze diff".
 
-Pin: `v1.7.0-alpha.11` (all forks).
+Pin: `v1.7.0-alpha.12` (all forks).
 
 Spec-markdown line citations (`<file>.md:NN`) resolve under `specs/` in
 `ethereum/consensus-specs` at the pinned version; every re-pin re-checks them
@@ -55,7 +55,24 @@ catalogued in `IMPLEMENTATION_NOTES.md`, "Gloas diff" and "Fork choice".
 
 ## Heze
 
-_No open discrepancies._ EIP-7805 (FOCIL) ships no behavioral conformance vector at
-`v1.7.0-alpha.11`, so there is no Lean-versus-vector divergence to record for the FOCIL
-layer. Its deliberate divergences from the spec text are catalogued in
+One open discrepancy. The Gloas→Heze `fork` vectors are in scope. On both presets the
+`after_fork_deactivate_validators_from_gloas_to_heze` and
+`after_fork_deactivate_validators_wo_block_from_gloas_to_heze` cases are genuine Gloas
+pre-states, and `upgrade_to_heze` matches their post roots. `fork_base_state` is not a
+Gloas state and is not the output of `upgrade_to_heze`. Lean follows the spec text.
+The harness reports the two cases as `xfail`; a future pass fails the run so the row
+gets removed. FOCIL's deliberate divergences from the spec text stay in
 `IMPLEMENTATION_NOTES.md`, "Heze diff".
+
+| Vector id | Spec citation | Upstream issue | Resolution |
+|---|---|---|---|
+| `minimal/heze/fork/fork/pyspec_tests/fork_base_state` | `heze/fork.md:36`, `upgrade_to_heze` | none | Open. Lean follows the spec. |
+| `mainnet/heze/fork/fork/pyspec_tests/fork_base_state` | `heze/fork.md:36`, `upgrade_to_heze` | none | Open. Lean follows the spec. |
+
+The pre-state's fork current version is already Heze (`0x08000001` minimal,
+`0x08000000` mainnet). On minimal the bid's first variable offset is 226, where a
+Gloas bid's prefix is 224, so the bid is the 13-field Heze container. On both presets
+the pre-state is two bytes larger than the sibling Gloas pre-states. The post-state's
+`fork.current_version` is the bytes `e8 14 80 00`, which is not `HEZE_FORK_VERSION`.
+A correct upgrade of a Gloas state grows by those two inclusion-list bytes; these
+posts grow by 516 bytes (minimal) and 2052 bytes (mainnet).

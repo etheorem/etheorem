@@ -190,13 +190,20 @@ field block for per-fork replay. `declModifiers` lets the author attach a `/-- �
 scoped syntax (name := forkcontainerCmd)
   declModifiers "forkcontainer " ident " where " Parser.Command.structFields : command
 
+/-- Whether `stx` mentions the identifier `n`. Used to see
+`@[sizzlean_progressive]` on a `forkcontainer`'s modifiers. -/
+private def syntaxHasIdent (stx : Syntax) (n : Name) : Bool :=
+  stx.find? (fun s => s.isIdent && s.getId == n) |>.isSome
+
 @[command_elab forkcontainerCmd]
 def elabForkcontainer : CommandElab := fun stx => do
   let mods   : TSyntax ``Parser.Command.declModifiers := ⟨stx[0]⟩
   let nameId : Ident := ⟨stx[2]⟩
   let fields : TSyntax ``Parser.Command.structFields := ⟨stx[4]⟩
   let (forkNs, name) ← keyFor nameId.getId
-  modifyEnv (recordCapture · { forkNs, name, kind := .container, val := fields.raw })
+  let progressive := syntaxHasIdent mods.raw `sizzlean_progressive
+  modifyEnv (recordCapture ·
+    { forkNs, name, kind := .container, val := fields.raw, progressive })
   emitContainer mods nameId fields
 
 /-- `forkstruct Name <binders> where <fields>`: declare a non-SSZ structure and
@@ -256,7 +263,11 @@ def replayOne (spelled : Name) : CommandElabM Unit := do
   | .instance_ =>
     emitInstance declId ⟨cap.sig⟩ ⟨cap.val⟩
   | .container =>
-    emitContainer (← emptyMods) nameId ⟨cap.val⟩
+    let mods ← if cap.progressive then
+      `(declModifiers| @[sizzlean_progressive])
+    else
+      emptyMods
+    emitContainer mods nameId ⟨cap.val⟩
   | .struct =>
     emitStruct (← emptyMods) nameId (cap.binders.getArgs.map (⟨·⟩)) ⟨cap.val⟩
   | .tier =>

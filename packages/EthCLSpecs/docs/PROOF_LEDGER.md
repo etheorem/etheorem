@@ -128,8 +128,8 @@ Functions whose natural theorem is an inverse relationship with another Gloas fu
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `convertBuilderIndexToValidatorIndex` | `Gloas/Operations.lean:457` | Round-trips with `toBuilderIndex` on any `bi` that does not already carry the `BUILDER_INDEX_FLAG` bit, since `toBuilderIndex` always clears that bit, the round trip holds only under that precondition, not as a free identity | proved | #16, `Proofs/Gloas/BuilderIndex.lean` |
-| `toBuilderIndex` | `Gloas/Operations.lean:54` | Clears the `BUILDER_INDEX_FLAG` bit, so it inverts `convertBuilderIndexToValidatorIndex` on any index that already carries the flag; the companion direction is the row above | proved | #16, `Proofs/Gloas/BuilderIndex.lean` |
+| `convertBuilderIndexToValidatorIndex` | `Gloas/Operations.lean:474` | Round-trips with `toBuilderIndex` on any `bi` that does not already carry the `BUILDER_INDEX_FLAG` bit, since `toBuilderIndex` always clears that bit, the round trip holds only under that precondition, not as a free identity | proved | #16, `Proofs/Gloas/BuilderIndex.lean` |
+| `toBuilderIndex` | `Gloas/Operations.lean:70` | Clears the `BUILDER_INDEX_FLAG` bit, so it inverts `convertBuilderIndexToValidatorIndex` on any index that already carries the flag; the companion direction is the row above | proved | #16, `Proofs/Gloas/BuilderIndex.lean` |
 
 ### Bounds and termination properties
 
@@ -139,11 +139,11 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | --- | --- | --- | --- | --- |
 | `computeExitEpochAndUpdateChurn` | `Gloas/EpochProcessing.lean:93-103` | The churn arithmetic this call site performs through `reserveChurn` must not underflow | proposed |  |
 | `getExpectedWithdrawals` | `Gloas/Withdrawals.lean:171-179` | The withdrawals returned by its four phases combined never exceed `MAX_WITHDRAWALS_PER_PAYLOAD` | proposed |  |
-| `initiateBuilderExit` | `Gloas/Operations.lean:88-91` | `initiateBuilderExit_run_eq` is the whole-transition equation; its exact in-range/out-of-range effect on the builder registry is characterized; no-wrap is conditional for an arbitrary `Config` and proved unconditionally for both shipped Gloas preset/config pairs | proved | #39, `Proofs/Gloas/InitiateBuilderExit.lean` |
-| `processBuilderExitRequest` | `Gloas/Operations.lean:194-204` | On its successful builder-exit branch, the index supplied to `initiateBuilderExit` is in range; under either shipped Gloas preset/config pair, the selected builder receives the intended non-wrapping future `withdrawableEpoch`. All non-matching or ineligible branches leave the builder registry unchanged | proposed |  |
-| `getPtc` | `Gloas/Operations.lean:390-407` | Its computed offset into `ptcWindow` stays in range under the two guarded call patterns: `data.slot + 1 == state.slot` and the fork-choice replay callers' `slot == curSlot`. Landed: both bounds, stated over `getPtcElseOffset`, a restatement of the else-branch arithmetic. Open: a statement about `getPtc` itself, which is what would carry a `characterizes` tag and move the function past the touched tier | in progress | `4b4b78a`, `Proofs/Gloas/GetPtc.lean` |
-| `getPendingBalanceToWithdrawForBuilder` | `Gloas/Operations.lean:61-65` | Under an explicit bound preventing overflow across both sequential `UInt64` folds, its result agrees with the unbounded `Nat` sum of the matching pending-withdrawal and pending-payment amounts | proposed |  |
-| `canBuilderCoverBid` | `Gloas/Operations.lean:461-464` | Its `Bool` result is characterized exactly against the implementation's computed `minBalance`. Proving that queuing an accepted bid preserves `MIN_DEPOSIT_AMOUNT` + pending obligations ≤ builder balance is the caller-level follow-up, and needs pending-total no-overflow and ring-cell freshness hypotheses | proved | #36, `Proofs/Gloas/CanBuilderCoverBid.lean` |
+| `initiateBuilderExit` | `Gloas/Operations.lean:104-107` | `initiateBuilderExit_run_eq` is the whole-transition equation; its exact in-range/out-of-range effect on the builder registry is characterized; no-wrap is conditional for an arbitrary `Config` and proved unconditionally for both shipped Gloas preset/config pairs | proved | #39, `Proofs/Gloas/InitiateBuilderExit.lean` |
+| `processBuilderExitRequest` | `Gloas/Operations.lean:211-221` | On its successful builder-exit branch, the index supplied to `initiateBuilderExit` is in range; under either shipped Gloas preset/config pair, the selected builder receives the intended non-wrapping future `withdrawableEpoch`. All non-matching or ineligible branches leave the builder registry unchanged | proposed |  |
+| `getPtc` | `Gloas/Operations.lean:407-424` | Its computed offset into `ptcWindow` stays in range under the two guarded call patterns: `data.slot + 1 == state.slot` and the fork-choice replay callers' `slot == curSlot`. Landed: both bounds, stated over `getPtcElseOffset`, a restatement of the else-branch arithmetic. Open: a statement about `getPtc` itself, which is what would carry a `characterizes` tag and move the function past the touched tier | in progress | `4b4b78a`, `Proofs/Gloas/GetPtc.lean` |
+| `getPendingBalanceToWithdrawForBuilder` | `Gloas/Operations.lean:77-81` | Under an explicit bound preventing overflow across both sequential `UInt64` folds, its result agrees with the unbounded `Nat` sum of the matching pending-withdrawal and pending-payment amounts | proposed |  |
+| `canBuilderCoverBid` | `Gloas/Operations.lean:478-481` | Its `Bool` result is characterized exactly against the implementation's computed `minBalance`. Proving that queuing an accepted bid preserves `MIN_DEPOSIT_AMOUNT` + pending obligations ≤ builder balance is the caller-level follow-up, and needs pending-total no-overflow and ring-cell freshness hypotheses | proved | #36, `Proofs/Gloas/CanBuilderCoverBid.lean` |
 | `applyWithdrawals` | `Gloas/Withdrawals.lean:184-194` | A builder-flagged withdrawal decreases the builder's balance by at most its own balance, so the balance never goes negative | proposed |  |
 | `getAncestor` | `Gloas/ForkChoice.lean:177-184` | The fuel supplied to its `fuelLoop` DAG walk is sufficient for the walk to terminate before running out | proposed |  |
 | `getHead` | `Gloas/ForkChoice.lean:534-569` | The fuel `2 * blocks.length + 2` supplied to its LMD-GHOST walk is sufficient for the walk to reach a decided head before running out | proposed |  |
@@ -154,17 +154,17 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `processProposerSlashing` | `Gloas/Operations.lean:211-241` | Payment-voiding must never touch another proposer's `BuilderPendingPayment` | proposed |  |
-| `processAttestation` | `Gloas/Operations.lean:291-370` | Committee-index safety together with builder-payment weight accounting | proposed |  |
-| `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:234-253` | Whole-transition equation over a plain `BeaconState`: the run returns `preState` with only `builderPendingWithdrawals` (the qualifying withdrawals, folded through the bounded `SSZList.push` in slot order) and `builderPendingPayments` (the window shifted down by `SLOTS_PER_EPOCH` and padded with empties) written. Under an explicit capacity hypothesis every qualifying withdrawal is appended with no clamp; this does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
+| `processProposerSlashing` | `Gloas/Operations.lean:228-258` | Payment-voiding must never touch another proposer's `BuilderPendingPayment` | proposed |  |
+| `processAttestation` | `Gloas/Operations.lean:308-387` | Committee-index safety together with builder-payment weight accounting | proposed |  |
+| `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:234-253` | Whole-transition equation over a plain `BeaconState`: the run returns `preState` with only `builderPendingWithdrawals` (the qualifying withdrawals, folded through `ProgressiveList.push` in slot order; every one is appended) and `builderPendingPayments` (the window shifted down by `SLOTS_PER_EPOCH` and padded with empties) written. This does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
 | `processPtcWindow` | `Gloas/EpochProcessing.lean:272-282` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
-| `applyDepositForBuilder` | `Gloas/Operations.lean:118-126` | A deposit with an invalid signature is neither applied to a builder's balance nor requeued | proposed |  |
-| `processBuilderDepositRequest` | `Gloas/Operations.lean:172-188` | A new builder is onboarded only when its deposit signature is valid | proposed |  |
-| `getIndexedPayloadAttestation` | `Gloas/Operations.lean:412-418` | Preserves `pa.data` and `pa.signature`, and produces the sorted multiset of PTC seats selected by `pa.aggregationBits`. The proof requires `Array.qsort` sortedness and permutation lemmas not currently available in core/Std | proposed |  |
-| `isValidIndexedPayloadAttestation` | `Gloas/Operations.lean:423-434` | Returns true exactly when the attesting indices are non-empty, adjacent-nondecreasing (duplicates permitted), all within the validator registry, and the configured `[CryptoBackend]` accepts the exact aggregate-verification call | proved | #38, `Proofs/Gloas/IsValidIndexedPayloadAttestation.lean` |
-| `processPayloadAttestation` | `Gloas/Operations.lean:439-452` | Running `processPayloadAttestation` does not modify `State`: it only reads the input state and evaluates three assertions. A concrete run-level theorem should show that both success and rejection preserve the state component | proposed |  |
-| `processExecutionPayloadBid` | `Gloas/Operations.lean:493-527` | The self-build and builder-bid paths it chooses between are mutually exclusive and jointly exhaustive | proposed |  |
-| `applyParentExecutionPayload` | `Gloas/Operations.lean:532-556` | Exactly one of settle-current, settle-previous, or evict fires, so a payment is never settled twice | proposed |  |
+| `applyDepositForBuilder` | `Gloas/Operations.lean:134-142` | A deposit with an invalid signature is neither applied to a builder's balance nor requeued | proposed |  |
+| `processBuilderDepositRequest` | `Gloas/Operations.lean:189-205` | A new builder is onboarded only when its deposit signature is valid | proposed |  |
+| `getIndexedPayloadAttestation` | `Gloas/Operations.lean:429-435` | Preserves `pa.data` and `pa.signature`, and produces the sorted multiset of PTC seats selected by `pa.aggregationBits`. The proof requires `Array.qsort` sortedness and permutation lemmas not currently available in core/Std | proposed |  |
+| `isValidIndexedPayloadAttestation` | `Gloas/Operations.lean:440-451` | Returns true exactly when the attesting indices are non-empty, adjacent-nondecreasing (duplicates permitted), all within the validator registry, and the configured `[CryptoBackend]` accepts the exact aggregate-verification call | proved | #38, `Proofs/Gloas/IsValidIndexedPayloadAttestation.lean` |
+| `processPayloadAttestation` | `Gloas/Operations.lean:456-469` | Running `processPayloadAttestation` does not modify `State`: it only reads the input state and evaluates three assertions. A concrete run-level theorem should show that both success and rejection preserve the state component | proposed |  |
+| `processExecutionPayloadBid` | `Gloas/Operations.lean:510-544` | The self-build and builder-bid paths it chooses between are mutually exclusive and jointly exhaustive | proposed |  |
+| `applyParentExecutionPayload` | `Gloas/Operations.lean:549-578` | Exactly one of settle-current, settle-previous, or evict fires, so a payment is never settled twice | proposed |  |
 
 ### Monotonicity properties
 
@@ -173,7 +173,7 @@ Functions whose output only moves in one direction as their input grows or accum
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
 | `getWeight` | `Gloas/ForkChoice.lean:422-434` | Weight only grows as more attestations accumulate for a node | proposed |  |
-| `onAttesterSlashing` | `Gloas/ForkChoice.lean:1023-1033` | The set of equivocating indices only grows, never shrinks | proposed |  |
+| `onAttesterSlashing` | `Gloas/ForkChoice.lean:1024-1034` | The set of equivocating indices only grows, never shrinks | proposed |  |
 | `updateCheckpoints` | `Gloas/ForkChoice.lean:574-576` | Each justified/finalized checkpoint either remains unchanged or advances to its candidate, so its epoch never decreases, and no other Store field moves | proved | #30, `Proofs/Gloas/UpdateCheckpoints.lean` |
 
 ### State-transition correctness
@@ -183,8 +183,8 @@ The block/slot/epoch-processing spine itself: the composition of the individual 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
 | `processSlot` | `Gloas/Transition.lean:32-52` | After `processSlot`, the `executionPayloadAvailability` bit at index `(slot + 1) mod SLOTS_PER_HISTORICAL_ROOT` reads `false`, matching the documented invariant that a payload starts unavailable | proposed |  |
-| `processOperations` | `Gloas/Transition.lean:87-94` | public declarations live in `EthCLSpecs.Proofs.Gloas`. Non-empty in-block deposits fail immediately with `StateTransitionError.assert`, and a reject at this monad carries no state; success on the uncached box of a plain value is equivalent to empty deposits plus the six operation-family loops succeeding in order over five plain intermediate values, one `runPure` fact per loop. `KeepsUncached` is the fact behind the split: every handler keeps the flavour, so `runPure_bind_of_keepsUncached` names each fold's post-state as a plain value. No per-operation correctness or rollback guarantee for later failures is claimed | proved | #57, `Proofs/Gloas/ProcessOperations.lean` |
-| `stateTransition` | `Gloas/Transition.lean:108-118` | Top-level state-transition correctness; composes `processSlots`, `processBlock`, and the root check into the canonical transition | proposed |  |
+| `processOperations` | `Gloas/Transition.lean:87-101` | public declarations live in `EthCLSpecs.Proofs.Gloas`. Non-empty in-block deposits fail immediately with `StateTransitionError.assert`, and a reject at this monad carries no state; success on the uncached box of a plain value is equivalent to empty deposits plus the six operation-family loops succeeding in order over five plain intermediate values, one `runPure` fact per loop. `KeepsUncached` is the fact behind the split: every handler keeps the flavour, so `runPure_bind_of_keepsUncached` names each fold's post-state as a plain value. No per-operation correctness or rollback guarantee for later failures is claimed | proved | #57, `Proofs/Gloas/ProcessOperations.lean` |
+| `stateTransition` | `Gloas/Transition.lean:115-125` | Top-level state-transition correctness; composes `processSlots`, `processBlock`, and the root check into the canonical transition | proposed |  |
 
 ### Fork-choice correctness
 
@@ -194,7 +194,7 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
 | --- | --- | --- | --- | --- |
 | `onBlock` | `Gloas/ForkChoice.lean:759-808` | Accepts a block only if a full parent implies a verified payload, and the block's ancestry agrees with the currently finalized checkpoint | proposed |  |
 | `validateOnAttestation` | `Gloas/ForkChoice.lean:954-984` | Validates that the attestation's index is 0 or 1, that a same-slot attestation has index 0, and that a full-vote attestation's payload is verified | proposed |  |
-| `getForkchoiceStore` | `Gloas/ForkChoice.lean:1044-1076` | Every root-keyed map in a freshly built store agrees on the anchor entry | proposed |  |
+| `getForkchoiceStore` | `Gloas/ForkChoice.lean:1045-1077` | Every root-keyed map in a freshly built store agrees on the anchor entry | proposed |  |
 | `isAncestor` | `Gloas/ForkChoice.lean:189-194` | Agrees with the ancestor relation that `getAncestor` computes iteratively | proposed |  |
 | `verifyExecutionPayloadEnvelope` | `Gloas/ForkChoice.lean:873-908` | Acceptance requires every validation check performed by `verifyExecutionPayloadEnvelope` to succeed | proposed |  |
 

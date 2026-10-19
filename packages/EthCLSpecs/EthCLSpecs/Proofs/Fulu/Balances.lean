@@ -46,7 +46,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu
 
-open EthCLLib.Spec (HasherTag StateTransitionError checkedAdd sszGetIdx)
+open EthCLLib.Spec (HasherTag StateTransitionError checkedAdd sszGetIdx IdxRead)
 open EthCLSpecs.Fulu (Preset BeaconState State ValidatorIndex Gwei increaseBalance decreaseBalance
   modBalance)
 open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok)
@@ -106,7 +106,7 @@ theorem increaseBalance_run_eq [Preset] [HasherTag] :
               .ok (modBalance (pureState state) i (fun _ => balance + delta),
                 pureState preState)) := by
   intro state preState i delta
-  unfold increaseBalance sszGetIdx checkedAdd
+  unfold increaseBalance sszGetIdx IdxRead.get? IdxRead.size checkedAdd
   -- Reduce the reads on `pureState state` to plain fields, so the read's `[i]?` decides the outer
   -- arm and the carry test the inner one. `cases` then substitutes the read on both sides, and
   -- the branch tactics need only the carry hypothesis.
@@ -209,7 +209,7 @@ theorem decreaseBalance_run_eq [Preset] [HasherTag] :
                 (fun _ => if delta > balance then 0 else balance - delta),
               pureState preState)) := by
   intro state preState i delta
-  unfold decreaseBalance sszGetIdx
+  unfold decreaseBalance sszGetIdx IdxRead.get? IdxRead.size
   simp only [view_uncachedBox]
   cases state.balances.val[i.toNat]? with
   | none =>

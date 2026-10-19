@@ -158,7 +158,7 @@ theorem returnsUncached_increaseBalance (state : BeaconState) (i : ValidatorInde
             .error (.arithmetic "increase_balance: balances[index] + delta")
           else
             .ok (modBalance (pureState state) i (fun _ => balance + d), pureState preState)) := by
-    unfold increaseBalance sszGetIdx checkedAdd
+    unfold increaseBalance sszGetIdx EthCLLib.Spec.IdxRead.get? EthCLLib.Spec.IdxRead.size checkedAdd
     simp only [view_uncachedBox]
     cases state.balances.val[i.toNat]? with
     | none => simp; rfl
@@ -195,7 +195,7 @@ theorem returnsUncached_decreaseBalance (state : BeaconState) (i : ValidatorInde
         | some balance =>
           .ok (modBalance (pureState state) i
             (fun _ => if d > balance then 0 else balance - d), pureState preState)) := by
-    unfold decreaseBalance sszGetIdx
+    unfold decreaseBalance sszGetIdx EthCLLib.Spec.IdxRead.get? EthCLLib.Spec.IdxRead.size
     simp only [view_uncachedBox]
     cases state.balances.val[i.toNat]? with
     | none => simp; rfl

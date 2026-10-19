@@ -124,6 +124,10 @@ structure CapturedDecl where
   sig  : Syntax := .missing
   /-- A declaration value (`declVal`), or a structure's field block. -/
   val  : Syntax
+  /-- The captured container was declared `@[sizzlean_progressive]`. Replay
+  emits the attribute again so the child's `SSZRepr` is a progressive container.
+  Meaningless for the other kinds; they leave it `false`. -/
+  progressive : Bool := false
   deriving Inhabited
 
 /-- Lineage edges: `(forkFullName, parentFullName)`, parent `anonymous` for a

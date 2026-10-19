@@ -16,6 +16,8 @@ import SizzLean.Cache.Update
 import SizzLean.Proofs.SSZListPush
 import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.SSZListSet
+import SizzLean.Proofs.ProgressiveListSet
+import SizzLean.Proofs.ProgressiveListPush
 import SizzLean.Proofs.UncachedBox
 import SizzLean.Proofs.Merkle.Gindex
 import SizzLean.Proofs.Merkle.Opening

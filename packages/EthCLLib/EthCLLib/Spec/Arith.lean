@@ -34,7 +34,7 @@ alone brings the author surface into scope (`SPEC_AUTHORING_MODEL.md` §3.2), wi
 no second `open SizzLean.Repr`. The fixed-length `Vector` is core Lean; the boxed
 `State` representation (`SizzLean.Cache`) stays behind `sszGet` / `sszUpdate` and is
 deliberately not re-exported. -/
-export SizzLean.Repr (SSZList Bitvector Bitlist)
+export SizzLean.Repr (SSZList Bitvector Bitlist ProgressiveList ProgressiveBitlist)
 
 /-! ## `UInt64` arithmetic -/
 
@@ -176,14 +176,37 @@ is the ordinary `x % n`. Pure `Nat` index arithmetic, so it cannot change which 
 downstream total write hits. -/
 @[inline] def modWrap (x n : Nat) : Nat := if n == 0 then 0 else x % n
 
-/-- Drop the first `k` elements of an `SSZList` (size only shrinks). -/
-def sszDrop {α : Type} {cap : Nat} (xs : SSZList α cap) (k : Nat) : SSZList α cap :=
-  ⟨xs.val.extract k xs.val.size, by have := xs.property; simp only [Array.size_extract]; omega⟩
+/-- A list that can drop a prefix and stay the same collection type.
+`SSZList` keeps its cap (the tail is no longer); `ProgressiveList` has no cap. -/
+class SszDrop (ρ : Type) where
+  drop : ρ → Nat → ρ
 
-/-- Replace an `SSZList`'s contents, clamping length at capacity. -/
-def sszOfArray {α : Type} {cap : Nat} (a : Array α) : SSZList α cap :=
-  if h : a.size ≤ cap then ⟨a, h⟩
-  else ⟨a.extract 0 cap, by simp only [Array.size_extract]; omega⟩
+/-- Drop the first `k` elements. On an `SSZList` the cap is unchanged. -/
+@[inline] def sszDrop {ρ : Type} [SszDrop ρ] (xs : ρ) (k : Nat) : ρ :=
+  SszDrop.drop xs k
+
+instance {α : Type} {cap : Nat} : SszDrop (SSZList α cap) where
+  drop xs k :=
+    ⟨xs.val.extract k xs.val.size, by have := xs.property; simp only [Array.size_extract]; omega⟩
+
+instance {α : Type} : SszDrop (ProgressiveList α) where
+  drop xs k := xs.drop k
+
+/-- Build a list from an `Array`. An `SSZList` clamps at its cap; a
+`ProgressiveList` takes the array whole. The expected type picks which. -/
+class OfSszArray (ρ : Type) (α : outParam Type) where
+  ofArray : Array α → ρ
+
+@[inline] def sszOfArray {ρ α : Type} [OfSszArray ρ α] (a : Array α) : ρ :=
+  OfSszArray.ofArray a
+
+instance {α : Type} {cap : Nat} : OfSszArray (SSZList α cap) α where
+  ofArray a :=
+    if h : a.size ≤ cap then ⟨a, h⟩
+    else ⟨a.extract 0 cap, by simp only [Array.size_extract]; omega⟩
+
+instance {α : Type} : OfSszArray (ProgressiveList α) α where
+  ofArray a := ⟨a⟩
 
 /-- The indices of `xs` whose element (with its position) satisfies `p`, as `uint64`s. Names
 the `mut out / for i / push (UInt64.ofNat i)` accumulator that the registry walks

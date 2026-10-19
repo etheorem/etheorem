@@ -6,36 +6,40 @@ the glossary). Those four are the design of record. This file records how
 `EthCLSpecs` / `EthCLLib` realize them: the current architecture, the places the code
 deviates from a doc (with the reason), and the spec-faithfulness decisions worth
 knowing. Everything here describes the tree as it stands against the
-`v1.7.0-alpha.11` pin.
+`v1.7.0-alpha.12` pin.
 
 ## Scope and conformance
 
-Three forks, **Fulu**, **Gloas**, and **Heze**, against the `consensus-spec-tests` minimal and
-mainnet archives at `v1.7.0-alpha.11` (the latest release with cut vectors; it is
-flagged pre-release, so the harness pins the tag explicitly rather than reading `gh
-release latest`). The full in-scope suite is green at both presets for all three
-forks, `--subset=0`, zero failures and zero `xfail`:
+Three forks, **Fulu**, **Gloas**, and **Heze**, against the `consensus-specs` minimal and
+mainnet archives at `v1.7.0-alpha.12` (a pre-release, so the harness pins the tag
+explicitly rather than reading `gh release latest`). The counts below are the
+alpha.12 run, `--subset=0`. Heze's single xfail, on both presets, is
+`fork_base_state` (`DISCREPANCIES.md`).
 
 | | minimal | mainnet |
 |---|---|---|
-| Fulu  | **5188 passed** | **847 passed** |
-| Gloas | **6573 passed** | **1034 passed** |
-| Heze  | **6770 passed** | **997 passed** |
+| Fulu  | **5189 passed** | **848 passed** |
+| Gloas | **6600 passed** | **1060 passed** |
+| Heze  | **6798 passed**, 1 xfailed | **1024 passed**, 1 xfailed |
+
+A fully parallel Gloas mainnet run lost 99 cases to a dead server. Those 99 passed
+when the same runners were rerun, and the 1060 figure counts them as passed.
 
 Fulu's collected formats: `epoch_processing`, `operations` (including the standalone
 `execution_payload`), `rewards`, `sanity/blocks`, `sanity/slots`, `finality`,
 `random`, `fork_choice` (including the PeerDAS data-availability `on_block` cases and
 `get_proposer_head`). Gloas adds `fork`, `transition`, and the full ePBS
-`fork_choice`. `DISCREPANCIES.md` records no open vector discrepancy: every vector the
-implemented formats reach matches by root or rejects faithfully. Deliberate divergences
-from the spec *text* that no vector observes are catalogued per fork in this file.
+`fork_choice`. `DISCREPANCIES.md` records one open vector, the Heze `fork_base_state`
+case on both presets. Every other vector the implemented formats reach matches by root
+or rejects faithfully. Deliberate divergences from the spec *text* that no vector
+observes are catalogued per fork in this file.
 
 **Out of scope** (deselected in `walk_cases`, not collected):
 
 - **Fulu `fork` / `transition`** (Electra→Fulu): the upgrade and the pre-fork Electra
   blocks both need a complete Electra parent fork the library never builds. The
   **Gloas** `fork` / `transition` (Fulu→Gloas) and the **Heze** ones (Gloas→Heze)
-  are in scope and green.
+  are in scope. Heze `fork_base_state` is the recorded discrepancy above.
 - **`light_client`, `networking`, `merkle_proof`, `sync`**: not state-transition or
   fork-choice formats; outside `IN_SCOPE_RUNNERS`.
 - **`genesis`**: no vectors at the pin (see Genesis below).
@@ -603,7 +607,7 @@ the ePBS tail appends `builders`, `nextWithdrawalBuilderIndex`,
 are declared in-spec, tracking `specs/gloas/beacon-chain.md` (and `fork.md` for
 `upgradeToGloas`). Gloas extends Fulu's three constant tiers with the
 ePBS values: `ptcSize` / `maxBuildersPerWithdrawalsSweep` (preset);
-`builderRegistryLimit` / `builderPendingWithdrawalsLimit` / `maxPayloadAttestations` /
+`maxPayloadAttestations` /
 the builder-payment threshold and builder prefixes and domains (universal); and
 `gloasForkVersion` / `churnLimitQuotientGloas` / `consolidationChurnLimitQuotient` /
 `maxPerEpochActivationChurnLimitGloas` / `minBuilderWithdrawabilityDelay` (config).
@@ -662,7 +666,7 @@ payload-availability bit), and `process_epoch` (builder-pending-payments and
 
 EIP-7805 changes no state-transition substep, so Heze inherits the Gloas spine whole
 and the diff is confined to the fork-choice inclusion-list layer. FOCIL ships no
-behavioral conformance vector at the alpha.11 pin, so the divergences below are anchored
+behavioral conformance vector at the alpha.12 pin, so the divergences below are anchored
 to the pinned spec text and the `EthCLSpecs/Heze/ForkChoice.lean` pins.
 
 - **`is_inclusion_list_satisfied`** (`heze/fork-choice.md:54-62`) defers its answer to
@@ -768,7 +772,7 @@ desynced or dead server, so the parallel run is deterministic.
 
 `SPECS_ARCHITECTURE.md` §10.1 marks `genesis` in scope and §6.1 names
 `initializeBeaconStateFromEth1` / `isValidGenesisState`. The pytest corpus carries no
-`genesis` vectors for Fulu, Gloas, or Heze at the `v1.7.0-alpha.11` pin, so there is nothing to
+`genesis` vectors for Fulu, Gloas, or Heze at the `v1.7.0-alpha.12` pin, so there is nothing to
 drive; both stay a `todo` stub in `Interface.lean`.
 
 ## Proofs
@@ -795,10 +799,9 @@ separation.
 
 - **`Proofs/Gloas/BuilderPendingPayments.lean`** proves `processBuilderPendingPayments`'s
   local before/after behavior for one call: the withdrawals loop reduces to a
-  bounded `SSZList.push` fold over the qualifying previous-epoch payments' withdrawals,
-  in slot order, and the payment window shifts down by `SLOTS_PER_EPOCH`. A
-  capacity-guarded corollary derives the full, unclamped append under an explicit
-  headroom hypothesis. It does not prove protocol-wide exactly-once settlement or say
+  `ProgressiveList.push` fold over the qualifying previous-epoch payments' withdrawals,
+  in slot order, and the payment window shifts down by `SLOTS_PER_EPOCH`. Every
+  qualifying withdrawal is appended. It does not prove protocol-wide exactly-once settlement or say
   anything about `settleBuilderPayment` / `processProposerSlashing`, the other paths
   that clear a `BuilderPendingPayment`.
 
@@ -817,9 +820,9 @@ separation.
 
 - **`Proofs/Gloas/InitiateBuilderExit.lean`** gives the whole-transition
   `initiateBuilderExit_run_eq` contract at the box: the run on `pureState preState` returns
-  `pureState` of a value whose `builders` carries one unconditional `SSZList.set!`
+  `pureState` of a value whose `builders` carries one unconditional `ProgressiveList.set!`
   write. The in-range and out-of-range theorems state the `runPure` form of that
-  contract and read it through `SizzLean.Proofs.SSZListSet`, so the range split happens
+  contract and read it through `SizzLean.Proofs.ProgressiveListSet`, so the range split happens
   at the read rather than in a second transition proof; out of range the run returns
   the pre-state value itself. It also proves that the
   withdrawability-delay addition does not wrap for the shipped minimal and

@@ -34,7 +34,7 @@ namespace EthCLSpecs.Fulu.Interface
 /-- Pinned upstream spec / vectors release (`SPEC_AUTHORING_MODEL.md` §10). The
 latest `consensus-spec-tests` release; confirmed to carry the Fulu, Gloas, and
 Heze minimal vectors. -/
-def pyspecPinnedVersion : String := "v1.7.0-alpha.11"
+def pyspecPinnedVersion : String := "v1.7.0-alpha.12"
 
 /-- Decode a `BeaconState` at preset `P` into a `FastBox`, or the runner's `decode`
 error (a well-formed vector should always decode, so a parse failure is our bug, not a

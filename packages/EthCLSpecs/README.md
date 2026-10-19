@@ -98,9 +98,10 @@ the lineage edge.
 
 **Validated against the real vectors.** The full in-scope suite passes at both
 the `minimal` and `mainnet` presets, for all three forks (Fulu, Gloas, Heze),
-pinned to release `v1.7.0-alpha.11`. The error model is honest. An out-of-range read or a crash
-is a hard failure, and an unimplemented branch is a visible `xfail`. Every
-passing vector reflects a real match or a faithful rejection.
+pinned to release `v1.7.0-alpha.12`. Heze `fork_base_state` is the one expected
+failure, recorded in `docs/DISCREPANCIES.md`. The error model is honest. An
+out-of-range read or a crash is a hard failure, and an unimplemented branch is a
+visible `xfail`. Every passing vector reflects a real match or a faithful rejection.
 
 ## Build and test
 
@@ -134,15 +135,15 @@ column is the fork's own diff, for scale.
 | Fork | Characterized | Touched | Spec functions | Authored |
 | --- | --- | --- | --- | --- |
 | `EthCLSpecs.Fulu` | 3 | 5 | 158 | 158 |
-| `EthCLSpecs.Gloas` | 8 | 32 | 209 | 109 |
+| `EthCLSpecs.Gloas` | 8 | 32 | 209 | 110 |
 | `EthCLSpecs.Heze` | 6 | 18 | 218 | 12 |
-| **Total** | 17 | 55 | 585 | 279 |
+| **Total** | 17 | 55 | 585 | 280 |
 
 | Axiom | Theorems resting on it |
 | --- | --- |
-| `propext` | 122 |
+| `propext` | 123 |
 | `Classical.choice` | 112 |
-| `Quot.sound` | 120 |
+| `Quot.sound` | 121 |
 | `Lean.ofReduceBool` | 0 |
 | `Lean.trustCompiler` | 0 |
 | `SizzLean.Hasher.sha256Hash_eq_spec` | 0 |

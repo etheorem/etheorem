@@ -1,7 +1,7 @@
 import EthCLSpecs.Gloas.EpochProcessing
 import EthCLSpecs.Proofs.Gloas.Run
 import EthCLLib.Proofs.Run
-import SizzLean.Proofs.SSZListPush
+import SizzLean.Proofs.ProgressiveListPush
 import SizzLean.Proofs.UncachedBox
 
 /-!
@@ -13,18 +13,13 @@ whole transition as one value: the run on `pureState preState` returns `pureStat
 `preState` with `builderPendingWithdrawals` and `builderPendingPayments` written, and
 nothing else. When
 invoked by the epoch substep, it feeds every qualifying previous-epoch payment's
-withdrawal, in slot order, through the bounded `SSZList.push`; under an explicit capacity
-hypothesis, every qualifying withdrawal is appended. It then shifts the payment window
-down by `SLOTS_PER_EPOCH`, padding the vacated half with empties.
+withdrawal, in slot order, through `ProgressiveList.push`, which always appends. It then
+shifts the payment window down by `SLOTS_PER_EPOCH`, padding the vacated half with empties.
 
-The withdrawals side rests on two pieces: a pure fact about `SSZList.push`'s clamp
-(iterating it over a list of values ends at the original list plus the clamped prefix that
-fits, unconditionally, proved generically in `SizzLean.Proofs.SSZListPush`), and the loop's
-own reduction to that list, in iteration order. No capacity-headroom invariant is assumed
-or proved here; the "every qualifying withdrawal is appended" statement above is a
-corollary of the unconditional clamp fact under an explicit
-`preState.builderPendingWithdrawals.val.size + qualifying.length ≤ builderPendingWithdrawalsLimit`
-hypothesis, not an unconditional theorem.
+The withdrawals side rests on `progressiveListFoldlPush_val`
+(`SizzLean.Proofs.ProgressiveListPush`): iterating `push` over a list of values ends at
+the original list plus every value, in order. Alpha.12 dropped
+`BUILDER_PENDING_WITHDRAWALS_LIMIT`, so there is no capacity clamp to assume.
 
 The window side is a direct instance of `shiftWindow`'s general behavior:
 `expectedPaymentWindow_get_lt` / `expectedPaymentWindow_get_upper` state the two
@@ -57,8 +52,8 @@ open EthCLLib.Proofs (pureState runPure runPure_of_run_ok run_bind run_pure
 open EthCLSpecs.Gloas
 open EthCLSpecs.Gloas (Preset Gwei BeaconState)
 open EthCLSpecs.Gloas.Const (slotsPerEpoch builderPaymentThresholdNumerator
-  builderPaymentThresholdDenominator builderPendingWithdrawalsLimit)
-open SizzLean.Proofs (sszListFoldlPush_val sszListFoldlPush_val_of_fits view_uncachedBox)
+  builderPaymentThresholdDenominator)
+open SizzLean.Proofs (progressiveListFoldlPush_val view_uncachedBox)
 
 /-- `do x` for a lone `for`-loop `x` elaborates as `x >>= fun _ => pure ()`, not as `x`
 itself. Peels that wrapper so a fact about the bare loop run connects to a use site that
@@ -157,7 +152,7 @@ def builderPaymentQuorum [Preset] [HasherTag] (state : BeaconState) : Gwei :=
     builderPaymentThresholdNumerator / builderPaymentThresholdDenominator
 
 /-- The previous-epoch payments whose weight clears `builderPaymentQuorum`, mapped to
-their withdrawals, in slot order, before `SSZList.push`'s capacity clamp. -/
+their withdrawals, in slot order. -/
 def qualifyingBuilderWithdrawals [Preset] [HasherTag] (state : BeaconState) :
     List BuilderPendingWithdrawal :=
   let payments := state.builderPendingPayments
@@ -166,11 +161,10 @@ def qualifyingBuilderWithdrawals [Preset] [HasherTag] (state : BeaconState) :
     fun i => (vget payments i).withdrawal
 
 /-- The `builderPendingWithdrawals` value `processBuilderPendingPayments` produces:
-`qualifyingBuilderWithdrawals`, folded through `SSZList.push` from the field's current
-value. `sszListFoldlPush_val` and `sszListFoldlPush_val_of_fits` characterize this
-fold's clamping behavior. -/
+`qualifyingBuilderWithdrawals`, folded through `ProgressiveList.push` from the field's
+current value. `progressiveListFoldlPush_val` says that fold appends every withdrawal. -/
 def expectedWithdrawals [Preset] [HasherTag] (state : BeaconState) :
-    SSZList BuilderPendingWithdrawal builderPendingWithdrawalsLimit :=
+    ProgressiveList BuilderPendingWithdrawal :=
   (qualifyingBuilderWithdrawals state).foldl (fun l w => l.push w)
     state.builderPendingWithdrawals
 
@@ -221,8 +215,7 @@ half is the final `modifyState`, whose read of the field is unaffected by the lo
 pure configuration runs: the step on `pureState preState` returns the uncached box of the original
 value with only the two fields written through the source-level writes. Stated at the box
 level so the fork-choice bridge consumes it by application; `runPure_of_run_ok` derives
-the `runPure` form (`processBuilderPendingPayments_run_of_fits` reads it under an explicit
-capacity hypothesis). -/
+the `runPure` form (`processBuilderPendingPayments_run_appended` reads it). -/
 @[characterizes EthCLSpecs.Gloas.processBuilderPendingPayments]
 theorem processBuilderPendingPayments_run [Preset] [HasherTag] :
     ∀ (preState : BeaconState),
@@ -256,25 +249,25 @@ theorem processBuilderPendingPayments_run [Preset] [HasherTag] :
     expectedPaymentWindow
   rfl
 
-/-- Capacity-guarded value-level reading of `processBuilderPendingPayments_run`: under an
-explicit headroom hypothesis, every qualifying withdrawal is appended in slot order, with
-no `SSZList.push` clamp. The payment-window half is unchanged from the contract. -/
-theorem processBuilderPendingPayments_run_of_fits [Preset] [HasherTag] (preState : BeaconState)
-    (hfits : preState.builderPendingWithdrawals.val.size +
-      (qualifyingBuilderWithdrawals preState).length ≤ builderPendingWithdrawalsLimit) :
+/-- Value-level reading of `processBuilderPendingPayments_run`: every qualifying
+withdrawal is appended in slot order. The payment-window half is unchanged from
+the contract. -/
+theorem processBuilderPendingPayments_run_appended [Preset] [HasherTag] (preState : BeaconState) :
     runPure (processBuilderPendingPayments (StateTransition := GloasRun)) preState
       = .ok ((), { preState with
           builderPendingWithdrawals :=
-            ⟨preState.builderPendingWithdrawals.val ++ (qualifyingBuilderWithdrawals preState).toArray,
-              by simp only [Array.size_append, List.size_toArray]; omega⟩,
+            ⟨preState.builderPendingWithdrawals.val ++ (qualifyingBuilderWithdrawals preState).toArray⟩,
           builderPendingPayments := expectedPaymentWindow preState }) := by
   rw [runPure_of_run_ok (processBuilderPendingPayments_run preState)]
   congr 1
-  rw [show expectedWithdrawals preState
-        = ⟨preState.builderPendingWithdrawals.val ++ (qualifyingBuilderWithdrawals preState).toArray,
-            by simp only [Array.size_append, List.size_toArray]; omega⟩ from
-      Subtype.ext (by
-        unfold expectedWithdrawals
-        rw [sszListFoldlPush_val_of_fits _ _ hfits])]
+  have hval : (expectedWithdrawals preState).val =
+      preState.builderPendingWithdrawals.val ++
+        (qualifyingBuilderWithdrawals preState).toArray := by
+    unfold expectedWithdrawals
+    rw [progressiveListFoldlPush_val]
+  rw [show expectedWithdrawals preState = ⟨(expectedWithdrawals preState).val⟩ from by
+    cases expectedWithdrawals preState
+    rfl]
+  rw [hval]
 
 end EthCLSpecs.Proofs.Gloas

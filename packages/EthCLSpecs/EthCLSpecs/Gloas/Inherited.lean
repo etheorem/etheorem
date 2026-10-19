@@ -31,8 +31,24 @@ namespace EthCLSpecs.Gloas
 
 inherit Checkpoint
 inherit AttestationData
-inherit Attestation
-inherit IndexedAttestation
+
+/-- Gloas `Attestation` (EIP-7688). `aggregation_bits` is a `ProgressiveBitlist`.
+`committee_bits` stays a bitvector. -/
+@[sizzlean_progressive]
+forkcontainer Attestation where
+  aggregationBits : ProgressiveBitlist
+  data            : AttestationData
+  signature       : BLSSignature
+  committeeBits   : Bitvector Const.maxCommitteesPerSlot
+
+/-- Gloas `IndexedAttestation` (EIP-7688). `attesting_indices` is an uncapped
+progressive list; `is_valid_indexed_attestation` checks the old cap. -/
+@[sizzlean_progressive]
+forkcontainer IndexedAttestation where
+  attestingIndices : ProgressiveList ValidatorIndex
+  data             : AttestationData
+  signature        : BLSSignature
+
 inherit AttesterSlashing
 inherit BLSToExecutionChange
 inherit BeaconBlockHeader

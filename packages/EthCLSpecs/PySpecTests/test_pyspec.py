@@ -25,6 +25,14 @@ import pytest
 
 from harness import build_request, ensure_archive, walk_cases
 
+# Upstream vectors that contradict the spec text. Each id is an open row in
+# docs/DISCREPANCIES.md. A pass means the vector now matches the spec, so the
+# row and this set have to come out together.
+SPEC_TEXT_DIVERGENCES = {
+    "minimal/heze/fork/fork/pyspec_tests/fork_base_state",
+    "mainnet/heze/fork/fork/pyspec_tests/fork_base_state",
+}
+
 
 def test_value_error_scope(request):
     """The `except ValueError` set models one test function's own wrapper,
@@ -55,6 +63,15 @@ def test_value_error_scope(request):
 def test_case(case, server, tmp_path):
     request = build_request(case, tmp_path)
     result = server.submit(request)
+    if case.case_id in SPEC_TEXT_DIVERGENCES:
+        if result.passed:
+            pytest.fail(
+                f"{case.case_id} now matches the spec; remove it from "
+                "SPEC_TEXT_DIVERGENCES and DISCREPANCIES.md"
+            )
+        pytest.xfail(
+            "upstream vector contradicts the spec text; see DISCREPANCIES.md"
+        )
     if result.bucket == "bug":
         pytest.fail(f"{case.case_id}: bug-smell — {result.detail}")
     if not result.passed and result.bucket == "skip":

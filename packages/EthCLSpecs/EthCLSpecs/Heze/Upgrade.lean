@@ -4,12 +4,12 @@ import EthCLSpecs.Heze.Containers
 # `EthCLSpecs.Heze.Upgrade`: the Gloas → Heze fork upgrade (EIP-7805)
 
 `upgradeToHeze` reads a finished Gloas state and constructs the Heze one, the single
-sanctioned cross-fork reference. At alpha.11 it is a near-passthrough: every
-`BeaconState` field carries across and only the fork version bumps. Because Heze's
-containers are fresh namespace twins of Gloas's, each container field is copied through
-a field-by-field `cv*` converter, the mechanical price of the flat namespace. No builder
-onboarding and no PTC recompute: builders were onboarded and the PTC window built at the
-Gloas fork, and EIP-7805 adds no `BeaconState` field, so the upgrade is a pure copy.
+sanctioned cross-fork reference. The fork version bumps, and the bid gains an empty
+`inclusion_list_bits`. Because Heze's containers are fresh namespace twins of Gloas's,
+each container field is copied through a field-by-field `cv*` converter, the mechanical
+price of the flat namespace. No builder onboarding and no PTC recompute: builders were
+onboarded and the PTC window built at the Gloas fork, and EIP-7805 adds no `BeaconState`
+field.
 -/
 
 set_option autoImplicit false
@@ -65,18 +65,19 @@ private def cvBuilderPendingPayment [Preset] (v : Gloas.BuilderPendingPayment) :
 private def cvWithdrawal [Preset] (v : Gloas.Withdrawal) : Withdrawal :=
   { index := v.index, validatorIndex := v.validatorIndex, address := v.address, amount := v.amount }
 
-/-- Convert the Gloas bid to the Heze bid. At alpha.11 the bid is unchanged, so this is a
-plain 12-field copy. -/
+/-- Convert the Gloas bid to the Heze bid. Alpha.12 adds `inclusion_list_bits`,
+empty at the fork boundary. -/
 private def cvExecutionPayloadBid [Preset] (v : Gloas.ExecutionPayloadBid) : ExecutionPayloadBid :=
   { parentBlockHash := v.parentBlockHash, parentBlockRoot := v.parentBlockRoot,
     blockHash := v.blockHash, prevRandao := v.prevRandao, feeRecipient := v.feeRecipient,
     gasLimit := v.gasLimit, builderIndex := v.builderIndex, slot := v.slot, value := v.value,
-    executionPayment := v.executionPayment, blobKzgCommitments := v.blobKzgCommitments,
-    executionRequestsRoot := v.executionRequestsRoot }
+    executionPayment := v.executionPayment, blobKzgCommitments := ⟨v.blobKzgCommitments.val⟩,
+    executionRequestsRoot := v.executionRequestsRoot,
+    inclusionListBits := default }
 
 /-- The fork upgrade `upgrade_to_heze(pre)`: builds the Heze state from a finished Gloas
-one. At alpha.11 every field carries across; only the fork version changes
-(`previous := pre.fork.current`, `current := HEZE_FORK_VERSION`, `epoch := get_current_epoch(pre)`).
+one. The fork version changes (`previous := pre.fork.current`, `current := HEZE_FORK_VERSION`,
+`epoch := get_current_epoch(pre)`) and the bid gains an empty `inclusion_list_bits`.
 No builder onboarding or PTC recompute is needed: both already happened at the Gloas fork
 and live in the pre-state. `hezeForkVersion` is the config's `HEZE_FORK_VERSION`, passed by
 the runner. -/
@@ -97,7 +98,7 @@ def upgradeToHeze [Preset] (hezeForkVersion : Version) (pre : Gloas.BeaconState)
     eth1Data                      := cvEth1Data pre.eth1Data
     eth1DataVotes                 := pre.eth1DataVotes.mapCap cvEth1Data
     eth1DepositIndex              := pre.eth1DepositIndex
-    validators                    := pre.validators.mapCap cvValidator
+    validators                    := ⟨pre.validators.val.map cvValidator⟩
     balances                      := pre.balances
     randaoMixes                   := pre.randaoMixes
     slashings                     := pre.slashings
@@ -120,17 +121,17 @@ def upgradeToHeze [Preset] (hezeForkVersion : Version) (pre : Gloas.BeaconState)
     earliestExitEpoch             := pre.earliestExitEpoch
     consolidationBalanceToConsume := pre.consolidationBalanceToConsume
     earliestConsolidationEpoch    := pre.earliestConsolidationEpoch
-    pendingDeposits               := pre.pendingDeposits.mapCap cvPendingDeposit
-    pendingPartialWithdrawals     := pre.pendingPartialWithdrawals.mapCap cvPendingPartialWithdrawal
-    pendingConsolidations         := pre.pendingConsolidations.mapCap cvPendingConsolidation
+    pendingDeposits               := ⟨pre.pendingDeposits.val.map cvPendingDeposit⟩
+    pendingPartialWithdrawals     := ⟨pre.pendingPartialWithdrawals.val.map cvPendingPartialWithdrawal⟩
+    pendingConsolidations         := ⟨pre.pendingConsolidations.val.map cvPendingConsolidation⟩
     proposerLookahead             := pre.proposerLookahead
-    builders                      := pre.builders.mapCap cvBuilder
+    builders                      := ⟨pre.builders.val.map cvBuilder⟩
     nextWithdrawalBuilderIndex    := pre.nextWithdrawalBuilderIndex
     executionPayloadAvailability  := pre.executionPayloadAvailability
     builderPendingPayments        := pre.builderPendingPayments.map cvBuilderPendingPayment
-    builderPendingWithdrawals     := pre.builderPendingWithdrawals.mapCap cvBuilderPendingWithdrawal
+    builderPendingWithdrawals     := ⟨pre.builderPendingWithdrawals.val.map cvBuilderPendingWithdrawal⟩
     latestExecutionPayloadBid     := cvExecutionPayloadBid pre.latestExecutionPayloadBid
-    payloadExpectedWithdrawals    := pre.payloadExpectedWithdrawals.mapCap cvWithdrawal
+    payloadExpectedWithdrawals    := ⟨pre.payloadExpectedWithdrawals.val.map cvWithdrawal⟩
     ptcWindow                     := pre.ptcWindow }
 
 end EthCLSpecs.Heze

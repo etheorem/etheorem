@@ -9,7 +9,7 @@ import EthCLSpecs.Fulu.Committees
 finished Fulu state and constructs the Gloas one, so it lives in Gloas and names
 both forks. It is the `fork` vector format's entry point.
 
-Ported verbatim from the v1.7.0-alpha.11 `specs/gloas/fork.md`: common fields carry
+Ported from the v1.7.0-alpha.12 `specs/gloas/fork.md`: common fields carry
 across through the per-container `cv*` converters below, since a Gloas component
 container is this fork's own replayed copy and so a distinct type from Fulu's;
 the fork version bumps (`previous := pre.fork.current`,
@@ -123,17 +123,17 @@ def upgradeToGloas [Preset] [HasherTag] (gloasForkVersion : Version) (pre : Fulu
     eth1Data                      := cvEth1Data pre.eth1Data
     eth1DataVotes                 := pre.eth1DataVotes.mapCap cvEth1Data
     eth1DepositIndex              := pre.eth1DepositIndex
-    validators                    := pre.validators.mapCap cvValidator
-    balances                      := pre.balances
+    validators                    := ⟨pre.validators.val.map cvValidator⟩
+    balances                      := ⟨pre.balances.val⟩
     randaoMixes                   := pre.randaoMixes
     slashings                     := pre.slashings
-    previousEpochParticipation    := pre.previousEpochParticipation
-    currentEpochParticipation     := pre.currentEpochParticipation
+    previousEpochParticipation    := ⟨pre.previousEpochParticipation.val⟩
+    currentEpochParticipation     := ⟨pre.currentEpochParticipation.val⟩
     justificationBits             := pre.justificationBits
     previousJustifiedCheckpoint   := cvCheckpoint pre.previousJustifiedCheckpoint
     currentJustifiedCheckpoint    := cvCheckpoint pre.currentJustifiedCheckpoint
     finalizedCheckpoint           := cvCheckpoint pre.finalizedCheckpoint
-    inactivityScores              := pre.inactivityScores
+    inactivityScores              := ⟨pre.inactivityScores.val⟩
     currentSyncCommittee          := cvSyncCommittee pre.currentSyncCommittee
     nextSyncCommittee             := cvSyncCommittee pre.nextSyncCommittee
     latestExecutionPayloadBid     :=
@@ -150,9 +150,9 @@ def upgradeToGloas [Preset] [HasherTag] (gloasForkVersion : Version) (pre : Fulu
     earliestExitEpoch             := pre.earliestExitEpoch
     consolidationBalanceToConsume := pre.consolidationBalanceToConsume
     earliestConsolidationEpoch    := pre.earliestConsolidationEpoch
-    pendingDeposits               := pre.pendingDeposits.mapCap cvPendingDeposit
-    pendingPartialWithdrawals     := pre.pendingPartialWithdrawals.mapCap cvPendingPartialWithdrawal
-    pendingConsolidations         := pre.pendingConsolidations.mapCap cvPendingConsolidation
+    pendingDeposits               := ⟨pre.pendingDeposits.val.map cvPendingDeposit⟩
+    pendingPartialWithdrawals     := ⟨pre.pendingPartialWithdrawals.val.map cvPendingPartialWithdrawal⟩
+    pendingConsolidations         := ⟨pre.pendingConsolidations.val.map cvPendingConsolidation⟩
     proposerLookahead             := pre.proposerLookahead
     builders                      := default
     nextWithdrawalBuilderIndex    := 0

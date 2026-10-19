@@ -12,10 +12,10 @@ import EthCLSpecs.Heze.Signing
 /-!
 # `EthCLSpecs.Heze`: the Heze fork (EIP-7805 FOCIL), a thin diff over Gloas
 
-At alpha.11 Heze adds the `InclusionList`
-family (PR #5371 reverted the bid change) and the `upgradeToHeze` near-passthrough. EIP-7805
-changes no state transition, so the spine (the `process_slots` / `process_block` /
-`process_epoch` pipeline) is the Gloas one re-instantiated over Heze types.
+At alpha.12 Heze adds the `InclusionList` family and an `inclusion_list_bits` field on
+`ExecutionPayloadBid`. `upgradeToHeze` carries the Gloas state across and leaves that
+bitvector empty. EIP-7805 changes no state transition, so the spine (the `process_slots` /
+`process_block` / `process_epoch` pipeline) is the Gloas one re-instantiated over Heze types.
 `EpochProcessing` / `Operations` / `Withdrawals` / `Transition` carry that
 re-instantiation, pulled in via `Interface`, and the fork-interface drives every tested
 runner. The as-built divergence catalogue is `IMPLEMENTATION_NOTES.md`, "Heze diff".
@@ -35,5 +35,5 @@ The fork choice (`ForkChoice`) is Gloas's with the EIP-7805 inclusion-list layer
 behavioral conformance vector (the two new containers do pass their `ssz_static` suites), so that
 layer is pinned to the spec by the build-enforced pins in `EthCLSpecs.Tests.HezeForkChoicePins`,
 kernel `#guard`s plus `native_decide` examples, rather than exercised by a runner. Pinned to
-v1.7.0-alpha.11.
+v1.7.0-alpha.12.
 -/

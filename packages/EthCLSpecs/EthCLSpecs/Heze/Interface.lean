@@ -9,18 +9,18 @@ import EthCLSpecs.Heze.ForkChoice
 # `EthCLSpecs.Heze.Interface`: the Heze fork-interface instance
 
 Heze's implementation of `ForkInterface`, the entry points the pyspec runner drives
-(`SPEC_AUTHORING_MODEL.md` §11). At v1.7.0-alpha.11 EIP-7805 (FOCIL) adds no state transition
+(`SPEC_AUTHORING_MODEL.md` §11). At v1.7.0-alpha.12 EIP-7805 (FOCIL) adds no state transition
 and no vector-tested fork-choice change. Its fork-choice overrides do run on the existing
 fork_choice vectors, but only on the path where the inclusion-list store stays empty, which
 behaves exactly like Gloas; the FOCIL-specific behavior ships no vector. So every dynamic
 runner reuses the Gloas spine re-instantiated over Heze types (`Heze.EpochProcessing` /
 `Operations` / `Withdrawals` / `Transition` / `ForkChoice`).
 
-The Heze-specific entries: `runUpgrade` is the Gloas→Heze `fork` format (a pure field copy,
-see `upgradeToHeze`); `runTransition` is the Gloas→Heze boundary; `runForkChoice` runs the
+The Heze-specific entries: `runUpgrade` is the Gloas→Heze `fork` format (see
+`upgradeToHeze`); `runTransition` is the Gloas→Heze boundary; `runForkChoice` runs the
 Heze ePBS store. `runGenesis` and any `ssz_static` type Heze does not model report
 `outOfScope`, a deliberate skip rather than xfail work, matching Fulu / Gloas. Pinned to
-v1.7.0-alpha.11.
+v1.7.0-alpha.12.
 -/
 
 set_option autoImplicit false
@@ -42,7 +42,7 @@ namespace EthCLSpecs.Heze.Interface
 open scoped EthCLSpecs.Heze.Downgrade
 
 /-- Pinned upstream release; Heze tracks the same tag as Fulu / Gloas. -/
-def pyspecPinnedVersion : String := "v1.7.0-alpha.11"
+def pyspecPinnedVersion : String := "v1.7.0-alpha.12"
 
 /-- `stateRoot`: decode a Heze `BeaconState` at preset `P` and take its root. -/
 private def stateRootImpl (P : Preset) (bytes : ByteArray) :
@@ -54,8 +54,8 @@ private def stateRootImpl (P : Preset) (bytes : ByteArray) :
   | .error _ => .error (.decode "BeaconState")
 
 /-- `runUpgrade` (the `fork` format, Gloas→Heze): decode the Gloas pre-state at preset `P`,
-apply `upgradeToHeze` with the config's `HEZE_FORK_VERSION`, return the Heze post root. A
-pure field copy; `upgradeToHeze`'s docstring carries the why. -/
+apply `upgradeToHeze` with the config's `HEZE_FORK_VERSION`, return the Heze post root.
+`upgradeToHeze`'s docstring carries the why. -/
 private def runUpgradeImpl (P : Preset) (forkVersion : Version) (preBytes : ByteArray) :
     Except (RunError StateTransitionError) ByteArray :=
   letI : Preset := P
@@ -196,7 +196,7 @@ private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
 
 /-- `runTransition` (the `transition` format, Gloas→Heze): fold the pre-fork blocks under
 Gloas `state_transition`, advance the Gloas state to the fork-epoch boundary, apply
-`upgradeToHeze` (a pure copy, see its docstring), then fold the post-fork blocks under the
+`upgradeToHeze` (see its docstring), then fold the post-fork blocks under the
 Heze spine. Unqualified spine names resolve to the Heze copies; the pre-fork Gloas calls are
 qualified. -/
 private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)

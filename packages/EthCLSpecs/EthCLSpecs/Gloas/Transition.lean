@@ -86,6 +86,13 @@ loops (those run in `process_parent_execution_payload`), and the new
 `payload_attestations` loop. -/
 forkdef processOperations (body : BeaconBlockBody) : StateTransition Unit := do
   assert (body.deposits.size == 0)
+  -- EIP-7688: the operation lists are progressive, so the old SSZ caps are asserts.
+  assert (body.proposerSlashings.size ≤ Const.maxProposerSlashings)
+  assert (body.attesterSlashings.size ≤ Const.maxAttesterSlashingsElectra)
+  assert (body.attestations.size ≤ Const.maxAttestationsElectra)
+  assert (body.voluntaryExits.size ≤ Const.maxVoluntaryExits)
+  assert (body.blsToExecutionChanges.size ≤ Const.maxBlsToExecutionChanges)
+  assert (body.payloadAttestations.size ≤ Const.maxPayloadAttestations)
   for op in body.proposerSlashings do processProposerSlashing op
   for op in body.attesterSlashings do processAttesterSlashing op
   for op in body.attestations do processAttestation op

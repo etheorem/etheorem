@@ -13,7 +13,9 @@ open EthCLLib.Spec
 
 namespace EthCLSpecs.Gloas
 
-/-- The proposer's commitment to a builder's future execution payload. -/
+/-- The proposer's commitment to a builder's future execution payload
+(EIP-7688 progressive container). -/
+@[sizzlean_progressive]
 forkcontainer ExecutionPayloadBid where
   parentBlockHash       : Hash32
   parentBlockRoot       : Root
@@ -25,7 +27,7 @@ forkcontainer ExecutionPayloadBid where
   slot                  : Slot
   value                 : Gwei
   executionPayment      : Gwei
-  blobKzgCommitments    : SSZList KZGCommitment Const.maxBlobCommitmentsPerBlock
+  blobKzgCommitments    : ProgressiveList KZGCommitment
   executionRequestsRoot : Root
 
 /-- A signed execution-payload bid. -/

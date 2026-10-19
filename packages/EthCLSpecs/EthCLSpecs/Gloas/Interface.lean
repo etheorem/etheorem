@@ -37,7 +37,7 @@ open scoped EthCLSpecs.Gloas.Downgrade
 
 /-- Pinned upstream release; Gloas tracks the same tag as Fulu while it is
 pre-release. -/
-def pyspecPinnedVersion : String := "v1.7.0-alpha.11"
+def pyspecPinnedVersion : String := "v1.7.0-alpha.12"
 
 /-- `stateRoot`: decode a Gloas `BeaconState` at preset `P` and take its root. -/
 private def stateRootImpl (P : Preset) (bytes : ByteArray) :

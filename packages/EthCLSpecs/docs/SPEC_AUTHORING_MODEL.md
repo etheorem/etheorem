@@ -689,7 +689,7 @@ implementation passes the full pyspec suite. It is recorded as a constant in
 the fork:
 
 ```lean
-def pyspecPinnedVersion : String := "v1.7.0-alpha.11"
+def pyspecPinnedVersion : String := "v1.7.0-alpha.12"
 ```
 
 The name is lowerCamelCase, per the Lean convention; the value is the release

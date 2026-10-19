@@ -40,7 +40,7 @@ Vector coverage is partial, and the split matters. The `on_execution_payload_env
 fork_choice vectors do drive `onExecutionPayloadEnvelope` and `shouldExtendPayload`, but only
 on the empty-inclusion-list, always-satisfied path they share with Gloas. The FOCIL-specific
 behavior (the discriminating satisfaction gate and `on_inclusion_list`) has no vector; the
-pinned spec text (`consensus-specs` at tag `v1.7.0-alpha.11`) is its oracle
+pinned spec text (`consensus-specs` at tag `v1.7.0-alpha.12`) is its oracle
 (`IMPLEMENTATION_NOTES.md`, "Heze diff", is the catalogue). Each override mirrors its Python
 branch-for-branch, and the build-enforced pins fix the inclusion-list logic's expected
 outcomes at build time: kernel `#guard`s where the outcome is hash-free, `native_decide`

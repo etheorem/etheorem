@@ -129,16 +129,6 @@
   "flat",
   "gloas/beacon-chain.md"
  ],
- "BUILDER_PENDING_WITHDRAWALS_LIMIT": [
-  "gloas",
-  "Preset",
-  "gloas/beacon-chain.md"
- ],
- "BUILDER_REGISTRY_LIMIT": [
-  "gloas",
-  "Preset",
-  "gloas/beacon-chain.md"
- ],
  "BUILDER_WITHDRAWAL_PREFIX": [
   "gloas",
   "flat",
@@ -579,6 +569,11 @@
   "Preset",
   "electra/beacon-chain.md"
  ],
+ "MAX_ATTESTER_SLASHING_SIZE": [
+  "gloas",
+  "Preset",
+  "presets/gloas.yaml"
+ ],
  "MAX_BLOBS_PER_BLOCK": [
   "deneb",
   "Config",
@@ -634,6 +629,11 @@
   "Preset",
   "electra/beacon-chain.md"
  ],
+ "MAX_DATA_COLUMN_SIDECAR_SIZE": [
+  "gloas",
+  "Preset",
+  "presets/gloas.yaml"
+ ],
  "MAX_DEPOSITS": [
   "phase0",
   "Preset",
@@ -658,6 +658,11 @@
   "bellatrix",
   "Preset",
   "bellatrix/beacon-chain.md"
+ ],
+ "MAX_PARTIAL_DATA_COLUMN_SIDECAR_SIZE": [
+  "gloas",
+  "Preset",
+  "presets/gloas.yaml"
  ],
  "MAX_PAYLOAD_ATTESTATIONS": [
   "gloas",
@@ -723,6 +728,26 @@
   "phase0",
   "Preset",
   "phase0/beacon-chain.md"
+ ],
+ "MAX_SIGNED_AGGREGATE_AND_PROOF_SIZE": [
+  "gloas",
+  "Preset",
+  "presets/gloas.yaml"
+ ],
+ "MAX_SIGNED_EXECUTION_PAYLOAD_BID_SIZE": [
+  "gloas",
+  "Preset",
+  "presets/gloas.yaml"
+ ],
+ "MAX_SIGNED_EXECUTION_PAYLOAD_BID_SIZE_HEZE": [
+  "heze",
+  "Preset",
+  "presets/heze.yaml"
+ ],
+ "MAX_SIGNED_INCLUSION_LIST_SIZE": [
+  "heze",
+  "Preset",
+  "presets/heze.yaml"
  ],
  "MAX_TRANSACTIONS_PER_PAYLOAD": [
   "bellatrix",

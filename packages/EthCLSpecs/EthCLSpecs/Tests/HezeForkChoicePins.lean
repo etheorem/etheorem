@@ -291,14 +291,15 @@ private def pinAltRoot : Root := Vector.replicate 32 2
 
 /-- A transaction holding the single byte `b` (enough to make two transactions compare
 unequal for the dedup pins). -/
-private def pinTx (b : UInt8) : Transaction := sszOfArray #[b]
+private def pinTx (b : UInt8) : Transaction := ⟨#[b]⟩
 
 /-- An inclusion list from validator `v` over committee `pinKey`, carrying `txs`. The `letI`
 fixes the preset so the anonymous constructor can synthesize it (a return-type annotation alone
 does not flow into instance resolution for `{ … }`). -/
 private def pinIL (v : ValidatorIndex) (txs : Array Transaction) : @InclusionList minimal :=
   letI : Preset := minimal
-  { slot := 0, validatorIndex := v, inclusionListCommitteeRoot := pinKey, transactions := sszOfArray txs }
+  { slot := 0, validatorIndex := v, inclusionListCommitteeRoot := pinKey,
+    transactions := sszOfArray txs }
 
 /-- Number of inclusion lists stored under `pinKey`. The `letI`s supply the store's preset /
 hasher for the field projection (Lean re-synthesizes them rather than reading the argument's

@@ -167,12 +167,123 @@ the disambiguator that picks the bit-packed wire layout. -/
 /-- SSZ `Bitlist[cap]`: variable-length bit vector capped at `cap`. -/
 abbrev Bitlist (cap : Nat) : Type := { bs : Array Bool // bs.size ≤ cap }
 
-/-- `ProgressiveList α`: an uncapped array of `α`. The wire format is
-`ProgressiveList`, so the Merkle root uses `merkleize_progressive`. -/
-abbrev ProgressiveList (α : Type) := Array α
+/-- `ProgressiveList α`: an uncapped list of `α`. The wire format is
+`ProgressiveList`, so the Merkle root uses `merkleize_progressive`.
+The value is a one-field wrapper over `Array` so `[i]!` returns
+`default` past the end and `set!` is a no-op there, the same total
+indexing `SSZList` gives a capped list. -/
+structure ProgressiveList (α : Type) where
+  val : Array α
+  deriving Inhabited
 
-/-- `ProgressiveBitlist`: an uncapped bit array. -/
-abbrev ProgressiveBitlist := Array Bool
+/-- `ProgressiveBitlist`: an uncapped bit list. Indexing matches
+`Bitlist`: `[i]!` is `false` past the end, and `set!` does not grow
+the list. -/
+structure ProgressiveBitlist where
+  val : Array Bool
+  deriving Inhabited
+
+/-- Runtime length of a `ProgressiveList`. -/
+abbrev ProgressiveList.size {α : Type} (xs : ProgressiveList α) : Nat := xs.val.size
+
+/-- The elements as an `Array`. -/
+abbrev ProgressiveList.toArray {α : Type} (xs : ProgressiveList α) : Array α := xs.val
+
+/-- The elements as a `List`. -/
+abbrev ProgressiveList.toList {α : Type} (xs : ProgressiveList α) : List α := xs.val.toList
+
+/-- Wrap an `Array` as a `ProgressiveList` without clamping. A `def`, so
+dot-notation can see it; an `abbrev` in this namespace is invisible to it. -/
+def ProgressiveList.ofArray {α : Type} (xs : Array α) : ProgressiveList α := ⟨xs⟩
+
+/-- Replace the `i`-th element. Out of range the list is returned unchanged. -/
+def ProgressiveList.set! {α : Type} (xs : ProgressiveList α) (i : Nat) (v : α) :
+    ProgressiveList α :=
+  ⟨xs.val.setIfInBounds i v⟩
+
+/-- Append `x`. A progressive list has no capacity, so this always grows. -/
+def ProgressiveList.push {α : Type} (xs : ProgressiveList α) (x : α) : ProgressiveList α :=
+  ⟨xs.val.push x⟩
+
+/-- Drop the first `k` elements. -/
+def ProgressiveList.drop {α : Type} (xs : ProgressiveList α) (k : Nat) : ProgressiveList α :=
+  ⟨xs.val.extract k xs.val.size⟩
+
+/-- Left fold over the elements. -/
+abbrev ProgressiveList.foldl {α β : Type} (f : β → α → β) (init : β) (xs : ProgressiveList α) : β :=
+  xs.val.foldl f init
+
+/-- Map the elements, keeping the progressive-list wrapper. -/
+def ProgressiveList.map {α β : Type} (f : α → β) (xs : ProgressiveList α) : ProgressiveList β :=
+  ⟨xs.val.map f⟩
+
+/-- Whether any element satisfies `p`. -/
+abbrev ProgressiveList.any {α : Type} (xs : ProgressiveList α) (p : α → Bool) : Bool := xs.val.any p
+
+/-- Whether every element satisfies `p`. -/
+abbrev ProgressiveList.all {α : Type} (xs : ProgressiveList α) (p : α → Bool) : Bool := xs.val.all p
+
+/-- First index whose element satisfies `p`. -/
+abbrev ProgressiveList.findIdx? {α : Type} (xs : ProgressiveList α) (p : α → Bool) : Option Nat :=
+  xs.val.findIdx? p
+
+/-- Membership test. -/
+abbrev ProgressiveList.contains {α : Type} [BEq α] (xs : ProgressiveList α) (a : α) : Bool :=
+  xs.val.contains a
+
+/-- `GetElem` for `ProgressiveList`. `xs[i]!` is `default` past the end. -/
+instance {α : Type} [Inhabited α] : GetElem (ProgressiveList α) Nat α (fun xs i => i < xs.size) where
+  getElem xs i h := xs.val[i]'h
+
+@[reducible] instance {m : Type → Type} [Monad m] {α : Type} : ForIn m (ProgressiveList α) α where
+  forIn xs b f := ForIn.forIn xs.val b f
+
+instance {α : Type} [BEq α] : BEq (ProgressiveList α) where
+  beq a b := a.val == b.val
+
+instance {α : Type} [DecidableEq α] : DecidableEq (ProgressiveList α) := fun a b =>
+  match decEq a.val b.val with
+  | isTrue h => isTrue (by cases a; cases b; simpa using h)
+  | isFalse h => isFalse (by
+      intro eq
+      cases a; cases b
+      exact h (congrArg ProgressiveList.val eq))
+
+instance {α : Type} [Ord α] : Ord (ProgressiveList α) where
+  compare a b := compare a.val b.val
+
+instance {α : Type} [Hashable α] : Hashable (ProgressiveList α) where
+  hash a := hash a.val
+
+/-- Runtime length of a `ProgressiveBitlist`. -/
+abbrev ProgressiveBitlist.size (bs : ProgressiveBitlist) : Nat := bs.val.size
+
+/-- The bits as an `Array Bool`. -/
+abbrev ProgressiveBitlist.toArray (bs : ProgressiveBitlist) : Array Bool := bs.val
+
+/-- Replace bit `i`. Out of range the bitlist is returned unchanged. -/
+def ProgressiveBitlist.set! (bs : ProgressiveBitlist) (i : Nat) (v : Bool) : ProgressiveBitlist :=
+  ⟨bs.val.setIfInBounds i v⟩
+
+instance : GetElem ProgressiveBitlist Nat Bool (fun bs i => i < bs.size) where
+  getElem bs i h := bs.val[i]'h
+
+instance : BEq ProgressiveBitlist where
+  beq a b := a.val == b.val
+
+instance : DecidableEq ProgressiveBitlist := fun a b =>
+  match decEq a.val b.val with
+  | isTrue h => isTrue (by cases a; cases b; simpa using h)
+  | isFalse h => isFalse (by
+      intro eq
+      cases a; cases b
+      exact h (congrArg ProgressiveBitlist.val eq))
+
+instance : Ord ProgressiveBitlist where
+  compare a b := compare a.val b.val
+
+instance : Hashable ProgressiveBitlist where
+  hash a := hash a.val
 
 /-- SSZ `List[α, cap]`: variable-length list of `α` capped at `cap`. -/
 abbrev SSZList (α : Type) (cap : Nat) : Type := { xs : Array α // xs.size ≤ cap }
@@ -354,31 +465,30 @@ instance instSSZReprSSZList {α : Type} {cap : Nat} [r : SSZRepr α] :
     have h : r.toRepr ∘ r.fromRepr = id := funext r.from_to
     rw [h, Array.map_id]
 
-/-- `SSZRepr (ProgressiveList α)`. The iso is `Array.map` through the
-element instance. `interp (.progressiveList s)` is `Array s.interp`. -/
+/-- `SSZRepr (ProgressiveList α)`. `interp (.progressiveList s)` is
+`Array s.interp`; the wrapper's `val` is that array. -/
 instance instSSZReprProgressiveList {α : Type} [r : SSZRepr α] :
     SSZRepr (ProgressiveList α) where
   shape    := .progressiveList r.shape
-  toRepr   := fun xs => xs.map r.toRepr
-  fromRepr := fun xs => xs.map r.fromRepr
+  toRepr   := fun xs => xs.val.map r.toRepr
+  fromRepr := fun xs => ⟨xs.map r.fromRepr⟩
   to_from  := fun xs => by
-    show (xs.map r.toRepr).map r.fromRepr = xs
-    rw [Array.map_map]
-    have h : r.fromRepr ∘ r.toRepr = id := funext r.to_from
-    rw [h, Array.map_id]
+    obtain ⟨val⟩ := xs
+    show (ProgressiveList.mk ((val.map r.toRepr).map r.fromRepr)) = ProgressiveList.mk val
+    simp only [Array.map_map]
+    rw [show r.fromRepr ∘ r.toRepr = id from funext r.to_from, Array.map_id]
   from_to  := fun xs => by
-    show (xs.map r.fromRepr).map r.toRepr = xs
-    rw [Array.map_map]
-    have h : r.toRepr ∘ r.fromRepr = id := funext r.from_to
-    rw [h, Array.map_id]
+    show ((⟨xs.map r.fromRepr⟩ : ProgressiveList α).val).map r.toRepr = xs
+    simp only [Array.map_map]
+    rw [show r.toRepr ∘ r.fromRepr = id from funext r.from_to, Array.map_id]
 
 /-- `SSZRepr ProgressiveBitlist`. `interp .progressiveBitlist` is
-`Array Bool`, so the iso is the identity. -/
+`Array Bool`. -/
 instance instSSZReprProgressiveBitlist : SSZRepr ProgressiveBitlist where
   shape    := .progressiveBitlist
-  toRepr   := id
-  fromRepr := id
-  to_from  := fun _ => rfl
+  toRepr   := fun bs => bs.val
+  fromRepr := fun bs => ⟨bs⟩
+  to_from  := fun bs => by cases bs; rfl
   from_to  := fun _ => rfl
 
 /-- A fixed-length byte vector coerces to its underlying `ByteArray`. The conversion is

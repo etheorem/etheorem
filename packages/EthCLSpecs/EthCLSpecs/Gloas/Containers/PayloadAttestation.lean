@@ -21,13 +21,17 @@ forkcontainer PayloadAttestationData where
   payloadPresent    : Bool
   blobDataAvailable : Bool
 
-/-- A PTC payload attestation (aggregated over the PTC). -/
+/-- A PTC payload attestation (aggregated over the PTC). Progressive container;
+`aggregationBits` stays a `Bitvector` of `PTC_SIZE`. -/
+@[sizzlean_progressive]
 forkcontainer PayloadAttestation where
   aggregationBits : Bitvector Const.ptcSize
   data            : PayloadAttestationData
   signature       : BLSSignature
 
-/-- The resolved attesting set of a payload attestation. -/
+/-- The resolved attesting set of a payload attestation. Progressive container.
+`attestingIndices` stays `List[ValidatorIndex, PTC_SIZE]`. -/
+@[sizzlean_progressive]
 forkcontainer IndexedPayloadAttestation where
   attestingIndices : SSZList ValidatorIndex Const.ptcSize
   data             : PayloadAttestationData

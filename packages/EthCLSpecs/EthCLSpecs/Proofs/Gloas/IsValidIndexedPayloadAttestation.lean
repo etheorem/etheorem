@@ -1,13 +1,12 @@
 import EthCLSpecs.Gloas.Operations
 import EthCLLib.Proofs.Run
-import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.UncachedBox
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: a two-layer characterization
 
 An exact backend-generic characterization of
-`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:423-434`).
+`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:440-451`).
 
 **Layer 1** (`isValidIndexedPayloadAttestation_eq_true_iff_checks`) restates the
 function's `if` / `||` / `!` control flow as a plain conjunction, one conjunct per
@@ -45,14 +44,23 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (CryptoBackend HasherTag blsFastAggregateVerify computeSigningRoot)
+open EthCLLib.Spec (CryptoBackend HasherTag blsFastAggregateVerify computeSigningRoot ProgressiveList)
 open scoped EthCLLib.Spec
 open EthCLSpecs.Gloas (Preset ValidatorIndex BeaconState)
 open EthCLSpecs.Gloas.Const (domainPtcAttester)
 open EthCLSpecs.Gloas
   (IndexedPayloadAttestation isValidIndexedPayloadAttestation getDomain computeEpochAtSlot)
 open EthCLLib.Proofs (pureState)
-open SizzLean.Proofs (sszListMap_getElem!_eq_attachMap)
+private theorem progressiveListMap_getElem!_eq_attachMap {α β ι : Type} [Inhabited α]
+    (xs : ProgressiveList α) (is : Array ι) (idx : ι → Nat) (f : α → β)
+    (hRange : ∀ i ∈ is, idx i < xs.size) :
+    is.map (fun i => f xs[idx i]!)
+      = is.attach.map (fun i => f (xs[idx i.1]'(hRange i.1 i.2))) := by
+  apply Array.ext
+  · simp
+  · intro i _ _
+    simp only [Array.getElem_map, Array.getElem_attach]
+    rw [getElem!_pos]
 
 /-! ## Layer 1: the literal characterization -/
 
@@ -134,8 +142,8 @@ theorem isValidIndexedPayloadAttestation_eq_true_iff [Preset] [HasherTag] [Crypt
   refine and_congr_right (fun _ => and_congr_right (fun _ => ?_))
   constructor
   · rintro ⟨hRange, hVerify⟩
-    exact ⟨hRange, by rwa [sszListMap_getElem!_eq_attachMap _ _ _ _ hRange] at hVerify⟩
+    exact ⟨hRange, by rwa [progressiveListMap_getElem!_eq_attachMap _ _ _ _ hRange] at hVerify⟩
   · rintro ⟨hRange, hVerify⟩
-    exact ⟨hRange, by rwa [sszListMap_getElem!_eq_attachMap _ _ _ _ hRange]⟩
+    exact ⟨hRange, by rwa [progressiveListMap_getElem!_eq_attachMap _ _ _ _ hRange]⟩
 
 end EthCLSpecs.Proofs.Gloas

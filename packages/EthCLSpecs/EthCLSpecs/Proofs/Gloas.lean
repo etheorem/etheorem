@@ -32,7 +32,7 @@ Re-exports:
 * `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: `processBuilderPendingPayments`'s
   withdrawal-queuing and payment-window-shift postcondition
   (`processBuilderPendingPayments_run`, plus
-  `processBuilderPendingPayments_run_of_fits`).
+  `processBuilderPendingPayments_run_appended`).
 * `EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid`: the exact `Bool`-vs-`UInt64`-inequality
   characterization of `canBuilderCoverBid`.
 * `EthCLSpecs.Proofs.Gloas.GetPtc`: `getPtc`'s else-branch `ptcWindow` offset bound,

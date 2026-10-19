@@ -30,13 +30,16 @@ forkcontainer BuilderExitRequest where
   sourceAddress : ExecutionAddress
   pubkey        : BLSPubkey
 
-/-- The execution requests bundled with a payload (Gloas / EIP-8282): the Electra
-three plus the two builder-request lists. -/
+/-- The execution requests bundled with a payload (Gloas / EIP-8282 / EIP-7688):
+the Electra three plus the two builder-request lists, as a progressive
+container of progressive lists. The per-payload caps are processing asserts,
+not SSZ limits. -/
+@[sizzlean_progressive]
 forkcontainer ExecutionRequests where
-  deposits        : SSZList DepositRequest Const.maxDepositRequestsPerPayload
-  withdrawals     : SSZList WithdrawalRequest Const.maxWithdrawalRequestsPerPayload
-  consolidations  : SSZList ConsolidationRequest Const.maxConsolidationRequestsPerPayload
-  builderDeposits : SSZList BuilderDepositRequest Const.maxBuilderDepositRequestsPerPayload
-  builderExits    : SSZList BuilderExitRequest Const.maxBuilderExitRequestsPerPayload
+  deposits        : ProgressiveList DepositRequest
+  withdrawals     : ProgressiveList WithdrawalRequest
+  consolidations  : ProgressiveList ConsolidationRequest
+  builderDeposits : ProgressiveList BuilderDepositRequest
+  builderExits    : ProgressiveList BuilderExitRequest
 
 end EthCLSpecs.Gloas
