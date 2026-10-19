@@ -1,5 +1,6 @@
 import EthCLSpecs.Gloas.Operations
 import EthCLLib.Proofs.Run
+import EthCLLib.Internal.ManualTerms
 import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.UncachedBox
 
@@ -72,6 +73,36 @@ theorem isValidIndexedPayloadAttestation_eq_true_iff_checks [Preset] [HasherTag]
           (getDomain (pureState state) domainPtcAttester (computeEpochAtSlot a.data.slot)))
         a.signature = true := by
   simp [isValidIndexedPayloadAttestation, and_assoc]
+
+-- The generator's witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), written under it: 64
+-- registered validators put indices `5` and `9` in range, two in-range
+-- increasing indices make the true-side conjunction hold, and the zero
+-- signature is the one the verify-off backend accepts. The false-side
+-- disjuncts need container inputs the terms do not provide, and the
+-- random searcher draws them.
+open EthCLLib.Internal in
+theorem_vectors_manual isValidIndexedPayloadAttestation_eq_true_iff_checks
+  let v : EthCLSpecs.Gloas.Validator :=
+    { pubkey := Vector.replicate 48 0
+      withdrawalCredentials := Vector.replicate 32 0
+      effectiveBalance := 32000000000
+      slashed := false
+      activationEligibilityEpoch := 0
+      activationEpoch := 0
+      exitEpoch := EthCLSpecs.Gloas.Const.farFutureEpoch
+      withdrawableEpoch := EthCLSpecs.Gloas.Const.farFutureEpoch }
+  state :=
+    let vs : SizzLean.Repr.SSZList EthCLSpecs.Gloas.Validator
+        EthCLSpecs.Gloas.Const.validatorRegistryLimit :=
+      (Array.range 64).foldl (fun xs _ => xs.push v) default
+    { (default : BeaconState) with validators := vs }
+  a :=
+    let idx : SizzLean.Repr.SSZList EthCLSpecs.Gloas.ValidatorIndex
+        EthCLSpecs.Gloas.Const.ptcSize :=
+      ((default : SizzLean.Repr.SSZList EthCLSpecs.Gloas.ValidatorIndex
+          EthCLSpecs.Gloas.Const.ptcSize).push 5).push 9
+    { attestingIndices := idx, data := default, signature := default }
 
 /-! ## Layer 2: private core-only bridge lemmas, then the public semantic theorem -/
 

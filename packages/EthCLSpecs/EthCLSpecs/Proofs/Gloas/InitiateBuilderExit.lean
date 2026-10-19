@@ -1,6 +1,7 @@
 import EthCLSpecs.Gloas.Operations
 import EthCLSpecs.Proofs.Gloas.Run
 import EthCLLib.Proofs.Run
+import EthCLLib.Internal.ManualTerms
 import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.UncachedBox
@@ -85,6 +86,25 @@ theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
   rw [sszList_getElem?_eq_getElem! preState.builders builderIndex.toNat hidx]
   simp [EthCLLib.Spec.liftErr, Except.mapError, MonadExcept.ofExcept]
   rfl
+
+-- The generator's witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), written under it. The
+-- hypothesis reads the builder index through `UInt64.toNat`, which the
+-- coupled walk and the solver's `UInt64` fragment do not bridge, so no
+-- searcher can fix the index against a built registry. The old witness
+-- came from `Builders.Gloas.withQueue`, which a proof file must not
+-- import, so the state is written by hand: a one-builder registry meets
+-- the hypothesis at index `0`. The theorem holds at every state meeting
+-- the hypothesis, so the vector stays valid, and the record's input
+-- bytes change by design.
+open EthCLLib.Internal in
+theorem_vectors_manual initiateBuilderExit_run_eq
+  let bs : SizzLean.Repr.SSZList EthCLSpecs.Gloas.Builder
+      EthCLSpecs.Gloas.Const.builderRegistryLimit :=
+    (default : SizzLean.Repr.SSZList EthCLSpecs.Gloas.Builder
+      EthCLSpecs.Gloas.Const.builderRegistryLimit).push default
+  preState := { (default : BeaconState) with builders := bs }
+  builderIndex := 0
 
 /-- **In range.** Under the contract's own bound, running
 `initiateBuilderExit builderIndex` never rejects, and the written builder reads back with
