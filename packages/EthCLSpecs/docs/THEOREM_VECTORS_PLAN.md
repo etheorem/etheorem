@@ -664,6 +664,16 @@ closed or dropped it with its reason.
 
 ## Stage 10: client conformance
 
+*Superseded in part: this stage read the target's pyspec spelling off
+its docstring and named the wire key `specName`. The closing entry of
+`IMPLEMENTATION_NOTES.md`, "Theorem vectors, the pyspec-name rename",
+records the change. The spelling comes from the fork binding's
+`pyspecNames` table (`THEOREM_VECTORS_ARCHITECTURE.md` §6, §7.2),
+validated once at the `theorem_vectors_fork` header. The wire key is
+`pyspecName` in the records and the client-results file. The table
+names the `inherit` replays, which the docstring scheme answered `none`
+for. The stage text below stands as the record of what ran.*
+
 **Goal.** The function-format vectors run against a real consensus
 client. The first client is Prysm; another is acceptable if Prysm
 cannot take the fork set at its pin (decision point D). The issues the
