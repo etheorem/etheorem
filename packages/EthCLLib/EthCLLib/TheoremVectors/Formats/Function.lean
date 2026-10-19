@@ -45,7 +45,10 @@ open Lean
 
 namespace EthCLLib.TheoremVectors
 
-/-- A record literal as one YAML leaf (`THEOREM_VECTORS_ARCHITECTURE.md` §13.3). -/
+/-- A record literal as one YAML leaf (`THEOREM_VECTORS_ARCHITECTURE.md` §13.3).
+The string is all the format sees: the record payload carries only the
+literal. A digit string reads as an int, so a scalar spelled `007`
+renders as `7`. -/
 def literalYaml (lit : String) : Yaml :=
   if lit == "true" then .bool true
   else if lit == "false" then .bool false

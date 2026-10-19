@@ -170,8 +170,9 @@ private def drawN {α : Type} (elem : Plausible.Gen α) :
     return ⟨xs.push x, by simp [h, Array.size_push]⟩
 
 /-- The drawn array bounded by `cap` (§9.5): the length sits at the `Gen`
-size parameter, capped by the SSZ limit. The limit itself is reachable, so
-a hypothesis at a full container (`xs.size = cap`) has a satisfying draw. -/
+size parameter, capped by the SSZ limit. The limit is reachable only when
+`theorem_vectors.randomSize` is at least `cap`; at the default of 8, no
+committed container's cap is met. -/
 private def drawBounded {α : Type} (elem : Plausible.Gen α) (cap : Nat) :
     Plausible.Gen { xs : Array α // xs.size ≤ cap } := do
   if hcap : cap = 0 then

@@ -26,7 +26,8 @@ Three forms of the solve live here, one entry point:
   hypotheses go to the solver as they are.
 - **The manual handoff.** A line whose manual terms fix the container
   inputs leaves scalar inputs, and the prepared hypotheses still name the
-  manual values (`coverBidState.builders[builderIndex]!.balance`). The
+  manual values (`maxBalanceState.balances[i.toNat]!` in
+  `increaseBalance_run_overflow`). The
   searcher fixes each *coupled* scalar, one that co-occurs with a manual
   input, over a bounded value grid. At each fixed point the manual reads
   become closed terms of scalar type, the searcher evaluates them in
@@ -246,7 +247,8 @@ private def groundsScalar (env : Environment) (e : Expr) : Bool :=
 
 /-- Replace every maximal closed subterm of `e` with its compiled value
 (§9.4's read substitution). Manual reads
-(`coverBidState.builders[0]!.balance`), preset constants
+(`oneBalanceState.balances[0]!` from `decreaseBalance_run_no_underflow`),
+preset constants
 (`UInt64.ofNat slotsPerEpoch`, whose opaque form the solver would abstract
 into a spurious model), and crypto gates under the verify-off backend all
 ground to literals this way; the residual formula stays a bit-vector

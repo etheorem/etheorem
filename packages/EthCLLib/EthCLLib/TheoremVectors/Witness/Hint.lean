@@ -196,7 +196,9 @@ structure HintFile where
   field carries French quotes and the derived JSON writes the wire
   spelling §9.8 fixes. -/
   «theorem»   : Name
-  /-- The fingerprint of the statement and the input type names (§9.8). -/
+  /-- The fingerprint of the statement and the input type names (§9.8).
+  The field decides nothing: each entry carries the operative
+  fingerprint, and `mergeWrite` sets the file's to the last run's. -/
   fingerprint : String
   /-- One entry per preset, disjunct, and side. -/
   entries     : Array HintEntry
