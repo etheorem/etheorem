@@ -30,7 +30,8 @@ Three readings deviate from the sketches and carry their reasons:
 - The pyspec name comes from the fork binding's `pyspecNames` table (§6).
   §7.2's sketch names no spec-name field, and the spelling a client
   consumes is data the fork owns, so the binding carries one row per
-  function it owns and the reader looks the discovered target up in the
+  function the fork declares with a pyspec spelling; the inherited
+  replays carry none. The reader looks the discovered target up in the
   table. A target with no row answers `none`. A target declaration's
   docstring may still open with the backticked snake-case span, as
   documentation for humans; nothing reads it.
@@ -534,7 +535,8 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
       | none => pure none
       | some lhs => findTargetIn env binding lhs
     -- the pyspec name, from the binding's table (§6): one row per
-    -- function the fork owns, and a target with no row answers `none`
+    -- function the fork declares with a pyspec spelling, and a target
+    -- with no row answers `none`
     let pyspecName := target.bind fun c =>
       binding.pyspecNames.find? (fun p => p.1 == c) |>.map (·.2)
     -- the scalar kinds, once per input: the searchers' `applies` tests and

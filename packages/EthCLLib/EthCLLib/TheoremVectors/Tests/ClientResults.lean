@@ -48,7 +48,7 @@ the theorem, the disjunct index, and the side marker. -/
 private def entry (file : String) (status : ClientStatus)
     (detail : String) : ClientResult :=
   { path := s!"formats/function/gloas/minimal/EthCLSpecs.Toy.toyFn/{file}",
-    fork := "gloas", preset := "minimal", specName := "toy_fn",
+    fork := "gloas", preset := "minimal", pyspecName := "toy_fn",
     status, detail }
 
 /-- The toy entries: one per status, each naming its theorem, plus the
@@ -67,7 +67,7 @@ private def toyResults : Array ClientResult :=
 /-- One toy record, `.runOk` shape, at the toy target. -/
 private def toyRecord (thm : Name) (side : Option Bool) : VectorRecord :=
   { «theorem» := thm, fork := "gloas", preset := .minimal,
-    target := some `EthCLSpecs.Toy.toyFn, specName := some "toy_fn",
+    target := some `EthCLSpecs.Toy.toyFn, pyspecName := some "toy_fn",
     shape := .runOk, disjunctIndex := 0, side, inputs := #[],
     output := none, error := none, witnessSearcher := .random }
 

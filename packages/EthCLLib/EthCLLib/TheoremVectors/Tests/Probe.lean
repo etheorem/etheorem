@@ -158,7 +158,7 @@ private def roundTrip (thm : Name) (binding : ForkBinding)
           (r.inputLiterals.getD i none) (r.inputRoots.getD i none)
     let record : VectorRecord :=
       { «theorem» := stmt.thm, fork := binding.tag, preset := .minimal,
-        target := stmt.target, specName := stmt.pyspecName,
+        target := stmt.target, pyspecName := stmt.pyspecName,
         shape := shapeTag,
         disjunctIndex := d.index, side := d.side,
         inputs := inputVals,
@@ -468,7 +468,7 @@ run_cmd do
       unless ctx.stmt.target == some `EthCLLib.Tests.InheritanceReplay.Base.callee do
         throwError "toyCallee: the reader found no target"
       unless ctx.stmt.pyspecName == some "callee" do
-        throwError s!"toyCallee: expected the spec name `callee`, got \
+        throwError s!"toyCallee: expected the pyspec name `callee`, got \
           {repr ctx.stmt.pyspecName}"
     -- a target with no row in the table answers `none`
     Statement.readIn toyBinding
@@ -476,7 +476,7 @@ run_cmd do
       unless ctx.stmt.target == some `EthCLLib.Tests.InheritanceReplay.Base.caller do
         throwError "toyCaller: the reader found no target"
       unless ctx.stmt.pyspecName == none do
-        throwError s!"toyCaller: expected no spec name, got \
+        throwError s!"toyCaller: expected no pyspec name, got \
           {repr ctx.stmt.pyspecName}"
     -- a targetless statement answers `none` whatever the table holds
     Statement.readIn toyBinding
@@ -484,6 +484,6 @@ run_cmd do
       unless ctx.stmt.target == none do
         throwError "toyEq: expected no target"
       unless ctx.stmt.pyspecName == none do
-        throwError s!"toyEq: expected no spec name, got \
+        throwError s!"toyEq: expected no pyspec name, got \
           {repr ctx.stmt.pyspecName}"
     IO.FS.removeDirAll dir

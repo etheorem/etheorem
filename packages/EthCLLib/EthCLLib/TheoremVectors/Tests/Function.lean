@@ -6,10 +6,10 @@ import EthCLLib.TheoremVectors.Formats.Function
 
 Build-gate check for the function format's central line
 (`THEOREM_VECTORS_ARCHITECTURE.md` §13.3): the field carries the record's
-`specName`, the target's pyspec name, and falls back to the Lean target
+`pyspecName`, the target's pyspec name, and falls back to the Lean target
 name when the reader read none. The drive renders the format twice over a
-hand-built record, once with `specName := none` and once with
-`specName := some "toy_set_bal"`. It pins the rendered file's
+hand-built record, once with `pyspecName := none` and once with
+`pyspecName := some "toy_set_bal"`. It pins the rendered file's
 `function:` line both ways. It also pins the directory spelling, which
 keeps the Lean target name either way, so a client's path join never
 depends on the field.
@@ -34,11 +34,11 @@ def toyEnv : RenderEnv := { outDir := scratchOut, bindings := fun _ => none }
 /-- The hand-built record (§13.3): a target and the toy theorem's name,
 no inputs and no output, because the pin reads the `function:` line and
 the directory alone. -/
-def toyRecord (specName : Option String) : VectorRecord :=
+def toyRecord (pyspecName : Option String) : VectorRecord :=
   { «theorem» := `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunOk,
     fork := "toyrun", preset := .minimal,
     target := some `EthCLLib.TheoremVectors.Tests.ToyRun.toySetBal,
-    specName, shape := .runOk, disjunctIndex := 0, side := none,
+    pyspecName, shape := .runOk, disjunctIndex := 0, side := none,
     inputs := #[], output := none, error := none, witnessSearcher := .base }
 
 /-- The `function:` line of a rendered file. -/
@@ -63,7 +63,7 @@ run_cmd do
     -- A failed earlier run leaves its scratch tree behind. Remove first.
     if ← scratchOut.pathExists then IO.FS.removeDirAll scratchOut
     IO.FS.createDirAll scratchOut
-    -- `specName := none`: the field falls back to the Lean target name,
+    -- `pyspecName := none`: the field falls back to the Lean target name,
     -- and the directory spells that name
     let files ← Formats.function.render toyEnv (toyRecord none) #[] none
     unless files.size == 1 do
@@ -75,7 +75,7 @@ run_cmd do
         "function: EthCLLib.TheoremVectors.Tests.ToyRun.toySetBal" do
       throw (IO.userError s!"function render: the fallback line is \
         {← functionLine files[0]!}")
-    -- `specName := some`: the spec name reaches the field, and the
+    -- `pyspecName := some`: the pyspec name reaches the field, and the
     -- directory keeps the Lean target name
     let named ← Formats.function.render toyEnv
       (toyRecord (some "toy_set_bal")) #[] none

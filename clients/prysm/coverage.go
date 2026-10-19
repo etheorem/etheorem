@@ -33,19 +33,19 @@ const (
 )
 
 // coverageRow is one row of the coverage table. It maps one
-// (fork, preset, specName) triple to the Prysm symbols that carry the
+// (fork, preset, pyspecName) triple to the Prysm symbols that carry the
 // spec function, the roles that feed the record's inputs to them, and
 // the comparison the runner makes.
 type coverageRow struct {
-	Fork     string            `yaml:"fork"`
-	Preset   string            `yaml:"preset"`
-	SpecName string            `yaml:"specName"`
-	Target   string            `yaml:"target"`
-	Status   string            `yaml:"status"`
-	Reason   string            `yaml:"reason"`
-	Symbols  []string          `yaml:"symbols"`
-	Args     map[string]string `yaml:"args"`
-	Compare  string            `yaml:"compare"`
+	Fork       string            `yaml:"fork"`
+	Preset     string            `yaml:"preset"`
+	PyspecName string            `yaml:"pyspecName"`
+	Target     string            `yaml:"target"`
+	Status     string            `yaml:"status"`
+	Reason     string            `yaml:"reason"`
+	Symbols    []string          `yaml:"symbols"`
+	Args       map[string]string `yaml:"args"`
+	Compare    string            `yaml:"compare"`
 }
 
 // skipReason returns the reason a record with this row is a tabled skip.
@@ -62,19 +62,19 @@ type coverageTable struct {
 	Rows []coverageRow `yaml:"rows"`
 }
 
-// lookup finds the first row for a (fork, preset, specName) triple. A row
-// with preset "both" matches either preset. A row with specName "*"
-// matches any spec name of its fork, and a row with fork "*" matches any
+// lookup finds the first row for a (fork, preset, pyspecName) triple. A row
+// with preset "both" matches either preset. A row with pyspecName "*"
+// matches any pyspec name of its fork, and a row with fork "*" matches any
 // fork, so wildcard rows must follow specific rows in the table or they
 // shadow them. The second return value reports whether a row exists but
 // is scoped to the other preset, which is its own kind of tabled skip.
-func (t coverageTable) lookup(fork, preset, specName string) (row *coverageRow, otherPreset bool) {
+func (t coverageTable) lookup(fork, preset, pyspecName string) (row *coverageRow, otherPreset bool) {
 	for i := range t.Rows {
 		r := &t.Rows[i]
 		if r.Fork != fork && r.Fork != "*" {
 			continue
 		}
-		if r.SpecName != specName && r.SpecName != "*" {
+		if r.PyspecName != pyspecName && r.PyspecName != "*" {
 			continue
 		}
 		if r.Preset == "both" || r.Preset == preset {

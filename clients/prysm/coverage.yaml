@@ -9,7 +9,7 @@
 #   surveyed:   2026-10-15, from the pinned release tarball
 #
 # The table is data the harness runner reads. One row per (fork, preset,
-# specName) triple the function format can produce. Status vocabulary is the
+# pyspecName) triple the function format can produce. Status vocabulary is the
 # plan's: implemented, not-implemented (at this pin), fork-not-supported
 # (at this pin). A target with no row, or a row with any other status, is a
 # tabled skip in the runner's summary; a skip never fails the run.
@@ -53,7 +53,7 @@ rows:
   # as the call's argument and `preState` is the bystander store.
   - fork: fulu
     preset: both
-    specName: increase_balance
+    pyspecName: increase_balance
     target: EthCLSpecs.Fulu.increaseBalance
     status: implemented
     symbols:
@@ -67,7 +67,7 @@ rows:
 
   - fork: fulu
     preset: both
-    specName: decrease_balance
+    pyspecName: decrease_balance
     target: EthCLSpecs.Fulu.decreaseBalance
     status: implemented
     symbols:
@@ -90,7 +90,7 @@ rows:
   # these skips.
   - fork: gloas
     preset: both
-    specName: process_builder_pending_payments
+    pyspecName: process_builder_pending_payments
     target: EthCLSpecs.Gloas.processBuilderPendingPayments
     status: not-implemented
     reason: >-
@@ -106,7 +106,7 @@ rows:
 
   - fork: gloas
     preset: minimal
-    specName: initiate_builder_exit
+    pyspecName: initiate_builder_exit
     target: EthCLSpecs.Gloas.initiateBuilderExit
     status: not-implemented
     reason: >-
@@ -122,7 +122,7 @@ rows:
 
   - fork: gloas
     preset: minimal
-    specName: can_builder_cover_bid
+    pyspecName: can_builder_cover_bid
     target: EthCLSpecs.Gloas.canBuilderCoverBid
     status: not-implemented
     reason: >-
@@ -142,7 +142,7 @@ rows:
   # names both symbols in that order.
   - fork: gloas
     preset: minimal
-    specName: is_builder_index
+    pyspecName: is_builder_index
     target: EthCLSpecs.Gloas.isBuilderIndex
     status: implemented
     symbols:
@@ -156,7 +156,7 @@ rows:
   # row names both symbols in the theorem's order and expects the input back.
   - fork: gloas
     preset: minimal
-    specName: convert_validator_index_to_builder_index
+    pyspecName: convert_validator_index_to_builder_index
     target: EthCLSpecs.Gloas.toBuilderIndex
     status: implemented
     symbols:
@@ -168,7 +168,7 @@ rows:
 
   - fork: gloas
     preset: minimal
-    specName: convert_builder_index_to_validator_index
+    pyspecName: convert_builder_index_to_validator_index
     target: EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex
     status: implemented
     symbols:
@@ -180,7 +180,7 @@ rows:
 
   - fork: gloas
     preset: both
-    specName: initialize_ptc_window
+    pyspecName: initialize_ptc_window
     target: EthCLSpecs.Gloas.initializePtcWindow
     status: implemented
     # initializePTCWindow itself is unexported at the pin. UpgradeToGloas is
@@ -198,7 +198,7 @@ rows:
   # ── Gloas: tabled skip ──────────────────────────────────────────────────
   - fork: gloas
     preset: minimal
-    specName: is_valid_indexed_payload_attestation
+    pyspecName: is_valid_indexed_payload_attestation
     target: EthCLSpecs.Gloas.isValidIndexedPayloadAttestation
     status: not-implemented
     reason: >-
@@ -213,7 +213,7 @@ rows:
   # ── Heze: the fork is absent from the pinned tree ───────────────────────
   - fork: heze
     preset: both
-    specName: "*"
+    pyspecName: "*"
     target: "*"
     status: fork-not-supported
     reason: >-

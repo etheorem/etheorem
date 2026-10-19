@@ -586,6 +586,11 @@ structure ForkBinding where
   /-- Which `(runner, handler)` pair a spec function answers to in the pyspec
   layout; `none` for a function no vector format drives. -/
   handlerOf   : Name → Option (String × String)
+  /-- The pyspec spelling of the fork's spec functions: the full Lean name
+  to the snake-case name clients consume. One row per function the fork
+  declares with a pyspec spelling; the inherited replays carry none.
+  Validated once, at the generator header. -/
+  pyspecNames : Array (Name × String)
   /-- The fork's `ForkInterface` at a preset, for the pyspec format's check. -/
   interface   : PresetId → Option ForkInterface
 ```
@@ -660,10 +665,10 @@ theorem still runs when its shape matches, and a format that needs a
 target rejects its records (§13.3). `getPtcElseOffset_lt_same_slot` is one:
 a `.bound` over a helper the proof file defines.
 
-The reader also reads the target's spec name: the pyspec spelling the
-declaration's docstring opens with, as a backticked snake-case span
-(§13.3's `function` field carries it). A target whose docstring opens
-otherwise has no spec name, and the record's field is null.
+The reader also reads the target's pyspec name: the fork binding's
+`pyspecNames` table maps the target's full Lean name to the snake-case
+spelling clients consume (§6), and §13.3's `function` field carries it.
+A target with no row has no pyspec name, and the record's field is null.
 
 ### 7.3 Shape matching
 
@@ -973,7 +978,7 @@ the `.iffTrue` side.
   "fork": "gloas",
   "preset": "minimal",
   "target": "EthCLSpecs.Gloas.canBuilderCoverBid",
-  "specName": "can_builder_cover_bid",
+  "pyspecName": "can_builder_cover_bid",
   "shape": "iffTrue",
   "disjunctIndex": 0,
   "side": true,
@@ -992,9 +997,10 @@ the `.iffTrue` side.
 Every value has an `ssz` side file named by the binder. The payload nests
 under `value`, one of two forms: a container's `root`, or a scalar's
 `scalar` as a string, so a `UInt64` never meets a JSON reader's integer
-range. A `.runError` record has `error` in place of `output`. `specName`
-carries the pyspec name the reader read off the target's docstring (§7.2),
-null when there is none; a client-conformance harness maps on it.
+range. A `.runError` record has `error` in place of `output`. `pyspecName`
+carries the pyspec name the fork binding's `pyspecNames` table maps the
+target to (§7.2), null when there is no row; a client-conformance harness
+maps on it.
 
 ### 12.3 File formats: JSON inside, YAML outside
 
@@ -1126,10 +1132,10 @@ table-skipped it, or the harness has not run. The format serves a
 client that chooses to expose the function. The theorem name in the
 file is the point.
 
-The `function` field names the function the way the spec spells it: the
-record's `specName` (§7.2, §12.2). A record whose target has no spec
-name falls back to the Lean target name, and a harness mapping on the
-field table-skips such a record.
+The `function` key keeps its name; it names the function the way the spec
+spells it: the record's `pyspecName` (§7.2, §12.2). A record whose target
+has no pyspec name falls back to the Lean target name, and a harness
+mapping on the field table-skips such a record.
 
 ### 13.4 The pyspec format
 

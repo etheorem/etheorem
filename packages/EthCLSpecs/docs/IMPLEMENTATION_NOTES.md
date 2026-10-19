@@ -1283,9 +1283,9 @@ function format, and the search wiring, against
   container's root share one field slot (§12.2 sketches flat `ssz` /
   `root` / `scalar` keys beside the name). The
   record's theorem field spells `«theorem»` in Lean, a keyword, and the
-  derived JSON writes the wire spelling §12.2 fixes. The sketch names no
-  spec-name field either; the record adds `specName` (the stage-10
-  section records it). The record reader and writer agree with each
+  derived JSON writes the wire spelling §12.2 fixes. The sketch carries
+  the pyspec-name field beside `target`; the stage-10 section records
+  when the field appeared. The record reader and writer agree with each
   other; a consumer reads records through neither.
 
 - **The wrong-expected test's subject is a `def` with an
@@ -2031,7 +2031,8 @@ builders, the executor's run rows, and the record's error value) against
   falls back to the Lean target name. The rule lives in
   `Statement.lean`, beside target discovery. The reader fills the new
   `Statement.specName` field, and the record carries it as the wire key
-  `specName`. An inherited target has no docstring, because `inherit`
+  `specName` (both spell `pyspecName` today; the closing entry records
+  the move). An inherited target has no docstring, because `inherit`
   replays the captured `forkdef` as a bare `def`, so its spec name
   answers `none`. No current record targets an inherited function. The
   `theorem:` field and the directory naming keep the Lean target name.
@@ -2208,3 +2209,31 @@ carry the design.
   time. The plan expected the builder-exit hint to change with its
   witness. It does not: the hints-update recipe ran as a no-op, and the
   committed file stayed byte-identical through the migration.
+
+## Theorem vectors, the pyspec-name rename
+
+The spec name's source moved from the docstring parse to the binding's
+table, and the wire key moved with the reader's field name. One word now
+means one thing from the binding to the Go harness.
+
+- **The docstring parse is superseded.** Stage 10 read the target's pyspec
+  name off the declaring docstring. Stage 7 replaced that parse with the
+  fork binding's `pyspecNames` table (§6): the table is data the fork
+  declares and the header validates, so the reader answers a lookup, and
+  the docstring no longer decides behavior. The stage-10 entry above
+  stands as the record of the parse this entry replaces.
+
+- **The wire key is `pyspecName` on both sides of the client join, in one
+  commit.** The record's `record.json` key, the results-file
+  `client-results.json` key, and the prysm coverage table's column all
+  spell `pyspecName` now, and the Go fields spell `PyspecName`. One
+  commit carries the Lean side and the Go side, so no commit spells the
+  old key on one side alone. The function format's `function:` key keeps
+  its name; the harness reads it as the record's `pyspecName`, with the
+  Lean-target fallback. The values are unchanged: every coverage row
+  keeps its spelling, and the `"*"` wildcard rows keep theirs.
+
+- **The Go side is verified by inspection.** The environment has no Go
+  toolchain, so no `go build`, `go vet`, or harness run checked the
+  rename. The edit is mechanical: the two struct tags, the two Go field
+  names, the `lookup` parameter, and the tests that read the field.

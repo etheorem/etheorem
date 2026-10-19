@@ -10,7 +10,7 @@ one entry per function-format file the harness walked:
 
 ```json
 { "path": "formats/function/<fork>/<preset>/<Target>/<Thm>_<index>[_t|_f].yaml",
-  "fork": "gloas", "preset": "minimal", "specName": "increase_balance",
+  "fork": "gloas", "preset": "minimal", "pyspecName": "increase_balance",
   "status": "passed", "detail": "post state matched (bytes and root)" }
 ```
 
@@ -65,18 +65,18 @@ mapped the record to, its answer, and the answer's detail line. The wire
 field names are the harness's JSON keys. -/
 structure ClientResult where
   /-- The walked file, relative to the outDir. -/
-  path     : String
+  path       : String
   /-- The fork tag, such as `"gloas"`. -/
-  fork     : String
+  fork       : String
   /-- The preset tag, such as `"minimal"`. -/
-  preset   : String
+  preset     : String
   /-- The pyspec function the harness mapped the record to. -/
-  specName : String
+  pyspecName : String
   /-- The harness's answer. -/
-  status   : ClientStatus
+  status     : ClientStatus
   /-- The answer's detail line: what matched, what disagreed, or the
   skip's reason. -/
-  detail   : String
+  detail     : String
   deriving ToJson, FromJson, Repr, BEq, Inhabited
 
 /-! ## The file -/

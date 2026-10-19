@@ -27,7 +27,7 @@ spelling §12.2 carries today. The
 payload nests under `value`, because the scalar's literal and the
 container's root share one field slot. The `theorem` field spells with
 French quotes in Lean, `«theorem»`, and the derived JSON writes the wire
-spelling §12.2 fixes. The record's `specName` field carries the target's
+spelling §12.2 fixes. The record's `pyspecName` field carries the target's
 pyspec name, which the fork binding's `pyspecNames` table supplies.
 
 ## Lean idioms annotated
@@ -85,27 +85,27 @@ structure VectorRecord where
   §12.2 fixes. -/
   «theorem»   : Name
   /-- The binding's tag, such as `"gloas"`. -/
-  fork      : String
+  fork       : String
   /-- The preset the run fixed. -/
-  preset    : PresetId
+  preset     : PresetId
   /-- The spec function under test, when the reader found one (§7.2). -/
-  target    : Option Name
+  target     : Option Name
   /-- The target's pyspec name, from the fork binding's `pyspecNames`
-  table (§6). The derived JSON writes the wire key
-  `specName`, the way `disjunctIndex` spells. -/
-  specName  : Option String
+  table (§6). The derived JSON writes the wire key `pyspecName`, the
+  way `disjunctIndex` spells. -/
+  pyspecName : Option String
   /-- The conclusion's shape. -/
-  shape     : ShapeTag
+  shape      : ShapeTag
   /-- The zero-based disjunct index. -/
   disjunctIndex : Nat
   /-- The `.iffTrue` side, when the shape is `.iffTrue`. -/
-  side      : Option Bool
+  side       : Option Bool
   /-- One entry per input, in binder order. -/
-  inputs    : Array VectorValue
+  inputs     : Array VectorValue
   /-- The recorded output, `none` for `.runError`. -/
-  output    : Option VectorValue
+  output     : Option VectorValue
   /-- The error's `repr`, `.runError` only. -/
-  error     : Option String
+  error      : Option String
   /-- The witness searcher that won. -/
   witnessSearcher : WitnessSearcherTag
   deriving ToJson, FromJson

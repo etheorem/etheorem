@@ -14,7 +14,8 @@ framework half.
 
 The pyspec spelling of a function is data the binding carries: the
 `pyspecNames` table sits beside `handlerOf` and `builders`, one row per
-function the fork owns. The statement reader looks a discovered target up
+function the fork declares with a pyspec spelling; the inherited replays
+carry none. The statement reader looks a discovered target up
 in the table, a target with no row answers `none`, and the function format
 falls back to the Lean target name.
 

@@ -10,10 +10,10 @@ The runner walks the generator's function-format tree,
 
 1. Parses the YAML (one self-contained file per vector, §13.3 of the
    theorem-vectors architecture).
-2. Maps the record through `coverage.yaml` on (fork, preset, specName). A
-   record with no row, or a row whose status is not `implemented`, is a
-   tabled skip with the row's reason. A skip never fails the run and pays
-   no gate.
+2. Maps the record through `coverage.yaml` on (fork, preset,
+   pyspecName). A record with no row, or a row whose status is not
+   `implemented`, is a tabled skip with the row's reason. A skip never
+   fails the run and pays no gate.
 3. Deserializes every SSZ input of a record that runs with Prysm's SSZ
    library and checks the input's Merkle root against the file's. Every
    SSZ input pays this gate, including inputs the coverage row marks

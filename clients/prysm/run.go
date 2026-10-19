@@ -26,12 +26,12 @@ const (
 // Result is the runner's answer for one record. It is one line of the
 // summary and one entry of client-results.json.
 type Result struct {
-	Path     string `json:"path"`
-	Fork     string `json:"fork"`
-	Preset   string `json:"preset"`
-	SpecName string `json:"specName"`
-	Status   string `json:"status"`
-	Detail   string `json:"detail"`
+	Path       string `json:"path"`
+	Fork       string `json:"fork"`
+	Preset     string `json:"preset"`
+	PyspecName string `json:"pyspecName"`
+	Status     string `json:"status"`
+	Detail     string `json:"detail"`
 }
 
 // sszMessage is the surface the runner needs from a Prysm proto type:
@@ -108,7 +108,7 @@ func runRecord(relPath, path, fork, preset, targetDir string, table coverageTabl
 	if err != nil {
 		return fail("%v", err)
 	}
-	res.SpecName = vec.Function
+	res.PyspecName = vec.Function
 
 	// The file's own header must agree with the directory it sits in.
 	if vec.Fork != fork || vec.Preset != preset {
@@ -243,7 +243,7 @@ func decodeInputs(vec *vector, row *coverageRow) (*runEnv, error) {
 
 // compareRecord checks the run outcome per the row's compare role. The
 // detail names the client's answer and the expected one on a mismatch.
-// base carries the record's path, fork, preset, and spec name.
+// base carries the record's path, fork, preset, and pyspec name.
 func compareRecord(base Result, row *coverageRow, vec *vector, out runOutcome) Result {
 	res := base
 	pass := func(detail string) Result {

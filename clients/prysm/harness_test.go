@@ -31,7 +31,7 @@ func fixtureTable(t *testing.T) coverageTable {
 	t.Helper()
 	table := loadTableForTest(t)
 	for i := range table.Rows {
-		if table.Rows[i].SpecName == "is_builder_index" {
+		if table.Rows[i].PyspecName == "is_builder_index" {
 			table.Rows[i].Preset = "both"
 		}
 	}
@@ -287,7 +287,7 @@ func TestImplementedRowsResolveRunners(t *testing.T) {
 			continue
 		}
 		if _, ok := runnerFor(row.Symbols); !ok {
-			t.Errorf("%s/%s/%s: no runner for symbols %q", row.Fork, row.Preset, row.SpecName, row.Symbols)
+			t.Errorf("%s/%s/%s: no runner for symbols %q", row.Fork, row.Preset, row.PyspecName, row.Symbols)
 		}
 	}
 }
