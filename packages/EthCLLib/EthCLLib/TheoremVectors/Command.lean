@@ -191,11 +191,11 @@ scoped syntax (name := tvSkipCmd)
 -- the strict marker lives in the identifier token: the lexer reads
 -- `theorem_vectors!` as one ident, so this atom and the plain form's
 -- leading atom never collide
-scoped syntax (name := tvNamedStrictNoManualCmd)
+scoped syntax (name := tvNamedStrictCmd)
   "theorem_vectors!" ident optional("presets " ident+) : command
 
 -- a `with` group after a named line is a parse error
-scoped syntax (name := tvNamedNoManualCmd)
+scoped syntax (name := tvNamedCmd)
   "theorem_vectors " ident optional("presets " ident+) : command
 
 /-- Every ident in a syntax subtree, in source order. The `presets` clauses
@@ -1085,10 +1085,10 @@ private def elabNamedLine (strict : Bool) : CommandElab := fun stx => do
   let ps ← parsePresets stx[2]
   addLine { kind := .named thm strict, presetIds := ps }
 
-@[command_elab tvNamedStrictNoManualCmd]
-def elabTvNamedStrictNoManual : CommandElab := elabNamedLine true
+@[command_elab tvNamedStrictCmd]
+def elabTvNamedStrict : CommandElab := elabNamedLine true
 
-@[command_elab tvNamedNoManualCmd]
-def elabTvNamedNoManual : CommandElab := elabNamedLine false
+@[command_elab tvNamedCmd]
+def elabTvNamed : CommandElab := elabNamedLine false
 
 end EthCLLib.TheoremVectors
