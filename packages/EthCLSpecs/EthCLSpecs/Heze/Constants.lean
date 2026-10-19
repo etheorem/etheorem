@@ -57,8 +57,7 @@ forkabbrev inclusionListDueBps : UInt64 := Config.inclusionListDueBps
 -- vocabulary, and a new call site should not have to come back and edit this block.
 
 -- Gloas's own ePBS and EIP-8282 entries.
-inherit ptcSize maxBuildersPerWithdrawalsSweep builderRegistryLimit
-inherit builderPendingWithdrawalsLimit maxPayloadAttestations
+inherit ptcSize maxBuildersPerWithdrawalsSweep maxPayloadAttestations
 inherit maxBuilderDepositRequestsPerPayload maxBuilderExitRequestsPerPayload
 inherit gloasForkVersion churnLimitQuotientGloas maxPerEpochActivationChurnLimitGloas
 inherit minBuilderWithdrawabilityDelay builderPaymentThresholdNumerator

@@ -3,10 +3,10 @@ import EthCLSpecs.Heze.Inherited
 /-!
 # `EthCLSpecs.Heze.Containers.InclusionList`: the FOCIL inclusion list (EIP-7805, new)
 
-The two containers EIP-7805 adds at alpha.11: an `InclusionList` (a committee member's
-committed transactions for a slot) and its signed wrapper. `Transaction` and
-`MAX_TRANSACTIONS_PER_PAYLOAD` are the inherited types. These are the *only*
-new Heze containers; the bid is unchanged at alpha.11.
+The two containers EIP-7805 adds: an `InclusionList` (a committee member's
+committed transactions for a slot) and its signed wrapper. At v1.7.0-alpha.12
+`transactions` is a `ProgressiveList` of Gloas `Transaction`s
+(`ProgressiveByteList`). The container itself stays a classic container.
 
 The two DSL forms: `forkcontainer` declares an SSZ container in the fork namespace and
 captures it for a later fork's `inherit`. Field order is declaration order, and that order
@@ -28,7 +28,7 @@ forkcontainer InclusionList where
   slot                       : Slot
   validatorIndex             : ValidatorIndex
   inclusionListCommitteeRoot : Root
-  transactions               : SSZList Transaction Const.maxTransactionsPerPayload
+  transactions               : ProgressiveList Transaction
 
 /-- A signed inclusion list. -/
 signedwrapper SignedInclusionList wraps InclusionList

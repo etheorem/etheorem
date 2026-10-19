@@ -26,8 +26,24 @@ state_section
 -- Operation-level validity helpers (no committee dependency).
 inherit strictlySorted zeroRoot
 inherit isSlashableAttestationData
-inherit isValidIndexedAttestation
 inherit isValidSwitchToCompoundingRequest
+
+/-- `is_valid_indexed_attestation` (Gloas, EIP-7688). Fulu's checks, plus the
+cap that used to live on the list type:
+`len(indices) > MAX_VALIDATORS_PER_COMMITTEE * MAX_COMMITTEES_PER_SLOT`
+rejects. A pure `Bool`, so an index past the registry returns `false`.
+Declared before the inherited slashings handlers so their calls bind here. -/
+forkdef isValidIndexedAttestation (state : State) (a : IndexedAttestation) : Bool :=
+  let validators := sszGet state validators
+  let idx := a.attestingIndices.toArray
+  let cap := Const.maxValidatorsPerCommittee * Const.maxCommitteesPerSlot
+  if idx.size == 0 || idx.size > cap || !strictlySorted idx then false
+  else if !idx.all (·.toNat < validators.size) then false
+  else
+    let pubkeys := idx.map (fun i => (validators[i.toNat]!).pubkey)
+    blsFastAggregateVerify pubkeys
+      (computeSigningRoot a.data (getDomain state Const.domainBeaconAttester a.data.target.epoch))
+      a.signature
 -- Attesting-set helper: now inheritable since the Gloas committee layer is in scope
 -- (its `getBeaconCommittee` / `getCommitteeIndices` calls bind to the Gloas copies).
 inherit getAttestingIndices
@@ -143,8 +159,9 @@ forkdef onboardBuildersFromPendingDeposits : StateTransition Unit := do
     else
       applyDepositForBuilder d.pubkey d.withdrawalCredentials d.amount d.signature d.slot
 
-  let keptList : SSZList PendingDeposit Const.pendingDepositsLimit ←
-    sszOfArrayM "pendingDeposits" kept
+  -- `pendingDeposits` is a progressive list at alpha.12: the kept deposits go back
+  -- whole, with no `PENDING_DEPOSITS_LIMIT` cap and no `.listFull` raise.
+  let keptList : ProgressiveList PendingDeposit := ⟨kept⟩
   modifyState fun state => sszUpdate state with pendingDeposits := keptList
 
 /-! ## EIP-8282 builder-request handlers
@@ -163,27 +180,28 @@ forkdef isValidBuilderDepositSignature (request : BuilderDepositRequest) : Bool 
   let domain := computeDomain Const.domainBuilderDeposit Const.genesisForkVersion (Vector.replicate 32 0)
   blsVerify request.pubkey (computeSigningRoot msg domain) request.signature
 
-/-- `process_builder_deposit_request` (EIP-8282): for a new builder pubkey with a valid
-proof-of-possession, onboard it (the `version` byte and execution address come from the
-withdrawal credentials, stamped at `state.slot`); for an existing builder, top up its
-balance and, if it had already initiated exit, push its withdrawable epoch back out. -/
+/-- `process_builder_deposit_request` (EIP-8282, alpha.12): ignore a deposit whose
+withdrawal-credential prefix is not the builder prefix. A new pubkey with a valid
+proof-of-possession is onboarded at `PAYLOAD_BUILDER_VERSION`. An existing builder
+is topped up; if it has exited and its balance is already zero, its withdrawable
+epoch is pushed back out before the balance increases. -/
 forkdef processBuilderDepositRequest (request : BuilderDepositRequest) : StateTransition Unit := do
+  if !isBuilderWithdrawalCredential request.withdrawalCredentials then return
   let state ← get
   match (sszGet state builders).findIdx? (·.pubkey == request.pubkey) with
   | none =>
     if isValidBuilderDepositSignature request then
-      addBuilderToRegistry request.pubkey (credPrefix request.withdrawalCredentials)
+      addBuilderToRegistry request.pubkey Const.payloadBuilderVersion
         (addressOfCred request.withdrawalCredentials) request.amount (sszGet state slot)
   | some builderIndex =>
     let epoch := currentEpochOf state
     modifyState fun state =>
       sszModify state builders[builderIndex]! as b =>
+        let reset := b.withdrawableEpoch != Const.farFutureEpoch && b.balance == 0
         { b with
           balance := b.balance + request.amount,
           withdrawableEpoch :=
-            if b.withdrawableEpoch != Const.farFutureEpoch
-            then epoch + Const.minBuilderWithdrawabilityDelay
-            else b.withdrawableEpoch }
+            if reset then epoch + Const.minBuilderWithdrawabilityDelay else b.withdrawableEpoch }
 
 /-- `process_builder_exit_request` (EIP-8282): an EL-triggered builder exit. A no-op
 unless the pubkey names an active builder whose registered execution address matches the
@@ -314,8 +332,7 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
   let indexedAttestation : IndexedAttestation :=
-    { attestingIndices := ← sszOfArrayM "attestingIndices"
-        ((← liftErr (getAttestingIndices state att)).qsort (· < ·)),
+    { attestingIndices := ⟨(← liftErr (getAttestingIndices state att)).qsort (· < ·)⟩,
       data := att.data, signature := att.signature }
   assert (isValidIndexedAttestation state indexedAttestation)
 
@@ -533,6 +550,11 @@ forkdef applyParentExecutionPayload (requests : ExecutionRequests) : StateTransi
   let parentBid := sszGet state latestExecutionPayloadBid
   let parentSlot := parentBid.slot
   let parentEpoch := computeEpochAtSlot parentSlot
+
+  assert (requests.withdrawals.size ≤ Const.maxWithdrawalRequestsPerPayload)
+  assert (requests.consolidations.size ≤ Const.maxConsolidationRequestsPerPayload)
+  assert (requests.builderDeposits.size ≤ Const.maxBuilderDepositRequestsPerPayload)
+  assert (requests.builderExits.size ≤ Const.maxBuilderExitRequestsPerPayload)
 
   for d in requests.deposits do processDepositRequest d
   for w in requests.withdrawals do processWithdrawalRequest w

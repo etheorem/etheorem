@@ -45,7 +45,11 @@ mutual
 
 /-- Decide `BasicSupported s` by recursion on `s`. Each arm states the
 side condition the matching constructor carries. The `uintN` arm lists
-the six widths the codec implements. -/
+the six widths the codec implements. The three progressive arms
+(`progressiveList`, `progressiveBitlist`, `progressiveContainer`)
+carry no `BasicSupported` constructor, so they are rejected here and
+in the soundness direction below; `Supported.lean` records the same
+exclusion for `Supported` / `SupportedBounded`. -/
 def SSZType.checkBasicSupported : SSZType → Bool
   | .uintN n      => n == 8 || n == 16 || n == 32 || n == 64 || n == 128 || n == 256
   | .bool         => true
@@ -55,6 +59,9 @@ def SSZType.checkBasicSupported : SSZType → Bool
   | .bitvector n  => decide (0 < n)
   | .bitlist _    => true
   | .container fs => SSZType.checkBasicSupportedFields fs
+  | .progressiveList _        => false
+  | .progressiveBitlist       => false
+  | .progressiveContainer _ _ => false
 
 /-- `checkBasicSupported` over a container's field list, pointwise. -/
 def SSZType.checkBasicSupportedFields : List SSZType → Bool
@@ -120,6 +127,12 @@ theorem SSZType.basicSupported_of_checkBasicSupported :
       · exact .containerVar h_fs h_fixed
       · exact .containerFixed
           (SSZType.basicSupportedFieldsFixed_of_basicSupportedFields h_fs h_fixed)
+  | .progressiveList _, h => by
+      simp [SSZType.checkBasicSupported] at h
+  | .progressiveBitlist, h => by
+      simp [SSZType.checkBasicSupported] at h
+  | .progressiveContainer _ _, h => by
+      simp [SSZType.checkBasicSupported] at h
 
 /-- Soundness over a field list. -/
 theorem SSZType.basicSupportedFields_of_checkBasicSupportedFields :

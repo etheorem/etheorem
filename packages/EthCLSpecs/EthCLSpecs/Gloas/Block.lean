@@ -15,22 +15,24 @@ open EthCLLib.Spec
 
 namespace EthCLSpecs.Gloas
 
-/-- The Gloas `BeaconBlockBody` (ePBS): a `signedExecutionPayloadBid` and
-`payloadAttestations` in place of the in-block execution payload / blob
-commitments; `parentExecutionRequests` carries the parent block's requests. -/
+/-- The Gloas `BeaconBlockBody` (ePBS, EIP-7688): a progressive container.
+`signedExecutionPayloadBid` and `payloadAttestations` stand in place of the
+in-block execution payload / blob commitments; `parentExecutionRequests`
+carries the parent block's requests. The operation lists are progressive. -/
+@[sizzlean_progressive]
 forkcontainer BeaconBlockBody where
   randaoReveal              : BLSSignature
   eth1Data                  : Eth1Data
   graffiti                  : Bytes32
-  proposerSlashings         : SSZList ProposerSlashing Const.maxProposerSlashings
-  attesterSlashings         : SSZList AttesterSlashing Const.maxAttesterSlashingsElectra
-  attestations              : SSZList Attestation Const.maxAttestationsElectra
-  deposits                  : SSZList Deposit Const.maxDeposits
-  voluntaryExits            : SSZList SignedVoluntaryExit Const.maxVoluntaryExits
+  proposerSlashings         : ProgressiveList ProposerSlashing
+  attesterSlashings         : ProgressiveList AttesterSlashing
+  attestations              : ProgressiveList Attestation
+  deposits                  : ProgressiveList Deposit
+  voluntaryExits            : ProgressiveList SignedVoluntaryExit
   syncAggregate             : SyncAggregate
-  blsToExecutionChanges     : SSZList SignedBLSToExecutionChange Const.maxBlsToExecutionChanges
+  blsToExecutionChanges     : ProgressiveList SignedBLSToExecutionChange
   signedExecutionPayloadBid : SignedExecutionPayloadBid
-  payloadAttestations       : SSZList PayloadAttestation Const.maxPayloadAttestations
+  payloadAttestations       : ProgressiveList PayloadAttestation
   parentExecutionRequests   : ExecutionRequests
 
 /-- A Gloas `BeaconBlock` (references the Gloas `BeaconBlockBody`). -/

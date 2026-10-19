@@ -87,33 +87,55 @@ instance : ErrorConv IndexError StateTransitionError where
 instance : ErrorConv IndexError StoreTransitionError where
   conv := fun | .indexError i b => .transition (.outOfBounds i b)
 
-/-- Monadic element access on an `SSZList`: element `i`, or the typed reject
-`outOfBounds i size` (the bug-smell for a framework-invariant index that should never be
-out of range on well-formed input). The monadic-context safe read that replaces `…
-.val[i]!` (`SPEC_AUTHORING_MODEL.md` §7); it builds the `Except IndexError` carrying the
-real index and bound and hands it to `liftErr`, whose `[ErrorConv IndexError E]` instance
-maps the miss to the context's reject. Generic over the error type, so it reads in both the
-state machine (`E = StateTransitionError`, a direct `outOfBounds`) and the fork-choice
-machine (`E = StoreTransitionError`, the wrapped `transition (outOfBounds …)`). A spec
-*validation* of an index pairs this with a preceding `assert (i < size)`: the `assert`
-rejects a bad index first as the spec's `IndexError` (`assert`, an `expectedRejection`), so
-`sszGetIdx`'s own `outOfBounds` stays unreachable, the safe read behind the validation and a
-defense-in-depth signal if the assert is ever wrong. -/
-@[inline] def sszGetIdx {α : Type} {m : Type → Type u} {E : Type} [Monad m] {cap : Nat}
-    [MonadExcept E m] [ErrorConv IndexError E] (xs : SizzLean.Repr.SSZList α cap) (i : Nat) : m α :=
-  liftErr <| match xs.val[i]? with
-    | some a => .ok a
-    | none   => .error (IndexError.indexError i xs.val.size)
+/-- A random-access collection `sszGetIdx` can read: the length, and `get?`.
+`SSZList` and `ProgressiveList` both carry it, so a fork that switches a field
+from a capped list to a progressive list keeps the same read spelling. -/
+class IdxRead (ρ : Type) (α : outParam Type) where
+  size : ρ → Nat
+  get? : ρ → Nat → Option α
 
-/-- `sszGetIdx` for a `Bitlist` bit: bit `i`, or the typed reject `outOfBounds i size`. The
+@[reducible] instance {α : Type} {cap : Nat} : IdxRead (SizzLean.Repr.SSZList α cap) α where
+  size xs := xs.val.size
+  get? xs i := xs.val[i]?
+
+@[reducible] instance {α : Type} : IdxRead (SizzLean.Repr.ProgressiveList α) α where
+  size xs := xs.val.size
+  get? xs i := xs.val[i]?
+
+@[reducible] instance {cap : Nat} : IdxRead (SizzLean.Repr.Bitlist cap) Bool where
+  size bs := bs.val.size
+  get? bs i := bs.val[i]?
+
+@[reducible] instance : IdxRead SizzLean.Repr.ProgressiveBitlist Bool where
+  size bs := bs.val.size
+  get? bs i := bs.val[i]?
+
+/-- Monadic element access: element `i`, or the typed reject `outOfBounds i size`
+(the bug-smell for a framework-invariant index that should never be out of range on
+well-formed input). The monadic-context safe read that replaces `….val[i]!`
+(`SPEC_AUTHORING_MODEL.md` §7); it builds the `Except IndexError` carrying the real
+index and bound and hands it to `liftErr`, whose `[ErrorConv IndexError E]` instance
+maps the miss to the context's reject. Generic over the error type, so it reads in both
+the state machine (`E = StateTransitionError`, a direct `outOfBounds`) and the
+fork-choice machine (`E = StoreTransitionError`, the wrapped `transition (outOfBounds …)`).
+A spec *validation* of an index pairs this with a preceding `assert (i < size)`: the
+`assert` rejects a bad index first as the spec's `IndexError` (`assert`, an
+`expectedRejection`), so `sszGetIdx`'s own `outOfBounds` stays unreachable, the safe
+read behind the validation and a defense-in-depth signal if the assert is ever wrong.
+The collection is any `IdxRead`: a capped `SSZList` or an uncapped `ProgressiveList`. -/
+@[inline] def sszGetIdx {α ρ : Type} {m : Type → Type u} {E : Type} [Monad m] [IdxRead ρ α]
+    [MonadExcept E m] [ErrorConv IndexError E] (xs : ρ) (i : Nat) : m α :=
+  liftErr <| match IdxRead.get? xs i with
+    | some a => .ok a
+    | none   => .error (IndexError.indexError i (IdxRead.size xs))
+
+/-- `sszGetIdx` for a bit list: bit `i`, or the typed reject `outOfBounds i size`. The
 monadic safe read for an *untrusted* bit index, an attestation's `aggregation_bits` read
 indexed by a block-supplied committee offset, where `[i]!`'s `false` default would mask an
-over-length read. Same shape as `sszGetIdx`, on `Bitlist`'s faithful `[i]?`. -/
-@[inline] def bitlistGetIdx {m : Type → Type u} {E : Type} [Monad m] {cap : Nat}
-    [MonadExcept E m] [ErrorConv IndexError E] (bs : SizzLean.Repr.Bitlist cap) (i : Nat) : m Bool :=
-  liftErr <| match bs.val[i]? with
-    | some b => .ok b
-    | none   => .error (IndexError.indexError i bs.val.size)
+over-length read. Same shape as `sszGetIdx`, on a `Bitlist` or a `ProgressiveBitlist`. -/
+@[inline] def bitlistGetIdx {ρ : Type} {m : Type → Type u} {E : Type} [Monad m] [IdxRead ρ Bool]
+    [MonadExcept E m] [ErrorConv IndexError E] (bs : ρ) (i : Nat) : m Bool :=
+  sszGetIdx bs i
 
 /-- `sszGetIdx` for a plain `Array`: element `i`, or the typed reject `outOfBounds i size`. The
 monadic safe read for a spec `list[i]` over a non-SSZ `Array`, e.g. a fork-choice `Store` value

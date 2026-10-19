@@ -46,6 +46,8 @@ Usage:
     python3 scripts/check_constant_tiers.py --refresh  # re-download, rewrite JSON
 """
 
+from __future__ import annotations
+
 import json
 import re
 import sys

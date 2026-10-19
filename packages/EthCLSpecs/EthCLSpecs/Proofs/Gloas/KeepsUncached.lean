@@ -159,7 +159,7 @@ theorem returnsUncached_increaseBalance (state : BeaconState) (i : ValidatorInde
             .error (.arithmetic "increase_balance: balances[index] + delta")
           else
             .ok (modBalance (pureState state) i (fun _ => balance + d), pureState preState)) := by
-    unfold increaseBalance sszGetIdx checkedAdd
+    unfold increaseBalance sszGetIdx EthCLLib.Spec.IdxRead.get? EthCLLib.Spec.IdxRead.size checkedAdd
     simp only [view_uncachedBox]
     cases state.balances.val[i.toNat]? with
     | none => simp; rfl
@@ -196,7 +196,7 @@ theorem returnsUncached_decreaseBalance (state : BeaconState) (i : ValidatorInde
         | some balance =>
           .ok (modBalance (pureState state) i
             (fun _ => if d > balance then 0 else balance - d), pureState preState)) := by
-    unfold decreaseBalance sszGetIdx
+    unfold decreaseBalance sszGetIdx EthCLLib.Spec.IdxRead.get? EthCLLib.Spec.IdxRead.size
     simp only [view_uncachedBox]
     cases state.balances.val[i.toNat]? with
     | none => simp; rfl
@@ -396,9 +396,8 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) :
                     · exact keepsUncachedFrom_liftErr (T := BeaconState) (v := midState₉)
                         (ε := EthCLLib.Spec.StateTransitionError) (ε' := EthCLLib.Spec.IndexError)
                         (α := Array EthCLSpecs.Gloas.ValidatorIndex) _
-                    · -- `sszOfArrayM` builds the attesting-index list, or raises `.listFull`.
-                      refine keepsUncachedFrom_bind (keepsUncachedFrom_sszOfArrayM _ _ _)
-                        (fun _ midStateL => ?_)
+                    · -- The attesting-index list is built purely (a progressive list wraps
+                      -- the sorted array), so the next effect is the validity assert.
                       refine keepsUncachedFrom_bind ?gG (fun _ midState₁₁ => ?_)
                       · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _)
                           (fun _ => keepsUncachedFrom_throw _ _)

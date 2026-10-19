@@ -1,7 +1,6 @@
 import EthCLSpecs.Proofs.Gloas.BuilderIndex
 import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 import EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid
-import EthCLSpecs.Proofs.Gloas.Codec
 import EthCLSpecs.Proofs.Gloas.ForkChoiceRun
 import EthCLSpecs.Proofs.Gloas.GetPtc
 import EthCLSpecs.Proofs.Gloas.InitializePtcWindow
@@ -30,16 +29,12 @@ Re-exports:
 
 * `EthCLSpecs.Proofs.Gloas.BuilderIndex`: the builder-index flag round-trip
   (`isBuilderIndex`, `toBuilderIndex`, `convertBuilderIndexToValidatorIndex`).
-* `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: both outcomes of
-  `processBuilderPendingPayments` (`processBuilderPendingPayments_run`). When the qualifying
-  withdrawals fit, it appends them and shifts the payment window
-  (`processBuilderPendingPayments_run_of_fits`). Otherwise it raises `.listFull`
-  (`processBuilderPendingPayments_run_of_overflow`).
+* `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: `processBuilderPendingPayments`'s
+  withdrawal-queuing and payment-window-shift postcondition
+  (`processBuilderPendingPayments_run`, plus
+  `processBuilderPendingPayments_run_appended`).
 * `EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid`: the exact `Bool`-vs-`UInt64`-inequality
   characterization of `canBuilderCoverBid`.
-* `EthCLSpecs.Proofs.Gloas.Codec`: the `BasicSupported` gate by kernel `decide`, roundtrip,
-  and non-malleability (`serialize_injective`) for `BeaconState`, `BeaconBlockBody`,
-  `BeaconBlock`, and `SignedBeaconBlock` at the two shipped presets.
 * `EthCLSpecs.Proofs.Gloas.GetPtc`: `getPtc`'s else-branch `ptcWindow` offset bound,
   for the `data.slot + 1 == state.slot` caller (`getPtcElseOffset`,
   `getPtcElseOffset_lt_next_slot`) and the `slot == curSlot` fork-choice replay callers

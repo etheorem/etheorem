@@ -723,28 +723,23 @@ theorem keepsUncachedFrom_forIn_range_run_inv {T ε α β : Type} [SSZRepr T] [H
   have hpair := keepsUncachedFrom_forIn_range_inv (α := α) f P hf n init v hinit
   exact ⟨hpair.1 r s h, hpair.2 r s h⟩
 
-theorem run_sszGetIdx_some {α : Type} {cap : Nat} {σ ε : Type} [ErrorConv IndexError ε] {y : α}
-    (xs : SizzLean.Repr.SSZList α cap) (i : Nat) (sb : σ)
-    (hq : xs.val[i]? = some y) :
+theorem run_sszGetIdx_some {α ρ : Type} {σ ε : Type}
+    [EthCLLib.Spec.IdxRead ρ α] [ErrorConv IndexError ε] {y : α}
+    (xs : ρ) (i : Nat) (sb : σ)
+    (hq : EthCLLib.Spec.IdxRead.get? xs i = some y) :
     (EthCLLib.Spec.sszGetIdx (E := ε) (m := StateT σ (Except ε)) xs i).run sb = .ok (y, sb) := by
-  show (MonadExcept.ofExcept (ε := ε) (m := StateT σ (Except ε))
-    (Except.mapError (ErrorConv.conv (F := ε))
-      (match xs.val[i]? with
-      | some a => Except.ok a
-      | none => .error (SizzLean.Cache.IndexError.indexError i xs.val.size)))).run sb = _
+  unfold EthCLLib.Spec.sszGetIdx EthCLLib.Spec.liftErr
   rw [hq]
   exact run_ofExcept_ok sb
 
-theorem run_sszGetIdx_none {α : Type} {cap : Nat} {σ ε : Type} [ErrorConv IndexError ε]
-    (xs : SizzLean.Repr.SSZList α cap) (i : Nat) (sb : σ)
-    (hq : xs.val[i]? = none) :
+theorem run_sszGetIdx_none {α ρ : Type} {σ ε : Type}
+    [EthCLLib.Spec.IdxRead ρ α] [ErrorConv IndexError ε]
+    (xs : ρ) (i : Nat) (sb : σ)
+    (hq : EthCLLib.Spec.IdxRead.get? xs i = none) :
     (EthCLLib.Spec.sszGetIdx (E := ε) (m := StateT σ (Except ε)) xs i).run sb
-      = .error (ErrorConv.conv (SizzLean.Cache.IndexError.indexError i xs.val.size)) := by
-  show (MonadExcept.ofExcept (ε := ε) (m := StateT σ (Except ε))
-    (Except.mapError (ErrorConv.conv (F := ε))
-      (match xs.val[i]? with
-      | some a => Except.ok a
-      | none => .error (SizzLean.Cache.IndexError.indexError i xs.val.size)))).run sb = _
+      = .error (ErrorConv.conv
+          (SizzLean.Cache.IndexError.indexError i (EthCLLib.Spec.IdxRead.size xs))) := by
+  unfold EthCLLib.Spec.sszGetIdx EthCLLib.Spec.liftErr
   rw [hq]
   exact run_ofExcept_error sb
 

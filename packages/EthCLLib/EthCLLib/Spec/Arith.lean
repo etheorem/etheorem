@@ -36,7 +36,7 @@ alone brings the author surface into scope (`SPEC_AUTHORING_MODEL.md` §3.2), wi
 no second `open SizzLean.Repr`. The fixed-length `Vector` is core Lean; the boxed
 `State` representation (`SizzLean.Cache`) stays behind `sszGet` / `sszUpdate` and is
 deliberately not re-exported. -/
-export SizzLean.Repr (SSZList Bitvector Bitlist)
+export SizzLean.Repr (SSZList Bitvector Bitlist ProgressiveList ProgressiveBitlist)
 
 /-! ## `UInt64` arithmetic -/
 
@@ -178,15 +178,28 @@ is the ordinary `x % n`. Pure `Nat` index arithmetic, so it cannot change which 
 downstream total write hits. -/
 @[inline] def modWrap (x n : Nat) : Nat := if n == 0 then 0 else x % n
 
-/-- Drop the first `k` elements of an `SSZList` (size only shrinks). -/
-def sszDrop {α : Type} {cap : Nat} (xs : SSZList α cap) (k : Nat) : SSZList α cap :=
-  ⟨xs.val.extract k xs.val.size, by have := xs.property; simp only [Array.size_extract]; omega⟩
+/-- A list that can drop a prefix and stay the same collection type.
+`SSZList` keeps its cap (the tail is no longer); `ProgressiveList` has no cap. -/
+class SszDrop (ρ : Type) where
+  drop : ρ → Nat → ρ
+
+/-- Drop the first `k` elements. On an `SSZList` the cap is unchanged. -/
+@[inline] def sszDrop {ρ : Type} [SszDrop ρ] (xs : ρ) (k : Nat) : ρ :=
+  SszDrop.drop xs k
+
+instance {α : Type} {cap : Nat} : SszDrop (SSZList α cap) where
+  drop xs k :=
+    ⟨xs.val.extract k xs.val.size, by have := xs.property; simp only [Array.size_extract]; omega⟩
+
+instance {α : Type} : SszDrop (ProgressiveList α) where
+  drop xs k := xs.drop k
 
 /-- An `SSZList` from an array that fits, the spec's `List[T, N](a)`. The caller passes
 the proof that `a.size ≤ cap` at the call site, `by decide` or `by simp` on the fixed
 sizes, so the obligation is visible where it is paid and this form has no failure branch.
 An array whose size depends on the input goes through `sszOfArrayM`, which raises on too
-many elements as pyspec does. -/
+many elements as pyspec does. A `ProgressiveList` has no cap, so its one-field wrapper
+takes the array whole: `⟨a⟩`. -/
 def sszOfArray {α : Type} {cap : Nat} (a : Array α)
     (h : a.size ≤ cap) : SSZList α cap :=
   ⟨a, h⟩

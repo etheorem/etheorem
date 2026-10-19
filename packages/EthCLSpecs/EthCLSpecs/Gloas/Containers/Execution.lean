@@ -15,8 +15,11 @@ open EthCLLib.Spec
 
 namespace EthCLSpecs.Gloas
 
-/-- `ExecutionPayload` (Gloas): the Fulu payload plus `block_access_list` and
-`slot_number`. -/
+/-- `ExecutionPayload` (Gloas, EIP-7688): the Fulu payload plus
+`block_access_list` and `slot_number`, as a progressive container.
+`transactions` is a progressive list of `ProgressiveByteList`s;
+`withdrawals` is a progressive list. `extraData` stays a capped byte list. -/
+@[sizzlean_progressive]
 forkcontainer ExecutionPayload where
   parentHash      : Hash32
   feeRecipient    : ExecutionAddress
@@ -31,15 +34,17 @@ forkcontainer ExecutionPayload where
   extraData       : SSZList UInt8 Const.maxExtraDataBytes
   baseFeePerGas   : BitVec 256
   blockHash       : Hash32
-  transactions    : SSZList Transaction Const.maxTransactionsPerPayload
-  withdrawals     : SSZList Withdrawal Const.maxWithdrawalsPerPayload
+  transactions    : ProgressiveList Transaction
+  withdrawals     : ProgressiveList Withdrawal
   blobGasUsed     : UInt64
   excessBlobGas   : UInt64
-  blockAccessList : SSZList UInt8 Const.maxBytesPerTransaction
+  blockAccessList : ProgressiveList UInt8
   slotNumber      : UInt64
 
-/-- `ExecutionPayloadEnvelope` (EIP-7732): the revealed payload plus its execution
-requests and the bindings the envelope check verifies against the committed bid. -/
+/-- `ExecutionPayloadEnvelope` (EIP-7732, EIP-7688): the revealed payload plus its
+execution requests and the bindings the envelope check verifies against the
+committed bid. A progressive container. -/
+@[sizzlean_progressive]
 forkcontainer ExecutionPayloadEnvelope where
   payload                : ExecutionPayload
   executionRequests      : ExecutionRequests

@@ -507,6 +507,6 @@ private def roundTripProgList (xs : SizzLean.Repr.ProgressiveList UInt8) : Bool 
         (List.range xs.size).all (fun i => ys'[i]! == xs[i]!)
   | .error _ => false
 
-example : roundTripProgList #[1, 2, 3] = true := by native_decide
+example : roundTripProgList ⟨#[1, 2, 3]⟩ = true := by native_decide
 
 end SizzLeanTests.ReprExamples

@@ -188,6 +188,12 @@ private partial def shapeForType (fieldTypeOrig : Expr) : TermElabM (TSyntax `te
   -- Otherwise reduce via `whnf` for abbrev newtypes (`Slot = UInt64`)
   -- and proceed with the primitive pattern checks.
   let fieldType ← Lean.instantiateMVars (← Lean.Meta.whnf fieldTypeOrig)
+  if fieldType.isAppOfArity ``SizzLean.Repr.ProgressiveList 1 then
+    let α := fieldType.appArg!
+    let αShape ← shapeForType α
+    return ← `(SizzLean.Spec.SSZType.progressiveList $αShape)
+  if fieldType.isConstOf ``SizzLean.Repr.ProgressiveBitlist then
+    return ← `(SizzLean.Spec.SSZType.progressiveBitlist)
   if fieldType.isConstOf ``Bool then
     `(SizzLean.Spec.SSZType.bool)
   else if fieldType.isConstOf ``UInt8 then

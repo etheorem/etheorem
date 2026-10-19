@@ -3,7 +3,7 @@ import EthCLSpecs.Gloas.Containers.Execution
 /-!
 # `EthCLSpecs.Gloas.State`: the Gloas `BeaconState` and its boxed view (EIP-7732)
 
-The Gloas `BeaconState` (v1.7.0-alpha.11, 46 fields), then the `State` abbrev that
+The Gloas `BeaconState` (v1.7.0-alpha.12, 46 fields), then the `State` abbrev that
 views it as an SSZ box. The eth1 fields remain; `latestExecutionPayloadHeader` is
 dropped (its slot now holds `latestBlockHash`), and the ePBS block is appended
 after `proposerLookahead`. The unchanged component containers are this fork's
@@ -17,10 +17,14 @@ open EthCLLib.Spec
 
 namespace EthCLSpecs.Gloas
 
-/-- The Gloas `BeaconState` (v1.7.0-alpha.11, 46 fields). The eth1 fields remain;
+/-- The Gloas `BeaconState` (v1.7.0-alpha.12, 46 fields). The eth1 fields remain;
 `latestExecutionPayloadHeader` is dropped (its slot now holds `latestBlockHash`),
 and the ePBS block is appended after `proposerLookahead`. The unchanged component
-containers are the replayed copies in `Inherited`. -/
+containers are the replayed copies in `Inherited`. EIP-7688 makes the container
+progressive and turns the registry, participation, pending-queue, and builder
+lists into `ProgressiveList`s. `historicalRoots`, `eth1DataVotes`, and
+`historicalSummaries` stay capped lists. -/
+@[sizzlean_progressive]
 forkcontainer BeaconState where
   genesisTime                   : UInt64
   genesisValidatorsRoot         : Root
@@ -33,17 +37,17 @@ forkcontainer BeaconState where
   eth1Data                      : Eth1Data
   eth1DataVotes                 : SSZList Eth1Data (Const.epochsPerEth1VotingPeriod * Const.slotsPerEpoch)
   eth1DepositIndex              : UInt64
-  validators                    : SSZList Validator Const.validatorRegistryLimit
-  balances                      : SSZList Gwei Const.validatorRegistryLimit
+  validators                    : ProgressiveList Validator
+  balances                      : ProgressiveList Gwei
   randaoMixes                   : Vector Bytes32 Const.epochsPerHistoricalVector
   slashings                     : Vector Gwei Const.epochsPerSlashingsVector
-  previousEpochParticipation    : SSZList ParticipationFlags Const.validatorRegistryLimit
-  currentEpochParticipation     : SSZList ParticipationFlags Const.validatorRegistryLimit
+  previousEpochParticipation    : ProgressiveList ParticipationFlags
+  currentEpochParticipation     : ProgressiveList ParticipationFlags
   justificationBits             : Bitvector Const.justificationBitsLength
   previousJustifiedCheckpoint   : Checkpoint
   currentJustifiedCheckpoint    : Checkpoint
   finalizedCheckpoint           : Checkpoint
-  inactivityScores              : SSZList UInt64 Const.validatorRegistryLimit
+  inactivityScores              : ProgressiveList UInt64
   currentSyncCommittee          : SyncCommittee
   nextSyncCommittee             : SyncCommittee
   latestBlockHash               : Hash32
@@ -56,17 +60,17 @@ forkcontainer BeaconState where
   earliestExitEpoch             : Epoch
   consolidationBalanceToConsume : Gwei
   earliestConsolidationEpoch    : Epoch
-  pendingDeposits               : SSZList PendingDeposit Const.pendingDepositsLimit
-  pendingPartialWithdrawals     : SSZList PendingPartialWithdrawal Const.pendingPartialWithdrawalsLimit
-  pendingConsolidations         : SSZList PendingConsolidation Const.pendingConsolidationsLimit
+  pendingDeposits               : ProgressiveList PendingDeposit
+  pendingPartialWithdrawals     : ProgressiveList PendingPartialWithdrawal
+  pendingConsolidations         : ProgressiveList PendingConsolidation
   proposerLookahead             : Vector ValidatorIndex (2 * Const.slotsPerEpoch)
-  builders                      : SSZList Builder Const.builderRegistryLimit
+  builders                      : ProgressiveList Builder
   nextWithdrawalBuilderIndex    : BuilderIndex
   executionPayloadAvailability  : Bitvector Const.slotsPerHistoricalRoot
   builderPendingPayments        : Vector BuilderPendingPayment (2 * Const.slotsPerEpoch)
-  builderPendingWithdrawals     : SSZList BuilderPendingWithdrawal Const.builderPendingWithdrawalsLimit
+  builderPendingWithdrawals     : ProgressiveList BuilderPendingWithdrawal
   latestExecutionPayloadBid     : ExecutionPayloadBid
-  payloadExpectedWithdrawals    : SSZList Withdrawal Const.maxWithdrawalsPerPayload
+  payloadExpectedWithdrawals    : ProgressiveList Withdrawal
   ptcWindow                     : Vector (Vector ValidatorIndex Const.ptcSize) (3 * Const.slotsPerEpoch)
 
 -- The once-per-fork preamble: declares `State` (the boxed `BeaconState`) and the

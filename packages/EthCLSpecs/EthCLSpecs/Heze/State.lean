@@ -3,8 +3,10 @@ import EthCLSpecs.Heze.Containers.InclusionList
 /-!
 # `EthCLSpecs.Heze.State`: the Heze `BeaconState` (inherited from Gloas)
 
-At alpha.11 Heze does not change `BeaconState`, so `inherit BeaconState` replays Gloas's
-field block here unchanged. `state_preamble` declares the boxed `State` and `modifyState`.
+Heze's `BeaconState` keeps Gloas's 46 fields. `inherit BeaconState` replays that block,
+including the progressive-container attribute, and `latestExecutionPayloadBid` late-binds
+to Heze's bid (the extra `inclusionListBits` field). `state_preamble` declares the boxed
+`State` and `modifyState`.
 The `Containers.InclusionList` import is the load-order entry: it transitively pulls
 `Heze.Inherited` (the inherited containers) and the `fork Heze from Gloas` lineage that
 `inherit` resolves against. It is required; do not drop it.

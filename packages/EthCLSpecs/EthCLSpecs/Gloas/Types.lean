@@ -24,6 +24,10 @@ inherit CommitteeIndex WithdrawalIndex Gwei Root
 inherit Bytes32 Hash32 Version DomainType
 inherit Domain BLSPubkey BLSSignature ExecutionAddress
 inherit ParticipationFlags KZGCommitment KZGProof Cell
-inherit ColumnIndex CellIndex Transaction
+inherit ColumnIndex CellIndex
+
+/-- `Transaction` at Gloas is a `ProgressiveByteList`: an uncapped byte list.
+Fulu's alias is a capped `SSZList`. -/
+forkabbrev Transaction := SizzLean.Repr.ProgressiveList UInt8
 
 end EthCLSpecs.Gloas

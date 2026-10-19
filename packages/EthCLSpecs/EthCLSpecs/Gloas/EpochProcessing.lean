@@ -205,8 +205,10 @@ forkdef processPendingDeposits : StateTransition Unit := do
   let deposits := (sszGet state pendingDeposits).toArray
 
   let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
-  let remaining : SSZList PendingDeposit Const.pendingDepositsLimit ←
-    sszOfArrayM "pendingDeposits" (deposits.extract scan.ndi deposits.size ++ scan.postpone)
+  -- `pendingDeposits` is a progressive list at alpha.12, so the leftover array goes in
+  -- whole: no `PENDING_DEPOSITS_LIMIT` cap, no `.listFull` raise to mirror.
+  let remaining : ProgressiveList PendingDeposit :=
+    ⟨deposits.extract scan.ndi deposits.size ++ scan.postpone⟩
   modifyState fun state => sszUpdate state with
     pendingDeposits := remaining,
     depositBalanceToConsume := if scan.churnReached then avail - scan.processed else 0
@@ -218,7 +220,23 @@ inherit processSlashingsReset
 inherit processRandaoMixesReset
 inherit processEth1DataReset
 inherit processHistoricalSummariesUpdate
-inherit processParticipationFlagUpdates
+
+/-- `process_participation_flag_updates` (Gloas override of the Fulu substep): rotate
+current participation into previous and reset current to all-zero flags, one per
+validator. Fulu's body builds the zero flags through the capped `SSZList`
+constructor, the raise #120 added; Gloas's `currentEpochParticipation` is an
+uncapped progressive list at alpha.12, so the reset takes the array whole and
+nothing can raise. Heze inherits this override. -/
+forkdef processParticipationFlagUpdates : StateTransition Unit := do
+  let state ← get
+  let current := sszGet state currentEpochParticipation
+  let count := (sszGet state validators).size
+  let zeros : ProgressiveList ParticipationFlags :=
+    ⟨Array.replicate count (0 : ParticipationFlags)⟩
+  modifyState fun state =>
+    sszUpdate state with
+      previousEpochParticipation := current,
+      currentEpochParticipation  := zeros
 
 -- Shuffle-dependent substeps: now inheritable since the committee layer is in the
 -- Gloas namespace. `processProposerLookahead`'s `getBeaconProposerIndices` call binds

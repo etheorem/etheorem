@@ -209,9 +209,8 @@ forkdef processWithdrawals : StateTransition Unit := do
     modifyState fun state => sszUpdate state with nextWithdrawalIndex := (expected[expected.size - 1]!).index + 1
 
   -- update_payload_expected_withdrawals (NEW)
-  let expectedList : SSZList Withdrawal Const.maxWithdrawalsPerPayload ←
-    sszOfArrayM "payloadExpectedWithdrawals" expected
-  modifyState fun state => sszUpdate state with payloadExpectedWithdrawals := expectedList
+  modifyState fun state =>
+    sszUpdate state with payloadExpectedWithdrawals := ⟨expected⟩
 
   -- update_builder_pending_withdrawals (NEW): drop the processed builder withdrawals
   modifyState fun state => sszUpdate state with builderPendingWithdrawals := sszDrop (sszGet state builderPendingWithdrawals) builderCount
