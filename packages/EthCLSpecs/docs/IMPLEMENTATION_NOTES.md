@@ -2166,10 +2166,11 @@ carry the design.
 
 - **The `with` clause became an at-theorem command.** The sketch's §14.3
   spelled the terms in a `with` clause on the generator line. The command
-  `theorem_vectors_manual` replaced it, the `with` surface is gone from
-  the grammar, and the registration sits under the theorem it witnesses.
-  Four reasons. An authoring mistake errors in the file that made it, at
-  the exact clause. The terms elaborate under the proof file's own
+  `theorem_vectors_manual` replaced it, and the registration sits under
+  the theorem it witnesses. A follow-up commit deleted the `with`
+  group's parse rules, so a `with` group after a named line is a parse
+  error. Four reasons. An authoring mistake errors in the file that made
+  it, at the exact clause. The terms elaborate under the proof file's own
   `open`s, so a term reads the way the proof above it reads. A witness
   has one home, beside its theorem. And the ledger persists names only,
   `(theorem, input, holder)` triples in a `SimplePersistentEnvExtension`,

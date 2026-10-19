@@ -67,8 +67,8 @@ structure ReuseWin where
   fromPreset : PresetId
 
 /-- One run of the search: the probe, its build-time description, the
-binding, the preset, and the telescope's free variables with this line's
-manual terms (§9.2's `SearchCtx`; their serialized bytes sit in the
+binding, the preset, and the telescope's free variables with the
+theorem's manual terms (§9.2's `SearchCtx`; their serialized bytes sit in the
 probe's `manuals` field, which the command fixes at build time).
 
 The free variables are telescope-local: like the statement's expressions,
@@ -89,8 +89,9 @@ structure SearchCtx where
   /-- The instance constant each instance binder fixes at this preset
   (§10), aligned with `stmt.instances`. -/
   instConsts : Array Name
-  /-- The author's manual terms of this line, with their input positions
-  (§14.3). Empty when the line named none. -/
+  /-- The theorem's manual terms, from its `theorem_vectors_manual`
+  registration (§14.6), with their input positions. Empty when the
+  theorem has none. -/
   manualTerms : Array (Nat × Expr)
   /-- The random searcher's draws, memoized per position: a draw is a
   pure function of the seed, the size, the index, and the position (§9.4),

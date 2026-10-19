@@ -57,7 +57,7 @@ theorem callee_add (v : UInt64) :
 end EthCLLib.Proofs.Base
 
 -- The fixture's registration: the witness for `v`, recorded in the
--- theorem's own file (§14.3). `open EthCLLib.Internal in` activates the
+-- theorem's own file (§14.6). `open EthCLLib.Internal in` activates the
 -- registration command's scoped syntax for this one command.
 open EthCLLib.Internal in
 theorem_vectors_manual EthCLLib.Proofs.Base.callee_add
@@ -72,7 +72,7 @@ theorem_vectors_fork EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding
 -- the discovery clauses, so the clauses never run an excluded theorem.
 theorem_vectors! callee_eq presets minimal
 -- the registered theorem's named line: its manual terms come from the
--- registration above, and the line carries no `with` clause
+-- registration above
 theorem_vectors callee_add presets minimal
 theorem_vectors skip callee_skipped "covered by callee_eq"
 

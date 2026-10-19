@@ -88,7 +88,7 @@ theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
   rfl
 
 -- The generator's witness for the theorem above
--- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), written under it. The
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), written under it. The
 -- hypothesis reads the builder index through `UInt64.toNat`, which the
 -- coupled walk and the solver's `UInt64` fragment do not bridge, so no
 -- searcher can fix the index against a built registry. The old witness

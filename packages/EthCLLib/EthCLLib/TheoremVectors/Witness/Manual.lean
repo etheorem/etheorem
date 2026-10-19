@@ -4,8 +4,8 @@ import EthCLLib.TheoremVectors.Witness.Searcher
 /-!
 # `EthCLLib.TheoremVectors.Witness.Manual`: the manual searcher
 
-The manual searcher (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4): a named line's
-`with` clause fixes inputs to author-written terms. When the manual terms
+The manual searcher (`THEOREM_VECTORS_ARCHITECTURE.md` §9.4): a registration's
+terms fix inputs to author-written values (§14.6). When the manual terms
 cover every input, the candidate is the terms' serialized bytes overlaid
 on the serialized defaults, checked like any other. When they cover a strict
 subset, the searcher answers `nothing` and the bit-vector searcher takes the

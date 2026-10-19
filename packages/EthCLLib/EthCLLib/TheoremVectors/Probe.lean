@@ -1358,7 +1358,7 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
         let safeFn ← Meta.mkLambdaFVars #[ci, bytes] safeDispatch
 
         -- the manual terms, serialized in compiled code (§9.4). Each
-        -- manual term already carries the telescope's instances (§14.3:
+        -- manual term already carries the telescope's instances (§14.6:
         -- elaborated in the telescope), which `substInstances` fixes
         -- per preset.
         let manualsLit : Array Expr ← manualTerms.mapM fun (pos, sterm) => do

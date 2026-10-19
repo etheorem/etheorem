@@ -216,7 +216,7 @@ run_cmd do
       unless disjuncts.size == 1 do
         throwError s!"toyManual: expected one prepared disjunct, got {disjuncts.size}"
       -- the manual term `0`, elaborated in the telescope like a
-      -- `with` term
+      -- registration clause's term
       let stx ← `(term| 0)
       let manualTerm ← (Lean.Elab.Term.withoutErrToSorry
         (Lean.Elab.Term.elabTermAndSynthesize stx (some (.const ``UInt64 [])))).run'

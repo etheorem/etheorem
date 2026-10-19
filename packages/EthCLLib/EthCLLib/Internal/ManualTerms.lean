@@ -7,8 +7,7 @@ import EthCLLib.Internal.ProofLedger
 # `EthCLLib.Internal.ManualTerms`: the `theorem_vectors_manual` command
 
 The generator (`EthCLLib.TheoremVectors`) takes an author's witness terms
-through a `with` clause on a generator-file line. This module is the other
-home for the same kind of term: next to the theorem it witnesses. A manual
+through this module: the terms sit next to the theorem they witness. A manual
 witness is a value for one theorem input, written in the theorem's own file:
 
 ```lean
@@ -141,7 +140,7 @@ private inductive ManualClause where
 
 /-- Every clause node of the command, in source order. `many`'s own node
 wraps the list, so the walk recurses and keys on the four clause rule
-kinds, the way the generator's `parseManuals` keys on the token layout.
+kinds, the way the generator's line parsers key on their rules' kinds.
 The kinds compare fully qualified: a bare name literal never picks up the
 module namespace, and the rule names carry it. -/
 private partial def collectClauses (stx : Syntax) (acc : Array Syntax) :
@@ -193,9 +192,8 @@ private def withInstanceTelescope {α : Type} (type : Expr)
     (k : Array Expr → Expr → MetaM α) : MetaM α :=
   Meta.forallBoundedTelescope type (some (instancePrefixArity type)) k
 
-/-- Elaborate one clause's term against `expectedType?`, the way the
-generator elaborates a `with`-clause manual term: `errToSorry` is off, so
-an authoring error is a build error at the clause. The run keeps the
+/-- Elaborate one clause's term against `expectedType?`: `errToSorry` is
+off, so an authoring error is a build error at the clause. The run keeps the
 walk's local context, so the instance free variables and the shared `let`s
 stay visible. -/
 private def elabClauseTerm (stx : Syntax) (expectedType? : Option Expr) :

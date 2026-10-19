@@ -26,7 +26,7 @@ alongside Gloas's constants. `open scoped EthCLSpecs.Gloas.Downgrade` supplies t
 both sides, the same bridge `Gloas/Upgrade.lean` itself opens.
 
 The three theorems carry the generator's witness terms as `theorem_vectors_manual`
-registrations under them (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3). The search
+registrations under them (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6). The search
 never draws the terms they need. `default`'s empty validator set drives
 `computePtcFromFulu`'s balance-weighted selection into its fuel bound, so
 `activeState` supplies 64 active validators. The window offsets pin the smallest
@@ -100,7 +100,7 @@ theorem initializePtcWindow_lt [Preset] [HasherTag] :
   simp [initializePtcWindow, h]
 
 -- The generator's witnesses for the three theorems of this file
--- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), written under them.
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), written under them.
 open EthCLLib.Internal in
 theorem_vectors_manual initializePtcWindow_lt
   state := activeState

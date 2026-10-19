@@ -1449,8 +1449,8 @@ the `.olean`.
 ledger's names, over the statement's instance binders (§11.2). Every run
 of a registered theorem uses its registration: a named line,
 `characterized`, and `tagged` alike. A registration is the theorem's only
-manual source, so a line that spells a `with` group for a registered
-theorem errors (§14.3).
+manual source, and a `with` group after a named line is a parse error
+(the grammar of §14.3 has no `with` form).
 
 **Precedence with the generator file.** Two rules protect a registration:
 

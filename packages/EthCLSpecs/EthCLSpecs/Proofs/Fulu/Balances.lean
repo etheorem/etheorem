@@ -41,7 +41,7 @@ Scope is Fulu's two mutators. Gloas and Heze inherit them at their own `State`, 
 constant, and these theorems say nothing about those instantiations.
 
 Four of the theorems carry the generator's witness terms under them, as
-`theorem_vectors_manual` registrations (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3). A
+`theorem_vectors_manual` registrations (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6). A
 witness belongs to its theorem, so it is written under it, the terms elaborate in
 this file's own scope, and an authoring mistake fails this file's build. The two
 out-of-range theorems take `default` for both states, whose empty balances list
@@ -146,7 +146,7 @@ theorem increaseBalance_run_outOfRange [Preset] [HasherTag] :
   rfl
 
 -- The generator's witnesses for the theorem above
--- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), now written under it.
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), now written under it.
 open EthCLLib.Internal in
 theorem_vectors_manual increaseBalance_run_outOfRange
   state    := default
@@ -184,7 +184,7 @@ theorem increaseBalance_run_overflow [Preset] [HasherTag] :
   rfl
 
 -- The generator's witnesses for the theorem above
--- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), now written under it.
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), now written under it.
 open EthCLLib.Internal in
 theorem_vectors_manual increaseBalance_run_overflow
   state    := maxBalanceState
@@ -266,7 +266,7 @@ theorem decreaseBalance_run_outOfRange [Preset] [HasherTag] :
   rfl
 
 -- The generator's witnesses for the theorem above
--- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), now written under it.
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), now written under it.
 open EthCLLib.Internal in
 theorem_vectors_manual decreaseBalance_run_outOfRange
   state    := default
@@ -304,7 +304,7 @@ theorem decreaseBalance_run_no_underflow [Preset] [HasherTag] :
   rfl
 
 -- The generator's witnesses for the theorem above
--- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), now written under it.
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), now written under it.
 open EthCLLib.Internal in
 theorem_vectors_manual decreaseBalance_run_no_underflow
   state    := oneBalanceState

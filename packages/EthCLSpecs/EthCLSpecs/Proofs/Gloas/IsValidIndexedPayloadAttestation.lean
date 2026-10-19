@@ -75,7 +75,7 @@ theorem isValidIndexedPayloadAttestation_eq_true_iff_checks [Preset] [HasherTag]
   simp [isValidIndexedPayloadAttestation, and_assoc]
 
 -- The generator's witness for the theorem above
--- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.3), written under it: 64
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), written under it: 64
 -- registered validators put indices `5` and `9` in range, two in-range
 -- increasing indices make the true-side conjunction hold, and the zero
 -- signature is the one the verify-off backend accepts. The false-side
