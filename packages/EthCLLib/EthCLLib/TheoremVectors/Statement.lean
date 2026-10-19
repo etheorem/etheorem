@@ -27,10 +27,13 @@ Three readings deviate from the sketches and carry their reasons:
   vector. The walk still fills `target` when it finds a spec function, and a
   theorem whose conclusion matches no shape is `.unsupported` by §7.3's rule
   8 regardless.
-- `specName` reads the target's docstring. §7.2's sketch names no spec-name
-  field, and the pyspec spelling already opens the target declaration's
-  docstring as its backticked snake-case span, so the reader promotes it
-  to data at read time. The notes record the deviation (stage 10).
+- The pyspec name comes from the fork binding's `pyspecNames` table (§6).
+  §7.2's sketch names no spec-name field, and the spelling a client
+  consumes is data the fork owns, so the binding carries one row per
+  function it owns and the reader looks the discovered target up in the
+  table. A target with no row answers `none`. A target declaration's
+  docstring may still open with the backticked snake-case span, as
+  documentation for humans; nothing reads it.
 - The run matches require the run's state to be one of the statement's
   state-typed value binders, the binders whose type names
   `binding.stateType`; the `.runOk` returned value and post-state must
@@ -150,16 +153,10 @@ structure Statement where
   /-- The spec function under test, when the conclusion's left side names
   one the binding's fork owns (§7.2). -/
   target    : Option Name
-  /-- The target's pyspec name, read off the target declaration's
-  docstring (the stage-10 promotion, a recorded deviation from §7.2).
-  The docstring must open with a backticked code span. The span's
-  content must be the identifier, or the identifier followed by a
-  `(pre)`-style call form; `initialize_ptc_window(pre)` yields
-  `initialize_ptc_window`. A missing
-  target, a missing docstring, or an opening span that names no such
-  identifier answers `none`. The function format then falls back to the
-  Lean target name. -/
-  specName  : Option String
+  /-- The target's pyspec name, from the fork binding's `pyspecNames`
+  table (§6). A target with no row answers `none`. The function format
+  then falls back to the Lean target name. -/
+  pyspecName : Option String
   /-- The scalar kind of each input, in binder order, `none` for a
   container (`§9.4`). The reader computes it once, in `MetaM`, because
   the kind needs a reducible `whnf` that a pure `applies` test cannot
@@ -203,20 +200,12 @@ functions, which are plain `def`s (`initializePtcWindow` among them) and
 §7.2's own example names one as the target. Ownership plus
 "elaborates to a definition, and not a projection accessor" keeps the
 fork's containers, its `forkstruct` types, and their field accessors out
-of the walk while keeping every callable fork function in. -/
+of the walk while keeping every callable fork function in. The test's one
+home is `ForkBinding.ownedSpecFunction?`; the binding's `pyspecNames`
+validation reads through the same rule. -/
 private def isOwnedSpecFunction (env : Environment) (binding : ForkBinding)
     (c : Name) : Bool :=
-  if (EthCLLib.Internal.specFunctionOwner? env c).map (·.1) != some binding.fork then
-    false
-  else if env.isProjectionFn c then
-    -- a structure accessor names a field, not a function under test:
-    -- `store.justifiedCheckpoint.epoch`'s `Checkpoint.epoch` must not
-    -- become the target of the monotonicity bound over it
-    false
-  else
-    match env.find? c with
-    | some (.defnInfo _) | some (.opaqueInfo _) => true
-    | _ => false
+  ownedSpecFunction? env binding c
 
 /-- The left side of a conclusion: the first operand of an equation, an
 `↔`'s equation's first operand, or the first operand of a comparison.
@@ -263,55 +252,6 @@ private partial def findTargetIn (env : Environment) (binding : ForkBinding)
   -- application the executor could call, and instantiating the binder
   -- here would drag the walk past the term it was given
   | _ => pure none
-
-/-- Does the char open a lowercase snake-case identifier? A letter of
-`[a-z]`. -/
-private def isSnakeHead (c : Char) : Bool := 'a' ≤ c && c ≤ 'z'
-
-/-- May the char appear past the head of a snake-case identifier? -/
-private def isSnakeChar (c : Char) : Bool :=
-  c == '_' || c.isDigit || isSnakeHead c
-
-/-- The leading snake-case run of a span's content, when the content
-starts with one. `initialize_ptc_window(pre)` yields
-`initialize_ptc_window`; `MIN_DEPOSIT_AMOUNT` yields `none`. -/
-private def snakePrefix? (span : String) : Option String := do
-  let c ← span.toList.head?
-  guard (isSnakeHead c)
-  pure (String.ofList (span.toList.takeWhile isSnakeChar))
-
-/-- The snake-case identifier a docstring opens with, when it does. The
-docstring must open with the backticked span, and the span's content must
-be the identifier itself or the identifier followed by a `(` call form.
-`initialize_ptc_window(pre)` yields `initialize_ptc_window`; a span like
-`sszGetIdx`, and a span named mid-sentence, yield `none`. -/
-private def openingSnakeName? (doc : String) : Option String := do
-  let chunks := doc.splitOn "`"
-  -- the docstring opens with the span: the lead-in chunk is empty
-  guard (chunks.head? == some "")
-  let span ← chunks[1]?
-  let name ← snakePrefix? span
-  let rest := span.drop name.length
-  guard (rest.isEmpty || rest.take 1 == "(")
-  pure name
-
--- the parse's branches, pinned beside the rule (stage 10)
-#guard openingSnakeName? "`initialize_ptc_window(pre)`: the cached PTC window."
-    == some "initialize_ptc_window"
-#guard openingSnakeName? "`callee`: the toy value under test." == some "callee"
-#guard openingSnakeName? "`sszGetIdx` reads the list." == none
-#guard openingSnakeName? "`state.slot` is the slot." == none
-#guard openingSnakeName? "The toy composition value, named `caller`, builds on `callee`."
-    == none
-#guard openingSnakeName? "no code span at all" == none
-#guard openingSnakeName? "`MIN_DEPOSIT_AMOUNT` is a constant." == none
-
-/-- The target's spec name: the snake-case identifier the declaration's
-docstring opens with (the stage-10 promotion). No docstring, or no identifier
-in the opening span's position, answers `none`. -/
-private def specNameOf (env : Environment) (c : Name) : MetaM (Option String) := do
-  let doc? ← findDocString? env c
-  pure (doc?.bind openingSnakeName?)
 
 /-! ## Shape matching (§7.3) -/
 
@@ -593,11 +533,10 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
     let target ← match conclusionLhs? body with
       | none => pure none
       | some lhs => findTargetIn env binding lhs
-    -- the spec name, once per target, at read time: the same `env` lookup
-    -- target discovery used (the stage-10 promotion)
-    let specName ← match target with
-      | some c => specNameOf env c
-      | none => pure none
+    -- the pyspec name, from the binding's table (§6): one row per
+    -- function the fork owns, and a target with no row answers `none`
+    let pyspecName := target.bind fun c =>
+      binding.pyspecNames.find? (fun p => p.1 == c) |>.map (·.2)
     -- the scalar kinds, once per input: the searchers' `applies` tests and
     -- the probe read this table, so an alias never reads as a container
     -- and the reducible `whnf` never runs twice (§9.4)
@@ -615,7 +554,7 @@ def Statement.readIn {α : Type} (binding : ForkBinding) (thmName : Name)
         else .unsupported s!"unknown instance seam on binder `{n}`: `{c}`"
       | _ => shape
     k { stmt := { thm := thmName, instances, inputs, typeBinders, hyps, target,
-                  specName, scalarKinds, shape }
+                  pyspecName, scalarKinds, shape }
         inputFvars, instFvars }
 
 end EthCLLib.TheoremVectors

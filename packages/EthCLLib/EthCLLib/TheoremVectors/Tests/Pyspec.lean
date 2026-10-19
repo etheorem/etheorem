@@ -54,6 +54,8 @@ private def gloasLikeBinding : ForkBinding where
   opens := #[]
   builders := #[]
   handlerOf := fun _ => none
+  -- §6: the guard pins the local-name fold alone, so the table stays empty.
+  pyspecNames := #[]
   interface := fun _ => none
 
 -- the theorem's local name (§13.4): the fork's proof namespace, then the

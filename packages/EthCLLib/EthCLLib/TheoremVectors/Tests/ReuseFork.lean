@@ -53,6 +53,8 @@ def reuseBinding : EthCLLib.TheoremVectors.ForkBinding where
   opens      := #[]
   builders   := #[]
   handlerOf  := fun _ => none
+  -- §6: no reuse test pins a pyspec spelling, so the table stays empty.
+  pyspecNames := #[]
   interface  := fun _ => none
 
 /-- The scratch output root the reuse tests' command drive writes into,

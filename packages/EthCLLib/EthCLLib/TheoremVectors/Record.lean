@@ -27,8 +27,8 @@ spelling §12.2 carries today. The
 payload nests under `value`, because the scalar's literal and the
 container's root share one field slot. The `theorem` field spells with
 French quotes in Lean, `«theorem»`, and the derived JSON writes the wire
-spelling §12.2 fixes. The record's `specName` field, the target's pyspec
-name, is the stage-10 promotion, recorded in the notes.
+spelling §12.2 fixes. The record's `specName` field carries the target's
+pyspec name, which the fork binding's `pyspecNames` table supplies.
 
 ## Lean idioms annotated
 
@@ -90,8 +90,8 @@ structure VectorRecord where
   preset    : PresetId
   /-- The spec function under test, when the reader found one (§7.2). -/
   target    : Option Name
-  /-- The target's pyspec name, when the reader read one off the target's
-  docstring (the stage-10 promotion). The derived JSON writes the wire key
+  /-- The target's pyspec name, from the fork binding's `pyspecNames`
+  table (§6). The derived JSON writes the wire key
   `specName`, the way `disjunctIndex` spells. -/
   specName  : Option String
   /-- The conclusion's shape. -/

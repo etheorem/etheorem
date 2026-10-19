@@ -12,8 +12,8 @@ accepts the records whose target the reader found: the file's `function`
 field names the function a client exposes, and a record without one has
 no function to name, so the format rejects it. §13.3 says the format
 accepts every record; the notes record the deviation. The `function`
-field spells the record's `specName`, the target's pyspec name the reader
-read off the docstring (the stage-10 promotion). When `specName` is
+field spells the record's `specName`, the target's pyspec name the fork
+binding's `pyspecNames` table supplies. When `specName` is
 `none`, the field falls back to the Lean target name. The directory
 keeps the Lean target name either way. One YAML file per accepted
 vector:
@@ -96,7 +96,8 @@ def Formats.functionCheck (env : RenderEnv) (_r : VectorRecord)
 the records whose target the reader found: the file's `function` field
 names the function a client exposes, and a record without one has no
 function to name. The field carries the record's `specName`, the pyspec
-name. When `specName` is `none`, it falls back to the Lean target name.
+name from the fork binding's `pyspecNames` table. When `specName` is
+`none`, it falls back to the Lean target name.
 The directory spells the Lean target name either way. -/
 def Formats.function : VectorFormat where
   name := "function"

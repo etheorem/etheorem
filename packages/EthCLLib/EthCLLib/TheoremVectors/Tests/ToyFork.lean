@@ -44,6 +44,9 @@ def toyBinding : EthCLLib.TheoremVectors.ForkBinding where
   opens := #[]
   builders := #[]
   handlerOf := fun _ => none
+  -- §6: the pyspec table. The fork's `callee` forkdef gets the row; the
+  -- `caller` forkdef gets none, which `Tests/Probe.lean` pins.
+  pyspecNames := #[(`EthCLLib.Tests.InheritanceReplay.Base.callee, "callee")]
   interface := fun _ => none
 
 /-- The scratch output root the test drives share, under this package's
@@ -130,6 +133,8 @@ def toyRunBinding : EthCLLib.TheoremVectors.ForkBinding where
     | `EthCLLib.TheoremVectors.Tests.ToyRun.toyIndexMiss =>
         some ("epoch_processing", "inactivity_updates")
     | _ => none
+  -- §6: no test pins a pyspec spelling here, so the table stays empty.
+  pyspecNames := #[]
   interface := fun
     | .minimal => some toyRunInterface
     | .mainnet => none

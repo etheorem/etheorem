@@ -83,14 +83,13 @@ def toyWrongFun (x : UInt64) : UInt64 := x + 4
 compiled code refutes it. -/
 theorem toyWrongEq [HasherTag] (x : UInt64) : toyWrongFun x = x + 4 := rfl
 
-/-- A theorem over the toy fork's `callee`, the forkdef whose docstring
-opens with the backticked spec name. The theorem lives outside the fork's
+/-- A theorem over the toy fork's `callee`, the forkdef the toy binding's
+`pyspecNames` table names. The theorem lives outside the fork's
 proof namespace, so the command tests' survey clause never discovers it. -/
 theorem toyCallee : EthCLLib.Tests.InheritanceReplay.Base.callee = 1 := rfl
 
-/-- A theorem over the toy fork's `caller`, the forkdef whose docstring
-names no pyspec step in the opening span's position: the spec-name rule's
-negative. -/
+/-- A theorem over the toy fork's `caller`, the forkdef no `pyspecNames`
+row names: the table lookup's negative. -/
 theorem toyCaller : EthCLLib.Tests.InheritanceReplay.Base.caller = 11 := rfl
 
 /-- The evaluated probe for one theorem, with a skip reason turned into
@@ -159,7 +158,7 @@ private def roundTrip (thm : Name) (binding : ForkBinding)
           (r.inputLiterals.getD i none) (r.inputRoots.getD i none)
     let record : VectorRecord :=
       { «theorem» := stmt.thm, fork := binding.tag, preset := .minimal,
-        target := stmt.target, specName := stmt.specName,
+        target := stmt.target, specName := stmt.pyspecName,
         shape := shapeTag,
         disjunctIndex := d.index, side := d.side,
         inputs := inputVals,
@@ -462,30 +461,29 @@ run_cmd do
       unless stmt.shape matches .eq _ _ do
         throwError s!"toyRunOk at the toy binding: expected the eq \
           fallback, got {stmt.shape.wire}"
-    -- the spec name's promotion (stage 10): the target's docstring names the
-    -- pyspec spelling, and the reader lifts it at read time
+    -- the pyspec name (§6): the binding's `pyspecNames` table names the
+    -- target, and the reader answers the row's spelling
     Statement.readIn toyBinding
         `EthCLLib.TheoremVectors.Tests.Probe.toyCallee fun ctx => do
       unless ctx.stmt.target == some `EthCLLib.Tests.InheritanceReplay.Base.callee do
         throwError "toyCallee: the reader found no target"
-      unless ctx.stmt.specName == some "callee" do
+      unless ctx.stmt.pyspecName == some "callee" do
         throwError s!"toyCallee: expected the spec name `callee`, got \
-          {repr ctx.stmt.specName}"
-    -- a target whose docstring names no identifier in the opening
-    -- span's position answers `none`
+          {repr ctx.stmt.pyspecName}"
+    -- a target with no row in the table answers `none`
     Statement.readIn toyBinding
         `EthCLLib.TheoremVectors.Tests.Probe.toyCaller fun ctx => do
       unless ctx.stmt.target == some `EthCLLib.Tests.InheritanceReplay.Base.caller do
         throwError "toyCaller: the reader found no target"
-      unless ctx.stmt.specName == none do
+      unless ctx.stmt.pyspecName == none do
         throwError s!"toyCaller: expected no spec name, got \
-          {repr ctx.stmt.specName}"
-    -- a targetless statement answers `none` whatever its docstrings say
+          {repr ctx.stmt.pyspecName}"
+    -- a targetless statement answers `none` whatever the table holds
     Statement.readIn toyBinding
         `EthCLLib.TheoremVectors.Tests.Probe.toyEq fun ctx => do
       unless ctx.stmt.target == none do
         throwError "toyEq: expected no target"
-      unless ctx.stmt.specName == none do
+      unless ctx.stmt.pyspecName == none do
         throwError s!"toyEq: expected no spec name, got \
-          {repr ctx.stmt.specName}"
+          {repr ctx.stmt.pyspecName}"
     IO.FS.removeDirAll dir

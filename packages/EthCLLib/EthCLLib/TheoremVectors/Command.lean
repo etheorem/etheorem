@@ -624,7 +624,7 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
             (r.inputLiterals.getD i none) (r.inputRoots.getD i none)
       let record : VectorRecord :=
         { «theorem» := stmt.thm, fork := binding.tag, preset := p,
-          target := stmt.target, specName := stmt.specName,
+          target := stmt.target, specName := stmt.pyspecName,
           shape := shapeTag,
           disjunctIndex := d.index, side := d.side,
           inputs := inputVals, output := outVal, error := errVal,
@@ -1014,6 +1014,9 @@ def elabTvFork : CommandElab := fun stx => do
   -- a fresh outcome subtree per build: a theorem the fork's lines no
   -- longer name must not linger in the report (§16.2)
   let binding ← evalForkBinding bindingName
+  -- §6: the binding's `pyspecNames` table validates once, at the header,
+  -- so a stale row fails the build the way a stale `skip` line does
+  validatePyspecNames binding
   let outDir ← outDirOf
   -- a fresh outcome and record subtree per build: a theorem the fork's
   -- lines no longer name must not linger in the report or the render pass
