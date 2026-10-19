@@ -1425,9 +1425,7 @@ function format, and the search wiring, against
   (default 1000000) around each run by writing both `Core.Context`
   reader fields, `maxHeartbeats` times 1000 and `initHeartbeats` at the
   run's start, so the budget is per run and the generator file sets no
-  `set_option`. An earlier revision raised the file's `maxHeartbeats`
-  instead and claimed a reader-field change inside the run could not
-  raise it; that claim was wrong, and the reader fields take the change.
+  `set_option`.
 
 - **The witness searchers' `applies` reads the search context.** §9.2's
   sketch types `applies : Statement → Case → Bool`. §9.4's state rule is
@@ -1708,11 +1706,11 @@ the hint source, the mode, the committed files, and the recipes) against
 
 - **The committed Gloas hints cover the ten theorems that wrote
   records.** Their sources are the four kinds the stage runs: `base`
-  for `getPtcElseOffset_lt_same_slot`; `bitVec` for
-  `getPtcElseOffset_lt_next_slot`,
-  `convertBuilderIndexToValidatorIndex_toBuilderIndex`,
+  for `getPtcElseOffset_lt_same_slot`,
   `isBuilderIndex_convertBuilderIndexToValidatorIndex`, and
-  `toBuilderIndex_convertBuilderIndexToValidatorIndex`; `seed` for the
+  `toBuilderIndex_convertBuilderIndexToValidatorIndex`; `bitVec` for
+  `getPtcElseOffset_lt_next_slot` and
+  `convertBuilderIndexToValidatorIndex_toBuilderIndex`; `seed` for the
   two window theorems, `initializePtcWindow_ge`, and
   `isValidIndexedPayloadAttestation_eq_true_iff_checks`'s true side;
   and `random` for `canBuilderCoverBid_iff`'s three cases and the
