@@ -1811,8 +1811,8 @@ the hint source, the mode, the committed files, and the recipes) against
   stops paying its grid walk per build, which is what keeps the clean
   recipe near one minute. The skip keys on the fingerprint alone, and
   the fingerprint covers the statement and the input shapes. A raised
-  `randomDraws`, a new `with` clause, or a builder fix that makes a
-  recorded case satisfiable does not re-search it. A fully covering
+  `randomDraws`, new manual terms under the theorem, or a builder fix that
+  makes a recorded case satisfiable does not re-search it. A fully covering
   seed added to a theorem whose cases all read `notFound` hits the
   seed-claim error until one rebuild recipe run refreshes the entries.
 
@@ -2064,15 +2064,17 @@ builders, the executor's run rows, and the record's error value) against
   (`increaseBalance_run_no_wrap`, `decreaseBalance_run_no_underflow` at
   both presets) carry the mutated state in their `output.ssz` and roots.
 
-- **The `initiateBuilderExit` faithful reject, and the seed that carries
-  its record.** Stage 10's harness probe surfaced the Lean-side gap
+- **The `initiateBuilderExit` faithful reject, and the witness that
+  carries its record.** Stage 10's harness probe surfaced the Lean-side gap
   (`DISCREPANCIES.md`, Gloas): the forkdef's `[i]!` write answered
   `default` and no-op past the end of `builders`, where the pyspec's bare
   `state.builders[builder_index]` read raises `IndexError`. The forkdef
   now reads the registry through `sszGetIdx` and rejects with
   `.outOfBounds`, `_run_eq` carries the range hypothesis, and the vector
-  regenerates from the `withQueue` seed (`Manual/Gloas.builderState`; the
-  stage's run recorded the winner tag as `seed`, today `manual`).
+  regenerates from the witness registered under the theorem
+  (`theorem_vectors_manual` in `Proofs/Gloas/InitiateBuilderExit.lean`):
+  a hand-written one-builder registry, `default` pushed at index `0`. The
+  stage's run recorded the winner tag as `seed`, today `manual`.
   The search alone cannot witness the theorem: the hypothesis reads the
   index through `UInt64.toNat`, which the coupled walk and the solver's
   `UInt64` fragment do not bridge.
@@ -2152,3 +2154,56 @@ builders, the executor's run rows, and the record's error value) against
   run-output quotes included (`notFound after manual, bitVec, random`).
   The entries above that name a moved identifier or wire key carry the
   new spelling.
+
+## Theorem vectors, the manual-terms migration
+
+Four tasks landed the move (commits `375ef94`, `1c065ad`, `bf8a942`,
+`6cd64d2`): the `theorem_vectors_manual` command with the shared binder
+sort, the generator's consumption of the ledger, and the Fulu and Gloas
+migrations that deleted `TheoremVectors/Manual/`. This section records
+the deviations; §14.3 and §14.6 of `THEOREM_VECTORS_ARCHITECTURE.md`
+carry the design.
+
+- **The `with` clause became an at-theorem command.** The sketch's §14.3
+  spelled the terms in a `with` clause on the generator line. The command
+  `theorem_vectors_manual` replaced it, the `with` surface is gone from
+  the grammar, and the registration sits under the theorem it witnesses.
+  Four reasons. An authoring mistake errors in the file that made it, at
+  the exact clause. The terms elaborate under the proof file's own
+  `open`s, so a term reads the way the proof above it reads. A witness
+  has one home, beside its theorem. And the ledger persists names only,
+  `(theorem, input, holder)` triples in a `SimplePersistentEnvExtension`,
+  so no author term ever crosses an `.olean`.
+
+- **The same-file rule settles two failure modes.** A registration must
+  sit in the theorem's own module. The check reads the theorem's module
+  index: a theorem the file imports cannot register there. First, no
+  stale labels: the registration re-elaborates whenever the theorem's
+  file changes, so a label error points at the theorem as it is. Second,
+  a complete duplicate check: the one-registration-per-theorem test reads
+  the global ledger, so a second registration errors wherever it sits.
+
+- **An assignment cannot name a sibling input.** The clause walk
+  introduces the instance binders alone, so an assignment elaborates in
+  the `let` context and never sees the other assignments or the theorem's
+  value binders. The input-type check runs the same shape on the theorem
+  side: an input whose type mentions anything outside the instance
+  binders errors, because no holder over the instance binders could
+  exist. No committed term referenced a sibling, so the ban costs the
+  corpus nothing.
+
+- **The builder-exit witness is hand-written.** The old state came from
+  `Builders.Gloas.withQueue`, and a proof file must not import a builder:
+  the builders live in the generator's spec half, which imports the
+  proofs, so the import would run the wrong way. The registration under
+  `initiateBuilderExit_run_eq` writes a one-builder registry by hand,
+  `default` pushed at index `0`. The theorem holds at every state meeting
+  its hypothesis, so the vector stays valid, and the record's input bytes
+  change by design.
+
+- **A manual-source hint carries no candidate bytes.** The entry holds
+  the searcher tag, the scalars, the preset, the fingerprint, and the
+  disjunct index; the container bytes come from the holders at replay
+  time. The plan expected the builder-exit hint to change with its
+  witness. It does not: the hints-update recipe ran as a no-op, and the
+  committed file stayed byte-identical through the migration.

@@ -54,17 +54,18 @@ structure WitnessSearcher where
   search  : SearchCtx → Statement → Disjunct → SearchM SearchStep
 ```
 
-`SearchCtx` carries the probe, the binding, the preset, the manual terms of
-this line, and the draw memo of the random searcher. `SearchM` is `MetaM`.
+`SearchCtx` carries the probe, the binding, the preset, the theorem's
+manual terms, from its `theorem_vectors_manual` registration (§14.6), and
+the draw memo of the random searcher. `SearchM` is `MetaM`.
 The redraw loop's budget is the `randomDraws` option per disjunct, and the
 per-run heartbeat budget (§14.3) bounds the rest.
 
 The full order is hint (§9.8), manual, base, bit-vector, built (§9.9),
-random, and the command assembles the list per line. A line with manual
-terms runs manual then bit-vector, with no base searcher: the author chose
+random, and the command assembles the list per theorem. A theorem with
+manual terms runs manual then bit-vector, with no base searcher: the author chose
 those inputs, and a `default` witness would ignore that choice, for the
 disjuncts the manual terms win and for the disjuncts they fail alike. A
-line without manual terms runs base then bit-vector. A theorem with a
+theorem without manual terms runs base then bit-vector. A theorem with a
 block input runs base alone (§1.2). The hint searcher comes first on every
 list, and the built and random searchers follow the bit-vector searcher.
 The rest is cheapest first.
@@ -147,14 +148,14 @@ each point the manual reads are closed, the grounding turns them into
 literals, and the solver takes the remaining free scalars. A `¬P` proof at
 one grid point is a fact about that point, so the searcher moves to the
 next and answers `nothing` when every point fails. Only the solve on a
-line with no manual terms, where the formula carries the whole disjunct,
+theorem with no manual terms, where the formula carries the whole disjunct,
 answers `unsat`. A coupled scalar the grid misses falls to a later
 searcher.
 
 **Random plus solve.** Applies when at least one input is a container and
 no block input is in play. It runs after the bit-vector searcher on every
-list, manual lines included, and on a disjunct the manual terms fail the
-drawn bytes replace the author's terms in the candidate. The probe draws the container
+list, a theorem with manual terms included, and on a disjunct the manual
+terms fail the drawn bytes replace the author's terms in the candidate. The probe draws the container
 inputs with their `SampleableExt` instances (`probe.sample seed size`),
 serialized; draw `k` of a theorem is a pure function of the seed, the
 size, and `k`, and the theorem's disjuncts share it. The searcher then
@@ -179,7 +180,8 @@ side of the bound. At mainnet the searcher answers `nothing` before any
 draw when a container input's type is the binding's state type, because a
 mainnet state's fixed-length vectors overflow the draw's recursion.
 
-**Manual.** Applies when the line names manual terms (§14.3). A manual term
+**Manual.** Applies when the theorem carries manual terms, its
+`theorem_vectors_manual` registration (§14.6). A manual term
 fixes some inputs to author-written terms, serialized through the probe
 (`probe.manuals`). When the manual terms cover every input, the candidate
 is the terms' serialized bytes, checked like any other. When they cover a

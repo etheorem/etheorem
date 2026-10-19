@@ -268,8 +268,9 @@ The `tagged` clause selects tagged theorems and runs them strict: one that
 wins no vector fails the build, the way a `theorem_vectors!` line does. The
 fork's generator file
 (`EthCLSpecs/TheoremVectors/Generators/<Fork>.lean`) decides what runs. A
-named line selects a theorem, and it can carry manual terms or a preset
-choice.
+named line selects a theorem, and it carries the preset choice. The manual
+terms live under their theorems, as `theorem_vectors_manual` registrations
+(`EthCLLib/Internal/ManualTerms.lean`).
 The `characterized` clause runs the search on the contract theorems. The
 `survey` clause lists the rest with their outcomes in
 `theorem_vectors/report.md`, with no search. `just theorem-vectors` writes

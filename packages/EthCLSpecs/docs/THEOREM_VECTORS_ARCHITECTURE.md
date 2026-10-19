@@ -124,7 +124,6 @@ covers it.
 │  EthCLSpecs.TheoremVectors    lean_lib EthCLSpecsTheoremVectors          │
 │    Bindings/   one ForkBinding value per fork                            │
 │    Builders/   the state-builder catalog per fork                        │
-│    Manual/     author-written input terms                                │
 │    Generators/ one file per fork: discovery clauses and named lines      │
 │    Hints/      the committed hints, one JSON file per theorem            │
 │    Main.lean   lean_exe theorem_vectors: render, check, report           │
@@ -169,8 +168,8 @@ roots = ["EthCLLib.TheoremVectors"]
 `packages/EthCLSpecs/lakefile.toml` gains one library and one executable:
 
 ```toml
-# The generator's spec half: fork bindings, state builders, manual terms,
-# and the generator files whose elaboration writes the records. The
+# The generator's spec half: fork bindings, state builders, and
+# the generator files whose elaboration writes the records. The
 # output directory is fixed here so the command never depends on the
 # working directory Lake
 # gives it. The `weak.` prefix defers the setting until the module that
@@ -179,7 +178,12 @@ roots = ["EthCLLib.TheoremVectors"]
 [[lean_lib]]
 name = "EthCLSpecsTheoremVectors"
 roots = ["EthCLSpecs.TheoremVectors"]
-leanOptions = [{ name = "weak.theorem_vectors.outDir", value = "packages/EthCLSpecs/theorem_vectors" }]
+leanOptions = [
+  { name = "weak.theorem_vectors.outDir", value = "packages/EthCLSpecs/theorem_vectors" },
+  # The committed hints the hint searcher reads (§9.8); the update recipe
+  # copies the output tree's hints over this directory.
+  { name = "weak.theorem_vectors.hintsDir", value = "packages/EthCLSpecs/EthCLSpecs/TheoremVectors/Hints" },
+]
 
 # The command-line harness over the records: render, check, report.
 [[lean_exe]]
@@ -330,10 +334,16 @@ Each module does one thing. `Statement` reads. `Prepare` rewrites. `Probe`
 compiles. `Witness/*` searches. `Execute` runs. `Record` persists. `Format`
 renders. `Command` sequences.
 
-One piece sits outside the library. The `@[theorem_vectors]` attribute and
-its extension, `theoremVectorsExt`, live in `EthCLLib.Internal.ProofLedger`
-beside `@[characterizes]`. A proof module imports that module already, and
-it pulls in nothing from the generator (§14.1).
+Three pieces sit outside the library, under `EthCLLib/Internal/`. The
+`@[theorem_vectors]` attribute and its extension, `theoremVectorsExt`, live
+in `EthCLLib.Internal.ProofLedger` beside `@[characterizes]`.
+`EthCLLib.Internal.Binders` holds the shared binder sort (`BinderRole`,
+`binderRole`); the statement reader and the manual-terms command both sort
+through it, so the two cannot disagree about what an input is.
+`EthCLLib.Internal.ManualTerms` holds the `theorem_vectors_manual` command
+and its ledger (`manualTermsExt`, `manualTermsOf`, §14.6). A proof module
+imports `ProofLedger` already, and none of the three pulls in anything from
+the generator (§14.1).
 
 ### 4.2 The spec half: `EthCLSpecs/TheoremVectors/`
 
@@ -341,15 +351,16 @@ it pulls in nothing from the generator (§14.1).
 | --- | --- |
 | `Bindings/Fulu.lean`, `Bindings/Gloas.lean`, `Bindings/Heze.lean` | one `ForkBinding` value per fork |
 | `Bindings.lean` | the table the exe uses: fork tag → `ForkBinding` |
-| `Manual/Gloas.lean` (and siblings as needed) | author-written input terms, `[Preset]`-generic |
 | `Builders/Fulu.lean`, `Builders/Gloas.lean`, `Builders/Heze.lean` | the state-builder catalog per fork (§9.9) |
 | `Generators/Fulu.lean`, `Generators/Gloas.lean`, `Generators/Heze.lean` | the generator lists |
 | `Hints/<fork>/<thm>.json` | the committed hints, one file per theorem (§9.8) |
 | `Main.lean` | the exe: `render`, `check`, `report` |
-| `TheoremVectors.lean` | the library root, imports the bindings, builders, manual terms, and generators |
+| `TheoremVectors.lean` | the library root, imports the bindings, builders, and generators |
 
-A generator file imports `EthCLSpecs.Proofs.<Fork>`, its fork's binding, and
-its fork's manual terms. The binding imports its fork's builders, because it names
+A generator file imports `EthCLSpecs.Proofs.<Fork>` and its fork's binding.
+The registration under a theorem sits in the theorem's own module (§14.6),
+so the proof file carries the witness terms and no generator file names a
+term. The binding imports its fork's builders, because it names
 them. A generator file imports nothing from another fork.
 
 ### 4.3 Module dependency graph
@@ -482,7 +493,8 @@ inductive WitnessSearcherTag where
 inductive Failure where
   /-- The solver proved `¬P` with no state input in play. The theorem is vacuous. -/
   | unsat
-  /-- Every searcher ran out. The author should add a manual term. -/
+  /-- Every searcher ran out. The author registers manual terms under the
+  theorem (§14.6). -/
   | notFound (tried : Array WitnessSearcherTag)
   /-- A block input and the base searcher failed (§1.2). -/
   | outOfScope (inputs : Array Name)
@@ -789,9 +801,10 @@ decodes strictly. See §9.3 in the search document.
 ### 9.4 The core searchers
 
 Base (never `default` for the state type), bit-vector (grounding, the
-coupled grid, `unsat` only on a line with no manual terms), random plus
+coupled grid, `unsat` only on a theorem with no manual terms), random plus
 solve (draws, read grounding, the safe face, `randomDraws`, the mainnet
-cap), manual (the per-theorem claim). See §9.4 in the search document.
+cap), manual (the terms registered under the theorem, §14.6). See §9.4 in
+the search document.
 
 ### 9.5 Generation
 
@@ -1245,8 +1258,7 @@ fork it drives on the first line.
 theorem_vectors_fork Bindings.gloas
 
 -- named lines: overrides and additions
-theorem_vectors isValidIndexedPayloadAttestation_eq_true_iff_checks with
-  (state := Manual.Gloas.iPacState) (a := Manual.Gloas.iPacAttestation)
+theorem_vectors isValidIndexedPayloadAttestation_eq_true_iff_checks
 theorem_vectors! processBuilderPendingPayments_run presets minimal mainnet
 theorem_vectors initializePtcWindow_lt_default
 
@@ -1267,31 +1279,35 @@ Grammar:
 theorem_vectors characterized [presets <presetId>+]
 theorem_vectors tagged        [presets <presetId>+]
 theorem_vectors survey
-theorem_vectors[!] <ident> [with (<input> := <term>)+] [presets <presetId>+]
+theorem_vectors[!] <ident> [presets <presetId>+]
 theorem_vectors skip <ident> <string>
 ```
 
 - `characterized` selects every `@[characterizes]` theorem whose target the
   binding's fork owns (`Capture.specFunctionOwner?`). `tagged` selects every
   `@[theorem_vectors]` theorem under the fork's proof namespace. Each runs
-  with the default budget, no manual terms, and the clause's preset list.
+  with the default budget and the clause's preset list, and a theorem with
+  a `theorem_vectors_manual` registration (§14.6) runs its registration
+  here too.
 - `survey` takes every public theorem under the fork's proof namespace that
   no other clause or line selects, runs phase A alone (§3), and writes an
   outcome line with status `unselected`. It never searches a witness and
   never writes a record. It exists so the report shows the whole corpus: a
   reader sees which theorems the lines leave out and what the reader made
-  of them. It takes no `presets` clause, because nothing runs per preset.
+  of them. It takes no `presets` clause, because nothing runs per preset. A
+  registered theorem never surveys (§14.6).
 - `<ident>` resolves to a theorem in the environment, under the fork's proof
   namespace or fully qualified.
-- `with` names manual terms: one term per input, `[Preset]`-generic,
-  elaborated at each preset. A manual term for an input the theorem does
-  not have is an error.
 - `presets` lists the presets to run. The default is `minimal`.
 - `!` turns every skip into an error. A tagged theorem is strict without it.
 - `skip` excludes a theorem from discovery and records the reason in the
   outcome file. A `skip` validates against the potential selection, the
   tags of §14.1 and the fork's proof namespace, so a stale exclusion is
   still visible and the line can sit above the clauses it excludes from.
+
+Manual terms are not part of the line grammar. A named line carries the
+theorem and its `presets` clause alone; the witness terms live under the
+theorem (§14.6), and every run of a registered theorem uses them.
 
 **Precedence.** Each line elaborates as its own command, in file order. A
 named line wins over discovery for the same theorem, and one theorem runs
@@ -1305,11 +1321,13 @@ outcome line records the origin:
 clauses in the file. Named lines run in file order, then the discovered
 set in name order, with the skips and named lines removed. A named line
 or a `skip` line after a discovery clause that already ran its theorem is
-an error, and the message says to move the line up: a discovery run of
-that theorem would run it without the manual terms, warn, and then run
-it again, or run it and lose the exclusion. A line a precedence rule
-rejects leaves no state: the elaborator records it only after its pass
-succeeded, so a later line meets only the lines above it that passed.
+an error, and the message says to move the line up. A clause's pass runs
+the theorem at the clause's presets and strictness. The named line's
+settings would reach the theorem only through a second run, and one
+theorem runs once. A skip below it would only replace the
+outcome the clause wrote. A line a precedence rule rejects leaves no
+state: the elaborator records it only after its pass succeeded, so a
+later line meets only the lines above it that passed.
 
 Each per-preset run of phases B1 through B8 (§3) carries its own
 heartbeat budget (`theorem_vectors.maxHeartbeats`, §14.4), which the
@@ -1320,8 +1338,10 @@ strict theorem.
 
 **What this buys.** A new `@[characterizes]` proof gets a vector attempt on
 the next build, and the report lists it with its outcome. An author who wants
-a lemma's vectors adds one tag at the proof. The generator file still shows
-every manual term, every strict line, and every exclusion with a reason. Cost stays
+a lemma's vectors adds one tag at the proof. The generator file shows every
+strict line and every exclusion with a reason; the witness terms sit under
+their theorems (§14.6), where an authoring mistake fails the proof file's
+own build. Cost stays
 bounded, because the discovered set runs with the default budget and a
 theorem that needs more gets a named line.
 
@@ -1346,6 +1366,113 @@ Lake elaborates modules in parallel. Each generator file writes under its own
 `records/<fork>/`, `outcomes/<fork>/`, `hints/<fork>/`, and `built/<fork>/`
 subtrees, so two files never write the same path. Theorems inside one file
 run in order.
+
+### 14.6 `theorem_vectors_manual`
+
+The witness terms live under their theorems. `theorem_vectors_manual`
+registers them in the theorem's own module, and the generator reads them
+from the ledger on every run of the theorem:
+
+```lean
+theorem_vectors_manual increaseBalance_run_overflow
+  let bs : SSZList Gwei Const.validatorRegistryLimit :=
+    ((default : SSZList Gwei Const.validatorRegistryLimit)
+      .push 18446744073709551615)
+  state    := { (default : BeaconState) with balances := bs }
+  preState := default
+  i        := 0
+  delta    := 1
+```
+
+The block above is the shape of the committed Fulu registration
+(`Proofs/Fulu/Balances.lean`). That file factors the state term into
+`maxBalanceState`, a `private` def beside the theorem, so its clause reads
+`state := maxBalanceState`.
+
+Grammar:
+
+```
+theorem_vectors_manual <ident>
+  let <binder> [: <type>] := <term>
+  <input>   [: <type>] := <term>
+```
+
+- `<ident>` names the theorem the registration witnesses.
+- A `let` clause names a shared value. The clauses below it see it, and it
+  never reaches the theorem.
+- An assignment clause names one theorem input and its term. Assignments
+  never see each other; a term that needs a helper names a `let` above it
+  or a definition of the module.
+- Indentation carries the block, the way a structure instance's fields do.
+  A clause's term ends at the next clause's label, however many lines the
+  term spans.
+
+**The rules.** The command validates the registration before it adds any
+declaration, so a failing registration leaves the environment untouched.
+Every failure is a build error in the proof file's build:
+
+- The target must be a theorem under a registered fork's proof namespace
+  (`EthCLSpecs.Proofs.<Fork>`).
+- The command must sit in the theorem's own module; a registration in a
+  file that imports the theorem errors. The same-file rule re-elaborates
+  every registration whenever the theorem's file changes.
+- One registration per theorem. The ledger is global across imports, so a
+  second registration errors wherever it sits.
+- The theorem's instance binders come first in its binder chain. The
+  holder quantifies the instance prefix alone, so a binder that breaks
+  the prefix errors at the command.
+- Each assignment's label must name an input, and one assignment per
+  input.
+- An input's type may depend on the instance binders alone. A type that
+  mentions a type parameter or an earlier input errors, because no holder
+  over the instance binders could exist.
+- An ill-typed term, a `:` ascription that misses the input's type, or a
+  shared `let` whose type holds a metavariable errors at its clause.
+- A registration with `let`s and no assignments errors: it would record
+  nothing.
+
+**The holders.** The command elaborates each assignment over the theorem's
+instance binders alone, then emits one `private` definition per
+assignment. Its name joins the theorem's namespace, `TheoremVectorsManual`,
+the theorem's name, and the input's name, so the example's `state`
+assignment lands at
+`EthCLSpecs.Proofs.Fulu.TheoremVectorsManual.increaseBalance_run_overflow.state`.
+The holder takes the theorem's instance binders, in the theorem's order,
+and the theorem's universe parameters, and nothing else. The definition is
+compiled, because the probe serializes manual terms in compiled code
+(§11.1). The registration records one `(theorem, input, holder)` name
+triple per assignment in a `SimplePersistentEnvExtension`
+(`manualTermsExt` in `EthCLLib.Internal.ManualTerms`); only names cross
+the `.olean`.
+
+**The generator's side.** The generator applies each holder through the
+ledger's names, over the statement's instance binders (§11.2). Every run
+of a registered theorem uses its registration: a named line,
+`characterized`, and `tagged` alike. A registration is the theorem's only
+manual source, so a line that spells a `with` group for a registered
+theorem errors (§14.3).
+
+**Precedence with the generator file.** Two rules protect a registration:
+
+- A `skip` line on a registered theorem errors. The registration belongs
+  to the theorem, and the exclusion contradicts it.
+- A registered theorem that only the `survey` clause selects errors. The
+  survey searches no witness, so the registration would reach no vector;
+  the author gives the theorem a named line above the discovery clauses
+  (§14.3).
+
+| Mistake | Where it errors |
+| --- | --- |
+| target is not a theorem, or sits under no fork's proof namespace | the command |
+| the command sits in a file that imports the theorem | the command |
+| a second registration for the theorem | the command |
+| the theorem's instance binders do not come first | the command |
+| a label names no input, or names one twice | the clause |
+| an input's type mentions a binder outside the instance binders | the clause |
+| an ill-typed term, a `:` ascription that misses the input's type, or a shared `let` whose type holds a metavariable | the clause |
+| no assignments, only `let`s | the command |
+| a `skip` line on a registered theorem | the generator line's pass |
+| a registered theorem only `survey` selects | the generator line's pass |
 
 ---
 
@@ -1529,11 +1656,14 @@ path as the upstream corpus.
 | `skip` for a theorem no discovery clause could select | A0 | error |
 | named or skip line below the clause that ran its theorem | A0 | error |
 | a named line and a skip line for one theorem | A0 | error |
+| a registration clause fails a §14.6 check | A0 | error in the proof file's build (§14.6) |
+| `skip` line on a theorem with a `theorem_vectors_manual` registration | A0 | error (§14.6) |
+| a registered theorem only `survey` selects | A0 | error (§14.6) |
 | `.unsupported` shape | A1 | skip (error under `!` or `@[theorem_vectors]`) |
 | block input, base searcher fails | B3 | `outOfScope` skip (error under `!` or the tag) |
 | solver proves `¬P` | B3 | `unsat` skip, always reported |
 | searchers exhausted | B3 | `notFound` skip (error under `!` or the tag) |
-| fully covering manual terms win no disjunct | B3 | error |
+| fully covering manual terms win no disjunct | B3 | error: "fix the manual term in `theorem_vectors_manual`" |
 | partial manual terms, no searcher finds a witness | B3 | `notFound` skip |
 | hint fails the check, mode `use` | B3 | full search, `hint: failed` in the outcome |
 | hint fails the check, or a disjunct wins from a search, mode `require` | B3 | error |
@@ -1562,7 +1692,7 @@ Each row adds code and edits none of the existing pipeline.
 | a witness searcher | one `WitnessSearcher` value | the searcher list |
 | a format | one `VectorFormat` value | `Formats.all` |
 | a shape | one `Shape` constructor, one reader arm, one executor row | `Statement`, `Execute` |
-| a manual term | one `def` in `Manual/<Fork>.lean` | the generator line |
+| a manual term | one clause in the theorem's `theorem_vectors_manual` registration (§14.6) | nothing else |
 | a state builder | one `def` in `Builders/<Fork>.lean` | the binding's `builders` list |
 | a theorem | `@[characterizes]` or `@[theorem_vectors]` on the proof, or one named line | nothing else |
 | an exclusion | one `theorem_vectors skip` line with a reason | nothing else |
@@ -1588,9 +1718,9 @@ matches, so a missing arm is a build error.
 - **Witness searcher.** One strategy that proposes witnesses. The searchers
   run in a fixed order, cheapest first. Renamed from witness source
   (owner decision of 2026-10-16).
-- **Manual term.** The author's hand-supplied input term for a generator
-  line, spelled through the `with` clause. Renamed from seed (owner
-  decision of 2026-10-16).
+- **Manual term.** The author's hand-supplied input term for one theorem
+  input, registered under the theorem with `theorem_vectors_manual`
+  (§14.6). Renamed from seed (owner decision of 2026-10-16).
 - **Check.** Compiled `decide P` on a candidate. The single arbiter.
 - **Hint.** A committed note of how a witness was found, enough to rebuild
   the candidate without a search. The check still decides.

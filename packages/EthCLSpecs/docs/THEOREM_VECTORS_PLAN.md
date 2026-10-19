@@ -211,6 +211,11 @@ the reader gave one. The pins pass.
 
 ## Stage 2: probe, executor, records, function format
 
+*Superseded in part: this stage created `Manual/Gloas.lean`, and the
+manual-at-theorem migration deleted it. The terms live under their
+theorems as `theorem_vectors_manual` registrations
+(`THEOREM_VECTORS_ARCHITECTURE.md` §14.6).*
+
 **Goal.** A theorem with `default` inputs or the author's manual terms
 produces a record
 on disk, the record reads back, and the function format renders it.
