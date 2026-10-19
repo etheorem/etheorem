@@ -12,7 +12,8 @@ the toy fork `EthCLLib.Tests.InheritanceReplay.Base`: one line of each
 kind, with the outcomes read back and asserted, and the `#guard_msgs`
 rejections (a `skip` below the clause that ran its theorem, a stale
 `skip`, a named line below a clause that ran its theorem, a named line
-and a skip line on one theorem, and a duplicated named line).
+and a skip line on one theorem, a duplicated named line, a `skip` of a
+registered theorem, and a registered theorem only `survey` selects).
 
 The scratch output tree lives under this package's `.lake/build`, so the
 gitignore carries it and the final `run_cmd` removes it.
@@ -44,7 +45,23 @@ registered fork's proof namespace. -/
 fork's proof namespace that no other clause or line selected. -/
 theorem callee_survey : EthCLLib.Tests.InheritanceReplay.Base.callee = 1 := rfl
 
+/-- The registration fixture: one `UInt64` input, whose witness the
+registration below spells (`EthCLLib.Internal.ManualTerms`) and whose
+named line sits above the discovery clauses. The equation runs in `Nat`,
+so `callee`'s `rfl` proof carries, and the input crosses the byte
+boundary through the `UInt64` wire codec. -/
+theorem callee_add (v : UInt64) :
+    EthCLLib.Tests.InheritanceReplay.Base.callee + v.toNat = 1 + v.toNat :=
+  rfl
+
 end EthCLLib.Proofs.Base
+
+-- The fixture's registration: the witness for `v`, recorded in the
+-- theorem's own file (§14.3). `open EthCLLib.Internal in` activates the
+-- registration command's scoped syntax for this one command.
+open EthCLLib.Internal in
+theorem_vectors_manual EthCLLib.Proofs.Base.callee_add
+  v := 0
 
 -- the open activates the commands' scoped syntax
 open EthCLLib.TheoremVectors
@@ -54,6 +71,9 @@ theorem_vectors_fork EthCLLib.TheoremVectors.Tests.ToyFork.toyBinding
 -- §14.3's positional order: the named lines and the `skip` lines precede
 -- the discovery clauses, so the clauses never run an excluded theorem.
 theorem_vectors! callee_eq presets minimal
+-- the registered theorem's named line: its manual terms come from the
+-- registration above, and the line carries no `with` clause
+theorem_vectors callee_add presets minimal
 theorem_vectors skip callee_skipped "covered by callee_eq"
 
 theorem_vectors characterized
@@ -80,7 +100,8 @@ private def readOutcome (thmLocal : String) : Lean.Elab.Command.CommandElabM Out
 
 -- The command surface's answers: named wins over characterized, the skip
 -- excludes and records, `!` carries strictness, tagged discovery claims
--- its theorem, and the survey takes only the residual.
+-- its theorem, the survey takes only the residual, and the registered
+-- theorem's named run consumes the registration's manual terms.
 run_cmd do
   let named ← readOutcome "callee_eq"
   unless named.origin == .named do
@@ -88,6 +109,14 @@ run_cmd do
   unless named.runs.any fun r => r.preset == some .minimal
       && r.status == .written do
     throwError "toy named line: expected one written minimal run"
+  let added ← readOutcome "callee_add"
+  unless added.origin == .named do
+    throwError s!"toy registration fixture: origin is {added.origin.tag}, \
+      expected named"
+  unless added.runs.any fun r => r.preset == some .minimal
+      && r.status == .written do
+    throwError s!"toy registration fixture: expected one written minimal \
+      run, got {repr added.runs}"
   let skipped ← readOutcome "callee_skipped"
   unless skipped.origin == .skipped do
     throwError s!"toy skip line: origin is {skipped.origin.tag}, expected skipped"
@@ -106,8 +135,8 @@ run_cmd do
   let dir := (".lake/build/test-theorem-vectors" : System.FilePath) /
     "outcomes" / "toybase"
   let files ← dir.readDir
-  unless files.size == 4 do
-    throwError s!"toy outcomes: {files.size} files, expected exactly 4"
+  unless files.size == 5 do
+    throwError s!"toy outcomes: {files.size} files, expected exactly 5"
 
 -- Two named lines for one theorem are an error. The guard sits first on
 -- purpose: under a record-then-run pass the rejected line would stay in
@@ -154,8 +183,39 @@ theorem_vectors skip callee_eq "covered by the named line"
 set_option theorem_vectors.hints "require" in
 theorem_vectors EthCLLib.TheoremVectors.Tests.Command.callee_require
 
+-- The two registration precedence checks (§14.3). Order matters: a failed
+-- line leaves no state, but a registration persists. The skip guard's own
+-- pass holds the skip line in `skipSet`, so the theorem stays out of the
+-- survey selection and the registration-plus-skip contradiction is the
+-- error that fires. The skip never records, so the survey guard's own
+-- pass survey-selects the same registered theorem, and the survey check
+-- fires there. The outer namespace ends above, so the fixture's name is
+-- `EthCLLib.Proofs.Base.callee_skip_refused` and the registration and the
+-- skip line resolve to it.
+end EthCLLib.TheoremVectors.Tests.Command
+
+namespace EthCLLib.Proofs.Base
+
+/-- The registered-and-skipped fixture: the registration below persists
+through both guards, and neither line records anything. -/
+theorem callee_skip_refused (v : UInt64) :
+    EthCLLib.Tests.InheritanceReplay.Base.callee + v.toNat = 1 + v.toNat :=
+  rfl
+
+end EthCLLib.Proofs.Base
+
+open EthCLLib.Internal in
+theorem_vectors_manual EthCLLib.Proofs.Base.callee_skip_refused
+  v := 0
+
+/-- error: theorem_vectors: `EthCLLib.Proofs.Base.callee_skip_refused` has witness terms registered with `theorem_vectors_manual` and a skip line; a registered theorem runs, so drop the skip line (§14.3) -/
+#guard_msgs (error) in
+theorem_vectors skip EthCLLib.Proofs.Base.callee_skip_refused "registered theorems run"
+
+/-- error: theorem_vectors: `EthCLLib.Proofs.Base.callee_skip_refused` has witness terms registered with `theorem_vectors_manual` and only the survey clause selects it; give the theorem a named line above the discovery clauses (§14.3) -/
+#guard_msgs (error) in
+theorem_vectors survey
+
 -- Remove the scratch output tree.
 run_cmd do
   IO.FS.removeDirAll ".lake/build/test-theorem-vectors"
-
-end EthCLLib.TheoremVectors.Tests.Command

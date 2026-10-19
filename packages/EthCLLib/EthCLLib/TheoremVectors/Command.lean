@@ -18,6 +18,7 @@ import EthCLLib.TheoremVectors.Witness.Random
 import EthCLLib.TheoremVectors.Witness.Shrink
 import EthCLLib.TheoremVectors.Record
 import EthCLLib.TheoremVectors.Outcome
+import EthCLLib.Internal.ManualTerms
 import EthCLLib.Internal.ProofLedger
 
 /-!
@@ -31,10 +32,13 @@ theorem_vectors_fork EthCLSpecs.TheoremVectors.Bindings.Gloas.gloas
 theorem_vectors characterized
 theorem_vectors tagged
 theorem_vectors survey
-theorem_vectors canBuilderCoverBid_iff with (state := Manual.Gloas.coverBidState)
 theorem_vectors getPtcElseOffset_lt_same_slot presets minimal mainnet
 theorem_vectors skip processOperations_run_ok_iff "block input, needs a body builder"
 ```
+
+Manual terms come from `theorem_vectors_manual` under the theorem
+(`EthCLLib.Internal.ManualTerms`), and every run of a registered theorem
+uses them, named line or discovery clause alike.
 
 The header stores the binding constant's name in a module-local extension
 (§14.2); every later line reads it, and a line in a file with no header is
@@ -54,7 +58,8 @@ overrode it. Two order rules follow from the line-at-a-time passes: a
 `skip` line must precede the discovery clauses that select its theorem, or
 the clause's pass runs the theorem first and the skip can only replace the
 outcome; and a named line must precede the discovery clauses, because a
-clause's pass runs the theorem without the manual terms. Each rule is an error
+clause's pass runs the theorem at the clause's presets and strictness rather
+than the named line's. Each rule is an error
 whose message names the fix. A `skip` validates against the *potential*
 selection of §14.1's tags and the fork's proof namespace, so the line can
 sit above the clauses it excludes from and a stale exclusion is still
@@ -383,7 +388,9 @@ terms still carry the telescope's instance variables, and the probe builds
 from the statement's expressions. The hint mode and the committed hint
 file come from the run (`runTheorem` resolved both once per theorem). -/
 private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
-    (thmLocal : String) (manualTerms : Array (Nat × Expr)) (builtStamp : String)
+    (thmLocal : String) (manualTerms : Array (Nat × Expr))
+    -- where the manual terms came from: the §18 throw names the source
+    (manualsFromRegistration : Bool) (builtStamp : String)
     (winsRef : IO.Ref (Array ReuseWin)) (p : PresetId) (ctx : StatementCtx)
     (disjuncts : Array Disjunct) (mode : HintMode) (hintFile? : Option HintFile) :
     MetaM RunOutcome := do
@@ -695,11 +702,14 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
     { «theorem» := stmt.thm, fingerprint, entries := hintEntries }
   -- §18: a fully-covering set of manual terms that wins no disjunct
   -- breaks the build, because the author claimed it works; a partial
-  -- failure falls through (§9.4)
+  -- failure falls through (§9.4). The message names the terms' source,
+  -- so the author edits where the term lives.
   if !manualTerms.isEmpty && manualTerms.size == stmt.inputs.size && !manualWon then
+    let source :=
+      if manualsFromRegistration then "`theorem_vectors_manual`"
+      else "the line's `with` clause"
     throwError "theorem_vectors: the manual terms of `{stmt.thm}` win no \
-      disjunct at {p.tag}; fix the manual term or drop the `with` clause \
-      (§9.4, §18)"
+      disjunct at {p.tag}; fix the manual term in {source} (§9.4, §18)"
   let failureText := String.intercalate "; "
     (failures.toList.map fun (i, _, text) => s!"disjunct {i}: {text}")
   if written > 0 then
@@ -720,7 +730,10 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
 /-- The stage-2 run of one theorem: phase A, then phases B1 through B8 per
 preset (§3, and the module docstring). The whole fold runs inside the
 reader's telescope scope (`Statement.readIn`), because the statement's
-expressions and the manual terms cannot leave it. `binding` is the header's
+expressions and the manual terms cannot leave it. The manual terms come
+from the line's `with` clause, or from the theorem's
+`theorem_vectors_manual` registration when it has one (§14.3); a line that
+spells both is an error. `binding` is the header's
 value and `bindingName` its constant, whose parent names the module the
 built cache's stamp reads (§9.9); the binding value carries no name of
 its own. -/
@@ -730,6 +743,17 @@ private def runTheorem (binding : ForkBinding) (bindingName : Name)
     (manualStx : Array (Name × Syntax)) : CommandElabM Unit := do
   let proofNs := EthCLLib.Internal.proofNamespaceOf binding.fork
   let localName := thm.replacePrefix proofNs .anonymous
+  -- the theorem's registrations (`EthCLLib.Internal.ManualTerms`). The
+  -- registration belongs to the theorem, so it wins over a spelled `with`
+  -- clause: the two sources on one line contradict, and the registration
+  -- is the one that stays. Transitional wording; the `with` surface goes
+  -- away in a later stage.
+  let regs := (EthCLLib.Internal.manualTermsOf (← getEnv)).filter
+    fun (t, _, _) => t == thm
+  if !regs.isEmpty && !manualStx.isEmpty then
+    throwError "theorem_vectors: `{thm}` has witness terms registered with \
+      `theorem_vectors_manual` next to it, and this line spells a `with` \
+      clause; the registration wins, so drop the `with` clause (§14.3)"
   let outDir ← outDirOf
   -- §9.8: the hint mode and the committed file resolve once per theorem
   -- and pass down to every preset's run
@@ -770,42 +794,84 @@ private def runTheorem (binding : ForkBinding) (bindingName : Name)
       | none =>
         -- phase A: prepare (§8.4's first form)
         let (disjuncts, dropped) ← Prepare.pass stmt
-        -- the author's manual terms (§14.3: "[Preset]-generic,
-        -- elaborated at each preset"): each term elaborates against its
-        -- input's type inside the telescope, so the theorem's own
-        -- instances fill the term's instance binders and
-        -- `substInstances` fixes them per preset. A term for an input
-        -- the theorem does not have is an error here, and a term of the
-        -- wrong type is an elaboration error at the clause: §18's build
-        -- error for an author claim.
-        let manualTerms ← manualStx.mapM fun (n, stx) => do
-          match stmt.inputs.findIdx? (fun i => i.name == n) with
-          | none =>
-            throwError "theorem_vectors: the manual term names input \
-              `{n}`, which `{thm}` does not have (§14.3)"
-          | some i => do
-            let t := stmt.inputs[i]!.type
-            -- the expected type fills the manual term's `[Preset]`-generic
-            -- instance binders from the telescope; the check below holds
-            -- the §18 line: a manual term of the wrong type is an error
-            -- at the clause, because the author claimed it works
-            let term ←
-              (Lean.Elab.Term.withoutErrToSorry
-                (Lean.Elab.Term.elabTermAndSynthesize stx (some t))).run'
-            let term ← Lean.instantiateMVars term
-            unless ← Meta.isDefEq (← Meta.inferType term) t do
-              throwError "theorem_vectors: the manual term for `{n}` of \
-                `{thm}` does not have the input's type (§14.3)"
-            pure (i, term)
+        -- the manual terms, from one of two sources: the line's `with`
+        -- clause when the theorem has no registration, and the theorem's
+        -- `theorem_vectors_manual` ledger when it has one. The precedence
+        -- between the two is the registration-wins check at this
+        -- function's top.
+        let manualTerms ←
+          if regs.isEmpty then
+            -- the author's manual terms (§14.3: "[Preset]-generic,
+            -- elaborated at each preset"): each term elaborates against its
+            -- input's type inside the telescope, so the theorem's own
+            -- instances fill the term's instance binders and
+            -- `substInstances` fixes them per preset. A term for an input
+            -- the theorem does not have is an error here, and a term of the
+            -- wrong type is an elaboration error at the clause: §18's build
+            -- error for an author claim.
+            manualStx.mapM fun (n, stx) => do
+              match stmt.inputs.findIdx? (fun i => i.name == n) with
+              | none =>
+                throwError "theorem_vectors: the manual term names input \
+                  `{n}`, which `{thm}` does not have (§14.3)"
+              | some i => do
+                let t := stmt.inputs[i]!.type
+                -- the expected type fills the manual term's `[Preset]`-generic
+                -- instance binders from the telescope; the check below holds
+                -- the §18 line: a manual term of the wrong type is an error
+                -- at the clause, because the author claimed it works
+                let term ←
+                  (Lean.Elab.Term.withoutErrToSorry
+                    (Lean.Elab.Term.elabTermAndSynthesize stx (some t))).run'
+                let term ← Lean.instantiateMVars term
+                unless ← Meta.isDefEq (← Meta.inferType term) t do
+                  throwError "theorem_vectors: the manual term for `{n}` of \
+                    `{thm}` does not have the input's type (§14.3)"
+                pure (i, term)
+          else
+            -- the registered holders: the ledger stores one private
+            -- definition per assignment, over the theorem's instance
+            -- binders and the theorem's universe parameters, so the
+            -- application over the telescope's instance variables has the
+            -- input's type (§14.3). The levels read back off the theorem
+            -- here, because the holders were declared with exactly the
+            -- theorem's level parameters. A miss below is internal, never
+            -- authoring: the registration was validated at its own clause
+            -- against this same theorem, and the same-file rule
+            -- re-elaborates the file on any change.
+            let us :=
+              match (← getEnv).find? thm with
+              | some info => info.levelParams.map Level.param
+              | none => []
+            regs.mapM fun (_, inputName, holderName) => do
+              match stmt.inputs.findIdx? (fun i => i.name == inputName) with
+              | none =>
+                throwError "theorem_vectors: internal error: the \
+                  `theorem_vectors_manual` registration for `{thm}` names \
+                  input `{inputName}`, which the theorem does not have; the \
+                  registration's own validation should have caught this"
+              | some i => do
+                let t := stmt.inputs[i]!.type
+                let term := mkAppN (.const holderName us) ctx.instFvars
+                unless ← Meta.isDefEq (← Meta.inferType term) t do
+                  throwError "theorem_vectors: internal error: the \
+                    registered holder for `{inputName}` of `{thm}` does not \
+                    have the input's type; the registration's own \
+                    validation should have caught this"
+                pure (i, term)
         -- phases B1 through B8, per preset in the line's list, each under
         -- its own heartbeat budget (§14.3). §10: the fold carries one
         -- earlier-wins ref across the line's presets, so a witness won at
         -- an earlier preset proposes at a later one when the preset-free
         -- type check and the later preset's check both pass.
         let winsRef ← IO.mkRef (#[] : Array ReuseWin)
+        -- where the manual terms came from: the registration when the
+        -- theorem has one, the line's `with` clause otherwise
+        let manualsFromRegistration := !regs.isEmpty
         let runs ← ps.foldlM (init := #[]) fun acc p => do
           let r ← withRunHeartbeats
-            (runPreset binding outDir localName.toString manualTerms builtStamp
+            (runPreset binding outDir localName.toString manualTerms
+              manualsFromRegistration builtStamp
               winsRef p ctx disjuncts mode hintFile?)
           pure (acc.push r)
         -- §18: a strict claim that skipped fails hard; a non-strict line
@@ -902,8 +968,9 @@ private def runPass (lines : Array Line) : CommandElabM Unit := do
       throwError "theorem_vectors: `{thm}` has a named line and a skip \
         line; one or the other (§14.3)"
   -- §14.3: the named lines come before the discovery clauses. A discovery
-  -- clause above a named line already ran its theorem without the manual
-  -- terms and warned; the message names the fix. The same rule holds
+  -- clause above a named line already ran its theorem, registration
+  -- included, at the clause's presets and strictness; the message names
+  -- the fix. The same rule holds
   -- for a skip line: above the clauses, or the clause's pass ran the
   -- theorem first.
   let discoveryRan (thm : Name) : Bool :=
@@ -929,6 +996,12 @@ private def runPass (lines : Array Line) : CommandElabM Unit := do
       throwError "theorem_vectors: `{thm}` already ran under a discovery \
         clause above this skip line; move the skip line above the \
         discovery clauses (§14.3)"
+    -- a registered theorem runs: the registration belongs to the theorem,
+    -- and the exclusion contradicts it (§14.3)
+    if (EthCLLib.Internal.manualTermsOf env).any fun (t, _, _) => t == thm then
+      throwError "theorem_vectors: `{thm}` has witness terms registered \
+        with `theorem_vectors_manual` and a skip line; a registered \
+        theorem runs, so drop the skip line (§14.3)"
     unless potential.contains thm do
       throwError "theorem_vectors: `skip {thm}` selects a theorem no \
         discovery clause selects (§14.3)"
@@ -955,6 +1028,18 @@ private def runPass (lines : Array Line) : CommandElabM Unit := do
   -- outranks its characterization, and the survey takes the residual
   let keep (thm : Name) : Bool :=
     !namedSet.contains thm && !skipSet.contains thm
+  -- a registered theorem never surveys (§14.3): its run must carry the
+  -- named line's presets and strictness, so the author moves the theorem
+  -- under a named line. The check fires here, at selection time before
+  -- the pass runs anything, so a rejected line leaves no state.
+  for thm in rawSurvey.foldl (init := (#[] : Array Name)) fun acc thm =>
+      acc.push thm do
+    if keep thm && !rawTag.contains thm && !rawChar.contains thm then
+      if (EthCLLib.Internal.manualTermsOf env).any fun (t, _, _) => t == thm then
+        throwError "theorem_vectors: `{thm}` has witness terms \
+          registered with `theorem_vectors_manual` and only the survey \
+          clause selects it; give the theorem a named line above the \
+          discovery clauses (§14.3)"
   let sel : Array (Name × OutcomeOrigin × Bool × Array PresetId) :=
     (rawTag.foldl (init := (#[] : Array (Name × OutcomeOrigin × Bool × Array PresetId))) fun acc thm =>
         if keep thm then acc.push (thm, .tagged, true, tagPs) else acc) ++
