@@ -624,9 +624,12 @@ def buildReport (env : Environment) : Report :=
           surface holds. Did the function move fork?")
     ++ tags.filterMap (fun (thm, target) =>
         -- One directory per fork: a claim about `EthCLSpecs.Gloas.f` belongs in a
-        -- module under `EthCLSpecs.Proofs.Gloas`, the rule `Proofs.lean` states.
+        -- module under `EthCLSpecs.Proofs.Gloas`. The ledger's `proofNamespaceOf`
+        -- is the one home for that rule, so the derivation reads it. A target no
+        -- `forkdef` declared has no expected namespace; the arm keeps its old
+        -- fallback, the fork-body proof root.
         let expected := match specFunctionOwner? env target with
-          | some (fork, _) => fork.replacePrefix specsRoot forkProofsRoot
+          | some (fork, _) => proofNamespaceOf fork
           | none           => forkProofsRoot
         match forkThms.find? (·.name == thm) with
         | none =>
