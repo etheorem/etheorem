@@ -167,6 +167,13 @@ the disambiguator that picks the bit-packed wire layout. -/
 /-- SSZ `Bitlist[cap]`: variable-length bit vector capped at `cap`. -/
 abbrev Bitlist (cap : Nat) : Type := { bs : Array Bool // bs.size ≤ cap }
 
+/-- `ProgressiveList α`: an uncapped array of `α`. The wire format is
+`ProgressiveList`, so the Merkle root uses `merkleize_progressive`. -/
+abbrev ProgressiveList (α : Type) := Array α
+
+/-- `ProgressiveBitlist`: an uncapped bit array. -/
+abbrev ProgressiveBitlist := Array Bool
+
 /-- SSZ `List[α, cap]`: variable-length list of `α` capped at `cap`. -/
 abbrev SSZList (α : Type) (cap : Nat) : Type := { xs : Array α // xs.size ≤ cap }
 
@@ -346,6 +353,33 @@ instance instSSZReprSSZList {α : Type} {cap : Nat} [r : SSZRepr α] :
     rw [Array.map_map]
     have h : r.toRepr ∘ r.fromRepr = id := funext r.from_to
     rw [h, Array.map_id]
+
+/-- `SSZRepr (ProgressiveList α)`. The iso is `Array.map` through the
+element instance. `interp (.progressiveList s)` is `Array s.interp`. -/
+instance instSSZReprProgressiveList {α : Type} [r : SSZRepr α] :
+    SSZRepr (ProgressiveList α) where
+  shape    := .progressiveList r.shape
+  toRepr   := fun xs => xs.map r.toRepr
+  fromRepr := fun xs => xs.map r.fromRepr
+  to_from  := fun xs => by
+    show (xs.map r.toRepr).map r.fromRepr = xs
+    rw [Array.map_map]
+    have h : r.fromRepr ∘ r.toRepr = id := funext r.to_from
+    rw [h, Array.map_id]
+  from_to  := fun xs => by
+    show (xs.map r.fromRepr).map r.toRepr = xs
+    rw [Array.map_map]
+    have h : r.toRepr ∘ r.fromRepr = id := funext r.from_to
+    rw [h, Array.map_id]
+
+/-- `SSZRepr ProgressiveBitlist`. `interp .progressiveBitlist` is
+`Array Bool`, so the iso is the identity. -/
+instance instSSZReprProgressiveBitlist : SSZRepr ProgressiveBitlist where
+  shape    := .progressiveBitlist
+  toRepr   := id
+  fromRepr := id
+  to_from  := fun _ => rfl
+  from_to  := fun _ => rfl
 
 /-- A fixed-length byte vector coerces to its underlying `ByteArray`. The conversion is
 representation-only (`⟨v.toArray⟩` is exactly the bytes the vector holds), so it is a

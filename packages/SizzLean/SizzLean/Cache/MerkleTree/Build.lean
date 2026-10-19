@@ -107,6 +107,41 @@ def Node.mixInLength (H : Type) [Hasher H] (n : Node) (count : Nat) : Node :=
   let root := Hasher.combine (H := H) (Node.rootOf H n) (Node.rootOf H lenLeaf)
   .pair n lenLeaf (some root)
 
+/-- `mix_in_active_fields` as a cached pair. The right leaf is
+`pack(active_fields)`, right-padded to one chunk. -/
+def Node.mixInActiveFields (H : Type) [Hasher H] (n : Node) (active : List Bool) : Node :=
+  let mask : Node := .leaf (padToChunk (packBitsLE active))
+  let root := Hasher.combine (H := H) (Node.rootOf H n) (Node.rootOf H mask)
+  .pair n mask (some root)
+
+/-- Cached tree for `merkleize_progressive`. Mirrors
+`Spec.merkleizeProgressiveAux`: the empty chunk list is a zero
+leaf, and a non-empty list pairs the balanced shelf with the
+progressive tree of the remainder. -/
+def Node.ofProgressiveAux (H : Type) [Hasher H] :
+    Nat → List ByteArray → Nat → Node
+  | _, [], _ => .leaf zero32
+  | 0, _, _ => .leaf zero32
+  | fuel + 1, chunks, numLeaves =>
+      let n := max numLeaves 1
+      let left := Node.ofLeaves H (chunks.take n) (chunkDepth n)
+      let right := Node.ofProgressiveAux H fuel (chunks.drop n) (n * 4)
+      let root := Hasher.combine (H := H)
+        (Node.rootOf H left) (Node.rootOf H right)
+      .pair left right (some root)
+
+/-- `merkleize_progressive` over chunk bytes, rooted at shelf width 1. -/
+def Node.ofProgressive (H : Type) [Hasher H] (chunks : List ByteArray) : Node :=
+  Node.ofProgressiveAux H chunks.length chunks 1
+
+/-- Field-root chunks of a progressive container, with a zero chunk
+for each inactive mask bit. -/
+def placeActiveRoots (H : Type) [Hasher H] : List Bool → List Node → List ByteArray
+  | [], _ => []
+  | false :: bits, nodes => zero32 :: placeActiveRoots H bits nodes
+  | true :: bits, n :: ns => Node.rootOf H n :: placeActiveRoots H bits ns
+  | true :: bits, [] => zero32 :: placeActiveRoots H bits []
+
 /-! ### The shape-driven builder
 
 Mutual block mirroring `Spec.SSZType.hashTreeRoot` arm-for-arm.
@@ -188,6 +223,28 @@ def Node.ofShape (H : Type) [Hasher H] :
   | .container fs, vs =>
       let subs := Node.subtreesForFields H fs vs
       Node.ofSubtrees H subs (chunkDepth fs.length)
+  | .progressiveList t, xs =>
+      let xs' : Array t.interp := xs
+      if t.isBasicType then
+        let body := SSZType.serializeFixedElems t xs'.toList
+        let bodyTree := Node.ofProgressive H (chunkify body)
+        Node.mixInLength H bodyTree xs'.size
+      else
+        let subs := Node.subtreesForListComposite H t xs'.toList
+        let chunks := subs.map (Node.rootOf H)
+        let bodyTree := Node.ofProgressive H chunks
+        Node.mixInLength H bodyTree xs'.size
+  | .progressiveBitlist, bs =>
+      let bs' : Array Bool := bs
+      let bv : BitVec bs'.size := BitVec.ofNat bs'.size (bitsToNatLE bs'.toList)
+      let bytes := SSZType.serialize (.bitvector bs'.size) bv
+      let bodyTree := Node.ofProgressive H (chunkify bytes)
+      Node.mixInLength H bodyTree bs'.size
+  | .progressiveContainer active fs, vs =>
+      let subs := Node.subtreesForFields H fs vs
+      let chunks := placeActiveRoots H active subs
+      let body := Node.ofProgressive H chunks
+      Node.mixInActiveFields H body active
 
 /-- Per-field sub-trees for a `container fs` value. Mirrors the
 spec's `hashTreeRootFields` (lines 450–458 of `HashTreeRoot.lean`)

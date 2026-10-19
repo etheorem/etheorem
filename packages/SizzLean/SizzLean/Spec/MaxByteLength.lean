@@ -5,11 +5,17 @@ import SizzLean.Spec.Serialize  -- for SSZType.isFixedSize
 /-!
 # `SizzLean.Spec.MaxByteLength`: static upper bound on serialized size
 
-For every `s : SSZType`, `maxByteLength s` is a `Nat` upper bound
-on `(serialize s x).size`, derived from the schema alone (no value
-input). This is the right-hand side of the `encode_size_le_max`
-central theorem and the foundation of any pre-flight buffer
-sizing in callers.
+For every shape `BasicSupported` admits, `maxByteLength s` is a
+`Nat` upper bound on `(serialize s x).size`, derived from the schema
+alone (no value input). This is the right-hand side of the
+`encode_size_le_max` central theorem and the foundation of any
+pre-flight buffer sizing in callers.
+
+`progressiveList` and `progressiveBitlist` have no schema cap. The
+number returned for them is `MAX_LENGTH`, the `uint32` offset
+domain, and it is not a hypothesis of `encode_size_le_max`.
+`progressiveContainer` sums its active fields the way `container`
+does.
 
 Mirrors the spec's `*_serialized_byte_length` / `byte_length` helpers
 in `simple-serialize.md` *§Serialization, Byte length*. Definitions
@@ -66,6 +72,9 @@ def SSZType.maxByteLength : SSZType → Nat
   | .bitvector n  => (n + 7) / 8
   | .bitlist cap  => (cap + 1 + 7) / 8
   | .container fs => SSZType.maxByteLengthFields fs
+  | .progressiveList _ => MAX_LENGTH
+  | .progressiveBitlist => MAX_LENGTH
+  | .progressiveContainer _ fs => SSZType.maxByteLengthFields fs
 
 /-- Sum of per-field max-length contributions for a `container` field
 list. Each fixed-size field contributes its own bytes; each
@@ -157,5 +166,10 @@ example : SSZType.maxByteLength (.vector (.list (.uintN 8) 4) 2) = 16 := rfl
 -- A container field pays the same offset-table term, `4 + 2` for the
 -- `bitlist` on top of the 1-byte `uintN 8`.
 example : SSZType.maxByteLength (.container [.uintN 8, .bitlist 8]) = 7 := rfl
+
+example : SSZType.maxByteLength (.progressiveList (.uintN 8)) = MAX_LENGTH := rfl
+
+example : SSZType.maxByteLength
+    (.progressiveContainer [true, false] [.uintN 8]) = 1 := rfl
 
 end SizzLean.Spec

@@ -34,9 +34,9 @@ theorems.
 - **Validated against Ethereum's test corpus.** Passes both
   upstream SSZ suites from `ethereum/consensus-spec-tests` (release
   `v1.6.0-beta.0`) end-to-end on **both** preset configurations:
-  `ssz_generic` (2188 / 2188 in-scope cases, the wire-format
-  tests; 292 progressive-container cases are deliberately out of
-  scope, see the "deliberately not implemented" table below),
+  `ssz_generic` (2188 / 2188 in-scope cases on that release).
+  The current pin also runs the progressive handlers; the root README
+  has that count. Forms still omitted are in the table below.
   `ssz_static --config mainnet` (1585 / 1585 cases), and
   `ssz_static --config minimal` (38991 / 38991 cases), every
   fork from Phase 0 through Fulu. SHA-256 passes the NIST CAVP
@@ -145,11 +145,9 @@ the Ethereum consensus spec from Phase 0 through Gloas is
 implemented. Upstream test suites (`ethereum/consensus-spec-tests
 v1.6.0-beta.0`) pass clean on **both** preset configurations:
 
-* `ssz_generic --all`: **2188 / 2188** in-scope cases passed,
-  0 failed. Plus **292** deliberately skipped progressive-container
-  cases (see the "deliberately not implemented" table); the
-  pyspec harness classifies them as `out of library scope`,
-  not failures.
+* `ssz_generic --all`: **2188 / 2188** in-scope cases passed
+  on that release. The current pin's live count, including the
+  progressive handlers, is in the root README.
 * `ssz_static --config mainnet --all`: **1585 / 1585** cases
   passed across every fork Phase 0 → Fulu.
 * `ssz_static --config minimal --all`: **38991 / 38991** cases
@@ -174,25 +172,22 @@ itself implements every wire-format type they need.
 | `List[T, N]` | Variable-length list with cap `N` and mix-in-length root |
 | `Bitvector[N]` | Fixed-length bit array |
 | `Bitlist[N]` | Variable-length bit array with trailing-`1` delimiter |
-| `Container` | Heterogeneous record / struct, every consensus container is one of these |
+| `Container` | Heterogeneous record / struct |
+| `ProgressiveList[T]` / `ProgressiveBitlist` | EIP-7916. No cap. Outside `BasicSupported` |
+| `ProgressiveContainer(active_fields=[…])` | EIP-7495. Mask is type-level. Outside `BasicSupported` |
 
 ### SSZ types deliberately *not* implemented
 
-These forms appear in the SSZ spec but are not used by any
-consensus-spec fork through Gloas, so the library omits them
-to keep the core proof obligation small:
-
 | Type | Source | Status here |
 |---|---|---|
-| `Union[T₁, …, Tₙ]` | core SSZ spec | unimplemented, no fork uses it |
-| `ProgressiveContainer(active_fields=[…])` | EIP-7495 | unimplemented, no fork adopted EIP-7495 |
+| `Union[T₁, …, Tₙ]` | core SSZ spec | unimplemented |
 | `StableContainer[N]` + `Profile` | EIP-7495 (legacy form) | unimplemented |
-| `ProgressiveList[T]` / `ProgressiveBitlist` | EIP-7916 | unimplemented |
 | `CompatibleUnion({sel: type, …})` | EIP-8016 | unimplemented |
 
-ARCHITECTURE.md §8 carries the recipe for reintroducing any of
-these the day a fork adopts them. They slot back into `SSZType`
-as new constructors without disrupting the existing layers.
+`deriving SSZRepr` emits a classic container. `@[sizzlean_progressive]`
+emits a progressive container whose mask is all ones. EthCLSpecs is
+still pinned at classic Gloas (`v1.7.0-alpha.11`); re-deriving those
+containers is a separate change from the codec.
 
 ### Proof coverage
 
@@ -228,6 +223,7 @@ per constructor and with the proof technique for each arm.
 | `.bitlist cap` | ✅ ³ | ✅ ³ | ✅ | bit-packing inverse + `msbPos` delimiter recovery |
 | `.container fs`, all fields fixed-size | ✅ ¹ | ✅ ¹ | ✅ ¹ | see [per-field type](#container-fs-per-field-type) |
 | `.container fs`, mixed fixed/variable fields | ✅ ⁵ | ✅ ⁵ | ✅ | needs `allFixedSize fs = false`; offset-table codec, see [per-field type](#container-fs-per-field-type) |
+| `.progressiveList` / `.progressiveBitlist` / `.progressiveContainer` | — | — | — | implemented, outside `BasicSupported` |
 
 The three central theorems take a value-level guard
 `EncodedFits s x`, the encoded size below `MAX_LENGTH`, in place

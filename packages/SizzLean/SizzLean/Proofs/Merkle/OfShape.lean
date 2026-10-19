@@ -65,6 +65,9 @@ theorem isFixedSize_of_isBasicType (t : SSZType) (h : t.isBasicType = true) :
   | bitvector n => simp [SSZType.isBasicType] at h
   | bitlist cap => simp [SSZType.isBasicType] at h
   | container fs => simp [SSZType.isBasicType] at h
+  | progressiveList _ => simp [SSZType.isBasicType] at h
+  | progressiveBitlist => simp [SSZType.isBasicType] at h
+  | progressiveContainer _ _ => simp [SSZType.isBasicType] at h
 
 /-- The sub-tree list holds one tree per field. -/
 theorem length_subtreesForFields (H : Type) [Hasher H] :

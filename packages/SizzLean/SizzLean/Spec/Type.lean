@@ -7,42 +7,37 @@ Reflects the SSZ grammar from the consensus-specs *§SSZ Types* section
 value of that shape; the latter is `SSZType.interp` in
 `Spec/Interp.lean`.
 
-## Scope: what's *not* here
+## Scope
 
-The full SSZ universe in `consensus-specs/ssz/simple-serialize.md`
-also defines five forms that SizzLean **intentionally does not
-implement**:
+The classic forms (`uintN`, `bool`, `Vector`, `List`, `Bitvector`,
+`Bitlist`, `Container`) and the progressive forms are in this
+inductive:
 
-* `Union[T₁, …, Tₙ]`: tagged sum with a `uint8` selector.
-* `ProgressiveContainer(active_fields=[…])` (EIP-7495): container
-  with a `List Bool` *active-fields prefix* so future forks can add
-  fields without disturbing existing gindices.
-* `StableContainer[N]` + `Profile` (EIP-7495 legacy): fixed-size
-  optional-field bag with named profiles.
-* `ProgressiveList[T]` / `ProgressiveBitlist` (EIP-7916): capacity-
-  less lists / bitlists that grow with content.
-* `CompatibleUnion({sel: type, …})` (EIP-8016): union with explicit
-  `uint8` selectors in `1..127` (rather than positional indices).
+* `ProgressiveList[T]` / `ProgressiveBitlist` (EIP-7916): no capacity.
+  Serialization follows the list / bitlist rules. Merkleization uses
+  `merkleize_progressive` (shelves of 1, 4, 16, 64, … leaves).
+* `ProgressiveContainer(active_fields=[…])` (EIP-7495): the mask is a
+  type-level `List Bool`, not a serialized prefix. Only active fields
+  are on the wire. A `false` bit is a zero chunk in the progressive
+  Merkle tree.
 
-**Why omitted.** As of consensus-spec-tests v1.5.0 *and* the current
-consensus-specs `dev` head, no consensus type from `phase0` through
-`gloas` (including the experimental `eip7732` / `eip7441` tracks) uses
-any of these forms. Every container in the seven mainline forks plus
-Gloas is a plain `Container`; every list is a plain `List[T, N]` or
-`Bitlist[N]`; no fork uses `Union`. Including the five unused forms
-in `SSZType` would inflate every match expression with TODO arms and
-every proof with extra cases, for zero conformance benefit. The
-universal `decode_encode` / `serialize_injective` /
-`encode_size_le_max` theorems are several arms smaller as a
-result.
+The progressive constructors sit outside `BasicSupported`. The
+central theorems (`decode_encode`, `serialize_injective`,
+`encode_size_le_max`) stay on the classic subset; admitting the new
+arms is a separate proof.
 
-If a future fork adopts any of these forms (e.g. `BeaconBlockBody`
-rewrapped as a `ProgressiveContainer` for forward-compatible field
-additions), the right move is to re-add the corresponding constructor
-plus its `serialize` / `deserialize` / `hashTreeRoot` arms, and at
-that point, the `profile%` macro front-end sketched in
-ARCHITECTURE.md §8 becomes the way users declare them. Until then,
-`deriving SSZRepr` over a vanilla Lean `structure` is sufficient.
+Three spec forms are still absent:
+
+* `Union[T₁, …, Tₙ]`.
+* Legacy `StableContainer[N]` + `Profile` (the on-wire active-fields
+  prefix).
+* `CompatibleUnion` (EIP-8016).
+
+`deriving SSZRepr` emits a classic `container`. A structure tagged
+`@[sizzlean_progressive]` emits `progressiveContainer` with every
+field active. A mask that contains holes is an `SSZType` value
+written by hand: a Lean structure has a field for every component,
+so it cannot describe an inactive slot.
 -/
 
 set_option autoImplicit false
@@ -64,10 +59,12 @@ Constructor cheatsheet (matched to consensus-specs naming):
 * `list t cap`: variable-length up to `cap`.
 * `bitvector n` / `bitlist cap`: `n` (resp. up-to-`cap`) bits.
 * `container fs`: heterogeneous tuple over the given field types.
+* `progressiveList t` / `progressiveBitlist`: EIP-7916, no cap.
+* `progressiveContainer active fs`: EIP-7495. `fs` is the active
+  fields only; `active` is the type-level mask.
 
-See the module docstring for the SSZ-spec forms intentionally omitted
-(unions, progressive / stable containers, progressive lists,
-compatible unions). -/
+See the module docstring for `Union`, legacy `StableContainer`, and
+`CompatibleUnion`, which stay out of this inductive. -/
 inductive SSZType where
   | uintN     : (bits : Nat) → SSZType
   | bool      : SSZType
@@ -76,6 +73,14 @@ inductive SSZType where
   | bitvector : Nat → SSZType
   | bitlist   : Nat → SSZType
   | container : List SSZType → SSZType
+  /-- `ProgressiveList[T]`. Values are uncapped arrays. -/
+  | progressiveList : SSZType → SSZType
+  /-- `ProgressiveBitlist`. Values are uncapped bit arrays. -/
+  | progressiveBitlist : SSZType
+  /-- `ProgressiveContainer(active_fields=…)`. `fields` lists the
+  active field types in order; `active` places them among zero
+  chunks. The mask is not serialized. -/
+  | progressiveContainer : (active : List Bool) → (fields : List SSZType) → SSZType
   deriving Hashable
 
 -- TODO: `DecidableEq SSZType`. Lean 4.29.1's nested-inductive

@@ -206,27 +206,28 @@ inductive SSZType where
   | bitvector : Nat            → SSZType
   | bitlist   : Nat            → SSZType
   | container : List SSZType   → SSZType
+  | progressiveList : SSZType  → SSZType        -- ProgressiveList[T], no cap
+  | progressiveBitlist :         SSZType        -- ProgressiveBitlist
+  | progressiveContainer : List Bool → List SSZType → SSZType
   deriving Hashable
 ```
 
 A `SSZType` value is itself plain Lean data: comparable, hashable, useful
 for fuzzing against an external oracle.
 
-**Intentionally omitted.** The SSZ spec also defines `Union[T₁, …, Tₙ]`,
-`ProgressiveContainer(active_fields=[…])` and `StableContainer[N]` /
-`Profile` (EIP-7495), `ProgressiveList[T]` / `ProgressiveBitlist`
-(EIP-7916), and `CompatibleUnion({sel: type, …})` (EIP-8016). **No
-consensus type from `phase0` through `gloas` uses any of these.**
-Every container in the mainline + experimental forks (including
-`eip7732` / `eip7441`) is a plain `Container`; no fork uses `Union`.
-Carrying the unused constructors would inflate every match expression
-and every proof obligation for zero conformance benefit. The universal
-proofs in Phase 5 (Stage 18) have a smaller surface as a result.
+**Progressive forms.** `progressiveList`, `progressiveBitlist`, and
+`progressiveContainer` implement EIP-7916 and EIP-7495 merkleization
+(`merkleize_progressive`, `mix_in_active_fields`). They are outside
+`BasicSupported`, so the central theorems stay on the classic subset.
+`@[sizzlean_progressive]` makes `deriving SSZRepr` emit an all-active
+progressive container. Masks with holes are `SSZType` values written
+by hand.
 
-If a future fork adopts any of these forms, re-add the constructor
-plus its `serialize` / `deserialize` / `hashTreeRoot` / `Supported`
-arms. The `profile%` macro front-end (§8) would also land at that
-point. Until then, it stays unbuilt.
+**Still absent.** `Union`, legacy `StableContainer[N]` / `Profile`, and
+`CompatibleUnion` (EIP-8016). The `ssz_generic` compatible-union
+handler is not collected. The `profile%` macro in §8 stays unbuilt:
+the all-active Gloas-shaped containers are ordinary structures plus
+the attribute above.
 
 ### 3.2 Interpretation: from descriptions to Lean types
 

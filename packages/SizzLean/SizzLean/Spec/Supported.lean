@@ -157,7 +157,9 @@ diverge without renaming the existing theorems.
 `supported_of_supportedBounded` (at the foot of this file) turn the
 "extensionally equal" claim into a kernel-checked fact, so the
 constructors are under the same drift guard as the
-`BasicSupported → Supported` link. -/
+`BasicSupported → Supported` link. The `SSZType` constructors
+`progressiveList`, `progressiveBitlist`, and `progressiveContainer`
+exist and are intentionally absent from both predicates. -/
 inductive SSZType.SupportedBounded : SSZType → Prop
   | uintN8         : SSZType.SupportedBounded (.uintN 8)
   | uintN16        : SSZType.SupportedBounded (.uintN 16)

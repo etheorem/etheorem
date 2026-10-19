@@ -88,6 +88,12 @@ def SSZType.chunkCount : SSZType → Nat
   | .vector t n => bytesToChunkCount (n * itemLength t)
   | .list t cap => bytesToChunkCount (cap * itemLength t)
   | .container fs => fs.length
+  -- Progressive merkleization is a shelf tree, not one balanced
+  -- block, and `stepInto` does not descend into these shapes yet.
+  -- The counts below keep the function total.
+  | .progressiveList _ => 1
+  | .progressiveBitlist => 1
+  | .progressiveContainer active _ => active.length
 
 /-- One step of the fold: the slot `pos` inside the current node's
 block, the block's bit depth `d` (the factor is `2 ^ d`), and the

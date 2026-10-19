@@ -20,6 +20,11 @@ instance (so the field type must itself derive, or carry, an
 `SSZRepr` instance), assembles the matching `SSZType.container`
 shape, and emits the iso plus `rfl` proofs.
 
+A structure tagged `@[sizzlean_progressive]` is emitted as
+`progressiveContainer` with one `true` bit per field. That is the
+all-active mask. A mask with holes is written as an `SSZType`
+value; deriving has no absent field to place a `false` bit on.
+
 ## What a deriving handler is
 
 Lean's `deriving Cls` after a declaration asks the compiler to
@@ -105,6 +110,12 @@ namespace SizzLean.Repr.Deriving
 open SizzLean.Repr
 
 open Lean Elab Command Meta Term
+
+/-- Structures carrying this tag derive `SSZRepr` as a progressive
+container with every field active. -/
+initialize sizzleanProgressiveAttr : TagAttribute ←
+  registerTagAttribute `sizzlean_progressive
+    "Derive SSZRepr as a progressive container with every field active."
 
 /-- Render a `Nat`-valued cap / length / width expression as shape
 Syntax, preferring a concrete literal but falling back to the
@@ -315,6 +326,13 @@ private def mkInstance (declName : Name) : CommandElabM Unit := do
   -- docstring for the dual role.
   let (binders, structApp, shapeExprs, fieldTypes) ←
     liftTermElabM <| getFieldShapesAndTypes declName
+  let progressive := sizzleanProgressiveAttr.hasTag env declName
+  let activeExprs ← shapeExprs.mapM fun _ => `(true)
+  let shapeStx ←
+    if progressive then
+      `(SizzLean.Spec.SSZType.progressiveContainer [$activeExprs,*] [$shapeExprs,*])
+    else
+      `(SizzLean.Spec.SSZType.container [$shapeExprs,*])
   -- Build the *unfolded* product type matching the shape's interp:
   -- `τ₁ × τ₂ × … × τₙ × PUnit`. Right-nested `Prod`, terminated by
   -- `PUnit`. This is the explicit type we pin `fromRepr`'s input
@@ -368,7 +386,7 @@ private def mkInstance (declName : Name) : CommandElabM Unit := do
     mkIdent (`_root_ ++ Name.mkSimple instLeafStr)
   let cmd ← `(
     instance $instIdent:ident $binders:bracketedBinder* : SizzLean.SSZRepr $structApp where
-      shape    := SizzLean.Spec.SSZType.container [$shapeExprs,*]
+      shape    := $shapeStx
       toRepr   := fun (s : $structApp) => $toReprBody
       fromRepr := fun $fromReprPat:term =>
         { $[$fieldIdents:ident := $fromReprFields:term],* }

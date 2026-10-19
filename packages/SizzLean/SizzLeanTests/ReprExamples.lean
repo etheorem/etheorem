@@ -452,4 +452,41 @@ example (xs : SSZType.interp (.list (.container [.uintN 8, .bitlist 8]) 2)) :
           (by decide))
         rfl) xs (by decide))
 
+/-! ### Progressive container deriving
+
+`@[sizzlean_progressive]` asks the handler for
+`progressiveContainer` with one `true` bit per field. The shape
+equality is definitional, so `rfl` rejects a handler that still
+emits `.container`. The round-trip is `native_decide` because the
+progressive constructors are outside `BasicSupported`, and
+`SSZ.roundtrip` is gated on that predicate. -/
+
+@[sizzlean_progressive]
+structure ProgPair where
+  a : Bool
+  b : Bool
+  deriving SSZRepr
+
+example : SSZRepr.shape (T := ProgPair) =
+    .progressiveContainer [true, true] [.bool, .bool] := rfl
+
+private def roundTripProgPair (p : ProgPair) : Bool :=
+  match SSZ.deserialize (SSZ.serialize p) with
+  | .ok q =>
+      let q' : ProgPair := q
+      q'.a == p.a && q'.b == p.b
+  | .error _ => false
+
+example : roundTripProgPair { a := true, b := false } = true := by native_decide
+
+private def roundTripProgList (xs : SizzLean.Repr.ProgressiveList UInt8) : Bool :=
+  match SSZ.deserialize (SSZ.serialize xs) with
+  | .ok ys =>
+      let ys' : SizzLean.Repr.ProgressiveList UInt8 := ys
+      ys'.size == xs.size &&
+        (List.range xs.size).all (fun i => ys'[i]! == xs[i]!)
+  | .error _ => false
+
+example : roundTripProgList #[1, 2, 3] = true := by native_decide
+
 end SizzLeanTests.ReprExamples

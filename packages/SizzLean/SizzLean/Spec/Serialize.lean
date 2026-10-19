@@ -102,6 +102,11 @@ def SSZType.isFixedSize : SSZType → Bool
   | .bitvector _  => true
   | .bitlist _    => false
   | .container fs => SSZType.allFixedSize fs
+  -- A progressive list is variable-size even when its element is
+  -- fixed (`ProgressiveList[uint64]` still uses mix-in-length).
+  | .progressiveList _ => false
+  | .progressiveBitlist => false
+  | .progressiveContainer _ fs => SSZType.allFixedSize fs
 
 /-- `isFixedSize` lifted over a field list. -/
 def SSZType.allFixedSize : List SSZType → Bool
@@ -134,6 +139,9 @@ def SSZType.fixedByteSize : SSZType → Nat
   | .bitvector n  => (n + 7) / 8
   | .bitlist _    => 0
   | .container fs => SSZType.fixedByteSizeFields fs
+  | .progressiveList _ => 0
+  | .progressiveBitlist => 0
+  | .progressiveContainer _ fs => SSZType.fixedByteSizeFields fs
 
 /-- Sum of `fixedByteSize` over a field list. -/
 def SSZType.fixedByteSizeFields : List SSZType → Nat
@@ -141,6 +149,15 @@ def SSZType.fixedByteSizeFields : List SSZType → Nat
   | t :: ts => SSZType.fixedByteSize t + SSZType.fixedByteSizeFields ts
 
 end
+
+/-- A progressive list is variable-size even when the element is a
+basic fixed-width type. -/
+example : SSZType.isFixedSize (.progressiveList (.uintN 64)) = false := rfl
+
+/-- Inactive mask bits contribute no serialized bytes. The two active
+fields here are `uint8` and `uint16`. -/
+example : SSZType.fixedByteSize
+    (.progressiveContainer [true, false, true] [.uintN 8, .uintN 16]) = 3 := rfl
 
 /-- Width a single field contributes to a container's fixed-size
 prefix: its full bytes if fixed, else `BYTES_PER_LENGTH_OFFSET`
@@ -338,6 +355,27 @@ def SSZType.serialize : (s : SSZType) → s.interp → ByteArray
       -- `SSZType.interpFields fs`, definitionally a right-nested
       -- `Prod` chain ending in `PUnit`. `serializeFieldsAux` walks
       -- it cons-by-cons via `.1` / `.2` projections.
+      let (fix, var) : ByteArray × ByteArray :=
+        SSZType.serializeFieldsAux fs vs (SSZType.fixedSectionSizeFields fs)
+      fix ++ var
+  | .progressiveList t, xs =>
+      -- Same element encoding as `list`: fixed-size elements
+      -- concatenate, variable-size elements take an offset table.
+      -- There is no capacity to enforce.
+      let xs' : Array t.interp := xs
+      if t.isFixedSize then
+        SSZType.serializeFixedElems t xs'.toList
+      else
+        let ys : List t.interp := xs'.toList
+        let varOff : Nat := ys.length * BYTES_PER_LENGTH_OFFSET
+        let (offs, bodies) := SSZType.serializeVarElemsAux t ys varOff
+        offs ++ bodies
+  | .progressiveBitlist, bs =>
+      let bs' : Array Bool := bs
+      bitlistToBytes bs'
+  | .progressiveContainer _ fs, vs =>
+      -- Inactive mask bits are not on the wire. `fs` is already the
+      -- active fields, so this is the container encoding of `fs`.
       let (fix, var) : ByteArray × ByteArray :=
         SSZType.serializeFieldsAux fs vs (SSZType.fixedSectionSizeFields fs)
       fix ++ var

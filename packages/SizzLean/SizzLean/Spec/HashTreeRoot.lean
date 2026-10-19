@@ -65,11 +65,10 @@ widths, so the totality-preserving stub is sufficient.
 -/
 
 set_option autoImplicit false
--- Same reason as `Spec/Deserialize.lean`: the 17-arm dependent match
+-- Same reason as `Spec/Deserialize.lean`: the dependent match
 -- in `SSZType.hashTreeRoot` (each arm refining `s.interp` against
--- `interp`'s own 17-case recursion) drives the elaborator past the
--- 200k-heartbeat default. Bumped here, not globally, so only this
--- file pays the cost.
+-- `interp`) drives the elaborator past the 200k-heartbeat default.
+-- Bumped here, not globally, so only this file pays the cost.
 set_option maxHeartbeats 5000000
 
 namespace SizzLean.Spec
@@ -330,6 +329,52 @@ def mixInSelector (H : Type) [Hasher H]
     (root : ByteArray) (sel : Nat) : ByteArray :=
   Hasher.combine (H := H) root (natToChunk sel)
 
+/-- One fuel step of `merkleize_progressive`. `fuel` starts at
+`chunks.length`. Each shelf consumes at least one chunk, so the
+empty-list arm is reached while fuel remains, and the `fuel = 0`
+arm is only a totality fallback.
+
+Shelves are `numLeaves`, then `numLeaves * 4`, starting at 1. Those
+widths are powers of two, so `merkleize` at `chunkDepth numLeaves`
+is the spec's `merkleize(chunks, limit = numLeaves)`. A non-empty
+input always hashes the shelf root with the root of the remainder,
+and the remainder of an empty tail is the zero chunk. -/
+def merkleizeProgressiveAux (H : Type) [Hasher H] :
+    Nat → List ByteArray → Nat → ByteArray
+  | _, [], _ => zero32
+  | 0, _, _ => zero32
+  | fuel + 1, chunks, numLeaves =>
+      let n := max numLeaves 1
+      Hasher.combine (H := H)
+        (merkleize H (chunks.take n) (chunkDepth n))
+        (merkleizeProgressiveAux H fuel (chunks.drop n) (n * 4))
+
+/-- `merkleize_progressive` from consensus-specs *§Merkleization*.
+Empty input is the zero chunk. A one-chunk input is
+`hash(chunk, zero32)`, which is a different value from the chunk. -/
+def merkleizeProgressive (H : Type) [Hasher H]
+    (chunks : List ByteArray) : ByteArray :=
+  merkleizeProgressiveAux H chunks.length chunks 1
+
+example (H : Type) [Hasher H] : merkleizeProgressive H [] = zero32 := rfl
+
+/-- Place active-field roots into the `active_fields` mask. A `false`
+bit is a zero chunk and consumes no root. A `true` bit consumes the
+next root. `Square(active_fields=[1, 0, 1])` in the spec puts `side`
+at index 0 and `color` at index 2. -/
+def placeActiveChunks : List Bool → List ByteArray → List ByteArray
+  | [], _ => []
+  | false :: bits, roots => zero32 :: placeActiveChunks bits roots
+  | true :: bits, r :: rs => r :: placeActiveChunks bits rs
+  | true :: bits, [] => zero32 :: placeActiveChunks bits []
+
+/-- `mix_in_active_fields`: `hash(root, pack(active_fields))`.
+The mask is at most 256 bits, so the packed form is one
+right-padded chunk. There is no delimiter bit. -/
+def mixInActiveFields (H : Type) [Hasher H]
+    (root : ByteArray) (active : List Bool) : ByteArray :=
+  Hasher.combine (H := H) root (padToChunk (packBitsLE active))
+
 /-! ### Bit-list to bytes (no trailing delimiter)
 
 The bitlist body merkleization needs the data bits packed LSB-first
@@ -477,6 +522,24 @@ def SSZType.hashTreeRoot (H : Type) [Hasher H] :
   | .container fs, vs =>
       let roots := SSZType.hashTreeRootFields H fs vs
       merkleize H roots (chunkDepth fs.length)
+  | .progressiveList t, xs =>
+      let xs' : Array t.interp := xs
+      let n := xs'.size
+      if t.isBasicType then
+        let body := SSZType.serializeFixedElems t xs'.toList
+        mixInLength H (merkleizeProgressive H (chunkify body)) n
+      else
+        let roots := SSZType.hashTreeRootListComposite H t xs'.toList
+        mixInLength H (merkleizeProgressive H roots) n
+  | .progressiveBitlist, bs =>
+      let bs' : Array Bool := bs
+      let bv : BitVec bs'.size := BitVec.ofNat bs'.size (bitsToNatLE bs'.toList)
+      let bytes := SSZType.serialize (.bitvector bs'.size) bv
+      mixInLength H (merkleizeProgressive H (chunkify bytes)) bs'.size
+  | .progressiveContainer active fs, vs =>
+      let roots := SSZType.hashTreeRootFields H fs vs
+      let chunks := placeActiveChunks active roots
+      mixInActiveFields H (merkleizeProgressive H chunks) active
 
 /-- Per-field merkleization for `container fs`. Returns the list of
 field roots in declaration order; the caller merkleizes that list. -/

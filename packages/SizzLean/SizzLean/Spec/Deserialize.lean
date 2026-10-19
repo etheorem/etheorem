@@ -292,6 +292,21 @@ protected def deserializeBitlist (cap : Nat) (b : ByteArray) :
           if hsz : arr.size ≤ cap then .ok (⟨arr, hsz⟩, b.size)
           else .error .outOfRange
 
+/-- `ProgressiveBitlist` decoder. The delimiter rule matches
+`deserializeBitlist`; there is no capacity to reject against. -/
+protected def deserializeProgressiveBitlist (b : ByteArray) :
+    Except SSZError (Array Bool × Nat) :=
+  if h : b.size = 0 then .error .bitlistMissingDelimiter
+  else
+    have hlt : b.size - 1 < b.size := by omega
+    let last := b[b.size - 1]'hlt
+    match msbPos last with
+    | .none     => .error .bitlistMissingDelimiter
+    | .some pos =>
+        let totalBits := (b.size - 1) * 8 + pos
+        let bits := (unpackBitsLEAux b b.size 0).take totalBits
+        .ok (bits.toArray, b.size)
+
 /-! ### The deserializer
 
 Mutual block matching `Spec/Serialize.lean` shape:
@@ -412,6 +427,59 @@ def SSZType.deserialize : (s : SSZType) → ByteArray → Except SSZError (s.int
                           else .error .outOfRange
   | .bitvector n, b => SizzLean.Spec.deserializeBitvector n b
   | .bitlist cap, b => SizzLean.Spec.deserializeBitlist cap b
+  | .progressiveList t, b =>
+      if t.isFixedSize then
+        let sz := t.fixedByteSize
+        if sz = 0 then .error .tooShort
+        else
+          let count := b.size / sz
+          if count * sz ≠ b.size then .error .trailingBytes
+          else
+            match SSZType.deserializeFixedElems t count b 0 sz with
+            | .error e       => .error e
+            | .ok (xs, used) => .ok (xs.toArray, used)
+      else if b.size = 0 then
+        .ok (#[], 0)
+      else
+        -- The first offset is the width of the offset table, so it
+        -- is a positive multiple of 4. A zero first offset would
+        -- report an empty list over a non-empty buffer.
+        match readUInt32LE b 0 with
+        | .none => .error .tooShort
+        | .some firstOff =>
+            let firstOffN := firstOff.toNat
+            if firstOffN = 0 || firstOffN % BYTES_PER_LENGTH_OFFSET ≠ 0 then
+              .error .invalidOffset
+            else
+              let count := firstOffN / BYTES_PER_LENGTH_OFFSET
+              match SizzLean.Spec.extractCollOffsets b count 0 with
+              | .error e => .error e
+              | .ok offs =>
+                  match SSZType.deserializeVarElems t offs b.size b with
+                  | .error e => .error e
+                  | .ok xs   =>
+                      if xs.length ≠ count then .error .tooShort
+                      else .ok (xs.toArray, b.size)
+  | .progressiveBitlist, b => SizzLean.Spec.deserializeProgressiveBitlist b
+  | .progressiveContainer _ fs, b =>
+      if SSZType.allFixedSize fs then
+        SSZType.deserializeFixedFields fs b 0
+      else
+        let prefixSize := SSZType.fixedSectionSizeFields fs
+        if b.size < prefixSize then .error .tooShort
+        else
+          match SizzLean.Spec.extractFieldOffsets b fs 0 with
+          | .error e  => .error e
+          | .ok offs  =>
+              match offs.head? with
+              | .some firstOff =>
+                  if firstOff ≠ prefixSize then .error .invalidOffset
+                  else
+                    match SSZType.deserializeVarFields fs b 0 offs b.size with
+                    | .error e => .error e
+                    | .ok v    => .ok (v, b.size)
+              | .none =>
+                  SSZType.deserializeFixedFields fs b 0
   | .container fs, b =>
       if SSZType.allFixedSize fs then
         SSZType.deserializeFixedFields fs b 0
@@ -669,5 +737,48 @@ private def roundTripVarContainer
 example : roundTripVarContainer true ⟨#[true, false, true], by decide⟩ 0xDEADBEEF = true := by
   native_decide
 example : roundTripVarContainer false ⟨#[], by decide⟩ 0 = true := by native_decide
+
+/-- `ProgressiveList[uint8]` round-trips, including the empty list.
+The element type is fixed-size, so the wire form is concatenation. -/
+private def roundTripProgListU8 (xs : Array UInt8) : Bool :=
+  let s : SSZType := .progressiveList (.uintN 8)
+  match SSZType.deserialize s (SSZType.serialize s xs) with
+  | .ok (y, n) =>
+      let yb : Array UInt8 := y
+      yb.size == xs.size &&
+        (List.range xs.size).all (fun i => yb[i]! == xs[i]!) &&
+        n == (SSZType.serialize s xs).size
+  | .error _ => false
+
+example : roundTripProgListU8 #[] = true := by native_decide
+example : roundTripProgListU8 #[1, 2, 3] = true := by native_decide
+
+/-- Empty `ProgressiveBitlist` is the single delimiter byte `0x01`. -/
+private def roundTripProgBitlistEmpty : Bool :=
+  let s : SSZType := .progressiveBitlist
+  let v : Array Bool := #[]
+  let b := SSZType.serialize s v
+  match SSZType.deserialize s b with
+  | .ok (y, n) =>
+      let yb : Array Bool := y
+      b.size == 1 && b[0]! == 1 && yb.size == 0 && n == 1
+  | .error _ => false
+
+example : roundTripProgBitlistEmpty = true := by native_decide
+
+/-- A hole in `active_fields` is absent from the wire. The value
+`(1, 2)` occupies mask bits 0 and 2. -/
+private def progressiveHoleWire : Bool :=
+  let s : SSZType := .progressiveContainer [true, false, true] [.uintN 8, .uintN 8]
+  let v : SSZType.interpFields [.uintN 8, .uintN 8] := (1, 2, PUnit.unit)
+  let b := SSZType.serialize s v
+  match SSZType.deserialize s b with
+  | .ok (y, n) =>
+      let yv : SSZType.interpFields [.uintN 8, .uintN 8] := y
+      b.size == 2 && b[0]! == 1 && b[1]! == 2 &&
+        yv.1 == 1 && yv.2.1 == 2 && n == 2
+  | .error _ => false
+
+example : progressiveHoleWire = true := by native_decide
 
 end SizzLean.Spec
