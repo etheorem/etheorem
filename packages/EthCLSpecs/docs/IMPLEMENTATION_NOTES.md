@@ -2223,6 +2223,16 @@ means one thing from the binding to the Go harness.
   the docstring no longer decides behavior. The stage-10 entry above
   stands as the record of the parse this entry replaces.
 
+- **The table names the `inherit` replays.** The docstring scheme answered
+  `none` for every `inherit` replay: a replay is a bare `def`, so it
+  carries no docstring to parse. The table names them. The first row is
+  Heze's `verifyExecutionPayloadEnvelope` replay, spelled as Gloas's
+  original, `verify_execution_payload_envelope`. The surveyed corpus
+  targets no other replay today. The frozen stage-10 narrative in
+  `THEOREM_VECTORS_PLAN.md` still describes the docstring parse and the
+  `specName` spelling as current; this entry and the architecture
+  document are the record of record.
+
 - **The wire key is `pyspecName` on both sides of the client join, in one
   commit.** The record's `record.json` key, the results-file
   `client-results.json` key, and the prysm coverage table's column all

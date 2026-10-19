@@ -68,7 +68,10 @@ def heze : ForkBinding where
       (`EthCLSpecs.Heze.isInclusionListSatisfied, "is_inclusion_list_satisfied"),
       (`EthCLSpecs.Heze.getInclusionListCommittee, "get_inclusion_list_committee"),
       (`EthCLSpecs.Heze.shouldExtendPayload, "should_extend_payload"),
-      (`EthCLSpecs.Heze.balanceAfterWithdrawals, "get_balance_after_withdrawals")
+      (`EthCLSpecs.Heze.balanceAfterWithdrawals, "get_balance_after_withdrawals"),
+      -- The `inherit` replay of Gloas's `verifyExecutionPayloadEnvelope`, named
+      -- for the first time: the docstring parse answered `none` for every replay.
+      (`EthCLSpecs.Heze.verifyExecutionPayloadEnvelope, "verify_execution_payload_envelope")
       -- No row for `isValidInclusionListSignature`: its `def` lives in
       -- `EthCLSpecs.Heze.Signing`, which no generator module imports, so
       -- the constant is not in the header's environment and no target
