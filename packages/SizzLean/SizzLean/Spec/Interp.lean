@@ -111,6 +111,9 @@ those native types when they ship. -/
   | .bitvector n              => BitVec n
   | .bitlist cap              => { bs : Array Bool // bs.size ≤ cap }
   | .container fs             => SSZType.interpFields fs
+  | .progressiveList t        => Array t.interp
+  | .progressiveBitlist       => Array Bool
+  | .progressiveContainer _ fs => SSZType.interpFields fs
 
 /-- Heterogeneous tuple over a `List SSZType`: one component per
 field, encoded as right-nested `Prod` terminated by `PUnit`. The
@@ -149,5 +152,9 @@ example : SSZType.interp (.vector .bool 3) = Vector Bool 3 := rfl
 example : SSZType.interp (.uintN 64)  = UInt64      := by with_reducible rfl
 example : SSZType.interp (.uintN 128) = BitVec 128  := by with_reducible rfl
 example : SSZType.interp (.uintN 64) := 42
+example : SSZType.interp (.progressiveList (.uintN 8)) = Array UInt8 := rfl
+example : SSZType.interp .progressiveBitlist = Array Bool := rfl
+example : SSZType.interp (.progressiveContainer [true, false] [.bool]) =
+    (Bool × PUnit) := rfl
 
 end SizzLean.Spec

@@ -40,25 +40,31 @@ PINNED_VERSION = "v1.7.0-alpha.13"
 CACHE_DIR = Path.home() / ".cache" / "sizzlean"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# The handlers the runner models. The progressive / stable / compatible forms
-# (`basic_progressive_list`, `progressive_bitlist`, `progressive_containers`,
-# EIP-7495 / 7916 / 8016) are outside SizzLean's `SSZType` universe and are not
-# collected; see `SizzLean/Spec/Type.lean`'s module docstring.
+# The handlers the runner models. Compatible unions (EIP-8016) stay
+# outside `SSZType` and are not collected. Stable containers are not a
+# handler in this archive.
 SUPPORTED_HANDLERS = {
     "uints", "basic_vector", "bitvector", "bitlist", "boolean", "containers",
+    "basic_progressive_list", "progressive_bitlist", "progressive_containers",
 }
 
 # Positive shape-prefix patterns: match the prefix of the case name, the rest is
 # a variant suffix (`_zero`, `_random_3`, `_max_one_byte_less`). Prefix matching
 # is robust to upstream variant churn. A case that matches nothing (the
-# out-of-scope progressive/stable test structs) has shape `None` and xfails.
+# out-of-scope compatible-union cases) has shape `None` and xfails.
 _SHAPE_PATTERNS = [
     re.compile(r"^(uint_\d+)"),
     re.compile(r"^(bitvec_\d+)"),
     re.compile(r"^(bitlist_\d+)"),
     re.compile(r"^(vec_(?:bool|uint\d+)_\d+)"),
+    re.compile(r"^(proglist_(?:bool|uint\d+))"),
+    re.compile(r"^(progbitlist)"),
     re.compile(r"^(SingleFieldTestStruct|SmallTestStruct|FixedTestStruct|"
-               r"VarTestStruct|ComplexTestStruct|BitsStruct)"),
+               r"VarTestStruct|ComplexTestStruct|BitsStruct|"
+               r"ProgressiveSingleFieldContainerTestStruct|"
+               r"ProgressiveSingleListContainerTestStruct|"
+               r"ProgressiveVarTestStruct|ProgressiveComplexTestStruct|"
+               r"ProgressiveTestStruct|ProgressiveBitsStruct)"),
 ]
 
 

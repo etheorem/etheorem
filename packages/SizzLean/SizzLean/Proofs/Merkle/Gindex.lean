@@ -394,6 +394,9 @@ theorem stepInto_pos_lt {s : SSZType} {step : PathStep} {pos d : Nat} {s' : SSZT
   | bool => intro h; simp [SSZType.stepInto, SSZType.isBasicType] at h
   | bitvector n => intro h; simp [SSZType.stepInto, SSZType.isBasicType] at h
   | bitlist cap => intro h; simp [SSZType.stepInto, SSZType.isBasicType] at h
+  | progressiveList _ => intro h; simp [SSZType.stepInto, SSZType.isBasicType] at h
+  | progressiveBitlist => intro h; simp [SSZType.stepInto, SSZType.isBasicType] at h
+  | progressiveContainer _ _ => intro h; simp [SSZType.stepInto, SSZType.isBasicType] at h
   | container fs =>
       intro h
       cases step with

@@ -30,8 +30,10 @@ their own code. They map one-to-one onto the sections of
 
 * `Repr/Class`, `Repr/Instances`, `Repr/Deriving`: the `SSZRepr`
   class, the built-in field-type instances (`Bool`, `UIntN`,
-  `BitVec 128/256`, `Vector`, `SSZList`, `Bitvector`, `Bitlist`),
-  and the `deriving SSZRepr` handler.
+  `BitVec 128/256`, `Vector`, `SSZList`, `Bitvector`, `Bitlist`,
+  `ProgressiveList`, `ProgressiveBitlist`),
+  and the `deriving SSZRepr` handler (`@[sizzlean_progressive]`
+  emits a progressive container).
 * `Spec/SSZError`: the deserialise-error sum returned by
   `SSZ.deserialize`.
 * `Hasher/Class`, `Hasher/Sha256`, `Hasher/Sha256Spec`: the

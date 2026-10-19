@@ -4,8 +4,8 @@ The harness builds a request from the case on disk and submits it to the worker'
 `ssz_generic_runner`; the runner returns its classify result. The assertion
 follows the same model as the EthCLSpecs harness:
 
-- a shape outside SizzLean's `SSZType` universe (the progressive / stable /
-  compatible test structs) `xfail`s, it is collected but not a real failure;
+- a shape the runner does not model (`shape is None`, or `todo`) `xfail`s.
+  Compatible unions are not collected;
 - `bug` (a decode/round-trip/root mismatch on a well-formed vector, or a server
   crash) is a hard failure;
 - `todo` (a shape the runner does not parse) is `xfail`;

@@ -17,9 +17,10 @@ runner lives here in `SizzLean` rather than in a fork's spec library.
 
 A `valid` case must decode, re-serialize to the exact input bytes, and root to
 the value in `meta.yaml`. An `invalid` case must fail to decode (or leave trailing
-bytes). A shape identifier `SizzLean`'s universe does not model (the EIP-7495 /
-7916 / 8016 progressive / stable / compatible forms `Spec/Type.lean` omits) is
-reported `todo`, so the harness xfails it rather than failing.
+bytes). A shape identifier `SizzLean`'s universe does not model (legacy stable
+containers and EIP-8016 compatible unions) is reported `todo`, so the
+harness xfails it rather than failing. Progressive lists, progressive
+bitlists, and progressive containers are in the universe.
 
 ## The wire protocol
 
@@ -77,6 +78,10 @@ matching the `consensus-spec-tests` `ssz_generic` layout:
 * `bitlist_<cap>`
 * the test-only container names (`VarTestStruct`, `ComplexTestStruct`, …),
   whose SSZ shapes are hard-coded below from `formats/ssz_generic/containers.md`.
+* `proglist_{bool|uintN}` and `progbitlist`.
+* the progressive container names (`ProgressiveVarTestStruct`, …) and the
+  classic containers whose fields are progressive (`ProgressiveTestStruct`,
+  `ProgressiveBitsStruct`).
 -/
 
 /-- Parse a uintN element identifier (`uint8`, `uint16`, …). -/
@@ -93,6 +98,9 @@ private def parseUintElem (s : String) : Option SSZType :=
 /-- Parse a basic-type element identifier (uintN, bool). -/
 private def parseElem (s : String) : Option SSZType :=
   if s == "bool" then some .bool else parseUintElem s
+
+private def smallTestStructShape : SSZType :=
+  .container [.uintN 16, .uintN 16]
 
 private def varTestStructShape : SSZType :=
   .container [.uintN 16, .list (.uintN 16) 1024, .uintN 8]
@@ -114,16 +122,73 @@ private def complexTestStructShape : SSZType :=
 private def bitsStructShape : SSZType :=
   .container [.bitlist 5, .bitvector 2, .bitvector 1, .bitlist 6, .bitvector 8]
 
+/-- `ProgressiveSingleFieldContainerTestStruct`, mask `[1]`. -/
+private def progressiveSingleFieldShape : SSZType :=
+  .progressiveContainer [true] [.uintN 8]
+
+/-- `ProgressiveSingleListContainerTestStruct`, mask `[0, 0, 0, 0, 1]`. -/
+private def progressiveSingleListShape : SSZType :=
+  .progressiveContainer [false, false, false, false, true] [.progressiveBitlist]
+
+/-- `ProgressiveVarTestStruct`, mask `[1, 0, 1, 0, 1]`. -/
+private def progressiveVarShape : SSZType :=
+  .progressiveContainer [true, false, true, false, true]
+    [.uintN 8, .list (.uintN 16) 123, .progressiveBitlist]
+
+/-- `ProgressiveComplexTestStruct`. Eight active fields; the mask is
+22 bits, from `tests/formats/ssz_generic/README.md`. -/
+private def progressiveComplexShape : SSZType :=
+  .progressiveContainer
+    [true, false, true, false, true, false, false, false, true, false, false, false,
+     true, true, false, false, false, false, false, false, true, true]
+    [.uintN 8,
+     .list (.uintN 16) 123,
+     .progressiveBitlist,
+     .progressiveList (.uintN 64),
+     .progressiveList smallTestStructShape,
+     .progressiveList (.progressiveList varTestStructShape),
+     .list progressiveSingleFieldShape 10,
+     .progressiveList progressiveVarShape]
+
+/-- Classic container of progressive lists (`containers` handler). -/
+private def progressiveTestStructShape : SSZType :=
+  .container [
+    .progressiveList (.uintN 8),
+    .progressiveList (.uintN 64),
+    .progressiveList smallTestStructShape,
+    .progressiveList (.progressiveList varTestStructShape)
+  ]
+
+/-- Classic container mixing capped bit fields with progressive bitlists. -/
+private def progressiveBitsStructShape : SSZType :=
+  .container [
+    .bitvector 256, .bitlist 256, .progressiveBitlist,
+    .bitvector 257, .bitlist 257, .progressiveBitlist,
+    .bitvector 1280, .bitlist 1280, .progressiveBitlist,
+    .bitvector 1281, .bitlist 1281, .progressiveBitlist
+  ]
+
 /-- Parse a shape prefix into an `SSZType`. `none` ⇒ a form `SizzLean`'s universe
 does not model (reported `todo` upstream). -/
 def parseShape (s : String) : Option SSZType :=
   if s == "bool" then some .bool
   else if s == "SingleFieldTestStruct" then some (.container [.uintN 8])
-  else if s == "SmallTestStruct" then some (.container [.uintN 16, .uintN 16])
+  else if s == "SmallTestStruct" then some smallTestStructShape
   else if s == "FixedTestStruct" then some fixedTestStructShape
   else if s == "VarTestStruct" then some varTestStructShape
   else if s == "ComplexTestStruct" then some complexTestStructShape
   else if s == "BitsStruct" then some bitsStructShape
+  else if s == "progbitlist" then some .progressiveBitlist
+  else if s == "ProgressiveSingleFieldContainerTestStruct" then
+    some progressiveSingleFieldShape
+  else if s == "ProgressiveSingleListContainerTestStruct" then
+    some progressiveSingleListShape
+  else if s == "ProgressiveVarTestStruct" then some progressiveVarShape
+  else if s == "ProgressiveComplexTestStruct" then some progressiveComplexShape
+  else if s == "ProgressiveTestStruct" then some progressiveTestStructShape
+  else if s == "ProgressiveBitsStruct" then some progressiveBitsStructShape
+  else if s.startsWith "proglist_" then
+    (parseElem (s.drop 9).toString).map .progressiveList
   else if s.startsWith "uint_" then
     match (s.drop 5).toString.toNat? with
     | some 8 => some (.uintN 8)   | some 16 => some (.uintN 16)

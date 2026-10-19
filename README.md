@@ -326,11 +326,13 @@ specification and the `ssz_generic` tests in `v1.7.0-alpha.14`, and the
 specification now lives in [`ethereum/ssz-specs`](https://github.com/ethereum/ssz-specs),
 which ships its own JSON vector archive per release.
 
-- **`ssz_generic`** (SizzLean): 2215 in-scope cases pass across every handler
-  (uints, basic_vector, bitvector, bitlist, boolean, containers). The 294
-  EIP-7495 / 7916 / 8016 progressive / stable / compatible cases are out of
-  SizzLean's `SSZType` universe and xfail. The test-only container shapes
-  (`VarTestStruct`, `ComplexTestStruct`, `BitsStruct`, …) are hard-coded in
+- **`ssz_generic`** (SizzLean): 4624 cases pass at
+  [v1.7.0-alpha.13](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.13)
+  across uints, basic vectors, bitvectors, bitlists, booleans, containers,
+  `basic_progressive_list`, `progressive_bitlist`, and `progressive_containers`
+  (including `ProgressiveTestStruct` and `ProgressiveBitsStruct` under
+  `containers`). Compatible unions are not part of `SSZType` and are not
+  collected. The test-only container shapes are hard-coded in
   `packages/SizzLean/SszGenericRunner.lean`.
 - **`ssz_static`** (EthCLSpecs, Fulu + Gloas + Heze): the consensus containers
   EthCLSpecs models pass at both the minimal and mainnet presets; the types it

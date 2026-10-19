@@ -11,9 +11,9 @@ Proves that LSB-first bit packing (`Spec/Serialize.lean`) and
 unpacking (`Spec/Deserialize.lean`) are mutual inverses, then
 closes `decode_encode` and `encode_size_le_max` for the
 `.bitvector n` and `.bitlist cap` arms. This is the file that
-`packBitsLE` (`Spec/Serialize.lean:232-238`) and `unpackBitsLEAux`
+`packBitsLE` (`Spec/Serialize.lean:249-255`) and `unpackBitsLEAux`
 (`Spec/Deserialize.lean:206-208`) were made public for, together with
-`bitsToByte` (`Spec/Serialize.lean:222-225`) and `byteToBits`
+`bitsToByte` (`Spec/Serialize.lean:239-242`) and `byteToBits`
 (`Spec/Deserialize.lean:201-202`).
 
 ## Lemma path
