@@ -161,7 +161,8 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
     | some f => pure f
     | none   => throw (StateTransitionError.assert "is_matching_source")
   let indexedAttestation : IndexedAttestation :=
-    { attestingIndices := sszOfArray ((← liftErr (getAttestingIndices state att)).qsort (· < ·)),
+    { attestingIndices := ← sszOfArrayM "attestingIndices"
+        ((← liftErr (getAttestingIndices state att)).qsort (· < ·)),
       data := att.data, signature := att.signature }
   assert (isValidIndexedAttestation state indexedAttestation)
 
@@ -278,7 +279,8 @@ forkdef processDepositRequest (dr : DepositRequest) : StateTransition Unit := do
     if (sszGet state depositRequestsStartIndex) == Const.unsetDepositRequestsStartIndex then
       sszUpdate state with depositRequestsStartIndex := dr.index
     else state
-  modifyState fun state => sszAppend state pendingDeposits
+  let state ← get
+  appendState pendingDeposits
     { pubkey := dr.pubkey, withdrawalCredentials := dr.withdrawalCredentials, amount := dr.amount,
       signature := dr.signature, slot := sszGet state slot }
 

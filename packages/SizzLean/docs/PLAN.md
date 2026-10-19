@@ -1552,7 +1552,7 @@ mix-in-length variant `processDeposit` needs. EthCLLib proves
 
 Two gaps separate that from the shipped call sites. Each call site
 checks a branch taken off the wire.
-`EthCLSpecs/Fulu/Operations.lean:225` checks it against the
+`EthCLSpecs/Fulu/Operations.lean:227` checks it against the
 deposit contract's incremental tree, which is not an `ofShape`
 tree. The wire value therefore needs its own connection to the
 tree the theorem describes. The light-client sites call

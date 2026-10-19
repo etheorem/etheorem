@@ -52,6 +52,11 @@ theorem run_bind {σ ε α β : Type} (x : StateT σ (Except ε) α)
 theorem run_pure {σ ε α : Type} (a : α) (s : σ) :
     (pure a : StateT σ (Except ε) α).run s = .ok (a, s) := rfl
 
+/-- `.run` of `getThe σ`: the state, as the value and as the unchanged state. `appendState`
+opens with this read. -/
+theorem run_getThe {σ ε : Type} (s : σ) :
+    (getThe σ : StateT σ (Except ε) σ).run s = .ok (s, s) := rfl
+
 /-- `.run` of a `throw`: the error alone. This is where the two monads part company.
 `EStateM`'s throw carries the state it had reached, which is what the pyspec runner needs
 and what a proof about a rejecting path then has to say something about. Here a reject is

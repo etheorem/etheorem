@@ -178,16 +178,18 @@ that slot-0's beacon committee is non-empty (`computeCommittee` takes the shuffl
 empty-committee guard instead of throwing. A `default` validator has `exitEpoch = 0`, hence
 inactive, so only `exitEpoch := farFutureEpoch` is overridden (`is_active_validator` needs
 `activationEpoch ≤ epoch < exitEpoch`, and `activationEpoch` is already `0`). Effective balance is
-irrelevant here: `computeCommittee` is a plain shuffled slice, not balance-weighted. The registry
-is pushed onto the empty `base.validators` so the `SSZList` element type is inferred, never spelled.
+irrelevant here: `computeCommittee` is a plain shuffled slice, not balance-weighted. `sszOfArray`
+builds the registry, and the field type fixes the list limit (`SLOTS_PER_EPOCH` validators sit far
+under it).
 -/
 private def pinPopulatedState : @EthCLSpecs.Heze.BeaconState minimal :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   let base := (default : @EthCLSpecs.Heze.BeaconState minimal)
   let activeValidator : Validator := { (default : Validator) with exitEpoch := Const.farFutureEpoch }
-  let vals := (Array.replicate Const.slotsPerEpoch activeValidator).foldl (·.push ·) base.validators
-  { base with slot := 1, validators := vals }
+  { base with
+    slot := 1
+    validators := EthCLLib.Spec.sszOfArray (Array.replicate Const.slotsPerEpoch activeValidator) }
 
 /-- `record_payload_inclusion_list_satisfaction` records the engine answer at `root`: with
 the optimistic default (`isInclusionListSatisfied = true`) it writes `true`. `slot := 1` clears the
@@ -295,10 +297,13 @@ private def pinTx (b : UInt8) : Transaction := sszOfArray #[b]
 
 /-- An inclusion list from validator `v` over committee `pinKey`, carrying `txs`. The `letI`
 fixes the preset so the anonymous constructor can synthesize it (a return-type annotation alone
-does not flow into instance resolution for `{ … }`). -/
-private def pinIL (v : ValidatorIndex) (txs : Array Transaction) : @InclusionList minimal :=
+does not flow into instance resolution for `{ … }`). The pins pass at most two transactions,
+and `h` carries that bound to `sszOfArray`, far under `MAX_TRANSACTIONS_PER_PAYLOAD`. -/
+private def pinIL (v : ValidatorIndex) (txs : Array Transaction)
+    (h : txs.size ≤ 2 := by decide) : @InclusionList minimal :=
   letI : Preset := minimal
-  { slot := 0, validatorIndex := v, inclusionListCommitteeRoot := pinKey, transactions := sszOfArray txs }
+  { slot := 0, validatorIndex := v, inclusionListCommitteeRoot := pinKey,
+    transactions := sszOfArray txs (Nat.le_trans h (by decide)) }
 
 /-- Number of inclusion lists stored under `pinKey`. The `letI`s supply the store's preset /
 hasher for the field projection (Lean re-synthesizes them rather than reading the argument's
