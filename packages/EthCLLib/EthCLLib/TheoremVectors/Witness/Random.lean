@@ -5,6 +5,7 @@ import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Prepare
 import EthCLLib.TheoremVectors.Probe
 import EthCLLib.TheoremVectors.Witness.Searcher
+import EthCLLib.TheoremVectors.Witness.Layers
 import EthCLLib.TheoremVectors.Witness.BitVec
 
 /-!
@@ -51,26 +52,19 @@ open Lean
 
 namespace EthCLLib.TheoremVectors
 
-/-- The reads' bytes at one solve point, layered like the candidate's own
-overlay (`buildAssignment`): the drawn containers, then the manual
-terms' serialized bytes, then the coupled scalars at their grid values,
-then the zero encodings. This is what the probe's `reads` decodes (§9.4). -/
+/-- The reads' bytes at one solve point, the layered assignment
+(`layeredAssignment`, §9.4): the drawn containers, then the manual terms'
+serialized bytes, then the coupled scalars at their grid values, then the
+zero encodings. The `.default` edge is the gate's leniency (§9.4): a
+scalar the grid does not fix is the solver's to fill, so the layer answers
+the default encoding and the solve goes on. This is what the probe's
+`reads` decodes (§9.4). That edge answers every position, so the wrapper's
+fallback never fires. -/
 private def readsBytesAt (ctx : SearchCtx) (stmt : Statement)
     (drawn : Array (Nat × ByteArray)) (fixedVals : Array (Nat × Nat)) :
-    MetaM Assignment :=
-  (Array.range stmt.inputs.size).mapM fun i =>
-    match drawn.find? fun (p, _) => p == i with
-    | some (_, b) => pure b
-    | none =>
-      match ctx.probe.manuals.find? fun (p, _) => p == i with
-      | some (_, b) => pure b
-      | none =>
-        match fixedVals.find? fun (p, _) => p == i with
-        | some (_, v) => do
-          match ← scalarKind stmt.inputs[i]!.type with
-          | some k => pure (scalarBytes k v)
-          | none => pure (ctx.probe.defaults.getD i emptyBytes)
-        | none => pure (ctx.probe.defaults.getD i emptyBytes)
+    MetaM Assignment := do
+  return (← layeredAssignment stmt drawn ctx.probe.manuals fixedVals
+    (.default ctx.probe.defaults)).getD #[]
 
 /-- The reads mismatch's detail (§9.4): the two counts, and the fact that
 no substitution ran. The plan and the probe's `reads` face walk the same

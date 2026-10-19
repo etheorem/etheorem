@@ -5,6 +5,7 @@ import EthCLLib.TheoremVectors.Record
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Probe
 import EthCLLib.TheoremVectors.Witness.Searcher
+import EthCLLib.TheoremVectors.Witness.Layers
 import EthCLLib.TheoremVectors.Witness.Built
 
 /-!
@@ -334,26 +335,31 @@ private def entryScalar (e : HintEntry) (stmt : Statement) (i : Nat) : Nat :=
     (·.2) |>.getD 0
 
 /-- Rebuild the candidate one hint entry recorded (`THEOREM_VECTORS_ARCHITECTURE.md` §9.8).
-The overlay follows the winning assignment's construction: the drawn
-containers win over the manual terms in a random replay, the manual terms
-win at the positions they fix in a bit-vector replay, and the hint's
-scalars fill the solver's choices. A reused entry (§10) rebuilds every
-input from the entry's scalar table alone, because the reuse searcher
-proposes only for a statement whose every input is a scalar. The replay
-wrapper counts as the form under it at any depth, so `.hinted (.reused p)`
-rebuilds from the same table and a doubly wrapped entry reaches the
-searcher under both wrappers. `none` when the entry does not describe a
-candidate this module can rebuild. -/
+The overlay follows the winning assignment's construction, the layers of
+`layeredAssignment`: the drawn containers win over the manual terms in a
+random replay, the manual terms win at the positions they fix in a
+bit-vector replay, and the hint's scalars fill the solver's choices. Each
+arm builds its own overlay and hands the assembly to `layeredAssignment`
+under the `.fail` edge (§9.8's strictness): a position the arm's layers
+cannot answer as scalar bytes leaves no candidate, so a stale hint cannot
+replay wrong bytes. A reused entry (§10) rebuilds every input from the
+entry's scalar table alone, because the reuse searcher proposes only for a
+statement whose every input is a scalar. The replay wrapper counts as the
+form under it at any depth, so `.hinted (.reused p)` rebuilds from the
+same table and a doubly wrapped entry reaches the searcher under both
+wrappers. The candidate is the pre-shrink one: the recorded shrink path,
+when the entry carries one, walks in the command's shrink step (the plan's
+stage-6 step 8), the same place the original walk ran, so the path applies
+once and the candidate the hint searcher checks is the one the original
+search checked. `none` when the entry does not describe a candidate this
+module can rebuild. -/
 def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
     MetaM (Option Assignment) := do
-  let manualPositions := ctx.probe.manuals.map (·.1)
-  let manualBytes (i : Nat) : ByteArray :=
-    (ctx.probe.manuals.find? fun (p, _) => p == i).map (·.2) |>.getD emptyBytes
-  let scalarVal (i : Nat) : Nat := entryScalar e stmt i
-  let scalarByte (i : Nat) : MetaM (Option ByteArray) := do
-    match stmt.scalarKinds[i]? |>.join with
-    | none => return none
-    | some k => return some (scalarBytes k (scalarVal i))
+  -- the entry's scalar table, keyed by position: one value per input,
+  -- `0` where the entry holds none, the candidate's builder wrote the
+  -- same zero for an unsolved scalar (§9.4)
+  let fill : Array (Nat × Nat) :=
+    (Array.range stmt.inputs.size).map fun i => (i, entryScalar e stmt i)
   -- the entry's searcher with every replay wrapper unwrapped, at any
   -- depth: a hand-edited entry can nest `.hinted`, and the rebuilt
   -- candidate still goes through the search loop's `safe` and `check`
@@ -362,14 +368,10 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
   -- arbitrates.
   match plainSearcherOf e.witnessSearcher with
   | .reused _ =>
-    -- §10: the scalar table is the whole entry; a position with no
-    -- scalar kind or no bytes is an entry the table cannot rebuild
-    let mut a : Array ByteArray := #[]
-    for i in [0:stmt.inputs.size] do
-      match ← scalarByte i with
-      | none => return none
-      | some b => a := a.push b
-    pure (some a)
+    -- §10: the scalar table is the whole entry, and no drawn or manual
+    -- layer stands over it. The `.fail` edge is the table's strictness
+    -- (§9.8): a container position is an entry the table cannot rebuild
+    layeredAssignment stmt #[] #[] fill .fail
   | .base => pure (some ctx.probe.defaults)
   | .manual =>
     pure (some (ctx.probe.manuals.foldl (init := ctx.probe.defaults)
@@ -377,40 +379,26 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
         let (pos, b) := p
         acc.setIfInBounds pos b))
   | .bitVec =>
-    let mut a : Array ByteArray := #[]
-    for i in [0:stmt.inputs.size] do
-      if manualPositions.contains i then
-        a := a.push (manualBytes i)
-      else
-        match ← scalarByte i with
-        | none => return none
-        | some b => a := a.push b
-    pure (some a)
+    -- §9.4's handoff replay: the manual terms fix their positions, the
+    -- entry's scalars fill the rest. The `.fail` edge is the searcher's
+    -- own precondition in `buildAssignment`: only scalar positions sit
+    -- behind the manual terms, so a container left behind is no candidate
+    -- (§9.8's strictness for a stale entry)
+    layeredAssignment stmt #[] ctx.probe.manuals fill .fail
   | .random =>
     let some seed := e.seed | return none
     let some size := e.size | return none
     let some draw := e.draw | return none
     -- the redraw loop sampled `seedOpt + draw` (§9.4), so the replay
-    -- samples the same sum
+    -- samples the same sum. The sample face answers one entry per input,
+    -- so every container position's drawn bytes are its own entry, and
+    -- the drawn layer wins over the manual terms (§9.4's overlay)
     let raw := ctx.probe.sample (seed + draw) size
-    let mut a : Array ByteArray := #[]
-    for i in [0:stmt.inputs.size] do
-      if stmt.scalarKinds[i]?.join.isNone then
-        -- the drawn containers win over the manual terms, per the
-        -- §9.4 overlay
-        a := a.push (raw.getD i emptyBytes)
-      else if manualPositions.contains i then
-        a := a.push (manualBytes i)
-      else
-        match ← scalarByte i with
-        | none => return none
-        | some b => a := a.push b
-    -- the pre-shrink candidate: the recorded shrink path, when the
-    -- entry carries one, walks in the command's shrink step (the plan's
-    -- stage-6 step 8), the same place the original walk ran, so the
-    -- path applies once and the candidate the hint searcher checks is the
-    -- one the original search checked
-    pure (some a)
+    let drawn : Array (Nat × ByteArray) :=
+      (Array.range stmt.inputs.size).filterMap fun i =>
+        if (stmt.scalarKinds[i]? |>.join).isSome then none
+        else raw[i]?.map fun b => (i, b)
+    layeredAssignment stmt drawn ctx.probe.manuals fill .fail
   | .built =>
     -- §9.9: the built bytes at the statement's one state input, through
     -- the cache the search used, the other containers drawn from the
@@ -425,7 +413,7 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
     -- differ (§9.8). The side containers draw per position through the
     -- probe's `sampleAt` face, so the replay never samples the state
     -- position's draw (§9.9), whatever preset the entry replays at.
-    let drawn : Array (Nat × ByteArray) :=
+    let sideDrawn : Array (Nat × ByteArray) :=
       match e.seed, e.size, e.draw with
       | some seed, some size, some draw =>
         (Array.range stmt.inputs.size).filterMap fun i =>
@@ -433,20 +421,11 @@ def Hint.rebuild (ctx : SearchCtx) (stmt : Statement) (e : HintEntry) :
           else some (i, ctx.probe.sampleAt (seed + draw) size i)
       | _, _, _ => #[]
     let builtBytes ← Built.cachedBytes ctx name k
-    let mut a : Array ByteArray := #[]
-    for i in [0:stmt.inputs.size] do
-      if i == statePos then
-        a := a.push builtBytes
-      else match drawn.find? fun (p, _) => p == i with
-        | some (_, b) => a := a.push b
-        | none =>
-          if manualPositions.contains i then
-            a := a.push (manualBytes i)
-          else
-            match ← scalarByte i with
-            | none => return none
-            | some b => a := a.push b
-    pure (some a)
+    -- the state layer is the drawn layer's first pair, ahead of the side
+    -- containers; the side draw above never samples the state position,
+    -- so that pair is the drawn layer's only answer there
+    let drawn := #[(statePos, builtBytes)] ++ sideDrawn
+    layeredAssignment stmt drawn ctx.probe.manuals fill .fail
   -- totality only: `plainSearcherOf` never returns a `.hinted` tag, so
   -- this arm is unreachable
   | .hinted _ => return none

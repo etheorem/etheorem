@@ -7,6 +7,7 @@ import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Prepare
 import EthCLLib.TheoremVectors.Probe
 import EthCLLib.TheoremVectors.Witness.Searcher
+import EthCLLib.TheoremVectors.Witness.Layers
 
 /-!
 # `EthCLLib.TheoremVectors.Witness.BitVec`: the bit-vector searcher
@@ -341,30 +342,19 @@ inductive SolveAnswer where
   /-- The reflection or an evaluation failed; the answer is no answer. -/
   | stuck (detail : Option String := none)
 
-/-- The candidate's bytes for every input: the drawn bytes for the drawn
-containers, which win over the manual terms, since on a manual line's
-failing disjunct a draw replaces the author's choice (§9.2); then the manual
-terms' bytes from the probe, the fixed and solved scalars from their
-kinds, and the zero scalar for what neither touched. -/
+/-- The candidate's bytes for every input, the layered assignment
+(`layeredAssignment`, §9.4): the drawn bytes for the drawn containers,
+which win over the manual terms, since on a manual line's failing disjunct
+a draw replaces the author's choice (§9.4); then the manual terms' bytes
+from the probe, the fixed and solved scalars from their kinds, and the
+zero scalar for what neither touched. The `.fail` edge states the
+searcher's precondition: the `applies` gate admits a theorem whose every
+uncovered input is a scalar, so only scalar positions reach the fill, and
+a container left behind answers `none` and the point is stuck. -/
 private def buildAssignment (ctx : SearchCtx) (stmt : Statement)
     (drawn : Array (Nat × ByteArray)) (fixed solved : Array (Nat × Nat)) :
-    MetaM (Option Assignment) := do
-  let chosen := fixed ++ solved
-  let mut a : Array ByteArray := #[]
-  for i in [0:stmt.inputs.size] do
-    match drawn.find? fun (p, _) => p == i with
-    | some (_, b) => a := a.push b
-    | none =>
-      match ctx.probe.manuals.find? fun (p, _) => p == i with
-      | some (_, b) => a := a.push b
-      | none =>
-        let ty := stmt.inputs[i]!.type
-        match ← scalarKind ty with
-        | none => return none
-        | some k =>
-          let v := (chosen.find? fun (p, _) => p == i).map (·.2) |>.getD 0
-          a := a.push (scalarBytes k v)
-  return some a
+    MetaM (Option Assignment) :=
+  layeredAssignment stmt drawn ctx.probe.manuals (fixed ++ solved) .fail
 
 /-- One solve attempt at one substitution state: substitute the manual
 terms, the drawn containers, and the fixed coupled values, unfold (§8.1),
