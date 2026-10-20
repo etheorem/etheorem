@@ -6,6 +6,7 @@ import EthCLSpecs.Proofs.Heze.BlockRoot
 import EthCLSpecs.Proofs.Heze.BlockRootsRun
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
 import EthCLSpecs.Proofs.Heze.CensorshipCost
+import EthCLSpecs.Proofs.Heze.ChainAgree
 import EthCLSpecs.Proofs.Heze.CheckpointFrame
 import EthCLSpecs.Proofs.Heze.CheckpointInvariants
 import EthCLSpecs.Proofs.Heze.CheckpointOrd
