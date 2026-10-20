@@ -10,8 +10,9 @@ sees Fulu (`THEOREM_VECTORS_ARCHITECTURE.md` §6): the builder catalog (§9.9)
 beside the presets and the scope types. Fulu's catalog is `genesis` and
 `advanced`. The base fork has no parent to upgrade from, so §9.9's
 `upgraded` row has no Fulu analogue, and no `withQueue` either, Fulu
-predating the builder registry. `handlerOf` answers `none`: no Fulu
-theorem has a pyspec-driven handler in scope yet.
+predating the builder registry. `handlerOf` carries one row so far:
+`processConsolidationRequest` as the `operations/consolidation_request`
+handler. The theorems that write through it come in the following stage.
 
 The `pyspecNames` table carries the pyspec spelling of every
 function the fork owns, beside `handlerOf` and `builders`; the
@@ -187,7 +188,10 @@ def fulu : ForkBinding where
       (`EthCLSpecs.Fulu.getCheckpointBlock, "get_checkpoint_block"),
       (`EthCLSpecs.Fulu.processBlsToExecutionChange, "process_bls_to_execution_change")
     ]
-  handlerOf  := fun _ => none
+  handlerOf  := fun
+    | ``EthCLSpecs.Fulu.processConsolidationRequest =>
+        some ("operations", "consolidation_request")
+    | _ => none
   interface  := fun
     | .minimal => some EthCLSpecs.Fulu.Interface.fuluInterface
     | .mainnet => some EthCLSpecs.Fulu.Interface.fuluInterfaceMainnet
