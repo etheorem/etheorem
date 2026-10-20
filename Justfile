@@ -565,9 +565,12 @@ theorem-vectors-hints-rebuild:
 # (the README's order). A preset is a Go build tag, so one `go run` per
 # preset is the only way to cover both. The Go caches stay inside
 # `clients/prysm/.go/`, as the harness README documents, and
-# `GOTOOLCHAIN=local` pins the run to the installed toolchain. The
-# recipe fails iff a harness run exits nonzero; a tabled skip exits
-# zero, so a skip never fails the run (the plan's rule). Each build
+# `GOTOOLCHAIN=local` pins the run to the installed toolchain. When the
+# worktree toolchain is installed, the recipe prepends its `bin` to
+# `PATH`; when it is absent, the recipe leaves `PATH` alone, so a
+# system Go serves. The recipe fails iff a harness run exits nonzero;
+# a tabled skip exits zero, so a skip never fails the run (the plan's
+# rule). Each build
 # overwrites `client-results.json`, so when both runs pass, the file
 # left in the tree is the minimal run's. The harness runs alone here:
 # the CI job installs no Lean toolchain by design, and the report
@@ -582,6 +585,11 @@ client-prysm:
     export GOMODCACHE="{{ justfile_directory() }}/clients/prysm/.go/mod"
     export GOBIN="{{ justfile_directory() }}/clients/prysm/.go/bin"
     export GOTOOLCHAIN=local
+    # The worktree's toolchain, when installed (GOTOOLCHAIN=local needs its
+    # binary on PATH; a system Go serves when this directory is absent).
+    if [ -d "{{ justfile_directory() }}/clients/prysm/.go/toolchain/go/bin" ]; then
+      export PATH="{{ justfile_directory() }}/clients/prysm/.go/toolchain/go/bin:$PATH"
+    fi
     cd "{{ justfile_directory() }}/clients/prysm"
     out="{{ justfile_directory() }}/packages/EthCLSpecs/theorem_vectors"
     go run . --out "$out"
