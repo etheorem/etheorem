@@ -125,6 +125,13 @@ Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Heze.Accountable`: accountable safety for two honest nodes
+  (`honestNodes_accountable`). The justified checkpoint of one node conflicts with the
+  finalized checkpoint of another, under `getCheckpointBlock`. Then a root collision exists, or
+  there is `SlashingEvidence`. The evidence is pairs of indexed attestations that pass the
+  slashing test, with one attestation valid on a state of each chain. The common validators of
+  the pairs hold a third of the stake of the fork point, less `5/3` of the measured drift.
+  `SlashingEvidence.accepted` states that `processAttesterSlashing` accepts such a pair.
 * `EthCLSpecs.Proofs.Heze.AttestationScore`: the Heze `getAttestationScore` is the `Nat` sum
   of the effective balances of the counted active indices (`getAttestationScore_run_ok`).
 * `EthCLSpecs.Proofs.Heze.AttesterSlashing`: the slashing test of two attestation data is a
@@ -161,6 +168,11 @@ Re-exports:
   does not settle the bid. At the epoch substep, the entry of the bid is appended if and
   only if it reaches the quorum. `unsatisfiedPayload_cost_of_run` states the three facts
   with the third one over the chain from the block to the substep.
+* `EthCLSpecs.Proofs.Heze.ChainAgree`: take two runs whose blocks lie on ancestor paths. Their
+  chains agree below a shared root, or a root collision exists (`ffgChain_agree`). The walk of
+  `getCheckpointBlock` along an ancestor path returns the root after the path blocks at or
+  before the epoch start (`AncestorPath.checkpointBlock`). So a checkpoint that conflicts with a
+  justified checkpoint of a chain is not on that chain (`conflicting_not_onChain`).
 * `EthCLSpecs.Proofs.Heze.CheckpointFrame`: every function of a slot step and a block
   step, other than `processJustificationAndFinalization`, keeps the three state checkpoints,
   the justification bits, and the slot (`processBlock_frame_ord`,
@@ -214,6 +226,13 @@ Re-exports:
   whose finalized block is on the EMPTY side of `r`. Each later head is not below `full r`,
   or a root collision exists, or the later justified checkpoint conflicts with that
   finalized checkpoint (`honestNode_finality_lock`).
+* `EthCLSpecs.Proofs.Heze.ForkPoint`: two runs from one state split at their fork point `st₀`
+  (`ForkAt`, `ChainRun.forkAt`). The fork point ends the longest common prefix of their block
+  messages.
+  Before the slot of `st₀`, the runs have one root at each slot and one weigh state at each
+  epoch. So their chains share the base when the fork comes late enough (`ForkAt.commonBase`).
+  Two runs that reach a slot `T` and keep the same blocks below it fork at or after `T`
+  (`ForkAt.slot_ge`). `regVals` holds every registry index.
 * `EthCLSpecs.Proofs.Heze.FrameInvert`: the `frame_invert` tactic. From a run between two
   plain states, it proves that the run keeps a view, one action at a time. It closes a
   call of a spec function by a `@[frame]` lemma of that function, and a loop by an invariant.
@@ -428,6 +447,12 @@ Re-exports:
   complete run of `recordPayloadInclusionListSatisfaction`
   (`recordPayloadInclusionListSatisfaction_run`), proved with
   `ForkChoiceStoreRun`.
+* `EthCLSpecs.Proofs.Heze.RefDrift`: the drift of a state from the fork point `st₀`
+  (`refDrift`). It adds the distances of the link stakes of the state from the current-epoch
+  stake of `st₀`, and the shortfall of its total. `runDrift` takes the largest drift over the
+  run after `st₀`. From the epoch of `st₀` on, the chain of the run stays within `runDrift`
+  (`ForkAt.stakeClose`). `refDrift_le_drift` bounds the drift by the stake drift `drift` plus
+  the stake that exits at the epoch of `st₀`.
 * `EthCLSpecs.Proofs.Heze.RootFrames`: each handler keeps the block, the envelope, and
   the answer at a root `r`, unless it writes another value there
   (`HandlerEvent.run_keeps_rootView`). A trace after the envelope handler, with no second
@@ -489,4 +514,8 @@ Re-exports:
   `traceAll` checks the stores of a trace in one pass. `ClockedTrace.of_check`,
   `RootFacts.of_check`, and `HonestList.of_check` derive the hypotheses of the network
   results from `Bool` checks that `native_decide` closes.
+* `EthCLSpecs.Proofs.Heze.VoteValid`: a placed vote is an indexed attestation that
+  `processAttestation` validated. It is valid on the run state before its block
+  (`RunVote.indexed`, under `QsortMem`). `isValidIndexedAttestation` reads only `keyView`
+  (`isValidIndexedAttestation_of_keyView`).
 -/
