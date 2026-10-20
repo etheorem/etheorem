@@ -58,6 +58,47 @@ def Formats.pyspecAccepts (env : RenderEnv) (r : VectorRecord) : Bool :=
             && v.type == b.stateType.toString
         | _, _, _ => false)
 
+/-- The §13.4 case directory under `env.outDir`: the `formats/pyspec`
+prefix, the fork, the preset tag, the runner, the handler, the
+`pyspec_tests` segment, and the case name. The operations format will
+render the same layout, so the path stays one shared decision. -/
+def Formats.pyspecCaseDir (env : RenderEnv) (b : ForkBinding)
+    (r : VectorRecord) (runner handler : String) : System.FilePath :=
+  env.outDir / "formats" / "pyspec" / r.fork / r.preset.tag /
+    runner / handler / "pyspec_tests" /
+    ((Formats.pyspecThmLocal b r.«theorem»).toString ++ "_" ++
+      Record.disjunctName r.disjunctIndex r.side)
+
+/-- The §13.4 `post.ssz` write: when the record carries an output, the
+helper writes the bytes and answers the path. A record with an output
+but no output bytes is a render error. The decision reads the record,
+the same field `check` reads, so the two passes can never disagree about
+the file's presence. The operations format will share the write. -/
+def Formats.pyspecWritePost (dir : System.FilePath) (r : VectorRecord)
+    (outputBytes : Option ByteArray) : IO (Option System.FilePath) := do
+  if r.output.isSome then
+    match outputBytes with
+    | some out =>
+      let postFile := dir / "post.ssz"
+      IO.FS.writeBinFile postFile out
+      return some postFile
+    | none =>
+      throw (IO.userError s!"pyspec render: {r.«theorem»} has an output \
+        but no output bytes")
+  else
+    return none
+
+/-- The §13.4 `meta.yaml` write: the `{bls_setting: 2, theorem: <name>}`
+map as one upstream flow line (§12.3). The operations format will share
+the write. -/
+def Formats.pyspecWriteMeta (dir : System.FilePath) (r : VectorRecord) :
+    IO System.FilePath := do
+  let metaFile := dir / "meta.yaml"
+  let doc : Yaml :=
+    .map #[("bls_setting", .int 2), ("theorem", .str r.«theorem».toString)]
+  IO.FS.writeFile metaFile (Yaml.renderFlowDoc doc)
+  return metaFile
+
 /-- §13.4's render: one case directory under `env.outDir` with
 `pre.ssz`, `post.ssz` when the record carries an output, and
 `meta.yaml`. Returns the written paths in that order, the list the
@@ -73,30 +114,29 @@ def Formats.pyspecRender (env : RenderEnv) (r : VectorRecord)
     | throw (IO.userError s!"pyspec render: {target} has no (runner, handler) pair")
   let some preBytes := inputBytes[0]?
     | throw (IO.userError s!"pyspec render: no input bytes for the state")
-  let dir := env.outDir / "formats" / "pyspec" / r.fork / r.preset.tag /
-    runner / handler / "pyspec_tests" /
-    ((Formats.pyspecThmLocal b r.«theorem»).toString ++ "_" ++
-      Record.disjunctName r.disjunctIndex r.side)
+  let dir := Formats.pyspecCaseDir env b r runner handler
   IO.FS.createDirAll dir
   let preFile := dir / "pre.ssz"
   IO.FS.writeBinFile preFile preBytes
   let mut files := #[preFile]
-  -- The post decision reads the record, the same field `check` reads, so
-  -- the two passes can never disagree about the file's presence.
-  if r.output.isSome then
-    match outputBytes with
-    | some out =>
-      let postFile := dir / "post.ssz"
-      IO.FS.writeBinFile postFile out
-      files := files.push postFile
-    | none =>
-      throw (IO.userError s!"pyspec render: {r.«theorem»} has an output \
-        but no output bytes")
-  let metaFile := dir / "meta.yaml"
-  let doc : Yaml :=
-    .map #[("bls_setting", .int 2), ("theorem", .str r.«theorem».toString)]
-  IO.FS.writeFile metaFile (Yaml.renderFlowDoc doc)
+  let postFile ← Formats.pyspecWritePost dir r outputBytes
+  if let some postFile := postFile then
+    files := files.push postFile
+  let metaFile ← Formats.pyspecWriteMeta dir r
   return files.push metaFile
+
+/-- The §13.5 post read: the post bytes when the record carries an
+output, `none` when it does not. A record with an output but no
+`post.ssz` in the paths answers the error string, and `pyspecCheck`
+turns that into `.failed`. The operations format will share the read. -/
+def Formats.pyspecReadPost (r : VectorRecord)
+    (paths : Array System.FilePath) : IO (Except String (Option ByteArray)) := do
+  if r.output.isSome then
+    match paths[1]? with
+    | none => return .error "pyspec check: no post.ssz in the rendered paths"
+    | some p => return .ok (some (← IO.FS.readBinFile p))
+  else
+    return .ok none
 
 /-- §13.5's check: rebuild the case from the files `render` returned and
 replay it through `EthCLLib.PySpecTests.runCase` with the binding's
@@ -126,12 +166,9 @@ def Formats.pyspecCheck (env : RenderEnv) (r : VectorRecord)
     | return .failed "pyspec check: no pre.ssz in the rendered paths"
   let pre ← IO.FS.readBinFile prePath
   let post ←
-    if r.output.isSome then
-      match paths[1]? with
-      | none => return .failed "pyspec check: no post.ssz in the rendered paths"
-      | some p => some <$> IO.FS.readBinFile p
-    else
-      pure none
+    match ← Formats.pyspecReadPost r paths with
+    | .error msg => return .failed msg
+    | .ok post => pure post
   let req : EthCLLib.PySpecTests.CaseRequest :=
     { runner, handler, pre, post, inputs := #[],
       caseMeta := { blsSetting := 2 } }
