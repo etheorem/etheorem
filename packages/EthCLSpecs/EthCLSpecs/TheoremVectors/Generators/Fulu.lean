@@ -70,6 +70,10 @@ theorem_vectors increaseBalance_run_overflow presets minimal mainnet
 -- fixes `delta` beside it. The random searcher caps itself at mainnet over
 -- a state-typed container, so this line stays minimal-only.
 theorem_vectors increaseBalance_run_no_wrap
+-- The stage-5 spike: the churn gate writes the first operations cases.
+-- G3's state condition, churn 0 at the genesis builders, holds at both
+-- presets, so it is the easiest branch to meet.
+theorem_vectors processConsolidationRequest_run_churn_too_low presets minimal mainnet
 
 theorem_vectors characterized
 theorem_vectors survey

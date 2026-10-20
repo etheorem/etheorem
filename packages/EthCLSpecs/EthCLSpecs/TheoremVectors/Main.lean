@@ -247,8 +247,8 @@ def runSub (sc : Subcommand) (opts : Options) : IO UInt32 := do
     -- phase C2 (§13.2, §13.5): every registered format's consumer replays
     -- what the render pass returned, through the manifest. The function
     -- format joins the client harness's results file (§13.3), answering
-    -- `noConsumer` for records no client ran; the pyspec format replays
-    -- its cases through the pyspec driver.
+    -- `noConsumer` for records no client ran; the pyspec and operations
+    -- formats replay their cases through the pyspec driver.
     let env := renderEnv out
     let rendered ← readManifest out
     let mut nChecked := 0
