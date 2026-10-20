@@ -98,6 +98,7 @@ import EthCLSpecs.Proofs.Heze.TargetStake
 import EthCLSpecs.Proofs.Heze.Time
 import EthCLSpecs.Proofs.Heze.TraceFacts
 import EthCLSpecs.Proofs.Heze.TraceRun
+import EthCLSpecs.Proofs.Heze.VoteValid
 
 /-!
 # `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems (index)
