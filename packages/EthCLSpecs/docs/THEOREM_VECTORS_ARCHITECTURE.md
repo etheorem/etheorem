@@ -1154,9 +1154,18 @@ mapping on the field table-skips such a record.
 
 ### 13.4 The pyspec format
 
-Accepts a `.runOk` or `.runError` record whose target has a handler in
-`binding.handlerOf` and whose only input is the state (`binding.stateType`).
-Handlers that take a block or an operation are out of scope by §1.2.
+Upstream defines one case layout per runner (§13.6), and each layout
+needs its own `VectorFormat` value with its own `accepts`, `render`, and
+`check`. The value this section describes, `Formats.pyspec`, writes one
+layout: the `epoch_processing` case, a pre-state and a post-state. The
+name "the pyspec format" means this value throughout this document.
+Another runner, such as `operations` with its operand part, gets a new
+value beside it (§13.6's closing rule).
+
+`Formats.pyspec` accepts a `.runOk` or `.runError` record whose target has
+a handler in `binding.handlerOf` and whose only input is the state
+(`binding.stateType`). A record with a second input, such as an
+operation handler's operand, has no part to go in this layout.
 
 ```
 <outDir>/formats/pyspec/<fork>/<preset>/<runner>/<handler>/pyspec_tests/<thm>_<case>/
@@ -1213,7 +1222,7 @@ take the shape.
 | `light_client` | SSZ + YAML | no | no | never (out of scope, the comment in `harness.py` names it) |
 | `merkle_proof` | SSZ + YAML | no | no | never (out of scope) |
 | `networking` | SSZ + YAML | no | no | never (out of scope) |
-| `operations` | `pre.ssz`, one operand part (`block.ssz`, `attestation.ssz`, …), `post.ssz`, `meta.yaml` | yes | no | the theorems §1.2's block-input rule drops |
+| `operations` | `pre.ssz`, one operand part (`block.ssz`, `attestation.ssz`, …), `post.ssz`, `meta.yaml` | yes | no, no value writes the operand part yet | operation-handler run theorems over the state and one operand; an operand of a §1.2 block type also needs a searcher |
 | `random` | `pre.ssz`, `blocks_*.ssz`, `post.ssz`, `meta.yaml` (`{blocks_count, bls_setting}`) | yes | no | never (needs generated blocks) |
 | `rewards` | `pre.ssz`, per-delta outputs (`source_deltas.ssz`, `target_deltas.ssz`, `head_deltas.ssz`, `inactivity_penalty_deltas.ssz`), `meta.yaml`, no post | yes | no | none yet |
 | `sanity` | handlers: `blocks` (`blocks_*.ssz`, `meta.yaml`), `slots` (`slots.yaml`, a plain integer) | yes | no | never (needs generated blocks) |
@@ -1230,7 +1239,9 @@ because its two formats are not upstream layouts and its paths already
 say what §13.3's and §13.4's files need.
 
 A new upstream shape is one new `VectorFormat` value in `Formats.all`
-(§13.1), never an edit to the existing two.
+(§13.1), never an edit to the existing two. Each value carries the
+writer for its layout: the parts it emits, their file names, and the
+replay its `check` runs.
 
 ---
 
