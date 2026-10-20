@@ -30,12 +30,17 @@ which is the whole of what they state.
 
 The two exact run equations (`increaseBalance_run_eq`,
 `decreaseBalance_run_eq`) carry `@[characterizes]`, so the `characterized`
-clause selects them and the report shows their outcome. Their `.eq`
-reading survives the reader, but the output type is an `Except` over a
-pair of boxed `State` values, and the box has neither an `SSZRepr` nor a
-`ToString` instance, so the recorder skips each run with that reason. No
-searcher choice or manual term changes an output type, so the file gives
-the two theorems no named line.
+clause selects them and the search runs on them. Their `.eq` reading
+survives the reader. The output type is an `Except` over a pair of boxed
+`State` values, so the `.eq` face's projected output rule records the run's
+return value, the pair's first component read through the box's `.view`
+(§11.3). An `.ok` point records the container's bytes and its root. An
+`.error` point records the error's repr, the `.runError` row's rule. The
+random search won the one disjunct once, and its winner lives in the
+committed hint file; a run replays that witness, so each record's
+`witnessSearcher` field reads `hinted-random`. The file still gives the
+two theorems no named line; the `characterized` clause runs them at its
+default preset list.
 
 `modBalance_pureState` also carries `@[characterizes]`; its function-typed
 input `f` has no SSZ form (§1.2), and the clause records the reader's

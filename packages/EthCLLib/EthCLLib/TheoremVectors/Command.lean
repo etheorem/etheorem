@@ -630,7 +630,8 @@ private def runPreset (binding : ForkBinding) (outDir : System.FilePath)
           inputs := inputVals, output := outVal, error := errVal,
           witnessSearcher := won }
       -- B6: write the record (§12.1, §12.4); the assignment's bytes are
-      -- the record's bytes, and a record with no output (`.runError`)
+      -- the record's bytes, and a record with no output (a `.runError`
+      -- record, or a projected-`.eq` record at an error-valued point)
       -- writes no `output.ssz` (§12.1)
       let dir := Record.disjunctDir outDir binding.tag p thmLocal d.index d.side
       Record.write outDir binding.tag record thmLocal a

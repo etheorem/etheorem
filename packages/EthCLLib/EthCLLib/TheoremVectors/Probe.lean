@@ -30,6 +30,17 @@ and the result assemblers); and it is elaborated once per statement and
 preset, with the disjunct index as a runtime argument, so the search loop
 never re-elaborates.
 
+The `.eq` face carries the output rule §11.3 gives the `.runOk` face. When
+the output type has no direct codec and wraps the run's return, an `Except ε β`
+whose pair's first component names the binding's state container, the
+builder `eqRunProjectedBody` projects each side through that component:
+the container's bytes at `.ok` points, and the `.runError` row's repr rule
+at `.error` points. One compiled body answers both, because a won point can be
+of either kind. The agreement guard compares what the projection rendered on
+each side: the bytes at `.ok` points, the two sides' error reprs at `.error`
+points, compared by `compareRepr` inside the assembler. The record's
+`errorRepr` slot carries the actual side's repr alone.
+
 `sample` and `shrink` draw and shrink the container inputs through the
 `Sampleable` generators (§9.5, §9.6); `reads` evaluates one disjunct's
 container-reading subterms at the candidate's bytes (§9.4). `build` runs
@@ -310,6 +321,20 @@ def runErrorMiss (expected : String)
         agree := false, literal := none, inputLiterals, inputRoots,
         outputRoot := none }
 
+/-- The projected `.eq` miss result: the two compiled sides' projections
+disagree on the kernel's one answer, one side `.ok` and the other
+`.error`. The kernel proved the two sides equal, so no honest run lands
+here; `agree` stays `false`, and the executor turns the result into the
+build error (`THEOREM_VECTORS_ARCHITECTURE.md` §11.3, §18). The
+`.error` side's repr, when the caller holds one, goes in `errorRepr`,
+so the executor's disagreement print names the rejection. -/
+def eqProjectedMiss (errorRepr : Option String)
+    (inputLiterals : Array (Option String))
+    (inputRoots : Array (Option ByteArray)) : Except String ProbeResult :=
+  .ok { output := emptyBytes, expected := emptyBytes, agree := false,
+        literal := none, inputLiterals, inputRoots, outputRoot := none,
+        errorRepr }
+
 /-! ## The probe (§11.1) and its build-time description -/
 
 /-- The compiled face of one statement at one preset (`THEOREM_VECTORS_ARCHITECTURE.md`
@@ -564,8 +589,8 @@ private opaque evalProbeCore (value : Expr) : MetaM Probe
 output's type, or, when the type has no `SSZRepr`, fall back to the UTF-8
 bytes of the literal (`Nat`-typed outputs). Each side computes once, as
 `eqRunResult`'s arguments (§11.3). `none` when the output type records no
-way; the caller reports a skipped run, because the shape ran but the
-record layer has no form for the answer. -/
+way; the caller then tries the projected rule (`eqRunProjectedBody`)
+before it reports a skipped run. -/
 private def eqRunBody (lhs rhs : Expr)
     (underXs : Expr → Expr) (outTy : Expr)
     (outRepr? : Option Expr) (outHash : Option (Expr × Expr))
@@ -693,7 +718,9 @@ mutators are the `some` shape. `increaseBalance` takes the state it
 writes as an argument and returns the mutated one. The `preState`
 bystander its theorem threads records nothing the theorem asserts. A
 `Unit`-return step's mutation lives on the store, so the store pick
-carries that mutation.
+carries that mutation. The `.eq` face's projected rule
+(`eqRunProjectedBody`) reads the same predicate over the output type's
+value side, the pair's first component under the wrapped `Except`.
 
 The test whnfs the return type first, because the box wrapping hides the
 container: the fork's `State` is a reducible abbrev over
@@ -736,6 +763,156 @@ private def runOkValueSide? (binding : ForkBinding) (retTy : Expr) :
           instance did not resolve, so the box's `.view` read has no \
           `Hasher` instance (§11.3)"
     pure (some { ty := bare, repr, viewH? := some (hTy, hasher) })
+
+/-- The `.eq` face's projected output rule (`THEOREM_VECTORS_ARCHITECTURE.md`
+§11.3, the `.eq` copy of the `.runOk` output rule): the output type has
+no direct codec, and it wraps the run's return, an `Except ε β` whose
+pair's first component names the binding's state container. Each side
+records through that component, the pair's `.1` read through the box's
+`.view` when the value is boxed, exactly as `.runOk` records the pair's
+first component for the value-style mutators. The builder arms only
+after the direct render returned `none` (`eqRunBody`), so an output
+type with `SSZRepr` or `ToString` renders exactly as before.
+
+The body compiles once and answers at both point kinds. The `Except`
+matching stays in the precompiled helpers (§11.2), `runProbeOk` and
+`runProbeError` here:
+
+- at `.ok`, the picked side's `.view` serialized against the other
+  side's bytes, the comparison the `eqRunResult` assembler computes,
+  and the picked value's `hashTreeRoot` as the record's root;
+- at `.error`, the `.runError` row's rule: no output value, and the two
+  sides' error `repr` strings compared, the actual side's repr recorded
+  in the error slot (`runErrorResult`'s `errorRepr`). The guard's
+  comparison stays meaningful at both point kinds: bytes at `.ok`
+  points, the two reprs at `.error` points. The kernel proved the
+  equation, so a disagreement at either kind is a defect (§11.3). At
+  an `.error` point the lhs evaluates twice, `okDispatch` evaluating
+  its `lhsOkP` and falling through, and `errDispatch` then evaluating
+  `lhsErrP`, the mirror of `runOkRunBody`'s miss path; the sides are
+  pure, so the second run is deterministic and safe;
+- a side whose projection lands on the kernel's other answer takes
+  `eqProjectedMiss`, whose `agree := false` is the executor's build
+  error, its `errorRepr` naming the `.error` side's rejection
+  (§11.3, §18).
+
+Returns the body and the projected value's type, the one the record's
+output type names (§12.2). `none` when the output type is not the
+projected shape, or the error type carries no `Repr`, which leaves the
+caller's skip reason standing. -/
+private def eqRunProjectedBody (binding : ForkBinding) (lhs rhs : Expr)
+    (underXs : Expr → Expr) (outTy : Expr)
+    (hashPair? : Option (Expr × Expr))
+    (inputLits inputRoots : Array Expr) :
+    MetaM (Option (Expr × Expr)) := do
+  -- the `Except` unwrap, and the value side: the pair's first
+  -- component, the one `runOkValueSide?` reads
+  let w ← Meta.withReducible (Meta.whnf outTy)
+  let .app (.app (.const ``Except _) errTy) beta := w | return none
+  let bp ← Meta.withReducible (Meta.whnf beta)
+  let .app (.app (.const ``Prod _) valTy) storeTy := bp | return none
+  let some valSide ← runOkValueSide? binding valTy | return none
+  let some errRepr ←
+    (try some <$> Meta.synthInstance (mkApp (.const ``Repr [levelZero]) errTy)
+      catch _ => pure none)
+    | return none
+  let exTy := probeResultExTy
+  let arrLits := mkArrayLit (mkApp (.const ``Option [levelZero])
+    (.const ``String [])) inputLits
+  let arrRoots := mkArrayLit (mkApp (.const ``Option [levelZero])
+    (.const ``ByteArray [])) inputRoots
+  let pairTy := mkApp2 (.const ``Prod [levelZero, levelZero]) valTy storeTy
+  let okPayloadTy := mkApp2 (.const ``Prod [levelZero, levelZero])
+    (.const ``ByteArray [])
+    (mkApp (.const ``Option [levelZero]) (.const ``ByteArray []))
+  -- the box's `.view` read on the picked value; the identity on an
+  -- unboxed one
+  let viewOf (e : Expr) : Expr :=
+    match valSide.viewH? with
+    | none => e
+    | some (hTy, hasher) =>
+      mkAppN (.const ``SizzLean.Cache.SSZ.Box.view [])
+        #[hTy, valSide.ty, hasher, valSide.repr, e]
+  let serOf (e : Expr) : Expr :=
+    mkAppN (.const ``SizzLean.SSZ.serialize [])
+      #[valSide.ty, valSide.repr, viewOf e]
+  -- one side's `.ok` projection: the run evaluates once, and the
+  -- picked value's serialize and hash sit inside the map's lambda, so
+  -- they run only when the side answered `.ok` (§11.2)
+  let okProjOf (side : Expr) : MetaM Expr :=
+    Meta.withLocalDeclD `eqPair pairTy fun p => do
+      let v := .proj `Prod 0 p
+      let root :=
+        match hashPair? with
+        | some (h, hasher) =>
+          optSome (.const ``ByteArray [])
+            (mkAppN (.const ``SizzLean.SSZ.hashTreeRoot [])
+              #[valSide.ty, h, hasher, valSide.repr, viewOf v])
+        | none => optNone (.const ``ByteArray [])
+      let body := mkAppN (.const ``Prod.mk [levelZero, levelZero])
+        #[.const ``ByteArray [],
+          mkApp (.const ``Option [levelZero]) (.const ``ByteArray []),
+          serOf v, root]
+      pure (optMap pairTy okPayloadTy (← Meta.mkLambdaFVars #[p] body)
+        (mkAppN (.const ``runProbeOk []) #[errTy, valTy, storeTy, side]))
+  -- one side's `.error` projection: the error's `repr` string
+  let errProjOf (side : Expr) : MetaM Expr :=
+    Meta.withLocalDeclD `eqErr errTy fun e => do
+      let body := mkAppN (.const ``reprStr [levelZero]) #[errTy, errRepr, e]
+      pure (optMap errTy (.const ``String [])
+        (← Meta.mkLambdaFVars #[e] body)
+        (mkAppN (.const ``runProbeError []) #[errTy, valTy, storeTy, side]))
+  -- the mixed miss: `errorRepr` carries the `.error` side's repr, so
+  -- the executor's §18 print names the rejection. The error route's
+  -- inner miss holds the lhs repr, its outer one the rhs's `Option`
+  -- term, `some` exactly when the rhs errored
+  let missResOf (err : Expr) : Expr :=
+    mkAppN (.const ``eqProjectedMiss []) #[err, arrLits, arrRoots]
+  -- the error route: both sides' projected repr strings compared, the
+  -- actual side's repr recorded; a mixed pair takes the miss. The
+  -- projections answer `Option String`, so the lambdas bind strings
+  let lhsErrP ← errProjOf (underXs lhs)
+  let rhsErrP ← errProjOf (underXs rhs)
+  let errDispatch ←
+    Meta.withLocalDeclD `eqErrL (.const ``String []) fun le => do
+      Meta.withLocalDeclD `eqErrR (.const ``String []) fun re => do
+        let res := mkAppN (.const ``runErrorResult [])
+          #[le, re, arrLits, arrRoots]
+        let bothErr ← Meta.mkLambdaFVars #[le] <|
+          optGetD exTy
+            (optMap (.const ``String []) exTy
+              (← Meta.mkLambdaFVars #[re] res) rhsErrP)
+            -- the lhs errored and the rhs answered `.ok`; the `.error`
+            -- side is the lhs, whose repr the lambda holds
+            (missResOf (optSome (.const ``String []) le))
+        -- here the lhs answered `.ok`, so the route runs only on a
+        -- mixed pair, and the `.error` side is the rhs
+        pure (optGetD exTy
+          (optMap (.const ``String []) exTy bothErr lhsErrP)
+          (missResOf rhsErrP))
+  -- the ok route: the recorded side's bytes against the expected side's,
+  -- the recorded side's root; a mixed pair falls to the error route,
+  -- whose second arm takes the miss
+  let lhsOkP ← okProjOf (underXs lhs)
+  let rhsOkP ← okProjOf (underXs rhs)
+  let okDispatch ←
+    Meta.withLocalDeclD `eqOkL okPayloadTy fun lp => do
+      Meta.withLocalDeclD `eqOkR okPayloadTy fun rp => do
+        let res := mkAppN (.const ``eqRunResult [])
+          #[.proj `Prod 0 lp, .proj `Prod 0 rp,
+            optNone (.const ``String []), .proj `Prod 1 lp,
+            arrLits, arrRoots]
+        let bothOk ← Meta.mkLambdaFVars #[lp] <|
+          optGetD exTy
+            (optMap okPayloadTy exTy
+              (← Meta.mkLambdaFVars #[rp] res) rhsOkP)
+            errDispatch
+        pure (optGetD exTy
+          (optMap okPayloadTy exTy bothOk lhsOkP)
+          errDispatch)
+  -- the recorded type replaces the output type in the record's output
+  -- value, so the type string names the bytes
+  pure (some (okDispatch, valSide.ty))
 
 /-- The `.runOk` run body under the `xs` binder (`THEOREM_VECTORS_ARCHITECTURE.md`
 §11.3): `runPure` (`EthCLLib.Proofs.runPure`) evaluates the run on the
@@ -1246,9 +1423,19 @@ def Probe.ofStatement (binding : ForkBinding) (presetId : PresetId)
           | _, _ => optNone (.const ``ByteArray [])
         let bodyOpt ← match shape with
           | .eq lhs rhs => do
-            let b? ← eqRunBody lhs rhs underXs outTy outRepr? hashPair?
-              outToString? inputLits inputRoots
-            pure (b?.map fun b => (b, none))
+            match ← eqRunBody lhs rhs underXs outTy outRepr? hashPair?
+                outToString? inputLits inputRoots with
+            | some b => pure (some (b, none))
+            | none =>
+              -- §11.3's output rule, the `.eq` face's copy: the direct
+              -- render found no codec, so the face tries the projected
+              -- one before it skips. An output type that wraps the
+              -- run's return records the run's return value, the same
+              -- pick the `.runOk` face makes
+              match ← eqRunProjectedBody binding lhs rhs underXs outTy
+                  hashPair? inputLits inputRoots with
+              | some (b, vTy) => pure (some (b, some vTy))
+              | none => pure none
           | .bound lhs _ _ =>
             let some (cmp, cmpDec) := cmp?
               | return .error "the bound has no `Decidable` instance"

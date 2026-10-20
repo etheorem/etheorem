@@ -10,7 +10,7 @@ One record directory per disjunct (`THEOREM_VECTORS_ARCHITECTURE.md` §12.1):
 <outDir>/records/<fork>/<preset>/<thm>/<index>[_t|_f]/
   record.json
   <input>.ssz          one per input, scalars included, named by the binder
-  output.ssz           absent for .runError
+  output.ssz           absent for a .runError record, or a projected-.eq record at an error-valued point
 ```
 
 The wire record is §12.2's JSON. Every value has an `ssz` file; a scalar
@@ -102,9 +102,9 @@ structure VectorRecord where
   side       : Option Bool
   /-- One entry per input, in binder order. -/
   inputs     : Array VectorValue
-  /-- The recorded output, `none` for `.runError`. -/
+  /-- The recorded output, `none` for a `.runError` record, or a projected-`.eq` record at an error-valued point. -/
   output     : Option VectorValue
-  /-- The error's `repr`, `.runError` only. -/
+  /-- The error's `repr`, on a `.runError` record, or a projected-`.eq` record at an error-valued point. -/
   error      : Option String
   /-- The witness searcher that won. -/
   witnessSearcher : WitnessSearcherTag

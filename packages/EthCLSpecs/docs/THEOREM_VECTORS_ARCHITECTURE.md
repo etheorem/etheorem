@@ -940,6 +940,20 @@ native. The probe's own glue is interpreted, and it does little.
 | `.runOk act pre ret post` | `ret` when its type names the state container, else the post-state | `post`, or `ret` matching the pick | `.ok` and bytes equal |
 | `.runError act pre err` | empty | `repr err` | `.error` and the error's `repr` equal |
 
+The `.eq` face has one further rule, the projected output rule. When the
+output type has no `SSZRepr` and no `ToString`, and it wraps the run's
+return, an `Except ε β` whose pair's first component names the state
+container, each side records through that component. The pick is the
+`.runOk` rule's own: the pair's first component read through the box's
+`.view`, recorded at the container's type. One compiled body answers both
+point kinds, because a won point can be of either kind. At an `.ok` point
+the record is the picked value's bytes against the other side's, with its
+root. At an `.error` point the row follows the `.runError` rule: no output
+value, and the actual side's error repr in the error slot. The agreement
+guard compares what the projection rendered on each side, the bytes at
+`.ok` points and the two reprs at `.error` points. The recorded output
+type names the picked value's container (§12.2).
+
 `agree = false` is a build error with both values printed. The kernel proved
 them equal, so the difference is a compiler, FFI, or serialization defect.
 
@@ -964,7 +978,7 @@ nothing that belongs to one format. Formats read records and nothing else.
 <outDir>/records/<fork>/<preset>/<thm>/<index>[_t|_f]/
   record.json
   <input>.ssz          one per input, scalars included, named by the binder
-  output.ssz           absent for .runError
+  output.ssz           absent for a .runError record, or a projected-.eq record at an error-valued point
 ```
 
 `<thm>` is the theorem's name with the `EthCLSpecs.Proofs.<Fork>.` prefix
@@ -997,7 +1011,8 @@ the `.iffTrue` side.
 Every value has an `ssz` side file named by the binder. The payload nests
 under `value`, one of two forms: a container's `root`, or a scalar's
 `scalar` as a string, so a `UInt64` never meets a JSON reader's integer
-range. A `.runError` record has `error` in place of `output`. `pyspecName`
+range. A `.runError` record, or a projected-`.eq` record at an error-valued
+point, has `error` in place of `output`. `pyspecName`
 carries the pyspec name the fork binding's `pyspecNames` table maps the
 target to (§7.2), null when there is no row; a client-conformance harness
 maps on it.

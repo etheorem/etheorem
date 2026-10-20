@@ -29,7 +29,14 @@ implementation rejects where the kernel's body returns `.ok`, and
 the kernel's body rejects. Both proofs stay `rfl`; only the compiled code
 disagrees. The first two actions' error type is `String`, which already
 carries the `Repr` instance the miss assemblers need; `toyIndexMiss`
-rejects with the SSZ `IndexError`.
+rejects with the SSZ `IndexError`. A third disagreement fixture,
+`toyWrongBoxValueEq`, states the projected path's `.eq` over a
+disagreeing action: the kernel proves it, and the compiled
+implementation rejects, so the projections land on the mixed miss (§18).
+The `.eq` face's projected-rule
+fixtures close the file's run theorems: two run equations over the whole
+`Except`, one `.ok`-valued and one `.error`-valued, the shape the Fulu
+balance contracts state.
 
 ## Lean idioms annotated
 
@@ -150,6 +157,56 @@ theorem toyRunBoxValueOk [HasherTag] (state preState : ToyState) :
       = .ok (pureState { state with bal := state.bal + 1 }, preState) :=
   rfl
 
+/-! ## The `.eq` face's projected output rule (§11.3)
+
+The two run equations stated over the whole `Except`, the shape the Fulu
+balance contracts state: the output type is an `Except` over a pair of
+boxed states, which carries neither an `SSZRepr` nor a `ToString`
+instance, and the right side is a named term over the binders, which is
+what keeps the reader's run shapes from firing (§7.3). Both
+statements classify `.eq`, so the face's projected rule records the
+pair's first component through the box's `.view`. One wins at an `.ok`
+point and one at an `.error` point, the two kinds one compiled body must
+answer. -/
+
+/-- The toy action that always rejects; its value side is the boxed
+state, so the projected rule arms, and every point lands on the rule's
+`.error` arm. -/
+def toyFailBox [HasherTag] :
+    StateT (SSZ.Box HasherTag.H ToyState) (Except String)
+      (SSZ.Box HasherTag.H ToyState) :=
+  fun _ => throw "boom"
+
+/-- The ok-point run equation's expected value, named so the reader's
+run shapes stay off (§7.3). -/
+def toyRunBoxValueEqRhs [HasherTag] (state preState : ToyState) :
+    Except String (SSZ.Box HasherTag.H ToyState × SSZ.Box HasherTag.H ToyState) :=
+  .ok (pureState { state with bal := state.bal + 1 }, pureState preState)
+
+/-- The ok-point `.eq` toy theorem (§11.3's projected rule): the record
+is the returned state's container bytes, and the threaded `preState` is
+a bystander. -/
+theorem toyRunBoxValueEq [HasherTag] (state preState : ToyState) :
+    (toyBumpBalBox state 1).run (pureState preState)
+      = toyRunBoxValueEqRhs state preState :=
+  rfl
+
+/-- The error-point run equation's expected value, named for the same
+reason. The binder names carry the underscore because the error carries
+no state. -/
+def toyRunBoxValueErrorEqRhs [HasherTag] (_state _preState : ToyState) :
+    Except String (SSZ.Box HasherTag.H ToyState × SSZ.Box HasherTag.H ToyState) :=
+  .error "boom"
+
+/-- The error-point `.eq` toy theorem (§11.3's projected rule): both
+sides answer `.error` at every point, so the record follows the
+`.runError` row, no output value and the error's repr in the error
+slot. -/
+theorem toyRunBoxValueErrorEq [HasherTag] (state preState : ToyState) :
+    toyFailBox.run (pureState preState)
+      = toyRunBoxValueErrorEqRhs state preState :=
+  rfl
+
 /-! ## The disagreement fixtures (§18) -/
 
 /-- The compiled body of `toyWrongSetBal`: rejects where the kernel's
@@ -191,6 +248,33 @@ def toyCleanFail [HasherTag] :
 the compiled code returns cleanly. -/
 theorem toyCleanRunError [HasherTag] (s : ToyState) :
     toyCleanFail.run (pureState s) = .error "boom" :=
+  rfl
+
+/-- The compiled body of `toyWrongBoxEq`: rejects where the kernel's
+body returns `.ok`. The binder names carry the underscore because the
+rejection reads no argument; the signature still matches `toyWrongBoxEq`. -/
+private def toyWrongBoxEqImpl [HasherTag] (_st : ToyState) (_v : UInt64) :
+    StateT (SSZ.Box HasherTag.H ToyState) (Except String)
+      (SSZ.Box HasherTag.H ToyState) :=
+  fun _ => throw "toy: the wrong projected run rejected"
+
+/-- The kernel's boxed-value action: returns the mutated state. The
+compiled implementation above rejects instead, so the kernel and the
+compiled code disagree. -/
+@[implemented_by toyWrongBoxEqImpl]
+def toyWrongBoxEq [HasherTag] (st : ToyState) (v : UInt64) :
+    StateT (SSZ.Box HasherTag.H ToyState) (Except String)
+      (SSZ.Box HasherTag.H ToyState) :=
+  fun b => .ok (pureState { st with bal := st.bal + v }, b)
+
+/-- The projected path's mixed-miss theorem (§18): the `.eq` statement
+over the whole `Except`, so the projected rule arms, and the compiled
+left side rejects where the kernel proved `.ok`. The projections land
+one on each side of the point kinds, and the executor's disagreement
+print names the rejection repr. -/
+theorem toyWrongBoxValueEq [HasherTag] (state preState : ToyState) :
+    (toyWrongBoxEq state 1).run (pureState preState)
+      = toyRunBoxValueEqRhs state preState :=
   rfl
 
 end EthCLLib.TheoremVectors.Tests.ToyRun

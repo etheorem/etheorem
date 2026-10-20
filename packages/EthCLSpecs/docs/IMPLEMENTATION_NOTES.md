@@ -2245,3 +2245,41 @@ means one thing from the binding to the Go harness.
   toolchain, so no `go build`, `go vet`, or harness run checked the
   rename. The edit is mechanical: the two struct tags, the two Go field
   names, the `lookup` parameter, and the tests that read the field.
+
+## Theorem vectors, the `.eq` face's output rule
+
+The `.eq` face gains the output rule §11.3 gives the `.runOk` face. An
+output type with neither an `SSZRepr` nor a `ToString` instance used to end
+the run body, and the recorder skipped the theorem with that reason. The
+skip was wrong for one shape: a contract stated over the whole run, whose
+output type wraps the run's return, an `Except ε β` whose pair's first
+component names the binding's state container. `increaseBalance_run_eq` and
+`decreaseBalance_run_eq` are that shape, the two contracts the Fulu fork
+characterizes. The face now projects both sides through that component, and
+the two contracts write records at the `characterized` clause's minimal run.
+
+- **The pick is the `.runOk` machinery.** `runOkValueSide?` answers for the
+  pair's first component under the wrapped `Except`, the same box strip and
+  the same container test it answers for a run's return type. No parallel
+  pick exists.
+
+- **One compiled body answers both point kinds.** A won point can be
+  `.ok`-valued or `.error`-valued, because the contracts' right side
+  matches on the read. At an `.ok` point the record is the picked value's
+  bytes, its root, and the byte comparison. At an `.error` point the record
+  follows the `.runError` row: no output value, and the actual side's repr
+  in the error slot. `ProbeResult` already carried `errorRepr`, and
+  `Execute.output` routes an `.eq` result that carries one to the
+  `.runError` row.
+
+- **The agreement guard survived the projection.** The guard compares what
+  the projection rendered on each side: the bytes at `.ok` points, the two
+  sides' error reprs at `.error` points, through `compareRepr` inside the
+  assembler. The kernel proved the equation, so a disagreement at either
+  point kind is a compiler, FFI, or serialization defect, and a side whose
+  projection lands on the kernel's other answer is a miss with `agree :=
+  false`.
+
+- **The direct path is untouched.** The projection arms only when the
+  direct render returned `none`. Every previously written record keeps its
+  bytes, and the toy `.eq` pins keep theirs.

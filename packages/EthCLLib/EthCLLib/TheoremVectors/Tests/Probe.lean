@@ -30,7 +30,9 @@ disagreement constructions live beside the clean fixtures in
 `ToyRun.lean`, and this module pins that their miss paths
 (`runOkMiss` / `runErrorMiss`, §18) trip the executor's build error:
 a rejecting `.runOk` run, with the run's repr named in the message, and
-a clean `.runError` run. The same drive pins the reader's store rule at
+a clean `.runError` run. A third pin drives the projected path's mixed
+miss (`eqProjectedMiss`, §18), whose message names the rejection repr
+too. The same drive pins the reader's store rule at
 the toy level (§7.3): the two state binders of `toyRunPureOkSecond` read
 `.runOk` with the second as the store, `toyRunPureError` reads the
 `runPure`-form `.runError`, and a run whose store is a plain value binder
@@ -166,7 +168,8 @@ private def roundTrip (thm : Name) (binding : ForkBinding)
         -- the searcher field is a record-round-trip label here: on the
         -- defaults branch no searcher ran, and nothing below reads it
         witnessSearcher := WitnessSearcherTag.base }
-    -- a record with no output (`.runError`) writes no `output.ssz` (§12.1)
+    -- a record with no output (a `.runError` record, or a projected-`.eq`
+    -- record at an error-valued point) writes no `output.ssz` (§12.1)
     Record.write dir binding.tag record thm.toString a
       (record.output.map fun _ => r.output)
     let rb ← Record.read (Record.disjunctDir dir binding.tag .minimal
@@ -263,6 +266,45 @@ private def expectRunErrorMiss (thm : Name) : MetaM Unit := do
         | e => throw e
       unless failed do
         throwError s!"{thm}: the executor accepted a ran-clean runError"
+    | .error e =>
+      throwError s!"{thm}: the probe failed to run: {e}"
+
+/-- The projected path's mixed-miss pin (§18): the compiled left side
+rejects where the kernel proved `.ok`, so the `.eq` projections land one
+on each side of the point kinds. The executor must throw, and the
+message must carry the rejection repr beside the two byte values
+(`Execute.lean`'s disagreement print, fed by `eqProjectedMiss`'s
+`errorRepr`). The binding is the toy run binding, so the statement
+classifies `.eq` and the projected rule arms. -/
+private def expectProjectedMiss (thm : Name) : MetaM Unit := do
+  let binding := EthCLLib.TheoremVectors.Tests.ToyFork.toyRunBinding
+  Statement.readIn binding thm fun ctx => do
+    let stmt ← Scope.classify binding ctx.stmt
+    unless stmt.shape matches .eq _ _ do
+      throwError s!"{thm}: expected the eq shape, got {stmt.shape.wire}"
+    let (disjuncts, _) ← Prepare.pass stmt
+    let (_, probe) ← builtProbe thm binding ctx disjuncts
+    match probe.run probe.defaults with
+    | .ok r =>
+      unless !r.agree do
+        throwError s!"{thm}: the run agreed, but the compiled body rejects"
+      unless r.errorRepr.isSome do
+        throwError s!"{thm}: the miss result carries no rejection repr"
+      let msg? ← try
+        let _ ← Execute.output stmt.thm stmt.shape default r
+        pure none
+      catch
+        -- `Exception.error` carries the ref first, the message second
+        | .error _ m => pure (some (← MessageData.toString m))
+        | e => throw e
+      let some msg := msg?
+        | throwError s!"{thm}: the executor accepted a projected miss"
+      unless msg.contains "; the run answered " do
+        throwError s!"{thm}: the disagreement message names no run repr: \
+          {msg}"
+      unless msg.contains (reprStr "toy: the wrong projected run rejected") do
+        throwError s!"{thm}: the disagreement message carries the wrong \
+          repr: {msg}"
     | .error e =>
       throwError s!"{thm}: the probe failed to run: {e}"
 
@@ -406,6 +448,47 @@ run_cmd do
         (uint64BytesLE 1) do
       throwError "toyRunBoxValueOk: output.ssz is not the returned state \
         with balance 1"
+    -- the `.eq` face's projected rule (§11.3): a run equation over the
+    -- whole `Except`, the shape the Fulu balance contracts state. The
+    -- output records the pair's first component through the box's
+    -- `.view`, so the type names the container and the bytes hold the
+    -- written balance
+    let eqOkRecord ← roundTrip
+      `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunBoxValueEq toyRunBinding dir
+    unless eqOkRecord.shape == .eq do
+      throwError s!"toyRunBoxValueEq: expected the eq shape, got \
+        {eqOkRecord.shape.tag}"
+    let some eqOkOut := eqOkRecord.output
+      | throwError "toyRunBoxValueEq: expected an output value"
+    unless eqOkOut.type == valOut.type do
+      throwError s!"toyRunBoxValueEq: expected the output type to name \
+        the container, got {eqOkOut.type}"
+    let eqOkRootOk :=
+      match eqOkOut.value with
+      | .ssz root => !root.isEmpty
+      | _ => false
+    unless eqOkRootOk do
+      throwError "toyRunBoxValueEq: expected the output value to be an \
+        SSZ value with a root"
+    let eqOkFile := Record.disjunctDir dir eqOkRecord.fork eqOkRecord.preset
+      eqOkRecord.«theorem».toString eqOkRecord.disjunctIndex eqOkRecord.side
+    unless compareBytes (← IO.FS.readBinFile (eqOkFile / "output.ssz"))
+        (uint64BytesLE 1) do
+      throwError "toyRunBoxValueEq: output.ssz is not the returned state \
+        with balance 1"
+    -- the error-point half of the projected rule: both sides answer
+    -- `.error` at every point, so the record follows the `.runError`
+    -- row, no output value and the error's repr in the error slot
+    let eqErrRecord ← roundTrip
+      `EthCLLib.TheoremVectors.Tests.ToyRun.toyRunBoxValueErrorEq toyRunBinding dir
+    unless eqErrRecord.shape == .eq do
+      throwError s!"toyRunBoxValueErrorEq: expected the eq shape, got \
+        {eqErrRecord.shape.tag}"
+    unless eqErrRecord.output.isNone do
+      throwError "toyRunBoxValueErrorEq: expected no output value"
+    unless eqErrRecord.error == some (reprStr "boom") do
+      throwError s!"toyRunBoxValueErrorEq: expected the error repr \
+        {reprStr "boom"}, got {eqErrRecord.error}"
     -- the strict decodes (§9.3): a corrupt record answers `none`, and the
     -- read-back check reads that as a failed decode
     unless (decodeInput (T := Fin 3) #[uint64BytesLE 5] 0).isNone do
@@ -428,6 +511,11 @@ run_cmd do
     -- the kernel proved `.error` throws as well
     expectRunOkMiss `EthCLLib.TheoremVectors.Tests.ToyRun.toyWrongRunOk
     expectRunErrorMiss `EthCLLib.TheoremVectors.Tests.ToyRun.toyCleanRunError
+    -- the projected path's mixed miss (§18): the `.eq` statement over the
+    -- whole `Except`, the compiled left side rejecting where the kernel
+    -- proved `.ok`
+    expectProjectedMiss
+      `EthCLLib.TheoremVectors.Tests.ToyRun.toyWrongBoxValueEq
     -- the reader's store rule at the toy level (§7.3): the run's state is
     -- one of the state-typed value binders, and the type identifies it
     -- whatever the binder's position

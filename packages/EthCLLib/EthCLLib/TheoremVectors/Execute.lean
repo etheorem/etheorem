@@ -16,7 +16,10 @@ Every conclusion shape runs: `.eq`, `.bound`, and `.iffTrue` record the
 sides' bytes, `.runOk` records one side of the run's result pair, and
 `.runError` records the error's `repr` in place of an output (§11.3). The
 `.runOk` recorded side is the run's return value when it is the state,
-and the store `runPure` produced otherwise.
+and the store `runPure` produced otherwise. The `.eq` face's projected
+output rule adds one row: a point the projection answered `.error` on
+follows the `.runError` row, no output value and the error's repr in the
+error slot.
 An `.unsupported` statement never reaches the executor: the reader's
 reason reports it before phase B.
 -/
@@ -58,9 +61,21 @@ def Execute.output (thm : Name) (shape : Shape) (info : ProbeInfo)
   -- rule sets `literal := none`, and the root carries the value
   -- (§11.3, §12.2; the rule lives in `runOkResult`, `Probe.lean`, and
   -- `info.outputType` already names the recorded side's type)
-  | .eq .. | .bound .. | .iffTrue .. | .runOk .. =>
+  | .bound .. | .iffTrue .. | .runOk .. =>
     let out ← VectorValue.ofRun `output info.outputType r.literal r.outputRoot
     pure (some out, none)
+  | .eq .. =>
+    -- the `.eq` face's projected rule (§11.3): a point the projection
+    -- answered `.error` on follows the `.runError` row, no output value
+    -- and the actual side's error repr in the error slot. Only the
+    -- projected error path sets `errorRepr` with a `true` agreement, so
+    -- the field routes the row
+    match r.errorRepr with
+    | some err => pure (none, some err)
+    | none =>
+      let out ← VectorValue.ofRun `output info.outputType r.literal
+        r.outputRoot
+      pure (some out, none)
   | .runError .. =>
     -- no output (§12.1); the record's `error` value is the actual
     -- error's repr (§12.2)
