@@ -1,3 +1,4 @@
+import EthCLSpecs.Proofs.Heze.Accountable
 import EthCLSpecs.Proofs.Heze.AttestationScore
 import EthCLSpecs.Proofs.Heze.AttesterSlashing
 import EthCLSpecs.Proofs.Heze.BalanceMoves
@@ -87,6 +88,7 @@ import EthCLSpecs.Proofs.Heze.PaymentWriters
 import EthCLSpecs.Proofs.Heze.ProposerScore
 import EthCLSpecs.Proofs.Heze.RaceCheck
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
+import EthCLSpecs.Proofs.Heze.RefDrift
 import EthCLSpecs.Proofs.Heze.RootFrames
 import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.RunVotes
