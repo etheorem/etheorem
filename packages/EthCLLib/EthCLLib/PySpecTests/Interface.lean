@@ -308,6 +308,66 @@ def OpKind.ofString? : String → Option OpKind
   | "builder_exit_request"     => some .builderExitRequest
   | _                          => none
 
+/-- The operand file stem upstream writes the operation object to (`<inputName>.ssz`) for
+an `operations/<handler>` case. The `operations` writer names each operand part file
+with it. Source of record: `tests/formats/operations/README.md` at pin
+`v1.7.0-alpha.11`. Most stems equal the handler string (`ofString?`'s input). The
+README's exceptions are `blockHeader` ("block"), `executionPayload` ("body"), `withdrawals`
+("execution_payload"), `blsToExecutionChange` ("address_change"), and
+`parentExecutionPayload` ("block"). `voluntaryExitChurn` sits in the
+`voluntary_exit_churn` directory but writes `voluntary_exit.ssz`. The README table has
+no row for it; the cached corpus is the evidence
+(`voluntary_exit_churn/pyspec_tests/*/voluntary_exit.ssz_snappy`). -/
+def OpKind.inputName : OpKind → String
+  | .proposerSlashing        => "proposer_slashing"
+  | .attesterSlashing        => "attester_slashing"
+  | .attestation             => "attestation"
+  | .deposit                 => "deposit"
+  | .voluntaryExit           => "voluntary_exit"
+  | .voluntaryExitChurn      => "voluntary_exit"
+  | .blsToExecutionChange    => "address_change"
+  | .depositRequest          => "deposit_request"
+  | .withdrawalRequest       => "withdrawal_request"
+  | .consolidationRequest    => "consolidation_request"
+  | .blockHeader             => "block"
+  | .syncAggregate           => "sync_aggregate"
+  | .withdrawals             => "execution_payload"
+  | .executionPayload        => "body"
+  | .payloadAttestation      => "payload_attestation"
+  | .executionPayloadBid     => "execution_payload_bid"
+  | .parentExecutionPayload  => "block"
+  | .builderDepositRequest   => "builder_deposit_request"
+  | .builderExitRequest      => "builder_exit_request"
+
+-- The five stems that differ from the handler string, pinned directly.
+#guard OpKind.inputName .blockHeader == "block"
+#guard OpKind.inputName .executionPayload == "body"
+#guard OpKind.inputName .withdrawals == "execution_payload"
+#guard OpKind.inputName .blsToExecutionChange == "address_change"
+#guard OpKind.inputName .parentExecutionPayload == "block"
+-- One stem that equals its handler string, as a spot check.
+#guard OpKind.inputName .consolidationRequest == "consolidation_request"
+-- Round trip: every handler string `ofString?` accepts maps to its operand stem.
+#guard (OpKind.ofString? "proposer_slashing").map OpKind.inputName == some "proposer_slashing"
+#guard (OpKind.ofString? "attester_slashing").map OpKind.inputName == some "attester_slashing"
+#guard (OpKind.ofString? "attestation").map OpKind.inputName == some "attestation"
+#guard (OpKind.ofString? "deposit").map OpKind.inputName == some "deposit"
+#guard (OpKind.ofString? "voluntary_exit").map OpKind.inputName == some "voluntary_exit"
+#guard (OpKind.ofString? "voluntary_exit_churn").map OpKind.inputName == some "voluntary_exit"
+#guard (OpKind.ofString? "bls_to_execution_change").map OpKind.inputName == some "address_change"
+#guard (OpKind.ofString? "deposit_request").map OpKind.inputName == some "deposit_request"
+#guard (OpKind.ofString? "withdrawal_request").map OpKind.inputName == some "withdrawal_request"
+#guard (OpKind.ofString? "consolidation_request").map OpKind.inputName == some "consolidation_request"
+#guard (OpKind.ofString? "block_header").map OpKind.inputName == some "block"
+#guard (OpKind.ofString? "sync_aggregate").map OpKind.inputName == some "sync_aggregate"
+#guard (OpKind.ofString? "withdrawals").map OpKind.inputName == some "execution_payload"
+#guard (OpKind.ofString? "execution_payload").map OpKind.inputName == some "body"
+#guard (OpKind.ofString? "payload_attestation").map OpKind.inputName == some "payload_attestation"
+#guard (OpKind.ofString? "execution_payload_bid").map OpKind.inputName == some "execution_payload_bid"
+#guard (OpKind.ofString? "parent_execution_payload").map OpKind.inputName == some "block"
+#guard (OpKind.ofString? "builder_deposit_request").map OpKind.inputName == some "builder_deposit_request"
+#guard (OpKind.ofString? "builder_exit_request").map OpKind.inputName == some "builder_exit_request"
+
 /-- The `epoch_processing/<handler>` axis as a typed tag, one constructor per pyspec
 epoch-substep directory across the in-scope forks. Exhaustive like `OpKind`. -/
 inductive EpochStep where
