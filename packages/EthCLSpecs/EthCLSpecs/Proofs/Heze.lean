@@ -39,6 +39,7 @@ import EthCLSpecs.Proofs.Heze.EconFrame
 import EthCLSpecs.Proofs.Heze.Equivocators
 import EthCLSpecs.Proofs.Heze.FFGRefines
 import EthCLSpecs.Proofs.Heze.FinalityLock
+import EthCLSpecs.Proofs.Heze.ForkPoint
 import EthCLSpecs.Proofs.Heze.FullSupport
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.HandlerFrames
