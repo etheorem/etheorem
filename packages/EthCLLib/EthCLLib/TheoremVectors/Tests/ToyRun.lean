@@ -38,6 +38,10 @@ fixtures close the file's run theorems: two run equations over the whole
 `Except`, one `.ok`-valued and one `.error`-valued, the shape the Fulu
 balance contracts state.
 
+A final section holds the toy operation handler's fixtures (§13.6): the
+`ToyReq` operand container and the `toyOpApply` action the toy
+interface's `runOperation` arm runs.
+
 ## Lean idioms annotated
 
 - `deriving SSZRepr` gives the toy container the SSZ type description the
@@ -275,6 +279,38 @@ print names the rejection repr. -/
 theorem toyWrongBoxValueEq [HasherTag] (state preState : ToyState) :
     (toyWrongBoxEq state 1).run (pureState preState)
       = toyRunBoxValueEqRhs state preState :=
+  rfl
+
+/-! ## The toy operation handler (§13.6)
+
+The `operations` pyspec layout gives each handler records with two inputs,
+the state and one operand. The toy fork answers with one operand
+container and one action over the boxed state, so the layout's tests
+drive a real handler instead of a `todo`. -/
+
+/-- The toy operand container: one field, the amount. One field keeps
+serialization trivial, the same single-operand shape the `operations`
+layout models (§13.6). -/
+structure ToyReq where
+  /-- The amount the `.ok` face writes into the balance. -/
+  amt : UInt64
+  deriving Inhabited, SSZRepr
+
+/-- The toy operation over the state and the operand: rejects with
+`"zero"` when the amount is zero, and writes the amount into the balance
+otherwise. -/
+def toyOpApply [HasherTag] (r : ToyReq) :
+    StateT (SSZ.Box HasherTag.H ToyState) (Except String) Unit :=
+  fun b => if r.amt == 0 then throw "zero" else .ok ((), pureState { b.view with bal := r.amt })
+
+/-- The operation's `.runOk` face (§7.3, form 2). -/
+theorem toyOpRunOk [HasherTag] (s : ToyState) :
+    (toyOpApply { amt := 42 }).run (pureState s) = .ok ((), pureState { s with bal := 42 }) :=
+  rfl
+
+/-- The operation's `.runError` face (§7.3, form 4). -/
+theorem toyOpRunError [HasherTag] (s : ToyState) :
+    (toyOpApply { amt := 0 }).run (pureState s) = .error "zero" :=
   rfl
 
 end EthCLLib.TheoremVectors.Tests.ToyRun

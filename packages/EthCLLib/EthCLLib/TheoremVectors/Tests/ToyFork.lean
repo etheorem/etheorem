@@ -61,7 +61,8 @@ private def decodeToy (bytes : ByteArray) :
   | .error _ => .error (.decode "ToyState")
 
 /-- The toy `ForkInterface` at minimal (`THEOREM_VECTORS_ARCHITECTURE.md`
-§13.5). Three steps are wired, and the rest answer an explicit `todo`:
+§13.5). Three epoch substeps and the `.blockHeader` operation are wired,
+and the rest answer an explicit `todo`:
 `.effectiveBalanceUpdates` runs the `.runOk` theorem's action, and
 `.slashings` is the toy's rejection. The reject runs `toyFail`, whose
 `throw "boom"` the interface reports as the spec assert `toy: boom`, the
@@ -70,7 +71,9 @@ expected reject an invalid vector carries under the driver's caught set.
 whose read rejects with the SSZ `IndexError`, lifted to the state machine's
 `outOfBounds` the way the fork bodies lift it. The driver scores that
 reject as a pass with the bug-smell flag, the divergence `pyspecCheck`
-fails on. -/
+fails on. `.blockHeader` is the toy's operation: the handler decodes a
+`ToyReq` and writes its amount into the balance, and a zero amount
+rejects with the spec assert `toy: zero`. -/
 @[reducible] def toyRunInterface : ForkInterface where
   stateRoot := fun bytes =>
     letI : HasherTag := fastHasherTag
@@ -99,7 +102,20 @@ fails on. -/
         | .error e => .error (.spec (ErrorConv.conv e))
         | .ok (_, post) => .ok (SizzLean.SSZ.hashTreeRoot HasherTag.H post.view)
       | _ => .error (.spec (.todo "toyrun epoch substep: not modeled"))
-  runOperation  := fun _ _ _ _ => .error (.spec (.todo "toyrun operations: not modeled"))
+  runOperation  := fun kind pre opBytes _meta =>
+    letI : HasherTag := fastHasherTag
+    match decodeToy pre with
+    | .error e => .error e
+    | .ok pre =>
+      match kind with
+      | .blockHeader =>
+        match SizzLean.SSZ.deserialize (T := ToyRun.ToyReq) opBytes with
+        | .error _ => .error (.decode "ToyReq")
+        | .ok req =>
+          match (ToyRun.toyOpApply req).run (pureState pre) with
+          | .ok (_, post) => .ok (SizzLean.SSZ.hashTreeRoot HasherTag.H post.view)
+          | .error e => .error (.spec (.assert s!"toy: {e}"))
+      | _ => .error (.spec (.todo "toyrun operations: not modeled"))
   runRewards    := fun _       => .error (.spec (.todo "toyrun rewards: not modeled"))
   runForkChoice := fun _ _ _   => .error (.spec (.todo "toyrun fork_choice: not modeled"))
   runGenesis    := fun _ _     => .error (.spec (.todo "toyrun genesis: not modeled"))
@@ -108,12 +124,14 @@ fails on. -/
 
 /-- The toy run binding for the pyspec format's tests (§13.4, §13.5): the
 same fork facts as `toyBinding`, with the toy state type, the `handlerOf`
-map over the three toy actions, and the toy interface at minimal. The map
+map over the four toy actions, and the toy interface at minimal. The map
 arms name real `epoch_processing` directories, because the driver parses
 the handler string through `EpochStep.ofString?` before it reaches the
 interface: the `.runOk` action runs under the real `effective_balance_updates`
 directory, `toyFail`'s rejection under `slashings`, and the index miss
-under `inactivity_updates`. The `presets` field stays empty; the pyspec
+under `inactivity_updates`. The one `operations` arm deliberately maps
+`toyOpApply` to `block_header`, whose operand stem differs from the
+handler name (§13.6). The `presets` field stays empty; the pyspec
 path reads only `handlerOf` and `interface`. -/
 def toyRunBinding : EthCLLib.TheoremVectors.ForkBinding where
   fork := `EthCLLib.Tests.InheritanceReplay.Base
@@ -132,6 +150,9 @@ def toyRunBinding : EthCLLib.TheoremVectors.ForkBinding where
         some ("epoch_processing", "slashings")
     | `EthCLLib.TheoremVectors.Tests.ToyRun.toyIndexMiss =>
         some ("epoch_processing", "inactivity_updates")
+    -- `OpKind.inputName .blockHeader` is "block", so the test can pin the operand name `block.ssz`.
+    | `EthCLLib.TheoremVectors.Tests.ToyRun.toyOpApply =>
+        some ("operations", "block_header")
     | _ => none
   -- §6: no test pins a pyspec spelling here, so the table stays empty.
   pyspecNames := #[]

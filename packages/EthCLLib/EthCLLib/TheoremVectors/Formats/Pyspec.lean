@@ -127,13 +127,15 @@ def Formats.pyspecRender (env : RenderEnv) (r : VectorRecord)
 
 /-- The §13.5 post read: the post bytes when the record carries an
 output, `none` when it does not. A record with an output but no
-`post.ssz` in the paths answers the error string, and `pyspecCheck`
-turns that into `.failed`. The operations format will share the read. -/
-def Formats.pyspecReadPost (r : VectorRecord)
+`post.ssz` in the paths answers the error string, and a check turns that
+into `.failed`. The caller's format fixes the position: the pyspec
+layout carries the post at position 1, the operations layout at
+position 2, where the operand part sits between pre and post. -/
+def Formats.pyspecReadPost (postIdx : Nat) (r : VectorRecord)
     (paths : Array System.FilePath) : IO (Except String (Option ByteArray)) := do
   if r.output.isSome then
-    match paths[1]? with
-    | none => return .error "pyspec check: no post.ssz in the rendered paths"
+    match paths[postIdx]? with
+    | none => return .error "no post.ssz in the rendered paths"
     | some p => return .ok (some (← IO.FS.readBinFile p))
   else
     return .ok none
@@ -166,7 +168,7 @@ def Formats.pyspecCheck (env : RenderEnv) (r : VectorRecord)
     | return .failed "pyspec check: no pre.ssz in the rendered paths"
   let pre ← IO.FS.readBinFile prePath
   let post ←
-    match ← Formats.pyspecReadPost r paths with
+    match ← Formats.pyspecReadPost 1 r paths with
     | .error msg => return .failed msg
     | .ok post => pure post
   let req : EthCLLib.PySpecTests.CaseRequest :=
