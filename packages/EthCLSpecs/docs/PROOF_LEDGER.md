@@ -423,6 +423,15 @@ partition of `getBeaconCommittee` gives "at most one slot" (`EpochCommittees.one
 `EpochCommittees` carries the three preset facts of the partition as fields.
 `RaceCommittees.of_epoch` keeps only the two balance conditions as premises.
 
+A window of several epochs has more than one justified state. `race_empty_persists_long`
+states the race with one justified state per slot (`RaceSetting.Long`), and
+`race_empty_persists_exec` is its case with one justified state. `Proofs/Heze/RaceLong.lean` gives the
+counting inequality after a full epoch of the window (`count_of_epoch`). Every validator that
+is active at that epoch has voted (`EpochCommittees.votes_of_active`). So a margin of the
+honest total over the adversarial total gives the count, with no bound on the number of
+votes of a validator. `hcount_of_parts` joins it to `RaceCommittees.count` for the first part of the window.
+The window still ends before the justified checkpoint passes `r`.
+
 `Tests/HezeRaceWitness.lean` shows that the premises of `race_empty_persists_composed` can
 hold together. Two honest nodes at the minimal preset run a window of slots 2 to 4 after a
 block of slot 1. One node holds the payload and receives one adversarial vote for `full r`.

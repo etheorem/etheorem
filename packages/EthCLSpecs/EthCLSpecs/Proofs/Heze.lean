@@ -406,7 +406,8 @@ Re-exports:
   (`race_empty_persists_exec`). `RaceSetting.Core` puts every honest head of the window
   strictly below `pending r`, and `RaceSetting` adds the first slot. Under it and the
   counting inequality, each of these heads lies below `empty r` and not below `full r`, or
-  a root collision exists.
+  a root collision exists. `race_empty_persists_long` states the race with one justified
+  state per slot (`RaceSetting.Long`), for a window of several epochs.
 * `EthCLSpecs.Proofs.Heze.PayloadRaceRefines`: the score of `full r` and of `empty r` is
   `sideWeight` of that side, over the active unslashed validators and the side the store
   gives each one (`score_full_refines`, `score_empty_refines`). One supported node is never
@@ -444,6 +445,10 @@ Re-exports:
   computations. When every vote finds its target in the store before it, the checkpoint
   states stay those of the seed (`NodeTrace.checkpointStates_eq`). `deliver_of_check`,
   `HeadRun.Ok.of_check`, and `honestSigner_of_check` give premises from checks.
+* `EthCLSpecs.Proofs.Heze.RaceLong`: the counting inequality of `race_empty_persists_long`
+  after a full epoch of the window (`count_of_epoch`). Every validator that is active at the
+  epoch has voted, so a margin of the honest total over the adversarial total gives the
+  count. `hcount_of_parts` joins it to `RaceCommittees.count` for the first part.
 * `EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction`: the
   complete run of `recordPayloadInclusionListSatisfaction`
   (`recordPayloadInclusionListSatisfaction_run`), proved with
