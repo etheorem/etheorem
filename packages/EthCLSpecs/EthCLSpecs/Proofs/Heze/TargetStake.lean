@@ -18,7 +18,9 @@ stake, as the FFG model reads it.
 - `RunTotals u`: the premises on the totals of a state. The floor does not apply to two
   thirds of the total. Three times the sum of all effective balances fits a `uint64`, and so
   does the size of the registry. The weigh step multiplies a balance by three, so the factor
-  three keeps that product in range.
+  three keeps that product in range. Under them, a successful read of the counted indices
+  gives the target balance as the `Nat` sum of their effective balances, or the floor
+  (`tgtBal_toNat`).
 - `linkStake u i`: the effective balance of `i` in `u` when `i` is active at the current or the
   previous epoch of `u`, else zero. The previous-epoch test counts validators active at the
   previous epoch against the total of the current epoch, so a validator that exits at the
@@ -402,6 +404,32 @@ theorem participating_nodup {u : BeaconState} {flag : Nat} {e : Epoch}
     (h64 : u.validators.val.size < 2 ^ 64) : idx.toList.Nodup := by
   rw [getUnslashedParticipatingIndices_ok_toList hidx]
   exact (EthCLLib.Proofs.indicesWhere_nodup _ _ (Nat.le_of_lt h64)).filter _
+
+/-- Under `RunTotals`, a successful read of the counted indices gives the target balance as the
+`Nat` sum of their effective balances, or the floor `EFFECTIVE_BALANCE_INCREMENT`. The balance
+sum succeeds, since each counted index is in range and the sum fits a `uint64`. -/
+theorem tgtBal_toNat {u : BeaconState} (ht : RunTotals u) {e : Epoch}
+    {idx : Array ValidatorIndex}
+    (hidx : EthCLSpecs.Heze.getUnslashedParticipatingIndices (pureState u)
+      EthCLSpecs.Heze.Const.timelyTargetFlagIndex e = .ok idx) :
+    (tgtBal u e).toNat = max ((idx.toList.map (effBal u)).sum)
+      EthCLSpecs.Heze.Const.effectiveBalanceIncrementG.toNat := by
+  obtain ⟨-, hsum, h64⟩ := ht
+  let g : Nat → Nat := fun i => (u.validators.val[i]!).effectiveBalance.toNat
+  -- The sum over the counted indices is at most the sum over the registry.
+  have hle : (idx.toList.map (effBal u)).sum ≤
+      (u.validators.val.toList.map (·.effectiveBalance.toNat)).sum := by
+    rw [← sum_range_getElem! u.validators.val,
+      show idx.toList.map (effBal u) = (idx.toList.map UInt64.toNat).map g by
+        rw [List.map_map]; rfl]
+    refine sum_map_le_of_subset g _ _ ?_ fun i hi => ?_
+    · exact EthCLLib.Proofs.nodup_map_of_injOn (participating_nodup hidx h64)
+        fun a _ b _ hab => UInt64.toNat_inj.mp hab
+    · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hi
+      exact List.mem_range.mpr (mem_participating hidx h64 hx).1
+  have hg := getTotalBalance_ok_of (u := u) (idx := idx)
+    (fun i hi => (mem_participating hidx h64 hi).1) (by omega)
+  rw [tgtBal_of_ok hidx hg, getTotalBalance_ok_toNat hg]
 
 /-- Under `RunTotals`, a passed test bounds the `linkStake` sum over a list that holds every
 counted index. When a read of the target balance faults, `tgtBal` is `0`, and the floor
