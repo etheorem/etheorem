@@ -102,6 +102,7 @@ import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 import EthCLSpecs.Proofs.Heze.Shuffle
 import EthCLSpecs.Proofs.Heze.SlotsIncrease
 import EthCLSpecs.Proofs.Heze.StakeDrift
+import EthCLSpecs.Proofs.Heze.StoreChainState
 import EthCLSpecs.Proofs.Heze.StoreFinality
 import EthCLSpecs.Proofs.Heze.SyncFrame
 import EthCLSpecs.Proofs.Heze.TargetStake

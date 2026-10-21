@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.Heze.FinalizationProgress
 import EthCLSpecs.Proofs.Heze.ClockedTrace
+import EthCLSpecs.Proofs.Heze.StoreChainState
 
 /-!
 # `EthCLSpecs.Proofs.Heze.StoreFinality`: an honest store finalizes with the chain
@@ -23,8 +24,9 @@ is the last weigh step of the honest chain. So the pull-up finalizes `E₁` or l
 
 ## The store
 
-An honest store receives that block before `E₁ + 4` starts, and it stores the chain's state
-after the block. Its unrealized finalized epoch is then `E₁` or later. Until the clock reaches
+An honest store receives that block before `E₁ + 4` starts. The store traces to the anchor
+of the chain, so it stores the chain's state after the block (`onBlock_stores_chainState`).
+Its unrealized finalized epoch is then `E₁` or later. Until the clock reaches
 the first slot of `E₁ + 4`, every event keeps that (`FinalizesBy`). The tick that reaches the
 slot realizes it. So from that slot on, the finalized epoch is `E₁` or later
 (`honestStore_finalizes`).
@@ -527,28 +529,38 @@ theorem NodeTrace.finalizesBy (hD : 1000 ∣ slotDurationMs.toNat)
     subst hrun
     exact ih
 
-/-- **An honest store finalizes `E₁` from the first slot of `E₁ + 4`.** The store receives the
-block of the last slot of `E₁ + 3` before `E₁ + 4` starts, and it stores the chain's state `w`
-after that block. `onBlock` pulls `w` up, so the unrealized finalized epoch is `E₁` or later
-(`HonestChain.pullup_finalizes`). The tick that reaches the first slot of `E₁ + 4` realizes it,
-and the later events do not lower it (`NodeTrace.finalizesBy`). -/
+/-- **An honest store finalizes `E₁` from the first slot of `E₁ + 4`.** The store traces to
+the anchor state `st₀` of the honest chain and to the anchor block `a` (`CkptInv`). The anchor
+state has the header of `a`, with a filled state root when the header slot is below the state
+slot. The store receives the block of the last slot of `E₁ + 3` before `E₁ + 4` starts.
+Without a block collision, it stores the chain's state `w` after that block
+(`onBlock_stores_chainState`). `onBlock` computes the pull-up of `w`, so the unrealized
+finalized epoch is `E₁` or later (`HonestChain.pullup_finalizes`).
+The tick that reaches the first slot of `E₁ + 4` realizes it, and the later events do not
+lower it (`NodeTrace.finalizesBy`). -/
 theorem honestStore_finalizes (hD : 1000 ∣ slotDurationMs.toNat)
-    (hD0 : 0 < slotDurationMs.toNat) {hi : Nat} {steps : List ChainStep}
+    (hD0 : 0 < slotDurationMs.toNat) (hc : ¬ HtrCollision EthCLSpecs.Heze.BeaconBlock)
+    {hi : Nat} {steps : List ChainStep}
     {st₀ st : EthCLSpecs.Heze.BeaconState} {vals : List EthCLSpecs.Heze.ValidatorIndex}
     {honestOf : EthCLSpecs.Heze.ValidatorIndex → Bool} {E₁ : Nat}
-    (H : HonestChain hi steps st₀ st vals honestOf E₁) {p q : List ChainStep}
+    (H : HonestChain hi steps st₀ st vals honestOf E₁) {a : EthCLSpecs.Heze.BeaconBlock}
+    (hfill₀ : HdrFilled st₀) (hanc : filledHeader st₀ = headerOf a) {p q : List ChainStep}
     {sb : SignedBeaconBlock} {v : Bool} {u w : EthCLSpecs.Heze.BeaconState}
     (hs : steps = p ++ .block sb v :: .slot :: q) (hu : ChainRun hi p st₀ u)
     (hstep : BlockStep sb v u w) (hlast : (u.slot.toNat + 1) % slotsPerEpoch = 0)
     (hep : u.slot.toNat / slotsPerEpoch = E₁ + 3)
     {sA sB s : Store map} {events : List TraceEvent}
-    {arrivals : List (SignedInclusionList × UInt64)} (hpA : BlockStatesPure sA)
+    {arrivals : List (SignedInclusionList × UInt64)} (hinv : CkptInv st₀ a sA)
     (hblk : (onBlock (map := map) (StoreTransition := ForkChoiceStoreRun (Store map)) sb).run sA
       = .ok ((), sB))
-    (hstate : FcMap.lookup sB.blockStates (htr sb.message) = some (pureState w))
     (hA : storeSlot sA < (E₁ + 4) * slotsPerEpoch) (htrace : NodeTrace sB events arrivals s)
     (hS : (E₁ + 4) * slotsPerEpoch ≤ storeSlot s) :
     E₁ ≤ s.finalizedCheckpoint.epoch.toNat := by
+  have hpA : BlockStatesPure sA := hinv.slot.statesPure
+  have hval : ValidatedSteps p := fun sb' v' hm =>
+    H.ref.val sb' v' (by rw [hs]; exact List.mem_append_left _ hm)
+  have hstate := onBlock_stores_chainState H.ref.hw hc H.ref.hhi H.ref.roots hfill₀ hanc hu hval
+    hstep hinv hblk
   obtain ⟨pv, w', u', -, -, -, hbsu, -, hpull⟩ := onBlock_run_ckpt sb sA sB hpA hblk
   obtain ⟨-, -, -, -, -, bs1⟩ :=
     updateCheckpoints_ckpt u' w'.currentJustifiedCheckpoint w'.finalizedCheckpoint
