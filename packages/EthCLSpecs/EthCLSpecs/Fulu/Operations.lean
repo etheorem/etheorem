@@ -321,7 +321,8 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
           if hasCompoundingWithdrawalCredential validator && sufficientEff && excess then
             let toWithdraw := umin (balance - Const.minActivationBalance - pending) wr.amount
             let exitEpoch ← computeExitEpochAndUpdateChurn toWithdraw
-            let we := exitEpoch + Const.minValidatorWithdrawabilityDelay
+            let we ← checkedAdd exitEpoch Const.minValidatorWithdrawabilityDelay
+              "process_withdrawal_request: exit_queue_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY"
             appendState pendingPartialWithdrawals
               { validatorIndex := index, amount := toWithdraw, withdrawableEpoch := we }
           else pure ()
@@ -372,8 +373,10 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
       else if getPendingBalanceToWithdraw state (UInt64.ofNat srcN) > 0 then pure ()
       else
         let exitEpoch ← computeConsolidationEpochAndUpdateChurn src.effectiveBalance
+        let we ← checkedAdd exitEpoch Const.minValidatorWithdrawabilityDelay
+          "process_consolidation_request: exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY"
         modifyState fun state => modValidator state (UInt64.ofNat srcN) fun validator =>
-          { validator with exitEpoch := exitEpoch, withdrawableEpoch := exitEpoch + Const.minValidatorWithdrawabilityDelay }
+          { validator with exitEpoch := exitEpoch, withdrawableEpoch := we }
         appendState pendingConsolidations { sourceIndex := UInt64.ofNat srcN, targetIndex := UInt64.ofNat tgtN }
     | _, _ => pure ()
 
