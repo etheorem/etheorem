@@ -40,6 +40,7 @@ import EthCLSpecs.Proofs.Heze.DriftTotal
 import EthCLSpecs.Proofs.Heze.DriftWithdraw
 import EthCLSpecs.Proofs.Heze.EbUpdates
 import EthCLSpecs.Proofs.Heze.EconFrame
+import EthCLSpecs.Proofs.Heze.EmptyTarget
 import EthCLSpecs.Proofs.Heze.Equivocators
 import EthCLSpecs.Proofs.Heze.FFGRefines
 import EthCLSpecs.Proofs.Heze.FinalityLock
@@ -53,6 +54,7 @@ import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
 import EthCLSpecs.Proofs.Heze.HeadBelowJustified
 import EthCLSpecs.Proofs.Heze.HonestDuties
 import EthCLSpecs.Proofs.Heze.HonestHead
+import EthCLSpecs.Proofs.Heze.HonestVoter
 import EthCLSpecs.Proofs.Heze.HonestVoteSide
 import EthCLSpecs.Proofs.Heze.ILStoreOrder
 import EthCLSpecs.Proofs.Heze.InclusionDichotomy
