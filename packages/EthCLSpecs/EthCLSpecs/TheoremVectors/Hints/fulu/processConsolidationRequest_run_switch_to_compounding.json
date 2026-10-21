@@ -1,0 +1,13 @@
+{"theorem": "EthCLSpecs.Proofs.Fulu.processConsolidationRequest_run_switch_to_compounding",
+ "fingerprint": "0xa25bbcaeb3bb6901",
+ "entries":
+ [{"witnessSearcher": "manual",
+   "scalars": {},
+   "preset": "minimal",
+   "fingerprint": "0x36983bc652128de1",
+   "disjunctIndex": 0},
+  {"witnessSearcher": "manual",
+   "scalars": {},
+   "preset": "mainnet",
+   "fingerprint": "0xa25bbcaeb3bb6901",
+   "disjunctIndex": 0}]}

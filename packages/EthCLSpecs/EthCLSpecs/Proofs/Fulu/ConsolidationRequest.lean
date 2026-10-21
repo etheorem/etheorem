@@ -1,10 +1,13 @@
 import EthCLSpecs.Fulu.Operations
+import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Run
 import EthCLLib.Proofs.Run
+import SizzLean.Proofs.SSZListGetElem
+import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.UncachedBox
 
 /-!
-# `EthCLSpecs.Proofs.Fulu.ConsolidationRequest`: `processConsolidationRequest`'s request gates
+# `EthCLSpecs.Proofs.Fulu.ConsolidationRequest`: `processConsolidationRequest`'s request gates and success arms
 
 `process_consolidation_request` (EIP-7251) runs its request through a ladder of gates, and
 this file gives each gate one theorem. A gate theorem's hypotheses carry the request past
@@ -21,15 +24,18 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu
 
-open EthCLLib.Spec (HasherTag vecSliceEq SSZList)
+open EthCLLib.Spec (HasherTag SSZList ErrorConv IndexError sszGetIdx umax vecSliceEq)
 open EthCLSpecs.Fulu (Preset Config BLSPubkey BeaconState ConsolidationRequest Gwei Validator
-  Bytes32 Epoch ParticipationFlags PendingConsolidation PendingPartialWithdrawal
-  computeConsolidationEpochAndUpdateChurn computeEpochAtSlot getConsolidationChurnLimit
-  hasCompoundingWithdrawalCredential hasExecutionWithdrawalCredential hasNotInitiatedExit
-  isActiveValidator modValidator modifyState passedShardCommitteePeriod
+  ValidatorIndex Bytes32 Epoch ParticipationFlags PendingConsolidation
+  PendingPartialWithdrawal
+  computeActivationExitEpoch computeConsolidationEpochAndUpdateChurn computeEpochAtSlot
+  getConsolidationChurnLimit hasCompoundingWithdrawalCredential hasExecutionWithdrawalCredential
+  hasNotInitiatedExit isActiveValidator modBalance modValidator modifyState passedShardCommitteePeriod
+  queueExcessActiveBalance reserveChurn switchToCompoundingValidator
   isValidSwitchToCompoundingRequest processConsolidationRequest validatorIndexByPubkey?)
-open EthCLLib.Proofs (pureState run_bind run_get except_bind_ok)
-open SizzLean.Proofs (view_uncachedBox)
+open EthCLLib.Proofs (pureState run_bind run_get run_pure run_ofExcept_ok except_bind_ok)
+open SizzLean.Proofs (sszList_getElem?_eq_getElem! sszListSet!_getElem!_self sszListSet!_size
+  view_uncachedBox)
 
 /-- The validator `processConsolidationRequest` reads at registry index `s`: the body's
 `let src := validators[srcN]?.getD default`, with the box view reduced to the plain list. -/
@@ -171,9 +177,11 @@ private theorem processConsolidationRequest_run_validityLadder [Preset] [HasherT
 
 /-! ## The manual witnesses
 
-Ten of the gate theorems below carry `theorem_vectors_manual` registrations
+Ten of the gate theorems and the two success-arm theorems below carry
+`theorem_vectors_manual` registrations
 (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), and this block holds the one state
-and the one request the registrations name. Each gate's patch is a named
+and the base request most registrations name; the switch arm's registration
+spells its same-pubkey request inline. Each patch is a named
 argument to `consolidationState`, because the patched field sits inside an
 `SSZList` a record update cannot reach. The def sits once, before the first
 theorem that uses it, and every vector length comes from the preset constants,
@@ -215,14 +223,15 @@ compounding credentials. The total active balance of 6208 ETH puts the
 consolidation churn limit at 66 ETH at minimal, above `minActivationBalance`,
 so the churn gate passes. The slot sits at epoch 65, past the minimal
 `shardCommitteePeriod` of 64, so the shard-period gate passes. The queues
-start empty; the knobs patch one field per gate theorem. -/
+start empty; the knobs patch one field per theorem. -/
 private def consolidationState [Preset]
     (srcTag : UInt8 := EthCLSpecs.Fulu.Const.eth1AddressWithdrawalPrefix)
     (tgtTag : UInt8 := EthCLSpecs.Fulu.Const.compoundingWithdrawalPrefix)
     (srcActivation : Epoch := 0) (tgtActivation : Epoch := 0)
     (srcExit : Epoch := EthCLSpecs.Fulu.Const.farFutureEpoch)
     (tgtExit : Epoch := EthCLSpecs.Fulu.Const.farFutureEpoch)
-    (srcPending : Gwei := 0) (queue : Nat := 0) : BeaconState :=
+    (srcPending : Gwei := 0) (queue : Nat := 0)
+    (srcBalance : Gwei := 32000000000) : BeaconState :=
   let vs : SSZList Validator EthCLSpecs.Fulu.Const.validatorRegistryLimit :=
     ((default : SSZList Validator EthCLSpecs.Fulu.Const.validatorRegistryLimit)
       |>.push (consolidationValidator EthCLSpecs.Fulu.Const.compoundingWithdrawalPrefix 0
@@ -236,7 +245,7 @@ private def consolidationState [Preset]
   let bs : SSZList Gwei EthCLSpecs.Fulu.Const.validatorRegistryLimit :=
     ((default : SSZList Gwei EthCLSpecs.Fulu.Const.validatorRegistryLimit)
       |>.push 2048000000000 |>.push 2048000000000 |>.push 2048000000000
-      |>.push 32000000000 |>.push 32000000000)
+      |>.push srcBalance |>.push 32000000000)
   -- the per-validator lists the epoch step indexes by validator index:
   -- one zero entry per validator, the way the fork's genesis builder fills them
   let flags : SSZList ParticipationFlags EthCLSpecs.Fulu.Const.validatorRegistryLimit :=
@@ -811,6 +820,355 @@ theorem processConsolidationRequest_run_source_pending_withdrawal [Preset] [Hash
 open EthCLLib.Internal in
 theorem_vectors_manual processConsolidationRequest_run_source_pending_withdrawal
   pre := consolidationState (srcPending := 1000000000)
+  req := baseRequest
+
+/-! ## The two success arms
+
+The catalog's last two branches mutate the state. The switch arm rewrites the
+source's credential prefix and queues the balance above `minActivationBalance`;
+the success arm reserves churn and appends the pending consolidation. Each
+theorem states the post-state in closed form over a helper, and each carries a
+registry size bound: the writes index the registry through a `UInt64`, so the
+`uint64` truncation has to read back as the found index. The switch arm also
+reads the balance list at the found index, so its theorem adds the two lists'
+equal length: on a broken pair the balance read rejects with `outOfBounds`,
+the reject `Operations.lean`'s own comment names for the withdrawal path. -/
+
+/-- The total read at an in-range index equals the composed read the helpers
+state: the element, taken out of the `some` the checked read wraps. -/
+private theorem sszList_getElem!_eq_getD {α : Type} [Inhabited α] {cap : Nat}
+    (xs : SSZList α cap) (i : Nat) (h : i < xs.size) :
+    xs[i]! = xs.toArray[i]?.getD default := by
+  rw [getElem!_pos (dom := fun (xs : SSZList α cap) j => j < xs.size) (h := h)]
+  rw [Array.getElem?_eq_getElem h]
+  rfl
+
+/-- A monadic read at an in-range index lifts to the element, with the threaded
+box handed on unchanged. The read-level fact the two success arms rewrite
+through at each of their reads. -/
+private theorem run_sszGetIdx_of_range {α : Type} [Inhabited α] {cap : Nat}
+    (xs : SSZList α cap) (j : Nat) (h : j < xs.size)
+    {σ ε : Type} [ErrorConv IndexError ε] (sb : σ) :
+    (sszGetIdx (E := ε) (m := StateT σ (Except ε)) xs j).run sb = .ok (xs[j]!, sb) := by
+  show (MonadExcept.ofExcept (ε := ε) (m := StateT σ (Except ε))
+    (Except.mapError ErrorConv.conv
+      (match xs.val[j]? with
+      | some a => Except.ok a
+      | none => .error (SizzLean.Cache.IndexError.indexError j xs.val.size)))).run sb = _
+  rw [sszList_getElem?_eq_getElem! xs j h]
+  exact run_ofExcept_ok sb
+
+/-- Reading back the element a `set!` wrote, in range: the read lifts to the
+written value. The credential write's own read-back, which the switch arm's
+pending deposit reads. -/
+private theorem run_sszGetIdx_of_set!_self {α : Type} [Inhabited α] {cap : Nat}
+    (xs : SSZList α cap) (j : Nat) (v : α) (h : j < xs.size)
+    {σ ε : Type} [ErrorConv IndexError ε] (sb : σ) :
+    (sszGetIdx (E := ε) (m := StateT σ (Except ε)) (xs.set! j v) j).run sb = .ok (v, sb) := by
+  rw [run_sszGetIdx_of_range (xs.set! j v) j (by rw [sszListSet!_size]; exact h) sb,
+    sszListSet!_getElem!_self xs j v h]
+
+/-- The run of one `modifyState` write: the written box handed on, no value.
+The write-level fact the two success arms rewrite through at each of their
+writes, so the next read meets the written state. The statement is about the
+box machinery itself (`SPECS_ARCHITECTURE.md` §11.1's first `box_generic`
+kind): `modifyState` hands the written box on, for whatever box the run
+threads. -/
+@[box_generic "modifyState's run hands the written box on; the lemma is about \
+the box step itself, and every run-level write rewrite in this file reads it"]
+private theorem run_modifyState [Preset] [HasherTag] {ε : Type}
+    (f : EthCLSpecs.Fulu.State → EthCLSpecs.Fulu.State) (sb : EthCLSpecs.Fulu.State) :
+    (modifyState f : StateT EthCLSpecs.Fulu.State (Except ε) PUnit).run sb
+      = .ok ((), f sb) := rfl
+
+/-- A conditional action's run splits into the conditional runs of its arms.
+The success arms state their balance conditions at the value level, so the
+run-level conditionals rewrite through this before the branches reduce. -/
+private theorem run_ite {σ ε α : Type} (c : Prop) [Decidable c]
+    (x y : StateT σ (Except ε) α) (sb : σ) :
+    (if c then x else y).run sb = if c then x.run sb else y.run sb := by
+  by_cases h : c <;> simp [h]
+
+/-- A conditional pair of answers is the answer of the conditional value. The
+run-level conditional's arms both answer `.ok`, so the split condition moves
+inside, where the helper states it. -/
+private theorem except_ok_ite {ε α : Type} (c : Prop) [Decidable c] (x y : α) :
+    (if c then Except.ok x else Except.ok y : Except ε α)
+      = Except.ok (if c then x else y) := by
+  by_cases h : c <;> simp [h]
+
+/-- The pair's second component carries the split condition, so the pair
+constructor moves inside the conditional, where the helper states it. -/
+private theorem prod_ite {α β : Type} (c : Prop) [Decidable c] (a : α) (x y : β) :
+    (if c then (a, x) else (a, y)) = (a, if c then x else y) := by
+  by_cases h : c <;> simp [h]
+
+/-- `modValidator`'s write at the pure box lands as one plain record update.
+The mirror of `modBalance_pureState` (`Proofs/Fulu/Balances.lean`), stated
+here because the switch arm's reads meet the validator write and the run
+has to reduce through it. This one stays private and untagged: the theorem
+is setup for the proofs above, and `modValidator` remains merely touched. -/
+private theorem modValidator_pureState [Preset] [HasherTag] :
+    ∀ (state : BeaconState) (i : ValidatorIndex) (f : Validator → Validator),
+      modValidator (pureState state) i f =
+        pureState
+          { state with validators := state.validators.set! i.toNat (f state.validators[i.toNat]!) } :=
+  fun _ _ _ => rfl
+
+/-- The balance of registry index `i`: the body's `queueExcessActiveBalance`
+read, reduced to the plain list. -/
+private def registryBalance [Preset] (pre : BeaconState) (i : Nat) : Gwei :=
+  pre.balances.toArray[i]?.getD default
+
+/-- The switch arm's post-state at the found index `i`: the source's
+withdrawal credential prefix becomes `compoundingWithdrawalPrefix`, and a
+balance above `minActivationBalance` moves the excess into a pending deposit
+while the balance drops to the minimum. The helper `switchedState`'s found
+arm, stated once so the ladder below names it. -/
+private def switchedArm [Preset] (pre : BeaconState) (i : Nat) : BeaconState :=
+  let creds := (registryValidator pre i).withdrawalCredentials.set 0
+    EthCLSpecs.Fulu.Const.compoundingWithdrawalPrefix
+  let srcVal : Validator := { registryValidator pre i with withdrawalCredentials := creds }
+  let b := registryBalance pre i
+  if b > EthCLSpecs.Fulu.Const.minActivationBalance then
+    { pre with
+      validators := pre.validators.set! i srcVal
+      balances := pre.balances.set! i EthCLSpecs.Fulu.Const.minActivationBalance
+      pendingDeposits := pre.pendingDeposits.push
+        { pubkey := srcVal.pubkey, withdrawalCredentials := creds,
+          amount := b - EthCLSpecs.Fulu.Const.minActivationBalance,
+          signature := EthCLSpecs.Fulu.Const.g2PointAtInfinity,
+          slot := EthCLSpecs.Fulu.Const.genesisSlot } }
+  else
+    { pre with validators := pre.validators.set! i srcVal }
+
+/-- The exact closed-form post-state of the switch arm. The `none` arm is
+unreachable under the switch hypothesis (the lookup is found there); the arm
+exists so the helper is total. -/
+private def switchedState [Preset] (pre : BeaconState) (pk : BLSPubkey) : BeaconState :=
+  match pre.validators.val.findIdx? (·.pubkey == pk) with
+  | none => pre
+  | some i => switchedArm pre i
+
+/-- The switch arm's whole run at the box, over the found index `j`. The range
+and parity hypotheses carry the three registry reads' bounds, and the size
+bound the `uint64` truncation's read-back, so the proof reduces to the helper's
+record updates. -/
+private theorem switchArm_run_eq [Preset] [HasherTag] (pre : BeaconState) (j : Nat)
+    (hj : j < pre.validators.size) (hpar : pre.balances.size = pre.validators.size)
+    (hsize : j < 2 ^ 64) :
+    (do
+        let state ← get
+        let validator ← sszGetIdx (sszGet state validators) (UInt64.ofNat j).toNat
+        let newWc : Bytes32 := validator.withdrawalCredentials.set 0
+          EthCLSpecs.Fulu.Const.compoundingWithdrawalPrefix
+        modifyState fun state => modValidator state (UInt64.ofNat j) fun validator =>
+          { validator with withdrawalCredentials := newWc }
+        queueExcessActiveBalance (UInt64.ofNat j) : FuluRun PUnit).run (pureState pre)
+      = .ok ((), pureState (switchedArm pre j)) := by
+  have hj' : (UInt64.ofNat j).toNat = j := UInt64.toNat_ofNat_of_lt' hsize
+  have hv' : j < pre.validators.size := hj
+  have hb' : j < pre.balances.size := by rw [hpar]; exact hj
+  -- Each read lifts to its element at the in-range index, each write hands its
+  -- state on, and the conditionals split so both sides compare at the value
+  -- level.
+  simp only [hj', view_uncachedBox,
+    run_bind, run_get, run_pure, except_bind_ok, run_ite, except_ok_ite, prod_ite,
+    queueExcessActiveBalance,
+    run_sszGetIdx_of_range pre.validators _ hv',
+    run_sszGetIdx_of_range pre.balances _ hb',
+    run_sszGetIdx_of_set!_self pre.validators _ _ hv',
+    modValidator_pureState, modBalance_pureState, run_modifyState]
+  -- Both sides now carry the balance conditional at the value level, the run's
+  -- on the total read and the helper's on the composed read. The two conditions
+  -- are the same read, so one split discharges both branches.
+  by_cases hbal : pre.balances[j]! > EthCLSpecs.Fulu.Const.minActivationBalance
+  · have hbal' : registryBalance pre j > EthCLSpecs.Fulu.Const.minActivationBalance := hbal
+    simp only [if_pos hbal, switchedArm, if_pos hbal']
+    rfl
+  · have hbal' : ¬(registryBalance pre j > EthCLSpecs.Fulu.Const.minActivationBalance) := hbal
+    simp only [if_neg hbal, switchedArm, if_neg hbal']
+    rfl
+
+/-- **Switch to compounding.** A request whose source and target pubkeys are equal and
+that passes `isValidSwitchToCompoundingRequest` takes the switch arm. The conclusion
+states the post-state in closed form: the source's withdrawal credential prefix becomes
+`compoundingWithdrawalPrefix`, and a balance above `minActivationBalance` moves the
+excess into a pending deposit while the balance drops to the minimum. One theorem
+states both balance cases, because upstream's three switch tests exercise each. The
+equal-pubkey hypothesis names the arm the statement covers; the switch hypothesis
+already implies it, and the statement keeps it so the hypothesis list reads in the
+body's gate order. The two registry hypotheses carry the facts the arm's reads and
+writes need: the run indexes the balance list at the found registry index, so the two
+lists match, and the write's `uint64`-truncated index reads back as the index, so the
+registry stays inside the `uint64` range.
+
+Upstream tests (`electra/block_processing/test_process_consolidation_request.py`,
+`v1.7.0-alpha.11`): `test_basic_switch_to_compounding`,
+`test_switch_to_compounding_with_excess`,
+`test_switch_to_compounding_with_pending_consolidations_at_limit`. -/
+theorem processConsolidationRequest_run_switch_to_compounding [Preset] [HasherTag] [Config] :
+    ∀ (pre : BeaconState) (req : ConsolidationRequest),
+      req.sourcePubkey = req.targetPubkey →
+      isValidSwitchToCompoundingRequest (pureState pre) req = true →
+      pre.validators.size < 2 ^ 64 →
+      pre.balances.size = pre.validators.size →
+      (processConsolidationRequest (StateTransition := FuluRun) req).run (pureState pre)
+        = .ok ((), pureState (switchedState pre req.sourcePubkey)) := by
+  intro pre req _heq hswitch hsize hpar
+  unfold processConsolidationRequest
+  -- `run_bind` splits the do-block. `run_get` pairs the threaded box with itself, and beta
+  -- plus `except_bind_ok` substitute `pureState pre` for the `state` binder.
+  simp only [run_bind, run_get, except_bind_ok]
+  -- The switch gate fires on the hypothesis.
+  rw [if_pos hswitch]
+  -- Both lookups: rewrite through the bridge, then let each concrete value put the
+  -- match into its arm.
+  simp only [validatorIndexByPubkey?_pureState]
+  cases hfind : pre.validators.val.findIdx? (·.pubkey == req.sourcePubkey) with
+  | none =>
+    simp only [switchedState, hfind]
+    rfl
+  | some i =>
+    obtain ⟨hv, -⟩ := Array.findIdx?_eq_some_iff_findIdx_eq.mp hfind
+    -- The match enters its `some` arm and the switch unfolds; the arm's run
+    -- reduces through the ladder.
+    dsimp only
+    simp only [switchToCompoundingValidator]
+    rw [switchArm_run_eq pre i hv hpar (Nat.lt_trans hv hsize)]
+    simp only [switchedState, hfind]
+
+-- The manual witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), mirroring
+-- `test_switch_to_compounding_with_excess`: the patch raises the source's
+-- balance by 1 ETH (`EFFECTIVE_BALANCE_INCREMENT`), so the switch queues the
+-- excess and caps the balance.
+open EthCLLib.Internal in
+theorem_vectors_manual processConsolidationRequest_run_switch_to_compounding
+  pre := consolidationState (srcBalance := 33000000000)
+  req := { sourceAddress := default, sourcePubkey := basePubkey 3,
+           targetPubkey := basePubkey 3 }
+
+/-- The exact closed-form post-state of the success arm. The exit epoch and
+the churn bookkeeping are `reserveChurn`'s output, the arithmetic core
+`computeConsolidationEpochAndUpdateChurn` runs, and the churn reads spell as the
+body's own (`getConsolidationChurnLimit` on the box, the epoch step on the slot),
+so the helper covers every churn scenario without pinning one. The `_, _` arm is
+unreachable under the found-ness hypotheses; it keeps the helper total. -/
+private def consolidatedState [Preset] [HasherTag] [Config]
+    (pre : BeaconState) (req : ConsolidationRequest) : BeaconState :=
+  match pre.validators.val.findIdx? (·.pubkey == req.sourcePubkey),
+      pre.validators.val.findIdx? (·.pubkey == req.targetPubkey) with
+  | some s, some t =>
+    let bal := (registryValidator pre s).effectiveBalance
+    let earliest := umax pre.earliestConsolidationEpoch
+      (computeActivationExitEpoch (computeEpochAtSlot pre.slot))
+    let perEpoch := getConsolidationChurnLimit (pureState pre)
+    let consume := if pre.earliestConsolidationEpoch < earliest then perEpoch
+      else pre.consolidationBalanceToConsume
+    let churn := reserveChurn bal consume perEpoch earliest
+    let churned : BeaconState :=
+      { pre with
+        consolidationBalanceToConsume := churn.2 - bal,
+        earliestConsolidationEpoch := churn.1 }
+    let exitedVal : Validator :=
+      { registryValidator pre s with
+        exitEpoch := churn.1,
+        withdrawableEpoch :=
+          churn.1 + EthCLSpecs.Fulu.Const.minValidatorWithdrawabilityDelay }
+    let exited : BeaconState :=
+      { churned with validators := churned.validators.set! s exitedVal }
+    let pushed :
+        SSZList PendingConsolidation EthCLSpecs.Fulu.Const.pendingConsolidationsLimit :=
+      exited.pendingConsolidations.push
+        { sourceIndex := UInt64.ofNat s, targetIndex := UInt64.ofNat t }
+    { exited with pendingConsolidations := pushed }
+  | _, _ => pre
+
+/-- **Consolidation success.** A request through every gate reserves churn and appends
+one `PendingConsolidation`. The exit epoch comes from
+`computeConsolidationEpochAndUpdateChurn`'s effect, and the right-hand side states its
+arithmetic through `reserveChurn`, the core that function runs, so one statement covers
+every churn scenario upstream tests: a fresh budget, churn already spent this epoch, and
+a spread over several epochs. The registry size bound carries the fact the write's
+`uint64`-truncated index reads back as the found source index.
+
+Upstream tests (`electra/block_processing/test_process_consolidation_request.py`,
+`v1.7.0-alpha.11`): `test_basic_consolidation_in_current_consolidation_epoch`,
+`test_basic_consolidation_with_excess_target_balance`,
+`test_basic_consolidation_in_new_consolidation_epoch`,
+`test_basic_consolidation_with_preexisting_churn`,
+`test_basic_consolidation_with_insufficient_preexisting_churn`,
+`test_basic_consolidation_with_compounding_credentials`,
+`test_consolidation_churn_limit_balance`,
+`test_basic_consolidation_source_has_less_than_max_effective_balance`,
+`test_basic_consolidation_target_has_less_than_min_activation_effective_balance`,
+`test_consolidation_balance_larger_than_churn_limit`,
+`test_consolidation_balance_through_two_churn_epochs`. -/
+theorem processConsolidationRequest_run_consolidation_success [Preset] [HasherTag] [Config] :
+    ∀ (pre : BeaconState) (req : ConsolidationRequest),
+      req.sourcePubkey ≠ req.targetPubkey →
+      pre.pendingConsolidations.size < EthCLSpecs.Fulu.Const.pendingConsolidationsLimit →
+      getConsolidationChurnLimit (pureState pre) > EthCLSpecs.Fulu.Const.minActivationBalance →
+      pre.validators.val.findIdx? (·.pubkey == req.sourcePubkey) ≠ none →
+      pre.validators.val.findIdx? (·.pubkey == req.targetPubkey) ≠ none →
+      pre.validators.size < 2 ^ 64 →
+      (hasExecutionWithdrawalCredential (validatorByPubkey pre req.sourcePubkey) &&
+          vecSliceEq (validatorByPubkey pre req.sourcePubkey).withdrawalCredentials 12
+            req.sourceAddress 0 20) = true →
+      (hasCompoundingWithdrawalCredential (validatorByPubkey pre req.targetPubkey)) = true →
+      (isActiveValidator (validatorByPubkey pre req.sourcePubkey)
+        (computeEpochAtSlot pre.slot)) = true →
+      (isActiveValidator (validatorByPubkey pre req.targetPubkey)
+        (computeEpochAtSlot pre.slot)) = true →
+      (hasNotInitiatedExit (validatorByPubkey pre req.sourcePubkey)) = true →
+      (hasNotInitiatedExit (validatorByPubkey pre req.targetPubkey)) = true →
+      (passedShardCommitteePeriod (validatorByPubkey pre req.sourcePubkey)
+        (computeEpochAtSlot pre.slot)) = true →
+      pendingWithdrawalOfPubkey pre req.sourcePubkey = 0 →
+      (processConsolidationRequest (StateTransition := FuluRun) req).run (pureState pre)
+        = .ok ((), pureState (consolidatedState pre req)) := by
+  intro pre req hne hroom hchurn hfindS hfindT hsize hauth hcomp hsrcact htgtact
+    hsrcexit htgtexit hshard hpend
+  obtain ⟨s, hs⟩ := Option.ne_none_iff_exists'.mp hfindS
+  obtain ⟨t, ht⟩ := Option.ne_none_iff_exists'.mp hfindT
+  rw [validatorByPubkey_eq_registryValidator pre req.sourcePubkey s hs] at hauth hsrcact hsrcexit hshard
+  rw [validatorByPubkey_eq_registryValidator pre req.targetPubkey t ht] at hcomp htgtact htgtexit
+  rw [pendingWithdrawalOfPubkey_eq pre req.sourcePubkey s hs] at hpend
+  rw [processConsolidationRequest_run_validityLadder pre req s t hne hroom hchurn hs ht]
+  rw [if_neg (negCond_not hauth)]
+  rw [if_neg (negCond_not hcomp)]
+  rw [if_neg (negCond_not hsrcact)]
+  rw [if_neg (negCond_not htgtact)]
+  rw [if_neg (negCond_not hsrcexit)]
+  rw [if_neg (negCond_not htgtexit)]
+  rw [if_neg (negCond_not hshard)]
+  -- The last gate: the composed pending total is zero, so it cannot exceed zero.
+  have hgate : ¬(pendingWithdrawalOf pre s > 0) := by
+    rw [hpend]
+    decide
+  rw [if_neg hgate]
+  -- The write's `uint64`-truncated index reads back as the found index under the
+  -- registry size bound.
+  obtain ⟨hsz, -⟩ := Array.findIdx?_eq_some_iff_findIdx_eq.mp hs
+  have h64 : (UInt64.ofNat s).toNat = s :=
+    UInt64.toNat_ofNat_of_lt' (Nat.lt_trans hsz hsize)
+  -- Both sides: the helper's match enters the two-index arm, the churn
+  -- reservation's run threads through its write, and the validator write's total
+  -- read spells as the helper's composed read at the in-range source index.
+  simp only [consolidatedState, hs, ht, h64, view_uncachedBox,
+    computeConsolidationEpochAndUpdateChurn,
+    run_bind, run_get, except_bind_ok, run_modifyState, modValidator]
+  rfl
+
+-- The manual witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), mirroring
+-- `test_basic_consolidation_in_current_consolidation_epoch`: the base state
+-- passes every gate unchanged, so the run takes the success arm exactly as
+-- the plainest upstream basic test does.
+open EthCLLib.Internal in
+theorem_vectors_manual processConsolidationRequest_run_consolidation_success
+  pre := consolidationState
   req := baseRequest
 
 end EthCLSpecs.Proofs.Fulu

@@ -90,6 +90,16 @@ theorem_vectors processConsolidationRequest_run_source_exited
 theorem_vectors processConsolidationRequest_run_target_exited
 theorem_vectors processConsolidationRequest_run_shard_period_not_passed
 theorem_vectors processConsolidationRequest_run_source_pending_withdrawal
+-- The two success arms: the switch arm rewrites the source's withdrawal
+-- credential prefix to compounding and queues the balance above the minimum,
+-- and the success arm reserves churn and appends the pending consolidation.
+-- The switch carries no churn hypothesis, so its line runs at both presets;
+-- the success line stays minimal-only, where the churn hypothesis can hold.
+-- Both searches answer notFound until the theorems carry manual terms: the
+-- request's pubkeys must sit in the registry, and no draw or built state
+-- puts them there.
+theorem_vectors processConsolidationRequest_run_switch_to_compounding presets minimal mainnet
+theorem_vectors processConsolidationRequest_run_consolidation_success
 
 theorem_vectors characterized
 theorem_vectors survey
