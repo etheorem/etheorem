@@ -203,6 +203,11 @@ Re-exports:
   (`NodeTrace.blockStates_origin`, `onBlock_run_ok_currentSlot`).
 * `EthCLSpecs.Proofs.Heze.Committees`: the inherited committee functions
   partition the active set per epoch (`getBeaconCommittee_partition`).
+* `EthCLSpecs.Proofs.Heze.CommitteeFrame`: two states with one activity and one seed mix at
+  an epoch have one set of attesting indices there (`getAttestingIndices_eq_of_comView`). A
+  block keeps both up to and inside its attestation loop. So it sets the target flag of each
+  attesting index of its attestations, as its start state computes them
+  (`processBlock_sets_flag`).
 * The stake-drift modules, which `StakeDrift` assembles. `DriftMath` and `DriftDefs` hold
   the arithmetic and the reads (`absDiff`, `EbTrack`, `moveN`). `DriftBound` bounds the drift
   by facts at the end of a run (`drift_le_of_endFacts`). `DriftInv` states the invariant
@@ -233,6 +238,12 @@ Re-exports:
   whose finalized block is on the EMPTY side of `r`. Each later head is not below `full r`,
   or a root collision exists, or the later justified checkpoint conflicts with that
   finalized checkpoint (`honestNode_finality_lock`).
+* `EthCLSpecs.Proofs.Heze.FinalizationProgress`: a chain that includes the honest votes of
+  three epochs finalizes the first one (`HonestChain.finalizes`). Each honest validator that
+  the target test can count has a placed vote (`PlacedVote`), and these validators hold two
+  thirds of the total active balance. Then each weigh step passes its previous-epoch test
+  (`HonestChain.weigh`). When the justified block is on the EMPTY side of `r`, no head is below
+  `full r` (`heads_stay_of_justified_empty`).
 * `EthCLSpecs.Proofs.Heze.ForkPoint`: two runs from one state split at their fork point `st₀`
   (`ForkAt`, `ChainRun.forkAt`). The fork point ends the longest common prefix of their block
   messages.
@@ -386,6 +397,12 @@ Re-exports:
   rotation, and the deposits. The callers of `addValidatorToRegistry` keep a target bit of
   `false`. An epoch step clears the current bit, and a previous bit after it was a current
   bit before it (`processEpoch_part`).
+* `EthCLSpecs.Proofs.Heze.ParticipationKeep`: a set target flag stays set inside one epoch
+  (`ChainRun.targetFlag_keep`). `processAttestation` only adds flags, and every other function
+  of a block step or of a slot step inside the epoch keeps them.
+* `EthCLSpecs.Proofs.Heze.ParticipationRotate`: the epoch step moves the set current flag of a
+  registry index to the previous list (`processEpoch_moves`, `SlotStep.targetFlag_moves`). The
+  deposits write past every registry index, so they keep that flag.
 * `EthCLSpecs.Proofs.Heze.PayloadRace`: the race between the EMPTY and the FULL node of a
   block from slot `N + 2` on. The model has validators, latest messages, and views
   (`sideWeight`, `ViewOk`). While the honest balance that has voted is more than the
@@ -501,6 +518,16 @@ Re-exports:
   the link stakes, plus the shortfall of the total active balance, are at most
   `driftBound`. The bound reads `st₀`, the churn bounds, and the bounds of the total active
   balance, of the effective balances, and of the inactivity scores along the run.
+* `EthCLSpecs.Proofs.Heze.StoreChainState`: a store traces to the anchor of a chain run and
+  receives a block of the run. Then the store holds the state of the run after that block,
+  unless two blocks share a root (`onBlock_stores_chainState`). Each block of a validated run names the last block
+  before it as its parent (`ChainRun.linked`). Two runs from one state with one list of blocks
+  and one end slot end in one state (`ChainRun.det_blocks`).
+* `EthCLSpecs.Proofs.Heze.StoreFinality`: an honest store finalizes `E₁` from the first slot
+  of `E₁ + 4` (`honestStore_finalizes`). It receives the block of the last slot of `E₁ + 3`
+  before that slot. The pull-up of that block finalizes `E₁` or later
+  (`HonestChain.pullup_finalizes`). The tick that reaches the first slot of an epoch realizes
+  the unrealized finalized checkpoint (`onTick_realizes`).
 * `EthCLSpecs.Proofs.Heze.StorePure`: every state that the store holds is the uncached box
   of a plain value, at the end of a trace from the anchor store of `getForkchoiceStore`
   over an uncached anchor (`StorePure.anchor`, `NodeTrace.storePure`). The `blockStates`
