@@ -20,5 +20,6 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Balances`: `increaseBalance` and `decreaseBalance`, each with an exact
   run equation and an out-of-range reject, plus `increaseBalance`'s overflow reject and its
   exact stored sum, and `decreaseBalance`'s truncating difference.
-* `EthCLSpecs.Proofs.Fulu.ConsolidationRequest`: `processConsolidationRequest`'s churn gate.
+* `EthCLSpecs.Proofs.Fulu.ConsolidationRequest`: `processConsolidationRequest`'s twelve
+  request gates, one theorem per gate from G1 through G12.
 -/

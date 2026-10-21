@@ -1,9 +1,19 @@
 # Proof-coverage baseline. Rewrite with `just proof-coverage-update`.
 # Every line is a claim `just proof-coverage-check` enforces exactly.
+tier1 EthCLSpecs.Fulu.computeConsolidationEpochAndUpdateChurn
+tier1 EthCLSpecs.Fulu.computeEpochAtSlot
 tier1 EthCLSpecs.Fulu.computeStartSlotAtEpoch
 tier1 EthCLSpecs.Fulu.currentEpochOf
 tier1 EthCLSpecs.Fulu.getConsolidationChurnLimit
+tier1 EthCLSpecs.Fulu.hasCompoundingWithdrawalCredential
+tier1 EthCLSpecs.Fulu.hasExecutionWithdrawalCredential
+tier1 EthCLSpecs.Fulu.hasNotInitiatedExit
+tier1 EthCLSpecs.Fulu.isActiveValidator
+tier1 EthCLSpecs.Fulu.isValidSwitchToCompoundingRequest
+tier1 EthCLSpecs.Fulu.modValidator
+tier1 EthCLSpecs.Fulu.passedShardCommitteePeriod
 tier1 EthCLSpecs.Fulu.processConsolidationRequest
+tier1 EthCLSpecs.Fulu.validatorIndexByPubkey?
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot
 tier1 EthCLSpecs.Gloas.computeExitEpochAndUpdateChurn
 tier1 EthCLSpecs.Gloas.currentEpochOf

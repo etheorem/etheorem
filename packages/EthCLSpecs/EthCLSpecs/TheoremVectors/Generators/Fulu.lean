@@ -70,10 +70,26 @@ theorem_vectors increaseBalance_run_overflow presets minimal mainnet
 -- fixes `delta` beside it. The random searcher caps itself at mainnet over
 -- a state-typed container, so this line stays minimal-only.
 theorem_vectors increaseBalance_run_no_wrap
+-- The stage-6 gate theorems take one plain line each, in gate order. G1 runs
+-- at both presets because it precedes the churn gate. G2 and G4 to G12 are
+-- minimal-only: the queue cap is 64 at minimal and 262144 at mainnet, and a
+-- churn limit above `minActivationBalance` needs a total active balance of
+-- about 18.9 M ETH at mainnet.
+theorem_vectors processConsolidationRequest_run_same_pubkeys presets minimal mainnet
+theorem_vectors processConsolidationRequest_run_queue_full
 -- The stage-5 spike: the churn gate writes the first operations cases.
 -- G3's state condition, churn 0 at the genesis builders, holds at both
 -- presets, so it is the easiest branch to meet.
 theorem_vectors processConsolidationRequest_run_churn_too_low presets minimal mainnet
+theorem_vectors processConsolidationRequest_run_unknown_pubkey
+theorem_vectors processConsolidationRequest_run_source_not_authorized
+theorem_vectors processConsolidationRequest_run_target_not_compounding
+theorem_vectors processConsolidationRequest_run_source_inactive
+theorem_vectors processConsolidationRequest_run_target_inactive
+theorem_vectors processConsolidationRequest_run_source_exited
+theorem_vectors processConsolidationRequest_run_target_exited
+theorem_vectors processConsolidationRequest_run_shard_period_not_passed
+theorem_vectors processConsolidationRequest_run_source_pending_withdrawal
 
 theorem_vectors characterized
 theorem_vectors survey
