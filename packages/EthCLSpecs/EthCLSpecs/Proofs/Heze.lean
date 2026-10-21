@@ -13,6 +13,7 @@ import EthCLSpecs.Proofs.Heze.CheckpointInvariants
 import EthCLSpecs.Proofs.Heze.CheckpointOrd
 import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.ClockedTrace
+import EthCLSpecs.Proofs.Heze.CommitteeFrame
 import EthCLSpecs.Proofs.Heze.Committees
 import EthCLSpecs.Proofs.Heze.DriftAttest
 import EthCLSpecs.Proofs.Heze.DriftBlock
