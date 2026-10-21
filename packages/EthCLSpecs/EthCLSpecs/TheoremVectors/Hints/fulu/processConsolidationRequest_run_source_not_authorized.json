@@ -1,0 +1,8 @@
+{"theorem": "EthCLSpecs.Proofs.Fulu.processConsolidationRequest_run_source_not_authorized",
+ "fingerprint": "0xfd7123fc4a4f0d4f",
+ "entries":
+ [{"witnessSearcher": "manual",
+   "scalars": {},
+   "preset": "minimal",
+   "fingerprint": "0xfd7123fc4a4f0d4f",
+   "disjunctIndex": 0}]}

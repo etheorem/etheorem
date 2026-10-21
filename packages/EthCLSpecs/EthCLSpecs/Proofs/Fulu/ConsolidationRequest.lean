@@ -21,8 +21,9 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu
 
-open EthCLLib.Spec (HasherTag vecSliceEq)
+open EthCLLib.Spec (HasherTag vecSliceEq SSZList)
 open EthCLSpecs.Fulu (Preset Config BLSPubkey BeaconState ConsolidationRequest Gwei Validator
+  Bytes32 Epoch ParticipationFlags PendingConsolidation PendingPartialWithdrawal
   computeConsolidationEpochAndUpdateChurn computeEpochAtSlot getConsolidationChurnLimit
   hasCompoundingWithdrawalCredential hasExecutionWithdrawalCredential hasNotInitiatedExit
   isActiveValidator modValidator modifyState passedShardCommitteePeriod
@@ -168,6 +169,110 @@ private theorem processConsolidationRequest_run_validityLadder [Preset] [HasherT
   rw [hs, ht]
   rfl
 
+/-! ## The manual witnesses
+
+Ten of the gate theorems below carry `theorem_vectors_manual` registrations
+(`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), and this block holds the one state
+and the one request the registrations name. Each gate's patch is a named
+argument to `consolidationState`, because the patched field sits inside an
+`SSZList` a record update cannot reach. The def sits once, before the first
+theorem that uses it, and every vector length comes from the preset constants,
+so G1's line runs the same state at both presets. -/
+
+/-- The pubkey of the consolidation witness validator at `index`: the index
+byte, replicated across all 48 bytes. The five witness pubkeys (indexes 0-4)
+and the unknown index 9 are pairwise distinct, which is all the registry
+lookups and the pubkey gates read. No signature check runs on these bytes;
+the gates compare them byte by byte. -/
+private def basePubkey (index : Nat) : BLSPubkey :=
+  Vector.ofFn (fun _ : Fin 48 => UInt8.ofNat index)
+
+/-- The withdrawal credentials of a consolidation witness validator: the
+prefix byte at position 0, zeros elsewhere, so the tail matches the zero
+execution address the witness requests carry. -/
+private def baseCredentials (tag : UInt8) : Bytes32 :=
+  Vector.ofFn (fun i : Fin 32 => if i.val == 0 then tag else 0)
+
+/-- A consolidation witness validator: active from epoch 0 with no exit
+initiated, at the given credential prefix and effective balance. The exit
+and activation knobs carry the per-gate patches. -/
+private def consolidationValidator [Preset] (tag : UInt8) (index : Nat)
+    (activation : Epoch := 0) (exit : Epoch := EthCLSpecs.Fulu.Const.farFutureEpoch)
+    (balance : Gwei := 32000000000) : Validator :=
+  { pubkey := basePubkey index
+    withdrawalCredentials := baseCredentials tag
+    effectiveBalance := balance
+    slashed := false
+    activationEligibilityEpoch := activation
+    activationEpoch := activation
+    exitEpoch := exit
+    withdrawableEpoch := EthCLSpecs.Fulu.Const.farFutureEpoch }
+
+/-- The consolidation base state. Five active validators: three compounding
+validators at 2048 ETH (indexes 0-2), the consolidation source at index 3
+with eth1 credentials, and the consolidation target at index 4 with
+compounding credentials. The total active balance of 6208 ETH puts the
+consolidation churn limit at 66 ETH at minimal, above `minActivationBalance`,
+so the churn gate passes. The slot sits at epoch 65, past the minimal
+`shardCommitteePeriod` of 64, so the shard-period gate passes. The queues
+start empty; the knobs patch one field per gate theorem. -/
+private def consolidationState [Preset]
+    (srcTag : UInt8 := EthCLSpecs.Fulu.Const.eth1AddressWithdrawalPrefix)
+    (tgtTag : UInt8 := EthCLSpecs.Fulu.Const.compoundingWithdrawalPrefix)
+    (srcActivation : Epoch := 0) (tgtActivation : Epoch := 0)
+    (srcExit : Epoch := EthCLSpecs.Fulu.Const.farFutureEpoch)
+    (tgtExit : Epoch := EthCLSpecs.Fulu.Const.farFutureEpoch)
+    (srcPending : Gwei := 0) (queue : Nat := 0) : BeaconState :=
+  let vs : SSZList Validator EthCLSpecs.Fulu.Const.validatorRegistryLimit :=
+    ((default : SSZList Validator EthCLSpecs.Fulu.Const.validatorRegistryLimit)
+      |>.push (consolidationValidator EthCLSpecs.Fulu.Const.compoundingWithdrawalPrefix 0
+        (balance := 2048000000000))
+      |>.push (consolidationValidator EthCLSpecs.Fulu.Const.compoundingWithdrawalPrefix 1
+        (balance := 2048000000000))
+      |>.push (consolidationValidator EthCLSpecs.Fulu.Const.compoundingWithdrawalPrefix 2
+        (balance := 2048000000000))
+      |>.push (consolidationValidator srcTag 3 srcActivation srcExit)
+      |>.push (consolidationValidator tgtTag 4 tgtActivation tgtExit))
+  let bs : SSZList Gwei EthCLSpecs.Fulu.Const.validatorRegistryLimit :=
+    ((default : SSZList Gwei EthCLSpecs.Fulu.Const.validatorRegistryLimit)
+      |>.push 2048000000000 |>.push 2048000000000 |>.push 2048000000000
+      |>.push 32000000000 |>.push 32000000000)
+  -- the per-validator lists the epoch step indexes by validator index:
+  -- one zero entry per validator, the way the fork's genesis builder fills them
+  let flags : SSZList ParticipationFlags EthCLSpecs.Fulu.Const.validatorRegistryLimit :=
+    (Array.range 5).foldl (fun xs _ => xs.push 0) default
+  let scores : SSZList UInt64 EthCLSpecs.Fulu.Const.validatorRegistryLimit :=
+    (Array.range 5).foldl (fun xs _ => xs.push 0) default
+  let partials :
+      SSZList PendingPartialWithdrawal EthCLSpecs.Fulu.Const.pendingPartialWithdrawalsLimit :=
+    if srcPending == 0 then default
+    else
+      ((default : SSZList PendingPartialWithdrawal
+          EthCLSpecs.Fulu.Const.pendingPartialWithdrawalsLimit).push
+        { validatorIndex := 3, amount := srcPending
+          withdrawableEpoch := EthCLSpecs.Fulu.Const.farFutureEpoch })
+  let consolidations :
+      SSZList PendingConsolidation EthCLSpecs.Fulu.Const.pendingConsolidationsLimit :=
+    (Array.range queue).foldl (fun xs _ => xs.push default) default
+  { (default : BeaconState) with
+    slot := UInt64.ofNat (65 * EthCLSpecs.Fulu.Const.slotsPerEpoch)
+    validators := vs
+    balances := bs
+    previousEpochParticipation := flags
+    currentEpochParticipation := flags
+    inactivityScores := scores
+    pendingPartialWithdrawals := partials
+    pendingConsolidations := consolidations }
+
+/-- The consolidation request the base state answers: the source and target
+validators at indexes 3 and 4, and the zero execution address their
+credentials carry. Every container carries the `Preset` binder, preset-free
+fields included (`FRAMEWORK_ARCHITECTURE.md` §5). -/
+private def baseRequest [Preset] : ConsolidationRequest :=
+  { sourceAddress := default
+    sourcePubkey := basePubkey 3
+    targetPubkey := basePubkey 4 }
+
 /-- **Same pubkeys.** Equal source and target pubkeys take this gate's arm, so the run
 returns with the state unchanged. The switch-invalid hypothesis excludes the one way a
 same-pubkey request would change the state. The six `switch_to_compounding` tests reach this
@@ -201,6 +306,16 @@ theorem processConsolidationRequest_run_same_pubkeys [Preset] [HasherTag] [Confi
   rw [if_pos hsame]
   rfl
 
+-- The manual witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), mirroring
+-- `test_incorrect_same_source_target`: the request reuses the target's pubkey,
+-- and the target's compounding credentials fail the switch's eth1 check.
+open EthCLLib.Internal in
+theorem_vectors_manual processConsolidationRequest_run_same_pubkeys
+  pre := consolidationState
+  req := { sourceAddress := default, sourcePubkey := basePubkey 4,
+           targetPubkey := basePubkey 4 }
+
 /-- **Queue full.** The pending-consolidations queue at its cap fails the queue gate. The run
 returns with the state unchanged, because the gate's arm is `pure ()`.
 
@@ -229,6 +344,14 @@ theorem processConsolidationRequest_run_queue_full [Preset] [HasherTag] [Config]
     exact hfull
   rw [if_pos hqueue]
   rfl
+
+-- The manual witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), mirroring
+-- `test_incorrect_exceed_pending_consolidations_limit`.
+open EthCLLib.Internal in
+theorem_vectors_manual processConsolidationRequest_run_queue_full
+  pre := consolidationState (queue := EthCLSpecs.Fulu.Const.pendingConsolidationsLimit)
+  req := baseRequest
 
 /-- **Consolidation churn too low.** With distinct source and target pubkeys and room in the
 pending-consolidations queue, a consolidation churn limit at or below `minActivationBalance`
@@ -350,6 +473,15 @@ theorem processConsolidationRequest_run_source_not_authorized [Preset] [HasherTa
   rw [if_pos (negCond_true hgate)]
   rfl
 
+-- The manual witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), mirroring
+-- `test_incorrect_source_with_bls_credential`: the source carries the BLS
+-- prefix, so its credential fails the execution-credential check.
+open EthCLLib.Internal in
+theorem_vectors_manual processConsolidationRequest_run_source_not_authorized
+  pre := consolidationState (srcTag := EthCLSpecs.Fulu.Const.blsWithdrawalPrefix)
+  req := baseRequest
+
 /-- **Target not compounding.** With both pubkeys in the registry and the source authorized,
 a target whose withdrawal credential prefix is not compounding fails the target-credential
 gate. The run returns with the state unchanged, because the gate's arm is `pure ()`.
@@ -381,6 +513,15 @@ theorem processConsolidationRequest_run_target_not_compounding [Preset] [HasherT
   -- G6: the target's prefix is not compounding, so the gate fires.
   rw [if_pos (negCond_true hgate)]
   rfl
+
+-- The manual witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), mirroring
+-- `test_incorrect_target_with_eth1_credential`: the target carries the eth1
+-- prefix, so its credential fails the compounding check.
+open EthCLLib.Internal in
+theorem_vectors_manual processConsolidationRequest_run_target_not_compounding
+  pre := consolidationState (tgtTag := EthCLSpecs.Fulu.Const.eth1AddressWithdrawalPrefix)
+  req := baseRequest
 
 /-- **Source inactive.** With both pubkeys in the registry and the target compounding, a
 source inactive in the current epoch fails the activity gate. The run returns with the state
@@ -414,6 +555,14 @@ theorem processConsolidationRequest_run_source_inactive [Preset] [HasherTag] [Co
   -- G7: the source is inactive in `computeEpochAtSlot pre.slot`, so the gate fires.
   rw [if_pos (negCond_true hgate)]
   rfl
+
+-- The manual witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), mirroring
+-- `test_incorrect_inactive_source`.
+open EthCLLib.Internal in
+theorem_vectors_manual processConsolidationRequest_run_source_inactive
+  pre := consolidationState (srcActivation := EthCLSpecs.Fulu.Const.farFutureEpoch)
+  req := baseRequest
 
 /-- **Target inactive.** With both pubkeys in the registry and the source active, a target
 inactive in the current epoch fails the activity gate. The run returns with the state
@@ -450,6 +599,14 @@ theorem processConsolidationRequest_run_target_inactive [Preset] [HasherTag] [Co
   -- G8: the target is inactive in `computeEpochAtSlot pre.slot`, so the gate fires.
   rw [if_pos (negCond_true hgate)]
   rfl
+
+-- The manual witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), mirroring
+-- `test_incorrect_inactive_target`.
+open EthCLLib.Internal in
+theorem_vectors_manual processConsolidationRequest_run_target_inactive
+  pre := consolidationState (tgtActivation := EthCLSpecs.Fulu.Const.farFutureEpoch)
+  req := baseRequest
 
 /-- **Source exited.** With both pubkeys in the registry and both validators active, a source
 that has initiated its exit fails the exit gate. The run returns with the state unchanged,
@@ -488,6 +645,15 @@ theorem processConsolidationRequest_run_source_exited [Preset] [HasherTag] [Conf
   -- G9: the source has initiated its exit, so the gate fires.
   rw [if_pos (negCond_true hgate)]
   rfl
+
+-- The manual witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), mirroring
+-- `test_incorrect_exited_source`: the patch sets exit epoch 66, one past the
+-- state's epoch 65, so the source stays active but its exit has begun.
+open EthCLLib.Internal in
+theorem_vectors_manual processConsolidationRequest_run_source_exited
+  pre := consolidationState (srcExit := 66)
+  req := baseRequest
 
 /-- **Target exited.** With both pubkeys in the registry and the source's exit uninitiated, a
 target that has initiated its exit fails the exit gate. The run returns with the state
@@ -528,6 +694,15 @@ theorem processConsolidationRequest_run_target_exited [Preset] [HasherTag] [Conf
   -- G10: the target has initiated its exit, so the gate fires.
   rw [if_pos (negCond_true hgate)]
   rfl
+
+-- The manual witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), mirroring
+-- `test_incorrect_exited_target`: the patch sets exit epoch 66, one past the
+-- state's epoch 65, so the target stays active but its exit has begun.
+open EthCLLib.Internal in
+theorem_vectors_manual processConsolidationRequest_run_target_exited
+  pre := consolidationState (tgtExit := 66)
+  req := baseRequest
 
 /-- **Shard period not passed.** With both pubkeys in the registry and neither validator
 exiting, a source short of `shardCommitteePeriod` epochs of activity fails the tenure gate.
@@ -572,6 +747,15 @@ theorem processConsolidationRequest_run_shard_period_not_passed [Preset] [Hasher
   -- G11: the source is short of the shard-committee period, so the gate fires.
   rw [if_pos (negCond_true hgate)]
   rfl
+
+-- The manual witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), mirroring
+-- `test_incorrect_source_not_active_long_enough`: the patch sets activation
+-- epoch 2, so `2 + shardCommitteePeriod` (64 at minimal) passes epoch 65.
+open EthCLLib.Internal in
+theorem_vectors_manual processConsolidationRequest_run_shard_period_not_passed
+  pre := consolidationState (srcActivation := 2)
+  req := baseRequest
 
 /-- **Source pending withdrawal.** With both pubkeys in the registry and the source past its
 shard-committee period, a nonzero pending partial-withdrawal total fails the last gate. The
@@ -619,5 +803,14 @@ theorem processConsolidationRequest_run_source_pending_withdrawal [Preset] [Hash
   -- G12: the pending total is nonzero, so the gate fires.
   rw [if_pos hgate]
   rfl
+
+-- The manual witness for the theorem above
+-- (`THEOREM_VECTORS_ARCHITECTURE.md` §14.6), mirroring
+-- `test_incorrect_source_has_pending_withdrawal`: the patch queues one
+-- 1-ETH partial withdrawal at the source index.
+open EthCLLib.Internal in
+theorem_vectors_manual processConsolidationRequest_run_source_pending_withdrawal
+  pre := consolidationState (srcPending := 1000000000)
+  req := baseRequest
 
 end EthCLSpecs.Proofs.Fulu

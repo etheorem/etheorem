@@ -1,0 +1,13 @@
+{"theorem": "EthCLSpecs.Proofs.Fulu.processConsolidationRequest_run_same_pubkeys",
+ "fingerprint": "0x3cb4037b67a76fdb",
+ "entries":
+ [{"witnessSearcher": "manual",
+   "scalars": {},
+   "preset": "minimal",
+   "fingerprint": "0xdc1579d4ebad390b",
+   "disjunctIndex": 0},
+  {"witnessSearcher": "manual",
+   "scalars": {},
+   "preset": "mainnet",
+   "fingerprint": "0x3cb4037b67a76fdb",
+   "disjunctIndex": 0}]}

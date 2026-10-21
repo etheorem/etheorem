@@ -1,0 +1,16 @@
+{"theorem": "EthCLSpecs.Proofs.Fulu.processConsolidationRequest_run_target_exited",
+ "fingerprint": "0xf1e1e18cf76554a7",
+ "entries":
+ [{"witnessSearcher": "manual",
+   "scalars": {},
+   "preset": "minimal",
+   "fingerprint": "0xf1e1e18cf76554a7",
+   "disjunctIndex": 0},
+  {"witnessSearcher": "base",
+   "scalars": {},
+   "preset": "minimal",
+   "notFoundReason":
+   "notFound after manual, bitVec, built, random (no grid step of 4 satisfied the disjunct; no draw satisfied the disjunct within 64 draws)",
+   "notFound": ["manual", "bitVec", "built", "random"],
+   "fingerprint": "0xf1e1e18cf76554a7",
+   "disjunctIndex": 1}]}
