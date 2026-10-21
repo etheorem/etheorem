@@ -2283,3 +2283,34 @@ the two contracts write records at the `characterized` clause's minimal run.
 - **The direct path is untouched.** The projection arms only when the
   direct render returned `none`. Every previously written record keeps its
   bytes, and the toy `.eq` pins keep theirs.
+
+## Theorem vectors, the consolidation gate prefix
+
+Two rules the `processConsolidationRequest` theorem family follows: how a
+gate theorem's hypotheses keep its vector on its branch, and which preset a
+theorem runs at.
+
+- **A gate theorem carries every earlier gate's passing condition as a
+  hypothesis, then its own gate's failing condition.** The check runs
+  compiled `decide` on the hypotheses, so a recorded witness is guaranteed
+  to reach the gate the theorem names. Without the prefix the theorem is
+  stronger, but its witness may stop at an earlier gate, and the vector
+  would test a branch its name does not say. Hypotheses are stated over
+  plain `BeaconState` fields where a plain form exists. The two pubkey
+  lookups are stated as found-ness (`findIdx? … ≠ none`) over a composed
+  pubkey read, with private bridge lemmas tying it to the index read the
+  shared ladder lemma (`processConsolidationRequest_run_validityLadder`)
+  states.
+
+- **A theorem runs at a preset only when its hardest hypothesis is
+  reachable there.** The churn gate needs a consolidation churn limit above
+  `minActivationBalance`, which needs about 18.9 M ETH of total active
+  balance at mainnet and 5120 ETH at minimal, so every theorem with the
+  churn gate in its prefix runs minimal only. The queue gate needs a full
+  pending-consolidations queue, 262144 entries at mainnet against 64 at
+  minimal, so it runs minimal only. The same-pubkeys gate, the churn gate
+  itself, and the switch theorem sit before both, so they run at both
+  presets. The fork's `genesis` builder gives a consolidation churn of 0 at
+  both presets, so the gate theorems past the churn gate draw their
+  witnesses from the file's hand-built `consolidationState`, not from the
+  built searcher.

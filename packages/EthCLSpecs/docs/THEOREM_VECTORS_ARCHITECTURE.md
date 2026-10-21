@@ -325,6 +325,7 @@ warning into an error.
 | `Format.lean` | the `VectorFormat` structure and `RenderEnv` | `Record`, `ForkBinding` |
 | `Formats/Function.lean` | the function format | `Format`, `Yaml` |
 | `Formats/Pyspec.lean` | the pyspec format and its `runCase` check | `Format`, `Yaml`, `PySpecTests.Driver` |
+| `Formats/Operations.lean` | the operations format and its `runCase` check | `Format`, `Formats/Pyspec`, `PySpecTests.Interface`, `PySpecTests.Driver` |
 | `Outcome.lean` | the per-theorem outcome lines | `Types`, `Lean.Json` |
 | `Report.lean` | `report.md` from outcomes and records | `Outcome`, `Record` |
 | `Command.lean` | `theorem_vectors_fork`, `theorem_vectors` with its discovery, named, and `skip` forms | everything above except `Formats`, `Report`; `Internal.ProofLedger` for the two tags |
@@ -381,7 +382,8 @@ them. A generator file imports nothing from another fork.
          └────►  Probe ◄── Format ───┼──► Report     │
                    │          │      │               │
           ┌────────┼───────┐  ├─ Formats/Function ◄──┤
-          ▼        ▼       ▼  └─ Formats/Pyspec ◄────┘
+          │        │       │  ├─ Formats/Pyspec ◄────┘
+          ▼        ▼       ▼  └─ Formats/Operations
     Witness/*   Preset   Execute
           │        │       │
           └────────┴───────┴──────► Command
@@ -1154,13 +1156,13 @@ mapping on the field table-skips such a record.
 
 ### 13.4 The pyspec format
 
-Upstream defines one case layout per runner (§13.6), and each layout
+Upstream defines one case layout per runner (§13.7), and each layout
 needs its own `VectorFormat` value with its own `accepts`, `render`, and
 `check`. The value this section describes, `Formats.pyspec`, writes one
 layout: the `epoch_processing` case, a pre-state and a post-state. The
 name "the pyspec format" means this value throughout this document.
 Another runner, such as `operations` with its operand part, gets a new
-value beside it (§13.6's closing rule).
+value beside it (§13.7's closing rule).
 
 `Formats.pyspec` accepts a `.runOk` or `.runError` record whose target has
 a handler in `binding.handlerOf` and whose only input is the state
@@ -1179,7 +1181,7 @@ Python harness decompresses before it hands paths to the server, so a
 one-line switch in `harness.py` accepts either suffix and snappy stays out of
 Lean. The YAML writer renders `meta.yaml` as one flow line, the form the
 upstream dumper writes for a map of scalars and the one every client's
-runner already reads (§12.3). §13.6 lists every upstream pyspec format and
+runner already reads (§12.3). §13.7 lists every upstream pyspec format and
 this repository's coverage of each.
 
 ### 13.5 The pyspec check
@@ -1192,7 +1194,45 @@ flagged pass fails the same way: a bug-smell reject never ships green,
 whether or not the record's error column holds the same class. This
 replays the vector through the same path the upstream vectors take.
 
-### 13.6 The upstream pyspec formats
+### 13.6 The operations format
+
+`Formats.operations` writes the `operations` runner's case layout. The path
+layout is the pyspec format's (§13.4). The case parts differ: one operand
+part sits between `pre.ssz` and `post.ssz`.
+
+`Formats.operations` accepts a `.runOk` or `.runError` record whose target's
+`handlerOf` maps to `("operations", h)` and whose input list is exactly two:
+the binding's state type and one operand. The render pass finds the state
+input by type, never by position.
+
+```
+<outDir>/formats/pyspec/<fork>/<preset>/<runner>/<handler>/pyspec_tests/<thm>_<case>/
+  pre.ssz
+  <operand>.ssz      the operand part, named by `OpKind.inputName`
+  post.ssz           absent for .runError, which marks an invalid case
+  meta.yaml          {bls_setting: 2, theorem: <name>}
+```
+
+The operand part's file name comes from the `OpKind.inputName` table, never
+from the handler string. Two examples: `block_header` writes `block.ssz`,
+and `bls_to_execution_change` writes `address_change.ssz`.
+
+The two formats never accept the same record. A two-input record has no part
+in the pyspec layout, and a single-state record has no part here.
+`Formats.pyspec` keeps its single-state rule unchanged.
+
+The check rebuilds a `CaseRequest` from the rendered files with the operand
+bytes. It replays the request through `runCase` with the fork's
+`ForkInterface`, the path the upstream vectors take (§17.4). A result with
+`passed = false` is `CheckResult.failed` with the driver's detail. The
+flagged-pass rule of §13.5 applies unchanged: a bug-smell reject never ships
+green.
+
+The Fulu `consolidation_request` handler is the live consumer today; its 18
+rendered cases (15 minimal, 3 mainnet) pass the Python harness and the client
+harness.
+
+### 13.7 The upstream pyspec formats
 
 Upstream defines one test format per runner in consensus-specs'
 `tests/formats/`. The vocabulary there is: a **runner** owns a format; a
@@ -1222,7 +1262,7 @@ take the shape.
 | `light_client` | SSZ + YAML | no | no | never (out of scope, the comment in `harness.py` names it) |
 | `merkle_proof` | SSZ + YAML | no | no | never (out of scope) |
 | `networking` | SSZ + YAML | no | no | never (out of scope) |
-| `operations` | `pre.ssz`, one operand part (`block.ssz`, `attestation.ssz`, …), `post.ssz`, `meta.yaml` | yes | no, no value writes the operand part yet | operation-handler run theorems over the state and one operand; an operand of a §1.2 block type also needs a searcher |
+| `operations` | `pre.ssz`, one operand part (`block.ssz`, `attestation.ssz`, …), `post.ssz`, `meta.yaml` | yes | yes, for handlers with a `handlerOf` row | operation-handler run theorems over the state and one operand; an operand of a §1.2 block type also needs a searcher |
 | `random` | `pre.ssz`, `blocks_*.ssz`, `post.ssz`, `meta.yaml` (`{blocks_count, bls_setting}`) | yes | no | never (needs generated blocks) |
 | `rewards` | `pre.ssz`, per-delta outputs (`source_deltas.ssz`, `target_deltas.ssz`, `head_deltas.ssz`, `inactivity_penalty_deltas.ssz`), `meta.yaml`, no post | yes | no | none yet |
 | `sanity` | handlers: `blocks` (`blocks_*.ssz`, `meta.yaml`), `slots` (`slots.yaml`, a plain integer) | yes | no | never (needs generated blocks) |
@@ -1235,11 +1275,10 @@ Two shared parts sit outside the table. `meta.yaml` is optional per case
 and carries `bls_setting` among other keys; the generator writes it in the
 one-line flow form (§13.4). `manifest.yaml` is in every upstream case at
 the pin and repeats the path's five segments; the generator writes none,
-because its two formats are not upstream layouts and its paths already
-say what §13.3's and §13.4's files need.
+and its paths already say what §13.3's, §13.4's, and §13.6's files need.
 
 A new upstream shape is one new `VectorFormat` value in `Formats.all`
-(§13.1), never an edit to the existing two. Each value carries the
+(§13.1), never an edit to the existing three. Each value carries the
 writer for its layout: the parts it emits, their file names, and the
 replay its `check` runs.
 
@@ -1723,6 +1762,7 @@ Each row adds code and edits none of the existing pipeline.
 | a preset | one `PresetId` constructor, one entry per binding | `Types.lean`, the bindings |
 | a witness searcher | one `WitnessSearcher` value | the searcher list |
 | a format | one `VectorFormat` value | `Formats.all` |
+| an operation handler | one `handlerOf` row on the fork binding naming `("operations", h)`; a handler with a new operand kind adds one `OpKind` arm and its `inputName` (§13.6) | nothing else |
 | a shape | one `Shape` constructor, one reader arm, one executor row | `Statement`, `Execute` |
 | a manual term | one clause in the theorem's `theorem_vectors_manual` registration (§14.6) | nothing else |
 | a state builder | one `def` in `Builders/<Fork>.lean` | the binding's `builders` list |

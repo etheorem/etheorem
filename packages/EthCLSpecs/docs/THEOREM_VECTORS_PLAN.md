@@ -25,6 +25,7 @@ Contents:
 - Stage 10: client conformance
 - Decision points
 - Risks
+- Closing note
 
 ---
 
@@ -871,3 +872,20 @@ not the client, is what the vectors key on.
   table-skip most Gloas and Heze targets at the first pin. The harness
   is built so a client release bump widens the table; the vectors do
   not move. Decision point D holds the switch.
+
+---
+
+## Closing note
+
+The ten stages built the generator this file sequences. After stage 10
+closed, a second plan landed on top of it, "Pyspec `operations` cases from
+consolidation-request theorems". That plan added `Formats.operations`
+(§13.6 of `THEOREM_VECTORS_ARCHITECTURE.md`), the second written upstream
+pyspec format, and the Fulu `processConsolidationRequest` theorem family as
+its first producer. The family holds fourteen branch theorems in
+`Proofs/Fulu/ConsolidationRequest.lean`, one per arm of the request ladder,
+and they render eighteen cases across both presets. The Python pyspec harness
+and the Prysm harness pass every case, and the Prysm coverage table carries
+the `process_consolidation_request` row. Read §13.6 and §13.7 of
+`THEOREM_VECTORS_ARCHITECTURE.md` for the format, and
+`Proofs/Fulu/ConsolidationRequest.lean` for the theorems.
