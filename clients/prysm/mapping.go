@@ -7,9 +7,11 @@ import (
 
 	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/gloas"
 	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/requests"
 	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
 	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
 	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
 	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 )
 
@@ -21,12 +23,14 @@ const (
 
 // runEnv carries the decoded record inputs to the mapped symbols. The
 // state argument is the one input the coverage row's args role maps to
-// decode-*-state; scalars hold every scalar-uint64 input by name.
+// decode-*-state; req is the one decode-consolidation-request operand;
+// scalars hold every scalar-uint64 input by name.
 type runEnv struct {
 	ctx     context.Context
 	scalars map[string]uint64
 	st      state.BeaconState
 	kind    string
+	req     *enginev1.ConsolidationRequest
 }
 
 // runOutcome is what the mapped symbols produced. callErr is the mapped
@@ -73,6 +77,18 @@ var runners = map[string]runFunc{
 
 	"beacon-chain/core/gloas.InitiateBuilderExit": func(e *runEnv) (runOutcome, error) {
 		err := gloas.InitiateBuilderExit(e.st, primitives.BuilderIndex(e.scalars["builderIndex"]))
+		return runOutcome{callErr: err, st: e.st, kind: e.kind}, nil
+	},
+
+	// The spec function processes one request; the mapped wrapper takes a
+	// slice, so the runner passes the decoded operand as a one-element
+	// slice. Gate paths leave the state unchanged, and the exit paths
+	// mutate it in place, which is what the per-shape compare reads.
+	"beacon-chain/core/requests.ProcessConsolidationRequests": func(e *runEnv) (runOutcome, error) {
+		if e.req == nil {
+			return runOutcome{}, fmt.Errorf("the coverage row decodes no consolidation request operand")
+		}
+		err := requests.ProcessConsolidationRequests(e.ctx, e.st, []*enginev1.ConsolidationRequest{e.req})
 		return runOutcome{callErr: err, st: e.st, kind: e.kind}, nil
 	},
 

@@ -29,6 +29,9 @@
 #     ethpb.BeaconState{Gloas,Fulu}.UnmarshalSSZ, then
 #     state_native.InitializeFromProtoUnsafe{Gloas,Fulu}; the decoded state
 #     is the mapped call's argument
+#   decode-consolidation-request            one input's bytes go through
+#     enginev1.ConsolidationRequest.UnmarshalSSZ; the decoded operand is
+#     the mapped call's request argument
 #   scalar-uint64                           one input's literal, as uint64
 #   ignore                                  root check only, never an argument
 #
@@ -77,6 +80,23 @@ rows:
       preState: ignore
       i: scalar-uint64
       delta: scalar-uint64
+    compare: per-shape
+
+  # ── Fulu: consolidation requests map ────────────────────────────────────
+  # The record's `req` operand is one spec ConsolidationRequest. The mapped
+  # wrapper runs the per-request ladder over a slice, and a one-element
+  # slice is the spec function on that one request. Gate paths leave the
+  # state unchanged, so those records expect the pre state back.
+  - fork: fulu
+    preset: both
+    pyspecName: process_consolidation_request
+    target: EthCLSpecs.Fulu.processConsolidationRequest
+    status: implemented
+    symbols:
+      - beacon-chain/core/requests.ProcessConsolidationRequests
+    args:
+      pre: decode-fulu-state
+      req: decode-consolidation-request
     compare: per-shape
 
   # ── Gloas: tabled skips at this pin ─────────────────────────────────────

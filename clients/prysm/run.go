@@ -12,6 +12,7 @@ import (
 
 	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
 	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
 	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 )
 
@@ -159,8 +160,9 @@ func runRecord(relPath, path, fork, preset, targetDir string, table coverageTabl
 // decodeInputs decodes every record input per its args role and checks
 // every SSZ input's root, the cheap gate every record that runs pays. A
 // root mismatch is a failure that names the input, the file's root, and
-// the computed one. The decoded state argument lands in the runEnv;
-// inputs with the ignore role pay the gate and are never arguments.
+// the computed one. The decoded state and the consolidation-request
+// operand land in the runEnv; inputs with the ignore role pay the gate
+// and are never arguments.
 func decodeInputs(vec *vector, row *coverageRow) (*runEnv, error) {
 	env := &runEnv{ctx: context.Background(), scalars: map[string]uint64{}}
 	// Sorted names keep the root-gate details, and so client-results.json,
@@ -183,6 +185,28 @@ func decodeInputs(vec *vector, row *coverageRow) (*runEnv, error) {
 				return nil, fmt.Errorf("scalar input %s has args role %s, want %s", name, role, argScalarUint64)
 			}
 			env.scalars[name] = in.scalar
+			continue
+		}
+
+		// A consolidation-request operand decodes with its own container
+		// type, pays the same root gate as a state input, and lands in the
+		// run env; it is never the state argument.
+		if role == argDecodeConsolidationRequest {
+			req := &enginev1.ConsolidationRequest{}
+			if err := req.UnmarshalSSZ(in.ssz.SSZ); err != nil {
+				return nil, fmt.Errorf("input %s failed to deserialize: %v", name, err)
+			}
+			root, err := req.HashTreeRoot()
+			if err != nil {
+				return nil, fmt.Errorf("input %s failed to merkleize: %v", name, err)
+			}
+			if root != in.ssz.Root {
+				return nil, fmt.Errorf("root mismatch for input %s: file %s, computed %#x", name, in.ssz.RootHex, root)
+			}
+			if env.req != nil {
+				return nil, fmt.Errorf("the coverage row maps a second consolidation request argument, input %s", name)
+			}
+			env.req = req
 			continue
 		}
 
@@ -259,29 +283,28 @@ func compareRecord(base Result, row *coverageRow, vec *vector, out runOutcome) R
 
 	switch row.Compare {
 	case comparePerShape:
-		if vec.Shape == "runError" {
-			if !vec.Output.errSet {
-				return fail("the runError record carries no error marker")
-			}
+		// The output form picks the path. A record with the error
+		// marker expects the mapped call to reject. A record with an
+		// SSZ output expects a matching post state. The eq shape
+		// carries either form, and runError and runOk each carry one,
+		// so each gate names the shape and the output form.
+		if vec.Output.errSet && (vec.Shape == "runError" || vec.Shape == "eq") {
 			if out.callErr != nil {
 				return pass("error returned as expected")
 			}
 			return fail("the call succeeded, the record expects an error")
 		}
-		if vec.Shape != "runOk" {
-			return fail("per-shape compare has no rule for shape %s", vec.Shape)
+		if vec.Output.ssz != nil && (vec.Shape == "runOk" || vec.Shape == "eq") {
+			if out.callErr != nil {
+				return fail("the call errored: %v", out.callErr)
+			}
+			msg, err := marshaledState(out.kind, out.st)
+			if err != nil {
+				return fail("%v", err)
+			}
+			return compareSSZ(msg, vec, pass, fail, "post state")
 		}
-		if out.callErr != nil {
-			return fail("the call errored: %v", out.callErr)
-		}
-		if vec.Output.ssz == nil {
-			return fail("the runOk record carries no SSZ output")
-		}
-		msg, err := marshaledState(out.kind, out.st)
-		if err != nil {
-			return fail("%v", err)
-		}
-		return compareSSZ(msg, vec, pass, fail, "post state")
+		return fail("per-shape compare has no rule for shape %s", vec.Shape)
 
 	case compareBool:
 		if !shapeSupports(vec.Shape, "eq", "iffTrue") {

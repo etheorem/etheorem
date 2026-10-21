@@ -73,12 +73,14 @@ tests under both builds (`go test ./...` and `go test -tags minimal
 
 ## Corpus status
 
-The first runs over the real corpus (2026-10-15) passed every Fulu record
-and every scalar, bool, and window record that ran. The Gloas-state
-records failed the root gate: Prysm's `BeaconStateGloas` merkleization
-computes a different root from the record's, at both presets, while the
-same gate passes the Fulu states. The stage's bucket triage owns those
-failures, so a real-corpus run exits 1 until it lands.
+The runs over the real corpus pass at both presets, so a run exits 0.
+Every Fulu record runs and passes, including the consolidation requests:
+the runner decodes each record's `ConsolidationRequest` operand and
+feeds it to the mapped wrapper. The Gloas-state records are tabled
+`not-implemented` skips: Prysm's `BeaconStateGloas` merkleization is
+progressive (EIP-7495), the vectors are classic, and the root gate
+cannot pass at this pin. etheorem/etheorem#128 tracks the Gloas switch
+that closes those skips.
 
 ## Files
 

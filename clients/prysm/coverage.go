@@ -26,10 +26,11 @@ const (
 
 // Arg roles the coverage table uses for a record's named inputs.
 const (
-	argDecodeGloasState = "decode-gloas-state"
-	argDecodeFuluState  = "decode-fulu-state"
-	argScalarUint64     = "scalar-uint64"
-	argIgnore           = "ignore"
+	argDecodeGloasState           = "decode-gloas-state"
+	argDecodeFuluState            = "decode-fulu-state"
+	argDecodeConsolidationRequest = "decode-consolidation-request"
+	argScalarUint64               = "scalar-uint64"
+	argIgnore                     = "ignore"
 )
 
 // coverageRow is one row of the coverage table. It maps one
