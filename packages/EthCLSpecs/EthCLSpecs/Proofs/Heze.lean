@@ -229,6 +229,11 @@ Re-exports:
   slashing passes its checks (`onAttesterSlashing_run_ok`, `onAttesterSlashing_new_member`).
   Along a trace from the anchor, an index that no slashing of the trace marks is never in
   the set (`honest_not_equivocating`).
+* `EthCLSpecs.Proofs.Heze.EmptyTarget`: two nodes above one node lie on one chain
+  (`NodeBelow.comparable`). Under `SlotsIncrease`, the block of a node is no later than the
+  block of a node below it (`NodeBelow.slot_le`). The checkpoint block of a head below
+  `empty r` is a stored block (`checkpointBlock_block`). When that block is later than `rb`,
+  it is on the EMPTY side of `r` (`checkpointBlock_emptySide`).
 * `EthCLSpecs.Proofs.Heze.FFGRefines`: a chain run refines Casper FFG (`chain_refines`). The
   abstract chain of the run (`ffgChain`) has the placed votes of the run, the checkpoint roots
   of the run, and the stake and the total of each weigh state (`ChainMatches`). At an epoch
@@ -242,6 +247,14 @@ Re-exports:
   whose finalized block is on the EMPTY side of `r`. Each later head is not below `full r`,
   or a root collision exists, or the later justified checkpoint conflicts with that
   finalized checkpoint (`honestNode_finality_lock`).
+* `EthCLSpecs.Proofs.Heze.FinalizationLiveness`: the censored payload stays off the honest
+  heads (`censored_payload_final`). The window runs from `N + 1` to the first slot of
+  `E₁ + 4` (`FinalitySetting`). A justified block no later than `rb` gives the race step. A
+  justified block past `rb` is on the EMPTY side (`FinalitySetting.justified_empty`). So every
+  honest head of the window avoids `full r` (`heads_avoid_full_window`). At the end of the
+  window, every honest store has finalized `E₁` or later, on the EMPTY side
+  (`honestNodes_finalize_empty`). A later head avoids `full r`, or there is slashing
+  evidence, or two blocks, headers, or attestation data share a root.
 * `EthCLSpecs.Proofs.Heze.FinalizationProgress`: a chain that includes the honest votes of
   three epochs finalizes the first one (`HonestChain.finalizes`). Each honest validator that
   the target test can count has a placed vote (`PlacedVote`), and these validators hold two
@@ -299,6 +312,10 @@ Re-exports:
   the FULL node of `r` and every node below it, or a root collision exists
   (`honestNode_head_avoids_full`). The current slot comes from the wall clock
   (`getCurrentSlot_run_eq_of_window`, `ClockedTrace`).
+* `EthCLSpecs.Proofs.Heze.HonestVoter`: take a checkpoint that the chain of a run justifies
+  past its base. The adversary holds less than two thirds of the stake that weighs the link.
+  Then an honest validator voted for the checkpoint (`justified_honest_voter`). A margin at
+  the anchor and a drift bound give that premise on every run (`allChains_of_drift`).
 * `EthCLSpecs.Proofs.Heze.HonestVoteSide`: an honest vote on a head below `empty r` puts
   its validator on `empty` in `storeSide` (`honest_supported_below_empty`,
   `storeSide_empty_of_below`). The `getAncestor` walk from a node below `empty r` returns
@@ -527,6 +544,12 @@ Re-exports:
   unless two blocks share a root (`onBlock_stores_chainState`). Each block of a validated run names the last block
   before it as its parent (`ChainRun.linked`). Two runs from one state with one list of blocks
   and one end slot end in one state (`ChainRun.det_blocks`).
+* `EthCLSpecs.Proofs.Heze.StoreClock`: the blocks of a head-run store are no later than its
+  slot (`HeadRun.Base.block_slot_le`). A placed vote is from a slot before its block, and
+  its target epoch is the epoch of its slot (`RunVote.slot_lt_block`). Each checkpoint
+  epoch of a traced store is at most the anchor epoch or the epoch of a block event of the
+  trace (`NodeTrace.ckptWit`). Each checkpoint is the anchor checkpoint or is from a later
+  epoch (`NodeTrace.ckptAbove`).
 * `EthCLSpecs.Proofs.Heze.StoreFinality`: an honest store finalizes `E₁` from the first slot
   of `E₁ + 4` (`honestStore_finalizes`). It receives the block of the last slot of `E₁ + 3`
   before that slot. The pull-up of that block finalizes `E₁` or later
