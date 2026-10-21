@@ -511,17 +511,62 @@ theorem fields_of_ckView {a b : BeaconState} (h : ckView (pureState a) = ckView 
   simp only [ckView, Prod.mk.injEq] at h
   exact h
 
-/-- **The honest chain finalizes `E₁`.** The weigh steps at the ends of `E₁ + 1`, `E₁ + 2`, and
-`E₁ + 3` justify `E₁`, `E₁ + 1`, and `E₁ + 2` (`HonestChain.weigh`). At the end of `E₁ + 3`,
-bits 1, 2, and 3 are set, and the previous justified checkpoint is the one that the first
-weigh step wrote: the chain's checkpoint of `E₁`, or of `E₁ + 1`. A test with that checkpoint
-two or three epochs back passes (`finalizeRules_fires`). So the end state has a finalized epoch
-of `E₁` or later. When it is `E₁`, the finalized checkpoint is the chain's checkpoint of `E₁`. -/
-theorem HonestChain.finalizes {hi : Nat} {steps : List ChainStep} {st₀ st : BeaconState}
+/-- The previous justified checkpoint at the end of `E₁ + 3`: the chain's checkpoint of
+`E₁ + 1`, or of `E₁`. -/
+def PrevAtEnd (st₀ : BeaconState) (steps : List ChainStep) (E₁ : Nat)
+    (c : EthCLSpecs.Heze.Checkpoint) : Prop :=
+  (c.epoch.toNat = E₁ + 1 ∧ c.root = chainRoot st₀ steps (E₁ + 1)) ∨
+    (c.epoch.toNat = E₁ ∧ c.root = chainRoot st₀ steps E₁)
+
+omit [Config] [CryptoBackend] in
+/-- **The last weigh step finalizes `E₁`.** Take a state `x` of epoch `E₁ + 3` whose bits 1 and
+2 are set, whose previous justified checkpoint is the chain's checkpoint of `E₁` or `E₁ + 1`, and
+whose current justified epoch is at least `E₁ + 1`. A weigh step on `x` that justifies the
+previous epoch sets bits 1, 2, and 3. Its previous justified checkpoint is two or three epochs
+back, so a finalization test passes (`finalizeRules_fires`). The new finalized checkpoint has an
+epoch of `E₁` or later. With epoch `E₁` it is the chain's checkpoint of `E₁`. -/
+theorem finalize_tail {st₀ : BeaconState} {steps : List ChainStep} {E₁ : Nat} {x : BeaconState}
+    (hb1 : bitGet x.justificationBits 1 = true) (hb2 : bitGet x.justificationBits 2 = true)
+    (hP : PrevAtEnd st₀ steps E₁ x.previousJustifiedCheckpoint)
+    (hC : E₁ + 1 ≤ x.currentJustifiedCheckpoint.epoch.toNat)
+    (hcur : (currentEpochOf (pureState x)).toNat = E₁ + 3) (jc : Bool) :
+    E₁ ≤ (finalizeRules (weighBits x.justificationBits true jc) x.previousJustifiedCheckpoint
+        x.currentJustifiedCheckpoint x.finalizedCheckpoint (currentEpochOf (pureState x))).epoch.toNat ∧
+      ((finalizeRules (weighBits x.justificationBits true jc) x.previousJustifiedCheckpoint
+          x.currentJustifiedCheckpoint x.finalizedCheckpoint
+          (currentEpochOf (pureState x))).epoch.toNat = E₁ →
+        toCp (finalizeRules (weighBits x.justificationBits true jc) x.previousJustifiedCheckpoint
+          x.currentJustifiedCheckpoint x.finalizedCheckpoint (currentEpochOf (pureState x))) =
+          cpOf st₀ steps E₁) := by
+  have g := weighBits_get x.justificationBits true jc
+  have b1 : bitGet (weighBits x.justificationBits true jc) 1 = true := by rw [g.2.1]; rfl
+  have b2 : bitGet (weighBits x.justificationBits true jc) 2 = true := by rw [g.2.2.1, hb1]
+  have b3 : bitGet (weighBits x.justificationBits true jc) 3 = true := by rw [g.2.2.2, hb2]
+  have hop : x.previousJustifiedCheckpoint.epoch.toNat + 2 =
+        (currentEpochOf (pureState x)).toNat ∨
+      x.previousJustifiedCheckpoint.epoch.toNat + 3 = (currentEpochOf (pureState x)).toNat := by
+    rcases hP with ⟨h, -⟩ | ⟨h, -⟩ <;> omega
+  rcases finalizeRules_fires _ _ _ _ _ b1 b2 b3 hop with h | h <;> rw [h]
+  · exact ⟨by omega, fun h' => by omega⟩
+  · rcases hP with ⟨h1, -⟩ | ⟨h1, h2⟩
+    · exact ⟨by omega, fun h' => by omega⟩
+    · refine ⟨by omega, fun _ => ?_⟩
+      unfold toCp cpOf
+      rw [h1, h2]
+
+/-- **The weigh state of `E₁ + 3` on the honest chain.** The weigh steps at the ends of
+`E₁ + 1` and `E₁ + 2` justify `E₁` and `E₁ + 1` (`HonestChain.weigh`). So at the weigh state of
+`E₁ + 3`, bits 1 and 2 are set. The previous justified checkpoint is the one that the first
+weigh step wrote: the chain's checkpoint of `E₁`, or of `E₁ + 1`. The current justified epoch
+is `E₁ + 1` or later. The weigh state passes the test of its previous epoch. -/
+theorem HonestChain.end_facts {hi : Nat} {steps : List ChainStep} {st₀ st : BeaconState}
     {vals : List ValidatorIndex} {honestOf : ValidatorIndex → Bool} {E₁ : Nat}
     (H : HonestChain hi steps st₀ st vals honestOf E₁) :
-    E₁ ≤ st.finalizedCheckpoint.epoch.toNat ∧
-      (st.finalizedCheckpoint.epoch.toNat = E₁ → toCp st.finalizedCheckpoint = cpOf st₀ steps E₁) := by
+    ∃ W3, WeighAt hi steps st₀ (E₁ + 2 + 1) W3 ∧ jpOf W3 = true ∧
+      bitGet W3.justificationBits 1 = true ∧ bitGet W3.justificationBits 2 = true ∧
+      PrevAtEnd st₀ steps E₁ W3.previousJustifiedCheckpoint ∧
+      E₁ + 1 ≤ W3.currentJustifiedCheckpoint.epoch.toNat ∧
+      (currentEpochOf (pureState W3)).toNat = E₁ + 3 := by
   have S := H.ref
   have hhi := S.hhi
   obtain ⟨W1, hW1, jp1⟩ := H.weigh (k := 0) (by decide)
@@ -534,19 +579,14 @@ theorem HonestChain.finalizes {hi : Nat} {steps : List ChainStep} {st₀ st : Be
   -- The steps between the weigh states.
   obtain ⟨m1, a1, hl1, hs1, hm1, ea1⟩ := hW1.before hhi hW2 (by omega)
   obtain ⟨m2, a2, hl2, hs2, hm2, ea2⟩ := hW2.before hhi hW3 (by omega)
-  obtain ⟨-, q3, a3, -, -, hl3, hs3, hq3, ea3⟩ := hW3.next hhi S.run
   have hlow := H.low
   obtain ⟨p1, c1, b1, f1⟩ := S.weigh_rec hW1 (by omega) hs1 hl1
   obtain ⟨p2, c2, b2, f2⟩ := S.weigh_rec hW2 (by omega) hs2 hl2
-  obtain ⟨-, -, b3, f3⟩ := S.weigh_rec hW3 (by omega) hs3 hl3
   -- The states in one epoch have one set of checkpoint fields.
   obtain ⟨k1p, k1c, -, k1b⟩ := fields_of_ckView (hm1.ckView_of_epoch hhi (by
     unfold epochOf at ea1 e2; omega))
   obtain ⟨k2p, k2c, -, k2b⟩ := fields_of_ckView (hm2.ckView_of_epoch hhi (by
     unfold epochOf at ea2 e3; omega))
-  obtain ⟨-, -, kf, -⟩ := fields_of_ckView (hq3.ckView_of_epoch hhi (by
-    have := H.ends
-    unfold epochOf at ea3 this; omega))
   -- The epochs of the three weigh states.
   have cur1 : (currentEpochOf (pureState W1)).toNat = E₁ + 1 := by
     rw [currentEpochOf_epochOf, e1]
@@ -562,30 +602,19 @@ theorem HonestChain.finalizes {hi : Nat} {steps : List ChainStep} {st₀ st : Be
   rw [if_pos jp2] at c2
   rw [jp1] at b1
   rw [jp2] at b2
-  rw [jp3] at f3
   -- The bits at the end of `E₁ + 3`.
   have bW3 : W3.justificationBits = weighBits (weighBits W1.justificationBits true (jcOf W1))
       true (jcOf W2) := by rw [k2b, b2, k1b, b1]
-  have g1 := (weighBits_get (weighBits (weighBits W1.justificationBits true (jcOf W1)) true
-    (jcOf W2)) true (jcOf W3))
   have g2 := weighBits_get (weighBits W1.justificationBits true (jcOf W1)) true (jcOf W2)
   have g3 := weighBits_get W1.justificationBits true (jcOf W1)
-  rw [← bW3] at g1
-  have hb1 : bitGet (weighBits W3.justificationBits true (jcOf W3)) 1 = true := by
-    rw [g1.2.1]; rfl
-  have hb2 : bitGet (weighBits W3.justificationBits true (jcOf W3)) 2 = true := by
-    rw [g1.2.2.1, bW3, g2.2.1]; rfl
-  have hb3 : bitGet (weighBits W3.justificationBits true (jcOf W3)) 3 = true := by
-    rw [g1.2.2.2, bW3, g2.2.2.1, g3.2.1]; rfl
+  have hb1 : bitGet W3.justificationBits 1 = true := by rw [bW3, g2.2.1]; rfl
+  have hb2 : bitGet W3.justificationBits 2 = true := by rw [bW3, g2.2.2.1, g3.2.1]; rfl
   -- The two old justified checkpoints at the end of `E₁ + 3`.
   have hP : W3.previousJustifiedCheckpoint = a1.currentJustifiedCheckpoint := by
     rw [k2p, p2, k1c]
   have hC : W3.currentJustifiedCheckpoint = a2.currentJustifiedCheckpoint := k2c
-  have hfin : st.finalizedCheckpoint = a3.finalizedCheckpoint := kf
-  have hP1 : (W3.previousJustifiedCheckpoint.epoch.toNat = E₁ + 1 ∧
-        W3.previousJustifiedCheckpoint.root = chainRoot st₀ steps (E₁ + 1)) ∨
-      (W3.previousJustifiedCheckpoint.epoch.toNat = E₁ ∧
-        W3.previousJustifiedCheckpoint.root = chainRoot st₀ steps E₁) := by
+  have hP1 : PrevAtEnd st₀ steps E₁ W3.previousJustifiedCheckpoint := by
+    unfold PrevAtEnd
     rw [hP, c1]
     by_cases hj : jcOf W1 = true
     · rw [if_pos hj]
@@ -599,18 +628,30 @@ theorem HonestChain.finalizes {hi : Nat} {steps : List ChainStep} {st₀ st : Be
     by_cases hj : jcOf W2 = true
     · rw [if_pos hj]; show E₁ + 1 ≤ (currentEpochOf (pureState W2)).toNat; omega
     · rw [if_neg hj]; show E₁ + 1 ≤ (previousEpochOf (pureState W2)).toNat; omega
-  have hop : W3.previousJustifiedCheckpoint.epoch.toNat + 2 =
-        (currentEpochOf (pureState W3)).toNat ∨
-      W3.previousJustifiedCheckpoint.epoch.toNat + 3 = (currentEpochOf (pureState W3)).toNat := by
-    rcases hP1 with ⟨h, -⟩ | ⟨h, -⟩ <;> omega
-  rw [hfin, f3]
-  rcases finalizeRules_fires _ _ _ _ _ hb1 hb2 hb3 hop with h | h <;> rw [h]
-  · exact ⟨by omega, fun h' => by omega⟩
-  · rcases hP1 with ⟨h1, -⟩ | ⟨h1, h2⟩
-    · exact ⟨by omega, fun h' => by omega⟩
-    · refine ⟨by omega, fun _ => ?_⟩
-      unfold toCp cpOf
-      rw [h1, h2]
+  exact ⟨W3, hW3, jp3, hb1, hb2, hP1, hC1, cur3⟩
+
+/-- **The honest chain finalizes `E₁`.** At the weigh state of `E₁ + 3`, the weigh step meets
+`finalize_tail` (`HonestChain.end_facts`). So the end state in epoch `E₁ + 4` has a finalized
+epoch of `E₁` or later. When it is `E₁`, the finalized checkpoint is the chain's checkpoint of
+`E₁`. -/
+theorem HonestChain.finalizes {hi : Nat} {steps : List ChainStep} {st₀ st : BeaconState}
+    {vals : List ValidatorIndex} {honestOf : ValidatorIndex → Bool} {E₁ : Nat}
+    (H : HonestChain hi steps st₀ st vals honestOf E₁) :
+    E₁ ≤ st.finalizedCheckpoint.epoch.toNat ∧
+      (st.finalizedCheckpoint.epoch.toNat = E₁ → toCp st.finalizedCheckpoint = cpOf st₀ steps E₁) := by
+  have S := H.ref
+  have hhi := S.hhi
+  obtain ⟨W3, hW3, jp3, hb1, hb2, hP, hC, hcur⟩ := H.end_facts
+  have e3 : epochOf W3 = E₁ + 2 + 1 := by obtain ⟨-, -, -, -, -, he⟩ := id hW3; exact he
+  obtain ⟨-, q3, a3, -, -, hl3, hs3, hq3, ea3⟩ := hW3.next hhi S.run
+  have hlow := H.low
+  obtain ⟨-, -, -, f3⟩ := S.weigh_rec hW3 (by omega) hs3 hl3
+  obtain ⟨-, -, kf, -⟩ := fields_of_ckView (hq3.ckView_of_epoch hhi (by
+    have := H.ends
+    unfold epochOf at ea3 this; omega))
+  rw [jp3] at f3
+  rw [kf, f3]
+  exact finalize_tail hb1 hb2 hP hC hcur _
 
 end
 
