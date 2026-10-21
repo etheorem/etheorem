@@ -278,7 +278,7 @@ theorem HeadRun.Ok.of_check {n : NodeRun map} {q : HeadRun map} {r : Root}
   simp only [headRunB, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.all_eq_true]
     at h
   obtain ⟨⟨⟨⟨⟨hwall, htime⟩, hslot⟩, hhd⟩, hblock⟩, hjb⟩ := h
-  refine ⟨hpre, NodeTrace.of_runTrace hrun, hwall, htime, ?_, ?_, ?_, hblock, ?_, hjst⟩
+  refine ⟨⟨hpre, NodeTrace.of_runTrace hrun, hwall, htime, ?_, ?_, ?_, hblock⟩, ?_, hjst⟩
   · split at hslot
     · rename_i cs s' hcs
       have := getCurrentSlot_run_self _ _ _ _ hcs
