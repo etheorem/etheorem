@@ -87,6 +87,7 @@ import EthCLSpecs.Proofs.Heze.PaymentFrame
 import EthCLSpecs.Proofs.Heze.PaymentWriters
 import EthCLSpecs.Proofs.Heze.ProposerScore
 import EthCLSpecs.Proofs.Heze.RaceCheck
+import EthCLSpecs.Proofs.Heze.RaceLong
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.RefDrift
 import EthCLSpecs.Proofs.Heze.RootFrames

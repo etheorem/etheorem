@@ -25,7 +25,8 @@ are the `.ok` committees of a plain state `st` at `e`. A validator then sits in 
 committee of the epoch (`getBeaconCommittee_nodup`, `Committees.lean`), so it votes in at
 most one slot. The preset bounds of `getBeaconCommittee_ok` are fields of `EpochCommittees`.
 `RaceCommittees.of_epoch` builds `RaceCommittees` from `EpochCommittees` and the two
-balance conditions.
+balance conditions. For a window that is the whole epoch, `EpochCommittees.votes_of_active`
+gives at least one vote: every validator that is active at `e` votes in some slot of `e`.
 `raceCommittees_first_of_fraction` gives the first-slot condition from more than 70 % honest
 balance in that committee. It needs a committee balance of at least the committee weight of
 `jst`. That is the uniform-committee premise of `PayloadRaceBounds.lean`, for the one slot
@@ -40,8 +41,8 @@ open EthCLLib.Spec
 open EthCLLib.Proofs (pureState epochSlot_toNat epochSlot_div toNat_ofNat_lt64
   flatMap_nodup_block_eq committeeSlice swapOrNotArray)
 open EthCLSpecs.Heze (Preset Config State BeaconState Epoch Slot ValidatorIndex committeeWeight
-  computeEpochAtSlot computeStartSlotAtEpoch getBeaconCommittee getCommitteeCountPerSlot
-  getActiveValidatorIndices getSeed)
+  computeEpochAtSlot computeStartSlotAtEpoch getActiveValidatorIndices getBeaconCommittee
+  getCommitteeCountPerSlot getSeed)
 open EthCLSpecs.Heze.Const (slotsPerEpoch slotsPerEpochPos slotsPerEpochLt
   validatorRegistryLimit shuffleRoundCount maxCommitteesPerSlot domainBeaconAttester)
 open EthCLSpecs.Proofs.Heze.PayloadRace (slotBalance OneVoteIn count_of_slots first_of_fraction
@@ -216,6 +217,39 @@ theorem EpochCommittees.oneVoteIn {committees : Nat → Nat → Array ValidatorI
       _ h.epochCommitteesOf)
     (List.mem_range.mpr hj) (List.mem_range.mpr hj') hm hm'
   omega
+
+omit [Config] in
+/-- Every validator that is active in `st` at the epoch `e` votes in some slot of `e`, when
+the window is the whole epoch. `getBeaconCommittee_covers` puts the validator in the slice
+`epochSlices st e j idx`, for a slot `j` of the epoch and an index `idx` below
+`get_committee_count_per_slot`. At the slot `e * SLOTS_PER_EPOCH + j`, `EpochCommittees.eq`
+and `getBeaconCommittee_ok` give the same `.ok` committee, so `committees` holds that slice. -/
+theorem EpochCommittees.votes_of_active {committees : Nat → Nat → Array ValidatorIndex}
+    {st : BeaconState} {e : Epoch}
+    (h : EpochCommittees committees st e (e.toNat * slotsPerEpoch) ((e.toNat + 1) * slotsPerEpoch))
+    (i : ValidatorIndex) (hi : i ∈ (getActiveValidatorIndices (pureState st) e).toList) :
+    ∃ t, e.toNat * slotsPerEpoch ≤ t ∧ t < (e.toNat + 1) * slotsPerEpoch ∧
+      committeeVotes committees i t = true := by
+  obtain ⟨j, hj, idx, hidx, hm⟩ := getBeaconCommittee_covers st e _
+    (computeStartSlotAtEpoch_ok_of_lt (start_lt_of_fits h.fits)) h.limit h.rounds h.cap h.fits
+    _ h.epochCommitteesOf i hi
+  have h1 : e.toNat * slotsPerEpoch ≤ e.toNat * slotsPerEpoch + j := Nat.le_add_right _ _
+  have h2 : e.toNat * slotsPerEpoch + j < (e.toNat + 1) * slotsPerEpoch := by
+    rw [Nat.succ_mul]; omega
+  have hslot := slot_eq_epochSlot h1 h2 h.fits
+  rw [Nat.add_sub_cancel_left] at hslot
+  have hepoch : computeEpochAtSlot (UInt64.ofNat (e.toNat * slotsPerEpoch + j)) = e := by
+    rw [hslot]
+    simp only [computeEpochAtSlot]
+    exact epochSlot_div hj slotsPerEpochLt h.fits
+  refine ⟨_, h1, h2, ?_⟩
+  simp only [committeeVotes, decide_eq_true_eq]
+  refine ⟨idx, ?_⟩
+  have heq := h.eq _ h1 h2 idx
+  rw [hepoch, if_pos hidx, hslot] at heq
+  -- The window committee and the epoch slice are the same `.ok` value.
+  rw [Except.ok.inj (heq.symm.trans (h.epochCommitteesOf j hj idx hidx))]
+  exact Array.mem_toList_iff.mp hm
 
 /-- `RaceCommittees` from the committees of one epoch and the two balance conditions. -/
 theorem RaceCommittees.of_epoch {jst : BeaconState} {honestOf : ValidatorIndex → Bool}
