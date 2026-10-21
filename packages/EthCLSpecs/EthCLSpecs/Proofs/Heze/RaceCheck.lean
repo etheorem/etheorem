@@ -17,7 +17,7 @@ premise. `Tests/HezeRaceWitness.lean` runs them on a concrete execution.
   premises of `RaceSetting.Core` name such events.
 - `attIndicesB` computes the attesting indices that `AttIndices` names.
 - `deliverAt` checks one delivered vote. `deliver_of_check` gives the conclusion of
-  `RaceSetting.Core.deliver` from it.
+  `RaceSetting.Fields.deliver` from it.
 - `HeadRun.Ok.of_check` gives the fields of one head run with the head `empty r`.
 - `honestSigner_of_check` gives `HonestSigner` from a trace with no attester slashing.
 - `committeeVotes_eq_any` turns `committeeVotes` into a finite search.
@@ -191,7 +191,7 @@ def deliverAt (s0 : Store map) (tevs : List (TraceEvent × Nat)) (k t : Nat)
     | .error _ => false
   | _ => false
 
-/-- `deliverAt` gives the conclusion of `RaceSetting.Core.deliver` for a prefix that holds
+/-- `deliverAt` gives the conclusion of `RaceSetting.Fields.deliver` for a prefix that holds
 the vote. A trace is a function of its events (`NodeTrace.det`), so the store before the vote
 is the store of the check. -/
 theorem deliver_of_check {s0 : Store map} {tevs : List (TraceEvent × Nat)} {k t n : Nat}
