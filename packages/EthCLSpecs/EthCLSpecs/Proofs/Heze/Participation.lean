@@ -437,10 +437,11 @@ theorem gapfi_target_of_root (st : BeaconState) (data : AttestationData) (d : UI
 variable [Config] [CryptoBackend]
 
 /-- A successful `processAttestation` run. It read a flag list `f` and the attesting indices
-`idx`, and the target epoch is the previous or the current epoch. Then two facts hold:
+`idx`, and the target epoch is the previous or the current epoch. Then three facts hold:
 
 - A target bit that is set after the run was set before, or it belongs to an index of
   `idx` in the list of the target epoch, and `f` holds the target flag.
+- A target bit that is set before the run stays set.
 - When `f` holds the target flag, every index of `idx` has its target bit set after the run,
   in the list of the target epoch. -/
 theorem processAttestation_run_flags (att : Attestation) (st st' : BeaconState)
@@ -456,6 +457,7 @@ theorem processAttestation_run_flags (att : Attestation) (st st' : BeaconState)
       (∀ w j, partBit w j (pureState st') = true → partBit w j (pureState st) = true ∨
         (w = (att.data.target.epoch == currentEpochOf (pureState st)) ∧
           UInt64.ofNat j ∈ idx ∧ f.contains timelyTargetFlagIndex = true)) ∧
+      (∀ w j, partBit w j (pureState st) = true → partBit w j (pureState st') = true) ∧
       (f.contains timelyTargetFlagIndex = true → ∀ vi ∈ idx,
         partBit (att.data.target.epoch == currentEpochOf (pureState st))
           vi.toNat (pureState st') = true) := by
@@ -590,26 +592,19 @@ theorem processAttestation_run_flags (att : Attestation) (st st' : BeaconState)
     have e9 := pureState_inj (EthCLLib.Proofs.run_set_state_eq _ _ _ _ hset)
     subst e9
     exact congrArg Prod.fst ((increaseBalance_ret_part (cur := w) (i := j) hinc).trans rfl)
-  refine ⟨?back, ?fwd⟩
-  case back =>
-    intro w j hb
-    rw [hpost] at hb
-    exact hback w j hb
-  case fwd =>
-    -- Each index gets its bit when the loop reaches it, and later writes only add flags.
-    intro hTT vi hvi
-    -- The accumulator stays a plain state, as `hinv` shows. The invariant `I` carries it.
-    have hall := forIn_run_all_inv
-      (fun b : MProd EthCLSpecs.Heze.Gwei (MProd State EthCLSpecs.Heze.Gwei) =>
-        ∃ u, b.2.1 = pureState u)
-      (fun a b : MProd EthCLSpecs.Heze.Gwei (MProd State EthCLSpecs.Heze.Gwei) =>
-        ∀ w j, partBit w j a.2.1 = true → partBit w j b.2.1 = true)
-      (fun _ _ _ h => h) (fun _ _ _ h1 h2 w j hb => h2 w j (h1 w j hb))
-      (fun (vi : ValidatorIndex) r => partBit ct vi.toNat r.2.1 = true)
-      (fun _ _ _ hq hr => hr _ _ hq) _ idx.toList ?fostep _ _ _ _ ⟨st, rfl⟩ hr
-    · rw [hpost]
-      exact hall.2.2 vi (Array.mem_toList_iff.mpr hvi)
-    · intro vi _ rr s s' stp hI hb
+  -- Each index gets its bit when the loop reaches it, and every write only adds flags. The
+  -- accumulator stays a plain state, as `hinv` shows.
+  have hall := forIn_run_all_inv
+    (fun b : MProd EthCLSpecs.Heze.Gwei (MProd State EthCLSpecs.Heze.Gwei) =>
+      ∃ u, b.2.1 = pureState u)
+    (fun a b : MProd EthCLSpecs.Heze.Gwei (MProd State EthCLSpecs.Heze.Gwei) =>
+      ∀ w j, partBit w j a.2.1 = true → partBit w j b.2.1 = true)
+    (fun _ _ _ h => h) (fun _ _ _ h1 h2 w j hb => h2 w j (h1 w j hb))
+    (fun (vi : ValidatorIndex) r => f.contains timelyTargetFlagIndex = true →
+      partBit ct vi.toNat r.2.1 = true)
+    (fun _ _ _ hq hr hTT => hr _ _ (hq hTT)) _ idx.toList ?fostep _ _ _ _ ⟨st, rfl⟩ hr
+  case fostep =>
+      intro vi _ rr s s' stp hI hb
       obtain ⟨r1, s1, hin, hb⟩ := run_bind_eq_ok _ _ _ _ hb
       rw [Std.Legacy.Range.forIn_eq_forIn_range'] at hin
       have hin2 := forIn_run_all_inv
@@ -617,11 +612,12 @@ theorem processAttestation_run_flags (att : Attestation) (st st' : BeaconState)
         (fun a b : MProd EthCLSpecs.Heze.Gwei (MProd State Bool) =>
           ∀ w j, partBit w j a.2.1 = true → partBit w j b.2.1 = true)
         (fun _ _ _ h => h) (fun _ _ _ h1 h2 w j hb => h2 w j (h1 w j hb))
-        (fun (k : Nat) r => k = timelyTargetFlagIndex → partBit ct vi.toNat r.2.1 = true)
-        (fun _ _ _ hq hr he => hr _ _ (hq he)) _ _ ?fistep _ _ _ _ hI hin
+        (fun (k : Nat) r => f.contains timelyTargetFlagIndex = true →
+          k = timelyTargetFlagIndex → partBit ct vi.toNat r.2.1 = true)
+        (fun _ _ _ hq hr hTT he => hr _ _ (hq hTT he)) _ _ ?fistep _ _ _ _ hI hin
       · obtain ⟨hI1, hR1, hQ1⟩ := hin2
-        have hbit := hQ1 timelyTargetFlagIndex
-          (by simp [List.mem_range', timelyTargetFlagIndex]) rfl
+        have hbit := fun hTT => hQ1 timelyTargetFlagIndex
+          (by simp [List.mem_range', timelyTargetFlagIndex]) hTT rfl
         rcases run_ite_eq_ok hb with ⟨-, hb⟩ | ⟨-, hb⟩
         · obtain ⟨_, _, -, hb⟩ := run_bind_eq_ok _ _ _ _ hb
           obtain ⟨_, _, -, hb⟩ := run_bind_eq_ok _ _ _ _ hb
@@ -642,7 +638,7 @@ theorem processAttestation_run_flags (att : Attestation) (st st' : BeaconState)
         · obtain ⟨_, _, -, hb⟩ := run_bind_eq_ok _ _ _ _ hb
           refine ⟨_, EthCLLib.Proofs.run_pure_eq_ok _ _ _ _ hb, ⟨u, rfl⟩,
             fun w j hbit => hbit, ?_⟩
-          rintro rfl
+          rintro hTT rfl
           exact absurd hTT hcon
         rcases run_ite_eq_ok hb with ⟨hct, hb⟩ | ⟨hct, hb⟩
         · obtain ⟨y1, s1, hy1, hb⟩ := run_bind_eq_ok _ _ _ _ hb
@@ -664,7 +660,7 @@ theorem processAttestation_run_flags (att : Attestation) (st st' : BeaconState)
               cases w
               · exact hbit
               · exact bitOf_set_addFlag_mono _ _ _ _ hy1' k hk3 hbit
-            · rintro rfl
+            · rintro - rfl
               show partBit ct vi.toNat (if ct = true then _ else _) = true
               rw [if_pos hct, hct]
               refine (congrArg Prod.fst
@@ -674,7 +670,7 @@ theorem processAttestation_run_flags (att : Attestation) (st st' : BeaconState)
           · obtain ⟨_, _, -, hb⟩ := run_bind_eq_ok _ _ _ _ hb
             refine ⟨_, EthCLLib.Proofs.run_pure_eq_ok _ _ _ _ hb, ⟨u, rfl⟩,
               fun w j hbit => hbit, ?_⟩
-            rintro rfl
+            rintro - rfl
             rw [hct]
             -- The flag is in the entry already, since the run did not write it.
             have hf : hasFlag y1 timelyTargetFlagIndex = true := by simpa using hc
@@ -701,7 +697,7 @@ theorem processAttestation_run_flags (att : Attestation) (st st' : BeaconState)
               cases w
               · exact bitOf_set_addFlag_mono _ _ _ _ hy1' k hk3 hbit
               · exact hbit
-            · rintro rfl
+            · rintro - rfl
               show partBit ct vi.toNat (if ct = true then _ else _) = true
               rw [if_neg hct, hct']
               refine (congrArg Prod.fst
@@ -711,13 +707,27 @@ theorem processAttestation_run_flags (att : Attestation) (st st' : BeaconState)
           · obtain ⟨_, _, -, hb⟩ := run_bind_eq_ok _ _ _ _ hb
             refine ⟨_, EthCLLib.Proofs.run_pure_eq_ok _ _ _ _ hb, ⟨u, rfl⟩,
               fun w j hbit => hbit, ?_⟩
-            rintro rfl
+            rintro - rfl
             rw [hct']
             -- The flag is in the entry already, since the run did not write it.
             have hf : hasFlag y1 timelyTargetFlagIndex = true := by simpa using hc
             show bitOf (sszGet (pureState u) previousEpochParticipation) vi.toNat = true
             rw [bitOf_of_getElem? _ _ _ hy1']
             exact hf
+  obtain ⟨-, hmono, hset⟩ := hall
+  refine ⟨?back, ?mono, ?fwd⟩
+  case back =>
+    intro w j hb
+    rw [hpost] at hb
+    exact hback w j hb
+  case mono =>
+    intro w j hb
+    rw [hpost]
+    exact hmono w j hb
+  case fwd =>
+    intro hTT vi hvi
+    rw [hpost]
+    exact hset vi (Array.mem_toList_iff.mpr hvi) hTT
 
 end
 
@@ -820,7 +830,8 @@ theorem processAttestation_sets_target (att : Attestation) (pre post : BeaconSta
     ∀ i ∈ idx, TargetFlagSet post i.toNat att.data.target.epoch := by
   have hr := (EthCLLib.Proofs.runPure_iff_run_of_keepsUncached
     (keepsUncached_processAttestation att) pre post ()).mp h
-  obtain ⟨f, idx', hidx', ⟨s1, hfo⟩, hep, -, hfwd⟩ := processAttestation_run_flags att pre post hr
+  obtain ⟨f, idx', hidx', ⟨s1, hfo⟩, hep, -, -, hfwd⟩ :=
+    processAttestation_run_flags att pre post hr
   rw [hidx] at hidx'
   injection hidx' with hidx'
   subst hidx'

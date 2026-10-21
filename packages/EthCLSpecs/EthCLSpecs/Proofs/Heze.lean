@@ -74,6 +74,8 @@ import EthCLSpecs.Proofs.Heze.OnTickPerSlot
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.Participation
 import EthCLSpecs.Proofs.Heze.ParticipationFrame
+import EthCLSpecs.Proofs.Heze.ParticipationKeep
+import EthCLSpecs.Proofs.Heze.ParticipationRotate
 import EthCLSpecs.Proofs.Heze.PayloadRace
 import EthCLSpecs.Proofs.Heze.PayloadRaceBounds
 import EthCLSpecs.Proofs.Heze.PayloadRaceCount
