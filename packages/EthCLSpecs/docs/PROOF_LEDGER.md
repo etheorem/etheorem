@@ -139,7 +139,7 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | `canBuilderCoverBid` | `Gloas/Operations.lean:460-463` | Its `Bool` result is characterized exactly against the implementation's computed `minBalance`. Proving that queuing an accepted bid preserves `MIN_DEPOSIT_AMOUNT` + pending obligations ≤ builder balance is the caller-level follow-up, and needs pending-total no-overflow and ring-cell freshness hypotheses | proved | #36, `Proofs/Gloas/CanBuilderCoverBid.lean` |
 | `applyWithdrawals` | `Gloas/Withdrawals.lean:184-194` | A builder-flagged withdrawal decreases the builder's balance by at most its own balance, so the balance never goes negative | proposed |  |
 | `getAncestor` | `Gloas/ForkChoice.lean:177-184` | The fuel supplied to its `fuelLoop` DAG walk is sufficient for the walk to terminate before running out | proposed |  |
-| `getHead` | `Gloas/ForkChoice.lean:534-569` | The fuel `2 * blocks.length + 2` supplied to its LMD-GHOST walk is sufficient for the walk to reach a decided head before running out | proposed |  |
+| `getHead` | `Gloas/ForkChoice.lean:536-571` | The fuel `2 * blocks.length + 2` supplied to its LMD-GHOST walk is sufficient for the walk to reach a decided head before running out | proposed |  |
 
 ### Safety and invariant preservation
 
@@ -149,8 +149,8 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | --- | --- | --- | --- | --- |
 | `processProposerSlashing` | `Gloas/Operations.lean:209-239` | Payment-voiding must never touch another proposer's `BuilderPendingPayment` | proposed |  |
 | `processAttestation` | `Gloas/Operations.lean:289-369` | Committee-index safety together with builder-payment weight accounting | proposed |  |
-| `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:236-255` | Both outcomes over a plain `BeaconState`. When the qualifying previous-epoch withdrawals fit under the list limit, the run returns `preState` with only two fields written. `builderPendingWithdrawals` holds the old list followed by the qualifying withdrawals in slot order. `builderPendingPayments` holds the window shifted down by `SLOTS_PER_EPOCH` and padded with empties. When the withdrawals do not fit, the run raises `.listFull`. This does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
-| `processPtcWindow` | `Gloas/EpochProcessing.lean:274-284` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
+| `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:237-256` | Both outcomes over a plain `BeaconState`. When the qualifying previous-epoch withdrawals fit under the list limit, the run returns `preState` with only two fields written. `builderPendingWithdrawals` holds the old list followed by the qualifying withdrawals in slot order. `builderPendingPayments` holds the window shifted down by `SLOTS_PER_EPOCH` and padded with empties. When the withdrawals do not fit, the run raises `.listFull`. This does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
+| `processPtcWindow` | `Gloas/EpochProcessing.lean:275-291` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
 | `applyDepositForBuilder` | `Gloas/Operations.lean:114-122` | A deposit with an invalid signature is neither applied to a builder's balance nor requeued | proposed |  |
 | `processBuilderDepositRequest` | `Gloas/Operations.lean:170-186` | A new builder is onboarded only when its deposit signature is valid | proposed |  |
 | `getIndexedPayloadAttestation` | `Gloas/Operations.lean:411-417` | Preserves `pa.data` and `pa.signature`, and produces the sorted multiset of PTC seats selected by `pa.aggregationBits`. The proof requires `Array.qsort` sortedness and permutation lemmas not currently available in core/Std | proposed |  |
@@ -165,9 +165,9 @@ Functions whose output only moves in one direction as their input grows or accum
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `getWeight` | `Gloas/ForkChoice.lean:422-434` | Weight only grows as more attestations accumulate for a node | proposed |  |
-| `onAttesterSlashing` | `Gloas/ForkChoice.lean:1026-1036` | The set of equivocating indices only grows, never shrinks | proposed |  |
-| `updateCheckpoints` | `Gloas/ForkChoice.lean:574-576` | Each justified/finalized checkpoint either remains unchanged or advances to its candidate, so its epoch never decreases, and no other Store field moves | proved | #30, `Proofs/Gloas/UpdateCheckpoints.lean` |
+| `getWeight` | `Gloas/ForkChoice.lean:424-436` | Weight only grows as more attestations accumulate for a node | proposed |  |
+| `onAttesterSlashing` | `Gloas/ForkChoice.lean:1031-1041` | The set of equivocating indices only grows, never shrinks | proposed |  |
+| `updateCheckpoints` | `Gloas/ForkChoice.lean:576-578` | Each justified/finalized checkpoint either remains unchanged or advances to its candidate, so its epoch never decreases, and no other Store field moves | proved | #30, `Proofs/Gloas/UpdateCheckpoints.lean` |
 
 ### State-transition correctness
 
@@ -185,11 +185,11 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `onBlock` | `Gloas/ForkChoice.lean:760-809` | Accepts a block only if a full parent implies a verified payload, and the block's ancestry agrees with the currently finalized checkpoint | proposed |  |
-| `validateOnAttestation` | `Gloas/ForkChoice.lean:955-985` | Validates that the attestation's index is 0 or 1, that a same-slot attestation has index 0, and that a full-vote attestation's payload is verified | proposed |  |
-| `getForkchoiceStore` | `Gloas/ForkChoice.lean:1047-1079` | Every root-keyed map in a freshly built store agrees on the anchor entry | proposed |  |
+| `onBlock` | `Gloas/ForkChoice.lean:765-814` | Accepts a block only if a full parent implies a verified payload, and the block's ancestry agrees with the currently finalized checkpoint | proposed |  |
+| `validateOnAttestation` | `Gloas/ForkChoice.lean:960-990` | Validates that the attestation's index is 0 or 1, that a same-slot attestation has index 0, and that a full-vote attestation's payload is verified | proposed |  |
+| `getForkchoiceStore` | `Gloas/ForkChoice.lean:1052-1084` | Every root-keyed map in a freshly built store agrees on the anchor entry | proposed |  |
 | `isAncestor` | `Gloas/ForkChoice.lean:189-194` | Agrees with the ancestor relation that `getAncestor` computes iteratively | proposed |  |
-| `verifyExecutionPayloadEnvelope` | `Gloas/ForkChoice.lean:874-909` | Acceptance requires every validation check performed by `verifyExecutionPayloadEnvelope` to succeed | proposed |  |
+| `verifyExecutionPayloadEnvelope` | `Gloas/ForkChoice.lean:879-914` | Acceptance requires every validation check performed by `verifyExecutionPayloadEnvelope` to succeed | proposed |  |
 
 ### Upgrade-boundary properties
 
@@ -197,7 +197,7 @@ Functions whose entire purpose is the Fulu-to-Gloas upgrade itself: preserving s
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `upgradeToGloas` | `Gloas/Upgrade.lean:109-164` | Preserves inherited state while correctly initializing the new ePBS state | proposed |  |
+| `upgradeToGloas` | `Gloas/Upgrade.lean:111-168` | Preserves inherited state while correctly initializing the new ePBS state | proposed |  |
 | `computePtcFromFulu` | `Gloas/Upgrade.lean:43-51` | Agrees with `Gloas.computePtc` once the state is upgraded | proposed |  |
 | `initializePtcWindow` | `Gloas/Upgrade.lean:58-70` | The first `SLOTS_PER_EPOCH` entries are the empty committee. Every remaining entry equals `computePtcFromFulu` at the slot the definition computes. Both claims hold under a bound on the window's largest epoch. The function is a plain `def` in the fork body, not a `forkdef`. It is not a spec function, so the coverage report's denominator never holds it | proved | #26, `Proofs/Gloas/InitializePtcWindow.lean` |
 
@@ -207,7 +207,7 @@ Functions where the useful theorem hasn't been identified yet, either because th
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `computePtc` | `Gloas/EpochProcessing.lean:261-268` | No standalone theorem has been identified yet. The strongest current candidate is its agreement with `computePtcFromFulu` after state upgrade | proposed |  |
+| `computePtc` | `Gloas/EpochProcessing.lean:262-269` | No standalone theorem has been identified yet. The strongest current candidate is its agreement with `computePtcFromFulu` after state upgrade | proposed |  |
 
 
 ---
@@ -278,8 +278,8 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
 | `getAncestor` | `Fulu/ForkChoice.lean:136` | One third of a joint claim with `getHead` and `onBlock`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
-| `getHead` | `Fulu/ForkChoice.lean:261` | One third of a joint claim with `getAncestor` and `onBlock`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
-| `onBlock` | `Fulu/ForkChoice.lean:526` | One third of a joint claim with `getAncestor` and `getHead`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
+| `getHead` | `Fulu/ForkChoice.lean:262` | One third of a joint claim with `getAncestor` and `onBlock`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
+| `onBlock` | `Fulu/ForkChoice.lean:532` | One third of a joint claim with `getAncestor` and `getHead`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
 
 
 ---
