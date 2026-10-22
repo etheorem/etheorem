@@ -43,6 +43,7 @@ tier1 EthCLSpecs.Heze.applyParentExecutionPayload
 tier1 EthCLSpecs.Heze.applyPendingDeposit
 tier1 EthCLSpecs.Heze.applyWithdrawals
 tier1 EthCLSpecs.Heze.builderPaymentIndex
+tier1 EthCLSpecs.Heze.committeeWeight
 tier1 EthCLSpecs.Heze.computeEpochAtSlot
 tier1 EthCLSpecs.Heze.currentEpochOf
 tier1 EthCLSpecs.Heze.decreaseBalance

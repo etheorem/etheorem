@@ -7,7 +7,7 @@ import EthCLLib.Proofs.StoreRun
 `get_proposer_score` (phase0 `fork-choice.md:350-352`) reads the justified checkpoint state.
 It returns `compute_proposer_score` of that state (`:342-344`): the committee weight times
 `PROPOSER_SCORE_BOOST`, divided by `100`. Heze inherits both. The model puts
-`compute_proposer_score` inside `getProposerScore` (`Gloas/ForkChoice.lean:346`), and the
+`compute_proposer_score` inside `getProposerScore` (`Gloas/ForkChoice.lean:352`), and the
 product goes through `checkedMul`.
 
 So the proposer score is one value per justified state. `proposerScoreOf` is that value in
