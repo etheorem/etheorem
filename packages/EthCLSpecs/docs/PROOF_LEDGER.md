@@ -151,8 +151,8 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | --- | --- | --- | --- | --- |
 | `processProposerSlashing` | `Gloas/Operations.lean:209-239` | Payment-voiding must never touch another proposer's `BuilderPendingPayment` | proposed |  |
 | `processAttestation` | `Gloas/Operations.lean:289-369` | Committee-index safety together with builder-payment weight accounting | proposed |  |
-| `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:238-257` | Both outcomes over a plain `BeaconState`. When the qualifying previous-epoch withdrawals fit under the list limit, the run returns `preState` with only two fields written. `builderPendingWithdrawals` holds the old list followed by the qualifying withdrawals in slot order. `builderPendingPayments` holds the window shifted down by `SLOTS_PER_EPOCH` and padded with empties. When the withdrawals do not fit, the run raises `.listFull`. This does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
-| `processPtcWindow` | `Gloas/EpochProcessing.lean:276-292` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
+| `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:240-259` | Both outcomes over a plain `BeaconState`. When the qualifying previous-epoch withdrawals fit under the list limit, the run returns `preState` with only two fields written. `builderPendingWithdrawals` holds the old list followed by the qualifying withdrawals in slot order. `builderPendingPayments` holds the window shifted down by `SLOTS_PER_EPOCH` and padded with empties. When the withdrawals do not fit, the run raises `.listFull`. This does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
+| `processPtcWindow` | `Gloas/EpochProcessing.lean:278-294` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
 | `applyDepositForBuilder` | `Gloas/Operations.lean:114-122` | A deposit with an invalid signature is neither applied to a builder's balance nor requeued | proposed |  |
 | `processBuilderDepositRequest` | `Gloas/Operations.lean:170-186` | A new builder is onboarded only when its deposit signature is valid | proposed |  |
 | `getIndexedPayloadAttestation` | `Gloas/Operations.lean:411-417` | Preserves `pa.data` and `pa.signature`, and produces the sorted multiset of PTC seats selected by `pa.aggregationBits`. The proof requires `Array.qsort` sortedness and permutation lemmas not currently available in core/Std | proposed |  |
@@ -209,7 +209,7 @@ Functions where the useful theorem hasn't been identified yet, either because th
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `computePtc` | `Gloas/EpochProcessing.lean:263-270` | No standalone theorem has been identified yet. The strongest current candidate is its agreement with `computePtcFromFulu` after state upgrade | proposed |  |
+| `computePtc` | `Gloas/EpochProcessing.lean:265-272` | No standalone theorem has been identified yet. The strongest current candidate is its agreement with `computePtcFromFulu` after state upgrade | proposed |  |
 
 
 ---
@@ -262,8 +262,8 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | `processDeposit` | `Fulu/Operations.lean:225` | `validators.size = balances.size` holds at the append site, and then holds across the transition. The two overflow bounds are the separate row under Bounds and termination properties | proposed |  |
 | `isSlashableAttestationData` | `Fulu/Operations.lean:38` | Agrees with the spec's slashability condition, a double vote or a surround vote, given the `strictlySorted` well-formedness the caller establishes | proposed |  |
 | `processRegistryUpdates` | `Fulu/EpochProcessing.lean:176` | One third of a joint claim with `initiateValidatorExit` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
-| `initiateValidatorExit` | `Fulu/RegistryUpdates.lean:115` | One third of a joint claim with `processRegistryUpdates` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
-| `computeExitEpochAndUpdateChurn` | `Fulu/RegistryUpdates.lean:78` | One third of a joint claim with `processRegistryUpdates` and `initiateValidatorExit`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
+| `initiateValidatorExit` | `Fulu/RegistryUpdates.lean:140` | One third of a joint claim with `processRegistryUpdates` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
+| `computeExitEpochAndUpdateChurn` | `Fulu/RegistryUpdates.lean:99` | One third of a joint claim with `processRegistryUpdates` and `initiateValidatorExit`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
 
 ### Monotonicity properties
 
