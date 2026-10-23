@@ -131,18 +131,45 @@ forkdef processEth1Data (body : BeaconBlockBody) : StateTransition Unit := do
 
 /-- `process_sync_aggregate`: verify the aggregate signature over the previous
 slot's block root, then apply participant / proposer rewards and non-participant
-penalties. The participant pubkey list is the bit-selected committee keys;
-`eth_fast_aggregate_verify` aggregates them, so the all-participate /
-majority-subtraction optimizations the spec describes are unnecessary and the
-verification result is identical. -/
+penalties.
+
+The verify gets the keys the spec chooses by the number of set bits:
+
+- All bits set: the stored `aggregate_pubkey`, unchanged. The body does not compare it with
+  the committee keys.
+- More than half set: the G1 difference of the stored aggregate and the aggregate of the
+  non-participant keys. `ValueError` (`.arithmetic`) when the stored aggregate or a
+  non-participant key does not decode as a G1 point, or when a non-participant key fails
+  `KeyValidate`.
+- Half set or fewer: the participant keys.
+
+The pyspec chooses the keys before it reads the block root. So a key fault raises before a
+fault in `get_block_root_at_slot`.
+
+Before any reward, the pyspec finds the registry position of every committee key
+(`all_pubkeys.index`). A key that is not in the registry raises `ValueError`
+(`.arithmetic`). -/
 forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let state ← get
 
-  -- Verify the aggregate over the previous slot's block root from the bit-selected keys.
+  -- Choose the verification keys by the number of set bits.
   let syncCommittee := sszGet state currentSyncCommittee
   let bits := agg.syncCommitteeBits
-  let participantKeys : Array BLSPubkey :=
-    (Bitvector.trueIndices bits).map (fun i => syncCommittee.pubkeys[i]!)
+  let participantCount := (Bitvector.trueIndices bits).size
+  let participantKeys : Array BLSPubkey ←
+    if participantCount == Const.syncCommitteeSize then
+      pure #[syncCommittee.aggregatePubkey]
+    else if participantCount > Const.syncCommitteeSize / 2 then do
+      let nonParticipantKeys : Array BLSPubkey :=
+        ((Array.range Const.syncCommitteeSize).filter (fun i => !bitGet bits i)).map
+          (fun i => syncCommittee.pubkeys[i]!)
+      let nonParticipantAggregate ← liftErr (blsAggregatePubkeysChecked nonParticipantKeys)
+      let negated ← liftErr (blsG1Neg nonParticipantAggregate)
+      pure #[← liftErr (blsG1Add syncCommittee.aggregatePubkey negated)]
+    else
+      pure ((Bitvector.trueIndices bits).map (fun i => syncCommittee.pubkeys[i]!))
+
+  -- Verify the signature over the previous slot's block root.
   let previousSlot := (umax (sszGet state slot) 1) - 1
   let previousBlockRoot ← getBlockRootAtSlot state previousSlot
   let signingRoot := computeSigningRoot previousBlockRoot
@@ -157,20 +184,23 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let proposerReward : Gwei :=
     UInt64.ofNat (participantReward.toNat * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight))
   let proposerIdx := getBeaconProposerIndex state
+
+  -- `committee_indices`: the first registry position of each committee key.
   let validators := (sszGet state validators).toArray
+  let committeeIndices : Array ValidatorIndex ← syncCommittee.pubkeys.toArray.mapM fun pk =>
+    match validators.findIdx? (·.pubkey == pk) with
+    | some pIdx => pure (UInt64.ofNat pIdx)
+    | none => throwArithmetic "process_sync_aggregate: all_pubkeys.index(pubkey)"
 
   -- Reward participants (and the proposer), penalize non-participants.
   let mut state := state
-  for h : i in [0:Const.syncCommitteeSize] do
-    let pk := syncCommittee.pubkeys[i]
-    match validators.findIdx? (·.pubkey == pk) with
-    | some pIdx =>
-      if bitGet bits i then
-        state ← increaseBalance state (UInt64.ofNat pIdx) participantReward
-        state ← increaseBalance state proposerIdx proposerReward
-      else
-        state ← decreaseBalance state (UInt64.ofNat pIdx) participantReward
-    | none => pure ()
+  for h : i in [0:committeeIndices.size] do
+    let pIdx := committeeIndices[i]
+    if bitGet bits i then
+      state ← increaseBalance state pIdx participantReward
+      state ← increaseBalance state proposerIdx proposerReward
+    else
+      state ← decreaseBalance state pIdx participantReward
   set state
 
 /-- `process_execution_payload`: the consistency checks against the previous
