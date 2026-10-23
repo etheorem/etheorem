@@ -538,11 +538,9 @@ the `getAttestationScore` balance sum, the `isHeadWeak` equivocator sums and the
 `committee_weight * committee_percent` product in `calculateCommitteeFraction`, so the
 fraction, `computeProposerScore`, and both re-org thresholds throw.
 
-One root still wraps: `getTotalBalance` (`phase0/beacon-chain.md:1559-1570`), whose
-`sum(...)` accumulates in `Gwei` and raises. It is a pure `forkdef` with call sites across
-epoch processing, rewards, registry updates, the transition spine, and fork choice, so
-making it throwing propagates upward through every pure caller (§7.1's rule, one layer
-over).
+The fraction's operand, `getTotalBalance` (`phase0/beacon-chain.md:1559-1570`), returns
+`Except`: its `sum(...)` accumulates in `Gwei` through `checkedAdd`, so the committee weight
+throws where the pyspec's total raises.
 
 The reference catches different exceptions per step kind, so what satisfies a
 `valid: false` step varies too. `expect_assertion_error` (`context.py:424-435`) catches

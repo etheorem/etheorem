@@ -176,7 +176,7 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
     let d1 ← liftErr (getFlagIndexDeltas state 1)
     let d2 ← liftErr (getFlagIndexDeltas state 2)
     pure #[← mkDeltas d0, ← mkDeltas d1, ← mkDeltas d2,
-      ← mkDeltas (zeros, getInactivityPenaltyDeltas state)]
+      ← mkDeltas (zeros, ← liftErr (getInactivityPenaltyDeltas state))]
 
 /-- `runBlocks`: decode the pre-state, fold `stateTransition` over the block
 sequence (verify-off when `bls_setting = 2`), and return the post root. Drives

@@ -150,15 +150,15 @@ forkdef getCheckpointBlock (store : Store map) (root : Root) (epoch : Epoch) :
 a percentage of the per-slot committee weight. At v1.7.0-beta.4 the weight is the total
 balance of the *unslashed* active validators (`get_total_balance`, floored at one increment)
 divided across the slots of an epoch, where alpha.12 took `get_total_active_balance`, which
-counts slashed validators too. `UInt64` truncating division, as the spec's `//`. The product
-`committee_weight * committee_percent` is a `uint64` op that raises past `2^64`, so it is
-`checkedMul`, and the function throws. -/
+counts slashed validators too. `UInt64` truncating division, as the spec's `//`. The function
+throws where `get_total_balance` throws, and on the `uint64` product
+`committee_weight * committee_percent` past `2^64` (`checkedMul`). -/
 forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) :
     Except StateTransitionError Gwei := do
   let validators := sszGet state validators
   let unslashedAndActive := (getActiveValidatorIndices state (currentEpochOf state)).filter
     fun i => !(validators[i.toNat]!).slashed
-  let committeeWeight := getTotalBalance state unslashedAndActive / UInt64.ofNat Const.slotsPerEpoch
+  let committeeWeight := (← getTotalBalance state unslashedAndActive) / UInt64.ofNat Const.slotsPerEpoch
   let product ← checkedMul committeeWeight committeePercent
     "calculate_committee_fraction: committee_weight * committee_percent"
   pure (product / 100)
