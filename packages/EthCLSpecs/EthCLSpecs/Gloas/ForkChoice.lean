@@ -415,7 +415,7 @@ forkdef shouldApplyProposerBoost (store : Store map) : StoreTransition Bool := d
     let parentRoot := block.parentRoot
     let parent ← FcMap.getOrThrow store.blocks parentRoot
     let slot := block.slot
-    let parentNextSlot ← checkedAdd parent.slot 1 "is_proposer_equivocation: parent.slot + 1"
+    let parentNextSlot ← checkedAdd parent.slot 1 "should_apply_proposer_boost: parent.slot + 1"
     if parentNextSlot < slot then pure true
     else if !(← isHeadWeak store parentRoot) then pure true
     else
@@ -425,14 +425,17 @@ forkdef shouldApplyProposerBoost (store : Store map) : StoreTransition Bool := d
       -- `store.block_timeliness[root][PTC_TIMELINESS_INDEX]` (`:503`): the outer `[root]` is a
       -- plain `Dict` (raises `KeyError`, `getOrThrow`), the inner `[PTC_TIMELINESS_INDEX]` a
       -- raising `list` index (`IndexError`, `arrGetIdx`). Both faithful throws.
+      -- The spec's `and` stops at the first false test. So `block.slot + 1` (a checked add)
+      -- runs only for a timely block of the parent's proposer.
       let entries : Array (Root × BeaconBlock) :=
         FcMap.fold (fun acc root b => acc.push (root, b)) #[] store.blocks
       let equivExists ← entries.foldlM (init := false) fun found (root, b) => do
         let tl ← FcMap.getOrThrow store.blockTimeliness root
         let timely ← arrGetIdx tl Const.ptcTimelinessIndex
-        let bNextSlot ← checkedAdd b.slot 1 "is_proposer_equivocation: block.slot + 1"
-        pure (found || (timely && b.proposerIndex == parent.proposerIndex
-          && bNextSlot == slot && root != parentRoot))
+        if timely && b.proposerIndex == parent.proposerIndex then
+          let bNextSlot ← checkedAdd b.slot 1 "should_apply_proposer_boost: block.slot + 1"
+          pure (found || (bNextSlot == slot && root != parentRoot))
+        else pure found
       pure (!equivExists)
 
 /-- `get_weight(store, node)`: zero for an undecided previous-slot payload; otherwise
@@ -976,15 +979,24 @@ forkdef storeTargetCheckpointState (store : Store map) (target : Checkpoint) :
     pure { store with checkpointStates := FcMap.insert store.checkpointStates target advanced }
 
 /-- `validate_on_attestation` (Gloas): adds `index ∈ {0, 1}`, same-slot ⇒ index 0,
-and full vote (index 1) ⇒ the head block's payload is verified. -/
+and full vote (index 1) ⇒ the head block's payload is verified.
+
+The pyspec calls `validate_target_epoch_against_current_time` only when `is_from_block` is
+false. For an attestation from a block, the body does not read the store epoch, so a fault
+in `get_current_store_epoch` cannot raise there. -/
 forkdef validateOnAttestation (store : Store map) (att : Attestation) (isFromBlock : Bool) :
     StoreTransition Unit := do
   let target := att.data.target
-  let currentEpoch ← getCurrentStoreEpoch store
-  let previousEpoch := if currentEpoch > Const.genesisEpoch then currentEpoch - 1 else Const.genesisEpoch
 
-  -- Target epoch in range and consistent with the attestation slot; both roots known.
-  assert (isFromBlock || target.epoch == currentEpoch || target.epoch == previousEpoch)
+  -- `validate_target_epoch_against_current_time`: the target is in the current or previous
+  -- epoch. Only an attestation that is not from a block runs it.
+  if !isFromBlock then
+    let currentEpoch ← getCurrentStoreEpoch store
+    let previousEpoch :=
+      if currentEpoch > Const.genesisEpoch then currentEpoch - 1 else Const.genesisEpoch
+    assert (target.epoch == currentEpoch || target.epoch == previousEpoch)
+
+  -- The target epoch matches the attestation slot, and the store holds both roots.
   assert (target.epoch == computeEpochAtSlot att.data.slot)
   assert (FcMap.contains store.blocks target.root)
   assert (FcMap.contains store.blocks att.data.beaconBlockRoot)

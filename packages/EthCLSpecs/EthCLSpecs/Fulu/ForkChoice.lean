@@ -620,13 +620,17 @@ forkdef storeTargetCheckpointState (store : Store map) (target : Checkpoint) :
       else pure base
     pure { store with checkpointStates := FcMap.insert store.checkpointStates target advanced }
 
-/-- `validate_on_attestation`. The epoch-scope check is skipped for a block-implied
-attestation (`is_from_block = true`); the rest always apply. -/
+/-- `validate_on_attestation`. The pyspec calls `validate_target_epoch_against_current_time`
+only when `is_from_block` is false. For an attestation from a block, the body does not read
+the store epoch, so a fault in `get_current_store_epoch` cannot raise there. The other checks
+apply to every attestation. -/
 forkdef validateOnAttestation (store : Store map) (att : Attestation) (isFromBlock : Bool) : StoreTransition Unit := do
   let target := att.data.target
-  let currentEpoch ← getCurrentStoreEpoch store
-  let previousEpoch := if currentEpoch > Const.genesisEpoch then currentEpoch - 1 else Const.genesisEpoch
-  assert (isFromBlock || target.epoch == currentEpoch || target.epoch == previousEpoch)
+  if !isFromBlock then
+    let currentEpoch ← getCurrentStoreEpoch store
+    let previousEpoch :=
+      if currentEpoch > Const.genesisEpoch then currentEpoch - 1 else Const.genesisEpoch
+    assert (target.epoch == currentEpoch || target.epoch == previousEpoch)
   assert (target.epoch == computeEpochAtSlot att.data.slot)
   assert (FcMap.contains store.blocks target.root)
   assert (FcMap.contains store.blocks att.data.beaconBlockRoot)

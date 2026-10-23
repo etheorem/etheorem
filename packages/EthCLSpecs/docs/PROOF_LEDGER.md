@@ -129,7 +129,7 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | `canBuilderCoverBid` | `Gloas/Operations.lean:492-498` | With a successful pending balance and a `MIN_DEPOSIT_AMOUNT` addition below `2^64`, its `Bool` result is characterized exactly against the computed `minBalance`. A pending-balance fault passes through, and the addition rejects with `.arithmetic` at `2^64`. Proving that queuing an accepted bid preserves `MIN_DEPOSIT_AMOUNT` + pending obligations ≤ builder balance is the caller-level follow-up, and needs ring-cell freshness hypotheses | proved | #36, `Proofs/Gloas/CanBuilderCoverBid.lean` |
 | `applyWithdrawals` | `Gloas/Withdrawals.lean:185-195` | A builder-flagged withdrawal decreases the builder's balance by at most its own balance, so the balance never goes negative | proposed |  |
 | `getAncestor` | `Gloas/ForkChoice.lean:177-184` | The fuel supplied to its `fuelLoop` DAG walk is sufficient for the walk to terminate before running out | proposed |  |
-| `getHead` | `Gloas/ForkChoice.lean:552-587` | The fuel `2 * blocks.length + 2` supplied to its LMD-GHOST walk is sufficient for the walk to reach a decided head before running out | proposed |  |
+| `getHead` | `Gloas/ForkChoice.lean:555-590` | The fuel `2 * blocks.length + 2` supplied to its LMD-GHOST walk is sufficient for the walk to reach a decided head before running out | proposed |  |
 
 ### Safety and invariant preservation
 
@@ -139,8 +139,8 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | --- | --- | --- | --- | --- |
 | `processProposerSlashing` | `Gloas/Operations.lean:239-269` | Payment-voiding must never touch another proposer's `BuilderPendingPayment` | proposed |  |
 | `processAttestation` | `Gloas/Operations.lean:322-393` | Committee-index safety together with builder-payment weight accounting | proposed |  |
-| `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:264-284` | The total-active-balance read for the quorum faults first, on a `uint64` overflow of the sum, and that fault passes through. The quorum product `per_slot_balance * BUILDER_PAYMENT_THRESHOLD_NUMERATOR` faults next, with `.arithmetic`, when it reaches `2 ^ 64` (`processBuilderPendingPayments_run_quorum_error`). Given the total and a quorum product that fits (`QuorumFits`), both outcomes over a plain `BeaconState`. When the qualifying previous-epoch withdrawals fit under the list limit, the run returns `preState` with only two fields written. `builderPendingWithdrawals` holds the old list followed by the qualifying withdrawals in slot order. `builderPendingPayments` holds the window shifted down by `SLOTS_PER_EPOCH` and padded with empties. When the withdrawals do not fit, the run raises `.listFull`. This does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
-| `processPtcWindow` | `Gloas/EpochProcessing.lean:304-324` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
+| `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:264-287` | The total-active-balance read for the quorum faults first, on a `uint64` overflow of the sum, and that fault passes through. The quorum product `per_slot_balance * BUILDER_PAYMENT_THRESHOLD_NUMERATOR` faults next, with `.arithmetic`, when it reaches `2 ^ 64` (`processBuilderPendingPayments_run_quorum_error`). Given the total and a quorum product that fits (`QuorumFits`), both outcomes over a plain `BeaconState`. When the qualifying previous-epoch withdrawals fit under the list limit, the run returns `preState` with only two fields written. `builderPendingWithdrawals` holds the old list followed by the qualifying withdrawals in slot order. `builderPendingPayments` holds the window shifted down by `SLOTS_PER_EPOCH` and padded with empties. When the withdrawals do not fit, the run raises `.listFull`. This does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
+| `processPtcWindow` | `Gloas/EpochProcessing.lean:307-327` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
 | `applyDepositForBuilder` | `Gloas/Operations.lean:131-143` | A deposit with an invalid signature is neither applied to a builder's balance nor requeued | proposed |  |
 | `processBuilderDepositRequest` | `Gloas/Operations.lean:191-210` | A new builder is onboarded only when its deposit signature is valid | proposed |  |
 | `getIndexedPayloadAttestation` | `Gloas/Operations.lean:435-441` | Preserves `pa.data` and `pa.signature`, and produces the sorted multiset of PTC seats selected by `pa.aggregationBits`. The proof requires `Array.qsort` sortedness and permutation lemmas not currently available in core/Std | proposed |  |
@@ -155,9 +155,9 @@ Functions whose output only moves in one direction as their input grows or accum
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `getWeight` | `Gloas/ForkChoice.lean:440-452` | Weight only grows as more attestations accumulate for a node | proposed |  |
-| `onAttesterSlashing` | `Gloas/ForkChoice.lean:1051-1061` | The set of equivocating indices only grows | proposed |  |
-| `updateCheckpoints` | `Gloas/ForkChoice.lean:592-594` | Each justified/finalized checkpoint either remains unchanged or advances to its candidate, so its epoch never decreases, and no other Store field moves | proved | #30, `Proofs/Gloas/UpdateCheckpoints.lean` |
+| `getWeight` | `Gloas/ForkChoice.lean:443-455` | Weight only grows as more attestations accumulate for a node | proposed |  |
+| `onAttesterSlashing` | `Gloas/ForkChoice.lean:1063-1073` | The set of equivocating indices only grows | proposed |  |
+| `updateCheckpoints` | `Gloas/ForkChoice.lean:595-597` | Each justified/finalized checkpoint either remains unchanged or advances to its candidate, so its epoch never decreases, and no other Store field moves | proved | #30, `Proofs/Gloas/UpdateCheckpoints.lean` |
 
 ### State-transition correctness
 
@@ -175,11 +175,11 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `onBlock` | `Gloas/ForkChoice.lean:785-834` | Accepts a block only if a full parent implies a verified payload, and the block's ancestry agrees with the currently finalized checkpoint | proposed |  |
-| `validateOnAttestation` | `Gloas/ForkChoice.lean:980-1010` | Validates that the attestation's index is 0 or 1, that a same-slot attestation has index 0, and that a full-vote attestation's payload is verified | proposed |  |
-| `getForkchoiceStore` | `Gloas/ForkChoice.lean:1072-1104` | Every root-keyed map in a freshly built store agrees on the anchor entry | proposed |  |
+| `onBlock` | `Gloas/ForkChoice.lean:788-837` | Accepts a block only if a full parent implies a verified payload, and the block's ancestry agrees with the currently finalized checkpoint | proposed |  |
+| `validateOnAttestation` | `Gloas/ForkChoice.lean:987-1022` | Validates that the attestation's index is 0 or 1, that a same-slot attestation has index 0, and that a full-vote attestation's payload is verified | proposed |  |
+| `getForkchoiceStore` | `Gloas/ForkChoice.lean:1084-1116` | Every root-keyed map in a freshly built store agrees on the anchor entry | proposed |  |
 | `isAncestor` | `Gloas/ForkChoice.lean:189-194` | Agrees with the ancestor relation that `getAncestor` computes iteratively | proposed |  |
-| `verifyExecutionPayloadEnvelope` | `Gloas/ForkChoice.lean:899-934` | Acceptance requires every validation check performed by `verifyExecutionPayloadEnvelope` to succeed | proposed |  |
+| `verifyExecutionPayloadEnvelope` | `Gloas/ForkChoice.lean:902-937` | Acceptance requires every validation check performed by `verifyExecutionPayloadEnvelope` to succeed | proposed |  |
 
 ### Upgrade-boundary properties
 
@@ -197,7 +197,7 @@ Functions where the useful theorem hasn't been identified yet, either because th
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `computePtc` | `Gloas/EpochProcessing.lean:290-298` | No standalone theorem has been identified yet. The strongest current candidate is its agreement with `computePtcFromFulu` after state upgrade | proposed |  |
+| `computePtc` | `Gloas/EpochProcessing.lean:293-301` | No standalone theorem has been identified yet. The strongest current candidate is its agreement with `computePtcFromFulu` after state upgrade | proposed |  |
 
 
 ---
@@ -225,7 +225,7 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | `modBalance` | `Fulu/Balances.lean:29` | On the pure box, the write through the infallible `[i]!` index is one plain record update: `modBalance (pureState state) i f = pureState { state with balances := state.balances.set! i.toNat (f state.balances[i.toNat]!) }`. This is the whole contract; the two mutators below build on it | proved | follow-up to #80, `Proofs/Fulu/Balances.lean` |
 | `increaseBalance` | `Fulu/Balances.lean:43` | The run rejects an index past the end of `balances` with `.outOfBounds`, and an addition that leaves the `uint64` range with `.arithmetic`. In range and below that bound it returns the input value with exactly that one balance written, and that balance is the exact natural-number sum | proved | #80, `Proofs/Fulu/Balances.lean` |
 | `decreaseBalance` | `Fulu/Balances.lean:53` | The run rejects an index past the end of `balances` with `.outOfBounds`. In range it returns the input value with exactly the clamped difference written; the `Nat` difference truncates at zero, so the clamp matches the spec and the `uint64` subtraction never wraps | proved | #80, `Proofs/Fulu/Balances.lean` |
-| `processRegistryUpdates` | `Fulu/EpochProcessing.lean:235` | The registry never exceeds `VALIDATOR_REGISTRY_LIMIT` | proposed |  |
+| `processRegistryUpdates` | `Fulu/EpochProcessing.lean:242` | The registry never exceeds `VALIDATOR_REGISTRY_LIMIT` | proposed |  |
 | `getBeaconCommittee` | `Fulu/Committees.lean:147` | An active-validator count in `[32, 2^22]` implies every committee size is in `(0, MAX_VALIDATORS_PER_COMMITTEE]`. Dafny proves the same bound in `ActiveValidatorBounds` | proposed |  |
 | `computeStartSlotAtEpoch` | `Fulu/Time.lean:42-44` | The function multiplies an epoch back to a slot. It faults with `.arithmetic` above `2^64`. It never faults on an epoch derived from a slot. The claim is open where the caller supplies the epoch | proved | `Proofs/Fulu/Time.lean` |
 | `computeStartSlotAtEpoch` | `Gloas/EpochProcessing.lean:34` | The Fulu claims, restated at Gloas's own constant. Each theorem takes the Fulu proof term through the `Downgrade` bridge | proved | `Proofs/Gloas/Time.lean` |
@@ -246,7 +246,7 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | `computeShuffledPermutation` | `Fulu/Committees.lean:55` | A bijection on `[0, indexCount)`. No prior art: Dafny stubbed shuffling to the identity, and Runtime Verification did not prove it either | proposed |  |
 | `getBeaconCommittee` | `Fulu/Committees.lean:147` | The committees for a slot partition the active set: their union is the active validator set and they are pairwise disjoint. This follows from the shuffle bijection. The committee-size bound is the separate row under Bounds and termination properties | proposed |  |
 | `isSlashableAttestationData` | `Fulu/Operations.lean:38` | Agrees with the spec's slashability condition, a double vote or a surround vote, given the `strictlySorted` well-formedness the caller establishes | proposed |  |
-| `processRegistryUpdates` | `Fulu/EpochProcessing.lean:235` | One third of a joint claim with `initiateValidatorExit` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
+| `processRegistryUpdates` | `Fulu/EpochProcessing.lean:242` | One third of a joint claim with `initiateValidatorExit` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
 | `initiateValidatorExit` | `Fulu/RegistryUpdates.lean:144` | One third of a joint claim with `processRegistryUpdates` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
 | `computeExitEpochAndUpdateChurn` | `Fulu/RegistryUpdates.lean:103` | One third of a joint claim with `processRegistryUpdates` and `initiateValidatorExit`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
 
@@ -274,7 +274,7 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
 | --- | --- | --- | --- | --- |
 | `getAncestor` | `Fulu/ForkChoice.lean:137` | One third of a joint claim with `getHead` and `onBlock`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
 | `getHead` | `Fulu/ForkChoice.lean:265` | One third of a joint claim with `getAncestor` and `onBlock`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
-| `onBlock` | `Fulu/ForkChoice.lean:547` | One third of a joint claim with `getAncestor` and `getHead`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
+| `onBlock` | `Fulu/ForkChoice.lean:549` | One third of a joint claim with `getAncestor` and `getHead`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
 
 
 ---
