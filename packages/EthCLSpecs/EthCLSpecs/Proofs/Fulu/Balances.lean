@@ -19,8 +19,7 @@ the `uint64` subtraction never wraps.
 
 These theorems do not bound the total balance, and that bound does not follow from the spec.
 `VALIDATOR_REGISTRY_LIMIT` times `MAX_EFFECTIVE_BALANCE_ELECTRA` is about `2 ^ 81`. The real
-bound is the ETH supply, which the consensus spec never gives. `processDeposit` carries the
-same gap.
+bound is the ETH supply, which the consensus spec never gives.
 
 `increaseBalance` takes the state it writes as an explicit argument and returns the new one as
 its value. It never calls `set`, so a successful run leaves the threaded state untouched; the

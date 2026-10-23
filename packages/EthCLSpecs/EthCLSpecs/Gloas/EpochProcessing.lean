@@ -191,10 +191,8 @@ forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (
     let state ← get
     let deposit := deposits[s.ndi]!
 
-    -- Stop the scan early: the eth1-bridge deposits are not yet applied, the deposit is
-    -- not finalized, or this epoch's deposit cap is reached.
-    if deposit.slot > Const.genesisSlot
-        && (sszGet state eth1DepositIndex) < (sszGet state depositRequestsStartIndex) then return .done s
+    -- Stop the scan early: the deposit is not finalized, or this epoch's deposit cap is
+    -- reached.
     if deposit.slot > finalizedSlot then return .done s
     if s.ndi ≥ Const.maxPendingDepositsPerEpoch then return .done s
 

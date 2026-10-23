@@ -220,31 +220,6 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
     (UInt64.ofNat (proposerNum / proposerDenom))
   set stateAcc
 
-/-! ## Deposits -/
-
-/-- `apply_deposit`: a new pubkey is added only with a valid proof-of-possession;
-either way (existing, or freshly added) the amount is queued as a pending deposit. -/
-forkdef applyDeposit (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) (sig : BLSSignature) :
-    StateTransition Unit := do
-  let state ← get
-  let pendingDeposit : PendingDeposit :=
-    { pubkey, withdrawalCredentials := wc, amount, signature := sig, slot := Const.genesisSlot }
-  if (sszGet state validators).any (·.pubkey == pubkey) then
-    appendState pendingDeposits pendingDeposit
-  else if isValidDepositSignature pubkey wc amount sig then
-    addValidatorToRegistry pubkey wc 0
-    appendState pendingDeposits pendingDeposit
-
-/-- `process_deposit`: verify the Merkle branch into `eth1_data.deposit_root`,
-advance `eth1_deposit_index`, then apply. -/
-forkdef processDeposit (d : Deposit) : StateTransition Unit := do
-  let state ← get
-  assert (isValidMerkleBranch (htr d.data) d.proof.toArray (Const.depositContractTreeDepth + 1)
-    (sszGet state eth1DepositIndex).toNat (sszGet state eth1Data).depositRoot)
-
-  modifyState fun state => sszUpdate state with eth1DepositIndex := (sszGet state eth1DepositIndex) + 1
-  applyDeposit d.data.pubkey d.data.withdrawalCredentials d.data.amount d.data.signature
-
 /-! ## Voluntary exits -/
 
 /-- `process_voluntary_exit`. -/
@@ -288,12 +263,9 @@ forkdef processBlsToExecutionChange (sbc : SignedBLSToExecutionChange) : StateTr
 
 /-! ## Execution requests (Electra) -/
 
-/-- `process_deposit_request`. -/
+/-- `process_deposit_request` (modified in Fulu): append the request to the pending
+deposits. Fulu removes the Electra write of `deposit_requests_start_index`. -/
 forkdef processDepositRequest (dr : DepositRequest) : StateTransition Unit := do
-  modifyState fun state =>
-    if (sszGet state depositRequestsStartIndex) == Const.unsetDepositRequestsStartIndex then
-      sszUpdate state with depositRequestsStartIndex := dr.index
-    else state
   let state ← get
   appendState pendingDeposits
     { pubkey := dr.pubkey, withdrawalCredentials := dr.withdrawalCredentials, amount := dr.amount,
@@ -397,20 +369,15 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
 
 /-! ## process_operations -/
 
-/-- `process_operations`: the deposit-count gate, then each operation list in
-order, then the Electra execution requests. -/
+/-- `process_operations` (modified in Fulu). The block must carry no eth1-bridge
+deposits. Each operation list then runs in order, and the execution requests run last.
+Fulu removes the Electra deposit-count gate and the `process_deposit` loop. -/
 forkdef processOperations (body : BeaconBlockBody) : StateTransition Unit := do
-  let state ← get
-  let limit := umin (sszGet state eth1Data).depositCount (sszGet state depositRequestsStartIndex)
-  if (sszGet state eth1DepositIndex) < limit then
-    assert (UInt64.ofNat body.deposits.size == umin (UInt64.ofNat Const.maxDeposits) (limit - (sszGet state eth1DepositIndex)))
-  else
-    assert (body.deposits.size == 0)
+  assert (body.deposits.size == 0)
 
   for op in body.proposerSlashings do processProposerSlashing op
   for op in body.attesterSlashings do processAttesterSlashing op
   for op in body.attestations do processAttestation op
-  for op in body.deposits do processDeposit op
   for op in body.voluntaryExits do processVoluntaryExit op
   for op in body.blsToExecutionChanges do processBlsToExecutionChange op
   for op in body.executionRequests.deposits do processDepositRequest op

@@ -222,12 +222,13 @@ forkstruct DepositScan where
 /-- The deposit-queue scan, tail-recursive on `fuel = #deposits`. A deposit for a
 withdrawn validator applies without consuming churn; one for an exiting validator is
 postponed; otherwise it applies while it fits the per-epoch churn, and the scan stops
-(setting `churnReached`) once it does not. The eth1-bridge / not-finalized /
-per-epoch-limit stops leave `churnReached` false. -/
+(setting `churnReached`) once it does not. The not-finalized and per-epoch-limit stops
+leave `churnReached` false. Fulu removes the Electra stop at an eth1-bridge deposit
+(`fulu/beacon-chain.md`, modified `process_pending_deposits`). -/
 forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (nextEpoch : Epoch) :
     StateTransition DepositScan :=
   -- Fuel rather than a measure (§7.2): the scan stops on a data-dependent guard (churn
-  -- exhausted, an eth1-bridge deposit, a not-yet-finalized slot), not on a quantity that
+  -- exhausted, a not-yet-finalized slot, the per-epoch cap), not on a quantity that
   -- decreases every step, so the terminating invariant is not available at definition time.
   -- Fuel is `deposits.size + 1`: the `ndi ≥ deposits.size` guard returns `.done` one step
   -- before exhaustion, so `fuelLoop`'s `exhausted` value is unreachable.
@@ -236,10 +237,8 @@ forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (
     let state ← get
     let deposit := deposits[s.ndi]!
 
-    -- Stop the scan early: the eth1-bridge deposits are not yet applied, the deposit is
-    -- not finalized, or this epoch's deposit cap is reached.
-    if deposit.slot > Const.genesisSlot
-        && (sszGet state eth1DepositIndex) < (sszGet state depositRequestsStartIndex) then return .done s
+    -- Stop the scan early: the deposit is not finalized, or this epoch's deposit cap is
+    -- reached.
     if deposit.slot > finalizedSlot then return .done s
     if s.ndi ≥ Const.maxPendingDepositsPerEpoch then return .done s
 

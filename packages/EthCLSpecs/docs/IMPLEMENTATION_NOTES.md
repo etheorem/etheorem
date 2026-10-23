@@ -771,10 +771,10 @@ desynced or dead server, so the parallel run is deterministic.
 
 ## Genesis
 
-`SPECS_ARCHITECTURE.md` §10.1 marks `genesis` in scope and §6.1 names
-`initializeBeaconStateFromEth1` / `isValidGenesisState`. The pytest corpus carries no
-`genesis` vectors for Fulu, Gloas, or Heze at the `v1.7.0-alpha.11` pin, so there is nothing to
-drive; both stay a `todo` stub in `Interface.lean`.
+The model does not construct a genesis state (`SPECS_ARCHITECTURE.md` §6.1, §10.1). The
+pytest corpus carries no `genesis` vectors for Fulu, Gloas, or Heze at the `v1.7.0-alpha.11`
+pin, so there is nothing to drive. Each fork's `runGenesis` in `Interface.lean` returns
+`.outOfScope`.
 
 ## Proofs
 
