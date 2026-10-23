@@ -272,7 +272,7 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
           onboardBuildersFromPendingDeposits
           for sb in gloasBlocks do
             if (sszGet (← get) slot) < sb.message.slot then Gloas.processSlots sb.message.slot
-            if cmeta.blsSetting != 2 then assert (Gloas.verifyBlockSignature (← get) sb)
+            if cmeta.blsSetting != 2 then assert (← liftErr (Gloas.verifyBlockSignature (← get) sb))
             Gloas.processBlock sb.message
             let root ← getStateRoot
             assert (sb.message.stateRoot == bytesToRoot root)

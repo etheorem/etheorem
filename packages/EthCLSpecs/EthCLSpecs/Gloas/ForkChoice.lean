@@ -747,7 +747,7 @@ forkdef onPayloadAttestationMessage (msg : PayloadAttestationMessage) (isFromBlo
       let indexed : IndexedPayloadAttestation :=
         { attestingIndices := ← sszOfArrayM "attestingIndices" #[msg.validatorIndex], data := data,
           signature := msg.signature }
-      assert (isValidIndexedPayloadAttestation state indexed)
+      assert (← liftErr (isValidIndexedPayloadAttestation state indexed))
       set (← recordPtcVotes store data ptcIndices)
 
 /-- `notify_ptc_messages(store, state, payload_attestations)`: replay the block's
@@ -1040,7 +1040,7 @@ forkdef onAttestation (att : Attestation) (isFromBlock : Bool) : StoreTransition
   let indexedAttestation : IndexedAttestation :=
     { attestingIndices := ← sszOfArrayM "attestingIndices" attesting, data := att.data,
       signature := att.signature }
-  assert (isValidIndexedAttestation targetState indexedAttestation)
+  assert (← liftErr (isValidIndexedAttestation targetState indexedAttestation))
 
   set (updateLatestMessages store attesting att)
 
@@ -1052,8 +1052,8 @@ forkdef onAttesterSlashing (asl : AttesterSlashing) : StoreTransition Unit := do
   assert (isSlashableAttestationData asl.attestation1.data asl.attestation2.data)
   let store ← get
   let state ← FcMap.getOrThrow store.blockStates store.justifiedCheckpoint.root
-  assert (isValidIndexedAttestation state asl.attestation1)
-  assert (isValidIndexedAttestation state asl.attestation2)
+  assert (← liftErr (isValidIndexedAttestation state asl.attestation1))
+  assert (← liftErr (isValidIndexedAttestation state asl.attestation2))
 
   let set2 := asl.attestation2.attestingIndices.toArray
   let inter := arrayInter asl.attestation1.attestingIndices.toArray set2

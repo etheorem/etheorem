@@ -39,20 +39,24 @@ forkdef isSlashableAttestationData (d1 d2 : AttestationData) : Bool :=
   (htr d1 != htr d2 && d1.target.epoch == d2.target.epoch) ||
   (d1.source.epoch < d2.source.epoch && d2.target.epoch < d1.target.epoch)
 
-/-- `is_valid_indexed_attestation`: non-empty, sorted-unique indices in range, and a
-valid aggregate signature (through the `[CryptoBackend]` seam). A pure `Bool`, so an
-index past the registry returns `false` (the pyspec's `IndexError` reject outcome)
-rather than panicking. -/
-forkdef isValidIndexedAttestation (state : State) (a : IndexedAttestation) : Bool :=
+/-- `is_valid_indexed_attestation`: non-empty, sorted-unique indices, and a valid aggregate
+signature (through the `[CryptoBackend]` seam). The pyspec tests the shape first and returns
+`False` on a bad one. It then reads `state.validators[i].pubkey` for each index, in order, and
+a read past the registry raises `IndexError`. The body finds the first index past the
+registry and raises `.outOfBounds` there, so the result is an `Except`. Callers `assert` the
+`Bool` it returns. -/
+forkdef isValidIndexedAttestation (state : State) (a : IndexedAttestation) :
+    Except StateTransitionError Bool := do
   let validators := sszGet state validators
   let idx := a.attestingIndices.toArray
-  if idx.size == 0 || !strictlySorted idx then false
-  else if !idx.all (·.toNat < validators.size) then false
-  else
-    let pubkeys := idx.map (fun i => (validators[i.toNat]!).pubkey)
-    blsFastAggregateVerify pubkeys
-      (computeSigningRoot a.data (getDomain state Const.domainBeaconAttester a.data.target.epoch))
-      a.signature
+  if idx.size == 0 || !strictlySorted idx then return false
+  -- The pyspec reads the indices in order, so the first one past the registry raises.
+  if let some i := idx.find? (fun i => validators.size ≤ i.toNat) then
+    throw (.outOfBounds i.toNat validators.size)
+  let pubkeys := idx.map (fun i => (validators[i.toNat]!).pubkey)
+  pure (blsFastAggregateVerify pubkeys
+    (computeSigningRoot a.data (getDomain state Const.domainBeaconAttester a.data.target.epoch))
+    a.signature)
 
 /-! ## Slashings -/
 
@@ -66,8 +70,8 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
   assert (h1.proposerIndex == h2.proposerIndex)
   assert (htr h1 != htr h2)
 
-  let hb ← assertH (h1.proposerIndex.toNat < (sszGet state validators).size)
-  let proposer := (sszGet state validators)[h1.proposerIndex.toNat]'hb.down
+  -- `state.validators[header_1.proposer_index]` raises `IndexError` past the registry.
+  let proposer ← sszGetIdx (sszGet state validators) h1.proposerIndex.toNat
   assert (isSlashableValidator proposer (currentEpochOf state))
   assert (blsVerifySigned proposer.pubkey h1
     (getDomain state Const.domainBeaconProposer (computeEpochAtSlot h1.slot)) ps.signedHeader1.signature)
@@ -80,8 +84,8 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
 forkdef processAttesterSlashing (asl : AttesterSlashing) : StateTransition Unit := do
   let state ← get
   assert (isSlashableAttestationData asl.attestation1.data asl.attestation2.data)
-  assert (isValidIndexedAttestation state asl.attestation1)
-  assert (isValidIndexedAttestation state asl.attestation2)
+  assert (← liftErr (isValidIndexedAttestation state asl.attestation1))
+  assert (← liftErr (isValidIndexedAttestation state asl.attestation2))
 
   let set2 := asl.attestation2.attestingIndices.toArray
   let indices := (arrayInter asl.attestation1.attestingIndices.toArray set2).qsort (· < ·)
@@ -97,25 +101,26 @@ forkdef processAttesterSlashing (asl : AttesterSlashing) : StateTransition Unit 
 
 /-! ## Attestations -/
 
-/-- `get_attestation_participation_flag_indices`. Returns `none` for the
-`is_matching_source` assertion (a valid attestation always matches source), so the
-caller rejects; `some flags` otherwise. -/
+/-- `get_attestation_participation_flag_indices`. The pyspec reads the target root and the
+head root first, and asserts `is_matching_source` last. A root read can fault (`.assert` from
+the recency check, `.arithmetic` from its sum), and that fault comes before the source
+assert. The body keeps that order. -/
 forkdef getAttestationParticipationFlagIndices (state : State) (data : AttestationData)
-    (inclusionDelay : UInt64) : StateTransition (Option (Array Nat)) := do
+    (inclusionDelay : UInt64) : StateTransition (Array Nat) := do
   let justified := if data.target.epoch == currentEpochOf state then sszGet state currentJustifiedCheckpoint
                    else sszGet state previousJustifiedCheckpoint
   let isMatchingSource := data.source.epoch == justified.epoch && data.source.root == justified.root
-  if !isMatchingSource then return none
   let targetRoot ← getBlockRoot state data.target.epoch
-  let isMatchingTarget := data.target.root == targetRoot
+  let isMatchingTarget := isMatchingSource && data.target.root == targetRoot
   let headRoot ← getBlockRootAtSlot state data.slot
   let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == headRoot
+  assert isMatchingSource
 
   let mut flags : Array Nat := #[]
   if inclusionDelay ≤ UInt64.ofNat (isqrt Const.slotsPerEpoch) then flags := flags.push Const.timelySourceFlagIndex
   if isMatchingTarget then flags := flags.push Const.timelyTargetFlagIndex
   if isMatchingHead && inclusionDelay == Const.minAttestationInclusionDelay then flags := flags.push Const.timelyHeadFlagIndex
-  return some flags
+  return flags
 
 /-- `get_attesting_indices`: the validators flagged across the slot's committees. The body
 reads the block-supplied `aggregation_bits` at a committee offset that the block does not
@@ -185,39 +190,43 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   assert (att.aggregationBits.size == offset)
 
   -- Resolve the participation flags, then validate the aggregate signature.
-  let flagIndices ← match ← getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) with
-    | some f => pure f
-    | none   => throw (StateTransitionError.assert "is_matching_source")
+  let flagIndices ← getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot)
   let indexedAttestation : IndexedAttestation :=
     { attestingIndices := ← sszOfArrayM "attestingIndices"
         ((← liftErr (getAttestingIndices state att)).qsort (· < ·)),
       data := att.data, signature := att.signature }
-  assert (isValidIndexedAttestation state indexedAttestation)
+  assert (← liftErr (isValidIndexedAttestation state indexedAttestation))
 
   -- Apply participation flags and accumulate the proposer-reward numerator.
   let currentTarget := data.target.epoch == currentEpochOf state
   let mut stateAcc := state
-  let mut proposerNum := 0
+  let mut proposerNum : Gwei := 0
   for vi in (← liftErr (getAttestingIndices state att)) do
     let i := vi.toNat
     for flagIndex in [0:3] do
-      -- `i` is a data-derived attesting-validator index; read the participation flag
-      -- through `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather
-      -- than masking as a default flag. The matching `[i]!` write below is then a
-      -- provably-in-range write (the read at `i` just succeeded).
-      let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) i
-                 else sszGetIdx (sszGet stateAcc previousEpochParticipation) i
-      if flagIndices.contains flagIndex && !hasFlag flag flagIndex then
-        stateAcc := if currentTarget then
-                   sszUpdate stateAcc with currentEpochParticipation[i]! := addFlag flag flagIndex
-                 else
-                   sszUpdate stateAcc with previousEpochParticipation[i]! := addFlag flag flagIndex
-        proposerNum := proposerNum + (← liftErr (getBaseReward state vi)).toNat * Const.participationFlagWeights[flagIndex]!
+      -- Python's `and` reads `epoch_participation[index]` only for a flag in the set. The
+      -- read goes through `sszGetIdx`, so an index past the list rejects with
+      -- `outOfBounds`. The `[i]!` write below is in range, since the read at `i` succeeded.
+      if flagIndices.contains flagIndex then
+        let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) i
+                   else sszGetIdx (sszGet stateAcc previousEpochParticipation) i
+        if !hasFlag flag flagIndex then
+          stateAcc := if currentTarget then
+                     sszUpdate stateAcc with currentEpochParticipation[i]! := addFlag flag flagIndex
+                   else
+                     sszUpdate stateAcc with previousEpochParticipation[i]! := addFlag flag flagIndex
+          -- `get_base_reward(state, index) * weight` is a `Gwei` product, and the numerator a
+          -- `Gwei` sum, so both are checked `uint64` ops.
+          let reward ← checkedMul (← liftErr (getBaseReward state vi))
+            (UInt64.ofNat Const.participationFlagWeights[flagIndex]!)
+            "process_attestation: get_base_reward(state, index) * weight"
+          proposerNum ← checkedAdd proposerNum reward
+            "process_attestation: proposer_reward_numerator + reward"
 
   -- Pay the proposer the accumulated weight.
   let proposerDenom := (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
   stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc)
-    (UInt64.ofNat (proposerNum / proposerDenom))
+    (proposerNum / UInt64.ofNat proposerDenom)
   set stateAcc
 
 /-! ## Voluntary exits -/
@@ -226,14 +235,14 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
 forkdef processVoluntaryExit (sve : SignedVoluntaryExit) : StateTransition Unit := do
   let state ← get
   let ve := sve.message
-  let hb ← assertH (ve.validatorIndex.toNat < (sszGet state validators).size)
-  let validator := (sszGet state validators)[ve.validatorIndex.toNat]'hb.down
+  -- `state.validators[voluntary_exit.validator_index]` raises `IndexError` past the registry.
+  let validator ← sszGetIdx (sszGet state validators) ve.validatorIndex.toNat
 
   assert (isActiveValidator validator (currentEpochOf state))
   assert (hasNotInitiatedExit validator)
   assert (currentEpochOf state ≥ ve.epoch)
   assert (passedShardCommitteePeriod validator (currentEpochOf state))
-  assert (getPendingBalanceToWithdraw state ve.validatorIndex == 0)
+  assert ((← liftErr (getPendingBalanceToWithdraw state ve.validatorIndex)) == 0)
 
   let domain := computeDomain Const.domainVoluntaryExit Const.capellaForkVersion (sszGet state genesisValidatorsRoot)
   assert (blsVerifySigned validator.pubkey ve domain sve.signature)
@@ -294,7 +303,7 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
       else if !hasNotInitiatedExit validator then pure ()
       else if !passedShardCommitteePeriod validator (currentEpochOf state) then pure ()
       else
-        let pending := getPendingBalanceToWithdraw state index
+        let pending ← liftErr (getPendingBalanceToWithdraw state index)
         if isFullExit then
           if pending == 0 then initiateValidatorExit index else pure ()
         else
@@ -304,7 +313,10 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
           -- silently reading a default balance.
           let balance ← sszGetIdx (sszGet state balances) idxN
           let sufficientEff := validator.effectiveBalance ≥ Const.minActivationBalance
-          let excess := balance > Const.minActivationBalance + pending
+          -- `MIN_ACTIVATION_BALANCE + pending_balance_to_withdraw` is a checked `uint64` add.
+          let threshold ← checkedAdd Const.minActivationBalance pending
+            "process_withdrawal_request: MIN_ACTIVATION_BALANCE + pending_balance_to_withdraw"
+          let excess := balance > threshold
           if hasCompoundingWithdrawalCredential validator && sufficientEff && excess then
             let toWithdraw := umin (balance - Const.minActivationBalance - pending) wr.amount
             let exitEpoch ← computeExitEpochAndUpdateChurn toWithdraw
@@ -359,8 +371,8 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
       else if !hasNotInitiatedExit src then pure ()
       else if !hasNotInitiatedExit tgt then pure ()
       else if !passedShardCommitteePeriod src (currentEpochOf state) then pure ()
-      else if getPendingBalanceToWithdraw state (UInt64.ofNat srcN) > 0 then pure ()
       else
+        if (← liftErr (getPendingBalanceToWithdraw state (UInt64.ofNat srcN))) > 0 then return
         let exitEpoch ← computeConsolidationEpochAndUpdateChurn src.effectiveBalance
         let we ← checkedAdd exitEpoch Const.minValidatorWithdrawabilityDelay
           "process_consolidation_request: exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY"

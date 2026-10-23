@@ -73,10 +73,15 @@ forkdef getBlockRoot (state : State) (epoch : Epoch) : StateTransition Root := d
   let epochFirstSlot ← liftErr (computeStartSlotAtEpoch epoch)
   getBlockRootAtSlot state epochFirstSlot
 
-/-- `get_pending_balance_to_withdraw`. -/
-forkdef getPendingBalanceToWithdraw (state : State) (vi : ValidatorIndex) : Gwei :=
-  (sszGet state pendingPartialWithdrawals).foldl
-    (fun acc w => if w.validatorIndex == vi then acc + w.amount else acc) 0
+/-- `get_pending_balance_to_withdraw`. The pyspec's `sum` adds `Gwei` amounts, so each partial
+sum is a checked `uint64` and an overflow raises `ValueError`. The body adds through
+`checkedAdd` (`.arithmetic`). -/
+forkdef getPendingBalanceToWithdraw (state : State) (vi : ValidatorIndex) :
+    Except StateTransitionError Gwei :=
+  (sszGet state pendingPartialWithdrawals).toArray.foldlM (init := 0) fun acc w =>
+    if w.validatorIndex == vi then
+      checkedAdd acc w.amount "get_pending_balance_to_withdraw: sum of amounts"
+    else pure acc
 
 end
 

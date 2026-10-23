@@ -236,7 +236,7 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
       let hezeAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Heze.BeaconState P)) Unit := do
         for sb in postBlocks do
           if (sszGet (← get) slot) < sb.message.slot then processSlots sb.message.slot
-          if cmeta.blsSetting != 2 then assert (verifyBlockSignature (← get) sb)
+          if cmeta.blsSetting != 2 then assert (← liftErr (verifyBlockSignature (← get) sb))
           processBlock sb.message
           let root ← getStateRoot
           assert (sb.message.stateRoot == bytesToRoot root)

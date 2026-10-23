@@ -672,7 +672,7 @@ forkdef onAttestation (att : Attestation) (isFromBlock : Bool) : StoreTransition
   let indexedAttestation : IndexedAttestation :=
     { attestingIndices := ← sszOfArrayM "attestingIndices" attesting, data := att.data,
       signature := att.signature }
-  assert (isValidIndexedAttestation targetState indexedAttestation)
+  assert (← liftErr (isValidIndexedAttestation targetState indexedAttestation))
 
   set (updateLatestMessages store attesting att)
 
@@ -684,8 +684,8 @@ forkdef onAttesterSlashing (asl : AttesterSlashing) : StoreTransition Unit := do
   assert (isSlashableAttestationData asl.attestation1.data asl.attestation2.data)
   let store ← get
   let state ← FcMap.getOrThrow store.blockStates store.justifiedCheckpoint.root
-  assert (isValidIndexedAttestation state asl.attestation1)
-  assert (isValidIndexedAttestation state asl.attestation2)
+  assert (← liftErr (isValidIndexedAttestation state asl.attestation1))
+  assert (← liftErr (isValidIndexedAttestation state asl.attestation2))
 
   let set2 := asl.attestation2.attestingIndices.toArray
   let inter := arrayInter asl.attestation1.attestingIndices.toArray set2

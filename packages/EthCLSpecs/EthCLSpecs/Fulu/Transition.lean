@@ -89,8 +89,8 @@ forkdef processBlockHeader (block : BeaconBlock) : StateTransition Unit := do
   let newHeader : BeaconBlockHeader :=
     { slot := block.slot, proposerIndex := block.proposerIndex, parentRoot := block.parentRoot,
       stateRoot := zeroRoot, bodyRoot := htr block.body }
-  let hb ← assertH (block.proposerIndex.toNat < (sszGet state validators).size)
-  let proposer := (sszGet state validators)[block.proposerIndex.toNat]'hb.down
+  -- `state.validators[block.proposer_index]` raises `IndexError` past the registry.
+  let proposer ← sszGetIdx (sszGet state validators) block.proposerIndex.toNat
   assert (!proposer.slashed)
 
   modifyState fun state => sszUpdate state with latestBlockHeader := newHeader
@@ -208,14 +208,15 @@ forkdef processBlock (block : BeaconBlock) : StateTransition Unit := do
   processOperations block.body
   processSyncAggregate block.body.syncAggregate
 
-/-- `verify_block_signature`. -/
-forkdef verifyBlockSignature (state : State) (signedBlock : SignedBeaconBlock) : Bool :=
+/-- `verify_block_signature`. The pyspec reads `state.validators[proposer_index]` first, and
+that read raises `IndexError` past the registry. The body reads through `sszGetIdx`
+(`.outOfBounds`), so the result is an `Except`. -/
+forkdef verifyBlockSignature (state : State) (signedBlock : SignedBeaconBlock) :
+    Except StateTransitionError Bool := do
   let block := signedBlock.message
-  if block.proposerIndex.toNat ≥ (sszGet state validators).size then false
-  else
-    let proposer := sszGet state validators[block.proposerIndex.toNat]!
-    let signingRoot := computeSigningRoot block (getDomain state Const.domainBeaconProposer (currentEpochOf state))
-    blsVerify proposer.pubkey signingRoot signedBlock.signature
+  let proposer ← sszGetIdx (sszGet state validators) block.proposerIndex.toNat
+  let signingRoot := computeSigningRoot block (getDomain state Const.domainBeaconProposer (currentEpochOf state))
+  pure (blsVerify proposer.pubkey signingRoot signedBlock.signature)
 
 /-- `state_transition`: advance to the block's slot, verify the block signature,
 apply the block, and check the claimed post-state root, all under `validateResult`. -/
@@ -223,7 +224,7 @@ forkdef stateTransition (signedBlock : SignedBeaconBlock) (validateResult : Bool
     StateTransition Unit := do
   let block := signedBlock.message
   processSlots block.slot
-  if validateResult then assert (verifyBlockSignature (← get) signedBlock)
+  if validateResult then assert (← liftErr (verifyBlockSignature (← get) signedBlock))
   processBlock block
   if validateResult then
     let root ← getStateRoot
