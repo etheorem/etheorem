@@ -1,4 +1,5 @@
 import EthCLSpecs.Tests.BoxBinderPins
+import EthCLSpecs.Tests.FuluBlobSchedulePins
 import EthCLSpecs.Tests.FuluCommitteesPins
 import EthCLSpecs.Tests.FuluDepositPins
 import EthCLSpecs.Tests.FuluForkChoicePins
