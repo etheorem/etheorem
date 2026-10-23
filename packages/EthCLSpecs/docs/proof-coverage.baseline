@@ -17,6 +17,7 @@ tier1 EthCLSpecs.Gloas.getExitChurnLimit
 tier1 EthCLSpecs.Gloas.getIndexedPayloadAttestation
 tier1 EthCLSpecs.Gloas.getPtc
 tier1 EthCLSpecs.Gloas.getSlotsSinceGenesis
+tier1 EthCLSpecs.Gloas.getTotalActiveBalance
 tier1 EthCLSpecs.Gloas.increaseBalance
 tier1 EthCLSpecs.Gloas.initiateValidatorExit
 tier1 EthCLSpecs.Gloas.isAttestationSameSlot
@@ -32,8 +33,6 @@ tier1 EthCLSpecs.Heze.builderPaymentIndex
 tier1 EthCLSpecs.Heze.computeEpochAtSlot
 tier1 EthCLSpecs.Heze.currentEpochOf
 tier1 EthCLSpecs.Heze.fcZeroRoot
-tier1 EthCLSpecs.Heze.getBeaconCommittee
-tier1 EthCLSpecs.Heze.getCommitteeCountPerSlot
 tier1 EthCLSpecs.Heze.getConsolidationChurnLimit
 tier1 EthCLSpecs.Heze.getCurrentSlot
 tier1 EthCLSpecs.Heze.getExitChurnLimit
@@ -43,6 +42,7 @@ tier1 EthCLSpecs.Heze.getInclusionListDueMs
 tier1 EthCLSpecs.Heze.getNodeChildren
 tier1 EthCLSpecs.Heze.getParentPayloadStatus
 tier1 EthCLSpecs.Heze.getPayloadStatusTiebreaker
+tier1 EthCLSpecs.Heze.getTotalActiveBalance
 tier1 EthCLSpecs.Heze.getWeight
 tier1 EthCLSpecs.Heze.isDataAvailable
 tier1 EthCLSpecs.Heze.isInclusionListSatisfied
