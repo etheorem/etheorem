@@ -1,8 +1,9 @@
 /-!
 # `EthCLLib.TheoremVectors.Yaml`: the client-facing YAML writer
 
-The writer for the two YAML files a consumer reads (`THEOREM_VECTORS_ARCHITECTURE.md`
-§12.3): a pyspec case's `meta.yaml` (§13.4) and the function format (§13.3).
+The writer for the three YAML files a consumer reads
+(`THEOREM_VECTORS_ARCHITECTURE.md` §12.3): a pyspec case's `meta.yaml` and
+`manifest.yaml` (§13.4) and the function format (§13.3).
 `meta.yaml` goes out as one flow line, the form the cached upstream corpus
 writes, and the function format goes out in block style per §13.3. The
 writer has no reader, because the generator never reads a YAML file. The

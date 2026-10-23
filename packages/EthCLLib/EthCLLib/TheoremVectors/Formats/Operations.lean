@@ -18,6 +18,7 @@ The upstream `operations` case layout, rendered from `.runOk` and
   <operand>.ssz      the operand part, named by `OpKind.inputName`
   post.ssz           absent for .runError, which marks an invalid case
   meta.yaml          {bls_setting: 2, theorem: <name>}
+  manifest.yaml      {preset, fork, runner, handler, suite, case}
 ```
 
 The path layout is the pyspec format's (§13.4). The case parts differ:
@@ -68,10 +69,10 @@ def Formats.operationsAccepts (env : RenderEnv) (r : VectorRecord) : Bool :=
 
 /-- §13.6's render: one case directory under `env.outDir` with
 `pre.ssz`, the operand part at `<k.inputName>.ssz`, `post.ssz` when the
-record carries an output, and `meta.yaml`. The state input is found by
-type, never by position, and the operand takes the other slot. Returns
-the written paths in that order, the list the manifest carries to
-`check` (§13.2). -/
+record carries an output, `meta.yaml`, and `manifest.yaml`. The state
+input is found by type, never by position, and the operand takes the
+other slot. Returns the written paths in that order, the list the check
+receives (§13.2). -/
 def Formats.operationsRender (env : RenderEnv) (r : VectorRecord)
     (inputBytes : Array ByteArray) (outputBytes : Option ByteArray) :
     IO (Array System.FilePath) := do
@@ -105,23 +106,27 @@ def Formats.operationsRender (env : RenderEnv) (r : VectorRecord)
   if let some postFile := postFile then
     files := files.push postFile
   let metaFile ← Formats.pyspecWriteMeta dir r
-  return files.push metaFile
+  let manifestFile ← Formats.pyspecWriteManifest dir r.preset.tag r.fork
+    "operations" handler "pyspec_tests" (Formats.pyspecCaseName b r)
+  return (files.push metaFile).push manifestFile
 
 /-- §13.5's check over the §13.6 layout: rebuild the case from the files
 `render` returned and replay it through `EthCLLib.PySpecTests.runCase`
 with the binding's `ForkInterface` at the record's preset. The paths
 arrive in the order render returned them: `pre.ssz`, the operand part,
-`post.ssz` when the record has an output, then `meta.yaml` (§13.2). The
-post read goes through the shared `pyspecReadPost`, which this format
-calls at position 2, where the operand part sits. A failed replay names
-the result's bucket and its detail line, so a human sees why it failed.
-A flagged pass fails too: the replay rejected an invalid vector with a
-bug-smell the case's caught set admits, and a bug-smell reject never
-ships green.
+`post.ssz` when the record has an output, then `meta.yaml`, then
+`manifest.yaml` (§13.2). The post read goes through the shared
+`pyspecReadPost`, which this format calls at position 2, where the
+operand part sits. A failed replay names the result's bucket and its
+detail line, so a human sees why it failed. A flagged pass fails too:
+the replay rejected an invalid vector with a bug-smell the case's caught
+set admits, and a bug-smell reject never ships green.
 
 Only the pre, operand, and post bytes come from the files. `meta.yaml`
 is written but never parsed: the check rebuilds `caseMeta` from the
-constant `{ blsSetting := 2 }`. -/
+constant `{ blsSetting := 2 }`. `manifest.yaml` is written but never
+parsed: the check reads no path after `meta.yaml`, so a tampered
+manifest cannot change the outcome. -/
 def Formats.operationsCheck (env : RenderEnv) (r : VectorRecord)
     (paths : Array System.FilePath) : IO CheckResult := do
   let some b := env.bindings r.fork

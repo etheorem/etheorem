@@ -11,9 +11,10 @@ import EthCLLib.TheoremVectors.Tests.ToyRun
 
 Build-gate checks for the pyspec format (`THEOREM_VECTORS_ARCHITECTURE.md`
 §13.4, §13.5), over the toy run binding: what `accepts` takes and refuses,
-the rendered case layout with its byte-exact `meta.yaml`, and the check
-that rebuilds a `CaseRequest` from the rendered files and replays it
-through `runCase`. The records are hand-built, no search involved.
+the rendered case layout with its byte-exact `meta.yaml` and
+`manifest.yaml`, and the check that rebuilds a `CaseRequest` from the
+rendered files and replays it through `runCase`. The records are
+hand-built, no search involved.
 
 Two pins carry the format's point:
 
@@ -194,13 +195,14 @@ run_cmd do
       throw (IO.userError "pyspec accepts: the non-state input record was accepted")
     unless Formats.pyspec.accepts toyEnv toyRunErrorRecord do
       throw (IO.userError "pyspec accepts: the runError record was refused")
-    -- the rendered layout (§13.4): pre, post, meta, in one case directory
+    -- the rendered layout (§13.4): pre, post, meta, manifest, in one
+    -- case directory
     let preBytes := SizzLean.SSZ.serialize toyPre
     let postBytes := SizzLean.SSZ.serialize toyPost
     let paths ← Formats.pyspec.render toyEnv toyRunOkRecord
       #[preBytes] (some postBytes)
-    unless paths.size == 3 do
-      throw (IO.userError s!"pyspec render: {paths.size} paths, expected 3")
+    unless paths.size == 4 do
+      throw (IO.userError s!"pyspec render: {paths.size} paths, expected 4")
     let caseDir := scratchOutDir / "formats" / "pyspec" / "toyrun" /
       "minimal" / "epoch_processing" / "effective_balance_updates" /
       "pyspec_tests" / "EthCLLib.TheoremVectors.Tests.ToyRun.toyRunOk_000"
@@ -210,6 +212,8 @@ run_cmd do
       throw (IO.userError s!"pyspec render: post path is {paths[1]!}")
     unless paths[2]!.toString == (caseDir / "meta.yaml").toString do
       throw (IO.userError s!"pyspec render: meta path is {paths[2]!}")
+    unless paths[3]!.toString == (caseDir / "manifest.yaml").toString do
+      throw (IO.userError s!"pyspec render: manifest path is {paths[3]!}")
     unless (← IO.FS.readBinFile paths[0]!) == preBytes do
       throw (IO.userError "pyspec render: pre.ssz is not the pre-state's bytes")
     unless (← IO.FS.readBinFile paths[1]!) == postBytes do
@@ -218,8 +222,23 @@ run_cmd do
     unless (← IO.FS.readFile paths[2]!) ==
         "{bls_setting: 2, theorem: EthCLLib.TheoremVectors.Tests.ToyRun.toyRunOk}\n" do
       throw (IO.userError "pyspec render: meta.yaml is not the pinned flow line")
+    -- manifest.yaml, byte for byte in the upstream block form (§12.3):
+    -- six keys in upstream order, the case path's segments as the values
+    unless (← IO.FS.readFile paths[3]!) ==
+        "preset: minimal\n" ++
+        "fork: toyrun\n" ++
+        "runner: epoch_processing\n" ++
+        "handler: effective_balance_updates\n" ++
+        "suite: pyspec_tests\n" ++
+        "case: EthCLLib.TheoremVectors.Tests.ToyRun.toyRunOk_000\n" do
+      throw (IO.userError "pyspec render: manifest.yaml is not the pinned block map")
     -- the check replays the rendered files through runCase (§13.5)
     checkOutcome "pyspec check runOk"
+      (← Formats.pyspec.check toyEnv toyRunOkRecord paths)
+    -- the manifest is written and never parsed: garbage in the file, and
+    -- the check still passes on the same paths
+    IO.FS.writeFile paths[3]! "garbage\n"
+    checkOutcome "pyspec check runOk with a garbage manifest"
       (← Formats.pyspec.check toyEnv toyRunOkRecord paths)
     -- a preset the binding's interface does not answer fails defensively,
     -- before any file is read
@@ -233,10 +252,11 @@ run_cmd do
     -- the runError case: no post.ssz, and the returned paths reflect that
     let errPaths ← Formats.pyspec.render toyEnv toyRunErrorRecord
       #[preBytes] none
-    unless errPaths.size == 2 do
+    unless errPaths.size == 3 do
       throw (IO.userError s!"pyspec render: {errPaths.size} paths for runError, \
-        expected 2")
-    unless errPaths.all fun p => p.fileName == "pre.ssz" || p.fileName == "meta.yaml" do
+        expected 3")
+    unless errPaths.all fun p => p.fileName == "pre.ssz" || p.fileName == "meta.yaml"
+        || p.fileName == "manifest.yaml" do
       throw (IO.userError s!"pyspec render: the runError case wrote \
         {errPaths.map (·.fileName)}")
     -- the invalid case genuinely rejects: the toy interface answers the

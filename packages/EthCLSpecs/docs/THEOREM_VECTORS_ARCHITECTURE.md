@@ -1030,8 +1030,9 @@ client sees them. They are JSON through `Lean.Json`, which ships with Lean:
 each structure derives `ToJson` and `FromJson`, the printer writes the file,
 and the parser reads it. No format code is written for them.
 
-**The client-facing files** are the ones a consumer reads: `meta.yaml` in
-the pyspec layout (§13.4) and the function format (§13.3). Other clients'
+**The client-facing files** are the ones a consumer reads: `meta.yaml` and
+`manifest.yaml` in the pyspec layouts (§13.4, §13.6) and the function
+format (§13.3). Other clients'
 runners read `meta.yaml` with their YAML parsers, so the generator writes
 the form the upstream dumper writes, byte for byte. That dumper writes a
 map of scalars as one flow line, `{bls_setting: 1}`, and a map with a
@@ -1174,6 +1175,7 @@ operation handler's operand, has no part to go in this layout.
   pre.ssz
   post.ssz          absent for .runError, which marks an invalid case
   meta.yaml         {bls_setting: 2, theorem: <name>}
+  manifest.yaml     {preset, fork, runner, handler, suite, case}
 ```
 
 The layout is the upstream one with raw `.ssz` in place of `.ssz_snappy`. The
@@ -1181,8 +1183,9 @@ Python harness decompresses before it hands paths to the server, so a
 one-line switch in `harness.py` accepts either suffix and snappy stays out of
 Lean. The YAML writer renders `meta.yaml` as one flow line, the form the
 upstream dumper writes for a map of scalars and the one every client's
-runner already reads (§12.3). §13.7 lists every upstream pyspec format and
-this repository's coverage of each.
+runner already reads (§12.3). Both pyspec layouts write a `manifest.yaml`
+beside `meta.yaml`; §13.7 gives its keys. That section lists every upstream
+pyspec format and this repository's coverage of each.
 
 ### 13.5 The pyspec check
 
@@ -1211,6 +1214,7 @@ input by type, never by position.
   <operand>.ssz      the operand part, named by `OpKind.inputName`
   post.ssz           absent for .runError, which marks an invalid case
   meta.yaml          {bls_setting: 2, theorem: <name>}
+  manifest.yaml      {preset, fork, runner, handler, suite, case}
 ```
 
 The operand part's file name comes from the `OpKind.inputName` table, never
@@ -1274,8 +1278,12 @@ take the shape.
 Two shared parts sit outside the table. `meta.yaml` is optional per case
 and carries `bls_setting` among other keys; the generator writes it in the
 one-line flow form (§13.4). `manifest.yaml` is in every upstream case at
-the pin and repeats the path's five segments; the generator writes none,
-and its paths already say what §13.3's, §13.4's, and §13.6's files need.
+the pin, and the generator writes one in every case its two pyspec
+layouts render (§13.4, §13.6): a block-style map of six scalar keys in
+upstream order, `preset, fork, runner, handler, suite, case`, the values
+repeating the case path's segments (§12.3). The function format writes
+none, because it is not an upstream case layout. The checks read no
+manifest.
 
 A new upstream shape is one new `VectorFormat` value in `Formats.all`
 (§13.1), never an edit to the existing three. Each value carries the

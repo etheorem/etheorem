@@ -12,9 +12,10 @@ import EthCLLib.TheoremVectors.Tests.ToyRun
 
 Build-gate checks for the operations format (`THEOREM_VECTORS_ARCHITECTURE.md`
 §13.6), over the toy run binding: what `accepts` takes and refuses, the
-rendered case layout with its byte-exact `meta.yaml`, and the check that
-rebuilds a `CaseRequest` from the rendered files and replays it through
-`runCase`. The records are hand-built, no search involved.
+rendered case layout with its byte-exact `meta.yaml` and `manifest.yaml`,
+and the check that rebuilds a `CaseRequest` from the rendered files and
+replays it through `runCase`. The records are hand-built, no search
+involved.
 
 Two pins carry the format's point:
 
@@ -230,15 +231,15 @@ run_cmd do
     -- the unparseable handler: the `OpKind.ofString?` leg refuses it
     if Formats.operations.accepts toyBogusEnv toyOpRunOkRecord then
       throw (IO.userError "operations accepts: the bogus-handler record was accepted")
-    -- the rendered layout (§13.6): pre, operand, post, meta, in one case
-    -- directory, the operand file named by `OpKind.inputName`
+    -- the rendered layout (§13.6): pre, operand, post, meta, manifest,
+    -- in one case directory, the operand file named by `OpKind.inputName`
     let preBytes := SizzLean.SSZ.serialize toyPre
     let reqBytes := SizzLean.SSZ.serialize toyReq
     let postBytes := SizzLean.SSZ.serialize toyPost
     let paths ← Formats.operations.render toyEnv toyOpRunOkRecord
       #[preBytes, reqBytes] (some postBytes)
-    unless paths.size == 4 do
-      throw (IO.userError s!"operations render: {paths.size} paths, expected 4")
+    unless paths.size == 5 do
+      throw (IO.userError s!"operations render: {paths.size} paths, expected 5")
     let caseDir := scratchOutDir / "formats" / "pyspec" / "toyrun" /
       "minimal" / "operations" / "block_header" /
       "pyspec_tests" / "EthCLLib.TheoremVectors.Tests.ToyRun.toyOpRunOk_000"
@@ -250,6 +251,8 @@ run_cmd do
       throw (IO.userError s!"operations render: post path is {paths[2]!}")
     unless paths[3]!.toString == (caseDir / "meta.yaml").toString do
       throw (IO.userError s!"operations render: meta path is {paths[3]!}")
+    unless paths[4]!.toString == (caseDir / "manifest.yaml").toString do
+      throw (IO.userError s!"operations render: manifest path is {paths[4]!}")
     unless (← IO.FS.readBinFile paths[0]!) == preBytes do
       throw (IO.userError "operations render: pre.ssz is not the pre-state's bytes")
     unless (← IO.FS.readBinFile paths[1]!) == reqBytes do
@@ -260,13 +263,23 @@ run_cmd do
     unless (← IO.FS.readFile paths[3]!) ==
         "{bls_setting: 2, theorem: EthCLLib.TheoremVectors.Tests.ToyRun.toyOpRunOk}\n" do
       throw (IO.userError "operations render: meta.yaml is not the pinned flow line")
+    -- manifest.yaml, byte for byte in the upstream block form (§12.3):
+    -- six keys in upstream order, the case path's segments as the values
+    unless (← IO.FS.readFile paths[4]!) ==
+        "preset: minimal\n" ++
+        "fork: toyrun\n" ++
+        "runner: operations\n" ++
+        "handler: block_header\n" ++
+        "suite: pyspec_tests\n" ++
+        "case: EthCLLib.TheoremVectors.Tests.ToyRun.toyOpRunOk_000\n" do
+      throw (IO.userError "operations render: manifest.yaml is not the pinned block map")
     -- the operand-first render lands the same paths in the same order: the
     -- state input is found by type, the operand takes the other slot
     let firstPaths ← Formats.operations.render toyEnv toyOpOperandFirstRecord
       #[reqBytes, preBytes] (some postBytes)
-    unless firstPaths.size == 4 do
+    unless firstPaths.size == 5 do
       throw (IO.userError s!"operations render: {firstPaths.size} paths \
-        for the operand-first record, expected 4")
+        for the operand-first record, expected 5")
     unless firstPaths[0]!.toString == (caseDir / "pre.ssz").toString do
       throw (IO.userError s!"operations render: the operand-first pre path is {firstPaths[0]!}")
     unless firstPaths[1]!.toString == (caseDir / "block.ssz").toString do
@@ -280,6 +293,11 @@ run_cmd do
         is not the pre-state's bytes")
     -- the check replays the rendered files through runCase (§13.5)
     checkOutcome "operations check runOk"
+      (← Formats.operations.check toyEnv toyOpRunOkRecord paths)
+    -- the manifest is written and never parsed: garbage in the file, and
+    -- the check still passes on the same paths
+    IO.FS.writeFile paths[4]! "garbage\n"
+    checkOutcome "operations check runOk with a garbage manifest"
       (← Formats.operations.check toyEnv toyOpRunOkRecord paths)
     -- a preset the binding's interface does not answer fails defensively,
     -- before any file is read
@@ -297,11 +315,11 @@ run_cmd do
     let zeroReqBytes := SizzLean.SSZ.serialize toyReqZero
     let errPaths ← Formats.operations.render toyEnv toyOpRunErrorRecord
       #[preBytes, zeroReqBytes] none
-    unless errPaths.size == 3 do
+    unless errPaths.size == 4 do
       throw (IO.userError s!"operations render: {errPaths.size} paths for runError, \
-        expected 3")
+        expected 4")
     unless errPaths.all fun p => p.fileName == "pre.ssz" || p.fileName == "block.ssz"
-        || p.fileName == "meta.yaml" do
+        || p.fileName == "meta.yaml" || p.fileName == "manifest.yaml" do
       throw (IO.userError s!"operations render: the runError case wrote \
         {errPaths.map (·.fileName)}")
     -- the invalid case genuinely rejects: the toy interface answers the
