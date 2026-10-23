@@ -272,28 +272,30 @@ theorem reserveChurn_covers :
 
 /-! ## The two Fulu callers
 
-Each caller reads the state, computes the activation-exit epoch, reserves churn, and writes
-the two churn fields. The two theorems per caller split on the reservation. When it succeeds,
-the run succeeds, because `reserveChurn_covers` rules out the subtraction fault. When the
-activation epoch or the reservation faults, the run rejects with that same fault. -/
+Each caller reads the state, computes the activation-exit epoch, reads the churn limit,
+reserves churn, and writes the two churn fields. The theorems per caller split on those three
+steps, in that order. When all three succeed, the run succeeds, because `reserveChurn_covers`
+rules out the subtraction fault. When one of them faults, the run rejects with that same
+fault. The churn limit faults only where `get_total_active_balance` does. -/
 
 section Callers
 
 open EthCLLib.Spec (umax liftErr)
 open EthCLLib.Proofs (pureState)
 
-/-- **Exit churn, success.** When the activation-exit epoch and the reservation both succeed,
-the run succeeds. It returns the reserved epoch, and it writes the consumed total minus the
-exit balance and the reserved epoch. The subtraction cannot fault. -/
+/-- **Exit churn, success.** When the activation-exit epoch, the churn limit and the
+reservation all succeed, the run succeeds. It returns the reserved epoch, and it writes the
+consumed total minus the exit balance and the reserved epoch. The subtraction cannot fault. -/
 @[characterizes computeExitEpochAndUpdateChurn]
 theorem computeExitEpochAndUpdateChurn_run_ok [Preset] [HasherTag] [Config] :
-    ∀ (state : BeaconState) (exitBalance activation epoch consumed : UInt64),
+    ∀ (state : BeaconState) (exitBalance activation churn epoch consumed : UInt64),
       (computeActivationExitEpoch (computeEpochAtSlot state.slot)
           : Except StateTransitionError UInt64) = .ok activation →
+      getActivationExitChurnLimit (pureState state) = .ok churn →
       (reserveChurn exitBalance
           (if state.earliestExitEpoch < umax (state.earliestExitEpoch) activation
-            then getActivationExitChurnLimit (pureState state) else state.exitBalanceToConsume)
-          (getActivationExitChurnLimit (pureState state))
+            then churn else state.exitBalanceToConsume)
+          churn
           (umax (state.earliestExitEpoch) activation)
           : Except StateTransitionError _) = .ok (epoch, consumed) →
       (computeExitEpochAndUpdateChurn (StateTransition := FuluRun) exitBalance).run (pureState state) =
@@ -301,11 +303,25 @@ theorem computeExitEpochAndUpdateChurn_run_ok [Preset] [HasherTag] [Config] :
           { state with
               exitBalanceToConsume := consumed - exitBalance
               earliestExitEpoch := epoch }) := by
-  intro state exitBalance activation epoch consumed hact hres
+  intro state exitBalance activation churn epoch consumed hact hchurn hres
   have hcov := reserveChurn_covers _ _ _ _ _ _ hres
   have hnot : ¬ exitBalance > consumed := Nat.not_lt.mpr (UInt64.le_iff_toNat_le.mp hcov)
-  simp [computeExitEpochAndUpdateChurn, hact, hres, liftErr, Except.mapError,
+  simp [computeExitEpochAndUpdateChurn, hact, hchurn, hres, liftErr, Except.mapError,
     MonadExcept.ofExcept, checkedSub, hnot]
+  rfl
+
+/-- **Exit churn, churn-limit fault.** When the activation-exit epoch succeeds and the churn
+limit faults, the run rejects with that fault. -/
+theorem computeExitEpochAndUpdateChurn_run_churn_error [Preset] [HasherTag] [Config] :
+    ∀ (state : BeaconState) (exitBalance activation : UInt64) (err : StateTransitionError),
+      (computeActivationExitEpoch (computeEpochAtSlot state.slot)
+          : Except StateTransitionError UInt64) = .ok activation →
+      getActivationExitChurnLimit (pureState state) = .error err →
+      (computeExitEpochAndUpdateChurn (StateTransition := FuluRun) exitBalance).run (pureState state)
+        = .error err := by
+  intro state exitBalance activation err hact hchurn
+  simp [computeExitEpochAndUpdateChurn, hact, hchurn, liftErr, Except.mapError,
+    MonadExcept.ofExcept]
   rfl
 
 /-- **Exit churn, activation fault.** When the activation-exit epoch faults, the run rejects
@@ -320,22 +336,23 @@ theorem computeExitEpochAndUpdateChurn_run_activation_error [Preset] [HasherTag]
   simp [computeExitEpochAndUpdateChurn, hact, liftErr, Except.mapError, MonadExcept.ofExcept]
   rfl
 
-/-- **Exit churn, reservation fault.** When the activation-exit epoch succeeds and the
-reservation faults, the run rejects with the reservation's fault. -/
+/-- **Exit churn, reservation fault.** When the activation-exit epoch and the churn limit
+succeed and the reservation faults, the run rejects with the reservation's fault. -/
 theorem computeExitEpochAndUpdateChurn_run_reserve_error [Preset] [HasherTag] [Config] :
-    ∀ (state : BeaconState) (exitBalance activation : UInt64) (err : StateTransitionError),
+    ∀ (state : BeaconState) (exitBalance activation churn : UInt64) (err : StateTransitionError),
       (computeActivationExitEpoch (computeEpochAtSlot state.slot)
           : Except StateTransitionError UInt64) = .ok activation →
+      getActivationExitChurnLimit (pureState state) = .ok churn →
       (reserveChurn exitBalance
           (if state.earliestExitEpoch < umax (state.earliestExitEpoch) activation
-            then getActivationExitChurnLimit (pureState state) else state.exitBalanceToConsume)
-          (getActivationExitChurnLimit (pureState state))
+            then churn else state.exitBalanceToConsume)
+          churn
           (umax (state.earliestExitEpoch) activation)
           : Except StateTransitionError _) = .error err →
       (computeExitEpochAndUpdateChurn (StateTransition := FuluRun) exitBalance).run (pureState state)
         = .error err := by
-  intro state exitBalance activation err hact hres
-  simp [computeExitEpochAndUpdateChurn, hact, hres, liftErr, Except.mapError,
+  intro state exitBalance activation churn err hact hchurn hres
+  simp [computeExitEpochAndUpdateChurn, hact, hchurn, hres, liftErr, Except.mapError,
     MonadExcept.ofExcept]
   rfl
 
@@ -344,14 +361,15 @@ theorem computeExitEpochAndUpdateChurn_run_reserve_error [Preset] [HasherTag] [C
 churn limit. -/
 @[characterizes computeConsolidationEpochAndUpdateChurn]
 theorem computeConsolidationEpochAndUpdateChurn_run_ok [Preset] [HasherTag] [Config] :
-    ∀ (state : BeaconState) (balance activation epoch consumed : UInt64),
+    ∀ (state : BeaconState) (balance activation churn epoch consumed : UInt64),
       (computeActivationExitEpoch (currentEpochOf (pureState state))
           : Except StateTransitionError UInt64) = .ok activation →
+      getConsolidationChurnLimit (pureState state) = .ok churn →
       (reserveChurn balance
           (if state.earliestConsolidationEpoch
                 < umax (state.earliestConsolidationEpoch) activation
-            then getConsolidationChurnLimit (pureState state) else state.consolidationBalanceToConsume)
-          (getConsolidationChurnLimit (pureState state))
+            then churn else state.consolidationBalanceToConsume)
+          churn
           (umax (state.earliestConsolidationEpoch) activation)
           : Except StateTransitionError _) = .ok (epoch, consumed) →
       (computeConsolidationEpochAndUpdateChurn (StateTransition := FuluRun) balance).run (pureState state) =
@@ -359,11 +377,25 @@ theorem computeConsolidationEpochAndUpdateChurn_run_ok [Preset] [HasherTag] [Con
           { state with
               consolidationBalanceToConsume := consumed - balance
               earliestConsolidationEpoch := epoch }) := by
-  intro state balance activation epoch consumed hact hres
+  intro state balance activation churn epoch consumed hact hchurn hres
   have hcov := reserveChurn_covers _ _ _ _ _ _ hres
   have hnot : ¬ balance > consumed := Nat.not_lt.mpr (UInt64.le_iff_toNat_le.mp hcov)
-  simp [computeConsolidationEpochAndUpdateChurn, hact, hres, liftErr, Except.mapError,
+  simp [computeConsolidationEpochAndUpdateChurn, hact, hchurn, hres, liftErr, Except.mapError,
     MonadExcept.ofExcept, checkedSub, hnot]
+  rfl
+
+/-- **Consolidation churn, churn-limit fault.** When the activation-exit epoch succeeds and
+the consolidation churn limit faults, the run rejects with that fault. -/
+theorem computeConsolidationEpochAndUpdateChurn_run_churn_error [Preset] [HasherTag] [Config] :
+    ∀ (state : BeaconState) (balance activation : UInt64) (err : StateTransitionError),
+      (computeActivationExitEpoch (currentEpochOf (pureState state))
+          : Except StateTransitionError UInt64) = .ok activation →
+      getConsolidationChurnLimit (pureState state) = .error err →
+      (computeConsolidationEpochAndUpdateChurn (StateTransition := FuluRun) balance).run (pureState state)
+        = .error err := by
+  intro state balance activation err hact hchurn
+  simp [computeConsolidationEpochAndUpdateChurn, hact, hchurn, liftErr, Except.mapError,
+    MonadExcept.ofExcept]
   rfl
 
 /-- **Consolidation churn, activation fault.** When the activation-exit epoch faults, the run
@@ -380,24 +412,25 @@ theorem computeConsolidationEpochAndUpdateChurn_run_activation_error
     MonadExcept.ofExcept]
   rfl
 
-/-- **Consolidation churn, reservation fault.** When the activation-exit epoch succeeds and
-the reservation faults, the run rejects with the reservation's fault. -/
+/-- **Consolidation churn, reservation fault.** When the activation-exit epoch and the churn
+limit succeed and the reservation faults, the run rejects with the reservation's fault. -/
 theorem computeConsolidationEpochAndUpdateChurn_run_reserve_error
     [Preset] [HasherTag] [Config] :
-    ∀ (state : BeaconState) (balance activation : UInt64) (err : StateTransitionError),
+    ∀ (state : BeaconState) (balance activation churn : UInt64) (err : StateTransitionError),
       (computeActivationExitEpoch (currentEpochOf (pureState state))
           : Except StateTransitionError UInt64) = .ok activation →
+      getConsolidationChurnLimit (pureState state) = .ok churn →
       (reserveChurn balance
           (if state.earliestConsolidationEpoch
                 < umax (state.earliestConsolidationEpoch) activation
-            then getConsolidationChurnLimit (pureState state) else state.consolidationBalanceToConsume)
-          (getConsolidationChurnLimit (pureState state))
+            then churn else state.consolidationBalanceToConsume)
+          churn
           (umax (state.earliestConsolidationEpoch) activation)
           : Except StateTransitionError _) = .error err →
       (computeConsolidationEpochAndUpdateChurn (StateTransition := FuluRun) balance).run (pureState state)
         = .error err := by
-  intro state balance activation err hact hres
-  simp [computeConsolidationEpochAndUpdateChurn, hact, hres, liftErr, Except.mapError,
+  intro state balance activation churn err hact hchurn hres
+  simp [computeConsolidationEpochAndUpdateChurn, hact, hchurn, hres, liftErr, Except.mapError,
     MonadExcept.ofExcept]
   rfl
 
