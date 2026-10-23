@@ -1,5 +1,6 @@
 import EthCLSpecs.Fulu.RegistryUpdates
 import EthCLSpecs.Proofs.Fulu.Run
+import EthCLLib.Proofs.Checked
 import EthCLLib.Proofs.Run
 import SizzLean.Proofs.UncachedBox
 
@@ -27,6 +28,7 @@ namespace EthCLSpecs.Proofs.Fulu
 
 open EthCLLib.Spec (HasherTag StateTransitionError checkedAdd checkedMul checkedSub
   throwArithmetic)
+open EthCLLib.Proofs (mulGuard_iff)
 open EthCLSpecs.Fulu (Preset Config BeaconState reserveChurn computeExitEpochAndUpdateChurn
   computeConsolidationEpochAndUpdateChurn computeActivationExitEpoch computeEpochAtSlot
   currentEpochOf getActivationExitChurnLimit getConsolidationChurnLimit)
@@ -67,36 +69,6 @@ private theorem additional_toNat (balance consume perEpoch : UInt64) (h : consum
       balance.toNat - consume.toNat - 1 := Nat.div_le_self _ _
   rw [UInt64.toNat_add, UInt64.toNat_div, hsub1, UInt64.toNat_one,
     Nat.mod_eq_of_lt (by omega)]
-
-/-- `checkedMul`'s guard, read on `Nat`. With `a ≠ 0`, the guard fires exactly when the `Nat`
-product reaches `2 ^ 64`. -/
-private theorem mulGuard_iff (a p : UInt64) (ha : a.toNat ≠ 0) :
-    (a != 0 && a * p / a != p) = true ↔ 2 ^ 64 ≤ a.toNat * p.toNat := by
-  have hapos : 0 < a.toNat := Nat.pos_of_ne_zero ha
-  have hne : (a != 0) = true := by
-    simp only [bne_iff_ne, ne_eq]
-    intro hz
-    exact ha (by simp [hz])
-  rw [hne, Bool.true_and]
-  constructor
-  · intro hg
-    -- Below the bound the product is exact, so the division recovers `p`.
-    refine Nat.le_of_not_lt (fun hlt => ?_)
-    have hrec : a * p / a = p := by
-      apply UInt64.toNat_inj.mp
-      rw [UInt64.toNat_div, UInt64.toNat_mul, Nat.mod_eq_of_lt hlt]
-      exact Nat.mul_div_cancel_left _ hapos
-    simp [hrec] at hg
-  · intro hge
-    -- At or above the bound the product wraps, and the wrapped value is below `a * p`, so the
-    -- quotient falls below `p`.
-    have hmod : (a.toNat * p.toNat) % 2 ^ 64 < a.toNat * p.toNat :=
-      Nat.lt_of_lt_of_le (Nat.mod_lt _ (by decide)) hge
-    have hq : (a * p / a).toNat < p.toNat := by
-      rw [UInt64.toNat_div, UInt64.toNat_mul]
-      exact (Nat.div_lt_iff_lt_mul hapos).mpr (Nat.lt_of_lt_of_eq hmod (Nat.mul_comm _ _))
-    have : a * p / a ≠ p := fun heq => by rw [heq] at hq; exact Nat.lt_irrefl _ hq
-    simpa using this
 
 /-- **Fits.** When the balance fits in the remaining budget, the reservation changes nothing
 and cannot fault. -/

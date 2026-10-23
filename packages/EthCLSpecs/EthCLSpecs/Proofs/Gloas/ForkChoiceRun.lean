@@ -127,17 +127,20 @@ not re-entered here. Like the theorem, the example takes the written list `withd
 and the hypothesis `hw` that it is the old list followed by the qualifying withdrawals. -/
 example [Preset] [HasherTag] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
-    ∀ (preState : BeaconState)
+    ∀ (preState : BeaconState) (total : EthCLSpecs.Gloas.Gwei)
       (withdrawals : SSZList BuilderPendingWithdrawal
         EthCLSpecs.Gloas.Const.builderPendingWithdrawalsLimit),
+      EthCLSpecs.Gloas.getTotalActiveBalance (pureState preState) = .ok total →
+      QuorumFits total →
       withdrawals.val = preState.builderPendingWithdrawals.val ++
-          (qualifyingBuilderWithdrawals preState).toArray →
+          (qualifyingBuilderWithdrawals preState total).toArray →
       runNestedStateTransition (pureState preState)
           (processBuilderPendingPayments (StateTransition := GloasRun))
         = (pure (pureState { preState with
               builderPendingWithdrawals := withdrawals,
               builderPendingPayments := expectedPaymentWindow preState }) : m State) :=
-  fun preState withdrawals hw =>
-    runNestedStateTransition_of_ok ((processBuilderPendingPayments_run preState).1 withdrawals hw)
+  fun preState total withdrawals htotal hq hw =>
+    runNestedStateTransition_of_ok
+      ((processBuilderPendingPayments_run preState total htotal hq).1 withdrawals hw)
 
 end EthCLSpecs.Proofs.Gloas
