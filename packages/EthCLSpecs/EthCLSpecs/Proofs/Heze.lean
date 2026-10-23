@@ -42,6 +42,7 @@ import EthCLSpecs.Proofs.Heze.EconFrame
 import EthCLSpecs.Proofs.Heze.EmptyTarget
 import EthCLSpecs.Proofs.Heze.Equivocators
 import EthCLSpecs.Proofs.Heze.FFGRefines
+import EthCLSpecs.Proofs.Heze.FinalityCheck
 import EthCLSpecs.Proofs.Heze.FinalityLock
 import EthCLSpecs.Proofs.Heze.FinalizationLiveness
 import EthCLSpecs.Proofs.Heze.FinalizationProgress
