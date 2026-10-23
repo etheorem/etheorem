@@ -4,7 +4,7 @@ import EthCLLib.Proofs.StateFree
 /-!
 # `EthCLSpecs.Proofs.Heze.OnInclusionList`: the honest list in the IL store
 
-`onInclusionList` (`Heze/ForkChoice.lean:536-585`) reads the store, runs the checks of
+`onInclusionList` (`Heze/ForkChoice.lean:539-590`) reads the store, runs the checks of
 v1.7.0-beta.4, judges the timeliness of the list, and then sets the store with the
 result of `processInclusionList`. It sets the store it read first, so a successful run
 writes only the IL store. `onInclusionList_run_ok` states this: a successful run is one
