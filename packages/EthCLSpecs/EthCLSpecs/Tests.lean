@@ -10,6 +10,7 @@ import EthCLSpecs.Tests.GloasBlockOpPins
 import EthCLSpecs.Tests.GloasEpochPins
 import EthCLSpecs.Tests.GloasForkChoicePins
 import EthCLSpecs.Tests.GloasPtcWindowPins
+import EthCLSpecs.Tests.HezeAccountableWitness
 import EthCLSpecs.Tests.HezeCommitteesPins
 import EthCLSpecs.Tests.HezeDichotomyWitness
 import EthCLSpecs.Tests.HezeFinalityWitness
