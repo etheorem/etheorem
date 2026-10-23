@@ -18,6 +18,7 @@ import EthCLSpecs.Proofs.Heze.KeepsUncached.Epoch
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Payload
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Slots
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Withdrawals
+import EthCLSpecs.Proofs.Heze.ListLengths
 import EthCLSpecs.Proofs.Heze.StorePure
 import EthCLSpecs.Proofs.Heze.NodeTrace
 import EthCLSpecs.Proofs.Heze.NodeViews
@@ -137,6 +138,10 @@ Re-exports:
   `processEpoch`, and for `processSlots` and `stateTransition`
   (`keepsUncached_stateTransition`). A run of the state transition that starts on an
   uncached box ends on an uncached box.
+* `EthCLSpecs.Proofs.Heze.ListLengths`: along a chain run, the balances, the two
+  participation lists, and the inactivity scores keep the length of `validators` when they
+  have it at the start (`ChainRun.listLengths`). Each spec function on the way has a lemma
+  for the lengths.
 * `EthCLSpecs.Proofs.Heze.NodeTrace`: the successful handler runs of one node
   (`NodeTrace`). From a seed with the empty IL store, such as the anchor store of
   `getForkchoiceStore`, the IL store is `ilStoreOfArrivals` of the arrivals of the trace

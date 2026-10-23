@@ -25,7 +25,8 @@ lemmas of `EthCLLib/Proofs/Run.lean`:
 - An `if`, a dependent `if`, or a `match` splits into its branches.
 - A write (`modifyState g`, `set t`) ends in a record update of the start box. `is_pure`
   names it as `pureState` of a value, and `view_trans_hyp` proves that the update keeps the
-  view.
+  view. A write of one list entry keeps the length of the list (`array_size_set!`), so a
+  view of list lengths stays too.
 - A call of a spec function closes by a frame lemma of that function. A frame lemma carries
   the attribute `@[frame]`, which indexes it by the function its run hypothesis names. A call
   without a frame lemma unfolds. A lemma may keep one value of the view: it concludes
@@ -331,6 +332,26 @@ theorem pureState_eq_uncached {T : Type} [SizzLean.SSZRepr T] [EthCLLib.Spec.Has
       (H := EthCLLib.Spec.HasherTag.H)
       { view := w } := rfl
 
+/-- A write of one entry keeps the size of an array. `SSZList.set!` and `SSZList.size` are
+reducible, so a view that reads the length of a list field sees this form after a `[i]!`
+write. -/
+theorem array_size_set! {α : Type} (a : Array α) (i : Nat) (v : α) :
+    (a.set! i v).size = a.size := by
+  simp [Array.set!_eq_setIfInBounds]
+
+/-- The view of an `if` of two boxes is the `if` of their views. A write whose new box is
+chosen by an `if` shows this form. Pushing the view into the branches first keeps the
+unfolding of `Box.view` from turning the `if` into the scrutinee of a `match`. -/
+theorem box_view_ite {H T : Type} [SizzLean.Hasher H] [SizzLean.SSZRepr T] {c : Prop}
+    [Decidable c] (a b : SizzLean.Cache.SSZ.Box H T) :
+    (if c then a else b).view = if c then a.view else b.view := by
+  split <;> rfl
+
+/-- `array_size_set!` in the `SSZList` form that a list field shows. -/
+theorem sszList_size_set! {α : Type} {cap : Nat} (xs : SizzLean.Repr.SSZList α cap) (i : Nat)
+    (v : α) : (xs.set! i v).size = xs.size :=
+  array_size_set! xs.val i v
+
 /-- The definitions under the namespace `EthCLSpecs.Proofs.Heze` that the view `V` reads,
 with the definitions they read in turn. -/
 partial def viewDefs (V : Expr) : MetaM (Array Name) := do
@@ -351,11 +372,19 @@ def viewValue (V : Expr) : TacticM Unit := withMainContext do
   let ids : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
     names.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
   evalTactic (← `(tactic| (
-    simp only [EthCLSpecs.Proofs.Heze.pureState_eq_uncached, EthCLLib.Spec.stateRoot,
-      SizzLean.Cache.SSZ.Box.hashTreeRoot, SizzLean.Cache.SSZ.Box.view, $ids,*]
+    try simp only [EthCLSpecs.Proofs.Heze.box_view_ite, EthCLLib.Proofs.forInStep_value_yield,
+      EthCLLib.Proofs.forInStep_value_done, $ids,*]
+    try simp only [EthCLSpecs.Proofs.Heze.pureState_eq_uncached, EthCLLib.Spec.stateRoot,
+      SizzLean.Cache.SSZ.Box.hashTreeRoot, SizzLean.Cache.SSZ.Box.view,
+      EthCLSpecs.Proofs.Heze.array_size_set!, EthCLSpecs.Proofs.Heze.sszList_size_set!,
+      EthCLSpecs.Heze.modBalance, EthCLSpecs.Heze.modValidator, $ids,*]
     all_goals first
       | rfl
-      | (repeat' split) <;> rfl)))
+      | ((repeat' split) <;>
+          -- A branch of a split holds a write that the first `simp` could not reach.
+          (try simp only [EthCLSpecs.Proofs.Heze.pureState_eq_uncached,
+            SizzLean.Cache.SSZ.Box.view, EthCLSpecs.Proofs.Heze.array_size_set!,
+            EthCLSpecs.Proofs.Heze.sszList_size_set!]) <;> rfl))))
 
 /-- Close a goal `f t = v` from a hypothesis `h : f s = v`, where `t` is a pure update of
 the state `s`. The tactic tries the hypotheses from the last one to the first. It takes `h`
