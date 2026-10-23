@@ -55,6 +55,8 @@ tier1 EthCLSpecs.Heze.committeeCountOf
 tier1 EthCLSpecs.Heze.computeEpochAtSlot
 tier1 EthCLSpecs.Heze.computeProposerScore
 tier1 EthCLSpecs.Heze.computePulledUpTip
+tier1 EthCLSpecs.Heze.computeSlotAtTimeMs
+tier1 EthCLSpecs.Heze.computeTimeAtSlotMs
 tier1 EthCLSpecs.Heze.convertBuilderIndexToValidatorIndex
 tier1 EthCLSpecs.Heze.currentEpochOf
 tier1 EthCLSpecs.Heze.decreaseBalance
