@@ -5,6 +5,7 @@ import EthCLSpecs.Tests.FuluCommitteesPins
 import EthCLSpecs.Tests.FuluDepositPins
 import EthCLSpecs.Tests.FuluEpochPins
 import EthCLSpecs.Tests.FuluForkChoicePins
+import EthCLSpecs.Tests.FuluSyncAggregatePins
 import EthCLSpecs.Tests.GloasBlockOpPins
 import EthCLSpecs.Tests.GloasEpochPins
 import EthCLSpecs.Tests.GloasForkChoicePins
