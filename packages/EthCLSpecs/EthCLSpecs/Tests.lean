@@ -2,6 +2,7 @@ import EthCLSpecs.Tests.BoxBinderPins
 import EthCLSpecs.Tests.FuluBlobSchedulePins
 import EthCLSpecs.Tests.FuluCommitteesPins
 import EthCLSpecs.Tests.FuluDepositPins
+import EthCLSpecs.Tests.FuluEpochPins
 import EthCLSpecs.Tests.FuluForkChoicePins
 import EthCLSpecs.Tests.GloasForkChoicePins
 import EthCLSpecs.Tests.GloasPtcWindowPins
