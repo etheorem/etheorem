@@ -144,8 +144,8 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   assert (blsEthFastAggregateVerify participantKeys signingRoot agg.syncCommitteeSignature)
 
   -- Per-participant and per-proposer reward amounts.
-  let totalActiveIncrements := (getTotalActiveBalance state).toNat / Const.effectiveBalanceIncrement
-  let totalBaseRewards := getBaseRewardPerIncrement state * totalActiveIncrements
+  let totalActiveIncrements := (← liftErr (getTotalActiveBalance state)).toNat / Const.effectiveBalanceIncrement
+  let totalBaseRewards := (← liftErr (getBaseRewardPerIncrement state)) * totalActiveIncrements
   let maxParticipantRewards := totalBaseRewards * Const.syncRewardWeight / Const.weightDenominator / Const.slotsPerEpoch
   let participantReward : Gwei := UInt64.ofNat (maxParticipantRewards / Const.syncCommitteeSize)
   let proposerReward : Gwei :=

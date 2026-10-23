@@ -82,22 +82,23 @@ inherit reserveChurn
 -- `get_exit_churn_limit` rather than Fulu's `get_activation_exit_churn_limit`. These
 -- override the inherited Fulu versions; `initiateValidatorExit`/`slashValidator`
 -- (inherited below) bind to this `computeExitEpochAndUpdateChurn`.
-forkdef getExitChurnLimit (state : State) : Gwei :=
+-- Each limit fails only where `get_total_active_balance` fails.
+forkdef getExitChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let churn := umax Const.minPerEpochChurnLimitElectra
-    ((getTotalActiveBalance state) / Const.churnLimitQuotientGloas)
-  churn - churn % Const.effectiveBalanceIncrementG
+    ((← getTotalActiveBalance state) / Const.churnLimitQuotientGloas)
+  pure (churn - churn % Const.effectiveBalanceIncrementG)
 
-forkdef getActivationChurnLimit (state : State) : Gwei :=
+forkdef getActivationChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let churn := umax Const.minPerEpochChurnLimitElectra
-    ((getTotalActiveBalance state) / Const.churnLimitQuotientGloas)
-  umin Const.maxPerEpochActivationChurnLimitGloas (churn - churn % Const.effectiveBalanceIncrementG)
+    ((← getTotalActiveBalance state) / Const.churnLimitQuotientGloas)
+  pure (umin Const.maxPerEpochActivationChurnLimitGloas (churn - churn % Const.effectiveBalanceIncrementG))
 
 forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Epoch := do
   let state ← get
   let currentEpoch := computeEpochAtSlot (sszGet state slot)
   let activationExitEpoch ← liftErr (computeActivationExitEpoch currentEpoch)
   let earliest := umax (sszGet state earliestExitEpoch) activationExitEpoch
-  let perEpochChurn := getExitChurnLimit state
+  let perEpochChurn ← liftErr (getExitChurnLimit state)
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
   let (ee, ebtc) ← liftErr (reserveChurn exitBalance consume perEpochChurn earliest)
   let remaining ← checkedSub ebtc exitBalance
@@ -115,9 +116,9 @@ inherit getPendingBalanceToWithdraw
 -- Gloas (EIP-8061) consolidation churn: `total_active // CONSOLIDATION_CHURN_LIMIT_QUOTIENT`
 -- (no `MIN` floor, no balance-churn subtraction). Overrides the inherited Fulu
 -- version; the inherited `computeConsolidationEpochAndUpdateChurn` below binds to it.
-forkdef getConsolidationChurnLimit (state : State) : Gwei :=
-  let churn := (getTotalActiveBalance state) / Const.consolidationChurnLimitQuotient
-  churn - churn % Const.effectiveBalanceIncrementG
+forkdef getConsolidationChurnLimit (state : State) : Except StateTransitionError Gwei := do
+  let churn := (← getTotalActiveBalance state) / Const.consolidationChurnLimitQuotient
+  pure (churn - churn % Const.effectiveBalanceIncrementG)
 
 inherit computeConsolidationEpochAndUpdateChurn
 inherit queueExcessActiveBalance
@@ -213,13 +214,21 @@ forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (
 
     if isWithdrawn then applyPendingDeposit deposit; return advance s.processed s.postpone
     else if isExited then return advance s.processed (s.postpone.push deposit)
-    else if s.processed + deposit.amount > avail then return .done { s with churnReached := true }
-    else applyPendingDeposit deposit; return advance (s.processed + deposit.amount) s.postpone
+    else
+      -- `processed_amount + deposit.amount` adds `Gwei` values, a checked `uint64` add.
+      let total ← checkedAdd s.processed deposit.amount
+        "process_pending_deposits: processed_amount + deposit.amount"
+      if total > avail then return .done { s with churnReached := true }
+      else applyPendingDeposit deposit; return advance total s.postpone
 
+/-- `process_pending_deposits` (Gloas, EIP-8061). `deposit_balance_to_consume + churn` is a
+checked `uint64` add, as in Fulu. -/
 forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
   let nextEpoch := currentEpochOf state + 1
-  let avail := (sszGet state depositBalanceToConsume) + getActivationChurnLimit state
+  let churn ← liftErr (getActivationChurnLimit state)
+  let avail ← checkedAdd (sszGet state depositBalanceToConsume) churn
+    "process_pending_deposits: deposit_balance_to_consume + get_activation_churn_limit"
   let finalizedSlot ← liftErr (computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch)
   let deposits := (sszGet state pendingDeposits).toArray
 
@@ -255,9 +264,13 @@ queue its withdrawal directly; then shift the payment window down by
 forkdef processBuilderPendingPayments : StateTransition Unit := do
   let state ← get
 
-  -- Quorum threshold: `get_total_active_balance / SLOTS_PER_EPOCH * NUMERATOR / DENOMINATOR`.
-  let quorum := (getTotalActiveBalance state / UInt64.ofNat Const.slotsPerEpoch)
-    * Const.builderPaymentThresholdNumerator / Const.builderPaymentThresholdDenominator
+  -- Quorum threshold (`get_builder_payment_quorum_threshold`): `get_total_active_balance //
+  -- SLOTS_PER_EPOCH * NUMERATOR // DENOMINATOR`. The total read and the product can raise.
+  -- The product overflows when `SLOTS_PER_EPOCH` is small next to the total.
+  let perSlotBalance := (← liftErr (getTotalActiveBalance state)) / UInt64.ofNat Const.slotsPerEpoch
+  let quorumNumerator ← checkedMul perSlotBalance Const.builderPaymentThresholdNumerator
+    "get_builder_payment_quorum_threshold: per_slot_balance * BUILDER_PAYMENT_THRESHOLD_NUMERATOR"
+  let quorum := quorumNumerator / Const.builderPaymentThresholdDenominator
 
   -- Queue the withdrawal of every previous-epoch payment whose weight clears the quorum.
   let payments := sszGet state builderPendingPayments

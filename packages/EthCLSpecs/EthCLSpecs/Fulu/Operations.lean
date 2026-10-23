@@ -338,8 +338,10 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
   -- Request-level gates: distinct source/target, queue room, churn capacity.
   else if req.sourcePubkey == req.targetPubkey then pure ()
   else if (sszGet state pendingConsolidations).size == Const.pendingConsolidationsLimit then pure ()
-  else if getConsolidationChurnLimit state ≤ Const.minActivationBalance then pure ()
   else
+    -- The churn limit can fault (`get_total_active_balance`), so it is bound, then tested.
+    let churnLimit ← liftErr (getConsolidationChurnLimit state)
+    if churnLimit ≤ Const.minActivationBalance then return
     let validators := (sszGet state validators).toArray
     match validatorIndexByPubkey? state req.sourcePubkey, validatorIndexByPubkey? state req.targetPubkey with
     | some srcN, some tgtN =>

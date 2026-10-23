@@ -151,16 +151,16 @@ forkdef getCheckpointBlock (store : Store map) (root : Root) (epoch : Epoch) :
 /-- The per-slot committee weight: total active balance divided across the slots of an epoch
 (`get_total_active_balance // SLOTS_PER_EPOCH`). The shared core of `getProposerScore` and
 `calculateCommitteeFraction`. `UInt64` truncating division, so the floor is taken here once and
-both callers inherit the same rounding. -/
-forkdef committeeWeight (state : State) : Gwei :=
-  getTotalActiveBalance state / UInt64.ofNat Const.slotsPerEpoch
+both callers inherit the same rounding. It fails only where `get_total_active_balance` fails. -/
+forkdef committeeWeight (state : State) : Except StateTransitionError Gwei := do
+  pure ((← getTotalActiveBalance state) / UInt64.ofNat Const.slotsPerEpoch)
 
 /-- `get_proposer_score`. The product `committee_weight * PROPOSER_SCORE_BOOST` is a `uint64`
 op that raises past `2^64`, so it is `checkedMul`. -/
 forkdef getProposerScore (store : Store map) : StoreTransition Gwei := do
   let state ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  let product ← checkedMul (committeeWeight state) (UInt64.ofNat Const.proposerScoreBoost)
+  let product ← checkedMul (← liftErr (committeeWeight state)) (UInt64.ofNat Const.proposerScoreBoost)
     "get_proposer_score: committee_weight * PROPOSER_SCORE_BOOST"
   pure (product / 100)
 
@@ -298,7 +298,7 @@ product `committee_weight * committee_percent` is a `uint64` op that raises past
 it is `checkedMul`, and the function throws. -/
 forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) :
     StoreTransition Gwei := do
-  let product ← checkedMul (committeeWeight state) committeePercent
+  let product ← checkedMul (← liftErr (committeeWeight state)) committeePercent
     "calculate_committee_fraction: committee_weight * committee_percent"
   pure (product / 100)
 

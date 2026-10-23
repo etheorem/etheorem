@@ -40,19 +40,23 @@ forkdef isEligibleForActivation (state : State) (validator : Validator) : Bool :
 
 /-! ## Electra churn limits -/
 
-/-- `get_balance_churn_limit`. -/
-forkdef getBalanceChurnLimit (state : State) : Gwei :=
-  let churn := umax Const.minPerEpochChurnLimitElectra
-    ((getTotalActiveBalance state) / Const.churnLimitQuotient)
-  churn - churn % Const.effectiveBalanceIncrementG
+/-- `get_balance_churn_limit`. It fails only where `get_total_active_balance` fails. The
+division and the rounding cannot fault. -/
+forkdef getBalanceChurnLimit (state : State) : Except StateTransitionError Gwei := do
+  let total ← getTotalActiveBalance state
+  let churn := umax Const.minPerEpochChurnLimitElectra (total / Const.churnLimitQuotient)
+  pure (churn - churn % Const.effectiveBalanceIncrementG)
 
 /-- `get_activation_exit_churn_limit`. -/
-forkdef getActivationExitChurnLimit (state : State) : Gwei :=
-  umin Const.maxPerEpochActivationExitChurnLimit (getBalanceChurnLimit state)
+forkdef getActivationExitChurnLimit (state : State) : Except StateTransitionError Gwei := do
+  pure (umin Const.maxPerEpochActivationExitChurnLimit (← getBalanceChurnLimit state))
 
-/-- `get_consolidation_churn_limit`. -/
-forkdef getConsolidationChurnLimit (state : State) : Gwei :=
-  getBalanceChurnLimit state - getActivationExitChurnLimit state
+/-- `get_consolidation_churn_limit`. The activation-exit limit is at most the balance limit, so
+the subtraction cannot underflow. -/
+forkdef getConsolidationChurnLimit (state : State) : Except StateTransitionError Gwei := do
+  let balanceChurn ← getBalanceChurnLimit state
+  let activationExitChurn ← getActivationExitChurnLimit state
+  pure (balanceChurn - activationExitChurn)
 
 /-! ## Churn reservation -/
 
@@ -101,7 +105,7 @@ forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Ep
   let currentEpoch := computeEpochAtSlot (sszGet state slot)
   let activationExitEpoch ← liftErr (computeActivationExitEpoch currentEpoch)
   let earliest := umax (sszGet state earliestExitEpoch) activationExitEpoch
-  let perEpochChurn := getActivationExitChurnLimit state
+  let perEpochChurn ← liftErr (getActivationExitChurnLimit state)
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
 
   let (ee, ebtc) ← liftErr (reserveChurn exitBalance consume perEpochChurn earliest)
@@ -117,7 +121,7 @@ forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : 
   let state ← get
   let activationExitEpoch ← liftErr (computeActivationExitEpoch (currentEpochOf state))
   let earliest := umax (sszGet state earliestConsolidationEpoch) activationExitEpoch
-  let perEpoch := getConsolidationChurnLimit state
+  let perEpoch ← liftErr (getConsolidationChurnLimit state)
   let consume := if (sszGet state earliestConsolidationEpoch) < earliest then perEpoch
                  else (sszGet state consolidationBalanceToConsume)
 
