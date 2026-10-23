@@ -35,6 +35,8 @@ inherit computeStartSlotAtEpoch
 inherit getCurrentEpoch
 inherit getPreviousEpoch
 inherit computeTimeAtSlot
+inherit BlobParameters
+inherit getBlobParameters
 inherit getRandaoMix
 
 -- Balance / validator mutators, accessors, predicates.

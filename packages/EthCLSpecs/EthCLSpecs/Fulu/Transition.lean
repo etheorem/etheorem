@@ -170,8 +170,8 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
 /-- `process_execution_payload`: the consistency checks against the previous
 header and the current RANDAO / slot time, then cache the new header. The
 execution-engine `verify_and_notify_new_payload` is the consumer's responsibility
-(valid for `sanity/blocks`); the blob-parameter bound is enforced where the
-operation format supplies it. -/
+(valid for `sanity/blocks`). The blob commitments must fit the blob limit of the
+current epoch (EIP-7892). -/
 forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit := do
   let state ← get
   let payload := body.executionPayload
@@ -183,6 +183,7 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   -- through `liftErr`, which lands the `.arithmetic` fault on this machine unwrapped.
   let expectedTimestamp ← liftErr (computeTimeAtSlot state (sszGet state slot))
   assert (payload.timestamp == expectedTimestamp)
+  assert (body.blobKzgCommitments.size ≤ (getBlobParameters epoch).maxBlobsPerBlock.toNat)
 
   let header : ExecutionPayloadHeader :=
     { parentHash := payload.parentHash, feeRecipient := payload.feeRecipient,

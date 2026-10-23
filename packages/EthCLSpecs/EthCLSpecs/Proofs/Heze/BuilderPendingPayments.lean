@@ -9,7 +9,7 @@ import SizzLean.Proofs.UncachedBox
 # `EthCLSpecs.Proofs.Heze.BuilderPendingPayments`: the builder-payment epoch substep
 
 Heze inherits `processBuilderPendingPayments` from Gloas
-(`Heze/EpochProcessing.lean:110`). The inheritance makes a new constant,
+(`Heze/EpochProcessing.lean:112`). The inheritance makes a new constant,
 `EthCLSpecs.Heze.processBuilderPendingPayments`, so the Gloas theorem in
 `Proofs/Gloas/BuilderPendingPayments.lean` does not cover it. This module ports that
 proof to the Heze constant. It also adds `mem_qualifyingPaymentIndices_iff`: an entry

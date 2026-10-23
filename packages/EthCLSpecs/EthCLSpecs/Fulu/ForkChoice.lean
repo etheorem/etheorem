@@ -513,7 +513,9 @@ forkdef verifyDataColumnSidecar (sidecar : DataColumnSidecar) : Bool :=
   let ncomm := sidecar.kzgCommitments.size
   if sidecar.index ≥ UInt64.ofNat Const.numberOfColumns then false
   else if ncomm == 0 then false
-  else if ncomm > Const.maxBlobsPerBlockElectra then false
+  -- The blob limit at the epoch of the sidecar's block header (EIP-7892).
+  else if ncomm > (getBlobParameters
+      (computeEpochAtSlot sidecar.signedBlockHeader.message.slot)).maxBlobsPerBlock.toNat then false
   else ncol == ncomm && ncol == sidecar.kzgProofs.size
 
 /-- `verify_data_column_sidecar_kzg_proofs`: the KZG gate. Every cell index in the

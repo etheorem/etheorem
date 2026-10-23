@@ -100,6 +100,31 @@ forkdef previousEpochOf (state : State) : Epoch :=
   let c := currentEpochOf state
   if c == Const.genesisEpoch then Const.genesisEpoch else c - 1
 
+/-! ## The blob schedule (EIP-7892) -/
+
+/-- `BlobParameters`: a `BLOB_SCHEDULE` entry, the epoch it starts at and its blob limit. -/
+forkstruct BlobParameters where
+  epoch            : Epoch := 0
+  maxBlobsPerBlock : UInt64 := 0
+
+/-- `get_blob_parameters(epoch)`: the entry with the highest `EPOCH` at or below `epoch`.
+Below every entry it is `(ELECTRA_FORK_EPOCH, MAX_BLOBS_PER_BLOCK_ELECTRA)`.
+
+The pyspec sorts the schedule by epoch, descending, and takes the first match. Its sort is
+stable, so of two entries with the same epoch the earlier one in config order wins. The fold
+keeps the first entry it sees at each epoch, through the strict `<`. -/
+forkdef getBlobParameters (epoch : Epoch) : BlobParameters :=
+  let best : Option (Epoch × UInt64) := Const.blobSchedule.foldl (init := none) fun acc e =>
+    if e.1 ≤ epoch then
+      match acc with
+      | some b => if b.1 < e.1 then some e else acc
+      | none   => some e
+    else acc
+  match best with
+  | some (e, m) => { epoch := e, maxBlobsPerBlock := m }
+  | none => { epoch := Const.electraForkEpoch
+              maxBlobsPerBlock := UInt64.ofNat Const.maxBlobsPerBlockElectra }
+
 end
 
 end EthCLSpecs.Fulu

@@ -118,9 +118,9 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `computeExitEpochAndUpdateChurn` | `Gloas/EpochProcessing.lean:93-106` | The Gloas override reads `get_exit_churn_limit`. When the activation-exit epoch and the reservation succeed, the run succeeds, and its `balance_to_consume - exit_balance` subtraction cannot fault. Each activation-epoch or reservation fault passes through unchanged | proved | `Proofs/Gloas/Churn.lean` |
-| `reserveChurn` | `Gloas/EpochProcessing.lean:76` | The Fulu claims. The body reads no preset or config value, so each theorem takes the Fulu proof term | proved | `Proofs/Gloas/Churn.lean` |
-| `computeConsolidationEpochAndUpdateChurn` | `Gloas/EpochProcessing.lean:120` | The Fulu claims, at the Gloas consolidation limit. That limit has no `MIN` floor and can be zero, and `reserveChurn` rejects a zero limit | proved | `Proofs/Gloas/Churn.lean` |
+| `computeExitEpochAndUpdateChurn` | `Gloas/EpochProcessing.lean:95-108` | The Gloas override reads `get_exit_churn_limit`. When the activation-exit epoch and the reservation succeed, the run succeeds, and its `balance_to_consume - exit_balance` subtraction cannot fault. Each activation-epoch or reservation fault passes through unchanged | proved | `Proofs/Gloas/Churn.lean` |
+| `reserveChurn` | `Gloas/EpochProcessing.lean:78` | The Fulu claims. The body reads no preset or config value, so each theorem takes the Fulu proof term | proved | `Proofs/Gloas/Churn.lean` |
+| `computeConsolidationEpochAndUpdateChurn` | `Gloas/EpochProcessing.lean:122` | The Fulu claims, at the Gloas consolidation limit. That limit has no `MIN` floor and can be zero, and `reserveChurn` rejects a zero limit | proved | `Proofs/Gloas/Churn.lean` |
 | `getExpectedWithdrawals` | `Gloas/Withdrawals.lean:171-179` | The withdrawals returned by its four phases combined never exceed `MAX_WITHDRAWALS_PER_PAYLOAD` | proposed |  |
 | `initiateBuilderExit` | `Gloas/Operations.lean:101-104` | `initiateBuilderExit_run_eq` is the whole-transition equation; its exact in-range/out-of-range effect on the builder registry is characterized; no-wrap is conditional for an arbitrary `Config` and proved unconditionally for both shipped Gloas preset/config pairs | proved | #39, `Proofs/Gloas/InitiateBuilderExit.lean` |
 | `processBuilderExitRequest` | `Gloas/Operations.lean:210-221` | On its successful builder-exit branch, the index supplied to `initiateBuilderExit` is in range. Under either shipped Gloas preset/config pair, the selected builder receives the intended non-wrapping future `withdrawableEpoch`. All non-matching or ineligible branches leave the builder registry unchanged | proposed |  |
@@ -139,15 +139,15 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | --- | --- | --- | --- | --- |
 | `processProposerSlashing` | `Gloas/Operations.lean:228-258` | Payment-voiding must never touch another proposer's `BuilderPendingPayment` | proposed |  |
 | `processAttestation` | `Gloas/Operations.lean:308-372` | Committee-index safety together with builder-payment weight accounting | proposed |  |
-| `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:253-272` | Both outcomes over a plain `BeaconState`. When the qualifying previous-epoch withdrawals fit under the list limit, the run returns `preState` with only two fields written. `builderPendingWithdrawals` holds the old list followed by the qualifying withdrawals in slot order. `builderPendingPayments` holds the window shifted down by `SLOTS_PER_EPOCH` and padded with empties. When the withdrawals do not fit, the run raises `.listFull`. This does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
-| `processPtcWindow` | `Gloas/EpochProcessing.lean:292-312` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
+| `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:255-274` | Both outcomes over a plain `BeaconState`. When the qualifying previous-epoch withdrawals fit under the list limit, the run returns `preState` with only two fields written. `builderPendingWithdrawals` holds the old list followed by the qualifying withdrawals in slot order. `builderPendingPayments` holds the window shifted down by `SLOTS_PER_EPOCH` and padded with empties. When the withdrawals do not fit, the run raises `.listFull`. This does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
+| `processPtcWindow` | `Gloas/EpochProcessing.lean:294-314` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
 | `applyDepositForBuilder` | `Gloas/Operations.lean:127-135` | A deposit with an invalid signature is neither applied to a builder's balance nor requeued | proposed |  |
 | `processBuilderDepositRequest` | `Gloas/Operations.lean:183-199` | A new builder is onboarded only when its deposit signature is valid | proposed |  |
 | `getIndexedPayloadAttestation` | `Gloas/Operations.lean:414-420` | Preserves `pa.data` and `pa.signature`, and produces the sorted multiset of PTC seats selected by `pa.aggregationBits`. The proof requires `Array.qsort` sortedness and permutation lemmas not currently available in core/Std | proposed |  |
 | `isValidIndexedPayloadAttestation` | `Gloas/Operations.lean:425-436` | Returns true exactly when the attesting indices are non-empty, adjacent-nondecreasing (duplicates permitted), all within the validator registry, and the configured `[CryptoBackend]` accepts the exact aggregate-verification call | proved | #38, `Proofs/Gloas/IsValidIndexedPayloadAttestation.lean` |
 | `processPayloadAttestation` | `Gloas/Operations.lean:441-454` | Running `processPayloadAttestation` does not modify `State`: it only reads the input state and evaluates three assertions. A concrete run-level theorem should show that both success and rejection preserve the state component | proposed |  |
-| `processExecutionPayloadBid` | `Gloas/Operations.lean:502-536` | The self-build and builder-bid paths it chooses between are mutually exclusive and jointly exhaustive | proposed |  |
-| `applyParentExecutionPayload` | `Gloas/Operations.lean:541-565` | Exactly one of settle-current, settle-previous, or evict fires, so a payment is never settled twice | proposed |  |
+| `processExecutionPayloadBid` | `Gloas/Operations.lean:502-537` | The self-build and builder-bid paths it chooses between are mutually exclusive and jointly exhaustive | proposed |  |
+| `applyParentExecutionPayload` | `Gloas/Operations.lean:542-566` | Exactly one of settle-current, settle-previous, or evict fires, so a payment is never settled twice | proposed |  |
 
 ### Monotonicity properties
 
@@ -197,7 +197,7 @@ Functions where the useful theorem hasn't been identified yet, either because th
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `computePtc` | `Gloas/EpochProcessing.lean:278-286` | No standalone theorem has been identified yet. The strongest current candidate is its agreement with `computePtcFromFulu` after state upgrade | proposed |  |
+| `computePtc` | `Gloas/EpochProcessing.lean:280-288` | No standalone theorem has been identified yet. The strongest current candidate is its agreement with `computePtcFromFulu` after state upgrade | proposed |  |
 
 
 ---
@@ -231,11 +231,11 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | `computeStartSlotAtEpoch` | `Gloas/EpochProcessing.lean:34` | The Fulu claims, restated at Gloas's own constant. Each theorem takes the Fulu proof term through the `Downgrade` bridge | proved | `Proofs/Gloas/Time.lean` |
 | `computeStartSlotAtEpoch` | `Heze/EpochProcessing.lean:24` | The same claims at Heze's constant. The bridge reaches one fork up, so the proof terms come from Gloas | proved | `Proofs/Heze/Time.lean` |
 | `computeActivationExitEpoch` | `Fulu/Time.lean:54-57` | The function adds `1 + MAX_SEED_LOOKAHEAD` to an epoch. It faults with `.arithmetic` when the sum reaches `2^64`. Below that bound it returns the exact sum. It never faults on an epoch derived from a slot, under a preset bound that both shipped presets satisfy | proved | `Proofs/Fulu/Time.lean` |
-| `computeActivationExitEpoch` | `Gloas/EpochProcessing.lean:45` | The Fulu claims, restated at Gloas's own constants through the `Downgrade` bridge | proved | `Proofs/Gloas/Time.lean` |
-| `computeActivationExitEpoch` | `Heze/EpochProcessing.lean:33` | The same claims at Heze's constants. The proof terms come from Gloas | proved | `Proofs/Heze/Time.lean` |
+| `computeActivationExitEpoch` | `Gloas/EpochProcessing.lean:47` | The Fulu claims, restated at Gloas's own constants through the `Downgrade` bridge | proved | `Proofs/Gloas/Time.lean` |
+| `computeActivationExitEpoch` | `Heze/EpochProcessing.lean:35` | The same claims at Heze's constants. The proof terms come from Gloas | proved | `Proofs/Heze/Time.lean` |
 | `reserveChurn` | `Heze/EpochProcessing.lean:23` | The Fulu claims at Heze. The proof terms come from Gloas | proved | `Proofs/Heze/Churn.lean` |
-| `computeExitEpochAndUpdateChurn` | `Heze/EpochProcessing.lean:64` | The Gloas claims at Heze, proved again over the Heze `State` | proved | `Proofs/Heze/Churn.lean` |
-| `computeConsolidationEpochAndUpdateChurn` | `Heze/EpochProcessing.lean:70` | The Gloas claims at Heze, proved again over the Heze `State` | proved | `Proofs/Heze/Churn.lean` |
+| `computeExitEpochAndUpdateChurn` | `Heze/EpochProcessing.lean:66` | The Gloas claims at Heze, proved again over the Heze `State` | proved | `Proofs/Heze/Churn.lean` |
+| `computeConsolidationEpochAndUpdateChurn` | `Heze/EpochProcessing.lean:72` | The Gloas claims at Heze, proved again over the Heze `State` | proved | `Proofs/Heze/Churn.lean` |
 
 ### Safety and invariant preservation
 
@@ -351,7 +351,7 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `processBuilderPendingPayments` | `Heze/EpochProcessing.lean:110` | The Heze port of the Gloas row. The function shifts the payment window down by `SLOTS_PER_EPOCH`. Under an explicit capacity hypothesis, it appends the withdrawal of every qualifying payment from the previous epoch to `builderPendingWithdrawals`, in slot order. An entry is qualifying if and only if its weight reaches the quorum (`mem_qualifyingPaymentIndices_iff`). When the qualifying withdrawals do not fit under the list limit, the run raises `.listFull`. For one bid whose entry still carries its withdrawal, the substep appends that entry if and only if it reaches the quorum (`processBuilderPendingPayments_run_bid`). This row does not prove that each payment settles exactly once across the protocol | proved | #113, `Proofs/Heze/BuilderPendingPayments.lean` |
+| `processBuilderPendingPayments` | `Heze/EpochProcessing.lean:112` | The Heze port of the Gloas row. The function shifts the payment window down by `SLOTS_PER_EPOCH`. Under an explicit capacity hypothesis, it appends the withdrawal of every qualifying payment from the previous epoch to `builderPendingWithdrawals`, in slot order. An entry is qualifying if and only if its weight reaches the quorum (`mem_qualifyingPaymentIndices_iff`). When the qualifying withdrawals do not fit under the list limit, the run raises `.listFull`. For one bid whose entry still carries its withdrawal, the substep appends that entry if and only if it reaches the quorum (`processBuilderPendingPayments_run_bid`). This row does not prove that each payment settles exactly once across the protocol | proved | #113, `Proofs/Heze/BuilderPendingPayments.lean` |
 
 ### State-transition correctness
 

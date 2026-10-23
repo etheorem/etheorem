@@ -516,7 +516,8 @@ forkdef processExecutionPayloadBid (signedBid : SignedExecutionPayloadBid) : Sta
     assert (← liftErr (canBuilderCoverBid state builderIndex amount))
     assert (verifyExecutionPayloadBidSignature state signedBid)
 
-  assert (bid.blobKzgCommitments.size ≤ Const.maxBlobsPerBlockElectra)
+  assert (bid.blobKzgCommitments.size ≤
+    (getBlobParameters (currentEpochOf state)).maxBlobsPerBlock.toNat)
   assert (bid.slot == sszGet state slot)
   assert ((sszGet state slot) > Const.genesisSlot)
   assert (bid.parentBlockHash == sszGet state latestBlockHash)

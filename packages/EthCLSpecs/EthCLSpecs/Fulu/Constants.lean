@@ -139,6 +139,10 @@ forkconfig where
   attestationDueBps : UInt64
   ejectionBalanceG : Gwei
   maxBlobsPerBlockElectra : Nat
+  /-- `ELECTRA_FORK_EPOCH`: the epoch of the `get_blob_parameters` fallback entry. -/
+  electraForkEpoch : Epoch
+  /-- `BLOB_SCHEDULE` (EIP-7892), as `(EPOCH, MAX_BLOBS_PER_BLOCK)` pairs in config order. -/
+  blobSchedule : List (Epoch × UInt64)
   /-- `INACTIVITY_SCORE_BIAS` / `INACTIVITY_SCORE_RECOVERY_RATE` (Altair). -/
   inactivityScoreBias : UInt64
   inactivityScoreRecoveryRate : UInt64
@@ -284,9 +288,11 @@ forkabbrev genesisForkVersion : Version := Config.genesisForkVersion
 forkabbrev capellaForkVersion : Version := Config.capellaForkVersion
 forkabbrev slotDurationMs : UInt64 := Config.slotDurationMs
 forkabbrev attestationDueBps : UInt64 := Config.attestationDueBps
-/-- `MAX_BLOBS_PER_BLOCK_ELECTRA` (9 for both presets). With an empty `BLOB_SCHEDULE`
-this is what `get_blob_parameters(epoch).max_blobs_per_block` returns. -/
+/-- `MAX_BLOBS_PER_BLOCK_ELECTRA` (9 for both presets). `get_blob_parameters` returns it
+for an epoch below every `BLOB_SCHEDULE` entry. -/
 forkabbrev maxBlobsPerBlockElectra : Nat := Config.maxBlobsPerBlockElectra
+forkabbrev electraForkEpoch : Epoch := Config.electraForkEpoch
+forkabbrev blobSchedule : List (Epoch × UInt64) := Config.blobSchedule
 /-- Reorg weight thresholds (percent of the per-slot committee weight). -/
 forkabbrev reorgHeadWeightThreshold : UInt64 := Config.reorgHeadWeightThreshold
 forkabbrev reorgParentWeightThreshold : UInt64 := Config.reorgParentWeightThreshold
@@ -481,6 +487,8 @@ forkconfigvalues minimalConfig where
   attestationDueBps := 3333
   ejectionBalanceG := 16000000000
   maxBlobsPerBlockElectra := 9
+  electraForkEpoch := 18446744073709551615
+  blobSchedule := []
   inactivityScoreBias := 4
   inactivityScoreRecoveryRate := 16
   proposerScoreBoost := 40
@@ -502,6 +510,8 @@ forkconfigvalues mainnetConfig where
   attestationDueBps := 3333
   ejectionBalanceG := 16000000000
   maxBlobsPerBlockElectra := 9
+  electraForkEpoch := 364032
+  blobSchedule := [(412672, 15), (419072, 21)]
   inactivityScoreBias := 4
   inactivityScoreRecoveryRate := 16
   proposerScoreBoost := 40
