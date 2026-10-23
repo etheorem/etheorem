@@ -242,6 +242,12 @@ Re-exports:
   justified checkpoints at the end are justified in the chain. The finalized checkpoint is
   finalized there, or it is a base checkpoint. The same holds for the pull-up of the end state
   (`chain_refines_pullup`).
+* `EthCLSpecs.Proofs.Heze.FinalityCheck`: the premises of `FinalitySetting` and
+  `SlashingEvidence` as computations. The store runs of a store of chain blocks follow the chain
+  (`ChainStore.state_mem`). So checks over the states and the votes of the chain give
+  `StoreTotals`, the stake bound, and the honest votes. A check over the epochs up to the one
+  after the head block gives `early` (`early_of_check`). `HonestChain.of_check` and
+  `SlashingEvidence.of_check` check the chain premises.
 * `EthCLSpecs.Proofs.Heze.FinalityLock`: under `SlotsIncrease`, the two sides of a block `r`
   are disjoint (`below_emptySide_not_full`). A checkpoint block on the EMPTY side puts the
   start of its walk on the EMPTY side (`emptySide_of_checkpointBlock`). Take an honest node
