@@ -170,7 +170,7 @@ forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) :
 
   for vi in getEligibleValidatorIndices state do
     let i := vi.toNat
-    let baseReward := UInt64.ofNat (← getBaseReward state vi)
+    let baseReward ← getBaseReward state vi
     if unslashed.contains vi then
       if !(← isInInactivityLeak state) then
         let weighted ← checkedMul baseReward weight
@@ -410,19 +410,24 @@ forkdef processPendingConsolidations : StateTransition Unit := do
 
 The pyspec reads `state.balances[index]` for each validator, and that read raises
 `IndexError` on a list shorter than the registry. The body reads through `sszGetIdx`
-(`.outOfBounds`). Both threshold sums are checked `uint64` adds that raise `ValueError` past
-`2 ^ 64`. Python's `or` forms the second sum only when the first test fails, and the body
-keeps that order. -/
+(`.outOfBounds`). pyspec forms the two thresholds inside the loop, after that read:
+`HYSTERESIS_INCREMENT * HYSTERESIS_DOWNWARD_MULTIPLIER`, then `* HYSTERESIS_UPWARD_MULTIPLIER`.
+Both are checked `uint64` products, and the body forms them at the same place, in the same
+order. Both threshold sums are checked `uint64` adds that raise `ValueError` past `2 ^ 64`.
+Python's `or` forms the second sum only when the first test fails, and the body keeps that
+order. -/
 forkdef processEffectiveBalanceUpdates : StateTransition Unit := do
   let hysteresisIncrement := Const.effectiveBalanceIncrementG / UInt64.ofNat Const.hysteresisQuotient
-  let downward := hysteresisIncrement * UInt64.ofNat Const.hysteresisDownwardMultiplier
-  let upward := hysteresisIncrement * UInt64.ofNat Const.hysteresisUpwardMultiplier
   let n := (sszGet (← get) validators).size
 
   for i in [0 : n] do
     let state ← get
     let validator := sszGet state validators[i]!
     let balance ← sszGetIdx (sszGet state balances) i
+    let downward ← checkedMul hysteresisIncrement (UInt64.ofNat Const.hysteresisDownwardMultiplier)
+      "process_effective_balance_updates: HYSTERESIS_INCREMENT * HYSTERESIS_DOWNWARD_MULTIPLIER"
+    let upward ← checkedMul hysteresisIncrement (UInt64.ofNat Const.hysteresisUpwardMultiplier)
+      "process_effective_balance_updates: HYSTERESIS_INCREMENT * HYSTERESIS_UPWARD_MULTIPLIER"
     let lower ← checkedAdd balance downward
       "process_effective_balance_updates: balance + DOWNWARD_THRESHOLD"
     let update ← if lower < validator.effectiveBalance then pure true

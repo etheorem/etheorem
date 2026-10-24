@@ -145,7 +145,7 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
 
   -- Per-participant and per-proposer reward amounts.
   let totalActiveIncrements := (← liftErr (getTotalActiveBalance state)).toNat / Const.effectiveBalanceIncrement
-  let totalBaseRewards := (← liftErr (getBaseRewardPerIncrement state)) * totalActiveIncrements
+  let totalBaseRewards := (← liftErr (getBaseRewardPerIncrement state)).toNat * totalActiveIncrements
   let maxParticipantRewards := totalBaseRewards * Const.syncRewardWeight / Const.weightDenominator / Const.slotsPerEpoch
   let participantReward : Gwei := UInt64.ofNat (maxParticipantRewards / Const.syncCommitteeSize)
   let proposerReward : Gwei :=
