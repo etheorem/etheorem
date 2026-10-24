@@ -392,10 +392,11 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) :
         · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _) (fun _ => keepsUncachedFrom_throw _ _)
         · refine keepsUncachedFrom_bind ?gD (fun _ midState₅ => ?_)
           · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _) (fun _ => keepsUncachedFrom_throw _ _)
-          · simp only []
-            split
-            · refine keepsUncachedFrom_bind (keepsUncachedFrom_pure _ _) (fun _ midState₆ => ?_)
-              refine keepsUncachedFrom_bind (T := BeaconState) ?gF (fun _ midState₇ => ?_)
+          · refine keepsUncachedFrom_bind ?co (fun _ midState₆ => ?_)
+            · exact keepsUncachedFrom_liftErr (T := BeaconState) (v := midState₅)
+                (ε := EthCLLib.Spec.StateTransitionError) (ε' := EthCLLib.Spec.StateTransitionError)
+                (α := Nat) _
+            · refine keepsUncachedFrom_bind (T := BeaconState) ?gF (fun _ midState₇ => ?_)
               · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _)
                   (fun _ => keepsUncachedFrom_throw _ _)
               · refine keepsUncachedFrom_bind (T := BeaconState) ?gf (fun flagIndices midState₈ => ?_)
@@ -404,7 +405,8 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) :
                   · refine keepsUncachedFrom_bind (keepsUncachedFrom_pure _ _) (fun _ midState₉ => ?_)
                     refine keepsUncachedFrom_bind ?li (fun idxs midState₁₀ => ?_)
                     · exact keepsUncachedFrom_liftErr (T := BeaconState) (v := midState₉)
-                        (ε := EthCLLib.Spec.StateTransitionError) (ε' := EthCLLib.Spec.IndexError)
+                        (ε := EthCLLib.Spec.StateTransitionError)
+                        (ε' := EthCLLib.Spec.StateTransitionError)
                         (α := Array EthCLSpecs.Gloas.ValidatorIndex) _
                     · -- `sszOfArrayM` builds the attesting-index list, or raises `.listFull`.
                       refine keepsUncachedFrom_bind (keepsUncachedFrom_sszOfArrayM _ _ _)
@@ -418,7 +420,7 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) :
                         · refine keepsUncachedFrom_bind ?li2 (fun idxs2 midState₁₃ => ?_)
                           · exact keepsUncachedFrom_liftErr (T := BeaconState) (v := midState₁₂)
                               (ε := EthCLLib.Spec.StateTransitionError)
-                              (ε' := EthCLLib.Spec.IndexError)
+                              (ε' := EthCLLib.Spec.StateTransitionError)
                               (α := Array EthCLSpecs.Gloas.ValidatorIndex) _
                           · refine keepsUncachedFrom_forIn_array_bind_P (T := BeaconState) (v := midState₁₃)
                               ?ob ?kt
@@ -433,7 +435,8 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) :
                             · intro vi b midState₁₄ r s hb hrun
                               obtain ⟨accState, hu⟩ := hb
                               rcases b with ⟨pn, sa, ws⟩
-                              rw [hu] at hrun
+                              dsimp only at hu
+                              subst hu
                               simp only [] at hrun
                               refine keepsUncachedFrom_forIn_range_bind_run_inv
                                 (T := BeaconState) (v := midState₁₄)
@@ -538,12 +541,12 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) :
                             · intro b midState₁₇ hb
                               obtain ⟨accState, hu⟩ := hb
                               rcases b with ⟨pn, sa, wt⟩
-                              rw [hu]
+                              dsimp only at hu
+                              subst hu
                               refine returnsUncachedFrom_bind
                                 (returnsUncached_increaseBalance _ _ _) (fun afterIncrease midState₁₈ =>
                                   keepsUncachedFrom_set midState₁₈ afterIncrease)
                   · exact keepsUncachedFrom_throw_bind _ _
-            · exact keepsUncachedFrom_throw_bind _ _
 
 end
 

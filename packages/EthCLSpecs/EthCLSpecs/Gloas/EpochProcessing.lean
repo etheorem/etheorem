@@ -137,7 +137,22 @@ inherit getCommitteeIndices
 inherit cbwsAux
 inherit computeBalanceWeightedSelection
 inherit computeProposerIndices
-inherit getNextSyncCommittee
+
+/-- `get_next_sync_committee` (Gloas). The selection is `compute_balance_weighted_selection`
+(`gloas/beacon-chain.md:784-793`). Its `assert total > 0` rejects an empty active set with
+`.assert`. This declaration overrides Fulu's body, which raises Electra's
+`ZeroDivisionError` for an empty active set. -/
+forkdef getNextSyncCommittee [CryptoBackend] (state : State) :
+    Except StateTransitionError SyncCommittee := do
+  let epoch := currentEpochOf state + 1
+  let seed := getSeed state epoch Const.domainSyncCommittee
+  let indices ← computeBalanceWeightedSelection state (getActiveValidatorIndices state epoch)
+    seed Const.syncCommitteeSize true
+
+  let validators := sszGet state validators
+  let pubkeys : Vector BLSPubkey Const.syncCommitteeSize :=
+    Vector.ofFn (fun i => (validators[(indices[i.val]!).toNat]?.getD default).pubkey)
+  pure { pubkeys := pubkeys, aggregatePubkey := blsAggregatePubkeys pubkeys.toArray }
 
 /-- `get_beacon_proposer_indices` (Gloas, EIP-8045): the proposer lookahead is drawn
 only from *unslashed* active validators. This overrides the inherited Fulu version
@@ -262,14 +277,15 @@ forkdef processBuilderPendingPayments : StateTransition Unit := do
 `slot`, with possible duplicates. Concatenate every beacon committee for the slot in
 order, then take a `PTC_SIZE` balance-weighted selection with no shuffle. The seed
 mixes `DOMAIN_PTC_ATTESTER` and the slot. -/
-forkdef computePtc (state : State) (slot : Slot) : Vector ValidatorIndex Const.ptcSize :=
+forkdef computePtc (state : State) (slot : Slot) :
+    Except StateTransitionError (Vector ValidatorIndex Const.ptcSize) := do
   let epoch := computeEpochAtSlot slot
   let seed := sha ((getSeed state epoch Const.domainPtcAttester) ++ uint64ToBytes slot)
   let committeesPerSlot := getCommitteeCountPerSlot state epoch
-  let indices := (Array.range committeesPerSlot).foldl
-    (fun acc i => acc ++ getBeaconCommittee state slot i) (#[] : Array ValidatorIndex)
-  let sel := computeBalanceWeightedSelection state indices seed Const.ptcSize false
-  Vector.ofFn (fun i : Fin Const.ptcSize => sel[i.val]!)
+  let indices ← (Array.range committeesPerSlot).foldlM
+    (fun acc i => do pure (acc ++ (← getBeaconCommittee state slot i))) (#[] : Array ValidatorIndex)
+  let sel ← computeBalanceWeightedSelection state indices seed Const.ptcSize false
+  pure (Vector.ofFn (fun i : Fin Const.ptcSize => sel[i.val]!))
 
 /-- `process_ptc_window` (v1.7.0-alpha.11, EIP-7732): shift the cached PTC window down
 by `SLOTS_PER_EPOCH` and recompute the last epoch's per-slot PTCs from the snapshot
@@ -286,8 +302,12 @@ forkdef processPtcWindow : StateTransition Unit := do
   let state ← get
   let nextEpoch := currentEpochOf state + Const.minSeedLookahead + 1
   let startSlot ← liftErr (computeStartSlotAtEpoch nextEpoch)
-  let fresh : Array (Vector ValidatorIndex Const.ptcSize) :=
-    (Array.range Const.slotsPerEpoch).map (fun i => computePtc state (startSlot + UInt64.ofNat i))
+  -- pyspec forms the range end `start_slot + SLOTS_PER_EPOCH` as a `Slot` before the first
+  -- `compute_ptc` call. A range end of `2^64` raises here.
+  let _ ← checkedAdd startSlot (UInt64.ofNat Const.slotsPerEpoch)
+    "process_ptc_window: start_slot + SLOTS_PER_EPOCH"
+  let fresh : Array (Vector ValidatorIndex Const.ptcSize) ← liftErr <|
+    (Array.range Const.slotsPerEpoch).mapM (fun i => computePtc state (startSlot + UInt64.ofNat i))
 
   modifyState fun state =>
     sszUpdate state with ptcWindow :=

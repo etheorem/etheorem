@@ -96,20 +96,36 @@ private theorem startSlot_eq_ok [Preset] (e : UInt64)
   rw [hguard]
   rfl
 
-/-- Under the window's range bound, the whole build succeeds and agrees with the pure
-`Vector.ofFn` of the same values. Every theorem below reads its `getElem` fact off this, so the
-`Except` layer unfolds once instead of three times. -/
+/-- The slot that `initialize_ptc_window` computes for window entry `i ≥ SLOTS_PER_EPOCH`.
+The offset `k := i - SLOTS_PER_EPOCH` splits into an epoch delta `k / SLOTS_PER_EPOCH` and an
+intra-epoch slot `k % SLOTS_PER_EPOCH`, exactly as the definition does. -/
+abbrev windowSlot [Preset] [HasherTag] (state : Fulu.BeaconState)
+    (i : Fin (3 * Gloas.Const.slotsPerEpoch)) : UInt64 :=
+  let k := i.val - Gloas.Const.slotsPerEpoch
+  (currentEpochOf (pureState state) + UInt64.ofNat (k / Gloas.Const.slotsPerEpoch)) *
+      UInt64.ofNat Gloas.Const.slotsPerEpoch +
+    UInt64.ofNat (k % Gloas.Const.slotsPerEpoch)
+
+/-- `compute_ptc` succeeds at every populated window slot, with the committee `ptc i`. The
+PTC can fault (an empty candidate set fails the selection's `assert`), so the window build
+needs this premise. -/
+abbrev PtcWindowOk [Preset] [HasherTag] (state : Fulu.BeaconState)
+    (ptc : Fin (3 * Gloas.Const.slotsPerEpoch) → Vector UInt64 Gloas.Const.ptcSize) : Prop :=
+  ∀ i : Fin (3 * Gloas.Const.slotsPerEpoch), Gloas.Const.slotsPerEpoch ≤ i.val →
+    computePtcFromFulu (pureState state) (windowSlot state i) = .ok (ptc i)
+
+/-- Under the window's range bound, and when the PTC succeeds at each populated slot, the
+whole build succeeds and agrees with the pure `Vector.ofFn` of the same values. Every theorem
+below reads its `getElem` fact off this, so the `Except` layer unfolds once instead of three
+times. -/
 theorem initializePtcWindow_eq_ok [Preset] [HasherTag] (state : Fulu.BeaconState)
-    (h : PtcWindowInRange state) :
+    (h : PtcWindowInRange state)
+    (ptc : Fin (3 * Gloas.Const.slotsPerEpoch) → Vector UInt64 Gloas.Const.ptcSize)
+    (hptc : PtcWindowOk state ptc) :
     initializePtcWindow (pureState state) =
       .ok (Vector.ofFn fun i : Fin (3 * Gloas.Const.slotsPerEpoch) =>
         if i.val < Gloas.Const.slotsPerEpoch then Vector.replicate Gloas.Const.ptcSize 0
-        else
-          let k := i.val - Gloas.Const.slotsPerEpoch
-          computePtcFromFulu (pureState state)
-            ((currentEpochOf (pureState state) + UInt64.ofNat (k / Gloas.Const.slotsPerEpoch)) *
-                UInt64.ofNat Gloas.Const.slotsPerEpoch +
-              UInt64.ofNat (k % Gloas.Const.slotsPerEpoch))) := by
+        else ptc i) := by
   have hpos : 0 < Gloas.Const.slotsPerEpoch := Gloas.Const.slotsPerEpochPos
   unfold initializePtcWindow
   apply ofFnM_eq_ok_ofFn
@@ -124,46 +140,41 @@ theorem initializePtcWindow_eq_ok [Preset] [HasherTag] (state : Fulu.BeaconState
       have := Nat.div_lt_of_lt_mul hlt2
       omega
     simp only [if_neg hi, startSlot_eq_ok _ h _ hk]
-    rfl
+    exact hptc i (by omega)
 
 /-- The window's first `SLOTS_PER_EPOCH` entries (the placeholder "previous
 epoch", empty because the pre-fork Fulu state carries no PTC) are the all-zero
 committee, `initialize_ptc_window`'s `emptyCommittee`.
 
-`PtcWindowInRange` rules out the `compute_start_slot_at_epoch` fault in the
-window's populated regions, so the build succeeds and the entry exists. -/
+`PtcWindowInRange` rules out the `compute_start_slot_at_epoch` fault in the window's populated
+regions, and `PtcWindowOk` rules out a PTC fault there. So the build succeeds and the entry
+exists. -/
 theorem initializePtcWindow_lt [Preset] [HasherTag] :
-    ∀ (state : Fulu.BeaconState) (i : Fin (3 * Gloas.Const.slotsPerEpoch)),
-      PtcWindowInRange state →
+    ∀ (state : Fulu.BeaconState) (i : Fin (3 * Gloas.Const.slotsPerEpoch))
+      (ptc : Fin (3 * Gloas.Const.slotsPerEpoch) → Vector UInt64 Gloas.Const.ptcSize),
+      PtcWindowInRange state → PtcWindowOk state ptc →
       i.val < Gloas.Const.slotsPerEpoch →
       (initializePtcWindow (pureState state)).map (·[i]) =
         .ok (Vector.replicate Gloas.Const.ptcSize 0) := by
-  intro state i hRange h
-  simp [initializePtcWindow_eq_ok state hRange, Except.map, h]
+  intro state i ptc hRange hptc h
+  simp [initializePtcWindow_eq_ok state hRange ptc hptc, Except.map, h]
 
-/-- The window's remaining `2 * SLOTS_PER_EPOCH` entries (the current epoch and
-the one after it) are `computePtcFromFulu` evaluated at the slot
-`initialize_ptc_window` computes for that offset: split the offset
-`k := i - SLOTS_PER_EPOCH` into an epoch delta (`k / SLOTS_PER_EPOCH`) and an
-intra-epoch slot offset (`k % SLOTS_PER_EPOCH`), exactly as the definition
-does, rather than the collapsed `startSlot(currentEpoch) + k` form (which
-would need a `UInt64` no-overflow side condition this statement doesn't
-carry).
+/-- The window's remaining `2 * SLOTS_PER_EPOCH` entries (the current epoch and the one after
+it) are the PTC that `computePtcFromFulu` returns at `windowSlot state i`. `windowSlot` keeps
+the definition's split of the offset into an epoch delta and an intra-epoch slot. The
+collapsed `startSlot(currentEpoch) + k` form would need a `UInt64` no-overflow side condition
+that this statement does not carry.
 
-`PtcWindowInRange` rules out the `compute_start_slot_at_epoch` fault at every
-offset, so the build succeeds and the entry exists. -/
+`PtcWindowInRange` rules out the `compute_start_slot_at_epoch` fault at every offset, and
+`PtcWindowOk` gives the PTC at each one. So the build succeeds and the entry exists. -/
 theorem initializePtcWindow_ge [Preset] [HasherTag] :
-    ∀ (state : Fulu.BeaconState) (i : Fin (3 * Gloas.Const.slotsPerEpoch)),
-      PtcWindowInRange state →
+    ∀ (state : Fulu.BeaconState) (i : Fin (3 * Gloas.Const.slotsPerEpoch))
+      (ptc : Fin (3 * Gloas.Const.slotsPerEpoch) → Vector UInt64 Gloas.Const.ptcSize),
+      PtcWindowInRange state → PtcWindowOk state ptc →
       Gloas.Const.slotsPerEpoch ≤ i.val →
-      (initializePtcWindow (pureState state)).map (·[i]) = .ok (
-        let k := i.val - Gloas.Const.slotsPerEpoch
-        computePtcFromFulu (pureState state)
-          ((currentEpochOf (pureState state) + UInt64.ofNat (k / Gloas.Const.slotsPerEpoch)) *
-              UInt64.ofNat Gloas.Const.slotsPerEpoch +
-            UInt64.ofNat (k % Gloas.Const.slotsPerEpoch))) := by
-  intro state i hRange h
-  simp [initializePtcWindow_eq_ok state hRange, Except.map, Nat.not_lt.mpr h]
+      (initializePtcWindow (pureState state)).map (·[i]) = .ok (ptc i) := by
+  intro state i ptc hRange hptc h
+  simp [initializePtcWindow_eq_ok state hRange ptc hptc, Except.map, Nat.not_lt.mpr h]
 
 /-- The first region's committee is also the ambient `default` for
 `Vector ValidatorIndex Gloas.Const.ptcSize` (`ValidatorIndex := UInt64`'s
@@ -171,13 +182,14 @@ theorem initializePtcWindow_ge [Preset] [HasherTag] :
 that already reason in terms of `default` don't need to unfold
 `initializePtcWindow` a second time to get there.
 
-It carries the same `PtcWindowInRange` bound as the theorem it reads from. -/
+It carries the same premises as the theorem it reads from. -/
 theorem initializePtcWindow_lt_default [Preset] [HasherTag] :
-    ∀ (state : Fulu.BeaconState) (i : Fin (3 * Gloas.Const.slotsPerEpoch)),
-      PtcWindowInRange state →
+    ∀ (state : Fulu.BeaconState) (i : Fin (3 * Gloas.Const.slotsPerEpoch))
+      (ptc : Fin (3 * Gloas.Const.slotsPerEpoch) → Vector UInt64 Gloas.Const.ptcSize),
+      PtcWindowInRange state → PtcWindowOk state ptc →
       i.val < Gloas.Const.slotsPerEpoch →
       (initializePtcWindow (pureState state)).map (·[i]) = .ok default := by
-  intro state i hRange h
-  exact initializePtcWindow_lt state i hRange h
+  intro state i ptc hRange hptc h
+  exact initializePtcWindow_lt state i ptc hRange hptc h
 
 end EthCLSpecs.Proofs.Gloas

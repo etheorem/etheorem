@@ -205,8 +205,9 @@ forkdef getInclusionListCommittee (state : State) (slot : Slot) :
     StoreTransition (Vector ValidatorIndex Const.inclusionListCommitteeSize) := do
   let epoch := computeEpochAtSlot slot
   let committeesPerSlot := getCommitteeCountPerSlot state epoch
-  let indices := (Array.range committeesPerSlot).foldl
-    (fun acc i => acc ++ getBeaconCommittee state slot i) (#[] : Array ValidatorIndex)
+  let indices ← liftErr <| (Array.range committeesPerSlot).foldlM
+    (fun acc i => do pure (acc ++ (← getBeaconCommittee state slot i)))
+    (#[] : Array ValidatorIndex)
   if indices.size == 0 then
     throwArithmetic "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"
   pure (cyclicSample indices Const.inclusionListCommitteeSize)

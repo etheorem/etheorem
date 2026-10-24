@@ -117,19 +117,49 @@ forkdef getAttestationParticipationFlagIndices (state : State) (data : Attestati
   if isMatchingHead && inclusionDelay == Const.minAttestationInclusionDelay then flags := flags.push Const.timelyHeadFlagIndex
   return some flags
 
-/-- `get_attesting_indices`: the validators flagged across the slot's committees. Returns
-`Except IndexError` because the block-supplied `aggregation_bits` is read at a committee
-offset it does not bound; an over-length read rejects rather than masking to `false`. The
-`committee[i]` read stays total, `i` is bounded by the committee it just built. -/
-forkdef getAttestingIndices (state : State) (att : Attestation) : Except IndexError (Array ValidatorIndex) := do
+/-- `get_attesting_indices`: the validators flagged across the slot's committees. The body
+reads the block-supplied `aggregation_bits` at a committee offset that the block does not
+bound. A read past the end rejects with `outOfBounds`, the pyspec's `IndexError`, and does
+not read as `false`. `getBeaconCommittee` can also fault, so the result type is
+`Except StateTransitionError`. The `committee[i]` read stays total, because the committee
+that the loop just built bounds `i`. -/
+forkdef getAttestingIndices (state : State) (att : Attestation) :
+    Except StateTransitionError (Array ValidatorIndex) := do
   let mut out : Array ValidatorIndex := #[]
   let mut offset := 0
   for ci in getCommitteeIndices att.committeeBits do
-    let committee := getBeaconCommittee state att.data.slot ci
+    let committee ← getBeaconCommittee state att.data.slot ci
     for i in [0:committee.size] do
       if (← bitlistGetIdx att.aggregationBits (offset + i)) then out := out.push committee[i]!
     offset := offset + committee.size
   return out
+
+/-- The committee loop of `process_attestation` (`electra/beacon-chain.md:1518-1529`, and
+the same loop at `gloas/beacon-chain.md:1754-1763`). For each committee index, in order, the
+loop does three things:
+
+1. It asserts that the index is below the slot's committee count.
+2. It builds the committee, which can fault.
+3. It asserts that at least one bit of the committee is set.
+
+The pyspec stops at the first failed assert, and this loop stops there too. A bit read past
+the end of `aggregation_bits` raises the pyspec's `IndexError` (`outOfBounds`). The loop
+returns the sum of the committee sizes. The caller compares it with the bitfield length.
+The loop reads `state` only through its argument, so it is a bare `Except`, as
+`getAttestingIndices` is. -/
+forkdef attestationCommitteeOffset (state : State) (att : Attestation) :
+    Except StateTransitionError Nat := do
+  let data := att.data
+  let mut offset := 0
+  for ci in getCommitteeIndices att.committeeBits do
+    assert (ci < getCommitteeCountPerSlot state data.target.epoch)
+    let committee ← getBeaconCommittee state data.slot ci
+    let mut attesters := 0
+    for i in [0:committee.size] do
+      if (← bitlistGetIdx att.aggregationBits (offset + i)) then attesters := attesters + 1
+    assert (attesters > 0)
+    offset := offset + committee.size
+  return offset
 
 /-- `process_attestation`. -/
 forkdef processAttestation (att : Attestation) : StateTransition Unit := do
@@ -151,9 +181,7 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
 
   -- Every committee index is valid and contributes at least one attester; the
   -- aggregation bitfield length matches the total committee size.
-  let count := getCommitteeCountPerSlot state data.target.epoch
-  let (ok, offset) := verifyCommitteeCoverage state data count
-  assert ok
+  let offset ← liftErr (attestationCommitteeOffset state att)
   assert (att.aggregationBits.size == offset)
 
   -- Resolve the participation flags, then validate the aggregate signature.
@@ -191,19 +219,6 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc)
     (UInt64.ofNat (proposerNum / proposerDenom))
   set stateAcc
-where
-  /-- Fold over the attestation's committee indices: each must be below `count` and
-  contribute at least one attester. Returns `(allValid, totalCommitteeSize)`. -/
-  verifyCommitteeCoverage (state : State) (data : AttestationData) (count : Nat) : Bool × Nat :=
-    (getCommitteeIndices att.committeeBits).foldl
-      (fun (acc : Bool × Nat) ci => Id.run do
-        let (okAcc, off) := acc
-        if (UInt64.ofNat ci).toNat ≥ count then return (false, off)
-        let committee := getBeaconCommittee state data.slot ci
-        let attesters := (List.range committee.size).foldl
-          (fun a i => if att.aggregationBits[off + i]! then a + 1 else a) 0
-        return (okAcc && attesters > 0, off + committee.size))
-      (true, 0)
 
 /-! ## Deposits -/
 

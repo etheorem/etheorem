@@ -377,7 +377,7 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
   -- sibling `getAttestationScore` fold keeps `validators[idx]!`: its indices come from
   -- `getActiveValidatorIndices` on the same state it reads, so they are in range.
   let headWeight ← (List.range (getCommitteeCountPerSlot headState epoch)).foldlM (init := baseWeight) fun acc index => do
-    let committee := getBeaconCommittee headState headBlock.slot index
+    let committee ← liftErr (getBeaconCommittee headState headBlock.slot index)
     -- Python sums the equivocator balances of the committee as `Gwei(sum(...))`. Then it
     -- adds that sum with `head_weight +=`. Both `uint64` ops raise past `2^64`, so the model
     -- checks both, in the same order.

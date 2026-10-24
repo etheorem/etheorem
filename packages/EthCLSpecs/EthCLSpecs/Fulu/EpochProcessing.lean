@@ -391,14 +391,19 @@ forkdef processParticipationFlagUpdates : StateTransition Unit := do
 
 /-- `process_sync_committee_updates`: at a sync-committee-period boundary, rotate
 `next` into `current` and select a fresh `next` (balance-weighted, with the real
-BLS aggregate pubkey). -/
+BLS aggregate pubkey).
+
+The body writes twice. The pyspec assigns `current_sync_committee` before the call that can
+fault (`altair/beacon-chain.md:779-784`). So when the selection faults, the state keeps the
+rotated `current`, in the pyspec and here. The selection reads only the validators and the
+randao mixes, and the first write does not change them. -/
 forkdef processSyncCommitteeUpdates : StateTransition Unit := do
   let state ← get
   if (currentEpochOf state + 1) % UInt64.ofNat Const.epochsPerSyncCommitteePeriod == 0 then
-    let nsc := getNextSyncCommittee state
-    set (sszUpdate state with
-      currentSyncCommittee := sszGet state nextSyncCommittee,
-      nextSyncCommittee := nsc)
+    set (sszUpdate state with currentSyncCommittee := sszGet state nextSyncCommittee)
+    let rotated ← get
+    let nsc ← liftErr (getNextSyncCommittee rotated)
+    modifyState fun state => sszUpdate state with nextSyncCommittee := nsc
 
 /-- `process_proposer_lookahead` (Fulu, EIP-7917): shift out the first epoch's
 proposers and append the freshly-computed proposers for
