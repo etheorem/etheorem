@@ -111,4 +111,70 @@ example : isOob (verifyBlockSignature (pureState oneValidator)
 
 end
 
+/-! ## Item 5: the `uint64` products under patched constants
+
+The site f and l rows of `specs/2026-10-24-batchfaith-probes.md` (local, not committed). Each
+probe sets a module constant of the pinned pyspec, and the pin sets the same `Preset` field.
+`Validator` and `BeaconState` depend on the preset, so the fixture takes it as an argument. -/
+
+section
+local instance : Config := minimalConfig
+local instance : HasherTag := fastHasherTag
+local instance : CryptoBackend := CryptoBackend.realBackend
+
+/-- The default state under the preset `P`, with one active validator per entry of `effs` and
+balances equal to the effective balances. -/
+private def stateAt (P : Preset) (effs : Array Gwei) : @BeaconState P :=
+  letI : Preset := P
+  let validator (e : Gwei) (k : UInt8) : Validator :=
+    { (default : Validator) with
+      pubkey := Vector.replicate 48 k, effectiveBalance := e
+      exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
+  let listOf {α : Type} {cap : Nat} (a : Array α) : SSZList α cap :=
+    if h : a.size ≤ cap then ⟨a, h⟩ else ⟨#[], Nat.zero_le _⟩
+  { (default : BeaconState) with
+    validators := listOf (effs.mapIdx fun i e => validator e (UInt8.ofNat (0x11 + i)))
+    balances := listOf effs
+    previousEpochParticipation := listOf (effs.map fun _ => (0 : UInt8))
+    currentEpochParticipation := listOf (effs.map fun _ => (0 : UInt8))
+    inactivityScores := listOf (effs.map fun _ => (0 : UInt64)) }
+
+/-- `WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA = 1`. -/
+@[reducible] private def wbq1 : Preset := { minimal with whistleblowerRewardQuotientElectra := 1 }
+/-- `EPOCHS_PER_ETH1_VOTING_PERIOD = 2 ^ 62`. -/
+@[reducible] private def period62 : Preset := { minimal with epochsPerEth1VotingPeriod := 2 ^ 62 }
+
+/-! ### f. `slash_validator`: `whistleblower_reward * PROPOSER_WEIGHT` -/
+
+-- Overflow: slashing a `2 ^ 62` validator with quotient 1 makes the product `2 ^ 65`.
+example : (letI : Preset := wbq1
+    match runPure (slashValidator (StateTransition := FuluRun) 0)
+        (stateAt wbq1 #[4611686018427387904, eth32]) with
+    | .error (.arithmetic d) => d == "slash_validator: whistleblower_reward * PROPOSER_WEIGHT"
+    | _ => false) = true := by native_decide
+
+-- Order: slashing index 5, past the registry, raises `IndexError` in
+-- `initiate_validator_exit` before the product.
+example : (letI : Preset := wbq1
+    match runPure (slashValidator (StateTransition := FuluRun) 5)
+        (stateAt wbq1 #[4611686018427387904, eth32]) with
+    | .error (.outOfBounds _ _) => true
+    | _ => false) = true := by native_decide
+
+-- The minimal preset, at the largest effective balance: pyspec succeeds.
+example : (letI : Preset := minimal
+    (runPure (slashValidator (StateTransition := FuluRun) 0)
+      (stateAt minimal #[2048000000000, eth32])).isOk) = true := by native_decide
+
+/-! ### l. `process_eth1_data`: `EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH` -/
+
+-- Overflow: `2 ^ 62 * 8`, with an empty body and one validator.
+example : (letI : Preset := period62
+    match runPure (processEth1Data (StateTransition := FuluRun) default)
+        (stateAt period62 #[eth32]) with
+    | .error (.arithmetic d) => d == "process_eth1_data: EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH"
+    | _ => false) = true := by native_decide
+
+end
+
 end EthCLSpecs.Tests.FuluBlockOpPins
