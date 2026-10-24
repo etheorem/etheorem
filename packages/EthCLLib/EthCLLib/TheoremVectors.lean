@@ -2,6 +2,7 @@ import EthCLLib.TheoremVectors.Types
 import EthCLLib.TheoremVectors.Scalar
 import EthCLLib.TheoremVectors.Sampleable
 import EthCLLib.TheoremVectors.Yaml
+import EthCLLib.TheoremVectors.Snappy
 import EthCLLib.TheoremVectors.ForkBinding
 import EthCLLib.TheoremVectors.Statement
 import EthCLLib.TheoremVectors.Scope

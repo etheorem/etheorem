@@ -82,6 +82,40 @@ progressive (EIP-7495), the vectors are classic, and the root gate
 cannot pass at this pin. etheorem/etheorem#128 tracks the Gloas switch
 that closes those skips.
 
+## The spectest suite
+
+Prysm runs the upstream pyspec cases through its own `testing/spectest`
+runners, and the recipe runs those runners unmodified over a mirrored
+corpus. `just client-prysm-pyspec` does the whole run: it ensures the
+pinned shallow clone, it emits the corpus with the generator exe's
+`prysm-corpus` subcommand, it copies the corpus to the clone's repository
+root, and it runs the two consolidation targets.
+
+The clone lives at `clients/prysm/.go/prysm-repo`, a shallow clone of tag
+`v7.2.1`. Every run checks the clone's HEAD against the pin
+`fea24b41265542905352ab45fe2291d8eea010cc` and fails on a mismatch.
+
+The `prysm-corpus` subcommand mirrors every rendered upstream case layout
+under `<out>/tests/<preset>/<fork>/...`, the layout a Prysm checkout runs
+its spectests from. It snappy-encodes each `.ssz` part to `.ssz_snappy`
+with the generator's all-literals writer (`Snappy.lean`), and it copies
+`manifest.yaml` raw. `meta.yaml` is never copied: ours carries
+`bls_setting: 2` ("fake backend only"), and the suite's real BLS backend
+makes `blsSettingRunnable` drop every case that declares it. Upstream's
+consolidation cases carry no `meta.yaml` at the pin, and the mirror follows
+them.
+
+The targets are Prysm's `TestMinimal_Fulu_Operations_Consolidation` (with
+`-tags minimal`) and `TestMainnet_Fulu_Operations_Consolidation`. Their
+pass counts are pinned: 15 minimal, 3 mainnet. A wrong count names one of
+two causes: a case the emitter missed, or a fetch-fired run. The clone's
+`Runfile` fetches the upstream archive into `third_party/testdata` on a
+path miss, and upstream holds 37 minimal consolidation cases at this pin,
+so a fetch-fired minimal run counts 37.
+
+The emitter reads the manifest the render pass wrote and never renders, so
+a rendered tree is the precondition. Run the generator's `render` first.
+
 ## Files
 
 | File | Purpose |

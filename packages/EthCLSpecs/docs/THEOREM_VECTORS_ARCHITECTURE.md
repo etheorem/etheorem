@@ -322,6 +322,7 @@ warning into an error.
 | `Execute.lean` | per-shape outcome from probe runs, the agreement check | `Probe` |
 | `Record.lean` | `VectorValue`, `VectorRecord`, writer, reader | `Types`, `Lean.Json` |
 | `Yaml.lean` | the YAML writer for the client-facing files (§12.3) | Lean core |
+| `Snappy.lean` | the snappy block-format writer, all-literals form | Lean core |
 | `Format.lean` | the `VectorFormat` structure and `RenderEnv` | `Record`, `ForkBinding` |
 | `Formats/Function.lean` | the function format | `Format`, `Yaml` |
 | `Formats/Pyspec.lean` | the pyspec format and its `runCase` check | `Format`, `Yaml`, `PySpecTests.Driver` |
@@ -1246,7 +1247,10 @@ of **parts** (the files). This document's `VectorFormat` values are per
 case shape, not per runner: one value renders one part layout, whatever
 runner writes it. The part suffix rule is upstream-wide: `.ssz_snappy`
 preferred, a raw `.ssz` beside it accepted, which is what lets this
-generator's output ride the readers below.
+generator's output ride the readers below. The generator's writers still
+emit raw `.ssz` parts. The exe's `prysm-corpus` subcommand writes the
+`.ssz_snappy` mirror the Prysm suite's readers consume (§15), with the
+all-literals encoder in `Snappy.lean`.
 
 The table names every upstream format and this repository's coverage of
 each. "Read" means `PySpecTests/harness.py` parses the format and the
@@ -1567,6 +1571,7 @@ theorem_vectors render [--fork <tag>] [--preset <id>] [--format <name>] [--out <
 theorem_vectors check  [--fork <tag>] [--preset <id>] [--format <name>] [--out <dir>]
 theorem_vectors report [--out <dir>]
 theorem_vectors list   [--out <dir>]
+theorem_vectors prysm-corpus [--out <dir>]
 ```
 
 | Subcommand | Does | Exit code |
@@ -1575,6 +1580,7 @@ theorem_vectors list   [--out <dir>]
 | `check` | phase C2 over the rendered vectors | 0, or 1 when any check fails |
 | `report` | phase C3; writes `report.md` | 0 |
 | `list` | prints one line per record, for scripts | 0 |
+| `prysm-corpus` | writes the snappy mirror of every rendered upstream case layout under `<out>/tests` (the Prysm suite's corpus); `meta.yaml` never copied | 0, or 1 when the manifest is missing or holds no case-layout entries, a case path is malformed, or a mirror write throws |
 
 `--out` defaults to `packages/EthCLSpecs/theorem_vectors`, the same path the
 lakefile fixes for the commands. The exe imports `Bindings.lean` and

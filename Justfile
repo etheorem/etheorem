@@ -603,6 +603,101 @@ client-prysm:
 client-prysm-report: client-prysm
     lake exe theorem_vectors report
 
+# Run Prysm's own spectest suite, unmodified, over the theorem-vector
+# generator's corpus. Prysm's suite reads a snappy corpus in the upstream
+# layout. The exe's `prysm-corpus` subcommand emits ours. The four steps:
+# ensure the pinned shallow Prysm clone, emit the corpus, place it at the
+# clone's repository root, and run the two Fulu consolidation targets with
+# the `client-prysm` Go env.
+#
+# The clone lives at `clients/prysm/.go/prysm-repo`, shallow, at tag
+# v7.2.1. The pin rev sits in the recipe body beside the clone step. Every
+# run checks the clone's HEAD against it. A stale checkout, a foreign
+# checkout, or a directory that is not a git repo fails the recipe. Remove
+# the directory and re-run to re-clone.
+#
+# Each target's pass count is pinned: 15 subtests for minimal, 3 for
+# mainnet. The numbers are the generator's consolidation records for Fulu
+# at each preset. Update the pins when the corpus changes. A wrong count
+# has one of two causes: the emitter missed a case, or the run fetched
+# upstream test data. The clone's `Runfile` fetches the upstream archive
+# into `third_party/testdata` on a path miss. Upstream's corpus at this
+# pin holds 37 minimal consolidation cases, so a fetch-fired minimal run
+# counts 37. The recipe manages nothing under `third_party/testdata`.
+# Prysm's runfile lookup answers the module root before the testdata root,
+# so our corpus always wins. The count pin catches a fetch-fired run.
+#
+# Precondition: a rendered formats tree, the same one `client-prysm`
+# reads. Run `just theorem-vectors` first, or rely on any prior render.
+# The subcommand fails loudly when the manifest is missing.
+
+# Run Prysm's own spectest suite over the emitted corpus (pinned clone, pinned pass counts)
+[group('ethcl')]
+client-prysm-pyspec:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export GOCACHE="{{ justfile_directory() }}/clients/prysm/.go/build"
+    export GOMODCACHE="{{ justfile_directory() }}/clients/prysm/.go/mod"
+    export GOBIN="{{ justfile_directory() }}/clients/prysm/.go/bin"
+    export GOTOOLCHAIN=local
+    # The worktree's toolchain, when installed (GOTOOLCHAIN=local needs its
+    # binary on PATH; a system Go serves when this directory is absent).
+    if [ -d "{{ justfile_directory() }}/clients/prysm/.go/toolchain/go/bin" ]; then
+      export PATH="{{ justfile_directory() }}/clients/prysm/.go/toolchain/go/bin:$PATH"
+    fi
+    repo="{{ justfile_directory() }}/clients/prysm/.go/prysm-repo"
+    pin="fea24b41265542905352ab45fe2291d8eea010cc"
+
+    # The pinned shallow clone. A directory that is not a git repo yields
+    # "unknown" here, which fails the pin check below.
+    if [ ! -d "$repo" ]; then
+      mkdir -p "$(dirname "$repo")"
+      git clone --depth 1 --branch v7.2.1 https://github.com/OffchainLabs/prysm "$repo"
+    fi
+    rev=$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo unknown)
+    if [ "$rev" != "$pin" ]; then
+      echo "client-prysm-pyspec: prysm-repo HEAD is $rev, expected pin $pin" >&2
+      echo "remove $repo and re-run \`just client-prysm-pyspec\`" >&2
+      exit 1
+    fi
+
+    # The snappy corpus, from the rendered formats tree.
+    cd "{{ justfile_directory() }}"
+    lake exe theorem_vectors prysm-corpus
+
+    # Replace the clone's tests/ wholesale, so a stale case of a removed
+    # record cannot survive.
+    rm -rf "$repo/tests"
+    cp -r "{{ justfile_directory() }}/packages/EthCLSpecs/theorem_vectors/tests" "$repo/tests"
+
+    # Both consolidation targets, each with its pinned subtest count.
+    cd "$repo"
+    run_pinned() {
+      local name="$1" want="$2"; shift 2
+      local out rc=0 n
+      echo "== $name =="
+      out=$(go test -count=1 -v -run "^Test${name}$" "$@") || rc=$?
+      if [ "$rc" -ne 0 ]; then
+        printf '%s\n' "$out" >&2
+        echo "client-prysm-pyspec: the $name target exited $rc" >&2
+        exit 1
+      fi
+      printf '%s\n' "$out" | grep '^ok' || true
+      n=$(printf '%s\n' "$out" | grep -c '^    --- PASS:' || true)
+      if [ "$n" -ne "$want" ]; then
+        printf '%s\n' "$out" >&2
+        echo "client-prysm-pyspec: the $name target passed $n subtests, expected $want" >&2
+        echo "a wrong count has one of two causes: the emitter missed a case, or the run" >&2
+        echo "fetched upstream test data (the clone's Runfile fetches the upstream archive" >&2
+        echo "into third_party/testdata on a path miss; upstream holds 37 minimal cases at" >&2
+        echo "this pin, so a fetch-fired minimal run counts 37)" >&2
+        exit 1
+      fi
+      echo "client-prysm-pyspec: $name: $n subtests passed (pin $want)"
+    }
+    run_pinned Minimal_Fulu_Operations_Consolidation 15 -tags minimal ./testing/spectest/minimal
+    run_pinned Mainnet_Fulu_Operations_Consolidation 3 ./testing/spectest/mainnet
+
 # ═════════════════════════════════════════════════════════════════════════
 # SizzLean, SSZ library
 #

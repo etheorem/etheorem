@@ -7,7 +7,7 @@ import EthCLLib.TheoremVectors.Record
 # `EthCLSpecs.TheoremVectors.Main`: the command-line harness
 
 The `theorem_vectors` executable (`THEOREM_VECTORS_ARCHITECTURE.md` §15). It never
-elaborates a theorem; the records on disk are its input. Four subcommands:
+elaborates a theorem; the records on disk are its input. Five subcommands:
 
 - `render [--fork <tag>] [--preset <id>] [--format <name>] [--out <dir>]`
   turns every record into every format that accepts it (phase C1, §13.2);
@@ -17,7 +17,10 @@ elaborates a theorem; the records on disk are its input. Four subcommands:
   the pyspec format replays its cases through `runCase` (§13.5);
 - `report [--out <dir>]` folds the outcome files into `report.md` (C3),
   with the client harness's answers in the Formats cells (§16.2);
-- `list [--out <dir>]` prints one line per record.
+- `list [--out <dir>]` prints one line per record;
+- `prysm-corpus [--out <dir>]` mirrors every rendered upstream case layout
+  under `<out>/tests`, each `.ssz` part snappy-encoded (§13.6, §13.7), the
+  corpus tree a Prysm checkout runs its spectests from.
 -/
 
 set_option autoImplicit false
@@ -33,6 +36,7 @@ inductive Subcommand where
   | check
   | report
   | list
+  | prysmCorpus
   deriving DecidableEq, Repr, Inhabited
 
 /-- Parse a subcommand name. -/
@@ -41,6 +45,7 @@ def Subcommand.ofString? : String → Option Subcommand
   | "check"  => some .check
   | "report" => some .report
   | "list"   => some .list
+  | "prysm-corpus" => some .prysmCorpus
   | _        => none
 
 /-- The flags the subcommands share. -/
@@ -60,10 +65,10 @@ def Flag.ofString? : String → Option Flag
   | _          => none
 
 /-- The flags each subcommand takes: `render` and `check` take all four,
-`report` and `list` take only `--out`. -/
+`report`, `list`, and `prysm-corpus` take only `--out`. -/
 def Subcommand.flags : Subcommand → List Flag
   | .render | .check => [.fork, .preset, .format, .out]
-  | .report | .list  => [.out]
+  | .report | .list | .prysmCorpus => [.out]
 
 /-- The flags a subcommand parsed (`THEOREM_VECTORS_ARCHITECTURE.md` §15).
 `out` defaults to `EthCLSpecs.TheoremVectors.outDir`, the path the lakefile
@@ -82,6 +87,7 @@ def usage : String :=
   "  check  [--fork <tag>] [--preset <id>] [--format <name>] [--out <dir>]\n" ++
   "  report [--out <dir>]\n" ++
   "  list   [--out <dir>]\n" ++
+  "  prysm-corpus [--out <dir>]\n" ++
   "  presets: minimal | mainnet; --out defaults to " ++
     EthCLSpecs.TheoremVectors.outDir ++ "\n"
 
@@ -207,6 +213,113 @@ def readManifest (out : System.FilePath) : IO (Array Rendered) := do
     | .ok rs => return rs
     | .error e => throw (IO.userError s!"cannot read {path}: {e}")
 
+/-! ## The `prysm-corpus` emitter
+
+The mirror writes the corpus tree a Prysm checkout runs its spectests from
+(§15). It reads the manifest the render pass wrote and touches nothing else
+in the output tree; it never renders. -/
+
+/-- The two formats whose entries describe an upstream case layout
+(§13.6, §13.7). Every other format's entries the mirror skips. -/
+private def prysmCorpusFormats : List String := ["pyspec", "operations"]
+
+/-- The six segments a case directory keeps after the `formats/pyspec`
+pair: the fork, the preset, the runner, the handler, the suite directory
+(`pyspec_tests` today), and the case. Named fields keep the mirror's swap
+of the first two readable. -/
+private structure CaseSegs where
+  fork : String
+  preset : String
+  runner : String
+  handler : String
+  suite : String
+  caseName : String
+
+/-- Parse the six segments out of a case directory path, the parent of a
+case entry's first path. Any shape other than
+`<...>/formats/pyspec/<fork>/<preset>/<runner>/<handler>/<suite>/<case>`
+fails, and the error names the offending path. -/
+private def caseSegsOfDir (dir : System.FilePath) : IO CaseSegs := do
+  let bad := s!"prysm-corpus: {dir} is not a case directory \
+    (expected <...>/formats/pyspec/<fork>/<preset>/<runner>/<handler>/\
+    <suite>/<case>)"
+  let segs := dir.toString.splitOn "/"
+  -- the real `formats` root is the last `formats` segment: a stray earlier
+  -- one can only come from the `--out` prefix the render pass recorded
+  let some j := segs.reverse.findIdx? (· == "formats")
+    | throw (IO.userError bad)
+  let i := segs.length - 1 - j
+  unless segs[i + 1]? == some "pyspec" do
+    throw (IO.userError bad)
+  match segs.drop (i + 2) with
+  | [f, p, r, h, s, c] =>
+    pure { fork := f, preset := p, runner := r, handler := h, suite := s, caseName := c }
+  | _ => throw (IO.userError bad)
+
+/-- The mirror directory of one case under `<out>/tests`: the preset and
+the fork swap places, and the rest keeps the case layout's order. A Prysm
+checkout expects the suite at `tests/<preset>/<fork>/...`, the layout
+upstream's consolidation publishes. -/
+private def CaseSegs.mirrorDir (segs : CaseSegs) (out : System.FilePath) :
+    System.FilePath :=
+  out / "tests" / segs.preset / segs.fork / segs.runner / segs.handler /
+    segs.suite / segs.caseName
+
+/-- Mirror every rendered upstream case layout under `<out>/tests` (§15).
+Reads the manifest the render pass wrote, so a stale case of a removed
+record cannot survive: the mirror root is wiped first. Each case directory
+mirrors to `<out>/tests/<preset>/<fork>/<runner>/<handler>/<suite>/<case>`.
+Every `.ssz` part is written snappy-encoded as `<stem>.ssz_snappy`, and
+`manifest.yaml` is copied raw. `meta.yaml` is never copied: ours carries
+`bls_setting: 2`, and the suite's real BLS backend drops every case that
+declares it. Upstream's consolidation cases carry no `meta.yaml`, and the
+mirror follows them. A case with no `post.ssz` part (an expected-failure
+case) keeps the mark: no post part is written. Returns the case count and
+the written-file count. -/
+private def writePrysmCorpus (out : System.FilePath) : IO (Nat × Nat) := do
+  let manifest := out / "formats" / "manifest.json"
+  unless ← manifest.pathExists do
+    throw (IO.userError s!"prysm-corpus: no manifest at {manifest}; \
+      run render first")
+  let rendered ← readManifest out
+  if rendered.isEmpty then
+    throw (IO.userError s!"prysm-corpus: {manifest} holds no entries (0); \
+      run render first")
+  let cases := rendered.filter (fun r => prysmCorpusFormats.contains r.format)
+  if cases.isEmpty then
+    throw (IO.userError s!"prysm-corpus: {manifest} holds no pyspec or \
+      operations entries (0 of {rendered.size}); run render first")
+  let testsDir := out / "tests"
+  if ← testsDir.pathExists then
+    IO.FS.removeDirAll testsDir
+  let mut nFiles := 0
+  for r in cases do
+    let some first := r.paths[0]?
+      | throw (IO.userError s!"prysm-corpus: the entry for {r.recordPath} \
+          holds no paths")
+    let some dir := (System.FilePath.mk first).parent
+      | throw (IO.userError s!"prysm-corpus: {first} has no parent directory")
+    let segs ← caseSegsOfDir dir
+    let mirror := segs.mirrorDir out
+    IO.FS.createDirAll mirror
+    for entry in ← dir.readDir do
+      let p := entry.path
+      if ← p.isDir then continue
+      let name := entry.fileName
+      -- `meta.yaml` and anything else the layouts do not write: skipped
+      if name == "meta.yaml" then continue
+      if name.endsWith ".ssz" then
+        let target := mirror / ((name.dropEnd 4).toString ++ ".ssz_snappy")
+        IO.FS.writeBinFile target (Snappy.encode (← IO.FS.readBinFile p))
+        nFiles := nFiles + 1
+        IO.println s!"theorem_vectors prysm-corpus: {target}"
+      else if name == "manifest.yaml" then
+        let target := mirror / name
+        IO.FS.writeBinFile target (← IO.FS.readBinFile p)
+        nFiles := nFiles + 1
+        IO.println s!"theorem_vectors prysm-corpus: {target}"
+  return (cases.size, nFiles)
+
 /-- The record directories no registered format accepted (§16.2's list).
 The report subcommand walks the records tree and asks every format's
 `accepts`. -/
@@ -274,6 +387,14 @@ def runSub (sc : Subcommand) (opts : Options) : IO UInt32 := do
       for f in failures do
         IO.eprintln s!"theorem_vectors check: {f}"
       return 1
+    return 0
+  | .prysmCorpus =>
+    -- the snappy mirror of the rendered upstream case layouts (§15): the
+    -- corpus tree a Prysm checkout runs its spectests from. Reads the
+    -- manifest; never renders.
+    let (nCases, nFiles) ← writePrysmCorpus out
+    IO.println s!"theorem_vectors prysm-corpus: mirrored {nCases} cases, \
+      {nFiles} files"
     return 0
 
 /-- Parse the invocation, then run the subcommand. -/
