@@ -388,6 +388,40 @@ example : pinOnIlTimely 0 = some true := by native_decide
 -- 4000 ms into the slot: not < 4000 ⇒ untimely.
 example : pinOnIlTimely 4000 = some false := by native_decide
 
+/-- The `.arithmetic` description `onInclusionList` raises on the `pinOnIlTimely` fixture at
+`timeMs` and `genesisTimeMs`, with `SLOT_DURATION_MS = 2^60`. The list passes every check, so
+the timeliness read is the first step that can raise after the current-slot read. `none` when
+the run raises nothing of that kind. -/
+private def pinOnIlError (timeMs genesisTimeMs : UInt64) : Option String :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := 2 ^ 60 }
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.verifyOff
+  let state : State := SSZ.FastBox pinPopulatedState
+  let anchorBlock : @BeaconBlock minimal :=
+    { (default : @BeaconBlock minimal) with stateRoot := htr pinPopulatedState }
+  let anchorRoot := htr anchorBlock
+  match (getForkchoiceStore (map := treeMap) state anchorBlock,
+      getInclusionListCommittee (StoreTransition := Except StoreTransitionError) state 0) with
+  | (.ok store0, .ok committee) =>
+    let signed := pinSIL (vget committee 0) 0 anchorRoot #[pinTx 0xAA]
+    let store := { store0 with timeMs := timeMs, genesisTimeMs := genesisTimeMs }
+    match runOn store
+        (onInclusionList (map := treeMap) signed : EStateM StoreTransitionError (Store treeMap) Unit) with
+    | .error (.transition (.arithmetic d), _) => some d
+    | _ => none
+  | _ => none
+
+-- The clock reads fine, the list is in the current slot, and the inclusion-list deadline
+-- raises.
+example : pinOnIlError 20 10
+    = some "get_slot_component_duration_ms: basis_points * SLOT_DURATION_MS" := by native_decide
+
+-- A store time before genesis: the `time_ms - genesis_time_ms` underflow in the current-slot
+-- read raises first.
+example : pinOnIlError 0 10 = some "compute_slot_at_time_ms: time_ms - genesis_time_ms" := by
+  native_decide
+
 /-! ### Build-enforced pins for the inclusion-list store (vectorless)
 
 FOCIL has no conformance vector (the module docstring carries the coverage story), so these

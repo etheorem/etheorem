@@ -195,4 +195,38 @@ private def pinWeightOverflowThrows : Bool :=
   | _ => false
 example : pinWeightOverflowThrows = true := by native_decide
 
+/-- `bpsDeadlineMs` at the minimal config with `SLOT_DURATION_MS` set to `slotDurationMs`,
+`get_slot_component_duration_ms` in pyspec. -/
+private def pinDeadline (slotDurationMs bps : UInt64) : Except StateTransitionError UInt64 :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := slotDurationMs }
+  bpsDeadlineMs bps
+
+-- With `SLOT_DURATION_MS = 2^60`, the product `10000 * 2^60` overflows, and pyspec raises
+-- `ValueError` at `basis_points * SLOT_DURATION_MS`.
+#guard pinDeadline (2 ^ 60) 10000 matches .error (.arithmetic _)
+
+-- At the minimal config (`SLOT_DURATION_MS = 6000`), `10000 * 6000 // 10000 = 6000`.
+#guard (pinDeadline 6000 10000).toOption = some 6000
+
+/-- The `.arithmetic` description `isProposingOnTime` raises on `pinStore` at `timeMs` and
+`genesisTimeMs`, with `SLOT_DURATION_MS = 2^60`. `none` when it raises nothing of that kind. -/
+private def pinProposingOnTimeError (timeMs genesisTimeMs : UInt64) : Option String :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := 2 ^ 60 }
+  letI : HasherTag := fastHasherTag
+  let store := { pinStore with timeMs := timeMs, genesisTimeMs := genesisTimeMs }
+  match (isProposingOnTime (map := treeMap) store : PinM Bool).run store with
+  | .error (.transition (.arithmetic d)) _ => some d
+  | _ => none
+
+-- The time into the slot reads fine, and the cutoff product raises.
+example : pinProposingOnTimeError 20 10
+    = some "get_slot_component_duration_ms: basis_points * SLOT_DURATION_MS" := by native_decide
+
+-- A store time before genesis: the `time_ms - genesis_time_ms` underflow in the current-slot
+-- read raises first.
+example : pinProposingOnTimeError 0 10 = some "compute_slot_at_time_ms: time_ms - genesis_time_ms" := by
+  native_decide
+
 end EthCLSpecs.Tests.FuluForkChoicePins
