@@ -408,7 +408,7 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
                    sszUpdate stateAcc with currentEpochParticipation[i]! := addFlag flag flagIndex
                  else
                    sszUpdate stateAcc with previousEpochParticipation[i]! := addFlag flag flagIndex
-        proposerNum := proposerNum + (← liftErr (getBaseReward state vi)) * Const.participationFlagWeights[flagIndex]!
+        proposerNum := proposerNum + (← liftErr (getBaseReward state vi)).toNat * Const.participationFlagWeights[flagIndex]!
         willSet := true
     if willSet && hadNoParticipation && sameSlot && payment0.withdrawal.amount > 0 then
       let attester ← sszGetIdx (sszGet state validators) i
