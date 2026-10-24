@@ -168,4 +168,59 @@ example : isAssert (run rejectAll 1 (fixture keys badKey (registry := keys.extra
 
 end
 
+/-! ## Item 5, site g: the reward products under patched constants
+
+The two site g rows of `specs/2026-10-24-batchfaith-probes.md` (local, not committed). The probe
+sets `EFFECTIVE_BALANCE_INCREMENT = 1` and a large `BASE_REWARD_FACTOR`, turns BLS off, and runs
+an empty aggregate on one validator of `2 ^ 50` at slot 1. The pin sets the same `Preset` fields
+(both increment fields) and uses `CryptoBackend.verifyOff`. The aggregate is empty, so neither
+side runs a key operation. The reward products raise before `all_pubkeys.index`. -/
+
+section
+local instance : Config := minimalConfig
+local instance : HasherTag := fastHasherTag
+local instance : CryptoBackend := CryptoBackend.verifyOff
+
+/-- The preset of the site g rows: `EFFECTIVE_BALANCE_INCREMENT = 1` and the given
+`BASE_REWARD_FACTOR`. -/
+@[reducible] private def ebi1Brf (brf : Nat) : Preset :=
+  { minimal with
+    effectiveBalanceIncrement := 1, effectiveBalanceIncrementG := 1, baseRewardFactor := brf }
+
+/-- `process_sync_aggregate` with an empty aggregate on one validator of `2 ^ 50` at slot 1,
+under the preset `P` and the backend `cb`. -/
+private def runEmpty (P : Preset) (cb : CryptoBackend := CryptoBackend.verifyOff) :
+    Except StateTransitionError (Unit × @BeaconState P) :=
+  letI : Preset := P
+  letI : CryptoBackend := cb
+  let v : Validator :=
+    { (default : Validator) with
+      effectiveBalance := 1125899906842624
+      exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
+  runPure (processSyncAggregate (StateTransition := FuluRun) default)
+    { (default : BeaconState) with
+      slot := 1
+      validators := listOf #[v]
+      balances := listOf #[32000000000] }
+
+-- `BASE_REWARD_FACTOR = 2 ^ 40`: `2 ^ 15 * 2 ^ 50` raises at the first product.
+example : (match runEmpty (ebi1Brf (2 ^ 40)) with
+    | .error (.arithmetic d) =>
+      d == "process_sync_aggregate: get_base_reward_per_increment(state) * total_active_increments"
+    | _ => false) = true := by native_decide
+
+-- Order: the same state under the real backend. The zero signature over the empty aggregate
+-- fails the signature assert, which pyspec checks before the reward products.
+example : (match runEmpty (ebi1Brf (2 ^ 40)) CryptoBackend.realBackend with
+    | .error (.assert _) => true
+    | _ => false) = true := by native_decide
+
+-- `BASE_REWARD_FACTOR = 2 ^ 38`: the first product is `2 ^ 63`, and `* SYNC_REWARD_WEIGHT`
+-- raises.
+example : (match runEmpty (ebi1Brf (2 ^ 38)) with
+    | .error (.arithmetic d) => d == "process_sync_aggregate: total_base_rewards * SYNC_REWARD_WEIGHT"
+    | _ => false) = true := by native_decide
+
+end
+
 end EthCLSpecs.Tests.FuluSyncAggregatePins
