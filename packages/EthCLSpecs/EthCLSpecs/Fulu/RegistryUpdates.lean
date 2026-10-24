@@ -176,9 +176,15 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
   set state
 
   -- Pay the proposer its share of the whistleblower reward, then the remainder.
+  -- `whistleblower_reward * PROPOSER_WEIGHT` is a checked `uint64` product: it overflows
+  -- when `WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA` is small next to the effective balance. The
+  -- difference cannot underflow, since `PROPOSER_WEIGHT ≤ WEIGHT_DENOMINATOR` makes the
+  -- proposer reward at most the whistleblower reward.
   let proposerIdx := getBeaconProposerIndex (← get)
   let whistleblowerReward := validator.effectiveBalance / UInt64.ofNat Const.whistleblowerRewardQuotientElectra
-  let proposerReward := whistleblowerReward * UInt64.ofNat Const.proposerWeight / UInt64.ofNat Const.weightDenominator
+  let weighted ← checkedMul whistleblowerReward (UInt64.ofNat Const.proposerWeight)
+    "slash_validator: whistleblower_reward * PROPOSER_WEIGHT"
+  let proposerReward := weighted / UInt64.ofNat Const.weightDenominator
   let state ← increaseBalance state proposerIdx proposerReward
   set (← increaseBalance state proposerIdx (whistleblowerReward - proposerReward))
 
