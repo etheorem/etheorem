@@ -580,4 +580,37 @@ private def pinAnchorRejects : Bool :=
   | _                  => false
 example : pinAnchorRejects = true := by native_decide
 
+/-- The error of Heze's `shouldExtendPayload pinPilsRoot` on a store with a block of slot
+`slot` at `pinPilsRoot` when `stored`, and a store time before genesis when `beforeGenesis`.
+`none` when the call succeeds. -/
+private def pinExtendPayloadError (slot : UInt64) (beforeGenesis stored : Bool) :
+    Option StoreTransitionError :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let blocks := if stored then
+      FcMap.insert FcMap.empty pinPilsRoot { (default : BeaconBlock) with slot := slot }
+    else FcMap.empty
+  let timeMs : UInt64 := if beforeGenesis then 10000 else 1012000
+  let store := { pinPilsStore false none with
+    timeMs := timeMs, genesisTimeMs := 1000000, blocks := blocks }
+  match (shouldExtendPayload store pinPilsRoot : PinM Bool).run store with
+  | .error e _ => some e
+  | .ok _ _ => none
+
+-- Four rows for Heze `should_extend_payload`. With both faults, the pinned pyspec
+-- (`v1.7.0-beta.4`) raises `ValueError` at `store.blocks[root].slot + 1`, before the clock
+-- read.
+example : (pinExtendPayloadError (2 ^ 64 - 1) true true matches some (.transition
+    (.arithmetic "should_extend_payload: blocks[root].slot + 1"))) = true := by
+  native_decide
+example : (pinExtendPayloadError (2 ^ 64 - 1) false true matches some (.transition
+    (.arithmetic "should_extend_payload: blocks[root].slot + 1"))) = true := by
+  native_decide
+example : (pinExtendPayloadError 5 true true matches some (.transition
+    (.arithmetic "compute_slot_at_time_ms: time_ms - genesis_time_ms"))) = true := by
+  native_decide
+example : (pinExtendPayloadError (2 ^ 64 - 1) true false matches some (.missingKey _)) =
+    true := by native_decide
+
 end EthCLSpecs.Tests.HezeForkChoicePins
