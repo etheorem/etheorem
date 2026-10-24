@@ -28,6 +28,17 @@ Two pins carry the format's point:
   interface reports its `throw "zero"` as the spec assert `toy: zero`,
   which the `operations` caught set admits).
 
+Two rows over the miss operation (`toyOpMiss`, mapped to `withdrawals`)
+pin the check's two refusal branches, the ones no corpus record reaches:
+
+- the flagged pass: the post-less case rejects out of bounds, the caught
+  set admits the reject, and the driver answers `passed = true,
+  flagged = true`, which the check fails (a bug-smell reject never ships
+  green);
+- the valid marking rejected: a record marked `.runOk` whose replay
+  rejects, which the check fails with the reject's bucket. The
+  flagged-pass line stays absent.
+
 The binding's `handlerOf` row maps `toyOpApply` to `block_header`, and
 `OpKind.inputName .blockHeader` is `"block"`. The choice is deliberate: the
 pinned operand file name `block.ssz` proves the writer reads the
@@ -47,7 +58,7 @@ gitignore carries it and the final `run_cmd` removes it.
 set_option autoImplicit false
 
 open Lean
-open EthCLLib.Spec (HasherTag)
+open EthCLLib.Spec (HasherTag IndexError)
 
 namespace EthCLLib.TheoremVectors.Tests.Operations
 
@@ -163,6 +174,36 @@ def toyOpRunErrorRecord : VectorRecord :=
                   value := .ssz (toyReqRoot toyReqZero) }],
     output := none, error := some (reprStr "zero"), witnessSearcher := .base }
 
+/-- The hand-built `.runError` record over the miss operation (§13.6): no
+output, the operand the action ignores, the action's own reject in the
+error slot. The replay's reject is the lifted `outOfBounds`, which the
+`operations` caught set admits, so the driver answers a flagged pass and
+the check must fail it: a bug-smell reject never ships green. -/
+def toyOpMissFlaggedRecord : VectorRecord :=
+  { «theorem» := `EthCLLib.TheoremVectors.Tests.ToyRun.toyOpMissRun,
+    fork := "toyrun", preset := .minimal,
+    target := some `EthCLLib.TheoremVectors.Tests.ToyRun.toyOpMiss,
+    pyspecName := none,
+    shape := .runError, disjunctIndex := 0, side := none,
+    inputs := #[{ name := `state, type := toyStateType,
+                  value := .ssz (toyRoot toyPre) },
+                { name := `req, type := toyReqType,
+                  value := .ssz (toyReqRoot toyReq) }],
+    output := none,
+    error := some (reprStr (IndexError.indexError 5 1)),
+    witnessSearcher := .base }
+
+/-- The same record marked `.runOk`, with the post-state as the output: the
+record claims a clean run, the replay rejects, and the check fails it for
+the reject (the valid-marking-rejected branch). The flagged-pass line
+stays absent. -/
+def toyOpMissRunOkRecord : VectorRecord :=
+  { toyOpMissFlaggedRecord with
+    shape := .runOk,
+    output := some { name := `output, type := toyStateType,
+                     value := .ssz (toyRoot toyPost) },
+    error := none }
+
 /-- A binding whose `operations` row names a handler no `OpKind` parses:
 the `OpKind.ofString?` leg refuses the record under it. -/
 private def toyBogusBinding : ForkBinding :=
@@ -195,6 +236,22 @@ private def checkFailsWith (label : String) (needle : String)
   | .failed d =>
     unless d.contains needle do
       throw (IO.userError s!"{label}: unexpected detail {d}")
+  | .passed =>
+    throw (IO.userError s!"{label}: the check passed")
+  | .noConsumer =>
+    throw (IO.userError s!"{label}: the check answered noConsumer")
+
+/-- One check outcome that must answer `failed`, with `needle` in the
+detail line and `absent` nowhere in it. The absent leg is what tells the
+valid-marking-rejected branch from the flagged-pass branch. -/
+private def checkFailsWithout (label : String) (needle absent : String)
+    (r : CheckResult) : IO Unit :=
+  match r with
+  | .failed d => do
+    unless d.contains needle do
+      throw (IO.userError s!"{label}: unexpected detail {d}")
+    if d.contains absent then
+      throw (IO.userError s!"{label}: the detail carries {absent}: {d}")
   | .passed =>
     throw (IO.userError s!"{label}: the check passed")
   | .noConsumer =>
@@ -326,4 +383,34 @@ run_cmd do
     -- assert `toy: zero`, and the `operations` caught set admits it
     checkOutcome "operations check runError"
       (← Formats.operations.check toyEnv toyOpRunErrorRecord errPaths)
+    -- the two check branches no corpus record reaches, over the miss
+    -- operation (§13.6): the flagged pass. The post-less case rejects out
+    -- of bounds, the `operations` caught set admits the reject, and the
+    -- driver answers passed with the bug-smell flag, which the check
+    -- fails. The bucket renders through its tag `bug`, the tag of
+    -- `.likelyBug`.
+    let missPaths ← Formats.operations.render toyEnv toyOpMissFlaggedRecord
+      #[preBytes, reqBytes] none
+    unless missPaths.size == 4 do
+      throw (IO.userError s!"operations render: {missPaths.size} paths for the \
+        flagged record, expected 4")
+    -- `OpKind.inputName .withdrawals` is "execution_payload": the writer
+    -- reads the stem table here too, the second handler whose stem differs
+    -- from the handler string
+    unless missPaths[1]!.fileName == "execution_payload.ssz" do
+      throw (IO.userError s!"operations render: the flagged record's operand \
+        file is {missPaths[1]!.fileName}, expected execution_payload.ssz")
+    checkFailsWith "operations check flagged pass" "flagged pass, bucket bug"
+      (← Formats.operations.check toyEnv toyOpMissFlaggedRecord missPaths)
+    -- the valid marking rejected: the record claims a clean run and
+    -- carries the post bytes, the replay rejects, and the check fails it
+    -- with the bucket. The flagged-pass line stays absent.
+    let missOkPaths ← Formats.operations.render toyEnv toyOpMissRunOkRecord
+      #[preBytes, reqBytes] (some postBytes)
+    unless missOkPaths.size == 5 do
+      throw (IO.userError s!"operations render: {missOkPaths.size} paths for the \
+        marked-ok record, expected 5")
+    checkFailsWithout "operations check valid marking rejected" "bucket bug"
+      "flagged pass"
+      (← Formats.operations.check toyEnv toyOpMissRunOkRecord missOkPaths)
     IO.FS.removeDirAll scratchOutDir

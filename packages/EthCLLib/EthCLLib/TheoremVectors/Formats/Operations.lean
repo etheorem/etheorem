@@ -106,8 +106,7 @@ def Formats.operationsRender (env : RenderEnv) (r : VectorRecord)
   if let some postFile := postFile then
     files := files.push postFile
   let metaFile ← Formats.pyspecWriteMeta dir r
-  let manifestFile ← Formats.pyspecWriteManifest dir r.preset.tag r.fork
-    "operations" handler "pyspec_tests" (Formats.pyspecCaseName b r)
+  let manifestFile ← Formats.pyspecWriteManifest dir b r "operations" handler
   return (files.push metaFile).push manifestFile
 
 /-- §13.5's check over the §13.6 layout: rebuild the case from the files
@@ -145,7 +144,7 @@ def Formats.operationsCheck (env : RenderEnv) (r : VectorRecord)
     | return .failed "operations check: no operand file in the rendered paths"
   let operandBytes ← IO.FS.readBinFile operandPath
   let post ←
-    match ← Formats.pyspecReadPost 2 r paths with
+    match ← Formats.pyspecReadPost "operations" 2 r paths with
     | .error msg => return .failed msg
     | .ok post => pure post
   let req : EthCLLib.PySpecTests.CaseRequest :=

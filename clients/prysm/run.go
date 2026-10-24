@@ -304,7 +304,7 @@ func compareRecord(base Result, row *coverageRow, vec *vector, out runOutcome) R
 			}
 			return compareSSZ(msg, vec, pass, fail, "post state")
 		}
-		return fail("per-shape compare has no rule for shape %s", vec.Shape)
+		return fail("per-shape compare has no rule for shape %s with %s", vec.Shape, outputForm(vec))
 
 	case compareBool:
 		if !shapeSupports(vec.Shape, "eq", "iffTrue") {
@@ -350,6 +350,21 @@ func compareRecord(base Result, row *coverageRow, vec *vector, out runOutcome) R
 
 	default:
 		return fail("unknown compare role %s", row.Compare)
+	}
+}
+
+// outputForm names the record's output form in the words the per-shape
+// gates read. A rejected combination is a (shape, output form) pair, so
+// the detail names both. A per-shape record carries one of the two
+// forms; the none case only keeps the helper total.
+func outputForm(vec *vector) string {
+	switch {
+	case vec.Output.errSet:
+		return "error marker"
+	case vec.Output.ssz != nil:
+		return "ssz output"
+	default:
+		return "none"
 	}
 }
 

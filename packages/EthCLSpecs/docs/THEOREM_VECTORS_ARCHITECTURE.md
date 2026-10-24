@@ -1176,7 +1176,7 @@ operation handler's operand, has no part to go in this layout.
   pre.ssz
   post.ssz          absent for .runError, which marks an invalid case
   meta.yaml         {bls_setting: 2, theorem: <name>}
-  manifest.yaml     {preset, fork, runner, handler, suite, case}
+  manifest.yaml     the block-style map: preset, fork, runner, handler, suite, case
 ```
 
 The layout is the upstream one with raw `.ssz` in place of `.ssz_snappy`. The
@@ -1215,7 +1215,7 @@ input by type, never by position.
   <operand>.ssz      the operand part, named by `OpKind.inputName`
   post.ssz           absent for .runError, which marks an invalid case
   meta.yaml          {bls_setting: 2, theorem: <name>}
-  manifest.yaml      {preset, fork, runner, handler, suite, case}
+  manifest.yaml      the block-style map: preset, fork, runner, handler, suite, case
 ```
 
 The operand part's file name comes from the `OpKind.inputName` table, never

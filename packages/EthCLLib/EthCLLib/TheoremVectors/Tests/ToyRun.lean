@@ -40,7 +40,10 @@ balance contracts state.
 
 A final section holds the toy operation handler's fixtures (§13.6): the
 `ToyReq` operand container and the `toyOpApply` action the toy
-interface's `runOperation` arm runs.
+interface's `runOperation` arm runs. Beside it, `toyOpMiss` ignores the
+operand and reads past the one-element table's end, the `toyIndexMiss`
+shape over the operand, the reject the operations drive's two undriven
+check branches pin.
 
 ## Lean idioms annotated
 
@@ -311,6 +314,34 @@ theorem toyOpRunOk [HasherTag] (s : ToyState) :
 /-- The operation's `.runError` face (§7.3, form 4). -/
 theorem toyOpRunError [HasherTag] (s : ToyState) :
     (toyOpApply { amt := 0 }).run (pureState s) = .error "zero" :=
+  rfl
+
+/-- The toy operation that ignores its operand and reads past the end of a
+one-element table (§13.6): the `toyIndexMiss` shape over the `ToyReq`
+operand. The read runs through `arrGetIdx`, so the reject is the genuine
+`IndexError` carrying the index and the bound. The interface lifts it
+through `ErrorConv IndexError StateTransitionError` to the state machine's
+`outOfBounds`. The operations format's check must fail both scorings: the
+caught set admits a post-less case's reject, so the driver answers a
+flagged pass, and a post-carrying case fails on the reject itself. The
+binder carries the underscore because the body reads no operand field. -/
+def toyOpMiss [HasherTag] (_r : ToyReq) :
+    StateT (SSZ.Box HasherTag.H ToyState) (Except IndexError) Unit :=
+  fun b =>
+    -- The `let` pins `arrGetIdx`'s monad, the same way `toyIndexMiss` does.
+    let read : Except IndexError UInt64 := arrGetIdx #[b.view.bal] 5
+    read.map (fun _ => ((), b))
+
+/-- The miss operation's run: the read at index 5 of the one-element table
+rejects with `IndexError.indexError 5 1`, whatever the operand carries. -/
+theorem toyOpMissRun [HasherTag] (r : ToyReq) (s : ToyState) :
+    (toyOpMiss r).run (pureState s) = .error (IndexError.indexError 5 1) :=
+  rfl
+
+/-- The miss operation's `runPure` reading: the same reject over the plain
+state binder. -/
+theorem toyOpMissPure [HasherTag] (r : ToyReq) (s : ToyState) :
+    runPure (toyOpMiss r) s = .error (IndexError.indexError 5 1) :=
   rfl
 
 end EthCLLib.TheoremVectors.Tests.ToyRun

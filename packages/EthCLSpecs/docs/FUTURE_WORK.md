@@ -128,3 +128,52 @@ No stage carries it. The searcher reads the pyspec vectors from disk, and the
 not exist on a CI run. Heze waits one step further. Most of its theorems take a block or
 store input. Block inputs come back with corpus blocks or a block builder, and the risk
 list in `THEOREM_VECTORS_PLAN.md` puts neither in a stage.
+
+## The next producer plan: the request-handler theorems
+
+All three entries share one future consumer: the `withdrawal_request` and
+`deposit_request` theorem families, the pyspec-operations plan's §0.
+`THEOREM_VECTORS_PLAN.md`'s closing note records that plan.
+
+### The reduction lemma over the `Option` lookups
+
+The G2, G3, and G4 proofs in `Proofs/Fulu/ConsolidationRequest.lean` re-derive the switch
+and request-gate discharges inline. Four copies exist, counting the ladder's own. The
+shape is a second reduction lemma over the `Option` lookups, which the four proofs share.
+The change waits because the statements are settled and the repetition is proof-local.
+
+### The pubkey bridge's visibility
+
+`validatorIndexByPubkey?_pureState` is public while its sibling bridges are private. The
+decision, a re-export from `Proofs/Fulu.lean` or a `private` mark, waits for the lookup's
+second consumer. The request-handler theorems do `findIdx?`-style lookups too.
+
+### The mainnet-cost rule
+
+Each both-preset consolidation line's mainnet check costs 15 to 18 seconds, and the
+mainnet `BeaconState` encode/decode dominates. Three lines run at both presets now. A
+fourth puts the per-generation mainnet cost near a minute. The rule: measure again before
+adding the next both-preset line.
+
+## Generator caveats waiting for a consumer
+
+Each entry records a caveat in the generator with no consumer today. The entry names the
+consumer that would make the caveat matter.
+
+### The `Snappy.encode` size bound
+
+The all-literals snappy writer in `EthCLLib/TheoremVectors/Snappy.lean` documents the
+`2^32` input bound and does not check it. Above the bound the bytes it writes are
+undecodable. No in-tree caller approaches the bound, so the writer stays as it is. The
+shape, if an external caller ever appears, is a checked variant with an `Except String`
+return.
+
+### The operand-free operations handler
+
+A future operations handler with no operand produces single-state records. The concrete
+case is Gloas `process_withdrawals`. Two behaviors of the pyspec format then matter.
+`Formats.pyspecAccepts` checks no runner string. The format's check builds `caseMeta`
+from the constant `{ blsSetting := 2 }`, leaving `executionValid` at its default, `true`.
+Both matter only when a fork binding maps such a handler, so the caveat waits for that
+binding. The binding author reads §13.6 of `THEOREM_VECTORS_ARCHITECTURE.md` and this
+entry.

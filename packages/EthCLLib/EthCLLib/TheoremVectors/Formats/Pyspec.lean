@@ -109,11 +109,17 @@ def Formats.pyspecWriteMeta (dir : System.FilePath) (r : VectorRecord) :
 /-- The §13.4 `manifest.yaml` write: the six-key block map upstream puts
 in every case directory, rendered through `Yaml.render`'s block form with
 one `key: value` line per key in upstream's order (`preset, fork,
-runner, handler, suite, case`). The values repeat the case path's
-segments. The operations format will share the write, and the check
-never parses the file. -/
-def Formats.pyspecWriteManifest (dir : System.FilePath)
-    (preset fork runner handler suite case : String) : IO System.FilePath := do
+runner, handler, suite, case`). The helper derives `preset` and `fork`
+from the record and fixes `suite` to `pyspec_tests`. The `case` key
+comes from `Formats.pyspecCaseName`, the one composition the directory
+name uses, so the key cannot drift from the directory. The operations
+format shares the write, and the check never parses the file. -/
+def Formats.pyspecWriteManifest (dir : System.FilePath) (b : ForkBinding)
+    (r : VectorRecord) (runner handler : String) : IO System.FilePath := do
+  let preset := r.preset.tag
+  let fork := r.fork
+  let suite := "pyspec_tests"
+  let case := Formats.pyspecCaseName b r
   let manifestFile := dir / "manifest.yaml"
   let doc : Yaml :=
     .map #[("preset", .str preset), ("fork", .str fork),
@@ -146,21 +152,22 @@ def Formats.pyspecRender (env : RenderEnv) (r : VectorRecord)
   if let some postFile := postFile then
     files := files.push postFile
   let metaFile ← Formats.pyspecWriteMeta dir r
-  let manifestFile ← Formats.pyspecWriteManifest dir r.preset.tag r.fork
-    runner handler "pyspec_tests" (Formats.pyspecCaseName b r)
+  let manifestFile ← Formats.pyspecWriteManifest dir b r runner handler
   return (files.push metaFile).push manifestFile
 
 /-- The §13.5 post read: the post bytes when the record carries an
 output, `none` when it does not. A record with an output but no
 `post.ssz` in the paths answers the error string, and a check turns that
-into `.failed`. The caller's format fixes the position: the pyspec
-layout carries the post at position 1, the operations layout at
-position 2, where the operand part sits between pre and post. -/
-def Formats.pyspecReadPost (postIdx : Nat) (r : VectorRecord)
+into `.failed`. The error line carries the caller's format prefix, the
+one detail convention the two checks share. The caller's format also
+fixes the position: the pyspec layout carries the post at position 1,
+the operations layout at position 2, where the operand part sits between
+pre and post. -/
+def Formats.pyspecReadPost (fmt : String) (postIdx : Nat) (r : VectorRecord)
     (paths : Array System.FilePath) : IO (Except String (Option ByteArray)) := do
   if r.output.isSome then
     match paths[postIdx]? with
-    | none => return .error "no post.ssz in the rendered paths"
+    | none => return .error s!"{fmt} check: no post.ssz in the rendered paths"
     | some p => return .ok (some (← IO.FS.readBinFile p))
   else
     return .ok none
@@ -196,7 +203,7 @@ def Formats.pyspecCheck (env : RenderEnv) (r : VectorRecord)
     | return .failed "pyspec check: no pre.ssz in the rendered paths"
   let pre ← IO.FS.readBinFile prePath
   let post ←
-    match ← Formats.pyspecReadPost 1 r paths with
+    match ← Formats.pyspecReadPost "pyspec" 1 r paths with
     | .error msg => return .failed msg
     | .ok post => pure post
   let req : EthCLLib.PySpecTests.CaseRequest :=

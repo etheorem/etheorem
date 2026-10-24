@@ -73,7 +73,10 @@ whose read rejects with the SSZ `IndexError`, lifted to the state machine's
 reject as a pass with the bug-smell flag, the divergence `pyspecCheck`
 fails on. `.blockHeader` is the toy's operation: the handler decodes a
 `ToyReq` and writes its amount into the balance, and a zero amount
-rejects with the spec assert `toy: zero`. -/
+rejects with the spec assert `toy: zero`. `.withdrawals` is the toy's
+second operation: it decodes the same `ToyReq`, ignores it, and runs
+`toyOpMiss`, whose read rejects with the same lifted `outOfBounds`, the
+reject the operations drive's two undriven check branches pin. -/
 @[reducible] def toyRunInterface : ForkInterface where
   stateRoot := fun bytes =>
     letI : HasherTag := fastHasherTag
@@ -115,6 +118,13 @@ rejects with the spec assert `toy: zero`. -/
           match (ToyRun.toyOpApply req).run (pureState pre) with
           | .ok (_, post) => .ok (SizzLean.SSZ.hashTreeRoot HasherTag.H post.view)
           | .error e => .error (.spec (.assert s!"toy: {e}"))
+      | .withdrawals =>
+        match SizzLean.SSZ.deserialize (T := ToyRun.ToyReq) opBytes with
+        | .error _ => .error (.decode "ToyReq")
+        | .ok req =>
+          match (ToyRun.toyOpMiss req).run (pureState pre) with
+          | .error e => .error (.spec (ErrorConv.conv e))
+          | .ok (_, post) => .ok (SizzLean.SSZ.hashTreeRoot HasherTag.H post.view)
       | _ => .error (.spec (.todo "toyrun operations: not modeled"))
   runRewards    := fun _       => .error (.spec (.todo "toyrun rewards: not modeled"))
   runForkChoice := fun _ _ _   => .error (.spec (.todo "toyrun fork_choice: not modeled"))
@@ -129,10 +139,11 @@ arms name real `epoch_processing` directories, because the driver parses
 the handler string through `EpochStep.ofString?` before it reaches the
 interface: the `.runOk` action runs under the real `effective_balance_updates`
 directory, `toyFail`'s rejection under `slashings`, and the index miss
-under `inactivity_updates`. The one `operations` arm deliberately maps
+under `inactivity_updates`. The two `operations` arms deliberately map
 `toyOpApply` to `block_header`, whose operand stem differs from the
-handler name (§13.6). The `presets` field stays empty; the pyspec
-path reads only `handlerOf` and `interface`. -/
+handler name (§13.6), and `toyOpMiss` to `withdrawals`, the handler the
+operations drive's two check-branch records run. The `presets` field
+stays empty; the pyspec path reads only `handlerOf` and `interface`. -/
 def toyRunBinding : EthCLLib.TheoremVectors.ForkBinding where
   fork := `EthCLLib.Tests.InheritanceReplay.Base
   tag := "toyrun"
@@ -153,6 +164,10 @@ def toyRunBinding : EthCLLib.TheoremVectors.ForkBinding where
     -- `OpKind.inputName .blockHeader` is "block", so the test can pin the operand name `block.ssz`.
     | `EthCLLib.TheoremVectors.Tests.ToyRun.toyOpApply =>
         some ("operations", "block_header")
+    -- `OpKind.inputName .withdrawals` is "execution_payload", so the miss
+    -- case's operand file is `execution_payload.ssz`.
+    | `EthCLLib.TheoremVectors.Tests.ToyRun.toyOpMiss =>
+        some ("operations", "withdrawals")
     | _ => none
   -- §6: no test pins a pyspec spelling here, so the table stays empty.
   pyspecNames := #[]
