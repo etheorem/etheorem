@@ -176,13 +176,22 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
     (getDomain state Const.domainSyncCommittee (computeEpochAtSlot previousSlot))
   assert (blsEthFastAggregateVerify participantKeys signingRoot agg.syncCommitteeSignature)
 
-  -- Per-participant and per-proposer reward amounts.
-  let totalActiveIncrements := (← liftErr (getTotalActiveBalance state)).toNat / Const.effectiveBalanceIncrement
-  let totalBaseRewards := (← liftErr (getBaseRewardPerIncrement state)).toNat * totalActiveIncrements
-  let maxParticipantRewards := totalBaseRewards * Const.syncRewardWeight / Const.weightDenominator / Const.slotsPerEpoch
-  let participantReward : Gwei := UInt64.ofNat (maxParticipantRewards / Const.syncCommitteeSize)
-  let proposerReward : Gwei :=
-    UInt64.ofNat (participantReward.toNat * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight))
+  -- Per-participant and per-proposer reward amounts, in `uint64` as pyspec forms them. The
+  -- two products with a state value or a `Preset` field are checked. `participant_reward *
+  -- PROPOSER_WEIGHT` stays plain: `participant_reward` is below
+  -- `2 ^ 64 / 64 / SLOTS_PER_EPOCH / SYNC_COMMITTEE_SIZE`, since `weightedRewards` is checked
+  -- below `2 ^ 64`, so the product stays below `2 ^ 61`.
+  let totalActiveIncrements := (← liftErr (getTotalActiveBalance state)) / Const.effectiveBalanceIncrementG
+  let perIncrement ← liftErr (getBaseRewardPerIncrement state)
+  let totalBaseRewards ← checkedMul perIncrement totalActiveIncrements
+    "process_sync_aggregate: get_base_reward_per_increment(state) * total_active_increments"
+  let weightedRewards ← checkedMul totalBaseRewards (UInt64.ofNat Const.syncRewardWeight)
+    "process_sync_aggregate: total_base_rewards * SYNC_REWARD_WEIGHT"
+  let maxParticipantRewards :=
+    weightedRewards / UInt64.ofNat Const.weightDenominator / UInt64.ofNat Const.slotsPerEpoch
+  let participantReward : Gwei := maxParticipantRewards / UInt64.ofNat Const.syncCommitteeSize
+  let proposerReward : Gwei := participantReward * UInt64.ofNat Const.proposerWeight /
+    UInt64.ofNat (Const.weightDenominator - Const.proposerWeight)
   let proposerIdx := getBeaconProposerIndex state
 
   -- `committee_indices`: the first registry position of each committee key.
