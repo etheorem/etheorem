@@ -895,8 +895,8 @@ separation.
   `EthCLSpecs.Proofs.Heze` because `shouldExtendPayload` exists in both Gloas
   and Heze. `shouldExtendPayload_run` is the complete `.run` equation at
   `ForkChoiceStoreRun (Store map)` and carries `@[characterizes]`. The
-  right-hand side is the evaluation order: block lookup, `getCurrentSlot`,
-  the slot increment and assertion, `isPayloadVerified`,
+  right-hand side is the evaluation order: block lookup, the slot increment,
+  `getCurrentSlot`, the slot assertion, `isPayloadVerified`,
   `isPayloadInclusionListSatisfied`, then the inherited Gloas tail. Named
   corollaries cover the prefix rejects, the FOCIL gate, the vote membership
   asserts, and the inherited Gloas accept and reject arms. Successful binds

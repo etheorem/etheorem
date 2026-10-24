@@ -264,8 +264,10 @@ forkdef isPreviousSlotPayloadDecision (store : Store map) (node : ForkChoiceNode
     StoreTransition Bool := do
   -- The spec reads `store.blocks[node.root].slot` (plain `Dict`), raising on a missing root.
   let block ← FcMap.getOrThrow store.blocks node.root
-  let currentSlot ← getCurrentSlot store
+  -- Python evaluates the left operand of `==` first, so the `+ 1` overflow raises before
+  -- `get_current_slot` does.
   let nextSlot ← checkedAdd block.slot 1 "is_previous_slot_payload_decision: blocks[root].slot + 1"
+  let currentSlot ← getCurrentSlot store
   let isPreviousSlot := nextSlot == currentSlot
   let isPayloadDecision :=
     node.payloadStatus == Const.payloadStatusEmpty || node.payloadStatus == Const.payloadStatusFull
@@ -275,10 +277,12 @@ forkdef isPreviousSlotPayloadDecision (store : Store map) (node : ForkChoiceNode
 should win the payload-status tiebreak. -/
 forkdef shouldExtendPayload (store : Store map) (root : Root) : StoreTransition Bool := do
   -- The spec opens with `assert store.blocks[root].slot + 1 == get_current_slot(store)`:
-  -- read the block (raising on a missing root), then assert the slot equation.
+  -- read the block (raising on a missing root), then assert the slot equation. Python
+  -- evaluates the left operand of `==` first, so the `+ 1` overflow raises before
+  -- `get_current_slot` does.
   let rootBlock ← FcMap.getOrThrow store.blocks root
-  let currentSlot ← getCurrentSlot store
   let nextSlot ← checkedAdd rootBlock.slot 1 "should_extend_payload: blocks[root].slot + 1"
+  let currentSlot ← getCurrentSlot store
   assert (nextSlot == currentSlot)
   if !isPayloadVerified store root then pure false
   else

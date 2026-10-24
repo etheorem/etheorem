@@ -320,10 +320,11 @@ inclusion-list constraints is not extended (`fork-choice.md:226`). The rest is G
 -/
 forkdef shouldExtendPayload (store : Store map) (root : Root) : StoreTransition Bool := do
   -- Mirrors the Gloas body plus the inclusion-list gate: the spec opens with
-  -- `assert store.blocks[root].slot + 1 == get_current_slot(store)`.
+  -- `assert store.blocks[root].slot + 1 == get_current_slot(store)`. Python evaluates the
+  -- left operand of `==` first, so the `+ 1` overflow raises before `get_current_slot` does.
   let rootBlock ← FcMap.getOrThrow store.blocks root
-  let currentSlot ← getCurrentSlot store
   let nextSlot ← checkedAdd rootBlock.slot 1 "should_extend_payload: blocks[root].slot + 1"
+  let currentSlot ← getCurrentSlot store
   assert (nextSlot == currentSlot)
   if !isPayloadVerified store root then pure false
   -- [New in Heze:EIP7805] do not extend a payload that fails the inclusion-list constraints
