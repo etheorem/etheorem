@@ -55,7 +55,7 @@ open EthCLSpecs.Heze (Preset Config Store BeaconState Root ForkChoiceNode Beacon
   ExecutionPayload ExecutionRequests Transaction InclusionList SignedInclusionList
   SignedExecutionPayloadEnvelope ValidatorIndex onExecutionPayloadEnvelope isDataAvailable
   verifyExecutionPayloadEnvelope isInclusionListSatisfied getCurrentSlot
-  getInclusionListCommittee getInclusionListDueMs getParentPayloadStatus
+  getInclusionListCommittee getParentPayloadStatus
   processParentExecutionPayload processBuilderPendingPayments)
 
 section
@@ -133,7 +133,7 @@ structure DichotomyHypotheses (isValidOmission : ExecutionPayload → Transactio
   /-- The arrival model of `OnInclusionList.lean`. -/
   arrivals : ArrivalHypotheses il before after
   /-- The arrival `(signed, t)` is timely. -/
-  timely : t < getInclusionListDueMs
+  timely : t < ilDueMs
 
 /-- The inclusion dichotomy for one honest transaction. The module docstring states the
 two cases, and `DichotomyHypotheses` lists the hypotheses. The map must satisfy

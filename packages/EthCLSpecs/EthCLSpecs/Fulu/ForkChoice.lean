@@ -106,14 +106,15 @@ forkdef timeIntoSlotMs (store : Store map) : StoreTransition UInt64 := do
   let seconds ← checkedSub store.time store.genesisTime "time_into_slot: time - genesis_time"
   pure (secondsToMilliseconds seconds % Const.slotDurationMs)
 
-/-- A basis-points deadline within a slot, in milliseconds: `bps * SLOT_DURATION_MS //
-BASIS_POINTS`. Multiply before the `UInt64` truncating divide, so the floor lands on the full
-`bps * SLOT_DURATION_MS` product. The product is bare rather than `checkedMul`, and stays
-that way: both factors are constants (`bps ≤ BASIS_POINTS = 10000`, `SLOT_DURATION_MS` is
-12000 at mainnet and 6000 at minimal), so it peaks near `1.2e8` and cannot reach the `uint64`
-bound at any preset. -/
-forkdef bpsDeadlineMs (bps : UInt64) : UInt64 :=
-  bps * Const.slotDurationMs / Const.basisPoints
+/-- `get_slot_component_duration_ms(basis_points)` (`phase0/fork-choice.md`): a deadline
+within a slot, in milliseconds, `basis_points * SLOT_DURATION_MS // BASIS_POINTS`. The
+product is a checked `uint64` multiplication. `SLOT_DURATION_MS` is a `Config` field, so the
+model cannot bound it. A large value makes pyspec raise `ValueError` at the product. The
+divide comes after the product, so the floor applies to the full product. -/
+forkdef bpsDeadlineMs (bps : UInt64) : Except StateTransitionError UInt64 := do
+  let scaled ← checkedMul bps Const.slotDurationMs
+    "get_slot_component_duration_ms: basis_points * SLOT_DURATION_MS"
+  pure (scaled / Const.basisPoints)
 
 /-! ## DAG walks
 
@@ -330,9 +331,12 @@ forkdef isFinalizationOk (store : Store map) (slot : Slot) : StoreTransition Boo
   pure (gap ≤ Const.reorgMaxEpochsSinceFinalization)
 
 /-- `is_proposing_on_time`: within the reorg cutoff of the slot start (ms timing; the
-store clock is seconds, converted via `* 1000`). Throwing only to bind `timeIntoSlotMs`. -/
+store clock is seconds, converted via `* 1000`). It reads the time into the slot first and
+then the cutoff, as pyspec does. Both can raise. -/
 forkdef isProposingOnTime (store : Store map) : StoreTransition Bool := do
-  pure ((← timeIntoSlotMs store) ≤ bpsDeadlineMs Const.proposerReorgCutoffBps)
+  let timeIntoSlot ← timeIntoSlotMs store
+  let cutoff ← liftErr (bpsDeadlineMs Const.proposerReorgCutoffBps)
+  pure (timeIntoSlot ≤ cutoff)
 
 /-- `is_head_weak`: the head's weight is below the reorg-head threshold. -/
 forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool := do
@@ -565,17 +569,20 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) (columns : Array DataColumnSid
   let blockRoot := htr block
   -- The head is taken BEFORE the new block is added (v1.7 `update_proposer_boost_root`).
   let head ← getHead store
-  let beforeAttesting ← timeIntoSlotMs store
-  let isTimely := currentSlot == block.slot && beforeAttesting < bpsDeadlineMs Const.attestationDueBps
 
-  -- Insert the block, its post-state, and the timeliness flag. `set` before the boost
-  -- computation: `update_proposer_boost_root`'s dependent-root walks can raise, and so
-  -- does `compute_pulled_up_tip`'s pull-up, so each completed write must persist
-  -- (in-place runner semantics).
+  -- Insert the block and its post-state, then record the timeliness flag
+  -- (`record_block_timeliness`). Each `set` keeps a completed write (in-place runner
+  -- semantics). The attestation deadline can raise after the two inserts. The dependent-root
+  -- walks of `update_proposer_boost_root` and the pull-up of `compute_pulled_up_tip` can also
+  -- raise.
   set { store with
     blocks := FcMap.insert store.blocks blockRoot block
-    blockStates := FcMap.insert store.blockStates blockRoot postState
-    blockTimeliness := FcMap.insert store.blockTimeliness blockRoot isTimely }
+    blockStates := FcMap.insert store.blockStates blockRoot postState }
+  let store ← get
+  let beforeAttesting ← timeIntoSlotMs store
+  let attestationThreshold ← liftErr (bpsDeadlineMs Const.attestationDueBps)
+  let isTimely := currentSlot == block.slot && beforeAttesting < attestationThreshold
+  set { store with blockTimeliness := FcMap.insert store.blockTimeliness blockRoot isTimely }
   let store ← get
 
   -- Boost only a timely first block on the same proposer-shuffling lineage as the

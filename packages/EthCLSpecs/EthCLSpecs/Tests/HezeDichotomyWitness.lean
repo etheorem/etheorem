@@ -42,7 +42,7 @@ namespace EthCLSpecs.Tests.HezeDichotomyWitness
 open EthCLSpecs.Heze (Preset Config Store State Root BeaconState Validator ExecutionPayload
   ExecutionRequests Transaction InclusionList SignedInclusionList InclusionListStore
   SignedExecutionPayloadEnvelope BeaconBlockHeader ValidatorIndex minimal minimalConfig
-  verifyExecutionPayloadEnvelope getInclusionListCommittee getInclusionListDueMs
+  verifyExecutionPayloadEnvelope getInclusionListCommittee
   getBeaconCommittee getCommitteeCountPerSlot computeEpochAtSlot cyclicSample
   computeTimeAtSlot isDataAvailable)
 open EthCLSpecs.Heze.Const (farFutureEpoch slotsPerEpoch builderIndexSelfBuild

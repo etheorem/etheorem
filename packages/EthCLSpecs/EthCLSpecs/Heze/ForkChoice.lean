@@ -504,9 +504,11 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
 
 /-- `get_inclusion_list_due_ms()` (`consensus-specs/specs/heze/fork-choice.md:242-243`):
 `get_slot_component_duration_ms(INCLUSION_LIST_DUE_BPS)`. `bpsDeadlineMs` (inherited from Gloas)
-IS `get_slot_component_duration_ms`. A fork-choice deadline helper leaning on that inherited
-fork-choice function, so it lives here with the rest of the fork-choice layer. -/
-forkdef getInclusionListDueMs : UInt64 := bpsDeadlineMs Const.inclusionListDueBps
+is `get_slot_component_duration_ms`, so the deadline raises where its checked product raises.
+It calls an inherited fork-choice function, so it lives here with the rest of the fork-choice
+layer. -/
+forkdef getInclusionListDueMs : Except StateTransitionError UInt64 :=
+  bpsDeadlineMs Const.inclusionListDueBps
 
 /-- `on_inclusion_list(store, signed_inclusion_list)` (the new wire handler,
 `consensus-specs/specs/heze/fork-choice.md:256-267`): on receiving an inclusion list, judge its
@@ -518,7 +520,9 @@ MUST NOT modify the store" is automatic here. The inclusion-list store rides ins
 forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit := do
   let store ← get
   let inclusionList := signed.message
-  let isTimely := (← timeIntoSlotMs store) < getInclusionListDueMs
+  let timeIntoSlot ← timeIntoSlotMs store
+  let inclusionListDue ← liftErr getInclusionListDueMs
+  let isTimely := timeIntoSlot < inclusionListDue
   set { store with
     inclusionListStore := processInclusionList store.inclusionListStore inclusionList isTimely }
 

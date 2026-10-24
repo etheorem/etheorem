@@ -3,9 +3,10 @@ import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 /-!
 # `EthCLSpecs.Proofs.Heze.OnInclusionList`: the honest list in the IL store
 
-`onInclusionList` reads the time into the slot and compares it with
+`onInclusionList` reads the time into the slot and compares it with the deadline
 `getInclusionListDueMs`. Then it passes the list to `processInclusionList`.
-`onInclusionList_run_eq` states this run.
+`onInclusionList_run_eq` states this run for a config where the deadline does not raise, and
+names the deadline value `ilDueMs`.
 
 The arrival model is a list of `(SignedInclusionList, t)` pairs. `t` is the time into the
 current slot at arrival, as in pyspec: the slot of the list does not enter the timeliness,
@@ -62,19 +63,31 @@ example : LawfulBEq Transaction := inferInstance
 -- Core's `ReflBEq` handler proves that the derived `BEq` is reflexive, field by field.
 deriving instance ReflBEq for InclusionList
 
-/-- Take a store where the time into the slot is `t`. Then `onInclusionList` replaces the
-IL store with the result of `processInclusionList` on the list. The timeliness argument is
-`t < getInclusionListDueMs`. -/
+/-- The inclusion-list deadline in milliseconds, when `getInclusionListDueMs` does not raise.
+The deadline raises when its checked product `INCLUSION_LIST_DUE_BPS * SLOT_DURATION_MS`
+overflows, and then `ilDueMs` is `0`. A theorem about a run of `onInclusionList` carries the
+premise `getInclusionListDueMs = .ok ilDueMs`. The arrival model (`ILStore.arrivalStep` and the
+theorems over it) reads `ilDueMs` with no premise. It describes the IL store that successful
+runs build, and in a config where the deadline raises no run succeeds. -/
+def ilDueMs [Config] : UInt64 :=
+  match getInclusionListDueMs with
+  | .ok d => d
+  | .error _ => 0
+
+/-- Take a store where the time into the slot is `t`, and a config where the deadline does
+not raise. Then `onInclusionList` replaces the IL store with the result of
+`processInclusionList` on the list. The timeliness argument is `t < ilDueMs`. -/
 theorem onInclusionList_run_eq {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
     (store : Store map) (signed : SignedInclusionList) (t : UInt64)
     (hclock : (timeIntoSlotMs (StoreTransition := ForkChoiceStoreRun (Store map)) store).run
-      store = .ok (t, store)) :
+      store = .ok (t, store))
+    (hdue : getInclusionListDueMs = .ok ilDueMs) :
     (onInclusionList (map := map) (StoreTransition := ForkChoiceStoreRun (Store map))
         signed).run store
       = .ok ((), { store with
           inclusionListStore := processInclusionList store.inclusionListStore signed.message
-            (decide (t < getInclusionListDueMs)) }) := by
-  simp [onInclusionList, StateT.run_bind, hclock]
+            (decide (t < ilDueMs)) }) := by
+  simp [onInclusionList, StateT.run_bind, hclock, hdue, liftErr]
   rfl
 
 section
@@ -161,7 +174,7 @@ def After (il : InclusionList) (b : Bool) (s : InclusionListStore map) : Prop :=
 /-- The fold step of the arrival model. -/
 def arrivalStep [Config] (s : InclusionListStore map) (a : SignedInclusionList × UInt64) :
     InclusionListStore map :=
-  processInclusionList s a.1.message (decide (a.2 < getInclusionListDueMs))
+  processInclusionList s a.1.message (decide (a.2 < ilDueMs))
 
 end ILStore
 
@@ -421,13 +434,13 @@ root alone. `before` needs no such hypothesis: the first arrival of `il` takes b
 which overwrites any entry at `htr il`.
 
 Then the IL store holds `il` under its key at `htr il`, with the timeliness of the first
-arrival: `true` when `t < getInclusionListDueMs`, and `false` otherwise. The validator of
+arrival: `true` when `t < ilDueMs`, and `false` otherwise. The validator of
 `il` is not an equivocator at that key. -/
 theorem honestStored_of_arrivals [Config]
     (before after : List (SignedInclusionList × UInt64)) (signed : SignedInclusionList)
     (t : UInt64) (il : InclusionList) (hil : signed.message = il)
     (h : ArrivalHypotheses il before after) :
-    ILStore.After il (decide (t < getInclusionListDueMs))
+    ILStore.After il (decide (t < ilDueMs))
       (ilStoreOfArrivals (map := map) (before ++ (signed, t) :: after)) := by
   subst hil
   unfold ilStoreOfArrivals
@@ -437,7 +450,7 @@ theorem honestStored_of_arrivals [Config]
     signed.message.inclusionListCommitteeRoot before _ h.first
     (ILStore.before_empty signed.message.validatorIndex signed.message.inclusionListCommitteeRoot)
   -- `arrivalStep` on `(signed, t)` unfolds to `processInclusionList` with this timeliness.
-  exact ILStore.after_first _ signed.message (decide (t < getInclusionListDueMs)) hB
+  exact ILStore.after_first _ signed.message (decide (t < ilDueMs)) hB
 
 /-- `ArrivalHypotheses` holds for a validator that sits on two committees with different
 keys. The validator signs `il'` under one key and `il` under the other. `il'` arrives
