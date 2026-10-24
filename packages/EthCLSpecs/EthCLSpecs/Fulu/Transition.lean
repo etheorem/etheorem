@@ -112,7 +112,10 @@ forkdef processRandao (body : BeaconBlockBody) : StateTransition Unit := do
     sszUpdate state with randaoMixes[umodIdx epoch Const.epochsPerHistoricalVector]! := newMix
 
 /-- `process_eth1_data`: append the vote and adopt it once it has a majority over
-the voting period. -/
+the voting period. pyspec evaluates `votes.count(...) * 2`, then
+`EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH`. `count` returns a Python `int`, so
+`count * 2` is exact, and the body keeps it in `Nat`. The period product multiplies two
+`uint64` constants, so it is a checked product (`.arithmetic`). -/
 forkdef processEth1Data (body : BeaconBlockBody) : StateTransition Unit := do
   appendState eth1DataVotes body.eth1Data
 
@@ -120,7 +123,10 @@ forkdef processEth1Data (body : BeaconBlockBody) : StateTransition Unit := do
   let target := htr body.eth1Data
   let cnt := (sszGet state eth1DataVotes).foldl
     (fun acc e => if htr e == target then acc + 1 else acc) 0
-  if cnt * 2 > Const.epochsPerEth1VotingPeriod * Const.slotsPerEpoch then
+  let votingSlots ← checkedMul (UInt64.ofNat Const.epochsPerEth1VotingPeriod)
+    (UInt64.ofNat Const.slotsPerEpoch)
+    "process_eth1_data: EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH"
+  if cnt * 2 > votingSlots.toNat then
     modifyState fun state => sszUpdate state with eth1Data := body.eth1Data
 
 /-- `process_sync_aggregate`: verify the aggregate signature over the previous

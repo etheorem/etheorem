@@ -248,6 +248,10 @@ theorem keepsUncached_slashValidator (i : ValidatorIndex) :
   refine keepsUncachedFrom_bind (v := midState₄) (keepsUncachedFrom_set midState₄ afterDecrease)
     (fun _ midState₅ => ?_)
   refine keepsUncachedFrom_get_bind (fun state' => ?_)
+  -- The checked product `whistleblower_reward * PROPOSER_WEIGHT`.
+  refine keepsUncachedFrom_bind ?cm (fun _ midState₅a => ?_)
+  · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_throw _ _)
+      (fun _ => keepsUncachedFrom_pure _ _)
   refine returnsUncachedFrom_bind (returnsUncached_increaseBalance _ _ _)
     (fun afterProposerReward midState₆ => ?_)
   exact returnsUncachedFrom_bind (returnsUncached_increaseBalance _ _ _)
