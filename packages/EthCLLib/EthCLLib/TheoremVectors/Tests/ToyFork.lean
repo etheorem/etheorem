@@ -15,9 +15,10 @@ command syntax's atoms at import time, so a module below the import cannot
 spell the binding's `presets` field. Declaring the binding here, where the
 command module is not imported, keeps the field speakable.
 
-The file also carries the toy run facts the pyspec format's tests drive
-(`THEOREM_VECTORS_ARCHITECTURE.md` §13.4, §13.5): the toy `ForkInterface`
-value and the second `ForkBinding` over the toy state, `toyRunBinding`.
+The file also carries the toy run facts the epoch_processing format's
+tests drive (`THEOREM_VECTORS_ARCHITECTURE.md` §13.4, §13.5): the toy
+`ForkInterface` value and the second `ForkBinding` over the toy state,
+`toyRunBinding`.
 The two bindings share the file, so a reader sees both in one place and
 neither disturbs the other.
 -/
@@ -70,7 +71,7 @@ expected reject an invalid vector carries under the driver's caught set.
 `.inactivityUpdates` is the toy's index miss: the step runs `toyIndexMiss`,
 whose read rejects with the SSZ `IndexError`, lifted to the state machine's
 `outOfBounds` the way the fork bodies lift it. The driver scores that
-reject as a pass with the bug-smell flag, the divergence `pyspecCheck`
+reject as a pass with the bug-smell flag, the divergence `epochProcessingCheck`
 fails on. `.blockHeader` is the toy's operation: the handler decodes a
 `ToyReq` and writes its amount into the balance, and a zero amount
 rejects with the spec assert `toy: zero`. `.withdrawals` is the toy's
@@ -132,9 +133,10 @@ reject the operations drive's two undriven check branches pin. -/
   runUpgrade    := fun _       => .error (.spec (.todo "toyrun fork upgrade: not modeled"))
   runTransition := fun _ _ _   => .error (.spec (.todo "toyrun transition: not modeled"))
 
-/-- The toy run binding for the pyspec format's tests (§13.4, §13.5): the
-same fork facts as `toyBinding`, with the toy state type, the `handlerOf`
-map over the four toy actions, and the toy interface at minimal. The map
+/-- The toy run binding for the epoch_processing format's tests (§13.4,
+§13.5): the same fork facts as `toyBinding`, with the toy state type, the
+`handlerOf` map over the four toy actions, and the toy interface at
+minimal. The map
 arms name real `epoch_processing` directories, because the driver parses
 the handler string through `EpochStep.ofString?` before it reaches the
 interface: the `.runOk` action runs under the real `effective_balance_updates`

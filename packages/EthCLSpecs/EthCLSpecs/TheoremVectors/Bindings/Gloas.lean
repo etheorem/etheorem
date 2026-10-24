@@ -9,8 +9,8 @@ The one `ForkBinding` value through which the generator's framework half
 sees Gloas (`THEOREM_VECTORS_ARCHITECTURE.md` §6): the builder catalog (§9.9)
 beside the presets and the scope types. The `handlerOf` map names the pyspec
 runner and handler for each epoch-processing substep the fork drives
-(§6, §13.4). Every other function answers `none`, so the pyspec format
-accepts no record that targets it.
+(§6, §13.4). Every other function answers `none`, so the epoch_processing
+format accepts no record that targets it.
 
 The `pyspecNames` table carries the pyspec spelling of every
 function the fork owns, beside `handlerOf` and `builders`; the

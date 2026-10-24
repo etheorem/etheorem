@@ -19,7 +19,7 @@ Contents:
 - Stage 4: generation, the random searcher, shrink
 - Stage 5: hints
 - Stage 6: state builders
-- Stage 7: run shapes and the pyspec format
+- Stage 7: run shapes and the pyspec format [renamed to `epoch_processing` after stage 13]
 - Stage 8: mainnet and witness reuse
 - Stage 9: the other forks, CI, documentation
 - Stage 10: client conformance
@@ -863,7 +863,8 @@ not the client, is what the vectors key on.
   run of the update recipe refreshes the hints. Built hints survive, because
   they hold knobs and no draw.
 - **Vectors without a consumer.** The function format tests nothing in a
-  client until a client wires it up. The pyspec format has a consumer today.
+  client until a client wires it up. The epoch_processing format
+  has a consumer today.
   Stage 7 earned the most and should not slip behind polish on stages 4 to 6;
   stage 10 wires the client, and until it runs, the function format's
   `check` answers `noConsumer` and the format's value stays unproven.

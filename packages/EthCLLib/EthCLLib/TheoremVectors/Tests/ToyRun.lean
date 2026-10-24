@@ -11,8 +11,8 @@ The toy fixtures the stage-7 run-shape tests drive
 container with one field, and three toy actions over the boxed state in
 the `GloasRun` style, `StateT` over `Except` threading the uncached box.
 The third action, `toyIndexMiss`, reads past the end of a one-element
-table, so its reject is the SSZ `IndexError` the pyspec format's tests
-lift to the flagged `outOfBounds` bucket (§13.5).
+table, so its reject is the SSZ `IndexError` the epoch_processing
+format's tests lift to the flagged `outOfBounds` bucket (§13.5).
 
 The conclusion shapes are the reader's run forms. `toyRunOk` states
 `act.run (pureState pre) = .ok (ret, pureState post)` (form 2), with the

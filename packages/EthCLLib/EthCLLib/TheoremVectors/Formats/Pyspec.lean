@@ -6,10 +6,12 @@ import EthCLLib.Internal.ProofLedger
 import EthCLLib.PySpecTests.Driver
 
 /-!
-# `EthCLLib.TheoremVectors.Formats.Pyspec`: the pyspec format
+# `EthCLLib.TheoremVectors.Formats.Pyspec`: the epoch_processing format and the shared pyspec case-layout helpers
 
-The upstream pyspec case layout, rendered from `.runOk` and `.runError`
-records (`THEOREM_VECTORS_ARCHITECTURE.md` §13.4):
+The `epoch_processing` format value, and the pyspec case-layout helpers
+both upstream-runner formats share. The format renders the upstream
+`epoch_processing` case layout from `.runOk` and `.runError` records
+(`THEOREM_VECTORS_ARCHITECTURE.md` §13.4):
 
 ```
 <outDir>/formats/pyspec/<fork>/<preset>/<runner>/<handler>/pyspec_tests/<thm>_<case>/
@@ -48,15 +50,21 @@ def Formats.pyspecThmLocal (binding : ForkBinding) (thm : Name) : Name :=
   thm.replacePrefix (EthCLLib.Internal.proofNamespaceOf binding.fork) Name.anonymous
 
 /-- §13.4's acceptance predicate: a `.runOk` or `.runError` record whose
-fork resolves to a binding, whose target has a `(runner, handler)` pair
-in the binding's `handlerOf` map, and whose single input is the state
-(input type string equals the binding's state type spelling). -/
-def Formats.pyspecAccepts (env : RenderEnv) (r : VectorRecord) : Bool :=
+fork resolves to a binding, whose target maps to a `("epoch_processing", _)`
+pair in the binding's `handlerOf` map, and whose single input is the state
+(input type string equals the binding's state type spelling). The runner
+pin gives the value its name's meaning: a single-state record of another
+runner's handler belongs to that runner's format, once that format
+exists. -/
+def Formats.epochProcessingAccepts (env : RenderEnv) (r : VectorRecord) : Bool :=
   (r.shape == .runOk || r.shape == .runError)
     && (match env.bindings r.fork, r.target, r.inputs with
         | some b, some target, #[v] =>
-          (b.handlerOf target).isSome
-            && v.type == b.stateType.toString
+          match b.handlerOf target with
+          | some (runner, _) =>
+            runner == "epoch_processing"
+              && v.type == b.stateType.toString
+          | none => false
         | _, _, _ => false)
 
 /-- The §13.4 case directory's own name: the theorem's local name and the
@@ -132,17 +140,21 @@ def Formats.pyspecWriteManifest (dir : System.FilePath) (b : ForkBinding)
 `pre.ssz`, `post.ssz` when the record carries an output, `meta.yaml`, and
 `manifest.yaml`. Returns the written paths in that order, the list the
 check receives (§13.2). -/
-def Formats.pyspecRender (env : RenderEnv) (r : VectorRecord)
+def Formats.epochProcessingRender (env : RenderEnv) (r : VectorRecord)
     (inputBytes : Array ByteArray) (outputBytes : Option ByteArray) :
     IO (Array System.FilePath) := do
   let some b := env.bindings r.fork
-    | throw (IO.userError s!"pyspec render: no binding for fork '{r.fork}'")
+    | throw (IO.userError
+        s!"epoch_processing render: no binding for fork '{r.fork}'")
   let some target := r.target
-    | throw (IO.userError s!"pyspec render: record of {r.«theorem»} has no target")
+    | throw (IO.userError
+        s!"epoch_processing render: record of {r.«theorem»} has no target")
   let some (runner, handler) := b.handlerOf target
-    | throw (IO.userError s!"pyspec render: {target} has no (runner, handler) pair")
+    | throw (IO.userError
+        s!"epoch_processing render: {target} has no (runner, handler) pair")
   let some preBytes := inputBytes[0]?
-    | throw (IO.userError s!"pyspec render: no input bytes for the state")
+    | throw (IO.userError
+        s!"epoch_processing render: no input bytes for the state")
   let dir := Formats.pyspecCaseDir env b r runner handler
   IO.FS.createDirAll dir
   let preFile := dir / "pre.ssz"
@@ -160,9 +172,9 @@ output, `none` when it does not. A record with an output but no
 `post.ssz` in the paths answers the error string, and a check turns that
 into `.failed`. The error line carries the caller's format prefix, the
 one detail convention the two checks share. The caller's format also
-fixes the position: the pyspec layout carries the post at position 1,
-the operations layout at position 2, where the operand part sits between
-pre and post. -/
+fixes the position: the epoch_processing layout carries the post at
+position 1, the operations layout at position 2, where the operand part
+sits between pre and post. -/
 def Formats.pyspecReadPost (fmt : String) (postIdx : Nat) (r : VectorRecord)
     (paths : Array System.FilePath) : IO (Except String (Option ByteArray)) := do
   if r.output.isSome then
@@ -188,26 +200,28 @@ but never parsed: the check rebuilds `caseMeta` from the constant
 so a tampered meta cannot change the outcome. `manifest.yaml` is written
 but never parsed: the check reads no path after `meta.yaml`, so a
 tampered manifest cannot change the outcome. -/
-def Formats.pyspecCheck (env : RenderEnv) (r : VectorRecord)
+def Formats.epochProcessingCheck (env : RenderEnv) (r : VectorRecord)
     (paths : Array System.FilePath) : IO CheckResult := do
   let some b := env.bindings r.fork
-    | return .failed s!"pyspec check: no binding for fork '{r.fork}'"
+    | return .failed s!"epoch_processing check: no binding for fork '{r.fork}'"
   let some target := r.target
-    | return .failed s!"pyspec check: record of {r.«theorem»} has no target"
-  let some (runner, handler) := b.handlerOf target
-    | return .failed s!"pyspec check: {target} has no (runner, handler) pair"
+    | return .failed
+        s!"epoch_processing check: record of {r.«theorem»} has no target"
+  let some (_runner, handler) := b.handlerOf target
+    | return .failed
+        s!"epoch_processing check: {target} has no (runner, handler) pair"
   let some iface := b.interface r.preset
-    | return .failed s!"pyspec check: binding '{b.tag}' has no interface \
+    | return .failed s!"epoch_processing check: binding '{b.tag}' has no interface \
         at preset {r.preset.tag}"
   let some prePath := paths[0]?
-    | return .failed "pyspec check: no pre.ssz in the rendered paths"
+    | return .failed "epoch_processing check: no pre.ssz in the rendered paths"
   let pre ← IO.FS.readBinFile prePath
   let post ←
-    match ← Formats.pyspecReadPost "pyspec" 1 r paths with
+    match ← Formats.pyspecReadPost "epoch_processing" 1 r paths with
     | .error msg => return .failed msg
     | .ok post => pure post
   let req : EthCLLib.PySpecTests.CaseRequest :=
-    { runner, handler, pre, post, inputs := #[],
+    { runner := "epoch_processing", handler, pre, post, inputs := #[],
       caseMeta := { blsSetting := 2 } }
   -- The interface value passes as the explicit instance argument: the
   -- check holds one runtime value, so there is no instance to synthesize.
@@ -217,7 +231,7 @@ def Formats.pyspecCheck (env : RenderEnv) (r : VectorRecord)
   -- reject the case's caught set admits. The check fails and names the
   -- flag, whether or not the record's pure column recorded the same class.
   if res.passed && res.flagged then
-    return .failed s!"pyspec replay: flagged pass, bucket {res.bucket.tag} \
+    return .failed s!"epoch_processing replay: flagged pass, bucket {res.bucket.tag} \
       ({EthCLLib.PySpecTests.CaseResult.flattenDetail res.detail})"
   if res.passed then
     return .passed
@@ -225,17 +239,19 @@ def Formats.pyspecCheck (env : RenderEnv) (r : VectorRecord)
     match res.flagged with
     | true => ", flagged"
     | false => ""
-  return .failed s!"pyspec replay: bucket {res.bucket.tag} \
+  return .failed s!"epoch_processing replay: bucket {res.bucket.tag} \
     ({EthCLLib.PySpecTests.CaseResult.flattenDetail res.detail}){flagPart}"
 
-/-- The pyspec format (`THEOREM_VECTORS_ARCHITECTURE.md` §13.4, §13.5).
-It accepts the run-shape records whose target has a handler and whose
-single input is the state, renders the upstream case layout, and replays
-the rendered case through the pyspec driver. -/
-def Formats.pyspec : VectorFormat where
-  name    := "pyspec"
-  accepts := Formats.pyspecAccepts
-  render  := Formats.pyspecRender
-  check   := Formats.pyspecCheck
+/-- The epoch_processing format (`THEOREM_VECTORS_ARCHITECTURE.md` §13.4,
+§13.5). It accepts the run-shape records whose target maps to the
+`epoch_processing` runner and whose single input is the state, renders the
+upstream case layout, and replays the rendered case through the pyspec
+driver. The value takes its runner's name, and `accepts` pins the runner,
+so the name stays honest. -/
+def Formats.epochProcessing : VectorFormat where
+  name    := "epoch_processing"
+  accepts := Formats.epochProcessingAccepts
+  render  := Formats.epochProcessingRender
+  check   := Formats.epochProcessingCheck
 
 end EthCLLib.TheoremVectors

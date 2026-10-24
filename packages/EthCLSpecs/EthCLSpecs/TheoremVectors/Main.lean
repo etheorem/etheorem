@@ -14,7 +14,7 @@ elaborates a theorem; the records on disk are its input. Five subcommands:
 - `check [--fork <tag>] [--preset <id>] [--format <name>] [--out <dir>]`
   replays the rendered vectors through each format's consumer (C2); the
   function format joins the client harness's results file (§13.3), and
-  the pyspec format replays its cases through `runCase` (§13.5);
+  the epoch_processing format replays its cases through `runCase` (§13.5);
 - `report [--out <dir>]` folds the outcome files into `report.md` (C3),
   with the client harness's answers in the Formats cells (§16.2);
 - `list [--out <dir>]` prints one line per record;
@@ -221,7 +221,7 @@ in the output tree; it never renders. -/
 
 /-- The two formats whose entries describe an upstream case layout
 (§13.6, §13.7). Every other format's entries the mirror skips. -/
-private def prysmCorpusFormats : List String := ["pyspec", "operations"]
+private def prysmCorpusFormats : List String := ["epoch_processing", "operations"]
 
 /-- The six segments a case directory keeps after the `formats/pyspec`
 pair: the fork, the preset, the runner, the handler, the suite directory
@@ -287,8 +287,9 @@ private def writePrysmCorpus (out : System.FilePath) : IO (Nat × Nat) := do
       run render first")
   let cases := rendered.filter (fun r => prysmCorpusFormats.contains r.format)
   if cases.isEmpty then
-    throw (IO.userError s!"prysm-corpus: {manifest} holds no pyspec or \
-      operations entries (0 of {rendered.size}); run render first")
+    throw (IO.userError s!"prysm-corpus: {manifest} holds no \
+      epoch_processing or operations entries \
+      (0 of {rendered.size}); run render first")
   let testsDir := out / "tests"
   if ← testsDir.pathExists then
     IO.FS.removeDirAll testsDir
@@ -360,8 +361,8 @@ def runSub (sc : Subcommand) (opts : Options) : IO UInt32 := do
     -- phase C2 (§13.2, §13.5): every registered format's consumer replays
     -- what the render pass returned, through the manifest. The function
     -- format joins the client harness's results file (§13.3), answering
-    -- `noConsumer` for records no client ran; the pyspec and operations
-    -- formats replay their cases through the pyspec driver.
+    -- `noConsumer` for records no client ran; the epoch_processing and
+    -- operations formats replay their cases through the pyspec driver.
     let env := renderEnv out
     let rendered ← readManifest out
     let mut nChecked := 0

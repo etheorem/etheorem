@@ -137,9 +137,9 @@ def Formats.function : VectorFormat where
   check := Formats.functionCheck
 
 /-- The format registry (`THEOREM_VECTORS_ARCHITECTURE.md` §13.1): the
-function format (§13.3), the pyspec format (§13.4, §13.5), and the
-operations format (§13.6). A new format is one more value here. -/
+function format (§13.3), the epoch_processing format (§13.4, §13.5), and
+the operations format (§13.6). A new format is one more value here. -/
 def Formats.all : Array VectorFormat :=
-  #[Formats.function, Formats.pyspec, Formats.operations]
+  #[Formats.function, Formats.epochProcessing, Formats.operations]
 
 end EthCLLib.TheoremVectors

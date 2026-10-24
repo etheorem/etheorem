@@ -46,7 +46,7 @@ and the executor (§11), the witness search's searchers (manual, base,
 bit-vector, built, random, reuse, and hint) and the shrink (§9.2, §9.4,
 §9.6, §9.8, §9.9, §10), the records
 (§12), the client harness's results file (§13.3), the function format
-(§13.3), the pyspec format (§13.4, §13.5), the operations format
+(§13.3), the epoch_processing format (§13.4, §13.5), the operations format
 (§13.6), the outcome lines (§16.1), the report (§16.2), and the
 generator commands (§14).
 

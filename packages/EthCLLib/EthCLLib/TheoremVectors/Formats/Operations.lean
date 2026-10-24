@@ -21,13 +21,13 @@ The upstream `operations` case layout, rendered from `.runOk` and
   manifest.yaml      {preset, fork, runner, handler, suite, case}
 ```
 
-The path layout is the pyspec format's (§13.4). The case parts differ:
-the operand part sits between `pre.ssz` and `post.ssz`, and its file
+The path layout is the epoch_processing format's (§13.4). The case parts
+differ: the operand part sits between `pre.ssz` and `post.ssz`, and its file
 name comes from the `OpKind.inputName` table. The table decides, never
 the handler string echoed: `block_header` writes `block.ssz`, and
 `voluntary_exit_churn` writes `voluntary_exit.ssz`. A record with two
-inputs has no part in the pyspec layout, and a single-state record has
-no part here, so the two formats never accept the same record.
+inputs has no part in the epoch_processing layout, and a single-state
+record has no part here, so the two formats never accept the same record.
 
 The check (§13.5) rebuilds a `EthCLLib.PySpecTests.CaseRequest` from the
 rendered files and replays it through `runCase` with the fork's

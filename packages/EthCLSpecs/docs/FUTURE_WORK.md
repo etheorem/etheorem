@@ -171,9 +171,12 @@ return.
 ### The operand-free operations handler
 
 A future operations handler with no operand produces single-state records. The concrete
-case is Gloas `process_withdrawals`. Two behaviors of the pyspec format then matter.
-`Formats.pyspecAccepts` checks no runner string. The format's check builds `caseMeta`
-from the constant `{ blsSetting := 2 }`, leaving `executionValid` at its default, `true`.
-Both matter only when a fork binding maps such a handler, so the caveat waits for that
-binding. The binding author reads §13.6 of `THEOREM_VECTORS_ARCHITECTURE.md` and this
-entry.
+case is Gloas `process_withdrawals`. The epoch_processing format takes its runner's
+name and pins the runner, so no format accepts such a record today:
+`Formats.epochProcessingAccepts` requires the
+`epoch_processing` runner, and `Formats.operationsAccepts` matches exactly two inputs.
+The record stays unaccepted until the operations format grows an operand-free variant.
+When that variant lands, its check still builds `caseMeta` from the constant
+`{ blsSetting := 2 }`, leaving `executionValid` at its default, `true`. Both caveats
+wait for a fork binding that maps such a handler. The binding author reads §13.6 of
+`THEOREM_VECTORS_ARCHITECTURE.md` and this entry.

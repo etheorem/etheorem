@@ -204,7 +204,7 @@ same way `pyspec_server` does, through the package-level `moreLinkArgs`.
 | `cadical` (ships with the toolchain) | the SAT backend of `bvDecide'` | build environment |
 | `SizzLean` | `SSZRepr`, serialize, `hashTreeRoot` | the probe, records |
 | `Lean.Json` (core) | `ToJson`, `FromJson`, the printer and parser | records, outcomes, hints |
-| `EthCLLib.PySpecTests` | `ForkInterface`, `runCase` | the pyspec format's check |
+| `EthCLLib.PySpecTests` | `ForkInterface`, `runCase` | the epoch_processing format's check |
 
 The `Plausible` tag sits one patch behind the `v4.29.1` toolchain. A toolchain
 bump moves the tag with it. That is one line in the bump checklist.
@@ -325,7 +325,7 @@ warning into an error.
 | `Snappy.lean` | the snappy block-format writer, all-literals form | Lean core |
 | `Format.lean` | the `VectorFormat` structure and `RenderEnv` | `Record`, `ForkBinding` |
 | `Formats/Function.lean` | the function format | `Format`, `Yaml` |
-| `Formats/Pyspec.lean` | the pyspec format and its `runCase` check | `Format`, `Yaml`, `PySpecTests.Driver` |
+| `Formats/Pyspec.lean` | the epoch_processing format and its `runCase` check, the shared pyspec case-layout helpers | `Format`, `Yaml`, `PySpecTests.Driver` |
 | `Formats/Operations.lean` | the operations format and its `runCase` check | `Format`, `Formats/Pyspec`, `PySpecTests.Interface`, `PySpecTests.Driver` |
 | `Outcome.lean` | the per-theorem outcome lines | `Types`, `Lean.Json` |
 | `Report.lean` | `report.md` from outcomes and records | `Outcome`, `Record` |
@@ -577,7 +577,7 @@ structure ForkBinding where
   hasherTag   : Name
   /-- The crypto backend the probe binds: `EthCLLib.Spec.CryptoBackend.verifyOff`. -/
   crypto      : Name
-  /-- The state container, so the pyspec format can tell a state input apart. -/
+  /-- The state container, so the epoch_processing format can tell a state input apart. -/
   stateType   : Name
   /-- The types that put a theorem out of scope (§1.2). -/
   blockTypes  : Array Name
@@ -594,7 +594,7 @@ structure ForkBinding where
   declares with a pyspec spelling; the inherited replays carry none.
   Validated once, at the generator header. -/
   pyspecNames : Array (Name × String)
-  /-- The fork's `ForkInterface` at a preset, for the pyspec format's check. -/
+  /-- The fork's `ForkInterface` at a preset, for the epoch_processing format's check. -/
   interface   : PresetId → Option ForkInterface
 ```
 
@@ -1156,20 +1156,23 @@ spells it: the record's `pyspecName` (§7.2, §12.2). A record whose target
 has no pyspec name falls back to the Lean target name, and a harness
 mapping on the field table-skips such a record.
 
-### 13.4 The pyspec format
+### 13.4 The epoch_processing format
 
 Upstream defines one case layout per runner (§13.7), and each layout
 needs its own `VectorFormat` value with its own `accepts`, `render`, and
-`check`. The value this section describes, `Formats.pyspec`, writes one
-layout: the `epoch_processing` case, a pre-state and a post-state. The
-name "the pyspec format" means this value throughout this document.
-Another runner, such as `operations` with its operand part, gets a new
-value beside it (§13.7's closing rule).
+`check`. The value this section describes, `Formats.epochProcessing`,
+writes one layout: the `epoch_processing` runner's case, a pre-state and
+a post-state. The value takes its runner's name, and its acceptance
+predicate pins the runner, so the name stays honest. Another runner,
+such as `operations` with its operand part, gets its own value beside it
+(§13.7's closing rule).
 
-`Formats.pyspec` accepts a `.runOk` or `.runError` record whose target has
-a handler in `binding.handlerOf` and whose only input is the state
-(`binding.stateType`). A record with a second input, such as an
-operation handler's operand, has no part to go in this layout.
+`Formats.epochProcessing` accepts a `.runOk` or `.runError` record whose
+target maps to `("epoch_processing", h)` in `binding.handlerOf` and whose
+only input is the state (`binding.stateType`). A record of another
+runner's handler is a record of that runner's format, once that format
+exists. A record with a second input, such as an operation handler's
+operand, has no part to go in this layout.
 
 ```
 <outDir>/formats/pyspec/<fork>/<preset>/<runner>/<handler>/pyspec_tests/<thm>_<case>/
@@ -1188,7 +1191,7 @@ runner already reads (§12.3). Both pyspec layouts write a `manifest.yaml`
 beside `meta.yaml`; §13.7 gives its keys. That section lists every upstream
 pyspec format and this repository's coverage of each.
 
-### 13.5 The pyspec check
+### 13.5 The epoch_processing check
 
 `check` builds a `CaseRequest` from the rendered files, with `post = none`
 for an invalid case, and calls `EthCLLib.PySpecTests.runCase` with the
@@ -1201,7 +1204,7 @@ replays the vector through the same path the upstream vectors take.
 ### 13.6 The operations format
 
 `Formats.operations` writes the `operations` runner's case layout. The path
-layout is the pyspec format's (§13.4). The case parts differ: one operand
+layout is the epoch_processing format's (§13.4). The case parts differ: one operand
 part sits between `pre.ssz` and `post.ssz`.
 
 `Formats.operations` accepts a `.runOk` or `.runError` record whose target's
@@ -1223,8 +1226,9 @@ from the handler string. Two examples: `block_header` writes `block.ssz`,
 and `bls_to_execution_change` writes `address_change.ssz`.
 
 The two formats never accept the same record. A two-input record has no part
-in the pyspec layout, and a single-state record has no part here.
-`Formats.pyspec` keeps its single-state rule unchanged.
+in the epoch_processing layout, and a single-state record has no part here.
+Each format pins its runner in its acceptance predicate, so a record of the
+one runner is never the other's.
 
 The check rebuilds a `CaseRequest` from the rendered files with the operand
 bytes. It replays the request through `runCase` with the fork's
@@ -1243,14 +1247,16 @@ Upstream defines one test format per runner in consensus-specs'
 `tests/formats/`. The vocabulary there is: a **runner** owns a format; a
 **handler** inside a runner is the sub-format layer, a specialization that
 may change a case's parts; cases sit in **suites**; a case is a directory
-of **parts** (the files). This document's `VectorFormat` values are per
-case shape, not per runner: one value renders one part layout, whatever
-runner writes it. The part suffix rule is upstream-wide: `.ssz_snappy`
-preferred, a raw `.ssz` beside it accepted, which is what lets this
-generator's output ride the readers below. The generator's writers still
-emit raw `.ssz` parts. The exe's `prysm-corpus` subcommand writes the
-`.ssz_snappy` mirror the Prysm suite's readers consume (§15), with the
-all-literals encoder in `Snappy.lean`.
+of **parts** (the files). The two upstream-runner `VectorFormat` values
+take their runner's name, `epoch_processing` and `operations`, and each
+pins its runner in its acceptance predicate. A value's name names the
+runner whose layout it writes. The function format is this repository's
+own, named after its consumer. The part suffix rule is upstream-wide:
+`.ssz_snappy` preferred, a raw `.ssz` beside it accepted, which is what
+lets this generator's output ride the readers below. The generator's
+writers still emit raw `.ssz` parts. The exe's `prysm-corpus` subcommand
+writes the `.ssz_snappy` mirror the Prysm suite's readers consume (§15),
+with the all-literals encoder in `Snappy.lean`.
 
 The table names every upstream format and this repository's coverage of
 each. "Read" means `PySpecTests/harness.py` parses the format and the
@@ -1261,7 +1267,7 @@ take the shape.
 | Format (runner) | Case parts | Read | Written | Corpus |
 | --- | --- | --- | --- | --- |
 | `bls` | YAML only, no SSZ | no | no | never (the primitives are a dependency's) |
-| `epoch_processing` | `pre.ssz`, `post.ssz`, `meta.yaml` | yes | yes — the pyspec format's one shape today | handler-bearing run theorems |
+| `epoch_processing` | `pre.ssz`, `post.ssz`, `meta.yaml` | yes | yes, the epoch_processing format | handler-bearing run theorems |
 | `fast_confirmation` | the confirmation-rule fork-choice shape, minimal only | no | no | never yet, a named future-work runner |
 | `finality` | `pre.ssz`, `blocks_*.ssz`, `post.ssz`, `meta.yaml` | yes | no records today | same case shape as `epoch_processing` |
 | `fork_choice` | `anchor_state.ssz`, `anchor_block.ssz`, `steps.yaml`, `meta.yaml` | yes (the steps emitter chain) | no | never (Store inputs, §1.2) |
@@ -1562,7 +1568,8 @@ manual source, and a `with` group after a named line is a parse error
 ## 15. The command-line harness
 
 `lake exe theorem_vectors` lives in `EthCLSpecs/TheoremVectors/Main.lean`. It
-needs the fork bindings for the pyspec check, so it lives in the spec half,
+needs the fork bindings for the epoch_processing check, so it lives in the
+spec half,
 as `pyspec_server` does. It never elaborates a theorem; the records are its
 input.
 
@@ -1717,7 +1724,8 @@ One job, `theorem-vectors`, after the `ethcl` build:
 
 1. `just theorem-vectors`, with hints in `use` mode. A `theorem_vectors!`
    skip, a tagged theorem's skip, a failed agreement check, a failed
-   read-back, or a failed pyspec check fails the job. A stale or failed hint
+   read-back, or a failed epoch_processing check fails the job. A stale or
+   failed hint
    does not, and the report lists it. A job that wants to catch unreviewed
    witness churn runs with `require` instead.
 2. Upload `theorem_vectors/` as an artifact, so the vectors and the report
@@ -1726,7 +1734,8 @@ One job, `theorem-vectors`, after the `ethcl` build:
 ### 17.4 The pyspec harness switch
 
 `harness.py` accepts `.ssz` where it finds no `.ssz_snappy`. With that, the
-pyspec format's output tree can be pointed at the harness directly
+epoch_processing format's output tree can be pointed at the harness
+directly
 (`--vectors <outDir>/formats/pyspec`) and runs through the same `pytest`
 path as the upstream corpus.
 
@@ -1756,7 +1765,7 @@ path as the upstream corpus.
 | `agree = false` | B5 | error, both values printed |
 | read-back mismatch | B7 | error |
 | no format accepts a record | C1 | listed in the report |
-| pyspec check fails | C2 | `check` exits 1 |
+| epoch_processing check fails | C2 | `check` exits 1 |
 | DNF cap hit | A3 | warning, unsplit fallback |
 
 The rule behind the table: a claim the author made (`!`, the tag, a manual
@@ -1825,6 +1834,10 @@ matches, so a missing arm is a build error.
   a fork.
 - **Record.** The general vector on disk: `record.json` plus SSZ files.
 - **Format.** A renderer from records to one consumer's layout, with a check.
+- **Pyspec formats.** The family of upstream case layouts under
+  `formats/pyspec/` (§13.7); upstream owns one format per runner.
+- **Runner / handler.** Upstream's two-level case naming: a runner owns a
+  format; a handler specializes it (§13.7).
 - **Generator file.** A module in the spec half that selects a fork's
   theorems: discovery clauses, named lines, and exclusions.
 - **Discovery.** Selecting theorems through a tag, `@[characterizes]` or

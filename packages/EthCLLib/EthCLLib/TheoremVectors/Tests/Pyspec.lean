@@ -7,14 +7,14 @@ import EthCLLib.TheoremVectors.Tests.ToyFork
 import EthCLLib.TheoremVectors.Tests.ToyRun
 
 /-!
-# `EthCLLib.TheoremVectors.Tests.Pyspec`: the pyspec format over the toy fork
+# `EthCLLib.TheoremVectors.Tests.Pyspec`: the epoch_processing format over the toy fork
 
-Build-gate checks for the pyspec format (`THEOREM_VECTORS_ARCHITECTURE.md`
-§13.4, §13.5), over the toy run binding: what `accepts` takes and refuses,
-the rendered case layout with its byte-exact `meta.yaml` and
-`manifest.yaml`, and the check that rebuilds a `CaseRequest` from the
-rendered files and replays it through `runCase`. The records are
-hand-built, no search involved.
+Build-gate checks for the epoch_processing format
+(`THEOREM_VECTORS_ARCHITECTURE.md` §13.4, §13.5), over the toy run
+binding: what `accepts` takes and refuses, the rendered case layout with
+its byte-exact `meta.yaml` and `manifest.yaml`, and the check that
+rebuilds a `CaseRequest` from the rendered files and replays it through
+`runCase`. The records are hand-built, no search involved.
 
 Two pins carry the format's point:
 
@@ -108,7 +108,8 @@ def toyRunOkRecord : VectorRecord :=
                      value := .ssz (toyRoot toyPost) },
     error := none, witnessSearcher := .base }
 
-/-- The same record with an `.eq` shape: the pyspec format refuses it. -/
+/-- The same record with an `.eq` shape: the epoch_processing format
+refuses it. -/
 def toyEqRecord : VectorRecord := { toyRunOkRecord with shape := .eq }
 
 /-- The same record with no target: nothing to map through `handlerOf`. -/
@@ -119,6 +120,13 @@ state type: the input is not the state. -/
 def toyWrongTypeRecord : VectorRecord :=
   { toyRunOkRecord with
     inputs := #[{ name := `state, type := "Nat", value := .ssz (toyRoot toyPre) }] }
+
+/-- The same record with the operation action as the target: `toyOpApply`
+maps to the `operations` runner, so the runner pin refuses it. The pin
+keeps the value honest to its name. -/
+def toyWrongRunnerRecord : VectorRecord :=
+  { toyRunOkRecord with
+    target := some `EthCLLib.TheoremVectors.Tests.ToyRun.toyOpApply }
 
 /-- The hand-built `.runError` record (§13.4): no output, the error's
 repr, the toy fail action as the target. -/
@@ -185,43 +193,45 @@ run_cmd do
   Lean.Elab.Command.liftIO do
     IO.FS.createDirAll scratchOutDir
     -- what accepts takes and refuses (§13.4)
-    unless Formats.pyspec.accepts toyEnv toyRunOkRecord do
-      throw (IO.userError "pyspec accepts: the runOk record was refused")
-    if Formats.pyspec.accepts toyEnv toyEqRecord then
-      throw (IO.userError "pyspec accepts: the eq-shaped record was accepted")
-    if Formats.pyspec.accepts toyEnv toyNoTargetRecord then
-      throw (IO.userError "pyspec accepts: the targetless record was accepted")
-    if Formats.pyspec.accepts toyEnv toyWrongTypeRecord then
-      throw (IO.userError "pyspec accepts: the non-state input record was accepted")
-    unless Formats.pyspec.accepts toyEnv toyRunErrorRecord do
-      throw (IO.userError "pyspec accepts: the runError record was refused")
+    unless Formats.epochProcessing.accepts toyEnv toyRunOkRecord do
+      throw (IO.userError "epoch_processing accepts: the runOk record was refused")
+    if Formats.epochProcessing.accepts toyEnv toyEqRecord then
+      throw (IO.userError "epoch_processing accepts: the eq-shaped record was accepted")
+    if Formats.epochProcessing.accepts toyEnv toyNoTargetRecord then
+      throw (IO.userError "epoch_processing accepts: the targetless record was accepted")
+    if Formats.epochProcessing.accepts toyEnv toyWrongTypeRecord then
+      throw (IO.userError "epoch_processing accepts: the non-state input record was accepted")
+    if Formats.epochProcessing.accepts toyEnv toyWrongRunnerRecord then
+      throw (IO.userError "epoch_processing accepts: the operations-runner record was accepted")
+    unless Formats.epochProcessing.accepts toyEnv toyRunErrorRecord do
+      throw (IO.userError "epoch_processing accepts: the runError record was refused")
     -- the rendered layout (§13.4): pre, post, meta, manifest, in one
     -- case directory
     let preBytes := SizzLean.SSZ.serialize toyPre
     let postBytes := SizzLean.SSZ.serialize toyPost
-    let paths ← Formats.pyspec.render toyEnv toyRunOkRecord
+    let paths ← Formats.epochProcessing.render toyEnv toyRunOkRecord
       #[preBytes] (some postBytes)
     unless paths.size == 4 do
-      throw (IO.userError s!"pyspec render: {paths.size} paths, expected 4")
+      throw (IO.userError s!"epoch_processing render: {paths.size} paths, expected 4")
     let caseDir := scratchOutDir / "formats" / "pyspec" / "toyrun" /
       "minimal" / "epoch_processing" / "effective_balance_updates" /
       "pyspec_tests" / "EthCLLib.TheoremVectors.Tests.ToyRun.toyRunOk_000"
     unless paths[0]!.toString == (caseDir / "pre.ssz").toString do
-      throw (IO.userError s!"pyspec render: pre path is {paths[0]!}")
+      throw (IO.userError s!"epoch_processing render: pre path is {paths[0]!}")
     unless paths[1]!.toString == (caseDir / "post.ssz").toString do
-      throw (IO.userError s!"pyspec render: post path is {paths[1]!}")
+      throw (IO.userError s!"epoch_processing render: post path is {paths[1]!}")
     unless paths[2]!.toString == (caseDir / "meta.yaml").toString do
-      throw (IO.userError s!"pyspec render: meta path is {paths[2]!}")
+      throw (IO.userError s!"epoch_processing render: meta path is {paths[2]!}")
     unless paths[3]!.toString == (caseDir / "manifest.yaml").toString do
-      throw (IO.userError s!"pyspec render: manifest path is {paths[3]!}")
+      throw (IO.userError s!"epoch_processing render: manifest path is {paths[3]!}")
     unless (← IO.FS.readBinFile paths[0]!) == preBytes do
-      throw (IO.userError "pyspec render: pre.ssz is not the pre-state's bytes")
+      throw (IO.userError "epoch_processing render: pre.ssz is not the pre-state's bytes")
     unless (← IO.FS.readBinFile paths[1]!) == postBytes do
-      throw (IO.userError "pyspec render: post.ssz is not the post-state's bytes")
+      throw (IO.userError "epoch_processing render: post.ssz is not the post-state's bytes")
     -- meta.yaml, byte for byte in the upstream flow form (§12.3)
     unless (← IO.FS.readFile paths[2]!) ==
         "{bls_setting: 2, theorem: EthCLLib.TheoremVectors.Tests.ToyRun.toyRunOk}\n" do
-      throw (IO.userError "pyspec render: meta.yaml is not the pinned flow line")
+      throw (IO.userError "epoch_processing render: meta.yaml is not the pinned flow line")
     -- manifest.yaml, byte for byte in the upstream block form (§12.3):
     -- six keys in upstream order, the case path's segments as the values
     unless (← IO.FS.readFile paths[3]!) ==
@@ -231,50 +241,50 @@ run_cmd do
         "handler: effective_balance_updates\n" ++
         "suite: pyspec_tests\n" ++
         "case: EthCLLib.TheoremVectors.Tests.ToyRun.toyRunOk_000\n" do
-      throw (IO.userError "pyspec render: manifest.yaml is not the pinned block map")
+      throw (IO.userError "epoch_processing render: manifest.yaml is not the pinned block map")
     -- the check replays the rendered files through runCase (§13.5)
-    checkOutcome "pyspec check runOk"
-      (← Formats.pyspec.check toyEnv toyRunOkRecord paths)
+    checkOutcome "epoch_processing check runOk"
+      (← Formats.epochProcessing.check toyEnv toyRunOkRecord paths)
     -- the manifest is written and never parsed: garbage in the file, and
     -- the check still passes on the same paths
     IO.FS.writeFile paths[3]! "garbage\n"
-    checkOutcome "pyspec check runOk with a garbage manifest"
-      (← Formats.pyspec.check toyEnv toyRunOkRecord paths)
+    checkOutcome "epoch_processing check runOk with a garbage manifest"
+      (← Formats.epochProcessing.check toyEnv toyRunOkRecord paths)
     -- a preset the binding's interface does not answer fails defensively,
     -- before any file is read
-    checkFailsWith "pyspec check no-interface" "no interface"
-      (← Formats.pyspec.check toyEnv
+    checkFailsWith "epoch_processing check no-interface" "no interface"
+      (← Formats.epochProcessing.check toyEnv
         { toyRunOkRecord with preset := .mainnet } paths)
     -- a tampered post.ssz fails the replay with the root-mismatch detail
     IO.FS.writeBinFile paths[1]! (SizzLean.SSZ.serialize toyTampered)
-    checkFailsWith "pyspec check tampered" "post-state root mismatch"
-      (← Formats.pyspec.check toyEnv toyRunOkRecord paths)
+    checkFailsWith "epoch_processing check tampered" "post-state root mismatch"
+      (← Formats.epochProcessing.check toyEnv toyRunOkRecord paths)
     -- the runError case: no post.ssz, and the returned paths reflect that
-    let errPaths ← Formats.pyspec.render toyEnv toyRunErrorRecord
+    let errPaths ← Formats.epochProcessing.render toyEnv toyRunErrorRecord
       #[preBytes] none
     unless errPaths.size == 3 do
-      throw (IO.userError s!"pyspec render: {errPaths.size} paths for runError, \
+      throw (IO.userError s!"epoch_processing render: {errPaths.size} paths for runError, \
         expected 3")
     unless errPaths.all fun p => p.fileName == "pre.ssz" || p.fileName == "meta.yaml"
         || p.fileName == "manifest.yaml" do
-      throw (IO.userError s!"pyspec render: the runError case wrote \
+      throw (IO.userError s!"epoch_processing render: the runError case wrote \
         {errPaths.map (·.fileName)}")
     -- the invalid case genuinely rejects: the toy interface answers the
     -- assert `toy: boom`, and runCase scores it as the expected rejection
-    checkOutcome "pyspec check runError"
-      (← Formats.pyspec.check toyEnv toyRunErrorRecord errPaths)
+    checkOutcome "epoch_processing check runError"
+      (← Formats.epochProcessing.check toyEnv toyRunErrorRecord errPaths)
     -- a valid marking whose dispatch rejects fails the replay: the
     -- driver's `.error e, some _` row carries the reject itself in the
     -- detail, so the needle pins the toy's assert text (§13.5)
-    let rejPaths ← Formats.pyspec.render toyEnv toyValidRejectedRecord
+    let rejPaths ← Formats.epochProcessing.render toyEnv toyValidRejectedRecord
       #[preBytes] (some postBytes)
-    checkFailsWith "pyspec check valid-rejected" "toy: boom"
-      (← Formats.pyspec.check toyEnv toyValidRejectedRecord rejPaths)
+    checkFailsWith "epoch_processing check valid-rejected" "toy: boom"
+      (← Formats.epochProcessing.check toyEnv toyValidRejectedRecord rejPaths)
     -- the index-miss case: the replay rejects out-of-bounds, an admitted
     -- reject the driver scores as a flagged pass, and `check` fails on
     -- the flag (§13.5)
-    let flagPaths ← Formats.pyspec.render toyEnv toyFlaggedRecord
+    let flagPaths ← Formats.epochProcessing.render toyEnv toyFlaggedRecord
       #[preBytes] none
-    checkFailsWith "pyspec check flagged" "flagged pass"
-      (← Formats.pyspec.check toyEnv toyFlaggedRecord flagPaths)
+    checkFailsWith "epoch_processing check flagged" "flagged pass"
+      (← Formats.epochProcessing.check toyEnv toyFlaggedRecord flagPaths)
     IO.FS.removeDirAll scratchOutDir

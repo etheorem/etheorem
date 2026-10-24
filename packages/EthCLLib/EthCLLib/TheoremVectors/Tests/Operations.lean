@@ -45,11 +45,11 @@ pinned operand file name `block.ssz` proves the writer reads the
 `inputName` table and never echoes the handler string.
 
 The two formats partition the run-shape records: a two-input record has no
-part in the pyspec layout, and a one-input record has no part here, so the
-drive pins `Formats.pyspec` refusing the record this format accepts. Two
-further pins cover the edges: a preset the binding's interface does not
-answer fails the check defensively, and an unparseable handler fails the
-`OpKind.ofString?` leg of `accepts`.
+part in the epoch_processing layout, and a one-input record has no part
+here, so the drive pins `Formats.epochProcessing` refusing the record this
+format accepts. Two further pins cover the edges: a preset the binding's
+interface does not answer fails the check defensively, and an unparseable
+handler fails the `OpKind.ofString?` leg of `accepts`.
 
 The scratch output tree lives under this package's `.lake/build`, so the
 gitignore carries it and the final `run_cmd` removes it.
@@ -283,8 +283,8 @@ run_cmd do
     if Formats.operations.accepts toyEnv toyOpWrongRunnerRecord then
       throw (IO.userError "operations accepts: the epoch-runner record was accepted")
     -- the partition pin: the two-input record belongs to this format alone
-    if Formats.pyspec.accepts toyEnv toyOpRunOkRecord then
-      throw (IO.userError "operations accepts: the pyspec format accepted the runOk record")
+    if Formats.epochProcessing.accepts toyEnv toyOpRunOkRecord then
+      throw (IO.userError "operations accepts: the epoch_processing format accepted the runOk record")
     -- the unparseable handler: the `OpKind.ofString?` leg refuses it
     if Formats.operations.accepts toyBogusEnv toyOpRunOkRecord then
       throw (IO.userError "operations accepts: the bogus-handler record was accepted")

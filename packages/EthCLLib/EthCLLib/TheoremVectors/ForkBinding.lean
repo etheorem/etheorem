@@ -53,8 +53,8 @@ structure ForkBinding where
   hasherTag   : Name
   /-- The crypto backend the probe binds, `EthCLLib.Spec.CryptoBackend.verifyOff`. -/
   crypto      : Name
-  /-- The state container, so the pyspec format can tell a state input
-  apart. -/
+  /-- The state container, so the epoch_processing format can tell a state
+  input apart. -/
   stateType   : Name
   /-- The types that put a theorem out of scope (§1.2). -/
   blockTypes  : Array Name
@@ -72,8 +72,8 @@ structure ForkBinding where
   here; a target with no row answers `none`, and the function format then
   falls back to the Lean target name. -/
   pyspecNames : Array (Name × String)
-  /-- The fork's `ForkInterface` at a preset, for the pyspec format's
-  check (§13.5). -/
+  /-- The fork's `ForkInterface` at a preset, for the epoch_processing
+  format's check (§13.5). -/
   interface   : PresetId → Option EthCLLib.PySpecTests.ForkInterface
   deriving Inhabited
 

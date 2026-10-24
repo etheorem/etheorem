@@ -7,7 +7,7 @@ import EthCLSpecs.TheoremVectors.Bindings.Heze
 # `EthCLSpecs.TheoremVectors.Bindings`: the fork-binding table
 
 The table the exe reads (`THEOREM_VECTORS_ARCHITECTURE.md` §4.2): fork tag to binding. The
-pyspec format's check and the harness's per-fork selection go through
+epoch_processing format's check and the harness's per-fork selection go through
 `ofTag`; a generator file names its fork's binding constant directly.
 -/
 
