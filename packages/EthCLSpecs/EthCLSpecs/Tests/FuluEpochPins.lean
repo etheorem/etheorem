@@ -240,4 +240,188 @@ example : isArith (runPure (processPendingDeposits (StateTransition := FuluRun))
 
 end
 
+/-! ## Item 5: the `uint64` products under patched constants
+
+The rows of `specs/2026-10-24-batchfaith-probes.md` (local, not committed). Each probe sets a
+module constant of the pinned pyspec so that one product overflows, and the pin sets the same
+`Preset` or `Config` field. The `Preset` holds `EFFECTIVE_BALANCE_INCREMENT` twice, so a patch
+of it sets both fields. This section binds the preset in each pin, so the fixture below takes
+it as an argument. -/
+
+section
+local instance : Config := minimalConfig
+local instance : HasherTag := fastHasherTag
+local instance : CryptoBackend := CryptoBackend.realBackend
+
+/-- The result raised `.arithmetic` with the description `d`, which names the product. -/
+private def arithAt {α : Type} (d : String) : Except StateTransitionError α → Bool
+  | .error (.arithmetic e) => e == d
+  | _ => false
+
+/-- `fixture` of the section above, under the preset `P`. `Validator` depends on the preset,
+so the validators are built here rather than through `activeValidator`. -/
+private def fixtureAt (P : Preset) (effs : Array Gwei) (slot : Slot) (part : Array UInt8)
+    (scores : Array UInt64) (balances : Array Gwei) : @BeaconState P :=
+  letI : Preset := P
+  let validator (e : Gwei) (k : UInt8) : Validator :=
+    { (default : Validator) with
+      pubkey := Vector.replicate 48 k, effectiveBalance := e
+      exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
+  { (default : BeaconState) with
+    slot
+    validators := listOf (effs.mapIdx fun i e => validator e (UInt8.ofNat (0x11 + i)))
+    balances := listOf balances
+    previousEpochParticipation := listOf part
+    currentEpochParticipation := listOf part
+    inactivityScores := listOf scores }
+
+/-- `EFFECTIVE_BALANCE_INCREMENT = 1`. -/
+@[reducible] private def ebi1 : Preset :=
+  { minimal with effectiveBalanceIncrement := 1, effectiveBalanceIncrementG := 1 }
+/-- `EFFECTIVE_BALANCE_INCREMENT = 1`, `BASE_REWARD_FACTOR = 2 ^ 40`. -/
+@[reducible] private def ebi1Brf40 : Preset := { ebi1 with baseRewardFactor := 2 ^ 40 }
+/-- `BASE_REWARD_FACTOR = 2 ^ 40`. -/
+@[reducible] private def brf40 : Preset := { minimal with baseRewardFactor := 2 ^ 40 }
+/-- `HYSTERESIS_DOWNWARD_MULTIPLIER = 2 ^ 40`. -/
+@[reducible] private def down40 : Preset := { minimal with hysteresisDownwardMultiplier := 2 ^ 40 }
+/-- `HYSTERESIS_UPWARD_MULTIPLIER = 2 ^ 40`. -/
+@[reducible] private def up40 : Preset := { minimal with hysteresisUpwardMultiplier := 2 ^ 40 }
+/-- Both hysteresis multipliers at `2 ^ 40`. -/
+@[reducible] private def both40 : Preset := { down40 with hysteresisUpwardMultiplier := 2 ^ 40 }
+
+private def pow58 : Gwei := 288230376151711744
+private def pow50 : Gwei := 1125899906842624
+private def pow63 : Gwei := 9223372036854775808
+
+/-! ### a. `get_flag_index_deltas`: `active_increments * WEIGHT_DENOMINATOR` -/
+
+-- Overflow: one participant of `2 ^ 58` at slot 8. The base reward is 0, so the numerator
+-- cannot fault first, and the divisor `2 ^ 58 * 64` raises.
+example : (letI : Preset := ebi1
+    arithAt "get_flag_index_deltas: active_increments * WEIGHT_DENOMINATOR"
+      (getFlagIndexDeltas (pureState (fixtureAt ebi1 #[pow58] 8 #[7] #[0] #[eth32])) 0))
+    = true := by native_decide
+
+-- Never reached: the validator does not participate.
+example : (letI : Preset := ebi1
+    okIs (getFlagIndexDeltas (pureState (fixtureAt ebi1 #[pow58] 8 #[0] #[0] #[eth32])) 0)
+      (#[0], #[0])) = true := by native_decide
+
+-- Never reached: at slot 80 the chain is in the leak, so the participant gets no reward.
+example : (letI : Preset := ebi1
+    okIs (getFlagIndexDeltas (pureState (fixtureAt ebi1 #[pow58] 80 #[7] #[0] #[eth32])) 0)
+      (#[0], #[0])) = true := by native_decide
+
+-- Order: with `BASE_REWARD_FACTOR = 2 ^ 40`, `get_base_reward` raises first.
+example : (letI : Preset := ebi1Brf40
+    arithAt "get_base_reward: increments * get_base_reward_per_increment"
+      (getFlagIndexDeltas (pureState (fixtureAt ebi1Brf40 #[pow58] 8 #[7] #[0] #[eth32])) 0))
+    = true := by native_decide
+
+/-! ### b. `get_base_reward`: `increments * get_base_reward_per_increment` -/
+
+-- Overflow: `2 ^ 50` increments times `2 ^ 15` per increment.
+example : (letI : Preset := ebi1Brf40
+    arithAt "get_base_reward: increments * get_base_reward_per_increment"
+      (getBaseReward (pureState (fixtureAt ebi1Brf40 #[pow50] 0 #[0] #[0] #[eth32])) 0))
+    = true := by native_decide
+
+-- Order: index 5 is past the registry, so `state.validators[index]` raises first.
+example : (letI : Preset := ebi1Brf40
+    isOob (getBaseReward (pureState (fixtureAt ebi1Brf40 #[pow50] 0 #[0] #[0] #[eth32])) 5))
+    = true := by native_decide
+
+-- The minimal preset: pyspec returns 11448672.
+example : (letI : Preset := minimal
+    okIs (getBaseReward (pureState (fixtureAt minimal #[eth32] 0 #[0] #[0] #[eth32])) 0)
+      11448672) = true := by native_decide
+
+/-! ### c. `get_base_reward_per_increment`: the product before the total -/
+
+private def perIncrementDescr : String :=
+  "get_base_reward_per_increment: EFFECTIVE_BALANCE_INCREMENT * BASE_REWARD_FACTOR"
+
+-- Overflow: `10 ^ 9 * 2 ^ 40`.
+example : (letI : Preset := brf40
+    arithAt perIncrementDescr
+      (getBaseRewardPerIncrement (pureState (fixtureAt brf40 #[eth32] 0 #[0] #[0] #[eth32]))))
+    = true := by native_decide
+
+-- Order: the total of two `2 ^ 63` balances also overflows, and the product raises first.
+example : (letI : Preset := brf40
+    arithAt perIncrementDescr
+      (getBaseRewardPerIncrement (pureState
+        (fixtureAt brf40 #[pow63, pow63] 0 #[0, 0] #[0, 0] #[eth32, eth32]))))
+    = true := by native_decide
+
+-- The total fault alone, at the minimal preset: the `get_total_balance` sum raises.
+example : (letI : Preset := minimal
+    arithAt "get_total_balance: sum of effective balances"
+      (getBaseRewardPerIncrement (pureState
+        (fixtureAt minimal #[pow63, pow63] 0 #[0, 0] #[0, 0] #[eth32, eth32]))))
+    = true := by native_decide
+
+/-! ### d. `get_inactivity_penalty_deltas`: the denominator, inside the loop -/
+
+private def denominatorDescr : String :=
+  "get_inactivity_penalty_deltas: INACTIVITY_SCORE_BIAS * INACTIVITY_PENALTY_QUOTIENT_BELLATRIX"
+
+/-- `INACTIVITY_SCORE_BIAS = 2 ^ 40`. -/
+@[reducible] private def bias40 : Config := { minimalConfig with inactivityScoreBias := 2 ^ 40 }
+
+-- Overflow: one non-participant at slot 8, score 1. `2 ^ 40 * 2 ^ 24` raises.
+example : (letI : Preset := minimal; letI : Config := bias40
+    arithAt denominatorDescr
+      (getInactivityPenaltyDeltas (pureState (fixtureAt minimal #[eth32] 8 #[0] #[1] #[eth32]))))
+    = true := by native_decide
+
+-- Never reached: the validator participates.
+example : (letI : Preset := minimal; letI : Config := bias40
+    okIs (getInactivityPenaltyDeltas (pureState (fixtureAt minimal #[eth32] 8 #[7] #[1] #[eth32])))
+      #[0]) = true := by native_decide
+
+-- Never reached: the registry is empty.
+example : (letI : Preset := minimal; letI : Config := bias40
+    okIs (getInactivityPenaltyDeltas (pureState (fixtureAt minimal #[] 8 #[] #[] #[]))) #[])
+    = true := by native_decide
+
+-- Order: `effective_balance * inactivity_score` (`2 ^ 63 * 4`) raises first.
+example : (letI : Preset := minimal; letI : Config := bias40
+    arithAt "get_inactivity_penalty_deltas: effective_balance * inactivity_scores[index]"
+      (getInactivityPenaltyDeltas (pureState (fixtureAt minimal #[pow63] 8 #[0] #[4] #[eth32]))))
+    = true := by native_decide
+
+/-! ### e. `process_effective_balance_updates`: the hysteresis thresholds -/
+
+private def downDescr : String :=
+  "process_effective_balance_updates: HYSTERESIS_INCREMENT * HYSTERESIS_DOWNWARD_MULTIPLIER"
+
+-- Overflow, downward: `2.5 * 10 ^ 8 * 2 ^ 40`.
+example : (letI : Preset := down40
+    arithAt downDescr (runPure (processEffectiveBalanceUpdates (StateTransition := FuluRun))
+      (fixtureAt down40 #[eth32] 0 #[0] #[0] #[eth32]))) = true := by native_decide
+
+-- Overflow, upward.
+example : (letI : Preset := up40
+    arithAt "process_effective_balance_updates: HYSTERESIS_INCREMENT * HYSTERESIS_UPWARD_MULTIPLIER"
+      (runPure (processEffectiveBalanceUpdates (StateTransition := FuluRun))
+        (fixtureAt up40 #[eth32] 0 #[0] #[0] #[eth32]))) = true := by native_decide
+
+-- Order: an empty balance list raises `IndexError` first.
+example : (letI : Preset := down40
+    isOob (runPure (processEffectiveBalanceUpdates (StateTransition := FuluRun))
+      (fixtureAt down40 #[eth32] 0 #[0] #[0] #[]))) = true := by native_decide
+
+-- Order: with both multipliers patched, the downward product raises first.
+example : (letI : Preset := both40
+    arithAt downDescr (runPure (processEffectiveBalanceUpdates (StateTransition := FuluRun))
+      (fixtureAt both40 #[eth32] 0 #[0] #[0] #[eth32]))) = true := by native_decide
+
+-- Never reached: the registry is empty.
+example : (letI : Preset := down40
+    (runPure (processEffectiveBalanceUpdates (StateTransition := FuluRun))
+      (fixtureAt down40 #[] 0 #[] #[] #[])).isOk) = true := by native_decide
+
+end
+
 end EthCLSpecs.Tests.FuluEpochPins
