@@ -284,6 +284,26 @@ example : pinOnIlTimely 0 = some true := by native_decide
 -- time 4: timeIntoSlotMs = 4000, not < 4000 ⇒ untimely.
 example : pinOnIlTimely 4 = some false := by native_decide
 
+/-- The `.arithmetic` description `onInclusionList` raises at `time` and `genesisTime`, with
+`SLOT_DURATION_MS = 2^60`. `none` when it raises nothing of that kind. -/
+private def pinOnIlError (time genesisTime : UInt64) : Option String :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := 2 ^ 60 }
+  letI : HasherTag := fastHasherTag
+  let signed : @SignedInclusionList minimal := default
+  match runOn { pinPilsStore false none with time := time, genesisTime := genesisTime }
+      (onInclusionList (map := treeMap) signed : EStateM StoreTransitionError (Store treeMap) Unit) with
+  | .error (.transition (.arithmetic d), _) => some d
+  | _ => none
+
+-- The clock reads fine, and the inclusion-list deadline raises (probe row k,
+-- `on_inclusion_list` overflow).
+example : pinOnIlError 20 10
+    = some "get_slot_component_duration_ms: basis_points * SLOT_DURATION_MS" := by native_decide
+
+-- A store time before genesis: the `time - genesis_time` underflow raises first.
+example : pinOnIlError 0 10 = some "time_into_slot: time - genesis_time" := by native_decide
+
 /-! ### Build-enforced pins for the inclusion-list store (vectorless)
 
 FOCIL has no conformance vector (the module docstring carries the coverage story), so these

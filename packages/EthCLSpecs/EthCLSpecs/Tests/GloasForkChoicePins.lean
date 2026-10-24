@@ -215,4 +215,46 @@ private def pinEngineRefuted : Bool × Bool :=
 
 #guard pinEngineRefuted = (false, false)
 
+/-- `bpsDeadlineMs` at the minimal config with `SLOT_DURATION_MS` set to `slotDurationMs`.
+The pins replay the two probe rows of site k (`get_slot_component_duration_ms`). -/
+private def pinDeadline (slotDurationMs bps : UInt64) : Except StateTransitionError UInt64 :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := slotDurationMs }
+  bpsDeadlineMs bps
+
+-- With `SLOT_DURATION_MS = 2^60`, the product `10000 * 2^60` overflows, and pyspec raises
+-- `ValueError` at `basis_points * SLOT_DURATION_MS`.
+#guard pinDeadline (2 ^ 60) 10000 matches .error (.arithmetic _)
+
+-- At the minimal config (`SLOT_DURATION_MS = 6000`), `10000 * 6000 // 10000 = 6000`.
+#guard (pinDeadline 6000 10000).toOption = some 6000
+
+/-- The error `recordBlockTimeliness pinRoot` raises on `pinStore` at `time` and `genesisTime`,
+with `SLOT_DURATION_MS = 2^60`, and with the default block at `pinRoot` when `stored`. -/
+private def pinTimelinessError (time genesisTime : UInt64) (stored : Bool) :
+    Option StoreTransitionError :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := 2 ^ 60 }
+  letI : HasherTag := fastHasherTag
+  let blocks := if stored then FcMap.insert FcMap.empty pinRoot (default : BeaconBlock)
+    else FcMap.empty
+  let store := { pinStore with time := time, genesisTime := genesisTime, blocks := blocks }
+  match (recordBlockTimeliness (map := treeMap) store pinRoot : PinM (Store treeMap)).run store with
+  | .error e _ => some e
+  | .ok _ _ => none
+
+-- The block is stored and the clock reads fine: the attestation deadline raises (probe row k,
+-- `record_block_timeliness` overflow).
+example : (pinTimelinessError 20 10 true matches some (.transition (.arithmetic
+    "get_slot_component_duration_ms: basis_points * SLOT_DURATION_MS"))) = true := by
+  native_decide
+
+-- The block is missing: `store.blocks[root]` raises first (pyspec `KeyError`).
+example : (pinTimelinessError 20 10 false matches some (.missingKey _)) = true := by
+  native_decide
+
+-- A store time before genesis: the `time - genesis_time` underflow raises first.
+example : (pinTimelinessError 0 10 true matches some (.transition (.arithmetic
+    "time_into_slot: time - genesis_time"))) = true := by native_decide
+
 end EthCLSpecs.Tests.GloasForkChoicePins
