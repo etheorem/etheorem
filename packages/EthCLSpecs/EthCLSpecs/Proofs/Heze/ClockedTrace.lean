@@ -146,32 +146,15 @@ open EthCLLib.Proofs (ForkChoiceStoreRun.throwArithmetic_run run_bind run_pure
 
 omit [Preset] [HasherTag] [Config] in
 /-- The overflow guard of `checkedMul e 1000`: `e` is zero, or the truncating product
-divides back to `1000`. Then `e * 1000` fits in `UInt64`. -/
+divides back to `1000`. Then `e * 1000` fits in `UInt64` (`toNat_mul_of_guard`). -/
 theorem toNat_mul_1000_lt (e : UInt64) (h : e = 0 ∨ e * 1000 / e = 1000) :
     e.toNat * 1000 < 2 ^ 64 := by
-  rcases h with h | h
-  · simp [h]
-  · have hpos : 0 < e.toNat := by
-      rcases Nat.eq_zero_or_pos e.toNat with h0 | h0
-      · have : e = 0 := UInt64.toNat_inj.mp (by simpa using h0)
-        subst this
-        simp at h
-      · exact h0
-    have hn := congrArg UInt64.toNat h
-    simp only [UInt64.toNat_div, UInt64.toNat_mul] at hn
-    -- `p` is the truncated product. It divides back to `1000`, so it is at least
-    -- `1000 * e`, and it never exceeds the true product.
-    generalize hp : e.toNat * (1000 : UInt64).toNat % 2 ^ 64 = p at hn
-    have hlo : 1000 * e.toNat ≤ p := by
-      have := (Nat.le_div_iff_mul_le hpos).mp (Nat.le_of_eq hn.symm)
-      simpa [Nat.mul_comm] using this
-    have hhi : p ≤ e.toNat * 1000 := by
-      rw [← hp]
-      exact Nat.le_trans (Nat.mod_le _ _) (by simp)
-    have hlt : p < 2 ^ 64 := by
-      rw [← hp]
-      exact Nat.mod_lt _ (by decide)
-    omega
+  have hg : ¬ ((e != 0 && e * 1000 / e != 1000) = true) := by
+    rcases h with h | h <;> simp [h]
+  have hmul := EthCLLib.Proofs.toNat_mul_of_guard e 1000 hg
+  have hlt := (e * 1000).toNat_lt
+  rw [hmul] at hlt
+  exact hlt
 
 /-- A successful `timeIntoSlotMs` read: the store time is not before genesis, and the value
 is the elapsed milliseconds modulo the slot length. -/
@@ -406,6 +389,38 @@ theorem getCurrentSlot_run_eq_of_window (st s : Store map) (w k : Nat)
     omega
   · rw [Nat.add_mul, Nat.one_mul, hm]
     omega
+
+/-- Take a store whose time is the wall time `w` in whole seconds, and whose current slot is
+`cs`. When the slot length is a positive whole number of seconds, `w` lies in slot `cs`. The
+converse direction is `getCurrentSlot_run_eq_of_window`. -/
+theorem slot_window_of_getCurrentSlot (st s s' : Store map) (cs : UInt64) (w : Nat)
+    (h : (getCurrentSlot (StoreTransition := ForkChoiceStoreRun (Store map)) st).run s
+      = .ok (cs, s'))
+    (htime : st.time.toNat = w / 1000) (hDdiv : 1000 ∣ slotDurationMs.toNat)
+    (hD : 0 < slotDurationMs.toNat) :
+    slotStartMs st.genesisTime cs.toNat ≤ w ∧ w < slotStartMs st.genesisTime (cs.toNat + 1) := by
+  refine ⟨slotStartMs_le_of_getCurrentSlot st s s' cs w cs.toNat h htime hD (Nat.le_refl _), ?_⟩
+  obtain ⟨hle, -, hcs⟩ := getCurrentSlot_run_ok st s s' cs h
+  have hg : st.genesisTime.toNat ≤ w / 1000 := htime ▸ UInt64.le_iff_toNat_le.mp hle
+  rw [UInt64.toNat_sub_of_le _ _ hle, htime] at hcs
+  obtain ⟨d, hd⟩ := hDdiv
+  have hdpos : 0 < d := by omega
+  -- Seconds since genesis, `e`. The slot is `e / d`.
+  generalize he : w / 1000 - st.genesisTime.toNat = e at hcs
+  rw [hd, Nat.mul_comm e 1000, Nat.mul_div_mul_left _ _ (by decide : 0 < 1000)] at hcs
+  have hlt : e < d * (e / d + 1) := by
+    have := Nat.lt_mul_div_succ e hdpos
+    simpa [Nat.mul_add] using this
+  rw [← hcs] at hlt
+  have hw : w < (w / 1000 + 1) * 1000 := by
+    have := Nat.lt_mul_div_succ w (by decide : 0 < 1000)
+    simpa [Nat.mul_comm, Nat.mul_add] using this
+  unfold slotStartMs
+  have hmul : (cs.toNat + 1) * slotDurationMs.toNat = 1000 * (d * (cs.toNat + 1)) := by
+    rw [hd, Nat.mul_comm (cs.toNat + 1), Nat.mul_assoc]
+  rw [hmul]
+  generalize d * (cs.toNat + 1) = p at hlt ⊢
+  omega
 
 end Clock
 

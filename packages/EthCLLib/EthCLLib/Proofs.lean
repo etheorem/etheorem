@@ -56,8 +56,8 @@ Re-exports:
   tactic `free_solve` that applies them to a fork-choice query.
 * `EthCLLib.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine runner
   every fork's fork-choice proofs pin at that fork's `Store`, the
-  store-specific `throwArithmetic_run` equation, and `toNat_add_of_not_lt` for a
-  `checkedAdd` that does not raise.
+  store-specific `throwArithmetic_run` equation, and `toNat_add_of_not_lt` and
+  `toNat_mul_of_guard` for a `checkedAdd` and a `checkedMul` that do not raise.
 * `EthCLLib.Proofs.KeepsUncached`: the box-flavour predicates (`KeepsUncached`,
   `KeepsUncachedFrom`, `ReturnsUncached`, `RunPassesP`), their closure and loop
   lemmas, the indexed-read run equations, and the conditional bind law

@@ -16,6 +16,7 @@ import EthCLSpecs.Tests.HezeForkChoicePins
 import EthCLSpecs.Tests.HezeNetworkWitness
 import EthCLSpecs.Tests.HezePayloadRace
 import EthCLSpecs.Tests.HezePaymentWitness
+import EthCLSpecs.Tests.HezeRaceWitness
 import EthCLSpecs.Tests.HezeScoreRefines
 import EthCLSpecs.Tests.HezeWalkRefines
 import EthCLSpecs.Tests.HezeWitnessSeams
