@@ -29,6 +29,10 @@ states the premises:
 - The heads of slot `N + 1` avoid `full r` (`RaceSetting.first`). `RaceSetting.Core` holds
   the other premises. `PayloadRaceDecision.lean` proves `first` from the premises of tier T1,
   or a root collision.
+- A window of several epochs has more than one justified state. `RaceSetting.Long` gives the
+  head run of slot `t` the justified state `jstOf t`, and `race_empty_persists_long` states the
+  race under it. The window still ends before the justified checkpoint passes `r`, because
+  `HeadRun.Ok.justified` asks for a justified block no later than `rb`.
 - Every honest validator votes for the head of its node, with the payload flag of
   `honestAttestationIndex` (`HonestData`). Each vote of slot `t` reaches every honest node
   before its head run of a later slot (`deliver`). No attester slashing marks an honest
@@ -233,12 +237,12 @@ structure NodeRun.Honest (n : NodeRun map) (rb : BeaconBlock) : Prop where
   noAnchorParent : ∀ (e : HandlerEvent) (w : Nat), (.handler e, w) ∈ n.events →
     e.NotAtAnchorParent n.anchor
 
-/-- A head run of slot `t` of the node `n`. The run follows a prefix of the trace of `n`. Its
-wall time is in slot `t` and no earlier than the events of the prefix. Its store holds the block
-`rb` at `r`, a justified block no later than `rb`, and the uncached box of the justified
-state `jst`. The head is strictly below `pending r`. -/
-structure HeadRun.Ok (n : NodeRun map) (q : HeadRun map) (r : Root) (rb : BeaconBlock)
-    (jst : BeaconState) (t : Nat) : Prop where
+/-- The fields of a head run of slot `t` of the node `n` that name no justified state. The run
+follows a prefix of the trace of `n`. Its wall time is in slot `t` and no earlier than the
+events of the prefix. Its store holds the block `rb` at `r`. The head is strictly below
+`pending r`. -/
+structure HeadRun.Base (n : NodeRun map) (q : HeadRun map) (r : Root) (rb : BeaconBlock)
+    (t : Nat) : Prop where
   /-- The run follows a prefix of the trace. -/
   isPrefix : ∃ rest, n.events = q.events ++ rest
   /-- The store is the end of the prefix. -/
@@ -258,6 +262,11 @@ structure HeadRun.Ok (n : NodeRun map) (q : HeadRun map) (r : Root) (rb : Beacon
   setting : NodeBelow q.store (.pending r) q.head ∧ q.head ≠ .pending r
   /-- The store holds `rb` at `r`. -/
   block : FcMap.lookup q.store.blocks r = some rb
+
+/-- A head run of slot `t` of the node `n` in the race: `HeadRun.Base`, a justified block no
+later than `rb`, and the uncached box of the justified state `jst`. -/
+structure HeadRun.Ok (n : NodeRun map) (q : HeadRun map) (r : Root) (rb : BeaconBlock)
+    (jst : BeaconState) (t : Nat) : Prop extends HeadRun.Base n q r rb t where
   /-- The justified block is no later than `rb`. -/
   justified : ∃ jb, FcMap.lookup q.store.blocks q.store.justifiedCheckpoint.root = some jb ∧
     jb.slot ≤ rb.slot
@@ -281,16 +290,15 @@ def HonestData (st : Store map) (head : ForkChoiceNode) (att : Attestation) : Pr
     att.data.index = honestAttestationIndex head hb.slot att.data.slot
 
 /-- The premises of the race on the executable spec, for the block `rb` at `r` and the
-window `[raceLo rb, hi]`, except the first slot. `RaceSetting` adds the first slot. -/
-structure RaceSetting.Core {Node : Type} (honest : Node → Prop) (node : Node → NodeRun map)
+window `[raceLo rb, hi]`, except the head runs and the first slot. None of them names a
+justified state. `RaceSetting.Core` adds the head runs, and `RaceSetting` adds the first
+slot. -/
+structure RaceSetting.Fields {Node : Type} (honest : Node → Prop) (node : Node → NodeRun map)
     (run : Node → Nat → HeadRun map) (r : Root) (rb : BeaconBlock) (hi : Nat)
-    (jst : BeaconState) (nodeOf : ValidatorIndex → Node) (honestOf : ValidatorIndex → Bool)
+    (nodeOf : ValidatorIndex → Node) (honestOf : ValidatorIndex → Bool)
     (committees : Nat → Nat → Array ValidatorIndex) : Prop where
   /-- Each honest node meets `NodeRun.Honest`. -/
   nodeOk : ∀ v, honest v → (node v).Honest rb
-  /-- Each head run of an honest node in the window meets `HeadRun.Ok` for its slot. -/
-  runOk : ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi →
-    (run v t).Ok (node v) r rb jst t
   /-- An honest validator runs on an honest node. -/
   honestNode : ∀ i, honestOf i = true → honest (nodeOf i)
   /-- Every target state of a window vote at an honest node gives the committees
@@ -334,6 +342,17 @@ structure RaceSetting.Core {Node : Type} (honest : Node → Prop) (node : Node �
   /-- The sort of the handler keeps the members. -/
   sort : QsortMem
 
+/-- The premises of the race on the executable spec, except the first slot: `RaceSetting.Fields`
+and the head runs, each with the justified state `jst`. `RaceSetting` adds the first slot. -/
+structure RaceSetting.Core {Node : Type} (honest : Node → Prop) (node : Node → NodeRun map)
+    (run : Node → Nat → HeadRun map) (r : Root) (rb : BeaconBlock) (hi : Nat)
+    (jst : BeaconState) (nodeOf : ValidatorIndex → Node) (honestOf : ValidatorIndex → Bool)
+    (committees : Nat → Nat → Array ValidatorIndex) : Prop
+    extends RaceSetting.Fields honest node run r rb hi nodeOf honestOf committees where
+  /-- Each head run of an honest node in the window meets `HeadRun.Ok` for its slot. -/
+  runOk : ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi →
+    (run v t).Ok (node v) r rb jst t
+
 /-- The premises of the race on the executable spec: `RaceSetting.Core` and the first slot. -/
 structure RaceSetting {Node : Type} (honest : Node → Prop) (node : Node → NodeRun map)
     (run : Node → Nat → HeadRun map) (r : Root) (rb : BeaconBlock) (hi : Nat)
@@ -343,6 +362,32 @@ structure RaceSetting {Node : Type} (honest : Node → Prop) (node : Node → No
   /-- The heads of the first slot avoid `full r`. -/
   first : ∀ v, honest v →
     ¬ NodeBelow (run v (raceLo rb)).store (.full r) (run v (raceLo rb)).head
+
+/-- The premises of the race with one justified state per slot: `RaceSetting.Fields`, the
+head runs, and the first slot. The head run of slot `t` has the justified state `jstOf t`. A
+window of several epochs needs this form, because the justified checkpoint of a store moves
+at an epoch boundary. -/
+structure RaceSetting.Long {Node : Type} (honest : Node → Prop) (node : Node → NodeRun map)
+    (run : Node → Nat → HeadRun map) (r : Root) (rb : BeaconBlock) (hi : Nat)
+    (jstOf : Nat → BeaconState) (nodeOf : ValidatorIndex → Node)
+    (honestOf : ValidatorIndex → Bool) (committees : Nat → Nat → Array ValidatorIndex) : Prop
+    extends RaceSetting.Fields honest node run r rb hi nodeOf honestOf committees where
+  /-- Each head run of an honest node in the window meets `HeadRun.Ok` for its slot, with the
+  justified state of that slot. -/
+  runOkAt : ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi →
+    (run v t).Ok (node v) r rb (jstOf t) t
+  /-- The heads of the first slot avoid `full r`. -/
+  first : ∀ v, honest v →
+    ¬ NodeBelow (run v (raceLo rb)).store (.full r) (run v (raceLo rb)).head
+
+/-- `RaceSetting` is `RaceSetting.Long` with one justified state on every slot. -/
+theorem RaceSetting.toLong {Node : Type} {honest : Node → Prop} {node : Node → NodeRun map}
+    {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock} {hi : Nat} {jst : BeaconState}
+    {nodeOf : ValidatorIndex → Node} {honestOf : ValidatorIndex → Bool}
+    {committees : Nat → Nat → Array ValidatorIndex}
+    (hset : RaceSetting honest node run r rb hi jst nodeOf honestOf committees) :
+    RaceSetting.Long honest node run r rb hi (fun _ => jst) nodeOf honestOf committees :=
+  { toFields := hset.toFields, runOkAt := hset.runOk, first := hset.first }
 
 end Setting
 
@@ -356,8 +401,8 @@ variable {map : MapKind} [Preset] [HasherTag] [Config] [CryptoBackend] [FcMap ma
 
 omit [LawfulFcMap map Root] in
 /-- The events of a head run are events of the trace of its node. -/
-theorem HeadRun.Ok.mem_events {n : NodeRun map} {q : HeadRun map} {r : Root} {rb : BeaconBlock}
-    {jst : BeaconState} {t : Nat} (hq : q.Ok n r rb jst t) (e : HandlerEvent)
+theorem HeadRun.Base.mem_events {n : NodeRun map} {q : HeadRun map} {r : Root} {rb : BeaconBlock}
+    {t : Nat} (hq : q.Base n r rb t) (e : HandlerEvent)
     (he : TraceEvent.handler e ∈ q.events.map Prod.fst) :
     ∃ w, (TraceEvent.handler e, w) ∈ n.events := by
   obtain ⟨rest, hsplit⟩ := hq.isPrefix
@@ -383,17 +428,17 @@ theorem NodeRun.Honest.slotInv {n : NodeRun map} {rb : BeaconBlock} (hn : n.Hone
 
 include hw in
 /-- The store of a head run meets `SlotInv`, unless a root collision exists. -/
-theorem HeadRun.Ok.slotInv {n : NodeRun map} {q : HeadRun map} {r : Root} {rb : BeaconBlock}
-    {jst : BeaconState} {t : Nat} (hn : n.Honest rb) (hq : q.Ok n r rb jst t)
+theorem HeadRun.Base.slotInv {n : NodeRun map} {q : HeadRun map} {r : Root} {rb : BeaconBlock}
+    {t : Nat} (hn : n.Honest rb) (hq : q.Base n r rb t)
     (hcol : ¬ RootCollision) : SlotInv n.anchor q.store :=
   hn.slotInv hw (hq.mem_events) hq.trace hcol
 
 include hw in
 /-- A store inside the prefix of a head run meets `SlotInv`, unless a root collision
 exists. -/
-theorem HeadRun.Ok.slotInv_mid {n : NodeRun map} {q : HeadRun map} {r : Root}
-    {rb : BeaconBlock} {jst : BeaconState} {t : Nat} (hn : n.Honest rb)
-    (hq : q.Ok n r rb jst t) {es1 es2 : List TraceEvent} {e : TraceEvent}
+theorem HeadRun.Base.slotInv_mid {n : NodeRun map} {q : HeadRun map} {r : Root}
+    {rb : BeaconBlock} {t : Nat} (hn : n.Honest rb)
+    (hq : q.Base n r rb t) {es1 es2 : List TraceEvent} {e : TraceEvent}
     (hes : q.events.map Prod.fst = es1 ++ e :: es2) {arr : List (SignedInclusionList × UInt64)}
     {mid : Store map} (h : NodeTrace n.seed es1 arr mid) (hcol : ¬ RootCollision) :
     SlotInv n.anchor mid :=
@@ -417,7 +462,7 @@ variable {map : MapKind} [Preset] [HasherTag] [Config] [CryptoBackend] [FcMap ma
   [ExecutionEngine ExecutionPayload Transaction ExecutionRequests] [DataAvailability]
   (hw : ∀ a b : ByteArray, (SizzLean.Hasher.combine (H := HasherTag.H) a b).size = 32)
   {Node : Type} {honest : Node → Prop} {node : Node → NodeRun map}
-  {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock} {hi : Nat} {jst : BeaconState}
+  {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock} {hi : Nat}
   {nodeOf : ValidatorIndex → Node} {honestOf : ValidatorIndex → Bool}
   {committees : Nat → Nat → Array ValidatorIndex}
 
@@ -426,8 +471,9 @@ include hw in
 the prefix (`NodeTrace.latest_source`). The vote slot is before `s`
 (`ClockedTrace.attestation_slot_le`). The store of the run holds the same block at the vote
 root as the store before the event. That block is no later than the vote slot. -/
-theorem RaceSetting.Core.latest_window
-    (hset : RaceSetting.Core honest node run r rb hi jst nodeOf honestOf committees)
+theorem RaceSetting.Fields.latest_window
+    (hset : RaceSetting.Fields honest node run r rb hi nodeOf honestOf committees)
+    (hruns : ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi → (run v t).Base (node v) r rb t)
     (hcol : ¬ RootCollision) (v : Node) (hv : honest v) (s : Nat) (hlos : raceLo rb < s)
     (hs : s ≤ hi) (i : ValidatorIndex) (q : LatestMessage)
     (hq : FcMap.lookup (run v s).store.latestMessages i = some q) :
@@ -440,7 +486,7 @@ theorem RaceSetting.Core.latest_window
       b.slot ≤ att.data.slot := by
   have hBlk : ¬ HtrCollision BeaconBlock := fun h => hcol (Or.inr h)
   have hN := hset.nodeOk v hv
-  have hQ := hset.runOk v hv s (Nat.le_of_lt hlos) hs
+  have hQ := hruns v hv s (Nat.le_of_lt hlos) hs
   obtain ⟨rest, hsplit⟩ := hQ.isPrefix
   rcases hQ.trace.latest_source (StorePure.anchor _ _ _ hN.anchorStore) i q hq with h0 |
       ⟨es1, es2, att, fb, mid, arr, arrS, hes, htr, hsuf, hW, rfl⟩
@@ -469,8 +515,9 @@ attestation event of the trace (`NodeTrace.latest_source`), from a slot of `[N +
 `NodeBelow.transfer` moves that head to the store of the run. Then
 `honest_supported_below_empty` and `storeSide_empty_of_below` give the side. The `supports`
 run at `empty r` must succeed. -/
-theorem RaceSetting.Core.storeSide_empty
-    (hset : RaceSetting.Core honest node run r rb hi jst nodeOf honestOf committees)
+theorem RaceSetting.Fields.storeSide_empty
+    (hset : RaceSetting.Fields honest node run r rb hi nodeOf honestOf committees)
+    (hruns : ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi → (run v t).Base (node v) r rb t)
     (hcol : ¬ RootCollision) (v : Node) (hv : honest v) (s : Nat) (hlos : raceLo rb < s)
     (hs : s ≤ hi)
     (hP : ∀ u, honest u → ∀ t, raceLo rb ≤ t → t < s →
@@ -482,7 +529,7 @@ theorem RaceSetting.Core.storeSide_empty
     storeSide (run v s).store r i.toNat = .empty := by
   have hBlk : ¬ HtrCollision BeaconBlock := fun h => hcol (Or.inr h)
   have hN := hset.nodeOk v hv
-  have hQ := hset.runOk v hv s (Nat.le_of_lt hlos) hs
+  have hQ := hruns v hv s (Nat.le_of_lt hlos) hs
   have hinvB := hQ.slotInv hw hN hcol
   have hsigner := hset.signer v hv s hlos hs i hhon
   -- The vote of slot `t` reaches the node, so the latest message has at least slot `t`.
@@ -500,7 +547,7 @@ theorem RaceSetting.Core.storeSide_empty
   obtain ⟨q, hq, hle1⟩ := hrest.latest_mono i q0 hq0
   -- The latest message comes from an attestation event of the prefix, before slot `s`.
   obtain ⟨es1', es2', att', fb', mid', arr', b0, hes', htr', hW, rfl, hlt', hb', hb0slot⟩ :=
-    hset.latest_window hw hcol v hv s hlos hs i q hq
+    hset.latest_window hw hruns hcol v hv s hlos hs i q hq
   have hlo' : raceLo rb ≤ att'.data.slot.toNat := by
     have := UInt64.le_iff_toNat_le.mp (UInt64.le_trans hle0 hle1)
     simp only [attMessage] at this
@@ -511,7 +558,7 @@ theorem RaceSetting.Core.storeSide_empty
     ⟨A, hAI, (hset.sort A i).mp hiA⟩ hlo' (by omega)
   obtain ⟨hroot, hbA, hhbA, hidx⟩ := hHD
   have hu := hset.honestNode i hhon
-  have hQu := hset.runOk (nodeOf i) hu att'.data.slot.toNat hlo' (by omega)
+  have hQu := hruns (nodeOf i) hu att'.data.slot.toNat hlo' (by omega)
   have hNu := hset.nodeOk (nodeOf i) hu
   have hinvA := hQu.slotInv hw hNu hcol
   have hbelowA := hP (nodeOf i) hu att'.data.slot.toNat hlo' hlt'
@@ -552,19 +599,20 @@ The supported node of the latest message lies below `full r` (`storeSide_full_be
 message comes from an attestation event of the trace that checked the slot of its block
 (`AttWrite`). So the message slot is after the slot of `r` (`fullSupport_slot_gt`) and before
 `s` (`ClockedTrace.attestation_slot_le`). The validator is an attesting index of the event,
-in a committee that the vote names (`getAttestingIndices_mem`). `RaceSetting.Core.committee`
+in a committee that the vote names (`getAttestingIndices_mem`). `RaceSetting.Fields.committee`
 puts that index in range, so the committee is one of `committees` of the slot. -/
-theorem RaceSetting.Core.storeSide_full_voted
-    (hset : RaceSetting.Core honest node run r rb hi jst nodeOf honestOf committees)
+theorem RaceSetting.Fields.storeSide_full_voted
+    (hset : RaceSetting.Fields honest node run r rb hi nodeOf honestOf committees)
+    (hruns : ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi → (run v t).Base (node v) r rb t)
     (hcol : ¬ RootCollision) (v : Node) (hv : honest v) (s : Nat) (hlos : raceLo rb < s)
     (hs : s ≤ hi) (i : ValidatorIndex)
     (hfull : storeSide (run v s).store r i.toNat = .full) :
     ∃ t, raceLo rb ≤ t ∧ t < s ∧ committeeVotes committees i t = true := by
-  have hQ := hset.runOk v hv s (Nat.le_of_lt hlos) hs
+  have hQ := hruns v hv s (Nat.le_of_lt hlos) hs
   have hinvB := hQ.slotInv hw (hset.nodeOk v hv) hcol
   obtain ⟨lm, n, u, u', hlm, -, hsup, hbelow⟩ := storeSide_full_below _ r i hfull
   obtain ⟨es1', es2', att', fb', mid', arr', b0, hes', htr', hW, rfl, hlt', hb', hb0slot⟩ :=
-    hset.latest_window hw hcol v hv s hlos hs i lm hlm
+    hset.latest_window hw hruns hcol v hv s hlos hs i lm hlm
   -- The block at the message root has a slot no greater than the message slot.
   have hmsg : ∀ b, FcMap.lookup (run v s).store.blocks (attMessage att').root = some b →
       b.slot ≤ (attMessage att').slot := by
@@ -597,19 +645,22 @@ theorem RaceSetting.Core.storeSide_full_voted
 
 include hw in
 /-- EMPTY is ahead on weight in a head run of slot `s > N + 1`, when every honest head
-before `s` lies below `empty r` and the counting inequality holds at `s`.
+before `s` lies below `empty r` and the counting inequality holds at `s`. The head runs of
+the other slots need only `HeadRun.Base`. The run of slot `s` meets `HeadRun.Ok` with the
+justified state `jst`.
 
 The block `r` is two or more slots back, so both weights are off the decision slot
 (`isPreviousSlotPayloadDecision_run_false`). The score of each side is its race weight over
 the validators of `jst` (`score_empty_refines`, `score_full_refines`). The successful EMPTY
 score run ran `supports` at every validator (`getAttestationScore_supports`). Then the two
 side lemmas bound the race weights. Every proposer score is `proposerScoreOf jst`
-(`getProposerScore_run_eq`). The counting inequality puts EMPTY ahead by more than that score
-(`weightAhead_of_scores`). -/
-theorem RaceSetting.Core.weightAhead
-    (hset : RaceSetting.Core honest node run r rb hi jst nodeOf honestOf committees)
+(`getProposerScore_run_eq`). The counting
+inequality puts EMPTY ahead by more than that score (`weightAhead_of_scores`). -/
+theorem RaceSetting.Fields.weightAhead
+    (hset : RaceSetting.Fields honest node run r rb hi nodeOf honestOf committees)
+    (hruns : ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi → (run v t).Base (node v) r rb t)
     (hcol : ¬ RootCollision) (v : Node) (hv : honest v) (s : Nat) (hlos : raceLo rb < s)
-    (hs : s ≤ hi)
+    (hs : s ≤ hi) {jst : BeaconState} (hQ : (run v s).Ok (node v) r rb jst s)
     (hcount : advVoted (raceValidators (pureState jst) honestOf (committeeVotes committees))
         (raceLo rb) s + proposerScoreOf (pureState jst)
       < honestVoted (raceValidators (pureState jst) honestOf (committeeVotes committees))
@@ -617,7 +668,6 @@ theorem RaceSetting.Core.weightAhead
     (hP : ∀ u, honest u → ∀ t, raceLo rb ≤ t → t < s →
       NodeBelow (run u t).store (.empty r) (run u t).head) :
     WeightAhead (run v s).store r := by
-  have hQ := hset.runOk v hv s (Nat.le_of_lt hlos) hs
   obtain ⟨cs, hcs, hcur⟩ := hQ.slot
   have hlt : rb.slot.toNat + 1 < cs.toNat := by
     unfold raceLo at hlos
@@ -640,18 +690,18 @@ theorem RaceSetting.Core.weightAhead
       intro w hw' hhon hvoted
       obtain ⟨i, hi, hsl, rfl⟩ := mem_raceValidators jst honestOf _ w hw'
       obtain ⟨t, hlo, hts, hvote⟩ := (votedIn_iff _ _ _).mp hvoted
-      exact hset.storeSide_empty hw hcol v hv s hlos hs hP i hhon t hlo hts hvote
+      exact hset.storeSide_empty hw hruns hcol v hv s hlos hs hP i hhon t hlo hts hvote
         (getAttestationScore_supports _ _ jst hsE i hi hsl))
   have h2 := full_le_advVoted_of
     (raceValidators (pureState jst) honestOf (committeeVotes committees))
     (fun w => storeSide (run v s).store r w.index) (raceLo rb) s (by
       intro w hw' hfull
       obtain ⟨i, hi, hsl, rfl⟩ := mem_raceValidators jst honestOf _ w hw'
-      obtain ⟨t, hlo, hts, hvote⟩ := hset.storeSide_full_voted hw hcol v hv s hlos hs i hfull
+      obtain ⟨t, hlo, hts, hvote⟩ := hset.storeSide_full_voted hw hruns hcol v hv s hlos hs i hfull
       refine ⟨?_, (votedIn_iff _ _ _).mpr ⟨t, hlo, hts, hvote⟩⟩
       cases hh : honestOf i
       · rfl
-      · have hE := hset.storeSide_empty hw hcol v hv s hlos hs hP i hh t hlo hts hvote
+      · have hE := hset.storeSide_empty hw hruns hcol v hv s hlos hs hP i hh t hlo hts hvote
           (getAttestationScore_supports _ _ jst hsE i hi hsl)
         have hF : storeSide (run v s).store r i.toNat = .full := hfull
         rw [hE] at hF
@@ -669,25 +719,26 @@ variable {map : MapKind} [Preset] [HasherTag] [Config] [CryptoBackend] [FcMap ma
   (hw : ∀ a b : ByteArray, (SizzLean.Hasher.combine (H := HasherTag.H) a b).size = 32)
 
 include hw in
-/-- Tier T2 on the executable spec. Take the block `rb` at `r`, of slot `N`, and the window
-of slots `N + 1 .. hi`, under `RaceSetting`. In every slot `s` of `(N + 1, hi]`, the honest
-balance that has voted in `[N + 1, s)` is more than the adversarial balance that has voted
-there, plus the proposer score `proposerScoreOf jst`. Then every honest head of the window
-lies below `empty r` and not below `full r`, or a root collision exists.
+/-- Tier T2 on the executable spec, with one justified state per slot. Take the block `rb` at
+`r`, of slot `N`, and the window of slots `N + 1 .. hi`, under `RaceSetting.Long`. In every
+slot `s` of `(N + 1, hi]`, take the validators of `jstOf s`. Their honest balance that has
+voted in `[N + 1, s)` is more than their adversarial balance that has voted there, plus the
+proposer score of `jstOf s`. Then every honest head of the window lies below `empty r` and
+not below `full r`, or a root collision exists.
 
-The proof is the induction of `race_empty_persists`. The first slot is `RaceSetting.first`
-with `NodeBelow.pending_split`. A later slot applies `getHead_run_below_empty` to
-`RaceSetting.Core.weightAhead`. -/
-theorem race_empty_persists_exec {Node : Type} {honest : Node → Prop}
+The proof is the induction of `race_empty_persists`. The first slot is
+`RaceSetting.Long.first` with `NodeBelow.pending_split`. A later slot applies
+`getHead_run_below_empty` to `RaceSetting.Fields.weightAhead`. -/
+theorem race_empty_persists_long {Node : Type} {honest : Node → Prop}
     {node : Node → NodeRun map} {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock}
-    {hi : Nat} {jst : BeaconState} {nodeOf : ValidatorIndex → Node}
+    {hi : Nat} {jstOf : Nat → BeaconState} {nodeOf : ValidatorIndex → Node}
     {honestOf : ValidatorIndex → Bool} {committees : Nat → Nat → Array ValidatorIndex}
-    (hset : RaceSetting honest node run r rb hi jst nodeOf honestOf committees)
+    (hset : RaceSetting.Long honest node run r rb hi jstOf nodeOf honestOf committees)
     (hcount : ∀ s, raceLo rb < s → s ≤ hi →
-      advVoted (raceValidators (pureState jst) honestOf (committeeVotes committees)) (raceLo rb) s
-        + proposerScoreOf (pureState jst)
-        < honestVoted (raceValidators (pureState jst) honestOf (committeeVotes committees))
-          (raceLo rb) s) :
+      advVoted (raceValidators (pureState (jstOf s)) honestOf (committeeVotes committees))
+          (raceLo rb) s + proposerScoreOf (pureState (jstOf s))
+        < honestVoted (raceValidators (pureState (jstOf s)) honestOf
+          (committeeVotes committees)) (raceLo rb) s) :
     RootCollision ∨ ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi →
       NodeBelow (run v t).store (.empty r) (run v t).head ∧
         ¬ NodeBelow (run v t).store (.full r) (run v t).head := by
@@ -701,7 +752,7 @@ theorem race_empty_persists_exec {Node : Type} {honest : Node → Prop}
       ∀ v, honest v → NodeBelow (run v s).store (.empty r) (run v s).head ∧
         ¬ NodeBelow (run v s).store (.full r) (run v s).head := by
     intro s hlo hs hP v hv
-    have hQ := hset.runOk v hv s hlo hs
+    have hQ := hset.runOkAt v hv s hlo hs
     by_cases hfirst : s = raceLo rb
     · subst hfirst
       have hnf := hset.first v hv
@@ -709,7 +760,8 @@ theorem race_empty_persists_exec {Node : Type} {honest : Node → Prop}
       · exact ⟨h, hnf⟩
       · exact absurd h hnf
     · have hlos : raceLo rb < s := by omega
-      have hahead := hset.weightAhead hw hcol v hv s hlos hs (hcount s hlos hs) hP
+      have hahead := hset.weightAhead hw (fun u hu t h1 h2 => (hset.runOkAt u hu t h1 h2).toBase)
+        hcol v hv s hlos hs hQ (hcount s hlos hs) hP
       have hinv := hQ.slotInv hw (hset.nodeOk v hv) hcol
       obtain ⟨jb, hjb, hjle⟩ := hQ.justified
       obtain ⟨s', hrun⟩ := hQ.headRun
@@ -731,6 +783,30 @@ theorem race_empty_persists_exec {Node : Type} {honest : Node → Prop}
         exact (hstep t hlo (by omega) (ih (by omega)) u hu).1
   intro v hv t hlo ht
   exact hstep t hlo ht (hall t (by omega)) v hv
+
+include hw in
+/-- Tier T2 on the executable spec. Take the block `rb` at `r`, of slot `N`, and the window
+of slots `N + 1 .. hi`, under `RaceSetting`. In every slot `s` of `(N + 1, hi]`, the honest
+balance that has voted in `[N + 1, s)` is more than the adversarial balance that has voted
+there, plus the proposer score `proposerScoreOf jst`. Then every honest head of the window
+lies below `empty r` and not below `full r`, or a root collision exists.
+
+This is `race_empty_persists_long` with the justified state `jst` on every slot
+(`RaceSetting.toLong`). -/
+theorem race_empty_persists_exec {Node : Type} {honest : Node → Prop}
+    {node : Node → NodeRun map} {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock}
+    {hi : Nat} {jst : BeaconState} {nodeOf : ValidatorIndex → Node}
+    {honestOf : ValidatorIndex → Bool} {committees : Nat → Nat → Array ValidatorIndex}
+    (hset : RaceSetting honest node run r rb hi jst nodeOf honestOf committees)
+    (hcount : ∀ s, raceLo rb < s → s ≤ hi →
+      advVoted (raceValidators (pureState jst) honestOf (committeeVotes committees)) (raceLo rb) s
+        + proposerScoreOf (pureState jst)
+        < honestVoted (raceValidators (pureState jst) honestOf (committeeVotes committees))
+          (raceLo rb) s) :
+    RootCollision ∨ ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi →
+      NodeBelow (run v t).store (.empty r) (run v t).head ∧
+        ¬ NodeBelow (run v t).store (.full r) (run v t).head :=
+  race_empty_persists_long hw hset.toLong hcount
 
 end Race
 
