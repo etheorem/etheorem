@@ -260,6 +260,18 @@ theorem view_jp_ite {σ β : Type} (f : σ → β) {c : Prop} {dc : Decidable c}
   · exact (hJ b _).trans hb
   · exact (hJ a _).trans ha
 
+/-- The rule of `view_jp_ite` with a map `G` in place of the identity. When the join point `J`
+changes the view by `G`, the `if` that feeds `J` changes it by `G` after the branch. A proof
+that states what a pure update writes uses this rule (`jp_map_level`). -/
+theorem view_jp_ite_map {σ β : Type} (f : σ → β) (G : β → β) {c : Prop} {dc : Decidable c}
+    {J : σ → PUnit → Id σ} {a b : σ}
+    (hJ : ∀ s y, f (J s y) = G (f s)) :
+    f (@ite (Id σ) c dc (pure PUnit.unit >>= fun y => J a y)
+        (pure PUnit.unit >>= fun y => J b y)) = G (if c then f a else f b) := by
+  cases dc
+  · exact hJ b _
+  · exact hJ a _
+
 /-- Prove `∀ s y, view (J s y) = view s` for the join point `J`, a `let` in the context,
 from the same fact `h` for the join point that `J` calls. `simp -zeta` unfolds `J` and
 keeps the `have` bindings of its body. `extract_lets` moves them to the context, so the
@@ -271,6 +283,21 @@ macro_rules
       simp -zeta only [$J:ident]
       extract_lets
       refine EthCLSpecs.Proofs.Heze.view_jp_ite _ $h ?_ rfl
+      dsimp -zeta +zetaDelta only
+      cases s <;> with_unfolding_all rfl))
+
+/-- Prove `∀ s y, view (J s y) = G (u (view s))` for the join point `J`, from the fact
+`∀ s y, view (K s y) = G (view s)` for the join point `K` that `J` calls. `u` is the change
+that the `if` of `J` makes to the view, and the goal names it. The tactic proves that the
+`if` makes this change, on each box by `rfl`. It names the bindings of `J` as `jp_level`
+does. -/
+syntax "jp_map_level " ident ident term:max : tactic
+macro_rules
+  | `(tactic| jp_map_level $J $h $G) => `(tactic| (
+      intro s _
+      simp -zeta only [$J:ident]
+      extract_lets
+      refine (EthCLSpecs.Proofs.Heze.view_jp_ite_map _ $G $h).trans (congrArg $G ?_)
       dsimp -zeta +zetaDelta only
       cases s <;> with_unfolding_all rfl))
 

@@ -3,6 +3,9 @@ import EthCLLib.Proofs.Checked
 import EthCLLib.Proofs.CheckedOps
 import EthCLLib.Proofs.CommitteePartition
 import EthCLLib.Proofs.EngineLaws
+import EthCLLib.Proofs.FFG.Model
+import EthCLLib.Proofs.FFG.Safety
+import EthCLLib.Proofs.FFG.Stake
 import EthCLLib.Proofs.Frame
 import EthCLLib.Proofs.IndicesWhere
 import EthCLLib.Proofs.KeepsUncached
@@ -38,6 +41,15 @@ Re-exports:
   `Nat`, and `checkedMul_of_lt` / `checkedMul_of_ge` give the two outcomes from a `Nat` bound.
 * `EthCLLib.Proofs.EngineLaws`: the EIP-7805 inclusion rule as an assumption on an
   `ExecutionEngine` (`LawfulInclusionList`).
+* `EthCLLib.Proofs.FFG.Model`: an abstract Casper FFG over two chains, each with its own
+  votes and stake. It defines links, `Justified`, `Finalized`, and the double and surround
+  votes, and the shared history of the chains (`CommonBase`, `Agree`).
+* `EthCLLib.Proofs.FFG.Stake`: stake sums over filters of a validator list, the drift bound
+  `StakeClose`, and the bound of one link under drift (`link_bound_of_close`).
+* `EthCLLib.Proofs.FFG.Safety`: accountable safety with stake drift
+  (`ffg_accountable_safety`). A finalized checkpoint on one chain and a justified one on the
+  other that conflict make a set of validators slashable. Their stake is at least one third
+  of the total, less `5/3` of the two drifts.
 * `EthCLLib.Proofs.Frame`: the frame rules (`KeepsAt`, `Resets`, `Returns`) that
   prove a store run leaves one field alone, one bind at a time.
 * `EthCLLib.Proofs.LawfulFcMap`: the laws of an `FcMap`
