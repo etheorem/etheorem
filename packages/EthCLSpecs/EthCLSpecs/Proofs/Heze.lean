@@ -95,7 +95,7 @@ Re-exports:
   existing recorded-unsatisfied FOCIL rejection
   (`shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`), and the
   named prefix, FOCIL, vote, and inherited-Gloas-tail corollaries.
-* `EthCLSpecs.Proofs.Heze.Time`: the inherited `computeEpochAtSlot` and
-  `computeStartSlotAtEpoch` at Heze. The `Downgrade` bridge reaches one fork up,
+* `EthCLSpecs.Proofs.Heze.Time`: the inherited `computeEpochAtSlot`,
+  `computeStartSlotAtEpoch`, and `computeActivationExitEpoch` at Heze. The `Downgrade` bridge reaches one fork up,
   so each theorem takes the Gloas proof term.
 -/
