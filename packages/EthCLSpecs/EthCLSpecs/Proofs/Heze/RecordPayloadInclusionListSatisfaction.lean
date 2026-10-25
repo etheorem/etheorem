@@ -185,10 +185,9 @@ theorem recordPayloadInclusionListSatisfaction_run_error_of_empty_committee
     (store runnerStore : Store map) (state : BeaconState) (root : Root)
     (payload : ExecutionPayload)
     (hslot : state.slot ≠ 0)
-    (hempty : ((Array.range (getCommitteeCountPerSlot (pureState state)
-        (computeEpochAtSlot (state.slot - 1)))).foldl
-        (fun acc i => acc ++ getBeaconCommittee (pureState state) (state.slot - 1) i)
-        (#[] : Array ValidatorIndex)).size = 0) :
+    (indices : Array ValidatorIndex)
+    (hindices : slotCommitteeIndices state (state.slot - 1) = .ok indices)
+    (hempty : indices.size = 0) :
     (recordPayloadInclusionListSatisfaction
         (StoreTransition := ForkChoiceStoreRun (Store map))
         store (pureState state) root payload).run runnerStore
@@ -196,7 +195,7 @@ theorem recordPayloadInclusionListSatisfaction_run_error_of_empty_committee
           "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee")) := by
   have hcomm :=
     getInclusionListCommittee_run_error_of_empty (σ := Store map) state (state.slot - 1)
-      runnerStore hempty
+      runnerStore indices hindices hempty
   have htxs :=
     getInclusionListTransactions_run_error_of_committee (map := map) store.inclusionListStore
       state (state.slot - 1) true runnerStore _ hcomm

@@ -42,7 +42,7 @@ namespace EthCLSpecs.Tests.HezeDichotomyWitness
 open EthCLSpecs.Heze (Preset Config Store State Root BeaconState Validator ExecutionPayload
   ExecutionRequests Transaction InclusionList SignedInclusionList InclusionListStore
   SignedExecutionPayloadEnvelope BeaconBlockHeader ValidatorIndex minimal minimalConfig
-  verifyExecutionPayloadEnvelope getInclusionListCommittee getInclusionListDueMs
+  verifyExecutionPayloadEnvelope getInclusionListCommittee
   getBeaconCommittee getCommitteeCountPerSlot computeEpochAtSlot cyclicSample
   computeTimeAtSlot isDataAvailable)
 open EthCLSpecs.Heze.Const (farFutureEpoch slotsPerEpoch builderIndexSelfBuild
@@ -110,12 +110,22 @@ def envelope : SignedExecutionPayloadEnvelope :=
     signature := default }
 
 /-- The indices that `getInclusionListCommittee` samples for slot `0`, as
-`getInclusionListCommittee_run_eq` states them. -/
+`getInclusionListCommittee_run_eq` states them. `committeeIndices_ok` shows that the
+concatenation succeeds, so the `.error` arm never applies. -/
 def committeeIndices : Array ValidatorIndex :=
-  (Array.range (getCommitteeCountPerSlot blockState
-      (computeEpochAtSlot (sszGet blockState slot - 1)))).foldl
-    (fun acc i => acc ++ getBeaconCommittee blockState (sszGet blockState slot - 1) i)
-    (#[] : Array ValidatorIndex)
+  match slotCommitteeIndices blockValue (blockValue.slot - 1) with
+  | .ok indices => indices
+  | .error _ => #[]
+
+/-- The concatenation of slot `0`'s committees succeeds. -/
+theorem committeeIndices_ok :
+    slotCommitteeIndices blockValue (blockValue.slot - 1) = .ok committeeIndices := by
+  have h : (slotCommitteeIndices blockValue (blockValue.slot - 1)).isOk = true := by
+    native_decide
+  unfold committeeIndices
+  cases hx : slotCommitteeIndices blockValue (blockValue.slot - 1) with
+  | ok indices => rfl
+  | error e => rw [hx] at h; cases h
 
 /-- The inclusion-list committee of slot `0`. -/
 def committee : Vector ValidatorIndex inclusionListCommitteeSize :=
@@ -163,7 +173,7 @@ theorem dichotomyHypotheses_witness :
   refine ⟨strictEngine_lawful, ?_, rfl, verify_ok, by native_decide, ?_, rfl, rfl, rfl,
     ⟨by simp, by simp, by simp⟩, by native_decide⟩
   · exact LawfulFcMap.lookup_insert_self _ _ _
-  · rw [getInclusionListCommittee_run_eq]
+  · rw [getInclusionListCommittee_run_eq, committeeIndices_ok]
     show (if committeeIndices.size == 0 then _ else _) = _
     rw [if_neg (by native_decide)]
     rfl

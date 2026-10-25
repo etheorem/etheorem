@@ -54,7 +54,9 @@ inductive StateTransitionError where
   rejects this way fails, unless the case's own wrapper catches `ValueError` (`RunnerCaughtSet`).
   `descr` names the faulting op, diagnostic only. The
   standing case is `get_balance_after_withdrawals`' `state.balances[i] - withdrawn`
-  (`capella/beacon-chain.md:378`), a bare subtraction. On the store machine the same fault rides
+  (`capella/beacon-chain.md:378`), a bare subtraction. Two `ValueError`s outside
+  arithmetic take this kind too: a sync committee key absent from the registry, and a BLS key
+  operation on bytes it rejects (see `throwArithmetic`). On the store machine the same fault rides
   in wrapped as `.transition (.arithmetic …)`, e.g. Heze's `Slot(state.slot - 1)` underflow and
   `get_inclusion_list_committee`'s `indices[i % len(indices)]` on an empty committee. -/
   | arithmetic (descr : String)
@@ -331,10 +333,14 @@ names the wrapper its context needs: the `[ErrorConv StateTransitionError E]` bo
 fault in as `.arithmetic` on the state machine (identity) and `.transition (.arithmetic …)` on
 the store machine, so one definition serves both, exactly as `sszGetIdx` does for `IndexError`.
 
-Two kinds of site reach it. The three checked operators below are the `uint64` over/underflows.
-The other is `get_inclusion_list_committee`'s `indices[i % len(indices)]` on an empty committee
+Three kinds of site reach it. The three checked operators below are the `uint64` over/underflows.
+Another is `get_inclusion_list_committee`'s `indices[i % len(indices)]` on an empty committee
 (`heze/beacon-chain.md:108-110`), a `ZeroDivisionError` rather than a `uint64` op, which lands
-in the same uncaught-fault class because the reference runner propagates it just the same. -/
+in the same uncaught-fault class because the reference runner propagates it just the same. The
+third kind is a `ValueError` outside arithmetic. `process_sync_aggregate` raises it from
+`all_pubkeys.index` when the registry does not hold a sync committee key. The key wrappers in
+`Crypto` raise it too: `blsG1Add` and `blsG1Neg` on bytes that do not decode as a G1 point,
+and `blsAggregatePubkeysChecked` on an empty list or a key that fails `KeyValidate`. -/
 @[inline] def throwArithmetic {m : Type → Type u} {α E : Type} [Monad m] [MonadExcept E m]
     [ErrorConv StateTransitionError E] (descr : String) : m α :=
   liftErr (E := StateTransitionError) (.error (.arithmetic descr))

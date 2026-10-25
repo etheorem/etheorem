@@ -73,7 +73,8 @@ forkdef getBuilderWithdrawals (withdrawalIndex : WithdrawalIndex)
     ws := ws.push
       { index := wi, validatorIndex := convertBuilderIndexToValidatorIndex w.builderIndex,
         address := w.feeRecipient, amount := w.amount }
-    wi := wi + 1
+    -- `withdrawal_index += WithdrawalIndex(1)` is a checked `uint64` add, here and below.
+    wi ← checkedAdd wi 1 "get_builder_withdrawals: withdrawal_index + 1"
     count := count + 1
   return (ws, wi, count)
 
@@ -100,7 +101,7 @@ forkdef getPendingPartialWithdrawals (withdrawalIndex : WithdrawalIndex)
       ws := ws.push
         { index := wi, validatorIndex := vi, address := addressOf validator,
           amount := umin (bal - Const.minActivationBalance) w.amount }
-      wi := wi + 1
+      wi ← checkedAdd wi 1 "get_pending_partial_withdrawals: withdrawal_index + 1"
     count := count + 1
   return (ws, wi, count)
 
@@ -127,7 +128,7 @@ forkdef getBuildersSweepWithdrawals (withdrawalIndex : WithdrawalIndex)
       ws := ws.push
         { index := wi, validatorIndex := convertBuilderIndexToValidatorIndex (UInt64.ofNat builderIndex),
           address := builder.executionAddress, amount := builder.balance }
-      wi := wi + 1
+      wi ← checkedAdd wi 1 "get_builders_sweep_withdrawals: withdrawal_index + 1"
     builderIndex := modWrap (builderIndex + 1) bs.size
     count := count + 1
   return (ws, wi, count)
@@ -155,12 +156,12 @@ forkdef getValidatorsSweepWithdrawals (withdrawalIndex : WithdrawalIndex)
     let bal ← balanceAfterWithdrawals state (UInt64.ofNat vi) allW
     if isFullyWithdrawable validator bal epoch then
       ws := ws.push { index := wi, validatorIndex := UInt64.ofNat vi, address := addressOf validator, amount := bal }
-      wi := wi + 1
+      wi ← checkedAdd wi 1 "get_validators_sweep_withdrawals: withdrawal_index + 1"
     else if isPartiallyWithdrawable validator bal then
       ws := ws.push
         { index := wi, validatorIndex := UInt64.ofNat vi, address := addressOf validator,
           amount := bal - getMaxEffectiveBalance validator }
-      wi := wi + 1
+      wi ← checkedAdd wi 1 "get_validators_sweep_withdrawals: withdrawal_index + 1"
     vi := modWrap (vi + 1) nvals
     count := count + 1
   return (ws, wi, count)
@@ -204,9 +205,11 @@ forkdef processWithdrawals : StateTransition Unit := do
   let (expected, builderCount, partialCount, buildersSweepCount) ← getExpectedWithdrawals
   applyWithdrawals expected
 
-  -- update_next_withdrawal_index
+  -- update_next_withdrawal_index. `latest_withdrawal.index + 1` is a checked `uint64` add.
   if expected.size != 0 then
-    modifyState fun state => sszUpdate state with nextWithdrawalIndex := (expected[expected.size - 1]!).index + 1
+    let nextIndex ← checkedAdd (expected[expected.size - 1]!).index 1
+      "update_next_withdrawal_index: latest_withdrawal.index + 1"
+    modifyState fun state => sszUpdate state with nextWithdrawalIndex := nextIndex
 
   -- update_payload_expected_withdrawals (NEW)
   let expectedList : SSZList Withdrawal Const.maxWithdrawalsPerPayload ←
@@ -219,22 +222,34 @@ forkdef processWithdrawals : StateTransition Unit := do
   -- update_pending_partial_withdrawals: drop the processed pending partials
   modifyState fun state => sszUpdate state with pendingPartialWithdrawals := sszDrop (sszGet state pendingPartialWithdrawals) partialCount
 
-  -- update_next_withdrawal_builder_index (NEW)
-  modifyState fun state =>
-    let n := (sszGet state builders).size
-    if n > 0 then sszUpdate state with nextWithdrawalBuilderIndex := UInt64.ofNat (((sszGet state nextWithdrawalBuilderIndex).toNat + buildersSweepCount) % n)
-    else state
+  -- update_next_withdrawal_builder_index (NEW). With builders present, the cursor sum is a
+  -- checked `uint64` add, then the pyspec takes it modulo the builder count.
+  let state ← get
+  let nBuilders := (sszGet state builders).size
+  if nBuilders > 0 then
+    let nextBuilder ← checkedAdd (sszGet state nextWithdrawalBuilderIndex)
+      (UInt64.ofNat buildersSweepCount)
+      "update_next_withdrawal_builder_index: next_withdrawal_builder_index + processed_builders_sweep_count"
+    modifyState fun state =>
+      sszUpdate state with nextWithdrawalBuilderIndex := UInt64.ofNat (nextBuilder.toNat % nBuilders)
 
-  -- update_next_withdrawal_validator_index: a full payload resumes one past the
-  -- last validator drained; a short one jumps a whole sweep window ahead. Both
-  -- wrap modulo the registry size (0 when empty).
+  -- update_next_withdrawal_validator_index: a full payload resumes one past the last
+  -- validator drained; a short one jumps a whole sweep window ahead. Each sum is a checked
+  -- `uint64` add. The pyspec then takes it modulo `len(state.validators)`, which raises
+  -- `ZeroDivisionError` on an empty registry (`.arithmetic`).
+  let state ← get
+  let nvals := (sszGet state validators).size
+  let nextCursor ← if expected.size == Const.maxWithdrawalsPerPayload then
+      checkedAdd (expected[expected.size - 1]!).validatorIndex 1
+        "update_next_withdrawal_validator_index: withdrawals[-1].validator_index + 1"
+    else
+      checkedAdd (sszGet state nextWithdrawalValidatorIndex)
+        (UInt64.ofNat Const.maxValidatorsPerWithdrawalsSweep)
+        "update_next_withdrawal_validator_index: next_withdrawal_validator_index + MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP"
+  if nvals == 0 then
+    throwArithmetic "update_next_withdrawal_validator_index: next_index % len(state.validators)"
   modifyState fun state =>
-    let nvals := (sszGet state validators).size
-    let sweptFullPayload := expected.size == Const.maxWithdrawalsPerPayload
-    let nextCursor :=
-      if sweptFullPayload then (expected[expected.size - 1]!).validatorIndex.toNat + 1
-      else (sszGet state nextWithdrawalValidatorIndex).toNat + Const.maxValidatorsPerWithdrawalsSweep
-    sszUpdate state with nextWithdrawalValidatorIndex := UInt64.ofNat (modWrap nextCursor nvals)
+    sszUpdate state with nextWithdrawalValidatorIndex := UInt64.ofNat (nextCursor.toNat % nvals)
 
 end
 

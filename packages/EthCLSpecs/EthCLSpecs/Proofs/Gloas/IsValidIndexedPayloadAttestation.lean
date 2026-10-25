@@ -7,7 +7,7 @@ import SizzLean.Proofs.UncachedBox
 # `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: a two-layer characterization
 
 An exact backend-generic characterization of
-`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:440-451`).
+`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:449-461`).
 
 **Layer 1** (`isValidIndexedPayloadAttestation_eq_true_iff_checks`) restates the
 function's `if` / `||` / `!` control flow as a plain conjunction, one conjunct per
@@ -19,9 +19,11 @@ gates into named propositions: non-empty, adjacent nondecreasing, every index in
 range, and the configured `[CryptoBackend]` returning `true` on the exact pubkey
 array, signing root, domain, and epoch the implementation computes.
 
-**Why Layer 2's in-range gate binds a proof.** The implementation reads each pubkey
-with `validators[i.toNat]!`, which silently yields `default` past the end of the
-registry. Layer 2 states the in-range gate as `∃ hRange : ∀ i ∈ idx, …`, so the
+**The result is an `Except`.** An index past the registry raises `.outOfBounds`, the pyspec's
+`IndexError`. Both layers characterize `= .ok true`, so the in-range gate stays a conjunct.
+
+**Why Layer 2's in-range gate binds a proof.** After the range check, the implementation
+reads each pubkey with `validators[i.toNat]!`. Layer 2 states the in-range gate as `∃ hRange : ∀ i ∈ idx, …`, so the
 bound is in scope for the signature conjunct, whose pubkey array is then built by
 `Array.attach` with genuine in-bounds proofs. No `!` survives into the semantic
 statement, and the reading is unconditional. The `∃` is invisible in use: callers
@@ -56,11 +58,19 @@ open SizzLean.Proofs (sszListMap_getElem!_eq_attachMap)
 
 /-! ## Layer 1: the literal characterization -/
 
+/-- The first-out-of-range search the function runs finds nothing exactly when every index is
+in range. -/
+private theorem find?_outOfRange_eq_none_iff (n : Nat) (idx : Array ValidatorIndex) :
+    idx.find? (fun i => decide (n ≤ i.toNat)) = none ↔
+      idx.all (fun i => i.toNat < n) = true := by
+  simp only [Array.find?_eq_none, Array.all_eq_true', decide_eq_true_eq, Nat.not_le]
+
 /-- Exact backend-generic characterization using the function's literal
-`Array.all` validation gates. -/
+`Array.all` validation gates. The function returns `.ok true` exactly when every gate passes.
+An index past the registry gives an `.outOfBounds` error, so it never gives `.ok true`. -/
 theorem isValidIndexedPayloadAttestation_eq_true_iff_checks [Preset] [HasherTag] [CryptoBackend]
     (state : BeaconState) (a : IndexedPayloadAttestation) :
-    isValidIndexedPayloadAttestation (pureState state) a = true ↔
+    isValidIndexedPayloadAttestation (pureState state) a = .ok true ↔
       let idx := a.attestingIndices.toArray
       let validators := state.validators
       idx.size ≠ 0 ∧
@@ -71,7 +81,42 @@ theorem isValidIndexedPayloadAttestation_eq_true_iff_checks [Preset] [HasherTag]
         (computeSigningRoot a.data
           (getDomain (pureState state) domainPtcAttester (computeEpochAtSlot a.data.slot)))
         a.signature = true := by
-  simp [isValidIndexedPayloadAttestation, and_assoc]
+  unfold isValidIndexedPayloadAttestation
+  -- Inline the `do` block's local definitions, and read the box's view as `state`.
+  dsimp only
+  simp only [show (pureState state).view = state from rfl]
+  split
+  · -- The shape test fails: the result is `.ok false`.
+    rename_i hbad
+    refine ⟨fun h => absurd (Except.ok.inj h) Bool.false_ne_true, fun ⟨h1, h2, _, _⟩ => ?_⟩
+    simp only [Bool.or_eq_true, beq_iff_eq, Bool.not_eq_true'] at hbad
+    rcases hbad with hbad | hbad
+    · exact absurd hbad h1
+    · rw [h2] at hbad; cases hbad
+  · rename_i hgood
+    simp only [Bool.or_eq_true, beq_iff_eq, Bool.not_eq_true', not_or,
+      Bool.not_eq_false] at hgood
+    obtain ⟨h1, h2⟩ := hgood
+    split
+    · -- An index is past the registry: the result is an error.
+      rename_i i hf
+      have hnot : ¬ a.attestingIndices.toArray.all
+          (fun i => i.toNat < state.validators.size) = true := fun hall => by
+        rw [(find?_outOfRange_eq_none_iff _ _).mpr hall] at hf
+        cases hf
+      refine ⟨fun h => (by cases h), fun ⟨_, _, h3, _⟩ => absurd h3 hnot⟩
+    · -- Every index is in range: the result is the verify call.
+      rename_i hf
+      have hnone : a.attestingIndices.toArray.find?
+          (fun i => decide (state.validators.size ≤ i.toNat)) = none := by
+        cases h : a.attestingIndices.toArray.find?
+            (fun i => decide (state.validators.size ≤ i.toNat)) with
+        | none => rfl
+        | some i => exact absurd h (hf i)
+      have hall := (find?_outOfRange_eq_none_iff _ _).mp hnone
+      refine ⟨fun h => ⟨h1, h2, hall, Except.ok.inj h⟩, fun ⟨_, _, _, h4⟩ => ?_⟩
+      rw [← h4]
+      rfl
 
 /-! ## Layer 2: private core-only bridge lemmas, then the public semantic theorem -/
 
@@ -116,7 +161,7 @@ proof so the pubkey array can be read in bounds; see the module docstring. -/
 @[characterizes EthCLSpecs.Gloas.isValidIndexedPayloadAttestation]
 theorem isValidIndexedPayloadAttestation_eq_true_iff [Preset] [HasherTag] [CryptoBackend]
     (state : BeaconState) (a : IndexedPayloadAttestation) :
-    isValidIndexedPayloadAttestation (pureState state) a = true ↔
+    isValidIndexedPayloadAttestation (pureState state) a = .ok true ↔
       let idx := a.attestingIndices.toArray
       let validators := state.validators
       idx.size ≠ 0 ∧

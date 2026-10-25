@@ -25,6 +25,7 @@ inherit isSlashableAttestationData
 inherit isValidIndexedAttestation
 inherit isValidSwitchToCompoundingRequest
 inherit getAttestingIndices
+inherit attestationCommitteeOffset
 inherit processAttesterSlashing
 inherit processBlockHeader
 inherit processBlsToExecutionChange

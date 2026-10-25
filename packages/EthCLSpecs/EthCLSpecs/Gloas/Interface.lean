@@ -134,7 +134,7 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
     let d1 ← liftErr (getFlagIndexDeltas state 1)
     let d2 ← liftErr (getFlagIndexDeltas state 2)
     pure #[← mkDeltas d0, ← mkDeltas d1, ← mkDeltas d2,
-      ← mkDeltas (zeros, getInactivityPenaltyDeltas state)]
+      ← mkDeltas (zeros, ← liftErr (getInactivityPenaltyDeltas state))]
 
 /-- Decode a plain (non-boxed) SSZ operation value. -/
 private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
@@ -272,7 +272,7 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
           onboardBuildersFromPendingDeposits
           for sb in gloasBlocks do
             if (sszGet (← get) slot) < sb.message.slot then Gloas.processSlots sb.message.slot
-            if cmeta.blsSetting != 2 then assert (Gloas.verifyBlockSignature (← get) sb)
+            if cmeta.blsSetting != 2 then assert (← liftErr (Gloas.verifyBlockSignature (← get) sb))
             Gloas.processBlock sb.message
             let root ← getStateRoot
             assert (sb.message.stateRoot == bytesToRoot root)

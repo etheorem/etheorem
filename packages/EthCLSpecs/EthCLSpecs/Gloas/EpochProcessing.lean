@@ -35,6 +35,8 @@ inherit computeStartSlotAtEpoch
 inherit getCurrentEpoch
 inherit getPreviousEpoch
 inherit computeTimeAtSlot
+inherit BlobParameters
+inherit getBlobParameters
 inherit getRandaoMix
 
 -- Balance / validator mutators, accessors, predicates.
@@ -80,22 +82,23 @@ inherit reserveChurn
 -- `get_exit_churn_limit` rather than Fulu's `get_activation_exit_churn_limit`. These
 -- override the inherited Fulu versions; `initiateValidatorExit`/`slashValidator`
 -- (inherited below) bind to this `computeExitEpochAndUpdateChurn`.
-forkdef getExitChurnLimit (state : State) : Gwei :=
+-- Each limit fails only where `get_total_active_balance` fails.
+forkdef getExitChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let churn := umax Const.minPerEpochChurnLimitElectra
-    ((getTotalActiveBalance state) / Const.churnLimitQuotientGloas)
-  churn - churn % Const.effectiveBalanceIncrementG
+    ((← getTotalActiveBalance state) / Const.churnLimitQuotientGloas)
+  pure (churn - churn % Const.effectiveBalanceIncrementG)
 
-forkdef getActivationChurnLimit (state : State) : Gwei :=
+forkdef getActivationChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let churn := umax Const.minPerEpochChurnLimitElectra
-    ((getTotalActiveBalance state) / Const.churnLimitQuotientGloas)
-  umin Const.maxPerEpochActivationChurnLimitGloas (churn - churn % Const.effectiveBalanceIncrementG)
+    ((← getTotalActiveBalance state) / Const.churnLimitQuotientGloas)
+  pure (umin Const.maxPerEpochActivationChurnLimitGloas (churn - churn % Const.effectiveBalanceIncrementG))
 
 forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Epoch := do
   let state ← get
   let currentEpoch := computeEpochAtSlot (sszGet state slot)
   let activationExitEpoch ← liftErr (computeActivationExitEpoch currentEpoch)
   let earliest := umax (sszGet state earliestExitEpoch) activationExitEpoch
-  let perEpochChurn := getExitChurnLimit state
+  let perEpochChurn ← liftErr (getExitChurnLimit state)
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
   let (ee, ebtc) ← liftErr (reserveChurn exitBalance consume perEpochChurn earliest)
   let remaining ← checkedSub ebtc exitBalance
@@ -113,9 +116,9 @@ inherit getPendingBalanceToWithdraw
 -- Gloas (EIP-8061) consolidation churn: `total_active // CONSOLIDATION_CHURN_LIMIT_QUOTIENT`
 -- (no `MIN` floor, no balance-churn subtraction). Overrides the inherited Fulu
 -- version; the inherited `computeConsolidationEpochAndUpdateChurn` below binds to it.
-forkdef getConsolidationChurnLimit (state : State) : Gwei :=
-  let churn := (getTotalActiveBalance state) / Const.consolidationChurnLimitQuotient
-  churn - churn % Const.effectiveBalanceIncrementG
+forkdef getConsolidationChurnLimit (state : State) : Except StateTransitionError Gwei := do
+  let churn := (← getTotalActiveBalance state) / Const.consolidationChurnLimitQuotient
+  pure (churn - churn % Const.effectiveBalanceIncrementG)
 
 inherit computeConsolidationEpochAndUpdateChurn
 inherit queueExcessActiveBalance
@@ -137,7 +140,22 @@ inherit getCommitteeIndices
 inherit cbwsAux
 inherit computeBalanceWeightedSelection
 inherit computeProposerIndices
-inherit getNextSyncCommittee
+
+/-- `get_next_sync_committee` (Gloas). The selection is `compute_balance_weighted_selection`
+(`gloas/beacon-chain.md:784-793`). Its `assert total > 0` rejects an empty active set with
+`.assert`. This declaration overrides Fulu's body, which raises Electra's
+`ZeroDivisionError` for an empty active set. -/
+forkdef getNextSyncCommittee [CryptoBackend] (state : State) :
+    Except StateTransitionError SyncCommittee := do
+  let epoch := currentEpochOf state + 1
+  let seed := getSeed state epoch Const.domainSyncCommittee
+  let indices ← computeBalanceWeightedSelection state (getActiveValidatorIndices state epoch)
+    seed Const.syncCommitteeSize true
+
+  let validators := sszGet state validators
+  let pubkeys : Vector BLSPubkey Const.syncCommitteeSize :=
+    Vector.ofFn (fun i => (validators[(indices[i.val]!).toNat]?.getD default).pubkey)
+  pure { pubkeys := pubkeys, aggregatePubkey := blsAggregatePubkeys pubkeys.toArray }
 
 /-- `get_beacon_proposer_indices` (Gloas, EIP-8045): the proposer lookahead is drawn
 only from *unslashed* active validators. This overrides the inherited Fulu version
@@ -176,10 +194,8 @@ forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (
     let state ← get
     let deposit := deposits[s.ndi]!
 
-    -- Stop the scan early: the eth1-bridge deposits are not yet applied, the deposit is
-    -- not finalized, or this epoch's deposit cap is reached.
-    if deposit.slot > Const.genesisSlot
-        && (sszGet state eth1DepositIndex) < (sszGet state depositRequestsStartIndex) then return .done s
+    -- Stop the scan early: the deposit is not finalized, or this epoch's deposit cap is
+    -- reached.
     if deposit.slot > finalizedSlot then return .done s
     if s.ndi ≥ Const.maxPendingDepositsPerEpoch then return .done s
 
@@ -198,13 +214,21 @@ forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (
 
     if isWithdrawn then applyPendingDeposit deposit; return advance s.processed s.postpone
     else if isExited then return advance s.processed (s.postpone.push deposit)
-    else if s.processed + deposit.amount > avail then return .done { s with churnReached := true }
-    else applyPendingDeposit deposit; return advance (s.processed + deposit.amount) s.postpone
+    else
+      -- `processed_amount + deposit.amount` adds `Gwei` values, a checked `uint64` add.
+      let total ← checkedAdd s.processed deposit.amount
+        "process_pending_deposits: processed_amount + deposit.amount"
+      if total > avail then return .done { s with churnReached := true }
+      else applyPendingDeposit deposit; return advance total s.postpone
 
+/-- `process_pending_deposits` (Gloas, EIP-8061). `deposit_balance_to_consume + churn` is a
+checked `uint64` add, as in Fulu. -/
 forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
   let nextEpoch := currentEpochOf state + 1
-  let avail := (sszGet state depositBalanceToConsume) + getActivationChurnLimit state
+  let churn ← liftErr (getActivationChurnLimit state)
+  let avail ← checkedAdd (sszGet state depositBalanceToConsume) churn
+    "process_pending_deposits: deposit_balance_to_consume + get_activation_churn_limit"
   let finalizedSlot ← liftErr (computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch)
   let deposits := (sszGet state pendingDeposits).toArray
 
@@ -240,9 +264,13 @@ queue its withdrawal directly; then shift the payment window down by
 forkdef processBuilderPendingPayments : StateTransition Unit := do
   let state ← get
 
-  -- Quorum threshold: `get_total_active_balance / SLOTS_PER_EPOCH * NUMERATOR / DENOMINATOR`.
-  let quorum := (getTotalActiveBalance state / UInt64.ofNat Const.slotsPerEpoch)
-    * Const.builderPaymentThresholdNumerator / Const.builderPaymentThresholdDenominator
+  -- Quorum threshold (`get_builder_payment_quorum_threshold`): `get_total_active_balance //
+  -- SLOTS_PER_EPOCH * NUMERATOR // DENOMINATOR`. The total read and the product can raise.
+  -- The product overflows when `SLOTS_PER_EPOCH` is small next to the total.
+  let perSlotBalance := (← liftErr (getTotalActiveBalance state)) / UInt64.ofNat Const.slotsPerEpoch
+  let quorumNumerator ← checkedMul perSlotBalance Const.builderPaymentThresholdNumerator
+    "get_builder_payment_quorum_threshold: per_slot_balance * BUILDER_PAYMENT_THRESHOLD_NUMERATOR"
+  let quorum := quorumNumerator / Const.builderPaymentThresholdDenominator
 
   -- Queue the withdrawal of every previous-epoch payment whose weight clears the quorum.
   let payments := sszGet state builderPendingPayments
@@ -262,14 +290,15 @@ forkdef processBuilderPendingPayments : StateTransition Unit := do
 `slot`, with possible duplicates. Concatenate every beacon committee for the slot in
 order, then take a `PTC_SIZE` balance-weighted selection with no shuffle. The seed
 mixes `DOMAIN_PTC_ATTESTER` and the slot. -/
-forkdef computePtc (state : State) (slot : Slot) : Vector ValidatorIndex Const.ptcSize :=
+forkdef computePtc (state : State) (slot : Slot) :
+    Except StateTransitionError (Vector ValidatorIndex Const.ptcSize) := do
   let epoch := computeEpochAtSlot slot
   let seed := sha ((getSeed state epoch Const.domainPtcAttester) ++ uint64ToBytes slot)
   let committeesPerSlot := getCommitteeCountPerSlot state epoch
-  let indices := (Array.range committeesPerSlot).foldl
-    (fun acc i => acc ++ getBeaconCommittee state slot i) (#[] : Array ValidatorIndex)
-  let sel := computeBalanceWeightedSelection state indices seed Const.ptcSize false
-  Vector.ofFn (fun i : Fin Const.ptcSize => sel[i.val]!)
+  let indices ← (Array.range committeesPerSlot).foldlM
+    (fun acc i => do pure (acc ++ (← getBeaconCommittee state slot i))) (#[] : Array ValidatorIndex)
+  let sel ← computeBalanceWeightedSelection state indices seed Const.ptcSize false
+  pure (Vector.ofFn (fun i : Fin Const.ptcSize => sel[i.val]!))
 
 /-- `process_ptc_window` (v1.7.0-alpha.11, EIP-7732): shift the cached PTC window down
 by `SLOTS_PER_EPOCH` and recompute the last epoch's per-slot PTCs from the snapshot
@@ -286,8 +315,12 @@ forkdef processPtcWindow : StateTransition Unit := do
   let state ← get
   let nextEpoch := currentEpochOf state + Const.minSeedLookahead + 1
   let startSlot ← liftErr (computeStartSlotAtEpoch nextEpoch)
-  let fresh : Array (Vector ValidatorIndex Const.ptcSize) :=
-    (Array.range Const.slotsPerEpoch).map (fun i => computePtc state (startSlot + UInt64.ofNat i))
+  -- pyspec forms the range end `start_slot + SLOTS_PER_EPOCH` as a `Slot` before the first
+  -- `compute_ptc` call. A range end of `2^64` raises here.
+  let _ ← checkedAdd startSlot (UInt64.ofNat Const.slotsPerEpoch)
+    "process_ptc_window: start_slot + SLOTS_PER_EPOCH"
+  let fresh : Array (Vector ValidatorIndex Const.ptcSize) ← liftErr <|
+    (Array.range Const.slotsPerEpoch).mapM (fun i => computePtc state (startSlot + UInt64.ofNat i))
 
   modifyState fun state =>
     sszUpdate state with ptcWindow :=

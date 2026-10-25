@@ -110,7 +110,7 @@ forkdef stateTransition (signedBlock : SignedBeaconBlock) (validateResult : Bool
   let block := signedBlock.message
   processSlots block.slot
 
-  if validateResult then assert (verifyBlockSignature (← get) signedBlock)
+  if validateResult then assert (← liftErr (verifyBlockSignature (← get) signedBlock))
   processBlock block
 
   if validateResult then

@@ -130,7 +130,6 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     | .proposerSlashing      => (decodeOp (@ProposerSlashing P) opBytes).map processProposerSlashing
     | .attesterSlashing      => (decodeOp (@AttesterSlashing P) opBytes).map processAttesterSlashing
     | .attestation           => (decodeOp (@Attestation P) opBytes).map processAttestation
-    | .deposit               => (decodeOp (@Deposit P) opBytes).map processDeposit
     | .voluntaryExit         => (decodeOp (@SignedVoluntaryExit P) opBytes).map processVoluntaryExit
     | .blsToExecutionChange  => (decodeOp (@SignedBLSToExecutionChange P) opBytes).map processBlsToExecutionChange
     | .depositRequest        => (decodeOp (@DepositRequest P) opBytes).map processDepositRequest
@@ -145,8 +144,9 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     | .executionPayload      => (decodeOp (@BeaconBlockBody P) opBytes).map (fun body => do
         assert cmeta.executionValid
         processExecutionPayload body)
-    -- Gloas / EIP-7732 / EIP-8282-only operation handlers; not standalone Fulu operations.
-    | .voluntaryExitChurn | .payloadAttestation | .executionPayloadBid | .parentExecutionPayload
+    -- Fulu removes `process_deposit`, so the corpus has no Fulu `deposit` vectors. The
+    -- other handlers are Gloas / EIP-7732 / EIP-8282 only.
+    | .deposit | .voluntaryExitChurn | .payloadAttestation | .executionPayloadBid | .parentExecutionPayload
     | .builderDepositRequest | .builderExitRequest =>
         .error (.spec (.todo s!"operations/{reprStr kind}: not a standalone Fulu operation"))
   match dispatch with
@@ -176,7 +176,7 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
     let d1 ← liftErr (getFlagIndexDeltas state 1)
     let d2 ← liftErr (getFlagIndexDeltas state 2)
     pure #[← mkDeltas d0, ← mkDeltas d1, ← mkDeltas d2,
-      ← mkDeltas (zeros, getInactivityPenaltyDeltas state)]
+      ← mkDeltas (zeros, ← liftErr (getInactivityPenaltyDeltas state))]
 
 /-- `runBlocks`: decode the pre-state, fold `stateTransition` over the block
 sequence (verify-off when `bls_setting = 2`), and return the post root. Drives

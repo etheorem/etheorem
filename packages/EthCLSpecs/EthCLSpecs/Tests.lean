@@ -1,6 +1,15 @@
 import EthCLSpecs.Tests.BoxBinderPins
+import EthCLSpecs.Tests.FuluBlobSchedulePins
+import EthCLSpecs.Tests.FuluBlockOpPins
+import EthCLSpecs.Tests.FuluCommitteesPins
+import EthCLSpecs.Tests.FuluDepositPins
+import EthCLSpecs.Tests.FuluEpochPins
 import EthCLSpecs.Tests.FuluForkChoicePins
+import EthCLSpecs.Tests.FuluSyncAggregatePins
+import EthCLSpecs.Tests.GloasBlockOpPins
+import EthCLSpecs.Tests.GloasEpochPins
 import EthCLSpecs.Tests.GloasForkChoicePins
+import EthCLSpecs.Tests.GloasPtcWindowPins
 import EthCLSpecs.Tests.HezeCommitteesPins
 import EthCLSpecs.Tests.HezeDichotomyWitness
 import EthCLSpecs.Tests.HezeForkChoicePins

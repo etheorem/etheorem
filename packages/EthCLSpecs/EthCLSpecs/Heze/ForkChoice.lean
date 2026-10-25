@@ -205,8 +205,9 @@ forkdef getInclusionListCommittee (state : State) (slot : Slot) :
     StoreTransition (Vector ValidatorIndex Const.inclusionListCommitteeSize) := do
   let epoch := computeEpochAtSlot slot
   let committeesPerSlot := getCommitteeCountPerSlot state epoch
-  let indices := (Array.range committeesPerSlot).foldl
-    (fun acc i => acc ++ getBeaconCommittee state slot i) (#[] : Array ValidatorIndex)
+  let indices ← liftErr <| (Array.range committeesPerSlot).foldlM
+    (fun acc i => do pure (acc ++ (← getBeaconCommittee state slot i)))
+    (#[] : Array ValidatorIndex)
   if indices.size == 0 then
     throwArithmetic "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"
   pure (cyclicSample indices Const.inclusionListCommitteeSize)
@@ -319,10 +320,11 @@ inclusion-list constraints is not extended (`fork-choice.md:226`). The rest is G
 -/
 forkdef shouldExtendPayload (store : Store map) (root : Root) : StoreTransition Bool := do
   -- Mirrors the Gloas body plus the inclusion-list gate: the spec opens with
-  -- `assert store.blocks[root].slot + 1 == get_current_slot(store)`.
+  -- `assert store.blocks[root].slot + 1 == get_current_slot(store)`. Python evaluates the
+  -- left operand of `==` first, so the `+ 1` overflow raises before `get_current_slot` does.
   let rootBlock ← FcMap.getOrThrow store.blocks root
-  let currentSlot ← getCurrentSlot store
   let nextSlot ← checkedAdd rootBlock.slot 1 "should_extend_payload: blocks[root].slot + 1"
+  let currentSlot ← getCurrentSlot store
   assert (nextSlot == currentSlot)
   if !isPayloadVerified store root then pure false
   -- [New in Heze:EIP7805] do not extend a payload that fails the inclusion-list constraints
@@ -504,9 +506,11 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
 
 /-- `get_inclusion_list_due_ms()` (`consensus-specs/specs/heze/fork-choice.md:242-243`):
 `get_slot_component_duration_ms(INCLUSION_LIST_DUE_BPS)`. `bpsDeadlineMs` (inherited from Gloas)
-IS `get_slot_component_duration_ms`. A fork-choice deadline helper leaning on that inherited
-fork-choice function, so it lives here with the rest of the fork-choice layer. -/
-forkdef getInclusionListDueMs : UInt64 := bpsDeadlineMs Const.inclusionListDueBps
+is `get_slot_component_duration_ms`, so the deadline raises where its checked product raises.
+It calls an inherited fork-choice function, so it lives here with the rest of the fork-choice
+layer. -/
+forkdef getInclusionListDueMs : Except StateTransitionError UInt64 :=
+  bpsDeadlineMs Const.inclusionListDueBps
 
 /-- `on_inclusion_list(store, signed_inclusion_list)` (the new wire handler,
 `consensus-specs/specs/heze/fork-choice.md:256-267`): on receiving an inclusion list, judge its
@@ -518,7 +522,9 @@ MUST NOT modify the store" is automatic here. The inclusion-list store rides ins
 forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit := do
   let store ← get
   let inclusionList := signed.message
-  let isTimely := (← timeIntoSlotMs store) < getInclusionListDueMs
+  let timeIntoSlot ← timeIntoSlotMs store
+  let inclusionListDue ← liftErr getInclusionListDueMs
+  let isTimely := timeIntoSlot < inclusionListDue
   set { store with
     inclusionListStore := processInclusionList store.inclusionListStore inclusionList isTimely }
 

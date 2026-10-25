@@ -40,19 +40,23 @@ forkdef isEligibleForActivation (state : State) (validator : Validator) : Bool :
 
 /-! ## Electra churn limits -/
 
-/-- `get_balance_churn_limit`. -/
-forkdef getBalanceChurnLimit (state : State) : Gwei :=
-  let churn := umax Const.minPerEpochChurnLimitElectra
-    ((getTotalActiveBalance state) / Const.churnLimitQuotient)
-  churn - churn % Const.effectiveBalanceIncrementG
+/-- `get_balance_churn_limit`. It fails only where `get_total_active_balance` fails. The
+division and the rounding cannot fault. -/
+forkdef getBalanceChurnLimit (state : State) : Except StateTransitionError Gwei := do
+  let total ← getTotalActiveBalance state
+  let churn := umax Const.minPerEpochChurnLimitElectra (total / Const.churnLimitQuotient)
+  pure (churn - churn % Const.effectiveBalanceIncrementG)
 
 /-- `get_activation_exit_churn_limit`. -/
-forkdef getActivationExitChurnLimit (state : State) : Gwei :=
-  umin Const.maxPerEpochActivationExitChurnLimit (getBalanceChurnLimit state)
+forkdef getActivationExitChurnLimit (state : State) : Except StateTransitionError Gwei := do
+  pure (umin Const.maxPerEpochActivationExitChurnLimit (← getBalanceChurnLimit state))
 
-/-- `get_consolidation_churn_limit`. -/
-forkdef getConsolidationChurnLimit (state : State) : Gwei :=
-  getBalanceChurnLimit state - getActivationExitChurnLimit state
+/-- `get_consolidation_churn_limit`. The activation-exit limit is at most the balance limit, so
+the subtraction cannot underflow. -/
+forkdef getConsolidationChurnLimit (state : State) : Except StateTransitionError Gwei := do
+  let balanceChurn ← getBalanceChurnLimit state
+  let activationExitChurn ← getActivationExitChurnLimit state
+  pure (balanceChurn - activationExitChurn)
 
 /-! ## Churn reservation -/
 
@@ -101,7 +105,7 @@ forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Ep
   let currentEpoch := computeEpochAtSlot (sszGet state slot)
   let activationExitEpoch ← liftErr (computeActivationExitEpoch currentEpoch)
   let earliest := umax (sszGet state earliestExitEpoch) activationExitEpoch
-  let perEpochChurn := getActivationExitChurnLimit state
+  let perEpochChurn ← liftErr (getActivationExitChurnLimit state)
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
 
   let (ee, ebtc) ← liftErr (reserveChurn exitBalance consume perEpochChurn earliest)
@@ -117,7 +121,7 @@ forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : 
   let state ← get
   let activationExitEpoch ← liftErr (computeActivationExitEpoch (currentEpochOf state))
   let earliest := umax (sszGet state earliestConsolidationEpoch) activationExitEpoch
-  let perEpoch := getConsolidationChurnLimit state
+  let perEpoch ← liftErr (getConsolidationChurnLimit state)
   let consume := if (sszGet state earliestConsolidationEpoch) < earliest then perEpoch
                  else (sszGet state consolidationBalanceToConsume)
 
@@ -157,20 +161,30 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
   let slashIdx := umodIdx epoch Const.epochsPerSlashingsVector
 
   -- Mark slashed, extend withdrawability, record the effective balance in the
-  -- slashings ring buffer, and apply the slashing penalty.
+  -- slashings ring buffer, and apply the slashing penalty. The epoch sum and the
+  -- slashings sum are checked `uint64` adds, in the pyspec's order.
+  let slashedEpoch ← checkedAdd epoch (UInt64.ofNat Const.epochsPerSlashingsVector)
+    "slash_validator: epoch + EPOCHS_PER_SLASHINGS_VECTOR"
   let state := modValidator state i fun validator =>
     { validator with
         slashed := true,
-        withdrawableEpoch := umax validator.withdrawableEpoch (epoch + UInt64.ofNat Const.epochsPerSlashingsVector) }
-  let state := sszUpdate state with
-    slashings[slashIdx]! := (vget (sszGet state slashings) slashIdx + validator.effectiveBalance)
+        withdrawableEpoch := umax validator.withdrawableEpoch slashedEpoch }
+  let slashed ← checkedAdd (vget (sszGet state slashings) slashIdx) validator.effectiveBalance
+    "slash_validator: state.slashings[epoch % EPOCHS_PER_SLASHINGS_VECTOR] + effective_balance"
+  let state := sszUpdate state with slashings[slashIdx]! := slashed
   let state ← decreaseBalance state i (validator.effectiveBalance / UInt64.ofNat Const.minSlashingPenaltyQuotientElectra)
   set state
 
   -- Pay the proposer its share of the whistleblower reward, then the remainder.
+  -- `whistleblower_reward * PROPOSER_WEIGHT` is a checked `uint64` product: it overflows
+  -- when `WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA` is small next to the effective balance. The
+  -- difference cannot underflow, since `PROPOSER_WEIGHT ≤ WEIGHT_DENOMINATOR` makes the
+  -- proposer reward at most the whistleblower reward.
   let proposerIdx := getBeaconProposerIndex (← get)
   let whistleblowerReward := validator.effectiveBalance / UInt64.ofNat Const.whistleblowerRewardQuotientElectra
-  let proposerReward := whistleblowerReward * UInt64.ofNat Const.proposerWeight / UInt64.ofNat Const.weightDenominator
+  let weighted ← checkedMul whistleblowerReward (UInt64.ofNat Const.proposerWeight)
+    "slash_validator: whistleblower_reward * PROPOSER_WEIGHT"
+  let proposerReward := weighted / UInt64.ofNat Const.weightDenominator
   let state ← increaseBalance state proposerIdx proposerReward
   set (← increaseBalance state proposerIdx (whistleblowerReward - proposerReward))
 

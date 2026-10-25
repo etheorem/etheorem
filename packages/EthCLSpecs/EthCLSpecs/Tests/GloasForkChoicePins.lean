@@ -175,6 +175,30 @@ private def pinEnvelopeSigBuilderOob : Bool :=
   | _ => false
 example : pinEnvelopeSigBuilderOob = true := by native_decide
 
+/-- The error of `validateOnAttestation` on a store whose time 0 is before its genesis time
+10, for an attestation with slot 0 and target epoch 1. On that store `get_current_slot`
+raises `ValueError` (`.transition (.arithmetic …)`). `none` when the call succeeds. -/
+private def pinValidateAttestationError (isFromBlock : Bool) : Option StoreTransitionError :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let store := { pinStore with time := 0, genesisTime := 10 }
+  let att : @Attestation minimal :=
+    { (default : @Attestation minimal) with
+      data := { (default : AttestationData) with slot := 0, target := { epoch := 1, root := default } } }
+  match (validateOnAttestation (map := treeMap) store att isFromBlock : PinM Unit).run store with
+  | .error e _ => some e
+  | .ok _ _ => none
+
+-- From a block: the body does not read the store epoch. The check
+-- `target.epoch == compute_epoch_at_slot(slot)` fails (epoch 1 against slot 0), so `.assert`.
+-- pyspec raises `AssertionError` (`.tmp/spike/sweep/fc/validate_att_probe.py`).
+example : (pinValidateAttestationError true matches some (.assert _)) = true := by native_decide
+
+-- Not from a block: the store-epoch read raises first. pyspec raises `ValueError`.
+example : (pinValidateAttestationError false matches some (.transition (.arithmetic _))) = true := by
+  native_decide
+
 /-! ### The execution-layer seams, refuted
 
 Both answers default to `true`, so every conformance vector runs the accepting branch and
@@ -214,5 +238,116 @@ private def pinEngineRefuted : Bool × Bool :=
    isDataAvailable (Vector.replicate 32 0))
 
 #guard pinEngineRefuted = (false, false)
+
+/-- `bpsDeadlineMs` at the minimal config with `SLOT_DURATION_MS` set to `slotDurationMs`.
+The pins replay the two probe rows of site k (`get_slot_component_duration_ms`). -/
+private def pinDeadline (slotDurationMs bps : UInt64) : Except StateTransitionError UInt64 :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := slotDurationMs }
+  bpsDeadlineMs bps
+
+-- With `SLOT_DURATION_MS = 2^60`, the product `10000 * 2^60` overflows, and pyspec raises
+-- `ValueError` at `basis_points * SLOT_DURATION_MS`.
+#guard pinDeadline (2 ^ 60) 10000 matches .error (.arithmetic _)
+
+-- At the minimal config (`SLOT_DURATION_MS = 6000`), `10000 * 6000 // 10000 = 6000`.
+#guard (pinDeadline 6000 10000).toOption = some 6000
+
+/-- The error `recordBlockTimeliness pinRoot` raises on `pinStore` at `time` and `genesisTime`,
+with `SLOT_DURATION_MS = 2^60`, and with the default block at `pinRoot` when `stored`. -/
+private def pinTimelinessError (time genesisTime : UInt64) (stored : Bool) :
+    Option StoreTransitionError :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := 2 ^ 60 }
+  letI : HasherTag := fastHasherTag
+  let blocks := if stored then FcMap.insert FcMap.empty pinRoot (default : BeaconBlock)
+    else FcMap.empty
+  let store := { pinStore with time := time, genesisTime := genesisTime, blocks := blocks }
+  match (recordBlockTimeliness (map := treeMap) store pinRoot : PinM (Store treeMap)).run store with
+  | .error e _ => some e
+  | .ok _ _ => none
+
+-- The block is stored and the clock reads fine: the attestation deadline raises (probe row k,
+-- `record_block_timeliness` overflow).
+example : (pinTimelinessError 20 10 true matches some (.transition (.arithmetic
+    "get_slot_component_duration_ms: basis_points * SLOT_DURATION_MS"))) = true := by
+  native_decide
+
+-- The block is missing: `store.blocks[root]` raises first (pyspec `KeyError`).
+example : (pinTimelinessError 20 10 false matches some (.missingKey _)) = true := by
+  native_decide
+
+-- A store time before genesis: the `time - genesis_time` underflow raises first.
+example : (pinTimelinessError 0 10 true matches some (.transition (.arithmetic
+    "time_into_slot: time - genesis_time"))) = true := by native_decide
+
+/-- A store for the `slot + 1 == get_current_slot(store)` pins: a block of slot `slot` at
+`pinRoot` when `stored`, and a store time before genesis when `beforeGenesis`. -/
+private def pinSlotStore (slot : UInt64) (beforeGenesis stored : Bool) :
+    @Store minimal treeMap fastHasherTag :=
+  letI : Preset := minimal
+  letI : HasherTag := fastHasherTag
+  let blocks := if stored then
+      FcMap.insert FcMap.empty pinRoot { (default : BeaconBlock) with slot := slot }
+    else FcMap.empty
+  let time : UInt64 := if beforeGenesis then 10 else 1012
+  { pinStore with time := time, genesisTime := 1000, blocks := blocks }
+
+/-- The error of `isPreviousSlotPayloadDecision` on an EMPTY node at `pinRoot`, on
+`pinSlotStore`. `none` when the call succeeds. -/
+private def pinPrevSlotDecisionError (slot : UInt64) (beforeGenesis stored : Bool) :
+    Option StoreTransitionError :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let store := pinSlotStore slot beforeGenesis stored
+  match (isPreviousSlotPayloadDecision store (.empty pinRoot) : PinM Bool).run store with
+  | .error e _ => some e
+  | .ok _ _ => none
+
+/-- The error of `shouldExtendPayload pinRoot` on `pinSlotStore`. `none` when the call
+succeeds. -/
+private def pinExtendPayloadError (slot : UInt64) (beforeGenesis stored : Bool) :
+    Option StoreTransitionError :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let store := pinSlotStore slot beforeGenesis stored
+  match (shouldExtendPayload store pinRoot : PinM Bool).run store with
+  | .error e _ => some e
+  | .ok _ _ => none
+
+-- The block slot is `2^64 - 1` and the clock is before genesis. pyspec raises `ValueError`
+-- at `store.blocks[root].slot + 1`, so the increment raises before the clock read
+-- (`.tmp/batchfaith/probe_item6.py`, row "both").
+example : (pinPrevSlotDecisionError (2 ^ 64 - 1) true true matches some (.transition
+    (.arithmetic "is_previous_slot_payload_decision: blocks[root].slot + 1"))) = true := by
+  native_decide
+example : (pinExtendPayloadError (2 ^ 64 - 1) true true matches some (.transition
+    (.arithmetic "should_extend_payload: blocks[root].slot + 1"))) = true := by
+  native_decide
+
+-- The increment alone overflows (row "slot").
+example : (pinPrevSlotDecisionError (2 ^ 64 - 1) false true matches some (.transition
+    (.arithmetic "is_previous_slot_payload_decision: blocks[root].slot + 1"))) = true := by
+  native_decide
+example : (pinExtendPayloadError (2 ^ 64 - 1) false true matches some (.transition
+    (.arithmetic "should_extend_payload: blocks[root].slot + 1"))) = true := by
+  native_decide
+
+-- The clock alone is before genesis: `time - genesis_time` raises (row "clock").
+example : (pinPrevSlotDecisionError 5 true true matches some (.transition
+    (.arithmetic "get_slots_since_genesis: time - genesis_time"))) = true := by
+  native_decide
+example : (pinExtendPayloadError 5 true true matches some (.transition
+    (.arithmetic "get_slots_since_genesis: time - genesis_time"))) = true := by
+  native_decide
+
+-- The block is missing: `store.blocks[root]` raises first, with both faults present
+-- (row "missing", pyspec `KeyError`).
+example : (pinPrevSlotDecisionError (2 ^ 64 - 1) true false matches some (.missingKey _)) =
+    true := by native_decide
+example : (pinExtendPayloadError (2 ^ 64 - 1) true false matches some (.missingKey _)) =
+    true := by native_decide
 
 end EthCLSpecs.Tests.GloasForkChoicePins

@@ -89,8 +89,8 @@ forkdef processBlockHeader (block : BeaconBlock) : StateTransition Unit := do
   let newHeader : BeaconBlockHeader :=
     { slot := block.slot, proposerIndex := block.proposerIndex, parentRoot := block.parentRoot,
       stateRoot := zeroRoot, bodyRoot := htr block.body }
-  let hb ← assertH (block.proposerIndex.toNat < (sszGet state validators).size)
-  let proposer := (sszGet state validators)[block.proposerIndex.toNat]'hb.down
+  -- `state.validators[block.proposer_index]` raises `IndexError` past the registry.
+  let proposer ← sszGetIdx (sszGet state validators) block.proposerIndex.toNat
   assert (!proposer.slashed)
 
   modifyState fun state => sszUpdate state with latestBlockHeader := newHeader
@@ -112,7 +112,10 @@ forkdef processRandao (body : BeaconBlockBody) : StateTransition Unit := do
     sszUpdate state with randaoMixes[umodIdx epoch Const.epochsPerHistoricalVector]! := newMix
 
 /-- `process_eth1_data`: append the vote and adopt it once it has a majority over
-the voting period. -/
+the voting period. pyspec evaluates `votes.count(...) * 2`, then
+`EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH`. `count` returns a Python `int`, so
+`count * 2` is exact, and the body keeps it in `Nat`. The period product multiplies two
+`uint64` constants, so it is a checked product (`.arithmetic`). -/
 forkdef processEth1Data (body : BeaconBlockBody) : StateTransition Unit := do
   appendState eth1DataVotes body.eth1Data
 
@@ -120,58 +123,100 @@ forkdef processEth1Data (body : BeaconBlockBody) : StateTransition Unit := do
   let target := htr body.eth1Data
   let cnt := (sszGet state eth1DataVotes).foldl
     (fun acc e => if htr e == target then acc + 1 else acc) 0
-  if cnt * 2 > Const.epochsPerEth1VotingPeriod * Const.slotsPerEpoch then
+  let votingSlots ← checkedMul (UInt64.ofNat Const.epochsPerEth1VotingPeriod)
+    (UInt64.ofNat Const.slotsPerEpoch)
+    "process_eth1_data: EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH"
+  if cnt * 2 > votingSlots.toNat then
     modifyState fun state => sszUpdate state with eth1Data := body.eth1Data
 
 /-- `process_sync_aggregate`: verify the aggregate signature over the previous
 slot's block root, then apply participant / proposer rewards and non-participant
-penalties. The participant pubkey list is the bit-selected committee keys;
-`eth_fast_aggregate_verify` aggregates them, so the all-participate /
-majority-subtraction optimizations the spec describes are unnecessary and the
-verification result is identical. -/
+penalties.
+
+The verify gets the keys the spec chooses by the number of set bits:
+
+- All bits set: the stored `aggregate_pubkey`, unchanged. The body does not compare it with
+  the committee keys.
+- More than half set: the G1 difference of the stored aggregate and the aggregate of the
+  non-participant keys. `ValueError` (`.arithmetic`) when the stored aggregate or a
+  non-participant key does not decode as a G1 point, or when a non-participant key fails
+  `KeyValidate`.
+- Half set or fewer: the participant keys.
+
+The pyspec chooses the keys before it reads the block root. So a key fault raises before a
+fault in `get_block_root_at_slot`.
+
+Before any reward, the pyspec finds the registry position of every committee key
+(`all_pubkeys.index`). A key that is not in the registry raises `ValueError`
+(`.arithmetic`). -/
 forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let state ← get
 
-  -- Verify the aggregate over the previous slot's block root from the bit-selected keys.
+  -- Choose the verification keys by the number of set bits.
   let syncCommittee := sszGet state currentSyncCommittee
   let bits := agg.syncCommitteeBits
-  let participantKeys : Array BLSPubkey :=
-    (Bitvector.trueIndices bits).map (fun i => syncCommittee.pubkeys[i]!)
+  let participantCount := (Bitvector.trueIndices bits).size
+  let participantKeys : Array BLSPubkey ←
+    if participantCount == Const.syncCommitteeSize then
+      pure #[syncCommittee.aggregatePubkey]
+    else if participantCount > Const.syncCommitteeSize / 2 then do
+      let nonParticipantKeys : Array BLSPubkey :=
+        ((Array.range Const.syncCommitteeSize).filter (fun i => !bitGet bits i)).map
+          (fun i => syncCommittee.pubkeys[i]!)
+      let nonParticipantAggregate ← liftErr (blsAggregatePubkeysChecked nonParticipantKeys)
+      let negated ← liftErr (blsG1Neg nonParticipantAggregate)
+      pure #[← liftErr (blsG1Add syncCommittee.aggregatePubkey negated)]
+    else
+      pure ((Bitvector.trueIndices bits).map (fun i => syncCommittee.pubkeys[i]!))
+
+  -- Verify the signature over the previous slot's block root.
   let previousSlot := (umax (sszGet state slot) 1) - 1
   let previousBlockRoot ← getBlockRootAtSlot state previousSlot
   let signingRoot := computeSigningRoot previousBlockRoot
     (getDomain state Const.domainSyncCommittee (computeEpochAtSlot previousSlot))
   assert (blsEthFastAggregateVerify participantKeys signingRoot agg.syncCommitteeSignature)
 
-  -- Per-participant and per-proposer reward amounts.
-  let totalActiveIncrements := (getTotalActiveBalance state).toNat / Const.effectiveBalanceIncrement
-  let totalBaseRewards := getBaseRewardPerIncrement state * totalActiveIncrements
-  let maxParticipantRewards := totalBaseRewards * Const.syncRewardWeight / Const.weightDenominator / Const.slotsPerEpoch
-  let participantReward : Gwei := UInt64.ofNat (maxParticipantRewards / Const.syncCommitteeSize)
-  let proposerReward : Gwei :=
-    UInt64.ofNat (participantReward.toNat * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight))
+  -- Per-participant and per-proposer reward amounts, in `uint64` as pyspec forms them. The
+  -- two products with a state value or a `Preset` field are checked. `participant_reward *
+  -- PROPOSER_WEIGHT` stays plain: `participant_reward` is below
+  -- `2 ^ 64 / 64 / SLOTS_PER_EPOCH / SYNC_COMMITTEE_SIZE`, since `weightedRewards` is checked
+  -- below `2 ^ 64`, so the product stays below `2 ^ 61`.
+  let totalActiveIncrements := (← liftErr (getTotalActiveBalance state)) / Const.effectiveBalanceIncrementG
+  let perIncrement ← liftErr (getBaseRewardPerIncrement state)
+  let totalBaseRewards ← checkedMul perIncrement totalActiveIncrements
+    "process_sync_aggregate: get_base_reward_per_increment(state) * total_active_increments"
+  let weightedRewards ← checkedMul totalBaseRewards (UInt64.ofNat Const.syncRewardWeight)
+    "process_sync_aggregate: total_base_rewards * SYNC_REWARD_WEIGHT"
+  let maxParticipantRewards :=
+    weightedRewards / UInt64.ofNat Const.weightDenominator / UInt64.ofNat Const.slotsPerEpoch
+  let participantReward : Gwei := maxParticipantRewards / UInt64.ofNat Const.syncCommitteeSize
+  let proposerReward : Gwei := participantReward * UInt64.ofNat Const.proposerWeight /
+    UInt64.ofNat (Const.weightDenominator - Const.proposerWeight)
   let proposerIdx := getBeaconProposerIndex state
+
+  -- `committee_indices`: the first registry position of each committee key.
   let validators := (sszGet state validators).toArray
+  let committeeIndices : Array ValidatorIndex ← syncCommittee.pubkeys.toArray.mapM fun pk =>
+    match validators.findIdx? (·.pubkey == pk) with
+    | some pIdx => pure (UInt64.ofNat pIdx)
+    | none => throwArithmetic "process_sync_aggregate: all_pubkeys.index(pubkey)"
 
   -- Reward participants (and the proposer), penalize non-participants.
   let mut state := state
-  for h : i in [0:Const.syncCommitteeSize] do
-    let pk := syncCommittee.pubkeys[i]
-    match validators.findIdx? (·.pubkey == pk) with
-    | some pIdx =>
-      if bitGet bits i then
-        state ← increaseBalance state (UInt64.ofNat pIdx) participantReward
-        state ← increaseBalance state proposerIdx proposerReward
-      else
-        state ← decreaseBalance state (UInt64.ofNat pIdx) participantReward
-    | none => pure ()
+  for h : i in [0:committeeIndices.size] do
+    let pIdx := committeeIndices[i]
+    if bitGet bits i then
+      state ← increaseBalance state pIdx participantReward
+      state ← increaseBalance state proposerIdx proposerReward
+    else
+      state ← decreaseBalance state pIdx participantReward
   set state
 
 /-- `process_execution_payload`: the consistency checks against the previous
 header and the current RANDAO / slot time, then cache the new header. The
 execution-engine `verify_and_notify_new_payload` is the consumer's responsibility
-(valid for `sanity/blocks`); the blob-parameter bound is enforced where the
-operation format supplies it. -/
+(valid for `sanity/blocks`). The blob commitments must fit the blob limit of the
+current epoch (EIP-7892). -/
 forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit := do
   let state ← get
   let payload := body.executionPayload
@@ -183,6 +228,7 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   -- through `liftErr`, which lands the `.arithmetic` fault on this machine unwrapped.
   let expectedTimestamp ← liftErr (computeTimeAtSlot state (sszGet state slot))
   assert (payload.timestamp == expectedTimestamp)
+  assert (body.blobKzgCommitments.size ≤ (getBlobParameters epoch).maxBlobsPerBlock.toNat)
 
   let header : ExecutionPayloadHeader :=
     { parentHash := payload.parentHash, feeRecipient := payload.feeRecipient,
@@ -207,14 +253,15 @@ forkdef processBlock (block : BeaconBlock) : StateTransition Unit := do
   processOperations block.body
   processSyncAggregate block.body.syncAggregate
 
-/-- `verify_block_signature`. -/
-forkdef verifyBlockSignature (state : State) (signedBlock : SignedBeaconBlock) : Bool :=
+/-- `verify_block_signature`. The pyspec reads `state.validators[proposer_index]` first, and
+that read raises `IndexError` past the registry. The body reads through `sszGetIdx`
+(`.outOfBounds`), so the result is an `Except`. -/
+forkdef verifyBlockSignature (state : State) (signedBlock : SignedBeaconBlock) :
+    Except StateTransitionError Bool := do
   let block := signedBlock.message
-  if block.proposerIndex.toNat ≥ (sszGet state validators).size then false
-  else
-    let proposer := sszGet state validators[block.proposerIndex.toNat]!
-    let signingRoot := computeSigningRoot block (getDomain state Const.domainBeaconProposer (currentEpochOf state))
-    blsVerify proposer.pubkey signingRoot signedBlock.signature
+  let proposer ← sszGetIdx (sszGet state validators) block.proposerIndex.toNat
+  let signingRoot := computeSigningRoot block (getDomain state Const.domainBeaconProposer (currentEpochOf state))
+  pure (blsVerify proposer.pubkey signingRoot signedBlock.signature)
 
 /-- `state_transition`: advance to the block's slot, verify the block signature,
 apply the block, and check the claimed post-state root, all under `validateResult`. -/
@@ -222,7 +269,7 @@ forkdef stateTransition (signedBlock : SignedBeaconBlock) (validateResult : Bool
     StateTransition Unit := do
   let block := signedBlock.message
   processSlots block.slot
-  if validateResult then assert (verifyBlockSignature (← get) signedBlock)
+  if validateResult then assert (← liftErr (verifyBlockSignature (← get) signedBlock))
   processBlock block
   if validateResult then
     let root ← getStateRoot

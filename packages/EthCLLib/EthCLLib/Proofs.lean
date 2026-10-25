@@ -1,4 +1,5 @@
 import EthCLLib.Proofs.ArrayUnion
+import EthCLLib.Proofs.Checked
 import EthCLLib.Proofs.EngineLaws
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
@@ -25,6 +26,8 @@ Re-exports:
 
 * `EthCLLib.Proofs.ArrayUnion`: an element is in `arrayUnion xs ys` exactly when it is
   in `xs` or in `ys` (`mem_arrayUnion`).
+* `EthCLLib.Proofs.Checked`: when `checkedMul` raises. `mulGuard_iff` reads its guard on
+  `Nat`, and `checkedMul_of_lt` / `checkedMul_of_ge` give the two outcomes from a `Nat` bound.
 * `EthCLLib.Proofs.EngineLaws`: the EIP-7805 inclusion rule as an assumption on an
   `ExecutionEngine` (`LawfulInclusionList`).
 * `EthCLLib.Proofs.LawfulFcMap`: the laws of an `FcMap`

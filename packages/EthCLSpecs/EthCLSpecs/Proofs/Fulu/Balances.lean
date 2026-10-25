@@ -19,8 +19,7 @@ the `uint64` subtraction never wraps.
 
 These theorems do not bound the total balance, and that bound does not follow from the spec.
 `VALIDATOR_REGISTRY_LIMIT` times `MAX_EFFECTIVE_BALANCE_ELECTRA` is about `2 ^ 81`. The real
-bound is the ETH supply, which the consensus spec never gives. `processDeposit` carries the
-same gap.
+bound is the ETH supply, which the consensus spec never gives.
 
 `increaseBalance` takes the state it writes as an explicit argument and returns the new one as
 its value. It never calls `set`, so a successful run leaves the threaded state untouched; the
@@ -34,8 +33,8 @@ two states the mutator keeps apart: the one it writes, `state`, and the one it t
 `preState`.
 
 Scope is Fulu's two mutators. Gloas and Heze inherit them at their own `State`, as
-`increaseBalance` (`Gloas/EpochProcessing.lean:42`) and `increaseBalance`
-(`Heze/EpochProcessing.lean:30`), and likewise for `decreaseBalance`. Each is a separate
+`increaseBalance` (`Gloas/EpochProcessing.lean:44`) and `increaseBalance`
+(`Heze/EpochProcessing.lean:32`), and likewise for `decreaseBalance`. Each is a separate
 constant, and these theorems say nothing about those instantiations.
 
 `SizzLean.Proofs.SSZListSet` supplies `sszListSet!_getElem!_self`, which reads back the element

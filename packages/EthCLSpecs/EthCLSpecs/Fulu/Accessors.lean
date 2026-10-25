@@ -20,22 +20,34 @@ namespace EthCLSpecs.Fulu
 
 state_section
 
-/-- `get_total_active_balance`. -/
-forkdef getTotalActiveBalance (state : State) : Gwei :=
+/-- `get_total_active_balance`. The active indices come from `validators` itself, so the reads
+stay in range, and only the `uint64` sum can fault. -/
+forkdef getTotalActiveBalance (state : State) : Except StateTransitionError Gwei :=
   getTotalBalance state (getActiveValidatorIndices state (computeEpochAtSlot (sszGet state slot)))
 
-/-- `get_unslashed_participating_indices(state, flag_index, epoch)`. No committees. -/
-forkdef getUnslashedParticipatingIndices (state : State) (flagIndex : Nat) (epoch : Epoch) :
-    Array ValidatorIndex := Id.run do
-  let isCurrent := epoch == computeEpochAtSlot (sszGet state slot)
-  let part := if isCurrent then sszGet state currentEpochParticipation else sszGet state previousEpochParticipation
-  let validators := sszGet state validators
-  let mut out : Array ValidatorIndex := #[]
+/-- `get_unslashed_participating_indices(state, flag_index, epoch)`. No committees.
 
-  for i in getActiveValidatorIndices state epoch do
-    let idx := i.toNat
-    if hasFlag (part[idx]!) flagIndex && !(validators[idx]!).slashed then out := out.push i
-  return out
+The pyspec runs three steps, and the body keeps their order:
+
+1. `assert epoch in (previous, current)`. Any other epoch rejects with `.assert`.
+2. The participation read `epoch_participation[i]` for each active index, in active order. A
+   participation list shorter than the registry raises `IndexError` (`.outOfBounds`).
+3. The `state.validators[index].slashed` filter over the participants. These indices are
+   active, so they are in range for `validators`.
+
+The result keeps the active order. The pyspec returns a `set`, and every caller only tests
+membership or sums over it. -/
+forkdef getUnslashedParticipatingIndices (state : State) (flagIndex : Nat) (epoch : Epoch) :
+    Except StateTransitionError (Array ValidatorIndex) := do
+  let currentEpoch := computeEpochAtSlot (sszGet state slot)
+  assert (epoch == previousEpochOf state || epoch == currentEpoch)
+  let part := if epoch == currentEpoch then sszGet state currentEpochParticipation
+              else sszGet state previousEpochParticipation
+  let participating ← (getActiveValidatorIndices state epoch).filterM fun i => do
+    let flags ← sszGetIdx part i.toNat
+    pure (hasFlag flags flagIndex)
+  let validators := sszGet state validators
+  pure (participating.filter fun i => !(validators[i.toNat]!).slashed)
 
 /-- `get_block_root_at_slot`. The pinned `assert slot < state.slot <= slot +
 SLOTS_PER_HISTORICAL_ROOT` is a recency guard that raises for a stale or future
@@ -61,10 +73,15 @@ forkdef getBlockRoot (state : State) (epoch : Epoch) : StateTransition Root := d
   let epochFirstSlot ← liftErr (computeStartSlotAtEpoch epoch)
   getBlockRootAtSlot state epochFirstSlot
 
-/-- `get_pending_balance_to_withdraw`. -/
-forkdef getPendingBalanceToWithdraw (state : State) (vi : ValidatorIndex) : Gwei :=
-  (sszGet state pendingPartialWithdrawals).foldl
-    (fun acc w => if w.validatorIndex == vi then acc + w.amount else acc) 0
+/-- `get_pending_balance_to_withdraw`. The pyspec's `sum` adds `Gwei` amounts, so each partial
+sum is a checked `uint64` and an overflow raises `ValueError`. The body adds through
+`checkedAdd` (`.arithmetic`). -/
+forkdef getPendingBalanceToWithdraw (state : State) (vi : ValidatorIndex) :
+    Except StateTransitionError Gwei :=
+  (sszGet state pendingPartialWithdrawals).toArray.foldlM (init := 0) fun acc w =>
+    if w.validatorIndex == vi then
+      checkedAdd acc w.amount "get_pending_balance_to_withdraw: sum of amounts"
+    else pure acc
 
 end
 

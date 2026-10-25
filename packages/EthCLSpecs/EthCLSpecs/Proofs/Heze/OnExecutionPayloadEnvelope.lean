@@ -7,7 +7,7 @@ import EthCLLib.Proofs.LawfulFcMap
 /-!
 # Accepting an execution payload envelope
 
-Heze's `onExecutionPayloadEnvelope` (`Heze/ForkChoice.lean:426-448`)
+Heze's `onExecutionPayloadEnvelope` (`Heze/ForkChoice.lean:428-450`)
 verifies and records a revealed payload envelope. This module proves its
 complete compositional `.run` equation at `ForkChoiceStoreRun (Store map)`.
 

@@ -145,12 +145,19 @@ threads into `process_inclusion_list`. -/
 the minimal config that is `6667 * 6000 / 10000 = 4000` (truncating divide), pinning both the
 `INCLUSION_LIST_DUE_BPS = 6667` constant and the inherited `bpsDeadlineMs` composition. Arithmetic
 only (no hash), so kernel `#guard`. -/
-private def pinIlDueMs : UInt64 :=
+private def pinIlDueMs : Option UInt64 :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  getInclusionListDueMs
-#guard pinIlDueMs = 4000
+  getInclusionListDueMs.toOption
+#guard pinIlDueMs = some 4000
+
+-- With `SLOT_DURATION_MS = 2^60`, `INCLUSION_LIST_DUE_BPS * SLOT_DURATION_MS` overflows, and
+-- pyspec raises `ValueError` in `get_slot_component_duration_ms` (probe row k).
+#guard
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := 2 ^ 60 }
+  getInclusionListDueMs matches .error (.arithmetic _)
 
 /-- The faithful empty-committee throw. Over a zero-validator `default BeaconState` (at `slot :=
 1`, so the `state.slot != 0` underflow throw does not fire), `slot - 1`'s beacon committee is
@@ -276,6 +283,26 @@ private def pinOnIlTimely (time : UInt64) : Option Bool :=
 example : pinOnIlTimely 0 = some true := by native_decide
 -- time 4: timeIntoSlotMs = 4000, not < 4000 ⇒ untimely.
 example : pinOnIlTimely 4 = some false := by native_decide
+
+/-- The `.arithmetic` description `onInclusionList` raises at `time` and `genesisTime`, with
+`SLOT_DURATION_MS = 2^60`. `none` when it raises nothing of that kind. -/
+private def pinOnIlError (time genesisTime : UInt64) : Option String :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := 2 ^ 60 }
+  letI : HasherTag := fastHasherTag
+  let signed : @SignedInclusionList minimal := default
+  match runOn { pinPilsStore false none with time := time, genesisTime := genesisTime }
+      (onInclusionList (map := treeMap) signed : EStateM StoreTransitionError (Store treeMap) Unit) with
+  | .error (.transition (.arithmetic d), _) => some d
+  | _ => none
+
+-- The clock reads fine, and the inclusion-list deadline raises (probe row k,
+-- `on_inclusion_list` overflow).
+example : pinOnIlError 20 10
+    = some "get_slot_component_duration_ms: basis_points * SLOT_DURATION_MS" := by native_decide
+
+-- A store time before genesis: the `time - genesis_time` underflow raises first.
+example : pinOnIlError 0 10 = some "time_into_slot: time - genesis_time" := by native_decide
 
 /-! ### Build-enforced pins for the inclusion-list store (vectorless)
 
@@ -433,5 +460,37 @@ private def pinAnchorRejects : Bool :=
   | .error (.assert _) => true
   | _                  => false
 example : pinAnchorRejects = true := by native_decide
+
+/-- The error of Heze's `shouldExtendPayload pinPilsRoot` on a store with a block of slot
+`slot` at `pinPilsRoot` when `stored`, and a store time before genesis when `beforeGenesis`.
+`none` when the call succeeds. -/
+private def pinExtendPayloadError (slot : UInt64) (beforeGenesis stored : Bool) :
+    Option StoreTransitionError :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let blocks := if stored then
+      FcMap.insert FcMap.empty pinPilsRoot { (default : BeaconBlock) with slot := slot }
+    else FcMap.empty
+  let time : UInt64 := if beforeGenesis then 10 else 1012
+  let store := { pinPilsStore false none with time := time, genesisTime := 1000, blocks := blocks }
+  match (shouldExtendPayload store pinPilsRoot : PinM Bool).run store with
+  | .error e _ => some e
+  | .ok _ _ => none
+
+-- The four rows of `.tmp/batchfaith/probe_item6.py` for Heze `should_extend_payload`. With
+-- both faults, pyspec raises `ValueError` at `store.blocks[root].slot + 1`, before the
+-- clock read.
+example : (pinExtendPayloadError (2 ^ 64 - 1) true true matches some (.transition
+    (.arithmetic "should_extend_payload: blocks[root].slot + 1"))) = true := by
+  native_decide
+example : (pinExtendPayloadError (2 ^ 64 - 1) false true matches some (.transition
+    (.arithmetic "should_extend_payload: blocks[root].slot + 1"))) = true := by
+  native_decide
+example : (pinExtendPayloadError 5 true true matches some (.transition
+    (.arithmetic "get_slots_since_genesis: time - genesis_time"))) = true := by
+  native_decide
+example : (pinExtendPayloadError (2 ^ 64 - 1) true false matches some (.missingKey _)) =
+    true := by native_decide
 
 end EthCLSpecs.Tests.HezeForkChoicePins

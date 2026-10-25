@@ -25,6 +25,8 @@ inherit computeStartSlotAtEpoch
 inherit getCurrentEpoch
 inherit getPreviousEpoch
 inherit computeTimeAtSlot
+inherit BlobParameters
+inherit getBlobParameters
 inherit getRandaoMix
 inherit modBalance
 inherit increaseBalance

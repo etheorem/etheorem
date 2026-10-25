@@ -600,41 +600,24 @@ lets the Lean read naturally.
 
 ## 6. Genesis construction and fork upgrade
 
-Two state-lifecycle functions sit outside the per-slot transition. They are
-per-fork `forkdef`s and they are the `genesis` and `fork` entry points of the fork
-interface.
+Two state-lifecycle entry points of the fork interface sit outside the per-slot
+transition: `genesis` and `fork`. The fork bodies model the upgrade and leave genesis
+out.
 
 ### 6.1 Genesis
 
-`initializeBeaconStateFromEth1` is a `StateTransition Unit`, not a state-builder. It
-runs over a default initial state already threaded through the monad: it sets the
-genesis fields, then runs the same monadic `processDeposit` that block processing
-uses, over each genesis deposit.
+The model does not construct a genesis state. No fork body defines
+`initialize_beacon_state_from_eth1` or `is_valid_genesis_state`. Each fork's
+`runGenesis` returns `.outOfScope`, and the driver reports a `genesis` vector as
+out of scope rather than as a failure. Fulu has no eth1-bridge deposit step either,
+because Fulu removed the bridge (`fulu/beacon-chain.md:142-188`).
 
-```lean
-forkdef initializeBeaconStateFromEth1
-    (eth1BlockHash : Hash32) (eth1Timestamp : UInt64)
-    (deposits : List Deposit) : StateTransition Unit := do
-  modifyState fun state => -- set genesisTime, fork, eth1Data, latest header, ...
-    ...
-  for d in deposits do
-    processDeposit d            -- the same monadic step block processing runs
-  -- effective-balance and activation finalization follow
-```
-
-The runner is the sole anchor. It boxes `default : BeaconState` with the config's
-flavour, `FastBox` for the runner and `UncachedBox Sha256Spec` for proofs, and runs
-genesis over that boxed state. So genesis never touches a box and the box type is never passed to
-it. The flavour choice lives at the one anchor where the state is first built, the
-arrangement the contract's `State`-from-the-author's-view section describes.
-
-`isValidGenesisState` is a pure `State → Bool` predicate. The harness calls it
-standalone, not inside a transition, so it stays pure under the state-reading rule
-of Section 5: it does not read the threaded state, it inspects a state it is handed,
-which reads cleanly as a pure predicate.
-
-Both are per-fork. Gloas overrides `initializeBeaconStateFromEth1` to initialize the
-ePBS fields, and the `genesis` vector format exercises them.
+Every run starts from a state that the vector supplies. The runner decodes that
+pre-state into a `FastBox`. A proof starts from a plain value `v` and boxes it with
+`pureState v`, an `UncachedBox`. So no fork body builds a box, and no fork body takes
+the box type as a parameter. The flavour choice lives at the one anchor where
+the state is first built, the arrangement the contract's `State`-from-the-author's-view
+section describes.
 
 ### 6.2 Fork upgrade
 
@@ -798,20 +781,30 @@ validators root through `computeDomain` directly, bypassing `getDomain`, because
 deposit signature is made before the depositor knows the chain it will join.
 
 ```lean
-forkdef processDeposit (deposit : Deposit) : StateTransition Unit := do
-  -- ... merkle-branch check against eth1Data.depositRoot ...
-  let domain := computeDomain Const.domainDeposit
-                  (some Const.genesisForkVersion) (zeroBytes 32)  -- fixed, zero gvr
-  let signingRoot := computeSigningRoot deposit.data.message domain
-  if blsVerify deposit.data.pubkey signingRoot deposit.data.signature then
-    -- add or top up the validator
-    ...
-  -- else: skip this deposit; a bad deposit signature does not reject the block
+forkdef isValidDepositSignature (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei)
+    (signature : BLSSignature) : Bool :=
+  let msg : DepositMessage := { pubkey, withdrawalCredentials := wc, amount }
+  let domain := computeDomain Const.domainDeposit Const.genesisForkVersion
+    (Vector.replicate 32 0)                                   -- fixed, zero gvr
+  let signingRoot := computeSigningRoot msg domain
+  blsVerify pubkey signingRoot signature
+
+forkdef applyPendingDeposit (deposit : PendingDeposit) : StateTransition Unit := do
+  let state ← get
+  match validatorIndexByPubkey? state deposit.pubkey with
+  | some vi => set (← increaseBalance state (UInt64.ofNat vi) deposit.amount)
+  | none    =>
+      if isValidDepositSignature deposit.pubkey deposit.withdrawalCredentials deposit.amount deposit.signature then
+        addValidatorToRegistry deposit.pubkey deposit.withdrawalCredentials deposit.amount
+      else pure ()                       -- a bad signature skips the new validator
 ```
 
-The deposit's `verify` is a conditional, not a gate. A bad deposit signature skips
-the validator rather than rejecting the block, which is the one place crypto
-verification branches instead of asserting.
+The deposit signature check is a conditional, not a gate. A bad signature on a
+pending deposit for a new pubkey skips that validator, and epoch processing goes on.
+Gloas branches on a deposit signature at three more sites (`Gloas/Operations.lean`):
+`is_pending_validator`, `apply_deposit_for_builder`, and
+`process_builder_deposit_request`, whose `isValidBuilderDepositSignature` uses
+`DOMAIN_BUILDER_DEPOSIT`.
 
 ### 8.3 `verify` as a gate, `todo` for the unreachable
 
@@ -901,7 +894,7 @@ interface and `PySpecTests`, written once and fork-agnostic, runs every format.
 | `operations/*` | a single operation handler | yes |
 | `rewards/*` | a single delta function | yes |
 | `fork_choice` | the `on_*` handlers | yes |
-| `genesis` | `initializeBeaconStateFromEth1` | yes |
+| `genesis` | `runGenesis`, which returns `.outOfScope` (§6.1) | no |
 | `fork` | `upgradeToGloas` / `upgradeToHeze` | yes (Fulu→Gloas, Gloas→Heze) |
 | `transition` | `stateTransition` with the upgrade mid-fold | yes (Fulu→Gloas, Gloas→Heze) |
 | `ssz_static` | each container's `SSZRepr` (decode, hash-tree-root, round-trip) | yes (Fulu + Gloas + Heze) |

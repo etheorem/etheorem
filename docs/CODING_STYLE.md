@@ -524,14 +524,14 @@ with no `get` / `set`, that boundary is the seam.
 #### When the language forces it
 
 Some splits exist because Lean demands them, with no style motive. The
-fuel-bounded loops `ppdLoop` (`EthCLSpecs/Fulu/EpochProcessing.lean:ppdLoop`), `pcLoop`
-(`:pcLoop`), and `cbwsAux` (`EthCLSpecs/Fulu/Committees.lean:cbwsAux`) are extracted for
-structural recursion. The `Node.ofShape` mutual block
+fuel-bounded loops `ppdLoop` (`EthCLSpecs/Fulu/EpochProcessing.lean:ppdLoop`) and `pcLoop`
+(`:pcLoop`) are extracted for structural recursion. `cbwsAux`
+(`EthCLSpecs/Fulu/Committees.lean:cbwsAux`) is extracted because its loop recurses. The `Node.ofShape` mutual block
 (`SizzLean/Cache/MerkleTree/Build.lean`) is split into mutual helpers because Lean
 4.29.1 rejects passing `Node.ofShape` itself as a higher-order argument, as its
 "Why structural mutual recursion" note records. These helpers are tolerated
 even when they take many parameters (`cbwsAux` threads eight). That parameter count
-is itself a smell, and it is the price of the termination proof. Do not copy the
+is itself a smell, and it is the price of the extraction. Do not copy the
 wide-parameter shape into splits that the language does not force.
 
 What the language forces is the extraction and its parameter list, not a pass on
@@ -573,9 +573,9 @@ whole, and toward `where` over promotion, is stronger than elsewhere.
 #### Applied to the long ones
 
 `processAttestation` (`EthCLSpecs/Gloas/Operations.lean:processAttestation`) is the case where both
-tools apply. The committee-coverage check (the `(ok, offset)` fold) is a
-self-contained validity computation with a clean boundary; lift it to a `where
-verifyCommitteeCoverage` helper. The participation-flag loop that follows mutates
+tools apply. The committee loop is a self-contained validity computation with a clean
+boundary, so it is the `attestationCommitteeOffset` helper. Both forks share it, so it is
+a `forkdef` that Gloas inherits. The participation-flag loop that follows mutates
 three accumulators together (`stateAcc`, `proposerNum`, `weight`), so extracting it
 cleanly means returning a triple, which buys little. Leave that inline and
 paragraph it (§1). The judgment is per-block: extract the parts with clean

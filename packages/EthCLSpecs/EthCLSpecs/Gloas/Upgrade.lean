@@ -41,14 +41,14 @@ is the unshuffled balance-weighted selection of `PTC_SIZE` of them. The committe
 machinery is Fulu's (the pre-state is a Fulu state), so the helpers are called
 directly rather than inherited. -/
 def computePtcFromFulu [Preset] [HasherTag] (state : Fulu.State) (slot : Slot) :
-    Vector ValidatorIndex Const.ptcSize :=
+    Except StateTransitionError (Vector ValidatorIndex Const.ptcSize) := do
   let epoch := Fulu.computeEpochAtSlot slot
   let seed := sha ((Fulu.getSeed state epoch Const.domainPtcAttester) ++ uint64ToBytes slot)
   let committeesPerSlot := Fulu.getCommitteeCountPerSlot state epoch
-  let indices := (Array.range committeesPerSlot).foldl
-    (fun acc i => acc ++ Fulu.getBeaconCommittee state slot i) #[]
-  let sel := Fulu.computeBalanceWeightedSelection state indices seed Const.ptcSize false
-  Vector.ofFn (fun i : Fin Const.ptcSize => sel[i.val]!)
+  let indices ← (Array.range committeesPerSlot).foldlM
+    (fun acc i => do pure (acc ++ (← Fulu.getBeaconCommittee state slot i))) #[]
+  let sel ← Fulu.computeBalanceWeightedSelection state indices seed Const.ptcSize false
+  pure (Vector.ofFn (fun i : Fin Const.ptcSize => sel[i.val]!))
 
 /-- `initialize_ptc_window(pre)`: the cached PTC window seeding the Gloas state.
 The first `SLOTS_PER_EPOCH` slots (the empty previous epoch) hold zeroed
@@ -67,7 +67,7 @@ def initializePtcWindow [Preset] [HasherTag] (state : Fulu.State) :
       let epoch := currentEpoch + UInt64.ofNat (j / Const.slotsPerEpoch)
       do
         let startSlot ← Fulu.computeStartSlotAtEpoch epoch
-        pure (computePtcFromFulu state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch)))
+        computePtcFromFulu state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch))
 
 /-! ## Component-container conversion at the fork boundary
 

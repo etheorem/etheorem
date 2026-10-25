@@ -169,4 +169,86 @@ private def pinProposerHeadBoostRejects : Bool :=
   | _ => false
 example : pinProposerHeadBoostRejects = true := by native_decide
 
+/-- `getWeight` rejects (`.arithmetic`) when the attestation sum passes `2^64`. Two active
+validators of effective balance `2^63` both hold a latest message for `pinRoot`, so the
+second `checkedAdd` of the fold overflows. pyspec's `Gwei(sum(...))` raises `ValueError`
+there, uncaught by the reference runner. A wrapping fold would return `0`. `State` is
+FFI-backed, so the pin uses `native_decide`. -/
+private def pinWeightOverflowThrows : Bool :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let v : Validator :=
+    { (default : Validator) with exitEpoch := Const.farFutureEpoch, effectiveBalance := 2 ^ 63 }
+  let bs : @EthCLSpecs.Fulu.BeaconState minimal :=
+    { (default : @EthCLSpecs.Fulu.BeaconState minimal) with validators := sszOfArray #[v, v] }
+  let state : State := SSZ.FastBox bs
+  let message : LatestMessage := { epoch := 0, root := pinRoot }
+  let store := { pinStore with
+      blocks := FcMap.insert FcMap.empty pinRoot (default : @EthCLSpecs.Fulu.BeaconBlock minimal)
+      checkpointStates := FcMap.insert FcMap.empty pinStore.justifiedCheckpoint state
+      latestMessages := FcMap.insert (FcMap.insert FcMap.empty 0 message) 1 message }
+  match (getWeight (map := treeMap) store pinRoot : PinM Gwei).run store with
+  | .error (.transition (.arithmetic _)) _ => true
+  | _ => false
+example : pinWeightOverflowThrows = true := by native_decide
+
+/-- `bpsDeadlineMs` at the minimal config with `SLOT_DURATION_MS` set to `slotDurationMs`.
+The pins replay the two probe rows of site k (`get_slot_component_duration_ms`). -/
+private def pinDeadline (slotDurationMs bps : UInt64) : Except StateTransitionError UInt64 :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := slotDurationMs }
+  bpsDeadlineMs bps
+
+-- With `SLOT_DURATION_MS = 2^60`, the product `10000 * 2^60` overflows, and pyspec raises
+-- `ValueError` at `basis_points * SLOT_DURATION_MS`.
+#guard pinDeadline (2 ^ 60) 10000 matches .error (.arithmetic _)
+
+-- At the minimal config (`SLOT_DURATION_MS = 6000`), `10000 * 6000 // 10000 = 6000`.
+#guard (pinDeadline 6000 10000).toOption = some 6000
+
+/-- The `.arithmetic` description `isProposingOnTime` raises on `pinStore` at `time` and
+`genesisTime`, with `SLOT_DURATION_MS = 2^60`. `none` when it raises nothing of that kind. -/
+private def pinProposingOnTimeError (time genesisTime : UInt64) : Option String :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := 2 ^ 60 }
+  letI : HasherTag := fastHasherTag
+  let store := { pinStore with time := time, genesisTime := genesisTime }
+  match (isProposingOnTime (map := treeMap) store : PinM Bool).run store with
+  | .error (.transition (.arithmetic d)) _ => some d
+  | _ => none
+
+-- The time into the slot reads fine, and the cutoff product raises (probe row k,
+-- `is_proposing_on_time` overflow).
+example : pinProposingOnTimeError 20 10
+    = some "get_slot_component_duration_ms: basis_points * SLOT_DURATION_MS" := by native_decide
+
+-- A store time before genesis: the `time - genesis_time` underflow raises first.
+example : pinProposingOnTimeError 0 10 = some "time_into_slot: time - genesis_time" := by
+  native_decide
+
+/-- The error of `validateOnAttestation` on a store whose time 0 is before its genesis time
+10, for an attestation with slot 0 and target epoch 1. On that store `get_current_slot`
+raises `ValueError` (`.transition (.arithmetic …)`). `none` when the call succeeds. -/
+private def pinValidateAttestationError (isFromBlock : Bool) : Option StoreTransitionError :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let store := { pinStore with time := 0, genesisTime := 10 }
+  let att : @Attestation minimal :=
+    { (default : @Attestation minimal) with
+      data := { (default : AttestationData) with slot := 0, target := { epoch := 1, root := default } } }
+  match (validateOnAttestation (map := treeMap) store att isFromBlock : PinM Unit).run store with
+  | .error e _ => some e
+  | .ok _ _ => none
+
+-- From a block: the body does not read the store epoch. The check
+-- `target.epoch == compute_epoch_at_slot(slot)` fails (epoch 1 against slot 0), so `.assert`.
+-- pyspec raises `AssertionError` (`.tmp/spike/sweep/fc/validate_att_probe.py`).
+example : (pinValidateAttestationError true matches some (.assert _)) = true := by native_decide
+
+-- Not from a block: the store-epoch read raises first. pyspec raises `ValueError`.
+example : (pinValidateAttestationError false matches some (.transition (.arithmetic _))) = true := by
+  native_decide
+
 end EthCLSpecs.Tests.FuluForkChoicePins

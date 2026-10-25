@@ -123,7 +123,7 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
     let d1 ← liftErr (getFlagIndexDeltas state 1)
     let d2 ← liftErr (getFlagIndexDeltas state 2)
     pure #[← mkDeltas d0, ← mkDeltas d1, ← mkDeltas d2,
-      ← mkDeltas (zeros, getInactivityPenaltyDeltas state)]
+      ← mkDeltas (zeros, ← liftErr (getInactivityPenaltyDeltas state))]
 
 /-- Decode a plain (non-boxed) SSZ operation value. -/
 private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
@@ -236,7 +236,7 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
       let hezeAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Heze.BeaconState P)) Unit := do
         for sb in postBlocks do
           if (sszGet (← get) slot) < sb.message.slot then processSlots sb.message.slot
-          if cmeta.blsSetting != 2 then assert (verifyBlockSignature (← get) sb)
+          if cmeta.blsSetting != 2 then assert (← liftErr (verifyBlockSignature (← get) sb))
           processBlock sb.message
           let root ← getStateRoot
           assert (sb.message.stateRoot == bytesToRoot root)

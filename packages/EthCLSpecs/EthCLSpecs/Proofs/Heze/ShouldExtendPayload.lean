@@ -10,7 +10,7 @@ Heze's `shouldExtendPayload` inserts a FOCIL gate after payload verification
 and before the timeliness, data-availability, and proposer-boost checks.
 
 The complete `.run` equation evaluates in this order: block lookup,
-`getCurrentSlot.run`, the `slot + 1` overflow check, the slot assertion,
+the `slot + 1` overflow check, `getCurrentSlot.run`, the slot assertion,
 `isPayloadVerified`, `isPayloadInclusionListSatisfied.run`, then the
 remaining post-FOCIL checks (`payloadTimeliness`, `payloadDataAvailability`,
 proposer-boost block lookup, and `isParentNodeFull`).
@@ -62,16 +62,16 @@ theorem shouldExtendPayload_run :
         match FcMap.lookup store.blocks root with
         | none => .error (.missingKey root)
         | some rootBlock =>
-          match (getCurrentSlot
-              (StoreTransition := ForkChoiceStoreRun (Store map))
-              store).run runnerStore with
-          | .error err => .error err
-          | .ok (currentSlot, s1) =>
-            if rootBlock.slot + 1 < rootBlock.slot then
-              .error (.transition (.arithmetic
-                "should_extend_payload: blocks[root].slot + 1"))
-            else
-              let nextSlot := rootBlock.slot + 1
+          if rootBlock.slot + 1 < rootBlock.slot then
+            .error (.transition (.arithmetic
+              "should_extend_payload: blocks[root].slot + 1"))
+          else
+            let nextSlot := rootBlock.slot + 1
+            match (getCurrentSlot
+                (StoreTransition := ForkChoiceStoreRun (Store map))
+                store).run runnerStore with
+            | .error err => .error err
+            | .ok (currentSlot, s1) =>
               if nextSlot == currentSlot then
                 if !isPayloadVerified store root then
                   .ok (false, s1)
@@ -112,17 +112,17 @@ theorem shouldExtendPayload_run :
   | none =>
     simp [run_throw, except_bind_error]
   | some rootBlock =>
-    cases hcur : (getCurrentSlot
-        (StoreTransition := ForkChoiceStoreRun (Store map))
-        store).run runnerStore with
-    | error err =>
-      simp [hcur, except_bind_error]
-    | ok p =>
-      obtain ⟨currentSlot, s1⟩ := p
-      simp [hcur, except_bind_ok]
-      by_cases hover : rootBlock.slot + 1 < rootBlock.slot
-      · simp [hover, ForkChoiceStoreRun.throwArithmetic_run, except_bind_error]
-      · simp [hover]
+    by_cases hover : rootBlock.slot + 1 < rootBlock.slot
+    · simp [hover, ForkChoiceStoreRun.throwArithmetic_run, except_bind_error]
+    · simp [hover]
+      cases hcur : (getCurrentSlot
+          (StoreTransition := ForkChoiceStoreRun (Store map))
+          store).run runnerStore with
+      | error err =>
+        simp [except_bind_error]
+      | ok p =>
+        obtain ⟨currentSlot, s1⟩ := p
+        simp [except_bind_ok]
         by_cases hslot : rootBlock.slot + 1 = currentSlot
         · simp [hslot]
           cases hverified : isPayloadVerified store root
@@ -175,13 +175,13 @@ theorem shouldExtendPayload_run :
 
 /-! ## The successful prefix
 
-The block lookup, `getCurrentSlot`, the increment, and the slot assertion
+The block lookup, the increment, `getCurrentSlot`, and the slot assertion
 are the prefix every post-prefix corollary shares. One bridge reduces that
 prefix once, and each corollary states only its own case.
 -/
 
-/-- Under the successful prefix (block lookup, `getCurrentSlot`, the
-non-overflowing increment, the slot assertion) the run reduces to the
+/-- Under the successful prefix (block lookup, the non-overflowing
+increment, `getCurrentSlot`, the slot assertion) the run reduces to the
 post-prefix form: the `isPayloadVerified` branch, the FOCIL read bound at
 `s1`, then the inherited Gloas tail. The gate and tail corollaries below
 derive from this bridge, as does later composition work on the write
@@ -250,11 +250,12 @@ theorem shouldExtendPayload_run_error_of_missing_block :
   rw [shouldExtendPayload_run]
   simp [hblock]
 
-/-- A `getCurrentSlot` reject is propagated unchanged. -/
+/-- After a successful increment, the run returns a `getCurrentSlot` reject unchanged. -/
 theorem shouldExtendPayload_run_error_of_getCurrentSlot :
     ∀ (store runnerStore : Store map) (root : Root) (rootBlock : BeaconBlock)
       (err : StoreTransitionError),
       FcMap.lookup store.blocks root = some rootBlock →
+      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
@@ -263,29 +264,24 @@ theorem shouldExtendPayload_run_error_of_getCurrentSlot :
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .error err := by
-  intro store runnerStore root rootBlock err hblock hcur
+  intro store runnerStore root rootBlock err hblock hnooverflow hcur
   rw [shouldExtendPayload_run]
-  simp [hblock, hcur]
+  simp [hblock, hnooverflow, hcur]
 
 /-- Overflow of `blocks[root].slot + 1` is the arithmetic fault named by
-`checkedAdd`. -/
+`checkedAdd`. It raises before `getCurrentSlot` runs, so the run does not read the clock. -/
 theorem shouldExtendPayload_run_error_of_slot_overflow :
-    ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
-      (currentSlot : Slot),
+    ∀ (store runnerStore : Store map) (root : Root) (rootBlock : BeaconBlock),
       FcMap.lookup store.blocks root = some rootBlock →
-      (getCurrentSlot
-          (StoreTransition := ForkChoiceStoreRun (Store map))
-          store).run runnerStore
-        = .ok (currentSlot, s1) →
       rootBlock.slot + 1 < rootBlock.slot →
       (shouldExtendPayload
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .error (.transition (.arithmetic
             "should_extend_payload: blocks[root].slot + 1")) := by
-  intro store runnerStore s1 root rootBlock currentSlot hblock hcur hover
+  intro store runnerStore root rootBlock hblock hover
   rw [shouldExtendPayload_run]
-  simp [hblock, hcur, hover]
+  simp [hblock, hover]
 
 /-- A successful increment that fails `nextSlot == currentSlot` is the spec's
 slot assertion. -/
