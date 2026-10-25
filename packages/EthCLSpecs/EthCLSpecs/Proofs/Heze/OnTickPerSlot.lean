@@ -37,7 +37,13 @@ theorem onTickPerSlot_run_keeps {map : MapKind} [Preset] [HasherTag] [Config] [F
         { store with time := time }).run p.2 with
     | error e => rw [h2] at h; exact nomatch h
     | ok q =>
-      rw [h2, except_bind_ok, run_pure, Except.ok.injEq, Prod.mk.injEq] at h
+      rw [h2, except_bind_ok] at h
+      -- The slots since the epoch start, through the checked start slot.
+      cases h3 : (onTickPerSlot.computeSlotsSinceEpochStart
+          (StoreTransition := ForkChoiceStoreRun (Store map)) q.1).run q.2 with
+      | error e => rw [h3] at h; exact nomatch h
+      | ok k =>
+      rw [h3, except_bind_ok, run_pure, Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, -⟩ := h
       -- Each field read passes through the two `if`s of the body and the two of
       -- `updateCheckpoints`. None of them writes the two maps.

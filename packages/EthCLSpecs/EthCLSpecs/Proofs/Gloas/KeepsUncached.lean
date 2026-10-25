@@ -263,7 +263,9 @@ theorem keepsUncached_getBlockRootAtSlot (state : BeaconState) (s : EthCLSpecs.G
 theorem keepsUncached_getBlockRoot (state : BeaconState) (epoch : EthCLSpecs.Gloas.Epoch) :
     KeepsUncached (getBlockRoot (StateTransition := GloasRun) (pureState state) epoch) := by
   unfold getBlockRoot
-  exact keepsUncached_getBlockRootAtSlot state _
+  -- The epoch's start slot comes from the checked multiply, lifted into the run.
+  exact keepsUncached_bind (keepsUncached_liftErr _)
+    (fun _ => keepsUncached_getBlockRootAtSlot state _)
 
 theorem keepsUncached_isAttestationSameSlot (state : BeaconState) (data : EthCLSpecs.Gloas.AttestationData) :
     KeepsUncached (isAttestationSameSlot (StateTransition := GloasRun) (pureState state) data) := by

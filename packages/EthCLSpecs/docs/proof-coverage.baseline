@@ -1,6 +1,6 @@
 # Proof-coverage baseline. Rewrite with `just proof-coverage-update`.
 # Every line is a claim `just proof-coverage-check` enforces exactly.
-tier1 EthCLSpecs.Fulu.computeStartSlotAtEpoch
+tier1 EthCLSpecs.Fulu.computeEpochAtSlot
 tier1 EthCLSpecs.Fulu.currentEpochOf
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot
 tier1 EthCLSpecs.Gloas.computeExitEpochAndUpdateChurn
@@ -51,10 +51,12 @@ tier1 EthCLSpecs.Heze.processInclusionList
 tier1 EthCLSpecs.Heze.processParentExecutionPayload
 tier1 EthCLSpecs.Heze.timeIntoSlotMs
 tier1 EthCLSpecs.Heze.verifyExecutionPayloadEnvelope
+tier2 EthCLSpecs.Fulu.computeStartSlotAtEpoch
 tier2 EthCLSpecs.Fulu.decreaseBalance
 tier2 EthCLSpecs.Fulu.increaseBalance
 tier2 EthCLSpecs.Fulu.modBalance
 tier2 EthCLSpecs.Gloas.canBuilderCoverBid
+tier2 EthCLSpecs.Gloas.computeStartSlotAtEpoch
 tier2 EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex
 tier2 EthCLSpecs.Gloas.initiateBuilderExit
 tier2 EthCLSpecs.Gloas.isValidIndexedPayloadAttestation
@@ -62,6 +64,7 @@ tier2 EthCLSpecs.Gloas.processBuilderPendingPayments
 tier2 EthCLSpecs.Gloas.processOperations
 tier2 EthCLSpecs.Gloas.toBuilderIndex
 tier2 EthCLSpecs.Gloas.updateCheckpoints
+tier2 EthCLSpecs.Heze.computeStartSlotAtEpoch
 tier2 EthCLSpecs.Heze.getInclusionListCommittee
 tier2 EthCLSpecs.Heze.getInclusionListTransactions
 tier2 EthCLSpecs.Heze.isPayloadInclusionListSatisfied
