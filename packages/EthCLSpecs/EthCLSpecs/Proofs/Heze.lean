@@ -1,18 +1,43 @@
+import EthCLSpecs.Proofs.Heze.BlockRoot
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
 import EthCLSpecs.Proofs.Heze.CensorshipCost
+import EthCLSpecs.Proofs.Heze.CheckpointOrd
 import EthCLSpecs.Proofs.Heze.Churn
+import EthCLSpecs.Proofs.Heze.ClockedTrace
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
+import EthCLSpecs.Proofs.Heze.HandlerFrames
+import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
+import EthCLSpecs.Proofs.Heze.HonestDuties
+import EthCLSpecs.Proofs.Heze.HonestHead
+import EthCLSpecs.Proofs.Heze.ILStoreOrder
 import EthCLSpecs.Proofs.Heze.InclusionDichotomy
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
+import EthCLSpecs.Proofs.Heze.KeepsUncached
+import EthCLSpecs.Proofs.Heze.KeepsUncached.Block
+import EthCLSpecs.Proofs.Heze.KeepsUncached.Epoch
+import EthCLSpecs.Proofs.Heze.KeepsUncached.Payload
+import EthCLSpecs.Proofs.Heze.KeepsUncached.Slots
+import EthCLSpecs.Proofs.Heze.KeepsUncached.Withdrawals
+import EthCLSpecs.Proofs.Heze.ListLengths
+import EthCLSpecs.Proofs.Heze.StorePure
+import EthCLSpecs.Proofs.Heze.NodeTrace
+import EthCLSpecs.Proofs.Heze.NodeViews
 import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 import EthCLSpecs.Proofs.Heze.OnInclusionList
 import EthCLSpecs.Proofs.Heze.OnTickPerSlot
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.PayloadTiebreak
+import EthCLSpecs.Proofs.Heze.PaymentCarried
+import EthCLSpecs.Proofs.Heze.PaymentFrame
+import EthCLSpecs.Proofs.Heze.PaymentWriters
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
+import EthCLSpecs.Proofs.Heze.RootFrames
 import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
+import EthCLSpecs.Proofs.Heze.SlotsIncrease
+import EthCLSpecs.Proofs.Heze.SyncFrame
 import EthCLSpecs.Proofs.Heze.Time
+import EthCLSpecs.Proofs.Heze.TraceRun
 
 /-!
 # `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems (index)
@@ -29,6 +54,9 @@ Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Heze.BlockRoot`: a block root is the root of its header
+  (`htr_eq_htr_headerOf`), under the hypothesis that every `combine` returns 32 bytes.
+  The root of a 32-byte vector is its bytes (`hashTreeRoot_bytes32`).
 * `EthCLSpecs.Proofs.Heze.BuilderPendingPayments`: the Heze port of the epoch
   substep for builder payments (`processBuilderPendingPayments_run`), and the
   per-entry quorum condition (`mem_qualifyingPaymentIndices_iff`), proved with
@@ -39,16 +67,59 @@ Re-exports:
   `false` inclusion-list answer (`unsatisfiedPayload_cost`). The `getHead` loop
   continues from EMPTY at the block. A child on EMPTY, with the empty parent requests,
   does not settle the bid. At the epoch substep, the entry of the bid is appended if and
-  only if it reaches the quorum.
+  only if it reaches the quorum. `unsatisfiedPayload_cost_of_run` states the three facts
+  with the third one over the chain from the block to the substep.
+* `EthCLSpecs.Proofs.Heze.CheckpointOrd`: the derived order on `Checkpoint` is transitive
+  and returns `.eq` only on equal checkpoints (`instTransOrdCheckpoint`,
+  `instLawfulEqOrdCheckpoint`), so `treeMap` meets the map laws at `Checkpoint`.
 * `EthCLSpecs.Proofs.Heze.Churn`: the inherited `reserveChurn`, which takes the Gloas proof
   terms, and run theorems for the two inherited churn callers.
+* `EthCLSpecs.Proofs.Heze.ClockedTrace`: a node trace on the wall clock
+  (`ClockedTrace`). The current slot and the time into the slot in terms of the wall time
+  (`slotStartMs_le_of_getCurrentSlot`, `timeIntoSlotMs_lt_of_window`). A state at a root
+  comes from an `onBlock` event that passed its clock check
+  (`NodeTrace.blockStates_origin`, `onBlock_run_ok_currentSlot`).
+* `EthCLSpecs.Proofs.Heze.FrameInvert`: the `frame_invert` tactic. From a run between two
+  plain states, it proves that the run keeps a view, one action at a time. It closes a
+  call of a spec function by a `@[frame]` lemma of that function, and a loop by an invariant.
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
   equations for `getInclusionListCommittee` and
   `getInclusionListTransactions`
   (`getInclusionListCommittee_run_eq`, `getInclusionListTransactions_run_eq`),
   plus the missing-timeliness predicate on the `FcMap.fold` entries array. Under
-  `LawfulFcMap`, a successful collection keeps each transaction of an honest list
+  `LawfulFcMap`, a successful collection holds exactly the transactions of the stored,
+  timely lists from validators that are not equivocators
+  (`collectInclusionListTransactions_ok_mem_iff`, `getInclusionListTransactions_ok_mem_iff`).
+  So it keeps each transaction of an honest list
   (`collectInclusionListTransactions_ok_mem`, `mem_getInclusionListTransactions`).
+* `EthCLSpecs.Proofs.Heze.HandlerFrames`: the six handlers other than `onInclusionList`
+  keep the IL store (`onBlock_keeps_ilStore` and the rest), with the `keeps_solve`
+  tactic that walks a handler body.
+* `EthCLSpecs.Proofs.Heze.HeadAvoidsFull`: the node tree (`NodeEdge`, `NodeBelow`).
+  Take a block from the previous slot with an unverified payload or a recorded `false`
+  answer. The head that `getHead` returns is not the FULL node of the block and not
+  below it (`getHead_run_avoids_full`). For a missing transaction under
+  `DichotomyHypotheses`, the same holds at every `LaterStore`
+  (`inclusionList_missing_tx_head_avoids_full`). Without the block at `r`, the walk never
+  reaches the pending node of `r` (`getHead_run_avoids_full_of_no_block`).
+* `EthCLSpecs.Proofs.Heze.HonestDuties`: the duties of slot `n + 1` on a head that avoids
+  the FULL node of `r`. `shouldBuildOnFull` rejects a pending head and answers `false` at
+  an EMPTY head. No honest vote is `(r, 1)` (`honestAttestation_ne_full`). An honest block
+  (`HonestProposal`) has a parent root other than `r`. Or its head is the EMPTY node of `r`,
+  and `processParentExecutionPayload` leaves the state unchanged, so the block settles no
+  builder payment (`honestProposal_avoids_full`). `HonestProposal` covers a proposer that
+  builds on the `getHead` head, without a proposer re-org. `honestNodes_duties_avoid_full`
+  states the three facts for every honest node of a network.
+* `EthCLSpecs.Proofs.Heze.HonestHead`: the head of an honest node in slot `n + 1` avoids
+  the FULL node of `r` and every node below it, or a root collision exists
+  (`honestNode_head_avoids_full`). The current slot comes from the wall clock
+  (`getCurrentSlot_run_eq_of_window`, `ClockedTrace`).
+* `EthCLSpecs.Proofs.Heze.ILStoreOrder`: the IL store after an arrival list in closed
+  form (`ilStoreOfArrivals_describes`). The collected transactions depend only on the
+  timeliness of the first arrival of each list
+  (`getInclusionListTransactions_order_independent`), so the recorded answer does too
+  (`recordPayloadInclusionListSatisfaction_order_independent`,
+  `NodeTrace.answer_order_independent`).
 * `EthCLSpecs.Proofs.Heze.InclusionDichotomy`: for one honest inclusion-list
   transaction, the envelope handler records one of two answers
   (`inclusionList_dichotomy`). With `true`, the payload includes the transaction or the
@@ -62,6 +133,27 @@ Re-exports:
   (`isPayloadInclusionListSatisfied_run`), and the four read corollaries
   for a missing record, an unverified recorded value, a recorded `false`,
   and a recorded `true` with a verified payload.
+* `EthCLSpecs.Proofs.Heze.KeepsUncached`: a run of each Heze operation handler, and of
+  `processOperations`, that starts on an uncached box ends on an uncached box
+  (`keepsUncached_processOperations` and the handler lemmas). `increaseBalance` and
+  `decreaseBalance` also return an uncached box (`returnsUncached_increaseBalance`).
+* `EthCLSpecs.Proofs.Heze.KeepsUncached.Block`, `….Payload`, `….Withdrawals`,
+  `….Epoch`, `….Slots`: the same fact for every substep of `processBlock` and
+  `processEpoch`, and for `processSlots` and `stateTransition`
+  (`keepsUncached_stateTransition`). A run of the state transition that starts on an
+  uncached box ends on an uncached box.
+* `EthCLSpecs.Proofs.Heze.ListLengths`: along a chain run, the balances, the two
+  participation lists, and the inactivity scores keep the length of `validators` when they
+  have it at the start (`ChainRun.listLengths`). Each spec function on the way has a lemma
+  for the lengths.
+* `EthCLSpecs.Proofs.Heze.NodeTrace`: the successful handler runs of one node
+  (`NodeTrace`). From a seed with the empty IL store, such as the anchor store of
+  `getForkchoiceStore`, the IL store is `ilStoreOfArrivals` of the arrivals of the trace
+  (`NodeTrace.ilStore`).
+* `EthCLSpecs.Proofs.Heze.NodeViews`: every honest node that handles an envelope for the
+  root `r`, on a payload that omits a transaction of the honest list, records `false`
+  (`honestNode_records_false`, `honestNodes_record_false`). The answer at `r` then never
+  holds `true` (`honestNode_answer_ne_true`).
 * `EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope`: the complete
   compositional `.run` equation of `onExecutionPayloadEnvelope`
   (`onExecutionPayloadEnvelope_run`), tagged
@@ -87,18 +179,61 @@ Re-exports:
   `headLoopBody` to EMPTY (`getHeadStep_run_eq_empty_of_recorded_unsatisfied`), proved
   with `ForkChoiceStoreRun`. `getHead_eq_fuelLoop_headLoopBody` ties the body to
   `getHead` by `rfl`, and `getHead_walk_pending_to_empty` takes the walk from the
-  pending node to the EMPTY node.
+  pending node to the EMPTY node. The step lemmas hold at any runner state
+  (`getCurrentSlot_run_state`).
+* `EthCLSpecs.Proofs.Heze.PaymentCarried`: `stateTransition` as slot steps and a block
+  step (`ChainRun`, `stateTransition_chainRun`). Along such a run, the entry of a bid keeps
+  its withdrawal until the epoch substep that judges it (`bidPaymentCarried_of_run`),
+  when the first child takes the EMPTY edge and no block slashes the bid's proposer at the
+  bid's slot. The states of a run are plain values, and each step runs on their uncached
+  boxes. `runChain` computes a run.
+* `EthCLSpecs.Proofs.Heze.PaymentFrame`: the spec functions between a bid and its epoch
+  substep keep the slot, the header slot, the cached bid, and the payment window
+  (`windowView`), or the first three (`spineView`). Each frame lemma states the view of a
+  run between plain states, and `frame_invert` (`FrameInvert`) proves it by run inversion.
+* `EthCLSpecs.Proofs.Heze.PaymentWriters`: the writers of the payment window at one index
+  (`processExecutionPayloadBid_run_payment`, `processAttestation_run_withdrawal`,
+  `processProposerSlashing_run_withdrawal`, `processParentExecutionPayload_run_withdrawal`),
+  and the index facts (`builderPaymentIndex_inj`).
 * `EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction`: the
   complete run of `recordPayloadInclusionListSatisfaction`
   (`recordPayloadInclusionListSatisfaction_run`), proved with
   `ForkChoiceStoreRun`.
+* `EthCLSpecs.Proofs.Heze.RootFrames`: each handler keeps the block, the envelope, and
+  the answer at a root `r`, unless it writes another value there
+  (`HandlerEvent.run_keeps_rootView`). A trace after the envelope handler, with no second
+  envelope for `r`, gives `LaterStore` (`NodeTrace.laterStore`). Traces split and join
+  (`NodeTrace.split`, `NodeTrace.append`). `inclusionList_missing_tx_trace` states the
+  missing-transaction result over such a trace.
 * `EthCLSpecs.Proofs.Heze.Run`: `HezeRun`, the runner for Heze state transitions.
 * `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: the complete `.run`
   equation of `shouldExtendPayload` (`shouldExtendPayload_run`), the
   existing recorded-unsatisfied FOCIL rejection
   (`shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`), and the
   named prefix, FOCIL, vote, and inherited-Gloas-tail corollaries.
+* `EthCLSpecs.Proofs.Heze.SlotsIncrease`: block slots increase along parent links at the
+  end of a trace from the anchor store, or two distinct headers or blocks share a root
+  (`NodeTrace.slotInv`). The argument uses the header check of `processBlockHeader` and
+  the block-root lemma, and needs no frame over the state transition.
+  `inclusionList_missing_tx_anchored` states the missing-transaction result on such a
+  trace, with the justified-root hypothesis reduced to a slot comparison.
+* `EthCLSpecs.Proofs.Heze.StorePure`: every state that the store holds is the uncached box
+  of a plain value, at the end of a trace from the anchor store of `getForkchoiceStore`
+  over an uncached anchor (`StorePure.anchor`, `NodeTrace.storePure`). The `blockStates`
+  half needs only the law of the root map (`NodeTrace.blockStatesPure`). The run
+  inversions of `onBlock` and the envelope handler return the stored states as plain
+  values (`onBlock_run_ok`, `onExecutionPayloadEnvelope_run_ok`). The predicates are in
+  `….StorePure.Basic`.
+* `EthCLSpecs.Proofs.Heze.SyncFrame`: the `sync_frame` tactic, the frame fact of a
+  `processSyncAggregate` run for a view. It names the join point after the key choice, so
+  `frame_invert` inverts it once.
 * `EthCLSpecs.Proofs.Heze.Time`: the inherited `computeEpochAtSlot`,
-  `computeStartSlotAtEpoch`, and `computeActivationExitEpoch` at Heze. The `Downgrade` bridge reaches one fork up,
-  so each theorem takes the Gloas proof term.
+  `computeStartSlotAtEpoch`, and `computeActivationExitEpoch` at Heze. The `Downgrade`
+  bridge reaches one fork up, so each theorem takes the Gloas proof term.
+* `EthCLSpecs.Proofs.Heze.TraceRun`: a node trace as a function. `runTrace` runs the
+  handlers of a trace, and a trace exists exactly when it succeeds
+  (`NodeTrace.iff_runTrace`), so a trace is a function of its events (`NodeTrace.det`).
+  `traceAll` checks the stores of a trace in one pass. `ClockedTrace.of_check`,
+  `RootFacts.of_check`, and `HonestList.of_check` derive the hypotheses of the network
+  results from `Bool` checks that `native_decide` closes.
 -/

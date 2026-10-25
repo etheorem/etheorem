@@ -273,6 +273,25 @@ forkdef isPreviousSlotPayloadDecision (store : Store map) (node : ForkChoiceNode
     node.payloadStatus == Const.payloadStatusEmpty || node.payloadStatus == Const.payloadStatusFull
   pure (isPreviousSlot && isPayloadDecision)
 
+/-- `should_build_on_full(store, head)`: whether the proposer builds on the FULL parent
+node of `head`. Only the proposer calls it. It decides the bid's `parent_block_hash` and
+the `parent_execution_requests` (`validator.md`). A node from an earlier slot follows its own payload
+status. A FULL node from the previous slot also needs the PTC to see the payload as
+timely and available. -/
+forkdef shouldBuildOnFull (store : Store map) (head : ForkChoiceNode) : StoreTransition Bool := do
+  assert (head.payloadStatus != Const.payloadStatusPending)
+  -- The spec reads `store.blocks[head.root]` (a plain `Dict`), raising on a missing root.
+  let block ← FcMap.getOrThrow store.blocks head.root
+  -- Python evaluates the left operand of `!=` first, so the `+ 1` overflow raises before
+  -- `get_current_slot` does.
+  let nextSlot ← checkedAdd block.slot 1 "should_build_on_full: blocks[head.root].slot + 1"
+  let currentSlot ← getCurrentSlot store
+  if nextSlot != currentSlot then pure (head.payloadStatus == Const.payloadStatusFull)
+  else if head.payloadStatus == Const.payloadStatusEmpty then pure false
+  else if ← payloadTimeliness store head.root false then pure false
+  else if ← payloadDataAvailability store head.root false then pure false
+  else pure true
+
 /-- `should_extend_payload(store, root)`: whether the FULL realisation of `root`
 should win the payload-status tiebreak. -/
 forkdef shouldExtendPayload (store : Store map) (root : Root) : StoreTransition Bool := do

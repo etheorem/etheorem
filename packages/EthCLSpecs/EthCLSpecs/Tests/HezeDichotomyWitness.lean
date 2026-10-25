@@ -1,4 +1,4 @@
-import EthCLSpecs.Proofs.Heze.InclusionDichotomy
+import EthCLSpecs.Tests.HezeWitnessSeams
 
 /-!
 # `EthCLSpecs.Tests.HezeDichotomyWitness`: the dichotomy hypotheses have a witness
@@ -13,9 +13,10 @@ gives `UnsatisfiedPayload` at a real store.
 
 The witness uses the minimal preset, `treeMap`, and three seam instances:
 
-- `strictEngine`, an `[ExecutionEngine]` that applies the EIP-7805 rule with no valid
-  omission. It satisfies `LawfulInclusionList` with `isValidOmission := fun _ _ => False`.
-  Its payload check `verifyAndNotifyNewPayload` accepts every payload;
+- `strictEngine` (`HezeWitnessSeams.lean`), an `[ExecutionEngine]` that applies the
+  EIP-7805 rule with no valid omission. It satisfies `LawfulInclusionList` with
+  `isValidOmission := fun _ _ => False`. Its payload check `verifyAndNotifyNewPayload`
+  accepts every payload.
 - `CryptoBackend.verifyOff`, which accepts every BLS signature. The envelope carries no
   real signature.
 - The optimistic `[DataAvailability]`, which answers `true` for every root.
@@ -53,20 +54,8 @@ local instance : HasherTag := fastHasherTag
 local instance : Config := minimalConfig
 local instance : CryptoBackend := CryptoBackend.verifyOff
 
-/-- The EIP-7805 rule with no valid omission: the answer is `true` exactly when every
-listed transaction is in the payload. -/
-local instance (priority := high) strictEngine :
-    ExecutionEngine ExecutionPayload Transaction ExecutionRequests where
-  isInclusionListSatisfied p ilTxs := ilTxs.all fun tx => p.transactions.toArray.contains tx
-  verifyAndNotifyNewPayload _ _ _ _ := true
-
-/-- `strictEngine` satisfies the rule with no valid omission. -/
-theorem strictEngine_lawful :
-    LawfulInclusionList ExecutionPayload Transaction ExecutionRequests
-      (fun p => p.transactions.toArray) (fun _ _ => False) :=
-  ⟨fun p ilTxs => by
-    simp only [ExecutionEngine.isInclusionListSatisfied, Array.all_eq_true_iff_forall_mem,
-      Array.contains_iff_mem, or_false]⟩
+open EthCLSpecs.Tests.HezeWitnessSeams (strictEngine_lawful)
+open scoped EthCLSpecs.Tests.HezeWitnessSeams
 
 /-- The one transaction of the honest list. -/
 def tx : Transaction := sszOfArray #[1]

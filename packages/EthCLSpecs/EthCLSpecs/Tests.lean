@@ -13,6 +13,9 @@ import EthCLSpecs.Tests.GloasPtcWindowPins
 import EthCLSpecs.Tests.HezeCommitteesPins
 import EthCLSpecs.Tests.HezeDichotomyWitness
 import EthCLSpecs.Tests.HezeForkChoicePins
+import EthCLSpecs.Tests.HezeNetworkWitness
+import EthCLSpecs.Tests.HezePaymentWitness
+import EthCLSpecs.Tests.HezeWitnessSeams
 import EthCLSpecs.Tests.WalkingSkeleton
 
 /-!

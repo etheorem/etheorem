@@ -294,6 +294,7 @@ inherit voteCount
 inherit payloadTimeliness
 inherit payloadDataAvailability
 inherit isPreviousSlotPayloadDecision
+inherit shouldBuildOnFull
 
 /-- `is_payload_inclusion_list_satisfied(store, root)`
 (`consensus-specs/specs/heze/fork-choice.md:199-212`): whether the payload for `root`
