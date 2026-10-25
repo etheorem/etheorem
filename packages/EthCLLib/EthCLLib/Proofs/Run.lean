@@ -1,5 +1,6 @@
 import EthCLLib.Spec.Errors
 import EthCLLib.Spec.Hasher
+import EthCLLib.Spec.Loop
 
 /-!
 # `EthCLLib.Proofs.Run`: the monad facts and the pure box the pure runners share
@@ -14,6 +15,8 @@ under a fork's runner name.
 All five close by `rfl`. They exist to be `rw`/`simp` targets with a readable right-hand
 side. Stated at any `σ` / `ε`: nothing in either proof is specific to a fork's state,
 and the general form applies to `GloasRun` and `ForkChoiceStoreRun` alike.
+`fuelLoop_run_of_next` runs one iteration of the framework loop `fuelLoop`
+(`EthCLLib/Spec/Loop.lean`).
 
 The runner names remain in their own modules: `GloasRun` is in
 `EthCLSpecs/Proofs/Gloas/Run.lean`, while the fork-neutral `ForkChoiceStoreRun` is
@@ -111,6 +114,16 @@ theorem run_of_run_seq_pure_error {ε σ β : Type} (x : StateT σ (Except ε) �
     rw [hx, except_bind_error] at h
     injection h with h'
     rw [h']
+
+/-- One iteration of `fuelLoop` with fuel left. When the step at `init` returns
+`.next b` and the state `s'`, the loop continues from `b` in `s'`, with one unit of
+fuel less. -/
+theorem fuelLoop_run_of_next {σ ε β α : Type} (fuel : Nat) (init : β) (exhausted : α)
+    (step : β → StateT σ (Except ε) (EthCLLib.Spec.Step β α)) (b : β) (s s' : σ)
+    (h : (step init).run s = .ok (.next b, s')) :
+    (EthCLLib.Spec.fuelLoop (fuel + 1) init exhausted step).run s
+      = (EthCLLib.Spec.fuelLoop fuel b exhausted step).run s' := by
+  simp only [EthCLLib.Spec.fuelLoop, run_bind, h, except_bind_ok]
 
 /-- `ofExcept` of an `.ok a`: the run succeeds and passes the state through
 unchanged. The run-level shape the loop-body proofs read the spec's indexed reads
