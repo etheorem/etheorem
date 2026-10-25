@@ -28,8 +28,9 @@ state its two outcomes on the uncached box.
 The window side applies the general behavior of `shiftWindow`.
 `expectedPaymentWindow_get_lt` and `expectedPaymentWindow_get_upper` state the two facts
 about index regions: the old upper half moves down, and the new upper half is empty.
-`processBuilderPendingPayments` reads `builderPendingPayments` once, before the loop, and
-the loop never writes that field.
+`processBuilderPendingPayments` reads `builderPendingPayments` twice: before the
+withdrawals loop, and again from the state after the loop, as pyspec does. The loop
+does not write that field, so both reads give the same value.
 
 Statements bind plain `BeaconState` values and never bind a boxed `State`. The contract
 `processBuilderPendingPayments_run` states the run at the box, in `.run` form, because
@@ -49,50 +50,12 @@ namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec
 open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok run_bind run_pure
-  run_getThe except_bind_ok except_bind_error)
+  run_getThe except_bind_ok except_bind_error run_of_run_seq_pure run_of_run_seq_pure_error)
 open EthCLSpecs.Gloas
 open EthCLSpecs.Gloas (Preset Gwei BeaconState)
 open EthCLSpecs.Gloas.Const (slotsPerEpoch builderPaymentThresholdNumerator
   builderPaymentThresholdDenominator builderPendingWithdrawalsLimit)
 open SizzLean.Proofs (sszListPush_val sszListPush?_of_lt sszListPush?_of_le)
-
-/-- `do x` for a lone `for`-loop `x` elaborates as `x >>= fun _ => pure ()`, not as `x`
-itself. Peels that wrapper so a fact about the bare loop run connects to a use site that
-runs the bare `forIn` before more code: the wrapper succeeds with the same post-state, and
-discards the loop's own value. -/
-private theorem run_of_run_seq_pure {ε σ β : Type} (x : StateT σ (Except ε) β) (s0 s1 : σ)
-    (h : (x >>= fun _ => (pure () : StateT σ (Except ε) Unit)).run s0 = .ok ((), s1)) :
-    ∃ a : β, x.run s0 = .ok (a, s1) := by
-  rw [run_bind] at h
-  cases hx : x.run s0 with
-  | ok p =>
-    obtain ⟨a, s⟩ := p
-    rw [hx] at h
-    rw [except_bind_ok, run_pure] at h
-    have h2 : s = s1 := congrArg Prod.snd (Except.ok.inj h)
-    subst h2
-    exact ⟨a, rfl⟩
-  | error e =>
-    rw [hx, except_bind_error] at h
-    cases h
-
-/-- The reject half of `run_of_run_seq_pure`. The `pure ()` wrapper never raises. So when
-`x >>= fun _ => pure ()` rejects, `x` rejects with the same error. -/
-private theorem run_of_run_seq_pure_error {ε σ β : Type} (x : StateT σ (Except ε) β)
-    (s0 : σ) (e : ε)
-    (h : (x >>= fun _ => (pure () : StateT σ (Except ε) Unit)).run s0 = .error e) :
-    x.run s0 = .error e := by
-  rw [run_bind] at h
-  cases hx : x.run s0 with
-  | ok p =>
-    obtain ⟨a, s⟩ := p
-    rw [hx] at h
-    rw [except_bind_ok, run_pure] at h
-    cases h
-  | error e' =>
-    rw [hx, except_bind_error] at h
-    injection h with h'
-    rw [h']
 
 /-! ## The withdrawals loop
 

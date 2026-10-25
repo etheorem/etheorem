@@ -1,7 +1,12 @@
+import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
+import EthCLSpecs.Proofs.Heze.CensorshipCost
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
-import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
+import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
+import EthCLSpecs.Proofs.Heze.PayloadTiebreak
+import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
+import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 
 /-!
@@ -19,6 +24,16 @@ Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Heze.BuilderPendingPayments`: the Heze port of the epoch
+  substep for builder payments (`processBuilderPendingPayments_run`), and the
+  per-entry quorum condition (`mem_qualifyingPaymentIndices_iff`), proved with
+  `HezeRun`. When the payment of a bid is carried to the substep
+  (`BidPaymentCarried`), the substep appends the entry of the bid if and only if the
+  entry reaches the quorum (`processBuilderPendingPayments_run_bid`).
+* `EthCLSpecs.Proofs.Heze.CensorshipCost`: three facts about a block with a recorded
+  `false` inclusion-list answer (`unsatisfiedPayload_cost`). The head step goes to
+  EMPTY. A child on EMPTY, with the empty parent requests, does not settle the bid. At
+  the epoch substep, the bid is paid if and only if its entry reaches the quorum.
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
   equations for `getInclusionListCommittee` and
   `getInclusionListTransactions`
@@ -29,10 +44,6 @@ Re-exports:
   (`isPayloadInclusionListSatisfied_run`), and the four read corollaries
   for a missing record, an unverified recorded value, a recorded `false`,
   and a recorded `true` with a verified payload.
-* `EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction`: the
-  complete run of `recordPayloadInclusionListSatisfaction`
-  (`recordPayloadInclusionListSatisfaction_run`), proved with
-  `ForkChoiceStoreRun`.
 * `EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope`: the complete
   compositional `.run` equation of `onExecutionPayloadEnvelope`
   (`onExecutionPayloadEnvelope_run`), tagged
@@ -40,6 +51,20 @@ Re-exports:
   the four direct error corollaries and the successful-path corollary
   `onExecutionPayloadEnvelope_run_eq_of_successful_checks`, proved with
   `ForkChoiceStoreRun`.
+* `EthCLSpecs.Proofs.Heze.ParentPayloadEmpty`: `processParentExecutionPayload` on
+  the EMPTY edge, with the empty parent requests, does not change the state
+  (`processParentExecutionPayload_run_of_empty_parent`). Fork choice calls an edge
+  EMPTY exactly when the two block hashes differ
+  (`getParentPayloadStatus_run_eq_empty_iff`).
+* `EthCLSpecs.Proofs.Heze.PayloadTiebreak`: the payload tiebreak at a block from
+  the previous slot, the zero weights, `betterOf`, and the head step to EMPTY
+  (`getHeadStep_run_eq_empty_of_recorded_unsatisfied`), proved with
+  `ForkChoiceStoreRun`.
+* `EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction`: the
+  complete run of `recordPayloadInclusionListSatisfaction`
+  (`recordPayloadInclusionListSatisfaction_run`), proved with
+  `ForkChoiceStoreRun`.
+* `EthCLSpecs.Proofs.Heze.Run`: `HezeRun`, the runner for Heze state transitions.
 * `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: the complete `.run`
   equation of `shouldExtendPayload` (`shouldExtendPayload_run`), the
   existing recorded-unsatisfied FOCIL rejection
