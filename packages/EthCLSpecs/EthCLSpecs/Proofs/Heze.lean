@@ -5,6 +5,7 @@ import EthCLSpecs.Proofs.Heze.CensorshipCost
 import EthCLSpecs.Proofs.Heze.CheckpointOrd
 import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.ClockedTrace
+import EthCLSpecs.Proofs.Heze.Committees
 import EthCLSpecs.Proofs.Heze.Equivocators
 import EthCLSpecs.Proofs.Heze.FullSupport
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
@@ -44,6 +45,7 @@ import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.RootFrames
 import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
+import EthCLSpecs.Proofs.Heze.Shuffle
 import EthCLSpecs.Proofs.Heze.SlotsIncrease
 import EthCLSpecs.Proofs.Heze.SyncFrame
 import EthCLSpecs.Proofs.Heze.Time
@@ -97,6 +99,8 @@ Re-exports:
   (`slotStartMs_le_of_getCurrentSlot`, `timeIntoSlotMs_lt_of_window`). A state at a root
   comes from an `onBlock` event that passed its clock check
   (`NodeTrace.blockStates_origin`, `onBlock_run_ok_currentSlot`).
+* `EthCLSpecs.Proofs.Heze.Committees`: the inherited committee functions
+  partition the active set per epoch (`getBeaconCommittee_partition`).
 * `EthCLSpecs.Proofs.Heze.Equivocators`: only `onAttesterSlashing` adds to
   `equivocatingIndices`, and only an index that both attestations carry and whose
   slashing passes its checks (`onAttesterSlashing_run_ok`, `onAttesterSlashing_new_member`).
@@ -275,6 +279,9 @@ Re-exports:
   existing recorded-unsatisfied FOCIL rejection
   (`shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`), and the
   named prefix, FOCIL, vote, and inherited-Gloas-tail corollaries.
+* `EthCLSpecs.Proofs.Heze.Shuffle`: the inherited `computeShuffledPermutation`
+  returns a permutation of `[0, n)` whenever it does not raise
+  (`computeShuffledPermutation_perm`).
 * `EthCLSpecs.Proofs.Heze.SlotsIncrease`: block slots increase along parent links at the
   end of a trace from the anchor store, or two distinct headers or blocks share a root
   (`NodeTrace.slotInv`). The argument uses the header check of `processBlockHeader` and

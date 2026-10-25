@@ -1,15 +1,20 @@
 import EthCLLib.Proofs.ArrayUnion
 import EthCLLib.Proofs.Checked
+import EthCLLib.Proofs.CheckedOps
+import EthCLLib.Proofs.CommitteePartition
 import EthCLLib.Proofs.EngineLaws
 import EthCLLib.Proofs.Frame
+import EthCLLib.Proofs.IndicesWhere
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.KeepsUncachedMemLoop
 import EthCLLib.Proofs.LawfulFcMap
+import EthCLLib.Proofs.Lemmas
 import EthCLLib.Proofs.MerkleBranch
 import EthCLLib.Proofs.OfFnM
 import EthCLLib.Proofs.Run
 import EthCLLib.Proofs.StateFree
 import EthCLLib.Proofs.StoreRun
+import EthCLLib.Proofs.SwapOrNot
 
 /-!
 # `EthCLLib.Proofs`: framework proof modules
@@ -59,4 +64,10 @@ Re-exports:
   `runPure_bind_of_keepsUncached`.
 * `EthCLLib.Proofs.KeepsUncachedMemLoop`: the `forIn'` loop lemmas for a
   `for h : i in xs` loop, whose body reads the membership proof `h`.
+* `EthCLLib.Proofs.SwapOrNot`: the swap-or-not shuffle is a permutation. The fork
+  bridges in `EthCLSpecs/Proofs/<Fork>/Shuffle.lean` use its theorems.
+* `EthCLLib.Proofs.Lemmas`: the list and `UInt64` lemmas that core Lean lacks.
+* `EthCLLib.Proofs.IndicesWhere`: the registry walk `indicesWhere` returns distinct
+  indices.
+* `EthCLLib.Proofs.CommitteePartition`: committee slices cover a shuffled list once.
 -/

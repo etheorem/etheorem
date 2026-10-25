@@ -3,6 +3,7 @@ import EthCLSpecs.Proofs.Gloas.BuilderIndex
 import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 import EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid
 import EthCLSpecs.Proofs.Gloas.Churn
+import EthCLSpecs.Proofs.Gloas.Committees
 import EthCLSpecs.Proofs.Gloas.ForkChoiceRun
 import EthCLSpecs.Proofs.Gloas.GetPtc
 import EthCLSpecs.Proofs.Gloas.InitializePtcWindow
@@ -11,6 +12,7 @@ import EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation
 import EthCLSpecs.Proofs.Gloas.PendingBalanceForBuilder
 import EthCLSpecs.Proofs.Gloas.ProcessOperations
 import EthCLSpecs.Proofs.Gloas.Run
+import EthCLSpecs.Proofs.Gloas.Shuffle
 import EthCLSpecs.Proofs.Gloas.Time
 import EthCLSpecs.Proofs.Gloas.UpdateCheckpoints
 
@@ -45,6 +47,8 @@ Re-exports:
   characterization of `canBuilderCoverBid`, and its two faults.
 * `EthCLSpecs.Proofs.Gloas.Churn`: the inherited `reserveChurn`, which takes the Fulu proof
   terms, and run theorems for the exit override and the inherited consolidation caller.
+* `EthCLSpecs.Proofs.Gloas.Committees`: the inherited committee functions
+  partition the active set per epoch (`getBeaconCommittee_partition`).
 * `EthCLSpecs.Proofs.Gloas.GetPtc`: `getPtc`'s else-branch `ptcWindow` offset bound,
   for the `data.slot + 1 == state.slot` caller (`getPtcElseOffset`,
   `getPtcElseOffset_lt_next_slot`) and the `slot == curSlot` fork-choice replay callers
@@ -69,6 +73,9 @@ Re-exports:
   proof in this directory pins its theorems to. The generic `StateT`-over-`Except`
   bind and `Except` facts live in `EthCLLib.Proofs.Run`; both fork directories
   import that module and name the facts directly.
+* `EthCLSpecs.Proofs.Gloas.Shuffle`: the inherited `computeShuffledPermutation`
+  returns a permutation of `[0, n)` whenever it does not raise
+  (`computeShuffledPermutation_perm`).
 * `EthCLSpecs.Proofs.Gloas.Time`: the inherited `computeEpochAtSlot`,
   `computeStartSlotAtEpoch`, and `computeActivationExitEpoch` at Gloas. Each theorem takes the Fulu proof term
   through the `Downgrade` bridge.
