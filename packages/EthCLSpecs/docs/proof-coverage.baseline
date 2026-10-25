@@ -15,7 +15,6 @@ tier1 EthCLSpecs.Gloas.getCurrentSlot
 tier1 EthCLSpecs.Gloas.getDomain
 tier1 EthCLSpecs.Gloas.getExitChurnLimit
 tier1 EthCLSpecs.Gloas.getIndexedPayloadAttestation
-tier1 EthCLSpecs.Gloas.getPendingBalanceToWithdrawForBuilder
 tier1 EthCLSpecs.Gloas.getPtc
 tier1 EthCLSpecs.Gloas.getSlotsSinceGenesis
 tier1 EthCLSpecs.Gloas.increaseBalance
@@ -71,6 +70,7 @@ tier2 EthCLSpecs.Gloas.computeConsolidationEpochAndUpdateChurn
 tier2 EthCLSpecs.Gloas.computeExitEpochAndUpdateChurn
 tier2 EthCLSpecs.Gloas.computeStartSlotAtEpoch
 tier2 EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex
+tier2 EthCLSpecs.Gloas.getPendingBalanceToWithdrawForBuilder
 tier2 EthCLSpecs.Gloas.initiateBuilderExit
 tier2 EthCLSpecs.Gloas.isValidIndexedPayloadAttestation
 tier2 EthCLSpecs.Gloas.processBuilderPendingPayments

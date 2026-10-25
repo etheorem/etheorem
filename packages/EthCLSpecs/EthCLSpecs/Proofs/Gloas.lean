@@ -7,6 +7,7 @@ import EthCLSpecs.Proofs.Gloas.GetPtc
 import EthCLSpecs.Proofs.Gloas.InitializePtcWindow
 import EthCLSpecs.Proofs.Gloas.InitiateBuilderExit
 import EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation
+import EthCLSpecs.Proofs.Gloas.PendingBalanceForBuilder
 import EthCLSpecs.Proofs.Gloas.ProcessOperations
 import EthCLSpecs.Proofs.Gloas.Run
 import EthCLSpecs.Proofs.Gloas.Time
@@ -37,7 +38,7 @@ Re-exports:
   (`processBuilderPendingPayments_run_of_fits`). Otherwise it raises `.listFull`
   (`processBuilderPendingPayments_run_of_overflow`).
 * `EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid`: the exact `Bool`-vs-`UInt64`-inequality
-  characterization of `canBuilderCoverBid`.
+  characterization of `canBuilderCoverBid`, and its two faults.
 * `EthCLSpecs.Proofs.Gloas.Churn`: the inherited `reserveChurn`, which takes the Fulu proof
   terms, and run theorems for the exit override and the inherited consolidation caller.
 * `EthCLSpecs.Proofs.Gloas.GetPtc`: `getPtc`'s else-branch `ptcWindow` offset bound,
@@ -54,6 +55,8 @@ Re-exports:
   characterizations of `isValidIndexedPayloadAttestation`, including its adjacent
   nondecreasing and validator-range checks. The semantic layer indexes the
   validator registry in bounds rather than through `!`.
+* `EthCLSpecs.Proofs.Gloas.PendingBalanceForBuilder`: `getPendingBalanceToWithdrawForBuilder`
+  returns the exact `Nat` total below `2 ^ 64`, and rejects with `.arithmetic` at or above it.
 * `EthCLSpecs.Proofs.Gloas.ProcessOperations`: Gloas `processOperations` structural
   coordinator equation (`processOperations_eq_seq`), deposit-gate failure, and
   exact success sequencing; handlers remain
