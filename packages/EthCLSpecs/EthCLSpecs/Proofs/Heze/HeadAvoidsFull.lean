@@ -39,8 +39,9 @@ EMPTY.
 A `.next` step moves to a child of the current node (`headLoopBody_run_next_edge`).
 `getNodeChildren` returns children in the node tree (`getNodeChildren_run_edge`), and the
 `betterOf` fold returns one of them (`betterOf_run_mem`). A `.done` step returns the
-current node (`headLoopBody_run_done`). `headLoop_run_avoids_full` keeps "not below
-the FULL node" as a loop invariant with `fuelLoop_run_inv`.
+current node (`headLoopBody_run_done`). `headLoop_run_avoids_full_of_step` keeps "not
+below the FULL node" as a loop invariant with `fuelLoop_run_inv`, given the step at the
+pending node of the block. `headLoop_run_avoids_full` supplies that step.
 
 The loop threads a runner state through its steps. The steps read only the `store`
 argument. So the step at the pending node must hold at any runner state. The
@@ -219,13 +220,13 @@ def SlotsIncrease (store : Store map) : Prop :=
   ∀ (root : Root) (b pb : BeaconBlock), FcMap.lookup store.blocks root = some b →
     FcMap.lookup store.blocks b.parentRoot = some pb → pb.slot < b.slot
 
-/-- Slots grow below the FULL node of `r`, under `SlotsIncrease`. Every node below the
-FULL node, other than the FULL node itself, has a block with a greater slot than the
-block at `r`. -/
-theorem NodeBelow.slot_gt (store : Store map) (hslots : SlotsIncrease store) (r : Root)
-    (rootBlock : BeaconBlock) (hblock : FcMap.lookup store.blocks r = some rootBlock)
-    (n : ForkChoiceNode) (h : NodeBelow store (.full r) n) :
-    n = .full r ∨
+/-- Slots grow below a decided node `d`, under `SlotsIncrease`. Every node below `d`, other
+than `d` itself, has a block with a greater slot than the block at the root of `d`. -/
+theorem NodeBelow.slot_gt_decided (store : Store map) (hslots : SlotsIncrease store)
+    (d : ForkChoiceNode) (hd : d.payloadStatus ≠ EthCLSpecs.Heze.Const.payloadStatusPending)
+    (rootBlock : BeaconBlock) (hblock : FcMap.lookup store.blocks d.root = some rootBlock)
+    (n : ForkChoiceNode) (h : NodeBelow store d n) :
+    n = d ∨
       ∃ b : BeaconBlock, FcMap.lookup store.blocks n.root = some b ∧ rootBlock.slot < b.slot := by
   induction h with
   | refl => exact Or.inl rfl
@@ -233,23 +234,32 @@ theorem NodeBelow.slot_gt (store : Store map) (hslots : SlotsIncrease store) (r 
     right
     rcases NodeEdge.cases_on_child store p c hpc with ⟨hp, _⟩ | ⟨y, b, s, s', hc, hb, hparent, hs⟩
     · -- `c` is decided, and `p` is the pending node of the same root.
-      rcases ih with hfull | ⟨pb, hpb, hlt⟩
+      rcases ih with hpd | ⟨pb, hpb, hlt⟩
       · exfalso
-        have hstatus := congrArg ForkChoiceNode.payloadStatus (hfull.symm.trans hp)
-        exact payloadStatus_full_ne_pending hstatus
+        exact hd (congrArg ForkChoiceNode.payloadStatus (hpd.symm.trans hp))
       · have hroot : p.root = c.root := by rw [hp]; rfl
         exact ⟨pb, hroot ▸ hpb, hlt⟩
     · -- `c` is the pending node of a block whose parent root is the root of `p`.
       subst hc
       have hparentBlock : ∃ pb : BeaconBlock, FcMap.lookup store.blocks b.parentRoot = some pb ∧
           rootBlock.slot ≤ pb.slot := by
-        rcases ih with hfull | ⟨pb, hpb, hlt⟩
+        rcases ih with hpd | ⟨pb, hpb, hlt⟩
         · refine ⟨rootBlock, ?_, UInt64.le_refl _⟩
-          rw [hparent, hfull]
+          rw [hparent, hpd]
           exact hblock
         · exact ⟨pb, hparent ▸ hpb, UInt64.le_of_lt hlt⟩
       obtain ⟨pb, hpb, hle⟩ := hparentBlock
       exact ⟨b, hb, UInt64.lt_of_le_of_lt hle (hslots y b pb hb hpb)⟩
+
+/-- Slots grow below the FULL node of `r`, under `SlotsIncrease`. Every node below the
+FULL node, other than the FULL node itself, has a block with a greater slot than the
+block at `r`. -/
+theorem NodeBelow.slot_gt (store : Store map) (hslots : SlotsIncrease store) (r : Root)
+    (rootBlock : BeaconBlock) (hblock : FcMap.lookup store.blocks r = some rootBlock)
+    (n : ForkChoiceNode) (h : NodeBelow store (.full r) n) :
+    n = .full r ∨
+      ∃ b : BeaconBlock, FcMap.lookup store.blocks n.root = some b ∧ rootBlock.slot < b.slot :=
+  NodeBelow.slot_gt_decided store hslots _ payloadStatus_full_ne_pending rootBlock hblock n h
 
 /-- A sufficient condition from slots, under `SlotsIncrease`. Take a node other than the
 FULL node of `r`, whose block has a slot no greater than the block at `r`. That node is
@@ -394,15 +404,47 @@ theorem headLoopBody_run_done (store s s' : Store map) (blocks : Array Root)
     have := run_pure_eq_ok _ _ _ _ h
     cases this
 
+/-- The `getHead` loop avoids `full r` and every node below it, given the step at
+`pending r`: every successful `.next` step there goes to `empty r`.
+
+The invariant is "not below `full r`". A `.next` step goes to a child `c` of the current
+node `n`. Suppose `c` is below `full r`. If `c` is `full r`, then `n` is its only parent,
+`pending r`, and the step hypothesis makes `c` the EMPTY node. If `c` is strictly below,
+then its only parent `n` is below as well, which contradicts the invariant. -/
+theorem headLoop_run_avoids_full_of_step (store : Store map) (blocks : Array Root) (r : Root)
+    (hstep : ∀ (c : ForkChoiceNode) (t t' : Store map),
+      (headLoopBody store blocks (ForkChoiceNode.pending r)).run t = .ok (.next c, t') →
+      c = ForkChoiceNode.empty r)
+    (fuel : Nat) (start exhausted head : ForkChoiceNode) (s s' : Store map)
+    (hstart : ¬ NodeBelow store (.full r) start)
+    (hexhausted : ¬ NodeBelow store (.full r) exhausted)
+    (hrun : (fuelLoop fuel start exhausted (headLoopBody store blocks)).run s
+      = .ok (head, s')) :
+    ¬ NodeBelow store (.full r) head := by
+  refine fuelLoop_run_inv (fun n => ¬ NodeBelow store (.full r) n)
+    (fun n => ¬ NodeBelow store (.full r) n) exhausted _ ?_ ?_ hexhausted fuel start s s'
+    head hstart hrun
+  · intro n c t t' hn hst hbelow
+    have hedge := headLoopBody_run_next_edge store t t' blocks n c hst
+    cases hbelow with
+    | refl =>
+      have hn' : n = .pending r :=
+        NodeEdge.parent_unique store n _ _ hedge (NodeEdge.full r)
+      subst hn'
+      have hc := hstep _ _ _ hst
+      exact payloadStatus_empty_ne_full (congrArg ForkChoiceNode.payloadStatus hc).symm
+    | step p _ hp hpc =>
+      exact hn (NodeEdge.parent_unique store p n c hpc hedge ▸ hp)
+  · intro n d t t' hn hst
+    rw [headLoopBody_run_done store t t' blocks n d hst]
+    exact hn
+
 /-- The `getHead` loop avoids the FULL node and every node below it. The block is from
 the previous slot, and its payload is unverified or recorded `false`. The loop starts at
 `start`, and its fuel-out value is `exhausted`. Neither is below the FULL node.
 
-The invariant is "not below the FULL node". A `.next` step goes to a child `c` of the
-current node `n`. Suppose `c` is below the FULL node. If `c` is the FULL node, then `n`
-is its only parent, the pending node of the block. There the step goes to EMPTY, so `c`
-is EMPTY. If `c` is strictly below, then its only parent `n` is below as well, against
-the invariant. -/
+`headLoop_run_avoids_full_of_step` carries the invariant. The step at the pending node of
+the block is `getHeadStep_run_eq_empty_of_recorded_unsatisfied`. -/
 theorem headLoop_run_avoids_full (store : Store map) (blocks : Array Root)
     (root : Root) (rootBlock : BeaconBlock)
     (hblock : FcMap.lookup store.blocks root = some rootBlock)
@@ -416,30 +458,15 @@ theorem headLoop_run_avoids_full (store : Store map) (blocks : Array Root)
     (hexhausted : ¬ NodeBelow store (.full root) exhausted)
     (hrun : (fuelLoop fuel start exhausted (headLoopBody store blocks)).run s
       = .ok (head, s')) :
-    ¬ NodeBelow store (.full root) head := by
-  refine fuelLoop_run_inv (fun n => ¬ NodeBelow store (.full root) n)
-    (fun n => ¬ NodeBelow store (.full root) n) exhausted _ ?_ ?_ hexhausted fuel start s s'
-    head hstart hrun
-  · intro n c t t' hn hstep hbelow
-    have hedge := headLoopBody_run_next_edge store t t' blocks n c hstep
-    cases hbelow with
-    | refl =>
-      -- `c` is FULL, so `n` is the pending node of `root`, where the step goes to EMPTY.
-      have hn' : n = .pending root :=
-        NodeEdge.parent_unique store n _ _ hedge (NodeEdge.full root)
-      subst hn'
-      have hempty := getHeadStep_run_eq_empty_of_recorded_unsatisfied store t blocks root
-        rootBlock hblock hcurrentslot hnooverflow hfull
-      rw [hempty] at hstep
-      injection hstep with hstep
-      injection hstep with hstep
-      injection hstep with hstep
-      exact payloadStatus_empty_ne_full (congrArg ForkChoiceNode.payloadStatus hstep)
-    | step p _ hp hpc =>
-      exact hn (NodeEdge.parent_unique store p n c hpc hedge ▸ hp)
-  · intro n d t t' hn hstep
-    rw [headLoopBody_run_done store t t' blocks n d hstep]
-    exact hn
+    ¬ NodeBelow store (.full root) head :=
+  headLoop_run_avoids_full_of_step store blocks root (fun c t t' hstep => by
+    have hempty := getHeadStep_run_eq_empty_of_recorded_unsatisfied store t blocks root
+      rootBlock hblock hcurrentslot hnooverflow hfull
+    rw [hempty] at hstep
+    injection hstep with hstep
+    injection hstep with hstep
+    injection hstep with hstep
+    exact hstep.symm) fuel start exhausted head s s' hstart hexhausted hrun
 
 /-- `getHead` avoids the FULL node and every node below it. The block is from the
 previous slot, and its payload is unverified or recorded `false`. The walk starts at the
@@ -525,6 +552,21 @@ theorem getParentPayloadStatus_run_parent (store s s' : Store map) (b : BeaconBl
   split at h
   · rename_i pb hpb
     exact ⟨pb, hpb⟩
+  · simp only [run_bind] at h
+    cases h
+
+/-- A `getParentPayloadStatus` run answers EMPTY or FULL. -/
+theorem getParentPayloadStatus_run_decided (store s s' : Store map) (b : BeaconBlock) (v : UInt8)
+    (h : (getParentPayloadStatus (StoreTransition := ForkChoiceStoreRun (Store map))
+      store b).run s = .ok (v, s')) :
+    v = EthCLSpecs.Heze.Const.payloadStatusEmpty ∨ v = EthCLSpecs.Heze.Const.payloadStatusFull := by
+  simp only [getParentPayloadStatus, FcMap.getOrThrow, FcMap.getOrThrowKey] at h
+  split at h
+  · simp only [pure_bind] at h
+    rw [run_pure_eq_ok _ _ _ _ h]
+    split
+    · exact Or.inr rfl
+    · exact Or.inl rfl
   · simp only [run_bind] at h
     cases h
 

@@ -362,6 +362,48 @@ justified root is not below the FULL node of the block. There the head that `get
 returns is not below that FULL node. So the head does not extend the payload, and a
 block on the FULL edge is never the head.
 
+`Proofs/Heze/PayloadRace.lean` covers the slots after the decision slot on an abstract
+model. From slot `N + 2` on, attestation weight decides between the EMPTY and the FULL
+node of the block. The model has validators with balances and vote slots, a view per
+honest node, and a proposer boost of at most `boost` on FULL. `race_empty_persists`
+proves that every allowed view puts EMPTY strictly ahead in each slot of the window. The
+hypothesis is a counting inequality: the honest balance that has voted since `N + 1` is
+more than the adversarial balance that has voted, plus `boost`.
+`Proofs/Heze/PayloadRaceBounds.lean` derives the inequality from uniform committees and
+from honest proposers. With `PROPOSER_SCORE_BOOST = 40`, the first slot needs more than
+70 % honest balance in the committee of `N + 1`.
+
+`Proofs/Heze/PayloadRaceRefines.lean` ties the race model to the executable score. A
+successful run of `getAttestationScore` at `full r` or `empty r` returns `sideWeight` of
+that side, over the active unslashed validators of the state and the side the store gives
+each one. The equations rest on the score characterization of
+`Proofs/Heze/AttestationScore.lean` (and its Gloas copy), and on exclusivity: one supported
+node is never under both children of `pending r`. `Proofs/Heze/Equivocators.lean`
+characterizes `onAttesterSlashing`. Along a trace from the anchor, an index enters
+`equivocatingIndices` only through an attester slashing that carries it in two slashable
+attestations that pass their checks. An index that no such slashing marks is never in the
+set, so `storeSide` does not drop it as an equivocator. `honest_not_equivocating` takes
+"no such slashing marks the index" as the hypothesis `HonestSigner`, and no theorem derives
+it.
+
+`Proofs/Heze/PayloadRaceWalk.lean` ties the race to the `getHead` walk. Off the decision
+slot, a weight run returns the score, or the score plus one proposer score. When the EMPTY
+score beats the FULL score plus a bound on every proposer score, the loop body at
+`pending r` steps to `empty r`. A head strictly below `pending r` then lies below `empty r`.
+`Proofs/Heze/HonestVoteSide.lean` shows that an honest vote on a head below `empty r` puts
+its validator on `empty`. The `get_ancestor` walk climbs the parent chain of the head, and
+its fuel is enough, because the roots of the chain are distinct keys of the block map.
+
+`Proofs/Heze/LatestMessages.lean` traces each latest message to the attestation event that
+wrote it, and that event checked the block and the slot of the vote.
+`Proofs/Heze/FullSupport.lean` shows that a validator on `full` has a latest message from a
+slot after the slot of `r`. `Proofs/Heze/PayloadRaceExec.lean` composes the pieces into
+`race_empty_persists_exec`. `RaceSetting` puts every honest head of the window strictly below
+`pending r`. Under it and the counting inequality of `race_empty_persists`, each of these
+heads lies below `empty r` and not below `full r`, or a root collision exists. The sort in
+`on_attestation` is the hypothesis `QsortMem`, because core Lean states no lemma about
+`Array.qsort`.
+
 The theorem has these hypotheses, bundled as `DichotomyHypotheses`:
 
 - the envelope handler succeeds: the block state is present, the data is available, the
