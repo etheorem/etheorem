@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
 import EthCLSpecs.Proofs.Heze.CensorshipCost
+import EthCLSpecs.Proofs.Heze.Churn
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.InclusionDichotomy
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
@@ -39,6 +40,8 @@ Re-exports:
   continues from EMPTY at the block. A child on EMPTY, with the empty parent requests,
   does not settle the bid. At the epoch substep, the entry of the bid is appended if and
   only if it reaches the quorum.
+* `EthCLSpecs.Proofs.Heze.Churn`: the inherited `reserveChurn`, which takes the Gloas proof
+  terms, and run theorems for the two inherited churn callers.
 * `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
   equations for `getInclusionListCommittee` and
   `getInclusionListTransactions`
