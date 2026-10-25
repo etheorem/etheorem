@@ -1,22 +1,30 @@
 import Std.Data.TreeMap.Lemmas
-import Std.Data.HashMap.Lemmas
 import EthCLLib.Spec.FiniteMap
 
 /-!
-# `EthCLLib.Proofs.LawfulFcMap`: same-key insertion for `FcMap`
+# `EthCLLib.Proofs.LawfulFcMap`: the laws of a fork-choice map
 
-`FcMap` is the operation contract. This module adds the two same-key
-insertion facts a store postcondition needs: lookup of an inserted key
-returns that value, and the inserted key is present.
+`FcMap` names the operations of a fork-choice map. It states no law about them. A
+proof about the store needs the laws. For example, a lookup after an insert at the
+same key returns the inserted value. `LawfulFcMap` states six laws:
 
-The class is parameterized by the map family and the key type.
-`instLawfulFcMapTreeMap` needs `[Std.TransOrd K]`. `instLawfulFcMapHashMap`
-needs `[EquivBEq K]` and `[LawfulHashable K]`.
+- `lookup_insert_self`: a lookup at the inserted key returns the inserted value.
+- `contains_eq_isSome_lookup`: `contains` agrees with `Option.isSome` of `lookup`.
+- `lookup_empty`: the empty map has no entries.
+- `lookup_insert_ne`: an insert does not change a lookup at a different key.
+- `mem_fold_push`: a fold that pushes each entry lists exactly the entries.
+- `mem_keys`: `keys` lists exactly the keys with an entry.
 
-`contains` and `lookup` are independent `FcMap` fields. The class
-records that `contains` agrees with `Option.isSome` of `lookup`. The
-public membership theorem follows from that agreement and the lookup
-law. The two public insertion theorems carry `@[simp]`.
+The class takes the map family and the key type as parameters. The `treeMap`
+instance needs a transitive order with lawful equality on the key
+(`[Std.TransOrd K] [Std.LawfulEqOrd K]`). `lookup_insert_ne` and the two enumeration
+laws need the lawful-equality binder to turn "the keys compare equal" into `k = k'`.
+`hashMap` has no instance, because it is never a proof target (`SPECS_ARCHITECTURE.md`
+§11.1).
+
+For `Root` (`Vector UInt8 32`), the order laws `instTransOrdVectorUInt8` and
+`instLawfulEqOrdVectorUInt8` sit beside `instOrdVectorUInt8` in
+`EthCLLib/Spec/FiniteMap.lean`.
 -/
 
 set_option autoImplicit false
@@ -25,7 +33,7 @@ namespace EthCLLib.Proofs
 
 open EthCLLib.Spec
 
-/-- Same-key insertion laws for one `FcMap` family at one key type. -/
+/-- The laws of one `FcMap` family at one key type. -/
 class LawfulFcMap (map : MapKind) (K : Type)
     [Ord K] [BEq K] [Hashable K] [FcMap map] : Prop where
   /-- Lookup of a key just inserted at that key returns the inserted value. -/
@@ -36,6 +44,22 @@ class LawfulFcMap (map : MapKind) (K : Type)
   contains_eq_isSome_lookup :
     ∀ {V : Type} (m : map K V) (k : K),
       FcMap.contains m k = (FcMap.lookup m k).isSome
+  /-- The empty map has no entries. -/
+  lookup_empty :
+    ∀ {V : Type} (k : K), FcMap.lookup (FcMap.empty : map K V) k = none
+  /-- An insert does not change a lookup at a different key. -/
+  lookup_insert_ne :
+    ∀ {V : Type} (m : map K V) (k k' : K) (v : V),
+      k ≠ k' → FcMap.lookup (FcMap.insert m k v) k' = FcMap.lookup m k'
+  /-- A fold that pushes each entry lists exactly the entries of the map. -/
+  mem_fold_push :
+    ∀ {V : Type} (m : map K V) (k : K) (v : V),
+      (k, v) ∈ (FcMap.fold (fun (acc : Array (K × V)) k v => acc.push (k, v)) #[] m).toList
+        ↔ FcMap.lookup m k = some v
+  /-- `keys` lists exactly the keys with an entry. -/
+  mem_keys :
+    ∀ {V : Type} (m : map K V) (k : K),
+      k ∈ FcMap.keys m ↔ (FcMap.lookup m k).isSome
 
 /-- Lookup of a key just inserted at that key returns the inserted value. -/
 @[simp] theorem FcMap.lookup_insert_self
@@ -54,30 +78,43 @@ class LawfulFcMap (map : MapKind) (K : Type)
   rw [LawfulFcMap.contains_eq_isSome_lookup, FcMap.lookup_insert_self]
   rfl
 
-/-- `treeMap` is lawful at keys whose `compare` is a transitive order. -/
-instance instLawfulFcMapTreeMap {K : Type}
-    [Ord K] [BEq K] [Hashable K] [Std.TransOrd K] :
-    LawfulFcMap treeMap K where
-  lookup_insert_self m k v := by
-    simpa only [FcMap.lookup, FcMap.insert, Std.TreeMap.get?_eq_getElem?] using
-      Std.TreeMap.getElem?_insert_self (t := m) (k := k) (v := v)
-  contains_eq_isSome_lookup m k := by
-    simpa only [FcMap.contains, FcMap.lookup, Std.TreeMap.get?_eq_getElem?] using
-      Std.TreeMap.contains_eq_isSome_getElem? (t := m) (a := k)
+/-- A value is in `FcMap.values` exactly when some key maps to it. -/
+theorem FcMap.mem_values
+    {map : MapKind} {K : Type}
+    [Ord K] [BEq K] [Hashable K] [FcMap map] [LawfulFcMap map K]
+    {V : Type} (m : map K V) (v : V) :
+    v ∈ FcMap.values m ↔ ∃ k, FcMap.lookup m k = some v := by
+  unfold FcMap.values
+  constructor
+  · intro h
+    obtain ⟨k, -, hk⟩ := List.mem_filterMap.mp h
+    exact ⟨k, hk⟩
+  · rintro ⟨k, hk⟩
+    exact List.mem_filterMap.mpr ⟨k, (LawfulFcMap.mem_keys m k).mpr (by simp [hk]), hk⟩
 
-/-- `hashMap` is lawful at keys whose `BEq` is an equivalence and whose
-hash respects that equality. -/
-instance instLawfulFcMapHashMap {K : Type}
-    [Ord K] [BEq K] [Hashable K] [EquivBEq K] [LawfulHashable K] :
-    LawfulFcMap hashMap K where
-  lookup_insert_self m k v := by
-    simpa only [FcMap.lookup, FcMap.insert, Std.HashMap.get?_eq_getElem?] using
-      Std.HashMap.getElem?_insert_self (m := m) (k := k) (v := v)
-  contains_eq_isSome_lookup m k := by
-    simpa only [FcMap.contains, FcMap.lookup, Std.HashMap.get?_eq_getElem?] using
-      Std.HashMap.contains_eq_isSome_getElem? (m := m) (a := k)
+/-- `treeMap` is lawful at keys whose `compare` is a transitive order that returns
+`.eq` only on equal keys. -/
+instance instLawfulFcMapTreeMap {K : Type}
+    [Ord K] [BEq K] [Hashable K] [Std.TransOrd K] [Std.LawfulEqOrd K] :
+    LawfulFcMap treeMap K where
+  lookup_insert_self _ _ _ := Std.TreeMap.getElem?_insert_self
+  contains_eq_isSome_lookup _ _ := Std.TreeMap.isSome_getElem?_eq_contains.symm
+  lookup_empty _ := Std.TreeMap.getElem?_emptyc
+  lookup_insert_ne m k k' v hne := by
+    show (m.insert k v).get? k' = m.get? k'
+    simp only [Std.TreeMap.get?_eq_getElem?, Std.TreeMap.getElem?_insert]
+    rw [if_neg (fun h => hne (Std.LawfulEqCmp.eq_of_compare h))]
+  mem_fold_push m k v := by
+    show (k, v) ∈ (m.foldl _ #[]).toList ↔ m.get? k = some v
+    -- `simp` turns the fold of pushes over `toList` into `toList` itself.
+    rw [Std.TreeMap.foldl_eq_foldl_toList]
+    simp
+  mem_keys m k := by
+    show k ∈ m.keys ↔ (m.get? k).isSome
+    rw [Std.TreeMap.mem_keys, Std.TreeMap.mem_iff_contains,
+      ← Std.TreeMap.isSome_getElem?_eq_contains]
+    rfl
 
 example : LawfulFcMap treeMap (Vector UInt8 32) := inferInstance
-example : LawfulFcMap hashMap (Vector UInt8 32) := inferInstance
 
 end EthCLLib.Proofs

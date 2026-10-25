@@ -2,6 +2,7 @@ import EthCLSpecs.Heze.ForkChoice
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLLib.Proofs.Run
 import EthCLLib.Proofs.StoreRun
+import EthCLLib.Proofs.LawfulFcMap
 
 /-!
 # Accepting an execution payload envelope
@@ -30,19 +31,21 @@ back unchanged. So the corollaries ask only that the verification succeeds, and
 `onExecutionPayloadEnvelope_run_of_pureState` restates the whole `.run`
 equation with no box beyond `pureState state`.
 
-Lookup-after-insert, contains-after-insert, `isPayloadVerified`, and
-composition with `shouldExtendPayload` remain open. The generic `FcMap`
-interface provides no insert/lookup or insert/contains law.
+The generic `FcMap` interface has no insert/lookup law, so the run equation
+makes no lookup claim. `onExecutionPayloadEnvelope_run_pairing` adds one under
+`LawfulFcMap`: after the run, a lookup at the root returns the envelope and the
+EL answer for its payload. Contains-after-insert, `isPayloadVerified`, and
+composition with `shouldExtendPayload` remain open.
 -/
 
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLLib.Proofs (ForkChoiceStoreRun run_throw except_bind_error pureState)
+open EthCLLib.Proofs (ForkChoiceStoreRun run_throw except_bind_error pureState LawfulFcMap)
 open EthCLLib.Spec (HasherTag MapKind FcMap ExecutionEngine DataAvailability CryptoBackend
   StoreTransitionError)
-open EthCLSpecs.Heze (Preset Config Store BeaconState ExecutionPayload ExecutionRequests
+open EthCLSpecs.Heze (Preset Config Store BeaconState Root ExecutionPayload ExecutionRequests
   Transaction SignedExecutionPayloadEnvelope onExecutionPayloadEnvelope
   verifyExecutionPayloadEnvelope recordPayloadInclusionListSatisfaction
   getInclusionListTransactions isInclusionListSatisfied
@@ -309,5 +312,33 @@ theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks :
   simp [hlookup, hda, verifyExecutionPayloadEnvelope_pureState_of_isOk state signedEnv hok,
     recordPayloadInclusionListSatisfaction_run_eq (map := map) store store postRunnerStore
       state signedEnv.message.beaconBlockRoot signedEnv.message.payload ilTxs hslot htxs]
+
+/-- After a successful `onExecutionPayloadEnvelope`, the store pairs the envelope with its
+inclusion-list answer at the block root `r` of the envelope. `payloads[r]` is the envelope.
+`payloadInclusionListSatisfaction[r]` is the EL answer for the payload of the envelope.
+The hypotheses are the five of `onExecutionPayloadEnvelope_run_eq_of_successful_checks`.
+The map must satisfy `LawfulFcMap`. -/
+theorem onExecutionPayloadEnvelope_run_pairing [LawfulFcMap map Root] :
+    ∀ (store runnerPost : Store map) (signedEnv : SignedExecutionPayloadEnvelope)
+      (state : BeaconState) (ilTxs : Array Transaction),
+      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some (pureState state) →
+      isDataAvailable signedEnv.message.beaconBlockRoot = true →
+      (verifyExecutionPayloadEnvelope (pureState state) signedEnv).isOk = true →
+      state.slot ≠ 0 →
+      (getInclusionListTransactions (StoreTransition := ForkChoiceStoreRun (Store map))
+          store.inclusionListStore (pureState state) (state.slot - 1) (onlyTimely := true)).run store
+        = .ok (ilTxs, runnerPost) →
+      ∃ post : Store map,
+        (onExecutionPayloadEnvelope (map := map)
+            (StoreTransition := ForkChoiceStoreRun (Store map)) signedEnv).run store
+          = .ok ((), post) ∧
+        FcMap.lookup post.payloads signedEnv.message.beaconBlockRoot = some signedEnv.message ∧
+        FcMap.lookup post.payloadInclusionListSatisfaction signedEnv.message.beaconBlockRoot
+          = some (isInclusionListSatisfied signedEnv.message.payload ilTxs) := by
+  intro store runnerPost signedEnv state ilTxs hstate havail hok hslot htxs
+  refine ⟨_, onExecutionPayloadEnvelope_run_eq_of_successful_checks store signedEnv state
+    ilTxs runnerPost hstate havail hok hslot htxs, ?_, ?_⟩
+  · exact LawfulFcMap.lookup_insert_self _ _ _
+  · exact LawfulFcMap.lookup_insert_self _ _ _
 
 end EthCLSpecs.Proofs.Heze
