@@ -58,7 +58,7 @@ theorem gindexBits_pow_add (depth r : Nat) (hr : r < 2 ^ depth) :
   rw [log2_two_pow_add hr]
   exact List.map_congr_left fun i hi => by
     have h := Nat.testBit_two_pow_mul_add 1 hr i
-    rw [Nat.mul_one, if_pos (List.mem_range.mp (List.mem_reverse.mp hi))] at h
+    rw [Nat.mul_one, ite_eq_left (List.mem_range.mp (List.mem_reverse.mp hi))] at h
     exact h
 
 /-- The first-bit split of a field address one level down: the bit
@@ -76,12 +76,12 @@ theorem gindexBits_cons_pow_add (d r : Nat) (hr : r < 2 ^ (d + 1)) :
     List.range_succ, List.reverse_append, List.reverse_singleton,
     List.map_append, List.map_cons]
   have hfirst := Nat.testBit_two_pow_mul_add 1 hr d
-  simp only [Nat.mul_one, if_pos (Nat.lt_succ_self d)] at hfirst
+  simp only [Nat.mul_one, ite_eq_left (Nat.lt_succ_self d)] at hfirst
   rw [hfirst]
   exact congrArg _ (List.map_congr_left fun i hi => by
     have him : i < d := List.mem_range.mp (List.mem_reverse.mp hi)
     have h2 := Nat.testBit_two_pow_mul_add 1 hr i
-    simp only [Nat.mul_one, if_pos (Nat.lt_succ_of_lt him)] at h2
+    simp only [Nat.mul_one, ite_eq_left (Nat.lt_succ_of_lt him)] at h2
     rw [h2, Nat.testBit_mod_two_pow, decide_eq_true him, Bool.true_and])
 
 /-- The fold the pending-map's `gindexOfBits` performs, over a
@@ -251,11 +251,11 @@ theorem foldl_boolIf_eq_toNat (bs : List Bool) (acc : Nat) :
         = bs.foldl _ (2 * acc + b.toNat)
       cases b with
       | false =>
-          rw [if_neg (by decide), show (false : Bool).toNat = 0 from rfl,
+          rw [ite_eq_right (by decide), show (false : Bool).toNat = 0 from rfl,
             Nat.add_zero]
           exact ih _
       | true =>
-          rw [if_pos rfl, show (true : Bool).toNat = 1 from rfl, Nat.add_zero]
+          rw [ite_eq_left rfl, show (true : Bool).toNat = 1 from rfl, Nat.add_zero]
           exact ih _
 
 /-- The pending-map round trip: bits to index and back. -/
@@ -362,7 +362,7 @@ theorem gindexBits_append_step {g d k : Nat} (hg : 0 < g) (hk : k < 2 ^ d) :
       List.map_congr_left fun y _ => by
         show (g * 2 ^ d + k).testBit (y + d) = g.testBit y
         rw [Nat.mul_comm, Nat.testBit_two_pow_mul_add g hk (y + d),
-          if_neg (by omega), Nat.add_sub_cancel_right]
+          ite_eq_right (by omega), Nat.add_sub_cancel_right]
     rw [hinner, ← List.map_reverse]
   rw [hhigh]
   congr 1
@@ -371,7 +371,7 @@ theorem gindexBits_append_step {g d k : Nat} (hg : 0 < g) (hk : k < 2 ^ d) :
       have := List.mem_range.mp (List.mem_reverse.mp hx)
       omega
     show (g * 2 ^ d + k).testBit x = k.testBit x
-    rw [Nat.mul_comm, Nat.testBit_two_pow_mul_add g hk x, if_pos hx']
+    rw [Nat.mul_comm, Nat.testBit_two_pow_mul_add g hk x, ite_eq_left hx']
 
 /-! ### The decomposition of `get_generalized_index`
 
@@ -399,7 +399,7 @@ theorem stepInto_pos_lt {s : SSZType} {step : PathStep} {pos d : Nat} {s' : SSZT
       cases step with
       | field k =>
           simp only [SSZType.stepInto, SSZType.isBasicType, Bool.false_eq_true,
-            if_false] at h
+            ite_false] at h
           split at h
           · simp only [Option.some.injEq, Prod.mk.injEq] at h
             obtain ⟨rfl, rfl, -⟩ := h
@@ -413,7 +413,7 @@ theorem stepInto_pos_lt {s : SSZType} {step : PathStep} {pos d : Nat} {s' : SSZT
       cases step with
       | elem i =>
           simp only [SSZType.stepInto, SSZType.isBasicType, Bool.false_eq_true,
-            if_false] at h
+            ite_false] at h
           split at h
           · simp only [Option.some.injEq, Prod.mk.injEq] at h
             obtain ⟨rfl, rfl, -⟩ := h
@@ -439,7 +439,7 @@ theorem stepInto_pos_lt {s : SSZType} {step : PathStep} {pos d : Nat} {s' : SSZT
       cases step with
       | elem i =>
           simp only [SSZType.stepInto, SSZType.isBasicType, Bool.false_eq_true,
-            if_false] at h
+            ite_false] at h
           split at h
           · simp only [Option.some.injEq, Prod.mk.injEq] at h
             obtain ⟨rfl, rfl, -⟩ := h
@@ -466,7 +466,7 @@ theorem stepInto_pos_lt {s : SSZType} {step : PathStep} {pos d : Nat} {s' : SSZT
       | field k => simp [SSZType.stepInto, SSZType.isBasicType] at h
       | length =>
           simp only [SSZType.stepInto, SSZType.isBasicType, Bool.false_eq_true,
-            if_false] at h
+            ite_false] at h
           simp only [Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨rfl, rfl, -⟩ := h
           decide

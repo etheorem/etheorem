@@ -114,7 +114,7 @@ theorem encode_size_le_max_containerFields_aux : ∀ {fs : List SSZType}
         rw [h_sz] at h; exact h
       have h_tail := encode_size_le_max_containerFields_aux h_ts vs.2
       unfold SSZType.fixedByteSizeFields SSZType.maxByteLengthFields
-      simp only [h_t_fixed, if_true]
+      simp only [h_t_fixed, ite_true]
       omega
 
 /-- Field-walker companion for `containerVar`: descend

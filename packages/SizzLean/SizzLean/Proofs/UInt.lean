@@ -336,7 +336,7 @@ theorem readUInt16LE_digits (b : ByteArray) (off : Nat) (h : off + 2 ≤ b.size)
     readUInt16LE b off =
       some ((b[off]'(by omega)).toUInt16 ||| (b[off + 1]'(by omega)).toUInt16 <<< 8) := by
   unfold readUInt16LE
-  rw [dif_pos h]
+  rw [dite_eq_left h]
 
 /-- The `uintN 32` reader over raw bytes. -/
 theorem readUInt32LE_digits (b : ByteArray) (off : Nat) (h : off + 4 ≤ b.size) :
@@ -344,7 +344,7 @@ theorem readUInt32LE_digits (b : ByteArray) (off : Nat) (h : off + 4 ≤ b.size)
       some ((b[off]'(by omega)).toUInt32 ||| (b[off + 1]'(by omega)).toUInt32 <<< 8 |||
         (b[off + 2]'(by omega)).toUInt32 <<< 16 ||| (b[off + 3]'(by omega)).toUInt32 <<< 24) := by
   unfold readUInt32LE
-  rw [dif_pos h]
+  rw [dite_eq_left h]
 
 /-- The `uintN 64` reader over raw bytes. The index arithmetic keeps
 the definition's own `off + i` shape so the final `rfl` closes the
@@ -356,7 +356,7 @@ theorem readUInt64LE_digits (b : ByteArray) (off : Nat) (h : off + 8 ≤ b.size)
         (b[off + 4]'(by omega)).toUInt64 <<< 32 ||| (b[off + 5]'(by omega)).toUInt64 <<< 40 |||
         (b[off + 6]'(by omega)).toUInt64 <<< 48 ||| (b[off + 7]'(by omega)).toUInt64 <<< 56) := by
   unfold readUInt64LE
-  rw [dif_pos h]
+  rw [dite_eq_left h]
 
 /-- `(Nat.toUInt8 n).toNat = n % 256`, as a rewrite rule. -/
 theorem toUInt8_toNat_digit (n : Nat) : (Nat.toUInt8 n).toNat = n % 256 := by
@@ -456,7 +456,7 @@ theorem decode_encode_uintN16 : ∀ (x : UInt16),
       .ok (x, (SSZType.serialize (.uintN 16) x).size) := by
   intro x
   rw [serialize_uintN16_eq_natToLEBytes]
-  unfold SSZType.deserialize
+  simp only [SSZType.deserialize]
   rw [readUInt16LE_natToLEBytes, size_natToLEBytes]
   simp
 
@@ -467,7 +467,7 @@ theorem decode_encode_uintN32 : ∀ (x : UInt32),
       .ok (x, (SSZType.serialize (.uintN 32) x).size) := by
   intro x
   rw [serialize_uintN32_eq_natToLEBytes]
-  unfold SSZType.deserialize
+  simp only [SSZType.deserialize]
   rw [readUInt32LE_natToLEBytes, size_natToLEBytes]
   simp
 
@@ -478,7 +478,7 @@ theorem decode_encode_uintN64 : ∀ (x : UInt64),
       .ok (x, (SSZType.serialize (.uintN 64) x).size) := by
   intro x
   rw [serialize_uintN64_eq_natToLEBytes]
-  unfold SSZType.deserialize
+  simp only [SSZType.deserialize]
   rw [readUInt64LE_natToLEBytes, size_natToLEBytes]
   simp
 

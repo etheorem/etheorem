@@ -116,11 +116,11 @@ theorem padToChunk_eq_append_zeros (b : ByteArray) (hb : b.size ≤ BYTES_PER_CH
     Spec.padToChunk b = b ++ natToLEBytes (BYTES_PER_CHUNK - b.size) 0 .empty := by
   simp only [padToChunk]
   by_cases hge : b.size ≥ BYTES_PER_CHUNK
-  · rw [if_pos hge]
+  · rw [ite_eq_left hge]
     have hsize : b.size = BYTES_PER_CHUNK := by omega
     rw [hsize]
     simp [natToLEBytes]
-  · rw [if_neg hge, padToChunk_go_eq_natToLEBytes, natToLEBytes_acc]
+  · rw [ite_eq_right hge, padToChunk_go_eq_natToLEBytes, natToLEBytes_acc]
 
 /-- `padToChunk` is injective on buffers of one size at or below a
 chunk: the padded outputs share the zeros, so the inputs agree
@@ -147,7 +147,7 @@ padded chunk pays one pass, and one pass suffices. -/
 theorem padToChunk_idem (b : ByteArray) :
     Spec.padToChunk (Spec.padToChunk b) = Spec.padToChunk b := by
   by_cases hge : b.size ≥ BYTES_PER_CHUNK
-  · have h1 : Spec.padToChunk b = b := by simp only [padToChunk, if_pos hge]
+  · have h1 : Spec.padToChunk b = b := by simp only [padToChunk, ite_eq_left hge]
     rw [h1, h1]
   · have h1 : Spec.padToChunk b
         = b ++ natToLEBytes (BYTES_PER_CHUNK - b.size) 0 .empty :=
@@ -166,7 +166,7 @@ theorem padToChunk_idem (b : ByteArray) :
         ≤ (b ++ natToLEBytes (BYTES_PER_CHUNK - b.size) 0 .empty).size := by
       rw [h2]
       exact Nat.le_refl _
-    rw [if_pos hcond]
+    rw [ite_eq_left hcond]
 
 /-- The link lemma the wide basic arms need, at the padded level:
 for an `n` that fits in `w` bytes, the chunk over the 32-byte digit
@@ -294,7 +294,7 @@ theorem hashTreeRoot_vectorFixed (H : Type) [Hasher H] (t : SSZType) (n : Nat)
       Spec.merkleize H (Spec.chunkify (SSZType.serialize (.vector t n) v))
         (chunkDepth (bytesToChunkCount (SSZType.serialize (.vector t n) v).size)) := by
   simp only [SSZType.hashTreeRoot]
-  rw [if_pos h_basic]
+  rw [ite_eq_left h_basic]
 
 /-- A composite-element vector merkleizes the element roots. -/
 theorem hashTreeRoot_vectorComposite (H : Type) [Hasher H] (t : SSZType) (n : Nat)
@@ -303,7 +303,7 @@ theorem hashTreeRoot_vectorComposite (H : Type) [Hasher H] (t : SSZType) (n : Na
       Spec.merkleize H
         (SSZType.hashTreeRootListComposite H t v.toList)
         (chunkDepth n) := by
-  simp only [SSZType.hashTreeRoot, h_comp, Bool.false_eq_true, if_false]
+  simp only [SSZType.hashTreeRoot, h_comp, Bool.false_eq_true, ite_false]
 
 /-- A basic-element list packs its serialization, then mixes in
 the length. -/
@@ -317,7 +317,7 @@ theorem hashTreeRoot_listBasic (H : Type) [Hasher H] (t : SSZType) (cap : Nat)
           (chunkDepth (bytesToChunkCount (cap * t.fixedByteSize))))
         xs.val.size := by
   simp only [SSZType.hashTreeRoot]
-  rw [if_pos h_basic]
+  rw [ite_eq_left h_basic]
 
 /-- A composite-element list merkleizes the element roots, then
 mixes in the length. -/
@@ -330,7 +330,7 @@ theorem hashTreeRoot_listComposite (H : Type) [Hasher H] (t : SSZType) (cap : Na
           (SSZType.hashTreeRootListComposite H t xs.val.toList)
           (chunkDepth cap))
         xs.val.size := by
-  simp only [SSZType.hashTreeRoot, h_comp, Bool.false_eq_true, if_false]
+  simp only [SSZType.hashTreeRoot, h_comp, Bool.false_eq_true, ite_false]
 
 /-- A container root is `merkleize` over the field roots at
 `chunkDepth fs.length`. -/
@@ -557,8 +557,8 @@ theorem hashTreeRoot_vector_gated (H : Type) [Hasher H] {t : SSZType} {n : Nat}
         Spec.merkleize H (SSZType.hashTreeRootListComposite H t v.toList)
           (chunkDepth n) := by
   by_cases hb : t.isBasicType = true
-  · rw [if_pos hb]; exact hashTreeRoot_vectorFixed H t n hb v
-  · rw [if_neg hb]; exact hashTreeRoot_vectorComposite H t n (by simpa using hb) v
+  · rw [ite_eq_left hb]; exact hashTreeRoot_vectorFixed H t n hb v
+  · rw [ite_eq_right hb]; exact hashTreeRoot_vectorComposite H t n (by simpa using hb) v
 
 /-- **The list arms, gated.** The body root by the same dispatch,
 with the actual length mixed in. Covers `listFixed` and `listVar`
@@ -578,8 +578,8 @@ theorem hashTreeRoot_list_gated (H : Type) [Hasher H] {t : SSZType} {cap : Nat}
             (chunkDepth cap))
         xs.val.size := by
   by_cases hb : t.isBasicType = true
-  · rw [if_pos hb]; exact hashTreeRoot_listBasic H t cap hb xs
-  · rw [if_neg hb]; exact hashTreeRoot_listComposite H t cap (by simpa using hb) xs
+  · rw [ite_eq_left hb]; exact hashTreeRoot_listBasic H t cap hb xs
+  · rw [ite_eq_right hb]; exact hashTreeRoot_listComposite H t cap (by simpa using hb) xs
 
 /-- **The container arms, gated.** The root is `merkleize` over the
 field roots at `chunkDepth fs.length`, for all-fixed and mixed

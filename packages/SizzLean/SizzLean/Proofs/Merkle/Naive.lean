@@ -171,9 +171,10 @@ theorem combineLayerAt_eq_pairLayer (H : Type) [Hasher H] (lvl : Nat)
   rw [Spec.combineLayerAt, Hasher.batchCombine_eq]
   rw [Array.toList_zipWith, Array.toList_ofFn, Array.toList_ofFn,
       zipWith_ofFn]
-  simpa using
-    ofFn_node_eq_pairLayer H lvl cs.length cs (Nat.le_refl _)
-      ((cs.length + 1) / 2) (by simp)
+  have h := ofFn_node_eq_pairLayer H lvl cs.length cs (Nat.le_refl _)
+    ((cs.length + 1) / 2) (by simp)
+  simp at h ⊢
+  exact h
 
 /-- One pairing step halves the length, rounding up. Length
 induction, because `pairLayer`'s own recursion skips one cons. -/

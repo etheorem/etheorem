@@ -42,7 +42,7 @@ proved in `Proofs/Merkle/OfShape.lean` (`ofShape_root`,
 
 The arms that recurse over a field list (`container fs`) or an
 element list (composite-element `vector` / `list`) need to traverse
-those `List` arguments. Lean 4.29.1 rejects passing `Node.ofShape`
+those `List` arguments. Lean 4.34.1 rejects passing `Node.ofShape`
 itself as a higher-order argument to `List.map`; the mutual-helper
 shape used by `Spec.hashTreeRoot` (`hashTreeRootFields`,
 `hashTreeRootListComposite`) is the workaround we mirror here.

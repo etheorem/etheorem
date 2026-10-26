@@ -63,8 +63,8 @@ theorem pad_injective : Function.Injective pad := by
     have hky2 : (ys.size + 1) % 2 < 2 := Nat.mod_lt _ (by norm_num)
     by_cases hx0 : (xs.size + 1) % 2 = 0 <;> by_cases hy0 : (ys.size + 1) % 2 = 0
     · omega
-    · rw [if_pos hx0, if_neg hy0] at hlast; exact absurd (Option.some.inj hlast) mark_ne_fill
-    · rw [if_neg hx0, if_pos hy0] at hlast; exact absurd (Option.some.inj hlast).symm mark_ne_fill
+    · rw [ite_eq_left hx0, ite_eq_right hy0] at hlast; exact absurd (Option.some.inj hlast) mark_ne_fill
+    · rw [ite_eq_right hx0, ite_eq_left hy0] at hlast; exact absurd (Option.some.inj hlast).symm mark_ne_fill
     · omega
   -- equal total length + equal counts ⇒ equal input sizes ⇒ strip the suffix
   have hlen : xs.toList.length = ys.toList.length := by

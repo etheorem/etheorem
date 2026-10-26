@@ -38,7 +38,7 @@ without needing a third partner in the mutual block.
 
 ## Why `cases ... with | … => rename_i` instead of named-arg `cases`
 
-Lean 4.29's `cases h with | ctor name₁ … nameₖ` only names the
+Lean 4.34's `cases h with | ctor name₁ … nameₖ` only names the
 *explicit* constructor arguments; the *implicit* ones (e.g. the
 `{t : SSZType}` in `vectorFixed`) get anonymous hypothesis names
 (`t✝` etc.). Reaching them requires either `@`-binding (which

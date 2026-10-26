@@ -35,14 +35,14 @@ theorem sszListFoldlPush_val {α : Type} {cap : Nat} (xs : SSZList α cap) (vs :
     by_cases h : xs.val.size < cap
     · have h_push : (xs.push v).val = xs.val.push v := by
         unfold SSZList.push
-        rw [dif_pos h]
+        rw [dite_eq_left h]
       rw [h_push, Array.size_push]
       have h_take : cap - xs.val.size = cap - (xs.val.size + 1) + 1 := by omega
       rw [h_take, List.take_succ_cons, List.toArray_cons, Array.push_eq_append,
         Array.append_assoc]
     · have h_push : (xs.push v).val = xs.val := by
         unfold SSZList.push
-        rw [dif_neg h]
+        rw [dite_eq_right h]
       have h_cap : cap - xs.val.size = 0 := by omega
       rw [h_push, h_cap]
       simp

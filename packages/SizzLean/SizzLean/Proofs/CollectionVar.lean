@@ -218,7 +218,7 @@ theorem size_serializeVarElemsAux_le_maxByteLength_vector
       (SSZType.serializeVarElemsAux t xs varOff).2.size ≤
       SSZType.maxByteLength (.vector t n) := by
   have h := size_serializeVarElemsAux_le_max t xs varOff h_max
-  simp only [SSZType.maxByteLength, h_var, if_false, Bool.false_eq_true]
+  simp only [SSZType.maxByteLength, h_var, ite_false, Bool.false_eq_true]
   rwa [h_len] at h
 
 /-- Size walker specialized to `.list t cap`: once `t` is
@@ -235,7 +235,7 @@ theorem size_serializeVarElemsAux_le_maxByteLength_list
       (SSZType.serializeVarElemsAux t xs varOff).2.size ≤
       SSZType.maxByteLength (.list t cap) := by
   have h := size_serializeVarElemsAux_le_max t xs varOff h_max
-  simp only [SSZType.maxByteLength, h_var, if_false, Bool.false_eq_true]
+  simp only [SSZType.maxByteLength, h_var, ite_false, Bool.false_eq_true]
   exact Nat.le_trans h (Nat.mul_le_mul_right _ h_len)
 
 /-! ### Offset-extraction inverse -/
@@ -524,7 +524,7 @@ theorem encode_size_le_max_vectorVar
         (SSZType.serializeVarElemsAux t v.toList varOff).1 ++
           (SSZType.serializeVarElemsAux t v.toList varOff).2 := by
     unfold SSZType.serialize
-    simp only [h_var, if_false, Bool.false_eq_true]
+    simp only [h_var, ite_false, Bool.false_eq_true]
     rfl
   rw [h_serialize_eq, ByteArray.size_append]
   exact size_serializeVarElemsAux_le_maxByteLength_vector t n v.toList
@@ -549,7 +549,7 @@ theorem encode_size_le_max_listVar
         (SSZType.serializeVarElemsAux t xs.val.toList varOff).1 ++
           (SSZType.serializeVarElemsAux t xs.val.toList varOff).2 := by
     unfold SSZType.serialize
-    simp only [h_var, if_false, Bool.false_eq_true]
+    simp only [h_var, ite_false, Bool.false_eq_true]
     rfl
   rw [h_serialize_eq, ByteArray.size_append]
   exact size_serializeVarElemsAux_le_maxByteLength_list t cap xs.val.toList
@@ -581,7 +581,7 @@ theorem decode_encode_vectorVar
         (SSZType.serializeVarElemsAux t v.toList varOff).1 ++
           (SSZType.serializeVarElemsAux t v.toList varOff).2 := by
     unfold SSZType.serialize
-    simp only [h_var, if_false, Bool.false_eq_true]
+    simp only [h_var, ite_false, Bool.false_eq_true]
     rw [h_varOff]
   have h_offs_size :
       (SSZType.serializeVarElemsAux t v.toList varOff).1.size = varOff := by
@@ -614,9 +614,9 @@ theorem decode_encode_vectorVar
   have h_ge : ¬ (SSZType.serialize (.vector t n) v).size < n * BYTES_PER_LENGTH_OFFSET := by
     rw [h_bsize]; omega
   unfold SSZType.deserialize
-  simp only [hn, if_false]
-  simp only [h_var, if_false, Bool.false_eq_true]
-  simp only [h_ge, if_false]
+  simp only [hn, ite_false]
+  simp only [h_var, ite_false, Bool.false_eq_true]
+  simp only [h_ge, ite_false]
   rw [h_offs]
   dsimp only
   rw [h_elems]
@@ -653,7 +653,7 @@ theorem decode_encode_listVar
         (SSZType.serializeVarElemsAux t xs.val.toList
           (xs.val.toList.length * BYTES_PER_LENGTH_OFFSET)).2 := by
     unfold SSZType.serialize
-    simp only [h_var, if_false, Bool.false_eq_true]
+    simp only [h_var, ite_false, Bool.false_eq_true]
 
   by_cases h_empty : xs.val.size = 0
   · -- Empty list: encoder writes the empty buffer; decoder's
@@ -666,9 +666,9 @@ theorem decode_encode_listVar
       rfl
     rw [h_ser_empty]
     unfold SSZType.deserialize
-    simp only [h_var, if_false, Bool.false_eq_true]
+    simp only [h_var, ite_false, Bool.false_eq_true]
     have h_sz0 : (ByteArray.empty).size = 0 := ByteArray.size_empty
-    simp only [h_sz0, if_true]
+    simp only [h_sz0, ite_true]
     have h_arr : xs.val = #[] := Array.eq_empty_of_size_eq_zero h_empty
     have hx : xs = ⟨#[], by simp⟩ := Subtype.ext h_arr
     rw [hx]
@@ -743,15 +743,15 @@ theorem decode_encode_listVar
         exact Nat.mul_pos hl hb
       omega
     unfold SSZType.deserialize
-    simp only [h_var, if_false, Bool.false_eq_true]
-    simp only [h_sz_pos, if_false]
+    simp only [h_var, ite_false, Bool.false_eq_true]
+    simp only [h_sz_pos, ite_false]
     rw [h_read]
     dsimp only
     have h_mod' : ¬ (Nat.toUInt32 varOff).toNat % BYTES_PER_LENGTH_OFFSET ≠ 0 := by
       rw [h_toNat, h_mod]; intro h; exact h rfl
-    simp only [h_mod', if_false]
+    simp only [h_mod', ite_false]
     rw [h_toNat, h_div]
-    simp only [h_count_le, if_false]
+    simp only [h_count_le, ite_false]
     rw [h_offs]
     dsimp only
     rw [h_elems]

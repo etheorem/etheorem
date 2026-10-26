@@ -42,10 +42,10 @@ theorem size_padToChunk (b : ByteArray) (h : b.size ≤ BYTES_PER_CHUNK) :
     (Spec.padToChunk b).size = BYTES_PER_CHUNK := by
   simp only [padToChunk]
   by_cases hge : b.size ≥ BYTES_PER_CHUNK
-  · rw [if_pos hge]
+  · rw [ite_eq_left hge]
     have hb : b.size = BYTES_PER_CHUNK := by omega
     rw [hb]
-  · rw [if_neg hge]
+  · rw [ite_eq_right hge]
     have hlt : b.size < BYTES_PER_CHUNK := by omega
     rw [size_padToChunk_go]
     omega
@@ -89,8 +89,8 @@ theorem length_chunkify (b : ByteArray) :
   have hcount : bytesToChunkCount b.size
       = (b.size + BYTES_PER_CHUNK - 1) / BYTES_PER_CHUNK := rfl
   by_cases hz : (b.size + BYTES_PER_CHUNK - 1) / BYTES_PER_CHUNK = 0
-  · rw [if_pos hz, hcount, hz]; rfl
-  · rw [if_neg hz, hcount, length_chunkify_go]
+  · rw [ite_eq_left hz, hcount, hz]; rfl
+  · rw [ite_eq_right hz, hcount, length_chunkify_go]
     simp
 
 /-- Every buffer pushed by `chunkify.go` is a full chunk. -/
@@ -123,9 +123,9 @@ theorem size_mem_chunkify (b : ByteArray) :
   intro c hc
   simp only [chunkify] at hc
   by_cases hz : (b.size + BYTES_PER_CHUNK - 1) / BYTES_PER_CHUNK = 0
-  · rw [if_pos hz] at hc
+  · rw [ite_eq_left hz] at hc
     simp at hc
-  · rw [if_neg hz] at hc
+  · rw [ite_eq_right hz] at hc
     exact size_mem_chunkify_go b _ [] (by simp) c hc
 
 /-! ### `chunkDepth`: the least power-of-two depth -/
@@ -147,9 +147,9 @@ theorem chunkDepth_go_bound (n : Nat) : ∀ (f acc cur : Nat), cur = 2 ^ acc →
       show n ≤ 2 ^ chunkDepth.go n (f + 1) acc cur
       rw [chunkDepth.go]
       by_cases hn : n ≤ cur
-      · rw [if_pos hn]
+      · rw [ite_eq_left hn]
         rwa [hcur] at hn
-      · rw [if_neg hn]
+      · rw [ite_eq_right hn]
         refine ih (acc + 1) (cur * 2) ?_ ?_
         · rw [hcur, Nat.pow_succ, Nat.mul_comm]
         · have hexp : (acc + 1) + f = acc + (f + 1) := by omega
@@ -189,9 +189,9 @@ theorem chunkDepth_go_le (n d : Nat) : ∀ (f acc cur : Nat), cur = 2 ^ acc →
       show chunkDepth.go n (f + 1) acc cur ≤ d
       rw [chunkDepth.go]
       by_cases hn : n ≤ cur
-      · rw [if_pos hn]
+      · rw [ite_eq_left hn]
         exact hacc
-      · rw [if_neg hn]
+      · rw [ite_eq_right hn]
         have hcurLt : cur < n := Nat.not_le.mp hn
         have hpowLt : 2 ^ acc < 2 ^ d := by
           rw [hcur] at hcurLt

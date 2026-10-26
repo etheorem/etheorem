@@ -122,7 +122,7 @@ theorem fixedByteSizeFields_le_maxByteLengthFields :
         rw [h_sz] at h; exact h
       have h_tail := ih h_ts vs.2 h_max_field
       unfold SSZType.fixedByteSizeFields SSZType.maxByteLengthFields
-      simp only [h_t_fixed, if_true]
+      simp only [h_t_fixed, ite_true]
       omega
 
 /-- Size bound for `.container fs`. -/

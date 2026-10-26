@@ -101,14 +101,14 @@ private theorem vectorUInt8CompareGo_eq_listCompareLex {n : Nat}
     have hle : n ≤ i := Nat.le_of_sub_eq_zero hdiff
     unfold vectorUInt8CompareGo
     have hnlt : ¬ i < n := Nat.not_lt.mpr hle
-    rw [dif_neg hnlt]
+    rw [dite_eq_right hnlt]
     rw [List.drop_eq_nil_of_le (by simpa [Vector.length_toList] using hle)]
     rw [List.drop_eq_nil_of_le (by simpa [Vector.length_toList] using hle)]
     rfl
   | succ k ih =>
     have hlt : i < n := Nat.lt_of_sub_pos (by simp [hdiff])
     unfold vectorUInt8CompareGo
-    rw [dif_pos hlt]
+    rw [dite_eq_left hlt]
     have hlen : i < a.toList.length := by simpa [Vector.length_toList] using hlt
     have hlenb : i < b.toList.length := by simpa [Vector.length_toList] using hlt
     rw [List.drop_eq_getElem_cons hlen, List.drop_eq_getElem_cons hlenb,
@@ -127,22 +127,22 @@ private theorem vectorUInt8CompareGo_eq_listCompareLex {n : Nat}
 
 /-- One step of the early-return `forIn` that `instOrdVectorUInt8` runs. -/
 private def vectorUInt8CompareStep {n : Nat} (a b : Vector UInt8 n) (i : Nat) :
-    Id (ForInStep (MProd (Option Ordering) PUnit)) :=
+    Id (ForInStep (Option Ordering × Unit)) :=
   let x := a.toArray[i]!
   let y := b.toArray[i]!
   if x < y then
-    pure (ForInStep.done ⟨some .lt, ()⟩)
+    pure (ForInStep.done (some .lt, ()))
   else if x > y then
-    pure (ForInStep.done ⟨some .gt, ()⟩)
+    pure (ForInStep.done (some .gt, ()))
   else
-    pure (ForInStep.yield ⟨none, ()⟩)
+    pure (ForInStep.yield (none, ()))
 
 /-- The `instOrdVectorUInt8` loop, starting at index `i`. -/
 private def vectorUInt8CompareForIn {n : Nat} (a b : Vector UInt8 n) (i : Nat) :
     Ordering :=
   Id.run (
     forIn (List.range' i (n - i) 1)
-      (MProd.mk (none : Option Ordering) PUnit.unit)
+      ((none : Option Ordering), ())
       (fun j _ => vectorUInt8CompareStep a b j)
     >>= fun r =>
       match r.fst with
@@ -153,7 +153,8 @@ private theorem instOrdVectorUInt8_compare_eq_forIn_zero {n : Nat}
     (a b : Vector UInt8 n) :
     compare a b = vectorUInt8CompareForIn a b 0 := by
   simp only [compare, vectorUInt8CompareForIn]
-  simp [Range.forIn_eq_forIn_range', Range.size, vectorUInt8CompareStep, pure_bind]
+  simp [Range.forIn_eq_forIn_range', Range.size, vectorUInt8CompareStep]
+  split <;> simp_all
 
 private theorem vectorUInt8CompareForIn_eq_ite {n : Nat} (a b : Vector UInt8 n)
     (i k : Nat) (hlt : i < n) (hdiff : n - i = k + 1) :
@@ -198,7 +199,7 @@ private theorem vectorUInt8CompareForIn_eq_compareGo {n : Nat}
     have hlt : i < n := Nat.lt_of_sub_pos (by simp [hdiff])
     rw [vectorUInt8CompareForIn_eq_ite a b i k hlt hdiff]
     unfold vectorUInt8CompareGo
-    rw [dif_pos hlt]
+    rw [dite_eq_left hlt]
     split
     · rfl
     · split

@@ -76,7 +76,7 @@ private theorem branchFoldM_ok [HasherTag] (branch : Array (Vector UInt8 32)) (i
   | succ d ih =>
       intro hb leaf
       rw [List.range_succ, List.foldlM_append, ih (by omega) leaf, branchFold_succ]
-      simp [dif_pos (show d < branch.size by omega),
+      simp [dite_eq_left (show d < branch.size by omega),
         getElem!_pos branch d (show d < branch.size by omega)]
       rfl
 
@@ -107,7 +107,7 @@ private theorem isValidMerkleBranch_eq_beq [HasherTag] (leaf : Vector UInt8 32)
     isValidMerkleBranch leaf branch depth index root
       = (bytesToRoot (branchFold (vecToBytes leaf) branch depth index) == root) := by
   unfold isValidMerkleBranch
-  rw [if_pos hsize,
+  rw [ite_eq_left hsize,
     computeMerkleBranchRoot_eq_branchFold leaf branch depth index (Nat.le_of_eq hsize.symm)]
 
 /-- **Reconstruction (acceptance #1).** The check's contract, public
@@ -232,11 +232,11 @@ theorem branchFold_eq_foldOpening [HasherTag] (leaf : ByteArray)
       rw [branchFold_succ, hval, hbits, routeRight_eq_testBit]
       cases hb : index.testBit d with
       | false =>
-          simp only [List.map_cons, Bool.false_eq_true, if_false,
+          simp only [List.map_cons, Bool.false_eq_true, ite_false,
             SizzLean.Proofs.Merkle.foldOpening, hd]
           rw [← hih]
       | true =>
-          simp only [List.map_cons, if_true, SizzLean.Proofs.Merkle.foldOpening, hd]
+          simp only [List.map_cons, ite_true, SizzLean.Proofs.Merkle.foldOpening, hd]
           rw [← hih]
 
 /-- **Branch completeness.** An honest opening passes the check:

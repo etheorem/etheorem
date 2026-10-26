@@ -116,9 +116,9 @@ theorem ofLeaves_coherent (H : Type) [Hasher H] :
       rw [Node.ofLeaves]
       simp only [List.splitAt_eq]
       by_cases hr : (ls.drop (2 ^ d)).isEmpty
-      · rw [if_pos hr, rootOf_eq_root (ih _), rootOf_eq_root (zeroLeaf_coherent H d)]
+      · rw [ite_eq_left hr, rootOf_eq_root (ih _), rootOf_eq_root (zeroLeaf_coherent H d)]
         exact Node.Coherent.pair_some (ih _) (zeroLeaf_coherent H d)
-      · rw [if_neg hr, rootOf_eq_root (ih _), rootOf_eq_root (ih _)]
+      · rw [ite_eq_right hr, rootOf_eq_root (ih _), rootOf_eq_root (ih _)]
         exact Node.Coherent.pair_some (ih _) (ih _)
 
 /-- The chunk builder's root is the naive tree over the same
@@ -164,7 +164,7 @@ theorem ofLeaves_naiveRoot (H : Type) [Hasher H] :
                   (Node.rootOf H (zeroLeaf H d)))) := by
           rw [Node.ofLeaves]
           simp only [List.splitAt_eq]
-          rw [if_pos hr]
+          rw [ite_eq_left hr]
         rw [e, Node.root, naiveRoot, naiveRootAt_succ, hd,
           naiveRootAt_nil, Nat.zero_add, ih _ hL, zeroLeaf_root H d]
         rfl
@@ -177,7 +177,7 @@ theorem ofLeaves_naiveRoot (H : Type) [Hasher H] :
                   (Node.rootOf H (Node.ofLeaves H (ls.drop (2 ^ d)) d)))) := by
           rw [Node.ofLeaves]
           simp only [List.splitAt_eq]
-          rw [if_neg hr]
+          rw [ite_eq_right hr]
         rw [e, Node.root, naiveRoot, naiveRootAt_succ,
           ih _ hL, ih _ hRlen]
         rfl
@@ -208,13 +208,13 @@ theorem ofSubtrees_coherent (H : Type) [Hasher H] :
       rw [Node.ofSubtrees]
       simp only [List.splitAt_eq]
       by_cases hr : (subs.drop (2 ^ d)).isEmpty
-      · rw [if_pos hr,
+      · rw [ite_eq_left hr,
           rootOf_eq_root (ih _ fun s hs => hc s (List.mem_of_mem_take hs)),
           rootOf_eq_root (zeroLeaf_coherent H d)]
         exact Node.Coherent.pair_some
           (ih _ fun s hs => hc s (List.mem_of_mem_take hs))
           (zeroLeaf_coherent H d)
-      · rw [if_neg hr,
+      · rw [ite_eq_right hr,
           rootOf_eq_root (ih _ fun s hs => hc s (List.mem_of_mem_take hs)),
           rootOf_eq_root (ih _ fun s hs => hc s (List.mem_of_mem_drop hs))]
         exact Node.Coherent.pair_some
@@ -266,7 +266,7 @@ theorem ofSubtrees_naiveRoot (H : Type) [Hasher H] :
                   (Node.rootOf H (zeroLeaf H d)))) := by
           rw [Node.ofSubtrees]
           simp only [List.splitAt_eq]
-          rw [if_pos hr]
+          rw [ite_eq_left hr]
         rw [e, Node.root, naiveRoot, naiveRootAt_succ, ← List.map_take,
           ← List.map_drop, hd, List.map_nil, naiveRootAt_nil, Nat.zero_add,
           ih _ hL, zeroLeaf_root H d]
@@ -280,7 +280,7 @@ theorem ofSubtrees_naiveRoot (H : Type) [Hasher H] :
                   (Node.rootOf H (Node.ofSubtrees H (subs.drop (2 ^ d)) d)))) := by
           rw [Node.ofSubtrees]
           simp only [List.splitAt_eq]
-          rw [if_neg hr]
+          rw [ite_eq_right hr]
         rw [e, Node.root, naiveRoot, naiveRootAt_succ, ← List.map_take,
           ← List.map_drop, ih _ hL, ih _ hR]
         rfl

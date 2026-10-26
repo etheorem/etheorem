@@ -331,7 +331,7 @@ pull it in for trivia; reach for `batteries` first if a small extension suffices
 The monorepo's mathlib dependency is **`LeanPoseidonProofs`** (the Poseidon2
 fast-≡-reference equivalence proof), and it is deliberately **contained**: a
 *standalone* package (not in the umbrella `[[require]]`s), pinned to mathlib's
-`v4.29.1` tag (an exact toolchain match, so `lake exe cache get` uses prebuilt
+`v4.34.1` tag (an exact toolchain match, so `lake exe cache get` uses prebuilt
 oleans, nothing compiles from scratch), with its own committed
 `lake-manifest.json`. So mathlib never touches the SSZ chain, the
 `LeanPoseidon` core, the root build, or any CI job other than the dedicated

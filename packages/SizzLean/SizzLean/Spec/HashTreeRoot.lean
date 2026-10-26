@@ -41,7 +41,7 @@ through either one.
 
 Same shape `Spec/Interp.lean` and `Spec/Serialize.lean` already use:
 the recursion descends into `List SSZType` (container fields), and
-Lean 4.29.1's structural-recursion checker rejects passing
+Lean 4.34.1's structural-recursion checker rejects passing
 `hashTreeRoot` itself as a higher-order argument to `List.map`. The
 fix is to inline each list traversal as a mutually-recursive helper
 that consumes its list cons-by-cons. See `Spec/Interp.lean`'s
@@ -335,7 +335,7 @@ def mixInSelector (H : Type) [Hasher H]
 The bitlist body merkleization needs the data bits packed LSB-first
 into bytes, *without* the trailing-delimiter bit `serialize`
 appends. Reconstructing the body via `BitVec.ofFn` would be cleanest,
-but Lean 4.29.1's core library doesn't ship that constructor; we go
+but Lean 4.34.1's core library doesn't ship that constructor; we go
 through `BitVec.ofNat` instead, treating the bit-list LSB-first as
 a `Nat`. -/
 

@@ -675,7 +675,7 @@ cargo/`extern_lib` target cannot be expressed in TOML, the same
 justification as `SizzLean`'s C shim) and inherits the root `lean-toolchain`
 like `SizzLean` / `EthCLSpecs`; `LeanPoseidonProofs` uses `lakefile.toml`.
 Both use `licenseFiles = ["../../LICENSE"]`. `LeanPoseidonProofs` *does*
-carry its own `lean-toolchain` (pinned `leanprover/lean4:v4.29.1`, matching
+carry its own `lean-toolchain` (pinned `leanprover/lean4:v4.34.1`, matching
 the root and the mathlib pin): because it is built **standalone** rather
 than through the umbrella, the explicit toolchain makes the standalone build
 self-contained and makes the mathlib↔toolchain coupling visible (a root
@@ -711,7 +711,7 @@ packages/
 │   └── README.md
 │
 └── LeanPoseidonProofs/                 # equivalence proof (requires mathlib)
-    ├── lakefile.toml                   # require LeanPoseidon (../LeanPoseidon) + mathlib @ v4.29.1
+    ├── lakefile.toml                   # require LeanPoseidon (../LeanPoseidon) + mathlib @ v4.34.1
     ├── lake-manifest.json              # committed — pins mathlib (+ transitive) revs
     ├── LeanPoseidonProofs.lean
     └── LeanPoseidonProofs/
@@ -796,14 +796,14 @@ SSZ-hash tactic guidance:
 | **0: Bootstrap** | Package skeleton, procedural `lakefile.lean`, `autoImplicit false` discipline, umbrella `[[require]]`, README/Justfile/CI surface. | ✅ done | No external deps yet; the cargo target lands in Phase 2, mathlib in Phase 3. |
 | **1: Core** | `Bn254Fr` (+ byte codec), `Params` (generated BN254 t=3), fast + reference linear layers, `permute` / `permuteRef`, `compress`, `hash`. Anchor KAT green. | ✅ done | Mathlib-free, kernel/`native_decide`-reducible. Self-contained; no FFI, no proofs. |
 | **2: Conformance** | Vendored Rust oracle (+ C ABI shim), `extern_lib`s + link args, `@[extern]` binding, `poseidon_fuzz` differential exe (100k trials green), committed KATs. | ✅ done | Rust toolchain confined to `poseidon_fuzz`; core + anchors build without it. |
-| **3: Equivalence proofs** | `LeanPoseidonProofs` + mathlib; `CommRing (Fp p)`; `fast = reference` for both layers ⇒ `permute = permuteRef`, specialised to `bn254Params` / `bls12Params`; `#print axioms` clean. | ✅ done | The one place mathlib enters, pinned to the `v4.29.1` tag (exact toolchain match, prebuilt olean cache), standalone so the rest of the repo stays mathlib-free. Axiom footprint verified `[propext, Classical.choice, Quot.sound]`. |
+| **3: Equivalence proofs** | `LeanPoseidonProofs` + mathlib; `CommRing (Fp p)`; `fast = reference` for both layers ⇒ `permute = permuteRef`, specialised to `bn254Params` / `bls12Params`; `#print axioms` clean. | ✅ done | The one place mathlib enters, pinned to the `v4.34.1` tag (exact toolchain match, prebuilt olean cache), standalone so the rest of the repo stays mathlib-free. Axiom footprint verified `[propext, Classical.choice, Quot.sound]`. |
 | **4: Generalise widths and fields** (optional follow-up) | **10a:** parameterise the field as `Fp (p : Nat)` with `Bn254Fr := Fp bn254FrModulus` (§3). **10b:** additional instances: a second *field* (BLS12-381 `Fr`, t=3) with anchor KAT, committed KATs, and differential; *widths* (`t ≠ 3`) need a core `Vector R t` generalisation. | 10a ✅; 10b field axis ✅ (BLS12-381); 10b width axis ⏸ deferred | Open/Closed, where a new field is new data (no edits to the generic layers/proofs); a new width is a core refactor (`Vector R 3 → Vector R t`, `M4` for t≥4). Concrete fields stay `Nat`/GMP-backed (hot path verified by the unchanged anchor KAT + differential). |
 | **5: Docs** | Package README, root README / CLAUDE.md / monorepo-arch.md updates. | ✅ done | — |
 | **6: Structural-correctness proofs** | The shipped permutation proved a genuine **bijection** (S-box ∘ invertible layers ∘ ARK), on the dense `permuteRef` and transported via `permute_eq_permuteRef`; plus sponge-`pad` injectivity, `compress` non-injectivity (pigeonhole), and a decidable round-count-meets-the-paper's-bounds `#guard`. | ✅ done | Generic theorems axiom-clean (`[propext, Choice, Quot.sound]`); concrete specialisations carry exactly one **cited** `Nat.Prime` axiom (standardised moduli; §9), no FFI/`ofReduceBool`, `#print axioms` verified. Swappable for a Pratt certificate. Sponge indifferentiability remains out of scope, see below. |
 
 The one decision that was flagged here, the **mathlib ↔ toolchain pin**
-(Phase 3), is **resolved**: mathlib's `v4.29.1` tag has `lean-toolchain`
-`leanprover/lean4:v4.29.1`, an exact match with the repo, so no toolchain
+(Phase 3), is **resolved**: mathlib's `v4.34.1` tag has `lean-toolchain`
+`leanprover/lean4:v4.34.1`, an exact match with the repo, so no toolchain
 bump was needed and the prebuilt olean cache applies. (The fallback on the
 table, hand-proving `CommRing (Fp p)` and the linear identities without
 `ring` and with no new dependency, was not needed.)

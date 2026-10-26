@@ -77,6 +77,23 @@ set_option autoImplicit false
 
 namespace SizzLean.Spec
 
+/-- The Lean type for `uintN n`: the core fixed-width type at `n ∈ {8, 16, 32, 64}`,
+`BitVec n` otherwise.
+
+The dispatch tests `Nat.beq` instead of matching the literals `8 | 16 | 32 | 64`. A
+literal pattern on `Nat` compiles to a `dite` on the `DecidableEq Nat` instance, and
+the reducible-transparency `whnf` that instance search and `with_reducible` run does
+not unfold an instance. `interp (.uintN 64)` would then stop short of `UInt64`, and a
+numeral at that type would find no `OfNat`. `Nat.beq` on two literals reduces natively
+at every transparency, and the `Bool` patterns compile to a plain `Bool.casesOn`. -/
+@[reducible] def SSZType.uintNInterp (n : Nat) : Type :=
+  match n.beq 8, n.beq 16, n.beq 32, n.beq 64 with
+  | true, _,    _,    _    => UInt8
+  | _,    true, _,    _    => UInt16
+  | _,    _,    true, _    => UInt32
+  | _,    _,    _,    true => UInt64
+  | _,    _,    _,    _    => BitVec n
+
 mutual
 
 /-- Map an SSZ description to the Lean type its values inhabit.
@@ -87,11 +104,7 @@ for the larger widths (`UInt128`/`UInt256` are not in core);
 downstream code can pattern-match on the description if it wants
 those native types when they ship. -/
 @[reducible] def SSZType.interp : SSZType → Type
-  | .uintN 8                  => UInt8
-  | .uintN 16                 => UInt16
-  | .uintN 32                 => UInt32
-  | .uintN 64                 => UInt64
-  | .uintN n                  => BitVec n
+  | .uintN n                  => SSZType.uintNInterp n
   | .bool                     => Bool
   | .vector t n               => Vector t.interp n
   | .list t cap               => { xs : Array t.interp // xs.size ≤ cap }
@@ -131,5 +144,10 @@ example : SSZType.interp (.uintN 32)       = UInt32        := rfl
 -- unfolds to `Vector (interp .bool) 3` which further unfolds to
 -- `Vector Bool 3`. The kernel performs both reductions to close `rfl`.
 example : SSZType.interp (.vector .bool 3) = Vector Bool 3 := rfl
+-- The `uintN` arm also reduces at reducible transparency, the level instance
+-- search runs at, so a numeral at `interp (.uintN 64)` finds `UInt64`'s `OfNat`.
+example : SSZType.interp (.uintN 64)  = UInt64      := by with_reducible rfl
+example : SSZType.interp (.uintN 128) = BitVec 128  := by with_reducible rfl
+example : SSZType.interp (.uintN 64) := 42
 
 end SizzLean.Spec

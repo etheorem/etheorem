@@ -65,8 +65,7 @@ theorem getInclusionListCommittee_run_eq :
   split
   · rw [run_bind, ForkChoiceStoreRun.throwArithmetic_run]
     exact except_bind_error _ _
-  · rw [run_bind, run_pure, except_bind_ok]
-    rw [run_pure]
+  · rw [run_pure]
 
 /-- Exact empty-committee error of `getInclusionListCommittee`. -/
 theorem getInclusionListCommittee_run_error_of_empty

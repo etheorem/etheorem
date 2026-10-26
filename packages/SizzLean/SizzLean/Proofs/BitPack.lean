@@ -422,11 +422,11 @@ theorem decode_encode_bitvector (n : Nat) (h_pos : 0 < n) (bv : BitVec n) :
     rw [bitsToNat_getLsbD_range, BitVec.ofNat_toNat, BitVec.setWidth_eq]
   rw [h_ser, h_size]
   unfold SSZType.deserialize
-  rw [deserializeBitvector, dif_neg (by omega : ¬ n = 0), dif_pos h_size]
+  rw [deserializeBitvector, dite_eq_right (by omega : ¬ n = 0), dite_eq_left h_size]
   by_cases h_u : (n + 7) / 8 * 8 - n > 0
   · -- Partial final byte: the zero-padding guard runs. Identify the
     -- last byte with the packed final chunk, whose high bits are unset.
-    rw [if_pos h_u]
+    rw [ite_eq_left h_u]
     have h_ne : (List.range n).map (fun i => bv.getLsbD i) ≠ [] := by
       intro h_con
       have := congrArg List.length h_con
@@ -462,7 +462,7 @@ theorem decode_encode_bitvector (n : Nat) (h_pos : 0 < n) (bv : BitVec n) :
     simp only [ne_eq, UInt8.zero_and, not_true_eq_false, ite_false]
     simp only [h_take, h_val]
   · -- The bit width fills its bytes exactly: no guard.
-    rw [if_neg h_u]
+    rw [ite_eq_right h_u]
     simp only [h_take, h_val]
 
 /-! ### The bitlist arm -/
@@ -487,7 +487,7 @@ theorem decode_encode_bitlist (cap : Nat) (xs : { bs : Array Bool // bs.size ≤
   have h_size_pos : 0 < (xs.val.size + 8) / 8 := by omega
   rw [h_ser, h_size]
   unfold SSZType.deserialize
-  rw [deserializeBitlist, dif_neg (by rw [h_size]; omega)]
+  rw [deserializeBitlist, dite_eq_right (by rw [h_size]; omega)]
   -- Identify the final byte: the packed final data chunk plus the
   -- delimiter bit.
   have h_ne : xs.val.toList ++ [true] ≠ [] := by simp
@@ -521,7 +521,7 @@ theorem decode_encode_bitlist (cap : Nat) (xs : { bs : Array Bool // bs.size ≤
   have h_total : ((packBitsLE (xs.val.toList ++ [true])).size - 1) * 8 + xs.val.size % 8 =
       xs.val.size := by
     rw [h_size]; omega
-  rw [h_total, if_neg (by omega : ¬ xs.val.size > cap)]
+  rw [h_total, ite_eq_right (by omega : ¬ xs.val.size > cap)]
   -- Unpack and take back the data bits.
   have h_take : (unpackBitsLEAux (packBitsLE (xs.val.toList ++ [true]))
         (packBitsLE (xs.val.toList ++ [true])).size 0).take xs.val.size =
@@ -532,7 +532,7 @@ theorem decode_encode_bitlist (cap : Nat) (xs : { bs : Array Bool // bs.size ≤
         List.append_assoc, List.take_left' h_len]
   rw [h_take]
   simp only [Array.toArray_toList]
-  rw [dif_pos xs.property, h_size]
+  rw [dite_eq_left xs.property, h_size]
 
 /-! ### Size bounds for the two arms -/
 

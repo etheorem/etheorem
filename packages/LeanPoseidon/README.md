@@ -26,7 +26,7 @@ bn254FrModulus`. The Poseidon2 construction is namespaced under
 ## Setup
 
 Toolchain is pinned in the repo's [`lean-toolchain`](../../lean-toolchain)
-(`leanprover/lean4:v4.29.1`); [`elan`](https://github.com/leanprover/elan)
+(`leanprover/lean4:v4.34.1`); [`elan`](https://github.com/leanprover/elan)
 picks it up automatically. Build the core:
 
 ```bash

@@ -156,10 +156,10 @@ theorem foldOpening_naiveOpeningAt (H : Type) [Hasher H] :
           rw [naiveOpeningAt, naiveRootAt_split]
           cases bit with
           | false =>
-              simp only [Bool.false_eq_true, if_false, foldOpening] at h ⊢
+              simp only [Bool.false_eq_true, ite_false, foldOpening] at h ⊢
               rw [ih _ _ _ _ h]
           | true =>
-              simp only [if_true, foldOpening] at h ⊢
+              simp only [ite_true, foldOpening] at h ⊢
               rw [ih _ _ _ _ h]
 
 /-- Branch completeness on the merkleizer `SSZType.hashTreeRoot`

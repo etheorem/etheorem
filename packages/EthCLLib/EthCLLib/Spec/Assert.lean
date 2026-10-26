@@ -52,6 +52,12 @@ the first line, trimmed and tab-stripped, is enough. -/
 def sanitizeDescr (raw : String) : String :=
   (((raw.splitOn "\n").headD raw).replace "\t" " ").trimAscii.toString
 
+/-- The expansion of `assert cond`, shared by the term form and the `do`-element form. -/
+def expandAssert (cond : Term) : MacroM Term := do
+  let descr := sanitizeDescr (cond.raw.reprint.getD "assertion")
+  let descrLit := Syntax.mkStrLit descr
+  `(if $cond then (pure PUnit.unit) else throw (EthCLLib.Spec.SpecReject.assert $descrLit))
+
 /-- `assert cond` throws the section's `assert` reject (a `StateTransitionError` in a
 state section, a `StoreTransitionError` in a fork-choice section, resolved through
 `SpecReject` from the monad's error type) carrying `<rendered cond>` as its descriptor
@@ -60,10 +66,21 @@ reprinted source, captured at macro-expansion time. Expands to a plain `if`, so 
 threads the section's monad with no extra structure.
 
 `scoped`, so `open EthCLLib.Spec` activates it. -/
-scoped macro (name := assertStx) "assert " cond:term:max : term => do
-  let descr := sanitizeDescr (cond.raw.reprint.getD "assertion")
-  let descrLit := Syntax.mkStrLit descr
-  `(if $cond then (pure PUnit.unit) else throw (EthCLLib.Spec.SpecReject.assert $descrLit))
+scoped macro (name := assertStx) "assert " cond:term:max : term => expandAssert cond
+
+/-- `assert cond` as a `do` element. Core Lean has its own `assert P` do element, a `vcgen`
+assertion with no runtime effect, at priority `default+10`. That parser wins over a plain
+expression element, so without this rule every `assert` line in a section's `do` block would
+lose its runtime check. This higher-priority element expands to the same `expandAssert` term,
+so it keeps the descriptor and the throw.
+
+`scoped`, so `open EthCLLib.Spec` activates it. -/
+scoped syntax (name := assertDoStx) (priority := high) "assert " term:max : doElem
+
+macro_rules
+  | `(doElem| assert $cond:term) => do
+    let t ← expandAssert cond
+    `(doElem| $t:term)
 
 /-- `assertH cond` is `assert` that **returns the proof** of its condition. It throws the
 section's `assert` reject when `cond` is false, exactly as `assert`; when `cond` holds it binds

@@ -103,8 +103,8 @@ theorem decode_encode_vectorFixed
   rw [h_serialize_eq]
   unfold SSZType.deserialize
   have hn : ¬ n = 0 := Nat.ne_of_gt h_pos
-  simp only [hn, if_false]
-  simp only [h_t_fixed, if_true]
+  simp only [hn, ite_false]
+  simp only [h_t_fixed, ite_true]
   rw [Vector.length_toList] at h_inv
   rw [h_inv]
   have h_sz_arr : v.toList.toArray.size = n := by
@@ -152,7 +152,7 @@ theorem encode_size_le_max_vectorFixed
     rw [Nat.mul_comm]
   rw [h_size]
   show n * t.fixedByteSize ≤ SSZType.maxByteLength (.vector t n)
-  simp only [SSZType.maxByteLength, h_t_fixed, if_true]
+  simp only [SSZType.maxByteLength, h_t_fixed, ite_true]
   exact Nat.mul_le_mul_left n h_fixed_le_max
 
 end SizzLean.Proofs

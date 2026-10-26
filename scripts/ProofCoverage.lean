@@ -80,14 +80,13 @@ it as a matrix rather than a ratio.
 
 ## Lean idioms annotated on first appearance
 
-* `importModules (loadExts := true)`: builds an `Environment` from compiled
-  `.olean`s. `loadExts` is what replays the environment extensions, so
-  `captureExt` and `characterizesExt` arrive populated. The script's own
-  `import` list stays free of `EthCLSpecs`, because the interpreter would then
-  have to resolve the FFI hasher's native symbols at load time.
-* `Lean.CollectAxioms.collect`: the core axiom walk behind `#print axioms`,
-  run directly as `ReaderT Environment (StateM …)` so the script needs no
-  `CoreM`.
+* `importModules`: builds an `Environment` from compiled `.olean`s. Each
+  extension's state starts empty; `loadImportedState` fills the four the report
+  reads. The script's own `import` list stays free of `EthCLSpecs`, because the
+  interpreter would then have to resolve the FFI hasher's native symbols at
+  load time.
+* `Lean.collectAxioms`: the core axiom walk behind `#print axioms`, run in a
+  `StateM Environment` so the script needs no `CoreM`.
 * `privateToUserName?` / `Name.isInternal` / `isReservedName`: the three tests
   that separate the theorems a person wrote from the declarations the
   elaborator generated beside them (`_simp_1_1` lemmas, `.eq_1` equation
@@ -202,12 +201,29 @@ def sizzleanProofModules : IO (Array Name) := do
       modules := modules.push (parts.foldl (fun n p => n ++ p.toName) Name.anonymous)
   return sortNames modules
 
+/-- Fill `ext`'s state from the entries the imported modules recorded.
+
+`importModules (loadExts := true)` runs this step for every extension, and then
+runs every imported `initialize` block. `SizzLean.Cache.MerkleTree.Zero` fills its
+zero-hash table in one of those blocks through the FFI `sha256Combine`, which the
+interpreter has no native code for. The report reads four extensions, all of them
+`EthCLLib`'s own, so the script imports without `loadExts` and fills those four. -/
+def loadImportedState {α β σ : Type} [Inhabited σ] (env : Environment)
+    (ext : PersistentEnvExtension α β σ) : IO Environment := do
+  let imported := env.header.moduleNames.mapIdx fun i _ => ext.getModuleEntries env i
+  let state ← (ext.addImportedFn imported).run { env, opts := {} }
+  return ext.setState env state
+
 /-- The compiled environment the whole report reads. -/
 def loadEnvironment : IO Environment := do
   initSearchPath (← findSysroot)
   let sizzlean ← sizzleanProofModules
   let modules := #[`EthCLSpecs, `EthCLSpecs.Proofs, `EthCLLib.Proofs] ++ sizzlean
-  importModules (loadExts := true) (modules.map fun m => { module := m }) {}
+  let env ← importModules (modules.map fun m => { module := m }) {}
+  let env ← loadImportedState env lineageExt
+  let env ← loadImportedState env captureExt
+  let env ← loadImportedState env characterizesExt
+  loadImportedState env boxGenericExt
 
 /-! ## The theorems a person wrote
 
@@ -314,9 +330,15 @@ def allowedAxioms : Array Name :=
     `Lean.ofReduceBool, `Lean.trustCompiler,
     `SizzLean.Hasher.sha256Hash_eq_spec, `SizzLean.Hasher.sha256Combine_eq_spec]
 
+/-- `collectAxioms` asks for a `MonadEnv`. A state monad over the loaded
+environment is the smallest one, so the walk below stays a pure function. -/
+private instance : MonadEnv (StateM Environment) where
+  getEnv := get
+  modifyEnv := modify
+
 /-- The axioms `n`'s proof rests on, transitively. -/
 def axiomsOf (env : Environment) (n : Name) : Array Name :=
-  (((CollectAxioms.collect n).run env).run {}).2.axioms
+  (collectAxioms (m := StateM Environment) n).run' env
 
 /-- Peel the components after a `bv_decide` marker: `foo._native.bv_decide.ax_1_6`
 yields `foo._native`. A name with no such marker yields `none`.

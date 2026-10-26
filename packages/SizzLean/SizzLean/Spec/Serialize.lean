@@ -62,7 +62,7 @@ region is empty. Per spec *§Serialization, List*.
   for the same reason: list traversals must be inlined as helpers
   descending on the list, called by the `SSZType`-driven recursion,
   because passing the recursive function through a higher-order
-  argument hides the descent from Lean 4.29.1's structural-recursion
+  argument hides the descent from Lean 4.34.1's structural-recursion
   checker.
 * `ByteArray.empty.push b`: single-byte append; `ByteArray.append`
   (`++`) concatenates. Lean compiles `push` to in-place mutation
@@ -252,7 +252,7 @@ A single `mutual` block: `serialize` recurses structurally on
 `s : SSZType`; the list-traversing helpers
 (`serializeFixedElems`, `serializeVarElemsAux`, `serializeFieldsAux`)
 recurse structurally on their `List` argument. Cross-calls descend
-on subterms, same shape `Spec/Interp.lean` uses, so Lean 4.29.1's
+on subterms, same shape `Spec/Interp.lean` uses, so Lean 4.34.1's
 structural-recursion checker accepts the block without
 `termination_by` annotations. -/
 

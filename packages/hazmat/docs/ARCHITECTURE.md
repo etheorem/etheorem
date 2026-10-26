@@ -480,7 +480,7 @@ as each matures; the aggregators are unlikely to need their own mirrors.
 
 ## 12. Module / namespace layout
 
-Toolchain is inherited from the repo root (`leanprover/lean4:v4.29.1`); no
+Toolchain is inherited from the repo root (`leanprover/lean4:v4.34.1`); no
 per-package override. Each package declares `licenseFiles = ["../../../LICENSE"]`
 until/unless it is promoted to a mirror, at which point it carries a local
 `LICENSE` copy with `licenseFiles = ["LICENSE"]` (the mirror-playbook shape).
@@ -488,7 +488,7 @@ until/unless it is promoted to a mirror, at which point it carries a local
 ```
 <repo root>/
 ├── lakefile.toml                       # umbrella; [[require]] per family + aggregator
-├── lean-toolchain                      # leanprover/lean4:v4.29.1 (inherited everywhere)
+├── lean-toolchain                      # leanprover/lean4:v4.34.1 (inherited everywhere)
 └── packages/
     └── hazmat/
         ├── docs/                       # this directory: cross-family ARCHITECTURE.md + PLAN.md

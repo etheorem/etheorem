@@ -171,7 +171,7 @@ theorem stepInto_field (fs : List SSZType) (k : Nat) (hk : k < fs.length) :
     (container fs).stepInto (.field k)
       = some (k, chunkDepth fs.length, fs.get ⟨k, hk⟩) := by
   simp only [SSZType.stepInto, SSZType.isBasicType, Bool.false_eq_true,
-    if_false, dif_pos hk]
+    ite_false, dite_eq_left hk]
 
 /-- A vector's `elem i` step: slot `i · item_length / 32`, depth
 `chunkDepth (chunk_count)`, next type the element type. -/
@@ -180,7 +180,7 @@ theorem stepInto_elem_vector (t : SSZType) (n i : Nat) (hi : i < n) :
       = some (i * itemLength t / BYTES_PER_CHUNK,
         chunkDepth (chunkCount (.vector t n)), t) := by
   simp only [SSZType.stepInto, SSZType.isBasicType, Bool.false_eq_true,
-    if_false, if_pos hi]
+    ite_false, ite_eq_left hi]
 
 /-- A list's `elem i` step: the vector step plus one level for the
 mix-in-length pair. -/
@@ -189,18 +189,18 @@ theorem stepInto_elem_list (t : SSZType) (cap i : Nat) (hi : i < cap) :
       = some (i * itemLength t / BYTES_PER_CHUNK,
         chunkDepth (chunkCount (.list t cap)) + 1, t) := by
   simp only [SSZType.stepInto, SSZType.isBasicType, Bool.false_eq_true,
-    if_false, if_pos hi]
+    ite_false, ite_eq_left hi]
 
 /-- A list's `length` step: the mix-in pair's right child, and the
 walk continues on `uint64`. -/
 theorem stepInto_length (t : SSZType) (cap : Nat) :
     (list t cap).stepInto .length = some (1, 1, .uintN 64) := by
-  simp only [SSZType.stepInto, SSZType.isBasicType, Bool.false_eq_true, if_false]
+  simp only [SSZType.stepInto, SSZType.isBasicType, Bool.false_eq_true, ite_false]
 
 /-- A composite type's `itemLength` is one full chunk. -/
 theorem itemLength_of_not_isBasicType (t : SSZType) (hc : ¬ t.isBasicType) :
     t.itemLength = BYTES_PER_CHUNK := by
-  simp only [SSZType.itemLength, if_neg hc]
+  simp only [SSZType.itemLength, ite_eq_right hc]
 
 /-- A composite-element vector holds one chunk per element. -/
 theorem chunkCount_vector_composite (t : SSZType) (n : Nat) (hc : ¬ t.isBasicType) :

@@ -72,6 +72,10 @@ theorem isValidIndexedPayloadAttestation_eq_true_iff_checks [Preset] [HasherTag]
           (getDomain (pureState state) domainPtcAttester (computeEpochAtSlot a.data.slot)))
         a.signature = true := by
   simp [isValidIndexedPayloadAttestation, and_assoc]
+  -- `simp` leaves the bounds gate as `decide P = true` under a binder; the
+  -- instance-generic `decide` lemmas close it.
+  intro _ _ _
+  exact ⟨fun h i hi => of_decide_eq_true (h i hi), fun h i hi => decide_eq_true (h i hi)⟩
 
 /-! ## Layer 2: private core-only bridge lemmas, then the public semantic theorem -/
 

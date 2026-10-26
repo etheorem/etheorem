@@ -115,7 +115,7 @@ poseidon-proofs`).
     │   ├── docs/                     # ARCHITECTURE.md, PLAN.md
     │   └── README.md
     └── LeanPoseidonProofs/           # standalone, NOT in the umbrella (mathlib-isolated)
-        ├── lakefile.toml             # require ../LeanPoseidon + mathlib @ v4.29.1
+        ├── lakefile.toml             # require ../LeanPoseidon + mathlib @ v4.34.1
         ├── lake-manifest.json        # committed — pins mathlib (+ transitive) revs
         ├── LeanPoseidonProofs.lean
         └── LeanPoseidonProofs/       # FpCommRing (CommRing (Fp p)), Equivalence (permute = permuteRef)

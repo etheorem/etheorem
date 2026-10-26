@@ -131,7 +131,7 @@ theorem readUInt32LE_append_shift (a b : ByteArray) (off : Nat) (h : off + 4 ≤
   have hbound_ab : a.size + off + 4 ≤ (a ++ b).size := by
     rw [ByteArray.size_append]; omega
   unfold readUInt32LE
-  rw [dif_pos hbound_ab, dif_pos h]
+  rw [dite_eq_left hbound_ab, dite_eq_left h]
   have e0 : (a ++ b)[a.size + off]'(by omega) = b[off]'(by omega) := by
     rw [ByteArray.getElem_append_right (by omega)]; congr 1; omega
   have e1 : (a ++ b)[a.size + off + 1]'(by omega) = b[off + 1]'(by omega) := by
@@ -228,12 +228,12 @@ theorem size_serializeFieldsAux_fixedSection :
     obtain ⟨h_head, h_tail⟩ := h_ok
     unfold SSZType.serializeFieldsAux SSZType.fixedSectionSizeFields SSZType.fixedSectionSize
     by_cases h_fixed : t.isFixedSize = true
-    · simp only [h_fixed, if_true]
+    · simp only [h_fixed, ite_true]
       rw [ByteArray.size_append, h_head h_fixed, ih vs.2 varOff h_tail]
     · have h_fixed' : t.isFixedSize = false := by
         cases h : t.isFixedSize <;> simp_all
       have hBPLO : SizzLean.Spec.BYTES_PER_LENGTH_OFFSET = 4 := rfl
-      simp only [h_fixed', if_false, Bool.false_eq_true, hBPLO]
+      simp only [h_fixed', ite_false, Bool.false_eq_true, hBPLO]
       rw [ByteArray.size_append, size_uint32LE,
           ih vs.2 (varOff + (SSZType.serialize t vs.1).size) h_tail]
 
@@ -264,12 +264,12 @@ theorem size_serializeFieldsAux_le_maxByteLengthFields :
     have h_tail_bound' := ih vs.2 (varOff + (SSZType.serialize t vs.1).size) h_tail
     unfold SSZType.serializeFieldsAux SSZType.maxByteLengthFields
     by_cases h_fixed : t.isFixedSize = true
-    · simp only [h_fixed, if_true]
+    · simp only [h_fixed, ite_true]
       rw [ByteArray.size_append]
       omega
     · have h_fixed' : t.isFixedSize = false := by
         cases h : t.isFixedSize <;> simp_all
-      simp only [h_fixed', if_false, Bool.false_eq_true]
+      simp only [h_fixed', ite_false, Bool.false_eq_true]
       rw [ByteArray.size_append, ByteArray.size_append, size_uint32LE]
       have hBPLO : SizzLean.Spec.BYTES_PER_LENGTH_OFFSET = 4 := rfl
       rw [hBPLO]
@@ -328,12 +328,12 @@ theorem extractFieldOffsets_serializeFieldsAux :
           (SSZType.serializeFieldsAux (t :: ts) vs varOff).1 =
             SSZType.serialize t vs.1 ++ (SSZType.serializeFieldsAux ts vs.2 varOff).1 := by
         show (SSZType.serializeFieldsAux (t :: ts) vs varOff).1 = _
-        simp only [SSZType.serializeFieldsAux, h_fixed, if_true]
+        simp only [SSZType.serializeFieldsAux, h_fixed, ite_true]
       have h_enc2 :
           (SSZType.serializeFieldsAux (t :: ts) vs varOff).2 =
             (SSZType.serializeFieldsAux ts vs.2 varOff).2 := by
         show (SSZType.serializeFieldsAux (t :: ts) vs varOff).2 = _
-        simp only [SSZType.serializeFieldsAux, h_fixed, if_true]
+        simp only [SSZType.serializeFieldsAux, h_fixed, ite_true]
       rw [h_enc2] at h_bound
       rw [h_enc]
       have h_reassoc :
@@ -346,10 +346,10 @@ theorem extractFieldOffsets_serializeFieldsAux :
       have h_presize : (pre ++ SSZType.serialize t vs.1).size = pre.size + t.fixedByteSize := by
         rw [ByteArray.size_append, h_size_head]
       unfold extractFieldOffsets
-      simp only [h_fixed, if_true]
+      simp only [h_fixed, ite_true]
       rw [show pre.size + t.fixedByteSize = (pre ++ SSZType.serialize t vs.1).size from
             h_presize.symm, h_ih]
-      simp only [varOffsetsOf, h_fixed, if_true]
+      simp only [varOffsetsOf, h_fixed, ite_true]
     · -- Variable field: `.1` gets `offBytes ++ fixTail`.
       -- `extractFieldOffsets` reads the offset placeholder (via the
       -- uint32 bridge), then advances by 4; the field's own body
@@ -363,14 +363,14 @@ theorem extractFieldOffsets_serializeFieldsAux :
               (SSZType.serializeFieldsAux ts vs.2
                 (varOff + (SSZType.serialize t vs.1).size)).1 := by
         show (SSZType.serializeFieldsAux (t :: ts) vs varOff).1 = _
-        simp only [SSZType.serializeFieldsAux, h_fixed', if_false, Bool.false_eq_true]
+        simp only [SSZType.serializeFieldsAux, h_fixed', ite_false, Bool.false_eq_true]
       have h_enc2 :
           (SSZType.serializeFieldsAux (t :: ts) vs varOff).2 =
             SSZType.serialize t vs.1 ++
               (SSZType.serializeFieldsAux ts vs.2
                 (varOff + (SSZType.serialize t vs.1).size)).2 := by
         show (SSZType.serializeFieldsAux (t :: ts) vs varOff).2 = _
-        simp only [SSZType.serializeFieldsAux, h_fixed', if_false, Bool.false_eq_true]
+        simp only [SSZType.serializeFieldsAux, h_fixed', ite_false, Bool.false_eq_true]
       rw [h_enc2] at h_bound
       have h_bound' : varOff + (SSZType.serialize t vs.1).size < 2 ^ 32 := by
         rw [ByteArray.size_append] at h_bound; omega
@@ -396,7 +396,7 @@ theorem extractFieldOffsets_serializeFieldsAux :
         simp only [ByteArray.append_assoc]
       rw [h_reassoc]
       unfold extractFieldOffsets
-      simp only [h_fixed', if_false, Bool.false_eq_true]
+      simp only [h_fixed', ite_false, Bool.false_eq_true]
       have h_read :
           readUInt32LE
               ((pre ++ uint32LE (Nat.toUInt32 varOff)) ++
@@ -421,7 +421,7 @@ theorem extractFieldOffsets_serializeFieldsAux :
       have h_toNat : (Nat.toUInt32 varOff).toNat = varOff :=
         toNat_toUInt32_of_lt varOff (by omega)
       rw [h_toNat]
-      simp only [varOffsetsOf, h_fixed', if_false, Bool.false_eq_true]
+      simp only [varOffsetsOf, h_fixed', ite_false, Bool.false_eq_true]
 
 /-! ### Roundtrip-walker helpers
 
@@ -485,18 +485,18 @@ theorem varOffsetsOf_head_getD :
   | t :: ts, vs, varOff, _, h => by
       unfold varOffsetsOf
       by_cases h_fixed : t.isFixedSize = true
-      · simp only [h_fixed, if_true]
+      · simp only [h_fixed, ite_true]
         apply varOffsetsOf_head_getD ts vs.2 varOff
         have h_enc2 :
             (SSZType.serializeFieldsAux (t :: ts) vs varOff).2 =
               (SSZType.serializeFieldsAux ts vs.2 varOff).2 := by
           show (SSZType.serializeFieldsAux (t :: ts) vs varOff).2 = _
-          simp only [SSZType.serializeFieldsAux, h_fixed, if_true]
+          simp only [SSZType.serializeFieldsAux, h_fixed, ite_true]
         rw [h_enc2] at h
         exact h
       · have h_fixed' : t.isFixedSize = false := by
           cases hc : t.isFixedSize <;> simp_all
-        simp only [h_fixed', if_false, Bool.false_eq_true]
+        simp only [h_fixed', ite_false, Bool.false_eq_true]
         rfl
 
 /-- Converse direction: an *empty* `varOffsetsOf` list means every
@@ -512,13 +512,13 @@ theorem allFixedSize_of_varOffsetsOf_eq_nil :
   | t :: ts, vs, varOff, h => by
       unfold varOffsetsOf at h
       by_cases h_fixed : t.isFixedSize = true
-      · simp only [h_fixed, if_true] at h
+      · simp only [h_fixed, ite_true] at h
         unfold SSZType.allFixedSize
         simp only [h_fixed, Bool.true_and]
         exact allFixedSize_of_varOffsetsOf_eq_nil ts vs.2 varOff h
       · have h_fixed' : t.isFixedSize = false := by
           cases hc : t.isFixedSize <;> simp_all
-        simp only [h_fixed', if_false, Bool.false_eq_true] at h
+        simp only [h_fixed', ite_false, Bool.false_eq_true] at h
         exact absurd h (List.cons_ne_nil _ _)
 
 end SizzLean.Proofs

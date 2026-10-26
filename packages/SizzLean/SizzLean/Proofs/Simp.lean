@@ -22,7 +22,7 @@ This file is split in two:
   `isFixedSize` / `allFixedSize` / `fixedByteSize`. Imports both
   this file and `Spec/{Serialize,Deserialize,Interp}.lean`.
 
-This two-file split is a Lean 4.29.1 module-system quirk; once the
+This two-file split is a Lean 4.34.1 module-system quirk; once the
 proofs are written, the user calls `simp [ssz_simp]` and gets the
 combined set regardless of where it was assembled.
 -/

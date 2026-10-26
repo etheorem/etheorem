@@ -50,7 +50,7 @@ same codec.
   avoid carrying bounds proofs; `get!_eq_getElem` bridges to the
   bounds-checked `b[i]'h` that `readNatLEAux` uses, exactly where
   the fold needs a concrete byte.
-* `dif_pos h`: reduce a `if h : p then … else …` (dependent-if)
+* `dite_eq_left h`: reduce a `if h : p then … else …` (dependent-if)
   along the `p`-true branch, given `h : p`. `readNatLEAux`'s
   recursion is guarded by `if h : off + k < b.size`, always true
   under our size hypotheses.
@@ -124,7 +124,7 @@ theorem get!_natToLEBytes (w : Nat) : ∀ (n : Nat) (acc : ByteArray) (i : Nat),
   | zero =>
       intro n acc i hi
       simp only [Nat.add_zero] at hi
-      simp only [natToLEBytes, if_pos hi]
+      simp only [natToLEBytes, ite_eq_left hi]
   | succ k ih =>
       intro n acc i hi
       show (natToLEBytes (k + 1) n acc).get! i = _
@@ -133,13 +133,13 @@ theorem get!_natToLEBytes (w : Nat) : ∀ (n : Nat) (acc : ByteArray) (i : Nat),
         ByteArray.size_push
       rw [ih (n / 256) (acc.push (Nat.toUInt8 (n % 256))) i (by rw [hsz]; omega), hsz]
       by_cases h1 : i < acc.size
-      · rw [if_pos (by omega : i < acc.size + 1), if_pos h1, get!_push_lt _ _ _ h1]
+      · rw [ite_eq_left (by omega : i < acc.size + 1), ite_eq_left h1, get!_push_lt _ _ _ h1]
       · by_cases h2 : i = acc.size
         · subst h2
-          rw [if_pos (Nat.lt_succ_self acc.size), if_neg (Nat.lt_irrefl acc.size),
+          rw [ite_eq_left (Nat.lt_succ_self acc.size), ite_eq_right (Nat.lt_irrefl acc.size),
               get!_push_eq]
           simp [Nat.sub_self]
-        · rw [if_neg (by omega : ¬ i < acc.size + 1), if_neg h1]
+        · rw [ite_eq_right (by omega : ¬ i < acc.size + 1), ite_eq_right h1]
           have hk : i - acc.size = (i - (acc.size + 1)) + 1 := by omega
           have hexp : (n / 256) / 256 ^ (i - (acc.size + 1)) = n / 256 ^ (i - acc.size) := by
             rw [Nat.div_div_eq_div_mul, hk, Nat.pow_succ,
@@ -151,7 +151,7 @@ theorem get!_natToLEBytes (w : Nat) : ∀ (n : Nat) (acc : ByteArray) (i : Nat),
 theorem get!_natToLEBytes_empty (w n i : Nat) (hi : i < w) :
     (natToLEBytes w n .empty).get! i = Nat.toUInt8 ((n / 256 ^ i) % 256) := by
   rw [get!_natToLEBytes w n .empty i (by rw [ByteArray.size_empty]; omega),
-      ByteArray.size_empty, if_neg (Nat.not_lt_zero i), Nat.sub_zero]
+      ByteArray.size_empty, ite_eq_right (Nat.not_lt_zero i), Nat.sub_zero]
 
 /-! ### The Horner reader -/
 
@@ -175,7 +175,7 @@ theorem readNatLEAux_value (b : ByteArray) (off n : Nat) : ∀ (w : Nat),
       have hstep : readNatLEAux b off (w + 1) acc =
           readNatLEAux b off w (acc * 256 + (b[off + w]'hw_lt).toNat) := by
         simp only [readNatLEAux]
-        rw [dif_pos hw_lt]
+        rw [dite_eq_left hw_lt]
       have hbridge : (b[off + w]'hw_lt).toNat = (n / 256 ^ w) % 256 := by
         rw [← get!_eq_getElem b (off + w) hw_lt]
         exact hval w (Nat.lt_succ_self w)
@@ -203,7 +203,7 @@ theorem readNatLE_natToLEBytes (w n : Nat) :
   have hsize : (natToLEBytes w n .empty).size = w := by
     rw [size_natToLEBytes]; simp [ByteArray.size_empty]
   unfold readNatLE
-  rw [if_neg (by rw [hsize]; omega)]
+  rw [ite_eq_right (by rw [hsize]; omega)]
   have hval := readNatLEAux_value (natToLEBytes w n .empty) 0 n w
     (fun i hi => by rw [hsize]; omega)
     (fun i hi => by

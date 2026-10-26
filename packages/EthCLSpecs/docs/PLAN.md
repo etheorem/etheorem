@@ -49,7 +49,7 @@ per-fork specs. `CLAUDE.md` at the repository root binds the writing and code st
 
 **The repository.** A Lake monorepo of packages under `packages/`, coordinated by an
 umbrella `lakefile.toml` that pulls each in with a `[[require]]` block. The toolchain
-is pinned in `lean-toolchain` (Lean v4.29.1); CI reads it. Build with `lake build`
+is pinned in `lean-toolchain` (Lean v4.34.1); CI reads it. Build with `lake build`
 from the root (the umbrella), `lake build <Lib>` for one library, or
 `cd packages/<Name> && lake build` per package. Add `EthCLLib` and `EthCLSpecs` to
 the umbrella requires; keep `EthCLProofs` out, the way `LeanPoseidonProofs` is kept

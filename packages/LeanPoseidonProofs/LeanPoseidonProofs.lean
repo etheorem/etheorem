@@ -18,7 +18,7 @@ This is the monorepo's **only `mathlib` dependency**, isolated in this
 package on purpose: the core `LeanPoseidon` library and its conformance
 gates stay `mathlib`-free and fast, while the equivalence theorem, the
 publishable artefact, lives here in the verified layer. mathlib is pinned
-to the `v4.29.1` tag, whose toolchain matches the repo's, so its prebuilt
+to the `v4.34.1` tag, whose toolchain matches the repo's, so its prebuilt
 olean cache is used (`lake exe cache get`); nothing is compiled from
 scratch.
 

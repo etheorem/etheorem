@@ -172,7 +172,7 @@ theorem bijective_list_foldl {α β : Type*} (l : List β) (g : β → α → α
     (hg : ∀ x ∈ l, Bijective (g x)) :
     Bijective (fun init => l.foldl (fun acc x => g x acc) init) := by
   induction l with
-  | nil => simpa using bijective_id
+  | nil => exact bijective_id
   | cons x xs ih =>
     have hx : Bijective (g x) := hg x (List.mem_cons.mpr (Or.inl rfl))
     have hxs : Bijective (fun init => xs.foldl (fun acc y => g y acc) init) :=
@@ -223,8 +223,8 @@ theorem partialRound_bijective (intLayer : Vector (Fp p) 3 → Vector (Fp p) 3) 
   have hg : ∀ i : Fin 3, Bijective (fun x : Fp p => if i = 0 then sbox (x + c) else x) := by
     intro i
     by_cases hi : i = 0
-    · subst hi; simpa using (sbox_bijective hcop).comp (Equiv.addRight c).bijective
-    · simp only [if_neg hi]; exact bijective_id
+    · subst hi; exact (sbox_bijective hcop).comp (Equiv.addRight c).bijective
+    · simp only [ite_eq_right hi]; exact bijective_id
   have key := piMap_conj_bijective (fun i x => if i = 0 then sbox (x + c) else x) hg
   have heq : partialRound intLayer c
            = intLayer ∘ (fun st : Vector (Fp p) 3 =>

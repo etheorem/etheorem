@@ -269,8 +269,8 @@ the foundation Phase 3's proof investment builds on.
 ## Phase 3: Equivalence proofs (mathlib)
 
 > **✅ Done.** The binding decision, the mathlib ↔ toolchain pin, resolved
-> cleanly: mathlib's `v4.29.1` tag has `lean-toolchain`
-> `leanprover/lean4:v4.29.1`, an *exact* match with the repo, so no
+> cleanly: mathlib's `v4.34.1` tag has `lean-toolchain`
+> `leanprover/lean4:v4.34.1`, an *exact* match with the repo, so no
 > toolchain bump was needed and `lake exe cache get` fetches prebuilt
 > oleans (nothing compiled from scratch). `packages/LeanPoseidonProofs` is
 > a standalone, mathlib-bearing package (the monorepo's only mathlib
@@ -297,13 +297,13 @@ structure.
 
 **Shipped.**
 - `packages/LeanPoseidonProofs/lakefile.toml`: `[[require]] LeanPoseidon`
-  (path `../LeanPoseidon`) + `[[require]] mathlib` (git, `rev = "v4.29.1"`);
+  (path `../LeanPoseidon`) + `[[require]] mathlib` (git, `rev = "v4.34.1"`);
   `licenseFiles = ["../../LICENSE"]`. The package is **standalone** (not
   added to the umbrella, see ARCHITECTURE.md §11), so mathlib stays out of
   the root; `lake update` was run *in the package* and its
   `lake-manifest.json` is committed (a `.gitignore` exception) to pin the
   exact mathlib + transitive revs. `lake exe cache get` fetches prebuilt
-  oleans (the `v4.29.1` toolchain match means no from-scratch build).
+  oleans (the `v4.34.1` toolchain match means no from-scratch build).
 - `packages/LeanPoseidonProofs/LeanPoseidonProofs/FpCommRing.lean`:
   `instance [NeZero p] : CommRing (Fp p)`, transported from `ZMod p` along
   `a ↦ (a.val : ZMod p)` via `Function.Injective.commRing` (so the core's
@@ -561,8 +561,8 @@ deliberately left unbuilt until its upstream consumer is concrete.
 
 ## Key risks
 
-- **Mathlib ↔ toolchain pin (Phase 3).** ✅ *Resolved.* mathlib's `v4.29.1`
-  tag has `lean-toolchain` `leanprover/lean4:v4.29.1`, an exact match with
+- **Mathlib ↔ toolchain pin (Phase 3).** ✅ *Resolved.* mathlib's `v4.34.1`
+  tag has `lean-toolchain` `leanprover/lean4:v4.34.1`, an exact match with
   the repo, so no toolchain bump was needed and `lake exe cache get` uses
   prebuilt oleans. The hand-prove fallback was not needed.
 - **`CommRing (Fp p)` route.** ✅ *Decided.* `Function.Injective.commRing`
@@ -589,7 +589,7 @@ deliberately left unbuilt until its upstream consumer is concrete.
 | 0: Bootstrap | Stage 0 | ✅ done: `lake build LeanPoseidon` + umbrella green |
 | 1: Core | Stages 1–5 | ✅ done: anchor KAT + compress KATs + all `#guard`s pass; mathlib-free |
 | 2: Conformance (FFI oracle + differential) | Stages 6–7 | ✅ done: committed KATs pass; differential test green over 100 000 seeded-random trials vs `zkhash`; Rust confined to `poseidon_fuzz` |
-| 3: Equivalence proofs (mathlib) | Stages 8–9 | ✅ done: `CommRing (Fp p)` + `permute = permuteRef` (both fields); axiom footprint verified clean (`propext`/`Classical.choice`/`Quot.sound`); standalone `LeanPoseidonProofs`, `v4.29.1` pin |
+| 3: Equivalence proofs (mathlib) | Stages 8–9 | ✅ done: `CommRing (Fp p)` + `permute = permuteRef` (both fields); axiom footprint verified clean (`propext`/`Classical.choice`/`Quot.sound`); standalone `LeanPoseidonProofs`, `v4.34.1` pin |
 | 4: Generalise widths and fields (optional) | Stages 10a–10b | 10a ✅ done (`Fp (p)`); 10b field axis ✅ done (BLS12-381 `Fr`); 10b width axis (`t ≠ 3`) ⏸ deferred |
 | 5: Docs | Stage 11 | ✅ done: README + root README / CLAUDE.md / monorepo-arch.md + this doc |
 | 6: Structural-correctness proofs | Targets 1–4 (bijectivity, `pad` injectivity, `compress` non-injectivity, round-count `#guard`) | ✅ done: `permute_bijective_{bn254,bls12}` + `compress_not_injective` + `pad_injective` + `meetsFloor` `#guard`s; axioms verified `[propext, Choice, Quot.sound]` + one cited primality axiom on the concrete specialisations, no FFI/`ofReduceBool` |

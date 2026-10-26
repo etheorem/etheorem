@@ -113,14 +113,14 @@ private theorem builderPendingWithdrawalsList_run_eq [Preset] [HasherTag]
       have hfilter : (List.filter (fun i => decide (cond i)) (i :: rest))
           = i :: List.filter (fun i => decide (cond i)) rest := by
         rw [List.filter_cons_of_pos]; simpa using h
-      simp only [List.forIn_cons, run_bind, if_pos h, hstep, except_bind_ok, run_pure]
+      simp only [List.forIn_cons, run_bind, ite_eq_left h, hstep, except_bind_ok, run_pure]
       rw [hfilter, List.map_cons, List.foldl_cons]
       exact ih { preState with builderPendingWithdrawals :=
         preState.builderPendingWithdrawals.push (val i) }
     · have hfilter : (List.filter (fun i => decide (cond i)) (i :: rest))
           = List.filter (fun i => decide (cond i)) rest := by
         rw [List.filter_cons_of_neg]; simpa using h
-      simp only [List.forIn_cons, run_bind, if_neg h, run_pure, except_bind_ok]
+      simp only [List.forIn_cons, run_bind, ite_eq_right h, run_pure, except_bind_ok]
       rw [hfilter]
       exact ih preState
 

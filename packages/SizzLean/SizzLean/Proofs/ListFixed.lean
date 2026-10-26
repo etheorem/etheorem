@@ -93,16 +93,16 @@ theorem decode_encode_listFixed
       simp [SSZType.serializeFixedElems]
     rw [h_ser_empty]
     unfold SSZType.deserialize
-    simp only [h_t_fixed, if_true]
-    simp only [h_sz_ne, if_false]
+    simp only [h_t_fixed, ite_true]
+    simp only [h_sz_ne, ite_false]
     have h_count0 : (ByteArray.empty.size / t.fixedByteSize) = 0 := by
       rw [ByteArray.size_empty, Nat.zero_div]
     rw [h_count0]
     have h_le_cap0 : ¬ (0 : Nat) > cap := Nat.not_lt.mpr (Nat.zero_le _)
-    simp only [h_le_cap0, if_false]
+    simp only [h_le_cap0, ite_false]
     have h_sz_match : ¬ (0 * t.fixedByteSize ≠ ByteArray.empty.size) :=
       not_ne_of_eq (by rw [ByteArray.size_empty, Nat.zero_mul])
-    simp only [h_sz_match, if_false]
+    simp only [h_sz_match, ite_false]
     unfold SSZType.deserializeFixedElems
     have h_arr : xs.val = #[] := Array.eq_empty_of_size_eq_zero h_empty
     have hx : xs = ⟨#[], by simp [show (0 : Nat) ≤ cap from Nat.zero_le _]⟩ := Subtype.ext h_arr
@@ -131,13 +131,13 @@ theorem decode_encode_listFixed
     -- Step 4: assemble the full deserialize.
     rw [h_serialize_size, h_serialize_eq]
     unfold SSZType.deserialize
-    simp only [h_t_fixed, if_true]
+    simp only [h_t_fixed, ite_true]
     -- Decoder guards:
     --  (a) sz ≠ 0 (h_sz_ne, hoisted above)
     --  (b) count := b.size / sz = xs.val.size (computed below)
     --  (c) count ≤ cap (from xs.property)
     --  (d) count * sz = b.size (from h_serialize_size)
-    simp only [h_sz_ne, if_false]
+    simp only [h_sz_ne, ite_false]
     -- Now: b.size = xs.val.size * sz (after rw); count = (xs.val.size * sz) / sz = xs.val.size.
     have h_count :
         (SSZType.serializeFixedElems t xs.val.toList).size / t.fixedByteSize = xs.val.size := by
@@ -148,14 +148,14 @@ theorem decode_encode_listFixed
     rw [h_count]
     -- count > cap branch: xs.val.size > cap is false because xs.property is xs.val.size ≤ cap.
     have h_le_cap : ¬ xs.val.size > cap := Nat.not_lt.mpr xs.property
-    simp only [h_le_cap, if_false]
+    simp only [h_le_cap, ite_false]
     -- count * sz = b.size branch: xs.val.size * sz = (serializeFixedElems …).size (true).
     have h_size_match :
         ¬ xs.val.size * t.fixedByteSize ≠
           (SSZType.serializeFixedElems t xs.val.toList).size :=
       not_ne_of_eq (by
         rw [serializeFixedElems_size_aux t t.fixedByteSize h_size_t xs.val.toList, h_list_len])
-    simp only [h_size_match, if_false]
+    simp only [h_size_match, ite_false]
     -- Now: match deserializeFixedElems … with .ok …
     rw [h_inv]
     -- Final: dependent-if on arr.size ≤ cap, then Vector-style subtype equality.
@@ -186,12 +186,12 @@ theorem encode_size_le_max_listFixed
   have h_size : (SSZType.serialize (.list t cap) xs).size =
       xs.val.size * t.fixedByteSize := by
     unfold SSZType.serialize
-    simp only [h_t_fixed, if_true]
+    simp only [h_t_fixed, ite_true]
     have h_list_len : xs.val.toList.length = xs.val.size := by simp
     rw [serializeFixedElems_size_aux t t.fixedByteSize h_size_t xs.val.toList, h_list_len]
   rw [h_size]
   show xs.val.size * t.fixedByteSize ≤ SSZType.maxByteLength (.list t cap)
-  simp only [SSZType.maxByteLength, h_t_fixed, if_true]
+  simp only [SSZType.maxByteLength, h_t_fixed, ite_true]
   -- Case-split on `xs.val.size = 0` to avoid needing an `Inhabited` instance.
   by_cases h_empty : xs.val.size = 0
   · rw [h_empty]; simp

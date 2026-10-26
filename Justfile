@@ -886,7 +886,7 @@ poseidon-fuzz:
 # and the round-count `#guard`s. Lives in the standalone `LeanPoseidonProofs`
 # package, the monorepo's only mathlib dependency, built on its own so the
 # core and all other recipes stay mathlib-free. `cache get` fetches mathlib's
-# prebuilt oleans (the v4.29.1 pin matches the repo toolchain), so nothing is
+# prebuilt oleans (the v4.34.1 pin matches the repo toolchain), so nothing is
 # compiled from scratch. Kept out of `test`/`build` (heavy; needs the cache).
 
 # Poseidon2 structural-correctness + equivalence proofs (mathlib; fetches olean cache)

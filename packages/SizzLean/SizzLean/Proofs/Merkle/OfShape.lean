@@ -38,8 +38,8 @@ Lean idiom, annotated once: `Node.ofShape` and
 they do not reduce definitionally; every arm unfolds them by their
 equation lemmas (`simp only [Node.ofShape]`, and so on). The two
 `if t.isBasicType` dispatches appear on both sides of each
-collection arm, so the positive branches rewrite with `if_pos hb`
-twice and the negative branches with `if_neg hb` twice.
+collection arm, so the positive branches rewrite with `ite_eq_left hb`
+twice and the negative branches with `ite_eq_right hb` twice.
 -/
 
 set_option autoImplicit false
@@ -197,13 +197,13 @@ theorem ofShape_root (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.BasicSup
   | _, .vectorFixed (t := t) (n := n) _ h_t _, v => by
       simp only [Node.ofShape, SSZType.hashTreeRoot]
       by_cases hb : t.isBasicType = true
-      · rw [if_pos hb,
+      · rw [ite_eq_left hb,
           ofLeaves_root H (chunkify (SSZType.serialize (SSZType.vector t n) v))
             (chunkDepth (bytesToChunkCount
               (SSZType.serialize (SSZType.vector t n) v).size))
             (by rw [length_chunkify]; exact le_two_pow_chunkDepth _),
-          if_pos hb]
-      · rw [if_neg hb,
+          ite_eq_left hb]
+      · rw [ite_eq_right hb,
           ofSubtrees_root H (Node.subtreesForListComposite H t v.toList)
             (chunkDepth n) (by
             rw [length_subtreesForListComposite, List.length_nil, Nat.zero_add,
@@ -211,7 +211,7 @@ theorem ofShape_root (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.BasicSup
             exact le_two_pow_chunkDepth n),
           subtreesForListComposite_roots H t
             (fun y => ofShape_root H h_t y) v.toList [],
-          if_neg hb]
+          ite_eq_right hb]
         rfl
   | _, .vectorVar (t := t) (n := n) _ h_t h_var, v => by
       simp only [Node.ofShape, SSZType.hashTreeRoot]
@@ -219,7 +219,7 @@ theorem ofShape_root (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.BasicSup
       · have h_fixed := isFixedSize_of_isBasicType t hb
         rw [h_fixed] at h_var
         simp at h_var
-      · rw [if_neg hb,
+      · rw [ite_eq_right hb,
           ofSubtrees_root H (Node.subtreesForListComposite H t v.toList)
             (chunkDepth n) (by
             rw [length_subtreesForListComposite, List.length_nil, Nat.zero_add,
@@ -227,7 +227,7 @@ theorem ofShape_root (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.BasicSup
             exact le_two_pow_chunkDepth n),
           subtreesForListComposite_roots H t
             (fun y => ofShape_root H h_t y) v.toList [],
-          if_neg hb]
+          ite_eq_right hb]
         rfl
   | _, .listFixed (t := t) (cap := cap) h_t h_t_fixed _, xs => by
       simp only [Node.ofShape, SSZType.hashTreeRoot]
@@ -251,7 +251,7 @@ theorem ofShape_root (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.BasicSup
                   (BYTES_PER_CHUNK - 1))
             _ ≤ 2 ^ chunkDepth (bytesToChunkCount (cap * t.fixedByteSize)) :=
                 le_two_pow_chunkDepth _
-        rw [if_pos hb,
+        rw [ite_eq_left hb,
           mixInLength_root H
             (Node.ofLeaves H
               (chunkify (SSZType.serializeFixedElems t xs.val.toList))
@@ -260,8 +260,8 @@ theorem ofShape_root (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.BasicSup
           ofLeaves_root H
             (chunkify (SSZType.serializeFixedElems t xs.val.toList))
             (chunkDepth (bytesToChunkCount (cap * t.fixedByteSize))) hbound,
-          if_pos hb]
-      · rw [if_neg hb,
+          ite_eq_left hb]
+      · rw [ite_eq_right hb,
           mixInLength_root H
             (Node.ofSubtrees H (Node.subtreesForListComposite H t xs.val.toList)
               (chunkDepth cap)) xs.val.size
@@ -277,7 +277,7 @@ theorem ofShape_root (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.BasicSup
               _ ≤ 2 ^ chunkDepth cap := le_two_pow_chunkDepth cap),
           subtreesForListComposite_roots H t
             (fun y => ofShape_root H h_t y) xs.val.toList [],
-          if_neg hb]
+          ite_eq_right hb]
         rfl
   | _, .listVar (t := t) (cap := cap) h_t h_var, xs => by
       simp only [Node.ofShape, SSZType.hashTreeRoot]
@@ -285,7 +285,7 @@ theorem ofShape_root (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.BasicSup
       · have h_fixed := isFixedSize_of_isBasicType t hb
         rw [h_fixed] at h_var
         simp at h_var
-      · rw [if_neg hb,
+      · rw [ite_eq_right hb,
           mixInLength_root H
             (Node.ofSubtrees H (Node.subtreesForListComposite H t xs.val.toList)
               (chunkDepth cap)) xs.val.size
@@ -301,7 +301,7 @@ theorem ofShape_root (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.BasicSup
               _ ≤ 2 ^ chunkDepth cap := le_two_pow_chunkDepth cap),
           subtreesForListComposite_roots H t
             (fun y => ofShape_root H h_t y) xs.val.toList [],
-          if_neg hb]
+          ite_eq_right hb]
         rfl
   | _, .containerVar (fs := fs) h_fs _, vs => by
       simp only [Node.ofShape, SSZType.hashTreeRoot]
@@ -352,9 +352,9 @@ theorem ofShape_coherent (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.Basi
   | _, .vectorFixed (t := t) (n := n) _ h_t _, v => by
       simp only [Node.ofShape]
       by_cases hb : t.isBasicType = true
-      · rw [if_pos hb]
+      · rw [ite_eq_left hb]
         exact ofLeaves_coherent H _ _
-      · rw [if_neg hb]
+      · rw [ite_eq_right hb]
         exact ofSubtrees_coherent H _ _ fun s hs =>
           subtreesForListComposite_coherent H t
             (fun y => ofShape_coherent H h_t y) v.toList []
@@ -365,7 +365,7 @@ theorem ofShape_coherent (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.Basi
       · have h_fixed := isFixedSize_of_isBasicType t hb
         rw [h_fixed] at h_var
         simp at h_var
-      · rw [if_neg hb]
+      · rw [ite_eq_right hb]
         exact ofSubtrees_coherent H _ _ fun s hs =>
           subtreesForListComposite_coherent H t
             (fun y => ofShape_coherent H h_t y) v.toList []
@@ -373,9 +373,9 @@ theorem ofShape_coherent (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.Basi
   | _, .listFixed (t := t) (cap := cap) h_t _ _, xs => by
       simp only [Node.ofShape]
       by_cases hb : t.isBasicType = true
-      · rw [if_pos hb]
+      · rw [ite_eq_left hb]
         exact (mixInLength_root_coherent H _ _ (ofLeaves_coherent H _ _)).2
-      · rw [if_neg hb]
+      · rw [ite_eq_right hb]
         exact (mixInLength_root_coherent H _ _ (ofSubtrees_coherent H _ _
           fun s hs => subtreesForListComposite_coherent H t
             (fun y => ofShape_coherent H h_t y) xs.val.toList []
@@ -386,7 +386,7 @@ theorem ofShape_coherent (H : Type) [Hasher H] : ∀ {s : SSZType}, SSZType.Basi
       · have h_fixed := isFixedSize_of_isBasicType t hb
         rw [h_fixed] at h_var
         simp at h_var
-      · rw [if_neg hb]
+      · rw [ite_eq_right hb]
         exact (mixInLength_root_coherent H _ _ (ofSubtrees_coherent H _ _
           fun s hs => subtreesForListComposite_coherent H t
             (fun y => ofShape_coherent H h_t y) xs.val.toList []
