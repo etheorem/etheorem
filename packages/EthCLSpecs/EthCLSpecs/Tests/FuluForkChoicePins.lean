@@ -97,7 +97,7 @@ private def pinTargetAdvanceRejects : Bool :=
   letI : CryptoBackend := CryptoBackend.realBackend
   let bs : @EthCLSpecs.Fulu.BeaconState minimal :=
     { (default : @EthCLSpecs.Fulu.BeaconState minimal) with
-      pendingConsolidations := sszOfArray #[{ sourceIndex := 0, targetIndex := 0 }] }
+      pendingConsolidations := sszOfArray #[{ sourceIndex := 0, targetIndex := 0 }] (by decide) }
   let state : State := SSZ.FastBox bs
   let store := { pinStore with blockStates := FcMap.insert FcMap.empty pinRoot state }
   let target : Checkpoint := { epoch := 1, root := pinRoot }
@@ -135,7 +135,7 @@ private def pinBalanceUnderflowThrows : Bool :=
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   let bs : @EthCLSpecs.Fulu.BeaconState minimal :=
-    { (default : @EthCLSpecs.Fulu.BeaconState minimal) with balances := sszOfArray #[(5 : Gwei)] }
+    { (default : @EthCLSpecs.Fulu.BeaconState minimal) with balances := sszOfArray #[(5 : Gwei)] (by decide) }
   let state : State := SSZ.FastBox bs
   let w : Withdrawal := { (default : Withdrawal) with validatorIndex := 0, amount := 10 }
   match (balanceAfterWithdrawals state 0 #[w] : EStateM StateTransitionError State Gwei).run state with

@@ -189,7 +189,8 @@ private def pinPopulatedState : @EthCLSpecs.Heze.BeaconState minimal :=
   let activeValidator : Validator := { (default : Validator) with exitEpoch := Const.farFutureEpoch }
   { base with
     slot := 1
-    validators := EthCLLib.Spec.sszOfArray (Array.replicate Const.slotsPerEpoch activeValidator) }
+    validators := EthCLLib.Spec.sszOfArray (Array.replicate Const.slotsPerEpoch activeValidator)
+      (by simp <;> decide) }
 
 /-- `record_payload_inclusion_list_satisfaction` records the engine answer at `root`: with
 the optimistic default (`isInclusionListSatisfied = true`) it writes `true`. `slot := 1` clears the
@@ -293,14 +294,14 @@ private def pinAltRoot : Root := Vector.replicate 32 2
 
 /-- A transaction holding the single byte `b` (enough to make two transactions compare
 unequal for the dedup pins). -/
-private def pinTx (b : UInt8) : Transaction := sszOfArray #[b]
+private def pinTx (b : UInt8) : Transaction := sszOfArray #[b] (by simp <;> decide)
 
 /-- An inclusion list from validator `v` over committee `pinKey`, carrying `txs`. The `letI`
 fixes the preset so the anonymous constructor can synthesize it (a return-type annotation alone
 does not flow into instance resolution for `{ … }`). The pins pass at most two transactions,
 and `h` carries that bound to `sszOfArray`, far under `MAX_TRANSACTIONS_PER_PAYLOAD`. -/
 private def pinIL (v : ValidatorIndex) (txs : Array Transaction)
-    (h : txs.size ≤ 2 := by decide) : @InclusionList minimal :=
+    (h : txs.size ≤ 2) : @InclusionList minimal :=
   letI : Preset := minimal
   { slot := 0, validatorIndex := v, inclusionListCommitteeRoot := pinKey,
     transactions := sszOfArray txs (Nat.le_trans h (by decide)) }
@@ -324,7 +325,7 @@ pins. -/
 private def pinStoreB : @InclusionListStore minimal treeMap fastHasherTag :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  { inclusionLists := FcMap.insert FcMap.empty pinKey (FcMap.insert FcMap.empty pinDummyRoot (pinIL 5 #[pinTx 0xAA])),
+  { inclusionLists := FcMap.insert FcMap.empty pinKey (FcMap.insert FcMap.empty pinDummyRoot (pinIL 5 #[pinTx 0xAA] (by decide))),
     inclusionListTimeliness := FcMap.insert FcMap.empty pinDummyRoot true,
     equivocators := FcMap.empty }
 
@@ -336,7 +337,7 @@ private def pinResA : Nat × Nat :=
   letI : HasherTag := fastHasherTag
   let store : InclusionListStore treeMap :=
     { InclusionListStore.empty with equivocators := FcMap.insert FcMap.empty pinKey #[5] }
-  let after := processInclusionList store (pinIL 5 #[pinTx 0xAA]) true
+  let after := processInclusionList store (pinIL 5 #[pinTx 0xAA] (by decide)) true
   (pinNumStored after, (pinEquivs after).size)
 #guard pinResA = (0, 1)
 
@@ -345,7 +346,7 @@ private def pinResA : Nat × Nat :=
 private def pinResBConflict : Array ValidatorIndex × Nat :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  let after := processInclusionList pinStoreB (pinIL 5 #[pinTx 0xBB]) true
+  let after := processInclusionList pinStoreB (pinIL 5 #[pinTx 0xBB] (by decide)) true
   (pinEquivs after, pinNumStored after)
 #guard pinResBConflict = (#[5], 1)
 
@@ -354,7 +355,7 @@ private def pinResBConflict : Array ValidatorIndex × Nat :=
 private def pinResBMatch : Nat × Nat :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  let after := processInclusionList pinStoreB (pinIL 5 #[pinTx 0xAA]) true
+  let after := processInclusionList pinStoreB (pinIL 5 #[pinTx 0xAA] (by decide)) true
   ((pinEquivs after).size, pinNumStored after)
 #guard pinResBMatch = (0, 1)
 
@@ -367,7 +368,7 @@ private def pinResC (isTimely : Bool) : Nat × Option Bool :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let store : InclusionListStore treeMap := InclusionListStore.empty
-  let il := pinIL 5 #[pinTx 0xAA]
+  let il := pinIL 5 #[pinTx 0xAA] (by decide)
   let after := processInclusionList store il isTimely
   (pinNumStored after, FcMap.lookup after.inclusionListTimeliness (htr il))
 example : pinResC true = (1, some true) := by native_decide
@@ -377,8 +378,8 @@ example : pinResC false = (1, some false) := by native_decide
 -- Two stored lists: validator 5 → [0xAA], validator 6 → [0xAA, 0xBB], timeliness 5=true /
 -- 6=false. Pins worked out by hand from the comprehension. All hash-free, kernel `#guard`.
 private def pinLists : treeMap Root (@InclusionList minimal) :=
-  FcMap.insert (FcMap.insert FcMap.empty pinDummyRoot (pinIL 5 #[pinTx 0xAA]))
-    pinAltRoot (pinIL 6 #[pinTx 0xAA, pinTx 0xBB])
+  FcMap.insert (FcMap.insert FcMap.empty pinDummyRoot (pinIL 5 #[pinTx 0xAA] (by decide)))
+    pinAltRoot (pinIL 6 #[pinTx 0xAA, pinTx 0xBB] (by decide))
 private def pinTimeliness : treeMap Root Bool :=
   FcMap.insert (FcMap.insert FcMap.empty pinDummyRoot true) pinAltRoot false
 

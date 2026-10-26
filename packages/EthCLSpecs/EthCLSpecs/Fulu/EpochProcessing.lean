@@ -360,7 +360,7 @@ forkdef processEth1DataReset : StateTransition Unit := do
   let nextEpoch := (← getCurrentEpoch) + 1
   if nextEpoch % UInt64.ofNat Const.epochsPerEth1VotingPeriod == 0 then
     modifyState fun state =>
-      sszUpdate state with eth1DataVotes := sszOfArray #[]
+      sszUpdate state with eth1DataVotes := sszOfArray #[] (by simp)
 
 /-- `process_historical_summaries_update`: at the end of a historical-root period,
 append a summary of the block-roots and state-roots vectors. -/

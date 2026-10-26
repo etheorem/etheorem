@@ -182,12 +182,13 @@ downstream total write hits. -/
 def sszDrop {α : Type} {cap : Nat} (xs : SSZList α cap) (k : Nat) : SSZList α cap :=
   ⟨xs.val.extract k xs.val.size, by have := xs.property; simp only [Array.size_extract]; omega⟩
 
-/-- An `SSZList` from an array that fits, the spec's `List[T, N](a)`. The caller proves
-`a.size ≤ cap`, so this form has no failure branch. The default proof closes the cases
-where the size is fixed, such as `#[]`. An array whose size depends on the input goes
-through `sszOfArrayM`, which raises on too many elements as pyspec does. -/
+/-- An `SSZList` from an array that fits, the spec's `List[T, N](a)`. The caller passes
+the proof that `a.size ≤ cap` at the call site, `by decide` or `by simp` on the fixed
+sizes, so the obligation is visible where it is paid and this form has no failure branch.
+An array whose size depends on the input goes through `sszOfArrayM`, which raises on too
+many elements as pyspec does. -/
 def sszOfArray {α : Type} {cap : Nat} (a : Array α)
-    (h : a.size ≤ cap := by first | (simp <;> decide) | decide) : SSZList α cap :=
+    (h : a.size ≤ cap) : SSZList α cap :=
   ⟨a, h⟩
 
 /-- The indices of `xs` whose element (with its position) satisfies `p`, as `uint64`s. Names
