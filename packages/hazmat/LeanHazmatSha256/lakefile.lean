@@ -110,7 +110,16 @@ package LeanHazmatSha256 where
 -- find `<openssl/evp.h>` on macOS Homebrew / Nix) stay in the untraced
 -- `weakArgs` position; they vary by system without changing what the
 -- code means.
-def cShimTraceFlags : Array String := #["-fPIC", "-O3", "-march=native"]
+--
+-- On x86_64, `-mno-avx512fp16` follows `-march=native`. On a host with
+-- AVX512-FP16 (Sapphire Rapids and later), GCC then sets
+-- `FLT_EVAL_METHOD = 16`, and `lean.h` refuses any value other than `0`.
+-- The flag removes only the half-precision vector ops, which the shims do
+-- not use. `leanc` (the toolchain's clang) keeps `FLT_EVAL_METHOD = 0`
+-- under `-march=native`, so `moreLeancArgs` needs no such flag.
+def cShimTraceFlags : Array String :=
+  #["-fPIC", "-O3", "-march=native"] ++
+    (if System.Platform.target.startsWith "x86_64" then #["-mno-avx512fp16"] else #[])
 
 def cShimIncludeArgs (leanInclude : FilePath) : Array String :=
   #["-I", leanInclude.toString] ++ (unsafe opensslCFlags)
