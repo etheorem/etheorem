@@ -126,7 +126,7 @@ private def pinTargetAdvanceRejects : Bool :=
   letI : CryptoBackend := CryptoBackend.realBackend
   let bs : @EthCLSpecs.Gloas.BeaconState minimal :=
     { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
-      pendingConsolidations := sszOfArray #[{ sourceIndex := 0, targetIndex := 0 }] (by decide) }
+      pendingConsolidations := ⟨#[{ sourceIndex := 0, targetIndex := 0 }]⟩ }
   let state : State := SSZ.FastBox bs
   let store := { pinStore with blockStates := FcMap.insert FcMap.empty pinRoot state }
   let target : Checkpoint := { epoch := 1, root := pinRoot }
