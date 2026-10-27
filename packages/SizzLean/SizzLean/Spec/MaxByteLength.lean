@@ -170,6 +170,6 @@ example : SSZType.maxByteLength (.container [.uintN 8, .bitlist 8]) = 7 := rfl
 example : SSZType.maxByteLength (.progressiveList (.uintN 8)) = MAX_LENGTH := rfl
 
 example : SSZType.maxByteLength
-    (.progressiveContainer [true, false] [.uintN 8]) = 1 := rfl
+    (.progressiveContainer [true] [.uintN 8]) = 1 := rfl
 
 end SizzLean.Spec

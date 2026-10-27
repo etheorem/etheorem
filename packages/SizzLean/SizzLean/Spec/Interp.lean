@@ -154,7 +154,7 @@ example : SSZType.interp (.uintN 128) = BitVec 128  := by with_reducible rfl
 example : SSZType.interp (.uintN 64) := 42
 example : SSZType.interp (.progressiveList (.uintN 8)) = Array UInt8 := rfl
 example : SSZType.interp .progressiveBitlist = Array Bool := rfl
-example : SSZType.interp (.progressiveContainer [true, false] [.bool]) =
+example : SSZType.interp (.progressiveContainer [true] [.bool]) =
     (Bool × PUnit) := rfl
 
 end SizzLean.Spec

@@ -88,9 +88,9 @@ def SSZType.chunkCount : SSZType → Nat
   | .vector t n => bytesToChunkCount (n * itemLength t)
   | .list t cap => bytesToChunkCount (cap * itemLength t)
   | .container fs => fs.length
-  -- Progressive merkleization is a shelf tree, not one balanced
-  -- block, and `stepInto` does not descend into these shapes yet.
-  -- The counts below keep the function total.
+  -- Progressive merkleization shelves chunks into a growing tree, so a
+  -- single balanced block cannot express it, and `stepInto` does not
+  -- descend into these shapes yet. The counts below keep the function total.
   | .progressiveList _ => 1
   | .progressiveBitlist => 1
   | .progressiveContainer active _ => active.length

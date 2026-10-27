@@ -17,7 +17,7 @@ inductive:
   Serialization follows the list / bitlist rules. Merkleization uses
   `merkleize_progressive` (shelves of 1, 4, 16, 64, … leaves).
 * `ProgressiveContainer(active_fields=[…])` (EIP-7495): the mask is a
-  type-level `List Bool`, not a serialized prefix. Only active fields
+  type-level `List Bool`; the wire never carries it. Only active fields
   are on the wire. A `false` bit is a zero chunk in the progressive
   Merkle tree.
 
