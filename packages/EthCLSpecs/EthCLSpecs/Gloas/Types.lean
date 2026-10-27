@@ -26,8 +26,10 @@ inherit Domain BLSPubkey BLSSignature ExecutionAddress
 inherit ParticipationFlags KZGCommitment KZGProof Cell
 inherit ColumnIndex CellIndex
 
-/-- `Transaction` at Gloas is a `ProgressiveByteList`: an uncapped byte list.
-Fulu's alias is a capped `SSZList`. -/
+/-- `Transaction` at Gloas is an uncapped byte list. The pyspec names the type
+`ProgressiveByteList`; Etheorem has no alias under that name and spells the same
+shape `ProgressiveList UInt8`, so a pyspec `ProgressiveByteList` field is a
+`ProgressiveList UInt8` field here. Fulu's alias is a capped `SSZList`. -/
 forkabbrev Transaction := SizzLean.Repr.ProgressiveList UInt8
 
 end EthCLSpecs.Gloas
