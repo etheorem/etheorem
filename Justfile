@@ -17,8 +17,10 @@ pytest_jobs := env_var_or_default("PYTEST_JOBS", "auto")
 
 # The vector `just ethcl-profile` profiles when the caller names none: the Gloas
 # mainnet `sanity/blocks` case the OPTIMISATION.md Stage 17d row table was
-# measured on. Any extracted vector directory holding a `pre.ssz_snappy` works.
-default_profile_case := env_var("HOME") + "/.cache/sizzlean/v1.7.0-alpha.11-mainnet/tests/mainnet/gloas/sanity/blocks/pyspec_tests/full_random_operations_0"
+# measured on (at v1.7.0-alpha.11), here at the harness's pinned release, the
+# archive the pyspec harness extracts. Any extracted vector directory holding a
+# `pre.ssz_snappy` works.
+default_profile_case := env_var("HOME") + "/.cache/sizzlean/v1.7.0-beta.4-mainnet/tests/mainnet/gloas/sanity/blocks/pyspec_tests/full_random_operations_0"
 
 # List every recipe with its description
 default:

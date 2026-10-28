@@ -128,6 +128,11 @@ structure CapturedDecl where
   emits the attribute again so the child's `SSZRepr` is a progressive container.
   Meaningless for the other kinds; they leave it `false`. -/
   progressive : Bool := false
+  /-- The `@[sizzlean_progressive_gaps …]` positions of a progressive container, in
+  the order written; empty for an all-active mask. Replay emits them again, so a
+  child fork's replayed container keeps the parent's mask holes. Meaningless for the
+  other kinds; they leave it empty. -/
+  progressiveGaps : Array Nat := #[]
   deriving Inhabited
 
 /-- Lineage edges: `(forkFullName, parentFullName)`, parent `anonymous` for a

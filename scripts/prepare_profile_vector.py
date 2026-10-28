@@ -10,7 +10,7 @@ Usage:
     python scripts/prepare_profile_vector.py <case-dir> <out-dir>
 
 `<case-dir>` is an extracted vector directory, e.g.
-`~/.cache/sizzlean/v1.7.0-alpha.11-mainnet/tests/mainnet/gloas/sanity/blocks/pyspec_tests/full_random_operations_0`.
+`~/.cache/sizzlean/v1.7.0-beta.4-mainnet/tests/mainnet/gloas/sanity/blocks/pyspec_tests/full_random_operations_0`.
 Needs `cramjam`, which the pyspec harness venv already carries.
 """
 

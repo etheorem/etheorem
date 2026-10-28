@@ -55,4 +55,17 @@ forkcontainer ExecutionPayloadEnvelope where
 /-- A signed `ExecutionPayloadEnvelope`. -/
 signedwrapper SignedExecutionPayloadEnvelope wraps ExecutionPayloadEnvelope
 
+/-- `NewPayloadRequest` (Gloas, EIP-7688, `gloas/beacon-chain.md:988-995`): the Electra
+request as a progressive container of width 4, over the Gloas payload and execution
+requests. `versioned_hashes` stays the capped `VersionedHashes` list, which Gloas does not
+modify. No modeled path builds one: the engine answer reads the `[ExecutionEngine]` seam
+(`verifyAndNotifyNewPayload`), which takes the request's fields directly. The `ssz_static`
+vectors cover the container. -/
+@[sizzlean_progressive]
+forkcontainer NewPayloadRequest where
+  executionPayload      : ExecutionPayload
+  versionedHashes       : SSZList VersionedHash Const.maxBlobCommitmentsPerBlock
+  parentBeaconBlockRoot : Root
+  executionRequests     : ExecutionRequests
+
 end EthCLSpecs.Gloas

@@ -4,6 +4,7 @@ import EthCLSpecs.Fulu.Constants
 import EthCLSpecs.Fulu.Containers
 import EthCLSpecs.Fulu.State
 import EthCLSpecs.Fulu.Time
+import EthCLSpecs.Fulu.BlobParameters
 import EthCLSpecs.Fulu.Signing
 import EthCLSpecs.Fulu.Randao
 import EthCLSpecs.Fulu.Balances

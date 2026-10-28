@@ -43,7 +43,7 @@ forkdef isEligibleForPartialWithdrawals (v : Validator) (balance : Gwei) : Bool 
 
 /-! ## Expected withdrawals -/
 
-/-- `get_balance_after_withdrawals` (`capella/beacon-chain.md:378`): the balance net of any
+/-- `get_balance_after_withdrawals` (`capella/beacon-chain.md:411-421`): the balance net of any
 already-queued withdrawals for that validator. Throwing (`StateTransition`): the spec's
 `state.balances[validator_index]` is a bare list index (`IndexError`, via `sszGetIdx` →
 `outOfBounds`), and `- withdrawn` is a bare `uint64` subtraction whose underflow raises Python

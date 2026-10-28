@@ -9,18 +9,20 @@ import EthCLSpecs.Heze.ForkChoice
 # `EthCLSpecs.Heze.Interface`: the Heze fork-interface instance
 
 Heze's implementation of `ForkInterface`, the entry points the pyspec runner drives
-(`SPEC_AUTHORING_MODEL.md` §11). At v1.7.0-alpha.12 EIP-7805 (FOCIL) adds no state transition
+(`SPEC_AUTHORING_MODEL.md` §11). At v1.7.0-beta.4 EIP-7805 (FOCIL) adds no state transition
 and no vector-tested fork-choice change. Its fork-choice overrides do run on the existing
 fork_choice vectors, but only on the path where the inclusion-list store stays empty, which
-behaves exactly like Gloas; the FOCIL-specific behavior ships no vector. So every dynamic
-runner reuses the Gloas spine re-instantiated over Heze types (`Heze.EpochProcessing` /
-`Operations` / `Withdrawals` / `Transition` / `ForkChoice`).
+behaves exactly like Gloas; the FOCIL-specific behavior ships no vector. The state-transition
+changes are EIP-8015 (the eth1 deposit machinery removed) and EIP-8365 (no new validator with
+BLS withdrawal credentials). So every dynamic runner reuses the Gloas spine re-instantiated
+over Heze types (`Heze.EpochProcessing` / `Operations` / `Withdrawals` / `Transition` /
+`ForkChoice`), with the EIP-8015 steps removed and Heze's own `apply_pending_deposit`.
 
 The Heze-specific entries: `runUpgrade` is the Gloas→Heze `fork` format (see
 `upgradeToHeze`); `runTransition` is the Gloas→Heze boundary; `runForkChoice` runs the
 Heze ePBS store. `runGenesis` and any `ssz_static` type Heze does not model report
 `outOfScope`, a deliberate skip rather than xfail work, matching Fulu / Gloas. Pinned to
-v1.7.0-alpha.12.
+v1.7.0-beta.4.
 -/
 
 set_option autoImplicit false
@@ -42,7 +44,7 @@ namespace EthCLSpecs.Heze.Interface
 open scoped EthCLSpecs.Heze.Downgrade
 
 /-- Pinned upstream release; Heze tracks the same tag as Fulu / Gloas. -/
-def pyspecPinnedVersion : String := "v1.7.0-alpha.12"
+def pyspecPinnedVersion : String := "v1.7.0-beta.4"
 
 /-- `stateRoot`: decode a Heze `BeaconState` at preset `P` and take its root. -/
 private def stateRootImpl (P : Preset) (bytes : ByteArray) :
@@ -61,7 +63,9 @@ private def runUpgradeImpl (P : Preset) (forkVersion : Version) (preBytes : Byte
   letI : Preset := P
   letI : HasherTag := fastHasherTag
   match SSZ.deserialize (T := Gloas.BeaconState) preBytes with
-  | .ok pre  => .ok (htr (upgradeToHeze forkVersion pre))
+  | .ok pre  =>
+    -- The annotation picks the `ByteArray` coercion of the 32-byte root, as the runner expects.
+    RunError.ofSpec ((upgradeToHeze forkVersion pre).map fun post => (htr post : ByteArray))
   | .error _ => .error (.decode "Gloas BeaconState")
 
 /-- Decode a Heze `BeaconState` into a `FastBox`, or the runner's `decode` error. -/
@@ -86,7 +90,10 @@ private def runEpochSubstepImpl (P : Preset) (C : Config) (step : EpochStep) (pr
     match step with
     | .slashingsReset               => processSlashingsReset
     | .randaoMixesReset             => processRandaoMixesReset
-    | .eth1DataReset                => processEth1DataReset
+    -- EIP-8015 removes `process_eth1_data_reset` in Heze, and the Heze corpus has no such
+    -- handler; a vector that names it is malformed for this fork.
+    | .eth1DataReset                =>
+        throw (.todo "epoch_processing/eth1_data_reset: not a Heze substep (EIP-8015 removes it)")
     | .historicalSummariesUpdate    => processHistoricalSummariesUpdate
     | .participationFlagUpdates     => processParticipationFlagUpdates
     | .justificationAndFinalization => processJustificationAndFinalization
@@ -145,7 +152,14 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     match kind with
     | .proposerSlashing       => (decodeOp (@ProposerSlashing P) opBytes).map processProposerSlashing
     | .attesterSlashing       => (decodeOp (@AttesterSlashing P) opBytes).map processAttesterSlashing
-    | .attestation            => (decodeOp (@Attestation P) opBytes).map processAttestation
+    -- From Gloas, `process_attestation` takes the parent block's slot, which the vector
+    -- carries as `parent_slot` in `meta.yaml`. A Gloas attestation vector without it is a
+    -- malformed case, the runner's own decode failure.
+    | .attestation            =>
+      match cmeta.parentSlot with
+      | some parentSlot =>
+        (decodeOp (@Attestation P) opBytes).map (processAttestation · (UInt64.ofNat parentSlot))
+      | none => .error (.decode "operations/attestation: meta.yaml parent_slot")
     | .payloadAttestation     => (decodeOp (@PayloadAttestation P) opBytes).map processPayloadAttestation
     | .executionPayloadBid    => (decodeOp (@SignedExecutionPayloadBid P) opBytes).map processExecutionPayloadBid
     | .parentExecutionPayload => (decodeOp (@BeaconBlock P) opBytes).map processParentExecutionPayload
@@ -232,7 +246,8 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
     match gloasAction.run gloasBox0 with
     | .error e _ => Except.error (RunError.spec e)
     | .ok _ gloasSt =>
-      let hezeBox0 : SSZ.Box Sha256 (@Heze.BeaconState P) := SSZ.FastBox (upgradeToHeze forkVersion gloasSt.view)
+      let hezePost ← RunError.ofSpec (upgradeToHeze forkVersion gloasSt.view)
+      let hezeBox0 : SSZ.Box Sha256 (@Heze.BeaconState P) := SSZ.FastBox hezePost
       let hezeAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Heze.BeaconState P)) Unit := do
         for sb in postBlocks do
           if (sszGet (← get) slot) < sb.message.slot then processSlots sb.message.slot
@@ -250,6 +265,32 @@ private def queryHead [Preset] [Config] [HasherTag] (store : Store hashMap) :
   runQuery store (getHead (map := hashMap) store :
     EStateM StoreTransitionError (Store hashMap) ForkChoiceNode)
 
+/-- The `viable_for_head_roots_and_weights` entries the reference test helper computes
+(`get_viable_for_head_checks`, `helpers/fork_choice.py:585-601`): walk from the justified root's
+PENDING node, stepping into every child that is in the filtered node tree, and collect each
+node with no such child, with its `get_weight` and payload status. A test-helper walk, not a
+spec function, so it lives with the interpreter. Each node is visited once, so twice the block
+count plus two bounds the stack walk; fuel-out returns the leaves found so far, which then
+fail the comparison loudly. -/
+private def viableForHeadLeaves [Preset] [Config] [HasherTag] (store : Store hashMap) :
+    Except StoreTransitionError (Array (ByteArray × Nat × Option Nat)) :=
+  let walk : EStateM StoreTransitionError (Store hashMap) (Array (ByteArray × Nat × Option Nat)) := do
+    let nodes ← getFilteredNodeTree (map := hashMap) store
+    let mut pending : Array ForkChoiceNode := #[.pending store.justifiedCheckpoint.root]
+    let mut leaves : Array (ByteArray × Nat × Option Nat) := #[]
+    for _ in [0:2 * (FcMap.keys store.blocks).length + 2] do
+      match pending.back? with
+      | none => break
+      | some node =>
+        pending := pending.pop
+        let children := (← getNodeChildren (map := hashMap) store node).filter nodes.contains
+        if children.isEmpty then
+          let weight ← getWeight (map := hashMap) store node
+          leaves := leaves.push (vecToBytes node.root, weight.toNat, some node.payloadStatus.toNat)
+        else pending := pending ++ children
+    pure leaves
+  runQuery store walk
+
 /-- Fold the decoded fork-choice `steps` over the Heze store. Identical shape to Gloas's
 interpreter, re-instantiated over Heze types: a `block` step runs `on_block` then replays
 the block's own attestations / attester-slashings; `execution_payload` /
@@ -262,7 +303,9 @@ private def fcInterpretHeze [Preset] [Config] [HasherTag] [CryptoBackend]
     match step with
     | .tick t =>
       store := (← checkStepValidity .tick true
-        (runOn store (onTick (map := hashMap) (UInt64.ofNat t) : EStateM StoreTransitionError (Store hashMap) Unit)))
+        -- The format runs `on_tick(store, seconds_to_milliseconds(tick))`: the tick is in seconds.
+        (runOn store (onTick (map := hashMap) (secondsToMilliseconds (UInt64.ofNat t)) :
+          EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes _columns valid =>
       -- pyspec `add_block` (`fork_choice.py:382-406`) runs `on_block` ALONE against `valid`: an
       -- invalid block returns right after `on_block` rejects (`:393`), so its own attestations /
@@ -332,10 +375,14 @@ private def fcInterpretHeze [Preset] [Config] [HasherTag] [CryptoBackend]
       assert (store.finalizedCheckpoint.root == root)
     | .checkBoost root =>
       assert (store.proposerBoostRoot == root)
-    | .checkTime t => assert (store.time.toNat == t)
-    | .checkGenesisTime t => assert (store.genesisTime.toNat == t)
+    -- `time` / `genesis_time` are `milliseconds_to_seconds` of the store's ms clock.
+    | .checkTime t => assert ((millisecondsToSeconds store.timeMs).toNat == t)
+    | .checkGenesisTime t => assert ((millisecondsToSeconds store.genesisTimeMs).toNat == t)
+    | .checkViableForHead expected =>
+      let actual ← viableForHeadLeaves store
+      assert (sameViableEntries actual expected)
     | .unsupported reason => throw (StoreTransitionError.todo reason)
-    -- `get_proposer_head` is Gloas-Modified but not ported, and no alpha.11 vector exercises it;
+    -- `get_proposer_head` is Gloas-Modified but not ported, and no beta.4 vector exercises it;
     -- surface it as unmodeled (a `todo` xfail) rather than passing it vacuously. This arm makes
     -- the match exhaustive over `FcStep`, so a newly added constructor becomes a build error rather
     -- than a silent pass through a catch-all.
@@ -401,6 +448,7 @@ private def sszStaticImpl (P : Preset) (typeName : String) (bytes : ByteArray) :
   | "HistoricalSummary"          => runStatic (@Heze.HistoricalSummary P) typeName bytes
   | "InclusionList"              => runStatic (@Heze.InclusionList P) typeName bytes
   | "IndexedAttestation"         => runStatic (@Heze.IndexedAttestation P) typeName bytes
+  | "NewPayloadRequest"          => runStatic (@Heze.NewPayloadRequest P) typeName bytes
   | "IndexedPayloadAttestation"  => runStatic (@Heze.IndexedPayloadAttestation P) typeName bytes
   | "PayloadAttestation"         => runStatic (@Heze.PayloadAttestation P) typeName bytes
   | "PayloadAttestationData"     => runStatic (@Heze.PayloadAttestationData P) typeName bytes
@@ -440,6 +488,27 @@ is the pure Gloas→Heze copy and `runTransition` the Gloas→Heze boundary. `ru
   runSlots        := runSlotsImpl P C
   runGenesis      := fun _ _   => .error (.spec (.outOfScope "heze genesis: out of scope (not modeled)"))
   runTransition   := runTransitionImpl P C forkVersion
+
+/-- The config values a vector can override, one `(KEY, set)` pair per value: the fork
+schedule Heze models. A vector that activates its forks at genesis ships a `config.yaml`
+setting these epochs to `0`, and a `transition` vector moves its post-fork's epoch to the
+`fork_epoch`; `EthCLLib.PySpecTests.applyConfigOverrides` applies them. -/
+def configSetters : List (String × (UInt64 → Config → Config)) := [
+  ("ALTAIR_FORK_EPOCH",    fun v c => { c with altairForkEpoch := v }),
+  ("BELLATRIX_FORK_EPOCH", fun v c => { c with bellatrixForkEpoch := v }),
+  ("CAPELLA_FORK_EPOCH",   fun v c => { c with capellaForkEpoch := v }),
+  ("DENEB_FORK_EPOCH",     fun v c => { c with denebForkEpoch := v }),
+  ("ELECTRA_FORK_EPOCH",   fun v c => { c with electraForkEpoch := v }),
+  ("FULU_FORK_EPOCH",      fun v c => { c with fuluForkEpoch := v }),
+  ("GLOAS_FORK_EPOCH",     fun v c => { c with gloasForkEpoch := v }),
+  ("HEZE_FORK_EPOCH",      fun v c => { c with hezeForkEpoch := v })]
+
+/-- The interface at preset `P` and config `C` with a vector's overrides applied, or the
+reason an override cannot be applied. The server builds one per request. -/
+def hezeInterfaceWith (P : Preset) (C : Config) (forkVersion : Version) (overrides : ConfigOverrides) :
+    Except String ForkInterface := do
+  let C' ← applyConfigOverrides configSetters overrides C
+  pure (hezeInterfaceFor P C' forkVersion)
 
 /-- The `minimal`-preset / config Heze interface. -/
 @[reducible] def hezeInterface : ForkInterface := hezeInterfaceFor minimal minimalConfig hezeForkVersionMinimal

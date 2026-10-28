@@ -1,6 +1,7 @@
 import EthCLSpecs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Run
 import EthCLLib.Proofs.Run
+import EthCLLib.Proofs.Arith
 import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.UncachedBox
 
@@ -34,8 +35,8 @@ two states the mutator keeps apart: the one it writes, `state`, and the one it t
 `preState`.
 
 Scope is Fulu's two mutators. Gloas and Heze inherit them at their own `State`, as
-`increaseBalance` (`Gloas/EpochProcessing.lean:42`) and `increaseBalance`
-(`Heze/EpochProcessing.lean:30`), and likewise for `decreaseBalance`. Each is a separate
+`increaseBalance` (`Gloas/EpochProcessing.lean:45`) and `increaseBalance`
+(`Heze/EpochProcessing.lean:35`), and likewise for `decreaseBalance`. Each is a separate
 constant, and these theorems say nothing about those instantiations.
 
 `SizzLean.Proofs.SSZListSet` supplies `sszListSet!_getElem!_self`, which reads back the element
@@ -46,7 +47,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu
 
-open EthCLLib.Spec (HasherTag StateTransitionError checkedAdd sszGetIdx IdxRead)
+open EthCLLib.Spec (HasherTag StateTransitionError checkedAdd saturatingSub sszGetIdx IdxRead)
 open EthCLSpecs.Fulu (Preset BeaconState State ValidatorIndex Gwei increaseBalance decreaseBalance
   modBalance)
 open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok)
@@ -188,13 +189,13 @@ theorem increaseBalance_run_no_wrap [Preset] [HasherTag] :
 /-! ## `decreaseBalance`
 
 `decreaseBalance` reads `balances` through `sszGetIdx`, as `increaseBalance` does, and then
-writes a clamped difference. The clamp is the pyspec's own
-`0 if delta > balance else balance - delta`. The subtraction therefore raises nothing, and the
-index read is the only reject. -/
+writes the floored difference. The floor is the pyspec's own `saturating_sub(balance, delta)`
+(v1.7.0-beta.4; earlier pins spelled it `0 if delta > balance else balance - delta`). The
+subtraction therefore raises nothing, and the index read is the only reject. -/
 
 /-- **Exact run equation.** Past the end of `balances` the run rejects with `.outOfBounds`. In
 range it returns the new state, `modBalance (pureState state) i …`, the source's own write with
-the clamped difference, and leaves the threaded state `preState` unchanged. Stated at the box level
+the floored difference, and leaves the threaded state `preState` unchanged. Stated at the box level
 so the fork-choice bridge consumes it by application; `modBalance_pureState` turns the
 written state into the plain record update (`decreaseBalance_run_no_underflow`). -/
 @[characterizes EthCLSpecs.Fulu.decreaseBalance]
@@ -205,8 +206,7 @@ theorem decreaseBalance_run_eq [Preset] [HasherTag] :
         = (match state.balances.val[i.toNat]? with
           | none => .error (.outOfBounds i.toNat state.balances.size)
           | some balance =>
-            .ok (modBalance (pureState state) i
-                (fun _ => if delta > balance then 0 else balance - delta),
+            .ok (modBalance (pureState state) i (fun _ => saturatingSub balance delta),
               pureState preState)) := by
   intro state preState i delta
   unfold decreaseBalance sszGetIdx IdxRead.get? IdxRead.size
@@ -234,11 +234,10 @@ theorem decreaseBalance_run_outOfRange [Preset] [HasherTag] :
   rw [hnone]
   rfl
 
-/-- **In range, no underflow.** The whole-state equation writes the clamped difference into
-that one balance. `Nat` subtraction truncates at zero, so one equation covers both arms of
-the clamp: that truncation and the spec's `0 if delta > balance` agree. The stored balance's
-`.toNat` reads back as the truncating `Nat` difference, and a bare `UInt64` subtraction
-would wrap to a balance near `2 ^ 64` on the underflowing arm; this equation excludes that. -/
+/-- **In range, no underflow.** The whole-state equation writes the floored difference
+`saturatingSub balance delta` into that one balance. `decreaseBalance_run_toNat` reads the
+stored balance back as the truncating `Nat` difference, so a bare `UInt64` subtraction, which
+would wrap to a balance near `2 ^ 64` on the underflowing arm, is excluded. -/
 theorem decreaseBalance_run_no_underflow [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       i.toNat < state.balances.size →
@@ -246,8 +245,7 @@ theorem decreaseBalance_run_no_underflow [Preset] [HasherTag] :
         = .ok (pureState
             { state with
                 balances := state.balances.set! i.toNat
-                  (if delta > state.balances[i.toNat]! then 0
-                   else state.balances[i.toNat]! - delta) },
+                  (saturatingSub state.balances[i.toNat]! delta) },
           preState) := by
   intro state preState i delta hidx
   rw [runPure_eq, decreaseBalance_run_eq state preState i delta,
@@ -255,5 +253,12 @@ theorem decreaseBalance_run_no_underflow [Preset] [HasherTag] :
   simp only
   rw [modBalance_pureState]
   rfl
+
+/-- **The stored balance as a number.** The value `decreaseBalance_run_no_underflow` writes
+reads back as the truncating `Nat` difference `balance - delta`: zero when `delta` exceeds the
+balance, the exact difference otherwise. -/
+theorem decreaseBalance_written_toNat (balance delta : Gwei) :
+    (saturatingSub balance delta).toNat = balance.toNat - delta.toNat :=
+  EthCLLib.Proofs.saturatingSub_toNat balance delta
 
 end EthCLSpecs.Proofs.Fulu

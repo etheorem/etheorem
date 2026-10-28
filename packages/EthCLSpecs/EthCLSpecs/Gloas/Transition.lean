@@ -81,10 +81,11 @@ forkdef processSlots (target : Slot) : StateTransition Unit := do
     if ((sszGet (← get) slot) + 1) % UInt64.ofNat Const.slotsPerEpoch == 0 then processEpoch
     modifyState fun state => sszUpdate state with slot := (sszGet state slot) + 1
 
-/-- `process_operations` (Gloas, EIP-7732): no in-block deposits, no execution-request
-loops (those run in `process_parent_execution_payload`), and the new
-`payload_attestations` loop. -/
-forkdef processOperations (body : BeaconBlockBody) : StateTransition Unit := do
+/-- `process_operations` (Gloas, EIP-7732, `gloas/beacon-chain.md:2228-2263`): no in-block
+deposits, no execution-request loops (those run in `process_parent_execution_payload`), and
+the new `payload_attestations` loop. v1.7.0-beta.4 adds the `parent_slot` parameter, which the
+attestation loop passes to `process_attestation`. -/
+forkdef processOperations (body : BeaconBlockBody) (parentSlot : Slot) : StateTransition Unit := do
   assert (body.deposits.size == 0)
   -- EIP-7688: the operation lists are progressive, so the old SSZ caps are asserts.
   assert (body.proposerSlashings.size ≤ Const.maxProposerSlashings)
@@ -95,20 +96,23 @@ forkdef processOperations (body : BeaconBlockBody) : StateTransition Unit := do
   assert (body.payloadAttestations.size ≤ Const.maxPayloadAttestations)
   for op in body.proposerSlashings do processProposerSlashing op
   for op in body.attesterSlashings do processAttesterSlashing op
-  for op in body.attestations do processAttestation op
+  for op in body.attestations do processAttestation op parentSlot
   for op in body.voluntaryExits do processVoluntaryExit op
   for op in body.blsToExecutionChanges do processBlsToExecutionChange op
   for op in body.payloadAttestations do processPayloadAttestation op
 
-/-- `process_block` (Gloas ordering, EIP-7732). -/
+/-- `process_block` (Gloas ordering, EIP-7732, `gloas/beacon-chain.md:1754-1772`). The parent
+block's slot is read first, before `process_block_header` replaces the latest header, and
+reaches `process_operations` (new at v1.7.0-beta.4). -/
 forkdef processBlock (block : BeaconBlock) : StateTransition Unit := do
+  let parentSlot := (sszGet (← get) latestBlockHeader).slot
   processParentExecutionPayload block
   processBlockHeader block
   processWithdrawals
   processExecutionPayloadBid block.body.signedExecutionPayloadBid
   processRandao block.body
   processEth1Data block.body
-  processOperations block.body
+  processOperations block.body parentSlot
   processSyncAggregate block.body.syncAggregate
 
 /-- `state_transition`: restated so its spine sub-calls bind to the Gloas copies. -/

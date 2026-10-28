@@ -52,7 +52,7 @@ private def pinRoot : Root := Vector.replicate 32 9
 private def pinStore : @Store minimal treeMap fastHasherTag :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  { time := 0, genesisTime := 0
+  { timeMs := 0, genesisTimeMs := 0
     justifiedCheckpoint := default, finalizedCheckpoint := default
     unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
     proposerBoostRoot := fcZeroRoot
@@ -82,17 +82,20 @@ private def pinRecordPtcVotesThrows : Bool :=
 #guard pinRecordPtcVotesThrows = true
 
 /-- The routed replay throw, end-to-end: `notifyPtcMessages` over a state at
-`slot := 1` (zeroed `ptc_window`, so the PTC is all validator 0; alpha.11 `get_ptc`
-is a plain window read) and a one-bit payload attestation whose `beacon_block_root`
-the store does not know rejects with the wire handler's `.assert` (the pinned
-`assert data.beacon_block_root in store.block_states` membership assert, a
-`getOrAssert` miss), where the pre-conversion replay silently skipped the
-message. This locks the routing itself: the replay path IS
-`on_payload_attestation_message (is_from_block = true)`. `State` is FFI-backed
-(`FastBox`), so `native_decide`. -/
+`slot := 1` (zeroed `ptc_window`, so the PTC is all validator 0) and a one-bit payload
+attestation whose `beacon_block_root` the store does not know rejects with the wire
+handler's `.assert` (the pinned `assert data.beacon_block_root in store.block_states`
+membership assert, a `getOrAssert` miss), where the pre-conversion replay silently
+skipped the message. This locks the routing itself: the replay path IS
+`on_payload_attestation_message (is_from_block = true)`.
+
+The config activates Gloas at genesis (`GLOAS_FORK_EPOCH = 0`), as a fork-choice vector's
+`config.yaml` does. At v1.7.0-beta.4 `get_ptc` opens with `assert epoch >= GLOAS_FORK_EPOCH`,
+and under the far-future default the indexed-attestation read would reject first, as the
+nested `.transition (.assert …)`. `State` is FFI-backed (`FastBox`), so `native_decide`. -/
 private def pinReplayThrows : Bool :=
   letI : Preset := minimal
-  letI : Config := minimalConfig
+  letI : Config := { minimalConfig with gloasForkEpoch := 0 }
   letI : HasherTag := fastHasherTag
   -- The handler wants a `CryptoBackend` for its wire-path signature check; the
   -- block-replay path (`is_from_block = true`) never reaches it, but elaboration does.
@@ -155,11 +158,41 @@ private def pinBlockRootRecencyRejects : Bool :=
   | _ => false
 example : pinBlockRootRecencyRejects = true := by native_decide
 
-/-- `verifyExecutionPayloadEnvelopeSignature` rejects (`.transition (.outOfBounds …)`) an
-out-of-range `builder_index`: a `default` state has an empty `builders` registry, so an
-envelope with `builder_index = 1` (not the self-build sentinel `UINT64_MAX`) reads
-`state.builders[1]`, which the spec's `IndexError` surfaces through `sszGetIdx` where the
-former `[i]!` would have panicked. The read throws before `bls.Verify`, so no backend runs.
+/-- `getPtc` rejects (`.assert`) a slot before the Gloas fork: the
+`assert epoch >= GLOAS_FORK_EPOCH` that opens it at v1.7.0-beta.4. The default config's
+`GLOAS_FORK_EPOCH` is far in the future, so epoch 0 precedes the fork. Without the assert the
+read would return the zero-filled window entry, a committee of validator 0. `State` is
+FFI-backed, so `native_decide`. -/
+private def pinPtcBeforeForkRejects : Bool :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let state : State := SSZ.FastBox (default : @EthCLSpecs.Gloas.BeaconState minimal)
+  match (getPtc state 0 : EStateM StateTransitionError State _).run state with
+  | .error (.assert _) _ => true
+  | _ => false
+example : pinPtcBeforeForkRejects = true := by native_decide
+
+/-- The same read with Gloas active at genesis passes the fork-epoch assert and the
+lookahead assert, and returns the window entry: the pair shows the fork epoch alone decides
+`pinPtcBeforeForkRejects`. -/
+private def pinPtcAtForkReads : Bool :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with gloasForkEpoch := 0 }
+  letI : HasherTag := fastHasherTag
+  let state : State := SSZ.FastBox (default : @EthCLSpecs.Gloas.BeaconState minimal)
+  match (getPtc state 0 : EStateM StateTransitionError State _).run state with
+  | .ok _ _ => true
+  | _ => false
+example : pinPtcAtForkReads = true := by native_decide
+
+/-- `verifyExecutionPayloadEnvelopeSignature` rejects (`.outOfBounds …`) an out-of-range
+`builder_index`: a `default` state has an empty `builders` registry, so an envelope with
+`builder_index = 1` (not the self-build sentinel `UINT64_MAX`) reads `state.builders[1]`,
+which the spec's `IndexError` surfaces through `sszGetIdx` where the former `[i]!` would
+have panicked. The read throws before `bls.Verify`, so no backend runs. At v1.7.0-beta.4
+the helper is a beacon-chain function returning `Except StateTransitionError`, so the
+reject is the state machine's own `.outOfBounds`, and its fork-choice caller wraps it.
 `State` is FFI-backed, so `native_decide`. -/
 private def pinEnvelopeSigBuilderOob : Bool :=
   letI : Preset := minimal
@@ -171,7 +204,7 @@ private def pinEnvelopeSigBuilderOob : Bool :=
     { (default : SignedExecutionPayloadEnvelope) with
       message := { (default : ExecutionPayloadEnvelope) with builderIndex := 1 } }
   match verifyExecutionPayloadEnvelopeSignature state signedEnv with
-  | .error (.transition (.outOfBounds _ _)) => true
+  | .error (.outOfBounds _ _) => true
   | _ => false
 example : pinEnvelopeSigBuilderOob = true := by native_decide
 

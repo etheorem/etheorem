@@ -26,7 +26,7 @@ import yaml
 # The pinned release: the latest consensus-specs release, confirmed to
 # carry the Fulu, Gloas, and Heze minimal vectors (matches
 # EthCLSpecs.Fulu.Interface.pyspecPinnedVersion).
-PINNED_VERSION = "v1.7.0-alpha.12"
+PINNED_VERSION = "v1.7.0-beta.4"
 CACHE_DIR = Path.home() / ".cache" / "sizzlean"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -55,7 +55,7 @@ KNOWN_CHECK_KEYS = {
     "get_proposer_head", "should_override_forkchoice_update", "head",
     "payload_timeliness_vote", "payload_data_availability_vote",
     "justified_checkpoint", "finalized_checkpoint", "proposer_boost_root",
-    "time", "genesis_time",
+    "time", "genesis_time", "viable_for_head_roots_and_weights",
 }
 KNOWN_CHECK_SUBKEYS = {
     "head": {"root", "slot", "payload_status"},
@@ -63,6 +63,7 @@ KNOWN_CHECK_SUBKEYS = {
     "payload_data_availability_vote": {"block_root", "votes"},
     "justified_checkpoint": {"epoch", "root"},
     "finalized_checkpoint": {"epoch", "root"},
+    "viable_for_head_roots_and_weights": {"root", "weight", "payload_status"},
 }
 
 
@@ -156,6 +157,30 @@ def parse_meta(case: Case) -> dict:
     return {}
 
 
+def config_overrides(case: Case) -> str:
+    """The case's config overrides, as the trailing `cfg=` request field.
+
+    Only fork epochs ever differ from the preset's config in this corpus: a vector that
+    activates its forks at genesis ships a `config.yaml` with `<FORK>_FORK_EPOCH: 0`, and a
+    `transition` vector's post-fork activates at its `meta.yaml` `fork_epoch`. Both reach the
+    Lean `Config`, which reads the schedule (`get_ptc`'s `GLOAS_FORK_EPOCH` assert, Heze's
+    `compute_fork_version`). The field is `cfg=KEY:VALUE,...`, or `cfg=-` for none; the server
+    strips it before the positional fields are read."""
+    overrides: dict[str, int] = {}
+    cfg_path = case.path / "config.yaml"
+    if cfg_path.exists():
+        cfg = yaml.safe_load(cfg_path.read_text()) or {}
+        for key, value in cfg.items():
+            if str(key).endswith("_FORK_EPOCH"):
+                overrides[str(key)] = int(value)
+    meta = parse_meta(case)
+    if case.runner == "transition" and "fork_epoch" in meta and "post_fork" in meta:
+        overrides[f"{str(meta['post_fork']).upper()}_FORK_EPOCH"] = int(meta["fork_epoch"])
+    if not overrides:
+        return "cfg=-"
+    return "cfg=" + ",".join(f"{k}:{v}" for k, v in sorted(overrides.items()))
+
+
 def _build_fork_choice_request(case: Case, tmpdir: Path) -> str:
     """Encode a `fork_choice` request: the anchor state in `pre`, and an
     `inputs` pair `anchorBlockPath,scriptPath`. The script is one line per
@@ -224,6 +249,15 @@ def _build_fork_choice_request(case: Case, tmpdir: Path) -> str:
                 lines.append(f"time {int(c['time'])}")
             if "genesis_time" in c:
                 lines.append(f"genesis_time {int(c['genesis_time'])}")
+            if "viable_for_head_roots_and_weights" in c:
+                # One `root:weight:status` token per leaf; `status` is `-` before Gloas. An
+                # entry key the token does not carry is unmodeled, so it surfaces below.
+                entries = c["viable_for_head_roots_and_weights"]
+                tokens = []
+                for e in entries:
+                    status = e.get("payload_status")
+                    tokens.append(f"{e['root']}:{int(e['weight'])}:{'-' if status is None else int(status)}")
+                lines.append(f"viable_for_head {','.join(tokens)}")
             # A check key we don't model (e.g. a future inclusion_list_satisfied) reports as
             # `unsupported <key>`, so the case lands in the `todo`/xfail bucket rather than
             # passing with the check silently dropped. The same guard runs one level down: an
@@ -231,25 +265,27 @@ def _build_fork_choice_request(case: Case, tmpdir: Path) -> str:
             # root/slot/payload_status) surfaces as `unsupported <key>.<subkey>`, so the
             # unmodeled-key promise covers nested shapes as well as top-level keys. `str(k)`
             # keeps the join total if YAML 1.1 ever parses an unquoted key as a non-string.
-            # No alpha.11 vector hits either path.
+            # No beta.4 vector hits either path.
             unknown = [str(k) for k in c if k not in KNOWN_CHECK_KEYS]
             for parent, known_sub in KNOWN_CHECK_SUBKEYS.items():
                 sub = c.get(parent)
                 if isinstance(sub, dict):
                     unknown += [f"{parent}.{k}" for k in sub if k not in known_sub]
+                elif isinstance(sub, list):
+                    unknown += sorted({f"{parent}.{k}" for e in sub for k in e if k not in known_sub})
             if unknown:
                 lines.append(f"unsupported {'/'.join(sorted(unknown))}")
         else:
             # An unrecognized step key (e.g. a future on_inclusion_list fork-choice step) reports
             # as `unsupported <key>`, so the case lands `todo`/xfail with an accurate reason rather
             # than silently dropping the step. Drop the auxiliary flags (valid / columns) and sort,
-            # so the reason names the step rather than its flags. No alpha.11 vector hits this.
+            # so the reason names the step rather than its flags. No beta.4 vector hits this.
             keys = sorted(str(k) for k in s if k not in ("valid", "columns"))
             lines.append(f"unsupported {'/'.join(keys) or 'unknown-step'}")
     script_path = tmpdir / "fc_script.txt"
     script_path.write_text("\n".join(lines))
     return "\t".join(["fork_choice", case.handler, str(anchor_state), "-", "1", "0", "-",
-                      f"{anchor_block},{script_path}"])
+                      f"{anchor_block},{script_path}", config_overrides(case)])
 
 
 def _build_ssz_static_request(case: Case, tmpdir: Path) -> str:
@@ -259,7 +295,8 @@ def _build_ssz_static_request(case: Case, tmpdir: Path) -> str:
     fork's container, compares the root, and checks the round-trip re-serialization."""
     serialized = _decompress_to(tmpdir, case.path / "serialized.ssz_snappy")
     roots = yaml.safe_load((case.path / "roots.yaml").read_text())
-    return "\t".join(["ssz_static", case.handler, str(serialized), roots["root"]])
+    return "\t".join(["ssz_static", case.handler, str(serialized), roots["root"],
+                      config_overrides(case)])
 
 
 def build_request(case: Case, tmpdir: Path) -> str:
@@ -318,6 +355,10 @@ def build_request(case: Case, tmpdir: Path) -> str:
             ev = yaml.safe_load(ev_path.read_text()) or {}
             execution_valid = 1 if ev.get("execution_valid", True) else 0
 
+    # operations/attestation from Gloas carries the parent block's slot, an extra input to
+    # `process_attestation` (`parent_slot` in meta.yaml).
+    parent_slot = meta.get("parent_slot", None)
+
     fields = [
         case.runner,
         case.handler,
@@ -329,6 +370,8 @@ def build_request(case: Case, tmpdir: Path) -> str:
         ",".join(str(p) for p in inputs),
         str(fork_block) if fork_block is not None else "-",
         str(execution_valid),
+        str(parent_slot) if parent_slot is not None else "-",
+        config_overrides(case),
     ]
     return "\t".join(fields)
 

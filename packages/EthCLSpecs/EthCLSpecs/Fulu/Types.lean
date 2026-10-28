@@ -55,6 +55,9 @@ forkabbrev ParticipationFlags := UInt8
 forkabbrev KZGCommitment := Vector UInt8 48
 /-- A KZG opening proof (48 bytes), same width as a commitment. -/
 forkabbrev KZGProof := Vector UInt8 48
+/-- A versioned hash of a blob's KZG commitment (32 bytes, Deneb `VersionedHash`), the unit of
+`NewPayloadRequest.versioned_hashes`. -/
+forkabbrev VersionedHash := Vector UInt8 32
 /-- A PeerDAS extended-blob cell: `BYTES_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_CELL`
 = `32 * 64` = 2048 bytes. -/
 forkabbrev Cell := Vector UInt8 2048

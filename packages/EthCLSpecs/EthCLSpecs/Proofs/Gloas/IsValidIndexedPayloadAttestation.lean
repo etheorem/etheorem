@@ -6,7 +6,7 @@ import SizzLean.Proofs.UncachedBox
 # `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: a two-layer characterization
 
 An exact backend-generic characterization of
-`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:439-450`).
+`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:464-475`).
 
 **Layer 1** (`isValidIndexedPayloadAttestation_eq_true_iff_checks`) restates the
 function's `if` / `||` / `!` control flow as a plain conjunction, one conjunct per

@@ -1060,7 +1060,7 @@ The map read is `getOrThrow`, not a `lookup` with a default: `store.blocks[r]` i
 `Dict` subscript in the spec, so a missing root has to reject.
 
 These suit the *linear* fork-choice walks (a single `.next` continuation): `getAncestor`
-and the `getHead` descent. A *tree* walk like `filterBlockTree`, which recurses over every
+and the `getHead` descent. A *tree* walk like `filterNodeTree`, which recurses over every
 child inside a fold, is genuine tree recursion that a linear combinator cannot express, so
 it keeps its own fuel-bounded `where` helper. The exhaustion result is a real value, never
 `panic!`, which keeps the proof path intact; the "fuel never exhausted on a well-formed

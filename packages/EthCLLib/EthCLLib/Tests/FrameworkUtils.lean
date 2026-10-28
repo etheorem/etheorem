@@ -27,6 +27,9 @@ namespace EthCLLib.Tests.FrameworkUtils
 #guard isqrt 1000000 = 1000
 #guard umax 3 5 = 5
 #guard umin 3 5 = 3
+#guard saturatingSub 5 3 = 2
+#guard saturatingSub 3 5 = 0
+#guard saturatingSub 3 3 = 0
 #guard (uint64ToBytes 258).size = 8
 #guard le8 (uint64ToBytes 258) = 258
 #guard le8 (uintToBytes (258 : UInt64)) = 258

@@ -195,6 +195,15 @@ scoped syntax (name := forkcontainerCmd)
 private def syntaxHasIdent (stx : Syntax) (n : Name) : Bool :=
   stx.find? (fun s => s.isIdent && s.getId == n) |>.isSome
 
+/-- The positions of a `@[sizzlean_progressive_gaps …]` attribute on a
+`forkcontainer`'s modifiers, or `#[]` when there is none. The attribute is its own
+syntax kind (`SizzLean.Repr.Deriving.sizzlean_progressive_gaps`), and its `[1]` child
+holds the `num+` repetition. -/
+private def progressiveGapsOf (stx : Syntax) : Array Nat :=
+  match stx.find? (·.getKind == ``SizzLean.Repr.Deriving.sizzlean_progressive_gaps) with
+  | some attr => attr[1].getArgs.filterMap (·.isNatLit?)
+  | none => #[]
+
 @[command_elab forkcontainerCmd]
 def elabForkcontainer : CommandElab := fun stx => do
   let mods   : TSyntax ``Parser.Command.declModifiers := ⟨stx[0]⟩
@@ -202,8 +211,9 @@ def elabForkcontainer : CommandElab := fun stx => do
   let fields : TSyntax ``Parser.Command.structFields := ⟨stx[4]⟩
   let (forkNs, name) ← keyFor nameId.getId
   let progressive := syntaxHasIdent mods.raw `sizzlean_progressive
+  let progressiveGaps := progressiveGapsOf mods.raw
   modifyEnv (recordCapture ·
-    { forkNs, name, kind := .container, val := fields.raw, progressive })
+    { forkNs, name, kind := .container, val := fields.raw, progressive, progressiveGaps })
   emitContainer mods nameId fields
 
 /-- `forkstruct Name <binders> where <fields>`: declare a non-SSZ structure and
@@ -263,10 +273,15 @@ def replayOne (spelled : Name) : CommandElabM Unit := do
   | .instance_ =>
     emitInstance declId ⟨cap.sig⟩ ⟨cap.val⟩
   | .container =>
-    let mods ← if cap.progressive then
-      `(declModifiers| @[sizzlean_progressive])
-    else
-      emptyMods
+    let mods ←
+      if cap.progressive && !cap.progressiveGaps.isEmpty then
+        -- Each position becomes one `num` of the attribute's `num+` repetition.
+        let gaps : Array (TSyntax `num) := cap.progressiveGaps.map Syntax.mkNatLit
+        `(declModifiers| @[sizzlean_progressive, sizzlean_progressive_gaps $gaps*])
+      else if cap.progressive then
+        `(declModifiers| @[sizzlean_progressive])
+      else
+        emptyMods
     emitContainer mods nameId ⟨cap.val⟩
   | .struct =>
     emitStruct (← emptyMods) nameId (cap.binders.getArgs.map (⟨·⟩)) ⟨cap.val⟩

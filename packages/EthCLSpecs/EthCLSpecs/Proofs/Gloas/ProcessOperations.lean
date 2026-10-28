@@ -12,7 +12,8 @@ runner every Gloas proof here pins to, they establish three facts about Gloas
 
 * `processOperations_eq_seq` equates the coordinator to the deposit assertion,
   the six progressive-list length assertions, and the six operation-family
-  folds in implementation order.
+  folds in implementation order. The attestation fold passes `parent_slot`
+  (the parent block's slot, new at v1.7.0-beta.4) to each `processAttestation`.
 * `processOperations_nonempty_deposits_error` shows that non-empty in-block
   deposits fail that assertion immediately, for any pre-state value.
 * `processOperations_run_ok_iff` characterizes success as empty deposits plus
@@ -112,8 +113,8 @@ folds, in implementation order. Handlers stay opaque and may modify state; this
 theorem does not claim that other state fields remain unchanged. -/
 @[characterizes EthCLSpecs.Gloas.processOperations]
 theorem processOperations_eq_seq :
-    ∀ (body : BeaconBlockBody),
-      processOperations (StateTransition := GloasRun) body = (do
+    ∀ (body : BeaconBlockBody) (parentSlot : Slot),
+      processOperations (StateTransition := GloasRun) body parentSlot = (do
         assert (body.deposits.size == 0)
         assert (body.proposerSlashings.size ≤ Const.maxProposerSlashings)
         assert (body.attesterSlashings.size ≤ Const.maxAttesterSlashingsElectra)
@@ -123,27 +124,27 @@ theorem processOperations_eq_seq :
         assert (body.payloadAttestations.size ≤ Const.maxPayloadAttestations)
         processOperationsForM body.proposerSlashings processProposerSlashing
         processOperationsForM body.attesterSlashings processAttesterSlashing
-        processOperationsForM body.attestations processAttestation
+        processOperationsForM body.attestations (processAttestation · parentSlot)
         processOperationsForM body.voluntaryExits processVoluntaryExit
         processOperationsForM body.blsToExecutionChanges processBlsToExecutionChange
         processOperationsForM body.payloadAttestations processPayloadAttestation) := by
-  intro body
+  intro body parentSlot
   unfold processOperations
   simp only [forIn_ops_eq_processOperationsForM, bind_pure_unit]
 
 /-- The six family loops as a single `GloasRun` action. -/
 private abbrev processOperationsLoops
-    (body : BeaconBlockBody) : GloasRun Unit := do
+    (body : BeaconBlockBody) (parentSlot : Slot) : GloasRun Unit := do
   processOperationsForM body.proposerSlashings processProposerSlashing
   processOperationsForM body.attesterSlashings processAttesterSlashing
-  processOperationsForM body.attestations processAttestation
+  processOperationsForM body.attestations (processAttestation · parentSlot)
   processOperationsForM body.voluntaryExits processVoluntaryExit
   processOperationsForM body.blsToExecutionChanges processBlsToExecutionChange
   processOperationsForM body.payloadAttestations processPayloadAttestation
 
 /-- After the deposit assert and the six length asserts pass, `processOperations`
 is the six loops. Each passing gate is `pure ()`, so the actions are equal. -/
-private theorem processOperations_eq_loops_of_bounds (body : BeaconBlockBody)
+private theorem processOperations_eq_loops_of_bounds (body : BeaconBlockBody) (parentSlot : Slot)
     (hDep : (body.deposits.size == 0) = true)
     (hProp : body.proposerSlashings.size ≤ maxProposerSlashings)
     (hAttSl : body.attesterSlashings.size ≤ maxAttesterSlashingsElectra)
@@ -151,7 +152,7 @@ private theorem processOperations_eq_loops_of_bounds (body : BeaconBlockBody)
     (hExit : body.voluntaryExits.size ≤ maxVoluntaryExits)
     (hBls : body.blsToExecutionChanges.size ≤ maxBlsToExecutionChanges)
     (hPay : body.payloadAttestations.size ≤ maxPayloadAttestations) :
-    (processOperations (StateTransition := GloasRun) body) = processOperationsLoops body := by
+    (processOperations (StateTransition := GloasRun) body parentSlot) = processOperationsLoops body parentSlot := by
   rw [processOperations_eq_seq]
   simp [hDep, hProp, hAttSl, hAtt, hExit, hBls, hPay, processOperationsLoops]
 
@@ -166,12 +167,12 @@ to have reached none), `StateT` over `Except` returns the error alone. So the
 statement no longer mentions a post-state, and the same silence covers a later
 handler failure, which is why no companion theorem is owed for those. -/
 theorem processOperations_nonempty_deposits_error :
-    ∀ (preState : BeaconState) (body : BeaconBlockBody),
+    ∀ (preState : BeaconState) (body : BeaconBlockBody) (parentSlot : Slot),
       body.deposits.size ≠ 0 →
       ∃ descr : String,
-        runPure (processOperations (StateTransition := GloasRun) body) preState
+        runPure (processOperations (StateTransition := GloasRun) body parentSlot) preState
           = .error (.assert descr) := by
-  intro preState body hne
+  intro preState body parentSlot hne
   have hfalse : (body.deposits.size == 0) = false :=
     beq_eq_false_iff_ne.2 hne
   rw [runPure_eq, processOperations_eq_seq]
@@ -198,10 +199,10 @@ private theorem keepsUncached_forM_attesterSlashings [Preset] [HasherTag] [Confi
 set_option linter.unusedSectionVars false in
 set_option linter.unusedSectionVars false in
 private theorem keepsUncached_forM_attestations [Preset] [HasherTag] [Config] [CryptoBackend]
-    (body : BeaconBlockBody) :
-    KeepsUncached (processOperationsForM body.attestations processAttestation) :=
-  keepsUncached_forM_array processAttestation
-    (fun a => keepsUncached_processAttestation a) body.attestations.val
+    (body : BeaconBlockBody) (parentSlot : Slot) :
+    KeepsUncached (processOperationsForM body.attestations (processAttestation · parentSlot)) :=
+  keepsUncached_forM_array (processAttestation · parentSlot)
+    (fun a => keepsUncached_processAttestation a parentSlot) body.attestations.val
 
 set_option linter.unusedSectionVars false in
 set_option linter.unusedSectionVars false in
@@ -238,8 +239,8 @@ reverse chains `runPure_bind_of_keepsUncached` over the six folds. This is a coo
 than complete correctness of operation processing. -/
 @[characterizes EthCLSpecs.Gloas.processOperations]
 theorem processOperations_run_ok_iff :
-    ∀ (preState postState : BeaconState) (body : BeaconBlockBody),
-      runPure (processOperations (StateTransition := GloasRun) body) preState
+    ∀ (preState postState : BeaconState) (body : BeaconBlockBody) (parentSlot : Slot),
+      runPure (processOperations (StateTransition := GloasRun) body parentSlot) preState
           = .ok ((), postState) ↔
         body.deposits.size = 0 ∧
         body.proposerSlashings.size ≤ maxProposerSlashings ∧
@@ -255,7 +256,7 @@ theorem processOperations_run_ok_iff :
           runPure (processOperationsForM body.attesterSlashings
               processAttesterSlashing) afterProposerSlashings
             = .ok ((), afterAttesterSlashings) ∧
-          runPure (processOperationsForM body.attestations processAttestation)
+          runPure (processOperationsForM body.attestations (processAttestation · parentSlot))
               afterAttesterSlashings = .ok ((), afterAttestations) ∧
           runPure (processOperationsForM body.voluntaryExits processVoluntaryExit)
               afterAttestations = .ok ((), afterVoluntaryExits) ∧
@@ -264,10 +265,10 @@ theorem processOperations_run_ok_iff :
             = .ok ((), afterBlsToExecutionChanges) ∧
           runPure (processOperationsForM body.payloadAttestations
               processPayloadAttestation) afterBlsToExecutionChanges = .ok ((), postState) := by
-  intro preState postState body
+  intro preState postState body parentSlot
   have H1 := keepsUncached_forM_proposerSlashings body
   have H2 := keepsUncached_forM_attesterSlashings body
-  have H3 := keepsUncached_forM_attestations body
+  have H3 := keepsUncached_forM_attestations body parentSlot
   have H4 := keepsUncached_forM_voluntaryExits body
   have H5 := keepsUncached_forM_blsToExecutionChanges body
   have H6 := keepsUncached_forM_payloadAttestations body
@@ -286,7 +287,7 @@ theorem processOperations_run_ok_iff :
             · by_cases hBls : body.blsToExecutionChanges.size ≤ maxBlsToExecutionChanges
               · by_cases hPay : body.payloadAttestations.size ≤ maxPayloadAttestations
                 · refine ⟨beq_iff_eq.mp hbeq0, hProp, hAttSl, hAtt, hExit, hBls, hPay, ?_⟩
-                  rw [processOperations_eq_loops_of_bounds body hbeq0 hProp hAttSl hAtt hExit hBls hPay] at hok
+                  rw [processOperations_eq_loops_of_bounds body parentSlot hbeq0 hProp hAttSl hAtt hExit hBls hPay] at hok
                   rw [run_bind] at hok
                   cases hr1 : (processOperationsForM body.proposerSlashings processProposerSlashing).run (pureState preState) with
                   | error e => rw [hr1, except_bind_error] at hok; simp [Except.map] at hok
@@ -310,14 +311,14 @@ theorem processOperations_run_ok_iff :
                         rw [runPure_eq, hr2, hu2]
                         rfl
                       rw [run_bind] at hok
-                      cases hr3 : (processOperationsForM body.attestations processAttestation).run (pureState s2.view) with
+                      cases hr3 : (processOperationsForM body.attestations (processAttestation · parentSlot)).run (pureState s2.view) with
                       | error e => rw [hr3, except_bind_error] at hok; simp [Except.map] at hok
                       | ok p3 =>
                         obtain ⟨_, s3⟩ := p3
                         have hu3 := H3 s2.view () s3 hr3
                         rw [hr3, except_bind_ok, hu3] at hok
                         dsimp only at hok
-                        have hF3 : runPure (processOperationsForM body.attestations processAttestation) s2.view = .ok ((), s3.view) := by
+                        have hF3 : runPure (processOperationsForM body.attestations (processAttestation · parentSlot)) s2.view = .ok ((), s3.view) := by
                           rw [runPure_eq, hr3, hu3]
                           rfl
                         rw [run_bind] at hok
@@ -375,7 +376,7 @@ theorem processOperations_run_ok_iff :
   · rintro ⟨hsize, hProp, hAttSl, hAtt, hExit, hBls, hPay, afterProposerSlashings,
       afterAttesterSlashings, afterAttestations, afterVoluntaryExits,
       afterBlsToExecutionChanges, hu1, hu2, hu3, hu4, hu5, hu6⟩
-    rw [processOperations_eq_loops_of_bounds body (beq_iff_eq.mpr hsize)
+    rw [processOperations_eq_loops_of_bounds body parentSlot (beq_iff_eq.mpr hsize)
       hProp hAttSl hAtt hExit hBls hPay]
     rw [runPure_bind_of_keepsUncached H1 preState]
     rw [hu1, except_bind_ok]

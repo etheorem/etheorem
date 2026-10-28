@@ -1,5 +1,6 @@
 import EthCLSpecs.Heze.Transition
 import EthCLSpecs.Heze.Committees
+import EthCLSpecs.Heze.Signing
 import EthCLLib.Spec.FiniteMap
 import EthCLLib.Spec.Engine
 
@@ -27,8 +28,12 @@ handlers are inherited verbatim; the FOCIL touch points are re-declared here:
 * `on_execution_payload_envelope` records satisfaction before storing the payload;
 * `on_inclusion_list` is the new wire handler.
 
+The inclusion-list store and its helpers (`consensus-specs/specs/heze/inclusion-list.md`) sit
+here too: `process_inclusion_list`, `get_inclusion_list_transactions`, `get_inclusion_list_bits`,
+and `is_inclusion_list_bits_inclusive`, keyed by `(slot, dependent_root)` at v1.7.0-beta.4.
+
 EIP-7805 also extends `PayloadAttributes` with `inclusion_list_transactions` and threads it
-through `notify_forkchoice_updated` (`heze/fork-choice.md:65-104`). Both belong to the
+through `notify_forkchoice_updated` (`heze/fork-choice.md:77-84`). Both belong to the
 production-side Engine-API surface, the calls a proposer drives to build its own payload.
 That surface sits outside the modeled state-transition and fork-choice scope, the boundary
 every fork keeps, so both stay unmodeled here. Only the consumption side is modeled:
@@ -40,7 +45,7 @@ Vector coverage is partial, and the split matters. The `on_execution_payload_env
 fork_choice vectors do drive `onExecutionPayloadEnvelope` and `shouldExtendPayload`, but only
 on the empty-inclusion-list, always-satisfied path they share with Gloas. The FOCIL-specific
 behavior (the discriminating satisfaction gate and `on_inclusion_list`) has no vector; the
-pinned spec text (`consensus-specs` at tag `v1.7.0-alpha.12`) is its oracle
+pinned spec text (`consensus-specs` at tag `v1.7.0-beta.4`) is its oracle
 (`IMPLEMENTATION_NOTES.md`, "Heze diff", is the catalogue). Each override mirrors its Python
 branch-for-branch, and the build-enforced pins fix the inclusion-list logic's expected
 outcomes at build time: kernel `#guard`s where the outcome is hash-free, `native_decide`
@@ -65,14 +70,25 @@ deriving instance BEq, Inhabited for ForkChoiceNode
 inherit LatestMessage
 deriving instance Inhabited for LatestMessage
 
-/-- `InclusionListStore` (`consensus-specs/specs/heze/inclusion-list.md:28-38`): the
-fork-choice node's view of the inclusion lists it has seen. The three fields:
+/-- `InclusionListEntry` (`consensus-specs/specs/heze/inclusion-list.md:33-35`, new at
+v1.7.0-beta.4): a stored signed inclusion list and whether it arrived before the
+`INCLUSION_LIST_DUE_BPS` deadline in its own slot. -/
+forkstruct InclusionListEntry where
+  signedInclusionList : SignedInclusionList
+  timely              : Bool
 
-* `inclusionLists`: every stored `InclusionList`, keyed first by its committee root, then by
-  the list's own hash-tree root (the spec's `DefaultDict[Root, Dict[Root, InclusionList]]`);
-* `inclusionListTimeliness`: per stored-list root, whether the list arrived before the
-  `INCLUSION_LIST_DUE_BPS` deadline;
-* `equivocators`: per committee root, the validators caught publishing two different lists.
+/-- `InclusionListStore` (`consensus-specs/specs/heze/inclusion-list.md:42-44`): the
+fork-choice node's view of the inclusion lists it has seen. The two fields, both keyed by
+`(slot, dependent_root)`, the slot and the shuffling dependent root its committee was drawn
+under:
+
+* `inclusionLists`: the stored entries, one per validator (the spec's
+  `defaultdict[tuple[Slot, Root], dict[ValidatorIndex, InclusionListEntry]]`);
+* `equivocators`: the validators caught publishing two different lists for the key.
+
+v1.7.0-beta.4 keys by `(slot, dependent_root)` and stores one entry per validator, with its
+timeliness inside the entry. alpha.12 keyed by the committee's root, stored lists by their own
+root, and kept the timeliness in a separate map.
 
 A `forkstruct` rather than a bare `structure`, so a later fork can `inherit` it, and so it
 carries the auto `[Preset]` / `[HasherTag]` uniformly with the containers it nests.
@@ -85,116 +101,128 @@ singleton to hang the spec's store off, so the store is modeled as a `Store` fie
 and moves with the rest of the state. Behavior is identical. It is fork-choice state, so it
 lives here, next to the handlers that drive it. -/
 forkstruct InclusionListStore (map : MapKind) [HasherTag] where
-  inclusionLists          : map Root (map Root InclusionList)
-  inclusionListTimeliness : map Root Bool
-  equivocators            : map Root (Array ValidatorIndex)
+  inclusionLists : map (Slot × Root) (map ValidatorIndex InclusionListEntry)
+  equivocators   : map (Slot × Root) (Array ValidatorIndex)
 
 section
 
 variable [Preset] [HasherTag] [Config] {map : MapKind} [FcMap map]
 
--- The store-transition monad, minus `MonadStateOf`: the inclusion-list helpers below thread the
--- (sub-)store explicitly rather than through `get`, so they need only `Monad` plus the store
--- reject to throw (`FcMap.getOrThrow`'s `missingKey`). Leaving `MonadStateOf` off lets the
--- vectorless pins run them in plain `Except StoreTransitionError`, with no dummy `Store` to
--- `.run` over. A concrete fork-choice monad (the one `fork_choice_section` opens below) still
--- satisfies these two, so the store handlers bind these helpers with `←` unchanged.
+-- The store-transition monad, minus `MonadStateOf`: the committee helper below threads the
+-- state explicitly rather than through `get`, so it needs only `Monad` plus the store reject
+-- to throw. Leaving `MonadStateOf` off lets the vectorless pins run it in plain
+-- `Except StoreTransitionError`, with no dummy `Store` to `.run` over. A concrete fork-choice
+-- monad (the one `fork_choice_section` opens below) still satisfies these two, so the store
+-- handlers bind it with `←` unchanged.
 variable {StoreTransition : Type → Type} [Monad StoreTransition]
 variable [MonadExceptOf StoreTransitionError StoreTransition]
 
-/-- The empty `InclusionListStore`: no stored lists, no timeliness, no equivocators.
-`getForkchoiceStore` seeds the folded-in `Store` field with it. The spec has no counterpart
-line: there the store is the lazily-created `get_inclusion_list_store()` singleton (see the
-`InclusionListStore` docstring above for the fold-in). Every pin below also builds from it,
-so the all-empty literal lives in one place. -/
+/-- The empty `InclusionListStore`: no stored lists, no equivocators. `getForkchoiceStore`
+seeds the folded-in `Store` field with it. The spec has no counterpart line: there the store
+is the lazily-created `get_inclusion_list_store()` singleton (see the `InclusionListStore`
+docstring above for the fold-in). Every pin below also builds from it, so the all-empty
+literal lives in one place. -/
 def InclusionListStore.empty : InclusionListStore map :=
-  { inclusionLists := FcMap.empty, inclusionListTimeliness := FcMap.empty, equivocators := FcMap.empty }
+  { inclusionLists := FcMap.empty, equivocators := FcMap.empty }
 
-/-- The inner comprehension of `get_inclusion_list_transactions`
-(`consensus-specs/specs/heze/inclusion-list.md:105-114`): over the inclusion lists stored for
-one committee key, keep those from non-equivocating validators (and, when `onlyTimely`, only
-the timely ones), gather their transactions, and deduplicate.
-
-Factored out of the accessor so the equivocator / timeliness / dedup logic is unit-checkable
-without building a `BeaconState` for the committee key, the same reason `cyclicSample` is
-factored out in `Committees`. The dedup keeps each transaction's first occurrence
-(`arrayUnion`): the spec's `list(set(transactions))` keeps each transaction once and calls
-the order irrelevant, so a deterministic representative lets `#guard` pin the result.
-`inclusion_list_timeliness` is a plain `Dict` in the spec (`inclusion-list.md:34`), so
-`timeliness[ilRoot]` raises `KeyError` on a miss: `FcMap.getOrThrow` (→ `missingKey`), throwing,
-in place of the old `lookupD false` default. The read is *conditional*: the comprehension's
-`and`/`or` short-circuit reaches `timeliness[il_root]` only for a non-equivocator's list and
-only when `only_timely` is set, so the guards below run in that exact order. Unreachable on
-the spec path either way, where `process_inclusion_list` writes every stored list and its
-timeliness entry together, so every stored `ilRoot` has an entry.
-
-Only `getInclusionListTransactions` calls it, so this would be `private`. It is not,
-because the pins that drive its throwing branches live in `EthCLSpecsTests` and Lean has
-no test-visible modifier. The alternative was leaving one pin behind in the shipped
-library for a visibility keyword's sake. -/
-def collectInclusionListTransactions (inclusionLists : map Root InclusionList)
-    (equivocators : Array ValidatorIndex) (timeliness : map Root Bool) (onlyTimely : Bool) :
-    StoreTransition (Array Transaction) := do
-  -- Gather the stored `(ilRoot, il)` entries in the map's fold order first (a pure pass);
-  -- the fold order feeds the `arrayUnion` dedup below, so it is preserved. The throwing
-  -- timeliness read then runs per entry, inside the comprehension's own guard order.
-  let entries : Array (Root × InclusionList) :=
-    FcMap.fold (fun acc ilRoot il => acc.push (ilRoot, il)) #[] inclusionLists
-  let collected ← entries.foldlM (init := (#[] : Array Transaction)) fun acc (ilRoot, il) => do
-    -- The condition is `validator_index not in store.equivocators[key] and (not only_timely
-    -- or store.inclusion_list_timeliness[il_root])`: `and`/`or` short-circuit, so the
-    -- (raising) timeliness read runs last, and only when it can decide the outcome.
-    if equivocators.contains il.validatorIndex then pure acc
-    else if !onlyTimely then pure (acc ++ il.transactions.toArray)
-    else
-      let timely ← FcMap.getOrThrow timeliness ilRoot
-      if timely then pure (acc ++ il.transactions.toArray) else pure acc
-  pure (arrayUnion #[] collected)
-
-/-- `process_inclusion_list(store, inclusion_list, is_timely)`
-(`consensus-specs/specs/heze/inclusion-list.md:57-82`): file a newly-received inclusion list,
+/-- `process_inclusion_list(store, signed_inclusion_list, timely)`
+(`consensus-specs/specs/heze/inclusion-list.md:64-85`): file a newly received inclusion list,
 or record an equivocation. Pure here (returns the updated `InclusionListStore`); the spec
-mutates in place. The three branches mirror the Python:
+mutates in place. The two branches mirror the Python:
 
-* (A) the list is from a known equivocator for this committee (`validator_index in
-  store.equivocators[key]`) → ignore it, return the store unchanged.
-* (B) we already hold a list from this validator for this committee → if the new list differs
-  from the stored one, add the validator to `equivocators[key]`; either way we have processed
-  it, so return (storing nothing new). At most one stored list per validator exists (a list is
-  filed only on branch (C), reached only when none matches), so the single `find?` match is
-  exactly the Python loop's first-and-only hit. The equivocator `push` is guarded by branch
-  (A) above, so it never duplicates.
-* (C) otherwise → store the list under its `hash_tree_root` and record its timeliness.
+* the validator already has an entry for this key → if its stored list differs from the new
+  one, add the validator to `equivocators[key]` (a set, so a repeat adds nothing); either way
+  the list is ignored;
+* otherwise → store the signed list and its timeliness under `(key, validator_index)`.
 
-`key` is the list's `inclusion_list_committee_root` (a field, no rehash). -/
-forkdef processInclusionList (store : InclusionListStore map) (inclusionList : InclusionList)
-    (isTimely : Bool) : InclusionListStore map :=
-  let key := inclusionList.inclusionListCommitteeRoot
-  let equivs := FcMap.lookupD store.equivocators key
-  -- (A) ignore inclusion lists from known equivocators for this committee
-  if equivs.contains inclusionList.validatorIndex then store
-  else
-    let stored := (FcMap.lookup store.inclusionLists key).getD FcMap.empty
-    match (FcMap.values stored).find? (fun il => il.validatorIndex == inclusionList.validatorIndex) with
-    -- (B) already hold a list from this validator: equivocate iff it differs, then stop
-    | some existing =>
-      if existing == inclusionList then store
-      else
-        { store with
-            equivocators := FcMap.insert store.equivocators key (equivs.push inclusionList.validatorIndex) }
-    -- (C) first list from this validator: store it and its timeliness
-    | none =>
-      let inclusionListRoot := htr inclusionList
-      let stored' := FcMap.insert stored inclusionListRoot inclusionList
-      { store with
-          inclusionLists := FcMap.insert store.inclusionLists key stored',
-          inclusionListTimeliness := FcMap.insert store.inclusionListTimeliness inclusionListRoot isTimely }
+The spec's `defaultdict` reads create an empty entry on a miss. Nothing observes that entry
+(every read of a missing key gets the same empty value), so the lookups default instead. -/
+forkdef processInclusionList (store : InclusionListStore map) (signed : SignedInclusionList)
+    (timely : Bool) : InclusionListStore map :=
+  let inclusionList := signed.message
+  let validatorIndex := inclusionList.validatorIndex
+  let key := (inclusionList.slot, inclusionList.dependentRoot)
+  let entries := (FcMap.lookup store.inclusionLists key).getD FcMap.empty
+  match FcMap.lookup entries validatorIndex with
+  | some storedEntry =>
+    -- Mark the validator as an equivocator if it published a different inclusion list.
+    let equivs := FcMap.lookupD store.equivocators key
+    if storedEntry.signedInclusionList.message != inclusionList && !equivs.contains validatorIndex then
+      { store with equivocators := FcMap.insert store.equivocators key (equivs.push validatorIndex) }
+    else store
+  | none =>
+    -- Store the signed inclusion list and its timeliness.
+    let entry : InclusionListEntry := { signedInclusionList := signed, timely }
+    { store with inclusionLists := FcMap.insert store.inclusionLists key (FcMap.insert entries validatorIndex entry) }
+
+/-- The stored entries for one key, as `(validator_index, entry)` pairs: the spec's
+`inclusion_lists[key].items()`. The map's fold order stands in for the dict's insertion order;
+no caller depends on it (`get_inclusion_list_transactions` deduplicates into a set, and
+`get_inclusion_list_bits` tests membership). A miss is the `defaultdict`'s empty dict. -/
+def inclusionListItems (store : InclusionListStore map) (slot : Slot) (dependentRoot : Root) :
+    Array (ValidatorIndex × InclusionListEntry) :=
+  FcMap.fold (fun acc validatorIndex entry => acc.push (validatorIndex, entry)) #[]
+    ((FcMap.lookup store.inclusionLists (slot, dependentRoot)).getD FcMap.empty)
+
+/-- Whether an item counts toward `get_inclusion_list_transactions` / `get_inclusion_list_bits`:
+its validator is not an equivocator for the key, and, when only timely lists count, its list
+arrived on time. Both spec loops skip an item on exactly these two `continue`s. -/
+def isCountedInclusionList (equivocators : Array ValidatorIndex) (onlyTimely : Bool)
+    (item : ValidatorIndex × InclusionListEntry) : Bool :=
+  !equivocators.contains item.1 && (!onlyTimely || item.2.timely)
+
+/-- The items both spec loops keep for one key: `inclusionListItems` filtered by
+`isCountedInclusionList` against the key's equivocators. Stated once, since
+`get_inclusion_list_transactions` and `get_inclusion_list_bits` run the same filter. -/
+def countedInclusionLists (store : InclusionListStore map) (slot : Slot) (dependentRoot : Root)
+    (onlyTimely : Bool) : Array (ValidatorIndex × InclusionListEntry) :=
+  let equivocators := FcMap.lookupD store.equivocators (slot, dependentRoot)
+  (inclusionListItems store slot dependentRoot).filter (isCountedInclusionList equivocators onlyTimely)
+
+/-- `get_inclusion_list_transactions(store, slot, dependent_root, only_timely=True)`
+(`consensus-specs/specs/heze/inclusion-list.md:101-121`): the unique transactions from every
+non-equivocating inclusion list stored for `(slot, dependent_root)`, optionally restricted to
+the timely ones. Pure: at v1.7.0-beta.4 each entry carries its own timeliness, so the alpha.12
+raising timeliness read is gone. The counted lists' transactions are concatenated in item
+order (the spec's `transactions.extend(...)`), then deduplicated. The dedup keeps each
+transaction's first occurrence (`arrayUnion`): the spec's `list(set(transactions))` keeps each
+transaction once and calls the order irrelevant, so a deterministic representative lets
+`#guard` pin the result. -/
+forkdef getInclusionListTransactions (store : InclusionListStore map) (slot : Slot)
+    (dependentRoot : Root) (onlyTimely : Bool := true) : Array Transaction :=
+  let transactions := (countedInclusionLists store slot dependentRoot onlyTimely).flatMap
+    (fun item => item.2.signedInclusionList.message.transactions.toArray)
+  arrayUnion #[] transactions
+
+/-- `get_inclusion_list_bits(store, committee, slot, dependent_root, only_timely=True)`
+(`consensus-specs/specs/heze/inclusion-list.md:127-150`): a bit per committee member, set when
+that member has a counted inclusion list for `(slot, dependent_root)`. The proposer and builder
+duties call it to fill `inclusion_list_bits`; no modeled path does. Pure. -/
+forkdef getInclusionListBits (store : InclusionListStore map)
+    (committee : Vector ValidatorIndex Const.inclusionListCommitteeSize) (slot : Slot)
+    (dependentRoot : Root) (onlyTimely : Bool := true) :
+    Bitvector Const.inclusionListCommitteeSize :=
+  let validatorIndices := (countedInclusionLists store slot dependentRoot onlyTimely).map (·.1)
+  (List.range Const.inclusionListCommitteeSize).foldl
+    (fun bits i => bitSet bits i (validatorIndices.contains (vget committee i))) default
+
+/-- `is_inclusion_list_bits_inclusive(store, committee, slot, dependent_root,
+inclusion_list_bits, only_timely=True)` (`consensus-specs/specs/heze/inclusion-list.md:156-171`):
+whether `inclusionListBits` sets every bit the local view sets, that is, the bits are a
+superset of `get_inclusion_list_bits`. The p2p bid rules call it; no modeled path does. Pure. -/
+forkdef isInclusionListBitsInclusive (store : InclusionListStore map)
+    (committee : Vector ValidatorIndex Const.inclusionListCommitteeSize) (slot : Slot)
+    (dependentRoot : Root) (inclusionListBits : Bitvector Const.inclusionListCommitteeSize)
+    (onlyTimely : Bool := true) : Bool :=
+  let localInclusionListBits := getInclusionListBits store committee slot dependentRoot onlyTimely
+  (List.range Const.inclusionListCommitteeSize).all fun i =>
+    !(bitGet localInclusionListBits i && !bitGet inclusionListBits i)
 
 /-- `get_inclusion_list_committee(state, slot)` (EIP-7805,
-`consensus-specs/specs/heze/beacon-chain.md:95-110`): concatenate every beacon committee for
+`consensus-specs/specs/heze/beacon-chain.md:264-277`): concatenate every beacon committee for
 `slot` in committee-index order, then take the first `INCLUSION_LIST_COMMITTEE_SIZE` members
 cyclically (`cyclicSample`, in `Heze/Committees.lean`). Relocated from the beacon-state accessors
-into this store-throwing block beside its sole caller `getInclusionListTransactions`: the spec's
+into this store-throwing block beside its caller `on_inclusion_list`: the spec's
 `indices[i % len(indices)]` raises `ZeroDivisionError` when the slot has no committee members.
 That is an uncaught fault (the reference runner catches only `AssertionError` / `IndexError`), so
 the empty case throws `.transition (.arithmetic …)` (an `uncaughtFault`, not an expected rejection)
@@ -211,35 +239,17 @@ forkdef getInclusionListCommittee (state : State) (slot : Slot) :
     throwArithmetic "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"
   pure (cyclicSample indices Const.inclusionListCommitteeSize)
 
-/-- `get_inclusion_list_transactions(store, state, slot, only_timely=True)`
-(`consensus-specs/specs/heze/inclusion-list.md:95-114`): the unique transactions from every
-valid, non-equivocating inclusion list whose committee root matches the one `state`/`slot`
-compute, optionally restricted to lists received before `INCLUSION_LIST_DUE_BPS`. Mirrors the
-Python: derive the committee, key it by `hash_tree_root`, read the `defaultdict` entries for
-that key, then run the comprehension (here `collectInclusionListTransactions`). Returns an
-`Array` for the spec's `Sequence[Transaction]`; the dedup leaves order unspecified, as the
-spec notes. -/
-forkdef getInclusionListTransactions (store : InclusionListStore map) (state : State)
-    (slot : Slot) (onlyTimely : Bool := true) : StoreTransition (Array Transaction) := do
-  let committee ← getInclusionListCommittee state slot
-  let key := htr committee
-  -- `inclusion_lists` and `equivocators` are `DefaultDict`s (inclusion-list.md:31,35): the
-  -- spec's `[key]` auto-creates an empty entry on a miss, so the defaults here are faithful.
-  let inclusionLists := (FcMap.lookup store.inclusionLists key).getD FcMap.empty
-  let equivocators := FcMap.lookupD store.equivocators key
-  collectInclusionListTransactions inclusionLists equivocators store.inclusionListTimeliness onlyTimely
-
 end
 
 /-- The Heze fork-choice store: the Gloas store plus the EIP-7805 fields. Re-declared as a
 `forkstruct` rather than an `inherit Store`, so the two `[New in Heze:EIP7805]` fields can be added.
 `payloadInclusionListSatisfaction` tracks, per beacon-block root, whether the revealed payload
-satisfied the inclusion-list constraints (`consensus-specs/specs/heze/fork-choice.md:134`);
+satisfied the inclusion-list constraints (`consensus-specs/specs/heze/fork-choice.md:133`);
 `inclusionListStore` folds in the spec's separate `InclusionListStore` (see the module docstring).
 The seventeen Gloas fields are restated verbatim. -/
 forkstruct Store (map : MapKind) [HasherTag] where
-  time                          : UInt64
-  genesisTime                   : UInt64
+  timeMs                        : UInt64
+  genesisTimeMs                 : UInt64
   justifiedCheckpoint           : Checkpoint
   finalizedCheckpoint           : Checkpoint
   unrealizedJustifiedCheckpoint : Checkpoint
@@ -255,7 +265,7 @@ forkstruct Store (map : MapKind) [HasherTag] where
   payloads                      : map Root ExecutionPayloadEnvelope
   payloadTimelinessVote         : map Root (Array (Option Bool))
   payloadDataAvailabilityVote   : map Root (Array (Option Bool))
-  -- [New in Heze:EIP7805] (consensus-specs/specs/heze/fork-choice.md:134)
+  -- [New in Heze:EIP7805] (consensus-specs/specs/heze/fork-choice.md:133)
   payloadInclusionListSatisfaction : map Root Bool
   -- [New in Heze:EIP7805] the spec's standalone `InclusionListStore`, folded in here as a field
   inclusionListStore            : InclusionListStore map
@@ -279,7 +289,7 @@ inherit fcZeroRoot
 inherit getSlotsSinceGenesis
 inherit getCurrentSlot
 inherit getCurrentStoreEpoch
-inherit timeIntoSlotMs
+inherit getTimeIntoSlotMs
 inherit bpsDeadlineMs
 inherit getParentPayloadStatus
 inherit isParentNodeFull
@@ -287,7 +297,8 @@ inherit getAncestor
 inherit isAncestor
 inherit getCheckpointBlock
 inherit getSupportedNode
-inherit getDependentRoot
+inherit computeShufflingLookaheadStartSlot computeShufflingDependentSlot
+inherit getShufflingDependentRoot
 inherit isPayloadVerified
 inherit voteCount
 inherit payloadTimeliness
@@ -295,7 +306,7 @@ inherit payloadDataAvailability
 inherit isPreviousSlotPayloadDecision
 
 /-- `is_payload_inclusion_list_satisfied(store, root)`
-(`consensus-specs/specs/heze/fork-choice.md:199-212`): whether the payload for `root`
+(`consensus-specs/specs/heze/fork-choice.md:207-220`): whether the payload for `root`
 satisfied the inclusion-list constraints and is locally available. The spec opens with
 `assert root in store.payload_inclusion_list_satisfaction`; the predicate throws that `assert`
 on a missing key (`StoreTransition Bool`), matching the spec's reject. The assert is unreachable
@@ -313,9 +324,9 @@ forkdef isPayloadInclusionListSatisfied (store : Store map) (root : Root) : Stor
   else pure satisfied
 
 /-- `should_extend_payload(store, root)` (Heze override,
-`consensus-specs/specs/heze/fork-choice.md:221-236`): the Gloas body with the one new
+`consensus-specs/specs/heze/fork-choice.md:229-244`): the Gloas body with the one new
 inclusion-list gate. After the `is_payload_verified` check, a payload that fails the
-inclusion-list constraints is not extended (`fork-choice.md:226`). The rest is Gloas verbatim.
+inclusion-list constraints is not extended (`heze/fork-choice.md:234-235`). The rest is Gloas verbatim.
 -/
 forkdef shouldExtendPayload (store : Store map) (root : Root) : StoreTransition Bool := do
   -- Mirrors the Gloas body plus the inclusion-list gate: the spec opens with
@@ -342,8 +353,7 @@ forkdef shouldExtendPayload (store : Store map) (root : Root) : StoreTransition 
       else isParentNodeFull store pb
 
 inherit getPayloadStatusTiebreaker
-inherit committeeWeight
-inherit calculateCommitteeFraction
+inherit calculateCommitteeFraction computeProposerScore
 inherit getProposerScore
 inherit getAttestationScore
 inherit isHeadWeak
@@ -351,10 +361,11 @@ inherit isParentStrong
 inherit shouldApplyProposerBoost
 inherit getWeight
 inherit getVotingSource
-inherit filterBlockTree
-inherit getFilteredBlockTree
 inherit getNodeChildren
+inherit filterNodeTree
+inherit getFilteredNodeTree
 inherit getHead
+inherit isValidDependentRoot
 inherit updateCheckpoints
 inherit updateUnrealizedCheckpoints
 inherit computePulledUpTip
@@ -366,7 +377,6 @@ inherit recordPtcVotes
 inherit onPayloadAttestationMessage
 inherit notifyPtcMessages
 inherit onBlock
-inherit verifyExecutionPayloadEnvelopeSignature
 
 -- Three answers on this fork's paths belong to something outside the vector: the EL's
 -- `is_inclusion_list_satisfied` (`heze/fork-choice.md:54-62`) and
@@ -396,47 +406,50 @@ forkdef isInclusionListSatisfied (payload : ExecutionPayload) (ilTxs : Array Tra
   ExecutionEngine.isInclusionListSatisfied (Payload := ExecutionPayload) (Tx := Transaction)
     (Requests := ExecutionRequests) payload ilTxs
 
-/-- `record_payload_inclusion_list_satisfaction(store, state, root, payload, execution_engine)`
-(`consensus-specs/specs/heze/fork-choice.md:180-193`): record whether `payload` satisfies the
+/-- `record_payload_inclusion_list_satisfaction(store, root, payload, execution_engine)`
+(`consensus-specs/specs/heze/fork-choice.md:187-201`): record whether `payload` satisfies the
 inclusion-list constraints for `root`. Pure here (returns the updated store); the spec mutates
-in place. `get_inclusion_list_store()` is `store.inclusionListStore`; the required
-transactions are read for the previous slot (`state.slot - 1`) at the default `only_timely =
-True`, and the EL answer comes from `isInclusionListSatisfied`, which reads the
-`[ExecutionEngine]` seam (the spec's `execution_engine` argument, modeled injectably). -/
-forkdef recordPayloadInclusionListSatisfaction (store : Store map) (state : State) (root : Root)
+in place. The required transactions are the timely ones stored for the previous slot
+(`store.blocks[root].slot - 1`) under the shuffling dependent root `root`'s chain fixes for that
+slot's epoch. `get_inclusion_list_store()` is `store.inclusionListStore`, and the EL answer comes
+from `isInclusionListSatisfied`, which reads the `[ExecutionEngine]` seam (the spec's
+`execution_engine` argument, modeled injectably).
+
+v1.7.0-beta.4 drops the `state` argument: the slot comes from the block in the store and the
+committee key from the dependent root, where alpha.12 recomputed the committee from the state.
+Throwing: `store.blocks[root]` raises on a miss, the `slot - 1` is a `uint64` subtraction that
+raises on a slot-0 block (an uncaught fault, so `checkedSub`), and the dependent-root walk
+reads the store. -/
+forkdef recordPayloadInclusionListSatisfaction (store : Store map) (root : Root)
     (payload : ExecutionPayload) : StoreTransition (Store map) := do
-  -- The spec reads `Slot(state.slot - 1)`, a `uint64` subtraction that raises `ValueError` on a
-  -- slot-0 state (invalidating the whole envelope). The reference runner leaves that fault
-  -- uncaught, so it is `checkedSub`, the same operator `balanceAfterWithdrawals` reads its
-  -- underflow through. The reject arrives as `.transition (.arithmetic …)`, an `uncaughtFault`
-  -- rather than a caught `.assert` or a silent empty set.
-  let stateSlot := sszGet state slot
-  let prevSlot ← checkedSub stateSlot 1 "record_payload_inclusion_list_satisfaction: Slot(state.slot - 1)"
-  let ilTxs ← getInclusionListTransactions store.inclusionListStore state prevSlot
+  let block ← FcMap.getOrThrow store.blocks root
+  let slot ← checkedSub block.slot 1 "record_payload_inclusion_list_satisfaction: store.blocks[root].slot - 1"
+  let dependentRoot ← getShufflingDependentRoot store root (computeEpochAtSlot slot)
+  let ilTxs := getInclusionListTransactions store.inclusionListStore slot dependentRoot (onlyTimely := true)
   let satisfied := isInclusionListSatisfied payload ilTxs
   pure { store with
       payloadInclusionListSatisfaction := FcMap.insert store.payloadInclusionListSatisfaction root satisfied }
 
 /-- `on_execution_payload_envelope` (Heze override,
-`consensus-specs/specs/heze/fork-choice.md:273-300`): the Gloas body with one added step,
+`consensus-specs/specs/heze/fork-choice.md:317-344`): the Gloas body with one added step,
 `record_payload_inclusion_list_satisfaction` is called on the verified envelope *before* the
-payload is stored (`fork-choice.md:295`), so `should_extend_payload` can later read the
-recorded answer. `state` is the pre-verify `block_states[root]`, as in the spec; the warm
-state from `verify_execution_payload_envelope` is kept only for `blockStates`. -/
+payload is stored, so `should_extend_payload` can later read the recorded answer. `state` is the
+pre-verify `block_states[root]`, as in the spec; the warm state from
+`verify_execution_payload_envelope` is kept only for `blockStates`. -/
 forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) : StoreTransition Unit := do
   let store ← get
   let envelope := signedEnv.message
   let state ← FcMap.getOrAssert store.blockStates envelope.beaconBlockRoot
     "envelope.beacon_block_root in store.block_states"
-  -- `assert is_data_available(envelope.beacon_block_root)` (`heze/fork-choice.md:285`),
-  -- inherited from Gloas at the same position.
+  -- `assert is_data_available(envelope.beacon_block_root)`, inherited from Gloas at the same
+  -- position.
   assert (isDataAvailable envelope.beaconBlockRoot)
 
   match verifyExecutionPayloadEnvelope state signedEnv with
   | .error e => throw e
   | .ok warm =>
     -- [New in Heze:EIP7805] record whether the payload satisfies the inclusion-list constraints
-    let store ← recordPayloadInclusionListSatisfaction store state envelope.beaconBlockRoot envelope.payload
+    let store ← recordPayloadInclusionListSatisfaction store envelope.beaconBlockRoot envelope.payload
     -- INVARIANT: `payloads[root]` and `payloadInclusionListSatisfaction[root]` are written
     -- together here (the satisfaction key via `recordPayloadInclusionListSatisfaction` just
     -- above). Keep it that way: `isPayloadInclusionListSatisfied` opens with the spec's
@@ -456,14 +469,14 @@ inherit onAttestation
 inherit onAttesterSlashing
 
 /-- `get_forkchoice_store(anchor_state, anchor_block)` (Heze override,
-`consensus-specs/specs/heze/fork-choice.md:140-166`): the Gloas anchor store with the two
+`consensus-specs/specs/heze/fork-choice.md:139-166`): the Gloas anchor store with the two
 `[New in Heze:EIP7805]` fields seeded empty: `payloadInclusionListSatisfaction` as an empty
-map (`fork-choice.md:165`) and `inclusionListStore` as the empty `InclusionListStore` (no
-spec counterpart; the spec's store is a process-lifetime singleton, folded into `Store` here,
-see the `InclusionListStore` docstring). The rest is Gloas verbatim, including the opening
-`assert anchor_block.state_root == hash_tree_root(anchor_state)` (`fork-choice.md:141`), so the
-seed is a throwing `Except StoreTransitionError` action rather than a total store literal.
-`pinAnchorRejects` below locks the reject branch. -/
+map and `inclusionListStore` as the empty `InclusionListStore` (no spec counterpart; the spec's
+store is a process-lifetime singleton, folded into `Store` here, see the `InclusionListStore`
+docstring). The rest is Gloas verbatim: the millisecond clock, the anchor's two PTC vote arrays
+of `[None] * PTC_SIZE`, and the opening `assert anchor_block.state_root ==
+hash_tree_root(anchor_state)`, so the seed is a throwing `Except StoreTransitionError` action
+rather than a total store literal. `pinAnchorRejects` locks the reject branch. -/
 forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
     Except StoreTransitionError (Store map) := do
   -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the boxed state hashes
@@ -472,18 +485,12 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }
-
-  -- `uint64(anchor_state.genesis_time + SLOT_DURATION_MS * anchor_state.slot // 1000)`
-  -- (`phase0/fork-choice.md:223`): both the product and the sum are checked. `anchor_state`
-  -- comes straight off the wire, so a slot at or above `2^64 / SLOT_DURATION_MS` wraps and
-  -- seeds the store with a wrong clock where pyspec errors.
-  let elapsedMs ← checkedMul Const.slotDurationMs (sszGet anchorState slot)
-    "get_forkchoice_store: SLOT_DURATION_MS * anchor_state.slot"
-  let storeTime ← checkedAdd (sszGet anchorState genesisTime) (elapsedMs / 1000)
-    "get_forkchoice_store: genesis_time + SLOT_DURATION_MS * slot // 1000"
+  let genesisTimeMs := secondsToMilliseconds (sszGet anchorState genesisTime)
+  let timeMs ← liftErr (computeTimeAtSlotMs genesisTimeMs (sszGet anchorState slot))
+  let emptyVotes : Array (Option Bool) := Array.replicate Const.ptcSize none
   pure
-    { time := storeTime
-      genesisTime := sszGet anchorState genesisTime
+    { timeMs := timeMs
+      genesisTimeMs := genesisTimeMs
       justifiedCheckpoint := cp, finalizedCheckpoint := cp
       unrealizedJustifiedCheckpoint := cp, unrealizedFinalizedCheckpoint := cp
       proposerBoostRoot := fcZeroRoot
@@ -495,32 +502,87 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
       latestMessages := FcMap.empty
       unrealizedJustifications := FcMap.insert FcMap.empty anchorRoot cp
       payloads := FcMap.empty
-      payloadTimelinessVote := FcMap.empty
-      payloadDataAvailabilityVote := FcMap.empty
+      payloadTimelinessVote := FcMap.insert FcMap.empty anchorRoot emptyVotes
+      payloadDataAvailabilityVote := FcMap.insert FcMap.empty anchorRoot emptyVotes
       -- [New in Heze:EIP7805] seeded empty in lockstep with `payloads` above (the INVARIANT
       -- note in `onExecutionPayloadEnvelope`: the two maps are always written together).
       payloadInclusionListSatisfaction := FcMap.empty
       inclusionListStore := InclusionListStore.empty }
 
-/-- `get_inclusion_list_due_ms()` (`consensus-specs/specs/heze/fork-choice.md:242-243`):
+/-- `get_inclusion_list_due_ms()` (`consensus-specs/specs/heze/fork-choice.md:250-251`):
 `get_slot_component_duration_ms(INCLUSION_LIST_DUE_BPS)`. `bpsDeadlineMs` (inherited from Gloas)
 IS `get_slot_component_duration_ms`. A fork-choice deadline helper leaning on that inherited
 fork-choice function, so it lives here with the rest of the fork-choice layer. -/
 forkdef getInclusionListDueMs : UInt64 := bpsDeadlineMs Const.inclusionListDueBps
 
-/-- `on_inclusion_list(store, signed_inclusion_list)` (the new wire handler,
-`consensus-specs/specs/heze/fork-choice.md:256-267`): on receiving an inclusion list, judge its
-timeliness against `INCLUSION_LIST_DUE_BPS` and hand it to `process_inclusion_list`. The spec's
-`seconds_to_milliseconds(store.time - store.genesis_time) % SLOT_DURATION_MS` is exactly the
-inherited `timeIntoSlotMs`. `process_inclusion_list` is total, so the spec's "an invalid call
-MUST NOT modify the store" is automatic here. The inclusion-list store rides inside `Store`, so
-`get_inclusion_list_store()` is `store.inclusionListStore`. -/
+/-- `on_inclusion_list(store, signed_inclusion_list)` (the wire handler,
+`consensus-specs/specs/heze/fork-choice.md:264-311`): validate a received inclusion list, judge
+its timeliness, and hand it to `process_inclusion_list`. `get_inclusion_list_store()` is
+`store.inclusionListStore`.
+
+v1.7.0-beta.4 adds the checks, in this order: the slot lies in the retention window (at most
+`MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS` slots back); the transactions are non-empty, each one
+non-empty, and within `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` in total; the dependent block
+is known, sits at or before the shuffling dependent slot, and is a possible dependent block
+(`is_valid_dependent_root`); the validator is in the inclusion-list committee, computed from the
+dependent block's state advanced to the lookahead start; and the signature verifies. A list is
+timely only in its own slot, before the deadline. alpha.12 ran none of the checks and judged
+timeliness against the time into the current slot alone.
+
+The state advance and the signature check are state-machine steps, so they cross the bridge
+(`runNestedStateTransition` / `evalNestedStateTransition`) and a reject arrives wrapped as
+`.transition`. Python's `and` short-circuits, so the time into the slot is read only for a list
+in the current slot. -/
 forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit := do
   let store ← get
   let inclusionList := signed.message
-  let isTimely := (← timeIntoSlotMs store) < getInclusionListDueMs
+  let currentSlot ← getCurrentSlot store
+
+  -- The slot must be within the retention window.
+  assert (inclusionList.slot ≤ currentSlot)
+  let windowEnd ← checkedAdd inclusionList.slot Const.minSlotsForInclusionListsRequests
+    "on_inclusion_list: inclusion_list.slot + MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS"
+  assert (windowEnd ≥ currentSlot)
+
+  -- The transactions must be non-empty, each non-empty, and within the byte cap. The spec sums
+  -- the lengths as a Python `int`, which cannot overflow, so the sum is over `Nat`.
+  let transactions := inclusionList.transactions.toArray
+  let transactionsSize : Nat := transactions.foldl (fun acc tx => acc + tx.size) 0
+  assert (transactionsSize > 0)
+  assert (transactionsSize ≤ Const.maxTransactionsBytesPerInclusionList.toNat)
+  assert (transactions.all (·.size > 0))
+
+  -- The dependent block must be known, no later than the shuffling dependent slot, and a
+  -- possible dependent block for the committee lookahead.
+  assert (FcMap.contains store.blocks inclusionList.dependentRoot)
+  assert (FcMap.contains store.blockStates inclusionList.dependentRoot)
+  let epoch := computeEpochAtSlot inclusionList.slot
+  let dependentSlot := computeShufflingDependentSlot epoch
+  let dependentBlock ← FcMap.getOrThrow store.blocks inclusionList.dependentRoot
+  assert (dependentBlock.slot ≤ dependentSlot)
+  assert (← isValidDependentRoot store inclusionList.dependentRoot dependentSlot)
+
+  -- The validator must be in the inclusion-list committee, computed on a copy of the dependent
+  -- block's state advanced to the lookahead start.
+  let dependentState ← FcMap.getOrThrow store.blockStates inclusionList.dependentRoot
+  let lookaheadStartSlot := computeShufflingLookaheadStartSlot epoch
+  let state ←
+    if (sszGet dependentState slot) < lookaheadStartSlot then
+      runNestedStateTransition dependentState (processSlots lookaheadStartSlot)
+    else pure dependentState
+  let committee ← getInclusionListCommittee state inclusionList.slot
+  assert (committee.toArray.contains inclusionList.validatorIndex)
+
+  -- The signature must verify.
+  assert (← evalNestedStateTransition state (isValidInclusionListSignature state signed))
+
+  -- Timely only in its own slot, before the deadline.
+  let isTimely ←
+    if inclusionList.slot == currentSlot then
+      pure (decide ((← getTimeIntoSlotMs store) < getInclusionListDueMs))
+    else pure false
   set { store with
-    inclusionListStore := processInclusionList store.inclusionListStore inclusionList isTimely }
+    inclusionListStore := processInclusionList store.inclusionListStore signed isTimely }
 
 end
 

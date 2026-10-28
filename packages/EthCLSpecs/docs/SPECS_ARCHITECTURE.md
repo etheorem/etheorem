@@ -240,7 +240,7 @@ them, plus the ePBS files.
 | 34 | `Genesis` | operations | `initializeBeaconStateFromEth1`, `isValidGenesisState` |
 | 35 | `Transition` | operations | `stateTransition`, `processSlots` (per slot calls `processSlot`, and `processEpoch` at epoch boundaries), `processSlot` (caches the state root into `stateRoots`), `processBlock` |
 | 36 | `ForkChoice/Store` | fork choice | `Store` structure plus `LatestMessage` / `FcNode` records, `getCurrentSlot`, `getAncestor`, store accessors |
-| 37 | `ForkChoice/Weight` | fork choice | `getWeight`, `getVotingSource`, `filterBlockTree` |
+| 37 | `ForkChoice/Weight` | fork choice | `getWeight`, `getVotingSource`, `filterNodeTree` |
 | 38 | `ForkChoice/Head` | fork choice | `getHead` |
 | 39 | `ForkChoice/Handlers` | fork choice | `onTick`, `onBlock` (calls `stateTransition`), `onAttestation`, `onAttesterSlashing` |
 
@@ -695,7 +695,7 @@ step-and-check harness shape comes from the conformance framework.
 ### 7.1 The read layer is monadic, like the handlers
 
 The fork-choice read layer runs in `StoreTransition`. `getHead`, `getWeight`,
-`filterBlockTree`, and their helpers take a `Store` and return a monadic action; the
+`filterNodeTree`, and their helpers take a `Store` and return a monadic action; the
 `on_*` handlers mutate the store and call the read layer on `(← get)`.
 
 ```lean
@@ -750,7 +750,7 @@ rather than relying on a heading further up the file. A loop that sits in no suc
 group records both at the loop.
 
 Every fork-choice walk currently takes the second option: `getAncestor`,
-`filterBlockTree`, and `getHead` are all `fuelLoop`-bounded, with the block count as
+`filterNodeTree`, and `getHead` are all `fuelLoop`-bounded, with the block count as
 the bound. The read layer being monadic (§7.1) is what tips it. `getHead` has a clean
 measure on paper, since `maxSlot - currentSlot` strictly decreases when child slots
 increase, but discharging it through `StoreTransition` means carrying the measure past
@@ -1043,17 +1043,17 @@ main branch, so it pins a pre-release or alpha tag, or a dev commit, while it is
 unreleased. Forks can sit at different pins at the same time.
 
 The values below are illustrative and are bumped to the current latest release at
-implementation time (the pytest harnesses pin `v1.7.0-alpha.12` at this writing);
+implementation time (the EthCLSpecs pytest harness pins `v1.7.0-beta.4` at this writing);
 the implementation also confirms the chosen tag
 actually carries the newest ported fork's vectors, falling back to a dev commit if not.
 
 ```lean
 namespace EthCLSpecs.Fulu
-def pyspecPinnedVersion : String := "v1.7.0-alpha.12"   -- latest release at writing
+def pyspecPinnedVersion : String := "v1.7.0-beta.4"   -- latest release at writing
 end EthCLSpecs.Fulu
 
 namespace EthCLSpecs.Gloas
-def pyspecPinnedVersion : String := "v1.7.0-alpha.12"   -- same tag while Gloas is unreleased
+def pyspecPinnedVersion : String := "v1.7.0-beta.4"   -- same tag while Gloas is unreleased
 end EthCLSpecs.Gloas
 ```
 

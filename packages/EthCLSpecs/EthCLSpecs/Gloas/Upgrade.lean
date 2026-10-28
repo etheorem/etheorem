@@ -1,5 +1,4 @@
 import EthCLSpecs.Gloas.Containers
-import EthCLSpecs.Fulu.Committees
 
 /-!
 # `EthCLSpecs.Gloas.Upgrade`: the Fulu → Gloas fork upgrade (load order, lifecycle)
@@ -9,14 +8,22 @@ import EthCLSpecs.Fulu.Committees
 finished Fulu state and constructs the Gloas one, so it lives in Gloas and names
 both forks. It is the `fork` vector format's entry point.
 
-Ported from the v1.7.0-alpha.12 `specs/gloas/fork.md`: common fields carry
+Ported from the v1.7.0-beta.4 `specs/gloas/fork.md`: common fields carry
 across through the per-container `cv*` converters below, since a Gloas component
 container is this fork's own replayed copy and so a distinct type from Fulu's;
 the fork version bumps (`previous := pre.fork.current`,
 `current := GLOAS_FORK_VERSION`, `epoch := get_current_epoch(pre)`);
-`latest_block_hash` comes from the dropped payload header's block hash; and the
-ePBS fields initialize to their fork-transition values (`execution_payload_availability`
-all-ones, `builder_pending_payments` a vector of empties, the rest empty/zero).
+`latest_block_hash` comes from the dropped payload header's block hash; the cached
+`latest_execution_payload_bid` is a self-build bid for the pre-state's head (its parent
+hash and root, block hash, RANDAO, gas limit, and slot); and the other ePBS fields
+initialize to their fork-transition values (`execution_payload_availability` all-ones,
+`builder_pending_payments` a vector of empties, the rest empty/zero).
+
+The spec then sets `post.ptc_window = initialize_ptc_window(post)` and runs
+`onboard_builders_from_pending_deposits(post)`. Both read and write the Gloas state, so they
+are the Gloas state-side step `completeUpgradeToGloas` (`Gloas/Operations.lean`), which the
+runner applies to the state built here. Until then `ptc_window` holds the spec's empty
+`PayloadTimelinessCommitteeWindow()`, all zeros.
 -/
 
 set_option autoImplicit false
@@ -33,45 +40,6 @@ namespace EthCLSpecs.Gloas
 -- conversions below run under a single `[Preset]` binder with the preset still
 -- symbolic. Nothing else in Gloas opens it.
 open scoped Downgrade
-
-/-- `compute_ptc(state, slot)` evaluated over the Fulu pre-state at the fork
-boundary: the seed mixes `DOMAIN_PTC_ATTESTER`, the candidate set is every beacon
-committee for the slot concatenated in order, and the payload-timeliness committee
-is the unshuffled balance-weighted selection of `PTC_SIZE` of them. The committee
-machinery is Fulu's (the pre-state is a Fulu state), so the helpers are called
-directly rather than inherited. A slot with no committee members rejects through
-`compute_balance_weighted_selection`'s `assert total > 0`, as `Gloas.computePtc` does. -/
-def computePtcFromFulu [Preset] [HasherTag] (state : Fulu.State) (slot : Slot) :
-    Except StateTransitionError (Vector ValidatorIndex Const.ptcSize) := do
-  let epoch := Fulu.computeEpochAtSlot slot
-  let seed := sha ((Fulu.getSeed state epoch Const.domainPtcAttester) ++ uint64ToBytes slot)
-  let committeesPerSlot := Fulu.getCommitteeCountPerSlot state epoch
-  let indices := (Array.range committeesPerSlot).foldl
-    (fun acc i => acc ++ Fulu.getBeaconCommittee state slot i) #[]
-  let sel ← Fulu.computeBalanceWeightedSelection state indices seed Const.ptcSize false
-  return Vector.ofFn (fun i : Fin Const.ptcSize => sel[i.val]!)
-
-/-- `initialize_ptc_window(pre)`, entry by entry: the cached PTC window seeding the
-Gloas state. The first `SLOTS_PER_EPOCH` slots (the empty previous epoch) hold zeroed
-committees; the next `(1 + MIN_SEED_LOOKAHEAD)` epochs hold `compute_ptc` for each
-slot. `MIN_SEED_LOOKAHEAD` is `1`, so the window is `3 * SLOTS_PER_EPOCH` long,
-matching the `ptcWindow` field's declared length.
-
-Each entry is the `Except` its `compute_ptc` returns, since that call can reject.
-`upgradeToGloas` sequences the entries in index order (`Vector.mapM id`), so the first
-rejecting slot surfaces. That ordering matches the spec's list comprehension. -/
-def initializePtcWindow [Preset] [HasherTag] (state : Fulu.State) :
-    Vector (Except StateTransitionError (Vector ValidatorIndex Const.ptcSize))
-      (3 * Const.slotsPerEpoch) :=
-  let currentEpoch := Fulu.currentEpochOf state
-  let emptyCommittee : Vector ValidatorIndex Const.ptcSize := Vector.replicate Const.ptcSize 0
-  Vector.ofFn fun i : Fin (3 * Const.slotsPerEpoch) =>
-    if i.val < Const.slotsPerEpoch then pure emptyCommittee
-    else
-      let j := i.val - Const.slotsPerEpoch
-      let epoch := currentEpoch + UInt64.ofNat (j / Const.slotsPerEpoch)
-      let startSlot := Fulu.computeStartSlotAtEpoch epoch
-      computePtcFromFulu state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch))
 
 /-! ## Component-container conversion at the fork boundary
 
@@ -109,16 +77,13 @@ private def cvPendingConsolidation [Preset] (v : Fulu.PendingConsolidation) : Pe
 /-- The fork upgrade `upgrade_to_gloas(pre)`: builds the Gloas state from a finished
 Fulu one. `gloasForkVersion` is the config's `GLOAS_FORK_VERSION`
 (`0x07000001` minimal, `0x07000000` mainnet), passed in by the runner since the
-fork version is a config value, not a preset one. The builder onboarding step
-(`onboard_builders_from_pending_deposits`) runs after this in the runner, since it
-needs the Gloas builder-registry helpers. Rejects when `initialize_ptc_window` does
-(a slot with no committee members, through `compute_ptc`). -/
+fork version is a config value, not a preset one. The two closing steps (the PTC window
+and the builder onboarding) run after this through `completeUpgradeToGloas`, since they
+need the Gloas state-side helpers. -/
 def upgradeToGloas [Preset] [HasherTag] (gloasForkVersion : Version) (pre : Fulu.BeaconState) :
-    Except StateTransitionError Gloas.BeaconState := do
+    Gloas.BeaconState :=
   let epoch : Epoch := pre.slot / UInt64.ofNat Const.slotsPerEpoch
-  let ptcWindow ← (initializePtcWindow (SSZ.CachedBox HasherTag.H pre)).mapM id
-  return {
-    genesisTime                   := pre.genesisTime
+  { genesisTime                   := pre.genesisTime
     genesisValidatorsRoot         := pre.genesisValidatorsRoot
     slot                          := pre.slot
     forkData                      :=
@@ -145,11 +110,21 @@ def upgradeToGloas [Preset] [HasherTag] (gloasForkVersion : Version) (pre : Fulu
     inactivityScores              := ⟨pre.inactivityScores.val⟩
     currentSyncCommittee          := cvSyncCommittee pre.currentSyncCommittee
     nextSyncCommittee             := cvSyncCommittee pre.nextSyncCommittee
+    -- The self-build bid for the pre-state's head (fields in the spec's order; the value,
+    -- execution payment, fee recipient, and commitments start empty).
     latestExecutionPayloadBid     :=
-      { (default : Gloas.ExecutionPayloadBid) with
-          blockHash             := pre.latestExecutionPayloadHeader.blockHash
-          gasLimit              := pre.latestExecutionPayloadHeader.gasLimit
-          executionRequestsRoot := htr (default : Gloas.ExecutionRequests) }
+      { parentBlockHash       := pre.latestExecutionPayloadHeader.parentHash
+        parentBlockRoot       := pre.latestBlockHeader.parentRoot
+        blockHash             := pre.latestExecutionPayloadHeader.blockHash
+        prevRandao            := pre.latestExecutionPayloadHeader.prevRandao
+        feeRecipient          := Vector.replicate 20 0
+        gasLimit              := pre.latestExecutionPayloadHeader.gasLimit
+        builderIndex          := Const.builderIndexSelfBuild
+        slot                  := pre.latestBlockHeader.slot
+        value                 := 0
+        executionPayment      := 0
+        blobKzgCommitments    := default
+        executionRequestsRoot := htr (default : Gloas.ExecutionRequests) }
     nextWithdrawalIndex           := pre.nextWithdrawalIndex
     nextWithdrawalValidatorIndex  := pre.nextWithdrawalValidatorIndex
     historicalSummaries           := pre.historicalSummaries.mapCap cvHistoricalSummary
@@ -170,6 +145,7 @@ def upgradeToGloas [Preset] [HasherTag] (gloasForkVersion : Version) (pre : Fulu
     builderPendingWithdrawals     := default
     latestBlockHash               := pre.latestExecutionPayloadHeader.blockHash
     payloadExpectedWithdrawals    := default
-    ptcWindow                     := ptcWindow }
+    -- `PayloadTimelinessCommitteeWindow()`: all zeros until `completeUpgradeToGloas` fills it.
+    ptcWindow                     := Vector.replicate _ (Vector.replicate _ 0) }
 
 end EthCLSpecs.Gloas

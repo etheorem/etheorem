@@ -4,15 +4,17 @@ import EthCLSpecs.Gloas.EpochProcessing
 /-!
 # `EthCLSpecs.Proofs.Gloas.GetPtc`: the `get_ptc` else-branch offset bound
 
-`EthCLSpecs.Gloas.getPtc` (`Gloas/Operations.lean:406-423`) reads the cached
+`EthCLSpecs.Gloas.getPtc` (`Gloas/Operations.lean:430-448`) reads the cached
 Payload Timeliness Committee for a slot out of the `ptcWindow` ring buffer. Its
 `if`-branch (a slot in the previous epoch) reads through `vmodGet`, already
 proof-carrying and safe by construction. Its `else`-branch computes a raw
 `UInt64` offset, `(epoch - stateEpoch + 1) * spe + slot % spe`, and reads
 `ptcWindow` at it via the total `vget`, so an out-of-range offset would not
-correspond to the intended cached committee. The docstring states this offset
-is in range only under the caller's guarantee, never checked in `getPtc`
-itself. This file proves that claim for `getPtc`'s two guarded call sites.
+correspond to the intended cached committee. Inside `getPtc` the branch's
+`MIN_SEED_LOOKAHEAD` assert bounds the offset. This file proves the bound from the
+slot relation of each of `getPtc`'s two guarded call sites, with no appeal to that
+assert. The `GLOAS_FORK_EPOCH` assert that opens `getPtc` at v1.7.0-beta.4 does not
+touch the offset, so neither bound changed.
 
 `getPtcElseOffset_lt_next_slot` covers the slot-successor guard used by
 `processPayloadAttestation`. `getPtcElseOffset_lt_same_slot` covers the

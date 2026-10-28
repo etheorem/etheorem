@@ -134,6 +134,11 @@
   "flat",
   "gloas/beacon-chain.md"
  ],
+ "BYTES_PER_FIELD_ELEMENT": [
+  "deneb",
+  "flat",
+  "deneb/beacon-chain.md"
+ ],
  "BYTES_PER_LOGS_BLOOM": [
   "bellatrix",
   "Preset",
@@ -152,7 +157,7 @@
  "CELLS_PER_EXT_BLOB": [
   "fulu",
   "Preset",
-  "presets/fulu.yaml"
+  "fulu/das-core.md"
  ],
  "CHURN_LIMIT_QUOTIENT": [
   "phase0",
@@ -225,24 +230,24 @@
   "configs/mainnet.yaml"
  ],
  "DEPOSIT_CHAIN_ID": [
-  "?",
+  "phase0",
   "Config",
-  "configs/mainnet.yaml"
+  "phase0/deposit-contract.md"
  ],
  "DEPOSIT_CONTRACT_ADDRESS": [
-  "?",
+  "phase0",
   "Config",
-  "configs/mainnet.yaml"
+  "phase0/deposit-contract.md"
  ],
  "DEPOSIT_CONTRACT_TREE_DEPTH": [
   "phase0",
   "flat",
-  "phase0/beacon-chain.md"
+  "phase0/deposit-contract.md"
  ],
  "DEPOSIT_NETWORK_ID": [
-  "?",
+  "phase0",
   "Config",
-  "configs/mainnet.yaml"
+  "phase0/deposit-contract.md"
  ],
  "DEPOSIT_REQUEST_TYPE": [
   "electra",
@@ -339,6 +344,26 @@
   "Preset",
   "phase0/beacon-chain.md"
  ],
+ "EIP8198_FORK_EPOCH": [
+  "heze",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "EIP8198_FORK_VERSION": [
+  "heze",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "EIP8321_FORK_EPOCH": [
+  "heze",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "EIP8321_FORK_VERSION": [
+  "heze",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
  "EJECTION_BALANCE": [
   "phase0",
   "Config",
@@ -407,17 +432,17 @@
  "FIELD_ELEMENTS_PER_BLOB": [
   "deneb",
   "Preset",
-  "presets/deneb.yaml"
+  "deneb/beacon-chain.md"
  ],
  "FIELD_ELEMENTS_PER_CELL": [
   "fulu",
   "Preset",
-  "presets/fulu.yaml"
+  "fulu/das-core.md"
  ],
  "FIELD_ELEMENTS_PER_EXT_BLOB": [
   "fulu",
   "Preset",
-  "presets/fulu.yaml"
+  "fulu/das-core.md"
  ],
  "FULL_EXIT_REQUEST_AMOUNT": [
   "electra",
@@ -431,6 +456,11 @@
  ],
  "FULU_FORK_VERSION": [
   "fulu",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
+ "GAS_LIMIT_SCHEDULE": [
+  "?",
   "Config",
   "configs/mainnet.yaml"
  ],
@@ -609,11 +639,6 @@
   "Preset",
   "gloas/beacon-chain.md"
  ],
- "MAX_BYTES_PER_INCLUSION_LIST": [
-  "heze",
-  "Config",
-  "configs/mainnet.yaml"
- ],
  "MAX_BYTES_PER_TRANSACTION": [
   "bellatrix",
   "Preset",
@@ -628,11 +653,6 @@
   "electra",
   "Preset",
   "electra/beacon-chain.md"
- ],
- "MAX_DATA_COLUMN_SIDECAR_SIZE": [
-  "gloas",
-  "Preset",
-  "presets/gloas.yaml"
  ],
  "MAX_DEPOSITS": [
   "phase0",
@@ -658,11 +678,6 @@
   "bellatrix",
   "Preset",
   "bellatrix/beacon-chain.md"
- ],
- "MAX_PARTIAL_DATA_COLUMN_SIDECAR_SIZE": [
-  "gloas",
-  "Preset",
-  "presets/gloas.yaml"
  ],
  "MAX_PAYLOAD_ATTESTATIONS": [
   "gloas",
@@ -749,6 +764,11 @@
   "Preset",
   "presets/heze.yaml"
  ],
+ "MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST": [
+  "heze",
+  "Config",
+  "configs/mainnet.yaml"
+ ],
  "MAX_TRANSACTIONS_PER_PAYLOAD": [
   "bellatrix",
   "Preset",
@@ -798,6 +818,11 @@
   "phase0",
   "Preset",
   "phase0/beacon-chain.md"
+ ],
+ "MIN_BLOB_DATA_RETENTION_MS": [
+  "heze",
+  "Config",
+  "configs/mainnet.yaml"
  ],
  "MIN_BUILDER_WITHDRAWABILITY_DELAY": [
   "gloas",
@@ -868,6 +893,11 @@
   "electra",
   "Preset",
   "electra/beacon-chain.md"
+ ],
+ "MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS": [
+  "heze",
+  "Config",
+  "configs/mainnet.yaml"
  ],
  "MIN_SYNC_COMMITTEE_PARTICIPANTS": [
   "altair",
@@ -1048,6 +1078,11 @@
   "phase0",
   "Config",
   "phase0/beacon-chain.md"
+ ],
+ "SLOT_DURATION_MS_EIP8198": [
+  "heze",
+  "Config",
+  "configs/mainnet.yaml"
  ],
  "SUBNETS_PER_NODE": [
   "?",

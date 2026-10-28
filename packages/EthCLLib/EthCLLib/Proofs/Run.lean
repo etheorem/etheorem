@@ -74,6 +74,14 @@ theorem except_bind_ok {ε α β : Type} (a : α) (f : α → Except ε β) :
 theorem except_bind_error {ε α β : Type} (e : ε) (f : α → Except ε β) :
     (Except.error e : Except ε α) >>= f = .error e := rfl
 
+/-- A bind distributes over an `if`. The do-notation `let x ← if c then a else b; rest`
+elaborates to the right-hand side, with `rest` copied into both branches. Rewriting right
+to left recovers the one bind, so a proof handles `rest` once. -/
+theorem ite_bind {m : Type → Type} [Monad m] {α β : Type} {c : Prop} [Decidable c]
+    (x y : m α) (f : α → m β) :
+    ((if c then x else y) >>= f) = (if c then x >>= f else y >>= f) := by
+  split <;> rfl
+
 /-- `ofExcept` of an `.ok a`: the run succeeds and passes the state through
 unchanged. The run-level shape the loop-body proofs read the spec's indexed reads
 and checked ops at (`liftErr` unfolds to `ofExcept` of the converted value). -/

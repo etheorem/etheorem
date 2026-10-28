@@ -22,8 +22,11 @@ shape, and emits the iso plus `rfl` proofs.
 
 A structure tagged `@[sizzlean_progressive]` is emitted as
 `progressiveContainer` with one `true` bit per field. That is the
-all-active mask. A mask with holes is written as an `SSZType`
-value; deriving has no absent field to place a `false` bit on.
+all-active mask. A mask with holes adds
+`@[sizzlean_progressive_gaps p₁ p₂ …]`: the handler places a `false`
+bit at each named position and the fields, in order, fill the rest. A
+fork that removes fields from a progressive container writes this, so
+the remaining fields keep their old mask positions (EIP-7495).
 
 ## What a deriving handler is
 
@@ -112,10 +115,53 @@ open SizzLean.Repr
 open Lean Elab Command Meta Term
 
 /-- Structures carrying this tag derive `SSZRepr` as a progressive
-container with every field active. -/
+container. Every field is active unless `@[sizzlean_progressive_gaps]`
+names the mask positions no field occupies. -/
 initialize sizzleanProgressiveAttr : TagAttribute ←
   registerTagAttribute `sizzlean_progressive
-    "Derive SSZRepr as a progressive container with every field active."
+    "Derive SSZRepr as a progressive container."
+
+/-- `@[sizzlean_progressive_gaps 8 9 10 28]`: the positions in a
+progressive container's `active_fields` mask that no field occupies. It
+is the pyspec's `active_fields(width=46, gaps=(8, 9, 10, 28))`, the
+EIP-7495 layout a fork writes when it removes fields and keeps the
+later fields at their old positions. The width is the field count plus
+the gap count, so it is not written. -/
+syntax (name := sizzlean_progressive_gaps) "sizzlean_progressive_gaps" (ppSpace num)+ : attr
+
+/-- The gap positions recorded by `@[sizzlean_progressive_gaps]`, read
+by the deriving handler. A `ParametricAttribute` stores one parameter
+per declaration, here the gap list in the order written. The handler
+checks the order and the bounds, because only it knows the field count
+and so the width. -/
+initialize sizzleanProgressiveGapsAttr : ParametricAttribute (Array Nat) ←
+  registerParametricAttribute {
+    name := `sizzlean_progressive_gaps
+    descr := "The active_fields positions of a progressive container that no field occupies."
+    -- `stx[1]` is the null node that holds the `num+` repetition.
+    getParam := fun _ stx => stx[1].getArgs.mapM fun n =>
+      match n.isNatLit? with
+      | some v => pure v
+      | none => throwErrorAt n "sizzlean_progressive_gaps: expected a numeral"
+  }
+
+/-- The `active_fields` mask of a progressive container with `fieldCount`
+fields and the given gap positions: `false` at each gap, `true`
+elsewhere. EIP-7495 rules the layout. The gaps ascend strictly, each
+lies inside the width, and the last position holds a field, so the mask
+does not end in a `0`. The width is at most 256 bits, one chunk. -/
+def progressiveMask (fieldCount : Nat) (gaps : Array Nat) : Except String (List Bool) := do
+  let width := fieldCount + gaps.size
+  for h : i in [1:gaps.size] do
+    unless gaps[i - 1]! < gaps[i] do
+      throw s!"gaps must ascend strictly, got {gaps}"
+  if gaps.any (· ≥ width) then
+    throw s!"a gap lies outside the width {width}, got {gaps}"
+  if gaps.contains (width - 1) then
+    throw s!"the last position {width - 1} is a gap, so the mask would end in a 0"
+  if width > 256 then
+    throw s!"the width {width} exceeds the 256 bits of one chunk"
+  return (List.range width).map fun pos => !gaps.contains pos
 
 /-- Render a `Nat`-valued cap / length / width expression as shape
 Syntax, preferring a concrete literal but falling back to the
@@ -333,7 +379,17 @@ private def mkInstance (declName : Name) : CommandElabM Unit := do
   let (binders, structApp, shapeExprs, fieldTypes) ←
     liftTermElabM <| getFieldShapesAndTypes declName
   let progressive := sizzleanProgressiveAttr.hasTag env declName
-  let activeExprs ← shapeExprs.mapM fun _ => `(true)
+  -- The gaps attribute only shapes a progressive mask; on a classic
+  -- container it would be silently meaningless, so reject it.
+  let gaps := (sizzleanProgressiveGapsAttr.getParam? env declName).getD #[]
+  if !progressive && !gaps.isEmpty then
+    throwError "deriving SSZRepr: '{declName}' has @[sizzlean_progressive_gaps] \
+      but not @[sizzlean_progressive]"
+  let mask ← match progressiveMask shapeExprs.size gaps with
+    | .ok m => pure m
+    | .error msg => throwError "deriving SSZRepr: '{declName}': {msg}"
+  let activeExprs : Array (TSyntax `term) ← mask.toArray.mapM fun bit =>
+    if bit then `(true) else `(false)
   let shapeStx ←
     if progressive then
       `(SizzLean.Spec.SSZType.progressiveContainer [$activeExprs,*] [$shapeExprs,*])

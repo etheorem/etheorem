@@ -1,4 +1,4 @@
-import EthCLSpecs.Fulu.Time
+import EthCLSpecs.Fulu.BlobParameters
 
 /-!
 # `EthCLSpecs.Fulu.Signing`: the domain accessor (load order row 21)

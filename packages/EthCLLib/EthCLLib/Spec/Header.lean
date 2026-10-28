@@ -202,7 +202,7 @@ macro_rules
 /-! ## `setOrAppendState`: the spec's `set_or_append_list` on a state field -/
 
 /-- `setOrAppendState f i v`: the spec's `set_or_append_list(state.f, i, v)`
-(`altair/beacon-chain.md:253-257`). When `i` is the length of the list it appends, through
+(`altair/beacon-chain.md:308-316`). When `i` is the length of the list it appends, through
 `appendState`, so a full list raises `.listFull`. When `i` is inside the list it overwrites
 entry `i`. Past the end, the spec's `list[index] = value` raises `IndexError`, which becomes
 the `.outOfBounds` reject through `liftErr`. `i` is a `Nat`. `v` is bound once, before the

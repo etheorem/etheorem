@@ -139,7 +139,7 @@ over-length read. Same shape as `sszGetIdx`, on a `Bitlist` or a `ProgressiveBit
 
 /-- `sszGetIdx` for a plain `Array`: element `i`, or the typed reject `outOfBounds i size`. The
 monadic safe read for a spec `list[i]` over a non-SSZ `Array`, e.g. a fork-choice `Store` value
-such as `block_timeliness`'s `list[boolean]` (`gloas/fork-choice.md:503,960`), where `[i]!` /
+such as `block_timeliness`'s `list[boolean]` (`gloas/fork-choice.md:554,1022`), where `[i]!` /
 `?.getD` would mask an over-length read as a silent default. Same shape as `sszGetIdx`, on the
 `Array`'s own `[i]?`. -/
 @[inline] def arrGetIdx {α : Type} {m : Type → Type u} {E : Type} [Monad m]

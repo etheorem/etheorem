@@ -75,6 +75,9 @@ private def buildRequest (fields : Array String) : IO CaseRequest := do
   -- Optional 10th field: `execution_valid` for `operations/execution_payload` (the
   -- mocked EL answer); absent ⇒ `true`.
   let executionValid := (fields[9]?.getD "1") == "1"
+  -- Optional 11th field: `parent_slot` for `operations/attestation` from Gloas; `-` or
+  -- absent ⇒ `none`.
+  let parentSlot := (fields[10]?.bind dashToNone).map (·.toNat!)
 
   let mut inputs : Array ByteArray := #[]
   for p in inputPaths do
@@ -82,7 +85,7 @@ private def buildRequest (fields : Array String) : IO CaseRequest := do
 
   return {
     runner, handler, pre, post, inputs,
-    caseMeta := { blsSetting, blocksCount, forkEpoch, forkBlock, executionValid }
+    caseMeta := { blsSetting, blocksCount, forkEpoch, forkBlock, executionValid, parentSlot }
   }
 
 /-- One hex digit's value (`0` for a non-digit, the caller controls the input). -/
@@ -165,6 +168,15 @@ private def handleForkChoice (iface : ForkInterface) (fields : Array String) : I
       | "boost"             => steps := steps.push (.checkBoost (hexToBytes parts[1]!))
       | "time"              => steps := steps.push (.checkTime parts[1]!.toNat!)
       | "genesis_time"      => steps := steps.push (.checkGenesisTime parts[1]!.toNat!)
+      | "viable_for_head"   =>
+        -- One `root:weight:status` token per leaf, comma-joined (`status` is `-` before Gloas);
+        -- an empty list arrives as no second token.
+        let tokens := if parts.size > 1 then (parts[1]!.splitOn ",").toArray else #[]
+        let leaves := tokens.map fun (t : String) =>
+          let f := (t.splitOn ":").toArray
+          let status := if f[2]! == "-" then none else some f[2]!.toNat!
+          (hexToBytes f[0]!, f[1]!.toNat!, status)
+        steps := steps.push (.checkViableForHead leaves)
       | "unsupported"       =>
         -- `harness.py` passes the specific descriptor (`should_override_forkchoice_update`, or an
         -- unrecognized step key like `on_inclusion_list`), so the xfail reason is accurate.
@@ -201,12 +213,33 @@ private def handleForkChoice (iface : ForkInterface) (fields : Array String) : I
     | .outOfScope => return s!"fail\tskip\t{detail}"
     | _           => return s!"fail\tbug\t{detail}"
 
-/-- Process one request line into a result line, against a given fork's interface.
-Exceptions become a `fail ⇥ bug` result so a single bad case never crashes the
-loop. -/
-private def handleLine (iface : ForkInterface) (line : String) : IO String := do
+/-- Split a request's trailing `cfg=KEY:VALUE,...` field (`cfg=-` for none) off the
+positional fields and parse it into the vector's config overrides. A request with no `cfg=`
+field carries no overrides. -/
+private def splitConfigOverrides (fields : Array String) : Array String × ConfigOverrides :=
+  match fields.back? with
+  | some last =>
+    if last.startsWith "cfg=" then
+      let body := (last.drop 4).toString
+      let pairs : ConfigOverrides :=
+        if body == "-" || body.isEmpty then #[]
+        else (body.splitOn ",").toArray.map fun kv =>
+          let kvs := (kv.splitOn ":").toArray
+          (kvs[0]!, kvs[1]!.toNat!)
+      (fields.pop, pairs)
+    else (fields, #[])
+  | none => (fields, #[])
+
+/-- Process one request line into a result line. `mkIface` builds the fork's interface at
+the case's config overrides. Exceptions, and an override the fork cannot apply, become a
+`fail ⇥ bug` result so a single bad case never crashes the loop. -/
+private def handleLine (mkIface : ConfigOverrides → Except String ForkInterface)
+    (line : String) : IO String := do
   try
-    let fields := (line.splitOn "\t").toArray
+    let (fields, overrides) := splitConfigOverrides (line.splitOn "\t").toArray
+    let iface ← match mkIface overrides with
+      | .ok i => pure i
+      | .error msg => throw (IO.userError msg)
     if fields[0]? == some "ssz_static" then
       handleSszStatic iface fields
     else if fields[0]? == some "fork_choice" then
@@ -220,8 +253,9 @@ private def handleLine (iface : ForkInterface) (line : String) : IO String := do
     return s!"fail\tbug\t{reason}"
 
 /-- The request/result loop at one fork's interface. Reads a line, emits a
-result, flushes, repeats; the empty line / EOF ends it. -/
-partial def serve (iface : ForkInterface) : IO UInt32 := do
+result, flushes, repeats; the empty line / EOF ends it. `mkIface` builds the interface
+at each case's config overrides. -/
+partial def serve (mkIface : ConfigOverrides → Except String ForkInterface) : IO UInt32 := do
   let stdin ← IO.getStdin
   let stdout ← IO.getStdout
   let rec loop : IO UInt32 := do
@@ -230,7 +264,7 @@ partial def serve (iface : ForkInterface) : IO UInt32 := do
     let line := ((← stdin.getLine).dropEndWhile (fun c => c == '\n' || c == '\r')).toString
     if line.isEmpty then
       return 0
-    let result ← handleLine iface line
+    let result ← handleLine mkIface line
     stdout.putStrLn result
     stdout.flush
     loop
@@ -263,6 +297,24 @@ def forkInterface? (forkName : String) : Option ForkInterface :=
   | _,       "mainnet" => EthCLSpecs.Fulu.Interface.fuluInterfaceMainnet
   | _,       _         => EthCLSpecs.Fulu.Interface.fuluInterface
 
+/-- Build a fork's interface at a preset with a vector's config overrides applied. The
+names are already validated (`serveKnown`), so the defaults here are unreachable. -/
+def interfaceWith (forkName preset : String) (overrides : ConfigOverrides) :
+    Except String ForkInterface :=
+  match forkName, preset with
+  | "gloas", "mainnet" => EthCLSpecs.Gloas.Interface.gloasInterfaceWith
+      EthCLSpecs.Gloas.mainnet EthCLSpecs.Gloas.mainnetConfig EthCLSpecs.Gloas.gloasForkVersionMainnet overrides
+  | "gloas", _         => EthCLSpecs.Gloas.Interface.gloasInterfaceWith
+      EthCLSpecs.Gloas.minimal EthCLSpecs.Gloas.minimalConfig EthCLSpecs.Gloas.gloasForkVersionMinimal overrides
+  | "heze",  "mainnet" => EthCLSpecs.Heze.Interface.hezeInterfaceWith
+      EthCLSpecs.Heze.mainnet EthCLSpecs.Heze.mainnetConfig EthCLSpecs.Heze.hezeForkVersionMainnet overrides
+  | "heze",  _         => EthCLSpecs.Heze.Interface.hezeInterfaceWith
+      EthCLSpecs.Heze.minimal EthCLSpecs.Heze.minimalConfig EthCLSpecs.Heze.hezeForkVersionMinimal overrides
+  | _,       "mainnet" => EthCLSpecs.Fulu.Interface.fuluInterfaceWith
+      EthCLSpecs.Fulu.mainnet EthCLSpecs.Fulu.mainnetConfig overrides
+  | _,       _         => EthCLSpecs.Fulu.Interface.fuluInterfaceWith
+      EthCLSpecs.Fulu.minimal EthCLSpecs.Fulu.minimalConfig overrides
+
 /-- Serve at a named fork/preset, erroring on the names `pickInterface` would silently
 default. An unknown fork or preset here is a typo'd invocation (the pytest harness passes
 exact names), and silently decoding another fork's SSZ shows up as a wall of opaque decode
@@ -273,7 +325,7 @@ def serveKnown (forkName preset : String) : IO UInt32 := do
   else if preset != "minimal" && preset != "mainnet" then
     IO.eprintln s!"unknown preset: {preset} (expected minimal / mainnet)"; return 2
   else
-    serve (pickInterface forkName preset)
+    serve (interfaceWith forkName preset)
 
 end EthCLSpecs.PySpecTests
 
@@ -306,7 +358,7 @@ def main (args : List String) : IO UInt32 := do
       | .error e => IO.eprintln s!"decode failed: {repr e}"; return 1
   | [forkName, preset] => EthCLSpecs.PySpecTests.serveKnown forkName preset
   | [forkName]         => EthCLSpecs.PySpecTests.serveKnown forkName "minimal"
-  | []                 => EthCLSpecs.PySpecTests.serve EthCLSpecs.Fulu.Interface.fuluInterface
+  | []                 => EthCLSpecs.PySpecTests.serve (EthCLSpecs.PySpecTests.interfaceWith "fulu" "minimal")
   | _ =>
     IO.eprintln "usage: pyspec_server [fork [preset]] | pyspec_server stateroot [fork] <path>"
     return 2

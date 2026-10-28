@@ -220,14 +220,16 @@ for fuzzing against an external oracle.
 (`merkleize_progressive`, `mix_in_active_fields`). They are outside
 `BasicSupported`, so the central theorems stay on the classic subset.
 `@[sizzlean_progressive]` makes `deriving SSZRepr` emit an all-active
-progressive container. Masks with holes are `SSZType` values written
-by hand.
+progressive container. `@[sizzlean_progressive_gaps p₁ p₂ …]` names the
+mask positions no field occupies, the pyspec's `active_fields(width=…,
+gaps=…)`. The Heze `BeaconState` and `BeaconBlockBody` use it to drop
+fields while the later fields keep their Gloas positions (EIP-8015).
 
 **Still absent.** `Union`, legacy `StableContainer[N]` / `Profile`, and
 `CompatibleUnion` (EIP-8016). The `ssz_generic` compatible-union
 handler is not collected. The `profile%` macro in §8 stays unbuilt:
-the all-active Gloas-shaped containers are ordinary structures plus
-the attribute above.
+the Gloas- and Heze-shaped containers are ordinary structures plus
+the attributes above.
 
 ### 3.2 Interpretation: from descriptions to Lean types
 

@@ -112,8 +112,9 @@ choice, and the SSZ containers declared in-spec, including Fulu's
 `BeaconState` fields plus the `Builder` / `ExecutionPayloadBid` types,
 and Heze's EIP-7805 FOCIL inclusion-list layer).
 Pyspec pinned at consensus-spec-tests
-[v1.7.0-alpha.11](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.11)
-in the pytest harnesses. The universal proof set
+[v1.7.0-beta.4](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-beta.4)
+in the EthCLSpecs pytest harness; the SizzLean `ssz_generic` harness stays at `v1.7.0-alpha.13`
+(see Coverage below). The universal proof set
 (`decode_encode`, `serialize_injective`, `encode_size_le_max`
 over `SSZType.Supported`) and the AVX-512 SIMD inner loop for
 `sha256BatchCombine` remain as planned follow-ups; see
@@ -318,7 +319,7 @@ just sizzlean-pyspec-full    # every in-scope wire-format vector
 ### Coverage
 
 Pinned at consensus-spec-tests
-[v1.7.0-alpha.11](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.11),
+[v1.7.0-beta.4](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-beta.4),
 except `ssz_generic`, which is frozen at
 [v1.7.0-alpha.13](https://github.com/ethereum/consensus-spec-tests/releases/tag/v1.7.0-alpha.13).
 That is the last release carrying those vectors: consensus-specs removed the SSZ
@@ -353,7 +354,7 @@ package stands.
 <!-- proof-coverage:begin -->
 | Package | What a proof covers here | Where it stands |
 | --- | --- | --- |
-| `EthCLSpecs` | the spec functions the fork bodies declare | 18 characterized, 56 touched, of 585 |
+| `EthCLSpecs` | the spec functions the fork bodies declare | 18 characterized, 57 touched, of 625 |
 | `SizzLean` | SSZ properties over the whole `SSZType` universe, gated by a predicate | 5 of 5 properties, over 15 admitted arms; none open |
 | `LeanSha256`, `LeanHazmat*` | nothing to cover: `@[extern]` bindings, and a spec side pinned by the NIST CAVP vectors | 3 named equivalence axioms: `sha256Hash_eq_spec`, `sha256Combine_eq_spec`, `sha256BatchCombine_eq_spec` |
 | `LeanPoseidon` | `permute_eq_permuteRef`, in the standalone `LeanPoseidonProofs` package | outside this run: it pins mathlib of its own |

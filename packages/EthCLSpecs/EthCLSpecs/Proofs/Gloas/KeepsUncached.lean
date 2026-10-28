@@ -62,7 +62,8 @@ open EthCLLib.Proofs (pureState KeepsUncached ReturnsUncached KeepsUncachedFrom
   keepsUncachedFrom_forIn_array_inv
   run_bind run_pure except_bind_ok except_bind_error
   run_ofExcept_ok run_ofExcept_error run_liftErr_of_ok run_liftErr_of_error
-  run_sszGetIdx_some run_sszGetIdx_none)
+  run_sszGetIdx_some run_sszGetIdx_none keepsUncached_sszGetIdx run_bind_inv ite_bind
+  pureState_forIn_range_id)
 
 open SizzLean.Proofs (view_uncachedBox)
 open SizzLean.Cache
@@ -184,7 +185,7 @@ theorem returnsUncached_increaseBalance (state : BeaconState) (i : ValidatorInde
       subst h1b
       exact ⟨⟨_, rfl⟩, rfl⟩
 
-/-- `decreaseBalance`, at its Gloas copy: the same shape, with the clamped
+/-- `decreaseBalance`, at its Gloas copy: the same shape, with the saturating
 difference written. -/
 theorem returnsUncached_decreaseBalance (state : BeaconState) (i : ValidatorIndex) (d : Gwei) :
     ReturnsUncached (decreaseBalance (StateTransition := GloasRun) (pureState state) i d) := by
@@ -195,7 +196,7 @@ theorem returnsUncached_decreaseBalance (state : BeaconState) (i : ValidatorInde
         | none => .error (.outOfBounds i.toNat state.balances.size)
         | some balance =>
           .ok (modBalance (pureState state) i
-            (fun _ => if d > balance then 0 else balance - d), pureState preState)) := by
+            (fun _ => EthCLLib.Spec.saturatingSub balance d), pureState preState)) := by
     unfold decreaseBalance sszGetIdx EthCLLib.Spec.IdxRead.get? EthCLLib.Spec.IdxRead.size
     simp only [view_uncachedBox]
     cases state.balances.val[i.toNat]? with
@@ -217,7 +218,9 @@ theorem returnsUncached_decreaseBalance (state : BeaconState) (i : ValidatorInde
 /-- `slashValidator` keeps the flavour: the reads and the exit write keep it as
 the spike lemmas do, and the two threaded states, the local write chain and the
 two balance returns, stay uncached through `ReturnsUncached` and
-`keepsUncachedFrom_set`. -/
+`keepsUncachedFrom_set`. The closing EIP-7732 loop over the payment window is a
+pure `modifyState` writer, and `pureState_forIn_range_id` carries the flavour through
+its steps. -/
 theorem keepsUncached_slashValidator (i : ValidatorIndex) :
     KeepsUncached (slashValidator (StateTransition := GloasRun) i) := by
   intro preState
@@ -238,9 +241,20 @@ theorem keepsUncached_slashValidator (i : ValidatorIndex) :
   refine keepsUncachedFrom_get_bind (fun state' => ?_)
   refine returnsUncachedFrom_bind (returnsUncached_increaseBalance _ _ _)
     (fun afterProposerReward midState₆ => ?_)
-  exact returnsUncachedFrom_bind (returnsUncached_increaseBalance _ _ _)
-    (fun afterWhistleblowerReward midState₇ =>
-      keepsUncachedFrom_set midState₇ afterWhistleblowerReward)
+  refine returnsUncachedFrom_bind (returnsUncached_increaseBalance _ _ _)
+    (fun afterWhistleblowerReward midState₇ => ?_)
+  refine keepsUncachedFrom_bind (keepsUncachedFrom_set midState₇ afterWhistleblowerReward)
+    (fun _ midState₈ => ?_)
+  -- The payment loop: each step either rebuilds the record (an uncached box) or passes
+  -- the box through, so the whole writer maps `pureState` to `pureState`.
+  refine keepsUncached_iff_forall_from.mp (keepsUncached_modify _ (fun v => ?_)) midState₈
+  -- `Id.run do … return state` is the loop followed by `pure`, which `bind_pure` drops.
+  simp only [bind_pure]
+  exact pureState_forIn_range_id _ (fun paymentIndex v => by
+    try dsimp only
+    split
+    · exact ⟨_, rfl⟩
+    · exact ⟨v, rfl⟩) _ v
 
 /-! ## The read helpers the two loop handlers call
 
@@ -276,9 +290,9 @@ theorem keepsUncached_isAttestationSameSlot (state : BeaconState) (data : EthCLS
     · exact keepsUncached_pure _
 
 theorem keepsUncached_getAttestationParticipationFlagIndices (state : BeaconState) (data : EthCLSpecs.Gloas.AttestationData)
-    (inclusionDelay : UInt64) :
+    (inclusionDelay : UInt64) (parentSlot : Slot) :
     KeepsUncached (getAttestationParticipationFlagIndices
-      (StateTransition := GloasRun) (pureState state) data inclusionDelay) := by
+      (StateTransition := GloasRun) (pureState state) data inclusionDelay parentSlot) := by
   unfold getAttestationParticipationFlagIndices
   refine keepsUncached_ite (fun _ => keepsUncached_pure _) (fun _ => ?_)
   refine keepsUncached_bind ?br (fun _ => ?_)
@@ -322,26 +336,8 @@ theorem keepsUncached_processProposerSlashing (ps : ProposerSlashing) :
             · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _) (fun _ => keepsUncachedFrom_throw _ _)
             · refine keepsUncachedFrom_bind ?g7 (fun _ midState₈ => ?_)
               · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _) (fun _ => keepsUncachedFrom_throw _ _)
-              · refine keepsUncachedFrom_ite (fun _ => ?ht) (fun _ => ?he)
-                · refine keepsUncachedFrom_ite (fun _ => ?ht1) (fun _ => ?he1)
-                  · refine keepsUncachedFrom_bind ?w1 (fun _ midState₉ => ?_)
-                    · exact keepsUncached_iff_forall_from.mp
-                        (keepsUncached_modify _ (by intro state; exact ⟨_, by rfl⟩)) _
-                    · exact keepsUncached_iff_forall_from.mp
-                        (keepsUncached_slashValidator (i := ps.signedHeader1.message.proposerIndex)) _
-                  · exact keepsUncached_iff_forall_from.mp
-                      (keepsUncached_slashValidator (i := ps.signedHeader1.message.proposerIndex)) _
-                · refine keepsUncachedFrom_ite (fun _ => ?ht2) (fun _ => ?he2)
-                  · refine keepsUncachedFrom_ite (fun _ => ?ht3) (fun _ => ?he3)
-                    · refine keepsUncachedFrom_bind ?w3 (fun _ midState₉ => ?_)
-                      · exact keepsUncached_iff_forall_from.mp
-                          (keepsUncached_modify _ (by intro state; exact ⟨_, by rfl⟩)) _
-                      · exact keepsUncached_iff_forall_from.mp
-                          (keepsUncached_slashValidator (i := ps.signedHeader1.message.proposerIndex)) _
-                    · exact keepsUncached_iff_forall_from.mp
-                        (keepsUncached_slashValidator (i := ps.signedHeader1.message.proposerIndex)) _
-                  · exact keepsUncached_iff_forall_from.mp
-                      (keepsUncached_slashValidator (i := ps.signedHeader1.message.proposerIndex)) _
+              · exact keepsUncached_iff_forall_from.mp
+                  (keepsUncached_slashValidator (i := ps.signedHeader1.message.proposerIndex)) _
 
 theorem keepsUncached_processAttesterSlashing (asl : AttesterSlashing) :
     KeepsUncached (processAttesterSlashing (StateTransition := GloasRun) asl) := by
@@ -366,8 +362,8 @@ theorem keepsUncached_processAttesterSlashing (asl : AttesterSlashing) :
         · refine keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _)
             (fun _ => keepsUncachedFrom_throw _ _)
 
-theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) :
-    KeepsUncached (EthCLSpecs.Gloas.processAttestation (StateTransition := GloasRun) att) := by
+theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (parentSlot : Slot) :
+    KeepsUncached (EthCLSpecs.Gloas.processAttestation (StateTransition := GloasRun) att parentSlot) := by
   intro preState
   unfold EthCLSpecs.Gloas.processAttestation
   apply keepsUncachedFrom_get_bind
@@ -389,7 +385,8 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) :
               · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _)
                   (fun _ => keepsUncachedFrom_throw _ _)
               · refine keepsUncachedFrom_bind (T := BeaconState) ?gf (fun flagIndices midState₈ => ?_)
-                · exact keepsUncached_iff_forall_from.mp (keepsUncached_getAttestationParticipationFlagIndices state _ _) _
+                · exact keepsUncached_iff_forall_from.mp
+                    (keepsUncached_getAttestationParticipationFlagIndices state _ _ _) _
                 · split
                   · refine keepsUncachedFrom_bind (keepsUncachedFrom_pure _ _) (fun _ midState₉ => ?_)
                     refine keepsUncachedFrom_bind ?li (fun idxs midState₁₀ => ?_)
@@ -424,6 +421,19 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) :
                               rcases b with ⟨sa, pn, ws⟩
                               rw [hu] at hrun
                               simp only [] at hrun
+                              -- The `had_no_participation` read (beta.4) comes first: a gated
+                              -- `sszGetIdx`, which passes the start box through. The do-notation
+                              -- copies the rest of the body into both read branches, and
+                              -- `ite_bind` folds the copies back into one bind.
+                              rw [← ite_bind] at hrun
+                              refine run_bind_inv (T := BeaconState) (γ := Unit) midState₁₄ (fun _ => True)
+                                (fun (acc : ForInStep (EthCLSpecs.Gloas.State × Nat × EthCLSpecs.Gloas.Gwei)) =>
+                                  ∃ accState : BeaconState, acc.value.1 = pureState accState)
+                                (fun r0 s0 h0 => ⟨keepsUncached_ite
+                                  (fun _ => keepsUncached_sszGetIdx _ _)
+                                  (fun _ => keepsUncached_sszGetIdx _ _) midState₁₄ r0 s0 h0, trivial⟩)
+                                ?hrest r s hrun
+                              intro flags0 midState₁₄ _ r s hrun
                               refine keepsUncachedFrom_forIn_range_bind_run_inv
                                 (T := BeaconState) (v := midState₁₄)
                                 (P := fun (acc : EthCLSpecs.Gloas.State × Nat × Bool) =>
@@ -530,7 +540,9 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) :
                               rw [hu]
                               refine returnsUncachedFrom_bind
                                 (returnsUncached_increaseBalance _ _ _) (fun afterIncrease midState₁₈ =>
-                                  keepsUncachedFrom_set midState₁₈ afterIncrease)
+                                  -- The payment write-back on `pureState afterIncrease` reduces to
+                                  -- `pureState` of the record update, so the value is inferred.
+                                  keepsUncachedFrom_set midState₁₈ _)
                   · exact keepsUncachedFrom_throw_bind _ _
             · exact keepsUncachedFrom_throw_bind _ _
 

@@ -179,10 +179,11 @@ jobs:
         with:
           python-version: '3.12'
       - name: Cache consensus-spec-tests archives
+        # The EthCLSpecs harness's per-preset archives, keyed on its pinned tag.
         uses: actions/cache@v4
         with:
-          path: ~/.cache/sizzlean/v1.7.0-alpha.10-*.tar.gz
-          key: consensus-spec-tests-v1.7.0-alpha.10-archives
+          path: ~/.cache/sizzlean/v1.7.0-beta.4-*.tar.gz
+          key: consensus-spec-tests-v1.7.0-beta.4-archives
       - name: Install nasm
         run: sudo apt-get install -y nasm
       - name: Verify build-time native deps

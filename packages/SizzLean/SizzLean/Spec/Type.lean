@@ -35,9 +35,10 @@ Three spec forms are still absent:
 
 `deriving SSZRepr` emits a classic `container`. A structure tagged
 `@[sizzlean_progressive]` emits `progressiveContainer` with every
-field active. A mask that contains holes is an `SSZType` value
-written by hand: a Lean structure has a field for every component,
-so it cannot describe an inactive slot.
+field active. A mask that contains holes adds
+`@[sizzlean_progressive_gaps p₁ p₂ …]`, which names the inactive
+positions: a Lean structure has a field for every active component
+only, and the attribute places the holes between them.
 -/
 
 set_option autoImplicit false

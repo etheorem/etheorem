@@ -64,7 +64,7 @@ def computeSigningRoot [HasherTag] {T : Type} [SSZRepr T] (obj : T)
   htr { objectRoot := htr obj, domain : SigningData }
 
 /-- `compute_merkle_branch_root(leaf, branch, depth, index)`
-(`phase0/beacon-chain.md:782-798`): fold `branch` into `leaf`. Level `i` mixes
+(`phase0/beacon-chain.md:1177-1189`): fold `branch` into `leaf`. Level `i` mixes
 its sibling in on the side that bit `i` of `index` picks.
 
 `routeRight` names that side. The pyspec spells the bit `index // (2**i) % 2`
@@ -90,7 +90,7 @@ def computeMerkleBranchRoot [HasherTag] (leaf : Vector UInt8 32)
   return bytesToRoot value
 
 /-- `is_valid_merkle_branch(leaf, branch, depth, index, root)`
-(`phase0/beacon-chain.md:800-812`): reject on `depth != len(branch)`, else
+(`phase0/beacon-chain.md:1195-1203`): reject on `depth != len(branch)`, else
 compare the reconstructed root. Used by `processDeposit` against
 `eth1Data.depositRoot`.
 

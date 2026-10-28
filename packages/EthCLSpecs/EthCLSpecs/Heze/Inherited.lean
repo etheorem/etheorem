@@ -86,5 +86,6 @@ forkcontainer ExecutionPayloadBid where
 inherit SignedExecutionPayloadBid
 inherit ExecutionPayloadEnvelope
 inherit SignedExecutionPayloadEnvelope
+inherit NewPayloadRequest
 
 end EthCLSpecs.Heze
