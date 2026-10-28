@@ -758,11 +758,11 @@ a step that can reject, which is the up-front proof this rule defers. The bounds
 therefore deferred rather than honest.
 
 The loops outside fork choice are bounded for their own reasons, not this one, so each
-records the reason at the loop: the queue scans in `EpochProcessing.lean` and the
-balance-weighted sampler in `Committees.lean` stop on a data-dependent guard rather
-than on a decreasing measure, and `on_tick`'s per-slot catch-up runs on a bound that is
-exact only at the pinned presets, which is why it throws on fuel-out
-(`fuelIterateM!`) instead of returning.
+records the reason at the loop: the queue scans in `EpochProcessing.lean` stop on a
+data-dependent guard rather than on a decreasing measure, and `on_tick`'s per-slot
+catch-up runs on a bound that is exact only at the pinned presets, which is why it
+throws on fuel-out (`fuelIterateM!`) instead of returning. The balance-weighted sampler
+in `Committees.lean` recurses on the spec's `uint64` counter (`termination_by 2^64 - i`).
 
 ---
 
