@@ -204,6 +204,121 @@ private def progressiveGapsOf (stx : Syntax) : Array Nat :=
   | some attr => attr[1].getArgs.filterMap (·.isNatLit?)
   | none => #[]
 
+/-! ## The lineage cross-check for progressive containers
+
+A progressive redeclaration's holes must sit where the ancestor's field block
+lost fields. Hand-written gap positions can drift from that, and nothing below
+the derive handler could tell. The check here diffs the child's field block
+against the nearest ancestor's captured block and enforces the result:
+
+* marker written and matching the diff: silent, the mask is a checked fact;
+* marker written and disagreeing: an error at the declaration;
+* marker absent: the computed gaps drive the mask, and a warning names the
+  marker the author should write.
+
+A fork whose diff is not expressible as gaps (a replaced or an inserted field,
+`Fulu`'s payload header becoming `Gloas`'s bid) is skipped: no mask exists to
+check, and the declaration keeps today's behaviour.
+-/
+
+/-- The field names of a `structFields` block, in declaration order. The block
+holds one repetition node whose children are the four field-binder kinds; each
+binder puts the field's own `ident` ahead of its type's, so the first ident in
+the binder is its name. The blocks this reads never carry field attributes,
+which the first-ident rule relies on. -/
+private def fieldNamesOf (fields : TSyntax ``Parser.Command.structFields) : Array Name :=
+  fields.raw.getArgs.flatMap (·.getArgs) |>.filterMap fun binder =>
+    let fieldKinds : List SyntaxNodeKind :=
+      [``Lean.Parser.Command.structSimpleBinder, ``Lean.Parser.Command.structExplicitBinder,
+        ``Lean.Parser.Command.structImplicitBinder, ``Lean.Parser.Command.structInstBinder]
+    if fieldKinds.contains binder.getKind then
+      (binder.find? fun s => s.isIdent).map (·.getId)
+    else
+      none
+
+/-- Does `n` appear in `xs` at or after `start`? Container blocks run to tens of
+fields, so the slice-and-scan is free. -/
+private def appearsFrom (xs : Array Name) (n : Name) (start : Nat) : Bool :=
+  (xs.toList.drop start).contains n
+
+/-- The parent positions `child` leaves empty, under the fork rules an
+EIP-7495 mask can express: delete anywhere, append at the end. `parent` is the
+ancestor's field names, `child` the redeclaration's.
+
+The scan walks both blocks with two cursors. Equal names consume one position
+each. A differing child name records the current parent position as a gap, but
+only when its own name appears later in the parent, the signature of a
+deletion; a name that appears nowhere later is a replacement or an insertion,
+which no mask expresses, and the scan bails. A child that runs out leaves the
+parent's remaining positions as gaps. A parent that runs out leaves the child's
+remaining names as appends. Names, not positions, are the diff unit; a rename
+inside a lineage also bails, and that is honest, since a renamed field breaks
+every inherited function that reads the old name. -/
+private def diffFieldGaps (parent child : Array Name) : Option (Array Nat) := do
+  let mut gaps : Array Nat := #[]
+  let mut j : Nat := 0
+  for i in [0:parent.size] do
+    if j < child.size then
+      if parent[i]! == child[j]! then
+        j := j + 1
+      else if appearsFrom parent child[j]! (i + 1) then
+        gaps := gaps.push i
+      else
+        -- A replacement or an insertion: no mask expresses it.
+        failure
+    else
+      -- The child ran out: the parent's remaining positions are all gaps.
+      gaps := (List.range (parent.size - i)).foldl (init := gaps) fun g k => g.push (i + k)
+  -- The parent ran out: the child's remaining names are appends.
+  return gaps
+
+/-- Carry the ancestor's mask across a redeclaration: the diff's positions are
+indices into the ancestor's *active* field list, so each maps to its mask
+position through the ancestor's own holes, and the ancestor's holes join the
+child's list, since a marker always carries every hole. Both inputs are
+ascending, and the sort merges them; the blocks run under the 256-bit mask
+cap, so the sort is free. -/
+private def accumulateGaps (parentGaps : Array Nat) (parentFieldCount : Nat)
+    (deleted : Array Nat) : Array Nat :=
+  let width := parentFieldCount + parentGaps.size
+  let actives : List Nat := (List.range width).filter fun p => !parentGaps.contains p
+  let mapped : Array Nat := deleted.filterMap fun i => actives[i]?
+  (parentGaps ++ mapped).qsort (· < ·)
+
+/-- The gap positions a `forkcontainer` redeclaration implies, diffed against
+the nearest ancestor's captured block, paired with that ancestor's fork
+namespace. `none` when no ancestor captured a container of the name (a base
+fork's declaration, or a name the fork added), the ancestor entry is not a
+container, or the diff hit a field the mask cannot express. A progressive
+ancestor's holes accumulate: the child re-states every hole, its own deletions
+mapped through the ancestor's mask. -/
+def expectedGapsFromLineage (env : Environment) (forkNs name : Name)
+    (childFields : Array Name) : Option (Name × Array Nat) :=
+  match resolveInherited env forkNs name with
+  | some cap =>
+    if cap.kind == CaptureKind.container then
+      match diffFieldGaps (fieldNamesOf ⟨cap.val⟩) childFields with
+      | none => none
+      | some deleted =>
+        if cap.progressive then
+          let parentFields := fieldNamesOf ⟨cap.val⟩
+          some (cap.forkNs, accumulateGaps cap.progressiveGaps parentFields.size deleted)
+        else
+          some (cap.forkNs, deleted)
+    else
+      none
+  | none => none
+
+/-- Render the marker a declaration should carry for the given gaps, e.g.
+`@[sizzlean_progressive, sizzlean_progressive_gaps 8 9 10 28]`; the all-active
+spelling when there are none. -/
+private def gapsMarkerString (gaps : Array Nat) : String :=
+  if gaps.isEmpty then
+    "@[sizzlean_progressive]"
+  else
+    let nums := gaps.foldl (init := "") fun acc g => s!"{acc} {g}"
+    s!"@[sizzlean_progressive, sizzlean_progressive_gaps{nums}]"
+
 @[command_elab forkcontainerCmd]
 def elabForkcontainer : CommandElab := fun stx => do
   let mods   : TSyntax ``Parser.Command.declModifiers := ⟨stx[0]⟩
@@ -211,10 +326,31 @@ def elabForkcontainer : CommandElab := fun stx => do
   let fields : TSyntax ``Parser.Command.structFields := ⟨stx[4]⟩
   let (forkNs, name) ← keyFor nameId.getId
   let progressive := syntaxHasIdent mods.raw `sizzlean_progressive
-  let progressiveGaps := progressiveGapsOf mods.raw
+  let mut progressiveGaps := progressiveGapsOf mods.raw
+  -- The lineage cross-check. A matching marker changes nothing; an absent
+  -- marker adopts the computed gaps, emits them on the structure so the derive
+  -- sees them, and asks to be written down; a disagreeing marker fails the
+  -- declaration.
+  let mut emitMods := mods
+  if progressive then
+    match expectedGapsFromLineage (← getEnv) forkNs name (fieldNamesOf fields) with
+    | some (parentFork, expected) =>
+      if progressiveGaps.isEmpty && !expected.isEmpty then
+        logWarning m!"'{forkNs}.{name}' is progressive and writes no gap marker. \
+          The lineage diff against '{parentFork}.{name}' computes gaps {toString expected}. \
+          Write {gapsMarkerString expected} so the mask is checked against the ancestor's \
+          field block."
+        progressiveGaps := expected
+        let nums : Array (TSyntax `num) := expected.map Syntax.mkNatLit
+        emitMods ← `(declModifiers| @[sizzlean_progressive, sizzlean_progressive_gaps $nums*])
+      else if progressiveGaps != expected then
+        throwError m!"'{forkNs}.{name}' declares {gapsMarkerString progressiveGaps}, but the \
+          lineage diff against '{parentFork}.{name}' computes gaps {toString expected}. \
+          Fix the marker or restate the field block so the two agree."
+    | none => pure ()
   modifyEnv (recordCapture ·
     { forkNs, name, kind := .container, val := fields.raw, progressive, progressiveGaps })
-  emitContainer mods nameId fields
+  emitContainer emitMods nameId fields
 
 /-- `forkstruct Name <binders> where <fields>`: declare a non-SSZ structure and
 capture it (with its extra binders) for per-fork replay. The binders let a struct
