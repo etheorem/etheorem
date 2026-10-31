@@ -38,7 +38,7 @@ set_option autoImplicit false
 
 namespace EthCLLib.Proofs
 
-open EthCLLib.Spec (HasherTag ErrorConv liftErr)
+open EthCLLib.Spec (HasherTag ErrorConv liftErr StateTransitionError throwArithmetic)
 open SizzLean (SSZRepr)
 open SizzLean.Cache
 
@@ -63,6 +63,16 @@ and what a proof about a rejecting path then has to say something about. Here a 
 just the error, so a theorem about one has no post-state to characterize. -/
 theorem run_throw {σ ε α : Type} (e : ε) (s : σ) :
     (throw e : StateT σ (Except ε) α).run s = .error e := rfl
+
+/-- `.run` of `throwArithmetic` at the pure runner: the fault, converted by the machine's
+own `ErrorConv` and carried alone, like `run_throw`. At the state machine
+(`ε := StateTransitionError`, identity conversion) the fault surfaces as the bare
+`.arithmetic`; at the store machine it arrives as `.transition (.arithmetic …)`. Closes by
+`rfl` without unfolding `liftErr`. -/
+theorem throwArithmetic_run {σ α ε : Type} [ErrorConv StateTransitionError ε]
+    (descr : String) (s : σ) :
+    (throwArithmetic (m := StateT σ (Except ε)) (E := ε) descr : StateT σ (Except ε) α).run s
+      = .error (ErrorConv.conv (StateTransitionError.arithmetic descr)) := rfl
 
 /-- `Except`'s bind on the success branch, the step that fires after `run_bind` on a
 run known to have succeeded. Core has no `simp` lemma in this shape, and unfolding

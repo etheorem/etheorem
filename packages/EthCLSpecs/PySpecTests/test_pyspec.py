@@ -61,6 +61,9 @@ def test_value_error_scope(request):
 def test_case(case, server, tmp_path):
     request = build_request(case, tmp_path)
     result = server.submit(request)
+    if result.bucket == "bug":
+        pytest.fail(f"{case.case_id}: bug-smell — {result.detail}")
+    # After the bug check on purpose: a bug is always a hard failure, divergence or not.
     if case.case_id in SPEC_TEXT_DIVERGENCES:
         if result.passed:
             pytest.fail(
@@ -70,8 +73,6 @@ def test_case(case, server, tmp_path):
         pytest.xfail(
             "upstream vector contradicts the spec text; see DISCREPANCIES.md"
         )
-    if result.bucket == "bug":
-        pytest.fail(f"{case.case_id}: bug-smell — {result.detail}")
     if not result.passed and result.bucket == "skip":
         pytest.skip(f"out of scope (not modeled): {result.detail}")
     if not result.passed and result.bucket == "todo":

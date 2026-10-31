@@ -260,8 +260,8 @@ beyond the standard kernel three.
 ⁶ `EncodedFits s x` (`Spec/MaxByteLength.lean`) is the encoded
 size below `MAX_LENGTH = 2^32`, which keeps every `uint32` offset
 placeholder exact. It is a condition on the *value*, so schemas
-whose static maximum exceeds `MAX_LENGTH`, real `BeaconState`
-shapes among them, are inside the theorems for every value they
+whose static maximum exceeds `MAX_LENGTH`, the Fulu `BeaconState`
+shape among them, are inside the theorems for every value they
 can produce.
 
 `serialize_injective` is a direct corollary of `decode_encode`

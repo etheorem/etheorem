@@ -47,6 +47,23 @@ namespace EthCLSpecs.PySpecTests
 private def dashToNone (s : String) : Option String :=
   if s == "-" then none else some s
 
+/-- Checked decimal parse of one harness-supplied numeric field. `String.toNat!`
+panics on non-decimal text, an empty string included, and a panic aborts the whole
+server process (the Python fixture then re-spawns it). `parseNatField` reports the
+field name and the raw text instead, so `handleLine` renders one bad field as a
+single `fail ⇥ bug` line. -/
+private def parseNatField (fieldName raw : String) : Except String Nat :=
+  match raw.toNat? with
+  | some n => .ok n
+  | none   => .error s!"{fieldName}: not a decimal number: \"{raw}\""
+
+/-- `parseNatField` lifted into `IO`. `handleLine` catches the throw and renders
+it as a `fail ⇥ bug` result line. -/
+private def checkedNat (fieldName raw : String) : IO Nat :=
+  match parseNatField fieldName raw with
+  | .ok n      => pure n
+  | .error msg => throw (IO.userError msg)
+
 /-- Parse a Gloas PTC vote token (`t`/`f`/`n` per slot, comma-joined) into the
 three-valued vote array a `payload_*_vote` check compares against. -/
 private def parseVotes (s : String) : Array (Option Bool) :=
@@ -67,17 +84,17 @@ private def buildRequest (fields : Array String) : IO CaseRequest := do
   let post ← match dashToNone fields[3]! with
     | none   => pure none
     | some p => some <$> IO.FS.readBinFile p
-  let blsSetting  := fields[4]!.toNat!
-  let blocksCount := fields[5]!.toNat!
-  let forkEpoch   := (dashToNone fields[6]!).map (·.toNat!)
+  let blsSetting  ← checkedNat "bls_setting" fields[4]!
+  let blocksCount ← checkedNat "blocks_count" fields[5]!
+  let forkEpoch   ← (dashToNone fields[6]!).mapM (checkedNat "fork_epoch")
   let inputPaths  := if fields[7]!.isEmpty then #[] else (fields[7]!.splitOn ",").toArray
-  let forkBlock   := (dashToNone fields[8]!).map (·.toNat!)
+  let forkBlock   ← (dashToNone fields[8]!).mapM (checkedNat "fork_block")
   -- Optional 10th field: `execution_valid` for `operations/execution_payload` (the
   -- mocked EL answer); absent ⇒ `true`.
   let executionValid := (fields[9]?.getD "1") == "1"
   -- Optional 11th field: `parent_slot` for `operations/attestation` from Gloas; `-` or
   -- absent ⇒ `none`.
-  let parentSlot := (fields[10]?.bind dashToNone).map (·.toNat!)
+  let parentSlot ← (fields[10]?.bind dashToNone).mapM (checkedNat "parent_slot")
 
   let mut inputs : Array ByteArray := #[]
   for p in inputPaths do
@@ -146,7 +163,7 @@ private def handleForkChoice (iface : ForkInterface) (fields : Array String) : I
     let parts := ((rawLine.splitOn " ").filter (· != "")).toArray
     if h : parts.size > 0 then
       match parts[0] with
-      | "tick"              => steps := steps.push (.tick parts[1]!.toNat!)
+      | "tick"              => steps := steps.push (.tick (← checkedNat "tick" parts[1]!))
       | "block"             =>
         let b ← IO.FS.readBinFile parts[1]!
         -- Optional 4th token: comma-separated PeerDAS column-sidecar paths (`-` if none).
@@ -156,26 +173,29 @@ private def handleForkChoice (iface : ForkInterface) (fields : Array String) : I
         steps := steps.push (.block b cols (parts[2]! == "1"))
       | "attestation"       => let b ← IO.FS.readBinFile parts[1]!; steps := steps.push (.attestation b (parts.size ≤ 2 || parts[2]! == "1"))
       | "attester_slashing" => let b ← IO.FS.readBinFile parts[1]!; steps := steps.push (.attesterSlashing b (parts.size ≤ 2 || parts[2]! == "1"))
-      | "head"              => steps := steps.push (.checkHead (hexToBytes parts[1]!) parts[2]!.toNat!)
+      | "head"              => steps := steps.push (.checkHead (hexToBytes parts[1]!) (← checkedNat "head slot" parts[2]!))
       | "get_proposer_head" => steps := steps.push (.checkProposerHead (hexToBytes parts[1]!))
       | "execution_payload" => let b ← IO.FS.readBinFile parts[1]!; steps := steps.push (.executionPayload b (parts[2]! == "1"))
       | "payload_attestation_message" => let b ← IO.FS.readBinFile parts[1]!; steps := steps.push (.payloadAttestationMessage b (parts[2]! == "1"))
-      | "head_payload_status" => steps := steps.push (.checkHeadPayloadStatus parts[1]!.toNat!)
+      | "head_payload_status" => steps := steps.push (.checkHeadPayloadStatus (← checkedNat "head_payload_status" parts[1]!))
       | "payload_timeliness_vote"        => steps := steps.push (.checkPayloadTimelinessVote (hexToBytes parts[1]!) (parseVotes parts[2]!))
       | "payload_data_availability_vote" => steps := steps.push (.checkPayloadDataAvailabilityVote (hexToBytes parts[1]!) (parseVotes parts[2]!))
-      | "justified"         => steps := steps.push (.checkJustified parts[1]!.toNat! (hexToBytes parts[2]!))
-      | "finalized"         => steps := steps.push (.checkFinalized parts[1]!.toNat! (hexToBytes parts[2]!))
+      | "justified"         => steps := steps.push (.checkJustified (← checkedNat "justified epoch" parts[1]!) (hexToBytes parts[2]!))
+      | "finalized"         => steps := steps.push (.checkFinalized (← checkedNat "finalized epoch" parts[1]!) (hexToBytes parts[2]!))
       | "boost"             => steps := steps.push (.checkBoost (hexToBytes parts[1]!))
-      | "time"              => steps := steps.push (.checkTime parts[1]!.toNat!)
-      | "genesis_time"      => steps := steps.push (.checkGenesisTime parts[1]!.toNat!)
+      | "time"              => steps := steps.push (.checkTime (← checkedNat "time" parts[1]!))
+      | "genesis_time"      => steps := steps.push (.checkGenesisTime (← checkedNat "genesis_time" parts[1]!))
       | "viable_for_head"   =>
         -- One `root:weight:status` token per leaf, comma-joined (`status` is `-` before Gloas);
         -- an empty list arrives as no second token.
         let tokens := if parts.size > 1 then (parts[1]!.splitOn ",").toArray else #[]
-        let leaves := tokens.map fun (t : String) =>
+        let leaves : Array (ByteArray × Nat × Option Nat) ← tokens.mapM fun (t : String) => do
           let f := (t.splitOn ":").toArray
-          let status := if f[2]! == "-" then none else some f[2]!.toNat!
-          (hexToBytes f[0]!, f[1]!.toNat!, status)
+          let weight ← checkedNat "viable_for_head weight" f[1]!
+          let status ← match f[2]! with
+            | "-" => pure (none : Option Nat)
+            | s   => some <$> checkedNat "viable_for_head payload_status" s
+          pure (hexToBytes f[0]!, weight, status)
         steps := steps.push (.checkViableForHead leaves)
       | "unsupported"       =>
         -- `harness.py` passes the specific descriptor (`should_override_forkchoice_update`, or an
@@ -215,28 +235,38 @@ private def handleForkChoice (iface : ForkInterface) (fields : Array String) : I
 
 /-- Split a request's trailing `cfg=KEY:VALUE,...` field (`cfg=-` for none) off the
 positional fields and parse it into the vector's config overrides. A request with no `cfg=`
-field carries no overrides. -/
-private def splitConfigOverrides (fields : Array String) : Array String × ConfigOverrides :=
+field carries no overrides. A `KEY:VALUE` pair without a colon, or a value that is not a
+decimal `Nat`, fails the parse, and `handleLine` renders the error as a `fail ⇥ bug`
+result instead of a panic that aborts the server. -/
+private def splitConfigOverrides (fields : Array String) :
+    Except String (Array String × ConfigOverrides) := do
   match fields.back? with
   | some last =>
     if last.startsWith "cfg=" then
       let body := (last.drop 4).toString
-      let pairs : ConfigOverrides :=
-        if body == "-" || body.isEmpty then #[]
-        else (body.splitOn ",").toArray.map fun kv =>
+      if body == "-" || body.isEmpty then
+        return (fields.pop, #[])
+      else
+        let pairs ← (body.splitOn ",").toArray.mapM fun kv =>
           let kvs := (kv.splitOn ":").toArray
-          (kvs[0]!, kvs[1]!.toNat!)
-      (fields.pop, pairs)
-    else (fields, #[])
-  | none => (fields, #[])
+          match kvs[0]?, kvs[1]? with
+          | some k, some v => (parseNatField s!"config override {k}" v).map (k, ·)
+          | _, _ => .error s!"malformed config override (expected KEY:VALUE): \"{kv}\""
+        return (fields.pop, pairs)
+    else return (fields, #[])
+  | none => return (fields, #[])
 
 /-- Process one request line into a result line. `mkIface` builds the fork's interface at
-the case's config overrides. Exceptions, and an override the fork cannot apply, become a
-`fail ⇥ bug` result so a single bad case never crashes the loop. -/
+the case's config overrides. Exceptions, a non-decimal numeric field, and an override the
+fork cannot apply become a `fail ⇥ bug` result so a single bad case never crashes the
+loop. -/
 private def handleLine (mkIface : ConfigOverrides → Except String ForkInterface)
     (line : String) : IO String := do
   try
-    let (fields, overrides) := splitConfigOverrides (line.splitOn "\t").toArray
+    let (fields, overrides) ← match
+        splitConfigOverrides (line.splitOn "\t").toArray with
+      | .ok p      => pure p
+      | .error msg => throw (IO.userError msg)
     let iface ← match mkIface overrides with
       | .ok i => pure i
       | .error msg => throw (IO.userError msg)

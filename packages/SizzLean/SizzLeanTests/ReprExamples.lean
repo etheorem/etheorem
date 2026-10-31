@@ -226,6 +226,8 @@ example :
       -- the encoding is 20 bytes; the evaluation runs through the
       -- offset-table writer, so the smoke check goes through the
       -- compiler, the package's licence for test modules
+      -- the codec's mutual blocks do not kernel-reduce, so `decide`
+      -- cannot close it
       native_decide)
 
 /-- Roundtrip for a general fixed-field container, three uintN
@@ -497,6 +499,7 @@ private def roundTripProgPair (p : ProgPair) : Bool :=
       q'.a == p.a && q'.b == p.b
   | .error _ => false
 
+-- native_decide: the codec's mutual blocks do not kernel-reduce
 example : roundTripProgPair { a := true, b := false } = true := by native_decide
 
 private def roundTripProgList (xs : SizzLean.Repr.ProgressiveList UInt8) : Bool :=
@@ -507,6 +510,7 @@ private def roundTripProgList (xs : SizzLean.Repr.ProgressiveList UInt8) : Bool 
         (List.range xs.size).all (fun i => ys'[i]! == xs[i]!)
   | .error _ => false
 
+-- native_decide: the codec's mutual blocks do not kernel-reduce
 example : roundTripProgList ⟨#[1, 2, 3]⟩ = true := by native_decide
 
 end SizzLeanTests.ReprExamples

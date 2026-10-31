@@ -404,10 +404,13 @@ The schema gate costs the caller nothing. `Spec/BasicSupportedDecide.lean`
 defines a `Bool` check that mirrors the predicate one arm at a time. It
 proves the check sound and complete, and registers the `Decidable`
 instance. `by decide` then proves `BasicSupported r.shape` for any closed
-schema: the kernel unfolds the derived `shape` and runs the check. The
-fork bodies discharge the gate this way for the real `BeaconState`,
+schema: the kernel unfolds the derived `shape` and runs the check. The Fulu
+fork body discharges the gate this way for the real `BeaconState`,
 `BeaconBlockBody`, `BeaconBlock`, and `SignedBeaconBlock`
-(`EthCLSpecs/Proofs/<Fork>/Codec.lean`). The size bound stays with the
+(`EthCLSpecs/Proofs/Fulu/Codec.lean`). Gloas and Heze wire containers
+carry progressive fields, and the predicate is false on the progressive
+arms, so their codec row stays open until SizzLean proves the theorems
+over the progressive constructors. The size bound stays with the
 caller, because it depends on the value.
 
 ### 5.2 The `deriving` handler

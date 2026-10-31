@@ -739,6 +739,29 @@ branch over the builder registry). The builder-registry helpers (`is_builder_ind
 new `process_payload_attestation`, the bid (`process_execution_payload_bid`),
 `process_parent_execution_payload`, and the PTC read helpers complete the surface.
 
+Two predicates in `Gloas.Operations` handle an attesting index past the
+validator registry differently from the spec text:
+
+- **`isValidIndexedAttestation` returns `false` for the out-of-range index.**
+  The spec's `is_valid_indexed_attestation` (`specs/gloas/beacon-chain.md:1022-1041`)
+  carries no range check, so its bare `state.validators[index]` read raises
+  `IndexError`. The Lean forkdef range-checks the indices before the pubkey
+  read and answers `false`. Every caller wraps the predicate in an `assert`,
+  so both outcomes invalidate the containing block or fork-choice step, and
+  the reference runner counts the `IndexError` as the step's expected
+  rejection. No conformance vector can observe the difference. The forkdef's
+  docstring records the choice (`EthCLSpecs/Gloas/Operations.lean`).
+- **`isValidIndexedPayloadAttestation` makes the same choice for the payload
+  attestation.** The spec's `is_valid_indexed_payload_attestation`
+  (`specs/gloas/beacon-chain.md:1094-1110`) reads `state.validators[index]`
+  bare over the PTC-derived indices and raises `IndexError` the same way. The
+  Lean forkdef returns `false` on an out-of-range index. Its callers,
+  `process_payload_attestation` and the fork-choice payload-attestation
+  message handler (`on_payload_attestation_message`), assert the predicate,
+  so a bad index rejects the containing block or step on both sides and no
+  vector can tell the two outcomes apart. The docstring on the forkdef
+  records it (`EthCLSpecs/Gloas/Operations.lean`).
+
 The v1.7.0-beta.4 changes to that surface:
 
 - `process_block` reads `parent_slot = state.latest_block_header.slot` before
@@ -974,14 +997,19 @@ separation.
   total/default indexing semantics, including fallback behavior for an
   out-of-range `builderIndex`.
 
-- **`Proofs/Gloas/InitializePtcWindow.lean`** establishes `simp`-closed theorems
-  over `initializePtcWindow`: its two index regions (the empty first-epoch
-  placeholder and the remainder computed via Gloas's `computePtc`), the whole
-  contract `initializePtcWindow_getElem` joining them, tagged
-  `@[characterizes EthCLSpecs.Gloas.initializePtcWindow]`, and a `default`
-  corollary for the first region. At v1.7.0-beta.4 the function is a Gloas
-  `forkdef` over the Gloas state; alpha.12 kept it a plain `def` over the Fulu
-  pre-state, outside the coverage denominator.
+- **`Proofs/Gloas/InitializePtcWindow.lean`** gives the whole-run
+  `initializePtcWindow_run_eq` contract at the box: the run rejects with the
+  `.arithmetic` fault exactly at `current_epoch = UINT64_MAX`, where the spec's
+  checked `current_epoch + e` overflows, and on every other state it returns the
+  window as one pure value, the state unchanged. Its two index regions (the
+  empty first-epoch placeholder and the remainder computed via Gloas's
+  `computePtc`) are read off the equation's success branch under the
+  no-overflow hypothesis, `initializePtcWindow_getElem` joins them at the
+  element level, and a `default` corollary restates the first region. The run
+  equation carries `@[characterizes EthCLSpecs.Gloas.initializePtcWindow]`. At
+  v1.7.0-beta.4 the function is a Gloas `forkdef` over the Gloas state;
+  alpha.12 kept it a plain `def` over the Fulu pre-state, outside the coverage
+  denominator.
 
 - **`Proofs/Gloas/InitiateBuilderExit.lean`** gives the whole-transition
   `initiateBuilderExit_run_eq` contract at the box: the run on `pureState preState` returns

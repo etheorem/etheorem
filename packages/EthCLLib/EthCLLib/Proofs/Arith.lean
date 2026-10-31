@@ -3,12 +3,12 @@ import EthCLLib.Spec.Arith
 /-!
 # `EthCLLib.Proofs.Arith`: what `saturatingSub` and `arrayUnion` compute
 
-`saturatingSub` is the spec's `saturating_sub` (`phase0/beacon-chain.md:1038-1042`), which
-v1.7.0-beta.4 introduces for every subtraction the spec floors at zero: `decrease_balance`,
-`get_previous_epoch`, the inactivity-score updates, the builder balance sweep. A fork proof
-about one of those wants to read the stored value back as a number, and the facts below say
-what that number is: the truncating `Nat` difference, which never exceeds the minuend. That is
-the no-underflow claim, stated once for every caller.
+`saturatingSub` is the spec's `saturating_sub` (`phase0/beacon-chain.md:1038-1042`), a helper
+that predates v1.7.0. Beta.4 applies it at every subtraction the spec floors at zero:
+`decrease_balance`, `get_previous_epoch`, the inactivity-score updates, the builder balance
+sweep. A fork proof about one of those wants to read the stored value back as a number, and
+the facts below say what that number is: the truncating `Nat` difference, which never exceeds
+the minuend. That is the no-underflow claim, stated once for every caller.
 -/
 
 set_option autoImplicit false

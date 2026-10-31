@@ -8,10 +8,11 @@ overrides only `process_attestation` (payload-aware participation, keyed at the 
 block's slot), `process_withdrawals` (builder withdrawals), and adds
 `process_payload_attestation` / the execution-bid / envelope steps. At v1.7.0-beta.4 the
 builder-payment cleanup moves from `process_proposer_slashing` into `slash_validator`
-(`Gloas/EpochProcessing.lean`), so `process_proposer_slashing` is Fulu's again. Everything else, the slashing-evidence and deposit / exit /
-change / execution-request handlers and `process_sync_aggregate`, is unchanged, so
-it is `inherit`ed verbatim and re-elaborated over `Gloas.State`, with the helper
-dependencies already in the Gloas namespace from `EpochProcessing`.
+(`Gloas/EpochProcessing.lean`), so `process_proposer_slashing` is Fulu's again. Everything
+else, the slashing-evidence and deposit / exit / change / execution-request handlers and
+`process_sync_aggregate`, is unchanged, so it is `inherit`ed verbatim and re-elaborated over
+`Gloas.State`, with the helper dependencies already in the Gloas namespace from
+`EpochProcessing`.
 
 The ePBS-modified and ePBS-new handlers are the Gloas-specific port (not here).
 -/
@@ -184,6 +185,13 @@ no Gloas PTC) hold zeroed committees; the next `1 + MIN_SEED_LOOKAHEAD` epochs h
 `compute_ptc` for each slot. `MIN_SEED_LOOKAHEAD` is `1`, so the window is
 `3 * SLOTS_PER_EPOCH` long, the `ptc_window` field's declared length.
 
+The spec's per-entry epoch add `current_epoch + e` (`e` the entry's epoch delta, which the
+`2 * SLOTS_PER_EPOCH` live entries confine to `0` and `1`) is checked `uint64` arithmetic,
+so it is modeled with `checkedAdd` like every spec add in this file. The two sums bind before
+the entry table: `current_epoch + 0` cannot overflow, and `current_epoch + 1` raises the
+`.arithmetic` fault at `current_epoch = UINT64_MAX`, where remerkleable raises Python
+`ValueError`. Throwing, so `completeUpgradeToGloas` binds it.
+
 At v1.7.0-beta.4 `upgrade_to_gloas` computes it over the Gloas post-state, with Gloas's own
 `compute_ptc`; alpha.12 computed it over the Fulu pre-state. The registry, balances, and
 RANDAO mixes the committee reads carry over unchanged, so the window is the same, but the
@@ -194,13 +202,20 @@ forkdef initializePtcWindow (state : State) :
     StateTransition (Vector (Vector ValidatorIndex Const.ptcSize) (3 * Const.slotsPerEpoch)) := do
   let currentEpoch := currentEpochOf state
   let emptyCommittee : Vector ValidatorIndex Const.ptcSize := Vector.replicate Const.ptcSize 0
-  let window ← (Vector.ofFn fun i : Fin (3 * Const.slotsPerEpoch) =>
+  -- The spec computes `current_epoch + e` per entry; the deltas are 0 and 1, so the two
+  -- sums bind once here.
+  let curEpoch ← checkedAdd currentEpoch 0 "initialize_ptc_window: current_epoch + e"
+  let nextEpoch ← checkedAdd currentEpoch 1 "initialize_ptc_window: current_epoch + e"
+  -- Each entry is `computePtc`'s `Except`, so a slot with no committee members rejects
+  -- the window and the upgrade with it; `mapM` surfaces the first rejecting slot in
+  -- index order, matching the spec's list comprehension.
+  let window ← liftErr ((Vector.ofFn fun i : Fin (3 * Const.slotsPerEpoch) =>
       if i.val < Const.slotsPerEpoch then pure emptyCommittee
       else
         let j := i.val - Const.slotsPerEpoch
-        let epoch := currentEpoch + UInt64.ofNat (j / Const.slotsPerEpoch)
+        let epoch := if j / Const.slotsPerEpoch == 0 then curEpoch else nextEpoch
         let startSlot := computeStartSlotAtEpoch epoch
-        computePtc state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch))).mapM id
+        computePtc state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch))).mapM id)
   return window
 
 /-- The state-side close of `upgrade_to_gloas` (`gloas/fork.md:227-230`): fill the post-state's

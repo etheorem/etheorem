@@ -27,6 +27,9 @@ the dependency `consensus-specs` v1.7.0-beta.4 pins). The value
 serializes to `02 01 07` and roots to the digest in `gappedRootHex`.
 The root is a `Sha256` (FFI) digest, so the checks close by
 `native_decide` (CLAUDE.md, *Proofs involving SSZ hashes*, case 2).
+Gate 2 carries no hash and closes by `native_decide` for a parallel
+reduction reason: the mutual `serialize` block compiles to
+`WellFounded.fix`, which the kernel cannot reduce.
 -/
 
 set_option autoImplicit false
@@ -54,7 +57,10 @@ example : SSZRepr.shape (T := Gapped) =
 private def value : Gapped := { side := 0x0102, color := 7 }
 
 /-- Gate 2: only the active fields are on the wire, so the hole costs no
-bytes. -/
+bytes. It closes by `native_decide` because the mutual `serialize`
+block compiles to `WellFounded.fix`, which the kernel cannot reduce
+(CLAUDE.md, *Proofs involving SSZ hashes*, the Default rule's
+hash-free exception). -/
 example : SSZ.serialize value = ⟨#[0x02, 0x01, 0x07]⟩ := by native_decide
 
 /-- Lowercase hex of a byte string, for the comparison with the oracle. -/

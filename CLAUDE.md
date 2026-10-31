@@ -297,7 +297,10 @@ Default rule: **prefer `native_decide` over kernel `decide` when
 the goal involves any `Sha256` (FFI) hashing**. For non-hash
 decidable goals (Nat comparisons, structural enums, finite
 bitvector reasoning), kernel `decide` is fine, no compiler
-axiom needed.
+axiom needed. One hash-free exception: goals over the mutual
+`serialize` / `deserialize` blocks also close by `native_decide`,
+because those blocks compile to `WellFounded.fix`, which the
+kernel cannot reduce.
 
 When the FFI-equivalence axioms are used, document why in the
 theorem's docstring, they're a real trust commitment, and a
@@ -352,13 +355,17 @@ the fork bodies track the
 for Fulu, Gloas, and Heze. When an implementation disagrees with the spec, the
 spec wins. We record the discrepancy rather than paper over it.
 
-**SSZ (`SizzLean`).** The `SSZType` universe has seven arms: `uintN`
-(8/16/32/64/128/256), `bool`, `vector`, `list`, `bitvector`, `bitlist`,
-and `container`. Each supports `serialize`, `deserialize`, and
+**SSZ (`SizzLean`).** The `SSZType` universe has ten arms: the seven
+classic ones (`uintN` (8/16/32/64/128/256), `bool`, `vector`, `list`,
+`bitvector`, `bitlist`, `container`) plus `progressiveList`,
+`progressiveBitlist`, and `progressiveContainer` (EIP-7916 / 7495). The
+progressive container carries an `active_fields` mask, so a fork can drop
+fields while later fields keep their positions (Heze's EIP-8015 containers
+use this). Each arm supports `serialize`, `deserialize`, and
 `hashTreeRoot` (merkleization), checked against the
-`ethereum/consensus-spec-tests` `ssz_generic` vectors. `Union` and the
-EIP-7495 / 7916 / 8016 progressive types sit outside the universe and
-are out of scope.
+`ethereum/consensus-spec-tests` `ssz_generic` vectors. `Union`,
+`StableContainer[N]` / `Profile`, and `CompatibleUnion` sit outside the
+universe and are out of scope.
 
 **Consensus specs (`EthCLLib` + `EthCLSpecs`).** The Fulu, Gloas, and
 Heze forks, authored in-spec on the framework: the SSZ containers, the

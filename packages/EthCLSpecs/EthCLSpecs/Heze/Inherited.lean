@@ -4,14 +4,16 @@ import EthCLSpecs.Heze.Constants
 # `EthCLSpecs.Heze.Inherited`: the inherited containers (everything but the new IL family)
 
 EIP-7805 adds the `InclusionList` family and redeclares `ExecutionPayloadBid` with
-`inclusion_list_bits`. Every other Heze container is byte-identical to Gloas, so each is
+`inclusion_list_bits`. Every other Heze container keeps Gloas's field block byte for byte,
+so each is
 `inherit`ed: the ancestor's field block is re-declared in `EthCLSpecs.Heze`, giving a
 distinct type with the same SSZ encoding (the inheritance mechanism,
 `SPEC_AUTHORING_MODEL.md` §8). The ePBS containers other than the bid come from Gloas;
 the component containers resolve through Gloas back to the definitions captured further
-up the lineage. `BeaconState` / `BeaconBlock*` are inherited in `State` / `Block` (they
-need the `state_preamble` / signed-wrapper steps). `inherit BeaconState` late-binds
-`latestExecutionPayloadBid` to the redeclared bid.
+up the lineage. `BeaconState` and `BeaconBlockBody` are not inherited: `State` and `Block`
+re-declare each as a progressive `forkcontainer` with the EIP-8015 mask gaps (`State` also
+runs the `state_preamble` step). Only `BeaconBlock` / `SignedBeaconBlock` are `inherit`ed,
+in `Block`, and their `body` binds to the re-declared body.
 -/
 
 set_option autoImplicit false

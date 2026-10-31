@@ -35,11 +35,10 @@ right side to `y`, and the decoder is a function, so `x = y`.
 type with an `SSZRepr` instance. The spec theorem gives
 `toRepr x = toRepr y`, and the `to_from` law carries it back to `x = y`.
 
-`EthCLSpecs/Proofs/<Fork>/Codec.lean` applies it to the real consensus
-containers. For Fulu, Gloas, and Heze, the `BeaconState`,
-`BeaconBlockBody`, `BeaconBlock`, and `SignedBeaconBlock` theorems hold at
-the mainnet and minimal presets. Heze's `SignedInclusionList` theorem
-holds at every preset. The size bound is the only hypothesis left.
+`EthCLSpecs/Proofs/Fulu/Codec.lean` applies it to the real consensus
+containers. The Fulu `BeaconState`, `BeaconBlockBody`, `BeaconBlock`, and
+`SignedBeaconBlock` theorems hold at the mainnet and minimal presets. The
+size bound is the only hypothesis left.
 
 Every one of these theorems rests on `propext`, `Classical.choice`, and
 `Quot.sound` alone. No `native_decide`, `bv_decide` certificate, or
@@ -58,13 +57,13 @@ there too.
 
 The gate costs the caller nothing on a concrete schema.
 `Spec/BasicSupportedDecide.lean` makes the predicate decidable, and
-`by decide` proves it in the kernel for any closed shape. The fork
+`by decide` proves it in the kernel for any closed shape. The Fulu
 theorems close it this way on the 38-field `BeaconState`.
 
-The fork theorems name the two shipped presets for one reason. The
-`Preset` class carries no positivity proof for `epochsPerSlashingsVector`
-or `ptcSize`. A preset that sets either to zero puts a zero-length vector
-in the state, and then the gate fails.
+The Fulu theorems name the two shipped presets for one reason. The
+`Preset` class carries no positivity proof for `epochsPerSlashingsVector`.
+A preset that sets it to zero puts a zero-length vector in the state, and
+then the gate fails.
 
 **`EncodedFits s x`** says the encoding of `x` is shorter than `2 ^ 32`
 bytes. SSZ stores every offset in a `uint32`, so a longer encoding has
@@ -131,6 +130,17 @@ The fix is one comparison in `SSZ.deserialize`: return
 `SSZ.roundtrip` keeps its proof, because `decode_encode` already gives a
 count equal to the size.
 
+### The Gloas and Heze fork containers
+
+Gloas and Heze wire containers carry progressive fields, and
+`BasicSupported` is false on `progressiveList`, `progressiveBitlist`, and
+`progressiveContainer`. The gate has no witness for their `BeaconState`,
+`BeaconBlockBody`, `BeaconBlock`, `SignedBeaconBlock`, or Heze's
+`SignedInclusionList`, so neither theorem is stated on them. Proving the
+two theorems over the progressive constructors is open SizzLean work,
+tracked by the `roundtrip × fork-schemas-progressive` row in
+[`PROOF_LEDGER.md`](PROOF_LEDGER.md).
+
 ### Merkle roots
 
 Two values with one `hash_tree_root` would be a third kind of ambiguity,
@@ -148,4 +158,4 @@ proves them injective outright.
 | `SizzLean/Proofs/Roundtrip.lean` | `decode_encode`, the theorem it rests on |
 | `SizzLean/Repr/Class.lean` | `SSZ.serialize_injective` and `SSZ.roundtrip` for user types |
 | `SizzLean/Spec/BasicSupportedDecide.lean` | the decision procedure for the gate |
-| `EthCLSpecs/Proofs/{Fulu,Gloas,Heze}/Codec.lean` | the theorems on the fork containers |
+| `EthCLSpecs/Proofs/Fulu/Codec.lean` | the theorems on the Fulu fork containers |

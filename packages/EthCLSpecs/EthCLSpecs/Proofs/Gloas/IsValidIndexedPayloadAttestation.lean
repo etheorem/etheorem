@@ -1,12 +1,13 @@
 import EthCLSpecs.Gloas.Operations
 import EthCLLib.Proofs.Run
+import SizzLean.Proofs.ProgressiveListMap
 import SizzLean.Proofs.UncachedBox
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: a two-layer characterization
 
 An exact backend-generic characterization of
-`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:464-475`).
+`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:478-489`).
 
 **Layer 1** (`isValidIndexedPayloadAttestation_eq_true_iff_checks`) restates the
 function's `if` / `||` / `!` control flow as a plain conjunction, one conjunct per
@@ -44,23 +45,14 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (CryptoBackend HasherTag blsFastAggregateVerify computeSigningRoot ProgressiveList)
+open EthCLLib.Spec (CryptoBackend HasherTag blsFastAggregateVerify computeSigningRoot)
 open scoped EthCLLib.Spec
 open EthCLSpecs.Gloas (Preset ValidatorIndex BeaconState)
 open EthCLSpecs.Gloas.Const (domainPtcAttester)
 open EthCLSpecs.Gloas
   (IndexedPayloadAttestation isValidIndexedPayloadAttestation getDomain computeEpochAtSlot)
 open EthCLLib.Proofs (pureState)
-private theorem progressiveListMap_getElem!_eq_attachMap {α β ι : Type} [Inhabited α]
-    (xs : ProgressiveList α) (is : Array ι) (idx : ι → Nat) (f : α → β)
-    (hRange : ∀ i ∈ is, idx i < xs.size) :
-    is.map (fun i => f xs[idx i]!)
-      = is.attach.map (fun i => f (xs[idx i.1]'(hRange i.1 i.2))) := by
-  apply Array.ext
-  · simp
-  · intro i _ _
-    simp only [Array.getElem_map, Array.getElem_attach]
-    rw [getElem!_pos]
+open SizzLean.Proofs (progressiveListMap_getElem!_eq_attachMap)
 
 /-! ## Layer 1: the literal characterization -/
 

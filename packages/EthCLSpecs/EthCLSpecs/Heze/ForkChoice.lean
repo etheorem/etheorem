@@ -17,8 +17,8 @@ fresh `forkstruct` (the framework's fork-aware `structure` form, capturable for 
 fork's `inherit`) instead of an `inherit`, to carry the two `[New in Heze:EIP7805]` fields:
 `payloadInclusionListSatisfaction` and the folded-in `inclusionListStore`. The spec keeps a
 separate process-lifetime `InclusionListStore`; this framework's fork choice threads one
-`Store` value through the generic `StoreTransition` monad, so the inclusion-list store rides
-inside it (the `InclusionListStore` declaration below carries the full rationale). Most
+`Store` value through the generic `StoreTransition` monad, so the inclusion-list store is
+folded into it (the `InclusionListStore` declaration below carries the full rationale). Most
 handlers are inherited verbatim; the FOCIL touch points are re-declared here:
 
 * `get_forkchoice_store` seeds the two new store fields empty;

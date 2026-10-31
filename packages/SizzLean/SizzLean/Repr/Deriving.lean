@@ -378,6 +378,11 @@ private def mkInstance (declName : Name) : CommandElabM Unit := do
   -- docstring for the dual role.
   let (binders, structApp, shapeExprs, fieldTypes) ←
     liftTermElabM <| getFieldShapesAndTypes declName
+  -- Reading both attributes from the environment here works only because of
+  -- attribute timing. Both registration forms (`registerTagAttribute` here,
+  -- `registerParametricAttribute` below) default to `afterTypeChecking`, and
+  -- the inductive pipeline applies those attributes before it runs
+  -- `applyDerivingHandlers`, so both are in the environment by now.
   let progressive := sizzleanProgressiveAttr.hasTag env declName
   -- The gaps attribute only shapes a progressive mask; on a classic
   -- container it would be silently meaningless, so reject it.
