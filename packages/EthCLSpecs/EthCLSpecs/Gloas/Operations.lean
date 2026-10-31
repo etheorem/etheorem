@@ -185,21 +185,16 @@ no Gloas PTC) hold zeroed committees; the next `1 + MIN_SEED_LOOKAHEAD` epochs h
 `compute_ptc` for each slot. `MIN_SEED_LOOKAHEAD` is `1`, so the window is
 `3 * SLOTS_PER_EPOCH` long, the `ptc_window` field's declared length.
 
-The spec's per-entry epoch add `current_epoch + e` (`e` the entry's epoch delta, which the
-`2 * SLOTS_PER_EPOCH` live entries confine to `0` and `1`) is checked `uint64` arithmetic,
-so it is modeled with `checkedAdd` like every spec add in this file. The two sums bind before
-the entry table: `current_epoch + 0` cannot overflow, and `current_epoch + 1` raises the
-`.arithmetic` fault at `current_epoch = UINT64_MAX`, where remerkleable raises Python
-`ValueError`. Throwing, so `completeUpgradeToGloas` binds it.
-
 At v1.7.0-beta.4 `upgrade_to_gloas` computes it over the Gloas post-state, with Gloas's own
 `compute_ptc`; alpha.12 computed it over the Fulu pre-state. The registry, balances, and
 RANDAO mixes the committee reads carry over unchanged, so the window is the same, but the
 function is now this fork's own. Each entry is an `Except` carrying its own two faults: the
-spec's per-entry `current_epoch + e` is checked `uint64` arithmetic, so the entry binds
-`checkedAdd` before its `compute_ptc` read, and `compute_ptc` itself rejects a slot with no
-committee members. `completeUpgradeToGloas` maps the entries in index order, so the first
-rejecting slot surfaces, matching the spec's list comprehension. -/
+spec's per-entry `current_epoch + e` (the delta confined to `0` and `1`; `+0` cannot
+overflow, `+1` raises the `.arithmetic` fault at `current_epoch = UINT64_MAX`, where
+remerkleable raises Python `ValueError`) binds `checkedAdd` before the entry's `compute_ptc`
+read, and `compute_ptc` itself rejects a slot with no committee members.
+`completeUpgradeToGloas` maps the entries in index order, so the first rejecting slot
+surfaces, matching the spec's list comprehension. -/
 forkdef initializePtcWindow (state : State) :
     Vector (Except StateTransitionError (Vector ValidatorIndex Const.ptcSize))
       (3 * Const.slotsPerEpoch) :=
