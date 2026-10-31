@@ -47,7 +47,8 @@ the only thing exercising the throw. -/
 #guard (checkedAdd 2 3 "x" : Except StateTransitionError UInt64).toOption = some 5
 #guard (checkedSub 5 3 "x" : Except StateTransitionError UInt64).toOption = some 2
 #guard (checkedMul 6 7 "x" : Except StateTransitionError UInt64).toOption = some 42
-#guard (match checkedSucc 5 "x" with | .ok ⟨j, _⟩ => j == 6 | _ => false)
+#guard (match (checkedSucc 5 "x" : Except StateTransitionError _) with
+  | .ok ⟨j, _⟩ => j == 6 | _ => false)
 #guard (checkedSub 3 5 "u" : Except StateTransitionError UInt64) matches .error (.arithmetic _)
 #guard (checkedAdd 0xffffffffffffffff 1 "o" : Except StateTransitionError UInt64) matches .error (.arithmetic _)
 #guard (checkedMul 0x8000000000000000 4 "o" : Except StateTransitionError UInt64) matches .error (.arithmetic _)
