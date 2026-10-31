@@ -534,7 +534,7 @@ fuel-bounded loops `ppdLoop` (`EthCLSpecs/Fulu/EpochProcessing.lean:ppdLoop`) an
 (`SizzLean/Cache/MerkleTree/Build.lean`) is split into mutual helpers because Lean
 4.34.1 rejects passing `Node.ofShape` itself as a higher-order argument, as its
 "Why structural mutual recursion" note records. These helpers are tolerated
-even when they take many parameters (`cbwsAux` threads eight). That parameter count
+even when they take many parameters (`cbwsAux` threads ten binders). That parameter count
 is itself a smell, and it is the price of the termination proof. Do not copy the
 wide-parameter shape into splits that the language does not force.
 
