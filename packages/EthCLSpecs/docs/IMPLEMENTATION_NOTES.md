@@ -997,19 +997,19 @@ separation.
   total/default indexing semantics, including fallback behavior for an
   out-of-range `builderIndex`.
 
-- **`Proofs/Gloas/InitializePtcWindow.lean`** gives the whole-run
-  `initializePtcWindow_run_eq` contract at the box: the run rejects with the
-  `.arithmetic` fault exactly at `current_epoch = UINT64_MAX`, where the spec's
-  checked `current_epoch + e` overflows, and on every other state it returns the
-  window as one pure value, the state unchanged. Its two index regions (the
-  empty first-epoch placeholder and the remainder computed via Gloas's
-  `computePtc`) are read off the equation's success branch under the
-  no-overflow hypothesis, `initializePtcWindow_getElem` joins them at the
-  element level, and a `default` corollary restates the first region. The run
-  equation carries `@[characterizes EthCLSpecs.Gloas.initializePtcWindow]`. At
-  v1.7.0-beta.4 the function is a Gloas `forkdef` over the Gloas state;
-  alpha.12 kept it a plain `def` over the Fulu pre-state, outside the coverage
-  denominator.
+- **`Proofs/Gloas/InitializePtcWindow.lean`** gives the whole vector equation
+  `initializePtcWindow_eq` over the window entries: each entry is an `Except`
+  carrying its own two faults, the checked per-entry add `current_epoch + e`
+  (the `.arithmetic` fault at `current_epoch = UINT64_MAX`) and the `compute_ptc`
+  read (the empty-candidate reject), and `completeUpgradeToGloas` maps the
+  entries in index order. Its two index regions (the empty first-epoch
+  placeholder and the remainder binding the checked add then Gloas's
+  `computePtc`) are read off the equation, `initializePtcWindow_getElem` joins
+  them at the element level, and a `default` corollary restates the first
+  region. The equation carries
+  `@[characterizes EthCLSpecs.Gloas.initializePtcWindow]`. At v1.7.0-beta.4 the
+  function is a Gloas `forkdef` over the Gloas state; alpha.12 kept it a plain
+  `def` over the Fulu pre-state, outside the coverage denominator.
 
 - **`Proofs/Gloas/InitiateBuilderExit.lean`** gives the whole-transition
   `initiateBuilderExit_run_eq` contract at the box: the run on `pureState preState` returns

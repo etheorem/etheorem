@@ -60,9 +60,8 @@ private def runUpgradeImpl (P : Preset) (C : Config) (forkVersion : Version) (pr
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.realBackend
   match SSZ.deserialize (T := Fulu.BeaconState) preBytes with
-  | .ok pre  => do
-    let post ← (upgradeToGloas forkVersion pre).mapError RunError.spec
-    let box0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox post
+  | .ok pre  =>
+    let box0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox (upgradeToGloas forkVersion pre)
     let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit :=
       completeUpgradeToGloas
     RunError.ofSpec (runToRoot box0 action)
@@ -268,9 +267,8 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
       if (sszGet (← get) slot) < boundary then Fulu.processSlots boundary
     match fuluAction.run fuluBox0 with
     | .error e _ => Except.error (RunError.spec e)
-    | .ok _ fuluSt => do
-      let gloasPost ← (upgradeToGloas forkVersion fuluSt.view).mapError RunError.spec
-      let gloasBox0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox gloasPost
+    | .ok _ fuluSt =>
+      let gloasBox0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox (upgradeToGloas forkVersion fuluSt.view)
       let gloasAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit := do
         completeUpgradeToGloas
         for sb in gloasBlocks do

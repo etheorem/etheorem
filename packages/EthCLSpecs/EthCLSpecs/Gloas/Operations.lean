@@ -195,28 +195,24 @@ the entry table: `current_epoch + 0` cannot overflow, and `current_epoch + 1` ra
 At v1.7.0-beta.4 `upgrade_to_gloas` computes it over the Gloas post-state, with Gloas's own
 `compute_ptc`; alpha.12 computed it over the Fulu pre-state. The registry, balances, and
 RANDAO mixes the committee reads carry over unchanged, so the window is the same, but the
-function is now this fork's own. Each entry is `computePtc`'s `Except`, so a slot with no
-committee members rejects the window and the upgrade with it; `Vector.mapM id` surfaces the
-first rejecting slot in index order, matching the spec's list comprehension. -/
+function is now this fork's own. Each entry is an `Except` carrying its own two faults: the
+spec's per-entry `current_epoch + e` is checked `uint64` arithmetic, so the entry binds
+`checkedAdd` before its `compute_ptc` read, and `compute_ptc` itself rejects a slot with no
+committee members. `completeUpgradeToGloas` maps the entries in index order, so the first
+rejecting slot surfaces, matching the spec's list comprehension. -/
 forkdef initializePtcWindow (state : State) :
-    StateTransition (Vector (Vector ValidatorIndex Const.ptcSize) (3 * Const.slotsPerEpoch)) := do
+    Vector (Except StateTransitionError (Vector ValidatorIndex Const.ptcSize))
+      (3 * Const.slotsPerEpoch) :=
   let currentEpoch := currentEpochOf state
   let emptyCommittee : Vector ValidatorIndex Const.ptcSize := Vector.replicate Const.ptcSize 0
-  -- The spec computes `current_epoch + e` per entry; the deltas are 0 and 1, so the two
-  -- sums bind once here.
-  let curEpoch ← checkedAdd currentEpoch 0 "initialize_ptc_window: current_epoch + e"
-  let nextEpoch ← checkedAdd currentEpoch 1 "initialize_ptc_window: current_epoch + e"
-  -- Each entry is `computePtc`'s `Except`, so a slot with no committee members rejects
-  -- the window and the upgrade with it; `mapM` surfaces the first rejecting slot in
-  -- index order, matching the spec's list comprehension.
-  let window ← liftErr ((Vector.ofFn fun i : Fin (3 * Const.slotsPerEpoch) =>
-      if i.val < Const.slotsPerEpoch then pure emptyCommittee
-      else
-        let j := i.val - Const.slotsPerEpoch
-        let epoch := if j / Const.slotsPerEpoch == 0 then curEpoch else nextEpoch
-        let startSlot := computeStartSlotAtEpoch epoch
-        computePtc state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch))).mapM id)
-  return window
+  Vector.ofFn fun i : Fin (3 * Const.slotsPerEpoch) =>
+    if i.val < Const.slotsPerEpoch then pure emptyCommittee
+    else do
+      let j := i.val - Const.slotsPerEpoch
+      let epoch ← checkedAdd currentEpoch (UInt64.ofNat (j / Const.slotsPerEpoch))
+        "initialize_ptc_window: current_epoch + e"
+      let startSlot := computeStartSlotAtEpoch epoch
+      computePtc state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch))
 
 /-- The state-side close of `upgrade_to_gloas` (`gloas/fork.md:227-230`): fill the post-state's
 `ptc_window` with `initialize_ptc_window(post)`, then onboard the builders from the pending
@@ -224,7 +220,7 @@ deposits. `upgradeToGloas` (`Gloas/Upgrade.lean`) builds the post-state's fields
 pre-state; these two steps read and write the Gloas state, so they run on it, in the spec's
 order. -/
 forkdef completeUpgradeToGloas : StateTransition Unit := do
-  let window ← initializePtcWindow (← get)
+  let window ← liftErr ((initializePtcWindow (← get)).mapM id)
   modifyState fun state => sszUpdate state with ptcWindow := window
   onboardBuildersFromPendingDeposits
 
