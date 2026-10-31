@@ -4,7 +4,7 @@ import EthCLSpecs.Gloas.EpochProcessing
 # `EthCLSpecs.Tests.GloasCommitteesPins`: the empty-selection pins
 
 The pins for `compute_balance_weighted_selection`'s `assert total > 0`
-(`gloas/beacon-chain.md:770`) and its `uint64` loop counter, which no conformance vector
+(`gloas/beacon-chain.md:1213`) and its `uint64` loop counter, which no conformance vector
 reaches. `State` is FFI-backed, so `native_decide`. The counter pin builds no `State`, so
 it runs as a `#guard`.
 

@@ -762,7 +762,8 @@ records the reason at the loop: the queue scans in `EpochProcessing.lean` stop o
 data-dependent guard rather than on a decreasing measure, and `on_tick`'s per-slot
 catch-up runs on a bound that is exact only at the pinned presets, which is why it
 throws on fuel-out (`fuelIterateM!`) instead of returning. The balance-weighted sampler
-in `Committees.lean` recurses on the spec's `uint64` counter (`termination_by 2^64 - i`).
+in `Committees.lean` recurses on the spec's `uint64` counter (`termination_by
+counterBudgetUInt64 i`, the `2^64` budget minus the counter).
 
 ---
 

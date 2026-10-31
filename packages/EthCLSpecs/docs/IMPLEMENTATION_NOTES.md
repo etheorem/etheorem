@@ -605,7 +605,7 @@ Spec-faithfulness facts worth knowing:
   of wrapping silently on Lean's `UInt64`. Valid exits never approach the bound. Gloas
   inherits the substep with no Gloas-side change.
 - **The balance-weighted sampler rejects on an empty candidate set.**
-  `compute_balance_weighted_selection` asserts `total > 0` (`gloas/beacon-chain.md:770`),
+  `compute_balance_weighted_selection` asserts `total > 0` (`gloas/beacon-chain.md:1213`),
   so proposer sampling, the sync committee, and `compute_ptc` reject with `.assert` when
   no validator qualifies (zero active, or all slashed under the EIP-8045 filter). No
   conformance vector reaches the empty case; `Tests/GloasCommitteesPins.lean` pins the

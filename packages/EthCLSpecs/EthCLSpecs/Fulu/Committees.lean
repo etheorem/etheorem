@@ -112,8 +112,8 @@ forkdef cbwsAux [Preset] (indices effBals : Array Nat) (perm : Array ValidatorIn
 termination_by counterBudgetUInt64 i
 
 /-- `compute_balance_weighted_selection(state, indices, seed, size, shuffle)`
-(`gloas/beacon-chain.md:755-787`). An empty `indices` rejects on the spec's
-`assert total > 0` (`:770`). -/
+(`gloas/beacon-chain.md:1195-1234`). An empty `indices` rejects on the spec's
+`assert total > 0` (`:1213`). -/
 forkdef computeBalanceWeightedSelection (state : State) (indices : Array ValidatorIndex)
     (seed : ByteArray) (size : Nat) (shuffle : Bool) :
     Except StateTransitionError (Array ValidatorIndex) := do
