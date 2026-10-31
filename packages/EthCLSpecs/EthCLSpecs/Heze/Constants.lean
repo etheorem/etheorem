@@ -5,7 +5,8 @@ import EthCLSpecs.Heze.Types
 
 Heze's three constant tiers, written as a diff over Gloas exactly as
 `Gloas/Constants.lean` is a diff over Fulu. EIP-7805 (FOCIL) adds one preset
-field and two flat constants, and leaves the config tier alone; everything else
+field, two flat constants, and three config values, and the fork adds its own fork
+version and epoch to the config tier; everything else
 arrives by lineage merge (the tier classes and their value sets) or by `inherit`
 (the `Const` entries), replayed into this namespace so Heze body code writes
 `Const.slotsPerEpoch` with no ancestor namespace in sight. A tier form with no
@@ -31,11 +32,23 @@ forkpreset where
   slot. -/
   inclusionListCommitteeSize : Nat
 
-/-- The one config value EIP-7805 adds. The lineage's fields merge in. -/
+/-- The config values Heze adds. The lineage's fields merge in. -/
 forkconfig where
+  /-- `HEZE_FORK_VERSION`. -/
+  hezeForkVersion : Version
+  /-- `HEZE_FORK_EPOCH`. `FAR_FUTURE_EPOCH` in both config files; a vector that activates
+  Heze at genesis overrides it to `0`. `compute_fork_version` reads it. -/
+  hezeForkEpoch : Epoch
   /-- `INCLUSION_LIST_DUE_BPS` (~67% of the slot): the timeliness deadline for an
   inclusion list, in basis points of the slot. -/
   inclusionListDueBps : UInt64
+  /-- `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` (8192): the cap on an inclusion list's
+  summed transaction bytes, which `on_inclusion_list` asserts. v1.7.0-beta.4 renames
+  alpha.12's `MAX_BYTES_PER_INCLUSION_LIST` to this. -/
+  maxTransactionsBytesPerInclusionList : UInt64
+  /-- `MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS` (1): how many slots past its own an
+  inclusion list stays in the retention window `on_inclusion_list` asserts. -/
+  minSlotsForInclusionListsRequests : UInt64
 
 namespace Const
 section
@@ -50,6 +63,11 @@ forkabbrev inclusionListCommitteeSize : Nat := Preset.inclusionListCommitteeSize
 forkabbrev domainInclusionListCommittee : ByteArray := ⟨#[0x10, 0, 0, 0]⟩
 -- `consensus-specs/specs/heze/fork-choice.md:38`.
 forkabbrev inclusionListDueBps : UInt64 := Config.inclusionListDueBps
+forkabbrev hezeForkVersion : Version := Config.hezeForkVersion
+forkabbrev hezeForkEpoch : Epoch := Config.hezeForkEpoch
+forkabbrev maxTransactionsBytesPerInclusionList : UInt64 :=
+  Config.maxTransactionsBytesPerInclusionList
+forkabbrev minSlotsForInclusionListsRequests : UInt64 := Config.minSlotsForInclusionListsRequests
 
 -- Gloas's entries, replayed here in Gloas's own order (its additions, then the
 -- Fulu surface it replays) so each body reaches its dependencies. The list is the
@@ -59,13 +77,15 @@ forkabbrev inclusionListDueBps : UInt64 := Config.inclusionListDueBps
 -- Gloas's own ePBS and EIP-8282 entries.
 inherit ptcSize maxBuildersPerWithdrawalsSweep maxPayloadAttestations
 inherit maxBuilderDepositRequestsPerPayload maxBuilderExitRequestsPerPayload
-inherit gloasForkVersion churnLimitQuotientGloas maxPerEpochActivationChurnLimitGloas
+inherit gloasForkVersion gloasForkEpoch churnLimitQuotientGloas
+inherit maxPerEpochActivationChurnLimitGloas
 inherit minBuilderWithdrawabilityDelay builderPaymentThresholdNumerator
 inherit builderPaymentThresholdDenominator builderWithdrawalPrefix payloadBuilderVersion
 inherit builderIndexFlag builderIndexSelfBuild domainBeaconBuilder domainPtcAttester
 inherit domainBuilderDeposit payloadStatusEmpty payloadStatusFull payloadStatusPending
 inherit attestationTimelinessIndex ptcTimelinessIndex payloadTimelyThreshold
 inherit dataAvailabilityTimelyThreshold attestationDueBpsGloas payloadAttestationDueBps
+inherit gasLimitSchedule
 inherit consolidationChurnLimitQuotient
 
 -- Vector widths and committee / epoch lengths.
@@ -123,8 +143,11 @@ inherit domainVoluntaryExit domainSyncCommittee domainBlsToExecutionChange
 -- Network parameters, and the fork-choice tuning beside them.
 inherit churnLimitQuotient minPerEpochChurnLimitElectra
 inherit maxPerEpochActivationExitChurnLimit minValidatorWithdrawabilityDelay
-inherit shardCommitteePeriod genesisForkVersion capellaForkVersion slotDurationMs
-inherit attestationDueBps maxBlobsPerBlockElectra
+inherit shardCommitteePeriod genesisForkVersion slotDurationMs
+inherit altairForkVersion altairForkEpoch bellatrixForkVersion bellatrixForkEpoch
+inherit capellaForkVersion capellaForkEpoch denebForkVersion denebForkEpoch
+inherit electraForkVersion electraForkEpoch fuluForkVersion fuluForkEpoch
+inherit attestationDueBps maxBlobsPerBlockElectra blobSchedule
 inherit reorgHeadWeightThreshold reorgParentWeightThreshold
 inherit reorgMaxEpochsSinceFinalization proposerReorgCutoffBps numberOfColumns
 inherit kzgCommitmentsInclusionProofDepth proposerScoreBoost basisPoints
@@ -144,9 +167,17 @@ forkpresetvalues minimal where
 forkpresetvalues mainnet where
   inclusionListCommitteeSize := 16
 forkconfigvalues minimalConfig where
+  hezeForkVersion := ⟨#[0x08, 0, 0, 1], by decide⟩
+  hezeForkEpoch := 0xffffffffffffffff
   inclusionListDueBps := 6667
+  maxTransactionsBytesPerInclusionList := 8192
+  minSlotsForInclusionListsRequests := 1
 forkconfigvalues mainnetConfig where
+  hezeForkVersion := ⟨#[0x08, 0, 0, 0], by decide⟩
+  hezeForkEpoch := 0xffffffffffffffff
   inclusionListDueBps := 6667
+  maxTransactionsBytesPerInclusionList := 8192
+  minSlotsForInclusionListsRequests := 1
 
 /-- `HEZE_FORK_VERSION` at the `minimal` config (`0x08000001`). -/
 def hezeForkVersionMinimal : Version := ⟨#[0x08, 0x00, 0x00, 0x01], by decide⟩

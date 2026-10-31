@@ -64,14 +64,47 @@ structure CaseMeta where
   /-- `execution.yaml`'s `execution_valid` for `operations/execution_payload`: the
   mocked execution-engine answer. `true` for every other format. -/
   executionValid : Bool := true
+  /-- `parent_slot` for `operations/attestation` from Gloas: the parent block's slot, the
+  extra input `process_attestation` takes there. `none` for every other format. -/
+  parentSlot : Option Nat := none
   deriving Inhabited, Repr
+
+/-- Whether two `viable_for_head_roots_and_weights` entry lists hold the same entries, as
+sets: the reference runner compares `{frozenset(e.items()) for e in …}`. The leaves are
+distinct nodes, so each side is duplicate-free and a two-way containment check is set
+equality. -/
+def sameViableEntries (a b : Array (ByteArray × Nat × Option Nat)) : Bool :=
+  a.size == b.size && a.all (b.contains ·) && b.all (a.contains ·)
+
+/-- A vector's config overrides, as `(KEY, value)` pairs in the spec's own spelling
+(`GLOAS_FORK_EPOCH`). The runner carries what the vector ships: a `config.yaml`'s fork
+epochs, and a `transition` vector's post-fork epoch. In this corpus only fork epochs ever
+differ from the preset's config, so the values are all `uint64`. -/
+abbrev ConfigOverrides := Array (String × Nat)
+
+/-- Apply `overrides` to the config `c` through `setters`, one `(KEY, set)` pair per config
+value the fork models. A key with no setter is a fork the model does not schedule (a later
+fork, an EIP feature fork). It is ignored only when its value is `FAR_FUTURE_EPOCH`, an
+unscheduled fork that cannot change this fork's behavior; any other value is an error, so an
+override never drops silently. -/
+def applyConfigOverrides {C : Type} (setters : List (String × (UInt64 → C → C)))
+    (overrides : ConfigOverrides) (c : C) : Except String C :=
+  overrides.foldlM (init := c) fun acc (key, value) =>
+    match setters.find? (·.1 == key) with
+    | some (_, set) =>
+      if value < 2 ^ 64 then .ok (set (UInt64.ofNat value) acc)
+      else .error s!"config override {key}: {value} exceeds uint64"
+    | none =>
+      if value == 2 ^ 64 - 1 then .ok acc
+      else .error s!"config override {key}: {value} is not modeled by this fork"
 
 /-- One step of a `fork_choice` vector's `steps.yaml`, decoded by the runner.
 `checks` carries the expected store values to compare; `unsupported` marks a step
 the runner does not model (a `should_override` check, an unrecognized key), so the
 case reports `todo` (an xfail) rather than falsely passing. -/
 inductive FcStep where
-  /-- `{tick: t}`: advance the store clock to absolute time `t` (seconds). -/
+  /-- `{tick: t}`: advance the store clock to absolute time `t`, in seconds. The format
+  runs `on_tick(store, seconds_to_milliseconds(t))`, so the interpreter converts. -/
   | tick (time : Nat)
   /-- `{block: …}`: a `SignedBeaconBlock`; `valid` is the step's expected outcome.
   `columns` are the raw `DataColumnSidecar` SSZ buffers the step lists (PeerDAS data
@@ -108,10 +141,15 @@ inductive FcStep where
   | checkFinalized (epoch : Nat) (root : ByteArray)
   /-- `checks.proposer_boost_root`. -/
   | checkBoost (root : ByteArray)
-  /-- `checks.time`. -/
+  /-- `checks.time`: `milliseconds_to_seconds(store.time_ms)`, in seconds. -/
   | checkTime (t : Nat)
-  /-- `checks.genesis_time`. -/
+  /-- `checks.genesis_time`: `milliseconds_to_seconds(store.genesis_time_ms)`, in seconds. -/
   | checkGenesisTime (t : Nat)
+  /-- `checks.viable_for_head_roots_and_weights`: the leaves of the filtered node tree that
+  `get_head` can reach, each as `(root, get_weight, payload_status)`. The payload status is
+  `none` before Gloas, where a node has none. The reference runner compares the expected and
+  computed entries as sets, so the order carries no meaning. -/
+  | checkViableForHead (leaves : Array (ByteArray × Nat × Option Nat))
   /-- A check the runner does not model (`should_override_forkchoice_update`, an
   unrecognized step or check key); the case reports `todo`, an xfail. -/
   | unsupported (reason : String)
@@ -173,7 +211,7 @@ step's does not (`add_block`'s `except (AssertionError, BlockNotFoundException)`
 
 Enumerated rather than closed on a wildcard, matching every other `FcStep` match in this file:
 Heze's spec already defines an `on_inclusion_list` fork-choice handler
-(`heze/fork-choice.md:256-267`) that the harness routes to `unsupported`, and wiring it adds a
+(`heze/fork-choice.md:264-311`) that the harness routes to `unsupported`, and wiring it adds a
 constructor. That must be a build error here, not a silent `true`. -/
 def FcStepKind.catchesIndexError : FcStepKind → Bool
   | .block                     => false

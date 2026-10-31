@@ -6,7 +6,7 @@ import SizzLean.Proofs.Merkle.Opening
 # `EthCLLib.Proofs.MerkleBranch`: what `isValidMerkleBranch` accepts
 
 `EthCLLib.Spec.isValidMerkleBranch` is `is_valid_merkle_branch`
-(`phase0/beacon-chain.md:800-812`).
+(`phase0/beacon-chain.md:1195-1203`).
 
 Past the length guard, the check reduces to a plain fold of `branch` over `leaf`,
 compared to `root`.

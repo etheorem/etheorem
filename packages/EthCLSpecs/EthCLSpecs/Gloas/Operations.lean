@@ -4,13 +4,15 @@ import EthCLSpecs.Gloas.EpochProcessing
 # `EthCLSpecs.Gloas.Operations`: the inherited (non-ePBS) operation handlers
 
 EIP-7732 leaves most block operations untouched. The Gloas `beacon-chain.md`
-overrides only `process_proposer_slashing` (builder-payment cleanup),
-`process_attestation` (payload-aware participation), `process_withdrawals` (builder
-withdrawals), and adds `process_payload_attestation` / the execution-bid /
-envelope steps. Everything else, the slashing-evidence and deposit / exit /
-change / execution-request handlers and `process_sync_aggregate`, is unchanged, so
-it is `inherit`ed verbatim and re-elaborated over `Gloas.State`, with the helper
-dependencies already in the Gloas namespace from `EpochProcessing`.
+overrides only `process_attestation` (payload-aware participation, keyed at the parent
+block's slot), `process_withdrawals` (builder withdrawals), and adds
+`process_payload_attestation` / the execution-bid / envelope steps. At v1.7.0-beta.4 the
+builder-payment cleanup moves from `process_proposer_slashing` into `slash_validator`
+(`Gloas/EpochProcessing.lean`), so `process_proposer_slashing` is Fulu's again. Everything
+else, the slashing-evidence and deposit / exit / change / execution-request handlers and
+`process_sync_aggregate`, is unchanged, so it is `inherit`ed verbatim and re-elaborated over
+`Gloas.State`, with the helper dependencies already in the Gloas namespace from
+`EpochProcessing`.
 
 The ePBS-modified and ePBS-new handlers are the Gloas-specific port (not here).
 -/
@@ -50,6 +52,9 @@ inherit getAttestingIndices
 
 -- Handlers EIP-7732 does not change, inherited verbatim over `Gloas.State`.
 inherit processAttesterSlashing
+-- v1.7.0-beta.4 drops the Gloas `process_proposer_slashing` override: the builder-payment
+-- cleanup lives in `slash_validator` now, which this replay late-binds to.
+inherit processProposerSlashing
 inherit processBlockHeader
 inherit processBlsToExecutionChange
 inherit processWithdrawalRequest
@@ -72,8 +77,18 @@ forkdef toBuilderIndex (vi : ValidatorIndex) : BuilderIndex := vi &&& (~~~ Const
 forkdef isActiveBuilder (state : State) (builderIndex : BuilderIndex) : Bool :=
   let builder := sszGet state builders[builderIndex.toNat]!
   builder.depositEpoch < (sszGet state finalizedCheckpoint).epoch && builder.withdrawableEpoch == Const.farFutureEpoch
-/-- `get_pending_balance_to_withdraw_for_builder`: pending builder withdrawals plus
-queued builder payments for `builderIndex`. -/
+/-- `get_scheduled_gas_limit(epoch)` (EIP-8261, new at v1.7.0-beta.4,
+`gloas/beacon-chain.md:1155-1162`): the gas limit of the latest `GAS_LIMIT_SCHEDULE` entry at
+or before `epoch`, or `none` when no entry applies. The schedule's epochs are distinct, so the
+descending sort has no ties to break. No modeled path calls it; its callers are the validator
+and builder duties. Pure. -/
+forkdef getScheduledGasLimit (epoch : Epoch) : Option UInt64 :=
+  let descending := Const.gasLimitSchedule.toArray.qsort (fun a b => a.1 > b.1)
+  (descending.find? (fun entry => epoch ≥ entry.1)).map (·.2)
+
+/-- `get_pending_balance_to_withdraw_for_builder` (`gloas/beacon-chain.md:1168-1178`): the
+pending builder withdrawals plus the queued builder payments for `builderIndex`, summed in
+that order. -/
 forkdef getPendingBalanceToWithdrawForBuilder (state : State) (builderIndex : BuilderIndex) : Gwei :=
   let w := (sszGet state builderPendingWithdrawals).foldl
     (fun acc x => if x.builderIndex == builderIndex then acc + x.amount else acc) 0
@@ -164,6 +179,46 @@ forkdef onboardBuildersFromPendingDeposits : StateTransition Unit := do
   let keptList : ProgressiveList PendingDeposit := ⟨kept⟩
   modifyState fun state => sszUpdate state with pendingDeposits := keptList
 
+/-- `initialize_ptc_window(state)` (`gloas/fork.md:37-56`): the cached PTC window that seeds
+a Gloas state at the fork. The first `SLOTS_PER_EPOCH` entries (the previous epoch, which has
+no Gloas PTC) hold zeroed committees; the next `1 + MIN_SEED_LOOKAHEAD` epochs hold
+`compute_ptc` for each slot. `MIN_SEED_LOOKAHEAD` is `1`, so the window is
+`3 * SLOTS_PER_EPOCH` long, the `ptc_window` field's declared length.
+
+At v1.7.0-beta.4 `upgrade_to_gloas` computes it over the Gloas post-state, with Gloas's own
+`compute_ptc`; alpha.12 computed it over the Fulu pre-state. The registry, balances, and
+RANDAO mixes the committee reads carry over unchanged, so the window is the same, but the
+function is now this fork's own. Each entry is an `Except` carrying its own two faults: the
+spec's per-entry `current_epoch + e` (the delta confined to `0` and `1`; `+0` cannot
+overflow, `+1` raises the `.arithmetic` fault at `current_epoch = UINT64_MAX`, where
+remerkleable raises Python `ValueError`) binds `checkedAdd` before the entry's `compute_ptc`
+read, and `compute_ptc` itself rejects a slot with no committee members.
+`completeUpgradeToGloas` maps the entries in index order, so the first rejecting slot
+surfaces, matching the spec's list comprehension. -/
+forkdef initializePtcWindow (state : State) :
+    Vector (Except StateTransitionError (Vector ValidatorIndex Const.ptcSize))
+      (3 * Const.slotsPerEpoch) :=
+  let currentEpoch := currentEpochOf state
+  let emptyCommittee : Vector ValidatorIndex Const.ptcSize := Vector.replicate Const.ptcSize 0
+  Vector.ofFn fun i : Fin (3 * Const.slotsPerEpoch) =>
+    if i.val < Const.slotsPerEpoch then pure emptyCommittee
+    else do
+      let j := i.val - Const.slotsPerEpoch
+      let epoch ← checkedAdd currentEpoch (UInt64.ofNat (j / Const.slotsPerEpoch))
+        "initialize_ptc_window: current_epoch + e"
+      let startSlot := computeStartSlotAtEpoch epoch
+      computePtc state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch))
+
+/-- The state-side close of `upgrade_to_gloas` (`gloas/fork.md:227-230`): fill the post-state's
+`ptc_window` with `initialize_ptc_window(post)`, then onboard the builders from the pending
+deposits. `upgradeToGloas` (`Gloas/Upgrade.lean`) builds the post-state's fields from the Fulu
+pre-state; these two steps read and write the Gloas state, so they run on it, in the spec's
+order. -/
+forkdef completeUpgradeToGloas : StateTransition Unit := do
+  let window ← liftErr ((initializePtcWindow (← get)).mapM id)
+  modifyState fun state => sszUpdate state with ptcWindow := window
+  onboardBuildersFromPendingDeposits
+
 /-! ## EIP-8282 builder-request handlers
 
 The EL-triggered builder onboarding / exit path (alpha.11). `apply_parent_execution_payload`
@@ -219,43 +274,6 @@ forkdef processBuilderExitRequest (request : BuilderExitRequest) : StateTransiti
         && getPendingBalanceToWithdrawForBuilder state builderIndex == 0 then
       initiateBuilderExit builderIndex
 
-/-! ## Gloas-modified operations -/
-
-/-- `process_proposer_slashing` (Gloas): Fulu's checks and `slash_validator`, plus
-the EIP-7732 step that voids the slashed proposal's `BuilderPendingPayment` if it
-is still in the two-epoch payment window. -/
-forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit := do
-  let state ← get
-  let h1 := ps.signedHeader1.message
-  let h2 := ps.signedHeader2.message
-
-  assert (h1.slot == h2.slot)
-  assert (h1.proposerIndex == h2.proposerIndex)
-  assert (htr h1 != htr h2)
-  let hb ← assertH (h1.proposerIndex.toNat < (sszGet state validators).size)
-  let proposer := (sszGet state validators)[h1.proposerIndex.toNat]'hb.down
-  assert (isSlashableValidator proposer (currentEpochOf state))
-  assert (blsVerifySigned proposer.pubkey h1
-    (getDomain state Const.domainBeaconProposer (computeEpochAtSlot h1.slot)) ps.signedHeader1.signature)
-  assert (blsVerifySigned proposer.pubkey h2
-    (getDomain state Const.domainBeaconProposer (computeEpochAtSlot h2.slot)) ps.signedHeader2.signature)
-
-  -- Void the slashed proposal's pending payment only if it is still in the two-epoch
-  -- window AND the recorded payment belongs to this proposer (EIP-8282). `default` is
-  -- the all-zero `BuilderPendingPayment`, so this clears the slot without restating it.
-  let empty : BuilderPendingPayment := default
-  let proposalEpoch := computeEpochAtSlot h1.slot
-  if proposalEpoch == currentEpochOf state then
-    let idx := builderPaymentIndex h1.slot true
-    if ((sszGet state builderPendingPayments)[idx]!).proposerIndex == h1.proposerIndex then
-      modifyState fun state => sszUpdate state with builderPendingPayments[idx]! := empty
-  else if proposalEpoch == previousEpochOf state then
-    let idx := builderPaymentIndex h1.slot false
-    if ((sszGet state builderPendingPayments)[idx]!).proposerIndex == h1.proposerIndex then
-      modifyState fun state => sszUpdate state with builderPendingPayments[idx]! := empty
-
-  slashValidator h1.proposerIndex
-
 /-! ## Attestation (payload-aware) + payload-timeliness committee (EIP-7732) -/
 
 /-- `is_attestation_same_slot`: the attestation votes for the block proposed at its
@@ -269,13 +287,19 @@ forkdef isAttestationSameSlot (state : State) (data : AttestationData) : StateTr
     let prevRoot ← getBlockRootAtSlot state (data.slot - 1)
     pure (blockroot == slotRoot && blockroot != prevRoot)
 
-/-- `get_attestation_participation_flag_indices` (Gloas, EIP-7732): adds the
-payload-matching constraint to `is_matching_head`. A same-slot attestation must have
-`data.index == 0` (a second reject, surfaced as `none`); otherwise `payload_matches`
-compares `data.index` to this slot's `execution_payload_availability` bit. `none`
-also covers the `is_matching_source` reject (as in Fulu). -/
+/-- `get_attestation_participation_flag_indices` (Gloas, EIP-7732,
+`gloas/beacon-chain.md:1339-1386`): adds the payload-matching constraint to `is_matching_head`.
+A same-slot attestation must have `data.index == 0` (a second reject, surfaced as `none`);
+otherwise `payload_matches` compares `data.index` to the `execution_payload_availability`
+bit at `parent_slot`. `none` also covers the `assert is_matching_source` reject (as in Fulu).
+
+v1.7.0-beta.4 adds the `parent_slot` parameter, the slot of the parent of the block being
+processed, and reads the payload bit there rather than at `data.slot`. The timely head flag
+needs both the minimum inclusion delay and a head root that matches the block root at the
+attestation slot, so only an attestation to the parent block can earn it, and the parent's
+payload availability is recorded at `parent_slot` even when `data.slot` is a skipped slot. -/
 forkdef getAttestationParticipationFlagIndices (state : State) (data : AttestationData)
-    (inclusionDelay : UInt64) : StateTransition (Option (Array Nat)) := do
+    (inclusionDelay : UInt64) (parentSlot : Slot) : StateTransition (Option (Array Nat)) := do
   let justified := if data.target.epoch == currentEpochOf state then sszGet state currentJustifiedCheckpoint
                    else sszGet state previousJustifiedCheckpoint
   let isMatchingSource := data.source.epoch == justified.epoch && data.source.root == justified.root
@@ -288,7 +312,7 @@ forkdef getAttestationParticipationFlagIndices (state : State) (data : Attestati
   let payloadMatches : Bool :=
     if sameSlot then true
     else
-      let bit := bitGet (sszGet state executionPayloadAvailability) (data.slot.toNat % Const.slotsPerHistoricalRoot)
+      let bit := bitGet (sszGet state executionPayloadAvailability) (parentSlot.toNat % Const.slotsPerHistoricalRoot)
       data.index == (if bit then (1 : UInt64) else 0)
   let headRoot ← getBlockRootAtSlot state data.slot
   let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == headRoot && payloadMatches
@@ -299,12 +323,17 @@ forkdef getAttestationParticipationFlagIndices (state : State) (data : Attestati
   if isMatchingHead && inclusionDelay == Const.minAttestationInclusionDelay then flags := flags.push Const.timelyHeadFlagIndex
   return some flags
 
-/-- `process_attestation` (Gloas, EIP-7732): Fulu's flag/reward processing, with
-`assert data.index < 2` (a payload-presence bit rides the committee index) and the
-new builder-payment weight accounting. For same-slot attestations whose builder
-payment is non-empty, each validator that sets a new flag adds its effective balance
-to the slot's `BuilderPendingPayment.weight`, contributing once per slot. -/
-forkdef processAttestation (att : Attestation) : StateTransition Unit := do
+/-- `process_attestation` (Gloas, EIP-7732, `gloas/beacon-chain.md:2396-2480`): Fulu's
+flag/reward processing, with `assert data.index < 2` (the committee
+index carries a payload-presence bit) and the builder-payment weight accounting. For a same-slot attestation
+whose builder payment is non-empty, a validator adds its effective balance to the slot's
+`BuilderPendingPayment.weight` when it sets a new flag and held no flag before this
+attestation, so each validator contributes once.
+
+v1.7.0-beta.4 adds the `parent_slot` parameter, which reaches
+`get_attestation_participation_flag_indices`, and the `had_no_participation` gate on the
+weight: alpha.12 credited any validator that set a new flag. -/
+forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransition Unit := do
   let state ← get
   let data := att.data
 
@@ -328,7 +357,7 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   assert (att.aggregationBits.size == offset)
 
   -- Resolve the participation flags, then validate the aggregate signature.
-  let flagIndices ← match ← getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) with
+  let flagIndices ← match ← getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) parentSlot with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
   let indexedAttestation : IndexedAttestation :=
@@ -346,11 +375,15 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   let mut weight := payment0.weight
   for vi in (← liftErr (getAttestingIndices state att)) do
     let i := vi.toNat
+    -- `i` is a data-derived attesting-validator index; read the participation flag
+    -- through `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather
+    -- than masking as a default flag (the matching `[i]!` writes are then in range).
+    -- [New in Gloas:EIP7732] the flags this validator held before this attestation.
+    let flags0 ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) i
+                 else sszGetIdx (sszGet stateAcc previousEpochParticipation) i
+    let hadNoParticipation := flags0 == 0
     let mut willSet := false
     for flagIndex in [0:3] do
-      -- `i` is a data-derived attesting-validator index; read the participation flag
-      -- through `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather
-      -- than masking as a default flag (the matching `[i]!` write is then in range).
       let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) i
                  else sszGetIdx (sszGet stateAcc previousEpochParticipation) i
       if flagIndices.contains flagIndex && !hasFlag flag flagIndex then
@@ -360,15 +393,16 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
                    sszUpdate stateAcc with previousEpochParticipation[i]! := addFlag flag flagIndex
         proposerNum := proposerNum + (← liftErr (getBaseReward state vi)) * Const.participationFlagWeights[flagIndex]!
         willSet := true
-    if willSet && sameSlot && payment0.withdrawal.amount > 0 then
+    if willSet && hadNoParticipation && sameSlot && payment0.withdrawal.amount > 0 then
       let attester ← sszGetIdx (sszGet state validators) i
       weight := weight + attester.effectiveBalance
 
-  -- Write back the (possibly weight-updated) payment, as the spec does unconditionally.
-  stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := { payment0 with weight := weight }
+  -- Reward the proposer, then write back the (possibly weight-updated) payment, which the
+  -- spec does unconditionally and in this order.
   let proposerDenom := (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
   stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc)
     (UInt64.ofNat (proposerNum / proposerDenom))
+  stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := { payment0 with weight := weight }
   set stateAcc
 where
   /-- Walk the committee bits: each referenced committee index is in range and
@@ -385,27 +419,28 @@ where
         return (okAcc && attesters > 0, off + committee.size))
       (true, 0)
 
-/-- `get_ptc` (v1.7.0-alpha.11): read the cached PTC for `slot` from `ptc_window`.
-For a slot in the previous epoch the window's first `SLOTS_PER_EPOCH` entries hold it;
-otherwise an `(epoch - state_epoch + 1) * SLOTS_PER_EPOCH` offset applies.
+/-- `get_ptc` (`gloas/beacon-chain.md:1392-1404`): read the cached PTC for `slot` from
+`ptc_window`. For a slot in the previous epoch the window's first `SLOTS_PER_EPOCH` entries
+hold it; otherwise an `(epoch - state_epoch + 1) * SLOTS_PER_EPOCH` offset applies.
 
-The pinned spec (`gloas/beacon-chain.md:853-864`) guards each branch with its own assert,
-`epoch + 1 == state_epoch` on the past-epoch side and
-`epoch <= state_epoch + MIN_SEED_LOOKAHEAD` on the other, and both are modeled here. They
-are also what bounds the index: `MIN_SEED_LOOKAHEAD` is 1, so the else branch's
-`epoch - state_epoch` is 0 or 1, the scaled offset is one or two epochs, and the read lands
-inside the `3 * SLOTS_PER_EPOCH` window by construction. That is why the total `vget` is
-sound once the asserts are in place, and why the spec's own `IndexError` on this subscript is
-unreachable rather than unmodeled.
+The spec opens with `assert epoch >= GLOAS_FORK_EPOCH` (new at v1.7.0-beta.4): a slot before
+the fork has no PTC. The window's previous-epoch entries are zero-filled at the upgrade, so
+without the assert a payload attestation for the last pre-fork slot would resolve to
+validator 0 and could verify. `GLOAS_FORK_EPOCH` is a config value; the runner applies a
+vector's override of it (`0` for a vector that activates Gloas at genesis, the `fork_epoch`
+for a transition vector).
 
-Both callers already bound the index structurally (`process_payload_attestation` asserts
-`data.slot + 1 == state.slot`, `on_payload_attestation_message` guards
-`data.slot == state.slot`), so no corpus input reaches either reject. This closes a
-faithfulness gap, not a live divergence. Throwing, so `get_indexed_payload_attestation` and
-the fork-choice handler bind it. -/
+The two branch asserts, `epoch + 1 == state_epoch` on the past-epoch side and
+`epoch <= state_epoch + MIN_SEED_LOOKAHEAD` on the other, are what bound the index:
+`MIN_SEED_LOOKAHEAD` is 1, so the else branch's `epoch - state_epoch` is 0 or 1, the scaled
+offset is one or two epochs, and the read lands inside the `3 * SLOTS_PER_EPOCH` window by
+construction. That is why the total `vget` is sound once the asserts are in place, and why the
+spec's own `IndexError` on this subscript is unreachable rather than unmodeled. Throwing, so
+`get_indexed_payload_attestation` and the fork-choice handler bind it. -/
 forkdef getPtc (state : State) (slot : Slot) :
     StateTransition (Vector ValidatorIndex Const.ptcSize) := do
   let epoch := computeEpochAtSlot slot
+  assert (epoch ≥ Const.gloasForkEpoch)
   let stateEpoch := currentEpochOf state
   let spe := UInt64.ofNat Const.slotsPerEpoch
   if epoch < stateEpoch then
@@ -486,6 +521,31 @@ forkdef verifyExecutionPayloadBidSignature (state : State) (signedBid : SignedEx
   blsVerifySigned builder.pubkey signedBid.message
     (getDomain state Const.domainBeaconBuilder (currentEpochOf state)) signedBid.signature
 
+/-- `verify_execution_payload_envelope_signature` (`gloas/beacon-chain.md:2107-2121`): the
+envelope is signed by the builder's key (the proposer's, for a self-build) under
+`DOMAIN_BEACON_BUILDER` at the current epoch. v1.7.0-beta.4 moves it from the fork-choice
+document into the beacon-chain one; its one caller is still the fork-choice envelope check.
+
+`state.validators[proposer_index]` / `state.builders[builder_index]` are bare indexed reads
+with no guarding assert, and `builder_index` comes straight from the untrusted envelope, so an
+out-of-range index is the spec's `IndexError`. `sszGetIdx` surfaces it as the `outOfBounds`
+reject, hence the `Except StateTransitionError Bool` signature; the fork-choice caller lifts it
+with `liftErr` and binds the result before its `assert`. -/
+forkdef verifyExecutionPayloadEnvelopeSignature (state : State)
+    (signedEnvelope : SignedExecutionPayloadEnvelope) : Except StateTransitionError Bool := do
+  let builderIndex := signedEnvelope.message.builderIndex
+  let pubkey ←
+    if builderIndex == Const.builderIndexSelfBuild then do
+      let validatorIndex := (sszGet state latestBlockHeader).proposerIndex
+      let v ← sszGetIdx (sszGet state validators) validatorIndex.toNat
+      pure v.pubkey
+    else do
+      let b ← sszGetIdx (sszGet state builders) builderIndex.toNat
+      pure b.pubkey
+  let signingRoot := computeSigningRoot signedEnvelope.message
+    (getDomain state Const.domainBeaconBuilder (currentEpochOf state))
+  pure (blsVerify pubkey signingRoot signedEnvelope.signature)
+
 /-- `settle_builder_payment`: queue the pending payment's withdrawal (if non-zero)
 and clear the payment slot. No quorum check at this layer (that lives in the epoch
 substep `process_builder_pending_payments`). -/
@@ -501,11 +561,13 @@ forkdef settleBuilderPayment (paymentIndex : Nat) : StateTransition Unit := do
   modifyState fun state =>
     sszUpdate state with builderPendingPayments[paymentIndex]! := empty
 
-/-- `process_execution_payload_bid` (EIP-7732, alpha.11 signature): validate the signed
-bid (self-build sentinel, or an active, payload-builder-versioned, funded, correctly-signed
-builder), check it commits to the current slot / parent / randao, record the
-`BuilderPendingPayment`, and cache the bid. alpha.11 takes the `SignedExecutionPayloadBid`
-directly (not a `BeaconBlock`) and reads the slot / parent root from state. -/
+/-- `process_execution_payload_bid` (EIP-7732, `gloas/beacon-chain.md:2162-2215`): validate the
+signed bid (self-build sentinel, or an active, payload-builder-versioned, funded,
+correctly-signed builder), check it commits to the current slot / parent / randao and names a
+block hash other than its parent's (`bid.block_hash != bid.parent_block_hash`, new at
+v1.7.0-beta.4), record the `BuilderPendingPayment`, and cache the bid. It takes the
+`SignedExecutionPayloadBid` directly (not a `BeaconBlock`, since alpha.11) and reads the
+slot / parent root from state. -/
 forkdef processExecutionPayloadBid (signedBid : SignedExecutionPayloadBid) : StateTransition Unit := do
   let state ← get
   let bid := signedBid.message
@@ -523,10 +585,12 @@ forkdef processExecutionPayloadBid (signedBid : SignedExecutionPayloadBid) : Sta
     assert (canBuilderCoverBid state builderIndex amount)
     assert (verifyExecutionPayloadBidSignature state signedBid)
 
-  assert (bid.blobKzgCommitments.size ≤ Const.maxBlobsPerBlockElectra)
+  assert (bid.blobKzgCommitments.size ≤ (getBlobParameters (currentEpochOf state)).maxBlobsPerBlock)
   assert (bid.slot == sszGet state slot)
   assert ((sszGet state slot) > Const.genesisSlot)
   assert (bid.parentBlockHash == sszGet state latestBlockHash)
+  -- [New at v1.7.0-beta.4] the bid's block hash must differ from its parent's.
+  assert (bid.blockHash != bid.parentBlockHash)
   let parentBlockRoot ← getBlockRootAtSlot state ((sszGet state slot) - 1)
   assert (bid.parentBlockRoot == parentBlockRoot)
   let randaoMix ← getRandaoMix (currentEpochOf state)
@@ -542,25 +606,25 @@ forkdef processExecutionPayloadBid (signedBid : SignedExecutionPayloadBid) : Sta
 
   modifyState fun state => sszUpdate state with latestExecutionPayloadBid := bid
 
-/-- `apply_parent_execution_payload`: process the parent payload's execution requests
-(at the child's slot), settle or evict the parent's builder payment, then mark the
-parent slot's payload available and adopt its block hash. -/
+/-- `apply_parent_execution_payload` (`gloas/beacon-chain.md:1784-1830`): settle the parent's
+builder payment (or queue its value directly once the payment entry is evicted), then process
+the parent payload's execution requests at the child's slot, then mark the parent slot's
+payload available and adopt its block hash.
+
+v1.7.0-beta.4 changes two things. The parent slot is `state.latest_block_header.slot`, the
+parent block's own slot; alpha.12 read the cached bid's slot. And the payment settles before
+the requests, so a builder exit request in the same payload is rejected while the payment is
+still pending. -/
 forkdef applyParentExecutionPayload (requests : ExecutionRequests) : StateTransition Unit := do
   let state ← get
   let parentBid := sszGet state latestExecutionPayloadBid
-  let parentSlot := parentBid.slot
+  let parentSlot := (sszGet state latestBlockHeader).slot
   let parentEpoch := computeEpochAtSlot parentSlot
 
   assert (requests.withdrawals.size ≤ Const.maxWithdrawalRequestsPerPayload)
   assert (requests.consolidations.size ≤ Const.maxConsolidationRequestsPerPayload)
   assert (requests.builderDeposits.size ≤ Const.maxBuilderDepositRequestsPerPayload)
   assert (requests.builderExits.size ≤ Const.maxBuilderExitRequestsPerPayload)
-
-  for d in requests.deposits do processDepositRequest d
-  for w in requests.withdrawals do processWithdrawalRequest w
-  for c in requests.consolidations do processConsolidationRequest c
-  for bd in requests.builderDeposits do processBuilderDepositRequest bd
-  for be in requests.builderExits do processBuilderExitRequest be
 
   -- Settle the parent's payment if it is still in the two-epoch window; outside it,
   -- queue any remaining value directly as a builder withdrawal.
@@ -571,6 +635,12 @@ forkdef applyParentExecutionPayload (requests : ExecutionRequests) : StateTransi
   else if parentBid.value > 0 then
     appendState builderPendingWithdrawals
       { feeRecipient := parentBid.feeRecipient, amount := parentBid.value, builderIndex := parentBid.builderIndex }
+
+  for d in requests.deposits do processDepositRequest d
+  for w in requests.withdrawals do processWithdrawalRequest w
+  for c in requests.consolidations do processConsolidationRequest c
+  for bd in requests.builderDeposits do processBuilderDepositRequest bd
+  for be in requests.builderExits do processBuilderExitRequest be
 
   modifyState fun state => sszUpdate state with executionPayloadAvailability :=
     bitSet (sszGet state executionPayloadAvailability) (umodIdx parentSlot Const.slotsPerHistoricalRoot) true

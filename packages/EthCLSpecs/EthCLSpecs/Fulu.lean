@@ -4,6 +4,7 @@ import EthCLSpecs.Fulu.Constants
 import EthCLSpecs.Fulu.Containers
 import EthCLSpecs.Fulu.State
 import EthCLSpecs.Fulu.Time
+import EthCLSpecs.Fulu.BlobParameters
 import EthCLSpecs.Fulu.Signing
 import EthCLSpecs.Fulu.Randao
 import EthCLSpecs.Fulu.Balances
@@ -28,7 +29,8 @@ Re-export of the Fulu spec modules in load order (`SPECS_ARCHITECTURE.md` §3.1)
 the lineage declaration (`Fork`, row 0, which every other module reaches through
 `Types`), the foundations (`Types`, `Constants`), the per-container files and `BeaconState`
 (`Containers`, `State`), the state-operation concern files (`Time` through
-`Operations`, split by concern with the read/write seam resolved), the state
+`Operations`, split by concern with the read/write seam resolved; `BlobParameters`
+between `Time` and `Signing` holds the blob-schedule lookup), the state
 transition (`Transition`), fork choice (`ForkChoice`), and the fork-interface
 instance (`Interface`).
 -/

@@ -44,7 +44,7 @@ private def pinRoot : Root := Vector.replicate 32 9
 private def pinStore : @Store minimal treeMap fastHasherTag :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  { time := 0, genesisTime := 0
+  { timeMs := 0, genesisTimeMs := 0
     justifiedCheckpoint := default, finalizedCheckpoint := default
     unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
     proposerBoostRoot := fcZeroRoot
@@ -69,8 +69,9 @@ private def pinGetAncestorThrows : Bool :=
   | _ => false
 #guard pinGetAncestorThrows = true
 
-/-- `getHead` rejects end-to-end when the justified-checkpoint root is unknown: the
-`filter_block_tree` opening read misses. Locks the whole `getHead` monadic path.
+/-- `getHead` rejects end-to-end when the justified-checkpoint root is unknown. The root has
+no children, so `filter_node_tree` takes its leaf branch, and `get_voting_source`'s
+`store.blocks[block_root]` read misses. Locks the whole `getHead` monadic path.
 `State`-free here (no checkpoint state read reached before the block miss), so `FcMap`
 kernel `#guard`. -/
 private def pinGetHeadThrows : Bool :=
@@ -127,7 +128,7 @@ example : pinBalanceAfterWithdrawalsThrows = true := by native_decide
 
 /-- `balanceAfterWithdrawals` rejects (`.arithmetic`) a `uint64` underflow: a validator whose
 queued withdrawals exceed its balance drives `balances[vi] - withdrawn` negative
-(`capella/beacon-chain.md:378`), which pyspec raises as `ValueError`, uncaught by the reference
+(`capella/beacon-chain.md:421`), which pyspec raises as `ValueError`, uncaught by the reference
 runner (`context.py:424-435`), so the Lean throws the uncaught `.arithmetic` reject rather than a
 caught `.assert`. Fixture: balance 5 at index 0, a queued withdrawal of 10. `State` is FFI-backed,
 so `native_decide`. -/

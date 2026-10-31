@@ -44,6 +44,10 @@ export SizzLean.Repr (SSZList Bitvector Bitlist ProgressiveList ProgressiveBitli
 @[inline] def umax (a b : UInt64) : UInt64 := if a < b then b else a
 /-- `min` on `UInt64`. -/
 @[inline] def umin (a b : UInt64) : UInt64 := if a < b then a else b
+/-- `saturating_sub(a, b)` (`phase0/beacon-chain.md:1038-1042`): `a - b`, floored at zero.
+The spec writes the floor as `a - a`, which keeps the result's type; on `UInt64` that is
+`0`. Total: the subtraction runs only when `a > b`, so it cannot wrap. -/
+@[inline] def saturatingSub (a b : UInt64) : UInt64 := if a > b then a - b else 0
 
 /-- Newton's-iteration integer square root over `Nat`, fuel-bounded so it is
 total and kernel-reducible (the spec's `integer_squareroot`). 200 steps converges

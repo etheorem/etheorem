@@ -33,7 +33,7 @@ From this directory, with the repo venv:
 caching backend for the plain FFI (caching is on by default). Useful for comparing
 cache-on against cache-off timings.
 
-The pin (`--tag`, default `v1.7.0-alpha.12`) selects the release; the archive is
+The pin (`--tag`, default `v1.7.0-beta.4`) selects the release; the archive is
 downloaded once and cached.
 
 ### Re-pinning checklist

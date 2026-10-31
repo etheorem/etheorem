@@ -66,12 +66,17 @@ ACCUMULATED = set(FORKS[:FORKS.index("fulu") + 1])
 OUR_FORKS = ["Fulu", "Gloas", "Heze"]
 
 # Section heading -> the tier a name defined under it belongs to. `Constant` is
-# the fork-choice documents' singular spelling.
+# the fork-choice documents' singular spelling. Since v1.7.0-beta.4 the documents
+# write `Presets` and `Configs`; the older `Preset` / `Configuration` stay so a
+# re-pin to an older tag still reads.
 TIERS = {"constant": "flat", "constants": "flat",
-         "preset": "Preset", "configuration": "Config"}
+         "preset": "Preset", "presets": "Preset",
+         "configuration": "Config", "configs": "Config"}
 
-# The documents each fork contributes constants through.
-DOCS = ["beacon-chain", "fork-choice", "das-core"]
+# The documents each fork contributes constants through. `deposit-contract` is
+# phase 0's: since v1.7.0-beta.4 it holds `DEPOSIT_CONTRACT_TREE_DEPTH`, which the
+# beacon-chain document's table carried before.
+DOCS = ["beacon-chain", "fork-choice", "das-core", "deposit-contract"]
 
 # Constants upstream defines outside any table, so the attribution method cannot
 # place them. Each is placed by reading the spec text, and each is an ordinary

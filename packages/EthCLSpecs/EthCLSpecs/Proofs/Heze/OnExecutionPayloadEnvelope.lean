@@ -6,7 +6,7 @@ import EthCLLib.Proofs.StoreRun
 /-!
 # Accepting an execution payload envelope
 
-Heze's `onExecutionPayloadEnvelope` (`Heze/ForkChoice.lean:426-448`)
+Heze's `onExecutionPayloadEnvelope` (`Heze/ForkChoice.lean:439-461`)
 verifies and records a revealed payload envelope. This module proves its
 complete compositional `.run` equation at `ForkChoiceStoreRun (Store map)`.
 
@@ -42,11 +42,11 @@ namespace EthCLSpecs.Proofs.Heze
 open EthCLLib.Proofs (ForkChoiceStoreRun run_throw except_bind_error pureState)
 open EthCLLib.Spec (HasherTag MapKind FcMap ExecutionEngine DataAvailability CryptoBackend
   StoreTransitionError)
-open EthCLSpecs.Heze (Preset Config Store BeaconState ExecutionPayload ExecutionRequests
-  Transaction SignedExecutionPayloadEnvelope onExecutionPayloadEnvelope
+open EthCLSpecs.Heze (Preset Config Store BeaconState BeaconBlock Root ExecutionPayload
+  ExecutionRequests Transaction SignedExecutionPayloadEnvelope onExecutionPayloadEnvelope
   verifyExecutionPayloadEnvelope recordPayloadInclusionListSatisfaction
-  getInclusionListTransactions isInclusionListSatisfied
-  isDataAvailable)
+  getShufflingDependentRoot getInclusionListTransactions isInclusionListSatisfied
+  computeEpochAtSlot isDataAvailable)
 
 variable {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
   [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
@@ -91,7 +91,7 @@ recorder errors propagate unchanged. After recorder success, the handler
 performs its final `set` on the returned store, discarding the
 recorder-produced runner state.
 `recordPayloadInclusionListSatisfaction_run` characterizes the recorder's
-slot-zero, collector-error, and successful outcomes.
+missing-block, slot-zero, walk-error, and successful outcomes.
 -/
 @[characterizes EthCLSpecs.Heze.onExecutionPayloadEnvelope]
 theorem onExecutionPayloadEnvelope_run :
@@ -113,7 +113,7 @@ theorem onExecutionPayloadEnvelope_run :
               | .ok warm =>
                   match (recordPayloadInclusionListSatisfaction
                       (StoreTransition := ForkChoiceStoreRun (Store map))
-                      store state signedEnv.message.beaconBlockRoot
+                      store signedEnv.message.beaconBlockRoot
                       signedEnv.message.payload).run store with
                   | .error err => .error err
                   | .ok (recordedStore, _) =>
@@ -141,7 +141,7 @@ theorem onExecutionPayloadEnvelope_run :
         simp
         cases (recordPayloadInclusionListSatisfaction
             (StoreTransition := ForkChoiceStoreRun (Store map))
-            store state signedEnv.message.beaconBlockRoot
+            store signedEnv.message.beaconBlockRoot
             signedEnv.message.payload).run store with
         | error err =>
           rfl
@@ -173,7 +173,7 @@ theorem onExecutionPayloadEnvelope_run_of_pureState :
           | .ok _ =>
               match (recordPayloadInclusionListSatisfaction
                   (StoreTransition := ForkChoiceStoreRun (Store map))
-                  store (pureState state) signedEnv.message.beaconBlockRoot
+                  store signedEnv.message.beaconBlockRoot
                   signedEnv.message.payload).run store with
               | .error err => .error err
               | .ok (recordedStore, _) =>
@@ -254,7 +254,7 @@ theorem onExecutionPayloadEnvelope_run_error_of_record :
       (verifyExecutionPayloadEnvelope (pureState state) signedEnv).isOk = true →
       (recordPayloadInclusionListSatisfaction
           (StoreTransition := ForkChoiceStoreRun (Store map))
-          store (pureState state) signedEnv.message.beaconBlockRoot
+          store signedEnv.message.beaconBlockRoot
           signedEnv.message.payload).run store
         = .error err →
       (onExecutionPayloadEnvelope (map := map)
@@ -266,28 +266,29 @@ theorem onExecutionPayloadEnvelope_run_error_of_record :
   simp [hlookup, hda, verifyExecutionPayloadEnvelope_pureState_of_isOk state signedEnv hok, hrec]
 
 /--
-Successful-path run equation for `onExecutionPayloadEnvelope`. When the
-handler's lookup and checks succeed and timely inclusion-list collection
-returns `ilTxs`, the final store is the original store updated by three
-same-root `FcMap.insert` expressions: the block state `pureState state` in
-`blockStates`, the envelope in `payloads`, and the inclusion-list result.
-The inserts may overwrite a prior entry.
+Successful-path run equation for `onExecutionPayloadEnvelope`. The handler's
+lookup and checks succeed, the envelope's block sits at a nonzero slot, and the
+dependent-root walk returns `dependentRoot`. Then the final store is the original
+store updated by three same-root `FcMap.insert` expressions: the block state
+`pureState state` in `blockStates`, the envelope in `payloads`, and the
+inclusion-list result for the timely transactions stored under
+`(block.slot - 1, dependentRoot)`. The inserts may overwrite a prior entry.
 -/
 theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks :
     ∀ (store : Store map)
       (signedEnv : SignedExecutionPayloadEnvelope)
       (state : BeaconState)
-      (ilTxs : Array Transaction)
+      (block : BeaconBlock) (dependentRoot : Root)
       (postRunnerStore : Store map),
       FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some (pureState state) →
       isDataAvailable signedEnv.message.beaconBlockRoot = true →
       (verifyExecutionPayloadEnvelope (pureState state) signedEnv).isOk = true →
-      state.slot ≠ 0 →
-      (getInclusionListTransactions
+      FcMap.lookup store.blocks signedEnv.message.beaconBlockRoot = some block →
+      block.slot ≠ 0 →
+      (getShufflingDependentRoot
           (StoreTransition := ForkChoiceStoreRun (Store map))
-          store.inclusionListStore (pureState state) (state.slot - 1)
-          (onlyTimely := true)).run store
-        = .ok (ilTxs, postRunnerStore) →
+          store signedEnv.message.beaconBlockRoot (computeEpochAtSlot (block.slot - 1))).run store
+        = .ok (dependentRoot, postRunnerStore) →
       (onExecutionPayloadEnvelope (map := map)
           (StoreTransition := ForkChoiceStoreRun (Store map))
           signedEnv).run store
@@ -301,13 +302,16 @@ theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks :
               payloadInclusionListSatisfaction :=
                 FcMap.insert store.payloadInclusionListSatisfaction
                   signedEnv.message.beaconBlockRoot
-                  (isInclusionListSatisfied signedEnv.message.payload ilTxs) }) := by
-  intro store signedEnv state ilTxs postRunnerStore hlookup hda hok hslot htxs
+                  (isInclusionListSatisfied signedEnv.message.payload
+                    (getInclusionListTransactions store.inclusionListStore (block.slot - 1)
+                      dependentRoot (onlyTimely := true))) }) := by
+  intro store signedEnv state block dependentRoot postRunnerStore hlookup hda hok hblock hslot hdep
   -- `hlookup`, `hda`, and `hok` discharge the handler prefix;
-  -- `hslot` and `htxs` select the recorder's successful branch.
+  -- `hblock`, `hslot`, and `hdep` select the recorder's successful branch.
   rw [onExecutionPayloadEnvelope_run]
   simp [hlookup, hda, verifyExecutionPayloadEnvelope_pureState_of_isOk state signedEnv hok,
     recordPayloadInclusionListSatisfaction_run_eq (map := map) store store postRunnerStore
-      state signedEnv.message.beaconBlockRoot signedEnv.message.payload ilTxs hslot htxs]
+      signedEnv.message.beaconBlockRoot signedEnv.message.payload block dependentRoot
+      hblock hslot hdep]
 
 end EthCLSpecs.Proofs.Heze

@@ -38,7 +38,7 @@ set_option autoImplicit false
 
 namespace EthCLLib.Proofs
 
-open EthCLLib.Spec (HasherTag ErrorConv liftErr)
+open EthCLLib.Spec (HasherTag ErrorConv liftErr StateTransitionError throwArithmetic)
 open SizzLean (SSZRepr)
 open SizzLean.Cache
 
@@ -64,6 +64,16 @@ just the error, so a theorem about one has no post-state to characterize. -/
 theorem run_throw {σ ε α : Type} (e : ε) (s : σ) :
     (throw e : StateT σ (Except ε) α).run s = .error e := rfl
 
+/-- `.run` of `throwArithmetic` at the pure runner: the fault, converted by the machine's
+own `ErrorConv` and carried alone, like `run_throw`. At the state machine
+(`ε := StateTransitionError`, identity conversion) the fault surfaces as the bare
+`.arithmetic`; at the store machine it arrives as `.transition (.arithmetic …)`. Closes by
+`rfl` without unfolding `liftErr`. -/
+theorem throwArithmetic_run {σ α ε : Type} [ErrorConv StateTransitionError ε]
+    (descr : String) (s : σ) :
+    (throwArithmetic (m := StateT σ (Except ε)) (E := ε) descr : StateT σ (Except ε) α).run s
+      = .error (ErrorConv.conv (StateTransitionError.arithmetic descr)) := rfl
+
 /-- `Except`'s bind on the success branch, the step that fires after `run_bind` on a
 run known to have succeeded. Core has no `simp` lemma in this shape, and unfolding
 `Bind.bind` / `Except.bind` at each call site obscures what is being rewritten. -/
@@ -73,6 +83,14 @@ theorem except_bind_ok {ε α β : Type} (a : α) (f : α → Except ε β) :
 /-- `Except`'s bind on the error branch: the continuation is skipped. -/
 theorem except_bind_error {ε α β : Type} (e : ε) (f : α → Except ε β) :
     (Except.error e : Except ε α) >>= f = .error e := rfl
+
+/-- A bind distributes over an `if`. The do-notation `let x ← if c then a else b; rest`
+elaborates to the right-hand side, with `rest` copied into both branches. Rewriting right
+to left recovers the one bind, so a proof handles `rest` once. -/
+theorem ite_bind {m : Type → Type} [Monad m] {α β : Type} {c : Prop} [Decidable c]
+    (x y : m α) (f : α → m β) :
+    ((if c then x else y) >>= f) = (if c then x >>= f else y >>= f) := by
+  split <;> rfl
 
 /-- `ofExcept` of an `.ok a`: the run succeeds and passes the state through
 unchanged. The run-level shape the loop-body proofs read the spec's indexed reads

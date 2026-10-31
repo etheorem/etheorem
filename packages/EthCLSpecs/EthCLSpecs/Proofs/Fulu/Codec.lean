@@ -37,8 +37,9 @@ and case-splits on it, and `decide` checks each shipped preset.
 After that step, every vector length in the shape is a closed term, and `decide` can reduce it.
 
 Gloas and Heze re-elaborate these containers at their own `Preset`, so these theorems say
-nothing about `EthCLSpecs.Gloas.BeaconState` or `EthCLSpecs.Heze.BeaconState`. Each fork's
-`Proofs/<Fork>/Codec.lean` states its own.
+nothing about `EthCLSpecs.Gloas.BeaconState` or `EthCLSpecs.Heze.BeaconState`. Their shapes
+carry progressive fields, and the gate rejects every progressive arm. Their codec row stays
+open until SizzLean proves the two theorems over the progressive constructors.
 -/
 
 set_option autoImplicit false

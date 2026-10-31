@@ -1,9 +1,9 @@
 # Proof-coverage baseline. Rewrite with `just proof-coverage-update`.
 # Every line is a claim `just proof-coverage-check` enforces exactly.
-tier1 EthCLSpecs.Fulu.computeStartSlotAtEpoch
-tier1 EthCLSpecs.Fulu.currentEpochOf
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot
 tier1 EthCLSpecs.Gloas.computeExitEpochAndUpdateChurn
+tier1 EthCLSpecs.Gloas.computePtc
+tier1 EthCLSpecs.Gloas.computeStartSlotAtEpoch
 tier1 EthCLSpecs.Gloas.currentEpochOf
 tier1 EthCLSpecs.Gloas.decreaseBalance
 tier1 EthCLSpecs.Gloas.getAttestationParticipationFlagIndices
@@ -31,6 +31,7 @@ tier1 EthCLSpecs.Heze.fcZeroRoot
 tier1 EthCLSpecs.Heze.getBeaconCommittee
 tier1 EthCLSpecs.Heze.getCommitteeCountPerSlot
 tier1 EthCLSpecs.Heze.getCurrentSlot
+tier1 EthCLSpecs.Heze.getShufflingDependentRoot
 tier1 EthCLSpecs.Heze.isDataAvailable
 tier1 EthCLSpecs.Heze.isInclusionListSatisfied
 tier1 EthCLSpecs.Heze.isParentNodeFull
@@ -43,6 +44,7 @@ tier2 EthCLSpecs.Fulu.increaseBalance
 tier2 EthCLSpecs.Fulu.modBalance
 tier2 EthCLSpecs.Gloas.canBuilderCoverBid
 tier2 EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex
+tier2 EthCLSpecs.Gloas.initializePtcWindow
 tier2 EthCLSpecs.Gloas.initiateBuilderExit
 tier2 EthCLSpecs.Gloas.isValidIndexedPayloadAttestation
 tier2 EthCLSpecs.Gloas.processBuilderPendingPayments

@@ -38,7 +38,7 @@ already-queued withdrawals for `vi`. Fulu's version is a plain `def` bound to
 `Fulu.State`, so it is restated here for the Gloas state.
 
 Throwing (`StateTransition`), because the spec's `return state.balances[validator_index] -
-withdrawn` (`capella/beacon-chain.md:378`) raises two ways, neither an explicit `assert`:
+withdrawn` (`capella/beacon-chain.md:421`) raises two ways, neither an explicit `assert`:
 `state.balances[validator_index]` is a bare list index (`IndexError` out of range), so it goes
 through `sszGetIdx` (→ `outOfBounds`); `- withdrawn` is a bare `uint64` subtraction whose
 underflow raises `ValueError`, which the reference runner does NOT catch (`context.py:424-435`),
@@ -104,10 +104,31 @@ forkdef getPendingPartialWithdrawals (withdrawalIndex : WithdrawalIndex)
     count := count + 1
   return (ws, wi, count)
 
-/-- `get_builders_sweep_withdrawals` (NEW, EIP-7732): sweep up to
-`MAX_BUILDERS_PER_WITHDRAWALS_SWEEP` builders from `next_withdrawal_builder_index`,
-withdrawing the full balance of each withdrawable, non-empty builder. An out-of-range
-builder cursor rejects. -/
+/-- `get_builder_balance_after_withdrawals(state, builder_index, withdrawals)` (NEW at
+v1.7.0-beta.4, `gloas/beacon-chain.md:1895-1906`): the builder's balance net of the
+withdrawals already queued for it, floored at zero (`saturating_sub`). A builder withdrawal
+carries the builder's flagged validator index, so the match is on
+`convert_builder_index_to_validator_index`. The `withdrawn` sum folds through `checkedAdd`:
+pyspec's `sum(...)` accumulates in `Gwei` and raises on overflow. `state.builders[i]` is a bare
+list index, so an out-of-range index rejects through `sszGetIdx`. -/
+forkdef getBuilderBalanceAfterWithdrawals (state : State) (builderIndex : BuilderIndex)
+    (ws : Array Withdrawal) : StateTransition Gwei := do
+  let validatorIndex := convertBuilderIndexToValidatorIndex builderIndex
+  let withdrawn ← ws.foldlM (init := (0 : Gwei)) fun acc w =>
+    if w.validatorIndex == validatorIndex then
+      checkedAdd acc w.amount "get_builder_balance_after_withdrawals: sum(withdrawal.amount)"
+    else pure acc
+  let builder ← sszGetIdx (sszGet state builders) builderIndex.toNat
+  pure (saturatingSub builder.balance withdrawn)
+
+/-- `get_builders_sweep_withdrawals` (NEW, EIP-7732, `gloas/beacon-chain.md:1912-1947`): sweep
+up to `MAX_BUILDERS_PER_WITHDRAWALS_SWEEP` builders from `next_withdrawal_builder_index`,
+withdrawing each withdrawable builder's balance net of the withdrawals already queued for it,
+when that is non-zero. An out-of-range builder cursor rejects.
+
+v1.7.0-beta.4 nets the queued withdrawals out (`get_builder_balance_after_withdrawals`), so a
+builder with a pending withdrawal in the same payload is not paid twice; alpha.12 withdrew the
+full balance. -/
 forkdef getBuildersSweepWithdrawals (withdrawalIndex : WithdrawalIndex)
     (prior : Array Withdrawal) : StateTransition (Array Withdrawal × WithdrawalIndex × Nat) := do
   let state ← get
@@ -121,12 +142,14 @@ forkdef getBuildersSweepWithdrawals (withdrawalIndex : WithdrawalIndex)
   let mut builderIndex := (sszGet state nextWithdrawalBuilderIndex).toNat
 
   for _ in [0:buildersLimit] do
-    if prior.size + ws.size ≥ limit then break
+    let allW := prior ++ ws
+    if allW.size ≥ limit then break
     let builder ← sszGetIdx (sszGet state builders) builderIndex
-    if builder.withdrawableEpoch ≤ epoch && builder.balance > 0 then
+    let balance ← getBuilderBalanceAfterWithdrawals state (UInt64.ofNat builderIndex) allW
+    if builder.withdrawableEpoch ≤ epoch && balance > 0 then
       ws := ws.push
         { index := wi, validatorIndex := convertBuilderIndexToValidatorIndex (UInt64.ofNat builderIndex),
-          address := builder.executionAddress, amount := builder.balance }
+          address := builder.executionAddress, amount := balance }
       wi := wi + 1
     builderIndex := modWrap (builderIndex + 1) bs.size
     count := count + 1
@@ -178,16 +201,16 @@ forkdef getExpectedWithdrawals : StateTransition (Array Withdrawal × Nat × Nat
   let (validatorWs, _, _) ← getValidatorsSweepWithdrawals idxAfterSweep priorAfterSweep
   return (priorAfterSweep ++ validatorWs, builderCount, partialCount, sweepCount)
 
-/-- `apply_withdrawals` (MODIFIED, EIP-7732): decrement a builder's balance for a
-builder-flagged withdrawal, otherwise the validator's. An out-of-range builder index
-rejects. -/
+/-- `apply_withdrawals` (MODIFIED, EIP-7732, `gloas/beacon-chain.md:1997-2006`): decrement a
+builder's balance for a builder-flagged withdrawal, floored at zero (`saturating_sub`),
+otherwise the validator's. An out-of-range builder index rejects. -/
 forkdef applyWithdrawals (withdrawals : Array Withdrawal) : StateTransition Unit := do
   let mut stateAcc ← get
   for w in withdrawals do
     if isBuilderIndex w.validatorIndex then
       let builderIndex := toBuilderIndex w.validatorIndex
       let b ← sszGetIdx (sszGet stateAcc builders) builderIndex.toNat
-      stateAcc := sszUpdate stateAcc with builders[builderIndex.toNat]! := { b with balance := b.balance - umin w.amount b.balance }
+      stateAcc := sszUpdate stateAcc with builders[builderIndex.toNat]! := { b with balance := saturatingSub b.balance w.amount }
     else
       stateAcc ← decreaseBalance stateAcc w.validatorIndex w.amount
 

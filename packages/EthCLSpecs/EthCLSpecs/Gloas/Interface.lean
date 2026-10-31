@@ -37,7 +37,7 @@ open scoped EthCLSpecs.Gloas.Downgrade
 
 /-- Pinned upstream release; Gloas tracks the same tag as Fulu while it is
 pre-release. -/
-def pyspecPinnedVersion : String := "v1.7.0-alpha.12"
+def pyspecPinnedVersion : String := "v1.7.0-beta.4"
 
 /-- `stateRoot`: decode a Gloas `BeaconState` at preset `P` and take its root. -/
 private def stateRootImpl (P : Preset) (bytes : ByteArray) :
@@ -49,10 +49,10 @@ private def stateRootImpl (P : Preset) (bytes : ByteArray) :
   | .error _ => .error (.decode "BeaconState")
 
 /-- `runUpgrade` (the `fork` format): decode the Fulu pre-state at preset `P`,
-apply `upgradeToGloas` with the config's `GLOAS_FORK_VERSION`, run the builder
-onboarding (`onboard_builders_from_pending_deposits`, which needs the Gloas
-builder-registry helpers and a `[CryptoBackend]` for deposit-signature checks),
-and return the Gloas post root. -/
+apply `upgradeToGloas` with the config's `GLOAS_FORK_VERSION`, close the upgrade with
+`completeUpgradeToGloas` (the PTC window over the post-state, then the builder onboarding,
+which needs a `[CryptoBackend]` for deposit-signature checks), and return the Gloas post
+root. -/
 private def runUpgradeImpl (P : Preset) (C : Config) (forkVersion : Version) (preBytes : ByteArray) :
     Except (RunError StateTransitionError) ByteArray :=
   letI : Preset := P
@@ -60,11 +60,10 @@ private def runUpgradeImpl (P : Preset) (C : Config) (forkVersion : Version) (pr
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.realBackend
   match SSZ.deserialize (T := Fulu.BeaconState) preBytes with
-  | .ok pre  => do
-    let post ← (upgradeToGloas forkVersion pre).mapError RunError.spec
-    let box0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox post
+  | .ok pre  =>
+    let box0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox (upgradeToGloas forkVersion pre)
     let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit :=
-      onboardBuildersFromPendingDeposits
+      completeUpgradeToGloas
     RunError.ofSpec (runToRoot box0 action)
   | .error _ => .error (.decode "Fulu BeaconState")
 
@@ -143,8 +142,8 @@ private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
 
 /-- `runOperation`: dispatch every operation handler over the decoded Gloas
 pre-state. The non-ePBS handlers are inherited from Fulu (`Gloas.Operations`); the
-ePBS-modified / ePBS-new ones are Gloas-specific: `proposer_slashing` (builder-payment
-cleanup), payload-aware `attestation`, `payload_attestation`, the builder-aware
+ePBS-modified / ePBS-new ones are Gloas-specific: payload-aware `attestation` (with the
+vector's `parent_slot`), `payload_attestation`, the builder-aware
 `withdrawals`, `execution_payload_bid`, `parent_execution_payload`, `block_header`,
 the EIP-8282 `builder_deposit_request` / `builder_exit_request`, and the builder-branch
 `voluntary_exit` / `deposit_request`. -/
@@ -159,7 +158,14 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     match kind with
     | .proposerSlashing       => (decodeOp (@ProposerSlashing P) opBytes).map processProposerSlashing
     | .attesterSlashing       => (decodeOp (@AttesterSlashing P) opBytes).map processAttesterSlashing
-    | .attestation            => (decodeOp (@Attestation P) opBytes).map processAttestation
+    -- From Gloas, `process_attestation` takes the parent block's slot, which the vector
+    -- carries as `parent_slot` in `meta.yaml`. A Gloas attestation vector without it is a
+    -- malformed case, the runner's own decode failure.
+    | .attestation            =>
+      match cmeta.parentSlot with
+      | some parentSlot =>
+        (decodeOp (@Attestation P) opBytes).map (processAttestation · (UInt64.ofNat parentSlot))
+      | none => .error (.decode "operations/attestation: meta.yaml parent_slot")
     | .payloadAttestation     => (decodeOp (@PayloadAttestation P) opBytes).map processPayloadAttestation
     -- The parent-payload handler decodes a full `BeaconBlock` (it reads `block.body` /
     -- `parentExecutionRequests`). alpha.11's bid handler takes the
@@ -224,7 +230,7 @@ private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
 /-- `runTransition` (the `transition` format, Fulu→Gloas): fold the pre-fork blocks
 (indices `0..forkBlock`) under Fulu `state_transition`, advance the Fulu state to the
 fork-epoch boundary (so the boundary `process_epoch` runs under Fulu rules), apply
-`upgradeToGloas` + builder onboarding, then fold the post-fork blocks under Gloas
+`upgradeToGloas` + `completeUpgradeToGloas`, then fold the post-fork blocks under Gloas
 `state_transition`. A post-fork block landing exactly on the boundary slot skips the
 slot advance (the upgrade already positioned the state there). -/
 private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
@@ -261,11 +267,10 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
       if (sszGet (← get) slot) < boundary then Fulu.processSlots boundary
     match fuluAction.run fuluBox0 with
     | .error e _ => Except.error (RunError.spec e)
-    | .ok _ fuluSt => do
-      let gloasPost ← (upgradeToGloas forkVersion fuluSt.view).mapError RunError.spec
-      let gloasBox0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox gloasPost
+    | .ok _ fuluSt =>
+      let gloasBox0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox (upgradeToGloas forkVersion fuluSt.view)
       let gloasAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit := do
-        onboardBuildersFromPendingDeposits
+        completeUpgradeToGloas
         for sb in gloasBlocks do
           if (sszGet (← get) slot) < sb.message.slot then Gloas.processSlots sb.message.slot
           if cmeta.blsSetting != 2 then assert (Gloas.verifyBlockSignature (← get) sb)
@@ -281,6 +286,32 @@ private def queryHead [Preset] [Config] [HasherTag] (store : Store hashMap) :
     Except StoreTransitionError ForkChoiceNode :=
   runQuery store (getHead (map := hashMap) store :
     EStateM StoreTransitionError (Store hashMap) ForkChoiceNode)
+
+/-- The `viable_for_head_roots_and_weights` entries the reference test helper computes
+(`get_viable_for_head_checks`, `helpers/fork_choice.py:585-601`): walk from the justified root's
+PENDING node, stepping into every child that is in the filtered node tree, and collect each
+node with no such child, with its `get_weight` and payload status. A test-helper walk, not a
+spec function, so it lives with the interpreter. Each node is visited once, so twice the block
+count plus two bounds the stack walk; fuel-out returns the leaves found so far, which then
+fail the comparison loudly. -/
+private def viableForHeadLeaves [Preset] [Config] [HasherTag] (store : Store hashMap) :
+    Except StoreTransitionError (Array (ByteArray × Nat × Option Nat)) :=
+  let walk : EStateM StoreTransitionError (Store hashMap) (Array (ByteArray × Nat × Option Nat)) := do
+    let nodes ← getFilteredNodeTree (map := hashMap) store
+    let mut pending : Array ForkChoiceNode := #[.pending store.justifiedCheckpoint.root]
+    let mut leaves : Array (ByteArray × Nat × Option Nat) := #[]
+    for _ in [0:2 * (FcMap.keys store.blocks).length + 2] do
+      match pending.back? with
+      | none => break
+      | some node =>
+        pending := pending.pop
+        let children := (← getNodeChildren (map := hashMap) store node).filter nodes.contains
+        if children.isEmpty then
+          let weight ← getWeight (map := hashMap) store node
+          leaves := leaves.push (vecToBytes node.root, weight.toNat, some node.payloadStatus.toNat)
+        else pending := pending ++ children
+    pure leaves
+  runQuery store walk
 
 /-- Fold the decoded fork-choice `steps` over the Gloas store. A `block` step runs
 `on_block` (which internally records PTC votes from the block's payload attestations
@@ -301,7 +332,9 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
     match step with
     | .tick t =>
       store := (← checkStepValidity .tick true
-        (runOn store (onTick (map := hashMap) (UInt64.ofNat t) : EStateM StoreTransitionError (Store hashMap) Unit)))
+        -- The format runs `on_tick(store, seconds_to_milliseconds(tick))`: the tick is in seconds.
+        (runOn store (onTick (map := hashMap) (secondsToMilliseconds (UInt64.ofNat t)) :
+          EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes _columns valid =>
       -- pyspec `add_block` (`fork_choice.py:382-406`) runs `on_block` ALONE against `valid`: an
       -- invalid block returns right after `on_block` rejects (`:393`), so its own attestations /
@@ -371,10 +404,14 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
       assert (store.finalizedCheckpoint.root == root)
     | .checkBoost root =>
       assert (store.proposerBoostRoot == root)
-    | .checkTime t => assert (store.time.toNat == t)
-    | .checkGenesisTime t => assert (store.genesisTime.toNat == t)
+    -- `time` / `genesis_time` are `milliseconds_to_seconds` of the store's ms clock.
+    | .checkTime t => assert ((millisecondsToSeconds store.timeMs).toNat == t)
+    | .checkGenesisTime t => assert ((millisecondsToSeconds store.genesisTimeMs).toNat == t)
+    | .checkViableForHead expected =>
+      let actual ← viableForHeadLeaves store
+      assert (sameViableEntries actual expected)
     | .unsupported reason => throw (StoreTransitionError.todo reason)
-    -- `get_proposer_head` is Gloas-Modified but not ported, and no alpha.11 vector exercises it;
+    -- `get_proposer_head` is Gloas-Modified but not ported, and no beta.4 vector exercises it;
     -- surface it as unmodeled (a `todo` xfail) rather than passing it vacuously. This arm makes
     -- the match exhaustive over `FcStep`, so a newly added constructor becomes a build error rather
     -- than a silent pass through a catch-all.
@@ -443,6 +480,7 @@ private def sszStaticImpl (P : Preset) (typeName : String) (bytes : ByteArray) :
   | "Fork"                       => runStatic (@Gloas.Fork P) typeName bytes
   | "HistoricalSummary"          => runStatic (@Gloas.HistoricalSummary P) typeName bytes
   | "IndexedAttestation"         => runStatic (@Gloas.IndexedAttestation P) typeName bytes
+  | "NewPayloadRequest"          => runStatic (@Gloas.NewPayloadRequest P) typeName bytes
   | "IndexedPayloadAttestation"  => runStatic (@Gloas.IndexedPayloadAttestation P) typeName bytes
   | "PayloadAttestation"         => runStatic (@Gloas.PayloadAttestation P) typeName bytes
   | "PayloadAttestationData"     => runStatic (@Gloas.PayloadAttestationData P) typeName bytes
@@ -483,6 +521,26 @@ ones), the block spine (`sanity/blocks` / `sanity/slots` / `finality` / `random`
   runSlots        := runSlotsImpl P C
   runGenesis      := fun _ _   => .error (.spec (.outOfScope "gloas genesis: out of scope (not modeled)"))
   runTransition   := runTransitionImpl P C forkVersion
+
+/-- The config values a vector can override, one `(KEY, set)` pair per value: the fork
+schedule Gloas models. A vector that activates its forks at genesis ships a `config.yaml`
+setting these epochs to `0`, and a `transition` vector moves its post-fork's epoch to the
+`fork_epoch`; `EthCLLib.PySpecTests.applyConfigOverrides` applies them. -/
+def configSetters : List (String × (UInt64 → Config → Config)) := [
+  ("ALTAIR_FORK_EPOCH",    fun v c => { c with altairForkEpoch := v }),
+  ("BELLATRIX_FORK_EPOCH", fun v c => { c with bellatrixForkEpoch := v }),
+  ("CAPELLA_FORK_EPOCH",   fun v c => { c with capellaForkEpoch := v }),
+  ("DENEB_FORK_EPOCH",     fun v c => { c with denebForkEpoch := v }),
+  ("ELECTRA_FORK_EPOCH",   fun v c => { c with electraForkEpoch := v }),
+  ("FULU_FORK_EPOCH",      fun v c => { c with fuluForkEpoch := v }),
+  ("GLOAS_FORK_EPOCH",     fun v c => { c with gloasForkEpoch := v })]
+
+/-- The interface at preset `P` and config `C` with a vector's overrides applied, or the
+reason an override cannot be applied. The server builds one per request. -/
+def gloasInterfaceWith (P : Preset) (C : Config) (forkVersion : Version) (overrides : ConfigOverrides) :
+    Except String ForkInterface := do
+  let C' ← applyConfigOverrides configSetters overrides C
+  pure (gloasInterfaceFor P C' forkVersion)
 
 /-- The `minimal`-preset / config Gloas interface. -/
 @[reducible] def gloasInterface : ForkInterface := gloasInterfaceFor minimal minimalConfig gloasForkVersionMinimal

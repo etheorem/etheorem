@@ -34,7 +34,10 @@ inherit computeEpochAtSlot
 inherit computeStartSlotAtEpoch
 inherit getCurrentEpoch
 inherit getPreviousEpoch
-inherit computeTimeAtSlot
+inherit secondsToMilliseconds millisecondsToSeconds
+inherit computeTimeAtSlotMs computeSlotAtTimeMs
+inherit computeTimeAtSlot computeSlotAtTime
+inherit BlobParameters getBlobParameters
 inherit getRandaoMix
 
 -- Balance / validator mutators, accessors, predicates.
@@ -103,7 +106,49 @@ forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Ep
   return ee
 
 inherit initiateValidatorExit
-inherit slashValidator
+/-- `slash_validator` (Gloas, `gloas/beacon-chain.md:1549-1581`): Fulu's slashing, then the
+EIP-7732 cleanup. Every pending builder payment whose recorded proposer is the slashed
+validator is voided, across both epochs of the payment window.
+
+v1.7.0-beta.4 moves the cleanup here from `process_proposer_slashing` and widens it. alpha.12
+voided only the one payment at the slashed proposal's slot, and only on the proposer-slashing
+path. Now every path that slashes a validator (proposer and attester slashings alike) voids
+every payment the validator proposed. The Fulu body is restated because the spec restates it;
+`whistleblower_index` defaults to the proposer, as the spec's `None` does. -/
+forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
+  let epoch := computeEpochAtSlot (sszGet (← get) slot)
+  initiateValidatorExit i
+  let state ← get
+  let validator ← sszGetIdx (sszGet state validators) i.toNat
+  let slashIdx := umodIdx epoch Const.epochsPerSlashingsVector
+
+  -- Mark slashed, extend withdrawability, record the effective balance in the
+  -- slashings ring buffer, and apply the slashing penalty.
+  let state := modValidator state i fun validator =>
+    { validator with
+        slashed := true,
+        withdrawableEpoch := umax validator.withdrawableEpoch (epoch + UInt64.ofNat Const.epochsPerSlashingsVector) }
+  let state := sszUpdate state with
+    slashings[slashIdx]! := (vget (sszGet state slashings) slashIdx + validator.effectiveBalance)
+  let state ← decreaseBalance state i (validator.effectiveBalance / UInt64.ofNat Const.minSlashingPenaltyQuotientElectra)
+  set state
+
+  -- Pay the proposer its share of the whistleblower reward, then the remainder.
+  let proposerIdx := getBeaconProposerIndex (← get)
+  let whistleblowerReward := validator.effectiveBalance / UInt64.ofNat Const.whistleblowerRewardQuotientElectra
+  let proposerReward := whistleblowerReward * UInt64.ofNat Const.proposerWeight / UInt64.ofNat Const.weightDenominator
+  let state ← increaseBalance state proposerIdx proposerReward
+  set (← increaseBalance state proposerIdx (whistleblowerReward - proposerReward))
+
+  -- [New in Gloas:EIP7732] Void the pending builder payments for blocks the slashed
+  -- validator proposed. `default` is the all-zero `BuilderPendingPayment.empty()`.
+  let empty : BuilderPendingPayment := default
+  modifyState fun state => Id.run do
+    let mut state := state
+    for paymentIndex in [0:2 * Const.slotsPerEpoch] do
+      if (vget (sszGet state builderPendingPayments) paymentIndex).proposerIndex == i then
+        state := sszUpdate state with builderPendingPayments[paymentIndex]! := empty
+    return state
 inherit getDomain
 inherit getPendingBalanceToWithdraw
 
@@ -159,9 +204,12 @@ inherit processRewardsAndPenalties
 inherit processRegistryUpdates
 inherit processSlashings
 
--- Gloas (EIP-8061) `process_pending_deposits`: identical to Fulu except the churn
--- budget is `get_activation_churn_limit` (Gloas) rather than the activation-exit one.
--- `DepositScan` (the scan's record state and result) is the Fulu one, replayed here.
+-- Gloas (EIP-8061) `process_pending_deposits` (`gloas/beacon-chain.md:1659-1713`): Fulu's,
+-- with two differences. The churn budget is `get_activation_churn_limit` (Gloas) rather than
+-- the activation-exit one, and the Electra eth1-bridge stop (`deposit.slot > GENESIS_SLOT and
+-- state.eth1_deposit_index < state.deposit_requests_start_index`) is gone; the Gloas text has
+-- no such check at either alpha.12 or beta.4. `DepositScan` (the scan's record state and
+-- result) is the Fulu one, replayed here.
 inherit DepositScan
 
 forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (nextEpoch : Epoch) :
@@ -175,7 +223,8 @@ forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (
     let state ← get
     let deposit := deposits[s.ndi]!
 
-    -- Stop the scan early: the deposit is not finalized, or this epoch's deposit cap is reached.
+    -- Stop the scan early: the deposit is not finalized, or this epoch's deposit cap is
+    -- reached.
     if deposit.slot > finalizedSlot then return .done s
     if s.ndi ≥ Const.maxPendingDepositsPerEpoch then return .done s
 
@@ -246,7 +295,7 @@ inherit processProposerLookahead
 
 /-! ## Gloas-new epoch substep (EIP-7732) -/
 
-/-- `process_builder_pending_payments` (v1.7.0-alpha.11): for each of the previous
+/-- `process_builder_pending_payments` (`gloas/beacon-chain.md:1719-1731`): for each of the previous
 epoch's pending payments whose weight clears the quorum threshold
 (`get_total_active_balance / SLOTS_PER_EPOCH * NUMERATOR / DENOMINATOR`, `>=`),
 queue its withdrawal directly; then shift the payment window down by
@@ -272,7 +321,7 @@ forkdef processBuilderPendingPayments : StateTransition Unit := do
       shiftWindow (sszGet state builderPendingPayments) Const.slotsPerEpoch Const.slotsPerEpoch
         (fun _ => empty)
 
-/-- `compute_ptc` (v1.7.0-alpha.11, EIP-7732): the payload-timeliness committee for
+/-- `compute_ptc` (EIP-7732, `gloas/beacon-chain.md:1266-1282`): the payload-timeliness committee for
 `slot`, with possible duplicates. Concatenate every beacon committee for the slot in
 order, then take a `PTC_SIZE` balance-weighted selection with no shuffle. The seed
 mixes `DOMAIN_PTC_ATTESTER` and the slot. A slot whose committees are all empty (fewer
@@ -288,7 +337,7 @@ forkdef computePtc (state : State) (slot : Slot) :
   let sel ← computeBalanceWeightedSelection state indices seed Const.ptcSize false
   return Vector.ofFn (fun i : Fin Const.ptcSize => sel[i.val]!)
 
-/-- `process_ptc_window` (v1.7.0-alpha.11, EIP-7732): shift the cached PTC window down
+/-- `process_ptc_window` (EIP-7732, `gloas/beacon-chain.md:1737-1748`): shift the cached PTC window down
 by `SLOTS_PER_EPOCH` and recompute the last epoch's per-slot PTCs from the snapshot
 state. The window length is `(2 + MIN_SEED_LOOKAHEAD) * SLOTS_PER_EPOCH = 3 *
 SLOTS_PER_EPOCH` (MIN_SEED_LOOKAHEAD = 1). The per-slot PTCs are computed in slot order,

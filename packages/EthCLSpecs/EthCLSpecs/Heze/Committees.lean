@@ -4,7 +4,7 @@ import EthCLSpecs.Heze.Constants
 # `EthCLSpecs.Heze.Committees`: the FOCIL inclusion-list committee resampling helper
 
 EIP-7805 (FOCIL) adds one beacon-state accessor, `get_inclusion_list_committee`
-(`consensus-specs/specs/heze/beacon-chain.md:95-110`), which samples a fixed-size committee from the
+(`consensus-specs/specs/heze/beacon-chain.md:264-277`), which samples a fixed-size committee from the
 slot's beacon committees. That accessor lives in `Heze/ForkChoice.lean`, next to its sole caller
 `get_inclusion_list_transactions`: it throws the fork-choice reject on the spec's degenerate
 empty-committee read (`indices[i % 0]` raises `ZeroDivisionError`), so it belongs in the
@@ -22,7 +22,7 @@ namespace EthCLSpecs.Heze
 /-- The cyclic resampling `get_inclusion_list_committee` uses to fill its fixed-length
 result: element `i` is `xs[i % xs.size]`, wrapping back to the front once `i` passes the end
 of the concatenated committees (the spec's `indices[i % len(indices)]`,
-`consensus-specs/specs/heze/beacon-chain.md:108-110`). Factored out of the accessor so the
+`consensus-specs/specs/heze/beacon-chain.md:274-276`). Factored out of the accessor so the
 wrap-around index arithmetic is unit-checkable without building a whole `BeaconState`
 (`EthCLSpecs.Tests.HezeCommitteesPins`).
 `xs.getD … default` is total via `[Inhabited α]`; the sole caller (`getInclusionListCommittee`

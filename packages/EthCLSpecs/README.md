@@ -35,7 +35,9 @@ Three forks are in scope:
   (EIP-7805 FOCIL): the `InclusionList` container family, the
   inclusion-list committee helpers, an inclusion-list store folded into the
   fork-choice store, and the payload satisfaction gate
-  (`is_payload_inclusion_list_satisfied`).
+  (`is_payload_inclusion_list_satisfied`). It also removes the eth1 deposit
+  machinery (EIP-8015) and stops new validators with BLS withdrawal
+  credentials (EIP-8365).
 
 For each fork the library implements the SSZ containers, the state transition
 (slots, blocks, epochs, and every operation), the fork upgrade, and a second
@@ -63,13 +65,14 @@ can audit the Lean line by line.
 ```lean
 /-- `process_block` (Gloas ordering, EIP-7732). -/
 forkdef processBlock (block : BeaconBlock) : StateTransition Unit := do
+  let parentSlot := (sszGet (← get) latestBlockHeader).slot
   processParentExecutionPayload block
   processBlockHeader block
   processWithdrawals
   processExecutionPayloadBid block.body.signedExecutionPayloadBid
   processRandao block.body
   processEth1Data block.body
-  processOperations block.body
+  processOperations block.body parentSlot
   processSyncAggregate block.body.syncAggregate
 ```
 
@@ -98,8 +101,8 @@ the lineage edge.
 
 **Validated against the real vectors.** The full in-scope suite passes at both
 the `minimal` and `mainnet` presets, for all three forks (Fulu, Gloas, Heze),
-pinned to release `v1.7.0-alpha.12`. Heze `fork_base_state` is the one expected
-failure, recorded in `docs/DISCREPANCIES.md`. The error model is honest. An
+pinned to release `v1.7.0-beta.4`, with no expected failure.
+`docs/DISCREPANCIES.md` keeps the resolved entries. The error model is honest. An
 out-of-range read or a crash is a hard failure, and an unimplemented branch is a
 visible `xfail`. Every passing vector reflects a real match or a faithful rejection.
 
@@ -134,16 +137,16 @@ column is the fork's own diff, for scale.
 <!-- proof-coverage:begin -->
 | Fork | Characterized | Touched | Spec functions | Authored |
 | --- | --- | --- | --- | --- |
-| `EthCLSpecs.Fulu` | 3 | 5 | 158 | 158 |
-| `EthCLSpecs.Gloas` | 9 | 33 | 209 | 111 |
-| `EthCLSpecs.Heze` | 6 | 18 | 218 | 12 |
-| **Total** | 18 | 56 | 585 | 281 |
+| `EthCLSpecs.Fulu` | 3 | 3 | 173 | 173 |
+| `EthCLSpecs.Gloas` | 10 | 36 | 222 | 114 |
+| `EthCLSpecs.Heze` | 6 | 19 | 230 | 19 |
+| **Total** | 19 | 58 | 625 | 306 |
 
 | Axiom | Theorems resting on it |
 | --- | --- |
-| `propext` | 137 |
-| `Classical.choice` | 126 |
-| `Quot.sound` | 135 |
+| `propext` | 134 |
+| `Classical.choice` | 127 |
+| `Quot.sound` | 132 |
 | `Lean.ofReduceBool` | 0 |
 | `Lean.trustCompiler` | 0 |
 | `SizzLean.Hasher.sha256Hash_eq_spec` | 0 |

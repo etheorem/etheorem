@@ -19,7 +19,7 @@ The predicate is generic over the SSZ value type `T`, the error `ε`, and the
 result `α`, the same way `runPure` is. The closure lemmas cover the constructs the
 spec bodies use: `pure`, `throw`, `bind`, `get`, `set` of a rebuilt box,
 `modify` through a writer that maps `pureState v` to `pureState` of a value (the
-shape `modBalance_pureState` supplies), `liftErr` and `assert`-shaped gates, the
+shape `modBalance_pureState` supplies, or a pure loop of such steps), `liftErr` and `assert`-shaped gates, the
 checked list constructor `sszOfArrayM`, `if`,
 and the `for` / `forM` folds over `List`, `Array`, and `SSZList`. A `match` on a
 plain value reduces to its branch by `cases` on the scrutinee, and
@@ -143,6 +143,36 @@ theorem keepsUncached_modify {T ε : Type} [SSZRepr T] [HasherTag] (f : SSZ.Box 
   injection h1 with _ h2
   subst h2
   rfl
+
+/-- A pure `List.forIn` over the box maps `pureState v` to `pureState` of some value when
+every step does and none stops early. This is the writer that
+`modifyState fun state => Id.run do for … do state := sszUpdate state …` builds, so it
+discharges `keepsUncached_modify`'s hypothesis for a loop. -/
+theorem pureState_forIn_list_id {T α : Type} [SSZRepr T] [HasherTag]
+    (f : α → SSZ.Box HasherTag.H T → Id (ForInStep (SSZ.Box HasherTag.H T)))
+    (hf : ∀ a (v : T), ∃ w, f a (pureState v) = .yield (pureState w)) :
+    ∀ (l : List α) (v : T), ∃ w, (forIn l (pureState v) f : Id _) = pureState w := by
+  intro l
+  induction l with
+  | nil => intro v; exact ⟨v, rfl⟩
+  | cons a rest ih =>
+    intro v
+    obtain ⟨w, hw⟩ := hf a v
+    rw [List.forIn_cons, hw]
+    exact ih w
+
+/-- `pureState_forIn_list_id` over a `Std.Legacy.Range`, the shape `for i in [0:n]`
+elaborates to: the range walk is the walk of `List.range n`. -/
+theorem pureState_forIn_range_id {T : Type} [SSZRepr T] [HasherTag]
+    (f : Nat → SSZ.Box HasherTag.H T → Id (ForInStep (SSZ.Box HasherTag.H T)))
+    (hf : ∀ i (v : T), ∃ w, f i (pureState v) = .yield (pureState w)) :
+    ∀ (n : Nat) (v : T), ∃ w, (forIn [0:n] (pureState v) f : Id _) = pureState w := by
+  intro n v
+  rw [Std.Legacy.Range.forIn_eq_forIn_range']
+  have hsize : ([:n] : Std.Legacy.Range).size = n := by simp [Std.Legacy.Range.size]
+  rw [hsize, show ([:n] : Std.Legacy.Range).start = 0 from rfl,
+    show ([:n] : Std.Legacy.Range).step = 1 from rfl, ← List.range_eq_range']
+  exact pureState_forIn_list_id f hf (List.range n) v
 
 /-- `getStateRoot` writes back the box `Box.hashTreeRoot` returned, and
 `hashTreeRoot_uncachedBox` says the uncached box comes back unchanged. -/
@@ -742,6 +772,24 @@ theorem run_sszGetIdx_none {α ρ : Type} {σ ε : Type}
   unfold EthCLLib.Spec.sszGetIdx EthCLLib.Spec.liftErr
   rw [hq]
   exact run_ofExcept_error sb
+
+/-- `sszGetIdx` reads and never writes: a hit returns the start box unchanged, and a miss
+raises. -/
+theorem keepsUncached_sszGetIdx {T ε α ρ : Type} [SSZRepr T] [HasherTag]
+    [EthCLLib.Spec.IdxRead ρ α] [ErrorConv IndexError ε] (xs : ρ) (i : Nat) :
+    KeepsUncached (EthCLLib.Spec.sszGetIdx (E := ε)
+      (m := StateT (SSZ.Box HasherTag.H T) (Except ε)) xs i) := by
+  intro v a s h
+  cases hq : EthCLLib.Spec.IdxRead.get? xs i with
+  | some y =>
+    rw [run_sszGetIdx_some xs i _ hq] at h
+    injection h with h1
+    injection h1 with _ h2
+    subst h2
+    rfl
+  | none =>
+    rw [run_sszGetIdx_none xs i _ hq] at h
+    simp at h
 
 set_option linter.unusedVariables false in
 /-- Run-level transfer through a bind: a first action whose successful runs pass

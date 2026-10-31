@@ -134,11 +134,29 @@ forkconfig where
   minValidatorWithdrawabilityDelay : UInt64
   shardCommitteePeriod : UInt64
   genesisForkVersion : Version
+  /-- The fork schedule, `<FORK>_FORK_VERSION` / `<FORK>_FORK_EPOCH` for every fork
+  through Fulu (the accumulated base). The epochs are config values a test can override:
+  a vector that activates the forks at genesis ships a `config.yaml` that sets them to `0`,
+  and the runner applies it. Heze's `compute_fork_version` reads the whole schedule. -/
+  altairForkVersion : Version
+  altairForkEpoch : Epoch
+  bellatrixForkVersion : Version
+  bellatrixForkEpoch : Epoch
   capellaForkVersion : Version
+  capellaForkEpoch : Epoch
+  denebForkVersion : Version
+  denebForkEpoch : Epoch
+  electraForkVersion : Version
+  electraForkEpoch : Epoch
+  fuluForkVersion : Version
+  fuluForkEpoch : Epoch
   slotDurationMs : UInt64
   attestationDueBps : UInt64
   ejectionBalanceG : Gwei
   maxBlobsPerBlockElectra : Nat
+  /-- `BLOB_SCHEDULE` (EIP-7892): the blob-parameter-only fork schedule, one
+  `(EPOCH, MAX_BLOBS_PER_BLOCK)` record per entry. `get_blob_parameters` reads it. -/
+  blobSchedule : List (Epoch × Nat)
   /-- `INACTIVITY_SCORE_BIAS` / `INACTIVITY_SCORE_RECOVERY_RATE` (Altair). -/
   inactivityScoreBias : UInt64
   inactivityScoreRecoveryRate : UInt64
@@ -281,12 +299,26 @@ forkabbrev maxPerEpochActivationExitChurnLimit : Gwei := Config.maxPerEpochActiv
 forkabbrev minValidatorWithdrawabilityDelay : UInt64 := Config.minValidatorWithdrawabilityDelay
 forkabbrev shardCommitteePeriod : UInt64 := Config.shardCommitteePeriod
 forkabbrev genesisForkVersion : Version := Config.genesisForkVersion
+-- The fork schedule through Fulu (`configs/*.yaml`, one `# <Fork>` block each).
+forkabbrev altairForkVersion : Version := Config.altairForkVersion
+forkabbrev altairForkEpoch : Epoch := Config.altairForkEpoch
+forkabbrev bellatrixForkVersion : Version := Config.bellatrixForkVersion
+forkabbrev bellatrixForkEpoch : Epoch := Config.bellatrixForkEpoch
 forkabbrev capellaForkVersion : Version := Config.capellaForkVersion
+forkabbrev capellaForkEpoch : Epoch := Config.capellaForkEpoch
+forkabbrev denebForkVersion : Version := Config.denebForkVersion
+forkabbrev denebForkEpoch : Epoch := Config.denebForkEpoch
+forkabbrev electraForkVersion : Version := Config.electraForkVersion
+forkabbrev electraForkEpoch : Epoch := Config.electraForkEpoch
+forkabbrev fuluForkVersion : Version := Config.fuluForkVersion
+forkabbrev fuluForkEpoch : Epoch := Config.fuluForkEpoch
 forkabbrev slotDurationMs : UInt64 := Config.slotDurationMs
 forkabbrev attestationDueBps : UInt64 := Config.attestationDueBps
-/-- `MAX_BLOBS_PER_BLOCK_ELECTRA` (9 for both presets). With an empty `BLOB_SCHEDULE`
-this is what `get_blob_parameters(epoch).max_blobs_per_block` returns. -/
+/-- `MAX_BLOBS_PER_BLOCK_ELECTRA` (9 for both presets). Before the first `BLOB_SCHEDULE`
+entry this is what `get_blob_parameters(epoch).max_blobs_per_block` returns. -/
 forkabbrev maxBlobsPerBlockElectra : Nat := Config.maxBlobsPerBlockElectra
+/-- `BLOB_SCHEDULE` (EIP-7892): the `(EPOCH, MAX_BLOBS_PER_BLOCK)` schedule. -/
+forkabbrev blobSchedule : List (Epoch × Nat) := Config.blobSchedule
 /-- Reorg weight thresholds (percent of the per-slot committee weight). -/
 forkabbrev reorgHeadWeightThreshold : UInt64 := Config.reorgHeadWeightThreshold
 forkabbrev reorgParentWeightThreshold : UInt64 := Config.reorgParentWeightThreshold
@@ -476,11 +508,25 @@ forkconfigvalues minimalConfig where
   minValidatorWithdrawabilityDelay := 256
   shardCommitteePeriod := 64
   genesisForkVersion := ⟨#[0, 0, 0, 1], by decide⟩
+  -- The minimal config schedules no fork: every epoch is `FAR_FUTURE_EPOCH`.
+  altairForkVersion := ⟨#[1, 0, 0, 1], by decide⟩
+  altairForkEpoch := 0xffffffffffffffff
+  bellatrixForkVersion := ⟨#[2, 0, 0, 1], by decide⟩
+  bellatrixForkEpoch := 0xffffffffffffffff
   capellaForkVersion := ⟨#[3, 0, 0, 1], by decide⟩
+  capellaForkEpoch := 0xffffffffffffffff
+  denebForkVersion := ⟨#[4, 0, 0, 1], by decide⟩
+  denebForkEpoch := 0xffffffffffffffff
+  electraForkVersion := ⟨#[5, 0, 0, 1], by decide⟩
+  electraForkEpoch := 0xffffffffffffffff
+  fuluForkVersion := ⟨#[6, 0, 0, 1], by decide⟩
+  fuluForkEpoch := 0xffffffffffffffff
   slotDurationMs := 6000
   attestationDueBps := 3333
   ejectionBalanceG := 16000000000
   maxBlobsPerBlockElectra := 9
+  -- `BLOB_SCHEDULE: []` in `configs/minimal.yaml`.
+  blobSchedule := []
   inactivityScoreBias := 4
   inactivityScoreRecoveryRate := 16
   proposerScoreBoost := 40
@@ -497,11 +543,25 @@ forkconfigvalues mainnetConfig where
   minValidatorWithdrawabilityDelay := 256
   shardCommitteePeriod := 256
   genesisForkVersion := ⟨#[0, 0, 0, 0], by decide⟩
+  -- The mainnet schedule: the activated forks at their mainnet epochs.
+  altairForkVersion := ⟨#[1, 0, 0, 0], by decide⟩
+  altairForkEpoch := 74240
+  bellatrixForkVersion := ⟨#[2, 0, 0, 0], by decide⟩
+  bellatrixForkEpoch := 144896
   capellaForkVersion := ⟨#[3, 0, 0, 0], by decide⟩
+  capellaForkEpoch := 194048
+  denebForkVersion := ⟨#[4, 0, 0, 0], by decide⟩
+  denebForkEpoch := 269568
+  electraForkVersion := ⟨#[5, 0, 0, 0], by decide⟩
+  electraForkEpoch := 364032
+  fuluForkVersion := ⟨#[6, 0, 0, 0], by decide⟩
+  fuluForkEpoch := 411392
   slotDurationMs := 12000
   attestationDueBps := 3333
   ejectionBalanceG := 16000000000
   maxBlobsPerBlockElectra := 9
+  -- `BLOB_SCHEDULE` in `configs/mainnet.yaml`: the two blob-parameter-only forks.
+  blobSchedule := [(412672, 15), (419072, 21)]
   inactivityScoreBias := 4
   inactivityScoreRecoveryRate := 16
   proposerScoreBoost := 40

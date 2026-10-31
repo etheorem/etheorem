@@ -6,7 +6,7 @@ import EthCLLib.Spec.FiniteMap
 
 The second state machine (`FRAMEWORK_ARCHITECTURE.md` §9): the fork-choice `Store`
 and the `on_tick` / `on_block` / `on_attestation` / `on_attester_slashing`
-handlers, plus `get_head` (the filtered-block-tree LMD-GHOST walk with proposer
+handlers, plus `get_head` (the filtered-node-tree LMD-GHOST walk with proposer
 boost). The store is a `forkstruct` (captured for inheritance); the section opens
 with `fork_choice_section map`, so the handlers are monadic `StoreTransition` actions
 over the typed `StoreTransitionError` (`assert` / `missingKey` / `todo`),
@@ -45,10 +45,16 @@ deriving instance Inhabited for LatestMessage
 
 /-- The fork-choice store, parameterized by its map backing and (via `forkstruct`'s
 auto `[Preset]`) the preset / hasher tag. The boxed states reuse the transition
-layer's `State` (`= SSZ.Box HasherTag.H BeaconState`). -/
+layer's `State` (`= SSZ.Box HasherTag.H BeaconState`). At v1.7.0-beta.4 the clock is in
+milliseconds (`time_ms`, `genesis_time_ms`), so slot arithmetic needs no seconds-to-ms
+conversion past `get_forkchoice_store`.
+
+A node is its block root here: the phase0 `ForkChoiceNode` carries only `root`, so the
+Fulu walks pass `Root` where the spec passes a node, and a membership test on nodes is a
+membership test on roots. -/
 forkstruct Store (map : MapKind) [HasherTag] where
-  time                          : UInt64
-  genesisTime                   : UInt64
+  timeMs                        : UInt64
+  genesisTimeMs                 : UInt64
   justifiedCheckpoint           : Checkpoint
   finalizedCheckpoint           : Checkpoint
   unrealizedJustifiedCheckpoint : Checkpoint
@@ -67,51 +73,43 @@ fork_choice_section map
 /-- The all-zero root (an unset `proposer_boost_root`). -/
 forkdef fcZeroRoot : Root := Vector.replicate 32 0
 
-/-! ## Time / slot accessors -/
+/-! ## Time / slot accessors
 
-/-- `seconds_to_milliseconds` (phase0 fork-choice.md): convert seconds to
-milliseconds, clamping to `UINT64_MAX` on overflow. The clamp is unreachable at
-realistic slot counts (`seconds` stays far below `UINT64_MAX // 1000`); modeled to
-mirror the pinned helper exactly. The spec calls it only from `time_into_slot`, so it
-backs `timeIntoSlotMs` alone; the other clock sites use the raw `* 1000` form the spec
-uses there. Shared with Gloas (`Fulu.secondsToMilliseconds`). -/
-def secondsToMilliseconds (seconds : UInt64) : UInt64 :=
-  if seconds > (0xffffffffffffffff : UInt64) / 1000 then (0xffffffffffffffff : UInt64)
-  else seconds * 1000
+The millisecond clock helpers (`compute_slot_at_time_ms`, `compute_time_at_slot_ms`,
+`seconds_to_milliseconds`) live in `Fulu/Time.lean` with the beacon-chain clock. They return
+`Except StateTransitionError`, and `liftErr` lands their `.arithmetic` fault on this machine as
+`.transition (.arithmetic …)`. -/
 
-/-- `get_slots_since_genesis`, ms-based: `(time - genesis) * 1000 // SLOT_DURATION_MS`
-(phase0 fork-choice.md:242). Raw `* 1000`, not `seconds_to_milliseconds` (the spec
-clamps only `time_into_slot`). Throwing (`StoreTransition`): both `time - genesis_time`
-(underflow when a tick predates genesis) and `* 1000` (overflow) are `uint64` ops that raise
-`ValueError`, which the reference runner does not catch, so they are `checkedSub` / `checkedMul`
-faults (`.transition (.arithmetic …)`), not the bare wrapping operators. The `// SLOT_DURATION_MS`
-divide by the positive constant never faults. -/
-forkdef getSlotsSinceGenesis (store : Store map) : StoreTransition UInt64 := do
-  let elapsed ← checkedSub store.time store.genesisTime "get_slots_since_genesis: time - genesis_time"
-  let ms ← checkedMul elapsed 1000 "get_slots_since_genesis: (time - genesis_time) * 1000"
-  pure (ms / Const.slotDurationMs)
-/-- `get_current_slot`. `GENESIS_SLOT` is `0`, so the `+` cannot overflow; the throw rides up from
-`getSlotsSinceGenesis`. -/
-forkdef getCurrentSlot (store : Store map) : StoreTransition Slot := do
-  pure (Const.genesisSlot + (← getSlotsSinceGenesis store))
+/-- `get_slots_since_genesis` (`phase0/fork-choice.md:254-255`):
+`compute_slot_at_time_ms(store.genesis_time_ms, store.time_ms)`. Throwing: the clock's
+`time_ms - genesis_time_ms` underflows when the store time predates genesis, a `uint64` fault
+the reference runner does not catch. -/
+forkdef getSlotsSinceGenesis (store : Store map) : StoreTransition Slot :=
+  liftErr (computeSlotAtTimeMs store.genesisTimeMs store.timeMs)
+/-- `get_current_slot` (`phase0/fork-choice.md:261-262`): the slots since genesis. At
+v1.7.0-beta.4 the spec drops the `GENESIS_SLOT +` term (it is `0`). -/
+forkdef getCurrentSlot (store : Store map) : StoreTransition Slot :=
+  getSlotsSinceGenesis store
 forkdef getCurrentStoreEpoch (store : Store map) : StoreTransition Epoch := do
   pure (computeEpochAtSlot (← getCurrentSlot store))
 
-/-- `time_into_slot`, in milliseconds: wall-clock elapsed since the slot start, modulo
-the slot length, via the overflow-guarded `seconds_to_milliseconds` (the one spec site
-that clamps). Throwing (`StoreTransition`): the `store.time - genesis_time` seconds are a
-`uint64` subtraction that raises on underflow (`checkedSub`); `seconds_to_milliseconds` clamps
-its own `* 1000`, so no further fault rides after it. -/
-forkdef timeIntoSlotMs (store : Store map) : StoreTransition UInt64 := do
-  let seconds ← checkedSub store.time store.genesisTime "time_into_slot: time - genesis_time"
-  pure (secondsToMilliseconds seconds % Const.slotDurationMs)
+/-- `get_time_into_slot_ms` (`phase0/fork-choice.md:247-248`): the milliseconds elapsed since
+the start of the current slot, `store.time_ms - compute_time_at_slot_ms(store.genesis_time_ms,
+get_current_slot(store))`. Throwing: `get_current_slot` and `compute_time_at_slot_ms` can each
+fault, and the subtraction is a checked `uint64` op. It cannot underflow once the current slot
+is known, since that slot starts at or before `time_ms`. -/
+forkdef getTimeIntoSlotMs (store : Store map) : StoreTransition UInt64 := do
+  let currentSlot ← getCurrentSlot store
+  let slotStartMs ← liftErr (computeTimeAtSlotMs store.genesisTimeMs currentSlot)
+  checkedSub store.timeMs slotStartMs
+    "get_time_into_slot_ms: time_ms - compute_time_at_slot_ms(genesis_time_ms, current_slot)"
 
-/-- A basis-points deadline within a slot, in milliseconds: `bps * SLOT_DURATION_MS //
-BASIS_POINTS`. Multiply before the `UInt64` truncating divide, so the floor lands on the full
-`bps * SLOT_DURATION_MS` product. The product is bare rather than `checkedMul`, and stays
-that way: both factors are constants (`bps ≤ BASIS_POINTS = 10000`, `SLOT_DURATION_MS` is
-12000 at mainnet and 6000 at minimal), so it peaks near `1.2e8` and cannot reach the `uint64`
-bound at any preset. -/
+/-- A basis-points deadline within a slot, in milliseconds: `get_slot_component_duration_ms`,
+`bps * SLOT_DURATION_MS // BASIS_POINTS` (`phase0/fork-choice.md:573-577`). Multiply before
+the `UInt64` truncating divide, so the floor lands on the full `bps * SLOT_DURATION_MS`
+product. The product is bare rather than `checkedMul`, and stays that way: both factors are
+constants (`bps ≤ BASIS_POINTS = 10000`, `SLOT_DURATION_MS` is 12000 at mainnet and 6000 at
+minimal), so it peaks near `1.2e8` and cannot reach the `uint64` bound at any preset. -/
 forkdef bpsDeadlineMs (bps : UInt64) : UInt64 :=
   bps * Const.slotDurationMs / Const.basisPoints
 
@@ -123,12 +121,12 @@ the walk is monadic, and a measure would have to be carried through a step that 
 The bounds are honest counts (the block count on a finite acyclic DAG), so fuel-out is
 unreachable and each site names the sentinel it would return.
 
-`filterBlockTree` and `getHead` are the same kind of walk for the same reason, but they sit
+`filterNodeTree` and `getHead` are the same kind of walk for the same reason, but they sit
 under `Weights and head` below, so each carries the reason in its own docstring rather than
 leaning on this heading.
 -/
 
-/-- `get_ancestor(store, root, slot)`: walk parent links until at/below `slot`.
+/-- `get_ancestor(store, node, slot)`: walk parent links until at/below `slot`.
 Fuel-bounded by the block count (the DAG is finite and acyclic). The spec's
 `store.blocks[node.root]` is a plain `Dict` read, so a missing root raises:
 `getOrThrow` in the monadic `fuelLoop` step (the fuel-out value is unreachable, so
@@ -146,42 +144,49 @@ forkdef getCheckpointBlock (store : Store map) (root : Root) (epoch : Epoch) :
 
 /-! ## Weights and head -/
 
-/-- The per-slot committee weight: total active balance divided across the slots of an epoch
-(`get_total_active_balance // SLOTS_PER_EPOCH`). The shared core of `getProposerScore` and
-`calculateCommitteeFraction`. `UInt64` truncating division, so the floor is taken here once and
-both callers inherit the same rounding. -/
-forkdef committeeWeight (state : State) : Gwei :=
-  getTotalActiveBalance state / UInt64.ofNat Const.slotsPerEpoch
+/-- `calculate_committee_fraction(state, committee_percent)` (`phase0/fork-choice.md:300-307`):
+a percentage of the per-slot committee weight. At v1.7.0-beta.4 the weight is the total
+balance of the *unslashed* active validators (`get_total_balance`, floored at one increment)
+divided across the slots of an epoch, where alpha.12 took `get_total_active_balance`, which
+counts slashed validators too. `UInt64` truncating division, as the spec's `//`. -/
+forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) : Gwei :=
+  let validators := sszGet state validators
+  let unslashedAndActive := (getActiveValidatorIndices state (currentEpochOf state)).filter
+    fun i => !(validators[i.toNat]!).slashed
+  let committeeWeight := getTotalBalance state unslashedAndActive / UInt64.ofNat Const.slotsPerEpoch
+  committeeWeight * committeePercent / 100
 
-/-- `get_proposer_score`. -/
+/-- `compute_proposer_score(state)` (`phase0/fork-choice.md:362-363`): the committee
+fraction at `PROPOSER_SCORE_BOOST`. -/
+forkdef computeProposerScore (state : State) : Gwei :=
+  calculateCommitteeFraction state (UInt64.ofNat Const.proposerScoreBoost)
+
+/-- `get_proposer_score` (`phase0/fork-choice.md:369-371`): `compute_proposer_score` over the
+justified checkpoint state. -/
 forkdef getProposerScore (store : Store map) : StoreTransition Gwei := do
   let state ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  pure (committeeWeight state * UInt64.ofNat Const.proposerScoreBoost / 100)
+  pure (computeProposerScore state)
 
-/-- `get_weight(store, root)`: attestation balance for `root`, plus the proposer
-boost if `root` is an ancestor of the boosted block. The `checkpoint_states` /
-`blocks` reads and the inlined `is_ancestor` walks are plain `Dict` reads that
-raise, so the query is monadic; the active-validator folds turn `foldlM` to bind
-the throwing `getAncestor`. -/
-forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := do
-  let state ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
-    store.justifiedCheckpoint.root
-  -- pyspec reads `store.blocks[...]` only inside `is_ancestor`, which the generator reaches only
-  -- for a validator carrying a latest message that is not equivocating, and it skips the boost
-  -- branch outright on a zero boost root. Hoisting the read made an empty-`latest_messages`
-  -- store, exactly what `get_forkchoice_store` hands back, raise `.missingKey` where the
-  -- reference returns `Gwei(0)`. The Gloas twin already defers it.
-  -- Two non-conversions here are deliberate, since the reads and sums around them did convert.
-  -- `validators[idx]!` stays unchecked: `idx` comes from `getActiveValidatorIndices` on the same
-  -- `state` the array belongs to, so it is in range by construction, and the Gloas
-  -- `getAttestationScore` fold keeps it for that reason too. The two `Gwei` sums below stay bare
-  -- `+` rather than `checkedAdd` because they are operands of the weight path, which converts as
-  -- one piece: `getTotalBalance` underneath still wraps, so checking these alone would move a
-  -- wrong number around instead of catching it.
+/-- `get_attestation_score(store, node, state)` (`phase0/fork-choice.md:338-356`): the
+effective balance of the unslashed active validators whose latest message supports a
+descendant of `root` (`is_ancestor(store, get_supported_node(...), node)`; a phase0 supported
+node is the message's root). The fold is monadic only to bind `getAncestor` and the
+`store.blocks[node.root]` read inside `is_ancestor`, both of which can reject.
+
+The `and` chain short-circuits, so the block read runs only for a validator with a latest
+message that is not equivocating. A store with no latest messages, exactly what
+`get_forkchoice_store` hands back, therefore scores `0` without any read.
+`validators[idx]!` stays unchecked: `idx` comes from `getActiveValidatorIndices` on the same
+`state` the array belongs to, so it is in range by construction. The sum stays a bare `+`
+because it is an operand of the weight path, which converts as one piece: `getTotalBalance`
+underneath still wraps, so checking this alone would move a wrong number around instead of
+catching it. -/
+forkdef getAttestationScore (store : Store map) (root : Root) (state : State) :
+    StoreTransition Gwei := do
   let active := getActiveValidatorIndices state (currentEpochOf state)
   let validators := sszGet state validators
-  let attestationScore ← active.foldlM (init := (0 : Gwei)) fun acc i => do
+  active.foldlM (init := (0 : Gwei)) fun acc i => do
     let idx := i.toNat
     if (validators[idx]!).slashed then pure acc
     else match FcMap.lookup store.latestMessages i with
@@ -189,47 +194,76 @@ forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := do
       | some lm =>
         if store.equivocatingIndices.contains i then pure acc
         else
+          -- `is_ancestor(store, supported, node)` reads `store.blocks[node.root].slot`, then
+          -- walks the supported node down to that slot.
           let block ← FcMap.getOrThrow store.blocks root
           let anc ← getAncestor store lm.root block.slot
           if anc == root then pure (acc + (validators[idx]!).effectiveBalance) else pure acc
+
+/-- `get_weight(store, node)` (`phase0/fork-choice.md:377-391`): the attestation score, plus
+the proposer score when `root` is an ancestor of the boosted block. With an unset boost root
+the spec returns the attestation score and reads nothing more. The `checkpoint_states` /
+`blocks` reads and the `is_ancestor` walk are plain `Dict` reads that raise, so the query is
+monadic. -/
+forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := do
+  let state ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
+    store.justifiedCheckpoint.root
+  let attestationScore ← getAttestationScore store root state
   if store.proposerBoostRoot == fcZeroRoot then pure attestationScore
   else
+    -- `is_ancestor(store, proposer_boost_node, node)`: read `store.blocks[node.root]`, then
+    -- walk the boosted block down to that slot.
     let block ← FcMap.getOrThrow store.blocks root
     let anc ← getAncestor store store.proposerBoostRoot block.slot
     if anc == root then
-      let ps ← getProposerScore store
-      pure (attestationScore + ps)
+      let proposerScore ← getProposerScore store
+      pure (attestationScore + proposerScore)
     else pure attestationScore
 
-/-- `filter_block_tree`: collect the viable branches into `acc` (a key set),
-returning whether `blockRoot` is viable. Monadic: the opening `store.blocks[block_root]`
-read and the `get_voting_source` reads are plain `Dict`s that raise, which is why the
-descent is fuel-bounded rather than closed by `termination_by` (§7.2), the same reason the
-`DAG walks` heading gives for the walks it heads. The bound is the block count on a finite
-acyclic DAG, so fuel-out is unreachable; it would return `(acc, false)`. -/
-forkdef filterBlockTree (store : Store map) (blockRoot : Root) (acc : Array Root) :
-    StoreTransition (Array Root × Bool) :=
-  go ((FcMap.keys store.blocks).length + 1) blockRoot acc
+/-- `get_voting_source(store, block_root)` (`phase0/fork-choice.md:397-410`): all three reads
+(`blocks`, `unrealized_justifications`, `block_states`) are raising `Dict` reads. -/
+forkdef getVotingSource (store : Store map) (blockRoot : Root) : StoreTransition Checkpoint := do
+  let block ← FcMap.getOrThrow store.blocks blockRoot
+  let currentEpoch ← getCurrentStoreEpoch store
+  if currentEpoch > computeEpochAtSlot block.slot then
+    FcMap.getOrThrow store.unrealizedJustifications blockRoot
+  else
+    let hs ← FcMap.getOrThrow store.blockStates blockRoot
+    pure (sszGet hs currentJustifiedCheckpoint)
+
+/-- `get_node_children(store, node)` (`phase0/fork-choice.md:416-421`): the roots of the
+blocks whose parent is `root`. It iterates `store.blocks` and reads each entry it holds, so it
+cannot raise; a pure filter. At v1.7.0-beta.4 it takes the whole store, where alpha.12 took
+a filtered block map. -/
+forkdef getNodeChildren (store : Store map) (root : Root) : Array Root :=
+  (FcMap.filterKeys store.blocks (fun _ b => b.parentRoot == root)).toArray
+
+/-- `filter_node_tree(store, node)` (`phase0/fork-choice.md:427-467`): the viable nodes under
+`root`, each viable branch with its ancestors up to `root`, in the spec's order (a node's
+viable descendants, then the node). A leaf is viable when its voting source stays close to the
+justified checkpoint and its chain holds the finalized checkpoint.
+
+v1.7.0-beta.4 replaces `filter_block_tree`. The new walk returns the node list rather than
+filling a block map, and it reads `store.blocks[node.root]` only through `get_voting_source`
+and `get_checkpoint_block` at a leaf; alpha.12 read it at every step. The reads raise, which
+is why the descent is fuel-bounded rather than closed by `termination_by` (§7.2), the same
+reason the `DAG walks` heading gives for the walks it heads. The bound is the block count on a
+finite acyclic DAG, so fuel-out is unreachable; it would return no nodes. -/
+forkdef filterNodeTree (store : Store map) (root : Root) : StoreTransition (Array Root) :=
+  go ((FcMap.keys store.blocks).length + 1) root
 where
-  /-- `get_voting_source(store, block_root)`: all three reads (`blocks`,
-  `unrealized_justifications`, `block_states`) are raising `Dict` reads. -/
-  getVotingSource (store : Store map) (blockRoot : Root) : StoreTransition Checkpoint := do
-    let block ← FcMap.getOrThrow store.blocks blockRoot
-    let currentEpoch ← getCurrentStoreEpoch store
-    if currentEpoch > computeEpochAtSlot block.slot then
-      FcMap.getOrThrow store.unrealizedJustifications blockRoot
-    else
-      let hs ← FcMap.getOrThrow store.blockStates blockRoot
-      pure (sszGet hs currentJustifiedCheckpoint)
   /-- The viability walk; `fuel` bounds the parent-to-child descent. -/
-  go : Nat → Root → Array Root → StoreTransition (Array Root × Bool)
-  | 0,        _,         acc => pure (acc, false)
-  | fuel + 1, blockRoot, acc => do
-    let _ ← FcMap.getOrThrow store.blocks blockRoot
-    let children := FcMap.filterKeys store.blocks (fun _ b => b.parentRoot == blockRoot)
-    if children.isEmpty then
+  go : Nat → Root → StoreTransition (Array Root)
+  | 0,        _    => pure #[]
+  | fuel + 1, root => do
+    let children := getNodeChildren store root
+    if !children.isEmpty then
+      let viableNodes ← children.foldlM (init := (#[] : Array Root)) fun acc child => do
+        pure (acc ++ (← go fuel child))
+      if !viableNodes.isEmpty then pure (viableNodes.push root) else pure #[]
+    else
       let currentEpoch ← getCurrentStoreEpoch store
-      let votingSource ← getVotingSource store blockRoot
+      let votingSource ← getVotingSource store root
       let justifiedWithoutHorizon :=
         store.justifiedCheckpoint.epoch == Const.genesisEpoch
           || votingSource.epoch == store.justifiedCheckpoint.epoch
@@ -239,33 +273,31 @@ where
       -- `decide` because `≥` on `UInt64` is a `Prop`: in the original the comparison sat inside
       -- a `Bool` `||` chain, which drove the coercion; standalone under `pure` it needs saying.
       let correctJustified ← if justifiedWithoutHorizon then pure true else do
-        let horizon ← checkedAdd votingSource.epoch 2 "filter_block_tree: voting_source.epoch + 2"
+        let horizon ← checkedAdd votingSource.epoch 2 "filter_node_tree: voting_source.epoch + 2"
         pure (decide (horizon ≥ currentEpoch))
-      let finalizedBlock ← getCheckpointBlock store blockRoot store.finalizedCheckpoint.epoch
+      let finalizedBlock ← getCheckpointBlock store root store.finalizedCheckpoint.epoch
       let correctFinalized :=
         store.finalizedCheckpoint.epoch == Const.genesisEpoch
           || store.finalizedCheckpoint.root == finalizedBlock
-      if correctJustified && correctFinalized then pure (acc.push blockRoot, true) else pure (acc, false)
-    else
-      let (acc', anyViable) ← children.foldlM (init := (acc, false)) fun (a, viable) child => do
-        let (a', v) ← go fuel child a
-        pure (a', viable || v)
-      if anyViable then pure (acc'.push blockRoot, true) else pure (acc', false)
+      if correctJustified && correctFinalized then pure #[root] else pure #[]
 
-/-- `get_head`: the filtered-block-tree LMD-GHOST walk, ties broken by the
-lexicographically-greater root. Monadic `fuelLoop`; the `max` fold is `foldlM`, since
+/-- `get_filtered_node_tree(store)` (`phase0/fork-choice.md:473-479`): the viable nodes rooted
+at the justified checkpoint. -/
+forkdef getFilteredNodeTree (store : Store map) : StoreTransition (Array Root) :=
+  filterNodeTree store store.justifiedCheckpoint.root
+
+/-- `get_head` (`phase0/fork-choice.md:485-496`): the LMD-GHOST walk from the justified root,
+stepping to the heaviest child that is in the filtered node tree, ties broken by the
+lexicographically greater root. Monadic `fuelLoop`; the `max` fold is `foldlM`, since
 `betterOf` can reject, and that rejecting step is why the walk is fuel-bounded rather than
 closed by `termination_by` (§7.2): `maxSlot - currentSlot` is a clean measure on paper but
 would have to be carried past the reject. The bound is the block count, so fuel-out is
 unreachable; the justified root doubles as the sentinel it would return. -/
 forkdef getHead (store : Store map) : StoreTransition Root := do
-  let (viable, _) ← filterBlockTree store store.justifiedCheckpoint.root #[]
+  let nodes ← getFilteredNodeTree store
   fuelLoop ((FcMap.keys store.blocks).length + 1) store.justifiedCheckpoint.root
       store.justifiedCheckpoint.root fun head => do
-    let children := viable.filter fun r =>
-      match FcMap.lookup store.blocks r with
-      | some b => b.parentRoot == head
-      | none   => false
+    let children := (getNodeChildren store head).filter nodes.contains
     if children.isEmpty then pure (.done head)
     else
       let best ← children.foldlM (init := children[0]!) (betterOf store)
@@ -289,17 +321,16 @@ where
 
 /-! ## Proposer-head reorg logic (`get_proposer_head`) -/
 
-/-- `calculate_committee_fraction`: a percentage of the per-slot committee weight. -/
-forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) : Gwei :=
-  committeeWeight state * committeePercent / 100
-
 /-- `is_head_late`: the head block did not arrive before the attestation deadline.
 `store.block_timeliness[head_root]` is a raising `Dict` read. -/
 forkdef isHeadLate (store : Store map) (headRoot : Root) : StoreTransition Bool := do
   let timely ← FcMap.getOrThrow store.blockTimeliness headRoot
   pure (!timely)
 
-/-- `is_shuffling_stable`: not on an epoch boundary (where the shuffling could flip). -/
+/-- `is_shuffling_stable(slot)` (`phase0/fork-choice.md:615-616`): not on an epoch boundary,
+where the proposer shuffling could change. v1.7.0-beta.4 renames phase0's
+`is_not_epoch_boundary` to this. The Fulu `get_proposer_head` no longer calls it (EIP-7917, see
+there); it stays as the phase0 surface the Fulu spec still carries. -/
 forkdef isShufflingStable (slot : Slot) : Bool := slot % UInt64.ofNat Const.slotsPerEpoch != 0
 
 /-- `is_ffg_competitive`: head and parent carry the same unrealized justification.
@@ -310,9 +341,9 @@ forkdef isFfgCompetitive (store : Store map) (headRoot parentRoot : Root) : Stor
   pure (h == p)
 
 /-- `is_finalization_ok`: the chain is finalizing within `REORG_MAX_EPOCHS_SINCE_FINALIZATION`.
-pyspec (`phase0/fork-choice.md:609-611`) computes the epoch gap as a checked `uint64`
-subtraction that raises `ValueError`. `on_tick_per_slot` sets `store.time = time` with no
-monotonicity assert (`phase0/fork-choice.md:750-754`), so the spec permits a tick that moves
+pyspec (`phase0/fork-choice.md:631-633`) computes the epoch gap as a checked `uint64`
+subtraction that raises `ValueError`. `on_tick_per_slot` sets `store.time_ms = time_ms` with no
+monotonicity assert (`phase0/fork-choice.md:792-808`), so the spec permits a tick that moves
 the clock back below the finalized epoch's start slot, where the subtraction underflows.
 `checkedSub` rejects there. No conformance vector emits a backwards tick, so the path is
 unreachable in the corpus and carries no pin. Throwing, so the caller binds it. -/
@@ -321,28 +352,52 @@ forkdef isFinalizationOk (store : Store map) (slot : Slot) : StoreTransition Boo
     "is_finalization_ok: compute_epoch_at_slot(slot) - finalized_checkpoint.epoch"
   pure (gap ≤ Const.reorgMaxEpochsSinceFinalization)
 
-/-- `is_proposing_on_time`: within the reorg cutoff of the slot start (ms timing; the
-store clock is seconds, converted via `* 1000`). Throwing only to bind `timeIntoSlotMs`. -/
+/-- `is_proposing_on_time` (`phase0/fork-choice.md:639-640`): the time into the slot is
+within `get_proposer_reorg_cutoff_ms()`. Throwing only to bind `getTimeIntoSlotMs`. -/
 forkdef isProposingOnTime (store : Store map) : StoreTransition Bool := do
-  pure ((← timeIntoSlotMs store) ≤ bpsDeadlineMs Const.proposerReorgCutoffBps)
+  pure ((← getTimeIntoSlotMs store) ≤ bpsDeadlineMs Const.proposerReorgCutoffBps)
 
-/-- `is_head_weak`: the head's weight is below the reorg-head threshold. -/
+/-- `is_head_weak(store, head_root)` (`phase0/fork-choice.md:652-673`): the head's attestation
+score, plus the effective balance of the equivocators in its slot's committees, is below the
+reorg-head threshold. v1.7.0-beta.4 moves phase0 to this form, which Gloas already had: the
+equivocator weight keeps the predicate monotonic, so more attestations can only turn it from
+`true` to `false`.
+
+The equivocator read is `justified_state.validators[i]` with `i` drawn from the *head* state's
+committees, so a cross-branch registry skew can push it past the justified registry's end; the
+spec raises `IndexError` there, hence `sszGetIdx` (the wrapped `outOfBounds` reject), and
+`foldlM` to bind it. The `store.block_states[head_root]` / `store.blocks[head_root]` reads raise
+on a miss. -/
 forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool := do
-  let js ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
+  let justifiedState ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  let hw ← getWeight store headRoot
-  pure (hw < calculateCommitteeFraction js Const.reorgHeadWeightThreshold)
+  let reorgThreshold := calculateCommitteeFraction justifiedState Const.reorgHeadWeightThreshold
+  let headState ← FcMap.getOrThrow store.blockStates headRoot
+  let headBlock ← FcMap.getOrThrow store.blocks headRoot
+  let epoch := computeEpochAtSlot headBlock.slot
+  let baseWeight ← getAttestationScore store headRoot justifiedState
+  let validators := sszGet justifiedState validators
+  let headWeight ← (List.range (getCommitteeCountPerSlot headState epoch)).foldlM
+      (init := baseWeight) fun acc index => do
+    let committee := getBeaconCommittee headState headBlock.slot index
+    committee.foldlM (init := acc) fun a i =>
+      if store.equivocatingIndices.contains i then do
+        let v ← sszGetIdx validators i.toNat
+        pure (a + v.effectiveBalance)
+      else pure a
+  pure (headWeight < reorgThreshold)
 
-/-- `is_parent_strong`: the head's parent weight exceeds the reorg-parent threshold.
-Phase0 `is_parent_strong` reads `store.blocks[root].parent_root` (raising) and scores
-the bare parent node, so the block read is faithful here. Gloas scores its parent at a
-synthetic PENDING node with no block read, so no throw belongs on that path. -/
+/-- `is_parent_strong(store, root)` (`phase0/fork-choice.md:679-685`): the parent's
+attestation score, over the justified state, exceeds the reorg-parent threshold. At
+v1.7.0-beta.4 the parent is scored with `get_attestation_score` (no proposer boost), where
+alpha.12 used `get_weight`. The `store.blocks[root]` read raises on a miss. -/
 forkdef isParentStrong (store : Store map) (root : Root) : StoreTransition Bool := do
-  let js ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
+  let justifiedState ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
+  let parentThreshold := calculateCommitteeFraction justifiedState Const.reorgParentWeightThreshold
   let b ← FcMap.getOrThrow store.blocks root
-  let pw ← getWeight store b.parentRoot
-  pure (pw > calculateCommitteeFraction js Const.reorgParentWeightThreshold)
+  let parentWeight ← getAttestationScore store b.parentRoot justifiedState
+  pure (parentWeight > parentThreshold)
 
 /-- `is_proposer_equivocation`: more than one block from the head's proposer at its
 slot. `store.blocks[root]` raises on a miss. -/
@@ -351,14 +406,18 @@ forkdef isProposerEquivocation (store : Store map) (root : Root) : StoreTransiti
   pure (((FcMap.values store.blocks).filter
     (fun b => b.proposerIndex == block.proposerIndex && b.slot == block.slot)).length > 1)
 
-/-- `get_proposer_head`: whether a proposer at `slot` should reorg the current head
-(`head_root`) by building on its parent. Reorg the head when it is late, weak, on a
-stable shuffling, FFG-competitive, finalizing, proposed on time, exactly one slot
-back, and its parent is strong; or, more aggressively, when the head is weak and the
-previous slot had a proposer equivocation. Otherwise keep the head. -/
+/-- `get_proposer_head` (Fulu, `fulu/fork-choice.md:28-80`): whether a proposer at `slot`
+should reorg the current head (`head_root`) by building on its parent. Reorg the head when it
+is late, weak, FFG-competitive, finalizing, proposed on time, exactly one slot back, and its
+parent is strong; or, more aggressively, when the head is weak and the previous slot had a
+proposer equivocation. Otherwise keep the head.
+
+v1.7.0-beta.4 modifies the function in Fulu to drop phase0's `is_shuffling_stable(slot)`
+guard (EIP-7917): the proposer lookahead fixes the proposer before the epoch boundary, so a
+reorg of a late block at the end of the previous epoch cannot change this slot's proposer. -/
 forkdef getProposerHead (store : Store map) (headRoot : Root) (slot : Slot) : StoreTransition Root := do
   -- `store.blocks[head_root]` / `store.blocks[parent_root]` are plain `Dict` reads that
-  -- raise on a miss (phase0 `get_proposer_head`).
+  -- raise on a miss.
   let headBlock ← FcMap.getOrThrow store.blocks headRoot
   let parentRoot := headBlock.parentRoot
   let parentBlock ← FcMap.getOrThrow store.blocks parentRoot
@@ -366,17 +425,16 @@ forkdef getProposerHead (store : Store map) (headRoot : Root) (slot : Slot) : St
   -- (throwing) read runs unconditionally and in this order. A lazy `&&` would skip a raise
   -- the spec performs (e.g. `is_ffg_competitive`'s `unrealized_justifications` reads when
   -- `is_head_late` is already false), so bind them all eagerly to reject exactly where
-  -- pyspec does. `isShufflingStable` is the pinned `is_epoch_boundary` (identical formula,
-  -- `slot % SLOTS_PER_EPOCH != 0`).
+  -- pyspec does.
   let headLate ← isHeadLate store headRoot
-  let epochBoundary := isShufflingStable slot
   let ffgCompetitive ← isFfgCompetitive store headRoot parentRoot
   let finalizationOk ← isFinalizationOk store slot
   let proposingOnTime ← isProposingOnTime store
+  let parentNextSlot ← checkedAdd parentBlock.slot 1 "get_proposer_head: parent_block.slot + 1"
+  let parentSlotOk := parentNextSlot == headBlock.slot
   let headNextSlot ← checkedAdd headBlock.slot 1 "get_proposer_head: head_block.slot + 1"
   let currentTimeOk := headNextSlot == slot
-  let parentNextSlot ← checkedAdd parentBlock.slot 1 "get_proposer_head: parent_block.slot + 1"
-  let singleSlotReorg := parentNextSlot == headBlock.slot && currentTimeOk
+  let singleSlotReorg := parentSlotOk && currentTimeOk
   -- `assert proposer_boost_root != head_root` (the boost has worn off). Placed after the
   -- timing predicates and before the weight ones (`is_head_weak` / `is_parent_strong` /
   -- `is_proposer_equivocation`), matching the spec's statement order. Vectorless.
@@ -384,7 +442,7 @@ forkdef getProposerHead (store : Store map) (headRoot : Root) (slot : Slot) : St
   let headWeak ← isHeadWeak store headRoot
   let parentStrong ← isParentStrong store headRoot
   let proposerEquivocation ← isProposerEquivocation store headRoot
-  if headLate && epochBoundary && ffgCompetitive && finalizationOk && proposingOnTime
+  if headLate && ffgCompetitive && finalizationOk && proposingOnTime
       && singleSlotReorg && headWeak && parentStrong then pure parentRoot
   else if headWeak && currentTimeOk && proposerEquivocation then pure parentRoot
   else pure headRoot
@@ -431,9 +489,11 @@ forkdef computePulledUpTip (blockRoot : Root) : StoreTransition Unit := do
 
 /-! ## on_tick -/
 
-forkdef onTickPerSlot (store : Store map) (time : UInt64) : StoreTransition (Store map) := do
+/-- `on_tick_per_slot(store, time_ms)` (`phase0/fork-choice.md:792-808`): set the clock,
+reset the boost on a new slot, and pull up the unrealized checkpoints on a new epoch. -/
+forkdef onTickPerSlot (store : Store map) (timeMs : UInt64) : StoreTransition (Store map) := do
   let previousSlot ← getCurrentSlot store
-  let store := { store with time := time }
+  let store := { store with timeMs := timeMs }
   let currentSlot ← getCurrentSlot store
   let store := if currentSlot > previousSlot then { store with proposerBoostRoot := fcZeroRoot } else store
   pure <| if currentSlot > previousSlot && computeSlotsSinceEpochStart currentSlot == 0 then
@@ -444,55 +504,96 @@ where
   -- always `≤ slot`, so this `uint64` subtraction cannot underflow; a bare `-`, not `checkedSub`.
   computeSlotsSinceEpochStart (slot : Slot) : UInt64 := slot - computeStartSlotAtEpoch (computeEpochAtSlot slot)
 
-/-- `on_tick`: advance the store clock to `time`. Each `on_tick_per_slot` commits before the
-next iteration, because pyspec calls it against the live store and a raise partway through the
-catch-up leaves the earlier per-slot boost resets and checkpoint updates applied. Threading a
-local and committing once discarded them. Same rule as `aed053b`'s, at the site it did not
-reach; the loop body can now throw, so the divergence is live in principle. -/
-forkdef onTick (time : UInt64) : StoreTransition Unit := do
+/-- `on_tick(store, time_ms)` (`phase0/fork-choice.md:946-954`): advance the store clock to
+`time_ms`, running `on_tick_per_slot` at the start of every slot the clock passes on the way.
+Each `on_tick_per_slot` commits before the next iteration, because pyspec calls it against the
+live store and a raise partway through the catch-up leaves the earlier per-slot boost resets
+and checkpoint updates applied. Threading a local and committing once discarded them. Same
+rule as `aed053b`'s, at the site it did not reach; the loop body can throw.
+
+The clock is in milliseconds, so the slot-start times come from `compute_time_at_slot_ms` with
+no seconds rounding, and the catch-up bound below is exact. -/
+forkdef onTick (timeMs : UInt64) : StoreTransition Unit := do
   let store ← get
-  let elapsed ← checkedSub time store.genesisTime "on_tick: time - genesis_time"
-  let tickMs ← checkedMul elapsed 1000 "on_tick: (time - genesis_time) * 1000"
-  let tickSlot := tickMs / Const.slotDurationMs
+  let tickSlot ← liftErr (computeSlotAtTimeMs store.genesisTimeMs timeMs)
   let cur ← getCurrentSlot store
   -- Fuel rather than a measure (§7.2): the body reads the store and can throw, so a decreasing
   -- `tickSlot - get_current_slot` would have to be carried past a rejecting step. The bound is a
   -- Lean artifact, not a spec op: a raw `-` here can only underflow to a huge ceiling when
-  -- `tickSlot < cur`, and then the step `.done`s on its first iteration anyway. `fuelIterateM!`
-  -- throws on fuel-out because the bound is exact only where `1000` divides `SLOT_DURATION_MS`.
+  -- `tickSlot < cur`, and then the step `.done`s on its first iteration anyway. Each pass of the
+  -- loop moves the clock to the next slot start, so `tickSlot - cur + 1` passes suffice;
+  -- `fuelIterateM!` throws on fuel-out rather than returning a wrong store.
   fuelIterateM! ((tickSlot - cur).toNat + 1) () "on_tick: per-slot catch-up" fun _ => do
     let cs ← getCurrentSlot (← get)
     if cs < tickSlot then
-      let bumped ← checkedAdd cs 1 "on_tick: get_current_slot + 1"
-      let scaled ← checkedMul bumped Const.slotDurationMs
-        "on_tick: (get_current_slot + 1) * SLOT_DURATION_MS"
-      let previousTime ← checkedAdd store.genesisTime (scaled / 1000) "on_tick: genesis_time + …"
-      set (← onTickPerSlot (← get) previousTime)
+      let nextSlot ← checkedAdd cs 1 "on_tick: get_current_slot(store) + 1"
+      let nextSlotTimeMs ← liftErr (computeTimeAtSlotMs (← get).genesisTimeMs nextSlot)
+      set (← onTickPerSlot (← get) nextSlotTimeMs)
       pure (.next ())
     else
-      set (← onTickPerSlot (← get) time)
+      set (← onTickPerSlot (← get) timeMs)
       pure (.done ())
 
-/-! ## on_block -/
+/-! ## on_block helpers -/
 
-/-- `get_dependent_root` (v1.7): the block root that determined the current epoch's
-proposer shuffling. Monadic to bind the throwing `getAncestor`. -/
-forkdef getDependentRoot (store : Store map) (root : Root) : StoreTransition Root := do
+/-- `record_block_timeliness(store, root)` (`phase0/fork-choice.md:890-896`): the block is
+timely when it arrives in its own slot, before the attestation deadline. The
+`store.blocks[root]` read raises on a miss. -/
+forkdef recordBlockTimeliness (store : Store map) (root : Root) : StoreTransition (Store map) := do
+  let block ← FcMap.getOrThrow store.blocks root
+  let timeIntoSlotMs ← getTimeIntoSlotMs store
+  let isBeforeAttestingInterval := timeIntoSlotMs < bpsDeadlineMs Const.attestationDueBps
+  let currentSlot ← getCurrentSlot store
+  let isTimely := currentSlot == block.slot && isBeforeAttestingInterval
+  pure { store with blockTimeliness := FcMap.insert store.blockTimeliness root isTimely }
+
+/-- `compute_shuffling_lookahead_start_slot(epoch)` (`phase0/fork-choice.md:902-904`): the
+first slot of the epoch `MIN_SEED_LOOKAHEAD` before `epoch`, floored at genesis. Pure. -/
+forkdef computeShufflingLookaheadStartSlot (epoch : Epoch) : Slot :=
+  computeStartSlotAtEpoch (saturatingSub epoch Const.minSeedLookahead)
+
+/-- `compute_shuffling_dependent_slot(epoch)` (`phase0/fork-choice.md:910-912`): the last slot
+before the lookahead start, the slot whose block fixes `epoch`'s proposer shuffling. Floored
+at genesis, so for the first `MIN_SEED_LOOKAHEAD + 1` epochs it is slot `0`. Pure. -/
+forkdef computeShufflingDependentSlot (epoch : Epoch) : Slot :=
+  saturatingSub (computeShufflingLookaheadStartSlot epoch) 1
+
+/-- `get_shuffling_dependent_root(store, root, epoch)` (`phase0/fork-choice.md:918-921`): the
+root of `root`'s ancestor at the shuffling dependent slot. At v1.7.0-beta.4 the genesis case
+goes through the same walk, so an early epoch resolves to the slot-0 ancestor, where alpha.12
+returned the zero root. Throwing, because `getAncestor` is. -/
+forkdef getShufflingDependentRoot (store : Store map) (root : Root) (epoch : Epoch) :
+    StoreTransition Root :=
+  getAncestor store root (computeShufflingDependentSlot epoch)
+
+/-- `update_proposer_boost_root(store, head, root)` (`phase0/fork-choice.md:927-938`): boost a
+timely first block whose shuffling dependent root matches the pre-insertion head's. The spec
+binds the head's dependent root first, then the block's, so when both walks would miss, the
+surfaced `missingKey` names the head walk's read. -/
+forkdef updateProposerBoostRoot (store : Store map) (head root : Root) :
+    StoreTransition (Store map) := do
+  let isFirstBlock := store.proposerBoostRoot == fcZeroRoot
+  let isTimely ← FcMap.getOrThrow store.blockTimeliness root
   let epoch ← getCurrentStoreEpoch store
-  if epoch ≤ Const.minSeedLookahead then pure fcZeroRoot
-  else getAncestor store root (computeStartSlotAtEpoch (epoch - Const.minSeedLookahead) - 1)
+  let headDependentRoot ← getShufflingDependentRoot store head epoch
+  let blockDependentRoot ← getShufflingDependentRoot store root epoch
+  let isSameDependentRoot := headDependentRoot == blockDependentRoot
+  if isTimely && isFirstBlock && isSameDependentRoot then
+    pure { store with proposerBoostRoot := root }
+  else pure store
 
 /-! ## Data availability (PeerDAS, EIP-7594) -/
 
-/-- `verify_data_column_sidecar`: the structural gate. The index is in range, the
-column is non-empty and within the blob limit, and the column / commitment / proof
-list lengths agree. -/
+/-- `verify_data_column_sidecar` (`fulu/p2p-interface.md`): the structural gate. The index is
+in range, the sidecar carries at least one commitment and no more than the blob limit at its
+block's epoch (`get_blob_parameters`), and the column / commitment / proof list lengths agree. -/
 forkdef verifyDataColumnSidecar (sidecar : DataColumnSidecar) : Bool :=
   let ncol := sidecar.column.size
   let ncomm := sidecar.kzgCommitments.size
+  let epoch := computeEpochAtSlot sidecar.signedBlockHeader.message.slot
   if sidecar.index ≥ UInt64.ofNat Const.numberOfColumns then false
   else if ncomm == 0 then false
-  else if ncomm > Const.maxBlobsPerBlockElectra then false
+  else if ncomm > (getBlobParameters epoch).maxBlobsPerBlock then false
   else ncol == ncomm && ncol == sidecar.kzgProofs.size
 
 /-- `verify_data_column_sidecar_kzg_proofs`: the KZG gate. Every cell index in the
@@ -510,7 +611,7 @@ feeds exactly the columns the step lists, mirroring the spec's
 `retrieve_column_sidecars`.
 
 The non-emptiness guard tracks the **test helper**, not the spec function. The spec's
-`is_data_available` (`fulu/fork-choice.md:22-33`) returns `all([]) = True` on an empty
+`is_data_available` (`fulu/fork-choice.md:86-97`) returns `all([]) = True` on an empty
 column set, because `retrieve_column_sidecars` is declared implementation-dependent and
 left unmodeled. The pyspec harness monkeypatches it to raise
 `AssertionError("Simulation: not all required columns have been sampled")` on an empty
@@ -519,14 +620,18 @@ the guard reproduces the helper. -/
 forkdef isDataAvailable (cols : Array DataColumnSidecar) : Bool :=
   !cols.isEmpty && cols.all (fun sidecar => verifyDataColumnSidecar sidecar && verifyDataColumnSidecarKzgProofs sidecar)
 
-/-- `on_block`. Rejects (via `assert`) an unknown parent, a future
-block, a finality conflict, or unavailable blob data, and propagates a failed
+/-- `on_block` (Fulu, `fulu/fork-choice.md:108-159`). Returns early, with the store
+unchanged, for a block it already holds. Otherwise it rejects (via `assert`) an unknown
+parent, a future block, a finality conflict, or unavailable blob data, and propagates a failed
 `state_transition` through `runNestedStateTransition`. `columns` are the block's PeerDAS
 data-column sidecars (EIP-7594); the runner supplies exactly those the step lists. -/
 forkdef onBlock (signedBlock : SignedBeaconBlock) (columns : Array DataColumnSidecar) :
     StoreTransition Unit := do
   let store ← get
   let block := signedBlock.message
+  let blockRoot := htr block
+  -- Return early if the block is already known (new at v1.7.0-beta.4).
+  if FcMap.contains store.blocks blockRoot then return
   let parentState ← FcMap.getOrAssert store.blockStates block.parentRoot
     "block.parent_root in store.block_states"
   let currentSlot ← getCurrentSlot store
@@ -534,43 +639,29 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) (columns : Array DataColumnSid
   let finalizedSlot := computeStartSlotAtEpoch store.finalizedCheckpoint.epoch
   assert (block.slot > finalizedSlot)
   assert (store.finalizedCheckpoint.root == (← getCheckpointBlock store block.parentRoot store.finalizedCheckpoint.epoch))
-  -- Data availability (EIP-7594). The spec's `on_block` (`fulu/fork-choice.md:70`) calls
-  -- `is_data_available(hash_tree_root(block))` unconditionally; the commitments
-  -- short-circuit is ours, and it pairs with `isDataAvailable`'s non-emptiness guard. That
-  -- guard reproduces the test helper, which raises on an empty column set, so without this
-  -- clause a blob-free block would reject on a set the spec calls available. The one input
-  -- shape that would tell the two apart is a block carrying blob commitments with no
-  -- `columns` key in its step; the generator emits `columns` for every such block, so no
-  -- vector produces it.
+  -- Data availability (EIP-7594). The spec's `on_block` calls `is_data_available(block_root)`
+  -- unconditionally; the commitments short-circuit is ours, and it pairs with
+  -- `isDataAvailable`'s non-emptiness guard. That guard reproduces the test helper, which
+  -- raises on an empty column set, so without this clause a blob-free block would reject on a
+  -- set the spec calls available. The one input shape that would tell the two apart is a block
+  -- carrying blob commitments with no `columns` key in its step; the generator emits `columns`
+  -- for every such block, so no vector produces it.
   assert (block.body.blobKzgCommitments.toArray.isEmpty || isDataAvailable columns)
 
   let postState ← runNestedStateTransition parentState (stateTransition signedBlock)
-  let blockRoot := htr block
-  -- The head is taken BEFORE the new block is added (v1.7 `update_proposer_boost_root`).
+  -- The head is taken BEFORE the new block is added (`update_proposer_boost_root`).
   let head ← getHead store
-  let beforeAttesting ← timeIntoSlotMs store
-  let isTimely := currentSlot == block.slot && beforeAttesting < bpsDeadlineMs Const.attestationDueBps
 
-  -- Insert the block, its post-state, and the timeliness flag. `set` before the boost
-  -- computation: `update_proposer_boost_root`'s dependent-root walks can raise, and so
-  -- does `compute_pulled_up_tip`'s pull-up, so each completed write must persist
-  -- (in-place runner semantics).
+  -- Insert the block and its post-state, then record its timeliness. `set` at each pyspec
+  -- statement boundary: `record_block_timeliness`'s clock read, `update_proposer_boost_root`'s
+  -- dependent-root walks, and `compute_pulled_up_tip`'s pull-up can each raise, so each
+  -- completed write must persist (in-place runner semantics).
   set { store with
     blocks := FcMap.insert store.blocks blockRoot block
-    blockStates := FcMap.insert store.blockStates blockRoot postState
-    blockTimeliness := FcMap.insert store.blockTimeliness blockRoot isTimely }
-  let store ← get
-
-  -- Boost only a timely first block on the same proposer-shuffling lineage as the
-  -- pre-insertion head (v1.7 `is_same_dependent_root`). Root-then-head evaluation
-  -- matches the pinned `get_dependent_root(store, root) == get_dependent_root(store, head)`.
-  let depRoot ← getDependentRoot store blockRoot
-  let depHead ← getDependentRoot store head
-  let store := if isTimely && store.proposerBoostRoot == fcZeroRoot && depHead == depRoot then
-    { store with proposerBoostRoot := blockRoot } else store
-  set store
-  let store := updateCheckpoints store (sszGet postState currentJustifiedCheckpoint) (sszGet postState finalizedCheckpoint)
-  set store
+    blockStates := FcMap.insert store.blockStates blockRoot postState }
+  set (← recordBlockTimeliness (← get) blockRoot)
+  set (← updateProposerBoostRoot (← get) head blockRoot)
+  set (updateCheckpoints (← get) (sszGet postState currentJustifiedCheckpoint) (sszGet postState finalizedCheckpoint))
   -- `(map := map)`: no store argument, so the section's map backing is undetermined here
   -- (the ambient `get`/`set` constraint alone leaves it a stuck metavariable); name it.
   computePulledUpTip (map := map) blockRoot
@@ -594,13 +685,21 @@ forkdef storeTargetCheckpointState (store : Store map) (target : Checkpoint) :
       else pure base
     pure { store with checkpointStates := FcMap.insert store.checkpointStates target advanced }
 
+/-- `validate_target_epoch_against_current_time` (`phase0/fork-choice.md:816-823`): the
+attestation's target is the current or the previous store epoch, where the previous epoch is
+`saturating_sub(current_epoch, 1)`. -/
+forkdef validateTargetEpochAgainstCurrentTime (store : Store map) (att : Attestation) :
+    StoreTransition Unit := do
+  let target := att.data.target
+  let currentEpoch ← getCurrentStoreEpoch store
+  let previousEpoch := saturatingSub currentEpoch 1
+  assert (target.epoch == currentEpoch || target.epoch == previousEpoch)
+
 /-- `validate_on_attestation`. The epoch-scope check is skipped for a block-implied
 attestation (`is_from_block = true`); the rest always apply. -/
 forkdef validateOnAttestation (store : Store map) (att : Attestation) (isFromBlock : Bool) : StoreTransition Unit := do
   let target := att.data.target
-  let currentEpoch ← getCurrentStoreEpoch store
-  let previousEpoch := if currentEpoch > Const.genesisEpoch then currentEpoch - 1 else Const.genesisEpoch
-  assert (isFromBlock || target.epoch == currentEpoch || target.epoch == previousEpoch)
+  if !isFromBlock then validateTargetEpochAgainstCurrentTime store att
   assert (target.epoch == computeEpochAtSlot att.data.slot)
   assert (FcMap.contains store.blocks target.root)
   assert (FcMap.contains store.blocks att.data.beaconBlockRoot)
@@ -612,7 +711,7 @@ forkdef validateOnAttestation (store : Store map) (att : Attestation) (isFromBlo
   -- `is_from_block`, so a block-implied attestation reaches here with an arbitrary slot. The
   -- bare `+` wraps `0xFFFF…FFFF + 1` to `0`, `currentSlot ≥ 0` holds for every store, and the
   -- attestation is ACCEPTED into `latest_messages`, corrupting the head walk. pyspec
-  -- (`phase0/fork-choice.md:813`) forms a checked `uint64` sum that raises `ValueError`, which
+  -- (`phase0/fork-choice.md:854`) forms a checked `uint64` sum that raises `ValueError`, which
   -- `expect_assertion_error` does not catch. Sequenced after every preceding assert, matching
   -- Python's evaluation order.
   let attestationDeadline ← checkedAdd att.data.slot 1
@@ -668,14 +767,19 @@ forkdef onAttesterSlashing (asl : AttesterSlashing) : StoreTransition Unit := do
 
 /-! ## get_forkchoice_store -/
 
-/-- `get_forkchoice_store(anchor_state, anchor_block)`
-(`consensus-specs/specs/phase0/fork-choice.md:215-216`). The pyspec opens with
-`assert anchor_block.state_root == hash_tree_root(anchor_state)`, the anchor's
+/-- `get_forkchoice_store(anchor_state, anchor_block)` (`phase0/fork-choice.md:219-241`). The
+pyspec opens with `assert anchor_block.state_root == hash_tree_root(anchor_state)`, the anchor's
 self-consistency check, so the seed is a throwing `Except StoreTransitionError` action rather
 than a total store literal. The reject branch is vectorless (the harness derives the anchor
 block and state from one vector, so `state_root` always matches); Heze's `pinAnchorRejects`
 locks the identical assert, and this Fulu constructor carries it verbatim. The anchor block's
-root is computed from the (state-root-filled) anchor block. -/
+root is computed from the (state-root-filled) anchor block.
+
+At v1.7.0-beta.4 the clock seeds in milliseconds: `genesis_time_ms =
+seconds_to_milliseconds(anchor_state.genesis_time)` (which caps at `UINT64_MAX` rather than raising) and
+`time_ms = compute_time_at_slot_ms(genesis_time_ms, anchor_state.slot)`, whose product and sum
+are checked. `anchor_state` comes straight off the wire, so a slot at or above
+`2^64 / SLOT_DURATION_MS` faults where a bare product would wrap and seed a wrong clock. -/
 forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
     Except StoreTransitionError (Store map) := do
   -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the boxed state hashes
@@ -684,17 +788,11 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }
-  -- `uint64(anchor_state.genesis_time + SLOT_DURATION_MS * anchor_state.slot // 1000)`
-  -- (`phase0/fork-choice.md:223`): both the product and the sum are checked. `anchor_state`
-  -- comes straight off the wire, so a slot at or above `2^64 / SLOT_DURATION_MS` wraps and
-  -- seeds the store with a wrong clock where pyspec errors.
-  let elapsedMs ← checkedMul Const.slotDurationMs (sszGet anchorState slot)
-    "get_forkchoice_store: SLOT_DURATION_MS * anchor_state.slot"
-  let storeTime ← checkedAdd (sszGet anchorState genesisTime) (elapsedMs / 1000)
-    "get_forkchoice_store: genesis_time + SLOT_DURATION_MS * slot // 1000"
+  let genesisTimeMs := secondsToMilliseconds (sszGet anchorState genesisTime)
+  let timeMs ← liftErr (computeTimeAtSlotMs genesisTimeMs (sszGet anchorState slot))
   pure
-    { time := storeTime
-      genesisTime := sszGet anchorState genesisTime
+    { timeMs := timeMs
+      genesisTimeMs := genesisTimeMs
       justifiedCheckpoint := cp, finalizedCheckpoint := cp
       unrealizedJustifiedCheckpoint := cp, unrealizedFinalizedCheckpoint := cp
       proposerBoostRoot := fcZeroRoot

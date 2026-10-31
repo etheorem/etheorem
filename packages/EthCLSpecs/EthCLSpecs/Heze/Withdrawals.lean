@@ -27,7 +27,7 @@ withdrawal credentials. Restated (a plain `def` rather than an inheritable `fork
 def addressOf (v : Validator) : ExecutionAddress :=
   Vector.ofFn (fun i : Fin 20 => vget v.withdrawalCredentials (12 + i.val))
 
-/-- `get_balance_after_withdrawals` over `Heze.State` (`capella/beacon-chain.md:378`): the
+/-- `get_balance_after_withdrawals` over `Heze.State` (`capella/beacon-chain.md:411-421`): the
 balance net of any already-queued withdrawals for `vi`. Restated (a plain `def` rather than a
 `forkdef`). Throwing, mirroring the Gloas copy: `state.balances[validator_index]` is a bare list
 index (`IndexError` → `sszGetIdx` → `outOfBounds`), and `- withdrawn` is a bare `uint64`
@@ -49,6 +49,7 @@ def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Wi
 
 inherit getBuilderWithdrawals
 inherit getPendingPartialWithdrawals
+inherit getBuilderBalanceAfterWithdrawals
 inherit getBuildersSweepWithdrawals
 inherit getValidatorsSweepWithdrawals
 inherit getExpectedWithdrawals

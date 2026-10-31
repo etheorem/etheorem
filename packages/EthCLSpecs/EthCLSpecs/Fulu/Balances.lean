@@ -46,14 +46,15 @@ forkdef increaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
   let sum ← checkedAdd balance delta "increase_balance: balances[index] + delta"
   return modBalance state i (fun _ => sum)
 
-/-- `decrease_balance`, floored at 0. The floor is the pyspec's own clamp, so the subtraction
-raises nothing. The read goes through `sszGetIdx` for the reason `increaseBalance` gives. The
-pyspec reads `state.balances[index]` before it writes, and that read raises `IndexError` past
-the end. -/
+/-- `decrease_balance` (`phase0/beacon-chain.md:1663-1667`):
+`saturating_sub(state.balances[index], delta)`, floored at 0. The floor is the pyspec's own,
+so the subtraction raises nothing. The read goes through `sszGetIdx` for the reason
+`increaseBalance` gives. The pyspec reads `state.balances[index]` before it writes, and that
+read raises `IndexError` past the end. -/
 forkdef decreaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
     StateTransition State := do
   let balance ← sszGetIdx (sszGet state balances) i.toNat
-  return modBalance state i (fun _ => if delta > balance then 0 else balance - delta)
+  return modBalance state i (fun _ => saturatingSub balance delta)
 
 /-- `get_total_balance` (floored at one increment). -/
 forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex) : Gwei :=

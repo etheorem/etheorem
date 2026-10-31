@@ -27,7 +27,7 @@ forkdef getValidatorFromDeposit (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gw
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
   { v with effectiveBalance := umin (amount - amount % Const.effectiveBalanceIncrementG) (getMaxEffectiveBalance v) }
 
-/-- `add_validator_to_registry` (`electra/beacon-chain.md:1602-1612`): write a fresh
+/-- `add_validator_to_registry` (`electra/beacon-chain.md:1736-1746`): write a fresh
 validator and its parallel records at `get_index_for_new_validator`, the length of
 `validators`. Each write is `set_or_append_list`, in spec order. On a state whose parallel
 lists match `validators` in length, every write appends, and an append to a full list

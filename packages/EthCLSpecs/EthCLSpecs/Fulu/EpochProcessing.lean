@@ -86,7 +86,10 @@ forkdef processJustificationAndFinalization : StateTransition Unit := do
 
 /-! ## Inactivity -/
 
-/-- `process_inactivity_updates`. -/
+/-- `process_inactivity_updates` (`altair/beacon-chain.md`): a timely-target voter's score
+drops by one, any other eligible validator's rises by `INACTIVITY_SCORE_BIAS`, and outside a
+leak every score drops by `INACTIVITY_SCORE_RECOVERY_RATE`. Both drops are the spec's
+`saturating_sub`, floored at zero. -/
 forkdef processInactivityUpdates : StateTransition Unit := do
   let state ← get
   if currentEpochOf state == Const.genesisEpoch then pure ()
@@ -100,8 +103,8 @@ forkdef processInactivityUpdates : StateTransition Unit := do
       for vi in eligible do
         let i := vi.toNat
         state := sszModify state inactivityScores[i]! as cur =>
-          let cur := if matchingTarget.contains vi then cur - umin 1 cur else cur + Const.inactivityScoreBias
-          if !leak then cur - umin Const.inactivityScoreRecoveryRate cur else cur
+          let cur := if matchingTarget.contains vi then saturatingSub cur 1 else cur + Const.inactivityScoreBias
+          if !leak then saturatingSub cur Const.inactivityScoreRecoveryRate else cur
       return state
 
 /-! ## Rewards & penalties -/
@@ -222,13 +225,17 @@ forkstruct DepositScan where
 /-- The deposit-queue scan, tail-recursive on `fuel = #deposits`. A deposit for a
 withdrawn validator applies without consuming churn; one for an exiting validator is
 postponed; otherwise it applies while it fits the per-epoch churn, and the scan stops
-(setting `churnReached`) once it does not. The not-finalized and per-epoch-limit stops
-leave `churnReached` false. -/
+(setting `churnReached`) once it does not. The not-finalized / per-epoch-limit stops leave
+`churnReached` false.
+
+Fulu's `process_pending_deposits` (`fulu/beacon-chain.md`, "Modified
+`process_pending_deposits`") drops Electra's eth1-bridge stop, because Fulu removes the former
+deposit mechanism (consensus-specs #4704, in the text since alpha.12). -/
 forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (nextEpoch : Epoch) :
     StateTransition DepositScan :=
   -- Fuel rather than a measure (§7.2): the scan stops on a data-dependent guard (churn
-  -- exhausted, a not-yet-finalized slot, the per-epoch cap). No quantity decreases every
-  -- step, so the terminating invariant is not available at definition time.
+  -- exhausted, a not-yet-finalized slot), not on a quantity that
+  -- decreases every step, so the terminating invariant is not available at definition time.
   -- Fuel is `deposits.size + 1`: the `ndi ≥ deposits.size` guard returns `.done` one step
   -- before exhaustion, so `fuelLoop`'s `exhausted` value is unreachable.
   fuelLoop (deposits.size + 1) ({} : DepositScan) ({} : DepositScan) fun s => do
@@ -236,7 +243,8 @@ forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (
     let state ← get
     let deposit := deposits[s.ndi]!
 
-    -- Stop the scan early: the deposit is not finalized, or this epoch's deposit cap is reached.
+    -- Stop the scan early: the deposit is not finalized, or this epoch's deposit cap is
+    -- reached.
     if deposit.slot > finalizedSlot then return .done s
     if s.ndi ≥ Const.maxPendingDepositsPerEpoch then return .done s
 

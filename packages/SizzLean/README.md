@@ -185,9 +185,14 @@ itself implements every wire-format type they need.
 | `CompatibleUnion({sel: type, …})` | EIP-8016 | unimplemented |
 
 `deriving SSZRepr` emits a classic container. `@[sizzlean_progressive]`
-emits a progressive container whose mask is all ones. EthCLSpecs is
-still pinned at classic Gloas (`v1.7.0-alpha.11`); re-deriving those
-containers is a separate change from the codec.
+emits a progressive container whose mask is all ones, and
+`@[sizzlean_progressive_gaps i …]` beside it sets the listed field positions
+to `0`, the `active_fields` gaps a container keeps where fields were removed.
+The handler rejects gaps without `@[sizzlean_progressive]`, unordered or
+repeated positions, a position past the mask's width, a trailing gap
+(`active_fields` must end in `1`), and a mask wider than 256 bits.
+EthCLSpecs derives its Gloas and Heze containers progressive at
+`v1.7.0-beta.4`, and Heze's `BeaconState` and `BeaconBlockBody` carry gaps.
 
 ### Proof coverage
 
@@ -255,8 +260,8 @@ beyond the standard kernel three.
 ⁶ `EncodedFits s x` (`Spec/MaxByteLength.lean`) is the encoded
 size below `MAX_LENGTH = 2^32`, which keeps every `uint32` offset
 placeholder exact. It is a condition on the *value*, so schemas
-whose static maximum exceeds `MAX_LENGTH`, real `BeaconState`
-shapes among them, are inside the theorems for every value they
+whose static maximum exceeds `MAX_LENGTH`, the Fulu `BeaconState`
+shape among them, are inside the theorems for every value they
 can produce.
 
 `serialize_injective` is a direct corollary of `decode_encode`

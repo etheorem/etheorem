@@ -153,6 +153,17 @@ forkcontainer ExecutionPayload where
   blobGasUsed   : UInt64
   excessBlobGas : UInt64
 
+/-- `NewPayloadRequest` (`electra/beacon-chain.md:566-572`): what a beacon node hands the
+execution engine's `verify_and_notify_new_payload`. At v1.7.0-beta.4 it is an SSZ `Container`
+(earlier pins declared it a dataclass), so the `ssz_static` vectors now cover it, and
+`versioned_hashes` is the capped `VersionedHashes` list. No modeled path builds one: the Fulu
+engine answer enters through the vector's `execution_valid` flag. -/
+forkcontainer NewPayloadRequest where
+  executionPayload      : ExecutionPayload
+  versionedHashes       : SSZList VersionedHash Const.maxBlobCommitmentsPerBlock
+  parentBeaconBlockRoot : Root
+  executionRequests     : ExecutionRequests
+
 /-- The sync-committee aggregate (Altair). -/
 forkcontainer SyncAggregate where
   syncCommitteeBits      : Bitvector Const.syncCommitteeSize

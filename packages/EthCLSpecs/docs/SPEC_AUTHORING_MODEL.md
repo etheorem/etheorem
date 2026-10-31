@@ -640,10 +640,12 @@ grep -rln "EthCLSpecs.Fulu" packages/EthCLSpecs/EthCLSpecs/Proofs
 which should hit only Fulu-subject proofs and declared boundary proofs.
 
 The one sanctioned exception mirrors the spec-side boundary: a proof *about*
-boundary code names both forks because its subject does.
-`Proofs/Gloas/InitializePtcWindow.lean` characterizes `computePtcFromFulu`, which reads
-a Fulu pre-state, so it imports both, opens the downgrade bridge, and says so in
-its module docstring. A file taking that exception must declare it there.
+boundary code names both forks because its subject does. A file taking that exception
+imports both forks, opens the downgrade bridge, and must declare the exception in its
+module docstring. No proof file takes it at v1.7.0-beta.4. The one that did,
+`Proofs/Gloas/InitializePtcWindow.lean`, characterized the alpha.12 `computePtcFromFulu`
+over a Fulu pre-state; beta.4 builds the window over the Gloas post-state, and the file
+now names Gloas alone.
 
 ---
 
@@ -692,7 +694,7 @@ implementation passes the full pyspec suite. It is recorded as a constant in
 the fork:
 
 ```lean
-def pyspecPinnedVersion : String := "v1.7.0-alpha.12"
+def pyspecPinnedVersion : String := "v1.7.0-beta.4"
 ```
 
 The name is lowerCamelCase, per the Lean convention; the value is the release

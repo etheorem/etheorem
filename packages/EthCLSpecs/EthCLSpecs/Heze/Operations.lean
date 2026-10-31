@@ -5,7 +5,8 @@ import EthCLSpecs.Heze.EpochProcessing
 
 EIP-7805 changes no block operation. Every Gloas operation handler (the inherited
 non-ePBS ones and the ePBS-modified / EIP-8282 builder ones) is `inherit`ed over Heze
-state, in Gloas's order. `addressOfCred` is a plain `def` in Gloas, and only the capturing
+state, in Gloas's order. The EIP-8015 change to `process_operations` (no deposits check) lives
+in `Heze/Transition.lean` with the rest of the spine. `addressOfCred` is a plain `def` in Gloas, and only the capturing
 declaration forms (`forkdef` / `forkcontainer` / `forkstruct`, `SPEC_AUTHORING_MODEL.md`
 §8.5) are stored for `inherit` to replay, so it is restated here before its first use.
 -/
@@ -34,6 +35,7 @@ inherit processDepositRequest
 inherit processVoluntaryExit
 inherit processSyncAggregate
 inherit isBuilderIndex
+inherit getScheduledGasLimit
 inherit toBuilderIndex
 inherit isActiveBuilder
 inherit getPendingBalanceToWithdrawForBuilder
@@ -59,6 +61,7 @@ inherit processPayloadAttestation
 inherit convertBuilderIndexToValidatorIndex
 inherit canBuilderCoverBid
 inherit verifyExecutionPayloadBidSignature
+inherit verifyExecutionPayloadEnvelopeSignature
 inherit settleBuilderPayment
 inherit processExecutionPayloadBid
 inherit applyParentExecutionPayload

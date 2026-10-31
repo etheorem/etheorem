@@ -125,10 +125,12 @@ forkdef processEth1Data (body : BeaconBlockBody) : StateTransition Unit := do
 
 /-- `process_sync_aggregate`: verify the aggregate signature over the previous
 slot's block root, then apply participant / proposer rewards and non-participant
-penalties. The participant pubkey list is the bit-selected committee keys;
-`eth_fast_aggregate_verify` aggregates them, so the all-participate /
-majority-subtraction optimizations the spec describes are unnecessary and the
-verification result is identical. -/
+penalties. The participant pubkey list is the bit-selected committee keys, and
+`eth_fast_aggregate_verify` aggregates them. The spec's all-participate and
+majority-subtraction branches start from the cached `aggregate_pubkey` instead, so the
+answers agree whenever that aggregate is the sum of the committee's `pubkeys`, as
+`get_next_sync_committee` builds it. The crypto seam has no point addition or negation to
+model those branches; `IMPLEMENTATION_NOTES.md` records the divergence. -/
 forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let state ← get
 
@@ -137,7 +139,7 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let bits := agg.syncCommitteeBits
   let participantKeys : Array BLSPubkey :=
     (Bitvector.trueIndices bits).map (fun i => syncCommittee.pubkeys[i]!)
-  let previousSlot := (umax (sszGet state slot) 1) - 1
+  let previousSlot := saturatingSub (sszGet state slot) 1
   let previousBlockRoot ← getBlockRootAtSlot state previousSlot
   let signingRoot := computeSigningRoot previousBlockRoot
     (getDomain state Const.domainSyncCommittee (computeEpochAtSlot previousSlot))
@@ -167,11 +169,13 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
     | none => pure ()
   set state
 
-/-- `process_execution_payload`: the consistency checks against the previous
-header and the current RANDAO / slot time, then cache the new header. The
-execution-engine `verify_and_notify_new_payload` is the consumer's responsibility
-(valid for `sanity/blocks`); the blob-parameter bound is enforced where the
-operation format supplies it. -/
+/-- `process_execution_payload` (Fulu, `fulu/beacon-chain.md`, "Modified
+`process_execution_payload`"): the consistency checks against the previous header and the
+current RANDAO / slot time, the EIP-7892 bound on the blob commitments
+(`get_blob_parameters(current_epoch).max_blobs_per_block`), then cache the new header. The
+execution-engine `verify_and_notify_new_payload` is the consumer's responsibility: the
+operations runner asserts the vector's `execution_valid` answer, and the block runners take
+it as valid. -/
 forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit := do
   let state ← get
   let payload := body.executionPayload
@@ -179,10 +183,12 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   let epoch := currentEpochOf state
   let mix := vmodGet (sszGet state randaoMixes) epoch Const.epochsPerHistoricalVector
   assert (payload.prevRandao == mix)
-  -- `compute_time_at_slot(state, state.slot)` (`Fulu/Time.lean`). It can fault, so it arrives
-  -- through `liftErr`, which lands the `.arithmetic` fault on this machine unwrapped.
-  let expectedTimestamp ← liftErr (computeTimeAtSlot state (sszGet state slot))
+  -- `compute_time_at_slot(state.genesis_time, state.slot)` (`Fulu/Time.lean`). It can fault, so
+  -- it arrives through `liftErr`, which lands the `.arithmetic` fault on this machine unwrapped.
+  let expectedTimestamp ← liftErr (computeTimeAtSlot (sszGet state genesisTime) (sszGet state slot))
   assert (payload.timestamp == expectedTimestamp)
+  -- [Modified in Fulu:EIP7892] the commitments are under the scheduled blob limit.
+  assert (body.blobKzgCommitments.size ≤ (getBlobParameters epoch).maxBlobsPerBlock)
 
   let header : ExecutionPayloadHeader :=
     { parentHash := payload.parentHash, feeRecipient := payload.feeRecipient,

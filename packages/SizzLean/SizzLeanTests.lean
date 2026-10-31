@@ -19,6 +19,7 @@ import SizzLeanTests.Sha256BatchEquivalence
 import SizzLeanTests.HashConsCoherence
 import SizzLeanTests.SerializeCacheCoherence
 import SizzLeanTests.ZeroHashDepth
+import SizzLeanTests.ProgressiveGaps
 
 /-!
 # `SizzLeanTests`: SSZ-only empirical / property-test gates

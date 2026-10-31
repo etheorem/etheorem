@@ -33,10 +33,14 @@ in an *imported* module. `Syntax` is a closure-free core inductive, so it
 serialises through the olean object writer with no extra instances.
 
 The three capturing forms (`forkdef`, `forkcontainer`, `forkstruct`) are the
-*producers* into `captureExt`; `inherit` is the single *consumer*. This file
-owns only the storage and the resolver; the forms themselves live in
-`EthCLLib.Spec.Forms`, which calls `recordCapture` / `recordLineage` and reads
-back through `resolveInherited`.
+*producers* into `captureExt`; `inherit` is the only form that *replays* a
+captured body. The other readers query the store in place: the tier forms
+merge the lineage's diffs (`mergedTier`), the proof-coverage report counts
+each fork's spec functions across the chain, and a progressive `forkcontainer`
+redeclaration diffs its field block against its ancestor's to check the gap
+marker (`Forms.expectedGapsFromLineage`). This file owns only the storage and the
+resolver; the forms themselves live in `EthCLLib.Spec.Forms`, which calls
+`recordCapture` / `recordLineage` and reads back through `resolveInherited`.
 
 ## Lean idioms annotated on first appearance
 
@@ -128,6 +132,11 @@ structure CapturedDecl where
   emits the attribute again so the child's `SSZRepr` is a progressive container.
   Meaningless for the other kinds; they leave it `false`. -/
   progressive : Bool := false
+  /-- The `@[sizzlean_progressive_gaps …]` positions of a progressive container, in
+  the order written; empty for an all-active mask. Replay emits them again, so a
+  child fork's replayed container keeps the parent's mask holes. Meaningless for the
+  other kinds; they leave it empty. -/
+  progressiveGaps : Array Nat := #[]
   deriving Inhabited
 
 /-- Lineage edges: `(forkFullName, parentFullName)`, parent `anonymous` for a

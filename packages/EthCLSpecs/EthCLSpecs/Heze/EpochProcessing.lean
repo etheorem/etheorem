@@ -1,14 +1,16 @@
 import EthCLSpecs.Heze.Containers
 
 /-!
-# `EthCLSpecs.Heze.EpochProcessing`: the inherited epoch substeps (Gloas over Heze state)
+# `EthCLSpecs.Heze.EpochProcessing`: the epoch substeps (Gloas over Heze state)
 
-EIP-7805 (FOCIL) changes no epoch processing. Every Gloas epoch substep and accessor is
-`inherit`ed here verbatim: each captured Gloas/Fulu `forkdef` (the DSL stores every
+EIP-7805 (FOCIL) changes no epoch processing. EIP-8015 and EIP-8365 (new at v1.7.0-beta.4)
+change two pieces: `process_eth1_data_reset` is gone with the eth1 votes it reset, and
+`apply_pending_deposit` drops a deposit that would create a `0x00`-credential validator. Every
+other Gloas epoch substep and accessor is `inherit`ed here verbatim: each captured Gloas/Fulu `forkdef` (the DSL stores every
 `forkdef`'s source for inheritance; `SPEC_AUTHORING_MODEL.md` §8) re-elaborates in the Heze
 namespace against `Heze.State` (`= SSZ.Box _ Heze.BeaconState`), its sibling calls
-rebinding to the Heze copies. No substep body is restated. The order matches Gloas's so
-each callee is declared before its caller.
+rebinding to the Heze copies. The order matches Gloas's so each callee is declared before
+its caller.
 -/
 
 set_option autoImplicit false
@@ -24,7 +26,10 @@ inherit reserveChurn
 inherit computeStartSlotAtEpoch
 inherit getCurrentEpoch
 inherit getPreviousEpoch
-inherit computeTimeAtSlot
+inherit secondsToMilliseconds millisecondsToSeconds
+inherit computeTimeAtSlotMs computeSlotAtTimeMs
+inherit computeTimeAtSlot computeSlotAtTime
+inherit BlobParameters getBlobParameters
 inherit getRandaoMix
 inherit modBalance
 inherit increaseBalance
@@ -73,7 +78,21 @@ inherit switchToCompoundingValidator
 inherit getValidatorFromDeposit
 inherit addValidatorToRegistry
 inherit isValidDepositSignature
-inherit applyPendingDeposit
+
+/-- `apply_pending_deposit` (Heze, EIP-8365, `heze/beacon-chain.md:291-310`): Fulu's, except
+that a deposit that would create a new validator with BLS (`0x00`) withdrawal credentials is
+dropped, with no refund. That covers deposits submitted before Heze too. A top-up to an
+existing validator is unaffected, whatever the deposit's credentials. -/
+forkdef applyPendingDeposit (deposit : PendingDeposit) : StateTransition Unit := do
+  let state ← get
+  match validatorIndexByPubkey? state deposit.pubkey with
+  | some vi => set (← increaseBalance state (UInt64.ofNat vi) deposit.amount)
+  | none    =>
+      -- [New in Heze:EIP8365] do not create validators with BLS withdrawal credentials.
+      if credPrefix deposit.withdrawalCredentials == Const.blsWithdrawalPrefix then return
+      if isValidDepositSignature deposit.pubkey deposit.withdrawalCredentials deposit.amount deposit.signature then
+        addValidatorToRegistry deposit.pubkey deposit.withdrawalCredentials deposit.amount
+      else pure ()
 inherit computeShuffledPermutation
 inherit getSeed
 inherit getCommitteeCountPerSlot
@@ -102,7 +121,7 @@ inherit processPendingConsolidations
 inherit processEffectiveBalanceUpdates
 inherit processSlashingsReset
 inherit processRandaoMixesReset
-inherit processEth1DataReset
+-- [Modified in Heze:EIP8015] `process_eth1_data_reset` is gone with the eth1 votes it reset.
 inherit processHistoricalSummariesUpdate
 inherit processParticipationFlagUpdates
 inherit processSyncCommitteeUpdates

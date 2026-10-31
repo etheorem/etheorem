@@ -27,11 +27,9 @@ from harness import build_request, ensure_archive, walk_cases
 
 # Upstream vectors that contradict the spec text. Each id is an open row in
 # docs/DISCREPANCIES.md. A pass means the vector now matches the spec, so the
-# row and this set have to come out together.
-SPEC_TEXT_DIVERGENCES = {
-    "minimal/heze/fork/fork/pyspec_tests/fork_base_state",
-    "mainnet/heze/fork/fork/pyspec_tests/fork_base_state",
-}
+# row and this set have to come out together. Empty at v1.7.0-beta.4: the Heze
+# `fork_base_state` vectors, the two alpha.12 rows, match the spec there.
+SPEC_TEXT_DIVERGENCES: set[str] = set()
 
 
 def test_value_error_scope(request):
@@ -63,6 +61,9 @@ def test_value_error_scope(request):
 def test_case(case, server, tmp_path):
     request = build_request(case, tmp_path)
     result = server.submit(request)
+    if result.bucket == "bug":
+        pytest.fail(f"{case.case_id}: bug-smell — {result.detail}")
+    # After the bug check on purpose: a bug is always a hard failure, divergence or not.
     if case.case_id in SPEC_TEXT_DIVERGENCES:
         if result.passed:
             pytest.fail(
@@ -72,8 +73,6 @@ def test_case(case, server, tmp_path):
         pytest.xfail(
             "upstream vector contradicts the spec text; see DISCREPANCIES.md"
         )
-    if result.bucket == "bug":
-        pytest.fail(f"{case.case_id}: bug-smell — {result.detail}")
     if not result.passed and result.bucket == "skip":
         pytest.skip(f"out of scope (not modeled): {result.detail}")
     if not result.passed and result.bucket == "todo":

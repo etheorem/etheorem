@@ -152,9 +152,11 @@ itself is one seam. But when a single branch runs several sub-phases of its own,
 paragraph *those* as well. The reader's eye needs the seams inside the branch for
 the same reason it needs them in a flat body.
 
-The leaf case of `filterBlockTree.go` (`EthCLSpecs/Gloas/ForkChoice.lean:filterBlockTree.go`)
+The leaf case of `filterNodeTree.go` (`EthCLSpecs/Gloas/ForkChoice.lean:filterNodeTree.go`)
 decides a branch's viability from two independent criteria, the voting-source
-check and the finalized-checkpoint check. They run in sequence and are combined
+check and the finalized-checkpoint check. The snippets below are its pure
+predecessor, `filterBlockTree.go`, which v1.7.0-beta.4 replaced; the current
+body keeps the same two paragraphs. They run in sequence and are combined
 once at the end, so the one branch holds two phases:
 
 ```lean
@@ -352,8 +354,10 @@ A nested expression that spans a line and a half does two jobs: it computes a
 value and it hides what the value is. Splitting it names the value and often
 removes a duplicated subexpression.
 
-`advanceStoreTime` (`EthCLSpecs/Gloas/ForkChoice.lean:advanceStoreTime`) buries the target slot
-in the fuel argument, then recomputes the identical formula inside the loop:
+`advanceStoreTime`, an earlier form of the `on_tick` catch-up loop, buried the target slot
+in the fuel argument, then recomputed the identical formula inside the loop. The snippets
+are that earlier code, with the second-based store clock; at v1.7.0-beta.4 the clock counts
+milliseconds and the loop lives in `onTick` (`EthCLSpecs/Fulu/ForkChoice.lean:onTick`):
 
 ```lean
 -- before
@@ -544,10 +548,9 @@ to the spec's flag-then-branch shape (§4) happened inside exactly such a helper
 For a one-off helper used by exactly one function, prefer a `where` clause over a
 top-level `def`. The helper stays invisible at namespace scope and reads as
 subordinate to its parent, so the top level still presents as one reference
-function. The codebase leans on this: `getHead.better`
-(`EthCLSpecs/Gloas/ForkChoice.lean:getHead.better`), `filterBlockTree.go` (`:filterBlockTree.go`),
-`addBuilderToRegistry.addressOfCred` (`EthCLSpecs/Gloas/Operations.lean:addBuilderToRegistry.addressOfCred`),
-`onTickPerSlot.computeSlotsSinceEpochStart` (`:onTickPerSlot.computeSlotsSinceEpochStart`).
+function. The codebase leans on this: `getHead.betterOf`
+(`EthCLSpecs/Gloas/ForkChoice.lean:getHead.betterOf`), `filterNodeTree.go` (`:filterNodeTree.go`),
+`onTickPerSlot.computeSlotsSinceEpochStart` (`EthCLSpecs/Fulu/ForkChoice.lean:onTickPerSlot.computeSlotsSinceEpochStart`).
 
 Promote a helper to namespace scope only when it is reused, mirrors a named
 reference helper, or must be recursive. A good promotion-for-reuse candidate: the
@@ -700,7 +703,7 @@ Heuristics for restraint:
   reads as visual stutter. Group, then break between groups.
 - **A comment per three to six lines, at most.** If a function wants a comment on
   every other line, it is too dense and wants splitting into helpers (§5, the
-  `where`-clause pattern in `getHead` and `filterBlockTree`).
+  `where`-clause pattern in `getHead` and `filterNodeTree`).
 - **Stop expanding names when the short form mirrors the reference.** See §2.
 
 ### Where the payoff is largest

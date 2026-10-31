@@ -6,32 +6,29 @@ the glossary). Those four are the design of record. This file records how
 `EthCLSpecs` / `EthCLLib` realize them: the current architecture, the places the code
 deviates from a doc (with the reason), and the spec-faithfulness decisions worth
 knowing. Everything here describes the tree as it stands against the
-`v1.7.0-alpha.12` pin.
+`v1.7.0-beta.4` pin.
 
 ## Scope and conformance
 
 Three forks, **Fulu**, **Gloas**, and **Heze**, against the `consensus-specs` minimal and
-mainnet archives at `v1.7.0-alpha.12` (a pre-release, so the harness pins the tag
+mainnet archives at `v1.7.0-beta.4` (a pre-release, so the harness pins the tag
 explicitly rather than reading `gh release latest`). The counts below are the
-alpha.12 run, `--subset=0`. Heze's single xfail, on both presets, is
-`fork_base_state` (`DISCREPANCIES.md`).
+beta.4 run, `--subset=0`, with no failure and no xfail on either preset. The Heze
+`fork_base_state` vectors, the alpha.12 xfails, match the spec at beta.4
+(`DISCREPANCIES.md`).
 
 | | minimal | mainnet |
 |---|---|---|
-| Fulu  | **5189 passed** | **848 passed** |
-| Gloas | **6600 passed** | **1060 passed** |
-| Heze  | **6798 passed**, 1 xfailed | **1024 passed**, 1 xfailed |
-
-A fully parallel Gloas mainnet run lost 99 cases to a dead server. Those 99 passed
-when the same runners were rerun, and the 1060 figure counts them as passed.
+| Fulu  | **5318 passed** | **859 passed** |
+| Gloas | **6760 passed** | **1094 passed** |
+| Heze  | **6972 passed** | **1073 passed** |
 
 Fulu's collected formats: `epoch_processing`, `operations` (including the standalone
 `execution_payload`), `rewards`, `sanity/blocks`, `sanity/slots`, `finality`,
 `random`, `fork_choice` (including the PeerDAS data-availability `on_block` cases and
 `get_proposer_head`). Gloas adds `fork`, `transition`, and the full ePBS
-`fork_choice`. `DISCREPANCIES.md` records one open vector, the Heze `fork_base_state`
-case on both presets. Every other vector the implemented formats reach matches by root
-or rejects faithfully. Deliberate divergences from the spec *text* that no vector
+`fork_choice`. `DISCREPANCIES.md` records no open vector at beta.4. Every vector the
+implemented formats reach matches by root or rejects faithfully. Deliberate divergences from the spec *text* that no vector
 observes are catalogued per fork in this file.
 
 **Out of scope** (deselected in `walk_cases`, not collected):
@@ -39,7 +36,7 @@ observes are catalogued per fork in this file.
 - **Fulu `fork` / `transition`** (Electra→Fulu): the upgrade and the pre-fork Electra
   blocks both need a complete Electra parent fork the library never builds. The
   **Gloas** `fork` / `transition` (Fulu→Gloas) and the **Heze** ones (Gloas→Heze)
-  are in scope. Heze `fork_base_state` is the recorded discrepancy above.
+  are in scope. Heze `fork_base_state`, open at alpha.12, passes at beta.4.
 - **`light_client`, `networking`, `merkle_proof`, `sync`**: not state-transition or
   fork-choice formats; outside `IN_SCOPE_RUNNERS`.
 - **`genesis`**: no vectors at the pin (see Genesis below).
@@ -157,6 +154,16 @@ rely on: `emitStruct` puts `[Preset]` first then the extra binders (so `Store ma
 resolves with `map` the only explicit parameter), and it emits no `deriving`, so a
 struct's `Inhabited` (and the map-key `Ord` / `BEq` / `Hashable`) is added by a
 following `deriving instance … for …`.
+
+A `forkcontainer` carries the SizzLean container attributes through capture and
+replay: `@[sizzlean_progressive]` (EIP-7495) and, since the beta.4 re-pin,
+`@[sizzlean_progressive_gaps i …]`, the field positions an `active_fields` mask leaves at
+`0`. The capture records the gap indices (`CapturedDecl.progressiveGaps`) and the replay
+re-emits both attributes on the child fork's copy, so an `inherit`ed gapped container keeps
+its shape. Heze's `BeaconState` (gaps 8, 9, 10, 28) and `BeaconBlockBody` (gaps 1, 6) are
+the users, the positions of the fields EIP-8015 removed. A `treeMap` keyed by a pair needs
+`Ord` on the pair, so `EthCLLib/Spec/FiniteMap.lean` gives `α × β` the lexicographic `Ord`
+(Heze's inclusion-list store is keyed by `(Slot, Root)`).
 
 ## Crypto seam
 
@@ -504,24 +511,35 @@ other as a bug-smell test failure). The `valid` flag on the standalone `attestat
 `attester_slashing` steps matters for the `validate_on_attestation` vectors, where the wire
 `valid: false` marks an attestation `on_attestation` is meant to reject.
 
-`on_block` reads the current head before inserting the block and applies the proposer
-boost only when the block is timely, no boost is already set, and the block shares the
-head's dependent root (`get_dependent_root`, gated by `MIN_SEED_LOOKAHEAD`), the v1.7
-rule.
+`on_block` returns early, with the store unchanged, for a block root already in
+`store.blocks` (new at v1.7.0-beta.4). Otherwise it reads the current head before inserting
+the block and applies the proposer boost only when the block is timely, no boost is already
+set, and the block shares the head's dependent root (`get_dependent_root`, gated by
+`MIN_SEED_LOOKAHEAD`), the v1.7 rule.
+
+The store clock counts milliseconds at v1.7.0-beta.4: `Store.timeMs` and
+`Store.genesisTimeMs` replace the second-based `time` and `genesis_time`. `on_tick` takes
+milliseconds. A vector's `tick` step still carries seconds, so the harness passes
+`seconds_to_milliseconds(tick)`, as the reference runner does, and reads the `time` check back
+through `milliseconds_to_seconds`. `compute_slot_at_time_ms` and `compute_time_at_slot_ms` are
+checked `uint64` ops, so a clock read raises where pyspec raises. `get_current_slot` drops the
+`GENESIS_SLOT +` term.
 
 The linear DAG walks route through fuel-bounded combinators (§12). `getAncestor` and the
 `getHead` descent read `store.blocks` as they go, so they thread the store monad through
-`fuelLoop`. The one tree walk, `filterBlockTree`, recurses over every child inside a fold,
+`fuelLoop`. The one tree walk, `filterNodeTree` (beta.4's node-based replacement for
+`filter_block_tree`), recurses over every child inside a fold,
 which a linear combinator cannot express, so it keeps a local fuel-bounded `where` helper.
 The totality the doc wants is met either way.
 
 The fork-choice weight path still runs on raw `UInt64` where the pyspec's `uint64` ops
 raise, and it is deferred as one piece because it rests on one root: `getTotalBalance`
-(`phase0/beacon-chain.md:1130-1140`), whose `sum(...)` accumulates in `Gwei` and raises,
-while this fold wraps. `committeeWeight` is `getTotalActiveBalance / SLOTS_PER_EPOCH`,
-`calculateCommitteeFraction` and `getProposerScore` are its products, and `getWeight`'s
-proposer-boost add takes one operand from them, so checking any of those while the total
-underneath still wraps would only move the wrong number around.
+(`phase0/beacon-chain.md:1559-1570`), whose `sum(...)` accumulates in `Gwei` and raises,
+while this fold wraps. `calculateCommitteeFraction` divides `getTotalBalance` over the
+unslashed active validators by `SLOTS_PER_EPOCH` (v1.7.0-beta.4; alpha.12 took
+`getTotalActiveBalance`), `computeProposerScore` and the re-org threshold are its products, and
+`getWeight`'s proposer-boost add takes one operand from them, so checking any of those while
+the total underneath still wraps would only move the wrong number around.
 
 The conversion is larger than the fork-choice layer. `getTotalBalance` and
 `getTotalActiveBalance` are pure `forkdef`s with 15 call sites across epoch processing,
@@ -568,9 +586,15 @@ runtime shuffle; only committees and building the lookahead / sync committee do.
 Spec-faithfulness facts worth knowing:
 
 - **`process_pending_deposits` resets `deposit_balance_to_consume` by stop reason.** A
-  not-finalized / per-epoch-limit stop resets it to zero; a churn-limit
-  stop carries `available_for_processing − processed_amount` forward. `ppdLoop` returns
-  the `churnLimitReached` flag so the caller writes the right value.
+  not-finalized / per-epoch-limit stop resets it to zero; a churn-limit stop carries
+  `available_for_processing − processed_amount` forward. `ppdLoop` returns the
+  `churnLimitReached` flag so the caller writes the right value.
+- **The old deposit mechanism is gone.** Fulu removes it (consensus-specs #4704, in the
+  text since alpha.12): `process_operations` asserts `len(body.deposits) == 0` and runs no
+  deposit loop, `process_deposit_request` no longer writes `deposit_requests_start_index`,
+  and `process_pending_deposits` has no eth1-bridge stop. The tree ran the Electra forms of
+  all three until the beta.4 re-pin found the gap; `DISCREPANCIES.md` records the fix. Gloas
+  carried the same stale eth1-bridge stop in its own `ppdLoop`, removed with it.
 - **`apply_pending_deposit` is signature-gated.** A new pubkey joins the registry only
   when `is_valid_deposit_signature` passes (the proof-of-possession the deposit contract
   does not check). The domain is fixed (`compute_domain(DOMAIN_DEPOSIT)`, genesis fork
@@ -594,12 +618,14 @@ Spec-faithfulness facts worth knowing:
 - **`process_execution_payload` takes the execution engine as valid.** It checks
   parent-hash / prev-randao / timestamp consistency and caches the header;
   `verify_and_notify_new_payload` is the consumer's responsibility, which is valid for
-  `sanity/blocks`. The timestamp is `compute_time_at_slot(state, state.slot)`, the
-  millisecond form every other clock site in the tree reads, and the standalone
-  `operations/execution_payload` format threads the
-  test's `execution.yaml` engine answer via `CaseMeta.executionValid` to model an
-  engine rejection. The blob-parameter bound is enforced where the operation format
-  supplies it. The skip is safe for the in-scope corpus by audit, not just by
+  `sanity/blocks`. The timestamp is `compute_time_at_slot(state.genesis_time, state.slot)`,
+  beta.4's signature, a checked `uint64` op over `compute_time_at_slot_ms`, and the
+  standalone `operations/execution_payload` format threads the test's `execution.yaml`
+  engine answer via `CaseMeta.executionValid` to model an engine rejection. The blob count
+  is bounded by `get_blob_parameters(epoch).max_blobs_per_block`, read from the
+  `BLOB_SCHEDULE` config (`Fulu/BlobParameters.lean`). The tree lacked that assert until the
+  beta.4 re-pin; `DISCREPANCIES.md` records the fix. The skip is safe for the in-scope corpus
+  by audit, not just by
   assumption: every invalid `sanity/blocks` / `finality` / `random` case (82, across
   both presets and both forks) rejects through a consensus `assert` the in-block
   pipeline models, signatures, blob-count limits, payload-attestation checks, the
@@ -611,6 +637,17 @@ Spec-faithfulness facts worth knowing:
 `CryptoBackend.aggregatePubkeys` exists because `get_next_sync_committee` needs BLS
 pubkey aggregation (the `ffi` / `verifyOff` backends delegate to
 `LeanHazmat.Bls.ethAggregatePubkeys`; the `symbolic` backend returns a zero point).
+
+`process_sync_aggregate` verifies against the participants' pubkeys with
+`eth_fast_aggregate_verify`, one branch. The Fulu text has three, chosen by
+`get_set_bit_count(sync_committee_bits)`: with every bit set it verifies the committee's
+cached `aggregate_pubkey`, with more than half set it subtracts the non-participants from that
+aggregate, and otherwise it aggregates the participants. The three agree whenever
+`aggregate_pubkey` is the sum of the committee's `pubkeys`. `get_next_sync_committee`
+guarantees that for every committee the transition builds, but a hand-built state can break
+it, and then the one branch can answer differently. Modeling the other two needs BLS point
+addition and negation on the crypto seam, which `CryptoBackend` does not carry. This is a
+divergence from the spec text that predates the beta.4 re-pin.
 
 ## Gloas diff
 
@@ -625,8 +662,12 @@ are declared in-spec, tracking `specs/gloas/beacon-chain.md` (and `fork.md` for
 ePBS values: `ptcSize` / `maxBuildersPerWithdrawalsSweep` (preset);
 `maxPayloadAttestations` /
 the builder-payment threshold and builder prefixes and domains (universal); and
-`gloasForkVersion` / `churnLimitQuotientGloas` / `consolidationChurnLimitQuotient` /
-`maxPerEpochActivationChurnLimitGloas` / `minBuilderWithdrawabilityDelay` (config).
+`gloasForkVersion` / `gloasForkEpoch` / `gasLimitSchedule` / `churnLimitQuotientGloas` /
+`consolidationChurnLimitQuotient` / `maxPerEpochActivationChurnLimitGloas` /
+`minBuilderWithdrawabilityDelay` (config). `GLOAS_FORK_EPOCH` is far in the future in both
+shipped configs, and `get_ptc` asserts against it (v1.7.0-beta.4), so the runner applies each
+vector's `config.yaml` fork-epoch override (`0` for a vector that starts in Gloas, the
+`fork_epoch` for a transition vector). The Harness section has the mechanism.
 
 At the alpha.12 re-pin the Gloas (and, by `inherit`, Heze) containers went progressive
 (EIP-7495): the state lists, the block-body lists, and the wire lists carry
@@ -649,13 +690,17 @@ travel with that switch:
   `processParticipationFlagUpdates`) get Gloas-local bodies that build the
   progressive list directly; Heze inherits those overrides.
 
-`upgradeToGloas` copies the carried-over fields, initializes the ePBS fields, builds the
-PTC window from the Fulu pre-state's committees (`initialize_ptc_window` / `compute_ptc`,
-called on the boxed Fulu state since the committee helpers are Fulu's), and onboards
-builders from the pending-deposit queue (`onboard_builders_from_pending_deposits`). It
-returns an `Except`, since a slot with no committee members makes `compute_ptc` reject. It
-takes `GLOAS_FORK_VERSION` as a parameter and sets `fork := {previous :=
-pre.fork.current, current := GLOAS_FORK_VERSION, epoch := currentEpoch}`.
+`upgradeToGloas` copies the carried-over fields and initializes the ePBS fields, the
+cached bid as a self-build bid for the pre-state's latest block (`parent_block_hash`,
+`parent_block_root`, `prev_randao`, `slot`, and `BUILDER_INDEX_SELF_BUILD`, filled at
+v1.7.0-beta.4) and the PTC window zeroed. `completeUpgradeToGloas` then runs on the boxed
+post-state: it fills `ptc_window` with `initialize_ptc_window(post)`, Gloas's own
+`compute_ptc` over the Gloas state (beta.4; alpha.12 computed it over the Fulu pre-state),
+and onboards builders from the pending-deposit queue
+(`onboard_builders_from_pending_deposits`). The split follows the spec, which builds the
+state, then writes `ptc_window`, then onboards. `upgradeToGloas` takes `GLOAS_FORK_VERSION` as
+a parameter and sets `fork := {previous := pre.fork.current, current := GLOAS_FORK_VERSION,
+epoch := currentEpoch}`.
 
 **Epoch inheritance is the framework's reason to exist.** `Gloas.EpochProcessing`
 `inherit`s the Fulu epoch substeps and their ~50 helper / time / RANDAO `forkdef`
@@ -677,10 +722,13 @@ inherited into Gloas, which carries `process_sync_committee_updates`,
 `process_proposer_lookahead`, the new `process_ptc_window`, the EIP-8045
 slashed-proposer filter in `get_beacon_proposer_indices`, and `compute_ptc`.
 
-`Gloas.Operations` inherits the handlers EIP-7732 leaves unchanged (`attester_slashing`,
-`bls_to_execution_change`, `withdrawal_request`, `consolidation_request`,
-`sync_aggregate`) verbatim. The ePBS-modified handlers are Gloas `forkdef`s:
-`process_proposer_slashing` (Fulu's logic plus the builder-payment cleanup),
+`Gloas.Operations` inherits the handlers EIP-7732 leaves unchanged (`proposer_slashing`,
+`attester_slashing`, `bls_to_execution_change`, `withdrawal_request`,
+`consolidation_request`, `sync_aggregate`) verbatim. At v1.7.0-beta.4 the builder-payment
+cleanup moved from `process_proposer_slashing` into `slash_validator`, a Gloas `forkdef`
+that restates Fulu's body and then voids every pending payment the slashed validator
+proposed, on both slashing paths; `process_proposer_slashing` went back to the inherited
+body. The ePBS-modified handlers are Gloas `forkdef`s:
 `process_voluntary_exit` and `process_deposit_request` (each fronted by a builder-index
 branch over the builder registry). The builder-registry helpers (`is_builder_index`,
 `is_active_builder`, `get_pending_balance_to_withdraw_for_builder`,
@@ -689,8 +737,54 @@ branch over the builder registry). The builder-registry helpers (`is_builder_ind
 `onboard_builders_from_pending_deposits`. The payload-aware `process_attestation` (the
 `data.index < 2` payload bit and the same-slot builder-payment weight accounting), the
 new `process_payload_attestation`, the bid (`process_execution_payload_bid`),
-`process_parent_execution_payload`, and the PTC read helpers complete the surface. The
-builder-aware `process_withdrawals` is the four-phase sweep (builder queue, pending
+`process_parent_execution_payload`, and the PTC read helpers complete the surface.
+
+Two predicates in `Gloas.Operations` handle an attesting index past the
+validator registry differently from the spec text:
+
+- **`isValidIndexedAttestation` returns `false` for the out-of-range index.**
+  The spec's `is_valid_indexed_attestation` (`specs/gloas/beacon-chain.md:1022-1041`)
+  carries no range check, so its bare `state.validators[index]` read raises
+  `IndexError`. The Lean forkdef range-checks the indices before the pubkey
+  read and answers `false`. Every caller wraps the predicate in an `assert`,
+  so both outcomes invalidate the containing block or fork-choice step, and
+  the reference runner counts the `IndexError` as the step's expected
+  rejection. No conformance vector can observe the difference. The forkdef's
+  docstring records the choice (`EthCLSpecs/Gloas/Operations.lean`).
+- **`isValidIndexedPayloadAttestation` makes the same choice for the payload
+  attestation.** The spec's `is_valid_indexed_payload_attestation`
+  (`specs/gloas/beacon-chain.md:1094-1110`) reads `state.validators[index]`
+  bare over the PTC-derived indices and raises `IndexError` the same way. The
+  Lean forkdef returns `false` on an out-of-range index. Its callers,
+  `process_payload_attestation` and the fork-choice payload-attestation
+  message handler (`on_payload_attestation_message`), assert the predicate,
+  so a bad index rejects the containing block or step on both sides and no
+  vector can tell the two outcomes apart. The docstring on the forkdef
+  records it (`EthCLSpecs/Gloas/Operations.lean`).
+
+The v1.7.0-beta.4 changes to that surface:
+
+- `process_block` reads `parent_slot = state.latest_block_header.slot` before
+  `process_block_header` replaces the header, and passes it through `process_operations` to
+  each `process_attestation`, where `get_attestation_participation_flag_indices` reads the
+  payload-availability bit at the parent's slot. A validator adds its effective balance to
+  the slot's payment weight only when it held no flag before the attestation
+  (`had_no_participation`).
+- `get_ptc` asserts `epoch >= GLOAS_FORK_EPOCH`, so a pre-fork slot has no PTC.
+- `apply_parent_execution_payload` takes the parent slot from the latest block header, where
+  alpha.12 read the cached bid's slot, and settles the builder payment before it processes
+  the parent's execution requests, so a builder exit in the same payload sees the payment
+  still pending.
+- `process_execution_payload_bid` asserts `bid.block_hash != bid.parent_block_hash`.
+- The builder sweep in `get_builders_sweep_withdrawals` reads
+  `get_builder_balance_after_withdrawals`, the balance net of the withdrawals already queued
+  in the payload, so a builder is not paid twice. `apply_withdrawals` floors with
+  `saturating_sub`.
+- `verify_execution_payload_envelope_signature` moves into the beacon-chain document and
+  returns `Except StateTransitionError Bool` (its bare indexed reads raise); its fork-choice
+  caller wraps the reject.
+
+The builder-aware `process_withdrawals` is the four-phase sweep (builder queue, pending
 partials, builder sweep, validator sweep) with the running-list cap that composes across
 phases. `Gloas/Transition.lean` reshapes `process_block` (drop
 `process_execution_payload`, prepend `process_parent_execution_payload`, add
@@ -702,10 +796,33 @@ payload-availability bit), and `process_epoch` (builder-pending-payments and
 
 ## Heze diff
 
-EIP-7805 changes no state-transition substep, so Heze inherits the Gloas spine whole
-and the diff is confined to the fork-choice inclusion-list layer. FOCIL ships no
-behavioral conformance vector at the alpha.12 pin, so the divergences below are anchored
-to the pinned spec text and the `EthCLSpecs/Heze/ForkChoice.lean` pins.
+EIP-7805 changes no state-transition substep. At v1.7.0-beta.4 two other EIPs do, so
+Heze re-instantiates the Gloas spine with three changes:
+
+- **EIP-8015 removes the eth1 deposit machinery.** `BeaconState` drops `eth1_data`,
+  `eth1_data_votes`, `eth1_deposit_index`, and `deposit_requests_start_index`, and
+  `BeaconBlockBody` drops `eth1_data` and `deposits`. Both stay progressive containers with
+  gaps at the removed positions (`active_fields` 0 bits), which the SizzLean deriving handler
+  expresses as `@[sizzlean_progressive_gaps …]` and the `forkcontainer` replay carries
+  through. `process_block` loses `process_eth1_data`, `process_epoch` loses
+  `process_eth1_data_reset`, and `process_operations` loses its deposits assert.
+  `upgrade_to_heze` opens with `assert pre.eth1_deposit_index ==
+  pre.deposit_requests_start_index`, so it returns `Except`.
+- **EIP-8365 stops new validators with BLS withdrawal credentials.** Heze's
+  `apply_pending_deposit` returns early for a new pubkey whose credentials carry
+  `BLS_WITHDRAWAL_PREFIX`.
+- **The inclusion-list signature reads `compute_fork_version`.** The domain takes the fork
+  version of the list's own epoch, where alpha.12 read the state's fork through
+  `get_domain`.
+
+The fork-choice inclusion-list layer is the rest of the diff. At beta.4 the
+`InclusionListStore` is keyed by `(slot, dependent_root)`, each stored entry carries its
+own timeliness, `on_inclusion_list` asserts the retention window, the transaction sizes,
+the dependent block, and committee membership on the dependent state, and
+`record_payload_inclusion_list_satisfaction` takes the slot from the block in the store
+and the key from its shuffling dependent root. FOCIL ships no behavioral conformance vector
+at the pin, so the divergences below are anchored to the pinned spec text and the
+`EthCLSpecs.Tests.HezeForkChoicePins` pins.
 
 - **`is_inclusion_list_satisfied`** (`heze/fork-choice.md:54-62`) defers its answer to
   `ExecutionEngine.is_inclusion_list_satisfied`, an Engine-API call against an external
@@ -716,7 +833,7 @@ to the pinned spec text and the `EthCLSpecs/Heze/ForkChoice.lean` pins.
 
 - **The `InclusionListStore` rides inside the fork-choice `Store` as a field.** The
   spec keeps it as a process-lifetime singleton reached through
-  `get_inclusion_list_store()` (`heze/inclusion-list.md:28-38`), and this framework has no
+  `get_inclusion_list_store()` (`heze/inclusion-list.md:52-58`), and this framework has no
   ambient singleton to hang it off. Behavior is identical. The rationale lives on the
   `InclusionListStore` declaration (`EthCLSpecs/Heze/ForkChoice.lean`).
 
@@ -793,6 +910,18 @@ was a real reject-faithfulness gap until set per preset:
   `initiate_builder_exit` sets the builder's `withdrawable_epoch`. The full mainnet sweep
   is what exercises it.
 
+Two more config values are read by v1.7.0-beta.4 code and differ per vector rather than per
+preset:
+
+- **The fork schedule.** Fulu's `Config` carries every `*_FORK_VERSION` / `*_FORK_EPOCH`
+  pair from Altair on, Gloas adds `GLOAS_FORK_EPOCH`, and Heze adds `HEZE_FORK_EPOCH`. The
+  shipped minimal config sets every epoch far in the future; a vector overrides them in its
+  own `config.yaml`. Two sites read them: `get_ptc`'s `GLOAS_FORK_EPOCH` assert and Heze's
+  `compute_fork_version`, which the inclusion-list signature domain takes.
+- **`BLOB_SCHEDULE`** feeds `get_blob_parameters`, the blob-count bound in
+  `process_execution_payload` and the data-column sidecar check. It is empty at minimal, and
+  mainnet lists two BPO steps. No in-scope vector overrides it.
+
 ## Harness
 
 `pyspec_server` is a long-lived, crash-tolerant loop (a malformed request reports failed
@@ -806,11 +935,28 @@ newline / tab in the detail to a space (the detail is diagnostic only). The
 `ServerClient` drains non-protocol lines (lake / startup stdout) and retries once on a
 desynced or dead server, so the parallel run is deterministic.
 
+Three request fields are new at the v1.7.0-beta.4 re-pin:
+
+- **`cfg=`**, the trailing field of every request: the case's fork-epoch overrides, read
+  from its `config.yaml` (`<FORK>_FORK_EPOCH` keys) and, for a `transition` vector, the
+  post-fork's epoch from `meta.yaml`. The server builds the fork interface for the case from
+  the preset's config with those values set (`applyConfigOverrides`). A key the fork does not
+  model is accepted only at the far-future value; any other value is an error, so an
+  override never drops silently.
+- **`parent_slot`**, field 10 of an `operations/attestation` request at Gloas and Heze,
+  from the case's `meta.yaml`. `process_attestation` takes it.
+- **`viable_for_head`**, a fork-choice check line built from the
+  `viable_for_head_roots_and_weights` check: the expected set of leaves in the filtered
+  node tree, each with its weight and (Gloas on) payload status. The comparison is as sets.
+
+A `tick` step's time is in seconds in the vectors, and the harness sends
+`seconds_to_milliseconds(tick)` to `on_tick`, as the reference runner does.
+
 ## Genesis
 
 `SPECS_ARCHITECTURE.md` §10.1 marks `genesis` in scope and §6.1 names
 `initializeBeaconStateFromEth1` / `isValidGenesisState`. The pytest corpus carries no
-`genesis` vectors for Fulu, Gloas, or Heze at the `v1.7.0-alpha.12` pin, so there is nothing to
+`genesis` vectors for Fulu, Gloas, or Heze at the `v1.7.0-beta.4` pin, so there is nothing to
 drive; both stay a `todo` stub in `Interface.lean`.
 
 ## Proofs
@@ -840,7 +986,7 @@ separation.
   `ProgressiveList.push` fold over the qualifying previous-epoch payments' withdrawals,
   in slot order, and the payment window shifts down by `SLOTS_PER_EPOCH`. Every
   qualifying withdrawal is appended. It does not prove protocol-wide exactly-once settlement or say
-  anything about `settleBuilderPayment` / `processProposerSlashing`, the other paths
+  anything about `settleBuilderPayment` / `slashValidator`, the other paths
   that clear a `BuilderPendingPayment`.
 
 - **`Proofs/Gloas/CanBuilderCoverBid.lean`** characterizes `canBuilderCoverBid`'s
@@ -851,11 +997,19 @@ separation.
   total/default indexing semantics, including fallback behavior for an
   out-of-range `builderIndex`.
 
-- **`Proofs/Gloas/InitializePtcWindow.lean`** establishes three `simp`-closed theorems
-  over `initializePtcWindow`: its two index regions (the empty first-epoch
-  placeholder and the remainder computed via `computePtcFromFulu`), plus a
-  `default` corollary for the first region. Each entry is an `Except`, since
-  `compute_ptc` can reject, and `upgradeToGloas` sequences them.
+- **`Proofs/Gloas/InitializePtcWindow.lean`** gives the whole vector equation
+  `initializePtcWindow_eq` over the window entries: each entry is an `Except`
+  carrying its own two faults, the checked per-entry add `current_epoch + e`
+  (the `.arithmetic` fault at `current_epoch = UINT64_MAX`) and the `compute_ptc`
+  read (the empty-candidate reject), and `completeUpgradeToGloas` maps the
+  entries in index order. Its two index regions (the empty first-epoch
+  placeholder and the remainder binding the checked add then Gloas's
+  `computePtc`) are read off the equation, `initializePtcWindow_getElem` joins
+  them at the element level, and a `default` corollary restates the first
+  region. The equation carries
+  `@[characterizes EthCLSpecs.Gloas.initializePtcWindow]`. At v1.7.0-beta.4 the
+  function is a Gloas `forkdef` over the Gloas state; alpha.12 kept it a plain
+  `def` over the Fulu pre-state, outside the coverage denominator.
 
 - **`Proofs/Gloas/InitiateBuilderExit.lean`** gives the whole-transition
   `initiateBuilderExit_run_eq` contract at the box: the run on `pureState preState` returns
@@ -908,7 +1062,13 @@ separation.
 
 - **`Proofs/Gloas/ProcessOperations.lean`** places its public declarations in
   `EthCLSpecs.Proofs.Gloas`. It characterizes Gloas `processOperations` at
-  `GloasRun`; handlers and later failure postconditions remain opaque.
+  `GloasRun`; handlers and later failure postconditions remain opaque. Every
+  statement takes the beta.4 `parentSlot` argument, and the attestation fold is
+  `processAttestation · parentSlot`. The `KeepsUncached` facts behind its split
+  (`Proofs/Gloas/KeepsUncached.lean`) cover the beta.4 bodies: `slashValidator`'s
+  payment loop through `pureState_forIn_range_id`, and `processAttestation`'s
+  `had_no_participation` read through `keepsUncached_sszGetIdx` and `ite_bind`
+  (`EthCLLib/Proofs/KeepsUncached.lean`, `EthCLLib/Proofs/Run.lean`).
 
 - **`EthCLLib/Proofs/LawfulFcMap.lean`** places its public declarations in
   `EthCLLib.Proofs`. It defines the key-indexed `LawfulFcMap map K` interface
@@ -957,40 +1117,41 @@ separation.
   those writes with this read, remain tracked by the
   `onExecutionPayloadEnvelope` entry in `PROOF_LEDGER.md`.
 
-- **`Proofs/Heze/GetInclusionListTransactions.lean`** proves the collector
-  run equations used by the recorder characterization.
+- **`Proofs/Heze/GetInclusionListTransactions.lean`** proves the committee run
+  equation and the transactions contract.
   `getInclusionListCommittee_run_eq` is the complete committee `.run`
   equation on the concatenated `getBeaconCommittee` indices, tagged
-  `@[characterizes EthCLSpecs.Heze.getInclusionListCommittee]`.
-  `getInclusionListTransactions_run_eq` is the whole-operation bind of
-  that committee run to collection at the committee's stored lists, tagged
-  `@[characterizes EthCLSpecs.Heze.getInclusionListTransactions]`.
-  The empty array throws the exact empty-committee arithmetic error.
-  `FirstReachableMissingTimeliness` names the first reachable missing
-  timeliness key in the `FcMap.fold` entries array. When `onlyTimely = true`,
-  that predicate implies `.error (.missingKey ilRoot)`. Committee and
-  collection errors propagate through `getInclusionListTransactions`.
-  Those error corollaries stay untagged.
-  The successful-result characterization of
-  `collectInclusionListTransactions` remains proposed in `PROOF_LEDGER.md`.
+  `@[characterizes EthCLSpecs.Heze.getInclusionListCommittee]`; the empty
+  array throws the exact empty-committee arithmetic error. At v1.7.0-beta.4
+  `getInclusionListTransactions` is pure, and
+  `mem_getInclusionListTransactions_iff`, tagged
+  `@[characterizes EthCLSpecs.Heze.getInclusionListTransactions]`, states its
+  result: a transaction is in it exactly when the list of a counted item for
+  the key carries it (sender not an equivocator for the key, entry timely when
+  only timely lists count). `getInclusionListTransactions_nodup` proves the
+  result holds no duplicate, and
+  `not_mem_getInclusionListTransactions_of_equivocators` names the equivocator
+  exclusion. The items are `inclusionListItems`, the map fold, since `FcMap`
+  has no fold law. The list-membership lemmas `mem_arrayUnion_iff` and
+  `nodup_arrayUnion` live in `EthCLLib/Proofs/Arith.lean`. The alpha.12
+  collector and its missing-timeliness corollaries went with the collector.
 
 - **`Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`** proves
   `recordPayloadInclusionListSatisfaction_run` in
   `EthCLSpecs.Proofs.Heze` and tags it
   `@[characterizes EthCLSpecs.Heze.recordPayloadInclusionListSatisfaction]`.
-  The equation is complete at `ForkChoiceStoreRun (Store map)`. Slot zero
-  returns the checked-sub arithmetic error. Otherwise the result matches
-  on `getInclusionListTransactions` at the previous slot with
-  `onlyTimely := true`. A collector error is returned unchanged. A
-  successful collection returns `store` with
+  The equation is complete at `ForkChoiceStoreRun (Store map)`. A block
+  missing from `store.blocks` is `missingKey root`, and a slot-zero block is
+  the checked-sub arithmetic error. Otherwise the result matches on the
+  dependent-root walk at the previous slot's epoch. A walk error is returned
+  unchanged. A successful walk returns `store` with
   `payloadInclusionListSatisfaction[root]` set to
-  `isInclusionListSatisfied payload ilTxs`, paired with the collector's
-  runner state. Public corollaries name slot zero, an arbitrary collector
-  error, an empty committee, and a missing timeliness key. The last two
-  follow from `Proofs/Heze/GetInclusionListTransactions.lean`.
-  `recordPayloadInclusionListSatisfaction_run_eq` restates the successful
-  branch with an arbitrary `postRunnerStore`. The generic `FcMap`
-  interface does not specify how insert affects a later lookup.
+  `isInclusionListSatisfied payload ilTxs`, for the timely transactions
+  `ilTxs` stored under `(block.slot - 1, dependentRoot)`, paired with the
+  walk's runner state. Public corollaries name the missing block, slot zero,
+  and an arbitrary walk error. `recordPayloadInclusionListSatisfaction_run_eq`
+  restates the successful branch. The generic `FcMap` interface does not
+  specify how insert affects a later lookup.
 
 - **`Proofs/Heze/OnExecutionPayloadEnvelope.lean`** proves
   `onExecutionPayloadEnvelope_run` in `EthCLSpecs.Proofs.Heze` and tags it
@@ -1004,7 +1165,7 @@ separation.
   `onExecutionPayloadEnvelope_run_eq_of_successful_checks` restates the
   successful branch as the original store updated by three same-root
   `FcMap.insert` expressions. `recordPayloadInclusionListSatisfaction_run`
-  characterizes the recorder's slot-zero and collector outcomes. The
+  characterizes the recorder's missing-block, slot-zero, and walk outcomes. The
   `proposed` `onExecutionPayloadEnvelope` row in `PROOF_LEDGER.md` lists
   lookup-after-insert and composition with the read-side theorems.
 

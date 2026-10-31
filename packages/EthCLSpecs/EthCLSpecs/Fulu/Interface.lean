@@ -34,7 +34,7 @@ namespace EthCLSpecs.Fulu.Interface
 /-- Pinned upstream spec / vectors release (`SPEC_AUTHORING_MODEL.md` §10). The
 latest `consensus-spec-tests` release; confirmed to carry the Fulu, Gloas, and
 Heze minimal vectors. -/
-def pyspecPinnedVersion : String := "v1.7.0-alpha.12"
+def pyspecPinnedVersion : String := "v1.7.0-beta.4"
 
 /-- Decode a `BeaconState` at preset `P` into a `FastBox`, or the runner's `decode`
 error (a well-formed vector should always decode, so a parse failure is our bug, not a
@@ -206,6 +206,31 @@ private def queryHead [Preset] [Config] [HasherTag] (store : Store hashMap) :
   runQuery store (getHead (map := hashMap) store :
     EStateM StoreTransitionError (Store hashMap) Root)
 
+/-- The `viable_for_head_roots_and_weights` entries the reference test helper computes
+(`get_viable_for_head_checks`, `helpers/fork_choice.py:585-601`): walk from the justified root,
+stepping into every child that is in the filtered node tree, and collect each node with no
+such child, paired with its `get_weight`. A test-helper walk, not a spec function, so it lives
+with the interpreter. The stack walk visits each block once, so the block count plus one bounds
+it; fuel-out returns the leaves found so far, which then fail the comparison loudly. -/
+private def viableForHeadLeaves [Preset] [Config] [HasherTag] (store : Store hashMap) :
+    Except StoreTransitionError (Array (ByteArray × Nat × Option Nat)) :=
+  let walk : EStateM StoreTransitionError (Store hashMap) (Array (ByteArray × Nat × Option Nat)) := do
+    let nodes ← getFilteredNodeTree (map := hashMap) store
+    let mut pending : Array Root := #[store.justifiedCheckpoint.root]
+    let mut leaves : Array (ByteArray × Nat × Option Nat) := #[]
+    for _ in [0:(FcMap.keys store.blocks).length + 1] do
+      match pending.back? with
+      | none => break
+      | some node =>
+        pending := pending.pop
+        let children := (getNodeChildren (map := hashMap) store node).filter nodes.contains
+        if children.isEmpty then
+          let weight ← getWeight (map := hashMap) store node
+          leaves := leaves.push (vecToBytes node, weight.toNat, none)
+        else pending := pending ++ children
+    pure leaves
+  runQuery store walk
+
 /-- Fold the decoded `steps` over the store from `store0`, verifying each `checks`
 step. A `block` step also feeds the block's own attestations / attester-slashings
 into the store (`is_from_block = true`). -/
@@ -224,8 +249,10 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
   for step in steps do
     match step with
     | .tick t =>
+      -- The format runs `on_tick(store, seconds_to_milliseconds(tick))`: the tick is in seconds.
       store := (← checkStepValidity .tick true
-        (runOn store (onTick (map := hashMap) (UInt64.ofNat t) : EStateM StoreTransitionError (Store hashMap) Unit)))
+        (runOn store (onTick (map := hashMap) (secondsToMilliseconds (UInt64.ofNat t)) :
+          EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes columns valid =>
       -- pyspec `add_block` (`fork_choice.py:382-406`) runs `on_block` ALONE against `valid`: an
       -- invalid block returns right after `on_block` rejects (`:393`), so its own attestations /
@@ -285,8 +312,12 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
       assert (store.finalizedCheckpoint.root == root)
     | .checkBoost root =>
       assert (store.proposerBoostRoot == root)
-    | .checkTime t => assert (store.time.toNat == t)
-    | .checkGenesisTime t => assert (store.genesisTime.toNat == t)
+    -- `time` / `genesis_time` are `milliseconds_to_seconds` of the store's ms clock.
+    | .checkTime t => assert ((millisecondsToSeconds store.timeMs).toNat == t)
+    | .checkGenesisTime t => assert ((millisecondsToSeconds store.genesisTimeMs).toNat == t)
+    | .checkViableForHead expected =>
+      let actual ← viableForHeadLeaves store
+      assert (sameViableEntries actual expected)
     | .checkProposerHead root =>
       let head ← queryHead store
       let proposerHead ← runQuery store (do
@@ -371,6 +402,7 @@ private def sszStaticImpl (P : Preset) (typeName : String) (bytes : ByteArray) :
   | "Fork"                     => runStatic (@Fork P) typeName bytes
   | "HistoricalSummary"        => runStatic (@HistoricalSummary P) typeName bytes
   | "IndexedAttestation"       => runStatic (@IndexedAttestation P) typeName bytes
+  | "NewPayloadRequest"        => runStatic (@NewPayloadRequest P) typeName bytes
   | "PendingConsolidation"     => runStatic (@PendingConsolidation P) typeName bytes
   | "PendingDeposit"           => runStatic (@PendingDeposit P) typeName bytes
   | "PendingPartialWithdrawal" => runStatic (@PendingPartialWithdrawal P) typeName bytes
@@ -402,6 +434,25 @@ instance (`FRAMEWORK_ARCHITECTURE.md` §4). -/
   runGenesis      := fun _ _   => .error (.spec (.outOfScope "genesis: out of scope (not modeled)"))
   runUpgrade      := fun _     => .error (.spec (.outOfScope "fork upgrade: Gloas only (out of scope for Fulu)"))
   runTransition   := fun _ _ _ => .error (.spec (.outOfScope "transition: needs the Electra parent fork (out of scope; Electra→Fulu boundary)"))
+
+/-- The config values a vector can override, one `(KEY, set)` pair per value: the fork
+schedule Fulu models. A vector that activates its forks at genesis ships a `config.yaml`
+setting these epochs to `0`, and a `transition` vector moves its post-fork's epoch to the
+`fork_epoch`; `EthCLLib.PySpecTests.applyConfigOverrides` applies them. -/
+def configSetters : List (String × (UInt64 → Config → Config)) := [
+  ("ALTAIR_FORK_EPOCH",    fun v c => { c with altairForkEpoch := v }),
+  ("BELLATRIX_FORK_EPOCH", fun v c => { c with bellatrixForkEpoch := v }),
+  ("CAPELLA_FORK_EPOCH",   fun v c => { c with capellaForkEpoch := v }),
+  ("DENEB_FORK_EPOCH",     fun v c => { c with denebForkEpoch := v }),
+  ("ELECTRA_FORK_EPOCH",   fun v c => { c with electraForkEpoch := v }),
+  ("FULU_FORK_EPOCH",      fun v c => { c with fuluForkEpoch := v })]
+
+/-- The interface at preset `P` and config `C` with a vector's overrides applied, or the
+reason an override cannot be applied. The server builds one per request. -/
+def fuluInterfaceWith (P : Preset) (C : Config) (overrides : ConfigOverrides) :
+    Except String ForkInterface := do
+  let C' ← applyConfigOverrides configSetters overrides C
+  pure (fuluInterfaceFor P C')
 
 /-- The `minimal`-preset interface (the default; runs on every push). -/
 @[reducible] def fuluInterface : ForkInterface := fuluInterfaceFor minimal minimalConfig

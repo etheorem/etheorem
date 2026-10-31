@@ -23,7 +23,7 @@ inherit Slot Epoch ValidatorIndex BuilderIndex
 inherit CommitteeIndex WithdrawalIndex Gwei Root
 inherit Bytes32 Hash32 Version DomainType
 inherit Domain BLSPubkey BLSSignature ExecutionAddress
-inherit ParticipationFlags KZGCommitment KZGProof Cell
+inherit ParticipationFlags KZGCommitment KZGProof VersionedHash Cell
 inherit ColumnIndex CellIndex
 
 /-- `Transaction` at Gloas is an uncapped byte list. The pyspec names the type

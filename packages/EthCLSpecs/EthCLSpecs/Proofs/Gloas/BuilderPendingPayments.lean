@@ -7,7 +7,7 @@ import SizzLean.Proofs.UncachedBox
 /-!
 # `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: the builder-payment epoch substep
 
-`EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:254-273`)
+`EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:303-322`)
 modifies two fields sequentially within one state transition. This file characterizes the
 whole transition as one value: the run on `pureState preState` returns `pureState` of
 `preState` with `builderPendingWithdrawals` and `builderPendingPayments` written, and

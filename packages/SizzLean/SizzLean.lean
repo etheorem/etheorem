@@ -18,6 +18,7 @@ import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.ProgressiveListSet
 import SizzLean.Proofs.ProgressiveListPush
+import SizzLean.Proofs.ProgressiveListMap
 import SizzLean.Proofs.UncachedBox
 import SizzLean.Proofs.Merkle.Gindex
 import SizzLean.Proofs.Merkle.Opening
@@ -73,7 +74,7 @@ uses or by sibling packages (`EthCLSpecs` reaches into
 handler infrastructure). They are deliberately not listed here so
 this file reads as the user's mental model of the library.
 
-The `Proofs.SSZList*` modules are imported above to keep their
+The `Proofs/*` modules imported above are in this file to keep their
 native initializers in SizzLean's precompiled plugin. Their current EthCLSpecs
 consumers reach them by a qualified-path import; without these root imports, Lake
 emits the `.olean` but omits the module from the native plugin graph, causing

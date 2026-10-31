@@ -37,6 +37,12 @@ Vector UInt8 32`, …) can use `hashMap`. -/
 instance instHashableVector {α : Type} {n : Nat} [Hashable α] : Hashable (Vector α n) :=
   ⟨fun v => hash v.toArray⟩
 
+/-- Lexicographic `Ord` on a pair, so a map keyed by a tuple (the Heze inclusion-list store's
+`(Slot, Root)`) satisfies `MapKind`'s `[Ord K]`. Core Lean ships the order as the `lexOrd`
+definition but registers no instance; this one registers it. A pair names no spec concept, so
+no fork owns it. -/
+instance instOrdProdLex {α β : Type} [Ord α] [Ord β] : Ord (α × β) := lexOrd
+
 /-- Lexicographic `Ord` on a fixed-length byte vector, so a `Root`- or
 `Checkpoint`-keyed map satisfies `MapKind`'s `[Ord K]`. It sits here beside
 `instHashableVector` for the same reason: `Vector UInt8 n` is a SizzLean type

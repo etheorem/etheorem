@@ -220,14 +220,16 @@ for fuzzing against an external oracle.
 (`merkleize_progressive`, `mix_in_active_fields`). They are outside
 `BasicSupported`, so the central theorems stay on the classic subset.
 `@[sizzlean_progressive]` makes `deriving SSZRepr` emit an all-active
-progressive container. Masks with holes are `SSZType` values written
-by hand.
+progressive container. `@[sizzlean_progressive_gaps p₁ p₂ …]` names the
+mask positions no field occupies, the pyspec's `active_fields(width=…,
+gaps=…)`. The Heze `BeaconState` and `BeaconBlockBody` use it to drop
+fields while the later fields keep their Gloas positions (EIP-8015).
 
 **Still absent.** `Union`, legacy `StableContainer[N]` / `Profile`, and
 `CompatibleUnion` (EIP-8016). The `ssz_generic` compatible-union
 handler is not collected. The `profile%` macro in §8 stays unbuilt:
-the all-active Gloas-shaped containers are ordinary structures plus
-the attribute above.
+the Gloas- and Heze-shaped containers are ordinary structures plus
+the attributes above.
 
 ### 3.2 Interpretation: from descriptions to Lean types
 
@@ -402,10 +404,13 @@ The schema gate costs the caller nothing. `Spec/BasicSupportedDecide.lean`
 defines a `Bool` check that mirrors the predicate one arm at a time. It
 proves the check sound and complete, and registers the `Decidable`
 instance. `by decide` then proves `BasicSupported r.shape` for any closed
-schema: the kernel unfolds the derived `shape` and runs the check. The
-fork bodies discharge the gate this way for the real `BeaconState`,
+schema: the kernel unfolds the derived `shape` and runs the check. The Fulu
+fork body discharges the gate this way for the real `BeaconState`,
 `BeaconBlockBody`, `BeaconBlock`, and `SignedBeaconBlock`
-(`EthCLSpecs/Proofs/<Fork>/Codec.lean`). The size bound stays with the
+(`EthCLSpecs/Proofs/Fulu/Codec.lean`). Gloas and Heze wire containers
+carry progressive fields, and the predicate is false on the progressive
+arms, so their codec row stays open until SizzLean proves the theorems
+over the progressive constructors. The size bound stays with the
 caller, because it depends on the value.
 
 ### 5.2 The `deriving` handler

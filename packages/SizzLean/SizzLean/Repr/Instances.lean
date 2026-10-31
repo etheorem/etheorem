@@ -249,6 +249,15 @@ instance {α : Type} [Inhabited α] : GetElem (ProgressiveList α) Nat α (fun x
 instance {α : Type} [BEq α] : BEq (ProgressiveList α) where
   beq a b := a.val == b.val
 
+/-- The `BEq` above is lawful whenever the element's is: it compares the underlying arrays,
+and a `ProgressiveList` is determined by its array. A proof about a collection of progressive
+lists (`contains` against `∈`, a deduplicated union) needs this to read `==` as `=`. -/
+instance {α : Type} [BEq α] [LawfulBEq α] : LawfulBEq (ProgressiveList α) where
+  eq_of_beq {a b} h := by
+    cases a; cases b
+    exact congrArg ProgressiveList.mk (eq_of_beq (α := Array α) h)
+  rfl {a} := beq_self_eq_true (α := Array α) a.val
+
 instance {α : Type} [DecidableEq α] : DecidableEq (ProgressiveList α) := fun a b =>
   match decEq a.val b.val with
   | isTrue h => isTrue (by cases a; cases b; simpa using h)

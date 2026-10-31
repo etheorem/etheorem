@@ -18,10 +18,12 @@ This file establishes the two things such a proof needs.
 
 **A store monad with no `EStateM` in it.** `getSlotsSinceGenesis_run_of_time_eq_genesis`
 is a real fork-choice `forkdef` proved at `GloasStoreRun`, the pure column's store monad.
-`getSlotsSinceGenesis` is the subject because it is small and it throws. Its two checked
-`uint64` ops are the reason the fork-choice read layer is monadic at all, so proving its
-equation at the pure monad exercises the part that makes the monad matter, without
-dragging in a walk or a nested transition.
+`getSlotsSinceGenesis` is the subject because it is small and it throws. At v1.7.0-beta.4 it
+is `compute_slot_at_time_ms(store.genesis_time_ms, store.time_ms)`, a state-machine clock
+helper whose checked `uint64` subtraction reaches the store machine through `liftErr`. That
+checked op is the reason the fork-choice read layer is monadic at all, and the lift is how
+every clock read crosses into fork choice, so proving the equation at the pure monad exercises
+both without dragging in a walk or a nested transition.
 
 **A route for the state-machine theorems.** `NestedStateMachine`
 (`EthCLLib/Spec/NestedMachine.lean`) resolves the nested monad from the store's, and for
@@ -53,35 +55,33 @@ abbrev GloasStoreRun [Preset] [HasherTag] (map : MapKind) : Type → Type :=
 /-- **A fork-choice `forkdef`, at the pure store monad.** `get_slots_since_genesis` on a
 store whose clock has not advanced past genesis returns `0`, leaving the store alone.
 
-The two `uint64` ops both stay in range for the trivial reason: `time - genesis_time` is
-`0` when they are equal, so the checked subtraction cannot underflow and the checked
-multiply has nothing to overflow. `simp` discharges those two guards; the `rfl` after it
-is the whole `do` block reducing at this monad, binds included. -/
+The checked `uint64` subtraction stays in range for the trivial reason: `time_ms -
+genesis_time_ms` is `0` when they are equal, so it cannot underflow, and `0 //
+SLOT_DURATION_MS` is `0` for the opaque `[Config]` divisor. `run_liftErr_of_ok` carries the
+helper's `.ok` across the lift; `simp` then discharges the guard inside it. -/
 theorem getSlotsSinceGenesis_run_of_time_eq_genesis
     [Preset] [HasherTag] [Config] {map : MapKind} [FcMap map] :
     ∀ store : Store map,
-      store.time = store.genesisTime →
+      store.timeMs = store.genesisTimeMs →
       (getSlotsSinceGenesis (StoreTransition := GloasStoreRun map) store).run store
         = .ok (0, store) := by
   intro store htime
-  -- `checkedSub g g` takes its `else` branch (`g > g` is false) and yields `g - g = 0`;
-  -- `checkedMul 0 1000` takes its `else` branch (the `a != 0` guard) and yields `0`;
-  -- `0 / SLOT_DURATION_MS` is `0` for the opaque `[Config]` divisor.
-  simp [getSlotsSinceGenesis, htime, EthCLLib.Spec.checkedSub, EthCLLib.Spec.checkedMul]
+  apply EthCLLib.Proofs.run_liftErr_of_ok
+  -- `checkedSub g g` takes its `else` branch (`g > g` is false) and yields `g - g = 0`.
+  simp [EthCLSpecs.Gloas.computeSlotAtTimeMs, htime, EthCLLib.Spec.checkedSub]
   rfl
 
-/-- The same fact one layer up, through `get_current_slot`'s `GENESIS_SLOT + _`. Two
-`forkdef`s composed, so the bind between them is at this monad too, not just the leaf. -/
+/-- The same fact one layer up, through `get_current_slot`. At v1.7.0-beta.4 that is
+`get_slots_since_genesis` itself (the `GENESIS_SLOT +` term is gone), so the fact carries
+across the one `forkdef` unchanged. -/
 theorem getCurrentSlot_run_of_time_eq_genesis
     [Preset] [HasherTag] [Config] {map : MapKind} [FcMap map] :
     ∀ store : Store map,
-      store.time = store.genesisTime →
+      store.timeMs = store.genesisTimeMs →
       (getCurrentSlot (StoreTransition := GloasStoreRun map) store).run store
         = .ok (0, store) := by
   intro store htime
-  simp [getCurrentSlot, getSlotsSinceGenesis, htime, EthCLLib.Spec.checkedSub,
-    EthCLLib.Spec.checkedMul, EthCLSpecs.Gloas.Const.genesisSlot]
-  rfl
+  exact getSlotsSinceGenesis_run_of_time_eq_genesis store htime
 
 /-! ## The bridge carries a step's own theorem, unchanged
 
@@ -123,7 +123,7 @@ example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
 
 /-- `processBuilderPendingPayments_run` likewise, and this is the one that shows the point:
 its proof rests on a `List.forIn` induction over the withdrawals loop, and that induction is
-not re-entered here. Alpha.12 made `builderPendingWithdrawals` a progressive list, so the
+not re-entered here. `builderPendingWithdrawals` is a progressive list (since alpha.12), so the
 contract is unconditional: the run always appends the qualifying withdrawals and shifts the
 payment window. -/
 example [Preset] [HasherTag] {m : Type → Type} [Monad m]

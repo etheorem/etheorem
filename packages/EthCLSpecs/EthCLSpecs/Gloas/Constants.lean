@@ -45,6 +45,10 @@ forkpreset where
 forkconfig where
   /-- `GLOAS_FORK_VERSION`. -/
   gloasForkVersion : Version
+  /-- `GLOAS_FORK_EPOCH`. `FAR_FUTURE_EPOCH` in both config files; a vector that activates
+  Gloas at genesis overrides it to `0`, and a transition vector to its `fork_epoch`.
+  `get_ptc` asserts the attested epoch is not before it. -/
+  gloasForkEpoch : Epoch
   /-- `CHURN_LIMIT_QUOTIENT_GLOAS`. -/
   churnLimitQuotientGloas : UInt64
   /-- `MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS`. -/
@@ -58,6 +62,10 @@ forkconfig where
   /-- Slot-component deadlines in basis points of the slot. -/
   attestationDueBpsGloas : UInt64
   payloadAttestationDueBps : UInt64
+  /-- `GAS_LIMIT_SCHEDULE` (EIP-8261, new at v1.7.0-beta.4): the default and recommended maximum
+  gas limit by epoch, one `(EPOCH, GAS_LIMIT)` record per entry. Empty in both config files.
+  `get_scheduled_gas_limit` reads it; it adds no validity rule. -/
+  gasLimitSchedule : List (Epoch × UInt64)
 
 namespace Const
 section
@@ -72,6 +80,7 @@ forkabbrev maxPayloadAttestations : Nat := Preset.maxPayloadAttestations
 forkabbrev maxBuilderDepositRequestsPerPayload : Nat := Preset.maxBuilderDepositRequestsPerPayload
 forkabbrev maxBuilderExitRequestsPerPayload : Nat := Preset.maxBuilderExitRequestsPerPayload
 forkabbrev gloasForkVersion : Version := Config.gloasForkVersion
+forkabbrev gloasForkEpoch : Epoch := Config.gloasForkEpoch
 forkabbrev churnLimitQuotientGloas : UInt64 := Config.churnLimitQuotientGloas
 forkabbrev maxPerEpochActivationChurnLimitGloas : Gwei := Config.maxPerEpochActivationChurnLimitGloas
 forkabbrev minBuilderWithdrawabilityDelay : UInt64 := Config.minBuilderWithdrawabilityDelay
@@ -108,6 +117,7 @@ forkabbrev payloadTimelyThreshold : Nat := ptcSize / 2
 forkabbrev dataAvailabilityTimelyThreshold : Nat := ptcSize / 2
 forkabbrev attestationDueBpsGloas : UInt64 := Config.attestationDueBpsGloas
 forkabbrev payloadAttestationDueBps : UInt64 := Config.payloadAttestationDueBps
+forkabbrev gasLimitSchedule : List (Epoch × UInt64) := Config.gasLimitSchedule
 
 -- Fulu's entries, replayed here in Fulu's own order so each body reaches its
 -- dependencies. The list is the whole surface, not the subset Gloas happens to
@@ -169,8 +179,11 @@ inherit domainVoluntaryExit domainSyncCommittee domainBlsToExecutionChange
 -- Network parameters, and the fork-choice tuning beside them.
 inherit churnLimitQuotient minPerEpochChurnLimitElectra
 inherit maxPerEpochActivationExitChurnLimit minValidatorWithdrawabilityDelay
-inherit shardCommitteePeriod genesisForkVersion capellaForkVersion slotDurationMs
-inherit attestationDueBps maxBlobsPerBlockElectra
+inherit shardCommitteePeriod genesisForkVersion slotDurationMs
+inherit altairForkVersion altairForkEpoch bellatrixForkVersion bellatrixForkEpoch
+inherit capellaForkVersion capellaForkEpoch denebForkVersion denebForkEpoch
+inherit electraForkVersion electraForkEpoch fuluForkVersion fuluForkEpoch
+inherit attestationDueBps maxBlobsPerBlockElectra blobSchedule
 inherit reorgHeadWeightThreshold reorgParentWeightThreshold
 inherit reorgMaxEpochsSinceFinalization proposerReorgCutoffBps numberOfColumns
 inherit kzgCommitmentsInclusionProofDepth proposerScoreBoost basisPoints
@@ -199,20 +212,24 @@ forkpresetvalues mainnet where
 
 /-- The `minimal` config's Gloas entries. -/
 forkconfigvalues minimalConfig where
+  gasLimitSchedule := []
   consolidationChurnLimitQuotient := 32
   attestationDueBpsGloas := 2500
   payloadAttestationDueBps := 7500
   gloasForkVersion := ⟨#[0x07, 0, 0, 1], by decide⟩
+  gloasForkEpoch := 0xffffffffffffffff
   churnLimitQuotientGloas := 16
   maxPerEpochActivationChurnLimitGloas := 128000000000
   minBuilderWithdrawabilityDelay := 2
 
 /-- The `mainnet` config's Gloas entries. -/
 forkconfigvalues mainnetConfig where
+  gasLimitSchedule := []
   consolidationChurnLimitQuotient := 65536
   attestationDueBpsGloas := 2500
   payloadAttestationDueBps := 7500
   gloasForkVersion := ⟨#[0x07, 0, 0, 0], by decide⟩
+  gloasForkEpoch := 0xffffffffffffffff
   churnLimitQuotientGloas := 32768
   maxPerEpochActivationChurnLimitGloas := 256000000000
   minBuilderWithdrawabilityDelay := 64

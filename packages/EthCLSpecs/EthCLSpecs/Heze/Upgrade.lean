@@ -4,12 +4,13 @@ import EthCLSpecs.Heze.Containers
 # `EthCLSpecs.Heze.Upgrade`: the Gloas → Heze fork upgrade (EIP-7805)
 
 `upgradeToHeze` reads a finished Gloas state and constructs the Heze one, the single
-sanctioned cross-fork reference. The fork version bumps, and the bid gains an empty
-`inclusion_list_bits`. Because Heze's containers are fresh namespace twins of Gloas's,
-each container field is copied through a field-by-field `cv*` converter, the mechanical
-price of the flat namespace. No builder onboarding and no PTC recompute: builders were
-onboarded and the PTC window built at the Gloas fork, and EIP-7805 adds no `BeaconState`
-field.
+allowed cross-fork reference. It first asserts that the old deposit mechanism has been
+disabled (`eth1_deposit_index == deposit_requests_start_index`, EIP-8015), then the fork
+version bumps, the bid gains an empty `inclusion_list_bits`, and the four eth1 deposit fields
+are dropped (EIP-8015). Because Heze's containers are fresh namespace twins of Gloas's, each
+container field is copied through a field-by-field `cv*` converter, the mechanical price of
+the flat namespace. No builder onboarding and no PTC recompute: builders were onboarded and
+the PTC window built at the Gloas fork.
 -/
 
 set_option autoImplicit false
@@ -31,8 +32,6 @@ open scoped Downgrade
 private def cvBeaconBlockHeader [Preset] (v : Gloas.BeaconBlockHeader) : BeaconBlockHeader :=
   { slot := v.slot, proposerIndex := v.proposerIndex, parentRoot := v.parentRoot,
     stateRoot := v.stateRoot, bodyRoot := v.bodyRoot }
-private def cvEth1Data [Preset] (v : Gloas.Eth1Data) : Eth1Data :=
-  { depositRoot := v.depositRoot, depositCount := v.depositCount, blockHash := v.blockHash }
 private def cvCheckpoint [Preset] (v : Gloas.Checkpoint) : Checkpoint :=
   { epoch := v.epoch, root := v.root }
 private def cvValidator [Preset] (v : Gloas.Validator) : Validator :=
@@ -65,7 +64,7 @@ private def cvBuilderPendingPayment [Preset] (v : Gloas.BuilderPendingPayment) :
 private def cvWithdrawal [Preset] (v : Gloas.Withdrawal) : Withdrawal :=
   { index := v.index, validatorIndex := v.validatorIndex, address := v.address, amount := v.amount }
 
-/-- Convert the Gloas bid to the Heze bid. Alpha.12 adds `inclusion_list_bits`,
+/-- Convert the Gloas bid to the Heze bid. EIP-7805 adds `inclusion_list_bits`,
 empty at the fork boundary. -/
 private def cvExecutionPayloadBid [Preset] (v : Gloas.ExecutionPayloadBid) : ExecutionPayloadBid :=
   { parentBlockHash := v.parentBlockHash, parentBlockRoot := v.parentBlockRoot,
@@ -75,63 +74,67 @@ private def cvExecutionPayloadBid [Preset] (v : Gloas.ExecutionPayloadBid) : Exe
     executionRequestsRoot := v.executionRequestsRoot,
     inclusionListBits := default }
 
-/-- The fork upgrade `upgrade_to_heze(pre)`: builds the Heze state from a finished Gloas
-one. The fork version changes (`previous := pre.fork.current`, `current := HEZE_FORK_VERSION`,
-`epoch := get_current_epoch(pre)`) and the bid gains an empty `inclusion_list_bits`.
-No builder onboarding or PTC recompute is needed: both already happened at the Gloas fork
-and live in the pre-state. `hezeForkVersion` is the config's `HEZE_FORK_VERSION`, passed by
-the runner. -/
+/-- The fork upgrade `upgrade_to_heze(pre)` (`heze/fork.md:41-123`): builds the Heze state
+from a finished Gloas one. It opens with `assert pre.eth1_deposit_index ==
+pre.deposit_requests_start_index` (EIP-8015, new at v1.7.0-beta.4): the eth1 bridge must have
+delivered every deposit before the fields that track it are dropped. A failed assert is the
+`.assert` reject, so the upgrade returns `Except StateTransitionError`. Then the fork version
+changes (`previous := pre.fork.current`, `current := HEZE_FORK_VERSION`,
+`epoch := get_current_epoch(pre)`), the bid gains an empty `inclusion_list_bits`, and
+`eth1_data`, `eth1_data_votes`, `eth1_deposit_index`, and `deposit_requests_start_index` are
+not carried. No builder onboarding or PTC recompute is needed: both already happened at the
+Gloas fork and live in the pre-state. `hezeForkVersion` is the config's `HEZE_FORK_VERSION`,
+passed by the runner. -/
 def upgradeToHeze [Preset] (hezeForkVersion : Version) (pre : Gloas.BeaconState) :
-    Heze.BeaconState :=
+    Except StateTransitionError Heze.BeaconState := do
+  -- [New in Heze:EIP8015] the old deposit mechanism has been disabled.
+  assert (pre.eth1DepositIndex == pre.depositRequestsStartIndex)
   let epoch : Epoch := pre.slot / UInt64.ofNat Const.slotsPerEpoch
-  { genesisTime                   := pre.genesisTime
-    genesisValidatorsRoot         := pre.genesisValidatorsRoot
-    slot                          := pre.slot
-    forkData                      :=
-      { previousVersion := pre.forkData.currentVersion
-        currentVersion  := hezeForkVersion
-        epoch           := epoch }
-    latestBlockHeader             := cvBeaconBlockHeader pre.latestBlockHeader
-    blockRoots                    := pre.blockRoots
-    stateRoots                    := pre.stateRoots
-    historicalRoots               := pre.historicalRoots
-    eth1Data                      := cvEth1Data pre.eth1Data
-    eth1DataVotes                 := pre.eth1DataVotes.mapCap cvEth1Data
-    eth1DepositIndex              := pre.eth1DepositIndex
-    validators                    := ⟨pre.validators.val.map cvValidator⟩
-    balances                      := ⟨pre.balances.val⟩
-    randaoMixes                   := pre.randaoMixes
-    slashings                     := pre.slashings
-    previousEpochParticipation    := ⟨pre.previousEpochParticipation.val⟩
-    currentEpochParticipation     := ⟨pre.currentEpochParticipation.val⟩
-    justificationBits             := pre.justificationBits
-    previousJustifiedCheckpoint   := cvCheckpoint pre.previousJustifiedCheckpoint
-    currentJustifiedCheckpoint    := cvCheckpoint pre.currentJustifiedCheckpoint
-    finalizedCheckpoint           := cvCheckpoint pre.finalizedCheckpoint
-    inactivityScores              := ⟨pre.inactivityScores.val⟩
-    currentSyncCommittee          := cvSyncCommittee pre.currentSyncCommittee
-    nextSyncCommittee             := cvSyncCommittee pre.nextSyncCommittee
-    latestBlockHash               := pre.latestBlockHash
-    nextWithdrawalIndex           := pre.nextWithdrawalIndex
-    nextWithdrawalValidatorIndex  := pre.nextWithdrawalValidatorIndex
-    historicalSummaries           := pre.historicalSummaries.mapCap cvHistoricalSummary
-    depositRequestsStartIndex     := pre.depositRequestsStartIndex
-    depositBalanceToConsume       := pre.depositBalanceToConsume
-    exitBalanceToConsume          := pre.exitBalanceToConsume
-    earliestExitEpoch             := pre.earliestExitEpoch
-    consolidationBalanceToConsume := pre.consolidationBalanceToConsume
-    earliestConsolidationEpoch    := pre.earliestConsolidationEpoch
-    pendingDeposits               := ⟨pre.pendingDeposits.val.map cvPendingDeposit⟩
-    pendingPartialWithdrawals     := ⟨pre.pendingPartialWithdrawals.val.map cvPendingPartialWithdrawal⟩
-    pendingConsolidations         := ⟨pre.pendingConsolidations.val.map cvPendingConsolidation⟩
-    proposerLookahead             := pre.proposerLookahead
-    builders                      := ⟨pre.builders.val.map cvBuilder⟩
-    nextWithdrawalBuilderIndex    := pre.nextWithdrawalBuilderIndex
-    executionPayloadAvailability  := pre.executionPayloadAvailability
-    builderPendingPayments        := pre.builderPendingPayments.map cvBuilderPendingPayment
-    builderPendingWithdrawals     := ⟨pre.builderPendingWithdrawals.val.map cvBuilderPendingWithdrawal⟩
-    latestExecutionPayloadBid     := cvExecutionPayloadBid pre.latestExecutionPayloadBid
-    payloadExpectedWithdrawals    := ⟨pre.payloadExpectedWithdrawals.val.map cvWithdrawal⟩
-    ptcWindow                     := pre.ptcWindow }
+  pure
+    { genesisTime                   := pre.genesisTime
+      genesisValidatorsRoot         := pre.genesisValidatorsRoot
+      slot                          := pre.slot
+      forkData                      :=
+        { previousVersion := pre.forkData.currentVersion
+          currentVersion  := hezeForkVersion
+          epoch           := epoch }
+      latestBlockHeader             := cvBeaconBlockHeader pre.latestBlockHeader
+      blockRoots                    := pre.blockRoots
+      stateRoots                    := pre.stateRoots
+      historicalRoots               := pre.historicalRoots
+      validators                    := ⟨pre.validators.val.map cvValidator⟩
+      balances                      := ⟨pre.balances.val⟩
+      randaoMixes                   := pre.randaoMixes
+      slashings                     := pre.slashings
+      previousEpochParticipation    := ⟨pre.previousEpochParticipation.val⟩
+      currentEpochParticipation     := ⟨pre.currentEpochParticipation.val⟩
+      justificationBits             := pre.justificationBits
+      previousJustifiedCheckpoint   := cvCheckpoint pre.previousJustifiedCheckpoint
+      currentJustifiedCheckpoint    := cvCheckpoint pre.currentJustifiedCheckpoint
+      finalizedCheckpoint           := cvCheckpoint pre.finalizedCheckpoint
+      inactivityScores              := ⟨pre.inactivityScores.val⟩
+      currentSyncCommittee          := cvSyncCommittee pre.currentSyncCommittee
+      nextSyncCommittee             := cvSyncCommittee pre.nextSyncCommittee
+      latestBlockHash               := pre.latestBlockHash
+      nextWithdrawalIndex           := pre.nextWithdrawalIndex
+      nextWithdrawalValidatorIndex  := pre.nextWithdrawalValidatorIndex
+      historicalSummaries           := pre.historicalSummaries.mapCap cvHistoricalSummary
+      depositBalanceToConsume       := pre.depositBalanceToConsume
+      exitBalanceToConsume          := pre.exitBalanceToConsume
+      earliestExitEpoch             := pre.earliestExitEpoch
+      consolidationBalanceToConsume := pre.consolidationBalanceToConsume
+      earliestConsolidationEpoch    := pre.earliestConsolidationEpoch
+      pendingDeposits               := ⟨pre.pendingDeposits.val.map cvPendingDeposit⟩
+      pendingPartialWithdrawals     := ⟨pre.pendingPartialWithdrawals.val.map cvPendingPartialWithdrawal⟩
+      pendingConsolidations         := ⟨pre.pendingConsolidations.val.map cvPendingConsolidation⟩
+      proposerLookahead             := pre.proposerLookahead
+      builders                      := ⟨pre.builders.val.map cvBuilder⟩
+      nextWithdrawalBuilderIndex    := pre.nextWithdrawalBuilderIndex
+      executionPayloadAvailability  := pre.executionPayloadAvailability
+      builderPendingPayments        := pre.builderPendingPayments.map cvBuilderPendingPayment
+      builderPendingWithdrawals     := ⟨pre.builderPendingWithdrawals.val.map cvBuilderPendingWithdrawal⟩
+      latestExecutionPayloadBid     := cvExecutionPayloadBid pre.latestExecutionPayloadBid
+      payloadExpectedWithdrawals    := ⟨pre.payloadExpectedWithdrawals.val.map cvWithdrawal⟩
+      ptcWindow                     := pre.ptcWindow }
 
 end EthCLSpecs.Heze

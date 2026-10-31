@@ -273,8 +273,11 @@ forkdef processBlsToExecutionChange (sbc : SignedBLSToExecutionChange) : StateTr
 
 /-! ## Execution requests (Electra) -/
 
-/-- `process_deposit_request` (Fulu): append a pending deposit stamped with the current
-slot. -/
+/-- `process_deposit_request` (Fulu, `fulu/beacon-chain.md`, "Modified
+`process_deposit_request`"): queue the request as a pending deposit at the current slot.
+Fulu removes the former deposit mechanism (consensus-specs #4704, in the text since
+alpha.12), so the Electra write of `deposit_requests_start_index` on the first request is gone.
+Gloas and Heze inherit this version. -/
 forkdef processDepositRequest (dr : DepositRequest) : StateTransition Unit := do
   let state ← get
   appendState pendingDeposits
@@ -376,8 +379,11 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
 
 /-! ## process_operations -/
 
-/-- `process_operations` (Fulu): the no-deposits gate, then each operation list in order,
-then the Electra execution requests. -/
+/-- `process_operations` (Fulu, `fulu/beacon-chain.md`, "Modified `process_operations`"): no
+in-block deposits (`assert len(body.deposits) == 0`), then each operation list in order, then
+the Electra execution requests. Fulu removes the former deposit mechanism (consensus-specs
+#4704, in the text since alpha.12): Electra's deposit-count gate and the `process_deposit`
+loop are gone. -/
 forkdef processOperations (body : BeaconBlockBody) : StateTransition Unit := do
   assert (body.deposits.size == 0)
 
