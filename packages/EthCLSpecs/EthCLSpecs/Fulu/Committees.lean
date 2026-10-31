@@ -92,14 +92,13 @@ forkdef getCommitteeIndices {n : Nat} (bits : Bitvector n) : Array Nat :=
 /-! ## Balance-weighted selection -/
 
 /-- `compute_balance_weighted_selection` inner loop, one call per pass of the spec's
-`while len(selected) < size`. `i` is the spec's `uint64` counter, so `i = 2**64` throws
-`.arithmetic`, the spec's overflow on `i += 1`. -/
+`while len(selected) < size`. The size check exits first, and the tail increment runs the
+spec's `uint64` `i += 1` through `checkedSucc`, so the last pass at `i = 2**64 - 1` throws
+`.arithmetic`, the spec's overflow, whether or not it filled the selection. -/
 forkdef cbwsAux [Preset] (indices effBals : Array Nat) (perm : Array ValidatorIndex)
     (seed : ByteArray) (total size : Nat) (shuffle : Bool) (i : Nat) (randomBytes : ByteArray)
-    (selected : Array ValidatorIndex) : Except StateTransitionError (Array ValidatorIndex) :=
-  if UInt64.size ≤ i then
-    throwArithmetic "compute_balance_weighted_selection: i += 1 past 2**64 - 1"
-  else if selected.size ≥ size then pure selected
+    (selected : Array ValidatorIndex) : Except StateTransitionError (Array ValidatorIndex) := do
+  if selected.size ≥ size then pure selected
   else
     let offset := (i % 16) * 2
     let randomBytes := if offset == 0 then sha (seed ++ uint64ToBytes (UInt64.ofNat (i / 16))) else randomBytes
@@ -108,8 +107,9 @@ forkdef cbwsAux [Preset] (indices effBals : Array Nat) (perm : Array ValidatorIn
     let randomValue := le2 randomBytes offset
     let threshold := Const.maxEffectiveBalanceElectra * randomValue
     let selected := if weight ≥ threshold then selected.push (UInt64.ofNat (indices[nextIndex]!)) else selected
-    cbwsAux indices effBals perm seed total size shuffle (i + 1) randomBytes selected
-termination_by UInt64.size - i
+    let s ← checkedSucc i "compute_balance_weighted_selection: i += 1 past 2**64 - 1"
+    cbwsAux indices effBals perm seed total size shuffle s.val randomBytes selected
+termination_by counterBudgetUInt64 i
 
 /-- `compute_balance_weighted_selection(state, indices, seed, size, shuffle)`
 (`gloas/beacon-chain.md:755-787`). An empty `indices` rejects on the spec's

@@ -69,19 +69,22 @@ private def pinPtcWindowFewActiveRejects : Bool :=
   | _ => false
 example : pinPtcWindowFewActiveRejects = true := by native_decide
 
-/-- `cbwsAux` at `i = 2**64` throws `.arithmetic`, with the selection empty or already full.
-At `i = 2**64 - 1` a full selection returns, and a pass that fills it throws on the
-increment. -/
+/-- `cbwsAux` mirrors the spec's loop order: the size check exits first, so a full selection
+returns at any `i`, even the unreachable `i = 2**64`, which no driver-driven run reaches. The
+tail increment is the spec's `i += 1`, so the last pass at `i = 2**64 - 1` throws on the
+increment, whether or not it filled the selection. -/
 private def pinSamplerCounterOverflow : Bool :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  (match cbwsAux #[] #[] #[] ByteArray.empty 1 1 false UInt64.size ByteArray.empty #[] with
-    | .error (.arithmetic _) => true | _ => false) &&
+  -- A full selection returns even at `i = 2**64`: the size check precedes the increment,
+  -- the spec's `while` order. No pass runs, so no hash is drawn.
   (match cbwsAux #[] #[] #[] ByteArray.empty 1 1 false UInt64.size ByteArray.empty #[7] with
-    | .error (.arithmetic _) => true | _ => false) &&
+    | .ok sel => sel == #[7] | _ => false) &&
+  -- A full selection returns at the last counter value.
   (match cbwsAux #[] #[] #[] ByteArray.empty 1 1 false (UInt64.size - 1) ByteArray.empty #[7] with
     | .ok sel => sel == #[7] | _ => false) &&
-  -- One 32 ETH validator and all-zero random bytes, so the last pass fills the selection.
+  -- One 32 ETH validator and all-zero random bytes, so the last pass fills the selection
+  -- and the increment throws.
   (match cbwsAux #[3] #[32000000000] #[] ByteArray.empty 1 1 false (UInt64.size - 1)
       (ByteArray.mk (Array.replicate 32 0)) #[] with
     | .error (.arithmetic _) => true | _ => false)

@@ -331,7 +331,7 @@ names the wrapper its context needs: the `[ErrorConv StateTransitionError E]` bo
 fault in as `.arithmetic` on the state machine (identity) and `.transition (.arithmetic …)` on
 the store machine, so one definition serves both, exactly as `sszGetIdx` does for `IndexError`.
 
-Two kinds of site reach it. The three checked operators below are the `uint64` over/underflows.
+Two kinds of site reach it. The checked operators below are the `uint64` over/underflows.
 The other is `get_inclusion_list_committee`'s `indices[i % len(indices)]` on an empty committee
 (`heze/beacon-chain.md:274-276`), a `ZeroDivisionError` rather than a `uint64` op, which lands
 in the same uncaught-fault class because the reference runner propagates it just the same. -/
@@ -356,6 +356,38 @@ and the truncating `a * b / a` fails to recover `b`). Mirrors remerkleable's `ui
 @[inline] def checkedMul {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
     [ErrorConv StateTransitionError E] (a b : UInt64) (descr : String) : m UInt64 :=
   if a != 0 && a * b / a != b then throwArithmetic descr else pure (a * b)
+
+/-- Checked `uint64` counter successor: the spec's loop-counter increment `i += 1`, or the
+`.arithmetic` fault past `2**64 - 1`. The value operators above return a bare `uint64`, but the
+counter's consumer is the caller's `termination_by`, so the `.ok` result is a subtype stating
+the sum and its range, `j = i + 1 ∧ j < 2**64`. In the loop below that property is the
+hypothesis the decrease obligation reads: with `let s ← checkedSucc …`, the default
+`decreasing_tactic` closes `counterBudgetUInt64 s.val < counterBudgetUInt64 i` from
+`s.property`, and a bare `Nat` return would leave it nothing to work with.
+
+Another context reads the property through the same two doors. The do-bind keeps it on the
+subtype as `s.property`. A `match` destructure, `.ok ⟨j, hj⟩`, turns it into a plain hypothesis
+any tactic can cite, `omega`, `exact`, and `simp` alike. A loop-invariant proof consumes it
+there: the counter moved exactly one step and stayed in range. The fault side has a reading
+too: the throw fires exactly when `i + 1 ≥ 2**64`, and `checkedSucc`'s equations hand that
+condition to a proof about the error arm.
+
+The step is fixed at `1` because the proof needs it: a general addend `k` would state
+`j = i + k`, which shows no progress unless the call site instantiates `k` with a literal.
+The bound takes no parameter either: the modeled surface has exactly one counter-driven loop,
+`compute_balance_weighted_selection`. -/
+@[inline] def checkedSucc {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
+    [ErrorConv StateTransitionError E] (i : Nat) (descr : String) :
+    m { j : Nat // j = i + 1 ∧ j < UInt64.size } :=
+  if h : i + 1 < UInt64.size then pure ⟨i + 1, rfl, h⟩
+  else throwArithmetic descr
+
+/-- The `uint64` counter's remaining budget: `2**64 - i`, the number of increments before the
+`.arithmetic` fault. `checkedSucc` consumes exactly one unit per step, so a loop recursing on
+the successor measures termination by this function. -/
+abbrev counterBudgetUInt64 (i : Nat) : Nat := UInt64.size - i
+
+@[simp] theorem counterBudgetUInt64_eq (i : Nat) : counterBudgetUInt64 i = UInt64.size - i := rfl
 
 /-! ## Lists over their limit -/
 
