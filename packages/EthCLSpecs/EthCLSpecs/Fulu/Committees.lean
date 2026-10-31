@@ -12,8 +12,7 @@ These are pure functions of the boxed `State` (no monad); the epoch and operatio
 steps call them. They hash through the `[HasherTag]` seam (`sha`), so the same
 swap-or-not bytes a real client computes. Performance is unoptimised but adequate
 for the minimal preset: the permutation is recomputed per committee, and the
-weighted sampler iterates with a fuel bound (tail-recursive, so it compiles to a
-loop, valid states fill well within the bound).
+weighted sampler is a tail-recursive loop bounded by the spec's `uint64` counter.
 -/
 
 set_option autoImplicit false
@@ -92,31 +91,29 @@ forkdef getCommitteeIndices {n : Nat} (bits : Bitvector n) : Array Nat :=
 
 /-! ## Balance-weighted selection -/
 
-/-- `compute_balance_weighted_selection` inner loop. Fuel-bounded rather than closed by
-`termination_by` (§7.2): the loop stops once `selected` reaches `size`, and a candidate
-that fails the weight threshold is skipped without filling a slot, so nothing decreases on
-every iteration and the terminating argument is probabilistic rather than structural. Fuel
-is the flat `10000000` `computeBalanceWeightedSelection` passes; tail-recursive, so it
-compiles to a loop, and valid states fill `size` well within the bound. -/
+/-- `compute_balance_weighted_selection` inner loop, one call per pass of the spec's
+`while len(selected) < size`. The size check exits first, and the tail increment runs the
+spec's `uint64` `i += 1` through `checkedSucc`, so the last pass at `i = 2**64 - 1` throws
+`.arithmetic`, the spec's overflow, whether or not it filled the selection. -/
 forkdef cbwsAux [Preset] (indices effBals : Array Nat) (perm : Array ValidatorIndex)
-    (seed : ByteArray) (total size : Nat) (shuffle : Bool) :
-    Nat → Nat → ByteArray → Array ValidatorIndex → Array ValidatorIndex
-  | 0,        _, _,          selected => selected
-  | fuel + 1, i, randomBytes, selected =>
-      if selected.size ≥ size then selected
-      else
-        let offset := (i % 16) * 2
-        let randomBytes := if offset == 0 then sha (seed ++ uint64ToBytes (UInt64.ofNat (i / 16))) else randomBytes
-        let nextIndex := if shuffle then (perm[i % total]!).toNat else i % total
-        let weight := effBals[nextIndex]! * Const.maxRandomValue
-        let randomValue := le2 randomBytes offset
-        let threshold := Const.maxEffectiveBalanceElectra * randomValue
-        let selected := if weight ≥ threshold then selected.push (UInt64.ofNat (indices[nextIndex]!)) else selected
-        cbwsAux indices effBals perm seed total size shuffle fuel (i + 1) randomBytes selected
+    (seed : ByteArray) (total size : Nat) (shuffle : Bool) (i : Nat) (randomBytes : ByteArray)
+    (selected : Array ValidatorIndex) : Except StateTransitionError (Array ValidatorIndex) := do
+  if selected.size ≥ size then pure selected
+  else
+    let offset := (i % 16) * 2
+    let randomBytes := if offset == 0 then sha (seed ++ uint64ToBytes (UInt64.ofNat (i / 16))) else randomBytes
+    let nextIndex := if shuffle then (perm[i % total]!).toNat else i % total
+    let weight := effBals[nextIndex]! * Const.maxRandomValue
+    let randomValue := le2 randomBytes offset
+    let threshold := Const.maxEffectiveBalanceElectra * randomValue
+    let selected := if weight ≥ threshold then selected.push (UInt64.ofNat (indices[nextIndex]!)) else selected
+    let s ← checkedSucc i "compute_balance_weighted_selection: i += 1 past 2**64 - 1"
+    cbwsAux indices effBals perm seed total size shuffle s.val randomBytes selected
+termination_by counterBudgetUInt64 i
 
 /-- `compute_balance_weighted_selection(state, indices, seed, size, shuffle)`
-(`gloas/beacon-chain.md:755-787`). An empty `indices` rejects on the spec's
-`assert total > 0` (`:770`). -/
+(`gloas/beacon-chain.md:1195-1234`). An empty `indices` rejects on the spec's
+`assert total > 0` (`:1213`). -/
 forkdef computeBalanceWeightedSelection (state : State) (indices : Array ValidatorIndex)
     (seed : ByteArray) (size : Nat) (shuffle : Bool) :
     Except StateTransitionError (Array ValidatorIndex) := do
@@ -126,7 +123,7 @@ forkdef computeBalanceWeightedSelection (state : State) (indices : Array Validat
   let validators := sszGet state validators
   let effBals := indices.map (fun vi => (validators[vi.toNat]!).effectiveBalance.toNat)
   let perm := if shuffle then computeShuffledPermutation total seed else #[]
-  pure (cbwsAux idxNat effBals perm seed total size shuffle 10000000 0 ByteArray.empty #[])
+  cbwsAux idxNat effBals perm seed total size shuffle 0 ByteArray.empty #[]
 
 /-! ## Proposer and sync-committee selection -/
 
