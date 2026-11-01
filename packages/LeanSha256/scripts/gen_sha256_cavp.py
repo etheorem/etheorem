@@ -12,7 +12,7 @@ FFI conformance to NIST is *not* tested here directly — it follows
 by transitivity from:
 * this file (spec ≡ NIST on 129 vectors);
 * `packages/SizzLean/SizzLeanTests/Sha256Equivalence.lean`
-  (FFI ≡ spec on 185 random inputs + 5 NIST §B vectors).
+  (FFI ≡ spec on 185 random inputs + 5 NIST example vectors).
 
 Special case: when `Len = 0`, the `Msg = 00` placeholder is *not*
 hashed — the input is the empty `ByteArray`. NIST's file format
@@ -97,7 +97,7 @@ FFI ≡ NIST follows by transitivity from:
 
 * this file (spec ≡ NIST on 129 vectors);
 * `packages/SizzLean/SizzLeanTests/Sha256Equivalence.lean`
-  (FFI ≡ spec on randomised inputs + the 5 NIST §B vectors via
+  (FFI ≡ spec on randomised inputs + the 5 NIST example vectors via
   `Sha256Vectors.lean`).
 
 The cross-implementation gate is empirical — a deliberate

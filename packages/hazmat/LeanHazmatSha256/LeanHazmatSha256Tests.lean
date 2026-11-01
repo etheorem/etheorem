@@ -19,7 +19,7 @@ that lets it ship as a mirror, packages/hazmat/docs/ARCHITECTURE.md §3.3/§11).
 ## What's here
 
 * **`Vectors`**: anchor cases for all three primitives: FIPS 180-4
-  §B digests for `sha256Hash`, the SSZ `ZERO_HASHES[1]` and a
+  NIST example digests for `sha256Hash`, the SSZ `ZERO_HASHES[1]` and a
   cross-check for `sha256Combine`, and empty/single/multi/order cases
   for `sha256BatchCombine`.
 * **`Cavp`**: the full NIST CAVP byte-oriented suite (129 vectors:

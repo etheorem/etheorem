@@ -47,8 +47,8 @@ evaluates the goal via *compiled* code (here: the whole permutation over
 GMP-backed `Nat`) and trusts the compiler's reduction. It adds one
 `Lean.ofReduceBool` axiom. Building this library runs the gate: it passes
 or the implementation (field codec, a constant, a layer, the schedule
-order) is wrong, caught at compile time. This mirrors the three in-file
-FIPS §B asserts that anchor `LeanSha256`.
+order) is wrong, caught at compile time. This mirrors the three
+in-file NIST example asserts that anchor `LeanSha256`.
 -/
 
 set_option autoImplicit false

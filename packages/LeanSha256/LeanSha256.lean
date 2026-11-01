@@ -18,8 +18,9 @@ This root re-exports the implementation:
 * `LeanSha256.Core`: FIPS 180-4 constants, round functions,
   message schedule, compression, padding, byte/word conversions,
   `hash`, `combine`, structural lemmas, and three in-file
-  `native_decide` examples anchoring the spec against FIPS 180-4
-  §B (empty input, `"abc"`, 56-byte §B.2). Building this library
+  `native_decide` examples anchoring the spec against NIST's
+  published examples (empty input, `"abc"`, the 56-byte two-block
+  message). Building this library
   runs those three gates.
 
 The heavy NIST CAVP suite (129 byte-oriented vectors, ~108s of

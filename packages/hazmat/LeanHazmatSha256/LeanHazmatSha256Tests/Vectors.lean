@@ -46,30 +46,30 @@ open LeanHazmat.Sha256
 `combine` operand in Merkleization. -/
 def zero32 : ByteArray := ByteArray.mk <| Array.replicate 32 0
 
-/-- The 56-byte FIPS 180-4 §B.2 worked-example input
+/-- The 56-byte FIPS 180-2 worked-example input
 `abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq`. Exactly
 this length so padding spans into a second block. -/
 def fips56 : ByteArray :=
   String.toUTF8 "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
 
-/-! ### Expected digests (FIPS 180-4 §B / SSZ ZERO_HASHES) -/
+/-! ### Expected digests (NIST examples / SSZ ZERO_HASHES) -/
 
-/-- `SHA-256("")` per FIPS 180-4 §B.0. -/
+/-- `SHA-256("")`, the empty input (CAVP ShortMsg Len = 0). -/
 def expected_empty : ByteArray := ByteArray.mk #[
   0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14,
   0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
   0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c,
   0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55]
 
-/-- `SHA-256("abc")` per FIPS 180-4 §B.1. -/
+/-- `SHA-256("abc")`, a FIPS 180-2 example. -/
 def expected_abc : ByteArray := ByteArray.mk #[
   0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea,
   0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
   0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c,
   0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad]
 
-/-- `SHA-256("abcdbcdec...")` per FIPS 180-4 §B.2 (the 56-byte
-two-block example). -/
+/-- `SHA-256("abcdbcdec...")`, the 56-byte FIPS 180-2 two-block
+example. -/
 def expected_fips56 : ByteArray := ByteArray.mk #[
   0x24, 0x8d, 0x6a, 0x61, 0xd2, 0x06, 0x38, 0xb8,
   0xe5, 0xc0, 0x26, 0x93, 0x0c, 0x3e, 0x60, 0x39,
@@ -86,13 +86,13 @@ def expected_zero_combine : ByteArray := ByteArray.mk #[
 
 /-! ### `sha256Hash` anchors -/
 
-/-- `sha256Hash ""` matches FIPS 180-4 §B.0. -/
+/-- `sha256Hash ""` matches the empty-input digest. -/
 example : sha256Hash ByteArray.empty = expected_empty := by native_decide
 
-/-- `sha256Hash "abc"` matches FIPS 180-4 §B.1. -/
+/-- `sha256Hash "abc"` matches the FIPS 180-2 example. -/
 example : sha256Hash (String.toUTF8 "abc") = expected_abc := by native_decide
 
-/-- `sha256Hash` on the 56-byte multi-block input matches §B.2. -/
+/-- `sha256Hash` on the 56-byte input matches the FIPS 180-2 example. -/
 example : sha256Hash fips56 = expected_fips56 := by native_decide
 
 /-! ### `sha256Combine`: the two-input concatenation digest -/

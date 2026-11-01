@@ -926,7 +926,8 @@ proof is *deferred* per the analysis below.
   (`ch`, `maj`, `bigSigma0/1`, `smallSigma0/1`); `messageSchedule`;
   `compressBlock`; `pad` (Merkle–Damgård); top-level `hash` and
   `combine`. Three in-file `native_decide` examples lock the spec
-  against NIST §B vectors directly (empty, `"abc"`, 56-byte §B.2).
+  against NIST's published examples directly (empty, `"abc"`, the
+  56-byte two-block message).
   Structural FIPS-shape lemmas: `ch_eq_fips`, `maj_eq_fips`,
   `bigSigma0/1_eq_fips`, `smallSigma0/1_eq_fips` (round functions
   match FIPS §4.1.2 forms, by `rfl`); `kConstants_size = 64` /
@@ -965,7 +966,7 @@ proof is *deferred* per the analysis below.
 gates moved from `packages/SizzLean/SizzLeanTests/` to a *separate*
 `lean_lib SizzLeanTests` at namespace `Tests.*`.
 Default `lake build` builds only the library proper (the
-in-file NIST §B gates in `Hasher/Sha256Spec.lean` plus structural
+in-file NIST example gates in `Hasher/Sha256Spec.lean` plus structural
 lemmas stay there, they're required for the spec's
 correctness at definition time). `lake build SizzLeanTests`
 runs the full empirical suite (CAVP, randomised property tests,

@@ -95,7 +95,7 @@ docstring for the full list.
 ```bash
 # From the umbrella repo root:
 lake build LeanSha256
-# (3 anchor FIPS 180-4 §B gates fire at build time via
+# (3 anchor NIST example gates fire at build time via
 # native_decide inside LeanSha256.Core; if any case regresses,
 # the build fails.)
 

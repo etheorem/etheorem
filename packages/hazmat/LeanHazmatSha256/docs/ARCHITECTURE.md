@@ -75,7 +75,7 @@ external dependency):
 
 * `LeanHazmatSha256Tests/Cavp.lean`: the full NIST CAVP byte-oriented
   suite (129 vectors) run against `sha256Hash` via `native_decide`.
-* `LeanHazmatSha256Tests/Vectors.lean`: FIPS 180-4 §B anchors plus
+* `LeanHazmatSha256Tests/Vectors.lean`: NIST example anchors plus
   the `combine` / `batchCombine` cases CAVP doesn't cover.
 
 The FFI ≡ pure-Lean equivalence (the evidence backing the SizzLean

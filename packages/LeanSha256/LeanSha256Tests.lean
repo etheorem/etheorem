@@ -15,8 +15,9 @@ Build with:
 lake build LeanSha256Tests
 ```
 
-The 3 anchor `native_decide` gates from FIPS 180-4 §B (empty
-input, `"abc"`, 56-byte §B.2) stay inside `LeanSha256.Core` itself,
+The 3 anchor `native_decide` gates from NIST's published examples
+(empty input, `"abc"`, the 56-byte two-block message) stay inside
+`LeanSha256.Core` itself,
 building the library proper validates them. The 129 CAVP vectors
 live here because their `native_decide` batch is heavy (~108s) and
 shouldn't run on every `lake build LeanSha256`.

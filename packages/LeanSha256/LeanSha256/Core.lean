@@ -35,7 +35,7 @@ reverse dependency.
 ## NIST acceptance gates
 
 Three `native_decide` examples at the bottom of this file lock the
-spec against NIST FIPS 180-4 §B test vectors directly. These three
+spec against NIST's published SHA-256 example vectors directly. These three
 pass *or* the spec is wrong; CI catches it at build time.
 
 For broader empirical coverage (full NIST CAVP short + long
@@ -287,15 +287,20 @@ locality, but the spec values clarity over micro-optimisation. -/
 def combine (left right : ByteArray) : ByteArray :=
   hash (left ++ right)
 
-/-! ## NIST FIPS 180-4 §B acceptance gates
+/-! ## Known-answer acceptance gates
 
 Three published test vectors, asserted against `hash` via
 `native_decide`. Catches any transcription error in the constants,
 padding, or round functions.
 
-* §B.0: `SHA-256("")`.
-* §B.1: `SHA-256("abc")`.
-* §B.2: `SHA-256(56-byte multi-block example)`.
+Provenance: FIPS 180-4's Appendix B is a list of references, so the
+two example messages come from FIPS 180-2's SHA-256 examples, which
+NIST republishes on its example-values page. The empty-input digest
+is the CAVP ShortMsg Len = 0 vector.
+
+* `SHA-256("")`, the empty input.
+* `SHA-256("abc")`, a FIPS 180-2 example.
+* `SHA-256(56-byte two-block message)`, also a FIPS 180-2 example.
 -/
 
 private def fips56 : ByteArray :=

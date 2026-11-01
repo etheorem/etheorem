@@ -136,7 +136,7 @@ graph TD
 - **A mathlib-free, reducible core.** `Bn254Fr` is backed by Lean's `Nat`
   (GMP big-integers under the hood), so the entire permutation reduces in
   the kernel and under `native_decide`. The anchor known-answer test
-  (KAT) is a build-time gate, exactly as `LeanSha256`'s three FIPS §B
+  (KAT) is a build-time gate, exactly as `LeanSha256`'s three NIST example
   vectors are. Downstream consumers pay no mathlib tax.
 
 - **Conformance without an official KAT suite.** Poseidon2 has no
@@ -359,7 +359,7 @@ perm[2] = 0x1ed25194542b12eef8617361c3ba7c52e660b145994427cc86296242cf766ec8
 `native_decide` evaluates the permutation via compiled code and adds one
 `Lean.ofReduceBool` axiom (it trusts the compiler's reduction; see §10).
 Building the library runs this gate. It passes or the implementation is
-wrong, caught at compile time. This mirrors the three in-file FIPS §B
+wrong, caught at compile time. This mirrors the three in-file NIST example
 asserts that anchor `LeanSha256`.
 
 ### 6.1 Files

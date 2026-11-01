@@ -1351,7 +1351,8 @@ graph LR
   CI. Tightened by Stage 15: the trust assumption is now scoped as
   "FFI implements `Sha256Spec`'s semantics" (validated on 185 NIST +
   randomised inputs in `SizzLeanTests/Sha256Equivalence.lean`); the spec
-  itself is Lean-kernel-checkable and locked to FIPS 180-4 §B via three
+  itself is Lean-kernel-checkable and locked to NIST's published
+  examples via three
   in-file `native_decide` asserts in `Hasher/Sha256Spec.lean`. Callers
   that want a non-FFI hash path pick `Hasher Sha256Spec` instead of
   `Hasher Sha256`: same digest, no FFI in the dependency chain.
@@ -1414,7 +1415,7 @@ graph LR
 
 **Stage 15 partial outcome:** the SHA-256 spec *shipped* as a
 standalone `LeanSha256` library, a pure-Lean implementation,
-kernel-reducible, locked to FIPS 180-4 §B by three in-file
+kernel-reducible, locked to NIST's published examples by three in-file
 `native_decide` asserts, with the full structural-conformance
 lemma set (round-function FIPS shapes, constant sizes + boundary
 entries, output sizes including `hash_size_eq_32`). `LeanSha256`
@@ -1426,7 +1427,7 @@ has no SSZ dependency; `SizzLean` consumes it via a thin
 `LeanSha256.hash msg = md` via `native_decide`. Building
 `LeanSha256` runs the gate. Empirical FFI ≡ spec equivalence
 lives in `packages/SizzLean/SizzLeanTests/Sha256Equivalence.lean` (185 random
-cases + 5 NIST §B vectors via `Sha256Vectors.lean`); FFI ≡ NIST
+cases + 5 NIST example vectors via `Sha256Vectors.lean`); FFI ≡ NIST
 follows by transitivity. The conformance gates live
 in a *separate* `lean_lib SizzLeanTests` (default
 `lake build` skips them; `lake build SizzLeanTests` runs

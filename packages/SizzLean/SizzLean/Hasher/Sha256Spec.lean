@@ -20,7 +20,7 @@ SizzLean's `Hasher` typeclass.
 
 The actual SHA-256 implementation: FIPS 180-4 constants, round
 functions, message schedule, compression, padding, byte/word
-conversions, `hash`, `combine`, NIST §B acceptance asserts, and
+conversions, `hash`, `combine`, NIST example acceptance asserts, and
 the full structural-conformance lemma set. `LeanSha256` has no
 dependency on SSZ machinery; anyone wanting a Lean-kernel-reducible
 SHA-256 reference imports it directly.

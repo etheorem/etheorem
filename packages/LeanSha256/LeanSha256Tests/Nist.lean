@@ -23,7 +23,7 @@ FFI ≡ NIST follows by transitivity from:
 
 * this file (spec ≡ NIST on 129 vectors);
 * `packages/SizzLean/SizzLeanTests/Sha256Equivalence.lean`
-  (FFI ≡ spec on randomised inputs + the 5 NIST §B vectors via
+  (FFI ≡ spec on randomised inputs + the 5 NIST example vectors via
   `Sha256Vectors.lean`).
 
 The cross-implementation gate is empirical, a deliberate

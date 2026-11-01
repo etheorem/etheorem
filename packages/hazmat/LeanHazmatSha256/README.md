@@ -58,7 +58,7 @@ compiles. To assert results at build time, use `native_decide` (this is how
 the test suite runs them):
 
 ```lean
--- SHA-256("") = e3b0c442… (FIPS 180-4 §B.0)
+-- SHA-256("") = e3b0c442… (CAVP ShortMsg Len = 0)
 example :
     sha256Hash ByteArray.empty
       = ByteArray.mk #[0xe3,0xb0,0xc4,0x42,0x98,0xfc,0x1c,0x14,
