@@ -31,18 +31,6 @@
 #include <lean/lean.h>
 #include "blst.h"
 
-// Weak `__libc_csu_*` stubs: glibc 2.34+ dropped these, but Lean's
-// bundled `Scrt1.o` still references them when linking a `lake exe`
-// that pulls this archive. Declared *weak* (unlike LeanHazmatSha256's
-// strong copy) so that an executable linking both the SHA-256 and the
-// BLS archives gets exactly one definition with no duplicate-symbol
-// error. `native_decide` links a shared object (no `Scrt1.o`), so the
-// test lib never needs these; they exist for a future standalone BLS
-// executable. Never called at runtime.
-__attribute__((weak)) void __libc_csu_init(int argc, char **argv, char **envp) {
-    (void)argc; (void)argv; (void)envp;
-}
-__attribute__((weak)) void __libc_csu_fini(void) {}
 
 // Consensus signature ciphersuite (proof-of-possession variant).
 // 43 bytes, the trailing NUL is excluded via `sizeof - 1`.

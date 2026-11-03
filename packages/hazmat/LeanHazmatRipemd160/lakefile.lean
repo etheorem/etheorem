@@ -32,10 +32,8 @@ unsafe def runPkgConfig (args : Array String)
           return fallback
     | .error _ => return fallback
 
-/-- OpenSSL link args via `pkg-config`, always with an explicit
-`-L<libdir>`: Lean's bundled `lld` does not search the system's
-default library paths (full rationale in LeanHazmatSha256's
-lakefile). On a pkg-config failure this returns the empty array; the
+/-- OpenSSL link args via `pkg-config`, with an explicit `-L<libdir>`
+on macOS only (full rationale in LeanHazmatSha256's lakefile). On a pkg-config failure this returns the empty array; the
 shim target below checks for that and fails the build with the
 actionable message (a lakefile-load-time `error` is not available in
 a plain definition). -/
@@ -46,8 +44,10 @@ unsafe def opensslLinkArgs : Array String :=
     -- The shim target turns the empty array into the build error with
     -- the install hint; nothing else consumes this value.
     #[]
-  else
+  else if System.Platform.isOSX then
     libDir.map (fun d => "-L" ++ d) ++ libs
+  else
+    libs
 
 /-- OpenSSL `-I<dir>` flags, for the OpenSSL headers on systems where
 they are not in the compiler's default search path (macOS Homebrew,
