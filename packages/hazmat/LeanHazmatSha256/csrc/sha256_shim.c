@@ -28,24 +28,12 @@
 #include <openssl/evp.h>
 #include <lean/lean.h>
 
-// glibc 2.34+ removed `__libc_csu_init` / `__libc_csu_fini`. Lean's
-// bundled `Scrt1.o` (used when linking `lake exe` binaries) still
-// references them, so on modern Debian/Ubuntu the final link fails
-// with `undefined symbol: __libc_csu_init`. Stub them out here so
-// any executable that transitively links this shim (e.g. SizzLean's
-// `ssz_bench`, LeanEthCS's `eth_ssz_vector_runner`) links cleanly.
-// The stubs are never called at runtime (newer glibc's `_start`
-// doesn't invoke them); they exist purely to satisfy the linker's
-// symbol-resolution pass. This shim is the single definition site.
-// It travels with the `libleanhazmat_sha256` archive to every
-// dependent's link step.
-//
-// This is a known Lean-on-glibc-2.34+ issue; the cleaner long-term
-// fix is to rebuild Lean's startup files against current glibc.
-void __libc_csu_init(int argc, char **argv, char **envp) {
-    (void)argc; (void)argv; (void)envp;
-}
-void __libc_csu_fini(void) {}
+// No `__libc_csu_init` / `__libc_csu_fini` here. Lean's bundled
+// `Scrt1.o` calls `__libc_csu_init` to run the static constructors,
+// and the toolchain's own `libc_nonshared.a` defines it. A definition
+// in this archive would replace the real one, and libc++ would then
+// run without its streams. The lakefile keeps the system libdir off
+// the Linux link line, so the toolchain's copy is the one `lld` finds.
 
 // SHA-256 digest size in bytes. Hardcoded because the primitive is
 // SHA-256 (not parameterised over hash family); the digest width is

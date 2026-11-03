@@ -81,27 +81,20 @@ unsafe def runPkgConfig (args : Array String)
           return fallback
     | .error _ => return fallback
 
-/-- OpenSSL link args via `pkg-config`. We *always* prepend an
-explicit `-L<libdir>` from `pkg-config --variable=libdir libcrypto`
-even when `pkg-config --libs` omits it: the Lean toolchain bundles
-its own `lld` whose default library search path does **not** include
-the system's standard locations (`/usr/lib`, `/usr/lib/x86_64-linux-gnu`,
-`/usr/lib64`, …), so an unqualified `-lcrypto` fails with
-`unable to find library -lcrypto` even though `libcrypto.so` is
-where the system would expect. The explicit `-L` makes the location
-unambiguous to Lean's `lld`.
-
-On Debian/Ubuntu `pkg-config --variable=libdir libcrypto` returns
-`/usr/lib/x86_64-linux-gnu`; on Fedora `/usr/lib64`; on macOS
-Homebrew `/opt/homebrew/opt/openssl@3/lib`; on Nix the store path.
-All transparent to this code, pkg-config does the platform
-discrimination for us. -/
+/-- OpenSSL link args via `pkg-config`, with an explicit `-L<libdir>`
+on macOS only. On Linux the toolchain's own `-L<toolchain>/lib`
+resolves `-lcrypto` to its static `libcrypto.a`, and a system `-L`
+would put the system's `libc_nonshared.a` ahead of the toolchain's,
+which breaks `Scrt1.o` (full rationale in LeanHazmatSha256's
+lakefile). -/
 unsafe def opensslLinkArgs : Array String :=
   let libDir := runPkgConfig #["--variable=libdir", "libcrypto"] #[]
   let libs   := runPkgConfig #["--libs",            "libcrypto"]
                   opensslFallbackLinkArgs
-  let libDirFlags := libDir.map (fun d => "-L" ++ d)
-  libDirFlags ++ libs
+  if System.Platform.isOSX then
+    libDir.map (fun d => "-L" ++ d) ++ libs
+  else
+    libs
 
 package SizzLean where
   -- SPDX identifier; the LICENSE file lives at the umbrella root.

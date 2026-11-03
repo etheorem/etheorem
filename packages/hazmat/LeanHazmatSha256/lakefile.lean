@@ -33,21 +33,18 @@ unsafe def runPkgConfig (args : Array String)
           return fallback
     | .error _ => return fallback
 
-/-- OpenSSL link args via `pkg-config`. We *always* prepend an
-explicit `-L<libdir>` from `pkg-config --variable=libdir libcrypto`
-even when `pkg-config --libs` omits it: the Lean toolchain bundles
-its own `lld` whose default library search path does **not** include
-the system's standard locations (`/usr/lib`, `/usr/lib/x86_64-linux-gnu`,
-`/usr/lib64`, …), so an unqualified `-lcrypto` fails with
-`unable to find library -lcrypto` even though `libcrypto.so` is where
-the system would expect. The explicit `-L` makes the location
-unambiguous to Lean's `lld`.
+/-- OpenSSL link args via `pkg-config`. Lean's bundled `lld` does not
+search the system's library paths. On macOS the args therefore carry
+an explicit `-L<libdir>` from `pkg-config --variable=libdir
+libcrypto` (Homebrew: `/opt/homebrew/opt/openssl@3/lib`).
 
-On Debian/Ubuntu `pkg-config --variable=libdir libcrypto` returns
-`/usr/lib/x86_64-linux-gnu`; on Fedora `/usr/lib64`; on macOS
-Homebrew `/opt/homebrew/opt/openssl@3/lib`; on Nix the store path.
-All transparent to this code. pkg-config does the platform
-discrimination for us.
+On Linux they carry no `-L`. The toolchain links every executable
+with `-L<toolchain>/lib -lcrypto` (`leanc --print-ldflags`), and that
+directory holds a static `libcrypto.a`, so `-lcrypto` resolves there.
+A system `-L` would also put the system's `libc_nonshared.a` ahead
+of the toolchain's. glibc 2.34 and later dropped `__libc_csu_init`
+from that archive, and the toolchain's `Scrt1.o` still calls it, so
+the link would fail with `undefined symbol: __libc_csu_init`.
 
 On any pkg-config failure this returns the empty array; the shim
 targets below check for that and fail the build with the actionable
@@ -61,8 +58,10 @@ unsafe def opensslLinkArgs : Array String :=
     -- The shim targets turn the empty array into the build error
     -- with the install hint; nothing else consumes this value.
     #[]
-  else
+  else if System.Platform.isOSX then
     libDir.map (fun d => "-L" ++ d) ++ libs
+  else
+    libs
 
 /-- The pkgConfigOpenSSLError hint, shared verbatim by the four
 OpenSSL-backed families' shim targets. -/
