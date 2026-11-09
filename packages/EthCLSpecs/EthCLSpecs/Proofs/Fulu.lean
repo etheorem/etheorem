@@ -1,5 +1,7 @@
 import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Codec
+import EthCLSpecs.Proofs.Fulu.Reachable
+import EthCLSpecs.Proofs.Fulu.StateInvariants
 import EthCLSpecs.Proofs.Fulu.Run
 
 /-!
@@ -23,4 +25,10 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Codec`: the `BasicSupported` gate by kernel `decide`, roundtrip, and
   non-malleability (`serialize_injective`) for `BeaconState`, `BeaconBlockBody`, `BeaconBlock`,
   and `SignedBeaconBlock` at the two shipped presets.
+* `EthCLSpecs.Proofs.Fulu.Reachable`: `ReachableState`, the Fulu states the state transition
+  reaches from an anchor before the next fork, with its `Anchors`, the `Nat` fork boundary
+  `forkSlot`, and the anchor-monotonicity and `unvalidated` lemmas.
+* `EthCLSpecs.Proofs.Fulu.StateInvariants`: `SimpleStateInvariants`, four facts every
+  reachable Fulu state satisfies, and the `invFields` projection that reduces a frame step to
+  one equation.
 -/

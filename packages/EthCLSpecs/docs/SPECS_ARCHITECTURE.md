@@ -668,6 +668,10 @@ activates the generated bridge from the child's `Preset` / `Config` to the
 parent's (`FRAMEWORK_ARCHITECTURE.md` §4.2). That is what lets the conversion run
 under a single `[Preset]` binder while the preset is still symbolic. The bridge
 lives one namespace below the fork, so no other file can reach it.
+Two proof modules open it as well, `Proofs/Gloas/Reachable.lean` and
+`Proofs/Heze/Reachable.lean`, because a reachable Gloas state can descend from a
+reachable Fulu one (§11.4). They sit outside the fork bodies, so the grep above
+does not count them.
 
 This does not reintroduce a shared spec layer. A shared layer would be a place
 both forks import for common helpers, which the inheritance mechanism removes the
@@ -1032,6 +1036,42 @@ inherited chain re-checks cheaply, and the proof cost concentrates on the diff. 
 theorems module is the containment boundary if proofs ever need mathlib, keeping it
 off the framework, spec, runner, and `PySpecTests` paths, the discipline the
 repository applies to its Poseidon proofs.
+
+### 11.4 Reachable states and the state invariants
+
+Invariant preservation needs a set of states to preserve over. `ReachableState`
+names that set, once per fork, in `Proofs/<Fork>/Reachable.lean`. It is an
+inductive over the plain `BeaconState`, with three parameters: the anchors, the
+`validated` flag, and the epoch of the next fork.
+
+* **The base case is an anchor.** The model builds no genesis state, and each
+  fork's `runGenesis` answers `.outOfScope`. So a chain starts from a
+  caller-supplied predicate. A theorem about reachable states
+  takes a hypothesis about the anchors. A later genesis can instantiate the
+  anchor without a change to the inductive.
+* **The steps are the two halves of `state_transition`.** `slots` is a successful
+  `processSlots`, and `block` is the signature check, `processBlock`, and the
+  state-root check. Upstream runs a fork upgrade inside `process_slots`, before the
+  block at the boundary slot. The split lets the upgrade sit between the halves.
+* **Gloas and Heze add `upgrade`.** It takes a reachable parent-fork state whose slot
+  is exactly `<FORK>_FORK_EPOCH * SLOTS_PER_EPOCH`, computed in `Nat` so that
+  `FAR_FUTURE_EPOCH` does not wrap. It applies the upgrade at the config's fork
+  version. The parent's inductive takes this fork's epoch as its window, so the
+  parent run stops at the boundary and no parent block lands on it.
+* **`validated` mirrors `validateResult`.** At `false` the block step skips both
+  checks. That set contains the honest one, and the checks never change a
+  post-state.
+
+Fork choice adds no step. `onBlock` runs `stateTransition`, a checkpoint state comes
+from `processSlots`, and `verifyExecutionPayloadEnvelope` stores the same value
+with a warmer cache.
+
+`SimpleStateInvariants`, in `Proofs/<Fork>/StateInvariants.lean`, is the first set
+of facts proved over the reachable states. It holds four facts: the header slot is at
+most the state slot; the four validator-indexed lists have the registry's length;
+the checkpoint epochs are in order, up to the previous epoch; and the `fork` field
+has an epoch no later than the current one and this fork's version. They are
+necessary for reachability and far from sufficient.
 
 ---
 
