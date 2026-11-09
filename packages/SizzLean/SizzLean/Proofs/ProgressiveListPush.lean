@@ -26,4 +26,11 @@ theorem progressiveListFoldlPush_val {α : Type} (xs : ProgressiveList α) (vs :
     unfold ProgressiveList.push
     rw [Array.push_eq_append, Array.append_assoc, ← List.toArray_cons]
 
+/-- A `push?` on a progressive list always appends `x` to the underlying array. -/
+theorem progressiveListPush?_eq_some {α : Type} {xs l : ProgressiveList α} {x : α}
+    (h : xs.push? x = some l) : l.val = xs.val.push x := by
+  unfold ProgressiveList.push? at h
+  cases h
+  rfl
+
 end SizzLean.Proofs

@@ -1,4 +1,5 @@
 import EthCLLib.Proofs.KeepsUncached
+import EthCLLib.Proofs.BoxSimp
 
 /-!
 # `EthCLLib.Proofs.RunEnsures`: what a successful run guarantees
@@ -59,6 +60,39 @@ result and post-state value satisfy `Q`. -/
 def RunEnsures {T ε α : Type} [SSZRepr T] [HasherTag] (v : T)
     (act : StateT (SSZ.Box HasherTag.H T) (Except ε) α) (Q : α → T → Prop) : Prop :=
   ∀ a s, act.run (pureState v) = .ok (a, s) → s = pureState s.view ∧ Q a s.view
+
+/-! ## Reducing the uncached box -/
+
+/-- The uncached box of `v` is the `.uncached` constructor around `v`. Stated here because the
+constructor's builder `Box.ofPure` is private to SizzLean. With it, `simp` reduces the `match`
+a record update makes on the box. -/
+@[box_reduce] theorem pureState_eq_uncached {T : Type} [SSZRepr T] [HasherTag] (v : T) :
+    (pureState v : SSZ.Box HasherTag.H T) = .uncached (UncachedSSZ.ofValue HasherTag.H v) := rfl
+
+/-- The view of a fresh uncached wrapper is the value it wraps. -/
+@[box_reduce] theorem uncachedSSZ_ofValue_view {T : Type} [SSZRepr T] [HasherTag] (v : T) :
+    (UncachedSSZ.ofValue HasherTag.H v).view = v := rfl
+
+/-- The view of an `.uncached` box is its wrapper's view. -/
+@[box_reduce] theorem box_view_uncached {T : Type} [SSZRepr T] [HasherTag]
+    (t : UncachedSSZ HasherTag.H T) : (SSZ.Box.uncached t).view = t.view := rfl
+
+attribute [box_reduce] SizzLean.Proofs.view_uncachedBox
+/-- The root of an `.uncached` box is the spec root of its view, and the box comes back
+unchanged. -/
+@[box_reduce] theorem box_hashTreeRoot_uncached {T : Type} [SSZRepr T] [HasherTag]
+    (t : UncachedSSZ HasherTag.H T) :
+    (SSZ.Box.uncached t).hashTreeRoot = (t.hashTreeRoot, SSZ.Box.uncached t) := rfl
+
+/-- `pure` in `Id` is the value itself. With `Id.run` unfolded, a pure `do` block over the box
+reduces to the box it returns. -/
+@[box_reduce] theorem id_pure_eq {α : Type} (a : α) : (pure a : Id α) = a := rfl
+
+/-- `bind` in `Id` is application. -/
+@[box_reduce] theorem id_bind_eq {α β : Type} (x : Id α) (f : α → Id β) : (x >>= f) = f x := rfl
+
+attribute [box_reduce] EthCLLib.Spec.stateRoot Id.run
+
 
 /-! ## Reading and weakening -/
 
@@ -178,6 +212,33 @@ theorem runEnsures_modifyThe {f : SSZ.Box HasherTag.H T → SSZ.Box HasherTag.H 
   injection hs with ha hs
   subst ha hs
   exact ⟨rfl, hq⟩
+
+/-- A write of a box held in a variable: the box must be the uncached box of some value.
+`appendState`'s `some` branch writes the box `sszAppend?` returned this way. -/
+theorem runEnsures_modifyThe_const {b : SSZ.Box HasherTag.H T} {Q : PUnit → T → Prop}
+    (h : ∃ w, b = pureState w ∧ Q ⟨⟩ w) :
+    RunEnsures v (modifyThe (SSZ.Box HasherTag.H T) (fun _ => b) :
+      StateT (SSZ.Box HasherTag.H T) (Except ε) PUnit) Q :=
+  runEnsures_modifyThe h
+
+/-- A write through `f` that maps the start box to the uncached box of its own view. The new
+state is named `(f (pureState v)).view`, a term the size of `f`'s application. The
+existential form `runEnsures_modifyThe` names it by the record `f` computes instead, and a run of
+several writes then nests one whole record inside each field of the next. -/
+theorem runEnsures_modifyThe_view {f : SSZ.Box HasherTag.H T → SSZ.Box HasherTag.H T}
+    {Q : PUnit → T → Prop} (hf : f (pureState v) = pureState (f (pureState v)).view)
+    (h : Q ⟨⟩ (f (pureState v)).view) :
+    RunEnsures v (modifyThe (SSZ.Box HasherTag.H T) f :
+      StateT (SSZ.Box HasherTag.H T) (Except ε) PUnit) Q :=
+  runEnsures_modifyThe ⟨_, hf, h⟩
+
+/-- `set b` of a box that is the uncached box of its own view, naming the new state `b.view`.
+The compact form of `runEnsures_set`, for `set (sszUpdate state with …)`. -/
+theorem runEnsures_set_view {b : SSZ.Box HasherTag.H T} {Q : PUnit → T → Prop}
+    (hb : b = pureState b.view) (h : Q ⟨⟩ b.view) :
+    RunEnsures v (set b : StateT (SSZ.Box HasherTag.H T) (Except ε) PUnit) Q := by
+  rw [hb]
+  exact runEnsures_set h
 
 /-- `getStateRoot` returns the start value's root and keeps the uncached box, which
 `hashTreeRoot_uncachedBox` hands back unchanged. -/
@@ -411,6 +472,14 @@ theorem runEnsures_foldlM_list_inv {f : β → α → StateT (SSZ.Box HasherTag.
     rw [List.foldlM_cons]
     exact runEnsures_bind ((hstep init x v hI).weaken fun b w hb => ih b w hb)
 
+/-- `Array.foldlM` with an invariant on the accumulator and state: the array fold is the fold of
+its `toList`. -/
+theorem runEnsures_foldlM_array_inv {f : β → α → StateT (SSZ.Box HasherTag.H T) (Except ε) β}
+    (I : β → T → Prop) (hstep : ∀ b x w, I b w → RunEnsures w (f b x) I) (xs : Array α)
+    (init : β) {v : T} (hinit : I init v) : RunEnsures v (xs.foldlM f init) I := by
+  rw [← Array.foldlM_toList]
+  exact runEnsures_foldlM_list_inv I hstep xs.toList init v hinit
+
 /-- `ForM.forM` over an `Array`, the shape of the operation loops, with an invariant on the
 state: the fold is `List.foldlM` over the elements. -/
 theorem runEnsures_forM_array_inv
@@ -485,32 +554,115 @@ end Relational
 
 /-! ## The tactic -/
 
+/-- One structural rule of the `run_ensures` walk. Each rule is its own `macro_rules` entry, so
+a later module adds rules for its own constructs; Lean tries the entries from the most recently
+declared back, and moves on when one fails. Every rule here matches at reducible transparency.
+The bind rule is declared first, so every leaf is tried before it. The `if` rule closes a branch
+whose guard `simp` refutes on its own, such as `¬ (n == n) = true`, so a walk through
+`set_or_append_list` does not follow the branches its index rules out. -/
+syntax "run_ensures_step" : tactic
+
+/-- The write rules of the `run_ensures` walk, tried only when every structural rule fails.
+They run at default transparency, because their `rfl` checks that the written box is uncached.
+They name the new state by the written box's view, `(f (pureState v)).view` or `b.view`, so a
+run of writes keeps a term linear in its length. -/
+syntax "run_ensures_fallback" : tactic
+
+macro_rules
+  | `(tactic| run_ensures_step) => `(tactic| with_reducible refine runEnsures_bind ?_)
+macro_rules
+  | `(tactic| run_ensures_step) =>
+    `(tactic| with_reducible refine runEnsures_dite (fun _ => ?_) (fun _ => ?_))
+macro_rules
+  | `(tactic| run_ensures_step) =>
+    `(tactic| (with_reducible refine runEnsures_ite (fun hc => ?_) (fun hc => ?_))
+              <;> try (simp [box_reduce] at hc; done))
+macro_rules
+  | `(tactic| run_ensures_step) =>
+    `(tactic| with_reducible refine runEnsures_liftErr (fun _ _ => ?_))
+macro_rules
+  | `(tactic| run_ensures_step) =>
+    `(tactic| with_reducible refine runEnsures_sszGetIdx _ _ (fun _ _ => ?_))
+macro_rules
+  | `(tactic| run_ensures_step) => `(tactic| with_reducible refine runEnsures_getStateRoot ?_)
+macro_rules
+  | `(tactic| run_ensures_step) => `(tactic| with_reducible refine runEnsures_set ?_)
+macro_rules
+  | `(tactic| run_ensures_step) => `(tactic| with_reducible refine runEnsures_get ?_)
+macro_rules
+  | `(tactic| run_ensures_step) => `(tactic| with_reducible refine runEnsures_pure ?_)
+macro_rules
+  | `(tactic| run_ensures_step) => `(tactic| with_reducible exact runEnsures_throw _)
+
+macro_rules
+  | `(tactic| run_ensures_fallback) => `(tactic| refine runEnsures_modifyThe_const ?_)
+macro_rules
+  | `(tactic| run_ensures_fallback) => `(tactic| refine runEnsures_set_view rfl ?_)
+macro_rules
+  | `(tactic| run_ensures_fallback) => `(tactic| refine runEnsures_modifyThe_view rfl ?_)
+
+open Lean Elab Tactic Meta in
+/-- Guard for the write rules: the goal is a `RunEnsures` triple whose action is, at its head, a
+write: `modifyThe`, a fork's `modifyState`, or `set`. The head is read after `whnfCore`, which
+reduces a leading `let` or beta-redex and unfolds no definition. Without the guard a write rule at default
+transparency would also match a callee whose whole body unfolds to one write, and the walk would
+pass over the call without its own fact. -/
+elab "run_ensures_is_write" : tactic => withMainContext do
+  let t ← whnfR (← instantiateMVars (← getMainTarget))
+  unless t.isAppOf ``RunEnsures do throwError "run_ensures_is_write: not a RunEnsures goal"
+  let act ← whnfCore (t.getArg! 6)
+  let isModifyState : Name → Bool
+    | .str _ s => s == "modifyState"
+    | _ => false
+  let ok : Bool := match act.getAppFn.constName? with
+    | some n => n == ``modifyThe || n == ``MonadStateOf.set || n == ``MonadState.set ||
+        isModifyState n
+    | none => false
+  unless ok do throwError "run_ensures_is_write: the action is not a write"
+
+open Lean Elab Tactic Meta in
+/-- Beta-reduce the head of the goal, and the head of a triple's action. A
+weakest-precondition goal arrives as `(fun a w => RunEnsures w (k a) Q) a₀ w₀`, and a rule
+elaborated against that unreduced type can leave an instance argument, such as an `if`'s
+`Decidable`, stuck. An action that opens with `have x := e` waits on its body the same way. -/
+elab "run_ensures_beta" : tactic => liftMetaTactic fun g => do
+  let t := (← instantiateMVars (← g.getType)).headBeta
+  -- On a triple, also reduce the action's head: a leading `have` or `let` from a `do` block,
+  -- or a beta-redex. `whnfCore` unfolds no definition, so a call stays a call.
+  let t ← if t.isAppOfArity ``RunEnsures 8 then do
+      let act ← whnfCore (t.getArg! 6)
+      pure (mkAppN t.getAppFn (t.getAppArgs.set! 6 act))
+    else pure t
+  return [← g.replaceTargetDefEq t]
+
+open Lean Elab Tactic Meta in
+/-- Tidy a postcondition leaf the walk left: read `(pureState w).view` back as `w` and reduce
+a loop step's postcondition. A goal that is still a `RunEnsures` triple is left alone, because
+rewriting inside its action term would change the term the next walk matches. -/
+elab "run_ensures_tidy" : tactic => withMainContext do
+  let t ← whnfR (← instantiateMVars (← getMainTarget))
+  unless t.isAppOf ``RunEnsures do
+    evalTactic (← `(tactic| try simp only [loopStepPost_yield, loopStepPost_done,
+      SizzLean.Proofs.view_uncachedBox, uncachedSSZ_ofValue_view]))
+
 /-- Walk a `RunEnsures` goal through straight-line code: leaves (`pure`, `throw`, `get`, `set`
-of a rebuilt box, `getStateRoot`, `liftErr`, and a record-update `modifyThe` or `modifyState`),
-gates (`if`, `dite`, and so `assert` and `assertH`), and binds. It leaves the postcondition goals
-it reaches for the author, with `(pureState w).view` read back as `w`.
+of a rebuilt box, `getStateRoot`, `sszGetIdx`, `liftErr`, and a record-update `modifyThe` or
+`modifyState`), gates (`if`, `dite`, and so `assert` and `assertH`), and binds. It leaves the
+postcondition goals it reaches for the author, with `(pureState w).view` read back as `w`, and
+leaves a goal it stops at, a call or a loop or a `match`, untouched.
 
 The structural rules match at reducible transparency, so a call to another spec step stays a
 call: `processEpoch >>= k` splits into `processEpoch` and `k`, and the goal for `processEpoch`
 is left for its own `RunEnsures` fact. At default transparency the bind rule would unfold the
-callee's definition and walk into its body. The `modifyThe` rule alone runs at default
-transparency, because its `rfl` computes the record update and because `modifyState` is a plain
+callee's definition and walk into its body. The write rules run at default transparency,
+because the record-update rule's `rfl` computes the update and because `modifyState` is a plain
 definition over `modifyThe`. A callee whose whole body is one `modifyState`, such as
-`processSlot`, is therefore walked as a write. Loops stop the walk: the author names the
-invariant. -/
+`processSlot`, is therefore walked as a write. A `set` of a record update on the read box,
+`set (sszUpdate state with …)`, is a write too. The walk stops at a loop, where the author names
+the invariant, and at a `match`, where the author splits. -/
 macro "run_ensures" : tactic => `(tactic|
-  (repeat' first
-    | with_reducible exact runEnsures_throw _
-    | with_reducible refine runEnsures_pure ?_
-    | with_reducible refine runEnsures_get ?_
-    | with_reducible refine runEnsures_set ?_
-    | with_reducible refine runEnsures_getStateRoot ?_
-    | with_reducible refine runEnsures_liftErr (fun _ _ => ?_)
-    | with_reducible refine runEnsures_ite (fun _ => ?_) (fun _ => ?_)
-    | with_reducible refine runEnsures_dite (fun _ => ?_) (fun _ => ?_)
-    | with_reducible refine runEnsures_bind ?_
-    | refine runEnsures_modifyThe ⟨_, rfl, ?_⟩)
-  <;> try simp only [loopStepPost_yield, loopStepPost_done, SizzLean.Proofs.view_uncachedBox])
+  (repeat' (run_ensures_beta; first | run_ensures_step | (run_ensures_is_write; run_ensures_fallback)))
+  <;> run_ensures_tidy)
 
 /-! ## Examples -/
 

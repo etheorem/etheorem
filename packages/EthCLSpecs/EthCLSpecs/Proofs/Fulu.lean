@@ -1,6 +1,12 @@
 import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Codec
+import EthCLSpecs.Proofs.Fulu.Invariants.Block
+import EthCLSpecs.Proofs.Fulu.Invariants.Epoch
+import EthCLSpecs.Proofs.Fulu.Invariants.Helpers
+import EthCLSpecs.Proofs.Fulu.Invariants.Justification
+import EthCLSpecs.Proofs.Fulu.Invariants.Slots
 import EthCLSpecs.Proofs.Fulu.Reachable
+import EthCLSpecs.Proofs.Fulu.ReachableInvariants
 import EthCLSpecs.Proofs.Fulu.StateInvariants
 import EthCLSpecs.Proofs.Fulu.Run
 
@@ -29,6 +35,13 @@ Re-exports:
   reaches from an anchor before the next fork, with its `Anchors`, the `Nat` fork boundary
   `forkSlot`, and the anchor-monotonicity and `unvalidated` lemmas.
 * `EthCLSpecs.Proofs.Fulu.StateInvariants`: `SimpleStateInvariants`, four facts every
-  reachable Fulu state satisfies, and the `invFields` projection that reduces a frame step to
-  one equation.
+  reachable Fulu state satisfies; `coreFields` and `RegistrySizes`, the values they read; and
+  `KeepsCore`, the step property nearly every substep has, with the frame tactics.
+* `EthCLSpecs.Proofs.Fulu.Invariants.Helpers`, `.Epoch`, `.Justification`, `.Block`, `.Slots`:
+  one fact per spec step. The shared mutators, fourteen epoch substeps and six block substeps
+  are `KeepsCore`; justification moves the checkpoint bound from the previous to the current
+  epoch; `processSlots_ensures` and the slot-increment lemmas join them over a run of slots.
+* `EthCLSpecs.Proofs.Fulu.ReachableInvariants`: `ReachableState.simpleStateInvariants`, the
+  induction; the window bound, slot monotonicity, closure under `stateTransition`, and
+  `simpleStateInvariants_not_sufficient`.
 -/

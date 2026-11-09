@@ -62,4 +62,13 @@ theorem sszListFoldlMPush?_val {α : Type} {cap : Nat} (xs : SSZList α cap) (vs
       rw [ite_eq_right hover]
       rfl
 
+/-- A successful `push?` appends `x` to the underlying array. The reading a proof about a
+spec append site needs: the longer list is the old one plus `x`. -/
+theorem sszListPush?_eq_some {α : Type} {cap : Nat} {xs l : SSZList α cap} {x : α}
+    (h : xs.push? x = some l) : l.val = xs.val.push x := by
+  unfold SSZList.push? at h
+  split at h
+  · cases h; rfl
+  · cases h
+
 end SizzLean.Proofs

@@ -1,7 +1,9 @@
 import EthCLLib.Proofs.Arith
+import EthCLLib.Proofs.BoxSimp
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
+import EthCLLib.Proofs.Preserves
 import EthCLLib.Proofs.Run
 import EthCLLib.Proofs.RunEnsures
 import EthCLLib.Proofs.StoreRun
@@ -40,6 +42,12 @@ Re-exports:
   `KeepsUncachedFrom`, `ReturnsUncached`, `RunPassesP`), their closure and loop
   lemmas, the indexed-read run equations, and the conditional bind law
   `runPure_bind_of_keepsUncached`.
+* `EthCLLib.Proofs.BoxSimp`: the `box_reduce` simp set, for reading a field of a state a
+  record update on the uncached box left.
+* `EthCLLib.Proofs.Preserves`: `Preserves`, the invariant every successful run keeps, and
+  `ReadsOnly`; leaves for the spec helpers (`getThe`, the checked operators,
+  `throwListFull`, `sszOfArrayM`); loop rules for `fuelLoop`, `forIn'`, pure `Id` loops, and
+  loops that carry a box; and the `append_split` tactic for `appendState`'s `match`.
 * `EthCLLib.Proofs.RunEnsures`: `RunEnsures`, the per-start triple that says what a
   successful run guarantees, with weakest-precondition closure lemmas, loop rules
   that take an invariant (`runEnsures_forIn_range` also sees the index), the
