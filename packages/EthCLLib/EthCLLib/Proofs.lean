@@ -3,6 +3,7 @@ import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
 import EthCLLib.Proofs.Run
+import EthCLLib.Proofs.RunEnsures
 import EthCLLib.Proofs.StoreRun
 
 /-!
@@ -39,4 +40,8 @@ Re-exports:
   `KeepsUncachedFrom`, `ReturnsUncached`, `RunPassesP`), their closure and loop
   lemmas, the indexed-read run equations, and the conditional bind law
   `runPure_bind_of_keepsUncached`.
+* `EthCLLib.Proofs.RunEnsures`: `RunEnsures`, the per-start triple that says what a
+  successful run guarantees, with weakest-precondition closure lemmas, loop rules
+  that take an invariant (`runEnsures_forIn_range` also sees the index), the
+  relational reading `KeepsUncachedWith`, and the `run_ensures` tactic.
 -/
