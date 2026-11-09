@@ -18,7 +18,8 @@ more case than the Fulu one:
   onboards builders, a `KeepsCore` step.
 
 `processBlock_ensures` composes the Gloas block: the parent payload first, then the header step,
-then the six other `KeepsCore` substeps.
+then the six other `KeepsCore` substeps. The window bound, slot monotonicity across the upgrade,
+and closure under `stateTransition` follow from the same facts, as in Fulu.
 
 The cross-fork statements name a Fulu state and its invariants, so this module opens the
 Gloas-to-Fulu preset bridge, as `Proofs/Gloas/Reachable.lean` does.
@@ -184,6 +185,38 @@ theorem slot_le_forkSlot
   | block sb hv hw _ hrun _ _ =>
     rw [((processBlock_ensures _ _ (hv.simpleStateInvariants hF hG)).runPure_ok hrun).1]
     exact Nat.le_of_lt hw
+
+/-- Slots only grow along a run, across the upgrade too: every reachable Gloas state's slot is
+at least the slot of some anchor, a Gloas one or a Fulu one the run started from. -/
+theorem anchor_slot_le
+    (hF : ∀ u, anchors.fulu u → EthCLSpecs.Proofs.Fulu.SimpleStateInvariants u)
+    (hG : ∀ v, anchors.gloas v → SimpleStateInvariants v) {v : BeaconState}
+    (h : ReachableState anchors validated nextForkEpoch v) :
+    (∃ a, anchors.gloas a ∧ a.slot ≤ v.slot) ∨ (∃ a, anchors.fulu a ∧ a.slot ≤ v.slot) := by
+  induction h with
+  | anchor ha _ => exact .inl ⟨_, ha, UInt64.le_refl _⟩
+  | @upgrade u w hu _ _ hrun =>
+    have hFu := EthCLSpecs.Proofs.Fulu.ReachableState.simpleStateInvariants hF hu
+    obtain ⟨a, ha, hle⟩ := EthCLSpecs.Proofs.Fulu.ReachableState.anchor_slot_le hF hu
+    have hk := (completeUpgradeToGloas_keepsCore _ _
+      ⟨rfl, (upgradeToGloas_invariants _ hFu).registrySizes⟩).runPure_ok hrun
+    have hs : w.slot = (upgradeToGloas gloasForkVersion u).slot := congrArg CoreFields.slot hk.1
+    refine .inr ⟨a, ha, ?_⟩
+    rw [hs]
+    exact hle
+  | slots target hv _ hrun ih =>
+    obtain ⟨hs, hlt, _⟩ :=
+      (processSlots_ensures target _ (hv.simpleStateInvariants hF hG)).runPure_ok hrun
+    have hgrow : ∀ {x : Slot}, x ≤ _ → x ≤ _ := fun hx =>
+      UInt64.le_trans hx (hs ▸ UInt64.le_of_lt hlt)
+    rcases ih with ⟨a, ha, hle⟩ | ⟨a, ha, hle⟩
+    · exact .inl ⟨a, ha, hgrow hle⟩
+    · exact .inr ⟨a, ha, hgrow hle⟩
+  | block sb hv _ _ hrun _ ih =>
+    have hs := ((processBlock_ensures _ _ (hv.simpleStateInvariants hF hG)).runPure_ok hrun).1
+    rcases ih with ⟨a, ha, hle⟩ | ⟨a, ha, hle⟩
+    · exact .inl ⟨a, ha, hs ▸ hle⟩
+    · exact .inr ⟨a, ha, hs ▸ hle⟩
 
 omit [Config] [CryptoBackend] in
 theorem runEnsures_with_run {α : Type} {act : GloasRun α} {v : BeaconState}

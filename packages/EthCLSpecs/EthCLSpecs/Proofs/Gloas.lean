@@ -75,7 +75,8 @@ Re-exports:
   Gloas fork boundary, with its `Anchors` and lemmas.
 * `EthCLSpecs.Proofs.Gloas.ReachableInvariants`: `ReachableState.simpleStateInvariants`, the
   induction, whose `upgrade` case carries the Fulu invariants through `upgradeToGloas` and
-  `completeUpgradeToGloas`; the window bound and closure under `stateTransition`.
+  `completeUpgradeToGloas`; the window bound, slot monotonicity across the upgrade, and
+  closure under `stateTransition`.
 * `EthCLSpecs.Proofs.Gloas.Run`: `GloasRun`, the state-transition monad every Gloas
   proof in this directory pins its theorems to. The generic `StateT`-over-`Except`
   bind and `Except` facts live in `EthCLLib.Proofs.Run`; both fork directories
