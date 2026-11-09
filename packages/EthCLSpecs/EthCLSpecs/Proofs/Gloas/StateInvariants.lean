@@ -1,4 +1,7 @@
 import EthCLSpecs.Gloas.EpochProcessing
+import EthCLSpecs.Proofs.Gloas.Run
+import EthCLLib.Proofs.Preserves
+import EthCLSpecs.Proofs.StepTactics
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.StateInvariants`: four facts every reachable Gloas state satisfies
@@ -7,8 +10,8 @@ import EthCLSpecs.Gloas.EpochProcessing
 `Proofs/Fulu/StateInvariants.lean` states for Fulu, with Gloas's fork version in the last one.
 Each fork elaborates its own `BeaconState`, so each fork states the facts over its own type.
 Every state in `ReachableState` (`Proofs/Gloas/Reachable.lean`) satisfies them, once the
-anchors do. Gloas turns the registry lists into `ProgressiveList`s; `.size` reads the length
-of either list kind. The
+anchors do. Gloas turns the registry lists into `ProgressiveList`s; `.size` reads the length of
+either list kind. The
 converse fails by design: the four facts read a handful of fields, so a state that satisfies
 them can still be one no chain produces. The invariants are necessary for reachability and
 far from sufficient.
@@ -28,9 +31,16 @@ far from sufficient.
 * `forkConsistent`: the `fork` field records an epoch no later than the current one, and the
   current version is Gloas's. Only a fork upgrade writes the field.
 
-`invFields` projects a state onto exactly the fields these four facts read.
-`SimpleStateInvariants.of_invFields_eq` then turns "this step keeps `invFields`" into "this
-step keeps the invariants", which is how most spec substeps are handled.
+## How a step keeps them
+
+Three of the four facts read only the slot, the header slot, the `fork` field and the three
+checkpoint epochs. `coreFields` projects a state onto those six values. The fourth reads the
+registry sizes, and `RegistrySizes` states it. Nearly every spec substep leaves the six values
+alone and keeps the registry sizes equal: it writes other fields, overwrites list entries in
+place, or appends to all five lists at once. `KeepsCore act` names that property, and
+`SimpleStateInvariants.of_coreFields_eq` turns it into preservation of the invariants. Only the
+header step, justification and finalization, and the slot increment change `coreFields`. The
+tactics that prove `KeepsCore` facts are in `Proofs/StepTactics.lean`, shared with Fulu.
 
 The anchors must satisfy all four, including the previous-epoch bound. A genesis state and an
 epoch-start checkpoint state do.
@@ -40,40 +50,36 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (saturatingSub)
+open EthCLLib.Spec (HasherTag saturatingSub)
 open EthCLSpecs.Gloas (Preset Config BeaconState Slot Epoch Fork computeEpochAtSlot)
 open EthCLSpecs.Gloas.Const (gloasForkVersion)
+open EthCLLib.Proofs (Preserves)
 
-/-- The fields `SimpleStateInvariants` reads, and nothing else. Two states with equal
-`invFields` satisfy the invariants together or not at all. `Fork` is a `forkcontainer`, and
-every `forkcontainer` takes the preset, so this structure does too. -/
-structure InvFields [Preset] where
+/-- The six values `SimpleStateInvariants` reads, other than the registry sizes. `Fork` is a
+`forkcontainer`, and every `forkcontainer` takes the preset, so this structure does too. -/
+structure CoreFields [Preset] where
   slot : Slot
   headerSlot : Slot
   forkData : Fork
   finalizedEpoch : Epoch
   previousJustifiedEpoch : Epoch
   currentJustifiedEpoch : Epoch
-  validatorsSize : Nat
-  balancesSize : Nat
-  inactivityScoresSize : Nat
-  previousParticipationSize : Nat
-  currentParticipationSize : Nat
 
-/-- Project a state onto the fields `SimpleStateInvariants` reads. A step whose run keeps
-`invFields` is a frame step for the invariants. -/
-def invFields [Preset] (v : BeaconState) : InvFields where
+/-- Project a state onto the six values `CoreFields` holds. -/
+def coreFields [Preset] (v : BeaconState) : CoreFields where
   slot := v.slot
   headerSlot := v.latestBlockHeader.slot
   forkData := v.forkData
   finalizedEpoch := v.finalizedCheckpoint.epoch
   previousJustifiedEpoch := v.previousJustifiedCheckpoint.epoch
   currentJustifiedEpoch := v.currentJustifiedCheckpoint.epoch
-  validatorsSize := v.validators.size
-  balancesSize := v.balances.size
-  inactivityScoresSize := v.inactivityScores.size
-  previousParticipationSize := v.previousEpochParticipation.size
-  currentParticipationSize := v.currentEpochParticipation.size
+
+/-- The four lists indexed by validator index have the registry's length. -/
+def RegistrySizes [Preset] (v : BeaconState) : Prop :=
+  v.balances.size = v.validators.size ∧
+  v.inactivityScores.size = v.validators.size ∧
+  v.previousEpochParticipation.size = v.validators.size ∧
+  v.currentEpochParticipation.size = v.validators.size
 
 /-- Four facts every reachable Gloas state satisfies. The module docstring gives the reason
 for each, and the reason the checkpoint bound is the previous epoch. -/
@@ -81,11 +87,7 @@ structure SimpleStateInvariants [Preset] [Config] (v : BeaconState) : Prop where
   /-- The latest block header is no later than the state. -/
   headerSlotLe : v.latestBlockHeader.slot ≤ v.slot
   /-- The four lists indexed by validator index have the registry's length. -/
-  registrySizes :
-    v.balances.size = v.validators.size ∧
-    v.inactivityScores.size = v.validators.size ∧
-    v.previousEpochParticipation.size = v.validators.size ∧
-    v.currentEpochParticipation.size = v.validators.size
+  registrySizes : RegistrySizes v
   /-- Finalized ≤ previous-justified ≤ current-justified ≤ previous epoch. -/
   checkpointOrder :
     v.finalizedCheckpoint.epoch ≤ v.previousJustifiedCheckpoint.epoch ∧
@@ -96,18 +98,77 @@ structure SimpleStateInvariants [Preset] [Config] (v : BeaconState) : Prop where
     v.forkData.epoch ≤ computeEpochAtSlot v.slot ∧
     v.forkData.currentVersion = gloasForkVersion
 
-/-- A step that keeps `invFields` keeps the invariants. Each field of the conclusion is the
-matching field of `hv`, rewritten along the field equations `h` unpacks into. -/
-theorem SimpleStateInvariants.of_invFields_eq [Preset] [Config] {v w : BeaconState}
-    (h : invFields w = invFields v) (hv : SimpleStateInvariants v) :
+/-- A step that keeps `coreFields` and the registry sizes keeps the invariants. Each field of
+the conclusion is the matching field of `hv`, rewritten along the field equations `h`
+unpacks into. -/
+theorem SimpleStateInvariants.of_coreFields_eq [Preset] [Config] {v w : BeaconState}
+    (h : coreFields w = coreFields v) (hr : RegistrySizes w) (hv : SimpleStateInvariants v) :
     SimpleStateInvariants w := by
-  obtain ⟨hh, hr, hc, hf⟩ := hv
-  simp only [invFields, InvFields.mk.injEq] at h
-  obtain ⟨hslot, hhead, hfork, hfin, hprev, hcurr, hval, hbal, hinact, hpp, hcp⟩ := h
-  refine ⟨?_, ?_, ?_, ?_⟩
+  obtain ⟨hh, _, hc, hf⟩ := hv
+  simp only [coreFields, CoreFields.mk.injEq] at h
+  obtain ⟨hslot, hhead, hfork, hfin, hprev, hcurr⟩ := h
+  refine ⟨?_, hr, ?_, ?_⟩
   · rw [hslot, hhead]; exact hh
-  · rw [hval, hbal, hinact, hpp, hcp]; exact hr
   · rw [hfin, hprev, hcurr, hslot]; exact hc
   · rw [hfork, hslot]; exact hf
+
+/-- The step invariant at the fixed core values `c`: the state has those six values, and its
+registry sizes agree. -/
+def StepInv [Preset] (c : CoreFields) (v : BeaconState) : Prop :=
+  coreFields v = c ∧ RegistrySizes v
+
+/-- The lengths of `validators` and of the four lists that run parallel to it. -/
+def listSizes [Preset] (v : BeaconState) : Nat × Nat × Nat × Nat × Nat :=
+  (v.validators.size, v.balances.size, v.inactivityScores.size,
+    v.previousEpochParticipation.size, v.currentEpochParticipation.size)
+
+/-- `w` agrees with `v` on the six core values and on the five list sizes. A record update that
+writes other fields, or overwrites list entries in place, gives such a pair. -/
+def FrameEq [Preset] (w v : BeaconState) : Prop :=
+  coreFields w = coreFields v ∧ listSizes w = listSizes v
+
+theorem FrameEq.refl [Preset] (v : BeaconState) : FrameEq v v := ⟨rfl, rfl⟩
+
+theorem FrameEq.trans [Preset] {u v w : BeaconState} (hwv : FrameEq w v) (hvu : FrameEq v u) :
+    FrameEq w u :=
+  ⟨hwv.1.trans hvu.1, hwv.2.trans hvu.2⟩
+
+/-- Equal list sizes carry the registry-size equalities. -/
+theorem RegistrySizes.of_listSizes [Preset] {v w : BeaconState} (h : listSizes w = listSizes v)
+    (hv : RegistrySizes v) : RegistrySizes w := by
+  obtain ⟨hb, hi, hp, hq⟩ := hv
+  simp only [listSizes, Prod.mk.injEq] at h
+  obtain ⟨sv, sb, si, sp, sq⟩ := h
+  exact ⟨by rw [sb, sv]; exact hb, by rw [si, sv]; exact hi, by rw [sp, sv]; exact hp,
+    by rw [sq, sv]; exact hq⟩
+
+/-- A state that agrees with a `StepInv` state on the six values and on the five list sizes
+satisfies `StepInv` too. The leaf of most frame proofs. -/
+theorem StepInv.of_frameEq [Preset] {c : CoreFields} {v w : BeaconState} (hv : StepInv c v)
+    (h : FrameEq w v) : StepInv c w := by
+  obtain ⟨hc, hb, hi, hp, hq⟩ := hv
+  obtain ⟨hcore, hsizes⟩ := h
+  simp only [listSizes, Prod.mk.injEq] at hsizes
+  obtain ⟨sv, sb, si, sp, sq⟩ := hsizes
+  exact ⟨hcore.trans hc, by rw [sb, sv]; exact hb, by rw [si, sv]; exact hi,
+    by rw [sp, sv]; exact hp, by rw [sq, sv]; exact hq⟩
+
+-- The two record-update helpers the fork body writes through, `modBalance` and
+-- `modValidator`, are plain definitions over `sszModify`. Tagging them `box_reduce` lets a frame
+-- proof see the field they write.
+attribute [box_reduce] EthCLSpecs.Gloas.modBalance EthCLSpecs.Gloas.modValidator
+
+/-- A run of `act` keeps the six core values fixed and the registry sizes equal, from every
+start. The property nearly every spec substep has. -/
+abbrev KeepsCore [Preset] [HasherTag] {α : Type} (act : GloasRun α) : Prop :=
+  ∀ c, Preserves (StepInv c) act
+
+/-- A `KeepsCore` step keeps the invariants. -/
+theorem KeepsCore.preserves_invariants [Preset] [HasherTag] [Config] {α : Type} {act : GloasRun α}
+    (h : KeepsCore act) : Preserves SimpleStateInvariants act := by
+  intro v hv
+  refine (h (coreFields v) v ⟨rfl, hv.registrySizes⟩).weaken ?_
+  intro _ w hw
+  exact SimpleStateInvariants.of_coreFields_eq hw.1 hw.2 hv
 
 end EthCLSpecs.Proofs.Gloas

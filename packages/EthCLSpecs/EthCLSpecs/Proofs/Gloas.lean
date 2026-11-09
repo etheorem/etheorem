@@ -5,10 +5,16 @@ import EthCLSpecs.Proofs.Gloas.ForkChoiceRun
 import EthCLSpecs.Proofs.Gloas.GetPtc
 import EthCLSpecs.Proofs.Gloas.InitializePtcWindow
 import EthCLSpecs.Proofs.Gloas.InitiateBuilderExit
+import EthCLSpecs.Proofs.Gloas.Invariants.Block
+import EthCLSpecs.Proofs.Gloas.Invariants.Epoch
+import EthCLSpecs.Proofs.Gloas.Invariants.Helpers
+import EthCLSpecs.Proofs.Gloas.Invariants.Justification
+import EthCLSpecs.Proofs.Gloas.Invariants.Slots
 import EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation
 import EthCLSpecs.Proofs.Gloas.ProcessDepositRequest
 import EthCLSpecs.Proofs.Gloas.ProcessOperations
 import EthCLSpecs.Proofs.Gloas.Reachable
+import EthCLSpecs.Proofs.Gloas.ReachableInvariants
 import EthCLSpecs.Proofs.Gloas.Run
 import EthCLSpecs.Proofs.Gloas.StateInvariants
 import EthCLSpecs.Proofs.Gloas.UpdateCheckpoints
@@ -60,15 +66,22 @@ Re-exports:
   coordinator equation (`processOperations_eq_seq`), deposit-gate failure, and
   exact success sequencing; handlers remain
   opaque and may modify state.
+* `EthCLSpecs.Proofs.Gloas.Invariants.Helpers`, `.Epoch`, `.Justification`, `.Block`, `.Slots`:
+  the Gloas counterparts of the Fulu step facts, for the inherited steps and for the EIP-7732
+  ones (the parent payload, the bid, builder requests and withdrawals, the payment and PTC
+  windows).
 * `EthCLSpecs.Proofs.Gloas.Reachable`: `ReachableState`, the Gloas states the state
   transition reaches, entering from a reachable Fulu state through the `upgrade` step at the
   Gloas fork boundary, with its `Anchors` and lemmas.
+* `EthCLSpecs.Proofs.Gloas.ReachableInvariants`: `ReachableState.simpleStateInvariants`, the
+  induction, whose `upgrade` case carries the Fulu invariants through `upgradeToGloas` and
+  `completeUpgradeToGloas`; the window bound and closure under `stateTransition`.
 * `EthCLSpecs.Proofs.Gloas.Run`: `GloasRun`, the state-transition monad every Gloas
   proof in this directory pins its theorems to. The generic `StateT`-over-`Except`
   bind and `Except` facts live in `EthCLLib.Proofs.Run`; both fork directories
   import that module and name the facts directly.
 * `EthCLSpecs.Proofs.Gloas.StateInvariants`: `SimpleStateInvariants`, the four Fulu facts
-  restated over the Gloas `BeaconState`, and its `invFields` projection.
+  restated over the Gloas `BeaconState`, with `coreFields`, `RegistrySizes` and `KeepsCore`.
 * `EthCLSpecs.Proofs.Gloas.UpdateCheckpoints`: `Gloas.updateCheckpoints` checkpoint
   monotonicity, the justified/finalized epoch never decreases. Its theorems sit
   in `EthCLSpecs.Proofs.Gloas`, since `updateCheckpoints` exists in both forks.

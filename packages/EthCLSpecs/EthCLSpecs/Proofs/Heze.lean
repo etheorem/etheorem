@@ -54,5 +54,6 @@ Re-exports:
 * `EthCLSpecs.Proofs.Heze.Run`: `HezeRun`, the state-transition monad the Heze
   beacon-state proofs pin their theorems to.
 * `EthCLSpecs.Proofs.Heze.StateInvariants`: `SimpleStateInvariants`, the four Fulu facts
-  restated over the Heze `BeaconState`, and its `invFields` projection.
+  restated over the Heze `BeaconState`, with `coreFields`, `RegistrySizes` and `KeepsCore`;
+  definitions only.
 -/

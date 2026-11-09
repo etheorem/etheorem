@@ -2,6 +2,7 @@ import EthCLSpecs.Fulu.Time
 import EthCLSpecs.Fulu.RegistryUpdates
 import EthCLSpecs.Proofs.Fulu.Run
 import EthCLLib.Proofs.Preserves
+import EthCLSpecs.Proofs.StepTactics
 
 /-!
 # `EthCLSpecs.Proofs.Fulu.StateInvariants`: four facts every reachable Fulu state satisfies
@@ -35,7 +36,8 @@ registry sizes, and `RegistrySizes` states it. Nearly every spec substep leaves 
 alone and keeps the registry sizes equal: it writes other fields, overwrites list entries in
 place, or appends to all five lists at once. `KeepsCore act` names that property, and
 `SimpleStateInvariants.of_coreFields_eq` turns it into preservation of the invariants. Only the
-header step, justification and finalization, and the slot increment change `coreFields`.
+header step, justification and finalization, and the slot increment change `coreFields`. The
+tactics that prove `KeepsCore` facts are in `Proofs/StepTactics.lean`, shared with Gloas.
 
 The anchors must satisfy all four, including the previous-epoch bound. A genesis state and an
 epoch-start checkpoint state do.
@@ -152,59 +154,6 @@ theorem StepInv.of_frameEq [Preset] {c : CoreFields} {v w : BeaconState} (hv : S
 -- `modValidator`, are plain definitions over `sszModify`. Tagging them `box_reduce` lets a frame
 -- proof see the field they write.
 attribute [box_reduce] EthCLSpecs.Fulu.modBalance EthCLSpecs.Fulu.modValidator
-
-/-- Close a `FrameEq w v` goal where `w` is a record update of `v`: the six core values agree
-by `rfl` or after splitting an `if` the update holds, and the list sizes agree by `rfl` or
-through `SSZList.set!`'s size lemma. -/
-macro "frame_eq" : tactic => `(tactic| first
-  | exact ⟨rfl, rfl⟩
-  | exact ⟨rfl, by simp [listSizes, box_reduce, SizzLean.Proofs.sszListSet!_size]⟩
-  | (constructor
-     <;> (simp only [coreFields, listSizes, box_reduce]
-          <;> (repeat' split_ite)
-          <;> simp [box_reduce, SizzLean.Proofs.sszListSet!_size])))
-
-open Lean Elab Tactic in
-/-- Close a `StepInv c w` leaf from some `StepInv c v` hypothesis, when `w` is a record update of
-`v` that `frame_eq` handles. It tries each `StepInv` hypothesis, most recent first: a `subst`
-reorders the context, so the right one need not be the last. -/
-elab "frame_leaf" : tactic => withMainContext do
-  for ld in (← getLCtx).decls.toList.reverse.filterMap id do
-    if ld.isImplementationDetail then continue
-    let ty ← instantiateMVars ld.type
-    unless ty.isAppOf ``StepInv do continue
-    let saved ← saveState
-    try
-      let h ← Term.exprToSyntax ld.toExpr
-      evalTactic (← `(tactic| (refine StepInv.of_frameEq $h ?_) <;> (frame_eq; done)))
-      return
-    catch _ =>
-      saved.restore
-  throwError "frame_leaf: no StepInv hypothesis gives the goal by a frame step"
-
-/-- Close a step-invariant leaf: a hypothesis that states it, or a record update of the state
-some `StepInv` hypothesis is about. -/
-macro "frame_close" : tactic => `(tactic| first | assumption | frame_leaf)
-
-/-- Step over a call to a `KeepsCore` step: the rest of the body runs from a state that
-satisfies the same `StepInv`. `frame_close` proves the premise once the goal has fixed the
-start, which may be a record update of an earlier state. -/
-macro "call " h:term : tactic =>
-  `(tactic| refine EthCLLib.Proofs.Preserves.run ($h _) (by frame_close) (fun _ _ _ => ?_))
-
-/-- Step over a call to a `ReadsOnly` accessor. -/
-macro "call_ro " h:term : tactic =>
-  `(tactic| refine EthCLLib.Proofs.Preserves.run
-    (EthCLLib.Proofs.ReadsOnly.preserves (P := StepInv _) $h) (by frame_close) (fun _ _ _ => ?_))
-
-/-- Step over a call that writes only the box it is handed, such as `increaseBalance`. `h`
-takes the `StepInv` fact for the handed value, which `frame_close` proves once the goal has
-fixed that value, and returns one for the value of the box it hands back. The threaded state
-stays, and the returned box is `pureState s'`. -/
-macro "call_box " h:term : tactic =>
-  `(tactic| (refine EthCLLib.Proofs.RunEnsures.weaken ($h (by frame_close)) (fun _ _ hbox => ?_)
-             obtain ⟨hst, _, hb, _⟩ := hbox
-             subst hst hb))
 
 /-- A run of `act` keeps the six core values fixed and the registry sizes equal, from every
 start. The property nearly every spec substep has. -/

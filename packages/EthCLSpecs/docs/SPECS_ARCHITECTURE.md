@@ -1073,6 +1073,26 @@ the checkpoint epochs are in order, up to the previous epoch; and the `fork` fie
 has an epoch no later than the current one and this fork's version. They are
 necessary for reachability and far from sufficient.
 
+`ReachableState.simpleStateInvariants` proves them for every reachable Fulu and Gloas
+state, in `Proofs/<Fork>/ReachableInvariants.lean`, given anchors that satisfy them.
+Heze has the definitions and no step proofs. The proof rests on one step property.
+`KeepsCore act` says a run keeps six values fixed (the slot, the header slot, the
+`fork` field and the three checkpoint epochs) and keeps the registry sizes equal.
+Nearly every substep has it, and `Proofs/<Fork>/Invariants/` proves it one substep at a
+time. Three steps change the six values. The header step writes the state's own slot.
+Justification moves the checkpoint bound from the previous epoch to the current one.
+The slot increment that ends the epoch moves it back. The upgrade case copies every value
+the invariants read and writes a `fork` field for Gloas.
+
+The step facts are Hoare triples over the pure runner, `RunEnsures v act Q`
+(`EthCLLib/Proofs/RunEnsures.lean`), with an invariant form, `Preserves`
+(`EthCLLib/Proofs/Preserves.lean`). The `run_ensures` tactic walks a body through
+binds, gates and record writes and stops at calls and loops. The frame tactics in
+`Proofs/StepTactics.lean` close the leaves for whichever fork's names are in scope. The
+same facts give a reachable state's window bound, closure under `stateTransition`, and,
+for Fulu, slot monotonicity and a state that satisfies the invariants and is not
+reachable (`simpleStateInvariants_not_sufficient`).
+
 ---
 
 ## 12. Spec-revision tracking and the discrepancy policy

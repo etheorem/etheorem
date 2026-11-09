@@ -71,7 +71,10 @@ most call sites free is a small set of invariant lemmas the default tactic can f
   `for i in [0:validators.size]`.
 - the parallel-length invariant `(sszGet state balances).size = (sszGet state
   validators).size`, for the reward and penalty reads that index `balances` at a validator
-  index.
+  index. It now holds on every reachable Fulu and Gloas state: it is the `registrySizes`
+  field of `SimpleStateInvariants`, which `ReachableState.simpleStateInvariants` proves
+  (`Proofs/Fulu/ReachableInvariants.lean`, `Proofs/Gloas/ReachableInvariants.lean`). A
+  call site that holds a reachable state can read it from there.
 
 With those registered for `grind` / `aesop`, the `autoParam` default discharges at the
 call sites and the consumers read as before.
