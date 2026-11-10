@@ -17,9 +17,11 @@ tier1 EthCLSpecs.Fulu.getBlockRoot
 tier1 EthCLSpecs.Fulu.getBlockRootAtSlot
 tier1 EthCLSpecs.Fulu.getCurrentEpoch
 tier1 EthCLSpecs.Fulu.getExpectedWithdrawals
+tier1 EthCLSpecs.Fulu.getMaxEffectiveBalance
 tier1 EthCLSpecs.Fulu.getNextSyncCommittee
 tier1 EthCLSpecs.Fulu.getRandaoMix
 tier1 EthCLSpecs.Fulu.initiateValidatorExit
+tier1 EthCLSpecs.Fulu.isActiveValidator
 tier1 EthCLSpecs.Fulu.pcLoop
 tier1 EthCLSpecs.Fulu.ppdLoop
 tier1 EthCLSpecs.Fulu.processAttestation

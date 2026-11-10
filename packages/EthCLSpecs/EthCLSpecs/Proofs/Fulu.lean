@@ -2,6 +2,9 @@ import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Codec
 import EthCLSpecs.Proofs.Fulu.ConfigValid
 import EthCLSpecs.Proofs.Fulu.EpochSafe
+import EthCLSpecs.Proofs.Fulu.EpochSuccess.Balances
+import EthCLSpecs.Proofs.Fulu.EpochSuccess.Consolidations
+import EthCLSpecs.Proofs.Fulu.EpochSuccess.FieldSteps
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.FrameSteps
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Selection
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Stage

@@ -80,10 +80,11 @@ class PresetValid [Preset] : Prop where
   /-- `test_incentives`: no ETH is minted in `slash_validator`. -/
   slashingPenaltyLeWhistleblowerReward :
     minSlashingPenaltyQuotientElectra ≤ whistleblowerRewardQuotientElectra
-  /-- `test_validators`: the registry and committee caps are positive, and a committee fits
-  the registry. -/
-  committeeBounds : 1 ≤ validatorRegistryLimit ∧ 1 ≤ maxCommitteesPerSlot ∧
-    1 ≤ targetCommitteeSize ∧ 1 ≤ maxValidatorsPerCommittee ∧
+  /-- `test_validators`: the registry and committee caps lie in `[1, UINT64_MAX]`, and a
+  committee fits the registry. -/
+  committeeBounds : 1 ≤ validatorRegistryLimit ∧ validatorRegistryLimit < 2 ^ 64 ∧
+    1 ≤ maxCommitteesPerSlot ∧ maxCommitteesPerSlot < 2 ^ 64 ∧
+    1 ≤ targetCommitteeSize ∧ targetCommitteeSize < 2 ^ 64 ∧ 1 ≤ maxValidatorsPerCommittee ∧
     maxValidatorsPerCommittee ≤ validatorRegistryLimit / slotsPerEpoch / maxCommitteesPerSlot
   /-- Electra `test_processing_pending_partial_withdrawals`. -/
   partialsLtWithdrawals : maxPendingPartialsPerWithdrawalsSweep < maxWithdrawalsPerPayload
