@@ -6,7 +6,9 @@ import EthCLLib.Proofs.MerkleBranch
 import EthCLLib.Proofs.Preserves
 import EthCLLib.Proofs.Run
 import EthCLLib.Proofs.RunEnsures
+import EthCLLib.Proofs.RunSucceeds
 import EthCLLib.Proofs.StoreRun
+import EthCLLib.Proofs.ZeroChunks
 
 /-!
 # `EthCLLib.Proofs`: framework proof modules
@@ -52,4 +54,10 @@ Re-exports:
   successful run guarantees, with weakest-precondition closure lemmas, loop rules
   that take an invariant (`runEnsures_forIn_range` also sees the index), the
   relational reading `KeepsUncachedWith`, and the `run_ensures` tactic.
+* `EthCLLib.Proofs.RunSucceeds`: `RunSucceeds`, the total-correctness triple: the run
+  succeeds and its result satisfies the postcondition. The same rule set as `RunEnsures`,
+  with each check's premise made explicit; `RunSucceeds.and_ensures` to join a
+  partial-correctness fact; and the `run_succeeds` tactic.
+* `EthCLLib.Proofs.ZeroChunks`: `ZeroChunksOften`, the hash premise under which
+  balance-weighted selection fills before its `uint64` pass counter overflows.
 -/
