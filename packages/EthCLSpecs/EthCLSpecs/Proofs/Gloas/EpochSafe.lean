@@ -151,8 +151,8 @@ theorem LiveUnslashed.proposers_pos [Preset] [HasherTag] {v : BeaconState} {e : 
 
 /-- The reward `get_flag_index_deltas` pays validator `vi` for flag `f` outside an inactivity
 leak: `base_reward * weight * unslashed_participating_increments // (active_increments *
-WEIGHT_DENOMINATOR)`, read off the state as the spec does (`Gloas/EpochProcessing.lean:132`). In a
-leak the spec pays nothing, so this bounds the reward either way. -/
+WEIGHT_DENOMINATOR)`, read off the state as `getFlagIndexDeltas` (`Fulu/EpochProcessing.lean:115-135`)
+reads it. In a leak the spec pays nothing, so this bounds the reward either way. -/
 def flagReward [Preset] [HasherTag] (v : BeaconState) (f : Nat) (vi : ValidatorIndex) : Nat :=
   (v.validators.val[vi.toNat]!).effectiveBalance.toNat / Const.effectiveBalanceIncrement *
       getBaseRewardPerIncrement (pureState v) *
