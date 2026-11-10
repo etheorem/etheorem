@@ -1093,6 +1093,62 @@ same facts give a reachable state's window bound, closure under `stateTransition
 for Fulu, slot monotonicity and a state that satisfies the invariants and is not
 reachable (`simpleStateInvariants_not_sufficient`).
 
+### 11.5 Epoch processing cannot fail
+
+`SimpleStateInvariants` holds on every reachable state, but it still allows states on which
+`processEpoch` fails. A run fails at an assert, an index read past a list's end, a checked
+`uint64` operation, or a `fuelLoop` that runs out of fuel. `EpochSafe b n v`, in
+`Proofs/<Fork>/EpochSafe.lean`, names states on which none of these can fire.
+`processEpoch_succeeds` proves that it is enough. From an `EpochSafe b (n + 1)` state at the
+last slot of an epoch, the run returns `.ok` at an `EpochSafe b n` state.
+
+* **The success triple.** `RunSucceeds v act Q` (`EthCLLib/Proofs/RunSucceeds.lean`) is total
+  correctness over the pure runner. The run returns `.ok` at a plain value, and the result and
+  the value satisfy `Q`. Its rules are in weakest-precondition form, as for `RunEnsures`, and
+  the `run_succeeds` tactic walks a body the same way. A gate leaves its condition as a goal,
+  and a throw branch leaves `False`. `RunSucceeds.and_ensures` joins a success fact to a
+  partial-correctness fact, so `processEpoch_succeeds_simple` reuses `processEpoch_ensures` for
+  the invariants of §11.4.
+* **Config validity.** Some failures depend only on the constants. `PresetValid` and
+  `ConfigValid`, in `Proofs/<Fork>/ConfigValid.lean`, are `Prop` classes. They mirror the
+  upstream `test_config_invariants.py` rules and add the rules the spec needs beyond them;
+  `DISCREPANCIES.md` lists the additions. Both shipped presets satisfy them by `decide`, and the
+  Gloas classes extend the Fulu ones.
+* **The budget.** `EpochSafe` takes a budget `b` and a count `n` of further calls. The budget
+  caps how much one call adds to one balance: three flag rewards, the deposits one call
+  applies, and the queued consolidations. The fields that bound room (the balances against
+  `2^64`, the exit queue, the historical summaries against their limit) each leave room for
+  `n + 1` calls. A call spends one unit.
+* **Two premises outside the state.** `RewardsWithin R v` bounds each flag reward by `R`. The
+  reward divides by the current active balance, which no state field bounds from below, so the
+  premise is per call. `ZeroChunksOften k` (`EthCLLib/Proofs/ZeroChunks.lean`) is the hash
+  premise. Each seed yields at least `k` zero two-byte chunks among the passes of the
+  balance-weighted sampler below `2^64 - 1`. A zero chunk accepts any candidate, so the sampler
+  fills its `k` seats before its counter overflows. Both are hypotheses of the theorem, and
+  neither is an axiom.
+* **The stage invariant.** The proof runs the substeps in order, fifteen in Fulu and seventeen
+  in Gloas. Between two substeps a `Stage` (`Proofs/<Fork>/EpochSuccess/Stage.lean`) relates the
+  current state to the start. It keeps the slot and the registry sizes, and it carries caps
+  that each substep raises. A substep's lemma takes a `Stage` with enough room and returns one
+  with updated caps. The main theorem reads `EpochSafe b n` off the last `Stage`.
+* **Liveness.** At the last slot of epoch `E`, the sync-committee selection reads the active
+  set at `E + 1`, and the proposer selection reads it at `E + MIN_SEED_LOOKAHEAD + 1`. The
+  `live` field names an active validator at each. At the second epoch Gloas also needs
+  `SLOTS_PER_EPOCH` active validators, so that each slot's payload-timeliness committee has a
+  candidate, and one unslashed validator for the proposers.
+
+The epoch transition follows. `processSlots_epoch_ok` runs `processSlots` from the last slot
+of an epoch to the next slot. `processSlot` writes no field that `EpochSafe` reads, so the run
+succeeds at an `EpochSafe b n` state moved one slot on, and the end state satisfies
+`SimpleStateInvariants`. Several fields read the slot (`live`, `slotRoom` and the exit room),
+so the moved state is not `EpochSafe` itself. The next epoch needs those facts at its own slot,
+and a new reward premise. Blocks between two epochs change the state too, and no block-side
+proof keeps `EpochSafe` yet. `FUTURE_WORK.md` records the routes to each.
+
+The proofs leave the model's arithmetic as it is. At a site where the model wraps and the
+pyspec raises, a success theorem holds for the model alone. `DISCREPANCIES.md` lists those
+sites.
+
 ---
 
 ## 12. Spec-revision tracking and the discrepancy policy

@@ -103,3 +103,62 @@ until the lemmas and the threading land together, so the build stays clean throu
 local-discharge shapes (loop, `size - 1`, `vget`) need no lemma and could land sooner; they
 are grouped into the same pass so the read surface changes once. Every total read is correct
 already; each gains a proof when the pass runs.
+
+## The premises left on the epoch-success theorems
+
+`processEpoch_succeeds` (`SPECS_ARCHITECTURE.md` §11.5) proves one call. Three things stand
+between it and a chain of calls, and a fourth is the gap list it found.
+
+### A reward bound read off the state
+
+`RewardsWithin R v` is a premise of each call. A flag reward is
+`base_reward * weight * U / (A * WEIGHT_DENOMINATOR)`, where `U` is the participating balance
+of the previous epoch and `A` is the current active balance. A participant was active in the
+previous epoch, so `U` is at most `A` plus the stake that left the active set at the epoch
+boundary. Exits are rate-limited by the churn, so that stake has a bound, and `U / A` has one
+with it.
+
+The bound is not a state fact yet. It needs an exit-flow invariant: for each future epoch `e`,
+the stake whose `exit_epoch` is `e` stays within the churn budget that
+`earliest_exit_epoch` and `exit_balance_to_consume` record. Every operation that creates an exit
+must keep it: voluntary exits, execution-layer exit requests, slashings, consolidation
+requests, and the ejections in `processRegistryUpdates`. That is block-side work. Its shape is
+a new `EpochSafe` field and a lemma `rewardsWithin_of_exitFlow` that discharges the premise
+from it. The worst-case reward then follows from `EFFECTIVE_BALANCE_INCREMENT`, the churn
+limit and the base reward.
+
+### Liveness and room at the next epoch
+
+`processSlots_epoch_ok` ends at an `EpochSafe b n` state moved one slot on. The moved state
+is not `EpochSafe` itself: `live`, `slotRoom` and the exit room read the slot. `slotRoom` and
+the exit room can take a further count, as the balance room does. Liveness cannot. A validator
+active at `E + MIN_SEED_LOOKAHEAD + 1` can leave before `E + MIN_SEED_LOOKAHEAD + 2`. A bound
+that keeps the active set nonempty needs the activation and exit queues, the same accounting
+as the reward bound.
+
+### Blocks between epochs
+
+No block-side proof keeps `EpochSafe`. The block operations grow the deposit and consolidation
+queues, change balances, and create exits. The fields that need work are the queue caps
+(`depositCap`, `consolidationCount`), the balance room, and the exit room. The structural
+fields (the indices in the consolidation queue and the effective-balance cap) need the same
+work for `processConsolidationRequest` and the deposit path. Proved on every reachable state,
+they would join `SimpleStateInvariants`.
+
+### The hash premise
+
+`ZeroChunksOften` is a premise on the hash. A deterministic route exists for the proposer
+and sync-committee selections. A candidate with the full `MAX_EFFECTIVE_BALANCE_ELECTRA` passes
+every threshold, and the shuffle visits each candidate once per round, so one such validator
+fills the selection within `size` rounds. That route rests on the shuffle bijection (the
+`computeShuffledPermutation` row of `PROOF_LEDGER.md`). It cannot cover the Gloas
+payload-timeliness committee, whose candidate list is one slot's committees and need not
+contain such a validator.
+
+### The silent wraps
+
+`DISCREPANCIES.md` lists the sites where the model wraps and the pyspec raises. Each fix makes
+the model raise there, and the success proofs then need the room that keeps the site in range.
+For the reward numerator, the balance fold and the proposer lookahead's start slot, that is a
+new `EpochSafe` field each. For the sync-committee pubkeys, it is a field that every pubkey in
+the registry passes `KeyValidate`, which the deposit signature check gives on the block side.
