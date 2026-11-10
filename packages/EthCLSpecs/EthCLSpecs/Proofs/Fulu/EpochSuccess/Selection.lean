@@ -1,6 +1,17 @@
 import EthCLSpecs.Fulu.Committees
 import EthCLLib.Proofs.ZeroChunks
 
+/-!
+# `EthCLSpecs.Proofs.Fulu.EpochSuccess.Selection`: the balance-weighted selection fills
+
+`compute_balance_weighted_selection` draws candidates until it has `size` of them, with a
+`uint64` pass counter that faults at `2^64 - 1`. `cbwsAux_ok` shows the draw loop fills under the
+hash premise `ZeroChunksOften`: each zero chunk accepts its candidate, and the loop's cached
+random bytes always hold the chunk block of the current pass. The selection's own
+`assert (total > 0)` needs a nonempty candidate list. The proposer and sync-committee selections
+call it with the active validators of a future epoch.
+-/
+
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu

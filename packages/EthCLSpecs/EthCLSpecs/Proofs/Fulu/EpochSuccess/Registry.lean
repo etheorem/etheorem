@@ -1,5 +1,18 @@
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.FieldSteps
 
+/-!
+# `EthCLSpecs.Proofs.Fulu.EpochSuccess.Registry`: the registry updates eject within the budget
+
+An ejection reserves exit churn for a validator whose effective balance is at most
+`EJECTION_BALANCE`. The per-epoch exit churn is at least `exitChurnFloor` under `ConfigValid`, so
+`reserve_churn` moves the earliest exit epoch by at most `ejectionStep`, and the exit epoch plus
+`MIN_VALIDATOR_WITHDRAWABILITY_DELAY` fits in a `uint64` while `EpochSafe.exitRoom` lasts.
+
+Exits and activations scheduled at epoch `E` land at or past `E + 1 + MAX_SEED_LOOKAHEAD`, after
+both sampled epochs, so they leave every validator's activity there unchanged. The loop body has
+two join points; `hJ2` and `hJ1` prove each once.
+-/
+
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu

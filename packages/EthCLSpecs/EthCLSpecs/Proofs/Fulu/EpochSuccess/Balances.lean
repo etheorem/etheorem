@@ -1,6 +1,15 @@
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.FrameSteps
 import EthCLSpecs.Proofs.Fulu.Balances
 
+/-!
+# `EthCLSpecs.Proofs.Fulu.EpochSuccess.Balances`: the balance writes and the slashings substep
+
+`increaseBalance` succeeds in range and under the overflow bound, and `decreaseBalance` in range;
+both write one entry of the uncached box they are handed. `Stage.setBalances` keeps a stage across
+a balance write under a new cap. The slashings substep only lowers balances, so it keeps the stage
+as it is.
+-/
+
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu

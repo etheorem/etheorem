@@ -1,5 +1,14 @@
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.FieldSteps
 
+/-!
+# `EthCLSpecs.Proofs.Fulu.EpochSuccess.Rewards`: the rewards and penalties substep
+
+`getFlagIndexDeltas` succeeds on every registry index, and each reward it returns is at most the
+`flagReward` formula. `applyDeltas` keeps an invariant on the index: entries the loop has passed
+are under the raised cap, and entries it has not reached are still under the old one, so each
+increase has room. Three flag passes raise the cap by `3 * R`; the inactivity pass pays no reward.
+-/
+
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu

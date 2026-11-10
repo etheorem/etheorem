@@ -1,5 +1,14 @@
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.FieldSteps
 
+/-!
+# `EthCLSpecs.Proofs.Fulu.EpochSuccess.Consolidations`: the consolidation queue drains
+
+The scan reads each queued source and target in the registry (`Stage.consolidationIdx`) and
+moves at most the source's effective balance, at most `MAX_EFFECTIVE_BALANCE_ELECTRA`, into the
+target. The target's balance then grows by at most one cap per queued entry, which the budget
+covers. The scan's fuel never runs out before its `npc ≥ size` guard ends it.
+-/
+
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu

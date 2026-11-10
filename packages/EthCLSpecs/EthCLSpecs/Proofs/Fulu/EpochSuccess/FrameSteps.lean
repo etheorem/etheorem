@@ -2,6 +2,20 @@ import EthCLSpecs.Proofs.Fulu.EpochSuccess.Stage
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Selection
 import EthCLSpecs.Proofs.Fulu.Invariants.Slots
 
+/-!
+# `EthCLSpecs.Proofs.Fulu.EpochSuccess.FrameSteps`: the substeps that keep the stage fields
+
+Seven substeps write no field `Stage` reads: justification and finalization, the inactivity
+update, the eth1, slashings and RANDAO resets, the sync-committee rotation, and the proposer
+lookahead. Each keeps the `Stage` it starts from.
+
+Justification reads the block roots of the previous and current epoch starts. At the last slot of
+an epoch both lie in the root window when `PresetValid` holds (`epochStart_window`), and the
+window bound fits in a `uint64` under `EpochSafe.slotRoom`. Justification and the inactivity
+update also keep the fields the reward formula reads (`rewardInputs`). The two selections need
+the hash premise and the liveness the stage carries.
+-/
+
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu
@@ -74,18 +88,22 @@ macro "ro_call " h:term : tactic =>
 
 theorem processInactivityUpdates_succeeds {b : EpochBudget} {v : BeaconState} {caps : StageCaps}
     {w : BeaconState} (hw : Stage b v caps w) :
-    RunSucceeds w (processInactivityUpdates (StateTransition := FuluRun)) (fun _ w' => Stage b v caps w') := by
+    RunSucceeds w (processInactivityUpdates (StateTransition := FuluRun))
+      (fun _ w' => Stage b v caps w' ∧ rewardInputs w' = rewardInputs w) := by
   unfold processInactivityUpdates
   run_succeeds
-  · exact hw
+  · exact ⟨hw, by first | rfl | trivial⟩
   · -- The scores loop runs inside the write; each step overwrites one score in place.
-    refine runSucceeds_modifyThe (Exists.imp (fun _ h => ⟨h.1, hw.of_frame h.2⟩)
-      (pureState_forIn_array_inv (fun s => stageFields s = stageFields w)
+    refine runSucceeds_modifyThe (Exists.imp (fun _ h => ⟨h.1, hw.of_frame h.2.1, h.2.2⟩)
+      (pureState_forIn_array_inv
+        (fun s => stageFields s = stageFields w ∧ rewardInputs s = rewardInputs w)
         (by
           intro _ s hs
-          refine ⟨_, rfl, ?_⟩
-          rw [← hs]
-          simp [stageFields, listSizes, box_reduce, SizzLean.Proofs.sszListSet!_size]) _ _ rfl))
+          refine ⟨_, rfl, ?_, ?_⟩
+          · rw [← hs.1]
+            simp [stageFields, listSizes, box_reduce, SizzLean.Proofs.sszListSet!_size]
+          · rw [← hs.2]
+            simp [rewardInputs, box_reduce]) _ _ ⟨rfl, rfl⟩))
 
 theorem processEth1DataReset_succeeds {b : EpochBudget} {v : BeaconState} {caps : StageCaps}
     {w : BeaconState} (hw : Stage b v caps w) :
@@ -149,7 +167,7 @@ theorem weighJustificationAndFinalization_succeeds [PresetValid] {b : EpochBudge
     (hroom : w.slot.toNat + Const.slotsPerHistoricalRoot < 2 ^ 64)
     (hE : 2 ≤ (computeEpochAtSlot w.slot).toNat) (totalActive prevTarget currTarget : Gwei) :
     RunSucceeds w (weighJustificationAndFinalization (StateTransition := FuluRun) totalActive prevTarget currTarget)
-      (fun _ w' => Stage b v caps w') := by
+      (fun _ w' => Stage b v caps w' ∧ rewardInputs w' = rewardInputs w) := by
   have hprev := epochStart_window w.slot hpos (previousEpochOf (pureState w)) (Or.inr (by
     show (EthCLLib.Spec.saturatingSub (computeEpochAtSlot w.slot) 1).toNat + 1 = _
     rw [EthCLLib.Proofs.saturatingSub_toNat]
@@ -162,22 +180,23 @@ theorem weighJustificationAndFinalization_succeeds [PresetValid] {b : EpochBudge
   all_goals (try run_succeeds)
   all_goals (try (ro_call getBlockRoot_succeeds w (currentEpochOf (pureState w)) _ hcurr.1 hroom hcurr.2))
   all_goals (try run_succeeds)
-  all_goals refine runSucceeds_modifyThe_view ?_ (hw.of_frame ?_)
+  all_goals refine runSucceeds_modifyThe_view ?_ ⟨hw.of_frame ?_, ?_⟩
   all_goals simp only [box_reduce, Id.run, *]
   all_goals repeat' split_ite
   all_goals first
     | rfl
     | simp [stageFields, listSizes]
+    | simp [rewardInputs]
 
 theorem processJustificationAndFinalization_succeeds [PresetValid] {b : EpochBudget}
     {v : BeaconState} {caps : StageCaps} {w : BeaconState} (hw : Stage b v caps w)
     (hpos : (w.slot.toNat + 1) % Const.slotsPerEpoch = 0)
     (hroom : w.slot.toNat + Const.slotsPerHistoricalRoot < 2 ^ 64) :
     RunSucceeds w (processJustificationAndFinalization (StateTransition := FuluRun))
-      (fun _ w' => Stage b v caps w') := by
+      (fun _ w' => Stage b v caps w' ∧ rewardInputs w' = rewardInputs w) := by
   unfold processJustificationAndFinalization
   run_succeeds
-  · exact hw
+  · exact ⟨hw, by first | rfl | trivial⟩
   · rename_i hc
     refine weighJustificationAndFinalization_succeeds hw hpos hroom ?_ _ _ _
     -- The step weighs only from epoch 2: the guard is `current_epoch <= GENESIS_EPOCH + 1`.

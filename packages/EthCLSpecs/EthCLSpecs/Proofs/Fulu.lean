@@ -2,6 +2,7 @@ import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Codec
 import EthCLSpecs.Proofs.Fulu.ConfigValid
 import EthCLSpecs.Proofs.Fulu.EpochSafe
+import EthCLSpecs.Proofs.Fulu.EpochSuccess
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Balances
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Consolidations
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Deposits
@@ -47,9 +48,12 @@ Re-exports:
   out a spec failure, with `decide` instances at `minimal` and `mainnet`.
 * `EthCLSpecs.Proofs.Fulu.EpochSafe`: `EpochSafe`, the states from which `processEpoch` cannot
   fail, with the per-call premise `RewardsWithin` and the budget `EpochBudget`.
-* `EthCLSpecs.Proofs.Fulu.EpochSuccess.Stage`, `.Selection`, `.FrameSteps`: the stage invariant
-  between substeps, the balance-weighted selection's success under `ZeroChunksOften`, and the
-  success of the substeps that write none of the fields the stage reads.
+* `EthCLSpecs.Proofs.Fulu.EpochSuccess`: `processEpoch_succeeds`, `processEpoch` cannot fail
+  on an `EpochSafe` state at the last slot of an epoch, and the post-state is `EpochSafe` with
+  one unit less of budget.
+* `EthCLSpecs.Proofs.Fulu.EpochSuccess.Stage` and its siblings: the stage invariant between
+  substeps, and one success lemma per substep. `.Selection` proves the balance-weighted selection
+  fills under `ZeroChunksOften`.
 * `EthCLSpecs.Proofs.Fulu.Reachable`: `ReachableState`, the Fulu states the state transition
   reaches from an anchor before the next fork, with its `Anchors`, the `Nat` fork boundary
   `forkSlot`, and the anchor-monotonicity and `unvalidated` lemmas.

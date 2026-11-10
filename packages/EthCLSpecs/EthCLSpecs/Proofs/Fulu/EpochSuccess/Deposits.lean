@@ -1,6 +1,19 @@
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Registry
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Consolidations
 
+/-!
+# `EthCLSpecs.Proofs.Fulu.EpochSuccess.Deposits`: the deposit queue drains
+
+`addValidatorToRegistry` takes `set_or_append_list`'s append branch five times on a state whose
+registry sizes agree, with room under the registry cap. A deposit either tops up a balance or
+appends a validator capped at `MAX_EFFECTIVE_BALANCE_ELECTRA`; both raise the balance cap by one
+deposit amount. The scan applies at most `MAX_PENDING_DEPOSITS_PER_EPOCH` deposits.
+
+Inside the scan the registry grows before the queue is trimmed, so the stage's registry potential
+runs ahead by up to the number of deposits dequeued (`StageCaps.slack`). The trimmed queue pays
+the slack back: an applied deposit leaves the queue, and a postponed one stays.
+-/
+
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu

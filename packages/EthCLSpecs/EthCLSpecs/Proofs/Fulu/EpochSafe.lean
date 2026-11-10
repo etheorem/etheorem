@@ -121,10 +121,37 @@ def flagReward [Preset] [HasherTag] (v : BeaconState) (f : Nat) (vi : ValidatorI
     ((getTotalActiveBalance (pureState v)).toNat / Const.effectiveBalanceIncrement *
       Const.weightDenominator)
 
+/-- The fields the reward formula reads. -/
+def rewardInputs [Preset] (v : BeaconState) :
+    Slot × SizzLean.Repr.SSZList Validator Const.validatorRegistryLimit ×
+      SizzLean.Repr.SSZList ParticipationFlags Const.validatorRegistryLimit ×
+      SizzLean.Repr.SSZList ParticipationFlags Const.validatorRegistryLimit :=
+  (v.slot, v.validators, v.previousEpochParticipation, v.currentEpochParticipation)
+
+/-- The reward formula reads only `rewardInputs`. -/
+theorem flagReward_congr [Preset] [HasherTag] {v w : BeaconState} (h : rewardInputs w = rewardInputs v)
+    (f : Nat) (vi : ValidatorIndex) : flagReward w f vi = flagReward v f vi := by
+  simp only [rewardInputs, Prod.mk.injEq] at h
+  obtain ⟨h1, h2, h3, h4⟩ := h
+  simp only [flagReward, getBaseRewardPerIncrement, getTotalActiveBalance, getTotalBalance,
+    getActiveValidatorIndices, getUnslashedParticipatingIndices, previousEpochOf, currentEpochOf,
+    EthCLLib.Proofs.pureState_eq_uncached, EthCLLib.Proofs.box_view_uncached,
+    EthCLLib.Proofs.uncachedSSZ_ofValue_view, h1, h2, h3, h4]
+  rfl
+
 /-- Every flag reward of every validator is at most `R`. A premise of each call, because the
 reward formula divides by the current active balance, which the state does not bound below. -/
 def RewardsWithin [Preset] [HasherTag] (R : Nat) (v : BeaconState) : Prop :=
   ∀ f < 3, ∀ i < v.validators.val.size, flagReward v f (UInt64.ofNat i) ≤ R
+
+/-- The reward bound carries across a step that keeps `rewardInputs`. -/
+theorem RewardsWithin.congr [Preset] [HasherTag] {R : Nat} {v w : BeaconState} (hv : RewardsWithin R v)
+    (h : rewardInputs w = rewardInputs v) : RewardsWithin R w := by
+  intro f hf i hi
+  rw [flagReward_congr h]
+  have hval : w.validators = v.validators := by
+    simp only [rewardInputs, Prod.mk.injEq] at h; exact h.2.1
+  exact hv f hf i (by rw [← hval]; exact hi)
 
 /-- The states from which `processEpoch` succeeds `n + 1` more times, given the per-call premises.
 The module docstring names the error site each field rules out. -/

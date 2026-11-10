@@ -1,5 +1,15 @@
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Balances
 
+/-!
+# `EthCLSpecs.Proofs.Fulu.EpochSuccess.FieldSteps`: three substeps that write one field group
+
+The effective-balance update rewrites effective balances, capped by `get_max_effective_balance`,
+so `effCap` holds after it, and the activation and exit epochs stay put, so liveness does. The
+historical-summaries update appends once when the list has room. The participation rotation
+rebuilds both lists at the registry's length. `Live.set!` and `Stage.setValidator` carry the stage
+across a validator write that keeps every sampled epoch's activity.
+-/
+
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu
