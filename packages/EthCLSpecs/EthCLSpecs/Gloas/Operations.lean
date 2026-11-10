@@ -206,7 +206,7 @@ forkdef initializePtcWindow (state : State) :
       let j := i.val - Const.slotsPerEpoch
       let epoch ← checkedAdd currentEpoch (UInt64.ofNat (j / Const.slotsPerEpoch))
         "initialize_ptc_window: current_epoch + e"
-      let startSlot := computeStartSlotAtEpoch epoch
+      let startSlot ← computeStartSlotAtEpoch epoch
       computePtc state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch))
 
 /-- The state-side close of `upgrade_to_gloas` (`gloas/fork.md:227-230`): fill the post-state's

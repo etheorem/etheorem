@@ -205,7 +205,8 @@ first slot, walking from a PENDING node. -/
 forkdef getCheckpointBlock (store : Store map) (root : Root) (epoch : Epoch) :
     StoreTransition Root := do
   let node : ForkChoiceNode := .pending root
-  let ancestor ← getAncestor store node (computeStartSlotAtEpoch epoch)
+  let epochFirstSlot ← liftErr (computeStartSlotAtEpoch epoch)
+  let ancestor ← getAncestor store node epochFirstSlot
   pure ancestor.root
 
 /-- `get_supported_node(store, message)`: the node a latest message supports. A
@@ -220,7 +221,7 @@ forkdef getSupportedNode (store : Store map) (message : LatestMessage) :
     else Const.payloadStatusPending
   pure { root := message.root, payloadStatus := payloadStatus }
 
--- The two pure shuffling-slot helpers are phase0's, unchanged in Gloas.
+-- The two state-free shuffling-slot helpers are phase0's, unchanged in Gloas.
 inherit computeShufflingLookaheadStartSlot computeShufflingDependentSlot
 
 /-- `get_shuffling_dependent_root(store, root, epoch)` (Gloas, `gloas/fork-choice.md:1006-1013`):
@@ -230,7 +231,8 @@ slot-0 ancestor, where alpha.12 returned the zero root. -/
 forkdef getShufflingDependentRoot (store : Store map) (root : Root) (epoch : Epoch) :
     StoreTransition Root := do
   let node : ForkChoiceNode := .pending root
-  let ancestor ← getAncestor store node (computeShufflingDependentSlot epoch)
+  let dependentSlot ← liftErr (computeShufflingDependentSlot epoch)
+  let ancestor ← getAncestor store node dependentSlot
   pure ancestor.root
 
 /-! ## Payload-vote predicates -/
@@ -623,12 +625,16 @@ forkdef onTickPerSlot (store : Store map) (timeMs : UInt64) : StoreTransition (S
   let store := { store with timeMs := timeMs }
   let currentSlot ← getCurrentSlot store
   let store := if currentSlot > previousSlot then { store with proposerBoostRoot := fcZeroRoot } else store
-  pure <| if currentSlot > previousSlot && computeSlotsSinceEpochStart currentSlot == 0 then
+  -- Bound before the `currentSlot > previousSlot` test, as in `Fulu.onTickPerSlot`.
+  let slotsSinceEpochStart ← computeSlotsSinceEpochStart currentSlot
+  pure <| if currentSlot > previousSlot && slotsSinceEpochStart == 0 then
     updateCheckpoints store store.unrealizedJustifiedCheckpoint store.unrealizedFinalizedCheckpoint
   else store
 where
   -- The epoch-start slot is always `≤ slot`, so this `uint64` subtraction cannot underflow.
-  computeSlotsSinceEpochStart (slot : Slot) : UInt64 := slot - computeStartSlotAtEpoch (computeEpochAtSlot slot)
+  computeSlotsSinceEpochStart (slot : Slot) : StoreTransition UInt64 := do
+    let epochFirstSlot ← liftErr (computeStartSlotAtEpoch (computeEpochAtSlot slot))
+    pure (slot - epochFirstSlot)
 
 /-- `on_tick(store, time_ms)` (`phase0/fork-choice.md:946-954`): advance the store clock to
 `time_ms`, running `on_tick_per_slot` at the start of every slot the clock passes on the way.
@@ -786,7 +792,7 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   assert (!parentFull || isPayloadVerified store block.parentRoot)
   let currentSlot ← getCurrentSlot store
   assert (currentSlot ≥ block.slot)
-  let finalizedSlot := computeStartSlotAtEpoch store.finalizedCheckpoint.epoch
+  let finalizedSlot ← liftErr (computeStartSlotAtEpoch store.finalizedCheckpoint.epoch)
   assert (block.slot > finalizedSlot)
   let finalizedBlock ← getCheckpointBlock store block.parentRoot store.finalizedCheckpoint.epoch
   assert (store.finalizedCheckpoint.root == finalizedBlock)
@@ -940,7 +946,7 @@ forkdef storeTargetCheckpointState (store : Store map) (target : Checkpoint) :
     -- `target not in store.checkpoint_states` is a membership guard (faithful), but the
     -- following `store.block_states[target.root]` is a plain `Dict` read that raises.
     let base ← FcMap.getOrThrow store.blockStates target.root
-    let targetSlot := computeStartSlotAtEpoch target.epoch
+    let targetSlot ← liftErr (computeStartSlotAtEpoch target.epoch)
     let advanced ←
       if (sszGet base slot) < targetSlot then
         runNestedStateTransition base (processSlots targetSlot)

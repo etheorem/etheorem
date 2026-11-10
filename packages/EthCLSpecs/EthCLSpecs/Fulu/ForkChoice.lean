@@ -139,8 +139,9 @@ forkdef getAncestor (store : Store map) (root : Root) (slot : Slot) : StoreTrans
 
 /-- `get_checkpoint_block`. -/
 forkdef getCheckpointBlock (store : Store map) (root : Root) (epoch : Epoch) :
-    StoreTransition Root :=
-  getAncestor store root (computeStartSlotAtEpoch epoch)
+    StoreTransition Root := do
+  let epochFirstSlot ← liftErr (computeStartSlotAtEpoch epoch)
+  getAncestor store root epochFirstSlot
 
 /-! ## Weights and head -/
 
@@ -496,13 +497,19 @@ forkdef onTickPerSlot (store : Store map) (timeMs : UInt64) : StoreTransition (S
   let store := { store with timeMs := timeMs }
   let currentSlot ← getCurrentSlot store
   let store := if currentSlot > previousSlot then { store with proposerBoostRoot := fcZeroRoot } else store
-  pure <| if currentSlot > previousSlot && computeSlotsSinceEpochStart currentSlot == 0 then
+  -- Bound before the `currentSlot > previousSlot` test, so it runs on every call. Its epoch
+  -- comes from `computeEpochAtSlot`, so its start-slot fault cannot occur, and the eager bind
+  -- matches the spec's short-circuit `and`.
+  let slotsSinceEpochStart ← computeSlotsSinceEpochStart currentSlot
+  pure <| if currentSlot > previousSlot && slotsSinceEpochStart == 0 then
     updateCheckpoints store store.unrealizedJustifiedCheckpoint store.unrealizedFinalizedCheckpoint
   else store
 where
   -- `slot - compute_start_slot_at_epoch(compute_epoch_at_slot(slot))`: the epoch-start slot is
   -- always `≤ slot`, so this `uint64` subtraction cannot underflow; a bare `-`, not `checkedSub`.
-  computeSlotsSinceEpochStart (slot : Slot) : UInt64 := slot - computeStartSlotAtEpoch (computeEpochAtSlot slot)
+  computeSlotsSinceEpochStart (slot : Slot) : StoreTransition UInt64 := do
+    let epochFirstSlot ← liftErr (computeStartSlotAtEpoch (computeEpochAtSlot slot))
+    pure (slot - epochFirstSlot)
 
 /-- `on_tick(store, time_ms)` (`phase0/fork-choice.md:946-954`): advance the store clock to
 `time_ms`, running `on_tick_per_slot` at the start of every slot the clock passes on the way.
@@ -548,23 +555,27 @@ forkdef recordBlockTimeliness (store : Store map) (root : Root) : StoreTransitio
   pure { store with blockTimeliness := FcMap.insert store.blockTimeliness root isTimely }
 
 /-- `compute_shuffling_lookahead_start_slot(epoch)` (`phase0/fork-choice.md:902-904`): the
-first slot of the epoch `MIN_SEED_LOOKAHEAD` before `epoch`, floored at genesis. Pure. -/
-forkdef computeShufflingLookaheadStartSlot (epoch : Epoch) : Slot :=
+first slot of the epoch `MIN_SEED_LOOKAHEAD` before `epoch`, floored at genesis. State-free;
+it returns an `Except` because `computeStartSlotAtEpoch` faults on its multiply. -/
+forkdef computeShufflingLookaheadStartSlot (epoch : Epoch) : Except StateTransitionError Slot :=
   computeStartSlotAtEpoch (saturatingSub epoch Const.minSeedLookahead)
 
 /-- `compute_shuffling_dependent_slot(epoch)` (`phase0/fork-choice.md:910-912`): the last slot
 before the lookahead start, the slot whose block fixes `epoch`'s proposer shuffling. Floored
-at genesis, so for the first `MIN_SEED_LOOKAHEAD + 1` epochs it is slot `0`. Pure. -/
-forkdef computeShufflingDependentSlot (epoch : Epoch) : Slot :=
-  saturatingSub (computeShufflingLookaheadStartSlot epoch) 1
+at genesis, so for the first `MIN_SEED_LOOKAHEAD + 1` epochs it is slot `0`. State-free; it
+carries the fault of `computeShufflingLookaheadStartSlot`. -/
+forkdef computeShufflingDependentSlot (epoch : Epoch) : Except StateTransitionError Slot := do
+  let lookaheadStartSlot ← computeShufflingLookaheadStartSlot epoch
+  pure (saturatingSub lookaheadStartSlot 1)
 
 /-- `get_shuffling_dependent_root(store, root, epoch)` (`phase0/fork-choice.md:918-921`): the
 root of `root`'s ancestor at the shuffling dependent slot. At v1.7.0-beta.4 the genesis case
 goes through the same walk, so an early epoch resolves to the slot-0 ancestor, where alpha.12
 returned the zero root. Throwing, because `getAncestor` is. -/
 forkdef getShufflingDependentRoot (store : Store map) (root : Root) (epoch : Epoch) :
-    StoreTransition Root :=
-  getAncestor store root (computeShufflingDependentSlot epoch)
+    StoreTransition Root := do
+  let dependentSlot ← liftErr (computeShufflingDependentSlot epoch)
+  getAncestor store root dependentSlot
 
 /-- `update_proposer_boost_root(store, head, root)` (`phase0/fork-choice.md:927-938`): boost a
 timely first block whose shuffling dependent root matches the pre-insertion head's. The spec
@@ -636,7 +647,7 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) (columns : Array DataColumnSid
     "block.parent_root in store.block_states"
   let currentSlot ← getCurrentSlot store
   assert (currentSlot ≥ block.slot)
-  let finalizedSlot := computeStartSlotAtEpoch store.finalizedCheckpoint.epoch
+  let finalizedSlot ← liftErr (computeStartSlotAtEpoch store.finalizedCheckpoint.epoch)
   assert (block.slot > finalizedSlot)
   assert (store.finalizedCheckpoint.root == (← getCheckpointBlock store block.parentRoot store.finalizedCheckpoint.epoch))
   -- Data availability (EIP-7594). The spec's `on_block` calls `is_data_available(block_root)`
@@ -678,7 +689,7 @@ forkdef storeTargetCheckpointState (store : Store map) (target : Checkpoint) :
   if FcMap.contains store.checkpointStates target then pure store
   else
     let base ← FcMap.getOrThrow store.blockStates target.root
-    let targetSlot := computeStartSlotAtEpoch target.epoch
+    let targetSlot ← liftErr (computeStartSlotAtEpoch target.epoch)
     let advanced ←
       if (sszGet base slot) < targetSlot then
         runNestedStateTransition base (processSlots targetSlot)
