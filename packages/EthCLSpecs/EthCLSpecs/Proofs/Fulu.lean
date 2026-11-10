@@ -4,6 +4,7 @@ import EthCLSpecs.Proofs.Fulu.ConfigValid
 import EthCLSpecs.Proofs.Fulu.EpochSafe
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Balances
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Consolidations
+import EthCLSpecs.Proofs.Fulu.EpochSuccess.Deposits
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.FieldSteps
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.FrameSteps
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Registry
