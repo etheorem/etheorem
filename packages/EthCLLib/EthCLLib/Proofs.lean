@@ -1,5 +1,6 @@
 import EthCLLib.Proofs.Arith
 import EthCLLib.Proofs.BoxSimp
+import EthCLLib.Proofs.IndicesWhere
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
@@ -44,6 +45,9 @@ Re-exports:
   `KeepsUncachedFrom`, `ReturnsUncached`, `RunPassesP`), their closure and loop
   lemmas, the indexed-read run equations, and the conditional bind law
   `runPure_bind_of_keepsUncached`.
+* `EthCLLib.Proofs.IndicesWhere`: what the registry filter `indicesWhere` returns: indices in
+  range that satisfy the predicate (`mem_indicesWhere`), and at least one when some element does
+  (`indicesWhere_size_pos`).
 * `EthCLLib.Proofs.BoxSimp`: the `box_reduce` simp set, for reading a field of a state a
   record update on the uncached box left.
 * `EthCLLib.Proofs.Preserves`: `Preserves`, the invariant every successful run keeps, and

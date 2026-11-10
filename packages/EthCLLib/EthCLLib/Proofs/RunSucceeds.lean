@@ -438,6 +438,42 @@ theorem runSucceeds_forIn_range_box (I : Nat → T → Prop) (n : Nat)
 
 end BoxLoops
 
+/-! ## The `Except` layer
+
+Some spec helpers are pure functions into `Except`, called through `liftErr`. Their success is
+an `.ok` value, and a `mapM` over a list or array of such calls succeeds when every call does. -/
+
+section ExceptLayer
+
+variable {ε α β : Type}
+
+/-- A `List.mapM` in `Except` succeeds when every call does, and every result satisfies `P`
+when every call's result does. -/
+theorem except_list_mapM_ok {f : α → Except ε β} {P : β → Prop} :
+    ∀ l : List α, (∀ x ∈ l, ∃ b, f x = .ok b ∧ P b) → ∃ r, l.mapM f = .ok r ∧ ∀ y ∈ r, P y
+  | [], _ => ⟨[], rfl, fun _ h => nomatch h⟩
+  | x :: l, h => by
+    obtain ⟨b, hb, hp⟩ := h x List.mem_cons_self
+    obtain ⟨r, hr, hps⟩ := except_list_mapM_ok l (fun y hy => h y (List.mem_cons_of_mem _ hy))
+    refine ⟨b :: r, ?_, ?_⟩
+    · rw [List.mapM_cons, hb, hr]
+      rfl
+    · intro y hy
+      rcases List.mem_cons.mp hy with rfl | hy
+      · exact hp
+      · exact hps y hy
+
+/-- An `Array.mapM` in `Except` succeeds when every call does: the array walk is the list walk
+of its `toList`. -/
+theorem except_array_mapM_ok {f : α → Except ε β} {P : β → Prop} (xs : Array α)
+    (h : ∀ x ∈ xs, ∃ b, f x = .ok b ∧ P b) : ∃ r, xs.mapM f = .ok r ∧ ∀ y ∈ r, P y := by
+  obtain ⟨r, hr, hps⟩ := except_list_mapM_ok xs.toList (fun x hx => h x (Array.mem_toList_iff.mp hx))
+  refine ⟨r.toArray, ?_, fun y hy => hps y (List.mem_toArray.mp hy)⟩
+  rw [Array.mapM_eq_mapM_toList, hr]
+  rfl
+
+end ExceptLayer
+
 /-! ## The tactic -/
 
 /-- One structural rule of the `run_succeeds` walk, as `run_ensures_step` is for

@@ -33,6 +33,9 @@ failure it rules out, and each is a candidate upstream rule:
   committee rotation, the eth1 reset or the churn arithmetic.
 * `effectiveBalanceIncrementPos`: Python's `%` in `test_balances` raises on a zero increment,
   so upstream requires it implicitly. Lean's `%` does not raise, so the rule is explicit.
+* `minActivationBalanceLe`: `get_max_effective_balance` returns `MIN_ACTIVATION_BALANCE` or
+  `MAX_EFFECTIVE_BALANCE_ELECTRA`, and the rule orders them, so every effective balance is at
+  most the second.
 * The two twin equations: the model carries `EFFECTIVE_BALANCE_INCREMENT` and
   `MAX_EFFECTIVE_BALANCE_ELECTRA` twice, as a `Nat` and as `Gwei`, because the reward arithmetic
   runs in `Nat` and the balance writes in `Gwei` (`Fulu/Constants.lean`). Both forms read the
@@ -98,6 +101,10 @@ class PresetValid [Preset] : Prop where
   effectiveBalanceIncrementTwin : effectiveBalanceIncrementG.toNat = effectiveBalanceIncrement
   /-- Addition: the `Nat` and `Gwei` forms of `MAX_EFFECTIVE_BALANCE_ELECTRA` agree. -/
   maxEffectiveBalanceElectraTwin : maxEffectiveBalanceElectraG.toNat = maxEffectiveBalanceElectra
+  /-- Addition: `get_max_effective_balance` returns `MIN_ACTIVATION_BALANCE` or
+  `MAX_EFFECTIVE_BALANCE_ELECTRA`, and the first is the smaller. Every effective balance is then at
+  most `MAX_EFFECTIVE_BALANCE_ELECTRA`, which bounds the balance a consolidation moves. -/
+  minActivationBalanceLe : minActivationBalance.toNat ≤ maxEffectiveBalanceElectra
 
 /-- The configs the proofs accept, at a preset. -/
 class ConfigValid [Preset] [Config] : Prop where
