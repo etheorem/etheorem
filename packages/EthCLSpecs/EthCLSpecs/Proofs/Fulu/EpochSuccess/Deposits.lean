@@ -123,9 +123,8 @@ theorem Stage.addValidator [PresetValid] {b : EpochBudget} {v : BeaconState} {ca
       exact ha
 
 
-variable [HasherTag] [CryptoBackend]
+variable [CryptoBackend]
 
-omit [HasherTag] in
 theorem applyPendingDeposit_succeeds [PresetValid] {b : EpochBudget} {v : BeaconState}
     {caps : StageCaps} {st : BeaconState} (hst : Stage b v caps st) (d : PendingDeposit)
     (hd : d.amount.toNat ≤ b.deposit) (hroom : caps.balance + b.deposit < 2 ^ 64)
@@ -187,7 +186,6 @@ def ScanInv [PresetValid] (b : EpochBudget) (v : BeaconState) (caps : StageCaps)
   st.pendingDeposits = w.pendingDeposits ∧
   Stage b v { caps with balance := caps.balance + scan.ndi * b.deposit, slack := caps.slack + scan.ndi } st
 
-omit [HasherTag] in
 theorem ppdLoop_succeeds [PresetValid] {b : EpochBudget} {v : BeaconState} {caps : StageCaps}
     {w : BeaconState} (hw : Stage b v caps w) (deposits : Array PendingDeposit)
     (hdep : ∀ d ∈ deposits, d.amount.toNat ≤ b.deposit)
@@ -250,7 +248,6 @@ theorem Stage.setPendingDeposits {b : EpochBudget} {v : BeaconState} {caps : Sta
   ⟨hst.slot, hst.registrySizes, hst.vGrows, hpot, hst.consolidationIdx, hst.consolidationCount,
     hst.effCap, hl, hst.exitBound, hst.historyBound, hst.balanceBound, hst.live⟩
 
-omit [HasherTag] in
 theorem processPendingDeposits_succeeds [PresetValid] {b : EpochBudget} {v : BeaconState}
     {caps : StageCaps} {w : BeaconState} (hw : Stage b v caps w)
     (hregv : registryPotential v + caps.slack ≤ Const.validatorRegistryLimit)

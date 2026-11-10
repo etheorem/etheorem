@@ -24,6 +24,7 @@ tier1 EthCLSpecs.Fulu.getFlagIndexDeltas
 tier1 EthCLSpecs.Fulu.getMaxEffectiveBalance
 tier1 EthCLSpecs.Fulu.getNextSyncCommittee
 tier1 EthCLSpecs.Fulu.getRandaoMix
+tier1 EthCLSpecs.Fulu.getValidatorFromDeposit
 tier1 EthCLSpecs.Fulu.initiateValidatorExit
 tier1 EthCLSpecs.Fulu.isActiveValidator
 tier1 EthCLSpecs.Fulu.pcLoop
@@ -67,6 +68,7 @@ tier1 EthCLSpecs.Fulu.reserveChurn
 tier1 EthCLSpecs.Fulu.slashValidator
 tier1 EthCLSpecs.Fulu.stateTransition
 tier1 EthCLSpecs.Fulu.switchToCompoundingValidator
+tier1 EthCLSpecs.Fulu.validatorIndexByPubkey?
 tier1 EthCLSpecs.Fulu.weighJustificationAndFinalization
 tier1 EthCLSpecs.Gloas.addBuilderToRegistry
 tier1 EthCLSpecs.Gloas.addValidatorToRegistry
