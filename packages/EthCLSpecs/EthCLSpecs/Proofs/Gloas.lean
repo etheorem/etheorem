@@ -2,6 +2,13 @@ import EthCLSpecs.Proofs.Gloas.BuilderIndex
 import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 import EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid
 import EthCLSpecs.Proofs.Gloas.ConfigValid
+import EthCLSpecs.Proofs.Gloas.EpochSafe
+import EthCLSpecs.Proofs.Gloas.EpochSuccess.Balances
+import EthCLSpecs.Proofs.Gloas.EpochSuccess.FrameSteps
+import EthCLSpecs.Proofs.Gloas.EpochSuccess.Lists
+import EthCLSpecs.Proofs.Gloas.EpochSuccess.Ptc
+import EthCLSpecs.Proofs.Gloas.EpochSuccess.Selection
+import EthCLSpecs.Proofs.Gloas.EpochSuccess.Stage
 import EthCLSpecs.Proofs.Gloas.ForkChoiceRun
 import EthCLSpecs.Proofs.Gloas.GetPtc
 import EthCLSpecs.Proofs.Gloas.InitializePtcWindow
@@ -47,6 +54,9 @@ Re-exports:
   characterization of `canBuilderCoverBid`.
 * `EthCLSpecs.Proofs.Gloas.ConfigValid`: the Gloas `PresetValid` and `ConfigValid`, each the
   Fulu class at the downgraded preset plus the Gloas fields, with the shipped instances.
+* `EthCLSpecs.Proofs.Gloas.EpochSafe` and `.EpochSuccess.*`: the Gloas counterparts of the Fulu
+  epoch-success modules, with the unslashed proposer filter and the payload-timeliness committee
+  window (`.EpochSuccess.Ptc`).
 * `EthCLSpecs.Proofs.Gloas.GetPtc`: `getPtc`'s else-branch `ptcWindow` offset bound,
   for the `data.slot + 1 == state.slot` caller (`getPtcElseOffset`,
   `getPtcElseOffset_lt_next_slot`) and the `slot == curSlot` fork-choice replay callers
