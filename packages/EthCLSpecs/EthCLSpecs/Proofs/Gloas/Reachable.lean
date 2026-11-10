@@ -2,6 +2,7 @@ import EthCLSpecs.Gloas.Transition
 import EthCLSpecs.Gloas.Upgrade
 import EthCLSpecs.Proofs.Gloas.Run
 import EthCLSpecs.Proofs.Fulu.Reachable
+import EthCLSpecs.Proofs.Gloas.ConfigValid
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.Reachable`: the Gloas states the state transition reaches
@@ -65,10 +66,11 @@ structure Anchors [Preset] extends toFulu : EthCLSpecs.Proofs.Fulu.Anchors where
 preset. -/
 def forkSlot [Preset] (epoch : Epoch) : Nat := epoch.toNat * slotsPerEpoch
 
-/-- No slot reaches the `FAR_FUTURE_EPOCH` boundary at a preset with two or more slots per
-epoch. -/
-theorem slot_lt_forkSlot_farFutureEpoch [Preset] (hspe : 2 ≤ slotsPerEpoch) (s : Slot) :
+/-- No slot reaches the `FAR_FUTURE_EPOCH` boundary at a valid preset, which has two or more
+slots per epoch. -/
+theorem slot_lt_forkSlot_farFutureEpoch [Preset] [PresetValid] (s : Slot) :
     s.toNat < forkSlot farFutureEpoch := by
+  have hspe : 2 ≤ slotsPerEpoch := PresetValid.toFulu.twoLeSlotsPerEpoch
   have hs : s.toNat < 2 ^ 64 := s.toNat_lt
   have hfar : farFutureEpoch.toNat = 2 ^ 64 - 1 := rfl
   unfold forkSlot

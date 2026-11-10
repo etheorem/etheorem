@@ -1,6 +1,7 @@
 import EthCLSpecs.Proofs.Gloas.BuilderIndex
 import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 import EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid
+import EthCLSpecs.Proofs.Gloas.ConfigValid
 import EthCLSpecs.Proofs.Gloas.ForkChoiceRun
 import EthCLSpecs.Proofs.Gloas.GetPtc
 import EthCLSpecs.Proofs.Gloas.InitializePtcWindow
@@ -44,6 +45,8 @@ Re-exports:
   `processBuilderPendingPayments_run_appended`).
 * `EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid`: the exact `Bool`-vs-`UInt64`-inequality
   characterization of `canBuilderCoverBid`.
+* `EthCLSpecs.Proofs.Gloas.ConfigValid`: the Gloas `PresetValid` and `ConfigValid`, each the
+  Fulu class at the downgraded preset plus the Gloas fields, with the shipped instances.
 * `EthCLSpecs.Proofs.Gloas.GetPtc`: `getPtc`'s else-branch `ptcWindow` offset bound,
   for the `data.slot + 1 == state.slot` caller (`getPtcElseOffset`,
   `getPtcElseOffset_lt_next_slot`) and the `slot == curSlot` fork-choice replay callers

@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Codec
+import EthCLSpecs.Proofs.Fulu.ConfigValid
 import EthCLSpecs.Proofs.Fulu.Invariants.Block
 import EthCLSpecs.Proofs.Fulu.Invariants.Epoch
 import EthCLSpecs.Proofs.Fulu.Invariants.Helpers
@@ -31,6 +32,9 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Codec`: the `BasicSupported` gate by kernel `decide`, roundtrip, and
   non-malleability (`serialize_injective`) for `BeaconState`, `BeaconBlockBody`, `BeaconBlock`,
   and `SignedBeaconBlock` at the two shipped presets.
+* `EthCLSpecs.Proofs.Fulu.ConfigValid`: `PresetValid` and `ConfigValid`, the presets and configs
+  the proofs accept: the upstream `test_config_invariants.py` rules plus the additions that rule
+  out a spec failure, with `decide` instances at `minimal` and `mainnet`.
 * `EthCLSpecs.Proofs.Fulu.Reachable`: `ReachableState`, the Fulu states the state transition
   reaches from an anchor before the next fork, with its `Anchors`, the `Nat` fork boundary
   `forkSlot`, and the anchor-monotonicity and `unvalidated` lemmas.

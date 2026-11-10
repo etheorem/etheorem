@@ -1,6 +1,7 @@
 import EthCLSpecs.Fulu.Transition
 import EthCLSpecs.Proofs.Fulu.Run
 import EthCLLib.Proofs.Run
+import EthCLSpecs.Proofs.Fulu.ConfigValid
 
 /-!
 # `EthCLSpecs.Proofs.Fulu.Reachable`: the Fulu states the state transition reaches
@@ -82,11 +83,12 @@ structure Anchors [Preset] where
 at `FAR_FUTURE_EPOCH` has a boundary past every slot. -/
 def forkSlot [Preset] (epoch : Epoch) : Nat := epoch.toNat * slotsPerEpoch
 
-/-- No slot reaches the `FAR_FUTURE_EPOCH` boundary at a preset with two or more slots per
-epoch, which both shipped presets have. So a chain that passes `farFutureEpoch` as
+/-- No slot reaches the `FAR_FUTURE_EPOCH` boundary at a valid preset, which has two or more
+slots per epoch (`PresetValid.twoLeSlotsPerEpoch`). So a chain that passes `farFutureEpoch` as
 `nextForkEpoch` has a window that excludes no slot and no block. -/
-theorem slot_lt_forkSlot_farFutureEpoch [Preset] (hspe : 2 ≤ slotsPerEpoch) (s : Slot) :
+theorem slot_lt_forkSlot_farFutureEpoch [Preset] [PresetValid] (s : Slot) :
     s.toNat < forkSlot farFutureEpoch := by
+  have hspe : 2 ≤ slotsPerEpoch := PresetValid.twoLeSlotsPerEpoch
   have hs : s.toNat < 2 ^ 64 := s.toNat_lt
   have hfar : farFutureEpoch.toNat = 2 ^ 64 - 1 := rfl
   unfold forkSlot
