@@ -6,6 +6,7 @@ import EthCLSpecs.Proofs.Fulu.EpochSuccess.Balances
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Consolidations
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.FieldSteps
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.FrameSteps
+import EthCLSpecs.Proofs.Fulu.EpochSuccess.Registry
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Rewards
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Selection
 import EthCLSpecs.Proofs.Fulu.EpochSuccess.Stage

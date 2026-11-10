@@ -195,6 +195,15 @@ theorem runSucceeds_bind {x : StateT (SSZ.Box HasherTag.H T) (Except ε) α}
   rw [run_bind, hx]
   exact hf
 
+/-- Bind with a named midpoint: the first action succeeds into `P`, and the continuation succeeds
+from every `P` state. It cuts a body whose `if` branches rejoin, so the rest of the body is proved
+once from `P` instead of once per branch. -/
+theorem runSucceeds_bind_cut {x : StateT (SSZ.Box HasherTag.H T) (Except ε) α}
+    {f : α → StateT (SSZ.Box HasherTag.H T) (Except ε) β} {Q : β → T → Prop} (P : α → T → Prop)
+    (hx : RunSucceeds v x P) (hf : ∀ a w, P a w → RunSucceeds w (f a) Q) :
+    RunSucceeds v (x >>= f) Q :=
+  runSucceeds_bind (hx.weaken hf)
+
 /-- `get` then a continuation on the read box. -/
 theorem runSucceeds_get_bind
     {g : SSZ.Box HasherTag.H T → StateT (SSZ.Box HasherTag.H T) (Except ε) α} {Q : α → T → Prop}
