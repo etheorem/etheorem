@@ -447,15 +447,17 @@ section ExceptLayer
 
 variable {ε α β : Type}
 
-/-- A `List.mapM` in `Except` succeeds when every call does, and every result satisfies `P`
-when every call's result does. -/
+/-- A `List.mapM` in `Except` succeeds when every call does, with one result per element, and
+every result satisfies `P` when every call's result does. -/
 theorem except_list_mapM_ok {f : α → Except ε β} {P : β → Prop} :
-    ∀ l : List α, (∀ x ∈ l, ∃ b, f x = .ok b ∧ P b) → ∃ r, l.mapM f = .ok r ∧ ∀ y ∈ r, P y
-  | [], _ => ⟨[], rfl, fun _ h => nomatch h⟩
+    ∀ l : List α, (∀ x ∈ l, ∃ b, f x = .ok b ∧ P b) →
+      ∃ r, l.mapM f = .ok r ∧ r.length = l.length ∧ ∀ y ∈ r, P y
+  | [], _ => ⟨[], rfl, rfl, fun _ h => nomatch h⟩
   | x :: l, h => by
     obtain ⟨b, hb, hp⟩ := h x List.mem_cons_self
-    obtain ⟨r, hr, hps⟩ := except_list_mapM_ok l (fun y hy => h y (List.mem_cons_of_mem _ hy))
-    refine ⟨b :: r, ?_, ?_⟩
+    obtain ⟨r, hr, hlen, hps⟩ :=
+      except_list_mapM_ok l (fun y hy => h y (List.mem_cons_of_mem _ hy))
+    refine ⟨b :: r, ?_, by simp [hlen], ?_⟩
     · rw [List.mapM_cons, hb, hr]
       rfl
     · intro y hy
@@ -467,10 +469,43 @@ theorem except_list_mapM_ok {f : α → Except ε β} {P : β → Prop} :
 of its `toList`. -/
 theorem except_array_mapM_ok {f : α → Except ε β} {P : β → Prop} (xs : Array α)
     (h : ∀ x ∈ xs, ∃ b, f x = .ok b ∧ P b) : ∃ r, xs.mapM f = .ok r ∧ ∀ y ∈ r, P y := by
-  obtain ⟨r, hr, hps⟩ := except_list_mapM_ok xs.toList (fun x hx => h x (Array.mem_toList_iff.mp hx))
+  obtain ⟨r, hr, _, hps⟩ :=
+    except_list_mapM_ok xs.toList (fun x hx => h x (Array.mem_toList_iff.mp hx))
   refine ⟨r.toArray, ?_, fun y hy => hps y (List.mem_toArray.mp hy)⟩
   rw [Array.mapM_eq_mapM_toList, hr]
   rfl
+
+/-- A `List.forIn` in `Except` succeeds when every step does, from any accumulator that
+satisfies the invariant `I`, and the result satisfies `I`. -/
+theorem except_list_forIn_ok {f : α → β → Except ε (ForInStep β)} (I : β → Prop) :
+    ∀ l : List α, (∀ x ∈ l, ∀ b, I b → ∃ r, f x b = .ok r ∧ I (ForInStep.value r)) →
+      ∀ init, I init → ∃ b, forIn l init f = .ok b ∧ I b
+  | [], _, init, hinit => ⟨init, rfl, hinit⟩
+  | x :: l, h, init, hinit => by
+    obtain ⟨r, hr, hI⟩ := h x List.mem_cons_self init hinit
+    rw [List.forIn_cons, hr]
+    cases r with
+    | done b => exact ⟨b, rfl, hI⟩
+    | yield b =>
+      exact except_list_forIn_ok I l (fun y hy => h y (List.mem_cons_of_mem _ hy)) b hI
+
+/-- An `Array.forIn` in `Except`, as the list walk of its `toList`. -/
+theorem except_array_forIn_ok {f : α → β → Except ε (ForInStep β)} (I : β → Prop) (xs : Array α)
+    (h : ∀ x ∈ xs, ∀ b, I b → ∃ r, f x b = .ok r ∧ I (ForInStep.value r)) (init : β)
+    (hinit : I init) : ∃ b, forIn xs init f = .ok b ∧ I b := by
+  rw [← Array.forIn_toList]
+  exact except_list_forIn_ok I xs.toList (fun x hx => h x (Array.mem_toList_iff.mp hx)) init hinit
+
+/-- An `Array.forIn` in `Except` followed by a continuation: the walk succeeds into an
+accumulator in `I`, and the continuation succeeds from every such accumulator. The form that
+matches a `do` block whose loop is followed by a `return`. -/
+theorem except_array_forIn_bind_ok {γ : Type} {f : α → β → Except ε (ForInStep β)}
+    {g : β → Except ε γ} {Q : γ → Prop} (I : β → Prop) {xs : Array α} {init : β}
+    (h : ∀ x ∈ xs, ∀ b, I b → ∃ r, f x b = .ok r ∧ I (ForInStep.value r)) (hinit : I init)
+    (hg : ∀ b, I b → ∃ c, g b = .ok c ∧ Q c) : ∃ c, (forIn xs init f >>= g) = .ok c ∧ Q c := by
+  obtain ⟨b, hb, hI⟩ := except_array_forIn_ok I xs h init hinit
+  rw [hb]
+  exact hg b hI
 
 end ExceptLayer
 

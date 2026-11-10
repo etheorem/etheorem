@@ -12,11 +12,14 @@ tier1 EthCLSpecs.Fulu.computeProposerIndices
 tier1 EthCLSpecs.Fulu.currentEpochOf
 tier1 EthCLSpecs.Fulu.getActiveValidatorIndices
 tier1 EthCLSpecs.Fulu.getAttestationParticipationFlagIndices
+tier1 EthCLSpecs.Fulu.getBaseReward
+tier1 EthCLSpecs.Fulu.getBaseRewardPerIncrement
 tier1 EthCLSpecs.Fulu.getBeaconProposerIndices
 tier1 EthCLSpecs.Fulu.getBlockRoot
 tier1 EthCLSpecs.Fulu.getBlockRootAtSlot
 tier1 EthCLSpecs.Fulu.getCurrentEpoch
 tier1 EthCLSpecs.Fulu.getExpectedWithdrawals
+tier1 EthCLSpecs.Fulu.getFlagIndexDeltas
 tier1 EthCLSpecs.Fulu.getMaxEffectiveBalance
 tier1 EthCLSpecs.Fulu.getNextSyncCommittee
 tier1 EthCLSpecs.Fulu.getRandaoMix
