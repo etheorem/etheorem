@@ -9,8 +9,9 @@ import SizzLean.Proofs.UncachedBox
 `ptcWindow` the Fulu → Gloas upgrade seeds, as one `Vector.ofFn` over
 `Fin (3 * SLOTS_PER_EPOCH)`, branching on whether the index falls in the empty first epoch
 or the remaining two `SLOTS_PER_EPOCH` regions. The function is pure and total: each entry
-is an `Except` carrying that entry's own two faults, the checked per-entry add
-`current_epoch + e` and the `compute_ptc` read, and `completeUpgradeToGloas` maps the
+is an `Except` carrying that entry's own three faults, the checked per-entry add
+`current_epoch + e`, the checked multiply of `compute_start_slot_at_epoch`, and the
+`compute_ptc` read, and `completeUpgradeToGloas` maps the
 entries in index order, so the first rejecting slot surfaces. The theorems here state the
 function's entries, not a run: `initializePtcWindow_eq` is the whole contract, the vector
 equation over the entry function; `initializePtcWindow_lt` / `initializePtcWindow_ge` read
@@ -40,9 +41,10 @@ open EthCLSpecs.Gloas (Preset Config BeaconState ValidatorIndex initializePtcWin
 /-- **The window contract.** The complete equation of `initializePtcWindow`: entry `i` is
 the all-zero committee in the first `SLOTS_PER_EPOCH` positions, and in the remaining
 `2 * SLOTS_PER_EPOCH` it binds the spec's checked per-entry add `current_epoch + e` (the
-epoch delta is the offset `i - SLOTS_PER_EPOCH` divided by `SLOTS_PER_EPOCH`, `0` or `1`)
-and then reads `compute_ptc` at the offset's slot. The `Except` in the entry's type carries
-both faults, the add's `.arithmetic` and `compute_ptc`'s empty-candidate reject. -/
+epoch delta is the offset `i - SLOTS_PER_EPOCH` divided by `SLOTS_PER_EPOCH`, `0` or `1`),
+then the epoch's start slot, and then reads `compute_ptc` at the offset's slot. The `Except`
+in the entry's type carries the three faults: the add's and the start slot's `.arithmetic`,
+and `compute_ptc`'s empty-candidate reject. -/
 @[characterizes EthCLSpecs.Gloas.initializePtcWindow]
 theorem initializePtcWindow_eq [Preset] [Config] [HasherTag] (state : BeaconState) :
     initializePtcWindow (pureState state) =
@@ -56,10 +58,11 @@ theorem initializePtcWindow_eq [Preset] [Config] [HasherTag] (state : BeaconStat
               (UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) /
                 Gloas.Const.slotsPerEpoch))
               "initialize_ptc_window: current_epoch + e") fun epoch =>
-            computePtc (pureState state)
-              (computeStartSlotAtEpoch epoch +
-                UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) %
-                  Gloas.Const.slotsPerEpoch)) := rfl
+            Except.bind (computeStartSlotAtEpoch epoch) fun startSlot =>
+              computePtc (pureState state)
+                (startSlot +
+                  UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) %
+                    Gloas.Const.slotsPerEpoch)) := rfl
 
 /-- The window's first `SLOTS_PER_EPOCH` entries (the placeholder "previous epoch", empty
 because the pre-fork state carries no Gloas PTC) are the all-zero committee,
@@ -73,9 +76,10 @@ theorem initializePtcWindow_lt [Preset] [Config] [HasherTag] (state : BeaconStat
   simp [h]
 
 /-- The window's remaining `2 * SLOTS_PER_EPOCH` entries bind the spec's checked per-entry
-add `current_epoch + e`, then read `compute_ptc` at the slot that add's epoch computes:
-split the offset `k := i - SLOTS_PER_EPOCH` into an epoch delta (`k / SLOTS_PER_EPOCH`) and
-an intra-epoch slot offset (`k % SLOTS_PER_EPOCH`), exactly as the composed contract does. -/
+add `current_epoch + e` and the epoch's start slot, then read `compute_ptc` at the slot that
+start slot gives: split the offset `k := i - SLOTS_PER_EPOCH` into an epoch delta
+(`k / SLOTS_PER_EPOCH`) and an intra-epoch slot offset (`k % SLOTS_PER_EPOCH`), exactly as
+the composed contract does. -/
 theorem initializePtcWindow_ge [Preset] [Config] [HasherTag] (state : BeaconState)
     (i : Fin (3 * Gloas.Const.slotsPerEpoch)) (h : Gloas.Const.slotsPerEpoch ≤ i.val) :
     (initializePtcWindow (pureState state))[i] =
@@ -84,17 +88,18 @@ theorem initializePtcWindow_ge [Preset] [Config] [HasherTag] (state : BeaconStat
           (UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) /
             Gloas.Const.slotsPerEpoch))
           "initialize_ptc_window: current_epoch + e") fun epoch =>
-        computePtc (pureState state)
-          (computeStartSlotAtEpoch epoch +
-            UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) %
-              Gloas.Const.slotsPerEpoch)) := by
+        Except.bind (computeStartSlotAtEpoch epoch) fun startSlot =>
+          computePtc (pureState state)
+            (startSlot +
+              UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) %
+                Gloas.Const.slotsPerEpoch)) := by
   rw [initializePtcWindow_eq state]
   simp [Nat.not_lt.mpr h]
 
 /-- The element-level join of the two regions: every entry of the seeded window is the
-all-zero committee in the first `SLOTS_PER_EPOCH` entries and the checked-add-then-`compute_ptc`
-bind in the remaining `2 * SLOTS_PER_EPOCH`. The contract equation above is the whole
-behavior; this is its element reading. -/
+all-zero committee in the first `SLOTS_PER_EPOCH` entries and the checked add, the start
+slot, and the `compute_ptc` bind in the remaining `2 * SLOTS_PER_EPOCH`. The contract
+equation above is the whole behavior; this is its element reading. -/
 theorem initializePtcWindow_getElem [Preset] [Config] [HasherTag] (state : BeaconState)
     (i : Fin (3 * Gloas.Const.slotsPerEpoch)) :
     (initializePtcWindow (pureState state))[i] =
@@ -107,10 +112,11 @@ theorem initializePtcWindow_getElem [Preset] [Config] [HasherTag] (state : Beaco
             (UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) /
               Gloas.Const.slotsPerEpoch))
             "initialize_ptc_window: current_epoch + e") fun epoch =>
-          computePtc (pureState state)
-            (computeStartSlotAtEpoch epoch +
-              UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) %
-                Gloas.Const.slotsPerEpoch)) := by
+          Except.bind (computeStartSlotAtEpoch epoch) fun startSlot =>
+            computePtc (pureState state)
+              (startSlot +
+                UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) %
+                  Gloas.Const.slotsPerEpoch)) := by
   rw [initializePtcWindow_eq state]
   by_cases hlt : i.val < Gloas.Const.slotsPerEpoch
   · simp [hlt]
