@@ -4,6 +4,8 @@ import EthCLLib.Proofs.RunSucceeds
 /-!
 # `EthCLSpecs.Proofs.Gloas.EpochSuccess.Stage`: what holds between the epoch substeps
 
+The Gloas counterpart of the Fulu module of the same name, over Gloas's progressive lists.
+
 `processEpoch` runs fifteen substeps from a start `v`. `Stage b n v caps w` is what each
 intermediate state `w` satisfies: `v`'s slot, the registry facts of `EpochSafe`, and three bounds
 that the substeps move, carried in `caps`. A substep's success lemma takes a `Stage` state to a
@@ -116,6 +118,14 @@ theorem Stage.mono [Preset] [Config] {b : EpochBudget} {v : BeaconState} {caps c
     exitBound := Nat.le_trans hw.exitBound (Nat.add_le_add_left he _)
     historyBound := Nat.le_trans hw.historyBound (Nat.add_le_add_left hh _)
     balanceBound := fun x hx => Nat.le_trans (hw.balanceBound x hx) hb }
+
+/-- A stage's registry indexes below `2^64` when the start's potential, plus the slack, does. -/
+theorem Stage.vFits [Preset] [Config] {b : EpochBudget} {v : BeaconState} {caps : StageCaps}
+    {w : BeaconState} (hw : Stage b v caps w) (h : registryPotential v + caps.slack < 2 ^ 64) :
+    w.validators.val.size < 2 ^ 64 := by
+  have := hw.potential
+  unfold registryPotential at this h
+  omega
 
 /-- Close a `Stage` leaf: a hypothesis that states it, or a record update of the state some
 `Stage` hypothesis is about that leaves the fields `Stage` reads alone. -/

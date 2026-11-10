@@ -4,6 +4,8 @@ import EthCLLib.Proofs.ZeroChunks
 /-!
 # `EthCLSpecs.Proofs.Gloas.EpochSuccess.Selection`: the balance-weighted selection fills
 
+The Gloas counterpart of the Fulu module of the same name, over Gloas's progressive lists.
+
 `compute_balance_weighted_selection` draws candidates until it has `size` of them, with a
 `uint64` pass counter that faults at `2^64 - 1`. `cbwsAux_ok` shows the draw loop fills under the
 hash premise `ZeroChunksOften`: each zero chunk accepts its candidate, and the loop's cached

@@ -6,9 +6,11 @@ import EthCLSpecs.Proofs.Gloas.Invariants.Slots
 /-!
 # `EthCLSpecs.Proofs.Gloas.EpochSuccess.FrameSteps`: the substeps that keep the stage fields
 
-Seven substeps write no field `Stage` reads: justification and finalization, the inactivity
-update, the eth1, slashings and RANDAO resets, the sync-committee rotation, and the proposer
-lookahead. Each keeps the `Stage` it starts from.
+Nine Gloas substeps write no field `Stage` reads: justification and finalization, the inactivity
+update, the eth1, slashings and RANDAO resets, the builder-payment step, the sync-committee
+rotation, the proposer lookahead, and the payload-timeliness committee window. Each keeps the
+`Stage` it starts from. The proposer lookahead samples only unslashed validators, and the
+committee window needs `SLOTS_PER_EPOCH` active validators (`Proofs/Gloas/EpochSuccess/Ptc.lean`).
 
 Justification reads the block roots of the previous and current epoch starts. At the last slot of
 an epoch both lie in the root window when `PresetValid` holds (`epochStart_window`), and the
