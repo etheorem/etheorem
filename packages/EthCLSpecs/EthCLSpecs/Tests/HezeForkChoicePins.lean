@@ -140,12 +140,19 @@ the recorded EL answer, and the timeliness bit `on_inclusion_list` files with ea
 the minimal config that is `6667 * 6000 / 10000 = 4000` (truncating divide), pinning both the
 `INCLUSION_LIST_DUE_BPS = 6667` constant and the inherited `bpsDeadlineMs` composition. Arithmetic
 only (no hash), so kernel `#guard`. -/
-private def pinIlDueMs : UInt64 :=
+private def pinIlDueMs : Option UInt64 :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  getInclusionListDueMs
-#guard pinIlDueMs = 4000
+  getInclusionListDueMs.toOption
+#guard pinIlDueMs = some 4000
+
+-- With `SLOT_DURATION_MS = 2^60`, `INCLUSION_LIST_DUE_BPS * SLOT_DURATION_MS` overflows, and
+-- pyspec raises `ValueError` in `get_slot_component_duration_ms`.
+#guard
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := 2 ^ 60 }
+  getInclusionListDueMs matches .error (.arithmetic _)
 
 /-- The faithful empty-committee throw. Over a zero-validator `default BeaconState`, slot 0's
 beacon committee is empty, so `getInclusionListCommittee` hits the empty-committee guard and

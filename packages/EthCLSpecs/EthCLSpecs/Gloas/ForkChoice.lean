@@ -140,13 +140,13 @@ forkdef getTimeIntoSlotMs (store : Store map) : StoreTransition UInt64 := do
   checkedSub store.timeMs slotStartMs
     "get_time_into_slot_ms: time_ms - compute_time_at_slot_ms(genesis_time_ms, current_slot)"
 
-/-- A basis-points deadline within a slot, in milliseconds: `get_slot_component_duration_ms`,
-`bps * SLOT_DURATION_MS // BASIS_POINTS`. Multiply before the `UInt64` truncating divide, so the
-floor lands on the full `bps * SLOT_DURATION_MS` product. The product stays bare rather than
-`checkedMul`: both factors are constants, so it peaks near `1.2e8` and cannot reach the `uint64`
-bound (`Fulu.bpsDeadlineMs`). -/
-forkdef bpsDeadlineMs (bps : UInt64) : UInt64 :=
-  bps * Const.slotDurationMs / Const.basisPoints
+/-- `get_slot_component_duration_ms(basis_points)`, the same text as `Fulu.bpsDeadlineMs`:
+`basis_points * SLOT_DURATION_MS // BASIS_POINTS`. The product is checked. It raises when the
+`Config` field `SLOT_DURATION_MS` is large. Heze inherits. -/
+forkdef bpsDeadlineMs (bps : UInt64) : Except StateTransitionError UInt64 := do
+  let scaled ← checkedMul bps Const.slotDurationMs
+    "get_slot_component_duration_ms: basis_points * SLOT_DURATION_MS"
+  pure (scaled / Const.basisPoints)
 
 /-! ## Parent payload status + node walks
 
@@ -678,14 +678,18 @@ forkdef onTick (timeMs : UInt64) : StoreTransition Unit := do
 
 /-- `record_block_timeliness(store, root)` (Gloas, `gloas/fork-choice.md:989-1000`): the two
 deadlines (attestation-due and PTC-due), each `is_current_slot ∧ time_into_slot_ms <
-threshold`. The `store.blocks[root]` read raises on a miss. -/
+threshold`. The `store.blocks[root]` read raises on a miss. The reads keep pyspec's order: the
+block, the time into the slot, the attestation deadline, the current slot, then the PTC
+deadline. Each deadline can raise. -/
 forkdef recordBlockTimeliness (store : Store map) (root : Root) : StoreTransition (Store map) := do
   let block ← FcMap.getOrThrow store.blocks root
   let timeIntoSlotMs ← getTimeIntoSlotMs store
+  let attestationThresholdMs ← liftErr (bpsDeadlineMs Const.attestationDueBpsGloas)
   let currentSlot ← getCurrentSlot store
   let isCurrentSlot := currentSlot == block.slot
-  let timeliness : Array Bool := #[isCurrentSlot && timeIntoSlotMs < bpsDeadlineMs Const.attestationDueBpsGloas,
-                                   isCurrentSlot && timeIntoSlotMs < bpsDeadlineMs Const.payloadAttestationDueBps]
+  let ptcThresholdMs ← liftErr (bpsDeadlineMs Const.payloadAttestationDueBps)
+  let timeliness : Array Bool := #[isCurrentSlot && timeIntoSlotMs < attestationThresholdMs,
+                                   isCurrentSlot && timeIntoSlotMs < ptcThresholdMs]
   pure { store with blockTimeliness := FcMap.insert store.blockTimeliness root timeliness }
 
 /-- `update_proposer_boost_root(store, head, root)` (Gloas, `gloas/fork-choice.md:1019-1031`):

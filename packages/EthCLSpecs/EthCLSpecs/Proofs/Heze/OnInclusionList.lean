@@ -10,7 +10,9 @@ result of `processInclusionList`. It sets the store it read first, so a successf
 writes only the IL store. `onInclusionList_run_ok` states this: a successful run is one
 `processInclusionList` step with a timeliness bit `b`. The bit is `true` exactly when
 `InclusionListTimely` holds: the list is for the current slot, and the time into the
-slot is before `getInclusionListDueMs`.
+slot is before the deadline `getInclusionListDueMs`. The deadline raises when its checked
+product `INCLUSION_LIST_DUE_BPS * SLOT_DURATION_MS` overflows, and such a run is not
+successful.
 
 The arrival model is a list of `(SignedInclusionList, Bool)` pairs: each list that
 `onInclusionList` accepted, and the timeliness bit of that run. `ilStoreOfArrivals` folds
@@ -57,13 +59,29 @@ section Handler
 variable {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
 
 /-- The list is timely at `store`. The current slot is `slot`, and the time into the slot
-is before `getInclusionListDueMs`. Both reads take the store argument and no runner
-state. -/
+is before the deadline `getInclusionListDueMs`, which does not raise. Both reads take the
+store argument and no runner state. -/
 def InclusionListTimely (store : Store map) (slot : Slot) : Prop :=
   (getCurrentSlot (StoreTransition := ForkChoiceStoreRun (Store map)) store).run store
       = .ok (slot, store) ∧
-    ∃ t, (getTimeIntoSlotMs (StoreTransition := ForkChoiceStoreRun (Store map)) store).run
-        store = .ok (t, store) ∧ t < getInclusionListDueMs
+    ∃ t d, (getTimeIntoSlotMs (StoreTransition := ForkChoiceStoreRun (Store map)) store).run
+        store = .ok (t, store) ∧ getInclusionListDueMs = .ok d ∧ t < d
+
+omit [Preset] [HasherTag] [Config] in
+/-- A successful `liftErr` run reads an `.ok` value and keeps the state. -/
+private theorem run_liftErr_eq_ok {σ ε' ε α : Type} [ErrorConv ε' ε] (x : Except ε' α)
+    (sb s : σ) (a : α)
+    (h : (liftErr (m := StateT σ (Except ε)) (E := ε') (F := ε) x).run sb = .ok (a, s)) :
+    x = .ok a ∧ s = sb := by
+  cases x with
+  | error e =>
+    rw [run_liftErr_of_error _ sb rfl] at h
+    cases h
+  | ok a' =>
+    rw [run_liftErr_of_ok _ sb rfl] at h
+    injection h with h
+    injection h with h1 h2
+    exact ⟨by rw [h1], h2.symm⟩
 
 omit [FcMap map] in
 /-- `getCurrentSlot` reads no runner state. -/
@@ -111,7 +129,9 @@ theorem onInclusionList_run_ok (store s' : Store map) (signed : SignedInclusionL
       (if (signed.message.slot == cs) = true then
           (do
             let t ← getTimeIntoSlotMs (StoreTransition := ForkChoiceStoreRun (Store map)) store
-            let isTimely ← pure (decide (t < getInclusionListDueMs))
+            let d ← liftErr (m := ForkChoiceStoreRun (Store map)) (F := StoreTransitionError)
+              getInclusionListDueMs
+            let isTimely ← pure (decide (t < d))
             set ({ store with inclusionListStore :=
               processInclusionList store.inclusionListStore signed isTimely } : Store map))
         else
@@ -128,9 +148,11 @@ theorem onInclusionList_run_ok (store s' : Store map) (signed : SignedInclusionL
     split at hrun
     · rename_i hslot
       obtain ⟨t, s2, ht, hrun⟩ := run_bind_eq_ok _ _ _ _ hrun
+      obtain ⟨d, s4, hd, hrun⟩ := run_bind_eq_ok _ _ _ _ hrun
       obtain ⟨b, s3, hb, hrun⟩ := run_bind_eq_ok _ _ _ _ hrun
       have hbt := run_pure_eq_ok _ _ _ _ hb
       have htStore := ((getTimeIntoSlotMs_stateFree store).run_eq ht).2 store
+      have hdue := (run_liftErr_eq_ok _ _ _ _ hd).1
       injection hrun with hrun
       injection hrun with _ hrun
       refine ⟨b, hrun.symm, ?_⟩
@@ -138,12 +160,15 @@ theorem onInclusionList_run_ok (store s' : Store map) (signed : SignedInclusionL
       have hcsSlot : signed.message.slot = cs := beq_iff_eq.mp hslot
       constructor
       · intro hlt
-        exact ⟨hcsSlot ▸ hcs, t, htStore, of_decide_eq_true hlt⟩
-      · rintro ⟨-, t', ht', hlt⟩
+        exact ⟨hcsSlot ▸ hcs, t, d, htStore, hdue, of_decide_eq_true hlt⟩
+      · rintro ⟨-, t', d', ht', hd', hlt⟩
         rw [htStore] at ht'
         injection ht' with ht'
         injection ht' with ht'
         subst ht'
+        rw [hdue] at hd'
+        injection hd' with hd'
+        subst hd'
         exact decide_eq_true hlt
     · rename_i hslot
       obtain ⟨b, s3, hb, hrun⟩ := run_bind_eq_ok _ _ _ _ hrun
