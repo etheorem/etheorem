@@ -532,24 +532,17 @@ The linear DAG walks route through fuel-bounded combinators (§12). `getAncestor
 which a linear combinator cannot express, so it keeps a local fuel-bounded `where` helper.
 The totality the doc wants is met either way.
 
-The fork-choice weight path still runs on raw `UInt64` where the pyspec's `uint64` ops
-raise, and it is deferred as one piece because it rests on one root: `getTotalBalance`
-(`phase0/beacon-chain.md:1559-1570`), whose `sum(...)` accumulates in `Gwei` and raises,
-while this fold wraps. `calculateCommitteeFraction` divides `getTotalBalance` over the
-unslashed active validators by `SLOTS_PER_EPOCH` (v1.7.0-beta.4; alpha.12 took
-`getTotalActiveBalance`), `computeProposerScore` and the re-org threshold are its products, and
-`getWeight`'s proposer-boost add takes one operand from them, so checking any of those while
-the total underneath still wraps would only move the wrong number around.
+The fork-choice weight path checks each `uint64` op the pyspec raises on. `checkedAdd` steps
+the `getAttestationScore` balance sum, the `isHeadWeak` equivocator sums and their
+`head_weight +=`, and `getWeight`'s proposer-boost add. `checkedMul` takes the
+`committee_weight * committee_percent` product in `calculateCommitteeFraction`, so the
+fraction, `computeProposerScore`, and both re-org thresholds throw.
 
-The conversion is larger than the fork-choice layer. `getTotalBalance` and
-`getTotalActiveBalance` are pure `forkdef`s with 15 call sites across epoch processing,
-rewards, registry updates, the transition spine, and fork choice; making them throwing
-propagates upward through every pure caller (§7.1's rule, one layer over). The remaining
-independent site is `getAttestationScore`'s own balance fold, which sums
-`state.validators[i].effective_balance` directly and could be checked on its own; it stays
-with the rest so the weight path converts in one go rather than half-guarded. Reaching any
-of them takes a total active balance within a factor of the `uint64` bound, which no
-preset's validator set approaches.
+One root still wraps: `getTotalBalance` (`phase0/beacon-chain.md:1559-1570`), whose
+`sum(...)` accumulates in `Gwei` and raises. It is a pure `forkdef` with call sites across
+epoch processing, rewards, registry updates, the transition spine, and fork choice, so
+making it throwing propagates upward through every pure caller (§7.1's rule, one layer
+over).
 
 The reference catches different exceptions per step kind, so what satisfies a
 `valid: false` step varies too. `expect_assertion_error` (`context.py:424-435`) catches
