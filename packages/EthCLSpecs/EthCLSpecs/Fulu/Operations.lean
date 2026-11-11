@@ -222,31 +222,6 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
     (UInt64.ofNat (proposerNum / proposerDenom))
   set stateAcc
 
-/-! ## Deposits -/
-
-/-- `apply_deposit`: a new pubkey is added only with a valid proof-of-possession;
-either way (existing, or freshly added) the amount is queued as a pending deposit. -/
-forkdef applyDeposit (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) (sig : BLSSignature) :
-    StateTransition Unit := do
-  let state ← get
-  let pendingDeposit : PendingDeposit :=
-    { pubkey, withdrawalCredentials := wc, amount, signature := sig, slot := Const.genesisSlot }
-  if (sszGet state validators).any (·.pubkey == pubkey) then
-    appendState pendingDeposits pendingDeposit
-  else if isValidDepositSignature pubkey wc amount sig then
-    addValidatorToRegistry pubkey wc 0
-    appendState pendingDeposits pendingDeposit
-
-/-- `process_deposit`: verify the Merkle branch into `eth1_data.deposit_root`,
-advance `eth1_deposit_index`, then apply. -/
-forkdef processDeposit (d : Deposit) : StateTransition Unit := do
-  let state ← get
-  assert (isValidMerkleBranch (htr d.data) d.proof.toArray (Const.depositContractTreeDepth + 1)
-    (sszGet state eth1DepositIndex).toNat (sszGet state eth1Data).depositRoot)
-
-  modifyState fun state => sszUpdate state with eth1DepositIndex := (sszGet state eth1DepositIndex) + 1
-  applyDeposit d.data.pubkey d.data.withdrawalCredentials d.data.amount d.data.signature
-
 /-! ## Voluntary exits -/
 
 /-- `process_voluntary_exit`. -/

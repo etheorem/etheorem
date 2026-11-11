@@ -88,18 +88,6 @@ These claims rest on another row:
   `unsatisfiedPayload_cost`.
 - The committee partition rests on the shuffle bijection.
 - Plausible liveness rests on accountable safety.
-- Both `processDeposit` rows rest on the Merkle branch check. Its proof module is
-  [`EthCLLib/Proofs/MerkleBranch.lean`](../../EthCLLib/EthCLLib/Proofs/MerkleBranch.lean),
-  which reduces `isValidMerkleBranch` past its length guard to a fold of `branch`
-  over `leaf`. The theorem to cite is
-  `isValidMerkleBranch_of_foldOpening`: for `index < 2 ^ depth` it accepts the
-  check whenever `branchFold_eq_foldOpening` ties the branch fold to a SizzLean
-  tree's own opening, and `Proofs/Merkle/Opening.lean` proves that opening
-  folds back to the tree's root (`foldOpening_openingAt`, with the
-  mix-in-length variant for list elements). The remaining gap is the tree the
-  deposit branch is checked against: the deposit contract's incremental tree is
-  not an `ofShape` tree, the case the SizzLean ledger's `branch × deposit-tree`
-  row holds out of scope.
 - `VerifiedImpliesRecorded` is a joint claim of `getForkchoiceStore` and
   `onExecutionPayloadEnvelope`. The local postcondition at the written root
   cites `FcMap.lookup_insert_self` and `FcMap.contains_insert_self`. The
@@ -266,7 +254,6 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | `modBalance` | `Fulu/Balances.lean:29` | On the pure box, the write through the infallible `[i]!` index is one plain record update: `modBalance (pureState state) i f = pureState { state with balances := state.balances.set! i.toNat (f state.balances[i.toNat]!) }`. This is the whole contract; the two mutators below build on it | proved | follow-up to #80, `Proofs/Fulu/Balances.lean` |
 | `increaseBalance` | `Fulu/Balances.lean:43` | The run rejects an index past the end of `balances` with `.outOfBounds`, and an addition that leaves the `uint64` range with `.arithmetic`. In range and below that bound it returns the input value with exactly that one balance written, and that balance is the exact natural-number sum | proved | #80, `Proofs/Fulu/Balances.lean` |
 | `decreaseBalance` | `Fulu/Balances.lean:54` | The run rejects an index past the end of `balances` with `.outOfBounds`. In range it returns the input value with exactly `saturatingSub balance delta` written, the spec's `saturating_sub` (v1.7.0-beta.4); that value reads back as the truncating `Nat` difference, so the `uint64` subtraction never wraps | proved | #80, `Proofs/Fulu/Balances.lean` |
-| `processDeposit` | `Fulu/Operations.lean:227` | Neither the incremented deposit index nor the running total balance exceeds `2^64`. Dafny stated both bounds and assumed them through `{:axiom}` lemmas, so Dafny's statements are reusable as a template. Its proofs are not. A sharper bound is open as well. The branch check needs `eth1DepositIndex < 2^32`, which follows from `eth1DepositIndex <= eth1Data.depositCount` together with a bound on `depositCount`. The consensus spec does not bound `depositCount`, since that count arrives from the execution layer. Any statement here is therefore conditional on the deposit contract's depth-32 capacity | proposed |  |
 | `processRegistryUpdates` | `Fulu/EpochProcessing.lean:179` | The registry never exceeds `VALIDATOR_REGISTRY_LIMIT` | proposed |  |
 | `getBeaconCommittee` | `Fulu/Committees.lean:82` | An active-validator count in `[32, 2^22]` implies every committee size is in `(0, MAX_VALIDATORS_PER_COMMITTEE]`. Dafny proves the same bound in `ActiveValidatorBounds` | proposed |  |
 | `computeStartSlotAtEpoch` | `Fulu/Time.lean:45-47` | The function multiplies an epoch back to a slot. It faults with `.arithmetic` above `2^64`. It never faults on an epoch derived from a slot. The claim is open where the caller supplies the epoch | proved | `Proofs/Fulu/Time.lean` |
@@ -287,7 +274,6 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | --- | --- | --- | --- | --- |
 | `computeShuffledPermutation` | `Fulu/Committees.lean:31` | A bijection on `[0, indexCount)`. No prior art: Dafny stubbed shuffling to the identity, and Runtime Verification did not prove it either | proposed |  |
 | `getBeaconCommittee` | `Fulu/Committees.lean:82` | The committees for a slot partition the active set: their union is the active validator set and they are pairwise disjoint. This follows from the shuffle bijection. The committee-size bound is the separate row under Bounds and termination properties | proposed |  |
-| `processDeposit` | `Fulu/Operations.lean:227` | `validators.size = balances.size` holds at the append site, and then holds across the transition. The two overflow bounds are the separate row under Bounds and termination properties | proposed |  |
 | `isSlashableAttestationData` | `Fulu/Operations.lean:39` | Agrees with the spec's slashability condition, a double vote or a surround vote, given the `strictlySorted` well-formedness the caller establishes | proposed |  |
 | `processRegistryUpdates` | `Fulu/EpochProcessing.lean:179` | One third of a joint claim with `initiateValidatorExit` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
 | `initiateValidatorExit` | `Fulu/RegistryUpdates.lean:140` | One third of a joint claim with `processRegistryUpdates` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
@@ -550,7 +536,7 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
   accountable safety and plausible liveness, over an abstract model with dynamic
   validator sets. It also proved the deposit contract's incremental Merkle root equal
   to the naive full-tree root. It refined the KEVM bytecode against an untrusted
-  compiler, which found bugs. That incremental-tree result is the closest prior art to
-  the deposit branch check the `processDeposit` rows name.
+  compiler, which found bugs. That incremental-tree result is prior art for the
+  Electra deposit branch check, which Fulu removes.
 - Nyx Foundation `formal-leanSpec` — a parallel Lean 4 formalization of the
   post-quantum leanSpec, with its own SSZ layer.

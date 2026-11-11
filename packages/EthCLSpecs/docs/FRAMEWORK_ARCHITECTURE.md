@@ -943,7 +943,7 @@ Framework-owned mechanics come in two kinds. The **hashing-based** primitives ar
 the signing-root combinators, `computeForkDataRoot`, `computeDomain`, and
 `computeSigningRoot`, which hash over small byte containers and take a fork-version
 value without reading state, plus `isValidMerkleBranch`, the Merkle-proof
-verification `processDeposit` runs against `eth1Data.depositRoot`. Both are backed
+verification. Both are backed
 by SizzLean's hashing by default, and the framework is free to swap another
 implementation if it fits better. The **signature- and commitment-based**
 primitives are the BLS verify and aggregate (including the `fastAggregateVerify`

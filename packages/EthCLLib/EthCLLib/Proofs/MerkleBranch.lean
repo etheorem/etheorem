@@ -245,8 +245,7 @@ over the leaf reconstructs the root, then
 `isValidMerkleBranch leaf branch depth index root` is `true`. The
 siblings are 32-byte roots, `branch` runs bottom-up, and the
 reconstruction hypothesis is stated on `gindexBits (2 ^ depth +
-index)`, the bit path the generalized index produces. This is the
-theorem the fork ledger's `processDeposit` rows wait on. -/
+index)`, the bit path the generalized index produces. -/
 theorem isValidMerkleBranch_of_foldOpening [HasherTag]
     (leaf root : Vector UInt8 32) (sibs : List (Vector UInt8 32)) (depth index : Nat)
     (hsize : sibs.length = depth) (hindex : index < 2 ^ depth)
