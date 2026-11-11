@@ -1,6 +1,7 @@
 import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Churn
 import EthCLSpecs.Proofs.Fulu.Codec
+import EthCLSpecs.Proofs.Fulu.Committees
 import EthCLSpecs.Proofs.Fulu.Run
 import EthCLSpecs.Proofs.Fulu.Shuffle
 import EthCLSpecs.Proofs.Fulu.Time
@@ -29,6 +30,9 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Codec`: the `BasicSupported` gate by kernel `decide`, roundtrip, and
   non-malleability (`serialize_injective`) for `BeaconState`, `BeaconBlockBody`, `BeaconBlock`,
   and `SignedBeaconBlock` at the two shipped presets.
+* `EthCLSpecs.Proofs.Fulu.Committees`: one epoch's beacon committees are a permutation of the
+  active set (`getBeaconCommittee_partition`), and no validator sits in two of them
+  (`getBeaconCommittee_nodup`).
 * `EthCLSpecs.Proofs.Fulu.Shuffle`: `computeShuffledPermutation` returns a permutation of
   `[0, n)` whenever it does not raise (`computeShuffledPermutation_perm`).
 * `EthCLSpecs.Proofs.Fulu.Time`: `computeEpochAtSlot` is monotone in the slot, and

@@ -4,17 +4,17 @@ import EthCLLib.Proofs.Lemmas
 /-!
 # `EthCLLib.Proofs.CheckedOps`: checked `uint64` operations that do not overflow
 
-`checkedMul` and `checkedAdd` (`EthCLLib/Spec/Errors.lean`) mirror the checked `uint64`
-arithmetic of the pyspec. They raise `.arithmetic` when the result does not fit. The two
-lemmas here state the other outcome in `Except`: when the operands and the result fit in
-`uint64`, the operation returns the `Nat` result.
+`checkedMul`, `checkedAdd` and `checkedSub` (`EthCLLib/Spec/Errors.lean`) mirror the
+checked `uint64` arithmetic of the pyspec. They raise `.arithmetic` when the result does not
+fit. The three lemmas here state the other outcome in `Except`: when the operands and the
+result fit in `uint64`, the operation returns the `Nat` result.
 -/
 
 set_option autoImplicit false
 
 namespace EthCLLib.Proofs
 
-open EthCLLib.Spec (StateTransitionError checkedMul checkedAdd)
+open EthCLLib.Spec (StateTransitionError checkedMul checkedAdd checkedSub)
 
 /-- `checkedMul` of two `uint64` values whose product fits returns the product. -/
 theorem checkedMul_ok {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) (hab : a * b < 2 ^ 64)
@@ -55,6 +55,26 @@ theorem checkedAdd_ok {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) (hab : a +
     omega
   unfold checkedAdd
   rw [ite_eq_right htest, hsum]
+  rfl
+
+/-- `checkedSub` of two `uint64` values with `b ≤ a` returns the difference. -/
+theorem checkedSub_ok {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) (hba : b ≤ a)
+    (descr : String) :
+    (checkedSub (m := Except StateTransitionError) (UInt64.ofNat a) (UInt64.ofNat b) descr)
+      = .ok (UInt64.ofNat (a - b)) := by
+  have hle : UInt64.ofNat b ≤ UInt64.ofNat a := by
+    rw [UInt64.le_iff_toNat_le, toNat_ofNat_lt64 ha, toNat_ofNat_lt64 hb]
+    exact hba
+  have hdiff : UInt64.ofNat a - UInt64.ofNat b = UInt64.ofNat (a - b) := by
+    apply UInt64.toNat_inj.mp
+    rw [UInt64.toNat_sub_of_le _ _ hle, toNat_ofNat_lt64 ha, toNat_ofNat_lt64 hb,
+      toNat_ofNat_lt64 (Nat.lt_of_le_of_lt (Nat.sub_le a b) ha)]
+  -- The underflow test `b > a` is false.
+  have htest : ¬ (UInt64.ofNat b > UInt64.ofNat a) := by
+    rw [gt_iff_lt, UInt64.lt_iff_toNat_lt, toNat_ofNat_lt64 ha, toNat_ofNat_lt64 hb]
+    omega
+  unfold checkedSub
+  rw [ite_eq_right htest, hdiff]
   rfl
 
 end EthCLLib.Proofs
