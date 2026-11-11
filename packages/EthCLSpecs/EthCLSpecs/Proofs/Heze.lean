@@ -42,6 +42,7 @@ import EthCLSpecs.Proofs.Heze.PayloadTiebreak
 import EthCLSpecs.Proofs.Heze.PaymentCarried
 import EthCLSpecs.Proofs.Heze.PaymentFrame
 import EthCLSpecs.Proofs.Heze.PaymentWriters
+import EthCLSpecs.Proofs.Heze.ProposerScore
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.RootFrames
 import EthCLSpecs.Proofs.Heze.Run
@@ -273,6 +274,9 @@ Re-exports:
   `slashValidator_run_withdrawal` and the two slashing handlers,
   `processParentExecutionPayload_run_withdrawal`), and the index facts
   (`builderPaymentIndex_inj`).
+* `EthCLSpecs.Proofs.Heze.ProposerScore`: a successful `getProposerScore` run returns
+  `proposerScoreOf` of the justified checkpoint state (`getProposerScore_run_eq`). So the
+  proposer score is one value per justified state.
 * `EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction`: the
   complete run of `recordPayloadInclusionListSatisfaction`
   (`recordPayloadInclusionListSatisfaction_run`), proved with

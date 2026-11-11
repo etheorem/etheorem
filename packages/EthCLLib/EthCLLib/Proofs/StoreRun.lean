@@ -26,8 +26,9 @@ state-transition theorem states its run on `pureState v`, the uncached box, and 
 `ForkChoiceStoreRun` abbreviation
 and the store-specific `throwArithmetic_run` equation: `throwArithmetic` lifts a
 `StateTransitionError` that the store machine wraps as `.transition`, so the
-generic `run_throw` does not apply. It also keeps `toNat_add_of_not_lt`, the `Nat`
-sum of a `checkedAdd` that does not raise.
+generic `run_throw` does not apply. It also keeps `toNat_add_of_not_lt` and
+`toNat_mul_of_guard`, the `Nat` values of a `checkedAdd` and a `checkedMul` that do
+not raise.
 -/
 
 set_option autoImplicit false
@@ -69,5 +70,32 @@ theorem toNat_add_of_not_lt (a b : UInt64) (h : ¬ (a + b < a)) :
   have hp : (2 : Nat) ^ 64 = 18446744073709551616 := rfl
   rw [hp] at h ⊢
   omega
+
+/-- A `checkedMul a b` that does not raise multiplies the `Nat` values. Its guard says that
+`a` is zero, or that the truncated product divides back to `b`. Then the product fits in
+`UInt64`. -/
+theorem toNat_mul_of_guard (a b : UInt64) (h : ¬ ((a != 0 && a * b / a != b) = true)) :
+    (a * b).toNat = a.toNat * b.toNat := by
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, not_and, Decidable.not_not] at h
+  by_cases ha : a = 0
+  · subst ha
+    simp
+  · have hd := congrArg UInt64.toNat (h ha)
+    have hpos : 0 < a.toNat := by
+      rcases Nat.eq_zero_or_pos a.toNat with h0 | h0
+      · exact absurd (UInt64.toNat_inj.mp (by simpa using h0)) ha
+      · exact h0
+    simp only [UInt64.toNat_div, UInt64.toNat_mul] at hd
+    -- `p` is the truncated product. It divides back to `b`, so it is at least `a * b`, and
+    -- it never exceeds the true product.
+    generalize hp : a.toNat * b.toNat % 2 ^ 64 = p at hd
+    have hlo : a.toNat * b.toNat ≤ p := by
+      have := (Nat.le_div_iff_mul_le hpos).mp (Nat.le_of_eq hd.symm)
+      simpa [Nat.mul_comm] using this
+    have hhi : p ≤ a.toNat * b.toNat := by
+      rw [← hp]
+      exact Nat.mod_le _ _
+    rw [UInt64.toNat_mul, hp]
+    omega
 
 end EthCLLib.Proofs
