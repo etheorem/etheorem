@@ -348,6 +348,29 @@ theorem inclusionListTimely_of_window (st : Store map) (slot due : UInt64) (w : 
   · rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_sub_of_le _ _ hsle, hstartN]
     omega
 
+/-- Take a store whose time is the wall time `w`, and whose current slot is `cs`. Then `w`
+lies in slot `cs`. The converse direction is `getCurrentSlot_run_eq_of_window`. -/
+theorem slot_window_of_getCurrentSlot (st s s' : Store map) (cs : UInt64) (w : Nat)
+    (h : (getCurrentSlot (StoreTransition := ForkChoiceStoreRun (Store map)) st).run s
+      = .ok (cs, s'))
+    (htime : st.timeMs.toNat = w) (hD : 0 < slotDurationMs.toNat) :
+    slotStartMs st.genesisTimeMs cs.toNat ≤ w ∧
+      w < slotStartMs st.genesisTimeMs (cs.toNat + 1) := by
+  refine ⟨slotStartMs_le_of_getCurrentSlot st s s' cs w cs.toNat h htime hD (Nat.le_refl _), ?_⟩
+  obtain ⟨hle, hcs, -⟩ := getCurrentSlot_run_ok st s s' cs h
+  have hg : st.genesisTimeMs.toNat ≤ w := htime ▸ UInt64.le_iff_toNat_le.mp hle
+  rw [htime] at hcs
+  -- The milliseconds since genesis, `e`, lie below the start of the next slot.
+  generalize he : w - st.genesisTimeMs.toNat = e at hcs
+  have hlt : e < slotDurationMs.toNat * (e / slotDurationMs.toNat + 1) := by
+    have := Nat.lt_mul_div_succ e hD
+    simpa [Nat.mul_add] using this
+  rw [← hcs] at hlt
+  unfold slotStartMs
+  rw [Nat.mul_comm (cs.toNat + 1)]
+  generalize slotDurationMs.toNat * (cs.toNat + 1) = p at hlt ⊢
+  omega
+
 end Clock
 
 section BlockClock
