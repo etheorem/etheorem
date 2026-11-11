@@ -414,24 +414,27 @@ forkdef shouldApplyProposerBoost (store : Store map) : StoreTransition Bool := d
     let parentRoot := block.parentRoot
     let parent ← FcMap.getOrThrow store.blocks parentRoot
     let slot := block.slot
-    let parentNextSlot ← checkedAdd parent.slot 1 "is_proposer_equivocation: parent.slot + 1"
+    let parentNextSlot ← checkedAdd parent.slot 1 "should_apply_proposer_boost: parent.slot + 1"
     if parentNextSlot < slot then pure true
     else if !(← isHeadWeak store parentRoot) then pure true
     else
       -- The spec's equivocation comprehension iterates `store.blocks.items()`
-      -- (`gloas/fork-choice.md:552`), so the block comes from the iteration itself, not a
+      -- (`gloas/fork-choice.md:550-559`), so the block comes from the iteration itself, not a
       -- separate read; fold over the `(root, block)` entries in hand. It then reads
-      -- `store.block_timeliness[root][PTC_TIMELINESS_INDEX]` (`:503`): the outer `[root]` is a
+      -- `store.block_timeliness[root][PTC_TIMELINESS_INDEX]` (`:554`): the outer `[root]` is a
       -- plain `Dict` (raises `KeyError`, `getOrThrow`), the inner `[PTC_TIMELINESS_INDEX]` a
       -- raising `list` index (`IndexError`, `arrGetIdx`). Both faithful throws.
+      -- The spec's `and` stops at the first false test. So `block.slot + 1` (a checked add)
+      -- runs only for a timely block of the parent's proposer.
       let entries : Array (Root × BeaconBlock) :=
         FcMap.fold (fun acc root b => acc.push (root, b)) #[] store.blocks
       let equivExists ← entries.foldlM (init := false) fun found (root, b) => do
         let tl ← FcMap.getOrThrow store.blockTimeliness root
         let timely ← arrGetIdx tl Const.ptcTimelinessIndex
-        let bNextSlot ← checkedAdd b.slot 1 "is_proposer_equivocation: block.slot + 1"
-        pure (found || (timely && b.proposerIndex == parent.proposerIndex
-          && bNextSlot == slot && root != parentRoot))
+        if timely && b.proposerIndex == parent.proposerIndex then
+          let bNextSlot ← checkedAdd b.slot 1 "should_apply_proposer_boost: block.slot + 1"
+          pure (found || (bNextSlot == slot && root != parentRoot))
+        else pure found
       pure (!equivExists)
 
 /-- `get_weight(store, node)`: zero for an undecided previous-slot payload; otherwise
