@@ -131,20 +131,46 @@ forkdef processEth1Data (body : BeaconBlockBody) : StateTransition Unit := do
 
 /-- `process_sync_aggregate`: verify the aggregate signature over the previous
 slot's block root, then apply participant / proposer rewards and non-participant
-penalties. The participant pubkey list is the bit-selected committee keys, and
-`eth_fast_aggregate_verify` aggregates them. The spec's all-participate and
-majority-subtraction branches start from the cached `aggregate_pubkey` instead, so the
-answers agree whenever that aggregate is the sum of the committee's `pubkeys`, as
-`get_next_sync_committee` builds it. The crypto seam has no point addition or negation to
-model those branches; `IMPLEMENTATION_NOTES.md` records the divergence. -/
+penalties (`altair/beacon-chain.md:635-695`).
+
+The verify gets the keys the spec chooses by the number of set bits:
+
+- All bits set: the stored `aggregate_pubkey`, unchanged. The body does not compare it with
+  the committee keys.
+- More than half set: the G1 difference of the stored aggregate and the aggregate of the
+  non-participant keys. `AssertionError` (`.assert`) when a non-participant key fails
+  `KeyValidate`, which includes bytes that do not decode, since `eth_aggregate_pubkeys`
+  asserts first. `ValueError` (`.arithmetic`) when the stored aggregate does not decode as a
+  G1 point.
+- Half set or fewer: the participant keys.
+
+The pyspec chooses the keys before it reads the block root. So a key fault raises before a
+fault in `get_block_root_at_slot`.
+
+Before any reward, the pyspec finds the registry position of every committee key
+(`all_pubkeys.index`). A key that is not in the registry raises `ValueError`
+(`.arithmetic`). -/
 forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let state ← get
 
-  -- Verify the aggregate over the previous slot's block root from the bit-selected keys.
+  -- Choose the verification keys by the number of set bits.
   let syncCommittee := sszGet state currentSyncCommittee
   let bits := agg.syncCommitteeBits
-  let participantKeys : Array BLSPubkey :=
-    (Bitvector.trueIndices bits).map (fun i => syncCommittee.pubkeys[i]!)
+  let participantCount := (Bitvector.trueIndices bits).size
+  let participantKeys : Array BLSPubkey ←
+    if participantCount == Const.syncCommitteeSize then
+      pure #[syncCommittee.aggregatePubkey]
+    else if participantCount > Const.syncCommitteeSize / 2 then do
+      let nonParticipantKeys : Array BLSPubkey :=
+        ((Array.range Const.syncCommitteeSize).filter (fun i => !bitGet bits i)).map
+          (fun i => syncCommittee.pubkeys[i]!)
+      let nonParticipantAggregate ← liftErr (blsAggregatePubkeysChecked nonParticipantKeys)
+      let negated ← liftErr (blsG1Neg nonParticipantAggregate)
+      pure #[← liftErr (blsG1Add syncCommittee.aggregatePubkey negated)]
+    else
+      pure ((Bitvector.trueIndices bits).map (fun i => syncCommittee.pubkeys[i]!))
+
+  -- Verify the signature over the previous slot's block root.
   let previousSlot := saturatingSub (sszGet state slot) 1
   let previousBlockRoot ← getBlockRootAtSlot state previousSlot
   let signingRoot := computeSigningRoot previousBlockRoot
@@ -159,20 +185,23 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let proposerReward : Gwei :=
     UInt64.ofNat (participantReward.toNat * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight))
   let proposerIdx := getBeaconProposerIndex state
+
+  -- `committee_indices`: the first registry position of each committee key.
   let validators := (sszGet state validators).toArray
+  let committeeIndices : Array ValidatorIndex ← syncCommittee.pubkeys.toArray.mapM fun pk =>
+    match validators.findIdx? (·.pubkey == pk) with
+    | some pIdx => pure (UInt64.ofNat pIdx)
+    | none => throwArithmetic "process_sync_aggregate: all_pubkeys.index(pubkey)"
 
   -- Reward participants (and the proposer), penalize non-participants.
   let mut state := state
-  for h : i in [0:Const.syncCommitteeSize] do
-    let pk := syncCommittee.pubkeys[i]
-    match validators.findIdx? (·.pubkey == pk) with
-    | some pIdx =>
-      if bitGet bits i then
-        state ← increaseBalance state (UInt64.ofNat pIdx) participantReward
-        state ← increaseBalance state proposerIdx proposerReward
-      else
-        state ← decreaseBalance state (UInt64.ofNat pIdx) participantReward
-    | none => pure ()
+  for h : i in [0:committeeIndices.size] do
+    let pIdx := committeeIndices[i]
+    if bitGet bits i then
+      state ← increaseBalance state pIdx participantReward
+      state ← increaseBalance state proposerIdx proposerReward
+    else
+      state ← decreaseBalance state pIdx participantReward
   set state
 
 /-- `process_execution_payload` (Fulu, `fulu/beacon-chain.md`, "Modified

@@ -629,16 +629,12 @@ Spec-faithfulness facts worth knowing:
 pubkey aggregation (the `ffi` / `verifyOff` backends delegate to
 `LeanHazmat.Bls.ethAggregatePubkeys`; the `symbolic` backend returns a zero point).
 
-`process_sync_aggregate` verifies against the participants' pubkeys with
-`eth_fast_aggregate_verify`, one branch. The Fulu text has three, chosen by
-`get_set_bit_count(sync_committee_bits)`: with every bit set it verifies the committee's
-cached `aggregate_pubkey`, with more than half set it subtracts the non-participants from that
-aggregate, and otherwise it aggregates the participants. The three agree whenever
-`aggregate_pubkey` is the sum of the committee's `pubkeys`. `get_next_sync_committee`
-guarantees that for every committee the transition builds, but a hand-built state can break
-it, and then the one branch can answer differently. Modeling the other two needs BLS point
-addition and negation on the crypto seam, which `CryptoBackend` does not carry. This is a
-divergence from the spec text that predates the beta.4 re-pin.
+`process_sync_aggregate` chooses its verification keys as the spec does, by
+`get_set_bit_count(sync_committee_bits)`: with every bit set the committee's cached
+`aggregate_pubkey`, with more than half set that aggregate minus the non-participants'
+aggregate, and otherwise the participants' keys. The subtraction uses the `keyValidate`,
+`g1Add` and `g1Neg` operations of `CryptoBackend`, so a hand-built state whose
+`aggregate_pubkey` is not the sum of its `pubkeys` gets the spec's answer.
 
 ## Gloas diff
 
