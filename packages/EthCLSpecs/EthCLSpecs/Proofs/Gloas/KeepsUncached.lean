@@ -380,10 +380,11 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
         · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _) (fun _ => keepsUncachedFrom_throw _ _)
         · refine keepsUncachedFrom_bind ?gD (fun _ midState₅ => ?_)
           · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _) (fun _ => keepsUncachedFrom_throw _ _)
-          · simp only []
-            split
-            · refine keepsUncachedFrom_bind (keepsUncachedFrom_pure _ _) (fun _ midState₆ => ?_)
-              refine keepsUncachedFrom_bind (T := BeaconState) ?gF (fun _ midState₇ => ?_)
+          · refine keepsUncachedFrom_bind ?co (fun _ midState₆ => ?_)
+            · exact keepsUncachedFrom_liftErr (T := BeaconState) (v := midState₅)
+                (ε := EthCLLib.Spec.StateTransitionError) (ε' := EthCLLib.Spec.StateTransitionError)
+                (α := Nat) _
+            · refine keepsUncachedFrom_bind (T := BeaconState) ?gF (fun _ midState₇ => ?_)
               · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _)
                   (fun _ => keepsUncachedFrom_throw _ _)
               · refine keepsUncachedFrom_bind (T := BeaconState) ?gf (fun flagIndices midState₈ => ?_)
@@ -393,7 +394,8 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                   · refine keepsUncachedFrom_bind (keepsUncachedFrom_pure _ _) (fun _ midState₉ => ?_)
                     refine keepsUncachedFrom_bind ?li (fun idxs midState₁₀ => ?_)
                     · exact keepsUncachedFrom_liftErr (T := BeaconState) (v := midState₉)
-                        (ε := EthCLLib.Spec.StateTransitionError) (ε' := EthCLLib.Spec.IndexError)
+                        (ε := EthCLLib.Spec.StateTransitionError)
+                        (ε' := EthCLLib.Spec.StateTransitionError)
                         (α := Array EthCLSpecs.Gloas.ValidatorIndex) _
                     · -- The attesting-index list is built purely (a progressive list wraps
                       -- the sorted array), so the next effect is the validity assert.
@@ -406,7 +408,7 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                         · refine keepsUncachedFrom_bind ?li2 (fun idxs2 midState₁₃ => ?_)
                           · exact keepsUncachedFrom_liftErr (T := BeaconState) (v := midState₁₂)
                               (ε := EthCLLib.Spec.StateTransitionError)
-                              (ε' := EthCLLib.Spec.IndexError)
+                              (ε' := EthCLLib.Spec.StateTransitionError)
                               (α := Array EthCLSpecs.Gloas.ValidatorIndex) _
                           · refine keepsUncachedFrom_forIn_array_bind_P (T := BeaconState) (v := midState₁₃)
                               ?ob ?kt
@@ -546,7 +548,6 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                                   -- `pureState` of the record update, so the value is inferred.
                                   keepsUncachedFrom_set midState₁₈ _)
                   · exact keepsUncachedFrom_throw_bind _ _
-            · exact keepsUncachedFrom_throw_bind _ _
 
 end
 

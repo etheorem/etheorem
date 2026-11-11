@@ -94,6 +94,7 @@ forkdef applyPendingDeposit (deposit : PendingDeposit) : StateTransition Unit :=
         addValidatorToRegistry deposit.pubkey deposit.withdrawalCredentials deposit.amount
       else pure ()
 inherit computeShuffledPermutation
+inherit seedOf
 inherit getSeed
 inherit getCommitteeCountPerSlot
 inherit computeCommittee

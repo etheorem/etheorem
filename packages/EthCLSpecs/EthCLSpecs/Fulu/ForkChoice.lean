@@ -391,7 +391,7 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
   let validators := sszGet justifiedState validators
   let headWeight ← (List.range (getCommitteeCountPerSlot headState epoch)).foldlM
       (init := baseWeight) fun acc index => do
-    let committee := getBeaconCommittee headState headBlock.slot index
+    let committee ← liftErr (getBeaconCommittee headState headBlock.slot index)
     -- Python sums the equivocator balances of the committee as `Gwei(sum(...))`. Then it
     -- adds that sum with `head_weight +=`. Both `uint64` ops raise past `2^64`, so the model
     -- checks both, in the same order.

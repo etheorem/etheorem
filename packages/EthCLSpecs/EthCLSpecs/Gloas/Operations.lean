@@ -49,6 +49,7 @@ forkdef isValidIndexedAttestation (state : State) (a : IndexedAttestation) : Boo
 -- Attesting-set helper: now inheritable since the Gloas committee layer is in scope
 -- (its `getBeaconCommittee` / `getCommitteeIndices` calls bind to the Gloas copies).
 inherit getAttestingIndices
+inherit attestationCommitteeOffset
 
 -- Handlers EIP-7732 does not change, inherited verbatim over `Gloas.State`.
 inherit processAttesterSlashing
@@ -369,9 +370,7 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   assert (data.index < 2)
 
   -- Every committee index is valid and non-empty; the bitfield covers them all.
-  let count := getCommitteeCountPerSlot state data.target.epoch
-  let (ok, offset) := verifyCommitteeCoverage state data att count
-  assert ok
+  let offset ← liftErr (attestationCommitteeOffset state att)
   assert (att.aggregationBits.size == offset)
 
   -- Resolve the participation flags, then validate the aggregate signature.
@@ -422,20 +421,6 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
     (UInt64.ofNat (proposerNum / proposerDenom))
   stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := { payment0 with weight := weight }
   set stateAcc
-where
-  /-- Walk the committee bits: each referenced committee index is in range and
-  attested by at least one bit, and the running `offset` totals their sizes (the
-  aggregation bitfield must match it exactly). Returns `(valid?, totalSize)`. -/
-  verifyCommitteeCoverage (state : State) (data : AttestationData) (att : Attestation) (count : Nat) : Bool × Nat :=
-    (getCommitteeIndices att.committeeBits).foldl
-      (fun (acc : Bool × Nat) ci => Id.run do
-        let (okAcc, off) := acc
-        if (UInt64.ofNat ci).toNat ≥ count then return (false, off)
-        let committee := getBeaconCommittee state data.slot ci
-        let attesters := (List.range committee.size).foldl
-          (fun a i => if att.aggregationBits[off + i]! then a + 1 else a) 0
-        return (okAcc && attesters > 0, off + committee.size))
-      (true, 0)
 
 /-- `get_ptc` (`gloas/beacon-chain.md:1392-1404`): read the cached PTC for `slot` from
 `ptc_window`. For a slot in the previous epoch the window's first `SLOTS_PER_EPOCH` entries

@@ -172,17 +172,95 @@ inherit applyPendingDeposit
 
 -- Committee layer (forkdef-converted in Fulu, inherited verbatim over `Gloas.State`).
 -- EIP-7732 changes none of the shuffle / seed / committee-assignment helpers, so the
--- selection of beacon committees and the sync committee is identical to Fulu.
+-- selection of beacon committees is identical to Fulu. The proposer and sync-committee
+-- selection is new below: Gloas replaces Electra's loops with
+-- `compute_balance_weighted_selection`.
 inherit computeShuffledPermutation
+inherit seedOf
 inherit getSeed
 inherit getCommitteeCountPerSlot
 inherit computeCommittee
 inherit getBeaconCommittee
 inherit getCommitteeIndices
-inherit cbwsAux
-inherit computeBalanceWeightedSelection
-inherit computeProposerIndices
-inherit getNextSyncCommittee
+
+/-- `compute_balance_weighted_selection` inner loop (`gloas/beacon-chain.md:1217-1229`), one
+call per pass of the spec's `while len(selected) < size`. The size check exits first, and the
+tail increment runs the spec's `uint64` `i += 1` through `checkedSucc`, so the last pass at
+`i = 2**64 - 1` throws `.arithmetic`, the spec's overflow, whether or not it filled the
+selection.
+
+The pyspec checks two products as `uint64` arithmetic, in this order in each iteration:
+`effective_balance * MAX_RANDOM_VALUE`, then `MAX_EFFECTIVE_BALANCE_ELECTRA * random_value`
+after the read of `random_value`. A product at or above `2 ^ 64` raises `.arithmetic`. The
+second product overflows only when the `Preset` field `MAX_EFFECTIVE_BALANCE_ELECTRA` is large. -/
+forkdef cbwsAux [Preset] (indices effBals : Array Nat) (perm : Array ValidatorIndex)
+    (seed : ByteArray) (total size : Nat) (shuffle : Bool) (i : Nat) (randomBytes : ByteArray)
+    (selected : Array ValidatorIndex) : Except StateTransitionError (Array ValidatorIndex) := do
+  if selected.size ≥ size then pure selected
+  else
+    let offset := (i % 16) * 2
+    let randomBytes := if offset == 0 then sha (seed ++ uint64ToBytes (UInt64.ofNat (i / 16))) else randomBytes
+    let nextIndex := if shuffle then (perm[i % total]!).toNat else i % total
+    let weight := effBals[nextIndex]! * Const.maxRandomValue
+    if 2 ^ 64 ≤ weight then
+      throwArithmetic "compute_balance_weighted_selection: effective_balance * MAX_RANDOM_VALUE"
+    let randomValue := le2 randomBytes offset
+    let threshold := Const.maxEffectiveBalanceElectra * randomValue
+    if 2 ^ 64 ≤ threshold then
+      throwArithmetic "compute_balance_weighted_selection: MAX_EFFECTIVE_BALANCE_ELECTRA * random_value"
+    let selected := if weight ≥ threshold then selected.push (UInt64.ofNat (indices[nextIndex]!)) else selected
+    let s ← checkedSucc i "compute_balance_weighted_selection: i += 1 past 2**64 - 1"
+    cbwsAux indices effBals perm seed total size shuffle s.val randomBytes selected
+termination_by counterBudgetUInt64 i
+
+/-- `compute_balance_weighted_selection(state, indices, seed, size, shuffle)`
+(`gloas/beacon-chain.md:1198-1230`). An empty `indices` rejects on the spec's
+`assert total > 0` (`:1213`). The spec then reads every candidate's effective balance up
+front, so an index past the registry raises `IndexError` (`sszGetIdx`, `.outOfBounds`) before
+the loop, whether or not the loop would reach it. With `shuffle_indices`, each iteration calls
+`compute_shuffled_index`. So the shuffle runs, and can fault, only when the loop runs at
+least once, which needs `size > 0`. -/
+forkdef computeBalanceWeightedSelection (state : State) (indices : Array ValidatorIndex)
+    (seed : ByteArray) (size : Nat) (shuffle : Bool) :
+    Except StateTransitionError (Array ValidatorIndex) := do
+  let total := indices.size
+  assert (total > 0)
+  let idxNat := indices.map (·.toNat)
+  let validators := sszGet state validators
+  let effBals ← indices.mapM (fun vi => do
+    let v ← sszGetIdx validators vi.toNat
+    pure v.effectiveBalance.toNat)
+  let perm ← if shuffle && 0 < size then computeShuffledPermutation total seed else pure #[]
+  cbwsAux idxNat effBals perm seed total size shuffle 0 ByteArray.empty #[]
+
+/-- `compute_proposer_indices` (Gloas, `gloas/beacon-chain.md:1240-1262`): one
+`compute_balance_weighted_selection(…, size=1, shuffle_indices=True)` per slot of `epoch`,
+each on its own seed. An empty `indices` rejects through the selection's `assert total > 0`.
+`start_slot + i` cannot wrap, as in Fulu's body. The loop stops at the first selection that
+raises, as the pyspec list comprehension does. -/
+forkdef computeProposerIndices (state : State) (epoch : Epoch) (seed : Bytes32)
+    (indices : Array ValidatorIndex) : Except StateTransitionError (Array ValidatorIndex) := do
+  let startSlot ← computeStartSlotAtEpoch epoch
+  (Array.range Const.slotsPerEpoch).mapM (fun i => do
+    let sd := sha (seed ++ uint64ToBytes (startSlot + UInt64.ofNat i))
+    return (← computeBalanceWeightedSelection state indices sd 1 true)[0]!)
+
+/-- `get_next_sync_committee` (Gloas). The selection is `compute_balance_weighted_selection`
+(`gloas/beacon-chain.md:1315-1325`). Its `assert total > 0` rejects an empty active set with
+`.assert`. This declaration overrides Fulu's body, which raises Electra's
+`ZeroDivisionError` for an empty active set. `get_current_epoch(state) + 1` is a checked
+`uint64` add, and `get_seed` can raise, before the selection runs. -/
+forkdef getNextSyncCommittee [CryptoBackend] (state : State) :
+    Except StateTransitionError SyncCommittee := do
+  let epoch ← checkedAdd (currentEpochOf state) 1 "get_next_sync_committee_indices: get_current_epoch(state) + 1"
+  let seed ← getSeed state epoch Const.domainSyncCommittee
+  let indices ← computeBalanceWeightedSelection state (getActiveValidatorIndices state epoch)
+    seed Const.syncCommitteeSize true
+
+  let validators := sszGet state validators
+  let pubkeys : Vector BLSPubkey Const.syncCommitteeSize :=
+    Vector.ofFn (fun i => (validators[(indices[i.val]!).toNat]?.getD default).pubkey)
+  pure { pubkeys := pubkeys, aggregatePubkey := blsAggregatePubkeys pubkeys.toArray }
 
 /-- `get_beacon_proposer_indices` (Gloas, EIP-8045): the proposer lookahead is drawn
 only from *unslashed* active validators. This overrides the inherited Fulu version
@@ -191,10 +269,10 @@ late-binds its `getBeaconProposerIndices` call to this Gloas copy. When every ac
 validator is slashed, the candidate set is empty, and `compute_balance_weighted_selection`'s
 `assert total > 0` rejects. -/
 forkdef getBeaconProposerIndices (state : State) (epoch : Epoch) :
-    Except StateTransitionError (Array ValidatorIndex) :=
+    Except StateTransitionError (Array ValidatorIndex) := do
   let validators := sszGet state validators
   let indices := (getActiveValidatorIndices state epoch).filter (fun vi => !(validators[vi.toNat]!).slashed)
-  computeProposerIndices state epoch (getSeed state epoch Const.domainBeaconProposer) indices
+  computeProposerIndices state epoch (← getSeed state epoch Const.domainBeaconProposer) indices
 
 -- Epoch substeps (all but the two shuffle-dependent ones).
 inherit weighJustificationAndFinalization
@@ -329,14 +407,15 @@ forkdef processBuilderPendingPayments : StateTransition Unit := do
 order, then take a `PTC_SIZE` balance-weighted selection with no shuffle. The seed
 mixes `DOMAIN_PTC_ATTESTER` and the slot. A slot whose committees are all empty (fewer
 active validators than `SLOTS_PER_EPOCH`) rejects through
-`compute_balance_weighted_selection`'s `assert total > 0`. -/
+`compute_balance_weighted_selection`'s `assert total > 0`. Each `get_beacon_committee` can
+raise, in committee order. -/
 forkdef computePtc (state : State) (slot : Slot) :
     Except StateTransitionError (Vector ValidatorIndex Const.ptcSize) := do
   let epoch := computeEpochAtSlot slot
-  let seed := sha ((getSeed state epoch Const.domainPtcAttester) ++ uint64ToBytes slot)
+  let seed := sha ((← getSeed state epoch Const.domainPtcAttester) ++ uint64ToBytes slot)
   let committeesPerSlot := getCommitteeCountPerSlot state epoch
-  let indices := (Array.range committeesPerSlot).foldl
-    (fun acc i => acc ++ getBeaconCommittee state slot i) (#[] : Array ValidatorIndex)
+  let indices ← (Array.range committeesPerSlot).foldlM
+    (fun acc i => do pure (acc ++ (← getBeaconCommittee state slot i))) (#[] : Array ValidatorIndex)
   let sel ← computeBalanceWeightedSelection state indices seed Const.ptcSize false
   return Vector.ofFn (fun i : Fin Const.ptcSize => sel[i.val]!)
 
@@ -347,8 +426,8 @@ SLOTS_PER_EPOCH` (MIN_SEED_LOOKAHEAD = 1). The per-slot PTCs are computed in slo
 so the run surfaces the first slot whose `compute_ptc` rejects.
 
 The body writes twice. The pyspec shifts the window in place before
-`compute_start_slot_at_epoch` and `compute_ptc` can raise, so when either raises, the state
-keeps the shifted window with the old last epoch, in the pyspec and here. -/
+`compute_start_slot_at_epoch`, the range end and `compute_ptc` can raise. So when one of them
+raises, the state keeps the shifted window with the old last epoch, in the pyspec and here. -/
 forkdef processPtcWindow : StateTransition Unit := do
   let state ← get
   let old := sszGet state ptcWindow
@@ -359,8 +438,12 @@ forkdef processPtcWindow : StateTransition Unit := do
   let state ← get
   let nextEpoch := currentEpochOf state + Const.minSeedLookahead + 1
   let startSlot ← liftErr (computeStartSlotAtEpoch nextEpoch)
-  let fresh : Array (Vector ValidatorIndex Const.ptcSize) ← liftErr
-    ((Array.range Const.slotsPerEpoch).mapM (fun i => computePtc state (startSlot + UInt64.ofNat i)))
+  -- pyspec forms the range end `start_slot + SLOTS_PER_EPOCH` as a `Slot` before the first
+  -- `compute_ptc` call. A range end of `2^64` raises here.
+  let _ ← checkedAdd startSlot (UInt64.ofNat Const.slotsPerEpoch)
+    "process_ptc_window: start_slot + SLOTS_PER_EPOCH"
+  let fresh : Array (Vector ValidatorIndex Const.ptcSize) ← liftErr <|
+    (Array.range Const.slotsPerEpoch).mapM (fun i => computePtc state (startSlot + UInt64.ofNat i))
 
   modifyState fun state =>
     sszUpdate state with ptcWindow :=

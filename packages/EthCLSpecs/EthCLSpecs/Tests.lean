@@ -1,7 +1,9 @@
 import EthCLSpecs.Tests.BoxBinderPins
+import EthCLSpecs.Tests.FuluCommitteesPins
 import EthCLSpecs.Tests.FuluForkChoicePins
 import EthCLSpecs.Tests.GloasCommitteesPins
 import EthCLSpecs.Tests.GloasForkChoicePins
+import EthCLSpecs.Tests.GloasPtcWindowPins
 import EthCLSpecs.Tests.HezeCommitteesPins
 import EthCLSpecs.Tests.HezeDichotomyWitness
 import EthCLSpecs.Tests.HezeForkChoicePins
