@@ -52,8 +52,9 @@ justified root. Otherwise it runs `fuelLoop` over `headLoopBody`
 current node (`headLoopBody_run_next_edge`). `getNodeChildren` returns children in the
 node tree (`getNodeChildren_run_edge`), and the `betterOf` fold returns one of them
 (`betterOf_run_mem`). A `.done` step returns the current node (`headLoopBody_run_done`).
-`headLoop_run_avoids_full` keeps "not below the FULL node" as a loop invariant with
-`fuelLoop_run_inv`.
+`headLoop_run_avoids_full_of_step` keeps "not below the FULL node" as a loop invariant
+with `fuelLoop_run_inv`, given the step at the pending node of the block.
+`headLoop_run_avoids_full` supplies that step.
 
 `getNodeChildren` reads the blocks through `FcMap.fold`. The step from a fold entry to a
 lookup is `LawfulFcMap.mem_fold_push`, so the walk theorems take `[LawfulFcMap map Root]`.
@@ -446,16 +447,53 @@ theorem headLoopBody_run_done (store s s' : Store map) (nodes : Array ForkChoice
     have := run_pure_eq_ok _ _ _ _ h
     cases this
 
+/-- The `getHead` loop avoids `full r` and every node below it, given the step at
+`pending r`: when `full r` is viable, every successful `.next` step there goes to
+`empty r`.
+
+The invariant is "not below `full r`". A `.next` step goes to a viable child `c` of the
+current node `n`. Suppose `c` is below `full r`. If `c` is `full r`, then `full r` is
+viable, `n` is its only parent `pending r`, and the step hypothesis makes `c` the EMPTY
+node. If `c` is strictly below,
+then its only parent `n` is below as well, which contradicts the invariant. -/
+theorem headLoop_run_avoids_full_of_step [LawfulFcMap map Root] (store : Store map)
+    (nodes : Array ForkChoiceNode) (r : Root)
+    (hstep : ∀ (c : ForkChoiceNode) (t t' : Store map),
+      nodes.contains (.full r) = true →
+      (headLoopBody store nodes (ForkChoiceNode.pending r)).run t = .ok (.next c, t') →
+      c = ForkChoiceNode.empty r)
+    (fuel : Nat) (start exhausted head : ForkChoiceNode) (s s' : Store map)
+    (hstart : ¬ NodeBelow store (.full r) start)
+    (hexhausted : ¬ NodeBelow store (.full r) exhausted)
+    (hrun : (fuelLoop fuel start exhausted (headLoopBody store nodes)).run s
+      = .ok (head, s')) :
+    ¬ NodeBelow store (.full r) head := by
+  refine fuelLoop_run_inv (fun n => ¬ NodeBelow store (.full r) n)
+    (fun n => ¬ NodeBelow store (.full r) n) exhausted _ ?_ ?_ hexhausted fuel start s s'
+    head hstart hrun
+  · intro n c t t' hn hst hbelow
+    obtain ⟨hedge, hviable⟩ := headLoopBody_run_next_edge store t t' nodes n c hst
+    cases hbelow with
+    | refl =>
+      have hn' : n = .pending r :=
+        NodeEdge.parent_unique store n _ _ hedge (NodeEdge.full r)
+      subst hn'
+      have hc := hstep _ _ _ hviable hst
+      exact payloadStatus_empty_ne_full (congrArg ForkChoiceNode.payloadStatus hc).symm
+    | step p _ hp hpc =>
+      exact hn (NodeEdge.parent_unique store p n c hpc hedge ▸ hp)
+  · intro n d t t' hn hst
+    rw [headLoopBody_run_done store t t' nodes n d hst]
+    exact hn
+
 /-- The `getHead` loop avoids the FULL node and every node below it. The block is from
 the previous slot, and its payload is unverified or recorded `false`. The FULL node is in
 the viable node list `nodes` only with the EMPTY node (`hviable`). The loop starts at
 `start`, and its fuel-out value is `exhausted`. Neither is below the FULL node.
 
-The invariant is "not below the FULL node". A `.next` step goes to a viable child `c` of
-the current node `n`. Suppose `c` is below the FULL node. If `c` is the FULL node, then
-`n` is its only parent, the pending node of the block. The FULL node is viable, so the
-EMPTY node is viable, and the step goes to EMPTY. So `c` is EMPTY. If `c` is strictly
-below, then its only parent `n` is below as well, against the invariant. -/
+`headLoop_run_avoids_full_of_step` carries the invariant. The step at the pending node of
+the block is `getHeadStep_run_eq_empty_of_recorded_unsatisfied`. The step goes to a viable
+child, so if that child is the FULL node, the EMPTY node is viable as well. -/
 theorem headLoop_run_avoids_full [LawfulFcMap map Root] (store : Store map)
     (nodes : Array ForkChoiceNode) (root : Root) (rootBlock : BeaconBlock)
     (hblock : FcMap.lookup store.blocks root = some rootBlock)
@@ -470,31 +508,15 @@ theorem headLoop_run_avoids_full [LawfulFcMap map Root] (store : Store map)
     (hexhausted : ¬ NodeBelow store (.full root) exhausted)
     (hrun : (fuelLoop fuel start exhausted (headLoopBody store nodes)).run s
       = .ok (head, s')) :
-    ¬ NodeBelow store (.full root) head := by
-  refine fuelLoop_run_inv (fun n => ¬ NodeBelow store (.full root) n)
-    (fun n => ¬ NodeBelow store (.full root) n) exhausted _ ?_ ?_ hexhausted fuel start s s'
-    head hstart hrun
-  · intro n c t t' hn hstep hbelow
-    obtain ⟨hedge, hc⟩ := headLoopBody_run_next_edge store t t' nodes n c hstep
-    cases hbelow with
-    | refl =>
-      -- `c` is FULL, so `n` is the pending node of `root`. The FULL node is viable, so the
-      -- EMPTY node is too, and the step goes to EMPTY.
-      have hn' : n = .pending root :=
-        NodeEdge.parent_unique store n _ _ hedge (NodeEdge.full root)
-      subst hn'
-      have hempty := getHeadStep_run_eq_empty_of_recorded_unsatisfied store t nodes root
-        rootBlock hblock hcurrentslot hnooverflow hfull (hviable hc)
-      rw [hempty] at hstep
-      injection hstep with hstep
-      injection hstep with hstep
-      injection hstep with hstep
-      exact payloadStatus_empty_ne_full (congrArg ForkChoiceNode.payloadStatus hstep)
-    | step p _ hp hpc =>
-      exact hn (NodeEdge.parent_unique store p n c hpc hedge ▸ hp)
-  · intro n d t t' hn hstep
-    rw [headLoopBody_run_done store t t' nodes n d hstep]
-    exact hn
+    ¬ NodeBelow store (.full root) head :=
+  headLoop_run_avoids_full_of_step store nodes root (fun c t t' hfv hstep => by
+    have hempty := getHeadStep_run_eq_empty_of_recorded_unsatisfied store t nodes root
+      rootBlock hblock hcurrentslot hnooverflow hfull (hviable hfv)
+    rw [hempty] at hstep
+    injection hstep with hstep
+    injection hstep with hstep
+    injection hstep with hstep
+    exact hstep.symm) fuel start exhausted head s s' hstart hexhausted hrun
 
 /-- `getHead` avoids the FULL node and every node below it. The block is from the
 previous slot, and its payload is unverified or recorded `false`. The FULL node is viable
