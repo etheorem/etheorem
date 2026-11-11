@@ -7,7 +7,8 @@ import EthCLLib.Proofs.Run
 A fork-choice query such as `getAttestationScore` reads its `store` argument and never the
 runner state. So every run gives the same value, and the run keeps the state. `StateFree`
 states this for one action. The rules below carry it through `pure`, `throw`, `ofExcept`,
-a bind, and `fuelLoop`. `free_solve` applies them to a body.
+a bind, `fuelLoop`, a `for` loop over a list, and a monadic fold over a list. `free_solve`
+applies them to a body.
 
 A theorem about a query can then take a run at one runner state and conclude at another.
 `onInclusionList` reads the time into the slot after its other checks, so its timeliness
@@ -65,6 +66,31 @@ theorem StateFree.fuelLoop (step : β → StateT σ (Except ε) (EthCLLib.Spec.S
     | done a => exact StateFree.pure a
     | next b => exact ih b
 
+/-- A `for` loop over a list reads no state when its body reads none. -/
+theorem StateFree.forIn_list {γ : Type} (xs : List γ)
+    (f : γ → β → StateT σ (Except ε) (ForInStep β)) (hf : ∀ a b, StateFree (f a b)) :
+    ∀ init, StateFree (forIn xs init f) := by
+  induction xs with
+  | nil => intro init; exact StateFree.pure init
+  | cons a rest ih =>
+    intro init
+    simp only [List.forIn_cons]
+    refine StateFree.bind (hf a init) fun st => ?_
+    cases st with
+    | done b => exact StateFree.pure b
+    | yield b => exact ih b
+
+/-- A monadic fold over a list reads no state when its step reads none. -/
+theorem StateFree.foldlM_list {γ : Type} (f : β → γ → StateT σ (Except ε) β)
+    (hf : ∀ b a, StateFree (f b a)) : ∀ (xs : List γ) init, StateFree (xs.foldlM f init) := by
+  intro xs
+  induction xs with
+  | nil => intro init; exact StateFree.pure init
+  | cons a rest ih =>
+    intro init
+    simp only [List.foldlM_cons]
+    exact StateFree.bind (hf init a) fun b => ih b
+
 /-- A successful run of a state-free action keeps the state, and every other runner state
 gives the same value. -/
 theorem StateFree.run_eq {x : StateT σ (Except ε) α} (hx : StateFree x) {s s' : σ} {a : α}
@@ -82,7 +108,8 @@ theorem StateFree.run_eq {x : StateT σ (Except ε) α} (hx : StateFree x) {s s'
 end
 
 /-- Prove `StateFree` of a body whose helpers are already unfolded: apply the rules, split
-each `if` and `match`, and unfold the store reads. -/
+each `if` and `match`, and unfold the store reads. A loop or a fold over an array runs over
+its list (`Array.forIn_toList`, `Array.foldlM_toList`). -/
 syntax "free_solve" : tactic
 macro_rules
   | `(tactic| free_solve) => `(tactic| repeat' (first
@@ -90,6 +117,10 @@ macro_rules
       | exact EthCLLib.Proofs.StateFree.throw _
       | exact EthCLLib.Proofs.StateFree.ofExcept _
       | refine EthCLLib.Proofs.StateFree.fuelLoop _ _ (fun _ => ?_) _ _
+      | refine EthCLLib.Proofs.StateFree.forIn_list _ _ (fun _ _ => ?_) _
+      | refine EthCLLib.Proofs.StateFree.foldlM_list _ (fun _ _ => ?_) _ _
+      | rw [← Array.forIn_toList]
+      | rw [← Array.foldlM_toList]
       | refine EthCLLib.Proofs.StateFree.bind ?_ fun _ => ?_
       | split
       | unfold EthCLLib.Spec.FcMap.getOrThrow

@@ -27,6 +27,7 @@ honest node.
   `slotStartMs_le_of_getCurrentSlot`: when the current slot is at least `n`, the wall time
   is past the start of slot `n`. `getTimeIntoSlotMs_lt_of_window`: an arrival in the first
   `due` milliseconds of a slot has a time into the slot below `due`.
+  `getCurrentSlot_run_eq_of_window`: a wall time in slot `k` gives the current slot `k`.
 - `onBlock_run_ok_currentSlot`: a successful `onBlock` for a new block passed its clock
   check. `NodeTrace.blockStates_origin`: a state at a root comes from an `onBlock` event on a
   block with that root.
@@ -274,6 +275,26 @@ theorem getCurrentSlot_run_of_le (st s : Store map) (h : st.genesisTimeMs ≤ st
   unfold EthCLSpecs.Heze.computeSlotAtTimeMs
   rw [checkedSub_of_le _ _ _ h]
   rfl
+
+/-- The current slot from the wall clock. The store time is the wall time `w`, and `w` lies
+in slot `k`: at or after its start, before the start of slot `k + 1`. Then `getCurrentSlot`
+returns `k`. -/
+theorem getCurrentSlot_run_eq_of_window (st s : Store map) (w k : Nat)
+    (htime : st.timeMs.toNat = w) (hlo : slotStartMs st.genesisTimeMs k ≤ w)
+    (hhi : w < slotStartMs st.genesisTimeMs (k + 1)) :
+    ∃ cs : UInt64, cs.toNat = k ∧
+      (getCurrentSlot (StoreTransition := ForkChoiceStoreRun (Store map)) st).run s
+        = .ok (cs, s) := by
+  unfold slotStartMs at hlo hhi
+  have hsucc : (k + 1) * slotDurationMs.toNat = k * slotDurationMs.toNat + slotDurationMs.toNat :=
+    Nat.succ_mul _ _
+  rw [hsucc] at hhi
+  have hle : st.genesisTimeMs ≤ st.timeMs := by rw [UInt64.le_iff_toNat_le]; omega
+  refine ⟨_, ?_, getCurrentSlot_run_of_le st s hle⟩
+  rw [UInt64.toNat_div, UInt64.toNat_sub_of_le _ _ hle, htime]
+  apply Nat.div_eq_of_lt_le
+  · omega
+  · rw [hsucc]; omega
 
 /-- A list of slot `slot` that arrives inside the timely window of that slot is timely. The
 store time is the wall time `w`, between the start of the slot and that start plus `due`.
