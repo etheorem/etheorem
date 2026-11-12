@@ -83,10 +83,9 @@ reject-faithfulness audit honest (`FRAMEWORK_ARCHITECTURE.md` §11.1).
 
 The key operations call the FFI: the aggregate, `KeyValidate`, and the G1 add and negation.
 `bls_setting: 2` turns off the signature checks only, and these operations compute a key.
-The pyspec's own BLS-off mode makes `AggregatePKs` return `0x22` repeated 48 times, which
-does not decode as a G1 point. In that mode, a sync aggregate with more than half of its bits
-set, but not all, raises `ValueError` in `bytes48_to_G1`. This backend computes the aggregate
-of the keys. The vector generator does not catch `ValueError`, so no vector holds such a case. -/
+The pinned pyspec's BLS-off mode does the same for `AggregatePKs`, `add` and `neg`
+(`eth_consensus_specs/utils/bls.py:188-195`): the aggregate is state data, so it is computed
+whatever the setting. Its `KeyValidate` returns `True`, and no fork body calls `keyValidate`. -/
 @[reducible] def verifyOff : CryptoBackend where
   verify _ _ _                  := true
   fastAggregateVerify _ _ _     := true
