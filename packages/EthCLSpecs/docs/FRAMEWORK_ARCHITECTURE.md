@@ -538,7 +538,7 @@ it in its classify mode:
 | `outOfBounds` / `decodeFailure` | a smell; the spec should not hit these on well-formed input, so they surface as likely bugs |
 | `missingKey` | a fault the reference propagates rather than catches, so it never counts as a rejection |
 | `arithmetic` | the same, except under a case whose own wrapper catches `ValueError` (`SPECS_ARCHITECTURE.md` §10.2) |
-| `listFull` | a list over its limit, from an append or a constructor. Remerkleable raises a bare `Exception`, which no wrapper catches, so it never counts as a rejection |
+| `listFull` | a list over its limit, from an append or a constructor. eth-ssz-specs raises a `ValueError`, so it counts as `arithmetic` does |
 
 ### 6.1 `todo` as the deferral work-queue
 

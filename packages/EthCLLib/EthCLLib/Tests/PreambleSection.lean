@@ -129,7 +129,7 @@ def runXs (action : EStateM StateTransitionError State Unit) :
 /-- An append with room: `[1] → [1, 5]`. -/
 example : runXs (appendX 5) = .inl #[1, 5] := by native_decide
 
-/-- An append to a full list raises `.listFull`, as remerkleable's `List.append` does. -/
+/-- An append to a full list raises `.listFull`, as the eth-ssz-specs `List.append` does. -/
 example : runXs (do appendX 5; appendX 6) = .inr (.listFull "xs") := by native_decide
 
 /-- `set_or_append_list` at the length appends. -/
@@ -144,7 +144,7 @@ example : runXs (setOrAppendX 3 9) = .inr (.outOfBounds 3 1) := by native_decide
 /-- An array up to the limit becomes the list. -/
 example : runXs (setXs #[4, 5]) = .inl #[4, 5] := by native_decide
 
-/-- An array over the limit raises `.listFull`, as remerkleable's `List` constructor does. -/
+/-- An array over the limit raises `.listFull`, as the eth-ssz-specs `List` constructor does. -/
 example : runXs (setXs #[4, 5, 6]) = .inr (.listFull "xs") := by native_decide
 
 end ListLimit

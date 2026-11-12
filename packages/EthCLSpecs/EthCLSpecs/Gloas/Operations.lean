@@ -216,7 +216,7 @@ RANDAO mixes the committee reads carry over unchanged, so the window is the same
 function is now this fork's own. Each entry is an `Except` carrying its own two faults: the
 spec's per-entry `current_epoch + e` (the delta confined to `0` and `1`; `+0` cannot
 overflow, `+1` raises the `.arithmetic` fault at `current_epoch = UINT64_MAX`, where
-remerkleable raises Python `ValueError`) binds `checkedAdd` before the entry's `compute_ptc`
+eth-ssz-specs raises Python `ValueError`) binds `checkedAdd` before the entry's `compute_ptc`
 read, and `compute_ptc` itself rejects a slot with no committee members.
 `completeUpgradeToGloas` maps the entries in index order, so the first rejecting slot
 surfaces, matching the spec's list comprehension. -/

@@ -8,7 +8,7 @@ import SizzLean.Proofs.UncachedBox
 /-!
 # `EthCLSpecs.Proofs.Fulu.Balances`: what the balance mutators reject, and what they store
 
-The pyspec's `state.balances[index] += delta` reads a bare list, and remerkleable re-runs its
+The pyspec's `state.balances[index] += delta` reads a bare list, and eth-ssz-specs re-runs its
 `uint64` bound check on the result. The read raises `IndexError` past the end. The addition
 raises `ValueError` on overflow. `increaseBalance` reads through `sszGetIdx` and adds through
 `checkedAdd`, so it rejects on exactly those two conditions. In range and below the bound, the

@@ -29,7 +29,7 @@ cost as the old whole-field form. -/
 forkdef modBalance (state : State) (i : ValidatorIndex) (f : Gwei → Gwei) : State :=
   sszModify state balances[i.toNat]! := f
 
-/-- `increase_balance`. The pyspec's `+=` is a bare `uint64` addition, and remerkleable re-runs
+/-- `increase_balance`. The pyspec's `+=` is a bare `uint64` addition, and eth-ssz-specs re-runs
 the bound check on the result, so an overflow raises `ValueError`. The reference runner lets that
 raise escape. `checkedAdd` models the addition, and the action rejects with the `.arithmetic`
 uncaught fault.
