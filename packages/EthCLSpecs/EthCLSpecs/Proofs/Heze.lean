@@ -2,7 +2,10 @@ import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
+import EthCLSpecs.Proofs.Heze.Reachable
+import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
+import EthCLSpecs.Proofs.Heze.StateInvariants
 
 /-!
 # `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems (index)
@@ -45,4 +48,12 @@ Re-exports:
   existing recorded-unsatisfied FOCIL rejection
   (`shouldExtendPayload_run_eq_false_of_recorded_unsatisfied`), and the
   named prefix, FOCIL, vote, and inherited-Gloas-tail corollaries.
+* `EthCLSpecs.Proofs.Heze.Reachable`: `ReachableState`, the Heze states the state
+  transition reaches, entering from a reachable Gloas state through the `upgrade` step at the
+  Heze fork boundary, with its `Anchors` and lemmas.
+* `EthCLSpecs.Proofs.Heze.Run`: `HezeRun`, the state-transition monad the Heze
+  beacon-state proofs pin their theorems to.
+* `EthCLSpecs.Proofs.Heze.StateInvariants`: `SimpleStateInvariants`, the four Fulu facts
+  restated over the Heze `BeaconState`, with `coreFields`, `RegistrySizes` and `KeepsCore`;
+  definitions only.
 -/
