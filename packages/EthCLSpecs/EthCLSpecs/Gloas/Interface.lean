@@ -503,6 +503,71 @@ private def sszStaticImpl (P : Preset) (typeName : String) (bytes : ByteArray) :
   | "SignedVoluntaryExit"        => runStatic (@Gloas.SignedVoluntaryExit P) typeName bytes
   | _ => .error (.spec (.outOfScope s!"ssz_static/{typeName}: not modeled by EthCLSpecs.Gloas"))
 
+/-- `runSpecFn`: run one Gloas shuffle or selection function on the decoded arguments and
+return its output, as Fulu's does. Gloas adds `compute_balance_weighted_selection`,
+`compute_ptc`, and `get_ptc`. `get_ptc` throws in the state monad, so it runs over the
+decoded box and keeps only the value. `get_inclusion_list_committee` is new in Heze, so it is
+`outOfScope` here. -/
+private def runSpecFnImpl (P : Preset) (C : Config) (fn : SpecFn) (args : SpecFnArgs) :
+    Except (RunError StateTransitionError) SpecFnOut :=
+  letI : Preset := P
+  letI : Config := C
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.realBackend
+  let indicesOut (xs : Array ValidatorIndex) : SpecFnOut := .nats (xs.map (·.toNat))
+  match fn with
+  | .shuffledPermutation => do
+    let perm ← RunError.ofSpec (computeShuffledPermutation (← args.nat 0) (← args.byteArg 0))
+    pure (indicesOut perm)
+  | .shufflingMapping => do
+    let count ← args.nat 0
+    if count == 0 then pure (.nats #[])
+    else pure (indicesOut (← RunError.ofSpec (computeShuffledPermutation count (← args.byteArg 0))))
+  | .computeCommittee => do
+    let committee ← RunError.ofSpec
+      (computeCommittee (← args.validatorIndices) (← args.bytes32 0) (← args.nat 0) (← args.nat 1))
+    pure (indicesOut committee)
+  | .activeValidatorIndices => do
+    let state ← decodeState P args.state
+    pure (indicesOut (← RunError.ofSpec (getActiveValidatorIndices state (← args.u64 0))))
+  | .seed => do
+    let state ← decodeState P args.state
+    pure (.bytes (vecToBytes (← RunError.ofSpec (getSeed state (← args.u64 0) (← args.byteArg 0)))))
+  | .committeeCountPerSlot => do
+    let state ← decodeState P args.state
+    pure (.nats #[← RunError.ofSpec (getCommitteeCountPerSlot state (← args.u64 0))])
+  | .beaconCommittee => do
+    let state ← decodeState P args.state
+    let committee ← RunError.ofSpec (getBeaconCommittee state (← args.u64 0) (← args.nat 1))
+    pure (indicesOut committee)
+  | .proposerIndices => do
+    let state ← decodeState P args.state
+    let proposers ← RunError.ofSpec
+      (computeProposerIndices state (← args.u64 0) (← args.bytes32 0) (← args.validatorIndices))
+    pure (indicesOut proposers)
+  | .beaconProposerIndices => do
+    let state ← decodeState P args.state
+    pure (indicesOut (← RunError.ofSpec (getBeaconProposerIndices state (← args.u64 0))))
+  | .nextSyncCommittee => do
+    let state ← decodeState P args.state
+    pure (.bytes (SSZ.serialize (← RunError.ofSpec (getNextSyncCommittee state))))
+  | .balanceWeightedSelection => do
+    let state ← decodeState P args.state
+    let selected ← RunError.ofSpec (computeBalanceWeightedSelection state (← args.validatorIndices)
+      (← args.byteArg 0) (← args.nat 0) ((← args.nat 1) == 1))
+    pure (indicesOut selected)
+  | .computePtc => do
+    let state ← decodeState P args.state
+    pure (indicesOut (← RunError.ofSpec (computePtc state (← args.u64 0))).toArray)
+  | .getPtc => do
+    let state ← decodeState P args.state
+    let slot ← args.u64 0
+    let ptc ← RunError.ofSpec (runQuery state
+      (getPtc state slot : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) _))
+    pure (indicesOut ptc.toArray)
+  | .inclusionListCommittee =>
+    .error (.spec (.outOfScope s!"spec_fn {reprStr fn}: not a Gloas function"))
+
 /-- Gloas's fork-interface instance at preset `P` with the config's
 `GLOAS_FORK_VERSION`. Every in-scope entry is driven: the `fork` upgrade, `stateRoot`,
 all `epoch_processing` substeps, `rewards`, the operation handlers (including the ePBS
@@ -521,6 +586,7 @@ ones), the block spine (`sanity/blocks` / `sanity/slots` / `finality` / `random`
   runSlots        := runSlotsImpl P C
   runGenesis      := fun _ _   => .error (.spec (.outOfScope "gloas genesis: out of scope (not modeled)"))
   runTransition   := runTransitionImpl P C forkVersion
+  runSpecFn       := runSpecFnImpl P C
 
 /-- The config values a vector can override, one `(KEY, set)` pair per value: the fork
 schedule Gloas models. A vector that activates its forks at genesis ships a `config.yaml`

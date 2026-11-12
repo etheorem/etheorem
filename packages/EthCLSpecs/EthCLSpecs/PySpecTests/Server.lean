@@ -233,6 +233,57 @@ private def handleForkChoice (iface : ForkInterface) (fields : Array String) : I
     | .outOfScope => return s!"fail\tskip\t{detail}"
     | _           => return s!"fail\tbug\t{detail}"
 
+/-- Lowercase hex of a byte buffer, for the `stateroot` debug mode and the `spec_fn` answers. -/
+def toHex (b : ByteArray) : String :=
+  String.join (b.toList.map fun x =>
+    let s := String.ofList (Nat.toDigits 16 x.toNat)
+    if s.length == 1 then "0" ++ s else s)
+
+/-- Render a `runSpecFn` outcome in the differential test's answer syntax: `ok:n:<i,j,…>`
+for an index list, `ok:b:0x<hex>` for a byte string, and `err:<kind>` for a spec reject.
+The kind names the Python exception class the pyspec raises: `assert` for `AssertionError`,
+`arithmetic` for the `ValueError` / `OverflowError` / `ZeroDivisionError` faults, `index`
+for `IndexError`, and `listfull` for the SSZ list-limit raise. `none` is a deferral, an
+out-of-scope function, or a runner fault, which the caller reports in its own bucket. -/
+private def renderSpecFnOutcome : Except (RunError StateTransitionError) SpecFnOut → Option String
+  | .ok (.nats xs)                   => some ("ok:n:" ++ ",".intercalate (xs.toList.map toString))
+  | .ok (.bytes b)                   => some ("ok:b:0x" ++ toHex b)
+  | .error (.spec (.assert _))       => some "err:assert"
+  | .error (.spec (.arithmetic _))   => some "err:arithmetic"
+  | .error (.spec (.outOfBounds _ _)) => some "err:index"
+  | .error (.spec (.listFull _))     => some "err:listfull"
+  | .error (.spec (.todo _)) | .error (.spec (.outOfScope _)) | .error (.decode _) => none
+
+/-- The differential request path: run one shuffle or selection function through the fork's
+`runSpecFn` and compare the rendered outcome with the pinned pyspec's answer. Request fields:
+`spec_fn ⇥ fnName ⇥ statePath ⇥ nats ⇥ indices ⇥ bytes ⇥ expected`. `statePath` is `-` for
+a function with no state, the three argument lists are comma-separated (possibly empty), the
+byte strings are `0x`-hex, and `expected` is in `renderSpecFnOutcome`'s syntax. -/
+private def handleSpecFn (iface : ForkInterface) (fields : Array String) : IO String := do
+  if fields.size < 7 then
+    throw (IO.userError s!"malformed spec_fn request: expected 7 tab-fields, got {fields.size}")
+  let some fn := SpecFn.ofString? fields[1]!
+    | return s!"fail\tskip\tspec_fn {fields[1]!}: not a driven function"
+  let state ← match dashToNone fields[2]! with
+    | none   => pure ByteArray.empty
+    | some p => IO.FS.readBinFile p
+  let splitList (s : String) : List String := if s.isEmpty then [] else s.splitOn ","
+  let nats ← (splitList fields[3]!).toArray.mapM (checkedNat "spec_fn integer")
+  let indices ← (splitList fields[4]!).toArray.mapM (checkedNat "spec_fn index")
+  let bytes := (splitList fields[5]!).toArray.map hexToBytes
+  let expected := fields[6]!
+  let outcome := iface.runSpecFn fn { state, nats, indices, bytes }
+  match renderSpecFnOutcome outcome with
+  | some actual =>
+    if actual == expected then return "pass\tpassing\t"
+    else return s!"fail\tbug\texpected {expected}, got {actual}"
+  | none =>
+    match outcome with
+    | .error (.spec (.todo d))       => return s!"fail\ttodo\t{d}"
+    | .error (.spec (.outOfScope d)) => return s!"fail\tskip\t{d}"
+    | .error (.decode what)          => return s!"fail\tbug\t{what} decode failed"
+    | _                              => return "fail\tbug\tspec_fn: unrendered outcome"
+
 /-- Split a request's trailing `cfg=KEY:VALUE,...` field (`cfg=-` for none) off the
 positional fields and parse it into the vector's config overrides. A request with no `cfg=`
 field carries no overrides. A `KEY:VALUE` pair without a colon, or a value that is not a
@@ -274,6 +325,8 @@ private def handleLine (mkIface : ConfigOverrides → Except String ForkInterfac
       handleSszStatic iface fields
     else if fields[0]? == some "fork_choice" then
       handleForkChoice iface fields
+    else if fields[0]? == some "spec_fn" then
+      handleSpecFn iface fields
     else
       let req ← buildRequest fields
       return (@runCase iface req).render
@@ -299,12 +352,6 @@ partial def serve (mkIface : ConfigOverrides → Except String ForkInterface) : 
     stdout.flush
     loop
   loop
-
-/-- Lowercase hex of a byte buffer, for the `stateroot` debug mode. -/
-def toHex (b : ByteArray) : String :=
-  String.join (b.toList.map fun x =>
-    let s := String.ofList (Nat.toDigits 16 x.toNat)
-    if s.length == 1 then "0" ++ s else s)
 
 /-- Resolve a fork name to its minimal-preset interface; `none` for an unknown name.
 `main` uses this to error on a bad fork argument instead of inheriting
