@@ -418,6 +418,19 @@ ethcl-pyspec-full: _ensure-venv
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n {{ pytest_jobs }} --preset=mainnet --fork=gloas
     cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q --subset=0 -n {{ pytest_jobs }} --preset=mainnet --fork=heze
 
+# The differential test of the shuffle and selection functions. `spec_fn_cases.py`
+# runs under the pinned pyspec's own interpreter (`pyspec_python`, the `.venv` that
+# `make build` creates in a consensus-specs checkout at the pinned tag) and writes
+# the cases with the pyspec's answers to `.tmp/specfn/<fork>-<preset>/`. The pytest
+# run then compares the fork body's answers through the Lean server.
+pyspec_python := env_var_or_default("PYSPEC_PYTHON", justfile_directory() / "../consensus-specs-v1.7.0-beta.4/.venv/bin/python")
+
+# Differential test of the shuffle and selection functions against the pinned pyspec
+[group('ethcl')]
+ethcl-spec-fn fork="fulu" preset="minimal": _ensure-venv
+    {{ pyspec_python }} -I -W ignore packages/EthCLSpecs/PySpecTests/spec_fn_cases.py --fork={{ fork }} --preset={{ preset }} --out={{ justfile_directory() }}/.tmp/specfn/{{ fork }}-{{ preset }}
+    cd packages/EthCLSpecs/PySpecTests && {{ justfile_directory() }}/.venv/bin/python -m pytest -q -n {{ pytest_jobs }} test_spec_fn.py --fork={{ fork }} --preset={{ preset }} --spec-fn-cases={{ justfile_directory() }}/.tmp/specfn/{{ fork }}-{{ preset }}
+
 # The Stage 17d container profile: which consensus container types dominate
 # encode / decode / root cost on a real mainnet state transition. Runs the
 # `specs_profile` exe over one upstream vector, at the mainnet preset, and
