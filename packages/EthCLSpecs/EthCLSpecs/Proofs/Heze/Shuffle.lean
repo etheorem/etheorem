@@ -26,11 +26,15 @@ private theorem shuffle_fold_eq [Preset] [HasherTag] (n : Nat) (seed : ByteArray
       (fun indices round =>
         let seedRound := seed.push (UInt8.ofNat round)
         let pivot := (le8 (sha seedRound)) % n
+        let sources := Array.ofFn (n := (n + 255) / 256)
+          (fun b : Fin ((n + 255) / 256) => sha (seedRound ++ u32leBytes b.val))
         Array.ofFn (n := n) (fun i : Fin n =>
           let cur := (indices[i.val]!).toNat
           let flip := (pivot + n - cur) % n
           let position := Nat.max cur flip
-          let source := sha (seedRound ++ u32leBytes (position / 256))
+          let bucket := position / 256
+          let source := if h : bucket < sources.size then sources[bucket]
+            else sha (seedRound ++ u32leBytes bucket)
           let byteVal := (source.get! ((position % 256) / 8)).toNat
           let bit := (byteVal >>> (position % 8)) % 2
           if bit == 1 then UInt64.ofNat flip else UInt64.ofNat cur))
@@ -39,7 +43,8 @@ private theorem shuffle_fold_eq [Preset] [HasherTag] (n : Nat) (seed : ByteArray
   unfold swapOrNotArray
   congr 1
   funext a r
-  simp only [swapOrNotStep, roundAt, swapOrNotRound, swapOrNotPivot, swapOrNotBit]
+  simp only [swapOrNotStep, roundAt, swapOrNotRound, swapOrNotPivot, swapOrNotBit,
+    bucketRead_eq]
   congr 1
   funext i
   exact (apply_ite UInt64.ofNat _ _ _).symm

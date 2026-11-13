@@ -90,6 +90,15 @@ def swapOrNotBit [HasherTag] (seed : ByteArray) (r position : Nat) : Bool :=
   let byteVal := (source.get! ((position % 256) / 8)).toNat
   (byteVal >>> (position % 8)) % 2 == 1
 
+/-- A read of a table of per-bucket hashes, with a direct hash past its end, is the direct
+hash. The fork bodies build the table once per round and read each position's bucket from
+it. -/
+theorem bucketRead_eq [HasherTag] {m : Nat} (s : ByteArray) (b : Nat) :
+    (if h : b < (Array.ofFn (n := m) fun j : Fin m => sha (s ++ u32leBytes j.val)).size
+      then (Array.ofFn (n := m) fun j : Fin m => sha (s ++ u32leBytes j.val))[b]
+      else sha (s ++ u32leBytes b)) = sha (s ++ u32leBytes b) := by
+  split <;> simp
+
 /-- Round `r` as a function on values. -/
 def roundAt [HasherTag] (n : Nat) (seed : ByteArray) (r : Nat) : Nat → Nat :=
   swapOrNotRound n (swapOrNotPivot seed n r) (swapOrNotBit seed r)

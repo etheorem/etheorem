@@ -6,8 +6,8 @@ import EthCLLib.Proofs.IndicesWhere
 /-!
 # `EthCLSpecs.Proofs.Fulu.Committees`: one epoch's committees partition the active set
 
-`computeCommittee` (`Fulu/Committees.lean:149-168`) is `compute_committee`, and
-`getBeaconCommittee` (`Fulu/Committees.lean:176-189`) is `get_beacon_committee`.
+`computeCommittee` (`Fulu/Committees.lean:157-176`) is `compute_committee`, and
+`getBeaconCommittee` (`Fulu/Committees.lean:184-197`) is `get_beacon_committee`.
 Within one epoch every committee reads the same shuffled active list. Committee
 `j * cps + idx` takes the `(j * cps + idx)`-th of `cps * SLOTS_PER_EPOCH` slices.
 

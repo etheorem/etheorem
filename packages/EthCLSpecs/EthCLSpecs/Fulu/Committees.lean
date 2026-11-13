@@ -9,8 +9,8 @@ proposer and sync-committee selection, and `get_next_sync_committee`.
 
 The epoch and operation steps call these functions of the boxed `State`. They hash through
 the `[HasherTag]` seam (`sha`), so they compute the same swap-or-not bytes a real client
-computes. Performance is adequate for the minimal preset. Each committee recomputes the
-permutation.
+computes. Each committee recomputes the permutation. The shuffle hashes once per bucket of
+256 positions in each round.
 
 A function here returns a bare `Except` when the pyspec can raise in it, as
 `computeStartSlotAtEpoch` does. It raises where the pyspec raises, with the reject kind that
@@ -72,16 +72,24 @@ forkdef computeShuffledPermutation (indexCount : Nat) (seed : ByteArray) :
         -- Each round mixes in a fresh seed byte and draws the swap pivot.
         let seedRound := seed.push (UInt8.ofNat round)
         let pivot := (le8 (sha seedRound)) % indexCount
+        -- The round's hash stream, one hash per bucket of 256 positions. The pyspec hashes
+        -- once per position. The bytes are the same, at one hash in 256.
+        let sources := Array.ofFn (n := (indexCount + 255) / 256)
+          (fun b : Fin ((indexCount + 255) / 256) => sha (seedRound ++ u32leBytes b.val))
 
         -- Rebuild every slot independently: swap to `flip`, or keep `cur`.
         Array.ofFn (n := indexCount) (fun i : Fin indexCount =>
           let cur := (indices[i.val]!).toNat
           let flip := (pivot + indexCount - cur) % indexCount
           let position := Nat.max cur flip
-          -- One bit of the round's hash stream decides the swap: hash the seed with
-          -- the high bytes of `position`, then read bit `position % 8` of the byte at
-          -- `(position % 256) / 8`. A set bit moves this slot to `flip`.
-          let source := sha (seedRound ++ u32leBytes (position / 256))
+          -- One bit of the round's hash stream decides the swap: take the hash of the seed
+          -- with the high bytes of `position`, then read bit `position % 8` of the byte at
+          -- `(position % 256) / 8`. A set bit moves this slot to `flip`. Every position is
+          -- below `index_count`, so the table holds its bucket. The fallback hashes a bucket
+          -- past the table directly, which gives the same bytes.
+          let bucket := position / 256
+          let source := if h : bucket < sources.size then sources[bucket]
+            else sha (seedRound ++ u32leBytes bucket)
           let byteVal := (source.get! ((position % 256) / 8)).toNat
           let bit := (byteVal >>> (position % 8)) % 2
           if bit == 1 then UInt64.ofNat flip else UInt64.ofNat cur))
