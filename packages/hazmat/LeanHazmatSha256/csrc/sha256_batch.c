@@ -58,6 +58,10 @@
 // Mirrors the digest-length constant in `sha256_shim.c`.
 #define LEAN_HAZMAT_SHA256_DIGEST_LEN 32
 
+// The SHA-256 method fetched once per process, defined in
+// `sha256_shim.c`. Both objects go into the one package archive.
+const EVP_MD *lean_hazmat_sha256_md(void);
+
 // ---------------------------------------------------------------------
 // OpenSSL EVP backend.
 // ---------------------------------------------------------------------
@@ -71,7 +75,7 @@ static int lean_hazmat_sha256_combine_into(
     const uint8_t *rp, size_t rn,
     uint8_t out[LEAN_HAZMAT_SHA256_DIGEST_LEN])
 {
-    return EVP_DigestInit_ex(ctx, EVP_sha256(), NULL)
+    return EVP_DigestInit_ex(ctx, lean_hazmat_sha256_md(), NULL)
         && EVP_DigestUpdate(ctx, lp, ln)
         && EVP_DigestUpdate(ctx, rp, rn)
         && EVP_DigestFinal_ex(ctx, out, NULL);
