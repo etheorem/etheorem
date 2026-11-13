@@ -28,6 +28,11 @@ and resolved vector-level gaps, keyed by vector id. Deliberate implementation
 divergences that no vector observes belong in `IMPLEMENTATION_NOTES.md` instead,
 catalogued per fork.
 
+[SPEC_ARITHMETIC.md](SPEC_ARITHMETIC.md) is a draft design for the arithmetic of the fork
+bodies: how the pyspec computes with integers at the pin, the rule that the model raises
+exactly when the pyspec raises, and the checked types that hold the rule. It is not built on
+`main`; its Section 7 says what exists.
+
 [FUTURE_WORK.md](FUTURE_WORK.md) records deferred changes: what is left, why it waits,
 and the shape it will take, so a later pass picks each one up whole. The current entry is
 the provability of the pure indexed reads: a proof parameter or a refined index-list type,
