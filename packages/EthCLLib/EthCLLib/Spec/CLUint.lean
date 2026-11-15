@@ -6,14 +6,15 @@ import EthCLLib.Spec.Errors
 import EthCLLib.Spec.DroppedCheckedLint
 
 /-!
-# `EthCLLib.Spec.CLUint`: the pyspec's checked `Uint64` (SPIKE)
+# `EthCLLib.Spec.CLUint`: the pyspec's checked `Uint64` and `Uint8` (SPIKE)
 
 The pyspec computes with a checked integer type: every operator tests its result against
-`[0, 2**64 - 1]` and raises outside it (`packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md` §3). `CLUint64` is that type.
-Its operators return a `Checked` value, so a fork body writes `a * b / c` as the pyspec does and
-binds the expression once.
+`[0, 2**BITS - 1]` and raises outside it (`packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md` §3). `CLUint64` is that type
+at width 64, and `CLUint8` at width 8, the type behind the pinned `ParticipationFlags`.
+The operators that can fault return a `Checked` value, so a fork body writes `a * b / c` as
+the pyspec does and binds the expression once.
 
-Spike quality. Width 64 only.
+Spike quality. Widths 64 and 8 only.
 -/
 
 set_option autoImplicit false
@@ -105,6 +106,38 @@ instance : Min CLUint64 := ⟨fun a b => if a < b then a else b⟩
 @[inline] def mod (a b : CLUint64) : Checked CLUint64 :=
   if b.val == 0 then .error (.zeroDivisor "%" a.toPlainInt) else .ok ⟨a.val % b.val⟩
 
+/-! ## `**` and the shifts: the last three §5.1 `not built` rows -/
+
+/-- `a ** n`: the pyspec computes the power unbounded and range-tests the result
+(`ssz/uint.py`, `BaseUint.__pow__` ends in `cls._wrap`), so `Uint64(2) ** 64` raises. The
+wheel also takes the three-argument `pow(a, b, m)`; the in-scope text never uses it, so there
+is no row for it. A negative exponent raises in the wheel too (the `float` result falls
+through the interned table, and `0 ** -1` divides by zero); the `Nat` and `CLUint64`
+exponents below cannot be negative, so that raise has no row either. -/
+@[inline] def pow (a b : CLUint64) : Checked CLUint64 :=
+  ofNat? (a.toPlainInt ^ b.toPlainInt)
+@[inline] def natPow (a b : Nat) : Checked CLUint64 :=
+  ofNat? (a ^ b)
+
+/-- `a << n`: the pyspec computes the shift unbounded and range-tests the result
+(`BaseUint.__lshift__` ends in `cls._wrap`), so `Uint64(1) << 64` raises. Core's `UInt64`
+shift cannot raise, so the model computes on the plain values and narrows once. A negative
+shift count raises `ValueError` in the wheel; a `Nat` count cannot be negative, so that raise
+has no row here either. -/
+@[inline] def shl (a b : CLUint64) : Checked CLUint64 :=
+  ofNat? (a.toPlainInt <<< b.toPlainInt)
+@[inline] def natShl (a b : Nat) : Checked CLUint64 :=
+  ofNat? (a <<< b)
+
+/-- `a >> n`: total, and deliberately not a `Checked` value. The wheel computes
+`int.__rshift__` and range-tests the result like every operator, but for `n ≥ 0` the result
+is at most `a`, and `a` is in range, so the test cannot fire. The count is not taken modulo
+64: `Uint64(7) >> 64` is `0`, and so is `Uint64(7) >> 1000`. -/
+@[inline] def shr (a b : CLUint64) : CLUint64 :=
+  ⟨UInt64.ofNat (a.toPlainInt >>> b.toPlainInt)⟩
+@[inline] def natShr (a b : Nat) : CLUint64 :=
+  ⟨UInt64.ofNat (a >>> b)⟩
+
 /-! The same five with one plain `int` operand: compute unbounded, then test the result, as the
 pyspec does for `int op Uint`. -/
 
@@ -118,6 +151,60 @@ pyspec does for `int op Uint`. -/
   if b = 0 then .error (.zeroDivisor "%" a) else ofNat? (a % b)
 
 end CLUint64
+
+/-! ## The pyspec `Uint8`, the type behind `ParticipationFlags`
+
+At the pin, `ParticipationFlags` is a `Uint8` subclass (`eth-ssz-specs` 0.1.0;
+`eth_consensus_specs/altair/mainnet.py`: `class ParticipationFlags(Uint8)`), and the pinned
+`add_flag` / `has_flag` compute on it: each forms the mask `ParticipationFlags(2**flag_index)`,
+which range-tests the mask against `[0, 255]` and raises past flag index 7, then combines with
+the `Uint8` `|` (in `add_flag`) or `&` and `==` (in `has_flag`). The `TIMELY_*_FLAG_INDEX`
+constants feeding the mask are `Uint64` values at the pin, so the mask's power computes over
+`Uint64` first; the raise a caller sees is at flag index 8 either way.
+
+The operators `|` and `&` on two in-range `Uint8` values cannot leave the range, so they are
+total here, like the wheel's, and return the value, not a `Checked`. -/
+
+/-- The pyspec `Uint8`. Same shape as `CLUint64`: no core operator instance applies, the
+constructor is private, and `ofNat?` is the checked route from a plain number, the pyspec's
+`Uint8(x)` / `ParticipationFlags(x)` cast. -/
+structure CLUint8 where
+  private mk ::
+  /-- The native value. -/
+  val : UInt8
+  deriving DecidableEq, Hashable, Ord
+
+namespace CLUint8
+
+/-- The framework's trusted route from a raw `UInt8`, for the same sites as
+`CLUint64.trustedOfUInt64`. -/
+@[inline] def trustedOfUInt8 (v : UInt8) : CLUint8 := ⟨v⟩
+
+/-- The value as a plain `int`: the pyspec's `int(x)`. -/
+@[inline] def toPlainInt (a : CLUint8) : Nat := a.val.toNat
+
+instance : Inhabited CLUint8 := ⟨⟨0⟩⟩
+instance : Repr CLUint8 := ⟨fun a _ => repr a.toPlainInt⟩
+instance : ToString CLUint8 := ⟨fun a => toString a.toPlainInt⟩
+-- The `num` elaborator gate at the end of this module covers this type as well, wherever
+-- `EthCLLib.Spec` is open, so a literal past 255 raises before the wrap below is reached.
+instance {n : Nat} : OfNat CLUint8 n := ⟨⟨UInt8.ofNat n⟩⟩
+
+/-- `Uint8(n)` from a plain `int`: the checked narrowing, the cast every `ParticipationFlags`
+construction goes through. -/
+@[inline] def ofNat? (n : Nat) : Checked CLUint8 :=
+  if n < UInt8.size then .ok ⟨UInt8.ofNat n⟩ else .error (.range "Uint8()" n 0)
+
+/-- `|` on two in-range values: total, the `add_flag` combine. -/
+@[inline] def bitOr (a b : CLUint8) : CLUint8 := ⟨a.val ||| b.val⟩
+
+/-- `&` on two in-range values: total, the `has_flag` combine. -/
+@[inline] def bitAnd (a b : CLUint8) : CLUint8 := ⟨a.val &&& b.val⟩
+
+end CLUint8
+
+instance : HOr CLUint8 CLUint8 CLUint8 := ⟨CLUint8.bitOr⟩
+instance : HAnd CLUint8 CLUint8 CLUint8 := ⟨CLUint8.bitAnd⟩
 
 open CLUint64
 
@@ -144,6 +231,19 @@ lift_op HSub sub natSub
 lift_op HMul mul natMul
 lift_op HDiv div natDiv
 lift_op HMod mod natMod
+lift_op HPow pow natPow
+lift_op HShiftLeft shl natShl
+
+/-! The right shift takes plain operands on both sides as a total route, the discipline of
+`PositiveDivisor` below: a `Checked` operand has no route, and the author binds first
+(`SPEC_ARITHMETIC.md` §4.3). The one exception is the `Nat`-left lift, the pyspec's
+`__rrshift__`: its base is a plain `int`, which the wheel range-tests like any result, so
+`(2**64) >> Uint64(0)` raises. That route computes unbounded and narrows, `Checked`. -/
+
+instance : HShiftRight CLUint64 CLUint64 CLUint64 := ⟨shr⟩
+instance : HShiftRight CLUint64 Nat CLUint64 := ⟨fun a b => natShr a.toPlainInt b⟩
+instance : HShiftRight Nat CLUint64 (Checked CLUint64) :=
+  ⟨fun a b => ofNat? (a >>> b.toPlainInt)⟩
 
 /-! ## Total division by a proof-carrying divisor
 
@@ -237,26 +337,36 @@ lets the monad lift bridge to the expected type. Any other tree falls through to
 
 open Lean Elab Term Meta in
 /-- The literal gate (SPEC_ARITHMETIC.md §7, item 6). Core's `num` elaborator builds any
-literal through the `OfNat` instance, and `UInt64.ofNat` wraps modulo `2^64`, so a literal
-past `2^64 - 1` would silently become a small value. This scoped elaborator runs before
-core's wherever `EthCLLib.Spec` is open, the same discipline as `elabCheckedOp`. It reads the
-expected type only: any type but `CLUint64`, or a reducible alias of it such as the fork
-body's `Gwei`, falls through to core with `throwUnsupportedSyntax`, and an in-range literal
-falls through too, so `Nat`, `UInt64`, `Int`, and every other type keeps core's path. An
-out-of-range literal raises with the value and the bound named. The gate sees through
-reducible aliases only; a plain `def` alias of `CLUint64` would escape it. The fork DSL
-authors every type alias through `forkabbrev`, which emits an `abbrev`, so no fork body
-writes the escaping shape. -/
+literal through the `OfNat` instance, and `UInt64.ofNat` wraps modulo `2^64` (`UInt8.ofNat`
+modulo `2^8`), so a literal past the maximum would silently become a small value. This scoped
+elaborator runs before core's wherever `EthCLLib.Spec` is open, the same discipline as
+`elabCheckedOp`. It reads the expected type only: any type but `CLUint64` or `CLUint8`, or a
+reducible alias of one such as the fork body's `Gwei`, falls through to core with
+`throwUnsupportedSyntax`, and an in-range literal falls through too, so `Nat`, `UInt64`,
+`Int`, and every other type keeps core's path. An out-of-range literal raises with the value
+and the bound named. The gate sees through reducible aliases only; a plain `def` alias of
+`CLUint64` would escape it. The fork DSL authors every type alias through `forkabbrev`, which
+emits an `abbrev`, so no fork body writes the escaping shape. -/
 @[scoped term_elab num] def elabCheckedNumLit : TermElab := fun stx expectedType? => do
   let some expected := expectedType? | throwUnsupportedSyntax
   -- `whnfR` sees through reducible aliases (`abbrev` / `forkabbrev`) and leaves a
   -- metavariable-headed type stuck, so both the fall-through and the postponement behave
   -- exactly as the plain constant check would.
-  unless (← whnfR (← instantiateMVars expected)).isConstOf ``CLUint64 do
-    throwUnsupportedSyntax
+  let ty := (← whnfR (← instantiateMVars expected))
+  let bound? :=
+    if ty.isConstOf ``CLUint64 then some UInt64.size
+    else if ty.isConstOf ``CLUint8 then some UInt8.size
+    else none
+  let some bound := bound? | throwUnsupportedSyntax
   let some n := stx.isNatLit? | throwUnsupportedSyntax
-  unless n < UInt64.size do
-    throwError "literal `{n}` is out of range for `CLUint64`: the type holds `[0, 2^64 - 1]`, and the maximum is `18446744073709551615`"
+  unless n < bound do
+    -- The message names the type by its last component, so an alias expected type
+    -- (`CLUnit` in the tests, `Gwei` in the fork body) reports the checked type,
+    -- exactly as the one-type gate did before `CLUint8` joined it.
+    let name := (ty.constName!).getString!
+    let bits := Nat.log2 bound
+    let max := bound - 1
+    throwError "literal `{n}` is out of range for `{name}`: the type holds `[0, 2^{bits} - 1]`, and the maximum is `{max}`"
   throwUnsupportedSyntax
 
 end EthCLLib.Spec
@@ -270,6 +380,16 @@ instance : SSZRepr EthCLLib.Spec.CLUint64 where
   shape    := .uintN 64
   toRepr   := (·.val)
   fromRepr := (EthCLLib.Spec.CLUint64.trustedOfUInt64)
+  to_from  := fun _ => rfl
+  from_to  := fun _ => rfl
+
+/-- `SSZRepr CLUint8`: the wire format of `uint8`, 1 little-endian byte. Same iso shape as
+the `uint64` instance above, so the `ParticipationFlags` fields keep the roots the `UInt8`
+fields had. -/
+instance : SSZRepr EthCLLib.Spec.CLUint8 where
+  shape    := .uintN 8
+  toRepr   := (·.val)
+  fromRepr := (EthCLLib.Spec.CLUint8.trustedOfUInt8)
   to_from  := fun _ => rfl
   from_to  := fun _ => rfl
 

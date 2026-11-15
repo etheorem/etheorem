@@ -619,35 +619,59 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                               = some (vi.toPlainInt) :=
                           pos?_progressiveList_some hq
                         rw [run_sszGetIdx_some _ _ _ hp hq, except_bind_ok] at hrun2
+                        -- The flag test is two steps now: the pure membership gate, then
+                        -- the checked `hasFlag` bind inside it (the pinned `and`
+                        -- short-circuits, so the model binds in its own branch).
                         split at hrun2
                         · rw [run_bind] at hrun2
-                          cases hm : (EthCLSpecs.Gloas.getBaseReward (pureState state) vi).mapError
-                            (ErrorConv.conv (F := EthCLLib.Spec.StateTransitionError)) with
+                          cases hf : (EthCLLib.Spec.hasFlag y cIdx) with
                           | error e =>
-                            rw [run_liftErr_of_error _ _ hm, except_bind_error] at hrun2
+                            rw [hf, run_liftM_error, except_bind_error] at hrun2
                             simp at hrun2
-                          | ok rw =>
-                            rw [run_liftErr_of_ok _ _ hm, except_bind_ok] at hrun2
-                            -- `proposerNum += baseReward * weight`: one checked-`Gwei`
-                            -- leaf between the base-reward read and the write-back.
-                            rw [run_bind] at hrun2
-                            cases hn : (p2 + rw *
-                                EthCLSpecs.Gloas.Const.participationFlagWeights[cIdx]! :
-                                EthCLLib.Spec.Checked EthCLLib.Spec.CLUint64) with
-                            | ok pn' =>
-                              rw [hn, run_liftM_ok, except_bind_ok] at hrun2
-                              rw [run_pure] at hrun2
+                          | ok isSet =>
+                            rw [hf, run_liftM_ok, except_bind_ok] at hrun2
+                            split at hrun2
+                            · rw [run_bind] at hrun2
+                              cases ha : (EthCLLib.Spec.addFlag y cIdx) with
+                              | error e =>
+                                rw [ha, run_liftM_error, except_bind_error] at hrun2
+                                simp at hrun2
+                              | ok updated =>
+                                rw [ha, run_liftM_ok, except_bind_ok] at hrun2
+                                rw [run_bind] at hrun2
+                                cases hm : (EthCLSpecs.Gloas.getBaseReward (pureState state) vi).mapError
+                                  (ErrorConv.conv (F := EthCLLib.Spec.StateTransitionError)) with
+                                | error e =>
+                                  rw [run_liftErr_of_error _ _ hm, except_bind_error] at hrun2
+                                  simp at hrun2
+                                | ok rw =>
+                                  rw [run_liftErr_of_ok _ _ hm, except_bind_ok] at hrun2
+                                  -- `proposerNum += baseReward * weight`: one checked-`Gwei`
+                                  -- leaf between the base-reward read and the write-back.
+                                  rw [run_bind] at hrun2
+                                  cases hn : (p2 + rw *
+                                      EthCLSpecs.Gloas.Const.participationFlagWeights[cIdx]! :
+                                      EthCLLib.Spec.Checked EthCLLib.Spec.CLUint64) with
+                                  | ok pn' =>
+                                    rw [hn, run_liftM_ok, except_bind_ok] at hrun2
+                                    rw [run_pure] at hrun2
+                                    injection hrun2 with h1
+                                    injection h1 with h1a h1b
+                                    subst h1a
+                                    subst h1b
+                                    refine ⟨rfl, ⟨({ flagAccState with
+                                      currentEpochParticipation :=
+                                        (SSZ.Box.view (pureState flagAccState)).currentEpochParticipation.set!
+                                          (vi.toPlainInt) updated }), rfl⟩⟩
+                                  | error e =>
+                                    rw [hn, run_liftM_error, except_bind_error] at hrun2
+                                    simp at hrun2
+                            · rw [run_pure] at hrun2
                               injection hrun2 with h1
                               injection h1 with h1a h1b
                               subst h1a
                               subst h1b
-                              refine ⟨rfl, ⟨({ flagAccState with
-                                currentEpochParticipation :=
-                                  (SSZ.Box.view (pureState flagAccState)).currentEpochParticipation.set!
-                                    (vi.toPlainInt) (EthCLLib.Spec.addFlag y cIdx) }), rfl⟩⟩
-                            | error e =>
-                              rw [hn, run_liftM_error, except_bind_error] at hrun2
-                              simp at hrun2
+                              exact ⟨rfl, ⟨flagAccState, rfl⟩⟩
                         · rw [run_pure] at hrun2
                           injection hrun2 with h1
                           injection h1 with h1a h1b
@@ -672,34 +696,56 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                               = some (vi.toPlainInt) :=
                           pos?_progressiveList_some hq
                         rw [run_sszGetIdx_some _ _ _ hp hq, except_bind_ok] at hrun2
+                        -- The same two-step flag test, previous-epoch branch.
                         split at hrun2
                         · rw [run_bind] at hrun2
-                          cases hm : (EthCLSpecs.Gloas.getBaseReward (pureState state) vi).mapError
-                            (ErrorConv.conv (F := EthCLLib.Spec.StateTransitionError)) with
+                          cases hf : (EthCLLib.Spec.hasFlag y cIdx) with
                           | error e =>
-                            rw [run_liftErr_of_error _ _ hm, except_bind_error] at hrun2
+                            rw [hf, run_liftM_error, except_bind_error] at hrun2
                             simp at hrun2
-                          | ok rw =>
-                            rw [run_liftErr_of_ok _ _ hm, except_bind_ok] at hrun2
-                            -- The same checked-`Gwei` leaf, previous-epoch branch.
-                            rw [run_bind] at hrun2
-                            cases hn : (p2 + rw *
-                                EthCLSpecs.Gloas.Const.participationFlagWeights[cIdx]! :
-                                EthCLLib.Spec.Checked EthCLLib.Spec.CLUint64) with
-                            | ok pn' =>
-                              rw [hn, run_liftM_ok, except_bind_ok] at hrun2
-                              rw [run_pure] at hrun2
+                          | ok isSet =>
+                            rw [hf, run_liftM_ok, except_bind_ok] at hrun2
+                            split at hrun2
+                            · rw [run_bind] at hrun2
+                              cases ha : (EthCLLib.Spec.addFlag y cIdx) with
+                              | error e =>
+                                rw [ha, run_liftM_error, except_bind_error] at hrun2
+                                simp at hrun2
+                              | ok updated =>
+                                rw [ha, run_liftM_ok, except_bind_ok] at hrun2
+                                rw [run_bind] at hrun2
+                                cases hm : (EthCLSpecs.Gloas.getBaseReward (pureState state) vi).mapError
+                                  (ErrorConv.conv (F := EthCLLib.Spec.StateTransitionError)) with
+                                | error e =>
+                                  rw [run_liftErr_of_error _ _ hm, except_bind_error] at hrun2
+                                  simp at hrun2
+                                | ok rw =>
+                                  rw [run_liftErr_of_ok _ _ hm, except_bind_ok] at hrun2
+                                  -- The same checked-`Gwei` leaf, previous-epoch branch.
+                                  rw [run_bind] at hrun2
+                                  cases hn : (p2 + rw *
+                                      EthCLSpecs.Gloas.Const.participationFlagWeights[cIdx]! :
+                                      EthCLLib.Spec.Checked EthCLLib.Spec.CLUint64) with
+                                  | ok pn' =>
+                                    rw [hn, run_liftM_ok, except_bind_ok] at hrun2
+                                    rw [run_pure] at hrun2
+                                    injection hrun2 with h1
+                                    injection h1 with h1a h1b
+                                    subst h1a
+                                    subst h1b
+                                    refine ⟨rfl, ⟨({ flagAccState with
+                                      previousEpochParticipation :=
+                                        (SSZ.Box.view (pureState flagAccState)).previousEpochParticipation.set!
+                                          (vi.toPlainInt) updated }), rfl⟩⟩
+                                  | error e =>
+                                    rw [hn, run_liftM_error, except_bind_error] at hrun2
+                                    simp at hrun2
+                            · rw [run_pure] at hrun2
                               injection hrun2 with h1
                               injection h1 with h1a h1b
                               subst h1a
                               subst h1b
-                              refine ⟨rfl, ⟨({ flagAccState with
-                                previousEpochParticipation :=
-                                  (SSZ.Box.view (pureState flagAccState)).previousEpochParticipation.set!
-                                    (vi.toPlainInt) (EthCLLib.Spec.addFlag y cIdx) }), rfl⟩⟩
-                            | error e =>
-                              rw [hn, run_liftM_error, except_bind_error] at hrun2
-                              simp at hrun2
+                              exact ⟨rfl, ⟨flagAccState, rfl⟩⟩
                         · rw [run_pure] at hrun2
                           injection hrun2 with h1
                           injection h1 with h1a h1b

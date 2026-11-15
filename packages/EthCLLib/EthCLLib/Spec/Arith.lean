@@ -264,12 +264,29 @@ def Bitvector.trueIndices {n : Nat} (bv : Bitvector n) : Array Nat := Id.run do
     if bitGet bv i then out := out.push i
   return out
 
-/-- Test participation-flag bit `idx` of a `uint8` flag byte. -/
-@[inline] def hasFlag (flags : UInt8) (idx : Nat) : Bool :=
-  (flags >>> (UInt8.ofNat idx)) &&& 1 == 1
+/-! ## Participation flags
 
-/-- Set participation-flag bit `idx` of a `uint8` flag byte. -/
-@[inline] def addFlag (flags : UInt8) (idx : Nat) : UInt8 :=
-  flags ||| (1 <<< (UInt8.ofNat idx))
+The pinned `ParticipationFlags` is a `Uint8` subclass, and `add_flag` / `has_flag` form the
+mask `ParticipationFlags(2**flag_index)` before combining, a range test against `[0, 255]`.
+Both helpers therefore raise exactly when the flag index is 8 or more. The in-tree flag
+indexes are the `TIMELY_*` constants `0, 1, 2`, so the raise is unreachable there, and the
+`Checked` result type carries it for the general flag index. -/
+
+/-- The mask `2**flag_index` narrowed by the `ParticipationFlags` cast: flag index 7 builds
+`128`, flag index 8 raises (`SSZValueError`, run at the pin and quoted in the stage report). -/
+@[inline] def participationFlagMask (flagIndex : Nat) : Checked CLUint8 :=
+  CLUint8.ofNat? (2 ^ flagIndex)
+
+/-- `add_flag`: `flags | ParticipationFlags(2**flag_index)`. Raises only through the mask
+cast above; the `|` itself is total on two in-range `Uint8` values. -/
+@[inline] def addFlag (flags : CLUint8) (flagIndex : Nat) : Checked CLUint8 := do
+  let mask ← participationFlagMask flagIndex
+  pure (flags ||| mask)
+
+/-- `has_flag`: `flags & ParticipationFlags(2**flag_index) == flag`. Same mask raise; the `&`
+and the equality are total. -/
+@[inline] def hasFlag (flags : CLUint8) (flagIndex : Nat) : Checked Bool := do
+  let mask ← participationFlagMask flagIndex
+  pure (flags &&& mask == mask)
 
 end EthCLLib.Spec

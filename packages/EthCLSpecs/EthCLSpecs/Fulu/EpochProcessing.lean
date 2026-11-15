@@ -92,8 +92,8 @@ forkdef processJustificationAndFinalization : StateTransition Unit := do
   let gate ← Const.genesisEpoch + 1
   if currentEpochOf state ≤ gate then pure ()
   else
-    let prevIdx := getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state)
-    let currIdx := getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (currentEpochOf state)
+    let prevIdx ← liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state))
+    let currIdx ← liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (currentEpochOf state))
     weighJustificationAndFinalization (← getTotalActiveBalance state)
       (← getTotalBalance state prevIdx) (← getTotalBalance state currIdx)
 
@@ -107,7 +107,7 @@ forkdef processInactivityUpdates : StateTransition Unit := do
   let state ← get
   if currentEpochOf state == Const.genesisEpoch then pure ()
   else
-    let matchingTarget := getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state)
+    let matchingTarget ← liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state))
     -- Both binds sit below the genesis guard, where the pyspec calls the helpers. The
     -- leak binds once above the loop rather than per validator (the pure `Id.run` write
     -- block cannot bind); the pyspec calls it per validator, so an empty eligible set
@@ -139,7 +139,7 @@ forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) :
   let mut penalties := Array.replicate n (0 : Gwei)
 
   let prevEpoch := previousEpochOf state
-  let unslashed := getUnslashedParticipatingIndices state flagIndex prevEpoch
+  let unslashed ← getUnslashedParticipatingIndices state flagIndex prevEpoch
   let weight := Const.participationFlagWeights[flagIndex]!
   let unslashedIncrements ← getTotalBalance state unslashed / Const.effectiveBalanceIncrementG
   let activeIncrements ← getTotalActiveBalance state / Const.effectiveBalanceIncrementG
@@ -159,12 +159,15 @@ forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) :
       penalties := penalties.set! i (← baseReward * weight / Const.weightDenominator)
   return (rewards, penalties)
 
-/-- `get_inactivity_penalty_deltas`: penalties only. -/
-forkdef getInactivityPenaltyDeltas (state : State) : Checked (Array Gwei) := do
+/-- `get_inactivity_penalty_deltas`: penalties only. Rejects where the pyspec raises: the
+`get_unslashed_participating_indices` call raises through the `has_flag` mask cast for a flag
+index of 8 or more, unreachable for the `TIMELY_TARGET` constant `1` every caller passes. -/
+forkdef getInactivityPenaltyDeltas (state : State) :
+    Except StateTransitionError (Array Gwei) := do
   let validators := sszGet state validators
   let iscores := sszGet state inactivityScores
   let mut penalties := Array.replicate validators.size (0 : Gwei)
-  let matchingTarget := getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state)
+  let matchingTarget ← getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state)
 
   for vi in (← getEligibleValidatorIndices state) do
     -- `toPlainInt` reason: index-only. The plain-`Nat` slot the total `[i]!` reads and
@@ -195,7 +198,7 @@ forkdef processRewardsAndPenalties : StateTransition Unit := do
   if currentEpochOf state == Const.genesisEpoch then pure ()
   else
     let flagDeltas ← liftErr ((List.range 3).mapM (fun f => getFlagIndexDeltas state f))
-    let inactPenalties ← getInactivityPenaltyDeltas state
+    let inactPenalties ← liftErr (getInactivityPenaltyDeltas state)
     let zeros := Array.replicate (sszGet state validators).size (0 : Gwei)
 
     for (rewards, penalties) in flagDeltas do

@@ -24,9 +24,12 @@ state_section
 forkdef getTotalActiveBalance (state : State) : Checked Gwei :=
   getTotalBalance state (getActiveValidatorIndices state (computeEpochAtSlot (sszGet state slot)))
 
-/-- `get_unslashed_participating_indices(state, flag_index, epoch)`. No committees. -/
+/-- `get_unslashed_participating_indices(state, flag_index, epoch)`. No committees. Rejects
+with the arithmetic-shaped `StateTransitionError` when the flag index is 8 or more: the
+pinned `has_flag` raises through the `ParticipationFlags(2**flag_index)` mask cast. The
+in-tree flag indexes are the `TIMELY_*` constants `0, 1, 2`, so no valid run reaches it. -/
 forkdef getUnslashedParticipatingIndices (state : State) (flagIndex : Nat) (epoch : Epoch) :
-    Array ValidatorIndex := Id.run do
+    Except StateTransitionError (Array ValidatorIndex) := do
   let isCurrent := epoch == computeEpochAtSlot (sszGet state slot)
   let part := if isCurrent then sszGet state currentEpochParticipation else sszGet state previousEpochParticipation
   let validators := sszGet state validators
@@ -37,7 +40,7 @@ forkdef getUnslashedParticipatingIndices (state : State) (flagIndex : Nat) (epoc
     -- total `[i]!` forms, plain-`Nat` slots; `getAt` covers plain `Array` only and
     -- both fields are `SSZList`s.
     let idx := i.toPlainInt
-    if hasFlag (part[idx]!) flagIndex && !(validators[idx]!).slashed then out := out.push i
+    if (← hasFlag (part[idx]!) flagIndex) && !(validators[idx]!).slashed then out := out.push i
   return out
 
 /-- `get_block_root_at_slot`. The pinned `assert slot < state.slot <= slot +

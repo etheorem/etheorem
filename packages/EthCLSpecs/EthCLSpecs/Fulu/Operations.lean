@@ -199,14 +199,22 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
       -- provably-in-range write (the read at `vi` just succeeded).
       let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) vi
                  else sszGetIdx (sszGet stateAcc previousEpochParticipation) vi
-      if flagIndices.contains flagIndex && !hasFlag flag flagIndex then
-        -- `toPlainInt` reason: index-only. The `sszUpdate` path spells the write
-        -- position as a plain `Nat` for the view's `set!`.
-        stateAcc := if currentTarget then
-                   sszUpdate stateAcc with currentEpochParticipation[vi.toPlainInt]! := addFlag flag flagIndex
-                 else
-                   sszUpdate stateAcc with previousEpochParticipation[vi.toPlainInt]! := addFlag flag flagIndex
-        proposerNum ← proposerNum + (← liftErr (getBaseReward state vi)) * Const.participationFlagWeights[flagIndex]!
+      -- The pinned `if flag_index in participation_flag_indices and not has_flag(...)`
+      -- short-circuits, so `hasFlag` binds inside its own branch: it is formed only when
+      -- the membership test passes. Both helpers raise through the
+      -- `ParticipationFlags(2**flag_index)` mask cast for a flag index of 8 or more;
+      -- unreachable here, the loop runs `[0:3]`.
+      if flagIndices.contains flagIndex then
+        let isSet ← hasFlag flag flagIndex
+        if !isSet then
+          let updated ← addFlag flag flagIndex
+          -- `toPlainInt` reason: index-only. The `sszUpdate` path spells the write
+          -- position as a plain `Nat` for the view's `set!`.
+          stateAcc := if currentTarget then
+                     sszUpdate stateAcc with currentEpochParticipation[vi.toPlainInt]! := updated
+                   else
+                     sszUpdate stateAcc with previousEpochParticipation[vi.toPlainInt]! := updated
+          proposerNum ← proposerNum + (← liftErr (getBaseReward state vi)) * Const.participationFlagWeights[flagIndex]!
 
   -- Pay the proposer the accumulated weight.
   let proposerDenom := (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight

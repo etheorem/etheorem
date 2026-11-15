@@ -49,8 +49,10 @@ forkabbrev BLSPubkey := Vector UInt8 48
 forkabbrev BLSSignature := Vector UInt8 96
 /-- A 20-byte execution-layer address. -/
 forkabbrev ExecutionAddress := Vector UInt8 20
-/-- Per-validator participation flag bits (Altair onward). SSZ `uint8`. -/
-forkabbrev ParticipationFlags := UInt8
+/-- Per-validator participation flag bits (Altair onward). SSZ `uint8`. At the pin
+`ParticipationFlags` is a `Uint8` subclass, so the type is the checked `CLUint8`: the
+`add_flag` / `has_flag` mask cast raises past flag index 7. -/
+forkabbrev ParticipationFlags := CLUint8
 /-- A blob-commitment KZG point (48 bytes). -/
 forkabbrev KZGCommitment := Vector UInt8 48
 /-- A KZG opening proof (48 bytes), same width as a commitment. -/

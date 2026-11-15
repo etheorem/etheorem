@@ -427,14 +427,20 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
     for flagIndex in [0:3] do
       let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) i
                  else sszGetIdx (sszGet stateAcc previousEpochParticipation) i
-      if flagIndices.contains flagIndex && !hasFlag flag flagIndex then
-        stateAcc := if currentTarget then
-                   sszUpdate stateAcc with currentEpochParticipation[i]! := addFlag flag flagIndex
-                 else
-                   sszUpdate stateAcc with previousEpochParticipation[i]! := addFlag flag flagIndex
-        -- `proposer_reward_numerator += get_base_reward(...) * weight`: a checked `Gwei` add.
-        proposerNum ← proposerNum + (← liftErr (getBaseReward state vi)) * Const.participationFlagWeights[flagIndex]!
-        willSet := true
+      -- The pinned `and` short-circuits, so `hasFlag` binds inside the membership branch;
+      -- it raises through the `ParticipationFlags(2**flag_index)` mask cast for a flag
+      -- index of 8 or more, unreachable in the `[0:3]` loop.
+      if flagIndices.contains flagIndex then
+        let isSet ← hasFlag flag flagIndex
+        if !isSet then
+          let updated ← addFlag flag flagIndex
+          stateAcc := if currentTarget then
+                     sszUpdate stateAcc with currentEpochParticipation[i]! := updated
+                   else
+                     sszUpdate stateAcc with previousEpochParticipation[i]! := updated
+          -- `proposer_reward_numerator += get_base_reward(...) * weight`: a checked `Gwei` add.
+          proposerNum ← proposerNum + (← liftErr (getBaseReward state vi)) * Const.participationFlagWeights[flagIndex]!
+          willSet := true
     if willSet && hadNoParticipation && sameSlot && payment0.withdrawal.amount > 0 then
       let attester ← sszGetIdx (sszGet state validators) i
       -- `payment.weight += effective_balance`: a checked `Gwei` add.

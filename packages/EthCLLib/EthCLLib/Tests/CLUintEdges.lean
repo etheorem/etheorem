@@ -1,14 +1,19 @@
+import EthCLLib.Spec.Arith
 import EthCLLib.Spec.CLUint
 
 /-!
-# `EthCLLib.Tests.CLUintEdges`: edge behaviour of `CLUint64`
+# `EthCLLib.Tests.CLUintEdges`: edge behaviour of `CLUint64` and `CLUint8`
 
-The pyspec's `Uint64` computes in unbounded integers and raises outside `[0, 2^64)`; division
-and modulo raise on a zero divisor alone, since their result cannot leave the range
-(`packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md` §3.2). `CLUint64` is that
-type, and this module pins each row of the operator table (§4.2) for `U = CLUint64`: the exact
-result value in range, the exact `ArithFault` payload at each raise, the `Nat` operand on either
-side, a `Checked` operand on either side, and the per-operation test in `a * b / c`.
+The pyspec's checked integers compute in unbounded Python `int` and raise outside
+`[0, 2**BITS - 1]`; division and modulo raise on a zero divisor alone, since their result
+cannot leave the range (`packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md` §3.2). This module pins
+each row of the operator table (§4.2) for `U = CLUint64`: the exact result value in range,
+the exact `ArithFault` payload at each raise, the `Nat` operand on either side, a `Checked`
+operand on either side, and the per-operation test in `a * b / c`. It also pins the last
+three §5.1 rows, `a ** n`, `a << n`, and `a >> n`, and the `Uint8` rows behind the pinned
+`ParticipationFlags`: the `Uint8()` cast, the total `|` / `&`, and the
+`add_flag` / `has_flag` mask raise past flag index 7. Every raise quoted in a section
+comment was run against the built pyspec in `.spike/pyspec-venv` (`eth-ssz-specs` 0.1.0).
 
 Two elaboration facts shape the assertions. A bare integer literal defaults to `Nat`, so the
 `U, U` rows ascribe both operands and the `Nat` rows pin the literal route. The `Eq` of an
@@ -119,6 +124,108 @@ example : ((maxValue + (1 : CLUint64)) + ((0 : CLUint64) - (1 : CLUint64)) : Che
 
 -- The product raises although the quotient `2^62` would fit.
 example : ((halfMax * (2 : CLUint64)) / (2 : CLUint64) : Checked CLUint64) = .error (.range "*" 9223372036854775808 2) := rfl
+
+/-! ## `a ** n` raises past the maximum (§5.1 row 5)
+
+The wheel computes `pow(int(self), int(value))` unbounded and range-tests the result
+(`ssz/uint.py`, `BaseUint.__pow__` ends in `cls._wrap`). Run at the pin:
+`Uint64(2) ** 64` raises `SSZValueError`, `Uint64(2) ** 63` is `Uint64(9223372036854775808)`,
+`Uint64(0) ** 0` is `Uint64(1)`, and `2 ** Uint64(64)` (the `__rpow__` route) raises too. The
+wheel also takes three-argument `pow`, which the in-scope text never uses, and it raises on a
+negative exponent, which a `Nat` exponent cannot be. -/
+
+-- In range, the exact value.
+example : ((2 : CLUint64) ^ (63 : CLUint64) : Checked CLUint64) = .ok halfMax := rfl
+example : ((2 : Nat) ^ (63 : CLUint64) : Checked CLUint64) = .ok halfMax := rfl
+example : (halfMax ^ (1 : Nat) : Checked CLUint64) = .ok halfMax := rfl
+-- `2^64` raises, in both operand orders.
+example : ((2 : CLUint64) ^ (64 : CLUint64) : Checked CLUint64) = .error (.range "Uint64()" 18446744073709551616 0) := rfl
+example : ((2 : Nat) ^ (64 : CLUint64) : Checked CLUint64) = .error (.range "Uint64()" 18446744073709551616 0) := rfl
+-- The unbounded power names itself in the fault.
+example : (maxValue ^ (2 : Nat) : Checked CLUint64) =
+    .error (.range "Uint64()" 340282366920938463426481119284349108225 0) := rfl
+-- `0 ** 0` is `1`, as in Python.
+example : ((0 : CLUint64) ^ (0 : CLUint64) : Checked CLUint64) = .ok (CLUint64.trustedOfUInt64 1) := rfl
+-- A fault on the left passes first.
+example : (((0 : CLUint64) - (1 : CLUint64)) ^ (2 : CLUint64) : Checked CLUint64) = .error (.range "-" 0 1) := rfl
+
+/-! ## `a << n` raises past the maximum (§5.1 row 6)
+
+The wheel computes `int.__lshift__` unbounded and range-tests the result
+(`BaseUint.__lshift__` ends in `cls._wrap`). Run at the pin: `Uint64(1) << 64` raises,
+`Uint64(1) << 63` is `Uint64(9223372036854775808)`, `1 << Uint64(64)` (the `__rlshift__`
+route) raises too. Lean's native `UInt64` `<<<` cannot raise, so the model computes on the
+plain values and narrows once. -/
+
+-- In range, the exact value.
+example : ((1 : CLUint64) <<< (63 : CLUint64) : Checked CLUint64) = .ok halfMax := rfl
+example : ((1 : Nat) <<< (63 : CLUint64) : Checked CLUint64) = .ok halfMax := rfl
+example : ((7 : CLUint64) <<< (0 : Nat) : Checked CLUint64) = .ok (CLUint64.trustedOfUInt64 7) := rfl
+-- `1 << 64` raises, in both operand orders.
+example : ((1 : CLUint64) <<< (64 : CLUint64) : Checked CLUint64) = .error (.range "Uint64()" 18446744073709551616 0) := rfl
+example : ((1 : Nat) <<< (64 : CLUint64) : Checked CLUint64) = .error (.range "Uint64()" 18446744073709551616 0) := rfl
+example : (halfMax <<< (1 : Nat) : Checked CLUint64) = .error (.range "Uint64()" 18446744073709551616 0) := rfl
+
+/-! ## `a >> n` is total (§5.1 row 7)
+
+The wheel computes `int.__rshift__` and range-tests the result like every operator, but for
+`n ≥ 0` the result is at most `a`, and `a` is in range, so the test cannot fire. The count is
+not taken modulo 64. Run at the pin: `Uint64(7) >> 64` is `Uint64(0)`, and so is
+`Uint64(7) >> 1000`. The result is the value itself, no bind. -/
+
+example : ((7 : CLUint64) >>> (1 : CLUint64)) = CLUint64.trustedOfUInt64 3 := rfl
+example : ((7 : CLUint64) >>> (64 : CLUint64)) = (CLUint64.trustedOfUInt64 0) := rfl
+example : ((7 : CLUint64) >>> 1000) = (CLUint64.trustedOfUInt64 0) := rfl
+example : ((7 : CLUint64) >>> (1 : Nat)) = CLUint64.trustedOfUInt64 3 := rfl
+-- The `Nat`-left route is the one `>>` route that can fault: the wheel's `__rrshift__`
+-- range-tests the result, and the base is a plain `int`. Run at the pin:
+-- `(2**63) >> Uint64(0)` is `Uint64(2**63)`, `(2**64) >> Uint64(0)` raises,
+-- `(2**64) >> Uint64(1)` is `Uint64(2**63)`.
+example : ((2 ^ 63 : Nat) >>> (0 : CLUint64) : Checked CLUint64) = .ok halfMax := rfl
+example : ((2 ^ 64 : Nat) >>> (0 : CLUint64) : Checked CLUint64) = .error (.range "Uint64()" 18446744073709551616 0) := rfl
+example : ((2 ^ 64 : Nat) >>> (1 : CLUint64) : Checked CLUint64) = .ok halfMax := rfl
+
+/-! ## The `Uint8` rows: `ParticipationFlags` at the pin
+
+At the pin, `ParticipationFlags` is a `Uint8` subclass (`eth-ssz-specs` 0.1.0,
+`altair/mainnet.py`: `class ParticipationFlags(Uint8)`), and `add_flag` / `has_flag` form the
+mask `ParticipationFlags(2**flag_index)` before combining, a range test against `[0, 255]`.
+Run at the pin: `ParticipationFlags(2**7)` is `Uint8(128)`; `add_flag` and `has_flag` at
+flag index 8 raise `SSZValueError: 256 is out of range for ParticipationFlags [0, 255]`;
+the mask power for a `Uint64` index of 64 raises at the `Uint64` wrap first, so the raise a
+caller sees starts at flag index 8 either way. `|` and `&` on two in-range values never
+leave the range (`Uint8(0b101) | Uint8(0b010)` is `Uint8(7)`). -/
+
+-- The `Uint8()` cast: in range, and one past the maximum.
+example : (CLUint8.ofNat? 255) = .ok (CLUint8.trustedOfUInt8 255) := rfl
+example : (CLUint8.ofNat? 256) = .error (.range "Uint8()" 256 0) := rfl
+-- `|` and `&` are total on two in-range values.
+example : ((5 : CLUint8) ||| (2 : CLUint8)) = (7 : CLUint8) := rfl
+example : ((5 : CLUint8) &&& (1 : CLUint8)) = (1 : CLUint8) := rfl
+
+-- The literal gate covers `CLUint8`: the maximum builds, one past it fails.
+example : (255 : CLUint8) = CLUint8.trustedOfUInt8 255 := rfl
+example : (255 : CLUint8).toPlainInt = 255 := rfl
+
+/-- error: literal `256` is out of range for `CLUint8`: the type holds `[0, 2^8 - 1]`, and the maximum is `255` -/
+#guard_msgs in
+example : CLUint8 := 256
+
+/-! ## `add_flag` / `has_flag` raise exactly past flag index 7
+
+The mask `2**flag_index` is the only raise site: `add_flag(flags, 7)` builds
+`ParticipationFlags(133)` from `0b101`, and `add_flag(flags, 8)` raises. -/
+
+-- The mask at the edge: flag index 7 fits, flag index 8 raises.
+example : (EthCLLib.Spec.participationFlagMask 7) = .ok (CLUint8.trustedOfUInt8 128) := rfl
+example : (EthCLLib.Spec.participationFlagMask 8) = .error (.range "Uint8()" 256 0) := rfl
+-- `add_flag`: the combine is total; the mask carries the raise.
+example : (EthCLLib.Spec.addFlag (5 : CLUint8) 7 : Checked CLUint8) = .ok (CLUint8.trustedOfUInt8 133) := rfl
+example : (EthCLLib.Spec.addFlag (5 : CLUint8) 8 : Checked CLUint8) = .error (.range "Uint8()" 256 0) := rfl
+-- `has_flag`: `flags & flag == flag`.
+example : (EthCLLib.Spec.hasFlag (5 : CLUint8) 0 : Checked Bool) = .ok true := rfl
+example : (EthCLLib.Spec.hasFlag (5 : CLUint8) 1 : Checked Bool) = .ok false := rfl
+example : (EthCLLib.Spec.hasFlag (5 : CLUint8) 8 : Checked Bool) = .error (.range "Uint8()" 256 0) := rfl
 
 /-! ## Conversions and the saturating subtraction (§4.5) -/
 
