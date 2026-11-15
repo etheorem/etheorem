@@ -20,9 +20,12 @@ namespace EthCLSpecs.Fulu
 
 state_section
 
-/-- `get_active_validator_indices`. -/
+/-- `get_active_validator_indices`. The `lift` is the trusted `CLUint64` route: the
+position `i` comes from the registry array's size, which the preset caps far below `2^64`
+(`VALIDATOR_REGISTRY_LIMIT`), so no range test is owed. -/
 forkdef getActiveValidatorIndices (state : State) (epoch : Epoch) : Array ValidatorIndex :=
   indicesWhere (sszGet state validators).toArray (fun v _ => isActiveValidator v epoch)
+    (fun i => CLUint64.trustedOfUInt64 (UInt64.ofNat i))
 
 /-- `get_eligible_validator_indices` (`fulu/mainnet.py:1805-1812`): the active validators of
 the previous epoch, plus the slashed ones whose withdrawable epoch lies past
@@ -37,11 +40,13 @@ forkdef getEligibleValidatorIndices (state : State) : Checked (Array ValidatorIn
   for i in [0 : validators.size] do
     let validator := validators[i]!
     if isActiveValidator validator prevEpoch then
-      eligible := eligible.push (UInt64.ofNat i)
+      -- Trusted `CLUint64` route: `i` is bounded by the registry array's size, which
+      -- the preset caps far below `2^64`, so the wrap cannot fault.
+      eligible := eligible.push (CLUint64.trustedOfUInt64 (UInt64.ofNat i))
     else if validator.slashed then
       let slashedFrom ← prevEpoch + 1
       if slashedFrom < validator.withdrawableEpoch then
-        eligible := eligible.push (UInt64.ofNat i)
+        eligible := eligible.push (CLUint64.trustedOfUInt64 (UInt64.ofNat i))
   pure eligible
 
 /-- The registry index of the first validator whose `pubkey` equals `pk`, or `none` when no
@@ -49,8 +54,8 @@ validator carries that pubkey. The single home for the
 `(sszGet state validators).findIdx? (·.pubkey == …)` scan that the deposit, withdrawal-request,
 consolidation, and pending-deposit paths each re-spell. Returns the raw `Nat` index `findIdx?`
 produces, not a narrowed `ValidatorIndex`: most callers need the index in both forms in the same
-branch (as a `Nat` to read the registry or a parallel list, as a `UInt64` to hand a balance / exit
-mutator), so the per-caller narrowing is left at the call site and only the scan and the pubkey
+branch (as a `Nat` to read the registry or a parallel list, as a `ValidatorIndex` to hand a
+balance / exit mutator), so the per-caller narrowing is left at the call site and only the scan and the pubkey
 key are centralized. -/
 forkdef validatorIndexByPubkey? (state : State) (pk : BLSPubkey) : Option Nat :=
   (sszGet state validators).findIdx? (·.pubkey == pk)

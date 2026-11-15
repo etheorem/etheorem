@@ -39,8 +39,10 @@ forkdef computeShuffledPermutation (indexCount : Nat) (seed : ByteArray) : Array
         let pivot := (le8 (sha seedRound)) % indexCount
 
         -- Rebuild every slot independently: swap to `flip`, or keep `cur`.
+        -- `toPlainInt`, the documented `int(x)` read: the swap arithmetic over
+        -- `cur` / `flip` is the pyspec's plain-`int` position math.
         Array.ofFn (n := indexCount) (fun i : Fin indexCount =>
-          let cur := (indices[i.val]!).toNat
+          let cur := (indices[i.val]!).toPlainInt
           let flip := (pivot + indexCount - cur) % indexCount
           let position := Nat.max cur flip
           -- One bit of the round's hash stream decides the swap: hash the seed with
@@ -49,8 +51,14 @@ forkdef computeShuffledPermutation (indexCount : Nat) (seed : ByteArray) : Array
           let source := sha (seedRound ++ u32leBytes (position / 256))
           let byteVal := (source.get! ((position % 256) / 8)).toNat
           let bit := (byteVal >>> (position % 8)) % 2
-          if bit == 1 then UInt64.ofNat flip else UInt64.ofNat cur))
-      (Array.ofFn (n := indexCount) (fun i : Fin indexCount => UInt64.ofNat i.val))
+          -- Trusted `CLUint64` route: `flip` / `cur` are positions below `indexCount`,
+          -- the active-set size, capped by `VALIDATOR_REGISTRY_LIMIT` far below `2^64`.
+          if bit == 1 then CLUint64.trustedOfUInt64 (UInt64.ofNat flip)
+          else CLUint64.trustedOfUInt64 (UInt64.ofNat cur)))
+      -- Trusted `CLUint64` route: the initial identity permutation is the positions
+      -- `0 … indexCount - 1`, all below the registry cap.
+      (Array.ofFn (n := indexCount) (fun i : Fin indexCount =>
+        CLUint64.trustedOfUInt64 (UInt64.ofNat i.val)))
 
 /-! ## Seeds and committee counts -/
 
@@ -82,7 +90,9 @@ forkdef computeCommittee (indices : Array ValidatorIndex) (seed : Bytes32) (inde
   let start := len * index / count
   let stop := len * (index + 1) / count
   let perm := computeShuffledPermutation len seed
-  (Array.range (stop - start)).map (fun j => indices[(perm[start + j]!).toNat]!)
+  -- `toPlainInt` reason: index-only. `perm[start + j]` names a position in `indices`,
+  -- the plain-`Nat` slot the array's `[i]!` read takes; the element itself is the result.
+  (Array.range (stop - start)).map (fun j => indices[(perm[start + j]!).toPlainInt]!)
 
 /-- `get_beacon_committee(state, slot, index)` (`fulu/mainnet.py:1508-1519`). `getSeed` is a
 checked value now, so the seed binds above `computeCommittee` and the helper raises where the
@@ -122,11 +132,17 @@ forkdef cbwsAux [Preset] (indices effBals : Array Nat) (perm : Array ValidatorIn
   else
     let offset := (i % 16) * 2
     let randomBytes := if offset == 0 then sha (seed ++ uint64ToBytes (UInt64.ofNat (i / 16))) else randomBytes
-    let nextIndex := if shuffle then (perm[i % total]!).toNat else i % total
+    -- `toPlainInt` reason: index-only. The permuted entry names a position in the
+    -- plain-`Nat` arrays `effBals` / `indices`, the slot their `[i]!` reads take.
+    let nextIndex := if shuffle then (perm[i % total]!).toPlainInt else i % total
     let weight := effBals[nextIndex]! * Const.maxRandomValue
     let randomValue := le2 randomBytes offset
     let threshold := Const.maxEffectiveBalanceElectra * randomValue
-    let selected := if weight ≥ threshold then selected.push (UInt64.ofNat (indices[nextIndex]!)) else selected
+    -- Trusted `CLUint64` route: `indices[nextIndex]` is a registry position, below
+    -- the registry size, which `VALIDATOR_REGISTRY_LIMIT` caps far below `2^64`.
+    let selected := if weight ≥ threshold
+      then selected.push (CLUint64.trustedOfUInt64 (UInt64.ofNat (indices[nextIndex]!)))
+      else selected
     let s ← checkedSucc i "compute_balance_weighted_selection: i += 1 past 2**64 - 1"
     cbwsAux indices effBals perm seed total size shuffle s.val randomBytes selected
 termination_by counterBudgetUInt64 i
@@ -139,9 +155,14 @@ forkdef computeBalanceWeightedSelection (state : State) (indices : Array Validat
     Except StateTransitionError (Array ValidatorIndex) := do
   let total := indices.size
   assert (total > 0)
-  let idxNat := indices.map (·.toNat)
+  -- `toPlainInt`, the documented `int(x)` read: the loop's plain-`int` copy of the
+  -- index array, the positions `effBals` / `indices` sit under.
+  let idxNat := indices.map (·.toPlainInt)
   let validators := sszGet state validators
-  let effBals := indices.map (fun vi => (validators[vi.toNat]!).effectiveBalance.toPlainInt)
+  -- `toPlainInt` reason: index-only on the read (`getAt` covers plain `Array` only,
+  -- `validators` is an `SSZList`); `.effectiveBalance.toPlainInt` is the documented
+  -- `int(x)` read, the plain-`int` balance the weight comparison runs on.
+  let effBals := indices.map (fun vi => (validators[vi.toPlainInt]!).effectiveBalance.toPlainInt)
   let perm := if shuffle then computeShuffledPermutation total seed else #[]
   cbwsAux idxNat effBals perm seed total size shuffle 0 ByteArray.empty #[]
 
@@ -188,7 +209,10 @@ forkdef getNextSyncCommittee [CryptoBackend] (state : State) :
 
   let validators := sszGet state validators
   let pubkeys : Vector BLSPubkey Const.syncCommitteeSize :=
-    Vector.ofFn (fun i => (validators[(indices[i.val]!).toNat]?.getD default).pubkey)
+    -- `toPlainInt` reason: index-only. `indices[i]` names a registry position, the
+    -- plain-`Nat` slot the `validators[...]` read takes; the `?.getD default` arm is
+    -- the pre-flip spelling and unreachable for a selection output.
+    Vector.ofFn (fun i => (validators[(indices[i.val]!).toPlainInt]?.getD default).pubkey)
   return { pubkeys := pubkeys, aggregatePubkey := blsAggregatePubkeys pubkeys.toArray }
 
 end

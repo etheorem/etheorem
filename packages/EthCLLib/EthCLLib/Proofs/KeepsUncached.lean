@@ -753,43 +753,111 @@ theorem keepsUncachedFrom_forIn_range_run_inv {T ε α β : Type} [SSZRepr T] [H
   have hpair := keepsUncachedFrom_forIn_range_inv (α := α) f P hf n init v hinit
   exact ⟨hpair.1 r s h, hpair.2 r s h⟩
 
-theorem run_sszGetIdx_some {α ρ : Type} {σ ε : Type}
-    [EthCLLib.Spec.IdxRead ρ α] [ErrorConv IndexError ε] {y : α}
-    (xs : ρ) (i : Nat) (sb : σ)
-    (hq : EthCLLib.Spec.IdxRead.get? xs i = some y) :
+/-- The `Nat` index's position: in range, the index itself. -/
+theorem pos?_nat_some {i size : Nat} (hlt : i < size) :
+    EthCLLib.Spec.ToIndex.pos? i size = some i := by
+  show (if i < size then some i else none) = some i
+  rw [ite_eq_left hlt]
+
+/-- The `Nat` index's position: out of range, `none`, the index-miss arm. -/
+theorem pos?_nat_none {i size : Nat} (hge : size ≤ i) :
+    EthCLLib.Spec.ToIndex.pos? i size = none := by
+  show (if i < size then some i else none) = none
+  rw [ite_eq_right (Nat.not_lt.mpr hge)]
+
+/-- The checked index's position (`ToIndex CLUint64`): in range, the plain read. The twin of
+`pos?_nat_some`, one class instance over. -/
+theorem pos?_clUint64_some {i : CLUint64} {size : Nat} (hlt : i.toPlainInt < size) :
+    EthCLLib.Spec.ToIndex.pos? i size = some i.toPlainInt := by
+  show (if i.toPlainInt < size then some i.toPlainInt else none) = some i.toPlainInt
+  rw [ite_eq_left hlt]
+
+/-- The checked index's position (`ToIndex CLUint64`): out of range, `none`, the index-miss arm. -/
+theorem pos?_clUint64_none {i : CLUint64} {size : Nat} (hge : size ≤ i.toPlainInt) :
+    EthCLLib.Spec.ToIndex.pos? i size = none := by
+  show (if i.toPlainInt < size then some i.toPlainInt else none) = none
+  rw [ite_eq_right (Nat.not_lt.mpr hge)]
+
+/-- An `SSZList` read that hit places the `Nat` index under the size, so `pos?` names the
+index itself. The side fact the `run_sszGetIdx_some` / `run_sszGetIdx_none` callers need
+when their hypothesis is the raw `[i]?` read. -/
+theorem pos?_sszList_some {α : Type} {cap : Nat} {xs : SizzLean.Repr.SSZList α cap}
+    {i : Nat} {y : α} (hq : xs.val[i]? = some y) :
+    EthCLLib.Spec.ToIndex.pos? i (EthCLLib.Spec.IdxRead.size xs) = some i := by
+  have hlt : i < xs.val.size := by
+    rcases Nat.lt_or_ge i xs.val.size with h | h
+    · exact h
+    · exact absurd hq (by rw [Array.getElem?_eq_none_iff.mpr h]; simp)
+  exact pos?_nat_some hlt
+
+/-- The `ProgressiveList` twin of `pos?_sszList_some`: a field a fork switches between the
+capped and the uncapped list keeps the same read-side fact. -/
+theorem pos?_progressiveList_some {α : Type} {xs : SizzLean.Repr.ProgressiveList α}
+    {i : Nat} {y : α} (hq : xs.val[i]? = some y) :
+    EthCLLib.Spec.ToIndex.pos? i (EthCLLib.Spec.IdxRead.size xs) = some i := by
+  have hlt : i < xs.val.size := by
+    rcases Nat.lt_or_ge i xs.val.size with h | h
+    · exact h
+    · exact absurd hq (by rw [Array.getElem?_eq_none_iff.mpr h]; simp)
+  exact pos?_nat_some hlt
+
+theorem run_sszGetIdx_some {α ρ ι : Type} {σ ε : Type}
+    [EthCLLib.Spec.IdxRead ρ α] [EthCLLib.Spec.ToIndex ι] [ErrorConv IndexError ε] {k : Nat} {y : α}
+    (xs : ρ) (i : ι) (sb : σ)
+    (hp : EthCLLib.Spec.ToIndex.pos? i (EthCLLib.Spec.IdxRead.size xs) = some k)
+    (hq : EthCLLib.Spec.IdxRead.get? xs k = some y) :
     (EthCLLib.Spec.sszGetIdx (E := ε) (m := StateT σ (Except ε)) xs i).run sb = .ok (y, sb) := by
   unfold EthCLLib.Spec.sszGetIdx EthCLLib.Spec.liftErr
-  rw [hq]
+  simp only [hp, hq]
   exact run_ofExcept_ok sb
 
-theorem run_sszGetIdx_none {α ρ : Type} {σ ε : Type}
-    [EthCLLib.Spec.IdxRead ρ α] [ErrorConv IndexError ε]
-    (xs : ρ) (i : Nat) (sb : σ)
-    (hq : EthCLLib.Spec.IdxRead.get? xs i = none) :
+theorem run_sszGetIdx_none {α ρ ι : Type} {σ ε : Type}
+    [EthCLLib.Spec.IdxRead ρ α] [EthCLLib.Spec.ToIndex ι] [ErrorConv IndexError ε] {k : Nat}
+    (xs : ρ) (i : ι) (sb : σ)
+    (hp : EthCLLib.Spec.ToIndex.pos? i (EthCLLib.Spec.IdxRead.size xs) = some k)
+    (hq : EthCLLib.Spec.IdxRead.get? xs k = none) :
     (EthCLLib.Spec.sszGetIdx (E := ε) (m := StateT σ (Except ε)) xs i).run sb
       = .error (ErrorConv.conv
-          (SizzLean.Cache.IndexError.indexError i (EthCLLib.Spec.IdxRead.size xs))) := by
+          (SizzLean.Cache.IndexError.indexError k (EthCLLib.Spec.IdxRead.size xs))) := by
   unfold EthCLLib.Spec.sszGetIdx EthCLLib.Spec.liftErr
-  rw [hq]
+  simp only [hp, hq]
+  exact run_ofExcept_error sb
+
+/-- The index-miss arm of `run_sszGetIdx_none`: `pos?` itself rejected the index, so no
+position exists and the fault's index field is the `0` placeholder. -/
+theorem run_sszGetIdx_none_pos {α ρ ι : Type} {σ ε : Type}
+    [EthCLLib.Spec.IdxRead ρ α] [EthCLLib.Spec.ToIndex ι] [ErrorConv IndexError ε]
+    (xs : ρ) (i : ι) (sb : σ)
+    (hp : EthCLLib.Spec.ToIndex.pos? i (EthCLLib.Spec.IdxRead.size xs) = none) :
+    (EthCLLib.Spec.sszGetIdx (E := ε) (m := StateT σ (Except ε)) xs i).run sb
+      = .error (ErrorConv.conv
+          (SizzLean.Cache.IndexError.indexError 0 (EthCLLib.Spec.IdxRead.size xs))) := by
+  unfold EthCLLib.Spec.sszGetIdx EthCLLib.Spec.liftErr
+  rw [hp]
   exact run_ofExcept_error sb
 
 /-- `sszGetIdx` reads and never writes: a hit returns the start box unchanged, and a miss
 raises. -/
-theorem keepsUncached_sszGetIdx {T ε α ρ : Type} [SSZRepr T] [HasherTag]
-    [EthCLLib.Spec.IdxRead ρ α] [ErrorConv IndexError ε] (xs : ρ) (i : Nat) :
+theorem keepsUncached_sszGetIdx {T ε α ρ ι : Type} [SSZRepr T] [HasherTag]
+    [EthCLLib.Spec.IdxRead ρ α] [EthCLLib.Spec.ToIndex ι] [ErrorConv IndexError ε] (xs : ρ) (i : ι) :
     KeepsUncached (EthCLLib.Spec.sszGetIdx (E := ε)
       (m := StateT (SSZ.Box HasherTag.H T) (Except ε)) xs i) := by
   intro v a s h
-  cases hq : EthCLLib.Spec.IdxRead.get? xs i with
-  | some y =>
-    rw [run_sszGetIdx_some xs i _ hq] at h
-    injection h with h1
-    injection h1 with _ h2
-    subst h2
-    rfl
+  cases hp : EthCLLib.Spec.ToIndex.pos? i (EthCLLib.Spec.IdxRead.size xs) with
   | none =>
-    rw [run_sszGetIdx_none xs i _ hq] at h
+    rw [run_sszGetIdx_none_pos xs i _ hp] at h
     simp at h
+  | some k =>
+    cases hq : EthCLLib.Spec.IdxRead.get? xs k with
+    | some y =>
+      rw [run_sszGetIdx_some xs i _ hp hq] at h
+      injection h with h1
+      injection h1 with _ h2
+      subst h2
+      rfl
+    | none =>
+      rw [run_sszGetIdx_none xs i _ hp hq] at h
+      simp at h
 
 set_option linter.unusedVariables false in
 /-- Run-level transfer through a bind: a first action whose successful runs pass

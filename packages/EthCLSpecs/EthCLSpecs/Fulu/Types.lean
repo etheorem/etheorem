@@ -22,7 +22,7 @@ forkabbrev Slot := CLUint64
 /-- An epoch number. -/
 forkabbrev Epoch := CLUint64
 /-- An index into the validator registry. -/
-forkabbrev ValidatorIndex := UInt64
+forkabbrev ValidatorIndex := CLUint64
 /-- An index into the builder registry (Gloas/EIP-7732). SSZ `uint64`. -/
 forkabbrev BuilderIndex := UInt64
 /-- An index into a committee. -/

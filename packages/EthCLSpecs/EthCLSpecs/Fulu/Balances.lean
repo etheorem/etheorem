@@ -27,7 +27,10 @@ state_section
 is a basic-packed `Gwei` field, so the write rebuilds the field's subtree, the same
 cost as the old whole-field form. -/
 forkdef modBalance (state : State) (i : ValidatorIndex) (f : Gwei → Gwei) : State :=
-  sszModify state balances[i.toNat]! := f
+  -- `toPlainInt` reason: index-only. The `sszModify` path spells the write
+  -- position as a plain `Nat` for the view's `set!`; the pyspec writes
+  -- `balances[index]` and this is that position, nothing more.
+  sszModify state balances[i.toPlainInt]! := f
 
 /-- `increase_balance`. The pyspec's `+=` is a bare `uint64` addition, and remerkleable re-runs
 the bound check on the result, so an overflow raises `ValueError`. The reference runner lets that
@@ -42,7 +45,7 @@ pyspec rejects. Two callers can hold one. `pcLoop` passes a `target_index` read 
 when the two lengths disagree. -/
 forkdef increaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
     StateTransition State := do
-  let balance ← sszGetIdx (sszGet state balances) i.toNat
+  let balance ← sszGetIdx (sszGet state balances) i
   let sum ← balance + delta
   return modBalance state i (fun _ => sum)
 
@@ -53,13 +56,16 @@ so the subtraction raises nothing. The read goes through `sszGetIdx` for the rea
 read raises `IndexError` past the end. -/
 forkdef decreaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
     StateTransition State := do
-  let balance ← sszGetIdx (sszGet state balances) i.toNat
+  let balance ← sszGetIdx (sszGet state balances) i
   return modBalance state i (fun _ => balance.saturatingSub delta)
 
 /-- `get_total_balance` (floored at one increment). -/
 forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex) : Checked Gwei := do
   let validators := sszGet state validators
-  let total ← indices.foldlM (fun acc i => acc + (validators[i.toNat]!).effectiveBalance) (0 : Gwei)
+  -- `toPlainInt` reason: index-only. The fold reads with the total `[i]!`, the same
+  -- infallible read the pre-flip spelling had; `getAt` covers plain `Array` only,
+  -- and this field is an `SSZList`.
+  let total ← indices.foldlM (fun acc i => acc + (validators[i.toPlainInt]!).effectiveBalance) (0 : Gwei)
   return max total Const.effectiveBalanceIncrementG
 
 end

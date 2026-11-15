@@ -51,10 +51,12 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu
 
-open EthCLLib.Spec (HasherTag StateTransitionError Checked IndexError liftErr sszGetIdx IdxRead)
+open EthCLLib.Spec (HasherTag StateTransitionError Checked IndexError liftErr sszGetIdx
+  IdxRead)
 open EthCLSpecs.Fulu (Preset BeaconState State ValidatorIndex Gwei increaseBalance decreaseBalance
   modBalance)
-open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok add_eq_ok)
+open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok add_eq_ok
+  pos?_clUint64_some pos?_clUint64_none)
 open SizzLean.Proofs (view_uncachedBox)
 open SizzLean.Repr
 open SizzLean.Cache
@@ -76,7 +78,7 @@ private theorem sszList_getElem?_eq_getElem! {α : Type} [Inhabited α] {cap : N
   exact Array.getElem?_eq_getElem h
 
 /-- `modBalance`'s whole contract at the pure box: the `sszModify state
-balances[i.toNat]! := f` expansion writes `set!` with `f` applied to the old
+balances[i.toPlainInt]! := f` expansion writes `set!` with `f` applied to the old
 element, so the writer lands as one plain record update. This is the shape the
 two mutator contracts below close into, and the fact a proof that runs a
 `State → State` writer on `pureState state` reaches for. -/
@@ -85,7 +87,7 @@ theorem modBalance_pureState [Preset] [HasherTag] :
     ∀ (state : BeaconState) (i : ValidatorIndex) (f : Gwei → Gwei),
       modBalance (pureState state) i f =
         pureState
-          { state with balances := state.balances.set! i.toNat (f state.balances[i.toNat]!) } :=
+          { state with balances := state.balances.set! i.toPlainInt (f state.balances[i.toPlainInt]!) } :=
   fun _ _ _ => rfl
 
 /-! ## `increaseBalance` -/
@@ -127,20 +129,22 @@ private theorem increaseBalance_checkedSum_ok (balance delta : Gwei)
   exact (add_eq_ok balance delta _).mpr ⟨hsum, hval⟩
 
 /-- **Exact run equation.** The run is `sszGetIdx`'s range check, then the checked `+`'s carry
-check, and nothing else. Past the end of `balances` it rejects with `.outOfBounds`, the
-`IndexError` the pyspec's list read raises. In range it rejects with the `.arithmetic` fault
-carrying the checked sum's exact `ArithFault.range` payload when the sum wraps, the unsigned
-carry test. Otherwise it returns the new state, `modBalance (pureState state) i …`, the
-source's own write, and leaves the threaded state `preState` unchanged. Stated at the box level
-so the fork-choice bridge consumes it by application; `modBalance_pureState` turns the written
-state into the plain record update (`increaseBalance_run_no_wrap`). -/
+check, and nothing else. Past the end of `balances` the checked index's `ToIndex.pos?` rejects,
+and the run rejects with `.outOfBounds`, the `IndexError` the pyspec's list read raises; the
+fault's index field is the `0` placeholder, since no position exists. In range it rejects with
+the `.arithmetic` fault carrying the checked sum's exact `ArithFault.range` payload when the
+sum wraps, the unsigned carry test. Otherwise it returns the new state, `modBalance
+(pureState state) i …`, the source's own write, and leaves the threaded state `preState`
+unchanged. Stated at the box level so the fork-choice bridge consumes it by application;
+`modBalance_pureState` turns the written state into the plain record update
+(`increaseBalance_run_no_wrap`). -/
 @[characterizes EthCLSpecs.Fulu.increaseBalance]
 theorem increaseBalance_run_eq [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       (increaseBalance (StateTransition := FuluRun) (pureState state) i delta).run
           (pureState preState)
-        = (match state.balances.val[i.toNat]? with
-          | none => .error (.outOfBounds i.toNat state.balances.size)
+        = (match state.balances.val[i.toPlainInt]? with
+          | none => .error (.outOfBounds 0 state.balances.size)
           | some balance =>
             match (balance + delta : Checked Gwei) with
             | .error _ => .error (.arithmetic (increaseFault balance delta))
@@ -152,32 +156,42 @@ theorem increaseBalance_run_eq [Preset] [HasherTag] :
   -- arm and the checked sum the inner one. `cases` then substitutes the read on both sides, and
   -- the branch tactics need only the sum's `Except` shape.
   simp only [view_uncachedBox]
-  cases state.balances.val[i.toNat]? with
-  | none =>
+  by_cases hlt : i.toPlainInt < state.balances.size
+  · rw [pos?_clUint64_some hlt]
+    simp only []
+    cases hq : state.balances.val[i.toPlainInt]? with
+    | none =>
+      -- Unreachable at `i < size`, but the match arms must both be disposed of.
+      have hle : state.balances.val.size ≤ i.toPlainInt := Array.getElem?_eq_none_iff.mp hq
+      have hsz : state.balances.size = state.balances.val.size := rfl
+      omega
+    | some balance =>
+      rw [bind_liftErr_ok]
+      simp only []
+      simp only [increaseBalance_checkedSum]
+      by_cases hcarry : balance.val + delta.val < balance.val
+      · simp only [ite_eq_left hcarry]
+        rfl
+      · simp only [ite_eq_right hcarry]
+        rfl
+  · rw [pos?_clUint64_none (Nat.le_of_not_lt hlt),
+      Array.getElem?_eq_none_iff.mpr (Nat.le_of_not_lt hlt)]
     simp
     rfl
-  | some balance =>
-    rw [bind_liftErr_ok]
-    simp only []
-    simp only [increaseBalance_checkedSum]
-    by_cases hcarry : balance.val + delta.val < balance.val
-    · simp only [ite_eq_left hcarry]
-      rfl
-    · simp only [ite_eq_right hcarry]
-      rfl
 
 /-- **Out of range.** Past the end of `balances` the run rejects with `.outOfBounds` and
-produces no state. The pyspec reads `state.balances[index]` there and raises `IndexError`,
-which the reference runner catches. `pcLoop` reaches this with a `target_index` read from
-`pending_consolidations`. -/
+produces no state; the fault's index field is the `0` placeholder (`pos?` rejected the
+index, so no position exists). The pyspec reads `state.balances[index]` there and raises
+`IndexError`, which the reference runner catches. `pcLoop` reaches this with a `target_index`
+read from `pending_consolidations`. -/
 theorem increaseBalance_run_outOfRange [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
-      ¬ i.toNat < state.balances.size →
+      ¬ i.toPlainInt < state.balances.size →
       runPure (increaseBalance (StateTransition := FuluRun) (pureState state) i delta) preState
-        = .error (.outOfBounds i.toNat state.balances.size) := by
+        = .error (.outOfBounds 0 state.balances.size) := by
   intro state preState i delta hidx
   rw [runPure_eq, increaseBalance_run_eq state preState i delta]
-  have hnone : state.balances.val[i.toNat]? = none := by
+  have hnone : state.balances.val[i.toPlainInt]? = none := by
     rw [Array.getElem?_eq_none_iff]
     exact Nat.le_of_not_lt hidx
   rw [hnone]
@@ -188,15 +202,15 @@ carry test fires and the run rejects with the `.arithmetic` fault carrying the e
 `ArithFault.range` payload. The pyspec raises `ValueError` at the same point. -/
 theorem increaseBalance_run_overflow [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
-      i.toNat < state.balances.size →
-      state.balances[i.toNat]!.toPlainInt + delta.toPlainInt ≥ 2 ^ 64 →
+      i.toPlainInt < state.balances.size →
+      state.balances[i.toPlainInt]!.toPlainInt + delta.toPlainInt ≥ 2 ^ 64 →
       runPure (increaseBalance (StateTransition := FuluRun) (pureState state) i delta) preState
-        = .error (.arithmetic (increaseFault state.balances[i.toNat]! delta)) := by
+        = .error (.arithmetic (increaseFault state.balances[i.toPlainInt]! delta)) := by
   intro state preState i delta hidx hsum
-  have hcarry : state.balances[i.toNat]!.val + delta.val < state.balances[i.toNat]!.val := by
-    have hb : state.balances[i.toNat]!.val.toNat < 2 ^ 64 := UInt64.toNat_lt _
+  have hcarry : state.balances[i.toPlainInt]!.val + delta.val < state.balances[i.toPlainInt]!.val := by
+    have hb : state.balances[i.toPlainInt]!.val.toNat < 2 ^ 64 := UInt64.toNat_lt _
     have hd : delta.val.toNat < 2 ^ 64 := UInt64.toNat_lt _
-    have hsum' : state.balances[i.toNat]!.val.toNat + delta.val.toNat ≥ 2 ^ 64 := hsum
+    have hsum' : state.balances[i.toPlainInt]!.val.toNat + delta.val.toNat ≥ 2 ^ 64 := hsum
     rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_add]
     omega
   rw [runPure_eq, increaseBalance_run_eq state preState i delta,
@@ -208,24 +222,24 @@ theorem increaseBalance_run_overflow [Preset] [HasherTag] :
 checked sum's witness into that one balance. `ite_eq_right` with the no-carry fact, derived
 from the fit hypothesis by `omega` over the native widths, picks the witness arm, so the stored
 balance's `.toPlainInt` reads back as the exact natural-number sum: rewrite the equation, then
-read `.balances[i.toNat]!.toPlainInt` off the written value. -/
+read `.balances[i.toPlainInt]!.toPlainInt` off the written value. -/
 theorem increaseBalance_run_no_wrap [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
-      i.toNat < state.balances.size →
-      state.balances[i.toNat]!.toPlainInt + delta.toPlainInt < 2 ^ 64 →
+      i.toPlainInt < state.balances.size →
+      state.balances[i.toPlainInt]!.toPlainInt + delta.toPlainInt < 2 ^ 64 →
       runPure (increaseBalance (StateTransition := FuluRun) (pureState state) i delta) preState
         = .ok (pureState
             { state with
-                balances := state.balances.set! i.toNat
+                balances := state.balances.set! i.toPlainInt
                   (EthCLLib.Spec.CLUint64.trustedOfUInt64
-                    (state.balances[i.toNat]!.val + delta.val)) },
+                    (state.balances[i.toPlainInt]!.val + delta.val)) },
           preState) := by
   intro state preState i delta hidx hsum
-  have hnocarry : ¬ (state.balances[i.toNat]!.val + delta.val
-      < state.balances[i.toNat]!.val) := by
-    have hb : state.balances[i.toNat]!.val.toNat < 2 ^ 64 := UInt64.toNat_lt _
+  have hnocarry : ¬ (state.balances[i.toPlainInt]!.val + delta.val
+      < state.balances[i.toPlainInt]!.val) := by
+    have hb : state.balances[i.toPlainInt]!.val.toNat < 2 ^ 64 := UInt64.toNat_lt _
     have hd : delta.val.toNat < 2 ^ 64 := UInt64.toNat_lt _
-    have hsum' : state.balances[i.toNat]!.val.toNat + delta.val.toNat < 2 ^ 64 := hsum
+    have hsum' : state.balances[i.toPlainInt]!.val.toNat + delta.val.toNat < 2 ^ 64 := hsum
     rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_add]
     omega
   rw [runPure_eq, increaseBalance_run_eq state preState i delta,
@@ -251,43 +265,55 @@ writes the floored difference. The floor is the pyspec's own `saturating_sub(bal
 (v1.7.0-beta.4; earlier pins spelled it `0 if delta > balance else balance - delta`). The
 subtraction therefore raises nothing, and the index read is the only reject. -/
 
-/-- **Exact run equation.** Past the end of `balances` the run rejects with `.outOfBounds`. In
-range it returns the new state, `modBalance (pureState state) i …`, the source's own write with
-the floored difference, and leaves the threaded state `preState` unchanged. Stated at the box level
-so the fork-choice bridge consumes it by application; `modBalance_pureState` turns the
-written state into the plain record update (`decreaseBalance_run_no_underflow`). -/
+/-- **Exact run equation.** Past the end of `balances` the checked index's `ToIndex.pos?`
+rejects, and the run rejects with `.outOfBounds` (the `0` index placeholder, since no
+position exists). In range it returns the new state, `modBalance (pureState state) i …`,
+the source's own write with the floored difference, and leaves the threaded state
+`preState` unchanged. Stated at the box level so the fork-choice bridge consumes it by
+application; `modBalance_pureState` turns the written state into the plain record update
+(`decreaseBalance_run_no_underflow`). -/
 @[characterizes EthCLSpecs.Fulu.decreaseBalance]
 theorem decreaseBalance_run_eq [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       (decreaseBalance (StateTransition := FuluRun) (pureState state) i delta).run
           (pureState preState)
-        = (match state.balances.val[i.toNat]? with
-          | none => .error (.outOfBounds i.toNat state.balances.size)
+        = (match state.balances.val[i.toPlainInt]? with
+          | none => .error (.outOfBounds 0 state.balances.size)
           | some balance =>
             .ok (modBalance (pureState state) i (fun _ => balance.saturatingSub delta),
               pureState preState)) := by
   intro state preState i delta
   unfold decreaseBalance sszGetIdx IdxRead.get? IdxRead.size
   simp only [view_uncachedBox]
-  cases state.balances.val[i.toNat]? with
-  | none =>
+  by_cases hlt : i.toPlainInt < state.balances.size
+  · rw [pos?_clUint64_some hlt]
+    simp only []
+    cases hq : state.balances.val[i.toPlainInt]? with
+    | none =>
+      -- Unreachable at `i < size`, but the match arms must both be disposed of.
+      have hle : state.balances.val.size ≤ i.toPlainInt := Array.getElem?_eq_none_iff.mp hq
+      have hsz : state.balances.size = state.balances.val.size := rfl
+      omega
+    | some balance =>
+      rw [bind_liftErr_ok]
+      simp only []
+      rfl
+  · rw [pos?_clUint64_none (Nat.le_of_not_lt hlt),
+      Array.getElem?_eq_none_iff.mpr (Nat.le_of_not_lt hlt)]
     simp
     rfl
-  | some balance =>
-    rw [bind_liftErr_ok]
-    simp only []
-    rfl
 
-/-- **Out of range.** The mirror of `increaseBalance_run_outOfRange`. The pyspec reads
-`state.balances[index]` before it writes, and that read raises `IndexError`. -/
+/-- **Out of range.** The mirror of `increaseBalance_run_outOfRange`: the run rejects with
+`.outOfBounds`, the `0` index placeholder. The pyspec reads `state.balances[index]` before
+it writes, and that read raises `IndexError`. -/
 theorem decreaseBalance_run_outOfRange [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
-      ¬ i.toNat < state.balances.size →
+      ¬ i.toPlainInt < state.balances.size →
       runPure (decreaseBalance (StateTransition := FuluRun) (pureState state) i delta) preState
-        = .error (.outOfBounds i.toNat state.balances.size) := by
+        = .error (.outOfBounds 0 state.balances.size) := by
   intro state preState i delta hidx
   rw [runPure_eq, decreaseBalance_run_eq state preState i delta]
-  have hnone : state.balances.val[i.toNat]? = none := by
+  have hnone : state.balances.val[i.toPlainInt]? = none := by
     rw [Array.getElem?_eq_none_iff]
     exact Nat.le_of_not_lt hidx
   rw [hnone]
@@ -299,12 +325,12 @@ the stored balance back as the truncating `Nat` difference, so the write is exac
 pyspec's `saturating_sub`: the floor, and nothing else. -/
 theorem decreaseBalance_run_no_underflow [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
-      i.toNat < state.balances.size →
+      i.toPlainInt < state.balances.size →
       runPure (decreaseBalance (StateTransition := FuluRun) (pureState state) i delta) preState
         = .ok (pureState
             { state with
-                balances := state.balances.set! i.toNat
-                  (state.balances[i.toNat]!.saturatingSub delta) },
+                balances := state.balances.set! i.toPlainInt
+                  (state.balances[i.toPlainInt]!.saturatingSub delta) },
           preState) := by
   intro state preState i delta hidx
   rw [runPure_eq, decreaseBalance_run_eq state preState i delta,

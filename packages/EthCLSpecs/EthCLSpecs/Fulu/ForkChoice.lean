@@ -155,7 +155,9 @@ counts slashed validators too. `UInt64` truncating division, as the spec's `//`.
 forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) : Checked Gwei := do
   let validators := sszGet state validators
   let unslashedAndActive := (getActiveValidatorIndices state (currentEpochOf state)).filter
-    fun i => !(validators[i.toNat]!).slashed
+    -- `toPlainInt` reason: index-only. The total `[i]!` read keeps the pre-flip
+    -- spelling; `getAt` covers plain `Array` only, and `validators` is an `SSZList`.
+    fun i => !(validators[i.toPlainInt]!).slashed
   let committeeWeight ← getTotalBalance state unslashedAndActive / Const.slotsPerEpoch
   committeeWeight * committeePercent.toNat / 100
 
@@ -190,7 +192,9 @@ forkdef getAttestationScore (store : Store map) (root : Root) (state : State) :
   let active := getActiveValidatorIndices state (currentEpochOf state)
   let validators := sszGet state validators
   active.foldlM (init := (0 : Gwei)) fun acc i => do
-    let idx := i.toNat
+    -- `toPlainInt` reason: index-only. The total `[i]!` reads keep the pre-flip
+    -- spelling; `getAt` covers plain `Array` only, and `validators` is an `SSZList`.
+    let idx := i.toPlainInt
     if (validators[idx]!).slashed then pure acc
     else match FcMap.lookup store.latestMessages i with
       | none => pure acc
@@ -387,7 +391,7 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
     let committee ← getBeaconCommittee headState headBlock.slot index
     committee.foldlM (init := acc) fun a i =>
       if store.equivocatingIndices.contains i then do
-        let v ← sszGetIdx validators i.toNat
+        let v ← sszGetIdx validators i
         a + v.effectiveBalance
       else pure a
   pure (headWeight < reorgThreshold)

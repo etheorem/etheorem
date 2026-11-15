@@ -1,6 +1,8 @@
 import SizzLean
 import EthCLLib.Spec.Errors
 import EthCLLib.Spec.Hasher
+import EthCLLib.Spec.CLUint
+import EthCLLib.Spec.CLInt
 
 /-!
 # `EthCLLib.Spec.State`: the boxed-state access surface
@@ -10,8 +12,10 @@ import EthCLLib.Spec.Hasher
 Reads and writes are SizzLean's generic `sszGet` / `sszUpdate` macros, available as
 global syntax the moment `SizzLean` is imported, so the framework adds no per-field
 lenses. This module supplies the small generic helpers the step primitives need:
-`getStateRoot` / `stateRoot` / `stateRoot!`, and the index-error lift
-(`FRAMEWORK_ARCHITECTURE.md` §8.1).
+`getStateRoot` / `stateRoot` / `stateRoot!`, the index-error lift
+(`FRAMEWORK_ARCHITECTURE.md` §8.1), and the indexing layer over the checked integer
+kinds: the `ToIndex` class (`SPEC_ARITHMETIC.md` §4.6) with the raising reads
+`sszGetIdx` (machine context) and `getAt` (the `Checked` prototype read).
 -/
 
 set_option autoImplicit false
@@ -110,38 +114,97 @@ class IdxRead (ρ : Type) (α : outParam Type) where
   size bs := bs.val.size
   get? bs i := bs.val[i]?
 
-/-- Monadic element access: element `i`, or the typed reject `outOfBounds i size`
-(the bug-smell for a framework-invariant index that should never be out of range on
-well-formed input). The monadic-context safe read that replaces `….val[i]!`
-(`SPEC_AUTHORING_MODEL.md` §7); it builds the `Except IndexError` carrying the real
-index and bound and hands it to `liftErr`, whose `[ErrorConv IndexError E]` instance
+/-! ## Indexing with a checked or a plain integer
+
+The pyspec indexes a list with any integer kind, and a plain negative `int` counts from
+the end (`SPEC_ARITHMETIC.md` §3.7). `ToIndex` says how an integer type names a position
+in a collection of a known size. The class sits here, beside `sszGetIdx` (§5.7): it is
+the read surface of the machine helpers, not an SSZ concern, so `SizzLean` keeps `Nat`
+indices and never sees it. The `CLInt` instance moved here with `CLInt` itself (the §5.5
+promotion). -/
+
+/-- How an integer type names a position in a collection of `size` elements: `none`
+exactly where the pyspec raises `IndexError`. A negative plain `int` counts from the
+end, as Python does. -/
+class ToIndex (ι : Type) where
+  /-- The position to read, or `none` where the index raises. -/
+  pos? : ι → Nat → Option Nat
+
+/-- In range, a `Nat` index is the position itself. -/
+instance : ToIndex Nat := ⟨fun i size => if i < size then some i else none⟩
+
+/-- The value's plain integer is the position. -/
+instance : ToIndex CLUint64 :=
+  ⟨fun i size => if i.toPlainInt < size then some i.toPlainInt else none⟩
+
+/-- A negative plain `int` counts from the end, as Python does. `-1` names the last
+element, `-size` the first, and anything past that raises (`SPEC_ARITHMETIC.md` §3.7).
+Promoted from `EthCLLib.Tests.CLIndex` with `CLInt` itself (§5.5). -/
+instance : ToIndex CLInt := ⟨fun i size =>
+  if 0 ≤ i.val then (if i.val.toNat < size then some i.val.toNat else none)
+  else if i.val.natAbs ≤ size then some (size - i.val.natAbs) else none⟩
+
+/-- The raising read on a plain `Array`, the prototype's `Checked` form: the element, or
+an `ArithFault.range` fault where the pyspec raises `IndexError`. `balances[index] + delta`
+is then one expression, a read an operand like any other. The machine read is `sszGetIdx`
+below, which returns in the ambient monad and keeps the reject typed as the machine's own
+`IndexError`-shaped fault; this one is the pure-context spelling (`SPEC_ARITHMETIC.md` §4.6). -/
+@[inline] def getAt {α ι : Type} [ToIndex ι] (xs : Array α) (i : ι) : Checked α :=
+  match ToIndex.pos? i xs.size with
+  | some k => match xs[k]? with
+    | some v => .ok v
+    | none => .error (.range "index" k xs.size)
+  | none => .error (.range "index" 0 xs.size)
+
+/-- `xs⟦i⟧`: the pyspec's `xs[i]`, through `getAt`. -/
+macro:max xs:term noWs "⟦" i:term "⟧" : term => `(getAt $xs $i)
+
+/-- Monadic element access: the element at the position index `i` names, or the typed
+reject `outOfBounds`, the position `k` against the bound at a rejected read and the `0`
+placeholder when no position exists (the bug-smell for a framework-invariant index that
+should never be out of range on well-formed input). The monadic-context safe read that replaces
+`….val[i]!` (`SPEC_AUTHORING_MODEL.md` §7); it builds the `Except IndexError` carrying the
+real index and bound and hands it to `liftErr`, whose `[ErrorConv IndexError E]` instance
 maps the miss to the context's reject. Generic over the error type, so it reads in both
 the state machine (`E = StateTransitionError`, a direct `outOfBounds`) and the
 fork-choice machine (`E = StoreTransitionError`, the wrapped `transition (outOfBounds …)`).
+
+The index `i` is any integer kind with a `[ToIndex ι]` instance: `ToIndex.pos?` names the
+position the collection reads, `none` exactly where the pyspec raises `IndexError`
+(`SPEC_ARITHMETIC.md` §3.7). The `Nat` instance makes the present `i.toNat` call sites
+elaborate as they did before the class existed. On a rejected position no position exists,
+so the fault's index field is `0`, the same placeholder `getAt` reports; the payload is
+diagnostic only and nothing branches on it (`Errors.lean`'s table).
+
 A spec *validation* of an index pairs this with a preceding `assert (i < size)`: the
 `assert` rejects a bad index first as the spec's `IndexError` (`assert`, an
 `expectedRejection`), so `sszGetIdx`'s own `outOfBounds` stays unreachable, the safe
 read behind the validation and a defense-in-depth signal if the assert is ever wrong.
 The collection is any `IdxRead`: a capped `SSZList` or an uncapped `ProgressiveList`. -/
-@[inline] def sszGetIdx {α ρ : Type} {m : Type → Type u} {E : Type} [Monad m] [IdxRead ρ α]
-    [MonadExcept E m] [ErrorConv IndexError E] (xs : ρ) (i : Nat) : m α :=
-  liftErr <| match IdxRead.get? xs i with
-    | some a => .ok a
-    | none   => .error (IndexError.indexError i (IdxRead.size xs))
+@[inline] def sszGetIdx {α ρ ι : Type} {m : Type → Type u} {E : Type} [Monad m] [IdxRead ρ α]
+    [ToIndex ι] [MonadExcept E m] [ErrorConv IndexError E] (xs : ρ) (i : ι) : m α :=
+  liftErr <| match ToIndex.pos? i (IdxRead.size xs) with
+    | none   => .error (IndexError.indexError 0 (IdxRead.size xs))
+    | some k => match IdxRead.get? xs k with
+      | some a => .ok a
+      | none   => .error (IndexError.indexError k (IdxRead.size xs))
 
-/-- `sszGetIdx` for a bit list: bit `i`, or the typed reject `outOfBounds i size`. The
-monadic safe read for an *untrusted* bit index, an attestation's `aggregation_bits` read
-indexed by a block-supplied committee offset, where `[i]!`'s `false` default would mask an
-over-length read. Same shape as `sszGetIdx`, on a `Bitlist` or a `ProgressiveBitlist`. -/
+/-- `sszGetIdx` for a bit list: bit `i`, or the typed reject `outOfBounds`, whose index
+field is the `0` placeholder where `ToIndex.pos?` rejected the index, as `sszGetIdx`
+reports. The monadic safe read for an *untrusted* bit index, an attestation's
+`aggregation_bits` read indexed by a block-supplied committee offset, where `[i]!`'s
+`false` default would mask an over-length read. Same shape as `sszGetIdx`, on a `Bitlist`
+or a `ProgressiveBitlist`. -/
 @[inline] def bitlistGetIdx {ρ : Type} {m : Type → Type u} {E : Type} [Monad m] [IdxRead ρ Bool]
     [MonadExcept E m] [ErrorConv IndexError E] (bs : ρ) (i : Nat) : m Bool :=
   sszGetIdx bs i
 
-/-- `sszGetIdx` for a plain `Array`: element `i`, or the typed reject `outOfBounds i size`. The
-monadic safe read for a spec `list[i]` over a non-SSZ `Array`, e.g. a fork-choice `Store` value
+/-- `sszGetIdx` for a plain `Array`: element `i`, or the typed reject `outOfBounds i size`.
+The monadic safe read for a spec `list[i]` over a non-SSZ `Array`, e.g. a fork-choice `Store` value
 such as `block_timeliness`'s `list[boolean]` (`gloas/fork-choice.md:554,1022`), where `[i]!` /
-`?.getD` would mask an over-length read as a silent default. Same shape as `sszGetIdx`, on the
-`Array`'s own `[i]?`. -/
+`?.getD` would mask an over-length read as a silent default. Unlike `sszGetIdx`, the reject
+carries the queried index: a plain `Array` read has no `ToIndex` layer to reject the index
+before the read. -/
 @[inline] def arrGetIdx {α : Type} {m : Type → Type u} {E : Type} [Monad m]
     [MonadExcept E m] [ErrorConv IndexError E] (xs : Array α) (i : Nat) : m α :=
   liftErr <| match xs[i]? with

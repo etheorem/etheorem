@@ -344,7 +344,9 @@ forkdef getAttestationScore (store : Store map) (node : ForkChoiceNode) (state :
   let active := getActiveValidatorIndices state (currentEpochOf state)
   let validators := sszGet state validators
   active.foldlM (init := (0 : Gwei)) fun acc i => do
-    let idx := i.toNat
+    -- `toPlainInt` reason: index-only. The total `[i]!` reads keep the pre-flip
+    -- spelling; `getAt` covers plain `Array` only, and `validators` is an `SSZList`.
+    let idx := i.toPlainInt
     if (validators[idx]!).slashed then pure acc
     else match FcMap.lookup store.latestMessages i with
       | none => pure acc
@@ -370,14 +372,14 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
   -- The equivocator read is `justified_state.validators[i]` with `i` drawn from the *head*
   -- state's committees, so a cross-branch registry skew can push it past the justified
   -- registry's end; the spec raises `IndexError` there, hence `sszGetIdx` (the wrapped
-  -- `outOfBounds` reject) for this fold's validator reads, and `foldlM` to bind it. The
+  -- `outOfBounds` reject) for this fold's one validator read, and `foldlM` to bind it. The
   -- sibling `getAttestationScore` fold keeps `validators[idx]!`: its indices come from
   -- `getActiveValidatorIndices` on the same state it reads, so they are in range.
   let headWeight ← (List.range (getCommitteeCountPerSlot headState epoch)).foldlM (init := baseWeight) fun acc index => do
     let committee ← getBeaconCommittee headState headBlock.slot index
     committee.foldlM (init := acc) fun a i =>
       if store.equivocatingIndices.contains i then do
-        let v ← sszGetIdx validators i.toNat
+        let v ← sszGetIdx validators i
         a + v.effectiveBalance
       else pure a
   pure (headWeight < reorgThreshold)

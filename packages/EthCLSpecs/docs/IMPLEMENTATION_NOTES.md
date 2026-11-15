@@ -604,6 +604,13 @@ Spec-faithfulness facts worth knowing:
   rejects faithfully (matching the pyspec's `uint64` serialization `ValueError`) instead
   of wrapping silently on Lean's `UInt64`. Valid exits never approach the bound. Gloas
   inherits the substep with no Gloas-side change.
+- **`WithdrawalIndex` is still the raw `UInt64`, so its `+ 1` wraps.** The pyspec's
+  `withdrawal_index += 1` (the sweep and queue counters) and
+  `latest_withdrawal.index + 1` (`update_next_withdrawal_index`) are checked adds: at
+  `index = 2^64 - 1` the pyspec rejects the block, and `Fulu/Withdrawals.lean`'s four
+  `+ 1` sites wrap instead. The arithmetic migration closes the gap when `WithdrawalIndex`
+  moves to `CLUint64` (SPEC_ARITHMETIC.md §7, "the other units"); a conformance vector
+  cannot reach the bound (§3.6 there), so no vector observes it.
 - **The balance-weighted sampler rejects on an empty candidate set.**
   `compute_balance_weighted_selection` asserts `total > 0` (`gloas/beacon-chain.md:1213`),
   so proposer sampling, the sync committee, and `compute_ptc` reject with `.assert` when

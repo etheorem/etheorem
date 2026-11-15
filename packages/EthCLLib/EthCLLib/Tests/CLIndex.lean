@@ -1,47 +1,19 @@
-import EthCLLib.Spec.CLUint
-import EthCLLib.Tests.CLIntSpike
+import EthCLLib.Spec.State
 
 /-!
 # `EthCLLib.Tests.CLIndex`: indexing with a checked or a plain integer
 
 The pyspec indexes a list with any integer kind, and a plain negative `int` counts from the
-end (`packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md` §3.7). `ToIndex` says how an integer type names a position:
-`pos?` returns `none` exactly where Python raises `IndexError`. The raising read `getAt`
-returns a `Checked` value, so a read is an operand like any other and
-`balances[index] + delta` is one expression (`packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md` §4.6).
-
-`CLInt` and its operator instances come from `EthCLLib.Tests.CLIntSpike`; this module adds
-only the indexing layer on top.
+end (`packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md` §3.7). The `ToIndex` class, the raising
+read `getAt`, and every instance (the `CLInt` one arrived with the §5.5 promotion) live in
+`EthCLLib.Spec.State`, beside `sszGetIdx`; this module keeps the tests.
 -/
 
 set_option autoImplicit false
 
 open EthCLLib.Spec
-open EthCLLib.Tests.CLIntSpike
 
 namespace EthCLLib.Tests.CLIndex
-
-/-- How an integer type names a position in a list of `size` elements: `none` where Python
-raises `IndexError`. A negative plain `int` counts from the end, as Python does. -/
-class ToIndex (ι : Type) where
-  pos? : ι → Nat → Option Nat
-
-instance : ToIndex Nat := ⟨fun i size => if i < size then some i else none⟩
-instance : ToIndex CLUint64 := ⟨fun i size => if i.toPlainInt < size then some i.toPlainInt else none⟩
-instance : ToIndex CLInt := ⟨fun i size =>
-  if 0 ≤ i.val then (if i.val.toNat < size then some i.val.toNat else none)
-  else if i.val.natAbs ≤ size then some (size - i.val.natAbs) else none⟩
-
-/-- The raising read: the element, or a fault where the pyspec raises `IndexError`. -/
-@[inline] def getAt {α ι : Type} [ToIndex ι] (xs : Array α) (i : ι) : Checked α :=
-  match ToIndex.pos? i xs.size with
-  | some k => match xs[k]? with
-    | some v => .ok v
-    | none => .error (.range "index" k xs.size)
-  | none => .error (.range "index" 0 xs.size)
-
-/-- `xs⟦i⟧`: the pyspec's `xs[i]`. -/
-macro:max xs:term noWs "⟦" i:term "⟧" : term => `(getAt $xs $i)
 
 /-- Core's own bracket forms with a `CLUint64` index: `xs[i]?`, `xs[i]!`, and `xs[i]` with a
 proof. -/

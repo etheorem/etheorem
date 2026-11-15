@@ -30,7 +30,10 @@ state_section
 pure `State → State` shape), and the cached single-leaf update for the composite
 `Validator` element. -/
 forkdef modValidator (state : State) (i : ValidatorIndex) (f : Validator → Validator) : State :=
-  sszModify state validators[i.toNat]! := f
+  -- `toPlainInt` reason: index-only. The `sszModify` path spells the write
+  -- position as a plain `Nat` for the view's `set!`; the pyspec writes
+  -- `validators[index]` and this is that position, nothing more.
+  sszModify state validators[i.toPlainInt]! := f
 
 /-- `is_eligible_for_activation`: reads the finalized checkpoint, so it is a
 state-operation predicate, not pure on the `Validator` (those live in
@@ -121,7 +124,7 @@ constant are both `Epoch` now, so the body takes the checked operator directly.
 scores it as the expected outcome (`RunnerCaughtSet.valueError`). -/
 forkdef initiateValidatorExit (i : ValidatorIndex) : StateTransition Unit := do
   let state ← get
-  let validator ← sszGetIdx (sszGet state validators) i.toNat
+  let validator ← sszGetIdx (sszGet state validators) i
   if !hasNotInitiatedExit validator then pure ()
   else
     let exitEpoch ← computeExitEpochAndUpdateChurn validator.effectiveBalance
@@ -134,7 +137,7 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
   let epoch := computeEpochAtSlot (sszGet (← get) slot)
   initiateValidatorExit i
   let state ← get
-  let validator ← sszGetIdx (sszGet state validators) i.toNat
+  let validator ← sszGetIdx (sszGet state validators) i
   -- `epoch % EPOCHS_PER_SLASHINGS_VECTOR`, the total ring index (positive preset divisor).
   let slashIdx := (epoch % Const.epochsPerSlashingsVectorDiv).toPlainInt
 
@@ -165,10 +168,10 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
 marker form). -/
 forkdef queueExcessActiveBalance (i : ValidatorIndex) : StateTransition Unit := do
   let state ← get
-  let balance ← sszGetIdx (sszGet state balances) i.toNat
+  let balance ← sszGetIdx (sszGet state balances) i
   if balance > Const.minActivationBalance then
     let excess ← balance - Const.minActivationBalance
-    let validator ← sszGetIdx (sszGet state validators) i.toNat
+    let validator ← sszGetIdx (sszGet state validators) i
     let pendingDeposit : PendingDeposit :=
       { pubkey := validator.pubkey, withdrawalCredentials := validator.withdrawalCredentials, amount := excess,
         signature := Const.g2PointAtInfinity, slot := Const.genesisSlot }
@@ -179,7 +182,7 @@ forkdef queueExcessActiveBalance (i : ValidatorIndex) : StateTransition Unit := 
 queue any excess active balance. -/
 forkdef switchToCompoundingValidator (i : ValidatorIndex) : StateTransition Unit := do
   let state ← get
-  let validator ← sszGetIdx (sszGet state validators) i.toNat
+  let validator ← sszGetIdx (sszGet state validators) i
   let newWc : Bytes32 := validator.withdrawalCredentials.set 0 Const.compoundingWithdrawalPrefix
   modifyState fun state => modValidator state i (fun validator => { validator with withdrawalCredentials := newWc })
   queueExcessActiveBalance i

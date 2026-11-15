@@ -213,13 +213,13 @@ validator's balance and no side condition on `indices` appears. -/
 theorem getTotalBalance_eq [Preset] [HasherTag] :
     ∀ (state : BeaconState) (indices : Array ValidatorIndex) (c : Gwei),
       getTotalBalance (pureState state) indices = .ok c ↔
-        indices.foldl (fun acc i => acc + state.validators[i.toNat]!.effectiveBalance.toPlainInt) 0
+        indices.foldl (fun acc i => acc + state.validators[i.toPlainInt]!.effectiveBalance.toPlainInt) 0
               < 2 ^ 64 ∧
           c.toPlainInt =
-            max (indices.foldl (fun acc i => acc + state.validators[i.toNat]!.effectiveBalance.toPlainInt) 0)
+            max (indices.foldl (fun acc i => acc + state.validators[i.toPlainInt]!.effectiveBalance.toPlainInt) 0)
               EthCLSpecs.Fulu.Const.effectiveBalanceIncrementG.toPlainInt :=
   fun state indices c => foldFloor_ok_array indices
-    (fun i => state.validators[i.toNat]!.effectiveBalance)
+    (fun i => state.validators[i.toPlainInt]!.effectiveBalance)
     EthCLSpecs.Fulu.Const.effectiveBalanceIncrementG c
 
 end EthCLSpecs.Proofs.Fulu

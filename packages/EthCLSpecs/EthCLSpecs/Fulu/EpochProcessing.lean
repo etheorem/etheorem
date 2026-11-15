@@ -115,7 +115,9 @@ forkdef processInactivityUpdates : StateTransition Unit := do
     modifyState fun state => Id.run do
       let mut state := state
       for vi in eligible do
-        let i := vi.toNat
+        -- `toPlainInt` reason: index-only. The `sszModify` path spells the write
+        -- position as a plain `Nat` for the view's `set!`.
+        let i := vi.toPlainInt
         state := sszModify state inactivityScores[i]! as cur =>
           let cur := if matchingTarget.contains vi then saturatingSub cur 1 else cur + Const.inactivityScoreBias
           if !leak then saturatingSub cur Const.inactivityScoreRecoveryRate else cur
@@ -123,9 +125,9 @@ forkdef processInactivityUpdates : StateTransition Unit := do
 
 /-! ## Rewards & penalties -/
 
-/-- `get_flag_index_deltas` for one flag: `(rewards, penalties)` per validator. Returns
-`Except IndexError` because `getBaseReward` does; a bad validator index rejects rather than
-masking. -/
+/-- `get_flag_index_deltas` for one flag: `(rewards, penalties)` per validator. Rejects with
+the `IndexError`-shaped `outOfBounds` (`StateTransitionError`) because `getBaseReward` does;
+a bad validator index rejects rather than masking. -/
 forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) :
     Except StateTransitionError (Array Gwei × Array Gwei) := do
   let n := (sszGet state validators).size
@@ -139,7 +141,9 @@ forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) :
   let activeIncrements ← getTotalActiveBalance state / Const.effectiveBalanceIncrementG
 
   for vi in (← getEligibleValidatorIndices state) do
-    let i := vi.toNat
+    -- `toPlainInt` reason: index-only. The plain-`Nat` slot the `rewards` / `penalties`
+    -- arrays' `set!` writes take.
+    let i := vi.toPlainInt
     let baseReward ← getBaseReward state vi
     if unslashed.contains vi then do
       -- The leak check sits in its branch, where the pyspec calls it (`mainnet.py:4455`).
@@ -159,7 +163,10 @@ forkdef getInactivityPenaltyDeltas (state : State) : Checked (Array Gwei) := do
   let matchingTarget := getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state)
 
   for vi in (← getEligibleValidatorIndices state) do
-    let i := vi.toNat
+    -- `toPlainInt` reason: index-only. The plain-`Nat` slot the total `[i]!` reads and
+    -- the `penalties.set!` write take (`getAt` covers plain `Array` only; the two
+    -- fields are `SSZList`s).
+    let i := vi.toPlainInt
     if !matchingTarget.contains vi then
       let num ← (validators[i]!).effectiveBalance * (iscores[i]!).toNat
       let denom := Const.inactivityScoreBias.toNat * Const.inactivityPenaltyQuotientBellatrix
@@ -171,9 +178,11 @@ forkdef getInactivityPenaltyDeltas (state : State) : Checked (Array Gwei) := do
 forkdef applyDeltas (rewards penalties : Array Gwei) (state : State) :
     StateTransition State := do
   let mut state := state
+  -- Trusted `CLUint64` route: `i` is a loop position in `[0 : validators.size]`, and
+  -- the registry size sits under `VALIDATOR_REGISTRY_LIMIT`, far below `2^64`.
   for i in [0 : (sszGet state validators).size] do
-    state ← increaseBalance state (UInt64.ofNat i) (rewards[i]!)
-    state ← decreaseBalance state (UInt64.ofNat i) (penalties[i]!)
+    state ← increaseBalance state (CLUint64.trustedOfUInt64 (UInt64.ofNat i)) (rewards[i]!)
+    state ← decreaseBalance state (CLUint64.trustedOfUInt64 (UInt64.ofNat i)) (penalties[i]!)
   return state
 
 /-- `process_rewards_and_penalties`. -/
@@ -201,15 +210,18 @@ forkdef processRegistryUpdates : StateTransition Unit := do
   for idx in [0 : n] do
     let state ← get
     let validator := sszGet state validators[idx]!
+    -- Trusted `CLUint64` route for the `idx` narrowings below: `idx` is a loop
+    -- position in `[0 : n]`, `n` the registry size, capped by `VALIDATOR_REGISTRY_LIMIT`
+    -- far below `2^64`.
     if isEligibleForActivationQueue validator then
       -- `activation_eligibility_epoch = current_epoch + 1`: the checked add binds at its
       -- branch, where the pyspec forms it.
       let eligibilityEpoch ← currentEpoch + 1
-      modifyState fun state => modValidator state (UInt64.ofNat idx) fun validator => { validator with activationEligibilityEpoch := eligibilityEpoch }
+      modifyState fun state => modValidator state (CLUint64.trustedOfUInt64 (UInt64.ofNat idx)) fun validator => { validator with activationEligibilityEpoch := eligibilityEpoch }
     if isActiveValidator validator currentEpoch && validator.effectiveBalance ≤ Const.ejectionBalanceG then
-      initiateValidatorExit (UInt64.ofNat idx)
+      initiateValidatorExit (CLUint64.trustedOfUInt64 (UInt64.ofNat idx))
     if isEligibleForActivation state validator then
-      modifyState fun state => modValidator state (UInt64.ofNat idx) fun validator => { validator with activationEpoch := activationEpoch }
+      modifyState fun state => modValidator state (CLUint64.trustedOfUInt64 (UInt64.ofNat idx)) fun validator => { validator with activationEpoch := activationEpoch }
 
 /-! ## Slashings (epoch penalty) -/
 
@@ -224,6 +236,8 @@ forkdef processSlashings : StateTransition Unit := do
   let penaltyPerIncrement ← adjusted / (totalBalance / increment)
 
   let mut state := state
+  -- Trusted `CLUint64` route: `i` is a loop position in `[0 : validators.size]`, and
+  -- the registry size sits under `VALIDATOR_REGISTRY_LIMIT`, far below `2^64`.
   for i in [0 : (sszGet state validators).size] do
     let validator := sszGet state validators[i]!
     if validator.slashed then
@@ -232,7 +246,7 @@ forkdef processSlashings : StateTransition Unit := do
       -- branch and is formed only where the pyspec forms it.
       let withdrawableAt ← epoch + (Const.epochsPerSlashingsVector / 2)
       if validator.withdrawableEpoch == withdrawableAt then
-        state ← decreaseBalance state (UInt64.ofNat i) (← penaltyPerIncrement * (validator.effectiveBalance / increment))
+        state ← decreaseBalance state (CLUint64.trustedOfUInt64 (UInt64.ofNat i)) (← penaltyPerIncrement * (validator.effectiveBalance / increment))
   set state
 
 /-! ## Pending deposits (Electra deposit queue) -/
@@ -326,13 +340,14 @@ forkdef pcLoop (cons : Array PendingConsolidation) (nextEpoch : Epoch) : StateTr
       let state ← get
       let pc := cons[npc]!
       -- `pc.sourceIndex` is a data-derived validator index from the queued
-      -- consolidation; the source validator and balance reads go through `sszGetIdx`,
-      -- so an out-of-range source rejects with `outOfBounds` instead of masking.
-      let src ← sszGetIdx (sszGet state validators) pc.sourceIndex.toNat
+      -- consolidation; the source validator and balance reads go through `sszGetIdx`
+      -- on the typed route, so an out-of-range source rejects with `outOfBounds`
+      -- instead of masking.
+      let src ← sszGetIdx (sszGet state validators) pc.sourceIndex
       if src.slashed then return .next (npc + 1)
       else if src.withdrawableEpoch > nextEpoch then return .done npc
       else
-        let srcBal ← sszGetIdx (sszGet state balances) pc.sourceIndex.toNat
+        let srcBal ← sszGetIdx (sszGet state balances) pc.sourceIndex
         let amt := min srcBal src.effectiveBalance
         let state ← decreaseBalance state pc.sourceIndex amt
         set (← increaseBalance state pc.targetIndex amt)
@@ -365,8 +380,10 @@ forkdef processEffectiveBalanceUpdates : StateTransition Unit := do
     let above ← if below then pure false
       else do pure ((← validator.effectiveBalance + upward) < balance)
     if below || above then
+      -- Trusted `CLUint64` route: `i` is a loop position in `[0 : validators.size]`,
+      -- and the registry size sits under `VALIDATOR_REGISTRY_LIMIT`, far below `2^64`.
       let newEff := min (← balance - balance % Const.effectiveBalanceIncrementG) (getMaxEffectiveBalance validator)
-      state := modValidator state (UInt64.ofNat i) (fun validator => { validator with effectiveBalance := newEff })
+      state := modValidator state (CLUint64.trustedOfUInt64 (UInt64.ofNat i)) (fun validator => { validator with effectiveBalance := newEff })
   set state
 
 /-- `process_slashings_reset`: zero the next epoch's slashings slot. The index is the

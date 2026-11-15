@@ -134,7 +134,7 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
   let epoch := computeEpochAtSlot (sszGet (← get) slot)
   initiateValidatorExit i
   let state ← get
-  let validator ← sszGetIdx (sszGet state validators) i.toNat
+  let validator ← sszGetIdx (sszGet state validators) i
   let slashIdx := umodIdx epoch Const.epochsPerSlashingsVector
 
   -- Mark slashed, extend withdrawability, record the effective balance in the
@@ -211,7 +211,7 @@ validator is slashed, the candidate set is empty, and `compute_balance_weighted_
 forkdef getBeaconProposerIndices (state : State) (epoch : Epoch) :
     Except StateTransitionError (Array ValidatorIndex) := do
   let validators := sszGet state validators
-  let indices := (getActiveValidatorIndices state epoch).filter (fun vi => !(validators[vi.toNat]!).slashed)
+  let indices := (getActiveValidatorIndices state epoch).filter (fun vi => !(validators[vi.toPlainInt]!).slashed)
   -- The seed binds where the pyspec assigns it (`gloas/beacon-chain.md:1304`).
   let seed ← getSeed state epoch Const.domainBeaconProposer
   computeProposerIndices state epoch seed indices

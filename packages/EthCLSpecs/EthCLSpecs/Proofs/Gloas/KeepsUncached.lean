@@ -70,7 +70,9 @@ open EthCLLib.Proofs (pureState KeepsUncached ReturnsUncached KeepsUncachedFrom
   keepsUncachedFrom_forIn_array_inv
   run_bind run_pure except_bind_ok except_bind_error
   run_ofExcept_ok run_ofExcept_error run_liftErr_of_ok run_liftErr_of_error
-  run_sszGetIdx_some run_sszGetIdx_none keepsUncached_sszGetIdx run_bind_inv ite_bind
+  run_sszGetIdx_some run_sszGetIdx_none run_sszGetIdx_none_pos keepsUncached_sszGetIdx
+  run_bind_inv ite_bind pos?_nat_some pos?_nat_none pos?_sszList_some
+  pos?_progressiveList_some pos?_clUint64_some pos?_clUint64_none
   pureState_forIn_range_id)
 
 open SizzLean.Proofs (view_uncachedBox)
@@ -249,8 +251,8 @@ theorem returnsUncached_increaseBalance (state : BeaconState) (i : ValidatorInde
   intro preState b s h
   have hrun : (increaseBalance (StateTransition := GloasRun) (pureState state) i d).run
       (pureState preState)
-      = (match state.balances.val[i.toNat]? with
-        | none => .error (.outOfBounds i.toNat state.balances.size)
+      = (match state.balances.val[i.toPlainInt]? with
+        | none => .error (.outOfBounds 0 state.balances.size)
         | some balance =>
           if balance.val + d.val < balance.val then
             .error (.arithmetic (EthCLSpecs.Proofs.Fulu.increaseFault balance d))
@@ -260,17 +262,27 @@ theorem returnsUncached_increaseBalance (state : BeaconState) (i : ValidatorInde
               pureState preState)) := by
     unfold increaseBalance sszGetIdx EthCLLib.Spec.IdxRead.get? EthCLLib.Spec.IdxRead.size
     simp only [view_uncachedBox]
-    cases state.balances.val[i.toNat]? with
-    | none => simp; rfl
-    | some balance =>
-      rw [bind_liftErr_ok]
-      simp only [increaseBalance_checkedSum]
-      by_cases hc : balance.val + d.val < balance.val
-      · simp only [ite_eq_left hc]
-        rfl
-      · simp only [ite_eq_right hc]
-        rfl
-  cases hu : state.balances.val[i.toNat]? with
+    by_cases hlt : i.toPlainInt < state.balances.size
+    · rw [pos?_clUint64_some hlt]
+      simp only []
+      cases hq : state.balances.val[i.toPlainInt]? with
+      | none =>
+        have hle : state.balances.val.size ≤ i.toPlainInt := Array.getElem?_eq_none_iff.mp hq
+        have hsz : state.balances.size = state.balances.val.size := rfl
+        omega
+      | some balance =>
+        rw [bind_liftErr_ok]
+        simp only [increaseBalance_checkedSum]
+        by_cases hc : balance.val + d.val < balance.val
+        · simp only [ite_eq_left hc]
+          rfl
+        · simp only [ite_eq_right hc]
+          rfl
+    · rw [pos?_clUint64_none (Nat.le_of_not_lt hlt),
+        Array.getElem?_eq_none_iff.mpr (Nat.le_of_not_lt hlt)]
+      simp
+      rfl
+  cases hu : state.balances.val[i.toPlainInt]? with
   | none => rw [hrun, hu] at h; simp at h
   | some balance =>
     rw [hrun, hu] at h
@@ -292,19 +304,29 @@ theorem returnsUncached_decreaseBalance (state : BeaconState) (i : ValidatorInde
   intro preState b s h
   have hrun : (decreaseBalance (StateTransition := GloasRun) (pureState state) i d).run
       (pureState preState)
-      = (match state.balances.val[i.toNat]? with
-        | none => .error (.outOfBounds i.toNat state.balances.size)
+      = (match state.balances.val[i.toPlainInt]? with
+        | none => .error (.outOfBounds 0 state.balances.size)
         | some balance =>
           .ok (modBalance (pureState state) i
             (fun _ => balance.saturatingSub d), pureState preState)) := by
     unfold decreaseBalance sszGetIdx EthCLLib.Spec.IdxRead.get? EthCLLib.Spec.IdxRead.size
     simp only [view_uncachedBox]
-    cases state.balances.val[i.toNat]? with
-    | none => simp; rfl
-    | some balance =>
-      simp only [EthCLLib.Spec.liftErr, Except.mapError, MonadExcept.ofExcept]
+    by_cases hlt : i.toPlainInt < state.balances.size
+    · rw [pos?_clUint64_some hlt]
+      simp only []
+      cases hq : state.balances.val[i.toPlainInt]? with
+      | none =>
+        have hle : state.balances.val.size ≤ i.toPlainInt := Array.getElem?_eq_none_iff.mp hq
+        have hsz : state.balances.size = state.balances.val.size := rfl
+        omega
+      | some balance =>
+        simp only [EthCLLib.Spec.liftErr, Except.mapError, MonadExcept.ofExcept]
+        rfl
+    · rw [pos?_clUint64_none (Nat.le_of_not_lt hlt),
+        Array.getElem?_eq_none_iff.mpr (Nat.le_of_not_lt hlt)]
+      simp
       rfl
-  cases hu : state.balances.val[i.toNat]? with
+  cases hu : state.balances.val[i.toPlainInt]? with
   | none => rw [hrun, hu] at h; simp at h
   | some balance =>
     rw [hrun, hu] at h
@@ -589,9 +611,14 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                     simp only [] at hrun2
                     split at hrun2
                     · rw [run_bind] at hrun2
-                      cases hq : ((SSZ.Box.view (pureState flagAccState)).currentEpochParticipation).val[(UInt64.toNat vi)]? with
+                      cases hq : ((SSZ.Box.view (pureState flagAccState)).currentEpochParticipation).val[vi.toPlainInt]? with
                       | some y =>
-                        rw [run_sszGetIdx_some _ _ _ hq, except_bind_ok] at hrun2
+                        have hp : EthCLLib.Spec.ToIndex.pos? (vi.toPlainInt)
+                            (EthCLLib.Spec.IdxRead.size
+                              (SSZ.Box.view (pureState flagAccState)).currentEpochParticipation)
+                              = some (vi.toPlainInt) :=
+                          pos?_progressiveList_some hq
+                        rw [run_sszGetIdx_some _ _ _ hp hq, except_bind_ok] at hrun2
                         split at hrun2
                         · rw [run_bind] at hrun2
                           cases hm : (EthCLSpecs.Gloas.getBaseReward (pureState state) vi).mapError
@@ -617,7 +644,7 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                               refine ⟨rfl, ⟨({ flagAccState with
                                 currentEpochParticipation :=
                                   (SSZ.Box.view (pureState flagAccState)).currentEpochParticipation.set!
-                                    (UInt64.toNat vi) (EthCLLib.Spec.addFlag y cIdx) }), rfl⟩⟩
+                                    (vi.toPlainInt) (EthCLLib.Spec.addFlag y cIdx) }), rfl⟩⟩
                             | error e =>
                               rw [hn, run_liftM_error, except_bind_error] at hrun2
                               simp at hrun2
@@ -628,12 +655,23 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                           subst h1b
                           exact ⟨rfl, ⟨flagAccState, rfl⟩⟩
                       | none =>
-                        rw [run_sszGetIdx_none _ _ _ hq, except_bind_error] at hrun2
+                        -- A miss at the raw `[i]?` read puts the index past the size, so
+                        -- `pos?` rejected it and the fault carries the `0` placeholder.
+                        have hge : EthCLLib.Spec.IdxRead.size
+                            ((SSZ.Box.view (pureState flagAccState)).currentEpochParticipation) ≤ vi.toPlainInt :=
+                          Array.getElem?_eq_none_iff.mp hq
+                        rw [run_sszGetIdx_none_pos _ _ _ (pos?_nat_none hge),
+                          except_bind_error] at hrun2
                         simp at hrun2
                     · rw [run_bind] at hrun2
-                      cases hq : ((SSZ.Box.view (pureState flagAccState)).previousEpochParticipation).val[(UInt64.toNat vi)]? with
+                      cases hq : ((SSZ.Box.view (pureState flagAccState)).previousEpochParticipation).val[vi.toPlainInt]? with
                       | some y =>
-                        rw [run_sszGetIdx_some _ _ _ hq, except_bind_ok] at hrun2
+                        have hp : EthCLLib.Spec.ToIndex.pos? (vi.toPlainInt)
+                            (EthCLLib.Spec.IdxRead.size
+                              (SSZ.Box.view (pureState flagAccState)).previousEpochParticipation)
+                              = some (vi.toPlainInt) :=
+                          pos?_progressiveList_some hq
+                        rw [run_sszGetIdx_some _ _ _ hp hq, except_bind_ok] at hrun2
                         split at hrun2
                         · rw [run_bind] at hrun2
                           cases hm : (EthCLSpecs.Gloas.getBaseReward (pureState state) vi).mapError
@@ -658,7 +696,7 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                               refine ⟨rfl, ⟨({ flagAccState with
                                 previousEpochParticipation :=
                                   (SSZ.Box.view (pureState flagAccState)).previousEpochParticipation.set!
-                                    (UInt64.toNat vi) (EthCLLib.Spec.addFlag y cIdx) }), rfl⟩⟩
+                                    (vi.toPlainInt) (EthCLLib.Spec.addFlag y cIdx) }), rfl⟩⟩
                             | error e =>
                               rw [hn, run_liftM_error, except_bind_error] at hrun2
                               simp at hrun2
@@ -669,16 +707,28 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                           subst h1b
                           exact ⟨rfl, ⟨flagAccState, rfl⟩⟩
                       | none =>
-                        rw [run_sszGetIdx_none _ _ _ hq, except_bind_error] at hrun2
+                        -- A miss at the raw `[i]?` read puts the index past the size, so
+                        -- `pos?` rejected it and the fault carries the `0` placeholder.
+                        have hge : EthCLLib.Spec.IdxRead.size
+                            ((SSZ.Box.view (pureState flagAccState)).previousEpochParticipation) ≤ vi.toPlainInt :=
+                          Array.getElem?_eq_none_iff.mp hq
+                        rw [run_sszGetIdx_none_pos _ _ _ (pos?_nat_none hge),
+                          except_bind_error] at hrun2
                         simp at hrun2
                   · intro r1 midState₁₆ hP1 a s3 hrun3
                     obtain ⟨flagAccState, hu1⟩ := hP1
                     rw [hu1] at hrun3
                     split at hrun3
                     · rw [run_bind] at hrun3
-                      cases hq : ((SSZ.Box.view (pureState state)).validators).val[(UInt64.toNat vi)]? with
+                      cases hq : ((SSZ.Box.view (pureState state)).validators).val[vi.toPlainInt]? with
                       | some yv =>
-                        rw [run_sszGetIdx_some _ _ _ hq, except_bind_ok] at hrun3
+                        have hp : EthCLLib.Spec.ToIndex.pos? (vi.toPlainInt)
+                            (EthCLLib.Spec.IdxRead.size
+                              (SSZ.Box.view (pureState state)).validators)
+                              = some (vi.toPlainInt) :=
+                          pos?_progressiveList_some (xs := (SSZ.Box.view (pureState state)).validators)
+                            (i := vi.toPlainInt) hq
+                        rw [run_sszGetIdx_some _ _ _ hp hq, except_bind_ok] at hrun3
                         -- `weight += effective_balance`: one checked-`Gwei` leaf.
                         rw [run_bind] at hrun3
                         cases hn : (ws + yv.effectiveBalance :
@@ -695,7 +745,13 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                           rw [hn, run_liftM_error, except_bind_error] at hrun3
                           simp at hrun3
                       | none =>
-                        rw [run_sszGetIdx_none _ _ _ hq, except_bind_error] at hrun3
+                        -- A miss at the raw `[i]?` read puts the index past the size, so
+                        -- `pos?` rejected it and the fault carries the `0` placeholder.
+                        have hge : EthCLLib.Spec.IdxRead.size
+                            ((SSZ.Box.view (pureState state)).validators) ≤ vi.toPlainInt :=
+                          Array.getElem?_eq_none_iff.mp hq
+                        rw [run_sszGetIdx_none_pos _ _ _ (pos?_nat_none hge),
+                          except_bind_error] at hrun3
                         simp at hrun3
                     · rw [run_pure] at hrun3
                       injection hrun3 with h1

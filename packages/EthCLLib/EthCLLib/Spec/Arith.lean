@@ -182,15 +182,6 @@ mixup is harder. Index-only: it feeds the same total `field[idx]!` write, so it 
 which slot is hit (no bounds-carrying `vmodSet`, which a proof could discharge differently). -/
 @[inline] def umodIdx (x : CLUint64) (d : Nat) : Nat := (x.val % UInt64.ofNat d).toNat
 
-/-- A `Nat` cursor advanced modulo a length, with the length-zero case pinned to `0`. Names
-the `if n == 0 then 0 else x % n` guard the withdrawal sweeps repeat when they wrap the
-builder / validator cursor past the end of a (possibly empty) collection: an empty collection
-has no slot to land on, so the cursor resets to `0` instead of evaluating `x % 0` (which
-Lean's `Nat` `%` defines as `x`, leaking a non-wrapped index). With a non-empty collection it
-is the ordinary `x % n`. Pure `Nat` index arithmetic, so it cannot change which slot a
-downstream total write hits. -/
-@[inline] def modWrap (x n : Nat) : Nat := if n == 0 then 0 else x % n
-
 /-- A list that can drop a prefix and stay the same collection type.
 `SSZList` keeps its cap (the tail is no longer); `ProgressiveList` has no cap. -/
 class SszDrop (ρ : Type) where
@@ -217,18 +208,22 @@ def sszOfArray {α : Type} {cap : Nat} (a : Array α)
     (h : a.size ≤ cap) : SSZList α cap :=
   ⟨a, h⟩
 
-/-- The indices of `xs` whose element (with its position) satisfies `p`, as `uint64`s. Names
-the `mut out / for i / push (UInt64.ofNat i)` accumulator that the pure-predicate registry
-walks repeat (`get_active_validator_indices`; its eligible-set sibling spells the loop
-longhand now that its predicate is checked), leaving only the
+/-- The indices of `xs` whose element (with its position) satisfies `p`. Names
+the `mut out / for i / push (lift i)` accumulator that the pure-predicate registry
+walks repeat (`get_active_validator_indices`; its eligible-set sibling spells the
+loop longhand now that its predicate is checked), leaving only the
 one-line predicate at the call site. The predicate takes the element and its index; the spec
-walks only inspect the element, the index is offered for generality. Same iteration order
+walks only inspect the element, the index is offered for generality. `lift` names the
+position as the caller's index type (`UInt64.ofNat` for a plain `UInt64` index array, the
+trusted `CLUint64` route for a `ValidatorIndex`), so one helper serves both
+integer kinds. Same iteration order
 (`0 … xs.size-1`) and same push order as the longhand loop, so the resulting index array is
 byte-for-byte the one the loop produced. -/
-def indicesWhere {α : Type} [Inhabited α] (xs : Array α) (p : α → Nat → Bool) : Array UInt64 := Id.run do
-  let mut out : Array UInt64 := #[]
+def indicesWhere {α ι : Type} [Inhabited α] (xs : Array α) (p : α → Nat → Bool)
+    (lift : Nat → ι) : Array ι := Id.run do
+  let mut out : Array ι := #[]
   for i in [0 : xs.size] do
-    if p (xs[i]!) i then out := out.push (UInt64.ofNat i)
+    if p (xs[i]!) i then out := out.push (lift i)
   return out
 
 /-- Intersection by membership: the elements of `xs` that also appear in `ys`, kept in `xs`'s

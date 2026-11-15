@@ -3,6 +3,7 @@ import EthCLLib.Spec.Hasher
 import EthCLLib.Spec.State
 import EthCLLib.Spec.Arith
 import EthCLLib.Spec.CLUint
+import EthCLLib.Spec.CLInt
 import EthCLLib.Spec.MerklePath
 import EthCLLib.Spec.SigningRoot
 import EthCLLib.Spec.Loop

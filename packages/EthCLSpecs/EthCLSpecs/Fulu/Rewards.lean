@@ -24,12 +24,12 @@ forkdef getBaseRewardPerIncrement (state : State) : Checked Gwei := do
   let total ← getTotalActiveBalance state
   Const.effectiveBalanceIncrementG * Const.baseRewardFactor / isqrt total.toPlainInt
 
-/-- `get_base_reward`. Reads `validators[i]`, so it returns `Except IndexError`: an
-out-of-range `i` rejects (the pyspec's `IndexError`), where `[i]!` would mask it with a
-default. A monadic caller binds it through `liftErr`; a same-error caller binds directly. -/
+/-- `get_base_reward`. Reads `validators[i]`, so it rejects with the `IndexError`-shaped
+`outOfBounds` (`StateTransitionError`): an out-of-range `i` rejects, where `[i]!` would mask
+it with a default. A monadic caller binds it through `liftErr`; a same-error caller binds directly. -/
 forkdef getBaseReward (state : State) (i : ValidatorIndex) :
     Except StateTransitionError Gwei := do
-  let v ← sszGetIdx (sszGet state validators) i.toNat
+  let v ← sszGetIdx (sszGet state validators) i
   v.effectiveBalance / Const.effectiveBalanceIncrementG * getBaseRewardPerIncrement state
 
 /-- `get_finality_delay` (`fulu/mainnet.py:1797-1798`): the previous epoch minus the

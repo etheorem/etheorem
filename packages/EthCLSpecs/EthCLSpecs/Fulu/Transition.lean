@@ -101,8 +101,10 @@ forkdef processBlockHeader (block : BeaconBlock) : StateTransition Unit := do
   let newHeader : BeaconBlockHeader :=
     { slot := block.slot, proposerIndex := block.proposerIndex, parentRoot := block.parentRoot,
       stateRoot := zeroRoot, bodyRoot := htr block.body }
-  let hb ← assertH (block.proposerIndex.toNat < (sszGet state validators).size)
-  let proposer := (sszGet state validators)[block.proposerIndex.toNat]'hb.down
+  -- `toPlainInt` reason: index-only. The guard and the proof-carrying read take the
+  -- plain `Nat` position the `validators` list indexes with.
+  let hb ← assertH (block.proposerIndex.toPlainInt < (sszGet state validators).size)
+  let proposer := (sszGet state validators)[block.proposerIndex.toPlainInt]'hb.down
   assert (!proposer.slashed)
 
   modifyState fun state => sszUpdate state with latestBlockHeader := newHeader
@@ -112,7 +114,7 @@ current epoch's mix. -/
 forkdef processRandao (body : BeaconBlockBody) : StateTransition Unit := do
   let state ← get
   let epoch := currentEpochOf state
-  let proposer ← sszGetIdx (sszGet state validators) (getBeaconProposerIndex state).toNat
+  let proposer ← sszGetIdx (sszGet state validators) (getBeaconProposerIndex state)
   let signingRoot := computeSigningRoot epoch (getDomain state Const.domainRandao epoch)
   assert (blsVerify proposer.pubkey signingRoot body.randaoReveal)
 
@@ -180,11 +182,14 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
     let pk := syncCommittee.pubkeys[i]
     match validators.findIdx? (·.pubkey == pk) with
     | some pIdx =>
+      -- Trusted `CLUint64` route for the two `pIdx` narrowings below: `pIdx` is a
+      -- `findIdx?` position in the registry array, below the registry size, which
+      -- `VALIDATOR_REGISTRY_LIMIT` caps far below `2^64`.
       if bitGet bits i then
-        state ← increaseBalance state (UInt64.ofNat pIdx) participantReward
+        state ← increaseBalance state (CLUint64.trustedOfUInt64 (UInt64.ofNat pIdx)) participantReward
         state ← increaseBalance state proposerIdx proposerReward
       else
-        state ← decreaseBalance state (UInt64.ofNat pIdx) participantReward
+        state ← decreaseBalance state (CLUint64.trustedOfUInt64 (UInt64.ofNat pIdx)) participantReward
     | none => pure ()
   set state
 
@@ -200,6 +205,8 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   let payload := body.executionPayload
   assert (payload.parentHash == (sszGet state latestExecutionPayloadHeader).blockHash)
   let epoch := currentEpochOf state
+  -- `toPlainInt` reason: index-only. The ring index `epoch % EPOCHS_PER_HISTORICAL_VECTOR`
+  -- takes the total route (positive preset divisor), the remainder always in range.
   let mix := vget (sszGet state randaoMixes) (epoch % Const.epochsPerHistoricalVectorDiv).toPlainInt
   assert (payload.prevRandao == mix)
   -- `compute_time_at_slot(state.genesis_time, state.slot)` (`Fulu/Time.lean`). It can fault, so
@@ -235,9 +242,11 @@ forkdef processBlock (block : BeaconBlock) : StateTransition Unit := do
 /-- `verify_block_signature`. -/
 forkdef verifyBlockSignature (state : State) (signedBlock : SignedBeaconBlock) : Bool :=
   let block := signedBlock.message
-  if block.proposerIndex.toNat ≥ (sszGet state validators).size then false
+  -- `toPlainInt`, the documented `int(x)` read for the range check; the total `[i]!`
+  -- read below keeps the pre-flip spelling (index-only; `validators` is an `SSZList`).
+  if block.proposerIndex.toPlainInt ≥ (sszGet state validators).size then false
   else
-    let proposer := sszGet state validators[block.proposerIndex.toNat]!
+    let proposer := sszGet state validators[block.proposerIndex.toPlainInt]!
     let signingRoot := computeSigningRoot block (getDomain state Const.domainBeaconProposer (currentEpochOf state))
     blsVerify proposer.pubkey signingRoot signedBlock.signature
 

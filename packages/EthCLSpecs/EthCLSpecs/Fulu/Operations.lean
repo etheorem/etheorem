@@ -47,9 +47,13 @@ forkdef isValidIndexedAttestation (state : State) (a : IndexedAttestation) : Boo
   let validators := sszGet state validators
   let idx := a.attestingIndices.toArray
   if idx.size == 0 || !strictlySorted idx then false
-  else if !idx.all (·.toNat < validators.size) then false
+  -- `toPlainInt`, the documented `int(x)` read: the pyspec's range check compares the
+  -- position's plain value against the list length.
+  else if !idx.all (·.toPlainInt < validators.size) then false
   else
-    let pubkeys := idx.map (fun i => (validators[i.toNat]!).pubkey)
+    -- `toPlainInt` reason: index-only. The total `[i]!` read keeps the pre-flip
+    -- spelling; `getAt` covers plain `Array` only, and `validators` is an `SSZList`.
+    let pubkeys := idx.map (fun i => (validators[i.toPlainInt]!).pubkey)
     blsFastAggregateVerify pubkeys
       (computeSigningRoot a.data (getDomain state Const.domainBeaconAttester a.data.target.epoch))
       a.signature
@@ -66,8 +70,10 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
   assert (h1.proposerIndex == h2.proposerIndex)
   assert (htr h1 != htr h2)
 
-  let hb ← assertH (h1.proposerIndex.toNat < (sszGet state validators).size)
-  let proposer := (sszGet state validators)[h1.proposerIndex.toNat]'hb.down
+  -- `toPlainInt` reason: index-only. The guard and the proof-carrying read take the
+  -- plain `Nat` position the `validators` list indexes with.
+  let hb ← assertH (h1.proposerIndex.toPlainInt < (sszGet state validators).size)
+  let proposer := (sszGet state validators)[h1.proposerIndex.toPlainInt]'hb.down
   assert (isSlashableValidator proposer (currentEpochOf state))
   assert (blsVerifySigned proposer.pubkey h1
     (getDomain state Const.domainBeaconProposer (computeEpochAtSlot h1.slot)) ps.signedHeader1.signature)
@@ -89,8 +95,10 @@ forkdef processAttesterSlashing (asl : AttesterSlashing) : StateTransition Unit 
   let mut slashedAny := false
   for idx in indices do
     let state ← get
-    if idx.toNat < (sszGet state validators).size
-        && isSlashableValidator (sszGet state validators[idx.toNat]!) (currentEpochOf state) then
+    -- `toPlainInt` reason: index-only. The guard takes the plain position and the
+    -- total `[i]!` read keeps the pre-flip spelling (`validators` is an `SSZList`).
+    if idx.toPlainInt < (sszGet state validators).size
+        && isSlashableValidator (sszGet state validators[idx.toPlainInt]!) (currentEpochOf state) then
       slashValidator idx
       slashedAny := true
   assert slashedAny
@@ -165,7 +173,6 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   assert (att.aggregationBits.size == offset)
 
   -- Resolve the participation flags, then validate the aggregate signature.
-  -- Resolve the participation flags, then validate the aggregate signature.
   -- `state.slot - data.slot` is the pyspec's checked subtract.
   -- It cannot underflow: the inclusion assert above pins
   -- `data.slot + MIN_ATTESTATION_INCLUSION_DELAY ≤ state.slot`, and the delay is 1,
@@ -185,19 +192,20 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   let mut stateAcc := state
   let mut proposerNum : Gwei := 0
   for vi in (← liftErr (getAttestingIndices state att)) do
-    let i := vi.toNat
     for flagIndex in [0:3] do
-      -- `i` is a data-derived attesting-validator index; read the participation flag
+      -- `vi` is a data-derived attesting-validator index; read the participation flag
       -- through `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather
-      -- than masking as a default flag. The matching `[i]!` write below is then a
-      -- provably-in-range write (the read at `i` just succeeded).
-      let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) i
-                 else sszGetIdx (sszGet stateAcc previousEpochParticipation) i
+      -- than masking as a default flag. The matching element write below is then a
+      -- provably-in-range write (the read at `vi` just succeeded).
+      let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) vi
+                 else sszGetIdx (sszGet stateAcc previousEpochParticipation) vi
       if flagIndices.contains flagIndex && !hasFlag flag flagIndex then
+        -- `toPlainInt` reason: index-only. The `sszUpdate` path spells the write
+        -- position as a plain `Nat` for the view's `set!`.
         stateAcc := if currentTarget then
-                   sszUpdate stateAcc with currentEpochParticipation[i]! := addFlag flag flagIndex
+                   sszUpdate stateAcc with currentEpochParticipation[vi.toPlainInt]! := addFlag flag flagIndex
                  else
-                   sszUpdate stateAcc with previousEpochParticipation[i]! := addFlag flag flagIndex
+                   sszUpdate stateAcc with previousEpochParticipation[vi.toPlainInt]! := addFlag flag flagIndex
         proposerNum ← proposerNum + (← liftErr (getBaseReward state vi)) * Const.participationFlagWeights[flagIndex]!
 
   -- Pay the proposer the accumulated weight.
@@ -255,8 +263,10 @@ forkdef processDeposit (d : Deposit) : StateTransition Unit := do
 forkdef processVoluntaryExit (sve : SignedVoluntaryExit) : StateTransition Unit := do
   let state ← get
   let ve := sve.message
-  let hb ← assertH (ve.validatorIndex.toNat < (sszGet state validators).size)
-  let validator := (sszGet state validators)[ve.validatorIndex.toNat]'hb.down
+  -- `toPlainInt` reason: index-only. The guard and the proof-carrying read take the
+  -- plain `Nat` position the `validators` list indexes with.
+  let hb ← assertH (ve.validatorIndex.toPlainInt < (sszGet state validators).size)
+  let validator := (sszGet state validators)[ve.validatorIndex.toPlainInt]'hb.down
 
   assert (isActiveValidator validator (currentEpochOf state))
   assert (hasNotInitiatedExit validator)
@@ -275,8 +285,10 @@ forkdef processVoluntaryExit (sve : SignedVoluntaryExit) : StateTransition Unit 
 forkdef processBlsToExecutionChange (sbc : SignedBLSToExecutionChange) : StateTransition Unit := do
   let state ← get
   let ac := sbc.message
-  let hb ← assertH (ac.validatorIndex.toNat < (sszGet state validators).size)
-  let validator := (sszGet state validators)[ac.validatorIndex.toNat]'hb.down
+  -- `toPlainInt` reason: index-only. The guard and the proof-carrying read take the
+  -- plain `Nat` position the `validators` list indexes with.
+  let hb ← assertH (ac.validatorIndex.toPlainInt < (sszGet state validators).size)
+  let validator := (sszGet state validators)[ac.validatorIndex.toPlainInt]'hb.down
 
   assert (credPrefix validator.withdrawalCredentials == Const.blsWithdrawalPrefix)
   let h := sha ac.fromBlsPubkey
@@ -315,7 +327,10 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
     match validatorIndexByPubkey? state wr.validatorPubkey with
     | none => pure ()
     | some idxN =>
-      let index := UInt64.ofNat idxN
+      -- Trusted `CLUint64` route: `idxN` is a `findIdx?` position in the registry
+      -- array, below the registry size, which `VALIDATOR_REGISTRY_LIMIT` caps far
+      -- below `2^64`.
+      let index := CLUint64.trustedOfUInt64 (UInt64.ofNat idxN)
       let validator := sszGet state validators[idxN]!
       let correctCred := hasExecutionWithdrawalCredential validator
       let correctSource := vecSliceEq validator.withdrawalCredentials 12 wr.sourceAddress 0 20
@@ -331,10 +346,10 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
           if pending == 0 then initiateValidatorExit index else pure ()
         else
           -- `idxN` is in range for `validators` (it came from `findIdx?` there); reading
-          -- the parallel `balances` at it goes through `sszGetIdx`, so a broken
-          -- validators/balances length parity rejects with `outOfBounds` rather than
-          -- silently reading a default balance.
-          let balance ← sszGetIdx (sszGet state balances) idxN
+          -- the parallel `balances` at the typed `index` goes through `sszGetIdx`, so a
+          -- broken validators/balances length parity rejects with `outOfBounds` rather
+          -- than silently reading a default balance.
+          let balance ← sszGetIdx (sszGet state balances) index
           let sufficientEff := validator.effectiveBalance ≥ Const.minActivationBalance
           let excess := balance > (← Const.minActivationBalance + pending)
           if hasCompoundingWithdrawalCredential validator && sufficientEff && excess then
@@ -364,7 +379,11 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
   -- A switch-to-compounding request is handled separately from a consolidation.
   if isValidSwitchToCompoundingRequest state req then
     match validatorIndexByPubkey? state req.sourcePubkey with
-    | some si => switchToCompoundingValidator (UInt64.ofNat si)
+    | some si =>
+      -- Trusted `CLUint64` route: `si` is a `findIdx?` position in the registry
+      -- array, below the registry size, which `VALIDATOR_REGISTRY_LIMIT` caps far
+      -- below `2^64`.
+      switchToCompoundingValidator (CLUint64.trustedOfUInt64 (UInt64.ofNat si))
     | none    => pure ()
   -- Request-level gates: distinct source/target, queue room, churn capacity.
   else if req.sourcePubkey == req.targetPubkey then pure ()
@@ -388,13 +407,21 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
       else if !hasNotInitiatedExit src then pure ()
       else if !hasNotInitiatedExit tgt then pure ()
       else if !(← passedShardCommitteePeriod src (currentEpochOf state)) then pure ()
-      else if (← getPendingBalanceToWithdraw state (UInt64.ofNat srcN)) > 0 then pure ()
       else
-        let exitEpoch ← computeConsolidationEpochAndUpdateChurn src.effectiveBalance
-        let withdrawableEpoch ← exitEpoch + Const.minValidatorWithdrawabilityDelay
-        modifyState fun state => modValidator state (UInt64.ofNat srcN) fun validator =>
-          { validator with exitEpoch := exitEpoch, withdrawableEpoch := withdrawableEpoch }
-        appendState pendingConsolidations { sourceIndex := UInt64.ofNat srcN, targetIndex := UInt64.ofNat tgtN }
+        -- Trusted `CLUint64` route for the three `srcN` narrowings below: `srcN` is a
+        -- `findIdx?` position in the registry array, below the registry size, which
+        -- `VALIDATOR_REGISTRY_LIMIT` caps far below `2^64`.
+        -- `tgtN` carries the same witness, and the consolidation record's indices are
+        -- registry positions of the same kind.
+        if (← getPendingBalanceToWithdraw state (CLUint64.trustedOfUInt64 (UInt64.ofNat srcN))) > 0 then pure ()
+        else
+          let exitEpoch ← computeConsolidationEpochAndUpdateChurn src.effectiveBalance
+          let withdrawableEpoch ← exitEpoch + Const.minValidatorWithdrawabilityDelay
+          modifyState fun state => modValidator state (CLUint64.trustedOfUInt64 (UInt64.ofNat srcN)) fun validator =>
+            { validator with exitEpoch := exitEpoch, withdrawableEpoch := withdrawableEpoch }
+          appendState pendingConsolidations
+            { sourceIndex := CLUint64.trustedOfUInt64 (UInt64.ofNat srcN),
+              targetIndex := CLUint64.trustedOfUInt64 (UInt64.ofNat tgtN) }
     | _, _ => pure ()
 
 /-! ## process_operations -/

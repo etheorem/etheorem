@@ -46,8 +46,21 @@ namespace CLUint64
 /-- The framework's trusted route from a raw `UInt64`. It skips the range test because every
 `UInt64` already sits inside `[0, 2^64)`, so the wrap cannot fault. Callers are the trusted
 sites only: SSZ decode, preset constants, and internal witnesses that another check bounds.
-A fork body builds values through `ofNat?`, the operators, or a literal, never here. -/
+A fork body builds values from computed numbers through `ofNat?`, the
+operators, or a literal, never here; `trustedOfUInt64` serves decoded
+values, preset constants, positions another check bounds (a loop
+index under a container cap), and total bitwise writes over raw `UInt64`
+operands (the builder-flag `|||`): the operation computes on the raw value, so
+the wrapper adds no fault site. -/
 @[inline] def trustedOfUInt64 (v : UInt64) : CLUint64 := ⟨v⟩
+
+/-- The projection reflects equality: two checked values are equal when their native values
+are. This is the public face of the private constructor's injectivity, so a proof outside
+this module can reduce a wrapper equation to a plain `UInt64` one (the builder-flag
+round-trip proofs hand the result to `bv_decide`). The reverse direction is `.val`
+congruence. -/
+theorem val_inj {a b : CLUint64} (h : a.val = b.val) : a = b :=
+  congrArg mk h
 
 /-- The value as a plain `int`: the pyspec's `int(x)`. The name is long on purpose. Arithmetic
 on the result is unchecked, so each use is a site a reviewer must see. -/

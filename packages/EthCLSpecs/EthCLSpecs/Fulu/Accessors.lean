@@ -33,7 +33,10 @@ forkdef getUnslashedParticipatingIndices (state : State) (flagIndex : Nat) (epoc
   let mut out : Array ValidatorIndex := #[]
 
   for i in getActiveValidatorIndices state epoch do
-    let idx := i.toNat
+    -- `toPlainInt` reason: index-only. The participation / registry reads keep the
+    -- total `[i]!` forms, plain-`Nat` slots; `getAt` covers plain `Array` only and
+    -- both fields are `SSZList`s.
+    let idx := i.toPlainInt
     if hasFlag (part[idx]!) flagIndex && !(validators[idx]!).slashed then out := out.push i
   return out
 

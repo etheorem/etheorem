@@ -40,9 +40,13 @@ forkdef isValidIndexedAttestation (state : State) (a : IndexedAttestation) : Boo
   let idx := a.attestingIndices.toArray
   let cap := Const.maxValidatorsPerCommittee * Const.maxCommitteesPerSlot
   if idx.size == 0 || idx.size > cap || !strictlySorted idx then false
-  else if !idx.all (·.toNat < validators.size) then false
+  -- `toPlainInt`, the documented `int(x)` read: the pyspec's range check compares the
+  -- position's plain value against the list length.
+  else if !idx.all (·.toPlainInt < validators.size) then false
   else
-    let pubkeys := idx.map (fun i => (validators[i.toNat]!).pubkey)
+    -- `toPlainInt` reason: index-only. The total `[i]!` read keeps the pre-flip
+    -- spelling; `getAt` covers plain `Array` only, and `validators` is an `SSZList`.
+    let pubkeys := idx.map (fun i => (validators[i.toPlainInt]!).pubkey)
     blsFastAggregateVerify pubkeys
       (computeSigningRoot a.data (getDomain state Const.domainBeaconAttester a.data.target.epoch))
       a.signature
@@ -69,10 +73,14 @@ inherit processSyncAggregate
 
 /-! ## Builder-registry helpers (EIP-7732) -/
 
-/-- `is_builder_index`: the `BUILDER_INDEX_FLAG` bit marks a builder index. -/
-forkdef isBuilderIndex (vi : ValidatorIndex) : Bool := (vi &&& Const.builderIndexFlag) != 0
-/-- `convert_validator_index_to_builder_index`. -/
-forkdef toBuilderIndex (vi : ValidatorIndex) : BuilderIndex := vi &&& (~~~ Const.builderIndexFlag)
+/-- `is_builder_index`: the `BUILDER_INDEX_FLAG` bit marks a builder index. The bit test
+is a total `UInt64` bitwise read through the `val` projection, the SSZ iso read. The test
+decides on the raw value, so the checked wrapper adds no fault site. -/
+forkdef isBuilderIndex (vi : ValidatorIndex) : Bool := (vi.val &&& Const.builderIndexFlag) != 0
+/-- `convert_validator_index_to_builder_index`: clear the `BUILDER_INDEX_FLAG` bit. The mask
+is a total `UInt64` bitwise read through the `val` projection, the SSZ iso read, and the
+cleared value already is a `BuilderIndex`. -/
+forkdef toBuilderIndex (vi : ValidatorIndex) : BuilderIndex := vi.val &&& (~~~ Const.builderIndexFlag)
 /-- `is_active_builder`. -/
 forkdef isActiveBuilder (state : State) (builderIndex : BuilderIndex) : Bool :=
   let builder := sszGet state builders[builderIndex.toNat]!
@@ -405,7 +413,9 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   let mut proposerNum : Gwei := 0
   let mut weight := payment0.weight
   for vi in (← liftErr (getAttestingIndices state att)) do
-    let i := vi.toNat
+    -- `toPlainInt` reason: index-only. The participation arrays index with the plain
+    -- position; `getBaseReward` below keeps the checked `vi`.
+    let i := vi.toPlainInt
     -- `i` is a data-derived attesting-validator index; read the participation flag
     -- through `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather
     -- than masking as a default flag (the matching `[i]!` writes are then in range).
@@ -524,9 +534,11 @@ forkdef isValidIndexedPayloadAttestation (state : State) (a : IndexedPayloadAtte
   if idx.size == 0 || !nonStrictSorted then false
   else
     let validators := sszGet state validators
-    if !idx.all (·.toNat < validators.size) then false
+    -- `toPlainInt`, the documented `int(x)` read for the range check, and index-only for
+    -- the total `[i]!` read (`getAt` covers plain `Array` only, `validators` is a list).
+    if !idx.all (·.toPlainInt < validators.size) then false
     else
-      let pubkeys := idx.map (fun i => (validators[i.toNat]!).pubkey)
+      let pubkeys := idx.map (fun i => (validators[i.toPlainInt]!).pubkey)
       blsFastAggregateVerify pubkeys
         (computeSigningRoot a.data (getDomain state Const.domainPtcAttester (computeEpochAtSlot a.data.slot)))
         a.signature
@@ -552,8 +564,11 @@ forkdef processPayloadAttestation (pa : PayloadAttestation) : StateTransition Un
 
 /-! ## Execution payload bid + parent-payload application (EIP-7732) -/
 
-/-- `convert_builder_index_to_validator_index`: set the `BUILDER_INDEX_FLAG` bit. -/
-forkdef convertBuilderIndexToValidatorIndex (builderIndex : BuilderIndex) : ValidatorIndex := builderIndex ||| Const.builderIndexFlag
+/-- `convert_builder_index_to_validator_index`: set the `BUILDER_INDEX_FLAG` bit. The `|||`
+is a total `UInt64` bitwise write on the raw `BuilderIndex`, and the trusted route is exact
+there: a `UInt64` already sits inside `[0, 2^64)`, so the wrap cannot fault. -/
+forkdef convertBuilderIndexToValidatorIndex (builderIndex : BuilderIndex) : ValidatorIndex :=
+  CLUint64.trustedOfUInt64 (builderIndex ||| Const.builderIndexFlag)
 
 /-- `can_builder_cover_bid`: the builder's balance, after reserving `MIN_DEPOSIT_AMOUNT`
 plus its already-pending withdrawals, covers the bid value. `min_balance` is the checked
@@ -595,7 +610,8 @@ forkdef verifyExecutionPayloadEnvelopeSignature (state : State)
   let pubkey ←
     if builderIndex == Const.builderIndexSelfBuild then do
       let validatorIndex := (sszGet state latestBlockHeader).proposerIndex
-      let v ← sszGetIdx (sszGet state validators) validatorIndex.toNat
+      -- `toPlainInt` reason: index-only, the `sszGetIdx` read position.
+      let v ← sszGetIdx (sszGet state validators) validatorIndex.toPlainInt
       pure v.pubkey
     else do
       let b ← sszGetIdx (sszGet state builders) builderIndex.toNat
