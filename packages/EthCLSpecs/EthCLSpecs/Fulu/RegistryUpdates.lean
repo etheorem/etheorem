@@ -32,6 +32,12 @@ pure `State → State` shape), and the cached single-leaf update for the composi
 forkdef modValidator (state : State) (i : ValidatorIndex) (f : Validator → Validator) : State :=
   sszModify state validators[i.toNat]! := f
 
+/-- `modValidator` at a list position. The spec's registry loops write `validator.field = …`
+on the element they walk, with no `ValidatorIndex` cast, so the write takes the position as it
+is. -/
+forkdef modValidatorAt (state : State) (i : Nat) (f : Validator → Validator) : State :=
+  sszModify state validators[i]! := f
+
 /-- `is_eligible_for_activation`: reads the finalized checkpoint, so it is a
 state-operation predicate, not pure on the `Validator` (those live in
 `Containers/Validator`). -/

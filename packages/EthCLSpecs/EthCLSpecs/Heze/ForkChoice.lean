@@ -232,7 +232,7 @@ accessor reads `state`, not the store). -/
 forkdef getInclusionListCommittee (state : State) (slot : Slot) :
     StoreTransition (Vector ValidatorIndex Const.inclusionListCommitteeSize) := do
   let epoch := computeEpochAtSlot slot
-  let committeesPerSlot := getCommitteeCountPerSlot state epoch
+  let committeesPerSlot ← liftErr (getCommitteeCountPerSlot state epoch)
   let indices ← liftErr <| (Array.range committeesPerSlot).foldlM
     (fun acc i => do pure (acc ++ (← getBeaconCommittee state slot i)))
     (#[] : Array ValidatorIndex)

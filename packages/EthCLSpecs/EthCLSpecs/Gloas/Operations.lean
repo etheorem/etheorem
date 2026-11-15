@@ -141,13 +141,15 @@ forkdef initiateBuilderExit (builderIndex : BuilderIndex) : StateTransition Unit
   let epoch := currentEpochOf (← get)
   modifyState fun state =>
     sszModify state builders[builderIndex.toNat]! as b => { b with withdrawableEpoch := epoch + Const.minBuilderWithdrawabilityDelay }
-/-- `get_index_for_new_builder`: a recyclable slot (withdrawable + zero balance) or the end. -/
-forkdef getIndexForNewBuilder (state : State) : BuilderIndex := Id.run do
+/-- `get_index_for_new_builder`: a recyclable slot (withdrawable + zero balance) or the end.
+Both returns cast a position with `BuilderIndex(...)`, which raises at `2 ^ 64` or above. -/
+forkdef getIndexForNewBuilder (state : State) : Except StateTransitionError BuilderIndex := do
   let bs := (sszGet state builders).toArray
   let epoch := currentEpochOf state
   for i in [0:bs.size] do
-    if (bs[i]?.getD default).withdrawableEpoch ≤ epoch && (bs[i]?.getD default).balance == 0 then return UInt64.ofNat i
-  return UInt64.ofNat bs.size
+    if (bs[i]?.getD default).withdrawableEpoch ≤ epoch && (bs[i]?.getD default).balance == 0 then
+      return (← checkedIndex i "get_index_for_new_builder: BuilderIndex(index)")
+  checkedIndex bs.size "get_index_for_new_builder: BuilderIndex(len(state.builders))"
 /-- `withdrawal_credentials[12:]` as a 20-byte execution address. -/
 forkdef addressOfCred (wc : Bytes32) : ExecutionAddress := Vector.ofFn (fun i : Fin 20 => wc[12 + i.val])
 
@@ -159,7 +161,7 @@ forkdef addBuilderToRegistry (pubkey : BLSPubkey) (version : UInt8) (executionAd
   let b : Builder :=
     { pubkey, version, executionAddress, balance := amount,
       depositEpoch := computeEpochAtSlot slot, withdrawableEpoch := Const.farFutureEpoch }
-  setOrAppendState builders (getIndexForNewBuilder state).toNat b
+  setOrAppendState builders (← liftErr (getIndexForNewBuilder state)).toNat b
 /-- `apply_deposit_for_builder` (retained as a helper; the spec inlines it into
 `onboard_builders_from_pending_deposits`): top up an existing builder, or add a new one
 with a valid proof-of-possession, stamped `PAYLOAD_BUILDER_VERSION`. -/
@@ -168,7 +170,10 @@ forkdef applyDepositForBuilder (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwe
   let state ← get
   match (sszGet state builders).findIdx? (·.pubkey == pubkey) with
   | some builderIndex =>
-    -- `balance += deposit.amount` is a checked `uint64` add (`gloas/fork.md`).
+    -- `BuilderIndex(builder_pubkeys.index(deposit.pubkey))` raises at `2 ^ 64` or above, and
+    -- `balance += deposit.amount` is a checked `uint64` add (`gloas/fork.md:116-117`).
+    let _ ← checkedIndex builderIndex
+      "onboard_builders_from_pending_deposits: BuilderIndex(builder_pubkeys.index(deposit.pubkey))"
     let builder := sszGet state builders[builderIndex]!
     let balance ← checkedAdd builder.balance amount
       "onboard_builders_from_pending_deposits: builder.balance + deposit.amount"
@@ -276,7 +281,10 @@ forkdef processBuilderDepositRequest (request : BuilderDepositRequest) : StateTr
       addBuilderToRegistry request.pubkey Const.payloadBuilderVersion
         (addressOfCred request.withdrawalCredentials) request.amount (sszGet state slot)
   | some builderIndex =>
-    -- `builderIndex` comes from `findIdx?` over the registry, so the read is in range.
+    -- `builderIndex` comes from `findIdx?` over the registry, so the read is in range. The
+    -- spec's `BuilderIndex(...)` cast of it raises at `2 ^ 64` or above.
+    let _ ← checkedIndex builderIndex
+      "process_builder_deposit_request: BuilderIndex(builder_pubkeys.index(request.pubkey))"
     let builder := sszGet state builders[builderIndex]!
     let reset := builder.withdrawableEpoch != Const.farFutureEpoch && builder.balance == 0
     let withdrawableEpoch ← if reset then
@@ -302,7 +310,8 @@ forkdef processBuilderExitRequest (request : BuilderExitRequest) : StateTransiti
   match (sszGet state builders).findIdx? (·.pubkey == request.pubkey) with
   | none => pure ()
   | some idx =>
-    let builderIndex : BuilderIndex := UInt64.ofNat idx
+    let builderIndex : BuilderIndex ← checkedIndex idx
+      "process_builder_exit_request: BuilderIndex(builder_pubkeys.index(request.pubkey))"
     let builder := sszGet state builders[idx]!
     if !(← liftErr (isActiveBuilder state builderIndex)) then return
     if builder.executionAddress != request.sourceAddress then return

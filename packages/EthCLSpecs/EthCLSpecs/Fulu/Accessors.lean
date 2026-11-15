@@ -21,18 +21,19 @@ namespace EthCLSpecs.Fulu
 state_section
 
 /-- `get_total_active_balance`. The active indices come from `validators` itself, so the reads
-stay in range, and only the `uint64` sum can fault. -/
-forkdef getTotalActiveBalance (state : State) : Except StateTransitionError Gwei :=
-  getTotalBalance state (getActiveValidatorIndices state (computeEpochAtSlot (sszGet state slot)))
+stay in range. The `ValidatorIndex(index)` cast of the walk and the `uint64` sum can fault. -/
+forkdef getTotalActiveBalance (state : State) : Except StateTransitionError Gwei := do
+  getTotalBalance state (← getActiveValidatorIndices state (computeEpochAtSlot (sszGet state slot)))
 
 /-- `get_unslashed_participating_indices(state, flag_index, epoch)`. No committees.
 
-The pyspec runs three steps, and the body keeps their order:
+The pyspec runs four steps, and the body keeps their order:
 
 1. `assert epoch in (previous, current)`. Any other epoch rejects with `.assert`.
-2. The participation read `epoch_participation[i]` for each active index, in active order. A
+2. `get_active_validator_indices(state, epoch)`, which can raise `.arithmetic`.
+3. The participation read `epoch_participation[i]` for each active index, in active order. A
    participation list shorter than the registry raises `IndexError` (`.outOfBounds`).
-3. The `state.validators[index].slashed` filter over the participants. These indices are
+4. The `state.validators[index].slashed` filter over the participants. These indices are
    active, so they are in range for `validators`.
 
 The result keeps the active order. The pyspec returns a `set`, and every caller only tests
@@ -43,7 +44,8 @@ forkdef getUnslashedParticipatingIndices (state : State) (flagIndex : Nat) (epoc
   assert (epoch == previousEpochOf state || epoch == currentEpoch)
   let part := if epoch == currentEpoch then sszGet state currentEpochParticipation
               else sszGet state previousEpochParticipation
-  let participating ← (getActiveValidatorIndices state epoch).filterM fun i => do
+  let active ← getActiveValidatorIndices state epoch
+  let participating ← active.filterM fun i => do
     let flags ← sszGetIdx part i.toNat
     pure (hasFlag flags flagIndex)
   let validators := sszGet state validators

@@ -1,5 +1,7 @@
 # Proof-coverage baseline. Rewrite with `just proof-coverage-update`.
 # Every line is a claim `just proof-coverage-check` enforces exactly.
+tier1 EthCLSpecs.Fulu.activeValidatorIndicesOf
+tier1 EthCLSpecs.Fulu.committeeCountOf
 tier1 EthCLSpecs.Fulu.computeEpochAtSlot
 tier1 EthCLSpecs.Fulu.currentEpochOf
 tier1 EthCLSpecs.Fulu.getActivationExitChurnLimit
@@ -30,6 +32,7 @@ tier1 EthCLSpecs.Gloas.processProposerSlashing
 tier1 EthCLSpecs.Gloas.processVoluntaryExit
 tier1 EthCLSpecs.Gloas.slashValidator
 tier1 EthCLSpecs.Heze.builderPaymentIndex
+tier1 EthCLSpecs.Heze.committeeCountOf
 tier1 EthCLSpecs.Heze.computeEpochAtSlot
 tier1 EthCLSpecs.Heze.currentEpochOf
 tier1 EthCLSpecs.Heze.fcZeroRoot

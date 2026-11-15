@@ -343,7 +343,7 @@ monadic because `getSupportedNode` and `isAncestor` can reject. The sum uses `ch
 because pyspec's `Gwei(sum(...))` raises `ValueError` past `2^64`. -/
 forkdef getAttestationScore (store : Store map) (node : ForkChoiceNode) (state : State) :
     StoreTransition Gwei := do
-  let active := getActiveValidatorIndices state (currentEpochOf state)
+  let active ← liftErr (getActiveValidatorIndices state (currentEpochOf state))
   let validators := sszGet state validators
   active.foldlM (init := 0) fun acc i => do
     let idx := i.toNat
@@ -378,7 +378,8 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
   -- `outOfBounds` reject) for this fold's validator reads, and `foldlM` to bind it. The
   -- sibling `getAttestationScore` fold keeps `validators[idx]!`: its indices come from
   -- `getActiveValidatorIndices` on the same state it reads, so they are in range.
-  let headWeight ← (List.range (getCommitteeCountPerSlot headState epoch)).foldlM (init := baseWeight) fun acc index => do
+  let committeeCount ← liftErr (getCommitteeCountPerSlot headState epoch)
+  let headWeight ← (List.range committeeCount).foldlM (init := baseWeight) fun acc index => do
     let committee ← liftErr (getBeaconCommittee headState headBlock.slot index)
     -- Python sums the equivocator balances of the committee as `Gwei(sum(...))`. Then it
     -- adds that sum with `head_weight +=`. Both `uint64` ops raise past `2^64`, so the model

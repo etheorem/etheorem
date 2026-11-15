@@ -1,3 +1,4 @@
+import EthCLSpecs.Proofs.Gloas.ActiveIndices
 import EthCLSpecs.Proofs.Gloas.BuilderIndex
 import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 import EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid
@@ -31,6 +32,8 @@ and collide with nothing.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Gloas.ActiveIndices`: a successful `get_active_validator_indices` returns
+  the total walk `activeValidatorIndicesOf` (`getActiveValidatorIndices_eq_of_ok`).
 * `EthCLSpecs.Proofs.Gloas.BuilderIndex`: the builder-index flag round-trip
   (`isBuilderIndex`, `toBuilderIndex`, `convertBuilderIndexToValidatorIndex`).
 * `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: `processBuilderPendingPayments`'s

@@ -211,21 +211,37 @@ private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
     for sb in signedBlocks do stateTransition sb
   RunError.ofSpec (runToRoot box0 action)
 
-/-- `runTransition` (the `transition` format, Gloas→Heze): fold the pre-fork blocks under
-Gloas `state_transition`, advance the Gloas state to the fork-epoch boundary, apply
-`upgradeToHeze` (see its docstring), then fold the post-fork blocks under the
-Heze spine. Unqualified spine names resolve to the Heze copies; the pre-fork Gloas calls are
-qualified. -/
-private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
-    (preBytes : ByteArray) (blocks : Array ByteArray) (cmeta : CaseMeta) :
-    Except (RunError StateTransitionError) ByteArray :=
+/-- The Gloas run of `runTransition`: fold the pre-fork blocks under Gloas
+`state_transition`, then advance the slots to the fork boundary. It takes the Gloas preset
+and config as values, so the compiler specializes the Gloas spine here alone. -/
+private def gloasRunToBoundary (GP : Gloas.Preset) (GC : Gloas.Config) (blsSetting : Nat)
+    (pre : @Gloas.BeaconState GP) (preBlocks : Array (@Gloas.SignedBeaconBlock GP))
+    (boundary : Slot) : Except StateTransitionError (@Gloas.BeaconState GP) :=
+  letI : Gloas.Preset := GP
+  letI : Gloas.Config := GC
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.forBlsSetting blsSetting
+  let action : EStateM StateTransitionError (SSZ.Box Sha256 (Gloas.BeaconState)) Unit := do
+    for sb in preBlocks do Gloas.stateTransition sb
+    if (sszGet (← get) slot) < boundary then Gloas.processSlots boundary
+  match action.run (SSZ.FastBox pre) with
+  | .error e _ => .error e
+  | .ok _ st => .ok st.view
+
+/-- The pre-fork half of `runTransition`: decode the Gloas pre-state and the first
+`nPre` blocks, fold the blocks under Gloas `state_transition`, advance the Gloas state to
+the fork-epoch boundary, and apply `upgradeToHeze` (see its docstring). The two halves are
+separate definitions with their own instances, so the compiler specializes one fork's spine
+in each. -/
+private def hezePreFork (P : Preset) (C : Config) (forkVersion : Version)
+    (preBytes : ByteArray) (blocks : Array ByteArray) (cmeta : CaseMeta) (nPre : Nat) :
+    Except (RunError StateTransitionError) (@Heze.BeaconState P) :=
   letI : Preset := P
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.forBlsSetting cmeta.blsSetting
   let forkEpoch := cmeta.forkEpoch.getD 0
   let boundary : Slot := UInt64.ofNat (forkEpoch * Const.slotsPerEpoch)
-  let nPre := match cmeta.forkBlock with | some n => n + 1 | none => 0
   match SSZ.deserialize (T := Gloas.BeaconState) preBytes with
   | .error _ => .error (.decode "Gloas BeaconState")
   | .ok preGloas => do
@@ -235,27 +251,44 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
       | some bb => match SSZ.deserialize (T := Gloas.SignedBeaconBlock) bb with
         | .ok sb   => Except.ok sb
         | .error _ => Except.error (RunError.decode "Gloas SignedBeaconBlock"))
+    let gloasSt ← RunError.ofSpec
+      (gloasRunToBoundary inferInstance inferInstance cmeta.blsSetting preGloas preBlocks boundary)
+    RunError.ofSpec (upgradeToHeze forkVersion gloasSt)
+
+/-- The post-fork half of `runTransition`: decode the blocks after the first `nPre`, then
+fold them under the Heze spine from the upgraded state. Each block advances the slots, checks
+the signature unless the case disables BLS, runs `process_block`, and checks the state root. -/
+private def hezePostFork (P : Preset) (C : Config) (hezePost : @Heze.BeaconState P)
+    (blocks : Array ByteArray) (cmeta : CaseMeta) (nPre : Nat) :
+    Except (RunError StateTransitionError) ByteArray :=
+  letI : Preset := P
+  letI : Config := C
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.forBlsSetting cmeta.blsSetting
+  do
     let postBlocks ← (blocks.extract nPre blocks.size).mapM (fun bb =>
       match SSZ.deserialize (T := @Heze.SignedBeaconBlock P) bb with
       | .ok sb   => Except.ok sb
       | .error _ => Except.error (RunError.decode "Heze SignedBeaconBlock"))
-    let gloasBox0 : SSZ.Box Sha256 (Gloas.BeaconState) := SSZ.FastBox preGloas
-    let gloasAction : EStateM StateTransitionError (SSZ.Box Sha256 (Gloas.BeaconState)) Unit := do
-      for sb in preBlocks do Gloas.stateTransition sb
-      if (sszGet (← get) slot) < boundary then Gloas.processSlots boundary
-    match gloasAction.run gloasBox0 with
-    | .error e _ => Except.error (RunError.spec e)
-    | .ok _ gloasSt =>
-      let hezePost ← RunError.ofSpec (upgradeToHeze forkVersion gloasSt.view)
-      let hezeBox0 : SSZ.Box Sha256 (@Heze.BeaconState P) := SSZ.FastBox hezePost
-      let hezeAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Heze.BeaconState P)) Unit := do
-        for sb in postBlocks do
-          if (sszGet (← get) slot) < sb.message.slot then processSlots sb.message.slot
-          if cmeta.blsSetting != 2 then assert (← liftErr (verifyBlockSignature (← get) sb))
-          processBlock sb.message
-          let root ← getStateRoot
-          assert (sb.message.stateRoot == bytesToRoot root)
-      RunError.ofSpec (runToRoot hezeBox0 hezeAction)
+    let hezeBox0 : SSZ.Box Sha256 (@Heze.BeaconState P) := SSZ.FastBox hezePost
+    let hezeAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Heze.BeaconState P)) Unit := do
+      for sb in postBlocks do
+        if (sszGet (← get) slot) < sb.message.slot then processSlots sb.message.slot
+        if cmeta.blsSetting != 2 then assert (← liftErr (verifyBlockSignature (← get) sb))
+        processBlock sb.message
+        let root ← getStateRoot
+        assert (sb.message.stateRoot == bytesToRoot root)
+    RunError.ofSpec (runToRoot hezeBox0 hezeAction)
+
+/-- `runTransition` (the `transition` format, Gloas→Heze): the pre-fork half, then the
+post-fork half. The fork block `cmeta.forkBlock` is the last pre-fork block. Unqualified
+spine names resolve to the Heze copies; the pre-fork Gloas calls are qualified. -/
+private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
+    (preBytes : ByteArray) (blocks : Array ByteArray) (cmeta : CaseMeta) :
+    Except (RunError StateTransitionError) ByteArray := do
+  let nPre := match cmeta.forkBlock with | some n => n + 1 | none => 0
+  let hezePost ← hezePreFork P C forkVersion preBytes blocks cmeta nPre
+  hezePostFork P C hezePost blocks cmeta nPre
 
 /-- Run `getHead` over the snapshot store as a pure query (`runQuery` discards the final
 store; `getHead` only reads it). Shared by the `checkHead` / `checkHeadPayloadStatus` arms,

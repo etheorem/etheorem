@@ -919,6 +919,12 @@ or where `Nat` is much simpler. There the result narrows back with an exact
 `UInt64.ofNat`, never a reject. There is no `Nat` tier in the state itself; `Nat`
 appears only as a transient intermediate.
 
+A spec type cast of a list position is different. The pyspec's `ValidatorIndex(i)` and
+`BuilderIndex(i)` raise a `ValueError` at `2^64`. The spec writes each such cast as
+`checkedIndex i descr`, which throws `.arithmetic` at that bound and returns
+`UInt64.ofNat i` below it. The active-index and eligible-index walks test the same bound
+once, through `keepsIndexPast64`, and raise when a kept index lies past it.
+
 The framework provides `umax`, `umin`, and `isqrt` (the integer square root the
 committee math needs), and a type-directed `uintToBytes` whose width follows from
 the value's type. The width-from-type discipline removes a whole bug class, the

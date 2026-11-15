@@ -156,7 +156,7 @@ throws where `get_total_balance` throws, and on the `uint64` product
 forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) :
     Except StateTransitionError Gwei := do
   let validators := sszGet state validators
-  let unslashedAndActive := (getActiveValidatorIndices state (currentEpochOf state)).filter
+  let unslashedAndActive := (← getActiveValidatorIndices state (currentEpochOf state)).filter
     fun i => !(validators[i.toNat]!).slashed
   let committeeWeight := (← getTotalBalance state unslashedAndActive) / UInt64.ofNat Const.slotsPerEpoch
   let product ← checkedMul committeeWeight committeePercent
@@ -185,11 +185,12 @@ The `and` chain short-circuits, so the block read runs only for a validator with
 message that is not equivocating. A store with no latest messages, exactly what
 `get_forkchoice_store` hands back, therefore scores `0` without any read.
 `validators[idx]!` stays unchecked: `idx` comes from `getActiveValidatorIndices` on the same
-`state` the array belongs to, so it is in range by construction. The `Gwei(sum(...))` raises
-`ValueError` past `2^64`, so the fold steps through `checkedAdd`. -/
+`state` the array belongs to, so it is in range by construction. That walk runs first, and its
+index cast can raise `.arithmetic`. The `Gwei(sum(...))` raises `ValueError` past `2^64`, so
+the fold steps through `checkedAdd`. -/
 forkdef getAttestationScore (store : Store map) (root : Root) (state : State) :
     StoreTransition Gwei := do
-  let active := getActiveValidatorIndices state (currentEpochOf state)
+  let active ← liftErr (getActiveValidatorIndices state (currentEpochOf state))
   let validators := sszGet state validators
   active.foldlM (init := (0 : Gwei)) fun acc i => do
     let idx := i.toNat
@@ -389,7 +390,8 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
   let epoch := computeEpochAtSlot headBlock.slot
   let baseWeight ← getAttestationScore store headRoot justifiedState
   let validators := sszGet justifiedState validators
-  let headWeight ← (List.range (getCommitteeCountPerSlot headState epoch)).foldlM
+  let committeeCount ← liftErr (getCommitteeCountPerSlot headState epoch)
+  let headWeight ← (List.range committeeCount).foldlM
       (init := baseWeight) fun acc index => do
     let committee ← liftErr (getBeaconCommittee headState headBlock.slot index)
     -- Python sums the equivocator balances of the committee as `Gwei(sum(...))`. Then it

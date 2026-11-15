@@ -357,6 +357,13 @@ do not decode as a G1 point. -/
     [ErrorConv StateTransitionError E] (a b : UInt64) (descr : String) : m UInt64 :=
   if b > a then throwArithmetic descr else pure (a - b)
 
+/-- The spec's `ValidatorIndex(index)` (or `BuilderIndex(index)`) cast of a list position: the
+index as a `uint64`, or the `.arithmetic` fault at `2 ^ 64` or above, where the cast raises
+`SSZValueError`, a Python `ValueError`. -/
+@[inline] def checkedIndex {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
+    [ErrorConv StateTransitionError E] (i : Nat) (descr : String) : m UInt64 :=
+  if 2 ^ 64 ≤ i then throwArithmetic descr else pure (UInt64.ofNat i)
+
 /-- Checked `uint64` multiplication: the product, or the `.arithmetic` fault on overflow (`a ≠ 0`
 and the truncating `a * b / a` fails to recover `b`). Mirrors the eth-ssz-specs `uint64.__mul__`. -/
 @[inline] def checkedMul {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]

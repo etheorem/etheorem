@@ -199,7 +199,7 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let validators := (sszGet state validators).toArray
   let committeeIndices : Array ValidatorIndex ← syncCommittee.pubkeys.toArray.mapM fun pk =>
     match validators.findIdx? (·.pubkey == pk) with
-    | some pIdx => pure (UInt64.ofNat pIdx)
+    | some pIdx => checkedIndex pIdx "process_sync_aggregate: ValidatorIndex(all_pubkeys.index(pubkey))"
     | none => throwArithmetic "process_sync_aggregate: all_pubkeys.index(pubkey)"
 
   -- Reward participants (and the proposer), penalize non-participants.

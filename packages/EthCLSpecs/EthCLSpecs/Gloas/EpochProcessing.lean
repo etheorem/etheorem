@@ -45,6 +45,7 @@ inherit modBalance
 inherit increaseBalance
 inherit decreaseBalance
 inherit modValidator
+inherit modValidatorAt
 inherit computeActivationExitEpoch
 inherit currentEpochOf
 inherit previousEpochOf
@@ -62,12 +63,15 @@ inherit hasExecutionWithdrawalCredential
 inherit getMaxEffectiveBalance
 inherit hasNotInitiatedExit
 inherit passedShardCommitteePeriod
+inherit activeValidatorIndicesOf
 inherit getActiveValidatorIndices
 inherit getTotalBalance
 inherit getTotalActiveBalance
 inherit getBaseRewardPerIncrement
 inherit getBaseReward
 inherit getUnslashedParticipatingIndices
+inherit isEligibleValidator
+inherit eligibleValidatorIndicesOf
 inherit getEligibleValidatorIndices
 inherit validatorIndexByPubkey?
 inherit getFinalityDelay
@@ -189,6 +193,7 @@ inherit applyPendingDeposit
 inherit computeShuffledPermutation
 inherit seedOf
 inherit getSeed
+inherit committeeCountOf
 inherit getCommitteeCountPerSlot
 inherit computeCommittee
 inherit getBeaconCommittee
@@ -265,8 +270,8 @@ forkdef getNextSyncCommittee [CryptoBackend] (state : State) :
     Except StateTransitionError SyncCommittee := do
   let epoch ← checkedAdd (currentEpochOf state) 1 "get_next_sync_committee_indices: get_current_epoch(state) + 1"
   let seed ← getSeed state epoch Const.domainSyncCommittee
-  let indices ← computeBalanceWeightedSelection state (getActiveValidatorIndices state epoch)
-    seed Const.syncCommitteeSize true
+  let active ← getActiveValidatorIndices state epoch
+  let indices ← computeBalanceWeightedSelection state active seed Const.syncCommitteeSize true
 
   let validators := sszGet state validators
   let pubkeys : Vector BLSPubkey Const.syncCommitteeSize :=
@@ -282,7 +287,7 @@ validator is slashed, the candidate set is empty, and `compute_balance_weighted_
 forkdef getBeaconProposerIndices (state : State) (epoch : Epoch) :
     Except StateTransitionError (Array ValidatorIndex) := do
   let validators := sszGet state validators
-  let indices := (getActiveValidatorIndices state epoch).filter (fun vi => !(validators[vi.toNat]!).slashed)
+  let indices := (← getActiveValidatorIndices state epoch).filter (fun vi => !(validators[vi.toNat]!).slashed)
   computeProposerIndices state epoch (← getSeed state epoch Const.domainBeaconProposer) indices
 
 -- Epoch substeps (all but the two shuffle-dependent ones).
@@ -326,12 +331,14 @@ forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (
 
     -- Read the deposit's validator once, if its pubkey is known, and derive the two flags
     -- the spec branches on. An unknown pubkey leaves both false, so it falls through to the
-    -- churn check.
-    let (isWithdrawn, isExited) := match validatorIndexByPubkey? state deposit.pubkey with
-      | some vi =>
+    -- churn check. The read casts the position with `ValidatorIndex(...)`, which raises at
+    -- `2 ^ 64` or above.
+    let (isWithdrawn, isExited) ← match validatorIndexByPubkey? state deposit.pubkey with
+      | some vi => do
+        let _ ← checkedIndex vi "process_pending_deposits: ValidatorIndex(validator_pubkeys.index(deposit.pubkey))"
         let v := sszGet state validators[vi]!
-        (decide (v.withdrawableEpoch < nextEpoch), decide (v.exitEpoch < Const.farFutureEpoch))
-      | none => (false, false)
+        pure (decide (v.withdrawableEpoch < nextEpoch), decide (v.exitEpoch < Const.farFutureEpoch))
+      | none => pure (false, false)
 
     if isWithdrawn then applyPendingDeposit deposit; return advance s.processed s.postpone
     else if isExited then return advance s.processed (s.postpone.push deposit)
@@ -436,7 +443,7 @@ forkdef computePtc (state : State) (slot : Slot) :
     Except StateTransitionError (Vector ValidatorIndex Const.ptcSize) := do
   let epoch := computeEpochAtSlot slot
   let seed := sha ((← getSeed state epoch Const.domainPtcAttester) ++ uint64ToBytes slot)
-  let committeesPerSlot := getCommitteeCountPerSlot state epoch
+  let committeesPerSlot ← getCommitteeCountPerSlot state epoch
   let indices ← (Array.range committeesPerSlot).foldlM
     (fun acc i => do pure (acc ++ (← getBeaconCommittee state slot i))) (#[] : Array ValidatorIndex)
   let sel ← computeBalanceWeightedSelection state indices seed Const.ptcSize false

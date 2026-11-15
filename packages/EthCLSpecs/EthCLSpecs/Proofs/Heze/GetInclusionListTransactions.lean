@@ -55,14 +55,19 @@ variable {σ : Type} [Preset]
 section
 variable [HasherTag]
 
-/-- The slot's committees laid end to end, the `indices` that
-`get_inclusion_list_committee` samples. Each `getBeaconCommittee` call can fault, so the
-concatenation is an `Except`. -/
-def slotCommitteeIndices (state : BeaconState) (slot : Slot) :
+/-- The concatenation of committees `0 … count - 1` of `slot`. -/
+def committeesUpTo (state : BeaconState) (slot : Slot) (count : Nat) :
     Except StateTransitionError (Array ValidatorIndex) :=
-  (Array.range (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))).foldlM
+  (Array.range count).foldlM
     (fun acc i => do pure (acc ++ (← getBeaconCommittee (pureState state) slot i)))
     (#[] : Array ValidatorIndex)
+
+/-- The slot's committees laid end to end, the `indices` that
+`get_inclusion_list_committee` samples. The committee count and each `getBeaconCommittee`
+call can fault, so the concatenation is an `Except`. -/
+def slotCommitteeIndices (state : BeaconState) (slot : Slot) :
+    Except StateTransitionError (Array ValidatorIndex) := do
+  committeesUpTo state slot (← getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))
 
 /-- Complete `.run` equation of `getInclusionListCommittee`. A committee fault surfaces as
 the store's `.transition` reject. An empty concatenation throws the empty-committee
@@ -85,19 +90,33 @@ theorem getInclusionListCommittee_run_eq :
   intro state slot runnerStore
   simp only [getInclusionListCommittee]
   rw [run_bind]
-  cases hidx : slotCommitteeIndices state slot with
+  cases hc : getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot) with
   | error e =>
-    rw [run_liftErr_of_error _ _ (by simp only [slotCommitteeIndices] at hidx; rw [hidx]; rfl),
-      except_bind_error]
+    rw [run_liftErr_of_error _ _ rfl, except_bind_error]
+    have hsci : slotCommitteeIndices state slot = .error e := by
+      simp only [slotCommitteeIndices, hc, bind, Except.bind]
+    rw [hsci]
     rfl
-  | ok indices =>
-    rw [run_liftErr_of_ok _ _ (by simp only [slotCommitteeIndices] at hidx; rw [hidx]; rfl),
-      except_bind_ok]
+  | ok count =>
+    rw [run_liftErr_of_ok _ _ rfl, except_bind_ok]
+    have hsci : slotCommitteeIndices state slot = committeesUpTo state slot count := by
+      simp only [slotCommitteeIndices, hc, bind, Except.bind]
+    rw [hsci]
     simp only
-    split
-    · rw [run_bind, ForkChoiceStoreRun.throwArithmetic_run]
-      exact except_bind_error _ _
-    · rw [run_pure]
+    rw [run_bind]
+    cases hidx : committeesUpTo state slot count with
+    | error e =>
+      rw [run_liftErr_of_error _ _ (by simp only [committeesUpTo] at hidx; rw [hidx]; rfl),
+        except_bind_error]
+      rfl
+    | ok indices =>
+      rw [run_liftErr_of_ok _ _ (by simp only [committeesUpTo] at hidx; rw [hidx]; rfl),
+        except_bind_ok]
+      simp only
+      split
+      · rw [run_bind, ForkChoiceStoreRun.throwArithmetic_run]
+        exact except_bind_error _ _
+      · rw [run_pure]
 
 /-- Exact empty-committee error of `getInclusionListCommittee`. -/
 theorem getInclusionListCommittee_run_error_of_empty

@@ -114,11 +114,19 @@ forkdef getSeed (state : State) (epoch : Epoch) (domainType : ByteArray) :
   let _ ← checkedSub lessLookahead 1 "get_seed: … - 1"
   pure (seedOf state epoch domainType)
 
-/-- `get_committee_count_per_slot`. -/
-forkdef getCommitteeCountPerSlot (state : State) (epoch : Epoch) : Nat :=
-  let active := (getActiveValidatorIndices state epoch).size
+/-- The committee count of `get_committee_count_per_slot` over the active set of
+`activeValidatorIndicesOf`. -/
+forkdef committeeCountOf (state : State) (epoch : Epoch) : Nat :=
+  let active := (activeValidatorIndicesOf state epoch).size
   Nat.max 1 (Nat.min Const.maxCommitteesPerSlot
     (active / Const.slotsPerEpoch / Const.targetCommitteeSize))
+
+/-- `get_committee_count_per_slot` (`phase0/beacon-chain.md:1509-1521`). It raises where its
+`get_active_validator_indices` call raises, and otherwise returns `committeeCountOf`. -/
+forkdef getCommitteeCountPerSlot (state : State) (epoch : Epoch) :
+    Except StateTransitionError Nat := do
+  let _ ← getActiveValidatorIndices state epoch
+  pure (committeeCountOf state epoch)
 
 /-! ## Committee assignment -/
 
@@ -162,13 +170,15 @@ forkdef computeCommittee (indices : Array ValidatorIndex) (seed : Bytes32) (inde
 /-- `get_beacon_committee(state, slot, index)` (`phase0/beacon-chain.md:1527-1539`). The
 committee number `(slot % SLOTS_PER_EPOCH) * committees_per_slot + index` and the count
 `committees_per_slot * SLOTS_PER_EPOCH` are checked `uint64` arithmetic in the pyspec. Python
-evaluates the `compute_committee` arguments in order, so `get_seed` runs, and can raise,
-before the committee number and the count. -/
+evaluates the `compute_committee` arguments in order. The count raises first where
+`get_active_validator_indices` raises, so the second call of the walk cannot raise. Then
+`get_seed` runs, and can raise, before the committee number and the count. -/
 forkdef getBeaconCommittee (state : State) (slot : Slot) (index : Nat) :
     Except StateTransitionError (Array ValidatorIndex) := do
   let epoch := computeEpochAtSlot slot
-  let committeesPerSlot := getCommitteeCountPerSlot state epoch
+  let committeesPerSlot ← getCommitteeCountPerSlot state epoch
   if 2 ^ 64 ≤ index then throwArithmetic "get_beacon_committee: index is not a uint64"
+  let active ← getActiveValidatorIndices state epoch
   let seed ← getSeed state epoch Const.domainBeaconAttester
   let slotBase ← checkedMul (slot % UInt64.ofNat Const.slotsPerEpoch) (UInt64.ofNat committeesPerSlot)
     "get_beacon_committee: (slot % SLOTS_PER_EPOCH) * committees_per_slot"
@@ -176,7 +186,7 @@ forkdef getBeaconCommittee (state : State) (slot : Slot) (index : Nat) :
     "get_beacon_committee: (slot % SLOTS_PER_EPOCH) * committees_per_slot + index"
   let count ← checkedMul (UInt64.ofNat committeesPerSlot) (UInt64.ofNat Const.slotsPerEpoch)
     "get_beacon_committee: committees_per_slot * SLOTS_PER_EPOCH"
-  computeCommittee (getActiveValidatorIndices state epoch) seed committeeIndex.toNat count.toNat
+  computeCommittee active seed committeeIndex.toNat count.toNat
 
 /-- `get_committee_indices`: the committee indices flagged in `committee_bits`. -/
 forkdef getCommitteeIndices {n : Nat} (bits : Bitvector n) : Array Nat :=
@@ -254,7 +264,7 @@ validator, the first pass's `i % active_validator_count` raises `ZeroDivisionErr
 forkdef getNextSyncCommitteeIndices (state : State) :
     Except StateTransitionError (Array ValidatorIndex) := do
   let epoch ← checkedAdd (currentEpochOf state) 1 "get_next_sync_committee_indices: get_current_epoch(state) + 1"
-  let active := getActiveValidatorIndices state epoch
+  let active ← getActiveValidatorIndices state epoch
   let seed ← getSeed state epoch Const.domainSyncCommittee
   if Const.syncCommitteeSize == 0 then return #[]
   if active.size == 0 then
@@ -282,7 +292,7 @@ forkdef getBeaconProposerIndex (state : State) : ValidatorIndex :=
 /-- `get_beacon_proposer_indices(state, epoch)`: the per-slot proposers for `epoch`. -/
 forkdef getBeaconProposerIndices (state : State) (epoch : Epoch) :
     Except StateTransitionError (Array ValidatorIndex) := do
-  let indices := getActiveValidatorIndices state epoch
+  let indices ← getActiveValidatorIndices state epoch
   computeProposerIndices state epoch (← getSeed state epoch Const.domainBeaconProposer) indices
 
 /-- `get_next_sync_committee` (`altair/beacon-chain.md:356-364`): the next sync committee from

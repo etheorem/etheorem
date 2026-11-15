@@ -159,7 +159,7 @@ forkdef attestationCommitteeOffset (state : State) (att : Attestation) :
   let data := att.data
   let mut offset := 0
   for ci in getCommitteeIndices att.committeeBits do
-    assert (ci < getCommitteeCountPerSlot state data.target.epoch)
+    assert (ci < (← getCommitteeCountPerSlot state data.target.epoch))
     let committee ← getBeaconCommittee state data.slot ci
     let mut attesters := 0
     for i in [0:committee.size] do
@@ -297,7 +297,7 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
     match validatorIndexByPubkey? state wr.validatorPubkey with
     | none => pure ()
     | some idxN =>
-      let index := UInt64.ofNat idxN
+      let index ← checkedIndex idxN "process_withdrawal_request: ValidatorIndex(validator_pubkeys.index(request_pubkey))"
       let validator := sszGet state validators[idxN]!
       let correctCred := hasExecutionWithdrawalCredential validator
       let correctSource := vecSliceEq validator.withdrawalCredentials 12 wr.sourceAddress 0 20
@@ -331,26 +331,31 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
               { validatorIndex := index, amount := toWithdraw, withdrawableEpoch := we }
           else pure ()
 
-/-- `is_valid_switch_to_compounding_request`. -/
-forkdef isValidSwitchToCompoundingRequest (state : State) (req : ConsolidationRequest) : Bool :=
-  if req.sourcePubkey != req.targetPubkey then false
-  else match validatorIndexByPubkey? state req.sourcePubkey with
-    | none => false
-    | some si =>
-      let validator := sszGet state validators[si]!
-      if !(vecSliceEq validator.withdrawalCredentials 12 req.sourceAddress 0 20) then false
-      else if !hasEth1WithdrawalCredential validator then false
-      else if !isActiveValidator validator (currentEpochOf state) then false
-      else if !hasNotInitiatedExit validator then false
-      else true
+/-- `is_valid_switch_to_compounding_request`. The source read casts the position with
+`ValidatorIndex(...)`, which raises at `2 ^ 64` or above. -/
+forkdef isValidSwitchToCompoundingRequest (state : State) (req : ConsolidationRequest) :
+    Except StateTransitionError Bool := do
+  if req.sourcePubkey != req.targetPubkey then return false
+  match validatorIndexByPubkey? state req.sourcePubkey with
+  | none => return false
+  | some si =>
+    let _ ← checkedIndex si
+      "is_valid_switch_to_compounding_request: ValidatorIndex(validator_pubkeys.index(source_pubkey))"
+    let validator := sszGet state validators[si]!
+    if !(vecSliceEq validator.withdrawalCredentials 12 req.sourceAddress 0 20) then return false
+    if !hasEth1WithdrawalCredential validator then return false
+    if !isActiveValidator validator (currentEpochOf state) then return false
+    return hasNotInitiatedExit validator
 
-/-- `process_consolidation_request` (EIP-7251). -/
+/-- `process_consolidation_request` (EIP-7251). Each `ValidatorIndex(...)` cast of a pubkey
+position raises at `2 ^ 64` or above, at the place the spec casts it. -/
 forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransition Unit := do
   let state ← get
   -- A switch-to-compounding request is handled separately from a consolidation.
-  if isValidSwitchToCompoundingRequest state req then
+  if ← liftErr (isValidSwitchToCompoundingRequest state req) then
     match validatorIndexByPubkey? state req.sourcePubkey with
-    | some si => switchToCompoundingValidator (UInt64.ofNat si)
+    | some si => switchToCompoundingValidator (← checkedIndex si
+        "process_consolidation_request: ValidatorIndex(validator_pubkeys.index(request_source_pubkey))")
     | none    => pure ()
   -- Request-level gates: distinct source/target, queue room, churn capacity.
   else if req.sourcePubkey == req.targetPubkey then pure ()
@@ -362,6 +367,10 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
     let validators := (sszGet state validators).toArray
     match validatorIndexByPubkey? state req.sourcePubkey, validatorIndexByPubkey? state req.targetPubkey with
     | some srcN, some tgtN =>
+      let srcIndex ← checkedIndex srcN
+        "process_consolidation_request: ValidatorIndex(validator_pubkeys.index(request_source_pubkey))"
+      let tgtIndex ← checkedIndex tgtN
+        "process_consolidation_request: ValidatorIndex(validator_pubkeys.index(request_target_pubkey))"
       let src := validators[srcN]?.getD default
       let tgt := validators[tgtN]?.getD default
       let correctCred := hasExecutionWithdrawalCredential src
@@ -377,13 +386,13 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
       else if !hasNotInitiatedExit tgt then pure ()
       else if !passedShardCommitteePeriod src (currentEpochOf state) then pure ()
       else
-        if (← liftErr (getPendingBalanceToWithdraw state (UInt64.ofNat srcN))) > 0 then return
+        if (← liftErr (getPendingBalanceToWithdraw state srcIndex)) > 0 then return
         let exitEpoch ← computeConsolidationEpochAndUpdateChurn src.effectiveBalance
         let we ← checkedAdd exitEpoch Const.minValidatorWithdrawabilityDelay
           "process_consolidation_request: exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY"
-        modifyState fun state => modValidator state (UInt64.ofNat srcN) fun validator =>
+        modifyState fun state => modValidator state srcIndex fun validator =>
           { validator with exitEpoch := exitEpoch, withdrawableEpoch := we }
-        appendState pendingConsolidations { sourceIndex := UInt64.ofNat srcN, targetIndex := UInt64.ofNat tgtN }
+        appendState pendingConsolidations { sourceIndex := srcIndex, targetIndex := tgtIndex }
     | _, _ => pure ()
 
 /-! ## process_operations -/

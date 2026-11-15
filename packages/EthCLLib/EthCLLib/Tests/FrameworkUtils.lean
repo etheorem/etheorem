@@ -55,6 +55,18 @@ the only thing exercising the throw. -/
 #guard (checkedSucc 0xffffffffffffffff "o" : Except StateTransitionError _) matches .error (.arithmetic _)
 #guard (checkedSub 3 5 "u" : Except StoreTransitionError UInt64) matches .error (.transition (.arithmetic _))
 
+/-! ## Index casts: the `ValidatorIndex(i)` fault
+
+`checkedIndex` stands for the pyspec cast of a list position to a `uint64` index type. The cast
+raises a `ValueError` at `2 ^ 64`, so `checkedIndex` throws `.arithmetic` there and returns the
+position below it. `keepsIndexPast64` is the bound test of the index walks. A registry this
+small keeps no index past the bound, so the test answers `false`. -/
+#guard (checkedIndex (2 ^ 64 - 1) "i" : Except StateTransitionError UInt64).toOption =
+  some 0xffffffffffffffff
+#guard (checkedIndex (2 ^ 64) "i" : Except StateTransitionError UInt64) matches .error (.arithmetic _)
+#guard (checkedIndex (2 ^ 64) "i" : Except StoreTransitionError UInt64) matches .error (.transition (.arithmetic _))
+#guard keepsIndexPast64 #[1, 2, 3] (· > 0) == false
+
 /-! ## Appends to a full list: the `.listFull` fault
 
 `throwListFull` stands for the eth-ssz-specs `List.append` raise on a full list, an

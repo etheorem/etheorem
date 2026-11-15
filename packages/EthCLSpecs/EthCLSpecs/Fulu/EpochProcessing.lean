@@ -131,7 +131,7 @@ forkdef processInactivityUpdates : StateTransition Unit := do
   let state ← get
   if currentEpochOf state == Const.genesisEpoch then pure ()
   else
-    let eligible := getEligibleValidatorIndices state
+    let eligible ← liftErr (getEligibleValidatorIndices state)
     if eligible.isEmpty then pure ()
     else
       let matchingTarget ← liftErr
@@ -171,7 +171,7 @@ forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) :
   let unslashedIncrements := (← getTotalBalance state unslashed) / Const.effectiveBalanceIncrementG
   let activeIncrements := (← getTotalActiveBalance state) / Const.effectiveBalanceIncrementG
 
-  for vi in getEligibleValidatorIndices state do
+  for vi in (← getEligibleValidatorIndices state) do
     let i := vi.toNat
     let baseReward ← getBaseReward state vi
     if unslashed.contains vi then
@@ -202,7 +202,7 @@ forkdef getInactivityPenaltyDeltas (state : State) : Except StateTransitionError
   let mut penalties := Array.replicate validators.size (0 : Gwei)
   let matchingTarget ← getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state)
 
-  for vi in getEligibleValidatorIndices state do
+  for vi in (← getEligibleValidatorIndices state) do
     let i := vi.toNat
     if !matchingTarget.contains vi then
       let score ← sszGetIdx iscores i
@@ -215,13 +215,15 @@ forkdef getInactivityPenaltyDeltas (state : State) : Except StateTransitionError
   return penalties
 
 /-- Apply per-validator `(rewards, penalties)` to balances. `increaseBalance` rejects on a
-`uint64` overflow, so the fold runs in `StateTransition`. -/
+`uint64` overflow, so the fold runs in `StateTransition`. Each step casts the position with
+`ValidatorIndex(index)`, which raises at `2 ^ 64` or above (`checkedIndex`). -/
 forkdef applyDeltas (rewards penalties : Array Gwei) (state : State) :
     StateTransition State := do
   let mut state := state
   for i in [0 : (sszGet state validators).size] do
-    state ← increaseBalance state (UInt64.ofNat i) (rewards[i]!)
-    state ← decreaseBalance state (UInt64.ofNat i) (penalties[i]!)
+    let vi ← checkedIndex i "process_rewards_and_penalties: ValidatorIndex(index)"
+    state ← increaseBalance state vi (rewards[i]!)
+    state ← decreaseBalance state vi (penalties[i]!)
   return state
 
 /-- `process_rewards_and_penalties`. -/
@@ -241,7 +243,9 @@ forkdef processRewardsAndPenalties : StateTransition Unit := do
 
 /-- `process_registry_updates` (Electra: activation-eligibility, ejections, and
 churn-unlimited activations in one pass). The three cases are the pyspec's
-`if / elif / elif`, so a validator takes at most one of them per epoch. -/
+`if / elif / elif`, so a validator takes at most one of them per epoch. The two field writes
+go to the walked element, and only the ejection casts the position with
+`ValidatorIndex(index)`, which raises at `2 ^ 64` or above (`checkedIndex`). -/
 forkdef processRegistryUpdates : StateTransition Unit := do
   let currentEpoch := currentEpochOf (← get)
   let activationEpoch ← liftErr (computeActivationExitEpoch currentEpoch)
@@ -251,11 +255,11 @@ forkdef processRegistryUpdates : StateTransition Unit := do
     let state ← get
     let validator := sszGet state validators[idx]!
     if isEligibleForActivationQueue validator then
-      modifyState fun state => modValidator state (UInt64.ofNat idx) fun validator => { validator with activationEligibilityEpoch := currentEpoch + 1 }
+      modifyState fun state => modValidatorAt state idx fun validator => { validator with activationEligibilityEpoch := currentEpoch + 1 }
     else if isActiveValidator validator currentEpoch && validator.effectiveBalance ≤ Const.ejectionBalanceG then
-      initiateValidatorExit (UInt64.ofNat idx)
+      initiateValidatorExit (← checkedIndex idx "process_registry_updates: ValidatorIndex(index)")
     else if isEligibleForActivation state validator then
-      modifyState fun state => modValidator state (UInt64.ofNat idx) fun validator => { validator with activationEpoch := activationEpoch }
+      modifyState fun state => modValidatorAt state idx fun validator => { validator with activationEpoch := activationEpoch }
 
 /-! ## Slashings (epoch penalty) -/
 
@@ -285,7 +289,7 @@ forkdef processSlashings : StateTransition Unit := do
       if target == validator.withdrawableEpoch then
         let penalty ← checkedMul penaltyPerIncrement (validator.effectiveBalance / increment)
           "process_slashings: penalty_per_effective_balance_increment * effective_balance_increments"
-        state ← decreaseBalance state (UInt64.ofNat i) penalty
+        state ← decreaseBalance state (← checkedIndex i "process_slashings: ValidatorIndex(index)") penalty
   set state
 
 /-! ## Pending deposits (Electra deposit queue) -/
@@ -332,12 +336,14 @@ forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (
 
     -- Read the deposit's validator once, if its pubkey is known, and derive the two flags
     -- the spec branches on. An unknown pubkey leaves both false, so it falls through to the
-    -- churn check.
-    let (isWithdrawn, isExited) := match validatorIndexByPubkey? state deposit.pubkey with
-      | some vi =>
+    -- churn check. The read casts the position with `ValidatorIndex(...)`, which raises at
+    -- `2 ^ 64` or above.
+    let (isWithdrawn, isExited) ← match validatorIndexByPubkey? state deposit.pubkey with
+      | some vi => do
+        let _ ← checkedIndex vi "process_pending_deposits: ValidatorIndex(validator_pubkeys.index(deposit.pubkey))"
         let v := sszGet state validators[vi]!
-        (decide (v.withdrawableEpoch < nextEpoch), decide (v.exitEpoch < Const.farFutureEpoch))
-      | none => (false, false)
+        pure (decide (v.withdrawableEpoch < nextEpoch), decide (v.exitEpoch < Const.farFutureEpoch))
+      | none => pure (false, false)
 
     if isWithdrawn then applyPendingDeposit deposit; return advance s.processed s.postpone
     else if isExited then return advance s.processed (s.postpone.push deposit)
@@ -443,7 +449,7 @@ forkdef processEffectiveBalanceUpdates : StateTransition Unit := do
         pure (decide (upper < balance))
     if update then
       let newEff := umin (balance - balance % Const.effectiveBalanceIncrementG) (getMaxEffectiveBalance validator)
-      set (modValidator state (UInt64.ofNat i) (fun validator => { validator with effectiveBalance := newEff }))
+      set (modValidatorAt state i (fun validator => { validator with effectiveBalance := newEff }))
 
 /-- `process_slashings_reset`: zero the next epoch's slashings slot. The index is in
 range by construction (`nextEpoch % EPOCHS_PER_SLASHINGS_VECTOR`), so the infallible

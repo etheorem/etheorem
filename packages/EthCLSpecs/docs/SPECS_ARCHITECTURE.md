@@ -794,7 +794,9 @@ forkdef isValidDepositSignature (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gw
 forkdef applyPendingDeposit (deposit : PendingDeposit) : StateTransition Unit := do
   let state ← get
   match validatorIndexByPubkey? state deposit.pubkey with
-  | some vi => set (← increaseBalance state (UInt64.ofNat vi) deposit.amount)
+  | some vi =>
+    let index ← checkedIndex vi "apply_pending_deposit: ValidatorIndex(validator_pubkeys.index(deposit.pubkey))"
+    set (← increaseBalance state index deposit.amount)
   | none    =>
       if isValidDepositSignature deposit.pubkey deposit.withdrawalCredentials deposit.amount deposit.signature then
         addValidatorToRegistry deposit.pubkey deposit.withdrawalCredentials deposit.amount
