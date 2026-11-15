@@ -198,6 +198,12 @@ Three properties follow.
 - **A plain expression needs no bind until it divides.** `len xs + len ys * 2 - 1` has type
   `CLInt`. `(len xs + 1) / len ys` has type `Checked CLInt`.
 
+One operator result leaves the `Checked` world on purpose: division and modulo by a
+`PositiveDivisor`, a wrapper that carries its divisor's positivity (§4.5), return a plain
+`CLUint64` with no raise. `slot / Const.slotsPerEpoch` is the shape at every pure call site.
+Only divisors went total; every other operator keeps its `Checked` result even where a site
+cannot raise, so the type still says what the pyspec does.
+
 ### 4.3 Binding
 
 An arithmetic expression is a `Checked` value. A `do` block binds it with `←`, once for the
@@ -292,8 +298,15 @@ write helper takes the same class. `SizzLean` keeps `Nat` indices.
 
 In the prototype the read returns a `Checked` value. A read is then an operand like any other,
 and `balances[index] + delta` is one expression. A read of a structure needs one bind before
-the field. `sszGetIdx` returns in the ambient monad today, so its result type is a choice still
-to make.
+the field.
+
+The choice is closed: the raising read returns in the ambient monad. A `Checked` read saves at
+most one bind, and it costs reject fidelity. Its fault is an `ArithFault`, and the lift of
+Section 4.4 turns that into `.arithmetic`, the uncaught-fault shape. The pyspec read raises
+`IndexError` there, which the harness's `expect_assertion_error` catches, so a `Checked` read
+scores a caught reject as an uncaught fault. Probes at three read sites, both ways, settled the
+choice. The pure context keeps a `Checked` read, `getAt` in
+`EthCLLib/Spec/State.lean`.
 
 ### 4.7 The operator elaborator
 
@@ -305,6 +318,16 @@ A scoped term elaborator in `EthCLLib.Spec` handles this case. It elaborates the
 with no expected type. If the result is a `Checked` expression it keeps the term, and the lift
 of Section 4.4 bridges to the monad. Any other tree falls through to core unchanged. When an
 operand type is still unknown, as for a lambda binder that a later argument fixes, it waits.
+
+One shape mis-elaborates. A bare `let x ← e1 % e2` in a `StateTransition` do-block fails when
+the dividend is itself a prior do-bind and an operand is a non-literal `Nat`: instance search
+then keys the operator on the monad, and it finds `HMod CLUint64 Nat (StateTransition …)`.
+`+` and `/` share the hazard, and a tree at root position, the whole body of a definition,
+hits it too. Two escapes exist, and neither hides a raise. An ascription,
+`(e1 % e2 : Checked _)`, hands the elaborator the type it needs. At root position the `Nat`
+operand can take the trusted route instead, `CLUint64.trustedOfUInt64`, the named route
+`EthCLLib/Spec/CLUint.lean` reserves for decoded and constant values, and the operator then
+picks the checked instance on its operand types.
 
 ## 5. Rationale
 
@@ -319,9 +342,9 @@ behaviour to match.
 | `a - b` below zero | raises | wraps modulo `2^64` | raises |
 | `a * b` past the maximum | raises | wraps modulo `2^64` | raises |
 | `a // 0`, `a % 0` | raises | `0`, `a` | raises |
-| `a ** n` past the maximum | raises | wraps modulo `2^64` | not built |
-| `a << n` past the maximum | raises | drops the high bits; shift taken modulo 64 | not built |
-| `a >> n`, bitwise operators | in range | in range for `n < 64` | not built |
+| `a ** n` past the maximum | raises | wraps modulo `2^64` | raises |
+| `a << n` past the maximum | raises | drops the high bits; shift taken modulo 64 | raises |
+| `a >> n`, bitwise operators | in range; the shift count is not taken modulo 64 | in range for `n < 64` | in range, total |
 | a comparison | a `bool` | a `Bool` | a `Bool` |
 | a cast from an out-of-range `int` | raises | `UInt64.ofNat` wraps | raises |
 | the operator on a plain `int` operand | checked, result is `Uint64` | no instance; `UInt64.ofNat` wraps | checked, result is `CLUint64` |
@@ -329,6 +352,14 @@ behaviour to match.
 
 Core `UInt64` differs from the pyspec in every row that can raise. No setting changes that: the
 operators are total functions, and a total function has no way to raise.
+
+The library computes `**` and `<<` unbounded and range-tests the result (`ssz/uint.py`,
+Section 8), so both raise past the maximum, and `CLUint64` does the same. `>>` is total: for a
+count of `n ≥ 0` the result is at most `a`, and `a` is in range, so the range test cannot
+fire. The count is not taken modulo 64; `Uint64(7) >> 64` is `Uint64(0)`. The one raising
+shift route is a plain `int` base on the left. The library's `__rrshift__` range-tests its
+plain result like any cast. Every edge in the three rows is pinned in
+`EthCLLib/Tests/CLUintEdges.lean` against the pin.
 
 ### 5.2 The plain kind, operation by operation
 
@@ -438,6 +469,20 @@ Most errors of the first and third kinds mark a site where the model returned a 
 pyspec raises. A loop of four operators over 200 million passes ran in 2.0 s with raw
 operators, 2.0 s with the named helpers, and 2.16 s with `CLUint64`.
 
+Two costs sit outside the table.
+
+- **The cache classifies by the `SSZRepr` shape.** When `Gwei := CLUint64` first ran
+  under the full harness, the SizzLean cache's indexed-write path classified elements by the
+  core type name (`Bool`, `UInt8..64`, `BitVec 1`). The new type fell to the composite path,
+  and 36 smoke vectors failed: the boxed state rooted its pre value while the serialized view
+  was byte-correct. The rule the fix states: any layer that classifies SSZ elements follows
+  the `SSZRepr` shape, the `.uintN` / `.bool` pack, never the Lean type name. SizzLean's
+  `Cache/Update.lean` (`isBasicByShape`) carries it.
+- **Tier premises flow by merge.** A wrapper type with a proof premise, such as
+  `PositiveDivisor`'s `pos`, needs that premise to reach the constants of the forks that
+  inherit a parent tier. The Gloas and Heze `Constants` inherits carried the premise once;
+  a later tier merge repeats it.
+
 ## 6. What the rule allows and forbids
 
 The rule fixes when the model raises. It leaves the form of the test open.
@@ -465,36 +510,55 @@ Forbidden:
 
 ## 7. Status and open work
 
+Every part below exists in the tree. The table names the file that carries it. The findings log
+and the stage reports under `mb/spec-arithmetics-spike/` are the record behind the numbers.
+
 | Part | State |
 |---|---|
-| `CLUint64`, `Checked`, `ArithFault`, the five operators with value, expression, and `Nat` operands | Built in a first spike, as one module for `EthCLLib/Spec/`. Not in the tree |
-| The lift, the operator elaborator, `SSZRepr CLUint64` | Built in the same module |
-| `Gwei` as `CLUint64` in Fulu | Ported in the first spike, and Fulu builds with it. Not in the tree. No conformance run: the runner links all three forks |
-| `CLInt` and its mixed operators | Standalone prototype |
-| `ToIndex` and the raising read over it | Standalone prototype, on `Array` |
-| `Slot`, `Epoch`, `ValidatorIndex`, and bare `Uint64` constants as `CLUint64` | Not started |
-| Gloas, Heze, and the proofs | Not ported. With the Fulu port applied, `Gloas/EpochProcessing` and `Proofs/Fulu/Balances` fail first |
+| `CLUint64`, `Checked`, `ArithFault`, the five operators of Section 4.2 plus `**` and the shifts, the private constructor, the literal gate, the lift, the operator elaborator, `PositiveDivisor`, `SSZRepr CLUint64` | In the tree, `EthCLLib/Spec/CLUint.lean` |
+| `CLInt` and its mixed operators | In the tree, `EthCLLib/Spec/CLInt.lean` |
+| `ToIndex`, the raising read `sszGetIdx`, and the pure `Checked` read `getAt` (Section 4.6) | In the tree, `EthCLLib/Spec/State.lean` |
+| The lemma set and the `simp_arith` chain set | In the tree, `EthCLLib/Proofs/CLUint.lean` |
+| The linter for a dropped expression (Section 4.3) | In the tree, `EthCLLib/Spec/DroppedCheckedLint.lean`, option `linter.droppedChecked` |
+| `Gwei`, `Epoch`, `Slot`, and `ValidatorIndex` as `CLUint64`; `ParticipationFlags` as `CLUint8` | The abbreviations sit in `EthCLSpecs/Fulu/Types.lean`; Gloas and Heze inherit. `addFlag` and `hasFlag` sit in `EthCLLib/Spec/Arith.lean` |
+| The operator edges of Section 5.1 | Pinned in `EthCLLib/Tests/CLUintEdges.lean` |
+| The raises of the four former wrap sites | Pinned in `EthCLSpecs/Tests/FuluArithPins.lean` |
+| Gloas, Heze, and the proofs | Ported. `lake build EthCLSpecs` is green, and the full vector matrix equals `main` at both presets on all three forks |
 
 Open work, in the order it blocks:
 
-1. **Conformance.** Port Gloas and Heze for `Gwei`, then run the vectors against the Fulu port.
-2. **Proofs.** Repair `Proofs/Fulu/Balances`, which states `increaseBalance` with a raw `+`. The
-   statement form is `(∃ c, a + b = .ok c) ↔ a.toPlainInt + b.toPlainInt < 2^64`; that lemma is
-   proved in a standalone prototype.
-3. **The other units.** Each unit left as `UInt64` forces a hand conversion where it meets a
-   migrated one. Four such sites exist in the Fulu port.
-4. **The remaining operators.** `**` and the shifts for `CLUint64`; the shift for `CLInt`.
-5. **Widths.** `Uint8`, `Uint32`, and `Uint256` appear in the pyspec. Each needs the same
-   instance set.
-6. **The private constructor and the literal bound.** `CLUint64.mk` is public in the first
-   spike, and a literal past `2^64` wraps.
-7. **A linter for a dropped expression.** Section 4.3 states the rule for authors. A check that
-   flags a `Checked` value some path never binds would enforce it.
-8. **Unit types.** Distinct types for `Slot`, `Epoch`, and `Gwei` would turn a unit mix into a
-   type error (Section 3.4). The rule does not need them.
-9. **Harness classes.** The driver sorts model errors by the Python exception class the
+1. **The build-time budget.** Cold `lake build EthCLSpecs` measured 1.57 times `main`
+   (10m59s against 6m58s, stable across two runs), past the spike's 1.5x stop bound. Run time
+   is at parity: the profile case moved +0.3%, and the epoch-processing suite +0.36%. The
+   growth divides to about +390ms per job across the 621 jobs. One profiled module shows the
+   do-element elaborator up 63ms of about 800ms, so that module holds no hotspot; no second
+   module was profiled. The levers are the elaborator's per-tree retry, the size of the
+   instance lattice, and the proof files' elaboration. The item closes when the budget is
+   accepted or the elaboration cost is attacked.
+2. **The unmoved units.** `WithdrawalIndex`, `BuilderIndex`, `CommitteeIndex`, and the time
+   clock. A unit left as raw `UInt64` wraps where the pyspec raises, and it forces a hand
+   conversion where it meets a migrated one; the `WithdrawalIndex` increments are the recorded
+   case. Each port is the shape the `Epoch` and `Slot` ports ran.
+3. **The `slotDurationMsDiv` wrapper.** `computeSlotAtTimeMs` divides by the config value
+   `slotDurationMs` with no positivity premise, so Lean returns `0` where the pyspec raises.
+   Both shipped configs are nonzero, so no vector reaches it; `DISCREPANCIES.md` records the
+   row. A config-value wrapper in the `PositiveDivisor` form closes it.
+4. **The remaining widths.** `Uint32` and `Uint256` appear in the pyspec and have no checked
+   type yet. Each needs the instance set `CLUint64` and `CLUint8` carry. `CLInt` still has no
+   shift (Section 5.2).
+5. **The `CODING_STYLE.md` worked example.** The text-faithful `process_pending_deposits`
+   needs no scan fuel, which deletes a shape the example still teaches. Re-author it.
+6. **Harness classes.** The driver sorts model errors by the Python exception class the
    reference wrapper catches (`FRAMEWORK_ARCHITECTURE.md` §6). That section treats a full list
    as a bare `Exception`. At the pin a full list raises `SSZValueError`.
+
+Two notes from the review of the cost stage:
+
+- **A cast fault records the value once.** The narrowing routes for a `Nat` or a raw `UInt64`
+  operand name no second operand, so the fault's second operand field holds `0`
+  (`EthCLLib/Tests/CLUintEdges.lean` pins the shape).
+- **The shift counts are unbounded on both sides.** `a >> n` is total for any count, and no
+  in-tree site calls `**` or the shifts at the pin (Section 5.1).
 
 `FRAMEWORK_ARCHITECTURE.md` §10 describes the arithmetic layer as built on `main`. It assumes
 that the pyspec computes in unbounded integers and that the spec text keeps every intermediate

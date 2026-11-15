@@ -57,6 +57,28 @@ vectors passed before and after, so the rows cite the spec text alone.
 | `fulu/beacon-chain.md:415`, `process_pending_deposits` | stopped at the eth1 bridge; the text has no such stop | Fixed in Lean |
 | `fulu/beacon-chain.md:115`, `process_execution_payload` | no bound on the blob count; the text asserts `len(body.blob_kzg_commitments) <= get_blob_parameters(get_current_epoch(state)).max_blobs_per_block` | Fixed in Lean (`BLOB_SCHEDULE`, `get_blob_parameters`) |
 
+The checked-arithmetic port (`SPEC_ARITHMETIC.md`) found four more Lean-side gaps that no vector
+observed: four sites where Lean's raw `UInt64` wrapped and the pyspec raises. `Epoch` and `Slot`
+moved to the checked type, all four sites now raise where the pyspec raises, and
+`EthCLSpecs/Tests/FuluArithPins.lean` pins each raise at a value near `2^64`. The Gloas
+`registry_updates` substep is inherited, so the `initiate_validator_exit` fix propagated as the
+overflow fix above did.
+
+| Spec citation | Lean-side gap | Resolution |
+|---|---|---|
+| `phase0/beacon-chain.md`, `compute_start_slot_at_epoch` | `epoch * SLOTS_PER_EPOCH` wrapped; the pyspec raises at the multiply's out-of-range product | Fixed in Lean, pinned in `FuluArithPins.lean` |
+| `phase0/beacon-chain.md`, `compute_activation_exit_epoch` | `epoch + 1 + MAX_SEED_LOOKAHEAD` wrapped at the top of the chain | Fixed in Lean, pinned in `FuluArithPins.lean` |
+| `electra/beacon-chain.md`, `initiate_validator_exit` | `withdrawable_epoch = exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY` wrapped | Fixed in Lean, pinned in `FuluArithPins.lean` |
+| `electra/beacon-chain.md`, `process_withdrawal_request` | the same sum at the partial withdrawal's `withdrawable_epoch` bind | Fixed in Lean, pinned in `FuluArithPins.lean` |
+
+Two corners of the checked arithmetic are recorded rather than fixed. No vector reaches either,
+and both stay on the record per the policy above.
+
+| Vector id | Spec citation | Upstream issue | Resolution |
+|---|---|---|---|
+| none; no vector reaches it | `electra/beacon-chain.md`, `process_attestation` (the committee-coverage checks) | none | Recorded. On a state slot near `2^64`, a later committee's arithmetic fault can preempt an earlier rung's caught assert reject in `verifyCommitteeCoverage`. The fault order differs from the pyspec; both sides reject, and the harness classifies both as rejects. |
+| none; no shipped config reaches it | `phase0/beacon-chain.md`, `compute_slot_at_time_ms` | none | Recorded. `computeSlotAtTimeMs` divides by the config value `slotDurationMs` with no positivity premise, so Lean returns `0` where the pyspec raises `ZeroDivisionError`. Both shipped configs are nonzero. `SPEC_ARITHMETIC.md` §7 lists the wrapper that closes it. |
+
 ## Gloas
 
 _No open discrepancies._ Gloas is fully ported (the EIP-7732 ePBS spine, that is the
