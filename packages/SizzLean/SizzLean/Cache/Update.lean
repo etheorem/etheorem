@@ -622,14 +622,29 @@ private def walkPath (rootType : Expr) (path : Array PathStep) :
           throwError "sszUpdate: index `[…]` requires the current type to be `Vector` or `SSZList`, got {curType}"
   let some ty := terminalType? | throwError "sszUpdate: walk produced no terminal type"
   return (pieces, ty, projDrop)
-where
-  isCompositeElem (α : Expr) : MetaM Bool := do
-    let αW ← whnf α
-    if αW.isConstOf ``Bool then return false
-    if αW.isConstOf ``UInt8 || αW.isConstOf ``UInt16 ||
-       αW.isConstOf ``UInt32 || αW.isConstOf ``UInt64 then return false
-    if αW.isAppOfArity ``BitVec 1 then return false
-    return true
+  where
+    isCompositeElem (α : Expr) : MetaM Bool := do
+      let αW ← whnf α
+      if αW.isConstOf ``Bool then return false
+      if αW.isConstOf ``UInt8 || αW.isConstOf ``UInt16 ||
+         αW.isConstOf ``UInt32 || αW.isConstOf ``UInt64 then return false
+      if αW.isAppOfArity ``BitVec 1 then return false
+      if ← isBasicByShape αW then return false
+      return true
+
+    /-- The shape-driven half of the basic/composite split. The whitelist above names the
+    core types; this asks the element's own `SSZRepr` shape. A `.uintN` or `.bool` shape
+    packs with its neighbours whatever Lean type carries it (a checked integer over
+    `UInt64`, say), so a wrapper type must not turn a packed element into a per-element
+    subtree. Synthesis failure or a stuck shape keeps the composite default: the write
+    then errors loudly in `gindexBits` arithmetic instead of packing wrongly. -/
+    isBasicByShape (αW : Expr) : MetaM Bool := do
+      let some inst ← Meta.synthInstance? (mkApp (mkConst ``SizzLean.SSZRepr) αW)
+        | return false
+      let shape ← whnf (mkApp2 (mkConst ``SizzLean.SSZRepr.shape) αW inst)
+      if shape.isAppOfArity ``SizzLean.Spec.SSZType.uintN 1 then return true
+      if shape.isConstOf ``SizzLean.Spec.SSZType.bool then return true
+      return false
 
 /-- Concatenate `BitsPiece` pieces into a single `List Bool` term
 expression. Literal pieces are spliced as list literals; runtime

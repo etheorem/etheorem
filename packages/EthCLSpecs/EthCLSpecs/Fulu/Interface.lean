@@ -226,6 +226,9 @@ private def viableForHeadLeaves [Preset] [Config] [HasherTag] (store : Store has
         let children := (getNodeChildren (map := hashMap) store node).filter nodes.contains
         if children.isEmpty then
           let weight ← getWeight (map := hashMap) store node
+          -- `toPlainInt` reason: the weight leaves the model only as a datum of the
+          -- check tuple the test compares; the helper computes no arithmetic on it, and
+          -- the pyspec weight is already a final checked `Gwei`, so no raise hides here.
           leaves := leaves.push (vecToBytes node, weight.toPlainInt, none)
         else pending := pending ++ children
     pure leaves

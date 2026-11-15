@@ -130,7 +130,7 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
     let d1 ← liftErr (getFlagIndexDeltas state 1)
     let d2 ← liftErr (getFlagIndexDeltas state 2)
     pure #[← mkDeltas d0, ← mkDeltas d1, ← mkDeltas d2,
-      ← mkDeltas (zeros, getInactivityPenaltyDeltas state)]
+      ← mkDeltas (zeros, ← getInactivityPenaltyDeltas state)]
 
 /-- Decode a plain (non-boxed) SSZ operation value. -/
 private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
@@ -211,6 +211,10 @@ private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
     for sb in signedBlocks do stateTransition sb
   RunError.ofSpec (runToRoot box0 action)
 
+-- The two spine folds (pre-fork Gloas + post-fork Heze) make the compiled form heavy
+-- enough that the compiler's LCNF pass needs more than the default heartbeats; the bump
+-- is scoped to this declaration.
+set_option maxHeartbeats 1000000 in
 /-- `runTransition` (the `transition` format, Gloas→Heze): fold the pre-fork blocks under
 Gloas `state_transition`, advance the Gloas state to the fork-epoch boundary, apply
 `upgradeToHeze` (see its docstring), then fold the post-fork blocks under the
@@ -269,16 +273,18 @@ private def queryHead [Preset] [Config] [HasherTag] (store : Store hashMap) :
 (`get_viable_for_head_checks`, `helpers/fork_choice.py:585-601`): walk from the justified root's
 PENDING node, stepping into every child that is in the filtered node tree, and collect each
 node with no such child, with its `get_weight` and payload status. A test-helper walk, not a
-spec function, so it lives with the interpreter. Each node is visited once, so twice the block
-count plus two bounds the stack walk; fuel-out returns the leaves found so far, which then
-fail the comparison loudly. -/
+spec function, so it lives with the interpreter. Each node is visited once, and one block root
+holds up to three nodes (its PENDING node, an EMPTY child, and, when the payload envelope is
+verified, a FULL child; `get_node_children`), so three times the block count plus two bounds
+the stack walk; fuel-out returns the leaves found so far, which then fail the comparison
+loudly. -/
 private def viableForHeadLeaves [Preset] [Config] [HasherTag] (store : Store hashMap) :
     Except StoreTransitionError (Array (ByteArray × Nat × Option Nat)) :=
   let walk : EStateM StoreTransitionError (Store hashMap) (Array (ByteArray × Nat × Option Nat)) := do
     let nodes ← getFilteredNodeTree (map := hashMap) store
     let mut pending : Array ForkChoiceNode := #[.pending store.justifiedCheckpoint.root]
     let mut leaves : Array (ByteArray × Nat × Option Nat) := #[]
-    for _ in [0:2 * (FcMap.keys store.blocks).length + 2] do
+    for _ in [0:3 * (FcMap.keys store.blocks).length + 2] do
       match pending.back? with
       | none => break
       | some node =>
@@ -286,7 +292,10 @@ private def viableForHeadLeaves [Preset] [Config] [HasherTag] (store : Store has
         let children := (← getNodeChildren (map := hashMap) store node).filter nodes.contains
         if children.isEmpty then
           let weight ← getWeight (map := hashMap) store node
-          leaves := leaves.push (vecToBytes node.root, weight.toNat, some node.payloadStatus.toNat)
+          -- `toPlainInt` reason: the weight leaves the model only as a datum of the
+          -- check tuple the test compares; the helper computes no arithmetic on it, and
+          -- the pyspec weight is already a final checked `Gwei`, so no raise hides here.
+          leaves := leaves.push (vecToBytes node.root, weight.toPlainInt, some node.payloadStatus.toNat)
         else pending := pending ++ children
     pure leaves
   runQuery store walk
@@ -389,6 +398,10 @@ private def fcInterpretHeze [Preset] [Config] [HasherTag] [CryptoBackend]
     | .checkProposerHead _ => throw (StoreTransitionError.todo "get_proposer_head check: not modeled")
   pure ()
 
+-- The ePBS step arms make the compiled form heavy enough that the compiler's LCNF
+-- pass needs more than the default heartbeats; the bump is scoped to this declaration.
+-- The arms live in `fcInterpretHeze`, but its single use inlines into this wrapper.
+set_option maxHeartbeats 1000000 in
 /-- `runForkChoice` (Heze): decode the anchor state / block, build the ePBS store, and run
 the step interpreter. -/
 private def runForkChoiceImpl (P : Preset) (C : Config) (anchorStateBytes anchorBlockBytes : ByteArray)
