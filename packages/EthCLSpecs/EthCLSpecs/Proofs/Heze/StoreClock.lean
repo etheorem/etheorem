@@ -406,14 +406,14 @@ theorem NodeTrace.ckptWit {A : BeaconState} {a : BeaconBlock} {s0 s : Store map}
         rw [onBlock_run_of_known sb pre post hknown hrun]
         exact ⟨wj, wf, wuj, wuf⟩
       have hpre := hinv events [.handler (.block sb)] arrs pre rfl htrace
-      obtain ⟨pv, w, u, hps, htrans, -, hbsu, hck, hpull⟩ :=
+      obtain ⟨pv, w, u, hps, htrans, -, hbsu, hck, hpull, -⟩ :=
         onBlock_run_ckpt sb pre post hpre.slot.statesPure hknown hrun
       obtain ⟨j1, f1, uj1, uf1, -, bs1⟩ :=
         updateCheckpoints_ckpt u w.currentJustifiedCheckpoint w.finalizedCheckpoint
       have hl : FcMap.lookup (updateCheckpoints u w.currentJustifiedCheckpoint
           w.finalizedCheckpoint).blockStates (htr sb.message) = some (pureState w) := by
         rw [bs1, hbsu, LawfulFcMap.lookup_insert_self]
-      obtain ⟨pulled, hjf, -, -, puj, puf, hj⟩ := computePulledUpTip_run_ok _ w _ post hl hpull
+      obtain ⟨pulled, hjf, -, -, puj, puf, hj, -⟩ := computePulledUpTip_run_ok _ w _ post hl hpull
       -- The state after the block is on a run from `A`, at the block slot.
       obtain ⟨steps0, hrun0, -, -⟩ := hpre.chains _ pv hps
       obtain ⟨nk, hrunT⟩ := stateTransition_chainRun sb true (2 ^ 64 - 1)
@@ -556,14 +556,14 @@ theorem NodeTrace.ckptAbove {A : BeaconState} {a : BeaconBlock} {s0 s : Store ma
         -- A known block leaves the store unchanged.
         rw [onBlock_run_of_known sb pre post hknown hrun]
         exact ⟨wj, wf, wuj, wuf⟩
-      obtain ⟨pv, w, u, -, -, -, hbsu, hck, hpull⟩ :=
+      obtain ⟨pv, w, u, -, -, -, hbsu, hck, hpull, -⟩ :=
         onBlock_run_ckpt sb pre post hpre hknown hrun
       obtain ⟨j1, f1, uj1, uf1, -, bs1⟩ :=
         updateCheckpoints_ckpt u w.currentJustifiedCheckpoint w.finalizedCheckpoint
       have hl : FcMap.lookup (updateCheckpoints u w.currentJustifiedCheckpoint
           w.finalizedCheckpoint).blockStates (htr sb.message) = some (pureState w) := by
         rw [bs1, hbsu, LawfulFcMap.lookup_insert_self]
-      obtain ⟨pulled, -, -, -, puj, puf, hj⟩ := computePulledUpTip_run_ok _ w _ post hl hpull
+      obtain ⟨pulled, -, -, -, puj, puf, hj, -⟩ := computePulledUpTip_run_ok _ w _ post hl hpull
       simp only [storeCkpts, Prod.mk.injEq] at hck
       obtain ⟨cj, cf, cuj, cuf⟩ := hck
       have mj : Above A a (updateCheckpoints u w.currentJustifiedCheckpoint

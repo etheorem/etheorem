@@ -302,14 +302,14 @@ theorem CkptInv.onBlock
   rotate_left
   · exact .inr (.inl hc)
   · exact .inr (.inr hc)
-  obtain ⟨pv, w, u, hps, htrans, hbu, hbsu, hck, hpull⟩ :=
+  obtain ⟨pv, w, u, hps, htrans, hbu, hbsu, hck, hpull, -⟩ :=
     onBlock_run_ckpt sb pre post hpre.slot.statesPure hnew h
   obtain ⟨j1, f1, uj1, uf1, b1, bs1⟩ :=
     updateCheckpoints_ckpt u w.currentJustifiedCheckpoint w.finalizedCheckpoint
   have hl : FcMap.lookup (updateCheckpoints u w.currentJustifiedCheckpoint
       w.finalizedCheckpoint).blockStates (htr sb.message) = some (pureState w) := by
     rw [bs1, hbsu, EthCLLib.Proofs.LawfulFcMap.lookup_insert_self]
-  obtain ⟨pulled, hjf, pb, pbs, puj, puf, hj⟩ := computePulledUpTip_run_ok _ w _ post hl hpull
+  obtain ⟨pulled, hjf, pb, pbs, puj, puf, hj, -⟩ := computePulledUpTip_run_ok _ w _ post hl hpull
   have hpb : post.blocks = FcMap.insert pre.blocks (htr sb.message) sb.message :=
     pb.trans (b1.trans hbu)
   have hpbs : post.blockStates = FcMap.insert pre.blockStates (htr sb.message) (pureState w) :=

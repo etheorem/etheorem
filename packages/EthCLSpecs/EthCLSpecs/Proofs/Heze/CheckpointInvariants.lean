@@ -585,9 +585,9 @@ end Tick
 section Block
 variable [Preset] [HasherTag] [Config] {map : MapKind} [FcMap map]
 
-/-- The block maps and the four checkpoints of a store. -/
+/-- The block maps, the four checkpoints, and the unrealized justifications of a store. -/
 def ckptMaps (s : Store map) :=
-  (s.blocks, s.blockStates, storeCkpts s)
+  (s.blocks, s.blockStates, storeCkpts s, s.unrealizedJustifications)
 
 omit [Config] in
 /-- A successful `getOrThrow` read found its value at the key, and kept the store. -/
@@ -661,7 +661,9 @@ theorem computePulledUpTip_run_ok (root : Root) (w : BeaconState) (u post : Stor
           post.finalizedCheckpoint = u.finalizedCheckpoint) ∨
         (post.justifiedCheckpoint =
             ckptPick u.justifiedCheckpoint pulled.currentJustifiedCheckpoint ∧
-          post.finalizedCheckpoint = ckptPick u.finalizedCheckpoint pulled.finalizedCheckpoint)) := by
+          post.finalizedCheckpoint = ckptPick u.finalizedCheckpoint pulled.finalizedCheckpoint)) ∧
+      post.unrealizedJustifications =
+        FcMap.insert u.unrealizedJustifications root pulled.currentJustifiedCheckpoint := by
   unfold computePulledUpTip at h
   have h := run_get_bind_eq_ok _ _ _ h
   -- The stored state, then the pull-up.
@@ -704,12 +706,20 @@ theorem computePulledUpTip_run_ok (root : Root) (w : BeaconState) (u post : Stor
       (updateUnrealizedCheckpoints u1 pulled.currentJustifiedCheckpoint
         pulled.finalizedCheckpoint)
       pulled.currentJustifiedCheckpoint pulled.finalizedCheckpoint
-    refine ⟨b'.trans ub, bs'.trans ubs, uj'.trans ujs, uf'.trans ufs, .inr ⟨?_, ?_⟩⟩
+    refine ⟨b'.trans ub, bs'.trans ubs, uj'.trans ujs, uf'.trans ufs, .inr ⟨?_, ?_⟩,
+      by
+        simp only [updateCheckpoints, updateUnrealizedCheckpoints]
+        repeat' split
+        all_goals rfl⟩
     · exact j'.trans (by rw [uj])
     · exact f'.trans (by rw [uf])
   · have e := run_pure_state_eq _ _ _ _ h
     subst e
-    exact ⟨ub, ubs, ujs, ufs, .inl ⟨uj, uf⟩⟩
+    exact ⟨ub, ubs, ujs, ufs, .inl ⟨uj, uf⟩,
+      by
+        simp only [updateUnrealizedCheckpoints]
+        repeat' split
+        all_goals rfl⟩
 
 /-- A successful `onBlock` run on a new block, with its checkpoint writes. A known block
 returns at once (`onBlock_run_of_known`). The run read the parent state `pv`
@@ -732,7 +742,8 @@ theorem onBlock_run_ckpt (sb : SignedBeaconBlock) (pre post : Store map)
       (computePulledUpTip (map := map) (StoreTransition := ForkChoiceStoreRun (Store map))
         (htr sb.message)).run
           (updateCheckpoints u w.currentJustifiedCheckpoint w.finalizedCheckpoint)
-        = .ok ((), post) := by
+        = .ok ((), post) ∧
+      u.unrealizedJustifications = pre.unrealizedJustifications := by
   unfold onBlock at h
   have h := run_get_bind_eq_ok _ _ _ h
   -- A new block passes the known-block return.
@@ -781,8 +792,8 @@ theorem onBlock_run_ckpt (sb : SignedBeaconBlock) (pre post : Store map)
   subst e6
   have e := e4.trans (e2.trans e1)
   simp only [ckptMaps, Prod.mk.injEq] at e
-  obtain ⟨eb, ebs, eck⟩ := e
-  exact ⟨pv, w, _, hpv, htrans, eb, ebs, eck, h⟩
+  obtain ⟨eb, ebs, eck, eunr⟩ := e
+  exact ⟨pv, w, _, hpv, htrans, eb, ebs, eck, h, eunr⟩
 
 end Block
 
@@ -845,13 +856,13 @@ theorem onBlock_ckptGrows (sb : SignedBeaconBlock) (pre post : Store map)
   · rw [onBlock_run_of_known sb pre post hknown h]
     exact CkptGrows.refl _
   have hnew : FcMap.contains pre.blocks (htr sb.message) = false := by simpa using hknown
-  obtain ⟨_, w, u, -, -, -, hbs, hck, hpull⟩ := onBlock_run_ckpt sb pre post hp hnew h
+  obtain ⟨_, w, u, -, -, -, hbs, hck, hpull, -⟩ := onBlock_run_ckpt sb pre post hp hnew h
   obtain ⟨j1, f1, uj1, uf1, -, bs1⟩ :=
     updateCheckpoints_ckpt u w.currentJustifiedCheckpoint w.finalizedCheckpoint
   have hl : FcMap.lookup (updateCheckpoints u w.currentJustifiedCheckpoint
       w.finalizedCheckpoint).blockStates (htr sb.message) = some (pureState w) := by
     rw [bs1, hbs, EthCLLib.Proofs.LawfulFcMap.lookup_insert_self]
-  obtain ⟨pulled, -, -, -, puj, puf, hj⟩ := computePulledUpTip_run_ok _ w _ post hl hpull
+  obtain ⟨pulled, -, -, -, puj, puf, hj, -⟩ := computePulledUpTip_run_ok _ w _ post hl hpull
   simp only [storeCkpts, Prod.mk.injEq] at hck
   obtain ⟨cj, cf, cuj, cuf⟩ := hck
   -- The realized pair of the store between the two writes.

@@ -291,6 +291,61 @@ theorem ChainRun.targetFlag_keep {hi : Nat} (hhi : hi ≤ 2 ^ 64 - 1) {q : List 
     obtain ⟨hs, -⟩ := hstep.slot
     exact ih (by rw [hs]; exact he) (hstep.keeps hf)
 
+/-- A slot step that does not end an epoch writes no participation flag, so a target flag after
+it was set before it. -/
+theorem SlotStep.targetFlag_back {st st' : BeaconState} (h : SlotStep st st')
+    (hlt : st.slot.toNat + 1 < 2 ^ 64) (hb : (st.slot.toNat + 1) % slotsPerEpoch ≠ 0)
+    {i : Nat} {e : Epoch} (hf : TargetFlagSet st' i e) : TargetFlagSet st i e := by
+  obtain ⟨st1, st2, h1, h2, hst'⟩ := h
+  have e1 : ∀ w, partView w i (pureState st1) = partView w i (pureState st) := fun w =>
+    processSlot_frame_part (cur := w) h1
+  have sl1 : st1.slot = st.slot := congrArg Prod.snd (e1 true)
+  have b' : ∀ w, partBit w i (pureState st') = partBit w i (pureState st2) := by
+    intro w
+    rw [hst']
+    rfl
+  have sl' : st'.slot = st2.slot + 1 := by
+    change sszGet (pureState st') slot = _
+    rw [hst']
+    rfl
+  split at h2
+  · rename_i htest
+    exact absurd ((epochTest_iff st1.slot (by rw [sl1]; exact hlt)).mp htest) (by rw [sl1]; exact hb)
+  · rw [h2] at sl' b'
+    have hsn : st'.slot.toNat = st.slot.toNat + 1 := by
+      rw [sl', sl1, UInt64.toNat_add, UInt64.toNat_one, Nat.mod_eq_of_lt hlt]
+    obtain ⟨hcur, hprev⟩ := epochs_eq_of_toNat (a := st') (b := st)
+      (by rw [hsn, succ_div_of_mod_ne hb])
+    have b1 : ∀ w, partBit w i (pureState st1) = partBit w i (pureState st) := fun w =>
+      congrArg Prod.fst (e1 w)
+    unfold TargetFlagSet at hf ⊢
+    rw [hcur, hprev, b', b', b1, b1] at hf
+    exact hf
+
+/-- A run of slot steps inside one epoch writes no participation flag, so a target flag at its
+end was set at its start. -/
+theorem ChainRun.targetFlag_back {hi : Nat} (hhi : hi ≤ 2 ^ 64 - 1) {q : List ChainStep}
+    {u w : BeaconState} (h : ChainRun hi q u w) (hq : blocksOf q = [])
+    (he : u.slot.toNat / slotsPerEpoch = w.slot.toNat / slotsPerEpoch)
+    {i : Nat} {e : Epoch} (hf : TargetFlagSet w i e) : TargetFlagSet u i e := by
+  revert hq he hf
+  induction h with
+  | nil => intro _ _ hf; exact hf
+  | @slot _ st st1 _ hlt hstep hrest ih =>
+    intro hq he hf
+    have hlt' : st.slot.toNat < hi := hlt
+    have hs := hstep.slot (by omega)
+    have hle := hrest.epoch_le hhi
+    by_cases hb : (st.slot.toNat + 1) % slotsPerEpoch = 0
+    · exfalso
+      have := succ_div_of_mod_eq hb
+      rw [← hs] at this
+      omega
+    · have hep := epoch_succ_of_not_boundary hb
+      rw [← hs] at hep
+      exact hstep.targetFlag_back (by omega) hb (ih hq (by omega) hf)
+  | block sb v _ _ _ => intro hq; simp [blocksOf] at hq
+
 end
 
 end EthCLSpecs.Proofs.Heze

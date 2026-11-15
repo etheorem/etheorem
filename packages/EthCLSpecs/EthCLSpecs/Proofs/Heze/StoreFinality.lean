@@ -528,7 +528,7 @@ theorem honestStore_finalizes (hD0 : 0 < slotDurationMs.toNat)
     H.ref.val sb' v' (by rw [hs]; exact List.mem_append_left _ hm)
   have hstate := onBlock_stores_chainState H.ref.hw hc H.ref.hhi H.ref.roots hfill₀ hanc hu hval
     hstep hinv hnew hblk
-  obtain ⟨pv, w', u', -, -, -, hbsu, -, hpull⟩ := onBlock_run_ckpt sb sA sB hpA hnew hblk
+  obtain ⟨pv, w', u', -, -, -, hbsu, -, hpull, -⟩ := onBlock_run_ckpt sb sA sB hpA hnew hblk
   obtain ⟨-, -, -, -, -, bs1⟩ :=
     updateCheckpoints_ckpt u' w'.currentJustifiedCheckpoint w'.finalizedCheckpoint
   have hl : FcMap.lookup (updateCheckpoints u' w'.currentJustifiedCheckpoint

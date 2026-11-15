@@ -260,7 +260,7 @@ theorem onBlock_stores_chainState (hw : ∀ x y : ByteArray,
     (hblk : (onBlock (map := map) (StoreTransition := ForkChoiceStoreRun (Store map)) sb).run sA
       = .ok ((), sB)) :
     FcMap.lookup sB.blockStates (htr sb.message) = some (pureState w) := by
-  obtain ⟨pv, w', s', hps, htrans, -, hbsu, -, hpull⟩ :=
+  obtain ⟨pv, w', s', hps, htrans, -, hbsu, -, hpull, -⟩ :=
     onBlock_run_ckpt sb sA sB hinv.slot.statesPure hnew hblk
   obtain ⟨-, -, -, -, -, bs1⟩ :=
     updateCheckpoints_ckpt s' w'.currentJustifiedCheckpoint w'.finalizedCheckpoint
