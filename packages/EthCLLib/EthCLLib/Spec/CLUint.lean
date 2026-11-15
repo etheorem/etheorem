@@ -1,6 +1,9 @@
 import Lean
 import SizzLean
 import EthCLLib.Spec.Errors
+-- The §4.3 dropped-expression linter. Registered process-globally at import, off by
+-- default; it matches `ArithFault` by name, so this import adds no value dependency.
+import EthCLLib.Spec.DroppedCheckedLint
 
 /-!
 # `EthCLLib.Spec.CLUint`: the pyspec's checked `Uint64` (SPIKE)

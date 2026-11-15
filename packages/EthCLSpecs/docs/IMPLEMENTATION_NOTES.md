@@ -587,14 +587,15 @@ Spec-faithfulness facts worth knowing:
 
 - **`process_pending_deposits` resets `deposit_balance_to_consume` by stop reason.** A
   not-finalized / per-epoch-limit stop resets it to zero; a churn-limit stop carries
-  `available_for_processing − processed_amount` forward. `ppdLoop` returns the
-  `churnLimitReached` flag so the caller writes the right value.
+  `available_for_processing − processed_amount` forward. The loop's `isChurnLimitReached`
+  flag tells the caller which value to write. The scan is a plain `for` / `break` over the
+  pending list, the spec text's own shape.
 - **The old deposit mechanism is gone.** Fulu removes it (consensus-specs #4704, in the
   text since alpha.12): `process_operations` asserts `len(body.deposits) == 0` and runs no
   deposit loop, `process_deposit_request` no longer writes `deposit_requests_start_index`,
   and `process_pending_deposits` has no eth1-bridge stop. The tree ran the Electra forms of
   all three until the beta.4 re-pin found the gap; `DISCREPANCIES.md` records the fix. Gloas
-  carried the same stale eth1-bridge stop in its own `ppdLoop`, removed with it.
+  carried the same stale eth1-bridge stop in its own scan, removed with it.
 - **`apply_pending_deposit` is signature-gated.** A new pubkey joins the registry only
   when `is_valid_deposit_signature` passes (the proof-of-possession the deposit contract
   does not check). The domain is fixed (`compute_domain(DOMAIN_DEPOSIT)`, genesis fork

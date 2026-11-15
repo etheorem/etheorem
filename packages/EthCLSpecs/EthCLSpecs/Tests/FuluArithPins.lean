@@ -1,13 +1,17 @@
 import EthCLSpecs.Fulu.Operations
 import EthCLSpecs.Fulu.RegistryUpdates
 import EthCLSpecs.Fulu.Time
+import EthCLSpecs.Fulu.WeakSubjectivity
 
 /-!
-# `EthCLSpecs.Tests.FuluArithPins`: the Fulu checked-arithmetic raises near `2^64`
+# `EthCLSpecs.Tests.FuluArithPins`: the Fulu checked-arithmetic pins
 
 Four sites used to wrap and return a wrong value; with `Epoch` and `Slot` on `CLUint64`
-they raise where the pyspec raises. Each pin locks one raise at a value near `2^64`, so a
-regression back to wrapping fails `lake build EthCLSpecsTests` instead of passing silently.
+they raise where the pyspec raises. Each raise pin locks one raise at a value near `2^64`,
+so a regression back to wrapping fails `lake build EthCLSpecsTests` instead of passing
+silently. The weak-subjectivity section at the end pins the values of the validator guide's
+`compute_weak_subjectivity_period`, the helper the model did not have; its oracle numbers
+come from the built pyspec at the pin (see the spike stage report).
 
 They live in `EthCLSpecsTests` rather than beside the declarations they pin, the same
 pattern as the fork-choice pins: a pin compiled into `EthCLSpecs` is shipped weight,
@@ -114,5 +118,75 @@ private def pinWithdrawalRequestRaises : Bool :=
   | .error (.arithmetic _) _ => true
   | _ => false
 example : pinWithdrawalRequestRaises = true := by native_decide
+
+/-! ### `compute_weak_subjectivity_period` (validator guide)
+
+The helper the model did not have (Stage 6.2 of the plan). Each pin's oracle value comes
+from the built pyspec at `v1.7.0-beta.4` over a state with the same shape: active
+compounding validators, activation epoch 0, exit at `FAR_FUTURE_EPOCH`, slot 512
+(epoch 64 at minimal).
+-/
+
+/-- The weak-subjectivity fixture: `n` active compounding validators of `eff` Gwei
+effective balance each, at slot 512. The Fulu `get_total_balance` sums
+`effective_balance`, so the `balances` list rides along only for state shape. The
+registry cap is literal because the fixture is a minimal-preset state and the
+signature carries no `[Preset]`. -/
+private def pinWSState (n : Nat) (eff : Gwei)
+    (hv : n ≤ 2 ^ 40) (hb : n ≤ 2 ^ 40) :
+    @EthCLSpecs.Fulu.BeaconState minimal :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  let cred : Bytes32 :=
+    Vector.ofFn (fun i : Fin 32 => if i.val == 0 then Const.compoundingWithdrawalPrefix else 0)
+  let v : Validator :=
+    { pubkey := default, withdrawalCredentials := cred
+      effectiveBalance := eff, slashed := false
+      activationEligibilityEpoch := 0, activationEpoch := 0
+      exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
+  { (default : @EthCLSpecs.Fulu.BeaconState minimal) with
+    slot := 512
+    validators := sszOfArray (Array.replicate n v)
+      (by rw [Array.size_replicate]; exact hv)
+    balances := sszOfArray (Array.replicate n eff)
+      (by rw [Array.size_replicate]; exact hb) }
+
+/-- One active validator at 32 ETH: `t = 32 ETH`, below the 64 ETH churn floor, so
+`delta = 64 ETH` and the churn term is `10 * t // (2 * delta * 100) = 0`; the period is
+the withdrawability delay alone. Oracle: 256. -/
+private def pinWeakSubjectivitySingle : Nat :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.realBackend
+  match computeWeakSubjectivityPeriod (SSZ.FastBox (pinWSState 1 32000000000 (by decide) (by decide))) with
+  | .ok v => v.toPlainInt
+  | .error _ => 0
+example : pinWeakSubjectivitySingle = 256 := by native_decide
+
+/-- 128 active validators at 32 ETH: `t = 4096 ETH`, so `delta = max(64 ETH, t // 32)
+= 128 ETH` and the churn term is `10 * t // (2 * delta * 100) = 1`. Oracle: 257. -/
+private def pinWeakSubjectivityChurn : Nat :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.realBackend
+  match computeWeakSubjectivityPeriod (SSZ.FastBox (pinWSState 128 32000000000 (by decide) (by decide))) with
+  | .ok v => v.toPlainInt
+  | .error _ => 0
+example : pinWeakSubjectivityChurn = 257 := by native_decide
+
+/-- The raise: one validator at `2^63` Gwei, so `t = 2^63` and the checked product
+`SAFETY_DECAY * t = 10 * 2^63` is the first step past `2^64` — the same first-faulting
+step the pyspec raises at (`SSZValueError: … is out of range for Gwei`). -/
+private def pinWeakSubjectivityOverflowRaises : Bool :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.realBackend
+  match computeWeakSubjectivityPeriod (SSZ.FastBox (pinWSState 1 9223372036854775808 (by decide) (by decide))) with
+  | .error _ => true
+  | _ => false
+example : pinWeakSubjectivityOverflowRaises = true := by native_decide
 
 end EthCLSpecs.Tests.FuluArithPins

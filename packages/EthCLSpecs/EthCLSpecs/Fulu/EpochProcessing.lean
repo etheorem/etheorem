@@ -14,6 +14,10 @@ follows in `Transition`.
 
 set_option autoImplicit false
 
+-- The §4.3 dropped-expression linter over the largest fork-body module (spike task 6.3):
+-- a `let` that binds a `Checked` value some return path never uses must fail the build.
+set_option linter.droppedChecked true
+
 open EthCLLib.Spec
 
 namespace EthCLSpecs.Fulu
@@ -251,73 +255,67 @@ forkdef processSlashings : StateTransition Unit := do
 
 /-! ## Pending deposits (Electra deposit queue) -/
 
-/-- The running state of the pending-deposit scan, and its result. `ndi` is the spec's
-`next_deposit_index`: both the queue cursor and the count of dequeued deposits, since
-every step advances it or stops, so the two never diverge. `churnReached` is set only
-when the per-epoch churn limit halts the scan. -/
-forkstruct DepositScan where
-  ndi          : Nat := 0
-  processed    : Gwei := 0
-  postpone     : Array PendingDeposit := #[]
-  churnReached : Bool := false
+/-- `process_pending_deposits` (`fulu/beacon-chain.md`, "Modified
+`process_pending_deposits`"). Fulu drops Electra's eth1-bridge stop, because Fulu removes the
+former deposit mechanism (consensus-specs #4704, in the text since alpha.12).
 
-/-- The deposit-queue scan, tail-recursive on `fuel = #deposits`. A deposit for a
-withdrawn validator applies without consuming churn; one for an exiting validator is
-postponed; otherwise it applies while it fits the per-epoch churn, and the scan stops
-(setting `churnReached`) once it does not. The not-finalized / per-epoch-limit stops leave
-`churnReached` false.
-
-Fulu's `process_pending_deposits` (`fulu/beacon-chain.md`, "Modified
-`process_pending_deposits`") drops Electra's eth1-bridge stop, because Fulu removes the former
-deposit mechanism (consensus-specs #4704, in the text since alpha.12). -/
-forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot : Slot) (avail : Gwei) (nextEpoch : Epoch) :
-    StateTransition DepositScan :=
-  -- Fuel rather than a measure (§7.2): the scan stops on a data-dependent guard (churn
-  -- exhausted, a not-yet-finalized slot), not on a quantity that
-  -- decreases every step, so the terminating invariant is not available at definition time.
-  -- Fuel is `deposits.size + 1`: the `ndi ≥ deposits.size` guard returns `.done` one step
-  -- before exhaustion, so `fuelLoop`'s `exhausted` value is unreachable.
-  fuelLoop (deposits.size + 1) ({} : DepositScan) ({} : DepositScan) fun s => do
-    if s.ndi ≥ deposits.size then return .done s
-    let state ← get
-    let deposit := deposits[s.ndi]!
-
-    -- Stop the scan early: the deposit is not finalized, or this epoch's deposit cap is
-    -- reached.
-    if deposit.slot > finalizedSlot then return .done s
-    if s.ndi ≥ Const.maxPendingDepositsPerEpoch then return .done s
-
-    -- Advance past this deposit, carrying the running churn and postpone list forward.
-    let advance (processed : Gwei) (postpone : Array PendingDeposit) : Step DepositScan DepositScan :=
-      .next { s with ndi := s.ndi + 1, processed, postpone }
-
-    -- Read the deposit's validator once, if its pubkey is known, and derive the two flags
-    -- the spec branches on. An unknown pubkey leaves both false, so it falls through to the
-    -- churn check.
-    let (isWithdrawn, isExited) := match validatorIndexByPubkey? state deposit.pubkey with
-      | some vi =>
-        let v := sszGet state validators[vi]!
-        (decide (v.withdrawableEpoch < nextEpoch), decide (v.exitEpoch < Const.farFutureEpoch))
-      | none => (false, false)
-
-    if isWithdrawn then applyPendingDeposit deposit; return advance s.processed s.postpone
-    else if isExited then return advance s.processed (s.postpone.push deposit)
-    else if (← s.processed + deposit.amount) > avail then return .done { s with churnReached := true }
-    else applyPendingDeposit deposit; return advance (← s.processed + deposit.amount) s.postpone
-
-/-- `process_pending_deposits`. Churn is accumulated into `deposit_balance_to_consume`
-only when the churn limit was actually hit; every other stop resets it to zero. -/
+The scan walks the queue in order: a not-yet-finalized deposit or a full per-epoch deposit
+count stops it; a deposit for a withdrawn validator applies without consuming churn; one for
+an exiting validator is postponed; otherwise it applies while it fits the per-epoch churn,
+and the churn stop halts the scan. -/
 forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
   let nextEpoch ← currentEpochOf state + 1
-  let avail ← (sszGet state depositBalanceToConsume) + getActivationExitChurnLimit state
+  let availableForProcessing ← (sszGet state depositBalanceToConsume) + getActivationExitChurnLimit state
+  let mut processedAmount : Gwei := 0
+  let mut nextDepositIndex : Nat := 0
+  let mut depositsToPostpone : Array PendingDeposit := #[]
+  let mut isChurnLimitReached := false
   let finalizedSlot ← computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
-  let deposits := (sszGet state pendingDeposits).toArray
 
-  let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
+  for deposit in (sszGet state pendingDeposits) do
+    -- Check if deposit has been finalized, otherwise, stop processing.
+    if deposit.slot > finalizedSlot then break
+
+    -- Check if number of processed deposits has not reached the limit, otherwise, stop processing.
+    if nextDepositIndex ≥ Const.maxPendingDepositsPerEpoch then break
+
+    -- Read validator state
+    let state ← get
+    let mut isValidatorExited := false
+    let mut isValidatorWithdrawn := false
+    if let some vi := validatorIndexByPubkey? state deposit.pubkey then
+      -- `vi` came from the registry scan itself, so the read cannot miss; the raising
+      -- route keeps the read honest anyway.
+      let validator ← sszGetIdx (sszGet state validators) vi
+      isValidatorExited := validator.exitEpoch < Const.farFutureEpoch
+      isValidatorWithdrawn := validator.withdrawableEpoch < nextEpoch
+
+    if isValidatorWithdrawn then
+      -- Deposited balance will never become active. Increase balance but do not consume churn
+      applyPendingDeposit deposit
+    else if isValidatorExited then
+      -- Validator is exiting, postpone the deposit until after withdrawable epoch
+      depositsToPostpone := depositsToPostpone.push deposit
+    else
+      -- Check if deposit fits in the churn, otherwise, do no more deposit processing in this epoch.
+      if (← processedAmount + deposit.amount) > availableForProcessing then
+        isChurnLimitReached := true
+        break
+
+      -- Consume churn and apply deposit.
+      processedAmount := ← processedAmount + deposit.amount
+      applyPendingDeposit deposit
+
+    -- Regardless of how the deposit was handled, we move on in the queue.
+    nextDepositIndex := nextDepositIndex + 1
+
   let remaining : SSZList PendingDeposit Const.pendingDepositsLimit ←
-    sszOfArrayM "pendingDeposits" (deposits.extract scan.ndi deposits.size ++ scan.postpone)
-  let leftover : Gwei ← if scan.churnReached then avail - scan.processed else pure 0
+    sszOfArrayM "pendingDeposits"
+      ((sszGet (← get) pendingDeposits).toArray.drop nextDepositIndex ++ depositsToPostpone)
+
+  -- Accumulate churn only if the churn limit has been hit.
+  let leftover : Gwei ← if isChurnLimitReached then availableForProcessing - processedAmount else pure 0
   modifyState fun state => sszUpdate state with
     pendingDeposits := remaining,
     depositBalanceToConsume := leftover

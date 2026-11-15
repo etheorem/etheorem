@@ -138,9 +138,9 @@ column is the fork's own diff, for scale.
 | Fork | Characterized | Touched | Spec functions | Authored |
 | --- | --- | --- | --- | --- |
 | `EthCLSpecs.Fulu` | 4 | 4 | 173 | 173 |
-| `EthCLSpecs.Gloas` | 10 | 37 | 222 | 114 |
-| `EthCLSpecs.Heze` | 6 | 19 | 230 | 19 |
-| **Total** | 20 | 60 | 625 | 306 |
+| `EthCLSpecs.Gloas` | 10 | 37 | 221 | 113 |
+| `EthCLSpecs.Heze` | 6 | 19 | 229 | 19 |
+| **Total** | 20 | 60 | 623 | 305 |
 
 | Axiom | Theorems resting on it |
 | --- | --- |

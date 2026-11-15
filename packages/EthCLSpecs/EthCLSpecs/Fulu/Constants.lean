@@ -354,6 +354,10 @@ forkabbrev kzgCommitmentsInclusionProofDepth : Nat := Preset.kzgCommitmentsInclu
 forkabbrev proposerScoreBoost : Nat := Config.proposerScoreBoost
 /-- `BASIS_POINTS` denominator for the slot-component durations. -/
 forkabbrev basisPoints : UInt64 := 10000
+/-- `SAFETY_DECAY` (`fulu/mainnet.py:137`, a spec constant var, both presets): the
+weak-subjectivity safety fraction, in percent. The only reader is the validator guide's
+`compute_weak_subjectivity_period`. -/
+forkabbrev safetyDecay : Nat := 10
 
 end
 end Const

@@ -12,6 +12,7 @@ import EthCLSpecs.Fulu.Registry
 import EthCLSpecs.Fulu.Committees
 import EthCLSpecs.Fulu.Accessors
 import EthCLSpecs.Fulu.RegistryUpdates
+import EthCLSpecs.Fulu.WeakSubjectivity
 import EthCLSpecs.Fulu.Rewards
 import EthCLSpecs.Fulu.Deposits
 import EthCLSpecs.Fulu.Blocks
