@@ -1,4 +1,5 @@
 import EthCLLib.Proofs.Arith
+import EthCLLib.Proofs.CLUint
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
@@ -23,6 +24,10 @@ Re-exports:
 
 * `EthCLLib.Proofs.Arith`: what `saturatingSub` computes (`saturatingSub_toNat`,
   `saturatingSub_le`).
+* `EthCLLib.Proofs.CLUint`: the success and value facts for the checked
+  `CLUint64` operators (`add_ok_iff`, `add_value`, and the same pair for
+  `sub`, `mul`, `div`, and `mod`), with the `rfl` bridges from the operator
+  syntax to the named functions.
 * `EthCLLib.Proofs.LawfulFcMap`: same-key insertion for `FcMap`
   (`LawfulFcMap`, `FcMap.lookup_insert_self`,
   `FcMap.contains_insert_self`), with `instLawfulFcMapTreeMap` and

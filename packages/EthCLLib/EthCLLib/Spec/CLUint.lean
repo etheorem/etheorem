@@ -10,7 +10,7 @@ The pyspec computes with a checked integer type: every operator tests its result
 Its operators return a `Checked` value, so a fork body writes `a * b / c` as the pyspec does and
 binds the expression once.
 
-Spike quality. Width 64 only. A literal past `2^64` wraps.
+Spike quality. Width 64 only.
 -/
 
 set_option autoImplicit false
@@ -32,11 +32,22 @@ abbrev Checked (α : Type) := Except ArithFault α
 /-- The pyspec `Uint64`. A `structure` over `UInt64`, so no `UInt64` operator instance applies:
 the wrapping `+` does not exist on this type. -/
 structure CLUint64 where
+  -- The constructor is private to the framework (`SPEC_ARITHMETIC.md` §4.5): `toUint64?` and
+  -- `ofNat?` are the only routes from a plain number to a checked one, and a fork body that
+  -- writes `CLUint64.mk x` fails to compile. The projection `val` stays public, so reads and
+  -- the SSZ iso keep working. Inside this module the anonymous constructor still elaborates.
+  private mk ::
   /-- The native value. -/
   val : UInt64
   deriving DecidableEq, Hashable, Ord
 
 namespace CLUint64
+
+/-- The framework's trusted route from a raw `UInt64`. It skips the range test because every
+`UInt64` already sits inside `[0, 2^64)`, so the wrap cannot fault. Callers are the trusted
+sites only: SSZ decode, preset constants, and internal witnesses that another check bounds.
+A fork body builds values through `ofNat?`, the operators, or a literal, never here. -/
+@[inline] def trustedOfUInt64 (v : UInt64) : CLUint64 := ⟨v⟩
 
 /-- The value as a plain `int`: the pyspec's `int(x)`. The name is long on purpose. Arithmetic
 on the result is unchecked, so each use is a site a reviewer must see. -/
@@ -45,6 +56,10 @@ on the result is unchecked, so each use is a site a reviewer must see. -/
 instance : Inhabited CLUint64 := ⟨⟨0⟩⟩
 instance : Repr CLUint64 := ⟨fun a _ => repr a.toPlainInt⟩
 instance : ToString CLUint64 := ⟨fun a => toString a.toPlainInt⟩
+-- The literal instance itself stays total; the `num` elaborator at the end of this module
+-- raises before core reaches it, wherever `EthCLLib.Spec` is open, when the expected type is
+-- `CLUint64` or a reducible alias of it and the literal is past `2^64 - 1`
+-- (SPEC_ARITHMETIC.md §7, item 6). Outside that scope the wrap below is still reachable.
 instance {n : Nat} : OfNat CLUint64 n := ⟨⟨UInt64.ofNat n⟩⟩
 instance : LT CLUint64 := ⟨fun a b => a.val < b.val⟩
 instance : LE CLUint64 := ⟨fun a b => a.val ≤ b.val⟩
@@ -151,16 +166,41 @@ lets the monad lift bridge to the expected type. Any other tree falls through to
   | some e => ensureHasType expected e
   | none => saved.restore; throwUnsupportedSyntax
 
+open Lean Elab Term Meta in
+/-- The literal gate (SPEC_ARITHMETIC.md §7, item 6). Core's `num` elaborator builds any
+literal through the `OfNat` instance, and `UInt64.ofNat` wraps modulo `2^64`, so a literal
+past `2^64 - 1` would silently become a small value. This scoped elaborator runs before
+core's wherever `EthCLLib.Spec` is open, the same discipline as `elabCheckedOp`. It reads the
+expected type only: any type but `CLUint64`, or a reducible alias of it such as the fork
+body's `Gwei`, falls through to core with `throwUnsupportedSyntax`, and an in-range literal
+falls through too, so `Nat`, `UInt64`, `Int`, and every other type keeps core's path. An
+out-of-range literal raises with the value and the bound named. The gate sees through
+reducible aliases only; a plain `def` alias of `CLUint64` would escape it. The fork DSL
+authors every type alias through `forkabbrev`, which emits an `abbrev`, so no fork body
+writes the escaping shape. -/
+@[scoped term_elab num] def elabCheckedNumLit : TermElab := fun stx expectedType? => do
+  let some expected := expectedType? | throwUnsupportedSyntax
+  -- `whnfR` sees through reducible aliases (`abbrev` / `forkabbrev`) and leaves a
+  -- metavariable-headed type stuck, so both the fall-through and the postponement behave
+  -- exactly as the plain constant check would.
+  unless (← whnfR (← instantiateMVars expected)).isConstOf ``CLUint64 do
+    throwUnsupportedSyntax
+  let some n := stx.isNatLit? | throwUnsupportedSyntax
+  unless n < UInt64.size do
+    throwError "literal `{n}` is out of range for `CLUint64`: the type holds `[0, 2^64 - 1]`, and the maximum is `18446744073709551615`"
+  throwUnsupportedSyntax
+
 end EthCLLib.Spec
 
 namespace SizzLean
 
 /-- `SSZRepr CLUint64`: the wire format of `uint64`, 8 little-endian bytes. The iso is the
-structure's projection and constructor, so both laws hold by `rfl`. -/
+structure's projection and the named constructor `trustedOfUInt64`, so both laws hold by
+`rfl`. -/
 instance : SSZRepr EthCLLib.Spec.CLUint64 where
   shape    := .uintN 64
   toRepr   := (·.val)
-  fromRepr := (⟨·⟩)
+  fromRepr := (EthCLLib.Spec.CLUint64.trustedOfUInt64)
   to_from  := fun _ => rfl
   from_to  := fun _ => rfl
 

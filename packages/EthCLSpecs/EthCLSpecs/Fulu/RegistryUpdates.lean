@@ -71,9 +71,11 @@ forkdef reserveChurn (balance consume perEpoch : Gwei) (earliest : Epoch) :
   if balance > consume then
     let balanceToProcess ← balance - consume
     let additional ← (balanceToProcess - 1) / perEpoch + 1
-    -- `earliest_exit_epoch += Epoch(additional_epochs)`: `Epoch` is still a raw `UInt64`, so the
-    -- sum crosses the two types by hand.
-    let epoch ← CLUint64.mk earliest + additional
+    -- `earliest_exit_epoch += Epoch(additional_epochs)`: `Epoch` is still a raw `UInt64`, so
+    -- the sum crosses the two types through the checked `ofNat?`. The cast cannot fault: every
+    -- `UInt64` is inside `[0, 2^64)`, and `CLUint64.mk` is private to the framework (§4.5).
+    let epochOfEarliest ← CLUint64.ofNat? earliest.toNat
+    let epoch ← epochOfEarliest + additional
     return (epoch.val, ← consume + additional * perEpoch)
   else return (earliest, consume)
 

@@ -57,7 +57,7 @@ instance : Mul CLInt := ⟨fun a b => ⟨a.val * b.val⟩⟩
 
 /-- `Uint64(n)`: raises for a negative number and for one past the maximum. -/
 @[inline] def toUint64? (n : CLInt) : Checked CLUint64 :=
-  if 0 ≤ n.val ∧ n.val < 2 ^ 64 then .ok ⟨UInt64.ofNat n.val.toNat⟩
+  if 0 ≤ n.val ∧ n.val < 2 ^ 64 then .ok (CLUint64.trustedOfUInt64 (UInt64.ofNat n.val.toNat))
   else .error (.range "Uint64()" n.val.natAbs 0)
 
 /-- A list position. A negative number raises here; `xs[-1]` is modeled in
@@ -136,7 +136,7 @@ mix_checked HDiv CLInt.fdiv
 mix_checked HMod CLInt.fmod
 
 /-- The `Uint64` maximum, `2^64 - 1`. A test operand only. -/
-def maxValue : CLUint64 := ⟨0xffffffffffffffff⟩
+def maxValue : CLUint64 := CLUint64.trustedOfUInt64 0xffffffffffffffff
 
 /-! ## The behaviours the pyspec shows -/
 
@@ -178,9 +178,9 @@ example : Nat := xs.size - 1
 
 end
 
-example : ((3 : CLInt) * (5 : CLUint64)) = .ok ⟨15⟩ := rfl
+example : ((3 : CLInt) * (5 : CLUint64)) = .ok (CLUint64.trustedOfUInt64 15) := rfl
 example : ((3 : CLInt) - (5 : CLUint64)) = .error (.range "Uint64()" 2 0) := rfl
 -- The mix computes in plain `int` and narrows once, so `0 * maxValue` is `0` and the sum fits.
-example : ((0 : CLInt) * maxValue + (7 : CLInt)) = .ok ⟨7⟩ := rfl
+example : ((0 : CLInt) * maxValue + (7 : CLInt)) = .ok (CLUint64.trustedOfUInt64 7) := rfl
 
 end EthCLLib.Tests.CLIntSpike
