@@ -41,17 +41,17 @@ forkdef isEligibleForActivation (state : State) (validator : Validator) : Bool :
 /-! ## Electra churn limits -/
 
 /-- `get_balance_churn_limit`. -/
-forkdef getBalanceChurnLimit (state : State) : Gwei :=
-  let churn := umax Const.minPerEpochChurnLimitElectra
-    ((getTotalActiveBalance state) / Const.churnLimitQuotient)
+forkdef getBalanceChurnLimit (state : State) : Checked Gwei := do
+  let churn := max Const.minPerEpochChurnLimitElectra
+    (← getTotalActiveBalance state / Const.churnLimitQuotient.toNat)
   churn - churn % Const.effectiveBalanceIncrementG
 
 /-- `get_activation_exit_churn_limit`. -/
-forkdef getActivationExitChurnLimit (state : State) : Gwei :=
-  umin Const.maxPerEpochActivationExitChurnLimit (getBalanceChurnLimit state)
+forkdef getActivationExitChurnLimit (state : State) : Checked Gwei := do
+  return min Const.maxPerEpochActivationExitChurnLimit (← getBalanceChurnLimit state)
 
 /-- `get_consolidation_churn_limit`. -/
-forkdef getConsolidationChurnLimit (state : State) : Gwei :=
+forkdef getConsolidationChurnLimit (state : State) : Checked Gwei :=
   getBalanceChurnLimit state - getActivationExitChurnLimit state
 
 /-! ## Churn reservation -/
@@ -66,12 +66,16 @@ unchanged; otherwise the leftover is spread forward by the ceiling-division
 `UInt64` (`Epoch`/`Gwei` are both `UInt64`), so the same byte arithmetic runs for Fulu's
 exit/consolidation churn and Gloas's overrides; the per-fork state reads and the `state` write
 stay in the callers. -/
-forkdef reserveChurn (balance consume perEpoch earliest : Gwei) : Epoch × Gwei :=
+forkdef reserveChurn (balance consume perEpoch : Gwei) (earliest : Epoch) :
+    Checked (Epoch × Gwei) := do
   if balance > consume then
-    let balanceToProcess := balance - consume
-    let additional := (balanceToProcess - 1) / perEpoch + 1
-    (earliest + additional, consume + additional * perEpoch)
-  else (earliest, consume)
+    let balanceToProcess ← balance - consume
+    let additional ← (balanceToProcess - 1) / perEpoch + 1
+    -- `earliest_exit_epoch += Epoch(additional_epochs)`: `Epoch` is still a raw `UInt64`, so the
+    -- sum crosses the two types by hand.
+    let epoch ← CLUint64.mk earliest + additional
+    return (epoch.val, ← consume + additional * perEpoch)
+  else return (earliest, consume)
 
 /-- `compute_exit_epoch_and_update_churn`: reserve exit churn, returning the
 assigned exit epoch and advancing the bookkeeping. -/
@@ -79,12 +83,13 @@ forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Ep
   let state ← get
   let currentEpoch := computeEpochAtSlot (sszGet state slot)
   let earliest := umax (sszGet state earliestExitEpoch) (computeActivationExitEpoch currentEpoch)
-  let perEpochChurn := getActivationExitChurnLimit state
+  let perEpochChurn ← getActivationExitChurnLimit state
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
 
-  let (ee, ebtc) := reserveChurn exitBalance consume perEpochChurn earliest
+  let (ee, ebtc) ← reserveChurn exitBalance consume perEpochChurn earliest
+  let remaining ← ebtc - exitBalance
   modifyState fun state =>
-    sszUpdate state with exitBalanceToConsume := ebtc - exitBalance, earliestExitEpoch := ee
+    sszUpdate state with exitBalanceToConsume := remaining, earliestExitEpoch := ee
   return ee
 
 /-- `compute_consolidation_epoch_and_update_churn`: the consolidation analogue of
@@ -93,13 +98,14 @@ forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : 
   let state ← get
   let earliest := umax (sszGet state earliestConsolidationEpoch)
     (computeActivationExitEpoch (currentEpochOf state))
-  let perEpoch := getConsolidationChurnLimit state
+  let perEpoch ← getConsolidationChurnLimit state
   let consume := if (sszGet state earliestConsolidationEpoch) < earliest then perEpoch
                  else (sszGet state consolidationBalanceToConsume)
 
-  let (ee, cbtc) := reserveChurn consolidationBalance consume perEpoch earliest
+  let (ee, cbtc) ← reserveChurn consolidationBalance consume perEpoch earliest
+  let remaining ← cbtc - consolidationBalance
   modifyState fun state =>
-    sszUpdate state with consolidationBalanceToConsume := cbtc - consolidationBalance,
+    sszUpdate state with consolidationBalanceToConsume := remaining,
                      earliestConsolidationEpoch := ee
   return ee
 
@@ -136,17 +142,17 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
     { validator with
         slashed := true,
         withdrawableEpoch := umax validator.withdrawableEpoch (epoch + UInt64.ofNat Const.epochsPerSlashingsVector) }
-  let state := sszUpdate state with
-    slashings[slashIdx]! := (vget (sszGet state slashings) slashIdx + validator.effectiveBalance)
-  let state ← decreaseBalance state i (validator.effectiveBalance / UInt64.ofNat Const.minSlashingPenaltyQuotientElectra)
+  let slashed ← vget (sszGet state slashings) slashIdx + validator.effectiveBalance
+  let state := sszUpdate state with slashings[slashIdx]! := slashed
+  let state ← decreaseBalance state i (← validator.effectiveBalance / Const.minSlashingPenaltyQuotientElectra)
   set state
 
   -- Pay the proposer its share of the whistleblower reward, then the remainder.
   let proposerIdx := getBeaconProposerIndex (← get)
-  let whistleblowerReward := validator.effectiveBalance / UInt64.ofNat Const.whistleblowerRewardQuotientElectra
-  let proposerReward := whistleblowerReward * UInt64.ofNat Const.proposerWeight / UInt64.ofNat Const.weightDenominator
+  let whistleblowerReward ← validator.effectiveBalance / Const.whistleblowerRewardQuotientElectra
+  let proposerReward ← whistleblowerReward * Const.proposerWeight / Const.weightDenominator
   let state ← increaseBalance state proposerIdx proposerReward
-  set (← increaseBalance state proposerIdx (whistleblowerReward - proposerReward))
+  set (← increaseBalance state proposerIdx (← whistleblowerReward - proposerReward))
 
 /-! ## Compounding / consolidation balance moves -/
 
@@ -157,7 +163,7 @@ forkdef queueExcessActiveBalance (i : ValidatorIndex) : StateTransition Unit := 
   let state ← get
   let balance ← sszGetIdx (sszGet state balances) i.toNat
   if balance > Const.minActivationBalance then
-    let excess := balance - Const.minActivationBalance
+    let excess ← balance - Const.minActivationBalance
     let validator ← sszGetIdx (sszGet state validators) i.toNat
     let pendingDeposit : PendingDeposit :=
       { pubkey := validator.pubkey, withdrawalCredentials := validator.withdrawalCredentials, amount := excess,

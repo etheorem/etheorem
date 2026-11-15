@@ -146,12 +146,13 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   assert (blsEthFastAggregateVerify participantKeys signingRoot agg.syncCommitteeSignature)
 
   -- Per-participant and per-proposer reward amounts.
-  let totalActiveIncrements := (getTotalActiveBalance state).toNat / Const.effectiveBalanceIncrement
-  let totalBaseRewards := getBaseRewardPerIncrement state * totalActiveIncrements
-  let maxParticipantRewards := totalBaseRewards * Const.syncRewardWeight / Const.weightDenominator / Const.slotsPerEpoch
-  let participantReward : Gwei := UInt64.ofNat (maxParticipantRewards / Const.syncCommitteeSize)
-  let proposerReward : Gwei :=
-    UInt64.ofNat (participantReward.toNat * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight))
+  let totalActiveIncrements ← getTotalActiveBalance state / Const.effectiveBalanceIncrementG
+  let totalBaseRewards ← getBaseRewardPerIncrement state * totalActiveIncrements
+  let maxParticipantRewards ←
+    totalBaseRewards * Const.syncRewardWeight / Const.weightDenominator / Const.slotsPerEpoch
+  let participantReward ← maxParticipantRewards / Const.syncCommitteeSize
+  let proposerReward ←
+    participantReward * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight)
   let proposerIdx := getBeaconProposerIndex state
   let validators := (sszGet state validators).toArray
 

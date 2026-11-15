@@ -19,15 +19,17 @@ namespace EthCLSpecs.Fulu
 state_section
 
 /-- `get_base_reward_per_increment`. -/
-forkdef getBaseRewardPerIncrement (state : State) : Nat :=
-  Const.effectiveBalanceIncrement * Const.baseRewardFactor / isqrt (getTotalActiveBalance state).toNat
+forkdef getBaseRewardPerIncrement (state : State) : Checked Gwei := do
+  let total ← getTotalActiveBalance state
+  Const.effectiveBalanceIncrementG * Const.baseRewardFactor / isqrt total.toPlainInt
 
 /-- `get_base_reward`. Reads `validators[i]`, so it returns `Except IndexError`: an
 out-of-range `i` rejects (the pyspec's `IndexError`), where `[i]!` would mask it with a
 default. A monadic caller binds it through `liftErr`; a same-error caller binds directly. -/
-forkdef getBaseReward (state : State) (i : ValidatorIndex) : Except IndexError Nat := do
+forkdef getBaseReward (state : State) (i : ValidatorIndex) :
+    Except StateTransitionError Gwei := do
   let v ← sszGetIdx (sszGet state validators) i.toNat
-  pure ((v.effectiveBalance.toNat / Const.effectiveBalanceIncrement) * getBaseRewardPerIncrement state)
+  v.effectiveBalance / Const.effectiveBalanceIncrementG * getBaseRewardPerIncrement state
 
 /-- `get_finality_delay`. -/
 forkdef getFinalityDelay (state : State) : Epoch :=

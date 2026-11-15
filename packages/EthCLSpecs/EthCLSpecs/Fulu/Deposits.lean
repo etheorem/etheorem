@@ -20,12 +20,14 @@ namespace EthCLSpecs.Fulu
 state_section
 
 /-- `get_validator_from_deposit`. -/
-forkdef getValidatorFromDeposit (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) : Validator :=
+forkdef getValidatorFromDeposit (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) :
+    Checked Validator := do
   let v : Validator :=
     { pubkey, withdrawalCredentials := wc, effectiveBalance := 0, slashed := false,
       activationEligibilityEpoch := Const.farFutureEpoch, activationEpoch := Const.farFutureEpoch,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  { v with effectiveBalance := umin (amount - amount % Const.effectiveBalanceIncrementG) (getMaxEffectiveBalance v) }
+  let rounded ← amount - amount % Const.effectiveBalanceIncrementG
+  return { v with effectiveBalance := min rounded (getMaxEffectiveBalance v) }
 
 /-- `add_validator_to_registry` (`electra/beacon-chain.md:1736-1746`): write a fresh
 validator and its parallel records at `get_index_for_new_validator`, the length of
@@ -36,7 +38,7 @@ forkdef addValidatorToRegistry (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwe
   let state ← get
   -- `get_index_for_new_validator(state)`: `len(state.validators)`.
   let index := (sszGet state validators).val.size
-  setOrAppendState validators index (getValidatorFromDeposit pubkey wc amount)
+  setOrAppendState validators index (← getValidatorFromDeposit pubkey wc amount)
   setOrAppendState balances index amount
   setOrAppendState previousEpochParticipation index 0
   setOrAppendState currentEpochParticipation index 0

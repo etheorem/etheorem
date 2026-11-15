@@ -62,11 +62,9 @@ remerkleable. -/
 def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
     StateTransition Gwei := do
   let withdrawn ← ws.foldlM (init := (0 : Gwei)) fun acc w =>
-    if w.validatorIndex == vi then
-      checkedAdd acc w.amount "get_balance_after_withdrawals: sum(withdrawal.amount)"
-    else pure acc
+    if w.validatorIndex == vi then acc + w.amount else pure acc
   let bal ← sszGetIdx (sszGet state balances) vi.toNat
-  checkedSub bal withdrawn "get_balance_after_withdrawals: balances[i] - withdrawn"
+  bal - withdrawn
 
 /-- `get_expected_withdrawals`: the pending-partial queue then the validator sweep.
 Throwing: the two `validators[i]` reads are bare list indices (`IndexError`, via
@@ -89,7 +87,7 @@ forkdef getExpectedWithdrawals (state : State) : StateTransition (Array Withdraw
     if isEligibleForPartialWithdrawals validator bal then
       withdrawals := withdrawals.push
         { index := withdrawalIndex, validatorIndex := vi, address := addressOf validator,
-          amount := umin (bal - Const.minActivationBalance) w.amount }
+          amount := min (← bal - Const.minActivationBalance) w.amount }
       withdrawalIndex := withdrawalIndex + 1
     processedPartial := processedPartial + 1
 
@@ -107,7 +105,7 @@ forkdef getExpectedWithdrawals (state : State) : StateTransition (Array Withdraw
     else if isPartiallyWithdrawable validator bal then
       withdrawals := withdrawals.push
         { index := withdrawalIndex, validatorIndex := UInt64.ofNat vIdx, address := addressOf validator,
-          amount := bal - getMaxEffectiveBalance validator }
+          amount := (← bal - getMaxEffectiveBalance validator) }
       withdrawalIndex := withdrawalIndex + 1
     vIdx := modWrap (vIdx + 1) nvals
   return (withdrawals, processedPartial)

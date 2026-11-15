@@ -43,7 +43,7 @@ when the two lengths disagree. -/
 forkdef increaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
     StateTransition State := do
   let balance ← sszGetIdx (sszGet state balances) i.toNat
-  let sum ← checkedAdd balance delta "increase_balance: balances[index] + delta"
+  let sum ← balance + delta
   return modBalance state i (fun _ => sum)
 
 /-- `decrease_balance` (`phase0/beacon-chain.md:1663-1667`):
@@ -54,13 +54,13 @@ read raises `IndexError` past the end. -/
 forkdef decreaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
     StateTransition State := do
   let balance ← sszGetIdx (sszGet state balances) i.toNat
-  return modBalance state i (fun _ => saturatingSub balance delta)
+  return modBalance state i (fun _ => balance.saturatingSub delta)
 
 /-- `get_total_balance` (floored at one increment). -/
-forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex) : Gwei :=
+forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex) : Checked Gwei := do
   let validators := sszGet state validators
-  let total := indices.foldl (fun acc i => acc + (validators[i.toNat]!).effectiveBalance) 0
-  umax total Const.effectiveBalanceIncrementG
+  let total ← indices.foldlM (fun acc i => acc + (validators[i.toNat]!).effectiveBalance) (0 : Gwei)
+  return max total Const.effectiveBalanceIncrementG
 
 end
 

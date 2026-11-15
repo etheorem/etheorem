@@ -30,7 +30,7 @@ forkabbrev CommitteeIndex := UInt64
 /-- An index into the withdrawal queue. -/
 forkabbrev WithdrawalIndex := UInt64
 /-- A balance, in gwei. SSZ `uint64`. -/
-forkabbrev Gwei := UInt64
+forkabbrev Gwei := CLUint64
 /-- A 32-byte SSZ Merkle root. -/
 forkabbrev Root := Vector UInt8 32
 /-- A generic 32-byte value. -/

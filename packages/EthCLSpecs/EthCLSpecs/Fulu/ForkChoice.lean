@@ -149,16 +149,16 @@ a percentage of the per-slot committee weight. At v1.7.0-beta.4 the weight is th
 balance of the *unslashed* active validators (`get_total_balance`, floored at one increment)
 divided across the slots of an epoch, where alpha.12 took `get_total_active_balance`, which
 counts slashed validators too. `UInt64` truncating division, as the spec's `//`. -/
-forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) : Gwei :=
+forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) : Checked Gwei := do
   let validators := sszGet state validators
   let unslashedAndActive := (getActiveValidatorIndices state (currentEpochOf state)).filter
     fun i => !(validators[i.toNat]!).slashed
-  let committeeWeight := getTotalBalance state unslashedAndActive / UInt64.ofNat Const.slotsPerEpoch
-  committeeWeight * committeePercent / 100
+  let committeeWeight ← getTotalBalance state unslashedAndActive / Const.slotsPerEpoch
+  committeeWeight * committeePercent.toNat / 100
 
 /-- `compute_proposer_score(state)` (`phase0/fork-choice.md:362-363`): the committee
 fraction at `PROPOSER_SCORE_BOOST`. -/
-forkdef computeProposerScore (state : State) : Gwei :=
+forkdef computeProposerScore (state : State) : Checked Gwei :=
   calculateCommitteeFraction state (UInt64.ofNat Const.proposerScoreBoost)
 
 /-- `get_proposer_score` (`phase0/fork-choice.md:369-371`): `compute_proposer_score` over the
@@ -166,7 +166,7 @@ justified checkpoint state. -/
 forkdef getProposerScore (store : Store map) : StoreTransition Gwei := do
   let state ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  pure (computeProposerScore state)
+  computeProposerScore state
 
 /-- `get_attestation_score(store, node, state)` (`phase0/fork-choice.md:338-356`): the
 effective balance of the unslashed active validators whose latest message supports a
@@ -198,7 +198,7 @@ forkdef getAttestationScore (store : Store map) (root : Root) (state : State) :
           -- walks the supported node down to that slot.
           let block ← FcMap.getOrThrow store.blocks root
           let anc ← getAncestor store lm.root block.slot
-          if anc == root then pure (acc + (validators[idx]!).effectiveBalance) else pure acc
+          if anc == root then acc + (validators[idx]!).effectiveBalance else pure acc
 
 /-- `get_weight(store, node)` (`phase0/fork-choice.md:377-391`): the attestation score, plus
 the proposer score when `root` is an ancestor of the boosted block. With an unset boost root
@@ -217,7 +217,7 @@ forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := do
     let anc ← getAncestor store store.proposerBoostRoot block.slot
     if anc == root then
       let proposerScore ← getProposerScore store
-      pure (attestationScore + proposerScore)
+      attestationScore + proposerScore
     else pure attestationScore
 
 /-- `get_voting_source(store, block_root)` (`phase0/fork-choice.md:397-410`): all three reads
@@ -371,7 +371,7 @@ on a miss. -/
 forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool := do
   let justifiedState ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  let reorgThreshold := calculateCommitteeFraction justifiedState Const.reorgHeadWeightThreshold
+  let reorgThreshold ← calculateCommitteeFraction justifiedState Const.reorgHeadWeightThreshold
   let headState ← FcMap.getOrThrow store.blockStates headRoot
   let headBlock ← FcMap.getOrThrow store.blocks headRoot
   let epoch := computeEpochAtSlot headBlock.slot
@@ -383,7 +383,7 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
     committee.foldlM (init := acc) fun a i =>
       if store.equivocatingIndices.contains i then do
         let v ← sszGetIdx validators i.toNat
-        pure (a + v.effectiveBalance)
+        a + v.effectiveBalance
       else pure a
   pure (headWeight < reorgThreshold)
 
@@ -394,7 +394,7 @@ alpha.12 used `get_weight`. The `store.blocks[root]` read raises on a miss. -/
 forkdef isParentStrong (store : Store map) (root : Root) : StoreTransition Bool := do
   let justifiedState ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  let parentThreshold := calculateCommitteeFraction justifiedState Const.reorgParentWeightThreshold
+  let parentThreshold ← calculateCommitteeFraction justifiedState Const.reorgParentWeightThreshold
   let b ← FcMap.getOrThrow store.blocks root
   let parentWeight ← getAttestationScore store b.parentRoot justifiedState
   pure (parentWeight > parentThreshold)

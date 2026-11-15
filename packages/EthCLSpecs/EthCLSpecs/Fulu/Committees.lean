@@ -121,7 +121,7 @@ forkdef computeBalanceWeightedSelection (state : State) (indices : Array Validat
   assert (total > 0)
   let idxNat := indices.map (·.toNat)
   let validators := sszGet state validators
-  let effBals := indices.map (fun vi => (validators[vi.toNat]!).effectiveBalance.toNat)
+  let effBals := indices.map (fun vi => (validators[vi.toNat]!).effectiveBalance.toPlainInt)
   let perm := if shuffle then computeShuffledPermutation total seed else #[]
   cbwsAux idxNat effBals perm seed total size shuffle 0 ByteArray.empty #[]
 
