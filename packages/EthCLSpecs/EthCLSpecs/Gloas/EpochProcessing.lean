@@ -109,7 +109,8 @@ whose per-epoch churn is the capped `getActivationExitChurnLimit`. -/
 forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Epoch := do
   let state ← get
   let currentEpoch := computeEpochAtSlot (sszGet state slot)
-  let earliest := umax (sszGet state earliestExitEpoch) (computeActivationExitEpoch currentEpoch)
+  let exitCandidate ← computeActivationExitEpoch currentEpoch
+  let earliest := max (sszGet state earliestExitEpoch) exitCandidate
   let perEpochChurn ← getExitChurnLimit state
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
 
@@ -137,11 +138,13 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
   let slashIdx := umodIdx epoch Const.epochsPerSlashingsVector
 
   -- Mark slashed, extend withdrawability, record the effective balance in the
-  -- slashings ring buffer, and apply the slashing penalty.
+  -- slashings ring buffer, and apply the slashing penalty. The withdrawability sum is the
+  -- checked `epoch + EPOCHS_PER_SLASHINGS_VECTOR`, bound where the pyspec's assignment forms it.
+  let withdrawableAt ← epoch + Const.epochsPerSlashingsVector
   let state := modValidator state i fun validator =>
     { validator with
         slashed := true,
-        withdrawableEpoch := umax validator.withdrawableEpoch (epoch + UInt64.ofNat Const.epochsPerSlashingsVector) }
+        withdrawableEpoch := max validator.withdrawableEpoch withdrawableAt }
   let slashed ← vget (sszGet state slashings) slashIdx + validator.effectiveBalance
   let state := sszUpdate state with slashings[slashIdx]! := slashed
   let state ← decreaseBalance state i (← validator.effectiveBalance / Const.minSlashingPenaltyQuotientElectra)
@@ -206,10 +209,12 @@ late-binds its `getBeaconProposerIndices` call to this Gloas copy. When every ac
 validator is slashed, the candidate set is empty, and `compute_balance_weighted_selection`'s
 `assert total > 0` rejects. -/
 forkdef getBeaconProposerIndices (state : State) (epoch : Epoch) :
-    Except StateTransitionError (Array ValidatorIndex) :=
+    Except StateTransitionError (Array ValidatorIndex) := do
   let validators := sszGet state validators
   let indices := (getActiveValidatorIndices state epoch).filter (fun vi => !(validators[vi.toNat]!).slashed)
-  computeProposerIndices state epoch (getSeed state epoch Const.domainBeaconProposer) indices
+  -- The seed binds where the pyspec assigns it (`gloas/beacon-chain.md:1304`).
+  let seed ← getSeed state epoch Const.domainBeaconProposer
+  computeProposerIndices state epoch seed indices
 
 -- Epoch substeps (all but the two shuffle-dependent ones).
 inherit weighJustificationAndFinalization
@@ -266,9 +271,9 @@ forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot : Slot) (avail 
 
 forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
-  let nextEpoch := currentEpochOf state + 1
+  let nextEpoch ← currentEpochOf state + 1
   let avail ← (sszGet state depositBalanceToConsume) + getActivationChurnLimit state
-  let finalizedSlot := computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
+  let finalizedSlot ← computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
   let deposits := (sszGet state pendingDeposits).toArray
 
   let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
@@ -355,11 +360,15 @@ active validators than `SLOTS_PER_EPOCH`) rejects through
 forkdef computePtc (state : State) (slot : Slot) :
     Except StateTransitionError (Vector ValidatorIndex Const.ptcSize) := do
   let epoch := computeEpochAtSlot slot
-  let seed := sha ((getSeed state epoch Const.domainPtcAttester) ++ uint64ToBytes slot)
+  -- The seed binds where the pyspec assigns it (`gloas/beacon-chain.md:1271`), and the
+  -- slot serializes through its `val` projection, the SSZ iso read.
+  let seed ← getSeed state epoch Const.domainPtcAttester
+  let sd := sha (seed ++ uint64ToBytes slot.val)
   let committeesPerSlot := getCommitteeCountPerSlot state epoch
-  let indices := (Array.range committeesPerSlot).foldl
-    (fun acc i => acc ++ getBeaconCommittee state slot i) (#[] : Array ValidatorIndex)
-  let sel ← computeBalanceWeightedSelection state indices seed Const.ptcSize false
+  let indices ← (Array.range committeesPerSlot).foldlM
+    (fun acc i => do let committee ← getBeaconCommittee state slot i; pure (acc ++ committee))
+    (#[] : Array ValidatorIndex)
+  let sel ← computeBalanceWeightedSelection state indices sd Const.ptcSize false
   return Vector.ofFn (fun i : Fin Const.ptcSize => sel[i.val]!)
 
 /-- `process_ptc_window` (EIP-7732, `gloas/beacon-chain.md:1737-1748`): shift the cached PTC window down
@@ -369,10 +378,14 @@ SLOTS_PER_EPOCH` (MIN_SEED_LOOKAHEAD = 1). The per-slot PTCs are computed in slo
 so the run surfaces the first slot whose `compute_ptc` rejects. -/
 forkdef processPtcWindow : StateTransition Unit := do
   let state ← get
-  let nextEpoch := currentEpochOf state + Const.minSeedLookahead + 1
-  let startSlot := computeStartSlotAtEpoch nextEpoch
+  let nextEpoch ← currentEpochOf state + Const.minSeedLookahead + 1
+  let startSlot ← computeStartSlotAtEpoch nextEpoch
   let fresh : Array (Vector ValidatorIndex Const.ptcSize) ← liftErr
-    ((Array.range Const.slotsPerEpoch).mapM (fun i => computePtc state (startSlot + UInt64.ofNat i)))
+    ((Array.range Const.slotsPerEpoch).mapM (fun i => do
+      -- `start_slot + i`, the checked `CLUint64` route; the same sum Fulu's
+      -- `computeProposerIndices` loop binds per slot.
+      let slotI ← startSlot + i
+      computePtc state slotI))
 
   modifyState fun state =>
     sszUpdate state with ptcWindow :=

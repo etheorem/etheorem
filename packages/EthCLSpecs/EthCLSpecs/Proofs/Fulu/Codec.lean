@@ -27,11 +27,11 @@ compiler trust enters, so every theorem here carries the three standard axioms a
 
 Every container here takes the fork's `[Preset]`, which sizes its vectors. `BasicSupported`
 requires every vector length to be positive, because the decoder rejects a zero-length vector.
-The `Preset` class carries positivity proofs for `slotsPerEpoch`, `slotsPerHistoricalRoot`,
-and `epochsPerHistoricalVector` only. `BeaconState.slashings` has length
-`epochsPerSlashingsVector`, which carries no such proof. For a preset that sets it to zero,
-the gate fails and the roundtrip is false. So each theorem takes `P = mainnet ∨ P = minimal`
-and case-splits on it, and `decide` checks each shipped preset.
+The `Preset` class carries positivity proofs for the vector-length constants, including
+`epochsPerSlashingsVectorPos` for `BeaconState.slashings`. The case-split on the shipped
+presets stays because `decide` needs closed vector lengths, which the split supplies. So each
+theorem takes `P = mainnet ∨ P = minimal` and case-splits on it, and `decide` checks each
+shipped preset.
 
 `rcases hP with rfl | rfl` substitutes the concrete preset for the instance variable `P`.
 After that step, every vector length in the shape is a closed term, and `decide` can reduce it.

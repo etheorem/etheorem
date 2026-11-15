@@ -57,11 +57,19 @@ forkdef hasNotInitiatedExit (v : Validator) : Bool :=
 
 /-- `validator.activation_epoch + SHARD_COMMITTEE_PERIOD <= epoch`: the validator has been
 active long enough to exit or consolidate. Written in the `≤` direction the spec uses; the call
-sites that gate on *not* having passed the window spell it `!passedShardCommitteePeriod …`.
+sites that gate on *not* having passed the window bind first and negate:
+`if !(← passedShardCommitteePeriod validator epoch) then …`.
+The sum is the checked `uint64` add every pyspec site carries
+(`fulu/mainnet.py:3913`, `current_epoch < validator.activation_epoch + SHARD_COMMITTEE_PERIOD`),
+so the predicate raises where it raises, on an `activation_epoch` at the `FAR_FUTURE_EPOCH`
+sentinel; the result is a `Checked Bool` on the `canBuilderCoverBid` shape.
 `Const.shardCommitteePeriod` is a `[Config]`-tier constant, so this is the one predicate in this
-file that carries the `[Config]` binder. -/
-forkdef passedShardCommitteePeriod (v : Validator) (epoch : Epoch) : Bool :=
-  v.activationEpoch + Const.shardCommitteePeriod ≤ epoch
+file that carries the `[Config]` binder; it is `UInt64`-typed, so the sum wraps it through
+`trustedOfUInt64`, the trusted route `CLUint.lean` reserves for decoded and constant values. -/
+forkdef passedShardCommitteePeriod (v : Validator) (epoch : Epoch) : Checked Bool := do
+  let activeWindowEnd ←
+    v.activationEpoch + CLUint64.trustedOfUInt64 Const.shardCommitteePeriod
+  pure (activeWindowEnd ≤ epoch)
 
 /-! ## Withdrawal-credential predicates (pure on the container) -/
 

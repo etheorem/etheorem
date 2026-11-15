@@ -123,6 +123,7 @@ forkpreset where
   slotsPerHistoricalRootLt : slotsPerHistoricalRoot < 2 ^ 64
   epochsPerHistoricalVectorPos : 0 < epochsPerHistoricalVector
   epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64
+  epochsPerSlashingsVectorPos : 0 < epochsPerSlashingsVector
 
 /-- The config-tier values (network parameters). Threaded `[Config]`; never
 shapes a type. Membership follows `configs/{minimal,mainnet}.yaml` the same way
@@ -131,7 +132,7 @@ forkconfig where
   churnLimitQuotient : UInt64
   minPerEpochChurnLimitElectra : Gwei
   maxPerEpochActivationExitChurnLimit : Gwei
-  minValidatorWithdrawabilityDelay : UInt64
+  minValidatorWithdrawabilityDelay : Epoch
   shardCommitteePeriod : UInt64
   genesisForkVersion : Version
   /-- The fork schedule, `<FORK>_FORK_VERSION` / `<FORK>_FORK_EPOCH` for every fork
@@ -198,13 +199,30 @@ forkabbrev pendingConsolidationsLimit : Nat := Preset.pendingConsolidationsLimit
 
 -- Well-formedness of the vector-length constants (positive, `uint64`-ranged), surfaced
 -- with the `Const.` prefix like the values. The proof-carrying premises of
--- `EthCLLib.Spec.uint64ModOfNatToNatLt` at a modulo index into the matching vector.
+-- `EthCLLib.Spec.uint64ModOfNatToNatLt` at a modulo index into the matching vector, and,
+-- for the `…Div` wrappers below, of the `PositiveDivisor` total-division route.
 forkabbrev slotsPerEpochPos : 0 < slotsPerEpoch := Preset.slotsPerEpochPos
 forkabbrev slotsPerEpochLt : slotsPerEpoch < 2 ^ 64 := Preset.slotsPerEpochLt
+/-- `SLOTS_PER_EPOCH` as a proof-carrying divisor: the total-division route for
+`slot // SLOTS_PER_EPOCH`, whose positivity is discharged here once and read by every
+`compute_epoch_at_slot`-shaped site. The `PositiveDivisor` wrapper makes the quotient a plain
+value, so the site keeps its pure signature and reads as the pyspec line. -/
+forkabbrev slotsPerEpochDiv : PositiveDivisor := ⟨slotsPerEpoch, slotsPerEpochPos⟩
 forkabbrev slotsPerHistoricalRootPos : 0 < slotsPerHistoricalRoot := Preset.slotsPerHistoricalRootPos
 forkabbrev slotsPerHistoricalRootLt : slotsPerHistoricalRoot < 2 ^ 64 := Preset.slotsPerHistoricalRootLt
 forkabbrev epochsPerHistoricalVectorPos : 0 < epochsPerHistoricalVector := Preset.epochsPerHistoricalVectorPos
 forkabbrev epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64 := Preset.epochsPerHistoricalVectorLt
+forkabbrev epochsPerSlashingsVectorPos : 0 < epochsPerSlashingsVector := Preset.epochsPerSlashingsVectorPos
+/-- `EPOCHS_PER_HISTORICAL_VECTOR` as a proof-carrying divisor: the total-division route for
+the `epoch % EPOCHS_PER_HISTORICAL_VECTOR` ring-buffer index (`fulu/mainnet.py:1459` and the
+`randao_mixes` writers). -/
+forkabbrev epochsPerHistoricalVectorDiv : PositiveDivisor :=
+  ⟨epochsPerHistoricalVector, epochsPerHistoricalVectorPos⟩
+/-- `EPOCHS_PER_SLASHINGS_VECTOR` as a proof-carrying divisor: the same total route for the
+`epoch % EPOCHS_PER_SLASHINGS_VECTOR` ring index of `slash_validator`
+(`fulu/mainnet.py:1646`) and, once their round lands, the `process_epoch` sibling sites. -/
+forkabbrev epochsPerSlashingsVectorDiv : PositiveDivisor :=
+  ⟨epochsPerSlashingsVector, epochsPerSlashingsVectorPos⟩
 
 -- Sentinels, registry and history caps.
 forkabbrev farFutureEpoch : Epoch := 0xffffffffffffffff
@@ -296,7 +314,7 @@ forkabbrev domainBlsToExecutionChange : ByteArray := ⟨#[0x0A, 0, 0, 0]⟩
 forkabbrev churnLimitQuotient : UInt64 := Config.churnLimitQuotient
 forkabbrev minPerEpochChurnLimitElectra : Gwei := Config.minPerEpochChurnLimitElectra
 forkabbrev maxPerEpochActivationExitChurnLimit : Gwei := Config.maxPerEpochActivationExitChurnLimit
-forkabbrev minValidatorWithdrawabilityDelay : UInt64 := Config.minValidatorWithdrawabilityDelay
+forkabbrev minValidatorWithdrawabilityDelay : Epoch := Config.minValidatorWithdrawabilityDelay
 forkabbrev shardCommitteePeriod : UInt64 := Config.shardCommitteePeriod
 forkabbrev genesisForkVersion : Version := Config.genesisForkVersion
 -- The fork schedule through Fulu (`configs/*.yaml`, one `# <Fork>` block each).
@@ -425,6 +443,7 @@ forkpresetvalues minimal where
   slotsPerHistoricalRootPos := by decide
   slotsPerHistoricalRootLt := by decide
   epochsPerHistoricalVectorPos := by decide
+  epochsPerSlashingsVectorPos := by decide
   epochsPerHistoricalVectorLt := by decide
 
 /-- The `mainnet` preset. -/
@@ -498,6 +517,7 @@ forkpresetvalues mainnet where
   slotsPerHistoricalRootPos := by decide
   slotsPerHistoricalRootLt := by decide
   epochsPerHistoricalVectorPos := by decide
+  epochsPerSlashingsVectorPos := by decide
   epochsPerHistoricalVectorLt := by decide
 
 /-- The `minimal` config. -/

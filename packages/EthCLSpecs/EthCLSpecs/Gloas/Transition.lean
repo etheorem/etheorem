@@ -28,8 +28,13 @@ inherit processEth1Data
 inherit verifyBlockSignature
 
 /-- `process_slot` (Gloas): Fulu's state/header/block-root caching, plus clearing the
-next slot's `execution_payload_availability` bit (a payload starts unavailable). -/
-forkdef processSlot : StateTransition Unit :=
+next slot's `execution_payload_availability` bit (a payload starts unavailable).
+The next slot binds before the store: `process_slot` never writes `slot`, so the read
+matches the pyspec's post-caching `state.slot + 1`, and nothing in the caching raises,
+so the checked add's raise surfaces at the same step. -/
+forkdef processSlot : StateTransition Unit := do
+  let nextSlot ← (sszGet (← get) slot) + 1
+  let nextIdx := umodIdx nextSlot Const.slotsPerHistoricalRoot
   modifyState fun state => Id.run do
     let (prevStateRootBytes, state) := stateRoot state
     let mut state := state
@@ -46,7 +51,6 @@ forkdef processSlot : StateTransition Unit :=
     state := sszUpdate state with blockRoots[idx]! := blockRoot
 
     -- Gloas addition: the next slot's payload starts unavailable.
-    let nextIdx := umodIdx ((sszGet state slot) + 1) Const.slotsPerHistoricalRoot
     state := sszUpdate state with executionPayloadAvailability :=
       bitSet (sszGet state executionPayloadAvailability) nextIdx false
     return state
@@ -72,14 +76,26 @@ forkdef processEpoch : StateTransition Unit := do
   processProposerLookahead
   processPtcWindow
 
-/-- `process_slots`: restated so its `process_slot` / `process_epoch` calls bind to
-the Gloas spine. -/
+/-- `process_slots`: advance to `target`, running `process_slot` (and `process_epoch`
+at each epoch boundary) for every intervening slot (`gloas/mainnet.py:2209-2216`). -/
 forkdef processSlots (target : Slot) : StateTransition Unit := do
   assert ((sszGet (← get) slot) < target)
-  for _ in [0:(target - (sszGet (← get) slot)).toNat] do
+  -- The loop count is the checked subtract `target - state.slot`. It cannot underflow: the
+  -- assert above pins `state.slot < target`. `.toPlainInt` is the plain-`int` range count.
+  let distance ← target - (sszGet (← get) slot)
+  for _ in [0:distance.toPlainInt] do
     processSlot
-    if ((sszGet (← get) slot) + 1) % UInt64.ofNat Const.slotsPerEpoch == 0 then processEpoch
-    modifyState fun state => sszUpdate state with slot := (sszGet state slot) + 1
+    -- The loop-bounded `+ 1` is the pyspec's checked `uint64` add (`gloas/mainnet.py:2214`).
+    -- It cannot overflow: the loop runs `target - slot₀` iterations and the `sszUpdate` below
+    -- is the only writer of `slot`, so at this bind `state.slot = slot₀ + k < target`, and
+    -- `state.slot + 1 ≤ target ≤ 2^64 - 1`. The epoch boundary reads
+    -- `(state.slot + 1) % SLOTS_PER_EPOCH == 0`, through the total `PositiveDivisor` route.
+    -- The ascription names the remainder's type; without it the `== 0` retypes the modulo to
+    -- the divisor. Binding `next` before `processEpoch` equals the spec's post-`process_epoch`
+    -- re-read: no epoch sub-step writes `slot`.
+    let next ← (sszGet (← get) slot) + 1
+    if (next % Const.slotsPerEpochDiv : Slot) == 0 then processEpoch
+    modifyState fun state => sszUpdate state with slot := next
 
 /-- `process_operations` (Gloas, EIP-7732, `gloas/beacon-chain.md:2228-2263`): no in-block
 deposits, no execution-request loops (those run in `process_parent_execution_payload`), and

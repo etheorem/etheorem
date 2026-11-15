@@ -18,9 +18,9 @@ open EthCLLib.Spec
 namespace EthCLSpecs.Fulu
 
 /-- A slot number. -/
-forkabbrev Slot := UInt64
+forkabbrev Slot := CLUint64
 /-- An epoch number. -/
-forkabbrev Epoch := UInt64
+forkabbrev Epoch := CLUint64
 /-- An index into the validator registry. -/
 forkabbrev ValidatorIndex := UInt64
 /-- An index into the builder registry (Gloas/EIP-7732). SSZ `uint64`. -/

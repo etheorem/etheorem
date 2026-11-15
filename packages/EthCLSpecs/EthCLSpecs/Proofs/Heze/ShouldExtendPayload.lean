@@ -10,14 +10,17 @@ Heze's `shouldExtendPayload` inserts a FOCIL gate after payload verification
 and before the timeliness, data-availability, and proposer-boost checks.
 
 The complete `.run` equation evaluates in this order: block lookup,
-`getCurrentSlot.run`, the `slot + 1` overflow check, the slot assertion,
-`isPayloadVerified`, `isPayloadInclusionListSatisfied.run`, then the
+`getCurrentSlot.run`, the checked `nextSlot ← blocks[root].slot + 1` bind, the
+slot assertion, `isPayloadVerified`, `isPayloadInclusionListSatisfied.run`, then the
 remaining post-FOCIL checks (`payloadTimeliness`, `payloadDataAvailability`,
 proposer-boost block lookup, and `isParentNodeFull`).
 
 The explicit argument `store` is the map that is read. `runnerStore` is
 the runner state. Successful binds thread intermediate states `s1`, `s2`,
 `s3`, and `s4`. A reject returns the error alone and has no post-state.
+The increment is the checked `Slot` add: its fault surfaces as the
+`.arithmetic` fault carrying the repr of the exact `ArithFault`, so the
+corollaries state the add's `.ok` or `.error` equation.
 
 Private bridges stage the equation so each corollary states only its own
 case. `shouldExtendPayload_run_eq_of_slot_prefix` reduces the successful
@@ -40,9 +43,9 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLLib.Proofs (ForkChoiceStoreRun run_throw except_bind_ok except_bind_error)
-open EthCLLib.Spec (HasherTag MapKind FcMap checkedAdd throwArithmetic StoreTransitionError
-  SpecReject)
+open EthCLLib.Proofs (ForkChoiceStoreRun run_bind run_pure run_throw run_liftM_error
+  run_liftM_ok except_bind_ok except_bind_error ite_bind)
+open EthCLLib.Spec (HasherTag MapKind FcMap Checked ArithFault StoreTransitionError)
 open EthCLSpecs.Heze (Preset Config Store shouldExtendPayload isPayloadInclusionListSatisfied
   isPayloadVerified getCurrentSlot payloadTimeliness payloadDataAvailability isParentNodeFull
   fcZeroRoot Root Slot BeaconBlock)
@@ -52,7 +55,9 @@ variable {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
 /-! ## Complete `.run` equation -/
 
 /-- Complete compositional `.run` equation of `shouldExtendPayload` at
-`ForkChoiceStoreRun (Store map)`. -/
+`ForkChoiceStoreRun (Store map)`. The increment is the checked `Slot` add,
+and its fault surfaces as the `.arithmetic` fault carrying the repr of the
+exact `ArithFault`. -/
 @[characterizes EthCLSpecs.Heze.shouldExtendPayload]
 theorem shouldExtendPayload_run :
     ∀ (store runnerStore : Store map) (root : Root),
@@ -67,11 +72,9 @@ theorem shouldExtendPayload_run :
               store).run runnerStore with
           | .error err => .error err
           | .ok (currentSlot, s1) =>
-            if rootBlock.slot + 1 < rootBlock.slot then
-              .error (.transition (.arithmetic
-                "should_extend_payload: blocks[root].slot + 1"))
-            else
-              let nextSlot := rootBlock.slot + 1
+            match (rootBlock.slot + 1 : Checked Slot) with
+            | .error f => .error (.transition (.arithmetic (reprStr f)))
+            | .ok nextSlot =>
               if nextSlot == currentSlot then
                 if !isPayloadVerified store root then
                   .ok (false, s1)
@@ -107,95 +110,106 @@ theorem shouldExtendPayload_run :
               else
                 .error (.assert "(nextSlot == currentSlot)") := by
   intro store runnerStore root
-  simp [shouldExtendPayload, FcMap.getOrThrow, FcMap.getOrThrowKey, checkedAdd]
+  simp only [shouldExtendPayload, FcMap.getOrThrow, FcMap.getOrThrowKey]
   cases hblock : FcMap.lookup store.blocks root with
   | none =>
-    simp [run_throw, except_bind_error]
+    simp only []
+    rw [run_bind, run_throw, except_bind_error]
   | some rootBlock =>
+    simp only []
+    rw [run_bind, run_pure, except_bind_ok]
+    rw [run_bind]
     cases hcur : (getCurrentSlot
         (StoreTransition := ForkChoiceStoreRun (Store map))
         store).run runnerStore with
-    | error err =>
-      simp [hcur, except_bind_error]
+    | error err => rw [except_bind_error]
     | ok p =>
       obtain ⟨currentSlot, s1⟩ := p
-      simp [hcur, except_bind_ok]
-      by_cases hover : rootBlock.slot + 1 < rootBlock.slot
-      · simp [hover, ForkChoiceStoreRun.throwArithmetic_run, except_bind_error]
-      · simp [hover]
-        by_cases hslot : rootBlock.slot + 1 = currentSlot
-        · simp [hslot]
-          cases hverified : isPayloadVerified store root
-          · simp
-            rfl
-          · simp
+      rw [except_bind_ok]
+      rw [run_bind]
+      cases hadd : (rootBlock.slot + 1 : Checked Slot) with
+      | error f => rw [run_liftM_error, except_bind_error]; rfl
+      | ok nextSlot =>
+        rw [run_liftM_ok, except_bind_ok]
+        rw [ite_bind]
+        split
+        case isTrue hsucc =>
+          simp only [run_bind, run_pure, except_bind_ok]
+          rw [if_pos hsucc]
+          cases hverified : isPayloadVerified store root with
+          | false =>
+            simp only [Bool.not_false, ite_true, run_pure]
+          | true =>
+            simp only [hverified, Bool.not_true, Bool.false_eq_true, if_false, run_bind]
             cases hfocil : (isPayloadInclusionListSatisfied
                 (StoreTransition := ForkChoiceStoreRun (Store map))
                 store root).run s1 with
-            | error err =>
-              simp [except_bind_error]
+            | error err => simp only [except_bind_error]
             | ok q =>
-              obtain ⟨satisfied, s2⟩ := q
-              simp [except_bind_ok]
-              cases satisfied
-              · rfl
-              · simp
-                cases htime : (payloadTimeliness
-                    (StoreTransition := ForkChoiceStoreRun (Store map))
-                    store root true).run s2 with
-                | error err =>
-                  simp [except_bind_error]
-                | ok r =>
-                  obtain ⟨payloadIsTimely, s3⟩ := r
-                  simp [except_bind_ok]
-                  cases hda : (payloadDataAvailability
+              simp only [except_bind_ok]
+              cases q with
+              | mk satisfied s2 =>
+                cases satisfied with
+                | false =>
+                  simp only [Bool.not_false, Bool.false_eq_true, if_true, run_pure]
+                | true =>
+                  simp only [Bool.not_true, Bool.false_eq_true, if_false, run_bind]
+                  cases htime : (payloadTimeliness
                       (StoreTransition := ForkChoiceStoreRun (Store map))
-                      store root true).run s3 with
-                  | error err =>
-                    simp [except_bind_error]
-                  | ok s =>
-                    obtain ⟨payloadDataIsAvailable, s4⟩ := s
-                    simp [except_bind_ok]
-                    by_cases hacc :
-                        payloadIsTimely = true ∧ payloadDataIsAvailable = true
-                          ∨ store.proposerBoostRoot = fcZeroRoot
-                    · simp [hacc]
-                      rfl
-                    · simp [hacc]
-                      cases hpb : FcMap.lookup store.blocks store.proposerBoostRoot with
-                      | none =>
-                        simp [run_throw, except_bind_error]
-                      | some pb =>
-                        simp
-                        by_cases hparent : pb.parentRoot = root
-                        · simp [hparent]
-                        · simp [hparent]
-                          rfl
-        · simp [hslot, run_throw, except_bind_error, SpecReject.assert]
+                      store root true).run s2 with
+                  | error err => simp only [except_bind_error]
+                  | ok r =>
+                    simp only [except_bind_ok]
+                    cases r with
+                    | mk payloadIsTimely s3 =>
+                      cases hda : (payloadDataAvailability
+                          (StoreTransition := ForkChoiceStoreRun (Store map))
+                          store root true).run s3 with
+                      | error err => simp only [except_bind_error]
+                      | ok s =>
+                        simp only [except_bind_ok]
+                        cases s with
+                        | mk payloadDataIsAvailable s4 =>
+                          simp only []
+                          split
+                          case isTrue hacc => rfl
+                          case isFalse hacc =>
+                            simp only [run_bind]
+                            cases hpb :
+                                FcMap.lookup store.blocks store.proposerBoostRoot with
+                            | none => simp only [run_throw, except_bind_error]
+                            | some pb =>
+                              simp only []
+                              rw [run_pure, except_bind_ok]
+                              split
+                              case isTrue _ => simp only [run_pure]
+                              case isFalse _ => rfl
+        case isFalse hsucc =>
+          simp only [run_bind, run_throw, except_bind_error, if_neg hsucc]
+          rfl
 
 /-! ## The successful prefix
 
-The block lookup, `getCurrentSlot`, the increment, and the slot assertion
-are the prefix every post-prefix corollary shares. One bridge reduces that
-prefix once, and each corollary states only its own case.
+The block lookup, `getCurrentSlot`, the checked increment, and the slot
+assertion are the prefix every post-prefix corollary shares. One bridge
+reduces that prefix once, and each corollary states only its own case.
 -/
 
-/-- Under the successful prefix (block lookup, `getCurrentSlot`, the
-non-overflowing increment, the slot assertion) the run reduces to the
-post-prefix form: the `isPayloadVerified` branch, the FOCIL read bound at
-`s1`, then the inherited Gloas tail. The gate and tail corollaries below
-derive from this bridge, as does later composition work on the write
-side. -/
+/-- Under the successful prefix (block lookup, `getCurrentSlot`, the bound
+increment, the slot assertion) the run reduces to the post-prefix form: the
+`isPayloadVerified` branch, the FOCIL read bound at `s1`, then the inherited
+Gloas tail. The gate and tail corollaries below derive from this bridge, as
+does later composition work on the write side. -/
 private theorem shouldExtendPayload_run_eq_of_slot_prefix :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
-      (currentSlot : Slot),
+      (currentSlot nextSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
-      rootBlock.slot + 1 = currentSlot →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
+      nextSlot = currentSlot →
       (shouldExtendPayload
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore =
@@ -230,11 +244,10 @@ private theorem shouldExtendPayload_run_eq_of_slot_prefix :
                       (isParentNodeFull
                           (StoreTransition := ForkChoiceStoreRun (Store map))
                           store pb).run s4 := by
-  intro store runnerStore s1 root rootBlock currentSlot
-    hblock hcur hnooverflow hslot
+  intro store runnerStore s1 root rootBlock currentSlot nextSlot
+    hblock hcur hadd hslot
   rw [shouldExtendPayload_run]
-  simp [hblock, hcur, hnooverflow]
-  simp [hslot]
+  simp [hblock, hcur, hadd, hslot]
 
 /-! ## Prefix rejects -/
 
@@ -267,45 +280,45 @@ theorem shouldExtendPayload_run_error_of_getCurrentSlot :
   rw [shouldExtendPayload_run]
   simp [hblock, hcur]
 
-/-- Overflow of `blocks[root].slot + 1` is the arithmetic fault named by
-`checkedAdd`. -/
+/-- Overflow of the checked increment is the `.arithmetic` fault carrying the
+repr of the exact `ArithFault`. -/
 theorem shouldExtendPayload_run_error_of_slot_overflow :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
-      (currentSlot : Slot),
+      (currentSlot : Slot) (f : ArithFault),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      rootBlock.slot + 1 < rootBlock.slot →
+      (rootBlock.slot + 1 : Checked Slot) = .error f →
       (shouldExtendPayload
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
-        = .error (.transition (.arithmetic
-            "should_extend_payload: blocks[root].slot + 1")) := by
-  intro store runnerStore s1 root rootBlock currentSlot hblock hcur hover
+        = .error (.transition (.arithmetic (reprStr f))) := by
+  intro store runnerStore s1 root rootBlock currentSlot f hblock hcur hadd
   rw [shouldExtendPayload_run]
-  simp [hblock, hcur, hover]
+  simp [hblock, hcur, hadd]
 
-/-- A successful increment that fails `nextSlot == currentSlot` is the spec's
+/-- A bound increment that fails `nextSlot == currentSlot` is the spec's
 slot assertion. -/
 theorem shouldExtendPayload_run_error_of_slot_assert :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
-      (currentSlot : Slot),
+      (currentSlot nextSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
-      rootBlock.slot + 1 ≠ currentSlot →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
+      nextSlot ≠ currentSlot →
       (shouldExtendPayload
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .error (.assert "(nextSlot == currentSlot)") := by
-  intro store runnerStore s1 root rootBlock currentSlot hblock hcur hnooverflow hslot
+  intro store runnerStore s1 root rootBlock currentSlot nextSlot
+    hblock hcur hadd hslot
   rw [shouldExtendPayload_run]
-  simp [hblock, hcur, hnooverflow, hslot]
+  simp [hblock, hcur, hadd, hslot]
 
 /-! ## FOCIL gate -/
 
@@ -313,46 +326,47 @@ theorem shouldExtendPayload_run_error_of_slot_assert :
 The helper is not called. The runner state is `s1`. -/
 theorem shouldExtendPayload_run_eq_false_of_unverified :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
-      (currentSlot : Slot),
+      (currentSlot nextSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
-      rootBlock.slot + 1 = currentSlot →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
+      nextSlot = currentSlot →
       isPayloadVerified store root = false →
       (shouldExtendPayload
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .ok (false, s1) := by
-  intro store runnerStore s1 root rootBlock currentSlot hblock hcur hnooverflow hslot hverified
+  intro store runnerStore s1 root rootBlock currentSlot nextSlot
+    hblock hcur hadd hslot hverified
   rw [shouldExtendPayload_run_eq_of_slot_prefix store runnerStore s1 root rootBlock
-    currentSlot hblock hcur hnooverflow hslot]
+    currentSlot nextSlot hblock hcur hadd hslot]
   simp [hverified]
 
 /-- A missing satisfaction record, after verification, is the helper's
 membership assert. -/
 theorem shouldExtendPayload_run_error_of_missing_focil_record :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
-      (currentSlot : Slot),
+      (currentSlot nextSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
-      rootBlock.slot + 1 = currentSlot →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
+      nextSlot = currentSlot →
       isPayloadVerified store root = true →
       FcMap.lookup store.payloadInclusionListSatisfaction root = none →
       (shouldExtendPayload
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .error (.assert "root in store.payload_inclusion_list_satisfaction") := by
-  intro store runnerStore s1 root rootBlock currentSlot
-    hblock hcur hnooverflow hslot hverified hlookup
+  intro store runnerStore s1 root rootBlock currentSlot nextSlot
+    hblock hcur hadd hslot hverified hlookup
   rw [shouldExtendPayload_run_eq_of_slot_prefix store runnerStore s1 root rootBlock
-    currentSlot hblock hcur hnooverflow hslot]
+    currentSlot nextSlot hblock hcur hadd hslot]
   simp [hverified]
   rw [isPayloadInclusionListSatisfied_run_error_of_missing_record store s1 root hlookup]
 
@@ -360,19 +374,19 @@ theorem shouldExtendPayload_run_error_of_missing_focil_record :
 verdict is rejected by the FOCIL gate. `hverified` selects that branch.
 The converse is not claimed. -/
 theorem shouldExtendPayload_run_eq_false_of_recorded_unsatisfied :
-    ∀ (store : Store map) (root : Root) (rootBlock : BeaconBlock),
+    ∀ (store : Store map) (root : Root) (rootBlock : BeaconBlock) (nextSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot (StoreTransition := ForkChoiceStoreRun (Store map)) store).run store
-        = .ok (rootBlock.slot + 1, store) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
+        = .ok (nextSlot, store) →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
       isPayloadVerified store root = true →
       FcMap.lookup store.payloadInclusionListSatisfaction root = some false →
       (shouldExtendPayload (StoreTransition := ForkChoiceStoreRun (Store map)) store root).run
           store
         = .ok (false, store) := by
-  intro store root rootBlock hblock hcurrentslot hnooverflow hverified hunsatisfied
+  intro store root rootBlock nextSlot hblock hcurrentslot hadd hverified hunsatisfied
   rw [shouldExtendPayload_run_eq_of_slot_prefix store store store root rootBlock
-    (rootBlock.slot + 1) hblock hcurrentslot hnooverflow rfl]
+    nextSlot nextSlot hblock hcurrentslot hadd rfl]
   simp [hverified]
   rw [isPayloadInclusionListSatisfied_run]
   simp [hunsatisfied]
@@ -381,14 +395,14 @@ theorem shouldExtendPayload_run_eq_false_of_recorded_unsatisfied :
 post-FOCIL checks at `s1`. The helper leaves that runner state unchanged. -/
 private theorem shouldExtendPayload_run_eq_of_recorded_satisfied :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
-      (currentSlot : Slot),
+      (currentSlot nextSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
-      rootBlock.slot + 1 = currentSlot →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
+      nextSlot = currentSlot →
       isPayloadVerified store root = true →
       FcMap.lookup store.payloadInclusionListSatisfaction root = some true →
       (shouldExtendPayload
@@ -416,10 +430,10 @@ private theorem shouldExtendPayload_run_eq_of_recorded_satisfied :
                   (isParentNodeFull
                       (StoreTransition := ForkChoiceStoreRun (Store map))
                       store pb).run s4 := by
-  intro store runnerStore s1 root rootBlock currentSlot
-    hblock hcur hnooverflow hslot hverified hlookup
+  intro store runnerStore s1 root rootBlock currentSlot nextSlot
+    hblock hcur hadd hslot hverified hlookup
   rw [shouldExtendPayload_run_eq_of_slot_prefix store runnerStore s1 root rootBlock
-    currentSlot hblock hcur hnooverflow hslot]
+    currentSlot nextSlot hblock hcur hadd hslot]
   simp [hverified]
   rw [isPayloadInclusionListSatisfied_run]
   simp [hlookup, hverified]
@@ -457,14 +471,14 @@ private theorem payloadDataAvailability_run_error_of_missing_vote :
 /-- A missing timeliness-vote record is the spec's membership assert. -/
 theorem shouldExtendPayload_run_error_of_missing_timeliness_vote :
     ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
-      (currentSlot : Slot),
+      (currentSlot nextSlot : Slot),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
-      rootBlock.slot + 1 = currentSlot →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
+      nextSlot = currentSlot →
       isPayloadVerified store root = true →
       FcMap.lookup store.payloadInclusionListSatisfaction root = some true →
       FcMap.lookup store.payloadTimelinessVote root = none →
@@ -472,26 +486,26 @@ theorem shouldExtendPayload_run_error_of_missing_timeliness_vote :
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .error (.assert "root in store.payload_timeliness_vote") := by
-  intro store runnerStore s1 root rootBlock currentSlot
-    hblock hcur hnooverflow hslot hverified hsat htime
+  intro store runnerStore s1 root rootBlock currentSlot nextSlot
+    hblock hcur hadd hslot hverified hsat htime
   have htail :=
     shouldExtendPayload_run_eq_of_recorded_satisfied
-      store runnerStore s1 root rootBlock currentSlot
-      hblock hcur hnooverflow hslot hverified hsat
+      store runnerStore s1 root rootBlock currentSlot nextSlot
+      hblock hcur hadd hslot hverified hsat
   rw [htail]
   rw [payloadTimeliness_run_error_of_missing_vote store s1 root htime]
 
 /-- A missing data-availability-vote record is the spec's membership assert. -/
 theorem shouldExtendPayload_run_error_of_missing_data_availability_vote :
     ∀ (store runnerStore s1 s3 : Store map) (root : Root) (rootBlock : BeaconBlock)
-      (currentSlot : Slot) (payloadIsTimely : Bool),
+      (currentSlot nextSlot : Slot) (payloadIsTimely : Bool),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
-      rootBlock.slot + 1 = currentSlot →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
+      nextSlot = currentSlot →
       isPayloadVerified store root = true →
       FcMap.lookup store.payloadInclusionListSatisfaction root = some true →
       (payloadTimeliness
@@ -503,12 +517,12 @@ theorem shouldExtendPayload_run_error_of_missing_data_availability_vote :
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .error (.assert "root in store.payload_data_availability_vote") := by
-  intro store runnerStore s1 s3 root rootBlock currentSlot payloadIsTimely
-    hblock hcur hnooverflow hslot hverified hsat htime hda
+  intro store runnerStore s1 s3 root rootBlock currentSlot nextSlot payloadIsTimely
+    hblock hcur hadd hslot hverified hsat htime hda
   have htail :=
     shouldExtendPayload_run_eq_of_recorded_satisfied
-      store runnerStore s1 root rootBlock currentSlot
-      hblock hcur hnooverflow hslot hverified hsat
+      store runnerStore s1 root rootBlock currentSlot nextSlot
+      hblock hcur hadd hslot hverified hsat
   rw [htail]
   simp [htime]
   rw [payloadDataAvailability_run_error_of_missing_vote store s3 root hda]
@@ -518,14 +532,14 @@ available, or when the proposer-boost root is unset. The runner state is
 `s4`. -/
 theorem shouldExtendPayload_run_eq_true_of_timely_available_or_zero_boost :
     ∀ (store runnerStore s1 s3 s4 : Store map) (root : Root) (rootBlock : BeaconBlock)
-      (currentSlot : Slot) (payloadIsTimely payloadDataIsAvailable : Bool),
+      (currentSlot nextSlot : Slot) (payloadIsTimely payloadDataIsAvailable : Bool),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
-      rootBlock.slot + 1 = currentSlot →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
+      nextSlot = currentSlot →
       isPayloadVerified store root = true →
       FcMap.lookup store.payloadInclusionListSatisfaction root = some true →
       (payloadTimeliness
@@ -542,27 +556,27 @@ theorem shouldExtendPayload_run_eq_true_of_timely_available_or_zero_boost :
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .ok (true, s4) := by
-  intro store runnerStore s1 s3 s4 root rootBlock currentSlot
+  intro store runnerStore s1 s3 s4 root rootBlock currentSlot nextSlot
     payloadIsTimely payloadDataIsAvailable
-    hblock hcur hnooverflow hslot hverified hsat htime hda hacc
+    hblock hcur hadd hslot hverified hsat htime hda hacc
   have htail :=
     shouldExtendPayload_run_eq_of_recorded_satisfied
-      store runnerStore s1 root rootBlock currentSlot
-      hblock hcur hnooverflow hslot hverified hsat
+      store runnerStore s1 root rootBlock currentSlot nextSlot
+      hblock hcur hadd hslot hverified hsat
   rw [htail]
   simp [htime, hda, hacc]
 
 /-- A missing proposer-boost block is `missingKey` of that boost root. -/
 theorem shouldExtendPayload_run_error_of_missing_proposer_block :
     ∀ (store runnerStore s1 s3 s4 : Store map) (root : Root) (rootBlock : BeaconBlock)
-      (currentSlot : Slot) (payloadIsTimely payloadDataIsAvailable : Bool),
+      (currentSlot nextSlot : Slot) (payloadIsTimely payloadDataIsAvailable : Bool),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
-      rootBlock.slot + 1 = currentSlot →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
+      nextSlot = currentSlot →
       isPayloadVerified store root = true →
       FcMap.lookup store.payloadInclusionListSatisfaction root = some true →
       (payloadTimeliness
@@ -580,13 +594,13 @@ theorem shouldExtendPayload_run_error_of_missing_proposer_block :
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .error (.missingKey store.proposerBoostRoot) := by
-  intro store runnerStore s1 s3 s4 root rootBlock currentSlot
+  intro store runnerStore s1 s3 s4 root rootBlock currentSlot nextSlot
     payloadIsTimely payloadDataIsAvailable
-    hblock hcur hnooverflow hslot hverified hsat htime hda hacc hpb
+    hblock hcur hadd hslot hverified hsat htime hda hacc hpb
   have htail :=
     shouldExtendPayload_run_eq_of_recorded_satisfied
-      store runnerStore s1 root rootBlock currentSlot
-      hblock hcur hnooverflow hslot hverified hsat
+      store runnerStore s1 root rootBlock currentSlot nextSlot
+      hblock hcur hadd hslot hverified hsat
   rw [htail]
   simp [htime, hda, hacc, hpb]
 
@@ -594,15 +608,15 @@ theorem shouldExtendPayload_run_error_of_missing_proposer_block :
 checks accept. The runner state is `s4`. -/
 theorem shouldExtendPayload_run_eq_true_of_proposer_parent_ne :
     ∀ (store runnerStore s1 s3 s4 : Store map) (root : Root)
-      (rootBlock pb : BeaconBlock) (currentSlot : Slot)
+      (rootBlock pb : BeaconBlock) (currentSlot nextSlot : Slot)
       (payloadIsTimely payloadDataIsAvailable : Bool),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
-      rootBlock.slot + 1 = currentSlot →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
+      nextSlot = currentSlot →
       isPayloadVerified store root = true →
       FcMap.lookup store.payloadInclusionListSatisfaction root = some true →
       (payloadTimeliness
@@ -621,13 +635,13 @@ theorem shouldExtendPayload_run_eq_true_of_proposer_parent_ne :
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .ok (true, s4) := by
-  intro store runnerStore s1 s3 s4 root rootBlock pb currentSlot
+  intro store runnerStore s1 s3 s4 root rootBlock pb currentSlot nextSlot
     payloadIsTimely payloadDataIsAvailable
-    hblock hcur hnooverflow hslot hverified hsat htime hda hacc hpb hparent
+    hblock hcur hadd hslot hverified hsat htime hda hacc hpb hparent
   have htail :=
     shouldExtendPayload_run_eq_of_recorded_satisfied
-      store runnerStore s1 root rootBlock currentSlot
-      hblock hcur hnooverflow hslot hverified hsat
+      store runnerStore s1 root rootBlock currentSlot nextSlot
+      hblock hcur hadd hslot hverified hsat
   rw [htail]
   simp [htime, hda, hacc, hpb, hparent]
 
@@ -635,15 +649,15 @@ theorem shouldExtendPayload_run_eq_true_of_proposer_parent_ne :
 `isParentNodeFull.run s4`. -/
 private theorem shouldExtendPayload_run_eq_of_isParentNodeFull :
     ∀ (store runnerStore s1 s3 s4 : Store map) (root : Root)
-      (rootBlock pb : BeaconBlock) (currentSlot : Slot)
+      (rootBlock pb : BeaconBlock) (currentSlot nextSlot : Slot)
       (payloadIsTimely payloadDataIsAvailable : Bool),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
-      rootBlock.slot + 1 = currentSlot →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
+      nextSlot = currentSlot →
       isPayloadVerified store root = true →
       FcMap.lookup store.payloadInclusionListSatisfaction root = some true →
       (payloadTimeliness
@@ -664,13 +678,13 @@ private theorem shouldExtendPayload_run_eq_of_isParentNodeFull :
         (isParentNodeFull
             (StoreTransition := ForkChoiceStoreRun (Store map))
             store pb).run s4 := by
-  intro store runnerStore s1 s3 s4 root rootBlock pb currentSlot
+  intro store runnerStore s1 s3 s4 root rootBlock pb currentSlot nextSlot
     payloadIsTimely payloadDataIsAvailable
-    hblock hcur hnooverflow hslot hverified hsat htime hda hacc hpb hparent
+    hblock hcur hadd hslot hverified hsat htime hda hacc hpb hparent
   have htail :=
     shouldExtendPayload_run_eq_of_recorded_satisfied
-      store runnerStore s1 root rootBlock currentSlot
-      hblock hcur hnooverflow hslot hverified hsat
+      store runnerStore s1 root rootBlock currentSlot nextSlot
+      hblock hcur hadd hslot hverified hsat
   rw [htail]
   simp [htime, hda, hacc, hpb, hparent]
 
@@ -678,15 +692,15 @@ private theorem shouldExtendPayload_run_eq_of_isParentNodeFull :
 `false`. The runner state is that helper's post-state `s5`. -/
 theorem shouldExtendPayload_run_eq_false_of_parent_node_not_full :
     ∀ (store runnerStore s1 s3 s4 s5 : Store map) (root : Root)
-      (rootBlock pb : BeaconBlock) (currentSlot : Slot)
+      (rootBlock pb : BeaconBlock) (currentSlot nextSlot : Slot)
       (payloadIsTimely payloadDataIsAvailable : Bool),
       FcMap.lookup store.blocks root = some rootBlock →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
         = .ok (currentSlot, s1) →
-      ¬ (rootBlock.slot + 1 < rootBlock.slot) →
-      rootBlock.slot + 1 = currentSlot →
+      (rootBlock.slot + 1 : Checked Slot) = .ok nextSlot →
+      nextSlot = currentSlot →
       isPayloadVerified store root = true →
       FcMap.lookup store.payloadInclusionListSatisfaction root = some true →
       (payloadTimeliness
@@ -709,14 +723,14 @@ theorem shouldExtendPayload_run_eq_false_of_parent_node_not_full :
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .ok (false, s5) := by
-  intro store runnerStore s1 s3 s4 s5 root rootBlock pb currentSlot
+  intro store runnerStore s1 s3 s4 s5 root rootBlock pb currentSlot nextSlot
     payloadIsTimely payloadDataIsAvailable
-    hblock hcur hnooverflow hslot hverified hsat htime hda hacc hpb hparent hfull
+    hblock hcur hadd hslot hverified hsat htime hda hacc hpb hparent hfull
   have htail :=
     shouldExtendPayload_run_eq_of_isParentNodeFull
-      store runnerStore s1 s3 s4 root rootBlock pb currentSlot
+      store runnerStore s1 s3 s4 root rootBlock pb currentSlot nextSlot
       payloadIsTimely payloadDataIsAvailable
-      hblock hcur hnooverflow hslot hverified hsat htime hda hacc hpb hparent
+      hblock hcur hadd hslot hverified hsat htime hda hacc hpb hparent
   rw [htail, hfull]
 
 end EthCLSpecs.Proofs.Heze

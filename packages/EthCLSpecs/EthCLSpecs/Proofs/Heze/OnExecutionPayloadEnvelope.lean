@@ -6,7 +6,7 @@ import EthCLLib.Proofs.StoreRun
 /-!
 # Accepting an execution payload envelope
 
-Heze's `onExecutionPayloadEnvelope` (`Heze/ForkChoice.lean:439-461`)
+Heze's `onExecutionPayloadEnvelope` (`Heze/ForkChoice.lean:442-464`)
 verifies and records a revealed payload envelope. This module proves its
 complete compositional `.run` equation at `ForkChoiceStoreRun (Store map)`.
 
@@ -40,9 +40,9 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs.Heze
 
 open EthCLLib.Proofs (ForkChoiceStoreRun run_throw except_bind_error pureState)
-open EthCLLib.Spec (HasherTag MapKind FcMap ExecutionEngine DataAvailability CryptoBackend
-  StoreTransitionError)
-open EthCLSpecs.Heze (Preset Config Store BeaconState BeaconBlock Root ExecutionPayload
+open EthCLLib.Spec (HasherTag MapKind FcMap Checked ExecutionEngine DataAvailability
+  CryptoBackend StoreTransitionError)
+open EthCLSpecs.Heze (Preset Config Store BeaconState BeaconBlock Root Slot ExecutionPayload
   ExecutionRequests Transaction SignedExecutionPayloadEnvelope onExecutionPayloadEnvelope
   verifyExecutionPayloadEnvelope recordPayloadInclusionListSatisfaction
   getShufflingDependentRoot getInclusionListTransactions isInclusionListSatisfied
@@ -267,27 +267,28 @@ theorem onExecutionPayloadEnvelope_run_error_of_record :
 
 /--
 Successful-path run equation for `onExecutionPayloadEnvelope`. The handler's
-lookup and checks succeed, the envelope's block sits at a nonzero slot, and the
-dependent-root walk returns `dependentRoot`. Then the final store is the original
-store updated by three same-root `FcMap.insert` expressions: the block state
-`pureState state` in `blockStates`, the envelope in `payloads`, and the
-inclusion-list result for the timely transactions stored under
-`(block.slot - 1, dependentRoot)`. The inserts may overwrite a prior entry.
+lookup and checks succeed, the envelope's block has a bound checked
+predecessor `slot`, and the dependent-root walk returns `dependentRoot`. Then
+the final store is the original store updated by three same-root
+`FcMap.insert` expressions: the block state `pureState state` in
+`blockStates`, the envelope in `payloads`, and the inclusion-list result for
+the timely transactions stored under `(slot, dependentRoot)`. The inserts may
+overwrite a prior entry.
 -/
 theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks :
     ∀ (store : Store map)
       (signedEnv : SignedExecutionPayloadEnvelope)
       (state : BeaconState)
-      (block : BeaconBlock) (dependentRoot : Root)
+      (block : BeaconBlock) (slot : Slot) (dependentRoot : Root)
       (postRunnerStore : Store map),
       FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some (pureState state) →
       isDataAvailable signedEnv.message.beaconBlockRoot = true →
       (verifyExecutionPayloadEnvelope (pureState state) signedEnv).isOk = true →
       FcMap.lookup store.blocks signedEnv.message.beaconBlockRoot = some block →
-      block.slot ≠ 0 →
+      (block.slot - 1 : Checked Slot) = .ok slot →
       (getShufflingDependentRoot
           (StoreTransition := ForkChoiceStoreRun (Store map))
-          store signedEnv.message.beaconBlockRoot (computeEpochAtSlot (block.slot - 1))).run store
+          store signedEnv.message.beaconBlockRoot (computeEpochAtSlot slot)).run store
         = .ok (dependentRoot, postRunnerStore) →
       (onExecutionPayloadEnvelope (map := map)
           (StoreTransition := ForkChoiceStoreRun (Store map))
@@ -303,15 +304,16 @@ theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks :
                 FcMap.insert store.payloadInclusionListSatisfaction
                   signedEnv.message.beaconBlockRoot
                   (isInclusionListSatisfied signedEnv.message.payload
-                    (getInclusionListTransactions store.inclusionListStore (block.slot - 1)
+                    (getInclusionListTransactions store.inclusionListStore slot
                       dependentRoot (onlyTimely := true))) }) := by
-  intro store signedEnv state block dependentRoot postRunnerStore hlookup hda hok hblock hslot hdep
+  intro store signedEnv state block slot dependentRoot postRunnerStore
+    hlookup hda hok hblock hsub hdep
   -- `hlookup`, `hda`, and `hok` discharge the handler prefix;
-  -- `hblock`, `hslot`, and `hdep` select the recorder's successful branch.
+  -- `hblock`, `hsub`, and `hdep` select the recorder's successful branch.
   rw [onExecutionPayloadEnvelope_run]
   simp [hlookup, hda, verifyExecutionPayloadEnvelope_pureState_of_isOk state signedEnv hok,
     recordPayloadInclusionListSatisfaction_run_eq (map := map) store store postRunnerStore
-      signedEnv.message.beaconBlockRoot signedEnv.message.payload block dependentRoot
-      hblock hslot hdep]
+      signedEnv.message.beaconBlockRoot signedEnv.message.payload block slot dependentRoot
+      hblock hsub hdep]
 
 end EthCLSpecs.Proofs.Heze

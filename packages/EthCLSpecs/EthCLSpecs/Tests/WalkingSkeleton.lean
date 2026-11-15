@@ -30,17 +30,17 @@ namespace EthCLSpecs.Tests.WalkingSkeleton
 (below the first epoch boundary, so no `processEpoch`) and read back the slot.
 Exercises the generated header, `[HasherTag]`, the `EStateM`-over-a-box
 composition, and `sszGet` / `sszUpdate`. -/
-def slotAfter (n : Nat) : UInt64 :=
+def slotAfter (n : Nat) : Slot :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let box0 : SSZ.Box Sha256 (@BeaconState minimal) := SSZ.FastBox default
   let action : EStateM StateTransitionError (SSZ.Box Sha256 (@BeaconState minimal)) Unit :=
-    processSlots (UInt64.ofNat n)
+    processSlots (EthCLLib.Spec.CLUint64.trustedOfUInt64 (UInt64.ofNat n))
   match action.run box0 with
   | .ok _ st   => sszGet st slot
-  | .error _ _ => 0xdead
+  | .error _ _ => 0
 
 -- The spine runs: `processSlots` advances `slot` from 0 to the target.
 #guard slotAfter 1 = 1

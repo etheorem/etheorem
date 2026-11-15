@@ -38,10 +38,10 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (HasherTag StateTransitionError StoreTransitionError ErrorConv MapKind FcMap
-  NestedStateMachine runNestedStateTransition runNestedStateTransition_of_ok
+open EthCLLib.Spec (HasherTag StateTransitionError StoreTransitionError ErrorConv Checked
+  MapKind FcMap NestedStateMachine runNestedStateTransition runNestedStateTransition_of_ok
   runNestedStateTransition_of_error)
-open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState BuilderPendingWithdrawal)
+open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState BuilderPendingWithdrawal Epoch)
 open EthCLSpecs.Gloas (Store getSlotsSinceGenesis getCurrentSlot State currentEpochOf
   initiateBuilderExit processBuilderPendingPayments)
 open EthCLLib.Proofs (pureState ForkChoiceStoreRun)
@@ -106,22 +106,37 @@ store monad in that column. No store value appears; a state transition's effect 
 depend on one. -/
 
 /-- `initiateBuilderExit_run_eq` crossing the bridge, by application. The contract is a
-`.run` fact on `pureState preState`, exactly the shape `runNestedStateTransition_of_ok` consumes. -/
+`.run` fact on `pureState preState`, exactly the shape the bridge consumes, one bridge
+lemma per arm. The unit flip gave the step a fault surface: the checked `Epoch`
+withdrawability sum may reject, and the bridge throws that reject converted, so no
+post-state reaches the store handler. -/
 example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
       runNestedStateTransition (pureState preState)
           (initiateBuilderExit (StateTransition := GloasRun) builderIndex)
-        = (pure (pureState
-          { preState with builders :=
-              (preState.builders.set! builderIndex.toNat
-                { preState.builders[builderIndex.toNat]! with
-                  withdrawableEpoch :=
-                    currentEpochOf (pureState preState)
-                      + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay }) })
-            : m State) :=
-  fun preState builderIndex =>
-    runNestedStateTransition_of_ok (initiateBuilderExit_run_eq preState builderIndex)
+        = (match (currentEpochOf (pureState preState)
+              + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay : Checked Epoch) with
+          | .error e =>
+              (throw (ErrorConv.conv (StateTransitionError.arithmetic (reprStr e))) : m State)
+          | .ok withdrawableAt => (pure (pureState
+              { preState with builders :=
+                  (preState.builders.set! builderIndex.toNat
+                    { preState.builders[builderIndex.toNat]! with
+                      withdrawableEpoch := withdrawableAt }) }) : m State)) := by
+  intro preState builderIndex
+  match hsum : (currentEpochOf (pureState preState)
+      + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay : Checked Epoch) with
+  | .error e =>
+    refine runNestedStateTransition_of_error ?_
+    have h := initiateBuilderExit_run_eq preState builderIndex
+    rw [hsum] at h
+    exact h
+  | .ok withdrawableAt =>
+    refine runNestedStateTransition_of_ok ?_
+    have h := initiateBuilderExit_run_eq preState builderIndex
+    rw [hsum] at h
+    exact h
 
 /-- `processBuilderPendingPayments_run` likewise, and this is the one that shows the point:
 its proof rests on a `List.forIn` induction over the withdrawals loop, and that induction is

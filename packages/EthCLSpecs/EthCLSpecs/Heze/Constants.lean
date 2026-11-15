@@ -48,7 +48,7 @@ forkconfig where
   maxTransactionsBytesPerInclusionList : UInt64
   /-- `MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS` (1): how many slots past its own an
   inclusion list stays in the retention window `on_inclusion_list` asserts. -/
-  minSlotsForInclusionListsRequests : UInt64
+  minSlotsForInclusionListsRequests : Slot
 
 namespace Const
 section
@@ -67,7 +67,7 @@ forkabbrev hezeForkVersion : Version := Config.hezeForkVersion
 forkabbrev hezeForkEpoch : Epoch := Config.hezeForkEpoch
 forkabbrev maxTransactionsBytesPerInclusionList : UInt64 :=
   Config.maxTransactionsBytesPerInclusionList
-forkabbrev minSlotsForInclusionListsRequests : UInt64 := Config.minSlotsForInclusionListsRequests
+forkabbrev minSlotsForInclusionListsRequests : Slot := Config.minSlotsForInclusionListsRequests
 
 -- Gloas's entries, replayed here in Gloas's own order (its additions, then the
 -- Fulu surface it replays) so each body reaches its dependencies. The list is the
@@ -99,7 +99,12 @@ inherit pendingPartialWithdrawalsLimit pendingConsolidationsLimit
 -- The preset's well-formedness premises.
 inherit slotsPerEpochPos slotsPerEpochLt slotsPerHistoricalRootPos
 inherit slotsPerHistoricalRootLt epochsPerHistoricalVectorPos
-inherit epochsPerHistoricalVectorLt
+inherit epochsPerHistoricalVectorLt epochsPerSlashingsVectorPos
+
+-- The proof-carrying divisors. Each `pos` field reads the premise above, discharged
+-- once per fork where the replay elaborates, so the replayed bodies divide through the
+-- total route.
+inherit slotsPerEpochDiv epochsPerHistoricalVectorDiv epochsPerSlashingsVectorDiv
 
 -- Sentinels, registry and history caps.
 inherit farFutureEpoch genesisSlot genesisEpoch validatorRegistryLimit

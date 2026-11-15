@@ -46,17 +46,21 @@ reachable). -/
 forkdef getBlockRootAtSlot (state : State) (s : Slot) : StateTransition Root := do
   -- `assert slot < state.slot <= slot + SLOTS_PER_HISTORICAL_ROOT`. Python's chained comparison
   -- short-circuits: `slot < state.slot` is checked first (a caught `AssertionError`), and only then
-  -- is `slot + SPHR` formed. That `uint64` sum raises `ValueError` on overflow, an uncaught fault the
-  -- runner does not catch, so it is `checkedAdd`, not a bare `+`, sequenced after the first assert.
+  -- is `slot + SPHR` formed. That `uint64` sum raises `ValueError` on overflow. The runner does
+  -- not catch that fault, so the sum keeps its checked raise, sequenced after the first assert.
+  -- The fault names the narrowing `Uint64()` and the true sum, the same raise site the
+  -- reference hits when it rebuilds the `uint64`.
   assert (s < sszGet state slot)
-  let bound ← checkedAdd s (UInt64.ofNat Const.slotsPerHistoricalRoot)
-    "get_block_root_at_slot: slot + SLOTS_PER_HISTORICAL_ROOT"
+  let bound ← s + Const.slotsPerHistoricalRoot
   assert (sszGet state slot ≤ bound)
   pure (vmodGet (sszGet state blockRoots) s Const.slotsPerHistoricalRoot)
 
-/-- `get_block_root` (the epoch's first slot). -/
-forkdef getBlockRoot (state : State) (epoch : Epoch) : StateTransition Root :=
-  getBlockRootAtSlot state (epoch * UInt64.ofNat Const.slotsPerEpoch)
+/-- `get_block_root` (`fulu/mainnet.py:1440-1445`): the root at the epoch's start slot.
+`computeStartSlotAtEpoch` is a checked value now, so the start slot binds and that helper
+raises where the epoch multiply raises, an epoch at or past `2^64 // SLOTS_PER_EPOCH`. -/
+forkdef getBlockRoot (state : State) (epoch : Epoch) : StateTransition Root := do
+  let startSlot ← computeStartSlotAtEpoch epoch
+  getBlockRootAtSlot state startSlot
 
 /-- `get_pending_balance_to_withdraw`. -/
 forkdef getPendingBalanceToWithdraw (state : State) (vi : ValidatorIndex) : Checked Gwei :=

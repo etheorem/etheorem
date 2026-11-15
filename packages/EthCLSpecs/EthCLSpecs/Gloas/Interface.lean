@@ -140,6 +140,10 @@ private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
   | .ok v    => .ok v
   | .error _ => .error (.decode "operation")
 
+-- The ePBS dispatch arms make the compiled form heavy enough that the compiler's LCNF
+-- pass needs more than the default heartbeats; the bump is scoped to this declaration
+-- (the 2.3d pattern, at the state-transition arms this round).
+set_option maxHeartbeats 1000000 in
 /-- `runOperation`: dispatch every operation handler over the decoded Gloas
 pre-state. The non-ePBS handlers are inherited from Fulu (`Gloas.Operations`); the
 ePBS-modified / ePBS-new ones are Gloas-specific: payload-aware `attestation` (with the
@@ -164,7 +168,10 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     | .attestation            =>
       match cmeta.parentSlot with
       | some parentSlot =>
-        (decodeOp (@Attestation P) opBytes).map (processAttestation · (UInt64.ofNat parentSlot))
+        -- The parent slot is vector metadata; the trusted wrap is the boundary route
+        -- (`configSetters` below), and `UInt64.ofNat` wraps so no range claim rides on it.
+        (decodeOp (@Attestation P) opBytes).map
+          (processAttestation · (CLUint64.trustedOfUInt64 (UInt64.ofNat parentSlot)))
       | none => .error (.decode "operations/attestation: meta.yaml parent_slot")
     | .payloadAttestation     => (decodeOp (@PayloadAttestation P) opBytes).map processPayloadAttestation
     -- The parent-payload handler decodes a full `BeaconBlock` (it reads `block.body` /
@@ -193,6 +200,10 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
   | .ok action =>
     RunError.ofSpec (runToRoot box0 action)
 
+-- The Gloas epoch substeps re-elaborated over the Gloas state make the slot loop's
+-- compiled form heavy enough that reduction needs more than the default heartbeats; the
+-- bump is scoped to this declaration (the 2.3d pattern).
+set_option maxHeartbeats 1000000 in
 /-- `runSlots`: advance the decoded Gloas pre-state by `n` empty slots through the
 Gloas `process_slots` (which runs the Gloas `process_epoch` at boundaries). -/
 private def runSlotsImpl (P : Preset) (C : Config) (preBytes : ByteArray) (n : Nat) :
@@ -204,7 +215,10 @@ private def runSlotsImpl (P : Preset) (C : Config) (preBytes : ByteArray) (n : N
   letI : CryptoBackend := CryptoBackend.realBackend
   let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit := do
     let state ← get
-    processSlots ((sszGet state slot) + UInt64.ofNat n)
+    -- The step's target is the checked add `slot + n`; the raise fires only if the vector
+    -- asks past `2^64 - 1`, where the modeled `uint64` target cannot exist.
+    let target ← sszGet state slot + n
+    processSlots target
   RunError.ofSpec (runToRoot box0 action)
 
 /-- `runBlocks` (`sanity/blocks`, `finality`, `random`): fold the Gloas
@@ -227,6 +241,9 @@ private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
     for sb in signedBlocks do stateTransition sb
   RunError.ofSpec (runToRoot box0 action)
 
+-- The two-fork fold makes the compiled form heavy enough that the transform pass needs
+-- more than the default heartbeats; the bump is scoped to this declaration (the 2.3d pattern).
+set_option maxHeartbeats 1000000 in
 /-- `runTransition` (the `transition` format, Fulu→Gloas): fold the pre-fork blocks
 (indices `0..forkBlock`) under Fulu `state_transition`, advance the Fulu state to the
 fork-epoch boundary (so the boundary `process_epoch` runs under Fulu rules), apply
@@ -241,7 +258,9 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.forBlsSetting cmeta.blsSetting
   let forkEpoch := cmeta.forkEpoch.getD 0
-  let boundary : Slot := UInt64.ofNat (forkEpoch * Const.slotsPerEpoch)
+  -- The fork boundary slot is vector metadata; the trusted wrap is the boundary route
+  -- (`configSetters` below), and `UInt64.ofNat` wraps so no range claim rides on it.
+  let boundary : Slot := CLUint64.trustedOfUInt64 (UInt64.ofNat (forkEpoch * Const.slotsPerEpoch))
   let nFulu := match cmeta.forkBlock with | some n => n + 1 | none => 0
   match SSZ.deserialize (T := Fulu.BeaconState) preBytes with
   | .error _ => .error (.decode "Fulu BeaconState")
@@ -387,7 +406,9 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
       -- `getOrThrow` is monad-polymorphic, and the fold's own monad is already
       -- `Except StoreTransitionError`, so the read binds directly (no `runQuery` detour).
       let headBlock ← FcMap.getOrThrow store.blocks head.root
-      assert (headBlock.slot.toNat == slot)
+      -- `toPlainInt`, the documented `int(x)` read: the compared `slot` is the Nat the
+      -- vector carries.
+      assert (headBlock.slot.toPlainInt == slot)
     | .checkHeadPayloadStatus status =>
       let head ← queryHead store
       assert (head.payloadStatus.toNat == status)
@@ -402,10 +423,14 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
       let recorded ← FcMap.getOrThrow store.payloadDataAvailabilityVote (bytesToRoot blockRoot)
       assert (recorded == votes)
     | .checkJustified epoch root =>
-      assert (store.justifiedCheckpoint.epoch.toNat == epoch)
+      -- `toPlainInt`, the documented `int(x)` read: the compared `epoch` is the Nat the
+      -- vector carries.
+      assert (store.justifiedCheckpoint.epoch.toPlainInt == epoch)
       assert (store.justifiedCheckpoint.root == root)
     | .checkFinalized epoch root =>
-      assert (store.finalizedCheckpoint.epoch.toNat == epoch)
+      -- `toPlainInt`, the documented `int(x)` read: the compared `epoch` is the Nat the
+      -- vector carries.
+      assert (store.finalizedCheckpoint.epoch.toPlainInt == epoch)
       assert (store.finalizedCheckpoint.root == root)
     | .checkBoost root =>
       assert (store.proposerBoostRoot == root)
@@ -534,15 +559,18 @@ ones), the block spine (`sanity/blocks` / `sanity/slots` / `finality` / `random`
 /-- The config values a vector can override, one `(KEY, set)` pair per value: the fork
 schedule Gloas models. A vector that activates its forks at genesis ships a `config.yaml`
 setting these epochs to `0`, and a `transition` vector moves its post-fork's epoch to the
-`fork_epoch`; `EthCLLib.PySpecTests.applyConfigOverrides` applies them. -/
+`fork_epoch`; `EthCLLib.PySpecTests.applyConfigOverrides` applies them. The setter takes
+the parsed `UInt64` and wraps it through `trustedOfUInt64`: `applyConfigOverrides` has
+already range-tested the value against `2^64` at the boundary, so the witness is trusted,
+and the pure setter type has no `Checked` channel for an `ofNat?`. -/
 def configSetters : List (String × (UInt64 → Config → Config)) := [
-  ("ALTAIR_FORK_EPOCH",    fun v c => { c with altairForkEpoch := v }),
-  ("BELLATRIX_FORK_EPOCH", fun v c => { c with bellatrixForkEpoch := v }),
-  ("CAPELLA_FORK_EPOCH",   fun v c => { c with capellaForkEpoch := v }),
-  ("DENEB_FORK_EPOCH",     fun v c => { c with denebForkEpoch := v }),
-  ("ELECTRA_FORK_EPOCH",   fun v c => { c with electraForkEpoch := v }),
-  ("FULU_FORK_EPOCH",      fun v c => { c with fuluForkEpoch := v }),
-  ("GLOAS_FORK_EPOCH",     fun v c => { c with gloasForkEpoch := v })]
+  ("ALTAIR_FORK_EPOCH",    fun v c => { c with altairForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("BELLATRIX_FORK_EPOCH", fun v c => { c with bellatrixForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("CAPELLA_FORK_EPOCH",   fun v c => { c with capellaForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("DENEB_FORK_EPOCH",     fun v c => { c with denebForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("ELECTRA_FORK_EPOCH",   fun v c => { c with electraForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("FULU_FORK_EPOCH",      fun v c => { c with fuluForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("GLOAS_FORK_EPOCH",     fun v c => { c with gloasForkEpoch := CLUint64.trustedOfUInt64 v })]
 
 /-- The interface at preset `P` and config `C` with a vector's overrides applied, or the
 reason an override cannot be applied. The server builds one per request. -/

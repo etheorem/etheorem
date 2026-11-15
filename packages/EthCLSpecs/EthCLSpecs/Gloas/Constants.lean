@@ -53,8 +53,10 @@ forkconfig where
   churnLimitQuotientGloas : UInt64
   /-- `MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS`. -/
   maxPerEpochActivationChurnLimitGloas : Gwei
-  /-- `MIN_BUILDER_WITHDRAWABILITY_DELAY`. -/
-  minBuilderWithdrawabilityDelay : UInt64
+  /-- `MIN_BUILDER_WITHDRAWABILITY_DELAY`. Adds to `get_current_epoch(state)`, so it is
+  `Epoch`-typed, the same retype Fulu's `minValidatorWithdrawabilityDelay` took; the sum at
+  `initiate_builder_exit` / `process_builder_deposit_request` is then the checked `Epoch` add. -/
+  minBuilderWithdrawabilityDelay : Epoch
   /-- `CONSOLIDATION_CHURN_LIMIT_QUOTIENT`. Electra's `get_consolidation_churn_limit`
   was a difference of two churn limits; EIP-7732 gives it its own quotient, so the
   value arrives with this fork rather than with Electra. -/
@@ -83,7 +85,7 @@ forkabbrev gloasForkVersion : Version := Config.gloasForkVersion
 forkabbrev gloasForkEpoch : Epoch := Config.gloasForkEpoch
 forkabbrev churnLimitQuotientGloas : UInt64 := Config.churnLimitQuotientGloas
 forkabbrev maxPerEpochActivationChurnLimitGloas : Gwei := Config.maxPerEpochActivationChurnLimitGloas
-forkabbrev minBuilderWithdrawabilityDelay : UInt64 := Config.minBuilderWithdrawabilityDelay
+forkabbrev minBuilderWithdrawabilityDelay : Epoch := Config.minBuilderWithdrawabilityDelay
 forkabbrev consolidationChurnLimitQuotient : UInt64 := Config.consolidationChurnLimitQuotient
 
 /-- The builder-payment threshold, as a fraction of the bid
@@ -135,7 +137,12 @@ inherit pendingPartialWithdrawalsLimit pendingConsolidationsLimit
 -- The preset's well-formedness premises.
 inherit slotsPerEpochPos slotsPerEpochLt slotsPerHistoricalRootPos
 inherit slotsPerHistoricalRootLt epochsPerHistoricalVectorPos
-inherit epochsPerHistoricalVectorLt
+inherit epochsPerHistoricalVectorLt epochsPerSlashingsVectorPos
+
+-- The proof-carrying divisors. Each `pos` field reads the premise above, discharged
+-- once per fork where the replay elaborates, so the replayed bodies divide through the
+-- total route.
+inherit slotsPerEpochDiv epochsPerHistoricalVectorDiv epochsPerSlashingsVectorDiv
 
 -- Sentinels, registry and history caps.
 inherit farFutureEpoch genesisSlot genesisEpoch validatorRegistryLimit

@@ -62,8 +62,8 @@ given the `balance` to reserve, the churn already `consume`d this epoch, the `pe
 limit, and the `earliest` candidate epoch, return the assigned epoch and the new consumed total.
 When `balance` fits in the remaining budget (`balance ≤ consume`) the epoch and consumption are
 unchanged; otherwise the leftover is spread forward by the ceiling-division
-`(balanceToProcess - 1) / perEpoch + 1`, the `-1 … +1` rounding the quotient up. Pure on
-`UInt64` (`Epoch`/`Gwei` are both `UInt64`), so the same byte arithmetic runs for Fulu's
+`(balanceToProcess - 1) / perEpoch + 1`, the `-1 … +1` rounding the quotient up. `Epoch` and
+`Gwei` are both checked `CLUint64` now, so the same byte arithmetic runs for Fulu's
 exit/consolidation churn and Gloas's overrides; the per-fork state reads and the `state` write
 stay in the callers. -/
 forkdef reserveChurn (balance consume perEpoch : Gwei) (earliest : Epoch) :
@@ -71,12 +71,9 @@ forkdef reserveChurn (balance consume perEpoch : Gwei) (earliest : Epoch) :
   if balance > consume then
     let balanceToProcess ← balance - consume
     let additional ← (balanceToProcess - 1) / perEpoch + 1
-    -- `earliest_exit_epoch += Epoch(additional_epochs)`: `Epoch` is still a raw `UInt64`, so
-    -- the sum crosses the two types through the checked `ofNat?`. The cast cannot fault: every
-    -- `UInt64` is inside `[0, 2^64)`, and `CLUint64.mk` is private to the framework (§4.5).
-    let epochOfEarliest ← CLUint64.ofNat? earliest.toNat
-    let epoch ← epochOfEarliest + additional
-    return (epoch.val, ← consume + additional * perEpoch)
+    -- `earliest_exit_epoch += Epoch(additional_epochs)`: the checked `Epoch` sum itself.
+    let epoch ← earliest + additional
+    return (epoch, ← consume + additional * perEpoch)
   else return (earliest, consume)
 
 /-- `compute_exit_epoch_and_update_churn`: reserve exit churn, returning the
@@ -84,7 +81,9 @@ assigned exit epoch and advancing the bookkeeping. -/
 forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Epoch := do
   let state ← get
   let currentEpoch := computeEpochAtSlot (sszGet state slot)
-  let earliest := umax (sszGet state earliestExitEpoch) (computeActivationExitEpoch currentEpoch)
+  -- `fulu/mainnet.py:6027-6029`: `max(earliest_exit_epoch, compute_activation_exit_epoch(...))`.
+  let exitCandidate ← computeActivationExitEpoch currentEpoch
+  let earliest := max (sszGet state earliestExitEpoch) exitCandidate
   let perEpochChurn ← getActivationExitChurnLimit state
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
 
@@ -98,8 +97,9 @@ forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Ep
 `compute_exit_epoch_and_update_churn`, reserving consolidation churn. -/
 forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : StateTransition Epoch := do
   let state ← get
-  let earliest := umax (sszGet state earliestConsolidationEpoch)
-    (computeActivationExitEpoch (currentEpochOf state))
+  -- `fulu/mainnet.py:6054-6056`, the consolidation twin of the exit max.
+  let exitCandidate ← computeActivationExitEpoch (currentEpochOf state)
+  let earliest := max (sszGet state earliestConsolidationEpoch) exitCandidate
   let perEpoch ← getConsolidationChurnLimit state
   let consume := if (sszGet state earliestConsolidationEpoch) < earliest then perEpoch
                  else (sszGet state consolidationBalanceToConsume)
@@ -113,37 +113,39 @@ forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : 
 
 /-! ## Validator-lifecycle mutators -/
 
-/-- `initiate_validator_exit`. The `withdrawable_epoch = exit_epoch +
-MIN_VALIDATOR_WITHDRAWABILITY_DELAY` sum is a bare `uint64` addition in the pyspec, so an
-overflow raises `ValueError` there. `checkedAdd` models the addition and reports the
-`.arithmetic` uncaught fault. `test_invalid_large_withdrawable_epoch` catches that raise in its
-own `except ValueError` and scores it as the expected outcome
-(`RunnerCaughtSet.valueError`). -/
+/-- `initiate_validator_exit` (`fulu/mainnet.py:1614-1628`). The
+`withdrawable_epoch = exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY` sum is a checked
+`uint64` addition in the pyspec, so an overflow raises `ValueError` there; `Epoch` and the
+constant are both `Epoch` now, so the body takes the checked operator directly.
+`test_invalid_large_withdrawable_epoch` catches that raise in its own `except ValueError` and
+scores it as the expected outcome (`RunnerCaughtSet.valueError`). -/
 forkdef initiateValidatorExit (i : ValidatorIndex) : StateTransition Unit := do
   let state ← get
   let validator ← sszGetIdx (sszGet state validators) i.toNat
   if !hasNotInitiatedExit validator then pure ()
   else
     let exitEpoch ← computeExitEpochAndUpdateChurn validator.effectiveBalance
-    let withdrawableEpoch ← checkedAdd exitEpoch Const.minValidatorWithdrawabilityDelay
-      "initiate_validator_exit: exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY"
+    let withdrawableEpoch ← exitEpoch + Const.minValidatorWithdrawabilityDelay
     modifyState fun state => modValidator state i fun validator =>
       { validator with exitEpoch := exitEpoch, withdrawableEpoch := withdrawableEpoch }
 
-/-- `slash_validator` (whistleblower = proposer). -/
+/-- `slash_validator` (whistleblower = proposer) (`fulu/mainnet.py:1631-1659`). -/
 forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
   let epoch := computeEpochAtSlot (sszGet (← get) slot)
   initiateValidatorExit i
   let state ← get
   let validator ← sszGetIdx (sszGet state validators) i.toNat
-  let slashIdx := umodIdx epoch Const.epochsPerSlashingsVector
+  -- `epoch % EPOCHS_PER_SLASHINGS_VECTOR`, the total ring index (positive preset divisor).
+  let slashIdx := (epoch % Const.epochsPerSlashingsVectorDiv).toPlainInt
 
   -- Mark slashed, extend withdrawability, record the effective balance in the
-  -- slashings ring buffer, and apply the slashing penalty.
+  -- slashings ring buffer, and apply the slashing penalty. The withdrawability sum is the
+  -- checked `epoch + EPOCHS_PER_SLASHINGS_VECTOR`, bound where the pyspec's assignment forms it.
+  let withdrawableAt ← epoch + Const.epochsPerSlashingsVector
   let state := modValidator state i fun validator =>
     { validator with
         slashed := true,
-        withdrawableEpoch := umax validator.withdrawableEpoch (epoch + UInt64.ofNat Const.epochsPerSlashingsVector) }
+        withdrawableEpoch := max validator.withdrawableEpoch withdrawableAt }
   let slashed ← vget (sszGet state slashings) slashIdx + validator.effectiveBalance
   let state := sszUpdate state with slashings[slashIdx]! := slashed
   let state ← decreaseBalance state i (← validator.effectiveBalance / Const.minSlashingPenaltyQuotientElectra)

@@ -129,6 +129,59 @@ lift_op HMul mul natMul
 lift_op HDiv div natDiv
 lift_op HMod mod natMod
 
+/-! ## Total division by a proof-carrying divisor
+
+The checked `/` and `%` above raise on a zero divisor alone: a quotient and a remainder cannot
+leave the range (`SPEC_ARITHMETIC.md` §3.2). For a divisor whose positivity the build already
+knows, a preset constant such as `SLOTS_PER_EPOCH`, that raise is unreachable, and the site's
+pyspec line is total. `compute_epoch_at_slot` is the shape: `Epoch(slot // SLOTS_PER_EPOCH)`
+with `SLOTS_PER_EPOCH = Slot(32)` at mainnet and `Slot(8)` at minimal, and about 50 pure call
+sites read the result. A `Checked` quotient would force a bind on every one of them
+(§4.3), so the quotient is a plain value and the divisor's type carries the positivity.
+
+Two alternatives lost. A method keyed on a hypothesis (`slot.tdiv n` with `[NeZero n]`)
+loses the operator surface: the line stops reading as `slot // SLOTS_PER_EPOCH`. An `HDiv`
+guarded by `[NeZero d]` on the existing `Nat` divisor route keeps the operator. That
+instance and the checked instance both match `a / 32`. Instance search then picks the
+route. The route is invisible at the site. The sibling `ValidModulus` class
+(`Spec/Arith.lean`) loses the same way for a `/`. Its premise sits on a bare `Nat` value,
+so the divisor's type never names the route. It also carries an `< 2^64` premise division
+does not need. The wrapper makes the route syntactic: the divisor's type names the route,
+at the site and in every signature. -/
+
+/-- A divisor that carries its own positivity. The constructor takes the proof, so a wrong
+positivity claim cannot be made silently: the kernel checks `pos` where the divisor is built,
+once, and every division through the `HDiv` instance below trusts that single discharge. There
+is no `OfNat` instance, so a bare literal never silently becomes a claimed-positive divisor;
+a literal divisor keeps the checked `/` route, whose zero-divisor raise stays reachable. The
+fork wraps each constant divisor once,
+`forkabbrev slotsPerEpochDiv : PositiveDivisor := ⟨Const.slotsPerEpoch, Const.slotsPerEpochPos⟩`,
+and the call sites read `slot / Const.slotsPerEpochDiv` from then on. -/
+structure PositiveDivisor where
+  /-- The divisor value. -/
+  val : Nat
+  /-- The divisor is positive. Discharged once, where the divisor is built. -/
+  pos : 0 < val
+
+/-- `a // d` for a proof-carrying divisor: total. The quotient floors as Python's `//` does on
+non-negative values, and it is at most `a`, so it cannot leave the range and the constructor
+route cannot fault. This is the route a constant divisor takes, so the line reads as the
+pyspec's `slot // SLOTS_PER_EPOCH` with no bind. -/
+instance : HDiv CLUint64 PositiveDivisor CLUint64 :=
+  ⟨fun a b => ⟨UInt64.ofNat (a.toPlainInt / b.val)⟩⟩
+
+/-- `a % d` for a proof-carrying divisor: total, the companion of the `HDiv` instance above.
+The remainder is at most the dividend, so it cannot leave the range either. This makes the `%`
+of an `amount - amount % INCREMENT` site total once `INCREMENT`'s positivity is discharged;
+the `-` keeps its own checked test. That test never fires, because the remainder is at most
+the dividend, but the type cannot see that, so the bind stays.
+
+Both instances take the dividend as a plain `CLUint64`. A `Checked` dividend has no route:
+`(a * b) / d` fails instance synthesis, and the author binds first, `let p ← a * b`, then
+divides, per the §4.3 discipline. -/
+instance : HMod CLUint64 PositiveDivisor CLUint64 :=
+  ⟨fun a b => ⟨UInt64.ofNat (a.toPlainInt % b.val)⟩⟩
+
 /-- The one lift. Any monad whose error accepts a `StateTransitionError` takes an arithmetic
 expression under `←`, so the state machine and the store machine share it. -/
 instance {m : Type → Type} {E : Type} [Monad m] [MonadExcept E m]

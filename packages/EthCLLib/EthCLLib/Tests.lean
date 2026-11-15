@@ -1,5 +1,6 @@
 import EthCLLib.Tests.CLIndex
 import EthCLLib.Tests.CLIntSpike
+import EthCLLib.Tests.CLTotalDiv
 import EthCLLib.Tests.CLUintEdges
 import EthCLLib.Tests.CLUintElab
 import EthCLLib.Tests.InheritanceReplay

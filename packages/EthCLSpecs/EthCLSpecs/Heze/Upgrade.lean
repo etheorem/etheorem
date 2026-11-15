@@ -89,7 +89,9 @@ def upgradeToHeze [Preset] (hezeForkVersion : Version) (pre : Gloas.BeaconState)
     Except StateTransitionError Heze.BeaconState := do
   -- [New in Heze:EIP8015] the old deposit mechanism has been disabled.
   assert (pre.eth1DepositIndex == pre.depositRequestsStartIndex)
-  let epoch : Epoch := pre.slot / UInt64.ofNat Const.slotsPerEpoch
+  -- `epoch = get_current_epoch(pre)`, the `slot // SLOTS_PER_EPOCH` total-division route,
+  -- the divisor's positivity discharged in the wrapper.
+  let epoch : Epoch := pre.slot / Const.slotsPerEpochDiv
   pure
     { genesisTime                   := pre.genesisTime
       genesisValidatorsRoot         := pre.genesisValidatorsRoot

@@ -99,9 +99,10 @@ forkdef processAttesterSlashing (asl : AttesterSlashing) : StateTransition Unit 
 
 /-- `get_attestation_participation_flag_indices`. Returns `none` for the
 `is_matching_source` assertion (a valid attestation always matches source), so the
-caller rejects; `some flags` otherwise. -/
+caller rejects; `some flags` otherwise. `inclusion_delay` is the `Slot`-typed difference
+the caller binds. -/
 forkdef getAttestationParticipationFlagIndices (state : State) (data : AttestationData)
-    (inclusionDelay : UInt64) : StateTransition (Option (Array Nat)) := do
+    (inclusionDelay : Slot) : StateTransition (Option (Array Nat)) := do
   let justified := if data.target.epoch == currentEpochOf state then sszGet state currentJustifiedCheckpoint
                    else sszGet state previousJustifiedCheckpoint
   let isMatchingSource := data.source.epoch == justified.epoch && data.source.root == justified.root
@@ -112,20 +113,26 @@ forkdef getAttestationParticipationFlagIndices (state : State) (data : Attestati
   let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == headRoot
 
   let mut flags : Array Nat := #[]
-  if inclusionDelay ≤ UInt64.ofNat (isqrt Const.slotsPerEpoch) then flags := flags.push Const.timelySourceFlagIndex
+  -- The pyspec's `<=` on the checked type never range-checks, so the comparison may
+  -- read the delay as its plain value; `.toPlainInt` is that read.
+  if inclusionDelay.toPlainInt ≤ isqrt Const.slotsPerEpoch then flags := flags.push Const.timelySourceFlagIndex
   if isMatchingTarget then flags := flags.push Const.timelyTargetFlagIndex
   if isMatchingHead && inclusionDelay == Const.minAttestationInclusionDelay then flags := flags.push Const.timelyHeadFlagIndex
   return some flags
 
 /-- `get_attesting_indices`: the validators flagged across the slot's committees. Returns
-`Except IndexError` because the block-supplied `aggregation_bits` is read at a committee
-offset it does not bound; an over-length read rejects rather than masking to `false`. The
+`Except StateTransitionError` for two fault kinds: the block-supplied `aggregation_bits` read
+at a committee offset it does not bound rejects as the spec's `IndexError` (`outOfBounds`)
+rather than masking to `false`, and `get_beacon_committee`'s checked arithmetic now raises
+through the same error, the pyspec's uncaught `ValueError` (`fulu/mainnet.py`, the
+`get_beacon_committee` call in `get_attesting_indices`). The
 `committee[i]` read stays total, `i` is bounded by the committee it just built. -/
-forkdef getAttestingIndices (state : State) (att : Attestation) : Except IndexError (Array ValidatorIndex) := do
+forkdef getAttestingIndices (state : State) (att : Attestation) :
+    Except StateTransitionError (Array ValidatorIndex) := do
   let mut out : Array ValidatorIndex := #[]
   let mut offset := 0
   for ci in getCommitteeIndices att.committeeBits do
-    let committee := getBeaconCommittee state att.data.slot ci
+    let committee ← getBeaconCommittee state att.data.slot ci
     for i in [0:committee.size] do
       if (← bitlistGetIdx att.aggregationBits (offset + i)) then out := out.push committee[i]!
     offset := offset + committee.size
@@ -139,25 +146,32 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   -- Reject on shape: target epoch, slot timing, and the committee index bound.
   assert (data.target.epoch == previousEpochOf state || data.target.epoch == currentEpochOf state)
   assert (data.target.epoch == computeEpochAtSlot data.slot)
-  -- `data.slot` is wire-controlled and `MIN_ATTESTATION_INCLUSION_DELAY` is 1, so the bare `+`
-  -- wraps `0xFFFF…FFFF + 1` to `0` and `0 ≤ state.slot` bypasses the guard for every state: a
-  -- false ACCEPT, the state-transition twin of `on_attestation`'s. pyspec's checked `uint64` add
-  -- raises `ValueError`, which `process_attestation` does not catch, so the driver scores it
-  -- `uncaughtFault`. Sequenced after the two epoch asserts above, matching Python's order.
-  let inclusionSlot ← checkedAdd data.slot Const.minAttestationInclusionDelay
-    "process_attestation: data.slot + MIN_ATTESTATION_INCLUSION_DELAY"
+  -- `data.slot` is wire-controlled and `MIN_ATTESTATION_INCLUSION_DELAY` is 1, so an unchecked
+  -- wrap of `0xFFFF…FFFF + 1` to `0` would bypass the guard for every state: a false ACCEPT, the
+  -- state-transition twin of `on_attestation`'s. The pyspec's checked `uint64` add raises
+  -- `ValueError`, which `process_attestation` does not catch, so the driver scores it
+  -- `uncaughtFault`. The `+` on `Slot` is that checked add; the fault names the `+` and both
+  -- operands, the wire slot and the delay. Sequenced after the two epoch asserts above,
+  -- matching Python's order.
+  let inclusionSlot ← data.slot + Const.minAttestationInclusionDelay
   assert (inclusionSlot ≤ sszGet state slot)
   assert (data.index == 0)
 
   -- Every committee index is valid and contributes at least one attester; the
   -- aggregation bitfield length matches the total committee size.
   let count := getCommitteeCountPerSlot state data.target.epoch
-  let (ok, offset) := verifyCommitteeCoverage state data count
+  let (ok, offset) ← verifyCommitteeCoverage state data count
   assert ok
   assert (att.aggregationBits.size == offset)
 
   -- Resolve the participation flags, then validate the aggregate signature.
-  let flagIndices ← match ← getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) with
+  -- Resolve the participation flags, then validate the aggregate signature.
+  -- `state.slot - data.slot` is the pyspec's checked subtract.
+  -- It cannot underflow: the inclusion assert above pins
+  -- `data.slot + MIN_ATTESTATION_INCLUSION_DELAY ≤ state.slot`, and the delay is 1,
+  -- so `data.slot < state.slot`. The bind never raises.
+  let inclusionDelay ← sszGet state slot - data.slot
+  let flagIndices ← match ← getAttestationParticipationFlagIndices state data inclusionDelay with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "is_matching_source")
   let indexedAttestation : IndexedAttestation :=
@@ -193,13 +207,18 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   set stateAcc
 where
   /-- Fold over the attestation's committee indices: each must be below `count` and
-  contribute at least one attester. Returns `(allValid, totalCommitteeSize)`. -/
-  verifyCommitteeCoverage (state : State) (data : AttestationData) (count : Nat) : Bool × Nat :=
-    (getCommitteeIndices att.committeeBits).foldl
-      (fun (acc : Bool × Nat) ci => Id.run do
+  contribute at least one attester. Returns `(allValid, totalCommitteeSize)`. `getBeaconCommittee`
+  is a checked value now, so the fold is monadic and the helper raises where a committee's
+  seed raises. The out-of-range check for an index runs before that index's committee is
+  built; unlike the pyspec's per-iteration assert, the fold continues past a failed index,
+  so a later committee's arithmetic fault can preempt the accumulated reject. -/
+  verifyCommitteeCoverage (state : State) (data : AttestationData) (count : Nat) :
+      Checked (Bool × Nat) :=
+    (getCommitteeIndices att.committeeBits).foldlM
+      (fun (acc : Bool × Nat) ci => do
         let (okAcc, off) := acc
         if (UInt64.ofNat ci).toNat ≥ count then return (false, off)
-        let committee := getBeaconCommittee state data.slot ci
+        let committee ← getBeaconCommittee state data.slot ci
         let attesters := (List.range committee.size).foldl
           (fun a i => if att.aggregationBits[off + i]! then a + 1 else a) 0
         return (okAcc && attesters > 0, off + committee.size))
@@ -242,7 +261,7 @@ forkdef processVoluntaryExit (sve : SignedVoluntaryExit) : StateTransition Unit 
   assert (isActiveValidator validator (currentEpochOf state))
   assert (hasNotInitiatedExit validator)
   assert (currentEpochOf state ≥ ve.epoch)
-  assert (passedShardCommitteePeriod validator (currentEpochOf state))
+  assert (← passedShardCommitteePeriod validator (currentEpochOf state))
   assert ((← getPendingBalanceToWithdraw state ve.validatorIndex) == 0)
 
   let domain := computeDomain Const.domainVoluntaryExit Const.capellaForkVersion (sszGet state genesisValidatorsRoot)
@@ -305,7 +324,7 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
       if !(correctCred && correctSource) then pure ()
       else if !isActiveValidator validator (currentEpochOf state) then pure ()
       else if !hasNotInitiatedExit validator then pure ()
-      else if !passedShardCommitteePeriod validator (currentEpochOf state) then pure ()
+      else if !(← passedShardCommitteePeriod validator (currentEpochOf state)) then pure ()
       else
         let pending ← getPendingBalanceToWithdraw state index
         if isFullExit then
@@ -321,7 +340,7 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
           if hasCompoundingWithdrawalCredential validator && sufficientEff && excess then
             let toWithdraw := min (← balance - Const.minActivationBalance - pending) wr.amount
             let exitEpoch ← computeExitEpochAndUpdateChurn toWithdraw
-            let we := exitEpoch + Const.minValidatorWithdrawabilityDelay
+            let we ← exitEpoch + Const.minValidatorWithdrawabilityDelay
             appendState pendingPartialWithdrawals
               { validatorIndex := index, amount := toWithdraw, withdrawableEpoch := we }
           else pure ()
@@ -368,12 +387,13 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
       else if !isActiveValidator tgt (currentEpochOf state) then pure ()
       else if !hasNotInitiatedExit src then pure ()
       else if !hasNotInitiatedExit tgt then pure ()
-      else if !passedShardCommitteePeriod src (currentEpochOf state) then pure ()
+      else if !(← passedShardCommitteePeriod src (currentEpochOf state)) then pure ()
       else if (← getPendingBalanceToWithdraw state (UInt64.ofNat srcN)) > 0 then pure ()
       else
         let exitEpoch ← computeConsolidationEpochAndUpdateChurn src.effectiveBalance
+        let withdrawableEpoch ← exitEpoch + Const.minValidatorWithdrawabilityDelay
         modifyState fun state => modValidator state (UInt64.ofNat srcN) fun validator =>
-          { validator with exitEpoch := exitEpoch, withdrawableEpoch := exitEpoch + Const.minValidatorWithdrawabilityDelay }
+          { validator with exitEpoch := exitEpoch, withdrawableEpoch := withdrawableEpoch }
         appendState pendingConsolidations { sourceIndex := UInt64.ofNat srcN, targetIndex := UInt64.ofNat tgtN }
     | _, _ => pure ()
 

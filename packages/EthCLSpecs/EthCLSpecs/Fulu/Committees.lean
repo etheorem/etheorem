@@ -8,7 +8,8 @@ committee assignment (`get_beacon_committee`), the balance-weighted sampler
 (`compute_balance_weighted_selection`) used for proposer and sync-committee
 selection, and `get_next_sync_committee`.
 
-These are pure functions of the boxed `State` (no monad); the epoch and operation
+These are functions of the boxed `State`; the selection helpers raise through `Checked` /
+`Except` where the pyspec's `uint64` arithmetic raises. The epoch and operation
 steps call them. They hash through the `[HasherTag]` seam (`sha`), so the same
 swap-or-not bytes a real client computes. Performance is unoptimised but adequate
 for the minimal preset: the permutation is recomputed per committee, and the
@@ -53,13 +54,18 @@ forkdef computeShuffledPermutation (indexCount : Nat) (seed : ByteArray) : Array
 
 /-! ## Seeds and committee counts -/
 
-/-- `get_seed(state, epoch, domain_type)`. The randao-mix slot is a `% EPOCHS_PER_HISTORICAL_VECTOR`
-ring-buffer index, read with the proof-carrying `vmodGet` (the modulus's positivity / bound
-come from the `[Preset]` well-formedness fields, so the read needs no `Inhabited` default). -/
-forkdef getSeed (state : State) (epoch : Epoch) (domainType : ByteArray) : Bytes32 :=
-  let epochsPerVector := UInt64.ofNat Const.epochsPerHistoricalVector
-  let mix := vmodGet (sszGet state randaoMixes) (epoch + epochsPerVector - Const.minSeedLookahead - 1) Const.epochsPerHistoricalVector
-  bytesToRoot (sha (domainType ++ uint64ToBytes epoch ++ mix))
+/-- `get_seed(state, epoch, domain_type)` (`fulu/mainnet.py:1483-1490`): hash the domain type,
+the epoch, and the randao mix at the lookback epoch. The mix index is the checked `uint64`
+chain `epoch + EPOCHS_PER_HISTORICAL_VECTOR - MIN_SEED_LOOKAHEAD - 1`; it raises where that
+chain raises, the overflow at `epoch ≥ 2^64 - EPOCHS_PER_HISTORICAL_VECTOR` (the two
+subtracts cannot underflow, the sum starts at `EPOCHS_PER_HISTORICAL_VECTOR`). The ring read
+is the total route `getRandaoMix` takes: modulo by the proof-carrying divisor, `vget` with
+the index provably in range. The epoch serializes through its `val` projection, the SSZ iso
+read. -/
+forkdef getSeed (state : State) (epoch : Epoch) (domainType : ByteArray) : Checked Bytes32 := do
+  let lookbackEpoch ← epoch + Const.epochsPerHistoricalVector - Const.minSeedLookahead - 1
+  let mix := vget (sszGet state randaoMixes) (lookbackEpoch % Const.epochsPerHistoricalVectorDiv).toPlainInt
+  pure (bytesToRoot (sha (domainType ++ uint64ToBytes epoch.val ++ mix)))
 
 /-- `get_committee_count_per_slot`. -/
 forkdef getCommitteeCountPerSlot (state : State) (epoch : Epoch) : Nat :=
@@ -78,12 +84,26 @@ forkdef computeCommittee (indices : Array ValidatorIndex) (seed : Bytes32) (inde
   let perm := computeShuffledPermutation len seed
   (Array.range (stop - start)).map (fun j => indices[(perm[start + j]!).toNat]!)
 
-/-- `get_beacon_committee(state, slot, index)`. -/
-forkdef getBeaconCommittee (state : State) (slot : Slot) (index : Nat) : Array ValidatorIndex :=
+/-- `get_beacon_committee(state, slot, index)` (`fulu/mainnet.py:1508-1519`). `getSeed` is a
+checked value now, so the seed binds above `computeCommittee` and the helper raises where the
+seed raises. The `slot % SLOTS_PER_EPOCH` index takes the total `PositiveDivisor` route, and
+the `.toPlainInt` is index-only; the rest of the index / count arithmetic keeps the `Nat`
+spelling it had. That spelling records three dropped raises. The two multiplies lose their
+checked tests, and neither can fire: the slot remainder is below `SLOTS_PER_EPOCH` (32 at
+mainnet) and `committees_per_slot` is capped at `MAX_COMMITTEES_PER_SLOT` (64 at mainnet), so
+each product stays below 2048. The pyspec's `+ index` faults when
+`index ≥ 2^64 - (slot % SLOTS_PER_EPOCH) * committees_per_slot`, a condition every
+modeled caller already excludes (index < committees_per_slot); closing it also needs
+`getCommitteeCountPerSlot` to leave `Nat`, since the pyspec returns `Uint64` and the
+`Nat`-operand routes cannot engage otherwise. -/
+forkdef getBeaconCommittee (state : State) (slot : Slot) (index : Nat) :
+    Checked (Array ValidatorIndex) := do
   let epoch := computeEpochAtSlot slot
   let committeesPerSlot := getCommitteeCountPerSlot state epoch
-  computeCommittee (getActiveValidatorIndices state epoch) (getSeed state epoch Const.domainBeaconAttester)
-    ((slot % UInt64.ofNat Const.slotsPerEpoch).toNat * committeesPerSlot + index) (committeesPerSlot * Const.slotsPerEpoch)
+  let seed ← getSeed state epoch Const.domainBeaconAttester
+  pure (computeCommittee (getActiveValidatorIndices state epoch) seed
+    ((slot % Const.slotsPerEpochDiv).toPlainInt * committeesPerSlot + index)
+    (committeesPerSlot * Const.slotsPerEpoch))
 
 /-- `get_committee_indices`: the committee indices flagged in `committee_bits`. -/
 forkdef getCommitteeIndices {n : Nat} (bits : Bitvector n) : Array Nat :=
@@ -127,32 +147,42 @@ forkdef computeBalanceWeightedSelection (state : State) (indices : Array Validat
 
 /-! ## Proposer and sync-committee selection -/
 
-/-- `compute_proposer_indices`: one balance-weighted proposer per slot in `epoch`. An empty
+/-- `compute_proposer_indices`: one balance-weighted proposer per slot in `epoch`
+(`fulu/mainnet.py:6608-6617`). `computeStartSlotAtEpoch` is a checked value now, so the
+start slot binds above the per-slot loop, where the pyspec assigns it. The loop's
+`startSlot + i` is the checked `CLUint64` route; its raise cannot fire, because the checked
+multiply that produced `startSlot` leaves it a true multiple of `SLOTS_PER_EPOCH` below
+`2^64`, `SLOTS_PER_EPOCH` divides `2^64` (a power of two at both presets, 8 and 32), and
+`i < SLOTS_PER_EPOCH`; the in-range sum reads back through `val` for the seed
+bytes. An empty
 `indices` rejects through `computeBalanceWeightedSelection`'s `assert total > 0`. -/
 forkdef computeProposerIndices (state : State) (epoch : Epoch) (seed : Bytes32)
-    (indices : Array ValidatorIndex) : Except StateTransitionError (Array ValidatorIndex) :=
-  let startSlot := computeStartSlotAtEpoch epoch
+    (indices : Array ValidatorIndex) : Except StateTransitionError (Array ValidatorIndex) := do
+  let startSlot ← computeStartSlotAtEpoch epoch
   (Array.range Const.slotsPerEpoch).mapM (fun i => do
-    let sd := sha (seed ++ uint64ToBytes (startSlot + UInt64.ofNat i))
+    let slotI ← startSlot + i
+    let sd := sha (seed ++ uint64ToBytes slotI.val)
     return (← computeBalanceWeightedSelection state indices sd 1 true)[0]!)
 
 /-- `get_beacon_proposer_index`: read the precomputed Fulu lookahead (no shuffle). -/
 forkdef getBeaconProposerIndex (state : State) : ValidatorIndex :=
   vmodGet (sszGet state proposerLookahead) (sszGet state slot) Const.slotsPerEpoch
 
-/-- `get_beacon_proposer_indices(state, epoch)`: the per-slot proposers for `epoch`. -/
+/-- `get_beacon_proposer_indices(state, epoch)`: the per-slot proposers for `epoch`. The
+seed binds where the pyspec assigns it (`fulu/mainnet.py:6619-6625`). -/
 forkdef getBeaconProposerIndices (state : State) (epoch : Epoch) :
-    Except StateTransitionError (Array ValidatorIndex) :=
-  computeProposerIndices state epoch (getSeed state epoch Const.domainBeaconProposer)
-    (getActiveValidatorIndices state epoch)
+    Except StateTransitionError (Array ValidatorIndex) := do
+  let seed ← getSeed state epoch Const.domainBeaconProposer
+  computeProposerIndices state epoch seed (getActiveValidatorIndices state epoch)
 
 /-- `get_next_sync_committee`: balance-weighted selection of the next sync committee,
 with the real BLS `aggregate_pubkey` through the `[CryptoBackend]` seam. Rejects when no
 validator is active next epoch, through `computeBalanceWeightedSelection`. -/
 forkdef getNextSyncCommittee [CryptoBackend] (state : State) :
     Except StateTransitionError SyncCommittee := do
-  let epoch := currentEpochOf state + 1
-  let seed := getSeed state epoch Const.domainSyncCommittee
+  -- `fulu/mainnet.py:4344`: `epoch = get_current_epoch(state) + 1`, the checked `uint64` add.
+  let epoch ← currentEpochOf state + 1
+  let seed ← getSeed state epoch Const.domainSyncCommittee
   let indices ← computeBalanceWeightedSelection state (getActiveValidatorIndices state epoch)
     seed Const.syncCommitteeSize true
 

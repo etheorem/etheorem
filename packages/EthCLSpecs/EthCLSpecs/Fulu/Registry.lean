@@ -24,11 +24,25 @@ state_section
 forkdef getActiveValidatorIndices (state : State) (epoch : Epoch) : Array ValidatorIndex :=
   indicesWhere (sszGet state validators).toArray (fun v _ => isActiveValidator v epoch)
 
-/-- `get_eligible_validator_indices` (for rewards / inactivity). -/
-forkdef getEligibleValidatorIndices (state : State) : Array ValidatorIndex :=
+/-- `get_eligible_validator_indices` (`fulu/mainnet.py:1805-1812`): the active validators of
+the previous epoch, plus the slashed ones whose withdrawable epoch lies past
+`previous_epoch + 1`. That add sits on the `or`'s second operand, so it binds inside the
+slashed branch and is formed only where the pyspec forms it; it raises where the pyspec
+raises, on a `previous_epoch` at `2^64 - 1`. The walk is the `indicesWhere`
+loop spelled longhand because the predicate is checked, same iteration and push order. -/
+forkdef getEligibleValidatorIndices (state : State) : Checked (Array ValidatorIndex) := do
   let prevEpoch := previousEpochOf state
-  indicesWhere (sszGet state validators).toArray
-    (fun validator _ => isActiveValidator validator prevEpoch || (validator.slashed && prevEpoch + 1 < validator.withdrawableEpoch))
+  let validators := (sszGet state validators).toArray
+  let mut eligible : Array ValidatorIndex := #[]
+  for i in [0 : validators.size] do
+    let validator := validators[i]!
+    if isActiveValidator validator prevEpoch then
+      eligible := eligible.push (UInt64.ofNat i)
+    else if validator.slashed then
+      let slashedFrom ← prevEpoch + 1
+      if slashedFrom < validator.withdrawableEpoch then
+        eligible := eligible.push (UInt64.ofNat i)
+  pure eligible
 
 /-- The registry index of the first validator whose `pubkey` equals `pk`, or `none` when no
 validator carries that pubkey. The single home for the

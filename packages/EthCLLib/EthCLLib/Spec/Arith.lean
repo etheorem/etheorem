@@ -1,11 +1,13 @@
 import SizzLean
+import EthCLLib.Spec.CLUint
 
 /-!
 # `EthCLLib.Spec.Arith`: the arithmetic, byte, and collection layer
 
 Domain-agnostic numeric and serialization utilities the spec calls
 (`FRAMEWORK_ARCHITECTURE.md` §10). Arithmetic stays in `UInt64` matching SSZ
-`uint64` semantics; `Nat` is the fallback only for an intermediate that a
+`uint64` semantics, except the ring helpers, which take the checked `CLUint64`
+the state fields carry; `Nat` is the fallback only for an intermediate that a
 faithful operation order pushes above `2^64` (the committee math's `isqrt` over a
 total balance), narrowed back with an exact conversion, never a reject.
 
@@ -149,29 +151,36 @@ theorem uint64ModOfNatToNatLt (x : UInt64) (n : Nat) (hn : 0 < n) (hb : n < 2 ^ 
 
 /-- A `Nat` usable as a `uint64` modulus into a vector: positive and `< 2 ^ 64`. The
 preset's vector-length constants are registered as instances (in `EthCLSpecs`), so a
-modulo read names only the divisor and lets the proofs resolve. -/
+modulo read names only the divisor and lets the proofs resolve. The class stays `Nat`-typed
+on purpose: the divisor is a preset vector length, it never meets a checked unit, and the
+checked `CLUint64` sits on the dividend side of `vmodGet` / `umodIdx`, not here. -/
 class ValidModulus (d : Nat) where
   /-- The modulus is positive (`x % 0 = x` carries no bound). -/
   pos : 0 < d
   /-- The modulus fits a `uint64`. -/
   lt : d < 2 ^ 64
 
-/-- Read `v` at the `uint64` index `x` reduced mod the period `d`, the "ring-buffer" read
-(`process_randao`'s mix slot, the proposer-lookahead / PTC windows). `d` divides into the
-vector (`d ≤ n`, discharged by `omega` from the lengths), and the in-bounds proof comes
-from `uint64ModOfNatToNatLt` plus the `[ValidModulus d]` instance, so the call names only
-the vector, the index, and the period. A proof-carrying read, so no `Inhabited` default. -/
-@[inline] def vmodGet {α : Type} {n : Nat} (v : Vector α n) (x : UInt64) (d : Nat)
+/-- Read `v` at the ring index `x` reduced mod the period `d`, the "ring-buffer" read
+(`process_randao`'s mix slot, the proposer-lookahead / PTC windows). `x` is the checked
+`uint64` value the state carries (`Slot`, `Epoch`); the read projects `val`, the SSZ iso
+read, because the modulo by a positive in-range `d` on the raw `UInt64` is exact.
+`d` divides into the vector (`d ≤ n`, discharged by `omega` from the lengths), and the
+in-bounds proof comes from `uint64ModOfNatToNatLt` plus the `[ValidModulus d]` instance, so
+the call names only the vector, the index, and the period. A proof-carrying read, so no
+`Inhabited` default. -/
+@[inline] def vmodGet {α : Type} {n : Nat} (v : Vector α n) (x : CLUint64) (d : Nat)
     [vd : ValidModulus d] (hle : d ≤ n := by omega) : α :=
-  v[(x % UInt64.ofNat d).toNat]'(by have := uint64ModOfNatToNatLt x d vd.pos vd.lt; omega)
+  v[(x.val % UInt64.ofNat d).toNat]'(by have := uint64ModOfNatToNatLt x.val d vd.pos vd.lt; omega)
 
 /-- The ring-buffer index `x % d` as a `Nat`, the write-side companion of `vmodGet`'s read
-index. Names the `(x % UInt64.ofNat d).toNat` spelling a per-element reset or cache write
-uses (`process_slot`'s root caching, the slashings / RANDAO / builder-payment ring buffers),
-so the period is written once and a `slotsPerEpoch`-versus-`slotsPerHistoricalRoot` mixup is
-harder. Index-only: it feeds the same total `field[idx]!` write, so it cannot change which
-slot is hit (no bounds-carrying `vmodSet`, which a proof could discharge differently). -/
-@[inline] def umodIdx (x : UInt64) (d : Nat) : Nat := (x % UInt64.ofNat d).toNat
+index. `x` is the checked `uint64` value the state carries (`Slot`, `Epoch`), read through
+the `val` projection, the SSZ iso read. Names the `(x % UInt64.ofNat d).toNat` spelling a
+per-element reset
+or cache write uses (`process_slot`'s root caching, the slashings / RANDAO / builder-payment
+ring buffers), so the period is written once and a `slotsPerEpoch`-versus-`slotsPerHistoricalRoot`
+mixup is harder. Index-only: it feeds the same total `field[idx]!` write, so it cannot change
+which slot is hit (no bounds-carrying `vmodSet`, which a proof could discharge differently). -/
+@[inline] def umodIdx (x : CLUint64) (d : Nat) : Nat := (x.val % UInt64.ofNat d).toNat
 
 /-- A `Nat` cursor advanced modulo a length, with the length-zero case pinned to `0`. Names
 the `if n == 0 then 0 else x % n` guard the withdrawal sweeps repeat when they wrap the
@@ -209,8 +218,9 @@ def sszOfArray {α : Type} {cap : Nat} (a : Array α)
   ⟨a, h⟩
 
 /-- The indices of `xs` whose element (with its position) satisfies `p`, as `uint64`s. Names
-the `mut out / for i / push (UInt64.ofNat i)` accumulator that the registry walks
-(`get_active_validator_indices` and its eligible-set sibling) repeat, leaving only the
+the `mut out / for i / push (UInt64.ofNat i)` accumulator that the pure-predicate registry
+walks repeat (`get_active_validator_indices`; its eligible-set sibling spells the loop
+longhand now that its predicate is checked), leaving only the
 one-line predicate at the call site. The predicate takes the element and its index; the spec
 walks only inspect the element, the index is offered for generality. Same iteration order
 (`0 … xs.size-1`) and same push order as the longhand loop, so the resulting index array is

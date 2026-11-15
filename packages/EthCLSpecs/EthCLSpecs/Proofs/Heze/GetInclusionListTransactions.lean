@@ -32,7 +32,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLLib.Proofs (ForkChoiceStoreRun run_bind run_pure except_bind_ok except_bind_error
+open EthCLLib.Proofs (ForkChoiceStoreRun run_bind except_bind_ok
   mem_arrayUnion_iff nodup_arrayUnion)
 open EthCLLib.Spec (HasherTag MapKind FcMap htr StoreTransitionError arrayUnion)
 open EthCLSpecs.Heze (Preset Store State BeaconState Root Slot ValidatorIndex InclusionList
@@ -48,17 +48,23 @@ section
 variable [HasherTag]
 
 /-- Complete `.run` equation of `getInclusionListCommittee`. The concatenated
-indices expression is the one in the source. An empty array throws the
-empty-committee arithmetic error. A nonempty array returns `cyclicSample` of
-that array and leaves the runner state unchanged. The committee accessor does
-not read the runner state, so the equation holds for an arbitrary `σ`. -/
+indices expression is the one in the source. Each `getBeaconCommittee` read is
+a checked value the fold binds. Since the unit flip, a committee's seed can
+raise, so the fold itself can fault, and the theorem takes the fold's `.ok`
+equation as a hypothesis. An empty array throws the empty-committee
+arithmetic error. A nonempty array returns `cyclicSample` of that array and
+leaves the runner state unchanged. The committee accessor does not read the
+runner state, so the equation holds for an arbitrary `σ`. -/
 @[characterizes EthCLSpecs.Heze.getInclusionListCommittee]
 theorem getInclusionListCommittee_run_eq :
-    ∀ (state : BeaconState) (slot : Slot) (runnerStore : σ),
-      let indices :=
-        (Array.range (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))).foldl
-          (fun acc i => acc ++ getBeaconCommittee (pureState state) slot i)
+    ∀ (state : BeaconState) (slot : Slot) (runnerStore : σ) (indices : Array ValidatorIndex),
+      ((Array.range (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))).foldlM
+          (fun acc i => do
+            let committee ← getBeaconCommittee (pureState state) slot i
+            pure (acc ++ committee))
           (#[] : Array ValidatorIndex)
+        : ForkChoiceStoreRun σ (Array ValidatorIndex)).run runnerStore
+        = .ok (indices, runnerStore) →
       (getInclusionListCommittee
           (StoreTransition := ForkChoiceStoreRun σ) (pureState state) slot).run runnerStore =
         if indices.size == 0 then
@@ -66,24 +72,30 @@ theorem getInclusionListCommittee_run_eq :
             "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"))
         else
           .ok (cyclicSample indices inclusionListCommitteeSize, runnerStore) := by
-  intro state slot runnerStore
+  intro state slot runnerStore indices hfold
   simp only [getInclusionListCommittee]
+  rw [run_bind, hfold, except_bind_ok]
   split
-  · rw [run_bind, ForkChoiceStoreRun.throwArithmetic_run]
-    exact except_bind_error _ _
-  · rw [run_pure]
+  · rfl
+  · rfl
 
 /-- Exact empty-committee error of `getInclusionListCommittee`. -/
 theorem getInclusionListCommittee_run_error_of_empty
-    (state : BeaconState) (slot : Slot) (runnerStore : σ)
-    (h : ((Array.range (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))).foldl
-        (fun acc i => acc ++ getBeaconCommittee (pureState state) slot i)
-        (#[] : Array ValidatorIndex)).size = 0) :
+    (state : BeaconState) (slot : Slot) (runnerStore : σ) (indices : Array ValidatorIndex)
+    (hfold : ((Array.range (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))).foldlM
+        (fun acc i => do
+          let committee ← getBeaconCommittee (pureState state) slot i
+          pure (acc ++ committee))
+        (#[] : Array ValidatorIndex)
+      : ForkChoiceStoreRun σ (Array ValidatorIndex)).run runnerStore
+      = .ok (indices, runnerStore))
+    (h : indices.size = 0) :
     (getInclusionListCommittee
         (StoreTransition := ForkChoiceStoreRun σ) (pureState state) slot).run runnerStore
       = .error (.transition (.arithmetic
           "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee")) := by
-  simp only [getInclusionListCommittee_run_eq, h, beq_iff_eq, ite_true]
+  rw [getInclusionListCommittee_run_eq state slot runnerStore indices hfold]
+  simp [h]
 
 end
 end CommitteeRun
