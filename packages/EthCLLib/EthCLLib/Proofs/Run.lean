@@ -1,3 +1,4 @@
+import EthCLLib.Spec.CLUint
 import EthCLLib.Spec.Errors
 import EthCLLib.Spec.Hasher
 
@@ -11,7 +12,7 @@ run proof needs the same rewrites, so they live once here rather than as a
 `simp [StateT.bind, Bind.bind, ...]` unfolding repeated per call site, and rather than
 under a fork's runner name.
 
-All five close by `rfl`. They exist to be `rw`/`simp` targets with a readable right-hand
+Each closes by `rfl`. They exist to be `rw`/`simp` targets with a readable right-hand
 side. Stated at any `σ` / `ε`: nothing in either proof is specific to a fork's state,
 and the general form applies to `GloasRun` and `ForkChoiceStoreRun` alike.
 
@@ -38,7 +39,8 @@ set_option autoImplicit false
 
 namespace EthCLLib.Proofs
 
-open EthCLLib.Spec (HasherTag ErrorConv liftErr StateTransitionError throwArithmetic)
+open EthCLLib.Spec (HasherTag ErrorConv liftErr StateTransitionError throwArithmetic Checked
+  ArithFault)
 open SizzLean (SSZRepr)
 open SizzLean.Cache
 
@@ -125,6 +127,29 @@ theorem run_liftErr_of_error {σ ε' ε α : Type} [ErrorConv ε' ε] {e : ε}
     (Except.mapError ErrorConv.conv x)).run sb = _
   rw [h]
   exact run_ofExcept_error sb
+
+/-! ## The `liftM (c : Checked …)` leaf
+
+The checked-`Gwei` port turned every arithmetic expression a fork body binds under
+`←` into `liftM c` for one `c : Checked Gwei` (`CLUint.lean`'s `MonadLift` instance,
+which needs the machine's error to accept a `StateTransitionError`). At a pure runner
+that lift is one leaf: the `.ok` arm is `pure`, the `.error` arm raises as the
+`.arithmetic` fault carrying the repr of the exact `ArithFault`, and neither arm writes
+the state. These two facts are the pair the fork proofs peel with. -/
+
+/-- `.run` of `liftM` on a `Checked` success: the value, with the state passed through. -/
+theorem run_liftM_ok {σ ε α : Type} [ErrorConv StateTransitionError ε] (a : α) (s : σ) :
+    (liftM (Except.ok a : Checked α)
+      : StateT σ (Except ε) α).run s = .ok (a, s) := rfl
+
+/-- `.run` of `liftM` on a `Checked` fault: the `.arithmetic` fault carrying the exact
+`reprStr` payload, and no state. -/
+theorem run_liftM_error {σ ε α : Type} [ErrorConv StateTransitionError ε] (e : ArithFault)
+    (s : σ) :
+    (liftM (Except.error e : Checked α)
+      : StateT σ (Except ε) α).run s
+      = .error (ErrorConv.conv (StateTransitionError.arithmetic (reprStr e))) :=
+  rfl
 
 /-! ## The pure box and the pure runner
 

@@ -11,7 +11,7 @@ also reads the active set, floats up to `Accessors` (the read/write seam, §3.3)
 old whole-field form but expressed as a single clause. `increaseBalance` and `decreaseBalance`
 read through `sszGetIdx` before that write. An out-of-range index therefore rejects with
 `.outOfBounds`, where the pyspec's list read raises `IndexError`. The write runs only in range.
-`increaseBalance` also adds through `checkedAdd`. It rejects with the `.arithmetic` fault when
+`increaseBalance` also adds through the checked `+` on `Gwei`. It rejects with the `.arithmetic` fault when
 the sum leaves the `uint64` range, where the pyspec's `+=` raises `ValueError`.
 -/
 
@@ -31,8 +31,8 @@ forkdef modBalance (state : State) (i : ValidatorIndex) (f : Gwei → Gwei) : St
 
 /-- `increase_balance`. The pyspec's `+=` is a bare `uint64` addition, and remerkleable re-runs
 the bound check on the result, so an overflow raises `ValueError`. The reference runner lets that
-raise escape. `checkedAdd` models the addition, and the action rejects with the `.arithmetic`
-uncaught fault.
+raise escape. The checked `+` on `Gwei` models the addition, and the action rejects with the
+`.arithmetic` uncaught fault.
 
 The read goes through `sszGetIdx`. The pyspec indexes a bare list here, and that read raises
 `IndexError` past the end. An `[i]!` read answers with the `Gwei` default instead, and the write

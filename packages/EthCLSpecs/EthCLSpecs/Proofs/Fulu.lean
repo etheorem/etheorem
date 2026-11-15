@@ -1,6 +1,7 @@
 import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Codec
 import EthCLSpecs.Proofs.Fulu.Run
+import EthCLSpecs.Proofs.Fulu.TotalBalance
 
 /-!
 # `EthCLSpecs.Proofs.Fulu`: the Fulu fork's theorems (index)
@@ -23,4 +24,7 @@ Re-exports:
 * `EthCLSpecs.Proofs.Fulu.Codec`: the `BasicSupported` gate by kernel `decide`, roundtrip, and
   non-malleability (`serialize_injective`) for `BeaconState`, `BeaconBlockBody`, `BeaconBlock`,
   and `SignedBeaconBlock` at the two shipped presets.
+* `EthCLSpecs.Proofs.Fulu.TotalBalance`: `getTotalBalance`'s exact contract. The checked fold
+  succeeds iff the plain sum of the effective balances fits in `2 ^ 64`, and then the result
+  reads back as that sum floored at one `EFFECTIVE_BALANCE_INCREMENT`.
 -/

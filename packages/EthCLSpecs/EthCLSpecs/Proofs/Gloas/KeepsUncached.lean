@@ -32,6 +32,14 @@ constants: `inherit` re-elaborates the Fulu bodies at `Gloas.State`, so
 `EthCLSpecs.Gloas.processVoluntaryExit` calls `EthCLSpecs.Gloas.initiateValidatorExit`
 and the Gloas `computeExitEpochAndUpdateChurn`, and the lemmas name those
 constants. All of them are supporting lemmas, untagged.
+
+The Stage 2 `Gwei := CLUint64` port moved the churn limits, the churn reservation, and the
+balance sums onto checked `Gwei` arithmetic. A checked expression the body binds under `←`
+reaches the proof as `liftM c` for one `c : Checked Gwei` value, so the proofs peel it as
+one leaf: `.ok` is `pure`, `.error` raises through `liftErr` as the `.arithmetic` fault,
+and neither arm writes the state. The four private facts in the first section state that
+leaf and its two run equations; they stay private so nothing downstream depends on this
+file's tactic surface.
 -/
 set_option autoImplicit false
 
@@ -66,7 +74,61 @@ open EthCLLib.Proofs (pureState KeepsUncached ReturnsUncached KeepsUncachedFrom
   pureState_forIn_range_id)
 
 open SizzLean.Proofs (view_uncachedBox)
+open SizzLean (SSZRepr)
 open SizzLean.Cache
+
+/-! ## The `liftM (c : Checked …)` leaf
+
+The checked-`Gwei` port turns every bound arithmetic expression into `liftM c` for one
+`c : Checked Gwei` value (`CLUint.lean`'s `MonadLift (Except ArithFault) m` instance). At
+the pure runner that lift is one leaf: the `.ok` arm is `pure`, the `.error` arm raises
+through `liftErr` as the `.arithmetic` fault, and neither arm writes the state. These four
+private facts are the leaf pair the closure lemmas cannot see and the two run equations
+the loop-body proofs peel with. They stay private so nothing downstream depends on this
+file's tactic surface. -/
+
+/-- `.run` of `liftM` on a `Checked` success: the value, with the state passed through. -/
+private theorem run_liftM_ok {σ α : Type} (a : α) (s : σ) :
+    (liftM (Except.ok a : EthCLLib.Spec.Checked α)
+      : StateT σ (Except EthCLLib.Spec.StateTransitionError) α).run s = .ok (a, s) := rfl
+
+/-- `.run` of `liftM` on a `Checked` fault: the `.arithmetic` fault carrying the exact
+`reprStr` payload, and no state. -/
+private theorem run_liftM_error {σ α : Type} (e : EthCLLib.Spec.ArithFault) (s : σ) :
+    (liftM (Except.error e : EthCLLib.Spec.Checked α)
+      : StateT σ (Except EthCLLib.Spec.StateTransitionError) α).run s
+      = .error (EthCLLib.Spec.StateTransitionError.arithmetic (reprStr e)) :=
+  rfl
+
+/-- `KeepsUncached` leaf for a lifted `Checked` value: `.ok` is `pure` and `.error` is a
+`liftErr` reject, so neither arm writes the state. The `liftM` is spelled with its
+`MonadLift` instance explicit, the spelling the body's `let x ← c` desugars to once the
+forkdef's `MonadExceptOf` hypothesis is instantiated at the pure runner. -/
+private theorem keepsUncached_liftChecked {T α : Type} [SSZRepr T] [HasherTag]
+    (c : EthCLLib.Spec.Checked α) :
+    KeepsUncached (act := @liftM (Except EthCLLib.Spec.ArithFault)
+      (StateT (SSZ.Box HasherTag.H T) (Except EthCLLib.Spec.StateTransitionError))
+      inferInstance α c) := by
+  cases c with
+  | ok b => exact keepsUncached_pure _
+  | error e =>
+    exact keepsUncached_liftErr (T := T) (ε := EthCLLib.Spec.StateTransitionError)
+      (ε' := EthCLLib.Spec.StateTransitionError)
+      (x := Except.error (EthCLLib.Spec.StateTransitionError.arithmetic (reprStr e)))
+
+/-- Per-start leaf for a lifted `Checked` value, the form a locally threaded chain peels
+with. -/
+private theorem keepsUncachedFrom_liftChecked {T α : Type} [SSZRepr T] [HasherTag]
+    (v : T) (c : EthCLLib.Spec.Checked α) :
+    KeepsUncachedFrom v (@liftM (Except EthCLLib.Spec.ArithFault)
+      (StateT (SSZ.Box HasherTag.H T) (Except EthCLLib.Spec.StateTransitionError))
+      inferInstance α c) := by
+  cases c with
+  | ok b => exact keepsUncachedFrom_pure v b
+  | error e =>
+    exact keepsUncachedFrom_liftErr (T := T) (ε := EthCLLib.Spec.StateTransitionError)
+      (ε' := EthCLLib.Spec.StateTransitionError) v
+      (Except.error (EthCLLib.Spec.StateTransitionError.arithmetic (reprStr e)))
 
 section
 variable [Preset] [HasherTag] [Config] [CryptoBackend]
@@ -79,6 +141,8 @@ theorem keepsUncached_computeExitEpochAndUpdateChurn (exitBalance : Gwei) :
   unfold computeExitEpochAndUpdateChurn
   refine keepsUncached_bind keepsUncached_get (fun state => ?_)
   keeps_uncached
+  -- The three checked-`Gwei` binds: the churn limit, the reservation pair, the remainder.
+  all_goals exact keepsUncached_liftChecked _
 
 /-- `initiateValidatorExit` keeps the flavour: the validator read and the
 checked withdrawability sum are `liftErr`-shaped, the early-return gate is an
@@ -88,6 +152,9 @@ theorem keepsUncached_initiateValidatorExit (i : ValidatorIndex) :
   unfold initiateValidatorExit
   refine keepsUncached_bind keepsUncached_get (fun state => ?_)
   keeps_uncached
+  -- The checked-`Gwei` leaves are the three churn-computation binds; the withdrawable
+  -- epoch add is a `checkedAdd`, whose `ite` the tactic discharges itself.
+  all_goals exact keepsUncached_liftChecked _
 
 /-- The Gloas copy of `processVoluntaryExit` keeps the flavour: six pure
 validation gates, one checked read, and `initiateValidatorExit`, whose own
@@ -97,6 +164,8 @@ theorem keepsUncached_processVoluntaryExit (sve : SignedVoluntaryExit) :
   unfold processVoluntaryExit
   refine keepsUncached_bind keepsUncached_get (fun state => ?_)
   keeps_uncached
+  -- The pending-balance fold and the checked-`Gwei` binds of the exit path.
+  all_goals exact keepsUncached_liftChecked _
 
 /-- `getPtc` keeps the flavour: it takes the state as an explicit argument, and
 its body reads and gates only, through checked ops and asserts. -/
@@ -145,9 +214,30 @@ theorem keepsUncached_processPayloadAttestation (pa : PayloadAttestation) :
         · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _)
             (fun _ => keepsUncachedFrom_throw _ _)
 
+/-- A bind on `liftErr`'s success branch is the continuation: `rfl`, since every layer is
+an instance projection, a definition, or a match on a constructor. This is the step that
+puts `sszGetIdx`'s read element and the run equation's `some` arm on one variable. -/
+private theorem bind_liftErr_ok {α β : Type} (v : α) (k : α → GloasRun β) :
+    bind (EthCLLib.Spec.liftErr (Except.ok v : Except IndexError α)) k = k v :=
+  rfl
+
+/-- The checked sum of the two balances, exactly as the body computes it: `rfl` against
+`CLUint64.add`, so the error arm is that operator's own `ArithFault.range`. The run
+equation below states its reject through `EthCLSpecs.Proofs.Fulu.increaseFault`, the
+payload that `reprStr` produces. -/
+private theorem increaseBalance_checkedSum (balance delta : Gwei) :
+    (balance + delta : EthCLLib.Spec.Checked Gwei) =
+      if balance.val + delta.val < balance.val
+      then .error (EthCLLib.Spec.ArithFault.range "+" balance.toPlainInt delta.toPlainInt)
+      else .ok (EthCLLib.Spec.CLUint64.trustedOfUInt64 (balance.val + delta.val)) := by
+  show (if balance.val + delta.val < balance.val then _ else _) = _
+  split
+  · rfl
+  · rfl
+
 /-- `increaseBalance`, at its Gloas copy, returns `pureState` of the written
 value and leaves the threaded state uncached: the run reduces to the same match
-the Fulu contract states. -/
+the Fulu contract states, with the checked `Gwei` sum as the one rejecting step. -/
 theorem returnsUncached_increaseBalance (state : BeaconState) (i : ValidatorIndex) (d : Gwei) :
     ReturnsUncached (increaseBalance (StateTransition := GloasRun) (pureState state) i d) := by
   intro preState b s h
@@ -156,26 +246,30 @@ theorem returnsUncached_increaseBalance (state : BeaconState) (i : ValidatorInde
       = (match state.balances.val[i.toNat]? with
         | none => .error (.outOfBounds i.toNat state.balances.size)
         | some balance =>
-          if balance + d < balance then
-            .error (.arithmetic "increase_balance: balances[index] + delta")
+          if balance.val + d.val < balance.val then
+            .error (.arithmetic (EthCLSpecs.Proofs.Fulu.increaseFault balance d))
           else
-            .ok (modBalance (pureState state) i (fun _ => balance + d), pureState preState)) := by
-    unfold increaseBalance sszGetIdx EthCLLib.Spec.IdxRead.get? EthCLLib.Spec.IdxRead.size checkedAdd
+            .ok (modBalance (pureState state) i
+              (fun _ => EthCLLib.Spec.CLUint64.trustedOfUInt64 (balance.val + d.val)),
+              pureState preState)) := by
+    unfold increaseBalance sszGetIdx EthCLLib.Spec.IdxRead.get? EthCLLib.Spec.IdxRead.size
     simp only [view_uncachedBox]
     cases state.balances.val[i.toNat]? with
     | none => simp; rfl
     | some balance =>
-      by_cases hc : balance + d < balance
-      · simp [hc, EthCLLib.Spec.liftErr, Except.mapError, MonadExcept.ofExcept]
+      rw [bind_liftErr_ok]
+      simp only [increaseBalance_checkedSum]
+      by_cases hc : balance.val + d.val < balance.val
+      · simp only [ite_eq_left hc]
         rfl
-      · simp [hc, EthCLLib.Spec.liftErr, Except.mapError, MonadExcept.ofExcept]
+      · simp only [ite_eq_right hc]
         rfl
   cases hu : state.balances.val[i.toNat]? with
   | none => rw [hrun, hu] at h; simp at h
   | some balance =>
     rw [hrun, hu] at h
     dsimp only at h
-    by_cases hc : balance + d < balance
+    by_cases hc : balance.val + d.val < balance.val
     · rw [ite_eq_left hc] at h
       simp at h
     · rw [ite_eq_right hc] at h
@@ -196,7 +290,7 @@ theorem returnsUncached_decreaseBalance (state : BeaconState) (i : ValidatorInde
         | none => .error (.outOfBounds i.toNat state.balances.size)
         | some balance =>
           .ok (modBalance (pureState state) i
-            (fun _ => EthCLLib.Spec.saturatingSub balance d), pureState preState)) := by
+            (fun _ => balance.saturatingSub d), pureState preState)) := by
     unfold decreaseBalance sszGetIdx EthCLLib.Spec.IdxRead.get? EthCLLib.Spec.IdxRead.size
     simp only [view_uncachedBox]
     cases state.balances.val[i.toNat]? with
@@ -218,9 +312,11 @@ theorem returnsUncached_decreaseBalance (state : BeaconState) (i : ValidatorInde
 /-- `slashValidator` keeps the flavour: the reads and the exit write keep it as
 the spike lemmas do, and the two threaded states, the local write chain and the
 two balance returns, stay uncached through `ReturnsUncached` and
-`keepsUncachedFrom_set`. The closing EIP-7732 loop over the payment window is a
-pure `modifyState` writer, and `pureState_forIn_range_id` carries the flavour through
-its steps. -/
+`keepsUncachedFrom_set`. The checked-`Gwei` sums the body binds (`slashings +`
+effective balance, the penalty and whistleblower quotients, the reward split)
+peel as `keepsUncachedFrom_liftChecked` leaves. The closing EIP-7732 loop over the
+payment window is a pure `modifyState` writer, and `pureState_forIn_range_id`
+carries the flavour through its steps. -/
 theorem keepsUncached_slashValidator (i : ValidatorIndex) :
     KeepsUncached (slashValidator (StateTransition := GloasRun) i) := by
   intro preState
@@ -234,20 +330,36 @@ theorem keepsUncached_slashValidator (i : ValidatorIndex) :
     (keepsUncachedFrom_liftErr (T := BeaconState) (ε := EthCLLib.Spec.StateTransitionError)
       (ε' := EthCLLib.Spec.IndexError) (α := Validator) state _)
     (fun validator midState₃ => ?_)
-  refine returnsUncachedFrom_bind (returnsUncached_decreaseBalance _ i _)
-    (fun afterDecrease midState₄ => ?_)
-  refine keepsUncachedFrom_bind (v := midState₄) (keepsUncachedFrom_set midState₄ afterDecrease)
-    (fun _ midState₅ => ?_)
+  -- `slashed ← vget … slashIdx + validator.effectiveBalance`: one checked-`Gwei` leaf.
+  refine keepsUncachedFrom_bind (keepsUncachedFrom_liftChecked midState₃ _)
+    (fun _ midState₄ => ?_)
+  -- `state ← decreaseBalance state i (← effectiveBalance / …)`: the penalty quotient is
+  -- one checked-`Gwei` leaf, then the mutator's own lemma.
+  refine keepsUncachedFrom_bind (keepsUncachedFrom_liftChecked midState₄ _)
+    (fun penalty midState₅ => ?_)
+  refine returnsUncachedFrom_bind (returnsUncached_decreaseBalance _ i penalty)
+    (fun afterDecrease midState₆ => ?_)
+  refine keepsUncachedFrom_bind (v := midState₆) (keepsUncachedFrom_set midState₆ afterDecrease)
+    (fun _ midState₇ => ?_)
   refine keepsUncachedFrom_get_bind (fun state' => ?_)
-  refine returnsUncachedFrom_bind (returnsUncached_increaseBalance _ _ _)
-    (fun afterProposerReward midState₆ => ?_)
-  refine returnsUncachedFrom_bind (returnsUncached_increaseBalance _ _ _)
-    (fun afterWhistleblowerReward midState₇ => ?_)
-  refine keepsUncachedFrom_bind (keepsUncachedFrom_set midState₇ afterWhistleblowerReward)
-    (fun _ midState₈ => ?_)
+  -- `whistleblowerReward` and `proposerReward`: two checked-`Gwei` leaves.
+  refine keepsUncachedFrom_bind (keepsUncachedFrom_liftChecked state' _)
+    (fun whistleblowerReward midState₈ => ?_)
+  refine keepsUncachedFrom_bind (keepsUncachedFrom_liftChecked midState₈ _)
+    (fun proposerReward midState₉ => ?_)
+  refine returnsUncachedFrom_bind (returnsUncached_increaseBalance _ _ proposerReward)
+    (fun afterProposerReward midState₁₀ => ?_)
+  -- `whistleblowerReward - proposerReward`: one more checked-`Gwei` leaf, then the second
+  -- mutator and the `set` of its return.
+  refine keepsUncachedFrom_bind (keepsUncachedFrom_liftChecked midState₁₀ _)
+    (fun remainder midState₁₁ => ?_)
+  refine returnsUncachedFrom_bind (returnsUncached_increaseBalance _ _ remainder)
+    (fun afterWhistleblowerReward midState₁₂ => ?_)
+  refine keepsUncachedFrom_bind (keepsUncachedFrom_set midState₁₂ afterWhistleblowerReward)
+    (fun _ midState₁₃ => ?_)
   -- The payment loop: each step either rebuilds the record (an uncached box) or passes
   -- the box through, so the whole writer maps `pureState` to `pureState`.
-  refine keepsUncached_iff_forall_from.mp (keepsUncached_modify _ (fun v => ?_)) midState₈
+  refine keepsUncached_iff_forall_from.mp (keepsUncached_modify _ (fun v => ?_)) midState₁₃
   -- `Id.run do … return state` is the loop followed by `pure`, which `bind_pure` drops.
   simp only [bind_pure]
   exact pureState_forIn_range_id _ (fun paymentIndex v => by
@@ -408,9 +520,9 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                               (α := Array EthCLSpecs.Gloas.ValidatorIndex) _
                           · refine keepsUncachedFrom_forIn_array_bind_P (T := BeaconState) (v := midState₁₃)
                               ?ob ?kt
-                              (P := fun (acc : EthCLSpecs.Gloas.State × Nat × EthCLSpecs.Gloas.Gwei) =>
+                              (P := fun (acc : EthCLSpecs.Gloas.State × Gwei × EthCLSpecs.Gloas.Gwei) =>
                                 ∃ accState : BeaconState, acc.1 = pureState accState) ?hf ?hk idxs2
-                              (pureState state, 0,
+                              (pureState state, (0 : Gwei),
                                 (EthCLLib.Spec.vget (pureState state).view.builderPendingPayments
                                   (EthCLSpecs.Gloas.builderPaymentIndex att.data.slot
                                     (att.data.target.epoch ==
@@ -427,7 +539,7 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                               -- `ite_bind` folds the copies back into one bind.
                               rw [← ite_bind] at hrun
                               refine run_bind_inv (T := BeaconState) (γ := Unit) midState₁₄ (fun _ => True)
-                                (fun (acc : ForInStep (EthCLSpecs.Gloas.State × Nat × EthCLSpecs.Gloas.Gwei)) =>
+                                (fun (acc : ForInStep (EthCLSpecs.Gloas.State × Gwei × EthCLSpecs.Gloas.Gwei)) =>
                                   ∃ accState : BeaconState, acc.value.1 = pureState accState)
                                 (fun r0 s0 h0 => ⟨keepsUncached_ite
                                   (fun _ => keepsUncached_sszGetIdx _ _)
@@ -436,9 +548,9 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                               intro flags0 midState₁₄ _ r s hrun
                               refine keepsUncachedFrom_forIn_range_bind_run_inv
                                 (T := BeaconState) (v := midState₁₄)
-                                (P := fun (acc : EthCLSpecs.Gloas.State × Nat × Bool) =>
+                                (P := fun (acc : EthCLSpecs.Gloas.State × Gwei × Bool) =>
                                   ∃ flagAccState : BeaconState, acc.1 = pureState flagAccState)
-                                (Q := fun (acc : ForInStep (EthCLSpecs.Gloas.State × Nat × EthCLSpecs.Gloas.Gwei)) =>
+                                (Q := fun (acc : ForInStep (EthCLSpecs.Gloas.State × Gwei × EthCLSpecs.Gloas.Gwei)) =>
                                   ∃ accState : BeaconState, acc.value.1 = pureState accState)
                                 (α := EthCLSpecs.Gloas.ValidatorIndex) (f := _) (k := _) ?hfin ?hkt 3
                                 (pureState accState, pn, false) ⟨accState, rfl⟩ r s hrun
@@ -461,15 +573,26 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                                         simp at hrun2
                                       | ok rw =>
                                         rw [run_liftErr_of_ok _ _ hm, except_bind_ok] at hrun2
-                                        rw [run_pure] at hrun2
-                                        injection hrun2 with h1
-                                        injection h1 with h1a h1b
-                                        subst h1a
-                                        subst h1b
-                                        refine ⟨rfl, ⟨({ flagAccState with
-                                          currentEpochParticipation :=
-                                            (SSZ.Box.view (pureState flagAccState)).currentEpochParticipation.set!
-                                              (UInt64.toNat vi) (EthCLLib.Spec.addFlag y cIdx) }), rfl⟩⟩
+                                        -- `proposerNum += baseReward * weight`: one checked-`Gwei`
+                                        -- leaf between the base-reward read and the write-back.
+                                        rw [run_bind] at hrun2
+                                        cases hn : (p2 + rw *
+                                            EthCLSpecs.Gloas.Const.participationFlagWeights[cIdx]! :
+                                            EthCLLib.Spec.Checked EthCLLib.Spec.CLUint64) with
+                                        | ok pn' =>
+                                          rw [hn, run_liftM_ok, except_bind_ok] at hrun2
+                                          rw [run_pure] at hrun2
+                                          injection hrun2 with h1
+                                          injection h1 with h1a h1b
+                                          subst h1a
+                                          subst h1b
+                                          refine ⟨rfl, ⟨({ flagAccState with
+                                            currentEpochParticipation :=
+                                              (SSZ.Box.view (pureState flagAccState)).currentEpochParticipation.set!
+                                                (UInt64.toNat vi) (EthCLLib.Spec.addFlag y cIdx) }), rfl⟩⟩
+                                        | error e =>
+                                          rw [hn, run_liftM_error, except_bind_error] at hrun2
+                                          simp at hrun2
                                     · rw [run_pure] at hrun2
                                       injection hrun2 with h1
                                       injection h1 with h1a h1b
@@ -492,15 +615,25 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                                         simp at hrun2
                                       | ok rw =>
                                         rw [run_liftErr_of_ok _ _ hm, except_bind_ok] at hrun2
-                                        rw [run_pure] at hrun2
-                                        injection hrun2 with h1
-                                        injection h1 with h1a h1b
-                                        subst h1a
-                                        subst h1b
-                                        refine ⟨rfl, ⟨({ flagAccState with
-                                          previousEpochParticipation :=
-                                            (SSZ.Box.view (pureState flagAccState)).previousEpochParticipation.set!
-                                              (UInt64.toNat vi) (EthCLLib.Spec.addFlag y cIdx) }), rfl⟩⟩
+                                        -- The same checked-`Gwei` leaf, previous-epoch branch.
+                                        rw [run_bind] at hrun2
+                                        cases hn : (p2 + rw *
+                                            EthCLSpecs.Gloas.Const.participationFlagWeights[cIdx]! :
+                                            EthCLLib.Spec.Checked EthCLLib.Spec.CLUint64) with
+                                        | ok pn' =>
+                                          rw [hn, run_liftM_ok, except_bind_ok] at hrun2
+                                          rw [run_pure] at hrun2
+                                          injection hrun2 with h1
+                                          injection h1 with h1a h1b
+                                          subst h1a
+                                          subst h1b
+                                          refine ⟨rfl, ⟨({ flagAccState with
+                                            previousEpochParticipation :=
+                                              (SSZ.Box.view (pureState flagAccState)).previousEpochParticipation.set!
+                                                (UInt64.toNat vi) (EthCLLib.Spec.addFlag y cIdx) }), rfl⟩⟩
+                                        | error e =>
+                                          rw [hn, run_liftM_error, except_bind_error] at hrun2
+                                          simp at hrun2
                                     · rw [run_pure] at hrun2
                                       injection hrun2 with h1
                                       injection h1 with h1a h1b
@@ -518,12 +651,21 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                                   cases hq : ((SSZ.Box.view (pureState state)).validators).val[(UInt64.toNat vi)]? with
                                   | some yv =>
                                     rw [run_sszGetIdx_some _ _ _ hq, except_bind_ok] at hrun3
-                                    rw [run_pure] at hrun3
-                                    injection hrun3 with h1
-                                    injection h1 with h1a h1b
-                                    subst h1a
-                                    subst h1b
-                                    exact ⟨rfl, ⟨flagAccState, rfl⟩⟩
+                                    -- `weight += effective_balance`: one checked-`Gwei` leaf.
+                                    rw [run_bind] at hrun3
+                                    cases hn : (ws + yv.effectiveBalance :
+                                      EthCLLib.Spec.Checked EthCLLib.Spec.CLUint64) with
+                                    | ok w' =>
+                                      rw [hn, run_liftM_ok, except_bind_ok] at hrun3
+                                      rw [run_pure] at hrun3
+                                      injection hrun3 with h1
+                                      injection h1 with h1a h1b
+                                      subst h1a
+                                      subst h1b
+                                      exact ⟨rfl, ⟨flagAccState, rfl⟩⟩
+                                    | error e =>
+                                      rw [hn, run_liftM_error, except_bind_error] at hrun3
+                                      simp at hrun3
                                   | none =>
                                     rw [run_sszGetIdx_none _ _ _ hq, except_bind_error] at hrun3
                                     simp at hrun3
@@ -538,11 +680,15 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                               obtain ⟨accState, hu⟩ := hb
                               rcases b with ⟨sa, pn, wt⟩
                               rw [hu]
+                              -- `Gwei(proposerNum / proposerDenom)`: one checked-`Gwei` leaf,
+                              -- then the mutator and the write-back of its return.
+                              refine keepsUncachedFrom_bind (keepsUncachedFrom_liftChecked midState₁₇ _)
+                                (fun delta midState₁₈ => ?_)
                               refine returnsUncachedFrom_bind
-                                (returnsUncached_increaseBalance _ _ _) (fun afterIncrease midState₁₈ =>
+                                (returnsUncached_increaseBalance _ _ delta) (fun afterIncrease midState₁₉ =>
                                   -- The payment write-back on `pureState afterIncrease` reduces to
                                   -- `pureState` of the record update, so the value is inferred.
-                                  keepsUncachedFrom_set midState₁₈ _)
+                                  keepsUncachedFrom_set midState₁₉ _)
                   · exact keepsUncachedFrom_throw_bind _ _
             · exact keepsUncachedFrom_throw_bind _ _
 

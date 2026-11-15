@@ -15,6 +15,7 @@ tier1 EthCLSpecs.Gloas.getIndexedPayloadAttestation
 tier1 EthCLSpecs.Gloas.getPendingBalanceToWithdrawForBuilder
 tier1 EthCLSpecs.Gloas.getPtc
 tier1 EthCLSpecs.Gloas.getSlotsSinceGenesis
+tier1 EthCLSpecs.Gloas.getTotalActiveBalance
 tier1 EthCLSpecs.Gloas.increaseBalance
 tier1 EthCLSpecs.Gloas.initiateValidatorExit
 tier1 EthCLSpecs.Gloas.isAttestationSameSlot
@@ -40,6 +41,7 @@ tier1 EthCLSpecs.Heze.payloadDataAvailability
 tier1 EthCLSpecs.Heze.payloadTimeliness
 tier1 EthCLSpecs.Heze.verifyExecutionPayloadEnvelope
 tier2 EthCLSpecs.Fulu.decreaseBalance
+tier2 EthCLSpecs.Fulu.getTotalBalance
 tier2 EthCLSpecs.Fulu.increaseBalance
 tier2 EthCLSpecs.Fulu.modBalance
 tier2 EthCLSpecs.Gloas.canBuilderCoverBid

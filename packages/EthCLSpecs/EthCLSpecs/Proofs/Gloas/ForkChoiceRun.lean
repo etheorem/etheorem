@@ -38,8 +38,9 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (HasherTag StoreTransitionError MapKind FcMap NestedStateMachine
-  runNestedStateTransition runNestedStateTransition_of_ok)
+open EthCLLib.Spec (HasherTag StateTransitionError StoreTransitionError ErrorConv MapKind FcMap
+  NestedStateMachine runNestedStateTransition runNestedStateTransition_of_ok
+  runNestedStateTransition_of_error)
 open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState BuilderPendingWithdrawal)
 open EthCLSpecs.Gloas (Store getSlotsSinceGenesis getCurrentSlot State currentEpochOf
   initiateBuilderExit processBuilderPendingPayments)
@@ -86,9 +87,10 @@ theorem getCurrentSlot_run_of_time_eq_genesis
 /-! ## The bridge carries a step's own theorem, unchanged
 
 `EthCLLib/Spec/NestedMachine.lean` proves once, for every action, that the bridge hands a
-successful run's post-state back with `pure`. So carrying a state-machine fact into the
-store machine is function application, and there is nothing left here to state as a
-theorem of the Gloas spec. The fact must be a `.run` fact: a contract theorem states
+successful run's post-state back with `pure`, and throws the converted reject otherwise.
+So carrying a state-machine fact into the store machine is function application, one
+bridge lemma per arm of the step's own dispatch, and there is nothing left here to state
+as a theorem of the Gloas spec. The fact must be a `.run` fact: a contract theorem states
 `act.run (pureState preState) = .ok (a, pureState postState)` (`EthCLLib/Proofs/Run.lean`),
 and the `runPure` value-level reading of the same contract hides the box, so it cannot feed the bridge.
 
@@ -123,18 +125,32 @@ example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
 
 /-- `processBuilderPendingPayments_run` likewise, and this is the one that shows the point:
 its proof rests on a `List.forIn` induction over the withdrawals loop, and that induction is
-not re-entered here. `builderPendingWithdrawals` is a progressive list (since alpha.12), so the
-contract is unconditional: the run always appends the qualifying withdrawals and shifts the
-payment window. -/
+not re-entered here. The Gwei port (Stage 2) gave the step a fault surface: the quorum chain
+`builderPaymentQuorum` may reject, and the bridge throws that reject converted, so no
+post-state reaches the store handler. The example dispatches on the chain, one bridge
+lemma per arm, the same split the contract itself states. -/
 example [Preset] [HasherTag] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
     ∀ (preState : BeaconState),
       runNestedStateTransition (pureState preState)
           (processBuilderPendingPayments (StateTransition := GloasRun))
-        = (pure (pureState { preState with
-              builderPendingWithdrawals := expectedWithdrawals preState,
-              builderPendingPayments := expectedPaymentWindow preState }) : m State) :=
-  fun preState =>
-    runNestedStateTransition_of_ok (processBuilderPendingPayments_run preState)
+        = (match builderPaymentQuorum preState with
+          | .error e =>
+              (throw (ErrorConv.conv (StateTransitionError.arithmetic (reprStr e))) : m State)
+          | .ok quorum => (pure (pureState { preState with
+              builderPendingWithdrawals := expectedWithdrawals preState quorum,
+              builderPendingPayments := expectedPaymentWindow preState }) : m State)) := by
+  intro preState
+  match hq : builderPaymentQuorum preState with
+  | .error e =>
+    refine runNestedStateTransition_of_error ?_
+    have h := processBuilderPendingPayments_run preState
+    rw [hq] at h
+    exact h
+  | .ok quorum =>
+    refine runNestedStateTransition_of_ok ?_
+    have h := processBuilderPendingPayments_run preState
+    rw [hq] at h
+    exact h
 
 end EthCLSpecs.Proofs.Gloas

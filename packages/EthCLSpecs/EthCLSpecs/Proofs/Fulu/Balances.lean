@@ -1,7 +1,7 @@
 import EthCLSpecs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Run
 import EthCLLib.Proofs.Run
-import EthCLLib.Proofs.Arith
+import EthCLLib.Proofs.CLUint
 import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.UncachedBox
 
@@ -11,12 +11,14 @@ import SizzLean.Proofs.UncachedBox
 The pyspec's `state.balances[index] += delta` reads a bare list, and remerkleable re-runs its
 `uint64` bound check on the result. The read raises `IndexError` past the end. The addition
 raises `ValueError` on overflow. `increaseBalance` reads through `sszGetIdx` and adds through
-`checkedAdd`, so it rejects on exactly those two conditions. In range and below the bound, the
-stored balance is the exact natural-number sum, with no wrap through `2 ^ 64`.
+the checked `+` on `Gwei` (`CLUint64`), so it rejects on exactly those two conditions, and the
+checked sum's own `ArithFault.range` is the payload of the `.arithmetic` fault the monad lift
+throws. In range and below the bound, the stored balance is the checked sum's witness, and its
+`.toPlainInt` reads back as the exact natural-number sum, with no wrap through `2 ^ 64`.
 
 `decrease_balance` clamps at zero, so its subtraction raises nothing. `decreaseBalance`
-therefore rejects on the read alone. Its stored balance is the truncating `Nat` difference, so
-the `uint64` subtraction never wraps.
+therefore rejects on the read alone. Its stored balance is the truncating `Nat` difference,
+so the floored subtraction never goes below zero.
 
 These theorems do not bound the total balance, and that bound does not follow from the spec.
 `VALIDATOR_REGISTRY_LIMIT` times `MAX_EFFECTIVE_BALANCE_ELECTRA` is about `2 ^ 81`. The real
@@ -39,26 +41,29 @@ Scope is Fulu's two mutators. Gloas and Heze inherit them at their own `State`, 
 (`Heze/EpochProcessing.lean:35`), and likewise for `decreaseBalance`. Each is a separate
 constant, and these theorems say nothing about those instantiations.
 
-`SizzLean.Proofs.SSZListSet` supplies `sszListSet!_getElem!_self`, which reads back the element
-`modBalance` writes.
+`SizzLean.Proofs.UncachedBox` supplies `view_uncachedBox`, which reduces the reads on the pure
+box to plain fields. `EthCLLib.Proofs.CLUint` supplies `add_eq_ok`, the success-and-value fact
+for the checked `+` (`SPEC_ARITHMETIC.md` §4.5, §5.1, and open work item 2), which names the
+witness `increaseBalance_run_no_wrap` stores.
 -/
 
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu
 
-open EthCLLib.Spec (HasherTag StateTransitionError checkedAdd saturatingSub sszGetIdx IdxRead)
+open EthCLLib.Spec (HasherTag StateTransitionError Checked IndexError liftErr sszGetIdx IdxRead)
 open EthCLSpecs.Fulu (Preset BeaconState State ValidatorIndex Gwei increaseBalance decreaseBalance
   modBalance)
-open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok)
-open SizzLean.Proofs (sszListSet!_getElem!_self view_uncachedBox)
+open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok add_eq_ok)
+open SizzLean.Proofs (view_uncachedBox)
 open SizzLean.Repr
 open SizzLean.Cache
 
-/-- The diagnostic descriptor `increaseBalance` hands `checkedAdd`. Named once, so the reject
-theorem below can state the exact error term. `abbrev` (reducible), so it unfolds against the
-string literal in the elaborated body. -/
-abbrev descr : String := "increase_balance: balances[index] + delta"
+/-- The `.arithmetic` payload the checked `+` raises when `balance + delta` overflows: the repr
+of the `ArithFault.range` fault the monad lift receives from the `Except` layer. Named once, so
+the two reject theorems below state the exact error term. -/
+abbrev increaseFault (balance delta : Gwei) : String :=
+  reprStr (EthCLLib.Spec.ArithFault.range "+" balance.toPlainInt delta.toPlainInt)
 
 /-- In range, `sszGetIdx`'s `[i]?` read carries the same element as the total `[i]!` read. The
 run equation matches on `[i]?`, and the theorems below state their balances through `[i]!`, so
@@ -85,14 +90,50 @@ theorem modBalance_pureState [Preset] [HasherTag] :
 
 /-! ## `increaseBalance` -/
 
-/-- **Exact run equation.** The run is `sszGetIdx`'s range check, then `checkedAdd`'s carry
+/-- `sszGetIdx`'s in-range read is the identity action, so the body's bind on it substitutes
+the element: the monad law `bind (pure v) k = k v` at the runner. `rfl`: every layer is an
+instance projection, a definition, or a match on a constructor. This is the step that puts the
+read's element and the equation's `some` arm on one variable, so the checked-sum branch
+tactics below decide one `if` shared by both sides. -/
+private theorem bind_liftErr_ok [Preset] [HasherTag] {α β : Type} (v : α) (k : α → FuluRun β) :
+    bind (liftErr (Except.ok v : Except IndexError α)) k = k v :=
+  rfl
+
+/-- The checked sum of the two balances, exactly as the body computes it: `rfl` against
+`CLUint64.add`, so the error arm is that operator's own `ArithFault.range`. The theorems below
+state their hypotheses over `.toPlainInt`, and `add_eq_ok` carries the fit hypothesis to the
+`Checked` value's witness arm. -/
+private theorem increaseBalance_checkedSum (balance delta : Gwei) :
+    (balance + delta : Checked Gwei) =
+      if balance.val + delta.val < balance.val
+      then .error (EthCLLib.Spec.ArithFault.range "+" balance.toPlainInt delta.toPlainInt)
+      else .ok (EthCLLib.Spec.CLUint64.trustedOfUInt64 (balance.val + delta.val)) := by
+  show (if balance.val + delta.val < balance.val then _ else _) = _
+  split
+  · rfl
+  · rfl
+
+/-- The witness arm of `increaseBalance_checkedSum`: under the fit hypothesis the checked sum
+returns the wrapped native sum, and `add_eq_ok` names it. -/
+private theorem increaseBalance_checkedSum_ok (balance delta : Gwei)
+    (hsum : balance.toPlainInt + delta.toPlainInt < 2 ^ 64) :
+    (balance + delta : Checked Gwei) =
+      .ok (EthCLLib.Spec.CLUint64.trustedOfUInt64 (balance.val + delta.val)) := by
+  have hsum' : balance.val.toNat + delta.val.toNat < 2 ^ 64 := hsum
+  have hval : (EthCLLib.Spec.CLUint64.trustedOfUInt64 (balance.val + delta.val)).toPlainInt
+      = balance.toPlainInt + delta.toPlainInt := by
+    show (balance.val + delta.val).toNat = balance.val.toNat + delta.val.toNat
+    rw [UInt64.toNat_add, Nat.mod_eq_of_lt hsum']
+  exact (add_eq_ok balance delta _).mpr ⟨hsum, hval⟩
+
+/-- **Exact run equation.** The run is `sszGetIdx`'s range check, then the checked `+`'s carry
 check, and nothing else. Past the end of `balances` it rejects with `.outOfBounds`, the
 `IndexError` the pyspec's list read raises. In range it rejects with the `.arithmetic` fault
-when the sum wraps below the balance, the unsigned carry test. Otherwise it returns the new
-state, `modBalance (pureState state) i …`, the source's own write, and leaves the threaded state
-`preState` unchanged. Stated at the box level so the fork-choice bridge consumes it by application;
-`modBalance_pureState` turns the written state into the plain record update
-(`increaseBalance_run_no_wrap`). -/
+carrying the checked sum's exact `ArithFault.range` payload when the sum wraps, the unsigned
+carry test. Otherwise it returns the new state, `modBalance (pureState state) i …`, the
+source's own write, and leaves the threaded state `preState` unchanged. Stated at the box level
+so the fork-choice bridge consumes it by application; `modBalance_pureState` turns the written
+state into the plain record update (`increaseBalance_run_no_wrap`). -/
 @[characterizes EthCLSpecs.Fulu.increaseBalance]
 theorem increaseBalance_run_eq [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
@@ -101,28 +142,28 @@ theorem increaseBalance_run_eq [Preset] [HasherTag] :
         = (match state.balances.val[i.toNat]? with
           | none => .error (.outOfBounds i.toNat state.balances.size)
           | some balance =>
-            if balance + delta < balance then
-              .error (.arithmetic descr)
-            else
-              .ok (modBalance (pureState state) i (fun _ => balance + delta),
-                pureState preState)) := by
+            match (balance + delta : Checked Gwei) with
+            | .error _ => .error (.arithmetic (increaseFault balance delta))
+            | .ok sum => .ok (modBalance (pureState state) i (fun _ => sum),
+              pureState preState)) := by
   intro state preState i delta
-  unfold increaseBalance sszGetIdx IdxRead.get? IdxRead.size checkedAdd
+  unfold increaseBalance sszGetIdx IdxRead.get? IdxRead.size
   -- Reduce the reads on `pureState state` to plain fields, so the read's `[i]?` decides the outer
-  -- arm and the carry test the inner one. `cases` then substitutes the read on both sides, and
-  -- the branch tactics need only the carry hypothesis.
+  -- arm and the checked sum the inner one. `cases` then substitutes the read on both sides, and
+  -- the branch tactics need only the sum's `Except` shape.
   simp only [view_uncachedBox]
   cases state.balances.val[i.toNat]? with
   | none =>
     simp
     rfl
   | some balance =>
-    -- `liftErr` wraps the successful read, and it has to unfold before the carry test is the
-    -- outermost step on this side.
-    by_cases h : balance + delta < balance
-    · simp [h, EthCLLib.Spec.liftErr, Except.mapError, MonadExcept.ofExcept]
+    rw [bind_liftErr_ok]
+    simp only []
+    simp only [increaseBalance_checkedSum]
+    by_cases hcarry : balance.val + delta.val < balance.val
+    · simp only [ite_eq_left hcarry]
       rfl
-    · simp [h, EthCLLib.Spec.liftErr, Except.mapError, MonadExcept.ofExcept]
+    · simp only [ite_eq_right hcarry]
       rfl
 
 /-- **Out of range.** Past the end of `balances` the run rejects with `.outOfBounds` and
@@ -142,49 +183,66 @@ theorem increaseBalance_run_outOfRange [Preset] [HasherTag] :
   rw [hnone]
   rfl
 
-/-- **In range, overflowing.** When the `uint64` sum would wrap, the run rejects with the
-`.arithmetic` fault and produces no state. The pyspec raises `ValueError` at the same point. -/
+/-- **In range, overflowing.** When the checked sum's plain-`int` value reaches `2 ^ 64`, the
+carry test fires and the run rejects with the `.arithmetic` fault carrying the exact
+`ArithFault.range` payload. The pyspec raises `ValueError` at the same point. -/
 theorem increaseBalance_run_overflow [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       i.toNat < state.balances.size →
-      state.balances[i.toNat]!.toNat + delta.toNat ≥ 2 ^ 64 →
+      state.balances[i.toNat]!.toPlainInt + delta.toPlainInt ≥ 2 ^ 64 →
       runPure (increaseBalance (StateTransition := FuluRun) (pureState state) i delta) preState
-        = .error (.arithmetic descr) := by
+        = .error (.arithmetic (increaseFault state.balances[i.toNat]! delta)) := by
   intro state preState i delta hidx hsum
-  have hcarry : state.balances[i.toNat]! + delta < state.balances[i.toNat]! := by
-    have hb := UInt64.toNat_lt state.balances[i.toNat]!
-    have hd := UInt64.toNat_lt delta
+  have hcarry : state.balances[i.toNat]!.val + delta.val < state.balances[i.toNat]!.val := by
+    have hb : state.balances[i.toNat]!.val.toNat < 2 ^ 64 := UInt64.toNat_lt _
+    have hd : delta.val.toNat < 2 ^ 64 := UInt64.toNat_lt _
+    have hsum' : state.balances[i.toNat]!.val.toNat + delta.val.toNat ≥ 2 ^ 64 := hsum
     rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_add]
     omega
   rw [runPure_eq, increaseBalance_run_eq state preState i delta,
     sszList_getElem?_eq_getElem! _ _ hidx]
-  simp only
-  rw [ite_eq_left hcarry]
+  simp only [increaseBalance_checkedSum, ite_eq_left hcarry]
   rfl
 
 /-- **In range, below the bound.** The run succeeds, and the whole-state equation writes the
-sum into that one balance. `UInt64.toNat_add` gives the `% 2 ^ 64` unconditionally, and
-`Nat.mod_eq_of_lt` drops it under the hypothesis, so the stored balance's `.toNat` reads back
-as the exact natural-number sum: rewrite the equation, then read
-`.balances[i.toNat]!.toNat` off the written value. -/
+checked sum's witness into that one balance. `ite_eq_right` with the no-carry fact, derived
+from the fit hypothesis by `omega` over the native widths, picks the witness arm, so the stored
+balance's `.toPlainInt` reads back as the exact natural-number sum: rewrite the equation, then
+read `.balances[i.toNat]!.toPlainInt` off the written value. -/
 theorem increaseBalance_run_no_wrap [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       i.toNat < state.balances.size →
-      state.balances[i.toNat]!.toNat + delta.toNat < 2 ^ 64 →
+      state.balances[i.toNat]!.toPlainInt + delta.toPlainInt < 2 ^ 64 →
       runPure (increaseBalance (StateTransition := FuluRun) (pureState state) i delta) preState
         = .ok (pureState
             { state with
-                balances := state.balances.set! i.toNat (state.balances[i.toNat]! + delta) },
+                balances := state.balances.set! i.toNat
+                  (EthCLLib.Spec.CLUint64.trustedOfUInt64
+                    (state.balances[i.toNat]!.val + delta.val)) },
           preState) := by
   intro state preState i delta hidx hsum
-  have hcarry : ¬ (state.balances[i.toNat]! + delta < state.balances[i.toNat]!) := by
-    rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_add, Nat.mod_eq_of_lt hsum]
+  have hnocarry : ¬ (state.balances[i.toNat]!.val + delta.val
+      < state.balances[i.toNat]!.val) := by
+    have hb : state.balances[i.toNat]!.val.toNat < 2 ^ 64 := UInt64.toNat_lt _
+    have hd : delta.val.toNat < 2 ^ 64 := UInt64.toNat_lt _
+    have hsum' : state.balances[i.toNat]!.val.toNat + delta.val.toNat < 2 ^ 64 := hsum
+    rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_add]
     omega
   rw [runPure_eq, increaseBalance_run_eq state preState i delta,
     sszList_getElem?_eq_getElem! _ _ hidx]
-  simp only
-  rw [ite_eq_right hcarry, modBalance_pureState]
+  simp only [increaseBalance_checkedSum, ite_eq_right hnocarry]
+  rw [modBalance_pureState]
   rfl
+
+/-- The sum `increaseBalance_run_no_wrap` writes reads back as the exact natural-number sum.
+This is `add_eq_ok`'s value equation at the written witness, the readback companion the
+total-balance proofs need. -/
+theorem increaseBalance_written_toPlainInt (balance delta : Gwei)
+    (hsum : balance.toPlainInt + delta.toPlainInt < 2 ^ 64) :
+    (EthCLLib.Spec.CLUint64.trustedOfUInt64 (balance.val + delta.val)).toPlainInt
+      = balance.toPlainInt + delta.toPlainInt :=
+  (add_eq_ok balance delta _).mp
+    (increaseBalance_checkedSum_ok balance delta hsum) |>.2
 
 /-! ## `decreaseBalance`
 
@@ -206,7 +264,7 @@ theorem decreaseBalance_run_eq [Preset] [HasherTag] :
         = (match state.balances.val[i.toNat]? with
           | none => .error (.outOfBounds i.toNat state.balances.size)
           | some balance =>
-            .ok (modBalance (pureState state) i (fun _ => saturatingSub balance delta),
+            .ok (modBalance (pureState state) i (fun _ => balance.saturatingSub delta),
               pureState preState)) := by
   intro state preState i delta
   unfold decreaseBalance sszGetIdx IdxRead.get? IdxRead.size
@@ -216,7 +274,8 @@ theorem decreaseBalance_run_eq [Preset] [HasherTag] :
     simp
     rfl
   | some balance =>
-    simp [EthCLLib.Spec.liftErr, Except.mapError, MonadExcept.ofExcept]
+    rw [bind_liftErr_ok]
+    simp only []
     rfl
 
 /-- **Out of range.** The mirror of `increaseBalance_run_outOfRange`. The pyspec reads
@@ -235,9 +294,9 @@ theorem decreaseBalance_run_outOfRange [Preset] [HasherTag] :
   rfl
 
 /-- **In range, no underflow.** The whole-state equation writes the floored difference
-`saturatingSub balance delta` into that one balance. `decreaseBalance_run_toNat` reads the
-stored balance back as the truncating `Nat` difference, so a bare `UInt64` subtraction, which
-would wrap to a balance near `2 ^ 64` on the underflowing arm, is excluded. -/
+`balance.saturatingSub delta` into that one balance. `decreaseBalance_written_toPlainInt` reads
+the stored balance back as the truncating `Nat` difference, so the write is exactly the
+pyspec's `saturating_sub`: the floor, and nothing else. -/
 theorem decreaseBalance_run_no_underflow [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       i.toNat < state.balances.size →
@@ -245,7 +304,7 @@ theorem decreaseBalance_run_no_underflow [Preset] [HasherTag] :
         = .ok (pureState
             { state with
                 balances := state.balances.set! i.toNat
-                  (saturatingSub state.balances[i.toNat]! delta) },
+                  (state.balances[i.toNat]!.saturatingSub delta) },
           preState) := by
   intro state preState i delta hidx
   rw [runPure_eq, decreaseBalance_run_eq state preState i delta,
@@ -257,8 +316,23 @@ theorem decreaseBalance_run_no_underflow [Preset] [HasherTag] :
 /-- **The stored balance as a number.** The value `decreaseBalance_run_no_underflow` writes
 reads back as the truncating `Nat` difference `balance - delta`: zero when `delta` exceeds the
 balance, the exact difference otherwise. -/
-theorem decreaseBalance_written_toNat (balance delta : Gwei) :
-    (saturatingSub balance delta).toNat = balance.toNat - delta.toNat :=
-  EthCLLib.Proofs.saturatingSub_toNat balance delta
+theorem decreaseBalance_written_toPlainInt (balance delta : Gwei) :
+    (balance.saturatingSub delta).toPlainInt = balance.toPlainInt - delta.toPlainInt := by
+  simp only [EthCLLib.Spec.CLUint64.toPlainInt]
+  unfold EthCLLib.Spec.CLUint64.saturatingSub
+  split
+  · rename_i h
+    rw [UInt64.toNat_sub_of_le _ _ (UInt64.le_of_lt h)]
+  · rename_i h
+    have hle : balance.val.toNat ≤ delta.val.toNat := by
+      have h' : ¬ (delta.val < balance.val) := by
+        intro hlt
+        apply h
+        show delta.val < balance.val
+        exact hlt
+      rw [UInt64.lt_iff_toNat_lt] at h'
+      omega
+    rw [Nat.sub_eq_zero_of_le hle]
+    rfl
 
 end EthCLSpecs.Proofs.Fulu
