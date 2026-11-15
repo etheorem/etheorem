@@ -43,6 +43,8 @@ import EthCLSpecs.Proofs.Heze.EconFrame
 import EthCLSpecs.Proofs.Heze.EmptyTarget
 import EthCLSpecs.Proofs.Heze.Equivocators
 import EthCLSpecs.Proofs.Heze.FFGRefines
+import EthCLSpecs.Proofs.Heze.FinalEmpty
+import EthCLSpecs.Proofs.Heze.FinLag
 import EthCLSpecs.Proofs.Heze.FinalityCheck
 import EthCLSpecs.Proofs.Heze.FinalityLock
 import EthCLSpecs.Proofs.Heze.FinalizationLiveness
@@ -65,6 +67,7 @@ import EthCLSpecs.Proofs.Heze.JustificationAndFinalization
 import EthCLSpecs.Proofs.Heze.JustificationBits
 import EthCLSpecs.Proofs.Heze.KeepsUncached
 import EthCLSpecs.Proofs.Heze.KeyFrame
+import EthCLSpecs.Proofs.Heze.KeyPrefix
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Block
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Epoch
 import EthCLSpecs.Proofs.Heze.KeepsUncached.Payload
@@ -107,6 +110,8 @@ import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 import EthCLSpecs.Proofs.Heze.Shuffle
 import EthCLSpecs.Proofs.Heze.SlotsIncrease
 import EthCLSpecs.Proofs.Heze.StakeDrift
+import EthCLSpecs.Proofs.Heze.StakeFrame
+import EthCLSpecs.Proofs.Heze.StakeRun
 import EthCLSpecs.Proofs.Heze.StoreChainState
 import EthCLSpecs.Proofs.Heze.StoreClock
 import EthCLSpecs.Proofs.Heze.StoreFinality
@@ -115,7 +120,11 @@ import EthCLSpecs.Proofs.Heze.TargetStake
 import EthCLSpecs.Proofs.Heze.Time
 import EthCLSpecs.Proofs.Heze.TraceFacts
 import EthCLSpecs.Proofs.Heze.TraceRun
+import EthCLSpecs.Proofs.Heze.ViableHonest
+import EthCLSpecs.Proofs.Heze.ViableNext
+import EthCLSpecs.Proofs.Heze.ViableWindow
 import EthCLSpecs.Proofs.Heze.VoteValid
+import EthCLSpecs.Proofs.Heze.WindowCheck
 
 /-!
 # `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems (index)
@@ -246,12 +255,20 @@ Re-exports:
   justified checkpoints at the end are justified in the chain. The finalized checkpoint is
   finalized there, or it is a base checkpoint. The same holds for the pull-up of the end state
   (`chain_refines_pullup`).
+* `EthCLSpecs.Proofs.Heze.FinalEmpty`: an honest validator does not vote `(r, e)` on a store
+  chain when the carrier chain has a block after `rb` by the first slot of `e`, and the voter is
+  active at `e` on the carrier chain (`fcase_core_active`). The two chains share the state after
+  `rb`, so the voter's vote of `e` on the carrier chain is the same vote.
 * `EthCLSpecs.Proofs.Heze.FinalityCheck`: the premises of `FinalitySetting` and
   `SlashingEvidence` as computations. The store runs of a store of chain blocks follow the chain
   (`ChainStore.state_mem`). So checks over the states and the votes of the chain give
-  `StoreTotals`, the stake bound, and the honest votes. A check over the epochs up to the one
-  after the head block gives `early` (`early_of_check`). `HonestChain.of_check` and
-  `SlashingEvidence.of_check` check the chain premises.
+  `StoreTotals`, the stake bound, and the honest votes. `SlashingEvidence.of_check` checks the
+  evidence over the states of two runs.
+* `EthCLSpecs.Proofs.Heze.FinLag`: the finalized epoch of a store lags its clock by two
+  epochs. A state's finalized epoch is at most the anchor epoch or its own epoch less two
+  (`ChainRun.stateLag`). Along a clocked trace, each tick moves the clock forward or starts from
+  anchor-level checkpoints (`ClockedTrace.tickLag`), so the store meets `StoreLag`
+  (`ClockedTrace.storeLag`).
 * `EthCLSpecs.Proofs.Heze.FinalityLock`: under `SlotsIncrease`, the two sides of a block `r`
   are disjoint (`below_emptySide_not_full`). A checkpoint block on the EMPTY side puts the
   start of its walk on the EMPTY side (`emptySide_of_checkpointBlock`). Take an honest node
@@ -379,6 +396,9 @@ Re-exports:
   of the registry, the fork, and the genesis validators root. A write of one validator keeps its
   public key (`keyView_modValidator`). The module also holds the plain-state forms of a write
   (`modValidator_pureState`).
+* `EthCLSpecs.Proofs.Heze.KeyPrefix`: the registry only appends and no step writes a public
+  key, so the first `n` public keys stay along a run (`ChainRun.pkView_eq`). An index of a
+  state names one key on every run from it (`ChainRun.pubkey_eq`).
 * `EthCLSpecs.Proofs.Heze.LatestMessages`: only `onAttestation` writes the latest messages
   (`onAttestation_run_ok`). An entry at the end of a trace comes from an attestation event of
   the trace. That event checked the block and the slot of the vote (`NodeTrace.latest_source`,
@@ -556,6 +576,12 @@ Re-exports:
   the link stakes, plus the shortfall of the total active balance, are at most
   `driftBound`. The bound reads `st₀`, the churn bounds, and the bounds of the total active
   balance, of the effective balances, and of the inactivity scores along the run.
+* `EthCLSpecs.Proofs.Heze.StakeFrame`: every block function keeps the effective balances and
+  the activity of the window, so a block step keeps the stake views.
+* `EthCLSpecs.Proofs.Heze.StakeRun`: a run inside one epoch keeps the honest list, the honest
+  stake, and the total. From a state whose honest validators of the previous epoch have their
+  flags and two thirds of the total, every run inside the epoch passes that target test
+  (`jp_along`).
 * `EthCLSpecs.Proofs.Heze.StoreChainState`: a store traces to the anchor of a chain run and
   receives a new block of the run. Then the store holds the state of the run after that block,
   unless two blocks share a root (`onBlock_stores_chainState`). Each block of a validated run
@@ -597,6 +623,34 @@ Re-exports:
   `traceAll` checks the stores of a trace in one pass. `ClockedTrace.of_check`,
   `RootFacts.of_check`, and `HonestList.of_check` derive the hypotheses of the network
   results from `Bool` checks that `native_decide` closes.
+* `EthCLSpecs.Proofs.Heze.ViableHonest`: EMPTY `r` stays viable beside FULL `r` at every
+  honest head of the window (`viableStep_of_carrier`), under a vote carrier chain on the EMPTY
+  side (`CarrierWindow`). The honest heads need not follow it. In the epoch of `rb` every node
+  below `r` reads the voting source of `r`. Later, the last carrier block `T` before the epoch
+  is below EMPTY `r` and its state passes the target test, so every leaf below it has a recent
+  voting source. The finalized root is `r`, and no carrier block lies between `rb` and the
+  finalized epoch (`CarrierWindow.no_block_before`). `censored_payload_avoided` keeps FULL `r`
+  off every honest head of the window. The carrier chain gives the finality chain
+  (`CarrierWindow.chain`, with `LastDelivered`). A carrier block after `rb` by the first slot of
+  `E₁` keeps the finalized root off `r` (`CarrierWindow.finRoot_ne`), and an honest target from
+  `E₁` other than `r` is past `rb` (`FinalitySetting.early`). The honest inclusion list and the
+  envelopes that leave out its transaction keep the heads of the first slot off FULL `r`
+  (`FinalitySetting.first_of_decision`). `censored_payload_final_carrier` composes these with
+  `censored_payload_final`. An honest index names one key on every run from the anchor
+  (`FinalitySetting.honest_key`).
+* `EthCLSpecs.Proofs.Heze.ViableNext`: the leaf check of `filter_node_tree` (`leafOk`), the
+  walk lemmas (`kept_of_leaves`, `emptyViable_of_kept`), and the store invariants
+  (`UnrealInv`, `UnrealKeys`, `FullVerified`, `StateLink`). At the slot after `r`, EMPTY `r` is
+  viable with FULL `r` with no premise on viability (`HeadRun.Base.emptyViable_raceLo`).
+  `race_empty_persists_spec` is tier T2 with that slot proved.
+* `EthCLSpecs.Proofs.Heze.ViableWindow`: EMPTY `r` is viable at one store from a tip block `T`
+  below it (`viable_store_core`): every leaf below `T` has a recent voting source
+  (`leaf_vs_store`, over the store runs of the store) and passes the finalized test
+  (`leaf_fin`).
+* `EthCLSpecs.Proofs.Heze.WindowCheck`: the premises of `CarrierWindow` as computations: the
+  weigh states of a range of epochs (`included_of_check`), the slashed flags
+  (`unslashed_of_check`), and one vote per target epoch (`single_of_check`). The voter of a
+  placed vote is an attesting index at the run state before its block (`RunVote.attesting`).
 * `EthCLSpecs.Proofs.Heze.VoteValid`: a placed vote is an indexed attestation that
   `processAttestation` validated. It is valid on the run state before its block
   (`RunVote.indexed`, under `QsortMem`). `isValidIndexedAttestation` reads only `keyView`

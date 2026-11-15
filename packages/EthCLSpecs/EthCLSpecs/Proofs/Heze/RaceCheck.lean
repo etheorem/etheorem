@@ -264,6 +264,14 @@ def headRunB (q : HeadRun map) (r : Root) (rb : BeaconBlock) (t : Nat) : Bool :=
   (FcMap.lookup q.store.blocks q.store.justifiedCheckpoint.root).any
     (fun jb => decide (jb.slot ≤ rb.slot))
 
+omit [CryptoBackend] [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
+  [DataAvailability] in
+/-- `headRunB` checks that `empty r` is viable beside `full r` in the store of the run. -/
+theorem EmptyViableWithFull.of_headRunB {q : HeadRun map} {r : Root} {rb : BeaconBlock} {t : Nat}
+    (h : headRunB q r rb t = true) : EmptyViableWithFull q.store r := by
+  simp only [headRunB, Bool.and_eq_true] at h
+  exact EmptyViableWithFull.of_check _ _ h.1.1.2
+
 /-- `headRunB`, the run of the prefix, and the justified state give `HeadRun.Ok`, for the
 head `empty r`. `NodeEdge.empty` puts `empty r` strictly below `pending r`. -/
 theorem HeadRun.Ok.of_check {n : NodeRun map} {q : HeadRun map} {r : Root}
@@ -276,9 +284,8 @@ theorem HeadRun.Ok.of_check {n : NodeRun map} {q : HeadRun map} {r : Root}
     (h : headRunB q r rb t = true) : q.Ok n r rb jst t := by
   simp only [headRunB, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.all_eq_true]
     at h
-  obtain ⟨⟨⟨⟨⟨⟨hwall, htime⟩, hslot⟩, hhd⟩, hviable⟩, hblock⟩, hjb⟩ := h
-  refine ⟨⟨⟨⟨hpre, NodeTrace.of_runTrace hrun, hwall, htime, ?_, ?_⟩, hblock⟩, ?_,
-    EmptyViableWithFull.of_check _ _ hviable⟩, ?_, hjst⟩
+  obtain ⟨⟨⟨⟨⟨⟨hwall, htime⟩, hslot⟩, hhd⟩, -⟩, hblock⟩, hjb⟩ := h
+  refine ⟨⟨⟨⟨hpre, NodeTrace.of_runTrace hrun, hwall, htime, ?_, ?_⟩, hblock⟩, ?_⟩, ?_, hjst⟩
   · split at hslot
     · rename_i cs s' hcs
       have := getCurrentSlot_run_self _ _ _ _ hcs

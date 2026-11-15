@@ -1,4 +1,4 @@
-import EthCLSpecs.Proofs.Heze.FinalityCheck
+import EthCLSpecs.Proofs.Heze.WindowCheck
 import EthCLSpecs.Tests.HezeWitnessSeams
 import EthCLSpecs.Tests.HezeNetworkWitness
 import EthCLSpecs.Tests.HezePaymentWitness
@@ -6,42 +6,48 @@ import EthCLSpecs.Tests.HezePaymentWitness
 /-!
 # `EthCLSpecs.Tests.HezeFinalityWitness`: the censored payload has a finality witness
 
-`censored_payload_final` (`Proofs/Heze/FinalizationLiveness.lean`) takes `FinalitySetting`.
-This module builds two honest nodes at the minimal preset and checks every premise of
-`FinalitySetting` on them. So the premises can hold together, and the finality results apply
-to a real run of the spec. `finalityWitness` takes `QsortMem` as its one hypothesis.
+`censored_payload_final_carrier` (`Proofs/Heze/ViableHonest.lean`) takes three premise sets:
+`FinalitySetting`, the honest inclusion list and the censoring envelopes (`DecisionSetting`),
+and the vote carrier chain of the window (`CarrierWindow`, a block of it after `r` by the first
+slot of `E₁`, and `LastDelivered`). This module builds two honest nodes at the
+minimal preset and checks every premise of the three sets on them. So the premises can hold
+together, and the theorem applies to a real run of the spec. `finalityWitness` takes `QsortMem`
+as its one hypothesis.
 
 ## The scenario
 
 - **Genesis.** 32 active validators, each with the effective balance and the balance
   `32 ETH`. Each slot has one committee of 4. The validators `0` to `21` are honest, and the
   validators `22` to `31` are adversarial: more than two thirds of the stake is honest.
-- **Block `r`.** Slot `24`, the first slot of epoch `3`, on the genesis block. Its builder
-  builds it itself. The envelope of `r` carries no transaction. Node `A` receives the
-  envelope, and node `B` never receives it.
-- **The chain.** An honest proposer builds a block in each slot from `25` to `63`. Each block
-  builds on the EMPTY edge of its parent, and it carries the votes of the honest members of
-  the committee of the slot before it. The adversary does not vote.
+- **The chain.** An honest proposer builds a block in each slot from `16` to `63`, on the
+  genesis block. Each block builds on the EMPTY edge of its parent, and from slot `17` on it
+  carries the votes of the honest members of the committee of the slot before it. The adversary
+  does not vote.
+- **The inclusion list.** The first honest member of the committee of slot `23` sends the list
+  `il` with the transaction `tx`, in slot `23`, under the genesis root.
+- **Block `r`.** Slot `24`, the first slot of epoch `3`. Its builder builds it itself. The
+  envelope of `r` carries no transaction, so it leaves out `tx`. Node `A` receives the envelope,
+  and node `B` never receives it.
 - **The nodes.** Each node receives the block of slot `t` and the honest votes of slot `t - 1`
   at the first tick of slot `t`. Each node runs `getHead` after these events, in each slot of
   the window `[25, 64]`. The head of slot `t` is the block of slot `t`. Every validator runs
   on `A`.
 
-`E₁` is `4`. The store finalizes epoch `4` at slot `64`, the first slot of epoch `8`.
+`E₁` is `4`. The first honest child of `r` is the block of slot `25`. The stores finalize epoch
+`4` or later at slot `64`, the first slot of epoch `8`.
 
 ## The checks
 
 `allChk` evaluates every premise that a computation decides, with one `native_decide`
-(`allChk_ok`). The lemmas of `Proofs/Heze/FinalityCheck.lean` and `Proofs/Heze/RaceCheck.lean`
-turn it into the premises (`finalityWitness`). A store run of an honest store follows the
-chain, so the premises over store runs reduce to checks over the states and the blocks of the
-chain (`ChainStore`). `finalityWitness` also states that both stores finalize epoch `4` at
-slot `64`. `finalityWitness_heads` applies `censored_payload_final`.
+(`allChk_ok`). The lemmas of `Proofs/Heze/FinalityCheck.lean`, `Proofs/Heze/RaceCheck.lean`,
+`Proofs/Heze/TraceRun.lean` and `Proofs/Heze/WindowCheck.lean` turn it into the premises
+(`finalityWitness`). A store run of an honest store follows the chain, so the premises over
+store runs reduce to checks over the states and the blocks of the chain (`ChainStore`).
+`finalityWitness_heads` applies `censored_payload_final_carrier`.
 
-The module builds in about three minutes and 2.3 GB at one core. The proofs about the witness
-state their lemmas over variables (`window`, `raceLo_of_slot`, `eq_some_of_getD_length`,
-`tailOf_some`): a proof that reduces `blockR` or `W` itself makes the kernel compute the chain,
-past 10 GB.
+The proofs about the witness state their lemmas over variables (`window`, `raceLo_of_slot`,
+`eq_some_of_getD_length`, `tailOf_some`, `blockAt?_some`): a proof that reduces `blockR` or `W`
+itself makes the kernel compute the chain, past 10 GB.
 
 The seams are those of `HezeNetworkWitness.lean`: `strictEngine`, `CryptoBackend.verifyOff`,
 the optimistic `[DataAvailability]`, and `pureHasherTag`.
@@ -71,7 +77,7 @@ open EthCLSpecs.Heze (Preset Config Store State Root BeaconState Validator Beaco
   getCommitteeIndices getHead getCurrentSlot getCheckpointBlock)
 open EthCLSpecs.Heze.Const (farFutureEpoch builderIndexSelfBuild g2PointAtInfinity)
 open EthCLSpecs.Tests.HezeWitnessSeams (strictEngine_lawful)
-open EthCLSpecs.Tests.HezeNetworkWitness (h1 h2 combine_size)
+open EthCLSpecs.Tests.HezeNetworkWitness (h1 h2 tx combine_size)
 open EthCLSpecs.Tests.HezePaymentWitness (bidFor)
 open scoped EthCLSpecs.Tests.HezeWitnessSeams
 
@@ -163,34 +169,37 @@ def blockAt (st : BeaconState) (n : Nat) (atts : Bool) :
         { message := { unsigned with stateRoot := bytesToRoot (stateRoot post).1 },
           signature := default })
 
-/-- The blocks at the slots `ns` on `st`. The first block carries no votes. -/
+/-- The blocks at the slots `ns` on `st`. The block of slot `16` carries no votes. -/
 def chainOf : List Nat → BeaconState → Option (BeaconState × List SignedBeaconBlock)
   | [], st => some (st, [])
   | n :: ns, st => do
-    let (st1, b) ← blockAt st n (decide (24 < n))
+    let (st1, b) ← blockAt st n (decide (16 < n))
     let (st2, bs) ← chainOf ns st1
     pure (st2, b :: bs)
 
-/-- The end state and the blocks of slots `24` to `63`. -/
+/-- The end state and the blocks of slots `16` to `63`. -/
 def chain : BeaconState × List SignedBeaconBlock :=
-  (chainOf ((List.range 40).map (· + 24)) genesisV).getD (genesisV, [])
+  (chainOf ((List.range 48).map (· + 16)) genesisV).getD (genesisV, [])
 
 /-- The blocks of the chain. -/
 def blocks : List SignedBeaconBlock := chain.2
 
+/-- The block of slot `t`, for `t` from `16` to `63`. -/
+def blockOf (t : Nat) : Option SignedBeaconBlock := blocks[t - 16]?
+
 /-- Block `r`, the block of slot `24`. -/
-def blockR : BeaconBlock := (blocks.head?.map (·.message)).getD default
+def blockR : BeaconBlock := ((blockOf 24).map (·.message)).getD default
 
 /-- The root of block `r`. -/
 def rootR : Root := htr blockR
 
-/-- The steps of the chain from genesis: slot steps to slot `24`, the block of each slot from
-`24` to `63` with the result check, and a slot step to slot `64`. -/
-def W : List ChainStep :=
-  List.replicate 23 .slot ++ blocks.flatMap (fun b => [.slot, .block b true]) ++ [.slot]
+/-- The first honest child of `r`: the block of slot `25`. -/
+def canonBlock : BeaconBlock := ((blockOf 25).map (·.message)).getD default
 
-/-- The block of slot `t`, for `t` from `24` to `63`. -/
-def blockOf (t : Nat) : Option SignedBeaconBlock := blocks[t - 24]?
+/-- The steps of the chain from genesis: slot steps to slot `16`, the block of each slot from
+`16` to `63` with the result check, and a slot step to slot `64`. Block `r` is step `32`. -/
+def W : List ChainStep :=
+  List.replicate 15 .slot ++ blocks.flatMap (fun b => [.slot, .block b true]) ++ [.slot]
 
 /-- The honest votes of slot `t`: the votes in the block of `t + 1`, or for slot `63` the votes
 that a block of slot `64` would carry. -/
@@ -217,21 +226,50 @@ def envelope : EthCLSpecs.Heze.SignedExecutionPayloadEnvelope :=
         parentBeaconBlockRoot := blockR.parentRoot }
     signature := default }
 
-/-! ## The traces -/
+/-! ## The inclusion list -/
 
-/-- The first group of node `v`: the genesis tick, block `r` at the first tick of slot `24`,
-and for `A` (`true`) the envelope of `r` at second `147`. The ticks carry milliseconds. -/
-def group0 (v : Bool) : List (TraceEvent × Nat) :=
-  [ (.handler (.tick 0), 0), (.handler (.tick 144000), 144000) ] ++
-  ((blockOf 24).toList.map fun sb => (.handler (.block sb), 144000)) ++
-  (if v then [(.handler (.tick 147000), 147000), (.handler (.envelope envelope), 147000)]
-    else [])
+/-- The dependent root of the lists of slot `23`. No block before slot `16` exists, so the
+dependent block of epoch `2` is the genesis block. -/
+def dr : Root := htr genesisBlock
+
+/-- The sender of the honest list: the first honest member of the committee of slot `23`. The
+IL committee of a slot samples its beacon committees cyclically, so it holds every member. -/
+def ilMember : ValidatorIndex :=
+  ((((getBeaconCommittee genesisState 23 0).toOption.getD #[]).toList.filter honestOf).head?).getD 0
+
+/-- The signed honest list of slot `23`: from `ilMember`, under `dr`, with `tx`. -/
+def signedIl : EthCLSpecs.Heze.SignedInclusionList :=
+  { message :=
+      { slot := 23, validatorIndex := ilMember, dependentRoot := dr
+        transactions := ⟨#[tx]⟩ }
+    signature := default }
+
+/-- The honest list. -/
+def il : EthCLSpecs.Heze.InclusionList := signedIl.message
+
+/-- The send time of `il`: half a second into slot `23`, in milliseconds. -/
+def tSendF : Nat := 138500
+
+/-- The delivery bound of `il`, in milliseconds. -/
+def ΔF : Nat := 1000
+
+/-! ## The traces -/
 
 /-- The group of slot `t`: the tick, the block of `t`, and the honest votes of `t - 1`. -/
 def groupAt (t : Nat) : List (TraceEvent × Nat) :=
   [(.handler (.tick (UInt64.ofNat (6000 * t))), 6000 * t)] ++
   ((blockOf t).toList.map fun sb => (.handler (.block sb), 6000 * t)) ++
   (gossip (t - 1)).map fun a => (.handler (.attestation a false), 6000 * t)
+
+/-- The first group of node `v`: the genesis tick, the groups of the slots `16` to `23`, the
+list `il` at its send time, the group of slot `24` with block `r`, and for `A` (`true`) the
+envelope of `r` at second `147`. The ticks carry milliseconds. -/
+def group0 (v : Bool) : List (TraceEvent × Nat) :=
+  [(.handler (.tick 0), 0)] ++ ((List.range 8).map fun k => groupAt (16 + k)).flatten ++
+  [(.handler (.tick (UInt64.ofNat tSendF)), tSendF), (.inclusionList signedIl, tSendF)] ++
+  groupAt 24 ++
+  (if v then [(.handler (.tick 147000), 147000), (.handler (.envelope envelope), 147000)]
+    else [])
 
 /-- The groups of node `v`: the first group, then one group for each slot from `25` to `64`. -/
 def groupsFor (v : Bool) : List (List (TraceEvent × Nat)) :=
@@ -365,19 +403,21 @@ def attHonest (s0 : Store treeMap) (att : Attestation) (m : Store treeMap) : Boo
       (committeesOf s0 att.data.slot.toNat ci).all fun i => !honestOf i || A.contains i)
   | none => false
 
-/-- The check of one event at the store `m` before it: the two checks of a vote, and for a
-block, a store slot no later than the block slot and a store that does not hold the block. -/
+/-- The check of one event at the store `m` before it: the two checks of a vote of the window
+`[25, 64)`, and for a block, a store slot no later than the block slot and a store that does not
+hold the block. The premises on votes read only the votes of the window. -/
 def evB (s0 : Store treeMap) (e : TraceEvent) (m : Store treeMap) : Bool :=
   match e with
-  | .handler (.attestation att _) => attTarget s0 att m && attHonest s0 att m
+  | .handler (.attestation att _) =>
+    decide (att.data.slot.toNat < 25) || (attTarget s0 att m && attHonest s0 att m)
   | .handler (.block sb) => decide (storeSlot m ≤ sb.message.slot.toNat) &&
       !FcMap.contains m.blocks (htr sb.message)
   | _ => true
 
 /-! ## The checks of the window -/
 
-/-- The step bound of a walk up the node tree. A store holds at most 41 blocks, so a walk
-passes at most `3 * 41` nodes. -/
+/-- The step bound of a walk up the node tree. A store holds at most 49 blocks, so a walk
+passes at most `3 * 49` nodes. -/
 def fuel : Nat := 200
 
 /-- The states of the run of `W` from genesis, or the empty list when the run fails. A closed
@@ -406,11 +446,16 @@ def casesB (s0 : Store treeMap) (q : HeadRun treeMap) (t : Nat) : Bool :=
       (FcMap.lookup q.store.checkpointStates q.store.justifiedCheckpoint).isSome &&
       (decide (t ≤ 25) || raceCountB s0 (jstOf q) t))
 
-/-- The checks of the head run `q` of slot `t`: `HeadRun.Base`, the two cases, and from the
-first slot of `E₁` on, the checkpoint blocks of `early`. -/
+/-- The store of `q` holds each block of `W` after `r` and before slot `t` (`CarrierWindow.holds`).
+-/
+def holdsB (q : HeadRun treeMap) (t : Nat) : Bool :=
+  (blocksOf W).all fun b => !(decide (blockR.slot < b.slot) && decide (b.slot.toNat < t)) ||
+    decide (FcMap.lookup q.store.blocks (htr b) = some b)
+
+/-- The checks of the head run `q` of slot `t`: `HeadRun.Base`, the two cases, and the held
+blocks of the carrier chain. -/
 def runQ (s0 : Store treeMap) (q : HeadRun treeMap) (t : Nat) : Bool :=
-  baseB q rootR blockR t fuel && casesB s0 q t &&
-  (!(decide (32 ≤ t) && decide (t < 64)) || earlyB q.store q.head.root blockR 4)
+  baseB q rootR blockR t fuel && casesB s0 q t && holdsB q t
 
 /-- The checks of the head run of slot `t` at node `v`. -/
 def runChk (s0 : Store treeMap) (v : Bool) (t : Nat) : Bool := runQ s0 (runOf s0 v t) t
@@ -467,6 +512,31 @@ theorem tailOf_some {X : List ChainStep} {sb : SignedBeaconBlock} {vb : Bool}
     rfl
   · cases h
 
+/-- The block step at index `n` of `X`, if `X` has one there. The list is a parameter, so a
+proof about `W` reasons about `blockAt? W n` and never reduces `W`. -/
+def blockAt? (X : List ChainStep) (n : Nat) : Option (SignedBeaconBlock × Bool) :=
+  match X[n]? with
+  | some (.block sb vb) => some (sb, vb)
+  | _ => none
+
+/-- A block step at index `n` splits the list there. The list is a variable, as in
+`tailOf_some`. -/
+theorem blockAt?_some {X : List ChainStep} {n : Nat} {sb : SignedBeaconBlock} {vb : Bool}
+    (h : blockAt? X n = some (sb, vb)) : X = X.take n ++ .block sb vb :: X.drop (n + 1) := by
+  unfold blockAt? at h
+  split at h
+  · rename_i sb' vb' hx
+    simp only [Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact split_of_getElem? hx
+  · cases h
+
+/-- The block step of `r` in `W`, or the default block. -/
+def sbR : SignedBeaconBlock := ((blockAt? W 32).map (·.1)).getD default
+
+/-- The result flag of the block step of `r` in `W`. -/
+def vbR : Bool := ((blockAt? W 32).map (·.2)).getD false
+
 /-- The block step of slot `63` at the end of `W`, or the default block. -/
 def sbLast : SignedBeaconBlock := ((tailOf W).map (·.1)).getD default
 
@@ -492,25 +562,56 @@ def blocksB (v : Bool) : Bool :=
         decide (sb.message.stateRoot ≠ EthCLSpecs.Heze.zeroRoot)
     | _ => true
 
-/-- The checks at node `v`: the records, the wall times, the pass of the event checks and the
-clock, the anchor parent, no attester slashing, the blocks, the head runs of the window, the
-first slot, the deliveries, the last block, and the finalized epoch at slot `64`. -/
+/-- Every envelope for `r` in the trace of node `v` leaves out `tx`. -/
+def omitsB (v : Bool) : Bool :=
+  handlersAll (tevs v) fun e => match e with
+    | .envelope env =>
+      !(env.message.beaconBlockRoot == rootR) ||
+      !(env.message.payload.transactions.toArray.contains tx)
+    | _ => true
+
+/-- The checks at node `v`: the records, the wall times, the pass of `RootFacts`, the event
+checks and the clock, the honest list, the envelopes, the anchor parent, no attester slashing,
+the blocks, the head runs of the window, the deliveries, the last block, and the finalized epoch
+at slot `64`. -/
 def nodeChk (s0 : Store treeMap) (v : Bool) : Bool :=
   (recs v).length == 41 &&
   decide ((tevs v).Pairwise (fun a b => a.2 ≤ b.2)) &&
-  traceAll (fun _ => true) (fun x m => decide (ClockAt x.1 x.2 m) && evB s0 x.1 m) (tevs v) [] s0 &&
+  traceAll (rootFactsB rootR blockR.slot dr)
+    (fun x m => decide (ClockAt x.1 x.2 m) && evB s0 x.1 m) (tevs v) [] s0 &&
+  honestListB (tevs v) il tSendF ΔF &&
+  omitsB v &&
   handlersAll (tevs v) (fun e => decide (e.NotAtAnchorParent genesisBlock)) &&
   noSlashingB (tevs v) &&
   blocksB v &&
   (List.range' 25 40).all (runChk s0 v) &&
-  notBelowB (runOf s0 v 25).store fuel (.full rootR) (runOf s0 v 25).head &&
   deliverChk v s0 &&
   lastB v &&
-  decide ((runOf s0 v 64).store.finalizedCheckpoint.epoch.toNat = 4)
+  decide (4 ≤ (runOf s0 v 64).store.finalizedCheckpoint.epoch.toNat)
+
+/-- The blocks of `W` after `r` build on EMPTY `r`: their bids name a parent block hash other
+than the hash of the bid of `r`. -/
+def emptyEdgeB : Bool :=
+  (blocksOf W).all fun b => !decide (blockR.slot < b.slot) ||
+    !(b.body.signedExecutionPayloadBid.message.parentBlockHash ==
+      blockR.body.signedExecutionPayloadBid.message.blockHash)
+
+/-- Every honest validator is a registry index of `u`, active at each epoch from `4` to `8`
+(`CarrierWindow.active`). -/
+def activeB (u : BeaconState) : Bool :=
+  (List.range 22).all fun j => decide (j < u.validators.val.size) &&
+    (List.range' 4 5).all fun e =>
+      EthCLSpecs.Heze.isActiveValidator u.validators.val[j]! (UInt64.ofNat e)
+
+/-- `W` has a block in each epoch from `4` to `7`. -/
+def liveB : Bool :=
+  (List.range' 4 4).all fun e => (blocksOf W).any fun b => b.slot.toNat / 8 == e
 
 /-- The checks over the chain: its states, the validated steps, the links and the roots of
-its blocks, the totals and the stake bound at each state, the honest votes, `HonestChain`, and
-the block of slot `63` before the last slot step. -/
+its blocks, the totals and the stake bound at each state, the honest votes, the votes and the
+stake of the weigh states of the epochs `3` to `7`, the slashed flags, one vote per target
+epoch, the EMPTY edge after `r`, the blocks of the epochs, the step of `r`, the first honest
+child of `r`, the end state, and the block of slot `63` before the last slot step. -/
 def chainChk (s0 : Store treeMap) : Bool :=
   Ls.length == W.length + 1 &&
   validatedB W &&
@@ -520,11 +621,34 @@ def chainChk (s0 : Store treeMap) : Bool :=
     decide (3 * advStakeB u honestOf <
       2 * (totBal u).toNat)) &&
   honestVotesB W (runOf s0 true) 25 64 &&
-  honestChainB W Ls honestOf 4 &&
+  includedB W Ls honestOf 3 7 &&
+  unslashedB Ls honestOf &&
+  singleB honestOf (attSetsB W Ls) &&
+  emptyEdgeB &&
+  liveB &&
+  (blockAt? W 32).isSome &&
+  decide (sbR.message = blockR) &&
+  (blocksOf W).any (fun b => decide (b = canonBlock)) &&
+  decide (canonBlock.slot.toNat = 25) &&
   (Ls[W.length]?).any (fun w => epochOf w == 8) &&
   tailB &&
   decide (sbLast.message.slot.toNat = 63) &&
-  (Ls[W.length - 2]?).any (fun u => decide (u.slot.toNat = 63))
+  (Ls[W.length - 2]?).any (fun u => decide (u.slot.toNat = 63)) &&
+  Ls.all activeB
+
+/-- The facts of the seed at `r` and of the genesis time. -/
+def seedChk (s0 : Store treeMap) : Bool :=
+  (FcMap.lookup s0.blockStates rootR).isNone &&
+  (FcMap.lookup s0.payloadInclusionListSatisfaction rootR).isNone &&
+  (FcMap.lookup s0.payloads rootR).isNone &&
+  s0.genesisTimeMs == 0
+
+/-- The facts of the list `il`: its key, its send window inside slot `23`, and `tx` in it. -/
+def ilChk : Bool :=
+  decide (ilKey il = (blockR.slot - 1, dr)) &&
+  decide (slotStartMs 0 (blockR.slot - 1).toNat ≤ tSendF) &&
+  decide (tSendF + ΔF < slotStartMs 0 (blockR.slot - 1).toNat + (4000 : UInt64).toNat) &&
+  decide (tx ∈ il.transactions.toArray)
 
 /-- The facts of the genesis state, the genesis block, block `r`, and the constants. -/
 def genesisChk : Bool :=
@@ -549,7 +673,8 @@ def genesisChk : Bool :=
 /-- Every check at the seed. -/
 def allChk : Bool :=
   match seed with
-  | .ok s0 => genesisChk && chainChk s0 && nodeChk s0 true && nodeChk s0 false
+  | .ok s0 => genesisChk && ilChk && seedChk s0 && chainChk s0 && nodeChk s0 true &&
+      nodeChk s0 false
   | .error _ => false
 
 /-! ## The witness -/
@@ -637,9 +762,13 @@ structure NodeParts (s0 : Store treeMap) (v : Bool) : Prop where
   len : (recs v).length = 41
   /-- The wall times do not decrease. -/
   mono : (tevs v).Pairwise (fun a b => a.2 ≤ b.2)
-  /-- The pass of the event checks and the clock. -/
-  pass : traceAll (fun _ => true) (fun x m => decide (ClockAt x.1 x.2 m) && evB s0 x.1 m)
-    (tevs v) [] s0 = true
+  /-- The pass of `RootFacts`, the event checks and the clock. -/
+  pass : traceAll (rootFactsB rootR blockR.slot dr)
+    (fun x m => decide (ClockAt x.1 x.2 m) && evB s0 x.1 m) (tevs v) [] s0 = true
+  /-- The honest list. -/
+  list : honestListB (tevs v) il tSendF ΔF = true
+  /-- Every envelope for `r` leaves out `tx`. -/
+  omits : omitsB v = true
   /-- No block at the parent root of the anchor. -/
   nap : handlersAll (tevs v) (fun e => decide (e.NotAtAnchorParent genesisBlock)) = true
   /-- No attester slashing. -/
@@ -648,21 +777,20 @@ structure NodeParts (s0 : Store treeMap) (v : Bool) : Prop where
   blocks : blocksB v = true
   /-- The head runs of the window. -/
   runs : (List.range' 25 40).all (runChk s0 v) = true
-  /-- The heads of the first slot avoid `full r`. -/
-  first : notBelowB (runOf s0 v 25).store fuel (.full rootR) (runOf s0 v 25).head = true
   /-- The deliveries. -/
   deliver : deliverChk v s0 = true
   /-- The block of slot `63`. -/
   last : lastB v = true
   /-- The finalized epoch at slot `64`. -/
-  fin : (runOf s0 v 64).store.finalizedCheckpoint.epoch.toNat = 4
+  fin : 4 ≤ (runOf s0 v 64).store.finalizedCheckpoint.epoch.toNat
 
 /-- `nodeChk` gives its parts. -/
 theorem NodeParts.of_check {s0 : Store treeMap} {v : Bool} (h : nodeChk s0 v = true) :
     NodeParts s0 v := by
   simp only [nodeChk, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hlen, hmono⟩, hpass⟩, hnap⟩, hs⟩, hb⟩, hr⟩, hf⟩, hd⟩, hl⟩, hfin⟩ := h
-  exact ⟨hlen, hmono, hpass, hnap, hs, hb, hr, hf, hd, hl, hfin⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hlen, hmono⟩, hpass⟩, hlist⟩, homits⟩, hnap⟩, hs⟩, hb⟩, hr⟩, hd⟩, hl⟩,
+    hfin⟩ := h
+  exact ⟨hlen, hmono, hpass, hlist, homits, hnap, hs, hb, hr, hd, hl, hfin⟩
 
 /-- The check of one event of a head run, read back at the store before it. -/
 theorem ev_check {s0 : Store treeMap} {v : Bool} (hp : NodeParts s0 v) {t : Nat}
@@ -765,21 +893,31 @@ theorem window {rb : BeaconBlock} {t : Nat} (hb : rb.slot.toNat = 24) (hlo : rac
   have : finSlot 4 = 64 := rfl
   omega
 
-/-- **The finality witness.** The two honest nodes meet `FinalitySetting` for block `r`, the
-genesis anchor, and `E₁ = 4`, given `QsortMem`. Both stores finalize epoch `4` at slot `64`.
+/-- **The finality witness.** The two honest nodes meet the three premise sets of
+`censored_payload_final_carrier` for block `r`, the genesis anchor, and `E₁ = 4`, given
+`QsortMem`: `FinalitySetting`, `DecisionSetting` for the list `il` and the transaction `tx`, and
+`CarrierWindow` for the run `W`, with the block of slot `25` and `LastDelivered`. Both stores
+finalize epoch `4` or later at slot `64`.
 
-`native_decide` evaluates `allChk`, and the lemmas of `FinalityCheck.lean` and `RaceCheck.lean`
-turn it into the premises. The hasher is the pure-Lean one, so no FFI equivalence axiom enters.
-`#print axioms` lists one compiler axiom per `native_decide` call. -/
+`native_decide` evaluates `allChk`, and the lemmas of the check modules turn it into the
+premises. The hasher is the pure-Lean one, so no FFI equivalence axiom enters. `#print axioms`
+lists one compiler axiom per `native_decide` call. -/
 theorem finalityWitness (hsort : QsortMem) :
     ∃ s0 : Store treeMap, seed = .ok s0 ∧
       FinalitySetting (fun _ : Bool => True) (nodeOf s0) (runOf s0) rootR blockR genesisV
         genesisBlock 4 (fun _ => true) honestOf (committeesOf s0) ∧
-      ∀ v, (runOf s0 v 64).store.finalizedCheckpoint.epoch.toNat = 4 := by
+      DecisionSetting (fun _ : Bool => True) (nodeOf s0) (runOf s0) rootR blockR 0 dr il tSendF
+        ΔF 4000 (fun p => p.transactions.toArray) (fun _ _ => False) tx ∧
+      (∃ sH, CarrierWindow (fun _ : Bool => True) (nodeOf s0) (runOf s0) blockR genesisV
+          genesisBlock 4 honestOf (2 ^ 64 - 1) W sH (W.take 32) sbR vbR (W.drop 33) ∧
+        (∃ b ∈ blocksOf W, blockR.slot.toNat < b.slot.toNat ∧
+          b.slot.toNat ≤ 4 * EthCLSpecs.Heze.Const.slotsPerEpoch) ∧
+        LastDelivered (fun _ : Bool => True) (nodeOf s0) (runOf s0) genesisV 4 (2 ^ 64 - 1) W) ∧
+      ∀ v, 4 ≤ (runOf s0 v 64).store.finalizedCheckpoint.epoch.toNat := by
   obtain ⟨s0, hseed⟩ := seed_ok
   have hall := allChk_ok
   simp only [allChk, hseed, Bool.and_eq_true] at hall
-  obtain ⟨⟨⟨hgen, hch⟩, hA⟩, hB⟩ := hall
+  obtain ⟨⟨⟨⟨⟨hgen, hil⟩, hsd⟩, hch⟩, hA⟩, hB⟩ := hall
   have parts : ∀ v, NodeParts s0 v := fun v => by
     cases v
     · exact NodeParts.of_check hB
@@ -787,9 +925,14 @@ theorem finalityWitness (hsort : QsortMem) :
   simp only [genesisChk, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hgen
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hgslot, hghdr⟩, hgcps⟩, hgord⟩, hgfill⟩, hghead⟩, hgroot⟩, hgpar⟩, hbslot⟩,
     hdelay⟩, hspos⟩, hsphr⟩, hspe⟩ := hgen
+  simp only [ilChk, Bool.and_eq_true, decide_eq_true_eq] at hil
+  obtain ⟨⟨⟨hkey, hsendLo⟩, hsendHi⟩, hlisted⟩ := hil
+  simp only [seedChk, Bool.and_eq_true, beq_iff_eq] at hsd
+  obtain ⟨⟨⟨hs0, ha0⟩, hp0⟩, hg⟩ := hsd
   simp only [chainChk, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.all_eq_true] at hch
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hLlen, hval⟩, hlinked⟩, hnodup⟩, hstates⟩, hvotesB⟩, hhc⟩, hend⟩, htail⟩,
-    hlastSlot⟩, hu63⟩ := hch
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hLlen, hval⟩, hlinked⟩, hnodup⟩, hstates⟩, hvotesB⟩, hinc⟩, hunsl⟩,
+    hsingle⟩, hedge⟩, hlive⟩, hrbs⟩, hsbR⟩, hcanM⟩, hcanS⟩, hend⟩, htail⟩, hlastSlot⟩, hu63⟩,
+    hactL⟩ := hch
   -- The states of the chain.
   have hL : runStates (2 ^ 64 - 1) W genesisV = some Ls := eq_some_of_getD_length hLlen
   -- The committees.
@@ -821,8 +964,8 @@ theorem finalityWitness (hsort : QsortMem) :
       simp only [runChk, runQ, Bool.and_eq_true] at this
       exact HeadRun.Base.of_check ⟨_, runOf_prefix s0 v t⟩
         (runOf_run hseed (parts v).len (by omega) h2) this.1.1
-  refine ⟨s0, hseed, ?_, fun v => (parts v).fin⟩
-  exact
+  have hset : FinalitySetting (fun _ : Bool => True) (nodeOf s0) (runOf s0) rootR blockR genesisV
+      genesisBlock 4 (fun _ => true) honestOf (committeesOf s0) :=
     { fields :=
         { nodeOk := fun v _ =>
             { anchorStore := hseed
@@ -839,12 +982,14 @@ theorem finalityWitness (hsort : QsortMem) :
           committee := by
             intro v _ s _ _ att mid ⟨es1, es2, fb, arr, hev, hm⟩ hlo hhi cps s2 ts hrun hts
             have he := ev_check (parts v) hev hm
-            simp only [evB, Bool.and_eq_true] at he
+            simp only [evB, Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true] at he
+            have he := he.resolve_left (by rw [hraceLo] at hlo; omega)
             exact target_of_check he.1 hrun hts
           attester := by
             intro v _ s _ _ i hi att mid ⟨es1, es2, fb, arr, hev, hm⟩ ⟨A, hA, hiA⟩ hlo hhi
             have he := ev_check (parts v) hev hm
-            simp only [evB, Bool.and_eq_true] at he
+            simp only [evB, Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true] at he
+            have he := he.resolve_left (by rw [hraceLo] at hlo; omega)
             have hany : A.any honestOf = true := Array.any_eq_true'.mpr ⟨i, hiA, hi⟩
             have hd := (honest_of_check he.2 hA).1 hany
             simp only [honestDataB, honestDataQ, Bool.and_eq_true, decide_eq_true_eq,
@@ -883,8 +1028,9 @@ theorem finalityWitness (hsort : QsortMem) :
                   Nat.min_eq_left (Nat.le_of_lt (by rw [runOf_events]; exact hk))]
               refine ⟨_, _, att, fb, hev, of_decide_eq_true hat, fun arr mid hm A hA => ?_⟩
               have he := ev_check (parts v) hev hm
-              simp only [evB, Bool.and_eq_true] at he
               have hslot := of_decide_eq_true hat
+              simp only [evB, Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true] at he
+              have he := he.resolve_left (by omega)
               have := (honest_of_check he.2 hA).2 ci (by rw [hslot]; exact hci) i
                 (by rw [hslot]; exact hmem) hi
               exact this
@@ -923,9 +1069,6 @@ theorem finalityWitness (hsort : QsortMem) :
           unfold RaceCount raceVs
           rw [hvotes]
           exact of_decide_eq_true hr
-      first := fun v _ => by
-        rw [hraceLo]
-        exact not_below_of_check (parts v).first
       anchorState := fun _ _ => rfl
       anchorBlock := fun _ _ => rfl
       stateRoots := fun v _ sb w hm => by
@@ -945,6 +1088,11 @@ theorem finalityWitness (hsort : QsortMem) :
         { zero := fun x hx y hy _ _ => (hgcps x hx).2.trans (hgcps y hy).2.symm
           roots := fun x hx h1 => absurd (hgcps x hx).1 (by omega) }
       sphr := hsphr
+      honestReg := fun i hi => by
+        have := of_decide_eq_true hi
+        show i.toNat < (Array.replicate 32 _).size
+        rw [Array.size_replicate]
+        omega
       totals := fun v _ t hlo hhi => by
         obtain ⟨h1, h2⟩ := window hbslot hlo hhi
         exact StoreTotals.of_chain (hcs v t (by omega) h2) fun u hu => (hstates u hu).1.1
@@ -963,75 +1111,192 @@ theorem finalityWitness (hsort : QsortMem) :
         obtain ⟨h1, h2⟩ := window hbslot hlo hhi
         rw [hfin] at hdhi
         rw [hraceLo] at hdlo
-        exact honestVotes_of_check (hcs v t (by omega) h2) hvotesB hsr hv hdlo hdhi
-      early := fun v _ t hlo hhi e c u u' he hck => by
-        rw [hspe] at hlo
-        rw [hfin] at hhi
-        have hq := hrunQ v t (by omega) (by omega)
-        simp only [runChk, runQ, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hq
-        have he' := hq.2.resolve_left (by simp only [Bool.and_eq_false_iff, decide_eq_false_iff_not]; omega)
-        exact early_of_check he' he hck
-      chain := by
-        obtain ⟨st, hst⟩ := HonestChain.of_check combine_size hL hval
-          ⟨hgfill, by omega, fun s _ hs _ => absurd hs (by omega)⟩
-          ⟨fun x hx y hy _ _ => (hgcps x hx).2.trans (hgcps y hy).2.symm,
-            fun x hx h1 => absurd (hgcps x hx).1 (by omega)⟩
-          hgord hsphr (fun u hu => (hstates u hu).1.1) (by omega)
-          (by unfold epochOf; rw [hgslot, Nat.zero_div]; omega)
-          hend hhc
-        -- `W` ends with the block of slot `63` and a slot step.
-        unfold tailB at htail
-        cases ht : tailOf W with
-        | none =>
-          rw [ht] at htail
-          cases htail
-        | some p =>
-          obtain ⟨sb, vb⟩ := p
-          have hsb : sbLast = sb := by unfold sbLast; rw [ht]; rfl
-          obtain ⟨hsplit, hle, htk⟩ := tailOf_some ht
-          obtain ⟨u, hu, hrunp⟩ := runStates_take hL (W.length - 2) (Nat.sub_le _ _)
-          obtain ⟨w, -, hrunb⟩ := runStates_take hL (W.length - 2 + 1) hle
-          rw [htk] at hrunb
-          obtain ⟨m, hm, hrest⟩ := ChainRun.split hrunb
-          rw [hm.det hrunp] at hrest
-          cases hrest with
-          | block _ _ hstep hnil =>
-            cases hnil
-            simp only [Option.any_eq_true, decide_eq_true_eq] at hu63
-            obtain ⟨u', hu', hslot⟩ := hu63
-            rw [hu] at hu'
-            cases hu'
-            refine ⟨_, W, st, regVals, hst, W.take (W.length - 2), [], sb, vb, u, _, hsplit,
-              hrunp, hstep, by rw [hslot, hspe], by rw [hslot, hspe], fun v _ => ?_⟩
-            -- The block of slot `63` in the trace of node `v`.
-            have hl := (parts v).last
-            unfold lastB at hl
-            split at hl
-            · rename_i sb' w' hget
-              have hsb' : sb' = sb := (of_decide_eq_true hl).trans hsb
-              subst hsb'
-              have hev64 : (runOf s0 v 64).events = tevs v := by
-                rw [runOf_events, List.take_of_length_le (by rw [groups_length]; decide), ← tevs_eq]
-              rw [hfin]
-              refine ⟨_, _, by rw [hev64]; exact split_at hget, fun arr mid hm => ?_⟩
-              have he := ev_check (parts v) (t := 64) (by rw [hev64]; exact split_at hget) hm
-              simp only [evB, Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at he
-              obtain ⟨hss, hnew⟩ := he
-              rw [← hsb] at hss
-              exact ⟨by omega, hnew⟩
-            · cases hl }
+        exact honestVotes_of_check (hcs v t (by omega) h2) hvotesB hsr hv hdlo hdhi }
+  -- The IL due time of the minimal preset: 6667 basis points of 6000 ms.
+  have hdec : DecisionSetting (fun _ : Bool => True) (nodeOf s0) (runOf s0) rootR blockR 0 dr il
+      tSendF ΔF 4000 (fun p => p.transactions.toArray) (fun _ _ => False) tx :=
+    { el := strictEngine_lawful
+      genesis := fun _ _ => hg
+      root := fun v _ => RootFacts.of_check hs0 (parts v).pass
+      answer0 := fun _ _ => Option.isNone_iff_eq_none.mp ha0
+      payload0 := fun _ _ => Option.isNone_iff_eq_none.mp hp0
+      list := fun v _ => HonestList.of_check (parts v).list
+      omits := fun v _ env w hm hroot' => by
+        have ho := (parts v).omits
+        unfold omitsB at ho
+        have := handlersAll_spec ho _ w hm
+        refine ⟨fun hmem => ?_, id⟩
+        simp [hroot'] at this
+        exact this hmem
+      key := hkey
+      sendLo := hsendLo
+      sendHi := hsendHi
+      slotPos := by decide
+      dueOk := rfl
+      dueLe := by decide
+      listed := hlisted }
+  -- The end state of `W`, in epoch `8`.
+  obtain ⟨st, hst, hrunW⟩ := runStates_take hL W.length (Nat.le_refl _)
+  rw [List.take_length] at hrunW
+  rw [hst] at hend
+  simp only [Option.any_some, beq_iff_eq] at hend
+  unfold epochOf at hend
+  rw [hspe] at hend
+  -- The step of `r` in `W`.
+  have hsplitR : W = W.take 32 ++ .block sbR vbR :: W.drop 33 := by
+    cases hx : blockAt? W 32 with
+    | none =>
+      rw [hx] at hrbs
+      cases hrbs
+    | some p =>
+      obtain ⟨sb, vb⟩ := p
+      have h1 : sbR = sb := by unfold sbR; rw [hx]; rfl
+      have h2 : vbR = vb := by unfold vbR; rw [hx]; rfl
+      rw [h1, h2]
+      exact blockAt?_some hx
+  -- The first honest child of `r`.
+  have hcanMem : canonBlock ∈ blocksOf W := by
+    obtain ⟨b, hb, he⟩ := List.any_eq_true.mp hcanM
+    rw [← of_decide_eq_true he]
+    exact hb
+  have hcanGt : blockR.slot < canonBlock.slot := UInt64.lt_iff_toNat_lt.mpr (by omega)
+  have hedge' := hedge
+  unfold emptyEdgeB at hedge'
+  have hlive' := hlive
+  unfold liveB at hlive'
+  -- `W` ends with the block of slot `63` and a slot step.
+  have hlast : ∃ (p q : List ChainStep) (sb : SignedBeaconBlock) (vb : Bool) (u w : BeaconState),
+      W = p ++ .block sb vb :: .slot :: q ∧ ChainRun (2 ^ 64 - 1) p genesisV u ∧
+      BlockStep sb vb u w ∧ (u.slot.toNat + 1) % EthCLSpecs.Heze.Const.slotsPerEpoch = 0 ∧
+      u.slot.toNat / EthCLSpecs.Heze.Const.slotsPerEpoch = 4 + 3 ∧
+      ∀ v, (fun _ : Bool => True) v → ∃ (es1 es2 : List TraceEvent),
+        (runOf s0 v (finSlot 4)).events.map Prod.fst =
+          es1 ++ TraceEvent.handler (.block sb) :: es2 ∧
+        ∀ arr mid, NodeTrace (nodeOf s0 v).seed es1 arr mid →
+          storeSlot mid < finSlot 4 ∧ FcMap.contains mid.blocks (htr sb.message) = false := by
+    unfold tailB at htail
+    cases ht : tailOf W with
+    | none =>
+      rw [ht] at htail
+      cases htail
+    | some p =>
+      obtain ⟨sb, vb⟩ := p
+      have hsb : sbLast = sb := by unfold sbLast; rw [ht]; rfl
+      obtain ⟨hsplit, hle, htk⟩ := tailOf_some ht
+      obtain ⟨u, hu, hrunp⟩ := runStates_take hL (W.length - 2) (Nat.sub_le _ _)
+      obtain ⟨w, -, hrunb⟩ := runStates_take hL (W.length - 2 + 1) hle
+      rw [htk] at hrunb
+      obtain ⟨m, hm, hrest⟩ := ChainRun.split hrunb
+      rw [hm.det hrunp] at hrest
+      cases hrest with
+      | block _ _ hstep hnil =>
+        cases hnil
+        simp only [Option.any_eq_true, decide_eq_true_eq] at hu63
+        obtain ⟨u', hu', hslot⟩ := hu63
+        rw [hu] at hu'
+        cases hu'
+        refine ⟨W.take (W.length - 2), [], sb, vb, u, _, hsplit, hrunp, hstep,
+          by rw [hslot, hspe], by rw [hslot, hspe], fun v _ => ?_⟩
+        -- The block of slot `63` in the trace of node `v`.
+        have hl := (parts v).last
+        unfold lastB at hl
+        split at hl
+        · rename_i sb' w' hget
+          have hsb' : sb' = sb := (of_decide_eq_true hl).trans hsb
+          subst hsb'
+          have hev64 : (runOf s0 v 64).events = tevs v := by
+            rw [runOf_events, List.take_of_length_le (by rw [groups_length]; decide), ← tevs_eq]
+          rw [hfin]
+          refine ⟨_, _, by rw [hev64]; exact split_at hget, fun arr mid hm => ?_⟩
+          have he := ev_check (parts v) (t := 64) (by rw [hev64]; exact split_at hget) hm
+          simp only [evB, Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at he
+          obtain ⟨hss, hnew⟩ := he
+          rw [← hsb] at hss
+          exact ⟨by omega, hnew⟩
+        · cases hl
+  have hH : CarrierWindow (fun _ : Bool => True) (nodeOf s0) (runOf s0) blockR genesisV
+      genesisBlock 4 honestOf (2 ^ 64 - 1) W st (W.take 32) sbR vbR (W.drop 33) :=
+    { hhi := Nat.le_refl _
+      chainRun := hrunW
+      val := ValidatedSteps.of_check hval
+      tot := fun p q u hs hu => (hstates u (runStates_mem hL hs hu)).1.1
+      ends := by rw [hspe]; omega
+      endsHi := by rw [hspe]; omega
+      split := hsplitR
+      isRb := hsbR
+      emptyEdge := fun p sb vb q hs hgt _ => by
+        have hm : sb.message ∈ blocksOf W := by rw [hs]; exact mem_blocksOf_block p q sb vb
+        have := List.all_eq_true.mp hedge' _ hm
+        simpa [hgt] using this
+      live := fun e h1 h2 => by
+        rw [hbslot, hspe] at h1
+        have hm : e ∈ List.range' 4 4 := List.mem_range'_1.mpr ⟨by omega, by omega⟩
+        obtain ⟨b, hb, he⟩ := List.any_eq_true.mp (List.all_eq_true.mp hlive' e hm)
+        exact ⟨b, hb, by rw [hspe]; simpa using he⟩
+      included := fun e h1 h2 W' hW' =>
+        included_of_check hL hinc e (by rw [hbslot, hspe] at h1; omega) (by omega) W' hW'
+      holds := fun v _ t h1 h2 b hb hgt hlt => by
+        obtain ⟨h1', h2'⟩ := window hbslot (Nat.le_of_lt h1) h2
+        have hq := hrunQ v t h1' h2'
+        simp only [runChk, runQ, Bool.and_eq_true] at hq
+        have := List.all_eq_true.mp hq.2 b hb
+        simpa [hgt, hlt] using this
+      unslashedH := fun p q u hs hu => unslashed_of_check hunsl (runStates_mem hL hs hu)
+      unslashed := fun v _ t h1 h2 p q z hsr hz => by
+        obtain ⟨h1', h2'⟩ := window hbslot (Nat.le_of_lt h1) h2
+        exact unslashed_of_check hunsl ((hcs v t (by omega) h2').state_mem hsr hz)
+      single := fun v _ t h1 h2 stepsC hsr _ _ _ _ _ _ i d hhon hvote _ q s₂ d₂ _ _ _ hsplit
+          hvote₂ he => by
+        obtain ⟨h1', h2'⟩ := window hbslot (Nat.le_of_lt h1) h2
+        have hc := hcs v t (by omega) h2'
+        have hj := hc.blocks_take hsr
+        obtain ⟨k, vv, hrunC, -, -, hendC⟩ := hsr
+        obtain ⟨w, hW⟩ := runStates_run hL
+        obtain ⟨W₁, W₂, hW12, hmap⟩ := steps_prefix (Nat.le_refl _) hrunC hW hendC hj
+        exact single_of_check hL hsingle (take_map_of_msgs hW12 hmap) (take_map_of_prefix hsplit)
+          hhon hvote hvote₂ he
+      active := fun p q z hs hz i hi e h1 h2 => by
+        have hm := hactL z (runStates_mem hL hs hz)
+        unfold activeB at hm
+        have hi' : i.toNat < 22 := by simpa [honestOf] using hi
+        have hj := List.all_eq_true.mp hm i.toNat (List.mem_range.mpr hi')
+        simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hj
+        refine ⟨hj.1, ?_⟩
+        have he := hj.2 e.toNat (List.mem_range'_1.mpr ⟨by rw [hbslot, hspe] at h1; omega,
+          by omega⟩)
+        simpa [UInt64.ofNat_toNat] using he
+      seed := by decide
+      room := by decide }
+  have hb0 : ∃ b ∈ blocksOf W, blockR.slot.toNat < b.slot.toNat ∧
+      b.slot.toNat ≤ 4 * EthCLSpecs.Heze.Const.slotsPerEpoch :=
+    ⟨canonBlock, hcanMem, UInt64.lt_iff_toNat_lt.mp hcanGt, by rw [hcanS, hspe]; decide⟩
+  exact ⟨s0, hseed, hset, hdec, ⟨st, hH, hb0, hlast⟩, fun v => (parts v).fin⟩
 
-/-- **The censored payload is final on the witness.** `censored_payload_final` applies to the
-two nodes. Every head of the window avoids `full r`, or two blocks or headers share a root. -/
+/-- **The censored payload is final on the witness.** `censored_payload_final_carrier` applies to
+the two nodes. Every head of the window avoids `full r`, or two blocks or headers share a
+root. -/
 theorem finalityWitness_heads (hsort : QsortMem) :
     ∃ s0 : Store treeMap, seed = .ok s0 ∧
       (RootCollision ∨
         ∀ (v : Bool) (t : Nat), raceLo blockR ≤ t → t ≤ finSlot 4 →
           ¬ NodeBelow (runOf s0 v t).store (.full rootR) (runOf s0 v t).head) := by
-  obtain ⟨s0, hseed, hset, -⟩ := finalityWitness hsort
+  obtain ⟨s0, hseed, hset, hdec, ⟨sH, hH, hb0, hlast⟩, -⟩ := finalityWitness hsort
   refine ⟨s0, hseed, ?_⟩
-  rcases censored_payload_final combine_size hset with h | ⟨h, -⟩
+  rcases censored_payload_final_carrier combine_size hset hdec hH hb0 hlast with h | ⟨h, -⟩
   · exact .inl h
   · exact .inr fun v t h1 h2 => h v trivial t h1 h2
+
+/-- **The censorship theorem applies to the witness.** `censored_payload_avoided` takes the
+carrier chain of the witness: every head of the window up to slot `64` avoids `full r`, or two
+blocks or headers share a root. -/
+theorem finalityWitness_avoided (hsort : QsortMem) :
+    ∃ s0 : Store treeMap, seed = .ok s0 ∧
+      (RootCollision ∨ ∀ (v : Bool) (t : Nat), raceLo blockR ≤ t → t ≤ finSlot 4 →
+        ¬ NodeBelow (runOf s0 v t).store (.full rootR) (runOf s0 v t).head) := by
+  obtain ⟨s0, hseed, hset, hdec, ⟨sH, hH, -, -⟩, -⟩ := finalityWitness hsort
+  refine ⟨s0, hseed, ?_⟩
+  rcases censored_payload_avoided combine_size hset hdec hH with h | h
+  · exact .inl h
+  · exact .inr fun v t h1 h2 => (h v trivial t h1 h2).2
 
 end EthCLSpecs.Tests.HezeFinalityWitness

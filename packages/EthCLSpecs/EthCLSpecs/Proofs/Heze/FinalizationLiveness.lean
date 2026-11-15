@@ -3,6 +3,7 @@ import EthCLSpecs.Proofs.Heze.HonestVoter
 import EthCLSpecs.Proofs.Heze.EmptyTarget
 import EthCLSpecs.Proofs.Heze.RaceLong
 import EthCLSpecs.Proofs.Heze.StoreClock
+import EthCLSpecs.Proofs.Heze.FinLag
 
 /-!
 # `EthCLSpecs.Proofs.Heze.FinalizationLiveness`: the censored payload stays off the honest heads
@@ -12,7 +13,10 @@ from `N + 1` to the first slot of epoch `E₁ + 4`.
 
 ## The window
 
-Each honest head run of the window takes one of two cases.
+The heads of the first slot avoid `full r` (`FirstSlotAvoids`). The theorems here take that as a
+premise. `FinalitySetting.first_of_decision` (`ViableHonest.lean`) proves it from the honest
+inclusion list and the envelopes that omit its transaction. Each honest head run of a later slot
+takes one of two cases.
 
 - The justified block of the store is no later than `rb`. The race step of
   `race_empty_persists_long` applies at that slot.
@@ -27,8 +31,10 @@ Each honest head run of the window takes one of two cases.
 ## The end of the window
 
 At the first slot of `E₁ + 4`, every honest store has finalized `E₁` or later
-(`honestStore_finalizes`). The finalized checkpoint is justified on a chain, so the argument of
-the window puts it on the EMPTY side. Later heads of the node take the finality lock
+(`honestStore_finalizes`), from the honest chain of `FinalityChain`. The finalized checkpoint is
+justified on a chain, so the argument of the window puts it on the EMPTY side. Its root is not
+`r` (`FinRootNe`), so as an honest target of an epoch from `E₁` it is past `rb`
+(`EarlyTargets`). Later heads of the node take the finality lock
 (`honestNode_finality_lock`). The conflict case of the lock gives slashing evidence
 (`honestNodes_accountable`).
 -/
@@ -57,7 +63,8 @@ def finSlot (E₁ : Nat) : Nat := (E₁ + 4) * slotsPerEpoch
 /-- The premises of the composed theorem, for the block `rb` at `r`, the anchor state `A`, the
 anchor block `a`, and the epoch `E₁`.
 
-- `fields`, `base`, `first`: the race premises over the window, without a justified state.
+- `fields`, `base`: the race premises over the window, without a justified state and without
+  the first slot.
 - `cases`: each honest head run of the window has one of two justified blocks. A justified
   block no later than `rb` comes with a justified state and the count of the race. The other
   case is a justified block past `rb`.
@@ -67,15 +74,17 @@ anchor block `a`, and the epoch `E₁`.
   an epoch from the anchor epoch on is the anchor block or a block of the run.
 - `totals`: each honest store of the window meets the totals premise of
   `honestNodes_accountable` (`StoreTotals`).
+- `honestReg`: every honest index is an index of the anchor registry. The registry only
+  appends and no step writes a public key, so such an index names one key on every run from
+  `A` (`ChainRun.pubkey_eq`). So `honestOf` labels keys. Two runs can fill one registry position
+  with different validators, and the label does not depend on that. An honest validator that
+  joins after `A` counts as adversarial.
 - `allChains`: on every prefix of a store run of an honest store of the window, up to epoch
   `E₁ + 5`, the adversary holds less than two thirds of the total active balance.
 - `honestVotes`: an honest vote of the window, on a store run of an honest store of the
   window, targets the checkpoint block of the voter's head at the vote slot.
-- `early`: from the first slot of `E₁`, the checkpoint blocks of an honest head at the epochs
-  from `E₁` are past `rb`.
-- `chain`: the honest chain of `HonestChain`, and the block of its last slot of `E₁ + 3`.
-  Each honest node receives that block before `E₁ + 4`, at an event whose store does not hold
-  it yet. `on_block` returns early on a known block, so this names the first receipt.
+
+The premises on the carrier chain are in `CarrierWindow` (`ViableHonest.lean`).
 
 `totals`, `allChains` and `honestVotes` read only the runs whose blocks an honest store
 holds. A store run ends at a stored block. So no state of the run is later than the last
@@ -92,8 +101,6 @@ structure FinalitySetting {Node : Type} (honest : Node → Prop) (node : Node �
       (raceLo rb < t → RaceCount jst honestOf committees (raceLo rb) t)) ∨
     ∃ jb, FcMap.lookup (run v t).store.blocks (run v t).store.justifiedCheckpoint.root = some jb ∧
       rb.slot < jb.slot
-  first : ∀ v, honest v →
-    ¬ NodeBelow (run v (raceLo rb)).store (.full r) (run v (raceLo rb)).head
   anchorState : ∀ v, honest v → (node v).anchorState = A
   anchorBlock : ∀ v, honest v → (node v).anchor = a
   stateRoots : ∀ v, honest v → ∀ (sb : SignedBeaconBlock) (w : Nat),
@@ -112,6 +119,7 @@ structure FinalitySetting {Node : Type} (honest : Node → Prop) (node : Node �
   before : rb.slot.toNat < E₁ * slotsPerEpoch
   delay : 0 < EthCLSpecs.Heze.Const.minAttestationInclusionDelay.toNat
   slotPos : 0 < slotDurationMs.toNat
+  honestReg : ∀ i, honestOf i = true → i.toNat < A.validators.val.size
   allChains : ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ finSlot E₁ → ∀ p q u,
     StoreRun A a (run v t).store (p ++ q) → ChainRun (2 ^ 64 - 1) p A u → epochOf u ≤ E₁ + 5 →
     3 * advStake u honestOf < 2 * (totBal u).toNat
@@ -121,12 +129,40 @@ structure FinalitySetting {Node : Type} (honest : Node → Prop) (node : Node �
     ∃ u u', (getCheckpointBlock (StoreTransition := ForkChoiceStoreRun (Store map))
       (run (nodeOf i) d.slot.toNat).store (run (nodeOf i) d.slot.toNat).head.root
       d.target.epoch).run u = .ok (d.target.root, u')
-  early : ∀ v, honest v → ∀ t, E₁ * slotsPerEpoch ≤ t → t < finSlot E₁ →
-    ∀ (e : Epoch) (c : Root) (u u' : Store map), E₁ ≤ e.toNat →
+
+/-- The heads of the first slot of the window avoid `full r`. -/
+def FirstSlotAvoids {Node : Type} (honest : Node → Prop) (run : Node → Nat → HeadRun map)
+    (r : Root) (rb : BeaconBlock) : Prop :=
+  ∀ v, honest v → ¬ NodeBelow (run v (raceLo rb)).store (.full r) (run v (raceLo rb)).head
+
+/-- From the first slot of `E₁`, a checkpoint block other than `r` of an honest head below
+EMPTY `r`, at an epoch from `E₁` to `E₁ + 4`, is past `rb`. `FinalitySetting.early` proves it:
+the checkpoint walk from such a head stops at `r` or at a block below `r`. -/
+def EarlyTargets {Node : Type} (honest : Node → Prop) (run : Node → Nat → HeadRun map)
+    (r : Root) (rb : BeaconBlock) (E₁ : Nat) : Prop :=
+  ∀ v, honest v → ∀ t, E₁ * slotsPerEpoch ≤ t → t < finSlot E₁ →
+    NodeBelow (run v t).store (.empty r) (run v t).head →
+    ∀ (e : Epoch) (c : Root) (u u' : Store map), E₁ ≤ e.toNat → e.toNat ≤ E₁ + 4 → c ≠ r →
     (getCheckpointBlock (StoreTransition := ForkChoiceStoreRun (Store map))
       (run v t).store (run v t).head.root e).run u = .ok (c, u') →
     ∃ cb, FcMap.lookup (run v t).store.blocks c = some cb ∧ rb.slot < cb.slot
-  chain : ∃ (hi : Nat) (steps : List ChainStep) (st : BeaconState)
+
+/-- The finalized root of an honest store at the end of the window is not `r` once its epoch
+is `E₁` or later. `CarrierWindow.finRoot_ne` proves it from a block of the carrier chain after
+`rb`, no later than the first slot of `E₁`. -/
+def FinRootNe {Node : Type} (honest : Node → Prop) (run : Node → Nat → HeadRun map)
+    (r : Root) (E₁ : Nat) : Prop :=
+  ∀ v, honest v → E₁ ≤ (run v (finSlot E₁)).store.finalizedCheckpoint.epoch.toNat →
+    (run v (finSlot E₁)).store.finalizedCheckpoint.root ≠ r
+
+/-- The honest chain of `HonestChain`, and the block of its last slot of `E₁ + 3`. Each honest
+node receives that block before `E₁ + 4`, at an event whose store does not hold it yet.
+`on_block` returns early on a known block, so this names the first receipt.
+`CarrierWindow.chain` proves it from the carrier chain and `LastDelivered`. -/
+def FinalityChain {Node : Type} (honest : Node → Prop) (node : Node → NodeRun map)
+    (run : Node → Nat → HeadRun map) (A : BeaconState) (honestOf : ValidatorIndex → Bool)
+    (E₁ : Nat) : Prop :=
+  ∃ (hi : Nat) (steps : List ChainStep) (st : BeaconState)
     (vals : List ValidatorIndex), HonestChain hi steps A st vals honestOf E₁ ∧
     ∃ (p q : List ChainStep) (sb : SignedBeaconBlock) (vb : Bool) (u w : BeaconState),
       steps = p ++ .block sb vb :: .slot :: q ∧ ChainRun hi p A u ∧ BlockStep sb vb u w ∧
@@ -287,6 +323,37 @@ theorem FinalitySetting.storeFacts
   exact ⟨hI, hAbove, ha, hwit _ wj, hwit _ wf⟩
 
 include hw in
+/-- **The finalized epoch of an honest head run of the window lags its slot by two epochs.** It
+is at most the anchor epoch, or at most the epoch of `t` less two. The node's events form a
+clocked trace from the anchor store (`ClockedTrace.tickLag`), whose two finalized epochs are the
+anchor epoch, and the prefix of the run meets `CkptInv` at each store (`NodeTrace.storeLag`). -/
+theorem FinalitySetting.finLag
+    (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees)
+    (hcol : ¬ RootCollision) {v : Node} (hv : honest v) {t : Nat} (ht : raceLo rb ≤ t)
+    (ht' : t ≤ finSlot E₁) :
+    (run v t).store.finalizedCheckpoint.epoch.toNat ≤ epochOf A ∨
+      (run v t).store.finalizedCheckpoint.epoch.toNat + 2 ≤ t / slotsPerEpoch := by
+  have hn := hset.fields.nodeOk v hv
+  have hq := hset.base v hv t ht ht'
+  obtain ⟨-, e2, -, e4⟩ := getForkchoiceStore_ckpts A a _ (hset.anchorStore hv)
+  have h0 : (node v).seed.finalizedCheckpoint.epoch.toNat ≤ epochOf A ∧
+      (node v).seed.unrealizedFinalizedCheckpoint.epoch.toNat ≤ epochOf A :=
+    ⟨Nat.le_of_eq e2, Nat.le_of_eq e4⟩
+  obtain ⟨rest, hsplit⟩ := hq.isPrefix
+  -- A tick of the prefix is a tick of the node's events.
+  have htick := hn.clocked.tickLag hset.slotPos h0
+  have hlag := hq.trace.storeLag hset.slotPos hset.ord
+    (fun es1 es2 arr1 mid hes h1 => hset.prefixInv hw hcol hv ht ht' hes h1) ⟨.inl h0.1, .inl h0.2⟩
+    (fun es1 es2 arr1 mid time hes h1 => htick es1 (es2 ++ rest.map Prod.fst) arr1 mid time
+      (by rw [hsplit, List.map_append, hes]; simp) h1)
+  obtain ⟨cs, hcsn, hcur⟩ := hq.slot
+  have hS : storeSlot (run v t).store = t := by
+    rw [← getCurrentSlot_storeSlot hcur, hcsn]
+  have hf := hlag.1
+  rw [hS] at hf
+  exact hf
+
+include hw in
 /-- **A checkpoint justified on a chain of the store is on the EMPTY side.** Take an honest head
 run of slot `t` and a store run of its store. The chain of the run
 justifies `x`, past the base and before epoch `E₁ + 5`. Every honest head before `t` lies below
@@ -438,32 +505,49 @@ variable {map : MapKind} [Preset] [HasherTag] [Config] [CryptoBackend] [FcMap ma
   [ExecutionEngine ExecutionPayload Transaction ExecutionRequests] [DataAvailability]
   (hw : ∀ a b : ByteArray, (SizzLean.Hasher.combine (H := HasherTag.H) a b).size = 32)
 
+/-- `empty r` is viable beside `full r` at each honest head run after the first slot whose
+justified block is no later than `rb`, once the honest heads before that slot lie below
+`empty r`. -/
+def ViableStep {Node : Type} (honest : Node → Prop) (run : Node → Nat → HeadRun map) (r : Root)
+    (rb : BeaconBlock) (hi : Nat) : Prop :=
+  ∀ s, raceLo rb < s → s ≤ hi →
+    (∀ u, honest u → ∀ t, raceLo rb ≤ t → t < s →
+      NodeBelow (run u t).store (.empty r) (run u t).head) →
+    ∀ v, honest v →
+      (∃ jb, FcMap.lookup (run v s).store.blocks (run v s).store.justifiedCheckpoint.root = some jb ∧
+        jb.slot ≤ rb.slot) →
+      EmptyViableWithFull (run v s).store r
+
 include hw in
-/-- **The window.** Every honest head of the window lies below `empty r` and not below
-`full r`, or a root collision exists. -/
-theorem heads_avoid_full_window {Node : Type} {honest : Node → Prop}
+/-- **Up to a slot of the window.** Every honest head from the first slot to `hi` lies below
+`empty r` and not below `full r`, or a root collision exists. The heads of the first slot avoid
+`full r` (`hfirst`), and `empty r` stays viable beside `full r` up to `hi` (`hviable`). -/
+theorem heads_avoid_full_upto {Node : Type} {honest : Node → Prop}
     {node : Node → NodeRun map} {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock}
     {A : BeaconState} {a : BeaconBlock} {E₁ : Nat} {nodeOf : ValidatorIndex → Node}
     {honestOf : ValidatorIndex → Bool} {committees : Nat → Nat → Array ValidatorIndex}
-    (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees) :
-    RootCollision ∨ ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ finSlot E₁ →
+    (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees)
+    (hfirst : FirstSlotAvoids honest run r rb) {hi : Nat} (hhi : hi ≤ finSlot E₁)
+    (hviable : ViableStep honest run r rb hi) :
+    RootCollision ∨ ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi →
       NodeBelow (run v t).store (.empty r) (run v t).head ∧
         ¬ NodeBelow (run v t).store (.full r) (run v t).head := by
   by_cases hcol : RootCollision
   · exact Or.inl hcol
   right
   -- One slot: from the honest heads before `s` to the honest heads of `s`.
-  have hstep : ∀ s, raceLo rb ≤ s → s ≤ finSlot E₁ →
+  have hstep : ∀ s, raceLo rb ≤ s → s ≤ hi →
       (∀ u, honest u → ∀ t, raceLo rb ≤ t → t < s →
         NodeBelow (run u t).store (.empty r) (run u t).head) →
       ∀ v, honest v → NodeBelow (run v s).store (.empty r) (run v s).head ∧
         ¬ NodeBelow (run v s).store (.full r) (run v s).head := by
-    intro s hlo hs hP v hv
+    intro s hlo hs' hP v hv
+    have hs : s ≤ finSlot E₁ := Nat.le_trans hs' hhi
     have hQ := hset.base v hv s hlo hs
     have hinv := hQ.slotInv hw (hset.fields.nodeOk v hv) hcol
     by_cases hfirst : s = raceLo rb
     · subst hfirst
-      have hnf := hset.first v hv
+      have hnf := hfirst v hv
       rcases NodeBelow.pending_split _ r _ hQ.setting.1 hQ.setting.2 with h | h
       · exact ⟨h, hnf⟩
       · exact absurd h hnf
@@ -474,7 +558,8 @@ theorem heads_avoid_full_window {Node : Type} {honest : Node → Prop}
       have hahead := hset.fields.weightAhead hw hset.base hcol v hv s hlos hs hOk
         (hcount hlos) hP
       obtain ⟨jb, hjb, hjle⟩ := hOk.justified
-      obtain ⟨havoid, hbelow⟩ := getHead_run_below_empty _ r hahead hQ.viable
+      obtain ⟨havoid, hbelow⟩ := getHead_run_below_empty _ r hahead
+        (hviable s hlos hs' hP v hv ⟨jb, hjb, hjle⟩)
         (hinv.justified_not_below hQ.block hjb hjle) _ s' _ hrun
       exact ⟨hbelow hQ.setting.1 hQ.setting.2, havoid⟩
     · -- The justified block is past `rb`: it is on the EMPTY side.
@@ -483,7 +568,7 @@ theorem heads_avoid_full_window {Node : Type} {honest : Node → Prop}
       exact ⟨NodeBelow.trans _ _ _ _ hj hhead,
         below_emptySide_not_full _ hinv.slots r rb hQ.block _ _ hj hhead⟩
   -- The induction over the slots of the window.
-  have hall : ∀ s, s ≤ finSlot E₁ + 1 → ∀ u, honest u → ∀ t, raceLo rb ≤ t → t < s →
+  have hall : ∀ s, s ≤ hi + 1 → ∀ u, honest u → ∀ t, raceLo rb ≤ t → t < s →
       NodeBelow (run u t).store (.empty r) (run u t).head := by
     intro s
     induction s with
@@ -499,13 +584,30 @@ theorem heads_avoid_full_window {Node : Type} {honest : Node → Prop}
   exact hstep t hlo ht (hall t (by omega)) v hv
 
 include hw in
+/-- **The window.** `heads_avoid_full_upto` at the last slot of the window. -/
+theorem heads_avoid_full_window {Node : Type} {honest : Node → Prop}
+    {node : Node → NodeRun map} {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock}
+    {A : BeaconState} {a : BeaconBlock} {E₁ : Nat} {nodeOf : ValidatorIndex → Node}
+    {honestOf : ValidatorIndex → Bool} {committees : Nat → Nat → Array ValidatorIndex}
+    (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees)
+    (hfirst : FirstSlotAvoids honest run r rb)
+    (hviable : ViableStep honest run r rb (finSlot E₁)) :
+    RootCollision ∨ ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ finSlot E₁ →
+      NodeBelow (run v t).store (.empty r) (run v t).head ∧
+        ¬ NodeBelow (run v t).store (.full r) (run v t).head :=
+  heads_avoid_full_upto hw hset hfirst (Nat.le_refl _) hviable
+
+include hw in
 /-- **Finalization on the EMPTY side.** At the end of the window, every honest store has
 finalized `E₁` or later, on the EMPTY side of `r`, or a root collision exists. -/
 theorem honestNodes_finalize_empty {Node : Type} {honest : Node → Prop}
     {node : Node → NodeRun map} {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock}
     {A : BeaconState} {a : BeaconBlock} {E₁ : Nat} {nodeOf : ValidatorIndex → Node}
     {honestOf : ValidatorIndex → Bool} {committees : Nat → Nat → Array ValidatorIndex}
-    (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees) :
+    (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees)
+    (hfirst : FirstSlotAvoids honest run r rb) (hearly : EarlyTargets honest run r rb E₁)
+    (hnotR : FinRootNe honest run r E₁) (hchain : FinalityChain honest node run A honestOf E₁)
+    (hviable : ViableStep honest run r rb (finSlot E₁)) :
     RootCollision ∨ ∀ v, honest v →
       E₁ ≤ (run v (finSlot E₁)).store.finalizedCheckpoint.epoch.toNat ∧
       OnEmptySide (run v (finSlot E₁)).store r
@@ -518,7 +620,7 @@ theorem honestNodes_finalize_empty {Node : Type} {honest : Node → Prop}
   have hp := slotsPerEpochPos
   have hlate := hset.late
   have hbefore := hset.before
-  have hwin := (heads_avoid_full_window hw hset).resolve_left hcol
+  have hwin := (heads_avoid_full_window hw hset hfirst hviable).resolve_left hcol
   have ht : raceLo rb ≤ finSlot E₁ := by
     unfold raceLo finSlot
     have : E₁ * slotsPerEpoch ≤ (E₁ + 4) * slotsPerEpoch := Nat.mul_le_mul_right _ (by omega)
@@ -534,7 +636,7 @@ theorem honestNodes_finalize_empty {Node : Type} {honest : Node → Prop}
     omega
   -- The finalized epoch: the store received the last block of `E₁ + 3` in time.
   obtain ⟨hi, steps, st, vals, H, p, q, sb, vb, u, w, hs, hu, hstep, hlast, hep, hrecv⟩ :=
-    hset.chain
+    hchain
   obtain ⟨es1, es2, hes, hslotA⟩ := hrecv v hv
   obtain ⟨sA, arr1, arr2, h1, h2, -⟩ := hq.trace.split hes
   obtain ⟨sB, a1, a2, hsingle, hrest, -⟩ :=
@@ -550,7 +652,8 @@ theorem honestNodes_finalize_empty {Node : Type} {honest : Node → Prop}
     hrest hS
   refine ⟨hfE, ?_⟩
   -- The finalized checkpoint is justified on a chain of the store, past the base.
-  generalize hf : (run v (finSlot E₁)).store.finalizedCheckpoint = f at hfE hft ⊢
+  have hnr := hnotR v hv hfE
+  generalize hf : (run v (finSlot E₁)).store.finalizedCheckpoint = f at hfE hft hnr ⊢
   obtain ⟨k, steps', v', hrun, hpath, -, -, hfin, hsr⟩ := finalized_source hw (hf ▸ hI.fSource)
     (by rw [currentEpochOf_epochOf]; unfold anchorK at hKE; omega) hset.roots hset.cps hset.ord
     hset.sphr (hset.totals v hv _ ht ht')
@@ -585,7 +688,8 @@ theorem honestNodes_finalize_empty {Node : Type} {honest : Node → Prop}
   have hE1 : E₁ * slotsPerEpoch ≤ t' := by
     rw [← Nat.le_div_iff_mul_le hp, hdiv]
     exact hfE
-  obtain ⟨cb', hcb'', hgt⟩ := hset.early u hu t' hE1 hlt' e f.root uu uu' (by omega) hck
+  obtain ⟨cb', hcb'', hgt⟩ := hearly u hu t' hE1 hlt' (hwin u hu t' hlo' (by omega)).1 e f.root
+    uu uu' (by omega) (by omega) hnr hck
   rw [hcb'] at hcb''
   cases hcb''
   exact hgt
@@ -594,12 +698,20 @@ include hw in
 /-- **The censored payload is final.** Every honest head of the window avoids `full r`. A later
 store of an honest node extends the store of the end of the window, and it meets the totals
 premise (`StoreTotals`). Its head avoids `full r`, or there is slashing evidence, or two
-blocks or headers share a root. -/
+blocks or headers share a root.
+
+The theorem takes the first slot (`hfirst`), the early targets (`hearly`), the finalized root
+(`hnotR`), the finality chain (`hchain`) and the viability step (`hviable`) as premises.
+`censored_payload_final_carrier` (`ViableHonest.lean`) proves them from the honest inclusion
+list, the carrier chain and the delivery of its last block of `E₁ + 3`. -/
 theorem censored_payload_final {Node : Type} {honest : Node → Prop}
     {node : Node → NodeRun map} {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock}
     {A : BeaconState} {a : BeaconBlock} {E₁ : Nat} {nodeOf : ValidatorIndex → Node}
     {honestOf : ValidatorIndex → Bool} {committees : Nat → Nat → Array ValidatorIndex}
-    (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees) :
+    (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees)
+    (hfirst : FirstSlotAvoids honest run r rb) (hearly : EarlyTargets honest run r rb E₁)
+    (hnotR : FinRootNe honest run r E₁) (hchain : FinalityChain honest node run A honestOf E₁)
+    (hviable : ViableStep honest run r rb (finSlot E₁)) :
     RootCollision ∨
       ((∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ finSlot E₁ →
           ¬ NodeBelow (run v t).store (.full r) (run v t).head) ∧
@@ -626,7 +738,7 @@ theorem censored_payload_final {Node : Type} {honest : Node → Prop}
   by_cases hcol : RootCollision
   · exact Or.inl hcol
   refine Or.inr ⟨fun v hv t h1 h2 =>
-    ((heads_avoid_full_window hw hset).resolve_left hcol v hv t h1 h2).2, ?_⟩
+    ((heads_avoid_full_window hw hset hfirst hviable).resolve_left hcol v hv t h1 h2).2, ?_⟩
   intro v hv es arr s' h2 hev hsr hbase htot' runner t head hhead
   have hp := slotsPerEpochPos
   have hlate := hset.late
@@ -642,7 +754,8 @@ theorem censored_payload_final {Node : Type} {honest : Node → Prop}
   have hself : a.parentRoot ≠ htr a := ha ▸ hn.anchorSelf
   have haslot : a.slot ≤ rb.slot := ha ▸ hn.anchorSlot
   obtain ⟨hI, -, -, -, -⟩ := hset.storeFacts hw hcol hv ht ht'
-  obtain ⟨hfE, hside⟩ := (honestNodes_finalize_empty hw hset).resolve_left hcol v hv
+  obtain ⟨hfE, hside⟩ :=
+    (honestNodes_finalize_empty hw hset hfirst hearly hnotR hchain hviable).resolve_left hcol v hv
   -- The events of the prefix and of the later trace.
   have hevP : ∀ e, TraceEvent.handler e ∈ (run v (finSlot E₁)).events.map Prod.fst →
       e.NotAtAnchorParent a := fun e he => by

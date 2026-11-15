@@ -269,14 +269,11 @@ structure HeadRun.Held (n : NodeRun map) (q : HeadRun map) (r : Root) (rb : Beac
   block : FcMap.lookup q.store.blocks r = some rb
 
 /-- The fields of a head run of slot `t` of the node `n` that name no justified state:
-`HeadRun.Held`, the head strictly below `pending r`, and, in the viable node list, `full r`
-only with `empty r`. -/
+`HeadRun.Held`, and the head strictly below `pending r`. -/
 structure HeadRun.Base (n : NodeRun map) (q : HeadRun map) (r : Root) (rb : BeaconBlock)
     (t : Nat) : Prop extends HeadRun.Held n q r rb t where
   /-- The head is strictly below `pending r`. -/
   setting : NodeBelow q.store (.pending r) q.head ∧ q.head ≠ .pending r
-  /-- In the viable node list of the store, `full r` is there only with `empty r`. -/
-  viable : EmptyViableWithFull q.store r
 
 /-- A head run of slot `t` of the node `n` in the race: `HeadRun.Base`, a justified block no
 later than `rb`, and the uncached box of the justified state `jst`. -/
@@ -738,8 +735,9 @@ include hw in
 `r`, of slot `N`, and the window of slots `N + 1 .. hi`, under `RaceSetting.Long`. In every
 slot `s` of `(N + 1, hi]`, take the validators of `jstOf s`. Their honest balance that has
 voted in `[N + 1, s)` is more than their adversarial balance that has voted there, plus the
-proposer score of `jstOf s`. Then every honest head of the window lies below `empty r` and
-not below `full r`, or a root collision exists.
+proposer score of `jstOf s`. In every slot `s` after the first, `empty r` is viable beside
+`full r` once the honest heads before `s` lie below `empty r` (`hviable`). Then every honest head
+of the window lies below `empty r` and not below `full r`, or a root collision exists.
 
 The proof is the induction of `race_empty_persists`. The first slot is
 `RaceSetting.Long.first` with `NodeBelow.pending_split`. A later slot applies
@@ -753,7 +751,11 @@ theorem race_empty_persists_long {Node : Type} {honest : Node → Prop}
       advVoted (raceValidators (pureState (jstOf s)) honestOf (committeeVotes committees))
           (raceLo rb) s + proposerScoreOf (pureState (jstOf s))
         < honestVoted (raceValidators (pureState (jstOf s)) honestOf
-          (committeeVotes committees)) (raceLo rb) s) :
+          (committeeVotes committees)) (raceLo rb) s)
+    (hviable : ∀ s, raceLo rb < s → s ≤ hi →
+      (∀ u, honest u → ∀ t, raceLo rb ≤ t → t < s →
+        NodeBelow (run u t).store (.empty r) (run u t).head) →
+      ∀ v, honest v → EmptyViableWithFull (run v s).store r) :
     RootCollision ∨ ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi →
       NodeBelow (run v t).store (.empty r) (run v t).head ∧
         ¬ NodeBelow (run v t).store (.full r) (run v t).head := by
@@ -780,8 +782,8 @@ theorem race_empty_persists_long {Node : Type} {honest : Node → Prop}
       have hinv := hQ.slotInv hw (hset.nodeOk v hv) hcol
       obtain ⟨jb, hjb, hjle⟩ := hQ.justified
       obtain ⟨s', hrun⟩ := hQ.headRun
-      obtain ⟨havoid, hbelow⟩ := getHead_run_below_empty _ r hahead hQ.viable
-        (hinv.justified_not_below hQ.block hjb hjle) _ s' _ hrun
+      obtain ⟨havoid, hbelow⟩ := getHead_run_below_empty _ r hahead
+        (hviable s hlos hs hP v hv) (hinv.justified_not_below hQ.block hjb hjle) _ s' _ hrun
       exact ⟨hbelow hQ.setting.1 hQ.setting.2, havoid⟩
   -- The induction over the slots of the window.
   have hall : ∀ s, s ≤ hi + 1 → ∀ u, honest u → ∀ t, raceLo rb ≤ t → t < s →
@@ -817,11 +819,15 @@ theorem race_empty_persists_exec {Node : Type} {honest : Node → Prop}
       advVoted (raceValidators (pureState jst) honestOf (committeeVotes committees)) (raceLo rb) s
         + proposerScoreOf (pureState jst)
         < honestVoted (raceValidators (pureState jst) honestOf (committeeVotes committees))
-          (raceLo rb) s) :
+          (raceLo rb) s)
+    (hviable : ∀ s, raceLo rb < s → s ≤ hi →
+      (∀ u, honest u → ∀ t, raceLo rb ≤ t → t < s →
+        NodeBelow (run u t).store (.empty r) (run u t).head) →
+      ∀ v, honest v → EmptyViableWithFull (run v s).store r) :
     RootCollision ∨ ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi →
       NodeBelow (run v t).store (.empty r) (run v t).head ∧
         ¬ NodeBelow (run v t).store (.full r) (run v t).head :=
-  race_empty_persists_long hw hset.toLong hcount
+  race_empty_persists_long hw hset.toLong hcount hviable
 
 end Race
 

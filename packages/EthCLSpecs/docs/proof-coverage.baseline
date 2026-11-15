@@ -106,6 +106,7 @@ tier1 EthCLSpecs.Heze.getTotalBalance
 tier1 EthCLSpecs.Heze.getUnslashedParticipatingIndices
 tier1 EthCLSpecs.Heze.getValidatorFromDeposit
 tier1 EthCLSpecs.Heze.getValidatorsSweepWithdrawals
+tier1 EthCLSpecs.Heze.getVotingSource
 tier1 EthCLSpecs.Heze.getWeight
 tier1 EthCLSpecs.Heze.hasCompoundingWithdrawalCredential
 tier1 EthCLSpecs.Heze.hasEth1WithdrawalCredential

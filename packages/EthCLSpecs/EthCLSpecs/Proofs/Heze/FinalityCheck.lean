@@ -7,8 +7,9 @@ import EthCLSpecs.Proofs.Heze.RaceCheck
 `censored_payload_final` (`FinalizationLiveness.lean`) takes `FinalitySetting`. Its premises
 quantify over the store runs of honest stores, the runs of a chain, and the head runs of a
 window. A concrete execution needs a computation for each one. This module gives the checks,
-and the lemmas that turn a passing check into a premise. `Tests/HezeFinalityWitness.lean` and
-`Tests/HezeAccountableWitness.lean` run them.
+and the lemmas that turn a passing check into a premise. `WindowCheck.lean` adds the checks of
+`CarrierWindow`. `Tests/HezeFinalityWitness.lean` and `Tests/HezeAccountableWitness.lean` run
+them.
 
 ## Store runs
 
@@ -27,13 +28,11 @@ before it as its parent root, and the roots of the anchor and the blocks of `W` 
 - A vote on a store run is a vote of a block of `W` (`RunVote.data_mem`). A check over the votes
   of `W` gives `honestVotes` (`honestVotes_of_check`).
 
-## Checkpoint blocks
+## Node walks
 
-`getCheckpointBlock` reads only its store argument (`getCheckpointBlock_run_transfer`). At an
-epoch whose first slot is at or after the block, it returns the block itself
-(`getCheckpointBlock_run_self`). At an epoch whose first slot does not fit in `uint64`, it
-raises. So a check over the epochs up to the one after the head block gives `early`
-(`early_of_check`).
+A walk up the node tree from a head lists its ancestors (`ancestorsB`). A node of the walk is
+above the head (`below_of_mem_ancestorsB`), and a complete walk lists every node above it
+(`mem_ancestorsB_of_below`).
 
 ## Slashing evidence
 
@@ -551,113 +550,12 @@ theorem mem_ancestorsB_of_below {store : Store map} {anc n : ForkChoiceNode}
 
 end Walk
 
-/-! ## Runs that read only the store argument -/
+/-! ## The start slot of an epoch -/
 
 section Transfer
-variable {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
+variable [Preset]
 
-open EthCLLib.Proofs (run_bind run_pure run_bind_eq_ok run_pure_eq_ok except_bind_ok
-  run_liftErr_of_ok run_liftErr_of_error)
-open EthCLSpecs.Heze (ForkChoiceNode getCheckpointBlock getAncestor)
 open EthCLSpecs.Heze.Const (slotsPerEpoch)
-
-/-- A loop whose steps ignore the runner state ignores it too. -/
-theorem fuelLoop_run_transfer {σ ε β α : Type} (step : β → StateT σ (Except ε) (Step β α))
-    (hstep : ∀ b x (s s' : σ), (step b).run s = .ok (x, s') → ∀ u, (step b).run u = .ok (x, u)) :
-    ∀ (fuel : Nat) (init : β) (exhausted : α) (s s' : σ) (a : α),
-      (fuelLoop fuel init exhausted step).run s = .ok (a, s') →
-      ∀ u, (fuelLoop fuel init exhausted step).run u = .ok (a, u) := by
-  intro fuel
-  induction fuel with
-  | zero =>
-    intro init exhausted s s' a h u
-    simp only [fuelLoop] at h ⊢
-    rw [run_pure_eq_ok _ _ _ _ h]
-    rfl
-  | succ fuel ih =>
-    intro init exhausted s s' a h u
-    simp only [fuelLoop] at h ⊢
-    obtain ⟨x, s1, hx, h⟩ := run_bind_eq_ok _ _ _ _ h
-    rw [run_bind, hstep init x s s1 hx u, except_bind_ok]
-    cases x with
-    | done a' =>
-      simp only at h ⊢
-      rw [run_pure_eq_ok _ _ _ _ h]
-      rfl
-    | next b => exact ih b exhausted s1 s' a h u
-
-/-- A step of the ancestor walk ignores the runner state. -/
-theorem ancStep_run_transfer (store : Store map) (slot : EthCLSpecs.Heze.Slot)
-    (n : ForkChoiceNode) (x : Step ForkChoiceNode ForkChoiceNode) (s s' : Store map)
-    (h : (ancStep store slot n).run s = .ok (x, s')) (u : Store map) :
-    (ancStep store slot n).run u = .ok (x, u) := by
-  unfold ancStep at h ⊢
-  cases hb : FcMap.lookup store.blocks n.root with
-  | none =>
-    simp only [FcMap.getOrThrow, FcMap.getOrThrowKey, hb] at h
-    cases h
-  | some b =>
-    simp only [FcMap.getOrThrow, FcMap.getOrThrowKey, hb, pure_bind] at h ⊢
-    split at h
-    · rename_i hgt
-      rw [ite_eq_left hgt]
-      obtain ⟨ps, s1, hps, h⟩ := run_bind_eq_ok _ _ _ _ h
-      obtain ⟨pb, hpb⟩ := getParentPayloadStatus_run_parent store s s1 b ps hps
-      rw [run_bind, getParentPayloadStatus_run_transfer store store b pb hpb hpb hps u,
-        except_bind_ok, run_pure_eq_ok _ _ _ _ h]
-      rfl
-    · rename_i hle
-      rw [ite_eq_right hle, run_pure_eq_ok _ _ _ _ h]
-      rfl
-
-/-- A successful `liftErr` ignores the runner state. -/
-theorem liftErr_run_transfer {σ ε' ε α : Type} [ErrorConv ε' ε] {x : Except ε' α} {s s' : σ}
-    {a : α} (h : (liftErr (m := StateT σ (Except ε)) (E := ε') (F := ε) x).run s = .ok (a, s'))
-    (u : σ) : (liftErr (m := StateT σ (Except ε)) (E := ε') (F := ε) x).run u = .ok (a, u) := by
-  cases x with
-  | error e =>
-    rw [run_liftErr_of_error _ s rfl] at h
-    cases h
-  | ok y =>
-    rw [run_liftErr_of_ok _ s rfl] at h
-    cases h
-    exact run_liftErr_of_ok _ u rfl
-
-/-- **`getCheckpointBlock` ignores the runner state.** It reads only its store argument. The
-checked start slot of the epoch keeps the state, and so does the walk. -/
-theorem getCheckpointBlock_run_transfer (store : Store map) (root : Root)
-    (e : EthCLSpecs.Heze.Epoch) {c : Root} {s s' : Store map}
-    (h : (getCheckpointBlock (StoreTransition := ForkChoiceStoreRun (Store map)) store root
-      e).run s = .ok (c, s')) (u : Store map) :
-    (getCheckpointBlock (StoreTransition := ForkChoiceStoreRun (Store map)) store root e).run u
-      = .ok (c, u) := by
-  simp only [getCheckpointBlock, getAncestor_eq_fuelLoop] at h ⊢
-  obtain ⟨m, s1, hm, h⟩ := run_bind_eq_ok _ _ _ _ h
-  obtain ⟨n, s2, hn, h⟩ := run_bind_eq_ok _ _ _ _ h
-  rw [run_bind, liftErr_run_transfer hm u, except_bind_ok, run_bind,
-    fuelLoop_run_transfer _ (ancStep_run_transfer store _) _ _ _ s1 s2 n hn u,
-    except_bind_ok, run_pure_eq_ok _ _ _ _ h]
-  rfl
-
-/-- **At an epoch whose first slot is no earlier than the block, the checkpoint block is the
-block itself.** The first slot `e * SLOTS_PER_EPOCH` fits in `uint64`, so the checked start
-slot succeeds. The walk then stops at its first step. -/
-theorem getCheckpointBlock_run_self (store : Store map) (root : Root) (b : BeaconBlock)
-    (hb : FcMap.lookup store.blocks root = some b) (e : EthCLSpecs.Heze.Epoch)
-    (hfit : e.toNat * slotsPerEpoch < 2 ^ 64)
-    (hle : b.slot ≤ e * UInt64.ofNat slotsPerEpoch) (u : Store map) :
-    (getCheckpointBlock (StoreTransition := ForkChoiceStoreRun (Store map)) store root e).run u
-      = .ok (root, u) := by
-  have hl : (liftErr (m := ForkChoiceStoreRun (Store map))
-      (EthCLSpecs.Heze.computeStartSlotAtEpoch e :
-        Except StateTransitionError EthCLSpecs.Heze.Slot)).run u
-      = .ok (e * UInt64.ofNat slotsPerEpoch, u) :=
-    run_liftErr_of_ok _ u (by rw [computeStartSlotAtEpoch_ok_of_lt hfit]; rfl)
-  unfold getCheckpointBlock
-  simp only [run_bind, hl, except_bind_ok, getAncestor_eq_fuelLoop, fuelLoop, ancStep,
-    FcMap.getOrThrow, FcMap.getOrThrowKey, hb, ForkChoiceNode.pending, pure_bind, gt_iff_lt,
-    UInt64.not_lt.mpr hle, ite_false]
-  rfl
 
 /-- When `e * SLOTS_PER_EPOCH` does not fit in `uint64`, `compute_start_slot_at_epoch(e)`
 raises. A product that wraps does not give back `SLOTS_PER_EPOCH` when divided by `e`. -/
@@ -685,76 +583,6 @@ theorem computeStartSlotAtEpoch_not_ok_of_ge {e : EthCLSpecs.Heze.Epoch}
     have hdm := Nat.div_mul_le_self (e.toNat * slotsPerEpoch % 2 ^ 64) e.toNat
     rw [hrec', Nat.mul_comm] at hdm
     omega
-
-/-- Every checkpoint block of `root` from epoch `E₁` on is later than `rb`. The block of
-`root` is later than `rb`. Each epoch from `E₁` to the epoch after the block passes the walk
-or raises. -/
-def earlyB (st : Store map) (root : Root) (rb : BeaconBlock) (E₁ : Nat) : Bool :=
-  match FcMap.lookup st.blocks root with
-  | some hb =>
-    decide (rb.slot < hb.slot) &&
-    (List.range' E₁ (hb.slot.toNat / slotsPerEpoch + 2 - E₁)).all fun e =>
-      match (getCheckpointBlock (StoreTransition := ForkChoiceStoreRun (Store map)) st root
-          (UInt64.ofNat e)).run st with
-      | .ok (c, _) =>
-        match FcMap.lookup st.blocks c with
-        | some cb => decide (rb.slot < cb.slot)
-        | none => false
-      | .error _ => true
-  | none => false
-
-/-- **`earlyB` gives the conclusion of `FinalitySetting.early`.** The walk ignores the runner
-state, so the check at the store covers every run. An epoch up to the one after the block is
-in the range of the check. A later epoch whose first slot fits in `uint64` has the block
-itself as its checkpoint block (`getCheckpointBlock_run_self`). At a later epoch whose first
-slot does not fit, the start slot raises, and no run succeeds. -/
-theorem early_of_check {st : Store map} {root : Root} {rb : BeaconBlock} {E₁ : Nat}
-    (h : earlyB st root rb E₁ = true) {e : EthCLSpecs.Heze.Epoch} {c : Root} {u u' : Store map}
-    (he : E₁ ≤ e.toNat)
-    (hrun : (getCheckpointBlock (StoreTransition := ForkChoiceStoreRun (Store map)) st root
-      e).run u = .ok (c, u')) :
-    ∃ cb, FcMap.lookup st.blocks c = some cb ∧ rb.slot < cb.slot := by
-  unfold earlyB at h
-  split at h
-  · rename_i hb hlook
-    rw [Bool.and_eq_true, decide_eq_true_eq] at h
-    obtain ⟨hrb, hall⟩ := h
-    have hst := getCheckpointBlock_run_transfer st root e hrun st
-    by_cases hk : e.toNat ≤ hb.slot.toNat / slotsPerEpoch + 1
-    · have hm : e.toNat ∈ List.range' E₁ (hb.slot.toNat / slotsPerEpoch + 2 - E₁) :=
-        List.mem_range'_1.mpr ⟨he, by omega⟩
-      have hchk := List.all_eq_true.mp hall _ hm
-      rw [UInt64.ofNat_toNat, hst] at hchk
-      simp only at hchk
-      split at hchk
-      · rename_i cb hcb
-        exact ⟨cb, hcb, of_decide_eq_true hchk⟩
-      · cases hchk
-    · by_cases hfit : e.toNat * slotsPerEpoch < 2 ^ 64
-      · have hle : hb.slot ≤ e * UInt64.ofNat slotsPerEpoch := by
-          have hn : (UInt64.ofNat slotsPerEpoch).toNat = slotsPerEpoch :=
-            UInt64.toNat_ofNat_of_lt EthCLSpecs.Heze.Const.slotsPerEpochLt
-          rw [UInt64.le_iff_toNat_le, UInt64.toNat_mul, hn, Nat.mod_eq_of_lt hfit]
-          have h1 := Nat.lt_mul_div_succ hb.slot.toNat EthCLSpecs.Heze.Const.slotsPerEpochPos
-          have h2 : slotsPerEpoch * (hb.slot.toNat / slotsPerEpoch + 1) ≤
-              slotsPerEpoch * e.toNat := Nat.mul_le_mul_left _ (by omega)
-          rw [Nat.mul_comm e.toNat]
-          omega
-        rw [getCheckpointBlock_run_self st root hb hlook e hfit hle u] at hrun
-        injection hrun with hrun
-        injection hrun with hc
-        subst hc
-        exact ⟨hb, hlook, hrb⟩
-      · exfalso
-        simp only [getCheckpointBlock] at hrun
-        obtain ⟨m, s1, hm, -⟩ := run_bind_eq_ok _ _ _ _ hrun
-        cases hx : (EthCLSpecs.Heze.computeStartSlotAtEpoch e :
-            Except StateTransitionError EthCLSpecs.Heze.Slot) with
-        | error err =>
-          rw [hx] at hm
-          cases hm
-        | ok y => exact computeStartSlotAtEpoch_not_ok_of_ge (by omega) hx
-  · cases h
 
 end Transfer
 
@@ -867,6 +695,12 @@ def baseB (q : HeadRun map) (r : Root) (rb : BeaconBlock) (t fuel : Nat) : Bool 
   emptyViableWithFullB q.store r &&
   decide (FcMap.lookup q.store.blocks r = some rb)
 
+/-- `baseB` checks that `empty r` is viable beside `full r` in the store of the run. -/
+theorem EmptyViableWithFull.of_baseB {q : HeadRun map} {r : Root} {rb : BeaconBlock}
+    {t fuel : Nat} (h : baseB q r rb t fuel = true) : EmptyViableWithFull q.store r := by
+  simp only [baseB, Bool.and_eq_true] at h
+  exact EmptyViableWithFull.of_check _ _ h.1.2
+
 /-- **`baseB` and the run of the prefix give `HeadRun.Base`.** The walk lists `pending r`, so
 `pending r` is an ancestor of the head (`below_of_mem_ancestorsB`). -/
 theorem HeadRun.Base.of_check {n : NodeRun map} {q : HeadRun map} {r : Root} {rb : BeaconBlock}
@@ -875,10 +709,9 @@ theorem HeadRun.Base.of_check {n : NodeRun map} {q : HeadRun map} {r : Root} {rb
     (h : baseB q r rb t fuel = true) : q.Base n r rb t := by
   simp only [baseB, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.all_eq_true,
     Bool.not_eq_true'] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨hwall, htime⟩, hslot⟩, hhd⟩, hanc⟩, hne⟩, hviable⟩, hblock⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨hwall, htime⟩, hslot⟩, hhd⟩, hanc⟩, hne⟩, -⟩, hblock⟩ := h
   refine ⟨⟨⟨hpre, NodeTrace.of_runTrace hrun, hwall, htime, ?_, ?_⟩, hblock⟩,
-    ⟨below_of_mem_ancestorsB fuel q.head (nodeIn_iff.mp hanc), fun he => ?_⟩,
-    EmptyViableWithFull.of_check _ _ hviable⟩
+    ⟨below_of_mem_ancestorsB fuel q.head (nodeIn_iff.mp hanc), fun he => ?_⟩⟩
   · split at hslot
     · rename_i cs s' hcs
       have := getCurrentSlot_run_self _ _ _ _ hcs
@@ -894,22 +727,6 @@ theorem HeadRun.Base.of_check {n : NodeRun map} {q : HeadRun map} {r : Root} {rb
       nodeIn_iff.mpr (List.mem_singleton.mpr he.symm)
     rw [this] at hne
     cases hne
-
-/-- The walk from `head` ends within `fuel` steps and does not list `x`. -/
-def notBelowB (store : Store map) (fuel : Nat) (x head : ForkChoiceNode) : Bool :=
-  walkDone store fuel head && !nodeIn (ancestorsB store fuel head) x
-
-omit [CryptoBackend] [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
-  [DataAvailability] in
-/-- **`notBelowB` rules out `x` below `head`.** A complete walk lists every ancestor
-(`mem_ancestorsB_of_below`). -/
-theorem not_below_of_check {store : Store map} {fuel : Nat} {x head : ForkChoiceNode}
-    (h : notBelowB store fuel x head = true) : ¬ NodeBelow store x head := by
-  simp only [notBelowB, Bool.and_eq_true, Bool.not_eq_true'] at h
-  intro hb
-  have := nodeIn_iff.mpr (mem_ancestorsB_of_below hb fuel h.1)
-  rw [this] at h
-  cases h.2
 
 end Heads
 
@@ -1084,65 +901,6 @@ theorem PlacedVote.of_check {W : List ChainStep} {A : BeaconState} {L : List Bea
         hidx', Array.contains_iff_mem.mp hidx, blockRootOf_run hroot, hcw, hx⟩
     · cases hidx
   · cases hat
-
-/-- A state that weighs one of the three epochs after `E₁`: the last slot of `E₁ + 1`,
-`E₁ + 2`, or `E₁ + 3`. -/
-def weighs (u : BeaconState) (E₁ : Nat) : Bool :=
-  decide ((u.slot.toNat + 1) % slotsPerEpoch = 0) &&
-    decide (E₁ + 1 ≤ u.slot.toNat / slotsPerEpoch) && decide (u.slot.toNat / slotsPerEpoch ≤ E₁ + 3)
-
-/-- At each weigh state, each validator of `honestList` has a placed vote for the previous
-epoch, and these validators hold two thirds of the total. -/
-def honestChainB (W : List ChainStep) (L : List BeaconState) (honestOf : ValidatorIndex → Bool)
-    (E₁ : Nat) : Bool :=
-  L.all fun u => !weighs u E₁ ||
-    (((honestList u honestOf (EthCLSpecs.Heze.previousEpochOf (pureState u))).all fun x =>
-        placedB W L x (EthCLSpecs.Heze.previousEpochOf (pureState u))) &&
-      decide (3 * honestStake u honestOf (EthCLSpecs.Heze.previousEpochOf (pureState u)) ≥
-        2 * (totBal u).toNat))
-
-/-- **`HonestChain` from checks over the states of `W`.** The run of `W` from `A` has the
-states `L`. Each weigh state of the window passes `honestChainB`. Every state meets
-`RunTotals`. The last state is in epoch `E₁ + 4`. -/
-theorem HonestChain.of_check
-    (hw : ∀ x y : ByteArray, (SizzLean.Hasher.combine (H := HasherTag.H) x y).size = 32)
-    {W : List ChainStep} {A : BeaconState} {L : List BeaconState}
-    {honestOf : ValidatorIndex → Bool} {E₁ : Nat} (hL : runStates (2 ^ 64 - 1) W A = some L)
-    (hval : validatedB W = true) (hroots : AnchorRoots A) (hcps : AnchorCps A)
-    (hord : StateCkptOrd A)
-    (hsphr : 2 * slotsPerEpoch ≤ EthCLSpecs.Heze.Const.slotsPerHistoricalRoot)
-    (htot : ∀ u ∈ L, RunTotals u) (hlow : 1 ≤ E₁) (hstart : epochOf A ≤ E₁)
-    (hend : (L[W.length]?).any (fun w => epochOf w == E₁ + 4) = true)
-    (hchk : honestChainB W L honestOf E₁ = true) :
-    ∃ st, HonestChain (2 ^ 64 - 1) W A st regVals honestOf E₁ := by
-  obtain ⟨st, hst, hrun⟩ := runStates_take hL W.length (Nat.le_refl _)
-  rw [List.take_length] at hrun
-  rw [hst] at hend
-  simp only [Option.any_some, beq_iff_eq] at hend
-  -- A weigh state of the window is a state of `L`, and it passes the check.
-  have hweigh : ∀ k, k < 3 → ∀ u, WeighAt (2 ^ 64 - 1) W A (E₁ + k + 1) u →
-      weighs u E₁ = true ∧ u ∈ L := by
-    intro k hk u ⟨s₁, s₂, hs, hu, hlast, hep⟩
-    refine ⟨?_, runStates_mem hL hs hu⟩
-    simp only [weighs, Bool.and_eq_true, decide_eq_true_eq]
-    omega
-  have hpass : ∀ k, k < 3 → ∀ u, WeighAt (2 ^ 64 - 1) W A (E₁ + k + 1) u →
-      (honestList u honestOf (EthCLSpecs.Heze.previousEpochOf (pureState u))).all
-          (fun x => placedB W L x (EthCLSpecs.Heze.previousEpochOf (pureState u))) = true ∧
-        3 * honestStake u honestOf (EthCLSpecs.Heze.previousEpochOf (pureState u)) ≥
-          2 * (totBal u).toNat := by
-    intro k hk u hu
-    obtain ⟨hw', hm⟩ := hweigh k hk u hu
-    have := List.all_eq_true.mp hchk u hm
-    rw [hw', Bool.not_true, Bool.false_or, Bool.and_eq_true, decide_eq_true_eq] at this
-    exact this
-  refine ⟨st, ⟨⟨hw, Nat.le_refl _, hrun, ValidatedSteps.of_check hval, hroots, hcps, hord, hsphr,
-      fun s₁ s₂ u hs hu => htot u (runStates_mem hL hs hu), regVals_nodup,
-      fun _ _ _ _ _ i _ => mem_regVals i⟩, hlow, hstart, hend, ?_, ?_⟩⟩
-  · intro k hk u hu x hx
-    exact PlacedVote.of_check hL (List.all_eq_true.mp (hpass k hk u hu).1 x hx)
-  · intro k hk u hu
-    exact (hpass k hk u hu).2
 
 /-- Each vote of a block of `W` with a slot in `[lo, hi)` targets the checkpoint block of the
 head run of its slot. `runAt` gives the head run of a slot at the node of the voter. -/
