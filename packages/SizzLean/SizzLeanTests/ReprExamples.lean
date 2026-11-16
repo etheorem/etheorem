@@ -184,6 +184,9 @@ purpose, pointing at the new wire behavior. -/
 example : (SSZ.serialize (T := BitVec 1) 1#1).size = 0 := by
   native_decide
 
+example : (SSZ.serialize (T := BitVec 1) 0#1) = (SSZ.serialize (T := BitVec 1) 1#1) := by
+  native_decide
+
 example : SSZ.hashTreeRoot SizzLean.Hasher.Sha256 (x := (1#1 : BitVec 1))
     = SSZ.hashTreeRoot SizzLean.Hasher.Sha256 (x := (0#1 : BitVec 1)) := by
   native_decide
