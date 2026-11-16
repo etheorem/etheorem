@@ -196,16 +196,30 @@ the build, proof, vector, and performance baselines have reproducible commands a
 
 ### Stage 1: SSZ packing and error prerequisites
 
-- [ ] **1.1 Classify by SSZ shape.** Replace type-name-dependent packing decisions with
+- [x] **1.1 Classify by SSZ shape.** Replace type-name-dependent packing decisions with
   shape-based classification. Handle an unresolved shape explicitly.
-- [ ] **1.2 Pin cached writes.** Use a custom wrapper in SizzLean tests. Cover lists,
+  *Done 2026-11-16, commit `66910e0`: the `sszUpdate` classifier reads the element's
+  `SSZRepr` shape; an unresolved shape is a compile error; `SSZRepr (BitVec 1)` added for
+  the shape-reading classifier with its degenerate width-1 codec pinned.*
+- [x] **1.2 Pin cached writes.** Use a custom wrapper in SizzLean tests. Cover lists,
   vectors, chunk boundaries, repeated writes, and a root cached before the write.
   Compare serialization and cached roots with the updated plain value.
-- [ ] **1.3 Preserve typed causes.** Define the arithmetic causes and their state/store
+  *Done 2026-11-16, commit `66910e0`: `CheckedWrapperPacking.lean` over `Wrapper64`
+  (independent of EthCLLib), root and serialization checked separately; the module fails
+  under the reverted name-based classifier (stale-root symptom observed verbatim).*
+- [x] **1.3 Preserve typed causes.** Define the arithmetic causes and their state/store
   mappings. Distinguish range failures from zero division where the runner catches
   `ValueError`. Recheck list-limit errors against `eth-ssz-specs` 0.1.0.
-- [ ] **1.4 Test runner classification.** Cover pure, state, nested state, and store
+  *Done 2026-11-16, commit `8ee9edb`: `ArithCause` (range / zeroDivision) with the
+  `.zeroDivision` reject constructor; the 0.1.0 recheck found list-limit faults are
+  `ValueError`-class (`SSZValueError` / pydantic `ValidationError`), so `.valueError`
+  admits `.listFull` and rejects `.zeroDivision`; Heze's empty-committee site re-labeled
+  with unchanged raise behavior.*
+- [x] **1.4 Test runner classification.** Cover pure, state, nested state, and store
   paths, including index errors and failed-state disposal. Keep decoding errors separate.
+  *Done 2026-11-16, commit `8ee9edb`: `ErrorClassify.lean` pins the admits table,
+  classify rows, the four lift paths for both causes, failed-state disposal in both
+  columns, and decode separation.*
 
 **Done when:** `lake build SizzLeanTests`, framework tests, the full build, project
 checks, and smoke vectors pass. No fork numeric alias has changed yet. The cache test
