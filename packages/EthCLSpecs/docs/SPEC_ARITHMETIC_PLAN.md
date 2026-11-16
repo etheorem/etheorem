@@ -188,7 +188,8 @@ against the pinned source. Record build costs. Stage-specific sweeps add to this
   *Done 2026-11-16 at `58ba389`: cold `lake build EthCLSpecs` 6m52s/607 jobs, no-op 0.5s,
   incremental 2m58s; coverage 78 claims (19 characterized, 58 touched of 625), no
   forbidden axioms; smoke and the full matrix at both presets match the spike's `main`
-  counts case-for-case; profile medians 273.8ms `stateRoot`, 617.9ms `runBlocks`.
+  counts count-for-count (per-case logs retained for minimal); profile medians 273.8ms
+  `stateRoot`, 617.9ms `runBlocks`.
   Working record `mb/spec-arithmetic-implementation/baselines.md` (untracked).*
 **Done when:** every current consensus arithmetic site has an assigned migration stage;
 the build, proof, vector, and performance baselines have reproducible commands and results.
