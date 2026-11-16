@@ -12,6 +12,8 @@ import EthCLLib.Tests.CLUintArith
 import EthCLLib.Tests.CLIntArith
 import EthCLLib.Tests.CLTotalArith
 import EthCLLib.Tests.CLArithLaws
+import EthCLLib.Tests.CLCheckedElab
+import EthCLLib.Tests.CLIndex
 
 /-!
 # `EthCLLib.Tests`: framework self-tests

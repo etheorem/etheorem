@@ -19,8 +19,9 @@ never branches on them.
 
 This module is the semantic core. It holds instances and definitions alone, so
 the proof modules import it without any authoring elaborator. Stage 3 owns the
-operator surface and the lift into the transition monads (`SPEC_ARITHMETIC.md`
-§4.4).
+operator surface (`Spec/Elab.lean`, the scoped elaborator) and the lift into
+the transition monads, which this module carries beside the fault type
+(`SPEC_ARITHMETIC.md` §4.4).
 -/
 
 set_option autoImplicit false
@@ -92,5 +93,40 @@ instance {α : Type} [DecidableEq α] : DecidableEq (Checked α) :=
       decidable_of_iff (x = y)
         (⟨fun h => by rw [h], fun h => Except.error.inj h⟩ :
           (x = y) ↔ (Except.error x = Except.error y))
+
+/-! ## The lift into the machine monads (`SPEC_ARITHMETIC.md` §4.4)
+
+A spec body binds a checked expression with `←` in any machine monad, so the
+fault needs one route into each machine's error channel. The route preserves
+the typed cause: a `.range` fault becomes `.arithmetic` (an `SSZValueError`, a
+Python `ValueError`, at the pin) and a `.zeroDivision` fault becomes
+`.zeroDivision` (a bare `ZeroDivisionError`), so the runner's caught sets keep
+the two apart without reading text. The `op` field is the reject's diagnostic
+payload, the same convention `throwArithmetic` uses. -/
+
+/-- The machine reject an arithmetic fault becomes. The constructor follows the
+fault's `cause`, so the reference exception class survives every lift
+(`SPEC_ARITHMETIC.md` §4.4); `op` is the diagnostic payload, never branched on. -/
+@[inline] def StateTransitionError.ofArithFault (e : ArithFault) : StateTransitionError :=
+  match e.cause with
+  | .range        => .arithmetic e.op
+  | .zeroDivision => .zeroDivision e.op
+
+/-- The conversion keeps the fault's own cause: the cause a fault carried on
+the `Checked` side is the cause its reject carries on the machine side. -/
+theorem StateTransitionError.ofArithFault_arithCause (e : ArithFault) :
+    (StateTransitionError.ofArithFault e).arithCause = some e.cause := by
+  cases e with
+  | mk c _ _ _ _ => cases c <;> rfl
+
+/-- The one lift (`SPEC_ARITHMETIC.md` §4.4): any monad whose error accepts a
+`StateTransitionError` takes an arithmetic expression under `←`. The state
+machine takes the fault directly (identity conversion) and the store machine
+wraps it as a nested state reject, so one definition serves both, exactly as
+`sszGetIdx` does for `IndexError`. The lift moves the whole expression's
+fault, so it changes no operand type. -/
+instance {m : Type → Type} {E : Type} [Monad m] [MonadExcept E m]
+    [ErrorConv StateTransitionError E] : MonadLift (Except ArithFault) m where
+  monadLift x := liftErr (x.mapError StateTransitionError.ofArithFault)
 
 end EthCLLib.Spec
