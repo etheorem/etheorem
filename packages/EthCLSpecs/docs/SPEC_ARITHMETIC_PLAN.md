@@ -174,13 +174,22 @@ against the pinned source. Record build costs. Stage-specific sweeps add to this
 
 ### Stage 0: complete inventory and baselines
 
-- [ ] **0.1 Inventory the full scope.** Enumerate numeric aliases, bare words, constants,
+- [x] **0.1 Inventory the full scope.** Enumerate numeric aliases, bare words, constants,
   configuration fields, casts, indexing, and operators in all `EthCLSpecs` consensus
   code. Include `ColumnIndex` and `CellIndex`, beyond the spike's unit list. Record
   numeric kind, width, consumers, fork inheritance, and the stage that migrates each item.
-- [ ] **0.2 Capture fresh baselines.** Run the build, proof checks, full vector matrix,
+  *Done 2026-11-16: ~400 operator sites, ~230 cast sites, ~200 index sites, ~110 constants,
+  and 10 numeric aliases inventoried with kind, consumers, inheritance, and stage;
+  zero unassigned. Working record `mb/spec-arithmetic-implementation/inventory.md`
+  (untracked); the stage rollup and counts land in `IMPLEMENTATION_NOTES.md` at Stage 10.*
+- [x] **0.2 Capture fresh baselines.** Run the build, proof checks, full vector matrix,
   and profile. Keep the spike numbers as historical evidence. Record case identities,
   axioms, and reproducible cold, no-op, and incremental timings.
+  *Done 2026-11-16 at `58ba389`: cold `lake build EthCLSpecs` 6m52s/607 jobs, no-op 0.5s,
+  incremental 2m58s; coverage 78 claims (19 characterized, 58 touched of 625), no
+  forbidden axioms; smoke and the full matrix at both presets match the spike's `main`
+  counts case-for-case; profile medians 273.8ms `stateRoot`, 617.9ms `runBlocks`.
+  Working record `mb/spec-arithmetic-implementation/baselines.md` (untracked).*
 **Done when:** every current consensus arithmetic site has an assigned migration stage;
 the build, proof, vector, and performance baselines have reproducible commands and results.
 
