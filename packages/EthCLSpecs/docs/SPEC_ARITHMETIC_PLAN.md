@@ -227,23 +227,40 @@ reproduces the spike's stale-root failure if shape classification is reverted.
 
 ### Stage 2: checked arithmetic core and proof interface
 
-- [ ] **2.1 Build safe construction.** Implement private wrappers, checked casts,
+- [x] **2.1 Build safe construction.** Implement private wrappers, checked casts,
   proof-carrying constructors, safe literals, and SSZ representation laws. Test direct
   `OfNat`, aliases, delayed expected types, and imports without the authoring scope.
   Use `toPlainNat` for `Nat` results, `toCLInt` for `CLInt` results, and `toCLUint64?`
   for checked conversions to `CLUint64`. Reserve `toPlainInt` for Lean `Int` results.
   Apply these names when re-authoring the spike code and its proof lemmas.
-- [ ] **2.2 Implement the operation matrix.** Cover `CLUint64` and `CLInt` arithmetic,
+  *Done 2026-11-16, commit `cf9110b`: `Checked.lean`/`CLUint.lean`/`CLInt.lean`;
+  kernel-checked `OfNat` literal gates (`NeZero` premise, numeral key); settled
+  conversion names throughout; out-of-range literals fail synthesis, errors recorded.*
+- [x] **2.2 Implement the operation matrix.** Cover `CLUint64` and `CLInt` arithmetic,
   mixed operands, intermediate overflow, and Python floor division.
   Implement 8-bit construction and the operations required by flags. Add wider
   framework operations identified by Stage 0 before their consumers migrate.
-- [ ] **2.3 Implement total routes.** Add proof-carrying positive divisors, total
+  *Done 2026-11-16, commit `cf9110b`: full matrix with tests; `CLUint32`/`CLUint256`
+  not built, Stage 0 shows no arithmetic consumer at those widths (codec only,
+  Stage 8 audits); 8-bit carries the flag surface with the index-8 mask raise.*
+- [x] **2.3 Implement total routes.** Add proof-carrying positive divisors, total
   same-width bitwise operations, and right shifts with nonnegative counts. Checked
   power and left shift use bounded overflow decisions with proofs.
-- [ ] **2.4 Prove the reusable laws.** Supply success/value lemmas, checked-chain and
+  *Done 2026-11-16, commit `fd9a965`: `Spec/CLTotal.lean`; bounded decisions proved
+  against the unbounded definitions; the mixed plain-left/checked-count route stays
+  checked, pinned.*
+- [x] **2.4 Prove the reusable laws.** Supply success/value lemmas, checked-chain and
   fold laws, conversion laws, and lift laws. Provide a focused simp set and audit axioms.
-- [ ] **2.5 Check the pinned oracle.** Exercise both operand orders, zero and maximum
+  *Done 2026-11-16, commit `fd9a965`: `Proofs/CLUint.lean`/`Proofs/CLInt.lean`;
+  `simp_arith` closes a depth-3 chain in one call (pin included); axiom audit within
+  `propext`/`Classical.choice`/`Quot.sound`; no `native_decide` in any lemma.*
+- [x] **2.5 Check the pinned oracle.** Exercise both operand orders, zero and maximum
   values, negative `CLInt` operands, narrowing, and every supported width boundary.
+  *Done 2026-11-16, lead-run oracle session: all operator edges match the implemented
+  matrix; the adjudicated constant-kind uncertainties resolved (record
+  `oracle-stage2.md`, inventory header note): every probed preset/config/`## Constants`
+  value is checked-typed at the pin; `~Uint64(x)` demotes to plain; the Gloas payment
+  pair is `Uint64(6)`/`Uint64(10)`, satisfying the Stage 4.1 oracle gate.*
 
 **Done when:** semantic and proof modules build independently of authoring elaborators;
 the operation matrix has tests and laws; no unsafe literal route exists; the full
