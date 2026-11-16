@@ -34,7 +34,7 @@ Re-exports:
   box helpers `pureState` and `runPure` and their lemmas.
 * `EthCLLib.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine runner
   every fork's fork-choice proofs pin at that fork's `Store`, and the
-  store-specific `throwArithmetic_run` equation.
+  store-specific `throwArithmetic_run` / `throwZeroDivision_run` equations.
 * `EthCLLib.Proofs.KeepsUncached`: the box-flavour predicates (`KeepsUncached`,
   `KeepsUncachedFrom`, `ReturnsUncached`, `RunPassesP`), their closure and loop
   lemmas, the indexed-read run equations, and the conditional bind law

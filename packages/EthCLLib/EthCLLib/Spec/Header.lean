@@ -177,7 +177,8 @@ def elabForkChoiceSection : CommandElab := fun stx => do
 
 /-- `appendState f v`: the spec's `state.f.append(v)`. It appends `v` to the threaded
 state's list field `f`, or raises the `.listFull` fault when the list is at its limit, as
-remerkleable's `List.append` does. The expansion reads the state and runs SizzLean's
+`eth-ssz-specs` 0.1.0's `List.append` does (`SSZValueError`, a `ValueError`). The expansion
+reads the state and runs SizzLean's
 `sszAppend?` on it. `some` of the updated state goes back through the per-fork
 `modifyState` (a use-site identifier, resolved to the running fork's). `none` becomes
 `throwListFull`.
@@ -230,8 +231,9 @@ universe u
 
 /-- `sszOfArrayM field a`: the spec's `List[T, N](a)`, for an array whose size depends on
 the input. It returns the list when `a` fits under the limit `cap`, the one the expected
-type fixes. Otherwise it raises the `.listFull` fault, as remerkleable's `List`
-constructor raises a bare `Exception` on too many elements. `field` names the list,
+type fixes. Otherwise it raises the `.listFull` fault, as `eth-ssz-specs` 0.1.0's `List`
+constructor raises pydantic's `ValidationError` (a `ValueError` subclass) on too many
+elements. `field` names the list,
 diagnostic only. The `[ErrorConv StateTransitionError E]` bound lets one definition serve
 both machines. An array of fixed size uses the proof-carrying `sszOfArray` instead. -/
 @[inline] def sszOfArrayM {m : Type → Type u} {α E : Type} {cap : Nat} [Monad m]

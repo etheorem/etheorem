@@ -223,12 +223,12 @@ forkdef isInclusionListBitsInclusive (store : InclusionListStore map)
 `slot` in committee-index order, then take the first `INCLUSION_LIST_COMMITTEE_SIZE` members
 cyclically (`cyclicSample`, in `Heze/Committees.lean`). Relocated from the beacon-state accessors
 into this store-throwing block beside its caller `on_inclusion_list`: the spec's
-`indices[i % len(indices)]` raises `ZeroDivisionError` when the slot has no committee members.
-That is an uncaught fault (the reference runner catches only `AssertionError` / `IndexError`), so
-the empty case throws `.transition (.arithmetic …)` (an `uncaughtFault`, not an expected rejection)
-rather than a caught `.assert`, matching how `balanceAfterWithdrawals` models the sibling `uint64`
-fault, and rather than silently sampling a `default`. `state` stays an explicit parameter (the
-accessor reads `state`, not the store). -/
+`indices[i % len(indices)]` raises a bare `ZeroDivisionError` when the slot has no committee
+members. That is the `.zeroDivision` cause, uncaught under every reference wrapper (`AssertionError`
+/ `IndexError` / `ValueError` all miss it), so the empty case throws
+`.transition (.zeroDivision …)` (an `uncaughtFault`, not an expected rejection) rather than a
+caught `.assert`, and rather than silently sampling a `default`. `state` stays an explicit
+parameter (the accessor reads `state`, not the store). -/
 forkdef getInclusionListCommittee (state : State) (slot : Slot) :
     StoreTransition (Vector ValidatorIndex Const.inclusionListCommitteeSize) := do
   let epoch := computeEpochAtSlot slot
@@ -236,7 +236,7 @@ forkdef getInclusionListCommittee (state : State) (slot : Slot) :
   let indices := (Array.range committeesPerSlot).foldl
     (fun acc i => acc ++ getBeaconCommittee state slot i) (#[] : Array ValidatorIndex)
   if indices.size == 0 then
-    throwArithmetic "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"
+    throwZeroDivision "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"
   pure (cyclicSample indices Const.inclusionListCommitteeSize)
 
 end

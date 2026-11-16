@@ -24,16 +24,16 @@ live in `EthCLLib/Proofs/Run.lean`. The same module pins the box on the state si
 state-transition theorem states its run on `pureState v`, the uncached box, and that
 `.run` fact is what the nested-machine bridge consumes unchanged. This file keeps the
 `ForkChoiceStoreRun` abbreviation
-and the store-specific `throwArithmetic_run` equation: `throwArithmetic` lifts a
-`StateTransitionError` that the store machine wraps as `.transition`, so the
-generic `run_throw` does not apply.
+and the store-specific `throwArithmetic_run` / `throwZeroDivision_run` equations:
+`throwArithmetic` and `throwZeroDivision` lift a `StateTransitionError` that the store
+machine wraps as `.transition`, so the generic `run_throw` does not apply.
 -/
 
 set_option autoImplicit false
 
 namespace EthCLLib.Proofs
 
-open EthCLLib.Spec (StoreTransitionError throwArithmetic)
+open EthCLLib.Spec (StoreTransitionError throwArithmetic throwZeroDivision)
 
 /-- Pure runner for fork-choice store proofs: `StateT` over `Except`, threading an
 arbitrary store state `σ` and rejecting with `StoreTransitionError`.
@@ -54,6 +54,17 @@ theorem ForkChoiceStoreRun.throwArithmetic_run {σ α : Type}
         (E := StoreTransitionError)
         descr : ForkChoiceStoreRun σ α).run s
       = .error (.transition (.arithmetic descr)) :=
+  rfl
+
+/-- `.run` of `throwZeroDivision` at `ForkChoiceStoreRun`, the zero-divisor class's store-side
+wrap. Same shape as `throwArithmetic_run`; only the constructor differs. -/
+theorem ForkChoiceStoreRun.throwZeroDivision_run {σ α : Type}
+    (descr : String) (s : σ) :
+    (throwZeroDivision
+        (m := ForkChoiceStoreRun σ)
+        (E := StoreTransitionError)
+        descr : ForkChoiceStoreRun σ α).run s
+      = .error (.transition (.zeroDivision descr)) :=
   rfl
 
 end EthCLLib.Proofs

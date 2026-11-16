@@ -28,9 +28,10 @@ wrap-around index arithmetic is unit-checkable without building a whole `BeaconS
 `xs.getD … default` is total via `[Inhabited α]`; the sole caller (`getInclusionListCommittee`
 in `Heze/ForkChoice.lean`) rejects an empty committee before reaching here, so on every path
 `xs` is non-empty, `i % xs.size < xs.size`, and `getD` always returns a real element. That
-guard is an `.arithmetic` throw, not an `assert`: the spec's `i % len(indices)` raises
+guard is a `.zeroDivision` throw, not an `assert`: the spec's `i % len(indices)` raises a bare
 `ZeroDivisionError` on an empty committee, an uncaught fault the reference runner propagates
-rather than catching, so it can never be a vector's expected rejection. -/
+rather than catching (no wrapper's class set holds it), so it can never be a vector's expected
+rejection. -/
 def cyclicSample {α : Type} [Inhabited α] (xs : Array α) (n : Nat) : Vector α n :=
   Vector.ofFn (fun i : Fin n => xs.getD (i.val % xs.size) default)
 

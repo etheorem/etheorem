@@ -49,7 +49,8 @@ variable [HasherTag]
 
 /-- Complete `.run` equation of `getInclusionListCommittee`. The concatenated
 indices expression is the one in the source. An empty array throws the
-empty-committee arithmetic error. A nonempty array returns `cyclicSample` of
+empty-committee zero-division error (a bare `ZeroDivisionError` at the pin, its own
+`ArithCause` class). A nonempty array returns `cyclicSample` of
 that array and leaves the runner state unchanged. The committee accessor does
 not read the runner state, so the equation holds for an arbitrary `σ`. -/
 @[characterizes EthCLSpecs.Heze.getInclusionListCommittee]
@@ -62,14 +63,14 @@ theorem getInclusionListCommittee_run_eq :
       (getInclusionListCommittee
           (StoreTransition := ForkChoiceStoreRun σ) (pureState state) slot).run runnerStore =
         if indices.size == 0 then
-          .error (.transition (.arithmetic
+          .error (.transition (.zeroDivision
             "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"))
         else
           .ok (cyclicSample indices inclusionListCommitteeSize, runnerStore) := by
   intro state slot runnerStore
   simp only [getInclusionListCommittee]
   split
-  · rw [run_bind, ForkChoiceStoreRun.throwArithmetic_run]
+  · rw [run_bind, ForkChoiceStoreRun.throwZeroDivision_run]
     exact except_bind_error _ _
   · rw [run_pure]
 
@@ -81,7 +82,7 @@ theorem getInclusionListCommittee_run_error_of_empty
         (#[] : Array ValidatorIndex)).size = 0) :
     (getInclusionListCommittee
         (StoreTransition := ForkChoiceStoreRun σ) (pureState state) slot).run runnerStore
-      = .error (.transition (.arithmetic
+      = .error (.transition (.zeroDivision
           "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee")) := by
   simp only [getInclusionListCommittee_run_eq, h, beq_iff_eq, ite_true]
 
