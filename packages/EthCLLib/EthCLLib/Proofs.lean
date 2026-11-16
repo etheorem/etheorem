@@ -1,4 +1,6 @@
 import EthCLLib.Proofs.Arith
+import EthCLLib.Proofs.CLInt
+import EthCLLib.Proofs.CLUint
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
@@ -28,6 +30,9 @@ Re-exports:
   `FcMap.contains_insert_self`), with `instLawfulFcMapTreeMap` and
   `instLawfulFcMapHashMap`.
 * `EthCLLib.Proofs.MerkleBranch`: what `isValidMerkleBranch` accepts.
+* `EthCLLib.Proofs.CLUint` / `EthCLLib.Proofs.CLInt`: the checked-arithmetic
+  law library, the `simp_arith` chain set, the checked-fold law, and the
+  conversion round-trips (`SPEC_ARITHMETIC.md` §4.9).
 * `EthCLLib.Proofs.Run`: the `StateT`-over-`Except` run facts every pure runner
   shares (`run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
   `except_bind_error`, the `ofExcept` and `liftErr` run equations), plus the pure

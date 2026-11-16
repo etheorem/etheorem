@@ -38,12 +38,16 @@ keep the two apart without reading text.
 diagnostic only: they name the site in a vector-mismatch report and are never
 branched on. `rhs` is `0` where the operator reads one operand (a cast or a
 narrowing); the operands are the values the operator computed on, before any
-range test. -/
+range test. `width` is the checked width the route computed at: `64` for a
+`CLUint64` route, `8` for a `CLUint8` one, and `0` for a `CLInt` route. The
+plain kind has no bound. -/
 structure ArithFault where
   /-- The reference exception class of the raise. -/
   cause : ArithCause
   /-- The operator, diagnostic only. -/
   op : String
+  /-- The checked width of the route, diagnostic only. `0` for the plain kind. -/
+  width : Nat
   /-- The left operand the operator computed on, diagnostic only. -/
   lhs : Int
   /-- The right operand, diagnostic only. `0` where the operator reads one
@@ -54,14 +58,15 @@ structure ArithFault where
 namespace ArithFault
 
 /-- A result outside the target range, or a failed cast or narrowing. `op` names
-the operator or the cast; `a` and `b` are its operands, diagnostic only. -/
-def range (op : String) (a b : Int) : ArithFault :=
-  ⟨.range, op, a, b⟩
+the operator or the cast, `w` is the checked width; `a` and `b` are its
+operands, diagnostic only. -/
+def range (op : String) (w : Nat) (a b : Int) : ArithFault :=
+  ⟨.range, op, w, a, b⟩
 
-/-- A `//` or `%` by zero. `op` is `"//"` or `"%"`; `a` is the dividend,
-diagnostic only. -/
-def zeroDivisor (op : String) (a : Int) : ArithFault :=
-  ⟨.zeroDivision, op, a, 0⟩
+/-- A `//` or `%` by zero. `op` is `"//"` or `"%"`, `w` is the checked width;
+`a` is the dividend, diagnostic only. -/
+def zeroDivisor (op : String) (w : Nat) (a : Int) : ArithFault :=
+  ⟨.zeroDivision, op, w, a, 0⟩
 
 end ArithFault
 

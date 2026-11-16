@@ -2,6 +2,7 @@ import EthCLLib.Spec.Errors
 import EthCLLib.Spec.Checked
 import EthCLLib.Spec.CLUint
 import EthCLLib.Spec.CLInt
+import EthCLLib.Spec.CLTotal
 import EthCLLib.Spec.Hasher
 import EthCLLib.Spec.State
 import EthCLLib.Spec.Arith

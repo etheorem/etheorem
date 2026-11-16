@@ -39,8 +39,8 @@ example : ((7 : CLInt) / (-2 : CLInt) : Checked CLInt) = .ok (-4) := by decide
 example : ((7 : CLInt) % (-2 : CLInt) : Checked CLInt) = .ok (-1) := by decide
 example : (((-7 : CLInt)) / 2 : Checked CLInt) = .ok (-4) := by decide
 example : (((-7 : CLInt)) % 2 : Checked CLInt) = .ok 1 := by decide
-example : ((1 : CLInt) / 0 : Checked CLInt) = .error (.zeroDivisor "//" 1) := by decide
-example : ((1 : CLInt) % 0 : Checked CLInt) = .error (.zeroDivisor "%" 1) := by decide
+example : ((1 : CLInt) / 0 : Checked CLInt) = .error (.zeroDivisor "//" 0 1) := by decide
+example : ((1 : CLInt) % 0 : Checked CLInt) = .error (.zeroDivisor "%" 0 1) := by decide
 
 /-! ## `Nat, I` in either order: the `Nat` coerces (§4.2) -/
 
@@ -52,8 +52,8 @@ example : (((3 : Nat) * (4 : CLInt)) : CLInt) = 12 := by decide
 example : (((3 : CLInt) * (4 : Nat)) : CLInt) = 12 := by decide
 example : (((7 : Nat) / (2 : CLInt)) : Checked CLInt) = .ok 3 := by decide
 example : (((7 : CLInt) / (2 : Nat)) : Checked CLInt) = .ok 3 := by decide
-example : (((1 : Nat) % (0 : CLInt)) : Checked CLInt) = .error (.zeroDivisor "%" 1) := by decide
-example : (((1 : CLInt) % (0 : Nat)) : Checked CLInt) = .error (.zeroDivisor "%" 1) := by decide
+example : (((1 : Nat) % (0 : CLInt)) : Checked CLInt) = .error (.zeroDivisor "%" 0 1) := by decide
+example : (((1 : CLInt) % (0 : Nat)) : Checked CLInt) = .error (.zeroDivisor "%" 0 1) := by decide
 
 /-! ## Literal divisors of both signs on `/ %` -/
 
@@ -64,8 +64,8 @@ example : ((7 : CLInt) % (-2 : Int) : Checked CLInt) = .ok (-1) := by decide
 
 example : ((pure ((2 : CLInt) + 3 + 4) : Checked CLInt)) = .ok 9 := by decide
 example : (((7 : CLInt) / 2) / 2 : Checked CLInt) = .ok 1 := by decide
-example : (((1 : CLInt) / 0) + 4 : Checked CLInt) = .error (.zeroDivisor "//" 1) := by decide
-example : ((2 : CLInt) + ((1 : CLInt) / 0) : Checked CLInt) = .error (.zeroDivisor "//" 1) := by decide
+example : (((1 : CLInt) / 0) + 4 : Checked CLInt) = .error (.zeroDivisor "//" 0 1) := by decide
+example : ((2 : CLInt) + ((1 : CLInt) / 0) : Checked CLInt) = .error (.zeroDivisor "//" 0 1) := by decide
 
 /-! ## Comparisons are total (§5.2) -/
 
@@ -90,7 +90,7 @@ operand first: `Uint64(0) * (2**64)` succeeds with zero.
 example : (((3 : CLInt) + (4 : CLUint64)) : Checked CLUint64) = .ok 7 := by decide
 example : (((4 : CLUint64) + (3 : CLInt)) : Checked CLUint64) = .ok 7 := by decide
 example : (((3 : CLUint64) - (5 : CLInt)) : Checked CLUint64) =
-    .error (.range "-" 3 5) := by decide
+    .error (.range "-" 64 3 5) := by decide
 example : (((2 : Nat) * (3 : CLInt) * (4 : CLUint64)) : Checked CLUint64) = .ok 24 := by decide
 example : (((0 : CLUint64) * (18446744073709551616 : Nat) : Checked CLUint64)) = .ok 0 := by
   decide
@@ -101,18 +101,25 @@ example : (((18446744073709551616 : Nat) * (0 : CLUint64)) : Checked CLUint64) =
   decide
 -- The range fault records the original operands.
 example : (((18446744073709551616 : CLInt) * (1 : CLUint64)) : Checked CLUint64) =
-    .error (.range "*" 18446744073709551616 1) := by decide
+    .error (.range "*" 64 18446744073709551616 1) := by decide
 example : (((7 : CLInt) / (0 : CLUint64)) : Checked CLUint64) =
-    .error (.zeroDivisor "//" 7) := by decide
+    .error (.zeroDivisor "//" 64 7) := by decide
 example : (((7 : CLUint64) / (0 : CLInt)) : Checked CLUint64) =
-    .error (.zeroDivisor "//" 7) := by decide
+    .error (.zeroDivisor "//" 64 7) := by decide
+-- A fault raised inside the signed operand passes through the mixed route
+-- unchanged, from either side: the payload keeps the signed route's width
+-- and dividend.
+example : ((((1 : CLInt) / 0) * (4 : CLUint64)) : Checked CLUint64) =
+    .error (.zeroDivisor "//" 0 1) := by decide
+example : (((4 : CLUint64) * ((1 : CLInt) / 0)) : Checked CLUint64) =
+    .error (.zeroDivisor "//" 0 1) := by decide
 -- The `/` and `%` of the mixed routes floor as Python does, so a negative
 -- divisor drives the result negative and the range test raises, where a
 -- truncating route would succeed with a small value.
 example : (((1 : CLUint64) / (-2 : CLInt)) : Checked CLUint64) =
-    .error (.range "//" 1 (-2)) := by decide
+    .error (.range "//" 64 1 (-2)) := by decide
 example : (((7 : CLUint64) % (-2 : CLInt)) : Checked CLUint64) =
-    .error (.range "%" 7 (-2)) := by decide
+    .error (.range "%" 64 7 (-2)) := by decide
 example : (((0 : CLUint64) / (-2 : CLInt)) : Checked CLUint64) = .ok 0 := by decide
 example : (((0 : CLUint64) % (-2 : CLInt)) : Checked CLUint64) = .ok 0 := by decide
 
@@ -122,8 +129,8 @@ example : ((7 : CLUint64).toCLInt) = 7 := by decide
 example : ((7 : CLUint8).toCLInt) = 7 := by decide
 example : ((7 : CLInt).toCLUint64?) = .ok 7 := by decide
 example : ((18446744073709551616 : CLInt).toCLUint64?) =
-    .error (.range "Uint64()" 18446744073709551616 0) := by decide
-example : (((-1 : CLInt)).toCLUint64?) = .error (.range "Uint64()" (-1) 0) := by decide
+    .error (.range "Uint64()" 64 18446744073709551616 0) := by decide
+example : (((-1 : CLInt)).toCLUint64?) = .error (.range "Uint64()" 64 (-1) 0) := by decide
 example : (CLUint64.ofCLInt? (7 : CLInt)) = .ok 7 := by decide
 
 end EthCLLib.Tests.CLIntArith

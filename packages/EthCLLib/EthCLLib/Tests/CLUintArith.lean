@@ -44,22 +44,22 @@ example : ((2 : CLUint64) + 3 : Checked CLUint64) = .ok 5 := by decide
 example : ((5 : CLUint64) - 2 : Checked CLUint64) = .ok 3 := by decide
 example : ((3 : CLUint64) * 4 : Checked CLUint64) = .ok 12 := by decide
 -- `max + 1` raises; the raise records both operands in order.
-example : (maxValue + 1 : Checked CLUint64) = .error (.range "+" 18446744073709551615 1) := by decide
+example : (maxValue + 1 : Checked CLUint64) = .error (.range "+" 64 18446744073709551615 1) := by decide
 -- `1 + max` raises too; the pyspec tests it from the right as well.
 example : ((1 : CLUint64) + maxValue : Checked CLUint64) =
-    .error (.range "+" 1 18446744073709551615) := by decide
+    .error (.range "+" 64 1 18446744073709551615) := by decide
 -- `0 - 1` raises.
-example : ((0 : CLUint64) - 1 : Checked CLUint64) = .error (.range "-" 0 1) := by decide
+example : ((0 : CLUint64) - 1 : Checked CLUint64) = .error (.range "-" 64 0 1) := by decide
 -- `2^63 * 2` raises.
 example : (halfMax * 2 : Checked CLUint64) =
-    .error (.range "*" 9223372036854775808 2) := by decide
+    .error (.range "*" 64 9223372036854775808 2) := by decide
 
 /-! ## `U, U` on `/ %`: the zero divisor is the only raise (§3.2) -/
 
 example : ((7 : CLUint64) / 2 : Checked CLUint64) = .ok 3 := by decide
 example : ((7 : CLUint64) % 2 : Checked CLUint64) = .ok 1 := by decide
-example : ((1 : CLUint64) / 0 : Checked CLUint64) = .error (.zeroDivisor "//" 1) := by decide
-example : ((1 : CLUint64) % 0 : Checked CLUint64) = .error (.zeroDivisor "%" 1) := by decide
+example : ((1 : CLUint64) / 0 : Checked CLUint64) = .error (.zeroDivisor "//" 64 1) := by decide
+example : ((1 : CLUint64) % 0 : Checked CLUint64) = .error (.zeroDivisor "%" 64 1) := by decide
 
 /-! ## A `Nat` operand on each side (§4.2 row `Nat, U`)
 
@@ -70,30 +70,30 @@ value raises on the range test alone; nothing narrows first.
 
 example : (((2 : Nat) + (3 : CLUint64)) : Checked CLUint64) = .ok 5 := by decide
 example : ((maxValue + (1 : Nat)) : Checked CLUint64) =
-    .error (.range "+" 18446744073709551615 1) := by decide
+    .error (.range "+" 64 18446744073709551615 1) := by decide
 example : (((3 : CLUint64) + (2 : Nat)) : Checked CLUint64) = .ok 5 := by decide
 example : ((maxValue + 18446744073709551616 : Checked CLUint64)) =
-    .error (.range "+" 18446744073709551615 18446744073709551616) := by decide
+    .error (.range "+" 64 18446744073709551615 18446744073709551616) := by decide
 
 example : (((5 : Nat) - (2 : CLUint64)) : Checked CLUint64) = .ok 3 := by decide
-example : (((2 : Nat) - (5 : CLUint64)) : Checked CLUint64) = .error (.range "-" 2 5) := by decide
+example : (((2 : Nat) - (5 : CLUint64)) : Checked CLUint64) = .error (.range "-" 64 2 5) := by decide
 example : (((5 : CLUint64) - (2 : Nat)) : Checked CLUint64) = .ok 3 := by decide
-example : (((2 : CLUint64) - (5 : Nat)) : Checked CLUint64) = .error (.range "-" 2 5) := by decide
+example : (((2 : CLUint64) - (5 : Nat)) : Checked CLUint64) = .error (.range "-" 64 2 5) := by decide
 
 example : (((3 : Nat) * (4 : CLUint64)) : Checked CLUint64) = .ok 12 := by decide
 example : (((3 : CLUint64) * (4 : Nat)) : Checked CLUint64) = .ok 12 := by decide
 example : ((halfMax * (2 : Nat)) : Checked CLUint64) =
-    .error (.range "*" 9223372036854775808 2) := by decide
+    .error (.range "*" 64 9223372036854775808 2) := by decide
 
 example : (((7 : Nat) / (2 : CLUint64)) : Checked CLUint64) = .ok 3 := by decide
 example : (((7 : CLUint64) / (2 : Nat)) : Checked CLUint64) = .ok 3 := by decide
-example : (((1 : Nat) / (0 : CLUint64)) : Checked CLUint64) = .error (.zeroDivisor "//" 1) := by decide
-example : (((1 : CLUint64) / (0 : Nat)) : Checked CLUint64) = .error (.zeroDivisor "//" 1) := by decide
+example : (((1 : Nat) / (0 : CLUint64)) : Checked CLUint64) = .error (.zeroDivisor "//" 64 1) := by decide
+example : (((1 : CLUint64) / (0 : Nat)) : Checked CLUint64) = .error (.zeroDivisor "//" 64 1) := by decide
 
 example : (((7 : Nat) % (2 : CLUint64)) : Checked CLUint64) = .ok 1 := by decide
 example : (((7 : CLUint64) % (2 : Nat)) : Checked CLUint64) = .ok 1 := by decide
-example : (((1 : Nat) % (0 : CLUint64)) : Checked CLUint64) = .error (.zeroDivisor "%" 1) := by decide
-example : (((1 : CLUint64) % (0 : Nat)) : Checked CLUint64) = .error (.zeroDivisor "%" 1) := by decide
+example : (((1 : Nat) % (0 : CLUint64)) : Checked CLUint64) = .error (.zeroDivisor "%" 64 1) := by decide
+example : (((1 : CLUint64) % (0 : Nat)) : Checked CLUint64) = .error (.zeroDivisor "%" 64 1) := by decide
 
 /-! ## The no-narrow rule (§4.2)
 
@@ -104,7 +104,7 @@ would be the cast raise.
 
 example : (((0 : CLUint64) * (18446744073709551616 : Nat) : Checked CLUint64)) = .ok 0 := by decide
 example : ((halfMax * (2 : Nat) : Checked CLUint64)) =
-    .error (.range "*" 9223372036854775808 2) := by decide
+    .error (.range "*" 64 9223372036854775808 2) := by decide
 
 /-! ## A `Checked` operand on each side (§4.2 row `Checked` operand)
 
@@ -117,18 +117,18 @@ example : (((2 : CLUint64) + 3) + 4 : Checked CLUint64) = .ok 9 := by decide
 example : (((7 : CLUint64) / 2) / 2 : Checked CLUint64) = .ok 1 := by decide
 -- A fault on the left stays.
 example : ((maxValue + 1) + 4 : Checked CLUint64) =
-    .error (.range "+" 18446744073709551615 1) := by decide
+    .error (.range "+" 64 18446744073709551615 1) := by decide
 example : ((maxValue + 1) / 2 : Checked CLUint64) =
-    .error (.range "+" 18446744073709551615 1) := by decide
+    .error (.range "+" 64 18446744073709551615 1) := by decide
 -- A fault on the right passes through the left value.
 example : ((2 : CLUint64) + (maxValue + 1) : Checked CLUint64) =
-    .error (.range "+" 18446744073709551615 1) := by decide
+    .error (.range "+" 64 18446744073709551615 1) := by decide
 -- Both operands fault: the left fault passes first.
 example : ((maxValue + 1) + (0 - (1 : CLUint64)) : Checked CLUint64) =
-    .error (.range "+" 18446744073709551615 1) := by decide
+    .error (.range "+" 64 18446744073709551615 1) := by decide
 -- A `Checked` right operand keeps its own zero divisor.
 example : ((7 : CLUint64) / (Except.ok (0 : CLUint64) : Checked CLUint64) : Checked CLUint64) =
-    .error (.zeroDivisor "//" 7) := by decide
+    .error (.zeroDivisor "//" 64 7) := by decide
 
 /-! ## Comparisons are total and return a `Bool` (§5.1) -/
 
@@ -150,12 +150,12 @@ example : ((7 : CLUint64).toPlainNat) = 7 := by decide
 example : ((7 : CLUint64).toCLInt) = 7 := by decide
 example : (CLUint64.ofNat? 7) = .ok 7 := by decide
 example : (CLUint64.ofNat? 18446744073709551616) =
-    .error (.range "Uint64()" 18446744073709551616 0) := by decide
-example : (CLUint64.ofInt? (-1)) = .error (.range "Uint64()" (-1) 0) := by decide
+    .error (.range "Uint64()" 64 18446744073709551616 0) := by decide
+example : (CLUint64.ofInt? (-1)) = .error (.range "Uint64()" 64 (-1) 0) := by decide
 example : (CLUint64.ofCLInt? (7 : CLInt)) = .ok 7 := by decide
 example : ((7 : CLInt).toCLUint64?) = .ok 7 := by decide
 example : ((18446744073709551616 : CLInt).toCLUint64?) =
-    .error (.range "Uint64()" 18446744073709551616 0) := by decide
+    .error (.range "Uint64()" 64 18446744073709551616 0) := by decide
 example : ((7 : CLUint64).toCLInt.toCLUint64?) = .ok 7 := by decide
 example : (CLUint64.ofNatLT 7 (by decide)) = 7 := by decide
 
@@ -173,6 +173,9 @@ example : SizzLean.SSZ.serialize (200 : CLUint8) = SizzLean.SSZ.serialize (200 :
 example : SizzLean.SSZ.hashTreeRoot (H := SizzLean.Hasher.Sha256) (5 : CLUint64)
     = SizzLean.SSZ.hashTreeRoot (H := SizzLean.Hasher.Sha256) (5 : UInt64) := by
   native_decide
+example : SizzLean.SSZ.hashTreeRoot (H := SizzLean.Hasher.Sha256) (200 : CLUint8)
+    = SizzLean.SSZ.hashTreeRoot (H := SizzLean.Hasher.Sha256) (200 : UInt8) := by
+  native_decide
 
 /-! ## The `Uint8` rows behind `ParticipationFlags`
 
@@ -184,13 +187,13 @@ in-range values are total (§5.1).
 example : (CLUint8.addFlag 0 3) = .ok 8 := by decide
 example : (CLUint8.addFlag 255 0) = .ok 255 := by decide
 example : (CLUint8.addFlag 0 8) =
-    .error (.range "Uint8()" 256 0) := by decide
+    .error (.range "Uint8()" 8 256 0) := by decide
 example : (CLUint8.hasFlag 8 3) = .ok true := by decide
 example : (CLUint8.hasFlag 8 4) = .ok false := by decide
-example : (CLUint8.hasFlag 0 8) = .error (.range "Uint8()" 256 0) := by decide
+example : (CLUint8.hasFlag 0 8) = .error (.range "Uint8()" 8 256 0) := by decide
 example : ((8 : CLUint8) ||| (1 : CLUint8)) = 9 := by decide
 example : ((9 : CLUint8) &&& (1 : CLUint8)) = 1 := by decide
 example : ((200 : CLUint8).toPlainNat) = 200 := by decide
-example : (CLUint8.ofNat? 256) = .error (.range "Uint8()" 256 0) := by decide
+example : (CLUint8.ofNat? 256) = .error (.range "Uint8()" 8 256 0) := by decide
 
 end EthCLLib.Tests.CLUintArith

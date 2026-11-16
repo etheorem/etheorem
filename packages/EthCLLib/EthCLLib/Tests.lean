@@ -10,6 +10,8 @@ import EthCLLib.Tests.PreambleSection
 import EthCLLib.Tests.CLUintLit
 import EthCLLib.Tests.CLUintArith
 import EthCLLib.Tests.CLIntArith
+import EthCLLib.Tests.CLTotalArith
+import EthCLLib.Tests.CLArithLaws
 
 /-!
 # `EthCLLib.Tests`: framework self-tests

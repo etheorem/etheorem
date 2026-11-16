@@ -91,13 +91,13 @@ is a site a reviewer sees (`SPEC_ARITHMETIC.md` §5.6). -/
 itself is `Int.fdiv` (`SPEC_ARITHMETIC.md` §5.2: `7 // -2 = -4`,
 `-7 // 2 = -4`). -/
 @[inline] def fdiv (a b : CLInt) : Checked CLInt :=
-  if b.val = 0 then .error (ArithFault.zeroDivisor "//" a.val)
+  if b.val = 0 then .error (ArithFault.zeroDivisor "//" 0 a.val)
   else .ok ⟨Int.fdiv a.val b.val⟩
 
 /-- `a % b`: Python's `%`, the sign of the divisor. Raises on a zero divisor;
 the flooring is `Int.fmod` (`§5.2`: `7 % -2 = -1`, `-7 % 2 = 1`). -/
 @[inline] def fmod (a b : CLInt) : Checked CLInt :=
-  if b.val = 0 then .error (ArithFault.zeroDivisor "%" a.val)
+  if b.val = 0 then .error (ArithFault.zeroDivisor "%" 0 a.val)
   else .ok ⟨Int.fmod a.val b.val⟩
 
 /-- `len(xs)`: the pyspec's plain-integer length. The floor-division partner

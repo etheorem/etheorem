@@ -160,7 +160,7 @@ theorem ofNatLT_toPlainNat (n : Nat) (h : n < UInt64.size) :
 (`SPEC_ARITHMETIC.md` §4.5). Raises, as `.range` with the cast as the
 operator, past `2^64 - 1`. -/
 @[inline] def ofNat? (n : Nat) : Checked CLUint64 :=
-  if h : n < UInt64.size then .ok (ofNatLT n h) else .error (ArithFault.range "Uint64()" n 0)
+  if h : n < UInt64.size then .ok (ofNatLT n h) else .error (ArithFault.range "Uint64()" 64 n 0)
 
 /-- `Uint64(n)` from a signed plain `int`: the checked narrowing. Raises for a
 negative number and past `2^64 - 1`. -/
@@ -168,7 +168,7 @@ negative number and past `2^64 - 1`. -/
   if h : 0 ≤ n ∧ n < 18446744073709551616 then
     .ok (ofNatLT n.toNat (by have := h.2; show n.toNat < 18446744073709551616; omega))
   else
-    .error (ArithFault.range "Uint64()" n 0)
+    .error (ArithFault.range "Uint64()" 64 n 0)
 
 /-- The narrowing succeeds in range, with the proof-carrying value. -/
 theorem ofNat?_ok (n : Nat) (h : n < UInt64.size) :
@@ -176,13 +176,31 @@ theorem ofNat?_ok (n : Nat) (h : n < UInt64.size) :
 
 /-- The narrowing raises past the maximum, with the operands in the fault. -/
 theorem ofNat?_fault (n : Nat) (h : UInt64.size ≤ n) :
-    ofNat? n = .error (ArithFault.range "Uint64()" n 0) := by
+    ofNat? n = .error (ArithFault.range "Uint64()" 64 n 0) := by
   simp only [ofNat?, dite_eq_right (Nat.not_lt.mpr h)]
 
 /-- `saturating_sub(a, b)`: `a - b`, floored at zero. Total
 (`SPEC_ARITHMETIC.md` §3.5, §4.5). -/
 @[inline] def saturatingSub (a b : CLUint64) : CLUint64 :=
   if a > b then ⟨a.val - b.val⟩ else 0
+
+/-- `saturatingSub` reads back as the truncating `Nat` difference. -/
+theorem saturatingSub_toPlainNat (a b : CLUint64) :
+    (a.saturatingSub b).toPlainNat = a.toPlainNat - b.toPlainNat := by
+  rw [saturatingSub]
+  split
+  · rename_i h
+    show (a.val - b.val).toNat = a.toPlainNat - b.toPlainNat
+    show (a.val - b.val).toNat = a.val.toNat - b.val.toNat
+    rw [UInt64.toNat_sub_of_le _ _ (UInt64.le_of_lt h)]
+  · rename_i h
+    have hle : a.toPlainNat ≤ b.toPlainNat := by
+      have h' : ¬(b.toPlainNat < a.toPlainNat) := fun hlt =>
+        h (UInt64.lt_iff_toNat_lt.mpr hlt)
+      omega
+    show (0 : UInt64).toNat = a.toPlainNat - b.toPlainNat
+    rw [show (0 : UInt64).toNat = (0 : Nat) from rfl]
+    omega
 
 /-! ## The five operators on two checked values
 
@@ -197,7 +215,7 @@ operator computed on, diagnostic only.
 /-- Checked addition: raises past `2^64 - 1`, where the native sum would wrap. -/
 @[inline] def add (a b : CLUint64) : Checked CLUint64 :=
   if a.val + b.val < a.val then
-    .error (ArithFault.range "+" a.toPlainNat b.toPlainNat)
+    .error (ArithFault.range "+" 64 a.toPlainNat b.toPlainNat)
   else
     .ok ⟨a.val + b.val⟩
 
@@ -205,7 +223,7 @@ operator computed on, diagnostic only.
 wrap. -/
 @[inline] def sub (a b : CLUint64) : Checked CLUint64 :=
   if a.val < b.val then
-    .error (ArithFault.range "-" a.toPlainNat b.toPlainNat)
+    .error (ArithFault.range "-" 64 a.toPlainNat b.toPlainNat)
   else
     .ok ⟨a.val - b.val⟩
 
@@ -214,20 +232,20 @@ product: with `a ≠ 0`, the wrapped product divided by `a` recovers `b` exactly
 when no high bits were lost. Mirrors `checkedMul` in `Spec/Errors.lean`. -/
 @[inline] def mul (a b : CLUint64) : Checked CLUint64 :=
   if a.val != 0 && a.val * b.val / a.val != b.val then
-    .error (ArithFault.range "*" a.toPlainNat b.toPlainNat)
+    .error (ArithFault.range "*" 64 a.toPlainNat b.toPlainNat)
   else
     .ok ⟨a.val * b.val⟩
 
 /-- Checked division: raises on a zero divisor. The quotient of two in-range
 values is in range (`SPEC_ARITHMETIC.md` §3.2). -/
 @[inline] def div (a b : CLUint64) : Checked CLUint64 :=
-  if b.val == 0 then .error (ArithFault.zeroDivisor "//" a.toPlainNat)
+  if b.val == 0 then .error (ArithFault.zeroDivisor "//" 64 a.toPlainNat)
   else .ok ⟨a.val / b.val⟩
 
 /-- Checked modulo: raises on a zero divisor. The remainder of two in-range
 values is in range. -/
 @[inline] def mod (a b : CLUint64) : Checked CLUint64 :=
-  if b.val == 0 then .error (ArithFault.zeroDivisor "%" a.toPlainNat)
+  if b.val == 0 then .error (ArithFault.zeroDivisor "%" 64 a.toPlainNat)
   else .ok ⟨a.val % b.val⟩
 
 /-! ## The mixed route: a plain `int` operand on either side
@@ -251,13 +269,13 @@ names `op` with both original operands. The mixed-route engine behind the
   if h : 0 ≤ r ∧ r < 18446744073709551616 then
     .ok (ofNatLT n (by have := h.2; show n < 18446744073709551616; omega))
   else
-    .error (ArithFault.range op a b)
+    .error (ArithFault.range op 64 a b)
 
 /-- `f`, guarding the zero divisor first: Lean's `Int` division and modulo of
 `x` by `0` are defined, and the pyspec raises, so the raise comes first. -/
 @[inline] def mixBinDiv (op : String) (f : Int → Int → Int)
     (a b : Int) : Checked CLUint64 :=
-  if b = 0 then .error (ArithFault.zeroDivisor op a) else mixBin op f a b
+  if b = 0 then .error (ArithFault.zeroDivisor op 64 a) else mixBin op f a b
 
 @[inline] private def mixAdd (a b : Int) : Checked CLUint64 := mixBin "+" (· + ·) a b
 @[inline] private def mixSub (a b : Int) : Checked CLUint64 := mixBin "-" (· - ·) a b
@@ -417,7 +435,7 @@ theorem ofNatLT_toPlainNat (n : Nat) (h : n < UInt8.size) :
 /-- `Uint8(n)` from a plain `int`: the checked narrowing, the cast every
 `ParticipationFlags` construction goes through. Raises past `255`. -/
 @[inline] def ofNat? (n : Nat) : Checked CLUint8 :=
-  if h : n < UInt8.size then .ok (ofNatLT n h) else .error (ArithFault.range "Uint8()" n 0)
+  if h : n < UInt8.size then .ok (ofNatLT n h) else .error (ArithFault.range "Uint8()" 8 n 0)
 
 /-- The narrowing succeeds in range, with the proof-carrying value. -/
 theorem ofNat?_ok (n : Nat) (h : n < UInt8.size) :
@@ -425,7 +443,7 @@ theorem ofNat?_ok (n : Nat) (h : n < UInt8.size) :
 
 /-- The narrowing raises past the maximum, with the operand in the fault. -/
 theorem ofNat?_fault (n : Nat) (h : UInt8.size ≤ n) :
-    ofNat? n = .error (ArithFault.range "Uint8()" n 0) := by
+    ofNat? n = .error (ArithFault.range "Uint8()" 8 n 0) := by
   simp [ofNat?, Nat.not_lt.mpr h]
 
 /-- `|` on two in-range values: total, the `add_flag` combine
