@@ -1,6 +1,12 @@
 # Spec arithmetic transition plan
 
-Status: planned. The production transition has not started.
+Status: in progress. Stages 0 through 4 are complete and committed (inventory and
+baselines; SSZ packing and typed causes; the checked core, authoring surface, and tier
+views; `Gwei` across every fork with proofs). Each stage's task checkboxes below carry
+a one-line completion note with the commit. Stage 5 (`Epoch` and `Slot`) is running.
+Durable working records (stage reports, findings, incidents, baselines, oracle
+results) live outside git in `mb/spec-arithmetic-implementation/` and are distilled
+into the tracked records at Stage 10.
 
 This temporary plan moves the current implementation to
 [SPEC_ARITHMETIC.md](SPEC_ARITHMETIC.md). Remove this file when the final acceptance
