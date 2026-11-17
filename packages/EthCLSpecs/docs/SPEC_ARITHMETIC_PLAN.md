@@ -268,21 +268,37 @@ build and framework tests pass. Record construction and instance-synthesis costs
 
 ### Stage 3: usable authoring surface and indexing
 
-- [ ] **3.1 Settle operator elaboration on the native-backed wrappers.** Start with
+- [x] **3.1 Settle operator elaboration on the native-backed wrappers.** Start with
   explicit `Checked` result ascriptions and exercise the known difficult expressions.
   Add bounded scoped elaboration if its readability benefit warrants the implementation
   work. Preserve unrelated core terms and retain the explicit ascription fallback.
   Pin the non-literal `Nat`, prior do-bind, whole-body, lambda, and inherited-body cases.
   Record compilation costs and proceed; cost is not an acceptance threshold.
-- [ ] **3.2 Add size-aware indices.** Implement reads and writes for arrays, SSZ lists,
+  *Done 2026-11-17, commit `e76e8bf`: bounded scoped elaborator (one probe pass, one
+  real pass; postpones; never changes operand types; unrelated terms verified
+  structurally identical); the five shapes pinned, the inherited-body pin landed at
+  3.4; the finding-9 corner recorded with enforced escapes; costs in `Elab.lean`.*
+- [x] **3.2 Add size-aware indices.** Implement reads and writes for arrays, SSZ lists,
   vectors, and bit collections. Pure reads preserve `IndexError`; mixed fallible helpers
   use a common typed error channel. Test negative indices and empty collections.
-- [ ] **3.3 Check constant and tier views.** Establish checked executable values and
+  *Done 2026-11-17, commit `e76e8bf` (+`1ec1758` for progressive kinds and the
+  `ToIndex.idx?` diagnostic): negative indices count from the end, the boundary rows
+  pinned for reads and writes, index faults stay `IndexError`-class.*
+- [x] **3.3 Check constant and tier views.** Establish checked executable values and
   structural size views without duplicating constants. Test positivity premises through
   Fulu, Gloas, Heze, and a child override.
-- [ ] **3.4 Exercise authoring rules.** Compile representative state-free, state, and
+  *Done 2026-11-17, commit `d3325da`: `slotsPerEpochC`/`slotsPerEpochDiv` and
+  `churnLimitQuotientC` project the originals (no stored value); the twin rule settles
+  checked-source; `ConstantViews.lean` pins all three forks, both presets, and a
+  synthetic child override with a fresh proof; `check-constants` taught the derived
+  views (`7d95074`).*
+- [x] **3.4 Exercise authoring rules.** Compile representative state-free, state, and
   store functions. Add behavior pins for dropped faults, empty loops, and short circuits.
   Review immediate binds manually. Keep linter work in its deferred document.
+  *Done 2026-11-17, commit `1ec1758`: all three shapes compiled with minimal
+  ascriptions; discriminating bind-discipline pins (each verified to fail under its
+  named incorrect form); the inherited checked body replays through the real fork DSL;
+  no linter work (stays in `SPEC_ARITHMETIC_LINTING.md`).*
 
 **Done when:** the full build and framework tests pass; representative formulas compile
 with the documented ascription where needed; index errors retain their class; and no
