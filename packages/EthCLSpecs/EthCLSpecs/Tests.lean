@@ -1,4 +1,5 @@
 import EthCLSpecs.Tests.BoxBinderPins
+import EthCLSpecs.Tests.ConstantViews
 import EthCLSpecs.Tests.FuluForkChoicePins
 import EthCLSpecs.Tests.GloasCommitteesPins
 import EthCLSpecs.Tests.GloasForkChoicePins
@@ -19,5 +20,6 @@ The `*Pins` modules are the vectorless build gates: reject branches and helper
 values no conformance vector reaches, one module per fork body they pin. They
 were written beside the declarations they pin and moved here, since a
 `native_decide` compiled into a fork body is evaluation every consumer of that
-body carries, for a check only the build gate reads.
+body carries, for a check only the build gate reads. `ConstantViews` pins the
+derived constant views of the arithmetic layer the same way.
 -/

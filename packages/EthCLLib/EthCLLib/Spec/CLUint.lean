@@ -29,8 +29,9 @@ are:
   range proof. Framework-facing: SSZ decode helpers and preset constants.
 - `trustedOfUInt64`: the wire iso's inverse, for a raw `UInt64` the framework
   already holds. Every `UInt64` sits inside `[0, 2^64)`, so the wrap cannot
-  fault. Callers are SSZ decode and the codec only; a trusted constructor
-  never repairs an operator elaboration error (`SPEC_ARITHMETIC.md` §4.5).
+  fault. Callers are SSZ decode, config constants, and the codec's
+  proved-total raw-word writes; a trusted constructor never repairs an
+  operator elaboration error (`SPEC_ARITHMETIC.md` §4.5).
 
 ## Kernel-checked literals
 
@@ -91,8 +92,8 @@ namespace CLUint64
 /-- The wire iso's inverse: wrap a raw `UInt64`. Every `UInt64` already sits in
 `[0, 2^64)`, so the wrap cannot fault and the route needs no range test.
 
-Callers are the framework's codec sites only: SSZ decode, preset constants,
-and total bitwise writes over raw operands. A spec body builds values from
+Callers are the framework's codec sites only: SSZ decode, config
+constants, and total bitwise writes over raw operands. A spec body builds values from
 computed numbers through `ofNat?`, `ofInt?`, `ofCLInt?`, `ofNatLT`, the
 operators, or a literal. A trusted constructor never repairs an operator
 elaboration error (`SPEC_ARITHMETIC.md` §4.5). -/

@@ -101,6 +101,11 @@ inherit slotsPerEpochPos slotsPerEpochLt slotsPerHistoricalRootPos
 inherit slotsPerHistoricalRootLt epochsPerHistoricalVectorPos
 inherit epochsPerHistoricalVectorLt
 
+-- The derived checked and proved-total views of the entries above
+-- (`SPEC_ARITHMETIC.md` §4.2, §4.5). The replay binds each view to this fork's
+-- own `Preset`, so Heze's values use the same proof fields.
+inherit slotsPerEpochC slotsPerEpochDiv
+
 -- Sentinels, registry and history caps.
 inherit farFutureEpoch genesisSlot genesisEpoch validatorRegistryLimit
 inherit historicalRootsLimit pendingDepositsLimit justificationBitsLength
@@ -141,7 +146,7 @@ inherit domainBeaconProposer domainBeaconAttester domainRandao domainDeposit
 inherit domainVoluntaryExit domainSyncCommittee domainBlsToExecutionChange
 
 -- Network parameters, and the fork-choice tuning beside them.
-inherit churnLimitQuotient minPerEpochChurnLimitElectra
+inherit churnLimitQuotient churnLimitQuotientC minPerEpochChurnLimitElectra
 inherit maxPerEpochActivationExitChurnLimit minValidatorWithdrawabilityDelay
 inherit shardCommitteePeriod genesisForkVersion slotDurationMs
 inherit altairForkVersion altairForkEpoch bellatrixForkVersion bellatrixForkEpoch

@@ -21,7 +21,19 @@ with `uint64`-shaped state fields (slots, epochs, indices, balances); `Nat`
 constants feed the reward / penalty arithmetic, evaluated in `Nat` (unbounded, no
 wraparound) to match the pyspec's Python `int` exactly, narrowing back to `Gwei`
 only at the application site. A `…G` suffix marks the `Gwei` form of a value that
-also has a `Nat` form.
+also has a `Nat` form. A `…G` field is also the *stored* flavour when the pyspec
+declares the value a `Gwei`: the `Nat` twin is then a derived view in `Const`
+(`SPEC_ARITHMETIC.md` §4.2, checked constants stay checked), and the numeral
+appears once per value set.
+
+Derived views (`SPEC_ARITHMETIC.md` §4.2, §4.5): a `…C` suffix marks the
+`CLUint64` view of a tier field, proof-carrying construction over the preset's
+own `< 2 ^ 64` premise for a `Nat` structural field, the wire route for a raw
+`UInt64` config field, and a `…Div` suffix marks
+the `PositiveDivisor` view, which pairs the stored value with the preset's own
+positivity premise. No view stores a value: each body projects the original
+entry, so a child override re-proves through the tier's proof fields, and the
+tier merge carries the views like any other entry.
 
 Values are Fulu/Electra, the conformance fork this body targets. Content a later
 fork introduces lives in that fork: `Gloas/Constants.lean` owns the ePBS and
@@ -91,10 +103,12 @@ forkpreset where
   minSeedLookahead : Epoch
   minAttestationInclusionDelay : Slot
   minEpochsToInactivityPenalty : Epoch
-  -- Balance thresholds. A `…G` field is the `Gwei` form of the value its
-  -- suffix-free twin holds as a `Nat`; both flavours are preset entries because
-  -- both read the same YAML key.
-  effectiveBalanceIncrement : Nat
+  -- Balance thresholds. Both flavours read the same YAML key. The stored
+  -- flavour is the pyspec's own: `EFFECTIVE_BALANCE_INCREMENT` is a `Gwei` in
+  -- the source, so the `Gwei` field stores the value here and the suffix-free
+  -- `Nat` entry is a derived view in `Const` (`SPEC_ARITHMETIC.md` §4.2).
+  -- `maxEffectiveBalanceElectra` keeps its two fields until its retype lands
+  -- with a consumer.
   effectiveBalanceIncrementG : Gwei
   minDepositAmountG : Gwei
   minActivationBalance : Gwei
@@ -206,6 +220,24 @@ forkabbrev slotsPerHistoricalRootLt : slotsPerHistoricalRoot < 2 ^ 64 := Preset.
 forkabbrev epochsPerHistoricalVectorPos : 0 < epochsPerHistoricalVector := Preset.epochsPerHistoricalVectorPos
 forkabbrev epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64 := Preset.epochsPerHistoricalVectorLt
 
+-- The derived views of `slotsPerEpoch`, the divisor every Stage 4 / 5 epoch
+-- formula divides by. Each view stores nothing: its body projects the preset's
+-- own fields, so the numeral stays in the value set alone, an override gets a
+-- fresh proof through the same fields, and a child fork replays the view
+-- against its own `Preset`.
+/-- The checked view of `slotsPerEpoch` (`SPEC_ARITHMETIC.md` §4.2, checked
+constants stay checked; §4.5, proof-carrying construction). The range premise is
+the preset's own `slotsPerEpochLt` field, so the view adds no `decide`. -/
+forkabbrev slotsPerEpochC : CLUint64 :=
+  CLUint64.ofNatLT Preset.slotsPerEpoch Preset.slotsPerEpochLt
+/-- The proved-total divisor view of `slotsPerEpoch`
+(`SPEC_ARITHMETIC.md` §4.2, "Total operations with a proof"). Division and
+modulo of a bound `CLUint64` dividend by this view return `CLUint64` directly.
+The positivity premise is the preset's own `slotsPerEpochPos` field, so the
+view adds no `decide` and a child override re-proves through the tier. -/
+forkabbrev slotsPerEpochDiv : PositiveDivisor :=
+  ⟨Preset.slotsPerEpoch, Preset.slotsPerEpochPos⟩
+
 -- Sentinels, registry and history caps.
 forkabbrev farFutureEpoch : Epoch := 0xffffffffffffffff
 forkabbrev genesisSlot : Slot := 0
@@ -234,11 +266,17 @@ forkabbrev maxBytesPerTransaction : Nat := Preset.maxBytesPerTransaction
 forkabbrev maxTransactionsPerPayload : Nat := Preset.maxTransactionsPerPayload
 forkabbrev bytesPerLogsBloom : Nat := Preset.bytesPerLogsBloom
 -- Balance / effective-balance thresholds, in Gwei. The `G` suffix marks the
--- `Gwei` (`UInt64`) form; the letter abbreviates "Gwei". A threshold that
--- also feeds `Nat` ratio arithmetic carries a suffix-free `Nat` twin of the same
--- value, so `effectiveBalanceIncrement` and `maxEffectiveBalanceElectra` are the
--- `Nat` forms and their `…G` siblings are the `Gwei` forms.
-forkabbrev effectiveBalanceIncrement : Nat := Preset.effectiveBalanceIncrement
+-- `Gwei` (`UInt64`) form; the letter abbreviates "Gwei". `effectiveBalanceIncrement`
+-- stores its value once, in the `…G` preset field, the flavour the pyspec gives
+-- the YAML value; the suffix-free `Nat` entry is the derived view the ratio
+-- arithmetic reads. `maxEffectiveBalanceElectra` still carries both flavours as
+-- preset fields until a consumer retypes it.
+/-- `EFFECTIVE_BALANCE_INCREMENT` as the plain ratio operand, derived from the
+stored `Gwei` field (`SPEC_ARITHMETIC.md` §4.2: the pyspec's kind is checked, so
+the checked field is the source and the `Nat` form is the projection). The
+underlying-type projection is the view itself, the use §4.5 asks each site to
+cite; the tests pin the round trip at both presets. -/
+forkabbrev effectiveBalanceIncrement : Nat := Preset.effectiveBalanceIncrementG.toNat
 forkabbrev effectiveBalanceIncrementG : Gwei := Preset.effectiveBalanceIncrementG
 forkabbrev minDepositAmountG : Gwei := Preset.minDepositAmountG
 forkabbrev minActivationBalance : Gwei := Preset.minActivationBalance
@@ -294,6 +332,16 @@ forkabbrev domainBlsToExecutionChange : ByteArray := ⟨#[0x0A, 0, 0, 0]⟩
 
 -- Network parameters, and the fork-choice tuning beside them.
 forkabbrev churnLimitQuotient : UInt64 := Config.churnLimitQuotient
+/-- The checked view of `churnLimitQuotient`, the divisor Stage 4's churn
+formulas divide by (`SPEC_ARITHMETIC.md` §4.2). The config field stores the raw
+`UInt64` the YAML gives; the view re-types it through the wire iso, whose wrap
+cannot fault because every `UInt64` is already in range (§4.5,
+`trustedOfUInt64`). A configuration value keeps checked division: no
+`PositiveDivisor` view exists over a generic configuration, whose accepted
+domain alone can supply positivity (§4.2). Stage 7.3 retypes the field to the
+checked kind; this view then collapses to the identity and is deleted, not
+re-derived. -/
+forkabbrev churnLimitQuotientC : CLUint64 := CLUint64.trustedOfUInt64 Config.churnLimitQuotient
 forkabbrev minPerEpochChurnLimitElectra : Gwei := Config.minPerEpochChurnLimitElectra
 forkabbrev maxPerEpochActivationExitChurnLimit : Gwei := Config.maxPerEpochActivationExitChurnLimit
 forkabbrev minValidatorWithdrawabilityDelay : UInt64 := Config.minValidatorWithdrawabilityDelay
@@ -400,8 +448,9 @@ forkpresetvalues minimal where
   minSeedLookahead := 1
   minAttestationInclusionDelay := 1
   minEpochsToInactivityPenalty := 4
-  -- Balance thresholds.
-  effectiveBalanceIncrement := 1000000000
+  -- Balance thresholds. `effectiveBalanceIncrementG` stores its value; the
+  -- `Nat` view derives from it in `Const`, so that numeral appears once.
+  -- `maxEffectiveBalanceElectra` keeps both flavours until its retype lands.
   effectiveBalanceIncrementG := 1000000000
   minDepositAmountG := 1000000000
   minActivationBalance := 32000000000
@@ -473,8 +522,9 @@ forkpresetvalues mainnet where
   minSeedLookahead := 1
   minAttestationInclusionDelay := 1
   minEpochsToInactivityPenalty := 4
-  -- Balance thresholds.
-  effectiveBalanceIncrement := 1000000000
+  -- Balance thresholds. `effectiveBalanceIncrementG` stores its value; the
+  -- `Nat` view derives from it in `Const`, so that numeral appears once.
+  -- `maxEffectiveBalanceElectra` keeps both flavours until its retype lands.
   effectiveBalanceIncrementG := 1000000000
   minDepositAmountG := 1000000000
   minActivationBalance := 32000000000
