@@ -58,8 +58,11 @@ store whose clock has not advanced past genesis returns `0`, leaving the store a
 
 The checked `uint64` subtraction stays in range for the trivial reason: `time_ms -
 genesis_time_ms` is `0` when they are equal, so it cannot underflow, and `0 //
-SLOT_DURATION_MS` is `0` for the opaque `[Config]` divisor. `run_liftErr_of_ok` carries the
-helper's `.ok` across the lift; `simp` then discharges the guard inside it. -/
+SLOT_DURATION_MS` is `0` for the opaque `[Config]` divisor. `checkedSub` is the
+store machine's own monadic helper over the raw clock words, not a `CLUint64`
+operator, so the Stage 2.4 law library does not reach it; the clock migration is
+Stage 7. `run_liftErr_of_ok` carries the helper's `.ok` across the lift; `simp`
+then discharges the guard inside it. -/
 theorem getSlotsSinceGenesis_run_of_time_eq_genesis
     [Preset] [HasherTag] [Config] {map : MapKind} [FcMap map] :
     ∀ store : Store map,

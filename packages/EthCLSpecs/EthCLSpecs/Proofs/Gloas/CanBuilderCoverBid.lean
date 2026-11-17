@@ -19,14 +19,15 @@ default value represents a registered builder.
 Statements bind plain `BeaconState` values; the state readers and the spec
 functions receive `pureState state`, and the reads spell `state.builders[i]!`.
 
-Three theorems (task 4.2 restates the second and third through the checked-chain
-laws; these repairs keep the tree building and the tags in place):
+Three theorems:
 
 * `canBuilderCoverBid_eq`: the exact run equation, the body itself.
-* `canBuilderCoverBid_ok_iff`: under the three `Checked` steps' success hypotheses,
-  `true` is exactly the guard passing and the bid fitting the remainder.
-* `canBuilderCoverBid_ok_toNat_add_le`: the `Nat` reading of the same contract, the
-  addition-fits-in-balance form.
+* `canBuilderCoverBid_ok_iff`: under the read's success and the two range facts the checked
+  steps pose (`add_ok_iff`'s and `sub_ok_iff`'s success conditions on the plain values),
+  `true` is exactly the bid fitting the remainder, read back through `add_value` and
+  `sub_value` as one `Nat` inequality.
+* `canBuilderCoverBid_ok_toNat_add_le`: the addition-fits-in-balance form of the same
+  contract, a corollary of `canBuilderCoverBid_ok_iff`.
 -/
 
 set_option autoImplicit false
@@ -36,7 +37,7 @@ namespace EthCLSpecs.Proofs.Gloas
 open EthCLLib.Spec (HasherTag Checked)
 open EthCLSpecs.Gloas (BeaconState BuilderIndex Gwei Preset)
 open EthCLSpecs.Gloas (canBuilderCoverBid getPendingBalanceToWithdrawForBuilder)
-open EthCLLib.Proofs (pureState)
+open EthCLLib.Proofs (pureState add_ok_iff add_value sub_ok_iff sub_value)
 
 /-- **Exact run equation.** The pending sum, the reserve add, and the cover
 subtraction bind in order; the guard then picks a branch, and the else branch
@@ -55,92 +56,124 @@ theorem canBuilderCoverBid_eq [Preset] [HasherTag] :
               pure (cover ≥ bidAmount)) :=
   fun _ _ _ => rfl
 
-/-- Under the three checked steps' success hypotheses, `canBuilderCoverBid`
-answers `true` exactly when the computed `minBalance` does not exceed the
-builder's balance and the bid fits in the remainder. No claim is made that
-pending-obligation accumulation is overflow-free or that `builderIndex`
-identifies a registered builder. -/
+/-- Under the checked chain's real obligations, `canBuilderCoverBid` answers `true`
+exactly when the bid fits the remainder. The read hypothesis is the callee's own
+success. The two range facts are the `+` and `-` steps' success conditions on the
+plain values (`add_ok_iff` and `sub_ok_iff`), so they name the arithmetic the chain
+checks and no intermediate `minBalance` or `cover` value appears: the conclusion
+reads the remainder off through `add_value` and `sub_value` as one `Nat`
+inequality. No claim is made that pending-obligation accumulation is overflow-free
+or that `builderIndex` identifies a registered builder. Laws: `add_ok_iff`,
+`add_value`, `sub_ok_iff`, `sub_value`. -/
 theorem canBuilderCoverBid_ok_iff [Preset] [HasherTag] :
-    ∀ (state : BeaconState) (builderIndex : BuilderIndex) (bidAmount pending minBalance cover : Gwei),
+    ∀ (state : BeaconState) (builderIndex : BuilderIndex) (bidAmount pending : Gwei),
       getPendingBalanceToWithdrawForBuilder (pureState state) builderIndex = .ok pending →
-      ((Gloas.Const.minDepositAmountG + pending : Checked Gwei)) = .ok minBalance →
-      ((state.builders[builderIndex.toNat]!.balance - minBalance : Checked Gwei)) = .ok cover →
+      Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat < 2 ^ 64 →
+      Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat
+          ≤ state.builders[builderIndex.toNat]!.balance.toPlainNat →
       (canBuilderCoverBid (pureState state) builderIndex bidAmount = .ok true ↔
-        minBalance ≤ state.builders[builderIndex.toNat]!.balance ∧ bidAmount ≤ cover) := by
-  intro state builderIndex bidAmount pending minBalance cover hpend hmin hsub
+        bidAmount.toPlainNat ≤ state.builders[builderIndex.toNat]!.balance.toPlainNat
+          - (Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat)) := by
+  intro state builderIndex bidAmount pending hpend hrange hfit
+  -- The fused laws name the two intermediates the body binds: `add_ok_iff`
+  -- produces `minBalance` from the sum's range fact, `sub_ok_iff` produces
+  -- `cover` from the difference's, and the value laws read both back in `Nat`
+  -- terms, so the branch reasoning below is plain arithmetic.
+  obtain ⟨minBalance, hmin⟩ := add_ok_iff _ _ |>.mpr hrange
+  have hminval : minBalance.toPlainNat
+      = Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat :=
+    add_value _ _ _ hmin
+  have hble : minBalance.toPlainNat
+      ≤ state.builders[builderIndex.toNat]!.balance.toPlainNat := by
+    rw [hminval]
+    exact hfit
+  obtain ⟨cover, hsub⟩ := sub_ok_iff _ _ |>.mpr hble
+  have hcovval : cover.toPlainNat
+      = state.builders[builderIndex.toNat]!.balance.toPlainNat - minBalance.toPlainNat :=
+    sub_value _ _ _ hsub
+  -- The laws state the equations through `CLUint64.add` / `sub`; the body writes
+  -- the operator surface. The two are definitionally equal, and the ascribed
+  -- copies make the rewrite below match the body's terms.
+  have hmin' : ((Gloas.Const.minDepositAmountG + pending : Checked Gwei)) = .ok minBalance := hmin
+  have hsub' : ((state.builders[builderIndex.toNat]!.balance - minBalance : Checked Gwei))
+      = .ok cover := hsub
   rw [canBuilderCoverBid_eq, hpend]
   -- `zeta` reduces the body's leading `let` and the successful read bind, putting
-  -- the two remaining checked steps where the hypotheses name them.
+  -- the two remaining checked steps where the laws named them.
   show ((do
       let minBalance ← Gloas.Const.minDepositAmountG + pending
       if state.builders[builderIndex.toNat]!.balance < minBalance then pure false
       else
         let cover ← state.builders[builderIndex.toNat]!.balance - minBalance
         pure (cover ≥ bidAmount)) : Checked Bool) = .ok true ↔
-    (minBalance ≤ state.builders[builderIndex.toNat]!.balance ∧ bidAmount ≤ cover)
-  rw [hmin]
-  -- The successful add reduces away, putting the guard and the cover subtraction
-  -- on the hypothesis-named values.
+    (bidAmount.toPlainNat ≤ state.builders[builderIndex.toNat]!.balance.toPlainNat
+      - (Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat))
+  rw [hmin']
   show (((if state.builders[builderIndex.toNat]!.balance < minBalance then Except.ok false
         else
           (do
             let cover ← state.builders[builderIndex.toNat]!.balance - minBalance
             pure (cover ≥ bidAmount)) : Checked Bool)) = .ok true) ↔
-    (minBalance ≤ state.builders[builderIndex.toNat]!.balance ∧ bidAmount ≤ cover)
-  rw [hsub]
+    (bidAmount.toPlainNat ≤ state.builders[builderIndex.toNat]!.balance.toPlainNat
+      - (Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat))
+  rw [hsub']
   split
   · next hlt =>
-    have hnat : ¬ (minBalance.val.toNat ≤ state.builders[builderIndex.toNat]!.balance.val.toNat) := by
-      have hv : state.builders[builderIndex.toNat]!.balance.val < minBalance.val := hlt
-      have h1 : state.builders[builderIndex.toNat]!.balance.val.toNat < minBalance.val.toNat :=
-        UInt64.lt_iff_toNat_lt.mp hv
+    -- The guard rejects exactly when `minBalance` exceeds the balance, which the
+    -- fit hypothesis excludes; both readings are the native ones on `.val`.
+    have hnat : ¬ (state.builders[builderIndex.toNat]!.balance.val.toNat
+        < minBalance.val.toNat) := by
+      have h1 : state.builders[builderIndex.toNat]!.balance.val.toNat
+          = state.builders[builderIndex.toNat]!.balance.toPlainNat := rfl
+      have h2 : minBalance.val.toNat = minBalance.toPlainNat := rfl
       omega
-    simp only [Except.ok.injEq, Bool.false_eq_true, false_iff, not_and]
-    exact fun hle _ => absurd (UInt64.le_iff_toNat_le.mp hle) hnat
-  · next hguard =>
-    have hge : minBalance ≤ state.builders[builderIndex.toNat]!.balance := by
-      show minBalance.val ≤ state.builders[builderIndex.toNat]!.balance.val
-      rw [UInt64.le_iff_toNat_le]
-      have hn : ¬ (state.builders[builderIndex.toNat]!.balance.val.toNat < minBalance.val.toNat) :=
-        fun hltv => hguard (UInt64.lt_iff_toNat_lt.mpr hltv)
-      omega
+    exact absurd (UInt64.lt_iff_toNat_lt.mp hlt) hnat
+  · next =>
     constructor
     · intro htrue
-      exact ⟨hge, decide_eq_true_iff.mp (Except.ok.inj htrue)⟩
-    · intro ⟨_, hfit⟩
+      have hle : bidAmount ≤ cover := decide_eq_true_iff.mp (Except.ok.inj htrue)
+      have hnat : bidAmount.val.toNat ≤ cover.val.toNat :=
+        UInt64.le_iff_toNat_le.mp hle
+      have h1 : bidAmount.val.toNat = bidAmount.toPlainNat := rfl
+      have h2 : cover.val.toNat = cover.toPlainNat := rfl
+      have h3 : state.builders[builderIndex.toNat]!.balance.val.toNat
+          = state.builders[builderIndex.toNat]!.balance.toPlainNat := rfl
+      have h4 : minBalance.val.toNat = minBalance.toPlainNat := rfl
+      omega
+    · intro hres
+      have hle : bidAmount.val.toNat ≤ cover.val.toNat := by
+        have h1 : bidAmount.val.toNat = bidAmount.toPlainNat := rfl
+        have h2 : cover.val.toNat = cover.toPlainNat := rfl
+        have h3 : state.builders[builderIndex.toNat]!.balance.val.toNat
+            = state.builders[builderIndex.toNat]!.balance.toPlainNat := rfl
+        have h4 : minBalance.val.toNat = minBalance.toPlainNat := rfl
+        omega
       show (Except.ok (decide (bidAmount ≤ cover)) : Checked Bool) = .ok true
-      rw [decide_eq_true hfit]
+      have hle' : bidAmount ≤ cover := by
+        show bidAmount.val ≤ cover.val
+        rw [UInt64.le_iff_toNat_le]
+        exact hle
+      rw [decide_eq_true hle']
 
-/-- Equivalent `Nat`-level characterization: under the checked steps' success
-hypotheses, `canBuilderCoverBid` accepts exactly when the computed `minBalance`
-plus the bid fits within the builder's balance. The addition in this conclusion
-cannot wrap. -/
+/-- Equivalent `Nat`-level reading of the same contract: under the same two range
+facts, acceptance puts the bid plus the computed `minBalance` within the builder's
+balance, an addition that cannot wrap. A corollary of `canBuilderCoverBid_ok_iff`
+by arithmetic: the remainder there is exact because the fit hypothesis bounds the
+subtrahend. Laws used: `canBuilderCoverBid_ok_iff` (hence `add_value`,
+`sub_value`). -/
 theorem canBuilderCoverBid_ok_toNat_add_le [Preset] [HasherTag] :
-    ∀ (state : BeaconState) (builderIndex : BuilderIndex) (bidAmount pending minBalance cover : Gwei),
+    ∀ (state : BeaconState) (builderIndex : BuilderIndex) (bidAmount pending : Gwei),
       getPendingBalanceToWithdrawForBuilder (pureState state) builderIndex = .ok pending →
-      ((Gloas.Const.minDepositAmountG + pending : Checked Gwei)) = .ok minBalance →
-      ((state.builders[builderIndex.toNat]!.balance - minBalance : Checked Gwei)) = .ok cover →
-      (canBuilderCoverBid (pureState state) builderIndex bidAmount = .ok true →
-        minBalance.toPlainNat + bidAmount.toPlainNat
-          ≤ state.builders[builderIndex.toNat]!.balance.toPlainNat) := by
-  intro state builderIndex bidAmount pending minBalance cover hpend hmin hsub hok
-  have ⟨h_le, h_fit⟩ := (canBuilderCoverBid_ok_iff state builderIndex bidAmount pending minBalance cover
-    hpend hmin hsub).mp hok
-  -- The cover value reads back as the plain difference (`sub_value`), and the
-  -- guard's `≤` is the native one, so the `Nat` facts close by arithmetic.
-  have hcoverNat := EthCLLib.Proofs.sub_value state.builders[builderIndex.toNat]!.balance minBalance cover hsub
-  have hle : minBalance.val.toNat ≤ state.builders[builderIndex.toNat]!.balance.val.toNat :=
-    UInt64.le_iff_toNat_le.mp h_le
-  have hfit : bidAmount.val.toNat ≤ cover.val.toNat := UInt64.le_iff_toNat_le.mp h_fit
-  have hcov : cover.val.toNat = state.builders[builderIndex.toNat]!.balance.val.toNat
-      - minBalance.val.toNat := by
-    have hc := EthCLLib.Proofs.sub_value state.builders[builderIndex.toNat]!.balance minBalance cover hsub
-    exact hc
-  have t1 : minBalance.toPlainNat = minBalance.val.toNat := rfl
-  have t2 : state.builders[builderIndex.toNat]!.balance.toPlainNat
-      = state.builders[builderIndex.toNat]!.balance.val.toNat := rfl
-  have t3 : bidAmount.toPlainNat = bidAmount.val.toNat := rfl
-  have t4 : cover.toPlainNat = cover.val.toNat := rfl
+      Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat < 2 ^ 64 →
+      Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat
+          ≤ state.builders[builderIndex.toNat]!.balance.toPlainNat →
+      canBuilderCoverBid (pureState state) builderIndex bidAmount = .ok true →
+        bidAmount.toPlainNat + (Gloas.Const.minDepositAmountG.toPlainNat
+            + pending.toPlainNat)
+          ≤ state.builders[builderIndex.toNat]!.balance.toPlainNat := by
+  intro state builderIndex bidAmount pending hpend hrange hfit hok
+  have hle := (canBuilderCoverBid_ok_iff state builderIndex bidAmount pending
+    hpend hrange hfit).mp hok
   omega
 
 end EthCLSpecs.Proofs.Gloas

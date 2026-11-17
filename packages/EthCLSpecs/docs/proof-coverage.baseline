@@ -17,6 +17,7 @@ tier1 EthCLSpecs.Gloas.getIndexedPayloadAttestation
 tier1 EthCLSpecs.Gloas.getPendingBalanceToWithdrawForBuilder
 tier1 EthCLSpecs.Gloas.getPtc
 tier1 EthCLSpecs.Gloas.getSlotsSinceGenesis
+tier1 EthCLSpecs.Gloas.getTotalActiveBalance
 tier1 EthCLSpecs.Gloas.increaseBalance
 tier1 EthCLSpecs.Gloas.initiateValidatorExit
 tier1 EthCLSpecs.Gloas.isAttestationSameSlot

@@ -48,7 +48,8 @@ namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec
 open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok run_bind run_pure
-  except_bind_ok except_bind_error)
+  except_bind_ok except_bind_error bind_ok_iff mul_eq_ok div_eq_ok runSum
+  foldlM_add_ok_iff foldlM_add_value max_value)
 open EthCLSpecs.Gloas
 open EthCLSpecs.Gloas (Preset Gwei BeaconState)
 open EthCLSpecs.Gloas.Const (slotsPerEpoch slotsPerEpochDiv builderPaymentThresholdNumerator
@@ -152,6 +153,176 @@ surface, so the threshold itself is a `Checked` value: at the migrated surface a
 fault here rejects the substep exactly where the pyspec raises. -/
 def builderPaymentQuorum [Preset] [HasherTag] (state : BeaconState) : Checked Gwei :=
   getBuilderPaymentQuorumThreshold (pureState state)
+
+/-- The effective balances `getTotalActiveBalance` folds, over plain state
+values: the active set at the state's own slot, each member's
+`effectiveBalance`. -/
+def activeEffectiveBalances [Preset] [HasherTag] (state : BeaconState) : List Gwei :=
+  (getActiveValidatorIndices (pureState state)
+      (computeEpochAtSlot state.slot)).toList.map
+    (fun i => state.validators[i.toNat]!.effectiveBalance)
+
+/-- The plain `Nat` the quorum chain divides: the fold's final running sum,
+floored at one increment (`get_total_balance`'s `max`). -/
+def quorumTotal [Preset] [HasherTag] (state : BeaconState) : Nat :=
+  max (runSum 0 (activeEffectiveBalances state)
+      (activeEffectiveBalances state).length)
+    Gloas.Const.effectiveBalanceIncrementG.toPlainNat
+
+/-- `getTotalActiveBalance`'s fused reading: the accessor succeeds with `tab`
+exactly when every running sum of `activeEffectiveBalances` stays in range
+(the checked fold's own obligation), and then `tab` is the fold's final running
+sum floored at one increment. This is the real arithmetic obligation the
+quorum chain's first bind names. Laws: `bind_ok_iff` (the one bind),
+`foldlM_add_ok_iff`, `foldlM_add_value`, `max_value`, over the `Array`-to-`List`
+fold route and the mapped list. -/
+theorem getTotalActiveBalance_eq_ok [Preset] [HasherTag] (state : BeaconState) (tab : Gwei) :
+    getTotalActiveBalance (pureState state) = .ok tab ↔
+      (∀ i ≤ (activeEffectiveBalances state).length,
+          runSum 0 (activeEffectiveBalances state) i < UInt64.size) ∧
+      tab.toPlainNat = max (runSum 0 (activeEffectiveBalances state)
+          (activeEffectiveBalances state).length)
+        Gloas.Const.effectiveBalanceIncrementG.toPlainNat := by
+  unfold getTotalActiveBalance getTotalBalance activeEffectiveBalances
+  simp only [view_uncachedBox]
+  -- The fold runs over the active indices; route it through the mapped list
+  -- the checked-fold laws are stated on.
+  rw [← Array.foldlM_toList, ← List.foldlM_map]
+  constructor
+  · rw [bind_ok_iff]
+    rintro ⟨c, hfold, hret⟩
+    have hmaxc : max c Gloas.Const.effectiveBalanceIncrementG = tab :=
+      Except.ok.inj hret
+    have hval1 : tab.toPlainNat
+        = max c.toPlainNat Gloas.Const.effectiveBalanceIncrementG.toPlainNat := by
+      rw [← hmaxc, max_value]
+    have hval2 : c.toPlainNat
+        = runSum 0 (activeEffectiveBalances state)
+            (activeEffectiveBalances state).length :=
+      foldlM_add_value 0 _ _ hfold
+    refine ⟨foldlM_add_ok_iff 0 _ |>.mp ⟨c, hfold⟩, ?_⟩
+    rw [hval1]
+    show max c.toPlainNat Gloas.Const.effectiveBalanceIncrementG.toPlainNat
+      = max (runSum 0 (activeEffectiveBalances state)
+          (activeEffectiveBalances state).length)
+        Gloas.Const.effectiveBalanceIncrementG.toPlainNat
+    rw [hval2]
+  · rintro ⟨hbounds, hval⟩
+    obtain ⟨c, hfold⟩ := foldlM_add_ok_iff 0 _ |>.mpr hbounds
+    rw [bind_ok_iff]
+    refine ⟨c, hfold, ?_⟩
+    show (Except.ok (max c Gloas.Const.effectiveBalanceIncrementG) : Checked Gwei)
+      = Except.ok tab
+    refine congrArg Except.ok (CLUint64.val_inj (UInt64.toNat_inj.1 ?_))
+    show (max c Gloas.Const.effectiveBalanceIncrementG).toPlainNat = tab.toPlainNat
+    rw [max_value, hval, ← foldlM_add_value 0 _ _ hfold]
+
+/-- The quorum chain's fused reading: the threshold is the checked `Gwei` chain
+`total // slotsPerEpoch * numerator // denominator`, with the per-slot division the
+proved-total route, so the chain succeeds with `quorum` exactly when every
+running sum of the active validators' effective balances stays in range, the
+scaling product stays in range, and the denominator is nonzero; the value reads
+back as that plain chain. This is the real arithmetic obligation the contract's
+`.ok quorum` hypothesis names. The denominator is the literal `10`, so its zero
+test discharges in the kernel. Laws: `getTotalActiveBalance_eq_ok` (hence
+`foldlM_add_ok_iff`, `foldlM_add_value`, `max_value`), `bind_ok_iff` (twice, one
+per bind), `mul_eq_ok`, `div_eq_ok`, and the proved-total route's
+`divPos_toPlainNat`. -/
+theorem builderPaymentQuorum_eq_ok [Preset] [HasherTag] (state : BeaconState) (quorum : Gwei) :
+    builderPaymentQuorum state = .ok quorum ↔
+      (∀ i ≤ (activeEffectiveBalances state).length,
+          runSum 0 (activeEffectiveBalances state) i < UInt64.size) ∧
+      ∃ scaled : Gwei,
+        scaled.toPlainNat = quorumTotal state / slotsPerEpoch
+            * Gloas.Const.builderPaymentThresholdNumerator.toPlainNat ∧
+        quorumTotal state / slotsPerEpoch
+            * Gloas.Const.builderPaymentThresholdNumerator.toPlainNat < UInt64.size ∧
+        Gloas.Const.builderPaymentThresholdDenominator.toPlainNat ≠ 0 ∧
+        quorum.toPlainNat = scaled.toPlainNat
+            / Gloas.Const.builderPaymentThresholdDenominator.toPlainNat := by
+  constructor
+  · intro h
+    rw [show builderPaymentQuorum state
+        = (getBuilderPaymentQuorumThreshold (pureState state) : Checked Gwei) from rfl] at h
+    simp only [getBuilderPaymentQuorumThreshold] at h
+    -- Two binds, one per `←` in the body; `bind_ok_iff` exposes each, and the
+    -- operator laws read the two checked steps on the plain values.
+    rw [bind_ok_iff] at h
+    obtain ⟨tab, hTAB, hrest⟩ := h
+    rw [bind_ok_iff] at hrest
+    obtain ⟨scaled, hmul, hdiv⟩ := hrest
+    have hden := (div_eq_ok _ _ _ |>.mp hdiv).1
+    have hval := (div_eq_ok _ _ _ |>.mp hdiv).2
+    have hmulr := mul_eq_ok _ _ _ |>.mp hmul
+    have htab := (getTotalActiveBalance_eq_ok state tab).mp hTAB
+    -- `quorumTotal` is the floored running sum `htab.2` names, and the
+    -- proved-total division reads back as the plain quotient, so the product's
+    -- range fact and value land on the statement's plain terms.
+    have hqt : quorumTotal state = tab.toPlainNat := by
+      show max (runSum 0 (activeEffectiveBalances state)
+          (activeEffectiveBalances state).length)
+        Gloas.Const.effectiveBalanceIncrementG.toPlainNat = tab.toPlainNat
+      rw [htab.2]
+    have hps : (tab / Const.slotsPerEpochDiv).toPlainNat
+        = quorumTotal state / slotsPerEpoch := by
+      rw [show (tab / Const.slotsPerEpochDiv).toPlainNat
+          = tab.toPlainNat / slotsPerEpoch from
+            CLUint64.divPos_toPlainNat tab Const.slotsPerEpochDiv, hqt]
+    have hrange'' : quorumTotal state / slotsPerEpoch
+        * Gloas.Const.builderPaymentThresholdNumerator.toPlainNat < UInt64.size := by
+      rw [← hps]
+      exact hmulr.1
+    refine ⟨htab.1, scaled, ?_, hrange'', hden, hval⟩
+    rw [hmulr.2, hps]
+  · rintro ⟨hfold, scaled, hscaled, hrange, hden, hval⟩
+    -- The total the laws name: the fold's final running sum, floored at one
+    -- increment, is in range, so a bound `Gwei` carries it.
+    have hinc : Gloas.Const.effectiveBalanceIncrementG.toPlainNat < UInt64.size :=
+      UInt64.toNat_lt_size Gloas.Const.effectiveBalanceIncrementG.val
+    have hrun : runSum 0 (activeEffectiveBalances state)
+        (activeEffectiveBalances state).length < UInt64.size :=
+      hfold _ (Nat.le_refl _)
+    have htabrange : quorumTotal state < UInt64.size := by
+      unfold quorumTotal
+      omega
+    -- The total the laws name is in range, so a bound `Gwei` carries it, and
+    -- its value law reads it back as that plain `Nat`.
+    have htabval : (CLUint64.ofNatLT (quorumTotal state) htabrange).toPlainNat
+        = quorumTotal state := CLUint64.ofNatLT_toPlainNat _ _
+    have hTAB : getTotalActiveBalance (pureState state)
+        = .ok (CLUint64.ofNatLT (quorumTotal state) htabrange) :=
+      (getTotalActiveBalance_eq_ok state _).mpr ⟨hfold, rfl⟩
+    have hps : ((CLUint64.ofNatLT (quorumTotal state) htabrange)
+        / Const.slotsPerEpochDiv).toPlainNat
+        = quorumTotal state / slotsPerEpoch := by
+      rw [show ((CLUint64.ofNatLT (quorumTotal state) htabrange)
+          / Const.slotsPerEpochDiv).toPlainNat
+          = (CLUint64.ofNatLT (quorumTotal state) htabrange).toPlainNat
+            / slotsPerEpoch from CLUint64.divPos_toPlainNat _ _,
+        htabval]
+    have hrange' : ((CLUint64.ofNatLT (quorumTotal state) htabrange)
+        / Const.slotsPerEpochDiv).toPlainNat
+        * Gloas.Const.builderPaymentThresholdNumerator.toPlainNat < UInt64.size := by
+      rw [hps]
+      exact hrange
+    have hval' : scaled.toPlainNat
+        = ((CLUint64.ofNatLT (quorumTotal state) htabrange)
+          / Const.slotsPerEpochDiv).toPlainNat
+          * Gloas.Const.builderPaymentThresholdNumerator.toPlainNat := by
+      rw [hps]
+      exact hscaled
+    rw [show builderPaymentQuorum state
+        = (getBuilderPaymentQuorumThreshold (pureState state) : Checked Gwei) from rfl,
+      show getBuilderPaymentQuorumThreshold (pureState state)
+        = (getTotalActiveBalance (pureState state) >>= fun tab =>
+            (tab / Const.slotsPerEpochDiv
+              * Gloas.Const.builderPaymentThresholdNumerator : Checked Gwei)
+            >>= fun scaled => scaled / Gloas.Const.builderPaymentThresholdDenominator)
+          from rfl, hTAB, bind_ok_iff]
+    refine ⟨CLUint64.ofNatLT (quorumTotal state) htabrange, rfl, ?_⟩
+    rw [bind_ok_iff]
+    exact ⟨scaled, mul_eq_ok _ _ _ |>.mpr ⟨hrange', hval'⟩,
+      div_eq_ok _ _ _ |>.mpr ⟨hden, hval⟩⟩
 
 /-- The previous-epoch payments whose weight clears `quorum`, mapped to their
 withdrawals, in slot order. -/
@@ -297,7 +468,8 @@ theorem processBuilderPendingPayments_run [Preset] [HasherTag] :
     rfl
 
 /-- The contract on the threshold's success path, as a literal `.ok` value: the
-form `runPure_of_run_ok` consumes. -/
+form `runPure_of_run_ok` consumes. The `.ok` hypothesis names the quorum chain's
+real arithmetic obligation through `builderPaymentQuorum_eq_ok`. -/
 theorem processBuilderPendingPayments_run_ok [Preset] [HasherTag] (preState : BeaconState)
     (quorum : Gwei) (hq : builderPaymentQuorum preState = .ok quorum) :
     (processBuilderPendingPayments (StateTransition := GloasRun)).run (pureState preState)

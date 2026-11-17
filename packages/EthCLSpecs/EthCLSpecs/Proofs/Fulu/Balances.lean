@@ -13,8 +13,9 @@ The pyspec's `state.balances[index] += delta` reads a bare list, and remerkleabl
 raises `ValueError` on overflow. `increaseBalance` reads through `sszGetIdx` and adds through
 the checked `Gwei` `+` (`CLUint64.add`, `SPEC_ARITHMETIC.md` §4.1), so it rejects on exactly
 those two conditions. In range and below the bound, the stored balance is the exact
-natural-number sum, with no wrap through `2 ^ 64`. (Task 4.2 restates these through the new
-checked-chain laws; these repairs keep the tree building and the tags in place.)
+natural-number sum, with no wrap through `2 ^ 64`. The success and value readings go through
+the checked-chain laws (`SPEC_ARITHMETIC.md` §4.9): the range condition is `add_ok_iff`'s
+success condition on the plain values, and the stored value is `add_value`'s read-back.
 
 `decrease_balance` clamps at zero, so its subtraction raises nothing. `decreaseBalance`
 therefore rejects on the read alone. Its stored balance is the truncating `Nat` difference, so
@@ -52,7 +53,8 @@ namespace EthCLSpecs.Proofs.Fulu
 open EthCLLib.Spec (HasherTag StateTransitionError Checked liftErr sszGetIdx IdxRead)
 open EthCLSpecs.Fulu (Preset BeaconState State ValidatorIndex Gwei increaseBalance decreaseBalance
   modBalance)
-open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok)
+open EthCLLib.Proofs (pureState runPure runPure_eq runPure_of_run_ok add_ok_iff
+  add_value)
 open SizzLean.Proofs (sszListSet!_getElem!_self view_uncachedBox)
 open SizzLean.Repr
 open SizzLean.Cache
@@ -161,7 +163,10 @@ theorem increaseBalance_run_outOfRange [Preset] [HasherTag] :
 
 /-- **In range, overflowing.** When the `uint64` sum would wrap, the run rejects with the
 `.arithmetic` fault and produces no state. The pyspec raises `ValueError` at the same point.
-The fault payload is the add's own `ArithFault.range` `"+"`, diagnostic only. -/
+The fault payload is the add's own `ArithFault.range` `"+"`, diagnostic only. The hypothesis
+is the real arithmetic obligation, the negation of `add_ok_iff`'s success condition on the
+plain values. The proof stays a hand proof: the law set reaches the add's success and value,
+but not the fault payload's identity, which the conclusion spells. -/
 theorem increaseBalance_run_overflow [Preset] [HasherTag] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       i.toNat < state.balances.size →
@@ -183,18 +188,28 @@ theorem increaseBalance_run_overflow [Preset] [HasherTag] :
   rfl
 
 /-- **In range, below the bound.** The run succeeds, and the whole-state equation writes the
-addition's sum into that one balance. The sum is named by the `CLUint64.add = .ok sum`
-hypothesis, the private-construction-free way to say which value lands; task 4.2 restates the
-stored-value read-back through the checked-chain laws (`add_value`). -/
+addition's result into that one balance. The hypothesis is the real range condition,
+`add_ok_iff`'s success condition on the plain values, so it names the arithmetic obligation
+the run has to check and no intermediate `Except` value. The conclusion names the written
+value and reads it back through `add_value`: the stored balance is the exact natural-number
+sum of the old balance and `delta`, with no wrap through `2 ^ 64`. Laws: `add_ok_iff`,
+`add_value` (both over the fused `add_eq_ok`). -/
 theorem increaseBalance_run_no_wrap [Preset] [HasherTag] :
-    ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta sum : Gwei),
+    ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       i.toNat < state.balances.size →
-      EthCLLib.Spec.CLUint64.add state.balances[i.toNat]! delta = .ok sum →
-      runPure (increaseBalance (StateTransition := FuluRun) (pureState state) i delta) preState
-        = .ok (pureState
-            { state with balances := state.balances.set! i.toNat sum },
-          preState) := by
-  intro state preState i delta sum hidx hadd
+      state.balances[i.toNat]!.toPlainNat + delta.toPlainNat < 2 ^ 64 →
+      ∃ sum : Gwei,
+        EthCLLib.Spec.CLUint64.add state.balances[i.toNat]! delta = .ok sum ∧
+        sum.toPlainNat = state.balances[i.toNat]!.toPlainNat + delta.toPlainNat ∧
+        runPure (increaseBalance (StateTransition := FuluRun) (pureState state) i delta) preState
+          = .ok (pureState
+              { state with balances := state.balances.set! i.toNat sum },
+            preState) := by
+  intro state preState i delta hidx hrange
+  -- The range condition names a real sum: `add_ok_iff` produces it, and `add_value` reads
+  -- its value back, so the whole-state equation writes a value the two laws pin.
+  obtain ⟨sum, hadd⟩ := add_ok_iff _ _ |>.mpr hrange
+  refine ⟨sum, hadd, add_value _ _ _ hadd, ?_⟩
   rw [runPure_eq, increaseBalance_run_eq state preState i delta,
     sszList_getElem?_eq_getElem! _ _ hidx]
   have hinst : ∀ a b : Gwei, (a + b) = EthCLLib.Spec.CLUint64.add a b := fun _ _ => rfl

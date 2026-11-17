@@ -502,6 +502,25 @@ theorem mod_value (a b r : CLUint64) (h : CLUint64.mod a b = .ok r) :
     r.toPlainNat = a.toPlainNat % b.toPlainNat :=
   (mod_eq_ok a b r).mp h |>.2
 
+/-! ## The total selectors
+
+`max` picks an operand and never raises (`SPEC_ARITHMETIC.md` §4.5), so its
+value is the plain maximum. -/
+
+/-- `max a b` is one of the operands, so its value is the plain maximum. -/
+theorem max_value (a b : CLUint64) :
+    (max a b).toPlainNat = max a.toPlainNat b.toPlainNat := by
+  show (if a < b then b else a).toPlainNat = max a.toPlainNat b.toPlainNat
+  split
+  · next h =>
+    have hlt : a.toPlainNat < b.toPlainNat := h
+    rw [Nat.max_eq_right (Nat.le_of_lt hlt)]
+  · next h =>
+    have hge : b.toPlainNat ≤ a.toPlainNat := by
+      have h' : ¬ (a.toPlainNat < b.toPlainNat) := h
+      omega
+    rw [Nat.max_eq_left hge]
+
 /-! ## The chain simp set
 
 `simp_arith` is one `simp only` call over the fused rules, the bind law, and

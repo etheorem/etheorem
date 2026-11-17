@@ -186,7 +186,9 @@ private theorem bind_liftErr_ok_gloas {α β : Type} (v : α) (k : α → GloasR
 
 /-- `increaseBalance`, at its Gloas copy, returns `pureState` of the written
 value and leaves the threaded state uncached: the run reduces to the same match
-the Fulu contract states. -/
+the Fulu contract states. The claims here are about the box, so the
+checked-chain value laws (`add_eq_ok`, `add_value`) do not reach: the matches on
+`balance + d` need only the `Except` shape, and the add's value is never read. -/
 theorem returnsUncached_increaseBalance (state : BeaconState) (i : ValidatorIndex) (d : Gwei) :
     ReturnsUncached (increaseBalance (StateTransition := GloasRun) (pureState state) i d) := by
   intro preState b s h
@@ -422,7 +424,10 @@ theorem keepsUncached_processAttesterSlashing (asl : AttesterSlashing) :
 
 /-- The run of a lifted checked value is the identity on the state: the success
 value passes through, so a `liftM` bind in a run equation peels with the bind
-law and this fact. -/
+law and this fact. The claim quantifies over an arbitrary box, so it is a box
+fact and no plain-value restatement replaces it: a caller reaches it mid-run,
+where the threaded box is only known to be `pureState` of some value through the
+surrounding invariant, not in the lemma's own statement. -/
 @[box_generic "the run equation is a claim about the box: it says the run's
 post-state box is the start box itself, unchanged by the lifted checked value"]
 private theorem run_liftChecked_ok {α : Type} (v : α)
