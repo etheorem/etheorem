@@ -535,7 +535,10 @@ wrote it, and that event checked the block and the slot of the vote.
 `Proofs/Heze/FullSupport.lean` shows that a validator on `full` has a latest message from a
 slot after the slot of `r`. `Proofs/Heze/PayloadRaceExec.lean` composes the pieces into
 `race_empty_persists_exec`. `RaceSetting` puts every honest head of the window strictly below
-`pending r`, with `full r` viable only with `empty r`. Every proposer score is the proposer
+`pending r`, with `full r` viable only with `empty r`. That head position is a premise of the
+tier, and without more premises it can fail: an honest node with no validators can hold a head
+off `r` in the epoch of `rb`. Under a vote carrier chain, `CarrierWindow.head_window`
+(`Proofs/Heze/VoteStep.lean`) derives it. Every proposer score is the proposer
 score of the justified state
 (`Proofs/Heze/ProposerScore.lean`). Under the setting and the counting inequality of
 `race_empty_persists`, each of these heads lies below `empty r` and not below `full r`, or a
