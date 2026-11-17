@@ -1,3 +1,4 @@
+import EthCLSpecs.Tests.AuthoringShapes
 import EthCLSpecs.Tests.BoxBinderPins
 import EthCLSpecs.Tests.ConstantViews
 import EthCLSpecs.Tests.FuluForkChoicePins

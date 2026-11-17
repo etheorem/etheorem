@@ -141,13 +141,24 @@ IndexError E` instances, never folded into the arithmetic fault. -/
 
 /-- How an integer type names a position in a collection of `size` elements:
 `none` exactly where the pyspec raises `IndexError`. A negative plain `int`
-counts from the end, as Python does. -/
+counts from the end, as Python does.
+
+`idx?` is the diagnostic read-back: the rejected index as the error payload's
+own `Nat` field carries it, so a reject reports the index the caller wrote. It
+is the written value where that value fits a `Nat` (`Nat`, `CLUint64`, and a
+nonnegative `CLInt`) and the `0` placeholder where it does not (a negative
+`CLInt`, whose signed value has no `Nat` representation; `IndexError`'s payload
+field is a `Nat`, so the sign cannot be carried in it). The payload is diagnostic
+only, and nothing branches on it. -/
 class ToIndex (ι : Type) where
   /-- The position to read, or `none` where the index raises. -/
   pos? : ι → Nat → Option Nat
+  /-- The rejected index, carried for the kinds whose value fits the payload's
+  `Nat` field; the `0` placeholder for a negative `CLInt`. -/
+  idx? : ι → Nat
 
 /-- In range, a `Nat` index is the position itself. -/
-instance : ToIndex Nat := ⟨fun i size => if i < size then some i else none⟩
+instance : ToIndex Nat := ⟨fun i size => if i < size then some i else none, fun i => i⟩
 
 /-- The checked value's plain integer is the position. `CLUint64` is
 nonnegative, so the only raise is the positive out-of-range case. This is the
@@ -155,7 +166,8 @@ allowed executable use of the underlying-value conversion
 (`SPEC_ARITHMETIC.md` §4.5): indexing goes through this interface, the value
 stays the index, and no operator is resolved through it. -/
 instance : ToIndex CLUint64 :=
-  ⟨fun i size => if i.toPlainNat < size then some i.toPlainNat else none⟩
+  ⟨fun i size => if i.toPlainNat < size then some i.toPlainNat else none,
+    fun i => i.toPlainNat⟩
 
 /-- A negative plain `int` counts from the end, as Python does: `-1` names the
 last element and `-size` the first. A positive out-of-range index and a
@@ -166,7 +178,8 @@ instance : ToIndex CLInt := ⟨fun i size =>
   if 0 ≤ i.val then
     if i.val.toNat < size then some i.val.toNat else none
   else
-    if i.val.natAbs ≤ size then some (size - i.val.natAbs) else none⟩
+    if i.val.natAbs ≤ size then some (size - i.val.natAbs) else none,
+  fun i => if 0 ≤ i.val then i.val.toNat else 0⟩
 
 /-- The pure raising read (`SPEC_ARITHMETIC.md` §4.6): the element at the
 position `i` names, or `Except IndexError` where the pyspec raises. The fault
@@ -176,15 +189,17 @@ arithmetic fault. A state-free helper that only reads returns this; one that
 also does arithmetic returns `Except StateTransitionError`, binding both the
 read (`liftErr (getAt …)`) and the operators (`SPEC_ARITHMETIC.md` §4.6). The
 machine-context read on an SSZ collection stays `sszGetIdx` below. A rejected
-index names no position, so the reject's diagnostic index field is the `0`
-placeholder; the payload is diagnostic only and nothing branches on it. -/
+index carries the value the caller wrote in the reject's diagnostic index
+field, through `ToIndex.idx?`; a negative `CLInt` keeps the `0` placeholder,
+the one case its signed value has no `Nat` payload for. The payload is
+diagnostic only and nothing branches on it. -/
 @[inline] def getAt {α ρ ι : Type} [IdxRead ρ α] [ToIndex ι] (xs : ρ) (i : ι) :
     Except IndexError α :=
   match ToIndex.pos? i (IdxRead.size xs) with
   | some k => match IdxRead.get? xs k with
     | some a => .ok a
     | none   => .error (IndexError.indexError k (IdxRead.size xs))
-  | none   => .error (IndexError.indexError 0 (IdxRead.size xs))
+  | none   => .error (IndexError.indexError (ToIndex.idx? i) (IdxRead.size xs))
 
 /-- A random-access collection `setAt` / the machine write can update: the
 read half plus a checked element write that leaves the collection alone past
@@ -245,7 +260,7 @@ classes stay distinct and each keeps its own classification. -/
   | some k => match IdxWrite.set? xs k v with
     | some xs' => .ok xs'
     | none     => .error (IndexError.indexError k (IdxRead.size xs))
-  | none   => .error (IndexError.indexError 0 (IdxRead.size xs))
+  | none   => .error (IndexError.indexError (ToIndex.idx? i) (IdxRead.size xs))
 
 /-- Monadic element access: element `i`, or the typed reject `outOfBounds i size`
 (the bug-smell for a framework-invariant index that should never be out of range on

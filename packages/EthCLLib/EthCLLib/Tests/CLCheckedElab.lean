@@ -248,9 +248,39 @@ example : ((do
 -- checked operand's type first, the kernel literal gate rejects the `OfNat`
 -- there, and no `Nat` retry follows. The error lands on the numeral, and the
 -- escapes are the two forms above: bind the cast first (§4.3's two-bind form)
--- or type the literal. For the record, both failing sources are
--- `let x ← CLUint64.ofNat? 5 + 1` and `let x ← 1 + CLUint64.ofNat? 5`, with
--- or without `(… : Checked _)`; the `CLInt`-cast mirror fails the same way.
+-- or type the literal. The two failing sources below pin the prose record as
+-- enforced `#guard_msgs`, one corner per side.
+--
+-- The CLInt-cast mirror fails the same way, on `OfNat (Checked CLInt) 1`.
+
+-- The right corner: `let x ← CLUint64.ofNat? 5 + 1`, with or without
+-- `(… : Checked _)`.
+/-- error: failed to synthesize instance of type class
+  OfNat (Checked CLUint64) 1
+numerals are polymorphic in Lean, but the numeral `1` cannot be used in a context where the expected type is
+  Checked CLUint64
+due to the absence of the instance above
+
+Hint: Type class instance resolution failures can be inspected with the `set_option trace.Meta.synthInstance true` command.
+-/
+#guard_msgs in
+def cornerRight : SM CLUint64 := do
+  let x ← CLUint64.ofNat? 5 + 1
+  pure x
+
+-- The left corner: `let x ← 1 + CLUint64.ofNat? 5`.
+/-- error: failed to synthesize instance of type class
+  OfNat (Checked CLUint64) 1
+numerals are polymorphic in Lean, but the numeral `1` cannot be used in a context where the expected type is
+  Checked CLUint64
+due to the absence of the instance above
+
+Hint: Type class instance resolution failures can be inspected with the `set_option trace.Meta.synthInstance true` command.
+-/
+#guard_msgs in
+def cornerLeft : SM CLUint64 := do
+  let x ← 1 + CLUint64.ofNat? 5
+  pure x
 
 -- The two-bind spelling of the same computation, the §4.3 form.
 example : ((do
