@@ -182,32 +182,27 @@ end Runs
 section Core
 variable [Preset] [HasherTag] [Config] [CryptoBackend]
 
-/-- **No honest validator votes `(r, e)` on a store chain when the carrier chain moved past `r`
-by the first slot of `e`.** The setting:
+/-- **An honest target is the checkpoint root of the carrier chain.** The setting:
 
 - `C` is a validated run from `A` that holds the block `rb` (`hC`). An honest validator `i`
-  votes `d` with the target root `htr rb` and a target epoch `e` after the epoch of `rb`.
-- `H` is a validated run from `A` that holds `rb` (`hH`) and a block `b` after `rb`, no later
-  than the first slot of `e`. Its state `W` weighs the epoch `e + 1`, and every honest validator
-  of the target test of `e` there has a placed vote on `H` (`hinc`, the `included` premise of
-  `HonestChain`). `i` is not slashed at `W`.
+  votes `d` with a target epoch `e` after the epoch of `rb`.
+- `H` is a validated run from `A` that holds `rb` (`hH`). Its state `W` weighs the epoch
+  `e + 1`, and every honest validator of the target test of `e` there has a placed vote on `H`
+  (`hinc`, the `included` premise of `HonestChain`). `i` is not slashed at `W`.
 - `i` is a registry index, active at `e`, at every state of a prefix of `H` (`hactH`).
 - An honest validator signs one vote for each target epoch (`hsingle`): a vote of `i` on a
   prefix of `H` with the target epoch of `d` is `d`.
 
-Then the target root of `d` is the checkpoint root of `H` at `e`, which is not `htr rb`. -/
-theorem fcase_core_active
+Then the target root of `d` is the checkpoint root at `e` of the prefix of `H` to `W`. -/
+theorem fcase_core_root
     (hw : ∀ x y : ByteArray, (SizzLean.Hasher.combine (H := HasherTag.H) x y).size = 32)
     (hc : ¬ RootCollision) {A : BeaconState} {a : BeaconBlock} (hroots : AnchorRoots A)
     (hfill : HdrFilled A) (hanc : filledHeader A = headerOf a)
-    (hanc' : htr (filledHeader A) = htr a)
-    (haligned : A.latestBlockHeader.slot.toNat ≤ epochOf A * slotsPerEpoch)
     {honestOf : ValidatorIndex → Bool} {rb : BeaconBlock}
     {stepsC : List ChainStep} {vC : BeaconState} (hrunC : ChainRun (2 ^ 64 - 1) stepsC A vC)
     (hvalC : ValidatedSteps stepsC) {aC bC : List ChainStep} {sbC : SignedBeaconBlock}
     {vbC : Bool} (hC : stepsC = aC ++ .block sbC vbC :: bC) (hrbC : sbC.message = rb)
     {i : ValidatorIndex} {d : AttestationData}
-    (hd : d.target.root = htr rb)
     {hi : Nat} (hhi : hi ≤ 2 ^ 64 - 1) {stepsH : List ChainStep} {sH : BeaconState}
     (hrunH : ChainRun hi stepsH A sH) (hvalH : ValidatedSteps stepsH) {aH bH : List ChainStep}
     {sbH : SignedBeaconBlock} {vbH : Bool} (hH : stepsH = aH ++ .block sbH vbH :: bH)
@@ -220,8 +215,6 @@ theorem fcase_core_active
     (hactH : ∀ (p q : List ChainStep) (z : BeaconState), stepsH = p ++ q → ChainRun hi p A z →
       i.toNat < z.validators.val.size ∧
       isActiveValidator z.validators.val[i.toNat]! d.target.epoch = true)
-    {b : BeaconBlock} (hb : b ∈ blocksOf stepsH) (hb1 : rb.slot.toNat < b.slot.toNat)
-    (hb2 : b.slot.toNat ≤ d.target.epoch.toNat * slotsPerEpoch)
     (hgt : rb.slot.toNat < d.target.epoch.toNat * slotsPerEpoch)
     (hAe : epochOf A + 1 < d.target.epoch.toNat)
     (hsingle : ∀ (sR : BeaconState) (q s₂ : List ChainStep) (d₂ : AttestationData),
@@ -229,7 +222,9 @@ theorem fcase_core_active
       ChainRun hi (aH ++ [.block sbH vbH]) A sR → i.toNat < sR.validators.val.size →
       stepsH = (aH ++ [.block sbH vbH] ++ q) ++ s₂ →
       RunVote hi A (aH ++ [.block sbH vbH] ++ q) i d₂ →
-      d₂.target.epoch = d.target.epoch → d₂ = d) : False := by
+      d₂.target.epoch = d.target.epoch → d₂ = d) :
+    ∃ w₁ w₂, stepsH = w₁ ++ .slot :: w₂ ∧ ChainRun hi w₁ A W ∧
+      d.target.root = chainRoot A w₁ d.target.epoch.toNat := by
   have hp := slotsPerEpochPos
   have h64 : (2 ^ 64 - 1 : Nat) ≤ 2 ^ 64 - 1 := Nat.le_refl _
   have hcb : ¬ HtrCollision BeaconBlock := fun h => hc (.inr h)
@@ -301,6 +296,57 @@ theorem fcase_core_active
   have htgt := hv₂.target_eq hw hhi hvalW hroots hrW (by omega)
   have hroot := congrArg (fun c : Cp => c.root) htgt
   simp only [toCp, cpOf] at hroot
+  exact ⟨w₁, w₂, hws, hrW, hroot⟩
+
+/-- **No honest validator votes `(r, e)` on a store chain when the carrier chain moved past `r`
+by the first slot of `e`.** The setting is that of `fcase_core_root`, with the target root
+`htr rb` and a block `b` of `H` after `rb`, no later than the first slot of `e`. The target root
+of `d` is the checkpoint root of `H` at `e` (`fcase_core_root`), which is not `htr rb`
+(`chainRoot_ne_of_later`). -/
+theorem fcase_core_active
+    (hw : ∀ x y : ByteArray, (SizzLean.Hasher.combine (H := HasherTag.H) x y).size = 32)
+    (hc : ¬ RootCollision) {A : BeaconState} {a : BeaconBlock} (hroots : AnchorRoots A)
+    (hfill : HdrFilled A) (hanc : filledHeader A = headerOf a)
+    (hanc' : htr (filledHeader A) = htr a)
+    (haligned : A.latestBlockHeader.slot.toNat ≤ epochOf A * slotsPerEpoch)
+    {honestOf : ValidatorIndex → Bool} {rb : BeaconBlock}
+    {stepsC : List ChainStep} {vC : BeaconState} (hrunC : ChainRun (2 ^ 64 - 1) stepsC A vC)
+    (hvalC : ValidatedSteps stepsC) {aC bC : List ChainStep} {sbC : SignedBeaconBlock}
+    {vbC : Bool} (hC : stepsC = aC ++ .block sbC vbC :: bC) (hrbC : sbC.message = rb)
+    {i : ValidatorIndex} {d : AttestationData}
+    (hd : d.target.root = htr rb)
+    {hi : Nat} (hhi : hi ≤ 2 ^ 64 - 1) {stepsH : List ChainStep} {sH : BeaconState}
+    (hrunH : ChainRun hi stepsH A sH) (hvalH : ValidatedSteps stepsH) {aH bH : List ChainStep}
+    {sbH : SignedBeaconBlock} {vbH : Bool} (hH : stepsH = aH ++ .block sbH vbH :: bH)
+    (hrbH : sbH.message = rb) {W : BeaconState}
+    (hW : WeighAt hi stepsH A (d.target.epoch.toNat + 1) W)
+    (hinc : ∀ x ∈ honestList W honestOf (previousEpochOf (pureState W)),
+      PlacedVote hi A stepsH x (previousEpochOf (pureState W)))
+    (hhon : honestOf i = true)
+    (hsl : i.toNat < W.validators.val.size → (W.validators.val[i.toNat]!).slashed = false)
+    (hactH : ∀ (p q : List ChainStep) (z : BeaconState), stepsH = p ++ q → ChainRun hi p A z →
+      i.toNat < z.validators.val.size ∧
+      isActiveValidator z.validators.val[i.toNat]! d.target.epoch = true)
+    {b : BeaconBlock} (hb : b ∈ blocksOf stepsH) (hb1 : rb.slot.toNat < b.slot.toNat)
+    (hb2 : b.slot.toNat ≤ d.target.epoch.toNat * slotsPerEpoch)
+    (hgt : rb.slot.toNat < d.target.epoch.toNat * slotsPerEpoch)
+    (hAe : epochOf A + 1 < d.target.epoch.toNat)
+    (hsingle : ∀ (sR : BeaconState) (q s₂ : List ChainStep) (d₂ : AttestationData),
+      ChainRun (2 ^ 64 - 1) (aC ++ [.block sbC vbC]) A sR →
+      ChainRun hi (aH ++ [.block sbH vbH]) A sR → i.toNat < sR.validators.val.size →
+      stepsH = (aH ++ [.block sbH vbH] ++ q) ++ s₂ →
+      RunVote hi A (aH ++ [.block sbH vbH] ++ q) i d₂ →
+      d₂.target.epoch = d.target.epoch → d₂ = d) : False := by
+  have hp := slotsPerEpochPos
+  have hcb : ¬ HtrCollision BeaconBlock := fun h => hc (.inr h)
+  obtain ⟨-, -, -, -, -, heW⟩ := id hW
+  obtain ⟨w₁, w₂, hws, hrW, hroot⟩ := fcase_core_root hw hc hroots hfill hanc hrunC hvalC hC
+    hrbC hhi hrunH hvalH hH hrbH hW hinc hhon hsl hactH hgt hAe hsingle
+  have hWs : (d.target.epoch.toNat + 1) * slotsPerEpoch ≤ W.slot.toNat := by
+    rw [← heW]
+    exact Nat.div_mul_le_self _ _
+  have hsucc : (d.target.epoch.toNat + 1) * slotsPerEpoch =
+      d.target.epoch.toNat * slotsPerEpoch + slotsPerEpoch := Nat.succ_mul _ _
   -- The block `b` lies on the prefix `w₁`: the blocks after `W` come at or after its slot.
   have hbw : b ∈ blocksOf w₁ := by
     rw [hws, blocksOf_append] at hb

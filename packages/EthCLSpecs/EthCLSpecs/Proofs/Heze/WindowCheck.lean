@@ -283,4 +283,63 @@ theorem unslashed_of_check {L : List BeaconState} {honestOf : ValidatorIndex →
 
 end States
 
+/-! ## The path to `pending r` -/
+
+section Path
+variable {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
+
+open EthCLSpecs.Heze (Store Root ForkChoiceNode)
+
+/-- The check of `FinalitySetting.pathBefore` at one store for the node `x` of slot `t`: the walk
+up from `pending r` ends within `fuel` steps, it passes `x`, and each node on it that a message
+of `t` can support lies below `x`. -/
+def pathB (store : Store map) (fuel : Nat) (r : Root) (x : ForkChoiceNode) (t : Nat) : Bool :=
+  let up := ancestorsB store fuel (.pending r)
+  let upX := ancestorsB store fuel x
+  walkDone store fuel (.pending r) && nodeIn up x &&
+    up.all fun y => !decide (supSlot store y ≤ t) || nodeIn upX y
+
+/-- **`pathB` gives the path facts of `pathBefore`.** The walk lists every ancestor of
+`pending r` (`mem_ancestorsB_of_below`), and a node on a walk is an ancestor
+(`below_of_mem_ancestorsB`). -/
+theorem path_of_check {store : Store map} {fuel : Nat} {r : Root} {x : ForkChoiceNode} {t : Nat}
+    (h : pathB store fuel r x t = true) :
+    NodeBelow store x (.pending r) ∧ ∀ y, NodeBelow store y (.pending r) →
+      supSlot store y ≤ t → NodeBelow store y x := by
+  simp only [pathB, Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true',
+    decide_eq_false_iff_not] at h
+  obtain ⟨⟨hdone, hx⟩, hall⟩ := h
+  refine ⟨below_of_mem_ancestorsB fuel _ (nodeIn_iff.mp hx), fun y hy hs => ?_⟩
+  rcases hall y (mem_ancestorsB_of_below hy fuel hdone) with h | h
+  · exact absurd hs h
+  · exact below_of_mem_ancestorsB fuel x (nodeIn_iff.mp h)
+
+/-- The check of the fork counts of `FinalitySetting.cases` at one store: the walk up from
+`pending r` ends within `fuel` steps, and at each node `y` on it whose parent `x` has a block
+`xb`, the count `ok y (xb.slot + 1)` holds. -/
+def forkB (store : Store map) (fuel : Nat) (r : Root) (ok : ForkChoiceNode → Nat → Bool) :
+    Bool :=
+  walkDone store fuel (.pending r) &&
+  (ancestorsB store fuel (.pending r)).all fun y =>
+    match nodeParent store y with
+    | some x => (FcMap.lookup store.blocks x.root).all fun xb => ok y (xb.slot.toNat + 1)
+    | none => true
+
+/-- **`forkB` gives the count at each fork of the path to `pending r`.** A child `y` above
+`pending r` is on the walk (`mem_ancestorsB_of_below`), and its parent is the one parent of
+`y` (`nodeParent_of_edge`). -/
+theorem fork_of_check {store : Store map} {fuel : Nat} {r : Root}
+    {ok : ForkChoiceNode → Nat → Bool} (h : forkB store fuel r ok = true) :
+    ∀ x y xb, NodeEdge store x y → NodeBelow store y (.pending r) →
+      FcMap.lookup store.blocks x.root = some xb → ok y (xb.slot.toNat + 1) = true := by
+  intro x y xb hxy hy hxb
+  simp only [forkB, Bool.and_eq_true, List.all_eq_true] at h
+  have hc := h.2 y (mem_ancestorsB_of_below hy fuel h.1)
+  rw [nodeParent_of_edge hxy] at hc
+  simp only at hc
+  rw [hxb] at hc
+  simpa using hc
+
+end Path
+
 end EthCLSpecs.Proofs.Heze

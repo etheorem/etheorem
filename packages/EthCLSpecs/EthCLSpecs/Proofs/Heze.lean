@@ -1,5 +1,6 @@
 import EthCLSpecs.Proofs.Heze.Accountable
 import EthCLSpecs.Proofs.Heze.ActiveIndices
+import EthCLSpecs.Proofs.Heze.AncestorAny
 import EthCLSpecs.Proofs.Heze.AttestationScore
 import EthCLSpecs.Proofs.Heze.AttesterSlashing
 import EthCLSpecs.Proofs.Heze.BalanceMoves
@@ -7,6 +8,7 @@ import EthCLSpecs.Proofs.Heze.BlockChain
 import EthCLSpecs.Proofs.Heze.BlockRoot
 import EthCLSpecs.Proofs.Heze.BlockRootsRun
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
+import EthCLSpecs.Proofs.Heze.CarrierFinality
 import EthCLSpecs.Proofs.Heze.CensorshipCost
 import EthCLSpecs.Proofs.Heze.ChainAgree
 import EthCLSpecs.Proofs.Heze.CheckpointFrame
@@ -50,12 +52,15 @@ import EthCLSpecs.Proofs.Heze.FinalityLock
 import EthCLSpecs.Proofs.Heze.FinalizationLiveness
 import EthCLSpecs.Proofs.Heze.FinalizationProgress
 import EthCLSpecs.Proofs.Heze.ForkPoint
+import EthCLSpecs.Proofs.Heze.ForkSides
+import EthCLSpecs.Proofs.Heze.ForkSupport
 import EthCLSpecs.Proofs.Heze.FullSupport
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.HandlerFrames
 import EthCLSpecs.Proofs.Heze.HeaderFrame
 import EthCLSpecs.Proofs.Heze.HeadAvoidsFull
 import EthCLSpecs.Proofs.Heze.HeadBelowJustified
+import EthCLSpecs.Proofs.Heze.HeadReach
 import EthCLSpecs.Proofs.Heze.HonestDuties
 import EthCLSpecs.Proofs.Heze.HonestHead
 import EthCLSpecs.Proofs.Heze.HonestVoter
@@ -65,6 +70,7 @@ import EthCLSpecs.Proofs.Heze.InclusionDichotomy
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
 import EthCLSpecs.Proofs.Heze.JustificationAndFinalization
 import EthCLSpecs.Proofs.Heze.JustificationBits
+import EthCLSpecs.Proofs.Heze.JustifiedPath
 import EthCLSpecs.Proofs.Heze.KeepsUncached
 import EthCLSpecs.Proofs.Heze.KeyFrame
 import EthCLSpecs.Proofs.Heze.KeyPrefix
@@ -81,6 +87,7 @@ import EthCLSpecs.Proofs.Heze.NodeViews
 import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 import EthCLSpecs.Proofs.Heze.OnInclusionList
 import EthCLSpecs.Proofs.Heze.OnTickPerSlot
+import EthCLSpecs.Proofs.Heze.PairScore
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.Participation
 import EthCLSpecs.Proofs.Heze.ParticipationFrame
@@ -106,8 +113,10 @@ import EthCLSpecs.Proofs.Heze.RootFrames
 import EthCLSpecs.Proofs.Heze.Run
 import EthCLSpecs.Proofs.Heze.RunVotes
 import EthCLSpecs.Proofs.Heze.RunWeighs
+import EthCLSpecs.Proofs.Heze.SettingWalk
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
 import EthCLSpecs.Proofs.Heze.Shuffle
+import EthCLSpecs.Proofs.Heze.SiblingWeight
 import EthCLSpecs.Proofs.Heze.SlotsIncrease
 import EthCLSpecs.Proofs.Heze.StakeDrift
 import EthCLSpecs.Proofs.Heze.StakeFrame
@@ -118,11 +127,13 @@ import EthCLSpecs.Proofs.Heze.StoreFinality
 import EthCLSpecs.Proofs.Heze.SyncFrame
 import EthCLSpecs.Proofs.Heze.TargetStake
 import EthCLSpecs.Proofs.Heze.Time
+import EthCLSpecs.Proofs.Heze.TipCheckpoint
 import EthCLSpecs.Proofs.Heze.TraceFacts
 import EthCLSpecs.Proofs.Heze.TraceRun
 import EthCLSpecs.Proofs.Heze.ViableHonest
 import EthCLSpecs.Proofs.Heze.ViableNext
 import EthCLSpecs.Proofs.Heze.ViableWindow
+import EthCLSpecs.Proofs.Heze.VoteStep
 import EthCLSpecs.Proofs.Heze.VoteValid
 import EthCLSpecs.Proofs.Heze.WindowCheck
 
@@ -156,6 +167,8 @@ Re-exports:
   `SlashingEvidence.accepted` states that `processAttesterSlashing` accepts such a pair.
 * `EthCLSpecs.Proofs.Heze.ActiveIndices`: a successful `get_active_validator_indices` returns
   the total walk `activeValidatorIndicesOf` (`getActiveValidatorIndices_eq_of_ok`).
+* `EthCLSpecs.Proofs.Heze.AncestorAny`: `is_ancestor` answers `true` for a target of any status
+  above the node (`isAncestor_run_below_any`).
 * `EthCLSpecs.Proofs.Heze.AttestationScore`: the Heze `getAttestationScore` is the `Nat` sum
   of the effective balances of the counted active indices (`getAttestationScore_run_ok`).
 * `EthCLSpecs.Proofs.Heze.AttesterSlashing`: the slashing test of two attestation data is a
@@ -186,6 +199,10 @@ Re-exports:
   `HezeRun`. When the payment of a bid is carried to the substep
   (`BidPaymentCarried`), the substep appends the entry of the bid if and only if the
   entry reaches the quorum (`processBuilderPendingPayments_run_bid`).
+* `EthCLSpecs.Proofs.Heze.CarrierFinality`: the two composed results, from `FinalitySetting`,
+  `DecisionSetting`, and a vote carrier chain on the EMPTY side (`CarrierWindow`). Every honest
+  head of the window lies below EMPTY `r` and avoids FULL `r` (`censored_payload_avoided`). The
+  EMPTY side finalizes (`censored_payload_final_carrier`).
 * `EthCLSpecs.Proofs.Heze.CensorshipCost`: three facts about a block with a recorded
   `false` inclusion-list answer (`unsatisfiedPayload_cost`). The `getHead` loop
   continues from EMPTY at the block when EMPTY is viable. A child on EMPTY, with the
@@ -299,6 +316,14 @@ Re-exports:
 * `EthCLSpecs.Proofs.Heze.FrameInvert`: the `frame_invert` tactic. From a run between two
   plain states, it proves that the run keeps a view, one action at a time. It closes a
   call of a spec function by a `@[frame]` lemma of that function, and a loop by an invariant.
+* `EthCLSpecs.Proofs.Heze.ForkSides`: the weights at the forks of the path from the justified
+  node to `pending r`, once the honest votes before the slot are on the EMPTY side. At each
+  fork the path child is ahead of every other child (`FinalitySetting.forkAhead`). At
+  `pending r`, EMPTY `r` is ahead of FULL `r` (`FinalitySetting.raceAhead`).
+* `EthCLSpecs.Proofs.Heze.ForkSupport`: the support facts at any node of a path. An honest vote
+  supports a node below the path node (`honest_supported_below_any`). A supporter of a sibling
+  child votes after the fork block (`sibling_supporters_late`). A chain moves between stores
+  (`NodeBelow.transfer_any`).
 * `EthCLSpecs.Proofs.Heze.FullSupport`: `getAncestor` returns an ancestor of its start
   node (`getAncestor_run_above`). So the store puts an index on `full` only when the
   supported node of its latest message lies below `full r` (`storeSide_full_below`). That
@@ -328,6 +353,9 @@ Re-exports:
   (`EmptyViableWithFull.of_check`).
 * `EthCLSpecs.Proofs.Heze.HeadBelowJustified`: the head that `getHead` returns lies below
   the pending node of the justified root (`getHead_run_below_justified`).
+* `EthCLSpecs.Proofs.Heze.HeadReach`: the `getHead` loop ends within its fuel (`walkPot` falls
+  at each step), so a path of winning steps reaches a node below it
+  (`getHead_run_below_of_path`, `getHead_run_strictly_below`).
 * `EthCLSpecs.Proofs.Heze.HonestDuties`: the duties of slot `n + 1` on a head that avoids
   the FULL node of `r`. `shouldBuildOnFull` rejects a pending head and answers `false` at
   an EMPTY head. No honest vote is `(r, 1)` (`honestAttestation_ne_full`). An honest block
@@ -382,6 +410,10 @@ Re-exports:
   the weigh step (`processJustificationAndFinalization_run_ok`).
 * `EthCLSpecs.Proofs.Heze.JustificationBits`: the weigh step shifts the justification bits and
   sets bits 0 and 1 from its two target tests (`weighBits_get`).
+* `EthCLSpecs.Proofs.Heze.JustifiedPath`: a justified block no later than `rb` lies above
+  `pending r` (`FinalitySetting.justified_above_r`). A finalized checkpoint whose epoch starts
+  before `rb` is the checkpoint block of `r` (`FinalitySetting.fin_cb_r`). In both cases an
+  honest validator voted for the checkpoint.
 * `EthCLSpecs.Proofs.Heze.KeepsUncached`: a run of each Heze operation handler, and of
   `processOperations`, that starts on an uncached box ends on an uncached box
   (`keepsUncached_processOperations` and the handler lemmas). `increaseBalance` and
@@ -436,6 +468,9 @@ Re-exports:
   (`honestStored_of_arrivals`).
 * `EthCLSpecs.Proofs.Heze.OnTickPerSlot`: a per-slot tick keeps the `blocks` and
   `payloadInclusionListSatisfaction` maps (`onTickPerSlot_run_keeps`).
+* `EthCLSpecs.Proofs.Heze.PairScore`: the scores of two sibling children are the two weights
+  of the abstract race (`score_left_refines`, `score_right_refines`), and the path child is
+  strictly ahead under the counting inequality (`weightAhead_pair`).
 * `EthCLSpecs.Proofs.Heze.ParentPayloadEmpty`: `processParentExecutionPayload` on
   the EMPTY edge, with the empty parent requests, does not change the state
   (`processParentExecutionPayload_run_of_empty_parent`). Fork choice calls an edge
@@ -486,7 +521,9 @@ Re-exports:
   adds the first slot. Under it and the counting inequality, each of these heads lies below
   `empty r` and not below `full r`, or a root collision exists. `race_empty_persists_long`
   states the race with one justified state per slot (`RaceSetting.Long`), for a window of
-  several epochs.
+  several epochs. The head position is a premise of this tier: an honest node with no validators
+  can hold a head off `r`. Under a vote carrier chain, `CarrierWindow.head_window`
+  derives it (`Proofs/Heze/VoteStep.lean`).
 * `EthCLSpecs.Proofs.Heze.PayloadRaceRefines`: the score of `full r` and of `empty r` is
   `sideWeight` of that side, over the active unslashed validators and the side the store
   gives each one (`score_full_refines`, `score_empty_refines`). One supported node is never
@@ -556,6 +593,9 @@ Re-exports:
   keep the checkpoints (`ChainRun.ckView_of_epoch`). An epoch has at most one weigh state
   (`WeighAt.unique`). The slot step after it runs the weigh step on the balances of that
   state (`SlotStep.weigh`).
+* `EthCLSpecs.Proofs.Heze.SettingWalk`: with the justified node above `pending r` and a kept
+  node strictly below it, the honest head lies strictly below `pending r`
+  (`FinalitySetting.settingAt`).
 * `EthCLSpecs.Proofs.Heze.ShouldExtendPayload`: the complete `.run`
   equation of `shouldExtendPayload` (`shouldExtendPayload_run`), the
   existing recorded-unsatisfied FOCIL rejection
@@ -564,6 +604,9 @@ Re-exports:
 * `EthCLSpecs.Proofs.Heze.Shuffle`: the inherited `computeShuffledPermutation`
   returns a permutation of `[0, n)` whenever it does not raise
   (`computeShuffledPermutation_perm`).
+* `EthCLSpecs.Proofs.Heze.SiblingWeight`: no latest message supports two distinct children of
+  one node (`supportsVal_siblings_exclusive`). Two ancestors of one node lie on one chain
+  (`NodeBelow.comparable`).
 * `EthCLSpecs.Proofs.Heze.SlotsIncrease`: block slots increase along parent links at the
   end of a trace from the anchor store, or two distinct headers or blocks share a root
   (`NodeTrace.slotInv`). The argument uses the header check of `processBlockHeader` and
@@ -613,6 +656,8 @@ Re-exports:
 * `EthCLSpecs.Proofs.Heze.Time`: the inherited `computeEpochAtSlot`,
   `computeStartSlotAtEpoch`, and `computeActivationExitEpoch` at Heze. The `Downgrade`
   bridge reaches one fork up, so each theorem takes the Gloas proof term.
+* `EthCLSpecs.Proofs.Heze.TipCheckpoint`: the checkpoint block of the carrier tip at an epoch
+  is the checkpoint root of the carrier chain there (`tip_cb_eq_chainRoot`).
 * `EthCLSpecs.Proofs.Heze.TraceFacts`: a key of the block map stays a key along a trace
   (`NodeTrace.blocks_persist`). An attestation event of a clocked trace ran at a current
   slot no greater than the current slot of a later query (`ClockedTrace.attestation_slot_le`).
@@ -629,15 +674,21 @@ Re-exports:
   below `r` reads the voting source of `r`. Later, the last carrier block `T` before the epoch
   is below EMPTY `r` and its state passes the target test, so every leaf below it has a recent
   voting source. The finalized root is `r`, and no carrier block lies between `rb` and the
-  finalized epoch (`CarrierWindow.no_block_before`). `censored_payload_avoided` keeps FULL `r`
-  off every honest head of the window. The carrier chain gives the finality chain
+  finalized epoch (`CarrierWindow.no_block_before`). The carrier chain gives the finality chain
   (`CarrierWindow.chain`, with `LastDelivered`). A carrier block after `rb` by the first slot of
   `E₁` keeps the finalized root off `r` (`CarrierWindow.finRoot_ne`), and an honest target from
   `E₁` other than `r` is past `rb` (`FinalitySetting.early`). The honest inclusion list and the
   envelopes that leave out its transaction keep the heads of the first slot off FULL `r`
-  (`FinalitySetting.first_of_decision`). `censored_payload_final_carrier` composes these with
-  `censored_payload_final`. An honest index names one key on every run from the anchor
-  (`FinalitySetting.honest_key`).
+  (`FinalitySetting.first_of_decision`). An honest index names one key on every run from the
+  anchor (`FinalitySetting.honest_key`). An honest store holds the tip of the carrier chain for
+  an epoch (`CarrierWindow.tipChain`) with its state (`CarrierWindow.tipState`,
+  `CarrierWindow.tipStore`).
+* `EthCLSpecs.Proofs.Heze.VoteStep`: every honest head of the window lies below EMPTY `r`
+  (`CarrierWindow.head_window`), so the honest votes of each slot are on the EMPTY side
+  (`CarrierWindow.voteStep`). The viability walk keeps a node strictly below `pending r`. The
+  tip of the carrier chain carries the honest votes of the epoch before
+  (`CarrierWindow.kept_of_tip`, `CarrierWindow.tipBefore`). Each leaf below it passes the
+  finalized test (`FinalitySetting.finRead_early`, `CarrierWindow.finRead_late`).
 * `EthCLSpecs.Proofs.Heze.ViableNext`: the leaf check of `filter_node_tree` (`leafOk`), the
   walk lemmas (`kept_of_leaves`, `emptyViable_of_kept`), and the store invariants
   (`UnrealInv`, `UnrealKeys`, `FullVerified`, `StateLink`). At the slot after `r`, EMPTY `r` is

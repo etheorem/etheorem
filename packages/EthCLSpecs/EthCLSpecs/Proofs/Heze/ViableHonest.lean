@@ -594,19 +594,27 @@ store keeps it and the viability filter reads its leaves.
 
 - `emptyEdge`: the first block of `H` after `rb` builds on EMPTY `rb`. Its bid names a parent
   block hash other than the hash of `rb`'s bid.
-- `live`: `H` has a block in each epoch after the epoch of `rb`, up to `E₁ + 3`.
-- `included`: from the epoch of `rb`, each weigh state of `H` holds a placed vote of every
-  honest validator of the target test, and these hold two thirds of the total.
+- `live`: `H` has a block in each epoch from the epoch before the epoch of `rb`, up to `E₁ + 3`.
+- `included`: from the epoch before the epoch of `rb`, each weigh state of `H` holds a placed
+  vote of every honest validator of the target test. These validators hold two thirds of the
+  total. The weigh state at the end of the epoch before `rb` places the votes of two epochs
+  before `rb`. So `H` enters the epoch of `rb` with that epoch justified, and the leaves below
+  EMPTY `r` pass `correct_justified` there. Without these votes, a side branch can justify a
+  later checkpoint and then lose it to a slashing. Then no leaf is viable in the epoch of `rb`,
+  the honest votes of that epoch sit above `r`, and an honest node with no validators reaches
+  FULL `r`.
 - `holds`: an honest node holds every block of `H` from a slot before the slot of its head
   run.
 - `unslashedH`, `unslashed`: no state on `H`, or on a store run of an honest store of the
   window, has an honest validator slashed.
-- `single`: an honest validator registered at the state after `rb` signs at most one vote
-  for each target epoch: a vote on a store run through `rb` and a vote on `H` with one target
-  epoch are one vote.
-- `active`: every honest validator is a registry index, active at each epoch of the window,
-  at every state of `H`. Its exit needs its own signature or its withdrawal credentials, and no
-  slashing marks it (`unslashedH`).
+- `single`: an honest validator signs at most one vote for each target epoch
+  (`phase0/validator.md`, the slashing protection rule against a double vote). An honest vote
+  of the window is one that an honest node receives, or a placed vote on a store run of an
+  honest store (`HonestVoteOf`). Such a vote and a vote on `H` with the same target epoch are
+  one vote.
+- `active`: every honest validator is a registry index, active at each epoch from two epochs
+  before the epoch of `rb` to `E₁ + 4`, at every state of `H`. Its exit needs its own signature
+  or its withdrawal credentials, and no slashing marks it (`unslashedH`).
 - `seed`, `room`: the preset facts and the epoch arithmetic that the committee lookups need. -/
 structure CarrierWindow {Node : Type} (honest : Node → Prop) (node : Node → NodeRun map)
     (run : Node → Nat → HeadRun map)
@@ -626,9 +634,9 @@ structure CarrierWindow {Node : Type} (honest : Node → Prop) (node : Node → 
     (∀ b ∈ blocksOf p, b.slot ≤ rb.slot) →
     (sb.message.body.signedExecutionPayloadBid.message.parentBlockHash ==
       rb.body.signedExecutionPayloadBid.message.blockHash) = false
-  live : ∀ e, rb.slot.toNat / slotsPerEpoch < e → e ≤ E₁ + 3 →
+  live : ∀ e, rb.slot.toNat / slotsPerEpoch ≤ e + 1 → e ≤ E₁ + 3 →
     ∃ b ∈ blocksOf stepsH, b.slot.toNat / slotsPerEpoch = e
-  included : ∀ e, rb.slot.toNat / slotsPerEpoch ≤ e → e ≤ E₁ + 3 → ∀ W,
+  included : ∀ e, rb.slot.toNat / slotsPerEpoch ≤ e + 1 → e ≤ E₁ + 3 → ∀ W,
     WeighAt hi stepsH A e W →
     (∀ x ∈ honestList W honestOf (EthCLSpecs.Heze.previousEpochOf (pureState W)),
       PlacedVote hi A stepsH x (EthCLSpecs.Heze.previousEpochOf (pureState W))) ∧
@@ -639,22 +647,15 @@ structure CarrierWindow {Node : Type} (honest : Node → Prop) (node : Node → 
   unslashedH : ∀ p q u, stepsH = p ++ q → ChainRun hi p A u →
     ∀ j < u.validators.val.size, honestOf (UInt64.ofNat j) = true →
       (u.validators.val[j]!).slashed = false
-  unslashed : ∀ v, honest v → ∀ t, raceLo rb < t → t ≤ finSlot E₁ → ∀ p q z,
+  unslashed : ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ finSlot E₁ → ∀ p q z,
     StoreRun A a (run v t).store (p ++ q) → ChainRun (2 ^ 64 - 1) p A z →
     ∀ j < z.validators.val.size, honestOf (UInt64.ofNat j) = true →
       (z.validators.val[j]!).slashed = false
-  single : ∀ v, honest v → ∀ t, raceLo rb < t → t ≤ finSlot E₁ → ∀ stepsC,
-    StoreRun A a (run v t).store stepsC → ∀ aC sbC vbC bC,
-    stepsC = aC ++ .block sbC vbC :: bC → sbC.message = rb → ∀ i (d : AttestationData),
-    honestOf i = true → RunVote (2 ^ 64 - 1) A stepsC i d →
-    ∀ (sR : BeaconState) (q s₂ : List ChainStep) (d₂ : AttestationData),
-      ChainRun (2 ^ 64 - 1) (aC ++ [.block sbC vbC]) A sR →
-      ChainRun hi (aR ++ [.block sbR vbR]) A sR → i.toNat < sR.validators.val.size →
-      stepsH = (aR ++ [.block sbR vbR] ++ q) ++ s₂ →
-      RunVote hi A (aR ++ [.block sbR vbR] ++ q) i d₂ →
-      d₂.target.epoch = d.target.epoch → d₂ = d
+  single : ∀ i, honestOf i = true → ∀ d, HonestVoteOf honest node run rb A a E₁ i d →
+    ∀ (q s₂ : List ChainStep) (d₂ : AttestationData), stepsH = q ++ s₂ →
+      RunVote hi A q i d₂ → d₂.target.epoch = d.target.epoch → d₂ = d
   active : ∀ p q z, stepsH = p ++ q → ChainRun hi p A z → ∀ i, honestOf i = true →
-    ∀ e : EthCLSpecs.Heze.Epoch, rb.slot.toNat / slotsPerEpoch < e.toNat → e.toNat ≤ E₁ + 4 →
+    ∀ e : EthCLSpecs.Heze.Epoch, rb.slot.toNat / slotsPerEpoch ≤ e.toNat + 2 → e.toNat ≤ E₁ + 4 →
       i.toNat < z.validators.val.size ∧
         EthCLSpecs.Heze.isActiveValidator z.validators.val[i.toNat]! e = true
   seed : EthCLSpecs.Heze.Const.minSeedLookahead.toNat + 2 <
@@ -706,14 +707,14 @@ theorem FinalitySetting.early
   have hp := slotsPerEpochPos
   have hbefore := hset.before
   have hlo : raceLo rb ≤ t := by unfold raceLo; omega
-  have hq := hset.base v hv t hlo (Nat.le_of_lt ht2)
+  have hq := hset.held v hv t hlo (Nat.le_of_lt ht2)
   have hslots := (hq.slotInv hw (hset.fields.nodeOk v hv) hcol).slots
   have hlk := hq.block
   have hbelow : NodeBelow (run v t).store (.pending r) (run v t).head :=
     NodeBelow.trans _ _ _ _ (.step _ _ .refl (.empty r)) hbelow
   -- The first slot of `e`.
   have hfit : e.toNat * slotsPerEpoch < 2 ^ 64 := by
-    obtain ⟨cs, hcsn, -⟩ := (hset.base v hv (finSlot E₁) (by
+    obtain ⟨cs, hcsn, -⟩ := (hset.held v hv (finSlot E₁) (by
       unfold raceLo finSlot
       have : E₁ * slotsPerEpoch ≤ (E₁ + 4) * slotsPerEpoch := Nat.mul_le_mul_right _ (by omega)
       omega) (Nat.le_refl _)).slot
@@ -779,22 +780,23 @@ theorem CarrierWindow.chain
         (hH.included (E₁ + k + 1) (by omega) (by omega) W hW).2 }, hlast⟩
 
 /-- **The tip of the honest chain for epoch `E`.** Take the weigh state `W` of `H` at the last
-slot of `E - 1`. The last block `T` of `H` up to `W` is in epoch `E - 1`: `H` has a block there
-(`live`), or `E - 1` is the epoch of `rb`. It is `rb` or later. Its post-state `wT` reaches `W`
-by slot steps of one epoch, which write no flag (`ChainRun.targetFlag_back`) and keep the
-activity and the balances (`ChainRun.views_of_epoch`). So the votes that `W` holds
-(`included`) are flags of `wT`, with the stake of `W`. -/
+slot of `E - 1`, for `E` from the epoch of `rb` on. The last block `T` of `H` up to `W` is in
+epoch `E - 1`, because `H` has a block there (`live`). After the epoch of `rb`, `T` is `rb` or
+later. The post-state `wT` of `T` reaches `W` by slot steps inside one epoch. These steps write
+no flag (`ChainRun.targetFlag_back`), and they keep the activity and the balances
+(`ChainRun.views_of_epoch`). So the votes that `W` holds (`included`) are flags of `wT`, with
+the stake of `W`. -/
 theorem CarrierWindow.tipChain
     (hH : CarrierWindow honest node run rb A a E₁ honestOf hi stepsH sH aR sbR vbR bR)
     (hlA : (epochOf A + 2) * slotsPerEpoch ≤ rb.slot.toNat) {E : Nat}
-    (hE1 : rb.slot.toNat / slotsPerEpoch < E) (hE2 : E ≤ E₁ + 4) :
+    (hE1 : rb.slot.toNat / slotsPerEpoch ≤ E) (hE2 : E ≤ E₁ + 4) :
     ∃ p sbT vbT q s₂ wT W, stepsH = p ++ .block sbT vbT :: (q ++ .slot :: s₂) ∧
       ChainRun hi (p ++ [.block sbT vbT]) A wT ∧ ChainRun hi q wT W ∧ blocksOf q = [] ∧
       (∃ u, ChainRun hi p A u ∧ BlockStep sbT vbT u wT) ∧ ValidatedSteps p ∧
       wT.slot.toNat = sbT.message.slot.toNat ∧
       (E - 1) * slotsPerEpoch ≤ sbT.message.slot.toNat ∧
       sbT.message.slot.toNat < E * slotsPerEpoch ∧
-      (rb ∈ blocksOf p ∨ sbT.message = rb) ∧
+      (rb.slot.toNat / slotsPerEpoch < E → rb ∈ blocksOf p ∨ sbT.message = rb) ∧
       (∀ x ∈ blocksOf p, x.slot.toNat < sbT.message.slot.toNat) ∧
       (∀ j < wT.validators.val.size, honestOf (UInt64.ofNat j) = true →
         (wT.validators.val[j]!).slashed = false) ∧
@@ -848,9 +850,13 @@ theorem CarrierWindow.tipChain
   have hrbH : rb ∈ blocksOf stepsH := by
     rw [hH.split, ← hH.isRb]
     exact mem_blocksOf_block _ _ _ _
-  have hrbE : rb.slot.toNat < E * slotsPerEpoch := (Nat.div_lt_iff_lt_mul hp).mp hE1
-  have hrb1 := hin rb hrbH hrbE
-  obtain ⟨p, sbT, vbT, q, hs1, hq⟩ := split_last_block s₁ (List.ne_nil_of_mem hrb1)
+  -- `H` has a block in `E - 1`, before the slot after `W`.
+  obtain ⟨b₁, hb₁, hb₁e⟩ := hH.live (E - 1) (by omega) (by omega)
+  have hb₁E : b₁.slot.toNat < E * slotsPerEpoch := by
+    rw [← hEE]
+    exact (Nat.div_lt_iff_lt_mul hp).mp (by omega)
+  have hb₁s := hin b₁ hb₁ hb₁E
+  obtain ⟨p, sbT, vbT, q, hs1, hq⟩ := split_last_block s₁ (List.ne_nil_of_mem hb₁s)
   have hbl : blocksOf s₁ = blocksOf p ++ [sbT.message] := by
     rw [hs1, blocksOf_append]
     show _ ++ sbT.message :: blocksOf q = _
@@ -879,18 +885,13 @@ theorem CarrierWindow.tipChain
   have hTW : sbT.message.slot.toNat ≤ W.slot.toNat :=
     ((hr1.slot_le hhi).2 sbT.message (by rw [hbl]; simp)).2
   have hTlo : (E - 1) * slotsPerEpoch ≤ sbT.message.slot.toNat := by
-    by_cases hEr : E - 1 = rb.slot.toNat / slotsPerEpoch
-    · rw [hEr]
-      exact Nat.le_trans (Nat.div_mul_le_self _ _) (hle1 rb hrb1)
-    · obtain ⟨b, hb, hbe⟩ := hH.live (E - 1) (by omega) (by omega)
-      have hbE : b.slot.toNat < E * slotsPerEpoch := by
-        rw [← hEE]
-        exact (Nat.div_lt_iff_lt_mul hp).mp (by omega)
-      rw [← hbe]
-      exact Nat.le_trans (Nat.div_mul_le_self _ _) (hle1 b (hin b hb hbE))
+    rw [← hb₁e]
+    exact Nat.le_trans (Nat.div_mul_le_self _ _) (hle1 b₁ hb₁s)
   have hsH : stepsH = p ++ .block sbT vbT :: (q ++ .slot :: s₂) := by rw [hs, hs1]; simp
   have hvalp : ValidatedSteps p := fun sb v hm => hH.val sb v (by rw [hsH]; simp [hm])
-  have hrbp : rb ∈ blocksOf p ∨ sbT.message = rb := by
+  have hrbp : rb.slot.toNat / slotsPerEpoch < E → rb ∈ blocksOf p ∨ sbT.message = rb := by
+    intro hlt
+    have hrb1 := hin rb hrbH ((Nat.div_lt_iff_lt_mul hp).mp hlt)
     rw [hbl] at hrb1
     rcases List.mem_append.mp hrb1 with h | h
     · exact .inl h
@@ -960,80 +961,32 @@ theorem CarrierWindow.tipChain
   exact hY.targetFlag_back hhi hq hsame ((hinc x hx).flag_at_weigh hhi hW')
 
 include hw in
-/-- **The tip `T` in the store of an honest head run of epoch `E`, after the epoch of `rb`.**
-`T` is the block of `CarrierWindow.tipChain`. The node holds it: it is `rb`, or a block of `H`
-after `rb` from an earlier slot (`holds`). Its stored state is `wT`: the store run to it
-(`CkptInv.chains`) and the prefix of `H` to it have one list of blocks (`Linked.eq_of_last`)
-and one end slot (`ChainRun.det_blocks`). Unless `T` is `rb`, the first block of `H` after
-`rb` builds on EMPTY `rb` (`emptyEdge`, `child_edge`), and the ancestor path from it reaches
-`T` (`AncestorPath.pendingBelow`). -/
-theorem CarrierWindow.tipStore
+/-- **The stored state of a held block of `H`.** Take a block `T` of `H`, not the anchor, that an
+honest store of the window holds, with `wT` the state of `H` after it. The stored state of `T`
+is `wT`: the store run to it (`CkptInv.chains`) and the prefix of `H` to it have one list of
+blocks (`Linked.eq_of_last`) and one end slot (`ChainRun.det_blocks`). -/
+theorem CarrierWindow.tipState
     (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees)
     (hH : CarrierWindow honest node run rb A a E₁ honestOf hi stepsH sH aR sbR vbR bR)
-    (hcol : ¬ RootCollision) {v : Node} (hv : honest v) {s : Nat} (hlo : raceLo rb < s)
-    (hs : s ≤ finSlot E₁) (hE1 : rb.slot.toNat / slotsPerEpoch < s / slotsPerEpoch) :
-    ∃ (T : Root) (tb : BeaconBlock) (sT : BeaconState) (preT : List ChainStep),
-      FcMap.lookup (run v s).store.blocks T = some tb ∧ T ≠ htr a ∧
-      FcMap.lookup (run v s).store.blockStates T = some (pureState sT) ∧
-      ChainRun (2 ^ 64 - 1) preT A sT ∧ AncestorPath a (run v s).store T (blocksOf preT) ∧
-      ValidatedSteps preT ∧ EndsAtBlock preT ∧
-      sT.slot.toNat = tb.slot.toNat ∧ rb.slot.toNat ≤ tb.slot.toNat ∧
-      sT.slot.toNat / slotsPerEpoch + 1 = s / slotsPerEpoch ∧
-      (∀ y ∈ blocksOf preT, y ∈ blocksOf stepsH) ∧
-      (T = r ∨ (rb.slot.toNat < tb.slot.toNat ∧
-        NodeBelow (run v s).store (.empty r) (.pending T))) ∧
-      (∀ j < sT.validators.val.size, honestOf (UInt64.ofNat j) = true →
-        (sT.validators.val[j]!).slashed = false) ∧
-      CommitteeWindow (EthCLSpecs.Heze.previousEpochOf (pureState sT)) (pureState sT) ∧
-      CommitteeWindow (EthCLSpecs.Heze.currentEpochOf (pureState sT)) (pureState sT) ∧
-      (∀ x ∈ honestList sT honestOf (EthCLSpecs.Heze.previousEpochOf (pureState sT)),
-        TargetFlagSet sT x.toNat (EthCLSpecs.Heze.previousEpochOf (pureState sT))) ∧
-      3 * honestStake sT honestOf (EthCLSpecs.Heze.previousEpochOf (pureState sT)) ≥
-        2 * (totBal sT).toNat := by
+    (hcol : ¬ RootCollision) {v : Node} (hv : honest v) {s : Nat} (hle : raceLo rb ≤ s)
+    (hs : s ≤ finSlot E₁) {p rest : List ChainStep} {sbT : SignedBeaconBlock} {vbT : Bool}
+    {wT : BeaconState} (hsH : stepsH = p ++ .block sbT vbT :: rest)
+    (hX : ChainRun hi (p ++ [.block sbT vbT]) A wT)
+    (hwT : wT.slot.toNat = sbT.message.slot.toNat)
+    (hTk : FcMap.lookup (run v s).store.blocks (htr sbT.message) = some sbT.message)
+    (hTa : htr sbT.message ≠ htr a) :
+    ∃ preT, FcMap.lookup (run v s).store.blockStates (htr sbT.message) = some (pureState wT) ∧
+      ChainRun (2 ^ 64 - 1) preT A wT ∧
+      AncestorPath a (run v s).store (htr sbT.message) (blocksOf preT) ∧
+      ValidatedSteps preT ∧ EndsAtBlock preT ∧ blocksOf preT = blocksOf p ++ [sbT.message] := by
   have hcb : ¬ HtrCollision BeaconBlock := fun h => hcol (.inr h)
-  have hp := slotsPerEpochPos
-  have hle : raceLo rb ≤ s := Nat.le_of_lt hlo
-  have hq := hset.base v hv s hle hs
+  have hq := hset.held v hv s hle hs
   have hn := hset.fields.nodeOk v hv
-  obtain ⟨hI, -, ha, -, -⟩ := hset.storeFacts hw hcol hv hle hs
+  obtain ⟨hI, -, -, -, -⟩ := hset.storeFacts hw hcol hv hle hs
   have hslot := hI.slot
   obtain ⟨-, -, -, hlink, -⟩ := hq.viableInvs hw hcol hn (hset.anchorState v hv ▸ hset.ord)
     (hset.stateRoots v hv)
   rw [hset.anchorBlock v hv] at hlink
-  have hlate := hset.late
-  have hlA : (epochOf A + 2) * slotsPerEpoch ≤ rb.slot.toNat :=
-    Nat.le_trans (Nat.mul_le_mul_right _ (Nat.le_max_left _ _)) hlate
-  have hE2 : s / slotsPerEpoch ≤ E₁ + 4 := by
-    have : s / slotsPerEpoch ≤ finSlot E₁ / slotsPerEpoch := Nat.div_le_div_right hs
-    rw [finSlot, Nat.mul_div_cancel _ hp] at this
-    exact this
-  obtain ⟨p, sbT, vbT, q, s₂, wT, W, hsH, hX, hY, hq0, ⟨u, hpu, hbs⟩, hvalp, hwT, hTlo, hThi,
-    hrbp, hlast, hus, hw₀, hw₁, hflags, hstake⟩ := hH.tipChain hlA hE1 hE2
-  have hsE : s / slotsPerEpoch * slotsPerEpoch ≤ s := Nat.div_mul_le_self _ _
-  have hTs : sbT.message.slot.toNat < s := by omega
-  have hrbr : htr rb = r := hslot.atRoot r rb hq.block
-  -- `T` is `rb`, or a later block of `H`.
-  have hrbT : rb.slot.toNat ≤ sbT.message.slot.toNat := by
-    rcases hrbp with h | h
-    · exact Nat.le_of_lt (hlast rb h)
-    · exact Nat.le_of_eq (by rw [h])
-  have hTk : FcMap.lookup (run v s).store.blocks (htr sbT.message) = some sbT.message := by
-    rcases hrbp with h | h
-    · exact hH.holds v hv s hlo hs sbT.message (by rw [hsH]; exact mem_blocksOf_block _ _ _ _)
-        (UInt64.lt_iff_toNat_lt.mpr (hlast rb h)) hTs
-    · rw [h, hrbr]
-      exact hq.block
-  -- `T` is not the anchor: the anchor block is before `rb`.
-  have haS : a.slot.toNat ≤ epochOf A * slotsPerEpoch := by
-    rw [anchor_slot_eq hset.anchorHeader]
-    exact hset.aligned
-  have hTa : htr sbT.message ≠ htr a := fun h => by
-    rw [h, ha] at hTk
-    cases hTk
-    have : epochOf A * slotsPerEpoch < (epochOf A + 2) * slotsPerEpoch :=
-      Nat.mul_lt_mul_of_pos_right (by omega) hp
-    omega
-  -- The stored state of `T` and its store run.
   obtain ⟨sb', _, w', hsb', -, hw', ht'⟩ := hlink _ _ hTk hTa
   obtain ⟨preT, hrunT, hpathT, hvalT, hendT⟩ := hI.chains _ w' hw'
   obtain ⟨hL1, hk1⟩ := hpathT.linked hslot
@@ -1054,6 +1007,90 @@ theorem CarrierWindow.tipStore
     exact ChainRun.det_blocks (Nat.le_refl _) hhi hrunT hX (by rw [hbl, blocksOf_append_block])
       (by rw [e1, hwT])
   subst hw'T
+  exact ⟨preT, hw', hrunT, hpathT, hvalT, hendT, hbl⟩
+
+include hw in
+/-- **The tip `T` in the store of an honest head run of epoch `E`, after the epoch of `rb`.**
+`T` is the block of `CarrierWindow.tipChain`. The node holds it: it is `rb`, or a block of `H`
+after `rb` from an earlier slot (`holds`). Its stored state is `wT`: the store run to it
+(`CkptInv.chains`) and the prefix of `H` to it have one list of blocks (`Linked.eq_of_last`)
+and one end slot (`ChainRun.det_blocks`). Unless `T` is `rb`, the first block of `H` after
+`rb` builds on EMPTY `rb` (`emptyEdge`, `child_edge`), and the ancestor path from it reaches
+`T` (`AncestorPath.pendingBelow`). -/
+theorem CarrierWindow.tipStore
+    (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees)
+    (hH : CarrierWindow honest node run rb A a E₁ honestOf hi stepsH sH aR sbR vbR bR)
+    (hcol : ¬ RootCollision) {v : Node} (hv : honest v) {s : Nat} (hlo : raceLo rb ≤ s)
+    (hs : s ≤ finSlot E₁) (hE1 : rb.slot.toNat / slotsPerEpoch < s / slotsPerEpoch) :
+    ∃ (T : Root) (tb : BeaconBlock) (sT : BeaconState) (preT : List ChainStep),
+      FcMap.lookup (run v s).store.blocks T = some tb ∧ T ≠ htr a ∧
+      FcMap.lookup (run v s).store.blockStates T = some (pureState sT) ∧
+      ChainRun (2 ^ 64 - 1) preT A sT ∧ AncestorPath a (run v s).store T (blocksOf preT) ∧
+      ValidatedSteps preT ∧ EndsAtBlock preT ∧
+      sT.slot.toNat = tb.slot.toNat ∧ rb.slot.toNat ≤ tb.slot.toNat ∧
+      sT.slot.toNat / slotsPerEpoch + 1 = s / slotsPerEpoch ∧
+      (∀ y ∈ blocksOf preT, y ∈ blocksOf stepsH) ∧
+      (∃ pT rest, stepsH = pT ++ rest ∧ blocksOf preT = blocksOf pT) ∧
+      (T = r ∨ (rb.slot.toNat < tb.slot.toNat ∧
+        NodeBelow (run v s).store (.empty r) (.pending T))) ∧
+      (∀ j < sT.validators.val.size, honestOf (UInt64.ofNat j) = true →
+        (sT.validators.val[j]!).slashed = false) ∧
+      CommitteeWindow (EthCLSpecs.Heze.previousEpochOf (pureState sT)) (pureState sT) ∧
+      CommitteeWindow (EthCLSpecs.Heze.currentEpochOf (pureState sT)) (pureState sT) ∧
+      (∀ x ∈ honestList sT honestOf (EthCLSpecs.Heze.previousEpochOf (pureState sT)),
+        TargetFlagSet sT x.toNat (EthCLSpecs.Heze.previousEpochOf (pureState sT))) ∧
+      3 * honestStake sT honestOf (EthCLSpecs.Heze.previousEpochOf (pureState sT)) ≥
+        2 * (totBal sT).toNat := by
+  have hcb : ¬ HtrCollision BeaconBlock := fun h => hcol (.inr h)
+  have hp := slotsPerEpochPos
+  have hle : raceLo rb ≤ s := hlo
+  have hq := hset.held v hv s hle hs
+  have hn := hset.fields.nodeOk v hv
+  obtain ⟨hI, -, ha, -, -⟩ := hset.storeFacts hw hcol hv hle hs
+  have hslot := hI.slot
+  obtain ⟨-, -, -, hlink, -⟩ := hq.viableInvs hw hcol hn (hset.anchorState v hv ▸ hset.ord)
+    (hset.stateRoots v hv)
+  rw [hset.anchorBlock v hv] at hlink
+  have hlate := hset.late
+  have hlA : (epochOf A + 2) * slotsPerEpoch ≤ rb.slot.toNat :=
+    Nat.le_trans (Nat.mul_le_mul_right _ (Nat.le_max_left _ _)) hlate
+  have hE2 : s / slotsPerEpoch ≤ E₁ + 4 := by
+    have : s / slotsPerEpoch ≤ finSlot E₁ / slotsPerEpoch := Nat.div_le_div_right hs
+    rw [finSlot, Nat.mul_div_cancel _ hp] at this
+    exact this
+  obtain ⟨p, sbT, vbT, q, s₂, wT, W, hsH, hX, hY, hq0, ⟨u, hpu, hbs⟩, hvalp, hwT, hTlo, hThi,
+    hrbp, hlast, hus, hw₀, hw₁, hflags, hstake⟩ := hH.tipChain hlA (Nat.le_of_lt hE1) hE2
+  replace hrbp := hrbp hE1
+  have hsE : s / slotsPerEpoch * slotsPerEpoch ≤ s := Nat.div_mul_le_self _ _
+  have hTs : sbT.message.slot.toNat < s := by omega
+  have hrbr : htr rb = r := hslot.atRoot r rb hq.block
+  -- `T` is `rb`, or a later block of `H`.
+  have hrbT : rb.slot.toNat ≤ sbT.message.slot.toNat := by
+    rcases hrbp with h | h
+    · exact Nat.le_of_lt (hlast rb h)
+    · exact Nat.le_of_eq (by rw [h])
+  have hTk : FcMap.lookup (run v s).store.blocks (htr sbT.message) = some sbT.message := by
+    rcases hrbp with h | h
+    · -- A block of `H` after `rb` and before `s`: `s` is past the first slot of the window.
+      have hTr := hlast rb h
+      have hlo' : raceLo rb < s := by unfold raceLo at hle ⊢; omega
+      exact hH.holds v hv s hlo' hs sbT.message (by rw [hsH]; exact mem_blocksOf_block _ _ _ _)
+        (UInt64.lt_iff_toNat_lt.mpr hTr) hTs
+    · rw [h, hrbr]
+      exact hq.block
+  -- `T` is not the anchor: the anchor block is before `rb`.
+  have haS : a.slot.toNat ≤ epochOf A * slotsPerEpoch := by
+    rw [anchor_slot_eq hset.anchorHeader]
+    exact hset.aligned
+  have hTa : htr sbT.message ≠ htr a := fun h => by
+    rw [h, ha] at hTk
+    cases hTk
+    have : epochOf A * slotsPerEpoch < (epochOf A + 2) * slotsPerEpoch :=
+      Nat.mul_lt_mul_of_pos_right (by omega) hp
+    omega
+  -- The stored state of `T` and its store run.
+  obtain ⟨preT, hw', hrunT, hpathT, hvalT, hendT, hbl⟩ :=
+    hH.tipState hw hset hcol hv hle hs hsH hX hwT hTk hTa
   have hsub : ∀ y ∈ blocksOf preT, y ∈ blocksOf stepsH := by
     intro y hy
     rw [hbl] at hy
@@ -1062,8 +1099,11 @@ theorem CarrierWindow.tipStore
     · exact List.mem_append_left _ h
     · rw [List.mem_singleton.mp h]
       exact List.mem_append_right _ List.mem_cons_self
-  refine ⟨htr sbT.message, sbT.message, w', preT, hTk, hTa, hw', hrunT, hpathT, hvalT, hendT,
-    hwT, hrbT, ?_, hsub, ?_, hus, hw₀, hw₁, hflags, hstake⟩
+  have hpre : ∃ pT rest, stepsH = pT ++ rest ∧ blocksOf preT = blocksOf pT :=
+    ⟨p ++ [.block sbT vbT], q ++ .slot :: s₂, by rw [hsH]; simp,
+      by rw [hbl, blocksOf_append_block]⟩
+  refine ⟨htr sbT.message, sbT.message, wT, preT, hTk, hTa, hw', hrunT, hpathT, hvalT, hendT,
+    hwT, hrbT, ?_, hsub, hpre, ?_, hus, hw₀, hw₁, hflags, hstake⟩
   · rw [hwT]
     have h1 : s / slotsPerEpoch - 1 ≤ sbT.message.slot.toNat / slotsPerEpoch :=
       (Nat.le_div_iff_mul_le hp).mpr hTlo
@@ -1140,8 +1180,7 @@ theorem FinalitySetting.fin_not_full
     (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees)
     (hcol : ¬ RootCollision) {v : Node} (hv : honest v) {t : Nat} (ht : raceLo rb < t)
     (ht' : t ≤ finSlot E₁)
-    (hIH : ∀ u, honest u → ∀ t', raceLo rb ≤ t' → t' < t →
-      NodeBelow (run u t').store (.empty r) (run u t').head)
+    (hV : VotesEmpty honest node run r rb A a E₁ nodeOf honestOf t)
     {fb : BeaconBlock}
     (hfb : FcMap.lookup (run v t).store.blocks (run v t).store.finalizedCheckpoint.root = some fb)
     (hgt : rb.slot < fb.slot)
@@ -1152,7 +1191,7 @@ theorem FinalitySetting.fin_not_full
   have hp := slotsPerEpochPos
   have hle' : raceLo rb ≤ t := Nat.le_of_lt ht
   obtain ⟨hI, -, -, -, hft⟩ := hset.storeFacts hw hcol hv hle' ht'
-  have hq := hset.base v hv t hle' ht'
+  have hq := hset.held v hv t hle' ht'
   have hgt' := UInt64.lt_iff_toNat_lt.mp hgt
   have hlate := hset.late
   generalize hF : (run v t).store.finalizedCheckpoint = F at hfb hle hfull hft
@@ -1169,9 +1208,14 @@ theorem FinalitySetting.fin_not_full
     omega
   have hE := hset.target_empty hw hcol hv hle' ht' hrun hpath hsr (x := toCp F)
     (justified_of_fin hfin) (by unfold anchorK; simp only [toCp]; omega)
-    (by simp only [toCp]; omega) (by simp only [toCp]; omega) ⟨fb, hfb⟩ hIH
-    (fun u hu t' hlo' hlt' _ e uu uu' _ _ cb hcb' => by
-      have hqu := hset.base u hu t' hlo' (by omega)
+    (by simp only [toCp]; omega) (by simp only [toCp]; omega) ⟨fb, hfb⟩
+    (fun he => by
+      simp only [toCp] at he
+      rw [he, hq.block] at hfb
+      cases hfb
+      exact UInt64.lt_irrefl _ hgt) hV
+    (fun u hu t' hlo' hlt' _ _ e uu uu' _ _ cb hcb' => by
+      have hqu := hset.held u hu t' hlo' (by omega)
       have hinvu : SlotInv a (run u t').store :=
         hset.anchorBlock _ hu ▸ hqu.slotInv hw (hset.fields.nodeOk _ hu) hcol
       have : cb = fb := SlotInv.block_eq hinvu hI.slot hcb hcb' hfb
@@ -1210,8 +1254,8 @@ theorem FinalitySetting.honest_key {Node : Type} {honest : Node → Prop}
 
 include hw in
 /-- **`ViableStep` from the honest chain.** Take an honest head run of slot `s` in the window,
-with a justified block no later than `rb`, after the honest heads before `s` lie below
-EMPTY `r`. Suppose that the filtered tree holds FULL `r`.
+with a justified block no later than `rb`, after the honest votes before `s` are on the EMPTY
+side (`VotesEmpty`). Suppose that the filtered tree holds FULL `r`.
 
 - `s` in the epoch of `rb`: `HeadRun.Base.viable_sameEpoch`.
 - `s` later: the tip `T` (`CarrierWindow.tipStore`) is `rb` or below EMPTY `r`, and its state
@@ -1235,14 +1279,14 @@ theorem viableStep_core {Node : Type} {honest : Node → Prop} {node : Node → 
       (run v t).store.finalizedCheckpoint.root = r →
       ∀ b ∈ blocksOf stepsH, rb.slot.toNat < b.slot.toNat →
       b.slot.toNat ≤ (run v t).store.finalizedCheckpoint.epoch.toNat * slotsPerEpoch → False) :
-    ViableStep honest run r rb hv' := by
-  intro s hlo hs' hIH v hv hjust
+    ViableStep honest node run r rb A a E₁ nodeOf honestOf hv' := by
+  intro s hlo hs' hIH _ v hv hjust
   have hs : s ≤ finSlot E₁ := Nat.le_trans hs' hhv
   obtain ⟨jb, hjb, -⟩ := hjust
   have hcb : ¬ HtrCollision BeaconBlock := fun h => hcol (.inr h)
   have hp := slotsPerEpochPos
   have hle : raceLo rb ≤ s := Nat.le_of_lt hlo
-  have hq := hset.base v hv s hle hs
+  have hq := hset.held v hv s hle hs
   have hn := hset.fields.nodeOk v hv
   have hA0 := hset.anchorState v hv
   have hA1 := hset.anchorBlock v hv
@@ -1289,7 +1333,7 @@ theorem viableStep_core {Node : Type} {honest : Node → Prop} {node : Node → 
     have : rb.slot.toNat / slotsPerEpoch ≤ s / slotsPerEpoch := Nat.div_le_div_right (by omega)
     omega
   obtain ⟨T, tb, sT, preT, hTk, hTa, hsT, hrunT, hpathT, hvalT, hendT, hsTb, hrbT, hsTE, hsub,
-    hTm, hus, hw₀, hw₁, hflags, hstake⟩ := hH.tipStore hw hset hcol hv hlo hs hE1
+    -, hTm, hus, hw₀, hw₁, hflags, hstake⟩ := hH.tipStore hw hset hcol hv hle hs hE1
   intro nodes t0 t' hrun hfull
   obtain ⟨hJr, hJfull⟩ := justified_path_of_full _ hfv r hrun hfull
   obtain ⟨E, hEn, hEr⟩ := hq.storeEpoch
@@ -1314,7 +1358,7 @@ theorem viableStep_core {Node : Type} {honest : Node → Prop} {node : Node → 
   have hall : ∀ p q z, StoreRun A a (run v s).store (p ++ q) → ChainRun (2 ^ 64 - 1) p A z →
       (∀ j < z.validators.val.size, honestOf (UInt64.ofNat j) = true →
         (z.validators.val[j]!).slashed = false) ∧ RunTotals z := fun p q z hsr hz =>
-    ⟨hH.unslashed v hv s hlo hs p q z hsr hz, hset.totals v hv s hle hs p q z hsr hz⟩
+    ⟨hH.unslashed v hv s hle hs p q z hsr hz, hset.totals v hv s hle hs p q z hsr hz⟩
   -- The finalized checkpoint, when its epoch starts at or after `rb`.
   have hfinr : ∀ dF, NodeBelow (run v s).store (.full r) dF →
       (∀ u, (finRead (run v s).store dF.root).run u = .ok (true, u)) → ¬ S < rb.slot →
@@ -1437,7 +1481,7 @@ theorem CarrierWindow.no_block_before {Node : Type} {honest : Node → Prop}
   have hp := slotsPerEpochPos
   have hle : raceLo rb ≤ t := Nat.le_of_lt ht
   obtain ⟨hI, -, ha, -, hft⟩ := hset.storeFacts hw hcol hv hle ht'
-  have hq := hset.base v hv t hle ht'
+  have hq := hset.held v hv t hle ht'
   have hn := hset.fields.nodeOk v hv
   have hrb := hq.block
   have hlt : rb.slot.toNat < t := by unfold raceLo at ht; omega
@@ -1510,9 +1554,11 @@ theorem CarrierWindow.no_block_before {Node : Type} {honest : Node → Prop}
       have := hH.unslashedH w₁ (.slot :: w₂) W hws hrW i.toNat hlt'
         (by rw [UInt64.ofNat_toNat]; exact hhon)
       exact this)
-    (fun p q z hpq hz => hH.active p q z hpq hz i hhon d.target.epoch hrbe (by omega))
+    (fun p q z hpq hz => hH.active p q z hpq hz i hhon d.target.epoch (by omega)
+      (by omega))
     hb hb1 hb2 (by omega) (by omega)
-    (hH.single v hv t ht ht' steps hsr aC sbC vbC bC hC hrbC' i d hhon hvote)
+    (fun _ _ s₂ d₂ _ _ _ hst hv₂ he => hH.single i hhon d
+      ⟨v, hv, t, Nat.le_of_lt ht, ht', .inr ⟨steps, hsr, hvote⟩⟩ _ s₂ d₂ hst hv₂ he)
 
 include hw in
 /-- **`ViableStep` from the carrier chain**, over the whole window: `viableStep_core` with
@@ -1527,7 +1573,8 @@ theorem viableStep_of_carrier {Node : Type} {honest : Node → Prop} {node : Nod
     {sbR : SignedBeaconBlock} {vbR : Bool} {bR : List ChainStep}
     (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees)
     (hH : CarrierWindow honest node run rb A a E₁ honestOf hi stepsH sH aR sbR vbR bR)
-    (hcol : ¬ RootCollision) : ViableStep honest run r rb (finSlot E₁) := by
+    (hcol : ¬ RootCollision) :
+    ViableStep honest node run r rb A a E₁ nodeOf honestOf (finSlot E₁) := by
   have hp := slotsPerEpochPos
   refine viableStep_core hw hset hH hcol (Nat.le_refl _)
     fun _ hv t hlo hs _ hFr b hb hb1 hb2 =>
@@ -1635,12 +1682,11 @@ theorem FinalitySetting.first_of_decision [LawfulFcMap map (Slot × Root)] {Node
     have : E₁ * slotsPerEpoch ≤ (E₁ + 4) * slotsPerEpoch := Nat.mul_le_mul_right _ (by omega)
     omega
   have hn := hset.fields.nodeOk v hv
-  have hQ := hset.base v hv _ hlo hhi
+  have hQ := hset.held v hv _ hlo hhi
   have hinv := hQ.slotInv hw hn hcol
   obtain ⟨s', hrun⟩ := hQ.headRun
-  rcases hset.cases v hv _ hlo hhi with ⟨jst, hOk, -⟩ | ⟨jb, hjb, hjlt⟩
-  · obtain ⟨jb, hj, hjle⟩ := hOk.justified
-    have hA' : (node v).anchorState.slot.toNat / slotsPerEpoch ≤
+  rcases hset.cases v hv _ hlo hhi with ⟨jst, ⟨jb, hj, hjle⟩, -, -, -⟩ | ⟨jb, hjb, hjlt⟩
+  · have hA' : (node v).anchorState.slot.toNat / slotsPerEpoch ≤
         (rb.slot.toNat + 1) / slotsPerEpoch := by
       rw [hset.anchorState v hv]
       exact hset.anchor_le hlo
@@ -1664,122 +1710,9 @@ theorem FinalitySetting.first_of_decision [LawfulFcMap map (Slot × Root)] {Node
     have hv0 := hQ.emptyViable_raceLo hw hset.sphr hcol hn hord (hset.stateRoots v hv) hA' hr0 hj
     exact (hdec.head_avoids_full hw hv hn hQ.toCore hj hjle hv0).resolve_left hcol
   · have hj := hset.justified_empty hw hcol hv hlo hhi hjb hjlt
-      (fun _ _ _ h1 h2 => absurd h2 (Nat.not_lt.mpr h1))
+      (fun _ _ _ _ h1 h2 => absurd h2 (Nat.not_lt.mpr h1))
     exact below_emptySide_not_full _ hinv.slots r rb hQ.block _ _ hj
       (getHead_run_below_justified _ _ _ _ hrun)
-
-include hw in
-/-- **The censored payload is final.** Take the block `rb` at `r`, of slot `N`, and an honest
-inclusion list of slot `N - 1` whose transaction `tx` every envelope for `r` at an honest node
-leaves out (`DecisionSetting`). Take the window premises (`FinalitySetting`), a vote carrier
-chain on the EMPTY side (`CarrierWindow`) with a block after `rb` no later than the first slot of
-`E₁`, and the delivery of its last block of `E₁ + 3` to every honest node (`LastDelivered`).
-Then every honest head of the window avoids FULL `r`.
-
-Take a later store of an honest node: a trace from the store of the end of the window, with no
-block at the parent root of the anchor and no zero state root. Its ancestor paths agree with
-those of the end store before the first slot of epoch `max (e₀ + 2) 3`, where `e₀` is the anchor
-epoch. The checkpoints justified from the anchor lie on that prefix, and the accountable form
-needs both chains to share them (`honestNodes_accountable`). The store meets the totals premise. Then its head avoids FULL `r`, or there is slashing
-evidence, or two blocks or headers share a root.
-
-The honest heads need not follow the carrier chain. The block after `rb` keeps the finalized
-root off `r` (`CarrierWindow.finRoot_ne`). `live` gives that block when `E₁` is two epochs past
-`rb` (`CarrierWindow.early_block`). At `E₁ = epoch(rb) + 1` the conclusion fails without it:
-`included` lets `H` place the votes of each epoch in the next epoch only. Then at the end of
-`E₁ + 3` only the rule `all(bits[1:4])` fires (`phase0/beacon-chain.md:1992`), and it finalizes
-`E₁`, whose block root is `r` when `H` has no block in `(rb.slot, E₁ * SLOTS_PER_EPOCH]`.
-
-`FinalitySetting.first_of_decision` gives the first slot, `FinalitySetting.early` the honest
-targets from `E₁`, `CarrierWindow.chain` the finalizing chain, and `viableStep_of_carrier` the
-viability of EMPTY `r`. Then `censored_payload_final` applies. -/
-theorem censored_payload_final_carrier [LawfulFcMap map (Slot × Root)] {Node : Type}
-    {honest : Node → Prop}
-    {node : Node → NodeRun map} {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock}
-    {A : BeaconState} {a : BeaconBlock} {E₁ : Nat} {nodeOf : ValidatorIndex → Node}
-    {honestOf : ValidatorIndex → Bool} {committees : Nat → Nat → Array ValidatorIndex}
-    {hi : Nat} {stepsH : List ChainStep} {sH : BeaconState} {aR : List ChainStep}
-    {sbR : SignedBeaconBlock} {vbR : Bool} {bR : List ChainStep}
-    {g : UInt64} {dr : Root} {il : EthCLSpecs.Heze.InclusionList} {tSend Δ : Nat} {due : UInt64}
-    {txs : ExecutionPayload → Array Transaction}
-    {isValidOmission : ExecutionPayload → Transaction → Prop} {tx : Transaction}
-    (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees)
-    (hdec : DecisionSetting honest node run r rb g dr il tSend Δ due txs isValidOmission tx)
-    (hH : CarrierWindow honest node run rb A a E₁ honestOf hi stepsH sH aR sbR vbR bR)
-    (hb0 : ∃ b ∈ blocksOf stepsH, rb.slot.toNat < b.slot.toNat ∧
-      b.slot.toNat ≤ E₁ * slotsPerEpoch)
-    (hlast : LastDelivered honest node run A E₁ hi stepsH) :
-    RootCollision ∨
-      ((∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ finSlot E₁ →
-          ¬ NodeBelow (run v t).store (.full r) (run v t).head) ∧
-        ∀ v, honest v → ∀ (es : List TraceEvent)
-          (arr : List (EthCLSpecs.Heze.SignedInclusionList × Bool))
-          (s' : Store map), NodeTrace (run v (finSlot E₁)).store es arr s' →
-          (∀ e, TraceEvent.handler e ∈ es → e.NotAtAnchorParent a) →
-          (∀ sb, TraceEvent.handler (.block sb) ∈ es →
-            sb.message.stateRoot ≠ EthCLSpecs.Heze.zeroRoot) →
-          (∀ k₁ bs₁ k₂ bs₂, AncestorPath a (run v (finSlot E₁)).store k₁ bs₁ →
-            AncestorPath a s' k₂ bs₂ →
-            bs₁.filter (fun b => b.slot.toNat < max (epochOf A + 2) 3 * slotsPerEpoch) =
-              bs₂.filter (fun b => b.slot.toNat < max (epochOf A + 2) 3 * slotsPerEpoch)) →
-          StoreTotals A a s' →
-          ∀ (runner t : Store map) (head : ForkChoiceNode),
-          (EthCLSpecs.Heze.getHead (StoreTransition := ForkChoiceStoreRun (Store map)) s').run
-            runner = .ok (head, t) →
-          ¬ NodeBelow s' (.full r) head ∨
-          ∃ (st₀ : BeaconState) (p₁ r₁ p₂ r₂ : List ChainStep)
-            (pairs : List (EthCLSpecs.Heze.IndexedAttestation × EthCLSpecs.Heze.IndexedAttestation)),
-            ChainRun (2 ^ 64 - 1) p₁ A st₀ ∧ ChainRun (2 ^ 64 - 1) p₂ A st₀ ∧
-            SlashingEvidence st₀ (OnRun (2 ^ 64 - 1) A (p₁ ++ r₁))
-              (OnRun (2 ^ 64 - 1) A (p₂ ++ r₂))
-              (runDrift (2 ^ 64 - 1) st₀ r₁) (runDrift (2 ^ 64 - 1) st₀ r₂) pairs) := by
-  by_cases hcol : RootCollision
-  · exact .inl hcol
-  rcases hset.first_of_decision hw hdec with h | hfirst
-  · exact .inl h
-  exact censored_payload_final hw hset hfirst (hset.early hw hcol)
-    (hH.finRoot_ne hw hset hcol hb0) (hH.chain hw hset hlast) (viableStep_of_carrier hw hset hH hcol)
-
-include hw in
-/-- **The censored payload stays off every honest head of the window.** The honest inclusion
-list of slot `N - 1` carries `tx`, and every envelope for `r` leaves it out
-(`DecisionSetting`). Under `FinalitySetting`, a vote carrier chain on the EMPTY side
-(`CarrierWindow`) keeps EMPTY `r` viable. Then no honest head from slot `N + 1` to
-`finSlot E₁` is FULL `r` or below it, and each lies below EMPTY `r`, or a root collision
-exists.
-
-The carrier chain is the condition the spec traces of `specs/2026-11-14-honest-network-spec.md`
-show necessary: without a block on the EMPTY side that carries the honest votes of an epoch
-that targets `r`, the FULL side justifies `(e, r)` alone, the viability filter drops the EMPTY
-leaves two epochs later, and FULL `r` becomes the head (runs 1, 3, 7). The honest heads need
-not follow the carrier chain (run 8). The theorem takes no premise on re-orgs and none on the
-honest heads beyond the window setting.
-
-Proof: the first slot from the inclusion list (`FinalitySetting.first_of_decision`), the
-viability step from the carrier chain (`viableStep_of_carrier`), and the window induction
-(`heads_avoid_full_upto`). -/
-theorem censored_payload_avoided [LawfulFcMap map (Slot × Root)] {Node : Type}
-    {honest : Node → Prop}
-    {node : Node → NodeRun map} {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock}
-    {A : BeaconState} {a : BeaconBlock} {E₁ : Nat} {nodeOf : ValidatorIndex → Node}
-    {honestOf : ValidatorIndex → Bool} {committees : Nat → Nat → Array ValidatorIndex}
-    {hi : Nat} {stepsH : List ChainStep} {sH : BeaconState} {aR : List ChainStep}
-    {sbR : SignedBeaconBlock} {vbR : Bool} {bR : List ChainStep}
-    {g : UInt64} {dr : Root} {il : EthCLSpecs.Heze.InclusionList} {tSend Δ : Nat} {due : UInt64}
-    {txs : ExecutionPayload → Array Transaction}
-    {isValidOmission : ExecutionPayload → Transaction → Prop} {tx : Transaction}
-    (hset : FinalitySetting honest node run r rb A a E₁ nodeOf honestOf committees)
-    (hdec : DecisionSetting honest node run r rb g dr il tSend Δ due txs isValidOmission tx)
-    (hH : CarrierWindow honest node run rb A a E₁ honestOf hi stepsH sH aR sbR vbR bR) :
-    RootCollision ∨ ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ finSlot E₁ →
-      NodeBelow (run v t).store (.empty r) (run v t).head ∧
-        ¬ NodeBelow (run v t).store (.full r) (run v t).head := by
-  by_cases hcol : RootCollision
-  · exact .inl hcol
-  rcases hset.first_of_decision hw hdec with h | hfirst
-  · exact .inl h
-  exact heads_avoid_full_upto hw hset hfirst (Nat.le_refl _)
-    (viableStep_of_carrier hw hset hH hcol)
 
 end Main
 
