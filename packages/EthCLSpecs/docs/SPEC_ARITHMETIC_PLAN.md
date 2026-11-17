@@ -306,14 +306,29 @@ trusted conversion is required merely to resolve an operator.
 
 ### Stage 4: `Gwei` across every fork
 
-- [ ] **4.1 Move the alias and consumers.** Port balances, rewards, deposits, churn,
+- [x] **4.1 Move the alias and consumers.** Port balances, rewards, deposits, churn,
   withdrawals, builder balances, and fork-choice weights from the pinned Python bodies.
   Retype their constants and repair interfaces and benchmark fixtures.
-- [ ] **4.2 Repair the proofs.** Restate successful and failing cases through the new
+  *Done 2026-11-17, commit `5fc2cfa`: `Gwei := CLUint64` in Fulu, replayed in Gloas and
+  Heze; every changed bind reviewed against the pinned Python per file; the F1 signature
+  repairs landed (`ppdLoop`'s `finalizedSlot : Slot` both forks, `reserveChurn`'s
+  `earliest : Epoch` with the recorded Stage 5 crossing); six temporary crossings listed
+  with removing stages; the Gloas reorg-threshold order matches the pin.*
+- [x] **4.2 Repair the proofs.** Restate successful and failing cases through the new
   laws. Include balance updates, builder payment and bid proofs, and checked total-balance
   folds. Preserve characterization tags and audit axioms.
-- [ ] **4.3 Verify the complete slice.** Run the common gate, then the full vector matrix.
+  *Done 2026-11-17, commit `065458a`: restatements through `add_ok_iff`/`add_value`/
+  `foldlM_add_ok_iff`/`max_value`; two new chain laws expose the builder-payment
+  intermediates; coverage 78→81 claims, no tag lost, no claim weakened; axioms within
+  the allowed trio.*
+- [x] **4.3 Verify the complete slice.** Run the common gate, then the full vector matrix.
   Measure the build and profile here, before moving more aliases.
+  *Done 2026-11-17 (commit `a9eec86` repairs the profiler fixture): cold
+  `lake build EthCLSpecs` 10m03s/621 jobs = 1.46x the Stage 0 baseline (6m52s/607);
+  incremental on `Fulu/Balances` 3m38s; minimal sweeps case-identical to the Stage 0
+  per-case logs (all three forks, skips identical); full matrix count-for-count at both
+  presets (mainnet 859/115, 1094/130, 1073/130); profile medians 263.3ms `stateRoot`,
+  602.5ms `runBlocks` (baseline 273.8/617.9, run-time parity).*
 
 **Done when:** all three forks and their proofs use the migrated `Gwei` surface; vector
 outcomes match or have a source-justified correction; and temporary crossings are listed.
