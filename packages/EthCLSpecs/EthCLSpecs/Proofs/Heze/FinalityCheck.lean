@@ -676,11 +676,9 @@ theorem nodeIn_iff {l : List ForkChoiceNode} {x : ForkChoiceNode} : nodeIn l x =
   · intro hx
     exact ⟨x, hx, by simp⟩
 
-/-- The fields of `HeadRun.Base` that a computation decides, for any head: the wall time of the
-prefix, the store time, the current slot, the `getHead` run, the walk from the head through
-`pending r` within `fuel` steps, the viability of `empty r` beside `full r`, and the block at
-`r`. -/
-def baseB (q : HeadRun map) (r : Root) (rb : BeaconBlock) (t fuel : Nat) : Bool :=
+/-- The fields of `HeadRun.Core` that a computation decides: the wall time of the prefix, the
+store time, the current slot, and the `getHead` run. -/
+def coreB (q : HeadRun map) (t : Nat) : Bool :=
   q.events.all (fun y => decide (y.2 ≤ q.wall)) &&
   q.store.timeMs.toNat == q.wall &&
   (match (getCurrentSlot (StoreTransition := ForkChoiceStoreRun (Store map))
@@ -689,7 +687,33 @@ def baseB (q : HeadRun map) (r : Root) (rb : BeaconBlock) (t fuel : Nat) : Bool 
     | .error _ => false) &&
   (match (getHead (StoreTransition := ForkChoiceStoreRun (Store map)) q.store).run q.store with
     | .ok (h, _) => nodeIn [q.head] h
-    | .error _ => false) &&
+    | .error _ => false)
+
+/-- **`coreB` and the run of the prefix give `HeadRun.Core`.** -/
+theorem HeadRun.Core.of_check {n : NodeRun map} {q : HeadRun map} {t : Nat}
+    (hpre : ∃ rest, n.events = q.events ++ rest)
+    (hrun : runTrace n.seed (q.events.map Prod.fst) = .ok (q.arrivals, q.store))
+    (h : coreB q t = true) : q.Core n t := by
+  simp only [coreB, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.all_eq_true] at h
+  obtain ⟨⟨⟨hwall, htime⟩, hslot⟩, hhd⟩ := h
+  refine ⟨hpre, NodeTrace.of_runTrace hrun, hwall, htime, ?_, ?_⟩
+  · split at hslot
+    · rename_i cs s' hcs
+      have := getCurrentSlot_run_self _ _ _ _ hcs
+      subst this
+      exact ⟨cs, beq_iff_eq.mp hslot, hcs⟩
+    · cases hslot
+  · split at hhd
+    · rename_i hd s' hh
+      have hm := List.mem_singleton.mp (nodeIn_iff.mp hhd)
+      exact ⟨s', hm ▸ hh⟩
+    · cases hhd
+
+/-- The fields of `HeadRun.Base` that a computation decides, for any head: the fields of
+`coreB`, the walk from the head through `pending r` within `fuel` steps, the viability of
+`empty r` beside `full r`, and the block at `r`. -/
+def baseB (q : HeadRun map) (r : Root) (rb : BeaconBlock) (t fuel : Nat) : Bool :=
+  coreB q t &&
   nodeIn (ancestorsB q.store fuel q.head) (.pending r) &&
   !nodeIn [q.head] (.pending r) &&
   emptyViableWithFullB q.store r &&
@@ -707,22 +731,10 @@ theorem HeadRun.Base.of_check {n : NodeRun map} {q : HeadRun map} {r : Root} {rb
     {t fuel : Nat} (hpre : ∃ rest, n.events = q.events ++ rest)
     (hrun : runTrace n.seed (q.events.map Prod.fst) = .ok (q.arrivals, q.store))
     (h : baseB q r rb t fuel = true) : q.Base n r rb t := by
-  simp only [baseB, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.all_eq_true,
-    Bool.not_eq_true'] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨hwall, htime⟩, hslot⟩, hhd⟩, hanc⟩, hne⟩, -⟩, hblock⟩ := h
-  refine ⟨⟨⟨hpre, NodeTrace.of_runTrace hrun, hwall, htime, ?_, ?_⟩, hblock⟩,
+  simp only [baseB, Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at h
+  obtain ⟨⟨⟨⟨hcore, hanc⟩, hne⟩, -⟩, hblock⟩ := h
+  refine ⟨⟨HeadRun.Core.of_check hpre hrun hcore, hblock⟩,
     ⟨below_of_mem_ancestorsB fuel q.head (nodeIn_iff.mp hanc), fun he => ?_⟩⟩
-  · split at hslot
-    · rename_i cs s' hcs
-      have := getCurrentSlot_run_self _ _ _ _ hcs
-      subst this
-      exact ⟨cs, beq_iff_eq.mp hslot, hcs⟩
-    · cases hslot
-  · split at hhd
-    · rename_i hd s' hh
-      have hm := List.mem_singleton.mp (nodeIn_iff.mp hhd)
-      exact ⟨s', hm ▸ hh⟩
-    · cases hhd
   · have : nodeIn [q.head] (.pending r) = true :=
       nodeIn_iff.mpr (List.mem_singleton.mpr he.symm)
     rw [this] at hne

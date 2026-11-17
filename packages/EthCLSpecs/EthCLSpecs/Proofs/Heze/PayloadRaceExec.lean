@@ -361,7 +361,9 @@ structure RaceSetting.Core {Node : Type} (honest : Node → Prop) (node : Node �
     (jst : BeaconState) (nodeOf : ValidatorIndex → Node) (honestOf : ValidatorIndex → Bool)
     (committees : Nat → Nat → Array ValidatorIndex) : Prop
     extends RaceSetting.Fields honest node run r rb hi nodeOf honestOf committees where
-  /-- Each head run of an honest node in the window meets `HeadRun.Ok` for its slot. -/
+  /-- Each head run of an honest node in the window meets `HeadRun.Ok` for its slot. This
+  assumes the head position: `HeadRun.Base.setting` puts every honest head strictly below
+  `pending r`. -/
   runOk : ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi →
     (run v t).Ok (node v) r rb jst t
 
@@ -385,7 +387,8 @@ structure RaceSetting.Long {Node : Type} (honest : Node → Prop) (node : Node �
     (honestOf : ValidatorIndex → Bool) (committees : Nat → Nat → Array ValidatorIndex) : Prop
     extends RaceSetting.Fields honest node run r rb hi nodeOf honestOf committees where
   /-- Each head run of an honest node in the window meets `HeadRun.Ok` for its slot, with the
-  justified state of that slot. -/
+  justified state of that slot. This assumes the head position: `HeadRun.Base.setting` puts
+  every honest head strictly below `pending r`. -/
   runOkAt : ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi →
     (run v t).Ok (node v) r rb (jstOf t) t
   /-- The heads of the first slot avoid `full r`. -/
@@ -739,6 +742,14 @@ proposer score of `jstOf s`. In every slot `s` after the first, `empty r` is via
 `full r` once the honest heads before `s` lie below `empty r` (`hviable`). Then every honest head
 of the window lies below `empty r` and not below `full r`, or a root collision exists.
 
+The head position is a premise here: `RaceSetting.Long.runOkAt` puts every honest head of the
+window strictly below `pending r` (`HeadRun.Base.setting`). The theorem decides which side of
+`r` the head takes. Without more premises the head position can fail: an honest node with no
+validators can hold a head off `r` in the epoch of `rb`. Under `FinalitySetting` and a vote
+carrier chain (`CarrierWindow`), `CarrierWindow.head_window` derives the head position. Then
+`censored_payload_avoided` gives the conclusion of this theorem with no premise on the head
+position.
+
 The proof is the induction of `race_empty_persists`. The first slot is
 `RaceSetting.Long.first` with `NodeBelow.pending_split`. A later slot applies
 `getHead_run_below_empty` to `RaceSetting.Fields.weightAhead`. -/
@@ -809,7 +820,8 @@ there, plus the proposer score `proposerScoreOf jst`. Then every honest head of 
 lies below `empty r` and not below `full r`, or a root collision exists.
 
 This is `race_empty_persists_long` with the justified state `jst` on every slot
-(`RaceSetting.toLong`). -/
+(`RaceSetting.toLong`). It takes the head position as a premise (`RaceSetting.Core.runOk`), as
+`race_empty_persists_long` does. -/
 theorem race_empty_persists_exec {Node : Type} {honest : Node → Prop}
     {node : Node → NodeRun map} {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock}
     {hi : Nat} {jst : BeaconState} {nodeOf : ValidatorIndex → Node}
