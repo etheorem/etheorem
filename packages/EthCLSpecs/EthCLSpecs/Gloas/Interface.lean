@@ -130,8 +130,9 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
     let d0 ← liftErr (getFlagIndexDeltas state 0)
     let d1 ← liftErr (getFlagIndexDeltas state 1)
     let d2 ← liftErr (getFlagIndexDeltas state 2)
+    let inactPenalties ← getInactivityPenaltyDeltas state
     pure #[← mkDeltas d0, ← mkDeltas d1, ← mkDeltas d2,
-      ← mkDeltas (zeros, getInactivityPenaltyDeltas state)]
+      ← mkDeltas (zeros, inactPenalties)]
 
 /-- Decode a plain (non-boxed) SSZ operation value. -/
 private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
@@ -308,7 +309,7 @@ private def viableForHeadLeaves [Preset] [Config] [HasherTag] (store : Store has
         let children := (← getNodeChildren (map := hashMap) store node).filter nodes.contains
         if children.isEmpty then
           let weight ← getWeight (map := hashMap) store node
-          leaves := leaves.push (vecToBytes node.root, weight.toNat, some node.payloadStatus.toNat)
+          leaves := leaves.push (vecToBytes node.root, weight.toPlainNat, some node.payloadStatus.toNat)
         else pending := pending ++ children
     pure leaves
   runQuery store walk
@@ -418,6 +419,7 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
     | .checkProposerHead _ => throw (StoreTransitionError.todo "get_proposer_head check: not modeled")
   pure ()
 
+set_option maxHeartbeats 1000000 in
 /-- `runForkChoice` (Gloas): decode the anchor state / block, build the ePBS store,
 and run the step interpreter. -/
 private def runForkChoiceImpl (P : Preset) (C : Config) (anchorStateBytes anchorBlockBytes : ByteArray)

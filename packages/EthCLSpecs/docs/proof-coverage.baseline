@@ -1,5 +1,7 @@
 # Proof-coverage baseline. Rewrite with `just proof-coverage-update`.
 # Every line is a claim `just proof-coverage-check` enforces exactly.
+box_generic EthCLSpecs.Proofs.Gloas.run_liftChecked_error
+box_generic EthCLSpecs.Proofs.Gloas.run_liftChecked_ok
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot
 tier1 EthCLSpecs.Gloas.computeExitEpochAndUpdateChurn
 tier1 EthCLSpecs.Gloas.computePtc

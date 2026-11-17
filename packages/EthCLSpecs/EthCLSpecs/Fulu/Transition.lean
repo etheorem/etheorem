@@ -145,13 +145,20 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
     (getDomain state Const.domainSyncCommittee (computeEpochAtSlot previousSlot))
   assert (blsEthFastAggregateVerify participantKeys signingRoot agg.syncCommitteeSignature)
 
-  -- Per-participant and per-proposer reward amounts.
-  let totalActiveIncrements := (getTotalActiveBalance state).toNat / Const.effectiveBalanceIncrement
-  let totalBaseRewards := getBaseRewardPerIncrement state * totalActiveIncrements
-  let maxParticipantRewards := totalBaseRewards * Const.syncRewardWeight / Const.weightDenominator / Const.slotsPerEpoch
-  let participantReward : Gwei := UInt64.ofNat (maxParticipantRewards / Const.syncCommitteeSize)
-  let proposerReward : Gwei :=
-    UInt64.ofNat (participantReward.toNat * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight))
+  -- Per-participant and per-proposer reward amounts (`fulu/mainnet.py`,
+  -- `process_sync_aggregate`). The chain is the checked `Gwei` surface:
+  -- the increment division, the base-reward product, the reward-quotient chain,
+  -- and the per-participant split each bind where the pyspec forms it. The
+  -- `slotsPerEpoch` divisor is the proved-total `PositiveDivisor` view, since the
+  -- preset value is positive (`SPEC_ARITHMETIC.md` §4.2).
+  let totalActiveBalance ← getTotalActiveBalance state
+  let totalActiveIncrements ← totalActiveBalance / Const.effectiveBalanceIncrementG
+  let basePerIncrement ← getBaseRewardPerIncrement state
+  let totalBaseRewards ← basePerIncrement * totalActiveIncrements
+  let maxParticipantRewards ← totalBaseRewards * Const.syncRewardWeight / Const.weightDenominator
+  let maxParticipantRewards := maxParticipantRewards / Const.slotsPerEpochDiv
+  let participantReward ← maxParticipantRewards / Const.syncCommitteeSize
+  let proposerReward ← participantReward * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight)
   let proposerIdx := getBeaconProposerIndex state
   let validators := (sszGet state validators).toArray
 

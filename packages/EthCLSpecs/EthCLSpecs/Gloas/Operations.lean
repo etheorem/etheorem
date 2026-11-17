@@ -88,12 +88,14 @@ forkdef getScheduledGasLimit (epoch : Epoch) : Option UInt64 :=
 
 /-- `get_pending_balance_to_withdraw_for_builder` (`gloas/beacon-chain.md:1168-1178`): the
 pending builder withdrawals plus the queued builder payments for `builderIndex`, summed in
-that order. -/
-forkdef getPendingBalanceToWithdrawForBuilder (state : State) (builderIndex : BuilderIndex) : Gwei :=
-  let w := (sszGet state builderPendingWithdrawals).foldl
-    (fun acc x => if x.builderIndex == builderIndex then acc + x.amount else acc) 0
-  (sszGet state builderPendingPayments).toArray.foldl
-    (fun acc p => if p.withdrawal.builderIndex == builderIndex then acc + p.withdrawal.amount else acc) w
+that order. The accumulator is a `Gwei` and each `balance += …amount` is the checked `Gwei`
+add (`SPEC_ARITHMETIC.md` §3.2, the `sum` row), so the fold carries its fault. -/
+forkdef getPendingBalanceToWithdrawForBuilder (state : State) (builderIndex : BuilderIndex) :
+    Checked Gwei := do
+  let w ← (sszGet state builderPendingWithdrawals).val.foldlM
+    (fun acc x => if x.builderIndex == builderIndex then acc + x.amount else pure acc) (0 : Gwei)
+  (sszGet state builderPendingPayments).toArray.foldlM
+    (fun acc p => if p.withdrawal.builderIndex == builderIndex then acc + p.withdrawal.amount else pure acc) w
 /-- `builderPaymentIndex`: the ring slot for `slot`'s `BuilderPendingPayment`, given whether
 `slot` falls in the *current* epoch (`current = true`) versus the previous one.
 `builderPendingPayments` is a `2 * SLOTS_PER_EPOCH` ring whose lower half holds the previous
@@ -146,8 +148,12 @@ forkdef applyDepositForBuilder (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwe
     (sig : BLSSignature) (slot : Slot) : StateTransition Unit := do
   let state ← get
   match (sszGet state builders).findIdx? (·.pubkey == pubkey) with
-  | some builderIndex => modifyState fun state =>
-      sszModify state builders[builderIndex]! as b => { b with balance := b.balance + amount }
+  | some builderIndex =>
+      -- `builder.balance += amount`: the checked `Gwei` add, bound here; the store
+      -- writes the value the add returned.
+      let newBalance ← (sszGet state builders[builderIndex]!).balance + amount
+      modifyState fun state =>
+        sszModify state builders[builderIndex]! as b => { b with balance := newBalance }
   | none =>
     if isValidDepositSignature pubkey wc amount sig then
       addBuilderToRegistry pubkey Const.payloadBuilderVersion (addressOfCred wc) amount slot
@@ -250,11 +256,14 @@ forkdef processBuilderDepositRequest (request : BuilderDepositRequest) : StateTr
         (addressOfCred request.withdrawalCredentials) request.amount (sszGet state slot)
   | some builderIndex =>
     let epoch := currentEpochOf state
+    -- `builder.balance += request.amount`: the checked `Gwei` add, bound here; the
+    -- reset write and the store land together, so a raise discards both.
+    let newBalance ← (sszGet state builders[builderIndex]!).balance + request.amount
     modifyState fun state =>
       sszModify state builders[builderIndex]! as b =>
         let reset := b.withdrawableEpoch != Const.farFutureEpoch && b.balance == 0
         { b with
-          balance := b.balance + request.amount,
+          balance := newBalance,
           withdrawableEpoch :=
             if reset then epoch + Const.minBuilderWithdrawabilityDelay else b.withdrawableEpoch }
 
@@ -269,10 +278,14 @@ forkdef processBuilderExitRequest (request : BuilderExitRequest) : StateTransiti
   | some idx =>
     let builderIndex : BuilderIndex := UInt64.ofNat idx
     let builder := sszGet state builders[idx]!
-    if isActiveBuilder state builderIndex
-        && builder.executionAddress == request.sourceAddress
-        && getPendingBalanceToWithdrawForBuilder state builderIndex == 0 then
-      initiateBuilderExit builderIndex
+    -- Python's gate ladder returns early before the pending balance computes
+    -- (`gloas/mainnet.py:8277-8281`), so the checked fold binds only in the
+    -- branch that reaches it.
+    if !isActiveBuilder state builderIndex then pure ()
+    else if builder.executionAddress != request.sourceAddress then pure ()
+    else
+      let pending ← getPendingBalanceToWithdrawForBuilder state builderIndex
+      if pending == 0 then initiateBuilderExit builderIndex else pure ()
 
 /-! ## Attestation (payload-aware) + payload-timeliness committee (EIP-7732) -/
 
@@ -371,7 +384,10 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   let paymentIdx := builderPaymentIndex data.slot currentTarget
   let payment0 := vget (sszGet state builderPendingPayments) paymentIdx
   let mut stateAcc := state
-  let mut proposerNum := 0
+  -- `proposer_reward_numerator = 0` starts plain; the first
+  -- `get_base_reward(state, index) * weight` makes it a `Gwei`, and each `+=` after
+  -- that is the checked `Gwei` add (`SPEC_ARITHMETIC.md` §3.2, the `sum` row).
+  let mut proposerNum : Gwei := 0
   let mut weight := payment0.weight
   for vi in (← liftErr (getAttestingIndices state att)) do
     let i := vi.toNat
@@ -391,17 +407,22 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
                    sszUpdate stateAcc with currentEpochParticipation[i]! := addFlag flag flagIndex
                  else
                    sszUpdate stateAcc with previousEpochParticipation[i]! := addFlag flag flagIndex
-        proposerNum := proposerNum + (← liftErr (getBaseReward state vi)) * Const.participationFlagWeights[flagIndex]!
+        let base ← liftErr (getBaseReward state vi)
+        let weighted ← base * Const.participationFlagWeights[flagIndex]!
+        proposerNum := ← proposerNum + weighted
         willSet := true
     if willSet && hadNoParticipation && sameSlot && payment0.withdrawal.amount > 0 then
       let attester ← sszGetIdx (sszGet state validators) i
-      weight := weight + attester.effectiveBalance
+      weight := ← weight + attester.effectiveBalance
 
   -- Reward the proposer, then write back the (possibly weight-updated) payment, which the
-  -- spec does unconditionally and in this order.
+  -- spec does unconditionally and in this order. The denominator
+  -- `(WEIGHT_DENOMINATOR - PROPOSER_WEIGHT) * WEIGHT_DENOMINATOR // PROPOSER_WEIGHT`
+  -- is a constant-only subexpression (adjudication F2), so it stays the plain `Nat`
+  -- formula and the mixed `Gwei / Nat` division carries the checked raise.
   let proposerDenom := (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
-  stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc)
-    (UInt64.ofNat (proposerNum / proposerDenom))
+  let proposerReward ← proposerNum / proposerDenom
+  stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc) proposerReward
   stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := { payment0 with weight := weight }
   set stateAcc
 where
@@ -507,12 +528,19 @@ forkdef processPayloadAttestation (pa : PayloadAttestation) : StateTransition Un
 /-- `convert_builder_index_to_validator_index`: set the `BUILDER_INDEX_FLAG` bit. -/
 forkdef convertBuilderIndexToValidatorIndex (builderIndex : BuilderIndex) : ValidatorIndex := builderIndex ||| Const.builderIndexFlag
 
-/-- `can_builder_cover_bid`: the builder's balance, after reserving `MIN_DEPOSIT_AMOUNT`
-plus its already-pending withdrawals, covers the bid value. -/
-forkdef canBuilderCoverBid (state : State) (builderIndex : BuilderIndex) (bidAmount : Gwei) : Bool :=
+/-- `can_builder_cover_bid` (`gloas/mainnet.py:7767-7777`): the builder's balance,
+after reserving `MIN_DEPOSIT_AMOUNT` plus its already-pending withdrawals, covers
+the bid value. The pending sum, the reserve add, and the cover subtraction are
+the checked `Gwei` chain, each bound where the pyspec forms it. -/
+forkdef canBuilderCoverBid (state : State) (builderIndex : BuilderIndex) (bidAmount : Gwei) :
+    Checked Bool := do
   let builderBalance := (sszGet state builders[builderIndex.toNat]!).balance
-  let minBalance := Const.minDepositAmountG + getPendingBalanceToWithdrawForBuilder state builderIndex
-  if builderBalance < minBalance then false else builderBalance - minBalance ≥ bidAmount
+  let pending ← getPendingBalanceToWithdrawForBuilder state builderIndex
+  let minBalance ← Const.minDepositAmountG + pending
+  if builderBalance < minBalance then pure false
+  else
+    let cover ← builderBalance - minBalance
+    pure (cover ≥ bidAmount)
 
 /-- `verify_execution_payload_bid_signature`: the bid is signed by the builder's key
 under `DOMAIN_BEACON_BUILDER` at the current epoch. -/
@@ -582,7 +610,7 @@ forkdef processExecutionPayloadBid (signedBid : SignedExecutionPayloadBid) : Sta
   else
     assert (isActiveBuilder state builderIndex)
     assert ((sszGet state builders[builderIndex.toNat]!).version == Const.payloadBuilderVersion)
-    assert (canBuilderCoverBid state builderIndex amount)
+    assert (← canBuilderCoverBid state builderIndex amount)
     assert (verifyExecutionPayloadBidSignature state signedBid)
 
   assert (bid.blobKzgCommitments.size ≤ (getBlobParameters (currentEpochOf state)).maxBlobsPerBlock)

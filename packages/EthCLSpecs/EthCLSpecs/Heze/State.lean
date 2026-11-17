@@ -46,7 +46,7 @@ forkcontainer BeaconState where
   previousJustifiedCheckpoint   : Checkpoint
   currentJustifiedCheckpoint    : Checkpoint
   finalizedCheckpoint           : Checkpoint
-  inactivityScores              : ProgressiveList UInt64
+  inactivityScores              : ProgressiveList Gwei
   currentSyncCommittee          : SyncCommittee
   nextSyncCommittee             : SyncCommittee
   latestBlockHash               : Hash32

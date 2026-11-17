@@ -175,8 +175,9 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
     let d0 ← liftErr (getFlagIndexDeltas state 0)
     let d1 ← liftErr (getFlagIndexDeltas state 1)
     let d2 ← liftErr (getFlagIndexDeltas state 2)
+    let inactPenalties ← getInactivityPenaltyDeltas state
     pure #[← mkDeltas d0, ← mkDeltas d1, ← mkDeltas d2,
-      ← mkDeltas (zeros, getInactivityPenaltyDeltas state)]
+      ← mkDeltas (zeros, inactPenalties)]
 
 /-- `runBlocks`: decode the pre-state, fold `stateTransition` over the block
 sequence (verify-off when `bls_setting = 2`), and return the post root. Drives
@@ -226,7 +227,7 @@ private def viableForHeadLeaves [Preset] [Config] [HasherTag] (store : Store has
         let children := (getNodeChildren (map := hashMap) store node).filter nodes.contains
         if children.isEmpty then
           let weight ← getWeight (map := hashMap) store node
-          leaves := leaves.push (vecToBytes node, weight.toNat, none)
+          leaves := leaves.push (vecToBytes node, weight.toPlainNat, none)
         else pending := pending ++ children
     pure leaves
   runQuery store walk

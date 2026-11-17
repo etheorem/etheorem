@@ -169,7 +169,10 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   -- Apply participation flags and accumulate the proposer-reward numerator.
   let currentTarget := data.target.epoch == currentEpochOf state
   let mut stateAcc := state
-  let mut proposerNum := 0
+  -- `proposer_reward_numerator = 0` starts plain; the first
+  -- `get_base_reward(state, index) * weight` makes it a `Gwei`, and each `+=` after
+  -- that is the checked `Gwei` add (`SPEC_ARITHMETIC.md` §3.2, the `sum` row).
+  let mut proposerNum : Gwei := 0
   for vi in (← liftErr (getAttestingIndices state att)) do
     let i := vi.toNat
     for flagIndex in [0:3] do
@@ -184,12 +187,18 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
                    sszUpdate stateAcc with currentEpochParticipation[i]! := addFlag flag flagIndex
                  else
                    sszUpdate stateAcc with previousEpochParticipation[i]! := addFlag flag flagIndex
-        proposerNum := proposerNum + (← liftErr (getBaseReward state vi)) * Const.participationFlagWeights[flagIndex]!
+        let base ← liftErr (getBaseReward state vi)
+        let weighted ← base * Const.participationFlagWeights[flagIndex]!
+        proposerNum := ← proposerNum + weighted
 
-  -- Pay the proposer the accumulated weight.
+  -- Pay the proposer the accumulated weight. The denominator
+  -- `(WEIGHT_DENOMINATOR - PROPOSER_WEIGHT) * WEIGHT_DENOMINATOR // PROPOSER_WEIGHT`
+  -- is a constant-only subexpression (adjudication F2): every operand is a plain spec
+  -- weight, no balance-derived value stands beside it, so it stays the plain `Nat`
+  -- formula and the mixed `Gwei / Nat` division carries the checked raise.
   let proposerDenom := (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
-  stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc)
-    (UInt64.ofNat (proposerNum / proposerDenom))
+  let proposerReward ← proposerNum / proposerDenom
+  stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc) proposerReward
   set stateAcc
 where
   /-- Fold over the attestation's committee indices: each must be below `count` and
@@ -243,7 +252,8 @@ forkdef processVoluntaryExit (sve : SignedVoluntaryExit) : StateTransition Unit 
   assert (hasNotInitiatedExit validator)
   assert (currentEpochOf state ≥ ve.epoch)
   assert (passedShardCommitteePeriod validator (currentEpochOf state))
-  assert (getPendingBalanceToWithdraw state ve.validatorIndex == 0)
+  let pending ← getPendingBalanceToWithdraw state ve.validatorIndex
+  assert (pending == 0)
 
   let domain := computeDomain Const.domainVoluntaryExit Const.capellaForkVersion (sszGet state genesisValidatorsRoot)
   assert (blsVerifySigned validator.pubkey ve domain sve.signature)
@@ -307,7 +317,9 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
       else if !hasNotInitiatedExit validator then pure ()
       else if !passedShardCommitteePeriod validator (currentEpochOf state) then pure ()
       else
-        let pending := getPendingBalanceToWithdraw state index
+        -- `pending_balance_to_withdraw` is the checked `Gwei` sum, formed on both
+        -- paths, so it binds before the full-exit branch reads it.
+        let pending ← getPendingBalanceToWithdraw state index
         if isFullExit then
           if pending == 0 then initiateValidatorExit index else pure ()
         else
@@ -317,9 +329,14 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
           -- silently reading a default balance.
           let balance ← sszGetIdx (sszGet state balances) idxN
           let sufficientEff := validator.effectiveBalance ≥ Const.minActivationBalance
-          let excess := balance > Const.minActivationBalance + pending
+          let excessThreshold ← Const.minActivationBalance + pending
+          let excess := balance > excessThreshold
           if hasCompoundingWithdrawalCredential validator && sufficientEff && excess then
-            let toWithdraw := umin (balance - Const.minActivationBalance - pending) wr.amount
+            -- `min(balances[index] - MIN_ACTIVATION_BALANCE - pending, amount)`: each
+            -- subtraction is a checked `Gwei` step, bound in order.
+            let excessBalance ← balance - Const.minActivationBalance
+            let toWithdrawCand ← excessBalance - pending
+            let toWithdraw := min toWithdrawCand wr.amount
             let exitEpoch ← computeExitEpochAndUpdateChurn toWithdraw
             let we := exitEpoch + Const.minValidatorWithdrawabilityDelay
             appendState pendingPartialWithdrawals
@@ -350,7 +367,7 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
   -- Request-level gates: distinct source/target, queue room, churn capacity.
   else if req.sourcePubkey == req.targetPubkey then pure ()
   else if (sszGet state pendingConsolidations).size == Const.pendingConsolidationsLimit then pure ()
-  else if getConsolidationChurnLimit state ≤ Const.minActivationBalance then pure ()
+  else if (← getConsolidationChurnLimit state) ≤ Const.minActivationBalance then pure ()
   else
     let validators := (sszGet state validators).toArray
     match validatorIndexByPubkey? state req.sourcePubkey, validatorIndexByPubkey? state req.targetPubkey with
@@ -369,7 +386,7 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
       else if !hasNotInitiatedExit src then pure ()
       else if !hasNotInitiatedExit tgt then pure ()
       else if !passedShardCommitteePeriod src (currentEpochOf state) then pure ()
-      else if getPendingBalanceToWithdraw state (UInt64.ofNat srcN) > 0 then pure ()
+      else if (← getPendingBalanceToWithdraw state (UInt64.ofNat srcN)) > 0 then pure ()
       else
         let exitEpoch ← computeConsolidationEpochAndUpdateChurn src.effectiveBalance
         modifyState fun state => modValidator state (UInt64.ofNat srcN) fun validator =>

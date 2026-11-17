@@ -52,21 +52,18 @@ already-queued withdrawals for that validator. Throwing (`StateTransition`): the
 caught `.assert`. Both reads are unreachable on a well-formed state and modeled rather than
 clamped.
 
-The `withdrawn` accumulator folds through `checkedAdd`, which is where pyspec faults too.
-`sum(...)` looks like it widens to a Python `int`, but `Gwei` subclasses `int` and defines
-`__radd__`, so Python's reflected-operand rule makes the accumulator a `Gwei` from the first
-element on, and every add re-runs the bound check in `uint.__new__`
-(`remerkleable/basic.py:88-107`). A running sum past `2^64` therefore raises `ValueError`
-during the accumulation, not at the later subtraction. Verified against the pinned
-remerkleable. -/
+The `withdrawn` accumulator is a `Gwei`, and the folded add is the checked `Gwei` `+`
+(`SPEC_ARITHMETIC.md` §3.2, the `sum` row), so a running sum past `2^64` raises during the
+accumulation, and the final `balances[i] - withdrawn` is the checked subtraction, whose
+underflow raises Python `ValueError` the reference runner does not catch (`context.py:424-435`
+catches only `AssertionError` / `IndexError`). Both reads are unreachable on a well-formed
+state and modeled rather than clamped. -/
 def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
     StateTransition Gwei := do
   let withdrawn ← ws.foldlM (init := (0 : Gwei)) fun acc w =>
-    if w.validatorIndex == vi then
-      checkedAdd acc w.amount "get_balance_after_withdrawals: sum(withdrawal.amount)"
-    else pure acc
+    if w.validatorIndex == vi then acc + w.amount else pure acc
   let bal ← sszGetIdx (sszGet state balances) vi.toNat
-  checkedSub bal withdrawn "get_balance_after_withdrawals: balances[i] - withdrawn"
+  bal - withdrawn
 
 /-- `get_expected_withdrawals`: the pending-partial queue then the validator sweep.
 Throwing: the two `validators[i]` reads are bare list indices (`IndexError`, via
@@ -87,9 +84,13 @@ forkdef getExpectedWithdrawals (state : State) : StateTransition (Array Withdraw
     let validator ← sszGetIdx (sszGet state validators) vi.toNat
     let bal ← balanceAfterWithdrawals state vi withdrawals
     if isEligibleForPartialWithdrawals validator bal then
+      -- `withdrawal_amount = min(balance - MIN_ACTIVATION_BALANCE, withdrawal.amount)`
+      -- (`fulu/mainnet.py:6204`, in `get_pending_partial_withdrawals`): the excess is the checked subtraction, formed only in
+      -- this branch, and `min` then picks an operand.
+      let excess ← bal - Const.minActivationBalance
       withdrawals := withdrawals.push
         { index := withdrawalIndex, validatorIndex := vi, address := addressOf validator,
-          amount := umin (bal - Const.minActivationBalance) w.amount }
+          amount := min excess w.amount }
       withdrawalIndex := withdrawalIndex + 1
     processedPartial := processedPartial + 1
 
@@ -105,9 +106,12 @@ forkdef getExpectedWithdrawals (state : State) : StateTransition (Array Withdraw
         { index := withdrawalIndex, validatorIndex := UInt64.ofNat vIdx, address := addressOf validator, amount := bal }
       withdrawalIndex := withdrawalIndex + 1
     else if isPartiallyWithdrawable validator bal then
+      -- `withdrawal_amount = balance - get_max_effective_balance(validator)`: the checked
+      -- subtraction, formed only in this branch.
+      let amount ← bal - getMaxEffectiveBalance validator
       withdrawals := withdrawals.push
         { index := withdrawalIndex, validatorIndex := UInt64.ofNat vIdx, address := addressOf validator,
-          amount := bal - getMaxEffectiveBalance validator }
+          amount := amount }
       withdrawalIndex := withdrawalIndex + 1
     vIdx := modWrap (vIdx + 1) nvals
   return (withdrawals, processedPartial)

@@ -126,6 +126,7 @@ inherit processHistoricalSummariesUpdate
 inherit processParticipationFlagUpdates
 inherit processSyncCommitteeUpdates
 inherit processProposerLookahead
+inherit getBuilderPaymentQuorumThreshold
 inherit processBuilderPendingPayments
 inherit computePtc
 inherit processPtcWindow

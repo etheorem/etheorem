@@ -58,7 +58,7 @@ example [EthCLSpecs.Fulu.Preset] : 0 < EthCLSpecs.Fulu.Const.slotsPerEpochDiv.n 
 
 example [EthCLSpecs.Fulu.Preset] :
     EthCLSpecs.Fulu.Const.effectiveBalanceIncrement
-      = EthCLSpecs.Fulu.Const.effectiveBalanceIncrementG.toNat := rfl
+      = EthCLSpecs.Fulu.Const.effectiveBalanceIncrementG.toPlainNat := rfl
 
 /-! ### Fulu pins
 
@@ -88,7 +88,7 @@ open EthCLSpecs.Fulu in
 /-- The twin settlement at both presets: the derived `Nat` view and the stored
 `Gwei` field read the same value, so the numeral appears once per value set. -/
 example : @Const.effectiveBalanceIncrement minimal
-    = (@Const.effectiveBalanceIncrementG minimal).toNat := rfl
+    = (@Const.effectiveBalanceIncrementG minimal).toPlainNat := rfl
 
 open EthCLSpecs.Fulu in
 /-- The stored value pins at both presets, so a preset edit that silently moves
@@ -98,7 +98,7 @@ example : @Const.effectiveBalanceIncrement minimal = 1000000000 := by
 
 open EthCLSpecs.Fulu in
 example : @Const.effectiveBalanceIncrement mainnet
-    = (@Const.effectiveBalanceIncrementG mainnet).toNat := rfl
+    = (@Const.effectiveBalanceIncrementG mainnet).toPlainNat := rfl
 
 open EthCLSpecs.Fulu in
 example : @Const.effectiveBalanceIncrement mainnet = 1000000000 := by
@@ -136,7 +136,7 @@ example : (@Const.churnLimitQuotientC minimalConfig).toPlainNat = 32 := by
 open EthCLSpecs.Gloas in
 /-- The inherited twin agreement, at the middle fork. -/
 example : @Const.effectiveBalanceIncrement minimal
-    = (@Const.effectiveBalanceIncrementG minimal).toNat := rfl
+    = (@Const.effectiveBalanceIncrementG minimal).toPlainNat := rfl
 
 open EthCLSpecs.Heze in
 example : (@Const.slotsPerEpochDiv minimal).n = 8 := by native_decide
@@ -155,7 +155,7 @@ example : (@Const.churnLimitQuotientC mainnetConfig).toPlainNat = 65536 := by
 open EthCLSpecs.Heze in
 /-- The inherited twin agreement, at the newest fork. -/
 example : @Const.effectiveBalanceIncrement mainnet
-    = (@Const.effectiveBalanceIncrementG mainnet).toNat := rfl
+    = (@Const.effectiveBalanceIncrementG mainnet).toPlainNat := rfl
 
 /-! ### The child override
 
@@ -182,7 +182,7 @@ fork ConstViewChild from Heze
 -- types, so the child's namespace needs these four before `forkpreset`.
 forkabbrev Slot := UInt64
 forkabbrev Epoch := UInt64
-forkabbrev Gwei := UInt64
+forkabbrev Gwei := CLUint64
 forkabbrev Version := Vector UInt8 4
 
 -- No new fields of its own; the forms materialize this fork's classes out of

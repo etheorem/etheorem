@@ -276,7 +276,7 @@ stored `Gwei` field (`SPEC_ARITHMETIC.md` §4.2: the pyspec's kind is checked, s
 the checked field is the source and the `Nat` form is the projection). The
 underlying-type projection is the view itself, the use §4.5 asks each site to
 cite; the tests pin the round trip at both presets. -/
-forkabbrev effectiveBalanceIncrement : Nat := Preset.effectiveBalanceIncrementG.toNat
+forkabbrev effectiveBalanceIncrement : Nat := Preset.effectiveBalanceIncrementG.toPlainNat
 forkabbrev effectiveBalanceIncrementG : Gwei := Preset.effectiveBalanceIncrementG
 forkabbrev minDepositAmountG : Gwei := Preset.minDepositAmountG
 forkabbrev minActivationBalance : Gwei := Preset.minActivationBalance
@@ -313,6 +313,13 @@ forkabbrev proportionalSlashingMultiplierBellatrix : Nat := Preset.proportionalS
 forkabbrev inactivityPenaltyQuotientBellatrix : Nat := Preset.inactivityPenaltyQuotientBellatrix
 forkabbrev inactivityScoreBias : UInt64 := Config.inactivityScoreBias
 forkabbrev inactivityScoreRecoveryRate : UInt64 := Config.inactivityScoreRecoveryRate
+/-- TEMPORARY CROSSING (removed in Stage 7): `INACTIVITY_SCORE_BIAS` /
+`INACTIVITY_SCORE_RECOVERY_RATE` re-type with their score-update consumers in
+Stage 7's configuration slice; until then the checked views ride the wire iso,
+so Stage 4's inactivity-score arithmetic keeps the checked kind. -/
+forkabbrev inactivityScoreBiasC : CLUint64 := CLUint64.trustedOfUInt64 Config.inactivityScoreBias
+forkabbrev inactivityScoreRecoveryRateC : CLUint64 :=
+  CLUint64.trustedOfUInt64 Config.inactivityScoreRecoveryRate
 forkabbrev hysteresisQuotient : Nat := Preset.hysteresisQuotient
 forkabbrev hysteresisDownwardMultiplier : Nat := Preset.hysteresisDownwardMultiplier
 forkabbrev hysteresisUpwardMultiplier : Nat := Preset.hysteresisUpwardMultiplier

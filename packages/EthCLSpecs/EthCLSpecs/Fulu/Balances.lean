@@ -11,8 +11,9 @@ also reads the active set, floats up to `Accessors` (the read/write seam, §3.3)
 old whole-field form but expressed as a single clause. `increaseBalance` and `decreaseBalance`
 read through `sszGetIdx` before that write. An out-of-range index therefore rejects with
 `.outOfBounds`, where the pyspec's list read raises `IndexError`. The write runs only in range.
-`increaseBalance` also adds through `checkedAdd`. It rejects with the `.arithmetic` fault when
-the sum leaves the `uint64` range, where the pyspec's `+=` raises `ValueError`.
+`increaseBalance` also adds through the checked `+` on `Gwei` (`SPEC_ARITHMETIC.md` §4.1). It
+rejects with the `.arithmetic` fault when the sum leaves the `uint64` range, where the pyspec's
+`+=` raises `ValueError`.
 -/
 
 set_option autoImplicit false
@@ -31,8 +32,8 @@ forkdef modBalance (state : State) (i : ValidatorIndex) (f : Gwei → Gwei) : St
 
 /-- `increase_balance`. The pyspec's `+=` is a bare `uint64` addition, and remerkleable re-runs
 the bound check on the result, so an overflow raises `ValueError`. The reference runner lets that
-raise escape. `checkedAdd` models the addition, and the action rejects with the `.arithmetic`
-uncaught fault.
+raise escape. The checked `+` on `Gwei` models the addition, and the action rejects with the
+`.arithmetic` uncaught fault.
 
 The read goes through `sszGetIdx`. The pyspec indexes a bare list here, and that read raises
 `IndexError` past the end. An `[i]!` read answers with the `Gwei` default instead, and the write
@@ -43,7 +44,7 @@ when the two lengths disagree. -/
 forkdef increaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
     StateTransition State := do
   let balance ← sszGetIdx (sszGet state balances) i.toNat
-  let sum ← checkedAdd balance delta "increase_balance: balances[index] + delta"
+  let sum ← balance + delta
   return modBalance state i (fun _ => sum)
 
 /-- `decrease_balance` (`phase0/beacon-chain.md:1663-1667`):
@@ -54,13 +55,19 @@ read raises `IndexError` past the end. -/
 forkdef decreaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
     StateTransition State := do
   let balance ← sszGetIdx (sszGet state balances) i.toNat
-  return modBalance state i (fun _ => saturatingSub balance delta)
+  return modBalance state i (fun _ => balance.saturatingSub delta)
 
-/-- `get_total_balance` (floored at one increment). -/
-forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex) : Gwei :=
+/-- `get_total_balance` (floored at one increment). The pyspec's `sum` over the
+`effective_balance` values is a checked fold (`SPEC_ARITHMETIC.md` §3.2, the
+`sum` row), so the result carries the fault; `max` picks an operand and never
+raises. -/
+forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex) : Checked Gwei := do
   let validators := sszGet state validators
-  let total := indices.foldl (fun acc i => acc + (validators[i.toNat]!).effectiveBalance) 0
-  umax total Const.effectiveBalanceIncrementG
+  -- The fold reads with the total `[i]!`, the same infallible read the
+  -- pre-flip spelling had; the index is the validator position, and the
+  -- `ValidatorIndex` → `Nat` adaptation stays until Stage 6.
+  let total ← indices.foldlM (fun acc i => acc + (validators[i.toNat]!).effectiveBalance) (0 : Gwei)
+  return max total Const.effectiveBalanceIncrementG
 
 end
 

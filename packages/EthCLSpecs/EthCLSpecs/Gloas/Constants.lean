@@ -82,14 +82,25 @@ forkabbrev maxBuilderExitRequestsPerPayload : Nat := Preset.maxBuilderExitReques
 forkabbrev gloasForkVersion : Version := Config.gloasForkVersion
 forkabbrev gloasForkEpoch : Epoch := Config.gloasForkEpoch
 forkabbrev churnLimitQuotientGloas : UInt64 := Config.churnLimitQuotientGloas
+/-- TEMPORARY CROSSING (removed in Stage 7): the config word re-types with the
+configuration slice; the checked view rides the wire iso until then, so Stage
+4's churn division keeps the checked kind. -/
+forkabbrev churnLimitQuotientGloasC : CLUint64 :=
+  CLUint64.trustedOfUInt64 Config.churnLimitQuotientGloas
 forkabbrev maxPerEpochActivationChurnLimitGloas : Gwei := Config.maxPerEpochActivationChurnLimitGloas
 forkabbrev minBuilderWithdrawabilityDelay : UInt64 := Config.minBuilderWithdrawabilityDelay
 forkabbrev consolidationChurnLimitQuotient : UInt64 := Config.consolidationChurnLimitQuotient
+/-- TEMPORARY CROSSING (removed in Stage 7): the config word re-types with the
+configuration slice; the checked view rides the wire iso until then. -/
+forkabbrev consolidationChurnLimitQuotientC : CLUint64 :=
+  CLUint64.trustedOfUInt64 Config.consolidationChurnLimitQuotient
 
 /-- The builder-payment threshold, as a fraction of the bid
-(`BUILDER_PAYMENT_THRESHOLD_NUMERATOR / …_DENOMINATOR`). -/
-forkabbrev builderPaymentThresholdNumerator : UInt64 := 6
-forkabbrev builderPaymentThresholdDenominator : UInt64 := 10
+(`BUILDER_PAYMENT_THRESHOLD_NUMERATOR / …_DENOMINATOR`). Both are `Uint64` at
+the pin (the Stage 2.5 oracle probe), so they store as `Gwei`, the checked kind
+the quorum product uses. -/
+forkabbrev builderPaymentThresholdNumerator : Gwei := 6
+forkabbrev builderPaymentThresholdDenominator : Gwei := 10
 /-- `BUILDER_WITHDRAWAL_PREFIX` (`0xB0`), the credential prefix that marks a builder deposit. -/
 forkabbrev builderWithdrawalPrefix : UInt8 := 0xB0
 /-- `PAYLOAD_BUILDER_VERSION = uint8(0)` (EIP-8282): the version stamped on a
@@ -171,7 +182,8 @@ inherit timelySourceWeight timelyTargetWeight timelyHeadWeight timelySourceFlagI
 inherit timelyTargetFlagIndex timelyHeadFlagIndex participationFlagWeights
 inherit minSlashingPenaltyQuotientElectra whistleblowerRewardQuotientElectra
 inherit proportionalSlashingMultiplierBellatrix inactivityPenaltyQuotientBellatrix
-inherit inactivityScoreBias inactivityScoreRecoveryRate hysteresisQuotient
+inherit inactivityScoreBias inactivityScoreRecoveryRate inactivityScoreBiasC
+inherit inactivityScoreRecoveryRateC hysteresisQuotient
 inherit hysteresisDownwardMultiplier hysteresisUpwardMultiplier maxRandomValue
 
 -- Withdrawal-credential prefixes.

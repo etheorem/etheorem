@@ -29,19 +29,27 @@ state_section
 
 /-! ## Justification & finalization -/
 
-/-- The justification-bits + checkpoint update, given the three target balances. -/
+/-- The justification-bits + checkpoint update, given the three target balances.
+The two-thirds tests are the pyspec's `get_total_balance(state, indices) * 3 >=
+total_active_balance * 2` pairs: checked `Gwei` products, each bound where the
+pyspec forms it (left operand first, then the active balance's). A `Nat`
+narrowing would hide the product's own range raise near `2^64`
+(`SPEC_ARITHMETIC.md` §6). -/
 forkdef weighJustificationAndFinalization (totalActive prevTarget currTarget : Gwei) :
     StateTransition Unit := do
   let state ← get
   let prevEpoch := previousEpochOf state
   let currEpoch := currentEpochOf state
-  let justifyPrev := prevTarget.toNat * 3 ≥ totalActive.toNat * 2
-  let justifyCurr := currTarget.toNat * 3 ≥ totalActive.toNat * 2
-  -- `get_block_root` is read ONLY inside its justify branch in the spec (lazy); read
-  -- each only when its branch fires, so the recency assert fires exactly where the
-  -- spec's read does. An unconditional read would assert on an epoch-boundary pull-up
-  -- state whose justify condition is false, a slot the spec never reads there.
+  -- Evaluation order is Python's: each target's product forms in its own `if`
+  -- condition, the root read only in the branch, so the current-epoch product
+  -- forms after the previous branch's root read. A `Nat` narrowing would hide
+  -- the product's own range raise near `2^64` (`SPEC_ARITHMETIC.md` §6).
+  let prevScaled ← prevTarget * 3
+  let activeScaled ← totalActive * 2
+  let justifyPrev := prevScaled ≥ activeScaled
   let prevRoot ← if justifyPrev then getBlockRoot state prevEpoch else pure default
+  let currScaled ← currTarget * 3
+  let justifyCurr := currScaled ≥ activeScaled
   let currRoot ← if justifyCurr then getBlockRoot state currEpoch else pure default
   modifyState fun state => Id.run do
     let oldPrev := sszGet state previousJustifiedCheckpoint
@@ -81,8 +89,10 @@ forkdef processJustificationAndFinalization : StateTransition Unit := do
   else
     let prevIdx := getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state)
     let currIdx := getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (currentEpochOf state)
-    weighJustificationAndFinalization (getTotalActiveBalance state)
-      (getTotalBalance state prevIdx) (getTotalBalance state currIdx)
+    let totalActive ← getTotalActiveBalance state
+    let prevTotal ← getTotalBalance state prevIdx
+    let currTotal ← getTotalBalance state currIdx
+    weighJustificationAndFinalization totalActive prevTotal currTotal
 
 /-! ## Inactivity -/
 
@@ -98,21 +108,30 @@ forkdef processInactivityUpdates : StateTransition Unit := do
     let leak := isInInactivityLeak state
     let eligible := getEligibleValidatorIndices state
 
-    modifyState fun state => Id.run do
-      let mut state := state
-      for vi in eligible do
-        let i := vi.toNat
-        state := sszModify state inactivityScores[i]! as cur =>
-          let cur := if matchingTarget.contains vi then saturatingSub cur 1 else cur + Const.inactivityScoreBias
-          if !leak then saturatingSub cur Const.inactivityScoreRecoveryRate else cur
-      return state
+    let mut state := state
+    for vi in eligible do
+      let i := vi.toNat
+      -- The score is a checked `Gwei`: `saturating_sub` floors at zero (the
+      -- spec's own guard), and `+= INACTIVITY_SCORE_BIAS` is the checked add,
+      -- bound in the branch that forms it; the write is the plain store of the
+      -- value the monadic block computed.
+      let cur := sszGet state inactivityScores |>.val[i]!
+      let cur ← if matchingTarget.contains vi then pure (cur.saturatingSub 1)
+                else cur + Const.inactivityScoreBiasC
+      let cur := if !leak then cur.saturatingSub Const.inactivityScoreRecoveryRateC else cur
+      state := sszModify state inactivityScores[i]! as _old => cur
+    set state
 
 /-! ## Rewards & penalties -/
 
-/-- `get_flag_index_deltas` for one flag: `(rewards, penalties)` per validator. Returns
-`Except IndexError` because `getBaseReward` does; a bad validator index rejects rather than
-masking. -/
-forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) : Except IndexError (Array Gwei × Array Gwei) := do
+/-- `get_flag_index_deltas` for one flag: `(rewards, penalties)` per validator
+(`fulu/mainnet.py:4445-4483`). Returns `Except StateTransitionError` because
+`getBaseReward` does; a bad validator index rejects rather than masking. The
+increments, the reward numerator, the divisor, and each `+=` are the checked
+`Gwei` chain, bound where the pyspec assigns it (`SPEC_ARITHMETIC.md` §4.3's
+worked example). -/
+forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) :
+    Except StateTransitionError (Array Gwei × Array Gwei) := do
   let n := (sszGet state validators).size
   let mut rewards := Array.replicate n (0 : Gwei)
   let mut penalties := Array.replicate n (0 : Gwei)
@@ -120,8 +139,10 @@ forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) : Except IndexError
   let prevEpoch := previousEpochOf state
   let unslashed := getUnslashedParticipatingIndices state flagIndex prevEpoch
   let weight := Const.participationFlagWeights[flagIndex]!
-  let unslashedIncrements := (getTotalBalance state unslashed).toNat / Const.effectiveBalanceIncrement
-  let activeIncrements := (getTotalActiveBalance state).toNat / Const.effectiveBalanceIncrement
+  let unslashedBalance ← getTotalBalance state unslashed
+  let unslashedIncrements ← unslashedBalance / Const.effectiveBalanceIncrementG
+  let activeBalance ← getTotalActiveBalance state
+  let activeIncrements ← activeBalance / Const.effectiveBalanceIncrementG
   let leak := isInInactivityLeak state
 
   for vi in getEligibleValidatorIndices state do
@@ -129,13 +150,21 @@ forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) : Except IndexError
     let baseReward ← getBaseReward state vi
     if unslashed.contains vi then
       if !leak then
-        rewards := rewards.set! i (UInt64.ofNat (baseReward * weight * unslashedIncrements / (activeIncrements * Const.weightDenominator)))
+        let rewardNumerator ← baseReward * weight * unslashedIncrements
+        let rewardDelta ← rewardNumerator / (activeIncrements * Const.weightDenominator)
+        let updatedReward ← rewards[i]! + rewardDelta
+        rewards := rewards.set! i updatedReward
     else if flagIndex != Const.timelyHeadFlagIndex then
-      penalties := penalties.set! i (UInt64.ofNat (baseReward * weight / Const.weightDenominator))
+      let penaltyDelta ← baseReward * weight / Const.weightDenominator
+      let updatedPenalty ← penalties[i]! + penaltyDelta
+      penalties := penalties.set! i updatedPenalty
   return (rewards, penalties)
 
-/-- `get_inactivity_penalty_deltas`: penalties only. -/
-forkdef getInactivityPenaltyDeltas (state : State) : Array Gwei := Id.run do
+/-- `get_inactivity_penalty_deltas` (`fulu/mainnet.py:1815-1832`): penalties only.
+The numerator is the checked `effective_balance * inactivity_scores[index]`
+product, the divisor the plain config-constant product, and the `+=` the checked
+`Gwei` add. -/
+forkdef getInactivityPenaltyDeltas (state : State) : Checked (Array Gwei) := do
   let validators := sszGet state validators
   let iscores := sszGet state inactivityScores
   let mut penalties := Array.replicate validators.size (0 : Gwei)
@@ -144,9 +173,14 @@ forkdef getInactivityPenaltyDeltas (state : State) : Array Gwei := Id.run do
   for vi in getEligibleValidatorIndices state do
     let i := vi.toNat
     if !matchingTarget.contains vi then
-      let num := (validators[i]!).effectiveBalance.toNat * (iscores[i]!).toNat
-      let denom := Const.inactivityScoreBias.toNat * Const.inactivityPenaltyQuotientBellatrix
-      penalties := penalties.set! i (UInt64.ofNat (num / denom))
+      let num ← (validators[i]!).effectiveBalance * (iscores[i]!)
+      -- `INACTIVITY_SCORE_BIAS` is a checked config value at the pin, so the
+      -- divisor is the checked product, not a `Nat` one (`SPEC_ARITHMETIC.md`
+      -- §6, no `Nat` intermediate over a checked operand).
+      let denom ← Const.inactivityScoreBiasC * Const.inactivityPenaltyQuotientBellatrix
+      let delta ← num / denom
+      let updated ← penalties[i]! + delta
+      penalties := penalties.set! i updated
   return penalties
 
 /-- Apply per-validator `(rewards, penalties)` to balances. `increaseBalance` rejects on a
@@ -165,7 +199,7 @@ forkdef processRewardsAndPenalties : StateTransition Unit := do
   if currentEpochOf state == Const.genesisEpoch then pure ()
   else
     let flagDeltas ← liftErr ((List.range 3).mapM (fun f => getFlagIndexDeltas state f))
-    let inactPenalties := getInactivityPenaltyDeltas state
+    let inactPenalties ← getInactivityPenaltyDeltas state
     let zeros := Array.replicate (sszGet state validators).size (0 : Gwei)
 
     for (rewards, penalties) in flagDeltas do
@@ -193,21 +227,27 @@ forkdef processRegistryUpdates : StateTransition Unit := do
 
 /-! ## Slashings (epoch penalty) -/
 
-/-- `process_slashings`. -/
+/-- `process_slashings` (`fulu/mainnet.py:1871-1895`). The `sum(state.slashings)`
+accumulator and the multiplier product are the checked `Gwei` chain; the
+increment division divides first, the guard the spec writes out
+(`SPEC_ARITHMETIC.md` §3.5). Each intermediate binds where the pyspec forms it. -/
 forkdef processSlashings : StateTransition Unit := do
   let state ← get
   let epoch := currentEpochOf state
-  let totalBalance := getTotalActiveBalance state
-  let sumSlashings := (sszGet state slashings).toArray.foldl (· + ·) (0 : Gwei)
-  let adjusted := umin (sumSlashings * UInt64.ofNat Const.proportionalSlashingMultiplierBellatrix) totalBalance
+  let totalBalance ← getTotalActiveBalance state
+  let sumSlashings ← (sszGet state slashings).toArray.foldlM (fun acc x => acc + x) (0 : Gwei)
+  let scaled ← sumSlashings * Const.proportionalSlashingMultiplierBellatrix
+  let adjusted := min scaled totalBalance
   let increment := Const.effectiveBalanceIncrementG
-  let penaltyPerIncrement := adjusted / (totalBalance / increment)
+  let penaltyPerIncrement ← adjusted / (totalBalance / increment)
 
   let mut state := state
   for i in [0 : (sszGet state validators).size] do
     let validator := sszGet state validators[i]!
     if validator.slashed && epoch + (UInt64.ofNat Const.epochsPerSlashingsVector / 2) == validator.withdrawableEpoch then
-      state ← decreaseBalance state (UInt64.ofNat i) (penaltyPerIncrement * (validator.effectiveBalance / increment))
+      let increments ← validator.effectiveBalance / increment
+      let penalty ← penaltyPerIncrement * increments
+      state ← decreaseBalance state (UInt64.ofNat i) penalty
   set state
 
 /-! ## Pending deposits (Electra deposit queue) -/
@@ -230,8 +270,12 @@ postponed; otherwise it applies while it fits the per-epoch churn, and the scan 
 
 Fulu's `process_pending_deposits` (`fulu/beacon-chain.md`, "Modified
 `process_pending_deposits`") drops Electra's eth1-bridge stop, because Fulu removes the former
-deposit mechanism (consensus-specs #4704, in the text since alpha.12). -/
-forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (nextEpoch : Epoch) :
+deposit mechanism (consensus-specs #4704, in the text since alpha.12). F1
+signature repair (inventory §2.5): `finalizedSlot` is the spec's
+`compute_start_slot_at_epoch(...)` value, a `Slot`; it keeps the raw `Slot` type
+until Stage 5. -/
+forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot : Slot) (avail : Gwei)
+    (nextEpoch : Epoch) :
     StateTransition DepositScan :=
   -- Fuel rather than a measure (§7.2): the scan stops on a data-dependent guard (churn
   -- exhausted, a not-yet-finalized slot), not on a quantity that
@@ -263,24 +307,37 @@ forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot avail : Gwei) (
 
     if isWithdrawn then applyPendingDeposit deposit; return advance s.processed s.postpone
     else if isExited then return advance s.processed (s.postpone.push deposit)
-    else if s.processed + deposit.amount > avail then return .done { s with churnReached := true }
-    else applyPendingDeposit deposit; return advance (s.processed + deposit.amount) s.postpone
+    else
+      -- `is_churn_limit_reached = processed_amount + deposit.amount >
+      -- available_for_processing`: the sum is the checked `Gwei` add, bound inside
+      -- the branch that forms it.
+      let running ← s.processed + deposit.amount
+      if running > avail then return .done { s with churnReached := true }
+      else
+        applyPendingDeposit deposit
+        return advance running s.postpone
 
 /-- `process_pending_deposits`. Churn is accumulated into `deposit_balance_to_consume`
 only when the churn limit was actually hit; every other stop resets it to zero. -/
 forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
   let nextEpoch := currentEpochOf state + 1
-  let avail := (sszGet state depositBalanceToConsume) + getActivationExitChurnLimit state
+  -- `available_for_processing = deposit_balance_to_consume +
+  -- get_activation_exit_churn_limit(state)`: the checked `Gwei` add, bound here.
+  let churn ← getActivationExitChurnLimit state
+  let avail ← (sszGet state depositBalanceToConsume) + churn
   let finalizedSlot := computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
   let deposits := (sszGet state pendingDeposits).toArray
 
   let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
   let remaining : SSZList PendingDeposit Const.pendingDepositsLimit ←
     sszOfArrayM "pendingDeposits" (deposits.extract scan.ndi deposits.size ++ scan.postpone)
+  -- `available_for_processing - processed_amount` forms only in the churn-hit
+  -- branch (the reset arm stores `Gwei(0)`), so the bind sits in its branch.
+  let remainingChurn ← if scan.churnReached then avail - scan.processed else pure (0 : Gwei)
   modifyState fun state => sszUpdate state with
     pendingDeposits := remaining,
-    depositBalanceToConsume := if scan.churnReached then avail - scan.processed else 0
+    depositBalanceToConsume := if scan.churnReached then remainingChurn else 0
 
 /-! ## Pending consolidations -/
 
@@ -307,7 +364,9 @@ forkdef pcLoop (cons : Array PendingConsolidation) (nextEpoch : Epoch) : StateTr
       else if src.withdrawableEpoch > nextEpoch then return .done npc
       else
         let srcBal ← sszGetIdx (sszGet state balances) pc.sourceIndex.toNat
-        let amt := umin srcBal src.effectiveBalance
+        -- `source_effective_balance = min(balances[source_index],
+        -- source_validator.effective_balance)`: `min` picks an operand, total.
+        let amt := min srcBal src.effectiveBalance
         let state ← decreaseBalance state pc.sourceIndex amt
         set (← increaseBalance state pc.targetIndex amt)
         return .next (npc + 1)
@@ -325,21 +384,35 @@ forkdef processPendingConsolidations : StateTransition Unit := do
 
 /-! ## Effective-balance updates -/
 
-/-- `process_effective_balance_updates` (the hysteresis rule). -/
-forkdef processEffectiveBalanceUpdates : StateTransition Unit :=
-  modifyState fun state => Id.run do
-    let mut state := state
-    let hysteresisIncrement := Const.effectiveBalanceIncrementG / UInt64.ofNat Const.hysteresisQuotient
-    let downward := hysteresisIncrement * UInt64.ofNat Const.hysteresisDownwardMultiplier
-    let upward := hysteresisIncrement * UInt64.ofNat Const.hysteresisUpwardMultiplier
+/-- `process_effective_balance_updates` (`fulu/mainnet.py:1901-1926`), the
+hysteresis rule. The thresholds are the checked `Gwei` chain
+`EFFECTIVE_BALANCE_INCREMENT // HYSTERESIS_QUOTIENT` and its multiplier
+products, and each comparison operand binds where the pyspec forms it; the
+Python `or` short-circuits, so the upward add forms only when the downward
+comparison is false. The reset is the checked round-and-cap pair. -/
+forkdef processEffectiveBalanceUpdates : StateTransition Unit := do
+  let mut state ← get
 
-    for i in [0 : (sszGet state validators).size] do
-      let validator := sszGet state validators[i]!
-      let balance := sszGet state balances[i]!
-      if balance + downward < validator.effectiveBalance || validator.effectiveBalance + upward < balance then
-        let newEff := umin (balance - balance % Const.effectiveBalanceIncrementG) (getMaxEffectiveBalance validator)
-        state := modValidator state (UInt64.ofNat i) (fun validator => { validator with effectiveBalance := newEff })
-    return state
+  for i in [0 : (sszGet state validators).size] do
+    -- Python assigns the three thresholds inside the loop
+    -- (`fulu/mainnet.py:1903-1907`), so they form only for a validator that
+    -- exists; a degenerate configuration raises there, not before the loop.
+    let hysteresisIncrement ← Const.effectiveBalanceIncrementG / Const.hysteresisQuotient
+    let downward ← hysteresisIncrement * Const.hysteresisDownwardMultiplier
+    let upward ← hysteresisIncrement * Const.hysteresisUpwardMultiplier
+    let validator := sszGet state validators[i]!
+    let balance := sszGet state balances[i]!
+    let downwardHit ← balance + downward
+    let hit ← if downwardHit < validator.effectiveBalance then pure true
+              else do
+                let upwardHit ← validator.effectiveBalance + upward
+                pure (upwardHit < balance)
+    if hit then
+      let rounded ← balance % Const.effectiveBalanceIncrementG
+      let excess ← balance - rounded
+      let newEff := min excess (getMaxEffectiveBalance validator)
+      state := modValidator state (UInt64.ofNat i) (fun validator => { validator with effectiveBalance := newEff })
+  set state
 
 /-- `process_slashings_reset`: zero the next epoch's slashings slot. The index is in
 range by construction (`nextEpoch % EPOCHS_PER_SLASHINGS_VECTOR`), so the infallible

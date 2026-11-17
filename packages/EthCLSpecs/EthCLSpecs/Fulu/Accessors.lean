@@ -20,8 +20,10 @@ namespace EthCLSpecs.Fulu
 
 state_section
 
-/-- `get_total_active_balance`. -/
-forkdef getTotalActiveBalance (state : State) : Gwei :=
+/-- `get_total_active_balance`. The total folds the active set's
+`effective_balance` values, a checked `sum` in the pyspec (`SPEC_ARITHMETIC.md`
+§3.2), so the result carries the fold's fault. -/
+forkdef getTotalActiveBalance (state : State) : Checked Gwei :=
   getTotalBalance state (getActiveValidatorIndices state (computeEpochAtSlot (sszGet state slot)))
 
 /-- `get_unslashed_participating_indices(state, flag_index, epoch)`. No committees. -/
@@ -58,10 +60,12 @@ forkdef getBlockRootAtSlot (state : State) (s : Slot) : StateTransition Root := 
 forkdef getBlockRoot (state : State) (epoch : Epoch) : StateTransition Root :=
   getBlockRootAtSlot state (epoch * UInt64.ofNat Const.slotsPerEpoch)
 
-/-- `get_pending_balance_to_withdraw`. -/
-forkdef getPendingBalanceToWithdraw (state : State) (vi : ValidatorIndex) : Gwei :=
-  (sszGet state pendingPartialWithdrawals).foldl
-    (fun acc w => if w.validatorIndex == vi then acc + w.amount else acc) 0
+/-- `get_pending_balance_to_withdraw`. The accumulator is a `Gwei` and each
+`balance += withdrawal.amount` is a checked add (`SPEC_ARITHMETIC.md` §3.2, the
+`sum` row), so the fold carries its fault. -/
+forkdef getPendingBalanceToWithdraw (state : State) (vi : ValidatorIndex) : Checked Gwei :=
+  (sszGet state pendingPartialWithdrawals).val.foldlM
+    (fun acc w => if w.validatorIndex == vi then acc + w.amount else pure acc) (0 : Gwei)
 
 end
 

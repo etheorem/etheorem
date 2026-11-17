@@ -92,10 +92,13 @@ forkdef getCommitteeIndices {n : Nat} (bits : Bitvector n) : Array Nat :=
 /-! ## Balance-weighted selection -/
 
 /-- `compute_balance_weighted_selection` inner loop, one call per pass of the spec's
-`while len(selected) < size`. The size check exits first, and the tail increment runs the
+`while len(selected) < size`. The size check exits first. The `weight` and `threshold`
+products are the spec's checked `Gwei` chains (`effective_balances[next_index] *
+MAX_RANDOM_VALUE`, `MAX_EFFECTIVE_BALANCE_ELECTRA * random_value`), so each binds before
+the comparison, and the comparison runs only after both formed. The tail increment runs the
 spec's `uint64` `i += 1` through `checkedSucc`, so the last pass at `i = 2**64 - 1` throws
 `.arithmetic`, the spec's overflow, whether or not it filled the selection. -/
-forkdef cbwsAux [Preset] (indices effBals : Array Nat) (perm : Array ValidatorIndex)
+forkdef cbwsAux [Preset] (indices perm : Array ValidatorIndex) (effBals : Array Gwei)
     (seed : ByteArray) (total size : Nat) (shuffle : Bool) (i : Nat) (randomBytes : ByteArray)
     (selected : Array ValidatorIndex) : Except StateTransitionError (Array ValidatorIndex) := do
   if selected.size ≥ size then pure selected
@@ -103,27 +106,30 @@ forkdef cbwsAux [Preset] (indices effBals : Array Nat) (perm : Array ValidatorIn
     let offset := (i % 16) * 2
     let randomBytes := if offset == 0 then sha (seed ++ uint64ToBytes (UInt64.ofNat (i / 16))) else randomBytes
     let nextIndex := if shuffle then (perm[i % total]!).toNat else i % total
-    let weight := effBals[nextIndex]! * Const.maxRandomValue
-    let randomValue := le2 randomBytes offset
-    let threshold := Const.maxEffectiveBalanceElectra * randomValue
-    let selected := if weight ≥ threshold then selected.push (UInt64.ofNat (indices[nextIndex]!)) else selected
+    let weight ← effBals[nextIndex]! * Const.maxRandomValue
+    -- `bytes_to_uint64` of two bytes: in range by construction, so the checked
+    -- construction carries the codec value into the checked kind.
+    let randomValue ← CLUint64.ofNat? (le2 randomBytes offset)
+    let threshold ← Const.maxEffectiveBalanceElectraG * randomValue
+    let selected := if weight ≥ threshold then selected.push (indices[nextIndex]!) else selected
     let s ← checkedSucc i "compute_balance_weighted_selection: i += 1 past 2**64 - 1"
-    cbwsAux indices effBals perm seed total size shuffle s.val randomBytes selected
+    cbwsAux indices perm effBals seed total size shuffle s.val randomBytes selected
 termination_by counterBudgetUInt64 i
 
 /-- `compute_balance_weighted_selection(state, indices, seed, size, shuffle)`
 (`gloas/beacon-chain.md:1195-1234`). An empty `indices` rejects on the spec's
-`assert total > 0` (`:1213`). -/
+`assert total > 0` (`:1213`). The sampled chain reads `effective_balance`, so
+the balance list and the `weight` / `threshold` products keep the checked
+`Gwei` kind (`SPEC_ARITHMETIC.md` §4.2, each intermediate range test). -/
 forkdef computeBalanceWeightedSelection (state : State) (indices : Array ValidatorIndex)
     (seed : ByteArray) (size : Nat) (shuffle : Bool) :
     Except StateTransitionError (Array ValidatorIndex) := do
   let total := indices.size
   assert (total > 0)
-  let idxNat := indices.map (·.toNat)
   let validators := sszGet state validators
-  let effBals := indices.map (fun vi => (validators[vi.toNat]!).effectiveBalance.toNat)
+  let effBals := indices.map (fun vi => (validators[vi.toNat]!).effectiveBalance)
   let perm := if shuffle then computeShuffledPermutation total seed else #[]
-  cbwsAux idxNat effBals perm seed total size shuffle 0 ByteArray.empty #[]
+  cbwsAux indices perm effBals seed total size shuffle 0 ByteArray.empty #[]
 
 /-! ## Proposer and sync-committee selection -/
 

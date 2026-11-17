@@ -40,7 +40,8 @@ namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag StoreTransitionError MapKind FcMap NestedStateMachine
   runNestedStateTransition runNestedStateTransition_of_ok)
-open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState BuilderPendingWithdrawal)
+open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState BuilderPendingWithdrawal Gwei)
+open EthCLLib.Spec (Checked)
 open EthCLSpecs.Gloas (Store getSlotsSinceGenesis getCurrentSlot State currentEpochOf
   initiateBuilderExit processBuilderPendingPayments)
 open EthCLLib.Proofs (pureState ForkChoiceStoreRun)
@@ -128,13 +129,14 @@ contract is unconditional: the run always appends the qualifying withdrawals and
 payment window. -/
 example [Preset] [HasherTag] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
-    ∀ (preState : BeaconState),
+    ∀ (preState : BeaconState) (quorum : Gwei),
+      builderPaymentQuorum preState = .ok quorum →
       runNestedStateTransition (pureState preState)
           (processBuilderPendingPayments (StateTransition := GloasRun))
         = (pure (pureState { preState with
-              builderPendingWithdrawals := expectedWithdrawals preState,
+              builderPendingWithdrawals := expectedWithdrawals quorum preState,
               builderPendingPayments := expectedPaymentWindow preState }) : m State) :=
-  fun preState =>
-    runNestedStateTransition_of_ok (processBuilderPendingPayments_run preState)
+  fun preState quorum hq =>
+    runNestedStateTransition_of_ok (processBuilderPendingPayments_run_ok preState quorum hq)
 
 end EthCLSpecs.Proofs.Gloas
