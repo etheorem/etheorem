@@ -133,7 +133,9 @@ per-value cost and not a size ramp. -/
 private def distinctValidators (st : BeaconState) : Array Validator :=
   let base := st.validators[0]!
   Array.ofFn (n := perTypeCount) fun i =>
-    { base with effectiveBalance := UInt64.ofNat (i.val + 1) }
+    -- Benchmark fixture data: trusted, in-range by construction (the index
+    -- bound), so the wire route is the right construction.
+    { base with effectiveBalance := CLUint64.trustedOfUInt64 (UInt64.ofNat (i.val + 1)) }
 
 /-- Distinct block headers off the state's `latestBlockHeader`, varied
 by `slot`. -/
