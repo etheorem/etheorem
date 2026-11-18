@@ -1,4 +1,5 @@
 import EthCLLib.Spec.CLUint
+import EthCLLib.Spec.Arith
 
 /-!
 # `EthCLLib.Spec.CLTotal`: the proved-total routes of the operation matrix
@@ -24,6 +25,9 @@ route itself, the route is total and returns the value directly
 - The checked mixed right shift for a plain left operand or a signed count
   (`Nat >>> CLUint64`): not total, per §5.1. `(2**64) >> Uint64(0)` raises,
   so the route keeps the result range test and the two routes stay distinct.
+- `integer_squareroot(n: uint64) -> uint64`: total. The spec text writes the
+  guard, a special case at the maximum (§3.5), and the root of any other value
+  is at most the value.
 
 This module sits beside `Spec/CLUint.lean`: `CLUint.lean` owns
 the raising operator matrix, this file owns the routes whose guard is a proof
@@ -556,6 +560,34 @@ theorem lshift_value (a : CLUint64) (count : Nat) (c : CLUint64)
   · cases h
     exact ofNatLT_toPlainNat _ _
   · cases h
+
+/-! ## The integer square root
+
+`integer_squareroot(n: Uint64) -> Uint64` (`phase0/beacon-chain.md:993`). The
+pinned body returns `UINT64_MAX_SQRT` at `n == UINT64_MAX`, the one input where
+its first step `(x + 1) // 2` would overflow (§3.5, "special case at the
+maximum"). Every other input runs Newton's iteration, and no step leaves the
+range, so the function is total. The model keeps the special case and runs the
+same iteration over the value's `Nat` (`EthCLLib.Spec.isqrt`, which starts from
+`(n + 1) / 2` as the pinned body does). The result fits because the root is at
+most its argument (`isqrt_le`). -/
+
+/-- `UINT64_MAX_SQRT`, the pinned constant `4294967295`. -/
+def uint64MaxSqrt : CLUint64 := ofNatLT 4294967295 (by decide)
+
+/-- `integer_squareroot(n)`: the special case at `UINT64_MAX`, else Newton's
+iteration. Total; the result is a `CLUint64`, as the pinned signature says. -/
+def integerSquareroot (n : CLUint64) : CLUint64 :=
+  if n.toPlainNat = UInt64.size - 1 then uint64MaxSqrt
+  else ofNatLT (isqrt n.toPlainNat)
+    (Nat.lt_of_le_of_lt (isqrt_le _) (UInt64.toNat_lt_size n.val))
+
+/-- Below the maximum, the root is `isqrt` of the value. -/
+theorem integerSquareroot_toPlainNat (n : CLUint64) (h : n.toPlainNat ≠ UInt64.size - 1) :
+    (integerSquareroot n).toPlainNat = isqrt n.toPlainNat := by
+  unfold integerSquareroot
+  simp only [h, ite_false]
+  exact ofNatLT_toPlainNat _ _
 
 end CLUint64
 

@@ -110,6 +110,8 @@ inherit epochsPerHistoricalVectorLt
 inherit slotsPerEpochC slotsPerEpochDiv slotsPerHistoricalRootC slotsPerHistoricalRootDiv
 inherit epochsPerHistoricalVectorC epochsPerSlashingsVectorC
 inherit epochsPerEth1VotingPeriodC epochsPerSyncCommitteePeriodC
+inherit maxCommitteesPerSlotC targetCommitteeSizeC maxWithdrawalsPerPayloadC
+inherit maxPendingPartialsPerWithdrawalsSweepC
 
 -- Sentinels, registry and history caps.
 inherit farFutureEpoch genesisSlot genesisEpoch validatorRegistryLimit

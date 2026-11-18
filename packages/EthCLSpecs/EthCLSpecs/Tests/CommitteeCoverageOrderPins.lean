@@ -8,7 +8,8 @@ import EthCLSpecs.Gloas
 `uint64` arithmetic, which it does not (`expect_assertion_error` catches
 `AssertionError` and `IndexError`, and the range fault is a `ValueError`). So the
 order of an assert and an arithmetic step decides the class the runner observes. The
-pins cover two sites in Fulu and in Gloas, each at a state slot near the maximum.
+pins cover three sites in Fulu and in Gloas. The first two sit at a state slot near the
+maximum.
 
 1. The committee loop (`fulu/minimal.py:2051-2060`, `gloas/minimal.py:2614-2623`). A
    failed check aborts the loop at once. The pins use a preset with
@@ -27,14 +28,24 @@ pins cover two sites in Fulu and in Gloas, each at a state slot near the maximum
    source raises the uncaught range fault. At state slot `20` the reads succeed and the
    same mismatch rejects with the caught assert.
 
-The pinned pyspec gives the same class at every pin (`.spike/stage5/oracle53.py`
-replays them, with `SLOTS_PER_EPOCH` patched to `1` for site 1). Site 2's
-maximum-slot pins discriminate: a source check placed before the reads rejects with
-`.assert` there. Site 1's pins do not discriminate the fold's stop at the first failed
-check. The committee call's only fault is `get_seed`'s epoch chain, which depends on the
-slot alone, and the committee indices ascend. So a failed check means either every later
-index is out of range or the committee call already succeeded at that slot. The pins
-record the class at the corner. `State` is FFI-backed, so `native_decide`.
+3. The fold's stop at the first failed check (`fulu/minimal.py:2051-2060`,
+   `gloas/minimal.py:2614-2623`). With `SLOTS_PER_EPOCH = 1` and eight validators the
+   slot has two committees of four. Committee indices `0` and `1` with four `false`
+   aggregation bits fail the attester assert at index `0`, so the attestation rejects
+   with the caught assert. A fold that ran on would read `aggregation_bits[4]` for
+   index `1` and raise `IndexError`; the nearby pin with four `true` bits passes index
+   `0` and shows that read raising.
+
+The pinned pyspec gives the same class at every pin (`.spike/stage5/oracle53.py` and
+`.spike/stage6/oracle62.py` replay them, with `SLOTS_PER_EPOCH` patched to `1` for
+sites 1 and 3). Site 2's maximum-slot pins discriminate: a source check placed before
+the reads rejects with `.assert` there. Site 3's pins discriminate the fold's stop: a
+later committee's aggregation-bit read raises `IndexError` once the fold reaches it.
+Site 1's pins record the class at a slot near the maximum. There the committee call's
+fault is `get_seed`'s epoch chain, which depends on the slot alone. The call also raises
+through `compute_committee`'s checked products, which depend on the committee index, but
+those products pass `2^64 - 1` only for a registry far larger than a fixture can hold.
+`State` is FFI-backed, so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -159,6 +170,32 @@ private def pinFuluMismatchedSourceRejectsAssert : Bool :=
   | _ => false
 example : pinFuluMismatchedSourceRejectsAssert = true := by native_decide
 
+/-! ### 3. The fold's stop at the first failed check -/
+
+/-- `fuluAtt` with the given aggregation bits in place of the single set bit. -/
+private def fuluAttBits (P : Preset) (slot : Slot) (targetEpoch : Epoch)
+    (committees : List Nat) (bits : Array Bool) : @Attestation P :=
+  letI : Preset := P
+  { fuluAtt P slot targetEpoch 0 committees with aggregationBits := capped bits }
+
+/-- `SLOTS_PER_EPOCH = 1`, state slot `3`, attestation slot `2`: two committees of four.
+Committee indices `0` and `1` with four `false` bits fail the attester assert at index
+`0`, so the fold stops there and the attestation rejects with the caught assert. A fold
+that ran on would read `aggregation_bits[4]` for index `1` and reject `outOfBounds`. -/
+private def pinFuluFirstFailureStopsFold : Bool :=
+  match fuluRun oneSlotEpochs 3 (fuluAttBits oneSlotEpochs 2 2 [0, 1] #[false, false, false, false]) with
+  | .error (.assert _) _ => true
+  | _ => false
+example : pinFuluFirstFailureStopsFold = true := by native_decide
+
+/-- The same attestation with four `true` bits: index `0` passes, and index `1` reads
+`aggregation_bits[4]`, which raises `IndexError`. -/
+private def pinFuluLaterCommitteeReadRaises : Bool :=
+  match fuluRun oneSlotEpochs 3 (fuluAttBits oneSlotEpochs 2 2 [0, 1] #[true, true, true, true]) with
+  | .error (.outOfBounds 4 4) _ => true
+  | _ => false
+example : pinFuluLaterCommitteeReadRaises = true := by native_decide
+
 end FuluPins
 
 /-! ## Gloas -/
@@ -254,6 +291,28 @@ private def pinGloasMismatchedSourceRejectsAssert : Bool :=
   | .error (.assert _) _ => true
   | _ => false
 example : pinGloasMismatchedSourceRejectsAssert = true := by native_decide
+
+/-! ### 3. The fold's stop at the first failed check -/
+
+/-- `gloasAtt` with the given aggregation bits in place of the single set bit. -/
+private def gloasAttBits (P : Preset) (slot : Slot) (targetEpoch : Epoch)
+    (committees : List Nat) (bits : Array Bool) : @Attestation P :=
+  letI : Preset := P
+  { gloasAtt P slot targetEpoch 0 committees with aggregationBits := ⟨bits⟩ }
+
+/-- Gloas twin of `pinFuluFirstFailureStopsFold`. -/
+private def pinGloasFirstFailureStopsFold : Bool :=
+  match gloasRun oneSlotEpochsG 3 (gloasAttBits oneSlotEpochsG 2 2 [0, 1] #[false, false, false, false]) with
+  | .error (.assert _) _ => true
+  | _ => false
+example : pinGloasFirstFailureStopsFold = true := by native_decide
+
+/-- Gloas twin of `pinFuluLaterCommitteeReadRaises`. -/
+private def pinGloasLaterCommitteeReadRaises : Bool :=
+  match gloasRun oneSlotEpochsG 3 (gloasAttBits oneSlotEpochsG 2 2 [0, 1] #[true, true, true, true]) with
+  | .error (.outOfBounds 4 4) _ => true
+  | _ => false
+example : pinGloasLaterCommitteeReadRaises = true := by native_decide
 
 end GloasPins
 

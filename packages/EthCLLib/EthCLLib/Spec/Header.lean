@@ -206,23 +206,28 @@ macro_rules
 (`altair/beacon-chain.md:308-316`). When `i` is the length of the list it appends, through
 `appendState`, so a full list raises `.listFull`. When `i` is inside the list it overwrites
 entry `i`. Past the end, the spec's `list[index] = value` raises `IndexError`, which becomes
-the `.outOfBounds` reject through `liftErr`. `i` is a `Nat`. `v` is bound once, before the
-branch, as pyspec evaluates `value` once before the call. -/
+the `.outOfBounds` reject through `liftErr`. `i` is a `CLUint64`, the pinned signature's
+`index: Uint64` (a `ValidatorIndex` or a `BuilderIndex` at every call site). `v` is bound
+once, before the branch, as pyspec evaluates `value` once before the call. -/
 scoped syntax (name := setOrAppendStateStx) "setOrAppendState " ident ppSpace term:max ppSpace term : term
 
 macro_rules
   | `(setOrAppendState $head:ident $i $v) => do
       let stateId  := mkIdent `State
       let modifyId := mkIdent `modifyState
-      let clause ← `(sszUpdateClause| $head:ident[i]! := v)
+      let clause ← `(sszUpdateClause| $head:ident[k]! := v)
       `(do
           let v := $v
           let s ← getThe $stateId
-          let i : Nat := $i
+          let i : CLUint64 := $i
+          -- `toPlainNat`: the checked index is compared with the plain length and then names
+          -- a position inside the list, the `ToIndex CLUint64` reading (`SPEC_ARITHMETIC.md`
+          -- §4.6); no operator runs on it.
+          let k := i.toPlainNat
           let n := (sszGet s $head:ident).val.size
-          if i == n then appendState $head:ident v
-          else if i < n then $modifyId:ident fun state => sszUpdate state with $clause
-          else liftErr (Except.error (SizzLean.Cache.IndexError.indexError i n)
+          if k == n then appendState $head:ident v
+          else if k < n then $modifyId:ident fun state => sszUpdate state with $clause
+          else liftErr (Except.error (SizzLean.Cache.IndexError.indexError k n)
             : Except SizzLean.Cache.IndexError PUnit))
 
 /-! ## `sszOfArrayM`: the spec's `List[T, N](a)` on an array of any size -/

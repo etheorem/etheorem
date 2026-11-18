@@ -86,7 +86,10 @@ existing validator is unaffected, whatever the deposit's credentials. -/
 forkdef applyPendingDeposit (deposit : PendingDeposit) : StateTransition Unit := do
   let state ← get
   match validatorIndexByPubkey? state deposit.pubkey with
-  | some vi => set (← increaseBalance state (UInt64.ofNat vi) deposit.amount)
+  | some vi =>
+      -- `ValidatorIndex(validator_pubkeys.index(deposit.pubkey))`: the pyspec's checked cast.
+      let index ← CLUint64.ofNat? vi
+      set (← increaseBalance state index deposit.amount)
   | none    =>
       -- [New in Heze:EIP8365] do not create validators with BLS withdrawal credentials.
       if credPrefix deposit.withdrawalCredentials == Const.blsWithdrawalPrefix then return
@@ -102,6 +105,7 @@ inherit getCommitteeIndices
 inherit cbwsAux
 inherit computeBalanceWeightedSelection
 inherit computeProposerIndices
+inherit getNextSyncCommitteeIndices
 inherit getNextSyncCommittee
 inherit getBeaconProposerIndices
 inherit weighJustificationAndFinalization

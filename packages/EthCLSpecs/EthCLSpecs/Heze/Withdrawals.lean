@@ -43,7 +43,7 @@ def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Wi
     StateTransition Gwei := do
   let withdrawn ← ws.foldlM (init := (0 : Gwei)) fun acc w =>
     if w.validatorIndex == vi then acc + w.amount else pure acc
-  let bal ← sszGetIdx (sszGet state balances) vi.toNat
+  let bal ← sszGetIdx (sszGet state balances) vi
   bal - withdrawn
 
 inherit getBuilderWithdrawals

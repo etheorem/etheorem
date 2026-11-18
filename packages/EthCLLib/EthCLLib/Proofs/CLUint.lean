@@ -959,4 +959,36 @@ theorem saturatingSub_value (a b : CLUint64) :
     (a.saturatingSub b).toPlainNat = a.toPlainNat - b.toPlainNat :=
   CLUint64.saturatingSub_toPlainNat a b
 
+/-! ## The mixed `&` with a complement
+
+`a & ~f` (`Spec/CLInt.lean`): `~f` is the plain `int` `-f - 1`, so the `&` is the
+mixed route with its range test. A nonnegative `a` keeps the result inside
+`[0, a]`, so the test never fires, and the value is the same-width `&` with the
+64-bit complement of `f`. Proofs about a bit mask (`convert_validator_index_to_builder_index`)
+rewrite through this law, then reason on the native words. -/
+
+/-- `a & ~f` succeeds, with the same-width `&` of `a` and the 64-bit complement of
+`f`. -/
+theorem hand_invert_eq (a f : CLUint64) :
+    (a &&& f.invert : Checked CLUint64) =
+      .ok (a &&& CLUint64.trustedOfUInt64 (~~~ f.val)) := by
+  -- Bit by bit: `x ∧ ¬y = x ⊕ (x ∧ y)`, a kernel proof with no `bv_decide` certificate.
+  have key : a.val &&& ~~~ f.val = a.val ^^^ (a.val &&& f.val) := by
+    apply UInt64.eq_of_toBitVec_eq
+    simp only [UInt64.toBitVec_and, UInt64.toBitVec_xor, UInt64.toBitVec_not]
+    ext i hi
+    simp only [BitVec.getElem_and, BitVec.getElem_xor, BitVec.getElem_not]
+    cases a.val.toBitVec[i] <;> cases f.val.toBitVec[i] <;> rfl
+  have hval : CLInt.landInt (a.toPlainNat : Int) (Int.negSucc f.toPlainNat)
+      = ((a.val &&& ~~~ f.val).toNat : Int) := by
+    rw [key, UInt64.toNat_xor, UInt64.toNat_and]
+    rfl
+  have hlt := UInt64.toNat_lt_size (a.val &&& ~~~ f.val)
+  rw [CLUint64.hand_clInt_eq]
+  show CLUint64.mixBin "&" CLInt.landInt (a.toPlainNat : Int) (Int.negSucc f.toPlainNat) = _
+  rw [mixBin_eq_ok, hval]
+  refine ⟨by omega, by omega, ?_⟩
+  show (a.val &&& ~~~ f.val).toNat = _
+  omega
+
 end EthCLLib.Proofs

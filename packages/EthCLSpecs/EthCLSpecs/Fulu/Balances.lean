@@ -26,9 +26,11 @@ state_section
 
 /-- Modify balance `i` via the infallible `[i]!` element write (total). `balances`
 is a basic-packed `Gwei` field, so the write rebuilds the field's subtree, the same
-cost as the old whole-field form. -/
+cost as the old whole-field form. The helper has no pyspec twin: every caller reads
+`balances[i]` through the raising `sszGetIdx` first, so the position is in range here. -/
 forkdef modBalance (state : State) (i : ValidatorIndex) (f : Gwei → Gwei) : State :=
-  sszModify state balances[i.toNat]! := f
+  -- `toPlainNat`: the caller's raising read already proved `i` in range (see above).
+  sszModify state balances[i.toPlainNat]! := f
 
 /-- `increase_balance`. The pyspec's `+=` is a bare `uint64` addition, and remerkleable re-runs
 the bound check on the result, so an overflow raises `ValueError`. The reference runner lets that
@@ -43,7 +45,7 @@ pyspec rejects. Two callers can hold one. `pcLoop` passes a `target_index` read 
 when the two lengths disagree. -/
 forkdef increaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
     StateTransition State := do
-  let balance ← sszGetIdx (sszGet state balances) i.toNat
+  let balance ← sszGetIdx (sszGet state balances) i
   let sum ← balance + delta
   return modBalance state i (fun _ => sum)
 
@@ -54,19 +56,23 @@ so the subtraction raises nothing. The read goes through `sszGetIdx` for the rea
 read raises `IndexError` past the end. -/
 forkdef decreaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
     StateTransition State := do
-  let balance ← sszGetIdx (sszGet state balances) i.toNat
+  let balance ← sszGetIdx (sszGet state balances) i
   return modBalance state i (fun _ => balance.saturatingSub delta)
 
 /-- `get_total_balance` (floored at one increment). The pyspec's `sum` over the
 `effective_balance` values is a checked fold (`SPEC_ARITHMETIC.md` §3.2, the
 `sum` row), so the result carries the fault; `max` picks an operand and never
-raises. -/
-forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex) : Checked Gwei := do
+raises. The comprehension `[state.validators[index].effective_balance for index in
+indices]` (`fulu/minimal.py:1523-1534`) forms the whole list before `sum` runs, so every
+read precedes the first add. Each read raises `IndexError` past the end of the registry,
+and the body reads through `getAt` in the same order. -/
+forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex) :
+    Except StateTransitionError Gwei := do
   let validators := sszGet state validators
-  -- The fold reads with the total `[i]!`, the same infallible read the
-  -- pre-flip spelling had; the index is the validator position, and the
-  -- `ValidatorIndex` → `Nat` adaptation stays until Stage 6.
-  let total ← indices.foldlM (fun acc i => acc + (validators[i.toNat]!).effectiveBalance) (0 : Gwei)
+  let balances ← indices.mapM fun i => do
+    let validator ← liftErr (getAt validators i)
+    pure validator.effectiveBalance
+  let total ← (balances.foldlM (fun acc b => acc + b) (0 : Gwei) : Checked Gwei)
   return max total Const.effectiveBalanceIncrementG
 
 end

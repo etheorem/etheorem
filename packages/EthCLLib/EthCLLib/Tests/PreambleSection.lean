@@ -69,7 +69,7 @@ def appendX (v : UInt64) : StateTransition Unit :=
   appendState xs v
 
 /-- The spec's `set_or_append_list(state.xs, i, v)`. -/
-def setOrAppendX (i : Nat) (v : UInt64) : StateTransition Unit :=
+def setOrAppendX (i : CLUint64) (v : UInt64) : StateTransition Unit :=
   setOrAppendState xs i v
 
 /-- The spec's `state.xs = List[uint64, 2](a)`, through `sszOfArrayM`. -/

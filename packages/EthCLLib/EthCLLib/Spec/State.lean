@@ -126,6 +126,13 @@ uses `getAt` below. -/
   size _ := n
   get? v i := if h : i < n then some v[i] else none
 
+/-- `len(xs)` on any random-access collection: an SSZ list, a vector, a bit list, or a
+plain array. The result is the pyspec's plain `int` (`SPEC_ARITHMETIC.md` §4.5), a
+`CLInt`, so `x % len xs` takes the plain kind's raising `%` on an empty collection, and
+`i % len xs` with a checked `i` takes the mixed route. `CLInt.len` is the same length
+for a plain `Array`. -/
+@[inline] def len {ρ α : Type} [IdxRead ρ α] (xs : ρ) : CLInt := ⟨IdxRead.size xs⟩
+
 /-! ## Size-aware indices (`SPEC_ARITHMETIC.md` §4.6)
 
 The pyspec indexes a list with any integer kind, and a plain negative `int`
@@ -274,12 +281,13 @@ A spec *validation* of an index pairs this with a preceding `assert (i < size)`:
 `assert` rejects a bad index first as the spec's `IndexError` (`assert`, an
 `expectedRejection`), so `sszGetIdx`'s own `outOfBounds` stays unreachable, the safe
 read behind the validation and a defense-in-depth signal if the assert is ever wrong.
-The collection is any `IdxRead`: a capped `SSZList` or an uncapped `ProgressiveList`. -/
-@[inline] def sszGetIdx {α ρ : Type} {m : Type → Type u} {E : Type} [Monad m] [IdxRead ρ α]
-    [MonadExcept E m] [ErrorConv IndexError E] (xs : ρ) (i : Nat) : m α :=
-  liftErr <| match IdxRead.get? xs i with
-    | some a => .ok a
-    | none   => .error (IndexError.indexError i (IdxRead.size xs))
+The collection is any `IdxRead`: a capped `SSZList` or an uncapped `ProgressiveList`.
+The index is any `ToIndex` kind (`SPEC_ARITHMETIC.md` §4.6): a `Nat` position, a
+`CLUint64` such as a `ValidatorIndex`, or a `CLInt`. The read is `getAt` lifted into the
+ambient monad, so each kind rejects exactly where the pyspec raises `IndexError`. -/
+@[inline] def sszGetIdx {α ρ ι : Type} {m : Type → Type u} {E : Type} [Monad m] [IdxRead ρ α]
+    [ToIndex ι] [MonadExcept E m] [ErrorConv IndexError E] (xs : ρ) (i : ι) : m α :=
+  liftErr (getAt xs i)
 
 /-- `sszGetIdx` for a bit list: bit `i`, or the typed reject `outOfBounds i size`. The
 monadic safe read for an *untrusted* bit index, an attestation's `aggregation_bits` read

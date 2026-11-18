@@ -106,10 +106,13 @@ forkabbrev builderWithdrawalPrefix : UInt8 := 0xB0
 /-- `PAYLOAD_BUILDER_VERSION = uint8(0)` (EIP-8282): the version stamped on a
 builder onboarded at the fork (`add_builder_to_registry`). -/
 forkabbrev payloadBuilderVersion : UInt8 := 0
-forkabbrev builderIndexFlag : UInt64 := 0x10000000000
+/-- `BUILDER_INDEX_FLAG = Uint64(2**40)`: the bit that marks a builder index carried in a
+`ValidatorIndex`. A checked `Uint64`, so `&` and `|` with an index are the same-width
+bitwise operators (`SPEC_ARITHMETIC.md` §5.1). -/
+forkabbrev builderIndexFlag : CLUint64 := 0x10000000000
 /-- `BUILDER_INDEX_SELF_BUILD = BuilderIndex(UINT64_MAX)`: the bid's `builder_index`
 sentinel marking a proposer self-build (no external builder). -/
-forkabbrev builderIndexSelfBuild : UInt64 := 0xffffffffffffffff
+forkabbrev builderIndexSelfBuild : BuilderIndex := 0xffffffffffffffff
 -- EIP-7732 / EIP-8282 BLS domain-type tags, beside the ones inherited below.
 forkabbrev domainBeaconBuilder : ByteArray := ⟨#[0x0B, 0, 0, 0]⟩
 forkabbrev domainPtcAttester : ByteArray := ⟨#[0x0C, 0, 0, 0]⟩
@@ -154,6 +157,8 @@ inherit epochsPerHistoricalVectorLt
 inherit slotsPerEpochC slotsPerEpochDiv slotsPerHistoricalRootC slotsPerHistoricalRootDiv
 inherit epochsPerHistoricalVectorC epochsPerSlashingsVectorC
 inherit epochsPerEth1VotingPeriodC epochsPerSyncCommitteePeriodC
+inherit maxCommitteesPerSlotC targetCommitteeSizeC maxWithdrawalsPerPayloadC
+inherit maxPendingPartialsPerWithdrawalsSweepC
 
 -- Sentinels, registry and history caps.
 inherit farFutureEpoch genesisSlot genesisEpoch validatorRegistryLimit

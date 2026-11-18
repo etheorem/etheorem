@@ -167,10 +167,13 @@ forkconfig where
   slotDurationMs : UInt64
   attestationDueBps : UInt64
   ejectionBalanceG : Gwei
-  maxBlobsPerBlockElectra : Nat
+  /-- `MAX_BLOBS_PER_BLOCK_ELECTRA`: a `Uint64` in the pinned module, so the checked kind. -/
+  maxBlobsPerBlockElectra : CLUint64
   /-- `BLOB_SCHEDULE` (EIP-7892): the blob-parameter-only fork schedule, one
-  `(EPOCH, MAX_BLOBS_PER_BLOCK)` record per entry. `get_blob_parameters` reads it. -/
-  blobSchedule : List (Epoch × Nat)
+  `(EPOCH, MAX_BLOBS_PER_BLOCK)` record per entry. `get_blob_parameters` reads it. The
+  pinned config loader keeps each `MAX_BLOBS_PER_BLOCK` a plain `int`, so the cap is a
+  `CLInt`. -/
+  blobSchedule : List (Epoch × CLInt)
   /-- `INACTIVITY_SCORE_BIAS` / `INACTIVITY_SCORE_RECOVERY_RATE` (Altair). -/
   inactivityScoreBias : UInt64
   inactivityScoreRecoveryRate : UInt64
@@ -268,6 +271,23 @@ forkabbrev epochsPerEth1VotingPeriodC : CLUint64 :=
   CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.epochsPerEth1VotingPeriod)
 forkabbrev epochsPerSyncCommitteePeriodC : CLUint64 :=
   CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.epochsPerSyncCommitteePeriod)
+
+/-- The checked views of the preset counts that the plain-integer formulas meet
+as `Uint64` operands (`SPEC_ARITHMETIC.md` §4.2, checked constants stay checked):
+`get_committee_count_per_slot`'s `min` and divisor, and the withdrawal sweeps'
+`MAX_WITHDRAWALS_PER_PAYLOAD - 1` and `len(prior) + MAX_PENDING_PARTIALS_…` limits.
+The pinned module types all four `Uint64`. Same construction as the three period
+views above: no preset proof field bounds them, so each rides the wire iso
+(§4.5, `trustedOfUInt64`). A zero value keeps its checked behavior: the divisor
+route raises `ZeroDivisionError` and `0 - 1` raises the range fault. -/
+forkabbrev maxCommitteesPerSlotC : CLUint64 :=
+  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.maxCommitteesPerSlot)
+forkabbrev targetCommitteeSizeC : CLUint64 :=
+  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.targetCommitteeSize)
+forkabbrev maxWithdrawalsPerPayloadC : CLUint64 :=
+  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.maxWithdrawalsPerPayload)
+forkabbrev maxPendingPartialsPerWithdrawalsSweepC : CLUint64 :=
+  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.maxPendingPartialsPerWithdrawalsSweep)
 
 -- Sentinels, registry and history caps.
 forkabbrev farFutureEpoch : Epoch := 0xffffffffffffffff
@@ -402,9 +422,10 @@ forkabbrev slotDurationMs : UInt64 := Config.slotDurationMs
 forkabbrev attestationDueBps : UInt64 := Config.attestationDueBps
 /-- `MAX_BLOBS_PER_BLOCK_ELECTRA` (9 for both presets). Before the first `BLOB_SCHEDULE`
 entry this is what `get_blob_parameters(epoch).max_blobs_per_block` returns. -/
-forkabbrev maxBlobsPerBlockElectra : Nat := Config.maxBlobsPerBlockElectra
-/-- `BLOB_SCHEDULE` (EIP-7892): the `(EPOCH, MAX_BLOBS_PER_BLOCK)` schedule. -/
-forkabbrev blobSchedule : List (Epoch × Nat) := Config.blobSchedule
+forkabbrev maxBlobsPerBlockElectra : CLUint64 := Config.maxBlobsPerBlockElectra
+/-- `BLOB_SCHEDULE` (EIP-7892): the `(EPOCH, MAX_BLOBS_PER_BLOCK)` schedule, its caps
+plain `int`s. -/
+forkabbrev blobSchedule : List (Epoch × CLInt) := Config.blobSchedule
 /-- Reorg weight thresholds (percent of the per-slot committee weight). -/
 forkabbrev reorgHeadWeightThreshold : UInt64 := Config.reorgHeadWeightThreshold
 forkabbrev reorgParentWeightThreshold : UInt64 := Config.reorgParentWeightThreshold

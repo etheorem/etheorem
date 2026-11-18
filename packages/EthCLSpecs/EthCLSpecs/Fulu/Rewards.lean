@@ -23,14 +23,17 @@ state_section
 (`fulu/mainnet.py:4380-4385`): `EFFECTIVE_BALANCE_INCREMENT * BASE_REWARD_FACTOR
 // integer_squareroot(get_total_active_balance(state))`. The increment and the
 total active balance are `Gwei`, so the product and the division are the
-checked `Gwei` operators, each tested per operation (`SPEC_ARITHMETIC.md` §4.2). -/
-forkdef getBaseRewardPerIncrement (state : State) : Checked Gwei := do
+checked `Gwei` operators, each tested per operation (`SPEC_ARITHMETIC.md` §4.2).
+`integer_squareroot(n: Uint64) -> Uint64` is total, with the pinned special case at
+`UINT64_MAX` (`CLUint64.integerSquareroot`), so the root is a checked value and the
+division is the checked `Uint64` operator, which raises on a zero root. Python
+evaluates the left operand of `//` first, so the product binds before the total
+active balance forms. -/
+forkdef getBaseRewardPerIncrement (state : State) : Except StateTransitionError Gwei := do
+  let numerator ← Const.effectiveBalanceIncrementG * Const.baseRewardFactor
   let total ← getTotalActiveBalance state
-  -- TEMPORARY CROSSING (removed in Stage 6): `integer_squareroot` at the pin is
-  -- a total helper over its `uint64` argument; the isqrt route stays the
-  -- proved `Nat` helper, entered through the underlying-value projection.
-  -- Stage 6 ports the isqrt route onto the checked surface and deletes this.
-  Const.effectiveBalanceIncrementG * Const.baseRewardFactor / isqrt total.toPlainNat
+  let perIncrement ← numerator / total.integerSquareroot
+  return perIncrement
 
 /-- `get_base_reward` (`fulu/mainnet.py:1789-1795`): `increments *
 get_base_reward_per_increment(state)` with
@@ -41,7 +44,7 @@ Reads `validators[i]`, so it rejects with the `IndexError`-shaped `outOfBounds`
 binds directly. -/
 forkdef getBaseReward (state : State) (i : ValidatorIndex) :
     Except StateTransitionError Gwei := do
-  let v ← sszGetIdx (sszGet state validators) i.toNat
+  let v ← sszGetIdx (sszGet state validators) i
   let increments ← v.effectiveBalance / Const.effectiveBalanceIncrementG
   let base ← getBaseRewardPerIncrement state
   let total ← increments * base

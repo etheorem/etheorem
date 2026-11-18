@@ -11,6 +11,7 @@ tier1 EthCLSpecs.Gloas.computePtc
 tier1 EthCLSpecs.Gloas.computeStartSlotAtEpoch
 tier1 EthCLSpecs.Gloas.currentEpochOf
 tier1 EthCLSpecs.Gloas.decreaseBalance
+tier1 EthCLSpecs.Gloas.getActiveValidatorIndices
 tier1 EthCLSpecs.Gloas.getAttestationParticipationFlagIndices
 tier1 EthCLSpecs.Gloas.getBaseReward
 tier1 EthCLSpecs.Gloas.getBlockRoot

@@ -65,6 +65,7 @@ open EthCLLib.Proofs (pureState KeepsUncached ReturnsUncached KeepsUncachedFrom
   run_bind run_pure run_throw except_bind_ok except_bind_error
   run_ofExcept_ok run_ofExcept_error run_liftErr_of_ok run_liftErr_of_error
   run_sszGetIdx_some run_sszGetIdx_none keepsUncached_sszGetIdx keepsUncached_sszOfArrayM
+  getAt_progressiveList_clUint64
   run_bind_inv ite_bind
   pureState_forIn_range_id)
 
@@ -129,9 +130,9 @@ theorem keepsUncached_computeExitEpochAndUpdateChurn (exitBalance : Gwei) :
       (ε := EthCLLib.Spec.StateTransitionError)
       (x := EthCLSpecs.Gloas.computeActivationExitEpoch
         (EthCLSpecs.Gloas.computeEpochAtSlot (sszGet state slot)))) (fun exitEpoch => ?_)
-  refine keepsUncached_bind (keepsUncached_liftChecked (T := BeaconState)
-      (ε := EthCLLib.Spec.StateTransitionError)
-      (x := EthCLSpecs.Gloas.getExitChurnLimit state)) (fun perEpochChurn => ?_)
+  refine keepsUncached_bind (keepsUncached_liftErr (T := BeaconState)
+      (ε := EthCLLib.Spec.StateTransitionError) (ε' := EthCLLib.Spec.StateTransitionError)
+      (EthCLSpecs.Gloas.getExitChurnLimit state)) (fun perEpochChurn => ?_)
   refine keepsUncached_bind (keepsUncached_liftChecked (T := BeaconState)
       (ε := EthCLLib.Spec.StateTransitionError)
       (x := EthCLSpecs.Gloas.reserveChurn exitBalance
@@ -168,10 +169,7 @@ theorem keepsUncached_processVoluntaryExit (sve : SignedVoluntaryExit) :
     KeepsUncached (processVoluntaryExit (StateTransition := GloasRun) sve) := by
   unfold processVoluntaryExit
   refine keepsUncached_bind keepsUncached_get (fun state => ?_)
-  refine keepsUncached_bind
-    (keepsUncached_dite (fun _ => keepsUncached_pure _) (fun _ => keepsUncached_throw _))
-    (fun hb => ?_)
-  simp only []
+  refine keepsUncached_bind (keepsUncached_sszGetIdx _ _) (fun validator => ?_)
   refine keepsUncached_bind
     (keepsUncached_ite (fun _ => keepsUncached_pure _) (fun _ => keepsUncached_throw _))
     (fun _ => ?_)
@@ -184,8 +182,7 @@ theorem keepsUncached_processVoluntaryExit (sve : SignedVoluntaryExit) :
   refine keepsUncached_bind ?h1 (fun _ => ?_)
   · exact keepsUncached_liftChecked (T := BeaconState)
       (ε := EthCLLib.Spec.StateTransitionError)
-      (x := EthCLSpecs.Gloas.passedShardCommitteePeriod
-        ((SSZ.Box.view state).validators[UInt64.toNat sve.message.validatorIndex]'hb.down)
+      (x := EthCLSpecs.Gloas.passedShardCommitteePeriod validator
         (EthCLSpecs.Gloas.currentEpochOf state))
   · refine keepsUncached_bind
       (keepsUncached_ite (fun _ => keepsUncached_pure _) (fun _ => keepsUncached_throw _))
@@ -272,18 +269,18 @@ theorem keepsUncached_getIndexedPayloadAttestation (state : BeaconState)
   refine keepsUncached_bind (keepsUncached_sszOfArrayM "attestingIndices" _) (fun _ => ?_)
   exact keepsUncached_pure _
 
-/-- `processBlsToExecutionChange` keeps the flavour: the `assertH` gate, three
-pure validation gates, and one `modValidator` write through the record
-update. -/
+/-- `processBlsToExecutionChange` keeps the flavour: the range assert, the
+registry read, three pure validation gates, and one `modValidator` write through
+the record update. -/
 theorem keepsUncached_processBlsToExecutionChange
     (sbc : SignedBLSToExecutionChange) :
     KeepsUncached (processBlsToExecutionChange (StateTransition := GloasRun) sbc) := by
   unfold processBlsToExecutionChange
   refine keepsUncached_bind keepsUncached_get (fun state => ?_)
   refine keepsUncached_bind
-    (keepsUncached_dite (fun _ => keepsUncached_pure _) (fun _ => keepsUncached_throw _))
-    (fun hb => ?_)
-  simp only []
+    (keepsUncached_ite (fun _ => keepsUncached_pure _) (fun _ => keepsUncached_throw _))
+    (fun _ => ?_)
+  refine keepsUncached_bind (keepsUncached_sszGetIdx _ _) (fun validator => ?_)
   refine keepsUncached_bind
     (keepsUncached_ite (fun _ => keepsUncached_pure _) (fun _ => keepsUncached_throw _))
     (fun _ => ?_)
@@ -346,15 +343,16 @@ theorem returnsUncached_increaseBalance (state : BeaconState) (i : ValidatorInde
   intro preState b s h
   have hrun : (increaseBalance (StateTransition := GloasRun) (pureState state) i d).run
       (pureState preState)
-      = (match state.balances.val[i.toNat]? with
-        | none => .error (.outOfBounds i.toNat state.balances.size)
+      = (match state.balances.val[i.toPlainNat]? with
+        | none => .error (.outOfBounds i.toPlainNat state.balances.size)
         | some balance =>
           match balance + d with
           | .error f => .error (StateTransitionError.ofArithFault f)
           | .ok sum => .ok (modBalance (pureState state) i (fun _ => sum), pureState preState)) := by
-    unfold increaseBalance sszGetIdx EthCLLib.Spec.IdxRead.get? EthCLLib.Spec.IdxRead.size
+    unfold increaseBalance sszGetIdx
+    rw [getAt_progressiveList_clUint64]
     simp only [view_uncachedBox]
-    cases state.balances.val[i.toNat]? with
+    cases state.balances.val[i.toPlainNat]? with
     | none => simp; rfl
     | some balance =>
       -- The read succeeded, so the body's first bind discharges; the checked add
@@ -369,7 +367,7 @@ theorem returnsUncached_increaseBalance (state : BeaconState) (i : ValidatorInde
       cases hc : balance + d with
       | error f => simp only [hc, Except.mapError]; rfl
       | ok sum => simp only [hc, Except.mapError]; rfl
-  cases hu : state.balances.val[i.toNat]? with
+  cases hu : state.balances.val[i.toPlainNat]? with
   | none => rw [hrun, hu] at h; simp at h
   | some balance =>
     rw [hrun, hu] at h
@@ -391,19 +389,20 @@ theorem returnsUncached_decreaseBalance (state : BeaconState) (i : ValidatorInde
   intro preState b s h
   have hrun : (decreaseBalance (StateTransition := GloasRun) (pureState state) i d).run
       (pureState preState)
-      = (match state.balances.val[i.toNat]? with
-        | none => .error (.outOfBounds i.toNat state.balances.size)
+      = (match state.balances.val[i.toPlainNat]? with
+        | none => .error (.outOfBounds i.toPlainNat state.balances.size)
         | some balance =>
           .ok (modBalance (pureState state) i
             (fun _ => balance.saturatingSub d), pureState preState)) := by
-    unfold decreaseBalance sszGetIdx EthCLLib.Spec.IdxRead.get? EthCLLib.Spec.IdxRead.size
+    unfold decreaseBalance sszGetIdx
+    rw [getAt_progressiveList_clUint64]
     simp only [view_uncachedBox]
-    cases state.balances.val[i.toNat]? with
+    cases state.balances.val[i.toPlainNat]? with
     | none => simp; rfl
     | some balance =>
       simp only [EthCLLib.Spec.liftErr, Except.mapError, MonadExcept.ofExcept]
       rfl
-  cases hu : state.balances.val[i.toNat]? with
+  cases hu : state.balances.val[i.toPlainNat]? with
   | none => rw [hrun, hu] at h; simp at h
   | some balance =>
     rw [hrun, hu] at h
@@ -587,8 +586,8 @@ theorem keepsUncached_processProposerSlashing (ps : ProposerSlashing) :
     · refine keepsUncachedFrom_bind ?g3 (fun _ midState₄ => ?_)
       · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _) (fun _ => keepsUncachedFrom_throw _ _)
       · refine keepsUncachedFrom_bind ?g4 (fun _ midState₅ => ?_)
-        · exact keepsUncachedFrom_dite (fun _ => keepsUncachedFrom_pure _ _)
-            (fun _ => keepsUncachedFrom_throw _ _)
+        · -- The proposer read is the raising registry read.
+          exact keepsUncached_iff_forall_from.mp (keepsUncached_sszGetIdx _ _) _
         · refine keepsUncachedFrom_bind ?g5 (fun _ midState₆ => ?_)
           · exact keepsUncachedFrom_ite (fun _ => keepsUncachedFrom_pure _ _) (fun _ => keepsUncachedFrom_throw _ _)
           · refine keepsUncachedFrom_bind ?g6 (fun _ midState₇ => ?_)
@@ -613,6 +612,10 @@ theorem keepsUncached_processAttesterSlashing (asl : AttesterSlashing) :
         · refine keepsUncachedFrom_forIn_array_of_keeps _ ?hf _ _
           · intro x b midState₆
             refine keepsUncachedFrom_bind (keepsUncachedFrom_get midState₆) (fun state midState₇ => ?_)
+            -- The registry read raises past the end and never writes.
+            refine keepsUncachedFrom_bind
+              (keepsUncached_iff_forall_from.mp (keepsUncached_sszGetIdx _ _) _)
+              (fun validator midState₇b => ?_)
             refine keepsUncachedFrom_ite (fun _ => ?ht) (fun _ => ?he)
             · refine keepsUncachedFrom_bind ?sv (fun _ midState₈ => ?_)
               · exact keepsUncached_iff_forall_from.mp (keepsUncached_slashValidator _) _
@@ -655,17 +658,20 @@ private theorem keepsUncached_attLoopCurr (state : BeaconState) (vi : ValidatorI
         (s : SSZ.Box HasherTag.H BeaconState),
       (∃ st : BeaconState, b.fst = pureState st) →
       (do
-        let flags0 ← sszGetIdx b.fst.view.currentEpochParticipation (UInt64.toNat vi)
+        let flags0 ← sszGetIdx b.fst.view.currentEpochParticipation vi
         let __s ←
-          forIn [:3] (b.fst, b.snd.fst, false) fun flagIndex __s => do
-            let flag ← sszGetIdx __s.fst.view.currentEpochParticipation (UInt64.toNat vi)
-            if (flagIndices.contains flagIndex && !EthCLLib.Spec.hasFlag flag flagIndex) = true then do
+          forIn [:3] (b.fst, b.snd.fst, false) fun flagIndex __s =>
+            if (!flagIndices.contains flagIndex) = true then
+              pure (ForInStep.yield (__s.fst, __s.snd.fst, __s.snd.snd))
+            else do
+            let flag ← sszGetIdx __s.fst.view.currentEpochParticipation vi
+            if (!EthCLLib.Spec.hasFlag flag flagIndex) = true then do
               let base ← liftErr (EthCLSpecs.Gloas.getBaseReward (pureState state) vi)
               let weighted ← liftM (base * Gloas.Const.participationFlagWeights[flagIndex]!)
               let __do_lift ← liftM (__s.snd.fst + weighted)
               pure
                 (ForInStep.yield
-                  ((sszUpdate __s.fst with currentEpochParticipation[UInt64.toNat vi]! :=
+                  ((sszUpdate __s.fst with currentEpochParticipation[vi.toPlainNat]! :=
                     EthCLLib.Spec.addFlag flag flagIndex), __do_lift, true))
             else pure (ForInStep.yield (__s.fst, __s.snd.fst, __s.snd.snd))
         if
@@ -678,7 +684,7 @@ private theorem keepsUncached_attLoopCurr (state : BeaconState) (vi : ValidatorI
                     0)) =
               true then
           do
-            let attester ← sszGetIdx (pureState state).view.validators (UInt64.toNat vi)
+            let attester ← sszGetIdx (pureState state).view.validators vi
             let __do_lift ← liftM (b.snd.snd + attester.effectiveBalance)
             pure (ForInStep.yield (__s.fst, __s.snd.fst, __do_lift))
         else pure (ForInStep.yield (__s.fst, __s.snd.fst, b.snd.snd)) :
@@ -703,6 +709,14 @@ private theorem keepsUncached_attLoopCurr (state : BeaconState) (vi : ValidatorI
     · -- inner hf: the flag walk
       rename_i f k
       intro flagIndex acc3 v2 r2 s2 hb2 hrun2
+      -- The `continue` for a flag the attestation does not earn: no read, no write.
+      split at hrun2
+      · rw [run_pure] at hrun2
+        injection hrun2 with hp
+        injection hp with hpa hpb
+        subst hpb
+        subst hpa
+        exact ⟨rfl, hb2⟩
       refine run_bind_inv (T := BeaconState)
         (α := EthCLSpecs.Gloas.ParticipationFlags)
         (γ := ForInStep (EthCLSpecs.Gloas.State × EthCLSpecs.Gloas.Gwei × Bool))
@@ -740,7 +754,7 @@ private theorem keepsUncached_attLoopCurr (state : BeaconState) (vi : ValidatorI
                 refine ⟨rfl, ?_⟩
                 obtain ⟨stC, hstC⟩ := hb2
                 simp only [hstC]
-                exact keepsUncached_writeParticipationCurr stC (UInt64.toNat vi) flag flagIndex
+                exact keepsUncached_writeParticipationCurr stC vi.toPlainNat flag flagIndex
               | error e =>
                 rw [hw2] at h3
                 rw [run_liftChecked_error] at h3
@@ -761,8 +775,9 @@ private theorem keepsUncached_attLoopCurr (state : BeaconState) (vi : ValidatorI
       intro acc3 sB hb2 a s h4
       split at h4
       · rw [run_bind] at h4
-        cases hq : ((pureState state).view.validators).val[(UInt64.toNat vi)]? with
-        | some yv =>
+        cases hq : (EthCLLib.Spec.getAt (pureState state).view.validators vi :
+            Except IndexError EthCLSpecs.Gloas.Validator) with
+        | ok yv =>
           rw [run_sszGetIdx_some _ _ _ hq, except_bind_ok] at h4
           rw [run_bind] at h4
           cases hw : ((b.2.2 + yv.effectiveBalance : Checked Gwei)) with
@@ -780,8 +795,8 @@ private theorem keepsUncached_attLoopCurr (state : BeaconState) (vi : ValidatorI
             rw [run_liftChecked_error] at h4
             rw [except_bind_error] at h4
             simp at h4
-        | none =>
-          rw [run_sszGetIdx_none _ _ _ hq, except_bind_error] at h4
+        | error ie =>
+          rw [run_sszGetIdx_none _ _ _ _ hq, except_bind_error] at h4
           simp at h4
       · rw [run_pure] at h4
         injection h4 with h4p
@@ -802,17 +817,20 @@ private theorem keepsUncached_attLoopPrev (state : BeaconState) (vi : ValidatorI
         (s : SSZ.Box HasherTag.H BeaconState),
       (∃ st : BeaconState, b.fst = pureState st) →
       (do
-        let flags0 ← sszGetIdx b.fst.view.previousEpochParticipation (UInt64.toNat vi)
+        let flags0 ← sszGetIdx b.fst.view.previousEpochParticipation vi
         let __s ←
-          forIn [:3] (b.fst, b.snd.fst, false) fun flagIndex __s => do
-            let flag ← sszGetIdx __s.fst.view.previousEpochParticipation (UInt64.toNat vi)
-            if (flagIndices.contains flagIndex && !EthCLLib.Spec.hasFlag flag flagIndex) = true then do
+          forIn [:3] (b.fst, b.snd.fst, false) fun flagIndex __s =>
+            if (!flagIndices.contains flagIndex) = true then
+              pure (ForInStep.yield (__s.fst, __s.snd.fst, __s.snd.snd))
+            else do
+            let flag ← sszGetIdx __s.fst.view.previousEpochParticipation vi
+            if (!EthCLLib.Spec.hasFlag flag flagIndex) = true then do
               let base ← liftErr (EthCLSpecs.Gloas.getBaseReward (pureState state) vi)
               let weighted ← liftM (base * Gloas.Const.participationFlagWeights[flagIndex]!)
               let __do_lift ← liftM (__s.snd.fst + weighted)
               pure
                 (ForInStep.yield
-                  ((sszUpdate __s.fst with previousEpochParticipation[UInt64.toNat vi]! :=
+                  ((sszUpdate __s.fst with previousEpochParticipation[vi.toPlainNat]! :=
                     EthCLLib.Spec.addFlag flag flagIndex), __do_lift, true))
             else pure (ForInStep.yield (__s.fst, __s.snd.fst, __s.snd.snd))
         if
@@ -825,7 +843,7 @@ private theorem keepsUncached_attLoopPrev (state : BeaconState) (vi : ValidatorI
                     0)) =
               true then
           do
-            let attester ← sszGetIdx (pureState state).view.validators (UInt64.toNat vi)
+            let attester ← sszGetIdx (pureState state).view.validators vi
             let __do_lift ← liftM (b.snd.snd + attester.effectiveBalance)
             pure (ForInStep.yield (__s.fst, __s.snd.fst, __do_lift))
         else pure (ForInStep.yield (__s.fst, __s.snd.fst, b.snd.snd)) :
@@ -850,6 +868,14 @@ private theorem keepsUncached_attLoopPrev (state : BeaconState) (vi : ValidatorI
     · -- inner hf: the flag walk
       rename_i f k
       intro flagIndex acc3 v2 r2 s2 hb2 hrun2
+      -- The `continue` for a flag the attestation does not earn: no read, no write.
+      split at hrun2
+      · rw [run_pure] at hrun2
+        injection hrun2 with hp
+        injection hp with hpa hpb
+        subst hpb
+        subst hpa
+        exact ⟨rfl, hb2⟩
       refine run_bind_inv (T := BeaconState)
         (α := EthCLSpecs.Gloas.ParticipationFlags)
         (γ := ForInStep (EthCLSpecs.Gloas.State × EthCLSpecs.Gloas.Gwei × Bool))
@@ -887,7 +913,7 @@ private theorem keepsUncached_attLoopPrev (state : BeaconState) (vi : ValidatorI
                 refine ⟨rfl, ?_⟩
                 obtain ⟨stC, hstC⟩ := hb2
                 simp only [hstC]
-                exact keepsUncached_writeParticipationPrev stC (UInt64.toNat vi) flag flagIndex
+                exact keepsUncached_writeParticipationPrev stC vi.toPlainNat flag flagIndex
               | error e =>
                 rw [hw2] at h3
                 rw [run_liftChecked_error] at h3
@@ -908,8 +934,9 @@ private theorem keepsUncached_attLoopPrev (state : BeaconState) (vi : ValidatorI
       intro acc3 sB hb2 a s h4
       split at h4
       · rw [run_bind] at h4
-        cases hq : ((pureState state).view.validators).val[(UInt64.toNat vi)]? with
-        | some yv =>
+        cases hq : (EthCLLib.Spec.getAt (pureState state).view.validators vi :
+            Except IndexError EthCLSpecs.Gloas.Validator) with
+        | ok yv =>
           rw [run_sszGetIdx_some _ _ _ hq, except_bind_ok] at h4
           rw [run_bind] at h4
           cases hw : ((b.2.2 + yv.effectiveBalance : Checked Gwei)) with
@@ -927,8 +954,8 @@ private theorem keepsUncached_attLoopPrev (state : BeaconState) (vi : ValidatorI
             rw [run_liftChecked_error] at h4
             rw [except_bind_error] at h4
             simp at h4
-        | none =>
-          rw [run_sszGetIdx_none _ _ _ hq, except_bind_error] at h4
+        | error ie =>
+          rw [run_sszGetIdx_none _ _ _ _ hq, except_bind_error] at h4
           simp at h4
       · rw [run_pure] at h4
         injection h4 with h4p

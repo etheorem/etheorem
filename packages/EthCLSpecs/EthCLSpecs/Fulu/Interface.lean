@@ -347,6 +347,9 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
       throw (StoreTransitionError.todo "payload_data_availability_vote check: ePBS-only, not applicable to fulu")
   pure ()
 
+-- The compiler specializes the whole fork-choice step interpreter here; with the checked
+-- `ValidatorIndex` reads the run exceeds the default budget, as the Gloas and Heze twins do.
+set_option maxHeartbeats 1000000 in
 /-- `runForkChoice`: decode the anchor state / block, build the store, and run the
 step interpreter. The fork-choice vectors carry real signatures, so the FFI crypto
 backend is used. -/

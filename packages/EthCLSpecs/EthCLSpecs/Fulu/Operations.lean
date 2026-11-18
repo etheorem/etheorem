@@ -40,19 +40,21 @@ forkdef isSlashableAttestationData (d1 d2 : AttestationData) : Bool :=
   (d1.source.epoch < d2.source.epoch && d2.target.epoch < d1.target.epoch)
 
 /-- `is_valid_indexed_attestation`: non-empty, sorted-unique indices in range, and a
-valid aggregate signature (through the `[CryptoBackend]` seam). A pure `Bool`, so an
-index past the registry returns `false` (the pyspec's `IndexError` reject outcome)
-rather than panicking. -/
+valid aggregate signature (through the `[CryptoBackend]` seam). The pyspec's pubkey read
+`state.validators[i]` raises `IndexError` for an index past the registry. This body is a
+pure `Bool`, so it returns `false` there, and the caller's `assert` raises the assert class.
+The runner catches both classes, so the vector outcome agrees. The pubkey reads go through
+`getAt`, so the range test is the size-aware index interface's own. -/
 forkdef isValidIndexedAttestation (state : State) (a : IndexedAttestation) : Bool :=
   let validators := sszGet state validators
   let idx := a.attestingIndices.toArray
   if idx.size == 0 || !strictlySorted idx then false
-  else if !idx.all (·.toNat < validators.size) then false
-  else
-    let pubkeys := idx.map (fun i => (validators[i.toNat]!).pubkey)
-    blsFastAggregateVerify pubkeys
-      (computeSigningRoot a.data (getDomain state Const.domainBeaconAttester a.data.target.epoch))
-      a.signature
+  else match idx.mapM (fun i => getAt validators i) with
+    | .error _ => false
+    | .ok attesters =>
+      blsFastAggregateVerify (attesters.map (·.pubkey))
+        (computeSigningRoot a.data (getDomain state Const.domainBeaconAttester a.data.target.epoch))
+        a.signature
 
 /-! ## Slashings -/
 
@@ -66,8 +68,9 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
   assert (h1.proposerIndex == h2.proposerIndex)
   assert (htr h1 != htr h2)
 
-  let hb ← assertH (h1.proposerIndex.toNat < (sszGet state validators).size)
-  let proposer := (sszGet state validators)[h1.proposerIndex.toNat]'hb.down
+  -- `proposer = state.validators[header_1.proposer_index]` (`fulu/minimal.py:2008`): a
+  -- raising list read, so an out-of-range proposer rejects with `IndexError`'s class.
+  let proposer ← sszGetIdx (sszGet state validators) h1.proposerIndex
   assert (isSlashableValidator proposer (currentEpochOf state))
   assert (blsVerifySigned proposer.pubkey h1
     (getDomain state Const.domainBeaconProposer (computeEpochAtSlot h1.slot)) ps.signedHeader1.signature)
@@ -89,8 +92,9 @@ forkdef processAttesterSlashing (asl : AttesterSlashing) : StateTransition Unit 
   let mut slashedAny := false
   for idx in indices do
     let state ← get
-    if idx.toNat < (sszGet state validators).size
-        && isSlashableValidator (sszGet state validators[idx.toNat]!) (currentEpochOf state) then
+    -- `state.validators[index]`: a raising list read.
+    let validator ← sszGetIdx (sszGet state validators) idx
+    if isSlashableValidator validator (currentEpochOf state) then
       slashValidator idx
       slashedAny := true
   assert slashedAny
@@ -101,8 +105,8 @@ forkdef processAttesterSlashing (asl : AttesterSlashing) : StateTransition Unit 
 `is_matching_source` assertion (a valid attestation always matches source), so the
 caller rejects; `some flags` otherwise. `inclusionDelay` is the pyspec's
 `state.slot - data.slot` checked difference, a `Slot`; the comparisons never raise in
-Python, so the `integer_squareroot` bound compares the checked value's `toPlainNat`
-projection (§4.5) while `MIN_ATTESTATION_INCLUSION_DELAY` meets it in the checked kind.
+Python. `integer_squareroot(SLOTS_PER_EPOCH)` is the total checked-kind root
+(`CLUint64.integerSquareroot`), so both bounds meet the delay in the checked kind.
 
 The pinned body (`fulu/minimal.py:4414-4423`) reads the target root and the head root
 before `assert is_matching_source`. Both reads can raise the uncaught range fault: near the
@@ -121,7 +125,7 @@ forkdef getAttestationParticipationFlagIndices (state : State) (data : Attestati
   if !isMatchingSource then return none
 
   let mut flags : Array Nat := #[]
-  if inclusionDelay.toPlainNat ≤ isqrt Const.slotsPerEpoch then flags := flags.push Const.timelySourceFlagIndex
+  if inclusionDelay ≤ Const.slotsPerEpochC.integerSquareroot then flags := flags.push Const.timelySourceFlagIndex
   if isMatchingTarget then flags := flags.push Const.timelyTargetFlagIndex
   if isMatchingHead && inclusionDelay == Const.minAttestationInclusionDelay then flags := flags.push Const.timelyHeadFlagIndex
   return some flags
@@ -137,7 +141,7 @@ forkdef getAttestingIndices (state : State) (att : Attestation) :
     Except StateTransitionError (Array ValidatorIndex) := do
   let mut out : Array ValidatorIndex := #[]
   let mut offset := 0
-  for ci in getCommitteeIndices att.committeeBits do
+  for ci in ← getCommitteeIndices att.committeeBits do
     let committee ← getBeaconCommittee state att.data.slot ci
     for i in [0:committee.size] do
       if (← bitlistGetIdx att.aggregationBits (offset + i)) then out := out.push committee[i]!
@@ -164,8 +168,7 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
 
   -- Every committee index is valid and contributes at least one attester; the
   -- aggregation bitfield length matches the total committee size.
-  let count := getCommitteeCountPerSlot state data.target.epoch
-  let (ok, offset) ← liftErr (verifyCommitteeCoverage state data count)
+  let (ok, offset) ← liftErr (verifyCommitteeCoverage state data)
   assert ok
   assert (att.aggregationBits.size == offset)
 
@@ -190,15 +193,18 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   -- that is the checked `Gwei` add (`SPEC_ARITHMETIC.md` §3.2, the `sum` row).
   let mut proposerNum : Gwei := 0
   for vi in ← liftErr (getAttestingIndices state att) do
-    let i := vi.toNat
     for flagIndex in [0:3] do
-      -- `i` is a data-derived attesting-validator index; read the participation flag
-      -- through `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather
-      -- than masking as a default flag. The matching `[i]!` write below is then a
-      -- provably-in-range write (the read at `i` just succeeded).
-      let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) i
-                 else sszGetIdx (sszGet stateAcc previousEpochParticipation) i
-      if flagIndices.contains flagIndex && !hasFlag flag flagIndex then
+      -- `flag_index in participation_flag_indices and not has_flag(epoch_participation[index],
+      -- flag_index)` (`fulu/minimal.py:2077-2079`): the `and` short-circuits, so the flag read
+      -- forms only for a flag the attestation earns. `vi` is a data-derived attesting-validator
+      -- index; the read goes through `sszGetIdx` so an out-of-range index rejects with
+      -- `outOfBounds` rather than masking as a default flag.
+      if !flagIndices.contains flagIndex then continue
+      let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) vi
+                 else sszGetIdx (sszGet stateAcc previousEpochParticipation) vi
+      if !hasFlag flag flagIndex then
+        -- `toPlainNat`: the raising read above proved `vi` in range for this list.
+        let i := vi.toPlainNat
         stateAcc := if currentTarget then
                    sszUpdate stateAcc with currentEpochParticipation[i]! := addFlag flag flagIndex
                  else
@@ -224,18 +230,29 @@ where
   range assert, then `get_beacon_committee`, then the attester assert. A failed assert
   aborts the loop. So the fold stops at the first failed check, and no later
   `get_beacon_committee` fault can preempt the caught assert (`SPEC_ARITHMETIC.md` §1,
-  the failure point). -/
-  verifyCommitteeCoverage (state : State) (data : AttestationData) (count : Nat) :
-      Except StateTransitionError (Bool × Nat) :=
-    (getCommitteeIndices att.committeeBits).foldlM
+  the failure point). The range assert forms `get_committee_count_per_slot` per index, as
+  the pinned loop does, so its active-set casts run only when an index exists. The
+  attester set reads `attestation.aggregation_bits[committee_offset + index]` for every
+  member before its assert, and a read past the bit list's end raises `IndexError`, so
+  each read goes through `getAt`. -/
+  verifyCommitteeCoverage (state : State) (data : AttestationData) :
+      Except StateTransitionError (Bool × Nat) := do
+    let committeeIndices ← getCommitteeIndices att.committeeBits
+    committeeIndices.foldlM
       (fun (acc : Bool × Nat) ci => do
         let (okAcc, off) := acc
         if !okAcc then pure acc
-        else if (UInt64.ofNat ci).toNat ≥ count then pure (false, off)
+        else
+        let count ← getCommitteeCountPerSlot state data.target.epoch
+        -- `committee_index < get_committee_count_per_slot(...)`: two `Uint64` values, a
+        -- comparison, which never raises.
+        if ci ≥ count then pure (false, off)
         else do
           let committee ← getBeaconCommittee state data.slot ci
-          let attesters := (List.range committee.size).foldl
-            (fun a i => if att.aggregationBits[off + i]! then a + 1 else a) 0
+          let attesters ← (List.range committee.size).foldlM
+            (fun (a : Nat) i => do
+              let bit ← liftErr (getAt att.aggregationBits (off + i))
+              pure (if bit then a + 1 else a)) 0
           pure (attesters > 0, off + committee.size))
       (true, 0)
 
@@ -270,8 +287,9 @@ forkdef processDeposit (d : Deposit) : StateTransition Unit := do
 forkdef processVoluntaryExit (sve : SignedVoluntaryExit) : StateTransition Unit := do
   let state ← get
   let ve := sve.message
-  let hb ← assertH (ve.validatorIndex.toNat < (sszGet state validators).size)
-  let validator := (sszGet state validators)[ve.validatorIndex.toNat]'hb.down
+  -- `validator = state.validators[voluntary_exit.validator_index]` (`fulu/minimal.py:2134`):
+  -- a raising list read, so an out-of-range index rejects with `IndexError`'s class.
+  let validator ← sszGetIdx (sszGet state validators) ve.validatorIndex
 
   assert (isActiveValidator validator (currentEpochOf state))
   assert (hasNotInitiatedExit validator)
@@ -292,8 +310,11 @@ forkdef processVoluntaryExit (sve : SignedVoluntaryExit) : StateTransition Unit 
 forkdef processBlsToExecutionChange (sbc : SignedBLSToExecutionChange) : StateTransition Unit := do
   let state ← get
   let ac := sbc.message
-  let hb ← assertH (ac.validatorIndex.toNat < (sszGet state validators).size)
-  let validator := (sszGet state validators)[ac.validatorIndex.toNat]'hb.down
+  -- `assert address_change.validator_index < len(state.validators)`: the checked index
+  -- against the plain length, a comparison that never raises. `int(x)` carries the index
+  -- into the plain kind, where it meets `len`. The read after it is then in range.
+  assert (ac.validatorIndex.toCLInt < len (sszGet state validators))
+  let validator ← sszGetIdx (sszGet state validators) ac.validatorIndex
 
   assert (credPrefix validator.withdrawalCredentials == Const.blsWithdrawalPrefix)
   let h := sha ac.fromBlsPubkey
@@ -332,8 +353,9 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
     match validatorIndexByPubkey? state wr.validatorPubkey with
     | none => pure ()
     | some idxN =>
-      let index := UInt64.ofNat idxN
-      let validator := sszGet state validators[idxN]!
+      -- `index = ValidatorIndex(validator_pubkeys.index(request_pubkey))`: the checked cast.
+      let index ← CLUint64.ofNat? idxN
+      let validator ← sszGetIdx (sszGet state validators) index
       let correctCred := hasExecutionWithdrawalCredential validator
       let correctSource := vecSliceEq validator.withdrawalCredentials 12 wr.sourceAddress 0 20
       -- Validity ladder: execution credential + matching source, active, not exiting,
@@ -349,11 +371,11 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
         if isFullExit then
           if pending == 0 then initiateValidatorExit index else pure ()
         else
-          -- `idxN` is in range for `validators` (it came from `findIdx?` there); reading
+          -- `index` is in range for `validators` (it came from `findIdx?` there); reading
           -- the parallel `balances` at it goes through `sszGetIdx`, so a broken
           -- validators/balances length parity rejects with `outOfBounds` rather than
           -- silently reading a default balance.
-          let balance ← sszGetIdx (sszGet state balances) idxN
+          let balance ← sszGetIdx (sszGet state balances) index
           let sufficientEff := validator.effectiveBalance ≥ Const.minActivationBalance
           let excessThreshold ← Const.minActivationBalance + pending
           let excess := balance > excessThreshold
@@ -390,18 +412,24 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
   -- A switch-to-compounding request is handled separately from a consolidation.
   if isValidSwitchToCompoundingRequest state req then
     match validatorIndexByPubkey? state req.sourcePubkey with
-    | some si => switchToCompoundingValidator (UInt64.ofNat si)
+    | some si =>
+      -- `source_index = ValidatorIndex(validator_pubkeys.index(…))`: the checked cast.
+      let sourceIndex ← CLUint64.ofNat? si
+      switchToCompoundingValidator sourceIndex
     | none    => pure ()
   -- Request-level gates: distinct source/target, queue room, churn capacity.
   else if req.sourcePubkey == req.targetPubkey then pure ()
   else if (sszGet state pendingConsolidations).size == Const.pendingConsolidationsLimit then pure ()
-  else if (← getConsolidationChurnLimit state) ≤ Const.minActivationBalance then pure ()
+  else if (← liftErr (getConsolidationChurnLimit state)) ≤ Const.minActivationBalance then pure ()
   else
-    let validators := (sszGet state validators).toArray
     match validatorIndexByPubkey? state req.sourcePubkey, validatorIndexByPubkey? state req.targetPubkey with
     | some srcN, some tgtN =>
-      let src := validators[srcN]?.getD default
-      let tgt := validators[tgtN]?.getD default
+      -- The two checked `ValidatorIndex(…)` casts, then the two registry reads, in the
+      -- pyspec's order (`fulu/minimal.py:6392-6395`).
+      let sourceIndex ← CLUint64.ofNat? srcN
+      let targetIndex ← CLUint64.ofNat? tgtN
+      let src ← sszGetIdx (sszGet state validators) sourceIndex
+      let tgt ← sszGetIdx (sszGet state validators) targetIndex
       let correctCred := hasExecutionWithdrawalCredential src
       let correctSource := vecSliceEq src.withdrawalCredentials 12 req.sourceAddress 0 20
       -- Validity ladder: source execution credential + matching source, target
@@ -414,15 +442,15 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
       else if !hasNotInitiatedExit src then pure ()
       else if !hasNotInitiatedExit tgt then pure ()
       else if !(← passedShardCommitteePeriod src (currentEpochOf state)) then pure ()
-      else if (← getPendingBalanceToWithdraw state (UInt64.ofNat srcN)) > 0 then pure ()
+      else if (← getPendingBalanceToWithdraw state sourceIndex) > 0 then pure ()
       else
         let exitEpoch ← computeConsolidationEpochAndUpdateChurn src.effectiveBalance
         -- `withdrawable_epoch = exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY`, the
         -- checked `Epoch` add, bound before the store that records both fields.
         let we ← exitEpoch + Const.minValidatorWithdrawabilityDelay
-        modifyState fun state => modValidator state (UInt64.ofNat srcN) fun validator =>
+        modifyState fun state => modValidator state sourceIndex fun validator =>
           { validator with exitEpoch := exitEpoch, withdrawableEpoch := we }
-        appendState pendingConsolidations { sourceIndex := UInt64.ofNat srcN, targetIndex := UInt64.ofNat tgtN }
+        appendState pendingConsolidations { sourceIndex := sourceIndex, targetIndex := targetIndex }
     | _, _ => pure ()
 
 /-! ## process_operations -/

@@ -154,20 +154,26 @@ per-slot division, the percent product, and the `/ 100` are the checked `Gwei`
 chain; the per-slot division takes the proved-total `PositiveDivisor` view, so it
 returns the value directly (`SPEC_ARITHMETIC.md` §4.2). TEMPORARY CROSSING
 (removed in Stage 7): `committee_percent` arrives as the raw `UInt64` config
-word and rides the wire route into the checked kind. -/
-forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) : Checked Gwei := do
+word and rides the wire route into the checked kind. The unslashed filter reads
+`state.validators[index]` for every active index, a raising list read through `getAt`, so
+the helper returns `Except StateTransitionError`. -/
+forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) :
+    Except StateTransitionError Gwei := do
   let validators := sszGet state validators
-  let unslashedAndActive := (getActiveValidatorIndices state (currentEpochOf state)).filter
-    fun i => !(validators[i.toNat]!).slashed
+  let active ← getActiveValidatorIndices state (currentEpochOf state)
+  let unslashedAndActive ← active.filterM fun i => do
+    let validator ← liftErr (getAt validators i)
+    pure !validator.slashed
   let total ← getTotalBalance state unslashedAndActive
   let committeeWeight := total / Const.slotsPerEpochDiv
   let percent := CLUint64.trustedOfUInt64 committeePercent
   let scaled ← committeeWeight * percent
-  scaled / 100
+  let fraction ← (scaled / 100 : Checked Gwei)
+  return fraction
 
 /-- `compute_proposer_score(state)` (`fulu/mainnet.py:2963-2964`): the committee
 fraction at `PROPOSER_SCORE_BOOST`. -/
-forkdef computeProposerScore (state : State) : Checked Gwei :=
+forkdef computeProposerScore (state : State) : Except StateTransitionError Gwei :=
   calculateCommitteeFraction state (UInt64.ofNat Const.proposerScoreBoost)
 
 /-- `get_proposer_score` (`fulu/mainnet.py:2967-2969`): `compute_proposer_score` over the
@@ -175,7 +181,7 @@ justified checkpoint state. -/
 forkdef getProposerScore (store : Store map) : StoreTransition Gwei := do
   let state ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  computeProposerScore state
+  liftErr (computeProposerScore state)
 
 /-- `get_attestation_score(store, node, state)` (`phase0/fork-choice.md:338-356`): the
 effective balance of the unslashed active validators whose latest message supports a
@@ -186,17 +192,18 @@ node is the message's root). The fold is monadic only to bind `getAncestor` and 
 The `and` chain short-circuits, so the block read runs only for a validator with a latest
 message that is not equivocating. A store with no latest messages, exactly what
 `get_forkchoice_store` hands back, therefore scores `0` without any read.
-`validators[idx]!` stays unchecked: `idx` comes from `getActiveValidatorIndices` on the same
-`state` the array belongs to, so it is in range by construction. The `sum(...)` over the
+The registry reads go through `sszGetIdx`: the indices come from `getActiveValidatorIndices`
+on the same `state`, so they are in range, and the pyspec's `state.validators[index]` reads
+would raise there too. The `sum(...)` over the
 `effective_balance` values is the checked `Gwei` fold (`SPEC_ARITHMETIC.md` §3.2,
 the `sum` row), so each `+` binds before the branch returns. -/
 forkdef getAttestationScore (store : Store map) (root : Root) (state : State) :
     StoreTransition Gwei := do
-  let active := getActiveValidatorIndices state (currentEpochOf state)
+  let active ← getActiveValidatorIndices state (currentEpochOf state)
   let validators := sszGet state validators
   active.foldlM (init := (0 : Gwei)) fun acc i => do
-    let idx := i.toNat
-    if (validators[idx]!).slashed then pure acc
+    let validator ← sszGetIdx validators i
+    if validator.slashed then pure acc
     else match FcMap.lookup store.latestMessages i with
       | none => pure acc
       | some lm =>
@@ -207,7 +214,7 @@ forkdef getAttestationScore (store : Store map) (root : Root) (state : State) :
           let block ← FcMap.getOrThrow store.blocks root
           let anc ← getAncestor store lm.root block.slot
           if anc == root then
-            let scaled ← acc + (validators[idx]!).effectiveBalance
+            let scaled ← acc + validator.effectiveBalance
             pure scaled
           else pure acc
 
@@ -380,25 +387,39 @@ The equivocator read is `justified_state.validators[i]` with `i` drawn from the 
 committees, so a cross-branch registry skew can push it past the justified registry's end; the
 spec raises `IndexError` there, hence `sszGetIdx` (the wrapped `outOfBounds` reject), and
 `foldlM` to bind it. The `store.block_states[head_root]` / `store.blocks[head_root]` reads raise
-on a miss. -/
+on a miss.
+
+Each committee adds `Gwei(sum(...))` of its equivocators (`fulu/minimal.py:3176-3184`): the
+`sum` runs first, from a plain `0`, then `head_weight +=` adds the committee's total. The
+fold keeps that order, so a range fault inside one committee's sum precedes the read of a
+later member, and the add to `head_weight` comes after the whole committee. The sum starts
+at `(0 : Gwei)`: the first add `0 + x` cannot raise, and the empty sum's `Gwei(0)` is the
+same value, so the start keeps every later raise (`SPEC_ARITHMETIC.md` §4.5). -/
 forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool := do
   let justifiedState ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  let reorgThreshold ← calculateCommitteeFraction justifiedState Const.reorgHeadWeightThreshold
+  let reorgThreshold ← liftErr (calculateCommitteeFraction justifiedState Const.reorgHeadWeightThreshold)
   let headState ← FcMap.getOrThrow store.blockStates headRoot
   let headBlock ← FcMap.getOrThrow store.blocks headRoot
   let epoch := computeEpochAtSlot headBlock.slot
   let baseWeight ← getAttestationScore store headRoot justifiedState
   let validators := sszGet justifiedState validators
-  let headWeight ← (List.range (getCommitteeCountPerSlot headState epoch)).foldlM
+  let committeeCount ← getCommitteeCountPerSlot headState epoch
+  -- `toPlainNat`: `range(get_committee_count_per_slot(...))` iterates the plain positions
+  -- below the checked count, which its value names.
+  let headWeight ← (List.range committeeCount.toPlainNat).foldlM
       (init := baseWeight) fun acc index => do
-    let committee ← getBeaconCommittee headState headBlock.slot index
-    committee.foldlM (init := acc) fun a i =>
+    -- `CommitteeIndex(index)`: the pyspec's checked cast of the plain loop variable.
+    let committeeIndex ← CLUint64.ofNat? index
+    let committee ← getBeaconCommittee headState headBlock.slot committeeIndex
+    let equivocatorWeight ← committee.foldlM (init := (0 : Gwei)) fun a i =>
       if store.equivocatingIndices.contains i then do
-        let v ← sszGetIdx validators i.toNat
+        let v ← sszGetIdx validators i
         let scaled ← a + v.effectiveBalance
         pure scaled
       else pure a
+    let weight ← acc + equivocatorWeight
+    pure weight
   pure (headWeight < reorgThreshold)
 
 /-- `is_parent_strong(store, root)` (`phase0/fork-choice.md:679-685`): the parent's
@@ -408,7 +429,7 @@ alpha.12 used `get_weight`. The `store.blocks[root]` read raises on a miss. -/
 forkdef isParentStrong (store : Store map) (root : Root) : StoreTransition Bool := do
   let justifiedState ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  let parentThreshold ← calculateCommitteeFraction justifiedState Const.reorgParentWeightThreshold
+  let parentThreshold ← liftErr (calculateCommitteeFraction justifiedState Const.reorgParentWeightThreshold)
   let b ← FcMap.getOrThrow store.blocks root
   let parentWeight ← getAttestationScore store b.parentRoot justifiedState
   pure (parentWeight > parentThreshold)
@@ -612,18 +633,24 @@ forkdef verifyDataColumnSidecar (sidecar : DataColumnSidecar) : Bool :=
   let ncol := sidecar.column.size
   let ncomm := sidecar.kzgCommitments.size
   let epoch := computeEpochAtSlot sidecar.signedBlockHeader.message.slot
-  if sidecar.index ≥ UInt64.ofNat Const.numberOfColumns then false
+  -- `sidecar.index >= NUMBER_OF_COLUMNS`: a comparison, which never raises. `toPlainNat`
+  -- because `NUMBER_OF_COLUMNS` is still the `Nat` preset value (Stage 7 config views).
+  if sidecar.index.toPlainNat ≥ Const.numberOfColumns then false
   else if ncomm == 0 then false
-  else if ncomm > (getBlobParameters epoch).maxBlobsPerBlock then false
+  else if len sidecar.kzgCommitments > (getBlobParameters epoch).maxBlobsPerBlock then false
   else ncol == ncomm && ncol == sidecar.kzgProofs.size
 
 /-- `verify_data_column_sidecar_kzg_proofs`: the KZG gate. Every cell index in the
 batch is the sidecar's own column `index`; the cells are batch-verified against the
 commitments and proofs through the `[CryptoBackend]` KZG seam. -/
 forkdef verifyDataColumnSidecarKzgProofs (sidecar : DataColumnSidecar) : Bool :=
+  -- `[CellIndex(sidecar.index)] * len(sidecar.column)`: the cast keeps the value. The
+  -- native KZG seam takes the cell indices as `uint64` words, so the checked value
+  -- crosses at the boundary as its wire word (`.val`, `SPEC_ARITHMETIC.md` §4.5).
+  let cellIndex : CellIndex := sidecar.index
   CryptoBackend.kzgVerifyCellProofBatch
     (sidecar.kzgCommitments.map vecToBytes)
-    (Array.replicate sidecar.column.size sidecar.index)
+    (Array.replicate sidecar.column.size cellIndex.val)
     (sidecar.column.map vecToBytes)
     (sidecar.kzgProofs.map vecToBytes)
 

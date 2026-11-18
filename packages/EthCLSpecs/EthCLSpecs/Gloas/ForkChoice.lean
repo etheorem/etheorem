@@ -329,19 +329,20 @@ forkdef getProposerScore (store : Store map) : StoreTransition Gwei := do
   -- own root as the (diagnostic) error key; the spec reads it as a plain `Dict`.
   let state ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  computeProposerScore state
+  liftErr (computeProposerScore state)
 
 /-- `get_attestation_score(store, node, state)`: the effective balance of the
 unslashed active validators whose supported node is an ancestor of `node`. The validator
-reads are at active-validator indices (in range by construction); the fold is monadic only
-to bind `getSupportedNode` / `isAncestor`, which can reject. -/
+reads are at active-validator indices (in range by construction) and go through
+`sszGetIdx`, the pyspec's raising `state.validators[index]`; the fold is monadic to bind
+them and `getSupportedNode` / `isAncestor`, which can reject. -/
 forkdef getAttestationScore (store : Store map) (node : ForkChoiceNode) (state : State) :
     StoreTransition Gwei := do
-  let active := getActiveValidatorIndices state (currentEpochOf state)
+  let active ← getActiveValidatorIndices state (currentEpochOf state)
   let validators := sszGet state validators
   active.foldlM (init := 0) fun acc i => do
-    let idx := i.toNat
-    if (validators[idx]!).slashed then pure acc
+    let validator ← sszGetIdx validators i
+    if validator.slashed then pure acc
     else match FcMap.lookup store.latestMessages i with
       | none => pure acc
       | some lm =>
@@ -349,7 +350,7 @@ forkdef getAttestationScore (store : Store map) (node : ForkChoiceNode) (state :
         else
           let supported ← getSupportedNode store lm
           if ← isAncestor store supported node then
-            let scaled ← acc + (validators[idx]!).effectiveBalance
+            let scaled ← acc + validator.effectiveBalance
             pure scaled
           else pure acc
 
@@ -358,7 +359,7 @@ equivocator weight from its slot's committees, is below the reorg threshold. -/
 forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool := do
   let justifiedState ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  let reorgThreshold ← calculateCommitteeFraction justifiedState Const.reorgHeadWeightThreshold
+  let reorgThreshold ← liftErr (calculateCommitteeFraction justifiedState Const.reorgHeadWeightThreshold)
   let headState ← FcMap.getOrThrow store.blockStates headRoot
   let headBlock ← FcMap.getOrThrow store.blocks headRoot
   let epoch := computeEpochAtSlot headBlock.slot
@@ -368,17 +369,25 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
   -- The equivocator read is `justified_state.validators[i]` with `i` drawn from the *head*
   -- state's committees, so a cross-branch registry skew can push it past the justified
   -- registry's end; the spec raises `IndexError` there, hence `sszGetIdx` (the wrapped
-  -- `outOfBounds` reject) for this fold's validator reads, and `foldlM` to bind it. The
-  -- sibling `getAttestationScore` fold keeps `validators[idx]!`: its indices come from
-  -- `getActiveValidatorIndices` on the same state it reads, so they are in range.
-  let headWeight ← (List.range (getCommitteeCountPerSlot headState epoch)).foldlM (init := baseWeight) fun acc index => do
-    let committee ← getBeaconCommittee headState headBlock.slot index
-    committee.foldlM (init := acc) fun a i =>
+  -- `outOfBounds` reject) for this fold's validator reads, and `foldlM` to bind it.
+  let committeeCount ← getCommitteeCountPerSlot headState epoch
+  -- `toPlainNat`: `range(get_committee_count_per_slot(...))` iterates the plain positions
+  -- below the checked count, which its value names.
+  let headWeight ← (List.range committeeCount.toPlainNat).foldlM (init := baseWeight) fun acc index => do
+    -- `CommitteeIndex(index)`: the pyspec's checked cast of the plain loop variable.
+    let committeeIndex ← CLUint64.ofNat? index
+    let committee ← getBeaconCommittee headState headBlock.slot committeeIndex
+    -- `head_weight += Gwei(sum(...))` (`gloas/minimal.py:3837-3845`): the committee's
+    -- equivocator sum runs first, from zero, then the one add to `head_weight`. The start
+    -- `(0 : Gwei)` keeps every raise of the nonempty sum (see `Fulu.isHeadWeak`).
+    let equivocatorWeight ← committee.foldlM (init := (0 : Gwei)) fun a i =>
       if store.equivocatingIndices.contains i then do
-        let v ← sszGetIdx validators i.toNat
+        let v ← sszGetIdx validators i
         let scaled ← a + v.effectiveBalance
         pure scaled
       else pure a
+    let weight ← acc + equivocatorWeight
+    pure weight
   pure (headWeight < reorgThreshold)
 
 /-- `is_parent_strong(store, root)`: the parent node's attestation weight exceeds the
@@ -386,7 +395,7 @@ reorg parent threshold. -/
 forkdef isParentStrong (store : Store map) (root : Root) : StoreTransition Bool := do
   let justifiedState ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  let parentThreshold ← calculateCommitteeFraction justifiedState Const.reorgParentWeightThreshold
+  let parentThreshold ← liftErr (calculateCommitteeFraction justifiedState Const.reorgParentWeightThreshold)
   let block ← FcMap.getOrThrow store.blocks root
   -- The spec scores the parent at PENDING "regardless of its payload status"
   -- (`ForkChoiceNode(root=block.parent_root, payload_status=PAYLOAD_STATUS_PENDING)`);

@@ -39,8 +39,9 @@ lists match `validators` in length, every write appends, and an append to a full
 raises `.listFull`. -/
 forkdef addValidatorToRegistry (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) : StateTransition Unit := do
   let state ← get
-  -- `get_index_for_new_validator(state)`: `len(state.validators)`.
-  let index := (sszGet state validators).val.size
+  -- `get_index_for_new_validator(state)` (`fulu/minimal.py:4317-4318`):
+  -- `ValidatorIndex(len(state.validators))`, the pyspec's checked cast of the plain length.
+  let index ← CLUint64.ofNat? (sszGet state validators).val.size
   let validator ← getValidatorFromDeposit pubkey wc amount
   setOrAppendState validators index validator
   setOrAppendState balances index amount
@@ -65,7 +66,10 @@ pubkey with a valid proof-of-possession, add it to the registry. -/
 forkdef applyPendingDeposit (deposit : PendingDeposit) : StateTransition Unit := do
   let state ← get
   match validatorIndexByPubkey? state deposit.pubkey with
-  | some vi => set (← increaseBalance state (UInt64.ofNat vi) deposit.amount)
+  | some vi =>
+      -- `ValidatorIndex(validator_pubkeys.index(deposit.pubkey))`: the pyspec's checked cast.
+      let index ← CLUint64.ofNat? vi
+      set (← increaseBalance state index deposit.amount)
   | none    =>
       if isValidDepositSignature deposit.pubkey deposit.withdrawalCredentials deposit.amount deposit.signature then
         addValidatorToRegistry deposit.pubkey deposit.withdrawalCredentials deposit.amount

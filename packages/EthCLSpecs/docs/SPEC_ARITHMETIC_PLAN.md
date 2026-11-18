@@ -1,10 +1,11 @@
 # Spec arithmetic transition plan
 
-Status: in progress. Stages 0 through 5 are complete and committed (inventory and
+Status: in progress. Stages 0 through 6 are complete and committed (inventory and
 baselines; SSZ packing and typed causes; the checked core, authoring surface, and tier
 views; `Gwei` across every fork with proofs; `Epoch` and `Slot` with evaluation-order
-fixes). Each stage's task checkboxes below carry a one-line completion note with the
-commit. Stage 6 (indices and plain-integer formulas) is next.
+fixes; indices and plain-integer formulas). Each stage's task checkboxes below carry a
+one-line completion note with the commit. Stage 7 (clocks and remaining configuration
+arithmetic) is next.
 Durable working records (stage reports, findings, incidents, baselines, oracle
 results) live outside git in `mb/spec-arithmetic-implementation/` and are distilled
 into the tracked records at Stage 10.
@@ -368,8 +369,8 @@ outcomes match or have a source-justified correction; and temporary crossings ar
   corner against the runner's caught sets. Include state slots near the maximum.
   *Done 2026-11-18, in the Stage 5 commit: Fulu `verifyCommitteeCoverage` stops at the first
   failed check, as Python and Gloas do; the old fold gave the same class, because the
-  committee fault depends on the slot alone (revisit when Stage 6 checks the
-  index-dependent `compute_committee` product). The participation-flag source assert
+  committee fault then depended on the slot alone. Stage 6.2 checks the index-dependent
+  `compute_committee` product, and `CommitteeCoverageOrderPins` site 3 pins that order. The participation-flag source assert
   now follows Python's reads in Fulu and Gloas: at a maximum state slot the old order
   returned the caught assert where Python raises the uncaught range fault. Pins in
   `CommitteeCoverageOrderPins`; oracle runs agree.*
@@ -387,16 +388,30 @@ including generic presets and boundary inputs; proof contracts and coverage rema
 
 ### Stage 6: all indices and plain-integer formulas
 
-- [ ] **6.1 Move validator indices.** Port reads, writes, enumerations, selection loops,
+- [x] **6.1 Move validator indices.** Port reads, writes, enumerations, selection loops,
   withdrawal cursors, and proofs. Remove unchecked conversions used solely for indexing.
+  *Done 2026-11-18 (`5772541`): `ValidatorIndex := CLUint64`; `sszGetIdx` takes any
+  `ToIndex` index; the withdrawal cursor `% len` raises ZeroDivisionError on an empty
+  registry. Pins in `ValidatorIndexMigrationPins`.*
 - [ ] **6.2 Move the other indices.** Cover withdrawal, builder, committee, column, cell,
   and every other index in the Stage 0 inventory. Preserve builder-flag bit operations
   and prove their conversion laws.
+  *Done 2026-11-18 (`5049778`): builder, committee, withdrawal, column, and cell indices
+  are `CLUint64`; builder-flag laws `hand_invert_eq`/`hand_clInt_eq`; checked
+  `compute_committee` products with a zero-count ZeroDivisionError. Pins in
+  `IndexMigrationPins`.*
 - [ ] **6.3 Port plain arithmetic.** Use `CLInt` for Python lengths and signed formulas.
   Preserve `withdrawals[-1]`, zero-divisor behavior on empty registries, and the numeric
   kinds selected by mixed `min`/`max` and empty sums. Remove defaulting modulo helpers.
+  *Done 2026-11-18 (`8556a58`, review fix `3d5e232`): `len` over any `IdxRead`, total
+  `integerSquareroot`, `withdrawals[-1]` through a `CLInt` index, checked committee count,
+  `modWrap`/`umodIdx` deleted. Fulu `get_next_sync_committee_indices` raises
+  ZeroDivisionError on an empty active set. Pins in `PlainArithmeticPins`.*
 - [ ] **6.4 Verify.** Run the common gate for each index slice and the complete minimal
   sweep after all index and plain-integer consumers have moved.
+  *Done 2026-11-19: common gate green after each task and after the review fixes
+  (`3d5e232`); complete minimal sweeps at `8556a58` case-identical to Stage 5
+  (5318/2829, 6760/3198, 6972/3198); Fulu and Gloas dev subsets equal after the fix.*
 
 **Done when:** every index family in scope has a checked or justified structural route;
 all negative-index and empty-collection cases preserve Python behavior.

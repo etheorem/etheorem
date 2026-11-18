@@ -22,21 +22,30 @@ state_section
 
 /-- `get_total_active_balance`. The total folds the active set's
 `effective_balance` values, a checked `sum` in the pyspec (`SPEC_ARITHMETIC.md`
-§3.2), so the result carries the fold's fault. -/
-forkdef getTotalActiveBalance (state : State) : Checked Gwei :=
-  getTotalBalance state (getActiveValidatorIndices state (computeEpochAtSlot (sszGet state slot)))
+§3.2), so the result carries the fold's fault, after the active set's checked casts and
+the total's raising registry reads. -/
+forkdef getTotalActiveBalance (state : State) : Except StateTransitionError Gwei := do
+  let active ← getActiveValidatorIndices state (computeEpochAtSlot (sszGet state slot))
+  getTotalBalance state active
 
-/-- `get_unslashed_participating_indices(state, flag_index, epoch)`. No committees. -/
+/-- `get_unslashed_participating_indices(state, flag_index, epoch)`
+(`fulu/minimal.py:4380-4396`). No committees. The pyspec reads `epoch_participation[index]`
+for every active index first, then `state.validators[index].slashed` for each participating
+one; both reads raise `IndexError` past the end, so they go through `getAt` in that order.
+The pyspec's leading `assert epoch in (previous, current)` has no Lean twin: every caller
+passes the previous or the current epoch. -/
 forkdef getUnslashedParticipatingIndices (state : State) (flagIndex : Nat) (epoch : Epoch) :
-    Array ValidatorIndex := Id.run do
+    Except StateTransitionError (Array ValidatorIndex) := do
   let isCurrent := epoch == computeEpochAtSlot (sszGet state slot)
   let part := if isCurrent then sszGet state currentEpochParticipation else sszGet state previousEpochParticipation
   let validators := sszGet state validators
+  let active ← getActiveValidatorIndices state epoch
+  let mut participating : Array ValidatorIndex := #[]
+  for i in active do
+    if hasFlag (← liftErr (getAt part i)) flagIndex then participating := participating.push i
   let mut out : Array ValidatorIndex := #[]
-
-  for i in getActiveValidatorIndices state epoch do
-    let idx := i.toNat
-    if hasFlag (part[idx]!) flagIndex && !(validators[idx]!).slashed then out := out.push i
+  for i in participating do
+    if !(← liftErr (getAt validators i)).slashed then out := out.push i
   return out
 
 /-- `get_block_root_at_slot` (`fulu/mainnet.py:1447-1452`). The pinned

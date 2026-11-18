@@ -224,25 +224,25 @@ forkdef isInclusionListBitsInclusive (store : InclusionListStore map)
 cyclically (`cyclicSample`, in `Heze/Committees.lean`). Relocated from the beacon-state accessors
 into this store-throwing block beside its caller `on_inclusion_list`: the spec's
 `indices[i % len(indices)]` raises a bare `ZeroDivisionError` when the slot has no committee
-members. That is the `.zeroDivision` cause, uncaught under every reference wrapper (`AssertionError`
-/ `IndexError` / `ValueError` all miss it), so the empty case throws
-`.transition (.zeroDivision …)` (an `uncaughtFault`, not an expected rejection) rather than a
-caught `.assert`, and rather than silently sampling a `default`. `state` stays an explicit
-parameter (the accessor reads `state`, not the store). -/
+members. The plain `%` inside `cyclicSample` raises it, the `.zeroDivision` cause, uncaught
+under every reference wrapper (`AssertionError` / `IndexError` / `ValueError` all miss it), so
+the empty case throws `.transition (.zeroDivision …)` (an `uncaughtFault`, not an expected
+rejection). `state` stays an explicit parameter (the accessor reads `state`, not the store). -/
 forkdef getInclusionListCommittee (state : State) (slot : Slot) :
     StoreTransition (Vector ValidatorIndex Const.inclusionListCommitteeSize) := do
   let epoch := computeEpochAtSlot slot
-  let committeesPerSlot := getCommitteeCountPerSlot state epoch
+  let committeesPerSlot ← getCommitteeCountPerSlot state epoch
   -- The committees concatenate in slot order, each `get_beacon_committee` bound as it
-  -- forms; the first rejecting slot surfaces (`SPEC_ARITHMETIC.md` §4.3).
-  let indices ← (Array.range committeesPerSlot).foldlM
+  -- forms; the first rejecting slot surfaces (`SPEC_ARITHMETIC.md` §4.3). `toPlainNat`:
+  -- `range(committees_per_slot)` iterates the plain positions below the checked count.
+  let indices ← (Array.range committeesPerSlot.toPlainNat).foldlM
     (fun acc i => do
-      let committee ← getBeaconCommittee state slot i
+      -- `CommitteeIndex(i)`: the pyspec's checked cast of the plain loop variable.
+      let committeeIndex ← CLUint64.ofNat? i
+      let committee ← getBeaconCommittee state slot committeeIndex
       pure (acc ++ committee))
     (#[] : Array ValidatorIndex)
-  if indices.size == 0 then
-    throwZeroDivision "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"
-  pure (cyclicSample indices Const.inclusionListCommitteeSize)
+  liftErr (cyclicSample indices Const.inclusionListCommitteeSize)
 
 end
 
@@ -553,11 +553,13 @@ forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit :=
   assert (windowEnd ≥ currentSlot)
 
   -- The transactions must be non-empty, each non-empty, and within the byte cap. The spec sums
-  -- the lengths as a Python `int`, which cannot overflow, so the sum is over `Nat`.
+  -- the lengths as a Python `int`, so the sum is a `CLInt`, which never raises.
   let transactions := inclusionList.transactions.toArray
-  let transactionsSize : Nat := transactions.foldl (fun acc tx => acc + tx.size) 0
+  let transactionsSize : CLInt := transactions.foldl (fun acc tx => acc + len tx) 0
   assert (transactionsSize > 0)
-  assert (transactionsSize ≤ Const.maxTransactionsBytesPerInclusionList.toNat)
+  -- TEMPORARY CROSSING (removed in Stage 7): the byte cap is still the raw `UInt64` config
+  -- field; its value enters the plain kind for the comparison, which never raises.
+  assert (transactionsSize ≤ (Const.maxTransactionsBytesPerInclusionList.toNat : CLInt))
   assert (transactions.all (·.size > 0))
 
   -- The dependent block must be known, no later than the shuffling dependent slot, and a

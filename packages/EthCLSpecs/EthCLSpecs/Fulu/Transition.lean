@@ -101,8 +101,10 @@ forkdef processBlockHeader (block : BeaconBlock) : StateTransition Unit := do
   let newHeader : BeaconBlockHeader :=
     { slot := block.slot, proposerIndex := block.proposerIndex, parentRoot := block.parentRoot,
       stateRoot := zeroRoot, bodyRoot := htr block.body }
-  let hb ← assertH (block.proposerIndex.toNat < (sszGet state validators).size)
-  let proposer := (sszGet state validators)[block.proposerIndex.toNat]'hb.down
+  -- `proposer = state.validators[block.proposer_index]` (`fulu/minimal.py`,
+  -- `process_block_header`): a raising list read, so an out-of-range proposer rejects
+  -- with `IndexError`'s class.
+  let proposer ← sszGetIdx (sszGet state validators) block.proposerIndex
   assert (!proposer.slashed)
 
   modifyState fun state => sszUpdate state with latestBlockHeader := newHeader
@@ -112,7 +114,7 @@ current epoch's mix. -/
 forkdef processRandao (body : BeaconBlockBody) : StateTransition Unit := do
   let state ← get
   let epoch := currentEpochOf state
-  let proposer ← sszGetIdx (sszGet state validators) (getBeaconProposerIndex state).toNat
+  let proposer ← sszGetIdx (sszGet state validators) (getBeaconProposerIndex state)
   let signingRoot := computeSigningRoot epoch (getDomain state Const.domainRandao epoch)
   assert (blsVerify proposer.pubkey signingRoot body.randaoReveal)
 
@@ -123,19 +125,29 @@ forkdef processRandao (body : BeaconBlockBody) : StateTransition Unit := do
   let mix := vmodGet (sszGet state randaoMixes) epoch.val Const.epochsPerHistoricalVector
   let digest := sha body.randaoReveal
   let newMix : Bytes32 := Vector.ofFn (fun i : Fin 32 => mix[i] ^^^ digest.get! i.val)
+  -- The write slot `epoch % EPOCHS_PER_HISTORICAL_VECTOR` is the checked `Epoch` modulo,
+  -- formed after the value, as Python evaluates an assignment's right side first. The
+  -- remainder is below the vector length, so `toPlainNat` names an in-range position (§4.5).
+  let idx ← epoch % Const.epochsPerHistoricalVectorC
   modifyState fun state =>
-    sszUpdate state with randaoMixes[umodIdx epoch.val Const.epochsPerHistoricalVector]! := newMix
+    sszUpdate state with randaoMixes[idx.toPlainNat]! := newMix
 
-/-- `process_eth1_data`: append the vote and adopt it once it has a majority over
-the voting period. -/
+/-- `process_eth1_data` (`fulu/minimal.py:1972-1978`): append the vote and adopt it once it
+has a majority over the voting period. `eth1_data_votes.count(...) * 2` is a plain `int`
+formula, a `CLInt`. `Uint64(EPOCHS_PER_ETH1_VOTING_PERIOD) * SLOTS_PER_EPOCH` is the checked
+product, formed after the plain side as Python evaluates it, so it raises past `2^64 - 1`
+for a generic preset. The comparison never raises; `int(x)` carries the product into the
+plain kind. -/
 forkdef processEth1Data (body : BeaconBlockBody) : StateTransition Unit := do
   appendState eth1DataVotes body.eth1Data
 
   let state ← get
   let target := htr body.eth1Data
-  let cnt := (sszGet state eth1DataVotes).foldl
+  let voteCount : CLInt := (sszGet state eth1DataVotes).foldl
     (fun acc e => if htr e == target then acc + 1 else acc) 0
-  if cnt * 2 > Const.epochsPerEth1VotingPeriod * Const.slotsPerEpoch then
+  let doubled := voteCount * 2
+  let periodSlots ← Const.epochsPerEth1VotingPeriodC * Const.slotsPerEpochC
+  if doubled > periodSlots.toCLInt then
     modifyState fun state => sszUpdate state with eth1Data := body.eth1Data
 
 /-- `process_sync_aggregate`: verify the aggregate signature over the previous
@@ -166,9 +178,9 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   -- and the per-participant split each bind where the pyspec forms it. The
   -- `slotsPerEpoch` divisor is the proved-total `PositiveDivisor` view, since the
   -- preset value is positive (`SPEC_ARITHMETIC.md` §4.2).
-  let totalActiveBalance ← getTotalActiveBalance state
+  let totalActiveBalance ← liftErr (getTotalActiveBalance state)
   let totalActiveIncrements ← totalActiveBalance / Const.effectiveBalanceIncrementG
-  let basePerIncrement ← getBaseRewardPerIncrement state
+  let basePerIncrement ← liftErr (getBaseRewardPerIncrement state)
   let totalBaseRewards ← basePerIncrement * totalActiveIncrements
   let maxParticipantRewards ← totalBaseRewards * Const.syncRewardWeight / Const.weightDenominator
   let maxParticipantRewards := maxParticipantRewards / Const.slotsPerEpochDiv
@@ -183,11 +195,13 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
     let pk := syncCommittee.pubkeys[i]
     match validators.findIdx? (·.pubkey == pk) with
     | some pIdx =>
+      -- `ValidatorIndex(all_pubkeys.index(pubkey))`: the pyspec's checked cast.
+      let participantIndex ← CLUint64.ofNat? pIdx
       if bitGet bits i then
-        state ← increaseBalance state (UInt64.ofNat pIdx) participantReward
+        state ← increaseBalance state participantIndex participantReward
         state ← increaseBalance state proposerIdx proposerReward
       else
-        state ← decreaseBalance state (UInt64.ofNat pIdx) participantReward
+        state ← decreaseBalance state participantIndex participantReward
     | none => pure ()
   set state
 
@@ -209,8 +223,9 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   -- it arrives through `liftErr`, which lands the `.arithmetic` fault on this machine unwrapped.
   let expectedTimestamp ← liftErr (computeTimeAtSlot (sszGet state genesisTime) (sszGet state slot))
   assert (payload.timestamp == expectedTimestamp)
-  -- [Modified in Fulu:EIP7892] the commitments are under the scheduled blob limit.
-  assert (body.blobKzgCommitments.size ≤ (getBlobParameters epoch).maxBlobsPerBlock)
+  -- [Modified in Fulu:EIP7892] the commitments are under the scheduled blob limit: the plain
+  -- `len(...)` against the plain limit, a comparison that never raises.
+  assert (len body.blobKzgCommitments ≤ (getBlobParameters epoch).maxBlobsPerBlock)
 
   let header : ExecutionPayloadHeader :=
     { parentHash := payload.parentHash, feeRecipient := payload.feeRecipient,
@@ -238,9 +253,12 @@ forkdef processBlock (block : BeaconBlock) : StateTransition Unit := do
 /-- `verify_block_signature`. -/
 forkdef verifyBlockSignature (state : State) (signedBlock : SignedBeaconBlock) : Bool :=
   let block := signedBlock.message
-  if block.proposerIndex.toNat ≥ (sszGet state validators).size then false
-  else
-    let proposer := sszGet state validators[block.proposerIndex.toNat]!
+  -- The pyspec's `state.validators[block.proposer_index]` raises `IndexError` for an
+  -- out-of-range proposer. This body returns `false` on the `getAt` miss, and the caller's
+  -- `assert` raises the assert class; the runner catches both.
+  match getAt (sszGet state validators) block.proposerIndex with
+  | .error _ => false
+  | .ok proposer =>
     let signingRoot := computeSigningRoot block (getDomain state Const.domainBeaconProposer (currentEpochOf state))
     blsVerify proposer.pubkey signingRoot signedBlock.signature
 

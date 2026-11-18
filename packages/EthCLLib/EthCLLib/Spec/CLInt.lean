@@ -371,4 +371,49 @@ instance : HMod (Checked CLInt) (Checked CLUint64) (Checked CLUint64) :=
 instance : HMod (Checked CLUint64) (Checked CLInt) (Checked CLUint64) :=
   ⟨fun a b => a >>= fun x => b >>= fun y => uintMixMod x y⟩
 
+/-! ## Python's `~x` and the mixed `&`
+
+The `Uint64` class defines no `__invert__`, so Python's `~x` on a checked value
+falls back to `int.__invert__` and returns the plain `int` `-x - 1`
+(`SPEC_ARITHMETIC.md` §3.1). The in-scope text uses it once, in
+`validator_index & ~BUILDER_INDEX_FLAG`. That `&` meets a checked operand and a
+plain one, so it is the mixed route: the pyspec computes the unbounded
+two's-complement `&` and range-tests the result (`ssz/uint.py`, `BaseUint.__and__`).
+The result type is `Checked CLUint64`, as for every mixed operator (§4.2). The
+same-width `&`, `|`, and `^` of two checked values stay the total routes in
+`Spec/CLTotal.lean` (§5.1). -/
+
+/-- Python's `&` on two unbounded signed integers, in two's complement. Lean core
+has no `Int` bitwise `and`, so each sign case reduces to `Nat` bitwise operations
+through `Int.negSucc k = ~k`: `x & ~k` clears the bits of `k` from `x`, and
+`~j & ~k = ~(j | k)`. -/
+def CLInt.landInt : Int → Int → Int
+  | .ofNat x, .ofNat y => .ofNat (x &&& y)
+  | .ofNat x, .negSucc y => .ofNat (x ^^^ (x &&& y))
+  | .negSucc x, .ofNat y => .ofNat (y ^^^ (y &&& x))
+  | .negSucc x, .negSucc y => .negSucc (x ||| y)
+
+/-- Python's `~x` on a checked value: the plain `int` `-x - 1` (`int.__invert__`).
+Total; the result is a `CLInt`, so a later operator with a checked operand takes
+the mixed route. -/
+@[inline] def CLUint64.invert (a : CLUint64) : CLInt := ⟨Int.negSucc a.toPlainNat⟩
+
+/-- The mixed `&`, checked operand on the left: compute the two's-complement `&`
+on the original operands, then run the one range test. -/
+private def uintMixAnd (a : CLUint64) (b : CLInt) : Checked CLUint64 :=
+  mixIntoUint' "&" CLInt.landInt a b.val
+
+/-- The mixed `&`, plain operand on the left. -/
+private def mixUintAnd (a : CLInt) (b : CLUint64) : Checked CLUint64 :=
+  mixIntoUint "&" CLInt.landInt a.val b
+
+instance : HAnd CLUint64 CLInt (Checked CLUint64) := ⟨uintMixAnd⟩
+instance : HAnd CLInt CLUint64 (Checked CLUint64) := ⟨mixUintAnd⟩
+
+/-- The mixed `&` with a checked left operand is the mixed-route engine on the two
+original operands. Stated here, beside the private helper it unfolds, so a proof
+outside the module rewrites through it. -/
+theorem CLUint64.hand_clInt_eq (a : CLUint64) (b : CLInt) :
+    (a &&& b : Checked CLUint64) = CLUint64.mixBin "&" CLInt.landInt a.asInt b.val := rfl
+
 end EthCLLib.Spec

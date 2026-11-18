@@ -28,9 +28,11 @@ state_section
 
 /-- Modify validator `i` via the infallible `[i]!` element write: total (fits the
 pure `State → State` shape), and the cached single-leaf update for the composite
-`Validator` element. -/
+`Validator` element. The helper has no pyspec twin: every caller reads
+`validators[i]` through the raising `sszGetIdx` first, so the position is in range here. -/
 forkdef modValidator (state : State) (i : ValidatorIndex) (f : Validator → Validator) : State :=
-  sszModify state validators[i.toNat]! := f
+  -- `toPlainNat`: the caller's raising read already proved `i` in range (see above).
+  sszModify state validators[i.toPlainNat]! := f
 
 /-- `is_eligible_for_activation`: reads the finalized checkpoint, so it is a
 state-operation predicate, not pure on the `Validator` (those live in
@@ -46,28 +48,31 @@ config.CHURN_LIMIT_QUOTIENT)`, then `churn - churn % EFFECTIVE_BALANCE_INCREMENT
 Every operand is `Gwei`, so the division, modulo, and subtraction are the
 checked `Gwei` operators, each bound as the pyspec assigns it
 (`SPEC_ARITHMETIC.md` §4.3). The divisor is the checked config view; a
-configuration value keeps checked division (`SPEC_ARITHMETIC.md` §4.2). -/
-forkdef getBalanceChurnLimit (state : State) : Checked Gwei := do
+configuration value keeps checked division (`SPEC_ARITHMETIC.md` §4.2). The total
+active balance reads the registry, so the result also carries its `IndexError`. -/
+forkdef getBalanceChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let totalActiveBalance ← getTotalActiveBalance state
   let scaled ← totalActiveBalance / Const.churnLimitQuotientC
   let churn := max Const.minPerEpochChurnLimitElectra scaled
   let rounded ← churn % Const.effectiveBalanceIncrementG
-  churn - rounded
+  let limit ← churn - rounded
+  return limit
 
 /-- `get_activation_exit_churn_limit` (`fulu/mainnet.py:5980-5985`):
 `min(config.MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT, get_balance_churn_limit(state))`.
 The churn limit binds first, the comparison picks an operand. -/
-forkdef getActivationExitChurnLimit (state : State) : Checked Gwei := do
+forkdef getActivationExitChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let churn ← getBalanceChurnLimit state
   return min Const.maxPerEpochActivationExitChurnLimit churn
 
 /-- `get_consolidation_churn_limit` (`fulu/mainnet.py:5988-5990`): the balance
 churn limit minus the activation/exit one, both bound before the checked
 subtraction. -/
-forkdef getConsolidationChurnLimit (state : State) : Checked Gwei := do
+forkdef getConsolidationChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let total ← getBalanceChurnLimit state
   let exit ← getActivationExitChurnLimit state
-  total - exit
+  let limit ← total - exit
+  return limit
 
 /-! ## Churn reservation -/
 
@@ -103,7 +108,7 @@ forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Ep
   let currentEpoch := computeEpochAtSlot (sszGet state slot)
   let exitEpoch ← computeActivationExitEpoch currentEpoch
   let earliest := max (sszGet state earliestExitEpoch) exitEpoch
-  let perEpochChurn ← getActivationExitChurnLimit state
+  let perEpochChurn ← liftErr (getActivationExitChurnLimit state)
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
 
   let (ee, ebtc) ← reserveChurn exitBalance consume perEpochChurn earliest
@@ -119,7 +124,7 @@ forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : 
   let state ← get
   let exitEpoch ← computeActivationExitEpoch (currentEpochOf state)
   let earliest := max (sszGet state earliestConsolidationEpoch) exitEpoch
-  let perEpoch ← getConsolidationChurnLimit state
+  let perEpoch ← liftErr (getConsolidationChurnLimit state)
   let consume := if (sszGet state earliestConsolidationEpoch) < earliest then perEpoch
                  else (sszGet state consolidationBalanceToConsume)
 
@@ -140,7 +145,7 @@ and scores it as the expected outcome (`RunnerCaughtSet.valueError`). The store 
 checked value's, so the sum lands in the branch that forms it. -/
 forkdef initiateValidatorExit (i : ValidatorIndex) : StateTransition Unit := do
   let state ← get
-  let validator ← sszGetIdx (sszGet state validators) i.toNat
+  let validator ← sszGetIdx (sszGet state validators) i
   if !hasNotInitiatedExit validator then pure ()
   else
     let exitEpoch ← computeExitEpochAndUpdateChurn validator.effectiveBalance
@@ -162,7 +167,7 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
   let epoch := computeEpochAtSlot (sszGet (← get) slot)
   initiateValidatorExit i
   let state ← get
-  let validator ← sszGetIdx (sszGet state validators) i.toNat
+  let validator ← sszGetIdx (sszGet state validators) i
   let slashIdx ← epoch % Const.epochsPerSlashingsVectorC
 
   -- Mark slashed, extend withdrawability, record the effective balance in the
@@ -196,10 +201,10 @@ marker form). The excess is the checked `balance - MIN_ACTIVATION_BALANCE` diffe
 formed and bound inside the branch, where the pyspec computes it. -/
 forkdef queueExcessActiveBalance (i : ValidatorIndex) : StateTransition Unit := do
   let state ← get
-  let balance ← sszGetIdx (sszGet state balances) i.toNat
+  let balance ← sszGetIdx (sszGet state balances) i
   if balance > Const.minActivationBalance then
     let excess ← balance - Const.minActivationBalance
-    let validator ← sszGetIdx (sszGet state validators) i.toNat
+    let validator ← sszGetIdx (sszGet state validators) i
     let pendingDeposit : PendingDeposit :=
       { pubkey := validator.pubkey, withdrawalCredentials := validator.withdrawalCredentials, amount := excess,
         signature := Const.g2PointAtInfinity, slot := Const.genesisSlot }
@@ -210,7 +215,7 @@ forkdef queueExcessActiveBalance (i : ValidatorIndex) : StateTransition Unit := 
 queue any excess active balance. -/
 forkdef switchToCompoundingValidator (i : ValidatorIndex) : StateTransition Unit := do
   let state ← get
-  let validator ← sszGetIdx (sszGet state validators) i.toNat
+  let validator ← sszGetIdx (sszGet state validators) i
   let newWc : Bytes32 := validator.withdrawalCredentials.set 0 Const.compoundingWithdrawalPrefix
   modifyState fun state => modValidator state i (fun validator => { validator with withdrawalCredentials := newWc })
   queueExcessActiveBalance i

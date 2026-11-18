@@ -116,25 +116,25 @@ cases the bridge equation's `.ok` reading fails. -/
 example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex) (we : Gloas.Epoch),
-      builderIndex.toNat < preState.builders.size →
+      builderIndex.toPlainNat < preState.builders.size →
       (currentEpochOf (pureState preState) +
           EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay : Checked Gloas.Epoch) = .ok we →
       runNestedStateTransition (pureState preState)
           (initiateBuilderExit (StateTransition := GloasRun) builderIndex)
         = (pure (pureState
           { preState with builders :=
-              (preState.builders.set! builderIndex.toNat
-                { preState.builders[builderIndex.toNat]! with withdrawableEpoch := we }) })
+              (preState.builders.set! builderIndex.toPlainNat
+                { preState.builders[builderIndex.toPlainNat]! with withdrawableEpoch := we }) })
             : m State) := by
   intro preState builderIndex we hidx hwe
   refine runNestedStateTransition_of_ok ?_
   show (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run
       (pureState preState) = _
-  have hsome : preState.builders.val[builderIndex.toNat]?
-      = some preState.builders[builderIndex.toNat]! := by
+  have hsome : preState.builders.val[builderIndex.toPlainNat]?
+      = some preState.builders[builderIndex.toPlainNat]! := by
     rw [getElem!_pos (dom := fun (xs : SizzLean.Repr.ProgressiveList Builder) i =>
       i < xs.size) (h := hidx)]
-    show preState.builders.val[builderIndex.toNat]? = some _
+    show preState.builders.val[builderIndex.toPlainNat]? = some _
     exact Array.getElem?_eq_getElem hidx
   rw [initiateBuilderExit_run_eq preState builderIndex, hsome, hwe]
 

@@ -133,7 +133,7 @@ theorem initializePtcWindow_getElem [Preset] [Config] [HasherTag] (state : Beaco
   · simp [hlt]
 
 /-- The first region's committee is also the ambient `default` for
-`Vector ValidatorIndex Gloas.Const.ptcSize` (`ValidatorIndex := UInt64`'s `default` is `0`,
+`Vector ValidatorIndex Gloas.Const.ptcSize` (`ValidatorIndex := CLUint64`'s `default` is `0`,
 and `Vector`'s `Inhabited` instance is pointwise), so callers that already reason in terms of
 `default` don't need to unfold the window a second time to get there. -/
 theorem initializePtcWindow_lt_default [Preset] [Config] [HasherTag] (state : BeaconState)
