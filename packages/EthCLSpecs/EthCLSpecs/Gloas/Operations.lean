@@ -648,14 +648,17 @@ forkdef applyParentExecutionPayload (requests : ExecutionRequests) : StateTransi
 
 /-- `process_parent_execution_payload` (NEW, EIP-7732): if the bid's parent hash does
 not match the cached bid, the parent was empty (no requests expected); otherwise the
-parent was full, so verify the requests commitment and apply them. -/
+parent was full, so verify the requests commitment and apply them. On the empty edge the
+pyspec's `requests == ExecutionRequests.empty()` compares fields, so the body compares
+`requests` with the empty value by the derived `BEq`. On the full edge the pyspec compares
+`hash_tree_root(requests)` with the bid's root, and so does the body. -/
 forkdef processParentExecutionPayload (block : BeaconBlock) : StateTransition Unit := do
   let state ← get
   let bid := block.body.signedExecutionPayloadBid.message
   let parentBid := sszGet state latestExecutionPayloadBid
   let requests := block.body.parentExecutionRequests
   if bid.parentBlockHash != parentBid.blockHash then
-    assert (htr requests == htr (default : ExecutionRequests))
+    assert (requests == (default : ExecutionRequests))
   else
     assert (htr requests == parentBid.executionRequestsRoot)
     applyParentExecutionPayload requests

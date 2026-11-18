@@ -34,9 +34,10 @@ forkdef strictlySorted (a : Array ValidatorIndex) : Bool := Id.run do
   return ok
 
 /-- `is_slashable_attestation_data`: a double vote (same target epoch, different
-data) or a surround vote. -/
+data) or a surround vote. The pyspec's `data_1 != data_2` compares the fields of the two
+containers, so the body compares them with the derived `BEq`, not by their roots. -/
 forkdef isSlashableAttestationData (d1 d2 : AttestationData) : Bool :=
-  (htr d1 != htr d2 && d1.target.epoch == d2.target.epoch) ||
+  (d1 != d2 && d1.target.epoch == d2.target.epoch) ||
   (d1.source.epoch < d2.source.epoch && d2.target.epoch < d1.target.epoch)
 
 /-- `is_valid_indexed_attestation`: non-empty, sorted-unique indices in range, and a
@@ -56,7 +57,8 @@ forkdef isValidIndexedAttestation (state : State) (a : IndexedAttestation) : Boo
 
 /-! ## Slashings -/
 
-/-- `process_proposer_slashing`. -/
+/-- `process_proposer_slashing`. The pyspec's `header_1 != header_2` compares the fields
+of the two headers, so the body compares them with the derived `BEq`. -/
 forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit := do
   let state ← get
   let h1 := ps.signedHeader1.message
@@ -64,7 +66,7 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
 
   assert (h1.slot == h2.slot)
   assert (h1.proposerIndex == h2.proposerIndex)
-  assert (htr h1 != htr h2)
+  assert (h1 != h2)
 
   let hb ← assertH (h1.proposerIndex.toNat < (sszGet state validators).size)
   let proposer := (sszGet state validators)[h1.proposerIndex.toNat]'hb.down
