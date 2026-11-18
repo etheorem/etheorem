@@ -211,6 +211,31 @@ theorem keepsUncached_liftErr {T ε ε' α : Type} [SSZRepr T] [HasherTag] [Erro
     subst h2
     rfl
 
+/-- A `liftM` of a pure `Checked` value passes the state through unchanged: the
+success value goes to `pure` and the fault to `throw`, and neither writes the
+state. This is the leaf the operator-surface binds (`let x ← a + b`) produce;
+`SPEC_ARITHMETIC.md` §4.9 moves it here so every fork's bind ladder cites one
+lemma. -/
+theorem keepsUncached_liftChecked {T ε α : Type} [SSZRepr T] [HasherTag]
+    [ErrorConv StateTransitionError ε] (x : Checked α) :
+    KeepsUncached (liftM (m := StateT (SSZ.Box HasherTag.H T) (Except ε)) x :
+      StateT (SSZ.Box HasherTag.H T) (Except ε) α) := by
+  intro v a s h
+  cases hx : x with
+  | error e =>
+    rw [show ((liftM (m := StateT (SSZ.Box HasherTag.H T) (Except ε)) x :
+        StateT (SSZ.Box HasherTag.H T) (Except ε) α).run (pureState v))
+      = .error (ErrorConv.conv (StateTransitionError.ofArithFault e)) from by rw [hx]; rfl] at h
+    simp at h
+  | ok b =>
+    rw [show ((liftM (m := StateT (SSZ.Box HasherTag.H T) (Except ε)) x :
+        StateT (SSZ.Box HasherTag.H T) (Except ε) α).run (pureState v))
+      = .ok (b, pureState v) from by rw [hx]; rfl] at h
+    injection h with h1
+    injection h1 with _ h2
+    subst h2
+    rfl
+
 /-- `sszOfArrayM`, the spec's `List[T, N](a)`, returns the list or raises `.listFull`
 through `throwListFull`, a `liftErr`. Neither branch writes the state. -/
 theorem keepsUncached_sszOfArrayM {T ε α : Type} [SSZRepr T] [HasherTag]
@@ -321,24 +346,31 @@ theorem keepsUncached_forM_array {T ε α : Type} [SSZRepr T] [HasherTag]
   exact keepsUncached_foldlM_list (fun _ a => handler a) (fun _ a => hf a) xs.toList ⟨⟩
 
 /-- One `KeepsUncached` obligation at a time, from the closure lemmas alone: a
-leaf (`pure`, `throw`, `get`, a `liftErr`-shaped read or checked op), a gate or
+leaf (`pure`, `throw`, `get`, a `liftM` or `liftErr`-shaped read or checked op), a gate or
 `match` (`dite` splitting, `split`), a state write through the record update, a
 loop or fold, or a bind to split. Nothing unfolds a handler body by hand; a
-handler proof is one `unfold` of its body and this tactic. -/
+handler proof is one `unfold` of its body and this tactic.
+
+Every leaf attempt runs under `with_reducible`: the closure lemmas match their
+goals through abbreviations and instance projections alone, so a leaf whose head
+does not match the goal's head fails at once instead of whnf-diving into a
+forkdef body (whose nested re-elaborated binds the unifier would otherwise
+re-expand for every trial). -/
 macro "keeps_uncached" : tactic => `(tactic| fail)
 macro_rules
   | `(tactic| keeps_uncached) => `(tactic|
       repeat' first
-        | exact keepsUncached_get
-        | exact keepsUncached_pure _
-        | exact keepsUncached_throw _
-        | refine keepsUncached_dite (fun _ => ?_) (fun _ => ?_)
-        | (apply keepsUncached_modify; intro v; exact ⟨_, by rfl⟩)
+        | simp only []
+        | with_reducible exact keepsUncached_liftChecked _
+        | with_reducible exact keepsUncached_liftErr _
+        | with_reducible exact keepsUncached_sszOfArrayM _ _
+        | with_reducible refine keepsUncached_dite (fun _ => ?_) (fun _ => ?_)
+        | with_reducible (apply keepsUncached_modify; intro v; exact ⟨_, by rfl⟩)
         | (apply keepsUncached_forIn_range; intro i b; keeps_uncached)
         | (apply keepsUncached_forM_array; intro a; keeps_uncached)
-        | refine keepsUncached_bind ?_ (fun a => ?_)
-        | exact keepsUncached_liftErr _
-        | exact keepsUncached_sszOfArrayM _ _
+        | with_reducible exact keepsUncached_pure _
+        | with_reducible exact keepsUncached_throw _
+        | exact keepsUncached_get
         | split)
 
 /-! ## Flavour from one start, and through local bindings
@@ -360,6 +392,14 @@ theorem keepsUncached_iff_forall_from {T ε α : Type} [SSZRepr T] [HasherTag]
     {act : StateT (SSZ.Box HasherTag.H T) (Except ε) α} :
     KeepsUncached act ↔ ∀ v, KeepsUncachedFrom v act :=
   ⟨fun h v a s hs => h v a s hs, fun h v a s hs => h v a s hs⟩
+
+/-- Per-start form of `keepsUncached_liftChecked`, for the ladders that thread a
+known start box. -/
+theorem keepsUncachedFrom_liftChecked {T ε α : Type} [SSZRepr T] [HasherTag]
+    [ErrorConv StateTransitionError ε] (v : T) (x : Checked α) :
+    KeepsUncachedFrom v (liftM (m := StateT (SSZ.Box HasherTag.H T) (Except ε)) x :
+      StateT (SSZ.Box HasherTag.H T) (Except ε) α) :=
+  keepsUncached_iff_forall_from.mp (keepsUncached_liftChecked x) v
 
 /-- Bind at one start: the continuation's fact is stated at any post-value and
 any post-start, because the first action's own conclusion hands over

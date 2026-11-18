@@ -39,26 +39,30 @@ forkdef getUnslashedParticipatingIndices (state : State) (flagIndex : Nat) (epoc
     if hasFlag (part[idx]!) flagIndex && !(validators[idx]!).slashed then out := out.push i
   return out
 
-/-- `get_block_root_at_slot`. The pinned `assert slot < state.slot <= slot +
-SLOTS_PER_HISTORICAL_ROOT` is a recency guard that raises for a stale or future
-slot; throwing (`StateTransition`), so callers bind it. Unreachable in normal epoch
-processing (`start_slot < state.slot` holds), fires only on degenerate epoch-boundary
-near-zero-stake states (the path that makes `compute_pulled_up_tip`'s pjf reject
-reachable). -/
+/-- `get_block_root_at_slot` (`fulu/mainnet.py:1447-1452`). The pinned
+`assert slot < state.slot <= slot + SLOTS_PER_HISTORICAL_ROOT` is a recency guard that raises
+for a stale or future slot; throwing (`StateTransition`), so callers bind it. Unreachable in
+normal epoch processing (`start_slot < state.slot` holds), fires only on degenerate
+epoch-boundary near-zero-stake states (the path that makes `compute_pulled_up_tip`'s pjf
+reject reachable). The `slot + SLOTS_PER_HISTORICAL_ROOT` sum adds two checked `Slot` values
+(the pinned constant is `Slot(64)`, `fulu/minimal.py:189`), so it binds (`SPEC_ARITHMETIC.md`
+§4.3). The ring read passes
+the checked value's word to the proved-total `vmodGet` route, whose bound is the mod
+itself. -/
 forkdef getBlockRootAtSlot (state : State) (s : Slot) : StateTransition Root := do
   -- `assert slot < state.slot <= slot + SLOTS_PER_HISTORICAL_ROOT`. Python's chained comparison
   -- short-circuits: `slot < state.slot` is checked first (a caught `AssertionError`), and only then
   -- is `slot + SPHR` formed. That `uint64` sum raises `ValueError` on overflow, an uncaught fault the
-  -- runner does not catch, so it is `checkedAdd`, not a bare `+`, sequenced after the first assert.
+  -- runner does not catch, so it binds (the checked add) after the first assert.
   assert (s < sszGet state slot)
-  let bound ← checkedAdd s (UInt64.ofNat Const.slotsPerHistoricalRoot)
-    "get_block_root_at_slot: slot + SLOTS_PER_HISTORICAL_ROOT"
+  let bound ← s + Const.slotsPerHistoricalRootC
   assert (sszGet state slot ≤ bound)
-  pure (vmodGet (sszGet state blockRoots) s Const.slotsPerHistoricalRoot)
+  pure (vmodGet (sszGet state blockRoots) s.val Const.slotsPerHistoricalRoot)
 
-/-- `get_block_root` (the epoch's first slot). -/
-forkdef getBlockRoot (state : State) (epoch : Epoch) : StateTransition Root :=
-  getBlockRootAtSlot state (epoch * UInt64.ofNat Const.slotsPerEpoch)
+/-- `get_block_root` (`fulu/mainnet.py:1443-1445`): the epoch's first slot. The start slot
+is `compute_start_slot_at_epoch`, so its checked product binds here. -/
+forkdef getBlockRoot (state : State) (epoch : Epoch) : StateTransition Root := do
+  getBlockRootAtSlot state (← computeStartSlotAtEpoch epoch)
 
 /-- `get_pending_balance_to_withdraw`. The accumulator is a `Gwei` and each
 `balance += withdrawal.amount` is a checked add (`SPEC_ARITHMETIC.md` §3.2, the

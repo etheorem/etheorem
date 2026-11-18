@@ -1,9 +1,10 @@
 # Spec arithmetic transition plan
 
-Status: in progress. Stages 0 through 4 are complete and committed (inventory and
+Status: in progress. Stages 0 through 5 are complete and committed (inventory and
 baselines; SSZ packing and typed causes; the checked core, authoring surface, and tier
-views; `Gwei` across every fork with proofs). Each stage's task checkboxes below carry
-a one-line completion note with the commit. Stage 5 (`Epoch` and `Slot`) is running.
+views; `Gwei` across every fork with proofs; `Epoch` and `Slot` with evaluation-order
+fixes). Each stage's task checkboxes below carry a one-line completion note with the
+commit. Stage 6 (indices and plain-integer formulas) is next.
 Durable working records (stage reports, findings, incidents, baselines, oracle
 results) live outside git in `mb/spec-arithmetic-implementation/` and are distilled
 into the tracked records at Stage 10.
@@ -341,16 +342,45 @@ outcomes match or have a source-justified correction; and temporary crossings ar
 
 ### Stage 5: `Epoch` and `Slot`
 
-- [ ] **5.1 Move `Epoch`.** Port activation, exit, withdrawability, slashing, and epoch
+- [x] **5.1 Move `Epoch`.** Port activation, exit, withdrawability, slashing, and epoch
   computations across all forks, with their proofs. Pin the four former wrap sites:
   start-slot computation, activation-exit computation, validator exit, and withdrawal request.
-- [ ] **5.2 Move `Slot`.** Port time-to-epoch helpers, transitions, committee calculations,
+  *Done 2026-11-17, in the Stage 5 commit: `Epoch := CLUint64` in Fulu, replayed in Gloas and
+  Heze; proofs restated through the checked-chain laws (`getPtc`, `initializePtcWindow`,
+  `initiateBuilderExit` with the raising read per the pinned Python order, the Gloas
+  `processAttestation` KeepsUncached ladder completed); coverage 81 → 85 claims, no tag
+  lost, axioms within the trio; pins with exact 105/361 outcomes; two fault-order
+  deviations found in review and fixed to the pinned positions (leak check in
+  `processInactivityUpdates` and `getFlagIndexDeltas`); dev subsets green at all six
+  fork×preset with counts equal to the spike baseline.*
+- [x] **5.2 Move `Slot`.** Port time-to-epoch helpers, transitions, committee calculations,
   ring buffers, and fork-choice slot expressions. Use positive-divisor views only with
   the required premises. Audit counter termination arguments.
-- [ ] **5.3 Check evaluation order.** Resolve the `verifyCommitteeCoverage` failure-order
+  *Done 2026-11-18, in the Stage 5 commit: `Slot := CLUint64` in Fulu, replayed in Gloas and
+  Heze; review fixed three fault-order sites to the pinned positions (the PTC window's
+  range end, the proposer seeds before selection, the proposer-boost short circuit);
+  runner `parent_slot` and fork boundary converted through `ofNat?`; `processSlots`
+  fuel is the exact loop count and `onTick` fuel a plain `Nat` count; new view
+  `slotsPerHistoricalRootC`; Heze `slot ± 1` characterizations state the plain range
+  decision; coverage 85 claims, no tag lost; dev subsets equal at all six fork×preset.
+  Clock crossings stay for Stage 7.*
+- [x] **5.3 Check evaluation order.** Resolve the `verifyCommitteeCoverage` failure-order
   corner against the runner's caught sets. Include state slots near the maximum.
-- [ ] **5.4 Verify each unit slice.** Run the common gate after each alias migration.
+  *Done 2026-11-18, in the Stage 5 commit: Fulu `verifyCommitteeCoverage` stops at the first
+  failed check, as Python and Gloas do; the old fold gave the same class, because the
+  committee fault depends on the slot alone (revisit when Stage 6 checks the
+  index-dependent `compute_committee` product). The participation-flag source assert
+  now follows Python's reads in Fulu and Gloas: at a maximum state slot the old order
+  returned the caught assert where Python raises the uncaught range fault. Pins in
+  `CommitteeCoverageOrderPins`; oracle runs agree.*
+- [x] **5.4 Verify each unit slice.** Run the common gate after each alias migration.
   Run the complete minimal sweep at the end of the stage.
+  *Done 2026-11-18 on the Stage 5 tree: common gate green after 5.1, 5.2, 5.3 and the cleanup
+  batch; complete minimal sweeps case-identical to the Stage 4 per-case logs (5318/2829,
+  6760/3198, 6972/3198; pass ids and skip reasons); cold `lake build EthCLSpecs`
+  15m02s/621 jobs (Stage 4: 10m03s; Stage 0: 6m52s), no-op 0.4s. The three
+  `Interface` C compiles take 121-179s each and their elaboration 18-74s; no earlier
+  per-module log exists, so the cause of the +5m is not established.*
 
 **Done when:** all epoch and slot arithmetic in scope has the prescribed behavior,
 including generic presets and boundary inputs; proof contracts and coverage remain sound.

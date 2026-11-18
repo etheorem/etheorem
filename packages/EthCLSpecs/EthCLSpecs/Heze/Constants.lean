@@ -47,8 +47,10 @@ forkconfig where
   alpha.12's `MAX_BYTES_PER_INCLUSION_LIST` to this. -/
   maxTransactionsBytesPerInclusionList : UInt64
   /-- `MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS` (1): how many slots past its own an
-  inclusion list stays in the retention window `on_inclusion_list` asserts. -/
-  minSlotsForInclusionListsRequests : UInt64
+  inclusion list stays in the retention window `on_inclusion_list` asserts. The pinned
+  configuration types it `Slot` (`Slot(1)`), so the field carries the checked kind
+  (`SPEC_ARITHMETIC.md` §4.2, checked constants stay checked). -/
+  minSlotsForInclusionListsRequests : Slot
 
 namespace Const
 section
@@ -67,7 +69,7 @@ forkabbrev hezeForkVersion : Version := Config.hezeForkVersion
 forkabbrev hezeForkEpoch : Epoch := Config.hezeForkEpoch
 forkabbrev maxTransactionsBytesPerInclusionList : UInt64 :=
   Config.maxTransactionsBytesPerInclusionList
-forkabbrev minSlotsForInclusionListsRequests : UInt64 := Config.minSlotsForInclusionListsRequests
+forkabbrev minSlotsForInclusionListsRequests : Slot := Config.minSlotsForInclusionListsRequests
 
 -- Gloas's entries, replayed here in Gloas's own order (its additions, then the
 -- Fulu surface it replays) so each body reaches its dependencies. The list is the
@@ -105,7 +107,9 @@ inherit epochsPerHistoricalVectorLt
 -- The derived checked and proved-total views of the entries above
 -- (`SPEC_ARITHMETIC.md` §4.2, §4.5). The replay binds each view to this fork's
 -- own `Preset`, so Heze's values use the same proof fields.
-inherit slotsPerEpochC slotsPerEpochDiv
+inherit slotsPerEpochC slotsPerEpochDiv slotsPerHistoricalRootC slotsPerHistoricalRootDiv
+inherit epochsPerHistoricalVectorC epochsPerSlashingsVectorC
+inherit epochsPerEth1VotingPeriodC epochsPerSyncCommitteePeriodC
 
 -- Sentinels, registry and history caps.
 inherit farFutureEpoch genesisSlot genesisEpoch validatorRegistryLimit

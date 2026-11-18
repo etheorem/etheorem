@@ -57,6 +57,14 @@ example [EthCLSpecs.Fulu.Preset] : 0 < EthCLSpecs.Fulu.Const.slotsPerEpochDiv.n 
   EthCLSpecs.Fulu.Const.slotsPerEpochDiv.positive
 
 example [EthCLSpecs.Fulu.Preset] :
+    EthCLSpecs.Fulu.Const.slotsPerHistoricalRootC.toPlainNat
+      = EthCLSpecs.Fulu.Const.slotsPerHistoricalRoot :=
+  CLUint64.ofNatLT_toPlainNat _ _
+
+example [EthCLSpecs.Fulu.Preset] : 0 < EthCLSpecs.Fulu.Const.slotsPerHistoricalRootDiv.n :=
+  EthCLSpecs.Fulu.Const.slotsPerHistoricalRootDiv.positive
+
+example [EthCLSpecs.Fulu.Preset] :
     EthCLSpecs.Fulu.Const.effectiveBalanceIncrement
       = EthCLSpecs.Fulu.Const.effectiveBalanceIncrementG.toPlainNat := rfl
 
@@ -79,10 +87,26 @@ open EthCLSpecs.Fulu in
 example : (@Const.slotsPerEpochC mainnet).toPlainNat = 32 := by native_decide
 
 open EthCLSpecs.Fulu in
+example : (@Const.slotsPerHistoricalRootDiv minimal).n = 64 := by native_decide
+
+open EthCLSpecs.Fulu in
+example : (@Const.slotsPerHistoricalRootDiv mainnet).n = 8192 := by native_decide
+
+open EthCLSpecs.Fulu in
+example : (@Const.slotsPerHistoricalRootC minimal).toPlainNat = 64 := by native_decide
+
+open EthCLSpecs.Fulu in
+example : (@Const.slotsPerHistoricalRootC mainnet).toPlainNat = 8192 := by native_decide
+
+open EthCLSpecs.Fulu in
 /-- The divisor view's positivity at a concrete preset comes from the preset's
 own proof field; this test states no `decide` of its own. -/
 example : 0 < (@Const.slotsPerEpochDiv minimal).n :=
   (@Const.slotsPerEpochDiv minimal).positive
+
+open EthCLSpecs.Fulu in
+example : 0 < (@Const.slotsPerHistoricalRootDiv mainnet).n :=
+  (@Const.slotsPerHistoricalRootDiv mainnet).positive
 
 open EthCLSpecs.Fulu in
 /-- The twin settlement at both presets: the derived `Nat` view and the stored
@@ -130,6 +154,22 @@ example : 0 < (@Const.slotsPerEpochDiv mainnet).n :=
   (@Const.slotsPerEpochDiv mainnet).positive
 
 open EthCLSpecs.Gloas in
+example : (@Const.slotsPerHistoricalRootDiv minimal).n = 64 := by native_decide
+
+open EthCLSpecs.Gloas in
+example : (@Const.slotsPerHistoricalRootDiv mainnet).n = 8192 := by native_decide
+
+open EthCLSpecs.Gloas in
+example : (@Const.slotsPerHistoricalRootC minimal).toPlainNat = 64 := by native_decide
+
+open EthCLSpecs.Gloas in
+example : (@Const.slotsPerHistoricalRootC mainnet).toPlainNat = 8192 := by native_decide
+
+open EthCLSpecs.Gloas in
+example : 0 < (@Const.slotsPerHistoricalRootDiv minimal).n :=
+  (@Const.slotsPerHistoricalRootDiv minimal).positive
+
+open EthCLSpecs.Gloas in
 example : (@Const.churnLimitQuotientC minimalConfig).toPlainNat = 32 := by
   native_decide
 
@@ -149,6 +189,22 @@ example : 0 < (@Const.slotsPerEpochDiv minimal).n :=
   (@Const.slotsPerEpochDiv minimal).positive
 
 open EthCLSpecs.Heze in
+example : (@Const.slotsPerHistoricalRootDiv minimal).n = 64 := by native_decide
+
+open EthCLSpecs.Heze in
+example : (@Const.slotsPerHistoricalRootDiv mainnet).n = 8192 := by native_decide
+
+open EthCLSpecs.Heze in
+example : (@Const.slotsPerHistoricalRootC minimal).toPlainNat = 64 := by native_decide
+
+open EthCLSpecs.Heze in
+example : (@Const.slotsPerHistoricalRootC mainnet).toPlainNat = 8192 := by native_decide
+
+open EthCLSpecs.Heze in
+example : 0 < (@Const.slotsPerHistoricalRootDiv mainnet).n :=
+  (@Const.slotsPerHistoricalRootDiv mainnet).positive
+
+open EthCLSpecs.Heze in
 example : (@Const.churnLimitQuotientC mainnetConfig).toPlainNat = 65536 := by
   native_decide
 
@@ -159,12 +215,13 @@ example : @Const.effectiveBalanceIncrement mainnet
 
 /-! ### The child override
 
-A synthetic fourth fork overrides `slotsPerEpoch` and nothing else. Its
-`forkpresetvalues` names only the override; the merged value set re-runs Fulu's
-`slotsPerEpochPos := by decide` against the child's number, so the proof is
+A synthetic fourth fork overrides `slotsPerEpoch` and `slotsPerHistoricalRoot`
+and nothing else. Its `forkpresetvalues` names only the overrides; the merged
+value set re-runs Fulu's `slotsPerEpochPos := by decide` (and the
+`slotsPerHistoricalRoot` twins) against the child's numbers, so each proof is
 fresh with nothing restated (`FRAMEWORK_ARCHITECTURE.md` §4): proof fields
-merge like any other field and re-prove against the child's number. The
-replayed views then read the child's number through the child's own `Preset`.
+merge like any other field and re-prove against the child's numbers. The
+replayed views then read the child's numbers through the child's own `Preset`.
 
 The fork sits in its own namespace directly under `EthCLSpecs`, the depth the
 `fork … from` form resolves the parent at. A real fork body would also replay
@@ -180,8 +237,9 @@ fork ConstViewChild from Heze
 -- The type aliases the merged tier fields' types name. Each real fork declares
 -- its own set in its `Types.lean`; a replayed tier class re-emits the raw field
 -- types, so the child's namespace needs these four before `forkpreset`.
-forkabbrev Slot := UInt64
-forkabbrev Epoch := UInt64
+-- `Slot` and `Epoch` take the post-migration checked kind the real forks declare.
+forkabbrev Slot := CLUint64
+forkabbrev Epoch := CLUint64
 forkabbrev Gwei := CLUint64
 forkabbrev Version := Vector UInt8 4
 
@@ -192,6 +250,7 @@ forkconfig where
 
 forkpresetvalues minimal where
   slotsPerEpoch := 64
+  slotsPerHistoricalRoot := 128
 
 forkconfigvalues minimalConfig where
 
@@ -199,7 +258,8 @@ namespace Const
 section
 variable [Preset] [Config]
 
-inherit slotsPerEpochC slotsPerEpochDiv churnLimitQuotientC
+inherit slotsPerEpochC slotsPerEpochDiv slotsPerHistoricalRootC slotsPerHistoricalRootDiv
+inherit churnLimitQuotientC
 
 end
 end Const
@@ -216,13 +276,23 @@ example : (@Const.slotsPerEpochDiv minimal).n = 64 := by native_decide
 open EthCLSpecs.ConstViewChild in
 example : (@Const.slotsPerEpochC minimal).toPlainNat = 64 := by native_decide
 
-/-! The tier's own proof field re-proved at the child's number: no `decide`
+open EthCLSpecs.ConstViewChild in
+example : (@Const.slotsPerHistoricalRootDiv minimal).n = 128 := by native_decide
+
+open EthCLSpecs.ConstViewChild in
+example : (@Const.slotsPerHistoricalRootC minimal).toPlainNat = 128 := by native_decide
+
+/-! The tier's own proof fields re-proved at the child's numbers: no `decide`
 restated at the view, the value set, or this test (`FRAMEWORK_ARCHITECTURE.md`
 §4). -/
 
 open EthCLSpecs.ConstViewChild in
 example : 0 < (@Const.slotsPerEpochDiv minimal).n :=
   (@Const.slotsPerEpochDiv minimal).positive
+
+open EthCLSpecs.ConstViewChild in
+example : 0 < (@Const.slotsPerHistoricalRootDiv minimal).n :=
+  (@Const.slotsPerHistoricalRootDiv minimal).positive
 
 /-! The config tier was not overridden, and the inherited config view still
 reduces through the child's own `Config` class. -/

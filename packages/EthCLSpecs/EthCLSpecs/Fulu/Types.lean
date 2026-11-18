@@ -17,10 +17,12 @@ open EthCLLib.Spec
 
 namespace EthCLSpecs.Fulu
 
-/-- A slot number. -/
-forkabbrev Slot := UInt64
-/-- An epoch number. -/
-forkabbrev Epoch := UInt64
+/-- A slot number. SSZ `uint64`, the pyspec's checked `Uint64` subclass, so
+the checked operator surface applies (`SPEC_ARITHMETIC.md` §4.1). -/
+forkabbrev Slot := CLUint64
+/-- An epoch number. SSZ `uint64`, the pyspec's checked `Uint64` subclass, so
+the checked operator surface applies (`SPEC_ARITHMETIC.md` §4.1). -/
+forkabbrev Epoch := CLUint64
 /-- An index into the validator registry. -/
 forkabbrev ValidatorIndex := UInt64
 /-- An index into the builder registry (Gloas/EIP-7732). SSZ `uint64`. -/

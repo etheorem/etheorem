@@ -159,6 +159,82 @@ theorem mixBinDiv_eq_ok (op : String) (f : Int → Int → Int) (a b : Int) (r :
     · rintro ⟨_, h1, h2, h3⟩
       exact ⟨h1, h2, h3⟩
 
+/-! ## A checked value and a plain `Nat`, as a decision
+
+The pyspec's `slot + 1` and `slot - 1` take the mixed route with a plain `Nat`
+right operand. These two laws state that route as a `dite` on the plain range
+test, with the exact value and the exact fault in its two branches. A `.run`
+equation that states the operation in this form keeps the range test a `Nat`
+comparison. The kernel then never reduces the `Int` range test of `mixBin` on
+an open operand; that reduction unfolds `Nat.sub` against `2^64` and exhausts
+the kernel's recursion depth. -/
+
+/-- The mixed `a + n`: the plain sum when it stays below `2^64`, and the range
+fault with the operands otherwise. -/
+theorem hadd_un_eq (a : CLUint64) (n : Nat) :
+    (a + n : Checked CLUint64) =
+      if h : a.toPlainNat + n < UInt64.size then .ok (CLUint64.ofNatLT _ h)
+      else .error (ArithFault.range "+" 64 a.asInt n) := by
+  -- The instance is `mixAdd`, private to `Spec/CLUint.lean`; unfolding the
+  -- instance projection exposes it, and `rfl` unfolds it to `mixBin`.
+  have hroute : (a + n : Checked CLUint64) = CLUint64.mixBin "+" (· + ·) a.asInt n := by
+    unfold HAdd.hAdd CLUint64.instHAddNatChecked_1
+    dsimp only
+    rfl
+  have hsz : UInt64.size = 18446744073709551616 := rfl
+  have hai : a.asInt = (a.toPlainNat : Int) := rfl
+  rw [hroute]
+  by_cases h : a.toPlainNat + n < UInt64.size
+  · rw [dite_eq_left h]
+    rw [hsz] at h
+    refine (mixBin_eq_ok _ _ _ _ _).mpr ⟨?_, ?_, ?_⟩
+    · rw [hai]
+      omega
+    · rw [hai, hsz]
+      omega
+    · rw [CLUint64.ofNatLT_toPlainNat, hai]
+      omega
+  · rw [dite_eq_right h]
+    unfold CLUint64.mixBin
+    rw [dite_eq_right]
+    rw [hai]
+    rw [hsz] at h
+    dsimp only
+    omega
+
+/-- The mixed `a - n`: the plain difference when `n ≤ a`, and the range fault
+with the operands otherwise. The difference is at most `a`, so it fits. -/
+theorem hsub_un_eq (a : CLUint64) (n : Nat) :
+    (a - n : Checked CLUint64) =
+      if n ≤ a.toPlainNat then
+        .ok (CLUint64.ofNatLT (a.toPlainNat - n)
+          (Nat.lt_of_le_of_lt (Nat.sub_le _ _) (UInt64.toNat_lt_size a.val)))
+      else .error (ArithFault.range "-" 64 a.asInt n) := by
+  -- The instance is `mixSub`, private to `Spec/CLUint.lean`, as in `hadd_un_eq`.
+  have hroute : (a - n : Checked CLUint64) = CLUint64.mixBin "-" (· - ·) a.asInt n := by
+    unfold HSub.hSub CLUint64.instHSubNatChecked_1
+    dsimp only
+    rfl
+  have hsz : UInt64.size = 18446744073709551616 := rfl
+  have hai : a.asInt = (a.toPlainNat : Int) := rfl
+  have hlt : a.toPlainNat < 18446744073709551616 := UInt64.toNat_lt_size a.val
+  rw [hroute]
+  by_cases h : n ≤ a.toPlainNat
+  · rw [ite_eq_left h]
+    refine (mixBin_eq_ok _ _ _ _ _).mpr ⟨?_, ?_, ?_⟩
+    · rw [hai]
+      omega
+    · rw [hai, hsz]
+      omega
+    · rw [CLUint64.ofNatLT_toPlainNat, hai]
+      omega
+  · rw [ite_eq_right h]
+    unfold CLUint64.mixBin
+    rw [dite_eq_right]
+    rw [hai]
+    dsimp only
+    omega
+
 /-! ## The five operators on two checked values
 
 Each primitive gets a fused law: the result equals `.ok r` exactly when the

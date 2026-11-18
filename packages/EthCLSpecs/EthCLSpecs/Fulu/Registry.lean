@@ -24,11 +24,23 @@ state_section
 forkdef getActiveValidatorIndices (state : State) (epoch : Epoch) : Array ValidatorIndex :=
   indicesWhere (sszGet state validators).toArray (fun v _ => isActiveValidator v epoch)
 
-/-- `get_eligible_validator_indices` (for rewards / inactivity). -/
-forkdef getEligibleValidatorIndices (state : State) : Array ValidatorIndex :=
+/-- `get_eligible_validator_indices` (for rewards / inactivity,
+`fulu/mainnet.py:1799-1806`). The comprehension's `previous_epoch + 1` is the pyspec's
+checked `Epoch` add, and Python's `or` / `and` short-circuit, so the sum forms only for a
+slashed validator the previous epoch left inactive; the fold binds it inside that branch
+(`SPEC_ARITHMETIC.md` §4.3) and the result carries the fault. -/
+forkdef getEligibleValidatorIndices (state : State) : Checked (Array ValidatorIndex) := do
   let prevEpoch := previousEpochOf state
-  indicesWhere (sszGet state validators).toArray
-    (fun validator _ => isActiveValidator validator prevEpoch || (validator.slashed && prevEpoch + 1 < validator.withdrawableEpoch))
+  let validators := (sszGet state validators).toArray
+  (List.range validators.size).foldlM (init := #[]) fun out i => do
+    let validator := validators[i]!
+    if isActiveValidator validator prevEpoch then
+      pure (out.push (UInt64.ofNat i))
+    else if validator.slashed then
+      let nextEpoch ← prevEpoch + 1
+      if nextEpoch < validator.withdrawableEpoch then pure (out.push (UInt64.ofNat i))
+      else pure out
+    else pure out
 
 /-- The registry index of the first validator whose `pubkey` equals `pk`, or `none` when no
 validator carries that pubkey. The single home for the

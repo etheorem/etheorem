@@ -1,7 +1,10 @@
 # Proof-coverage baseline. Rewrite with `just proof-coverage-update`.
 # Every line is a claim `just proof-coverage-check` enforces exactly.
+box_generic EthCLSpecs.Proofs.Gloas.keepsUncached_attLoopCurr
+box_generic EthCLSpecs.Proofs.Gloas.keepsUncached_attLoopPrev
 box_generic EthCLSpecs.Proofs.Gloas.run_liftChecked_error
 box_generic EthCLSpecs.Proofs.Gloas.run_liftChecked_ok
+tier1 EthCLSpecs.Gloas.builderPaymentIndex
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot
 tier1 EthCLSpecs.Gloas.computeExitEpochAndUpdateChurn
 tier1 EthCLSpecs.Gloas.computePtc
@@ -9,6 +12,7 @@ tier1 EthCLSpecs.Gloas.computeStartSlotAtEpoch
 tier1 EthCLSpecs.Gloas.currentEpochOf
 tier1 EthCLSpecs.Gloas.decreaseBalance
 tier1 EthCLSpecs.Gloas.getAttestationParticipationFlagIndices
+tier1 EthCLSpecs.Gloas.getBaseReward
 tier1 EthCLSpecs.Gloas.getBlockRoot
 tier1 EthCLSpecs.Gloas.getBlockRootAtSlot
 tier1 EthCLSpecs.Gloas.getCurrentSlot

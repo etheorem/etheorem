@@ -1,11 +1,15 @@
 import EthCLSpecs.Tests.AuthoringShapes
 import EthCLSpecs.Tests.BoxBinderPins
+import EthCLSpecs.Tests.CommitteeCoverageOrderPins
 import EthCLSpecs.Tests.ConstantViews
+import EthCLSpecs.Tests.EpochMigrationPins
 import EthCLSpecs.Tests.FuluForkChoicePins
 import EthCLSpecs.Tests.GloasCommitteesPins
 import EthCLSpecs.Tests.GloasForkChoicePins
+import EthCLSpecs.Tests.GloasSlotMigrationPins
 import EthCLSpecs.Tests.HezeCommitteesPins
 import EthCLSpecs.Tests.HezeForkChoicePins
+import EthCLSpecs.Tests.SlotMigrationPins
 import EthCLSpecs.Tests.WalkingSkeleton
 
 /-!

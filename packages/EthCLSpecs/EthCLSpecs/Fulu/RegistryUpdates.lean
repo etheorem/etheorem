@@ -81,22 +81,17 @@ spread forward by the ceiling-division `(balanceToProcess - 1) / perEpoch + 1`, 
 `-1 … +1` rounding the quotient up. Every step is the pyspec's checked arithmetic, so the
 core returns a `Checked` pair and each branch binds its own arithmetic.
 
-TEMPORARY CROSSING (removed in Stage 5): `earliest` arrives as the still-raw
-`Epoch`. The checked addition forms on the value through the wire route, and
-the in-range result adapts back to the raw `Epoch` with the underlying-value
-projection. Stage 5 moves `Epoch` onto the checked surface and deletes the
-crossing. -/
+`earliest` and `additional` are both on the checked surface now: the pyspec's
+`earliest_exit_epoch += Epoch(additional_epochs)` cast cannot fault (same width),
+so the sum is the checked `Epoch` add itself. -/
 forkdef reserveChurn (balance consume perEpoch : Gwei) (earliest : Epoch) :
     Checked (Epoch × Gwei) := do
   if balance > consume then
     let balanceToProcess ← balance - consume
     let additional ← (balanceToProcess - 1) / perEpoch + 1
-    -- TEMPORARY CROSSING (removed in Stage 5): the pyspec's
-    -- `earliest_exit_epoch += Epoch(additional_epochs)`; `earliest` is the raw
-    -- `Epoch` until Stage 5.
-    let sum ← CLUint64.trustedOfUInt64 earliest + additional
+    let sum ← earliest + additional
     let consumed ← consume + additional * perEpoch
-    return (UInt64.ofNat sum.toPlainNat, consumed)
+    return (sum, consumed)
   else return (earliest, consume)
 
 /-- `compute_exit_epoch_and_update_churn` (`fulu/mainnet.py:6026-6049`): reserve
@@ -106,7 +101,8 @@ chains, so each binds where the pyspec assigns it. -/
 forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Epoch := do
   let state ← get
   let currentEpoch := computeEpochAtSlot (sszGet state slot)
-  let earliest := umax (sszGet state earliestExitEpoch) (computeActivationExitEpoch currentEpoch)
+  let exitEpoch ← computeActivationExitEpoch currentEpoch
+  let earliest := max (sszGet state earliestExitEpoch) exitEpoch
   let perEpochChurn ← getActivationExitChurnLimit state
   let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
 
@@ -121,8 +117,8 @@ forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Ep
 `compute_exit_epoch_and_update_churn`, reserving consolidation churn. -/
 forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : StateTransition Epoch := do
   let state ← get
-  let earliest := umax (sszGet state earliestConsolidationEpoch)
-    (computeActivationExitEpoch (currentEpochOf state))
+  let exitEpoch ← computeActivationExitEpoch (currentEpochOf state)
+  let earliest := max (sszGet state earliestConsolidationEpoch) exitEpoch
   let perEpoch ← getConsolidationChurnLimit state
   let consume := if (sszGet state earliestConsolidationEpoch) < earliest then perEpoch
                  else (sszGet state consolidationBalanceToConsume)
@@ -136,20 +132,19 @@ forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : 
 
 /-! ## Validator-lifecycle mutators -/
 
-/-- `initiate_validator_exit`. The `withdrawable_epoch = exit_epoch +
-MIN_VALIDATOR_WITHDRAWABILITY_DELAY` sum is a bare `uint64` addition in the pyspec, so an
-overflow raises `ValueError` there. `checkedAdd` models the addition and reports the
-`.arithmetic` uncaught fault. `test_invalid_large_withdrawable_epoch` catches that raise in its
-own `except ValueError` and scores it as the expected outcome
-(`RunnerCaughtSet.valueError`). -/
+/-- `initiate_validator_exit` (`fulu/mainnet.py:1612-1631`). The
+`withdrawable_epoch = exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY` sum is the pyspec's
+checked `Epoch` addition, so it binds (`SPEC_ARITHMETIC.md` §4.3) and raises past `2^64 - 1`;
+`test_invalid_large_withdrawable_epoch` catches that raise in its own `except ValueError`
+and scores it as the expected outcome (`RunnerCaughtSet.valueError`). The store is the
+checked value's, so the sum lands in the branch that forms it. -/
 forkdef initiateValidatorExit (i : ValidatorIndex) : StateTransition Unit := do
   let state ← get
   let validator ← sszGetIdx (sszGet state validators) i.toNat
   if !hasNotInitiatedExit validator then pure ()
   else
     let exitEpoch ← computeExitEpochAndUpdateChurn validator.effectiveBalance
-    let withdrawableEpoch ← checkedAdd exitEpoch Const.minValidatorWithdrawabilityDelay
-      "initiate_validator_exit: exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY"
+    let withdrawableEpoch ← exitEpoch + Const.minValidatorWithdrawabilityDelay
     modifyState fun state => modValidator state i fun validator =>
       { validator with exitEpoch := exitEpoch, withdrawableEpoch := withdrawableEpoch }
 
@@ -159,24 +154,28 @@ The `slashings` ring store and the penalty / reward chain are the checked
 (`fulu/mainnet.py:1644`), the penalty divides by
 `MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA`, and the whistleblower reward splits by
 `PROPOSER_WEIGHT // WEIGHT_DENOMINATOR`, each step a checked `Gwei` operation
-bound where the pyspec forms it. The `withdrawableEpoch` and `epoch` parts run
-in the raw `Epoch` until Stage 5. -/
+bound where the pyspec forms it. The withdrawability extension is the pyspec's
+`max(validator.withdrawable_epoch, epoch + EPOCHS_PER_SLASHINGS_VECTOR)` checked `Epoch`
+add, so it binds before the store; the ring index is the same checked modulo feeding the
+underlying-value projection the read and write cite (`SPEC_ARITHMETIC.md` §4.5). -/
 forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
   let epoch := computeEpochAtSlot (sszGet (← get) slot)
   initiateValidatorExit i
   let state ← get
   let validator ← sszGetIdx (sszGet state validators) i.toNat
-  let slashIdx := umodIdx epoch Const.epochsPerSlashingsVector
+  let slashIdx ← epoch % Const.epochsPerSlashingsVectorC
 
   -- Mark slashed, extend withdrawability, record the effective balance in the
   -- slashings ring buffer, and apply the slashing penalty.
+  let extended ← epoch + Const.epochsPerSlashingsVectorC
+  let withdrawable := max validator.withdrawableEpoch extended
   let state := modValidator state i fun validator =>
     { validator with
         slashed := true,
-        withdrawableEpoch := umax validator.withdrawableEpoch (epoch + UInt64.ofNat Const.epochsPerSlashingsVector) }
-  let ringTotal ← vget (sszGet state slashings) slashIdx + validator.effectiveBalance
+        withdrawableEpoch := withdrawable }
+  let ringTotal ← vget (sszGet state slashings) slashIdx.toPlainNat + validator.effectiveBalance
   let state := sszUpdate state with
-    slashings[slashIdx]! := ringTotal
+    slashings[slashIdx.toPlainNat]! := ringTotal
   let slashingPenalty ← validator.effectiveBalance / Const.minSlashingPenaltyQuotientElectra
   let state ← decreaseBalance state i slashingPenalty
   set state

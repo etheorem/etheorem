@@ -145,8 +145,8 @@ forkconfig where
   churnLimitQuotient : UInt64
   minPerEpochChurnLimitElectra : Gwei
   maxPerEpochActivationExitChurnLimit : Gwei
-  minValidatorWithdrawabilityDelay : UInt64
-  shardCommitteePeriod : UInt64
+  minValidatorWithdrawabilityDelay : Epoch
+  shardCommitteePeriod : Epoch
   genesisForkVersion : Version
   /-- The fork schedule, `<FORK>_FORK_VERSION` / `<FORK>_FORK_EPOCH` for every fork
   through Fulu (the accumulated base). The epochs are config values a test can override:
@@ -230,6 +230,11 @@ constants stay checked; §4.5, proof-carrying construction). The range premise i
 the preset's own `slotsPerEpochLt` field, so the view adds no `decide`. -/
 forkabbrev slotsPerEpochC : CLUint64 :=
   CLUint64.ofNatLT Preset.slotsPerEpoch Preset.slotsPerEpochLt
+/-- The checked view of `slotsPerHistoricalRoot`, the pinned `Slot(64)` that
+`get_block_root_at_slot` adds to a slot. Same construction as `slotsPerEpochC`: the
+range premise is the preset's own `slotsPerHistoricalRootLt` field. -/
+forkabbrev slotsPerHistoricalRootC : CLUint64 :=
+  CLUint64.ofNatLT Preset.slotsPerHistoricalRoot Preset.slotsPerHistoricalRootLt
 /-- The proved-total divisor view of `slotsPerEpoch`
 (`SPEC_ARITHMETIC.md` §4.2, "Total operations with a proof"). Division and
 modulo of a bound `CLUint64` dividend by this view return `CLUint64` directly.
@@ -237,6 +242,32 @@ The positivity premise is the preset's own `slotsPerEpochPos` field, so the
 view adds no `decide` and a child override re-proves through the tier. -/
 forkabbrev slotsPerEpochDiv : PositiveDivisor :=
   ⟨Preset.slotsPerEpoch, Preset.slotsPerEpochPos⟩
+/-- The proved-total divisor view of `slotsPerHistoricalRoot`, the ring-buffer period
+`process_slot` takes `state.slot % SLOTS_PER_HISTORICAL_ROOT` by. Same construction as
+`slotsPerEpochDiv`: the positivity premise is the preset's own
+`slotsPerHistoricalRootPos` field (`SPEC_ARITHMETIC.md` §4.2, "Total operations with a
+proof"), so the view adds no `decide` and a child override re-proves through the tier. -/
+forkabbrev slotsPerHistoricalRootDiv : PositiveDivisor :=
+  ⟨Preset.slotsPerHistoricalRoot, Preset.slotsPerHistoricalRootPos⟩
+
+/-- The checked views of the preset epoch periods, the constants the checked
+`Epoch` formulas add, subtract, and take modulo (`SPEC_ARITHMETIC.md` §4.2,
+checked constants stay checked). Each stores nothing: the body projects the
+preset's own field, so a child override re-proves through the same fields, and
+the type-level `Nat` sizes above stay structural for the type-level caps.
+`epochsPerHistoricalVectorC` carries the preset's own `< 2 ^ 64` premise; the
+other three periods have no preset proof field, so their views ride the wire iso
+(§4.5, `trustedOfUInt64`): every `UInt64` is in range, so the wrap cannot fault.
+These views are permanent, not crossings: the `Nat` fields stay the structural
+sizes the type-level caps read, and the `…C` twin is their checked face. -/
+forkabbrev epochsPerHistoricalVectorC : CLUint64 :=
+  CLUint64.ofNatLT Preset.epochsPerHistoricalVector Preset.epochsPerHistoricalVectorLt
+forkabbrev epochsPerSlashingsVectorC : CLUint64 :=
+  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.epochsPerSlashingsVector)
+forkabbrev epochsPerEth1VotingPeriodC : CLUint64 :=
+  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.epochsPerEth1VotingPeriod)
+forkabbrev epochsPerSyncCommitteePeriodC : CLUint64 :=
+  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.epochsPerSyncCommitteePeriod)
 
 -- Sentinels, registry and history caps.
 forkabbrev farFutureEpoch : Epoch := 0xffffffffffffffff
@@ -351,8 +382,8 @@ re-derived. -/
 forkabbrev churnLimitQuotientC : CLUint64 := CLUint64.trustedOfUInt64 Config.churnLimitQuotient
 forkabbrev minPerEpochChurnLimitElectra : Gwei := Config.minPerEpochChurnLimitElectra
 forkabbrev maxPerEpochActivationExitChurnLimit : Gwei := Config.maxPerEpochActivationExitChurnLimit
-forkabbrev minValidatorWithdrawabilityDelay : UInt64 := Config.minValidatorWithdrawabilityDelay
-forkabbrev shardCommitteePeriod : UInt64 := Config.shardCommitteePeriod
+forkabbrev minValidatorWithdrawabilityDelay : Epoch := Config.minValidatorWithdrawabilityDelay
+forkabbrev shardCommitteePeriod : Epoch := Config.shardCommitteePeriod
 forkabbrev genesisForkVersion : Version := Config.genesisForkVersion
 -- The fork schedule through Fulu (`configs/*.yaml`, one `# <Fork>` block each).
 forkabbrev altairForkVersion : Version := Config.altairForkVersion

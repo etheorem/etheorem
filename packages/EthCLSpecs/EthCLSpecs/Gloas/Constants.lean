@@ -54,7 +54,7 @@ forkconfig where
   /-- `MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS`. -/
   maxPerEpochActivationChurnLimitGloas : Gwei
   /-- `MIN_BUILDER_WITHDRAWABILITY_DELAY`. -/
-  minBuilderWithdrawabilityDelay : UInt64
+  minBuilderWithdrawabilityDelay : Epoch
   /-- `CONSOLIDATION_CHURN_LIMIT_QUOTIENT`. Electra's `get_consolidation_churn_limit`
   was a difference of two churn limits; EIP-7732 gives it its own quotient, so the
   value arrives with this fork rather than with Electra. -/
@@ -88,7 +88,7 @@ configuration slice; the checked view rides the wire iso until then, so Stage
 forkabbrev churnLimitQuotientGloasC : CLUint64 :=
   CLUint64.trustedOfUInt64 Config.churnLimitQuotientGloas
 forkabbrev maxPerEpochActivationChurnLimitGloas : Gwei := Config.maxPerEpochActivationChurnLimitGloas
-forkabbrev minBuilderWithdrawabilityDelay : UInt64 := Config.minBuilderWithdrawabilityDelay
+forkabbrev minBuilderWithdrawabilityDelay : Epoch := Config.minBuilderWithdrawabilityDelay
 forkabbrev consolidationChurnLimitQuotient : UInt64 := Config.consolidationChurnLimitQuotient
 /-- TEMPORARY CROSSING (removed in Stage 7): the config word re-types with the
 configuration slice; the checked view rides the wire iso until then. -/
@@ -151,7 +151,9 @@ inherit epochsPerHistoricalVectorLt
 -- The derived checked and proved-total views of the entries above
 -- (`SPEC_ARITHMETIC.md` §4.2, §4.5). The replay binds each view to this fork's
 -- own `Preset`, so Gloas's values use the same proof fields.
-inherit slotsPerEpochC slotsPerEpochDiv
+inherit slotsPerEpochC slotsPerEpochDiv slotsPerHistoricalRootC slotsPerHistoricalRootDiv
+inherit epochsPerHistoricalVectorC epochsPerSlashingsVectorC
+inherit epochsPerEth1VotingPeriodC epochsPerSyncCommitteePeriodC
 
 -- Sentinels, registry and history caps.
 inherit farFutureEpoch genesisSlot genesisEpoch validatorRegistryLimit

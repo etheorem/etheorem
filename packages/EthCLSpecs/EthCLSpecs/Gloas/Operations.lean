@@ -105,7 +105,7 @@ a `SLOTS_PER_EPOCH` offset added only for the current epoch. The epoch test is t
 `process_attestation` keys off `data.target.epoch`); this helper names only the offset
 arithmetic. -/
 forkdef builderPaymentIndex (slot : Slot) (current : Bool) : Nat :=
-  (if current then Const.slotsPerEpoch else 0) + umodIdx slot Const.slotsPerEpoch
+  (if current then Const.slotsPerEpoch else 0) + (slot % Const.slotsPerEpochDiv).toPlainNat
 /-- `is_builder_withdrawal_credential`. -/
 forkdef isBuilderWithdrawalCredential (wc : Bytes32) : Bool := credPrefix wc == Const.builderWithdrawalPrefix
 /-- `is_pending_validator`: among `pendingDeposits`, a deposit for `pubkey` with a
@@ -115,13 +115,22 @@ state's queue (`process_deposit_request`) or an in-progress accumulator
 forkdef isPendingValidator (pendingDeposits : Array PendingDeposit) (pubkey : BLSPubkey) : Bool :=
   pendingDeposits.any fun d =>
     d.pubkey == pubkey && isValidDepositSignature d.pubkey d.withdrawalCredentials d.amount d.signature
-/-- `initiate_builder_exit`. The EL-triggered builder exit, called by
-`process_builder_exit_request` (alpha.11 moved builder exits off `process_voluntary_exit`
-to this path). -/
+/-- `initiate_builder_exit` (`gloas/mainnet.py:7901-7907`). The EL-triggered builder exit,
+called by `process_builder_exit_request` (alpha.11 moved builder exits off
+`process_voluntary_exit` to this path). Python reads `state.builders[builder_index]`
+before the withdrawability sum, so this body reads the builder first, in the pinned
+order: the read goes through `sszGetIdx`, so an out-of-range index rejects with
+`outOfBounds` (the spec's `IndexError`) before any arithmetic runs. The
+`get_current_epoch(state) + MIN_BUILDER_WITHDRAWABILITY_DELAY` sum is the pyspec's
+checked `Epoch` addition, so it binds (`SPEC_ARITHMETIC.md` §4.3) and raises past
+`2^64 - 1` before the store records it. -/
 forkdef initiateBuilderExit (builderIndex : BuilderIndex) : StateTransition Unit := do
-  let epoch := currentEpochOf (← get)
+  let state ← get
+  let _builder ← sszGetIdx (sszGet state builders) builderIndex.toNat
+  let epoch := currentEpochOf state
+  let withdrawableEpoch ← epoch + Const.minBuilderWithdrawabilityDelay
   modifyState fun state =>
-    sszModify state builders[builderIndex.toNat]! as b => { b with withdrawableEpoch := epoch + Const.minBuilderWithdrawabilityDelay }
+    sszModify state builders[builderIndex.toNat]! as b => { b with withdrawableEpoch := withdrawableEpoch }
 /-- `get_index_for_new_builder`: a recyclable slot (withdrawable + zero balance) or the end. -/
 forkdef getIndexForNewBuilder (state : State) : BuilderIndex := Id.run do
   let bs := (sszGet state builders).toArray
@@ -210,10 +219,15 @@ forkdef initializePtcWindow (state : State) :
     if i.val < Const.slotsPerEpoch then pure emptyCommittee
     else do
       let j := i.val - Const.slotsPerEpoch
-      let epoch ← checkedAdd currentEpoch (UInt64.ofNat (j / Const.slotsPerEpoch))
-        "initialize_ptc_window: current_epoch + e"
-      let startSlot := computeStartSlotAtEpoch epoch
-      computePtc state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch))
+      -- `epoch = current_epoch + e`: the checked `Epoch` add over the plain loop
+      -- offset (`e` is `0` or `1`), bound before the entry's `compute_ptc` read
+      -- (`SPEC_ARITHMETIC.md` §4.3).
+      let epoch ← currentEpoch + (j / Const.slotsPerEpoch)
+      let startSlot ← computeStartSlotAtEpoch epoch
+      -- `start_slot + index` is the pyspec's checked `Slot` add of a plain `int`,
+      -- bound per entry.
+      let slot ← startSlot + (j % Const.slotsPerEpoch)
+      computePtc state slot
 
 /-- The state-side close of `upgrade_to_gloas` (`gloas/fork.md:227-230`): fill the post-state's
 `ptc_window` with `initialize_ptc_window(post)`, then onboard the builders from the pending
@@ -256,16 +270,17 @@ forkdef processBuilderDepositRequest (request : BuilderDepositRequest) : StateTr
         (addressOfCred request.withdrawalCredentials) request.amount (sszGet state slot)
   | some builderIndex =>
     let epoch := currentEpochOf state
-    -- `builder.balance += request.amount`: the checked `Gwei` add, bound here; the
-    -- reset write and the store land together, so a raise discards both.
-    let newBalance ← (sszGet state builders[builderIndex]!).balance + request.amount
+    let b := sszGet state builders[builderIndex]!
+    -- "If exited and swept, reset the withdrawable epoch": the reset sum is the checked
+    -- `Epoch` add, formed only in the reset branch and bound there (`SPEC_ARITHMETIC.md`
+    -- §4.3); the `balance +=` after it is the checked `Gwei` add, in Python's order.
+    let withdrawable ← if b.withdrawableEpoch != Const.farFutureEpoch && b.balance == 0 then
+      epoch + Const.minBuilderWithdrawabilityDelay
+    else pure b.withdrawableEpoch
+    let newBalance ← b.balance + request.amount
     modifyState fun state =>
       sszModify state builders[builderIndex]! as b =>
-        let reset := b.withdrawableEpoch != Const.farFutureEpoch && b.balance == 0
-        { b with
-          balance := newBalance,
-          withdrawableEpoch :=
-            if reset then epoch + Const.minBuilderWithdrawabilityDelay else b.withdrawableEpoch }
+        { b with balance := newBalance, withdrawableEpoch := withdrawable }
 
 /-- `process_builder_exit_request` (EIP-8282): an EL-triggered builder exit. A no-op
 unless the pubkey names an active builder whose registered execution address matches the
@@ -291,13 +306,15 @@ forkdef processBuilderExitRequest (request : BuilderExitRequest) : StateTransiti
 
 /-- `is_attestation_same_slot`: the attestation votes for the block proposed at its
 own slot (head matches this slot's block root but differs from the previous slot's).
-The `slot == 0` guard avoids the `slot - 1` `UInt64` underflow. -/
+The `slot == 0` guard avoids the `slot - 1` underflow, the pyspec's checked subtraction,
+so the previous slot binds in the branch Python forms it. -/
 forkdef isAttestationSameSlot (state : State) (data : AttestationData) : StateTransition Bool := do
   if data.slot == 0 then pure true
   else
     let blockroot := data.beaconBlockRoot
     let slotRoot ← getBlockRootAtSlot state data.slot
-    let prevRoot ← getBlockRootAtSlot state (data.slot - 1)
+    let prevSlot ← data.slot - 1
+    let prevRoot ← getBlockRootAtSlot state prevSlot
     pure (blockroot == slotRoot && blockroot != prevRoot)
 
 /-- `get_attestation_participation_flag_indices` (Gloas, EIP-7732,
@@ -310,28 +327,42 @@ v1.7.0-beta.4 adds the `parent_slot` parameter, the slot of the parent of the bl
 processed, and reads the payload bit there rather than at `data.slot`. The timely head flag
 needs both the minimum inclusion delay and a head root that matches the block root at the
 attestation slot, so only an attestation to the parent block can earn it, and the parent's
-payload availability is recorded at `parent_slot` even when `data.slot` is a skipped slot. -/
+payload availability is recorded at `parent_slot` even when `data.slot` is a skipped slot.
+
+The pinned body (`gloas/minimal.py:5123-5142`) performs every read before
+`assert is_matching_source`: the target root, the same-slot check with its
+`assert data.index == 0`, the payload bit, and the head root. Near the maximum slot the
+target-root read raises the uncaught range fault (`slot + SLOTS_PER_HISTORICAL_ROOT`
+overflows). So the source check comes last, and a mismatched source cannot turn that fault
+into the caught assert (`SPEC_ARITHMETIC.md` §1). -/
 forkdef getAttestationParticipationFlagIndices (state : State) (data : AttestationData)
-    (inclusionDelay : UInt64) (parentSlot : Slot) : StateTransition (Option (Array Nat)) := do
+    (inclusionDelay : Slot) (parentSlot : Slot) : StateTransition (Option (Array Nat)) := do
   let justified := if data.target.epoch == currentEpochOf state then sszGet state currentJustifiedCheckpoint
                    else sszGet state previousJustifiedCheckpoint
   let isMatchingSource := data.source.epoch == justified.epoch && data.source.root == justified.root
-  if !isMatchingSource then return none
 
   let targetRoot ← getBlockRoot state data.target.epoch
   let isMatchingTarget := data.target.root == targetRoot
   let sameSlot ← isAttestationSameSlot state data
   if sameSlot && data.index != 0 then return none
+  -- The payload-availability bit sits at `parent_slot % SLOTS_PER_HISTORICAL_ROOT`: the
+  -- checked slot reduces by the proved-total divisor view and narrows to the structural
+  -- bit index (`SPEC_ARITHMETIC.md` §4.2, §4.5).
   let payloadMatches : Bool :=
     if sameSlot then true
     else
-      let bit := bitGet (sszGet state executionPayloadAvailability) (parentSlot.toNat % Const.slotsPerHistoricalRoot)
+      let bit := bitGet (sszGet state executionPayloadAvailability)
+        (parentSlot % Const.slotsPerHistoricalRootDiv).toPlainNat
       data.index == (if bit then (1 : UInt64) else 0)
   let headRoot ← getBlockRootAtSlot state data.slot
   let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == headRoot && payloadMatches
+  if !isMatchingSource then return none
 
   let mut flags : Array Nat := #[]
-  if inclusionDelay ≤ UInt64.ofNat (isqrt Const.slotsPerEpoch) then flags := flags.push Const.timelySourceFlagIndex
+  -- The comparisons never raise in Python; the `integer_squareroot` bound compares the
+  -- checked value's `toPlainNat` projection (§4.5) while `MIN_ATTESTATION_INCLUSION_DELAY`
+  -- meets it in the checked kind.
+  if inclusionDelay.toPlainNat ≤ isqrt Const.slotsPerEpoch then flags := flags.push Const.timelySourceFlagIndex
   if isMatchingTarget then flags := flags.push Const.timelyTargetFlagIndex
   if isMatchingHead && inclusionDelay == Const.minAttestationInclusionDelay then flags := flags.push Const.timelyHeadFlagIndex
   return some flags
@@ -353,24 +384,27 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   -- Reject on shape: target epoch, slot timing, and the payload-presence bit.
   assert (data.target.epoch == previousEpochOf state || data.target.epoch == currentEpochOf state)
   assert (data.target.epoch == computeEpochAtSlot data.slot)
-  -- `data.slot` is wire-controlled and `MIN_ATTESTATION_INCLUSION_DELAY` is 1, so the bare `+`
-  -- wraps `0xFFFF…FFFF + 1` to `0` and `0 ≤ state.slot` bypasses the guard for every state: a
-  -- false ACCEPT, the state-transition twin of `on_attestation`'s. pyspec's checked `uint64` add
-  -- raises `ValueError`, which `process_attestation` does not catch, so the driver scores it
+  -- `data.slot` is wire-controlled and `MIN_ATTESTATION_INCLUSION_DELAY` is 1, so the checked
+  -- add raises past the maximum where a bare `+` would wrap `0xFFFF…FFFF + 1` to `0` and
+  -- `0 ≤ state.slot` would bypass the guard for every state: a false ACCEPT, the
+  -- state-transition twin of `on_attestation`'s. pyspec's checked `uint64` add raises
+  -- `ValueError`, which `process_attestation` does not catch, so the driver scores it
   -- `uncaughtFault`. Sequenced after the two epoch asserts above, matching Python's order.
-  let inclusionSlot ← checkedAdd data.slot Const.minAttestationInclusionDelay
-    "process_attestation: data.slot + MIN_ATTESTATION_INCLUSION_DELAY"
+  let inclusionSlot ← data.slot + Const.minAttestationInclusionDelay
   assert (inclusionSlot ≤ sszGet state slot)
   assert (data.index < 2)
 
   -- Every committee index is valid and non-empty; the bitfield covers them all.
   let count := getCommitteeCountPerSlot state data.target.epoch
-  let (ok, offset) := verifyCommitteeCoverage state data att count
+  let (ok, offset) ← liftErr (verifyCommitteeCoverage state data att count)
   assert ok
   assert (att.aggregationBits.size == offset)
 
-  -- Resolve the participation flags, then validate the aggregate signature.
-  let flagIndices ← match ← getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) parentSlot with
+  -- Resolve the participation flags, then validate the aggregate signature. The
+  -- inclusion delay is the pyspec's checked `state.slot - data.slot`, bound at the
+  -- argument position Python evaluates it.
+  let inclusionDelay ← (sszGet state slot) - data.slot
+  let flagIndices ← match ← getAttestationParticipationFlagIndices state data inclusionDelay parentSlot with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
   let indexedAttestation : IndexedAttestation :=
@@ -428,16 +462,22 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
 where
   /-- Walk the committee bits: each referenced committee index is in range and
   attested by at least one bit, and the running `offset` totals their sizes (the
-  aggregation bitfield must match it exactly). Returns `(valid?, totalSize)`. -/
-  verifyCommitteeCoverage (state : State) (data : AttestationData) (att : Attestation) (count : Nat) : Bool × Nat :=
-    (getCommitteeIndices att.committeeBits).foldl
-      (fun (acc : Bool × Nat) ci => Id.run do
+  aggregation bitfield must match it exactly). Returns `(valid?, totalSize)`.
+  Python's per-index `assert` (`gloas/minimal.py:2614-2623`) aborts at the first
+  failure, so the walk stops there and no later `get_beacon_committee` fault can
+  preempt the assertion (`SPEC_ARITHMETIC.md` §1, the failure point). -/
+  verifyCommitteeCoverage (state : State) (data : AttestationData) (att : Attestation) (count : Nat) :
+      Except StateTransitionError (Bool × Nat) :=
+    (getCommitteeIndices att.committeeBits).foldlM
+      (fun (acc : Bool × Nat) ci => do
         let (okAcc, off) := acc
-        if (UInt64.ofNat ci).toNat ≥ count then return (false, off)
-        let committee := getBeaconCommittee state data.slot ci
-        let attesters := (List.range committee.size).foldl
-          (fun a i => if att.aggregationBits[off + i]! then a + 1 else a) 0
-        return (okAcc && attesters > 0, off + committee.size))
+        if !okAcc then pure acc
+        else if (UInt64.ofNat ci).toNat ≥ count then pure (false, off)
+        else do
+          let committee ← getBeaconCommittee state data.slot ci
+          let attesters := (List.range committee.size).foldl
+            (fun a i => if att.aggregationBits[off + i]! then a + 1 else a) 0
+          pure (attesters > 0, off + committee.size))
       (true, 0)
 
 /-- `get_ptc` (`gloas/beacon-chain.md:1392-1404`): read the cached PTC for `slot` from
@@ -463,20 +503,28 @@ forkdef getPtc (state : State) (slot : Slot) :
   let epoch := computeEpochAtSlot slot
   assert (epoch ≥ Const.gloasForkEpoch)
   let stateEpoch := currentEpochOf state
-  let spe := UInt64.ofNat Const.slotsPerEpoch
   if epoch < stateEpoch then
-    let nextEpoch ← checkedAdd epoch 1 "get_ptc: epoch + 1"
+    -- `epoch + 1 == state_epoch`: the checked `Epoch` add, bound before its assert
+    -- (`SPEC_ARITHMETIC.md` §4.3).
+    let nextEpoch ← epoch + 1
     assert (nextEpoch == stateEpoch)
-    pure (vmodGet (sszGet state ptcWindow) slot Const.slotsPerEpoch)
+    -- The window index `slot % SLOTS_PER_EPOCH` passes the checked slot's word to the
+    -- proved-total `vmodGet` route, whose bound is the mod itself (§4.5).
+    pure (vmodGet (sszGet state ptcWindow) slot.val Const.slotsPerEpoch)
   else
-    let lookaheadBound ← checkedAdd stateEpoch Const.minSeedLookahead
-      "get_ptc: state_epoch + MIN_SEED_LOOKAHEAD"
+    -- `epoch <= state_epoch + MIN_SEED_LOOKAHEAD`: the checked `Epoch` add.
+    let lookaheadBound ← stateEpoch + Const.minSeedLookahead
     assert (epoch ≤ lookaheadBound)
-    let offset ← checkedSub epoch stateEpoch "get_ptc: epoch - state_epoch"
-    let windowed ← checkedAdd offset 1 "get_ptc: (epoch - state_epoch) + 1"
-    let scaled ← checkedMul windowed spe "get_ptc: (epoch - state_epoch + 1) * SLOTS_PER_EPOCH"
-    let idx ← checkedAdd scaled (slot % spe) "get_ptc: … + slot % SLOTS_PER_EPOCH"
-    pure (vget (sszGet state ptcWindow) idx.toNat)
+    -- `Uint64(epoch - state_epoch + 1) * SLOTS_PER_EPOCH + slot % SLOTS_PER_EPOCH`: each
+    -- step binds. The `Uint64(...)` cast strips the epoch unit, so the product keeps the
+    -- `Slot` unit and the index sum is the checked `Slot` add (§3.4). The `slot %
+    -- SLOTS_PER_EPOCH` remainder takes the proved-total divisor view (§4.2).
+    let diff ← epoch - stateEpoch
+    let offset ← diff + 1
+    let scaled ← offset * Const.slotsPerEpochC
+    let slotIdx := slot % Const.slotsPerEpochDiv
+    let idx ← scaled + slotIdx
+    pure (vget (sszGet state ptcWindow) idx.toPlainNat)
 
 /-- `get_indexed_payload_attestation`: resolve the PTC bits to the (sorted) attesting
 validator set. The `aggregation_bits` index into the `PTC_SIZE`-length PTC. Throwing,
@@ -514,8 +562,9 @@ forkdef processPayloadAttestation (pa : PayloadAttestation) : StateTransition Un
   assert (data.beaconBlockRoot == (sszGet state latestBlockHeader).parentRoot)
   -- Only satisfiable by wrap when `state.slot == 0`, which block processing cannot reach — but
   -- it is the sole path by which `get_ptc`'s asserts could ever be reached, so it is
-  -- checked rather than argued about. pyspec's `data.slot + 1` is a checked `uint64` add.
-  let attestedSlot ← checkedAdd data.slot 1 "process_payload_attestation: data.slot + 1"
+  -- checked rather than argued about. pyspec's `data.slot + 1` is a checked `uint64` add,
+  -- bound here.
+  let attestedSlot ← data.slot + 1
   assert (attestedSlot == sszGet state slot)
   -- The bind stays after the slot assert: that assert is what bounds `get_ptc`'s index, and the
   -- spec's order is `beacon_block_root`, then `data.slot + 1 == state.slot`, then the indexed
@@ -619,7 +668,10 @@ forkdef processExecutionPayloadBid (signedBid : SignedExecutionPayloadBid) : Sta
   assert (bid.parentBlockHash == sszGet state latestBlockHash)
   -- [New at v1.7.0-beta.4] the bid's block hash must differ from its parent's.
   assert (bid.blockHash != bid.parentBlockHash)
-  let parentBlockRoot ← getBlockRootAtSlot state ((sszGet state slot) - 1)
+  -- `get_block_root_at_slot(state, state.slot - 1)`: the checked subtraction binds at the
+  -- argument position Python evaluates it.
+  let prevSlot ← (sszGet state slot) - 1
+  let parentBlockRoot ← getBlockRootAtSlot state prevSlot
   assert (bid.parentBlockRoot == parentBlockRoot)
   let randaoMix ← getRandaoMix (currentEpochOf state)
   assert (bid.prevRandao == randaoMix)
@@ -670,8 +722,12 @@ forkdef applyParentExecutionPayload (requests : ExecutionRequests) : StateTransi
   for bd in requests.builderDeposits do processBuilderDepositRequest bd
   for be in requests.builderExits do processBuilderExitRequest be
 
+  -- The availability bit sits at `parent_slot % SLOTS_PER_HISTORICAL_ROOT`: the checked
+  -- slot reduces by the proved-total divisor view and narrows to the structural bit index
+  -- (`SPEC_ARITHMETIC.md` §4.2, §4.5).
   modifyState fun state => sszUpdate state with executionPayloadAvailability :=
-    bitSet (sszGet state executionPayloadAvailability) (umodIdx parentSlot Const.slotsPerHistoricalRoot) true
+    bitSet (sszGet state executionPayloadAvailability)
+      (parentSlot % Const.slotsPerHistoricalRootDiv).toPlainNat true
   modifyState fun state => sszUpdate state with latestBlockHash := parentBid.blockHash
 
 /-- `process_parent_execution_payload` (NEW, EIP-7732): if the bid's parent hash does

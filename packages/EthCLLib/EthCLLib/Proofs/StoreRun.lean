@@ -26,14 +26,17 @@ state-transition theorem states its run on `pureState v`, the uncached box, and 
 `ForkChoiceStoreRun` abbreviation
 and the store-specific `throwArithmetic_run` / `throwZeroDivision_run` equations:
 `throwArithmetic` and `throwZeroDivision` lift a `StateTransitionError` that the store
-machine wraps as `.transition`, so the generic `run_throw` does not apply.
+machine wraps as `.transition`, so the generic `run_throw` does not apply. The two
+`liftChecked` equations give the `.run` of a lifted checked expression on the same
+grounds: a fault reaches the store machine wrapped as `.transition`.
 -/
 
 set_option autoImplicit false
 
 namespace EthCLLib.Proofs
 
-open EthCLLib.Spec (StoreTransitionError throwArithmetic throwZeroDivision)
+open EthCLLib.Spec (StoreTransitionError StateTransitionError throwArithmetic
+  throwZeroDivision Checked ArithFault)
 
 /-- Pure runner for fork-choice store proofs: `StateT` over `Except`, threading an
 arbitrary store state `σ` and rejecting with `StoreTransitionError`.
@@ -65,6 +68,21 @@ theorem ForkChoiceStoreRun.throwZeroDivision_run {σ α : Type}
         (E := StoreTransitionError)
         descr : ForkChoiceStoreRun σ α).run s
       = .error (.transition (.zeroDivision descr)) :=
+  rfl
+
+/-- `.run` of a lifted checked value at `ForkChoiceStoreRun`, the success side: the value
+passes with the store unchanged. A spec body's `let x ← a + b` elaborates to this lift
+(`SPEC_ARITHMETIC.md` §4.4). -/
+theorem ForkChoiceStoreRun.liftChecked_ok_run {σ α : Type} (a : α) (s : σ) :
+    (liftM (Except.ok a : Checked α) : ForkChoiceStoreRun σ α).run s = .ok (a, s) :=
+  rfl
+
+/-- `.run` of a lifted checked value at `ForkChoiceStoreRun`, the fault side: the fault
+becomes its typed machine reject, `StateTransitionError.ofArithFault`, wrapped as
+`.transition`. The reject keeps the fault's cause, so a range fault stays `.arithmetic`. -/
+theorem ForkChoiceStoreRun.liftChecked_error_run {σ α : Type} (e : ArithFault) (s : σ) :
+    (liftM (Except.error e : Checked α) : ForkChoiceStoreRun σ α).run s
+      = .error (.transition (StateTransitionError.ofArithFault e)) :=
   rfl
 
 end EthCLLib.Proofs

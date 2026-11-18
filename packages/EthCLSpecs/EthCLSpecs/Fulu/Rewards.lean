@@ -47,14 +47,20 @@ forkdef getBaseReward (state : State) (i : ValidatorIndex) :
   let total ← increments * base
   return total
 
-/-- `get_finality_delay`. -/
-forkdef getFinalityDelay (state : State) : Epoch :=
+/-- `get_finality_delay` (`fulu/mainnet.py:1807-1809`):
+`get_previous_epoch(state) - state.finalized_checkpoint.epoch`. The subtraction is the
+pyspec's checked `Epoch` operation and raises on underflow, so it binds and the helper
+carries the fault (`SPEC_ARITHMETIC.md` §4.3). -/
+forkdef getFinalityDelay (state : State) : Checked Epoch := do
   let prevEpoch := previousEpochOf state
   prevEpoch - (sszGet state finalizedCheckpoint).epoch
 
-/-- `is_in_inactivity_leak`. -/
-forkdef isInInactivityLeak (state : State) : Bool :=
-  getFinalityDelay state > Const.minEpochsToInactivityPenalty
+/-- `is_in_inactivity_leak` (`fulu/mainnet.py:1811-1812`): the finality delay exceeds
+`MIN_EPOCHS_TO_INACTIVITY_PENALTY`. The comparison never raises, so the fault is the
+delay's own; it binds before the comparison. -/
+forkdef isInInactivityLeak (state : State) : Checked Bool := do
+  let finalityDelay ← getFinalityDelay state
+  pure (finalityDelay > Const.minEpochsToInactivityPenalty)
 
 end
 

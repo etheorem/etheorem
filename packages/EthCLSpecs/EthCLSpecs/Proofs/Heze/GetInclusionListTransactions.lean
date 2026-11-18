@@ -48,43 +48,79 @@ section
 variable [HasherTag]
 
 /-- Complete `.run` equation of `getInclusionListCommittee`. The concatenated
-indices expression is the one in the source. An empty array throws the
-empty-committee zero-division error (a bare `ZeroDivisionError` at the pin, its own
-`ArithCause` class). A nonempty array returns `cyclicSample` of
-that array and leaves the runner state unchanged. The committee accessor does
-not read the runner state, so the equation holds for an arbitrary `σ`. -/
+indices expression is the one in the source: the monadic fold over the slot's
+committees, each `get_beacon_committee` bound as it forms (its checked seed
+walk can reject, and that fault propagates through the fold). An empty array
+throws the empty-committee zero-division error (a bare `ZeroDivisionError` at
+the pin, its own `ArithCause` class). A nonempty array returns `cyclicSample`
+of that array and leaves the runner state unchanged. The committee accessor
+does not read the runner state, so the equation holds for an arbitrary `σ`. -/
 @[characterizes EthCLSpecs.Heze.getInclusionListCommittee]
 theorem getInclusionListCommittee_run_eq :
     ∀ (state : BeaconState) (slot : Slot) (runnerStore : σ),
-      let indices :=
-        (Array.range (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))).foldl
-          (fun acc i => acc ++ getBeaconCommittee (pureState state) slot i)
-          (#[] : Array ValidatorIndex)
       (getInclusionListCommittee
           (StoreTransition := ForkChoiceStoreRun σ) (pureState state) slot).run runnerStore =
-        if indices.size == 0 then
-          .error (.transition (.zeroDivision
-            "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"))
-        else
-          .ok (cyclicSample indices inclusionListCommitteeSize, runnerStore) := by
+        match ((Array.foldlM
+            (fun acc i => do
+              let committee ← liftM (getBeaconCommittee (pureState state) slot i)
+              pure (acc ++ committee))
+            (#[] : Array ValidatorIndex)
+            (Array.range
+              (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))) :
+          ForkChoiceStoreRun σ (Array ValidatorIndex)).run runnerStore) with
+        | .error e =>
+          (Except.error e :
+            Except StoreTransitionError
+              (Vector ValidatorIndex inclusionListCommitteeSize × σ))
+        | .ok (indices, s') =>
+          if (indices.size == 0) = true then
+            (Except.error (.transition (.zeroDivision
+              "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee")) :
+              Except StoreTransitionError
+                (Vector ValidatorIndex inclusionListCommitteeSize × σ))
+          else
+            (Except.ok (cyclicSample indices inclusionListCommitteeSize, s') :
+              Except StoreTransitionError
+                (Vector ValidatorIndex inclusionListCommitteeSize × σ)) := by
   intro state slot runnerStore
   simp only [getInclusionListCommittee]
-  split
-  · rw [run_bind, ForkChoiceStoreRun.throwZeroDivision_run]
-    exact except_bind_error _ _
-  · rw [run_pure]
+  rw [run_bind]
+  cases hf : ((Array.foldlM
+      (fun acc i => do
+        let committee ← liftM (getBeaconCommittee (pureState state) slot i)
+        pure (acc ++ committee))
+      (#[] : Array ValidatorIndex)
+      (Array.range
+        (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))) :
+    ForkChoiceStoreRun σ (Array ValidatorIndex)).run runnerStore) with
+  | error e => rfl
+  | ok p =>
+    simp only [except_bind_ok]
+    split
+    · rw [run_bind, ForkChoiceStoreRun.throwZeroDivision_run]
+      exact except_bind_error _ _
+    · rw [run_pure]
 
-/-- Exact empty-committee error of `getInclusionListCommittee`. -/
+/-- Exact empty-committee error of `getInclusionListCommittee`, on the
+successful fold: when every committee read succeeds and the concatenation is
+empty, the accessor throws the zero-division fault. -/
 theorem getInclusionListCommittee_run_error_of_empty
     (state : BeaconState) (slot : Slot) (runnerStore : σ)
-    (h : ((Array.range (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))).foldl
-        (fun acc i => acc ++ getBeaconCommittee (pureState state) slot i)
-        (#[] : Array ValidatorIndex)).size = 0) :
+    (h : ((Array.foldlM
+        (fun acc i => do
+          let committee ← liftM (getBeaconCommittee (pureState state) slot i)
+          pure (acc ++ committee))
+        (#[] : Array ValidatorIndex)
+        (Array.range
+          (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot))) :
+      ForkChoiceStoreRun σ (Array ValidatorIndex)).run runnerStore)
+      = .ok (#[], runnerStore)) :
     (getInclusionListCommittee
         (StoreTransition := ForkChoiceStoreRun σ) (pureState state) slot).run runnerStore
       = .error (.transition (.zeroDivision
           "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee")) := by
-  simp only [getInclusionListCommittee_run_eq, h, beq_iff_eq, ite_true]
+  rw [getInclusionListCommittee_run_eq state slot runnerStore, h]
+  rfl
 
 end
 end CommitteeRun

@@ -30,14 +30,17 @@ forkdef zeroRoot : Root := Vector.replicate 32 0
 
 /-! ### Slot processing -/
 
-/-- `process_slot`: cache the state root, fill the latest header's empty state root,
-then cache the block root, all at `slot % SLOTS_PER_HISTORICAL_ROOT`. -/
+/-- `process_slot` (`fulu/mainnet.py:1696-1706`): cache the state root, fill the latest
+header's empty state root, then cache the block root, all at
+`slot % SLOTS_PER_HISTORICAL_ROOT`. The ring index is the checked slot reduced by the
+proved-total divisor view (`SPEC_ARITHMETIC.md` §4.2); `toPlainNat` names the structural
+vector index the result narrows to (`SPEC_ARITHMETIC.md` §4.5). -/
 forkdef processSlot : StateTransition Unit :=
   modifyState fun state => Id.run do
     let (prevStateRootBytes, state) := stateRoot state
     let mut state := state
     let prevStateRoot : Root := bytesToRoot prevStateRootBytes
-    let idx := umodIdx (sszGet state slot) Const.slotsPerHistoricalRoot
+    let idx := ((sszGet state slot) % Const.slotsPerHistoricalRootDiv).toPlainNat
     state := sszUpdate state with stateRoots[idx]! := prevStateRoot
 
     -- Fill the latest header's empty state root with the one just cached.
@@ -67,14 +70,23 @@ forkdef processEpoch : StateTransition Unit := do
   processSyncCommitteeUpdates
   processProposerLookahead
 
-/-- `process_slots`: advance to `slot`, running `process_slot` (and `process_epoch`
-at each epoch boundary) for every intervening slot. -/
+/-- `process_slots` (`fulu/mainnet.py:1686-1693`): advance to `slot`, running `process_slot`
+(and `process_epoch` at each epoch boundary) for every intervening slot. The loop fuel is
+the spec's `while` distance, the checked difference bound once and narrowed with
+`toPlainNat` (`SPEC_ARITHMETIC.md` §4.5; the assert above puts it above zero, so the
+subtraction cannot fault). `(state.slot + 1) % SLOTS_PER_EPOCH` binds the checked add where
+Python forms it, then the modulo takes the proved-total divisor view; the store's
+`state.slot = state.slot + 1` re-forms the sum as Python does. -/
 forkdef processSlots (target : Slot) : StateTransition Unit := do
   assert ((sszGet (← get) slot) < target)
-  for _ in [0:(target - (sszGet (← get) slot)).toNat] do
+  let diff ← target - (sszGet (← get) slot)
+  for _ in [0:diff.toPlainNat] do
     processSlot
-    if ((sszGet (← get) slot) + 1) % UInt64.ofNat Const.slotsPerEpoch == 0 then processEpoch
-    modifyState fun state => sszUpdate state with slot := (sszGet state slot) + 1
+    let next ← (sszGet (← get) slot) + 1
+    let atBoundary : Slot := next % Const.slotsPerEpochDiv
+    if atBoundary == 0 then processEpoch
+    let nextSlot ← (sszGet (← get) slot) + 1
+    modifyState fun state => sszUpdate state with slot := nextSlot
 
 /-! ### Block-level steps -/
 
@@ -104,12 +116,15 @@ forkdef processRandao (body : BeaconBlockBody) : StateTransition Unit := do
   let signingRoot := computeSigningRoot epoch (getDomain state Const.domainRandao epoch)
   assert (blsVerify proposer.pubkey signingRoot body.randaoReveal)
 
-  -- Mix the reveal's hash into the current epoch's mix, then write it back.
-  let mix := vmodGet (sszGet state randaoMixes) epoch Const.epochsPerHistoricalVector
+  -- Mix the reveal's hash into the current epoch's mix, then write it back. The mix slot
+  -- is `epoch % EPOCHS_PER_HISTORICAL_VECTOR`: the read rides the checked value's word
+  -- through the proved-total `vmodGet` route, whose bound is the mod itself
+  -- (`SPEC_ARITHMETIC.md` §4.5).
+  let mix := vmodGet (sszGet state randaoMixes) epoch.val Const.epochsPerHistoricalVector
   let digest := sha body.randaoReveal
   let newMix : Bytes32 := Vector.ofFn (fun i : Fin 32 => mix[i] ^^^ digest.get! i.val)
   modifyState fun state =>
-    sszUpdate state with randaoMixes[umodIdx epoch Const.epochsPerHistoricalVector]! := newMix
+    sszUpdate state with randaoMixes[umodIdx epoch.val Const.epochsPerHistoricalVector]! := newMix
 
 /-- `process_eth1_data`: append the vote and adopt it once it has a majority over
 the voting period. -/
@@ -139,7 +154,7 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let bits := agg.syncCommitteeBits
   let participantKeys : Array BLSPubkey :=
     (Bitvector.trueIndices bits).map (fun i => syncCommittee.pubkeys[i]!)
-  let previousSlot := saturatingSub (sszGet state slot) 1
+  let previousSlot := (sszGet state slot).saturatingSub 1
   let previousBlockRoot ← getBlockRootAtSlot state previousSlot
   let signingRoot := computeSigningRoot previousBlockRoot
     (getDomain state Const.domainSyncCommittee (computeEpochAtSlot previousSlot))
@@ -188,7 +203,7 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   let payload := body.executionPayload
   assert (payload.parentHash == (sszGet state latestExecutionPayloadHeader).blockHash)
   let epoch := currentEpochOf state
-  let mix := vmodGet (sszGet state randaoMixes) epoch Const.epochsPerHistoricalVector
+  let mix := vmodGet (sszGet state randaoMixes) epoch.val Const.epochsPerHistoricalVector
   assert (payload.prevRandao == mix)
   -- `compute_time_at_slot(state.genesis_time, state.slot)` (`Fulu/Time.lean`). It can fault, so
   -- it arrives through `liftErr`, which lands the `.arithmetic` fault on this machine unwrapped.
