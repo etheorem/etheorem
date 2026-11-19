@@ -47,14 +47,15 @@ deriving instance Inhabited for LatestMessage
 auto `[Preset]`) the preset / hasher tag. The boxed states reuse the transition
 layer's `State` (`= SSZ.Box HasherTag.H BeaconState`). At v1.7.0-beta.4 the clock is in
 milliseconds (`time_ms`, `genesis_time_ms`), so slot arithmetic needs no seconds-to-ms
-conversion past `get_forkchoice_store`.
+conversion past `get_forkchoice_store`. Both clock fields are `Uint64` in the pinned `Store`, so
+they are the checked kind.
 
 A node is its block root here: the phase0 `ForkChoiceNode` carries only `root`, so the
 Fulu walks pass `Root` where the spec passes a node, and a membership test on nodes is a
 membership test on roots. -/
 forkstruct Store (map : MapKind) [HasherTag] where
-  timeMs                        : UInt64
-  genesisTimeMs                 : UInt64
+  timeMs                        : CLUint64
+  genesisTimeMs                 : CLUint64
   justifiedCheckpoint           : Checkpoint
   finalizedCheckpoint           : Checkpoint
   unrealizedJustifiedCheckpoint : Checkpoint
@@ -77,15 +78,15 @@ forkdef fcZeroRoot : Root := Vector.replicate 32 0
 
 The millisecond clock helpers (`compute_slot_at_time_ms`, `compute_time_at_slot_ms`,
 `seconds_to_milliseconds`) live in `Fulu/Time.lean` with the beacon-chain clock. They return
-`Except StateTransitionError`, and `liftErr` lands their `.arithmetic` fault on this machine as
-`.transition (.arithmetic …)`. -/
+`Checked`, and the arithmetic lift lands their fault on this machine as
+`.transition (.arithmetic …)` or `.transition (.zeroDivision …)`. -/
 
 /-- `get_slots_since_genesis` (`phase0/fork-choice.md:254-255`):
 `compute_slot_at_time_ms(store.genesis_time_ms, store.time_ms)`. Throwing: the clock's
 `time_ms - genesis_time_ms` underflows when the store time predates genesis, a `uint64` fault
 the reference runner does not catch. -/
-forkdef getSlotsSinceGenesis (store : Store map) : StoreTransition Slot :=
-  liftErr (computeSlotAtTimeMs store.genesisTimeMs store.timeMs)
+forkdef getSlotsSinceGenesis (store : Store map) : StoreTransition Slot := do
+  computeSlotAtTimeMs store.genesisTimeMs store.timeMs
 /-- `get_current_slot` (`phase0/fork-choice.md:261-262`): the slots since genesis. At
 v1.7.0-beta.4 the spec drops the `GENESIS_SLOT +` term (it is `0`). -/
 forkdef getCurrentSlot (store : Store map) : StoreTransition Slot :=
@@ -98,20 +99,23 @@ the start of the current slot, `store.time_ms - compute_time_at_slot_ms(store.ge
 get_current_slot(store))`. Throwing: `get_current_slot` and `compute_time_at_slot_ms` can each
 fault, and the subtraction is a checked `uint64` op. It cannot underflow once the current slot
 is known, since that slot starts at or before `time_ms`. -/
-forkdef getTimeIntoSlotMs (store : Store map) : StoreTransition UInt64 := do
+forkdef getTimeIntoSlotMs (store : Store map) : StoreTransition CLUint64 := do
   let currentSlot ← getCurrentSlot store
-  let slotStartMs ← liftErr (computeTimeAtSlotMs store.genesisTimeMs currentSlot)
-  checkedSub store.timeMs slotStartMs
-    "get_time_into_slot_ms: time_ms - compute_time_at_slot_ms(genesis_time_ms, current_slot)"
+  let slotStartMs ← computeTimeAtSlotMs store.genesisTimeMs currentSlot
+  store.timeMs - slotStartMs
 
 /-- A basis-points deadline within a slot, in milliseconds: `get_slot_component_duration_ms`,
 `bps * SLOT_DURATION_MS // BASIS_POINTS` (`phase0/fork-choice.md:573-577`). Multiply before
 the `UInt64` truncating divide, so the floor lands on the full `bps * SLOT_DURATION_MS`
 product. The product is bare rather than `checkedMul`, and stays that way: both factors are
 constants (`bps ≤ BASIS_POINTS = 10000`, `SLOT_DURATION_MS` is 12000 at mainnet and 6000 at
-minimal), so it peaks near `1.2e8` and cannot reach the `uint64` bound at any preset. -/
+minimal), so it peaks near `1.2e8` and cannot reach the `uint64` bound at any preset.
+
+TEMPORARY CROSSING (removed in Stage 7.1b): the basis-points constants are still raw `UInt64`
+words, so the checked `SLOT_DURATION_MS` enters this formula through its native word, `val`.
+Stage 7.1b retypes the deadline formula and deletes the crossing. -/
 forkdef bpsDeadlineMs (bps : UInt64) : UInt64 :=
-  bps * Const.slotDurationMs / Const.basisPoints
+  bps * Const.slotDurationMs.val / Const.basisPoints
 
 /-! ## DAG walks
 
@@ -373,9 +377,14 @@ forkdef isFinalizationOk (store : Store map) (slot : Slot) : StoreTransition Boo
   pure (gap ≤ Const.reorgMaxEpochsSinceFinalization)
 
 /-- `is_proposing_on_time` (`phase0/fork-choice.md:639-640`): the time into the slot is
-within `get_proposer_reorg_cutoff_ms()`. Throwing only to bind `getTimeIntoSlotMs`. -/
+within `get_proposer_reorg_cutoff_ms()`. Throwing only to bind `getTimeIntoSlotMs`.
+
+TEMPORARY CROSSING (removed in Stage 7.1b): the cutoff is still a raw `UInt64`, so the
+checked time into the slot compares through its native word, `val`. The comparison is by
+value, as the pinned `Uint64.__le__` compares. -/
 forkdef isProposingOnTime (store : Store map) : StoreTransition Bool := do
-  pure ((← getTimeIntoSlotMs store) ≤ bpsDeadlineMs Const.proposerReorgCutoffBps)
+  let timeIntoSlotMs ← getTimeIntoSlotMs store
+  pure (timeIntoSlotMs.val ≤ bpsDeadlineMs Const.proposerReorgCutoffBps)
 
 /-- `is_head_weak(store, head_root)` (`phase0/fork-choice.md:652-673`): the head's attestation
 score, plus the effective balance of the equivocators in its slot's committees, is below the
@@ -526,7 +535,7 @@ forkdef computePulledUpTip (blockRoot : Root) : StoreTransition Unit := do
 
 /-- `on_tick_per_slot(store, time_ms)` (`phase0/fork-choice.md:792-808`): set the clock,
 reset the boost on a new slot, and pull up the unrealized checkpoints on a new epoch. -/
-forkdef onTickPerSlot (store : Store map) (timeMs : UInt64) : StoreTransition (Store map) := do
+forkdef onTickPerSlot (store : Store map) (timeMs : CLUint64) : StoreTransition (Store map) := do
   let previousSlot ← getCurrentSlot store
   let store := { store with timeMs := timeMs }
   let currentSlot ← getCurrentSlot store
@@ -550,9 +559,9 @@ rule as `aed053b`'s, at the site it did not reach; the loop body can throw.
 
 The clock is in milliseconds, so the slot-start times come from `compute_time_at_slot_ms` with
 no seconds rounding, and the catch-up bound below is exact. -/
-forkdef onTick (timeMs : UInt64) : StoreTransition Unit := do
+forkdef onTick (timeMs : CLUint64) : StoreTransition Unit := do
   let store ← get
-  let tickSlot ← liftErr (computeSlotAtTimeMs store.genesisTimeMs timeMs)
+  let tickSlot ← computeSlotAtTimeMs store.genesisTimeMs timeMs
   let cur ← getCurrentSlot store
   -- Fuel rather than a measure (§7.2): the body reads the store and can throw, so a decreasing
   -- `tickSlot - get_current_slot` would have to be carried past a rejecting step. The bound is a
@@ -566,7 +575,7 @@ forkdef onTick (timeMs : UInt64) : StoreTransition Unit := do
     if cs < tickSlot then
       -- `get_current_slot(store) + 1`: the spec's checked add, bound where Python forms it.
       let nextSlot ← cs + 1
-      let nextSlotTimeMs ← liftErr (computeTimeAtSlotMs (← get).genesisTimeMs nextSlot)
+      let nextSlotTimeMs ← computeTimeAtSlotMs (← get).genesisTimeMs nextSlot
       set (← onTickPerSlot (← get) nextSlotTimeMs)
       pure (.next ())
     else
@@ -581,7 +590,9 @@ timely when it arrives in its own slot, before the attestation deadline. The
 forkdef recordBlockTimeliness (store : Store map) (root : Root) : StoreTransition (Store map) := do
   let block ← FcMap.getOrThrow store.blocks root
   let timeIntoSlotMs ← getTimeIntoSlotMs store
-  let isBeforeAttestingInterval := timeIntoSlotMs < bpsDeadlineMs Const.attestationDueBps
+  -- TEMPORARY CROSSING (removed in Stage 7.1b): the attestation deadline is still a raw
+  -- `UInt64`, so the checked time into the slot compares through its native word, by value.
+  let isBeforeAttestingInterval := timeIntoSlotMs.val < bpsDeadlineMs Const.attestationDueBps
   let currentSlot ← getCurrentSlot store
   let isTimely := currentSlot == block.slot && isBeforeAttestingInterval
   pure { store with blockTimeliness := FcMap.insert store.blockTimeliness root isTimely }
@@ -836,7 +847,7 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }
   let genesisTimeMs := secondsToMilliseconds (sszGet anchorState genesisTime)
-  let timeMs ← liftErr (computeTimeAtSlotMs genesisTimeMs (sszGet anchorState slot))
+  let timeMs ← computeTimeAtSlotMs genesisTimeMs (sszGet anchorState slot)
   pure
     { timeMs := timeMs
       genesisTimeMs := genesisTimeMs

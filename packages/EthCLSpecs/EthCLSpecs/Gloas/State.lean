@@ -26,7 +26,7 @@ lists into `ProgressiveList`s. `historicalRoots`, `eth1DataVotes`, and
 `historicalSummaries` stay capped lists. -/
 @[sizzlean_progressive]
 forkcontainer BeaconState where
-  genesisTime                   : UInt64
+  genesisTime                   : CLUint64
   genesisValidatorsRoot         : Root
   slot                          : Slot
   forkData                      : Fork

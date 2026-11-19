@@ -358,7 +358,7 @@ before `get_inclusion_list_due_ms` is timely, one at or after the deadline is no
 end-to-end with the store clock `intoSlotMs` into slot 0, then reads the filed entry's timeliness
 back at `(0, anchor_root)` and the validator. `getForkchoiceStore` hashes the anchor (FFI
 `Sha256`), so this is a `native_decide` `example` (`Lean.ofReduceBool`). -/
-private def pinOnIlTimely (intoSlotMs : UInt64) : Option Bool :=
+private def pinOnIlTimely (intoSlotMs : CLUint64) : Option Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
@@ -372,14 +372,18 @@ private def pinOnIlTimely (intoSlotMs : UInt64) : Option Bool :=
   | (.ok store0, .ok committee) =>
     let validatorIndex := vget committee 0
     let signed := pinSIL validatorIndex 0 anchorRoot #[pinTx 0xAA]
-    let store := { store0 with timeMs := store0.genesisTimeMs + intoSlotMs }
-    match runOn store
-        (onInclusionList (map := treeMap) signed : EStateM StoreTransitionError (Store treeMap) Unit) with
-    | .ok after =>
-      let entries := (FcMap.lookup after.inclusionListStore.inclusionLists (0, anchorRoot)).getD
-        FcMap.empty
-      (FcMap.lookup entries validatorIndex).map (·.timely)
+    -- The store clock is the checked sum `genesis_time_ms + into_slot_ms`; it fits here.
+    match (store0.genesisTimeMs + intoSlotMs : Checked CLUint64) with
     | .error _ => none
+    | .ok timeMs =>
+      let store := { store0 with timeMs := timeMs }
+      match runOn store
+          (onInclusionList (map := treeMap) signed : EStateM StoreTransitionError (Store treeMap) Unit) with
+      | .ok after =>
+        let entries := (FcMap.lookup after.inclusionListStore.inclusionLists (0, anchorRoot)).getD
+          FcMap.empty
+        (FcMap.lookup entries validatorIndex).map (·.timely)
+      | .error _ => none
   | _ => none
 -- 0 ms into the slot: 0 < 4000 ⇒ timely.
 example : pinOnIlTimely 0 = some true := by native_decide

@@ -1,5 +1,6 @@
 import EthCLSpecs.Tests.AuthoringShapes
 import EthCLSpecs.Tests.BoxBinderPins
+import EthCLSpecs.Tests.ClockMigrationPins
 import EthCLSpecs.Tests.CommitteeCoverageOrderPins
 import EthCLSpecs.Tests.ConstantViews
 import EthCLSpecs.Tests.EpochMigrationPins

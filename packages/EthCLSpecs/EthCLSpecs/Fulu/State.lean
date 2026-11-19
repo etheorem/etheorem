@@ -27,7 +27,7 @@ namespace EthCLSpecs.Fulu
 /-- The complete Fulu `BeaconState`: the accumulated Phase 0 → Fulu field list, in
 SSZ order. The consensus `fork` field is `forkData` (keyword avoidance). -/
 forkcontainer BeaconState where
-  genesisTime                   : UInt64
+  genesisTime                   : CLUint64
   genesisValidatorsRoot         : Root
   slot                          : Slot
   forkData                      : Fork

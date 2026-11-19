@@ -220,9 +220,12 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   let mix := vmodGet (sszGet state randaoMixes) epoch.val Const.epochsPerHistoricalVector
   assert (payload.prevRandao == mix)
   -- `compute_time_at_slot(state.genesis_time, state.slot)` (`Fulu/Time.lean`). It can fault, so
-  -- it arrives through `liftErr`, which lands the `.arithmetic` fault on this machine unwrapped.
-  let expectedTimestamp ← liftErr (computeTimeAtSlot (sszGet state genesisTime) (sszGet state slot))
-  assert (payload.timestamp == expectedTimestamp)
+  -- it binds through the arithmetic lift, which lands the fault on this machine unwrapped.
+  let expectedTimestamp ← computeTimeAtSlot (sszGet state genesisTime) (sszGet state slot)
+  -- TEMPORARY CROSSING (removed in Stage 7.1b): `payload.timestamp` is still the raw `UInt64`
+  -- field, so the checked time compares through its native word. The pinned `Uint64.__eq__`
+  -- compares by value, so the answer is the same.
+  assert (payload.timestamp == expectedTimestamp.val)
   -- [Modified in Fulu:EIP7892] the commitments are under the scheduled blob limit: the plain
   -- `len(...)` against the plain limit, a comparison that never raises.
   assert (len body.blobKzgCommitments ≤ (getBlobParameters epoch).maxBlobsPerBlock)
