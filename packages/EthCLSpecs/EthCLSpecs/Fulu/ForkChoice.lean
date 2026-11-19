@@ -104,18 +104,16 @@ forkdef getTimeIntoSlotMs (store : Store map) : StoreTransition CLUint64 := do
   let slotStartMs ← computeTimeAtSlotMs store.genesisTimeMs currentSlot
   store.timeMs - slotStartMs
 
-/-- A basis-points deadline within a slot, in milliseconds: `get_slot_component_duration_ms`,
-`bps * SLOT_DURATION_MS // BASIS_POINTS` (`phase0/fork-choice.md:573-577`). Multiply before
-the `UInt64` truncating divide, so the floor lands on the full `bps * SLOT_DURATION_MS`
-product. The product is bare rather than `checkedMul`, and stays that way: both factors are
-constants (`bps ≤ BASIS_POINTS = 10000`, `SLOT_DURATION_MS` is 12000 at mainnet and 6000 at
-minimal), so it peaks near `1.2e8` and cannot reach the `uint64` bound at any preset.
-
-TEMPORARY CROSSING (removed in Stage 7.1b): the basis-points constants are still raw `UInt64`
-words, so the checked `SLOT_DURATION_MS` enters this formula through its native word, `val`.
-Stage 7.1b retypes the deadline formula and deletes the crossing. -/
-forkdef bpsDeadlineMs (bps : UInt64) : UInt64 :=
-  bps * Const.slotDurationMs.val / Const.basisPoints
+/-- `get_slot_component_duration_ms(basis_points)` (`phase0/fork-choice.md:573-577`): a
+deadline within a slot, in milliseconds, `basis_points * SLOT_DURATION_MS // BASIS_POINTS`.
+All three operands are `Uint64` in the pinned module, so both steps are the checked kind. The
+product raises past `2^64 - 1`, even where the quotient would fit. The floor division keeps the
+checked route: `BASIS_POINTS` has no `PositiveDivisor` view. The shipped presets keep the
+product near `1.2e8`, but a generic configuration can reach the bound. The callers
+`get_attestation_due_ms`, `get_proposer_reorg_cutoff_ms` and their Gloas and Heze siblings pass
+their basis-points constant here, and each caller binds the result where Python calls it. -/
+forkdef bpsDeadlineMs (bps : CLUint64) : Checked CLUint64 :=
+  bps * Const.slotDurationMs / Const.basisPoints
 
 /-! ## DAG walks
 
@@ -377,14 +375,14 @@ forkdef isFinalizationOk (store : Store map) (slot : Slot) : StoreTransition Boo
   pure (gap ≤ Const.reorgMaxEpochsSinceFinalization)
 
 /-- `is_proposing_on_time` (`phase0/fork-choice.md:639-640`): the time into the slot is
-within `get_proposer_reorg_cutoff_ms()`. Throwing only to bind `getTimeIntoSlotMs`.
-
-TEMPORARY CROSSING (removed in Stage 7.1b): the cutoff is still a raw `UInt64`, so the
-checked time into the slot compares through its native word, `val`. The comparison is by
-value, as the pinned `Uint64.__le__` compares. -/
+within `get_proposer_reorg_cutoff_ms()`. Throwing: `getTimeIntoSlotMs` and the checked cutoff
+can each fault. Python evaluates the left operand of `<=` first, so the time into the slot binds
+before the cutoff. -/
 forkdef isProposingOnTime (store : Store map) : StoreTransition Bool := do
   let timeIntoSlotMs ← getTimeIntoSlotMs store
-  pure (timeIntoSlotMs.val ≤ bpsDeadlineMs Const.proposerReorgCutoffBps)
+  -- `get_proposer_reorg_cutoff_ms()`.
+  let proposerReorgCutoffMs ← bpsDeadlineMs Const.proposerReorgCutoffBps
+  pure (timeIntoSlotMs ≤ proposerReorgCutoffMs)
 
 /-- `is_head_weak(store, head_root)` (`phase0/fork-choice.md:652-673`): the head's attestation
 score, plus the effective balance of the equivocators in its slot's committees, is below the
@@ -586,13 +584,14 @@ forkdef onTick (timeMs : CLUint64) : StoreTransition Unit := do
 
 /-- `record_block_timeliness(store, root)` (`phase0/fork-choice.md:890-896`): the block is
 timely when it arrives in its own slot, before the attestation deadline. The
-`store.blocks[root]` read raises on a miss. -/
+`store.blocks[root]` read raises on a miss. The binds follow Python's statement order: the
+time into the slot, then `get_attestation_due_ms()`, then the current slot. -/
 forkdef recordBlockTimeliness (store : Store map) (root : Root) : StoreTransition (Store map) := do
   let block ← FcMap.getOrThrow store.blocks root
   let timeIntoSlotMs ← getTimeIntoSlotMs store
-  -- TEMPORARY CROSSING (removed in Stage 7.1b): the attestation deadline is still a raw
-  -- `UInt64`, so the checked time into the slot compares through its native word, by value.
-  let isBeforeAttestingInterval := timeIntoSlotMs.val < bpsDeadlineMs Const.attestationDueBps
+  -- `attestation_threshold_ms = get_attestation_due_ms()`.
+  let attestationThresholdMs ← bpsDeadlineMs Const.attestationDueBps
+  let isBeforeAttestingInterval := timeIntoSlotMs < attestationThresholdMs
   let currentSlot ← getCurrentSlot store
   let isTimely := currentSlot == block.slot && isBeforeAttestingInterval
   pure { store with blockTimeliness := FcMap.insert store.blockTimeliness root isTimely }

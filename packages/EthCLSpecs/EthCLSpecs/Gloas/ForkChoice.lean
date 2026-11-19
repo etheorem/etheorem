@@ -139,16 +139,12 @@ forkdef getTimeIntoSlotMs (store : Store map) : StoreTransition CLUint64 := do
   let slotStartMs ← computeTimeAtSlotMs store.genesisTimeMs currentSlot
   store.timeMs - slotStartMs
 
-/-- A basis-points deadline within a slot, in milliseconds: `get_slot_component_duration_ms`,
-`bps * SLOT_DURATION_MS // BASIS_POINTS`. Multiply before the `UInt64` truncating divide, so the
-floor lands on the full `bps * SLOT_DURATION_MS` product. The product stays bare rather than
-`checkedMul`: both factors are constants, so it peaks near `1.2e8` and cannot reach the `uint64`
-bound (`Fulu.bpsDeadlineMs`).
-
-TEMPORARY CROSSING (removed in Stage 7.1b): the basis-points constants are still raw `UInt64`
-words, so the checked `SLOT_DURATION_MS` enters this formula through its native word, `val`. -/
-forkdef bpsDeadlineMs (bps : UInt64) : UInt64 :=
-  bps * Const.slotDurationMs.val / Const.basisPoints
+/-- `get_slot_component_duration_ms(basis_points)`: a deadline within a slot, in milliseconds,
+`basis_points * SLOT_DURATION_MS // BASIS_POINTS`. The checked product raises past
+`2^64 - 1`, and the floor division keeps the checked route (`Fulu.bpsDeadlineMs`). Heze
+inherits. -/
+forkdef bpsDeadlineMs (bps : CLUint64) : Checked CLUint64 :=
+  bps * Const.slotDurationMs / Const.basisPoints
 
 /-! ## Parent payload status + node walks
 
@@ -687,16 +683,21 @@ forkdef onTick (timeMs : CLUint64) : StoreTransition Unit := do
 
 /-- `record_block_timeliness(store, root)` (Gloas, `gloas/fork-choice.md:989-1000`): the two
 deadlines (attestation-due and PTC-due), each `is_current_slot ∧ time_into_slot_ms <
-threshold`. The `store.blocks[root]` read raises on a miss. -/
+threshold`. The `store.blocks[root]` read raises on a miss. The binds follow Python's
+statement order: the time into the slot, `get_attestation_due_ms()`, the current slot, then
+`get_payload_attestation_due_ms()`. Both thresholds bind before the list forms, so a fault in
+either one raises even when `is_current_slot` is false. -/
 forkdef recordBlockTimeliness (store : Store map) (root : Root) : StoreTransition (Store map) := do
   let block ← FcMap.getOrThrow store.blocks root
   let timeIntoSlotMs ← getTimeIntoSlotMs store
+  -- `attestation_threshold_ms = get_attestation_due_ms()`, the Gloas basis points.
+  let attestationThresholdMs ← bpsDeadlineMs Const.attestationDueBpsGloas
   let currentSlot ← getCurrentSlot store
   let isCurrentSlot := currentSlot == block.slot
-  -- TEMPORARY CROSSING (removed in Stage 7.1b): both deadlines are still raw `UInt64`, so the
-  -- checked time into the slot compares through its native word, by value.
-  let timeliness : Array Bool := #[isCurrentSlot && timeIntoSlotMs.val < bpsDeadlineMs Const.attestationDueBpsGloas,
-                                   isCurrentSlot && timeIntoSlotMs.val < bpsDeadlineMs Const.payloadAttestationDueBps]
+  -- `ptc_threshold_ms = get_payload_attestation_due_ms()`.
+  let ptcThresholdMs ← bpsDeadlineMs Const.payloadAttestationDueBps
+  let timeliness : Array Bool := #[isCurrentSlot && timeIntoSlotMs < attestationThresholdMs,
+                                   isCurrentSlot && timeIntoSlotMs < ptcThresholdMs]
   pure { store with blockTimeliness := FcMap.insert store.blockTimeliness root timeliness }
 
 /-- `update_proposer_boost_root(store, head, root)` (Gloas, `gloas/fork-choice.md:1019-1031`):
@@ -926,9 +927,8 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
   -- arithmetic lift wraps its fault as `.transition (.arithmetic …)`, the store machine's shape
   -- for the same fault.
   let expectedTime ← computeTimeAtSlot (sszGet state genesisTime) (sszGet state slot)
-  -- TEMPORARY CROSSING (removed in Stage 7.1b): `payload.timestamp` is still the raw `UInt64`
-  -- field, so the checked time compares through its native word, by value.
-  assert (payload.timestamp == expectedTime.val)
+  -- `payload.timestamp` is a `Uint64` field, so both sides are the checked kind.
+  assert (payload.timestamp == expectedTime)
   assert (htr payload.withdrawals == htr (sszGet state payloadExpectedWithdrawals))
 
   -- The EL answer, last as in the spec. `bid.blobKzgCommitments` supplies the request's

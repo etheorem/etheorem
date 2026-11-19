@@ -40,8 +40,9 @@ forkconfig where
   Heze at genesis overrides it to `0`. `compute_fork_version` reads it. -/
   hezeForkEpoch : Epoch
   /-- `INCLUSION_LIST_DUE_BPS` (~67% of the slot): the timeliness deadline for an
-  inclusion list, in basis points of the slot. -/
-  inclusionListDueBps : UInt64
+  inclusion list, in basis points of the slot. A `Uint64` in the pinned module, so the checked
+  kind. -/
+  inclusionListDueBps : CLUint64
   /-- `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` (8192): the cap on an inclusion list's
   summed transaction bytes, which `on_inclusion_list` asserts. v1.7.0-beta.4 renames
   alpha.12's `MAX_BYTES_PER_INCLUSION_LIST` to this. -/
@@ -64,7 +65,7 @@ forkabbrev inclusionListCommitteeSize : Nat := Preset.inclusionListCommitteeSize
 -- (`Heze/Signing.lean`) verifies signatures under it.
 forkabbrev domainInclusionListCommittee : ByteArray := ⟨#[0x10, 0, 0, 0]⟩
 -- `consensus-specs/specs/heze/fork-choice.md:38`.
-forkabbrev inclusionListDueBps : UInt64 := Config.inclusionListDueBps
+forkabbrev inclusionListDueBps : CLUint64 := Config.inclusionListDueBps
 forkabbrev hezeForkVersion : Version := Config.hezeForkVersion
 forkabbrev hezeForkEpoch : Epoch := Config.hezeForkEpoch
 forkabbrev maxTransactionsBytesPerInclusionList : UInt64 :=

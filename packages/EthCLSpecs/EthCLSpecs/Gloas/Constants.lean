@@ -59,9 +59,10 @@ forkconfig where
   was a difference of two churn limits; EIP-7732 gives it its own quotient, so the
   value arrives with this fork rather than with Electra. -/
   consolidationChurnLimitQuotient : UInt64
-  /-- Slot-component deadlines in basis points of the slot. -/
-  attestationDueBpsGloas : UInt64
-  payloadAttestationDueBps : UInt64
+  /-- Slot-component deadlines in basis points of the slot. Both are `Uint64` in the pinned
+  module, so the checked kind. -/
+  attestationDueBpsGloas : CLUint64
+  payloadAttestationDueBps : CLUint64
   /-- `GAS_LIMIT_SCHEDULE` (EIP-8261, new at v1.7.0-beta.4): the default and recommended maximum
   gas limit by epoch, one `(EPOCH, GAS_LIMIT)` record per entry. Empty in both config files.
   `get_scheduled_gas_limit` reads it; it adds no validity rule. -/
@@ -129,8 +130,8 @@ forkabbrev ptcTimelinessIndex : Nat := 1
 /-- PTC vote majority thresholds (`PTC_SIZE // 2`). -/
 forkabbrev payloadTimelyThreshold : Nat := ptcSize / 2
 forkabbrev dataAvailabilityTimelyThreshold : Nat := ptcSize / 2
-forkabbrev attestationDueBpsGloas : UInt64 := Config.attestationDueBpsGloas
-forkabbrev payloadAttestationDueBps : UInt64 := Config.payloadAttestationDueBps
+forkabbrev attestationDueBpsGloas : CLUint64 := Config.attestationDueBpsGloas
+forkabbrev payloadAttestationDueBps : CLUint64 := Config.payloadAttestationDueBps
 forkabbrev gasLimitSchedule : List (Epoch × UInt64) := Config.gasLimitSchedule
 
 -- Fulu's entries, replayed here in Fulu's own order so each body reaches its
