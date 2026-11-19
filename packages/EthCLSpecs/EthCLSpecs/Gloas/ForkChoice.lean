@@ -254,7 +254,10 @@ forkdef payloadTimeliness (store : Store map) (root : Root) (timely : Bool) : St
   let votes ← FcMap.getOrAssert store.payloadTimelinessVote root
     "root in store.payload_timeliness_vote"
   if !isPayloadVerified store root then pure (!timely)
-  else pure (voteCount votes timely > Const.payloadTimelyThreshold)
+  -- `vote_count(…) > PAYLOAD_TIMELY_THRESHOLD`: the count is a plain `int` in
+  -- Python and the threshold a `Uint64`; the mixed comparison never raises and
+  -- orders the values, which the plain projection of the checked threshold reads.
+  else pure (voteCount votes timely > Const.payloadTimelyThreshold.toPlainNat)
 
 /-- `payload_data_availability(store, root, available)`: the data-availability
 counterpart of `payload_timeliness` (same fused assert-and-read, see there). -/
@@ -263,7 +266,8 @@ forkdef payloadDataAvailability (store : Store map) (root : Root) (available : B
   let votes ← FcMap.getOrAssert store.payloadDataAvailabilityVote root
     "root in store.payload_data_availability_vote"
   if !isPayloadVerified store root then pure (!available)
-  else pure (voteCount votes available > Const.dataAvailabilityTimelyThreshold)
+  -- Same mixed plain/checked comparison as `payload_timeliness` (see there).
+  else pure (voteCount votes available > Const.dataAvailabilityTimelyThreshold.toPlainNat)
 
 /-- `is_previous_slot_payload_decision(store, node)`: the node is the previous
 slot's block and carries a decided (EMPTY or FULL) payload status. -/
