@@ -38,7 +38,8 @@ set_option autoImplicit false
 
 namespace EthCLLib.Proofs
 
-open EthCLLib.Spec (HasherTag ErrorConv liftErr StateTransitionError throwArithmetic)
+open EthCLLib.Spec (HasherTag ErrorConv liftErr StateTransitionError throwArithmetic
+  throwZeroDivision)
 open SizzLean (SSZRepr)
 open SizzLean.Cache
 
@@ -73,6 +74,14 @@ theorem throwArithmetic_run {σ α ε : Type} [ErrorConv StateTransitionError ε
     (descr : String) (s : σ) :
     (throwArithmetic (m := StateT σ (Except ε)) (E := ε) descr : StateT σ (Except ε) α).run s
       = .error (ErrorConv.conv (StateTransitionError.arithmetic descr)) := rfl
+
+/-- `.run` of `throwZeroDivision` at the pure runner, the zero-divisor class's twin of
+`throwArithmetic_run`: the fault, converted by the machine's own `ErrorConv` and carried
+alone. Closes by `rfl` without unfolding `liftErr`. -/
+theorem throwZeroDivision_run {σ α ε : Type} [ErrorConv StateTransitionError ε]
+    (descr : String) (s : σ) :
+    (throwZeroDivision (m := StateT σ (Except ε)) (E := ε) descr : StateT σ (Except ε) α).run s
+      = .error (ErrorConv.conv (StateTransitionError.zeroDivision descr)) := rfl
 
 /-- `Except`'s bind on the success branch, the step that fires after `run_bind` on a
 run known to have succeeded. Core has no `simp` lemma in this shape, and unfolding

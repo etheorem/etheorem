@@ -23,10 +23,16 @@ state_section
 
 /-- `BlobParameters` (`fulu/beacon-chain.md`, "New `BlobParameters`"): one blob-schedule entry,
 the epoch it starts at and the blob limit from then on. A `forkstruct`, so a later fork can
-`inherit` it. -/
+`inherit` it.
+
+The pinned class is a `dataclass`, which does not convert its fields. So the blob limit is a
+plain `int` when it comes from a `BLOB_SCHEDULE` entry and a `Uint64` when it is
+`MAX_BLOBS_PER_BLOCK_ELECTRA` (`fulu/minimal.py:1039-1041`, `:6590-6597`). Every consumer
+compares it with a plain `len(...)`, and no comparison raises. The field is a `CLInt`, which
+holds both values exactly, and the Electra fallback enters it through `int(x)`. -/
 forkstruct BlobParameters where
   epoch            : Epoch
-  maxBlobsPerBlock : Nat
+  maxBlobsPerBlock : CLInt
 
 /-- `get_blob_parameters(epoch)` (`fulu/beacon-chain.md`, "New `get_blob_parameters`"): scan
 `BLOB_SCHEDULE` from the latest epoch down and return the first entry at or before `epoch`;
@@ -36,7 +42,8 @@ forkdef getBlobParameters (epoch : Epoch) : BlobParameters :=
   let descending := Const.blobSchedule.toArray.qsort (fun a b => a.1 > b.1)
   match descending.find? (fun entry => epoch ≥ entry.1) with
   | some (entryEpoch, maxBlobs) => { epoch := entryEpoch, maxBlobsPerBlock := maxBlobs }
-  | none => { epoch := Const.electraForkEpoch, maxBlobsPerBlock := Const.maxBlobsPerBlockElectra }
+  | none =>
+    { epoch := Const.electraForkEpoch, maxBlobsPerBlock := Const.maxBlobsPerBlockElectra.toCLInt }
 
 end
 
