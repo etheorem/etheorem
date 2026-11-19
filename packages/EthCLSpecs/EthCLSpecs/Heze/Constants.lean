@@ -77,11 +77,13 @@ forkabbrev minSlotsForInclusionListsRequests : Slot := Config.minSlotsForInclusi
 -- whole surface, not the subset Heze happens to call today: the fork owns its
 -- vocabulary, and a new call site should not have to come back and edit this block.
 
--- Gloas's own ePBS and EIP-8282 entries.
-inherit ptcSize maxBuildersPerWithdrawalsSweep maxPayloadAttestations
+-- Gloas's own ePBS and EIP-8282 entries. `ptcSizeLt` / `ptcSizeC` replay beside
+-- `ptcSize` (Gloas's own declaration order): the majority thresholds replayed below
+-- name `ptcSizeC` in their bodies, and a replay resolves siblings already emitted.
+inherit ptcSize ptcSizeLt ptcSizeC maxBuildersPerWithdrawalsSweep
+inherit maxPayloadAttestations
 inherit maxBuilderDepositRequestsPerPayload maxBuilderExitRequestsPerPayload
 inherit gloasForkVersion gloasForkEpoch churnLimitQuotientGloas
-inherit churnLimitQuotientGloasC
 inherit maxPerEpochActivationChurnLimitGloas
 inherit minBuilderWithdrawabilityDelay builderPaymentThresholdNumerator
 inherit builderPaymentThresholdDenominator builderWithdrawalPrefix payloadBuilderVersion
@@ -90,7 +92,7 @@ inherit domainBuilderDeposit payloadStatusEmpty payloadStatusFull payloadStatusP
 inherit attestationTimelinessIndex ptcTimelinessIndex payloadTimelyThreshold
 inherit dataAvailabilityTimelyThreshold attestationDueBpsGloas payloadAttestationDueBps
 inherit gasLimitSchedule
-inherit consolidationChurnLimitQuotient consolidationChurnLimitQuotientC
+inherit consolidationChurnLimitQuotient
 
 -- Vector widths and committee / epoch lengths.
 inherit slotsPerEpoch slotsPerHistoricalRoot epochsPerHistoricalVector

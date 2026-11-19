@@ -1,12 +1,13 @@
 import EthCLSpecs.Heze.ForkChoice
 
 /-!
-# `EthCLSpecs.Tests.ConstantAuditPins`: the Fulu configuration constants at arbitrary values
+# `EthCLSpecs.Tests.ConstantAuditPins`: the configuration constants at arbitrary values
 
-Behavior pins for Stage 7.3a of the arithmetic transition, the Fulu rows of the constant
-audit. The pinned module (`eth-consensus-specs` 1.7.0b4) types each of these configuration
-values `Uint64`, or `Epoch` for `REORG_MAX_EPOCHS_SINCE_FINALIZATION`, so each `Config`
-field and `Const` mirror is `CLUint64`:
+Behavior pins for Stages 7.3a and 7.3b of the arithmetic transition, the constant
+audit's Fulu rows then its Gloas rows. The pinned module (`eth-consensus-specs`
+1.7.0b4) types each of these configuration values `Uint64`, or `Epoch` for
+`REORG_MAX_EPOCHS_SINCE_FINALIZATION`, so each `Config` field and `Const` mirror
+is `CLUint64`:
 
 | Constant | Consumer | Checked operation |
 |---|---|---|
@@ -15,6 +16,10 @@ field and `Const` mirror is `CLUint64`:
 | `INACTIVITY_SCORE_BIAS` | `get_inactivity_penalty_deltas` | `bias * INACTIVITY_PENALTY_QUOTIENT_BELLATRIX`, then `//` |
 | `CHURN_LIMIT_QUOTIENT` | `get_balance_churn_limit` | `//` |
 | `PROPOSER_SCORE_BOOST`, `REORG_HEAD_WEIGHT_THRESHOLD`, `REORG_PARENT_WEIGHT_THRESHOLD` | `calculate_committee_fraction` | `committee_weight * committee_percent` |
+| `CHURN_LIMIT_QUOTIENT_GLOAS` | `get_exit_churn_limit`, `get_activation_churn_limit` | `//` |
+| `CONSOLIDATION_CHURN_LIMIT_QUOTIENT` | `get_consolidation_churn_limit` | `//` |
+| `BUILDER_PAYMENT_THRESHOLD_NUMERATOR` / `…_DENOMINATOR` | `get_builder_payment_quorum_threshold` | `*`, then `//` (adjudication F2) |
+| `PAYLOAD_TIMELY_THRESHOLD`, `DATA_AVAILABILITY_TIMELY_THRESHOLD` | `payload_timeliness`, `payload_data_availability` | `PTC_SIZE // 2` at import, then `vote_count > threshold` |
 
 The checked kind decides the answer once a configuration leaves the shipped values. Each
 pin below sets one value, and each failure pin has a nearby success that reaches the same
@@ -24,8 +29,9 @@ Python's `ZeroDivisionError` (`SPEC_ARITHMETIC.md` §4.2).
 Every expected value is the answer of the pinned pyspec (the `minimal` module with the one
 `config` field replaced), read by running the probes on the state these pins build. Fulu,
 Gloas, and Heze gave the same answers. The Gloas and Heze pins run the inherited
-`calculate_committee_fraction` and `get_inactivity_penalty_deltas`. Gloas and Heze have no
-`get_balance_churn_limit`, so the churn pins run in Fulu alone.
+`calculate_committee_fraction` and `get_inactivity_penalty_deltas`. Fulu and Heze have no
+`get_exit_churn_limit` of their own (it is Gloas's EIP-8061 override, inherited by Heze),
+so those pins run in Gloas, and Heze re-runs the inherited churn helpers.
 
 The pins close by `native_decide`, as the other migration pins do: the minimal
 configuration is a large record.
@@ -260,6 +266,175 @@ example : gloasInactivityPenalty minimalConfig = .answer 47683 := by native_deci
 example : gloasInactivityPenalty { minimalConfig with inactivityScoreBias := biasProductEdge }
     = .rangeFault := by native_decide
 
+/-! ### Gloas: the Stage 7.3b rows
+
+The Gloas churn quotients and the builder-payment threshold pair. Each pin's expected
+value is the pinned module's answer for the same one-validator state (`gloasAuditState`
+above), read with the one `config` field replaced. `get_exit_churn_limit`'s `max` keeps
+`MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA` winning at both the shipped quotient `16` and `1`,
+so the pair pins that the division ran without pinning its quotient alone;
+`get_consolidation_churn_limit` has no floor, so its quotient `1` shows through. -/
+
+/-- Gloas `get_exit_churn_limit` under configuration `c`. -/
+private def gloasExitChurnLimit (c : Config) : Outcome :=
+  letI : Preset := minimal
+  letI : Config := c
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.ffi
+  gweiOutcome (getExitChurnLimit gloasAuditState)
+
+/-- Gloas `get_activation_churn_limit` under configuration `c`. -/
+private def gloasActivationChurnLimit (c : Config) : Outcome :=
+  letI : Preset := minimal
+  letI : Config := c
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.ffi
+  gweiOutcome (getActivationChurnLimit gloasAuditState)
+
+/-- Gloas `get_consolidation_churn_limit` under configuration `c`. -/
+private def gloasConsolidationChurnLimit (c : Config) : Outcome :=
+  letI : Preset := minimal
+  letI : Config := c
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.ffi
+  gweiOutcome (getConsolidationChurnLimit gloasAuditState)
+
+/-- Gloas `get_builder_payment_quorum_threshold` under configuration `c`. -/
+private def gloasPaymentQuorum (c : Config) : Outcome :=
+  letI : Preset := minimal
+  letI : Config := c
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.ffi
+  gweiOutcome (getBuilderPaymentQuorumThreshold gloasAuditState)
+
+-- `get_exit_churn_limit`: the shipped quotient `16` and `1` both leave the min-churn
+-- floor winning the `max`; a zero quotient raises the zero divisor.
+example : gloasExitChurnLimit minimalConfig = .answer 64000000000 := by native_decide
+example : gloasExitChurnLimit { minimalConfig with churnLimitQuotientGloas := 1 }
+    = .answer 64000000000 := by native_decide
+example : gloasExitChurnLimit { minimalConfig with churnLimitQuotientGloas := 0 }
+    = .zeroDivision := by native_decide
+
+-- `get_activation_churn_limit`: the `min` with `MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS`
+-- (`128_000_000_000` at minimal) caps the exit churn's `64_000_000_000`.
+example : gloasActivationChurnLimit minimalConfig = .answer 64000000000 := by native_decide
+
+-- `get_consolidation_churn_limit`: no floor, so the quotient shows through: shipped `32`
+-- gives `1_000_000_000`, quotient `1` gives the whole rounded balance, and zero divides by
+-- zero.
+example : gloasConsolidationChurnLimit minimalConfig = .answer 1000000000 := by native_decide
+example : gloasConsolidationChurnLimit
+    { minimalConfig with consolidationChurnLimitQuotient := 1 }
+    = .answer 32000000000 := by native_decide
+example : gloasConsolidationChurnLimit
+    { minimalConfig with consolidationChurnLimitQuotient := 0 }
+    = .zeroDivision := by native_decide
+
+-- `get_builder_payment_quorum_threshold` (adjudication F2): the checked `Uint64(6)` /
+-- `Uint64(10)` pair over `32_000_000_000 / 8` per slot gives `2_400_000_000`.
+example : gloasPaymentQuorum minimalConfig = .answer 2400000000 := by native_decide
+
+/-- A two-validator edge state, both active at `2 ^ 63 - 1` each: the total active
+balance `2 ^ 64 - 2` is the greatest that fits, and the quorum product
+`(2 ^ 64 - 2) / 8 * 6` is the nearest in-range product the fixture can reach. -/
+private def gloasEdgeState : @State minimal fastHasherTag :=
+  letI : Preset := minimal
+  letI : HasherTag := fastHasherTag
+  let v : Validator :=
+    { (default : Validator) with
+      activationEpoch := 0
+      effectiveBalance := 9223372036854775807
+      exitEpoch := Const.farFutureEpoch
+      withdrawableEpoch := Const.farFutureEpoch }
+  SSZ.FastBox
+    { (default : @BeaconState minimal) with
+      slot := 16
+      validators := ⟨#[v, v]⟩
+      balances := ⟨#[9223372036854775807, 9223372036854775807]⟩
+      previousEpochParticipation := ⟨#[0, 0]⟩
+      currentEpochParticipation := ⟨#[0, 0]⟩
+      inactivityScores := ⟨#[100, 100]⟩ }
+
+/-- The quorum at the total-active-balance edge: the product stays in range, so the
+threshold answers rather than raising. -/
+private def gloasEdgePaymentQuorum : Outcome :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.ffi
+  gweiOutcome (getBuilderPaymentQuorumThreshold gloasEdgeState)
+
+example : gloasEdgePaymentQuorum = .answer 1383505805528216370 := by native_decide
+
+/-! ### Gloas: the majority thresholds
+
+`PAYLOAD_TIMELY_THRESHOLD` / `DATA_AVAILABILITY_TIMELY_THRESHOLD` are `PTC_SIZE // 2`
+over the checked `PTC_SIZE` (`Uint64` at the pin), so each is `CLUint64`, derived at
+import. The pins read the derived value at both presets, then run the relabeled
+comparison end-to-end: `payload_timeliness` counts `some true` votes and compares the
+plain count against the threshold's plain projection, exactly Python's mixed
+`int > Uint64` (never raising, ordering the values). At `PTC_SIZE = 16` the threshold is
+`8`, so `8` timely votes are not a majority and `9` are. -/
+
+/-- The payload-timeliness threshold, `PTC_SIZE // 2`, at the `minimal` preset. -/
+private def thresholdMinimal : Nat × Nat :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  (Const.payloadTimelyThreshold.toPlainNat, Const.dataAvailabilityTimelyThreshold.toPlainNat)
+
+/-- The same at the `mainnet` preset. -/
+private def thresholdMainnet : Nat × Nat :=
+  letI : Preset := mainnet
+  letI : Config := mainnetConfig
+  (Const.payloadTimelyThreshold.toPlainNat, Const.dataAvailabilityTimelyThreshold.toPlainNat)
+
+example : thresholdMinimal = (8, 8) := by native_decide
+example : thresholdMainnet = (256, 256) := by native_decide
+
+/-- The pins' concrete fork-choice monad: the minimal preset over the deterministic
+`treeMap`. -/
+private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+
+/-- A store whose root has a revealed payload (so `is_payload_verified` holds) and a
+16-vote timeliness array: `trues` entries `some true`, the rest `some false`. The empty
+fields mirror `GloasForkChoicePins.pinStore`. -/
+private def timelinessStore (trues : Nat) : @Store minimal treeMap fastHasherTag :=
+  letI : Preset := minimal
+  letI : HasherTag := fastHasherTag
+  let root : Root := Vector.replicate 32 9
+  let votes : Array (Option Bool) :=
+    (Array.range 16).map fun i => if i < trues then some true else some false
+  { timeMs := 0, genesisTimeMs := 0
+    justifiedCheckpoint := default, finalizedCheckpoint := default
+    unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
+    proposerBoostRoot := fcZeroRoot
+    equivocatingIndices := #[]
+    blocks := FcMap.empty
+    blockStates := FcMap.empty
+    blockTimeliness := FcMap.empty
+    checkpointStates := FcMap.empty
+    latestMessages := FcMap.empty
+    unrealizedJustifications := FcMap.empty
+    payloads := FcMap.insert FcMap.empty root default
+    payloadTimelinessVote := FcMap.insert FcMap.empty root votes
+    payloadDataAvailabilityVote := FcMap.empty }
+
+/-- `payload_timeliness(store, root, true)` for `trues` timely votes: the strict `>`
+against the threshold `8`. -/
+private def payloadTimelinessAt (trues : Nat) : Option Bool :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let store := timelinessStore trues
+  match (payloadTimeliness (map := treeMap) store (Vector.replicate 32 9) true :
+    PinM Bool).run store with
+  | .ok b _ => some b
+  | .error _ _ => none
+
+example : payloadTimelinessAt 7 = some false := by native_decide
+example : payloadTimelinessAt 8 = some false := by native_decide
+example : payloadTimelinessAt 9 = some true := by native_decide
+
 end Gloas
 
 /-! ### Heze: the inherited helpers -/
@@ -310,6 +485,32 @@ example : hezeProposerScore { minimalConfig with proposerScoreBoost := percentPa
 example : hezeInactivityPenalty minimalConfig = .answer 47683 := by native_decide
 example : hezeInactivityPenalty { minimalConfig with inactivityScoreBias := biasProductEdge }
     = .rangeFault := by native_decide
+
+/-- Heze re-runs Gloas's churn helpers through the inherit: `get_exit_churn_limit` and
+`get_consolidation_churn_limit` over Heze's own state and configuration give the same
+answers as the Gloas pins. -/
+private def hezeExitChurnLimit (c : Config) : Outcome :=
+  letI : Preset := minimal
+  letI : Config := c
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.ffi
+  gweiOutcome (getExitChurnLimit hezeAuditState)
+
+/-- Heze `get_consolidation_churn_limit` under configuration `c`. -/
+private def hezeConsolidationChurnLimit (c : Config) : Outcome :=
+  letI : Preset := minimal
+  letI : Config := c
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.ffi
+  gweiOutcome (getConsolidationChurnLimit hezeAuditState)
+
+example : hezeExitChurnLimit minimalConfig = .answer 64000000000 := by native_decide
+example : hezeExitChurnLimit { minimalConfig with churnLimitQuotientGloas := 0 }
+    = .zeroDivision := by native_decide
+example : hezeConsolidationChurnLimit minimalConfig = .answer 1000000000 := by native_decide
+example : hezeConsolidationChurnLimit
+    { minimalConfig with consolidationChurnLimitQuotient := 0 }
+    = .zeroDivision := by native_decide
 
 end Heze
 
