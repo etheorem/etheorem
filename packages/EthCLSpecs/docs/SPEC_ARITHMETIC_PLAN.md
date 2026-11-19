@@ -507,7 +507,24 @@ all negative-index and empty-collection cases preserve Python behavior.
     inclusive edge); every answer from the pinned pyspec. Coverage 87, no tag lost, axiom
     audit within the trio; full minimal heze sweep 6972/3198 case-identical to Stage 7.3b —
     behavior unchanged.*
-- [ ] **7.4 Verify.** Run the common gate and complete minimal sweep.
+- [x] **7.4 Verify.** Run the common gate and complete minimal sweep.
+    *Done 2026-11-19 (WS-37, `9515566`): the full common gate ran green on the integrated
+    epic branch — `lake build EthCLSpecs` (621 jobs), `just ethcl-test` (667 jobs),
+    `just build-cli` with runners rebuilt, `just lint` exit 0, `just check-citations`
+    (196 citations in 9 files, all resolve), `just check-constants` (167 constants, every
+    tier and owning fork matching the pin; the 2 untabled upstream and 3 tier-only
+    advisories pre-existing), `just proof-coverage-update` with an empty inspected diff
+    then `just proof-coverage-check` (87 claims, axioms within
+    `propext`/`Classical.choice`/`Quot.sound`, `Lean.ofReduceBool` 0), `just
+    ethcl-pyspec-smoke` identical to 7.3b (fulu 155p/46s, gloas 207p/52s, heze 209p/52s),
+    and `git grep "TEMPORARY CROSSING"` empty over `*.lean`. The complete minimal sweep ran
+    sequentially (`--preset=minimal --subset=0 -n 6`, runner rebuilt first) and is
+    case-identical to the Stage 6 logs — fulu 5318 passed / 2829 skipped (23 skip groups),
+    gloas 6760/3198 (26), heze 6972/3198 (26); per-case logs retained as
+    `stage7.4-minimal-<fork>-cases.log`. No deviation, no skip change, nothing to repair.
+    Stage 7 build cost recorded per §3 (12 cores, Lake default parallelism, sequential
+    runs): cold `lake clean && lake build EthCLSpecs` 25m02.9s / 621 jobs, no-op 0.64s,
+    incremental (newline in `Fulu/Time.lean`, tree restored after) 5m57.1s.*
 
 **Done when:** generic configuration inputs preserve success/failure behavior, all
 time arithmetic is accounted for, and the remaining constant inventory is empty.
