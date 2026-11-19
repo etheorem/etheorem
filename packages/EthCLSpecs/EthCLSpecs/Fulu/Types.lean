@@ -17,20 +17,29 @@ open EthCLLib.Spec
 
 namespace EthCLSpecs.Fulu
 
-/-- A slot number. -/
-forkabbrev Slot := UInt64
-/-- An epoch number. -/
-forkabbrev Epoch := UInt64
-/-- An index into the validator registry. -/
-forkabbrev ValidatorIndex := UInt64
-/-- An index into the builder registry (Gloas/EIP-7732). SSZ `uint64`. -/
-forkabbrev BuilderIndex := UInt64
-/-- An index into a committee. -/
-forkabbrev CommitteeIndex := UInt64
-/-- An index into the withdrawal queue. -/
-forkabbrev WithdrawalIndex := UInt64
-/-- A balance, in gwei. SSZ `uint64`. -/
-forkabbrev Gwei := UInt64
+/-- A slot number. SSZ `uint64`, the pyspec's checked `Uint64` subclass, so
+the checked operator surface applies (`SPEC_ARITHMETIC.md` §4.1). -/
+forkabbrev Slot := CLUint64
+/-- An epoch number. SSZ `uint64`, the pyspec's checked `Uint64` subclass, so
+the checked operator surface applies (`SPEC_ARITHMETIC.md` §4.1). -/
+forkabbrev Epoch := CLUint64
+/-- An index into the validator registry. SSZ `uint64`, the pyspec's checked `Uint64`
+subclass, so the checked operator surface applies (`SPEC_ARITHMETIC.md` §4.1), and a
+read indexed by it goes through the size-aware `ToIndex` interface (§4.6). -/
+forkabbrev ValidatorIndex := CLUint64
+/-- An index into the builder registry (Gloas/EIP-7732). SSZ `uint64`, the pyspec's checked
+`Uint64` subclass, so the checked operator surface applies (`SPEC_ARITHMETIC.md` §4.1), and a
+read indexed by it goes through the size-aware `ToIndex` interface (§4.6). -/
+forkabbrev BuilderIndex := CLUint64
+/-- The index of a committee within a slot. SSZ `uint64`, the pyspec's checked `Uint64`
+subclass (`SPEC_ARITHMETIC.md` §4.1). -/
+forkabbrev CommitteeIndex := CLUint64
+/-- The running index of a withdrawal. SSZ `uint64`, the pyspec's checked `Uint64` subclass, so
+`withdrawal_index += 1` is the checked add (`SPEC_ARITHMETIC.md` §4.1). -/
+forkabbrev WithdrawalIndex := CLUint64
+/-- A balance, in gwei. SSZ `uint64`, the pyspec's checked `Uint64` subclass, so
+the checked operator surface applies (`SPEC_ARITHMETIC.md` §4.1). -/
+forkabbrev Gwei := CLUint64
 /-- A 32-byte SSZ Merkle root. -/
 forkabbrev Root := Vector UInt8 32
 /-- A generic 32-byte value. -/
@@ -61,10 +70,12 @@ forkabbrev VersionedHash := Vector UInt8 32
 /-- A PeerDAS extended-blob cell: `BYTES_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_CELL`
 = `32 * 64` = 2048 bytes. -/
 forkabbrev Cell := Vector UInt8 2048
-/-- A PeerDAS data-column index (`= CellIndex`; one of `NUMBER_OF_COLUMNS`). -/
-forkabbrev ColumnIndex := UInt64
-/-- A PeerDAS cell index into an extended blob. -/
-forkabbrev CellIndex := UInt64
+/-- A PeerDAS data-column index (`= CellIndex`; one of `NUMBER_OF_COLUMNS`). SSZ `uint64`,
+the pyspec's checked `Uint64` subclass (`SPEC_ARITHMETIC.md` §4.1). -/
+forkabbrev ColumnIndex := CLUint64
+/-- A PeerDAS cell index into an extended blob. SSZ `uint64`, the pyspec's checked `Uint64`
+subclass (`SPEC_ARITHMETIC.md` §4.1). -/
+forkabbrev CellIndex := CLUint64
 /-- An RLP-encoded execution transaction: an SSZ `ByteList[MAX_BYTES_PER_TRANSACTION]`. -/
 forkabbrev Transaction := SizzLean.Repr.SSZList UInt8 (2 ^ 30)
 
