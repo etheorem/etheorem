@@ -418,7 +418,7 @@ all negative-index and empty-collection cases preserve Python behavior.
 
 ### Stage 7: clocks and remaining configuration arithmetic
 
-- [ ] **7.1 Move time values.** Cover `timeMs`, `genesisTimeMs`, `slotDurationMs`, conversion
+- [x] **7.1 Move time values.** Cover `timeMs`, `genesisTimeMs`, `slotDurationMs`, conversion
   helpers, and all clock consumers in state transitions and fork choice.
   - [x] **7.1a Move time values: clock core and tick path.**
     *Done 2026-11-19 (WS-34, `9768c41`): clock values (`Store.timeMs`/`genesisTimeMs`,
@@ -428,7 +428,17 @@ all negative-index and empty-collection cases preserve Python behavior.
     tick conversion moved, `computeSlotAtTimeMs` now raising on a zero duration per
     Python; pins in `ClockMigrationPins`, no TEMPORARY CROSSING left in the file;
     coverage 86 → 87, no tag lost; minimal sweeps case-identical to Stage 6.*
-  - [ ] **7.1b Move time values: clock deadlines and timestamp asserts.**
+  - [x] **7.1b Move time values: clock deadlines and timestamp asserts.**
+    *Done 2026-11-19 (WS-38, `398ea49`): `bpsDeadlineMs` is `CLUint64 → Checked` (Fulu
+    definition, Gloas restatement, Heze inherit); every deadline consumer reads the checked
+    clock — `isProposingOnTime` (time into slot then reorg cutoff), Fulu/Gloas
+    `recordBlockTimeliness`, Heze `getInclusionListDueMs` and the `on_inclusion_list` due
+    window; the `verify_execution_payload_envelope` and `process_execution_payload`
+    timestamp asserts compare checked values; `attestationDueBps`, `basisPoints`,
+    `attestationDueBpsGloas`, `payloadAttestationDueBps`, `inclusionListDueBps`,
+    `proposerReorgCutoffBps` re-typed with their `Const` mirrors, Stage 0 rows closed;
+    pins in `DeadlineMigrationPins`, `HezeForkChoicePins` repaired; no new TEMPORARY
+    CROSSING; coverage baseline 87, minimal sweeps case-identical to Stage 6.*
 - [ ] **7.2 Preserve arbitrary configurations.** Use checked division where positivity
   is absent. Pin zero duration, boundary overflow, and nearby valid configurations.
   Close the `computeSlotAtTimeMs` mismatch with executable evidence.
