@@ -138,23 +138,28 @@ the recorded EL answer, and the timeliness bit `on_inclusion_list` files with ea
 
 /-- `get_inclusion_list_due_ms = INCLUSION_LIST_DUE_BPS * SLOT_DURATION_MS // BASIS_POINTS`. Under
 the minimal config that is `6667 * 6000 / 10000 = 4000` (truncating divide), pinning both the
-`INCLUSION_LIST_DUE_BPS = 6667` constant and the inherited `bpsDeadlineMs` composition. Arithmetic
-only (no hash), so kernel `#guard`. -/
-private def pinIlDueMs : UInt64 :=
+`INCLUSION_LIST_DUE_BPS = 6667` constant and the inherited `bpsDeadlineMs` composition. The
+result is `Checked`, since the product is the checked kind. The minimal configuration is a large
+record, so `native_decide`, as the migration pins do. -/
+private def pinIlDueMs : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  getInclusionListDueMs
-#guard pinIlDueMs = 4000
+  match getInclusionListDueMs with
+  | .ok due => due.toPlainNat = 4000
+  | .error _ => false
+example : pinIlDueMs = true := by native_decide
 
 /-- The faithful empty-committee throw. Over a zero-validator `default BeaconState`, slot 0's
 beacon committee is empty, so `getInclusionListCommittee` hits the empty-committee guard and
-rejects. Pyspec raises `ZeroDivisionError` on the same `indices[i % 0]`, an uncaught fault, so the
-pin checks the reject is NOT an expected rejection (a `.transition (.arithmetic …)`, not a caught
-`.assert`), the property a regression to `assert` would break. `on_inclusion_list` reaches the
-helper after its state advance. At v1.7.0-beta.4 the record path no longer computes a committee,
-so the pin drives the helper directly, in plain `Except` (it needs no `MonadStateOf`). `State` is
-FFI-backed (`FastBox`), so `native_decide`. -/
+rejects. Pyspec raises a bare `ZeroDivisionError` on the same `indices[i % 0]`, an uncaught
+fault no wrapper's class set holds, so the pin checks the reject is exactly the
+`.zeroDivision` cause, not a caught `.assert` and not the `.arithmetic` range class. A
+regression to `assert`, or to the range cause, breaks it. `on_inclusion_list` reaches the
+helper after its state advance. At
+v1.7.0-beta.4 the record path no longer computes a committee, so the pin drives the helper
+directly, in plain `Except` (it needs no `MonadStateOf`). `State` is FFI-backed (`FastBox`), so
+`native_decide`. -/
 private def pinCommitteeThrows : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
@@ -162,7 +167,10 @@ private def pinCommitteeThrows : Bool :=
   let state : State := SSZ.FastBox (default : @EthCLSpecs.Heze.BeaconState minimal)
   match (getInclusionListCommittee (StoreTransition := Except StoreTransitionError) state 0) with
   | .ok _    => false
-  | .error e => !e.isExpectedRejection
+  -- The `ErrorConv StateTransitionError StoreTransitionError` instance wraps the reject as
+  -- `.transition` even at this plain `Except` monad, so the cause sits one level inside.
+  | .error (.transition (.zeroDivision _)) => true
+  | .error _ => false
 example : pinCommitteeThrows = true := by native_decide
 
 /-! #### The record path
@@ -353,7 +361,7 @@ before `get_inclusion_list_due_ms` is timely, one at or after the deadline is no
 end-to-end with the store clock `intoSlotMs` into slot 0, then reads the filed entry's timeliness
 back at `(0, anchor_root)` and the validator. `getForkchoiceStore` hashes the anchor (FFI
 `Sha256`), so this is a `native_decide` `example` (`Lean.ofReduceBool`). -/
-private def pinOnIlTimely (intoSlotMs : UInt64) : Option Bool :=
+private def pinOnIlTimely (intoSlotMs : CLUint64) : Option Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
@@ -367,17 +375,23 @@ private def pinOnIlTimely (intoSlotMs : UInt64) : Option Bool :=
   | (.ok store0, .ok committee) =>
     let validatorIndex := vget committee 0
     let signed := pinSIL validatorIndex 0 anchorRoot #[pinTx 0xAA]
-    let store := { store0 with timeMs := store0.genesisTimeMs + intoSlotMs }
-    match runOn store
-        (onInclusionList (map := treeMap) signed : EStateM StoreTransitionError (Store treeMap) Unit) with
-    | .ok after =>
-      let entries := (FcMap.lookup after.inclusionListStore.inclusionLists (0, anchorRoot)).getD
-        FcMap.empty
-      (FcMap.lookup entries validatorIndex).map (·.timely)
+    -- The store clock is the checked sum `genesis_time_ms + into_slot_ms`; it fits here.
+    match (store0.genesisTimeMs + intoSlotMs : Checked CLUint64) with
     | .error _ => none
+    | .ok timeMs =>
+      let store := { store0 with timeMs := timeMs }
+      match runOn store
+          (onInclusionList (map := treeMap) signed : EStateM StoreTransitionError (Store treeMap) Unit) with
+      | .ok after =>
+        let entries := (FcMap.lookup after.inclusionListStore.inclusionLists (0, anchorRoot)).getD
+          FcMap.empty
+        (FcMap.lookup entries validatorIndex).map (·.timely)
+      | .error _ => none
   | _ => none
 -- 0 ms into the slot: 0 < 4000 ⇒ timely.
 example : pinOnIlTimely 0 = some true := by native_decide
+-- 3999 ms into the slot: the last timely millisecond, since the deadline is strict.
+example : pinOnIlTimely 3999 = some true := by native_decide
 -- 4000 ms into the slot: not < 4000 ⇒ untimely.
 example : pinOnIlTimely 4000 = some false := by native_decide
 
