@@ -23,10 +23,12 @@ and the successes read back exact values.
    `SLOTS_PER_HISTORICAL_ROOT = 64`), reading slot `64` wraps the index to `0`
    and returns the marker root stored there.
 
-The arithmetic rejects surface as `.error (.arithmetic _)`, the checked fault.
-A wrapping form gives a different outcome at both sites: at site 2 the wrapped
-product returns `.ok`, and at site 3 the wrapped bound `1` fails the recency
-assert with `.error (.assert _)`. So those failure pins fail under it. `State` is
+The arithmetic rejects surface as the checked range fault: `.error (.arithmetic _)`
+on the state machine at site 3, and the `Checked` result's `.range` cause at site 2,
+where `compute_time_at_slot_ms` returns `Checked`. A wrapping form gives a different
+outcome at both sites: at site 2 the wrapped product returns `.ok`, and at site 3 the
+wrapped bound `1` fails the recency assert with `.error (.assert _)`. So those failure
+pins fail under it. `Tests/ClockMigrationPins.lean` pins the clock's other sites. `State` is
 FFI-backed and the roots hash through the FFI `Sha256`, so `native_decide`.
 -/
 
@@ -85,9 +87,8 @@ example : pinProcessSlotsAtMaxSlotRejects = true := by native_decide
 private def pinTimeMsMultiplyOverflows : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  match (computeTimeAtSlotMs 0 (3074457345618259 : Slot) :
-      Except StateTransitionError UInt64) with
-  | .error (.arithmetic _) => true
+  match (computeTimeAtSlotMs 0 (3074457345618259 : Slot) : Checked CLUint64) with
+  | .error ⟨.range, _, _, _, _⟩ => true
   | _ => false
 example : pinTimeMsMultiplyOverflows = true := by native_decide
 
@@ -95,8 +96,8 @@ example : pinTimeMsMultiplyOverflows = true := by native_decide
 private def pinTimeMsInRangeReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  match (computeTimeAtSlotMs 0 (100 : Slot) : Except StateTransitionError UInt64) with
-  | .ok ms => ms = 600000
+  match (computeTimeAtSlotMs 0 (100 : Slot) : Checked CLUint64) with
+  | .ok ms => ms.toPlainNat = 600000
   | _ => false
 example : pinTimeMsInRangeReads = true := by native_decide
 

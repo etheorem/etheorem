@@ -142,7 +142,8 @@ forkpreset where
 shapes a type. Membership follows `configs/{minimal,mainnet}.yaml` the same way
 `Preset` follows the preset files. -/
 forkconfig where
-  churnLimitQuotient : UInt64
+  /-- `CHURN_LIMIT_QUOTIENT`: a `Uint64` in the pinned module, so the checked kind. -/
+  churnLimitQuotient : CLUint64
   minPerEpochChurnLimitElectra : Gwei
   maxPerEpochActivationExitChurnLimit : Gwei
   minValidatorWithdrawabilityDelay : Epoch
@@ -164,8 +165,10 @@ forkconfig where
   electraForkEpoch : Epoch
   fuluForkVersion : Version
   fuluForkEpoch : Epoch
-  slotDurationMs : UInt64
-  attestationDueBps : UInt64
+  /-- `SLOT_DURATION_MS`: a `Uint64` in the pinned module, so the checked kind. -/
+  slotDurationMs : CLUint64
+  /-- `ATTESTATION_DUE_BPS`: a `Uint64` in the pinned module, so the checked kind. -/
+  attestationDueBps : CLUint64
   ejectionBalanceG : Gwei
   /-- `MAX_BLOBS_PER_BLOCK_ELECTRA`: a `Uint64` in the pinned module, so the checked kind. -/
   maxBlobsPerBlockElectra : CLUint64
@@ -174,14 +177,20 @@ forkconfig where
   pinned config loader keeps each `MAX_BLOBS_PER_BLOCK` a plain `int`, so the cap is a
   `CLInt`. -/
   blobSchedule : List (Epoch × CLInt)
-  /-- `INACTIVITY_SCORE_BIAS` / `INACTIVITY_SCORE_RECOVERY_RATE` (Altair). -/
-  inactivityScoreBias : UInt64
-  inactivityScoreRecoveryRate : UInt64
-  /-- Fork-choice tuning, from the spec's fork-choice `Configuration` table. -/
-  proposerScoreBoost : Nat
-  proposerReorgCutoffBps : UInt64
-  reorgHeadWeightThreshold : UInt64
-  reorgParentWeightThreshold : UInt64
+  /-- `INACTIVITY_SCORE_BIAS` / `INACTIVITY_SCORE_RECOVERY_RATE` (Altair): both `Uint64`
+  in the pinned module, so the checked kind. -/
+  inactivityScoreBias : CLUint64
+  inactivityScoreRecoveryRate : CLUint64
+  /-- Fork-choice tuning, from the spec's fork-choice `Configuration` table.
+  `PROPOSER_SCORE_BOOST`: a `Uint64` in the pinned module, so the checked kind. -/
+  proposerScoreBoost : CLUint64
+  /-- `PROPOSER_REORG_CUTOFF_BPS`: a `Uint64` in the pinned module, so the checked kind. -/
+  proposerReorgCutoffBps : CLUint64
+  /-- `REORG_HEAD_WEIGHT_THRESHOLD` / `REORG_PARENT_WEIGHT_THRESHOLD`: both `Uint64` in the
+  pinned module, so the checked kind. -/
+  reorgHeadWeightThreshold : CLUint64
+  reorgParentWeightThreshold : CLUint64
+  /-- `REORG_MAX_EPOCHS_SINCE_FINALIZATION`: an `Epoch` in the pinned module. -/
   reorgMaxEpochsSinceFinalization : Epoch
 
 namespace Const
@@ -296,10 +305,29 @@ forkabbrev genesisEpoch : Epoch := 0
 forkabbrev validatorRegistryLimit : Nat := Preset.validatorRegistryLimit
 forkabbrev historicalRootsLimit : Nat := Preset.historicalRootsLimit
 forkabbrev pendingDepositsLimit : Nat := Preset.pendingDepositsLimit
+/-- `JUSTIFICATION_BITS_LENGTH`. The pinned module types it `Uint64(4)`, but it stays a
+structural `Nat`: it is the width of the `justificationBits` bitvector, and the one formula
+over it, `justification_bits[: JUSTIFICATION_BITS_LENGTH - 1]`, is the one-place shift of
+that fixed-width vector in `process_justification_and_finalization`. Python's checked
+`Uint64(4) - 1` cannot raise, so the shift by one gives the same answer. -/
 forkabbrev justificationBitsLength : Nat := 4
 forkabbrev maxExtraDataBytes : Nat := Preset.maxExtraDataBytes
+/-- `DEPOSIT_CONTRACT_TREE_DEPTH`. The pinned module types it `Uint64(2**5)`, but it stays a
+structural `Nat`: it sizes the `Deposit.proof` vector, and the one formula over it, the
+`DEPOSIT_CONTRACT_TREE_DEPTH + 1` branch depth, adds two literals whose sum `33` cannot
+raise. -/
 forkabbrev depositContractTreeDepth : Nat := 32
--- per-block operation caps
+/- Per-block operation caps. The pinned module types every cap `Uint64`, but each stays a
+structural `Nat`, with no checked view. Each one is an SSZ list cap. Most executable reads
+compare a plain length or counter to a cap: the Gloas and Heze `len(body.…) <= MAX_…`
+asserts, the Gloas payload-request asserts, and the `next_deposit_index >=
+MAX_PENDING_DEPOSITS_PER_EPOCH` stop of `process_pending_deposits`. A comparison of a plain
+`int` with a `Uint64` never raises and orders the values, so the `Nat` comparison gives the
+same answer. One formula multiplies: Gloas `is_valid_indexed_attestation` checks
+`len(indices) > MAX_VALIDATORS_PER_COMMITTEE * MAX_COMMITTEES_PER_SLOT`. The pinned Electra
+module forms that checked product at import, as the `AggregationBits` list limit, and every
+later fork imports it. A preset whose product passes `2^64 - 1` therefore has no pyspec to
+run, and on every preset that loads the `Nat` product is exact. -/
 forkabbrev maxProposerSlashings : Nat := Preset.maxProposerSlashings
 forkabbrev maxAttesterSlashings : Nat := Preset.maxAttesterSlashings
 forkabbrev maxAttestations : Nat := Preset.maxAttestations
@@ -362,15 +390,15 @@ forkabbrev minSlashingPenaltyQuotientElectra : Nat := Preset.minSlashingPenaltyQ
 forkabbrev whistleblowerRewardQuotientElectra : Nat := Preset.whistleblowerRewardQuotientElectra
 forkabbrev proportionalSlashingMultiplierBellatrix : Nat := Preset.proportionalSlashingMultiplierBellatrix
 forkabbrev inactivityPenaltyQuotientBellatrix : Nat := Preset.inactivityPenaltyQuotientBellatrix
-forkabbrev inactivityScoreBias : UInt64 := Config.inactivityScoreBias
-forkabbrev inactivityScoreRecoveryRate : UInt64 := Config.inactivityScoreRecoveryRate
-/-- TEMPORARY CROSSING (removed in Stage 7): `INACTIVITY_SCORE_BIAS` /
-`INACTIVITY_SCORE_RECOVERY_RATE` re-type with their score-update consumers in
-Stage 7's configuration slice; until then the checked views ride the wire iso,
-so Stage 4's inactivity-score arithmetic keeps the checked kind. -/
-forkabbrev inactivityScoreBiasC : CLUint64 := CLUint64.trustedOfUInt64 Config.inactivityScoreBias
-forkabbrev inactivityScoreRecoveryRateC : CLUint64 :=
-  CLUint64.trustedOfUInt64 Config.inactivityScoreRecoveryRate
+/-- `INACTIVITY_SCORE_BIAS`, the checked kind: `process_inactivity_updates` adds it to a
+score, and `get_inactivity_penalty_deltas` multiplies it by
+`INACTIVITY_PENALTY_QUOTIENT_BELLATRIX` for the penalty divisor. Both are checked
+operations. A configuration value: no `PositiveDivisor` view exists, so the divisor keeps
+the checked route (`SPEC_ARITHMETIC.md` §4.2). -/
+forkabbrev inactivityScoreBias : CLUint64 := Config.inactivityScoreBias
+/-- `INACTIVITY_SCORE_RECOVERY_RATE`, the checked kind: the `saturating_sub` operand of
+`process_inactivity_updates`. -/
+forkabbrev inactivityScoreRecoveryRate : CLUint64 := Config.inactivityScoreRecoveryRate
 forkabbrev hysteresisQuotient : Nat := Preset.hysteresisQuotient
 forkabbrev hysteresisDownwardMultiplier : Nat := Preset.hysteresisDownwardMultiplier
 forkabbrev hysteresisUpwardMultiplier : Nat := Preset.hysteresisUpwardMultiplier
@@ -389,17 +417,11 @@ forkabbrev domainSyncCommittee : ByteArray := ⟨#[7, 0, 0, 0]⟩
 forkabbrev domainBlsToExecutionChange : ByteArray := ⟨#[0x0A, 0, 0, 0]⟩
 
 -- Network parameters, and the fork-choice tuning beside them.
-forkabbrev churnLimitQuotient : UInt64 := Config.churnLimitQuotient
-/-- The checked view of `churnLimitQuotient`, the divisor Stage 4's churn
-formulas divide by (`SPEC_ARITHMETIC.md` §4.2). The config field stores the raw
-`UInt64` the YAML gives; the view re-types it through the wire iso, whose wrap
-cannot fault because every `UInt64` is already in range (§4.5,
-`trustedOfUInt64`). A configuration value keeps checked division: no
-`PositiveDivisor` view exists over a generic configuration, whose accepted
-domain alone can supply positivity (§4.2). Stage 7.3 retypes the field to the
-checked kind; this view then collapses to the identity and is deleted, not
-re-derived. -/
-forkabbrev churnLimitQuotientC : CLUint64 := CLUint64.trustedOfUInt64 Config.churnLimitQuotient
+/-- `CHURN_LIMIT_QUOTIENT`, the checked kind: the divisor of `get_balance_churn_limit`. A
+configuration value keeps checked division: no `PositiveDivisor` view exists over a generic
+configuration, whose accepted domain alone can supply positivity (`SPEC_ARITHMETIC.md`
+§4.2). -/
+forkabbrev churnLimitQuotient : CLUint64 := Config.churnLimitQuotient
 forkabbrev minPerEpochChurnLimitElectra : Gwei := Config.minPerEpochChurnLimitElectra
 forkabbrev maxPerEpochActivationExitChurnLimit : Gwei := Config.maxPerEpochActivationExitChurnLimit
 forkabbrev minValidatorWithdrawabilityDelay : Epoch := Config.minValidatorWithdrawabilityDelay
@@ -418,31 +440,39 @@ forkabbrev electraForkVersion : Version := Config.electraForkVersion
 forkabbrev electraForkEpoch : Epoch := Config.electraForkEpoch
 forkabbrev fuluForkVersion : Version := Config.fuluForkVersion
 forkabbrev fuluForkEpoch : Epoch := Config.fuluForkEpoch
-forkabbrev slotDurationMs : UInt64 := Config.slotDurationMs
-forkabbrev attestationDueBps : UInt64 := Config.attestationDueBps
+/-- `SLOT_DURATION_MS`, the checked kind. A configuration value: no `PositiveDivisor` view
+exists, so a division by it keeps the checked route (`SPEC_ARITHMETIC.md` §4.2). -/
+forkabbrev slotDurationMs : CLUint64 := Config.slotDurationMs
+/-- `ATTESTATION_DUE_BPS`, the checked kind: the attestation deadline in basis points of the
+slot. -/
+forkabbrev attestationDueBps : CLUint64 := Config.attestationDueBps
 /-- `MAX_BLOBS_PER_BLOCK_ELECTRA` (9 for both presets). Before the first `BLOB_SCHEDULE`
 entry this is what `get_blob_parameters(epoch).max_blobs_per_block` returns. -/
 forkabbrev maxBlobsPerBlockElectra : CLUint64 := Config.maxBlobsPerBlockElectra
 /-- `BLOB_SCHEDULE` (EIP-7892): the `(EPOCH, MAX_BLOBS_PER_BLOCK)` schedule, its caps
 plain `int`s. -/
 forkabbrev blobSchedule : List (Epoch × CLInt) := Config.blobSchedule
-/-- Reorg weight thresholds (percent of the per-slot committee weight). -/
-forkabbrev reorgHeadWeightThreshold : UInt64 := Config.reorgHeadWeightThreshold
-forkabbrev reorgParentWeightThreshold : UInt64 := Config.reorgParentWeightThreshold
-/-- `REORG_MAX_EPOCHS_SINCE_FINALIZATION`: do not reorg if finality is older. -/
+/-- Reorg weight thresholds (percent of the per-slot committee weight), the checked kind:
+each is the `committee_percent` operand of `calculate_committee_fraction`'s checked product. -/
+forkabbrev reorgHeadWeightThreshold : CLUint64 := Config.reorgHeadWeightThreshold
+forkabbrev reorgParentWeightThreshold : CLUint64 := Config.reorgParentWeightThreshold
+/-- `REORG_MAX_EPOCHS_SINCE_FINALIZATION`: do not reorg if finality is older. An `Epoch`,
+so the checked kind; `is_finalization_ok` only compares it, which never raises. -/
 forkabbrev reorgMaxEpochsSinceFinalization : Epoch := Config.reorgMaxEpochsSinceFinalization
 /-- `PROPOSER_REORG_CUTOFF_BPS`: the on-time deadline for a reorg proposal, in basis
-points of the slot (~17%). -/
-forkabbrev proposerReorgCutoffBps : UInt64 := Config.proposerReorgCutoffBps
+points of the slot (~17%), the checked kind. -/
+forkabbrev proposerReorgCutoffBps : CLUint64 := Config.proposerReorgCutoffBps
 /-- `NUMBER_OF_COLUMNS` (PeerDAS, `= CELLS_PER_EXT_BLOB`): the data-column count. -/
 forkabbrev numberOfColumns : Nat := Preset.numberOfColumns
 /-- Fulu `KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH` (4), the `DataColumnSidecar`'s proof
 vector length. Distinct from the Deneb singular `KZG_COMMITMENT_INCLUSION_PROOF_DEPTH`. -/
 forkabbrev kzgCommitmentsInclusionProofDepth : Nat := Preset.kzgCommitmentsInclusionProofDepth
-/-- `PROPOSER_SCORE_BOOST` (percent of the per-slot committee weight). -/
-forkabbrev proposerScoreBoost : Nat := Config.proposerScoreBoost
-/-- `BASIS_POINTS` denominator for the slot-component durations. -/
-forkabbrev basisPoints : UInt64 := 10000
+/-- `PROPOSER_SCORE_BOOST` (percent of the per-slot committee weight), the checked kind: the
+`committee_percent` operand of `calculate_committee_fraction`'s checked product. -/
+forkabbrev proposerScoreBoost : CLUint64 := Config.proposerScoreBoost
+/-- `BASIS_POINTS`, the denominator for the slot-component durations. The pinned module
+declares it `Uint64(10000)`, so the checked kind. -/
+forkabbrev basisPoints : CLUint64 := 10000
 
 end
 end Const

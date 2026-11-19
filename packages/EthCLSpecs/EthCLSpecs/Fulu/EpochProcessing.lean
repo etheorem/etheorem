@@ -149,10 +149,10 @@ forkdef processInactivityUpdates : StateTransition Unit := do
       -- value the monadic block computed.
       let cur ← sszGetIdx (sszGet state inactivityScores) vi
       let cur ← if matching.contains vi then pure (cur.saturatingSub 1)
-                else cur + Const.inactivityScoreBiasC
+                else cur + Const.inactivityScoreBias
       -- `is_in_inactivity_leak` runs here, after the score update, per validator.
       let leak ← isInInactivityLeak state
-      let cur := if !leak then cur.saturatingSub Const.inactivityScoreRecoveryRateC else cur
+      let cur := if !leak then cur.saturatingSub Const.inactivityScoreRecoveryRate else cur
       -- `toPlainNat`: the raising read above proved `vi` in range for this list.
       state := sszModify state inactivityScores[vi.toPlainNat]! as _old => cur
     set state
@@ -204,9 +204,11 @@ forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) :
 
 /-- `get_inactivity_penalty_deltas` (`fulu/mainnet.py:1815-1832`): penalties only.
 The numerator is the checked `effective_balance * inactivity_scores[index]`
-product, the divisor the plain config-constant product, and the `+=` the checked
-`Gwei` add. The two reads `state.validators[index]` and `state.inactivity_scores[index]`
-raise `IndexError` past the end, so they go through `getAt` in the pyspec's order. -/
+product, the divisor the checked product
+`INACTIVITY_SCORE_BIAS * INACTIVITY_PENALTY_QUOTIENT_BELLATRIX`, and the `+=` the
+checked `Gwei` add. The two reads `state.validators[index]` and
+`state.inactivity_scores[index]` raise `IndexError` past the end, so they go through
+`getAt` in the pyspec's order. -/
 forkdef getInactivityPenaltyDeltas (state : State) : Except StateTransitionError (Array Gwei) := do
   let validators := sszGet state validators
   let iscores := sszGet state inactivityScores
@@ -219,9 +221,10 @@ forkdef getInactivityPenaltyDeltas (state : State) : Except StateTransitionError
       let score ← liftErr (getAt iscores vi)
       let num ← validator.effectiveBalance * score
       -- `INACTIVITY_SCORE_BIAS` is a checked config value at the pin, so the
-      -- divisor is the checked product, not a `Nat` one (`SPEC_ARITHMETIC.md`
-      -- §6, no `Nat` intermediate over a checked operand).
-      let denom ← Const.inactivityScoreBiasC * Const.inactivityPenaltyQuotientBellatrix
+      -- divisor is the checked product, with no `Nat` intermediate over a checked
+      -- operand (`SPEC_ARITHMETIC.md` §6). The product binds each time Python forms
+      -- it, inside the loop, so an overflow raises only once a penalty is due.
+      let denom ← Const.inactivityScoreBias * Const.inactivityPenaltyQuotientBellatrix
       -- `penalties[index] += …` reads the element before it forms the right side.
       let previousPenalty ← liftErr (getAt penalties vi)
       let delta ← num / denom

@@ -40,12 +40,14 @@ forkconfig where
   Heze at genesis overrides it to `0`. `compute_fork_version` reads it. -/
   hezeForkEpoch : Epoch
   /-- `INCLUSION_LIST_DUE_BPS` (~67% of the slot): the timeliness deadline for an
-  inclusion list, in basis points of the slot. -/
-  inclusionListDueBps : UInt64
+  inclusion list, in basis points of the slot. A `Uint64` in the pinned module, so the checked
+  kind. -/
+  inclusionListDueBps : CLUint64
   /-- `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` (8192): the cap on an inclusion list's
   summed transaction bytes, which `on_inclusion_list` asserts. v1.7.0-beta.4 renames
-  alpha.12's `MAX_BYTES_PER_INCLUSION_LIST` to this. -/
-  maxTransactionsBytesPerInclusionList : UInt64
+  alpha.12's `MAX_BYTES_PER_INCLUSION_LIST` to this. A `Uint64` in the pinned module at
+  both presets, so the checked kind. -/
+  maxTransactionsBytesPerInclusionList : CLUint64
   /-- `MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS` (1): how many slots past its own an
   inclusion list stays in the retention window `on_inclusion_list` asserts. The pinned
   configuration types it `Slot` (`Slot(1)`), so the field carries the checked kind
@@ -64,10 +66,10 @@ forkabbrev inclusionListCommitteeSize : Nat := Preset.inclusionListCommitteeSize
 -- (`Heze/Signing.lean`) verifies signatures under it.
 forkabbrev domainInclusionListCommittee : ByteArray := ⟨#[0x10, 0, 0, 0]⟩
 -- `consensus-specs/specs/heze/fork-choice.md:38`.
-forkabbrev inclusionListDueBps : UInt64 := Config.inclusionListDueBps
+forkabbrev inclusionListDueBps : CLUint64 := Config.inclusionListDueBps
 forkabbrev hezeForkVersion : Version := Config.hezeForkVersion
 forkabbrev hezeForkEpoch : Epoch := Config.hezeForkEpoch
-forkabbrev maxTransactionsBytesPerInclusionList : UInt64 :=
+forkabbrev maxTransactionsBytesPerInclusionList : CLUint64 :=
   Config.maxTransactionsBytesPerInclusionList
 forkabbrev minSlotsForInclusionListsRequests : Slot := Config.minSlotsForInclusionListsRequests
 
@@ -76,11 +78,13 @@ forkabbrev minSlotsForInclusionListsRequests : Slot := Config.minSlotsForInclusi
 -- whole surface, not the subset Heze happens to call today: the fork owns its
 -- vocabulary, and a new call site should not have to come back and edit this block.
 
--- Gloas's own ePBS and EIP-8282 entries.
-inherit ptcSize maxBuildersPerWithdrawalsSweep maxPayloadAttestations
+-- Gloas's own ePBS and EIP-8282 entries. `ptcSizeLt` / `ptcSizeC` replay beside
+-- `ptcSize` (Gloas's own declaration order): the majority thresholds replayed below
+-- name `ptcSizeC` in their bodies, and a replay resolves siblings already emitted.
+inherit ptcSize ptcSizeLt ptcSizeC maxBuildersPerWithdrawalsSweep
+inherit maxPayloadAttestations
 inherit maxBuilderDepositRequestsPerPayload maxBuilderExitRequestsPerPayload
 inherit gloasForkVersion gloasForkEpoch churnLimitQuotientGloas
-inherit churnLimitQuotientGloasC
 inherit maxPerEpochActivationChurnLimitGloas
 inherit minBuilderWithdrawabilityDelay builderPaymentThresholdNumerator
 inherit builderPaymentThresholdDenominator builderWithdrawalPrefix payloadBuilderVersion
@@ -89,7 +93,7 @@ inherit domainBuilderDeposit payloadStatusEmpty payloadStatusFull payloadStatusP
 inherit attestationTimelinessIndex ptcTimelinessIndex payloadTimelyThreshold
 inherit dataAvailabilityTimelyThreshold attestationDueBpsGloas payloadAttestationDueBps
 inherit gasLimitSchedule
-inherit consolidationChurnLimitQuotient consolidationChurnLimitQuotientC
+inherit consolidationChurnLimitQuotient
 
 -- Vector widths and committee / epoch lengths.
 inherit slotsPerEpoch slotsPerHistoricalRoot epochsPerHistoricalVector
@@ -142,8 +146,7 @@ inherit timelySourceWeight timelyTargetWeight timelyHeadWeight timelySourceFlagI
 inherit timelyTargetFlagIndex timelyHeadFlagIndex participationFlagWeights
 inherit minSlashingPenaltyQuotientElectra whistleblowerRewardQuotientElectra
 inherit proportionalSlashingMultiplierBellatrix inactivityPenaltyQuotientBellatrix
-inherit inactivityScoreBias inactivityScoreRecoveryRate inactivityScoreBiasC
-inherit inactivityScoreRecoveryRateC hysteresisQuotient
+inherit inactivityScoreBias inactivityScoreRecoveryRate hysteresisQuotient
 inherit hysteresisDownwardMultiplier hysteresisUpwardMultiplier maxRandomValue
 
 -- Withdrawal-credential prefixes.
@@ -154,7 +157,7 @@ inherit domainBeaconProposer domainBeaconAttester domainRandao domainDeposit
 inherit domainVoluntaryExit domainSyncCommittee domainBlsToExecutionChange
 
 -- Network parameters, and the fork-choice tuning beside them.
-inherit churnLimitQuotient churnLimitQuotientC minPerEpochChurnLimitElectra
+inherit churnLimitQuotient minPerEpochChurnLimitElectra
 inherit maxPerEpochActivationExitChurnLimit minValidatorWithdrawabilityDelay
 inherit shardCommitteePeriod genesisForkVersion slotDurationMs
 inherit altairForkVersion altairForkEpoch bellatrixForkVersion bellatrixForkEpoch

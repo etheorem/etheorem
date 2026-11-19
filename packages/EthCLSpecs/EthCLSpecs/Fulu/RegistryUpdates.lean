@@ -47,12 +47,12 @@ max(MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA, get_total_active_balance(state) //
 config.CHURN_LIMIT_QUOTIENT)`, then `churn - churn % EFFECTIVE_BALANCE_INCREMENT`.
 Every operand is `Gwei`, so the division, modulo, and subtraction are the
 checked `Gwei` operators, each bound as the pyspec assigns it
-(`SPEC_ARITHMETIC.md` §4.3). The divisor is the checked config view; a
+(`SPEC_ARITHMETIC.md` §4.3). The divisor is the checked config value; a
 configuration value keeps checked division (`SPEC_ARITHMETIC.md` §4.2). The total
 active balance reads the registry, so the result also carries its `IndexError`. -/
 forkdef getBalanceChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let totalActiveBalance ← getTotalActiveBalance state
-  let scaled ← totalActiveBalance / Const.churnLimitQuotientC
+  let scaled ← totalActiveBalance / Const.churnLimitQuotient
   let churn := max Const.minPerEpochChurnLimitElectra scaled
   let rounded ← churn % Const.effectiveBalanceIncrementG
   let limit ← churn - rounded

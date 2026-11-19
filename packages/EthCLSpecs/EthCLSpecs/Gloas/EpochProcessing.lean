@@ -87,7 +87,7 @@ inherit reserveChurn
 place of Fulu's, the checked `Gwei` chain as `getBalanceChurnLimit` ports it. -/
 forkdef getExitChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let totalActiveBalance ← getTotalActiveBalance state
-  let scaled ← totalActiveBalance / Const.churnLimitQuotientGloasC
+  let scaled ← totalActiveBalance / Const.churnLimitQuotientGloas
   let churn := max Const.minPerEpochChurnLimitElectra scaled
   let rounded ← churn % Const.effectiveBalanceIncrementG
   let limit ← churn - rounded
@@ -97,7 +97,7 @@ forkdef getExitChurnLimit (state : State) : Except StateTransitionError Gwei := 
 churn capped at `MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS`. -/
 forkdef getActivationChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let totalActiveBalance ← getTotalActiveBalance state
-  let scaled ← totalActiveBalance / Const.churnLimitQuotientGloasC
+  let scaled ← totalActiveBalance / Const.churnLimitQuotientGloas
   let churn := max Const.minPerEpochChurnLimitElectra scaled
   let rounded ← churn % Const.effectiveBalanceIncrementG
   let churn ← churn - rounded
@@ -183,7 +183,7 @@ inherit getPendingBalanceToWithdraw
 EIP-7732 quotient, the checked `Gwei` chain as `getBalanceChurnLimit` ports it. -/
 forkdef getConsolidationChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let totalActiveBalance ← getTotalActiveBalance state
-  let scaled ← totalActiveBalance / Const.consolidationChurnLimitQuotientC
+  let scaled ← totalActiveBalance / Const.consolidationChurnLimitQuotient
   let churn := scaled
   let rounded ← churn % Const.effectiveBalanceIncrementG
   let limit ← churn - rounded

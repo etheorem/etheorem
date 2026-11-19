@@ -418,14 +418,113 @@ all negative-index and empty-collection cases preserve Python behavior.
 
 ### Stage 7: clocks and remaining configuration arithmetic
 
-- [ ] **7.1 Move time values.** Cover `timeMs`, `genesisTimeMs`, `slotDurationMs`, conversion
+- [x] **7.1 Move time values.** Cover `timeMs`, `genesisTimeMs`, `slotDurationMs`, conversion
   helpers, and all clock consumers in state transitions and fork choice.
-- [ ] **7.2 Preserve arbitrary configurations.** Use checked division where positivity
+  - [x] **7.1a Move time values: clock core and tick path.**
+    *Done 2026-11-19 (WS-34, `9768c41`): clock values (`Store.timeMs`/`genesisTimeMs`,
+    `BeaconState.genesisTime`, `Eth1Data.depositCount`, `SLOT_DURATION_MS`) are `CLUint64`;
+    the `Fulu/Time.lean` helpers return `Checked` with the Python bind order and the
+    `UINT64_MAX` cap on `secondsToMilliseconds`; the tick path, anchor store, and runner
+    tick conversion moved, `computeSlotAtTimeMs` now raising on a zero duration per
+    Python; pins in `ClockMigrationPins`, no TEMPORARY CROSSING left in the file;
+    coverage 86 → 87, no tag lost; minimal sweeps case-identical to Stage 6.*
+  - [x] **7.1b Move time values: clock deadlines and timestamp asserts.**
+    *Done 2026-11-19 (WS-38, `398ea49`): `bpsDeadlineMs` is `CLUint64 → Checked` (Fulu
+    definition, Gloas restatement, Heze inherit); every deadline consumer reads the checked
+    clock — `isProposingOnTime` (time into slot then reorg cutoff), Fulu/Gloas
+    `recordBlockTimeliness`, Heze `getInclusionListDueMs` and the `on_inclusion_list` due
+    window; the `verify_execution_payload_envelope` and `process_execution_payload`
+    timestamp asserts compare checked values; `attestationDueBps`, `basisPoints`,
+    `attestationDueBpsGloas`, `payloadAttestationDueBps`, `inclusionListDueBps`,
+    `proposerReorgCutoffBps` re-typed with their `Const` mirrors, Stage 0 rows closed;
+    pins in `DeadlineMigrationPins`, `HezeForkChoicePins` repaired; no new TEMPORARY
+    CROSSING; coverage baseline 87, minimal sweeps case-identical to Stage 6.*
+- [x] **7.2 Preserve arbitrary configurations.** Use checked division where positivity
   is absent. Pin zero duration, boundary overflow, and nearby valid configurations.
   Close the `computeSlotAtTimeMs` mismatch with executable evidence.
-- [ ] **7.3 Finish the constant audit.** Include Gloas threshold numerators/denominators
+  *Done 2026-11-19 (WS-35, `1997d99`): pins in `ConfigurationClockPins` at
+  `SLOT_DURATION_MS` 0, 1, `2^63`, and `UINT64_MAX`; a zero duration raises the typed
+  zero-division fault through `computeSlotAtTimeMs` and the store clock in all three forks,
+  and a time before genesis raises the range fault first. The pinned pyspec (1.7.0b4) gave
+  the same answer for every probe in Fulu, Gloas, and Heze, so the mismatch is closed. The
+  churn quotients and the inactivity denominator already divide on the checked route, and
+  `BASIS_POINTS` is the constant `10000`. No fork body changed; minimal subsets and full
+  minimal `fork_choice` runs case-identical to Stage 6.*
+- [x] **7.3 Finish the constant audit.** Include Gloas threshold numerators/denominators
   and churn quotients. Distinguish checked constants from plain configuration integers.
-- [ ] **7.4 Verify.** Run the common gate and complete minimal sweep.
+  - [x] **7.3a Finish the constant audit: Fulu rows.**
+    *Done 2026-11-19 (WS-36, `6dd48cf`): `INACTIVITY_SCORE_BIAS`,
+    `INACTIVITY_SCORE_RECOVERY_RATE`, `CHURN_LIMIT_QUOTIENT`, `PROPOSER_SCORE_BOOST`, and
+    `REORG_HEAD/PARENT_WEIGHT_THRESHOLD` are `CLUint64` (`Uint64` at the pin), read directly
+    by `process_inactivity_updates`, the inactivity penalty divisor,
+    `get_balance_churn_limit`, and `calculate_committee_fraction`, which now takes a
+    `CLUint64` percent (its TEMPORARY CROSSING is gone; Gloas and Heze replay it). The views
+    `inactivityScoreBiasC`, `inactivityScoreRecoveryRateC`, and `churnLimitQuotientC` are
+    deleted. `REORG_MAX_EPOCHS_SINCE_FINALIZATION` was already an `Epoch`. The operation
+    caps, `JUSTIFICATION_BITS_LENGTH`, and `DEPOSIT_CONTRACT_TREE_DEPTH` stay structural
+    `Nat` with a recorded justification (`Uint64` at the pin, but every executable read is
+    a comparison or a literal sum that cannot raise). Pins in `ConstantAuditPins`, every
+    answer from the pinned pyspec; coverage 87, no tag lost; subsets and full minimal
+    `fork_choice` case-identical to Stage 7.2.*
+  - [x] **7.3b Finish the constant audit: Gloas thresholds and churn.**
+    *Done 2026-11-19 (WS-39, `a30320c`): adjudication F2 closed — the pinned oracle
+    (1.7.0b4, both presets) confirms `BUILDER_PAYMENT_THRESHOLD_NUMERATOR/DENOMINATOR` are
+    `Uint64(6)`/`Uint64(10)`, already `Gwei` since 4.1, and `getBuilderPaymentQuorumThreshold`
+    keeps the checked chain. `churnLimitQuotientGloas` and `consolidationChurnLimitQuotient`
+    are `CLUint64` Config fields read directly by `getExitChurnLimit` and
+    `getConsolidationChurnLimit`; their TEMPORARY CROSSING `…C` views are deleted and Heze
+    inherits. `payloadTimelyThreshold`/`dataAvailabilityTimelyThreshold` are `CLUint64`,
+    derived `ptcSizeC / 2` on the proved-total `PositiveDivisor` route (the pin's
+    `PTC_SIZE // 2`); `ptcSize` stays the structural size view with a new `ptcSizeC` view and
+    `ptcSizeLt` premise, and vote-count sites compare via `toPlainNat` (Python's mixed
+    `int > Uint64`, never raises). `attestationTimelinessIndex`/`ptcTimelinessIndex` and the
+    other Gloas preset caps stay structural `Nat` — in-range indexes into fixed two-element
+    `block_timeliness` arrays, kind-blind reads. The 7.1b bps rows are closed with no
+    residual raw use. `just check-constants` needed no change (the `…C` suffix rule and
+    `…Lt` premise skip already cover `ptcSizeC`/`ptcSizeLt`). Pins in `ConstantAuditPins`,
+    every answer from the pinned pyspec; coverage 87, no tag lost; subsets and full minimal
+    `fork_choice` case-identical to Stage 6 — behavior unchanged.*
+  - [x] **7.3c Finish the constant audit: Heze rows and closure.**
+    *Done 2026-11-19 (WS-40, `ae8646f`): `maxTransactionsBytesPerInclusionList` is
+    `CLUint64` (field + `Const` mirror; the pin's `Uint64(8192)`), the audit's last
+    TEMPORARY CROSSING is gone — `on_inclusion_list`'s byte cap is consumed through
+    `toPlainNat`, exactly Python's mixed `int <= Uint64` that never raises, while the
+    retention window stays the checked `Slot` add bound before its assert; the pinned
+    tree's only other executable site of the cap (gossip validation) has no Lean twin.
+    `minSlotsForInclusionListsRequests` (`Slot(1)` at the pin) confirmed with its consumer
+    and closed; the 7.1b `inclusionListDueBps` closure re-confirmed. Closure: every Stage 7
+    row of the inventory's §3 tables carries a final disposition — checked-typed, or
+    plain/structural with a recorded justification, or data-only; total-divisor views only
+    where an explicit premise exists (`ptcSizeC` under `ptcSizeLt`); no raw/checked
+    crossing remains (`git grep TEMPORARY CROSSING` empty). `just check-constants` needed
+    no change: the `…C`/`…Div` suffix rules and `…Lt` premise skip already cover everything
+    landed in 7.1b/7.3a/7.3b — verified at 167 constants, every tier and owning fork
+    matching. Pins: `HezeForkChoicePins`' `on_inclusion_list` harness generalized with the
+    shipped boundaries (byte cap 8191/8192 file, 8193 rejects; window admits at the current
+    slot, rejects past it, a future slot rejects), `ConstantAuditPins` reads the three Heze
+    rows at both presets `(8192, 1, 6667)` and drives the handler at arbitrary
+    configurations (cap 0 rejects a one-byte list, cap 1 admits it; width 2 admits at the
+    inclusive edge); every answer from the pinned pyspec. Coverage 87, no tag lost, axiom
+    audit within the trio; full minimal heze sweep 6972/3198 case-identical to Stage 7.3b —
+    behavior unchanged.*
+- [x] **7.4 Verify.** Run the common gate and complete minimal sweep.
+    *Done 2026-11-19 (WS-37, `9515566`): the full common gate ran green on the integrated
+    epic branch — `lake build EthCLSpecs` (621 jobs), `just ethcl-test` (667 jobs),
+    `just build-cli` with runners rebuilt, `just lint` exit 0, `just check-citations`
+    (196 citations in 9 files, all resolve), `just check-constants` (167 constants, every
+    tier and owning fork matching the pin; the 2 untabled upstream and 3 tier-only
+    advisories pre-existing), `just proof-coverage-update` with an empty inspected diff
+    then `just proof-coverage-check` (87 claims, axioms within
+    `propext`/`Classical.choice`/`Quot.sound`, `Lean.ofReduceBool` 0), `just
+    ethcl-pyspec-smoke` identical to 7.3b (fulu 155p/46s, gloas 207p/52s, heze 209p/52s),
+    and `git grep "TEMPORARY CROSSING"` empty over `*.lean`. The complete minimal sweep ran
+    sequentially (`--preset=minimal --subset=0 -n 6`, runner rebuilt first) and is
+    case-identical to the Stage 6 logs — fulu 5318 passed / 2829 skipped (23 skip groups),
+    gloas 6760/3198 (26), heze 6972/3198 (26); per-case logs retained as
+    `stage7.4-minimal-<fork>-cases.log`. No deviation, no skip change, nothing to repair.
+    Stage 7 build cost recorded per §3 (12 cores, Lake default parallelism, sequential
+    runs): cold `lake clean && lake build EthCLSpecs` 25m02.9s / 621 jobs, no-op 0.64s,
+    incremental (newline in `Fulu/Time.lean`, tree restored after) 5m57.1s.*
 
 **Done when:** generic configuration inputs preserve success/failure behavior, all
 time arithmetic is accounted for, and the remaining constant inventory is empty.
