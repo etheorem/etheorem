@@ -3,6 +3,7 @@ import EthCLSpecs.Tests.BoxBinderPins
 import EthCLSpecs.Tests.ClockMigrationPins
 import EthCLSpecs.Tests.CommitteeCoverageOrderPins
 import EthCLSpecs.Tests.ConfigurationClockPins
+import EthCLSpecs.Tests.ConstantAuditPins
 import EthCLSpecs.Tests.ConstantViews
 import EthCLSpecs.Tests.DeadlineMigrationPins
 import EthCLSpecs.Tests.EpochMigrationPins
