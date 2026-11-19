@@ -30,14 +30,17 @@ forkdef zeroRoot : Root := Vector.replicate 32 0
 
 /-! ### Slot processing -/
 
-/-- `process_slot`: cache the state root, fill the latest header's empty state root,
-then cache the block root, all at `slot % SLOTS_PER_HISTORICAL_ROOT`. -/
+/-- `process_slot` (`fulu/mainnet.py:1696-1706`): cache the state root, fill the latest
+header's empty state root, then cache the block root, all at
+`slot % SLOTS_PER_HISTORICAL_ROOT`. The ring index is the checked slot reduced by the
+proved-total divisor view (`SPEC_ARITHMETIC.md` §4.2); `toPlainNat` names the structural
+vector index the result narrows to (`SPEC_ARITHMETIC.md` §4.5). -/
 forkdef processSlot : StateTransition Unit :=
   modifyState fun state => Id.run do
     let (prevStateRootBytes, state) := stateRoot state
     let mut state := state
     let prevStateRoot : Root := bytesToRoot prevStateRootBytes
-    let idx := umodIdx (sszGet state slot) Const.slotsPerHistoricalRoot
+    let idx := ((sszGet state slot) % Const.slotsPerHistoricalRootDiv).toPlainNat
     state := sszUpdate state with stateRoots[idx]! := prevStateRoot
 
     -- Fill the latest header's empty state root with the one just cached.
@@ -67,14 +70,23 @@ forkdef processEpoch : StateTransition Unit := do
   processSyncCommitteeUpdates
   processProposerLookahead
 
-/-- `process_slots`: advance to `slot`, running `process_slot` (and `process_epoch`
-at each epoch boundary) for every intervening slot. -/
+/-- `process_slots` (`fulu/mainnet.py:1686-1693`): advance to `slot`, running `process_slot`
+(and `process_epoch` at each epoch boundary) for every intervening slot. The loop fuel is
+the spec's `while` distance, the checked difference bound once and narrowed with
+`toPlainNat` (`SPEC_ARITHMETIC.md` §4.5; the assert above puts it above zero, so the
+subtraction cannot fault). `(state.slot + 1) % SLOTS_PER_EPOCH` binds the checked add where
+Python forms it, then the modulo takes the proved-total divisor view; the store's
+`state.slot = state.slot + 1` re-forms the sum as Python does. -/
 forkdef processSlots (target : Slot) : StateTransition Unit := do
   assert ((sszGet (← get) slot) < target)
-  for _ in [0:(target - (sszGet (← get) slot)).toNat] do
+  let diff ← target - (sszGet (← get) slot)
+  for _ in [0:diff.toPlainNat] do
     processSlot
-    if ((sszGet (← get) slot) + 1) % UInt64.ofNat Const.slotsPerEpoch == 0 then processEpoch
-    modifyState fun state => sszUpdate state with slot := (sszGet state slot) + 1
+    let next ← (sszGet (← get) slot) + 1
+    let atBoundary : Slot := next % Const.slotsPerEpochDiv
+    if atBoundary == 0 then processEpoch
+    let nextSlot ← (sszGet (← get) slot) + 1
+    modifyState fun state => sszUpdate state with slot := nextSlot
 
 /-! ### Block-level steps -/
 
@@ -89,8 +101,10 @@ forkdef processBlockHeader (block : BeaconBlock) : StateTransition Unit := do
   let newHeader : BeaconBlockHeader :=
     { slot := block.slot, proposerIndex := block.proposerIndex, parentRoot := block.parentRoot,
       stateRoot := zeroRoot, bodyRoot := htr block.body }
-  let hb ← assertH (block.proposerIndex.toNat < (sszGet state validators).size)
-  let proposer := (sszGet state validators)[block.proposerIndex.toNat]'hb.down
+  -- `proposer = state.validators[block.proposer_index]` (`fulu/minimal.py`,
+  -- `process_block_header`): a raising list read, so an out-of-range proposer rejects
+  -- with `IndexError`'s class.
+  let proposer ← sszGetIdx (sszGet state validators) block.proposerIndex
   assert (!proposer.slashed)
 
   modifyState fun state => sszUpdate state with latestBlockHeader := newHeader
@@ -100,27 +114,40 @@ current epoch's mix. -/
 forkdef processRandao (body : BeaconBlockBody) : StateTransition Unit := do
   let state ← get
   let epoch := currentEpochOf state
-  let proposer ← sszGetIdx (sszGet state validators) (getBeaconProposerIndex state).toNat
+  let proposer ← sszGetIdx (sszGet state validators) (getBeaconProposerIndex state)
   let signingRoot := computeSigningRoot epoch (getDomain state Const.domainRandao epoch)
   assert (blsVerify proposer.pubkey signingRoot body.randaoReveal)
 
-  -- Mix the reveal's hash into the current epoch's mix, then write it back.
-  let mix := vmodGet (sszGet state randaoMixes) epoch Const.epochsPerHistoricalVector
+  -- Mix the reveal's hash into the current epoch's mix, then write it back. The mix slot
+  -- is `epoch % EPOCHS_PER_HISTORICAL_VECTOR`: the read rides the checked value's word
+  -- through the proved-total `vmodGet` route, whose bound is the mod itself
+  -- (`SPEC_ARITHMETIC.md` §4.5).
+  let mix := vmodGet (sszGet state randaoMixes) epoch.val Const.epochsPerHistoricalVector
   let digest := sha body.randaoReveal
   let newMix : Bytes32 := Vector.ofFn (fun i : Fin 32 => mix[i] ^^^ digest.get! i.val)
+  -- The write slot `epoch % EPOCHS_PER_HISTORICAL_VECTOR` is the checked `Epoch` modulo,
+  -- formed after the value, as Python evaluates an assignment's right side first. The
+  -- remainder is below the vector length, so `toPlainNat` names an in-range position (§4.5).
+  let idx ← epoch % Const.epochsPerHistoricalVectorC
   modifyState fun state =>
-    sszUpdate state with randaoMixes[umodIdx epoch Const.epochsPerHistoricalVector]! := newMix
+    sszUpdate state with randaoMixes[idx.toPlainNat]! := newMix
 
-/-- `process_eth1_data`: append the vote and adopt it once it has a majority over
-the voting period. -/
+/-- `process_eth1_data` (`fulu/minimal.py:1972-1978`): append the vote and adopt it once it
+has a majority over the voting period. `eth1_data_votes.count(...) * 2` is a plain `int`
+formula, a `CLInt`. `Uint64(EPOCHS_PER_ETH1_VOTING_PERIOD) * SLOTS_PER_EPOCH` is the checked
+product, formed after the plain side as Python evaluates it, so it raises past `2^64 - 1`
+for a generic preset. The comparison never raises; `int(x)` carries the product into the
+plain kind. -/
 forkdef processEth1Data (body : BeaconBlockBody) : StateTransition Unit := do
   appendState eth1DataVotes body.eth1Data
 
   let state ← get
   let target := htr body.eth1Data
-  let cnt := (sszGet state eth1DataVotes).foldl
+  let voteCount : CLInt := (sszGet state eth1DataVotes).foldl
     (fun acc e => if htr e == target then acc + 1 else acc) 0
-  if cnt * 2 > Const.epochsPerEth1VotingPeriod * Const.slotsPerEpoch then
+  let doubled := voteCount * 2
+  let periodSlots ← Const.epochsPerEth1VotingPeriodC * Const.slotsPerEpochC
+  if doubled > periodSlots.toCLInt then
     modifyState fun state => sszUpdate state with eth1Data := body.eth1Data
 
 /-- `process_sync_aggregate`: verify the aggregate signature over the previous
@@ -139,19 +166,26 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let bits := agg.syncCommitteeBits
   let participantKeys : Array BLSPubkey :=
     (Bitvector.trueIndices bits).map (fun i => syncCommittee.pubkeys[i]!)
-  let previousSlot := saturatingSub (sszGet state slot) 1
+  let previousSlot := (sszGet state slot).saturatingSub 1
   let previousBlockRoot ← getBlockRootAtSlot state previousSlot
   let signingRoot := computeSigningRoot previousBlockRoot
     (getDomain state Const.domainSyncCommittee (computeEpochAtSlot previousSlot))
   assert (blsEthFastAggregateVerify participantKeys signingRoot agg.syncCommitteeSignature)
 
-  -- Per-participant and per-proposer reward amounts.
-  let totalActiveIncrements := (getTotalActiveBalance state).toNat / Const.effectiveBalanceIncrement
-  let totalBaseRewards := getBaseRewardPerIncrement state * totalActiveIncrements
-  let maxParticipantRewards := totalBaseRewards * Const.syncRewardWeight / Const.weightDenominator / Const.slotsPerEpoch
-  let participantReward : Gwei := UInt64.ofNat (maxParticipantRewards / Const.syncCommitteeSize)
-  let proposerReward : Gwei :=
-    UInt64.ofNat (participantReward.toNat * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight))
+  -- Per-participant and per-proposer reward amounts (`fulu/mainnet.py`,
+  -- `process_sync_aggregate`). The chain is the checked `Gwei` surface:
+  -- the increment division, the base-reward product, the reward-quotient chain,
+  -- and the per-participant split each bind where the pyspec forms it. The
+  -- `slotsPerEpoch` divisor is the proved-total `PositiveDivisor` view, since the
+  -- preset value is positive (`SPEC_ARITHMETIC.md` §4.2).
+  let totalActiveBalance ← liftErr (getTotalActiveBalance state)
+  let totalActiveIncrements ← totalActiveBalance / Const.effectiveBalanceIncrementG
+  let basePerIncrement ← liftErr (getBaseRewardPerIncrement state)
+  let totalBaseRewards ← basePerIncrement * totalActiveIncrements
+  let maxParticipantRewards ← totalBaseRewards * Const.syncRewardWeight / Const.weightDenominator
+  let maxParticipantRewards := maxParticipantRewards / Const.slotsPerEpochDiv
+  let participantReward ← maxParticipantRewards / Const.syncCommitteeSize
+  let proposerReward ← participantReward * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight)
   let proposerIdx := getBeaconProposerIndex state
   let validators := (sszGet state validators).toArray
 
@@ -161,11 +195,13 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
     let pk := syncCommittee.pubkeys[i]
     match validators.findIdx? (·.pubkey == pk) with
     | some pIdx =>
+      -- `ValidatorIndex(all_pubkeys.index(pubkey))`: the pyspec's checked cast.
+      let participantIndex ← CLUint64.ofNat? pIdx
       if bitGet bits i then
-        state ← increaseBalance state (UInt64.ofNat pIdx) participantReward
+        state ← increaseBalance state participantIndex participantReward
         state ← increaseBalance state proposerIdx proposerReward
       else
-        state ← decreaseBalance state (UInt64.ofNat pIdx) participantReward
+        state ← decreaseBalance state participantIndex participantReward
     | none => pure ()
   set state
 
@@ -181,14 +217,18 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   let payload := body.executionPayload
   assert (payload.parentHash == (sszGet state latestExecutionPayloadHeader).blockHash)
   let epoch := currentEpochOf state
-  let mix := vmodGet (sszGet state randaoMixes) epoch Const.epochsPerHistoricalVector
+  let mix := vmodGet (sszGet state randaoMixes) epoch.val Const.epochsPerHistoricalVector
   assert (payload.prevRandao == mix)
   -- `compute_time_at_slot(state.genesis_time, state.slot)` (`Fulu/Time.lean`). It can fault, so
-  -- it arrives through `liftErr`, which lands the `.arithmetic` fault on this machine unwrapped.
-  let expectedTimestamp ← liftErr (computeTimeAtSlot (sszGet state genesisTime) (sszGet state slot))
-  assert (payload.timestamp == expectedTimestamp)
-  -- [Modified in Fulu:EIP7892] the commitments are under the scheduled blob limit.
-  assert (body.blobKzgCommitments.size ≤ (getBlobParameters epoch).maxBlobsPerBlock)
+  -- it binds through the arithmetic lift, which lands the fault on this machine unwrapped.
+  let expectedTimestamp ← computeTimeAtSlot (sszGet state genesisTime) (sszGet state slot)
+  -- TEMPORARY CROSSING (removed in Stage 7.1b): `payload.timestamp` is still the raw `UInt64`
+  -- field, so the checked time compares through its native word. The pinned `Uint64.__eq__`
+  -- compares by value, so the answer is the same.
+  assert (payload.timestamp == expectedTimestamp.val)
+  -- [Modified in Fulu:EIP7892] the commitments are under the scheduled blob limit: the plain
+  -- `len(...)` against the plain limit, a comparison that never raises.
+  assert (len body.blobKzgCommitments ≤ (getBlobParameters epoch).maxBlobsPerBlock)
 
   let header : ExecutionPayloadHeader :=
     { parentHash := payload.parentHash, feeRecipient := payload.feeRecipient,
@@ -216,9 +256,12 @@ forkdef processBlock (block : BeaconBlock) : StateTransition Unit := do
 /-- `verify_block_signature`. -/
 forkdef verifyBlockSignature (state : State) (signedBlock : SignedBeaconBlock) : Bool :=
   let block := signedBlock.message
-  if block.proposerIndex.toNat ≥ (sszGet state validators).size then false
-  else
-    let proposer := sszGet state validators[block.proposerIndex.toNat]!
+  -- The pyspec's `state.validators[block.proposer_index]` raises `IndexError` for an
+  -- out-of-range proposer. This body returns `false` on the `getAt` miss, and the caller's
+  -- `assert` raises the assert class; the runner catches both.
+  match getAt (sszGet state validators) block.proposerIndex with
+  | .error _ => false
+  | .ok proposer =>
     let signingRoot := computeSigningRoot block (getDomain state Const.domainBeaconProposer (currentEpochOf state))
     blsVerify proposer.pubkey signingRoot signedBlock.signature
 

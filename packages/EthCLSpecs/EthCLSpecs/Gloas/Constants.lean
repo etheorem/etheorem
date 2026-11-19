@@ -54,7 +54,7 @@ forkconfig where
   /-- `MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS`. -/
   maxPerEpochActivationChurnLimitGloas : Gwei
   /-- `MIN_BUILDER_WITHDRAWABILITY_DELAY`. -/
-  minBuilderWithdrawabilityDelay : UInt64
+  minBuilderWithdrawabilityDelay : Epoch
   /-- `CONSOLIDATION_CHURN_LIMIT_QUOTIENT`. Electra's `get_consolidation_churn_limit`
   was a difference of two churn limits; EIP-7732 gives it its own quotient, so the
   value arrives with this fork rather than with Electra. -/
@@ -82,23 +82,37 @@ forkabbrev maxBuilderExitRequestsPerPayload : Nat := Preset.maxBuilderExitReques
 forkabbrev gloasForkVersion : Version := Config.gloasForkVersion
 forkabbrev gloasForkEpoch : Epoch := Config.gloasForkEpoch
 forkabbrev churnLimitQuotientGloas : UInt64 := Config.churnLimitQuotientGloas
+/-- TEMPORARY CROSSING (removed in Stage 7): the config word re-types with the
+configuration slice; the checked view rides the wire iso until then, so Stage
+4's churn division keeps the checked kind. -/
+forkabbrev churnLimitQuotientGloasC : CLUint64 :=
+  CLUint64.trustedOfUInt64 Config.churnLimitQuotientGloas
 forkabbrev maxPerEpochActivationChurnLimitGloas : Gwei := Config.maxPerEpochActivationChurnLimitGloas
-forkabbrev minBuilderWithdrawabilityDelay : UInt64 := Config.minBuilderWithdrawabilityDelay
+forkabbrev minBuilderWithdrawabilityDelay : Epoch := Config.minBuilderWithdrawabilityDelay
 forkabbrev consolidationChurnLimitQuotient : UInt64 := Config.consolidationChurnLimitQuotient
+/-- TEMPORARY CROSSING (removed in Stage 7): the config word re-types with the
+configuration slice; the checked view rides the wire iso until then. -/
+forkabbrev consolidationChurnLimitQuotientC : CLUint64 :=
+  CLUint64.trustedOfUInt64 Config.consolidationChurnLimitQuotient
 
 /-- The builder-payment threshold, as a fraction of the bid
-(`BUILDER_PAYMENT_THRESHOLD_NUMERATOR / …_DENOMINATOR`). -/
-forkabbrev builderPaymentThresholdNumerator : UInt64 := 6
-forkabbrev builderPaymentThresholdDenominator : UInt64 := 10
+(`BUILDER_PAYMENT_THRESHOLD_NUMERATOR / …_DENOMINATOR`). Both are `Uint64` at
+the pin (the Stage 2.5 oracle probe), so they store as `Gwei`, the checked kind
+the quorum product uses. -/
+forkabbrev builderPaymentThresholdNumerator : Gwei := 6
+forkabbrev builderPaymentThresholdDenominator : Gwei := 10
 /-- `BUILDER_WITHDRAWAL_PREFIX` (`0xB0`), the credential prefix that marks a builder deposit. -/
 forkabbrev builderWithdrawalPrefix : UInt8 := 0xB0
 /-- `PAYLOAD_BUILDER_VERSION = uint8(0)` (EIP-8282): the version stamped on a
 builder onboarded at the fork (`add_builder_to_registry`). -/
 forkabbrev payloadBuilderVersion : UInt8 := 0
-forkabbrev builderIndexFlag : UInt64 := 0x10000000000
+/-- `BUILDER_INDEX_FLAG = Uint64(2**40)`: the bit that marks a builder index carried in a
+`ValidatorIndex`. A checked `Uint64`, so `&` and `|` with an index are the same-width
+bitwise operators (`SPEC_ARITHMETIC.md` §5.1). -/
+forkabbrev builderIndexFlag : CLUint64 := 0x10000000000
 /-- `BUILDER_INDEX_SELF_BUILD = BuilderIndex(UINT64_MAX)`: the bid's `builder_index`
 sentinel marking a proposer self-build (no external builder). -/
-forkabbrev builderIndexSelfBuild : UInt64 := 0xffffffffffffffff
+forkabbrev builderIndexSelfBuild : BuilderIndex := 0xffffffffffffffff
 -- EIP-7732 / EIP-8282 BLS domain-type tags, beside the ones inherited below.
 forkabbrev domainBeaconBuilder : ByteArray := ⟨#[0x0B, 0, 0, 0]⟩
 forkabbrev domainPtcAttester : ByteArray := ⟨#[0x0C, 0, 0, 0]⟩
@@ -137,6 +151,15 @@ inherit slotsPerEpochPos slotsPerEpochLt slotsPerHistoricalRootPos
 inherit slotsPerHistoricalRootLt epochsPerHistoricalVectorPos
 inherit epochsPerHistoricalVectorLt
 
+-- The derived checked and proved-total views of the entries above
+-- (`SPEC_ARITHMETIC.md` §4.2, §4.5). The replay binds each view to this fork's
+-- own `Preset`, so Gloas's values use the same proof fields.
+inherit slotsPerEpochC slotsPerEpochDiv slotsPerHistoricalRootC slotsPerHistoricalRootDiv
+inherit epochsPerHistoricalVectorC epochsPerSlashingsVectorC
+inherit epochsPerEth1VotingPeriodC epochsPerSyncCommitteePeriodC
+inherit maxCommitteesPerSlotC targetCommitteeSizeC maxWithdrawalsPerPayloadC
+inherit maxPendingPartialsPerWithdrawalsSweepC
+
 -- Sentinels, registry and history caps.
 inherit farFutureEpoch genesisSlot genesisEpoch validatorRegistryLimit
 inherit historicalRootsLimit pendingDepositsLimit justificationBitsLength
@@ -166,7 +189,8 @@ inherit timelySourceWeight timelyTargetWeight timelyHeadWeight timelySourceFlagI
 inherit timelyTargetFlagIndex timelyHeadFlagIndex participationFlagWeights
 inherit minSlashingPenaltyQuotientElectra whistleblowerRewardQuotientElectra
 inherit proportionalSlashingMultiplierBellatrix inactivityPenaltyQuotientBellatrix
-inherit inactivityScoreBias inactivityScoreRecoveryRate hysteresisQuotient
+inherit inactivityScoreBias inactivityScoreRecoveryRate inactivityScoreBiasC
+inherit inactivityScoreRecoveryRateC hysteresisQuotient
 inherit hysteresisDownwardMultiplier hysteresisUpwardMultiplier maxRandomValue
 
 -- Withdrawal-credential prefixes.
@@ -177,7 +201,7 @@ inherit domainBeaconProposer domainBeaconAttester domainRandao domainDeposit
 inherit domainVoluntaryExit domainSyncCommittee domainBlsToExecutionChange
 
 -- Network parameters, and the fork-choice tuning beside them.
-inherit churnLimitQuotient minPerEpochChurnLimitElectra
+inherit churnLimitQuotient churnLimitQuotientC minPerEpochChurnLimitElectra
 inherit maxPerEpochActivationExitChurnLimit minValidatorWithdrawabilityDelay
 inherit shardCommitteePeriod genesisForkVersion slotDurationMs
 inherit altairForkVersion altairForkEpoch bellatrixForkVersion bellatrixForkEpoch

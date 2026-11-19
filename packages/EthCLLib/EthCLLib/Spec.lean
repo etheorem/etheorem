@@ -1,4 +1,9 @@
 import EthCLLib.Spec.Errors
+import EthCLLib.Spec.Checked
+import EthCLLib.Spec.CLUint
+import EthCLLib.Spec.CLInt
+import EthCLLib.Spec.CLTotal
+import EthCLLib.Spec.Elab
 import EthCLLib.Spec.Hasher
 import EthCLLib.Spec.State
 import EthCLLib.Spec.Arith
@@ -24,7 +29,11 @@ namespace (`SPEC_AUTHORING_MODEL.md` §3.2): the `fork*` forms and `inherit`
 value sets), the header macros `state_preamble` / `state_section` /
 `fork_choice_section`, `assert` and the step
 primitives (`modifyState`, `todo`), the `HasherTag` selector, the `CryptoBackend`
-seam, and the state helpers (`getStateRoot` / `stateRoot!`). SizzLean's `sszGet` / `sszUpdate` are
+seam, the state helpers (`getStateRoot` / `stateRoot!`), the checked operator
+surface (the operand-matrix instances plus the scoped elaborator in
+`Spec/Elab.lean` and the §4.4 lift in `Spec/Checked.lean`), and the size-aware
+indexing layer (`ToIndex` / `getAt` / `setAt` in `Spec/State.lean`).
+SizzLean's `sszGet` / `sszUpdate` are
 global syntax brought in by `import SizzLean`, so they need no re-export.
 
 What lives here is the *forms*, never a `Preset` / `Config` class or a `Const`

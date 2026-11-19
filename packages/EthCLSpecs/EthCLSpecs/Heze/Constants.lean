@@ -47,8 +47,10 @@ forkconfig where
   alpha.12's `MAX_BYTES_PER_INCLUSION_LIST` to this. -/
   maxTransactionsBytesPerInclusionList : UInt64
   /-- `MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS` (1): how many slots past its own an
-  inclusion list stays in the retention window `on_inclusion_list` asserts. -/
-  minSlotsForInclusionListsRequests : UInt64
+  inclusion list stays in the retention window `on_inclusion_list` asserts. The pinned
+  configuration types it `Slot` (`Slot(1)`), so the field carries the checked kind
+  (`SPEC_ARITHMETIC.md` §4.2, checked constants stay checked). -/
+  minSlotsForInclusionListsRequests : Slot
 
 namespace Const
 section
@@ -67,7 +69,7 @@ forkabbrev hezeForkVersion : Version := Config.hezeForkVersion
 forkabbrev hezeForkEpoch : Epoch := Config.hezeForkEpoch
 forkabbrev maxTransactionsBytesPerInclusionList : UInt64 :=
   Config.maxTransactionsBytesPerInclusionList
-forkabbrev minSlotsForInclusionListsRequests : UInt64 := Config.minSlotsForInclusionListsRequests
+forkabbrev minSlotsForInclusionListsRequests : Slot := Config.minSlotsForInclusionListsRequests
 
 -- Gloas's entries, replayed here in Gloas's own order (its additions, then the
 -- Fulu surface it replays) so each body reaches its dependencies. The list is the
@@ -78,6 +80,7 @@ forkabbrev minSlotsForInclusionListsRequests : UInt64 := Config.minSlotsForInclu
 inherit ptcSize maxBuildersPerWithdrawalsSweep maxPayloadAttestations
 inherit maxBuilderDepositRequestsPerPayload maxBuilderExitRequestsPerPayload
 inherit gloasForkVersion gloasForkEpoch churnLimitQuotientGloas
+inherit churnLimitQuotientGloasC
 inherit maxPerEpochActivationChurnLimitGloas
 inherit minBuilderWithdrawabilityDelay builderPaymentThresholdNumerator
 inherit builderPaymentThresholdDenominator builderWithdrawalPrefix payloadBuilderVersion
@@ -86,7 +89,7 @@ inherit domainBuilderDeposit payloadStatusEmpty payloadStatusFull payloadStatusP
 inherit attestationTimelinessIndex ptcTimelinessIndex payloadTimelyThreshold
 inherit dataAvailabilityTimelyThreshold attestationDueBpsGloas payloadAttestationDueBps
 inherit gasLimitSchedule
-inherit consolidationChurnLimitQuotient
+inherit consolidationChurnLimitQuotient consolidationChurnLimitQuotientC
 
 -- Vector widths and committee / epoch lengths.
 inherit slotsPerEpoch slotsPerHistoricalRoot epochsPerHistoricalVector
@@ -100,6 +103,15 @@ inherit pendingPartialWithdrawalsLimit pendingConsolidationsLimit
 inherit slotsPerEpochPos slotsPerEpochLt slotsPerHistoricalRootPos
 inherit slotsPerHistoricalRootLt epochsPerHistoricalVectorPos
 inherit epochsPerHistoricalVectorLt
+
+-- The derived checked and proved-total views of the entries above
+-- (`SPEC_ARITHMETIC.md` §4.2, §4.5). The replay binds each view to this fork's
+-- own `Preset`, so Heze's values use the same proof fields.
+inherit slotsPerEpochC slotsPerEpochDiv slotsPerHistoricalRootC slotsPerHistoricalRootDiv
+inherit epochsPerHistoricalVectorC epochsPerSlashingsVectorC
+inherit epochsPerEth1VotingPeriodC epochsPerSyncCommitteePeriodC
+inherit maxCommitteesPerSlotC targetCommitteeSizeC maxWithdrawalsPerPayloadC
+inherit maxPendingPartialsPerWithdrawalsSweepC
 
 -- Sentinels, registry and history caps.
 inherit farFutureEpoch genesisSlot genesisEpoch validatorRegistryLimit
@@ -130,7 +142,8 @@ inherit timelySourceWeight timelyTargetWeight timelyHeadWeight timelySourceFlagI
 inherit timelyTargetFlagIndex timelyHeadFlagIndex participationFlagWeights
 inherit minSlashingPenaltyQuotientElectra whistleblowerRewardQuotientElectra
 inherit proportionalSlashingMultiplierBellatrix inactivityPenaltyQuotientBellatrix
-inherit inactivityScoreBias inactivityScoreRecoveryRate hysteresisQuotient
+inherit inactivityScoreBias inactivityScoreRecoveryRate inactivityScoreBiasC
+inherit inactivityScoreRecoveryRateC hysteresisQuotient
 inherit hysteresisDownwardMultiplier hysteresisUpwardMultiplier maxRandomValue
 
 -- Withdrawal-credential prefixes.
@@ -141,7 +154,7 @@ inherit domainBeaconProposer domainBeaconAttester domainRandao domainDeposit
 inherit domainVoluntaryExit domainSyncCommittee domainBlsToExecutionChange
 
 -- Network parameters, and the fork-choice tuning beside them.
-inherit churnLimitQuotient minPerEpochChurnLimitElectra
+inherit churnLimitQuotient churnLimitQuotientC minPerEpochChurnLimitElectra
 inherit maxPerEpochActivationExitChurnLimit minValidatorWithdrawabilityDelay
 inherit shardCommitteePeriod genesisForkVersion slotDurationMs
 inherit altairForkVersion altairForkEpoch bellatrixForkVersion bellatrixForkEpoch
