@@ -452,7 +452,20 @@ all negative-index and empty-collection cases preserve Python behavior.
   minimal `fork_choice` runs case-identical to Stage 6.*
 - [ ] **7.3 Finish the constant audit.** Include Gloas threshold numerators/denominators
   and churn quotients. Distinguish checked constants from plain configuration integers.
-  - [ ] **7.3a Finish the constant audit: Fulu rows.**
+  - [x] **7.3a Finish the constant audit: Fulu rows.**
+    *Done 2026-11-19 (WS-36, `6dd48cf`): `INACTIVITY_SCORE_BIAS`,
+    `INACTIVITY_SCORE_RECOVERY_RATE`, `CHURN_LIMIT_QUOTIENT`, `PROPOSER_SCORE_BOOST`, and
+    `REORG_HEAD/PARENT_WEIGHT_THRESHOLD` are `CLUint64` (`Uint64` at the pin), read directly
+    by `process_inactivity_updates`, the inactivity penalty divisor,
+    `get_balance_churn_limit`, and `calculate_committee_fraction`, which now takes a
+    `CLUint64` percent (its TEMPORARY CROSSING is gone; Gloas and Heze replay it). The views
+    `inactivityScoreBiasC`, `inactivityScoreRecoveryRateC`, and `churnLimitQuotientC` are
+    deleted. `REORG_MAX_EPOCHS_SINCE_FINALIZATION` was already an `Epoch`. The operation
+    caps, `JUSTIFICATION_BITS_LENGTH`, and `DEPOSIT_CONTRACT_TREE_DEPTH` stay structural
+    `Nat` with a recorded justification (`Uint64` at the pin, but every executable read is
+    a comparison or a literal sum that cannot raise). Pins in `ConstantAuditPins`, every
+    answer from the pinned pyspec; coverage 87, no tag lost; subsets and full minimal
+    `fork_choice` case-identical to Stage 7.2.*
   - [ ] **7.3b Finish the constant audit: Gloas thresholds and churn.**
   - [ ] **7.3c Finish the constant audit: Heze rows and closure.**
 - [ ] **7.4 Verify.** Run the common gate and complete minimal sweep.
