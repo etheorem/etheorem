@@ -129,8 +129,9 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
     let d0 ← liftErr (getFlagIndexDeltas state 0)
     let d1 ← liftErr (getFlagIndexDeltas state 1)
     let d2 ← liftErr (getFlagIndexDeltas state 2)
+    let inactPenalties ← getInactivityPenaltyDeltas state
     pure #[← mkDeltas d0, ← mkDeltas d1, ← mkDeltas d2,
-      ← mkDeltas (zeros, getInactivityPenaltyDeltas state)]
+      ← mkDeltas (zeros, inactPenalties)]
 
 /-- Decode a plain (non-boxed) SSZ operation value. -/
 private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
@@ -139,8 +140,11 @@ private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
   | .ok v    => .ok v
   | .error _ => .error (.decode "operation")
 
-/-- `runOperation`: dispatch every operation handler over the decoded Heze pre-state. Each
-handler is the Gloas one re-instantiated over Heze. -/
+-- `runOperation`: dispatch every operation handler over the decoded Heze pre-state. Each
+-- handler is the Gloas one re-instantiated over Heze. The checked `Epoch` arithmetic makes
+-- the compiled body heavier; the annotation is a build-cost note
+-- (`SPEC_ARITHMETIC_PLAN.md` Stage 10).
+set_option maxHeartbeats 1000000 in
 private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     (preBytes opBytes : ByteArray) (cmeta : CaseMeta) : Except (RunError StateTransitionError) ByteArray := do
   let box0 ← decodeState P preBytes
@@ -158,7 +162,12 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     | .attestation            =>
       match cmeta.parentSlot with
       | some parentSlot =>
-        (decodeOp (@Attestation P) opBytes).map (processAttestation · (UInt64.ofNat parentSlot))
+        -- The vector's plain `int` parent slot enters through the checked narrow
+        -- `Uint64(n)` (§4.5). A value past `2^64 - 1` is a malformed case, the
+        -- runner's own decode failure.
+        match CLUint64.ofNat? parentSlot with
+        | .ok slot => (decodeOp (@Attestation P) opBytes).map (processAttestation · slot)
+        | .error _ => .error (.decode "operations/attestation: meta.yaml parent_slot range")
       | none => .error (.decode "operations/attestation: meta.yaml parent_slot")
     | .payloadAttestation     => (decodeOp (@PayloadAttestation P) opBytes).map processPayloadAttestation
     | .executionPayloadBid    => (decodeOp (@SignedExecutionPayloadBid P) opBytes).map processExecutionPayloadBid
@@ -191,9 +200,13 @@ private def runSlotsImpl (P : Preset) (C : Config) (preBytes : ByteArray) (n : N
   letI : CryptoBackend := CryptoBackend.realBackend
   let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Heze.BeaconState P)) Unit := do
     let state ← get
-    processSlots ((sszGet state slot) + UInt64.ofNat n)
+    -- The harness's `state.slot + slots`: the checked `Slot` add of the plain `int` slot
+    -- count, so a target past `2^64 - 1` raises (§4.2).
+    let target ← (sszGet state slot) + n
+    processSlots target
   RunError.ofSpec (runToRoot box0 action)
 
+set_option maxHeartbeats 1000000 in
 /-- `runBlocks` (`sanity/blocks`, `finality`, `random`): fold the Heze `state_transition`
 over the decoded signed blocks. -/
 private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
@@ -211,6 +224,7 @@ private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
     for sb in signedBlocks do stateTransition sb
   RunError.ofSpec (runToRoot box0 action)
 
+set_option maxHeartbeats 1000000 in
 /-- `runTransition` (the `transition` format, Gloas→Heze): fold the pre-fork blocks under
 Gloas `state_transition`, advance the Gloas state to the fork-epoch boundary, apply
 `upgradeToHeze` (see its docstring), then fold the post-fork blocks under the
@@ -224,11 +238,22 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.forBlsSetting cmeta.blsSetting
   let forkEpoch := cmeta.forkEpoch.getD 0
-  let boundary : Slot := UInt64.ofNat (forkEpoch * Const.slotsPerEpoch)
+  -- The boundary slot is the harness's `spec.Uint64(fork_epoch) * spec.SLOTS_PER_EPOCH`, the
+  -- product `transition_until_fork` subtracts one from for its `to_slot`
+  -- (`test/helpers/fork_transition.py:300-301` in the installed pyspec): the checked cast of
+  -- the vector's plain `int`,
+  -- then the checked product (§4.5). A failure is a malformed case, the runner's own
+  -- decode failure.
+  let boundary? : Except (RunError StateTransitionError) Slot :=
+    (do
+      let epoch ← CLUint64.ofNat? forkEpoch
+      epoch * Const.slotsPerEpochC : Checked Slot).mapError
+      (fun _ => RunError.decode "transition: meta.yaml fork_epoch range")
   let nPre := match cmeta.forkBlock with | some n => n + 1 | none => 0
   match SSZ.deserialize (T := Gloas.BeaconState) preBytes with
   | .error _ => .error (.decode "Gloas BeaconState")
   | .ok preGloas => do
+    let boundary ← boundary?
     let preBlocks ← (List.range nPre).toArray.mapM (fun i =>
       match blocks[i]? with
       | none    => Except.error (RunError.spec (.outOfBounds i blocks.size))
@@ -286,7 +311,7 @@ private def viableForHeadLeaves [Preset] [Config] [HasherTag] (store : Store has
         let children := (← getNodeChildren (map := hashMap) store node).filter nodes.contains
         if children.isEmpty then
           let weight ← getWeight (map := hashMap) store node
-          leaves := leaves.push (vecToBytes node.root, weight.toNat, some node.payloadStatus.toNat)
+          leaves := leaves.push (vecToBytes node.root, weight.toPlainNat, some node.payloadStatus.toNat)
         else pending := pending ++ children
     pure leaves
   runQuery store walk
@@ -353,7 +378,7 @@ private def fcInterpretHeze [Preset] [Config] [HasherTag] [CryptoBackend]
       -- `getOrThrow` is monad-polymorphic, and the fold's own monad is already
       -- `Except StoreTransitionError`, so the read binds directly (no `runQuery` detour).
       let headBlock ← FcMap.getOrThrow store.blocks head.root
-      assert (headBlock.slot.toNat == slot)
+      assert (headBlock.slot.toPlainNat == slot)
     | .checkHeadPayloadStatus status =>
       let head ← queryHead store
       assert (head.payloadStatus.toNat == status)
@@ -368,10 +393,10 @@ private def fcInterpretHeze [Preset] [Config] [HasherTag] [CryptoBackend]
       let recorded ← FcMap.getOrThrow store.payloadDataAvailabilityVote (bytesToRoot blockRoot)
       assert (recorded == votes)
     | .checkJustified epoch root =>
-      assert (store.justifiedCheckpoint.epoch.toNat == epoch)
+      assert (store.justifiedCheckpoint.epoch.toPlainNat == epoch)
       assert (store.justifiedCheckpoint.root == root)
     | .checkFinalized epoch root =>
-      assert (store.finalizedCheckpoint.epoch.toNat == epoch)
+      assert (store.finalizedCheckpoint.epoch.toPlainNat == epoch)
       assert (store.finalizedCheckpoint.root == root)
     | .checkBoost root =>
       assert (store.proposerBoostRoot == root)
@@ -389,6 +414,7 @@ private def fcInterpretHeze [Preset] [Config] [HasherTag] [CryptoBackend]
     | .checkProposerHead _ => throw (StoreTransitionError.todo "get_proposer_head check: not modeled")
   pure ()
 
+set_option maxHeartbeats 1000000 in
 /-- `runForkChoice` (Heze): decode the anchor state / block, build the ePBS store, and run
 the step interpreter. -/
 private def runForkChoiceImpl (P : Preset) (C : Config) (anchorStateBytes anchorBlockBytes : ByteArray)
@@ -493,15 +519,18 @@ is the pure Gloas→Heze copy and `runTransition` the Gloas→Heze boundary. `ru
 schedule Heze models. A vector that activates its forks at genesis ships a `config.yaml`
 setting these epochs to `0`, and a `transition` vector moves its post-fork's epoch to the
 `fork_epoch`; `EthCLLib.PySpecTests.applyConfigOverrides` applies them. -/
+-- The vector's plain `int` epoch crosses the runner boundary through the wire iso
+-- (`SPEC_ARITHMETIC.md` §4.5: `trustedOfUInt64`, the config-constant route; a `UInt64`
+-- cannot leave the range, so the wrap cannot fault).
 def configSetters : List (String × (UInt64 → Config → Config)) := [
-  ("ALTAIR_FORK_EPOCH",    fun v c => { c with altairForkEpoch := v }),
-  ("BELLATRIX_FORK_EPOCH", fun v c => { c with bellatrixForkEpoch := v }),
-  ("CAPELLA_FORK_EPOCH",   fun v c => { c with capellaForkEpoch := v }),
-  ("DENEB_FORK_EPOCH",     fun v c => { c with denebForkEpoch := v }),
-  ("ELECTRA_FORK_EPOCH",   fun v c => { c with electraForkEpoch := v }),
-  ("FULU_FORK_EPOCH",      fun v c => { c with fuluForkEpoch := v }),
-  ("GLOAS_FORK_EPOCH",     fun v c => { c with gloasForkEpoch := v }),
-  ("HEZE_FORK_EPOCH",      fun v c => { c with hezeForkEpoch := v })]
+  ("ALTAIR_FORK_EPOCH",    fun v c => { c with altairForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("BELLATRIX_FORK_EPOCH", fun v c => { c with bellatrixForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("CAPELLA_FORK_EPOCH",   fun v c => { c with capellaForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("DENEB_FORK_EPOCH",     fun v c => { c with denebForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("ELECTRA_FORK_EPOCH",   fun v c => { c with electraForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("FULU_FORK_EPOCH",      fun v c => { c with fuluForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("GLOAS_FORK_EPOCH",     fun v c => { c with gloasForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("HEZE_FORK_EPOCH",      fun v c => { c with hezeForkEpoch := CLUint64.trustedOfUInt64 v })]
 
 /-- The interface at preset `P` and config `C` with a vector's overrides applied, or the
 reason an override cannot be applied. The server builds one per request. -/

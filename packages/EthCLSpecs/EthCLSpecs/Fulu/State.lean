@@ -48,7 +48,7 @@ forkcontainer BeaconState where
   previousJustifiedCheckpoint   : Checkpoint
   currentJustifiedCheckpoint    : Checkpoint
   finalizedCheckpoint           : Checkpoint
-  inactivityScores              : SSZList UInt64 Const.validatorRegistryLimit
+  inactivityScores              : SSZList Gwei Const.validatorRegistryLimit
   currentSyncCommittee          : SyncCommittee
   nextSyncCommittee             : SyncCommittee
   latestExecutionPayloadHeader  : ExecutionPayloadHeader

@@ -18,6 +18,8 @@ typically wrap.
   (`.uintN8` / `.uintN16` / `.uintN32` / `.uintN64`).
 * `SSZRepr (BitVec 128)` / `(BitVec 256)`: same shape, identity
   iso. Used for the 128/256-bit fields in consensus containers.
+  `SSZRepr (BitVec 1)` (below) adds the `.uintN 1` shape for
+  shape-reading consumers; width 1 has no implemented wire format.
 * Composites: `Vector α n`, `SSZ.List α n` (= `SSZList`),
   `Bitvector n`, `Bitlist n`, sigma-typed unions. Same
   iso-is-identity pattern: each picks a definitional `interp`
@@ -125,6 +127,23 @@ instance : SSZRepr (BitVec 128) where
 from Bellatrix onward. -/
 instance : SSZRepr (BitVec 256) where
   shape    := .uintN 256
+  toRepr   := id
+  fromRepr := id
+  to_from  := fun _ => rfl
+  from_to  := fun _ => rfl
+
+/-- `SSZRepr (BitVec 1)`: the `.uintN 1` shape with the identity
+iso (`interp (.uintN 1)` reduces to `BitVec 1`, the catch-all arm of
+`interp`). Exists so a shape-reading consumer, the `sszUpdate`
+cached-write classifier, sees `.uintN 1` for one-bit values and
+packs them like any other `uintN`, matching the deriving handler's
+`BitVec n → .uintN n` mapping. Width 1 sits outside the implemented
+`{8, 16, 32, 64, 128, 256}` set: the Spec layer's non-spec-width
+arms return the empty byte array from `serialize` and the zero chunk
+from `hashTreeRoot`, so this instance classifies but does not give a
+usable one-bit wire format. -/
+instance : SSZRepr (BitVec 1) where
+  shape    := .uintN 1
   toRepr   := id
   fromRepr := id
   to_from  := fun _ => rfl
