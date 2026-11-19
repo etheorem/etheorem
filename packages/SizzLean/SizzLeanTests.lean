@@ -20,6 +20,7 @@ import SizzLeanTests.HashConsCoherence
 import SizzLeanTests.SerializeCacheCoherence
 import SizzLeanTests.ZeroHashDepth
 import SizzLeanTests.ProgressiveGaps
+import SizzLeanTests.CheckedWrapperPacking
 
 /-!
 # `SizzLeanTests`: SSZ-only empirical / property-test gates
@@ -49,6 +50,10 @@ lake build SizzLeanTests
   `sszUpdate` multi-field batched updates, vector-index `sszUpdate`,
   and the hash-cons opt-in (`HashConsCoherence.lean`: root
   coherence with `consing := true` plus the shape rule).
+  `CheckedWrapperPacking.lean` pins the shape-based packing
+  classification: indexed writes into a `structure`-over-`UInt64`
+  wrapper whose `SSZRepr` shape is `.uintN 64` keep the cached
+  root in step with a fresh merkleization.
   Containers used as test fixtures are defined locally in
   `ExampleContainers.lean`, small SSZ-shaped types analogous to
   `Fork` / `SignedBeaconBlockHeader` / `HistoricalBatch`

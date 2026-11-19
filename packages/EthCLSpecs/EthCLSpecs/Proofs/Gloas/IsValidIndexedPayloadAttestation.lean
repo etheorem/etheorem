@@ -7,7 +7,7 @@ import SizzLean.Proofs.UncachedBox
 # `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: a two-layer characterization
 
 An exact backend-generic characterization of
-`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:474-485`).
+`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:581-597`).
 
 **Layer 1** (`isValidIndexedPayloadAttestation_eq_true_iff_checks`) restates the
 function's `if` / `||` / `!` control flow as a plain conjunction, one conjunct per
@@ -20,7 +20,7 @@ range, and the configured `[CryptoBackend]` returning `true` on the exact pubkey
 array, signing root, domain, and epoch the implementation computes.
 
 **Why Layer 2's in-range gate binds a proof.** The implementation reads each pubkey
-with `validators[i.toNat]!`, which silently yields `default` past the end of the
+with `validators[i.toPlainNat]!`, which silently yields `default` past the end of the
 registry. Layer 2 states the in-range gate as `∃ hRange : ∀ i ∈ idx, …`, so the
 bound is in scope for the signature conjunct, whose pubkey array is then built by
 `Array.attach` with genuine in-bounds proofs. No `!` survives into the semantic
@@ -28,7 +28,7 @@ statement, and the reading is unconditional. The `∃` is invisible in use: call
 still build the whole right-hand side with `⟨h1, h2, h3, h4⟩` and still project the
 bound out with `.2.2.1`, since a `Prop`-valued binder is proof-irrelevant.
 
-Layer 1 keeps `validators[i.toNat]!` on purpose. Mirroring the implementation's
+Layer 1 keeps `validators[i.toPlainNat]!` on purpose. Mirroring the implementation's
 literal gates is that layer's entire job, and the implementation panics-by-default
 there.
 
@@ -66,8 +66,8 @@ theorem isValidIndexedPayloadAttestation_eq_true_iff_checks [Preset] [HasherTag]
       idx.size ≠ 0 ∧
       (Array.range (idx.size - 1)).all
           (fun i => idx[i]?.getD default ≤ idx[i + 1]?.getD default) = true ∧
-      idx.all (fun i => i.toNat < validators.size) = true ∧
-      blsFastAggregateVerify (idx.map (fun i => (validators[i.toNat]!).pubkey))
+      idx.all (fun i => i.toPlainNat < validators.size) = true ∧
+      blsFastAggregateVerify (idx.map (fun i => (validators[i.toPlainNat]!).pubkey))
         (computeSigningRoot a.data
           (getDomain (pureState state) domainPtcAttester (computeEpochAtSlot a.data.slot)))
         a.signature = true := by
@@ -110,7 +110,7 @@ part in the argument. Membership rather than position, because the bound's consu
 is the pubkey map below, which reads `validators` at an element of `idx`. -/
 private theorem indexedPayloadAttestation_indicesInRange_iff
     (n : Nat) (idx : Array ValidatorIndex) :
-    idx.all (fun i => i.toNat < n) = true ↔ ∀ i ∈ idx, i.toNat < n := by
+    idx.all (fun i => i.toPlainNat < n) = true ↔ ∀ i ∈ idx, i.toPlainNat < n := by
   simp only [Array.all_eq_true', decide_eq_true_eq]
 
 /-- Public semantic characterization: non-empty, adjacent-nondecreasing, in-range
@@ -125,9 +125,9 @@ theorem isValidIndexedPayloadAttestation_eq_true_iff [Preset] [HasherTag] [Crypt
       let validators := state.validators
       idx.size ≠ 0 ∧
       (∀ i (h : i + 1 < idx.size), idx[i]'(by omega) ≤ idx[i + 1]'h) ∧
-      ∃ hRange : ∀ i ∈ idx, i.toNat < validators.size,
+      ∃ hRange : ∀ i ∈ idx, i.toPlainNat < validators.size,
         blsFastAggregateVerify
-          (idx.attach.map (fun i => (validators[i.1.toNat]'(hRange i.1 i.2)).pubkey))
+          (idx.attach.map (fun i => (validators[i.1.toPlainNat]'(hRange i.1 i.2)).pubkey))
           (computeSigningRoot a.data
             (getDomain (pureState state) domainPtcAttester (computeEpochAtSlot a.data.slot)))
           a.signature = true := by
