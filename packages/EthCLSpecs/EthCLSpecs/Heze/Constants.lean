@@ -45,8 +45,9 @@ forkconfig where
   inclusionListDueBps : CLUint64
   /-- `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` (8192): the cap on an inclusion list's
   summed transaction bytes, which `on_inclusion_list` asserts. v1.7.0-beta.4 renames
-  alpha.12's `MAX_BYTES_PER_INCLUSION_LIST` to this. -/
-  maxTransactionsBytesPerInclusionList : UInt64
+  alpha.12's `MAX_BYTES_PER_INCLUSION_LIST` to this. A `Uint64` in the pinned module at
+  both presets, so the checked kind. -/
+  maxTransactionsBytesPerInclusionList : CLUint64
   /-- `MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS` (1): how many slots past its own an
   inclusion list stays in the retention window `on_inclusion_list` asserts. The pinned
   configuration types it `Slot` (`Slot(1)`), so the field carries the checked kind
@@ -68,7 +69,7 @@ forkabbrev domainInclusionListCommittee : ByteArray := ⟨#[0x10, 0, 0, 0]⟩
 forkabbrev inclusionListDueBps : CLUint64 := Config.inclusionListDueBps
 forkabbrev hezeForkVersion : Version := Config.hezeForkVersion
 forkabbrev hezeForkEpoch : Epoch := Config.hezeForkEpoch
-forkabbrev maxTransactionsBytesPerInclusionList : UInt64 :=
+forkabbrev maxTransactionsBytesPerInclusionList : CLUint64 :=
   Config.maxTransactionsBytesPerInclusionList
 forkabbrev minSlotsForInclusionListsRequests : Slot := Config.minSlotsForInclusionListsRequests
 

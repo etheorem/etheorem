@@ -3,11 +3,11 @@ import EthCLSpecs.Heze.ForkChoice
 /-!
 # `EthCLSpecs.Tests.ConstantAuditPins`: the configuration constants at arbitrary values
 
-Behavior pins for Stages 7.3a and 7.3b of the arithmetic transition, the constant
-audit's Fulu rows then its Gloas rows. The pinned module (`eth-consensus-specs`
-1.7.0b4) types each of these configuration values `Uint64`, or `Epoch` for
-`REORG_MAX_EPOCHS_SINCE_FINALIZATION`, so each `Config` field and `Const` mirror
-is `CLUint64`:
+Behavior pins for Stages 7.3a, 7.3b, and 7.3c of the arithmetic transition, the constant
+audit's Fulu rows, then its Gloas rows, then its Heze rows and the audit's closure. The
+pinned module (`eth-consensus-specs` 1.7.0b4) types each of these configuration values
+`Uint64`, or `Epoch` for `REORG_MAX_EPOCHS_SINCE_FINALIZATION`, so each `Config` field and
+`Const` mirror is `CLUint64`:
 
 | Constant | Consumer | Checked operation |
 |---|---|---|
@@ -20,6 +20,9 @@ is `CLUint64`:
 | `CONSOLIDATION_CHURN_LIMIT_QUOTIENT` | `get_consolidation_churn_limit` | `//` |
 | `BUILDER_PAYMENT_THRESHOLD_NUMERATOR` / `…_DENOMINATOR` | `get_builder_payment_quorum_threshold` | `*`, then `//` (adjudication F2) |
 | `PAYLOAD_TIMELY_THRESHOLD`, `DATA_AVAILABILITY_TIMELY_THRESHOLD` | `payload_timeliness`, `payload_data_availability` | `PTC_SIZE // 2` at import, then `vote_count > threshold` |
+| `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` | `on_inclusion_list` | mixed `int <= Uint64` against the plain byte sum (never raises) |
+| `MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS` (`Slot`) | `on_inclusion_list` | the checked `Slot` add of the retention window |
+| `INCLUSION_LIST_DUE_BPS` (7.1b, closure confirmed) | `get_inclusion_list_due_ms` | `bps * SLOT_DURATION_MS // BASIS_POINTS` |
 
 The checked kind decides the answer once a configuration leaves the shipped values. Each
 pin below sets one value, and each failure pin has a nearby success that reaches the same
@@ -511,6 +514,111 @@ example : hezeConsolidationChurnLimit minimalConfig = .answer 1000000000 := by n
 example : hezeConsolidationChurnLimit
     { minimalConfig with consolidationChurnLimitQuotient := 0 }
     = .zeroDivision := by native_decide
+
+/-! ### Heze: the Stage 7.3c rows
+
+The audit's last two rows and the closure. `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` is
+`Uint64(8192)` in the pinned module at both presets, so its `Config` field and mirror are
+`CLUint64`; `on_inclusion_list` compares the plain byte sum against it as Python's mixed
+`int <= Uint64`, which never raises and orders the values, so the consumer reads the plain
+projection. `MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS` is `Slot(1)` (the checked kind), and
+`on_inclusion_list`'s retention window is the checked `Slot` add. The `INCLUSION_LIST_DUE_BPS`
+closure from 7.1b is confirmed. The value pins read all three at both presets; the handler
+pins below set one configuration value each and run `on_inclusion_list` end-to-end, expected
+values from the pinned module (a one-byte list filed at the shipped cap, rejected at cap `0`,
+the window edge at current slot 2). Each pin module keeps its harness private, so the
+`on_inclusion_list` fixture repeats `Tests/HezeForkChoicePins`'s shape at the arbitrary
+configurations this file exists to drive. -/
+
+/-- The three Heze config rows at the `minimal` preset: the byte cap, the retention-window
+width, and the inclusion-list due bps, all plain. -/
+private def hezeRowsMinimal : Nat × Nat × Nat :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  (Const.maxTransactionsBytesPerInclusionList.toPlainNat,
+    Const.minSlotsForInclusionListsRequests.toPlainNat, Const.inclusionListDueBps.toPlainNat)
+
+/-- The same at the `mainnet` preset. -/
+private def hezeRowsMainnet : Nat × Nat × Nat :=
+  letI : Preset := mainnet
+  letI : Config := mainnetConfig
+  (Const.maxTransactionsBytesPerInclusionList.toPlainNat,
+    Const.minSlotsForInclusionListsRequests.toPlainNat, Const.inclusionListDueBps.toPlainNat)
+
+example : hezeRowsMinimal = (8192, 1, 6667) := by native_decide
+example : hezeRowsMainnet = (8192, 1, 6667) := by native_decide
+
+/-- What the pin's `on_inclusion_list` run did: filed the list with its timeliness, one of
+the handler's own asserts fired, or another reject. -/
+private inductive HezeIlOutcome where
+  /-- The list filed under `(slot, dependent_root)` with this timeliness bit. -/
+  | filed (timely : Bool)
+  /-- The handler's assert fired (the window or the byte cap). -/
+  | assertReject
+  /-- Any other reject. Never expected. -/
+  | otherReject
+  deriving DecidableEq
+
+/-- `on_inclusion_list` over a one-byte list from the committee's first member for slot `0`,
+its dependent root the anchor's, under configuration `c`, the store clock `intoSlotMs` ms into
+slot 0 (genesis time `0`). `SLOTS_PER_EPOCH` active validators make slot 0's committee
+non-empty; the anchor block's `stateRoot` fixes `get_forkchoice_store`'s opening assert; the
+verify-off backend accepts the empty signature. `getForkchoiceStore` hashes (FFI `Sha256`),
+so the pins are `native_decide` `example`s. -/
+private def hezeOnIl (c : Config) (intoSlotMs : CLUint64) : HezeIlOutcome :=
+  open EthCLLib.PySpecTests in
+  letI : Preset := minimal
+  letI : Config := c
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.verifyOff
+  let base := (default : @EthCLSpecs.Heze.BeaconState minimal)
+  let activeValidator : Validator := { (default : Validator) with exitEpoch := Const.farFutureEpoch }
+  let vals := (Array.replicate Const.slotsPerEpoch activeValidator).foldl (·.push ·) base.validators
+  let populated := { base with validators := vals }
+  let state : State := SSZ.FastBox populated
+  let anchorBlock : @EthCLSpecs.Heze.BeaconBlock minimal :=
+    { (default : @EthCLSpecs.Heze.BeaconBlock minimal) with stateRoot := htr populated }
+  let anchorRoot := htr anchorBlock
+  match (getForkchoiceStore (map := treeMap) state anchorBlock,
+      getInclusionListCommittee (StoreTransition := Except StoreTransitionError) state 0) with
+  | (.ok store0, .ok committee) =>
+    let validatorIndex := vget committee 0
+    let signed : SignedInclusionList :=
+      { message :=
+          { slot := 0, validatorIndex := validatorIndex, dependentRoot := anchorRoot,
+            transactions := ⟨#[⟨#[0xAB]⟩]⟩ }
+        signature := default }
+    match (store0.genesisTimeMs + intoSlotMs : Checked CLUint64) with
+    | .error _ => .otherReject
+    | .ok timeMs =>
+      let store := { store0 with timeMs := timeMs }
+      match runOn store
+          (onInclusionList (map := treeMap) signed : EStateM StoreTransitionError (Store treeMap) Unit) with
+      | .ok after =>
+        let entries := (FcMap.lookup after.inclusionListStore.inclusionLists (0, anchorRoot)).getD
+          FcMap.empty
+        match (FcMap.lookup entries validatorIndex).map (·.timely) with
+        | some b => .filed b
+        | none   => .otherReject
+      -- `runOn` returns `Except (ε × σ) σ`: the reject and the error-time store.
+      | .error (.assert _, _) => .assertReject
+      | .error _              => .otherReject
+  | _ => .otherReject
+
+-- The byte cap at arbitrary configurations: cap `0` rejects the one-byte list (the mixed
+-- comparison `1 <= 0` fails at the cap assert), cap `1` admits it, filed timely (0 ms into
+-- its own slot is before the 4000 ms deadline). The checked field drives the assert.
+example : hezeOnIl { minimalConfig with maxTransactionsBytesPerInclusionList := 0 } 0
+    = .assertReject := by native_decide
+example : hezeOnIl { minimalConfig with maxTransactionsBytesPerInclusionList := 1 } 0
+    = .filed true := by native_decide
+
+-- The retention window at arbitrary configurations: at current slot 2 (12000 ms) the shipped
+-- width `1` no longer admits the slot-0 list (`0 + 1 < 2`, the window assert), while width `2`
+-- admits it at the inclusive edge (`0 + 2 >= 2`), filed untimely (not its own slot).
+example : hezeOnIl minimalConfig 12000 = .assertReject := by native_decide
+example : hezeOnIl { minimalConfig with minSlotsForInclusionListsRequests := 2 } 12000
+    = .filed false := by native_decide
 
 end Heze
 

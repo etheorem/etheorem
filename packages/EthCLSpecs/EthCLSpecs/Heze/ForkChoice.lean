@@ -558,9 +558,10 @@ forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit :=
   let transactions := inclusionList.transactions.toArray
   let transactionsSize : CLInt := transactions.foldl (fun acc tx => acc + len tx) 0
   assert (transactionsSize > 0)
-  -- TEMPORARY CROSSING (removed in Stage 7): the byte cap is still the raw `UInt64` config
-  -- field; its value enters the plain kind for the comparison, which never raises.
-  assert (transactionsSize ≤ (Const.maxTransactionsBytesPerInclusionList.toNat : CLInt))
+  -- `transactions_size <= MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST`: the sum is a plain
+  -- `int` in Python and the cap a `Uint64`; the mixed comparison never raises and orders
+  -- the values, which the plain projection of the checked cap reads.
+  assert (transactionsSize ≤ Const.maxTransactionsBytesPerInclusionList.toPlainNat)
   assert (transactions.all (·.size > 0))
 
   -- The dependent block must be known, no later than the shuffling dependent slot, and a
