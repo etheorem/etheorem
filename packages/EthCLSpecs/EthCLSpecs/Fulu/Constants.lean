@@ -164,7 +164,8 @@ forkconfig where
   electraForkEpoch : Epoch
   fuluForkVersion : Version
   fuluForkEpoch : Epoch
-  slotDurationMs : UInt64
+  /-- `SLOT_DURATION_MS`: a `Uint64` in the pinned module, so the checked kind. -/
+  slotDurationMs : CLUint64
   attestationDueBps : UInt64
   ejectionBalanceG : Gwei
   /-- `MAX_BLOBS_PER_BLOCK_ELECTRA`: a `Uint64` in the pinned module, so the checked kind. -/
@@ -418,7 +419,9 @@ forkabbrev electraForkVersion : Version := Config.electraForkVersion
 forkabbrev electraForkEpoch : Epoch := Config.electraForkEpoch
 forkabbrev fuluForkVersion : Version := Config.fuluForkVersion
 forkabbrev fuluForkEpoch : Epoch := Config.fuluForkEpoch
-forkabbrev slotDurationMs : UInt64 := Config.slotDurationMs
+/-- `SLOT_DURATION_MS`, the checked kind. A configuration value: no `PositiveDivisor` view
+exists, so a division by it keeps the checked route (`SPEC_ARITHMETIC.md` §4.2). -/
+forkabbrev slotDurationMs : CLUint64 := Config.slotDurationMs
 forkabbrev attestationDueBps : UInt64 := Config.attestationDueBps
 /-- `MAX_BLOBS_PER_BLOCK_ELECTRA` (9 for both presets). Before the first `BLOB_SCHEDULE`
 entry this is what `get_blob_parameters(epoch).max_blobs_per_block` returns. -/

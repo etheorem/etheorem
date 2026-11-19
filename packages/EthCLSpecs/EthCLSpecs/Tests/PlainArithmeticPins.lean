@@ -292,7 +292,7 @@ private def eth1Adopted (P : Preset) : Except StateTransitionError Nat :=
   let body : BeaconBlockBody :=
     { (default : BeaconBlockBody) with eth1Data := { (default : Eth1Data) with depositCount := 7 } }
   match (processEth1Data body : EStateM StateTransitionError State Unit).run st with
-  | .ok _ post => .ok (sszGet post eth1Data).depositCount.toNat
+  | .ok _ post => .ok (sszGet post eth1Data).depositCount.toPlainNat
   | .error e _ => .error e
 
 /-- `EPOCHS_PER_ETH1_VOTING_PERIOD = 2^61`: the checked product

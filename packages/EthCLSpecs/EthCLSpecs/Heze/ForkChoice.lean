@@ -253,8 +253,8 @@ satisfied the inclusion-list constraints (`consensus-specs/specs/heze/fork-choic
 `inclusionListStore` folds in the spec's separate `InclusionListStore` (see the module docstring).
 The seventeen Gloas fields are restated verbatim. -/
 forkstruct Store (map : MapKind) [HasherTag] where
-  timeMs                        : UInt64
-  genesisTimeMs                 : UInt64
+  timeMs                        : CLUint64
+  genesisTimeMs                 : CLUint64
   justifiedCheckpoint           : Checkpoint
   finalizedCheckpoint           : Checkpoint
   unrealizedJustifiedCheckpoint : Checkpoint
@@ -493,7 +493,7 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }
   let genesisTimeMs := secondsToMilliseconds (sszGet anchorState genesisTime)
-  let timeMs ← liftErr (computeTimeAtSlotMs genesisTimeMs (sszGet anchorState slot))
+  let timeMs ← computeTimeAtSlotMs genesisTimeMs (sszGet anchorState slot)
   let emptyVotes : Array (Option Bool) := Array.replicate Const.ptcSize none
   pure
     { timeMs := timeMs
@@ -586,10 +586,13 @@ forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit :=
   -- The signature must verify.
   assert (← evalNestedStateTransition state (isValidInclusionListSignature state signed))
 
-  -- Timely only in its own slot, before the deadline.
+  -- Timely only in its own slot, before the deadline. The time into the slot binds inside the
+  -- branch, where Python's `and` forms it. TEMPORARY CROSSING (removed in Stage 7.1b): the due
+  -- time is still a raw `UInt64`, so the checked time compares through its native word.
   let isTimely ←
     if inclusionList.slot == currentSlot then
-      pure (decide ((← getTimeIntoSlotMs store) < getInclusionListDueMs))
+      let timeIntoSlotMs ← getTimeIntoSlotMs store
+      pure (decide (timeIntoSlotMs.val < getInclusionListDueMs))
     else pure false
   set { store with
     inclusionListStore := processInclusionList store.inclusionListStore signed isTimely }

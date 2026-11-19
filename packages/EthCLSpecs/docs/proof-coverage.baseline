@@ -8,6 +8,7 @@ tier1 EthCLSpecs.Gloas.builderPaymentIndex
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot
 tier1 EthCLSpecs.Gloas.computeExitEpochAndUpdateChurn
 tier1 EthCLSpecs.Gloas.computePtc
+tier1 EthCLSpecs.Gloas.computeSlotAtTimeMs
 tier1 EthCLSpecs.Gloas.computeStartSlotAtEpoch
 tier1 EthCLSpecs.Gloas.currentEpochOf
 tier1 EthCLSpecs.Gloas.decreaseBalance

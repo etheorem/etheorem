@@ -256,7 +256,13 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
     | .tick t =>
       -- The format runs `on_tick(store, seconds_to_milliseconds(tick))`: the tick is in seconds.
       store := (← checkStepValidity .tick true
-        (runOn store (onTick (map := hashMap) (secondsToMilliseconds (UInt64.ofNat t)) :
+        (runOn store (do
+            -- The vector writes the tick as `int(milliseconds_to_seconds(time_ms))`
+            -- (`test/helpers/fork_choice.py:306-309`), so it fits a `uint64`. The runner reads
+            -- it back through the checked cast `Uint64(tick)`: a tick past `2^64 - 1` is the
+            -- step's range fault, never a wrapped clock.
+            let tickSeconds ← CLUint64.ofNat? t
+            onTick (map := hashMap) (secondsToMilliseconds tickSeconds) :
           EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes columns valid =>
       -- pyspec `add_block` (`fork_choice.py:382-406`) runs `on_block` ALONE against `valid`: an
@@ -318,8 +324,8 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
     | .checkBoost root =>
       assert (store.proposerBoostRoot == root)
     -- `time` / `genesis_time` are `milliseconds_to_seconds` of the store's ms clock.
-    | .checkTime t => assert ((millisecondsToSeconds store.timeMs).toNat == t)
-    | .checkGenesisTime t => assert ((millisecondsToSeconds store.genesisTimeMs).toNat == t)
+    | .checkTime t => assert ((millisecondsToSeconds store.timeMs).toPlainNat == t)
+    | .checkGenesisTime t => assert ((millisecondsToSeconds store.genesisTimeMs).toPlainNat == t)
     | .checkViableForHead expected =>
       let actual ← viableForHeadLeaves store
       assert (sameViableEntries actual expected)
