@@ -450,7 +450,7 @@ all negative-index and empty-collection cases preserve Python behavior.
   churn quotients and the inactivity denominator already divide on the checked route, and
   `BASIS_POINTS` is the constant `10000`. No fork body changed; minimal subsets and full
   minimal `fork_choice` runs case-identical to Stage 6.*
-- [ ] **7.3 Finish the constant audit.** Include Gloas threshold numerators/denominators
+- [x] **7.3 Finish the constant audit.** Include Gloas threshold numerators/denominators
   and churn quotients. Distinguish checked constants from plain configuration integers.
   - [x] **7.3a Finish the constant audit: Fulu rows.**
     *Done 2026-11-19 (WS-36, `6dd48cf`): `INACTIVITY_SCORE_BIAS`,
@@ -484,7 +484,29 @@ all negative-index and empty-collection cases preserve Python behavior.
     `…Lt` premise skip already cover `ptcSizeC`/`ptcSizeLt`). Pins in `ConstantAuditPins`,
     every answer from the pinned pyspec; coverage 87, no tag lost; subsets and full minimal
     `fork_choice` case-identical to Stage 6 — behavior unchanged.*
-  - [ ] **7.3c Finish the constant audit: Heze rows and closure.**
+  - [x] **7.3c Finish the constant audit: Heze rows and closure.**
+    *Done 2026-11-19 (WS-40, `ae8646f`): `maxTransactionsBytesPerInclusionList` is
+    `CLUint64` (field + `Const` mirror; the pin's `Uint64(8192)`), the audit's last
+    TEMPORARY CROSSING is gone — `on_inclusion_list`'s byte cap is consumed through
+    `toPlainNat`, exactly Python's mixed `int <= Uint64` that never raises, while the
+    retention window stays the checked `Slot` add bound before its assert; the pinned
+    tree's only other executable site of the cap (gossip validation) has no Lean twin.
+    `minSlotsForInclusionListsRequests` (`Slot(1)` at the pin) confirmed with its consumer
+    and closed; the 7.1b `inclusionListDueBps` closure re-confirmed. Closure: every Stage 7
+    row of the inventory's §3 tables carries a final disposition — checked-typed, or
+    plain/structural with a recorded justification, or data-only; total-divisor views only
+    where an explicit premise exists (`ptcSizeC` under `ptcSizeLt`); no raw/checked
+    crossing remains (`git grep TEMPORARY CROSSING` empty). `just check-constants` needed
+    no change: the `…C`/`…Div` suffix rules and `…Lt` premise skip already cover everything
+    landed in 7.1b/7.3a/7.3b — verified at 167 constants, every tier and owning fork
+    matching. Pins: `HezeForkChoicePins`' `on_inclusion_list` harness generalized with the
+    shipped boundaries (byte cap 8191/8192 file, 8193 rejects; window admits at the current
+    slot, rejects past it, a future slot rejects), `ConstantAuditPins` reads the three Heze
+    rows at both presets `(8192, 1, 6667)` and drives the handler at arbitrary
+    configurations (cap 0 rejects a one-byte list, cap 1 admits it; width 2 admits at the
+    inclusive edge); every answer from the pinned pyspec. Coverage 87, no tag lost, axiom
+    audit within the trio; full minimal heze sweep 6972/3198 case-identical to Stage 7.3b —
+    behavior unchanged.*
 - [ ] **7.4 Verify.** Run the common gate and complete minimal sweep.
 
 **Done when:** generic configuration inputs preserve success/failure behavior, all
