@@ -420,11 +420,16 @@ all negative-index and empty-collection cases preserve Python behavior.
 
 - [ ] **7.1 Move time values.** Cover `timeMs`, `genesisTimeMs`, `slotDurationMs`, conversion
   helpers, and all clock consumers in state transitions and fork choice.
+  - [ ] **7.1a Move time values: clock core and tick path.**
+  - [ ] **7.1b Move time values: clock deadlines and timestamp asserts.**
 - [ ] **7.2 Preserve arbitrary configurations.** Use checked division where positivity
   is absent. Pin zero duration, boundary overflow, and nearby valid configurations.
   Close the `computeSlotAtTimeMs` mismatch with executable evidence.
 - [ ] **7.3 Finish the constant audit.** Include Gloas threshold numerators/denominators
   and churn quotients. Distinguish checked constants from plain configuration integers.
+  - [ ] **7.3a Finish the constant audit: Fulu rows.**
+  - [ ] **7.3b Finish the constant audit: Gloas thresholds and churn.**
+  - [ ] **7.3c Finish the constant audit: Heze rows and closure.**
 - [ ] **7.4 Verify.** Run the common gate and complete minimal sweep.
 
 **Done when:** generic configuration inputs preserve success/failure behavior, all
