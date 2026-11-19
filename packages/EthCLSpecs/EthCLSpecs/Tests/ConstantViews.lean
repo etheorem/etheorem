@@ -71,8 +71,8 @@ example [EthCLSpecs.Fulu.Preset] :
 /-! ### Fulu pins
 
 The views reduce at both injected presets. `@` supplies the instance the tier
-binder asks for: `Preset` for the two preset views, `Config` for the config
-view, whose body mentions the config class alone. -/
+binder asks for: `Preset` for the two preset views, `Config` for the checked
+config entry `churnLimitQuotient`, whose body mentions the config class alone. -/
 
 open EthCLSpecs.Fulu in
 example : (@Const.slotsPerEpochDiv minimal).n = 8 := by native_decide
@@ -129,11 +129,11 @@ example : @Const.effectiveBalanceIncrement mainnet = 1000000000 := by
   native_decide
 
 open EthCLSpecs.Fulu in
-example : (@Const.churnLimitQuotientC minimalConfig).toPlainNat = 32 := by
+example : (@Const.churnLimitQuotient minimalConfig).toPlainNat = 32 := by
   native_decide
 
 open EthCLSpecs.Fulu in
-example : (@Const.churnLimitQuotientC mainnetConfig).toPlainNat = 65536 := by
+example : (@Const.churnLimitQuotient mainnetConfig).toPlainNat = 65536 := by
   native_decide
 
 /-! ### Gloas and Heze pins
@@ -170,7 +170,7 @@ example : 0 < (@Const.slotsPerHistoricalRootDiv minimal).n :=
   (@Const.slotsPerHistoricalRootDiv minimal).positive
 
 open EthCLSpecs.Gloas in
-example : (@Const.churnLimitQuotientC minimalConfig).toPlainNat = 32 := by
+example : (@Const.churnLimitQuotient minimalConfig).toPlainNat = 32 := by
   native_decide
 
 open EthCLSpecs.Gloas in
@@ -205,7 +205,7 @@ example : 0 < (@Const.slotsPerHistoricalRootDiv mainnet).n :=
   (@Const.slotsPerHistoricalRootDiv mainnet).positive
 
 open EthCLSpecs.Heze in
-example : (@Const.churnLimitQuotientC mainnetConfig).toPlainNat = 65536 := by
+example : (@Const.churnLimitQuotient mainnetConfig).toPlainNat = 65536 := by
   native_decide
 
 open EthCLSpecs.Heze in
@@ -259,7 +259,7 @@ section
 variable [Preset] [Config]
 
 inherit slotsPerEpochC slotsPerEpochDiv slotsPerHistoricalRootC slotsPerHistoricalRootDiv
-inherit churnLimitQuotientC
+inherit churnLimitQuotient
 
 end
 end Const
@@ -294,11 +294,11 @@ open EthCLSpecs.ConstViewChild in
 example : 0 < (@Const.slotsPerHistoricalRootDiv minimal).n :=
   (@Const.slotsPerHistoricalRootDiv minimal).positive
 
-/-! The config tier was not overridden, and the inherited config view still
-reduces through the child's own `Config` class. -/
+/-! The config tier was not overridden, and the inherited checked config entry
+still reduces through the child's own `Config` class. -/
 
 open EthCLSpecs.ConstViewChild in
-example : (@Const.churnLimitQuotientC minimalConfig).toPlainNat = 32 := by
+example : (@Const.churnLimitQuotient minimalConfig).toPlainNat = 32 := by
   native_decide
 
 end EthCLSpecs.Tests.ConstantViews

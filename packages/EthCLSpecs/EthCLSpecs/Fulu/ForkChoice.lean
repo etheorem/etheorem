@@ -154,12 +154,12 @@ increment) divided across the slots of an epoch, where alpha.12 took
 `get_total_active_balance`, which counts slashed validators too. The total, the
 per-slot division, the percent product, and the `/ 100` are the checked `Gwei`
 chain; the per-slot division takes the proved-total `PositiveDivisor` view, so it
-returns the value directly (`SPEC_ARITHMETIC.md` §4.2). TEMPORARY CROSSING
-(removed in Stage 7): `committee_percent` arrives as the raw `UInt64` config
-word and rides the wire route into the checked kind. The unslashed filter reads
-`state.validators[index]` for every active index, a raising list read through `getAt`, so
-the helper returns `Except StateTransitionError`. -/
-forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) :
+returns the value directly (`SPEC_ARITHMETIC.md` §4.2). `committee_percent` is a
+checked config value (`PROPOSER_SCORE_BOOST`, `REORG_HEAD_WEIGHT_THRESHOLD`, or
+`REORG_PARENT_WEIGHT_THRESHOLD`), so the product takes it as it is. The unslashed
+filter reads `state.validators[index]` for every active index, a raising list read
+through `getAt`, so the helper returns `Except StateTransitionError`. -/
+forkdef calculateCommitteeFraction (state : State) (committeePercent : CLUint64) :
     Except StateTransitionError Gwei := do
   let validators := sszGet state validators
   let active ← getActiveValidatorIndices state (currentEpochOf state)
@@ -168,15 +168,14 @@ forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) :
     pure !validator.slashed
   let total ← getTotalBalance state unslashedAndActive
   let committeeWeight := total / Const.slotsPerEpochDiv
-  let percent := CLUint64.trustedOfUInt64 committeePercent
-  let scaled ← committeeWeight * percent
+  let scaled ← committeeWeight * committeePercent
   let fraction ← (scaled / 100 : Checked Gwei)
   return fraction
 
 /-- `compute_proposer_score(state)` (`fulu/mainnet.py:2963-2964`): the committee
 fraction at `PROPOSER_SCORE_BOOST`. -/
 forkdef computeProposerScore (state : State) : Except StateTransitionError Gwei :=
-  calculateCommitteeFraction state (UInt64.ofNat Const.proposerScoreBoost)
+  calculateCommitteeFraction state Const.proposerScoreBoost
 
 /-- `get_proposer_score` (`fulu/mainnet.py:2967-2969`): `compute_proposer_score` over the
 justified checkpoint state. -/
