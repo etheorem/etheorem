@@ -420,7 +420,14 @@ all negative-index and empty-collection cases preserve Python behavior.
 
 - [ ] **7.1 Move time values.** Cover `timeMs`, `genesisTimeMs`, `slotDurationMs`, conversion
   helpers, and all clock consumers in state transitions and fork choice.
-  - [ ] **7.1a Move time values: clock core and tick path.**
+  - [x] **7.1a Move time values: clock core and tick path.**
+    *Done 2026-11-19 (WS-34, `9768c41`): clock values (`Store.timeMs`/`genesisTimeMs`,
+    `BeaconState.genesisTime`, `Eth1Data.depositCount`, `SLOT_DURATION_MS`) are `CLUint64`;
+    the `Fulu/Time.lean` helpers return `Checked` with the Python bind order and the
+    `UINT64_MAX` cap on `secondsToMilliseconds`; the tick path, anchor store, and runner
+    tick conversion moved, `computeSlotAtTimeMs` now raising on a zero duration per
+    Python; pins in `ClockMigrationPins`, no TEMPORARY CROSSING left in the file;
+    coverage 86 → 87, no tag lost; minimal sweeps case-identical to Stage 6.*
   - [ ] **7.1b Move time values: clock deadlines and timestamp asserts.**
 - [ ] **7.2 Preserve arbitrary configurations.** Use checked division where positivity
   is absent. Pin zero duration, boundary overflow, and nearby valid configurations.
