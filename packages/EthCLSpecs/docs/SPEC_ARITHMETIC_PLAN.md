@@ -439,9 +439,17 @@ all negative-index and empty-collection cases preserve Python behavior.
     `proposerReorgCutoffBps` re-typed with their `Const` mirrors, Stage 0 rows closed;
     pins in `DeadlineMigrationPins`, `HezeForkChoicePins` repaired; no new TEMPORARY
     CROSSING; coverage baseline 87, minimal sweeps case-identical to Stage 6.*
-- [ ] **7.2 Preserve arbitrary configurations.** Use checked division where positivity
+- [x] **7.2 Preserve arbitrary configurations.** Use checked division where positivity
   is absent. Pin zero duration, boundary overflow, and nearby valid configurations.
   Close the `computeSlotAtTimeMs` mismatch with executable evidence.
+  *Done 2026-11-19 (WS-35, `1997d99`): pins in `ConfigurationClockPins` at
+  `SLOT_DURATION_MS` 0, 1, `2^63`, and `UINT64_MAX`; a zero duration raises the typed
+  zero-division fault through `computeSlotAtTimeMs` and the store clock in all three forks,
+  and a time before genesis raises the range fault first. The pinned pyspec (1.7.0b4) gave
+  the same answer for every probe in Fulu, Gloas, and Heze, so the mismatch is closed. The
+  churn quotients and the inactivity denominator already divide on the checked route, and
+  `BASIS_POINTS` is the constant `10000`. No fork body changed; minimal subsets and full
+  minimal `fork_choice` runs case-identical to Stage 6.*
 - [ ] **7.3 Finish the constant audit.** Include Gloas threshold numerators/denominators
   and churn quotients. Distinguish checked constants from plain configuration integers.
   - [ ] **7.3a Finish the constant audit: Fulu rows.**
