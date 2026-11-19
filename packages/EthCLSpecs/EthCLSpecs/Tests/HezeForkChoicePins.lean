@@ -138,14 +138,17 @@ the recorded EL answer, and the timeliness bit `on_inclusion_list` files with ea
 
 /-- `get_inclusion_list_due_ms = INCLUSION_LIST_DUE_BPS * SLOT_DURATION_MS // BASIS_POINTS`. Under
 the minimal config that is `6667 * 6000 / 10000 = 4000` (truncating divide), pinning both the
-`INCLUSION_LIST_DUE_BPS = 6667` constant and the inherited `bpsDeadlineMs` composition. Arithmetic
-only (no hash), so kernel `#guard`. -/
-private def pinIlDueMs : UInt64 :=
+`INCLUSION_LIST_DUE_BPS = 6667` constant and the inherited `bpsDeadlineMs` composition. The
+result is `Checked`, since the product is the checked kind. The minimal configuration is a large
+record, so `native_decide`, as the migration pins do. -/
+private def pinIlDueMs : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  getInclusionListDueMs
-#guard pinIlDueMs = 4000
+  match getInclusionListDueMs with
+  | .ok due => due.toPlainNat = 4000
+  | .error _ => false
+example : pinIlDueMs = true := by native_decide
 
 /-- The faithful empty-committee throw. Over a zero-validator `default BeaconState`, slot 0's
 beacon committee is empty, so `getInclusionListCommittee` hits the empty-committee guard and
@@ -387,6 +390,8 @@ private def pinOnIlTimely (intoSlotMs : CLUint64) : Option Bool :=
   | _ => none
 -- 0 ms into the slot: 0 < 4000 ⇒ timely.
 example : pinOnIlTimely 0 = some true := by native_decide
+-- 3999 ms into the slot: the last timely millisecond, since the deadline is strict.
+example : pinOnIlTimely 3999 = some true := by native_decide
 -- 4000 ms into the slot: not < 4000 ⇒ untimely.
 example : pinOnIlTimely 4000 = some false := by native_decide
 

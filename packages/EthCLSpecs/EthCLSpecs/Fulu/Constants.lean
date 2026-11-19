@@ -166,7 +166,8 @@ forkconfig where
   fuluForkEpoch : Epoch
   /-- `SLOT_DURATION_MS`: a `Uint64` in the pinned module, so the checked kind. -/
   slotDurationMs : CLUint64
-  attestationDueBps : UInt64
+  /-- `ATTESTATION_DUE_BPS`: a `Uint64` in the pinned module, so the checked kind. -/
+  attestationDueBps : CLUint64
   ejectionBalanceG : Gwei
   /-- `MAX_BLOBS_PER_BLOCK_ELECTRA`: a `Uint64` in the pinned module, so the checked kind. -/
   maxBlobsPerBlockElectra : CLUint64
@@ -180,7 +181,8 @@ forkconfig where
   inactivityScoreRecoveryRate : UInt64
   /-- Fork-choice tuning, from the spec's fork-choice `Configuration` table. -/
   proposerScoreBoost : Nat
-  proposerReorgCutoffBps : UInt64
+  /-- `PROPOSER_REORG_CUTOFF_BPS`: a `Uint64` in the pinned module, so the checked kind. -/
+  proposerReorgCutoffBps : CLUint64
   reorgHeadWeightThreshold : UInt64
   reorgParentWeightThreshold : UInt64
   reorgMaxEpochsSinceFinalization : Epoch
@@ -422,7 +424,9 @@ forkabbrev fuluForkEpoch : Epoch := Config.fuluForkEpoch
 /-- `SLOT_DURATION_MS`, the checked kind. A configuration value: no `PositiveDivisor` view
 exists, so a division by it keeps the checked route (`SPEC_ARITHMETIC.md` §4.2). -/
 forkabbrev slotDurationMs : CLUint64 := Config.slotDurationMs
-forkabbrev attestationDueBps : UInt64 := Config.attestationDueBps
+/-- `ATTESTATION_DUE_BPS`, the checked kind: the attestation deadline in basis points of the
+slot. -/
+forkabbrev attestationDueBps : CLUint64 := Config.attestationDueBps
 /-- `MAX_BLOBS_PER_BLOCK_ELECTRA` (9 for both presets). Before the first `BLOB_SCHEDULE`
 entry this is what `get_blob_parameters(epoch).max_blobs_per_block` returns. -/
 forkabbrev maxBlobsPerBlockElectra : CLUint64 := Config.maxBlobsPerBlockElectra
@@ -435,8 +439,8 @@ forkabbrev reorgParentWeightThreshold : UInt64 := Config.reorgParentWeightThresh
 /-- `REORG_MAX_EPOCHS_SINCE_FINALIZATION`: do not reorg if finality is older. -/
 forkabbrev reorgMaxEpochsSinceFinalization : Epoch := Config.reorgMaxEpochsSinceFinalization
 /-- `PROPOSER_REORG_CUTOFF_BPS`: the on-time deadline for a reorg proposal, in basis
-points of the slot (~17%). -/
-forkabbrev proposerReorgCutoffBps : UInt64 := Config.proposerReorgCutoffBps
+points of the slot (~17%), the checked kind. -/
+forkabbrev proposerReorgCutoffBps : CLUint64 := Config.proposerReorgCutoffBps
 /-- `NUMBER_OF_COLUMNS` (PeerDAS, `= CELLS_PER_EXT_BLOB`): the data-column count. -/
 forkabbrev numberOfColumns : Nat := Preset.numberOfColumns
 /-- Fulu `KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH` (4), the `DataColumnSidecar`'s proof
@@ -444,8 +448,9 @@ vector length. Distinct from the Deneb singular `KZG_COMMITMENT_INCLUSION_PROOF_
 forkabbrev kzgCommitmentsInclusionProofDepth : Nat := Preset.kzgCommitmentsInclusionProofDepth
 /-- `PROPOSER_SCORE_BOOST` (percent of the per-slot committee weight). -/
 forkabbrev proposerScoreBoost : Nat := Config.proposerScoreBoost
-/-- `BASIS_POINTS` denominator for the slot-component durations. -/
-forkabbrev basisPoints : UInt64 := 10000
+/-- `BASIS_POINTS`, the denominator for the slot-component durations. The pinned module
+declares it `Uint64(10000)`, so the checked kind. -/
+forkabbrev basisPoints : CLUint64 := 10000
 
 end
 end Const

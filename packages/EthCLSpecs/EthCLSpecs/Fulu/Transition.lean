@@ -222,10 +222,8 @@ forkdef processExecutionPayload (body : BeaconBlockBody) : StateTransition Unit 
   -- `compute_time_at_slot(state.genesis_time, state.slot)` (`Fulu/Time.lean`). It can fault, so
   -- it binds through the arithmetic lift, which lands the fault on this machine unwrapped.
   let expectedTimestamp ← computeTimeAtSlot (sszGet state genesisTime) (sszGet state slot)
-  -- TEMPORARY CROSSING (removed in Stage 7.1b): `payload.timestamp` is still the raw `UInt64`
-  -- field, so the checked time compares through its native word. The pinned `Uint64.__eq__`
-  -- compares by value, so the answer is the same.
-  assert (payload.timestamp == expectedTimestamp.val)
+  -- `payload.timestamp` is a `Uint64` field, so both sides are the checked kind.
+  assert (payload.timestamp == expectedTimestamp)
   -- [Modified in Fulu:EIP7892] the commitments are under the scheduled blob limit: the plain
   -- `len(...)` against the plain limit, a comparison that never raises.
   assert (len body.blobKzgCommitments ≤ (getBlobParameters epoch).maxBlobsPerBlock)
