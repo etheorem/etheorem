@@ -149,12 +149,14 @@ private def pinIlDueMs : UInt64 :=
 
 /-- The faithful empty-committee throw. Over a zero-validator `default BeaconState`, slot 0's
 beacon committee is empty, so `getInclusionListCommittee` hits the empty-committee guard and
-rejects. Pyspec raises `ZeroDivisionError` on the same `indices[i % 0]`, an uncaught fault, so the
-pin checks the reject is NOT an expected rejection (a `.transition (.arithmetic …)`, not a caught
-`.assert`), the property a regression to `assert` would break. `on_inclusion_list` reaches the
-helper after its state advance. At v1.7.0-beta.4 the record path no longer computes a committee,
-so the pin drives the helper directly, in plain `Except` (it needs no `MonadStateOf`). `State` is
-FFI-backed (`FastBox`), so `native_decide`. -/
+rejects. Pyspec raises a bare `ZeroDivisionError` on the same `indices[i % 0]`, an uncaught
+fault no wrapper's class set holds, so the pin checks the reject is exactly the
+`.zeroDivision` cause, not a caught `.assert` and not the `.arithmetic` range class. A
+regression to `assert`, or to the range cause, breaks it. `on_inclusion_list` reaches the
+helper after its state advance. At
+v1.7.0-beta.4 the record path no longer computes a committee, so the pin drives the helper
+directly, in plain `Except` (it needs no `MonadStateOf`). `State` is FFI-backed (`FastBox`), so
+`native_decide`. -/
 private def pinCommitteeThrows : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
@@ -162,7 +164,10 @@ private def pinCommitteeThrows : Bool :=
   let state : State := SSZ.FastBox (default : @EthCLSpecs.Heze.BeaconState minimal)
   match (getInclusionListCommittee (StoreTransition := Except StoreTransitionError) state 0) with
   | .ok _    => false
-  | .error e => !e.isExpectedRejection
+  -- The `ErrorConv StateTransitionError StoreTransitionError` instance wraps the reject as
+  -- `.transition` even at this plain `Except` monad, so the cause sits one level inside.
+  | .error (.transition (.zeroDivision _)) => true
+  | .error _ => false
 example : pinCommitteeThrows = true := by native_decide
 
 /-! #### The record path

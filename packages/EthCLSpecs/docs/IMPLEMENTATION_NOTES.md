@@ -409,8 +409,8 @@ concerns map on: `Preset` / `Monad` / `Box` → `Spec.State` + `Spec.Header`; `M
 `Errors` / `Header` read better than the sketch, so §3.6 is reconciled by this mapping.
 
 `Spec.Arith` carries `umax` / `umin` / `isqrt`, type-directed `uintToBytes`, byte
-conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet` /
-`umodIdx` (ring-buffer read / write index), `sszDrop` / `sszOfArray`, `bitGet` / `bitSet`,
+conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet`
+(ring-buffer read index), `shiftWindow`, `sszDrop` / `sszOfArray`, `bitGet` / `bitSet`,
 and `hasFlag` / `addFlag`. The append lives in SizzLean: `SSZList.push` takes a proof
 that the list has room, and `SSZList.push?` / `sszAppend?` return `none` on a full list.
 `appendState` (`Spec.Header`) turns that `none` into the `.listFull` fault, the spec's

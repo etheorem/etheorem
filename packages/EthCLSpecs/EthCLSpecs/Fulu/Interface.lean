@@ -71,7 +71,11 @@ private def runSlotsImpl (P : Preset) (C : Config) (preBytes : ByteArray) (n : N
   letI : CryptoBackend := CryptoBackend.realBackend
   let action : EStateM StateTransitionError (SSZ.Box Sha256 (@BeaconState P)) Unit := do
     let state ← get
-    processSlots ((sszGet state slot) + UInt64.ofNat n)
+    -- The harness's `state.slot + slots` (`test/phase0/sanity/test_slots.py:25`): the
+    -- checked `Slot` add of the plain `int` slot count, so a target past `2^64 - 1` raises
+    -- (`SPEC_ARITHMETIC.md` §4.2).
+    let target ← (sszGet state slot) + n
+    processSlots target
   RunError.ofSpec (runToRoot box0 action)
 
 /-- `runEpochSubstep`: dispatch the `epoch_processing/<handler>` name to its
@@ -175,8 +179,9 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
     let d0 ← liftErr (getFlagIndexDeltas state 0)
     let d1 ← liftErr (getFlagIndexDeltas state 1)
     let d2 ← liftErr (getFlagIndexDeltas state 2)
+    let inactPenalties ← getInactivityPenaltyDeltas state
     pure #[← mkDeltas d0, ← mkDeltas d1, ← mkDeltas d2,
-      ← mkDeltas (zeros, getInactivityPenaltyDeltas state)]
+      ← mkDeltas (zeros, inactPenalties)]
 
 /-- `runBlocks`: decode the pre-state, fold `stateTransition` over the block
 sequence (verify-off when `bls_setting = 2`), and return the post root. Drives
@@ -226,7 +231,7 @@ private def viableForHeadLeaves [Preset] [Config] [HasherTag] (store : Store has
         let children := (getNodeChildren (map := hashMap) store node).filter nodes.contains
         if children.isEmpty then
           let weight ← getWeight (map := hashMap) store node
-          leaves := leaves.push (vecToBytes node, weight.toNat, none)
+          leaves := leaves.push (vecToBytes node, weight.toPlainNat, none)
         else pending := pending ++ children
     pure leaves
   runQuery store walk
@@ -303,12 +308,12 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
       let head ← queryHead store
       assert (head == root)
       let headBlock ← FcMap.getOrThrow store.blocks head
-      assert (headBlock.slot.toNat == slot)
+      assert (headBlock.slot.toPlainNat == slot)
     | .checkJustified epoch root =>
-      assert (store.justifiedCheckpoint.epoch.toNat == epoch)
+      assert (store.justifiedCheckpoint.epoch.toPlainNat == epoch)
       assert (store.justifiedCheckpoint.root == root)
     | .checkFinalized epoch root =>
-      assert (store.finalizedCheckpoint.epoch.toNat == epoch)
+      assert (store.finalizedCheckpoint.epoch.toPlainNat == epoch)
       assert (store.finalizedCheckpoint.root == root)
     | .checkBoost root =>
       assert (store.proposerBoostRoot == root)
@@ -342,6 +347,9 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
       throw (StoreTransitionError.todo "payload_data_availability_vote check: ePBS-only, not applicable to fulu")
   pure ()
 
+-- The compiler specializes the whole fork-choice step interpreter here; with the checked
+-- `ValidatorIndex` reads the run exceeds the default budget, as the Gloas and Heze twins do.
+set_option maxHeartbeats 1000000 in
 /-- `runForkChoice`: decode the anchor state / block, build the store, and run the
 step interpreter. The fork-choice vectors carry real signatures, so the FFI crypto
 backend is used. -/
@@ -439,13 +447,16 @@ instance (`FRAMEWORK_ARCHITECTURE.md` §4). -/
 schedule Fulu models. A vector that activates its forks at genesis ships a `config.yaml`
 setting these epochs to `0`, and a `transition` vector moves its post-fork's epoch to the
 `fork_epoch`; `EthCLLib.PySpecTests.applyConfigOverrides` applies them. -/
+-- The vector's plain `int` epoch crosses the runner boundary through the wire iso
+-- (`SPEC_ARITHMETIC.md` §4.5: `trustedOfUInt64`, the config-constant route; a `UInt64`
+-- cannot leave the range, so the wrap cannot fault).
 def configSetters : List (String × (UInt64 → Config → Config)) := [
-  ("ALTAIR_FORK_EPOCH",    fun v c => { c with altairForkEpoch := v }),
-  ("BELLATRIX_FORK_EPOCH", fun v c => { c with bellatrixForkEpoch := v }),
-  ("CAPELLA_FORK_EPOCH",   fun v c => { c with capellaForkEpoch := v }),
-  ("DENEB_FORK_EPOCH",     fun v c => { c with denebForkEpoch := v }),
-  ("ELECTRA_FORK_EPOCH",   fun v c => { c with electraForkEpoch := v }),
-  ("FULU_FORK_EPOCH",      fun v c => { c with fuluForkEpoch := v })]
+  ("ALTAIR_FORK_EPOCH",    fun v c => { c with altairForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("BELLATRIX_FORK_EPOCH", fun v c => { c with bellatrixForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("CAPELLA_FORK_EPOCH",   fun v c => { c with capellaForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("DENEB_FORK_EPOCH",     fun v c => { c with denebForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("ELECTRA_FORK_EPOCH",   fun v c => { c with electraForkEpoch := CLUint64.trustedOfUInt64 v }),
+  ("FULU_FORK_EPOCH",      fun v c => { c with fuluForkEpoch := CLUint64.trustedOfUInt64 v })]
 
 /-- The interface at preset `P` and config `C` with a vector's overrides applied, or the
 reason an override cannot be applied. The server builds one per request. -/

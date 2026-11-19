@@ -538,7 +538,8 @@ it in its classify mode:
 | `outOfBounds` / `decodeFailure` | a smell; the spec should not hit these on well-formed input, so they surface as likely bugs |
 | `missingKey` | a fault the reference propagates rather than catches, so it never counts as a rejection |
 | `arithmetic` | the same, except under a case whose own wrapper catches `ValueError` (`SPECS_ARCHITECTURE.md` §10.2) |
-| `listFull` | a list over its limit, from an append or a constructor. Remerkleable raises a bare `Exception`, which no wrapper catches, so it never counts as a rejection |
+| `zeroDivision` | a zero divisor. At the `eth-ssz-specs` 0.1.0 pin the reference raises a bare `ZeroDivisionError`, which no wrapper's class set holds, so it never counts as a rejection |
+| `listFull` | a list over its limit, from an append or a constructor. At the 0.1.0 pin the reference raises a `ValueError` in both places (`SSZValueError` on an append, a pydantic `ValidationError` on the constructor), so it passes under the one `except ValueError` wrapper (`SPECS_ARCHITECTURE.md` §10.2) and fails everywhere else |
 
 ### 6.1 `todo` as the deferral work-queue
 
@@ -1168,10 +1169,12 @@ and the pytest fixture managing the subprocess.
 The report distinguishes the classify buckets from the error model: a passing
 case, an expected rejection (`assert` against an invalid vector), an out-of-scope
 deferral (`todo`), a likely bug (`outOfBounds` / `decodeFailure` on well-formed
-input), and an uncaught fault (`missingKey` / `arithmetic` / `listFull`, which the
+input), and an uncaught fault (`missingKey` / `arithmetic` / `zeroDivision` /
+`listFull`, which the
 reference propagates). Whether a reject passes its invalid vector is read from the case's own
-`RunnerCaughtSet` (§6), so an `.arithmetic` fault passes under `epoch_processing` /
-`registry_updates` and fails everywhere else. A `todo` that a vector actually reaches fails
+`RunnerCaughtSet` (§6), so an `.arithmetic` fault and a `.listFull` fault pass under the
+one `except ValueError` wrapper (`epoch_processing` / `registry_updates`), and a
+`.zeroDivision` fault fails under every wrapper. A `todo` that a vector actually reaches fails
 loudly rather than passing silently, which is the deferral safety net at work.
 
 ---
