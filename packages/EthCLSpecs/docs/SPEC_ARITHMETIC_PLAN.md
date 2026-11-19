@@ -466,7 +466,24 @@ all negative-index and empty-collection cases preserve Python behavior.
     a comparison or a literal sum that cannot raise). Pins in `ConstantAuditPins`, every
     answer from the pinned pyspec; coverage 87, no tag lost; subsets and full minimal
     `fork_choice` case-identical to Stage 7.2.*
-  - [ ] **7.3b Finish the constant audit: Gloas thresholds and churn.**
+  - [x] **7.3b Finish the constant audit: Gloas thresholds and churn.**
+    *Done 2026-11-19 (WS-39, `a30320c`): adjudication F2 closed — the pinned oracle
+    (1.7.0b4, both presets) confirms `BUILDER_PAYMENT_THRESHOLD_NUMERATOR/DENOMINATOR` are
+    `Uint64(6)`/`Uint64(10)`, already `Gwei` since 4.1, and `getBuilderPaymentQuorumThreshold`
+    keeps the checked chain. `churnLimitQuotientGloas` and `consolidationChurnLimitQuotient`
+    are `CLUint64` Config fields read directly by `getExitChurnLimit` and
+    `getConsolidationChurnLimit`; their TEMPORARY CROSSING `…C` views are deleted and Heze
+    inherits. `payloadTimelyThreshold`/`dataAvailabilityTimelyThreshold` are `CLUint64`,
+    derived `ptcSizeC / 2` on the proved-total `PositiveDivisor` route (the pin's
+    `PTC_SIZE // 2`); `ptcSize` stays the structural size view with a new `ptcSizeC` view and
+    `ptcSizeLt` premise, and vote-count sites compare via `toPlainNat` (Python's mixed
+    `int > Uint64`, never raises). `attestationTimelinessIndex`/`ptcTimelinessIndex` and the
+    other Gloas preset caps stay structural `Nat` — in-range indexes into fixed two-element
+    `block_timeliness` arrays, kind-blind reads. The 7.1b bps rows are closed with no
+    residual raw use. `just check-constants` needed no change (the `…C` suffix rule and
+    `…Lt` premise skip already cover `ptcSizeC`/`ptcSizeLt`). Pins in `ConstantAuditPins`,
+    every answer from the pinned pyspec; coverage 87, no tag lost; subsets and full minimal
+    `fork_choice` case-identical to Stage 6 — behavior unchanged.*
   - [ ] **7.3c Finish the constant audit: Heze rows and closure.**
 - [ ] **7.4 Verify.** Run the common gate and complete minimal sweep.
 
