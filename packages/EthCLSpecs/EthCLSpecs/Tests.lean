@@ -15,6 +15,7 @@ import EthCLSpecs.Tests.HezeCommitteesPins
 import EthCLSpecs.Tests.HezeForkChoicePins
 import EthCLSpecs.Tests.IndexMigrationPins
 import EthCLSpecs.Tests.ParticipationFlagsMigrationPins
+import EthCLSpecs.Tests.PendingDepositsScanPins
 import EthCLSpecs.Tests.PlainArithmeticPins
 import EthCLSpecs.Tests.SlotMigrationPins
 import EthCLSpecs.Tests.ValidatorIndexMigrationPins
