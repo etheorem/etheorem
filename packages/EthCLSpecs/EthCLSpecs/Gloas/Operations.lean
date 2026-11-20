@@ -114,7 +114,14 @@ epoch and whose upper half holds the current epoch, so the index is `slot % SLOT
 a `SLOTS_PER_EPOCH` offset added only for the current epoch. The epoch test is the caller's
 (`process_proposer_slashing` / `apply_parent_execution_payload` compare `compute_epoch_at_slot`,
 `process_attestation` keys off `data.target.epoch`); this helper names only the offset
-arithmetic. -/
+arithmetic.
+
+The pinned `SLOTS_PER_EPOCH + slot % SLOTS_PER_EPOCH` is a checked `Uint64` add, and the
+structural `Nat` sum here equals it. The add cannot raise: the remainder is below
+`SLOTS_PER_EPOCH`, so the sum is below `2 * SLOTS_PER_EPOCH`. The pinned module forms that
+product as the `BuilderPendingPayments` length when it loads, so it is below `2^64` on every
+preset the pyspec accepts. The `%` takes the proved-total divisor view (`SPEC_ARITHMETIC.md`
+§4.2). -/
 forkdef builderPaymentIndex (slot : Slot) (current : Bool) : Nat :=
   (if current then Const.slotsPerEpoch else 0) + (slot % Const.slotsPerEpochDiv).toPlainNat
 /-- `is_builder_withdrawal_credential`. -/
@@ -176,6 +183,9 @@ forkdef applyDepositForBuilder (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwe
   let state ← get
   match (sszGet state builders).findIdx? (·.pubkey == pubkey) with
   | some builderIndex =>
+      -- `BuilderIndex(builder_pubkeys.index(pubkey))`: the read is in range, because
+      -- `findIdx?` returned the position. The cast is omitted and cannot raise: the builder
+      -- list is a `ProgressiveList`, and a Lean array holds fewer than `2^61` entries.
       -- `builder.balance += amount`: the checked `Gwei` add, bound here; the store
       -- writes the value the add returned.
       let newBalance ← (sszGet state builders[builderIndex]!).balance + amount
@@ -440,6 +450,10 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
 
   -- Apply participation flags and accumulate the builder-payment weight.
   let currentTarget := data.target.epoch == currentEpochOf state
+  -- Python calls `is_attestation_same_slot` inside the per-validator `and`, so it can run
+  -- zero or many times. This bind runs it once. The move cannot add a fault:
+  -- `get_attestation_participation_flag_indices` above already ran the same call on the same
+  -- `state` and `data`, and the flag writes leave `slot` and `block_roots` unchanged.
   let sameSlot ← isAttestationSameSlot state data
   let paymentIdx := builderPaymentIndex data.slot currentTarget
   let payment0 := vget (sszGet state builderPendingPayments) paymentIdx
