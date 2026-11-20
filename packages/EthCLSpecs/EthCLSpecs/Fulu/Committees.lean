@@ -63,7 +63,9 @@ forkdef computeShuffledPermutation (indexCount : Nat) (seed : ByteArray) : Array
         let seedRound := seed.push roundByte.val
         let pivot := (le8 (sha seedRound)) % indexCount
 
-        -- Rebuild every slot independently: swap to `flip`, or keep `cur`.
+        -- Rebuild every slot independently: swap to `flip`, or keep `cur`. Both `!` reads
+        -- are structural: every round's array has `indexCount` entries, so `indices[i]` is
+        -- in range, and `source` is a 32-byte digest read at `(position % 256) / 8 < 32`.
         Array.ofFn (n := indexCount) (fun i : Fin indexCount =>
           let cur := indices[i.val]!
           let flip := (pivot + indexCount - cur) % indexCount
@@ -137,7 +139,10 @@ forkdef computeCommittee (indices : Array ValidatorIndex) (seed : Bytes32) (inde
   -- is zero exactly where Python's range is empty. Structural reads: `perm` is a
   -- permutation of `[0, len)`, and `start + j < stop ≤ len` whenever `index < count`, so
   -- both reads are in range there. Past that bound `compute_shuffled_index` asserts
-  -- `index < index_count`; that non-arithmetic assert has no twin here.
+  -- `index < index_count`; that non-arithmetic assert has no twin here. A nonempty range
+  -- with `index ≥ count` therefore reads `perm`'s default where the pyspec raises
+  -- `AssertionError`. Only the fork-choice `get_attesting_indices` path passes such an
+  -- index; the gap is recorded as an open finding of the arithmetic audit.
   pure ((Array.range (stop.toPlainNat - start.toPlainNat)).map
     (fun j => indices[perm[start.toPlainNat + j]!]!))
 
@@ -188,6 +193,9 @@ forkdef cbwsAux [Preset] (indices : Array ValidatorIndex) (perm : Array Nat) (ef
     -- `uint_to_bytes(i // 16)`.
     let offset := (i % 16) * 2
     let randomBytes := if offset == 0 then sha (seed ++ uint64ToBytes (UInt64.ofNat (i / 16))) else randomBytes
+    -- The `!` reads below are structural. `perm` is the shuffle of `[0, total)` and has
+    -- `total` entries, so `perm[i % total]` is in range and `nextIndex < total`. `effBals`
+    -- and `indices` both have `total` entries, so neither read can default.
     let nextIndex := if shuffle then perm[i % total]! else i % total
     let weight ← effBals[nextIndex]! * Const.maxRandomValue
     -- `bytes_to_uint64` of two bytes: in range by construction, so the checked
@@ -226,7 +234,13 @@ body (`fulu/minimal.py:6606-6608`) runs in two phases: the `seeds` list forms ev
 `start_slot + index` add first, then the selection runs once per seed. A range fault at any
 index therefore precedes the selection assert at index `0`. The seed feed `uint64_to_bytes`
 reads the checked value's underlying word, the codec boundary §4.5 asks each projection to
-name. -/
+name.
+
+The pinned Fulu body draws each proposer with `compute_proposer_index`, which returns
+before its `i += 1`. The shared sampler increments after a selection, so the two differ
+only when the pass at `i = 2^64 - 1` selects. That pass needs `2^64 - 1` earlier
+rejections, so no run reaches it. The `[0]!` read is structural: a selection of size `1`
+returns exactly one entry. -/
 forkdef computeProposerIndices (state : State) (epoch : Epoch) (seed : Bytes32)
     (indices : Array ValidatorIndex) : Except StateTransitionError (Array ValidatorIndex) := do
   let startSlot ← computeStartSlotAtEpoch epoch
