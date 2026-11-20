@@ -335,10 +335,11 @@ inclusion-list constraints is not extended (`heze/fork-choice.md:234-235`). The 
 -/
 forkdef shouldExtendPayload (store : Store map) (root : Root) : StoreTransition Bool := do
   -- Mirrors the Gloas body plus the inclusion-list gate: the spec opens with
-  -- `assert store.blocks[root].slot + 1 == get_current_slot(store)`.
+  -- `assert store.blocks[root].slot + 1 == get_current_slot(store)`. The add binds before the
+  -- clock read, in Python's operand order (see Gloas's `isPreviousSlotPayloadDecision`).
   let rootBlock ← FcMap.getOrThrow store.blocks root
-  let currentSlot ← getCurrentSlot store
   let nextSlot ← rootBlock.slot + 1
+  let currentSlot ← getCurrentSlot store
   assert (nextSlot == currentSlot)
   if !isPayloadVerified store root then pure false
   -- [New in Heze:EIP7805] do not extend a payload that fails the inclusion-list constraints

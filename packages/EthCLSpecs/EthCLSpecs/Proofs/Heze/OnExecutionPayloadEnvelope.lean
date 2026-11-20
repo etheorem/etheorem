@@ -6,7 +6,7 @@ import EthCLLib.Proofs.StoreRun
 /-!
 # Accepting an execution payload envelope
 
-Heze's `onExecutionPayloadEnvelope` (`Heze/ForkChoice.lean:446-468`)
+Heze's `onExecutionPayloadEnvelope` (`Heze/ForkChoice.lean:447-469`)
 verifies and records a revealed payload envelope. This module proves its
 complete compositional `.run` equation at `ForkChoiceStoreRun (Store map)`.
 

@@ -12,6 +12,7 @@ import EthCLSpecs.Tests.FuluDeclarationsAuditPins
 import EthCLSpecs.Tests.FuluForkChoicePins
 import EthCLSpecs.Tests.GloasCommitteesPins
 import EthCLSpecs.Tests.GloasForkChoicePins
+import EthCLSpecs.Tests.GloasHezeAuditPins
 import EthCLSpecs.Tests.GloasSlotMigrationPins
 import EthCLSpecs.Tests.HezeCommitteesPins
 import EthCLSpecs.Tests.HezeForkChoicePins

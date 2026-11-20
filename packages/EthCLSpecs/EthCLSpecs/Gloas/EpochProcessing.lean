@@ -284,6 +284,10 @@ forkdef processPendingDeposits : StateTransition Unit := do
     let (isValidatorExited, isValidatorWithdrawn) :=
       match validatorIndexByPubkey? state deposit.pubkey with
       | some vi =>
+        -- `state.validators[ValidatorIndex(validator_pubkeys.index(deposit.pubkey))]`: the
+        -- read is in range, because `findIdx?` returned `vi`. The cast is omitted and cannot
+        -- raise. Gloas's registry is a `ProgressiveList` with no SSZ cap, but a Lean array of
+        -- 8-byte entries holds fewer than `2^61` of them, so the position is below `2^64`.
         let validator := sszGet state validators[vi]!
         (decide (validator.exitEpoch < Const.farFutureEpoch),
           decide (validator.withdrawableEpoch < nextEpoch))
