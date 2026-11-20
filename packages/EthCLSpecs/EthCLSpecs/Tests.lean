@@ -19,6 +19,7 @@ import EthCLSpecs.Tests.PlainArithmeticPins
 import EthCLSpecs.Tests.SlotMigrationPins
 import EthCLSpecs.Tests.ValidatorIndexMigrationPins
 import EthCLSpecs.Tests.WalkingSkeleton
+import EthCLSpecs.Tests.WidthCastPins
 
 /-!
 # `EthCLSpecs.Tests`: Lean-internal spec self-tests
