@@ -783,9 +783,9 @@ arithmetic site remains unreviewed because its module built without edits.
 - [ ] **9.5 Close the Stage 8 routed items.** The 8.4 sub-stage records route these items
   to the Epic Lead / Stage 9. They run before the documentation families, so the audit
   sees final names and docstrings.
-  - [ ] **9.5a Close the sync-committee participant lookup fault arm.** Closes the
+  - [x] **9.5a Close the sync-committee participant lookup fault arm.** Closes the
     `findIdx?` arm in the `processSyncAggregate` rewards loop (the 8.4a1 record, 8.4b
-    open item 1).
+    open item 1). (WS-94, `b42af6dec3f49589f59407344b25ae12c8068767`)
   - [ ] **9.5b Close the `computeCommittee` honest bounds fault.** Replaces the
     defaulting permutation read of `computeCommittee` with an honest bounds fault (the
     8.4a2 record, 8.4b open item 2).
