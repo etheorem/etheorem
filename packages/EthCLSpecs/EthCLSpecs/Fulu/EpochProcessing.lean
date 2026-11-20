@@ -266,28 +266,33 @@ forkdef processRewardsAndPenalties : StateTransition Unit := do
 
 /-! ## Registry updates -/
 
-/-- `process_registry_updates` (Electra: activation-eligibility, ejections, and
-churn-unlimited activations in one pass). -/
+/-- `process_registry_updates` (`fulu/mainnet.py:1852-1868`; Electra: activation
+eligibility, ejections, and churn-unlimited activations in one pass). The pinned loop body
+is one `if` / `elif` / `elif` chain, so a validator takes at most one of the three
+updates. A queue-eligible validator therefore skips the ejection and activation tests,
+even when it also passes them (an `EJECTION_BALANCE` at or above
+`MIN_ACTIVATION_BALANCE`, or a finalized epoch at `FAR_FUTURE_EPOCH`). -/
 forkdef processRegistryUpdates : StateTransition Unit := do
   let currentEpoch := currentEpochOf (← get)
   let activationEpoch ← computeActivationExitEpoch currentEpoch
   let n := (sszGet (← get) validators).size
 
-  -- `validator.activation_eligibility_epoch = current_epoch + 1`: the checked `Epoch` add,
-  -- bound once where Python computes it (inside the loop body, per validator).
-  let nextEligibility ← currentEpoch + 1
   for idx in [0 : n] do
     let state ← get
+    -- `idx` enumerates the registry, which the loop never shrinks, so the read is in range.
     let validator := sszGet state validators[idx]!
     -- The two field writes go through the enumerated position, as the pyspec writes
     -- through the `validator` object; only the exit call casts `ValidatorIndex(index)`.
     if isEligibleForActivationQueue validator then
+      -- `validator.activation_eligibility_epoch = current_epoch + 1`: the checked `Epoch`
+      -- add, formed in this branch only, as Python forms it.
+      let nextEligibility ← currentEpoch + 1
       modifyState fun state => sszModify state validators[idx]! := fun validator =>
         { validator with activationEligibilityEpoch := nextEligibility }
-    if isActiveValidator validator currentEpoch && validator.effectiveBalance ≤ Const.ejectionBalanceG then
+    else if isActiveValidator validator currentEpoch && validator.effectiveBalance ≤ Const.ejectionBalanceG then
       let vi ← CLUint64.ofNat? idx
       initiateValidatorExit vi
-    if isEligibleForActivation state validator then
+    else if isEligibleForActivation state validator then
       modifyState fun state => sszModify state validators[idx]! := fun validator =>
         { validator with activationEpoch := activationEpoch }
 
@@ -307,19 +312,24 @@ forkdef processSlashings : StateTransition Unit := do
   let increment := Const.effectiveBalanceIncrementG
   let penaltyPerIncrement ← adjusted / (totalBalance / increment)
 
-  -- `epoch + EPOCHS_PER_SLASHINGS_VECTOR // 2`: the divisor is the checked constant, so the
-  -- half-ring sum is the checked `Epoch` chain, bound before the loop Python computes it in.
+  -- `EPOCHS_PER_SLASHINGS_VECTOR // 2`: a checked division by the literal `2`, which
+  -- never raises, so it binds once before the loop.
   let halfRing ← Const.epochsPerSlashingsVectorC / 2
-  let withdrawableBound ← epoch + halfRing
   let mut state := state
+  -- `index` enumerates the registry, which the loop never resizes, so the read is in range.
   for i in [0 : (sszGet state validators).size] do
     let validator := sszGet state validators[i]!
-    if validator.slashed && withdrawableBound == validator.withdrawableEpoch then
-      let increments ← validator.effectiveBalance / increment
-      let penalty ← penaltyPerIncrement * increments
-      -- `decrease_balance(state, ValidatorIndex(index), penalty)`: the checked cast.
-      let vi ← CLUint64.ofNat? i
-      state ← decreaseBalance state vi penalty
+    -- `validator.slashed and epoch + EPOCHS_PER_SLASHINGS_VECTOR // 2 == …`: Python's `and`
+    -- short-circuits, so the checked `Epoch` sum forms only for a slashed validator, and
+    -- binds inside that branch (`SPEC_ARITHMETIC.md` §4.3).
+    if validator.slashed then
+      let withdrawableBound ← epoch + halfRing
+      if withdrawableBound == validator.withdrawableEpoch then
+        let increments ← validator.effectiveBalance / increment
+        let penalty ← penaltyPerIncrement * increments
+        -- `decrease_balance(state, ValidatorIndex(index), penalty)`: the checked cast.
+        let vi ← CLUint64.ofNat? i
+        state ← decreaseBalance state vi penalty
   set state
 
 /-! ## Pending deposits (Electra deposit queue) -/

@@ -18,6 +18,7 @@ import EthCLSpecs.Tests.ParticipationFlagsMigrationPins
 import EthCLSpecs.Tests.PendingDepositsScanPins
 import EthCLSpecs.Tests.PlainArithmeticPins
 import EthCLSpecs.Tests.SlotMigrationPins
+import EthCLSpecs.Tests.TransitionFamilyAuditPins
 import EthCLSpecs.Tests.ValidatorIndexMigrationPins
 import EthCLSpecs.Tests.WalkingSkeleton
 import EthCLSpecs.Tests.WidthCastPins
