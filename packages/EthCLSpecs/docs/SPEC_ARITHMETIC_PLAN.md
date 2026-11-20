@@ -594,7 +594,28 @@ time arithmetic is accounted for, and the remaining constant inventory is empty.
   temporary crossings. Give every remaining use a source or proof justification.
   This is a manual transition audit; automated enforcement remains deferred.
   - [ ] **8.4a1 Audit fork bodies: Fulu state-transition family.**
-  - [ ] **8.4a2 Audit fork bodies: Fulu clock, sampling, and fork choice.**
+  - [x] **8.4a2 Audit fork bodies: Fulu clock, sampling, and fork choice.**
+    *Done 2026-11-20 (WS-66, `140669b`): the 8.4a2 family audited (Fulu `Time`,
+    `Committees`, `ForkChoice`). Comment-only audit, behavior unchanged: every
+    remaining raw use carries a recorded structural/source/proof justification —
+    the swap-or-not shuffle `Nat` core and the `u32leBytes`/`uint64ToBytes` codec
+    feeds stay structural with source justification; the sampler balance
+    multiplications, committee arithmetic, clock helpers and store fields
+    (Stage 7 migration) re-checked; fork-choice fuel walks and `onTick`'s fuel
+    bound confirmed structural; `saturatingSub` sites are the spec's own
+    `saturating_sub`. New `Tests/ClockSamplingAuditPins` proves the eager
+    `onTickPerSlot` bind cannot raise at `UINT64_MAX` and that
+    `computeCommittee`'s `stop - start` never truncates; the index-alias
+    consumers (`CommitteeIndex`/`ColumnIndex`/`CellIndex`) are dispositioned.
+    One open finding handed to the Epic Lead rather than committed:
+    `computeCommittee` reads a defaulting `perm[start + j]!` where the pinned
+    `compute_shuffled_index` asserts — the fix is an `Except
+    StateTransitionError` signature change across 8.4a1's files and all three
+    forks (pre-existing, `incidents.md` 2026-11-18). For 8.4a4: the Gloas
+    `onTickPerSlot` eager bind and `children[0]!` restate the same shapes.
+    `TEMPORARY CROSSING` grep empty; common gate green; minimal sweeps
+    case-identical to 8.3 (0 diffs across 8147/9958/10170 case ids). Record:
+    `mb/spec-arithmetic-implementation/stage-8.4a2.md`.*
   - [x] **8.4a3 Audit fork bodies: Fulu declarations, state, withdrawals, and constants.**
     *Done 2026-11-20 (WS-68, `c86b970`): the 8.4a3 family audited (Fulu `Types`,
     `State`, `Signing`, `Fork`, `Blocks`, `Withdrawals`, `Constants`,
