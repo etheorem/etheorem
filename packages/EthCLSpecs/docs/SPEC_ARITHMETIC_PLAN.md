@@ -786,9 +786,9 @@ arithmetic site remains unreviewed because its module built without edits.
   - [x] **9.5a Close the sync-committee participant lookup fault arm.** Closes the
     `findIdx?` arm in the `processSyncAggregate` rewards loop (the 8.4a1 record, 8.4b
     open item 1). (WS-94, `b42af6dec3f49589f59407344b25ae12c8068767`)
-  - [ ] **9.5b Close the `computeCommittee` honest bounds fault.** Replaces the
+  - [x] **9.5b Close the `computeCommittee` honest bounds fault.** Replaces the
     defaulting permutation read of `computeCommittee` with an honest bounds fault (the
-    8.4a2 record, 8.4b open item 2).
+    8.4a2 record, 8.4b open item 2). (WS-105, `3436194c8caa9f1839867af4eecabd86c1b4498b`)
   - [ ] **9.5c Close the unpinned `processDeposit` body and its raw `eth1DepositIndex`
     wrap.** Closes the raw `eth1DepositIndex + 1` wrap in `processDeposit` (the 8.4a1
     and 8.4a3 records, 8.4b open item 3).
