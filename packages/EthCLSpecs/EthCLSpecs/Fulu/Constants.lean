@@ -380,6 +380,9 @@ forkabbrev maxEffectiveBalanceG : Gwei := Preset.maxEffectiveBalanceG
 forkabbrev maxEffectiveBalanceElectra : Nat := Preset.maxEffectiveBalanceElectra
 forkabbrev maxEffectiveBalanceElectraG : Gwei := Preset.maxEffectiveBalanceElectraG
 forkabbrev ejectionBalanceG : Gwei := Config.ejectionBalanceG
+/-- `UNSET_DEPOSIT_REQUESTS_START_INDEX`, `Uint64(2**64 - 1)` at the pin. A raw `UInt64`
+literal: the constant is data only, and it stays raw to match the raw
+`depositRequestsStartIndex` field it names a value of. No body in the tree reads it. -/
 forkabbrev unsetDepositRequestsStartIndex : UInt64 := 0xffffffffffffffff
 forkabbrev fullExitRequestAmount : Gwei := 0
 /-- The BLS G2 point at infinity (`0xc0` then 95 zero bytes); the signature

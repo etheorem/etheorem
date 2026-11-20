@@ -137,10 +137,10 @@ column is the fork's own diff, for scale.
 <!-- proof-coverage:begin -->
 | Fork | Characterized | Touched | Spec functions | Authored |
 | --- | --- | --- | --- | --- |
-| `EthCLSpecs.Fulu` | 3 | 3 | 173 | 173 |
+| `EthCLSpecs.Fulu` | 3 | 3 | 171 | 171 |
 | `EthCLSpecs.Gloas` | 10 | 41 | 223 | 115 |
 | `EthCLSpecs.Heze` | 6 | 19 | 231 | 19 |
-| **Total** | 19 | 63 | 627 | 307 |
+| **Total** | 19 | 63 | 625 | 305 |
 
 | Axiom | Theorems resting on it |
 | --- | --- |

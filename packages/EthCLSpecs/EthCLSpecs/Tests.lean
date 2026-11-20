@@ -8,6 +8,7 @@ import EthCLSpecs.Tests.ConfigurationClockPins
 import EthCLSpecs.Tests.ConstantAuditPins
 import EthCLSpecs.Tests.ConstantViews
 import EthCLSpecs.Tests.DeadlineMigrationPins
+import EthCLSpecs.Tests.DepositOperationPins
 import EthCLSpecs.Tests.EpochMigrationPins
 import EthCLSpecs.Tests.FuluDeclarationsAuditPins
 import EthCLSpecs.Tests.FuluForkChoicePins
