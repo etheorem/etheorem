@@ -718,7 +718,22 @@ time arithmetic is accounted for, and the remaining constant inventory is empty.
     carried to the Epic Lead / Stage 9 (the `eth1DepositIndex` retype sequencing, the
     sync-committee `findIdx?` arm and `computeCommittee` defaulting read, deferred
     Epic Lead items). Record: `mb/spec-arithmetic-implementation/stage-8.4b.md`.*
-- [ ] **8.5 Verify.** Run the common gate and full vector matrix.
+- [x] **8.5 Verify.** Run the common gate and full vector matrix.
+    *Done 2026-11-20 (WS-65, `e3eec4c`): no source change — the gate and the
+    sequential full vector matrix found nothing to repair. Common gate green on
+    the integrated epic branch: `ethcl-test` 674 jobs, runners rebuilt
+    (`build-cli` 628), `lint`, `check-citations` 196 in 9 files,
+    `check-constants` 167 with the known 2 + 3 advisories, proof-coverage
+    update byte-identical then check 87 claims, `TEMPORARY CROSSING` grep empty,
+    smoke fulu 155/46, gloas 207/52, heze 209/52. Full matrix sequential, both
+    presets, three forks, case-identical to the recorded baselines: minimal
+    fulu 5318/2829, gloas 6760/3198, heze 6972/3198 (PASSED ids and skip groups
+    = 7.4; (outcome, id) sets = 8.4b at 8147/9958/10170 ids, 0 diffs); mainnet
+    fulu 859/115, gloas 1094/130, heze 1073/130 (= Stage 4 counts; first mainnet
+    per-case logs kept for Stage 10). Stage 8 build-cost anchor by the 7.4
+    method (12 cores, Lake default parallelism, sequential, no `.lake` at
+    start): cold 25m03.9s / 621 jobs, no-op 0.60s, incremental 5m59.9s, restore
+    6m02.4s. Record: `mb/spec-arithmetic-implementation/stage-8.5.md`.*
 
 **Done when:** every inventory row has implemented behavior and evidence; no consensus
 arithmetic site remains unreviewed because its module built without edits.
