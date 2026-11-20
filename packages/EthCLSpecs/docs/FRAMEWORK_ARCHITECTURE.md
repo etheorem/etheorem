@@ -508,12 +508,19 @@ monad's exception parameter is one of these types.
 inductive StateTransitionError where
   | assert (descr : String)          -- a spec assertion failed
   | todo (what : String)             -- an unimplemented branch
+  | outOfScope (what : String)       -- a branch we do not model
   | outOfBounds (idx bound : Nat)    -- indexed access past the end
+  | arithmetic (descr : String)      -- a checked range fault
+  | zeroDivision (descr : String)    -- a zero divisor
+  | listFull (field : String)        -- a list over its limit
+  | notInList (descr : String)       -- a `list.index` lookup miss
 
 inductive StoreTransitionError where
   | assert (descr : String)
   | todo (what : String)
+  | outOfScope (what : String)
   | missingKey (key : Root)          -- an FcMap lookup found nothing
+  | decodeFailure (what : String)    -- a step input that did not decode
   | transition (e : StateTransitionError)  -- a nested-transition failure
 ```
 
@@ -540,6 +547,7 @@ it in its classify mode:
 | `arithmetic` | the same, except under a case whose own wrapper catches `ValueError` (`SPECS_ARCHITECTURE.md` §10.2) |
 | `zeroDivision` | a zero divisor. At the `eth-ssz-specs` 0.1.0 pin the reference raises a bare `ZeroDivisionError`, which no wrapper's class set holds, so it never counts as a rejection |
 | `listFull` | a list over its limit, from an append or a constructor. At the 0.1.0 pin the reference raises a `ValueError` in both places (`SSZValueError` on an append, a pydantic `ValidationError` on the constructor), so it passes under the one `except ValueError` wrapper (`SPECS_ARCHITECTURE.md` §10.2) and fails everywhere else |
+| `notInList` | a `list.index` lookup miss, such as `process_sync_aggregate`'s committee pubkey that no validator carries. The reference raises a plain `ValueError`, so it passes under the one `except ValueError` wrapper (`SPECS_ARCHITECTURE.md` §10.2) and fails everywhere else |
 
 ### 6.1 `todo` as the deferral work-queue
 
@@ -1170,10 +1178,10 @@ The report distinguishes the classify buckets from the error model: a passing
 case, an expected rejection (`assert` against an invalid vector), an out-of-scope
 deferral (`todo`), a likely bug (`outOfBounds` / `decodeFailure` on well-formed
 input), and an uncaught fault (`missingKey` / `arithmetic` / `zeroDivision` /
-`listFull`, which the
+`listFull` / `notInList`, which the
 reference propagates). Whether a reject passes its invalid vector is read from the case's own
-`RunnerCaughtSet` (§6), so an `.arithmetic` fault and a `.listFull` fault pass under the
-one `except ValueError` wrapper (`epoch_processing` / `registry_updates`), and a
+`RunnerCaughtSet` (§6), so an `.arithmetic`, a `.listFull`, and a `.notInList` fault pass
+under the one `except ValueError` wrapper (`epoch_processing` / `registry_updates`), and a
 `.zeroDivision` fault fails under every wrapper. A `todo` that a vector actually reaches fails
 loudly rather than passing silently, which is the deferral safety net at work.
 
