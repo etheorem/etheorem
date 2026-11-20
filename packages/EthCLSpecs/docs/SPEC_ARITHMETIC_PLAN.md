@@ -545,9 +545,27 @@ time arithmetic is accounted for, and the remaining constant inventory is empty.
     success cases and failing pre-change forms. Common migration gate green; minimal
     sweeps case-identical to Stage 7.4 (fulu 5318/2829, gloas 6760/3198, heze 6972/3198);
     `git grep "TEMPORARY CROSSING"` empty. Record: `mb/spec-arithmetic-implementation/stage-8.1.md`.*
-- [ ] **8.2 Finish remaining widths and operators.** Cover every use of `Uint32`,
+- [x] **8.2 Finish remaining widths and operators.** Cover every use of `Uint32`,
   `Uint256`, and any other width found in Stage 0. Distinguish data-only representations
   from arithmetic uses. Finish signed shifts and mixed-width conversions used in scope.
+    *Done 2026-11-20 (WS-61, `352e809`): width sweep closed — `Uint32` survives only in
+    the framework codec (`uint32ToBytes`, the shuffle's `u32leBytes` feed) and the
+    PySpecTests server exit codes; `Uint256` (`baseFeePerGas`) is data only; the shuffle's
+    `Uint32(position_bucket)` cast carries a written 2^40 registry-cap bound and
+    `byte_val >> (position % 8)` cannot raise. The shuffle's `Uint8(current_round)` cast
+    is now proof-carrying: new preset premise `shuffleRoundCountLe : shuffleRoundCount ≤
+    2^8` (Fulu, inherited by Gloas/Heze), round byte via `CLUint8.ofNatLT` — a preset with
+    257+ rounds can no longer be built; minimal (10) and mainnet (90) bit-identical.
+    Data-only constants (credential prefixes, `payloadBuilderVersion`, payload-status
+    sentinels, `builders.version`, domain tags, `g2PointAtInfinity`, fork versions) each
+    carry a recorded disposition. No signed shift or mixed-width conversion in scope needs
+    a new framework operator (`CLUint8.ofNatLT` and its Stage 2.2 law pre-exist), so the
+    new-operator axiom audit does not apply. `check-constants` now skips `…Le` premises.
+    New `Tests/WidthCastPins`: premise boundary (256 builds, 257 rejected), typed
+    `Uint8()` range fault vs the old wrap-to-0, oracle permutation pins at 10/255/256
+    rounds plus the Heze replay. Common migration gate green; minimal sweeps
+    case-identical to 8.1 (fulu 5318/2829, gloas 6760/3198, heze 6972/3198). Record:
+    `mb/spec-arithmetic-implementation/stage-8.2.md`.*
 - [ ] **8.3 Re-author a complete body.** Use `process_pending_deposits` from the pinned
   text as the authoring check. Prefer structural iteration over the finite queue.
   Update the worked example in `docs/CODING_STYLE.md` with the resulting form.
