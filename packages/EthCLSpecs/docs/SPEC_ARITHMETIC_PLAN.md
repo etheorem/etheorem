@@ -593,7 +593,33 @@ time arithmetic is accounted for, and the remaining constant inventory is empty.
   defaulting reads, casts, and all
   temporary crossings. Give every remaining use a source or proof justification.
   This is a manual transition audit; automated enforcement remains deferred.
-  - [ ] **8.4a1 Audit fork bodies: Fulu state-transition family.**
+  - [x] **8.4a1 Audit fork bodies: Fulu state-transition family.**
+    *Done 2026-11-20 (WS-63, `42bbd08`): the state-transition family audited
+    (Fulu `EpochProcessing`, `Transition`, `Operations`, `RegistryUpdates`,
+    `Registry`, `Rewards`, `Balances`, `Deposits`, `Accessors`, `Randao`;
+    `Forms.lean` and root `Fulu.lean` check-offs). Two bodies diverged from the
+    pinned text and are fixed: `processRegistryUpdates` ran three independent
+    `if`s where the pin is one `if`/`elif`/`elif` chain (a queue-eligible
+    validator also took the activation update; `current_epoch + 1` now binds in
+    the first branch), and `processSlashings` formed
+    `epoch + EPOCHS_PER_SLASHINGS_VECTOR // 2` above the loop where Python
+    forms it only under `validator.slashed` (it now binds inside the `slashed`
+    branch; the constant `// 2` stays above). Gloas and Heze inherit both bodies
+    with identical pinned text — no mirror edit. New
+    `Tests/TransitionFamilyAuditPins` (7 Fulu pins in pairs plus 1 Gloas pin for
+    the inherited body; slashings pins use a `SLOTS_PER_EPOCH = 1` preset
+    because the shipped presets cannot reach the `Epoch` range limit) and two
+    `PROOF_LEDGER` citations follow the moved body. Every remaining raw use
+    carries a recorded source/proof/structural justification (audit table in
+    the hand-off). Two findings stay open, routed not committed:
+    `eth1DepositIndex += 1` raw wrap (field retype lives in 8.4a3/8.4a4 files —
+    Epic Lead sequencing) and the sync-committee `findIdx? … | none => pure ()`
+    defaulting lookup where the pin raises `ValueError` (needs a new
+    `StateTransitionError` arm — 8.4b boundary scope).
+    `TEMPORARY CROSSING` grep empty; common gate green; minimal sweeps
+    case-identical to 8.3 (fulu 5318/2829, gloas 6760/3198, heze 6972/3198,
+    0 diff lines). Record:
+    `mb/spec-arithmetic-implementation/stage-8.4a1.md`.*
   - [x] **8.4a2 Audit fork bodies: Fulu clock, sampling, and fork choice.**
     *Done 2026-11-20 (WS-66, `140669b`): the 8.4a2 family audited (Fulu `Time`,
     `Committees`, `ForkChoice`). Comment-only audit, behavior unchanged: every
