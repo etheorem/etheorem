@@ -134,7 +134,6 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     | .proposerSlashing      => (decodeOp (@ProposerSlashing P) opBytes).map processProposerSlashing
     | .attesterSlashing      => (decodeOp (@AttesterSlashing P) opBytes).map processAttesterSlashing
     | .attestation           => (decodeOp (@Attestation P) opBytes).map processAttestation
-    | .deposit               => (decodeOp (@Deposit P) opBytes).map processDeposit
     | .voluntaryExit         => (decodeOp (@SignedVoluntaryExit P) opBytes).map processVoluntaryExit
     | .blsToExecutionChange  => (decodeOp (@SignedBLSToExecutionChange P) opBytes).map processBlsToExecutionChange
     | .depositRequest        => (decodeOp (@DepositRequest P) opBytes).map processDepositRequest
@@ -149,7 +148,11 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     | .executionPayload      => (decodeOp (@BeaconBlockBody P) opBytes).map (fun body => do
         assert cmeta.executionValid
         processExecutionPayload body)
-    -- Gloas / EIP-7732 / EIP-8282-only operation handlers; not standalone Fulu operations.
+    -- Handlers with no standalone Fulu operation. Fulu removes `process_deposit`: the
+    -- pinned `process_operations` asserts `len(body.deposits) == 0` (`fulu/minimal.py:1983`),
+    -- and the pin ships no fulu `operations/deposit` vector. The other handlers are Gloas /
+    -- EIP-7732 / EIP-8282 only. The Gloas and Heze interfaces reject `deposit` the same way.
+    | .deposit
     | .voluntaryExitChurn | .payloadAttestation | .executionPayloadBid | .parentExecutionPayload
     | .builderDepositRequest | .builderExitRequest =>
         .error (.spec (.todo s!"operations/{reprStr kind}: not a standalone Fulu operation"))

@@ -5,10 +5,14 @@ import EthCLSpecs.Fulu.Blocks
 # `EthCLSpecs.Fulu.Operations`: `process_operations` and the per-operation steps
 
 The block-operation pipeline: proposer / attester slashings, attestations (with
-participation-flag accounting and the proposer reward), deposits, voluntary exits,
+participation-flag accounting and the proposer reward), voluntary exits,
 BLS-to-execution changes, and the Electra execution requests (deposit / withdrawal
-/ consolidation). Signature checks go through the `[CryptoBackend]` seam; the
-deposit Merkle branch is checked against `eth1_data.deposit_root`.
+/ consolidation). Signature checks go through the `[CryptoBackend]` seam.
+
+Fulu has no in-block deposit step. The pinned `process_operations` asserts
+`len(body.deposits) == 0` and drops `process_deposit`, so this file declares no
+`process_deposit` or `apply_deposit`. A deposit enters through
+`process_deposit_request` as a pending deposit.
 
 Each `assert` is an expected rejection: an invalid vector hits one and the harness
 classifies it as a faithful reject. Input-controlled indices are bounds-guarded
@@ -268,31 +272,6 @@ where
               pure (if bit then a + 1 else a)) 0
           pure (attesters > 0, off + committee.size))
       (true, 0)
-
-/-! ## Deposits -/
-
-/-- `apply_deposit`: a new pubkey is added only with a valid proof-of-possession;
-either way (existing, or freshly added) the amount is queued as a pending deposit. -/
-forkdef applyDeposit (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) (sig : BLSSignature) :
-    StateTransition Unit := do
-  let state ← get
-  let pendingDeposit : PendingDeposit :=
-    { pubkey, withdrawalCredentials := wc, amount, signature := sig, slot := Const.genesisSlot }
-  if (sszGet state validators).any (·.pubkey == pubkey) then
-    appendState pendingDeposits pendingDeposit
-  else if isValidDepositSignature pubkey wc amount sig then
-    addValidatorToRegistry pubkey wc 0
-    appendState pendingDeposits pendingDeposit
-
-/-- `process_deposit`: verify the Merkle branch into `eth1_data.deposit_root`,
-advance `eth1_deposit_index`, then apply. -/
-forkdef processDeposit (d : Deposit) : StateTransition Unit := do
-  let state ← get
-  assert (isValidMerkleBranch (htr d.data) d.proof.toArray (Const.depositContractTreeDepth + 1)
-    (sszGet state eth1DepositIndex).toNat (sszGet state eth1Data).depositRoot)
-
-  modifyState fun state => sszUpdate state with eth1DepositIndex := (sszGet state eth1DepositIndex) + 1
-  applyDeposit d.data.pubkey d.data.withdrawalCredentials d.data.amount d.data.signature
 
 /-! ## Voluntary exits -/
 
