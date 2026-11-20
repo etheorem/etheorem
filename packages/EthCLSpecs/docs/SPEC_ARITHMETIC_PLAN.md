@@ -1,11 +1,12 @@
 # Spec arithmetic transition plan
 
-Status: in progress. Stages 0 through 6 are complete and committed (inventory and
+Status: in progress. Stages 0 through 8 are complete and committed (inventory and
 baselines; SSZ packing and typed causes; the checked core, authoring surface, and tier
 views; `Gwei` across every fork with proofs; `Epoch` and `Slot` with evaluation-order
-fixes; indices and plain-integer formulas). Each stage's task checkboxes below carry a
-one-line completion note with the commit. Stage 7 (clocks and remaining configuration
-arithmetic) is next.
+fixes; indices and plain-integer formulas; clocks and remaining configuration
+arithmetic; flags, widths, and the full-scope closure). Each stage's task checkboxes
+below carry a one-line completion note with the commit. Stage 9 (the repository-wide
+documentation audit) is next.
 Durable working records (stage reports, findings, incidents, baselines, oracle
 results) live outside git in `mb/spec-arithmetic-implementation/` and are distilled
 into the tracked records at Stage 10.
@@ -745,6 +746,30 @@ arithmetic site remains unreviewed because its module built without edits.
   worked examples, and Lean module and declaration docstrings. Search for raw `UInt64`
   authoring guidance, unbounded-intermediate assumptions, wrapping conversions, error
   classification, obsolete conversion names, and arithmetic examples that omit binds.
+  - [ ] **9.1a Find and reconcile: arithmetic and authoring documents.** Covers the 9.1
+    find sweep and the 9.2 reconciliation for the arithmetic and authoring documents.
+  - [ ] **9.1b Find and reconcile: architecture and records documents.** Covers the 9.1
+    find sweep and the 9.2 reconciliation for the architecture and records documents.
+  - [ ] **9.1c Find and reconcile: repo-level, contributor, and other-package
+    documents.** Covers the 9.1 find sweep and the 9.2 reconciliation for the repo-level,
+    contributor, and other-package documents.
+  - [ ] **9.1d1 Find and reconcile: EthCLLib `Spec/`, `Internal/`, and root module
+    docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
+    docstrings of the EthCLLib `Spec/`, `Internal/`, and root modules.
+  - [ ] **9.1d2 Find and reconcile: EthCLLib `Proofs/`, `Tests/`, `PySpecTests/`, and
+    other-package docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for
+    the Lean docstrings of the EthCLLib `Proofs/`, `Tests/`, and `PySpecTests/` modules
+    and the other packages' `.lean` files.
+  - [ ] **9.1d3 Find and reconcile: Fulu fork body and EthCLSpecs root module
+    docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
+    docstrings of the Fulu fork body and the EthCLSpecs root modules.
+  - [ ] **9.1d4 Find and reconcile: Gloas and Heze fork body docstrings.** Covers the 9.1
+    find sweep and the 9.2 reconciliation for the Lean docstrings of the Gloas and Heze
+    fork bodies.
+  - [ ] **9.1d5 Find and reconcile: EthCLSpecs `Proofs/`, `Tests/`, `PySpecTests/`, and
+    bench docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
+    docstrings of the EthCLSpecs `Proofs/`, `Tests/`, and `PySpecTests/` modules and the
+    bench.
 - [ ] **9.2 Reconcile each finding.** Update current guidance and executable examples
   to match the implemented arithmetic contract. Check the actual result types behind
   conversion names. Preserve descriptions of intentionally raw arithmetic in other
@@ -755,6 +780,20 @@ arithmetic site remains unreviewed because its module built without edits.
 - [ ] **9.4 Check document links and status.** Update the docs index and cross-references.
   Ensure current guidance describes the implemented state and keeps deferred linter
   work separate. Leave removal of this temporary plan to the final acceptance stage.
+- [ ] **9.5 Close the Stage 8 routed items.** The 8.4 sub-stage records route these items
+  to the Epic Lead / Stage 9. They run before the documentation families, so the audit
+  sees final names and docstrings.
+  - [ ] **9.5a Close the sync-committee participant lookup fault arm.** Closes the
+    `findIdx?` arm in the `processSyncAggregate` rewards loop (the 8.4a1 record, 8.4b
+    open item 1).
+  - [ ] **9.5b Close the `computeCommittee` honest bounds fault.** Replaces the
+    defaulting permutation read of `computeCommittee` with an honest bounds fault (the
+    8.4a2 record, 8.4b open item 2).
+  - [ ] **9.5c Close the unpinned `processDeposit` body and its raw `eth1DepositIndex`
+    wrap.** Closes the raw `eth1DepositIndex + 1` wrap in `processDeposit` (the 8.4a1
+    and 8.4a3 records, 8.4b open item 3).
+  - [ ] **9.5d Close the deferred cleanup batch.** Lands the behavior-preserving cleanup
+    items that the 8.4a3 and 8.4a4 records hand to the Epic Lead / Stage 9.
 
 **Done when:** the repository-wide audit has a recorded scope and findings; every
 identified conflict with the implemented arithmetic contract has a resolution; affected
