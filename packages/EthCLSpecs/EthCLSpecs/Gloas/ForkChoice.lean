@@ -275,9 +275,12 @@ forkdef isPreviousSlotPayloadDecision (store : Store map) (node : ForkChoiceNode
     StoreTransition Bool := do
   -- The spec reads `store.blocks[node.root].slot` (plain `Dict`), raising on a missing root.
   let block ← FcMap.getOrThrow store.blocks node.root
-  let currentSlot ← getCurrentSlot store
-  -- `blocks[root].slot + 1`: the pyspec's checked `Slot` add, bound here.
+  -- `blocks[root].slot + 1 == get_current_slot(store)`: Python evaluates the left operand
+  -- first, so the checked `Slot` add binds before the clock read. Both can raise, and with
+  -- different classes: the add raises the range fault, and the clock raises the range fault
+  -- or, for a zero `SLOT_DURATION_MS`, the zero divisor (`SPEC_ARITHMETIC.md` §1).
   let nextSlot ← block.slot + 1
+  let currentSlot ← getCurrentSlot store
   let isPreviousSlot := nextSlot == currentSlot
   let isPayloadDecision :=
     node.payloadStatus == Const.payloadStatusEmpty || node.payloadStatus == Const.payloadStatusFull
@@ -287,10 +290,11 @@ forkdef isPreviousSlotPayloadDecision (store : Store map) (node : ForkChoiceNode
 should win the payload-status tiebreak. -/
 forkdef shouldExtendPayload (store : Store map) (root : Root) : StoreTransition Bool := do
   -- The spec opens with `assert store.blocks[root].slot + 1 == get_current_slot(store)`:
-  -- read the block (raising on a missing root), then assert the slot equation.
+  -- read the block (raising on a missing root), then assert the slot equation. The add binds
+  -- before the clock read, in Python's operand order (see `isPreviousSlotPayloadDecision`).
   let rootBlock ← FcMap.getOrThrow store.blocks root
-  let currentSlot ← getCurrentSlot store
   let nextSlot ← rootBlock.slot + 1
+  let currentSlot ← getCurrentSlot store
   assert (nextSlot == currentSlot)
   if !isPayloadVerified store root then pure false
   else

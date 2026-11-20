@@ -114,7 +114,14 @@ epoch and whose upper half holds the current epoch, so the index is `slot % SLOT
 a `SLOTS_PER_EPOCH` offset added only for the current epoch. The epoch test is the caller's
 (`process_proposer_slashing` / `apply_parent_execution_payload` compare `compute_epoch_at_slot`,
 `process_attestation` keys off `data.target.epoch`); this helper names only the offset
-arithmetic. -/
+arithmetic.
+
+The pinned `SLOTS_PER_EPOCH + slot % SLOTS_PER_EPOCH` is a checked `Uint64` add, and the
+structural `Nat` sum here equals it. The add cannot raise: the remainder is below
+`SLOTS_PER_EPOCH`, so the sum is below `2 * SLOTS_PER_EPOCH`. The pinned module forms that
+product as the `BuilderPendingPayments` length when it loads, so it is below `2^64` on every
+preset the pyspec accepts. The `%` takes the proved-total divisor view (`SPEC_ARITHMETIC.md`
+§4.2). -/
 forkdef builderPaymentIndex (slot : Slot) (current : Bool) : Nat :=
   (if current then Const.slotsPerEpoch else 0) + (slot % Const.slotsPerEpochDiv).toPlainNat
 /-- `is_builder_withdrawal_credential`. -/
@@ -176,6 +183,9 @@ forkdef applyDepositForBuilder (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwe
   let state ← get
   match (sszGet state builders).findIdx? (·.pubkey == pubkey) with
   | some builderIndex =>
+      -- `BuilderIndex(builder_pubkeys.index(pubkey))`: the read is in range, because
+      -- `findIdx?` returned the position. The cast is omitted and cannot raise: the builder
+      -- list is a `ProgressiveList`, and a Lean array holds fewer than `2^61` entries.
       -- `builder.balance += amount`: the checked `Gwei` add, bound here; the store
       -- writes the value the add returned.
       let newBalance ← (sszGet state builders[builderIndex]!).balance + amount
@@ -360,7 +370,7 @@ target-root read raises the uncaught range fault (`slot + SLOTS_PER_HISTORICAL_R
 overflows). So the source check comes last, and a mismatched source cannot turn that fault
 into the caught assert (`SPEC_ARITHMETIC.md` §1). -/
 forkdef getAttestationParticipationFlagIndices (state : State) (data : AttestationData)
-    (inclusionDelay : Slot) (parentSlot : Slot) : StateTransition (Option (Array Nat)) := do
+    (inclusionDelay : Slot) (parentSlot : Slot) : StateTransition (Option (Array CLUint64)) := do
   let justified := if data.target.epoch == currentEpochOf state then sszGet state currentJustifiedCheckpoint
                    else sszGet state previousJustifiedCheckpoint
   let isMatchingSource := data.source.epoch == justified.epoch && data.source.root == justified.root
@@ -383,7 +393,10 @@ forkdef getAttestationParticipationFlagIndices (state : State) (data : Attestati
   let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == headRoot && payloadMatches
   if !isMatchingSource then return none
 
-  let mut flags : Array Nat := #[]
+  -- The returned list holds the pinned checked constants (`TIMELY_*_FLAG_INDEX` =
+  -- `Uint64(0..2)`); its only consumer is the value-equality `in` test of
+  -- `process_attestation`, a total comparison.
+  let mut flags : Array CLUint64 := #[]
   -- The comparisons never raise in Python. `integer_squareroot(SLOTS_PER_EPOCH)` is the
   -- total checked-kind root, so both bounds meet the delay in the checked kind.
   if inclusionDelay ≤ Const.slotsPerEpochC.integerSquareroot then flags := flags.push Const.timelySourceFlagIndex
@@ -437,6 +450,10 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
 
   -- Apply participation flags and accumulate the builder-payment weight.
   let currentTarget := data.target.epoch == currentEpochOf state
+  -- Python calls `is_attestation_same_slot` inside the per-validator `and`, so it can run
+  -- zero or many times. This bind runs it once. The move cannot add a fault:
+  -- `get_attestation_participation_flag_indices` above already ran the same call on the same
+  -- `state` and `data`, and the flag writes leave `slot` and `block_roots` unchanged.
   let sameSlot ← isAttestationSameSlot state data
   let paymentIdx := builderPaymentIndex data.slot currentTarget
   let payment0 := vget (sszGet state builderPendingPayments) paymentIdx
@@ -450,7 +467,8 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
     -- `vi` is a data-derived attesting-validator index; read the participation flag
     -- through `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather
     -- than masking as a default flag (the matching `[i]!` writes are then in range).
-    -- [New in Gloas:EIP7732] the flags this validator held before this attestation.
+    -- [New in Gloas:EIP7732] the flags this validator held before this attestation:
+    -- `epoch_participation[index] == 0b0000_0000`, a total value comparison.
     let flags0 ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) vi
                  else sszGetIdx (sszGet stateAcc previousEpochParticipation) vi
     -- `toPlainNat`: the raising read above proved `vi` in range for this list.
@@ -458,16 +476,24 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
     let hadNoParticipation := flags0 == 0
     let mut willSet := false
     for flagIndex in [0:3] do
-      -- The `and` short-circuits (`gloas/minimal.py`, `process_attestation`): the flag read
-      -- forms only for a flag the attestation earns.
-      if !flagIndices.contains flagIndex then continue
+      -- `flag_index in participation_flag_indices and not has_flag(...)` (`gloas/minimal.py`,
+      -- `process_attestation`): the `and` short-circuits, so the flag read forms only for a
+      -- flag the attestation earns. The `in` compares a plain enumerate index against the
+      -- checked constants by value — a total comparison — so the membership reads the
+      -- elements' plain values.
+      if !flagIndices.any (·.toPlainNat == flagIndex) then continue
       let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) vi
                  else sszGetIdx (sszGet stateAcc previousEpochParticipation) vi
-      if !hasFlag flag flagIndex then
+      -- `not has_flag(...)`: the mask `ParticipationFlags(2**flag_index)` raises past
+      -- flag index 7, so the test binds (`SPEC_ARITHMETIC.md` §5.1).
+      if !(← CLUint8.hasFlag flag flagIndex) then
+        -- `add_flag`'s mask raises past flag index 7; the write stores the bound value,
+        -- as Python assigns the `add_flag(...)` result.
+        let flag' ← CLUint8.addFlag flag flagIndex
         stateAcc := if currentTarget then
-                   sszUpdate stateAcc with currentEpochParticipation[i]! := addFlag flag flagIndex
+                   sszUpdate stateAcc with currentEpochParticipation[i]! := flag'
                  else
-                   sszUpdate stateAcc with previousEpochParticipation[i]! := addFlag flag flagIndex
+                   sszUpdate stateAcc with previousEpochParticipation[i]! := flag'
         let base ← liftErr (getBaseReward state vi)
         let weighted ← base * Const.participationFlagWeights[flagIndex]!
         proposerNum := ← proposerNum + weighted
@@ -479,9 +505,10 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   -- Reward the proposer, then write back the (possibly weight-updated) payment, which the
   -- spec does unconditionally and in this order. The denominator
   -- `(WEIGHT_DENOMINATOR - PROPOSER_WEIGHT) * WEIGHT_DENOMINATOR // PROPOSER_WEIGHT`
-  -- is a constant-only subexpression (adjudication F2), so it stays the plain `Nat`
-  -- formula and the mixed `Gwei / Nat` division carries the checked raise.
-  let proposerDenom := (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
+  -- is checked arithmetic at the pin (every operand a `Uint64` constant), so the chain
+  -- binds; the shipped values cannot leave range, and the mixed `Gwei / CLUint64`
+  -- division carries the checked raise.
+  let proposerDenom ← (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
   let proposerReward ← proposerNum / proposerDenom
   stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc) proposerReward
   stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := { payment0 with weight := weight }

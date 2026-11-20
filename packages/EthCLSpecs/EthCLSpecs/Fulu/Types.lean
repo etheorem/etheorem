@@ -58,8 +58,12 @@ forkabbrev BLSPubkey := Vector UInt8 48
 forkabbrev BLSSignature := Vector UInt8 96
 /-- A 20-byte execution-layer address. -/
 forkabbrev ExecutionAddress := Vector UInt8 20
-/-- Per-validator participation flag bits (Altair onward). SSZ `uint8`. -/
-forkabbrev ParticipationFlags := UInt8
+/-- Per-validator participation flag bits (Altair onward). SSZ `uint8`, the pyspec's
+checked `Uint8` subclass (`ParticipationFlags(Uint8)`), so the checked-8 surface applies:
+`add_flag` / `has_flag` go through `CLUint8.addFlag` / `CLUint8.hasFlag`, whose mask
+`ParticipationFlags(2**flag_index)` raises past flag index 7 (`SPEC_ARITHMETIC.md` §4.1,
+§5.1). -/
+forkabbrev ParticipationFlags := CLUint8
 /-- A blob-commitment KZG point (48 bytes). -/
 forkabbrev KZGCommitment := Vector UInt8 48
 /-- A KZG opening proof (48 bytes), same width as a commitment. -/

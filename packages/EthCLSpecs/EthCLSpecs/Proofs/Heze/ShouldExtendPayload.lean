@@ -11,7 +11,7 @@ Heze's `shouldExtendPayload` inserts a FOCIL gate after payload verification
 and before the timeliness, data-availability, and proposer-boost checks.
 
 The complete `.run` equation evaluates in this order: block lookup,
-`getCurrentSlot.run`, the checked `slot + 1`, the slot assertion,
+the checked `slot + 1`, `getCurrentSlot.run`, the slot assertion,
 `isPayloadVerified`, `isPayloadInclusionListSatisfied.run`, then the
 remaining post-FOCIL checks (`payloadTimeliness`, `payloadDataAvailability`,
 proposer-boost block lookup, and `isParentNodeFull`).
@@ -71,12 +71,12 @@ theorem shouldExtendPayload_run :
         match FcMap.lookup store.blocks root with
         | none => .error (.missingKey root)
         | some rootBlock =>
-          match (getCurrentSlot
-              (StoreTransition := ForkChoiceStoreRun (Store map))
-              store).run runnerStore with
-          | .error err => .error err
-          | .ok (currentSlot, s1) =>
-            if hnext : rootBlock.slot.toPlainNat + 1 < UInt64.size then
+          if hnext : rootBlock.slot.toPlainNat + 1 < UInt64.size then
+            match (getCurrentSlot
+                (StoreTransition := ForkChoiceStoreRun (Store map))
+                store).run runnerStore with
+            | .error err => .error err
+            | .ok (currentSlot, s1) =>
               if CLUint64.ofNatLT _ hnext == currentSlot then
                 if !isPayloadVerified store root then
                   .ok (false, s1)
@@ -111,28 +111,28 @@ theorem shouldExtendPayload_run :
                                   store pb).run s4
               else
                 .error (.assert "(nextSlot == currentSlot)")
-            else
-              .error (.transition (.arithmetic "+")) := by
+          else
+            .error (.transition (.arithmetic "+")) := by
   intro store runnerStore root
   simp only [shouldExtendPayload, FcMap.getOrThrow, FcMap.getOrThrowKey, run_bind]
   cases hblock : FcMap.lookup store.blocks root with
   | none => rfl
   | some rootBlock =>
     rw [run_pure, except_bind_ok]
-    cases hcur : (getCurrentSlot
-        (StoreTransition := ForkChoiceStoreRun (Store map))
-        store).run runnerStore with
-    | error err => rfl
-    | ok p =>
-      obtain ⟨currentSlot, s1⟩ := p
-      rw [except_bind_ok]
-      -- Reduce the statement's outer matches, then state the checked add as its plain
-      -- range decision on both sides (`hadd_un_eq`).
-      dsimp only
-      rw [hadd_un_eq]
-      by_cases hnext : rootBlock.slot.toPlainNat + 1 < UInt64.size
-      · rw [dite_eq_left hnext, dite_eq_left hnext, ForkChoiceStoreRun.liftChecked_ok_run,
-          except_bind_ok]
+    -- Reduce the statement's outer match, then state the checked add as its plain range
+    -- decision on both sides (`hadd_un_eq`).
+    dsimp only
+    rw [hadd_un_eq]
+    by_cases hnext : rootBlock.slot.toPlainNat + 1 < UInt64.size
+    · rw [dite_eq_left hnext, dite_eq_left hnext, ForkChoiceStoreRun.liftChecked_ok_run,
+        except_bind_ok]
+      cases hcur : (getCurrentSlot
+          (StoreTransition := ForkChoiceStoreRun (Store map))
+          store).run runnerStore with
+      | error err => rfl
+      | ok p =>
+        obtain ⟨currentSlot, s1⟩ := p
+        rw [except_bind_ok]
         by_cases hslot : (CLUint64.ofNatLT _ hnext == currentSlot) = true
         · simp [hslot]
           cases hverified : isPayloadVerified store root
@@ -182,13 +182,13 @@ theorem shouldExtendPayload_run :
                         · simp [hparent]
                           rfl
         · simp [hslot, run_throw, except_bind_error, SpecReject.assert]
-      · rw [dite_eq_right hnext, dite_eq_right hnext, ForkChoiceStoreRun.liftChecked_error_run,
-          except_bind_error]
-        rfl
+    · rw [dite_eq_right hnext, dite_eq_right hnext, ForkChoiceStoreRun.liftChecked_error_run,
+        except_bind_error]
+      rfl
 
 /-! ## The successful prefix
 
-The block lookup, `getCurrentSlot`, the increment, and the slot assertion
+The block lookup, the increment, `getCurrentSlot`, and the slot assertion
 are the prefix every post-prefix corollary shares. One bridge reduces that
 prefix once, and each corollary states only its own case.
 -/
@@ -212,8 +212,8 @@ private theorem next_slot_beq {a c : Slot} (h : a.toPlainNat + 1 = c.toPlainNat)
   rw [CLUint64.ofNatLT_toPlainNat]
   exact h
 
-/-- Under the successful prefix (block lookup, `getCurrentSlot`, the
-non-overflowing increment, the slot assertion) the run reduces to the
+/-- Under the successful prefix (block lookup, the non-overflowing increment,
+`getCurrentSlot`, the slot assertion) the run reduces to the
 post-prefix form: the `isPayloadVerified` branch, the FOCIL read bound at
 `s1`, then the inherited Gloas tail. The gate and tail corollaries below
 derive from this bridge, as does later composition work on the write
@@ -280,11 +280,12 @@ theorem shouldExtendPayload_run_error_of_missing_block :
   rw [shouldExtendPayload_run]
   simp [hblock]
 
-/-- A `getCurrentSlot` reject is propagated unchanged. -/
+/-- After a successful increment, a `getCurrentSlot` reject is propagated unchanged. -/
 theorem shouldExtendPayload_run_error_of_getCurrentSlot :
     ∀ (store runnerStore : Store map) (root : Root) (rootBlock : BeaconBlock)
       (err : StoreTransitionError),
       FcMap.lookup store.blocks root = some rootBlock →
+      rootBlock.slot.toPlainNat + 1 < UInt64.size →
       (getCurrentSlot
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store).run runnerStore
@@ -293,28 +294,24 @@ theorem shouldExtendPayload_run_error_of_getCurrentSlot :
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .error err := by
-  intro store runnerStore root rootBlock err hblock hcur
+  intro store runnerStore root rootBlock err hblock hnooverflow hcur
   rw [shouldExtendPayload_run]
-  simp [hblock, hcur]
+  simp [hblock, hnooverflow, hcur]
 
 /-- Overflow of the checked `blocks[root].slot + 1` is the range fault, which lands as the
-`.arithmetic` reject carrying the operator. -/
+`.arithmetic` reject carrying the operator. The add binds before the clock read, as Python
+evaluates the left operand of `==` first, so the clock's own rejects cannot preempt it. -/
 theorem shouldExtendPayload_run_error_of_slot_overflow :
-    ∀ (store runnerStore s1 : Store map) (root : Root) (rootBlock : BeaconBlock)
-      (currentSlot : Slot),
+    ∀ (store runnerStore : Store map) (root : Root) (rootBlock : BeaconBlock),
       FcMap.lookup store.blocks root = some rootBlock →
-      (getCurrentSlot
-          (StoreTransition := ForkChoiceStoreRun (Store map))
-          store).run runnerStore
-        = .ok (currentSlot, s1) →
       UInt64.size ≤ rootBlock.slot.toPlainNat + 1 →
       (shouldExtendPayload
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store root).run runnerStore
         = .error (.transition (.arithmetic "+")) := by
-  intro store runnerStore s1 root rootBlock currentSlot hblock hcur hover
+  intro store runnerStore root rootBlock hblock hover
   rw [shouldExtendPayload_run]
-  simp [hblock, hcur, Nat.not_lt.mpr hover]
+  simp [hblock, Nat.not_lt.mpr hover]
 
 /-- A successful increment that fails `nextSlot == currentSlot` is the spec's
 slot assertion. -/

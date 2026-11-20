@@ -625,21 +625,21 @@ theorem keepsUncached_processAttesterSlashing (asl : AttesterSlashing) :
             (fun _ => keepsUncachedFrom_throw _ _)
 
 /-- The current-field record write of an uncached box is again uncached. `j`
-is the validator (record) index, `i` the flag index. -/
+is the validator (record) index; the written value is the checked-8 `addFlag`
+result the walk bound before the write. -/
 private theorem keepsUncached_writeParticipationCurr (stC : BeaconState) (j : Nat)
-    (fl : EthCLSpecs.Gloas.ParticipationFlags) (i : Nat) :
+    (fl' : EthCLSpecs.Gloas.ParticipationFlags) :
     ∃ w : BeaconState,
-      (sszUpdate (pureState stC) with currentEpochParticipation[j]! :=
-        EthCLLib.Spec.addFlag fl i) = pureState w :=
+      (sszUpdate (pureState stC) with currentEpochParticipation[j]! := fl') = pureState w :=
   ⟨_, rfl⟩
 
 /-- The previous-field record write of an uncached box is again uncached. `j`
-is the validator (record) index, `i` the flag index. -/
+is the validator (record) index; the written value is the checked-8 `addFlag`
+result the walk bound before the write. -/
 private theorem keepsUncached_writeParticipationPrev (stC : BeaconState) (j : Nat)
-    (fl : EthCLSpecs.Gloas.ParticipationFlags) (i : Nat) :
+    (fl' : EthCLSpecs.Gloas.ParticipationFlags) :
     ∃ w : BeaconState,
-      (sszUpdate (pureState stC) with previousEpochParticipation[j]! :=
-        EthCLLib.Spec.addFlag fl i) = pureState w :=
+      (sszUpdate (pureState stC) with previousEpochParticipation[j]! := fl') = pureState w :=
   ⟨_, rfl⟩
 
 /-- One concrete field choice of `processAttestation`'s per-validator walk, the
@@ -647,12 +647,14 @@ current-epoch one. The elaborator hoists the `current_epoch_target` ite around
 the whole body, the inner flag read around the inner-loop body, and reduces
 every same-condition ite at once, so `keepsUncached_processAttestation` splits
 the body into the two (field) branches; this lemma is the run-level proof of
-one branch. -/
+one branch. The flag test and the flag write are the checked-8 `hasFlag` /
+`addFlag` binds, restated through the mask laws (`SPEC_ARITHMETIC.md` §5.1):
+each raise discards the walk's writes, and each success threads the box. -/
 @[box_generic "the lemma is box infrastructure: it says the walk's successful runs
 thread the uncached box, the property KeepsUncached is about, and its statement
 runs the action at pureState v the same way the closure lemmas do"]
 private theorem keepsUncached_attLoopCurr (state : BeaconState) (vi : ValidatorIndex)
-    (att : Attestation) (flagIndices : Array Nat) (sameSlot : Bool) :
+    (att : Attestation) (flagIndices : Array EthCLLib.Spec.CLUint64) (sameSlot : Bool) :
     ∀ (b : EthCLSpecs.Gloas.State × EthCLSpecs.Gloas.Gwei × EthCLSpecs.Gloas.Gwei) (v : BeaconState)
         (r : ForInStep (EthCLSpecs.Gloas.State × EthCLSpecs.Gloas.Gwei × EthCLSpecs.Gloas.Gwei))
         (s : SSZ.Box HasherTag.H BeaconState),
@@ -661,18 +663,20 @@ private theorem keepsUncached_attLoopCurr (state : BeaconState) (vi : ValidatorI
         let flags0 ← sszGetIdx b.fst.view.currentEpochParticipation vi
         let __s ←
           forIn [:3] (b.fst, b.snd.fst, false) fun flagIndex __s =>
-            if (!flagIndices.contains flagIndex) = true then
+            if (!flagIndices.any fun x => x.toPlainNat == flagIndex) = true then
               pure (ForInStep.yield (__s.fst, __s.snd.fst, __s.snd.snd))
             else do
             let flag ← sszGetIdx __s.fst.view.currentEpochParticipation vi
-            if (!EthCLLib.Spec.hasFlag flag flagIndex) = true then do
+            let __do_lift ← liftM (EthCLLib.Spec.CLUint8.hasFlag flag flagIndex)
+            if (!__do_lift) = true then do
+              let flag' ← liftM (EthCLLib.Spec.CLUint8.addFlag flag flagIndex)
               let base ← liftErr (EthCLSpecs.Gloas.getBaseReward (pureState state) vi)
               let weighted ← liftM (base * Gloas.Const.participationFlagWeights[flagIndex]!)
               let __do_lift ← liftM (__s.snd.fst + weighted)
               pure
                 (ForInStep.yield
-                  ((sszUpdate __s.fst with currentEpochParticipation[vi.toPlainNat]! :=
-                    EthCLLib.Spec.addFlag flag flagIndex), __do_lift, true))
+                  ((sszUpdate __s.fst with currentEpochParticipation[vi.toPlainNat]! := flag'),
+                    __do_lift, true))
             else pure (ForInStep.yield (__s.fst, __s.snd.fst, __s.snd.snd))
         if
             (__s.snd.snd && flags0 == 0 && sameSlot &&
@@ -724,53 +728,74 @@ private theorem keepsUncached_attLoopCurr (state : BeaconState) (vi : ValidatorI
         (Q := fun stp => ∃ st : BeaconState, stp.value.1 = pureState st)
         (hx := fun r0 s0 h0 => ⟨keepsUncached_sszGetIdx _ _ v2 r0 s0 h0, trivial⟩)
         (hk := fun flag sC _ a s h3 => ?_) v2 r2 s2 hrun2
-      · split at h3
-        · -- the flag-set branch: base reward, weighted reward, the checked
-          -- accumulator add, and the field write
-          rw [run_bind] at h3
-          cases hm : (EthCLSpecs.Gloas.getBaseReward (pureState state) vi).mapError
-              (ErrorConv.conv (F := EthCLLib.Spec.StateTransitionError)) with
-          | error e =>
-            rw [run_liftErr_of_error _ _ hm, except_bind_error] at h3
-            simp at h3
-          | ok rw' =>
-            rw [run_liftErr_of_ok _ _ hm, except_bind_ok] at h3
+      · -- The `has_flag` mask test binds after the read: its raise discards the
+        -- walk, its success splits on the `not` gate.
+        rw [run_bind] at h3
+        cases hh : (EthCLLib.Spec.CLUint8.hasFlag flag flagIndex) with
+        | error ef =>
+          rw [hh, run_liftChecked_error] at h3
+          rw [except_bind_error] at h3
+          simp at h3
+        | ok hb' =>
+          rw [hh, run_liftChecked_ok _ _] at h3
+          rw [except_bind_ok] at h3
+          split at h3
+          · -- the flag-set branch: the `add_flag` mask binds before the write,
+            -- then base reward, weighted reward, the checked accumulator add,
+            -- and the field write
             rw [run_bind] at h3
-            cases hw : ((rw' * Gloas.Const.participationFlagWeights[flagIndex]! : Checked Gwei)) with
-            | ok weighted =>
-              rw [hw] at h3
-              rw [run_liftChecked_ok _ _] at h3
-              rw [except_bind_ok] at h3
-              rw [run_bind] at h3
-              cases hw2 : ((acc3.2.1 + weighted : Checked Gwei)) with
-              | ok total =>
-                rw [hw2] at h3
-                rw [run_liftChecked_ok _ _] at h3
-                rw [except_bind_ok, run_pure] at h3
-                injection h3 with h3p
-                injection h3p with h3a h3b
-                subst h3b
-                subst h3a
-                refine ⟨rfl, ?_⟩
-                obtain ⟨stC, hstC⟩ := hb2
-                simp only [hstC]
-                exact keepsUncached_writeParticipationCurr stC vi.toPlainNat flag flagIndex
-              | error e =>
-                rw [hw2] at h3
-                rw [run_liftChecked_error] at h3
-                rw [except_bind_error] at h3
-                simp at h3
-            | error e =>
-              rw [hw] at h3
-              rw [run_liftChecked_error] at h3
+            cases hf' : (EthCLLib.Spec.CLUint8.addFlag flag flagIndex) with
+            | error ef =>
+              rw [hf', run_liftChecked_error] at h3
               rw [except_bind_error] at h3
               simp at h3
-        · rw [run_pure] at h3
-          injection h3 with h3p
-          injection h3p with h3a h3b
-          subst h3b
-          subst h3a
-          exact ⟨rfl, hb2⟩
+            | ok flag' =>
+              rw [hf', run_liftChecked_ok _ _] at h3
+              rw [except_bind_ok] at h3
+              rw [run_bind] at h3
+              cases hm : (EthCLSpecs.Gloas.getBaseReward (pureState state) vi).mapError
+                  (ErrorConv.conv (F := EthCLLib.Spec.StateTransitionError)) with
+              | error e =>
+                rw [run_liftErr_of_error _ _ hm, except_bind_error] at h3
+                simp at h3
+              | ok rw' =>
+                rw [run_liftErr_of_ok _ _ hm, except_bind_ok] at h3
+                rw [run_bind] at h3
+                cases hw : ((rw' * Gloas.Const.participationFlagWeights[flagIndex]! : Checked Gwei)) with
+                | ok weighted =>
+                  rw [hw] at h3
+                  rw [run_liftChecked_ok _ _] at h3
+                  rw [except_bind_ok] at h3
+                  rw [run_bind] at h3
+                  cases hw2 : ((acc3.2.1 + weighted : Checked Gwei)) with
+                  | ok total =>
+                    rw [hw2] at h3
+                    rw [run_liftChecked_ok _ _] at h3
+                    rw [except_bind_ok, run_pure] at h3
+                    injection h3 with h3p
+                    injection h3p with h3a h3b
+                    subst h3b
+                    subst h3a
+                    refine ⟨rfl, ?_⟩
+                    obtain ⟨stC, hstC⟩ := hb2
+                    simp only [hstC]
+                    exact keepsUncached_writeParticipationCurr stC vi.toPlainNat flag'
+                  | error e =>
+                    rw [hw2] at h3
+                    rw [run_liftChecked_error] at h3
+                    rw [except_bind_error] at h3
+                    simp at h3
+                | error e =>
+                  rw [hw] at h3
+                  rw [run_liftChecked_error] at h3
+                  rw [except_bind_error] at h3
+                  simp at h3
+          · rw [run_pure] at h3
+            injection h3 with h3p
+            injection h3p with h3a h3b
+            subst h3b
+            subst h3a
+            exact ⟨rfl, hb2⟩
     · -- the payment gate
       intro acc3 sB hb2 a s h4
       split at h4
@@ -806,12 +831,13 @@ private theorem keepsUncached_attLoopCurr (state : BeaconState) (vi : ValidatorI
         exact ⟨rfl, hb2⟩
 
 /-- The previous-epoch field choice of the same walk; the proof is the
-current-field one with the field renamed. -/
+current-field one with the field renamed, including the checked-8 `hasFlag` /
+`addFlag` binds. -/
 @[box_generic "the lemma is box infrastructure: it says the walk's successful runs
 thread the uncached box, the property KeepsUncached is about, and its statement
 runs the action at pureState v the same way the closure lemmas do"]
 private theorem keepsUncached_attLoopPrev (state : BeaconState) (vi : ValidatorIndex)
-    (att : Attestation) (flagIndices : Array Nat) (sameSlot : Bool) :
+    (att : Attestation) (flagIndices : Array EthCLLib.Spec.CLUint64) (sameSlot : Bool) :
     ∀ (b : EthCLSpecs.Gloas.State × EthCLSpecs.Gloas.Gwei × EthCLSpecs.Gloas.Gwei) (v : BeaconState)
         (r : ForInStep (EthCLSpecs.Gloas.State × EthCLSpecs.Gloas.Gwei × EthCLSpecs.Gloas.Gwei))
         (s : SSZ.Box HasherTag.H BeaconState),
@@ -820,18 +846,20 @@ private theorem keepsUncached_attLoopPrev (state : BeaconState) (vi : ValidatorI
         let flags0 ← sszGetIdx b.fst.view.previousEpochParticipation vi
         let __s ←
           forIn [:3] (b.fst, b.snd.fst, false) fun flagIndex __s =>
-            if (!flagIndices.contains flagIndex) = true then
+            if (!flagIndices.any fun x => x.toPlainNat == flagIndex) = true then
               pure (ForInStep.yield (__s.fst, __s.snd.fst, __s.snd.snd))
             else do
             let flag ← sszGetIdx __s.fst.view.previousEpochParticipation vi
-            if (!EthCLLib.Spec.hasFlag flag flagIndex) = true then do
+            let __do_lift ← liftM (EthCLLib.Spec.CLUint8.hasFlag flag flagIndex)
+            if (!__do_lift) = true then do
+              let flag' ← liftM (EthCLLib.Spec.CLUint8.addFlag flag flagIndex)
               let base ← liftErr (EthCLSpecs.Gloas.getBaseReward (pureState state) vi)
               let weighted ← liftM (base * Gloas.Const.participationFlagWeights[flagIndex]!)
               let __do_lift ← liftM (__s.snd.fst + weighted)
               pure
                 (ForInStep.yield
-                  ((sszUpdate __s.fst with previousEpochParticipation[vi.toPlainNat]! :=
-                    EthCLLib.Spec.addFlag flag flagIndex), __do_lift, true))
+                  ((sszUpdate __s.fst with previousEpochParticipation[vi.toPlainNat]! := flag'),
+                    __do_lift, true))
             else pure (ForInStep.yield (__s.fst, __s.snd.fst, __s.snd.snd))
         if
             (__s.snd.snd && flags0 == 0 && sameSlot &&
@@ -883,53 +911,74 @@ private theorem keepsUncached_attLoopPrev (state : BeaconState) (vi : ValidatorI
         (Q := fun stp => ∃ st : BeaconState, stp.value.1 = pureState st)
         (hx := fun r0 s0 h0 => ⟨keepsUncached_sszGetIdx _ _ v2 r0 s0 h0, trivial⟩)
         (hk := fun flag sC _ a s h3 => ?_) v2 r2 s2 hrun2
-      · split at h3
-        · -- the flag-set branch: base reward, weighted reward, the checked
-          -- accumulator add, and the field write
-          rw [run_bind] at h3
-          cases hm : (EthCLSpecs.Gloas.getBaseReward (pureState state) vi).mapError
-              (ErrorConv.conv (F := EthCLLib.Spec.StateTransitionError)) with
-          | error e =>
-            rw [run_liftErr_of_error _ _ hm, except_bind_error] at h3
-            simp at h3
-          | ok rw' =>
-            rw [run_liftErr_of_ok _ _ hm, except_bind_ok] at h3
+      · -- The `has_flag` mask test binds after the read: its raise discards the
+        -- walk, its success splits on the `not` gate.
+        rw [run_bind] at h3
+        cases hh : (EthCLLib.Spec.CLUint8.hasFlag flag flagIndex) with
+        | error ef =>
+          rw [hh, run_liftChecked_error] at h3
+          rw [except_bind_error] at h3
+          simp at h3
+        | ok hb' =>
+          rw [hh, run_liftChecked_ok _ _] at h3
+          rw [except_bind_ok] at h3
+          split at h3
+          · -- the flag-set branch: the `add_flag` mask binds before the write,
+            -- then base reward, weighted reward, the checked accumulator add,
+            -- and the field write
             rw [run_bind] at h3
-            cases hw : ((rw' * Gloas.Const.participationFlagWeights[flagIndex]! : Checked Gwei)) with
-            | ok weighted =>
-              rw [hw] at h3
-              rw [run_liftChecked_ok _ _] at h3
-              rw [except_bind_ok] at h3
-              rw [run_bind] at h3
-              cases hw2 : ((acc3.2.1 + weighted : Checked Gwei)) with
-              | ok total =>
-                rw [hw2] at h3
-                rw [run_liftChecked_ok _ _] at h3
-                rw [except_bind_ok, run_pure] at h3
-                injection h3 with h3p
-                injection h3p with h3a h3b
-                subst h3b
-                subst h3a
-                refine ⟨rfl, ?_⟩
-                obtain ⟨stC, hstC⟩ := hb2
-                simp only [hstC]
-                exact keepsUncached_writeParticipationPrev stC vi.toPlainNat flag flagIndex
-              | error e =>
-                rw [hw2] at h3
-                rw [run_liftChecked_error] at h3
-                rw [except_bind_error] at h3
-                simp at h3
-            | error e =>
-              rw [hw] at h3
-              rw [run_liftChecked_error] at h3
+            cases hf' : (EthCLLib.Spec.CLUint8.addFlag flag flagIndex) with
+            | error ef =>
+              rw [hf', run_liftChecked_error] at h3
               rw [except_bind_error] at h3
               simp at h3
-        · rw [run_pure] at h3
-          injection h3 with h3p
-          injection h3p with h3a h3b
-          subst h3b
-          subst h3a
-          exact ⟨rfl, hb2⟩
+            | ok flag' =>
+              rw [hf', run_liftChecked_ok _ _] at h3
+              rw [except_bind_ok] at h3
+              rw [run_bind] at h3
+              cases hm : (EthCLSpecs.Gloas.getBaseReward (pureState state) vi).mapError
+                  (ErrorConv.conv (F := EthCLLib.Spec.StateTransitionError)) with
+              | error e =>
+                rw [run_liftErr_of_error _ _ hm, except_bind_error] at h3
+                simp at h3
+              | ok rw' =>
+                rw [run_liftErr_of_ok _ _ hm, except_bind_ok] at h3
+                rw [run_bind] at h3
+                cases hw : ((rw' * Gloas.Const.participationFlagWeights[flagIndex]! : Checked Gwei)) with
+                | ok weighted =>
+                  rw [hw] at h3
+                  rw [run_liftChecked_ok _ _] at h3
+                  rw [except_bind_ok] at h3
+                  rw [run_bind] at h3
+                  cases hw2 : ((acc3.2.1 + weighted : Checked Gwei)) with
+                  | ok total =>
+                    rw [hw2] at h3
+                    rw [run_liftChecked_ok _ _] at h3
+                    rw [except_bind_ok, run_pure] at h3
+                    injection h3 with h3p
+                    injection h3p with h3a h3b
+                    subst h3b
+                    subst h3a
+                    refine ⟨rfl, ?_⟩
+                    obtain ⟨stC, hstC⟩ := hb2
+                    simp only [hstC]
+                    exact keepsUncached_writeParticipationPrev stC vi.toPlainNat flag'
+                  | error e =>
+                    rw [hw2] at h3
+                    rw [run_liftChecked_error] at h3
+                    rw [except_bind_error] at h3
+                    simp at h3
+                | error e =>
+                  rw [hw] at h3
+                  rw [run_liftChecked_error] at h3
+                  rw [except_bind_error] at h3
+                  simp at h3
+          · rw [run_pure] at h3
+            injection h3 with h3p
+            injection h3p with h3a h3b
+            subst h3b
+            subst h3a
+            exact ⟨rfl, hb2⟩
     · -- the payment gate
       intro acc3 sB hb2 a s h4
       split at h4
@@ -1058,9 +1107,15 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                                 intro b w' hbp
                                 obtain ⟨saS, hsa⟩ := hbp
                                 rw [hsa]
+                                -- The denominator binds first: every operand is a
+                                -- checked `Uint64` constant at the pin, so the chain
+                                -- is checked arithmetic.
                                 refine keepsUncachedFrom_bind (T := BeaconState)
                                   (keepsUncachedFrom_liftChecked w' _)
-                                  (fun proposerReward w'' => ?_)
+                                  (fun proposerDenom w'' => ?_)
+                                refine keepsUncachedFrom_bind (T := BeaconState)
+                                  (keepsUncachedFrom_liftChecked w'' _)
+                                  (fun proposerReward w''' => ?_)
                                 refine returnsUncachedFrom_bind (T := BeaconState)
                                   (returnsUncached_increaseBalance saS
                                     (EthCLSpecs.Gloas.getBeaconProposerIndex (pureState saS))

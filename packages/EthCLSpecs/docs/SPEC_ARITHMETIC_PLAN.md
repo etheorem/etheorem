@@ -531,20 +531,209 @@ time arithmetic is accounted for, and the remaining constant inventory is empty.
 
 ### Stage 8: flags, widths, and full-scope closure
 
-- [ ] **8.1 Move participation flags.** Port `addFlag` and `hasFlag`, including checked
+- [x] **8.1 Move participation flags.** Port `addFlag` and `hasFlag`, including checked
   mask construction and short-circuit call placement. Repair proofs and codec fixtures.
-- [ ] **8.2 Finish remaining widths and operators.** Cover every use of `Uint32`,
+    *Done 2026-11-20 (WS-59, `87ad73d`): `ParticipationFlags := CLUint8` in Fulu with
+    Gloas/Heze inheriting the alias; the raw `UInt8` `hasFlag`/`addFlag` helpers deleted
+    from `EthCLLib/Spec/Arith.lean` and every flag site ported onto the checked-8 surface
+    (`CLUint8.addFlag`/`hasFlag`) with the pinned short-circuit placement preserved. Flag
+    indices and participation weights re-typed to their pinned checked kinds; the Fulu/Gloas
+    proposer denominators became checked chains. `Proofs/Gloas/KeepsUncached.lean` restated
+    through the checked-8 mask laws (coverage 87, no tag lost, axioms within the trio). New
+    `Tests/ParticipationFlagsMigrationPins`: mask boundary (index 7 succeeds, index 8
+    raises), add-flag idempotence at 255, short-circuit placement — each with paired
+    success cases and failing pre-change forms. Common migration gate green; minimal
+    sweeps case-identical to Stage 7.4 (fulu 5318/2829, gloas 6760/3198, heze 6972/3198);
+    `git grep "TEMPORARY CROSSING"` empty. Record: `mb/spec-arithmetic-implementation/stage-8.1.md`.*
+- [x] **8.2 Finish remaining widths and operators.** Cover every use of `Uint32`,
   `Uint256`, and any other width found in Stage 0. Distinguish data-only representations
   from arithmetic uses. Finish signed shifts and mixed-width conversions used in scope.
-- [ ] **8.3 Re-author a complete body.** Use `process_pending_deposits` from the pinned
+    *Done 2026-11-20 (WS-61, `352e809`): width sweep closed — `Uint32` survives only in
+    the framework codec (`uint32ToBytes`, the shuffle's `u32leBytes` feed) and the
+    PySpecTests server exit codes; `Uint256` (`baseFeePerGas`) is data only; the shuffle's
+    `Uint32(position_bucket)` cast carries a written 2^40 registry-cap bound and
+    `byte_val >> (position % 8)` cannot raise. The shuffle's `Uint8(current_round)` cast
+    is now proof-carrying: new preset premise `shuffleRoundCountLe : shuffleRoundCount ≤
+    2^8` (Fulu, inherited by Gloas/Heze), round byte via `CLUint8.ofNatLT` — a preset with
+    257+ rounds can no longer be built; minimal (10) and mainnet (90) bit-identical.
+    Data-only constants (credential prefixes, `payloadBuilderVersion`, payload-status
+    sentinels, `builders.version`, domain tags, `g2PointAtInfinity`, fork versions) each
+    carry a recorded disposition. No signed shift or mixed-width conversion in scope needs
+    a new framework operator (`CLUint8.ofNatLT` and its Stage 2.2 law pre-exist), so the
+    new-operator axiom audit does not apply. `check-constants` now skips `…Le` premises.
+    New `Tests/WidthCastPins`: premise boundary (256 builds, 257 rejected), typed
+    `Uint8()` range fault vs the old wrap-to-0, oracle permutation pins at 10/255/256
+    rounds plus the Heze replay. Common migration gate green; minimal sweeps
+    case-identical to 8.1 (fulu 5318/2829, gloas 6760/3198, heze 6972/3198). Record:
+    `mb/spec-arithmetic-implementation/stage-8.2.md`.*
+- [x] **8.3 Re-author a complete body.** Use `process_pending_deposits` from the pinned
   text as the authoring check. Prefer structural iteration over the finite queue.
   Update the worked example in `docs/CODING_STYLE.md` with the resulting form.
-- [ ] **8.4 Audit the whole scope again.** Review raw word operators, raw constructors,
+    *Done 2026-11-20 (WS-62, `f52bf90`): `processPendingDeposits` re-authored in Fulu
+    and the Gloas override as one body in the pinned text's shape — `for` over the
+    finite queue with the pyspec-named `let mut` locals (`processedAmount`,
+    `nextDepositIndex`, `depositsToPostpone`, `isChurnLimitReached`) and `break` at the
+    three pinned stops; `ppdLoop`, its `fuelLoop` and `DepositScan` removed from all
+    three forks (Heze inherits the Gloas body), so no measure remains in the body. The
+    churn sum binds only in the churn branch, `available_for_processing -
+    processed_amount` forms only after the churn stop, every other exit resets
+    `deposit_balance_to_consume` to `0`, and the Fulu `.listFull` raise still precedes
+    the churn write. New `Tests/PendingDepositsScanPins`: 8 examples pairing every
+    decision point (churn stop vs exact fit, finalized-slot 81 vs 80, withdrawable 100
+    vs 101 with the postpone-after-tail order, Gloas 128 vs Fulu 64 budget); the
+    recorded `>` → `≥` / `<` → `≤` mutations make the matching pins fail.
+    `docs/CODING_STYLE.md` §1/§4/§5/§6 and the checklist now show the shipped form.
+    Common migration gate green; full minimal sweeps case-identical to 8.2 (0 diffs
+    across 8147/9958/10170 case ids); all mainnet `pending_deposits` vectors pass
+    (fulu 48, gloas 52, heze 55); coverage stays at 87 claims with both baselines and
+    the axiom table unchanged, README denominator 630→627 for the three removed
+    `ppdLoop` copies. Record: `mb/spec-arithmetic-implementation/stage-8.3.md`.*
+- [x] **8.4 Audit the whole scope again.** Review raw word operators, raw constructors,
   projections, `toPlainNat`, `toPlainInt`, `toCLInt`, `Nat` subtraction/division,
   defaulting reads, casts, and all
   temporary crossings. Give every remaining use a source or proof justification.
   This is a manual transition audit; automated enforcement remains deferred.
-- [ ] **8.5 Verify.** Run the common gate and full vector matrix.
+    *Done 2026-11-20 (WS-64, `b78fcf6`): closed with its five sub-stages — see the
+    8.4a1 (WS-63), 8.4a2 (WS-66), 8.4a3 (WS-68), 8.4a4 (WS-67) and 8.4b (WS-64)
+    records below. The closure statement's exception list (three open divergences:
+    `eth1DepositIndex` wrap, sync-committee `findIdx?` arm, `computeCommittee`
+    defaulting read) stays routed to the Epic Lead before the Stage 10 rollup.*
+  - [x] **8.4a1 Audit fork bodies: Fulu state-transition family.**
+    *Done 2026-11-20 (WS-63, `42bbd08`): the state-transition family audited
+    (Fulu `EpochProcessing`, `Transition`, `Operations`, `RegistryUpdates`,
+    `Registry`, `Rewards`, `Balances`, `Deposits`, `Accessors`, `Randao`;
+    `Forms.lean` and root `Fulu.lean` check-offs). Two bodies diverged from the
+    pinned text and are fixed: `processRegistryUpdates` ran three independent
+    `if`s where the pin is one `if`/`elif`/`elif` chain (a queue-eligible
+    validator also took the activation update; `current_epoch + 1` now binds in
+    the first branch), and `processSlashings` formed
+    `epoch + EPOCHS_PER_SLASHINGS_VECTOR // 2` above the loop where Python
+    forms it only under `validator.slashed` (it now binds inside the `slashed`
+    branch; the constant `// 2` stays above). Gloas and Heze inherit both bodies
+    with identical pinned text — no mirror edit. New
+    `Tests/TransitionFamilyAuditPins` (7 Fulu pins in pairs plus 1 Gloas pin for
+    the inherited body; slashings pins use a `SLOTS_PER_EPOCH = 1` preset
+    because the shipped presets cannot reach the `Epoch` range limit) and two
+    `PROOF_LEDGER` citations follow the moved body. Every remaining raw use
+    carries a recorded source/proof/structural justification (audit table in
+    the hand-off). Two findings stay open, routed not committed:
+    `eth1DepositIndex += 1` raw wrap (field retype lives in 8.4a3/8.4a4 files —
+    Epic Lead sequencing) and the sync-committee `findIdx? … | none => pure ()`
+    defaulting lookup where the pin raises `ValueError` (needs a new
+    `StateTransitionError` arm — 8.4b boundary scope).
+    `TEMPORARY CROSSING` grep empty; common gate green; minimal sweeps
+    case-identical to 8.3 (fulu 5318/2829, gloas 6760/3198, heze 6972/3198,
+    0 diff lines). Record:
+    `mb/spec-arithmetic-implementation/stage-8.4a1.md`.*
+  - [x] **8.4a2 Audit fork bodies: Fulu clock, sampling, and fork choice.**
+    *Done 2026-11-20 (WS-66, `140669b`): the 8.4a2 family audited (Fulu `Time`,
+    `Committees`, `ForkChoice`). Comment-only audit, behavior unchanged: every
+    remaining raw use carries a recorded structural/source/proof justification —
+    the swap-or-not shuffle `Nat` core and the `u32leBytes`/`uint64ToBytes` codec
+    feeds stay structural with source justification; the sampler balance
+    multiplications, committee arithmetic, clock helpers and store fields
+    (Stage 7 migration) re-checked; fork-choice fuel walks and `onTick`'s fuel
+    bound confirmed structural; `saturatingSub` sites are the spec's own
+    `saturating_sub`. New `Tests/ClockSamplingAuditPins` proves the eager
+    `onTickPerSlot` bind cannot raise at `UINT64_MAX` and that
+    `computeCommittee`'s `stop - start` never truncates; the index-alias
+    consumers (`CommitteeIndex`/`ColumnIndex`/`CellIndex`) are dispositioned.
+    One open finding handed to the Epic Lead rather than committed:
+    `computeCommittee` reads a defaulting `perm[start + j]!` where the pinned
+    `compute_shuffled_index` asserts — the fix is an `Except
+    StateTransitionError` signature change across 8.4a1's files and all three
+    forks (pre-existing, `incidents.md` 2026-11-18). For 8.4a4: the Gloas
+    `onTickPerSlot` eager bind and `children[0]!` restate the same shapes.
+    `TEMPORARY CROSSING` grep empty; common gate green; minimal sweeps
+    case-identical to 8.3 (0 diffs across 8147/9958/10170 case ids). Record:
+    `mb/spec-arithmetic-implementation/stage-8.4a2.md`.*
+  - [x] **8.4a3 Audit fork bodies: Fulu declarations, state, withdrawals, and constants.**
+    *Done 2026-11-20 (WS-68, `c86b970`): the 8.4a3 family audited (Fulu `Types`,
+    `State`, `Signing`, `Fork`, `Blocks`, `Withdrawals`, `Constants`,
+    `BlobParameters`, `Containers/`). One unjustified raw construction fixed: the
+    seven preset views in `Constants.lean` moved from `trustedOfUInt64
+    (UInt64.ofNat n)` — which wraps `2^64` to `0` before the wrapper sees it, and
+    the pinned module raises at load — to `CLUint64.ofNatLT` over seven new preset
+    `…Lt` premises, proved by `decide` for both value sets; Gloas and Heze inherit
+    the premises through the preset merge with no edit. New
+    `Tests/FuluDeclarationsAuditPins` (premise boundary `2^64 - 1`/`2^64`, the old
+    wrap to `0` vs `ofNat?`'s range fault, a boundary child preset, and each view
+    against its `Nat` field at both presets in Fulu, Gloas, Heze);
+    `Tests/PlainArithmeticPins.lean` preset overrides re-prove the new premises
+    (mechanical, no assertion changed). All remaining raw uses carry recorded
+    data-only/structural/justified dispositions; the §8 raw aliases
+    (`WithdrawalIndex`, `BuilderIndex`, `CommitteeIndex`) and the
+    `Withdrawals.lean` cursor arithmetic confirmed closed. Five items handed to
+    the Epic Lead / Stage 9 rather than committed (processDeposit raw wrap,
+    dead `maxEffectiveBalanceElectra` twin, `inactivityScores` rename, baked-in
+    preset literals, Stage 9 docstring). `TEMPORARY CROSSING` grep empty; common
+    gate green; minimal sweeps case-identical to 8.3 (0 diff lines). Record:
+    `mb/spec-arithmetic-implementation/stage-8.4a3.md`.*
+  - [x] **8.4a4 Audit fork bodies: Gloas and Heze.**
+    *Done 2026-11-20 (WS-67, `307d8f6`): the Gloas and Heze trees audited
+    (`Gloas/`, `Heze/` except the `Interface.lean` files, which are 8.4b's).
+    One fixed fault order: the payload-availability pins read
+    `store.blocks[root].slot + 1 == get_current_slot(store)` with the clock
+    bound first, so a zero `SLOT_DURATION_MS` surfaced `.zeroDivision` where
+    the pinned Python raises the range fault from the add — the checked add
+    now binds before the clock in `Gloas/ForkChoice.lean`
+    (`isPreviousSlotPayloadDecision`, `shouldExtendPayload`) and
+    `Heze/ForkChoice.lean` (`shouldExtendPayload`), pinned by the new
+    `Tests/GloasHezeAuditPins.lean` (6 `#guard`s plus the `.arithmetic` /
+    `.zeroDivision` pair); `Proofs/Heze/ShouldExtendPayload.lean` restated
+    (`.run` equation re-ordered, the overflow corollary drops its clock
+    premise, the clock corollary gains the no-overflow premise;
+    `PROOF_LEDGER` row and `IMPLEMENTATION_NOTES` follow). Every 8.4a1/8.4a2/
+    8.4a3 fix is confirmed mirrored in Gloas/Heze by `inherit` replay (the
+    registry `if`/`elif` chain, the slashings sum, the preset `…C` views with
+    no restatement, 8.4a2's comment-only shapes). Every remaining raw use
+    carries a recorded source/proof/structural justification — the
+    Gloas-specific bodies (builder payments and quorum, PTC window, payload
+    availability, withdrawals sweeps, `CommitteeIndex` comparisons)
+    dispositioned against the pin, with four new justification comments
+    (`builderPaymentIndex`, the omitted `ValidatorIndex`/`BuilderIndex` casts
+    over progressive lists, the eager `isAttestationSameSlot` bind). Four
+    items handed to the Epic Lead / 8.4b rather than committed (the
+    `ptcWindow` length literal, the 8.4a3 follow-ups, the inherited
+    `processSyncAggregate`/`computeCommittee` gaps, a framework lemma for the
+    omitted index casts); the reviewer's non-blocking note on the
+    pre-existing `GloasCommitteesPins.lean:91` defaulting read is routed to
+    8.4b. `TEMPORARY CROSSING` grep empty; common gate green; vectors
+    case-identical to 8.3 (minimal 0 diff lines across 8147/9958/10170 case
+    ids; no vector reaches the fixed order — it needs a zero
+    `SLOT_DURATION_MS`). Record:
+    `mb/spec-arithmetic-implementation/stage-8.4a4.md`.*
+  - [x] **8.4b Audit the whole scope again: boundaries and closure.**
+    *Done 2026-11-20 (WS-64, `b78fcf6`): the runner/interface boundaries (the three
+    `Interface.lean` files, the runner tick and check-assert conversions) and the
+    framework side (codec width conversions, the Crypto seam, `MerklePath.routeRight`)
+    audited — every site carries a recorded disposition; no spec raise hides at the
+    boundary. One pin fix: the `GloasCommitteesPins.lean` `pinSamplerCounterOverflow`
+    third case fed `effBals = #[]`, so the array panic-default fired before the expected
+    `.arithmetic` throw; it now feeds the well-formed arrays its docstring claims, same
+    `.arithmetic` outcome, no body change. Non-spec-arith zones (`Loop.lean` fuel,
+    `counterBudgetUInt64`) confirmed out; `TEMPORARY CROSSING` grep empty; closure sweep
+    of the Stage 0 inventory §1–§8 green; common gate green; minimal sweeps
+    case-identical to 8.4a4 (0 diff lines across 8147/9958/10170 case ids). Open items
+    carried to the Epic Lead / Stage 9 (the `eth1DepositIndex` retype sequencing, the
+    sync-committee `findIdx?` arm and `computeCommittee` defaulting read, deferred
+    Epic Lead items). Record: `mb/spec-arithmetic-implementation/stage-8.4b.md`.*
+- [x] **8.5 Verify.** Run the common gate and full vector matrix.
+    *Done 2026-11-20 (WS-65, `e3eec4c`): no source change — the gate and the
+    sequential full vector matrix found nothing to repair. Common gate green on
+    the integrated epic branch: `ethcl-test` 674 jobs, runners rebuilt
+    (`build-cli` 628), `lint`, `check-citations` 196 in 9 files,
+    `check-constants` 167 with the known 2 + 3 advisories, proof-coverage
+    update byte-identical then check 87 claims, `TEMPORARY CROSSING` grep empty,
+    smoke fulu 155/46, gloas 207/52, heze 209/52. Full matrix sequential, both
+    presets, three forks, case-identical to the recorded baselines: minimal
+    fulu 5318/2829, gloas 6760/3198, heze 6972/3198 (PASSED ids and skip groups
+    = 7.4; (outcome, id) sets = 8.4b at 8147/9958/10170 ids, 0 diffs); mainnet
+    fulu 859/115, gloas 1094/130, heze 1073/130 (= Stage 4 counts; first mainnet
+    per-case logs kept for Stage 10). Stage 8 build-cost anchor by the 7.4
+    method (12 cores, Lake default parallelism, sequential, no `.lake` at
+    start): cold 25m03.9s / 621 jobs, no-op 0.60s, incremental 5m59.9s, restore
+    6m02.4s. Record: `mb/spec-arithmetic-implementation/stage-8.5.md`.*
 
 **Done when:** every inventory row has implemented behavior and evidence; no consensus
 arithmetic site remains unreviewed because its module built without edits.

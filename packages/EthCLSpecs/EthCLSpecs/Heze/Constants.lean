@@ -106,7 +106,7 @@ inherit pendingPartialWithdrawalsLimit pendingConsolidationsLimit
 -- The preset's well-formedness premises.
 inherit slotsPerEpochPos slotsPerEpochLt slotsPerHistoricalRootPos
 inherit slotsPerHistoricalRootLt epochsPerHistoricalVectorPos
-inherit epochsPerHistoricalVectorLt
+inherit epochsPerHistoricalVectorLt shuffleRoundCountLe
 
 -- The derived checked and proved-total views of the entries above
 -- (`SPEC_ARITHMETIC.md` §4.2, §4.5). The replay binds each view to this fork's

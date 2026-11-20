@@ -107,8 +107,11 @@ forkdef processJustificationAndFinalization : StateTransition Unit := do
   else
     -- `fulu/minimal.py:1724-1734`: both index sets, then the three totals, in this order;
     -- each can raise `IndexError` on a registry read.
-    let prevIdx ← liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state))
-    let currIdx ← liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (currentEpochOf state))
+    -- `TIMELY_TARGET_FLAG_INDEX` is the pin's checked `Uint64(1)`; the flag-index
+    -- parameter is the pyspec's plain `int`, and the mask exponent reads the checked
+    -- constant through its plain value, so the call projects it (`SPEC_ARITHMETIC.md` §4.5).
+    let prevIdx ← liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex.toPlainNat (previousEpochOf state))
+    let currIdx ← liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex.toPlainNat (currentEpochOf state))
     let totalActive ← liftErr (getTotalActiveBalance state)
     let prevTotal ← liftErr (getTotalBalance state prevIdx)
     let currTotal ← liftErr (getTotalBalance state currIdx)
@@ -140,7 +143,7 @@ forkdef processInactivityUpdates : StateTransition Unit := do
     for vi in eligible do
       let matching ← match matchingTarget with
         | some m => pure m
-        | none => liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex
+        | none => liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex.toPlainNat
             (previousEpochOf state))
       matchingTarget := some matching
       -- The score is a checked `Gwei`: `saturating_sub` floors at zero (the
@@ -195,7 +198,9 @@ forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) :
         let rewardDelta ← rewardNumerator / (activeIncrements * Const.weightDenominator)
         let updatedReward ← previousReward + rewardDelta
         rewards ← liftErr (setAt rewards vi updatedReward)
-    else if flagIndex != Const.timelyHeadFlagIndex then
+    -- `flag_index != TIMELY_HEAD_FLAG_INDEX`: a plain `range` index against the checked
+    -- constant, a total value comparison at the pin, so the read is the plain projection.
+    else if flagIndex != Const.timelyHeadFlagIndex.toPlainNat then
       let previousPenalty ← liftErr (getAt penalties vi)
       let penaltyDelta ← baseReward * weight / Const.weightDenominator
       let updatedPenalty ← previousPenalty + penaltyDelta
@@ -213,7 +218,7 @@ forkdef getInactivityPenaltyDeltas (state : State) : Except StateTransitionError
   let validators := sszGet state validators
   let iscores := sszGet state inactivityScores
   let mut penalties := Array.replicate validators.size (0 : Gwei)
-  let matchingTarget ← getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state)
+  let matchingTarget ← getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex.toPlainNat (previousEpochOf state)
 
   for vi in ← getEligibleValidatorIndices state do
     if !matchingTarget.contains vi then
@@ -261,28 +266,33 @@ forkdef processRewardsAndPenalties : StateTransition Unit := do
 
 /-! ## Registry updates -/
 
-/-- `process_registry_updates` (Electra: activation-eligibility, ejections, and
-churn-unlimited activations in one pass). -/
+/-- `process_registry_updates` (`fulu/mainnet.py:1852-1868`; Electra: activation
+eligibility, ejections, and churn-unlimited activations in one pass). The pinned loop body
+is one `if` / `elif` / `elif` chain, so a validator takes at most one of the three
+updates. A queue-eligible validator therefore skips the ejection and activation tests,
+even when it also passes them (an `EJECTION_BALANCE` at or above
+`MIN_ACTIVATION_BALANCE`, or a finalized epoch at `FAR_FUTURE_EPOCH`). -/
 forkdef processRegistryUpdates : StateTransition Unit := do
   let currentEpoch := currentEpochOf (← get)
   let activationEpoch ← computeActivationExitEpoch currentEpoch
   let n := (sszGet (← get) validators).size
 
-  -- `validator.activation_eligibility_epoch = current_epoch + 1`: the checked `Epoch` add,
-  -- bound once where Python computes it (inside the loop body, per validator).
-  let nextEligibility ← currentEpoch + 1
   for idx in [0 : n] do
     let state ← get
+    -- `idx` enumerates the registry, which the loop never shrinks, so the read is in range.
     let validator := sszGet state validators[idx]!
     -- The two field writes go through the enumerated position, as the pyspec writes
     -- through the `validator` object; only the exit call casts `ValidatorIndex(index)`.
     if isEligibleForActivationQueue validator then
+      -- `validator.activation_eligibility_epoch = current_epoch + 1`: the checked `Epoch`
+      -- add, formed in this branch only, as Python forms it.
+      let nextEligibility ← currentEpoch + 1
       modifyState fun state => sszModify state validators[idx]! := fun validator =>
         { validator with activationEligibilityEpoch := nextEligibility }
-    if isActiveValidator validator currentEpoch && validator.effectiveBalance ≤ Const.ejectionBalanceG then
+    else if isActiveValidator validator currentEpoch && validator.effectiveBalance ≤ Const.ejectionBalanceG then
       let vi ← CLUint64.ofNat? idx
       initiateValidatorExit vi
-    if isEligibleForActivation state validator then
+    else if isEligibleForActivation state validator then
       modifyState fun state => sszModify state validators[idx]! := fun validator =>
         { validator with activationEpoch := activationEpoch }
 
@@ -302,109 +312,105 @@ forkdef processSlashings : StateTransition Unit := do
   let increment := Const.effectiveBalanceIncrementG
   let penaltyPerIncrement ← adjusted / (totalBalance / increment)
 
-  -- `epoch + EPOCHS_PER_SLASHINGS_VECTOR // 2`: the divisor is the checked constant, so the
-  -- half-ring sum is the checked `Epoch` chain, bound before the loop Python computes it in.
+  -- `EPOCHS_PER_SLASHINGS_VECTOR // 2`: a checked division by the literal `2`, which
+  -- never raises, so it binds once before the loop.
   let halfRing ← Const.epochsPerSlashingsVectorC / 2
-  let withdrawableBound ← epoch + halfRing
   let mut state := state
+  -- `index` enumerates the registry, which the loop never resizes, so the read is in range.
   for i in [0 : (sszGet state validators).size] do
     let validator := sszGet state validators[i]!
-    if validator.slashed && withdrawableBound == validator.withdrawableEpoch then
-      let increments ← validator.effectiveBalance / increment
-      let penalty ← penaltyPerIncrement * increments
-      -- `decrease_balance(state, ValidatorIndex(index), penalty)`: the checked cast.
-      let vi ← CLUint64.ofNat? i
-      state ← decreaseBalance state vi penalty
+    -- `validator.slashed and epoch + EPOCHS_PER_SLASHINGS_VECTOR // 2 == …`: Python's `and`
+    -- short-circuits, so the checked `Epoch` sum forms only for a slashed validator, and
+    -- binds inside that branch (`SPEC_ARITHMETIC.md` §4.3).
+    if validator.slashed then
+      let withdrawableBound ← epoch + halfRing
+      if withdrawableBound == validator.withdrawableEpoch then
+        let increments ← validator.effectiveBalance / increment
+        let penalty ← penaltyPerIncrement * increments
+        -- `decrease_balance(state, ValidatorIndex(index), penalty)`: the checked cast.
+        let vi ← CLUint64.ofNat? i
+        state ← decreaseBalance state vi penalty
   set state
 
 /-! ## Pending deposits (Electra deposit queue) -/
 
-/-- The running state of the pending-deposit scan, and its result. `ndi` is the spec's
-`next_deposit_index`: both the queue cursor and the count of dequeued deposits, since
-every step advances it or stops, so the two never diverge. `churnReached` is set only
-when the per-epoch churn limit halts the scan. -/
-forkstruct DepositScan where
-  ndi          : Nat := 0
-  processed    : Gwei := 0
-  postpone     : Array PendingDeposit := #[]
-  churnReached : Bool := false
+/-- `process_pending_deposits` (`fulu/mainnet.py:6098-6152`), one body in the pinned text's
+shape. The scan is a `for` over the pending-deposit array: the queue is finite, so the
+loop is structural and total, with no fuel or measure (`Array.forIn` recurses on the
+count of entries left). Python's `break` is Lean's `break`, so each stop reads where the
+spec writes it.
 
-/-- The deposit-queue scan, tail-recursive on `fuel = #deposits`. A deposit for a
-withdrawn validator applies without consuming churn; one for an exiting validator is
-postponed; otherwise it applies while it fits the per-epoch churn, and the scan stops
-(setting `churnReached`) once it does not. The not-finalized / per-epoch-limit stops leave
-`churnReached` false.
+A deposit for a withdrawn validator applies without consuming churn. A deposit for an
+exiting validator is postponed. Any other deposit applies while it fits the per-epoch
+churn, and the scan stops once it does not. Only that churn stop carries
+`available_for_processing - processed_amount` into `deposit_balance_to_consume`; the
+not-finalized and per-epoch-limit stops, and a scan that reaches the end, reset it to
+zero.
 
-Fulu's `process_pending_deposits` (`fulu/beacon-chain.md`, "Modified
-`process_pending_deposits`") drops Electra's eth1-bridge stop, because Fulu removes the former
-deposit mechanism (consensus-specs #4704, in the text since alpha.12). F1
-signature repair (inventory §2.5): `finalizedSlot` is the spec's
-`compute_start_slot_at_epoch(...)` value, a `Slot`; it keeps the raw `Slot` type
-until Stage 5. -/
-forkdef ppdLoop (deposits : Array PendingDeposit) (finalizedSlot : Slot) (avail : Gwei)
-    (nextEpoch : Epoch) :
-    StateTransition DepositScan :=
-  -- Fuel rather than a measure (§7.2): the scan stops on a data-dependent guard (churn
-  -- exhausted, a not-yet-finalized slot), not on a quantity that
-  -- decreases every step, so the terminating invariant is not available at definition time.
-  -- Fuel is `deposits.size + 1`: the `ndi ≥ deposits.size` guard returns `.done` one step
-  -- before exhaustion, so `fuelLoop`'s `exhausted` value is unreachable.
-  fuelLoop (deposits.size + 1) ({} : DepositScan) ({} : DepositScan) fun s => do
-    if s.ndi ≥ deposits.size then return .done s
-    let state ← get
-    let deposit := deposits[s.ndi]!
-
-    -- Stop the scan early: the deposit is not finalized, or this epoch's deposit cap is
-    -- reached.
-    if deposit.slot > finalizedSlot then return .done s
-    if s.ndi ≥ Const.maxPendingDepositsPerEpoch then return .done s
-
-    -- Advance past this deposit, carrying the running churn and postpone list forward.
-    let advance (processed : Gwei) (postpone : Array PendingDeposit) : Step DepositScan DepositScan :=
-      .next { s with ndi := s.ndi + 1, processed, postpone }
-
-    -- Read the deposit's validator once, if its pubkey is known, and derive the two flags
-    -- the spec branches on. An unknown pubkey leaves both false, so it falls through to the
-    -- churn check.
-    let (isWithdrawn, isExited) := match validatorIndexByPubkey? state deposit.pubkey with
-      | some vi =>
-        let v := sszGet state validators[vi]!
-        (decide (v.withdrawableEpoch < nextEpoch), decide (v.exitEpoch < Const.farFutureEpoch))
-      | none => (false, false)
-
-    if isWithdrawn then applyPendingDeposit deposit; return advance s.processed s.postpone
-    else if isExited then return advance s.processed (s.postpone.push deposit)
-    else
-      -- `is_churn_limit_reached = processed_amount + deposit.amount >
-      -- available_for_processing`: the sum is the checked `Gwei` add, bound inside
-      -- the branch that forms it.
-      let running ← s.processed + deposit.amount
-      if running > avail then return .done { s with churnReached := true }
-      else
-        applyPendingDeposit deposit
-        return advance running s.postpone
-
-/-- `process_pending_deposits`. Churn is accumulated into `deposit_balance_to_consume`
-only when the churn limit was actually hit; every other stop resets it to zero. -/
+Fulu drops Electra's eth1-bridge stop, because Fulu removes the former deposit
+mechanism (consensus-specs #4704, in the text since alpha.12). `next_deposit_index` is
+a plain Python `int` counter that also slices the queue, so it stays a structural
+`Nat`. -/
 forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
   let nextEpoch ← currentEpochOf state + 1
-  -- `available_for_processing = deposit_balance_to_consume +
-  -- get_activation_exit_churn_limit(state)`: the checked `Gwei` add, bound here.
-  let churn ← liftErr (getActivationExitChurnLimit state)
-  let avail ← (sszGet state depositBalanceToConsume) + churn
+  let availableForProcessing ←
+    (sszGet state depositBalanceToConsume) + (← liftErr (getActivationExitChurnLimit state))
+  let mut processedAmount : Gwei := 0
+  let mut nextDepositIndex := 0
+  let mut depositsToPostpone : Array PendingDeposit := #[]
+  let mut isChurnLimitReached := false
   let finalizedSlot ← computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
-  let deposits := (sszGet state pendingDeposits).toArray
+  let pendingDeposits := (sszGet state pendingDeposits).toArray
 
-  let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
+  for deposit in pendingDeposits do
+    -- Check if deposit has been finalized, otherwise, stop processing.
+    if deposit.slot > finalizedSlot then break
+    -- Check if number of processed deposits has not reached the limit, otherwise, stop
+    -- processing.
+    if nextDepositIndex ≥ Const.maxPendingDepositsPerEpoch then break
+
+    -- Read validator state. `apply_pending_deposit` can add a validator, so each
+    -- deposit reads the current registry. An unknown pubkey leaves both flags false.
+    let state ← get
+    let (isValidatorExited, isValidatorWithdrawn) :=
+      match validatorIndexByPubkey? state deposit.pubkey with
+      | some vi =>
+        let validator := sszGet state validators[vi]!
+        (decide (validator.exitEpoch < Const.farFutureEpoch),
+          decide (validator.withdrawableEpoch < nextEpoch))
+      | none => (false, false)
+
+    if isValidatorWithdrawn then
+      -- Deposited balance will never become active. Increase balance but do not consume
+      -- churn.
+      applyPendingDeposit deposit
+    else if isValidatorExited then
+      -- Validator is exiting, postpone the deposit until after withdrawable epoch.
+      depositsToPostpone := depositsToPostpone.push deposit
+    else
+      -- Check if deposit fits in the churn, otherwise, do no more deposit processing in
+      -- this epoch. The sum is the checked `Gwei` add, formed only in this branch.
+      isChurnLimitReached := (← processedAmount + deposit.amount) > availableForProcessing
+      if isChurnLimitReached then break
+      -- Consume churn and apply deposit.
+      processedAmount ← processedAmount + deposit.amount
+      applyPendingDeposit deposit
+
+    -- Regardless of how the deposit was handled, we move on in the queue.
+    nextDepositIndex := nextDepositIndex + 1
+
+  -- `pending_deposits[next_deposit_index:] + deposits_to_postpone`, then the
+  -- `PENDING_DEPOSITS_LIMIT` cap, which raises `.listFull` before the churn write.
   let remaining : SSZList PendingDeposit Const.pendingDepositsLimit ←
-    sszOfArrayM "pendingDeposits" (deposits.extract scan.ndi deposits.size ++ scan.postpone)
-  -- `available_for_processing - processed_amount` forms only in the churn-hit
-  -- branch (the reset arm stores `Gwei(0)`), so the bind sits in its branch.
-  let remainingChurn ← if scan.churnReached then avail - scan.processed else pure (0 : Gwei)
+    sszOfArrayM "pendingDeposits" (pendingDeposits.extract nextDepositIndex ++ depositsToPostpone)
+  -- Accumulate churn only if the churn limit has been hit. The checked subtraction forms
+  -- only in that branch, as Python's does.
+  let depositBalance : Gwei ←
+    if isChurnLimitReached then availableForProcessing - processedAmount else pure 0
   modifyState fun state => sszUpdate state with
     pendingDeposits := remaining,
-    depositBalanceToConsume := if scan.churnReached then remainingChurn else 0
+    depositBalanceToConsume := depositBalance
 
 /-! ## Pending consolidations -/
 

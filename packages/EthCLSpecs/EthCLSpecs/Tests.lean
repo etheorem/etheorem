@@ -1,23 +1,30 @@
 import EthCLSpecs.Tests.AuthoringShapes
 import EthCLSpecs.Tests.BoxBinderPins
 import EthCLSpecs.Tests.ClockMigrationPins
+import EthCLSpecs.Tests.ClockSamplingAuditPins
 import EthCLSpecs.Tests.CommitteeCoverageOrderPins
 import EthCLSpecs.Tests.ConfigurationClockPins
 import EthCLSpecs.Tests.ConstantAuditPins
 import EthCLSpecs.Tests.ConstantViews
 import EthCLSpecs.Tests.DeadlineMigrationPins
 import EthCLSpecs.Tests.EpochMigrationPins
+import EthCLSpecs.Tests.FuluDeclarationsAuditPins
 import EthCLSpecs.Tests.FuluForkChoicePins
 import EthCLSpecs.Tests.GloasCommitteesPins
 import EthCLSpecs.Tests.GloasForkChoicePins
+import EthCLSpecs.Tests.GloasHezeAuditPins
 import EthCLSpecs.Tests.GloasSlotMigrationPins
 import EthCLSpecs.Tests.HezeCommitteesPins
 import EthCLSpecs.Tests.HezeForkChoicePins
 import EthCLSpecs.Tests.IndexMigrationPins
+import EthCLSpecs.Tests.ParticipationFlagsMigrationPins
+import EthCLSpecs.Tests.PendingDepositsScanPins
 import EthCLSpecs.Tests.PlainArithmeticPins
 import EthCLSpecs.Tests.SlotMigrationPins
+import EthCLSpecs.Tests.TransitionFamilyAuditPins
 import EthCLSpecs.Tests.ValidatorIndexMigrationPins
 import EthCLSpecs.Tests.WalkingSkeleton
+import EthCLSpecs.Tests.WidthCastPins
 
 /-!
 # `EthCLSpecs.Tests`: Lean-internal spec self-tests

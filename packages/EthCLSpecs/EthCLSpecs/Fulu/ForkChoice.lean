@@ -320,6 +320,7 @@ forkdef getHead (store : Store map) : StoreTransition Root := do
     let children := (getNodeChildren store head).filter nodes.contains
     if children.isEmpty then pure (.done head)
     else
+      -- `children[0]!` is structural: this branch runs only for a nonempty `children`.
       let best ← children.foldlM (init := children[0]!) (betterOf store)
       pure (.next best)
 where
@@ -540,7 +541,9 @@ forkdef onTickPerSlot (store : Store map) (timeMs : CLUint64) : StoreTransition 
   -- `slot - compute_start_slot_at_epoch(compute_epoch_at_slot(slot))`, Python's
   -- `compute_slots_since_epoch_start`: the epoch-start slot is always `≤ slot`, so the
   -- subtraction cannot underflow (still the checked bind, the pyspec's form); the start
-  -- slot's checked product binds here.
+  -- slot's checked product binds here. Python's `and` forms this value only on a new slot.
+  -- The bind sits above that branch, which is safe because neither step can raise: the start
+  -- slot `(slot // SLOTS_PER_EPOCH) * SLOTS_PER_EPOCH` is at most `slot < 2^64`.
   let startSlot ← computeStartSlotAtEpoch (computeEpochAtSlot currentSlot)
   let sinceEpochStart ← currentSlot - startSlot
   pure <| if currentSlot > previousSlot && sinceEpochStart == 0 then
@@ -643,7 +646,8 @@ forkdef verifyDataColumnSidecar (sidecar : DataColumnSidecar) : Bool :=
   let ncomm := sidecar.kzgCommitments.size
   let epoch := computeEpochAtSlot sidecar.signedBlockHeader.message.slot
   -- `sidecar.index >= NUMBER_OF_COLUMNS`: a comparison, which never raises. `toPlainNat`
-  -- because `NUMBER_OF_COLUMNS` is still the `Nat` preset value (Stage 7 config views).
+  -- because `NUMBER_OF_COLUMNS` is the structural `Nat` preset value. The pin has it as
+  -- `Uint64(128)`, and the comparison of two exact values gives the same answer.
   if sidecar.index.toPlainNat ≥ Const.numberOfColumns then false
   else if ncomm == 0 then false
   else if len sidecar.kzgCommitments > (getBlobParameters epoch).maxBlobsPerBlock then false

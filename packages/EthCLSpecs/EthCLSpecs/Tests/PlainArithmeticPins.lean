@@ -108,8 +108,9 @@ private def fuluState (P : Preset) (n : Nat) (eb : Gwei := 32000000000) (active 
 
 /-! ### 2. `get_committee_count_per_slot` -/
 
-/-- The minimal preset with `TARGET_COMMITTEE_SIZE` replaced. -/
-@[reducible] private def targetSize (t : Nat) : Preset := { minimal with targetCommitteeSize := t }
+/-- The minimal preset with `TARGET_COMMITTEE_SIZE` replaced, its range premise re-proved. -/
+@[reducible] private def targetSize (t : Nat) (h : t < 2 ^ 64 := by decide) : Preset :=
+  { minimal with targetCommitteeSize := t, targetCommitteeSizeLt := h }
 
 /-- The count at epoch `0` over `n` active validators, read back as a `Nat`. -/
 private def countOf (P : Preset) (n : Nat) : Except ArithFault Nat :=
@@ -162,9 +163,10 @@ private def fuluExpected (P : Preset) (n : Nat) :
   | .ok (ws, _) _ => .ok (ws.toList.map fun w => (w.index.toPlainNat, w.validatorIndex.toPlainNat))
   | .error e _ => .error e
 
-/-- The minimal preset with `MAX_WITHDRAWALS_PER_PAYLOAD` replaced. -/
-@[reducible] private def maxWithdrawals (m : Nat) : Preset :=
-  { minimal with maxWithdrawalsPerPayload := m }
+/-- The minimal preset with `MAX_WITHDRAWALS_PER_PAYLOAD` replaced, its range premise
+re-proved. -/
+@[reducible] private def maxWithdrawals (m : Nat) (h : m < 2 ^ 64 := by decide) : Preset :=
+  { minimal with maxWithdrawalsPerPayload := m, maxWithdrawalsPerPayloadLt := h }
 
 /-- `MAX_WITHDRAWALS_PER_PAYLOAD = 0`: the pending-partials limit's `Uint64` subtraction
 `MAX_WITHDRAWALS_PER_PAYLOAD - 1` raises (`SSZValueError` at the pin). The old `Nat`
@@ -300,7 +302,9 @@ private def eth1Adopted (P : Preset) : Except StateTransitionError Nat :=
 (`SSZValueError` at the pin). The old `Nat` product never raised, and the vote stayed
 unadopted. -/
 private def pinEth1PeriodProductRaises : Bool :=
-  match eth1Adopted { minimal with epochsPerEth1VotingPeriod := 2305843009213693952 } with
+  match eth1Adopted { minimal with
+      epochsPerEth1VotingPeriod := 2305843009213693952,
+      epochsPerEth1VotingPeriodLt := by decide } with
   | .error (.arithmetic _) => true
   | _ => false
 example : pinEth1PeriodProductRaises = true := by native_decide
@@ -309,10 +313,13 @@ example : pinEth1PeriodProductRaises = true := by native_decide
 one slot per epoch and a one-epoch period, one vote doubles past the product of `1` and is
 adopted. -/
 example :
-    (okIs (eth1Adopted { minimal with epochsPerEth1VotingPeriod := 2305843009213693951 }) 0 &&
+    (okIs (eth1Adopted { minimal with
+       epochsPerEth1VotingPeriod := 2305843009213693951,
+       epochsPerEth1VotingPeriodLt := by decide }) 0 &&
      okIs (eth1Adopted { minimal with
-       epochsPerEth1VotingPeriod := 1, slotsPerEpoch := 1,
-       slotsPerEpochPos := by decide, slotsPerEpochLt := by decide }) 7) = true := by
+       epochsPerEth1VotingPeriod := 1, epochsPerEth1VotingPeriodLt := by decide,
+       slotsPerEpoch := 1, slotsPerEpochPos := by decide, slotsPerEpochLt := by decide }) 7)
+      = true := by
   native_decide
 
 /-! ### 8. `get_blob_parameters` -/
@@ -410,14 +417,17 @@ private def builderWithdrawals (P : Preset) : Except StateTransitionError Nat :=
 /-- `MAX_WITHDRAWALS_PER_PAYLOAD = 0`: `withdrawals_limit = MAX_WITHDRAWALS_PER_PAYLOAD - 1`
 raises (`SSZValueError` at the pin). The old `Nat` subtraction floored at `0`. -/
 private def pinGloasBuilderLimitRaises : Bool :=
-  match builderWithdrawals { minimal with maxWithdrawalsPerPayload := 0 } with
+  match builderWithdrawals
+      { minimal with maxWithdrawalsPerPayload := 0, maxWithdrawalsPerPayloadLt := by decide } with
   | .error (.arithmetic _) => true
   | _ => false
 example : pinGloasBuilderLimitRaises = true := by native_decide
 
 /-- `MAX_WITHDRAWALS_PER_PAYLOAD = 1`: the limit is `0`, and the empty builder queue
 yields no withdrawal. -/
-example : okIs (builderWithdrawals { minimal with maxWithdrawalsPerPayload := 1 }) 0 = true := by
+example : okIs (builderWithdrawals
+    { minimal with maxWithdrawalsPerPayload := 1, maxWithdrawalsPerPayloadLt := by decide }) 0
+    = true := by
   native_decide
 
 /-! ### 9. `get_next_sync_committee_indices` (Gloas) -/

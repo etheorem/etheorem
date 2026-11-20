@@ -137,6 +137,21 @@ forkpreset where
   slotsPerHistoricalRootLt : slotsPerHistoricalRoot < 2 ^ 64
   epochsPerHistoricalVectorPos : 0 < epochsPerHistoricalVector
   epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64
+  -- The shuffle's round byte: `compute_shuffled_permutation` casts each round index
+  -- `Uint8(current_round)`, which raises past `2 ^ 8 - 1`. Every round index lies below
+  -- `shuffleRoundCount`, so this bound makes that cast total (`computeShuffledPermutation`).
+  shuffleRoundCountLe : shuffleRoundCount ≤ 2 ^ 8
+  -- The range premises of the counts whose checked views below the plain-integer and
+  -- `Epoch` formulas read. The pinned module types each `Epoch` or `Uint64`, so a value past
+  -- `2 ^ 64 - 1` raises when the module loads, and no pyspec runs on such a preset. Each
+  -- premise rules that preset out here too, so the view is the proof-carrying `ofNatLT`.
+  epochsPerSlashingsVectorLt : epochsPerSlashingsVector < 2 ^ 64
+  epochsPerEth1VotingPeriodLt : epochsPerEth1VotingPeriod < 2 ^ 64
+  epochsPerSyncCommitteePeriodLt : epochsPerSyncCommitteePeriod < 2 ^ 64
+  maxCommitteesPerSlotLt : maxCommitteesPerSlot < 2 ^ 64
+  targetCommitteeSizeLt : targetCommitteeSize < 2 ^ 64
+  maxWithdrawalsPerPayloadLt : maxWithdrawalsPerPayload < 2 ^ 64
+  maxPendingPartialsPerWithdrawalsSweepLt : maxPendingPartialsPerWithdrawalsSweep < 2 ^ 64
 
 /-- The config-tier values (network parameters). Threaded `[Config]`; never
 shapes a type. Membership follows `configs/{minimal,mainnet}.yaml` the same way
@@ -231,6 +246,8 @@ forkabbrev slotsPerHistoricalRootPos : 0 < slotsPerHistoricalRoot := Preset.slot
 forkabbrev slotsPerHistoricalRootLt : slotsPerHistoricalRoot < 2 ^ 64 := Preset.slotsPerHistoricalRootLt
 forkabbrev epochsPerHistoricalVectorPos : 0 < epochsPerHistoricalVector := Preset.epochsPerHistoricalVectorPos
 forkabbrev epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64 := Preset.epochsPerHistoricalVectorLt
+/-- Every shuffle round index fits the pyspec's `Uint8(current_round)` cast. -/
+forkabbrev shuffleRoundCountLe : shuffleRoundCount ≤ 2 ^ 8 := Preset.shuffleRoundCountLe
 
 -- The derived views of `slotsPerEpoch`, the divisor every Stage 4 / 5 epoch
 -- formula divides by. Each view stores nothing: its body projects the preset's
@@ -267,36 +284,36 @@ forkabbrev slotsPerHistoricalRootDiv : PositiveDivisor :=
 checked constants stay checked). Each stores nothing: the body projects the
 preset's own field, so a child override re-proves through the same fields, and
 the type-level `Nat` sizes above stay structural for the type-level caps.
-`epochsPerHistoricalVectorC` carries the preset's own `< 2 ^ 64` premise; the
-other three periods have no preset proof field, so their views ride the wire iso
-(§4.5, `trustedOfUInt64`): every `UInt64` is in range, so the wrap cannot fault.
-These views are permanent, not crossings: the `Nat` fields stay the structural
-sizes the type-level caps read, and the `…C` twin is their checked face. -/
+Each view is the proof-carrying `ofNatLT` (§4.5) over the preset's own `< 2 ^ 64`
+premise, so a preset value past `2 ^ 64 - 1` cannot be built, where `UInt64.ofNat`
+would wrap it. These views are permanent, not crossings: the `Nat` fields stay the
+structural sizes the type-level caps read, and the `…C` twin is their checked face. -/
 forkabbrev epochsPerHistoricalVectorC : CLUint64 :=
   CLUint64.ofNatLT Preset.epochsPerHistoricalVector Preset.epochsPerHistoricalVectorLt
 forkabbrev epochsPerSlashingsVectorC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.epochsPerSlashingsVector)
+  CLUint64.ofNatLT Preset.epochsPerSlashingsVector Preset.epochsPerSlashingsVectorLt
 forkabbrev epochsPerEth1VotingPeriodC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.epochsPerEth1VotingPeriod)
+  CLUint64.ofNatLT Preset.epochsPerEth1VotingPeriod Preset.epochsPerEth1VotingPeriodLt
 forkabbrev epochsPerSyncCommitteePeriodC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.epochsPerSyncCommitteePeriod)
+  CLUint64.ofNatLT Preset.epochsPerSyncCommitteePeriod Preset.epochsPerSyncCommitteePeriodLt
 
 /-- The checked views of the preset counts that the plain-integer formulas meet
 as `Uint64` operands (`SPEC_ARITHMETIC.md` §4.2, checked constants stay checked):
 `get_committee_count_per_slot`'s `min` and divisor, and the withdrawal sweeps'
 `MAX_WITHDRAWALS_PER_PAYLOAD - 1` and `len(prior) + MAX_PENDING_PARTIALS_…` limits.
-The pinned module types all four `Uint64`. Same construction as the three period
-views above: no preset proof field bounds them, so each rides the wire iso
-(§4.5, `trustedOfUInt64`). A zero value keeps its checked behavior: the divisor
-route raises `ZeroDivisionError` and `0 - 1` raises the range fault. -/
+The pinned module types all four `Uint64`. Same construction as the period views
+above: each is the proof-carrying `ofNatLT` over the preset's own `< 2 ^ 64` premise.
+A zero value keeps its checked behavior: the divisor route raises
+`ZeroDivisionError` and `0 - 1` raises the range fault. -/
 forkabbrev maxCommitteesPerSlotC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.maxCommitteesPerSlot)
+  CLUint64.ofNatLT Preset.maxCommitteesPerSlot Preset.maxCommitteesPerSlotLt
 forkabbrev targetCommitteeSizeC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.targetCommitteeSize)
+  CLUint64.ofNatLT Preset.targetCommitteeSize Preset.targetCommitteeSizeLt
 forkabbrev maxWithdrawalsPerPayloadC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.maxWithdrawalsPerPayload)
+  CLUint64.ofNatLT Preset.maxWithdrawalsPerPayload Preset.maxWithdrawalsPerPayloadLt
 forkabbrev maxPendingPartialsPerWithdrawalsSweepC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.maxPendingPartialsPerWithdrawalsSweep)
+  CLUint64.ofNatLT Preset.maxPendingPartialsPerWithdrawalsSweep
+    Preset.maxPendingPartialsPerWithdrawalsSweepLt
 
 -- Sentinels, registry and history caps.
 forkabbrev farFutureEpoch : Epoch := 0xffffffffffffffff
@@ -375,17 +392,35 @@ forkabbrev minAttestationInclusionDelay : Slot := Preset.minAttestationInclusion
 forkabbrev minEpochsToInactivityPenalty : Epoch := Preset.minEpochsToInactivityPenalty
 -- reward / penalty weights + quotients (Nat)
 forkabbrev baseRewardFactor : Nat := Preset.baseRewardFactor
-forkabbrev weightDenominator : Nat := 64
-forkabbrev proposerWeight : Nat := 8
-forkabbrev syncRewardWeight : Nat := 2
-forkabbrev timelySourceWeight : Nat := 14
-forkabbrev timelyTargetWeight : Nat := 26
-forkabbrev timelyHeadWeight : Nat := 14
-forkabbrev timelySourceFlagIndex : Nat := 0
-forkabbrev timelyTargetFlagIndex : Nat := 1
-forkabbrev timelyHeadFlagIndex : Nat := 2
-/-- `[TIMELY_SOURCE, TIMELY_TARGET, TIMELY_HEAD]` flag weights, in index order. -/
-forkabbrev participationFlagWeights : List Nat := [timelySourceWeight, timelyTargetWeight, timelyHeadWeight]
+/-- `WEIGHT_DENOMINATOR`, the checked kind: the pin's `Uint64(64)` (constants table,
+altair). Every consumer divides a checked `Gwei` chain by it (`get_flag_index_deltas`,
+`process_sync_aggregate`, the proposer share of `slash_validator`). -/
+forkabbrev weightDenominator : CLUint64 := 64
+/-- `PROPOSER_WEIGHT`, the checked kind: the pin's `Uint64(8)`. -/
+forkabbrev proposerWeight : CLUint64 := 8
+/-- `SYNC_REWARD_WEIGHT`, the checked kind: the pin's `Uint64(2)`. -/
+forkabbrev syncRewardWeight : CLUint64 := 2
+/-- `TIMELY_SOURCE_WEIGHT`, the checked kind: the pin's `Uint64(14)`. -/
+forkabbrev timelySourceWeight : CLUint64 := 14
+/-- `TIMELY_TARGET_WEIGHT`, the checked kind: the pin's `Uint64(26)`. -/
+forkabbrev timelyTargetWeight : CLUint64 := 26
+/-- `TIMELY_HEAD_WEIGHT`, the checked kind: the pin's `Uint64(14)`. -/
+forkabbrev timelyHeadWeight : CLUint64 := 14
+/-- The participation-flag indices, the checked kind: the pin's `Uint64(0)` /
+`Uint64(1)` / `Uint64(2)` (constants table, altair). Their pinned uses never compute on
+the checked value: the mask exponent `2**flag_index` evaluates through the plain value
+(`BaseUint.__rpow__` narrows both sides to `int` before the wrap), the `in` / `!=`
+consumers are total value comparisons, and the flags list only ever carries them
+(`SPEC_ARITHMETIC.md` §4.5). -/
+forkabbrev timelySourceFlagIndex : CLUint64 := 0
+/-- `TIMELY_TARGET_FLAG_INDEX`, the checked kind: the pin's `Uint64(1)`. -/
+forkabbrev timelyTargetFlagIndex : CLUint64 := 1
+/-- `TIMELY_HEAD_FLAG_INDEX`, the checked kind: the pin's `Uint64(2)`. -/
+forkabbrev timelyHeadFlagIndex : CLUint64 := 2
+/-- `[TIMELY_SOURCE, TIMELY_TARGET, TIMELY_HEAD]` flag weights, in index order. The
+pin's list holds the checked `Uint64` weights (`PARTICIPATION_FLAG_WEIGHTS =
+[TIMELY_SOURCE_WEIGHT, ...]`), and every consumer multiplies a `Gwei` by an element. -/
+forkabbrev participationFlagWeights : List CLUint64 := [timelySourceWeight, timelyTargetWeight, timelyHeadWeight]
 forkabbrev minSlashingPenaltyQuotientElectra : Nat := Preset.minSlashingPenaltyQuotientElectra
 forkabbrev whistleblowerRewardQuotientElectra : Nat := Preset.whistleblowerRewardQuotientElectra
 forkabbrev proportionalSlashingMultiplierBellatrix : Nat := Preset.proportionalSlashingMultiplierBellatrix
@@ -403,11 +438,14 @@ forkabbrev hysteresisQuotient : Nat := Preset.hysteresisQuotient
 forkabbrev hysteresisDownwardMultiplier : Nat := Preset.hysteresisDownwardMultiplier
 forkabbrev hysteresisUpwardMultiplier : Nat := Preset.hysteresisUpwardMultiplier
 forkabbrev maxRandomValue : Nat := 65535
--- withdrawal-credential prefixes
+-- Withdrawal-credential prefixes. Each is a `Bytes1` at the pin, byte data: every consumer
+-- compares it with `withdrawal_credentials[:1]` or writes it into the credentials, so the
+-- byte never enters spec arithmetic.
 forkabbrev blsWithdrawalPrefix : UInt8 := 0x00
 forkabbrev eth1AddressWithdrawalPrefix : UInt8 := 0x01
 forkabbrev compoundingWithdrawalPrefix : UInt8 := 0x02
--- BLS domain-type tags (4-byte prefixes, as ByteArrays for hashing)
+-- BLS domain-type tags (4-byte prefixes, as ByteArrays for hashing). `DomainType` at the pin:
+-- byte data that only feeds `compute_domain` and `get_seed`.
 forkabbrev domainBeaconProposer : ByteArray := ⟨#[0, 0, 0, 0]⟩
 forkabbrev domainBeaconAttester : ByteArray := ⟨#[1, 0, 0, 0]⟩
 forkabbrev domainRandao : ByteArray := ⟨#[2, 0, 0, 0]⟩
@@ -564,6 +602,14 @@ forkpresetvalues minimal where
   slotsPerHistoricalRootLt := by decide
   epochsPerHistoricalVectorPos := by decide
   epochsPerHistoricalVectorLt := by decide
+  shuffleRoundCountLe := by decide
+  epochsPerSlashingsVectorLt := by decide
+  epochsPerEth1VotingPeriodLt := by decide
+  epochsPerSyncCommitteePeriodLt := by decide
+  maxCommitteesPerSlotLt := by decide
+  targetCommitteeSizeLt := by decide
+  maxWithdrawalsPerPayloadLt := by decide
+  maxPendingPartialsPerWithdrawalsSweepLt := by decide
 
 /-- The `mainnet` preset. -/
 forkpresetvalues mainnet where
@@ -638,6 +684,14 @@ forkpresetvalues mainnet where
   slotsPerHistoricalRootLt := by decide
   epochsPerHistoricalVectorPos := by decide
   epochsPerHistoricalVectorLt := by decide
+  shuffleRoundCountLe := by decide
+  epochsPerSlashingsVectorLt := by decide
+  epochsPerEth1VotingPeriodLt := by decide
+  epochsPerSyncCommitteePeriodLt := by decide
+  maxCommitteesPerSlotLt := by decide
+  targetCommitteeSizeLt := by decide
+  maxWithdrawalsPerPayloadLt := by decide
+  maxPendingPartialsPerWithdrawalsSweepLt := by decide
 
 /-- The `minimal` config. -/
 forkconfigvalues minimalConfig where
