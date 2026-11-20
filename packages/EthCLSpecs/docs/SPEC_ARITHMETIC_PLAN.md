@@ -566,9 +566,28 @@ time arithmetic is accounted for, and the remaining constant inventory is empty.
     rounds plus the Heze replay. Common migration gate green; minimal sweeps
     case-identical to 8.1 (fulu 5318/2829, gloas 6760/3198, heze 6972/3198). Record:
     `mb/spec-arithmetic-implementation/stage-8.2.md`.*
-- [ ] **8.3 Re-author a complete body.** Use `process_pending_deposits` from the pinned
+- [x] **8.3 Re-author a complete body.** Use `process_pending_deposits` from the pinned
   text as the authoring check. Prefer structural iteration over the finite queue.
   Update the worked example in `docs/CODING_STYLE.md` with the resulting form.
+    *Done 2026-11-20 (WS-62, `f52bf90`): `processPendingDeposits` re-authored in Fulu
+    and the Gloas override as one body in the pinned text's shape — `for` over the
+    finite queue with the pyspec-named `let mut` locals (`processedAmount`,
+    `nextDepositIndex`, `depositsToPostpone`, `isChurnLimitReached`) and `break` at the
+    three pinned stops; `ppdLoop`, its `fuelLoop` and `DepositScan` removed from all
+    three forks (Heze inherits the Gloas body), so no measure remains in the body. The
+    churn sum binds only in the churn branch, `available_for_processing -
+    processed_amount` forms only after the churn stop, every other exit resets
+    `deposit_balance_to_consume` to `0`, and the Fulu `.listFull` raise still precedes
+    the churn write. New `Tests/PendingDepositsScanPins`: 8 examples pairing every
+    decision point (churn stop vs exact fit, finalized-slot 81 vs 80, withdrawable 100
+    vs 101 with the postpone-after-tail order, Gloas 128 vs Fulu 64 budget); the
+    recorded `>` → `≥` / `<` → `≤` mutations make the matching pins fail.
+    `docs/CODING_STYLE.md` §1/§4/§5/§6 and the checklist now show the shipped form.
+    Common migration gate green; full minimal sweeps case-identical to 8.2 (0 diffs
+    across 8147/9958/10170 case ids); all mainnet `pending_deposits` vectors pass
+    (fulu 48, gloas 52, heze 55); coverage stays at 87 claims with both baselines and
+    the axiom table unchanged, README denominator 630→627 for the three removed
+    `ppdLoop` copies. Record: `mb/spec-arithmetic-implementation/stage-8.3.md`.*
 - [ ] **8.4 Audit the whole scope again.** Review raw word operators, raw constructors,
   projections, `toPlainNat`, `toPlainInt`, `toCLInt`, `Nat` subtraction/division,
   defaulting reads, casts, and all
