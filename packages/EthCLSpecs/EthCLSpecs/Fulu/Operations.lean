@@ -138,8 +138,10 @@ forkdef getAttestationParticipationFlagIndices (state : State) (data : Attestati
 mixed fallible helper uses the common typed error channel): the block-supplied
 `aggregation_bits` is read at a committee offset it does not bound, so an over-length read
 rejects `IndexError`-shaped rather than masking to `false`, and each `getBeaconCommittee`
-carries the seed walk's checked `Epoch` chain. The `committee[i]` read stays total, `i` is
-bounded by the committee it just built. -/
+carries the seed walk's checked `Epoch` chain and the shuffled-index assert. That assert fires
+on a committee index at or past the slot's committee count, which `process_attestation` rules
+out first and the fork-choice `on_attestation` path does not. The `committee[i]` read stays
+total, `i` is bounded by the committee it just built. -/
 forkdef getAttestingIndices (state : State) (att : Attestation) :
     Except StateTransitionError (Array ValidatorIndex) := do
   let mut out : Array ValidatorIndex := #[]

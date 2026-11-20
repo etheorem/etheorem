@@ -382,7 +382,7 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
   let headWeight ← (List.range committeeCount.toPlainNat).foldlM (init := baseWeight) fun acc index => do
     -- `CommitteeIndex(index)`: the pyspec's checked cast of the plain loop variable.
     let committeeIndex ← CLUint64.ofNat? index
-    let committee ← getBeaconCommittee headState headBlock.slot committeeIndex
+    let committee ← liftErr (getBeaconCommittee headState headBlock.slot committeeIndex)
     -- `head_weight += Gwei(sum(...))` (`gloas/minimal.py:3837-3845`): the committee's
     -- equivocator sum runs first, from zero, then the one add to `head_weight`. The start
     -- `(0 : Gwei)` keeps every raise of the nonempty sum (see `Fulu.isHeadWeak`).

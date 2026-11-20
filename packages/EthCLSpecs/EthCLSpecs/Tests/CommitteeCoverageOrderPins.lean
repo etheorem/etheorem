@@ -128,8 +128,8 @@ private def pinFuluOutOfRangeIndexRejectsAssert : Bool :=
   let s : Slot := 18446744073709551614
   let laterCallFaults :=
     match (getBeaconCommittee (fuluState oneSlotEpochs 18446744073709551615) s 3 :
-        Checked (Array ValidatorIndex)) with
-    | .error _ => true
+        Except StateTransitionError (Array ValidatorIndex)) with
+    | .error (.arithmetic _) => true
     | _ => false
   let rejects :=
     match fuluRun oneSlotEpochs 18446744073709551615 (fuluAtt oneSlotEpochs s s 0 [2, 3]) with
@@ -253,8 +253,8 @@ private def pinGloasOutOfRangeIndexRejectsAssert : Bool :=
   let s : Slot := 18446744073709551614
   let laterCallFaults :=
     match (getBeaconCommittee (gloasState oneSlotEpochsG 18446744073709551615) s 3 :
-        Checked (Array ValidatorIndex)) with
-    | .error _ => true
+        Except StateTransitionError (Array ValidatorIndex)) with
+    | .error (.arithmetic _) => true
     | _ => false
   let rejects :=
     match gloasRun oneSlotEpochsG 18446744073709551615 (gloasAtt oneSlotEpochsG s s 0 [2, 3]) with

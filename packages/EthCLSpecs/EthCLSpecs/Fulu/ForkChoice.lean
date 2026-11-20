@@ -418,7 +418,7 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
       (init := baseWeight) fun acc index => do
     -- `CommitteeIndex(index)`: the pyspec's checked cast of the plain loop variable.
     let committeeIndex ← CLUint64.ofNat? index
-    let committee ← getBeaconCommittee headState headBlock.slot committeeIndex
+    let committee ← liftErr (getBeaconCommittee headState headBlock.slot committeeIndex)
     let equivocatorWeight ← committee.foldlM (init := (0 : Gwei)) fun a i =>
       if store.equivocatingIndices.contains i then do
         let v ← sszGetIdx validators i

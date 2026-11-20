@@ -122,13 +122,24 @@ checked chains: `start = (len(indices) * index) // count` and
 `end = (len(indices) * Uint64(index + 1)) // count`. The plain `len(indices)`, a `CLInt`,
 times a checked operand is the mixed route, which computes on the original operands and
 raises past `2^64 - 1`, and `// count` raises `ZeroDivisionError` on a zero count. Each step
-binds in Python's order, so the fault depends on `index` as well as on the registry size. -/
+binds in Python's order, so the fault depends on `index` as well as on the registry size.
+
+The comprehension then calls `compute_shuffled_index(Uint64(index), Uint64(len(indices)),
+seed)` for each position of `range(start, end)`, and `compute_shuffled_index`
+(`fulu/minimal.py:1278-1283`) asserts `index < index_count` first. With `index < count` the
+slice ends at or below `len(indices)`, so the assert holds at every position. A committee
+index at or past `count` with a nonempty range starts at or past `len(indices)`, so the
+first position raises `AssertionError`, the `.assert` reject. The bounds' checked faults come
+first, as in Python. `Checked` carries no assert, so the result is `Except
+StateTransitionError`, and each checked step lifts into it. -/
 forkdef computeCommittee (indices : Array ValidatorIndex) (seed : Bytes32) (index count : CLUint64) :
-    Checked (Array ValidatorIndex) := do
+    Except StateTransitionError (Array ValidatorIndex) := do
   let indexCount := len indices
   let startProduct ← indexCount * index
   let start ← startProduct / count
-  let nextIndex ← index + 1
+  -- The annotation fixes the add's result kind: under the lift the expected type alone
+  -- does not name it, so the next product could not pick its instance.
+  let nextIndex : CLUint64 ← index + 1
   let stopProduct ← indexCount * nextIndex
   let stop ← stopProduct / count
   -- The shuffle takes the registry length as its structural `Nat` count (see
@@ -136,15 +147,16 @@ forkdef computeCommittee (indices : Array ValidatorIndex) (seed : Bytes32) (inde
   let perm := computeShuffledPermutation indices.size seed
   -- `toPlainNat`: `range(start, end)` iterates plain positions between two nonnegative
   -- checked bounds, so the bounds' values name the same positions, and the `Nat` difference
-  -- is zero exactly where Python's range is empty. Structural reads: `perm` is a
-  -- permutation of `[0, len)`, and `start + j < stop ≤ len` whenever `index < count`, so
-  -- both reads are in range there. Past that bound `compute_shuffled_index` asserts
-  -- `index < index_count`; that non-arithmetic assert has no twin here. A nonempty range
-  -- with `index ≥ count` therefore reads `perm`'s default where the pyspec raises
-  -- `AssertionError`. Only the fork-choice `get_attesting_indices` path passes such an
-  -- index; the gap is recorded as an open finding of the arithmetic audit.
-  pure ((Array.range (stop.toPlainNat - start.toPlainNat)).map
-    (fun j => indices[perm[start.toPlainNat + j]!]!))
+  -- is zero exactly where Python's range is empty. The positions ascend, so the first one
+  -- at or past `len(indices)` is the one that raises.
+  (Array.range (stop.toPlainNat - start.toPlainNat)).mapM fun j => do
+    let position := start.toPlainNat + j
+    -- `Uint64(index)` of a position below `end ≤ 2^64 - 1` cannot raise, so the assert of
+    -- `compute_shuffled_index` is the first check that can fail at this position.
+    assert (position < indices.size)
+    -- Structural reads: `perm` is a permutation of `[0, len(indices))`, so the assert
+    -- bounds `perm[position]` and every entry of `perm` bounds the `indices` read.
+    pure indices[perm[position]!]!
 
 /-- `get_beacon_committee(state, slot, index)` (`fulu/minimal.py:1500-1514`). The seed walk
 is `get_seed`, which raises on its checked epoch chain, so the helper carries the fault and
@@ -154,9 +166,11 @@ active set, the seed, the index, the count. The index
 divisor view for the remainder (`SPEC_ARITHMETIC.md` §4.2), then the checked product and
 the checked add of the `CommitteeIndex`; the count `committees_per_slot *
 Uint64(SLOTS_PER_EPOCH)` is the checked product. `committees_per_slot` is the `Uint64` that
-`get_committee_count_per_slot` returns, so both products are checked `Uint64` products. -/
+`get_committee_count_per_slot` returns, so both products are checked `Uint64` products.
+`compute_committee` adds the assert of `compute_shuffled_index`, so the result is `Except
+StateTransitionError`, and the checked steps lift into it. -/
 forkdef getBeaconCommittee (state : State) (slot : Slot) (index : CommitteeIndex) :
-    Checked (Array ValidatorIndex) := do
+    Except StateTransitionError (Array ValidatorIndex) := do
   let epoch := computeEpochAtSlot slot
   let committeesPerSlot ← getCommitteeCountPerSlot state epoch
   let active ← getActiveValidatorIndices state epoch

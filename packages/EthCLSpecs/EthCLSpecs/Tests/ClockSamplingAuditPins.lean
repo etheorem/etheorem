@@ -60,7 +60,8 @@ example : pinSinceEpochStartMaxMainnet = true := by native_decide
 
 /-- Runs `compute_committee` over the indices `0 … n - 1` and a zero seed, reading back the
 committee's indices. -/
-private def committeeOf (n : Nat) (index count : CLUint64) : Except ArithFault (List Nat) :=
+private def committeeOf (n : Nat) (index count : CLUint64) :
+    Except StateTransitionError (List Nat) :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   (computeCommittee ((Array.range n).map fun i => ((CLUint64.ofNat? i).toOption.getD 0))
@@ -69,15 +70,15 @@ private def committeeOf (n : Nat) (index count : CLUint64) : Except ArithFault (
 /-- Two validators, four committees. Indices `0` and `2` give `start = end`, so the range is
 empty. Indices `1` and `3` give one member each. -/
 private def pinCommitteeEmptyRanges : Bool :=
-  committeeOf 2 0 4 == .ok [] && committeeOf 2 1 4 == .ok [1]
-    && committeeOf 2 2 4 == .ok [] && committeeOf 2 3 4 == .ok [0]
+  (committeeOf 2 0 4).toOption == some [] && (committeeOf 2 1 4).toOption == some [1]
+    && (committeeOf 2 2 4).toOption == some [] && (committeeOf 2 3 4).toOption == some [0]
 example : pinCommitteeEmptyRanges = true := by native_decide
 
 /-- Eight validators, three committees: the bounds `0, 2, 5, 8` split the shuffled registry
 `[4, 1, 0, 2, 6, 5, 3, 7]` into three consecutive slices. -/
 private def pinCommitteePartition : Bool :=
-  committeeOf 8 0 3 == .ok [4, 1] && committeeOf 8 1 3 == .ok [0, 2, 6]
-    && committeeOf 8 2 3 == .ok [5, 3, 7]
+  (committeeOf 8 0 3).toOption == some [4, 1] && (committeeOf 8 1 3).toOption == some [0, 2, 6]
+    && (committeeOf 8 2 3).toOption == some [5, 3, 7]
 example : pinCommitteePartition = true := by native_decide
 
 end EthCLSpecs.Tests.ClockSamplingAuditPins
