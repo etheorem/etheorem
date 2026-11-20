@@ -31,18 +31,32 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (HasherTag StateTransitionError checkedAdd)
+open EthCLLib.Spec (HasherTag StateTransitionError Checked)
 open EthCLLib.Proofs (pureState)
 open EthCLSpecs.Gloas.Const (slotsPerEpochPos)
-open EthCLSpecs.Gloas (Preset Config BeaconState ValidatorIndex initializePtcWindow computePtc
+open EthCLSpecs.Gloas (Preset Config BeaconState ValidatorIndex Epoch initializePtcWindow computePtc
   computeStartSlotAtEpoch currentEpochOf)
 
-/-- **The window contract.** The complete equation of `initializePtcWindow`: entry `i` is
-the all-zero committee in the first `SLOTS_PER_EPOCH` positions, and in the remaining
-`2 * SLOTS_PER_EPOCH` it binds the spec's checked per-entry add `current_epoch + e` (the
-epoch delta is the offset `i - SLOTS_PER_EPOCH` divided by `SLOTS_PER_EPOCH`, `0` or `1`)
-and then reads `compute_ptc` at the offset's slot. The `Except` in the entry's type carries
-both faults, the add's `.arithmetic` and `compute_ptc`'s empty-candidate reject. -/
+/-- The lift of one pure checked value into the entry's `Except`, the
+`←`-binding the entry body writes: the fault maps to its machine reject through
+`StateTransitionError.ofArithFault`, and the success value passes through. The
+`liftM` the do-notation inserts reduces to this term, so the contract below
+states it here. -/
+def entryBind {α : Type} (x : Checked α) :
+    Except StateTransitionError α := x.mapError StateTransitionError.ofArithFault
+
+/-- **The window contract.** The complete equation of `initializePtcWindow`, stated with the
+`Except.bind` / `liftM` shape the body elaborates to. Entry `i` is the all-zero committee in
+the first `SLOTS_PER_EPOCH` positions, and in the remaining `2 * SLOTS_PER_EPOCH` it binds
+the spec's checked per-entry add `current_epoch + e` (the epoch delta is the offset
+`i - SLOTS_PER_EPOCH` divided by `SLOTS_PER_EPOCH`, `0` or `1`), then the checked
+`compute_start_slot_at_epoch` product, and then reads `compute_ptc` at the start slot plus
+the intra-epoch offset, the pyspec's checked `Slot` add. The `Except` in the
+entry's type carries all three faults, the two arithmetic raises as `.arithmetic` and
+`compute_ptc`'s empty-candidate reject.
+
+The equation is `rfl`: the statement mirrors the elaborated body, so the kernel walk stays
+shallow and no `maxRecDepth` raise is needed. -/
 @[characterizes EthCLSpecs.Gloas.initializePtcWindow]
 theorem initializePtcWindow_eq [Preset] [Config] [HasherTag] (state : BeaconState) :
     initializePtcWindow (pureState state) =
@@ -52,14 +66,15 @@ theorem initializePtcWindow_eq [Preset] [Config] [HasherTag] (state : BeaconStat
             Except StateTransitionError (Vector ValidatorIndex Gloas.Const.ptcSize))
         else
           Except.bind
-            (checkedAdd (E := StateTransitionError) (currentEpochOf (pureState state))
-              (UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) /
-                Gloas.Const.slotsPerEpoch))
-              "initialize_ptc_window: current_epoch + e") fun epoch =>
-            computePtc (pureState state)
-              (computeStartSlotAtEpoch epoch +
-                UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) %
-                  Gloas.Const.slotsPerEpoch)) := rfl
+            (liftM ((currentEpochOf (pureState state) : Epoch) +
+                ((i.val - Gloas.Const.slotsPerEpoch) / Gloas.Const.slotsPerEpoch))) fun epoch =>
+          Except.bind
+            (liftM (computeStartSlotAtEpoch epoch)) fun startSlot =>
+          Except.bind
+            (liftM (startSlot +
+              ((i.val - Gloas.Const.slotsPerEpoch) % Gloas.Const.slotsPerEpoch))) fun slot =>
+          computePtc (pureState state) slot := by
+  rfl
 
 /-- The window's first `SLOTS_PER_EPOCH` entries (the placeholder "previous epoch", empty
 because the pre-fork state carries no Gloas PTC) are the all-zero committee,
@@ -73,21 +88,22 @@ theorem initializePtcWindow_lt [Preset] [Config] [HasherTag] (state : BeaconStat
   simp [h]
 
 /-- The window's remaining `2 * SLOTS_PER_EPOCH` entries bind the spec's checked per-entry
-add `current_epoch + e`, then read `compute_ptc` at the slot that add's epoch computes:
-split the offset `k := i - SLOTS_PER_EPOCH` into an epoch delta (`k / SLOTS_PER_EPOCH`) and
-an intra-epoch slot offset (`k % SLOTS_PER_EPOCH`), exactly as the composed contract does. -/
+add `current_epoch + e`, then the checked `compute_start_slot_at_epoch` product, then read
+`compute_ptc` at the start slot plus the intra-epoch offset, the checked `Slot` add: split the offset
+`k := i - SLOTS_PER_EPOCH` into an epoch delta (`k / SLOTS_PER_EPOCH`) and an intra-epoch
+slot offset (`k % SLOTS_PER_EPOCH`), exactly as the composed contract does. -/
 theorem initializePtcWindow_ge [Preset] [Config] [HasherTag] (state : BeaconState)
     (i : Fin (3 * Gloas.Const.slotsPerEpoch)) (h : Gloas.Const.slotsPerEpoch ≤ i.val) :
     (initializePtcWindow (pureState state))[i] =
       Except.bind
-        (checkedAdd (E := StateTransitionError) (currentEpochOf (pureState state))
-          (UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) /
-            Gloas.Const.slotsPerEpoch))
-          "initialize_ptc_window: current_epoch + e") fun epoch =>
-        computePtc (pureState state)
-          (computeStartSlotAtEpoch epoch +
-            UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) %
-              Gloas.Const.slotsPerEpoch)) := by
+        (liftM ((currentEpochOf (pureState state) : Epoch) +
+            ((i.val - Gloas.Const.slotsPerEpoch) / Gloas.Const.slotsPerEpoch))) fun epoch =>
+      Except.bind
+        (liftM (computeStartSlotAtEpoch epoch)) fun startSlot =>
+      Except.bind
+        (liftM (startSlot +
+          ((i.val - Gloas.Const.slotsPerEpoch) % Gloas.Const.slotsPerEpoch))) fun slot =>
+      computePtc (pureState state) slot := by
   rw [initializePtcWindow_eq state]
   simp [Nat.not_lt.mpr h]
 
@@ -103,21 +119,21 @@ theorem initializePtcWindow_getElem [Preset] [Config] [HasherTag] (state : Beaco
           Except StateTransitionError (Vector ValidatorIndex Gloas.Const.ptcSize))
       else
         Except.bind
-          (checkedAdd (E := StateTransitionError) (currentEpochOf (pureState state))
-            (UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) /
-              Gloas.Const.slotsPerEpoch))
-            "initialize_ptc_window: current_epoch + e") fun epoch =>
-          computePtc (pureState state)
-            (computeStartSlotAtEpoch epoch +
-              UInt64.ofNat ((i.val - Gloas.Const.slotsPerEpoch) %
-                Gloas.Const.slotsPerEpoch)) := by
+          (liftM ((currentEpochOf (pureState state) : Epoch) +
+              ((i.val - Gloas.Const.slotsPerEpoch) / Gloas.Const.slotsPerEpoch))) fun epoch =>
+        Except.bind
+          (liftM (computeStartSlotAtEpoch epoch)) fun startSlot =>
+        Except.bind
+          (liftM (startSlot +
+            ((i.val - Gloas.Const.slotsPerEpoch) % Gloas.Const.slotsPerEpoch))) fun slot =>
+        computePtc (pureState state) slot := by
   rw [initializePtcWindow_eq state]
   by_cases hlt : i.val < Gloas.Const.slotsPerEpoch
   · simp [hlt]
   · simp [hlt]
 
 /-- The first region's committee is also the ambient `default` for
-`Vector ValidatorIndex Gloas.Const.ptcSize` (`ValidatorIndex := UInt64`'s `default` is `0`,
+`Vector ValidatorIndex Gloas.Const.ptcSize` (`ValidatorIndex := CLUint64`'s `default` is `0`,
 and `Vector`'s `Inhabited` instance is pointwise), so callers that already reason in terms of
 `default` don't need to unfold the window a second time to get there. -/
 theorem initializePtcWindow_lt_default [Preset] [Config] [HasherTag] (state : BeaconState)

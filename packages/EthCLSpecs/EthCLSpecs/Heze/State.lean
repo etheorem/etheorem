@@ -27,7 +27,7 @@ progressive container with the four eth1 deposit fields removed and their positi
 mask gaps. -/
 @[sizzlean_progressive, sizzlean_progressive_gaps 8 9 10 28]
 forkcontainer BeaconState where
-  genesisTime                   : UInt64
+  genesisTime                   : CLUint64
   genesisValidatorsRoot         : Root
   slot                          : Slot
   forkData                      : Fork
@@ -46,7 +46,7 @@ forkcontainer BeaconState where
   previousJustifiedCheckpoint   : Checkpoint
   currentJustifiedCheckpoint    : Checkpoint
   finalizedCheckpoint           : Checkpoint
-  inactivityScores              : ProgressiveList UInt64
+  inactivityScores              : ProgressiveList Gwei
   currentSyncCommittee          : SyncCommittee
   nextSyncCommittee             : SyncCommittee
   latestBlockHash               : Hash32

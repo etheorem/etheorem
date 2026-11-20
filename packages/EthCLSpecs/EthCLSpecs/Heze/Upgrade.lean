@@ -89,7 +89,11 @@ def upgradeToHeze [Preset] (hezeForkVersion : Version) (pre : Gloas.BeaconState)
     Except StateTransitionError Heze.BeaconState := do
   -- [New in Heze:EIP8015] the old deposit mechanism has been disabled.
   assert (pre.eth1DepositIndex == pre.depositRequestsStartIndex)
-  let epoch : Epoch := pre.slot / UInt64.ofNat Const.slotsPerEpoch
+  -- `epoch = gloas.get_current_epoch(pre)` = `Epoch(pre.slot // SLOTS_PER_EPOCH)`: the
+  -- quotient rides the proved-positive `slotsPerEpochDiv` view, so it needs no range
+  -- test, and the `Epoch(...)` casts of a `Slot` value cannot fault (`SPEC_ARITHMETIC.md`
+  -- §4.2, the total route).
+  let epoch : Epoch := pre.slot / Const.slotsPerEpochDiv
   pure
     { genesisTime                   := pre.genesisTime
       genesisValidatorsRoot         := pre.genesisValidatorsRoot
