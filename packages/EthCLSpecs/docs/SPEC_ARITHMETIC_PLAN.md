@@ -531,8 +531,20 @@ time arithmetic is accounted for, and the remaining constant inventory is empty.
 
 ### Stage 8: flags, widths, and full-scope closure
 
-- [ ] **8.1 Move participation flags.** Port `addFlag` and `hasFlag`, including checked
+- [x] **8.1 Move participation flags.** Port `addFlag` and `hasFlag`, including checked
   mask construction and short-circuit call placement. Repair proofs and codec fixtures.
+    *Done 2026-11-20 (WS-59, `87ad73d`): `ParticipationFlags := CLUint8` in Fulu with
+    Gloas/Heze inheriting the alias; the raw `UInt8` `hasFlag`/`addFlag` helpers deleted
+    from `EthCLLib/Spec/Arith.lean` and every flag site ported onto the checked-8 surface
+    (`CLUint8.addFlag`/`hasFlag`) with the pinned short-circuit placement preserved. Flag
+    indices and participation weights re-typed to their pinned checked kinds; the Fulu/Gloas
+    proposer denominators became checked chains. `Proofs/Gloas/KeepsUncached.lean` restated
+    through the checked-8 mask laws (coverage 87, no tag lost, axioms within the trio). New
+    `Tests/ParticipationFlagsMigrationPins`: mask boundary (index 7 succeeds, index 8
+    raises), add-flag idempotence at 255, short-circuit placement — each with paired
+    success cases and failing pre-change forms. Common migration gate green; minimal
+    sweeps case-identical to Stage 7.4 (fulu 5318/2829, gloas 6760/3198, heze 6972/3198);
+    `git grep "TEMPORARY CROSSING"` empty. Record: `mb/spec-arithmetic-implementation/stage-8.1.md`.*
 - [ ] **8.2 Finish remaining widths and operators.** Cover every use of `Uint32`,
   `Uint256`, and any other width found in Stage 0. Distinguish data-only representations
   from arithmetic uses. Finish signed shifts and mixed-width conversions used in scope.
