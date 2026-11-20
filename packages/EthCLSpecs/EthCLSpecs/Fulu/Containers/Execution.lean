@@ -26,7 +26,7 @@ forkcontainer ExecutionPayloadHeader where
   blockNumber      : UInt64
   gasLimit         : UInt64
   gasUsed          : UInt64
-  timestamp        : UInt64
+  timestamp        : CLUint64
   extraData        : SSZList UInt8 Const.maxExtraDataBytes
   baseFeePerGas    : BitVec 256
   blockHash        : Hash32
