@@ -137,6 +137,10 @@ forkpreset where
   slotsPerHistoricalRootLt : slotsPerHistoricalRoot < 2 ^ 64
   epochsPerHistoricalVectorPos : 0 < epochsPerHistoricalVector
   epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64
+  -- The shuffle's round byte: `compute_shuffled_permutation` casts each round index
+  -- `Uint8(current_round)`, which raises past `2 ^ 8 - 1`. Every round index lies below
+  -- `shuffleRoundCount`, so this bound makes that cast total (`computeShuffledPermutation`).
+  shuffleRoundCountLe : shuffleRoundCount ≤ 2 ^ 8
 
 /-- The config-tier values (network parameters). Threaded `[Config]`; never
 shapes a type. Membership follows `configs/{minimal,mainnet}.yaml` the same way
@@ -231,6 +235,8 @@ forkabbrev slotsPerHistoricalRootPos : 0 < slotsPerHistoricalRoot := Preset.slot
 forkabbrev slotsPerHistoricalRootLt : slotsPerHistoricalRoot < 2 ^ 64 := Preset.slotsPerHistoricalRootLt
 forkabbrev epochsPerHistoricalVectorPos : 0 < epochsPerHistoricalVector := Preset.epochsPerHistoricalVectorPos
 forkabbrev epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64 := Preset.epochsPerHistoricalVectorLt
+/-- Every shuffle round index fits the pyspec's `Uint8(current_round)` cast. -/
+forkabbrev shuffleRoundCountLe : shuffleRoundCount ≤ 2 ^ 8 := Preset.shuffleRoundCountLe
 
 -- The derived views of `slotsPerEpoch`, the divisor every Stage 4 / 5 epoch
 -- formula divides by. Each view stores nothing: its body projects the preset's
@@ -421,11 +427,14 @@ forkabbrev hysteresisQuotient : Nat := Preset.hysteresisQuotient
 forkabbrev hysteresisDownwardMultiplier : Nat := Preset.hysteresisDownwardMultiplier
 forkabbrev hysteresisUpwardMultiplier : Nat := Preset.hysteresisUpwardMultiplier
 forkabbrev maxRandomValue : Nat := 65535
--- withdrawal-credential prefixes
+-- Withdrawal-credential prefixes. Each is a `Bytes1` at the pin, byte data: every consumer
+-- compares it with `withdrawal_credentials[:1]` or writes it into the credentials, so the
+-- byte never enters spec arithmetic.
 forkabbrev blsWithdrawalPrefix : UInt8 := 0x00
 forkabbrev eth1AddressWithdrawalPrefix : UInt8 := 0x01
 forkabbrev compoundingWithdrawalPrefix : UInt8 := 0x02
--- BLS domain-type tags (4-byte prefixes, as ByteArrays for hashing)
+-- BLS domain-type tags (4-byte prefixes, as ByteArrays for hashing). `DomainType` at the pin:
+-- byte data that only feeds `compute_domain` and `get_seed`.
 forkabbrev domainBeaconProposer : ByteArray := ⟨#[0, 0, 0, 0]⟩
 forkabbrev domainBeaconAttester : ByteArray := ⟨#[1, 0, 0, 0]⟩
 forkabbrev domainRandao : ByteArray := ⟨#[2, 0, 0, 0]⟩
@@ -582,6 +591,7 @@ forkpresetvalues minimal where
   slotsPerHistoricalRootLt := by decide
   epochsPerHistoricalVectorPos := by decide
   epochsPerHistoricalVectorLt := by decide
+  shuffleRoundCountLe := by decide
 
 /-- The `mainnet` preset. -/
 forkpresetvalues mainnet where
@@ -656,6 +666,7 @@ forkpresetvalues mainnet where
   slotsPerHistoricalRootLt := by decide
   epochsPerHistoricalVectorPos := by decide
   epochsPerHistoricalVectorLt := by decide
+  shuffleRoundCountLe := by decide
 
 /-- The `minimal` config. -/
 forkconfigvalues minimalConfig where

@@ -135,10 +135,14 @@ at every preset, so they store as `Gwei`, the checked kind the quorum product an
 fraction in `get_builder_payment_quorum_threshold` use. -/
 forkabbrev builderPaymentThresholdNumerator : Gwei := 6
 forkabbrev builderPaymentThresholdDenominator : Gwei := 10
-/-- `BUILDER_WITHDRAWAL_PREFIX` (`0xB0`), the credential prefix that marks a builder deposit. -/
+/-- `BUILDER_WITHDRAWAL_PREFIX` (`0xB0`), the credential prefix that marks a builder deposit.
+A `Bytes1` at the pin, byte data: its one consumer compares it with the credentials' first
+byte. -/
 forkabbrev builderWithdrawalPrefix : UInt8 := 0xB0
 /-- `PAYLOAD_BUILDER_VERSION = uint8(0)` (EIP-8282): the version stamped on a
-builder onboarded at the fork (`add_builder_to_registry`). -/
+builder onboarded at the fork (`add_builder_to_registry`). A version tag, not a number:
+the pinned body stores it in `Builder.version` and compares it for equality, and no
+operator touches it, so the raw `UInt8` carries it unchanged. -/
 forkabbrev payloadBuilderVersion : UInt8 := 0
 /-- `BUILDER_INDEX_FLAG = Uint64(2**40)`: the bit that marks a builder index carried in a
 `ValidatorIndex`. A checked `Uint64`, so `&` and `|` with an index are the same-width
@@ -153,7 +157,10 @@ forkabbrev domainPtcAttester : ByteArray := ⟨#[0x0C, 0, 0, 0]⟩
 -- EIP-8282 `DOMAIN_BUILDER_DEPOSIT` (`0x0E000000`). Consumed by the deferred
 -- builder-deposit signature check; recorded now alongside the other domain tags.
 forkabbrev domainBuilderDeposit : ByteArray := ⟨#[0x0E, 0, 0, 0]⟩
-/-- ePBS fork-choice payload statuses for a `ForkChoiceNode`. -/
+/-- ePBS fork-choice payload statuses for a `ForkChoiceNode`: `PayloadStatus(Uint8)` sentinels
+at the pin. The fork-choice bodies compare them for equality, and
+`get_payload_status_tiebreaker` returns one of them or the literals `0`, `1`, `2` for the
+`max` ordering. No operator touches them, so the raw `UInt8` carries the sentinels. -/
 forkabbrev payloadStatusEmpty : UInt8 := 0
 forkabbrev payloadStatusFull : UInt8 := 1
 forkabbrev payloadStatusPending : UInt8 := 2
@@ -196,7 +203,7 @@ inherit pendingPartialWithdrawalsLimit pendingConsolidationsLimit
 -- The preset's well-formedness premises.
 inherit slotsPerEpochPos slotsPerEpochLt slotsPerHistoricalRootPos
 inherit slotsPerHistoricalRootLt epochsPerHistoricalVectorPos
-inherit epochsPerHistoricalVectorLt
+inherit epochsPerHistoricalVectorLt shuffleRoundCountLe
 
 -- The derived checked and proved-total views of the entries above
 -- (`SPEC_ARITHMETIC.md` §4.2, §4.5). The replay binds each view to this fork's

@@ -209,7 +209,7 @@ def our_constants(fork: str) -> dict[str, str]:
     tiers = {}
     for m in re.finditer(r"^forkabbrev ([A-Za-z0-9_]+)\s*:.*?:=\s*(.*)$", body, re.M):
         name, rhs = m.group(1), m.group(2)
-        if re.search(r"(Pos|Lt)$", name):
+        if re.search(r"(Pos|Lt|Le)$", name):
             continue                                  # our well-formedness premises
         tiers[name] = ("Preset" if "Preset." in rhs
                        else "Config" if "Config." in rhs

@@ -34,9 +34,16 @@ The positions stay structural `Nat`s (`SPEC_ARITHMETIC.md` §4.2), because no st
 pinned `Uint64` chain can raise here. Every caller passes a registry length, at most
 `VALIDATOR_REGISTRY_LIMIT = 2^40`, and every position and `pivot` stay below `index_count`.
 So `pivot + index_count - indices[i]` lies in `[1, 2^41)`, and `position // 256` fits the
-`Uint32` cast. The pinned body forms `pivot = ... % index_count` even for `index_count = 0`
-and raises `ZeroDivisionError` there. No pinned caller reaches that case: `compute_committee`
-calls the shuffle once per position of its range, which is empty for an empty registry. The
+`Uint32` cast. The bit read `byte_val >> (position % 8)` shifts a plain byte value by a
+checked count, so the pinned body range-tests a `Uint64` result. A byte value stays below
+`2^8`, so that test passes too. The other width cast, `Uint8(current_round)`, raises in the
+pinned body once a preset sets more than `2^8` rounds. The preset premise
+`shuffleRoundCountLe` rules such a preset out, so the round byte is a proof-carrying
+`CLUint8` and never wraps.
+
+The pinned body forms `pivot = ... % index_count` even for `index_count = 0` and raises
+`ZeroDivisionError` there. No pinned caller reaches that case: `compute_committee` calls the
+shuffle once per position of its range, which is empty for an empty registry. The
 balance-weighted selection asserts `total > 0` first, and Fulu's
 `get_next_sync_committee_indices` raises `ZeroDivisionError` on `i % active_validator_count`
 before its first `compute_shuffled_index` call. The `index_count = 0` branch below
@@ -45,10 +52,15 @@ reads. -/
 forkdef computeShuffledPermutation (indexCount : Nat) (seed : ByteArray) : Array Nat :=
   if indexCount == 0 then #[]
   else
-    (List.range Const.shuffleRoundCount).foldl
+    (List.finRange Const.shuffleRoundCount).foldl
       (fun indices round =>
-        -- Each round mixes in a fresh seed byte and draws the swap pivot.
-        let seedRound := seed.push (UInt8.ofNat round)
+        -- Each round mixes in a fresh seed byte and draws the swap pivot. The byte is
+        -- `uint_to_bytes(Uint8(current_round))`: the checked width-8 narrowing, built
+        -- proof-carrying because `round < shuffleRoundCount ≤ 2 ^ 8` (the preset premise).
+        -- `.val` reads the checked value's wire byte, the codec boundary of §4.5.
+        let roundByte : CLUint8 := CLUint8.ofNatLT round.val
+          (Nat.lt_of_lt_of_le round.isLt Const.shuffleRoundCountLe)
+        let seedRound := seed.push roundByte.val
         let pivot := (le8 (sha seedRound)) % indexCount
 
         -- Rebuild every slot independently: swap to `flip`, or keep `cur`.
