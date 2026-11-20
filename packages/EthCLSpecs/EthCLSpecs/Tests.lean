@@ -7,6 +7,7 @@ import EthCLSpecs.Tests.ConstantAuditPins
 import EthCLSpecs.Tests.ConstantViews
 import EthCLSpecs.Tests.DeadlineMigrationPins
 import EthCLSpecs.Tests.EpochMigrationPins
+import EthCLSpecs.Tests.FuluDeclarationsAuditPins
 import EthCLSpecs.Tests.FuluForkChoicePins
 import EthCLSpecs.Tests.GloasCommitteesPins
 import EthCLSpecs.Tests.GloasForkChoicePins

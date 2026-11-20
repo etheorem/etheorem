@@ -141,6 +141,17 @@ forkpreset where
   -- `Uint8(current_round)`, which raises past `2 ^ 8 - 1`. Every round index lies below
   -- `shuffleRoundCount`, so this bound makes that cast total (`computeShuffledPermutation`).
   shuffleRoundCountLe : shuffleRoundCount ≤ 2 ^ 8
+  -- The range premises of the counts whose checked views below the plain-integer and
+  -- `Epoch` formulas read. The pinned module types each `Epoch` or `Uint64`, so a value past
+  -- `2 ^ 64 - 1` raises when the module loads, and no pyspec runs on such a preset. Each
+  -- premise rules that preset out here too, so the view is the proof-carrying `ofNatLT`.
+  epochsPerSlashingsVectorLt : epochsPerSlashingsVector < 2 ^ 64
+  epochsPerEth1VotingPeriodLt : epochsPerEth1VotingPeriod < 2 ^ 64
+  epochsPerSyncCommitteePeriodLt : epochsPerSyncCommitteePeriod < 2 ^ 64
+  maxCommitteesPerSlotLt : maxCommitteesPerSlot < 2 ^ 64
+  targetCommitteeSizeLt : targetCommitteeSize < 2 ^ 64
+  maxWithdrawalsPerPayloadLt : maxWithdrawalsPerPayload < 2 ^ 64
+  maxPendingPartialsPerWithdrawalsSweepLt : maxPendingPartialsPerWithdrawalsSweep < 2 ^ 64
 
 /-- The config-tier values (network parameters). Threaded `[Config]`; never
 shapes a type. Membership follows `configs/{minimal,mainnet}.yaml` the same way
@@ -273,36 +284,36 @@ forkabbrev slotsPerHistoricalRootDiv : PositiveDivisor :=
 checked constants stay checked). Each stores nothing: the body projects the
 preset's own field, so a child override re-proves through the same fields, and
 the type-level `Nat` sizes above stay structural for the type-level caps.
-`epochsPerHistoricalVectorC` carries the preset's own `< 2 ^ 64` premise; the
-other three periods have no preset proof field, so their views ride the wire iso
-(§4.5, `trustedOfUInt64`): every `UInt64` is in range, so the wrap cannot fault.
-These views are permanent, not crossings: the `Nat` fields stay the structural
-sizes the type-level caps read, and the `…C` twin is their checked face. -/
+Each view is the proof-carrying `ofNatLT` (§4.5) over the preset's own `< 2 ^ 64`
+premise, so a preset value past `2 ^ 64 - 1` cannot be built, where `UInt64.ofNat`
+would wrap it. These views are permanent, not crossings: the `Nat` fields stay the
+structural sizes the type-level caps read, and the `…C` twin is their checked face. -/
 forkabbrev epochsPerHistoricalVectorC : CLUint64 :=
   CLUint64.ofNatLT Preset.epochsPerHistoricalVector Preset.epochsPerHistoricalVectorLt
 forkabbrev epochsPerSlashingsVectorC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.epochsPerSlashingsVector)
+  CLUint64.ofNatLT Preset.epochsPerSlashingsVector Preset.epochsPerSlashingsVectorLt
 forkabbrev epochsPerEth1VotingPeriodC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.epochsPerEth1VotingPeriod)
+  CLUint64.ofNatLT Preset.epochsPerEth1VotingPeriod Preset.epochsPerEth1VotingPeriodLt
 forkabbrev epochsPerSyncCommitteePeriodC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.epochsPerSyncCommitteePeriod)
+  CLUint64.ofNatLT Preset.epochsPerSyncCommitteePeriod Preset.epochsPerSyncCommitteePeriodLt
 
 /-- The checked views of the preset counts that the plain-integer formulas meet
 as `Uint64` operands (`SPEC_ARITHMETIC.md` §4.2, checked constants stay checked):
 `get_committee_count_per_slot`'s `min` and divisor, and the withdrawal sweeps'
 `MAX_WITHDRAWALS_PER_PAYLOAD - 1` and `len(prior) + MAX_PENDING_PARTIALS_…` limits.
-The pinned module types all four `Uint64`. Same construction as the three period
-views above: no preset proof field bounds them, so each rides the wire iso
-(§4.5, `trustedOfUInt64`). A zero value keeps its checked behavior: the divisor
-route raises `ZeroDivisionError` and `0 - 1` raises the range fault. -/
+The pinned module types all four `Uint64`. Same construction as the period views
+above: each is the proof-carrying `ofNatLT` over the preset's own `< 2 ^ 64` premise.
+A zero value keeps its checked behavior: the divisor route raises
+`ZeroDivisionError` and `0 - 1` raises the range fault. -/
 forkabbrev maxCommitteesPerSlotC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.maxCommitteesPerSlot)
+  CLUint64.ofNatLT Preset.maxCommitteesPerSlot Preset.maxCommitteesPerSlotLt
 forkabbrev targetCommitteeSizeC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.targetCommitteeSize)
+  CLUint64.ofNatLT Preset.targetCommitteeSize Preset.targetCommitteeSizeLt
 forkabbrev maxWithdrawalsPerPayloadC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.maxWithdrawalsPerPayload)
+  CLUint64.ofNatLT Preset.maxWithdrawalsPerPayload Preset.maxWithdrawalsPerPayloadLt
 forkabbrev maxPendingPartialsPerWithdrawalsSweepC : CLUint64 :=
-  CLUint64.trustedOfUInt64 (UInt64.ofNat Preset.maxPendingPartialsPerWithdrawalsSweep)
+  CLUint64.ofNatLT Preset.maxPendingPartialsPerWithdrawalsSweep
+    Preset.maxPendingPartialsPerWithdrawalsSweepLt
 
 -- Sentinels, registry and history caps.
 forkabbrev farFutureEpoch : Epoch := 0xffffffffffffffff
@@ -592,6 +603,13 @@ forkpresetvalues minimal where
   epochsPerHistoricalVectorPos := by decide
   epochsPerHistoricalVectorLt := by decide
   shuffleRoundCountLe := by decide
+  epochsPerSlashingsVectorLt := by decide
+  epochsPerEth1VotingPeriodLt := by decide
+  epochsPerSyncCommitteePeriodLt := by decide
+  maxCommitteesPerSlotLt := by decide
+  targetCommitteeSizeLt := by decide
+  maxWithdrawalsPerPayloadLt := by decide
+  maxPendingPartialsPerWithdrawalsSweepLt := by decide
 
 /-- The `mainnet` preset. -/
 forkpresetvalues mainnet where
@@ -667,6 +685,13 @@ forkpresetvalues mainnet where
   epochsPerHistoricalVectorPos := by decide
   epochsPerHistoricalVectorLt := by decide
   shuffleRoundCountLe := by decide
+  epochsPerSlashingsVectorLt := by decide
+  epochsPerEth1VotingPeriodLt := by decide
+  epochsPerSyncCommitteePeriodLt := by decide
+  maxCommitteesPerSlotLt := by decide
+  targetCommitteeSizeLt := by decide
+  maxWithdrawalsPerPayloadLt := by decide
+  maxPendingPartialsPerWithdrawalsSweepLt := by decide
 
 /-- The `minimal` config. -/
 forkconfigvalues minimalConfig where
