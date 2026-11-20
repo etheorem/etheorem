@@ -9,7 +9,8 @@ that pin a checked range/cast fault raises `SSZValueError` (a `ValueError`), a z
 raises a bare `ZeroDivisionError`, a list over its limit raises a `ValueError`
 (`SSZValueError` on an append, a pydantic `ValidationError` on the constructor), and
 `expect_assertion_error` (`context.py:424-435`) catches only `AssertionError` and
-`IndexError`. One case writes its own `except ValueError` wrapper
+`IndexError`. A `list.index` miss raises a plain `ValueError`. One case writes its own
+`except ValueError` wrapper
 (`RunnerCaughtSet.valueError`). The four sections pin, in order: the admit table, the
 reporting buckets, the cause-preserving lifts, and the state-disposal and decode rules.
 
@@ -29,22 +30,24 @@ namespace EthCLLib.Tests.ErrorClassify
 /-! ## The typed arithmetic causes
 
 Each arithmetic constructor carries its reference class by construction, and
-`arithCause` reads it back typed. `listFull` carries no `ArithCause`: its fault is the
-collection's capacity, not a numeric operator, and its reference class (`ValueError`
-at the pin) is a property of the admit table, not of a cause tag. -/
+`arithCause` reads it back typed. `listFull` and `notInList` carry no `ArithCause`: their
+faults are a collection's capacity and a lookup miss, not a numeric operator. Their reference
+class (`ValueError` at the pin) is a property of the admit table, not of a cause tag. -/
 
 #guard StateTransitionError.arithCause (.arithmetic "x") == some ArithCause.range
 #guard StateTransitionError.arithCause (.zeroDivision "x") == some ArithCause.zeroDivision
 #guard StateTransitionError.arithCause (.assert "x") == none
 #guard StateTransitionError.arithCause (.listFull "x") == none
+#guard StateTransitionError.arithCause (.notInList "x") == none
 
 /-! ## The admit table (`RunnerCaughtSet.admits`)
 
 One row per constructor per set. `assert` is the `AssertionError` and `outOfBounds` the
 `IndexError`, so the `assertionAndIndex` set (`expect_assertion_error`,
 `context.py:424-435`) takes exactly those two. `arithmetic` (`SSZValueError` on a range
-fault) and `listFull` (`SSZValueError` on an append, pydantic `ValidationError` on the
-constructor) are `ValueError`s, so only the `valueError` set takes them. `zeroDivision` is
+fault), `listFull` (`SSZValueError` on an append, pydantic `ValidationError` on the
+constructor), and `notInList` (the plain `ValueError` of `list.index`) are `ValueError`s, so
+only the `valueError` set takes them. `zeroDivision` is
 a bare `ZeroDivisionError`, which neither class set holds, so no row admits it. -/
 
 #guard RunnerCaughtSet.assertionAndIndex.admits (.assert "x") == true
@@ -54,6 +57,7 @@ a bare `ZeroDivisionError`, which neither class set holds, so no row admits it. 
 #guard RunnerCaughtSet.assertionAndIndex.admits (.arithmetic "x") == false
 #guard RunnerCaughtSet.assertionAndIndex.admits (.zeroDivision "x") == false
 #guard RunnerCaughtSet.assertionAndIndex.admits (.listFull "x") == false
+#guard RunnerCaughtSet.assertionAndIndex.admits (.notInList "x") == false
 
 #guard RunnerCaughtSet.valueError.admits (.assert "x") == false
 #guard RunnerCaughtSet.valueError.admits (.todo "x") == false
@@ -62,6 +66,7 @@ a bare `ZeroDivisionError`, which neither class set holds, so no row admits it. 
 #guard RunnerCaughtSet.valueError.admits (.arithmetic "x") == true
 #guard RunnerCaughtSet.valueError.admits (.zeroDivision "x") == false
 #guard RunnerCaughtSet.valueError.admits (.listFull "x") == true
+#guard RunnerCaughtSet.valueError.admits (.notInList "x") == true
 
 /-! ## The reporting buckets (`classify`)
 
@@ -78,6 +83,7 @@ range fault under every wrapper but `valueError`. A zero divisor stays there eve
 #guard StateTransitionError.classify (.arithmetic "x") == .uncaughtFault
 #guard StateTransitionError.classify (.zeroDivision "x") == .uncaughtFault
 #guard StateTransitionError.classify (.listFull "x") == .uncaughtFault
+#guard StateTransitionError.classify (.notInList "x") == .uncaughtFault
 
 /-- The store buckets, including the `.transition`-wrapped arithmetic of both causes: the
 wrapper embeds the inner reject unchanged, so the store reports the same bucket the state
@@ -95,12 +101,13 @@ example : StoreTransitionError.classify (.transition (.outOfBounds 3 2)) = .like
 /-- Expected-rejection rows for a `valid: false` fork-choice step under
 `expect_assertion_error`: exactly the bare and wrapped `assert`, plus the wrapped index
 miss. Both wrapped arithmetic causes stay out, a bare `ZeroDivisionError` and an
-`SSZValueError` alike, and so does the wrapped `listFull`. -/
+`SSZValueError` alike, and so do the wrapped `listFull` and `notInList`. -/
 example : StoreTransitionError.isExpectedRejection (.transition (.assert "x")) = true := rfl
 example : StoreTransitionError.isExpectedRejection (.transition (.outOfBounds 3 2)) = true := rfl
 example : StoreTransitionError.isExpectedRejection (.transition (.arithmetic "x")) = false := rfl
 example : StoreTransitionError.isExpectedRejection (.transition (.zeroDivision "x")) = false := rfl
 example : StoreTransitionError.isExpectedRejection (.transition (.listFull "x")) = false := rfl
+example : StoreTransitionError.isExpectedRejection (.transition (.notInList "x")) = false := rfl
 #guard StoreTransitionError.isExpectedRejection (.assert "x") == true
 #guard StoreTransitionError.isExpectedRejection (.todo "x") == false
 #guard StoreTransitionError.isExpectedRejection (.missingKey (Vector.replicate 32 0)) == false
@@ -119,6 +126,7 @@ example : RunError.classify (E := StateTransitionError) (.spec (.assert "x")) = 
 example : RunError.classify (E := StateTransitionError) (.spec (.arithmetic "x")) = .uncaughtFault := rfl
 example : RunError.classify (E := StateTransitionError) (.spec (.zeroDivision "x")) = .uncaughtFault := rfl
 example : RunError.classify (E := StateTransitionError) (.spec (.listFull "x")) = .uncaughtFault := rfl
+example : RunError.classify (E := StateTransitionError) (.spec (.notInList "x")) = .uncaughtFault := rfl
 
 /-! ## `FcStepKind` admission
 
@@ -134,6 +142,7 @@ rule. The rows here use `.attestation`, which runs under `expect_assertion_error
 #guard FcStepKind.admits .attestation (.transition (.arithmetic "x")) == false
 #guard FcStepKind.admits .attestation (.transition (.zeroDivision "x")) == false
 #guard FcStepKind.admits .attestation (.transition (.listFull "x")) == false
+#guard FcStepKind.admits .attestation (.transition (.notInList "x")) == false
 #guard FcStepKind.admits .attestation (.missingKey (Vector.replicate 32 0)) == false
 #guard FcStepKind.admits .block (.assert "x") == true
 -- The block step's wrapper never catches `IndexError`, so its index-miss row is out.

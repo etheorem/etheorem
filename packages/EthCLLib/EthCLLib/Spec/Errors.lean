@@ -22,6 +22,7 @@ the *constructor* (its classify mode), which is typed:
 | `arithmetic` | a checked range fault (`ValueError` at the pin), the same, except under a case whose own wrapper catches `ValueError` |
 | `zeroDivision` | a zero-divisor fault (a bare `ZeroDivisionError` at the pin), uncaught under every wrapper |
 | `listFull` | a list over its limit, a `ValueError` at the pin: caught only by the `except ValueError` wrapper |
+| `notInList` | a `list.index` lookup miss, a plain `ValueError` at the pin: caught only by the `except ValueError` wrapper |
 
 `todo` and `outOfScope` both name a branch that does not run, the distinction is
 intent: a `todo` is expected to pass once the work-queue reaches it, an
@@ -99,6 +100,16 @@ inductive StateTransitionError where
   in the fork bodies can raise it, except where a spec-mirrored length guard runs first
   (`pending_partial_withdrawals`, `pending_consolidations`). -/
   | listFull (field : String)
+  /-- A value absent from a Python list that the spec searches with `list.index`. At the
+  pin, `list.index` raises a plain Python `ValueError` when no element equals the value.
+  That is neither an `AssertionError` nor an `IndexError`, so `expect_assertion_error`
+  does not catch it, while the one `except ValueError` wrapper does
+  (`RunnerCaughtSet.valueError`). It `classify`s as `ClassifyBucket.uncaughtFault` and
+  carries no `ArithCause`, since a lookup is not an arithmetic operator. `descr` names the
+  lookup, diagnostic only. The standing case is `process_sync_aggregate`'s
+  `all_pubkeys.index(pubkey)` (`fulu/minimal.py:4515-4517`) on a current-sync-committee
+  pubkey that no validator carries. -/
+  | notInList (descr : String)
   deriving Inhabited, Repr, DecidableEq
 
 /-- The fork-choice store machine's reject type.
@@ -134,8 +145,8 @@ inductive ClassifyBucket where
   /-- The case matched (a valid vector's post-state root, or expected output). -/
   | passing
   /-- A reject the case's own wrapper catches; correct for a vector marked invalid. Usually an
-  `assert`, an `.arithmetic` fault under a wrapper that catches `ValueError`, and a `.listFull`
-  fault under that same wrapper (a `ValueError` at the pin). -/
+  `assert`, or a `ValueError`-class fault under a wrapper that catches `ValueError`: an
+  `.arithmetic`, a `.listFull`, or a `.notInList` fault. -/
   | expectedRejection
   /-- A `todo` reject; an unimplemented work-queue branch. Reported `xfail`. -/
   | todo
@@ -148,15 +159,15 @@ inductive ClassifyBucket where
   | likelyBug
   /-- An uncaught Python fault the reference runner does NOT catch: an `SSZValueError`
   (a `ValueError`) from `.arithmetic`, a bare `ZeroDivisionError` from `.zeroDivision`, a
-  bare-`Dict` `KeyError` from `.missingKey`, or the `ValueError` of a list over its limit
-  from `.listFull`. Reports as a bug like `likelyBug`. It is a valid rejection only where
-  the case's own wrapper catches the fault. Under `expect_assertion_error` the reference
-  propagates every one of these, so the driver fails the vector; under the one wrapper
-  that catches `ValueError` an `.arithmetic` fault and a `.listFull` fault pass instead,
-  while a `.zeroDivision` fault still fails (a bare `ZeroDivisionError` is not a
-  `ValueError`). This is the reporting-side counterpart of `isExpectedRejection` excluding
-  `.missingKey`, `.transition (.arithmetic …)`, `.transition (.zeroDivision …)`, and
-  `.transition (.listFull …)`. -/
+  bare-`Dict` `KeyError` from `.missingKey`, the `ValueError` of a list over its limit
+  from `.listFull`, or the `ValueError` of a `list.index` miss from `.notInList`. Reports as
+  a bug like `likelyBug`. It is a valid rejection only where the case's own wrapper catches
+  the fault. Under `expect_assertion_error` the reference propagates every one of these, so
+  the driver fails the vector. Under the one wrapper that catches `ValueError`, an
+  `.arithmetic`, a `.listFull`, and a `.notInList` fault pass instead, while a
+  `.zeroDivision` fault still fails (a bare `ZeroDivisionError` is not a `ValueError`). This
+  is the reporting-side counterpart of `isExpectedRejection` excluding `.missingKey` and the
+  `.transition`-wrapped `.arithmetic`, `.zeroDivision`, `.listFull`, and `.notInList`. -/
   | uncaughtFault
   deriving Inhabited, Repr, DecidableEq
 
@@ -186,6 +197,7 @@ def StateTransitionError.classify : StateTransitionError → ClassifyBucket
   | .arithmetic _    => .uncaughtFault
   | .zeroDivision _  => .uncaughtFault
   | .listFull _      => .uncaughtFault
+  | .notInList _     => .uncaughtFault
 
 /-- Classify a store-transition reject by its constructor. A wrapped nested
 state failure classifies by the inner reject. -/
@@ -203,7 +215,8 @@ under `expect_assertion_error` (`context.py:424-435`), which catches `AssertionE
 only index-miss shape, `.transition (.outOfBounds …)`, count; at the `eth-ssz-specs` 0.1.0
 pin, `.missingKey` (an uncaught
 `KeyError`), `.transition (.arithmetic …)` (an uncaught `SSZValueError`, a `ValueError`),
-`.transition (.zeroDivision …)` (an uncaught bare `ZeroDivisionError`), `.todo` /
+`.transition (.zeroDivision …)` (an uncaught bare `ZeroDivisionError`),
+`.transition (.listFull …)` and `.transition (.notInList …)` (uncaught `ValueError`s), `.todo` /
 `.outOfScope` (our own deferrals), and anything else do not.
 
 That wrapper scores the attestation, attester-slashing, envelope, and PTC-message steps. The
@@ -255,9 +268,10 @@ inductive RunnerCaughtSet where
 `eth-ssz-specs` 0.1.0 pin.
 
 `.assert` is the `AssertionError` and `.outOfBounds` is the `IndexError`, so
-`expect_assertion_error` takes both. `.arithmetic` is an `SSZValueError` and `.listFull` is
-a pydantic `ValidationError`; both are Python `ValueError`s, so the `except ValueError`
-wrapper takes both and `expect_assertion_error` takes neither. `.zeroDivision` is a bare
+`expect_assertion_error` takes both. `.arithmetic` is an `SSZValueError`, `.listFull` is a
+pydantic `ValidationError`, and `.notInList` is the plain `ValueError` of a `list.index` miss.
+All three are Python `ValueError`s, so the `except ValueError` wrapper takes them and
+`expect_assertion_error` takes none of them. `.zeroDivision` is a bare
 `ZeroDivisionError`, which neither set catches. `.todo` and `.outOfScope` record our own
 deferrals, and the reference raises neither. -/
 def RunnerCaughtSet.admits : RunnerCaughtSet → StateTransitionError → Bool
@@ -266,10 +280,12 @@ def RunnerCaughtSet.admits : RunnerCaughtSet → StateTransitionError → Bool
   | .assertionAndIndex, .arithmetic _    => false
   | .assertionAndIndex, .zeroDivision _  => false
   | .assertionAndIndex, .listFull _      => false
+  | .assertionAndIndex, .notInList _     => false
   | .assertionAndIndex, .todo _          => false
   | .assertionAndIndex, .outOfScope _    => false
   | .valueError,        .arithmetic _    => true
   | .valueError,        .listFull _      => true
+  | .valueError,        .notInList _     => true
   | .valueError,        .zeroDivision _  => false
   | .valueError,        .assert _        => false
   | .valueError,        .outOfBounds _ _ => false

@@ -84,9 +84,11 @@ and `IndexError`. The guards pin both sets and the pair that selects them. -/
 #guard RunnerCaughtSet.assertionAndIndex.admits (.arithmetic "x") == false
 #guard RunnerCaughtSet.assertionAndIndex.admits (.zeroDivision "x") == false
 #guard RunnerCaughtSet.assertionAndIndex.admits (.listFull "x") == false
+#guard RunnerCaughtSet.assertionAndIndex.admits (.notInList "x") == false
 
 #guard RunnerCaughtSet.valueError.admits (.arithmetic "x") == true
 #guard RunnerCaughtSet.valueError.admits (.listFull "x") == true
+#guard RunnerCaughtSet.valueError.admits (.notInList "x") == true
 #guard RunnerCaughtSet.valueError.admits (.zeroDivision "x") == false
 #guard RunnerCaughtSet.valueError.admits (.assert "x") == false
 #guard RunnerCaughtSet.valueError.admits (.outOfBounds 0 0) == false
@@ -115,6 +117,12 @@ a pass or a fail. The guards above pin the first. These pin the second, one row 
 -- A `ValueError` at the pin, so the `except ValueError` wrapper catches it.
 #guard (classifyReject .valueError (.listFull "x")).passed == true
 #guard (classifyReject .valueError (.listFull "x")).bucket == .expectedRejection
+
+#guard (classifyReject .assertionAndIndex (.notInList "x")).passed == false
+#guard (classifyReject .assertionAndIndex (.notInList "x")).bucket == .uncaughtFault
+-- The plain `ValueError` of a `list.index` miss, so the `except ValueError` wrapper catches it.
+#guard (classifyReject .valueError (.notInList "x")).passed == true
+#guard (classifyReject .valueError (.notInList "x")).bucket == .expectedRejection
 
 #guard (classifyReject .assertionAndIndex (.zeroDivision "x")).passed == false
 #guard (classifyReject .assertionAndIndex (.zeroDivision "x")).bucket == .uncaughtFault
