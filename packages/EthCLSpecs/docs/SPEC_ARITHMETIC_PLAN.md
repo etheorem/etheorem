@@ -544,6 +544,11 @@ time arithmetic is accounted for, and the remaining constant inventory is empty.
   defaulting reads, casts, and all
   temporary crossings. Give every remaining use a source or proof justification.
   This is a manual transition audit; automated enforcement remains deferred.
+  - [ ] **8.4a1 Audit fork bodies: Fulu state-transition family.**
+  - [ ] **8.4a2 Audit fork bodies: Fulu clock, sampling, and fork choice.**
+  - [ ] **8.4a3 Audit fork bodies: Fulu declarations, state, withdrawals, and constants.**
+  - [ ] **8.4a4 Audit fork bodies: Gloas and Heze.**
+  - [ ] **8.4b Audit the whole scope again: boundaries and closure.**
 - [ ] **8.5 Verify.** Run the common gate and full vector matrix.
 
 **Done when:** every inventory row has implemented behavior and evidence; no consensus
