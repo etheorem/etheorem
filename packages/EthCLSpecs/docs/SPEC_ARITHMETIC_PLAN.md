@@ -595,7 +595,28 @@ time arithmetic is accounted for, and the remaining constant inventory is empty.
   This is a manual transition audit; automated enforcement remains deferred.
   - [ ] **8.4a1 Audit fork bodies: Fulu state-transition family.**
   - [ ] **8.4a2 Audit fork bodies: Fulu clock, sampling, and fork choice.**
-  - [ ] **8.4a3 Audit fork bodies: Fulu declarations, state, withdrawals, and constants.**
+  - [x] **8.4a3 Audit fork bodies: Fulu declarations, state, withdrawals, and constants.**
+    *Done 2026-11-20 (WS-68, `c86b970`): the 8.4a3 family audited (Fulu `Types`,
+    `State`, `Signing`, `Fork`, `Blocks`, `Withdrawals`, `Constants`,
+    `BlobParameters`, `Containers/`). One unjustified raw construction fixed: the
+    seven preset views in `Constants.lean` moved from `trustedOfUInt64
+    (UInt64.ofNat n)` — which wraps `2^64` to `0` before the wrapper sees it, and
+    the pinned module raises at load — to `CLUint64.ofNatLT` over seven new preset
+    `…Lt` premises, proved by `decide` for both value sets; Gloas and Heze inherit
+    the premises through the preset merge with no edit. New
+    `Tests/FuluDeclarationsAuditPins` (premise boundary `2^64 - 1`/`2^64`, the old
+    wrap to `0` vs `ofNat?`'s range fault, a boundary child preset, and each view
+    against its `Nat` field at both presets in Fulu, Gloas, Heze);
+    `Tests/PlainArithmeticPins.lean` preset overrides re-prove the new premises
+    (mechanical, no assertion changed). All remaining raw uses carry recorded
+    data-only/structural/justified dispositions; the §8 raw aliases
+    (`WithdrawalIndex`, `BuilderIndex`, `CommitteeIndex`) and the
+    `Withdrawals.lean` cursor arithmetic confirmed closed. Five items handed to
+    the Epic Lead / Stage 9 rather than committed (processDeposit raw wrap,
+    dead `maxEffectiveBalanceElectra` twin, `inactivityScores` rename, baked-in
+    preset literals, Stage 9 docstring). `TEMPORARY CROSSING` grep empty; common
+    gate green; minimal sweeps case-identical to 8.3 (0 diff lines). Record:
+    `mb/spec-arithmetic-implementation/stage-8.4a3.md`.*
   - [ ] **8.4a4 Audit fork bodies: Gloas and Heze.**
   - [ ] **8.4b Audit the whole scope again: boundaries and closure.**
 - [ ] **8.5 Verify.** Run the common gate and full vector matrix.
