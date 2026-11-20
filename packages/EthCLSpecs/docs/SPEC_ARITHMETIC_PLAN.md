@@ -588,11 +588,16 @@ time arithmetic is accounted for, and the remaining constant inventory is empty.
     (fulu 48, gloas 52, heze 55); coverage stays at 87 claims with both baselines and
     the axiom table unchanged, README denominator 630→627 for the three removed
     `ppdLoop` copies. Record: `mb/spec-arithmetic-implementation/stage-8.3.md`.*
-- [ ] **8.4 Audit the whole scope again.** Review raw word operators, raw constructors,
+- [x] **8.4 Audit the whole scope again.** Review raw word operators, raw constructors,
   projections, `toPlainNat`, `toPlainInt`, `toCLInt`, `Nat` subtraction/division,
   defaulting reads, casts, and all
   temporary crossings. Give every remaining use a source or proof justification.
   This is a manual transition audit; automated enforcement remains deferred.
+    *Done 2026-11-20 (WS-64, `b78fcf6`): closed with its five sub-stages — see the
+    8.4a1 (WS-63), 8.4a2 (WS-66), 8.4a3 (WS-68), 8.4a4 (WS-67) and 8.4b (WS-64)
+    records below. The closure statement's exception list (three open divergences:
+    `eth1DepositIndex` wrap, sync-committee `findIdx?` arm, `computeCommittee`
+    defaulting read) stays routed to the Epic Lead before the Stage 10 rollup.*
   - [x] **8.4a1 Audit fork bodies: Fulu state-transition family.**
     *Done 2026-11-20 (WS-63, `42bbd08`): the state-transition family audited
     (Fulu `EpochProcessing`, `Transition`, `Operations`, `RegistryUpdates`,
@@ -698,7 +703,21 @@ time arithmetic is accounted for, and the remaining constant inventory is empty.
     ids; no vector reaches the fixed order — it needs a zero
     `SLOT_DURATION_MS`). Record:
     `mb/spec-arithmetic-implementation/stage-8.4a4.md`.*
-  - [ ] **8.4b Audit the whole scope again: boundaries and closure.**
+  - [x] **8.4b Audit the whole scope again: boundaries and closure.**
+    *Done 2026-11-20 (WS-64, `b78fcf6`): the runner/interface boundaries (the three
+    `Interface.lean` files, the runner tick and check-assert conversions) and the
+    framework side (codec width conversions, the Crypto seam, `MerklePath.routeRight`)
+    audited — every site carries a recorded disposition; no spec raise hides at the
+    boundary. One pin fix: the `GloasCommitteesPins.lean` `pinSamplerCounterOverflow`
+    third case fed `effBals = #[]`, so the array panic-default fired before the expected
+    `.arithmetic` throw; it now feeds the well-formed arrays its docstring claims, same
+    `.arithmetic` outcome, no body change. Non-spec-arith zones (`Loop.lean` fuel,
+    `counterBudgetUInt64`) confirmed out; `TEMPORARY CROSSING` grep empty; closure sweep
+    of the Stage 0 inventory §1–§8 green; common gate green; minimal sweeps
+    case-identical to 8.4a4 (0 diff lines across 8147/9958/10170 case ids). Open items
+    carried to the Epic Lead / Stage 9 (the `eth1DepositIndex` retype sequencing, the
+    sync-committee `findIdx?` arm and `computeCommittee` defaulting read, deferred
+    Epic Lead items). Record: `mb/spec-arithmetic-implementation/stage-8.4b.md`.*
 - [ ] **8.5 Verify.** Run the common gate and full vector matrix.
 
 **Done when:** every inventory row has implemented behavior and evidence; no consensus
