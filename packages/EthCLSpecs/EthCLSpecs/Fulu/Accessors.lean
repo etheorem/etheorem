@@ -32,8 +32,10 @@ forkdef getTotalActiveBalance (state : State) : Except StateTransitionError Gwei
 (`fulu/minimal.py:4380-4396`). No committees. The pyspec reads `epoch_participation[index]`
 for every active index first, then `state.validators[index].slashed` for each participating
 one; both reads raise `IndexError` past the end, so they go through `getAt` in that order.
-The pyspec's leading `assert epoch in (previous, current)` has no Lean twin: every caller
-passes the previous or the current epoch. -/
+`has_flag`'s mask `ParticipationFlags(2**flag_index)` raises past flag index 7, so the
+test binds after the read it evaluates beside (`SPEC_ARITHMETIC.md` §5.1). The pyspec's
+leading `assert epoch in (previous, current)` has no Lean twin: every caller passes the
+previous or the current epoch. -/
 forkdef getUnslashedParticipatingIndices (state : State) (flagIndex : Nat) (epoch : Epoch) :
     Except StateTransitionError (Array ValidatorIndex) := do
   let isCurrent := epoch == computeEpochAtSlot (sszGet state slot)
@@ -42,7 +44,7 @@ forkdef getUnslashedParticipatingIndices (state : State) (flagIndex : Nat) (epoc
   let active ← getActiveValidatorIndices state epoch
   let mut participating : Array ValidatorIndex := #[]
   for i in active do
-    if hasFlag (← liftErr (getAt part i)) flagIndex then participating := participating.push i
+    if ← CLUint8.hasFlag (← liftErr (getAt part i)) flagIndex then participating := participating.push i
   let mut out : Array ValidatorIndex := #[]
   for i in participating do
     if !(← liftErr (getAt validators i)).slashed then out := out.push i

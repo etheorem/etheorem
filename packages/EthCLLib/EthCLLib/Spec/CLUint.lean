@@ -378,8 +378,8 @@ At the pin, `ParticipationFlags` is a `Uint8` subclass, and the pinned
 in-range values cannot leave the range, so those two are total here and return
 the value, matching the §5.1 row for same-width bitwise operators. The masks
 raise, so `addFlag` and `hasFlag` return a `Checked` result: the raise is the
-pyspec's, and Stage 8 migrates the raw-`UInt8` helpers in
-`Spec/Arith.lean` (`hasFlag` / `addFlag`) onto this surface. -/
+pyspec's. Stage 8 moved the flag sites onto this surface; the raw-`UInt8`
+helpers that used to sit in `Spec/Arith.lean` are gone. -/
 
 /-- The pyspec `Uint8`. Same shape as `CLUint64`: no core operator instance
 applies, the constructor is private, and `ofNat?` is the checked route from a

@@ -107,6 +107,9 @@ caller rejects; `some flags` otherwise. `inclusionDelay` is the pyspec's
 `state.slot - data.slot` checked difference, a `Slot`; the comparisons never raise in
 Python. `integer_squareroot(SLOTS_PER_EPOCH)` is the total checked-kind root
 (`CLUint64.integerSquareroot`), so both bounds meet the delay in the checked kind.
+The returned list holds the pinned checked constants (`TIMELY_*_FLAG_INDEX` =
+`Uint64(0..2)`, `fulu/minimal.py:138-140`); its only consumer is the value-equality
+`in` test of `process_attestation`, a total comparison.
 
 The pinned body (`fulu/minimal.py:4414-4423`) reads the target root and the head root
 before `assert is_matching_source`. Both reads can raise the uncaught range fault: near the
@@ -114,7 +117,7 @@ maximum slot, `get_block_root_at_slot`'s `slot + SLOTS_PER_HISTORICAL_ROOT` over
 the reads bind first and the source check comes last, and a mismatched source cannot turn
 that fault into the caught assert (`SPEC_ARITHMETIC.md` §1). -/
 forkdef getAttestationParticipationFlagIndices (state : State) (data : AttestationData)
-    (inclusionDelay : Slot) : StateTransition (Option (Array Nat)) := do
+    (inclusionDelay : Slot) : StateTransition (Option (Array CLUint64)) := do
   let justified := if data.target.epoch == currentEpochOf state then sszGet state currentJustifiedCheckpoint
                    else sszGet state previousJustifiedCheckpoint
   let isMatchingSource := data.source.epoch == justified.epoch && data.source.root == justified.root
@@ -124,7 +127,7 @@ forkdef getAttestationParticipationFlagIndices (state : State) (data : Attestati
   let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == headRoot
   if !isMatchingSource then return none
 
-  let mut flags : Array Nat := #[]
+  let mut flags : Array CLUint64 := #[]
   if inclusionDelay ≤ Const.slotsPerEpochC.integerSquareroot then flags := flags.push Const.timelySourceFlagIndex
   if isMatchingTarget then flags := flags.push Const.timelyTargetFlagIndex
   if isMatchingHead && inclusionDelay == Const.minAttestationInclusionDelay then flags := flags.push Const.timelyHeadFlagIndex
@@ -195,30 +198,38 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   for vi in ← liftErr (getAttestingIndices state att) do
     for flagIndex in [0:3] do
       -- `flag_index in participation_flag_indices and not has_flag(epoch_participation[index],
-      -- flag_index)` (`fulu/minimal.py:2077-2079`): the `and` short-circuits, so the flag read
-      -- forms only for a flag the attestation earns. `vi` is a data-derived attesting-validator
-      -- index; the read goes through `sszGetIdx` so an out-of-range index rejects with
-      -- `outOfBounds` rather than masking as a default flag.
-      if !flagIndices.contains flagIndex then continue
+      -- flag_index)` (`fulu/minimal.py:2081-2084`): the `and` short-circuits, so the flag read
+      -- forms only for a flag the attestation earns. The `in` compares a plain enumerate
+      -- index against the checked constants by value — a total comparison (`BaseUint.__eq__`
+      -- admits a bare integer) — so the membership reads the elements' plain values.
+      -- `vi` is a data-derived attesting-validator index; the read goes through
+      -- `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather than
+      -- masking as a default flag.
+      if !flagIndices.any (·.toPlainNat == flagIndex) then continue
       let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) vi
                  else sszGetIdx (sszGet stateAcc previousEpochParticipation) vi
-      if !hasFlag flag flagIndex then
+      -- `not has_flag(...)`: the mask `ParticipationFlags(2**flag_index)` raises past
+      -- flag index 7, so the test binds (`SPEC_ARITHMETIC.md` §5.1).
+      if !(← CLUint8.hasFlag flag flagIndex) then
         -- `toPlainNat`: the raising read above proved `vi` in range for this list.
         let i := vi.toPlainNat
+        -- `add_flag`'s mask raises past flag index 7; the write stores the bound value,
+        -- as Python assigns the `add_flag(...)` result.
+        let flag' ← CLUint8.addFlag flag flagIndex
         stateAcc := if currentTarget then
-                   sszUpdate stateAcc with currentEpochParticipation[i]! := addFlag flag flagIndex
+                   sszUpdate stateAcc with currentEpochParticipation[i]! := flag'
                  else
-                   sszUpdate stateAcc with previousEpochParticipation[i]! := addFlag flag flagIndex
+                   sszUpdate stateAcc with previousEpochParticipation[i]! := flag'
         let base ← liftErr (getBaseReward state vi)
         let weighted ← base * Const.participationFlagWeights[flagIndex]!
         proposerNum := ← proposerNum + weighted
 
   -- Pay the proposer the accumulated weight. The denominator
   -- `(WEIGHT_DENOMINATOR - PROPOSER_WEIGHT) * WEIGHT_DENOMINATOR // PROPOSER_WEIGHT`
-  -- is a constant-only subexpression (adjudication F2): every operand is a plain spec
-  -- weight, no balance-derived value stands beside it, so it stays the plain `Nat`
-  -- formula and the mixed `Gwei / Nat` division carries the checked raise.
-  let proposerDenom := (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
+  -- is checked arithmetic at the pin (every operand a `Uint64` constant), so the chain
+  -- binds; the shipped values cannot leave range, and the mixed `Gwei / CLUint64`
+  -- division carries the checked raise.
+  let proposerDenom ← (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
   let proposerReward ← proposerNum / proposerDenom
   stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc) proposerReward
   set stateAcc

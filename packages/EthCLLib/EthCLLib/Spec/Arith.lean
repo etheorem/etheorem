@@ -248,12 +248,4 @@ def Bitvector.trueIndices {n : Nat} (bv : Bitvector n) : Array Nat := Id.run do
     if bitGet bv i then out := out.push i
   return out
 
-/-- Test participation-flag bit `idx` of a `uint8` flag byte. -/
-@[inline] def hasFlag (flags : UInt8) (idx : Nat) : Bool :=
-  (flags >>> (UInt8.ofNat idx)) &&& 1 == 1
-
-/-- Set participation-flag bit `idx` of a `uint8` flag byte. -/
-@[inline] def addFlag (flags : UInt8) (idx : Nat) : UInt8 :=
-  flags ||| (1 <<< (UInt8.ofNat idx))
-
 end EthCLLib.Spec
