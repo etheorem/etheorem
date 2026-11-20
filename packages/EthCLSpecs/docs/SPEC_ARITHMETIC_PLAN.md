@@ -664,7 +664,40 @@ time arithmetic is accounted for, and the remaining constant inventory is empty.
     preset literals, Stage 9 docstring). `TEMPORARY CROSSING` grep empty; common
     gate green; minimal sweeps case-identical to 8.3 (0 diff lines). Record:
     `mb/spec-arithmetic-implementation/stage-8.4a3.md`.*
-  - [ ] **8.4a4 Audit fork bodies: Gloas and Heze.**
+  - [x] **8.4a4 Audit fork bodies: Gloas and Heze.**
+    *Done 2026-11-20 (WS-67, `307d8f6`): the Gloas and Heze trees audited
+    (`Gloas/`, `Heze/` except the `Interface.lean` files, which are 8.4b's).
+    One fixed fault order: the payload-availability pins read
+    `store.blocks[root].slot + 1 == get_current_slot(store)` with the clock
+    bound first, so a zero `SLOT_DURATION_MS` surfaced `.zeroDivision` where
+    the pinned Python raises the range fault from the add — the checked add
+    now binds before the clock in `Gloas/ForkChoice.lean`
+    (`isPreviousSlotPayloadDecision`, `shouldExtendPayload`) and
+    `Heze/ForkChoice.lean` (`shouldExtendPayload`), pinned by the new
+    `Tests/GloasHezeAuditPins.lean` (6 `#guard`s plus the `.arithmetic` /
+    `.zeroDivision` pair); `Proofs/Heze/ShouldExtendPayload.lean` restated
+    (`.run` equation re-ordered, the overflow corollary drops its clock
+    premise, the clock corollary gains the no-overflow premise;
+    `PROOF_LEDGER` row and `IMPLEMENTATION_NOTES` follow). Every 8.4a1/8.4a2/
+    8.4a3 fix is confirmed mirrored in Gloas/Heze by `inherit` replay (the
+    registry `if`/`elif` chain, the slashings sum, the preset `…C` views with
+    no restatement, 8.4a2's comment-only shapes). Every remaining raw use
+    carries a recorded source/proof/structural justification — the
+    Gloas-specific bodies (builder payments and quorum, PTC window, payload
+    availability, withdrawals sweeps, `CommitteeIndex` comparisons)
+    dispositioned against the pin, with four new justification comments
+    (`builderPaymentIndex`, the omitted `ValidatorIndex`/`BuilderIndex` casts
+    over progressive lists, the eager `isAttestationSameSlot` bind). Four
+    items handed to the Epic Lead / 8.4b rather than committed (the
+    `ptcWindow` length literal, the 8.4a3 follow-ups, the inherited
+    `processSyncAggregate`/`computeCommittee` gaps, a framework lemma for the
+    omitted index casts); the reviewer's non-blocking note on the
+    pre-existing `GloasCommitteesPins.lean:91` defaulting read is routed to
+    8.4b. `TEMPORARY CROSSING` grep empty; common gate green; vectors
+    case-identical to 8.3 (minimal 0 diff lines across 8147/9958/10170 case
+    ids; no vector reaches the fixed order — it needs a zero
+    `SLOT_DURATION_MS`). Record:
+    `mb/spec-arithmetic-implementation/stage-8.4a4.md`.*
   - [ ] **8.4b Audit the whole scope again: boundaries and closure.**
 - [ ] **8.5 Verify.** Run the common gate and full vector matrix.
 
