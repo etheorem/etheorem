@@ -26,9 +26,10 @@ open EthCLSpecs.Heze
 -- n = 8 wraps as i % 3 = 0,1,2,0,1,2,0,1. Second: a size-2 source over the real
 -- `INCLUSION_LIST_COMMITTEE_SIZE` (= 16) alternates 0,1,…; the 16-element result also pins
 -- the constant, since a different size would change the list length and fail the `=`.
-#guard (cyclicSample (#[10, 20, 30] : Array UInt64) 8).toList
-  = [10, 20, 30, 10, 20, 30, 10, 20]
-#guard (cyclicSample (#[7, 8] : Array UInt64) (@Const.inclusionListCommitteeSize minimal)).toList
-  = [7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8]
+#guard ((cyclicSample (#[10, 20, 30] : Array UInt64) 8).map (·.toList)).toOption
+  = some [10, 20, 30, 10, 20, 30, 10, 20]
+#guard ((cyclicSample (#[7, 8] : Array UInt64)
+    (@Const.inclusionListCommitteeSize minimal)).map (·.toList)).toOption
+  = some [7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8]
 
 end EthCLSpecs.Tests.HezeCommitteesPins
