@@ -133,21 +133,23 @@ per-value cost and not a size ramp. -/
 private def distinctValidators (st : BeaconState) : Array Validator :=
   let base := st.validators[0]!
   Array.ofFn (n := perTypeCount) fun i =>
-    { base with effectiveBalance := UInt64.ofNat (i.val + 1) }
+    -- Benchmark fixture data: trusted, in-range by construction (the index
+    -- bound), so the wire route is the right construction.
+    { base with effectiveBalance := CLUint64.trustedOfUInt64 (UInt64.ofNat (i.val + 1)) }
 
 /-- Distinct block headers off the state's `latestBlockHeader`, varied
 by `slot`. -/
 private def distinctHeaders (st : BeaconState) : Array BeaconBlockHeader :=
   let base := st.latestBlockHeader
   Array.ofFn (n := perTypeCount) fun i =>
-    { base with slot := UInt64.ofNat (i.val + 1) }
+    { base with slot := CLUint64.trustedOfUInt64 (UInt64.ofNat (i.val + 1)) }
 
 /-- Distinct checkpoints off the state's `finalizedCheckpoint`, varied
 by `epoch`. The smallest hot container in the state: two chunks. -/
 private def distinctCheckpoints (st : BeaconState) : Array Checkpoint :=
   let base := st.finalizedCheckpoint
   Array.ofFn (n := perTypeCount) fun i =>
-    { base with epoch := UInt64.ofNat (i.val + 1) }
+    { base with epoch := CLUint64.trustedOfUInt64 (UInt64.ofNat (i.val + 1)) }
 
 /-- Distinct attestations off the block's first attestation, varied by
 the attestation data's `slot`. Falls back to the `Inhabited` default
@@ -161,7 +163,7 @@ private def distinctAttestations (blocks : Array (SignedBeaconBlock)) :
     | some sb => (sb.message.body.attestations[0]?).getD default
     | none    => default
   Array.ofFn (n := perTypeCount) fun i =>
-    { base with data := { base.data with slot := UInt64.ofNat (i.val + 1) } }
+    { base with data := { base.data with slot := CLUint64.trustedOfUInt64 (UInt64.ofNat (i.val + 1)) } }
 
 /-- Prebuild one distinct buffer copy per iteration. Copies of one
 buffer hold equal bytes but are separate runtime objects, so the
@@ -193,7 +195,9 @@ private def rowState (label : String) (iterations : Nat) (st : BeaconState)
   let counter ← IO.mkRef 0
   runBench label iterations do
     let i ← counter.modifyGet (fun n => (n + 1, n + 1))
-    act { st with genesisTime := UInt64.ofNat i }
+    -- The salt is fixture data, never spec arithmetic: the raw word enters the checked
+    -- field through the wire iso, as a decoded `genesis_time` would.
+    act { st with genesisTime := CLUint64.trustedOfUInt64 (UInt64.ofNat i) }
   sink.modify (· + (← counter.get))
 
 /-- Run the whole profile against one vector: a pre-state buffer and
