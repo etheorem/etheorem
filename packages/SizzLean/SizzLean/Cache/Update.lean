@@ -160,6 +160,16 @@ it for you. The uncached path handles it with the same plain
 `{ view := { … with vec := vec.set! i v } }` rewrite it uses for
 everything.
 
+The basic-vs-composite decision (`isCompositeElem` in `walkPath`)
+reads the element's `SSZRepr` *shape*, not its Lean type name: a
+`.uintN` / `.bool` shape packs, everything else owns a sub-tree.
+A checked wrapper (a `structure` over `UInt64` whose shape is
+`.uintN 64`) therefore packs exactly like `UInt64` itself. A shape
+that does not reduce to an `SSZType` constructor at expansion time
+is a compile error ("unresolved shape"), never a silent composite
+guess, because a wrong guess here leaves the cached root stale
+while the view stays correct.
+
 Cost (cached path only): rebuilding the owning field's subtree is
 O(field-chunks) merkleization, not the O(log cap) of a single-leaf
 update. Fine for occasional writes; for tight per-element loops
@@ -623,13 +633,52 @@ private def walkPath (rootType : Expr) (path : Array PathStep) :
   let some ty := terminalType? | throwError "sszUpdate: walk produced no terminal type"
   return (pieces, ty, projDrop)
 where
+  /-- Classify a `Vector` / `SSZList` element as composite (it owns
+  a sub-tree, one gindex per element) or basic-packed (it shares a
+  32-byte chunk with its neighbours, no gindex of its own) from its
+  `SSZRepr` *shape*, not its Lean type name.
+
+  Why the shape: a checked wrapper (a `structure` over `UInt64`,
+  say) has the same wire layout as the wrapped integer. Its
+  `SSZRepr.shape` is `.uintN 64`, so it packs four per chunk and an
+  indexed write must take the owner-rebuild route. A type-name
+  whitelist would call the wrapper composite, key a write at a
+  per-element subtree gindex, and leave the cached root stale while
+  the serialized view stays byte-correct. Reading the shape keeps
+  every `.uintN` / `.bool`-shaped type on the same route as the
+  primitive it wraps.
+
+  The projection reduces at elaboration time for every instance
+  whose `shape` field is closed (all derived and hand-written
+  instances). A shape that does not whnf to an `SSZType` constructor
+  (an element that is a type variable under a generic instance, or
+  a type with no `SSZRepr` instance at all) raises here, at the
+  expansion site: guessing composite would silently corrupt the
+  root, so an unresolved shape is a compile error instead. -/
   isCompositeElem (α : Expr) : MetaM Bool := do
-    let αW ← whnf α
-    if αW.isConstOf ``Bool then return false
-    if αW.isConstOf ``UInt8 || αW.isConstOf ``UInt16 ||
-       αW.isConstOf ``UInt32 || αW.isConstOf ``UInt64 then return false
-    if αW.isAppOfArity ``BitVec 1 then return false
-    return true
+    let α ← instantiateMVars α
+    let cls ← mkAppM ``SizzLean.SSZRepr #[α]
+    let some inst ← synthInstance? cls
+      | throwError "sszUpdate: element type '{α}' has no `SSZRepr` instance, so its packing shape cannot be classified (unresolved shape). Derive or hand-write `SSZRepr {α}`; the instance's `shape` field decides basic-packed vs composite."
+    -- `SSZRepr.shape` is the first field of the instance structure;
+    -- `whnf` delta-unfolds the instance and iota-reduces the
+    -- projection down to the `SSZType` constructor it names.
+    let shapeW ← whnf (Lean.mkProj ``SizzLean.SSZRepr 0 inst)
+    -- Basic packed: one `.uintN` / `.bool` value occupies part of a
+    -- 32-byte chunk. `BitVec n` lands here through its shape: the
+    -- instance (or the deriving handler) maps it to `.uintN n`.
+    if shapeW.isAppOfArity ``SizzLean.Spec.SSZType.uintN 1 then return false
+    if shapeW.isConstOf ``SizzLean.Spec.SSZType.bool then return false
+    -- Composite: one sub-tree per element.
+    if shapeW.isAppOfArity ``SizzLean.Spec.SSZType.vector 2 then return true
+    if shapeW.isAppOfArity ``SizzLean.Spec.SSZType.list 2 then return true
+    if shapeW.isAppOfArity ``SizzLean.Spec.SSZType.bitvector 1 then return true
+    if shapeW.isAppOfArity ``SizzLean.Spec.SSZType.bitlist 1 then return true
+    if shapeW.isAppOfArity ``SizzLean.Spec.SSZType.container 1 then return true
+    if shapeW.isAppOfArity ``SizzLean.Spec.SSZType.progressiveList 1 then return true
+    if shapeW.isConstOf ``SizzLean.Spec.SSZType.progressiveBitlist then return true
+    if shapeW.isAppOfArity ``SizzLean.Spec.SSZType.progressiveContainer 2 then return true
+    throwError "sszUpdate: element type '{α}' has `SSZRepr` shape '{shapeW}' that did not reduce to an `SSZType` constructor at elaboration time (unresolved shape). The cached write path cannot classify it as basic-packed or composite without guessing; give the element a closed `SSZRepr` instance."
 
 /-- Concatenate `BitsPiece` pieces into a single `List Bool` term
 expression. Literal pieces are spliced as list literals; runtime
