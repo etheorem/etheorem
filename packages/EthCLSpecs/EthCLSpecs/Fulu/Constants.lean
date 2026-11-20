@@ -21,7 +21,19 @@ with `uint64`-shaped state fields (slots, epochs, indices, balances); `Nat`
 constants feed the reward / penalty arithmetic, evaluated in `Nat` (unbounded, no
 wraparound) to match the pyspec's Python `int` exactly, narrowing back to `Gwei`
 only at the application site. A `…G` suffix marks the `Gwei` form of a value that
-also has a `Nat` form.
+also has a `Nat` form. A `…G` field is also the *stored* flavour when the pyspec
+declares the value a `Gwei`: the `Nat` twin is then a derived view in `Const`
+(`SPEC_ARITHMETIC.md` §4.2, checked constants stay checked), and the numeral
+appears once per value set.
+
+Derived views (`SPEC_ARITHMETIC.md` §4.2, §4.5): a `…C` suffix marks the
+`CLUint64` view of a tier field, proof-carrying construction over the preset's
+own `< 2 ^ 64` premise for a `Nat` structural field, the wire route for a raw
+`UInt64` config field, and a `…Div` suffix marks
+the `PositiveDivisor` view, which pairs the stored value with the preset's own
+positivity premise. No view stores a value: each body projects the original
+entry, so a child override re-proves through the tier's proof fields, and the
+tier merge carries the views like any other entry.
 
 Values are Fulu/Electra, the conformance fork this body targets. Content a later
 fork introduces lives in that fork: `Gloas/Constants.lean` owns the ePBS and
@@ -91,10 +103,12 @@ forkpreset where
   minSeedLookahead : Epoch
   minAttestationInclusionDelay : Slot
   minEpochsToInactivityPenalty : Epoch
-  -- Balance thresholds. A `…G` field is the `Gwei` form of the value its
-  -- suffix-free twin holds as a `Nat`; both flavours are preset entries because
-  -- both read the same YAML key.
-  effectiveBalanceIncrement : Nat
+  -- Balance thresholds. Both flavours read the same YAML key. The stored
+  -- flavour is the pyspec's own: `EFFECTIVE_BALANCE_INCREMENT` is a `Gwei` in
+  -- the source, so the `Gwei` field stores the value here and the suffix-free
+  -- `Nat` entry is a derived view in `Const` (`SPEC_ARITHMETIC.md` §4.2).
+  -- `maxEffectiveBalanceElectra` keeps its two fields until its retype lands
+  -- with a consumer.
   effectiveBalanceIncrementG : Gwei
   minDepositAmountG : Gwei
   minActivationBalance : Gwei
@@ -123,16 +137,32 @@ forkpreset where
   slotsPerHistoricalRootLt : slotsPerHistoricalRoot < 2 ^ 64
   epochsPerHistoricalVectorPos : 0 < epochsPerHistoricalVector
   epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64
+  -- The shuffle's round byte: `compute_shuffled_permutation` casts each round index
+  -- `Uint8(current_round)`, which raises past `2 ^ 8 - 1`. Every round index lies below
+  -- `shuffleRoundCount`, so this bound makes that cast total (`computeShuffledPermutation`).
+  shuffleRoundCountLe : shuffleRoundCount ≤ 2 ^ 8
+  -- The range premises of the counts whose checked views below the plain-integer and
+  -- `Epoch` formulas read. The pinned module types each `Epoch` or `Uint64`, so a value past
+  -- `2 ^ 64 - 1` raises when the module loads, and no pyspec runs on such a preset. Each
+  -- premise rules that preset out here too, so the view is the proof-carrying `ofNatLT`.
+  epochsPerSlashingsVectorLt : epochsPerSlashingsVector < 2 ^ 64
+  epochsPerEth1VotingPeriodLt : epochsPerEth1VotingPeriod < 2 ^ 64
+  epochsPerSyncCommitteePeriodLt : epochsPerSyncCommitteePeriod < 2 ^ 64
+  maxCommitteesPerSlotLt : maxCommitteesPerSlot < 2 ^ 64
+  targetCommitteeSizeLt : targetCommitteeSize < 2 ^ 64
+  maxWithdrawalsPerPayloadLt : maxWithdrawalsPerPayload < 2 ^ 64
+  maxPendingPartialsPerWithdrawalsSweepLt : maxPendingPartialsPerWithdrawalsSweep < 2 ^ 64
 
 /-- The config-tier values (network parameters). Threaded `[Config]`; never
 shapes a type. Membership follows `configs/{minimal,mainnet}.yaml` the same way
 `Preset` follows the preset files. -/
 forkconfig where
-  churnLimitQuotient : UInt64
+  /-- `CHURN_LIMIT_QUOTIENT`: a `Uint64` in the pinned module, so the checked kind. -/
+  churnLimitQuotient : CLUint64
   minPerEpochChurnLimitElectra : Gwei
   maxPerEpochActivationExitChurnLimit : Gwei
-  minValidatorWithdrawabilityDelay : UInt64
-  shardCommitteePeriod : UInt64
+  minValidatorWithdrawabilityDelay : Epoch
+  shardCommitteePeriod : Epoch
   genesisForkVersion : Version
   /-- The fork schedule, `<FORK>_FORK_VERSION` / `<FORK>_FORK_EPOCH` for every fork
   through Fulu (the accumulated base). The epochs are config values a test can override:
@@ -150,21 +180,32 @@ forkconfig where
   electraForkEpoch : Epoch
   fuluForkVersion : Version
   fuluForkEpoch : Epoch
-  slotDurationMs : UInt64
-  attestationDueBps : UInt64
+  /-- `SLOT_DURATION_MS`: a `Uint64` in the pinned module, so the checked kind. -/
+  slotDurationMs : CLUint64
+  /-- `ATTESTATION_DUE_BPS`: a `Uint64` in the pinned module, so the checked kind. -/
+  attestationDueBps : CLUint64
   ejectionBalanceG : Gwei
-  maxBlobsPerBlockElectra : Nat
+  /-- `MAX_BLOBS_PER_BLOCK_ELECTRA`: a `Uint64` in the pinned module, so the checked kind. -/
+  maxBlobsPerBlockElectra : CLUint64
   /-- `BLOB_SCHEDULE` (EIP-7892): the blob-parameter-only fork schedule, one
-  `(EPOCH, MAX_BLOBS_PER_BLOCK)` record per entry. `get_blob_parameters` reads it. -/
-  blobSchedule : List (Epoch × Nat)
-  /-- `INACTIVITY_SCORE_BIAS` / `INACTIVITY_SCORE_RECOVERY_RATE` (Altair). -/
-  inactivityScoreBias : UInt64
-  inactivityScoreRecoveryRate : UInt64
-  /-- Fork-choice tuning, from the spec's fork-choice `Configuration` table. -/
-  proposerScoreBoost : Nat
-  proposerReorgCutoffBps : UInt64
-  reorgHeadWeightThreshold : UInt64
-  reorgParentWeightThreshold : UInt64
+  `(EPOCH, MAX_BLOBS_PER_BLOCK)` record per entry. `get_blob_parameters` reads it. The
+  pinned config loader keeps each `MAX_BLOBS_PER_BLOCK` a plain `int`, so the cap is a
+  `CLInt`. -/
+  blobSchedule : List (Epoch × CLInt)
+  /-- `INACTIVITY_SCORE_BIAS` / `INACTIVITY_SCORE_RECOVERY_RATE` (Altair): both `Uint64`
+  in the pinned module, so the checked kind. -/
+  inactivityScoreBias : CLUint64
+  inactivityScoreRecoveryRate : CLUint64
+  /-- Fork-choice tuning, from the spec's fork-choice `Configuration` table.
+  `PROPOSER_SCORE_BOOST`: a `Uint64` in the pinned module, so the checked kind. -/
+  proposerScoreBoost : CLUint64
+  /-- `PROPOSER_REORG_CUTOFF_BPS`: a `Uint64` in the pinned module, so the checked kind. -/
+  proposerReorgCutoffBps : CLUint64
+  /-- `REORG_HEAD_WEIGHT_THRESHOLD` / `REORG_PARENT_WEIGHT_THRESHOLD`: both `Uint64` in the
+  pinned module, so the checked kind. -/
+  reorgHeadWeightThreshold : CLUint64
+  reorgParentWeightThreshold : CLUint64
+  /-- `REORG_MAX_EPOCHS_SINCE_FINALIZATION`: an `Epoch` in the pinned module. -/
   reorgMaxEpochsSinceFinalization : Epoch
 
 namespace Const
@@ -205,6 +246,74 @@ forkabbrev slotsPerHistoricalRootPos : 0 < slotsPerHistoricalRoot := Preset.slot
 forkabbrev slotsPerHistoricalRootLt : slotsPerHistoricalRoot < 2 ^ 64 := Preset.slotsPerHistoricalRootLt
 forkabbrev epochsPerHistoricalVectorPos : 0 < epochsPerHistoricalVector := Preset.epochsPerHistoricalVectorPos
 forkabbrev epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64 := Preset.epochsPerHistoricalVectorLt
+/-- Every shuffle round index fits the pyspec's `Uint8(current_round)` cast. -/
+forkabbrev shuffleRoundCountLe : shuffleRoundCount ≤ 2 ^ 8 := Preset.shuffleRoundCountLe
+
+-- The derived views of `slotsPerEpoch`, the divisor every Stage 4 / 5 epoch
+-- formula divides by. Each view stores nothing: its body projects the preset's
+-- own fields, so the numeral stays in the value set alone, an override gets a
+-- fresh proof through the same fields, and a child fork replays the view
+-- against its own `Preset`.
+/-- The checked view of `slotsPerEpoch` (`SPEC_ARITHMETIC.md` §4.2, checked
+constants stay checked; §4.5, proof-carrying construction). The range premise is
+the preset's own `slotsPerEpochLt` field, so the view adds no `decide`. -/
+forkabbrev slotsPerEpochC : CLUint64 :=
+  CLUint64.ofNatLT Preset.slotsPerEpoch Preset.slotsPerEpochLt
+/-- The checked view of `slotsPerHistoricalRoot`, the pinned `Slot(64)` that
+`get_block_root_at_slot` adds to a slot. Same construction as `slotsPerEpochC`: the
+range premise is the preset's own `slotsPerHistoricalRootLt` field. -/
+forkabbrev slotsPerHistoricalRootC : CLUint64 :=
+  CLUint64.ofNatLT Preset.slotsPerHistoricalRoot Preset.slotsPerHistoricalRootLt
+/-- The proved-total divisor view of `slotsPerEpoch`
+(`SPEC_ARITHMETIC.md` §4.2, "Total operations with a proof"). Division and
+modulo of a bound `CLUint64` dividend by this view return `CLUint64` directly.
+The positivity premise is the preset's own `slotsPerEpochPos` field, so the
+view adds no `decide` and a child override re-proves through the tier. -/
+forkabbrev slotsPerEpochDiv : PositiveDivisor :=
+  ⟨Preset.slotsPerEpoch, Preset.slotsPerEpochPos⟩
+/-- The proved-total divisor view of `slotsPerHistoricalRoot`, the ring-buffer period
+`process_slot` takes `state.slot % SLOTS_PER_HISTORICAL_ROOT` by. Same construction as
+`slotsPerEpochDiv`: the positivity premise is the preset's own
+`slotsPerHistoricalRootPos` field (`SPEC_ARITHMETIC.md` §4.2, "Total operations with a
+proof"), so the view adds no `decide` and a child override re-proves through the tier. -/
+forkabbrev slotsPerHistoricalRootDiv : PositiveDivisor :=
+  ⟨Preset.slotsPerHistoricalRoot, Preset.slotsPerHistoricalRootPos⟩
+
+/-- The checked views of the preset epoch periods, the constants the checked
+`Epoch` formulas add, subtract, and take modulo (`SPEC_ARITHMETIC.md` §4.2,
+checked constants stay checked). Each stores nothing: the body projects the
+preset's own field, so a child override re-proves through the same fields, and
+the type-level `Nat` sizes above stay structural for the type-level caps.
+Each view is the proof-carrying `ofNatLT` (§4.5) over the preset's own `< 2 ^ 64`
+premise, so a preset value past `2 ^ 64 - 1` cannot be built, where `UInt64.ofNat`
+would wrap it. These views are permanent, not crossings: the `Nat` fields stay the
+structural sizes the type-level caps read, and the `…C` twin is their checked face. -/
+forkabbrev epochsPerHistoricalVectorC : CLUint64 :=
+  CLUint64.ofNatLT Preset.epochsPerHistoricalVector Preset.epochsPerHistoricalVectorLt
+forkabbrev epochsPerSlashingsVectorC : CLUint64 :=
+  CLUint64.ofNatLT Preset.epochsPerSlashingsVector Preset.epochsPerSlashingsVectorLt
+forkabbrev epochsPerEth1VotingPeriodC : CLUint64 :=
+  CLUint64.ofNatLT Preset.epochsPerEth1VotingPeriod Preset.epochsPerEth1VotingPeriodLt
+forkabbrev epochsPerSyncCommitteePeriodC : CLUint64 :=
+  CLUint64.ofNatLT Preset.epochsPerSyncCommitteePeriod Preset.epochsPerSyncCommitteePeriodLt
+
+/-- The checked views of the preset counts that the plain-integer formulas meet
+as `Uint64` operands (`SPEC_ARITHMETIC.md` §4.2, checked constants stay checked):
+`get_committee_count_per_slot`'s `min` and divisor, and the withdrawal sweeps'
+`MAX_WITHDRAWALS_PER_PAYLOAD - 1` and `len(prior) + MAX_PENDING_PARTIALS_…` limits.
+The pinned module types all four `Uint64`. Same construction as the period views
+above: each is the proof-carrying `ofNatLT` over the preset's own `< 2 ^ 64` premise.
+A zero value keeps its checked behavior: the divisor route raises
+`ZeroDivisionError` and `0 - 1` raises the range fault. -/
+forkabbrev maxCommitteesPerSlotC : CLUint64 :=
+  CLUint64.ofNatLT Preset.maxCommitteesPerSlot Preset.maxCommitteesPerSlotLt
+forkabbrev targetCommitteeSizeC : CLUint64 :=
+  CLUint64.ofNatLT Preset.targetCommitteeSize Preset.targetCommitteeSizeLt
+forkabbrev maxWithdrawalsPerPayloadC : CLUint64 :=
+  CLUint64.ofNatLT Preset.maxWithdrawalsPerPayload Preset.maxWithdrawalsPerPayloadLt
+forkabbrev maxPendingPartialsPerWithdrawalsSweepC : CLUint64 :=
+  CLUint64.ofNatLT Preset.maxPendingPartialsPerWithdrawalsSweep
+    Preset.maxPendingPartialsPerWithdrawalsSweepLt
 
 -- Sentinels, registry and history caps.
 forkabbrev farFutureEpoch : Epoch := 0xffffffffffffffff
@@ -213,10 +322,29 @@ forkabbrev genesisEpoch : Epoch := 0
 forkabbrev validatorRegistryLimit : Nat := Preset.validatorRegistryLimit
 forkabbrev historicalRootsLimit : Nat := Preset.historicalRootsLimit
 forkabbrev pendingDepositsLimit : Nat := Preset.pendingDepositsLimit
+/-- `JUSTIFICATION_BITS_LENGTH`. The pinned module types it `Uint64(4)`, but it stays a
+structural `Nat`: it is the width of the `justificationBits` bitvector, and the one formula
+over it, `justification_bits[: JUSTIFICATION_BITS_LENGTH - 1]`, is the one-place shift of
+that fixed-width vector in `process_justification_and_finalization`. Python's checked
+`Uint64(4) - 1` cannot raise, so the shift by one gives the same answer. -/
 forkabbrev justificationBitsLength : Nat := 4
 forkabbrev maxExtraDataBytes : Nat := Preset.maxExtraDataBytes
+/-- `DEPOSIT_CONTRACT_TREE_DEPTH`. The pinned module types it `Uint64(2**5)`, but it stays a
+structural `Nat`: it sizes the `Deposit.proof` vector, and the one formula over it, the
+`DEPOSIT_CONTRACT_TREE_DEPTH + 1` branch depth, adds two literals whose sum `33` cannot
+raise. -/
 forkabbrev depositContractTreeDepth : Nat := 32
--- per-block operation caps
+/- Per-block operation caps. The pinned module types every cap `Uint64`, but each stays a
+structural `Nat`, with no checked view. Each one is an SSZ list cap. Most executable reads
+compare a plain length or counter to a cap: the Gloas and Heze `len(body.…) <= MAX_…`
+asserts, the Gloas payload-request asserts, and the `next_deposit_index >=
+MAX_PENDING_DEPOSITS_PER_EPOCH` stop of `process_pending_deposits`. A comparison of a plain
+`int` with a `Uint64` never raises and orders the values, so the `Nat` comparison gives the
+same answer. One formula multiplies: Gloas `is_valid_indexed_attestation` checks
+`len(indices) > MAX_VALIDATORS_PER_COMMITTEE * MAX_COMMITTEES_PER_SLOT`. The pinned Electra
+module forms that checked product at import, as the `AggregationBits` list limit, and every
+later fork imports it. A preset whose product passes `2^64 - 1` therefore has no pyspec to
+run, and on every preset that loads the `Nat` product is exact. -/
 forkabbrev maxProposerSlashings : Nat := Preset.maxProposerSlashings
 forkabbrev maxAttesterSlashings : Nat := Preset.maxAttesterSlashings
 forkabbrev maxAttestations : Nat := Preset.maxAttestations
@@ -234,11 +362,17 @@ forkabbrev maxBytesPerTransaction : Nat := Preset.maxBytesPerTransaction
 forkabbrev maxTransactionsPerPayload : Nat := Preset.maxTransactionsPerPayload
 forkabbrev bytesPerLogsBloom : Nat := Preset.bytesPerLogsBloom
 -- Balance / effective-balance thresholds, in Gwei. The `G` suffix marks the
--- `Gwei` (`UInt64`) form; the letter abbreviates "Gwei". A threshold that
--- also feeds `Nat` ratio arithmetic carries a suffix-free `Nat` twin of the same
--- value, so `effectiveBalanceIncrement` and `maxEffectiveBalanceElectra` are the
--- `Nat` forms and their `…G` siblings are the `Gwei` forms.
-forkabbrev effectiveBalanceIncrement : Nat := Preset.effectiveBalanceIncrement
+-- `Gwei` (`UInt64`) form; the letter abbreviates "Gwei". `effectiveBalanceIncrement`
+-- stores its value once, in the `…G` preset field, the flavour the pyspec gives
+-- the YAML value; the suffix-free `Nat` entry is the derived view the ratio
+-- arithmetic reads. `maxEffectiveBalanceElectra` still carries both flavours as
+-- preset fields until a consumer retypes it.
+/-- `EFFECTIVE_BALANCE_INCREMENT` as the plain ratio operand, derived from the
+stored `Gwei` field (`SPEC_ARITHMETIC.md` §4.2: the pyspec's kind is checked, so
+the checked field is the source and the `Nat` form is the projection). The
+underlying-type projection is the view itself, the use §4.5 asks each site to
+cite; the tests pin the round trip at both presets. -/
+forkabbrev effectiveBalanceIncrement : Nat := Preset.effectiveBalanceIncrementG.toPlainNat
 forkabbrev effectiveBalanceIncrementG : Gwei := Preset.effectiveBalanceIncrementG
 forkabbrev minDepositAmountG : Gwei := Preset.minDepositAmountG
 forkabbrev minActivationBalance : Gwei := Preset.minActivationBalance
@@ -258,32 +392,60 @@ forkabbrev minAttestationInclusionDelay : Slot := Preset.minAttestationInclusion
 forkabbrev minEpochsToInactivityPenalty : Epoch := Preset.minEpochsToInactivityPenalty
 -- reward / penalty weights + quotients (Nat)
 forkabbrev baseRewardFactor : Nat := Preset.baseRewardFactor
-forkabbrev weightDenominator : Nat := 64
-forkabbrev proposerWeight : Nat := 8
-forkabbrev syncRewardWeight : Nat := 2
-forkabbrev timelySourceWeight : Nat := 14
-forkabbrev timelyTargetWeight : Nat := 26
-forkabbrev timelyHeadWeight : Nat := 14
-forkabbrev timelySourceFlagIndex : Nat := 0
-forkabbrev timelyTargetFlagIndex : Nat := 1
-forkabbrev timelyHeadFlagIndex : Nat := 2
-/-- `[TIMELY_SOURCE, TIMELY_TARGET, TIMELY_HEAD]` flag weights, in index order. -/
-forkabbrev participationFlagWeights : List Nat := [timelySourceWeight, timelyTargetWeight, timelyHeadWeight]
+/-- `WEIGHT_DENOMINATOR`, the checked kind: the pin's `Uint64(64)` (constants table,
+altair). Every consumer divides a checked `Gwei` chain by it (`get_flag_index_deltas`,
+`process_sync_aggregate`, the proposer share of `slash_validator`). -/
+forkabbrev weightDenominator : CLUint64 := 64
+/-- `PROPOSER_WEIGHT`, the checked kind: the pin's `Uint64(8)`. -/
+forkabbrev proposerWeight : CLUint64 := 8
+/-- `SYNC_REWARD_WEIGHT`, the checked kind: the pin's `Uint64(2)`. -/
+forkabbrev syncRewardWeight : CLUint64 := 2
+/-- `TIMELY_SOURCE_WEIGHT`, the checked kind: the pin's `Uint64(14)`. -/
+forkabbrev timelySourceWeight : CLUint64 := 14
+/-- `TIMELY_TARGET_WEIGHT`, the checked kind: the pin's `Uint64(26)`. -/
+forkabbrev timelyTargetWeight : CLUint64 := 26
+/-- `TIMELY_HEAD_WEIGHT`, the checked kind: the pin's `Uint64(14)`. -/
+forkabbrev timelyHeadWeight : CLUint64 := 14
+/-- The participation-flag indices, the checked kind: the pin's `Uint64(0)` /
+`Uint64(1)` / `Uint64(2)` (constants table, altair). Their pinned uses never compute on
+the checked value: the mask exponent `2**flag_index` evaluates through the plain value
+(`BaseUint.__rpow__` narrows both sides to `int` before the wrap), the `in` / `!=`
+consumers are total value comparisons, and the flags list only ever carries them
+(`SPEC_ARITHMETIC.md` §4.5). -/
+forkabbrev timelySourceFlagIndex : CLUint64 := 0
+/-- `TIMELY_TARGET_FLAG_INDEX`, the checked kind: the pin's `Uint64(1)`. -/
+forkabbrev timelyTargetFlagIndex : CLUint64 := 1
+/-- `TIMELY_HEAD_FLAG_INDEX`, the checked kind: the pin's `Uint64(2)`. -/
+forkabbrev timelyHeadFlagIndex : CLUint64 := 2
+/-- `[TIMELY_SOURCE, TIMELY_TARGET, TIMELY_HEAD]` flag weights, in index order. The
+pin's list holds the checked `Uint64` weights (`PARTICIPATION_FLAG_WEIGHTS =
+[TIMELY_SOURCE_WEIGHT, ...]`), and every consumer multiplies a `Gwei` by an element. -/
+forkabbrev participationFlagWeights : List CLUint64 := [timelySourceWeight, timelyTargetWeight, timelyHeadWeight]
 forkabbrev minSlashingPenaltyQuotientElectra : Nat := Preset.minSlashingPenaltyQuotientElectra
 forkabbrev whistleblowerRewardQuotientElectra : Nat := Preset.whistleblowerRewardQuotientElectra
 forkabbrev proportionalSlashingMultiplierBellatrix : Nat := Preset.proportionalSlashingMultiplierBellatrix
 forkabbrev inactivityPenaltyQuotientBellatrix : Nat := Preset.inactivityPenaltyQuotientBellatrix
-forkabbrev inactivityScoreBias : UInt64 := Config.inactivityScoreBias
-forkabbrev inactivityScoreRecoveryRate : UInt64 := Config.inactivityScoreRecoveryRate
+/-- `INACTIVITY_SCORE_BIAS`, the checked kind: `process_inactivity_updates` adds it to a
+score, and `get_inactivity_penalty_deltas` multiplies it by
+`INACTIVITY_PENALTY_QUOTIENT_BELLATRIX` for the penalty divisor. Both are checked
+operations. A configuration value: no `PositiveDivisor` view exists, so the divisor keeps
+the checked route (`SPEC_ARITHMETIC.md` §4.2). -/
+forkabbrev inactivityScoreBias : CLUint64 := Config.inactivityScoreBias
+/-- `INACTIVITY_SCORE_RECOVERY_RATE`, the checked kind: the `saturating_sub` operand of
+`process_inactivity_updates`. -/
+forkabbrev inactivityScoreRecoveryRate : CLUint64 := Config.inactivityScoreRecoveryRate
 forkabbrev hysteresisQuotient : Nat := Preset.hysteresisQuotient
 forkabbrev hysteresisDownwardMultiplier : Nat := Preset.hysteresisDownwardMultiplier
 forkabbrev hysteresisUpwardMultiplier : Nat := Preset.hysteresisUpwardMultiplier
 forkabbrev maxRandomValue : Nat := 65535
--- withdrawal-credential prefixes
+-- Withdrawal-credential prefixes. Each is a `Bytes1` at the pin, byte data: every consumer
+-- compares it with `withdrawal_credentials[:1]` or writes it into the credentials, so the
+-- byte never enters spec arithmetic.
 forkabbrev blsWithdrawalPrefix : UInt8 := 0x00
 forkabbrev eth1AddressWithdrawalPrefix : UInt8 := 0x01
 forkabbrev compoundingWithdrawalPrefix : UInt8 := 0x02
--- BLS domain-type tags (4-byte prefixes, as ByteArrays for hashing)
+-- BLS domain-type tags (4-byte prefixes, as ByteArrays for hashing). `DomainType` at the pin:
+-- byte data that only feeds `compute_domain` and `get_seed`.
 forkabbrev domainBeaconProposer : ByteArray := ⟨#[0, 0, 0, 0]⟩
 forkabbrev domainBeaconAttester : ByteArray := ⟨#[1, 0, 0, 0]⟩
 forkabbrev domainRandao : ByteArray := ⟨#[2, 0, 0, 0]⟩
@@ -293,11 +455,15 @@ forkabbrev domainSyncCommittee : ByteArray := ⟨#[7, 0, 0, 0]⟩
 forkabbrev domainBlsToExecutionChange : ByteArray := ⟨#[0x0A, 0, 0, 0]⟩
 
 -- Network parameters, and the fork-choice tuning beside them.
-forkabbrev churnLimitQuotient : UInt64 := Config.churnLimitQuotient
+/-- `CHURN_LIMIT_QUOTIENT`, the checked kind: the divisor of `get_balance_churn_limit`. A
+configuration value keeps checked division: no `PositiveDivisor` view exists over a generic
+configuration, whose accepted domain alone can supply positivity (`SPEC_ARITHMETIC.md`
+§4.2). -/
+forkabbrev churnLimitQuotient : CLUint64 := Config.churnLimitQuotient
 forkabbrev minPerEpochChurnLimitElectra : Gwei := Config.minPerEpochChurnLimitElectra
 forkabbrev maxPerEpochActivationExitChurnLimit : Gwei := Config.maxPerEpochActivationExitChurnLimit
-forkabbrev minValidatorWithdrawabilityDelay : UInt64 := Config.minValidatorWithdrawabilityDelay
-forkabbrev shardCommitteePeriod : UInt64 := Config.shardCommitteePeriod
+forkabbrev minValidatorWithdrawabilityDelay : Epoch := Config.minValidatorWithdrawabilityDelay
+forkabbrev shardCommitteePeriod : Epoch := Config.shardCommitteePeriod
 forkabbrev genesisForkVersion : Version := Config.genesisForkVersion
 -- The fork schedule through Fulu (`configs/*.yaml`, one `# <Fork>` block each).
 forkabbrev altairForkVersion : Version := Config.altairForkVersion
@@ -312,30 +478,39 @@ forkabbrev electraForkVersion : Version := Config.electraForkVersion
 forkabbrev electraForkEpoch : Epoch := Config.electraForkEpoch
 forkabbrev fuluForkVersion : Version := Config.fuluForkVersion
 forkabbrev fuluForkEpoch : Epoch := Config.fuluForkEpoch
-forkabbrev slotDurationMs : UInt64 := Config.slotDurationMs
-forkabbrev attestationDueBps : UInt64 := Config.attestationDueBps
+/-- `SLOT_DURATION_MS`, the checked kind. A configuration value: no `PositiveDivisor` view
+exists, so a division by it keeps the checked route (`SPEC_ARITHMETIC.md` §4.2). -/
+forkabbrev slotDurationMs : CLUint64 := Config.slotDurationMs
+/-- `ATTESTATION_DUE_BPS`, the checked kind: the attestation deadline in basis points of the
+slot. -/
+forkabbrev attestationDueBps : CLUint64 := Config.attestationDueBps
 /-- `MAX_BLOBS_PER_BLOCK_ELECTRA` (9 for both presets). Before the first `BLOB_SCHEDULE`
 entry this is what `get_blob_parameters(epoch).max_blobs_per_block` returns. -/
-forkabbrev maxBlobsPerBlockElectra : Nat := Config.maxBlobsPerBlockElectra
-/-- `BLOB_SCHEDULE` (EIP-7892): the `(EPOCH, MAX_BLOBS_PER_BLOCK)` schedule. -/
-forkabbrev blobSchedule : List (Epoch × Nat) := Config.blobSchedule
-/-- Reorg weight thresholds (percent of the per-slot committee weight). -/
-forkabbrev reorgHeadWeightThreshold : UInt64 := Config.reorgHeadWeightThreshold
-forkabbrev reorgParentWeightThreshold : UInt64 := Config.reorgParentWeightThreshold
-/-- `REORG_MAX_EPOCHS_SINCE_FINALIZATION`: do not reorg if finality is older. -/
+forkabbrev maxBlobsPerBlockElectra : CLUint64 := Config.maxBlobsPerBlockElectra
+/-- `BLOB_SCHEDULE` (EIP-7892): the `(EPOCH, MAX_BLOBS_PER_BLOCK)` schedule, its caps
+plain `int`s. -/
+forkabbrev blobSchedule : List (Epoch × CLInt) := Config.blobSchedule
+/-- Reorg weight thresholds (percent of the per-slot committee weight), the checked kind:
+each is the `committee_percent` operand of `calculate_committee_fraction`'s checked product. -/
+forkabbrev reorgHeadWeightThreshold : CLUint64 := Config.reorgHeadWeightThreshold
+forkabbrev reorgParentWeightThreshold : CLUint64 := Config.reorgParentWeightThreshold
+/-- `REORG_MAX_EPOCHS_SINCE_FINALIZATION`: do not reorg if finality is older. An `Epoch`,
+so the checked kind; `is_finalization_ok` only compares it, which never raises. -/
 forkabbrev reorgMaxEpochsSinceFinalization : Epoch := Config.reorgMaxEpochsSinceFinalization
 /-- `PROPOSER_REORG_CUTOFF_BPS`: the on-time deadline for a reorg proposal, in basis
-points of the slot (~17%). -/
-forkabbrev proposerReorgCutoffBps : UInt64 := Config.proposerReorgCutoffBps
+points of the slot (~17%), the checked kind. -/
+forkabbrev proposerReorgCutoffBps : CLUint64 := Config.proposerReorgCutoffBps
 /-- `NUMBER_OF_COLUMNS` (PeerDAS, `= CELLS_PER_EXT_BLOB`): the data-column count. -/
 forkabbrev numberOfColumns : Nat := Preset.numberOfColumns
 /-- Fulu `KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH` (4), the `DataColumnSidecar`'s proof
 vector length. Distinct from the Deneb singular `KZG_COMMITMENT_INCLUSION_PROOF_DEPTH`. -/
 forkabbrev kzgCommitmentsInclusionProofDepth : Nat := Preset.kzgCommitmentsInclusionProofDepth
-/-- `PROPOSER_SCORE_BOOST` (percent of the per-slot committee weight). -/
-forkabbrev proposerScoreBoost : Nat := Config.proposerScoreBoost
-/-- `BASIS_POINTS` denominator for the slot-component durations. -/
-forkabbrev basisPoints : UInt64 := 10000
+/-- `PROPOSER_SCORE_BOOST` (percent of the per-slot committee weight), the checked kind: the
+`committee_percent` operand of `calculate_committee_fraction`'s checked product. -/
+forkabbrev proposerScoreBoost : CLUint64 := Config.proposerScoreBoost
+/-- `BASIS_POINTS`, the denominator for the slot-component durations. The pinned module
+declares it `Uint64(10000)`, so the checked kind. -/
+forkabbrev basisPoints : CLUint64 := 10000
 
 end
 end Const
@@ -400,8 +575,9 @@ forkpresetvalues minimal where
   minSeedLookahead := 1
   minAttestationInclusionDelay := 1
   minEpochsToInactivityPenalty := 4
-  -- Balance thresholds.
-  effectiveBalanceIncrement := 1000000000
+  -- Balance thresholds. `effectiveBalanceIncrementG` stores its value; the
+  -- `Nat` view derives from it in `Const`, so that numeral appears once.
+  -- `maxEffectiveBalanceElectra` keeps both flavours until its retype lands.
   effectiveBalanceIncrementG := 1000000000
   minDepositAmountG := 1000000000
   minActivationBalance := 32000000000
@@ -426,6 +602,14 @@ forkpresetvalues minimal where
   slotsPerHistoricalRootLt := by decide
   epochsPerHistoricalVectorPos := by decide
   epochsPerHistoricalVectorLt := by decide
+  shuffleRoundCountLe := by decide
+  epochsPerSlashingsVectorLt := by decide
+  epochsPerEth1VotingPeriodLt := by decide
+  epochsPerSyncCommitteePeriodLt := by decide
+  maxCommitteesPerSlotLt := by decide
+  targetCommitteeSizeLt := by decide
+  maxWithdrawalsPerPayloadLt := by decide
+  maxPendingPartialsPerWithdrawalsSweepLt := by decide
 
 /-- The `mainnet` preset. -/
 forkpresetvalues mainnet where
@@ -473,8 +657,9 @@ forkpresetvalues mainnet where
   minSeedLookahead := 1
   minAttestationInclusionDelay := 1
   minEpochsToInactivityPenalty := 4
-  -- Balance thresholds.
-  effectiveBalanceIncrement := 1000000000
+  -- Balance thresholds. `effectiveBalanceIncrementG` stores its value; the
+  -- `Nat` view derives from it in `Const`, so that numeral appears once.
+  -- `maxEffectiveBalanceElectra` keeps both flavours until its retype lands.
   effectiveBalanceIncrementG := 1000000000
   minDepositAmountG := 1000000000
   minActivationBalance := 32000000000
@@ -499,6 +684,14 @@ forkpresetvalues mainnet where
   slotsPerHistoricalRootLt := by decide
   epochsPerHistoricalVectorPos := by decide
   epochsPerHistoricalVectorLt := by decide
+  shuffleRoundCountLe := by decide
+  epochsPerSlashingsVectorLt := by decide
+  epochsPerEth1VotingPeriodLt := by decide
+  epochsPerSyncCommitteePeriodLt := by decide
+  maxCommitteesPerSlotLt := by decide
+  targetCommitteeSizeLt := by decide
+  maxWithdrawalsPerPayloadLt := by decide
+  maxPendingPartialsPerWithdrawalsSweepLt := by decide
 
 /-- The `minimal` config. -/
 forkconfigvalues minimalConfig where
