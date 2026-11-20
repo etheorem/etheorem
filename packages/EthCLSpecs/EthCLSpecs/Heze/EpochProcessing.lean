@@ -117,8 +117,6 @@ inherit applyDeltas
 inherit processRewardsAndPenalties
 inherit processRegistryUpdates
 inherit processSlashings
-inherit DepositScan
-inherit ppdLoop
 inherit processPendingDeposits
 inherit pcLoop
 inherit processPendingConsolidations
