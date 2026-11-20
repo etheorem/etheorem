@@ -107,8 +107,11 @@ forkdef processJustificationAndFinalization : StateTransition Unit := do
   else
     -- `fulu/minimal.py:1724-1734`: both index sets, then the three totals, in this order;
     -- each can raise `IndexError` on a registry read.
-    let prevIdx ← liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state))
-    let currIdx ← liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (currentEpochOf state))
+    -- `TIMELY_TARGET_FLAG_INDEX` is the pin's checked `Uint64(1)`; the flag-index
+    -- parameter is the pyspec's plain `int`, and the mask exponent reads the checked
+    -- constant through its plain value, so the call projects it (`SPEC_ARITHMETIC.md` §4.5).
+    let prevIdx ← liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex.toPlainNat (previousEpochOf state))
+    let currIdx ← liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex.toPlainNat (currentEpochOf state))
     let totalActive ← liftErr (getTotalActiveBalance state)
     let prevTotal ← liftErr (getTotalBalance state prevIdx)
     let currTotal ← liftErr (getTotalBalance state currIdx)
@@ -140,7 +143,7 @@ forkdef processInactivityUpdates : StateTransition Unit := do
     for vi in eligible do
       let matching ← match matchingTarget with
         | some m => pure m
-        | none => liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex
+        | none => liftErr (getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex.toPlainNat
             (previousEpochOf state))
       matchingTarget := some matching
       -- The score is a checked `Gwei`: `saturating_sub` floors at zero (the
@@ -195,7 +198,9 @@ forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) :
         let rewardDelta ← rewardNumerator / (activeIncrements * Const.weightDenominator)
         let updatedReward ← previousReward + rewardDelta
         rewards ← liftErr (setAt rewards vi updatedReward)
-    else if flagIndex != Const.timelyHeadFlagIndex then
+    -- `flag_index != TIMELY_HEAD_FLAG_INDEX`: a plain `range` index against the checked
+    -- constant, a total value comparison at the pin, so the read is the plain projection.
+    else if flagIndex != Const.timelyHeadFlagIndex.toPlainNat then
       let previousPenalty ← liftErr (getAt penalties vi)
       let penaltyDelta ← baseReward * weight / Const.weightDenominator
       let updatedPenalty ← previousPenalty + penaltyDelta
@@ -213,7 +218,7 @@ forkdef getInactivityPenaltyDeltas (state : State) : Except StateTransitionError
   let validators := sszGet state validators
   let iscores := sszGet state inactivityScores
   let mut penalties := Array.replicate validators.size (0 : Gwei)
-  let matchingTarget ← getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex (previousEpochOf state)
+  let matchingTarget ← getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex.toPlainNat (previousEpochOf state)
 
   for vi in ← getEligibleValidatorIndices state do
     if !matchingTarget.contains vi then

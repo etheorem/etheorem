@@ -375,17 +375,35 @@ forkabbrev minAttestationInclusionDelay : Slot := Preset.minAttestationInclusion
 forkabbrev minEpochsToInactivityPenalty : Epoch := Preset.minEpochsToInactivityPenalty
 -- reward / penalty weights + quotients (Nat)
 forkabbrev baseRewardFactor : Nat := Preset.baseRewardFactor
-forkabbrev weightDenominator : Nat := 64
-forkabbrev proposerWeight : Nat := 8
-forkabbrev syncRewardWeight : Nat := 2
-forkabbrev timelySourceWeight : Nat := 14
-forkabbrev timelyTargetWeight : Nat := 26
-forkabbrev timelyHeadWeight : Nat := 14
-forkabbrev timelySourceFlagIndex : Nat := 0
-forkabbrev timelyTargetFlagIndex : Nat := 1
-forkabbrev timelyHeadFlagIndex : Nat := 2
-/-- `[TIMELY_SOURCE, TIMELY_TARGET, TIMELY_HEAD]` flag weights, in index order. -/
-forkabbrev participationFlagWeights : List Nat := [timelySourceWeight, timelyTargetWeight, timelyHeadWeight]
+/-- `WEIGHT_DENOMINATOR`, the checked kind: the pin's `Uint64(64)` (constants table,
+altair). Every consumer divides a checked `Gwei` chain by it (`get_flag_index_deltas`,
+`process_sync_aggregate`, the proposer share of `slash_validator`). -/
+forkabbrev weightDenominator : CLUint64 := 64
+/-- `PROPOSER_WEIGHT`, the checked kind: the pin's `Uint64(8)`. -/
+forkabbrev proposerWeight : CLUint64 := 8
+/-- `SYNC_REWARD_WEIGHT`, the checked kind: the pin's `Uint64(2)`. -/
+forkabbrev syncRewardWeight : CLUint64 := 2
+/-- `TIMELY_SOURCE_WEIGHT`, the checked kind: the pin's `Uint64(14)`. -/
+forkabbrev timelySourceWeight : CLUint64 := 14
+/-- `TIMELY_TARGET_WEIGHT`, the checked kind: the pin's `Uint64(26)`. -/
+forkabbrev timelyTargetWeight : CLUint64 := 26
+/-- `TIMELY_HEAD_WEIGHT`, the checked kind: the pin's `Uint64(14)`. -/
+forkabbrev timelyHeadWeight : CLUint64 := 14
+/-- The participation-flag indices, the checked kind: the pin's `Uint64(0)` /
+`Uint64(1)` / `Uint64(2)` (constants table, altair). Their pinned uses never compute on
+the checked value: the mask exponent `2**flag_index` evaluates through the plain value
+(`BaseUint.__rpow__` narrows both sides to `int` before the wrap), the `in` / `!=`
+consumers are total value comparisons, and the flags list only ever carries them
+(`SPEC_ARITHMETIC.md` §4.5). -/
+forkabbrev timelySourceFlagIndex : CLUint64 := 0
+/-- `TIMELY_TARGET_FLAG_INDEX`, the checked kind: the pin's `Uint64(1)`. -/
+forkabbrev timelyTargetFlagIndex : CLUint64 := 1
+/-- `TIMELY_HEAD_FLAG_INDEX`, the checked kind: the pin's `Uint64(2)`. -/
+forkabbrev timelyHeadFlagIndex : CLUint64 := 2
+/-- `[TIMELY_SOURCE, TIMELY_TARGET, TIMELY_HEAD]` flag weights, in index order. The
+pin's list holds the checked `Uint64` weights (`PARTICIPATION_FLAG_WEIGHTS =
+[TIMELY_SOURCE_WEIGHT, ...]`), and every consumer multiplies a `Gwei` by an element. -/
+forkabbrev participationFlagWeights : List CLUint64 := [timelySourceWeight, timelyTargetWeight, timelyHeadWeight]
 forkabbrev minSlashingPenaltyQuotientElectra : Nat := Preset.minSlashingPenaltyQuotientElectra
 forkabbrev whistleblowerRewardQuotientElectra : Nat := Preset.whistleblowerRewardQuotientElectra
 forkabbrev proportionalSlashingMultiplierBellatrix : Nat := Preset.proportionalSlashingMultiplierBellatrix
