@@ -28,13 +28,18 @@ inherit processEth1Data
 inherit verifyBlockSignature
 
 /-- `process_slot` (Gloas): Fulu's state/header/block-root caching, plus clearing the
-next slot's `execution_payload_availability` bit (a payload starts unavailable). -/
-forkdef processSlot : StateTransition Unit :=
+next slot's `execution_payload_availability` bit (a payload starts unavailable). The ring
+indices are the checked slots reduced by the proved-total divisor view
+(`SPEC_ARITHMETIC.md` §4.2); `toPlainNat` names the structural vector index the result
+narrows to (§4.5). The availability clear runs as its own step, after the caching, because
+its index needs the pyspec's checked `state.slot + 1`, which binds in the transition monad
+(the `Id.run` caching body is pure); no raise can land between the two writes. -/
+forkdef processSlot : StateTransition Unit := do
   modifyState fun state => Id.run do
     let (prevStateRootBytes, state) := stateRoot state
     let mut state := state
     let prevStateRoot : Root := bytesToRoot prevStateRootBytes
-    let idx := umodIdx (sszGet state slot) Const.slotsPerHistoricalRoot
+    let idx := ((sszGet state slot) % Const.slotsPerHistoricalRootDiv).toPlainNat
 
     -- Cache the previous state root, backfill it into the latest header, then cache that
     -- header's block root.
@@ -44,12 +49,12 @@ forkdef processSlot : StateTransition Unit :=
     state := sszUpdate state with latestBlockHeader := latestHeader
     let blockRoot := htr (sszGet state latestBlockHeader)
     state := sszUpdate state with blockRoots[idx]! := blockRoot
-
-    -- Gloas addition: the next slot's payload starts unavailable.
-    let nextIdx := umodIdx ((sszGet state slot) + 1) Const.slotsPerHistoricalRoot
-    state := sszUpdate state with executionPayloadAvailability :=
-      bitSet (sszGet state executionPayloadAvailability) nextIdx false
     return state
+  -- Gloas addition: the next slot's payload starts unavailable.
+  let next ← (sszGet (← get) slot) + 1
+  let nextIdx : Nat := (next % Const.slotsPerHistoricalRootDiv).toPlainNat
+  modifyState fun state => sszUpdate state with executionPayloadAvailability :=
+    bitSet (sszGet state executionPayloadAvailability) nextIdx false
 
 /-- `process_epoch` (Gloas ordering): `process_builder_pending_payments` after the
 pending-consolidations step, and `process_ptc_window` last (EIP-7732). -/
@@ -73,13 +78,21 @@ forkdef processEpoch : StateTransition Unit := do
   processPtcWindow
 
 /-- `process_slots`: restated so its `process_slot` / `process_epoch` calls bind to
-the Gloas spine. -/
+the Gloas spine. The loop fuel is the spec's `while` distance, the checked difference
+bound once and narrowed with `toPlainNat`; `(state.slot + 1) % SLOTS_PER_EPOCH` binds the
+checked add where Python forms it, then the modulo takes the proved-total divisor view;
+the store's `state.slot = state.slot + 1` re-forms the sum as Python does
+(`SPEC_ARITHMETIC.md` §4.2, §4.5). -/
 forkdef processSlots (target : Slot) : StateTransition Unit := do
   assert ((sszGet (← get) slot) < target)
-  for _ in [0:(target - (sszGet (← get) slot)).toNat] do
+  let diff ← target - (sszGet (← get) slot)
+  for _ in [0:diff.toPlainNat] do
     processSlot
-    if ((sszGet (← get) slot) + 1) % UInt64.ofNat Const.slotsPerEpoch == 0 then processEpoch
-    modifyState fun state => sszUpdate state with slot := (sszGet state slot) + 1
+    let next ← (sszGet (← get) slot) + 1
+    let atBoundary : Slot := next % Const.slotsPerEpochDiv
+    if atBoundary == 0 then processEpoch
+    let nextSlot ← (sszGet (← get) slot) + 1
+    modifyState fun state => sszUpdate state with slot := nextSlot
 
 /-- `process_operations` (Gloas, EIP-7732, `gloas/beacon-chain.md:2228-2263`): no in-block
 deposits, no execution-request loops (those run in `process_parent_execution_payload`), and
