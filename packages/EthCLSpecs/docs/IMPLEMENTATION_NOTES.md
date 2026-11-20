@@ -409,8 +409,8 @@ concerns map on: `Preset` / `Monad` / `Box` → `Spec.State` + `Spec.Header`; `M
 `Errors` / `Header` read better than the sketch, so §3.6 is reconciled by this mapping.
 
 `Spec.Arith` carries `umax` / `umin` / `isqrt`, type-directed `uintToBytes`, byte
-conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet` /
-`umodIdx` (ring-buffer read / write index), `sszDrop` / `sszOfArray`, `bitGet` / `bitSet`,
+conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet`
+(ring-buffer read index), `shiftWindow`, `sszDrop` / `sszOfArray`, `bitGet` / `bitSet`,
 and `hasFlag` / `addFlag`. The append lives in SizzLean: `SSZList.push` takes a proof
 that the list has room, and `SSZList.push?` / `sszAppend?` return `none` on a full list.
 `appendState` (`Spec.Header`) turns that `none` into the `.listFull` fault, the spec's
@@ -519,11 +519,12 @@ set, and the block shares the head's dependent root (`get_dependent_root`, gated
 
 The store clock counts milliseconds at v1.7.0-beta.4: `Store.timeMs` and
 `Store.genesisTimeMs` replace the second-based `time` and `genesis_time`. `on_tick` takes
-milliseconds. A vector's `tick` step still carries seconds, so the harness passes
-`seconds_to_milliseconds(tick)`, as the reference runner does, and reads the `time` check back
-through `milliseconds_to_seconds`. `compute_slot_at_time_ms` and `compute_time_at_slot_ms` are
-checked `uint64` ops, so a clock read raises where pyspec raises. `get_current_slot` drops the
-`GENESIS_SLOT +` term.
+milliseconds. A vector's `tick` step still carries seconds, so the harness casts it through the
+checked `Uint64(tick)` and passes `seconds_to_milliseconds` of the result, as the reference
+runner does. It reads the `time` check back through `milliseconds_to_seconds`. The clock
+values are the checked kind (`SPEC_ARITHMETIC.md`), so `compute_slot_at_time_ms` and
+`compute_time_at_slot_ms` raise where pyspec raises, including the zero divisor of a
+`SLOT_DURATION_MS = 0` configuration. `get_current_slot` drops the `GENESIS_SLOT +` term.
 
 The linear DAG walks route through fuel-bounded combinators (§12). `getAncestor` and the
 `getHead` descent read `store.blocks` as they go, so they thread the store monad through

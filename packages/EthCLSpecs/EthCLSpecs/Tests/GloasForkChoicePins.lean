@@ -248,4 +248,58 @@ private def pinEngineRefuted : Bool × Bool :=
 
 #guard pinEngineRefuted = (false, false)
 
+/-! ### `should_apply_proposer_boost`: the equivocation short-circuit
+
+The equivocation comprehension (`gloas/minimal.py:8466-8472`) forms `block.slot + 1` only
+for a timely block of the parent's proposer. The fixture is a weak parent `P` at slot `9`,
+the boost block `B` at slot `10`, and a third block `X` at slot `UINT64_MAX` with the
+parent's proposer. A timely `X` makes the checked add raise; a non-timely `X` skips it, and
+the boost applies (no equivocation). The justified state is an empty registry, so the
+parent's weight `0` is below the reorg threshold and `P` is weak. -/
+
+private def boostRootB : Root := Vector.replicate 32 1
+private def boostRootP : Root := Vector.replicate 32 2
+private def boostRootX : Root := Vector.replicate 32 3
+
+/-- The fixture store. `xTimely` is block `X`'s PTC-timeliness bit. -/
+private def boostStore (xTimely : Bool) : @Store minimal treeMap fastHasherTag :=
+  letI : Preset := minimal
+  letI : HasherTag := fastHasherTag
+  let state : State := SSZ.FastBox (default : @EthCLSpecs.Gloas.BeaconState minimal)
+  let blockP : BeaconBlock := { (default : BeaconBlock) with slot := 9 }
+  let blockB : BeaconBlock := { (default : BeaconBlock) with slot := 10, parentRoot := boostRootP }
+  let blockX : BeaconBlock := { (default : BeaconBlock) with slot := 18446744073709551615 }
+  { pinStore with
+    proposerBoostRoot := boostRootB
+    blocks := FcMap.insert (FcMap.insert (FcMap.insert FcMap.empty boostRootB blockB)
+      boostRootP blockP) boostRootX blockX
+    blockTimeliness := FcMap.insert (FcMap.insert (FcMap.insert FcMap.empty boostRootB
+      #[false, false]) boostRootP #[false, false]) boostRootX #[false, xTimely]
+    blockStates := FcMap.insert FcMap.empty boostRootP state
+    checkpointStates := FcMap.insert FcMap.empty default state }
+
+/-- A timely `X` of the parent's proposer at slot `UINT64_MAX`: the checked `X.slot + 1`
+raises the range fault. -/
+private def pinBoostTimelyMaxSlotFaults : Bool :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let store := boostStore true
+  match (shouldApplyProposerBoost (map := treeMap) store : PinM Bool).run store with
+  | .error (.transition (.arithmetic _)) _ => true
+  | _ => false
+example : pinBoostTimelyMaxSlotFaults = true := by native_decide
+
+/-- A non-timely `X` at slot `UINT64_MAX`: the short-circuit skips its `+ 1`, no block
+equivocates, and the boost applies. -/
+private def pinBoostNonTimelyMaxSlotApplies : Bool :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let store := boostStore false
+  match (shouldApplyProposerBoost (map := treeMap) store : PinM Bool).run store with
+  | .ok b _ => b
+  | _ => false
+example : pinBoostNonTimelyMaxSlotApplies = true := by native_decide
+
 end EthCLSpecs.Tests.GloasForkChoicePins
