@@ -10,10 +10,12 @@ open EthCLLib.Spec
 
 namespace EthCLSpecs.Fulu
 
-/-- The eth1 deposit-contract view. -/
+/-- The eth1 deposit-contract view. `deposit_count` is a `uint64` in the pinned container, so
+it is the checked kind. No modeled function computes with it: the fork bodies copy it and the
+codec reads and writes it. -/
 forkcontainer Eth1Data where
   depositRoot  : Root
-  depositCount : UInt64
+  depositCount : CLUint64
   blockHash    : Hash32
 
 end EthCLSpecs.Fulu
