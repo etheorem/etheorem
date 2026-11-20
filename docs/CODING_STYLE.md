@@ -213,29 +213,39 @@ binding preamble and its imperative work. A handler typically opens with a run o
 `let` reads and derived values, then turns to the action: a loop, a `modifyState`, a
 chain of `assert`s. Those are two phases even when the function does one job, so a
 blank line between them lets the eye find where setup ends and work begins.
-`processPendingDeposits` (`EthCLSpecs/Fulu/EpochProcessing.lean:processPendingDeposits`) gathers its five
-inputs, then a blank line, then runs the scan and writes the result back:
+`processPendingDeposits` (`EthCLSpecs/Fulu/EpochProcessing.lean:processPendingDeposits`) has three
+phases. It binds its inputs and the loop's mutable locals in the pinned text's order.
+It scans the queue. It writes the result back:
 
 ```lean
 forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
-  let nextEpoch := currentEpochOf state + 1
-  let avail := (sszGet state depositBalanceToConsume) + getActivationExitChurnLimit state
-  let finalizedSlot := computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
-  let deposits := (sszGet state pendingDeposits).toArray
+  let nextEpoch ← currentEpochOf state + 1
+  let availableForProcessing ←
+    (sszGet state depositBalanceToConsume) + (← liftErr (getActivationExitChurnLimit state))
+  let mut processedAmount : Gwei := 0
+  let mut nextDepositIndex := 0
+  let mut depositsToPostpone : Array PendingDeposit := #[]
+  let mut isChurnLimitReached := false
+  let finalizedSlot ← computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
+  let pendingDeposits := (sszGet state pendingDeposits).toArray
 
-  let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
+  for deposit in pendingDeposits do
+    …
+
   let remaining : SSZList PendingDeposit Const.pendingDepositsLimit ←
-    sszOfArrayM "pendingDeposits" (deposits.extract scan.ndi deposits.size ++ scan.postpone)
+    sszOfArrayM "pendingDeposits" (pendingDeposits.extract nextDepositIndex ++ depositsToPostpone)
+  let depositBalance : Gwei ←
+    if isChurnLimitReached then availableForProcessing - processedAmount else pure 0
   modifyState fun state => sszUpdate state with
     pendingDeposits := remaining,
-    depositBalanceToConsume := if scan.churnReached then avail - scan.processed else 0
+    depositBalanceToConsume := depositBalance
 ```
 
-No header is needed here: the binding names say what the setup gathers, and the call
-says what runs. Add a header on either side only when the purpose is not obvious from
-reading it (§3). The blank line is the whole point; a comment over each paragraph that
-just renames it is the noise §3 warns against.
+No header is needed on the setup: the binding names are the pinned text's names, so
+they say what the setup gathers. Add a header on either side only when the purpose is
+not obvious from reading it (§3). The blank line is the whole point; a comment over
+each paragraph that just renames it is the noise §3 warns against.
 
 ### 2. Name intermediates for what they hold
 
@@ -422,9 +432,10 @@ check sits in two arms of a `match` because the port grew a control-flow shape t
 reference does not have. Lifting a `let` does not fix that. Restoring the
 reference's shape does, and it writes the check once.
 
-`ppdLoop` (`EthCLSpecs/Fulu/EpochProcessing.lean:ppdLoop`), the `process_pending_deposits`
-scan, matched `validatorIndexByPubkey?` first and then ran the churn-limit check in
-*both* the `some` and the `none` arm:
+The `process_pending_deposits` scan in `processPendingDeposits`
+(`EthCLSpecs/Fulu/EpochProcessing.lean:processPendingDeposits`) once matched
+`validatorIndexByPubkey?` first and then ran the churn-limit check in *both* the
+`some` and the `none` arm:
 
 ```lean
 -- before
@@ -450,19 +461,32 @@ that shape reads the validator once and writes the churn check once:
 
 ```lean
 -- after
-        -- Read the deposit's validator once, if its pubkey is known, and derive the two
-        -- flags the spec branches on. An unknown pubkey leaves both false, so it falls
-        -- through to the churn check.
-        let (isWithdrawn, isExited) := match validatorIndexByPubkey? state deposit.pubkey with
-          | some vi =>
-            let v := sszGet state validators[vi]!
-            (decide (v.withdrawableEpoch < nextEpoch), decide (v.exitEpoch < Const.farFutureEpoch))
-          | none => (false, false)
+    -- Read validator state. `apply_pending_deposit` can add a validator, so each
+    -- deposit reads the current registry. An unknown pubkey leaves both flags false.
+    let state ← get
+    let (isValidatorExited, isValidatorWithdrawn) :=
+      match validatorIndexByPubkey? state deposit.pubkey with
+      | some vi =>
+        let validator := sszGet state validators[vi]!
+        (decide (validator.exitEpoch < Const.farFutureEpoch),
+          decide (validator.withdrawableEpoch < nextEpoch))
+      | none => (false, false)
 
-        if isWithdrawn then applyPendingDeposit deposit; return cont processed postpone
-        else if isExited then return cont processed (postpone.push deposit)
-        else if processed + deposit.amount > avail then return .done (true, processed, ndi, postpone)
-        else applyPendingDeposit deposit; return cont (processed + deposit.amount) postpone
+    if isValidatorWithdrawn then
+      -- Deposited balance will never become active. Increase balance but do not consume
+      -- churn.
+      applyPendingDeposit deposit
+    else if isValidatorExited then
+      -- Validator is exiting, postpone the deposit until after withdrawable epoch.
+      depositsToPostpone := depositsToPostpone.push deposit
+    else
+      -- Check if deposit fits in the churn, otherwise, do no more deposit processing in
+      -- this epoch. The sum is the checked `Gwei` add, formed only in this branch.
+      isChurnLimitReached := (← processedAmount + deposit.amount) > availableForProcessing
+      if isChurnLimitReached then break
+      -- Consume churn and apply deposit.
+      processedAmount ← processedAmount + deposit.amount
+      applyPendingDeposit deposit
 ```
 
 The churn check lives in one place, and the ladder now reads as the reference does,
@@ -528,8 +552,8 @@ with no `get` / `set`, that boundary is the seam.
 #### When the language forces it
 
 Some splits exist because Lean demands them, with no style motive. The
-fuel-bounded loops `ppdLoop` (`EthCLSpecs/Fulu/EpochProcessing.lean:ppdLoop`) and `pcLoop`
-(`:pcLoop`) are extracted for structural recursion, and the well-founded `cbwsAux`
+fuel-bounded loop `pcLoop` (`EthCLSpecs/Fulu/EpochProcessing.lean:pcLoop`) is extracted for
+structural recursion, and the well-founded `cbwsAux`
 (`EthCLSpecs/Fulu/Committees.lean:cbwsAux`) for its `termination_by`. The `Node.ofShape` mutual block
 (`SizzLean/Cache/MerkleTree/Build.lean`) is split into mutual helpers because Lean
 4.34.1 rejects passing `Node.ofShape` itself as a higher-order argument, as its
@@ -540,8 +564,9 @@ wide-parameter shape into splits that the language does not force.
 
 What the language forces is the extraction and its parameter list, not a pass on
 the body. A forced helper's body still follows §1 through §4 like any other; do not
-read "Lean demanded this split" as "leave the body alone." `ppdLoop`'s realignment
-to the spec's flag-then-branch shape (§4) happened inside exactly such a helper.
+read "Lean demanded this split" as "leave the body alone." Check first that the
+language still forces it: a scan over a finite collection needs no helper at all
+(§6).
 
 #### The cheapest split: a `where` clause
 
@@ -588,11 +613,12 @@ signatures, keep the tangled-accumulator core in place.
 
 The rules so far target flat handlers. A loop that threads an accumulator (a
 `fuelLoop`, a `fold`, a recursive scan) carries a second source of noise: the
-plumbing of the state itself. `ppdLoop` (`EthCLSpecs/Fulu/EpochProcessing.lean:ppdLoop`),
-the `process_pending_deposits` scan, threaded two near-identical positional 4-tuples
-(one for the accumulator, one for the result), two counters, and a guard ladder
-nested three `else` deep. The logic underneath is four early stops and a four-way
-classify; the plumbing buried it. Three behavior-preserving moves clear it:
+plumbing of the state itself. The `process_pending_deposits` scan in
+`processPendingDeposits` (`EthCLSpecs/Fulu/EpochProcessing.lean:processPendingDeposits`) shows
+the cure in full. It threaded two near-identical positional 4-tuples (one for the
+accumulator, one for the result) through a `fuelLoop` helper, with two counters and a
+guard ladder nested three `else` deep. The logic underneath is three early stops and
+a three-way classify. The plumbing buried it.
 
 ```lean
 -- before
@@ -606,8 +632,7 @@ classify; the plumbing buried it. Three behavior-preserving moves clear it:
     else
       let state ← get
       let deposit := deposits[di]!
-      if (eth1-bridge gap) then return .done (false, processed, ndi, postpone)
-      else if deposit.slot > finalizedSlot then return .done (false, processed, ndi, postpone)
+      if deposit.slot > finalizedSlot then return .done (false, processed, ndi, postpone)
       else if ndi ≥ Const.maxPendingDepositsPerEpoch then return .done (false, processed, ndi, postpone)
       else
         let cont (processed' : Gwei) (postpone' : Array PendingDeposit) := …
@@ -616,63 +641,78 @@ classify; the plumbing buried it. Three behavior-preserving moves clear it:
 
 ```lean
 -- after
-forkstruct DepositScan where
-  ndi          : Nat := 0
-  processed    : Gwei := 0
-  postpone     : Array PendingDeposit := #[]
-  churnReached : Bool := false
-
-  fuelLoop (deposits.size + 1) ({} : DepositScan) ({} : DepositScan) fun s => do
-    if s.ndi ≥ deposits.size then return .done s
-    let state ← get
-    let deposit := deposits[s.ndi]!
-
-    if (eth1-bridge gap) then return .done s
-    if deposit.slot > finalizedSlot then return .done s
-    if s.ndi ≥ Const.maxPendingDepositsPerEpoch then return .done s
-
-    let advance (processed : Gwei) (postpone : Array PendingDeposit) : Step DepositScan DepositScan :=
-      .next { s with ndi := s.ndi + 1, processed, postpone }
+  let mut processedAmount : Gwei := 0
+  let mut nextDepositIndex := 0
+  let mut depositsToPostpone : Array PendingDeposit := #[]
+  let mut isChurnLimitReached := false
+  …
+  for deposit in pendingDeposits do
+    -- Check if deposit has been finalized, otherwise, stop processing.
+    if deposit.slot > finalizedSlot then break
+    -- Check if number of processed deposits has not reached the limit, otherwise, stop
+    -- processing.
+    if nextDepositIndex ≥ Const.maxPendingDepositsPerEpoch then break
     …
+    -- Regardless of how the deposit was handled, we move on in the queue.
+    nextDepositIndex := nextDepositIndex + 1
 ```
+
+#### Iterate a finite collection with `for`
+
+When the loop walks a finite collection, write `for x in xs do` and let the `do`
+notation thread the state. Lean elaborates the `for` to the collection's `ForIn`
+instance. For an `Array` that instance recurses structurally on the count of entries
+left, so the loop is total with no fuel, no measure, and no unreachable `exhausted`
+value to explain. Each `let mut` local is one piece of loop state, named for what it
+holds. Inside a fork body the pyspec already named it, so use the pyspec's name. A
+pyspec `break` is a Lean `break`, and a `continue` is a `continue`. After the loop,
+the locals hold their final values, so the write-back reads them directly, with no
+result record to unpack.
+
+The checked arithmetic keeps its place in this form. `(← processedAmount +
+deposit.amount)` binds the checked sum where the pyspec forms it, inside the branch,
+so a range fault raises at the same step Python's does.
+
+Reach for `fuelLoop` only when the loop does not walk a collection. A fork-choice
+ancestor walk follows parent links through reads that can raise, so it runs on fuel
+bounded by the block count (`EthCLSpecs/Fulu/ForkChoice.lean`, "DAG walks"). Record in
+a comment why the shape needs fuel or a measure.
 
 #### Name threaded state with a record, not a positional tuple
 
-A `(Bool × Gwei × Nat × Array …)` accumulator turns every `.done (false, processed,
-ndi, postpone)` into a position-counting exercise, and two tuples of the same shape
-(here the accumulator led with `Nat`, the result with `Bool`) are a trap: the reader
+When a `fuelLoop` or a `fold` must thread state, a `(Bool × Gwei × Nat × Array …)`
+accumulator turns every `.done (false, processed, ndi, postpone)` into a
+position-counting exercise. Two tuples of the same shape are a trap: in the deposit
+scan above the accumulator led with `Nat` and the result with `Bool`, and the reader
 has to notice they differ. A record with named fields ends both. `fuelLoop`'s
-accumulator and result types may be the *same* type, so one `DepositScan` serves both,
-and `{}` (all field defaults) replaces the two giant inline `(… : Nat × Gwei × Nat ×
-Array …)` annotations. Past two components, a tuple is an unnamed record; name it.
-This is §2 applied to composite state.
+accumulator and result types may be the *same* type, so one record serves both, and
+`{}` (all field defaults) replaces the two inline type annotations. Past two
+components, a tuple is an unnamed record; name it. This is §2 applied to composite
+state.
 
 Inside a fork spec the record is a `forkstruct`, not a plain `structure`, so it carries
 the uniform `[Preset]` binder every container has and is captured for replay. A sibling
-fork that overrides the loop (Gloas has its own `ppdLoop`) adds `inherit DepositScan`
-rather than restating the fields, the same way it inherits any other declaration. Apply
-the record one place and both forks read in field names.
+fork that overrides the loop adds `inherit` for the record rather than restating the
+fields, the same way it inherits any other declaration.
 
 #### Thread the minimum: drop state that moves in lockstep
 
-`ppdLoop` threaded `di` (the cursor) and `ndi` (`next_deposit_index`) separately, yet
-every step advanced both by one or stopped on neither, so they were always equal. Two
-names for one value cost the reader a question with no answer, "when do these differ?".
-They never do, so collapse them to one. Before adding a field to an accumulator, check
-it is not a copy of one already there. This is §4 for state: the repeated thing is the
-variable itself, not an expression.
+The deposit scan once threaded `di` (the cursor) and `ndi` (`next_deposit_index`)
+separately, yet every step advanced both by one or stopped on neither, so they were
+always equal. Two names for one value cost the reader a question with no answer,
+"when do these differ?". In the `for` form the cursor belongs to the loop, so only
+`nextDepositIndex` is visible state. Before adding a field to an accumulator, check
+it is not a copy of one already there. This is §4 for state: the repeated thing is
+the variable itself, not an expression.
 
 #### Let guard clauses stand flat
 
-In a `do` block, `if c then return …` short-circuits, so a precondition need not wrap
-the rest of the body in its `else`. The three early stops sat nested three `else` deep;
-as flat `if … then return .done s` lines they read as a checklist, and the real work
-un-indents. Keep the two-armed `if … else` (and §1's "inside a branch" paragraphing)
-for branches where both arms do real work; a guard that only exits is cleaner flat.
-
-The payoff is in the caller too: `let scan ← ppdLoop …` then `scan.ndi` /
-`scan.churnReached` reads as English, where the old `let (churnReached, processed,
-ndi, postpone) ← …` made the call site re-declare the tuple shape.
+In a `do` block, `if c then break` (or `if c then return …`) short-circuits, so a
+precondition need not wrap the rest of the body in its `else`. The early stops above
+sat nested three `else` deep; as flat lines they read as a checklist, and the real
+work un-indents. Keep the two-armed `if … else` (and §1's "inside a branch"
+paragraphing) for branches where both arms do real work; a guard that only exits is
+cleaner flat.
 
 ### 7. Leave the small ones alone
 
@@ -749,8 +789,11 @@ When writing or revising a function body:
   function or helper.
 - A comment that restates its line, or just labels an obvious paragraph? Delete it.
   The blank line carries the paragraph; the header is only for the non-obvious.
-- Threading an accumulator? Name it with a record, not a positional tuple past two
-  fields; check no two components move in lockstep; let exit-only guards stand flat.
+- Scanning a finite collection? Write a `for` with `let mut` locals named after the
+  reference, and `break` where it breaks.
+- Threading an accumulator through `fuelLoop` or a `fold`? Name it with a record, not
+  a positional tuple past two fields; check no two components move in lockstep; let
+  exit-only guards stand flat.
 - Under ~8 lines, one step? Leave it as one paragraph.
 
 The bar is the one CLAUDE.md sets for the rest of the project: a reader who knows

@@ -180,8 +180,18 @@ def snake(name: str) -> str:
 
 
 def upstream_key(name: str, truth: dict) -> str:
-    """Our name -> its upstream key, trying the `…G` Gwei-twin spelling too."""
-    cands = [snake(name[:-1]), snake(name)] if name.endswith("G") else [snake(name)]
+    """Our name -> its upstream key, trying the `…G` Gwei-twin spelling too.
+
+    Derived views have no upstream definition of their own: a `…C` (checked
+    view) or `…Div` (PositiveDivisor view) suffix projects an original
+    constant (`SPEC_ARITHMETIC.md` §4.2, §4.5), so the view checks against its
+    base's upstream name and tier."""
+    cands = [snake(name)]
+    if name.endswith("G"):
+        cands.insert(0, snake(name[:-1]))
+    for suffix in ("Div", "C"):
+        if name.endswith(suffix):
+            cands.insert(0, snake(name[: -len(suffix)]))
     return next((c for c in cands if c in truth), cands[-1])
 
 
@@ -189,7 +199,9 @@ def our_constants(fork: str) -> dict[str, str]:
     """Each `Const` entry this fork declares, mapped to the tier its body says.
 
     The body classifies: a `Preset.x` projection carries `[Preset]`, a `Config.x`
-    projection carries `[Config]`, and a literal carries neither. Entries the
+    projection carries `[Config]`, and a literal carries neither. A derived view
+    (`…C` / `…Div`, §4.2/§4.5) projects its base inside a larger body, so the
+    tier comes from the projection the body mentions anywhere. Entries the
     fork inherits are not its own and are checked where they are declared.
     """
     src = (SPECS / fork / "Constants.lean").read_text()
@@ -197,10 +209,10 @@ def our_constants(fork: str) -> dict[str, str]:
     tiers = {}
     for m in re.finditer(r"^forkabbrev ([A-Za-z0-9_]+)\s*:.*?:=\s*(.*)$", body, re.M):
         name, rhs = m.group(1), m.group(2)
-        if re.search(r"(Pos|Lt)$", name):
+        if re.search(r"(Pos|Lt|Le)$", name):
             continue                                  # our well-formedness premises
-        tiers[name] = ("Preset" if rhs.startswith("Preset.")
-                       else "Config" if rhs.startswith("Config.")
+        tiers[name] = ("Preset" if "Preset." in rhs
+                       else "Config" if "Config." in rhs
                        else "flat")
     return tiers
 
