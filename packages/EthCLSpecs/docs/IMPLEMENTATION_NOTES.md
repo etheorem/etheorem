@@ -1638,3 +1638,28 @@ The routed spans resolve at their documented sites: `context.py:451-462`,
 `323-426`. The verification cross-references this record and adds no finding of
 its own. The builds reused copied local Lake caches and the gitignored native
 vendor trees.
+
+## Stage 10 documentation synchronization record
+
+Task 10.3 (WS-119) checked the lasting documents against the implemented state and the
+Stage 10.1 final-check record. The arithmetic content was already aligned by the Stage 9
+audit. The one stale class was prose that still named the Fulu `processDeposit` /
+`applyDeposit` entry points that 9.5c removed. The changes:
+
+| Document | Site | Changed claim |
+|---|---|---|
+| `SPEC_ARITHMETIC.md` | intro | The plan pointer records "the transition that produced this contract"; the final acceptance change removes it. The contract's own claims and the plan link are unchanged. |
+| `SPECS_ARCHITECTURE.md` | §6.1 | The genesis sketch adds a deposit's validator through `addValidatorToRegistry`, the helper the pending-deposit path uses, not the removed `processDeposit`. |
+| `SPECS_ARCHITECTURE.md` | §8.2 | The deposit example is `isValidDepositSignature` (the fixed `GENESIS_FORK_VERSION` and zero genesis root through `computeDomain`), with `applyPendingDeposit` as its conditional caller; the removed merkle-branch step is gone. |
+| `SPECS_ARCHITECTURE.md` | §10.1 | Notes that `genesis` is design scope, but the pin ships no `genesis` vectors, so `initializeBeaconStateFromEth1` stays a `todo` stub (the "Genesis" section above). |
+| `FRAMEWORK_ARCHITECTURE.md` | §11 | `isValidMerkleBranch`'s callers are named as the light-client and data-column sidecar inclusion-proof checks, which no fork body models, not the removed `processDeposit`. |
+
+The arithmetic contract's own claims, the authoring model's arithmetic row
+(`SPEC_AUTHORING_MODEL.md` §5), the framework error model (`FRAMEWORK_ARCHITECTURE.md`
+§6), and the discrepancy ledger (`DISCREPANCIES.md`) already matched the implemented
+state, so they need no content change. The Stage 9 audit record above is extended, not
+rewritten; `SPEC_ARITHMETIC_LINTING.md` stays the separate deferred document.
+
+Gate on the task tree: `just lint` clean, `just check-citations` 194 citations in 9
+files, `just check-constants` 166 constants (the same 2 untabled and 3 tier-only
+advisories) — identical to the Stage 10.1 record.

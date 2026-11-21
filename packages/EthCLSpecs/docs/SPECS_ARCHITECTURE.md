@@ -608,8 +608,8 @@ interface.
 
 `initializeBeaconStateFromEth1` is a `StateTransition Unit`, not a state-builder. It
 runs over a default initial state already threaded through the monad: it sets the
-genesis fields, then runs the same monadic `processDeposit` that block processing
-uses, over each genesis deposit.
+genesis fields, then adds each genesis deposit's validator through the same
+registry helper the pending-deposit path uses.
 
 ```lean
 forkdef initializeBeaconStateFromEth1
@@ -618,7 +618,7 @@ forkdef initializeBeaconStateFromEth1
   modifyState fun state => -- set genesisTime, fork, eth1Data, latest header, ...
     ...
   for d in deposits do
-    processDeposit d            -- the same monadic step block processing runs
+    addValidatorToRegistry d.data.pubkey d.data.withdrawalCredentials d.data.amount
   -- effective-balance and activation finalization follow
 ```
 
@@ -800,19 +800,18 @@ validators root through `computeDomain` directly, bypassing `getDomain`, because
 deposit signature is made before the depositor knows the chain it will join.
 
 ```lean
-forkdef processDeposit (deposit : Deposit) : StateTransition Unit := do
-  -- ... merkle-branch check against eth1Data.depositRoot ...
-  let domain := computeDomain Const.domainDeposit
-                  (some Const.genesisForkVersion) (zeroBytes 32)  -- fixed, zero gvr
-  let signingRoot := computeSigningRoot deposit.data.message domain
-  if blsVerify deposit.data.pubkey signingRoot deposit.data.signature then
-    -- add or top up the validator
-    ...
-  -- else: skip this deposit; a bad deposit signature does not reject the block
+forkdef isValidDepositSignature (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei)
+    (signature : BLSSignature) : Bool :=
+  let domain := computeDomain Const.domainDeposit Const.genesisForkVersion
+                  (Vector.replicate 32 0)              -- fixed fork version, zero genesis root
+  let signingRoot := computeSigningRoot
+    ({ pubkey, withdrawalCredentials := wc, amount } : DepositMessage) domain
+  blsVerify pubkey signingRoot signature
 ```
 
-The deposit's `verify` is a conditional, not a gate. A bad deposit signature skips
-the validator rather than rejecting the block, which is the one place crypto
+`applyPendingDeposit` calls it as a conditional, not a gate. It tops up an existing
+validator, and for a new pubkey it adds the validator on a valid signature and skips
+the deposit otherwise, rather than rejecting the block. This is the one place crypto
 verification branches instead of asserting.
 
 ### 8.3 `verify` as a gate, `todo` for the unreachable
@@ -919,6 +918,10 @@ The `rewards/*` format is in scope and drives a single delta function in isolati
 the reward and penalty deltas of the `Rewards` concern file (row 29). `fork` and
 `transition` run the Fulu-to-Gloas and Gloas-to-Heze upgrades only, since Electra is
 not built. Both presets run; mainnet runs on demand rather than on every CI pass.
+
+`genesis` is in the design scope, but the `v1.7.0-beta.4` pin ships no `genesis` vectors
+for Fulu, Gloas, or Heze, so `initializeBeaconStateFromEth1` stays a `todo` stub in the
+fork interfaces with nothing to drive (`IMPLEMENTATION_NOTES.md`, "Genesis").
 
 ### 10.2 The reject-faithfulness audit
 
