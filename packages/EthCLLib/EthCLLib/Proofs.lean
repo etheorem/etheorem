@@ -1,8 +1,10 @@
 import EthCLLib.Proofs.Arith
+import EthCLLib.Proofs.EngineLaws
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
 import EthCLLib.Proofs.Run
+import EthCLLib.Proofs.StateFree
 import EthCLLib.Proofs.StoreRun
 
 /-!
@@ -23,6 +25,8 @@ Re-exports:
 
 * `EthCLLib.Proofs.Arith`: what `saturatingSub` computes (`saturatingSub_toNat`,
   `saturatingSub_le`).
+* `EthCLLib.Proofs.EngineLaws`: the EIP-7805 inclusion rule as an assumption on an
+  `ExecutionEngine` (`LawfulInclusionList`).
 * `EthCLLib.Proofs.LawfulFcMap`: the laws of an `FcMap`
   (`LawfulFcMap`, `FcMap.lookup_insert_self`,
   `FcMap.contains_insert_self`, `FcMap.mem_values`), with `instLawfulFcMapTreeMap`.
@@ -33,6 +37,8 @@ Re-exports:
   shares (`run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
   `except_bind_error`, the `ofExcept` and `liftErr` run equations), plus the pure
   box helpers `pureState` and `runPure` and their lemmas.
+* `EthCLLib.Proofs.StateFree`: the rules for a run that reads no runner state, and the
+  tactic `free_solve` that applies them to a fork-choice query.
 * `EthCLLib.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine runner
   every fork's fork-choice proofs pin at that fork's `Store`, and the
   store-specific `throwArithmetic_run` equation.
