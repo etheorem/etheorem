@@ -600,7 +600,10 @@ shipping path.
 
 ## Status snapshot
 
-| Phase | Package | Status |
+This table records the plan's status when it was written. It is historical. For the
+implemented state, read `IMPLEMENTATION_NOTES.md` and the design documents.
+
+| Phase | Package | Status when written |
 |---|---|---|
 | 0: Foundations and spikes | SizzLean, `EthCLLib` | preset-cap derive landed; the three spikes pending |
 | 1: The walking skeleton | `EthCLLib`, `EthCLSpecs` | pending |
