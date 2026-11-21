@@ -30,9 +30,9 @@ def addressOf (v : Validator) : ExecutionAddress :=
 /-- `get_balance_after_withdrawals` over `Heze.State` (`capella/beacon-chain.md:411-421`): the
 balance net of any already-queued withdrawals for `vi`. Restated (a plain `def` rather than a
 `forkdef`). Throwing, mirroring the Gloas copy: `state.balances[validator_index]` is a bare list
-index (`IndexError` → `sszGetIdx` → `outOfBounds`), and `- withdrawn` is a bare `uint64`
-subtraction whose underflow raises `ValueError`, uncaught by the reference runner
-(`context.py:424-435`), so it throws the uncaught `.arithmetic` reject, not a caught `.assert`.
+index (`IndexError` → `sszGetIdx` → `outOfBounds`), and `- withdrawn` is the checked `uint64`
+subtraction, whose underflow raises `SSZValueError`, a `ValueError` the reference runner does
+not catch (`context.py:451-462`), so it throws the uncaught `.arithmetic` reject.
 See `Gloas.balanceAfterWithdrawals`.
 
 The `withdrawn` accumulator is a `Gwei` and the folded add is the checked `Gwei` `+`,
