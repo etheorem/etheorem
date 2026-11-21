@@ -1483,7 +1483,8 @@ it is distinct from a spec-integer conversion.
 | Contract forbidden-form tables and coding-style “before” snippets | These are labelled rejected forms or teaching counterexamples. Current “after” snippets use checked binds. Both contributor theorem examples use the current arithmetic and error contract. |
 
 The architecture/records family found no Stage 0/4/5/7/8 cost table to relabel.
-Those working measurements remain assigned to Stage 10's rollup.
+The "Final costs" section of the spec arithmetic completion record below carries
+those measurements.
 
 ### Explicit routes outside arithmetic reconciliation
 
@@ -1656,9 +1657,8 @@ vendor trees.
 ## Stage 10 documentation synchronization record
 
 Task 10.3 (WS-119) checks the six lasting documents against the implemented state.
-The verification source is WS-117's Stage 10.1 final-check record, checked tree
-`7dbe320`, held locally in `mb/spec-arithmetic-implementation/stage-10.1.md`.
-Task 10.4 brings that evidence into the tracked completion record.
+The verification source is WS-117's Stage 10.1 final check on tree `7dbe320`. The
+"Verification record" of the spec arithmetic completion record below carries it.
 The Stage 9 audit supplies the arithmetic guidance. This synchronization corrects
 the remaining deposit, genesis, fork upgrade, and index-read descriptions:
 
@@ -1689,7 +1689,7 @@ linter is active.
 
 Gate on the task tree: `just lint` clean, `just check-citations` 194 citations in 9
 files, `just check-constants` 166 constants (the same 2 untabled and 3 tier-only
-advisories). These results match the local Stage 10.1 final-check record named above.
+advisories). These results match the Stage 10.1 final check named above.
 
 Targeted searches over the six named documents cover raw words and conversions,
 unbounded and wrapping arithmetic, superseded designs, error classes, deposit,
@@ -1704,3 +1704,404 @@ primitive and state that no fork body calls it. The `Except IndexError` matches 
 `getAt`, `setAt`, and the value that `sszGetIdx` lifts. Error descriptions retain the typed
 caught-set distinctions. The plan link stays until 10.5, and linter references
 describe deferred work.
+
+## Spec arithmetic completion record
+
+This record closes the spec arithmetic transition, Stages 0 through 10. It holds the
+final scope, the chosen implementation, the final costs, the verification record, and
+the open optimization work. The contract is `SPEC_ARITHMETIC.md`. The deferred linter
+proposal is in `SPEC_ARITHMETIC_LINTING.md`; it is future work, and no arithmetic linter
+is active. The record needs no local working file: every number below is copied here
+with its command, tree, and method.
+
+Pins for every measurement: pyspec vectors `v1.7.0-beta.4`, Python package
+`eth_consensus_specs` 1.7.0b4 with `eth-ssz-specs` 0.1.0, Lean toolchain `v4.34.1`
+(Lake 5.0.0-src+5045d00), Python 3.13.11, pytest 9.2.0. One machine ran the transition's
+measurements: 12 cores, Lake default parallelism, pytest `-n 6`.
+
+### Decisions
+
+The user settled these decisions on 2026-11-15, before Stage 0:
+
+| Subject | Decision |
+|---|---|
+| Cost | Keep native-backed wrappers. Record compilation and run-time costs. No performance threshold can stop the transition. |
+| Authoring | Explicit `Checked` result ascriptions are the baseline. Bounded automatic elaboration may add readability with the same semantics. |
+| Binding | Bind each local checked computation immediately in a fork body. Source review and behavior pins check this rule. |
+| Configurations | Keep checked behavior for every accepted configuration. A total operation needs an explicit premise. |
+| Widths | Start with 64-bit and 8-bit wrappers. Build another width only for an arithmetic consumer. |
+| Coverage | Move all consensus-spec arithmetic in `EthCLSpecs`, including the sites the spike left raw. |
+| Linters | Defer linter work. `SPEC_ARITHMETIC_LINTING.md` holds it. |
+
+The spike on branch `specs-arithmetics-spike` (head `ff520aa`) tested the approach on a
+partial port and answered "go". The transition re-authored every change against the
+contract and the pinned Python. It started from `0215460`.
+
+### Final scope
+
+The transition covered all consensus-spec code in `EthCLSpecs` for Fulu, Gloas, and Heze:
+shared forms, constants, configuration values, helpers, containers, upgrades, and fork
+choice. It also covered the `EthCLLib` arithmetic layer, the `SizzLean` packing
+classifier, the proof repairs, the runner interfaces, and the bench fixtures.
+
+The Stage 0 inventory (task 0.1) counted the corpus on the starting tree:
+
+| Category | Count |
+|---|---|
+| Numeric aliases | 10, plus 14 data-only byte-vector aliases |
+| Container rows with numeric fields | 45, over 39 declarations |
+| Constants | about 110 names (Fulu about 66, Gloas about 28, Heze about 8) |
+| Operator lines in fork bodies | about 400 (Fulu about 202, Gloas about 159, Heze about 37) |
+| Cast and conversion sites | about 230 |
+| Index helper uses | about 200, over 12 helpers |
+| Framework arithmetic declarations | about 35 |
+| Sites with no assigned stage | 0 |
+
+Operator counts are code lines with an arithmetic operator; a line with two operators
+counts once. Approximate counts come from searches. The per-site tables of the inventory
+were the enumeration, and each stage closed its rows.
+
+Final types of the numeric aliases, declared once in `Fulu/Types.lean` and replayed in
+Gloas and Heze:
+
+| Alias | Type | Stage | Commit |
+|---|---|---|---|
+| `Gwei` | `CLUint64` | 4.1 | `5fc2cfa` |
+| `Epoch`, `Slot` | `CLUint64` | 5.1, 5.2 | `de786a5` |
+| `ValidatorIndex` | `CLUint64` | 6.1 | `3fc7209` |
+| `BuilderIndex`, `CommitteeIndex`, `WithdrawalIndex`, `ColumnIndex`, `CellIndex` | `CLUint64` | 6.2 | `3fc7209` |
+| `ParticipationFlags` | `CLUint8` | 8.1 | `87ad73d` |
+
+Stages 5 and 6 were each squashed into one commit, so their per-task commits do not
+appear in the history. The clock values (`Store.timeMs`, `Store.genesisTimeMs`,
+`BeaconState.genesisTime`, `Eth1Data.depositCount`, `SLOT_DURATION_MS`) became `CLUint64`
+at 7.1a (`9768c41`). The deadline helpers followed at 7.1b (`398ea49`).
+
+These values stay outside spec arithmetic, each with a recorded reason:
+
+- Structural `Nat`: loop fuel, termination measures, type-level sizes, `Loop.lean` fuel,
+  and `counterBudgetUInt64`.
+- Structural constants: the operation caps, `JUSTIFICATION_BITS_LENGTH`,
+  `DEPOSIT_CONTRACT_TREE_DEPTH`, and the Gloas timeliness indexes. Every executable read
+  of them is a comparison, a literal sum that cannot raise, or an in-range index.
+- Data: byte buffers, credential prefixes, RANDAO mixing, domain tags, fork versions,
+  payload-status tags, `payloadBuilderVersion`, `builders.version`, and
+  `g2PointAtInfinity`.
+- Data-only widths: `Uint32` lives only in the framework codec and the server exit
+  codes. `Uint256` is only `baseFeePerGas` data.
+
+#### Constant kinds and operator edges at the pin
+
+Task 2.5 read every answer from the built pyspec modules at 1.7.0b4. It read
+`type(value).__name__`, never YAML or prose. Every probed preset, configuration, and
+`## Constants` value parses to its declared SSZ type: `Uint64`, or a `Slot`, `Epoch`,
+`Gwei`, or `BuilderIndex` subclass. The plain values are `CELLS_PER_EXT_BLOB`, the
+`GAS_LIMIT_SCHEDULE` tuple, lengths, loop variables, `~` results, and literals.
+`MAX_RANDOM_VALUE` is absent from every built module, so its Lean constant (65535)
+rests on the spec text. The Gloas pair `BUILDER_PAYMENT_THRESHOLD_NUMERATOR` and
+`_DENOMINATOR` is `Uint64(6)` and `Uint64(10)`.
+
+| Probe in the Fulu module | Pinned answer |
+|---|---|
+| `Uint64(max)+1`, `1+Uint64(max)`, `Uint64(0)-1`, `0-Uint64(1)`, `Uint64(2^63)*2` | raise `SSZValueError` |
+| `Uint64(1)<<64`, `Uint64(2)**64`, `2**Uint64(64)` | raise `SSZValueError` |
+| `Uint64(1)//Uint64(0)`, `Uint64(1)%Uint64(0)` | raise `ZeroDivisionError` |
+| `sum([Gwei(max), Gwei(1)])` | raises inside the `sum` |
+| `Uint64(0) * (2**64)` | `Uint64(0)`; no intermediate narrows |
+| `Uint64(5) // (-2)`, `Uint64(7) % (-2)` | raise; the floored quotient is out of range |
+| `Uint64(7) >> 64` | `Uint64(0)`; the right shift is total |
+| `(2**64) >> Uint64(0)` | raises; a plain left operand with a checked count is range-tested |
+| `int(Uint64(max)) + 1` | `2**64`, a plain `int` |
+
+The implemented `CLUint64` and `CLInt` operation matrix matches every row.
+
+### Chosen implementation
+
+**Native-backed checked wrappers.** `CLUint64` and `CLUint8` are private structures over
+`UInt64` and `UInt8` (`EthCLLib/Spec/CLUint.lean`). `CLInt` models the pyspec's plain
+`int` (`Spec/CLInt.lean`). A fallible operation returns `Checked`
+(`Spec/Checked.lean`). The total routes live in `Spec/CLTotal.lean`: proof-carrying
+positive divisors, same-width bitwise operations, right shifts, and bounded checked
+power and left shift. No `CLUint32` or `CLUint256` exists, because no arithmetic consumer
+needs that width. The transition built no generic width-indexed type.
+
+The spike rejected an abbreviation with scoped instances. A probe of
+`abbrev CheckedUInt := UInt64` with a scoped checked `HAdd` showed three leaks: `a + 1`
+selects raw addition, an oversized literal wraps to zero, and code outside the scope
+wraps. The alias is definitionally equal to `UInt64`, so it gives no instance boundary.
+Its compile-time cost was never measured.
+
+**Safe construction.** A kernel-checked `OfNat` gate rejects an out-of-range literal
+at instance synthesis. The checked conversions are `ofNat?` and `toCLUint64?`. The
+proof-carrying constructor is `ofNatLT`. The trusted constructors follow a validation or
+a preset proof, and their docstrings state the caller's obligation. The projections are
+`toPlainNat` for `Nat` results, `toCLInt` for `CLInt` results, and `toPlainInt` for
+Lean `Int` results.
+
+**Authoring surface.** A bounded scoped elaborator (`Spec/Elab.lean`) resolves checked
+operators. It makes one probe pass and one real pass, postpones when it must, and never
+changes operand types. It leaves unrelated `Nat`, `Int`, and `UInt64` terms structurally
+identical. An explicit `(… : Checked _)` ascription stays the fallback. A fork body binds
+each checked computation at once. The `ToIndex` class and `sszGetIdx` read arrays, SSZ
+lists, vectors, and bit collections. A negative index counts from the end, and an index
+fault keeps the `IndexError` class.
+
+**Constant views.** A checked constant stays the source of truth. A `…C` view projects a
+checked value, and a `…Div` view gives a positive divisor. A `…Lt` or `…Le` preset premise
+carries the bound that a proof-carrying view needs. No view stores a second value.
+`just check-constants` knows the suffix rules and skips the premises.
+
+**Fault model.** `ArithFault` carries an `ArithCause` (`range` or `zeroDivision`), the
+operation, the width, and the operands. The lift maps it into `StateTransitionError` and
+`StoreTransitionError`. The runner's caught sets separate range faults, zero divisors,
+index faults, and asserts, as contract §1 requires. List-limit faults are
+`ValueError`-class at `eth-ssz-specs` 0.1.0, so `.valueError` admits `.listFull` and
+rejects `.zeroDivision`. `EthCLLib/Tests/ErrorClassify.lean` pins the table, the four lift
+paths, failed-state disposal, and decode separation.
+
+**SSZ packing.** The `SizzLean` cache once classified indexed writes by core type name. A
+checked wrapper then took the composite path, and the cached root went stale. The spike
+saw 36 smoke failures from this. Stage 1.1 (`66910e0`) reads the element's `SSZRepr`
+shape instead, and an unresolved shape is a compile error.
+`SizzLeanTests/CheckedWrapperPacking.lean` pins lists, vectors, chunk boundaries, repeated
+writes, and a root cached before the write. The module fails under the old classifier.
+
+**Proof interface.** `EthCLLib/Proofs/CLUint.lean` and `Proofs/CLInt.lean` supply the
+success and value lemmas, the checked-chain and fold laws, and the conversion and lift
+laws. Proof coverage went from 78 claims at Stage 0 to 87. No characterization tag was
+lost, and no claim was weakened. The fork-body axioms stay `propext`,
+`Classical.choice`, and `Quot.sound`. `Lean.ofReduceBool` and the SHA-256 equivalence
+axioms are absent from the fork-body proofs. Three Gloas theorems in
+`Proofs/Gloas/BuilderIndex.lean` rest on `bv_decide` certificates. They did before the
+transition, and `allowedAxioms` in `scripts/ProofCoverage.lean` admits that class.
+
+**Body re-authoring.** Task 8.3 (`f52bf90`) re-authored `processPendingDeposits` from
+the pinned text. It is a `for` over the finite queue, with `break` at the three pinned
+stops. The fuel loop and `DepositScan` are gone from all three forks.
+`docs/CODING_STYLE.md` shows the shipped form.
+
+#### Evaluation-order and raise fidelity
+
+Each row is a site where a Lean body raised at another point than the pinned Python,
+or did not raise. Some wrong forms predate the transition. Review found the others in a
+first migrated form, before its commit. Each named pin fails under the wrong form.
+
+| Site | Wrong form | Pinned behavior now | Task, commit | Pin module |
+|---|---|---|---|---|
+| `compute_start_slot_at_epoch`, `compute_activation_exit_epoch`, `initiate_validator_exit`, `process_withdrawal_request` | raw `Epoch` wrap | range fault | 5.1, `de786a5` | `EpochMigrationPins` |
+| `initiate_builder_exit` registry read | defaulting read | the raising read before the withdrawability sum | 5.1, `de786a5` | none; review against the pinned body |
+| `process_inactivity_updates`, `get_flag_index_deltas` | leak check above its pinned position | the pinned position | 5.1, `de786a5` | none; review against the pinned body |
+| `process_ptc_window` range end; proposer seeds; proposer-boost short circuit | raise missing, interleaved, or short circuit lost | the pinned positions | 5.2, `de786a5` | `GloasSlotMigrationPins`, `GloasForkChoicePins` |
+| Fulu `verifyCommitteeCoverage`; participation-flag source assert | fold past the first failed check; the caught assert before an uncaught range fault | stops at the first failed check; Python's read order | 5.3, `de786a5` | `CommitteeCoverageOrderPins` |
+| Withdrawal cursor `% len` on an empty registry; Fulu `get_next_sync_committee_indices` on an empty active set | default or assert | `ZeroDivisionError` | 6.1, 6.3, `3fc7209` | `ValidatorIndexMigrationPins`, `PlainArithmeticPins` |
+| `compute_committee` products | plain `Nat` | checked products; zero count raises `ZeroDivisionError` | 6.2, `3fc7209` | `IndexMigrationPins` |
+| `computeSlotAtTimeMs` with zero `SLOT_DURATION_MS` | returned `0` | `ZeroDivisionError`; a time before genesis raises the range fault first | 7.1a, 7.2, `9768c41`, `1997d99` | `ClockMigrationPins`, `ConfigurationClockPins` |
+| Shuffle round cast `Uint8(current_round)` | wrap past 255 | proof-carrying under the `shuffleRoundCountLe` premise | 8.2, `352e809` | `WidthCastPins` |
+| `processRegistryUpdates` | three independent `if`s | one `if`/`elif`/`elif` chain | 8.4a1, `42bbd08` | `TransitionFamilyAuditPins` |
+| `processSlashings` | sum formed above the loop | formed only for a slashed validator | 8.4a1, `42bbd08` | `TransitionFamilyAuditPins` |
+| Seven preset views in `Fulu/Constants.lean` | `UInt64.ofNat` wrapped `2^64` to `0` | `ofNatLT` over `…Lt` premises | 8.4a3, `c86b970` | `FuluDeclarationsAuditPins` |
+| Gloas `isPreviousSlotPayloadDecision`, Gloas and Heze `shouldExtendPayload` | clock read before `slot + 1` | the checked add binds first | 8.4a4, `307d8f6` | `GloasHezeAuditPins` |
+| `process_sync_aggregate` participant lookup | skipped an unknown pubkey | `ValueError`, the new `.notInList` arm | 9.5a, `b42af6d` | `SyncAggregateLookupPins` |
+| `computeCommittee` permutation read | defaulting read | `.assert` at the first position past `len(indices)` | 9.5b, `3436194` | `CommitteeBoundsAssertPins` |
+| `processDeposit` and its `eth1DepositIndex + 1` | raw wrap in a body with no pinned caller | body removed; the pinned Fulu `process_operations` asserts no deposits | 9.5c, `c563e40` | `DepositOperationPins` |
+| `processProposerLookahead` shift window | sized for `MIN_SEED_LOOKAHEAD = 1` only | sized from the preset | 9.5d, `f36cb2b` | none; `proposer_lookahead` vectors |
+
+Pin modules are under `EthCLSpecs/Tests/`. Review also put the Gloas reorg-threshold
+operands in the pinned order at 4.1 (`5fc2cfa`). No vector reaches most of these rows,
+because they need values near `2^64` or an unusual configuration.
+
+### Final costs
+
+All build rows use `lake build EthCLSpecs`, run alone and in sequence. "Cold" is
+`lake clean && lake build EthCLSpecs` after a warm-up build. "Incremental" appends a
+newline to `EthCLSpecs/Fulu/Time.lean` and rebuilds; Stage 4.3 touched `Fulu/Balances.lean`
+instead. The spike row is historical: it measured a partial port.
+
+| Tree | Cold | Jobs | No-op | Incremental |
+|---|---|---:|---|---|
+| Stage 0.2 baseline, `58ba389` | 6m52.3s | 607 | 0.52s | 2m57.7s |
+| Spike, historical | 10m58s to 10m59s | 621 | not recorded | not recorded |
+| Stage 4.3, `a9eec86` | 10m03s | 621 | not recorded | 3m38s (`Balances`) |
+| Stage 5.4, Stage 5 tree | 15m02s | 621 | 0.4s | not recorded |
+| Stage 7.4, `9515566` | 25m02.9s | 621 | 0.64s | 5m57.1s |
+| Stage 8.5, `e3eec4c` | 25m03.9s | 621 | 0.60s | 5m59.9s |
+| Stage 10.2, `fed8705d` | 25m29.8s | 621 | 0.443s | 6m08.3s |
+
+At 8.5 and 10.2 the warm-up took 25m02.2s and 25m51.9s. Restoring the incremental edit
+took 6m02.4s and 6m07.1s. The final cold build is 3.71 times the baseline. The final
+incremental build is 2.07 times the baseline. The no-op build did not change.
+
+| Profile median, `just ethcl-profile` | `ForkInterface.stateRoot BeaconState` | `ForkInterface.runBlocks` |
+|---|---|---|
+| Stage 0.2 baseline | 273.8 ms | 617.9 ms |
+| Spike `main` copy, historical | 265.1 ms | 605.3 ms |
+| Stage 4.3 | 263.3 ms | 602.5 ms |
+| Stage 10.2 | 264.66 ms | 600.32 ms |
+
+The profile case is the Gloas mainnet `sanity/blocks` vector `full_random_operations_0`:
+a 3171397-byte state, 256 validators, one block.
+
+The epoch suite is the Gloas mainnet `epoch_processing` handler, 154 cases:
+`pytest -q --preset=mainnet --subset=0 --fork=gloas -k epoch_processing` in
+`PySpecTests`, runners built first.
+
+| Epoch suite | Wall |
+|---|---|
+| Pre-transition `main`, historical | 124.50s |
+| Spike, historical | 124.95s |
+| Stage 10.2, run 1 | 131.48s |
+| Stage 10.2, run 2 | 125.08s |
+
+#### Explanation status of each difference
+
+- **Run time: parity.** Both profile rows sit within 0.5% of Stage 4.3 and below the
+  Stage 0 baseline. Epoch-suite run 2 is within 0.5% of the baseline.
+- **Epoch-suite run 1: cause unknown.** It is 6.4s slower than run 2. That spread is
+  larger than run 2's distance from the baseline. The same session's profile shows no
+  slowdown, so the arithmetic code is not the likely cause. No repeat at zero load exists.
+- **Stage 0 to Stage 4.3, cold +3m11s and +14 jobs: cause unknown.** Neither tree has a
+  per-module build log.
+- **Stage 4.3 to Stage 5.4, cold +4m59s: cause unknown.** No Stage 4 per-module log
+  exists.
+- **Stage 5.4 to Stage 7.4, cold +10m01s: located, root cause unknown.** The three
+  `Interface` modules hold the growth. The Stage 5 log shows their C compiles at 121s,
+  179s, and 178s, and their elaboration at 18s, 57s, and 74s: 627s in total. The Stage 7.4
+  log shows 168s, 389s, 447s and 24s, 83s, 106s: 1217s in total. That is 590s of the
+  601s increase. Which Stage 6 or Stage 7 change grew the generated C is not
+  established; no Stage 6 build log exists.
+- **Stage 8.5 to Stage 10.2: within 3.3%.** Cold grew 1.7%, incremental 2.3%, and warm-up
+  3.3%. Stage 8.5 matched Stage 7.4 within 0.1%. The job count is unchanged. The 10.2 run started at load 0.50 and ran at 1.3 to 2.2, where 8.5 started
+  at 0.14. The share that load explains is not established.
+- **Spike epoch-suite command: reconstructed.** The spike record names the suite
+  "Mainnet" but did not keep `--preset`. The harness default is `minimal`, so 10.2 added
+  `--preset=mainnet`.
+
+The cold build is close to serial: at 10.2 the wall was 25m29.8s and user time was
+28m40.0s. The three `Interface` modules use 1236s of the 1722s summed job time:
+
+| Module | Elaboration | C compile |
+|---|---:|---:|
+| `EthCLSpecs.Fulu.Interface` | 25s | 163s |
+| `EthCLSpecs.Gloas.Interface` | 86s | 392s |
+| `EthCLSpecs.Heze.Interface` | 110s | 460s |
+
+The next longest job takes 8.4s (`EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`).
+
+The transition added `set_option maxHeartbeats` where elaboration needed more time.
+There are nine at 1000000 in the `Interface` modules (one Fulu, four Gloas, four Heze),
+and two at 4000000 in `Proofs/Gloas/KeepsUncached.lean`. The pre-transition tree had
+none in `EthCLSpecs`. Stage 3.1 measured the elaborator alone: a cold `EthCLLib` build of
+49.7s over 303 jobs, and a 1.4s incremental chain, before any fork body used it.
+
+### Verification record
+
+Task 10.1 (WS-117) ran the final checks on `7dbe320`. That tree carries the
+`specs-arithmetics` code after 9.5a to 9.5d. One driver script ran every step in order,
+alone on the machine, from 2026-11-21T11:39:41Z to 13:23:15Z. Every package `.lake/build`
+was deleted first, so `just ethcl-test` was a cold build. No source changed.
+
+| Command | Result | Stage 8.5 anchor |
+|---|---|---|
+| `lake build` | "Nothing to build."; the umbrella declares no library, so this is no build evidence | same |
+| `just ethcl-test` | 677 jobs, no warnings | 674 |
+| `just build-cli` | 628 jobs; `pyspec_server` and `ssz_generic_runner` rebuilt | 628 |
+| `just lint` | clean | clean |
+| `just check-citations` | 194 citations in 9 files, all resolve | 196 |
+| `just check-constants` | 166 constants; 2 untabled (`g2PointAtInfinity`, `maxRandomValue`), 3 tier-only advisories | 167, same advisories |
+| `just proof-coverage-update` | baselines and README blocks byte-identical | same |
+| `just proof-coverage-check` | 87 claims | 87 |
+| `just proof-coverage` axiom report | `propext` 173, `Classical.choice` 150, `Quot.sound` 167, `Lean.ofReduceBool` 0, `Lean.trustCompiler` 0, SHA-256 equivalence axioms 0, `bv_decide` certificates 3 | same four headline counts |
+| `just ethcl-pyspec-smoke` | Fulu 155 passed / 46 skipped, Gloas 207 / 52, Heze 209 / 52 | same |
+| `git grep "TEMPORARY CROSSING" -- '*.lean'` | empty | empty |
+
+Each difference from Stage 8.5 has a known cause:
+
+- `ethcl-test` 674 to 677 jobs: 9.5a, 9.5b, and 9.5c each added one pin module.
+- `check-citations` 196 to 194: 9.5c removed `processDeposit` and its two ledger citations.
+- `check-constants` 167 to 166: 9.5d removed the dead `maxEffectiveBalanceElectra` twin.
+- Coverage denominator: spec functions 627 to 625 and authored functions 307 to 305,
+  because 9.5c removed Fulu `applyDeposit` and `processDeposit`. The 87 claims are unchanged.
+
+The full matrix ran as the six `PYTEST_JOBS=6 just ethcl-pyspec-full` commands in order,
+each with `-vv -rA --tb=no`. Nothing built during the matrix.
+
+| Preset and fork | Passed / skipped | Case ids | Compared with |
+|---|---|---:|---|
+| minimal Fulu | 5318 / 2829 | 8147 | 9.5d per-case log: identical; 23 skip groups identical |
+| minimal Gloas | 6760 / 3198 | 9958 | 9.5d: identical; 26 groups identical |
+| minimal Heze | 6972 / 3198 | 10170 | 9.5d: identical; 26 groups identical |
+| mainnet Fulu | 859 / 115 | 974 | 8.5 per-case log: identical; 23 groups identical |
+| mainnet Gloas | 1094 / 130 | 1224 | 8.5: identical; 26 groups identical |
+| mainnet Heze | 1073 / 130 | 1203 | 8.5: identical; 26 groups identical |
+
+"Identical" compares the sorted sets of (outcome, case id) pairs. No case failed,
+errored, xfailed, or xpassed. Every skip is an `ssz_static` type the fork does not model,
+the same groups at both presets.
+
+The comparison chain runs back to Stage 0. The minimal sweeps kept per-case logs from
+Stage 0, and each verification stage (4.3, 5.4, 6.4, 7.4, 8.1 to 8.5, 9.5d, 10.1) matched
+the one before it case for case. The mainnet counts matched the pre-transition `main`
+counts at Stage 0, 4.3, and 8.5. Stage 8.5 kept the first mainnet per-case logs, and
+10.1 matched them case for case. No vector outcome changed during the transition.
+
+Two earlier 10.1 driver starts failed before the matrix, both for environment reasons.
+The first had no vendored native libraries. Its smoke step then started six parallel
+server builds, which outlived the driver. Those builds wrote into the same `.lake` as the
+second start and corrupted two generated C files. The final run stopped every process
+in the worktree, deleted every `.lake/build`, and stopped on any failed build step.
+
+#### Incidents during the transition
+
+| Date | Incident | Resolution |
+|---|---|---|
+| 2026-11-16 | One pyspec server died once in a Fulu minimal sweep (`consolidation_balance_larger_than_churn_limit`) | The same sweep passed before and after. A one-off runner fault; a repeated server death in a gate run blocks. |
+| 2026-11-16 | `SizzLeanTests` prints three `PANIC` / index-out-of-bounds traces during elaboration | Present before the transition. The modules pin out-of-bounds behavior through `native_decide`; the build succeeds. |
+| 2026-11-17 | A reboot during a build left the Gloas fork-lineage dynlib half-linked ("initializer not found"), and Lake held it fresh | Delete the module's `.so` files and rebuild. |
+| 2026-11-21 | Concurrent builds into one `.lake` corrupted generated C (10.1, above) | Never build while a sweep or another build runs in the same worktree. |
+
+### Open optimization work
+
+No item below blocks the transition. The cost decision accepts the measured costs.
+
+1. **The `Interface` C compiles.** They take 1015s of a cold build and doubled between
+   Stage 5 and Stage 7.4. The cause is not established. A cold build with per-module
+   output on `de786a5`, `3fc7209`, and `9515566` would assign the growth to Stage 6 or
+   Stage 7. The generated C of one `Interface` module from two of those trees would then
+   show what grew.
+2. **Stage 0 to Stage 5 build growth.** About 8m10s, cause unknown. No per-module log
+   exists for those trees.
+3. **The `maxHeartbeats` annotations.** Eleven declarations need a raised limit. Whether
+   a smaller elaboration problem can remove them is not measured.
+4. **The elaborator's share.** The spike named the elaborator's retry pass and the
+   instance search as suspects. The measured elaboration of the three `Interface` modules
+   is 221s. The elaborator's share of that time is not isolated.
+5. **Load share at Stage 10.2.** A repeat at zero load would separate the load share of
+   the 1.7% to 3.3% difference from machine variance.
+6. **Epoch-suite run 1.** The extra 6.4s has no established cause.
+
+The deferred linter work stays a separate future proposal in
+`SPEC_ARITHMETIC_LINTING.md`.
+
+## Spike fixes outside the arithmetic transition
+
+These non-arithmetic items came from the spike or the transition. Each keeps its own
+tracking, apart from the completion record above.
+
+1. **Gloas and Heze `viableForHeadLeaves` fuel.** The fork-choice test helper in
+   `Gloas/Interface.lean` and `Heze/Interface.lean` walks the node tree with fuel
+   `2 * blocks + 2`. Under ePBS one block root holds up to three nodes: PENDING, EMPTY,
+   and FULL. The worst case needs `3 * blocks + 1` steps. The docstring still claims
+   that twice the block count plus two bounds the walk. On fuel-out the helper returns a partial leaf
+   set, so the vector comparison fails. No current vector trips it. The spike fixed it as
+   `3 * blocks + 2` (spike finding 14, commit `7b2accc` on `specs-arithmetics-spike`).
+   That fix is not in this tree. Status: open.
+2. **`compute_weak_subjectivity_period`.** The spike added this validator-guide helper
+   with oracle pins (commit `965885f`). It is outside the modeled fork bodies, and the
+   transition did not carry it. Status: not scheduled.
+3. **`get_unslashed_participating_indices` assert.** The pinned body asserts
+   `epoch in (previous, current)`, and Lean has no twin. Every caller passes the
+   previous or the current epoch. The `Fulu/Accessors.lean` docstring records it.
+   Status: recorded, no fix planned.
+4. **Stage 9 routes R2 and R3.** The non-arithmetic historical prose and the policy for
+   tracker IDs in the committed record stay with the Epic Lead. The Stage 9 audit
+   record above lists their sites. Status: open.
