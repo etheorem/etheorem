@@ -781,9 +781,10 @@ arithmetic site remains unreviewed because its module built without edits.
 - [x] **9.3 Verify documentation examples.** Build affected Lean modules and examples.
   Run the citation and project checks. Repeat the targeted searches and inspect remaining
   matches. Record each reviewed document and the resolution of each conflict. (WS-102, `170f0b00fa112b0fa95c38b43fe28f3fbac1ee3b`)
-- [ ] **9.4 Check document links and status.** Update the docs index and cross-references.
+- [x] **9.4 Check document links and status.** Update the docs index and cross-references.
   Ensure current guidance describes the implemented state and keeps deferred linter
   work separate. Leave removal of this temporary plan to the final acceptance stage.
+  (WS-103, `205929ad3f7b2cb5c63029a1f71cdd442639f151`)
 - [ ] **9.5 Close the Stage 8 routed items.** The 8.4 sub-stage records route these items
   to the Epic Lead / Stage 9. They run before the documentation families, so the audit
   sees final names and docstrings.
