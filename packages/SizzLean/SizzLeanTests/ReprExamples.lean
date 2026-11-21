@@ -1,3 +1,4 @@
+import SizzLean.Hasher.Sha256
 import SizzLean.Repr.Class
 import SizzLean.Repr.Instances
 import SizzLean.Repr.Deriving
@@ -167,6 +168,28 @@ example (x : BitVec 128) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
 example (x : BitVec 256) : SSZ.deserialize (SSZ.serialize x) = .ok x :=
   SSZ.roundtrip x .uintN256
     (SizzLean.Proofs.encodedFits_of_maxByteLength_lt .uintN256 x (by decide))
+
+/-! ### The `BitVec 1` shape instance, and its limit
+
+`SSZRepr (BitVec 1)` (`Repr/Instances.lean`) gives one-bit values
+the `.uintN 1` shape so a shape-reading consumer, the `sszUpdate`
+cached-write classifier, packs them as basic. Width 1 sits outside
+the implemented `{8, 16, 32, 64, 128, 256}` set, so the spec-level
+`serialize` arm returns the empty byte array and `hashTreeRoot`
+returns the zero chunk. The gates pin that degeneracy: both bit
+values serialize to nothing and root to the same bytes. A later
+implementation of the remaining widths breaks these gates on
+purpose, pointing at the new wire behavior. -/
+
+example : (SSZ.serialize (T := BitVec 1) 1#1).size = 0 := by
+  native_decide
+
+example : (SSZ.serialize (T := BitVec 1) 0#1) = (SSZ.serialize (T := BitVec 1) 1#1) := by
+  native_decide
+
+example : SSZ.hashTreeRoot SizzLean.Hasher.Sha256 (x := (1#1 : BitVec 1))
+    = SSZ.hashTreeRoot SizzLean.Hasher.Sha256 (x := (0#1 : BitVec 1)) := by
+  native_decide
 
 /-! ### Composite arm examples
 
