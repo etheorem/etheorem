@@ -142,8 +142,11 @@ container definitions live in the sibling `EthCLSpecs` package
 
 **Experimental, pyspec-validated.** Every SSZ type used by
 the Ethereum consensus spec from Phase 0 through Heze is
-implemented. Upstream test suites (`ethereum/consensus-spec-tests
-v1.6.0-beta.0`) pass clean on **both** preset configurations:
+implemented.
+
+The following counts record the historical `ethereum/consensus-spec-tests
+v1.6.0-beta.0` run at **both** presets. The `ssz_static` counts cover Phase 0 through
+Fulu:
 
 * `ssz_generic --all`: **2188 / 2188** in-scope cases passed
   on that release. The current pin's live count, including the
@@ -444,8 +447,8 @@ anything's missing. The CI `test` and `pyspec` jobs run
 SizzLean's `lakefile.lean` hosts the `pkg-config` discovery for the
 OpenSSL link arguments and the one-directory-deep `globsUnder`
 auto-discovery; the declarative `lakefile.toml` syntax can express
-neither, so this subpackage stays on `lakefile.lean` even though the
-umbrella and the two sibling subpackages stay on declarative TOML.
+neither, so this subpackage stays on `lakefile.lean`. The umbrella
+stays on declarative TOML.
 The FFI shim and its C build targets live in `LeanHazmatSha256`
 (`../hazmat/LeanHazmatSha256/csrc/sha256_shim.c` and
 `sha256_batch.c`); SizzLean links that package's `extern_lib` archive

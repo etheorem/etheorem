@@ -1596,7 +1596,7 @@ every remaining match falls under a disposition in the sections above.
 | `just proof-coverage-check` | Passed, 87 claims |
 | `just ethcl-pyspec-smoke` | Passed; Fulu 155 passed / 46 skipped, Gloas 207 / 52, Heze 209 / 52 |
 | `git grep 'TEMPORARY CROSSING' -- '*.lean'` | Empty (exit 1) |
-| `git diff --check` on the 9.3 edits | Clean |
+| `git diff --check 5ff4e967 170f0b00` (the 9.3 edits) | Clean |
 
 Differences from the Stage 8.5 reference, each with its cause:
 

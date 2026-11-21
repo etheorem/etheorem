@@ -134,7 +134,8 @@ Per-subpackage design docs live next to the code they describe:
   [`SPECS_ARCHITECTURE.md`](packages/EthCLSpecs/docs/SPECS_ARCHITECTURE.md)
   (how the fork specs are organized, ported, and tested).
   [`SPEC_ARITHMETIC.md`](packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md) is the
-  arithmetic contract; deferred linter work is in `SPEC_ARITHMETIC_LINTING.md`.
+  arithmetic contract; deferred linter work is in
+  [`SPEC_ARITHMETIC_LINTING.md`](packages/EthCLSpecs/docs/SPEC_ARITHMETIC_LINTING.md).
   The historical [`PLAN.md`](packages/EthCLSpecs/docs/PLAN.md) records the
   implementation phases; `IMPLEMENTATION_NOTES.md`, `DISCREPANCIES.md`,
   and `FUTURE_WORK.md` track deviations, spec disagreements, and
@@ -340,7 +341,7 @@ which ships its own JSON vector archive per release.
 - **`ssz_static`** (EthCLSpecs, Fulu + Gloas + Heze): the consensus containers
   EthCLSpecs models pass at both the minimal and mainnet presets; the types it
   does not model (light-client, gossip-aggregation, networking identifiers,
-  signing helpers) xfail as out of scope. Earlier forks (Phase 0 through
+  signing helpers) skip as out of scope. Earlier forks (Phase 0 through
   Electra) are not covered: EthCLSpecs authors Fulu as the accumulated base,
   not a per-fork container set.
 

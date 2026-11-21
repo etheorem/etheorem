@@ -177,7 +177,7 @@ The design is written down under [`docs/`](docs/):
   consensus-spec code, and
   [`SPEC_ARITHMETIC_LINTING.md`](docs/SPEC_ARITHMETIC_LINTING.md), its deferred
   automated checks.
-- The historical [`PLAN.md`](docs/PLAN.md), [`IMPLEMENTATION_NOTES.md`](docs/IMPLEMENTATION_NOTES.md),
+- [`PLAN.md`](docs/PLAN.md) (historical), [`IMPLEMENTATION_NOTES.md`](docs/IMPLEMENTATION_NOTES.md),
   [`DISCREPANCIES.md`](docs/DISCREPANCIES.md), and
   [`FUTURE_WORK.md`](docs/FUTURE_WORK.md).
 

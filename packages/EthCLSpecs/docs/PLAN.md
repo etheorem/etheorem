@@ -1,5 +1,8 @@
 # EthCLSpecs: Implementation Plan
 
+Status: historical implementation plan. For the implemented state, read
+[IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) and the [docs index](README.md).
+
 This document sequences the work that the three design documents describe.
 `SPEC_AUTHORING_MODEL.md` is the contract between author and framework,
 `FRAMEWORK_ARCHITECTURE.md` builds the framework from below, and

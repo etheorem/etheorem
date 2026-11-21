@@ -181,13 +181,13 @@ so its mathlib dependency never touches the root build.
 │   ├── LeanPoseidon/            # Pure-Lean Poseidon2 (standalone island parallel to LeanSha256).
 │   │   └── lakefile.lean (C ABI shim + cargo zkhash oracle), csrc/ / rust-oracle/ / docs/ / README.md
 │   ├── LeanPoseidonProofs/      # Poseidon2 permute ≡ reference proof (mathlib; standalone, NOT in the umbrella).
-│   └── LeanRlp/                 # Recursive-Length Prefix codec (standalone island; not in the umbrella).
+│   └── LeanRlp/                 # Recursive-Length Prefix codec (standalone island, built by the umbrella).
 └── .github/workflows/           # `leanprover/lean-action` runs `lake build`.
 ```
 
 The umbrella package is `Etheorem`; building it walks the whole
 dependency chain (`LeanSha256 → SizzLean → EthCLLib → EthCLSpecs`, with
-the crypto families feeding in and the `LeanPoseidon` island built
+the crypto families feeding in and the `LeanPoseidon` and `LeanRlp` islands built
 alongside). `LeanPoseidonProofs` is built on its own so mathlib stays
 out of the root build.
 
@@ -199,8 +199,10 @@ design of record is under
 and [`SPECS_ARCHITECTURE.md`](packages/EthCLSpecs/docs/SPECS_ARCHITECTURE.md)
 in that order, with `PLAN.md` (historical), `IMPLEMENTATION_NOTES.md`,
 `DISCREPANCIES.md`, and `FUTURE_WORK.md` for sequencing and deviations.
-The arithmetic contract is `SPEC_ARITHMETIC.md`; deferred linter work is in
-`SPEC_ARITHMETIC_LINTING.md`.
+The arithmetic contract is
+[`SPEC_ARITHMETIC.md`](packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md).
+Deferred linter work is in
+[`SPEC_ARITHMETIC_LINTING.md`](packages/EthCLSpecs/docs/SPEC_ARITHMETIC_LINTING.md).
 The SSZ library's design is under
 [`packages/SizzLean/docs/`](packages/SizzLean/docs/):
 [`ARCHITECTURE.md`](packages/SizzLean/docs/ARCHITECTURE.md) binds the

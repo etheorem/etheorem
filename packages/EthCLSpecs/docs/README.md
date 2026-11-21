@@ -18,9 +18,9 @@ vocabulary; the other two quote it.
 
 [PLAN.md](PLAN.md) is the historical implementation plan: it sequences the work into
 phases over the `EthCLLib`, `EthCLSpecs`, and planned `EthCLProofs` packages, and its
-status snapshot records the plan's first milestone. Deviations and notable findings
-live in `IMPLEMENTATION_NOTES.md`, not in the three design documents, which stay the
-design of record.
+status snapshot records the state when the plan was written. Deviations and notable
+findings live in [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md). The three design
+documents remain the design of record.
 
 [DISCREPANCIES.md](DISCREPANCIES.md) is the narrow spec-vs-vector ledger: it records
 only cases where a released vector contradicts the spec text (upstream pyspec bugs)
