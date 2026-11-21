@@ -312,8 +312,8 @@ backed by a C shim, validated empirically against NIST CAVP vectors.
 
 **Deliverables.**
 - `SizzLean/FFI/Sha256.lean`: `@[extern "lean_ssz_sha256_combine"] opaque sha256Combine` plus `instance : Hasher Sha256`.
-- Lake `extern_lib` block in `lakefile.toml` shipping the C shim.
-- A small C shim (`packages/SizzLean/csrc/sha256_shim.c` or similar) wrapping
+- Lake `extern_lib` block in `LeanHazmatSha256`'s `lakefile.lean` shipping the C shim.
+- A small C shim (`packages/hazmat/LeanHazmatSha256/csrc/sha256_shim.c`) wrapping
   OpenSSL/BoringSSL/`gohashtree`. Pluggable behind one symbol name.
 - `packages/SizzLean/SizzLeanTests/Sha256Vectors.lean` (small file) running NIST
   CAVP test vectors through `native_decide` in CI.

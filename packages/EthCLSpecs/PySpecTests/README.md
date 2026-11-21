@@ -56,9 +56,8 @@ Bumping the pin touches more than the constant. In one pass:
 
 ## Status
 
-While the spec port is in progress, in-scope cases that reach an unimplemented
-branch report `xfail` (`todo`) rather than failing, so the run stays green and the
-work-queue stays visible. A vector that reaches a `todo` never passes silently; an
-`outOfBounds` / `missingKey` on well-formed input fails hard as a bug-smell. As the
-Fulu/Gloas/Heze ports fill the `todo` stubs (Phase 2+), the `xfail`s become passes with
-no harness change.
+The Fulu, Gloas, and Heze ports are complete: the in-scope suite passes at both
+presets with no expected failure. The harness classifies a case as `todo` (`xfail`)
+when the server reports an unimplemented branch, so such a case stays visible rather
+than passing silently. An `outOfBounds` / `missingKey` on well-formed input fails
+hard as a bug-smell.

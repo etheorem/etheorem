@@ -1039,8 +1039,9 @@ the wire shape of its underlying value:
 and the byte buffers reuse the `Vector` instance from
 `packages/SizzLean/SizzLean/Repr/Instances.lean`.
 
-Per-fork containers live under `packages/EthCLSpecs/EthCLSpecs/Fulu/`
-and `packages/EthCLSpecs/EthCLSpecs/Gloas/`. They use the framework's
+Per-fork containers live under `packages/EthCLSpecs/EthCLSpecs/Fulu/`,
+`packages/EthCLSpecs/EthCLSpecs/Gloas/`, and
+`packages/EthCLSpecs/EthCLSpecs/Heze/`. They use the framework's
 `forkcontainer` / `forkstruct` DSL (from `EthCLLib`), which captures
 each shape for fork inheritance and emits the `deriving SSZRepr`
 plumbing, including the minimal / mainnet variants for
@@ -1049,8 +1050,8 @@ preset-sensitive containers like `BeaconState`.
 `packages/EthCLSpecs/EthCLSpecs/PySpecTests/Server.lean` is the
 `pyspec_server` Lake exe; the pytest harness in
 `packages/EthCLSpecs/PySpecTests/` drives it over `ssz_static` and
-state-transition vectors from `ethereum/consensus-spec-tests` (Fulu
-and Gloas). The fork-agnostic `ssz_generic` wire-format vectors run
+state-transition vectors from `ethereum/consensus-spec-tests` (Fulu,
+Gloas, and Heze). The fork-agnostic `ssz_generic` wire-format vectors run
 from `packages/SizzLean/PySpecTests/` against the `ssz_generic_runner`
 exe. The spec packages ship their own in-Lean tests, and SizzLean
 keeps its property tests over example containers.
@@ -1521,8 +1522,8 @@ lakefile. `LeanSha256` uses `lakefile.toml` (pure Lean, no FFI);
         ├── EthCLSpecs.lean
         └── EthCLSpecs/
             ├── Forms.lean              # spec-local container shorthands (signedwrapper)
-            ├── Fulu/ , Gloas/          # per-fork containers + state transition; Gloas has an
-            │                           #   Inherited.lean re-exporting types it inherits unchanged
+            ├── Fulu/ , Gloas/ , Heze/  # per-fork containers + state transition; Gloas and Heze
+            │                           #   have Inherited.lean re-exporting unchanged types
             └── PySpecTests/Server.lean # pyspec_server exe root, driven by the EthCLSpecs pytest
                                         #   harness over ssz_static + state-transition vectors
 

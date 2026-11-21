@@ -133,7 +133,9 @@ Per-subpackage design docs live next to the code they describe:
   (the EthCLLib framework and fork-authoring DSL), and
   [`SPECS_ARCHITECTURE.md`](packages/EthCLSpecs/docs/SPECS_ARCHITECTURE.md)
   (how the fork specs are organized, ported, and tested).
-  [`PLAN.md`](packages/EthCLSpecs/docs/PLAN.md) sequences the
+  [`SPEC_ARITHMETIC.md`](packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md) is the
+  arithmetic contract; deferred linter work is in `SPEC_ARITHMETIC_LINTING.md`.
+  The historical [`PLAN.md`](packages/EthCLSpecs/docs/PLAN.md) records the
   implementation phases; `IMPLEMENTATION_NOTES.md`, `DISCREPANCIES.md`,
   and `FUTURE_WORK.md` track deviations, spec disagreements, and
   deferred work.
