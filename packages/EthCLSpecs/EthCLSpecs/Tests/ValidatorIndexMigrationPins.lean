@@ -4,7 +4,7 @@ import EthCLSpecs.Gloas
 /-!
 # `EthCLSpecs.Tests.ValidatorIndexMigrationPins`: the `ValidatorIndex` behavior pins
 
-Behavior pins for the `ValidatorIndex` migration (spec arithmetic Stage 6.1). Each pin pairs
+Behavior pins for the checked `ValidatorIndex` kind. Each pin pairs
 a targeted failure case with a nearby success that reaches the same operation, and the
 successes read back exact values. Every failure pin fails under the pre-migration body, which
 the pin's own comment names.

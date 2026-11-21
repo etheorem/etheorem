@@ -3,19 +3,18 @@ import EthCLSpecs.Fulu
 /-!
 # `EthCLSpecs.Tests.ClockSamplingAuditPins`: the clock, sampling, and fork-choice audit pins
 
-Pins for the manual audit of the Fulu clock, sampling, and fork-choice files (Stage 8.4a2).
-The audit changed no behavior. These pins hold two of its proof justifications to the
-pinned pyspec, so the build fails if a later edit breaks them. Every value comes from the
-pinned pyspec (1.7.0b4).
+Pins for two proof justifications in the Fulu clock, sampling, and fork-choice files. The
+pins hold each justification to the pinned pyspec, so the build fails if an edit breaks
+one. Every value comes from the pinned pyspec (1.7.0b4).
 
 1. `on_tick_per_slot` binds `compute_slots_since_epoch_start(current_slot)` above the
-   branch where Python's `and` forms it. The audit accepts the eager bind because neither
-   step can raise: the epoch-start slot is at most the slot. At `slot = UINT64_MAX` the
+   branch where Python's `and` forms it. The eager bind is safe because neither step can
+   raise: the epoch-start slot is at most the slot. At `slot = UINT64_MAX` the
    start slot is `2^64 - 8` at minimal and `2^64 - 32` at mainnet, and the difference is
    `7` and `31`.
 2. `compute_committee` iterates `range(start, end)` as the `Nat` difference
-   `stop - start`. The audit accepts the truncated subtraction because `end ≥ start` for
-   every `index`, so the difference is zero exactly where Python's range is empty. Two
+   `stop - start`. The truncated subtraction is exact because `end ≥ start` for every
+   `index`, so the difference is zero exactly where Python's range is empty. Two
    indices over four committees of two validators read the empty range, and the three
    committees of eight validators partition the shuffled registry.
 

@@ -7,7 +7,7 @@ Four behavior pins, one per migration site where the pre-migration body wrapped
 a raw `UInt64` and the migrated body raises (the `Epoch` migration's
 discriminating tests). Each pin pairs a targeted failure case with a nearby
 success that reaches the same operation. The failure case is the input that
-used to wrap and now rejects with the checked `.arithmetic` fault. The pin
+used to wrap and now raises the checked range fault. The pin
 fails under the old wrapping form (`SPEC_ARITHMETIC.md` §3.1: the checked kind
 raises where the raw kind wrapped).
 
@@ -28,9 +28,11 @@ raises where the raw kind wrapped).
    through the request path with the huge delay config, beside the default
    delay with the same exact epochs.
 
-The checked raise surfaces as `.error (.arithmetic _)`; the old wrapping form
-returned a wrapped `.ok`, so each failure pin discriminates. `State` is
-FFI-backed, so `native_decide`.
+Pins 1 and 2 run the `Checked` helper alone, so the raise surfaces as the
+`ArithFault` range cause, `.error (.range _ 64 _ _)`. Pins 3 and 4 run the
+transition, where the lift turns that fault into `.error (.arithmetic _)`. The
+old wrapping form returned a wrapped `.ok`, so each failure pin discriminates.
+`State` is FFI-backed, so `native_decide`.
 -/
 
 set_option autoImplicit false

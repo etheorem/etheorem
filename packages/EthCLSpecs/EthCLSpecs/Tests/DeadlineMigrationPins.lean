@@ -3,7 +3,7 @@ import EthCLSpecs.Heze.ForkChoice
 /-!
 # `EthCLSpecs.Tests.DeadlineMigrationPins`: the slot deadline pins
 
-Behavior pins for the clock deadline migration (Stage 7.1b). `get_slot_component_duration_ms`
+Behavior pins for the slot deadlines. `get_slot_component_duration_ms`
 computes `basis_points * SLOT_DURATION_MS // BASIS_POINTS`, and every operand is a `Uint64` in
 the pinned module, so the product is the checked kind. `bpsDeadlineMs` models it, and the
 callers bind its result where Python calls it. All values use the minimal preset's
@@ -15,8 +15,8 @@ The minimal deadlines are `3333 → 1999` (Fulu attestation), `1667 → 1000` (r
 (Heze inclusion list, pinned in `Tests/HezeForkChoicePins.lean`).
 
 1. `bpsDeadlineMs`: the product past `2^64 - 1`. `B = 3074457345618259` is the least basis
-   points whose product with `6000` passes the bound. A wrapping product gives `2384`, so the
-   pre-change form returns `.ok 0` instead of the range fault. `B - 1` floors exactly.
+   points whose product with `6000` passes the bound. A wrapping product gives `2384`, so a
+   wrapping form returns `.ok 0` instead of the range fault. `B - 1` floors exactly.
 2. Fulu `is_proposing_on_time`: `<=` against the cutoff, so `1000` ms is on time and `1001` is
    not. A strict `<` answers `false` at `1000`. A cutoff of `B` raises, where the wrapping
    product gives a cutoff of `0` and answers `true` at `0` ms.
@@ -25,7 +25,7 @@ The minimal deadlines are `3333 → 1999` (Fulu attestation), `1667 → 1000` (r
    `false`.
 4. Gloas `record_block_timeliness`: the two deadlines, each strict, at both edges. Both
    thresholds bind before the list forms, so a payload-attestation deadline of `B` raises
-   even for a block outside the current slot. The pre-change form files `[false, false]` there.
+   even for a block outside the current slot. A wrapping form files `[false, false]` there.
 
 The store machine lands a range fault as `.transition (.arithmetic _)`, so `outcomeOf` reads
 the range cause one level down. The pins close by `native_decide`, as the other migration

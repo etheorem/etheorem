@@ -4,11 +4,10 @@ import EthCLSpecs.Gloas
 /-!
 # `EthCLSpecs.Tests.IndexMigrationPins`: the other index behavior pins
 
-Behavior pins for the migration of `BuilderIndex`, `WithdrawalIndex`, `CommitteeIndex`,
-`ColumnIndex`, and `CellIndex` to `CLUint64` (spec arithmetic Stage 6.2). Each pin pairs a
-targeted failure case with a nearby success that reaches the same operation, and the
-successes read back exact values. The pinned pyspec gives the same class or value at every
-pin (`.spike/stage6/oracle62.py` replays them). Every failure pin fails under the
+Behavior pins for `BuilderIndex`, `WithdrawalIndex`, `CommitteeIndex`, `ColumnIndex`, and
+`CellIndex` as the checked `CLUint64` kind. Each pin pairs a targeted failure case with a
+nearby success that reaches the same operation, and the successes read back exact values. The
+pinned pyspec gives the same class or value at every pin. Every failure pin fails under the
 pre-migration body, which the pin's own comment names.
 
 1. `withdrawal_index += 1` (Fulu `get_expected_withdrawals`, Gloas `get_builder_withdrawals`):

@@ -2,11 +2,10 @@ import EthCLSpecs.Fulu
 import EthCLSpecs.Gloas
 
 /-!
-# `EthCLSpecs.Tests.TransitionFamilyAuditPins`: the Stage 8.4a1 audit fixes
+# `EthCLSpecs.Tests.TransitionFamilyAuditPins`: the Fulu state-transition family pins
 
-Behavior pins for the two fixes the audit of the Fulu state-transition family made.
-Each fix has a pin pair: two nearby inputs that land on the two sides of the changed
-decision.
+Behavior pins for two decisions in the Fulu state-transition family. Each decision has a
+pin pair: two nearby inputs that land on its two sides.
 
 1. `process_registry_updates` (`fulu/mainnet.py:1852-1868`) is one `if` / `elif` /
    `elif` chain, so a validator takes at most one of its three updates. The old body ran
@@ -14,7 +13,7 @@ decision.
    when the finalized epoch is `FAR_FUTURE_EPOCH`, and the ejection exit when
    `EJECTION_BALANCE` is at least `MIN_ACTIVATION_BALANCE`. The pins read back
    `(activation_eligibility_epoch, activation_epoch, exit_epoch)` of validator `0`.
-2. `process_slashings` (`fulu/mainnet.py:1871-1895`) forms
+2. `process_slashings` (`fulu/mainnet.py:1871-1891`) forms
    `epoch + EPOCHS_PER_SLASHINGS_VECTOR // 2` only after `validator.slashed` passes,
    because Python's `and` short-circuits. The old body bound the sum before the loop, so
    a registry with no slashed validator raised the sum's range fault where Python

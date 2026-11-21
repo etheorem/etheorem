@@ -86,10 +86,10 @@ private def pinSamplerCounterOverflow : Bool :=
   -- One 32 ETH validator and all-zero random bytes, so the last pass fills the selection
   -- and the increment throws. The arrays are well formed (one entry each for
   -- `total = 1`: the identity permutation and the 32 ETH effective balance), so no
-  -- `!` read defaults: the `.arithmetic` fault comes from `checkedSucc` alone
-  -- (8.4b: the earlier `#[]` `effBals` fired an out-of-range `effBals[0]!`
-  -- panic-default, which no real caller can produce —
-  -- `computeBalanceWeightedSelection` builds `effBals` with exactly `total` entries).
+  -- `!` read defaults: the `.arithmetic` fault comes from `checkedSucc` alone. An empty
+  -- `effBals` fires the `effBals[0]!` panic default first, an input no real caller
+  -- produces: `computeBalanceWeightedSelection` builds `effBals` with exactly `total`
+  -- entries.
   (match cbwsAux #[3] #[0] #[32000000000] ByteArray.empty 1 1 false (UInt64.size - 1)
       (ByteArray.mk (Array.replicate 32 0)) #[] with
     | .error (.arithmetic _) => true | _ => false)

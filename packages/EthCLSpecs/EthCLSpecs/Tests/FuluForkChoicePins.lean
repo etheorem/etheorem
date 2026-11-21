@@ -104,9 +104,9 @@ private def pinTargetAdvanceRejects : Bool :=
   let store := { pinStore with blockStates := FcMap.insert FcMap.empty pinRoot state }
   let target : Checkpoint := { epoch := 1, root := pinRoot }
   match (storeTargetCheckpointState (map := treeMap) store target : PinM (Store treeMap)).run store with
-  -- Match the constructor, not the wrapper: `.transition` also spans `.arithmetic`, an uncaught
-  -- fault that would fail the very step this fixture pins as an expected rejection. The pin has
-  -- to break when the reject class changes, which is what Leo's note 3 asked for.
+  -- Match the inner constructor. `.transition` also wraps `.arithmetic`, an uncaught fault
+  -- that fails the step this fixture pins as an expected rejection, so the pin breaks when
+  -- the reject class changes.
   | .error (.transition (.outOfBounds _ _)) _ => true
   | _ => false
 example : pinTargetAdvanceRejects = true := by native_decide
@@ -128,10 +128,10 @@ example : pinBalanceAfterWithdrawalsThrows = true := by native_decide
 
 /-- `balanceAfterWithdrawals` rejects (`.arithmetic`) a `uint64` underflow: a validator whose
 queued withdrawals exceed its balance drives `balances[vi] - withdrawn` negative
-(`capella/beacon-chain.md:421`), which pyspec raises as `ValueError`, uncaught by the reference
-runner (`context.py:424-435`), so the Lean throws the uncaught `.arithmetic` reject rather than a
-caught `.assert`. Fixture: balance 5 at index 0, a queued withdrawal of 10. `State` is FFI-backed,
-so `native_decide`. -/
+(`capella/beacon-chain.md:421`). The pyspec raises `SSZValueError`, a `ValueError`, which
+`expect_assertion_error` (`context.py:451-462`) does not catch. So the Lean throws the uncaught
+`.arithmetic` reject, and a caught `.assert` fails the pin. Fixture: balance 5 at index 0, a
+queued withdrawal of 10. `State` is FFI-backed, so `native_decide`. -/
 private def pinBalanceUnderflowThrows : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig

@@ -10,8 +10,8 @@ import SizzLean.Proofs.UncachedBox
 `Fin ((MIN_SEED_LOOKAHEAD + 2) * SLOTS_PER_EPOCH)`, branching on whether the index falls in
 the empty first epoch or the remaining `1 + MIN_SEED_LOOKAHEAD` `SLOTS_PER_EPOCH` regions.
 The function is pure and total: each entry
-is an `Except` carrying that entry's own two faults, the checked per-entry add
-`current_epoch + e` and the `compute_ptc` read, and `completeUpgradeToGloas` maps the
+is an `Except` carrying that entry's own faults, from its three checked steps and the
+`compute_ptc` read, and `completeUpgradeToGloas` maps the
 entries in index order, so the first rejecting slot surfaces. The theorems here state the
 function's entries, not a run: `initializePtcWindow_eq` is the whole contract, the vector
 equation over the entry function; `initializePtcWindow_lt` / `initializePtcWindow_ge` read
@@ -22,8 +22,7 @@ the two regions; `initializePtcWindow_getElem` joins them at the element level; 
 
 At v1.7.0-beta.4 `upgrade_to_gloas` computes the window over the Gloas post-state with
 Gloas's own `compute_ptc` (`completeUpgradeToGloas` maps the entries), so the subject is an
-ordinary Gloas `forkdef` over a Gloas state; alpha.12 computed it over the Fulu pre-state,
-which made this file boundary code naming both forks. Statements bind plain
+ordinary Gloas `forkdef` over a Gloas state. Statements bind plain
 `Gloas.BeaconState` values, and the entry's `Except.bind` spelling is the `do`-block the
 implementation writes, laid out so the statements carry no monad metavariable.
 -/
@@ -55,8 +54,8 @@ the spec's checked per-entry add `current_epoch + e` (the epoch delta is the off
 so `0` or `1` at both presets), then the checked
 `compute_start_slot_at_epoch` product, and then reads `compute_ptc` at the start slot plus
 the intra-epoch offset, the pyspec's checked `Slot` add. The `Except` in the
-entry's type carries all three faults, the two arithmetic raises as `.arithmetic` and
-`compute_ptc`'s empty-candidate reject.
+entry's type carries every fault of the entry: the three checked steps raise
+`.arithmetic`, and `compute_ptc` passes its own rejects through.
 
 The equation is `rfl`: the statement mirrors the elaborated body, so the kernel walk stays
 shallow and no `maxRecDepth` raise is needed. -/

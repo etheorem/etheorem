@@ -36,9 +36,8 @@ maximum.
    index `1` and raise `IndexError`; the nearby pin with four `true` bits passes index
    `0` and shows that read raising.
 
-The pinned pyspec gives the same class at every pin (`.spike/stage5/oracle53.py` and
-`.spike/stage6/oracle62.py` replay them, with `SLOTS_PER_EPOCH` patched to `1` for
-sites 1 and 3). Site 2's maximum-slot pins discriminate: a source check placed before
+The pinned pyspec gives the same class at every pin, with `SLOTS_PER_EPOCH` patched to
+`1` for sites 1 and 3. Site 2's maximum-slot pins discriminate: a source check placed before
 the reads rejects with `.assert` there. Site 3's pins discriminate the fold's stop: a
 later committee's aggregation-bit read raises `IndexError` once the fold reaches it.
 Site 1's pins record the class at a slot near the maximum. There the committee call's

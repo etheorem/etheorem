@@ -4,11 +4,11 @@ import EthCLSpecs.Heze
 /-!
 # `EthCLSpecs.Tests.WidthCastPins`: the shuffle's width-8 round byte
 
-Behavior pins for the Stage 8.2 width sweep. The in-scope pyspec text casts to a width
+Behavior pins for the checked width casts. The in-scope pyspec text casts to a width
 other than 64 bits in one body: `compute_shuffled_permutation` feeds
 `uint_to_bytes(Uint8(current_round))` and `uint_to_bytes(Uint32(position_bucket))` into
-its hash (`fulu/minimal.py:1252-1273`). Every other `Uint8` / `Uint32` / `Uint256` site
-in scope is byte data or a codec value (`mb/spec-arithmetic-implementation/stage-8.2.md`).
+its hash (`fulu/minimal.py:1252-1275`). Every other `Uint8` / `Uint32` / `Uint256` site
+in scope is byte data or a codec value.
 
 The `Uint8` cast raises once a preset sets more than `2^8` rounds. At the pin,
 `SHUFFLE_ROUND_COUNT = Uint64(257)` raises

@@ -3,8 +3,8 @@ import EthCLSpecs.Heze.ForkChoice
 /-!
 # `EthCLSpecs.Tests.GloasHezeAuditPins`: the Gloas and Heze audit pins
 
-Pins for the manual audit of the Gloas and Heze fork bodies (Stage 8.4a4). The audit fixed one
-fault order. Every value comes from the pinned pyspec (1.7.0b4).
+Pins for one fault order in the Gloas and Heze fork bodies. Every value comes from the pinned
+pyspec (1.7.0b4).
 
 `is_previous_slot_payload_decision` and `should_extend_payload` (Gloas; Heze restates the second)
 compare `store.blocks[root].slot + 1 == get_current_slot(store)`. Python evaluates the left

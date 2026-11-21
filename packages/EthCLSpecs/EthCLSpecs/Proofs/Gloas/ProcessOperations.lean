@@ -160,12 +160,9 @@ private theorem processOperations_eq_loops_of_bounds (body : BeaconBlockBody) (p
 assert immediately, from any pre-state value. The error is an `assert`
 constructor; its diagnostic string is existential and unpinned in the statement.
 
-A reject at this monad carries no state. Where the `EStateM` spelling of this
-theorem had to *claim* that the gate preserved the pre-state (`EStateM` keeps
-whatever state a failing run had reached, and only this opening gate was known
-to have reached none), `StateT` over `Except` returns the error alone. So the
-statement no longer mentions a post-state, and the same silence covers a later
-handler failure, which is why no companion theorem is owed for those. -/
+A reject at this monad carries no state: `StateT` over `Except` returns the error
+alone. So the statement mentions no post-state. The same holds for a later handler
+failure, which is why no companion theorem is owed for those. -/
 theorem processOperations_nonempty_deposits_error :
     ∀ (preState : BeaconState) (body : BeaconBlockBody) (parentSlot : Slot),
       body.deposits.size ≠ 0 →

@@ -120,7 +120,7 @@ theorem getSlotsSinceGenesis_run_of_zero_duration
   rfl
 
 /-- The same fact one layer up, through `get_current_slot`. At v1.7.0-beta.4 that is
-`get_slots_since_genesis` itself (the `GENESIS_SLOT +` term is gone), so the fact carries
+`get_slots_since_genesis` itself, with no `GENESIS_SLOT +` term, so the fact carries
 across the one `forkdef` unchanged. -/
 theorem getCurrentSlot_run_of_time_eq_genesis
     [Preset] [HasherTag] [Config] {map : MapKind} [FcMap map] :
@@ -185,7 +185,7 @@ example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
 
 /-- `processBuilderPendingPayments_run` likewise, and this is the one that shows the point:
 its proof rests on a `List.forIn` induction over the withdrawals loop, and that induction is
-not re-entered here. `builderPendingWithdrawals` is a progressive list (since alpha.12), so the
+not re-entered here. `builderPendingWithdrawals` is a progressive list, so the
 contract is unconditional: the run always appends the qualifying withdrawals and shifts the
 payment window. -/
 example [Preset] [HasherTag] {m : Type → Type} [Monad m]

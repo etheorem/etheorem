@@ -38,10 +38,9 @@ open EthCLSpecs.Gloas (BeaconState BuilderIndex Builder Gwei Preset)
 open EthCLSpecs.Gloas (canBuilderCoverBid getPendingBalanceToWithdrawForBuilder)
 open EthCLLib.Proofs (pureState add_ok_iff add_value sub_ok_iff sub_value)
 
-/-- **Exact run equation.** The raising builder read, then the pending sum, the
-reserve add, and the cover subtraction bind in order; the guard then picks a branch,
-and the else branch forms the checked subtraction. This is the body itself, so `rfl`
-states it. -/
+/-- **Exact run equation.** The raising builder read, then the pending sum and the
+reserve add bind in order; the guard then picks a branch, and only the else branch binds
+the checked cover subtraction. This is the body itself, so `rfl` states it. -/
 @[characterizes EthCLSpecs.Gloas.canBuilderCoverBid]
 theorem canBuilderCoverBid_eq [Preset] [HasherTag] :
     ∀ (state : BeaconState) (builderIndex : BuilderIndex) (bidAmount : Gwei),

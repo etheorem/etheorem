@@ -3,7 +3,7 @@ import EthCLSpecs.Fulu
 /-!
 # `EthCLSpecs.Tests.SlotMigrationPins`: the `Slot` boundary pins
 
-Three Fulu behavior pins for the `Slot` migration (Stage 5.2); the Gloas
+Three Fulu behavior pins for the checked `Slot` kind; the Gloas
 `process_slot` pin is `Tests/GloasSlotMigrationPins.lean`. Each pin pairs a
 targeted failure case with a nearby success that reaches the same operation,
 and the successes read back exact values.
