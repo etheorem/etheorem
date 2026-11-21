@@ -88,32 +88,32 @@ variable (hw : ∀ a b : ByteArray, (SizzLean.Hasher.combine (H := HasherTag.H) 
 
 omit [LawfulFcMap map Checkpoint] in
 include hw in
-/-- The honest heads of slot `N + 1` avoid `full r`, or a root collision exists. This is
-`RaceSetting.first`.
+/-- **The head of one honest node at slot `N + 1` avoids `full r`**, or a root collision exists.
+The head run of slot `raceLo rb` has a justified block no later than `rb`, and `empty r` is
+viable beside `full r` there.
 
-The head run of slot `raceLo rb` gives the prefix, the store, and the `getHead` run. Its
-current slot puts the wall time in slot `N + 1` (`slot_window_of_getCurrentSlot`). The anchor
-store gives the empty IL store and `SlotInv`. Then `honestNode_head_avoids_full` applies. -/
-theorem RaceSetting.Core.first_of_decision {Node : Type} {honest : Node → Prop}
+The head run gives the prefix, the store, and the `getHead` run. Its current slot puts the wall
+time in slot `N + 1` (`slot_window_of_getCurrentSlot`). The anchor store gives the empty IL
+store and `SlotInv`. Then `honestNode_head_avoids_full` applies. -/
+theorem DecisionSetting.head_avoids_full {Node : Type} {honest : Node → Prop}
     {node : Node → NodeRun map} {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock}
-    {hi : Nat} {jst : BeaconState} {nodeOf : ValidatorIndex → Node}
-    {honestOf : ValidatorIndex → Bool} {committees : Nat → Nat → Array ValidatorIndex}
     {g : UInt64} {dr : Root} {il : InclusionList} {tSend Δ : Nat} {due : UInt64}
     {txs : ExecutionPayload → Array Transaction}
     {isValidOmission : ExecutionPayload → Transaction → Prop} {tx : Transaction}
-    (hset : RaceSetting.Core honest node run r rb hi jst nodeOf honestOf committees)
     (hdec : DecisionSetting honest node run r rb g dr il tSend Δ due txs isValidOmission tx)
-    (hlohi : raceLo rb ≤ hi) :
-    RootCollision ∨ ∀ v, honest v →
+    {v : Node} (hv : honest v) (hN : (node v).Honest rb)
+    (hQ : (run v (raceLo rb)).Core (node v) (raceLo rb)) {jb : BeaconBlock}
+    (hj : FcMap.lookup (run v (raceLo rb)).store.blocks
+      (run v (raceLo rb)).store.justifiedCheckpoint.root = some jb)
+    (hjslot : jb.slot ≤ rb.slot)
+    (hviable0 : EmptyViableWithFull (run v (raceLo rb)).store r) :
+    RootCollision ∨
       ¬ NodeBelow (run v (raceLo rb)).store (.full r) (run v (raceLo rb)).head := by
   by_cases hcol : RootCollision
   · exact Or.inl hcol
-  refine Or.inr fun v hv => ?_
-  have hN := hset.nodeOk v hv
-  have hQ := hset.runOk v hv (raceLo rb) (Nat.le_refl _) hlohi
+  refine Or.inr ?_
   obtain ⟨rest, hsplit⟩ := hQ.isPrefix
   obtain ⟨cs, hcs, hcur⟩ := hQ.slot
-  obtain ⟨jb, hj, hjslot⟩ := hQ.justified
   obtain ⟨s', hrun⟩ := hQ.headRun
   have hgs : (node v).seed.genesisTimeMs = g := hdec.genesis v hv
   have hg : (run v (raceLo rb)).store.genesisTimeMs = (node v).seed.genesisTimeMs :=
@@ -133,9 +133,34 @@ theorem RaceSetting.Core.first_of_decision {Node : Type} {honest : Node → Prop
       (by rw [hgs]; exact hdec.sendHi) hdec.slotPos hdec.dueOk hdec.dueLe hdec.listed
       (hdec.omits v hv) (SlotInv.anchor _ _ _ hN.anchorStore hN.anchorSelf) hN.noAnchorParent
       (run v (raceLo rb)).events rest hsplit hQ.trace hQ.time hwlo hwhi
-      hnext hj hjslot hQ.viable _ s' _ hrun with h | h
+      hnext hj hjslot hviable0 _ s' _ hrun with h | h
   · exact h
   · exact absurd h hcol
+
+omit [LawfulFcMap map Checkpoint] in
+include hw in
+/-- The honest heads of slot `N + 1` avoid `full r`, or a root collision exists. This is
+`RaceSetting.first`: `DecisionSetting.head_avoids_full` at each honest node. -/
+theorem RaceSetting.Core.first_of_decision {Node : Type} {honest : Node → Prop}
+    {node : Node → NodeRun map} {run : Node → Nat → HeadRun map} {r : Root} {rb : BeaconBlock}
+    {hi : Nat} {jst : BeaconState} {nodeOf : ValidatorIndex → Node}
+    {honestOf : ValidatorIndex → Bool} {committees : Nat → Nat → Array ValidatorIndex}
+    {g : UInt64} {dr : Root} {il : InclusionList} {tSend Δ : Nat} {due : UInt64}
+    {txs : ExecutionPayload → Array Transaction}
+    {isValidOmission : ExecutionPayload → Transaction → Prop} {tx : Transaction}
+    (hset : RaceSetting.Core honest node run r rb hi jst nodeOf honestOf committees)
+    (hdec : DecisionSetting honest node run r rb g dr il tSend Δ due txs isValidOmission tx)
+    (hlohi : raceLo rb ≤ hi)
+    (hviable0 : ∀ v, honest v → EmptyViableWithFull (run v (raceLo rb)).store r) :
+    RootCollision ∨ ∀ v, honest v →
+      ¬ NodeBelow (run v (raceLo rb)).store (.full r) (run v (raceLo rb)).head := by
+  by_cases hcol : RootCollision
+  · exact Or.inl hcol
+  refine Or.inr fun v hv => ?_
+  have hQ := hset.runOk v hv (raceLo rb) (Nat.le_refl _) hlohi
+  obtain ⟨jb, hj, hjslot⟩ := hQ.justified
+  exact (hdec.head_avoids_full hw hv (hset.nodeOk v hv) hQ.toCore hj hjslot
+    (hviable0 v hv)).resolve_left hcol
 
 include hw in
 /-- Tier T2 on the executable spec, with the decision slot and the count discharged. Take the
@@ -155,14 +180,19 @@ theorem race_empty_persists_composed {Node : Type} {honest : Node → Prop}
     {isValidOmission : ExecutionPayload → Transaction → Prop} {tx : Transaction}
     (hset : RaceSetting.Core honest node run r rb hi jst nodeOf honestOf committees)
     (hdec : DecisionSetting honest node run r rb g dr il tSend Δ due txs isValidOmission tx)
-    (hcomm : RaceCommittees jst honestOf committees (raceLo rb) hi) :
+    (hcomm : RaceCommittees jst honestOf committees (raceLo rb) hi)
+    (hviable0 : ∀ v, honest v → EmptyViableWithFull (run v (raceLo rb)).store r)
+    (hviable : ∀ s, raceLo rb < s → s ≤ hi →
+      (∀ u, honest u → ∀ t, raceLo rb ≤ t → t < s →
+        NodeBelow (run u t).store (.empty r) (run u t).head) →
+      ∀ v, honest v → EmptyViableWithFull (run v s).store r) :
     RootCollision ∨ ∀ v, honest v → ∀ t, raceLo rb ≤ t → t ≤ hi →
       NodeBelow (run v t).store (.empty r) (run v t).head ∧
         ¬ NodeBelow (run v t).store (.full r) (run v t).head := by
   by_cases hlohi : raceLo rb ≤ hi
-  · rcases hset.first_of_decision hw hdec hlohi with hcol | hfirst
+  · rcases hset.first_of_decision hw hdec hlohi hviable0 with hcol | hfirst
     · exact Or.inl hcol
-    · exact race_empty_persists_exec hw { toCore := hset, first := hfirst } hcomm.count
+    · exact race_empty_persists_exec hw { toCore := hset, first := hfirst } hcomm.count hviable
   · exact Or.inr fun _ _ t hlo hhi => absurd (Nat.le_trans hlo hhi) hlohi
 
 end Decision
