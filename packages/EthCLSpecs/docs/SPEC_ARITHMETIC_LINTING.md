@@ -5,8 +5,8 @@ work and does not schedule implementation as part of that transition.
 
 [SPEC_ARITHMETIC.md](SPEC_ARITHMETIC.md) defines the authoring rules. In particular,
 fork bodies bind local checked computations immediately and preserve short circuits.
-Authors follow those rules during the transition through source review and behavior
-tests. The later linter adds automated enforcement.
+No linter enforces them today. Source review and behavior tests hold authors to those
+rules until the later linter adds automated enforcement.
 
 ## 1. Goal and scope
 
