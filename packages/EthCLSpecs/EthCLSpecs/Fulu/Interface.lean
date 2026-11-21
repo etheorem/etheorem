@@ -268,7 +268,7 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
             onTick (map := hashMap) (secondsToMilliseconds tickSeconds) :
           EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes columns valid =>
-      -- pyspec `add_block` (`fork_choice.py:323-427`) runs `on_block` ALONE against `valid`: an
+      -- pyspec `add_block` (`fork_choice.py:323-426`) runs `on_block` ALONE against `valid`: an
       -- invalid block returns right after `on_block` rejects (`:387`), so its own attestations /
       -- attester-slashings replay only on the valid path (`:394-400`), each `valid = True`. So
       -- check `on_block` against `valid`, then replay the sub-steps only when the block was

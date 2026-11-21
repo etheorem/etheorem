@@ -225,7 +225,7 @@ pin, `.missingKey` (an uncaught
 
 That wrapper scores the attestation, attester-slashing, envelope, and PTC-message steps. The
 block step is scored by `add_block`'s own `except (AssertionError, BlockNotFoundException)`
-(`fork_choice.py:381-389`), which never catches `IndexError`, so its admitted set is this one
+(`fork_choice.py:383-387`), which never catches `IndexError`, so its admitted set is this one
 minus the index miss. `FcStepKind.admits` applies that narrowing; `isIndexMiss` is the shape
 it subtracts.
 

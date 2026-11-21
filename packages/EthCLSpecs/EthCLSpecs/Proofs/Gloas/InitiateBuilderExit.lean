@@ -196,13 +196,13 @@ theorem initiateBuilderExit_run_outOfRange [Preset] [HasherTag] [Config] :
   rw [hnone]
   rfl
 
-/-! ## Generic conditional no-wrap
+/-! ## Generic conditional sum bound
 
 `Epoch` is the checked kind, so the withdrawability sum raises past `2 ^ 64 - 1`.
 No generic invariant relates the bounded current epoch
 to the independently configurable withdrawal delay (a `[Config]` instance is free to set
-`minBuilderWithdrawabilityDelay` arbitrarily), so the no-wrap fact is necessarily
-**conditional**. Its condition is the sum bound `initiateBuilderExit_run_inRange` carries,
+`minBuilderWithdrawabilityDelay` arbitrarily), so the fact that the sum stays below the bound is
+necessarily **conditional**. Its condition is the sum bound `initiateBuilderExit_run_inRange` carries,
 a hypothesis the caller must establish elsewhere. When the bound fails for an in-range
 index, the checked add raises and the run rejects with the sum's arithmetic fault
 (`initiateBuilderExit_run_eq`). -/

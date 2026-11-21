@@ -1226,12 +1226,12 @@ Source hand-offs are issue comments. These IDs preserve the detailed evidence:
 | Family | Findings and final corrections, comment IDs |
 |---|---|
 | 9.1a | `01a1fc1f-76c7-777e-9a77-edc7878a71a6`; `01a1fc25-1d88-734b-95e0-f2dbec3d0013` |
-| 9.1b | `01a1fc1f-f8dc-7522-b726-0c868a56e2ca` |
+| 9.1b | `01a1fc1f-f8dc-7522-b726-0c868a56e2ca`; `01a1fc22-8303-73f4-84ed-6c6cfb29d066`; `01a1fc25-36ef-7ef8-84eb-5408a3fd48b4` |
 | 9.1c | `01a1fc21-bcc4-726e-aa79-320a34cb3a3c`; `01a1fc26-eeb0-7104-ab3b-f7e1846711da` |
-| 9.1d1 | `01a1fc37-d58d-718a-b6f8-74ee6299d0b5`; `01a1fc58-7b51-79d3-8d94-d65969ac2576` |
+| 9.1d1 | `01a1fc37-d58d-718a-b6f8-74ee6299d0b5`; `01a1fc58-7b51-79d3-8d94-d65969ac2576`; `01a1fce1-e3fe-7783-89a1-57cecccf4187` |
 | 9.1d2 | `01a1fc6c-fbe6-7cae-91bd-61186e01ef9c` |
 | 9.1d3 | `01a1fd07-02d1-70bb-82a0-eab3fce8de10` |
-| 9.1d4 | `01a1fcea-9800-7589-8c7e-347b99b17e80` |
+| 9.1d4 | `01a1fcea-9800-7589-8c7e-347b99b17e80`; `01a1fd50-d6ba-7c23-912f-4a491e86c677` |
 | 9.1d5 | `01a1fd0b-755b-705e-8bb4-77660a57efc5`; `01a1fd2f-9656-7300-893a-82bf4c8c993a`; `01a1fd46-1a44-71ac-8298-ab68504ed10f` |
 
 ### Family findings and resolutions
@@ -1301,7 +1301,7 @@ Paths in D3 through D5 are relative to `packages/EthCLSpecs/`.
 | D1-07 | Arithmetic throw helpers | The named caller was stale. Describes the checked lift and the Heze `CLInt` modulo route. |
 | D1-08 | Arithmetic error constructors | Prose omitted the lift. Names `ofArithFault` and keeps source examples as examples. |
 | D1-09 | `Errors`, Python context | Four spans pointed to configuration code. Uses `context.py:451-462`. |
-| D1-10 | Store expected rejection | The wrapper span was stale. Uses `fork_choice.py:381-389`. |
+| D1-10 | Store expected rejection | The wrapper span was stale. Uses `fork_choice.py:383-387`, the `add_block` except clause. |
 | D1-11 | `ArithCause`, `arithCause` | A temporary-stage narrative described the core. Names the module and lift theorem. |
 | D1-12 | `Checked` introduction | Temporary stages appeared as owners. Names the current operator modules. |
 | D1-13 | `Elab` hazards | Spike history and a combined bind could teach an invalid authoring form. Describes the hazard and requires split conversion binds. |
@@ -1362,7 +1362,7 @@ Paths in D3 through D5 are relative to `packages/EthCLSpecs/`.
 | D4-08 | Progressive lists | Pin history and issue labels obscured current behavior. Describes the pin and capped-constructor `.listFull` fault. |
 | D4-09 | Gloas/Heze withdrawals | Context spans and exception names were stale. Uses `451-462` and checked subtraction's `SSZValueError`. |
 | D4-10 | Operation interfaces | Comments depended on the temporary plan. Names the `maxHeartbeats` annotation directly. |
-| D4-11 | Fork-choice interfaces | Block/replay/vote-check helper spans were stale. Uses `323-427`, return `387`, replay `394-400`, and vote checks `511-513`. |
+| D4-11 | Fork-choice interfaces | Block/replay/vote-check helper spans were stale. Uses `323-426`, return `387`, replay `394-400`, and vote checks `511-513`. |
 | D4-12 | Python function spans | Churn, quorum, cover-bid, and withdrawal spans included blank lines or missed code. Uses `7876-7886`, `6678-6685`, `7867-7873`, `7767-7775`, and `8003-8031`. |
 | D4-13 | Gloas constants | Temporary audit labels and jargon obscured current facts. Uses current-state descriptions. |
 | D4-14 | Builder-deposit domain | An implemented signature check was described as deferred. Names `isValidBuilderDepositSignature`. |
@@ -1413,7 +1413,7 @@ route has one disposition. The consolidation changes documentation and comments 
 | X04 | Width rule required arithmetic matrices for data-only widths | Clarifies contract §4.1: 64/8-bit arithmetic has matrices; 32-bit codec and 256-bit data uses keep codec rules. Any future arithmetic use requires a checked surface first. |
 | X05 | Framework proof/test prose still taught raw helpers as fork operators | Labels `Proofs/Arith` as raw-word laws and points to `Proofs.CLUint`. Labels `Tests/FrameworkUtils`' raw helpers. Corrects Fulu `isFinalizationOk` to name checked `Epoch` subtraction. |
 | X06 | Modulo-bound comments named the implementation lemma as direct consumer | Fulu constants now name `ValidModulus` and `vmodGet`. The raw lemma remains a proved internal implementation. |
-| X07 | Pinned exception library and repeated context/block spans | Uses `eth-ssz-specs` and `SSZValueError` in Fulu balance/withdrawal comments. Fixes the notes' context/block spans and the four Fulu interface block/replay anchors. D4/D5 already resolve their copies. |
+| X07 | Pinned exception library and repeated context/block spans | Uses `eth-ssz-specs` and `SSZValueError` in Fulu balance/withdrawal comments. Fixes the notes' context/block spans and the four Fulu interface block/replay anchors. The `add_block` span is `323-426` (ends on the `return` line, not the following blank line) and its `except` clause is `383-387`, now used consistently in `Spec/Errors`, this record, and `PySpecTests/Interface`. D4/D5 already resolve their copies. |
 | X08 | Sync-aggregate lookup span ended one line early | Extends both `Spec/Errors` and Fulu transition comments to `4515-4518`, matching D5-14. |
 | X09 | PTC-window fault counts disagreed between documents and proofs | B10/B14, D4-01, and D5-06 name the same sequence: epoch add, start-slot product, slot add, and `computePtc`. |
 | X10 | Removed `processDeposit` survived in SizzLean records | Reconciles SizzLean's plan and ledger dependency, opening, deposit-tree, and related-work passages. Removes the invalid operations citation. Keeps incremental-tree work explicitly out of modeled-fork scope; the framework branch bridge remains proved. D1-21, D2-03, and D5-01 close the Lean copies. |
@@ -1424,6 +1424,9 @@ route has one disposition. The consolidation changes documentation and comments 
 | X15 | Proposed removal of unused raw helpers and duplicate `len` functions | Retains the APIs with explicit raw/structural labels. Removal and deduplication are optional code work, outside this documentation task. Both `CLInt.len` and generic `Spec.len` return `CLInt`. |
 | X16 | Builder/validator cast comments and a suggested size-bound lemma | Retains the comments verified in 9.1d4 against the size bounds. The proposed reusable lemma is optional code work; no documentation conflict requires it. |
 | X17 | A trusted maximum-value fixture could use a checked literal | Retains the in-range fixture. The existing trusted construction is accurate test setup; literal replacement is optional code work. |
+| X18 | The ledger's builder-exit row and the proof module's "no-wrap" header | The `processBuilderExitRequest` row now states the exact result: the selected builder receives `withdrawableEpoch` equal to the `Nat` sum of the current epoch and the delay, under the shipped sum bound. The `InitiateBuilderExit` section header and the `Gloas.lean` proof index now name the sum bound instead of no-wrap; the checked add raises past the bound, so it cannot wrap. Routed by the 9.1b review (`01a1fc22-8303-73f4-84ed-6c6cfb29d066`). |
+| X19 | `PLAN.md` used `todo` for two meanings | The classify-bucket bullet now calls `todo` the work-queue bucket, matching `FRAMEWORK_ARCHITECTURE.md` §6 and the separate `outOfScope` skip bucket. Routed by the 9.1b review (`01a1fc22-8303-73f4-84ed-6c6cfb29d066`). |
+| X20 | The §10 `Spec/Arith.lean` row omitted the raw-word helpers and the modulo-bound route | The row now lists `umax` / `umin` / `saturatingSub` and `ValidModulus` / `vmodGet`, matching this record and D1-03. This is the cross-family description mismatch the reviewer routed. |
 
 ### Conversion result types
 
@@ -1470,7 +1473,7 @@ Those working measurements remain assigned to Stage 10's rollup.
 ### Explicit routes outside arithmetic reconciliation
 
 No arithmetic guidance conflict remains open in the collected family findings.
-Two non-arithmetic groups remain assigned outside 9.2. They are recorded here so
+Three non-arithmetic groups remain assigned outside 9.2. They are recorded here so
 the Epic Lead can sequence them without losing the original findings.
 
 1. **R1, index and status work, 9.4 (WS-103).** `PLAN.md` still labels all phases
@@ -1489,8 +1492,20 @@ the Epic Lead can sequence them without losing the original findings.
    helpers, operations, withdrawals, and interfaces, including the old “Phase 4”
    label. Heze sites are version comparisons in constants, inclusion-list
    containers, fork choice, and signing. Root coding style §6 retains deposit-scan
-   history. These passages need a separate current-state style pass. Their exact
-   sites are recorded in the source hand-offs for 9.1a, 9.1d3, and 9.1d4.
+   history. The "ride" wording that X13 fixed at the eight WS-100 sites remains
+   outside them at `EthCLLib/Tests/CLAuthoring.lean:250`, `Tests/TierMerge.lean:12`,
+   `Tests/ForkScoping.lean:25`, `Spec/Forms.lean:28`, `Fulu/Transition.lean:122`,
+   `Gloas/Upgrade.lean:86`, `Heze/Upgrade.lean:93`, `Gloas/ForkChoice.lean:872`,
+   `Heze/ForkChoice.lean:392`, and `Proofs/KeepsUncached.lean:612`. These passages
+   need a separate current-state style pass. Their exact sites are recorded in the
+   source hand-offs for 9.1a, 9.1d1, 9.1d3, and 9.1d4.
+3. **R3, tracker IDs in the committed record, Epic Lead.** The source table above
+   holds Multica comment UUIDs, and the command list below opens with
+   `git merge epic/WS-92`. A reader on GitHub cannot resolve the branch name or the
+   UUIDs. `WS-` issue IDs already appear in the package documents, so those are
+   existing practice; the comment UUIDs are new to the repository. Keeping the
+   hand-off IDs as the audit's source of truth and replacing them with stable
+   in-tree labels are both defensible. This policy choice is for the Epic Lead.
 
 ### Commands and evidence
 

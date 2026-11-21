@@ -328,7 +328,7 @@ disk to a green result.
 - The Python harness: acquisition of the archive for `pyspecPinnedVersion`, the
   case-tree walk, `meta.yaml` parsing, and a `pytest-xdist` runner where each worker
   holds one server through a `session`-scoped fixture.
-- The classify-bucket reporting: passing, expected rejection, out-of-scope `todo`,
+- The classify-bucket reporting: passing, expected rejection, work-queue `todo`,
   likely-bug (`outOfBounds` / `decodeFailure`), uncaught fault (`missingKey` /
   `arithmetic`). The implemented buckets add `outOfScope` and the uncaught
   `zeroDivision`, `listFull`, and `notInList` faults (`FRAMEWORK_ARCHITECTURE.md` §6).
