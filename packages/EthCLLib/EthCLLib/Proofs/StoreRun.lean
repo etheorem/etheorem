@@ -26,7 +26,8 @@ state-transition theorem states its run on `pureState v`, the uncached box, and 
 `ForkChoiceStoreRun` abbreviation
 and the store-specific `throwArithmetic_run` equation: `throwArithmetic` lifts a
 `StateTransitionError` that the store machine wraps as `.transition`, so the
-generic `run_throw` does not apply.
+generic `run_throw` does not apply. It also keeps `toNat_add_of_not_lt`, the `Nat`
+sum of a `checkedAdd` that does not raise.
 -/
 
 set_option autoImplicit false
@@ -55,5 +56,18 @@ theorem ForkChoiceStoreRun.throwArithmetic_run {σ α : Type}
         descr : ForkChoiceStoreRun σ α).run s
       = .error (.transition (.arithmetic descr)) :=
   rfl
+
+/-- A `checkedAdd` that does not raise adds the `Nat` values. Its test `a + b < a` is the
+unsigned carry, so when the test fails the sum fits in `UInt64`. -/
+theorem toNat_add_of_not_lt (a b : UInt64) (h : ¬ (a + b < a)) :
+    (a + b).toNat = a.toNat + b.toNat := by
+  have ha : a.toNat < 18446744073709551616 := a.toNat_lt
+  have hb : b.toNat < 18446744073709551616 := b.toNat_lt
+  rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_add] at h
+  rw [UInt64.toNat_add]
+  -- `omega` needs the modulus as a literal.
+  have hp : (2 : Nat) ^ 64 = 18446744073709551616 := rfl
+  rw [hp] at h ⊢
+  omega
 
 end EthCLLib.Proofs
