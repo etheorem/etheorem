@@ -575,7 +575,7 @@ forkdef processProposerLookahead : StateTransition Unit := do
     liftErr (getBeaconProposerIndices state lookaheadEpoch)
   let old := sszGet state proposerLookahead
   set (sszUpdate state with proposerLookahead :=
-    Vector.ofFn (fun i : Fin (2 * Const.slotsPerEpoch) =>
+    Vector.ofFn (fun i : Fin ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch) =>
       if i.val < Const.slotsPerEpoch then vget old (i.val + Const.slotsPerEpoch)
       else newProposers[i.val - Const.slotsPerEpoch]!))
 

@@ -268,9 +268,13 @@ forkdef computeProposerIndices (state : State) (epoch : Epoch) (seed : Bytes32)
 
 /-- `get_beacon_proposer_index`: read the precomputed Fulu lookahead (no shuffle). The
 `slot % SLOTS_PER_EPOCH` ring index passes the checked value's word to the proved-total
-`vmodGet` route, whose bound is the mod itself (`SPEC_ARITHMETIC.md` §4.5). -/
+`vmodGet` route, whose bound is the mod itself (`SPEC_ARITHMETIC.md` §4.5). The window
+length is the preset product, so the call passes the `d ≤ n` bound: `1 ≤
+MIN_SEED_LOOKAHEAD + 1`. -/
 forkdef getBeaconProposerIndex (state : State) : ValidatorIndex :=
   vmodGet (sszGet state proposerLookahead) (sszGet state slot).val Const.slotsPerEpoch
+    (hle := Nat.le_mul_of_pos_left Const.slotsPerEpoch
+      (Nat.succ_pos Const.minSeedLookahead.toPlainNat))
 
 /-- `get_beacon_proposer_indices(state, epoch)`: the per-slot proposers for `epoch`. The
 pyspec forms the active set (its checked casts) before the seed (`fulu/minimal.py`,
