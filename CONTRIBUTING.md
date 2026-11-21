@@ -172,11 +172,9 @@ about `Heze.f`, and the per-fork directory is what keeps the two claims apart.
    -- before
    theorem initiateBuilderExit_run_outOfRange [Preset] [HasherTag] [Config] :
        ∀ (state : State) (builderIndex : BuilderIndex),
-         ¬ builderIndex.toNat < (sszGet state builders).size →
-         ∃ state' : State,
-           (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
-               = .ok ((), state')
-           ∧ sszGet state' builders = sszGet state builders
+         ¬ builderIndex.toPlainNat < (sszGet state builders).size →
+         (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run state
+           = .error (.outOfBounds builderIndex.toPlainNat (sszGet state builders).size)
 
    -- after
    theorem initiateBuilderExit_run_outOfRange [Preset] [HasherTag] [Config] :
