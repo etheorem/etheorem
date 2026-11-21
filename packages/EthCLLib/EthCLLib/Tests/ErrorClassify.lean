@@ -8,7 +8,7 @@ pinned reference (`v1.7.0-beta.4` with `eth-ssz-specs` 0.1.0 as the integer libr
 that pin a checked range/cast fault raises `SSZValueError` (a `ValueError`), a zero divisor
 raises a bare `ZeroDivisionError`, a list over its limit raises a `ValueError`
 (`SSZValueError` on an append, a pydantic `ValidationError` on the constructor), and
-`expect_assertion_error` (`context.py:424-435`) catches only `AssertionError` and
+`expect_assertion_error` (`context.py:451-462`) catches only `AssertionError` and
 `IndexError`. A `list.index` miss raises a plain `ValueError`. One case writes its own
 `except ValueError` wrapper
 (`RunnerCaughtSet.valueError`). The four sections pin, in order: the admit table, the
@@ -44,7 +44,7 @@ class (`ValueError` at the pin) is a property of the admit table, not of a cause
 
 One row per constructor per set. `assert` is the `AssertionError` and `outOfBounds` the
 `IndexError`, so the `assertionAndIndex` set (`expect_assertion_error`,
-`context.py:424-435`) takes exactly those two. `arithmetic` (`SSZValueError` on a range
+`context.py:451-462`) takes exactly those two. `arithmetic` (`SSZValueError` on a range
 fault), `listFull` (`SSZValueError` on an append, pydantic `ValidationError` on the
 constructor), and `notInList` (the plain `ValueError` of `list.index`) are `ValueError`s, so
 only the `valueError` set takes them. `zeroDivision` is

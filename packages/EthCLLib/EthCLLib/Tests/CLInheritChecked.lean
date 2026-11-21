@@ -3,7 +3,7 @@ import EthCLLib
 /-!
 # `EthCLLib.Tests.CLInheritChecked`: a checked body through the inherit/replay path
 
-The carried pre-Stage-4 pin: a `forkdef` whose body does checked arithmetic must
+A `forkdef` whose body does checked arithmetic must
 survive the fork DSL's replay, which re-elaborates the author's raw body
 syntax in the child namespace (`EthCLLib.Internal.Capture`, §4.3 "including
 … inherited declarations"). The base fork's `scaledSlot` reads the state's

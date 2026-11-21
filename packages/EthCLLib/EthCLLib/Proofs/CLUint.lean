@@ -604,7 +604,7 @@ the `∃`-normalization rules. It reduces a checked chain of up to three
 operations in one step to `Nat` facts under right-nested `∃` binders
 (`SPEC_ARITHMETIC.md` §4.9): each checked link of the chain contributes one
 binder and its range test. The binder order is what the pins below state,
-and the depth-3 pin is the form Stage 4 chain and fold proofs should
+and the depth-3 pin is the form the fork-body chain and fold proofs should
 expect, so one `simp_arith` call closes. Keep the set focused: only lemmas
 of this file belong in it. -/
 
@@ -766,7 +766,7 @@ example (a b c d r : CLUint64) :
 
 `sum(xs)` over checked values is `xs.foldlM (fun acc x => acc + x) 0`
 (`SPEC_ARITHMETIC.md` §4.5). It succeeds exactly when every running sum stays
-in range, which is the law Stage 4's total-balance folds reuse. -/
+in range, which is the law the total-balance folds reuse. -/
 
 /-- The running value after `i` steps of the checked addition fold. -/
 def runSum (start : CLUint64) (xs : List CLUint64) (i : Nat) : Nat :=

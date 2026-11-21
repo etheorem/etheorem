@@ -180,16 +180,16 @@ open EthCLLib.Spec in
 expected-rejection set.
 
 The reference does not catch one uniform set. `expect_assertion_error`
-(`context.py:424-435`) takes `AssertionError` and `IndexError`, and scores the attestation
-(`run_on_attestation:243-245`), attester-slashing (`run_on_attester_slashing:466-468`),
-envelope (`run_on_execution_payload_envelope:435-438`), and PTC-message
-(`run_on_payload_attestation_message:492-494`) steps. The block step never reaches it:
+(`context.py:451-462`) takes `AssertionError` and `IndexError`, and scores the attestation
+(`run_on_attestation:240-245`), attester-slashing (`run_on_attester_slashing:460-463`),
+envelope (`run_on_execution_payload_envelope:429-433`), and PTC-message
+(`run_on_payload_attestation_message:486-493`) steps. The block step never reaches it:
 `add_block` calls `run_on_block(valid=True)` inside its own
-`except (AssertionError, BlockNotFoundException)` (`fork_choice.py:387-395`), so an
+`except (AssertionError, BlockNotFoundException)` (`fork_choice.py:383-387`), so an
 `IndexError` there escapes and fails the vector.
 
-`tick` carries no `valid` flag (`on_tick_and_append_step:312`), and the block's replayed
-attestations / attester-slashings run `valid = True` (`fork_choice.py:400-406`), so for those
+`tick` carries no `valid` flag (`on_tick_and_append_step:306-310`), and the block's replayed
+attestations / attester-slashings run `valid = True` (`fork_choice.py:394-400`), so for those
 the admitted set is never consulted; they still name their kind so no call site hides which
 wrapper it stands for. -/
 inductive FcStepKind where
@@ -206,8 +206,8 @@ inductive FcStepKind where
 open EthCLLib.Spec in
 /-- Whether this step kind's reference wrapper catches Python `IndexError`. Only the block
 step's does not (`add_block`'s `except (AssertionError, BlockNotFoundException)`,
-`fork_choice.py:387-395`); every other kind runs under `expect_assertion_error`
-(`context.py:424-435`), which catches it.
+`fork_choice.py:383-387`); every other kind runs under `expect_assertion_error`
+(`context.py:451-462`), which catches it.
 
 Enumerated rather than closed on a wildcard, matching every other `FcStep` match in this file:
 Heze's spec already defines an `on_inclusion_list` fork-choice handler

@@ -4,7 +4,7 @@ import EthCLLib
 # `EthCLLib.Tests.CLAuthoring`: the authoring rules exercised
 
 `SPEC_ARITHMETIC.md` §4.3 and §4.7 on representative functions of each shape
-the fork bodies use, before Stage 4 points the surface at real fork bodies.
+the fork bodies use.
 The module pins, in order:
 
 - **The state-free `Checked` shape** (§4.3's reward formula): immediate binds,

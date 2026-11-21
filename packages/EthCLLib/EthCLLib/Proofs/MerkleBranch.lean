@@ -30,7 +30,7 @@ of which an induction can peel. `branchFold` is the same walk as a plain
 `ByteArray` function. It models nothing the spec declares, and
 `computeMerkleBranchRoot_eq_branchFold` is the only bridge to it. The definition
 is public: `isValidMerkleBranch_iff` names it on its right-hand side, and an
-outside module (the fork-ledger rows, the SizzLean opening bridge) has to be
+outside module (the SizzLean opening bridge) has to be
 able to state a goal against it. -/
 
 /-- The branch walk as a bare fold, reading siblings straight out of `branch`:
@@ -96,7 +96,7 @@ Both theorems below state their right-hand side with `branchFold`. They serve
 the theorems in this module that state the check's contract over
 `computeMerkleBranchRoot` and `isValidMerkleBranch` alone;
 `isValidMerkleBranch_iff` is public, and `branchFold` is
-public with it, so the fork-ledger rows can cite the iff directly. -/
+public with it, so the SizzLean opening bridge can cite the iff directly. -/
 
 /-- A well-formed branch has `branch.size = depth`, which the honest opening
 satisfies. The length guard then passes, and `isValidMerkleBranch` is the
@@ -245,8 +245,8 @@ over the leaf reconstructs the root, then
 `isValidMerkleBranch leaf branch depth index root` is `true`. The
 siblings are 32-byte roots, `branch` runs bottom-up, and the
 reconstruction hypothesis is stated on `gindexBits (2 ^ depth +
-index)`, the bit path the generalized index produces. This is the
-theorem the fork ledger's `processDeposit` rows wait on. -/
+index)`, the bit path the generalized index produces. The SizzLean
+ledger's branch-completeness row cites it. -/
 theorem isValidMerkleBranch_of_foldOpening [HasherTag]
     (leaf root : Vector UInt8 32) (sibs : List (Vector UInt8 32)) (depth index : Nat)
     (hsize : sibs.length = depth) (hindex : index < 2 ^ depth)
