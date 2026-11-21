@@ -205,7 +205,7 @@ yet.
 | `U`, `U` | `/ %` | `Checked U` | zero divisor |
 | `I`, `I` | `+ - *` | `I` | never |
 | `I`, `I` | `/ %` | `Checked I` | zero divisor |
-| `I`, Lean `Int` in either order | `/ %` | `Checked I` | zero divisor |
+| `I`, `Nat` or Lean `Int` in either order | `/ %` | `Checked I` | zero divisor |
 | `I`, `U` in either order | `+ - * / %` | `Checked U` | outside `[0, 2^64)`, or zero divisor |
 | `Nat`, `U` in either order | `+ - * / %` | `Checked U` | outside `[0, 2^64)`, or zero divisor |
 | `Nat`, `I` in either order | `+ - *` | `I`, the `Nat` coerces | never |

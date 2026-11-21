@@ -101,6 +101,7 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   -- Reject on shape: target epoch, slot timing, and the payload-presence bit.
   assert (data.target.epoch == previousEpochOf state || data.target.epoch == currentEpochOf state)
   assert (data.target.epoch == computeEpochAtSlot data.slot)
+  -- …
   let inclusionSlot ← data.slot + Const.minAttestationInclusionDelay
   assert (inclusionSlot ≤ sszGet state slot)
   assert (data.index < 2)
@@ -145,9 +146,7 @@ paragraphs earn the blank line and nothing more. A header that just restates its
 block in English is the obvious comment §3 says to delete, and the same holds for any
 line comment inside the body: if the code already says it, the comment is noise.
 
-Other good candidates: `getExpectedWithdrawals`
-(`EthCLSpecs/Fulu/Withdrawals.lean:getExpectedWithdrawals`, blank lines between setup, the partial
-loop, and the sweep loop), `onBlock` (`EthCLSpecs/Gloas/ForkChoice.lean:onBlock`), and
+Other good candidates: `onBlock` (`EthCLSpecs/Gloas/ForkChoice.lean:onBlock`) and
 `verifyExecutionPayloadEnvelope` (`EthCLSpecs/Gloas/ForkChoice.lean:verifyExecutionPayloadEnvelope`, the assert
 wall reads better split into signature / block-root / bid-consistency groups).
 
