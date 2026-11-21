@@ -237,8 +237,8 @@ forkabbrev pendingPartialWithdrawalsLimit : Nat := Preset.pendingPartialWithdraw
 forkabbrev pendingConsolidationsLimit : Nat := Preset.pendingConsolidationsLimit
 
 -- Well-formedness of the vector-length constants (positive, `uint64`-ranged), surfaced
--- with the `Const.` prefix like the values. The proof-carrying premises of
--- `EthCLLib.Spec.uint64ModOfNatToNatLt` at a modulo index into the matching vector.
+-- with the `Const.` prefix like the values. `ValidModulus` supplies these premises
+-- to `vmodGet` for a modulo index into the matching vector.
 forkabbrev slotsPerEpochPos : 0 < slotsPerEpoch := Preset.slotsPerEpochPos
 forkabbrev slotsPerEpochLt : slotsPerEpoch < 2 ^ 64 := Preset.slotsPerEpochLt
 forkabbrev slotsPerHistoricalRootPos : 0 < slotsPerHistoricalRoot := Preset.slotsPerHistoricalRootPos

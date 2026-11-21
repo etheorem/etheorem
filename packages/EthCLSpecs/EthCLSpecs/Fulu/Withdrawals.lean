@@ -51,7 +51,7 @@ already-queued withdrawals for that validator. Throwing (`StateTransition`). The
 The `withdrawn` accumulator is a `Gwei`, and the folded add is the checked `Gwei` `+`
 (`SPEC_ARITHMETIC.md` §3.2, the `sum` row), so a running sum past `2^64 - 1` raises during
 the accumulation. The final `balances[i] - withdrawn` is the checked subtraction. Its
-underflow raises Python `ValueError`, which `expect_assertion_error` does not catch
+underflow raises `SSZValueError`, a `ValueError` subclass, which `expect_assertion_error` does not catch
 (`context.py:451-462` catches only `AssertionError` and `IndexError`), so the body throws the
 uncaught `.arithmetic` reject. A well-formed state reaches none of these faults, and the
 body still models each one. -/
@@ -143,7 +143,7 @@ partials, and advance the sweep cursor. -/
 forkdef processWithdrawals (payload : ExecutionPayload) : StateTransition Unit := do
   let state ← get
   let (expected, processedPartial) ← getExpectedWithdrawals state
-  -- `payload.withdrawals == expected.withdrawals`: remerkleable's `View.__eq__` coerces the
+  -- `payload.withdrawals == expected.withdrawals`: `eth-ssz-specs`' `View.__eq__` coerces the
   -- Python list through the `List` constructor, which raises on too many elements, then
   -- compares roots.
   let expectedList : SSZList Withdrawal Const.maxWithdrawalsPerPayload ←

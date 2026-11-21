@@ -367,7 +367,7 @@ pyspec (`phase0/fork-choice.md:631-633`) computes the epoch gap as a checked `ui
 subtraction that raises `ValueError`. `on_tick_per_slot` sets `store.time_ms = time_ms` with no
 monotonicity assert (`phase0/fork-choice.md:792-808`), so the spec permits a tick that moves
 the clock back below the finalized epoch's start slot, where the subtraction underflows.
-`checkedSub` rejects there. No conformance vector emits a backwards tick, so the path is
+The checked `Epoch` subtraction rejects there. No conformance vector emits a backwards tick, so the path is
 unreachable in the corpus and carries no pin. Throwing, so the caller binds it. -/
 forkdef isFinalizationOk (store : Store map) (slot : Slot) : StoreTransition Bool := do
   let gap ← computeEpochAtSlot slot - store.finalizedCheckpoint.epoch

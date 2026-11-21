@@ -190,7 +190,7 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let proposerReward ← participantReward * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight)
   let proposerIdx := getBeaconProposerIndex state
 
-  -- `committee_indices` (`fulu/minimal.py:4515-4517`): resolve every committee pubkey to
+  -- `committee_indices` (`fulu/minimal.py:4515-4518`): resolve every committee pubkey to
   -- its registry index before the reward loop, left to right as the comprehension runs.
   -- `all_pubkeys.index(pubkey)` raises a plain `ValueError` on a pubkey no validator
   -- carries, so a miss faults before any balance changes and before the cast of any

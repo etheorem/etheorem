@@ -147,8 +147,8 @@ acceptance examples in `Cache/MerkleTree/Merkle.lean`, and one in
   generalized-index bridge.
 - The two guard-widening rows change the statements of all three central
   theorems and of `SSZ.roundtrip`, so they land as one change each.
-- The fork ledger's two `processDeposit` rows rest on the branch-completeness
-  rows here.
+- EthCLLib's `isValidMerkleBranch_of_foldOpening` bridge rests on the
+  branch-completeness rows here. The Fulu, Gloas, and Heze bodies have no caller.
 
 ---
 
@@ -326,9 +326,9 @@ opening satisfies that fold.
 
 | Cell | Arms | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- | --- |
-| `branch × opening` | | `foldOpening` at `Proofs/Merkle/Opening.lean:115` | The opening lives on the pure path: `naiveOpeningAt` walks the chunk tree `Spec.merkleize` builds, top down, and names each sibling by the sibling subtree's own root (`naiveRootAt` over the other half), so no coherence hypothesis is needed; `naiveLeafAt` names the chunk a path addresses, padding included. `foldOpening` is the same fold `EthCLLib`'s check performs, consuming the top-down list deepest-first. Proved: `foldOpening_naiveOpeningAt` (the tree over `naiveRootAt`), `foldOpening_openingAt` (on `Spec.merkleize`, through `merkleize_eq_naiveRoot`), and in EthCLLib the bridge `branchFold_eq_foldOpening` plus `isValidMerkleBranch_of_foldOpening`, which turns a reconstruction `foldOpening … (gindexBits (2 ^ depth + index)) = vecToBytes root` into `isValidMerkleBranch … = true` for `index < 2 ^ depth`. That is the theorem the fork ledger's `processDeposit` rows wait on | proved | `Proofs/Merkle/Opening.lean`, `foldOpening_naiveOpeningAt`, `foldOpening_openingAt`; `EthCLLib/Proofs/MerkleBranch.lean`, `branchFold_eq_foldOpening`, `isValidMerkleBranch_of_foldOpening`. |
+| `branch × opening` | | `foldOpening` at `Proofs/Merkle/Opening.lean:115` | The opening lives on the pure path: `naiveOpeningAt` walks the chunk tree `Spec.merkleize` builds, top down, and names each sibling by the sibling subtree's own root (`naiveRootAt` over the other half), so no coherence hypothesis is needed; `naiveLeafAt` names the chunk a path addresses, padding included. `foldOpening` is the same fold `EthCLLib`'s check performs, consuming the top-down list deepest-first. Proved: `foldOpening_naiveOpeningAt` (the tree over `naiveRootAt`), `foldOpening_openingAt` (on `Spec.merkleize`, through `merkleize_eq_naiveRoot`), and in EthCLLib the bridge `branchFold_eq_foldOpening` plus `isValidMerkleBranch_of_foldOpening`, which turns a reconstruction `foldOpening … (gindexBits (2 ^ depth + index)) = vecToBytes root` into `isValidMerkleBranch … = true` for `index < 2 ^ depth`. Framework tests and proofs cover the bridge; the modeled fork bodies have no caller | proved | `Proofs/Merkle/Opening.lean`, `foldOpening_naiveOpeningAt`, `foldOpening_openingAt`; `EthCLLib/Proofs/MerkleBranch.lean`, `branchFold_eq_foldOpening`, `isValidMerkleBranch_of_foldOpening`. |
 | `branch × mix-in-length` | `listFixed`, `listVar`, `bitlist` | `foldOpening_mixInLength` at `Proofs/Merkle/Opening.lean:187` | The opening of a chunk under a length mix-in, on the pure path: the length chunk prepended to the opening, one `false` prepended to the path, and the fold returns `Spec.mixInLength` of the body root (`foldOpening_mixInLength`), in `merkleize` spelling under the same length bound as `foldOpening_openingAt` (`foldOpening_mixInLength_merkleize`). Stated general over depth, it serves the sidecar inclusion proofs the fork bodies will model | proved | `Proofs/Merkle/Opening.lean`, `foldOpening_mixInLength`, `foldOpening_mixInLength_merkleize`. |
-| `branch × deposit-tree` | | | `processDeposit` checks a branch against the deposit contract's incremental tree, which is not an `ofShape` tree. The wire value needs its own connection to a tree the rows above describe. Runtime Verification proved the incremental root equal to the naive full-tree root in Coq, the closest prior art. Out of scope here until that tree is modeled, then a row of its own | out of scope | |
+| `branch × deposit-tree` | | | The deposit contract uses an incremental tree. A proof connecting its wire branches to the naive full-tree root requires a model of that tree. Runtime Verification's Coq equivalence proof is prior art. This is outside the modeled Fulu, Gloas, and Heze fork bodies, which have no `processDeposit` entry point | out of scope | |
 | `branch × normalized` | | | The light-client call sites use `is_valid_normalized_merkle_branch`, which pads a short branch with a zero prefix. `isValidMerkleBranch` rejects a branch whose length differs from the depth, so the normalized form must be modeled before its completeness can be stated | proposed | |
 
 ---
@@ -343,8 +343,8 @@ opening satisfies that fold.
   table with the proof technique for each arm, the finer reading of the twenty
   green cells.
 - [`../../EthCLSpecs/docs/PROOF_LEDGER.md`](../../EthCLSpecs/docs/PROOF_LEDGER.md)
-  is the fork-body ledger. Its `processDeposit` rows depend on the branch rows
-  here.
+  is the fork-body ledger. The branch bridge lives in EthCLLib; the modeled
+  forks have no `processDeposit` rows.
 - [`NON_MALLEABILITY.md`](NON_MALLEABILITY.md) is the write-up of the
   `serialize_injective` rows: what they prove, why each guard is there,
   and the open decoder-canonicity and trailing-byte gaps.
