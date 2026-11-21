@@ -27,7 +27,7 @@ progressive container with the four eth1 deposit fields removed and their positi
 mask gaps. -/
 @[sizzlean_progressive, sizzlean_progressive_gaps 8 9 10 28]
 forkcontainer BeaconState where
-  genesisTime                   : UInt64
+  genesisTime                   : CLUint64
   genesisValidatorsRoot         : Root
   slot                          : Slot
   forkData                      : Fork
@@ -46,7 +46,9 @@ forkcontainer BeaconState where
   previousJustifiedCheckpoint   : Checkpoint
   currentJustifiedCheckpoint    : Checkpoint
   finalizedCheckpoint           : Checkpoint
-  inactivityScores              : ProgressiveList UInt64
+  -- `inactivity_scores` re-exports Gloas's `InactivityScores(ProgressiveList[Uint64])`
+  -- (`heze/minimal.py:500` → `gloas/minimal.py:490`), not `Gwei`: a score is not a balance.
+  inactivityScores              : ProgressiveList CLUint64
   currentSyncCommittee          : SyncCommittee
   nextSyncCommittee             : SyncCommittee
   latestBlockHash               : Hash32
@@ -62,7 +64,10 @@ forkcontainer BeaconState where
   pendingDeposits               : ProgressiveList PendingDeposit
   pendingPartialWithdrawals     : ProgressiveList PendingPartialWithdrawal
   pendingConsolidations         : ProgressiveList PendingConsolidation
-  proposerLookahead             : Vector ValidatorIndex (2 * Const.slotsPerEpoch)
+  -- The length is `ProposerLookahead.LENGTH = (MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH`
+  -- (`heze/minimal.py:802` → `gloas/minimal.py:940` → `fulu/minimal.py:640-646`); both
+  -- presets set `minSeedLookahead` to `1`.
+  proposerLookahead             : Vector ValidatorIndex ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch)
   builders                      : ProgressiveList Builder
   nextWithdrawalBuilderIndex    : BuilderIndex
   executionPayloadAvailability  : Bitvector Const.slotsPerHistoricalRoot
@@ -70,7 +75,10 @@ forkcontainer BeaconState where
   builderPendingWithdrawals     : ProgressiveList BuilderPendingWithdrawal
   latestExecutionPayloadBid     : ExecutionPayloadBid
   payloadExpectedWithdrawals    : ProgressiveList Withdrawal
-  ptcWindow                     : Vector (Vector ValidatorIndex Const.ptcSize) (3 * Const.slotsPerEpoch)
+  -- The length is `PayloadTimelinessCommitteeWindow.LENGTH` = `(MIN_SEED_LOOKAHEAD + 2) *
+  -- SLOTS_PER_EPOCH` (`heze/minimal.py:799` → `gloas/minimal.py:931-937`); both presets
+  -- set `minSeedLookahead` to `1`.
+  ptcWindow                     : Vector (Vector ValidatorIndex Const.ptcSize) ((Const.minSeedLookahead.toPlainNat + 2) * Const.slotsPerEpoch)
 
 -- The once-per-fork preamble: declares `State` (the boxed `BeaconState`) and `modifyState`.
 state_preamble BeaconState
