@@ -808,9 +808,10 @@ examples and checks pass. Preserve the audit record in `IMPLEMENTATION_NOTES.md`
 
 ### Stage 10: final acceptance and remove this plan
 
-- [ ] **10.1 Run final checks.** Run the full build, framework/spec tests, rebuilt runners,
+- [x] **10.1 Run final checks.** Run the full build, framework/spec tests, rebuilt runners,
   project checks, coverage and axiom review, and the full vector matrix. Reuse Stage 8
   results where the executable code and inputs are unchanged.
+  (WS-117, `7dbe3203420e852f2f0d1b5de44d88fa244f4aae`)
 - [ ] **10.2 Record final costs.** Repeat cold, no-op, and incremental measurements with
   the baseline method. Record profile and epoch-suite results. Explain measured causes
   and mark unknown causes explicitly. Accept the correct implementation regardless of cost.
