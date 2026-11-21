@@ -792,8 +792,9 @@ arithmetic site remains unreviewed because its module built without edits.
   - [x] **9.5c Close the unpinned `processDeposit` body and its raw `eth1DepositIndex`
     wrap.** Closes the raw `eth1DepositIndex + 1` wrap in `processDeposit` (the 8.4a1
     and 8.4a3 records, 8.4b open item 3). (WS-95, `c563e4043e8efaf98281ba88d1a7c64e5683a476`)
-  - [ ] **9.5d Close the deferred cleanup batch.** Lands the behavior-preserving cleanup
+  - [x] **9.5d Close the deferred cleanup batch.** Lands the behavior-preserving cleanup
     items that the 8.4a3 and 8.4a4 records hand to the Epic Lead / Stage 9.
+    (WS-96, `f36cb2b7549994dab7db9fc2fd2783d0af5de673`)
 
 **Done when:** the repository-wide audit has a recorded scope and findings; every
 identified conflict with the implemented arithmetic contract has a resolution; affected
