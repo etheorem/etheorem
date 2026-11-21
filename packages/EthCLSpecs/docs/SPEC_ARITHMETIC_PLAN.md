@@ -769,10 +769,10 @@ arithmetic site remains unreviewed because its module built without edits.
   - [ ] **9.1d4 Find and reconcile: Gloas and Heze fork body docstrings.** Covers the 9.1
     find sweep and the 9.2 reconciliation for the Lean docstrings of the Gloas and Heze
     fork bodies.
-  - [ ] **9.1d5 Find and reconcile: EthCLSpecs `Proofs/`, `Tests/`, `PySpecTests/`, and
+  - [x] **9.1d5 Find and reconcile: EthCLSpecs `Proofs/`, `Tests/`, `PySpecTests/`, and
     bench docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
     docstrings of the EthCLSpecs `Proofs/`, `Tests/`, and `PySpecTests/` modules and the
-    bench.
+    bench. (WS-110, `3fbe87d4fbde469aafc88c28e654111941640cf4`)
 - [ ] **9.2 Reconcile each finding.** Update current guidance and executable examples
   to match the implemented arithmetic contract. Check the actual result types behind
   conversion names. Preserve descriptions of intentionally raw arithmetic in other
