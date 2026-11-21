@@ -204,7 +204,7 @@ them, plus the ePBS files.
 | # | File | Layer | Contains |
 |---|------|-------|----------|
 | 0 | `Fork` | foundations | The `fork … from …` lineage edge, plus a child's feeder import of its parent |
-| 1 | `Types` | foundations | Consensus type aliases (`Slot`, `Epoch`, `ValidatorIndex`, `Gwei`, `Root`, `BLSPubkey`, `ParticipationFlags`) over SizzLean basic types and crypto-backend types |
+| 1 | `Types` | foundations | Consensus type aliases: the unit types (`Slot`, `Epoch`, `ValidatorIndex`, `Gwei`, `ParticipationFlags`) over the checked `CLUint64` / `CLUint8`, and the byte types (`Root`, `BLSPubkey`) over SizzLean basic types and crypto-backend types |
 | 2 | `Constants` | foundations | This fork's `Preset` / `Config` classes and value sets (declared as a diff over the lineage), its own `Const` entries, and the `inherit Const.*` block replaying the parent's |
 | 3 | `Containers/Fork` | containers | `Fork`, `ForkData` |
 | 4 | `Containers/Checkpoint` | containers | `Checkpoint` |
@@ -613,7 +613,7 @@ uses, over each genesis deposit.
 
 ```lean
 forkdef initializeBeaconStateFromEth1
-    (eth1BlockHash : Hash32) (eth1Timestamp : UInt64)
+    (eth1BlockHash : Hash32) (eth1Timestamp : CLUint64)
     (deposits : List Deposit) : StateTransition Unit := do
   modifyState fun state => -- set genesisTime, fork, eth1Data, latest header, ...
     ...
@@ -860,6 +860,12 @@ vector width), the universal and config tiers do not. The author writes
 `Const.slotsPerEpoch` and the SCREAMING_SNAKE `SLOTS_PER_EPOCH` of the spec maps to
 that `Const.camelCase` projection.
 
+Each constant keeps the numeric kind the pinned pyspec gives it (`SPEC_ARITHMETIC.md`
+§4.2). A checked constant that only enters formulas is a `CLUint64`. A preset value
+that also sizes a type stays a structural `Nat` with a range premise, and formulas read
+its derived views: the checked `Const.slotsPerEpochC` and the proved-total divisor
+`Const.slotsPerEpochDiv`.
+
 ### 9.1 The tier system is per fork
 
 The tier system is per fork. Each fork has its own `Preset` and `Config` classes
@@ -931,7 +937,8 @@ and an `outOfBounds` on a valid vector is the bug-smell of the error model, surf
 a likely framework or spec bug rather than a validation. An invalid vector must be
 rejected the way its own reference wrapper expects, which `RunnerCaughtSet` records
 (`FRAMEWORK_ARCHITECTURE.md` §6). Under `expect_assertion_error` that is an `assert` or a
-caught `outOfBounds`; under the `except ValueError` wrapper it is the `.arithmetic` fault.
+caught `outOfBounds`. Under the `except ValueError` wrapper it is an `.arithmetic`, a
+`.listFull`, or a `.notInList` fault.
 A `todo` is never a faithful rejection;
 an unimplemented path is not a validation, so a `todo` on an invalid vector fails and
 points to the work. A caught `outOfBounds` counts as rejected but is
@@ -1021,10 +1028,11 @@ hasher by what the goal needs, independent of the box flavour and the monad.
 
 ### 11.3 The techniques and the candidate theorems
 
-When proofs start, the techniques are the gate-split on `assert` conditions and the
-abstract `[CryptoBackend]`, both from the deferred proof-support layer, with
-arithmetic lifted to `Nat` through the `UInt64`-to-`Nat` correspondence lemmas of the
-arithmetic layer. The candidate theorems per fork are invariant preservation and
+The techniques are the gate-split on `assert` conditions and the abstract
+`[CryptoBackend]`, both from the proof-support layer. Arithmetic goes through the
+checked-arithmetic law library of the arithmetic layer (`FRAMEWORK_ARCHITECTURE.md`
+§10): a proof reads each checked step through `toPlainNat` and reasons in `Nat` under
+that step's success condition. The candidate theorems per fork are invariant preservation and
 happy-path correctness. Each is proved per fork, since inheritance is by symbol and
 Fulu's and Gloas's steps are distinct symbols. A theorem is itself a declaration,
 though, so it can ride the inheritance replay into the child namespace: an unchanged

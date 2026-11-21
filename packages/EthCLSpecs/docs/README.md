@@ -38,8 +38,8 @@ the transition.
 
 [FUTURE_WORK.md](FUTURE_WORK.md) records deferred changes: what is left, why it waits,
 and the shape it will take, so a later pass picks each one up whole. The current entry is
-the provability of the pure indexed reads: a proof parameter or a refined index-list type,
-plus the invariant lemmas they rest on.
+the provability of the remaining total indexed reads: a proof parameter or a refined
+index-list type, plus the invariant lemmas they rest on.
 
 [PROOF_LEDGER.md](PROOF_LEDGER.md) is the proof ledger: one row per candidate spec
 function, grouped by fork and by the kind of theorem it asks for, with the property
