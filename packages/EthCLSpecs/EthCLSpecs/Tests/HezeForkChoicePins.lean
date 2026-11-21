@@ -138,22 +138,26 @@ the recorded EL answer, and the timeliness bit `on_inclusion_list` files with ea
 
 /-- `get_inclusion_list_due_ms = INCLUSION_LIST_DUE_BPS * SLOT_DURATION_MS // BASIS_POINTS`. Under
 the minimal config that is `6667 * 6000 / 10000 = 4000` (truncating divide), pinning both the
-`INCLUSION_LIST_DUE_BPS = 6667` constant and the inherited `bpsDeadlineMs` composition. Arithmetic
-only (no hash), so kernel `#guard`. -/
-private def pinIlDueMs : UInt64 :=
+`INCLUSION_LIST_DUE_BPS = 6667` constant and the inherited `bpsDeadlineMs` composition. The
+result is `Checked`, since the product is the checked kind. The minimal configuration is a large
+record, so `native_decide`, as the migration pins do. -/
+private def pinIlDueMs : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  getInclusionListDueMs
-#guard pinIlDueMs = 4000
+  match getInclusionListDueMs with
+  | .ok due => due.toPlainNat = 4000
+  | .error _ => false
+example : pinIlDueMs = true := by native_decide
 
 /-- The faithful empty-committee throw. Over a zero-validator `default BeaconState`, slot 0's
-beacon committee is empty, so `getInclusionListCommittee` hits the empty-committee guard and
-rejects. Pyspec raises `ZeroDivisionError` on the same `indices[i % 0]`, an uncaught fault, so the
-pin checks the reject is NOT an expected rejection (a `.transition (.arithmetic …)`, not a caught
-`.assert`), the property a regression to `assert` would break. `on_inclusion_list` reaches the
-helper after its state advance. At v1.7.0-beta.4 the record path no longer computes a committee,
-so the pin drives the helper directly, in plain `Except` (it needs no `MonadStateOf`). `State` is
+beacon committee is empty, so the plain `%` inside `cyclicSample` forms `i % 0` and
+`getInclusionListCommittee` rejects. The pyspec raises a bare `ZeroDivisionError` on the same
+`indices[i % len(indices)]`, an uncaught fault that neither `RunnerCaughtSet` admits. So the
+pin checks that the reject is exactly the `.zeroDivision` cause. A regression to a caught
+`.assert`, or to the `.arithmetic` range cause, breaks it. `on_inclusion_list` reaches the
+helper after its state advance. At v1.7.0-beta.4 the record path computes no committee, so the
+pin drives the helper directly, in plain `Except` (it needs no `MonadStateOf`). `State` is
 FFI-backed (`FastBox`), so `native_decide`. -/
 private def pinCommitteeThrows : Bool :=
   letI : Preset := minimal
@@ -162,7 +166,10 @@ private def pinCommitteeThrows : Bool :=
   let state : State := SSZ.FastBox (default : @EthCLSpecs.Heze.BeaconState minimal)
   match (getInclusionListCommittee (StoreTransition := Except StoreTransitionError) state 0) with
   | .ok _    => false
-  | .error e => !e.isExpectedRejection
+  -- The `ErrorConv StateTransitionError StoreTransitionError` instance wraps the reject as
+  -- `.transition` even at this plain `Except` monad, so the cause sits one level inside.
+  | .error (.transition (.zeroDivision _)) => true
+  | .error _ => false
 example : pinCommitteeThrows = true := by native_decide
 
 /-! #### The record path
@@ -348,12 +355,26 @@ private def pinPopulatedState : @EthCLSpecs.Heze.BeaconState minimal :=
   let vals := (Array.replicate Const.slotsPerEpoch activeValidator).foldl (·.push ·) base.validators
   { base with validators := vals }
 
-/-- `on_inclusion_list` files the list with its timeliness: a list received in its own slot
-before `get_inclusion_list_due_ms` is timely, one at or after the deadline is not. Runs the handler
-end-to-end with the store clock `intoSlotMs` into slot 0, then reads the filed entry's timeliness
-back at `(0, anchor_root)` and the validator. `getForkchoiceStore` hashes the anchor (FFI
-`Sha256`), so this is a `native_decide` `example` (`Lean.ofReduceBool`). -/
-private def pinOnIlTimely (intoSlotMs : UInt64) : Option Bool :=
+/-- What `on_inclusion_list` did with the list: filed it with its timeliness bit, rejected it
+with one of the handler's own asserts, or some other reject. Keeping the assert class separate
+is this file's rule (`pinPils`): the window and byte-cap rejects are the spec's own guards, and
+a regression to another throw class must fail the pin, not pass it. -/
+private inductive IlOutcome where
+  /-- The list filed under `(slot, dependent_root)` with this timeliness bit. -/
+  | filed (timely : Bool)
+  /-- One of the handler's asserts fired (the retention window, the byte cap, …). -/
+  | assertReject
+  /-- Any other reject. Never expected at this gate. -/
+  | otherReject
+  deriving DecidableEq
+
+/-- `on_inclusion_list` over a list from the committee's first member for `ilSlot` carrying
+`txs`, the store clock `intoSlotMs` ms into slot 0 (genesis time `0`, so the store time is the
+time into slot 0): the filed timeliness on success, the reject class otherwise. The general
+form the retention-window and byte-cap pins drive (any slot, any transaction list); the
+timeliness pins below specialize it. `getForkchoiceStore` hashes the anchor (FFI `Sha256`), so
+these are `native_decide` `example`s (`Lean.ofReduceBool`). -/
+private def pinOnIl (intoSlotMs : CLUint64) (ilSlot : Slot) (txs : Array Transaction) : IlOutcome :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
@@ -366,20 +387,59 @@ private def pinOnIlTimely (intoSlotMs : UInt64) : Option Bool :=
       getInclusionListCommittee (StoreTransition := Except StoreTransitionError) state 0) with
   | (.ok store0, .ok committee) =>
     let validatorIndex := vget committee 0
-    let signed := pinSIL validatorIndex 0 anchorRoot #[pinTx 0xAA]
-    let store := { store0 with timeMs := store0.genesisTimeMs + intoSlotMs }
-    match runOn store
-        (onInclusionList (map := treeMap) signed : EStateM StoreTransitionError (Store treeMap) Unit) with
-    | .ok after =>
-      let entries := (FcMap.lookup after.inclusionListStore.inclusionLists (0, anchorRoot)).getD
-        FcMap.empty
-      (FcMap.lookup entries validatorIndex).map (·.timely)
-    | .error _ => none
-  | _ => none
+    let signed := pinSIL validatorIndex ilSlot anchorRoot txs
+    -- The store clock is the checked sum `genesis_time_ms + into_slot_ms`; it fits here.
+    match (store0.genesisTimeMs + intoSlotMs : Checked CLUint64) with
+    | .error _ => .otherReject
+    | .ok timeMs =>
+      let store := { store0 with timeMs := timeMs }
+      match runOn store
+          (onInclusionList (map := treeMap) signed : EStateM StoreTransitionError (Store treeMap) Unit) with
+      | .ok after =>
+        let entries := (FcMap.lookup after.inclusionListStore.inclusionLists (ilSlot, anchorRoot)).getD
+          FcMap.empty
+        match (FcMap.lookup entries validatorIndex).map (·.timely) with
+        | some b => .filed b
+        | none   => .otherReject
+      -- `runOn` returns `Except (ε × σ) σ`: the reject and the error-time store.
+      | .error (.assert _, _) => .assertReject
+      | .error _              => .otherReject
+  | _ => .otherReject
+
 -- 0 ms into the slot: 0 < 4000 ⇒ timely.
-example : pinOnIlTimely 0 = some true := by native_decide
+example : pinOnIl 0 0 #[pinTx 0xAA] = .filed true := by native_decide
+-- 3999 ms into the slot: the last timely millisecond, since the deadline is strict.
+example : pinOnIl 3999 0 #[pinTx 0xAA] = .filed true := by native_decide
 -- 4000 ms into the slot: not < 4000 ⇒ untimely.
-example : pinOnIlTimely 4000 = some false := by native_decide
+example : pinOnIl 4000 0 #[pinTx 0xAA] = .filed false := by native_decide
+
+/-! #### The retention window and the byte cap
+
+The handler's two configuration asserts, at their shipped boundaries. `MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS`
+is `Slot(1)` in the pinned module (checked kind) and enters the window through the checked `Slot`
+add `inclusion_list.slot + MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS`, which raises past `2^64 - 1`
+where a raw add would wrap. `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` is `Uint64(8192)`,
+the checked kind at the pin. The spec compares the plain byte sum against it as a mixed
+`int <= Uint64`, which never raises and orders the values, so the consumer reads the cap's
+plain projection. Both asserts precede the dependent-block checks, so a
+reject here is the window's or the cap's, not a later one. -/
+
+/-- A single transaction of `n` bytes, each `b`. -/
+private def pinTxN (n : Nat) (b : UInt8) : Transaction := ⟨Array.replicate n b⟩
+
+-- The byte cap is inclusive: a list totalling 8191 bytes files, one at exactly 8192 files,
+-- and one byte past the cap is the cap assert's reject (the mixed comparison fails).
+example : pinOnIl 0 0 #[pinTxN 8191 0xAA] = .filed true := by native_decide
+example : pinOnIl 0 0 #[pinTxN 8192 0xAA] = .filed true := by native_decide
+example : pinOnIl 0 0 #[pinTxN 8193 0xAA] = .assertReject := by native_decide
+
+-- The retention window: at current slot 1 (6000 ms), the slot-0 list's window end
+-- `0 + 1` still admits it (`>=` is inclusive) and the list files untimely (not its own slot);
+-- at current slot 2 (12000 ms) the window end `1 < 2` is the window assert's reject. A list
+-- for a slot ahead of the store fails the first assert (`inclusion_list.slot <= current_slot`).
+example : pinOnIl 6000 0 #[pinTx 0xAA] = .filed false := by native_decide
+example : pinOnIl 12000 0 #[pinTx 0xAA] = .assertReject := by native_decide
+example : pinOnIl 0 1 #[pinTx 0xAA] = .assertReject := by native_decide
 
 /-! ### Build-enforced pins for the inclusion-list store (vectorless)
 

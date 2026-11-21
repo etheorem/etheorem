@@ -44,29 +44,23 @@ forkdef isEligibleForPartialWithdrawals (v : Validator) (balance : Gwei) : Bool 
 /-! ## Expected withdrawals -/
 
 /-- `get_balance_after_withdrawals` (`capella/beacon-chain.md:411-421`): the balance net of any
-already-queued withdrawals for that validator. Throwing (`StateTransition`): the spec's
-`state.balances[validator_index]` is a bare list index (`IndexError`, via `sszGetIdx` →
-`outOfBounds`), and `- withdrawn` is a bare `uint64` subtraction whose underflow raises Python
-`ValueError`, which the reference runner does NOT catch (`context.py:424-435` catches only
-`AssertionError` / `IndexError`), so it throws the uncaught `.arithmetic` reject rather than a
-caught `.assert`. Both reads are unreachable on a well-formed state and modeled rather than
-clamped.
+already-queued withdrawals for that validator. Throwing (`StateTransition`). The spec's
+`state.balances[validator_index]` is a bare list index, so a read past the end rejects with
+`outOfBounds` through `sszGetIdx`, the class of Python's `IndexError`.
 
-The `withdrawn` accumulator folds through `checkedAdd`, which is where pyspec faults too.
-`sum(...)` looks like it widens to a Python `int`, but `Gwei` subclasses `int` and defines
-`__radd__`, so Python's reflected-operand rule makes the accumulator a `Gwei` from the first
-element on, and every add re-runs the bound check in `uint.__new__`
-(`remerkleable/basic.py:88-107`). A running sum past `2^64` therefore raises `ValueError`
-during the accumulation, not at the later subtraction. Verified against the pinned
-remerkleable. -/
+The `withdrawn` accumulator is a `Gwei`, and the folded add is the checked `Gwei` `+`
+(`SPEC_ARITHMETIC.md` §3.2, the `sum` row), so a running sum past `2^64 - 1` raises during
+the accumulation. The final `balances[i] - withdrawn` is the checked subtraction. Its
+underflow raises `SSZValueError`, a `ValueError` subclass, which `expect_assertion_error` does not catch
+(`context.py:451-462` catches only `AssertionError` and `IndexError`), so the body throws the
+uncaught `.arithmetic` reject. A well-formed state reaches none of these faults, and the
+body still models each one. -/
 def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
     StateTransition Gwei := do
   let withdrawn ← ws.foldlM (init := (0 : Gwei)) fun acc w =>
-    if w.validatorIndex == vi then
-      checkedAdd acc w.amount "get_balance_after_withdrawals: sum(withdrawal.amount)"
-    else pure acc
-  let bal ← sszGetIdx (sszGet state balances) vi.toNat
-  checkedSub bal withdrawn "get_balance_after_withdrawals: balances[i] - withdrawn"
+    if w.validatorIndex == vi then acc + w.amount else pure acc
+  let bal ← sszGetIdx (sszGet state balances) vi
+  bal - withdrawn
 
 /-- `get_expected_withdrawals`: the pending-partial queue then the validator sweep.
 Throwing: the two `validators[i]` reads are bare list indices (`IndexError`, via
@@ -74,42 +68,71 @@ Throwing: the two `validators[i]` reads are bare list indices (`IndexError`, via
 raises on the balance read / underflow. Both unreachable on a well-formed state. -/
 forkdef getExpectedWithdrawals (state : State) : StateTransition (Array Withdrawal × Nat) := do
   let epoch := currentEpochOf state
-  let nvals := (sszGet state validators).size
+  let nvals := len (sszGet state validators)
   let mut withdrawals : Array Withdrawal := #[]
   let mut withdrawalIndex := sszGet state nextWithdrawalIndex
+  -- `processed_count` is a pinned `Uint64` counter. It stays a structural `Nat`: it counts
+  -- entries of the pending-partials list, whose cap is below `2^64`, so its checked
+  -- `+= 1` cannot raise, and `update_pending_partial_withdrawals` reads it as a slice start.
   let mut processedPartial := 0
 
-  -- Pending partial withdrawals (EIP-7251).
-  let partialLimit := Nat.min Const.maxPendingPartialsPerWithdrawalsSweep (Const.maxWithdrawalsPerPayload - 1)
+  -- Pending partial withdrawals (EIP-7251). `withdrawals_limit = min(len(prior_withdrawals)
+  -- + MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD - 1)`
+  -- (`fulu/minimal.py:6177-6180`), with `prior_withdrawals` the still-empty list. Both
+  -- operands are `Uint64`: the plain length plus a checked constant is the mixed route, and
+  -- `MAX_WITHDRAWALS_PER_PAYLOAD - 1` is the checked subtraction, which raises for a zero
+  -- preset value. `min` picks an operand.
+  let pendingCap ← len withdrawals + Const.maxPendingPartialsPerWithdrawalsSweepC
+  let payloadCap ← Const.maxWithdrawalsPerPayloadC - 1
+  let partialLimit := min pendingCap payloadCap
   for w in (sszGet state pendingPartialWithdrawals) do
-    if !(w.withdrawableEpoch ≤ epoch) || withdrawals.size ≥ partialLimit then break
+    -- `len(all_withdrawals) >= withdrawals_limit`: the plain length against the checked
+    -- limit, a comparison that never raises; `int(x)` carries the limit into the plain kind.
+    if !(w.withdrawableEpoch ≤ epoch) || len withdrawals ≥ partialLimit.toCLInt then break
     let vi := w.validatorIndex
-    let validator ← sszGetIdx (sszGet state validators) vi.toNat
+    let validator ← sszGetIdx (sszGet state validators) vi
     let bal ← balanceAfterWithdrawals state vi withdrawals
     if isEligibleForPartialWithdrawals validator bal then
+      -- `withdrawal_amount = min(balance - MIN_ACTIVATION_BALANCE, withdrawal.amount)`
+      -- (`fulu/mainnet.py:6204`, in `get_pending_partial_withdrawals`): the excess is the checked subtraction, formed only in
+      -- this branch, and `min` then picks an operand.
+      let excess ← bal - Const.minActivationBalance
       withdrawals := withdrawals.push
         { index := withdrawalIndex, validatorIndex := vi, address := addressOf validator,
-          amount := umin (bal - Const.minActivationBalance) w.amount }
-      withdrawalIndex := withdrawalIndex + 1
+          amount := min excess w.amount }
+      withdrawalIndex ← withdrawalIndex + 1
     processedPartial := processedPartial + 1
 
-  -- Validator sweep (Capella).
-  let validatorsLimit := Nat.min nvals Const.maxValidatorsPerWithdrawalsSweep
-  let mut vIdx := (sszGet state nextWithdrawalValidatorIndex).toNat
+  -- Validator sweep (Capella). `min(len(state.validators), MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP)`
+  -- mixes a plain length and a `Uint64`, so Python's result kind is whichever operand wins.
+  -- The result only bounds `range(...)`, which iterates the same positions for either kind,
+  -- so the structural `Nat` minimum names the same loop.
+  let validatorsLimit := Nat.min (sszGet state validators).size Const.maxValidatorsPerWithdrawalsSweep
+  let mut validatorIndex := sszGet state nextWithdrawalValidatorIndex
   for _ in [0:validatorsLimit] do
-    if withdrawals.size ≥ Const.maxWithdrawalsPerPayload then break
-    let validator ← sszGetIdx (sszGet state validators) vIdx
-    let bal ← balanceAfterWithdrawals state (UInt64.ofNat vIdx) withdrawals
+    -- `len(all_withdrawals) >= MAX_WITHDRAWALS_PER_PAYLOAD`: a comparison, which never raises.
+    if len withdrawals ≥ Const.maxWithdrawalsPerPayloadC.toCLInt then break
+    let validator ← sszGetIdx (sszGet state validators) validatorIndex
+    let bal ← balanceAfterWithdrawals state validatorIndex withdrawals
     if isFullyWithdrawable validator bal epoch then
       withdrawals := withdrawals.push
-        { index := withdrawalIndex, validatorIndex := UInt64.ofNat vIdx, address := addressOf validator, amount := bal }
-      withdrawalIndex := withdrawalIndex + 1
+        { index := withdrawalIndex, validatorIndex := validatorIndex, address := addressOf validator, amount := bal }
+      withdrawalIndex ← withdrawalIndex + 1
     else if isPartiallyWithdrawable validator bal then
+      -- `withdrawal_amount = balance - get_max_effective_balance(validator)`: the checked
+      -- subtraction, formed only in this branch.
+      let amount ← bal - getMaxEffectiveBalance validator
       withdrawals := withdrawals.push
-        { index := withdrawalIndex, validatorIndex := UInt64.ofNat vIdx, address := addressOf validator,
-          amount := bal - getMaxEffectiveBalance validator }
-      withdrawalIndex := withdrawalIndex + 1
-    vIdx := modWrap (vIdx + 1) nvals
+        { index := withdrawalIndex, validatorIndex := validatorIndex, address := addressOf validator,
+          amount := amount }
+      withdrawalIndex ← withdrawalIndex + 1
+    -- `validator_index = (validator_index + 1) % len(state.validators)`
+    -- (`fulu/minimal.py:5675`): the checked `ValidatorIndex` add, then the modulo by the
+    -- plain length, which raises `ZeroDivisionError` on an empty registry. The loop runs
+    -- only when the registry is nonempty, and the read above already proved the cursor in
+    -- range, so neither fires here; both keep the pyspec's operators.
+    let advanced ← validatorIndex + 1
+    validatorIndex ← (advanced % nvals : Checked _)
   return (withdrawals, processedPartial)
 
 /-! ## process_withdrawals -/
@@ -120,27 +143,41 @@ partials, and advance the sweep cursor. -/
 forkdef processWithdrawals (payload : ExecutionPayload) : StateTransition Unit := do
   let state ← get
   let (expected, processedPartial) ← getExpectedWithdrawals state
-  -- `payload.withdrawals == expected.withdrawals`: remerkleable's `View.__eq__` coerces the
+  -- `payload.withdrawals == expected.withdrawals`: `eth-ssz-specs`' `View.__eq__` coerces the
   -- Python list through the `List` constructor, which raises on too many elements, then
   -- compares roots.
   let expectedList : SSZList Withdrawal Const.maxWithdrawalsPerPayload ←
     sszOfArrayM "withdrawals" expected
   assert (htr expectedList == htr payload.withdrawals)
 
-  let nvals := (sszGet state validators).size
+  let nvals := len (sszGet state validators)
   let mut stateAcc := state
   for w in expected do
     stateAcc ← decreaseBalance stateAcc w.validatorIndex w.amount
 
-  if expected.size != 0 then
-    stateAcc := sszUpdate stateAcc with nextWithdrawalIndex := (expected[expected.size - 1]!).index + 1
+  -- `update_next_withdrawal_index` (`fulu/minimal.py:5711-5715`): behind the
+  -- `len(withdrawals) != 0` guard, `withdrawals[-1]` reads the last element through the
+  -- plain negative index (§4.6), and `latest_withdrawal.index + 1` is the checked
+  -- `WithdrawalIndex` add, so it raises past `2^64 - 1`.
+  if len expected != 0 then
+    let latestWithdrawal ← sszGetIdx expected (-1 : CLInt)
+    let nextIndex ← latestWithdrawal.index + 1
+    stateAcc := sszUpdate stateAcc with nextWithdrawalIndex := nextIndex
   stateAcc := sszUpdate stateAcc with pendingPartialWithdrawals := sszDrop (sszGet stateAcc pendingPartialWithdrawals) processedPartial
-  if expected.size == Const.maxWithdrawalsPerPayload then
-    let nextV := modWrap ((expected[expected.size - 1]!).validatorIndex.toNat + 1) nvals
-    stateAcc := sszUpdate stateAcc with nextWithdrawalValidatorIndex := UInt64.ofNat nextV
+  -- `update_next_withdrawal_validator_index` (`fulu/minimal.py:5718-5730`): the plain
+  -- `len(withdrawals)` against the checked `MAX_WITHDRAWALS_PER_PAYLOAD`, a comparison. Each
+  -- branch forms the checked `ValidatorIndex` add, then the modulo by the plain
+  -- `len(state.validators)`, which raises `ZeroDivisionError` on an empty registry. The full
+  -- branch reads `withdrawals[-1]`, which raises `IndexError` on an empty list.
+  if len expected == Const.maxWithdrawalsPerPayloadC.toCLInt then
+    let latestWithdrawal ← sszGetIdx expected (-1 : CLInt)
+    let advanced ← latestWithdrawal.validatorIndex + 1
+    let nextV ← (advanced % nvals : Checked _)
+    stateAcc := sszUpdate stateAcc with nextWithdrawalValidatorIndex := nextV
   else
-    let nextV := modWrap ((sszGet stateAcc nextWithdrawalValidatorIndex).toNat + Const.maxValidatorsPerWithdrawalsSweep) nvals
-    stateAcc := sszUpdate stateAcc with nextWithdrawalValidatorIndex := UInt64.ofNat nextV
+    let nextIndex ← sszGet stateAcc nextWithdrawalValidatorIndex + Const.maxValidatorsPerWithdrawalsSweep
+    let nextV ← (nextIndex % nvals : Checked _)
+    stateAcc := sszUpdate stateAcc with nextWithdrawalValidatorIndex := nextV
   set stateAcc
 
 end

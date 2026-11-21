@@ -58,10 +58,14 @@ forkdef hasNotInitiatedExit (v : Validator) : Bool :=
 /-- `validator.activation_epoch + SHARD_COMMITTEE_PERIOD <= epoch`: the validator has been
 active long enough to exit or consolidate. Written in the `≤` direction the spec uses; the call
 sites that gate on *not* having passed the window spell it `!passedShardCommitteePeriod …`.
+The sum is the pyspec's checked `Epoch` addition (`phase0/beacon-chain.md`,
+`passed_shard_committee_period`), so it binds and the predicate carries the fault
+(`SPEC_ARITHMETIC.md` §4.3): a comparison never raises, so the raise is the sum's alone.
 `Const.shardCommitteePeriod` is a `[Config]`-tier constant, so this is the one predicate in this
 file that carries the `[Config]` binder. -/
-forkdef passedShardCommitteePeriod (v : Validator) (epoch : Epoch) : Bool :=
-  v.activationEpoch + Const.shardCommitteePeriod ≤ epoch
+forkdef passedShardCommitteePeriod (v : Validator) (epoch : Epoch) : Checked Bool := do
+  let shifted ← v.activationEpoch + Const.shardCommitteePeriod
+  pure (shifted ≤ epoch)
 
 /-! ## Withdrawal-credential predicates (pure on the container) -/
 

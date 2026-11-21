@@ -33,19 +33,20 @@ inherit isValidSwitchToCompoundingRequest
 /-- `is_valid_indexed_attestation` (Gloas, EIP-7688). Fulu's checks, plus the
 cap that used to live on the list type:
 `len(indices) > MAX_VALIDATORS_PER_COMMITTEE * MAX_COMMITTEES_PER_SLOT`
-rejects. A pure `Bool`, so an index past the registry returns `false`.
-Declared before the inherited slashings handlers so their calls bind here. -/
+rejects. The pyspec's pubkey read `state.validators[i]` raises `IndexError` for an index
+past the registry. This body is a pure `Bool`, so it returns `false` there, and the caller's
+`assert` raises the assert class. The runner catches both classes. Declared before the inherited slashings handlers so their calls bind here. -/
 forkdef isValidIndexedAttestation (state : State) (a : IndexedAttestation) : Bool :=
   let validators := sszGet state validators
   let idx := a.attestingIndices.toArray
   let cap := Const.maxValidatorsPerCommittee * Const.maxCommitteesPerSlot
   if idx.size == 0 || idx.size > cap || !strictlySorted idx then false
-  else if !idx.all (·.toNat < validators.size) then false
-  else
-    let pubkeys := idx.map (fun i => (validators[i.toNat]!).pubkey)
-    blsFastAggregateVerify pubkeys
-      (computeSigningRoot a.data (getDomain state Const.domainBeaconAttester a.data.target.epoch))
-      a.signature
+  else match idx.mapM (fun i => getAt validators i) with
+    | .error _ => false
+    | .ok attesters =>
+      blsFastAggregateVerify (attesters.map (·.pubkey))
+        (computeSigningRoot a.data (getDomain state Const.domainBeaconAttester a.data.target.epoch))
+        a.signature
 -- Attesting-set helper: now inheritable since the Gloas committee layer is in scope
 -- (its `getBeaconCommittee` / `getCommitteeIndices` calls bind to the Gloas copies).
 inherit getAttestingIndices
@@ -69,14 +70,24 @@ inherit processSyncAggregate
 
 /-! ## Builder-registry helpers (EIP-7732) -/
 
-/-- `is_builder_index`: the `BUILDER_INDEX_FLAG` bit marks a builder index. -/
+/-- `is_builder_index` (`gloas/minimal.py:7657-7658`): the `BUILDER_INDEX_FLAG` bit marks a
+builder index. `validator_index & BUILDER_INDEX_FLAG` is the same-width `&` of two checked
+values, total (`SPEC_ARITHMETIC.md` §5.1). -/
 forkdef isBuilderIndex (vi : ValidatorIndex) : Bool := (vi &&& Const.builderIndexFlag) != 0
-/-- `convert_validator_index_to_builder_index`. -/
-forkdef toBuilderIndex (vi : ValidatorIndex) : BuilderIndex := vi &&& (~~~ Const.builderIndexFlag)
-/-- `is_active_builder`. -/
-forkdef isActiveBuilder (state : State) (builderIndex : BuilderIndex) : Bool :=
-  let builder := sszGet state builders[builderIndex.toNat]!
-  builder.depositEpoch < (sszGet state finalizedCheckpoint).epoch && builder.withdrawableEpoch == Const.farFutureEpoch
+/-- `convert_validator_index_to_builder_index` (`gloas/minimal.py:7732-7733`):
+`BuilderIndex(validator_index & ~BUILDER_INDEX_FLAG)`. `~BUILDER_INDEX_FLAG` is a plain `int`
+(`SPEC_ARITHMETIC.md` §3.1), so the `&` is the mixed route with its range test, and the
+result is `Checked`. The test never fires on a checked index (`hand_invert_eq` proves the
+value), and the `BuilderIndex(...)` cast of that in-range value is the same value. -/
+forkdef toBuilderIndex (vi : ValidatorIndex) : Checked BuilderIndex :=
+  vi &&& Const.builderIndexFlag.invert
+/-- `is_active_builder` (`gloas/minimal.py:7661-7671`). `state.builders[builder_index]` is a
+bare list index, so an out-of-range index raises `IndexError` through `getAt`. -/
+forkdef isActiveBuilder (state : State) (builderIndex : BuilderIndex) :
+    Except StateTransitionError Bool := do
+  let builder ← liftErr (getAt (sszGet state builders) builderIndex)
+  pure (builder.depositEpoch < (sszGet state finalizedCheckpoint).epoch &&
+    builder.withdrawableEpoch == Const.farFutureEpoch)
 /-- `get_scheduled_gas_limit(epoch)` (EIP-8261, new at v1.7.0-beta.4,
 `gloas/beacon-chain.md:1155-1162`): the gas limit of the latest `GAS_LIMIT_SCHEDULE` entry at
 or before `epoch`, or `none` when no entry applies. The schedule's epochs are distinct, so the
@@ -88,22 +99,31 @@ forkdef getScheduledGasLimit (epoch : Epoch) : Option UInt64 :=
 
 /-- `get_pending_balance_to_withdraw_for_builder` (`gloas/beacon-chain.md:1168-1178`): the
 pending builder withdrawals plus the queued builder payments for `builderIndex`, summed in
-that order. -/
-forkdef getPendingBalanceToWithdrawForBuilder (state : State) (builderIndex : BuilderIndex) : Gwei :=
-  let w := (sszGet state builderPendingWithdrawals).foldl
-    (fun acc x => if x.builderIndex == builderIndex then acc + x.amount else acc) 0
-  (sszGet state builderPendingPayments).toArray.foldl
-    (fun acc p => if p.withdrawal.builderIndex == builderIndex then acc + p.withdrawal.amount else acc) w
+that order. The accumulator is a `Gwei` and each `balance += …amount` is the checked `Gwei`
+add (`SPEC_ARITHMETIC.md` §3.2, the `sum` row), so the fold carries its fault. -/
+forkdef getPendingBalanceToWithdrawForBuilder (state : State) (builderIndex : BuilderIndex) :
+    Checked Gwei := do
+  let w ← (sszGet state builderPendingWithdrawals).val.foldlM
+    (fun acc x => if x.builderIndex == builderIndex then acc + x.amount else pure acc) (0 : Gwei)
+  (sszGet state builderPendingPayments).toArray.foldlM
+    (fun acc p => if p.withdrawal.builderIndex == builderIndex then acc + p.withdrawal.amount else pure acc) w
 /-- `builderPaymentIndex`: the ring slot for `slot`'s `BuilderPendingPayment`, given whether
 `slot` falls in the *current* epoch (`current = true`) versus the previous one.
 `builderPendingPayments` is a `2 * SLOTS_PER_EPOCH` ring whose lower half holds the previous
 epoch and whose upper half holds the current epoch, so the index is `slot % SLOTS_PER_EPOCH` with
 a `SLOTS_PER_EPOCH` offset added only for the current epoch. The epoch test is the caller's
-(`process_proposer_slashing` / `apply_parent_execution_payload` compare `compute_epoch_at_slot`,
-`process_attestation` keys off `data.target.epoch`); this helper names only the offset
-arithmetic. -/
+(`apply_parent_execution_payload` compares `compute_epoch_at_slot`, `process_attestation` keys
+off `data.target.epoch`, and `process_execution_payload_bid` always takes the current epoch);
+this helper names only the offset arithmetic.
+
+The pinned `SLOTS_PER_EPOCH + slot % SLOTS_PER_EPOCH` is a checked `Uint64` add, and the
+structural `Nat` sum here equals it. The add cannot raise: the remainder is below
+`SLOTS_PER_EPOCH`, so the sum is below `2 * SLOTS_PER_EPOCH`. The pinned module forms that
+product as the `BuilderPendingPayments` length when it loads, so it is below `2^64` on every
+preset the pyspec accepts. The `%` takes the proved-total divisor view (`SPEC_ARITHMETIC.md`
+§4.2). -/
 forkdef builderPaymentIndex (slot : Slot) (current : Bool) : Nat :=
-  (if current then Const.slotsPerEpoch else 0) + umodIdx slot Const.slotsPerEpoch
+  (if current then Const.slotsPerEpoch else 0) + (slot % Const.slotsPerEpochDiv).toPlainNat
 /-- `is_builder_withdrawal_credential`. -/
 forkdef isBuilderWithdrawalCredential (wc : Bytes32) : Bool := credPrefix wc == Const.builderWithdrawalPrefix
 /-- `is_pending_validator`: among `pendingDeposits`, a deposit for `pubkey` with a
@@ -113,20 +133,33 @@ state's queue (`process_deposit_request`) or an in-progress accumulator
 forkdef isPendingValidator (pendingDeposits : Array PendingDeposit) (pubkey : BLSPubkey) : Bool :=
   pendingDeposits.any fun d =>
     d.pubkey == pubkey && isValidDepositSignature d.pubkey d.withdrawalCredentials d.amount d.signature
-/-- `initiate_builder_exit`. The EL-triggered builder exit, called by
-`process_builder_exit_request` (alpha.11 moved builder exits off `process_voluntary_exit`
-to this path). -/
+/-- `initiate_builder_exit` (`gloas/mainnet.py:7901-7907`). The EL-triggered builder exit,
+called by `process_builder_exit_request` (alpha.11 moved builder exits off
+`process_voluntary_exit` to this path). Python reads `state.builders[builder_index]`
+before the withdrawability sum, so this body reads the builder first, in the pinned
+order: the read goes through `sszGetIdx`, so an out-of-range index rejects with
+`outOfBounds` (the spec's `IndexError`) before any arithmetic runs. The
+`get_current_epoch(state) + MIN_BUILDER_WITHDRAWABILITY_DELAY` sum is the pyspec's
+checked `Epoch` addition, so it binds (`SPEC_ARITHMETIC.md` §4.3) and raises past
+`2^64 - 1` before the store records it. -/
 forkdef initiateBuilderExit (builderIndex : BuilderIndex) : StateTransition Unit := do
-  let epoch := currentEpochOf (← get)
+  let state ← get
+  let _builder ← sszGetIdx (sszGet state builders) builderIndex
+  let epoch := currentEpochOf state
+  let withdrawableEpoch ← epoch + Const.minBuilderWithdrawabilityDelay
+  -- `toPlainNat`: the raising read above proved `builderIndex` in range for this list.
   modifyState fun state =>
-    sszModify state builders[builderIndex.toNat]! as b => { b with withdrawableEpoch := epoch + Const.minBuilderWithdrawabilityDelay }
-/-- `get_index_for_new_builder`: a recyclable slot (withdrawable + zero balance) or the end. -/
-forkdef getIndexForNewBuilder (state : State) : BuilderIndex := Id.run do
+    sszModify state builders[builderIndex.toPlainNat]! as b => { b with withdrawableEpoch := withdrawableEpoch }
+/-- `get_index_for_new_builder` (`gloas/minimal.py:8203-8207`): a recyclable slot
+(withdrawable + zero balance) or the end. Each return is the `BuilderIndex(...)` cast of a
+plain position, the pyspec's checked narrowing, so the result is `Checked`. -/
+forkdef getIndexForNewBuilder (state : State) : Checked BuilderIndex := do
   let bs := (sszGet state builders).toArray
   let epoch := currentEpochOf state
   for i in [0:bs.size] do
-    if (bs[i]?.getD default).withdrawableEpoch ≤ epoch && (bs[i]?.getD default).balance == 0 then return UInt64.ofNat i
-  return UInt64.ofNat bs.size
+    if (bs[i]?.getD default).withdrawableEpoch ≤ epoch && (bs[i]?.getD default).balance == 0 then
+      return ← CLUint64.ofNat? i
+  CLUint64.ofNat? bs.size
 /-- `withdrawal_credentials[12:]` as a 20-byte execution address. -/
 forkdef addressOfCred (wc : Bytes32) : ExecutionAddress := Vector.ofFn (fun i : Fin 20 => wc[12 + i.val])
 
@@ -135,10 +168,13 @@ index with the supplied `version` / `executionAddress`. -/
 forkdef addBuilderToRegistry (pubkey : BLSPubkey) (version : UInt8) (executionAddress : ExecutionAddress)
     (amount : Gwei) (slot : Slot) : StateTransition Unit := do
   let state ← get
+  -- `set_or_append_list(state.builders, get_index_for_new_builder(state), Builder(...))`:
+  -- the index argument forms first, with its `BuilderIndex(...)` cast.
+  let index ← getIndexForNewBuilder state
   let b : Builder :=
     { pubkey, version, executionAddress, balance := amount,
       depositEpoch := computeEpochAtSlot slot, withdrawableEpoch := Const.farFutureEpoch }
-  setOrAppendState builders (getIndexForNewBuilder state).toNat b
+  setOrAppendState builders index b
 /-- `apply_deposit_for_builder` (retained as a helper; the spec inlines it into
 `onboard_builders_from_pending_deposits`): top up an existing builder, or add a new one
 with a valid proof-of-possession, stamped `PAYLOAD_BUILDER_VERSION`. -/
@@ -146,8 +182,15 @@ forkdef applyDepositForBuilder (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwe
     (sig : BLSSignature) (slot : Slot) : StateTransition Unit := do
   let state ← get
   match (sszGet state builders).findIdx? (·.pubkey == pubkey) with
-  | some builderIndex => modifyState fun state =>
-      sszModify state builders[builderIndex]! as b => { b with balance := b.balance + amount }
+  | some builderIndex =>
+      -- `BuilderIndex(builder_pubkeys.index(pubkey))`: the read is in range, because
+      -- `findIdx?` returned the position. The cast is omitted and cannot raise: the builder
+      -- list is a `ProgressiveList`, and a Lean array holds fewer than `2^61` entries.
+      -- `builder.balance += amount`: the checked `Gwei` add, bound here; the store
+      -- writes the value the add returned.
+      let newBalance ← (sszGet state builders[builderIndex]!).balance + amount
+      modifyState fun state =>
+        sszModify state builders[builderIndex]! as b => { b with balance := newBalance }
   | none =>
     if isValidDepositSignature pubkey wc amount sig then
       addBuilderToRegistry pubkey Const.payloadBuilderVersion (addressOfCred wc) amount slot
@@ -174,7 +217,7 @@ forkdef onboardBuildersFromPendingDeposits : StateTransition Unit := do
     else
       applyDepositForBuilder d.pubkey d.withdrawalCredentials d.amount d.signature d.slot
 
-  -- `pendingDeposits` is a progressive list at alpha.12: the kept deposits go back
+  -- `pendingDeposits` is a progressive list at the pin: the kept deposits go back
   -- whole, with no `PENDING_DEPOSITS_LIMIT` cap and no `.listFull` raise.
   let keptList : ProgressiveList PendingDeposit := ⟨kept⟩
   modifyState fun state => sszUpdate state with pendingDeposits := keptList
@@ -182,32 +225,37 @@ forkdef onboardBuildersFromPendingDeposits : StateTransition Unit := do
 /-- `initialize_ptc_window(state)` (`gloas/fork.md:37-56`): the cached PTC window that seeds
 a Gloas state at the fork. The first `SLOTS_PER_EPOCH` entries (the previous epoch, which has
 no Gloas PTC) hold zeroed committees; the next `1 + MIN_SEED_LOOKAHEAD` epochs hold
-`compute_ptc` for each slot. `MIN_SEED_LOOKAHEAD` is `1`, so the window is
-`3 * SLOTS_PER_EPOCH` long, the `ptc_window` field's declared length.
+`compute_ptc` for each slot. The window is `(2 + MIN_SEED_LOOKAHEAD) * SLOTS_PER_EPOCH`
+long (`MIN_SEED_LOOKAHEAD` is `1`), the `ptc_window` field's declared length.
 
-At v1.7.0-beta.4 `upgrade_to_gloas` computes it over the Gloas post-state, with Gloas's own
-`compute_ptc`; alpha.12 computed it over the Fulu pre-state. The registry, balances, and
-RANDAO mixes the committee reads carry over unchanged, so the window is the same, but the
-function is now this fork's own. Each entry is an `Except` carrying its own two faults: the
-spec's per-entry `current_epoch + e` (the delta confined to `0` and `1`; `+0` cannot
-overflow, `+1` raises the `.arithmetic` fault at `current_epoch = UINT64_MAX`, where
-remerkleable raises Python `ValueError`) binds `checkedAdd` before the entry's `compute_ptc`
-read, and `compute_ptc` itself rejects a slot with no committee members.
+`upgrade_to_gloas` computes it over the Gloas post-state, with Gloas's own `compute_ptc`.
+The registry, balances, and RANDAO mixes the committee reads carry over unchanged from the
+Fulu pre-state. Each entry is an `Except` carrying its own faults. The spec's per-entry
+`current_epoch + e` (`e` below `1 + MIN_SEED_LOOKAHEAD`) is the checked `Epoch` add, bound
+before the entry's `compute_ptc` read. It raises the `.arithmetic` fault past `UINT64_MAX`,
+where the pinned `eth-ssz-specs` raises `SSZValueError`, a `ValueError`. The checked
+`start_slot + index` binds next, and `compute_ptc` itself rejects a slot with no committee
+members.
 `completeUpgradeToGloas` maps the entries in index order, so the first rejecting slot
 surfaces, matching the spec's list comprehension. -/
 forkdef initializePtcWindow (state : State) :
     Vector (Except StateTransitionError (Vector ValidatorIndex Const.ptcSize))
-      (3 * Const.slotsPerEpoch) :=
+      ((Const.minSeedLookahead.toPlainNat + 2) * Const.slotsPerEpoch) :=
   let currentEpoch := currentEpochOf state
   let emptyCommittee : Vector ValidatorIndex Const.ptcSize := Vector.replicate Const.ptcSize 0
-  Vector.ofFn fun i : Fin (3 * Const.slotsPerEpoch) =>
+  Vector.ofFn fun i : Fin ((Const.minSeedLookahead.toPlainNat + 2) * Const.slotsPerEpoch) =>
     if i.val < Const.slotsPerEpoch then pure emptyCommittee
     else do
       let j := i.val - Const.slotsPerEpoch
-      let epoch ← checkedAdd currentEpoch (UInt64.ofNat (j / Const.slotsPerEpoch))
-        "initialize_ptc_window: current_epoch + e"
-      let startSlot := computeStartSlotAtEpoch epoch
-      computePtc state (startSlot + UInt64.ofNat (j % Const.slotsPerEpoch))
+      -- `epoch = current_epoch + e`: the checked `Epoch` add over the plain loop
+      -- offset (`e` is `0` or `1`), bound before the entry's `compute_ptc` read
+      -- (`SPEC_ARITHMETIC.md` §4.3).
+      let epoch ← currentEpoch + (j / Const.slotsPerEpoch)
+      let startSlot ← computeStartSlotAtEpoch epoch
+      -- `start_slot + index` is the pyspec's checked `Slot` add of a plain `int`,
+      -- bound per entry.
+      let slot ← startSlot + (j % Const.slotsPerEpoch)
+      computePtc state slot
 
 /-- The state-side close of `upgrade_to_gloas` (`gloas/fork.md:227-230`): fill the post-state's
 `ptc_window` with `initialize_ptc_window(post)`, then onboard the builders from the pending
@@ -235,7 +283,7 @@ forkdef isValidBuilderDepositSignature (request : BuilderDepositRequest) : Bool 
   let domain := computeDomain Const.domainBuilderDeposit Const.genesisForkVersion (Vector.replicate 32 0)
   blsVerify request.pubkey (computeSigningRoot msg domain) request.signature
 
-/-- `process_builder_deposit_request` (EIP-8282, alpha.12): ignore a deposit whose
+/-- `process_builder_deposit_request` (EIP-8282): ignore a deposit whose
 withdrawal-credential prefix is not the builder prefix. A new pubkey with a valid
 proof-of-possession is onboarded at `PAYLOAD_BUILDER_VERSION`. An existing builder
 is topped up; if it has exited and its balance is already zero, its withdrawable
@@ -248,15 +296,23 @@ forkdef processBuilderDepositRequest (request : BuilderDepositRequest) : StateTr
     if isValidBuilderDepositSignature request then
       addBuilderToRegistry request.pubkey Const.payloadBuilderVersion
         (addressOfCred request.withdrawalCredentials) request.amount (sszGet state slot)
-  | some builderIndex =>
+  | some idx =>
+    -- `builder_index = BuilderIndex(builder_pubkeys.index(request.pubkey))`: the checked
+    -- cast, then the `state.builders[builder_index]` read.
+    let builderIndex ← CLUint64.ofNat? idx
+    let b ← sszGetIdx (sszGet state builders) builderIndex
     let epoch := currentEpochOf state
+    -- "If exited and swept, reset the withdrawable epoch": the reset sum is the checked
+    -- `Epoch` add, formed only in the reset branch and bound there (`SPEC_ARITHMETIC.md`
+    -- §4.3); the `balance +=` after it is the checked `Gwei` add, in Python's order.
+    let withdrawable ← if b.withdrawableEpoch != Const.farFutureEpoch && b.balance == 0 then
+      epoch + Const.minBuilderWithdrawabilityDelay
+    else pure b.withdrawableEpoch
+    let newBalance ← b.balance + request.amount
+    -- `toPlainNat`: the raising read above proved `builderIndex` in range for this list.
     modifyState fun state =>
-      sszModify state builders[builderIndex]! as b =>
-        let reset := b.withdrawableEpoch != Const.farFutureEpoch && b.balance == 0
-        { b with
-          balance := b.balance + request.amount,
-          withdrawableEpoch :=
-            if reset then epoch + Const.minBuilderWithdrawabilityDelay else b.withdrawableEpoch }
+      sszModify state builders[builderIndex.toPlainNat]! as b =>
+        { b with balance := newBalance, withdrawableEpoch := withdrawable }
 
 /-- `process_builder_exit_request` (EIP-8282): an EL-triggered builder exit. A no-op
 unless the pubkey names an active builder whose registered execution address matches the
@@ -267,24 +323,32 @@ forkdef processBuilderExitRequest (request : BuilderExitRequest) : StateTransiti
   match (sszGet state builders).findIdx? (·.pubkey == request.pubkey) with
   | none => pure ()
   | some idx =>
-    let builderIndex : BuilderIndex := UInt64.ofNat idx
-    let builder := sszGet state builders[idx]!
-    if isActiveBuilder state builderIndex
-        && builder.executionAddress == request.sourceAddress
-        && getPendingBalanceToWithdrawForBuilder state builderIndex == 0 then
-      initiateBuilderExit builderIndex
+    -- `builder_index = BuilderIndex(builder_pubkeys.index(request.pubkey))`: the checked
+    -- cast, then the `state.builders[builder_index]` read (`gloas/minimal.py:8266-8267`).
+    let builderIndex ← CLUint64.ofNat? idx
+    let builder ← sszGetIdx (sszGet state builders) builderIndex
+    -- Python's gate ladder returns early before the pending balance computes
+    -- (`gloas/mainnet.py:8277-8281`), so the checked fold binds only in the
+    -- branch that reaches it.
+    if !(← liftErr (isActiveBuilder state builderIndex)) then pure ()
+    else if builder.executionAddress != request.sourceAddress then pure ()
+    else
+      let pending ← getPendingBalanceToWithdrawForBuilder state builderIndex
+      if pending == 0 then initiateBuilderExit builderIndex else pure ()
 
 /-! ## Attestation (payload-aware) + payload-timeliness committee (EIP-7732) -/
 
 /-- `is_attestation_same_slot`: the attestation votes for the block proposed at its
 own slot (head matches this slot's block root but differs from the previous slot's).
-The `slot == 0` guard avoids the `slot - 1` `UInt64` underflow. -/
+The `slot == 0` guard avoids the `slot - 1` underflow, the pyspec's checked subtraction,
+so the previous slot binds in the branch Python forms it. -/
 forkdef isAttestationSameSlot (state : State) (data : AttestationData) : StateTransition Bool := do
   if data.slot == 0 then pure true
   else
     let blockroot := data.beaconBlockRoot
     let slotRoot ← getBlockRootAtSlot state data.slot
-    let prevRoot ← getBlockRootAtSlot state (data.slot - 1)
+    let prevSlot ← data.slot - 1
+    let prevRoot ← getBlockRootAtSlot state prevSlot
     pure (blockroot == slotRoot && blockroot != prevRoot)
 
 /-- `get_attestation_participation_flag_indices` (Gloas, EIP-7732,
@@ -297,28 +361,45 @@ v1.7.0-beta.4 adds the `parent_slot` parameter, the slot of the parent of the bl
 processed, and reads the payload bit there rather than at `data.slot`. The timely head flag
 needs both the minimum inclusion delay and a head root that matches the block root at the
 attestation slot, so only an attestation to the parent block can earn it, and the parent's
-payload availability is recorded at `parent_slot` even when `data.slot` is a skipped slot. -/
+payload availability is recorded at `parent_slot` even when `data.slot` is a skipped slot.
+
+The pinned body (`gloas/minimal.py:5123-5142`) performs every read before
+`assert is_matching_source`: the target root, the same-slot check with its
+`assert data.index == 0`, the payload bit, and the head root. Near the maximum slot the
+target-root read raises the uncaught range fault (`slot + SLOTS_PER_HISTORICAL_ROOT`
+overflows). So the source check comes last, and a mismatched source cannot turn that fault
+into the caught assert (`SPEC_ARITHMETIC.md` §1). -/
 forkdef getAttestationParticipationFlagIndices (state : State) (data : AttestationData)
-    (inclusionDelay : UInt64) (parentSlot : Slot) : StateTransition (Option (Array Nat)) := do
+    (inclusionDelay : Slot) (parentSlot : Slot) : StateTransition (Option (Array CLUint64)) := do
   let justified := if data.target.epoch == currentEpochOf state then sszGet state currentJustifiedCheckpoint
                    else sszGet state previousJustifiedCheckpoint
   let isMatchingSource := data.source.epoch == justified.epoch && data.source.root == justified.root
-  if !isMatchingSource then return none
 
   let targetRoot ← getBlockRoot state data.target.epoch
   let isMatchingTarget := data.target.root == targetRoot
   let sameSlot ← isAttestationSameSlot state data
   if sameSlot && data.index != 0 then return none
+  -- The payload-availability bit sits at `parent_slot % SLOTS_PER_HISTORICAL_ROOT`: the
+  -- checked slot reduces by the proved-total divisor view and narrows to the structural
+  -- bit index (`SPEC_ARITHMETIC.md` §4.2, §4.5).
   let payloadMatches : Bool :=
     if sameSlot then true
     else
-      let bit := bitGet (sszGet state executionPayloadAvailability) (parentSlot.toNat % Const.slotsPerHistoricalRoot)
-      data.index == (if bit then (1 : UInt64) else 0)
+      let bit := bitGet (sszGet state executionPayloadAvailability)
+        (parentSlot % Const.slotsPerHistoricalRootDiv).toPlainNat
+      -- `Uint64(data.index) == Uint64(payload_index)`: the bit casts to `0` or `1`.
+      data.index == (if bit then (1 : CommitteeIndex) else 0)
   let headRoot ← getBlockRootAtSlot state data.slot
   let isMatchingHead := isMatchingTarget && data.beaconBlockRoot == headRoot && payloadMatches
+  if !isMatchingSource then return none
 
-  let mut flags : Array Nat := #[]
-  if inclusionDelay ≤ UInt64.ofNat (isqrt Const.slotsPerEpoch) then flags := flags.push Const.timelySourceFlagIndex
+  -- The returned list holds the pinned checked constants (`TIMELY_*_FLAG_INDEX` =
+  -- `Uint64(0..2)`); its only consumer is the value-equality `in` test of
+  -- `process_attestation`, a total comparison.
+  let mut flags : Array CLUint64 := #[]
+  -- The comparisons never raise in Python. `integer_squareroot(SLOTS_PER_EPOCH)` is the
+  -- total checked-kind root, so both bounds meet the delay in the checked kind.
+  if inclusionDelay ≤ Const.slotsPerEpochC.integerSquareroot then flags := flags.push Const.timelySourceFlagIndex
   if isMatchingTarget then flags := flags.push Const.timelyTargetFlagIndex
   if isMatchingHead && inclusionDelay == Const.minAttestationInclusionDelay then flags := flags.push Const.timelyHeadFlagIndex
   return some flags
@@ -340,24 +421,26 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   -- Reject on shape: target epoch, slot timing, and the payload-presence bit.
   assert (data.target.epoch == previousEpochOf state || data.target.epoch == currentEpochOf state)
   assert (data.target.epoch == computeEpochAtSlot data.slot)
-  -- `data.slot` is wire-controlled and `MIN_ATTESTATION_INCLUSION_DELAY` is 1, so the bare `+`
-  -- wraps `0xFFFF…FFFF + 1` to `0` and `0 ≤ state.slot` bypasses the guard for every state: a
-  -- false ACCEPT, the state-transition twin of `on_attestation`'s. pyspec's checked `uint64` add
-  -- raises `ValueError`, which `process_attestation` does not catch, so the driver scores it
-  -- `uncaughtFault`. Sequenced after the two epoch asserts above, matching Python's order.
-  let inclusionSlot ← checkedAdd data.slot Const.minAttestationInclusionDelay
-    "process_attestation: data.slot + MIN_ATTESTATION_INCLUSION_DELAY"
+  -- `data.slot + MIN_ATTESTATION_INCLUSION_DELAY`: `data.slot` is wire-controlled, so the
+  -- checked `Slot` add can raise at the maximum, the state-transition twin of
+  -- `on_attestation`'s. pyspec's checked `uint64` add raises `SSZValueError`, a `ValueError`
+  -- that `expect_assertion_error` does not catch, so the `.arithmetic` reject classifies as
+  -- `uncaughtFault`. The add binds after the two epoch asserts above, in Python's evaluation
+  -- order, and before the inclusion-slot assert.
+  let inclusionSlot ← data.slot + Const.minAttestationInclusionDelay
   assert (inclusionSlot ≤ sszGet state slot)
   assert (data.index < 2)
 
   -- Every committee index is valid and non-empty; the bitfield covers them all.
-  let count := getCommitteeCountPerSlot state data.target.epoch
-  let (ok, offset) := verifyCommitteeCoverage state data att count
+  let (ok, offset) ← liftErr (verifyCommitteeCoverage state data att)
   assert ok
   assert (att.aggregationBits.size == offset)
 
-  -- Resolve the participation flags, then validate the aggregate signature.
-  let flagIndices ← match ← getAttestationParticipationFlagIndices state data ((sszGet state slot) - data.slot) parentSlot with
+  -- Resolve the participation flags, then validate the aggregate signature. The
+  -- inclusion delay is the pyspec's checked `state.slot - data.slot`, bound at the
+  -- argument position Python evaluates it.
+  let inclusionDelay ← (sszGet state slot) - data.slot
+  let flagIndices ← match ← getAttestationParticipationFlagIndices state data inclusionDelay parentSlot with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
   let indexedAttestation : IndexedAttestation :=
@@ -367,56 +450,99 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
 
   -- Apply participation flags and accumulate the builder-payment weight.
   let currentTarget := data.target.epoch == currentEpochOf state
+  -- Python calls `is_attestation_same_slot` inside the per-validator `and`, so it can run
+  -- zero or many times. This bind runs it once. The move cannot add a fault:
+  -- `get_attestation_participation_flag_indices` above already ran the same call on the same
+  -- `state` and `data`, and the flag writes leave `slot` and `block_roots` unchanged.
   let sameSlot ← isAttestationSameSlot state data
   let paymentIdx := builderPaymentIndex data.slot currentTarget
   let payment0 := vget (sszGet state builderPendingPayments) paymentIdx
   let mut stateAcc := state
-  let mut proposerNum := 0
+  -- `proposer_reward_numerator = 0` starts plain; the first
+  -- `get_base_reward(state, index) * weight` makes it a `Gwei`, and each `+=` after
+  -- that is the checked `Gwei` add (`SPEC_ARITHMETIC.md` §3.2, the `sum` row).
+  let mut proposerNum : Gwei := 0
   let mut weight := payment0.weight
   for vi in (← liftErr (getAttestingIndices state att)) do
-    let i := vi.toNat
-    -- `i` is a data-derived attesting-validator index; read the participation flag
+    -- `vi` is a data-derived attesting-validator index; read the participation flag
     -- through `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather
     -- than masking as a default flag (the matching `[i]!` writes are then in range).
-    -- [New in Gloas:EIP7732] the flags this validator held before this attestation.
-    let flags0 ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) i
-                 else sszGetIdx (sszGet stateAcc previousEpochParticipation) i
+    -- [New in Gloas:EIP7732] the flags this validator held before this attestation:
+    -- `epoch_participation[index] == 0b0000_0000`, a total value comparison.
+    let flags0 ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) vi
+                 else sszGetIdx (sszGet stateAcc previousEpochParticipation) vi
+    -- `toPlainNat`: the raising read above proved `vi` in range for this list.
+    let i := vi.toPlainNat
     let hadNoParticipation := flags0 == 0
     let mut willSet := false
     for flagIndex in [0:3] do
-      let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) i
-                 else sszGetIdx (sszGet stateAcc previousEpochParticipation) i
-      if flagIndices.contains flagIndex && !hasFlag flag flagIndex then
+      -- `flag_index in participation_flag_indices and not has_flag(...)` (`gloas/minimal.py`,
+      -- `process_attestation`): the `and` short-circuits, so the flag read forms only for a
+      -- flag the attestation earns. The `in` compares a plain enumerate index against the
+      -- checked constants by value, a total comparison, so the membership reads the
+      -- elements' plain values.
+      if !flagIndices.any (·.toPlainNat == flagIndex) then continue
+      let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) vi
+                 else sszGetIdx (sszGet stateAcc previousEpochParticipation) vi
+      -- `not has_flag(...)`: the mask `ParticipationFlags(2**flag_index)` raises past
+      -- flag index 7, so the test binds (`SPEC_ARITHMETIC.md` §5.1).
+      if !(← CLUint8.hasFlag flag flagIndex) then
+        -- `add_flag`'s mask raises past flag index 7; the write stores the bound value,
+        -- as Python assigns the `add_flag(...)` result.
+        let flag' ← CLUint8.addFlag flag flagIndex
         stateAcc := if currentTarget then
-                   sszUpdate stateAcc with currentEpochParticipation[i]! := addFlag flag flagIndex
+                   sszUpdate stateAcc with currentEpochParticipation[i]! := flag'
                  else
-                   sszUpdate stateAcc with previousEpochParticipation[i]! := addFlag flag flagIndex
-        proposerNum := proposerNum + (← liftErr (getBaseReward state vi)) * Const.participationFlagWeights[flagIndex]!
+                   sszUpdate stateAcc with previousEpochParticipation[i]! := flag'
+        let base ← liftErr (getBaseReward state vi)
+        let weighted ← base * Const.participationFlagWeights[flagIndex]!
+        proposerNum := ← proposerNum + weighted
         willSet := true
     if willSet && hadNoParticipation && sameSlot && payment0.withdrawal.amount > 0 then
-      let attester ← sszGetIdx (sszGet state validators) i
-      weight := weight + attester.effectiveBalance
+      let attester ← sszGetIdx (sszGet state validators) vi
+      weight := ← weight + attester.effectiveBalance
 
   -- Reward the proposer, then write back the (possibly weight-updated) payment, which the
-  -- spec does unconditionally and in this order.
-  let proposerDenom := (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
-  stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc)
-    (UInt64.ofNat (proposerNum / proposerDenom))
+  -- spec does unconditionally and in this order. The denominator
+  -- `(WEIGHT_DENOMINATOR - PROPOSER_WEIGHT) * WEIGHT_DENOMINATOR // PROPOSER_WEIGHT`
+  -- is checked arithmetic at the pin (every operand a `Uint64` constant), so the chain
+  -- binds; the shipped values cannot leave range, and the mixed `Gwei / CLUint64`
+  -- division carries the checked raise.
+  let proposerDenom ← (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
+  let proposerReward ← proposerNum / proposerDenom
+  stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc) proposerReward
   stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := { payment0 with weight := weight }
   set stateAcc
 where
   /-- Walk the committee bits: each referenced committee index is in range and
   attested by at least one bit, and the running `offset` totals their sizes (the
-  aggregation bitfield must match it exactly). Returns `(valid?, totalSize)`. -/
-  verifyCommitteeCoverage (state : State) (data : AttestationData) (att : Attestation) (count : Nat) : Bool × Nat :=
-    (getCommitteeIndices att.committeeBits).foldl
-      (fun (acc : Bool × Nat) ci => Id.run do
+  aggregation bitfield must match it exactly). Returns `(valid?, totalSize)`.
+  Python's per-index `assert` (`gloas/minimal.py:2614-2623`) aborts at the first
+  failure, so the walk stops there and no later `get_beacon_committee` fault can
+  preempt the assertion (`SPEC_ARITHMETIC.md` §1, the failure point). The range assert
+  forms `get_committee_count_per_slot` per index, as the pinned loop does. The attester
+  set reads `attestation.aggregation_bits[committee_offset + index]` for every member
+  before its assert, and a read past the bit list's end raises `IndexError`, so each
+  read goes through `getAt`. -/
+  verifyCommitteeCoverage (state : State) (data : AttestationData) (att : Attestation) :
+      Except StateTransitionError (Bool × Nat) := do
+    let committeeIndices ← getCommitteeIndices att.committeeBits
+    committeeIndices.foldlM
+      (fun (acc : Bool × Nat) ci => do
         let (okAcc, off) := acc
-        if (UInt64.ofNat ci).toNat ≥ count then return (false, off)
-        let committee := getBeaconCommittee state data.slot ci
-        let attesters := (List.range committee.size).foldl
-          (fun a i => if att.aggregationBits[off + i]! then a + 1 else a) 0
-        return (okAcc && attesters > 0, off + committee.size))
+        if !okAcc then pure acc
+        else
+        let count ← getCommitteeCountPerSlot state data.target.epoch
+        -- `committee_index < get_committee_count_per_slot(...)`: two `Uint64` values, a
+        -- comparison, which never raises.
+        if ci ≥ count then pure (false, off)
+        else do
+          let committee ← getBeaconCommittee state data.slot ci
+          let attesters ← (List.range committee.size).foldlM
+            (fun (a : Nat) i => do
+              let bit ← liftErr (getAt att.aggregationBits (off + i))
+              pure (if bit then a + 1 else a)) 0
+          pure (attesters > 0, off + committee.size))
       (true, 0)
 
 /-- `get_ptc` (`gloas/beacon-chain.md:1392-1404`): read the cached PTC for `slot` from
@@ -432,9 +558,9 @@ for a transition vector).
 
 The two branch asserts, `epoch + 1 == state_epoch` on the past-epoch side and
 `epoch <= state_epoch + MIN_SEED_LOOKAHEAD` on the other, are what bound the index:
-`MIN_SEED_LOOKAHEAD` is 1, so the else branch's `epoch - state_epoch` is 0 or 1, the scaled
-offset is one or two epochs, and the read lands inside the `3 * SLOTS_PER_EPOCH` window by
-construction. That is why the total `vget` is sound once the asserts are in place, and why the
+the else branch's `epoch - state_epoch` is at most `MIN_SEED_LOOKAHEAD`, so the scaled offset
+is at most `MIN_SEED_LOOKAHEAD + 1` epochs, and the read lands inside the
+`(MIN_SEED_LOOKAHEAD + 2) * SLOTS_PER_EPOCH` window by construction. That is why the total `vget` is sound once the asserts are in place, and why the
 spec's own `IndexError` on this subscript is unreachable rather than unmodeled. Throwing, so
 `get_indexed_payload_attestation` and the fork-choice handler bind it. -/
 forkdef getPtc (state : State) (slot : Slot) :
@@ -442,20 +568,32 @@ forkdef getPtc (state : State) (slot : Slot) :
   let epoch := computeEpochAtSlot slot
   assert (epoch ≥ Const.gloasForkEpoch)
   let stateEpoch := currentEpochOf state
-  let spe := UInt64.ofNat Const.slotsPerEpoch
   if epoch < stateEpoch then
-    let nextEpoch ← checkedAdd epoch 1 "get_ptc: epoch + 1"
+    -- `epoch + 1 == state_epoch`: the checked `Epoch` add, bound before its assert
+    -- (`SPEC_ARITHMETIC.md` §4.3).
+    let nextEpoch ← epoch + 1
     assert (nextEpoch == stateEpoch)
-    pure (vmodGet (sszGet state ptcWindow) slot Const.slotsPerEpoch)
+    -- The window index `slot % SLOTS_PER_EPOCH` passes the checked slot's word to the
+    -- proved-total `vmodGet` route, whose bound is the mod itself (§4.5). The window
+    -- length is the preset product, so the call passes the `d ≤ n` bound: `1 ≤
+    -- MIN_SEED_LOOKAHEAD + 2`.
+    pure (vmodGet (sszGet state ptcWindow) slot.val Const.slotsPerEpoch
+      (hle := Nat.le_mul_of_pos_left Const.slotsPerEpoch
+        (Nat.succ_pos (Const.minSeedLookahead.toPlainNat + 1))))
   else
-    let lookaheadBound ← checkedAdd stateEpoch Const.minSeedLookahead
-      "get_ptc: state_epoch + MIN_SEED_LOOKAHEAD"
+    -- `epoch <= state_epoch + MIN_SEED_LOOKAHEAD`: the checked `Epoch` add.
+    let lookaheadBound ← stateEpoch + Const.minSeedLookahead
     assert (epoch ≤ lookaheadBound)
-    let offset ← checkedSub epoch stateEpoch "get_ptc: epoch - state_epoch"
-    let windowed ← checkedAdd offset 1 "get_ptc: (epoch - state_epoch) + 1"
-    let scaled ← checkedMul windowed spe "get_ptc: (epoch - state_epoch + 1) * SLOTS_PER_EPOCH"
-    let idx ← checkedAdd scaled (slot % spe) "get_ptc: … + slot % SLOTS_PER_EPOCH"
-    pure (vget (sszGet state ptcWindow) idx.toNat)
+    -- `Uint64(epoch - state_epoch + 1) * SLOTS_PER_EPOCH + slot % SLOTS_PER_EPOCH`: each
+    -- step binds. The `Uint64(...)` cast strips the epoch unit, so the product keeps the
+    -- `Slot` unit and the index sum is the checked `Slot` add (§3.4). The `slot %
+    -- SLOTS_PER_EPOCH` remainder takes the proved-total divisor view (§4.2).
+    let diff ← epoch - stateEpoch
+    let offset ← diff + 1
+    let scaled ← offset * Const.slotsPerEpochC
+    let slotIdx := slot % Const.slotsPerEpochDiv
+    let idx ← scaled + slotIdx
+    pure (vget (sszGet state ptcWindow) idx.toPlainNat)
 
 /-- `get_indexed_payload_attestation`: resolve the PTC bits to the (sorted) attesting
 validator set. The `aggregation_bits` index into the `PTC_SIZE`-length PTC. Throwing,
@@ -477,9 +615,14 @@ forkdef isValidIndexedPayloadAttestation (state : State) (a : IndexedPayloadAtte
   if idx.size == 0 || !nonStrictSorted then false
   else
     let validators := sszGet state validators
-    if !idx.all (·.toNat < validators.size) then false
+    -- The pyspec's pubkey read `state.validators[i]` raises `IndexError` past the registry.
+    -- The range test returns `false` there, and the caller's `assert` raises the assert
+    -- class; the runner catches both. The reads after the test are in range by it
+    -- (`SPEC_ARITHMETIC.md` §6, a test before the operation). The characterization
+    -- theorem reads this form directly.
+    if !idx.all (·.toPlainNat < validators.size) then false
     else
-      let pubkeys := idx.map (fun i => (validators[i.toNat]!).pubkey)
+      let pubkeys := idx.map (fun i => (validators[i.toPlainNat]!).pubkey)
       blsFastAggregateVerify pubkeys
         (computeSigningRoot a.data (getDomain state Const.domainPtcAttester (computeEpochAtSlot a.data.slot)))
         a.signature
@@ -491,10 +634,11 @@ forkdef processPayloadAttestation (pa : PayloadAttestation) : StateTransition Un
   let state ← get
   let data := pa.data
   assert (data.beaconBlockRoot == (sszGet state latestBlockHeader).parentRoot)
-  -- Only satisfiable by wrap when `state.slot == 0`, which block processing cannot reach — but
-  -- it is the sole path by which `get_ptc`'s asserts could ever be reached, so it is
-  -- checked rather than argued about. pyspec's `data.slot + 1` is a checked `uint64` add.
-  let attestedSlot ← checkedAdd data.slot 1 "process_payload_attestation: data.slot + 1"
+  -- pyspec's `data.slot + 1` is a checked `uint64` add, bound here before its assert. At
+  -- `data.slot = UINT64_MAX` it raises the `.arithmetic` range fault, as Python raises
+  -- `SSZValueError`, a `ValueError` that `expect_assertion_error` does not catch, so the
+  -- reject classifies as `uncaughtFault`.
+  let attestedSlot ← data.slot + 1
   assert (attestedSlot == sszGet state slot)
   -- The bind stays after the slot assert: that assert is what bounds `get_ptc`'s index, and the
   -- spec's order is `beacon_block_root`, then `data.slot + 1 == state.slot`, then the indexed
@@ -504,22 +648,39 @@ forkdef processPayloadAttestation (pa : PayloadAttestation) : StateTransition Un
 
 /-! ## Execution payload bid + parent-payload application (EIP-7732) -/
 
-/-- `convert_builder_index_to_validator_index`: set the `BUILDER_INDEX_FLAG` bit. -/
-forkdef convertBuilderIndexToValidatorIndex (builderIndex : BuilderIndex) : ValidatorIndex := builderIndex ||| Const.builderIndexFlag
+/-- `convert_builder_index_to_validator_index` (`gloas/minimal.py:7728-7729`): set the
+`BUILDER_INDEX_FLAG` bit, `ValidatorIndex(builder_index | BUILDER_INDEX_FLAG)`. The `|` of two
+checked values is the total same-width route (`SPEC_ARITHMETIC.md` §5.1), and the
+`ValidatorIndex(...)` cast of that in-range value is the same value. -/
+forkdef convertBuilderIndexToValidatorIndex (builderIndex : BuilderIndex) : ValidatorIndex :=
+  builderIndex ||| Const.builderIndexFlag
 
-/-- `can_builder_cover_bid`: the builder's balance, after reserving `MIN_DEPOSIT_AMOUNT`
-plus its already-pending withdrawals, covers the bid value. -/
-forkdef canBuilderCoverBid (state : State) (builderIndex : BuilderIndex) (bidAmount : Gwei) : Bool :=
-  let builderBalance := (sszGet state builders[builderIndex.toNat]!).balance
-  let minBalance := Const.minDepositAmountG + getPendingBalanceToWithdrawForBuilder state builderIndex
-  if builderBalance < minBalance then false else builderBalance - minBalance ≥ bidAmount
+/-- `can_builder_cover_bid` (`gloas/mainnet.py:7767-7775`): the builder's balance,
+after reserving `MIN_DEPOSIT_AMOUNT` plus its already-pending withdrawals, covers
+the bid value. `state.builders[builder_index]` is a bare list index, so an
+out-of-range index raises `IndexError` through `getAt`. The pending sum, the reserve
+add, and the cover subtraction are the checked `Gwei` chain, each bound where the
+pyspec forms it. -/
+forkdef canBuilderCoverBid (state : State) (builderIndex : BuilderIndex) (bidAmount : Gwei) :
+    Except StateTransitionError Bool := do
+  let builder ← liftErr (getAt (sszGet state builders) builderIndex)
+  let builderBalance := builder.balance
+  let pending ← getPendingBalanceToWithdrawForBuilder state builderIndex
+  let minBalance ← Const.minDepositAmountG + pending
+  if builderBalance < minBalance then pure false
+  else
+    let cover ← builderBalance - minBalance
+    pure (cover ≥ bidAmount)
 
-/-- `verify_execution_payload_bid_signature`: the bid is signed by the builder's key
-under `DOMAIN_BEACON_BUILDER` at the current epoch. -/
-forkdef verifyExecutionPayloadBidSignature (state : State) (signedBid : SignedExecutionPayloadBid) : Bool :=
-  let builder := sszGet state builders[signedBid.message.builderIndex.toNat]!
-  blsVerifySigned builder.pubkey signedBid.message
-    (getDomain state Const.domainBeaconBuilder (currentEpochOf state)) signedBid.signature
+/-- `verify_execution_payload_bid_signature` (`gloas/minimal.py:8126-8133`): the bid is
+signed by the builder's key under `DOMAIN_BEACON_BUILDER` at the current epoch.
+`state.builders[signed_bid.message.builder_index]` is a bare list index, so an out-of-range
+index raises `IndexError` through `getAt`. -/
+forkdef verifyExecutionPayloadBidSignature (state : State) (signedBid : SignedExecutionPayloadBid) :
+    Except StateTransitionError Bool := do
+  let builder ← liftErr (getAt (sszGet state builders) signedBid.message.builderIndex)
+  pure (blsVerifySigned builder.pubkey signedBid.message
+    (getDomain state Const.domainBeaconBuilder (currentEpochOf state)) signedBid.signature)
 
 /-- `verify_execution_payload_envelope_signature` (`gloas/beacon-chain.md:2107-2121`): the
 envelope is signed by the builder's key (the proposer's, for a self-build) under
@@ -537,10 +698,10 @@ forkdef verifyExecutionPayloadEnvelopeSignature (state : State)
   let pubkey ←
     if builderIndex == Const.builderIndexSelfBuild then do
       let validatorIndex := (sszGet state latestBlockHeader).proposerIndex
-      let v ← sszGetIdx (sszGet state validators) validatorIndex.toNat
+      let v ← sszGetIdx (sszGet state validators) validatorIndex
       pure v.pubkey
     else do
-      let b ← sszGetIdx (sszGet state builders) builderIndex.toNat
+      let b ← sszGetIdx (sszGet state builders) builderIndex
       pure b.pubkey
   let signingRoot := computeSigningRoot signedEnvelope.message
     (getDomain state Const.domainBeaconBuilder (currentEpochOf state))
@@ -580,18 +741,25 @@ forkdef processExecutionPayloadBid (signedBid : SignedExecutionPayloadBid) : Sta
     assert (amount == 0)
     assert (signedBid.signature == Const.g2PointAtInfinity)
   else
-    assert (isActiveBuilder state builderIndex)
-    assert ((sszGet state builders[builderIndex.toNat]!).version == Const.payloadBuilderVersion)
-    assert (canBuilderCoverBid state builderIndex amount)
-    assert (verifyExecutionPayloadBidSignature state signedBid)
+    -- Each gate reads `state.builders[builder_index]`, a bare list index that raises
+    -- `IndexError` out of range; the first read, inside `is_active_builder`, raises first.
+    assert (← liftErr (isActiveBuilder state builderIndex))
+    let builder ← sszGetIdx (sszGet state builders) builderIndex
+    assert (builder.version == Const.payloadBuilderVersion)
+    assert (← liftErr (canBuilderCoverBid state builderIndex amount))
+    assert (← liftErr (verifyExecutionPayloadBidSignature state signedBid))
 
-  assert (bid.blobKzgCommitments.size ≤ (getBlobParameters (currentEpochOf state)).maxBlobsPerBlock)
+  -- The plain `len(...)` against the plain blob limit: a comparison, which never raises.
+  assert (len bid.blobKzgCommitments ≤ (getBlobParameters (currentEpochOf state)).maxBlobsPerBlock)
   assert (bid.slot == sszGet state slot)
   assert ((sszGet state slot) > Const.genesisSlot)
   assert (bid.parentBlockHash == sszGet state latestBlockHash)
   -- [New at v1.7.0-beta.4] the bid's block hash must differ from its parent's.
   assert (bid.blockHash != bid.parentBlockHash)
-  let parentBlockRoot ← getBlockRootAtSlot state ((sszGet state slot) - 1)
+  -- `get_block_root_at_slot(state, state.slot - 1)`: the checked subtraction binds at the
+  -- argument position Python evaluates it.
+  let prevSlot ← (sszGet state slot) - 1
+  let parentBlockRoot ← getBlockRootAtSlot state prevSlot
   assert (bid.parentBlockRoot == parentBlockRoot)
   let randaoMix ← getRandaoMix (currentEpochOf state)
   assert (bid.prevRandao == randaoMix)
@@ -642,8 +810,12 @@ forkdef applyParentExecutionPayload (requests : ExecutionRequests) : StateTransi
   for bd in requests.builderDeposits do processBuilderDepositRequest bd
   for be in requests.builderExits do processBuilderExitRequest be
 
+  -- The availability bit sits at `parent_slot % SLOTS_PER_HISTORICAL_ROOT`: the checked
+  -- slot reduces by the proved-total divisor view and narrows to the structural bit index
+  -- (`SPEC_ARITHMETIC.md` §4.2, §4.5).
   modifyState fun state => sszUpdate state with executionPayloadAvailability :=
-    bitSet (sszGet state executionPayloadAvailability) (umodIdx parentSlot Const.slotsPerHistoricalRoot) true
+    bitSet (sszGet state executionPayloadAvailability)
+      (parentSlot % Const.slotsPerHistoricalRootDiv).toPlainNat true
   modifyState fun state => sszUpdate state with latestBlockHash := parentBid.blockHash
 
 /-- `process_parent_execution_payload` (NEW, EIP-7732): if the bid's parent hash does

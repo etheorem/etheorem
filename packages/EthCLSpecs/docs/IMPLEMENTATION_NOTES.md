@@ -292,10 +292,16 @@ an `Except` query) at the read.
   proof-carrying is the residual recorded in `FUTURE_WORK.md`.
 - **A data-derived index in a pure query with no reject channel and a valid-by-construction
   index** reads total `vs[i]!`, resting on the invariant the query assumes (validators /
-  balances / participation share a length; the input is well-formed). `getWeight`,
-  `computeCommittee`, and the builder-registry queries keep this shape. Making it reject
+  balances / participation share a length; the input is well-formed). Making it reject
   means either an `Except` return, when the index is genuinely untrusted (the first case
   above), or the proof-carrying form once the length invariants are proved (`FUTURE_WORK.md`).
+  `getWeight`, `computeCommittee`, and the builder-registry queries carry a reject channel
+  instead. `getWeight` reads each validator through `sszGetIdx` in `getAttestationScore`.
+  `isActiveBuilder` reads the builder through `getAt` and `liftErr`, and
+  `getBuilderBalanceAfterWithdrawals` through `sszGetIdx`. `computeCommittee` returns
+  `Except StateTransitionError`. It binds its checked bounds, then asserts each position
+  below `len(indices)`, as `compute_shuffled_index` does, before its structural reads of
+  the permutation and of `indices`.
 
 `vs[i]?` is the faithful option read (`none` past the end); the `GetElem` instance uses
 the real validity `i < vs.size`, so `vs[i]!` and `vs[i]?` behave like `Array`'s.
@@ -318,7 +324,10 @@ not a fabricated index.
 
 `StoreTransitionError.missingKey` carries the 32-byte root (`Vector UInt8 32`).
 `StateTransitionError` and `StoreTransitionError` classify by constructor into the
-driver's pass / expected-rejection / out-of-scope / bug-smell buckets.
+`ClassifyBucket`s: pass, expected rejection, `todo`, out of scope, likely bug, and
+uncaught fault. A checked fault reaches the state machine through
+`StateTransitionError.ofArithFault`, which keeps its `ArithCause`: a range fault becomes
+`.arithmetic` and a zero divisor becomes `.zeroDivision`.
 
 `RunError E` (`EthCLLib/Spec/Errors.lean`) is the runner-level error one layer above a spec
 reject: `decode what` is a wire-deserialization failure (always a bug-smell, a well-formed
@@ -409,9 +418,13 @@ concerns map on: `Preset` / `Monad` / `Box` → `Spec.State` + `Spec.Header`; `M
 `Errors` / `Header` read better than the sketch, so §3.6 is reconciled by this mapping.
 
 `Spec.Arith` carries `umax` / `umin` / `isqrt`, type-directed `uintToBytes`, byte
-conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet` /
-`umodIdx` (ring-buffer read / write index), `sszDrop` / `sszOfArray`, `bitGet` / `bitSet`,
-and `hasFlag` / `addFlag`. The append lives in SizzLean: `SSZList.push` takes a proof
+conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet`
+(ring-buffer read index), `shiftWindow`, `sszDrop` / `sszOfArray`, and `bitGet` /
+`bitSet`. The checked arithmetic lives beside it: `Spec.Checked` (`Checked`,
+`ArithFault`, the lift), `Spec.CLUint` (`CLUint64`, `CLUint8`, and the participation-flag
+helpers `CLUint8.hasFlag` / `addFlag`, which return `Checked`), `Spec.CLInt`,
+`Spec.CLTotal`, and the scoped elaborator `Spec.Elab` (`FRAMEWORK_ARCHITECTURE.md` §10).
+The append lives in SizzLean: `SSZList.push` takes a proof
 that the list has room, and `SSZList.push?` / `sszAppend?` return `none` on a full list.
 `appendState` (`Spec.Header`) turns that `none` into the `.listFull` fault, the spec's
 `List.append` raise, and `setOrAppendState` models `set_or_append_list` on top of it.
@@ -506,7 +519,8 @@ thread the store; the policy lives in `checkStepValidity`. A step that carries a
 flag is `block`, the standalone `attestation` / `attester_slashing`, and in Gloas the
 `execution_payload` envelope and `payload_attestation_message`; a step with no flag (`tick`,
 the block's own `is_from_block` sub-attestations) is implicitly `valid := true`. The
-harness then reports a returned error by its constructor (a `.todo` as out-of-scope, any
+harness then reports a returned error by its constructor (a `.todo` as a work-queue
+`xfail`, a `.outOfScope` as a `skip`, any
 other as a bug-smell test failure). The `valid` flag on the standalone `attestation` /
 `attester_slashing` steps matters for the `validate_on_attestation` vectors, where the wire
 `valid: false` marks an attestation `on_attestation` is meant to reject.
@@ -519,11 +533,12 @@ set, and the block shares the head's dependent root (`get_dependent_root`, gated
 
 The store clock counts milliseconds at v1.7.0-beta.4: `Store.timeMs` and
 `Store.genesisTimeMs` replace the second-based `time` and `genesis_time`. `on_tick` takes
-milliseconds. A vector's `tick` step still carries seconds, so the harness passes
-`seconds_to_milliseconds(tick)`, as the reference runner does, and reads the `time` check back
-through `milliseconds_to_seconds`. `compute_slot_at_time_ms` and `compute_time_at_slot_ms` are
-checked `uint64` ops, so a clock read raises where pyspec raises. `get_current_slot` drops the
-`GENESIS_SLOT +` term.
+milliseconds. A vector's `tick` step still carries seconds, so the harness casts it through the
+checked `Uint64(tick)` and passes `seconds_to_milliseconds` of the result, as the reference
+runner does. It reads the `time` check back through `milliseconds_to_seconds`. The clock
+values are the checked kind (`SPEC_ARITHMETIC.md`), so `compute_slot_at_time_ms` and
+`compute_time_at_slot_ms` raise where pyspec raises, including the zero divisor of a
+`SLOT_DURATION_MS = 0` configuration. `get_current_slot` drops the `GENESIS_SLOT +` term.
 
 The linear DAG walks route through fuel-bounded combinators (§12). `getAncestor` and the
 `getHead` descent read `store.blocks` as they go, so they thread the store monad through
@@ -532,30 +547,22 @@ The linear DAG walks route through fuel-bounded combinators (§12). `getAncestor
 which a linear combinator cannot express, so it keeps a local fuel-bounded `where` helper.
 The totality the doc wants is met either way.
 
-The fork-choice weight path still runs on raw `UInt64` where the pyspec's `uint64` ops
-raise, and it is deferred as one piece because it rests on one root: `getTotalBalance`
-(`phase0/beacon-chain.md:1559-1570`), whose `sum(...)` accumulates in `Gwei` and raises,
-while this fold wraps. `calculateCommitteeFraction` divides `getTotalBalance` over the
-unslashed active validators by `SLOTS_PER_EPOCH` (v1.7.0-beta.4; alpha.12 took
-`getTotalActiveBalance`), `computeProposerScore` and the re-org threshold are its products, and
-`getWeight`'s proposer-boost add takes one operand from them, so checking any of those while
-the total underneath still wraps would only move the wrong number around.
-
-The conversion is larger than the fork-choice layer. `getTotalBalance` and
-`getTotalActiveBalance` are pure `forkdef`s with 15 call sites across epoch processing,
-rewards, registry updates, the transition spine, and fork choice; making them throwing
-propagates upward through every pure caller (§7.1's rule, one layer over). The remaining
-independent site is `getAttestationScore`'s own balance fold, which sums
-`state.validators[i].effective_balance` directly and could be checked on its own; it stays
-with the rest so the weight path converts in one go rather than half-guarded. Reaching any
-of them takes a total active balance within a factor of the `uint64` bound, which no
-preset's validator set approaches.
+The fork-choice weight path runs on checked `Gwei` and raises where the pyspec's `uint64`
+operations raise. Its root is `getTotalBalance` (`phase0/beacon-chain.md:1559-1570`), whose
+`sum(...)` is a checked fold that returns `Except StateTransitionError Gwei`.
+`calculateCommitteeFraction` divides `getTotalBalance` over the unslashed active validators
+by `SLOTS_PER_EPOCH` (v1.7.0-beta.4), and `computeProposerScore` and the re-org threshold
+are its products. `getAttestationScore` folds the effective balances with the checked add,
+and `getWeight`'s proposer-boost add binds the same way. `getTotalBalance` and
+`getTotalActiveBalance` return `Except`, so every pure caller carries the reject channel
+(§7.1's rule, one layer over). A fault takes a total balance near the `uint64` bound,
+which no preset's validator set approaches.
 
 The reference catches different exceptions per step kind, so what satisfies a
-`valid: false` step varies too. `expect_assertion_error` (`context.py:424-435`) catches
+`valid: false` step varies too. `expect_assertion_error` (`context.py:451-462`) catches
 `IndexError` for the attestation, attester-slashing, envelope, and PTC-message steps.
 `add_block` catches `AssertionError` and `BlockNotFoundException` alone
-(`fork_choice.py:389`). `FcStepKind` carries that table, and `checkStepValidity`
+(`fork_choice.py:383-387`). `FcStepKind` carries that table, and `checkStepValidity`
 (`PySpecTests/Interface.lean`) reads it.
 
 The Gloas fork choice is the node-based (`ForkChoiceNode = (root, payload_status)`)
@@ -587,22 +594,25 @@ Spec-faithfulness facts worth knowing:
 
 - **`process_pending_deposits` resets `deposit_balance_to_consume` by stop reason.** A
   not-finalized / per-epoch-limit stop resets it to zero; a churn-limit stop carries
-  `available_for_processing − processed_amount` forward. `ppdLoop` returns the
-  `churnLimitReached` flag so the caller writes the right value.
+  `available_for_processing − processed_amount` forward. `processPendingDeposits`
+  keeps the pinned text's `is_churn_limit_reached` local, set only in the churn
+  branch, and the write-back reads it.
 - **The old deposit mechanism is gone.** Fulu removes it (consensus-specs #4704, in the
   text since alpha.12): `process_operations` asserts `len(body.deposits) == 0` and runs no
   deposit loop, `process_deposit_request` no longer writes `deposit_requests_start_index`,
   and `process_pending_deposits` has no eth1-bridge stop. The tree ran the Electra forms of
   all three until the beta.4 re-pin found the gap; `DISCREPANCIES.md` records the fix. Gloas
-  carried the same stale eth1-bridge stop in its own `ppdLoop`, removed with it.
+  carried the same stale eth1-bridge stop in its own `processPendingDeposits`, removed
+  with it.
 - **`apply_pending_deposit` is signature-gated.** A new pubkey joins the registry only
   when `is_valid_deposit_signature` passes (the proof-of-possession the deposit contract
   does not check). The domain is fixed (`compute_domain(DOMAIN_DEPOSIT)`, genesis fork
   version, zero `genesis_validators_root`), so the check is one `[CryptoBackend].verify`.
-- **`initiate_validator_exit` bounds the withdrawable epoch.** It asserts `exit_epoch +
-  MIN_VALIDATOR_WITHDRAWABILITY_DELAY < 2^64` before the write, so an over-range case
-  rejects faithfully (matching the pyspec's `uint64` serialization `ValueError`) instead
-  of wrapping silently on Lean's `UInt64`. Valid exits never approach the bound. Gloas
+- **`initiate_validator_exit` raises past the `uint64` bound.** The `exit_epoch +
+  MIN_VALIDATOR_WITHDRAWABILITY_DELAY` sum is the checked `Epoch` add, so an over-range
+  case raises the `.arithmetic` fault, the pyspec's `ValueError`.
+  `test_invalid_large_withdrawable_epoch` catches it in its own `except ValueError`
+  wrapper (`RunnerCaughtSet.valueError`). Valid exits never approach the bound. Gloas
   inherits the substep with no Gloas-side change.
 - **The balance-weighted sampler rejects on an empty candidate set.**
   `compute_balance_weighted_selection` asserts `total > 0` (`gloas/beacon-chain.md:1213`),
@@ -982,26 +992,28 @@ separation.
   curSlot`). Both via `UInt64`/`Nat` bridging lemmas and `omega`, no mathlib.
 
 - **`Proofs/Gloas/BuilderPendingPayments.lean`** proves `processBuilderPendingPayments`'s
-  local before/after behavior for one call: the withdrawals loop reduces to a
+  local behavior for one call. A quorum error propagates and returns no state.
+  After a successful quorum computation, the withdrawals loop reduces to a
   `ProgressiveList.push` fold over the qualifying previous-epoch payments' withdrawals,
   in slot order, and the payment window shifts down by `SLOTS_PER_EPOCH`. Every
   qualifying withdrawal is appended. It does not prove protocol-wide exactly-once settlement or say
   anything about `settleBuilderPayment` / `slashValidator`, the other paths
   that clear a `BuilderPendingPayment`.
 
-- **`Proofs/Gloas/CanBuilderCoverBid.lean`** characterizes `canBuilderCoverBid`'s
-  `Bool` result exactly: `canBuilderCoverBid_iff` states the guard in the
-  implementation's own `UInt64` `builderBalance` / `minBalance` terms;
-  `canBuilderCoverBid_iff_toNat_add_le` restates it over `Nat` as a single
-  non-wrapping addition-fits-in-balance fact. Both hold unconditionally under
-  total/default indexing semantics, including fallback behavior for an
-  out-of-range `builderIndex`.
+- **`Proofs/Gloas/CanBuilderCoverBid.lean`** characterizes `canBuilderCoverBid`, whose
+  result is an `Except StateTransitionError Bool`: the raising builder read, then the
+  checked `Gwei` chain. `canBuilderCoverBid_eq` is the exact run equation.
+  `canBuilderCoverBid_ok_iff` states that, under the read's success, the pending sum's
+  success, and the success conditions of the `+` and `-` steps, `true` is exactly the
+  bid fitting the remainder, as one `Nat` inequality. `canBuilderCoverBid_ok_toNat_add_le`
+  restates it as an addition-fits-in-balance fact.
 
 - **`Proofs/Gloas/InitializePtcWindow.lean`** gives the whole vector equation
   `initializePtcWindow_eq` over the window entries: each entry is an `Except`
-  carrying its own two faults, the checked per-entry add `current_epoch + e`
-  (the `.arithmetic` fault at `current_epoch = UINT64_MAX`) and the `compute_ptc`
-  read (the empty-candidate reject), and `completeUpgradeToGloas` maps the
+  carrying its own faults, the checked per-entry add `current_epoch + e`
+  (the `.arithmetic` fault at `current_epoch = UINT64_MAX`), the checked
+  `compute_start_slot_at_epoch` product, the checked `start_slot + index` add, and the
+  `compute_ptc` read (the empty-candidate reject), and `completeUpgradeToGloas` maps the
   entries in index order. Its two index regions (the empty first-epoch
   placeholder and the remainder binding the checked add then Gloas's
   `computePtc`) are read off the equation, `initializePtcWindow_getElem` joins
@@ -1012,14 +1024,12 @@ separation.
   `def` over the Fulu pre-state, outside the coverage denominator.
 
 - **`Proofs/Gloas/InitiateBuilderExit.lean`** gives the whole-transition
-  `initiateBuilderExit_run_eq` contract at the box: the run on `pureState preState` returns
-  `pureState` of a value whose `builders` carries one unconditional `ProgressiveList.set!`
-  write. The in-range and out-of-range theorems state the `runPure` form of that
-  contract and read it through `SizzLean.Proofs.ProgressiveListSet`, so the range split happens
-  at the read rather than in a second transition proof; out of range the run returns
-  the pre-state value itself. It also proves that the
-  withdrawability-delay addition does not wrap for the shipped minimal and
-  mainnet configurations.
+  `initiateBuilderExit_run_eq` contract at the box. An out-of-range builder index
+  raises `outOfBounds`. An in-range index reaches the checked epoch-plus-delay add.
+  An addition fault propagates. A successful addition writes the builder through
+  `ProgressiveList.set!` and returns the updated pure box. The success theorem
+  requires both the in-range index and the sum bound. The shipped minimal and
+  mainnet corollaries discharge the sum bound and keep the in-range index premise.
 
 - **`EthCLLib/Proofs/Run.lean`** (framework package) names the `StateT`-over-`Except`
   bind, throw, and
@@ -1046,16 +1056,17 @@ separation.
 
 - **`EthCLLib/Proofs/StoreRun.lean`** (framework package) names `ForkChoiceStoreRun`, the shared pure
   store-machine runner every fork's fork-choice proofs pin at that fork's
-  `Store`. It also holds `ForkChoiceStoreRun.throwArithmetic_run`, the
-  store-specific equation for `throwArithmetic` under the store machine's
-  `.transition` wrapper. The generic `StateT`/`Except` equations live in
+  `Store`. It also holds the store-specific equations under the store machine's
+  `.transition` wrapper: `throwArithmetic_run` and `throwZeroDivision_run` for the two
+  explicit throws, and `liftChecked_ok_run` / `liftChecked_error_run` for a lifted
+  checked expression, whose fault becomes `.transition (StateTransitionError.ofArithFault e)`. The generic `StateT`/`Except` equations live in
   `EthCLLib/Proofs/Run.lean`. The module lives in the framework's generic
   proof toolkit because the runner is a monad over an arbitrary store type
   and so belongs to no fork.
 
 - **`Proofs/Gloas/IsValidIndexedPayloadAttestation.lean`** proves a two-layer,
   backend-generic characterization of `isValidIndexedPayloadAttestation`. Layer 1
-  mirrors the implementation's literal validation gates, `validators[i.toNat]!`
+  mirrors the implementation's literal validation gates, `validators[i.toPlainNat]!`
   included. Layer 2 restates them semantically and binds the in-range proof in an
   `∃`, so its pubkey array reads the registry through `Array.attach` and no
   panicking index survives into the public statement. No mathlib.
@@ -1092,8 +1103,8 @@ separation.
   `EthCLSpecs.Proofs.Heze` because `shouldExtendPayload` exists in both Gloas
   and Heze. `shouldExtendPayload_run` is the complete `.run` equation at
   `ForkChoiceStoreRun (Store map)` and carries `@[characterizes]`. The
-  right-hand side is the evaluation order: block lookup, `getCurrentSlot`,
-  the slot increment and assertion, `isPayloadVerified`,
+  right-hand side is the evaluation order: block lookup, the slot increment,
+  `getCurrentSlot`, the slot assertion, `isPayloadVerified`,
   `isPayloadInclusionListSatisfied`, then the inherited Gloas tail. Named
   corollaries cover the prefix rejects, the FOCIL gate, the vote membership
   asserts, and the inherited Gloas accept and reject arms. Successful binds
@@ -1102,11 +1113,11 @@ separation.
   corollary: if the initial block lookup and slot checks succeed, Heze
   rejects a verified payload when the queried root has a recorded `false`
   inclusion-list satisfaction result, and the runner state remains
-  unchanged. The bind lemmas it cites are the fork-neutral `run_throw`,
-  `except_bind_ok`, and `except_bind_error` in `EthCLLib/Proofs/Run.lean`, plus
-  `ForkChoiceStoreRun.throwArithmetic_run` in `EthCLLib/Proofs/StoreRun.lean`. They
+  unchanged. The bind lemmas it cites are the fork-neutral `run_bind`, `run_throw`,
+  `except_bind_ok`, and `except_bind_error` in `EthCLLib/Proofs/Run.lean`. They
   are stated at an arbitrary state type, so they apply to
-  `ForkChoiceStoreRun`. The successful path that records
+  `ForkChoiceStoreRun`. The checked slot increment reads through `hadd_un_eq`
+  (`EthCLLib/Proofs/CLUint.lean`). The successful path that records
   the result of `isInclusionListSatisfied` is proved in
   `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`. The successful
   handler path that writes `blockStates`, `payloads`, and
@@ -1133,8 +1144,7 @@ separation.
   `not_mem_getInclusionListTransactions_of_equivocators` names the equivocator
   exclusion. The items are `inclusionListItems`, the map fold, since `FcMap`
   has no fold law. The list-membership lemmas `mem_arrayUnion_iff` and
-  `nodup_arrayUnion` live in `EthCLLib/Proofs/Arith.lean`. The alpha.12
-  collector and its missing-timeliness corollaries went with the collector.
+  `nodup_arrayUnion` live in `EthCLLib/Proofs/Arith.lean`.
 
 - **`Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`** proves
   `recordPayloadInclusionListSatisfaction_run` in
@@ -1178,3 +1188,453 @@ separation.
   rather than the flat `EthCLSpecs.Proofs`, since Fulu declares the same function.
 
 - **`PROOF_LEDGER.md`** tracks candidate consensus proof targets and their status.
+
+## Stage 9 documentation audit record
+
+### Scope, revisions, and counting
+
+This record consolidates the eight documentation families of WS-92, task 9.2
+(WS-101). The source tree is `epic/WS-92` at `40d5e58`. It includes all eight
+family merges and the four 9.5 code tasks. The arithmetic contract is
+`SPEC_ARITHMETIC.md`; the Python pin is `eth_consensus_specs` 1.7.0b4,
+spec tag `v1.7.0-beta.4`.
+
+The tables below count resolved finding groups. One row is one group, even when
+several declarations share the correction. Review corrections to an existing
+group replace its first answer. Separate review findings have separate rows.
+Inspected matches that need no edit appear under retained dispositions and do
+not increase these counts. Cross-family rows track shared resolutions separately;
+their counts must not be added to the family counts.
+
+| Family | Audited corpus | Resolved groups | Delivered head |
+|---|---|---:|---|
+| 9.1a, WS-97 | `SPEC_ARITHMETIC.md`, `SPEC_AUTHORING_MODEL.md`, `SPEC_ARITHMETIC_LINTING.md`, and root `docs/CODING_STYLE.md` | 23 | `c5c7b09` |
+| 9.1b, WS-98 | This directory's `FRAMEWORK_ARCHITECTURE.md`, `SPECS_ARCHITECTURE.md`, `IMPLEMENTATION_NOTES.md`, `DISCREPANCIES.md`, `PROOF_LEDGER.md`, `FUTURE_WORK.md`, `PLAN.md`, and `README.md` | 15 | `e86a07e` |
+| 9.1c, WS-99 | Root README, contributor and agent instructions, security and conduct documents, PR template, `docs/monorepo-arch.md`, EthCLSpecs and PySpecTests READMEs; SizzLean README, manual and documents; hazmat, LeanRlp, LeanPoseidon, LeanSha256 documents; `scripts/compbench/README.md` | 3 | `b7bbaf6` |
+| 9.1d1, WS-100 | All 28 EthCLLib files: `Spec/`, `Internal/`, `EthCLLib.lean`, `Spec.lean`, `Proofs.lean`, and `Tests.lean` | 22 | `f074361` |
+| 9.1d2, WS-107 | All 30 EthCLLib files in `Proofs/`, `Tests/`, `PySpecTests/`; targeted searches over 217 Lean files in SizzLean, hazmat, LeanRlp, LeanPoseidon, LeanPoseidonProofs, LeanSha256, and `scripts/ProofCoverage.lean` | 10 | `2c6c605` |
+| 9.1d3, WS-108 | The 33 Fulu files, including containers, plus `EthCLSpecs.lean`, `Forms.lean`, `Fulu.lean`, `Gloas.lean`, `Heze.lean`, `Proofs.lean`, and `Tests.lean`, 40 files total | 19 | `4792eb3` |
+| 9.1d4, WS-109 | All 37 files in Gloas and Heze, including containers and interfaces | 18 | `311b724` |
+| 9.1d5, WS-110 | All 58 files in EthCLSpecs `Proofs/`, `Tests/`, `PySpecTests/`, and the bench | 26 | `3fbe87d` |
+
+The total is 136 resolved family groups. The 9.1d5 count of 58 files includes the
+three pin modules added by 9.5a, 9.5b, and 9.5c. Its issue estimated 55 files.
+The temporary arithmetic plan is outside the family corpus. Task 9.3 owns the
+integrated verification sweep; task 9.4 owns the index and status updates.
+
+Source hand-offs are issue comments. These IDs preserve the detailed evidence:
+
+| Family | Findings and final corrections, comment IDs |
+|---|---|
+| 9.1a | `01a1fc1f-76c7-777e-9a77-edc7878a71a6`; `01a1fc25-1d88-734b-95e0-f2dbec3d0013` |
+| 9.1b | `01a1fc1f-f8dc-7522-b726-0c868a56e2ca`; `01a1fc22-8303-73f4-84ed-6c6cfb29d066`; `01a1fc25-36ef-7ef8-84eb-5408a3fd48b4` |
+| 9.1c | `01a1fc21-bcc4-726e-aa79-320a34cb3a3c`; `01a1fc26-eeb0-7104-ab3b-f7e1846711da` |
+| 9.1d1 | `01a1fc37-d58d-718a-b6f8-74ee6299d0b5`; `01a1fc58-7b51-79d3-8d94-d65969ac2576`; `01a1fce1-e3fe-7783-89a1-57cecccf4187` |
+| 9.1d2 | `01a1fc6c-fbe6-7cae-91bd-61186e01ef9c` |
+| 9.1d3 | `01a1fd07-02d1-70bb-82a0-eab3fce8de10` |
+| 9.1d4 | `01a1fcea-9800-7589-8c7e-347b99b17e80`; `01a1fd50-d6ba-7c23-912f-4a491e86c677` |
+| 9.1d5 | `01a1fd0b-755b-705e-8bb4-77660a57efc5`; `01a1fd2f-9656-7300-893a-82bf4c8c993a`; `01a1fd46-1a44-71ac-8298-ab68504ed10f` |
+
+### Family findings and resolutions
+
+Paths in A and B are relative to this directory, except root `docs/CODING_STYLE.md`.
+Paths in D1 and D2 are relative to `packages/EthCLLib/EthCLLib/`.
+Paths in D3 through D5 are relative to `packages/EthCLSpecs/`.
+
+| ID | Document or site | Conflict and recorded resolution |
+|---|---|---|
+| A01 | Arithmetic §2 | The Heze assertion count omitted configuration checks. Records 177 function assertions and 13 module assertions, 190 total. |
+| A02 | Arithmetic §4.1 | The fault row invented a shift-count cause. Names `.range` and `.zeroDivision`; a negative shift count is `.range`. |
+| A03 | Arithmetic §4.2 | The matrix omitted implemented operand pairs and operators. Adds Lean `Int`, bitwise, shifts, power, positive divisors, mixed `&&&`, and 8-bit routes. |
+| A04 | Arithmetic §4.3 | The reward example used the wrong read and a placeholder write. Uses the body's `liftErr (getAt rewards vi)` and `setAt`. |
+| A05 | Arithmetic §4.5 | The sum seed lacked its type. Uses `(0 : Gwei)` and states the checked-fold behavior. |
+| A06 | Arithmetic §4.5 | The literal gate was hypothetical. Names the implemented `NeZero` bounds at both widths. |
+| A07 | Arithmetic §4.6 | The indexing description omitted `idx?` and helper names. Matches `ToIndex`, `getAt`, `setAt`, and `sszGetIdx`. |
+| A08 | Authoring §5 | The boundary table taught raw `UInt64` arithmetic. Describes the checked surface. |
+| A09 | Authoring §§6–7 | Two slot increments omitted binds. Each binds `nextSlot` before the store. |
+| A10 | Authoring §7 | The primitive table omitted checked binds and generic reads/writes. Adds them and states the accepted index kinds. |
+| A11 | Authoring §4.1 | The glossary omitted checked types and fault constructors. Adds them. |
+| A12 | Linting | Enforcement wording implied an active checker. States that no arithmetic linter enforces these rules; the proposal remains deferred. |
+| A13 | Coding style §1 | `processAttestation` had an old signature, unbound arithmetic, and stale paragraph counts. Uses the current Gloas form and five headers. |
+| A14 | Coding style §1 | The tree-filter example used a removed function and unbound horizon. Uses `filterNodeTree.go` with the short-circuit bind. |
+| A15 | Coding style §2 | `getHead.better` assumed pure weight queries. Uses monadic `betterOf`. |
+| A16 | Coding style §4 | The clock example used raw arithmetic and `.toNat`. Uses current `onTick`, checked binds, and structural `toPlainNat` fuel. |
+| A17 | Coding style §4 | The withdrawal cursor wrapped and defaulted on zero divisors. Uses the checked modulo and its empty-registry fault. |
+| A18 | Coding style §4 | The deposit-scan counterexample omitted a bind and used historical prose. Shows a hypothetical port with Python's addition order. |
+| A19 | Coding style §§5, 7 | Examples named removed helpers and narrowed raw intermediates. Uses current committee validation, `getCurrentSlot`, and `computeActivationExitEpoch`. |
+| A20 | Coding style backlog | Completed items remained candidates. Retains the request-ladder item only. |
+| A21 | Arithmetic §4.2 review | `CLInt` division/modulo with `Nat` was still absent. Adds `Nat` and Lean `Int` in either order, returning `Checked CLInt`. |
+| A22 | Coding style §1 review | `getExpectedWithdrawals` remained a paragraphing candidate despite existing phase breaks. Removes it. |
+| A23 | Coding style §1 review | An abbreviated snippet omitted text without marking the cut. Adds the omission marker. |
+
+| ID | Document or site | Conflict and recorded resolution |
+|---|---|---|
+| B01 | Notes, indexing | Queries were described as total reads without a reject channel. Names the raising builder/weight reads and `computeCommittee`'s checked bounds and assertion. |
+| B02 | Framework §10 | Raw arithmetic, narrowing, and correspondence guidance was obsolete. Describes checked modules, conversions, binds, codec boundaries, and laws. |
+| B03 | Framework §6 | Buckets and arithmetic causes were incomplete. Adds `ArithCause`, the lift, `outOfScope`, and current constructor descriptions. |
+| B04 | Framework §§4, 8.1 | A slot store omitted its bind; the maximum literal used a checked arithmetic expression. Binds the add and uses the bounded hexadecimal literal. |
+| B05 | Framework §§13–15 | Bucket names and test/proof references were stale. Uses current buckets, checked tests, and law modules. |
+| B06 | Specs architecture | Alias, timestamp, constant-kind, caught-error, and proof guidance used raw types. Matches checked units and current error handling. |
+| B07 | Notes, fork choice | Weight sums were described as wrapping. States the checked `Gwei` fold and raising queries. |
+| B08 | Notes, validator exit | Overflow rejection was described as an explicit assert. Names the checked epoch add and `valueError` wrapper. |
+| B09 | Notes, error model/module map | Buckets were incomplete and flag helpers were attributed to `Arith`. Names all buckets and the `Checked` flag helpers in `CLUint`. |
+| B10 | Notes, proofs | Theorem names, result types, and PTC fault counts were stale. Names current equations, four fallible PTC stages, and lift laws. X12 below completes the success/error descriptions. |
+| B11 | Discrepancies | The closed large-withdrawable-epoch entry named an assert. Names the checked add. No open arithmetic discrepancy remains there. |
+| B12 | Future work | The residual indexing sketch treated raising queries as total and used an unchecked fold. Restricts the residual and uses `Checked`, `foldlM`, and `toPlainNat`. |
+| B13 | Plan | Raw `UInt64` and `Nat` lifting appeared as current design. Labels those passages **Superseded** and points to the contract. |
+| B14 | Proof ledger | Conversion names, folds, PTC fault counts, and migration history were stale. Uses current names and four fallible stages; removes historical clauses. |
+| B15 | Docs README | The future-work entry described the wrong residual. Updates its description; structural links stay assigned to 9.4. |
+
+| ID | Document or site | Conflict and recorded resolution |
+|---|---|---|
+| C01 | `CONTRIBUTING.md` | Both builder-exit examples need the current conversion and rejecting out-of-range contract. Both use `.toPlainNat` and `.error (.outOfBounds …)`; only boxed/plain state differs. |
+| C02 | SizzLean architecture §7 | Consensus units were raw wrappers and their instances were attributed to SizzLean. Names `CLUint64` and EthCLLib's instance; keeps `Vector UInt8` byte instances in SizzLean. |
+| C03 | `SECURITY.md` | The C-shim path did not exist. Names the hazmat and LeanPoseidon `csrc/` paths. This is an incidental accuracy correction. |
+
+| ID | Module or site | Conflict and recorded resolution |
+|---|---|---|
+| D1-01 | `Spec/Arith` introduction | Raw `UInt64` and unbounded `Nat` were presented as spec arithmetic. Labels structural, codec, and proved-total helpers; names checked modules. |
+| D1-02 | `Spec/Arith` indexing | Default reads were offered as generic spec reads. Restricts total reads to known bounds and names raising reads. |
+| D1-03 | Raw `umax`, `umin`, `saturatingSub` | Helpers lacked a raw-word label. Labels them and points to checked forms. |
+| D1-04 | `isqrt`, `isqrtAux` | The raw helper was equated with the spec-facing function. Names the iteration and `CLUint64.integerSquareroot`. |
+| D1-05 | Modulo lemma, `vmodGet` | The raw modulo route had stale callers. Labels the proved-total route through `ValidModulus` and names current callers. |
+| D1-06 | `Errors` helper section | Raw helper advice and caller claims were false. Fork bodies use checked operators; only tests call `checkedAdd/Sub/Mul`. `checkedSucc` models the spec counter and supplies a termination bound. |
+| D1-07 | Arithmetic throw helpers | The named caller was stale. Describes the checked lift and the Heze `CLInt` modulo route. |
+| D1-08 | Arithmetic error constructors | Prose omitted the lift. Names `ofArithFault` and keeps source examples as examples. |
+| D1-09 | `Errors`, Python context | Four spans pointed to configuration code. Uses `context.py:451-462`. |
+| D1-10 | Store expected rejection | The wrapper span was stale. Uses `fork_choice.py:383-387`, the `add_block` except clause. |
+| D1-11 | `ArithCause`, `arithCause` | A temporary-stage narrative described the core. Names the module and lift theorem. |
+| D1-12 | `Checked` introduction | Temporary stages appeared as owners. Names the current operator modules. |
+| D1-13 | `Elab` hazards | Spike history and a combined bind could teach an invalid authoring form. Describes the hazard and requires split conversion binds. |
+| D1-14 | `Elab` cost note | An early measurement implied future fork use. Labels it **Historical** and removes the forward claim. |
+| D1-15 | `toPlainNat` | The docstring equated it with Python `int(x)`. States Lean `Nat`; `toCLInt` models Python `int`. |
+| D1-16 | `ofNatLT` | Caller restrictions omitted guarded fork-body uses. Requires the caller's guard or preset proof. |
+| D1-17 | Width paragraph | Closed stages appeared as future work. States 32-bit codec-only and 256-bit data-only use. |
+| D1-18 | 8-bit/SSZ sections | Migration history described current fields. Uses current-state descriptions. |
+| D1-19 | `CLTotal` divisor | A temporary stage tag was redundant. Removes it. |
+| D1-20 | `sszGetIdx` | A preceding assert was called `IndexError`. Names `AssertionError`. |
+| D1-21 | `isValidMerkleBranch` | The removed deposit caller was still named. Names pinned light-client/sidecar callers outside the modeled bodies and current framework tests/proofs. Closes the 9.5c route. |
+| D1-22 | Proof root | `saturatingSub` was ambiguous. Names the raw-word theorem and checked law module. |
+
+| ID | Module or site | Conflict and recorded resolution |
+|---|---|---|
+| D2-01 | `Proofs/MerkleBranch`, `branchFold` | Public visibility had a false outside-module justification. Names public theorem statements that expose the fold. |
+| D2-02 | Reconstruction theorem | The docstring still claimed fork-ledger consumers. Describes its reconstruction contract. |
+| D2-03 | Honest-opening theorem | The removed deposit-ledger dependency and replacement row name were wrong. Names SizzLean's `branch × opening` row. Closes the 9.5c route. |
+| D2-04 | `PySpecTests/Driver` | Fork choice and rewards were described as future work. Names current interface dispatch. |
+| D2-05 | `Tests/CLCheckedElab` introduction | The tested hazard description was unclear. Names the two elaboration hazards. |
+| D2-06 | `reserveChurn` test | A self-referential shape label obscured the check. Names the conversion, checked add, and non-literal `Nat`. |
+| D2-07 | Runner interface/error tests | Python helper spans were stale. Uses context `451-462`, helper `240-245`, `460-463`, `429-433`, `486-493`, block except `383-387`, tick `306-310`, and replay `394-400`. |
+| D2-08 | Authoring/law/replay/fold comments | Temporary stages appeared as future consumers. Describes current tests and proof uses. |
+| D2-09 | Elaboration tests | Temporary stages and external spike findings obscured expression shapes. Names the tested operators directly. |
+| D2-10 | Literal tests | The docstring denied a checked power route. Distinguishes bare result types from `Checked CLUint64` power. |
+
+| ID | Module or site | Conflict and recorded resolution |
+|---|---|---|
+| D3-01 | Fulu constants introduction | Unbounded reward intermediates and narrowing were taught as current. Names checked constants, structural sizes, and mixed `Gwei op Nat`. |
+| D3-02 | Derived constant views | The description claimed a raw config consumer. States proof-carrying `ofNatLT`. |
+| D3-03 | Period views | Contrastive wrapping prose obscured preset rejection. States the pinned module's raising behavior. |
+| D3-04 | Slot-to-epoch views | Temporary-stage references described consumers. Names slot-to-epoch formulas. |
+| D3-05 | Effective balance increment | `Gwei` was equated with `UInt64`; the `Nat` view had a false caller list. Names `CLUint64`, body `…G` uses, and test-only `Nat` uses. |
+| D3-06 | Reward weights | Checked weights were labelled `Nat`. Separates the structural factor from checked weights. |
+| D3-07 | Rewards introduction | A closed epoch retype was still promised. Describes checked epoch subtraction. |
+| D3-08 | `getBaseReward` | Jargon obscured the reject route. Names the `ArithFault` lift. |
+| D3-09 | `balanceAfterWithdrawals` | Repeated prose and a stale context span obscured faults. Removes repetition and uses `451-462`; X07 supplies the exact exception class. |
+| D3-10 | Fulu config setters | The bound check before the raw conversion was omitted. States `applyConfigOverrides`' range check before `UInt64.ofNat`. |
+| D3-11 | Operations introduction | Input reads were described as assertion-guarded. Names raising reads, `.outOfBounds`, and `assertionAndIndex`. |
+| D3-12 | Attestation comment | Punctuation conflicted with the writing rules. Splits the sentence and uses commas. |
+| D3-13 | Pubkey lookup | The removed deposit caller and raw index type remained. Names current callers and checked index casts. |
+| D3-14 | Tree filter | The epoch comparison was labelled `UInt64` with historical wording. Names `Epoch`. |
+| D3-15 | `onTick` | Contrastive wording obscured fuel exhaustion. States the thrown reject on an exhausted bound. |
+| D3-16 | Inactivity field | A completed rename was still justified. Describes the current `CLUint64` element. |
+| D3-17 | Epoch-processing introduction | Completed substeps appeared as future work. Lists current substeps and the transition spine. |
+| D3-18 | EthCLSpecs root | Gloas appeared as a future fork. Names all three current forks and their lineage. |
+| D3-19 | Python spans | Rewards, registry, accessors, time, committees, epoch processing, operations, and registry-update spans were stale. Checks them against 1.7.0b4. Seven moved Lean citations in the proof ledger receive span-only updates. |
+
+| ID | Module or site | Conflict and recorded resolution |
+|---|---|---|
+| D4-01 | PTC initialization | The library, helper name, fault count, offset bound, and pin history were stale. Names `SSZValueError`, checked operators, general offset bounds, and current fallible stages. |
+| D4-02 | Attestation inclusion slot | Hypothetical wrapping prose obscured the real fault. Names checked `Slot` addition and `uncaughtFault`. |
+| D4-03 | Payload attestation | Wrapping prose obscured the checked add. Names `.arithmetic` at the maximum slot and its classification. |
+| D4-04 | Fork-choice attestation | The comment justified a hypothetical wrap. Names `SSZValueError` and `.transition (.arithmetic …)`. |
+| D4-05 | Envelope slot number | A data-only field was promised a retype. Labels the raw field as comparison-only data. |
+| D4-06 | Gloas `onTick` | Fuel/history prose was stale. States the `todo` reject on fuel exhaustion. Closes the deferred phrasing item. |
+| D4-07 | `getPtc` | The comment assumed `MIN_SEED_LOOKAHEAD = 1`. Uses `(MIN_SEED_LOOKAHEAD + 2) * SLOTS_PER_EPOCH`. |
+| D4-08 | Progressive lists | Pin history and issue labels obscured current behavior. Describes the pin and capped-constructor `.listFull` fault. |
+| D4-09 | Gloas/Heze withdrawals | Context spans and exception names were stale. Uses `451-462` and checked subtraction's `SSZValueError`. |
+| D4-10 | Operation interfaces | Comments depended on the temporary plan. Names the `maxHeartbeats` annotation directly. |
+| D4-11 | Fork-choice interfaces | Block/replay/vote-check helper spans were stale. Uses `323-426`, return `387`, replay `394-400`, and vote checks `511-513`. |
+| D4-12 | Python function spans | Churn, quorum, cover-bid, and withdrawal spans included blank lines or missed code. Uses `7876-7886`, `6678-6685`, `7867-7873`, `7767-7775`, and `8003-8031`. |
+| D4-13 | Gloas constants | Temporary audit labels and jargon obscured current facts. Uses current-state descriptions. |
+| D4-14 | Builder-deposit domain | An implemented signature check was described as deferred. Names `isValidBuilderDepositSignature`. |
+| D4-15 | Epoch-processing introduction | Restated and implemented substeps were called inherited or `todo`. Lists current overrides and new substeps. |
+| D4-16 | Churn/slashing comment | `slashValidator` was called inherited. States that Gloas restates it. |
+| D4-17 | Payment index | A removed caller remained listed. Names parent-payload, attestation, and payload-bid callers. |
+| D4-18 | Builder-deposit/flag comments | Pin history and punctuation conflicted with the writing rules. Uses current-state wording and commas. |
+
+| ID | Module or site | Conflict and recorded resolution |
+|---|---|---|
+| D5-01 | Fulu balance proofs | A removed `processDeposit` caller remained. Names `applyPendingDeposit`. Closes the 9.5c route. |
+| D5-02 | Fulu balance proof introduction | The library, overflow class, and contract section were wrong. Names `eth-ssz-specs` 0.1.0, `SSZValueError`, and §4.2. |
+| D5-03 | Fulu balance theorems | Pin history and a nonexistent theorem name remained. Uses the pinned source and `decreaseBalance_written_toNat`. |
+| D5-04 | `GetPtc` proofs | A checked offset was described as raw. States the checked chain and the equality obtained from a passing caller. |
+| D5-05 | Cover-bid proof | Prose moved the subtraction before its guard. Matches the theorem's else-branch bind. |
+| D5-06 | PTC-window proof | Two/three-fault descriptions omitted fallible stages. Names three checked steps and `computePtc` rejects. |
+| D5-07 | Builder-exit proof | Migration history, a raw slot type, and delay 8192 were wrong. Names checked addition and the shipped delay 64. |
+| D5-08 | Uncached proof | A referenced lemma did not exist. Names current/previous attestation-loop lemmas. |
+| D5-09 | Proof indices | Theorem names, predicates, result types, and the fork-choice index were stale. Uses current names and checked contracts; adds `ForkChoiceRun`. |
+| D5-10 | Epoch pins | All failures were described as lifted `.arithmetic`. Distinguishes direct `.range` causes from lifted faults. |
+| D5-11 | Fulu fork-choice pins | The context span and exception class were stale. Uses `451-462` and `SSZValueError`. |
+| D5-12 | Heze fork-choice pins | An empty-committee guard was invented. Names `CLInt` modulo by zero and its uncaught `.zeroDivision`. |
+| D5-13 | Arithmetic pins | Old forms appeared as past behavior. States checked counterfactuals and verifies each against the pin. |
+| D5-14 | Pin Python spans | Epoch, cast, and lookup spans were short or long. Uses `1871-1891`, `1252-1275`, and `4515-4518`. |
+| D5-15 | Walking skeleton | A tested `outOfScope` entry was called `todo`. Names the actual entry and skip bucket. |
+| D5-16 | Constant-view tests | Proof fields were implicit and the sentence combined claims. Names all four fields and splits the sentence. Closes the deferred item. |
+| D5-17 | Pin/proof headers | Temporary stages, untracked script paths, and historical labels obscured current claims. Removes them while keeping oracle claims. |
+| D5-18 | Server protocol | Eight fields and unwired fork choice were claimed. Documents nine required fields, optional `cfg=`, and current dispatch. |
+| D5-19 | Bench example | The documented interface call omitted `forkVersion`. Adds `gloasForkVersionMainnet` in the comment example. |
+| D5-20 | Proof/pin style | Banned words and history obscured claims. Uses direct current descriptions and counterfactual pin forms. |
+| D5-21 | Fork-choice payment bridge | The prose promised unconditional writes. States the successful quorum premise and absence of a capacity premise. |
+| D5-22 | Payment proof | Module, section, theorem, and index prose described success only. States propagated quorum errors and both writes after quorum success. |
+| D5-23 | Builder-exit premises | Several descriptions omitted an in-range index or confused sum-bound requirements. Names both success premises, the bound-free out-of-range reject, and shipped corollaries that discharge only the sum bound. |
+| D5-24 | Operations proof | The success reading omitted six length bounds. Names those bounds in the introduction, summary, and theorem docstring. |
+| D5-25 | Gloas payment index | The proof index described the success postcondition alone. Names the run equation and propagated quorum error. |
+| D5-26 | Payment readings | “Unconditional” could imply success. Uses “reading with no side hypothesis” for the premise-free equivalences. |
+
+### Cross-family resolutions
+
+These rows reconcile the routed findings on the integrated source tree. A repeated
+route has one disposition. The consolidation changes documentation and comments only.
+
+| ID | Shared finding | Resolution at 9.2 |
+|---|---|---|
+| X01 | Raw arithmetic guidance repeated in the contract, framework architecture, and `Spec/Arith` | A08, B02, and D1-01 agree on checked operators. The raw helpers retain their explicit framework labels. |
+| X02 | Missing binds repeated in authoring, framework, and coding-style examples | A09, A13–A19, and B04 resolve the duplicates. Current examples bind fallible arithmetic immediately and preserve branch order. |
+| X03 | Conversion names and raw config construction | Checks the actual signatures in the table below. Clarifies `trustedOfUInt64`'s docstring and both Gloas/Heze config comments: the runner validates before `UInt64.ofNat`. Fulu already states that check. |
+| X04 | Width rule required arithmetic matrices for data-only widths | Clarifies contract §4.1: 64/8-bit arithmetic has matrices; 32-bit codec and 256-bit data uses keep codec rules. Any future arithmetic use requires a checked surface first. |
+| X05 | Framework proof/test prose still taught raw helpers as fork operators | Labels `Proofs/Arith` as raw-word laws and points to `Proofs.CLUint`. Labels `Tests/FrameworkUtils`' raw helpers. Corrects Fulu `isFinalizationOk` to name checked `Epoch` subtraction. |
+| X06 | Modulo-bound comments named the implementation lemma as direct consumer | Fulu constants now name `ValidModulus` and `vmodGet`. The raw lemma remains a proved internal implementation. |
+| X07 | Pinned exception library and repeated context/block spans | Uses `eth-ssz-specs` and `SSZValueError` in Fulu balance/withdrawal comments. Fixes the notes' context/block spans and the four Fulu interface block/replay anchors. The `add_block` span is `323-426` (ends on the `return` line, not the following blank line) and its `except` clause is `383-387`, now used consistently in `Spec/Errors`, this record, and `PySpecTests/Interface`. D4/D5 already resolve their copies. |
+| X08 | Sync-aggregate lookup span ended one line early | Extends both `Spec/Errors` and Fulu transition comments to `4515-4518`, matching D5-14. |
+| X09 | PTC-window fault counts disagreed between documents and proofs | B10/B14, D4-01, and D5-06 name the same sequence: epoch add, start-slot product, slot add, and `computePtc`. |
+| X10 | Removed `processDeposit` survived in SizzLean records | Reconciles SizzLean's plan and ledger dependency, opening, deposit-tree, and related-work passages. Removes the invalid operations citation. Keeps incremental-tree work explicitly out of modeled-fork scope; the framework branch bridge remains proved. D1-21, D2-03, and D5-01 close the Lean copies. |
+| X11 | Deferred Fulu/Gloas comments and restatements | D3/D4 resolve constants, Python spans, and fuel phrasing; D5 resolves constant-view proof fields. Restated comments agree on checked arithmetic. Different sampler faults retain their documented source-specific behavior. |
+| X12 | Success-only or unconditional claims repeated in the ledger and notes | Qualifies the ledger's builder-exit row with both premises. Rewrites the notes' builder-exit entry to include index and arithmetic rejects. Qualifies the notes' payment writes with quorum success and states error propagation. Matches D5-21–D5-25. |
+| X13 | Framework style items explicitly routed by WS-100 | Replaces “standing case”, “escape hatch”, and “ride” wording at the eight named sites in `Errors`, `State`, `Assert`, `Forms`, `FiniteMap`, `Hasher`, `NestedMachine`, and `Internal/Capture`. |
+| X14 | Notes called removed Heze corollaries a current history record | Removes the alpha.12 collector sentence. The entry describes the current equations and membership theorems. |
+| X15 | Proposed removal of unused raw helpers and duplicate `len` functions | Retains the APIs with explicit raw/structural labels. Removal and deduplication are optional code work, outside this documentation task. Both `CLInt.len` and generic `Spec.len` return `CLInt`. |
+| X16 | Builder/validator cast comments and a suggested size-bound lemma | Retains the comments verified in 9.1d4 against the size bounds. The proposed reusable lemma is optional code work; no documentation conflict requires it. |
+| X17 | A trusted maximum-value fixture could use a checked literal | Retains the in-range fixture. The existing trusted construction is accurate test setup; literal replacement is optional code work. |
+| X18 | The ledger's builder-exit row and the proof module's "no-wrap" header | The `processBuilderExitRequest` row now states the exact result: the selected builder receives `withdrawableEpoch` equal to the `Nat` sum of the current epoch and the delay, under the shipped sum bound. The `InitiateBuilderExit` section header and the `Gloas.lean` proof index now name the sum bound instead of no-wrap; the checked add raises past the bound, so it cannot wrap. Routed by the 9.1b review (`01a1fc22-8303-73f4-84ed-6c6cfb29d066`). |
+| X19 | `PLAN.md` used `todo` for two meanings | The classify-bucket bullet now calls `todo` the work-queue bucket, matching `FRAMEWORK_ARCHITECTURE.md` §6 and the separate `outOfScope` skip bucket. The fork-choice note in this record likewise reports `.todo` as a work-queue `xfail` and `.outOfScope` as a `skip`. Routed by the 9.1b review (`01a1fc22-8303-73f4-84ed-6c6cfb29d066`). |
+| X20 | The §10 `Spec/Arith.lean` row omitted the raw-word helpers and the modulo-bound route | The row now lists `umax` / `umin` / `saturatingSub` and `ValidModulus` / `vmodGet`, matching this record and D1-03/D1-05. This is the cross-family description mismatch the reviewer routed. |
+
+### Conversion result types
+
+The declaration determines whether a name returns a checked value or a plain
+integer. These signatures reconcile the document and docstring uses.
+
+| Declaration | Actual result | Documented use |
+|---|---|---|
+| `CLUint64.toPlainNat`, `CLUint8.toPlainNat` | Lean `Nat` | Proofs and justified structural/framework boundaries |
+| `CLInt.toPlainInt` | Lean `Int` | Proofs and justified framework boundaries |
+| `CLUint64.toCLInt`, `CLUint8.toCLInt` | `CLInt` | Python `int(x)` |
+| `CLInt.toCLUint64?` | `Checked CLUint64` | Checked unsigned cast from a signed spec integer |
+| `CLUint64.ofNat?`, `ofInt?`, `ofCLInt?` | `Checked CLUint64` | Range-checked construction |
+| `CLUint8.ofNat?` | `Checked CLUint8` | Range-checked 8-bit construction |
+| `CLUint64.ofNatLT` | `CLUint64` | Caller supplies the range proof |
+| `CLUint64.trustedOfUInt64`, `CLUint8.trustedOfUInt8` | Respective checked-width value, with no `Checked` result | Exact raw-word bridge after validation, codec conversion, or proved-total internal operation |
+| `CLInt.len`, generic `Spec.len` | `CLInt` | Spec-facing collection length |
+| `getAt` | `Except IndexError α` | Pure raising collection read |
+| `setAt` | `Except IndexError ρ` | Pure raising collection write |
+| `sszGetIdx` | Ambient `m α`, with `MonadExcept E m` and `ErrorConv IndexError E` | Raising read lifted into the caller's error channel |
+
+`getAt` remains a live API. The spike's use of that spelling does not make the
+current typed-index operation obsolete. The server's string `toNat?` parses input;
+it is distinct from a spec-integer conversion.
+
+### Retained raw, historical, and superseded descriptions
+
+| Corpus | Inspected disposition |
+|---|---|
+| SizzLean manual, architecture, optimisation records, plan, and ledger | Raw codec words, structural indices, cache calculations, and the manual's raw epoch-update example belong to SizzLean. Its checked-consensus-unit paragraph uses EthCLLib's contract. |
+| hazmat, LeanRlp, LeanPoseidon, LeanPoseidonProofs, LeanSha256 | FFI arguments, codec bounds, field arithmetic, and hash operations retain their packages' intentional raw arithmetic. The Lean search pass found no false checked-surface reference. |
+| SizzLean release counts, benchmark records, and research documents | Existing release, measurement, and research labels identify their historical scope. The audit preserves those measurements. |
+| `Spec/Elab` cost note | Explicitly labelled **Historical**, measured before fork-body use. It provides no current performance baseline. |
+| EthCLSpecs `PLAN.md` arithmetic design | Explicitly labelled **Superseded**. Current guidance points to the checked contract and framework architecture. |
+| `SPEC_ARITHMETIC_LINTING.md` | Spike results remain evidence; linter implementation and activation remain future work. |
+| Framework internals and proofs | Raw modulo behind `ValidModulus`, codec conversions, native projections, carry tests, and bounded literals have stated proofs or boundary roles. |
+| Fulu/Gloas/Heze data | Raw byte buffers, payload/version sentinels, data-only indices, gas schedules, and comparison-only payload fields retain their labels. Structural counters and fuel remain structural. |
+| Pins and bench fixtures | Old wrapping/defaulting forms are labelled counterexamples. Trusted constructors build in-range fixtures. The pins describe the fault that current code raises. |
+| Contract forbidden-form tables and coding-style “before” snippets | These are labelled rejected forms or teaching counterexamples. Current “after” snippets use checked binds. Both contributor theorem examples use the current arithmetic and error contract. |
+
+The architecture/records family found no Stage 0/4/5/7/8 cost table to relabel.
+Those working measurements remain assigned to Stage 10's rollup.
+
+### Explicit routes outside arithmetic reconciliation
+
+No arithmetic guidance conflict remains open in the collected family findings.
+Three non-arithmetic groups remain assigned outside 9.2. They are recorded here so
+the Epic Lead can sequence them without losing the original findings.
+
+1. **R1, index and status work, 9.4 (WS-103).** `PLAN.md` still labels all phases
+   pending. Root README and `CLAUDE.md` reading lists omit the arithmetic contract.
+   `CLAUDE.md` omits LeanRlp from its package list. `docs/monorepo-arch.md` understates
+   the document set. SizzLean's plan/README carry old C-shim paths, its architecture
+   omits Heze from the container list, and SizzLean/hazmat carry old fork ranges.
+   The Gloas proof index reaches `KeepsUncached` transitively. Generated coverage
+   blocks stay owned by `proof-coverage-update`. These are the reported link/status
+   observations; 9.4 must check their current disposition before editing.
+2. **R2, non-arithmetic prose, Epic Lead.** The family hand-offs explicitly left
+   historical wording outside arithmetic scope. Reported Fulu sites are the
+   alpha.12 and `aed053b` notes in `ForkChoice`, old whole-field prose in `Balances`,
+   the dataclass note in `Blocks`, movement prose in the `Tests` root, and wording
+   in `Forms`. Gloas sites are version comparisons in `slashValidator`, fork-choice
+   helpers, operations, withdrawals, and interfaces, including the old “Phase 4”
+   label. Heze sites are version comparisons in constants, inclusion-list
+   containers, fork choice, and signing. Root coding style §6 retains deposit-scan
+   history. The "ride" wording that X13 fixed at the eight WS-100 sites remains
+   outside them in `EthCLLib/Tests/CLAuthoring.lean:250`, `EthCLLib/Tests/TierMerge.lean:12`,
+   `EthCLLib/Tests/ForkScoping.lean:25`, `EthCLLib/Proofs/KeepsUncached.lean:612`,
+   `EthCLSpecs/Forms.lean:28`, `EthCLSpecs/Fulu/Transition.lean:122`,
+   `EthCLSpecs/Gloas/Upgrade.lean:86`, `EthCLSpecs/Heze/Upgrade.lean:93`,
+   `EthCLSpecs/Heze/Fork.lean:12`, `EthCLSpecs/Gloas/ForkChoice.lean:872`, and
+   `EthCLSpecs/Heze/ForkChoice.lean:392`. These passages
+   need a separate current-state style pass. Their exact sites are recorded in the
+   source hand-offs for 9.1a, 9.1d1, 9.1d2, 9.1d3, and 9.1d4.
+3. **R3, tracker IDs in the committed record, Epic Lead.** The source table above
+   holds Multica comment UUIDs, and the command list below opens with
+   `git merge epic/WS-92`. A reader on GitHub cannot resolve the branch name or the
+   UUIDs. `WS-` issue IDs already appear in the package documents, so those are
+   existing practice; the comment UUIDs are new to the repository. Keeping the
+   hand-off IDs as the audit's source of truth and replacing them with stable
+   in-tree labels are both defensible. This policy choice is for the Epic Lead.
+
+### Commands and evidence
+
+Each family re-ran `just lint`, `just check-citations`, and `just check-constants`.
+The Lean families also report the affected library and runner builds and an
+unchanged proof baseline. The 9.1d4 coder reported its builds pending; its review
+thread records successful `ethcl-test` and `build-cli` completion. Task 9.3 verifies
+the full integrated tree, including coverage; see "Integrated verification sweep
+(9.3)" below.
+
+The source hand-offs record targeted searches for raw `UInt64`/`UInt8` guidance,
+`UInt64.ofNat`, `.val`, trusted constructors, unbounded intermediates, wrapping,
+error classes, conversion names, temporary retypes, and unbound arithmetic examples.
+They separate comment matches from executable internals. Remaining matches have
+the dispositions above. The consolidation checks the routed sites and shared
+guidance; it does not repeat the family audits.
+
+Commands for the consolidation, from the repository root:
+
+```bash
+git merge epic/WS-92
+git grep -n -E 'toPlainNat|toPlainInt|toCLInt|toCLUint64\?|ofNat\?|ofInt\?|ofCLInt\?' -- packages/EthCLLib/EthCLLib/Spec
+git grep -n -E '424-435|382-406|400-406|4515-4517|remerkleable|checkedSub' -- packages/EthCLSpecs/EthCLSpecs/Fulu packages/EthCLLib/EthCLLib/Spec/Errors.lean
+git grep -n -E 'processDeposit|unconditional|missing-timeliness' -- packages/SizzLean/docs/PLAN.md packages/SizzLean/docs/PROOF_LEDGER.md packages/EthCLSpecs/docs/PROOF_LEDGER.md packages/EthCLSpecs/docs/IMPLEMENTATION_NOTES.md
+git grep -n 'TEMPORARY CROSSING' -- '*.lean'
+just ethcl-test
+just build-cli
+just lint
+just check-citations
+just check-constants
+just proof-coverage-check
+git diff --check
+```
+
+The expected empty `TEMPORARY CROSSING` search exits 1. Descriptions of removed
+deposit entry points in SizzLean now explain scope. Remaining raw helper names
+describe labelled framework internals or the audit findings themselves.
+
+Family evidence uses 677 test jobs, 628 runner jobs, 194 citations in nine files,
+166 constants, and 87 proof claims. The constants retain two untabled and three
+tier-only advisories. Relative to Stage 8.5, the three 9.5a–9.5c pin modules add
+three jobs; 9.5c removes two ledger citations; 9.5d removes
+`maxEffectiveBalanceElectra`. The runner and proof counts stay unchanged.
+The documentation consolidation adds no vector evidence; task 9.3 owns the smoke
+confirmation and Stage 10 owns the final full matrix.
+
+Consolidation results on the source tree plus the 9.2 edits:
+
+| Command or comparison | Result |
+|---|---|
+| `just ethcl-test` | Passed, 677 jobs |
+| `just build-cli` | Passed, 628 jobs |
+| `just lint` | Passed |
+| `just check-citations` | Passed, 194 citations in nine files |
+| `just check-constants` | Passed, 166 constants; two untabled and three tier-only advisories |
+| `just proof-coverage-check` | Passed, 87 claims |
+| Targeted searches above | Inspected; stale source/library spans are absent from the routed Fulu sites. Raw helper matches are labelled internals. Scope descriptions and audit rows explain the remaining deposit/history matches. |
+| `TEMPORARY CROSSING` search over Lean files | Empty |
+| Lexical comparison against `40d5e58` | All 19 changed Lean files have identical non-comment text and line counts. No cited Lean span moves. |
+| Baselines and generated README blocks | Byte-identical to the source tree |
+| `git diff --check` | Passed |
+
+The build reused copied local Lake caches and gitignored native vendor trees.
+Lake rebuilt modules whose source hashes changed. No formula, signature, theorem
+statement, or characterization tag changes in this consolidation.
+
+### Integrated verification sweep (9.3)
+
+Task 9.3 (WS-102) re-runs the build and project gates on the integrated
+`epic/WS-92` tree at `5ff4e967`. The sweep
+checks the documentation edits of 9.1a through 9.2 and the code edits of 9.5a
+through 9.5d together. It re-runs the targeted searches and inspects every
+remaining match. No new conflict surfaced, so no reconciliation edit is needed;
+every remaining match falls under a disposition in the sections above.
+
+| Command | Result |
+|---|---|
+| `just ethcl-test` | Passed, 677 jobs |
+| `lake build EthCLSpecsBench` | Passed, 672 jobs |
+| `just build-cli` | Passed, 628 jobs |
+| `just lint` | Passed |
+| `just check-citations` | Passed, 194 citations in nine files |
+| `just check-constants` | Passed, 166 constants against 244 upstream names; two untabled and three tier-only advisories |
+| `just proof-coverage-update` | Empty diff |
+| `just proof-coverage-check` | Passed, 87 claims |
+| `just ethcl-pyspec-smoke` | Passed; Fulu 155 passed / 46 skipped, Gloas 207 / 52, Heze 209 / 52 |
+| `git grep 'TEMPORARY CROSSING' -- '*.lean'` | Empty (exit 1) |
+| `git diff --check 5ff4e967 170f0b00` (the 9.3 edits) | Clean |
+
+Differences from the Stage 8.5 reference, each with its cause:
+
+- `ethcl-test` 674 to 677 jobs: the three pin modules of 9.5a, 9.5b, and 9.5c.
+- `check-citations` 196 to 194 citations: 9.5c removes the two removed-`processDeposit` ledger citations.
+- `check-constants` 167 to 166 constants: 9.5d removes `maxEffectiveBalanceElectra`.
+- `build-cli` 628 jobs, `proof-coverage` 87 claims, and the smoke counts are unchanged.
+
+Targeted searches re-run over the integrated tree:
+
+| Search | Matches | Disposition |
+|---|---:|---|
+| Raw `UInt64` / `UInt8` in documents | 92 | Data-only byte vectors, contract comparison tables, audit rows, the temporary plan, and other-package raw code. No current spec-arithmetic guidance. |
+| Unbounded / wrapping wording in documents | 74 | Contract rejected-form tables, labelled historical and superseded passages, and this audit record. |
+| `UInt64.ofNat` and `.val` in Lean | 769 | Codec conversion after a range check, structural projections, and labelled framework internals. |
+| Trusted constructors (`trustedOfUInt64`, `trustedOfUInt8`, `ofNatLT`) in Lean | 184 | Bridge after validation or a preset proof; the docstrings state the caller obligation. |
+| Obsolete conversion names (`getAt`, `toNat?`) in Lean | 126 | `getAt` is the live typed-index read and `toNat?` is the server input parse, both matching the conversion table above. |
+| `spike` in Lean and documents | 52 | Module names, the deferred linter document, and labelled historical or superseded passages. |
+| Error-class wording (`IndexError`, `AssertionError`, `SSZValueError`, `outOfBounds`) in documents | 78 | Current contract descriptions and audit rows. |
+| Arithmetic examples that omit binds in documents | 12 | The labelled rejected form at `SPEC_ARITHMETIC.md:308`, the bound-dividend total route at `SPEC_ARITHMETIC.md:264`, list concatenation, and intentionally raw LeanPoseidon and SizzLean examples. No current guidance teaches an unbound checked computation. |
+
+The search commands, run from the repository root on `5ff4e967`:
+
+```bash
+git grep -n -E 'UInt64|UInt8' -- '*.md'
+git grep -n -i -E 'unbounded|wrapping|overflow' -- '*.md'
+git grep -n -E 'UInt64\.ofNat|\.val\b' -- '*.lean'
+git grep -n -E 'trustedOfUInt64|trustedOfUInt8|ofNatLT' -- '*.lean'
+git grep -n -E '\bgetAt\b|\btoNat\?' -- '*.lean'
+git grep -n -i -E 'spike' -- '*.lean' '*.md'
+git grep -n -E 'IndexError|AssertionError|SSZValueError|outOfBounds' -- '*.md'
+git grep -n -E 'let [A-Za-z_][A-Za-z0-9_]* := .*[+*/]|let [A-Za-z_][A-Za-z0-9_]* := .* - ' -- '*.md'
+```
+
+The counts are matching lines.
+
+The routed spans resolve at their documented sites: `context.py:451-462`,
+`fork_choice.py:383-387`, `fulu/minimal.py:4515-4518`, and the `add_block` span
+`323-426`. The verification cross-references this record and adds no finding of
+its own. The builds reused copied local Lake caches and the gitignored native
+vendor trees.

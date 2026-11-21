@@ -20,10 +20,10 @@ This file establishes the two things such a proof needs.
 is a real fork-choice `forkdef` proved at `GloasStoreRun`, the pure column's store monad.
 `getSlotsSinceGenesis` is the subject because it is small and it throws. At v1.7.0-beta.4 it
 is `compute_slot_at_time_ms(store.genesis_time_ms, store.time_ms)`, a state-machine clock
-helper whose checked `uint64` subtraction reaches the store machine through `liftErr`. That
-checked op is the reason the fork-choice read layer is monadic at all, and the lift is how
-every clock read crosses into fork choice, so proving the equation at the pure monad exercises
-both without dragging in a walk or a nested transition.
+helper whose checked `uint64` subtraction and division reach the store machine through the
+arithmetic lift. Those checked ops are the reason the fork-choice read layer is monadic at all,
+and the lift is how every clock read crosses into fork choice, so proving the equation at the
+pure monad exercises both without dragging in a walk or a nested transition.
 
 **A route for the state-machine theorems.** `NestedStateMachine`
 (`EthCLLib/Spec/NestedMachine.lean`) resolves the nested monad from the store's, and for
@@ -40,7 +40,9 @@ namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLLib.Spec (HasherTag StoreTransitionError MapKind FcMap NestedStateMachine
   runNestedStateTransition runNestedStateTransition_of_ok)
-open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState BuilderPendingWithdrawal)
+open EthCLSpecs.Gloas (Preset Config BuilderIndex BeaconState Builder BuilderPendingWithdrawal Gwei)
+open EthCLLib.Spec (Checked CLUint64 ArithFault)
+open EthCLLib.Proofs (sub_eq_ok sub_ok_iff div_eq_ok)
 open EthCLSpecs.Gloas (Store getSlotsSinceGenesis getCurrentSlot State currentEpochOf
   initiateBuilderExit processBuilderPendingPayments)
 open EthCLLib.Proofs (pureState ForkChoiceStoreRun)
@@ -52,36 +54,83 @@ open SizzLean.Cache
 abbrev GloasStoreRun [Preset] [HasherTag] (map : MapKind) : Type → Type :=
   ForkChoiceStoreRun (Store map)
 
-/-- **A fork-choice `forkdef`, at the pure store monad.** `get_slots_since_genesis` on a
-store whose clock has not advanced past genesis returns `0`, leaving the store alone.
+/-- `compute_slot_at_time_ms(t, t)` is slot `0` when `SLOT_DURATION_MS` is positive. The
+checked subtraction `t - t` cannot underflow and gives `0`, and `0 // SLOT_DURATION_MS` is `0`.
+The premise names the one real obligation: the division by the configuration value raises on
+a zero divisor, as the pyspec's `//` does. -/
+theorem computeSlotAtTimeMs_self [Preset] [Config] (t : CLUint64)
+    (hdur : EthCLSpecs.Gloas.Const.slotDurationMs.toPlainNat ≠ 0) :
+    EthCLSpecs.Gloas.computeSlotAtTimeMs t t = .ok 0 := by
+  have hzero : (0 : CLUint64).toPlainNat = 0 := rfl
+  have hsub : CLUint64.sub t t = .ok 0 :=
+    (sub_eq_ok t t 0).mpr ⟨Nat.le_refl _, by rw [hzero, Nat.sub_self]⟩
+  have hdiv : CLUint64.div 0 EthCLSpecs.Gloas.Const.slotDurationMs = .ok 0 :=
+    (div_eq_ok _ _ 0).mpr ⟨hdur, by rw [hzero, Nat.zero_div]⟩
+  show (CLUint64.sub t t >>= fun elapsedMs =>
+    CLUint64.div elapsedMs EthCLSpecs.Gloas.Const.slotDurationMs) = _
+  rw [hsub]
+  exact hdiv
 
-The checked `uint64` subtraction stays in range for the trivial reason: `time_ms -
-genesis_time_ms` is `0` when they are equal, so it cannot underflow, and `0 //
-SLOT_DURATION_MS` is `0` for the opaque `[Config]` divisor. `run_liftErr_of_ok` carries the
-helper's `.ok` across the lift; `simp` then discharges the guard inside it. -/
+/-- **A fork-choice `forkdef`, at the pure store monad.** `get_slots_since_genesis` on a
+store whose clock has not advanced past genesis returns `0`, leaving the store alone, when
+`SLOT_DURATION_MS` is positive.
+
+`computeSlotAtTimeMs_self` gives the clock helper's `.ok 0`. The helper returns `Checked`,
+and the arithmetic lift is `liftErr` of the fault conversion, so `run_liftErr_of_ok` carries
+the `.ok` across the lift. `getSlotsSinceGenesis_run_of_zero_duration` states the failure the
+premise excludes. -/
 theorem getSlotsSinceGenesis_run_of_time_eq_genesis
     [Preset] [HasherTag] [Config] {map : MapKind} [FcMap map] :
     ∀ store : Store map,
       store.timeMs = store.genesisTimeMs →
+      EthCLSpecs.Gloas.Const.slotDurationMs.toPlainNat ≠ 0 →
       (getSlotsSinceGenesis (StoreTransition := GloasStoreRun map) store).run store
         = .ok (0, store) := by
-  intro store htime
+  intro store htime hdur
   apply EthCLLib.Proofs.run_liftErr_of_ok
-  -- `checkedSub g g` takes its `else` branch (`g > g` is false) and yields `g - g = 0`.
-  simp [EthCLSpecs.Gloas.computeSlotAtTimeMs, htime, EthCLLib.Spec.checkedSub]
+  rw [htime, computeSlotAtTimeMs_self _ hdur]
+  rfl
+
+/-- **The failure the positive-duration premise excludes.** With `SLOT_DURATION_MS = 0` and
+the store time at or after genesis, `get_slots_since_genesis` raises the zero divisor: the
+checked subtraction succeeds, and the `//` by the configuration value raises Python's
+`ZeroDivisionError`. The lift lands it on the store machine as a nested `.zeroDivision`, the
+class no reference wrapper catches. -/
+theorem getSlotsSinceGenesis_run_of_zero_duration
+    [Preset] [HasherTag] [Config] {map : MapKind} [FcMap map] :
+    ∀ store : Store map,
+      store.genesisTimeMs.toPlainNat ≤ store.timeMs.toPlainNat →
+      EthCLSpecs.Gloas.Const.slotDurationMs.toPlainNat = 0 →
+      (getSlotsSinceGenesis (StoreTransition := GloasStoreRun map) store).run store
+        = .error (.transition (.zeroDivision "//")) := by
+  intro store hle hdur
+  obtain ⟨elapsedMs, hsub⟩ := (sub_ok_iff store.timeMs store.genesisTimeMs).mpr hle
+  have hval : EthCLSpecs.Gloas.Const.slotDurationMs.val = 0 :=
+    UInt64.toNat_inj.1 hdur
+  have hdiv : CLUint64.div elapsedMs EthCLSpecs.Gloas.Const.slotDurationMs
+      = .error (ArithFault.zeroDivisor "//" 64 elapsedMs.toPlainNat) := by
+    simp [CLUint64.div, hval]
+  apply EthCLLib.Proofs.run_liftErr_of_error
+  show Except.mapError _ (Except.mapError _ (CLUint64.sub store.timeMs store.genesisTimeMs >>=
+    fun elapsedMs => CLUint64.div elapsedMs EthCLSpecs.Gloas.Const.slotDurationMs)) = _
+  rw [hsub]
+  show Except.mapError _ (Except.mapError _ (CLUint64.div elapsedMs
+    EthCLSpecs.Gloas.Const.slotDurationMs)) = _
+  rw [hdiv]
   rfl
 
 /-- The same fact one layer up, through `get_current_slot`. At v1.7.0-beta.4 that is
-`get_slots_since_genesis` itself (the `GENESIS_SLOT +` term is gone), so the fact carries
+`get_slots_since_genesis` itself, with no `GENESIS_SLOT +` term, so the fact carries
 across the one `forkdef` unchanged. -/
 theorem getCurrentSlot_run_of_time_eq_genesis
     [Preset] [HasherTag] [Config] {map : MapKind} [FcMap map] :
     ∀ store : Store map,
       store.timeMs = store.genesisTimeMs →
+      EthCLSpecs.Gloas.Const.slotDurationMs.toPlainNat ≠ 0 →
       (getCurrentSlot (StoreTransition := GloasStoreRun map) store).run store
         = .ok (0, store) := by
-  intro store htime
-  exact getSlotsSinceGenesis_run_of_time_eq_genesis store htime
+  intro store htime hdur
+  exact getSlotsSinceGenesis_run_of_time_eq_genesis store htime hdur
 
 /-! ## The bridge carries a step's own theorem, unchanged
 
@@ -104,37 +153,51 @@ store monad in that column. No store value appears; a state transition's effect 
 depend on one. -/
 
 /-- `initiateBuilderExit_run_eq` crossing the bridge, by application. The contract is a
-`.run` fact on `pureState preState`, exactly the shape `runNestedStateTransition_of_ok` consumes. -/
+`.run` fact on `pureState preState`, exactly the shape `runNestedStateTransition_of_ok` consumes.
+The bridge is conditional on the raising `builders[builder_index]` read being in range and on
+the checked withdrawability sum succeeding: past the registry's end the run raises the
+`.outOfBounds` fault, past `2 ^ 64 - 1` the sum raises the `.arithmetic` fault, and in both
+cases the bridge equation's `.ok` reading fails. -/
 example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
-    ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
+    ∀ (preState : BeaconState) (builderIndex : BuilderIndex) (we : Gloas.Epoch),
+      builderIndex.toPlainNat < preState.builders.size →
+      (currentEpochOf (pureState preState) +
+          EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay : Checked Gloas.Epoch) = .ok we →
       runNestedStateTransition (pureState preState)
           (initiateBuilderExit (StateTransition := GloasRun) builderIndex)
         = (pure (pureState
           { preState with builders :=
-              (preState.builders.set! builderIndex.toNat
-                { preState.builders[builderIndex.toNat]! with
-                  withdrawableEpoch :=
-                    currentEpochOf (pureState preState)
-                      + EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay }) })
-            : m State) :=
-  fun preState builderIndex =>
-    runNestedStateTransition_of_ok (initiateBuilderExit_run_eq preState builderIndex)
+              (preState.builders.set! builderIndex.toPlainNat
+                { preState.builders[builderIndex.toPlainNat]! with withdrawableEpoch := we }) })
+            : m State) := by
+  intro preState builderIndex we hidx hwe
+  refine runNestedStateTransition_of_ok ?_
+  show (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run
+      (pureState preState) = _
+  have hsome : preState.builders.val[builderIndex.toPlainNat]?
+      = some preState.builders[builderIndex.toPlainNat]! := by
+    rw [getElem!_pos (dom := fun (xs : SizzLean.Repr.ProgressiveList Builder) i =>
+      i < xs.size) (h := hidx)]
+    show preState.builders.val[builderIndex.toPlainNat]? = some _
+    exact Array.getElem?_eq_getElem hidx
+  rw [initiateBuilderExit_run_eq preState builderIndex, hsome, hwe]
 
 /-- `processBuilderPendingPayments_run` likewise, and this is the one that shows the point:
 its proof rests on a `List.forIn` induction over the withdrawals loop, and that induction is
-not re-entered here. `builderPendingWithdrawals` is a progressive list (since alpha.12), so the
-contract is unconditional: the run always appends the qualifying withdrawals and shifts the
-payment window. -/
+not re-entered here. After `builderPaymentQuorum` succeeds, the run appends the qualifying
+withdrawals and shifts the payment window. `builderPendingWithdrawals` is a progressive
+list, so the append needs no capacity premise. -/
 example [Preset] [HasherTag] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
-    ∀ (preState : BeaconState),
+    ∀ (preState : BeaconState) (quorum : Gwei),
+      builderPaymentQuorum preState = .ok quorum →
       runNestedStateTransition (pureState preState)
           (processBuilderPendingPayments (StateTransition := GloasRun))
         = (pure (pureState { preState with
-              builderPendingWithdrawals := expectedWithdrawals preState,
+              builderPendingWithdrawals := expectedWithdrawals quorum preState,
               builderPendingPayments := expectedPaymentWindow preState }) : m State) :=
-  fun preState =>
-    runNestedStateTransition_of_ok (processBuilderPendingPayments_run preState)
+  fun preState quorum hq =>
+    runNestedStateTransition_of_ok (processBuilderPendingPayments_run_ok preState quorum hq)
 
 end EthCLSpecs.Proofs.Gloas

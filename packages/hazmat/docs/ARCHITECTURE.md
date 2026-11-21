@@ -340,7 +340,7 @@ libc and libgcc. A consumer needs no `-lstdc++` / `-lc++`, and
 link-arg non-propagation (PLAN.md, Stage 0) costs nothing. Every other shim
 is plain `cc` C.
 
-## 7. Crypto surface: consensus layer (Phase 0 → Gloas)
+## 7. Crypto surface: consensus layer (Phase 0 → Heze)
 
 Three families → three packages. Keccak-256 and secp256k1/ECDSA are
 execution-layer only and excluded here.

@@ -4,22 +4,29 @@ import SizzLean
 # `EthCLLib.Spec.Arith`: the arithmetic, byte, and collection layer
 
 Domain-agnostic numeric and serialization utilities the spec calls
-(`FRAMEWORK_ARCHITECTURE.md` §10). Arithmetic stays in `UInt64` matching SSZ
-`uint64` semantics; `Nat` is the fallback only for an intermediate that a
-faithful operation order pushes above `2^64` (the committee math's `isqrt` over a
-total balance), narrowed back with an exact conversion, never a reject.
+(`FRAMEWORK_ARCHITECTURE.md` §10). Spec arithmetic is not here. A spec integer
+computes through the checked surface (`SPEC_ARITHMETIC.md` §4): `CLUint64` and
+`CLUint8` in `Spec/CLUint.lean`, `CLInt` in `Spec/CLInt.lean`, and the
+proved-total routes in `Spec/CLTotal.lean`. The helpers here work on structural
+`Nat` values, on bytes as data, and on raw machine words inside proved-total
+framework routes (`SPEC_ARITHMETIC.md` §7, rule 5). The raw `UInt64` helpers
+`umax`, `umin`, and `saturatingSub` have no fork-body caller. Their checked
+forms are the `Max` / `Min` instances and `CLUint64.saturatingSub`.
 
 `uintToBytes` is **type-directed**: the byte width follows from the value's type
 through `UIntToBytes`, removing the 4-versus-8-byte serialization bug class by
 never letting the author pick the width by hand.
 
 The collection helpers (`sszDrop`, `vget`, `bitGet` / `bitSet`) are total. A bit write
-past the end changes nothing, and an out-of-range read returns the default. So a spec step
-stays total (the pure-config requirement) with no panic. `sszOfArray` takes a proof that
-the array fits. A list whose length is known only at run time goes through
-`sszOfArrayM` (`Spec.Header`), which raises as the spec's `List[T, N](...)` does.
-Element reads and writes on a boxed-state field go through SizzLean's
-`sszGet`/`sszUpdate` index forms (`f[i]!` total, `f[i]` reject-on-miss) directly.
+past the end changes nothing, and an out-of-range read returns the default. Use them
+only at a position the caller already knows is in range, such as a fixed byte offset.
+A read where the pyspec can raise `IndexError` goes through the size-aware
+`sszGetIdx` / `getAt` (`Spec/State.lean`, `SPEC_ARITHMETIC.md` §4.6).
+`sszOfArray` takes a proof that the array fits. A list whose length is known only at
+run time goes through `sszOfArrayM` (`Spec.Header`), which raises as the spec's
+`List[T, N](...)` does. A boxed-state field reads and writes through SizzLean's
+`sszGet` / `sszUpdate` index forms: `f[i]` rejects on a miss, and the total `f[i]!`
+is for an index already known to be in range.
 -/
 
 set_option autoImplicit false
@@ -40,17 +47,22 @@ export SizzLean.Repr (SSZList Bitvector Bitlist ProgressiveList ProgressiveBitli
 
 /-! ## `UInt64` arithmetic -/
 
-/-- `max` on `UInt64`. -/
+/-- `max` on raw `UInt64`. No fork body calls it: the checked `max` is the
+`Max CLUint64` instance (`Spec/CLUint.lean`). -/
 @[inline] def umax (a b : UInt64) : UInt64 := if a < b then b else a
-/-- `min` on `UInt64`. -/
+/-- `min` on raw `UInt64`. No fork body calls it: the checked `min` is the
+`Min CLUint64` instance. -/
 @[inline] def umin (a b : UInt64) : UInt64 := if a < b then a else b
 /-- `saturating_sub(a, b)` (`phase0/beacon-chain.md:1038-1042`): `a - b`, floored at zero.
 The spec writes the floor as `a - a`, which keeps the result's type; on `UInt64` that is
-`0`. Total: the subtraction runs only when `a > b`, so it cannot wrap. -/
+`0`. Total: the subtraction runs only when `a > b`, so it cannot wrap. This is the raw-word
+form, with no fork-body caller. The spec bodies use `CLUint64.saturatingSub`
+(`Spec/CLUint.lean`). -/
 @[inline] def saturatingSub (a b : UInt64) : UInt64 := if a > b then a - b else 0
 
 /-- Newton's-iteration integer square root over `Nat`, fuel-bounded so it is
-total and kernel-reducible (the spec's `integer_squareroot`). 200 steps converges
+total and kernel-reducible. It is the iteration behind the spec's `integer_squareroot`,
+which `CLUint64.integerSquareroot` (`Spec/CLTotal.lean`) wraps. 200 steps converges
 for any `Nat` below `2^64·N`. -/
 def isqrtAux (n : Nat) : Nat → Nat → Nat
   | 0,        x => x
@@ -58,6 +70,25 @@ def isqrtAux (n : Nat) : Nat → Nat → Nat
 
 /-- `⌊√n⌋`. -/
 def isqrt (n : Nat) : Nat := if n = 0 then 0 else isqrtAux n 200 n
+
+/-- Newton's iteration never climbs above its start: each step either moves to a
+smaller `y` or stops at `x`. -/
+theorem isqrtAux_le (n : Nat) : ∀ (fuel x : Nat), isqrtAux n fuel x ≤ x
+  | 0, x => Nat.le_refl x
+  | fuel + 1, x => by
+    show (if (x + n / x) / 2 < x then isqrtAux n fuel ((x + n / x) / 2) else x) ≤ x
+    split
+    · rename_i h
+      exact Nat.le_trans (isqrtAux_le n fuel _) (Nat.le_of_lt h)
+    · exact Nat.le_refl x
+
+/-- The root is at most its argument, so a root of a `uint64` value fits a
+`uint64` (the range premise of `CLUint64.integerSquareroot`). -/
+theorem isqrt_le (n : Nat) : isqrt n ≤ n := by
+  unfold isqrt
+  split
+  · omega
+  · exact isqrtAux_le n 200 n
 
 /-! ## Type-directed `uintToBytes` -/
 
@@ -136,11 +167,12 @@ or an index-keyed refill (`fun k => fresh[k]!`). -/
     if j.val < keep then vget v (j.val + shift) else fill (j.val - keep))
 
 /-- A `UInt64` taken mod `n` lands in `[0, n)` once read back as a `Nat`, given `n`
-positive and in range. The bound for a proof-carrying read into a length-`n` vector at a
-`(x % UInt64.ofNat n).toNat` index (`process_randao`'s mix slot, the slashings / payment
-ring buffers): `v[(x % UInt64.ofNat n).toNat]'(uint64ModOfNatToNatLt …)`. The two premises
-hold for any sane preset (a vector length is positive and far below `2^64`); a symbolic
-preset supplies them from its positivity invariant. -/
+positive and in range. The bound behind `vmodGet`, the proof-carrying read into a
+length-`n` vector at a `(x % UInt64.ofNat n).toNat` index. The raw `%` is the
+proved-total route `SPEC_ARITHMETIC.md` §6 allows: a modulo by a positive preset length
+needs no range test. The two premises hold for any sane preset (a vector length is
+positive and far below `2^64`); a symbolic preset supplies them from its positivity
+invariant. -/
 theorem uint64ModOfNatToNatLt (x : UInt64) (n : Nat) (hn : 0 < n) (hb : n < 2 ^ 64) :
     (x % UInt64.ofNat n).toNat < n := by
   have h : (UInt64.ofNat n).toNat = n := UInt64.toNat_ofNat_of_lt hb
@@ -157,30 +189,15 @@ class ValidModulus (d : Nat) where
   lt : d < 2 ^ 64
 
 /-- Read `v` at the `uint64` index `x` reduced mod the period `d`, the "ring-buffer" read
-(`process_randao`'s mix slot, the proposer-lookahead / PTC windows). `d` divides into the
+(the RANDAO mixes, the block roots, the proposer-lookahead / PTC windows). The caller
+passes the raw word of a checked index (`epoch.val`, `slot.val`); the raw `%` runs only
+here, behind the `ValidModulus` proof (`SPEC_ARITHMETIC.md` §6). `d` divides into the
 vector (`d ≤ n`, discharged by `omega` from the lengths), and the in-bounds proof comes
 from `uint64ModOfNatToNatLt` plus the `[ValidModulus d]` instance, so the call names only
 the vector, the index, and the period. A proof-carrying read, so no `Inhabited` default. -/
 @[inline] def vmodGet {α : Type} {n : Nat} (v : Vector α n) (x : UInt64) (d : Nat)
     [vd : ValidModulus d] (hle : d ≤ n := by omega) : α :=
   v[(x % UInt64.ofNat d).toNat]'(by have := uint64ModOfNatToNatLt x d vd.pos vd.lt; omega)
-
-/-- The ring-buffer index `x % d` as a `Nat`, the write-side companion of `vmodGet`'s read
-index. Names the `(x % UInt64.ofNat d).toNat` spelling a per-element reset or cache write
-uses (`process_slot`'s root caching, the slashings / RANDAO / builder-payment ring buffers),
-so the period is written once and a `slotsPerEpoch`-versus-`slotsPerHistoricalRoot` mixup is
-harder. Index-only: it feeds the same total `field[idx]!` write, so it cannot change which
-slot is hit (no bounds-carrying `vmodSet`, which a proof could discharge differently). -/
-@[inline] def umodIdx (x : UInt64) (d : Nat) : Nat := (x % UInt64.ofNat d).toNat
-
-/-- A `Nat` cursor advanced modulo a length, with the length-zero case pinned to `0`. Names
-the `if n == 0 then 0 else x % n` guard the withdrawal sweeps repeat when they wrap the
-builder / validator cursor past the end of a (possibly empty) collection: an empty collection
-has no slot to land on, so the cursor resets to `0` instead of evaluating `x % 0` (which
-Lean's `Nat` `%` defines as `x`, leaking a non-wrapped index). With a non-empty collection it
-is the ordinary `x % n`. Pure `Nat` index arithmetic, so it cannot change which slot a
-downstream total write hits. -/
-@[inline] def modWrap (x n : Nat) : Nat := if n == 0 then 0 else x % n
 
 /-- A list that can drop a prefix and stay the same collection type.
 `SSZList` keeps its cap (the tail is no longer); `ProgressiveList` has no cap. -/
@@ -207,19 +224,6 @@ takes the array whole: `⟨a⟩`. -/
 def sszOfArray {α : Type} {cap : Nat} (a : Array α)
     (h : a.size ≤ cap) : SSZList α cap :=
   ⟨a, h⟩
-
-/-- The indices of `xs` whose element (with its position) satisfies `p`, as `uint64`s. Names
-the `mut out / for i / push (UInt64.ofNat i)` accumulator that the registry walks
-(`get_active_validator_indices` and its eligible-set sibling) repeat, leaving only the
-one-line predicate at the call site. The predicate takes the element and its index; the spec
-walks only inspect the element, the index is offered for generality. Same iteration order
-(`0 … xs.size-1`) and same push order as the longhand loop, so the resulting index array is
-byte-for-byte the one the loop produced. -/
-def indicesWhere {α : Type} [Inhabited α] (xs : Array α) (p : α → Nat → Bool) : Array UInt64 := Id.run do
-  let mut out : Array UInt64 := #[]
-  for i in [0 : xs.size] do
-    if p (xs[i]!) i then out := out.push (UInt64.ofNat i)
-  return out
 
 /-- Intersection by membership: the elements of `xs` that also appear in `ys`, kept in `xs`'s
 order. A `filter`, so it does not deduplicate `xs` itself; a value repeated in `xs` and present
@@ -258,13 +262,5 @@ def Bitvector.trueIndices {n : Nat} (bv : Bitvector n) : Array Nat := Id.run do
   for i in [0:n] do
     if bitGet bv i then out := out.push i
   return out
-
-/-- Test participation-flag bit `idx` of a `uint8` flag byte. -/
-@[inline] def hasFlag (flags : UInt8) (idx : Nat) : Bool :=
-  (flags >>> (UInt8.ofNat idx)) &&& 1 == 1
-
-/-- Set participation-flag bit `idx` of a `uint8` flag byte. -/
-@[inline] def addFlag (flags : UInt8) (idx : Nat) : UInt8 :=
-  flags ||| (1 <<< (UInt8.ofNat idx))
 
 end EthCLLib.Spec

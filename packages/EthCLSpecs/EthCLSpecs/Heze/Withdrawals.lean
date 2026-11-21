@@ -30,22 +30,21 @@ def addressOf (v : Validator) : ExecutionAddress :=
 /-- `get_balance_after_withdrawals` over `Heze.State` (`capella/beacon-chain.md:411-421`): the
 balance net of any already-queued withdrawals for `vi`. Restated (a plain `def` rather than a
 `forkdef`). Throwing, mirroring the Gloas copy: `state.balances[validator_index]` is a bare list
-index (`IndexError` → `sszGetIdx` → `outOfBounds`), and `- withdrawn` is a bare `uint64`
-subtraction whose underflow raises `ValueError`, uncaught by the reference runner
-(`context.py:424-435`), so it throws the uncaught `.arithmetic` reject, not a caught `.assert`.
+index (`IndexError` → `sszGetIdx` → `outOfBounds`), and `- withdrawn` is the checked `uint64`
+subtraction, whose underflow raises `SSZValueError`, a `ValueError` the reference runner does
+not catch (`context.py:451-462`), so it throws the uncaught `.arithmetic` reject.
 See `Gloas.balanceAfterWithdrawals`.
 
-The `withdrawn` accumulator folds through `checkedAdd`, as in Fulu and Gloas; pyspec's
-`sum(...)` raises during its own accumulation. See the ancestors' twins of this
-function, which the lineage replays unchanged. -/
+The `withdrawn` accumulator is a `Gwei` and the folded add is the checked `Gwei` `+`,
+as in Fulu and Gloas; pyspec's `sum(...)` raises during its own accumulation, and the
+final `balances[i] - withdrawn` is the checked subtraction. See the ancestors' twins of
+this function, which the lineage replays unchanged. -/
 def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
     StateTransition Gwei := do
   let withdrawn ← ws.foldlM (init := (0 : Gwei)) fun acc w =>
-    if w.validatorIndex == vi then
-      checkedAdd acc w.amount "get_balance_after_withdrawals: sum(withdrawal.amount)"
-    else pure acc
-  let bal ← sszGetIdx (sszGet state balances) vi.toNat
-  checkedSub bal withdrawn "get_balance_after_withdrawals: balances[i] - withdrawn"
+    if w.validatorIndex == vi then acc + w.amount else pure acc
+  let bal ← sszGetIdx (sszGet state balances) vi
+  bal - withdrawn
 
 inherit getBuilderWithdrawals
 inherit getPendingPartialWithdrawals

@@ -137,16 +137,16 @@ column is the fork's own diff, for scale.
 <!-- proof-coverage:begin -->
 | Fork | Characterized | Touched | Spec functions | Authored |
 | --- | --- | --- | --- | --- |
-| `EthCLSpecs.Fulu` | 3 | 3 | 173 | 173 |
-| `EthCLSpecs.Gloas` | 10 | 36 | 222 | 114 |
-| `EthCLSpecs.Heze` | 6 | 19 | 230 | 19 |
-| **Total** | 19 | 58 | 625 | 306 |
+| `EthCLSpecs.Fulu` | 3 | 3 | 171 | 171 |
+| `EthCLSpecs.Gloas` | 10 | 41 | 223 | 115 |
+| `EthCLSpecs.Heze` | 6 | 19 | 231 | 19 |
+| **Total** | 19 | 63 | 625 | 305 |
 
 | Axiom | Theorems resting on it |
 | --- | --- |
-| `propext` | 134 |
-| `Classical.choice` | 127 |
-| `Quot.sound` | 132 |
+| `propext` | 173 |
+| `Classical.choice` | 150 |
+| `Quot.sound` | 167 |
 | `Lean.ofReduceBool` | 0 |
 | `Lean.trustCompiler` | 0 |
 | `SizzLean.Hasher.sha256Hash_eq_spec` | 0 |
@@ -173,7 +173,11 @@ The design is written down under [`docs/`](docs/):
   provides from below.
 - [`SPEC_AUTHORING_MODEL.md`](docs/SPEC_AUTHORING_MODEL.md), the author/framework
   boundary and the authoring forms.
-- [`PLAN.md`](docs/PLAN.md), [`IMPLEMENTATION_NOTES.md`](docs/IMPLEMENTATION_NOTES.md),
+- [`SPEC_ARITHMETIC.md`](docs/SPEC_ARITHMETIC.md), the arithmetic contract for
+  consensus-spec code, and
+  [`SPEC_ARITHMETIC_LINTING.md`](docs/SPEC_ARITHMETIC_LINTING.md), its deferred
+  automated checks.
+- [`PLAN.md`](docs/PLAN.md) (historical), [`IMPLEMENTATION_NOTES.md`](docs/IMPLEMENTATION_NOTES.md),
   [`DISCREPANCIES.md`](docs/DISCREPANCIES.md), and
   [`FUTURE_WORK.md`](docs/FUTURE_WORK.md).
 

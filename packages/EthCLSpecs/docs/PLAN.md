@@ -1,5 +1,8 @@
 # EthCLSpecs: Implementation Plan
 
+Status: historical implementation plan. For the implemented state, read
+[IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) and the [docs index](README.md).
+
 This document sequences the work that the three design documents describe.
 `SPEC_AUTHORING_MODEL.md` is the contract between author and framework,
 `FRAMEWORK_ARCHITECTURE.md` builds the framework from below, and
@@ -328,9 +331,10 @@ disk to a green result.
 - The Python harness: acquisition of the archive for `pyspecPinnedVersion`, the
   case-tree walk, `meta.yaml` parsing, and a `pytest-xdist` runner where each worker
   holds one server through a `session`-scoped fixture.
-- The classify-bucket reporting: passing, expected rejection, out-of-scope `todo`,
+- The classify-bucket reporting: passing, expected rejection, work-queue `todo`,
   likely-bug (`outOfBounds` / `decodeFailure`), uncaught fault (`missingKey` /
-  `arithmetic`).
+  `arithmetic`). The implemented buckets add `outOfScope` and the uncaught
+  `zeroDivision`, `listFull`, and `notInList` faults (`FRAMEWORK_ARCHITECTURE.md` §6).
 
 **Acceptance.** One format, the single-operation handler the slice implements, is
 green end-to-end at the minimal preset, driven through a per-worker Lean server.
@@ -370,7 +374,9 @@ has every primitive it calls.
 **Deliverables.**
 - The arithmetic layer: `UInt64` operations transcribing the pyspec's operation order
   faithfully, `umax`, `umin`, `isqrt`, the type-directed `uintToBytes` width, and the
-  `Nat`-narrowing path for the rare intermediate above `2^64`.
+  `Nat`-narrowing path for the rare intermediate above `2^64`. *Superseded:* the checked
+  arithmetic of `SPEC_ARITHMETIC.md` replaces the raw `UInt64` design and the `Nat`
+  narrowing. `FRAMEWORK_ARCHITECTURE.md` §10 describes the implemented layer.
 - The crypto layer: the hashing-based primitives `computeForkDataRoot`,
   `computeDomain`, `computeSigningRoot`, and `isValidMerkleBranch`; the full
   `[CryptoBackend]` class with the caching FFI backend (keyed by the full serialized
@@ -556,6 +562,8 @@ a declaration, so it can ride the inheritance replay into the child namespace: a
 unchanged inherited chain re-checks cheaply and the proof cost concentrates on the
 diff. The techniques are the gate-split on `assert` conditions and the abstract
 `[CryptoBackend]`, with arithmetic lifted to `Nat` through the correspondence lemmas.
+*Superseded:* proofs read checked arithmetic through the law library of
+`FRAMEWORK_ARCHITECTURE.md` §10, under each step's success condition.
 
 **The discipline that keeps it reachable.** The earlier phases hold this so Phase 5
 needs no rework: every spec function is total, with `fuelLoop` or well-founded
@@ -595,7 +603,10 @@ shipping path.
 
 ## Status snapshot
 
-| Phase | Package | Status |
+This table records the plan's status when it was written. It is historical. For the
+implemented state, read `IMPLEMENTATION_NOTES.md` and the design documents.
+
+| Phase | Package | Status when written |
 |---|---|---|
 | 0: Foundations and spikes | SizzLean, `EthCLLib` | preset-cap derive landed; the three spikes pending |
 | 1: The walking skeleton | `EthCLLib`, `EthCLSpecs` | pending |
