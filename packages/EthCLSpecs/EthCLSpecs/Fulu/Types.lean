@@ -80,7 +80,12 @@ forkabbrev ColumnIndex := CLUint64
 /-- A PeerDAS cell index into an extended blob. SSZ `uint64`, the pyspec's checked `Uint64`
 subclass (`SPEC_ARITHMETIC.md` §4.1). -/
 forkabbrev CellIndex := CLUint64
-/-- An RLP-encoded execution transaction: an SSZ `ByteList[MAX_BYTES_PER_TRANSACTION]`. -/
+/-- An RLP-encoded execution transaction: an SSZ `ByteList[MAX_BYTES_PER_TRANSACTION]`
+(`bellatrix/minimal.py:372-378`). The cap is the literal `2 ^ 30`, the
+`MAX_BYTES_PER_TRANSACTION` value at both presets (`fulu/minimal.py:215`). This module is
+load-order row 1, and the `forkpreset` class is declared at row 2, so the alias cannot read
+the preset field without an import cycle or a module move. Gloas uncaps the alias
+(`ProgressiveList UInt8`), and Heze inherits that, so no later fork carries the literal. -/
 forkabbrev Transaction := SizzLean.Repr.SSZList UInt8 (2 ^ 30)
 
 end EthCLSpecs.Fulu

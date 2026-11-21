@@ -107,13 +107,13 @@ forkpreset where
   -- flavour is the pyspec's own: `EFFECTIVE_BALANCE_INCREMENT` is a `Gwei` in
   -- the source, so the `Gwei` field stores the value here and the suffix-free
   -- `Nat` entry is a derived view in `Const` (`SPEC_ARITHMETIC.md` §4.2).
-  -- `maxEffectiveBalanceElectra` keeps its two fields until its retype lands
-  -- with a consumer.
+  -- `MAX_EFFECTIVE_BALANCE_ELECTRA` stores only its `Gwei` flavour: every body
+  -- reads `…ElectraG` (`SPEC_ARITHMETIC.md` §4.2, the checked kind is the
+  -- stored one).
   effectiveBalanceIncrementG : Gwei
   minDepositAmountG : Gwei
   minActivationBalance : Gwei
   maxEffectiveBalanceG : Gwei
-  maxEffectiveBalanceElectra : Nat
   maxEffectiveBalanceElectraG : Gwei
   hysteresisQuotient : Nat
   hysteresisDownwardMultiplier : Nat
@@ -365,8 +365,8 @@ forkabbrev bytesPerLogsBloom : Nat := Preset.bytesPerLogsBloom
 -- `Gwei` (`UInt64`) form; the letter abbreviates "Gwei". `effectiveBalanceIncrement`
 -- stores its value once, in the `…G` preset field, the flavour the pyspec gives
 -- the YAML value; the suffix-free `Nat` entry is the derived view the ratio
--- arithmetic reads. `maxEffectiveBalanceElectra` still carries both flavours as
--- preset fields until a consumer retypes it.
+-- arithmetic reads. `maxEffectiveBalanceElectra` stores only its `Gwei` flavour:
+-- no body or test reads a suffix-free form, every body reads `…ElectraG`.
 /-- `EFFECTIVE_BALANCE_INCREMENT` as the plain ratio operand, derived from the
 stored `Gwei` field (`SPEC_ARITHMETIC.md` §4.2: the pyspec's kind is checked, so
 the checked field is the source and the `Nat` form is the projection). The
@@ -377,7 +377,6 @@ forkabbrev effectiveBalanceIncrementG : Gwei := Preset.effectiveBalanceIncrement
 forkabbrev minDepositAmountG : Gwei := Preset.minDepositAmountG
 forkabbrev minActivationBalance : Gwei := Preset.minActivationBalance
 forkabbrev maxEffectiveBalanceG : Gwei := Preset.maxEffectiveBalanceG
-forkabbrev maxEffectiveBalanceElectra : Nat := Preset.maxEffectiveBalanceElectra
 forkabbrev maxEffectiveBalanceElectraG : Gwei := Preset.maxEffectiveBalanceElectraG
 forkabbrev ejectionBalanceG : Gwei := Config.ejectionBalanceG
 /-- `UNSET_DEPOSIT_REQUESTS_START_INDEX`, `Uint64(2**64 - 1)` at the pin. A raw `UInt64`
@@ -580,12 +579,10 @@ forkpresetvalues minimal where
   minEpochsToInactivityPenalty := 4
   -- Balance thresholds. `effectiveBalanceIncrementG` stores its value; the
   -- `Nat` view derives from it in `Const`, so that numeral appears once.
-  -- `maxEffectiveBalanceElectra` keeps both flavours until its retype lands.
   effectiveBalanceIncrementG := 1000000000
   minDepositAmountG := 1000000000
   minActivationBalance := 32000000000
   maxEffectiveBalanceG := 32000000000
-  maxEffectiveBalanceElectra := 2048000000000
   maxEffectiveBalanceElectraG := 2048000000000
   hysteresisQuotient := 4
   hysteresisDownwardMultiplier := 1
@@ -662,12 +659,10 @@ forkpresetvalues mainnet where
   minEpochsToInactivityPenalty := 4
   -- Balance thresholds. `effectiveBalanceIncrementG` stores its value; the
   -- `Nat` view derives from it in `Const`, so that numeral appears once.
-  -- `maxEffectiveBalanceElectra` keeps both flavours until its retype lands.
   effectiveBalanceIncrementG := 1000000000
   minDepositAmountG := 1000000000
   minActivationBalance := 32000000000
   maxEffectiveBalanceG := 32000000000
-  maxEffectiveBalanceElectra := 2048000000000
   maxEffectiveBalanceElectraG := 2048000000000
   hysteresisQuotient := 4
   hysteresisDownwardMultiplier := 1
