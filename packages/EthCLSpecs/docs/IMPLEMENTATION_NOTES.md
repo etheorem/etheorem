@@ -26,8 +26,12 @@ beta.4 run, `--subset=0`, with no failure and no xfail on either preset. The Hez
 Fulu's collected formats: `epoch_processing`, `operations` (including the standalone
 `execution_payload`), `rewards`, `sanity/blocks`, `sanity/slots`, `finality`,
 `random`, `fork_choice` (including the PeerDAS data-availability `on_block` cases and
-`get_proposer_head`). Gloas adds `fork`, `transition`, and the full ePBS
-`fork_choice`. `DISCREPANCIES.md` records no open vector at beta.4. Every vector the
+`get_proposer_head`), and `ssz_static`. Gloas adds `fork`, `transition`, and the full
+ePBS `fork_choice`. The `ssz_static` runner collects a case for every upstream type.
+A fork's `sszStatic` returns `outOfScope` for a type that the fork does not model, and
+the harness reports that case as `skip` ("out of scope (not modeled)"). These collected
+skips differ from the deselected formats listed below. `DISCREPANCIES.md` records no open
+vector at beta.4. Every vector the
 implemented formats reach matches by root or rejects faithfully. Deliberate divergences from the spec *text* that no vector
 observes are catalogued per fork in this file.
 
@@ -616,15 +620,17 @@ Spec-faithfulness facts worth knowing:
   inherits the substep with no Gloas-side change.
 - **The balance-weighted sampler rejects on an empty candidate set.**
   `compute_balance_weighted_selection` asserts `total > 0` (`gloas/beacon-chain.md:1213`),
-  so proposer sampling, the sync committee, and `compute_ptc` reject with `.assert` when
-  no validator qualifies (zero active, or all slashed under the EIP-8045 filter). No
-  conformance vector reaches the empty case; `Tests/GloasCommitteesPins.lean` pins the
-  three reject sites. At Fulu this is an error-class divergence. The pyspec's Fulu
-  samplers fail differently on empty input. Electra's `get_next_sync_committee_indices`
-  computes `i % active_validator_count` unguarded and raises Python `ZeroDivisionError`.
-  `compute_proposer_index` raises its own `AssertionError`. Etheorem routes the Fulu
-  paths through the same balance-weighted sampler, so every empty-set case rejects with
-  `.assert`. Both sides fail the transition; only the reject class differs.
+  so Gloas proposer sampling, the Gloas sync committee, and `compute_ptc` reject with
+  `.assert` when no validator qualifies (zero active, or all slashed under the EIP-8045
+  filter). No conformance vector reaches the empty case; `Tests/GloasCommitteesPins.lean`
+  pins the three reject sites. Fulu keeps the two pyspec reject classes. Fulu proposer
+  sampling runs through the same sampler, and its `.assert` matches the `AssertionError`
+  that `compute_proposer_index` raises on an empty set. Fulu's
+  `getNextSyncCommitteeIndices` keeps the pinned Fulu loop. With a nonzero
+  `SYNC_COMMITTEE_SIZE` and no active validator, it throws `.zeroDivision` before it
+  reaches the sampler. That is the pyspec's `ZeroDivisionError` on
+  `i % active_validator_count`, and `Tests/PlainArithmeticPins.lean` pins it. The
+  earlier Fulu sync-committee reject-class mismatch is resolved.
 - **`process_execution_payload` takes the execution engine as valid.** It checks
   parent-hash / prev-randao / timestamp consistency and caches the header;
   `verify_and_notify_new_payload` is the consumer's responsibility, which is valid for
@@ -964,10 +970,12 @@ A `tick` step's time is in seconds in the vectors, and the harness sends
 
 ## Genesis
 
-`SPECS_ARCHITECTURE.md` §10.1 marks `genesis` in scope and §6.1 names
-`initializeBeaconStateFromEth1` / `isValidGenesisState`. The pytest corpus carries no
-`genesis` vectors for Fulu, Gloas, or Heze at the `v1.7.0-beta.4` pin, so there is nothing to
-drive; both stay a `todo` stub in `Interface.lean`.
+The `v1.7.0-beta.4` corpus carries no `genesis` vectors for Fulu, Gloas, or Heze.
+Each fork's `Interface.lean` implements `runGenesis` with `.error (.spec (.outOfScope …))`.
+The driver reports this result as `skip`; `Tests/WalkingSkeleton.lean` pins that bucket.
+The fork bodies declare neither `initializeBeaconStateFromEth1` nor `isValidGenesisState`.
+`SPECS_ARCHITECTURE.md` §6.1 labels their proposed authoring shape as an unmodeled design,
+and §10.1 records the implemented scope.
 
 ## Proofs
 
@@ -1638,3 +1646,47 @@ The routed spans resolve at their documented sites: `context.py:451-462`,
 `323-426`. The verification cross-references this record and adds no finding of
 its own. The builds reused copied local Lake caches and the gitignored native
 vendor trees.
+
+## Stage 10 documentation synchronization record
+
+Task 10.3 (WS-119) checks the six lasting documents against the implemented state.
+The verification source is WS-117's Stage 10.1 final-check record, checked tree
+`7dbe320`, held locally in `mb/spec-arithmetic-implementation/stage-10.1.md`.
+Task 10.4 brings that evidence into the tracked completion record.
+The Stage 9 audit supplies the arithmetic guidance. This synchronization corrects
+the remaining deposit and genesis descriptions:
+
+| Document | Site | Changed claim |
+|---|---|---|
+| `SPEC_ARITHMETIC.md` | intro | The contract describes the implemented arithmetic. The plan pointer records the transition to this contract; task 10.5 removes the link. |
+| `SPECS_ARCHITECTURE.md` | §1.1 | Each fork delivers the contract's deliverables except genesis construction. The scope table keeps the `fork` upgrade in scope and lists `genesis` construction as out of scope, with a pointer to §6.1. |
+| `SPECS_ARCHITECTURE.md` | §§3.1, 6, 6.1 | The module design reserves genesis construction as an unmodeled design. The pinned deposit path checks the Merkle branch and new-pubkey signature, adds new validators with zero balance, and queues the amount. Repeated pubkeys retain their validator. The Lean fork bodies omit `processDeposit` and `applyDeposit`. |
+| `SPECS_ARCHITECTURE.md` | §8.2 | The example uses the implemented `isValidDepositSignature`, with the fixed `GENESIS_FORK_VERSION` and zero genesis root. Its callers include `applyPendingDeposit`, Gloas's pending-validator and builder-deposit paths, and their Heze copies. In Fulu and Gloas a valid signature adds a new validator. Heze's `applyPendingDeposit` drops a new pubkey with BLS withdrawal credentials before the signature check (EIP-8365). `processBuilderDepositRequest` branches on its own verifier, `isValidBuilderDepositSignature`. |
+| `SPECS_ARCHITECTURE.md` | §10.1 | Genesis is out of scope. The pin ships no genesis vectors for the three forks. Their `runGenesis` implementations return `outOfScope`, reported as `skip`. |
+| `FRAMEWORK_ARCHITECTURE.md` | §11 | The pinned callers of `is_valid_merkle_branch` include `process_deposit`, light-client checks, and data-column sidecar checks. They sit outside the modeled fork bodies. Framework tests and proofs cover `isValidMerkleBranch`. |
+| `IMPLEMENTATION_NOTES.md` | Scope and conformance | Fulu collects `ssz_static`. Collected `ssz_static` cases for types a fork does not model report `skip`; they differ from the deselected formats. |
+| `IMPLEMENTATION_NOTES.md` | Fulu, empty candidate set | Fulu proposer sampling rejects with `.assert`, as `compute_proposer_index` does. Fulu's sync-committee draw throws `.zeroDivision` before the sampler, as the pyspec does, and `Tests/PlainArithmeticPins.lean` pins it. The earlier reject-class mismatch is resolved. |
+| `IMPLEMENTATION_NOTES.md` | Genesis | Names `runGenesis`, its `outOfScope` result, and the walking-skeleton bucket pin. The proposed genesis functions have no Lean declarations. |
+| `DISCREPANCIES.md` | Fulu | Two kinds of Fulu vectors do not run: the deselected formats, and the collected `ssz_static` cases for unmodeled types, which report `skip`. |
+
+The arithmetic contract's operation rules, the authoring model's arithmetic row
+(`SPEC_AUTHORING_MODEL.md` §5), the framework error model (`FRAMEWORK_ARCHITECTURE.md`
+§6), and the discrepancy entries of `DISCREPANCIES.md` already matched the implemented
+state. The Stage 9 audit record above stays intact.
+`SPEC_ARITHMETIC_LINTING.md` holds the separate deferred linter proposal; no arithmetic
+linter is active.
+
+Gate on the task tree: `just lint` clean, `just check-citations` 194 citations in 9
+files, `just check-constants` 166 constants (the same 2 untabled and 3 tier-only
+advisories). These results match the local Stage 10.1 final-check record named above.
+
+Targeted searches over the six named documents cover raw words and conversions,
+unbounded and wrapping arithmetic, superseded designs, error classes, deposit and
+genesis entry points, plan and linter links, and `let … :=` arithmetic examples.
+Remaining raw-word matches describe byte data, framework boundaries, proof bridges,
+comparison tables, and the preserved Stage 9 audit. The two matching arithmetic
+examples are the proved-total divisor route and the labelled unbound counterexample.
+Genesis matches in the authoring model describe its lifecycle contract; the specs
+architecture labels that design unmodeled. Error descriptions retain the typed
+caught-set distinctions. The plan link stays until 10.5, and linter references
+describe deferred work.
