@@ -820,9 +820,10 @@ examples and checks pass. Preserve the audit record in `IMPLEMENTATION_NOTES.md`
   model's arithmetic row, framework architecture §§6 and 10, spec architecture, and
   implementation/discrepancy records. Keep claims aligned with code and tests.
   (WS-119, `7578eb5be3fb9065623fa97315edaf6698be7030`)
-- [ ] **10.4 Preserve completion evidence.** Move the final scope, chosen implementation,
+- [x] **10.4 Preserve completion evidence.** Move the final scope, chosen implementation,
   costs, and any remaining optimization work into `IMPLEMENTATION_NOTES.md`. Keep the
   deferred linter document separate. Track unrelated spike fixes independently.
+  (WS-120, `945210c9b88092378a38896367be9fe139a63bb3`)
 - [ ] **10.5 Remove the temporary plan.** Delete this file and its links from the design
   document and docs index in the completion change. Retain the final-state contract
   and deferred linter document. Remove only scratch files created for this transition.
