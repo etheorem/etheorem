@@ -748,8 +748,9 @@ arithmetic site remains unreviewed because its module built without edits.
   classification, obsolete conversion names, and arithmetic examples that omit binds.
   - [ ] **9.1a Find and reconcile: arithmetic and authoring documents.** Covers the 9.1
     find sweep and the 9.2 reconciliation for the arithmetic and authoring documents.
-  - [ ] **9.1b Find and reconcile: architecture and records documents.** Covers the 9.1
+  - [x] **9.1b Find and reconcile: architecture and records documents.** Covers the 9.1
     find sweep and the 9.2 reconciliation for the architecture and records documents.
+    (WS-98, `e86a07e13001485222c09dce90d1a16f95c6aedd`)
   - [ ] **9.1c Find and reconcile: repo-level, contributor, and other-package
     documents.** Covers the 9.1 find sweep and the 9.2 reconciliation for the repo-level,
     contributor, and other-package documents.
