@@ -12,18 +12,19 @@ The directory mirrors `EthCLSpecs/Heze/`, for the reason `Proofs/Gloas.lean`
 states: a fork elaborates its own constant for every declaration, inherited ones
 included, so a theorem here is about the Heze constant and about no other fork's.
 `shouldExtendPayload` is the case that shows it. Gloas declares it and Heze
-overrides it with the FOCIL gate, so the Gloas theorems say nothing about the
-Heze constant.
+overrides it with the FOCIL gate, so a theorem about the Gloas constant says
+nothing about the Heze constant.
 
 Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
 Re-exports:
 
-* `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: collector run
-  equations for `getInclusionListCommittee` and
-  `getInclusionListTransactions`
-  (`getInclusionListCommittee_run_eq`, `getInclusionListTransactions_run_eq`),
-  plus the missing-timeliness predicate on the `FcMap.fold` entries array.
+* `EthCLSpecs.Proofs.Heze.GetInclusionListTransactions`: the `.run` equation
+  of `getInclusionListCommittee` (`getInclusionListCommittee_run_eq`) and its
+  zero-divisor reject on an empty committee
+  (`getInclusionListCommittee_run_error_of_empty`), plus the transactions
+  contract of the pure `getInclusionListTransactions` over the counted items
+  (`mem_getInclusionListTransactions_iff`, `getInclusionListTransactions_nodup`).
 * `EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied`: the complete
   `.run` equation of `isPayloadInclusionListSatisfied`
   (`isPayloadInclusionListSatisfied_run`), and the four read corollaries

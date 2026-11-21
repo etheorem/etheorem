@@ -32,9 +32,9 @@ read surfaces the same fault class as `.outOfBounds`.
 
 No-wrap for the withdrawability-delay sum is conditional for an arbitrary `[Config]`,
 and unconditional for the two shipped Gloas preset/config pairs, with no epoch or slot
-hypothesis from the caller. The pre-migration body wrapped a raw `UInt64` sum; the
-migrated body raises where the pinned Python raises, and the readings carry the
-no-overflow bound instead.
+hypothesis from the caller. The body forms the sum as a checked `Epoch` add, which
+raises where the pinned Python raises. The readings carry the no-overflow bound as a
+premise.
 
 Scope is Gloas's `initiateBuilderExit`. Heze inherits the function
 (`Heze/Operations.lean:45`) at its own `State`; these theorems say nothing about that
@@ -197,8 +197,8 @@ theorem initiateBuilderExit_run_outOfRange [Preset] [HasherTag] [Config] :
 
 /-! ## Generic conditional no-wrap
 
-`Epoch` is the checked kind, so the withdrawability sum raises past `2 ^ 64 - 1` where
-the pre-migration body wrapped. No generic invariant relates the bounded current epoch
+`Epoch` is the checked kind, so the withdrawability sum raises past `2 ^ 64 - 1`.
+No generic invariant relates the bounded current epoch
 to the independently configurable withdrawal delay (a `[Config]` instance is free to set
 `minBuilderWithdrawabilityDelay` arbitrarily), so the no-wrap fact is necessarily
 **conditional**. Its condition is the bound `initiateBuilderExit_run_inRange` carries,
@@ -240,8 +240,8 @@ theorem initiateBuilderExit_run_inRange_no_wrap [Preset] [HasherTag] [Config] :
 enough to make `currentEpochOf preState + minBuilderWithdrawabilityDelay` overflow
 `2 ^ 64`. The two pairs the repository actually ships (the minimal and mainnet
 preset/config pairs used by the shipped Gloas interfaces) don't: `slotsPerEpoch` bounds
-`currentEpochOf preState` well below `2 ^ 64` for *any* `preState.slot : UInt64`, so the
-sum with the concrete `minBuilderWithdrawabilityDelay` (`2` on minimal, `8192` on
+`currentEpochOf preState` well below `2 ^ 64` for *any* `preState.slot`, so the
+sum with the concrete `minBuilderWithdrawabilityDelay` (`2` on minimal, `64` on
 mainnet) can never reach `2 ^ 64`.
 Each corollary below discharges `hbound` from that arithmetic fact alone, with no epoch
 or slot hypothesis from the caller, and reuses

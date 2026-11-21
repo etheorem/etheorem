@@ -5,7 +5,7 @@ import EthCLSpecs.Heze
 /-!
 # `EthCLSpecs.Tests.SyncAggregateLookupPins`: the sync-committee participant lookup
 
-Pins for the committee lookup of `process_sync_aggregate` (`fulu/minimal.py:4515-4517`; Gloas
+Pins for the committee lookup of `process_sync_aggregate` (`fulu/minimal.py:4515-4518`; Gloas
 and Heze restate the body unchanged). The pinned body builds the whole `committee_indices` list
 before the reward loop:
 

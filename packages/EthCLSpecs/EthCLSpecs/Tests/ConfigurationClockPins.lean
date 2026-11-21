@@ -3,7 +3,7 @@ import EthCLSpecs.Heze.ForkChoice
 /-!
 # `EthCLSpecs.Tests.ConfigurationClockPins`: the clock at arbitrary configurations
 
-Behavior pins for Stage 7.2 of the arithmetic transition: the clock keeps the pinned
+Behavior pins for the clock at arbitrary configurations: the clock keeps the pinned
 pyspec's answers for every accepted `SLOT_DURATION_MS`, the shipped `6000` and `12000` and
 also `0`, `1`, `2^63`, and `UINT64_MAX`. `SLOT_DURATION_MS` is a configuration value, so it
 carries no positivity proof, and the clock divides by it through the checked route
@@ -11,7 +11,7 @@ carries no positivity proof, and the clock divides by it through the checked rou
 `Checked` types as the `.zeroDivision` cause and the store machine lands as
 `.transition (.zeroDivision _)`.
 
-The divisions by configuration values, audited at this stage:
+The divisions by configuration values:
 
 | Site | Divisor | Route |
 |---|---|---|
@@ -20,9 +20,9 @@ The divisions by configuration values, audited at this stage:
 | `get_balance_churn_limit` and the Gloas churn limits | `CHURN_LIMIT_QUOTIENT`, `CONSOLIDATION_CHURN_LIMIT_QUOTIENT` (config) | checked `//`, raises on zero |
 | `process_inactivity_updates` penalty | `INACTIVITY_SCORE_BIAS * INACTIVITY_PENALTY_QUOTIENT_BELLATRIX` | checked product, then checked `//` |
 
-The clock row is the one this module pins. The other rows already take the checked route,
-and Stage 7.3 audits their constants. Every other clock divisor is the literal `1000`, a
-`PositiveDivisor`.
+This module pins the clock row. The other rows take the checked route, and
+`Tests/ConstantAuditPins.lean` pins their constants. Every other clock divisor is the literal
+`1000`, a `PositiveDivisor`.
 
 Every expected value below is the answer of the pinned pyspec (`eth-consensus-specs`
 1.7.0b4, the `minimal` module with `config.SLOT_DURATION_MS` replaced), read by running the
@@ -382,7 +382,7 @@ end Heze
 
 /-! ### The unchecked forms
 
-The pre-change clock computed on raw `UInt64`, which wraps on overflow and answers `0` for a
+An unchecked clock computes on raw `UInt64`, which wraps on overflow and answers `0` for a
 division by zero. At each failure pin's inputs the raw form returns a value, so it would fail
 the pin. -/
 

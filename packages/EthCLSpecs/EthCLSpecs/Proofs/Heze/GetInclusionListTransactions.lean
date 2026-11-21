@@ -14,9 +14,7 @@ import SizzLean.Proofs.UncachedBox
 At v1.7.0-beta.4 the store is keyed by `(slot, dependent_root)` and each stored entry carries
 its own timeliness, so `getInclusionListTransactions` is pure: it filters the key's items
 (`inclusionListItems`, the spec's `inclusion_lists[key].items()`) to the counted ones and
-deduplicates their transactions. alpha.12 derived the committee from a state inside the
-accessor and raised on a missing timeliness record; both are gone, and the throwing theorems
-that described them went with them.
+deduplicates their transactions.
 
 This module proves the committee run equation and its empty-committee error, then the
 transactions contract: a transaction is in the result exactly when some counted item's list
