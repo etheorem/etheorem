@@ -1026,11 +1026,18 @@ reused with a different container set (an EIP-7495 profile, a
 non-consensus user schema) without dragging the consensus-spec
 types along.
 
-The spec's named primitives, `Slot`, `Epoch`, `ValidatorIndex`
-(each a thin wrapper over `UInt64`), `Root`, `Bytes32`, `Gwei`,
-`BLSPubkey` (each a thin wrapper over a fixed-size byte buffer),
-live in the spec packages and each gets a `SSZRepr` instance from
-`packages/SizzLean/SizzLean/Repr/Instances.lean` automatically.
+The spec's named primitives live in the spec packages. The unsigned
+64-bit units `Slot`, `Epoch`, `ValidatorIndex`, and `Gwei` are
+abbreviations of the checked `CLUint64`
+(`packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md` §4.1). A `CLUint64`
+operator raises where the pyspec raises; no core `UInt64` operator
+instance applies to it. `Root`, `Bytes32`, and `BLSPubkey` are
+abbreviations of fixed-size `Vector UInt8` buffers. Each primitive keeps
+the wire shape of its underlying value:
+`packages/EthCLLib/EthCLLib/Spec/CLUint.lean` defines the `uintN`
+`SSZRepr` instances for the checked types (`SPEC_ARITHMETIC.md` §4.8),
+and the byte buffers reuse the `Vector` instance from
+`packages/SizzLean/SizzLean/Repr/Instances.lean`.
 
 Per-fork containers live under `packages/EthCLSpecs/EthCLSpecs/Fulu/`
 and `packages/EthCLSpecs/EthCLSpecs/Gloas/`. They use the framework's
