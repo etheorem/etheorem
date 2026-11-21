@@ -51,8 +51,8 @@ def entryBind {α : Type} (x : Checked α) :
 the first `SLOTS_PER_EPOCH` positions, and in the remaining `(MIN_SEED_LOOKAHEAD + 1) *
 SLOTS_PER_EPOCH` it binds
 the spec's checked per-entry add `current_epoch + e` (the epoch delta is the offset
-`i - SLOTS_PER_EPOCH` divided by `SLOTS_PER_EPOCH`, `0` to `MIN_SEED_LOOKAHEAD` —
-`0` or `1` at both presets), then the checked
+`i - SLOTS_PER_EPOCH` divided by `SLOTS_PER_EPOCH`, `0` to `MIN_SEED_LOOKAHEAD`,
+so `0` or `1` at both presets), then the checked
 `compute_start_slot_at_epoch` product, and then reads `compute_ptc` at the start slot plus
 the intra-epoch offset, the pyspec's checked `Slot` add. The `Except` in the
 entry's type carries all three faults, the two arithmetic raises as `.arithmetic` and
