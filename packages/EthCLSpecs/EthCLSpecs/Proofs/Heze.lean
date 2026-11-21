@@ -1,3 +1,4 @@
+import EthCLSpecs.Proofs.Heze.ActiveIndices
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
 import EthCLSpecs.Proofs.Heze.CensorshipCost
 import EthCLSpecs.Proofs.Heze.Churn
@@ -29,6 +30,8 @@ Every declaration here sits in the `EthCLSpecs.Proofs.Heze` namespace.
 
 Re-exports:
 
+* `EthCLSpecs.Proofs.Heze.ActiveIndices`: a successful `get_active_validator_indices` returns
+  the total walk `activeValidatorIndicesOf` (`getActiveValidatorIndices_eq_of_ok`).
 * `EthCLSpecs.Proofs.Heze.BuilderPendingPayments`: the Heze port of the epoch
   substep for builder payments (`processBuilderPendingPayments_run`), and the
   per-entry quorum condition (`mem_qualifyingPaymentIndices_iff`), proved with

@@ -94,6 +94,15 @@ def Node.setAtBits : Node → List Bool → Node → Node
   | .pair l r _, true  :: rest, newSubtree =>
       .pair l (Node.setAtBits r rest newSubtree) none
 
+/-- The subtree at the path `bits`, or `none` when the path runs past a
+leaf. The read-side partner of `setAtBits`: the proofs state with it
+which sub-tree a write path reaches. -/
+def Node.getAtBits : Node → List Bool → Option Node
+  | n,           []            => some n
+  | .leaf _,     _ :: _        => none
+  | .pair l _ _, false :: rest => Node.getAtBits l rest
+  | .pair _ r _, true  :: rest => Node.getAtBits r rest
+
 /-- Update the subtree at generalized index `g` to `newSubtree`.
 Pure wrapper around `setAtBits ∘ gindexBits`, the `Nat`→`List Bool`
 hop is the only place gindex arithmetic happens, and it's

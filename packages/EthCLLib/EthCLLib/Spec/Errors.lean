@@ -20,7 +20,7 @@ the *constructor* (its classify mode), which is typed:
 | `outOfBounds` / `decodeFailure` | a smell; well-formed input should not hit these, though the reference catches `IndexError` |
 | `missingKey` | a fault the reference propagates rather than catches, so it never rejects a vector |
 | `arithmetic` | the same, except under a case whose own wrapper catches `ValueError` |
-| `listFull` | a list over its limit, a fault no wrapper catches: remerkleable raises a bare `Exception` |
+| `listFull` | a list over its limit: eth-ssz-specs raises a `ValueError`, so it classifies as `arithmetic` does |
 
 `todo` and `outOfScope` both name a branch that does not run, the distinction is
 intent: a `todo` is expected to pass once the work-queue reaches it, an
@@ -54,19 +54,22 @@ inductive StateTransitionError where
   rejects this way fails, unless the case's own wrapper catches `ValueError` (`RunnerCaughtSet`).
   `descr` names the faulting op, diagnostic only. The
   standing case is `get_balance_after_withdrawals`' `state.balances[i] - withdrawn`
-  (`capella/beacon-chain.md:421`), a bare subtraction. On the store machine the same fault rides
+  (`capella/beacon-chain.md:421`), a bare subtraction. Two `ValueError`s outside
+  arithmetic take this kind too: a sync committee key absent from the registry, and a G1 decode
+  of bytes that are not a point (see `throwArithmetic`). On the store machine the same fault rides
   in wrapped as `.transition (.arithmetic …)`, e.g. Heze's `Slot(state.slot - 1)` underflow and
   `get_inclusion_list_committee`'s `indices[i % len(indices)]` on an empty committee. -/
   | arithmetic (descr : String)
-  /-- An SSZ list over its limit. remerkleable raises a bare `Exception` in two places
-  (`complex.py`): `List.append` on a full list ("list is maximum capacity, cannot append"),
-  and the `List` constructor on too many elements ("too many list inputs"). That is not an
-  `AssertionError`, an `IndexError`, or a `ValueError`, so no reference wrapper catches it.
-  It `classify`s as `ClassifyBucket.uncaughtFault`, and no `RunnerCaughtSet` admits it.
-  `field` names the list, diagnostic only. `appendState` raises it for the first case, and
-  `sszOfArrayM` for the second. Every `appendState` in the fork bodies can raise it,
-  except where a spec-mirrored length guard runs first (`pending_partial_withdrawals`,
-  `pending_consolidations`). -/
+  /-- An SSZ list over its limit. The pinned pyspec's SSZ backend, eth-ssz-specs, raises in
+  two places. `List.append` on a full list raises `SSZValueError`, and the `List` constructor
+  on too many elements raises pydantic's `ValidationError`. Both subclass `ValueError`. So the
+  fault classifies as `.arithmetic` does: `ClassifyBucket.uncaughtFault` under
+  `expect_assertion_error`, and admitted by a wrapper that catches `ValueError`
+  (`RunnerCaughtSet.valueError`). It stays a separate constructor because the fault is a
+  different one. `field` names the list, diagnostic only. `appendState` raises it for the
+  first case, and `sszOfArrayM` for the second. Every `appendState` in the fork bodies can
+  raise it, except where a spec-mirrored length guard runs first
+  (`pending_partial_withdrawals`, `pending_consolidations`). -/
   | listFull (field : String)
   deriving Inhabited, Repr, DecidableEq
 
@@ -115,12 +118,12 @@ inductive ClassifyBucket where
   Under a wrapper that catches only `ValueError` it fails, still flagged. -/
   | likelyBug
   /-- An uncaught Python fault the reference runner does NOT catch (a `uint64` `ValueError` from
-  `.arithmetic`, a `ZeroDivisionError`, a bare-`Dict` `KeyError` from `.missingKey`, or the bare
-  `Exception` of a list over its limit from `.listFull`). Reports
+  `.arithmetic`, a `ZeroDivisionError`, a bare-`Dict` `KeyError` from `.missingKey`, or the
+  `ValueError` of a list over its limit from `.listFull`). Reports
   as a bug like `likelyBug`. It is a valid rejection only where the case's own wrapper catches
   the fault. Under `expect_assertion_error` the reference propagates it as a genuine error, so
-  the driver fails the vector; under a wrapper that catches `ValueError` an `.arithmetic` fault
-  passes instead. This is the reporting-side counterpart of `isExpectedRejection` excluding
+  the driver fails the vector; under a wrapper that catches `ValueError` an `.arithmetic` or
+  `.listFull` fault passes instead. This is the reporting-side counterpart of `isExpectedRejection` excluding
   `.missingKey` and `.transition (.arithmetic …)`. -/
   | uncaughtFault
   deriving Inhabited, Repr, DecidableEq
@@ -213,10 +216,9 @@ inductive RunnerCaughtSet where
 /-- Whether `e` is the expected raise of an invalid vector under this caught set.
 
 `.assert` is the `AssertionError` and `.outOfBounds` is the `IndexError`, so
-`expect_assertion_error` takes both. `.arithmetic` is the `ValueError`. `expect_assertion_error`
-lets it escape, and the `except ValueError` wrapper catches it. `.todo` and `.outOfScope` record
-our own deferrals, and the reference raises neither. `.listFull` is a bare `Exception`, which
-neither set catches. -/
+`expect_assertion_error` takes both. `.arithmetic` and `.listFull` are `ValueError`s.
+`expect_assertion_error` lets them escape, and the `except ValueError` wrapper catches them.
+`.todo` and `.outOfScope` record our own deferrals, and the reference raises neither. -/
 def RunnerCaughtSet.admits : RunnerCaughtSet → StateTransitionError → Bool
   | .assertionAndIndex, .assert _        => true
   | .assertionAndIndex, .outOfBounds _ _ => true
@@ -227,7 +229,7 @@ def RunnerCaughtSet.admits : RunnerCaughtSet → StateTransitionError → Bool
   | .valueError,        .arithmetic _    => true
   | .valueError,        .assert _        => false
   | .valueError,        .outOfBounds _ _ => false
-  | .valueError,        .listFull _      => false
+  | .valueError,        .listFull _      => true
   | .valueError,        .todo _          => false
   | .valueError,        .outOfScope _    => false
 
@@ -317,8 +319,8 @@ it; `ErrorConv` is just the per-pair conversion that stdlib leaves to the caller
 
 /-! ## Checked `uint64` arithmetic
 
-The spec's `uintN` arithmetic is *checked*: remerkleable reconstructs a `uint64` after every
-`+` / `-` / `*` (`basic.py`), so an over- or underflow raises Python `ValueError`. That
+The spec's `uintN` arithmetic is *checked*: the eth-ssz-specs `uint64` checks the range after
+every `+` / `-` / `*`, so an over- or underflow raises `SSZValueError`, a Python `ValueError`. That
 `ValueError` is not an `AssertionError`, so the reference runner does not catch it
 (`context.py`); it is the `.arithmetic` uncaught fault (`classify`s as `uncaughtFault`, never an
 expected rejection). Lean's raw `UInt64` ops wrap instead of raising, so a spec `a + b` / `a - b`
@@ -331,28 +333,39 @@ names the wrapper its context needs: the `[ErrorConv StateTransitionError E]` bo
 fault in as `.arithmetic` on the state machine (identity) and `.transition (.arithmetic …)` on
 the store machine, so one definition serves both, exactly as `sszGetIdx` does for `IndexError`.
 
-Two kinds of site reach it. The checked operators below are the `uint64` over/underflows.
-The other is `get_inclusion_list_committee`'s `indices[i % len(indices)]` on an empty committee
+Three kinds of site reach it. The checked operators below are the `uint64` over/underflows.
+Another is `get_inclusion_list_committee`'s `indices[i % len(indices)]` on an empty committee
 (`heze/beacon-chain.md:274-276`), a `ZeroDivisionError` rather than a `uint64` op, which lands
-in the same uncaught-fault class because the reference runner propagates it just the same. -/
+in the same uncaught-fault class because the reference runner propagates it just the same. The
+third kind is a `ValueError` outside arithmetic. `process_sync_aggregate` raises it from
+`all_pubkeys.index` when the registry does not hold a sync committee key. The key wrappers in
+`Crypto` raise it too: `blsG1Add`, `blsG1Neg` and `blsAggregatePubkeysChecked` on bytes that
+do not decode as a G1 point. -/
 @[inline] def throwArithmetic {m : Type → Type u} {α E : Type} [Monad m] [MonadExcept E m]
     [ErrorConv StateTransitionError E] (descr : String) : m α :=
   liftErr (E := StateTransitionError) (.error (.arithmetic descr))
 
 /-- Checked `uint64` addition: the sum, or the `.arithmetic` fault on overflow (`a + b` wraps below
-`a`, the unsigned carry test). Mirrors remerkleable's `uint64.__add__`. -/
+`a`, the unsigned carry test). Mirrors the eth-ssz-specs `uint64.__add__`. -/
 @[inline] def checkedAdd {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
     [ErrorConv StateTransitionError E] (a b : UInt64) (descr : String) : m UInt64 :=
   if a + b < a then throwArithmetic descr else pure (a + b)
 
 /-- Checked `uint64` subtraction: the difference, or the `.arithmetic` fault on underflow
-(`b > a`). Mirrors remerkleable's `uint64.__sub__` (the standing `balances[i] - withdrawn` case). -/
+(`b > a`). Mirrors the eth-ssz-specs `uint64.__sub__` (the standing `balances[i] - withdrawn` case). -/
 @[inline] def checkedSub {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
     [ErrorConv StateTransitionError E] (a b : UInt64) (descr : String) : m UInt64 :=
   if b > a then throwArithmetic descr else pure (a - b)
 
+/-- The spec's `ValidatorIndex(index)` (or `BuilderIndex(index)`) cast of a list position: the
+index as a `uint64`, or the `.arithmetic` fault at `2 ^ 64` or above, where the cast raises
+`SSZValueError`, a Python `ValueError`. -/
+@[inline] def checkedIndex {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
+    [ErrorConv StateTransitionError E] (i : Nat) (descr : String) : m UInt64 :=
+  if 2 ^ 64 ≤ i then throwArithmetic descr else pure (UInt64.ofNat i)
+
 /-- Checked `uint64` multiplication: the product, or the `.arithmetic` fault on overflow (`a ≠ 0`
-and the truncating `a * b / a` fails to recover `b`). Mirrors remerkleable's `uint64.__mul__`. -/
+and the truncating `a * b / a` fails to recover `b`). Mirrors the eth-ssz-specs `uint64.__mul__`. -/
 @[inline] def checkedMul {m : Type → Type u} {E : Type} [Monad m] [MonadExcept E m]
     [ErrorConv StateTransitionError E] (a b : UInt64) (descr : String) : m UInt64 :=
   if a != 0 && a * b / a != b then throwArithmetic descr else pure (a * b)

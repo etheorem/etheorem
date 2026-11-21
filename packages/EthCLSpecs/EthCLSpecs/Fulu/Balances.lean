@@ -29,7 +29,7 @@ cost as the old whole-field form. -/
 forkdef modBalance (state : State) (i : ValidatorIndex) (f : Gwei → Gwei) : State :=
   sszModify state balances[i.toNat]! := f
 
-/-- `increase_balance`. The pyspec's `+=` is a bare `uint64` addition, and remerkleable re-runs
+/-- `increase_balance`. The pyspec's `+=` is a bare `uint64` addition, and eth-ssz-specs re-runs
 the bound check on the result, so an overflow raises `ValueError`. The reference runner lets that
 raise escape. `checkedAdd` models the addition, and the action rejects with the `.arithmetic`
 uncaught fault.
@@ -56,11 +56,20 @@ forkdef decreaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
   let balance ← sszGetIdx (sszGet state balances) i.toNat
   return modBalance state i (fun _ => saturatingSub balance delta)
 
-/-- `get_total_balance` (floored at one increment). -/
-forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex) : Gwei :=
+/-- `get_total_balance` (floored at one increment). The pyspec builds the list of effective
+balances first, so every `state.validators[index]` read runs before any addition. A read past
+the end raises `IndexError`, and the body reads through `sszGetIdx` (`.outOfBounds`). The
+pyspec's `sum` then adds `Gwei` values, so each partial sum is a checked `uint64` and an
+overflow raises `ValueError`. The body adds through `checkedAdd` (`.arithmetic`). -/
+forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex) :
+    Except StateTransitionError Gwei := do
   let validators := sszGet state validators
-  let total := indices.foldl (fun acc i => acc + (validators[i.toNat]!).effectiveBalance) 0
-  umax total Const.effectiveBalanceIncrementG
+  let effBals ← indices.mapM fun i => do
+    let validator ← sszGetIdx validators i.toNat
+    pure validator.effectiveBalance
+  let total ← effBals.foldlM (init := 0) fun acc b =>
+    checkedAdd acc b "get_total_balance: sum of effective balances"
+  pure (umax total Const.effectiveBalanceIncrementG)
 
 end
 

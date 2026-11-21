@@ -221,6 +221,19 @@ def indicesWhere {α : Type} [Inhabited α] (xs : Array α) (p : α → Nat → 
     if p (xs[i]!) i then out := out.push (UInt64.ofNat i)
   return out
 
+/-- Whether an entry of `xs` at index `2 ^ 64` or above passes `p`. The spec's registry walks
+cast each kept index with `ValidatorIndex(index)`, and that cast raises `ValueError` at
+`2 ^ 64`. So a walk over `xs` with `p` raises exactly when this test holds. For an array of at
+most `2 ^ 64` entries the tail is empty, and the test is `false`
+(`EthCLLib.Proofs.keepsIndexPast64_of_le`).
+
+The size test comes first. On an array of unknown size, the kernel's `Nat.sub` in
+`Array.extract` would peel `2 ^ 64` successors one by one. `Nat.ble` instead stops on the
+unknown size at once. The definition is also irreducible, so the elaborator's defeq checks
+in proofs about a walk's callers leave it folded; the lemma unfolds it by name. -/
+@[irreducible] def keepsIndexPast64 {α : Type} (xs : Array α) (p : α → Bool) : Bool :=
+  if xs.size ≤ 2 ^ 64 then false else (xs.extract (2 ^ 64) xs.size).any p
+
 /-- Intersection by membership: the elements of `xs` that also appear in `ys`, kept in `xs`'s
 order. A `filter`, so it does not deduplicate `xs` itself; a value repeated in `xs` and present
 in `ys` survives once per occurrence. Names the intersect-the-two-index-sets step

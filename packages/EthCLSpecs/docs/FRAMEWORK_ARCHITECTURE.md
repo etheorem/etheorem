@@ -538,7 +538,7 @@ it in its classify mode:
 | `outOfBounds` / `decodeFailure` | a smell; the spec should not hit these on well-formed input, so they surface as likely bugs |
 | `missingKey` | a fault the reference propagates rather than catches, so it never counts as a rejection |
 | `arithmetic` | the same, except under a case whose own wrapper catches `ValueError` (`SPECS_ARCHITECTURE.md` §10.2) |
-| `listFull` | a list over its limit, from an append or a constructor. Remerkleable raises a bare `Exception`, which no wrapper catches, so it never counts as a rejection |
+| `listFull` | a list over its limit, from an append or a constructor. eth-ssz-specs raises a `ValueError`, so it counts as `arithmetic` does |
 
 ### 6.1 `todo` as the deferral work-queue
 
@@ -919,6 +919,12 @@ or where `Nat` is much simpler. There the result narrows back with an exact
 `UInt64.ofNat`, never a reject. There is no `Nat` tier in the state itself; `Nat`
 appears only as a transient intermediate.
 
+A spec type cast of a list position is different. The pyspec's `ValidatorIndex(i)` and
+`BuilderIndex(i)` raise a `ValueError` at `2^64`. The spec writes each such cast as
+`checkedIndex i descr`, which throws `.arithmetic` at that bound and returns
+`UInt64.ofNat i` below it. The active-index and eligible-index walks test the same bound
+once, through `keepsIndexPast64`, and raise when a kept index lies past it.
+
 The framework provides `umax`, `umin`, and `isqrt` (the integer square root the
 committee math needs), and a type-directed `uintToBytes` whose width follows from
 the value's type. The width-from-type discipline removes a whole bug class, the
@@ -943,7 +949,7 @@ Framework-owned mechanics come in two kinds. The **hashing-based** primitives ar
 the signing-root combinators, `computeForkDataRoot`, `computeDomain`, and
 `computeSigningRoot`, which hash over small byte containers and take a fork-version
 value without reading state, plus `isValidMerkleBranch`, the Merkle-proof
-verification `processDeposit` runs against `eth1Data.depositRoot`. Both are backed
+verification. Both are backed
 by SizzLean's hashing by default, and the framework is free to swap another
 implementation if it fits better. The **signature- and commitment-based**
 primitives are the BLS verify and aggregate (including the `fastAggregateVerify`

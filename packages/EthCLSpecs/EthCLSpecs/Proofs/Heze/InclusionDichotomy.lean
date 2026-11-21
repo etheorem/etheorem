@@ -267,12 +267,14 @@ theorem inclusionList_missing_tx_cost [LawfulFcMap map Root] [LawfulFcMap map (S
           (processParentExecutionPayload (StateTransition := HezeRun) child).run
               (pureState childState)
             = .ok ((), pureState childState)) ∧
-        (∀ epochState : BeaconState,
+        (∀ (epochState : BeaconState) (total : EthCLSpecs.Heze.Gwei),
           BidPaymentCarried epochState rootBlock.body.signedExecutionPayloadBid.message →
+          EthCLSpecs.Heze.getTotalActiveBalance (pureState epochState) = .ok total →
+          QuorumFits total →
           ∃ afterEpoch : BeaconState,
             runPure (processBuilderPendingPayments (StateTransition := HezeRun)) epochState
               = .ok ((), afterEpoch) ∧
-            EpochPaysBidIffQuorum epochState afterEpoch
+            EpochPaysBidIffQuorum epochState afterEpoch total
               rootBlock.body.signedExecutionPayloadBid.message) := by
   obtain ⟨post, hrun, -, hunsat⟩ := inclusionList_missing_tx rootBlock h htx hmissing hinvalid
   exact ⟨post, hrun, fun s nodes hlater hviable =>

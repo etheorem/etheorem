@@ -123,18 +123,20 @@ example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
 
 /-- `processBuilderPendingPayments_run` likewise, and this is the one that shows the point:
 its proof rests on a `List.forIn` induction over the withdrawals loop, and that induction is
-not re-entered here. `builderPendingWithdrawals` is a progressive list (since alpha.12), so the
-contract is unconditional: the run always appends the qualifying withdrawals and shifts the
-payment window. -/
+not re-entered here. `builderPendingWithdrawals` is a progressive list (since alpha.12), so,
+given the total read and `QuorumFits`, the run always appends the qualifying withdrawals and
+shifts the payment window. -/
 example [Preset] [HasherTag] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
-    ∀ (preState : BeaconState),
+    ∀ (preState : BeaconState) (total : EthCLSpecs.Gloas.Gwei),
+      EthCLSpecs.Gloas.getTotalActiveBalance (pureState preState) = .ok total →
+      QuorumFits total →
       runNestedStateTransition (pureState preState)
           (processBuilderPendingPayments (StateTransition := GloasRun))
         = (pure (pureState { preState with
-              builderPendingWithdrawals := expectedWithdrawals preState,
+              builderPendingWithdrawals := expectedWithdrawals preState total,
               builderPendingPayments := expectedPaymentWindow preState }) : m State) :=
-  fun preState =>
-    runNestedStateTransition_of_ok (processBuilderPendingPayments_run preState)
+  fun preState total htotal hq =>
+    runNestedStateTransition_of_ok (processBuilderPendingPayments_run preState total htotal hq)
 
 end EthCLSpecs.Proofs.Gloas

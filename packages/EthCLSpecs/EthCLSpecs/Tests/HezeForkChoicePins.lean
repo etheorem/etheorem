@@ -140,12 +140,19 @@ the recorded EL answer, and the timeliness bit `on_inclusion_list` files with ea
 the minimal config that is `6667 * 6000 / 10000 = 4000` (truncating divide), pinning both the
 `INCLUSION_LIST_DUE_BPS = 6667` constant and the inherited `bpsDeadlineMs` composition. Arithmetic
 only (no hash), so kernel `#guard`. -/
-private def pinIlDueMs : UInt64 :=
+private def pinIlDueMs : Option UInt64 :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  getInclusionListDueMs
-#guard pinIlDueMs = 4000
+  getInclusionListDueMs.toOption
+#guard pinIlDueMs = some 4000
+
+-- With `SLOT_DURATION_MS = 2^60`, `INCLUSION_LIST_DUE_BPS * SLOT_DURATION_MS` overflows, and
+-- pyspec raises `ValueError` in `get_slot_component_duration_ms`.
+#guard
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := 2 ^ 60 }
+  getInclusionListDueMs matches .error (.arithmetic _)
 
 /-- The faithful empty-committee throw. Over a zero-validator `default BeaconState`, slot 0's
 beacon committee is empty, so `getInclusionListCommittee` hits the empty-committee guard and
@@ -381,6 +388,40 @@ example : pinOnIlTimely 0 = some true := by native_decide
 -- 4000 ms into the slot: not < 4000 ⇒ untimely.
 example : pinOnIlTimely 4000 = some false := by native_decide
 
+/-- The `.arithmetic` description `onInclusionList` raises on the `pinOnIlTimely` fixture at
+`timeMs` and `genesisTimeMs`, with `SLOT_DURATION_MS = 2^60`. The list passes every check, so
+the timeliness read is the first step that can raise after the current-slot read. `none` when
+the run raises nothing of that kind. -/
+private def pinOnIlError (timeMs genesisTimeMs : UInt64) : Option String :=
+  letI : Preset := minimal
+  letI : Config := { minimalConfig with slotDurationMs := 2 ^ 60 }
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.verifyOff
+  let state : State := SSZ.FastBox pinPopulatedState
+  let anchorBlock : @BeaconBlock minimal :=
+    { (default : @BeaconBlock minimal) with stateRoot := htr pinPopulatedState }
+  let anchorRoot := htr anchorBlock
+  match (getForkchoiceStore (map := treeMap) state anchorBlock,
+      getInclusionListCommittee (StoreTransition := Except StoreTransitionError) state 0) with
+  | (.ok store0, .ok committee) =>
+    let signed := pinSIL (vget committee 0) 0 anchorRoot #[pinTx 0xAA]
+    let store := { store0 with timeMs := timeMs, genesisTimeMs := genesisTimeMs }
+    match runOn store
+        (onInclusionList (map := treeMap) signed : EStateM StoreTransitionError (Store treeMap) Unit) with
+    | .error (.transition (.arithmetic d), _) => some d
+    | _ => none
+  | _ => none
+
+-- The clock reads fine, the list is in the current slot, and the inclusion-list deadline
+-- raises.
+example : pinOnIlError 20 10
+    = some "get_slot_component_duration_ms: basis_points * SLOT_DURATION_MS" := by native_decide
+
+-- A store time before genesis: the `time_ms - genesis_time_ms` underflow in the current-slot
+-- read raises first.
+example : pinOnIlError 0 10 = some "compute_slot_at_time_ms: time_ms - genesis_time_ms" := by
+  native_decide
+
 /-! ### Build-enforced pins for the inclusion-list store (vectorless)
 
 FOCIL has no conformance vector (the module docstring carries the coverage story), so these
@@ -538,5 +579,38 @@ private def pinAnchorRejects : Bool :=
   | .error (.assert _) => true
   | _                  => false
 example : pinAnchorRejects = true := by native_decide
+
+/-- The error of Heze's `shouldExtendPayload pinPilsRoot` on a store with a block of slot
+`slot` at `pinPilsRoot` when `stored`, and a store time before genesis when `beforeGenesis`.
+`none` when the call succeeds. -/
+private def pinExtendPayloadError (slot : UInt64) (beforeGenesis stored : Bool) :
+    Option StoreTransitionError :=
+  letI : Preset := minimal
+  letI : Config := minimalConfig
+  letI : HasherTag := fastHasherTag
+  let blocks := if stored then
+      FcMap.insert FcMap.empty pinPilsRoot { (default : BeaconBlock) with slot := slot }
+    else FcMap.empty
+  let timeMs : UInt64 := if beforeGenesis then 10000 else 1012000
+  let store := { pinPilsStore false none with
+    timeMs := timeMs, genesisTimeMs := 1000000, blocks := blocks }
+  match (shouldExtendPayload store pinPilsRoot : PinM Bool).run store with
+  | .error e _ => some e
+  | .ok _ _ => none
+
+-- Four rows for Heze `should_extend_payload`. With both faults, the pinned pyspec
+-- (`v1.7.0-beta.4`) raises `ValueError` at `store.blocks[root].slot + 1`, before the clock
+-- read.
+example : (pinExtendPayloadError (2 ^ 64 - 1) true true matches some (.transition
+    (.arithmetic "should_extend_payload: blocks[root].slot + 1"))) = true := by
+  native_decide
+example : (pinExtendPayloadError (2 ^ 64 - 1) false true matches some (.transition
+    (.arithmetic "should_extend_payload: blocks[root].slot + 1"))) = true := by
+  native_decide
+example : (pinExtendPayloadError 5 true true matches some (.transition
+    (.arithmetic "compute_slot_at_time_ms: time_ms - genesis_time_ms"))) = true := by
+  native_decide
+example : (pinExtendPayloadError (2 ^ 64 - 1) true false matches some (.missingKey _)) =
+    true := by native_decide
 
 end EthCLSpecs.Tests.HezeForkChoicePins

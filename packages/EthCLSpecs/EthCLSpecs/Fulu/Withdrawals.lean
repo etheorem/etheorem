@@ -55,10 +55,9 @@ clamped.
 The `withdrawn` accumulator folds through `checkedAdd`, which is where pyspec faults too.
 `sum(...)` looks like it widens to a Python `int`, but `Gwei` subclasses `int` and defines
 `__radd__`, so Python's reflected-operand rule makes the accumulator a `Gwei` from the first
-element on, and every add re-runs the bound check in `uint.__new__`
-(`remerkleable/basic.py:88-107`). A running sum past `2^64` therefore raises `ValueError`
-during the accumulation, not at the later subtraction. Verified against the pinned
-remerkleable. -/
+element on, and every add re-runs the eth-ssz-specs bound check. A running sum past `2^64`
+therefore raises `SSZValueError`, a `ValueError`, during the accumulation, not at the later
+subtraction. Verified against the pinned pyspec's eth-ssz-specs. -/
 def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
     StateTransition Gwei := do
   let withdrawn ← ws.foldlM (init := (0 : Gwei)) fun acc w =>
@@ -120,12 +119,10 @@ partials, and advance the sweep cursor. -/
 forkdef processWithdrawals (payload : ExecutionPayload) : StateTransition Unit := do
   let state ← get
   let (expected, processedPartial) ← getExpectedWithdrawals state
-  -- `payload.withdrawals == expected.withdrawals`: remerkleable's `View.__eq__` coerces the
-  -- Python list through the `List` constructor, which raises on too many elements, then
-  -- compares roots.
-  let expectedList : SSZList Withdrawal Const.maxWithdrawalsPerPayload ←
-    sszOfArrayM "withdrawals" expected
-  assert (htr expectedList == htr payload.withdrawals)
+  -- `list(payload.withdrawals) == expected.withdrawals` (`electra/beacon-chain.md:1502`): two
+  -- Python lists, compared element by element. No `List` is built, so a long `expected` cannot
+  -- raise here, and a length mismatch fails the assert.
+  assert (payload.withdrawals.val == expected)
 
   let nvals := (sszGet state validators).size
   let mut stateAcc := state

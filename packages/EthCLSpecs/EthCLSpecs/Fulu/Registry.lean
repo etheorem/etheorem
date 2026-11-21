@@ -20,15 +20,40 @@ namespace EthCLSpecs.Fulu
 
 state_section
 
-/-- `get_active_validator_indices`. -/
-forkdef getActiveValidatorIndices (state : State) (epoch : Epoch) : Array ValidatorIndex :=
+/-- The indices of `get_active_validator_indices`, cast with a wrapping `UInt64.ofNat`.
+`getActiveValidatorIndices` runs the spec's cast check first, so it returns this only where
+every kept index fits. -/
+forkdef activeValidatorIndicesOf (state : State) (epoch : Epoch) : Array ValidatorIndex :=
   indicesWhere (sszGet state validators).toArray (fun v _ => isActiveValidator v epoch)
 
-/-- `get_eligible_validator_indices` (for rewards / inactivity). -/
-forkdef getEligibleValidatorIndices (state : State) : Array ValidatorIndex :=
+/-- `get_active_validator_indices` (`phase0/beacon-chain.md:1469-1478`). The comprehension
+builds `ValidatorIndex(index)` for each active validator, and that cast raises `ValueError`
+for an index at `2 ^ 64` or above (`.arithmetic`). The comprehension has no other effect, so
+the body tests for such an index first, and otherwise returns `activeValidatorIndicesOf`. -/
+forkdef getActiveValidatorIndices (state : State) (epoch : Epoch) :
+    Except StateTransitionError (Array ValidatorIndex) := do
+  if keepsIndexPast64 (sszGet state validators).toArray (isActiveValidator · epoch) then
+    throwArithmetic "get_active_validator_indices: ValidatorIndex(index) at 2**64 or above"
+  pure (activeValidatorIndicesOf state epoch)
+
+/-- The eligibility test of `get_eligible_validator_indices` at the previous epoch. -/
+forkdef isEligibleValidator (state : State) (validator : Validator) : Bool :=
   let prevEpoch := previousEpochOf state
-  indicesWhere (sszGet state validators).toArray
-    (fun validator _ => isActiveValidator validator prevEpoch || (validator.slashed && prevEpoch + 1 < validator.withdrawableEpoch))
+  isActiveValidator validator prevEpoch || (validator.slashed && prevEpoch + 1 < validator.withdrawableEpoch)
+
+/-- The indices of `get_eligible_validator_indices`, cast with a wrapping `UInt64.ofNat`, as
+`activeValidatorIndicesOf` does. -/
+forkdef eligibleValidatorIndicesOf (state : State) : Array ValidatorIndex :=
+  indicesWhere (sszGet state validators).toArray (fun validator _ => isEligibleValidator state validator)
+
+/-- `get_eligible_validator_indices` (`phase0/beacon-chain.md:2037-2045`, for rewards and
+inactivity). The same `ValidatorIndex(index)` cast as `get_active_validator_indices` raises at
+`2 ^ 64` or above. -/
+forkdef getEligibleValidatorIndices (state : State) :
+    Except StateTransitionError (Array ValidatorIndex) := do
+  if keepsIndexPast64 (sszGet state validators).toArray (isEligibleValidator state ·) then
+    throwArithmetic "get_eligible_validator_indices: ValidatorIndex(index) at 2**64 or above"
+  pure (eligibleValidatorIndicesOf state)
 
 /-- The registry index of the first validator whose `pubkey` equals `pk`, or `none` when no
 validator carries that pubkey. The single home for the

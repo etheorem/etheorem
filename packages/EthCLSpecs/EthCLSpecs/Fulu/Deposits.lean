@@ -34,8 +34,10 @@ lists match `validators` in length, every write appends, and an append to a full
 raises `.listFull`. -/
 forkdef addValidatorToRegistry (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) : StateTransition Unit := do
   let state ← get
-  -- `get_index_for_new_validator(state)`: `len(state.validators)`.
+  -- `get_index_for_new_validator(state)`: `ValidatorIndex(len(state.validators))`, a cast
+  -- that raises at `2 ^ 64` or above.
   let index := (sszGet state validators).val.size
+  let _ ← checkedIndex index "get_index_for_new_validator: ValidatorIndex(len(state.validators))"
   setOrAppendState validators index (getValidatorFromDeposit pubkey wc amount)
   setOrAppendState balances index amount
   setOrAppendState previousEpochParticipation index 0
@@ -55,11 +57,14 @@ forkdef isValidDepositSignature (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gw
   blsVerify pubkey signingRoot signature
 
 /-- `apply_pending_deposit`: top up an existing validator's balance, or, for a new
-pubkey with a valid proof-of-possession, add it to the registry. -/
+pubkey with a valid proof-of-possession, add it to the registry. The top-up casts the
+position with `ValidatorIndex(...)`, which raises at `2 ^ 64` or above. -/
 forkdef applyPendingDeposit (deposit : PendingDeposit) : StateTransition Unit := do
   let state ← get
   match validatorIndexByPubkey? state deposit.pubkey with
-  | some vi => set (← increaseBalance state (UInt64.ofNat vi) deposit.amount)
+  | some vi =>
+    let index ← checkedIndex vi "apply_pending_deposit: ValidatorIndex(validator_pubkeys.index(deposit.pubkey))"
+    set (← increaseBalance state index deposit.amount)
   | none    =>
       if isValidDepositSignature deposit.pubkey deposit.withdrawalCredentials deposit.amount deposit.signature then
         addValidatorToRegistry deposit.pubkey deposit.withdrawalCredentials deposit.amount

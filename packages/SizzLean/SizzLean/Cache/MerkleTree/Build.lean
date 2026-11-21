@@ -26,7 +26,10 @@ mirrors the SSZ shape:
   per element into sub-trees, then balance them as the leaves of
   an `ofSubtrees` tree (depth `chunkDepth n` / `chunkDepth cap`);
 * `container fs` recurses per field into sub-trees, balanced via
-  `ofSubtrees` at depth `chunkDepth fs.length`.
+  `ofSubtrees` at depth `chunkDepth fs.length`;
+* `progressiveContainer active fs` recurses per field into sub-trees
+  and places them in the `merkleize_progressive` shelves, with a zero
+  leaf at each inactive mask bit (`ofProgressiveSubtrees`).
 
 Every arm mirrors a corresponding arm of
 `Spec.SSZType.hashTreeRoot` (mutual block at
@@ -134,13 +137,89 @@ def Node.ofProgressiveAux (H : Type) [Hasher H] :
 def Node.ofProgressive (H : Type) [Hasher H] (chunks : List ByteArray) : Node :=
   Node.ofProgressiveAux H chunks.length chunks 1
 
-/-- Field-root chunks of a progressive container, with a zero chunk
-for each inactive mask bit. -/
-def placeActiveRoots (H : Type) [Hasher H] : List Bool → List Node → List ByteArray
+/-- `merkleize_progressive` over sub-trees. The shelves are the ones
+`Node.ofProgressiveAux` builds, but each shelf is an `ofSubtrees` tree,
+so the supplied sub-trees stay in the result. A write below one of them
+then replaces one path, and the other shelves keep their cache slots.
+`Proofs/Merkle/Progressive.lean` proves that the root equals the
+`ofProgressiveAux` root over the sub-trees' roots. -/
+def Node.ofProgressiveSubtreesAux (H : Type) [Hasher H] :
+    Nat → List Node → Nat → Node
+  | _, [], _ => .leaf zero32
+  | 0, _, _ => .leaf zero32
+  | fuel + 1, subs, numLeaves =>
+      let n := max numLeaves 1
+      let left := Node.ofSubtrees H (subs.take n) (chunkDepth n)
+      let right := Node.ofProgressiveSubtreesAux H fuel (subs.drop n) (n * 4)
+      let root := Hasher.combine (H := H)
+        (Node.rootOf H left) (Node.rootOf H right)
+      .pair left right (some root)
+
+/-- `merkleize_progressive` over sub-trees, rooted at shelf width 1. -/
+def Node.ofProgressiveSubtrees (H : Type) [Hasher H] (subs : List Node) : Node :=
+  Node.ofProgressiveSubtreesAux H subs.length subs 1
+
+/-- The chunk sub-trees of a progressive container: the field sub-trees
+in mask order, with a zero leaf at each inactive mask bit. -/
+def placeActiveSubtrees : List Bool → List Node → List Node
   | [], _ => []
-  | false :: bits, nodes => zero32 :: placeActiveRoots H bits nodes
-  | true :: bits, n :: ns => Node.rootOf H n :: placeActiveRoots H bits ns
-  | true :: bits, [] => zero32 :: placeActiveRoots H bits []
+  | false :: bits, nodes => .leaf zero32 :: placeActiveSubtrees bits nodes
+  | true :: bits, n :: ns => n :: placeActiveSubtrees bits ns
+  | true :: bits, [] => .leaf zero32 :: placeActiveSubtrees bits []
+
+/-! ### Paths into a progressive tree
+
+A progressive tree has no classic generalized index: shelf `k` holds
+`4 ^ k` chunks and hangs `k` right turns below the root. The functions
+below give the bit path (`false` = left) from the root of
+`Node.ofProgressiveSubtrees` to one chunk, and from the root of a
+progressive container to one field. The `sszUpdate` elaborator calls
+`progressiveFieldBits` to key a pending write, and
+`Proofs/Merkle/Progressive.lean` proves that the path reaches the
+field's sub-tree. -/
+
+/-- The path to chunk `pos` of a progressive tree whose current shelf
+holds `width` chunks. At the shelf that holds `pos`, the path turns left
+and then reads the `chunkDepth` low bits of `pos`, most significant
+first. Otherwise it turns right and continues at the next shelf. `fuel`
+bounds the shelf count. -/
+def progressiveChunkBitsAux : Nat → Nat → Nat → List Bool
+  | 0, _, _ => []
+  | fuel + 1, pos, width =>
+      let n := max width 1
+      if pos < n then
+        false :: (List.range (chunkDepth n)).reverse.map (pos.testBit ·)
+      else
+        true :: progressiveChunkBitsAux fuel (pos - n) (n * 4)
+
+/-- The path to chunk `pos` of `Node.ofProgressiveSubtrees`. Each shelf
+holds at least one chunk, so `pos + 1` shelves are enough fuel. -/
+def progressiveChunkBits (pos : Nat) : List Bool :=
+  progressiveChunkBitsAux (pos + 1) pos 1
+
+/-- The mask position of active field `k`: the index of the `k`-th
+`true` bit of `active`. -/
+def activeChunkPos : List Bool → Nat → Nat
+  | [], _ => 0
+  | false :: bits, k => activeChunkPos bits k + 1
+  | true :: _, 0 => 0
+  | true :: bits, k + 1 => activeChunkPos bits k + 1
+
+/-- The path from the root of a progressive container to field `k`. The
+leading `false` steps into the body of the `mix_in_active_fields` pair. -/
+def progressiveFieldBits (active : List Bool) (k : Nat) : List Bool :=
+  false :: progressiveChunkBits (activeChunkPos active k)
+
+/-- Shelf 0 holds chunk 0, shelf 1 holds chunks 1 to 4, and shelf 2
+starts at chunk 5. -/
+example : progressiveChunkBits 0 = [false] := by decide
+example : progressiveChunkBits 1 = [true, false, false, false] := by decide
+example : progressiveChunkBits 4 = [true, false, true, true] := by decide
+example : progressiveChunkBits 5 =
+    [true, true, false, false, false, false, false] := by decide
+/-- Field 1 of the mask `[1, 0, 1]` sits at position 2, after the gap. -/
+example : progressiveFieldBits [true, false, true] 1
+    = [false, true, false, false, true] := by decide
 
 /-! ### The shape-driven builder
 
@@ -241,9 +320,10 @@ def Node.ofShape (H : Type) [Hasher H] :
       let bodyTree := Node.ofProgressive H (chunkify bytes)
       Node.mixInLength H bodyTree bs'.size
   | .progressiveContainer active fs, vs =>
+      -- The field sub-trees stay in the tree, so `sszUpdate` can write
+      -- below one field at its `progressiveFieldBits` path.
       let subs := Node.subtreesForFields H fs vs
-      let chunks := placeActiveRoots H active subs
-      let body := Node.ofProgressive H chunks
+      let body := Node.ofProgressiveSubtrees H (placeActiveSubtrees active subs)
       Node.mixInActiveFields H body active
 
 /-- Per-field sub-trees for a `container fs` value. Mirrors the

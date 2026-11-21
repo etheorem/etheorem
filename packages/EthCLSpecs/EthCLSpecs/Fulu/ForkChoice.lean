@@ -105,13 +105,14 @@ forkdef getTimeIntoSlotMs (store : Store map) : StoreTransition UInt64 := do
     "get_time_into_slot_ms: time_ms - compute_time_at_slot_ms(genesis_time_ms, current_slot)"
 
 /-- A basis-points deadline within a slot, in milliseconds: `get_slot_component_duration_ms`,
-`bps * SLOT_DURATION_MS // BASIS_POINTS` (`phase0/fork-choice.md:573-577`). Multiply before
-the `UInt64` truncating divide, so the floor lands on the full `bps * SLOT_DURATION_MS`
-product. The product is bare rather than `checkedMul`, and stays that way: both factors are
-constants (`bps ≤ BASIS_POINTS = 10000`, `SLOT_DURATION_MS` is 12000 at mainnet and 6000 at
-minimal), so it peaks near `1.2e8` and cannot reach the `uint64` bound at any preset. -/
-forkdef bpsDeadlineMs (bps : UInt64) : UInt64 :=
-  bps * Const.slotDurationMs / Const.basisPoints
+`bps * SLOT_DURATION_MS // BASIS_POINTS` (`phase0/fork-choice.md:573-577`). The product is a
+checked `uint64` multiplication. `SLOT_DURATION_MS` is a `Config` field, so the model cannot
+bound it. A large value makes pyspec raise `ValueError` at the product. The divide comes after
+the product, so the floor applies to the full product. -/
+forkdef bpsDeadlineMs (bps : UInt64) : Except StateTransitionError UInt64 := do
+  let scaled ← checkedMul bps Const.slotDurationMs
+    "get_slot_component_duration_ms: basis_points * SLOT_DURATION_MS"
+  pure (scaled / Const.basisPoints)
 
 /-! ## DAG walks
 
@@ -149,17 +150,22 @@ forkdef getCheckpointBlock (store : Store map) (root : Root) (epoch : Epoch) :
 a percentage of the per-slot committee weight. At v1.7.0-beta.4 the weight is the total
 balance of the *unslashed* active validators (`get_total_balance`, floored at one increment)
 divided across the slots of an epoch, where alpha.12 took `get_total_active_balance`, which
-counts slashed validators too. `UInt64` truncating division, as the spec's `//`. -/
-forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) : Gwei :=
+counts slashed validators too. `UInt64` truncating division, as the spec's `//`. The function
+throws where `get_total_balance` throws, and on the `uint64` product
+`committee_weight * committee_percent` past `2^64` (`checkedMul`). -/
+forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) :
+    Except StateTransitionError Gwei := do
   let validators := sszGet state validators
-  let unslashedAndActive := (getActiveValidatorIndices state (currentEpochOf state)).filter
+  let unslashedAndActive := (← getActiveValidatorIndices state (currentEpochOf state)).filter
     fun i => !(validators[i.toNat]!).slashed
-  let committeeWeight := getTotalBalance state unslashedAndActive / UInt64.ofNat Const.slotsPerEpoch
-  committeeWeight * committeePercent / 100
+  let committeeWeight := (← getTotalBalance state unslashedAndActive) / UInt64.ofNat Const.slotsPerEpoch
+  let product ← checkedMul committeeWeight committeePercent
+    "calculate_committee_fraction: committee_weight * committee_percent"
+  pure (product / 100)
 
 /-- `compute_proposer_score(state)` (`phase0/fork-choice.md:362-363`): the committee
-fraction at `PROPOSER_SCORE_BOOST`. -/
-forkdef computeProposerScore (state : State) : Gwei :=
+fraction at `PROPOSER_SCORE_BOOST`. It throws where the fraction does. -/
+forkdef computeProposerScore (state : State) : Except StateTransitionError Gwei :=
   calculateCommitteeFraction state (UInt64.ofNat Const.proposerScoreBoost)
 
 /-- `get_proposer_score` (`phase0/fork-choice.md:369-371`): `compute_proposer_score` over the
@@ -167,7 +173,7 @@ justified checkpoint state. -/
 forkdef getProposerScore (store : Store map) : StoreTransition Gwei := do
   let state ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  pure (computeProposerScore state)
+  liftErr (computeProposerScore state)
 
 /-- `get_attestation_score(store, node, state)` (`phase0/fork-choice.md:338-356`): the
 effective balance of the unslashed active validators whose latest message supports a
@@ -179,13 +185,12 @@ The `and` chain short-circuits, so the block read runs only for a validator with
 message that is not equivocating. A store with no latest messages, exactly what
 `get_forkchoice_store` hands back, therefore scores `0` without any read.
 `validators[idx]!` stays unchecked: `idx` comes from `getActiveValidatorIndices` on the same
-`state` the array belongs to, so it is in range by construction. The sum stays a bare `+`
-because it is an operand of the weight path, which converts as one piece: `getTotalBalance`
-underneath still wraps, so checking this alone would move a wrong number around instead of
-catching it. -/
+`state` the array belongs to, so it is in range by construction. That walk runs first, and its
+index cast can raise `.arithmetic`. The `Gwei(sum(...))` raises `ValueError` past `2^64`, so
+the fold steps through `checkedAdd`. -/
 forkdef getAttestationScore (store : Store map) (root : Root) (state : State) :
     StoreTransition Gwei := do
-  let active := getActiveValidatorIndices state (currentEpochOf state)
+  let active ← liftErr (getActiveValidatorIndices state (currentEpochOf state))
   let validators := sszGet state validators
   active.foldlM (init := (0 : Gwei)) fun acc i => do
     let idx := i.toNat
@@ -199,13 +204,15 @@ forkdef getAttestationScore (store : Store map) (root : Root) (state : State) :
           -- walks the supported node down to that slot.
           let block ← FcMap.getOrThrow store.blocks root
           let anc ← getAncestor store lm.root block.slot
-          if anc == root then pure (acc + (validators[idx]!).effectiveBalance) else pure acc
+          if anc == root then
+            checkedAdd acc (validators[idx]!).effectiveBalance "get_attestation_score: sum"
+          else pure acc
 
 /-- `get_weight(store, node)` (`phase0/fork-choice.md:377-391`): the attestation score, plus
 the proposer score when `root` is an ancestor of the boosted block. With an unset boost root
 the spec returns the attestation score and reads nothing more. The `checkpoint_states` /
 `blocks` reads and the `is_ancestor` walk are plain `Dict` reads that raise, so the query is
-monadic. -/
+monadic. The closing `Gwei` addition raises past `2^64`, so it is `checkedAdd`. -/
 forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := do
   let state ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
@@ -218,7 +225,7 @@ forkdef getWeight (store : Store map) (root : Root) : StoreTransition Gwei := do
     let anc ← getAncestor store store.proposerBoostRoot block.slot
     if anc == root then
       let proposerScore ← getProposerScore store
-      pure (attestationScore + proposerScore)
+      checkedAdd attestationScore proposerScore "get_weight: attestation_score + proposer_score"
     else pure attestationScore
 
 /-- `get_voting_source(store, block_root)` (`phase0/fork-choice.md:397-410`): all three reads
@@ -354,9 +361,12 @@ forkdef isFinalizationOk (store : Store map) (slot : Slot) : StoreTransition Boo
   pure (gap ≤ Const.reorgMaxEpochsSinceFinalization)
 
 /-- `is_proposing_on_time` (`phase0/fork-choice.md:639-640`): the time into the slot is
-within `get_proposer_reorg_cutoff_ms()`. Throwing only to bind `getTimeIntoSlotMs`. -/
+within `get_proposer_reorg_cutoff_ms()`. It reads the time into the slot first and then the
+cutoff, as pyspec does. Both can raise. -/
 forkdef isProposingOnTime (store : Store map) : StoreTransition Bool := do
-  pure ((← getTimeIntoSlotMs store) ≤ bpsDeadlineMs Const.proposerReorgCutoffBps)
+  let timeIntoSlot ← getTimeIntoSlotMs store
+  let cutoff ← liftErr (bpsDeadlineMs Const.proposerReorgCutoffBps)
+  pure (timeIntoSlot ≤ cutoff)
 
 /-- `is_head_weak(store, head_root)` (`phase0/fork-choice.md:652-673`): the head's attestation
 score, plus the effective balance of the equivocators in its slot's committees, is below the
@@ -372,20 +382,27 @@ on a miss. -/
 forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool := do
   let justifiedState ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  let reorgThreshold := calculateCommitteeFraction justifiedState Const.reorgHeadWeightThreshold
+  -- pyspec computes the threshold before the head reads, so its overflow raises first.
+  let reorgThreshold ← liftErr
+    (calculateCommitteeFraction justifiedState Const.reorgHeadWeightThreshold)
   let headState ← FcMap.getOrThrow store.blockStates headRoot
   let headBlock ← FcMap.getOrThrow store.blocks headRoot
   let epoch := computeEpochAtSlot headBlock.slot
   let baseWeight ← getAttestationScore store headRoot justifiedState
   let validators := sszGet justifiedState validators
-  let headWeight ← (List.range (getCommitteeCountPerSlot headState epoch)).foldlM
+  let committeeCount ← liftErr (getCommitteeCountPerSlot headState epoch)
+  let headWeight ← (List.range committeeCount).foldlM
       (init := baseWeight) fun acc index => do
-    let committee := getBeaconCommittee headState headBlock.slot index
-    committee.foldlM (init := acc) fun a i =>
+    let committee ← liftErr (getBeaconCommittee headState headBlock.slot index)
+    -- Python sums the equivocator balances of the committee as `Gwei(sum(...))`. Then it
+    -- adds that sum with `head_weight +=`. Both `uint64` ops raise past `2^64`, so the model
+    -- checks both, in the same order.
+    let equivocatorWeight ← committee.foldlM (init := (0 : Gwei)) fun a i =>
       if store.equivocatingIndices.contains i then do
         let v ← sszGetIdx validators i.toNat
-        pure (a + v.effectiveBalance)
+        checkedAdd a v.effectiveBalance "is_head_weak: sum of equivocator balances"
       else pure a
+    checkedAdd acc equivocatorWeight "is_head_weak: head_weight += equivocator weight"
   pure (headWeight < reorgThreshold)
 
 /-- `is_parent_strong(store, root)` (`phase0/fork-choice.md:679-685`): the parent's
@@ -395,7 +412,9 @@ alpha.12 used `get_weight`. The `store.blocks[root]` read raises on a miss. -/
 forkdef isParentStrong (store : Store map) (root : Root) : StoreTransition Bool := do
   let justifiedState ← FcMap.getOrThrowKey store.checkpointStates store.justifiedCheckpoint
     store.justifiedCheckpoint.root
-  let parentThreshold := calculateCommitteeFraction justifiedState Const.reorgParentWeightThreshold
+  -- pyspec computes the threshold before the block read, so its overflow raises first.
+  let parentThreshold ← liftErr
+    (calculateCommitteeFraction justifiedState Const.reorgParentWeightThreshold)
   let b ← FcMap.getOrThrow store.blocks root
   let parentWeight ← getAttestationScore store b.parentRoot justifiedState
   pure (parentWeight > parentThreshold)
@@ -545,11 +564,12 @@ forkdef onTick (timeMs : UInt64) : StoreTransition Unit := do
 
 /-- `record_block_timeliness(store, root)` (`phase0/fork-choice.md:890-896`): the block is
 timely when it arrives in its own slot, before the attestation deadline. The
-`store.blocks[root]` read raises on a miss. -/
+`store.blocks[root]` read raises on a miss, and the deadline raises on its checked product. -/
 forkdef recordBlockTimeliness (store : Store map) (root : Root) : StoreTransition (Store map) := do
   let block ← FcMap.getOrThrow store.blocks root
   let timeIntoSlotMs ← getTimeIntoSlotMs store
-  let isBeforeAttestingInterval := timeIntoSlotMs < bpsDeadlineMs Const.attestationDueBps
+  let attestationThresholdMs ← liftErr (bpsDeadlineMs Const.attestationDueBps)
+  let isBeforeAttestingInterval := timeIntoSlotMs < attestationThresholdMs
   let currentSlot ← getCurrentSlot store
   let isTimely := currentSlot == block.slot && isBeforeAttestingInterval
   pure { store with blockTimeliness := FcMap.insert store.blockTimeliness root isTimely }
@@ -756,7 +776,7 @@ forkdef onAttestation (att : Attestation) (isFromBlock : Bool) : StoreTransition
   let indexedAttestation : IndexedAttestation :=
     { attestingIndices := ← sszOfArrayM "attestingIndices" attesting, data := att.data,
       signature := att.signature }
-  assert (isValidIndexedAttestation targetState indexedAttestation)
+  assert (← liftErr (isValidIndexedAttestation targetState indexedAttestation))
 
   set (updateLatestMessages store attesting att)
 
@@ -768,8 +788,8 @@ forkdef onAttesterSlashing (asl : AttesterSlashing) : StoreTransition Unit := do
   assert (isSlashableAttestationData asl.attestation1.data asl.attestation2.data)
   let store ← get
   let state ← FcMap.getOrThrow store.blockStates store.justifiedCheckpoint.root
-  assert (isValidIndexedAttestation state asl.attestation1)
-  assert (isValidIndexedAttestation state asl.attestation2)
+  assert (← liftErr (isValidIndexedAttestation state asl.attestation1))
+  assert (← liftErr (isValidIndexedAttestation state asl.attestation2))
 
   let set2 := asl.attestation2.attestingIndices.toArray
   let inter := arrayInter asl.attestation1.attestingIndices.toArray set2

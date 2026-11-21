@@ -35,6 +35,7 @@ inherit modBalance
 inherit increaseBalance
 inherit decreaseBalance
 inherit modValidator
+inherit modValidatorAt
 inherit computeActivationExitEpoch
 inherit currentEpochOf
 inherit previousEpochOf
@@ -52,12 +53,15 @@ inherit hasExecutionWithdrawalCredential
 inherit getMaxEffectiveBalance
 inherit hasNotInitiatedExit
 inherit passedShardCommitteePeriod
+inherit activeValidatorIndicesOf
 inherit getActiveValidatorIndices
 inherit getTotalBalance
 inherit getTotalActiveBalance
 inherit getBaseRewardPerIncrement
 inherit getBaseReward
 inherit getUnslashedParticipatingIndices
+inherit isEligibleValidator
+inherit eligibleValidatorIndicesOf
 inherit getEligibleValidatorIndices
 inherit validatorIndexByPubkey?
 inherit getFinalityDelay
@@ -86,7 +90,9 @@ existing validator is unaffected, whatever the deposit's credentials. -/
 forkdef applyPendingDeposit (deposit : PendingDeposit) : StateTransition Unit := do
   let state ← get
   match validatorIndexByPubkey? state deposit.pubkey with
-  | some vi => set (← increaseBalance state (UInt64.ofNat vi) deposit.amount)
+  | some vi =>
+    let index ← checkedIndex vi "apply_pending_deposit: ValidatorIndex(validator_pubkeys.index(deposit.pubkey))"
+    set (← increaseBalance state index deposit.amount)
   | none    =>
       -- [New in Heze:EIP8365] do not create validators with BLS withdrawal credentials.
       if credPrefix deposit.withdrawalCredentials == Const.blsWithdrawalPrefix then return
@@ -94,7 +100,9 @@ forkdef applyPendingDeposit (deposit : PendingDeposit) : StateTransition Unit :=
         addValidatorToRegistry deposit.pubkey deposit.withdrawalCredentials deposit.amount
       else pure ()
 inherit computeShuffledPermutation
+inherit seedOf
 inherit getSeed
+inherit committeeCountOf
 inherit getCommitteeCountPerSlot
 inherit computeCommittee
 inherit getBeaconCommittee

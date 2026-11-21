@@ -21,6 +21,7 @@
 // OpenSSL implements NIST FIPS 180-4 SHA-256 correctly. Validated
 // empirically by the byte-level CAVP KAT in `LeanHazmatSha256Tests/`.
 
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -52,6 +53,33 @@ void __libc_csu_fini(void) {}
 // fixed at 32 by FIPS 180-4.
 #define LEAN_HAZMAT_SHA256_DIGEST_LEN 32
 
+// The SHA-256 method, fetched from the default provider once per
+// process. `EVP_sha256()` returns a legacy handle, and OpenSSL 3 then
+// fetches the provider method inside every `EVP_DigestInit_ex`: a
+// lock and a hash-table lookup per digest. A fetched `EVP_MD` skips
+// that, and OpenSSL allows one fetched method to be shared across
+// threads. The pointer is published with a compare-and-swap, so two
+// threads that race on the first call each fetch, one wins, and the
+// other frees its copy. The method is never freed; it lives as long
+// as the process. `sha256_batch.c` calls this too.
+static _Atomic(EVP_MD *) lean_hazmat_sha256_cached_md = NULL;
+
+const EVP_MD *lean_hazmat_sha256_md(void) {
+    EVP_MD *md = atomic_load_explicit(&lean_hazmat_sha256_cached_md, memory_order_acquire);
+    if (md) return md;
+    EVP_MD *fresh = EVP_MD_fetch(NULL, "SHA256", NULL);
+    if (!fresh) {
+        lean_internal_panic("LeanHazmatSha256: EVP_MD_fetch(SHA256) failed");
+    }
+    EVP_MD *expected = NULL;
+    if (atomic_compare_exchange_strong_explicit(&lean_hazmat_sha256_cached_md,
+            &expected, fresh, memory_order_acq_rel, memory_order_acquire)) {
+        return fresh;
+    }
+    EVP_MD_free(fresh);
+    return expected;
+}
+
 // Internal helper: digest `len` bytes at `data` into `out` (32 bytes).
 // Returns 1 on success, 0 on failure. Failure is treated as a fatal
 // error and Lean is told via panic. There's no recovery story for
@@ -61,7 +89,7 @@ static int lean_hazmat_sha256_raw(
 {
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     if (!ctx) return 0;
-    int ok = EVP_DigestInit_ex(ctx, EVP_sha256(), NULL)
+    int ok = EVP_DigestInit_ex(ctx, lean_hazmat_sha256_md(), NULL)
           && EVP_DigestUpdate(ctx, data, len)
           && EVP_DigestFinal_ex(ctx, out, NULL);
     EVP_MD_CTX_free(ctx);
@@ -105,7 +133,7 @@ LEAN_EXPORT lean_obj_res lean_hazmat_sha256_combine(
     lean_obj_res out = lean_alloc_sarray(
         1, LEAN_HAZMAT_SHA256_DIGEST_LEN, LEAN_HAZMAT_SHA256_DIGEST_LEN);
 
-    int ok = EVP_DigestInit_ex(ctx, EVP_sha256(), NULL)
+    int ok = EVP_DigestInit_ex(ctx, lean_hazmat_sha256_md(), NULL)
           && EVP_DigestUpdate(ctx, lp, ln)
           && EVP_DigestUpdate(ctx, rp, rn)
           && EVP_DigestFinal_ex(ctx, (uint8_t *)lean_sarray_cptr(out), NULL);

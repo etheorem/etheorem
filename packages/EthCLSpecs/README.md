@@ -137,16 +137,16 @@ column is the fork's own diff, for scale.
 <!-- proof-coverage:begin -->
 | Fork | Characterized | Touched | Spec functions | Authored |
 | --- | --- | --- | --- | --- |
-| `EthCLSpecs.Fulu` | 8 | 12 | 173 | 173 |
-| `EthCLSpecs.Gloas` | 16 | 41 | 222 | 114 |
-| `EthCLSpecs.Heze` | 12 | 40 | 230 | 19 |
-| **Total** | 36 | 93 | 625 | 306 |
+| `EthCLSpecs.Fulu` | 8 | 12 | 181 | 181 |
+| `EthCLSpecs.Gloas` | 16 | 44 | 229 | 118 |
+| `EthCLSpecs.Heze` | 12 | 41 | 237 | 19 |
+| **Total** | 36 | 97 | 647 | 318 |
 
 | Axiom | Theorems resting on it |
 | --- | --- |
-| `propext` | 287 |
-| `Classical.choice` | 230 |
-| `Quot.sound` | 275 |
+| `propext` | 301 |
+| `Classical.choice` | 239 |
+| `Quot.sound` | 286 |
 | `Lean.ofReduceBool` | 0 |
 | `Lean.trustCompiler` | 0 |
 | `SizzLean.Hasher.sha256Hash_eq_spec` | 0 |

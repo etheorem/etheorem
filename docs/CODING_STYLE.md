@@ -576,9 +576,9 @@ whole, and toward `where` over promotion, is stronger than elsewhere.
 #### Applied to the long ones
 
 `processAttestation` (`EthCLSpecs/Gloas/Operations.lean:processAttestation`) is the case where both
-tools apply. The committee-coverage check (the `(ok, offset)` fold) is a
-self-contained validity computation with a clean boundary; lift it to a `where
-verifyCommitteeCoverage` helper. The participation-flag loop that follows mutates
+tools apply. The committee loop is a self-contained validity computation with a clean
+boundary, so it is the `attestationCommitteeOffset` helper. Both forks share it, so it is
+a `forkdef` that Gloas inherits. The participation-flag loop that follows mutates
 three accumulators together (`stateAcc`, `proposerNum`, `weight`), so extracting it
 cleanly means returning a triple, which buys little. Leave that inline and
 paragraph it (§1). The judgment is per-block: extract the parts with clean

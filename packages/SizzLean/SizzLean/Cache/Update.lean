@@ -528,9 +528,18 @@ private def walkPath (rootType : Expr) (path : Array PathStep) :
         let some idx := fieldNames.findIdx? (· == comp)
           | throwError "sszUpdate: field '{comp}' not in structure '{curT}'"
         let numFields := fieldNames.size
-        let chunkDepthVal := SizzLean.Spec.chunkDepth numFields
-        let g := 2 ^ chunkDepthVal + idx
-        pieces := pieces.push (.literal (SizzLean.Cache.MerkleTree.gindexBits g))
+        if SizzLean.Repr.Deriving.sizzleanProgressiveAttr.hasTag env curT then
+          -- A progressive container shelves its fields, so the path comes
+          -- from the mask the deriving handler built, gaps included.
+          let gaps := (SizzLean.Repr.Deriving.sizzleanProgressiveGapsAttr.getParam? env curT).getD #[]
+          let mask ← match SizzLean.Repr.Deriving.progressiveMask numFields gaps with
+            | .ok m => pure m
+            | .error msg => throwError "sszUpdate: '{curT}': {msg}"
+          pieces := pieces.push
+            (.literal (SizzLean.Cache.MerkleTree.progressiveFieldBits mask idx))
+        else
+          let g := 2 ^ SizzLean.Spec.chunkDepth numFields + idx
+          pieces := pieces.push (.literal (SizzLean.Cache.MerkleTree.gindexBits g))
         let some info := getFieldInfo? env curT comp
           | throwError "sszUpdate: cannot find field info for '{comp}'"
         let projInfo ← getConstInfo info.projFn
@@ -884,61 +893,14 @@ private def buildSszUpdateUncached
       (({ view := $viewLetChain }) :
         _root_.SizzLean.Cache.UncachedSSZ $hashStx $tIdent))
 
-/-- Cached update of a `@[sizzlean_progressive]` container. Field gindices
-in a progressive container are not the classic `2^depth + i` addresses, and
-`ofShape` stores field roots as leaves of `merkleize_progressive`. One pending
-write at the root, rebuilt from the fully updated view, keeps the cached root
-equal to `hashTreeRoot`. -/
-private def buildSszUpdateCachedProgressive
-    (baseStx hashStx : TSyntax `term) (tIdent : Ident) (tType : Expr)
-    (clauses : Array Syntax) : TermElabM (TSyntax `term) := do
-  let mut clausePaths : Array (Array PathStep) := #[]
-  let mut clauseValues : Array (TSyntax `term) := #[]
-  for clauseStx in clauses do
-    let (path, valStx) := parseClause clauseStx
-    clausePaths := clausePaths.push path
-    clauseValues := clauseValues.push valStx
-  let viewIdent : Ident := mkIdent (Name.mkSimple "__ssz_view")
-  let tyStx : TSyntax `term ← PrettyPrinter.delab tType
-  let closureBody ← `(
-    some (_root_.SizzLean.Cache.MerkleTree.Node.ofShape $hashStx
-            (@_root_.SizzLean.SSZRepr.shape $tyStx _)
-            (@_root_.SizzLean.SSZRepr.toRepr $tyStx _ $viewIdent)))
-  let updatesListStx ← `([
-    (([] : List Bool),
-      ((fun ($viewIdent:ident : $tyStx) => $closureBody)
-        : _root_.SizzLean.Cache.PendingWrite $tyStx))])
-  let viewLetChain ← buildViewLetChain clausePaths clauseValues
-  if clausePaths.any (·.any isCheckedIdxStep) then
-    let guard ← buildIndexGuardExcept clausePaths
-    `(
-      let t₀ := $baseStx
-      (($guard).map (fun _ =>
-          ((_root_.SizzLean.Cache.TreeBacked.addPendingMany t₀ $updatesListStx $viewLetChain)
-            : _root_.SizzLean.Cache.TreeBacked $hashStx $tIdent)) :
-        _root_.Except _root_.SizzLean.Cache.IndexError
-          (_root_.SizzLean.Cache.TreeBacked $hashStx $tIdent)))
-  else
-    `(
-      let t₀ := $baseStx
-      ((_root_.SizzLean.Cache.TreeBacked.addPendingMany t₀ $updatesListStx $viewLetChain)
-        : _root_.SizzLean.Cache.TreeBacked $hashStx $tIdent))
-
 /-- Cached emission path. Walks each clause's path through `T`'s nested
 structure to compute gindex bit-lists and per-clause replacement
 sub-Merkle-trees, then emits one batched `Node.setManyAt` call paired with
-the view-update chain. A `@[sizzlean_progressive]` root skips that walk and
-rebuilds the whole node from the updated view. -/
+the view-update chain. A field of a `@[sizzlean_progressive]` container
+gets its `progressiveFieldBits` path, at the root and when nested. -/
 private def buildSszUpdateCached
     (baseStx hashStx : TSyntax `term) (tIdent : Ident) (tType : Expr)
     (clauses : Array Syntax) : TermElabM (TSyntax `term) := do
-  let env ← getEnv
-  let progressiveRoot :=
-    match tType.getAppFn.constName? with
-    | some n => SizzLean.Repr.Deriving.sizzleanProgressiveAttr.hasTag env n
-    | none => false
-  if progressiveRoot then
-    return ← buildSszUpdateCachedProgressive baseStx hashStx tIdent tType clauses
   let mut clausePaths : Array (Array PathStep) := #[]
   let mut clauseValues : Array (TSyntax `term) := #[]
   let mut updatePairs : Array (TSyntax `term) := #[]

@@ -1,4 +1,5 @@
 import EthCLSpecs.Gloas.EpochProcessing
+import EthCLLib.Proofs.Checked
 import EthCLSpecs.Proofs.Gloas.Run
 import EthCLLib.Proofs.Run
 import SizzLean.Proofs.ProgressiveListPush
@@ -7,7 +8,7 @@ import SizzLean.Proofs.UncachedBox
 /-!
 # `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: the builder-payment epoch substep
 
-`EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:306-325`)
+`EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:410-433`)
 modifies two fields sequentially within one state transition. This file characterizes the
 whole transition as one value: the run on `pureState preState` returns `pureState` of
 `preState` with `builderPendingWithdrawals` and `builderPendingPayments` written, and
@@ -15,6 +16,13 @@ nothing else. When
 invoked by the epoch substep, it feeds every qualifying previous-epoch payment's
 withdrawal, in slot order, through `ProgressiveList.push`, which always appends. It then
 shifts the payment window down by `SLOTS_PER_EPOCH`, padding the vacated half with empties.
+
+The substep first reads the total active balance for its quorum. That read faults on a
+`uint64` overflow of the sum, and `processBuilderPendingPayments_run_total_error` states that
+outcome. The quorum then multiplies the per-slot balance by
+`BUILDER_PAYMENT_THRESHOLD_NUMERATOR`, a checked product that faults when it reaches
+`2 ^ 64` (`QuorumFits`), and `processBuilderPendingPayments_run_quorum_error` states that
+outcome. The other theorems take the total and `QuorumFits` as premises.
 
 The withdrawals side rests on `progressiveListFoldlPush_val`
 (`SizzLean.Proofs.ProgressiveListPush`): iterating `push` over a list of values ends at
@@ -125,27 +133,44 @@ private theorem builderPendingWithdrawalsLoop_run_eq [Preset] [HasherTag] (n : N
 conclusion, over plain `BeaconState` values. A spec accessor that takes the boxed `State`
 reads `pureState state`, so the names stay free of any box of their own. -/
 
-/-- `processBuilderPendingPayments`'s quorum threshold, factored out for reuse between
-`qualifyingBuilderWithdrawals`, `expectedWithdrawals`, and their theorems. -/
-def builderPaymentQuorum [Preset] [HasherTag] (state : BeaconState) : Gwei :=
-  (getTotalActiveBalance (pureState state) / UInt64.ofNat slotsPerEpoch) *
+/-- The quorum threshold of `processBuilderPendingPayments`, from the total active balance
+`total`. The substep reads the total through `getTotalActiveBalance`, which can fault, so the
+theorems below take its value as a premise. It is a separate definition, so
+`qualifyingBuilderWithdrawals` and the theorems below use one copy. -/
+def builderPaymentQuorum [Preset] (total : Gwei) : Gwei :=
+  (total / UInt64.ofNat slotsPerEpoch) *
     builderPaymentThresholdNumerator / builderPaymentThresholdDenominator
 
-/-- The previous-epoch payments whose weight clears `builderPaymentQuorum`, mapped to
-their withdrawals, in slot order. -/
-def qualifyingBuilderWithdrawals [Preset] [HasherTag] (state : BeaconState) :
+/-- The quorum product `per_slot_balance * BUILDER_PAYMENT_THRESHOLD_NUMERATOR` stays below
+`2 ^ 64` for the total `total`. Then the checked product does not fault, and the quorum is
+`builderPaymentQuorum total`. -/
+def QuorumFits [Preset] (total : Gwei) : Prop :=
+  (total / UInt64.ofNat slotsPerEpoch).toNat * builderPaymentThresholdNumerator.toNat < 2 ^ 64
+
+/-- The quorum product as the substep forms it: the product when it fits. -/
+private theorem quorumMul_of_fits [Preset] [HasherTag] (total : Gwei) (h : QuorumFits total) :
+    (checkedMul (total / UInt64.ofNat slotsPerEpoch) builderPaymentThresholdNumerator
+      "get_builder_payment_quorum_threshold: per_slot_balance * BUILDER_PAYMENT_THRESHOLD_NUMERATOR"
+      : GloasRun Gwei)
+      = pure ((total / UInt64.ofNat slotsPerEpoch) * builderPaymentThresholdNumerator) :=
+  EthCLLib.Proofs.checkedMul_of_lt _ _ _ h
+
+/-- The withdrawals of the payments from the previous epoch whose weight reaches
+`builderPaymentQuorum total`, in slot order. The substep appends these. -/
+def qualifyingBuilderWithdrawals [Preset] (state : BeaconState) (total : Gwei) :
     List BuilderPendingWithdrawal :=
   let payments := state.builderPendingPayments
   ((List.range slotsPerEpoch).filter
-      fun i => decide ((vget payments i).weight ≥ builderPaymentQuorum state)).map
+      fun i => decide ((vget payments i).weight ≥ builderPaymentQuorum total)).map
     fun i => (vget payments i).withdrawal
 
-/-- The `builderPendingWithdrawals` value `processBuilderPendingPayments` produces:
-`qualifyingBuilderWithdrawals`, folded through `ProgressiveList.push` from the field's
-current value. `progressiveListFoldlPush_val` says that fold appends every withdrawal. -/
-def expectedWithdrawals [Preset] [HasherTag] (state : BeaconState) :
+/-- The `builderPendingWithdrawals` value `processBuilderPendingPayments` produces from the
+total `total`: `qualifyingBuilderWithdrawals`, folded through `ProgressiveList.push` from the
+field's current value. `progressiveListFoldlPush_val` says that fold appends every
+withdrawal. -/
+def expectedWithdrawals [Preset] (state : BeaconState) (total : Gwei) :
     ProgressiveList BuilderPendingWithdrawal :=
-  (qualifyingBuilderWithdrawals state).foldl (fun l w => l.push w)
+  (qualifyingBuilderWithdrawals state total).foldl (fun l w => l.push w)
     state.builderPendingWithdrawals
 
 /-- The `builderPendingPayments` value `processBuilderPendingPayments` produces: the
@@ -198,19 +223,30 @@ level so the fork-choice bridge consumes it by application; `runPure_of_run_ok` 
 the `runPure` form (`processBuilderPendingPayments_run_appended` reads it). -/
 @[characterizes EthCLSpecs.Gloas.processBuilderPendingPayments]
 theorem processBuilderPendingPayments_run [Preset] [HasherTag] :
-    ∀ (preState : BeaconState),
+    ∀ (preState : BeaconState) (total : Gwei),
+      getTotalActiveBalance (pureState preState) = .ok total → QuorumFits total →
       (processBuilderPendingPayments (StateTransition := GloasRun)).run (pureState preState)
         = .ok ((), pureState { preState with
-            builderPendingWithdrawals := expectedWithdrawals preState,
+            builderPendingWithdrawals := expectedWithdrawals preState total,
             builderPendingPayments := expectedPaymentWindow preState }) := by
-  intro preState
+  intro preState total htotal hq
   have hloop := builderPendingWithdrawalsLoop_run_eq slotsPerEpoch
-    (fun i => (vget preState.builderPendingPayments i).weight ≥ builderPaymentQuorum preState)
+    (fun i => (vget preState.builderPendingPayments i).weight ≥ builderPaymentQuorum total)
     (fun i => (vget preState.builderPendingPayments i).withdrawal) preState
-  -- Re-elaborate the source shape here so the loop term matches `hloop`'s left side and
-  -- the final `sszUpdate` reduces against the record-update form on the right.
+  -- The total read succeeds with `total`, so the bind on it is `pure total`.
+  have hread : (liftErr (getTotalActiveBalance (pureState preState)) : GloasRun Gwei)
+      = pure total := by
+    simp only [htotal, liftErr, Except.mapError, MonadExcept.ofExcept]
+  -- Re-elaborate the source shape here so the total read can be rewritten, the loop term
+  -- matches `hloop`'s left side, and the final `sszUpdate` reduces against the
+  -- record-update form on the right.
   show (do
-      let quorum := builderPaymentQuorum preState
+      let t ← (liftErr (getTotalActiveBalance (pureState preState)) : GloasRun Gwei)
+      let quorumNumerator ← (checkedMul (t / UInt64.ofNat slotsPerEpoch)
+        builderPaymentThresholdNumerator
+        "get_builder_payment_quorum_threshold: per_slot_balance * BUILDER_PAYMENT_THRESHOLD_NUMERATOR"
+        : GloasRun Gwei)
+      let quorum := quorumNumerator / builderPaymentThresholdDenominator
       let payments := preState.builderPendingPayments
       for i in [0:slotsPerEpoch] do
         if (vget payments i).weight ≥ quorum then
@@ -221,33 +257,78 @@ theorem processBuilderPendingPayments_run [Preset] [HasherTag] :
             (fun _ => (default : BuilderPendingPayment))
       : GloasRun Unit).run (pureState preState)
     = .ok ((), pureState { preState with
-        builderPendingWithdrawals := expectedWithdrawals preState,
+        builderPendingWithdrawals := expectedWithdrawals preState total,
+        builderPendingPayments := expectedPaymentWindow preState })
+  rw [hread, pure_bind, quorumMul_of_fits total hq, pure_bind]
+  show (do
+      let quorum := builderPaymentQuorum total
+      let payments := preState.builderPendingPayments
+      for i in [0:slotsPerEpoch] do
+        if (vget payments i).weight ≥ quorum then
+          appendState builderPendingWithdrawals (vget payments i).withdrawal
+      modifyState fun state =>
+        sszUpdate state with builderPendingPayments :=
+          shiftWindow (sszGet state builderPendingPayments) slotsPerEpoch slotsPerEpoch
+            (fun _ => (default : BuilderPendingPayment))
+      : GloasRun Unit).run (pureState preState)
+    = .ok ((), pureState { preState with
+        builderPendingWithdrawals := expectedWithdrawals preState total,
         builderPendingPayments := expectedPaymentWindow preState })
   obtain ⟨a, hbare⟩ := run_of_run_seq_pure _ _ _ hloop
   rw [run_bind, hbare, except_bind_ok]
-  unfold expectedWithdrawals qualifyingBuilderWithdrawals builderPaymentQuorum
-    expectedPaymentWindow
+  unfold expectedWithdrawals qualifyingBuilderWithdrawals expectedPaymentWindow
   rfl
 
 /-- Value-level reading of `processBuilderPendingPayments_run`: every qualifying
 withdrawal is appended in slot order. The payment-window half is unchanged from
 the contract. -/
-theorem processBuilderPendingPayments_run_appended [Preset] [HasherTag] (preState : BeaconState) :
+theorem processBuilderPendingPayments_run_appended [Preset] [HasherTag] (preState : BeaconState)
+    (total : Gwei) (htotal : getTotalActiveBalance (pureState preState) = .ok total)
+    (hq : QuorumFits total) :
     runPure (processBuilderPendingPayments (StateTransition := GloasRun)) preState
       = .ok ((), { preState with
           builderPendingWithdrawals :=
-            ⟨preState.builderPendingWithdrawals.val ++ (qualifyingBuilderWithdrawals preState).toArray⟩,
+            ⟨preState.builderPendingWithdrawals.val ++
+              (qualifyingBuilderWithdrawals preState total).toArray⟩,
           builderPendingPayments := expectedPaymentWindow preState }) := by
-  rw [runPure_of_run_ok (processBuilderPendingPayments_run preState)]
+  rw [runPure_of_run_ok (processBuilderPendingPayments_run preState total htotal hq)]
   congr 1
-  have hval : (expectedWithdrawals preState).val =
+  have hval : (expectedWithdrawals preState total).val =
       preState.builderPendingWithdrawals.val ++
-        (qualifyingBuilderWithdrawals preState).toArray := by
+        (qualifyingBuilderWithdrawals preState total).toArray := by
     unfold expectedWithdrawals
     rw [progressiveListFoldlPush_val]
-  rw [show expectedWithdrawals preState = ⟨(expectedWithdrawals preState).val⟩ from by
-    cases expectedWithdrawals preState
+  rw [show expectedWithdrawals preState total = ⟨(expectedWithdrawals preState total).val⟩ from by
+    cases expectedWithdrawals preState total
     rfl]
   rw [hval]
+
+/-- The quorum product faults: the substep raises `.arithmetic` after the total read and
+before the loop. pyspec raises `ValueError` at `per_slot_balance *
+BUILDER_PAYMENT_THRESHOLD_NUMERATOR` in `get_builder_payment_quorum_threshold`. -/
+theorem processBuilderPendingPayments_run_quorum_error [Preset] [HasherTag]
+    (preState : BeaconState) (total : Gwei)
+    (htotal : getTotalActiveBalance (pureState preState) = .ok total)
+    (hq : ¬ QuorumFits total) :
+    (processBuilderPendingPayments (StateTransition := GloasRun)).run (pureState preState)
+      = .error (.arithmetic
+          "get_builder_payment_quorum_threshold: per_slot_balance * BUILDER_PAYMENT_THRESHOLD_NUMERATOR") := by
+  have hmul := EthCLLib.Proofs.checkedMul_of_ge (m := GloasRun)
+    (total / UInt64.ofNat slotsPerEpoch) builderPaymentThresholdNumerator
+    "get_builder_payment_quorum_threshold: per_slot_balance * BUILDER_PAYMENT_THRESHOLD_NUMERATOR"
+    (Nat.le_of_not_lt hq)
+  simp [processBuilderPendingPayments, htotal, liftErr, Except.mapError, MonadExcept.ofExcept,
+    hmul, throwArithmetic]
+  rfl
+
+/-- The total read faults: the substep raises that fault before the loop. The read is
+`get_total_active_balance`, which faults only on a `uint64` overflow of the sum. -/
+theorem processBuilderPendingPayments_run_total_error [Preset] [HasherTag]
+    (preState : BeaconState) (err : StateTransitionError)
+    (htotal : getTotalActiveBalance (pureState preState) = .error err) :
+    (processBuilderPendingPayments (StateTransition := GloasRun)).run (pureState preState)
+      = .error err := by
+  simp [processBuilderPendingPayments, htotal, liftErr, Except.mapError, MonadExcept.ofExcept]
+  rfl
 
 end EthCLSpecs.Proofs.Gloas

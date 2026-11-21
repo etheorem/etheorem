@@ -46,6 +46,16 @@ class CryptoBackend where
   deterministic aggregation, not a verification gate, so the verify-off backend
   keeps the real FFI. -/
   aggregatePubkeys : Array ByteArray → ByteArray
+  /-- BLS `KeyValidate`: the 48 bytes decode to a G1 point in the prime-order subgroup, and
+  the point is not the identity. The pinned pyspec's `eth_aggregate_pubkeys` rejects a key
+  that fails it. -/
+  keyValidate : ByteArray → Bool
+  /-- G1 point addition on compressed keys: `G1_to_bytes48(add(bytes48_to_G1 a,
+  bytes48_to_G1 b))`. It returns the empty `ByteArray` when an input does not decode. -/
+  g1Add : ByteArray → ByteArray → ByteArray
+  /-- G1 point negation on a compressed key: `G1_to_bytes48(neg(bytes48_to_G1 a))`. It
+  returns the empty `ByteArray` when the input does not decode. -/
+  g1Neg : ByteArray → ByteArray
   /-- KZG cell-proof batch over equal-length arrays of commitments, cell indices,
   cells, and proofs (Fulu PeerDAS). Not a single-cell call. -/
   kzgVerifyCellProofBatch :
@@ -61,17 +71,29 @@ by the caching backend). -/
   fastAggregateVerify     := LeanHazmat.Bls.fastAggregateVerify
   ethFastAggregateVerify  := LeanHazmat.Bls.ethFastAggregateVerify
   aggregatePubkeys        := LeanHazmat.Bls.ethAggregatePubkeys
+  keyValidate             := LeanHazmat.Bls.keyValidate
+  g1Add                   := LeanHazmat.Bls.g1Add
+  g1Neg                   := LeanHazmat.Bls.g1Neg
   kzgVerifyCellProofBatch := LeanHazmat.Kzg.verifyCellKzgProofBatch
 
 /-- The `bls_setting: 2` verify-off backend: BLS verification is forced `true`,
 so a case the upstream generator made invalid only by a dummy signature is not
 falsely rejected. KZG stays real (it is not gated by `bls_setting`). Keeps the
-reject-faithfulness audit honest (`FRAMEWORK_ARCHITECTURE.md` §11.1). -/
+reject-faithfulness audit honest (`FRAMEWORK_ARCHITECTURE.md` §11.1).
+
+The key operations call the FFI: the aggregate, `KeyValidate`, and the G1 add and negation.
+`bls_setting: 2` turns off the signature checks only, and these operations compute a key.
+The pinned pyspec's BLS-off mode does the same for `AggregatePKs`, `add` and `neg`
+(`eth_consensus_specs/utils/bls.py:188-195`): the aggregate is state data, so it is computed
+whatever the setting. Its `KeyValidate` returns `True`, and no fork body calls `keyValidate`. -/
 @[reducible] def verifyOff : CryptoBackend where
   verify _ _ _                  := true
   fastAggregateVerify _ _ _     := true
   ethFastAggregateVerify _ _ _  := true
   aggregatePubkeys              := LeanHazmat.Bls.ethAggregatePubkeys
+  keyValidate                   := LeanHazmat.Bls.keyValidate
+  g1Add                         := LeanHazmat.Bls.g1Add
+  g1Neg                         := LeanHazmat.Bls.g1Neg
   kzgVerifyCellProofBatch       := LeanHazmat.Kzg.verifyCellKzgProofBatch
 
 /-- The symbolic backend the pure configuration injects: BLS verification is
@@ -83,6 +105,9 @@ assumed-true. -/
   fastAggregateVerify _ _ _     := true
   ethFastAggregateVerify _ _ _  := true
   aggregatePubkeys _            := ⟨Array.replicate 48 0⟩
+  keyValidate _                 := true
+  g1Add _ _                     := ⟨Array.replicate 48 0⟩
+  g1Neg _                       := ⟨Array.replicate 48 0⟩
   kzgVerifyCellProofBatch _ _ _ _ := true
 
 /-! ## The caching backend (`FRAMEWORK_ARCHITECTURE.md` §11.1, §14)
@@ -129,6 +154,9 @@ the FFI (aggregate and the KZG batch are not the repeated hot path). -/
   fastAggregateVerify     := LeanHazmat.Bls.fastAggregateVerify
   ethFastAggregateVerify  := LeanHazmat.Bls.ethFastAggregateVerify
   aggregatePubkeys        := LeanHazmat.Bls.ethAggregatePubkeys
+  keyValidate             := LeanHazmat.Bls.keyValidate
+  g1Add                   := LeanHazmat.Bls.g1Add
+  g1Neg                   := LeanHazmat.Bls.g1Neg
   kzgVerifyCellProofBatch := LeanHazmat.Kzg.verifyCellKzgProofBatch
 
 /-- Whether the BLS-`verify` memo is disabled, read once from the
@@ -180,5 +208,44 @@ set verifies iff the signature is the G2 point at infinity). -/
 /-- `eth_aggregate_pubkeys`: the group sum of a pubkey set, as a 48-byte G1 point. -/
 @[inline] def blsAggregatePubkeys [CryptoBackend] (pubkeys : Array (Vector UInt8 48)) : Vector UInt8 48 :=
   bytesToVec 48 (CryptoBackend.aggregatePubkeys (pubkeys.map vecToBytes))
+
+/-! ## Checked key operations
+
+The pinned pyspec raises Python `ValueError` in `bytes48_to_G1` on 48 bytes that do not
+decode as a G1 point. The model gives that `ValueError` the `.arithmetic` kind, the same kind
+as a `uint64` fault. The FFI returns the empty `ByteArray` where the pyspec raises, and the
+wrappers raise `.arithmetic` through `throwArithmetic` on it. `AggregatePKs` asserts instead
+(`.assert`, see `blsAggregatePubkeysChecked`). -/
+
+/-- The 48-byte key the FFI returned, or the `.arithmetic` fault on the empty `ByteArray`. -/
+private def keyOrFault (descr : String) (b : ByteArray) :
+    Except StateTransitionError (Vector UInt8 48) :=
+  if b.size == 48 then .ok (bytesToVec 48 b) else throwArithmetic descr
+
+/-- `eth_aggregate_pubkeys` as the pinned pyspec runs it. The pyspec replaces the spec body
+with `bls.AggregatePKs` (`pysetup/spec_builders/altair.py`). At `v1.7.0-beta.4`, `AggregatePKs`
+asserts that the list is nonempty and that every key is valid, so an empty list or a key that
+fails `KeyValidate` raises `AssertionError` (`.assert`). The spec text asserts the same two
+conditions. The FFI aggregate only decodes its keys, so this wrapper calls `keyValidate` on
+each key first. -/
+def blsAggregatePubkeysChecked [CryptoBackend] (pubkeys : Array (Vector UInt8 48)) :
+    Except StateTransitionError (Vector UInt8 48) :=
+  let descr := "eth_aggregate_pubkeys: AggregatePKs"
+  if pubkeys.isEmpty || !pubkeys.all (CryptoBackend.keyValidate ∘ vecToBytes) then
+    .error (.assert descr)
+  else
+    keyOrFault descr (CryptoBackend.aggregatePubkeys (pubkeys.map vecToBytes))
+
+/-- `G1_to_bytes48(add(bytes48_to_G1(a), bytes48_to_G1(b)))`. `bytes48_to_G1` raises
+`ValueError` on bytes that do not decode as a G1 point. It does no subgroup test, so a point
+outside the subgroup decodes. -/
+def blsG1Add [CryptoBackend] (a b : Vector UInt8 48) :
+    Except StateTransitionError (Vector UInt8 48) :=
+  keyOrFault "bytes48_to_G1" (CryptoBackend.g1Add (vecToBytes a) (vecToBytes b))
+
+/-- `G1_to_bytes48(neg(bytes48_to_G1(a)))`, with the decode fault of `blsG1Add`. -/
+def blsG1Neg [CryptoBackend] (a : Vector UInt8 48) :
+    Except StateTransitionError (Vector UInt8 48) :=
+  keyOrFault "bytes48_to_G1" (CryptoBackend.g1Neg (vecToBytes a))
 
 end EthCLLib.Spec

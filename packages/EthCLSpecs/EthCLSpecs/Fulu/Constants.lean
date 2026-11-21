@@ -16,12 +16,12 @@ once, here.
 The `fork Fulu` lineage edge lives in `Fulu/Fork.lean` (row 0), which this module
 reaches through `Types`. It has to elaborate before any capturing form runs.
 
-Two numeric flavours, by design: `UInt64` / `Gwei` constants combine directly
-with `uint64`-shaped state fields (slots, epochs, indices, balances); `Nat`
-constants feed the reward / penalty arithmetic, evaluated in `Nat` (unbounded, no
-wraparound) to match the pyspec's Python `int` exactly, narrowing back to `Gwei`
-only at the application site. A `…G` suffix marks the `Gwei` form of a value that
-also has a `Nat` form.
+Two numeric flavours: `UInt64` / `Gwei` constants combine directly with
+`uint64`-shaped state fields (slots, epochs, indices, balances), and `Nat` constants
+hold sizes, indices and the remaining preset values. pyspec types most of these values
+`uint64`, and its arithmetic on them is checked `uint64` arithmetic. So a body that
+multiplies by a `Nat` constant converts it with `UInt64.ofNat` and uses `checkedMul`.
+A `…G` suffix marks the `Gwei` form of a value that also has a `Nat` form.
 
 Values are Fulu/Electra, the conformance fork this body targets. Content a later
 fork introduces lives in that fork: `Gloas/Constants.lean` owns the ePBS and

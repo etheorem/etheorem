@@ -532,24 +532,15 @@ The linear DAG walks route through fuel-bounded combinators (§12). `getAncestor
 which a linear combinator cannot express, so it keeps a local fuel-bounded `where` helper.
 The totality the doc wants is met either way.
 
-The fork-choice weight path still runs on raw `UInt64` where the pyspec's `uint64` ops
-raise, and it is deferred as one piece because it rests on one root: `getTotalBalance`
-(`phase0/beacon-chain.md:1559-1570`), whose `sum(...)` accumulates in `Gwei` and raises,
-while this fold wraps. `calculateCommitteeFraction` divides `getTotalBalance` over the
-unslashed active validators by `SLOTS_PER_EPOCH` (v1.7.0-beta.4; alpha.12 took
-`getTotalActiveBalance`), `computeProposerScore` and the re-org threshold are its products, and
-`getWeight`'s proposer-boost add takes one operand from them, so checking any of those while
-the total underneath still wraps would only move the wrong number around.
+The fork-choice weight path checks each `uint64` op the pyspec raises on. `checkedAdd` steps
+the `getAttestationScore` balance sum, the `isHeadWeak` equivocator sums and their
+`head_weight +=`, and `getWeight`'s proposer-boost add. `checkedMul` takes the
+`committee_weight * committee_percent` product in `calculateCommitteeFraction`, so the
+fraction, `computeProposerScore`, and both re-org thresholds throw.
 
-The conversion is larger than the fork-choice layer. `getTotalBalance` and
-`getTotalActiveBalance` are pure `forkdef`s with 15 call sites across epoch processing,
-rewards, registry updates, the transition spine, and fork choice; making them throwing
-propagates upward through every pure caller (§7.1's rule, one layer over). The remaining
-independent site is `getAttestationScore`'s own balance fold, which sums
-`state.validators[i].effective_balance` directly and could be checked on its own; it stays
-with the rest so the weight path converts in one go rather than half-guarded. Reaching any
-of them takes a total active balance within a factor of the `uint64` bound, which no
-preset's validator set approaches.
+The fraction's operand, `getTotalBalance` (`phase0/beacon-chain.md:1559-1570`), returns
+`Except`: its `sum(...)` accumulates in `Gwei` through `checkedAdd`, so the committee weight
+throws where the pyspec's total raises.
 
 The reference catches different exceptions per step kind, so what satisfies a
 `valid: false` step varies too. `expect_assertion_error` (`context.py:424-435`) catches
@@ -638,16 +629,12 @@ Spec-faithfulness facts worth knowing:
 pubkey aggregation (the `ffi` / `verifyOff` backends delegate to
 `LeanHazmat.Bls.ethAggregatePubkeys`; the `symbolic` backend returns a zero point).
 
-`process_sync_aggregate` verifies against the participants' pubkeys with
-`eth_fast_aggregate_verify`, one branch. The Fulu text has three, chosen by
-`get_set_bit_count(sync_committee_bits)`: with every bit set it verifies the committee's
-cached `aggregate_pubkey`, with more than half set it subtracts the non-participants from that
-aggregate, and otherwise it aggregates the participants. The three agree whenever
-`aggregate_pubkey` is the sum of the committee's `pubkeys`. `get_next_sync_committee`
-guarantees that for every committee the transition builds, but a hand-built state can break
-it, and then the one branch can answer differently. Modeling the other two needs BLS point
-addition and negation on the crypto seam, which `CryptoBackend` does not carry. This is a
-divergence from the spec text that predates the beta.4 re-pin.
+`process_sync_aggregate` chooses its verification keys as the spec does, by
+`get_set_bit_count(sync_committee_bits)`: with every bit set the committee's cached
+`aggregate_pubkey`, with more than half set that aggregate minus the non-participants'
+aggregate, and otherwise the participants' keys. The subtraction uses the `keyValidate`,
+`g1Add` and `g1Neg` operations of `CryptoBackend`, so a hand-built state whose
+`aggregate_pubkey` is not the sum of its `pubkeys` gets the spec's answer.
 
 ## Gloas diff
 
@@ -954,10 +941,10 @@ A `tick` step's time is in seconds in the vectors, and the harness sends
 
 ## Genesis
 
-`SPECS_ARCHITECTURE.md` §10.1 marks `genesis` in scope and §6.1 names
-`initializeBeaconStateFromEth1` / `isValidGenesisState`. The pytest corpus carries no
-`genesis` vectors for Fulu, Gloas, or Heze at the `v1.7.0-beta.4` pin, so there is nothing to
-drive; both stay a `todo` stub in `Interface.lean`.
+The model does not construct a genesis state (`SPECS_ARCHITECTURE.md` §6.1, §10.1). The
+pytest corpus carries no `genesis` vectors for Fulu, Gloas, or Heze at the `v1.7.0-beta.4`
+pin, so there is nothing to drive. Each fork's `runGenesis` in `Interface.lean` returns
+`.outOfScope`.
 
 ## Proofs
 
@@ -1093,8 +1080,8 @@ separation.
   `EthCLSpecs.Proofs.Heze` because `shouldExtendPayload` exists in both Gloas
   and Heze. `shouldExtendPayload_run` is the complete `.run` equation at
   `ForkChoiceStoreRun (Store map)` and carries `@[characterizes]`. The
-  right-hand side is the evaluation order: block lookup, `getCurrentSlot`,
-  the slot increment and assertion, `isPayloadVerified`,
+  right-hand side is the evaluation order: block lookup, the slot increment,
+  `getCurrentSlot`, the slot assertion, `isPayloadVerified`,
   `isPayloadInclusionListSatisfied`, then the inherited Gloas tail. Named
   corollaries cover the prefix rejects, the FOCIL gate, the vote membership
   asserts, and the inherited Gloas accept and reject arms. Successful binds

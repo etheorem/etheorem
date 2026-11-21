@@ -329,7 +329,7 @@ abbrev SSZList.set! {α : Type} {cap : Nat}
 
 /-- Append `x` to a list that has room. The caller proves `h : xs.val.size < cap`, so no
 call site can append to a full list by accident. The SSZ spec's `List.append` raises on a
-full list (remerkleable: "list is maximum capacity"). A silent no-op in its place would
+full list (eth-ssz-specs: "holds at most N elements"). A silent no-op in its place would
 turn that raise into a successful run. `push?` is the checked form for callers that must
 handle the full case. -/
 def SSZList.push {α : Type} {cap : Nat} (xs : SSZList α cap) (x : α)
@@ -345,7 +345,7 @@ def SSZList.push? {α : Type} {cap : Nat} (xs : SSZList α cap) (x : α) :
 
 /-- Build a list from an array, if the array fits: `some` of the list when
 `a.size ≤ cap`, or `none` when it is too long. The SSZ spec's `List[T, N](...)` raises on
-too many elements (remerkleable: "too many list inputs"), so the `none` branch is where
+too many elements (eth-ssz-specs: "holds at most N elements"), so the `none` branch is where
 the caller raises. No argument carries `cap`, so the expected type fixes it. -/
 def SSZList.ofArray? {α : Type} {cap : Nat} (a : Array α) : Option (SSZList α cap) :=
   if h : a.size ≤ cap then some ⟨a, h⟩ else none

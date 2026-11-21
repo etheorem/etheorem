@@ -36,7 +36,7 @@ namespace EthCLLib.Tests.FrameworkUtils
 
 /-! ## Checked `uint64` arithmetic: the faithful over/underflow faults
 
-`checkedAdd` / `checkedSub` / `checkedMul` mirror remerkleable's `uint64`, which raises on
+`checkedAdd` / `checkedSub` / `checkedMul` mirror the eth-ssz-specs `uint64`, which raises on
 over/underflow rather than wrapping, and `checkedSucc` mirrors the loop-counter increment
 `i += 1`, whose `.ok` result carries the counter's range for the caller's `termination_by`.
 In range they reduce to `.ok`; out of range they raise the uncaught `.arithmetic` fault (never
@@ -55,12 +55,24 @@ the only thing exercising the throw. -/
 #guard (checkedSucc 0xffffffffffffffff "o" : Except StateTransitionError _) matches .error (.arithmetic _)
 #guard (checkedSub 3 5 "u" : Except StoreTransitionError UInt64) matches .error (.transition (.arithmetic _))
 
+/-! ## Index casts: the `ValidatorIndex(i)` fault
+
+`checkedIndex` stands for the pyspec cast of a list position to a `uint64` index type. The cast
+raises a `ValueError` at `2 ^ 64`, so `checkedIndex` throws `.arithmetic` there and returns the
+position below it. `keepsIndexPast64` is the bound test of the index walks. A registry this
+small keeps no index past the bound, so the test answers `false`. -/
+#guard (checkedIndex (2 ^ 64 - 1) "i" : Except StateTransitionError UInt64).toOption =
+  some 0xffffffffffffffff
+#guard (checkedIndex (2 ^ 64) "i" : Except StateTransitionError UInt64) matches .error (.arithmetic _)
+#guard (checkedIndex (2 ^ 64) "i" : Except StoreTransitionError UInt64) matches .error (.transition (.arithmetic _))
+#guard keepsIndexPast64 #[1, 2, 3] (· > 0) == false
+
 /-! ## Appends to a full list: the `.listFull` fault
 
-`throwListFull` stands for remerkleable's `List.append` raise on a full list, a bare `Exception`.
-Like `.arithmetic`, it arrives as `.listFull` on the state machine and as
-`.transition (.listFull …)` on the store machine, and it is an uncaught fault that no wrapper
-admits. -/
+`throwListFull` stands for the eth-ssz-specs `List.append` raise on a full list, an
+`SSZValueError`, which subclasses `ValueError`. Like `.arithmetic`, it arrives as `.listFull` on
+the state machine and as `.transition (.listFull …)` on the store machine. It is an uncaught
+fault under `expect_assertion_error`. -/
 #guard (throwListFull "xs" : Except StateTransitionError Unit) matches .error (.listFull _)
 #guard (throwListFull "xs" : Except StoreTransitionError Unit) matches .error (.transition (.listFull _))
 #guard StateTransitionError.classify (.listFull "xs") == .uncaughtFault
@@ -69,8 +81,8 @@ admits. -/
 /-! ## The per-case caught set (`RunnerCaughtSet`)
 
 One test, under `epoch_processing` / `registry_updates`, scores its invalid vector with its own
-`except ValueError` wrapper. There the `.arithmetic` fault is the expected rejection, and an
-`assert` is not. Every other case uses `expect_assertion_error`, whose set is `AssertionError`
+`except ValueError` wrapper. There the `.arithmetic` and `.listFull` faults are the expected
+rejection, and an `assert` is not. Every other case uses `expect_assertion_error`, whose set is `AssertionError`
 and `IndexError`. The guards pin both sets and the pair that selects them. -/
 
 #guard RunnerCaughtSet.ofCase "epoch_processing" "registry_updates" == .valueError
@@ -86,7 +98,7 @@ and `IndexError`. The guards pin both sets and the pair that selects them. -/
 #guard RunnerCaughtSet.valueError.admits (.arithmetic "x") == true
 #guard RunnerCaughtSet.valueError.admits (.assert "x") == false
 #guard RunnerCaughtSet.valueError.admits (.outOfBounds 0 0) == false
-#guard RunnerCaughtSet.valueError.admits (.listFull "x") == false
+#guard RunnerCaughtSet.valueError.admits (.listFull "x") == true
 
 /-! ### The reject table (`classifyReject`)
 
@@ -109,8 +121,8 @@ a pass or a fail. The guards above pin the first. These pin the second, one row 
 
 #guard (classifyReject .assertionAndIndex (.listFull "x")).passed == false
 #guard (classifyReject .assertionAndIndex (.listFull "x")).bucket == .uncaughtFault
-#guard (classifyReject .valueError (.listFull "x")).passed == false
-#guard (classifyReject .valueError (.listFull "x")).bucket == .uncaughtFault
+#guard (classifyReject .valueError (.listFull "x")).passed == true
+#guard (classifyReject .valueError (.listFull "x")).bucket == .expectedRejection
 
 #guard (classifyReject .valueError (.todo "x")).bucket == .todo
 #guard (classifyReject .assertionAndIndex (.todo "x")).bucket == .todo

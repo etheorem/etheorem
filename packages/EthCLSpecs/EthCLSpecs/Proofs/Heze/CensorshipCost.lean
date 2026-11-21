@@ -122,8 +122,9 @@ example :
    not change the state, so it settles no payment.
 3. The builder still pays if the block reached the quorum. Take the state at the epoch
    substep that judges the payment of `bid`, where the payment is carried
-   (`BidPaymentCarried`). Then `processBuilderPendingPayments` succeeds and appends the
-   entry of `bid` if and only if the entry reaches the quorum (`EpochPaysBidIffQuorum`).
+   (`BidPaymentCarried`), the total active balance reads as `total`, and the quorum product
+   fits (`QuorumFits`). Then `processBuilderPendingPayments` succeeds and appends the entry
+   of `bid` if and only if the entry reaches the quorum (`EpochPaysBidIffQuorum`).
 
 The weight of the entry counts same-slot attestations for the beacon block
 (`process_attestation`). The theorem makes no assumption about the weight, and it does
@@ -149,17 +150,19 @@ theorem unsatisfiedPayload_cost
       (processParentExecutionPayload (StateTransition := HezeRun) child).run
           (pureState preState)
         = .ok ((), pureState preState)) ∧
-    (∀ epochState : BeaconState,
+    (∀ (epochState : BeaconState) (total : EthCLSpecs.Heze.Gwei),
       BidPaymentCarried epochState rootBlock.body.signedExecutionPayloadBid.message →
+      EthCLSpecs.Heze.getTotalActiveBalance (pureState epochState) = .ok total →
+      QuorumFits total →
       ∃ postState : BeaconState,
         runPure (processBuilderPendingPayments (StateTransition := HezeRun)) epochState
           = .ok ((), postState) ∧
-        EpochPaysBidIffQuorum epochState postState
+        EpochPaysBidIffQuorum epochState postState total
           rootBlock.body.signedExecutionPayloadBid.message) := by
   refine ⟨fun fuel exhausted => getHead_walk_pending_to_empty store nodes root rootBlock
     fuel exhausted h.block h.currentSlot h.noOverflow (fun _ => h.unsatisfied) hviable, ?_,
-    fun epochState hcarried =>
-      processBuilderPendingPayments_run_bid epochState _ hcarried⟩
+    fun epochState total hcarried htotal hquorum =>
+      processBuilderPendingPayments_run_bid epochState _ hcarried total htotal hquorum⟩
   intro child preState hparent hstatus hcached hreq
   have hlookup : FcMap.lookup store.blocks child.parentRoot = some rootBlock := by
     rw [hparent]; exact h.block
