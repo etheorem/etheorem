@@ -51,8 +51,9 @@ In scope:
   FFI hasher's output disagrees with the pure-Lean `Sha256Spec`
   reference (this would break the axiom
   `sha256Combine_eq_spec` and any proof depending on it).
-- **Memory-safety** issues in `packages/SizzLean/csrc/` (C
-  shims): buffer overflows, use-after-free, etc.
+- **Memory-safety** issues in the FFI C shims
+  (`packages/hazmat/*/csrc/`, `packages/LeanPoseidon/csrc/`):
+  buffer overflows, use-after-free, etc.
 - **Soundness** issues in the verified proofs (`Proofs/`): an
   axiom or `sorry` accepted where it shouldn't be, or a kernel
   bug that lets a false theorem typecheck.
