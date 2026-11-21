@@ -1,12 +1,13 @@
 # Spec arithmetic transition plan
 
-Status: in progress. Stages 0 through 8 are complete and committed (inventory and
+Status: in progress. Stages 0 through 9 are complete and committed (inventory and
 baselines; SSZ packing and typed causes; the checked core, authoring surface, and tier
 views; `Gwei` across every fork with proofs; `Epoch` and `Slot` with evaluation-order
 fixes; indices and plain-integer formulas; clocks and remaining configuration
-arithmetic; flags, widths, and the full-scope closure). Each stage's task checkboxes
-below carry a one-line completion note with the commit. Stage 9 (the repository-wide
-documentation audit) is next.
+arithmetic; flags, widths, and the full-scope closure; the repository-wide documentation
+audit, with the Stage 8 routed items closed as 9.5a through 9.5d). Each stage's task
+checkboxes below carry a one-line completion note with the commit. Stage 10 (final
+acceptance and removal of this plan) is next.
 Durable working records (stage reports, findings, incidents, baselines, oracle
 results) live outside git in `mb/spec-arithmetic-implementation/` and are distilled
 into the tracked records at Stage 10.
