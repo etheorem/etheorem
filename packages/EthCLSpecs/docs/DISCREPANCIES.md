@@ -28,10 +28,12 @@ _No open discrepancies._ Every collected in-scope minimal and mainnet vector pas
 by root or rejects faithfully (`epoch_processing`, `operations` incl. standalone
 `execution_payload`, `sanity/blocks`, `sanity/slots`, `finality`, `random`,
 `rewards`, `fork_choice` incl. the PeerDAS data-availability `on_block` cases and
-`get_proposer_head`), with zero `xfail`. The only Fulu vectors not run are the
-deselected out-of-scope ones (`IMPLEMENTATION_NOTES.md`, "Scope and conformance"): the Fulu `fork` /
-`transition` formats (the Electra→Fulu upgrade / boundary, needing an Electra parent
-fork) and the `light_client` / `networking` / `merkle_proof` / `sync` runners.
+`get_proposer_head`, `ssz_static` for the modeled types), with zero `xfail`. Two kinds of
+Fulu vectors do not run (`IMPLEMENTATION_NOTES.md`, "Scope and conformance"). The
+deselected formats are never collected: the Fulu `fork` / `transition` formats (the
+Electra→Fulu upgrade / boundary, needing an Electra parent fork) and the `light_client` /
+`networking` / `merkle_proof` / `sync` runners. The collected `ssz_static` cases for types
+the fork does not model report `skip` ("out of scope (not modeled)").
 
 | Vector id | Spec citation | Upstream issue | Resolution |
 |---|---|---|---|
