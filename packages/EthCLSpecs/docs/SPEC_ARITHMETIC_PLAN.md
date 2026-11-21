@@ -773,10 +773,11 @@ arithmetic site remains unreviewed because its module built without edits.
     bench docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
     docstrings of the EthCLSpecs `Proofs/`, `Tests/`, and `PySpecTests/` modules and the
     bench. (WS-110, `3fbe87d4fbde469aafc88c28e654111941640cf4`)
-- [ ] **9.2 Reconcile each finding.** Update current guidance and executable examples
+- [x] **9.2 Reconcile each finding.** Update current guidance and executable examples
   to match the implemented arithmetic contract. Check the actual result types behind
   conversion names. Preserve descriptions of intentionally raw arithmetic in other
   packages and clearly label historical measurements and superseded designs.
+  (WS-101, `cdbd9f5184d14a3ab6728418f1f1a0acb3ca80b7`)
 - [ ] **9.3 Verify documentation examples.** Build affected Lean modules and examples.
   Run the citation and project checks. Repeat the targeted searches and inspect remaining
   matches. Record each reviewed document and the resolution of each conflict.
