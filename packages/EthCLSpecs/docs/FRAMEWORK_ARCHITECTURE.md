@@ -834,15 +834,20 @@ index, one a data field supplies with no structural bound, reads through `sszGet
 `bitlistGetIdx` for a `Bitlist`) and returns through the error channel, surfacing
 `outOfBounds idx bound` rather than a panic, with a single `liftErr` adapter joining the two
 (its `[ErrorConv IndexError E]` instance mapping the miss to the section's reject), so a bad
-index becomes a rejected transition rather than an aborted process. An index a spec
-validation already checks reads through `assertH (i < size)`: the assert returns the witness
-and the read is the proof-carrying, reject-free `xs[i]'h.down`, the bad index having rejected
-at the `assertH`. Where the bound is statically known (a `Fin n` into a length-`n` vector, a
+index becomes a rejected transition rather than an aborted process. A read that an
+operation validates goes through the same `sszGetIdx`, and the reject class follows the
+pyspec. Where the pyspec reads `state.validators[i]` with no range guard, a bad index
+rejects with `outOfBounds` (`process_voluntary_exit`, `process_proposer_slashing`). Where
+the pyspec asserts the bound first, the body writes that `assert` before the read, and a
+bad index rejects with `assert` (`process_bls_to_execution_change`). The proof-returning
+`assertH` supports a proof-carrying, reject-free `xs[i]'h.down`; no fork body calls it.
+Where the bound is statically known (a `Fin n` into a length-`n` vector, a
 loop over `xs.size`, a `% LEN` modulo through `vmodGet`) the read is a proof-carrying lookup
 or the total `xs[i]!`, and proofs see a clean in-range lookup rather than an `Inhabited`
-default. A pure query whose data-derived index comes from untrusted input returns `Except
-IndexError` and reads through the same `sszGetIdx` (`get_base_reward`, `get_attesting_indices`,
-the reward-delta helpers); one whose index is valid by construction keeps the total `xs[i]!`,
+default. A pure query whose data-derived index comes from untrusted input returns
+`Except StateTransitionError` and reads through the same `sszGetIdx` (`get_base_reward`,
+`get_attesting_indices`, the reward-delta helpers); one whose index is valid by
+construction keeps the total `xs[i]!`,
 resting on the query's length invariant, the provability residual recorded in `FUTURE_WORK.md`.
 
 The container front-end never boxes a value on its own. The `State` abbrev here
@@ -981,8 +986,11 @@ domain-agnostic mechanics; the spec owns the consensus-aware part.
 Framework-owned mechanics come in two kinds. The **hashing-based** primitives are
 the signing-root combinators, `computeForkDataRoot`, `computeDomain`, and
 `computeSigningRoot`, which hash over small byte containers and take a fork-version
-value without reading state, plus `isValidMerkleBranch`, the Merkle-proof
-verification `processDeposit` runs against `eth1Data.depositRoot`. Both are backed
+value without reading state, plus `isValidMerkleBranch`, the `is_valid_merkle_branch`
+Merkle-proof check. No fork body calls it. Its pinned callers (`process_deposit`, the
+light-client and data-column sidecar inclusion-proof checks) sit outside the modeled
+fork bodies. The framework tests and `EthCLLib.Proofs.MerkleBranch` cover it. The
+signing-root combinators and `isValidMerkleBranch` are backed
 by SizzLean's hashing by default, and the framework is free to swap another
 implementation if it fits better. The **signature- and commitment-based**
 primitives are the BLS verify and aggregate (including the `fastAggregateVerify`
