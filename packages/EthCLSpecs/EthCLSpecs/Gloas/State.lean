@@ -26,7 +26,7 @@ lists into `ProgressiveList`s. `historicalRoots`, `eth1DataVotes`, and
 `historicalSummaries` stay capped lists. -/
 @[sizzlean_progressive]
 forkcontainer BeaconState where
-  genesisTime                   : UInt64
+  genesisTime                   : CLUint64
   genesisValidatorsRoot         : Root
   slot                          : Slot
   forkData                      : Fork
@@ -36,6 +36,9 @@ forkcontainer BeaconState where
   historicalRoots               : SSZList Root Const.historicalRootsLimit
   eth1Data                      : Eth1Data
   eth1DataVotes                 : SSZList Eth1Data (Const.epochsPerEth1VotingPeriod * Const.slotsPerEpoch)
+  -- `eth1_deposit_index` stays a raw `UInt64`: it is data only at the pin. No pinned
+  -- body computes with it. The Gloas upgrade copies it, and the Heze upgrade compares it
+  -- with `depositRequestsStartIndex`.
   eth1DepositIndex              : UInt64
   validators                    : ProgressiveList Validator
   balances                      : ProgressiveList Gwei
@@ -47,13 +50,18 @@ forkcontainer BeaconState where
   previousJustifiedCheckpoint   : Checkpoint
   currentJustifiedCheckpoint    : Checkpoint
   finalizedCheckpoint           : Checkpoint
-  inactivityScores              : ProgressiveList UInt64
+  -- `inactivity_scores` is `InactivityScores(ProgressiveList[Uint64])` at the pin
+  -- (`gloas/minimal.py:490`), not `Gwei`: a score is not a balance. Naming only.
+  inactivityScores              : ProgressiveList CLUint64
   currentSyncCommittee          : SyncCommittee
   nextSyncCommittee             : SyncCommittee
   latestBlockHash               : Hash32
   nextWithdrawalIndex           : WithdrawalIndex
   nextWithdrawalValidatorIndex  : ValidatorIndex
   historicalSummaries           : SSZList HistoricalSummary Const.historicalRootsLimit
+  -- `deposit_requests_start_index` stays a raw `UInt64`: it is data only at the pin. No
+  -- pinned body computes with it. The Gloas upgrade copies it, and the Heze upgrade
+  -- compares it with `eth1DepositIndex`.
   depositRequestsStartIndex     : UInt64
   depositBalanceToConsume       : Gwei
   exitBalanceToConsume          : Gwei
@@ -63,7 +71,9 @@ forkcontainer BeaconState where
   pendingDeposits               : ProgressiveList PendingDeposit
   pendingPartialWithdrawals     : ProgressiveList PendingPartialWithdrawal
   pendingConsolidations         : ProgressiveList PendingConsolidation
-  proposerLookahead             : Vector ValidatorIndex (2 * Const.slotsPerEpoch)
+  -- The length is `ProposerLookahead.LENGTH = (MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH`
+  -- (`gloas/minimal.py:940` → `fulu/minimal.py:640-646`); both presets set `minSeedLookahead` to `1`.
+  proposerLookahead             : Vector ValidatorIndex ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch)
   builders                      : ProgressiveList Builder
   nextWithdrawalBuilderIndex    : BuilderIndex
   executionPayloadAvailability  : Bitvector Const.slotsPerHistoricalRoot
@@ -71,7 +81,9 @@ forkcontainer BeaconState where
   builderPendingWithdrawals     : ProgressiveList BuilderPendingWithdrawal
   latestExecutionPayloadBid     : ExecutionPayloadBid
   payloadExpectedWithdrawals    : ProgressiveList Withdrawal
-  ptcWindow                     : Vector (Vector ValidatorIndex Const.ptcSize) (3 * Const.slotsPerEpoch)
+  -- The length is `PayloadTimelinessCommitteeWindow.LENGTH` = `(MIN_SEED_LOOKAHEAD + 2) *
+  -- SLOTS_PER_EPOCH` (`gloas/minimal.py:931-937`); both presets set `minSeedLookahead` to `1`.
+  ptcWindow                     : Vector (Vector ValidatorIndex Const.ptcSize) ((Const.minSeedLookahead.toPlainNat + 2) * Const.slotsPerEpoch)
 
 -- The once-per-fork preamble: declares `State` (the boxed `BeaconState`) and the
 -- concrete-domain `modifyState` (`SPEC_AUTHORING_MODEL.md` §6, `EthCLLib.Spec.Header`).
