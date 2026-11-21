@@ -1,6 +1,7 @@
 import EthCLSpecs.Proofs.Heze.PayloadTiebreak
 import EthCLSpecs.Proofs.Heze.ParentPayloadEmpty
 import EthCLSpecs.Proofs.Heze.BuilderPendingPayments
+import EthCLSpecs.Proofs.Heze.PaymentCarried
 
 /-!
 # `EthCLSpecs.Proofs.Heze.CensorshipCost`: what a failed inclusion list costs
@@ -28,9 +29,11 @@ through `applyParentExecutionPayload`.
 
 Fact 3 takes one hypothesis about the blocks between the bid and the epoch substep,
 `BidPaymentCarried`: the entry for the slot of the bid still carries the withdrawal of
-the bid when the substep reads it. The hypothesis excludes a slashing of the block's
-proposer, which clears the entry in `slashValidator`, and a child on the FULL edge, which
-settles it. No theorem here proves the hypothesis from the block transitions.
+the bid when the substep reads it. A slashing of the block's proposer clears the entry in
+`slashValidator`, and a child on the FULL edge settles it. `unsatisfiedPayload_cost_of_run`
+derives the hypothesis from the chain (`PaymentCarried.lean`) and states the three facts
+with it. It takes two chain hypotheses. The first block after the bid takes the EMPTY
+edge. No slashing of any block reaches the proposer of the bid's block (`NoSlashingOf`).
 
 The answer comes from the `[ExecutionEngine]` seam. The default instance answers `true`
 for every payload, so only a non-default engine gives the recorded `false`.
@@ -44,7 +47,7 @@ namespace EthCLSpecs.Proofs.Heze
 
 open EthCLLib.Proofs (ForkChoiceStoreRun pureState runPure)
 open EthCLLib.Spec
-open EthCLSpecs.Heze (Preset Config Store BeaconState Root ForkChoiceNode BeaconBlock
+open EthCLSpecs.Heze (Preset Config Store State BeaconState Root ForkChoiceNode BeaconBlock
   ExecutionRequests getCurrentSlot getParentPayloadStatus processParentExecutionPayload
   processBuilderPendingPayments)
 
@@ -169,5 +172,63 @@ theorem unsatisfiedPayload_cost
   have hne := (getParentPayloadStatus_run_eq_empty_iff store child rootBlock hlookup).mp hstatus
   exact processParentExecutionPayload_run_of_empty_parent preState child
     (by rw [hcached]; exact hne) hreq
+
+/-- `unsatisfiedPayload_cost` with fact 3 stated over the chain. Let `sbR` be the signed
+block at `root`, with a bid of value `> 0`. Run `sbR`, then `steps` to the last slot of
+the next epoch, then `processSlot` and the first seven epoch substeps. The first block
+after `sbR` takes the EMPTY edge. No slashing of any block reaches the proposer of `sbR`.
+When the total active balance of the judging state reads as `total` and the quorum
+product fits (`QuorumFits`), `processBuilderPendingPayments` appends the entry of the bid
+if and only if it reaches the quorum.
+
+Facts 1 and 2 are those of `unsatisfiedPayload_cost`, and they use `h`. Fact 3 uses only
+the chain hypotheses. The theorem does not derive `hempty` from fact 2. `hempty` constrains
+the parent block hash in the bid of the first block. Fact 2 reads the payload status from
+the fork-choice store. -/
+theorem unsatisfiedPayload_cost_of_run
+    {map : MapKind} [Preset] [HasherTag] [Config] [CryptoBackend] [FcMap map]
+    (store : Store map) (root : Root) (sbR : EthCLSpecs.Heze.SignedBeaconBlock)
+    (nodes : Array ForkChoiceNode) (h : UnsatisfiedPayload store root sbR.message)
+    (hviable : nodes.contains (ForkChoiceNode.empty root) = true)
+    (v : Bool) (steps : List ChainStep) (st0 st1 stEnd stA stJudge : BeaconState)
+    (hpos : 0 < sbR.message.body.signedExecutionPayloadBid.message.value)
+    (hwin : windowEnd sbR.message.body.signedExecutionPayloadBid.message.slot < 2 ^ 64)
+    (hr : BlockStep sbR v st0 st1)
+    (hrun : ChainRun (windowEnd sbR.message.body.signedExecutionPayloadBid.message.slot)
+      steps st1 stEnd)
+    (hend : stEnd.slot.toNat = windowEnd sbR.message.body.signedExecutionPayloadBid.message.slot)
+    (hempty : EmptyChild sbR.message.body.signedExecutionPayloadBid.message steps)
+    (hslashR : NoSlashingOf sbR.message.proposerIndex sbR)
+    (hslash : NoSlashingSteps sbR.message.proposerIndex steps)
+    (hslot : (EthCLSpecs.Heze.processSlot (StateTransition := HezeRun)).run (pureState stEnd)
+      = .ok ((), pureState stA))
+    (hprefix : processEpochPrefix.run (pureState stA) = .ok ((), pureState stJudge))
+    (total : EthCLSpecs.Heze.Gwei)
+    (htotal : EthCLSpecs.Heze.getTotalActiveBalance (pureState stJudge) = .ok total)
+    (hquorum : QuorumFits total) :
+    (∀ (fuel : Nat) (exhausted : ForkChoiceNode),
+      (fuelLoop (fuel + 1) (ForkChoiceNode.pending root) exhausted
+          (headLoopBody store nodes)).run store
+        = (fuelLoop fuel (ForkChoiceNode.empty root) exhausted
+            (headLoopBody store nodes)).run store) ∧
+    (∀ (child : BeaconBlock) (preState : BeaconState),
+      child.parentRoot = root →
+      (getParentPayloadStatus (StoreTransition := ForkChoiceStoreRun (Store map))
+          store child).run store
+        = .ok (EthCLSpecs.Heze.Const.payloadStatusEmpty, store) →
+      preState.latestExecutionPayloadBid = sbR.message.body.signedExecutionPayloadBid.message →
+      child.body.parentExecutionRequests = (default : ExecutionRequests) →
+      (processParentExecutionPayload (StateTransition := HezeRun) child).run
+          (pureState preState)
+        = .ok ((), pureState preState)) ∧
+    ∃ after : BeaconState,
+      runPure (processBuilderPendingPayments (StateTransition := HezeRun)) stJudge
+        = .ok ((), after) ∧
+      EpochPaysBidIffQuorum stJudge after total
+        sbR.message.body.signedExecutionPayloadBid.message :=
+  have hcost := unsatisfiedPayload_cost store root sbR.message nodes h hviable
+  ⟨hcost.1, hcost.2.1, hcost.2.2 stJudge total
+    (bidPaymentCarried_of_run sbR v steps st0 st1 stEnd stA stJudge hpos hwin hr hrun hend
+      hempty hslashR hslash hslot hprefix).1 htotal hquorum⟩
 
 end EthCLSpecs.Proofs.Heze

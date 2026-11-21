@@ -292,6 +292,10 @@ scope. The four cases:
    the kernel, use **`decide`** (no compiler axiom). Slower
    (the kernel reduces hundreds of instructions per hash block);
    reserve for theorems where compiler trust is unacceptable.
+   This holds for the raw hash only. The SSZ merkleizer
+   `SSZType.hashTreeRoot` compiles to well-founded recursion, so
+   the kernel does not reduce any `htr` goal, not even of a
+   `UInt64`. Such goals need `native_decide`.
 
 Default rule: **prefer `native_decide` over kernel `decide` when
 the goal involves any `Sha256` (FFI) hashing**. For non-hash

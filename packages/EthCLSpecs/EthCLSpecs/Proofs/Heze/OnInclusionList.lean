@@ -4,7 +4,7 @@ import EthCLLib.Proofs.StateFree
 /-!
 # `EthCLSpecs.Proofs.Heze.OnInclusionList`: the honest list in the IL store
 
-`onInclusionList` (`Heze/ForkChoice.lean:540-591`) reads the store, runs the checks of
+`onInclusionList` (`Heze/ForkChoice.lean:541-592`) reads the store, runs the checks of
 v1.7.0-beta.4, judges the timeliness of the list, and then sets the store with the
 result of `processInclusionList`. It sets the store it read first, so a successful run
 writes only the IL store. `onInclusionList_run_ok` states this: a successful run is one
@@ -36,7 +36,8 @@ entry and changes nothing. Thus the store keeps an honest list that first arrive
 late, even when a copy arrives on time later. This is the spec behavior.
 
 The proofs use the `==` on `InclusionList`, a derived structural `BEq`. The `ReflBEq`
-instance below makes it reflexive (`beq_self_eq_true`).
+instance below makes it reflexive (`beq_self_eq_true`), and the `LawfulBEq` instance makes
+`==` agree with `=`.
 -/
 
 set_option autoImplicit false
@@ -66,22 +67,6 @@ def InclusionListTimely (store : Store map) (slot : Slot) : Prop :=
       = .ok (slot, store) ∧
     ∃ t d, (getTimeIntoSlotMs (StoreTransition := ForkChoiceStoreRun (Store map)) store).run
         store = .ok (t, store) ∧ getInclusionListDueMs = .ok d ∧ t < d
-
-omit [Preset] [HasherTag] [Config] in
-/-- A successful `liftErr` run reads an `.ok` value and keeps the state. -/
-private theorem run_liftErr_eq_ok {σ ε' ε α : Type} [ErrorConv ε' ε] (x : Except ε' α)
-    (sb s : σ) (a : α)
-    (h : (liftErr (m := StateT σ (Except ε)) (E := ε') (F := ε) x).run sb = .ok (a, s)) :
-    x = .ok a ∧ s = sb := by
-  cases x with
-  | error e =>
-    rw [run_liftErr_of_error _ sb rfl] at h
-    cases h
-  | ok a' =>
-    rw [run_liftErr_of_ok _ sb rfl] at h
-    injection h with h
-    injection h with h1 h2
-    exact ⟨by rw [h1], h2.symm⟩
 
 omit [FcMap map] in
 /-- `getCurrentSlot` reads no runner state. -/
@@ -196,6 +181,26 @@ theorem onInclusionList_run_ok (store s' : Store map) (signed : SignedInclusionL
     exact htail _ h
 
 end Handler
+
+/-- The derived `==` on `InclusionList` compares the four fields in order. `rfl` closes it
+once both sides are constructors, because the derived function matches on them. -/
+theorem inclusionList_beq_eq [Preset] (a b : InclusionList) :
+    (a == b) = (a.slot == b.slot && (a.validatorIndex == b.validatorIndex &&
+      (a.dependentRoot == b.dependentRoot &&
+      a.transactions == b.transactions))) := by
+  cases a; cases b; rfl
+
+/-- `==` on `InclusionList` is lawful. Core's `LawfulBEq` handler fails on the
+`transactions` field, an `SSZList` (a `Subtype` over `Array`). So the proof unfolds `==`
+with `inclusionList_beq_eq`, and `beq_iff_eq` rewrites each field. -/
+instance [Preset] : LawfulBEq InclusionList where
+  rfl {a} := beq_self_eq_true a
+  eq_of_beq {a b} h := by
+    rw [inclusionList_beq_eq] at h
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨h1, h2, h3, h4⟩ := h
+    cases a; cases b
+    simp_all
 
 section
 variable {map : MapKind} [Preset] [HasherTag] [FcMap map]
