@@ -278,8 +278,8 @@ maps the miss to the context's reject. Generic over the error type, so it reads 
 the state machine (`E = StateTransitionError`, a direct `outOfBounds`) and the
 fork-choice machine (`E = StoreTransitionError`, the wrapped `transition (outOfBounds …)`).
 A spec *validation* of an index pairs this with a preceding `assert (i < size)`: the
-`assert` rejects a bad index first as the spec's `IndexError` (`assert`, an
-`expectedRejection`), so `sszGetIdx`'s own `outOfBounds` stays unreachable, the safe
+`assert` rejects a bad index first, as the spec's own `assert` does (an `AssertionError`,
+classified `expectedRejection`), so `sszGetIdx`'s own `outOfBounds` stays unreachable, the safe
 read behind the validation and a defense-in-depth signal if the assert is ever wrong.
 The collection is any `IdxRead`: a capped `SSZList` or an uncapped `ProgressiveList`.
 The index is any `ToIndex` kind (`SPEC_ARITHMETIC.md` §4.6): a `Nat` position, a

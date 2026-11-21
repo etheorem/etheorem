@@ -23,8 +23,10 @@ counts none of these modules; it audits their axioms through this same root.
 
 Re-exports:
 
-* `EthCLLib.Proofs.Arith`: what `saturatingSub` computes (`saturatingSub_toNat`,
-  `saturatingSub_le`).
+* `EthCLLib.Proofs.Arith`: what the raw-word `saturatingSub` of `Spec/Arith.lean`
+  computes (`saturatingSub_toNat`, `saturatingSub_le`), and what `arrayUnion`
+  computes. The laws of the checked `CLUint64.saturatingSub` sit in
+  `EthCLLib.Proofs.CLUint`.
 * `EthCLLib.Proofs.LawfulFcMap`: same-key insertion for `FcMap`
   (`LawfulFcMap`, `FcMap.lookup_insert_self`,
   `FcMap.contains_insert_self`), with `instLawfulFcMapTreeMap` and
