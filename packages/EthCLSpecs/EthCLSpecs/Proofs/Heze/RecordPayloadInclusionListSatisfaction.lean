@@ -36,8 +36,8 @@ alpha.12 recomputed the committee from a state and could raise an empty-committe
 missing-timeliness error; the corollaries that named those errors went with them.
 
 The theorems do not prove that a subsequent lookup returns the recorded
-value, because the generic `FcMap` interface does not provide an insert/lookup
-law.
+value. `OnExecutionPayloadEnvelope.lean` proves that lookup for the envelope
+handler, with the `LawfulFcMap` laws.
 -/
 
 set_option autoImplicit false
