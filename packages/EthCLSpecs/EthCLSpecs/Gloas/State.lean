@@ -26,7 +26,7 @@ lists into `ProgressiveList`s. `historicalRoots`, `eth1DataVotes`, and
 `historicalSummaries` stay capped lists. -/
 @[sizzlean_progressive]
 forkcontainer BeaconState where
-  genesisTime                   : UInt64
+  genesisTime                   : CLUint64
   genesisValidatorsRoot         : Root
   slot                          : Slot
   forkData                      : Fork
@@ -36,6 +36,9 @@ forkcontainer BeaconState where
   historicalRoots               : SSZList Root Const.historicalRootsLimit
   eth1Data                      : Eth1Data
   eth1DataVotes                 : SSZList Eth1Data (Const.epochsPerEth1VotingPeriod * Const.slotsPerEpoch)
+  -- `eth1_deposit_index` stays a raw `UInt64`: it is data only at the pin. No pinned
+  -- body computes with it. The Gloas upgrade copies it, and the Heze upgrade compares it
+  -- with `depositRequestsStartIndex`.
   eth1DepositIndex              : UInt64
   validators                    : ProgressiveList Validator
   balances                      : ProgressiveList Gwei
@@ -47,13 +50,16 @@ forkcontainer BeaconState where
   previousJustifiedCheckpoint   : Checkpoint
   currentJustifiedCheckpoint    : Checkpoint
   finalizedCheckpoint           : Checkpoint
-  inactivityScores              : ProgressiveList UInt64
+  inactivityScores              : ProgressiveList Gwei
   currentSyncCommittee          : SyncCommittee
   nextSyncCommittee             : SyncCommittee
   latestBlockHash               : Hash32
   nextWithdrawalIndex           : WithdrawalIndex
   nextWithdrawalValidatorIndex  : ValidatorIndex
   historicalSummaries           : SSZList HistoricalSummary Const.historicalRootsLimit
+  -- `deposit_requests_start_index` stays a raw `UInt64`: it is data only at the pin. No
+  -- pinned body computes with it. The Gloas upgrade copies it, and the Heze upgrade
+  -- compares it with `eth1DepositIndex`.
   depositRequestsStartIndex     : UInt64
   depositBalanceToConsume       : Gwei
   exitBalanceToConsume          : Gwei

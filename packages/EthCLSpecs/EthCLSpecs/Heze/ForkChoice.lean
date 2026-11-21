@@ -223,21 +223,26 @@ forkdef isInclusionListBitsInclusive (store : InclusionListStore map)
 `slot` in committee-index order, then take the first `INCLUSION_LIST_COMMITTEE_SIZE` members
 cyclically (`cyclicSample`, in `Heze/Committees.lean`). Relocated from the beacon-state accessors
 into this store-throwing block beside its caller `on_inclusion_list`: the spec's
-`indices[i % len(indices)]` raises `ZeroDivisionError` when the slot has no committee members.
-That is an uncaught fault (the reference runner catches only `AssertionError` / `IndexError`), so
-the empty case throws `.transition (.arithmetic …)` (an `uncaughtFault`, not an expected rejection)
-rather than a caught `.assert`, matching how `balanceAfterWithdrawals` models the sibling `uint64`
-fault, and rather than silently sampling a `default`. `state` stays an explicit parameter (the
-accessor reads `state`, not the store). -/
+`indices[i % len(indices)]` raises a bare `ZeroDivisionError` when the slot has no committee
+members. The plain `%` inside `cyclicSample` raises it, the `.zeroDivision` cause, uncaught
+under every reference wrapper (`AssertionError` / `IndexError` / `ValueError` all miss it), so
+the empty case throws `.transition (.zeroDivision …)` (an `uncaughtFault`, not an expected
+rejection). `state` stays an explicit parameter (the accessor reads `state`, not the store). -/
 forkdef getInclusionListCommittee (state : State) (slot : Slot) :
     StoreTransition (Vector ValidatorIndex Const.inclusionListCommitteeSize) := do
   let epoch := computeEpochAtSlot slot
-  let committeesPerSlot := getCommitteeCountPerSlot state epoch
-  let indices := (Array.range committeesPerSlot).foldl
-    (fun acc i => acc ++ getBeaconCommittee state slot i) (#[] : Array ValidatorIndex)
-  if indices.size == 0 then
-    throwArithmetic "get_inclusion_list_committee: indices[i % len(indices)] on an empty committee"
-  pure (cyclicSample indices Const.inclusionListCommitteeSize)
+  let committeesPerSlot ← getCommitteeCountPerSlot state epoch
+  -- The committees concatenate in slot order, each `get_beacon_committee` bound as it
+  -- forms; the first rejecting slot surfaces (`SPEC_ARITHMETIC.md` §4.3). `toPlainNat`:
+  -- `range(committees_per_slot)` iterates the plain positions below the checked count.
+  let indices ← (Array.range committeesPerSlot.toPlainNat).foldlM
+    (fun acc i => do
+      -- `CommitteeIndex(i)`: the pyspec's checked cast of the plain loop variable.
+      let committeeIndex ← CLUint64.ofNat? i
+      let committee ← liftErr (getBeaconCommittee state slot committeeIndex)
+      pure (acc ++ committee))
+    (#[] : Array ValidatorIndex)
+  liftErr (cyclicSample indices Const.inclusionListCommitteeSize)
 
 end
 
@@ -248,8 +253,8 @@ satisfied the inclusion-list constraints (`consensus-specs/specs/heze/fork-choic
 `inclusionListStore` folds in the spec's separate `InclusionListStore` (see the module docstring).
 The seventeen Gloas fields are restated verbatim. -/
 forkstruct Store (map : MapKind) [HasherTag] where
-  timeMs                        : UInt64
-  genesisTimeMs                 : UInt64
+  timeMs                        : CLUint64
+  genesisTimeMs                 : CLUint64
   justifiedCheckpoint           : Checkpoint
   finalizedCheckpoint           : Checkpoint
   unrealizedJustifiedCheckpoint : Checkpoint
@@ -330,10 +335,11 @@ inclusion-list constraints is not extended (`heze/fork-choice.md:234-235`). The 
 -/
 forkdef shouldExtendPayload (store : Store map) (root : Root) : StoreTransition Bool := do
   -- Mirrors the Gloas body plus the inclusion-list gate: the spec opens with
-  -- `assert store.blocks[root].slot + 1 == get_current_slot(store)`.
+  -- `assert store.blocks[root].slot + 1 == get_current_slot(store)`. The add binds before the
+  -- clock read, in Python's operand order (see Gloas's `isPreviousSlotPayloadDecision`).
   let rootBlock ← FcMap.getOrThrow store.blocks root
+  let nextSlot ← rootBlock.slot + 1
   let currentSlot ← getCurrentSlot store
-  let nextSlot ← checkedAdd rootBlock.slot 1 "should_extend_payload: blocks[root].slot + 1"
   assert (nextSlot == currentSlot)
   if !isPayloadVerified store root then pure false
   -- [New in Heze:EIP7805] do not extend a payload that fails the inclusion-list constraints
@@ -418,12 +424,14 @@ from `isInclusionListSatisfied`, which reads the `[ExecutionEngine]` seam (the s
 v1.7.0-beta.4 drops the `state` argument: the slot comes from the block in the store and the
 committee key from the dependent root, where alpha.12 recomputed the committee from the state.
 Throwing: `store.blocks[root]` raises on a miss, the `slot - 1` is a `uint64` subtraction that
-raises on a slot-0 block (an uncaught fault, so `checkedSub`), and the dependent-root walk
-reads the store. -/
+raises on a slot-0 block (an uncaught fault, so the checked `Slot` subtraction binds), and the
+dependent-root walk reads the store. -/
 forkdef recordPayloadInclusionListSatisfaction (store : Store map) (root : Root)
     (payload : ExecutionPayload) : StoreTransition (Store map) := do
   let block ← FcMap.getOrThrow store.blocks root
-  let slot ← checkedSub block.slot 1 "record_payload_inclusion_list_satisfaction: store.blocks[root].slot - 1"
+  -- `store.blocks[root].slot - 1`: the pyspec's checked `Slot` subtraction, which raises
+  -- on a slot-0 block (an uncaught fault), so it binds here.
+  let slot ← block.slot - 1
   let dependentRoot ← getShufflingDependentRoot store root (computeEpochAtSlot slot)
   let ilTxs := getInclusionListTransactions store.inclusionListStore slot dependentRoot (onlyTimely := true)
   let satisfied := isInclusionListSatisfied payload ilTxs
@@ -486,7 +494,7 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }
   let genesisTimeMs := secondsToMilliseconds (sszGet anchorState genesisTime)
-  let timeMs ← liftErr (computeTimeAtSlotMs genesisTimeMs (sszGet anchorState slot))
+  let timeMs ← computeTimeAtSlotMs genesisTimeMs (sszGet anchorState slot)
   let emptyVotes : Array (Option Bool) := Array.replicate Const.ptcSize none
   pure
     { timeMs := timeMs
@@ -511,9 +519,10 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
 
 /-- `get_inclusion_list_due_ms()` (`consensus-specs/specs/heze/fork-choice.md:250-251`):
 `get_slot_component_duration_ms(INCLUSION_LIST_DUE_BPS)`. `bpsDeadlineMs` (inherited from Gloas)
-IS `get_slot_component_duration_ms`. A fork-choice deadline helper leaning on that inherited
-fork-choice function, so it lives here with the rest of the fork-choice layer. -/
-forkdef getInclusionListDueMs : UInt64 := bpsDeadlineMs Const.inclusionListDueBps
+IS `get_slot_component_duration_ms`, so the result is `Checked`: the checked product can raise
+past `2^64 - 1`. A fork-choice deadline helper leaning on that inherited fork-choice function,
+so it lives here with the rest of the fork-choice layer. -/
+forkdef getInclusionListDueMs : Checked CLUint64 := bpsDeadlineMs Const.inclusionListDueBps
 
 /-- `on_inclusion_list(store, signed_inclusion_list)` (the wire handler,
 `consensus-specs/specs/heze/fork-choice.md:264-311`): validate a received inclusion list, judge
@@ -540,16 +549,20 @@ forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit :=
 
   -- The slot must be within the retention window.
   assert (inclusionList.slot ≤ currentSlot)
-  let windowEnd ← checkedAdd inclusionList.slot Const.minSlotsForInclusionListsRequests
-    "on_inclusion_list: inclusion_list.slot + MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS"
+  -- `inclusion_list.slot + MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS`: the checked `Slot`
+  -- add, both operands on the checked surface, bound before its assert.
+  let windowEnd ← inclusionList.slot + Const.minSlotsForInclusionListsRequests
   assert (windowEnd ≥ currentSlot)
 
   -- The transactions must be non-empty, each non-empty, and within the byte cap. The spec sums
-  -- the lengths as a Python `int`, which cannot overflow, so the sum is over `Nat`.
+  -- the lengths as a Python `int`, so the sum is a `CLInt`, which never raises.
   let transactions := inclusionList.transactions.toArray
-  let transactionsSize : Nat := transactions.foldl (fun acc tx => acc + tx.size) 0
+  let transactionsSize : CLInt := transactions.foldl (fun acc tx => acc + len tx) 0
   assert (transactionsSize > 0)
-  assert (transactionsSize ≤ Const.maxTransactionsBytesPerInclusionList.toNat)
+  -- `transactions_size <= MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST`: the sum is a plain
+  -- `int` in Python and the cap a `Uint64`; the mixed comparison never raises and orders
+  -- the values, which the plain projection of the checked cap reads.
+  assert (transactionsSize ≤ Const.maxTransactionsBytesPerInclusionList.toPlainNat)
   assert (transactions.all (·.size > 0))
 
   -- The dependent block must be known, no later than the shuffling dependent slot, and a
@@ -557,7 +570,7 @@ forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit :=
   assert (FcMap.contains store.blocks inclusionList.dependentRoot)
   assert (FcMap.contains store.blockStates inclusionList.dependentRoot)
   let epoch := computeEpochAtSlot inclusionList.slot
-  let dependentSlot := computeShufflingDependentSlot epoch
+  let dependentSlot ← computeShufflingDependentSlot epoch
   let dependentBlock ← FcMap.getOrThrow store.blocks inclusionList.dependentRoot
   assert (dependentBlock.slot ≤ dependentSlot)
   assert (← isValidDependentRoot store inclusionList.dependentRoot dependentSlot)
@@ -565,7 +578,7 @@ forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit :=
   -- The validator must be in the inclusion-list committee, computed on a copy of the dependent
   -- block's state advanced to the lookahead start.
   let dependentState ← FcMap.getOrThrow store.blockStates inclusionList.dependentRoot
-  let lookaheadStartSlot := computeShufflingLookaheadStartSlot epoch
+  let lookaheadStartSlot ← computeShufflingLookaheadStartSlot epoch
   let state ←
     if (sszGet dependentState slot) < lookaheadStartSlot then
       runNestedStateTransition dependentState (processSlots lookaheadStartSlot)
@@ -576,10 +589,13 @@ forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit :=
   -- The signature must verify.
   assert (← evalNestedStateTransition state (isValidInclusionListSignature state signed))
 
-  -- Timely only in its own slot, before the deadline.
+  -- Timely only in its own slot, before the deadline. The time into the slot and the due time
+  -- bind inside the branch, where Python's `and` forms them, in the `<` operands' order.
   let isTimely ←
     if inclusionList.slot == currentSlot then
-      pure (decide ((← getTimeIntoSlotMs store) < getInclusionListDueMs))
+      let timeIntoSlotMs ← getTimeIntoSlotMs store
+      let inclusionListDueMs ← getInclusionListDueMs
+      pure (decide (timeIntoSlotMs < inclusionListDueMs))
     else pure false
   set { store with
     inclusionListStore := processInclusionList store.inclusionListStore signed isTimely }
