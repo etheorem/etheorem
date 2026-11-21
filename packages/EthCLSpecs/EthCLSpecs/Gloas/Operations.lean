@@ -88,12 +88,24 @@ forkdef getScheduledGasLimit (epoch : Epoch) : Option UInt64 :=
 
 /-- `get_pending_balance_to_withdraw_for_builder` (`gloas/beacon-chain.md:1168-1178`): the
 pending builder withdrawals plus the queued builder payments for `builderIndex`, summed in
-that order. -/
-forkdef getPendingBalanceToWithdrawForBuilder (state : State) (builderIndex : BuilderIndex) : Gwei :=
-  let w := (sszGet state builderPendingWithdrawals).foldl
-    (fun acc x => if x.builderIndex == builderIndex then acc + x.amount else acc) 0
-  (sszGet state builderPendingPayments).toArray.foldl
-    (fun acc p => if p.withdrawal.builderIndex == builderIndex then acc + p.withdrawal.amount else acc) w
+that order into one `balance`.
+
+The pyspec starts `balance` at `Gwei(0)` and adds with `+=` on `uint64` values, so an addition
+past `2 ^ 64 - 1` raises a `ValueError`. The body mirrors that: one accumulator, folded first
+over the withdrawals and then over the payments, each addition a `checkedAdd`. The reject is
+`.arithmetic`. -/
+forkdef getPendingBalanceToWithdrawForBuilder (state : State) (builderIndex : BuilderIndex) :
+    Except StateTransitionError Gwei := do
+  let afterWithdrawals ← (sszGet state builderPendingWithdrawals).val.foldlM
+    (fun acc w => if w.builderIndex == builderIndex then
+        checkedAdd acc w.amount
+          "get_pending_balance_to_withdraw_for_builder: balance += withdrawal.amount"
+      else pure acc) 0
+  (sszGet state builderPendingPayments).toArray.foldlM
+    (fun acc p => if p.withdrawal.builderIndex == builderIndex then
+        checkedAdd acc p.withdrawal.amount
+          "get_pending_balance_to_withdraw_for_builder: balance += payment.withdrawal.amount"
+      else pure acc) afterWithdrawals
 /-- `builderPaymentIndex`: the ring slot for `slot`'s `BuilderPendingPayment`, given whether
 `slot` falls in the *current* epoch (`current = true`) versus the previous one.
 `builderPendingPayments` is a `2 * SLOTS_PER_EPOCH` ring whose lower half holds the previous
@@ -261,7 +273,12 @@ forkdef processBuilderDepositRequest (request : BuilderDepositRequest) : StateTr
 /-- `process_builder_exit_request` (EIP-8282): an EL-triggered builder exit. A no-op
 unless the pubkey names an active builder whose registered execution address matches the
 request's `source_address` and that has no pending balance to withdraw; otherwise it
-initiates the builder's exit. -/
+initiates the builder's exit.
+
+The pyspec returns early at each check, in order, so it computes the pending balance only for
+an active builder with a matching address. The body binds the pending balance after the first
+two checks for the same reason: its sum can fault, and the fault must fire only where the spec
+computes it. -/
 forkdef processBuilderExitRequest (request : BuilderExitRequest) : StateTransition Unit := do
   let state ← get
   match (sszGet state builders).findIdx? (·.pubkey == request.pubkey) with
@@ -270,9 +287,10 @@ forkdef processBuilderExitRequest (request : BuilderExitRequest) : StateTransiti
     let builderIndex : BuilderIndex := UInt64.ofNat idx
     let builder := sszGet state builders[idx]!
     if isActiveBuilder state builderIndex
-        && builder.executionAddress == request.sourceAddress
-        && getPendingBalanceToWithdrawForBuilder state builderIndex == 0 then
-      initiateBuilderExit builderIndex
+        && builder.executionAddress == request.sourceAddress then
+      let pending ← liftErr (getPendingBalanceToWithdrawForBuilder state builderIndex)
+      if pending == 0 then
+        initiateBuilderExit builderIndex
 
 /-! ## Attestation (payload-aware) + payload-timeliness committee (EIP-7732) -/
 
@@ -508,11 +526,18 @@ forkdef processPayloadAttestation (pa : PayloadAttestation) : StateTransition Un
 forkdef convertBuilderIndexToValidatorIndex (builderIndex : BuilderIndex) : ValidatorIndex := builderIndex ||| Const.builderIndexFlag
 
 /-- `can_builder_cover_bid`: the builder's balance, after reserving `MIN_DEPOSIT_AMOUNT`
-plus its already-pending withdrawals, covers the bid value. -/
-forkdef canBuilderCoverBid (state : State) (builderIndex : BuilderIndex) (bidAmount : Gwei) : Bool :=
+plus its already-pending withdrawals, covers the bid value (`gloas/beacon-chain.md:661`).
+
+Two steps can fault, as in the pyspec: the pending-balance sums, and
+`MIN_DEPOSIT_AMOUNT + pending_withdrawals_amount`. Each rejects with `.arithmetic`. The final
+subtraction cannot fault, because the `if` rules out `builder_balance < min_balance`. -/
+forkdef canBuilderCoverBid (state : State) (builderIndex : BuilderIndex) (bidAmount : Gwei) :
+    Except StateTransitionError Bool := do
   let builderBalance := (sszGet state builders[builderIndex.toNat]!).balance
-  let minBalance := Const.minDepositAmountG + getPendingBalanceToWithdrawForBuilder state builderIndex
-  if builderBalance < minBalance then false else builderBalance - minBalance ≥ bidAmount
+  let pending ← getPendingBalanceToWithdrawForBuilder state builderIndex
+  let minBalance ← checkedAdd Const.minDepositAmountG pending
+    "can_builder_cover_bid: MIN_DEPOSIT_AMOUNT + pending_withdrawals_amount"
+  pure (if builderBalance < minBalance then false else builderBalance - minBalance ≥ bidAmount)
 
 /-- `verify_execution_payload_bid_signature`: the bid is signed by the builder's key
 under `DOMAIN_BEACON_BUILDER` at the current epoch. -/
@@ -582,7 +607,7 @@ forkdef processExecutionPayloadBid (signedBid : SignedExecutionPayloadBid) : Sta
   else
     assert (isActiveBuilder state builderIndex)
     assert ((sszGet state builders[builderIndex.toNat]!).version == Const.payloadBuilderVersion)
-    assert (canBuilderCoverBid state builderIndex amount)
+    assert (← liftErr (canBuilderCoverBid state builderIndex amount))
     assert (verifyExecutionPayloadBidSignature state signedBid)
 
   assert (bid.blobKzgCommitments.size ≤ (getBlobParameters (currentEpochOf state)).maxBlobsPerBlock)
