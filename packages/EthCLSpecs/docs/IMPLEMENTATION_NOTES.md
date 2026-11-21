@@ -270,25 +270,30 @@ runner selects fork × preset (`pyspec_server [fork] [preset]`).
 
 ## State access, indexing, and the error model
 
-Reads and writes go through `sszGet` / `sszUpdate`. The index accessor is chosen by three
-questions: is the index _data-derived_ (supplied by a data field and not otherwise bounded), has a
-validation already proved it in range, and is a reject channel in scope (a monadic step or
-an `Except` query) at the read.
+Reads and writes go through `sszGet` / `sszUpdate`. The index accessor is chosen by two
+questions: is the index _data-derived_ (supplied by a data field and not otherwise bounded),
+and is a reject channel in scope (a monadic step or an `Except` query) at the read.
 
 - **A data-derived index with a reject channel** uses `sszGetIdx` / `bitlistGetIdx`
   (`Spec/State.lean`), which build an `Except IndexError` and hand it to `liftErr`,
   surfacing `outOfBounds i xs.size` with the real index and bound (the audit's `likelyBug`
   bucket) rather than masking as a default. This covers the operation reads in a state step
   (`process_attestation`'s participation reads, `process_withdrawal_request`'s balance read,
-  the pending-consolidation source reads) and the pure queries that return `Except IndexError`
-  because their index is untrusted or a parameter (`get_base_reward`, `get_attesting_indices`,
-  the reward-delta helpers), whose monadic callers bind them through `liftErr`.
-- **An index a spec validation checks** is read through `assertH (i < size)`
-  (`Spec/Assert.lean`): the assert returns the witness, so the read is the proof-carrying,
-  reject-free `vs[i]'h.down`, with no default fallback, the bad index having rejected at the
-  `assertH`. Plain `assert` stays the Unit-returning form for validations whose proof nothing
-  downstream needs. `process_voluntary_exit`, `process_proposer_slashing`, the block-header
-  proposer read, and the Gloas withdrawal sweep take this form, ten sites in all.
+  the pending-consolidation source reads) and the pure queries that return
+  `Except StateTransitionError` because their index is untrusted or a parameter
+  (`get_base_reward`, `get_attesting_indices`, the reward-delta helpers), whose monadic
+  callers bind them through `liftErr`.
+- **A registry read that an operation validates** goes through the same `sszGetIdx`, and
+  the reject class follows the pyspec. `process_voluntary_exit`,
+  `process_proposer_slashing`, the block-header proposer read, and the Gloas withdrawal
+  sweep read the registry with no range guard, as the pyspec's bare `state.validators[i]`
+  does. A bad index rejects with `outOfBounds`, the class of the pyspec's `IndexError`.
+  `Tests/ValidatorIndexMigrationPins.lean` pins `.outOfBounds 5 1` for the voluntary exit
+  and for the proposer slashing. Where the pyspec asserts the bound first, the body writes
+  that `assert` before the read, so a bad index rejects with `.assert`
+  (`process_bls_to_execution_change`). The framework keeps the proof-returning `assertH`
+  (`Spec/Assert.lean`), which supports a proof-carrying, reject-free `vs[i]'h.down`. No
+  fork body calls it.
 - **A structurally-bounded index** uses the total bang `vs[i]!` / `vget v i`, or `vmodGet`
   for a `% LEN` ring-buffer read (proof-carrying via the preset length bound). The index is
   provably in range, a `Fin n` iterating a length-`n` vector, a `for i in [0:xs.size]` loop,
@@ -622,15 +627,16 @@ Spec-faithfulness facts worth knowing:
   `compute_balance_weighted_selection` asserts `total > 0` (`gloas/beacon-chain.md:1213`),
   so Gloas proposer sampling, the Gloas sync committee, and `compute_ptc` reject with
   `.assert` when no validator qualifies (zero active, or all slashed under the EIP-8045
-  filter). No conformance vector reaches the empty case; `Tests/GloasCommitteesPins.lean`
-  pins the three reject sites. Fulu keeps the two pyspec reject classes. Fulu proposer
+  filter). No conformance vector reaches the empty case. `Tests/GloasCommitteesPins.lean`
+  pins the bare sampler, `process_proposer_lookahead`, and `process_ptc_window`;
+  `Tests/PlainArithmeticPins.lean` pins the Gloas and Heze sync-committee draws. Fulu
+  keeps the two pyspec reject classes. Fulu proposer
   sampling runs through the same sampler, and its `.assert` matches the `AssertionError`
   that `compute_proposer_index` raises on an empty set. Fulu's
   `getNextSyncCommitteeIndices` keeps the pinned Fulu loop. With a nonzero
   `SYNC_COMMITTEE_SIZE` and no active validator, it throws `.zeroDivision` before it
   reaches the sampler. That is the pyspec's `ZeroDivisionError` on
-  `i % active_validator_count`, and `Tests/PlainArithmeticPins.lean` pins it. The
-  earlier Fulu sync-committee reject-class mismatch is resolved.
+  `i % active_validator_count`, and `Tests/PlainArithmeticPins.lean` pins it.
 - **`process_execution_payload` takes the execution engine as valid.** It checks
   parent-hash / prev-randao / timestamp consistency and caches the header;
   `verify_and_notify_new_payload` is the consumer's responsibility, which is valid for
@@ -1654,25 +1660,30 @@ The verification source is WS-117's Stage 10.1 final-check record, checked tree
 `7dbe320`, held locally in `mb/spec-arithmetic-implementation/stage-10.1.md`.
 Task 10.4 brings that evidence into the tracked completion record.
 The Stage 9 audit supplies the arithmetic guidance. This synchronization corrects
-the remaining deposit and genesis descriptions:
+the remaining deposit, genesis, fork upgrade, and index-read descriptions:
 
 | Document | Site | Changed claim |
 |---|---|---|
 | `SPEC_ARITHMETIC.md` | intro | The contract describes the implemented arithmetic. The plan pointer records the transition to this contract; task 10.5 removes the link. |
-| `SPECS_ARCHITECTURE.md` | §1.1 | Each fork delivers the contract's deliverables except genesis construction. The scope table keeps the `fork` upgrade in scope and lists `genesis` construction as out of scope, with a pointer to §6.1. |
+| `SPECS_ARCHITECTURE.md` | §1.1 | The lifecycle functions carry two exceptions: genesis construction is unmodeled in every fork, and Fulu declares no upgrade. The scope table keeps the Fulu-to-Gloas and Gloas-to-Heze `fork` upgrades in scope. It lists `genesis` construction (§6.1) and the Electra-to-Fulu upgrade (§6.2) as out of scope. |
 | `SPECS_ARCHITECTURE.md` | §§3.1, 6, 6.1 | The module design reserves genesis construction as an unmodeled design. The pinned deposit path checks the Merkle branch and new-pubkey signature, adds new validators with zero balance, and queues the amount. Repeated pubkeys retain their validator. The Lean fork bodies omit `processDeposit` and `applyDeposit`. |
+| `SPECS_ARCHITECTURE.md` | §6.2 | Each child fork declares one upgrade. `upgradeToGloas` is total over a plain `Fulu.BeaconState`, and `completeUpgradeToGloas` is the step that can reject. `upgradeToHeze` returns `Except StateTransitionError` for its EIP-8015 assert. Fulu declares no upgrade: its `runUpgrade` and `runTransition` return `outOfScope`, and the harness does not collect the Fulu `fork` and `transition` vectors. `Fork.lean` holds a child fork's one import of its parent, and `Gloas/Transition.lean` writes `Fulu.zeroRoot`. The two boundary greps print no line. |
 | `SPECS_ARCHITECTURE.md` | §8.2 | The example uses the implemented `isValidDepositSignature`, with the fixed `GENESIS_FORK_VERSION` and zero genesis root. Its callers include `applyPendingDeposit`, Gloas's pending-validator and builder-deposit paths, and their Heze copies. In Fulu and Gloas a valid signature adds a new validator. Heze's `applyPendingDeposit` drops a new pubkey with BLS withdrawal credentials before the signature check (EIP-8365). `processBuilderDepositRequest` branches on its own verifier, `isValidBuilderDepositSignature`. |
 | `SPECS_ARCHITECTURE.md` | §10.1 | Genesis is out of scope. The pin ships no genesis vectors for the three forks. Their `runGenesis` implementations return `outOfScope`, reported as `skip`. |
+| `FRAMEWORK_ARCHITECTURE.md` | §8.1 | A read that an operation validates goes through `sszGetIdx`. A bad index rejects with `outOfBounds` where the pyspec reads with no range guard, and with `assert` where the pyspec asserts the bound first. No fork body calls `assertH`. The pure queries with an untrusted index return `Except StateTransitionError`. |
+| `SPEC_AUTHORING_MODEL.md` | §§4.1, 11 | The glossary and the format table name both upgrades, `upgradeToGloas` and `upgradeToHeze`. Each lives in one of its fork's two cross-fork boundary files. |
+| `SPEC_AUTHORING_MODEL.md` | §7 | The same two reject classes for a validated read. The proof-carrying `assertH` form stays in the primitive set, and no fork body uses it. |
 | `FRAMEWORK_ARCHITECTURE.md` | §11 | The pinned callers of `is_valid_merkle_branch` include `process_deposit`, light-client checks, and data-column sidecar checks. They sit outside the modeled fork bodies. Framework tests and proofs cover `isValidMerkleBranch`. |
 | `IMPLEMENTATION_NOTES.md` | Scope and conformance | Fulu collects `ssz_static`. Collected `ssz_static` cases for types a fork does not model report `skip`; they differ from the deselected formats. |
-| `IMPLEMENTATION_NOTES.md` | Fulu, empty candidate set | Fulu proposer sampling rejects with `.assert`, as `compute_proposer_index` does. Fulu's sync-committee draw throws `.zeroDivision` before the sampler, as the pyspec does, and `Tests/PlainArithmeticPins.lean` pins it. The earlier reject-class mismatch is resolved. |
+| `IMPLEMENTATION_NOTES.md` | State access, indexing, and the error model | Two questions choose the index accessor. `process_voluntary_exit`, `process_proposer_slashing`, the block-header proposer read, and the Gloas withdrawal sweep read through `sszGetIdx` and reject with `outOfBounds`; `Tests/ValidatorIndexMigrationPins.lean` pins the first two. `process_bls_to_execution_change` keeps the pyspec `assert` before the read. No fork body calls `assertH`. The pure queries return `Except StateTransitionError`. |
+| `IMPLEMENTATION_NOTES.md` | Fulu, empty candidate set | Fulu proposer sampling rejects with `.assert`, as `compute_proposer_index` does. Fulu's sync-committee draw throws `.zeroDivision` before the sampler, as the pyspec does, and `Tests/PlainArithmeticPins.lean` pins it. The earlier reject-class mismatch is resolved. `Tests/GloasCommitteesPins.lean` pins the bare sampler, `process_proposer_lookahead`, and `process_ptc_window`; `Tests/PlainArithmeticPins.lean` pins the Gloas and Heze sync-committee draws. |
 | `IMPLEMENTATION_NOTES.md` | Genesis | Names `runGenesis`, its `outOfScope` result, and the walking-skeleton bucket pin. The proposed genesis functions have no Lean declarations. |
 | `DISCREPANCIES.md` | Fulu | Two kinds of Fulu vectors do not run: the deselected formats, and the collected `ssz_static` cases for unmodeled types, which report `skip`. |
 
 The arithmetic contract's operation rules, the authoring model's arithmetic row
-(`SPEC_AUTHORING_MODEL.md` §5), the framework error model (`FRAMEWORK_ARCHITECTURE.md`
-§6), and the discrepancy entries of `DISCREPANCIES.md` already matched the implemented
-state. The Stage 9 audit record above stays intact.
+(`SPEC_AUTHORING_MODEL.md` §5), the framework error model and arithmetic layer
+(`FRAMEWORK_ARCHITECTURE.md` §§6, 10), and the discrepancy entries of `DISCREPANCIES.md`
+already matched the implemented state. The Stage 9 audit record above stays intact.
 `SPEC_ARITHMETIC_LINTING.md` holds the separate deferred linter proposal; no arithmetic
 linter is active.
 
@@ -1681,12 +1692,15 @@ files, `just check-constants` 166 constants (the same 2 untabled and 3 tier-only
 advisories). These results match the local Stage 10.1 final-check record named above.
 
 Targeted searches over the six named documents cover raw words and conversions,
-unbounded and wrapping arithmetic, superseded designs, error classes, deposit and
-genesis entry points, plan and linter links, and `let … :=` arithmetic examples.
+unbounded and wrapping arithmetic, superseded designs, error classes, deposit,
+genesis, and upgrade entry points, index reads, plan and linter links, and `let … :=`
+arithmetic examples.
 Remaining raw-word matches describe byte data, framework boundaries, proof bridges,
 comparison tables, and the preserved Stage 9 audit. The two matching arithmetic
 examples are the proved-total divisor route and the labelled unbound counterexample.
 Genesis matches in the authoring model describe its lifecycle contract; the specs
-architecture labels that design unmodeled. Error descriptions retain the typed
+architecture labels that design unmodeled. The `assertH` matches describe the framework
+primitive and state that no fork body calls it. The `Except IndexError` matches name
+`getAt`, `setAt`, and the value that `sszGetIdx` lifts. Error descriptions retain the typed
 caught-set distinctions. The plan link stays until 10.5, and linter references
 describe deferred work.

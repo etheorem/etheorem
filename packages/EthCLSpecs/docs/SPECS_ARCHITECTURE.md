@@ -37,16 +37,17 @@ it.
 ### 1.1 The surface per fork
 
 Each fork delivers the six deliverables of the contract's
-what-a-fork-spec-is section, drawn from the upstream specification. Genesis
-construction is the one exception: its lifecycle function stays an unmodeled design
-(§6.1). The surface that is in scope:
+what-a-fork-spec-is section, drawn from the upstream specification. The lifecycle
+functions carry two exceptions. Genesis construction stays an unmodeled design in
+every fork (§6.1). Fulu declares no upgrade, because `upgrade_to_fulu` takes an
+Electra state (§6.2). The surface that is in scope:
 
 | In scope | Out of scope |
 |---|---|
 | `beacon-chain` (containers, helpers, state transition, epoch processing, operations) | the validator guide's honest-behavior duties |
 | `fork-choice` (the `Store` and its `on_*` handlers) | the p2p networking layer |
-| the `fork` upgrade | `genesis` construction (an unmodeled design, §6.1) |
-| Fulu's PeerDAS additions (EIP-7594) | |
+| the `fork` upgrade (Fulu to Gloas, Gloas to Heze) | `genesis` construction (an unmodeled design, §6.1) |
+| Fulu's PeerDAS additions (EIP-7594) | the Electra-to-Fulu `fork` upgrade (§6.2) |
 | Gloas's ePBS additions (EIP-7732) | |
 | Heze's FOCIL additions (EIP-7805) | |
 
@@ -627,24 +628,44 @@ for these forks (§10.1).
 
 ### 6.2 Fork upgrade
 
-`upgradeToGloas : Fulu.State → Except StateTransitionError Gloas.State` reads a
-finished Fulu state and constructs the Gloas one. It can reject, since
-`initialize_ptc_window` runs `compute_ptc`.
+Each child fork declares one upgrade. The upgrade reads a finished parent state and
+constructs the child state.
 
 ```lean
-def upgradeToGloas (pre : Fulu.State) : Except StateTransitionError Gloas.State :=
-  -- reads Fulu fields by sszGet, writes the Gloas BeaconState,
-  -- carrying common fields across and initializing the ePBS ones
+def upgradeToGloas [Preset] [HasherTag] (gloasForkVersion : Version)
+    (pre : Fulu.BeaconState) : Gloas.BeaconState :=
+  -- copies the common fields by projection and initializes the ePBS fields
+  ...
+
+def upgradeToHeze [Preset] (hezeForkVersion : Version) (pre : Gloas.BeaconState) :
+    Except StateTransitionError Heze.BeaconState := do
+  -- asserts the EIP-8015 deposit condition, then copies the carried fields
   ...
 ```
 
-It is one of two sanctioned cross-fork references. It names both forks' `State`
-types, so it lives in Gloas, imports the Fulu module it needs, and reads Fulu
-fields by `sszGet`. The other is `Interface.lean`, the pyspec runner, which drives
-the parent spine for the pre-fork blocks of a mixed `fork_transition` vector.
-These two files are the only ones in a child fork that write a qualified parent
-name; every other file names its own namespace and the framework. The count is
-enforced by grep:
+Both take a plain `BeaconState` and read its fields by projection. The runner passes
+the fork version, which is a config value.
+
+`upgradeToGloas` (`Gloas/Upgrade.lean`) is total. The pinned `upgrade_to_gloas` ends
+with two steps that read and write the Gloas state: `initialize_ptc_window` and
+`onboard_builders_from_pending_deposits`. The step
+`completeUpgradeToGloas : StateTransition Unit` (`Gloas/Operations.lean`) runs both on
+the state that `upgradeToGloas` built. This step can reject, since
+`initialize_ptc_window` runs `compute_ptc`.
+
+`upgradeToHeze` (`Heze/Upgrade.lean`) returns `Except StateTransitionError`. The pinned
+`upgrade_to_heze` opens with
+`assert pre.eth1_deposit_index == pre.deposit_requests_start_index` (EIP-8015), and a
+failed assert is the `.assert` reject. Heze needs no closing step.
+
+`Upgrade.lean` is one of a child fork's two allowed cross-fork references. It names the
+`BeaconState` types of both forks, so it lives in the child fork. The other is
+`Interface.lean`, the pyspec runner, which drives the parent spine for the pre-fork
+blocks of a mixed `fork_transition` vector. `Fork.lean` declares the lineage and holds
+the fork's one import of its parent. Every other file imports its own fork and the
+framework. One file outside this set writes a qualified parent name in code:
+`Gloas/Transition.lean` compares against `Fulu.zeroRoot`. Two greps check the `open`
+and `import` edges, and each prints no line:
 
 ```bash
 grep -rn "open EthCLSpecs.Fulu"   packages/EthCLSpecs/EthCLSpecs/{Gloas,Heze}
@@ -663,11 +684,12 @@ both forks import for common helpers, which the inheritance mechanism removes th
 need for; the upgrade is the opposite, a deliberate single edge from the child to
 the parent, named once, for the one operation that genuinely spans two forks.
 
-Only `upgradeToGloas` is implemented. `upgradeToFulu` would require an Electra
-state, and Electra is not built, so only the Fulu-to-Gloas `fork` and `transition`
-vectors run; Electra-to-Fulu upgrade vectors are out of scope. This is the runtime
-counterpart to the static fork diff of Section 2. Section 2 says what changes
-between forks; the upgrade performs the change on a live state.
+Fulu declares no upgrade. `upgrade_to_fulu` takes an Electra state, and the library
+does not build Electra. Fulu's `runUpgrade` and `runTransition` return `outOfScope`,
+and the harness does not collect the Fulu `fork` and `transition` vectors. The
+Fulu-to-Gloas and Gloas-to-Heze `fork` and `transition` vectors run (§10.1). This is
+the runtime counterpart to the static fork diff of Section 2. Section 2 says what
+changes between forks; the upgrade performs the change on a live state.
 
 ---
 
