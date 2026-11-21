@@ -759,10 +759,10 @@ arithmetic site remains unreviewed because its module built without edits.
   - [ ] **9.1d1 Find and reconcile: EthCLLib `Spec/`, `Internal/`, and root module
     docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
     docstrings of the EthCLLib `Spec/`, `Internal/`, and root modules.
-  - [ ] **9.1d2 Find and reconcile: EthCLLib `Proofs/`, `Tests/`, `PySpecTests/`, and
+  - [x] **9.1d2 Find and reconcile: EthCLLib `Proofs/`, `Tests/`, `PySpecTests/`, and
     other-package docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for
     the Lean docstrings of the EthCLLib `Proofs/`, `Tests/`, and `PySpecTests/` modules
-    and the other packages' `.lean` files.
+    and the other packages' `.lean` files. (WS-107, `2c6c6052772b7d58c42e60462acb3a24446a9088`)
   - [ ] **9.1d3 Find and reconcile: Fulu fork body and EthCLSpecs root module
     docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
     docstrings of the Fulu fork body and the EthCLSpecs root modules.
