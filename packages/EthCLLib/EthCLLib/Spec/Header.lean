@@ -177,7 +177,8 @@ def elabForkChoiceSection : CommandElab := fun stx => do
 
 /-- `appendState f v`: the spec's `state.f.append(v)`. It appends `v` to the threaded
 state's list field `f`, or raises the `.listFull` fault when the list is at its limit, as
-remerkleable's `List.append` does. The expansion reads the state and runs SizzLean's
+`eth-ssz-specs` 0.1.0's `List.append` does (`SSZValueError`, a `ValueError`). The expansion
+reads the state and runs SizzLean's
 `sszAppend?` on it. `some` of the updated state goes back through the per-fork
 `modifyState` (a use-site identifier, resolved to the running fork's). `none` becomes
 `throwListFull`.
@@ -205,23 +206,28 @@ macro_rules
 (`altair/beacon-chain.md:308-316`). When `i` is the length of the list it appends, through
 `appendState`, so a full list raises `.listFull`. When `i` is inside the list it overwrites
 entry `i`. Past the end, the spec's `list[index] = value` raises `IndexError`, which becomes
-the `.outOfBounds` reject through `liftErr`. `i` is a `Nat`. `v` is bound once, before the
-branch, as pyspec evaluates `value` once before the call. -/
+the `.outOfBounds` reject through `liftErr`. `i` is a `CLUint64`, the pinned signature's
+`index: Uint64` (a `ValidatorIndex` or a `BuilderIndex` at every call site). `v` is bound
+once, before the branch, as pyspec evaluates `value` once before the call. -/
 scoped syntax (name := setOrAppendStateStx) "setOrAppendState " ident ppSpace term:max ppSpace term : term
 
 macro_rules
   | `(setOrAppendState $head:ident $i $v) => do
       let stateId  := mkIdent `State
       let modifyId := mkIdent `modifyState
-      let clause ← `(sszUpdateClause| $head:ident[i]! := v)
+      let clause ← `(sszUpdateClause| $head:ident[k]! := v)
       `(do
           let v := $v
           let s ← getThe $stateId
-          let i : Nat := $i
+          let i : CLUint64 := $i
+          -- `toPlainNat`: the checked index is compared with the plain length and then names
+          -- a position inside the list, the `ToIndex CLUint64` reading (`SPEC_ARITHMETIC.md`
+          -- §4.6); no operator runs on it.
+          let k := i.toPlainNat
           let n := (sszGet s $head:ident).val.size
-          if i == n then appendState $head:ident v
-          else if i < n then $modifyId:ident fun state => sszUpdate state with $clause
-          else liftErr (Except.error (SizzLean.Cache.IndexError.indexError i n)
+          if k == n then appendState $head:ident v
+          else if k < n then $modifyId:ident fun state => sszUpdate state with $clause
+          else liftErr (Except.error (SizzLean.Cache.IndexError.indexError k n)
             : Except SizzLean.Cache.IndexError PUnit))
 
 /-! ## `sszOfArrayM`: the spec's `List[T, N](a)` on an array of any size -/
@@ -230,8 +236,9 @@ universe u
 
 /-- `sszOfArrayM field a`: the spec's `List[T, N](a)`, for an array whose size depends on
 the input. It returns the list when `a` fits under the limit `cap`, the one the expected
-type fixes. Otherwise it raises the `.listFull` fault, as remerkleable's `List`
-constructor raises a bare `Exception` on too many elements. `field` names the list,
+type fixes. Otherwise it raises the `.listFull` fault, as `eth-ssz-specs` 0.1.0's `List`
+constructor raises pydantic's `ValidationError` (a `ValueError` subclass) on too many
+elements. `field` names the list,
 diagnostic only. The `[ErrorConv StateTransitionError E]` bound lets one definition serve
 both machines. An array of fixed size uses the proof-carrying `sszOfArray` instead. -/
 @[inline] def sszOfArrayM {m : Type → Type u} {α E : Type} {cap : Nat} [Monad m]
