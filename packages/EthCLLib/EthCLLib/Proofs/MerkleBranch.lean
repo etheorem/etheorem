@@ -29,9 +29,9 @@ open EthCLLib.Spec
 of which an induction can peel. `branchFold` is the same walk as a plain
 `ByteArray` function. It models nothing the spec declares, and
 `computeMerkleBranchRoot_eq_branchFold` is the only bridge to it. The definition
-is public: `isValidMerkleBranch_iff` names it on its right-hand side, and an
-outside module (the SizzLean opening bridge) has to be
-able to state a goal against it. -/
+is public because `isValidMerkleBranch_iff` and `branchFold_eq_foldOpening` name
+it in their statements. Readers can unfold the fold or state a goal
+against it. -/
 
 /-- The branch walk as a bare fold, reading siblings straight out of `branch`:
 entry `i` of `branch` is the level-`i` sibling, level `0` at the leaf, so the
@@ -94,9 +94,9 @@ private theorem computeMerkleBranchRoot_eq_branchFold [HasherTag]
 
 Both theorems below state their right-hand side with `branchFold`. They serve
 the theorems in this module that state the check's contract over
-`computeMerkleBranchRoot` and `isValidMerkleBranch` alone;
-`isValidMerkleBranch_iff` is public, and `branchFold` is
-public with it, so the SizzLean opening bridge can cite the iff directly. -/
+`computeMerkleBranchRoot` and `isValidMerkleBranch` alone.
+`isValidMerkleBranch_iff` exposes the equivalence between acceptance and
+reconstruction through the public fold. -/
 
 /-- A well-formed branch has `branch.size = depth`, which the honest opening
 satisfies. The length guard then passes, and `isValidMerkleBranch` is the
@@ -110,10 +110,10 @@ private theorem isValidMerkleBranch_eq_beq [HasherTag] (leaf : Vector UInt8 32)
   rw [ite_eq_left hsize,
     computeMerkleBranchRoot_eq_branchFold leaf branch depth index (Nat.le_of_eq hsize.symm)]
 
-/-- **Reconstruction (acceptance #1).** The check's contract, public
-for the fork-ledger rows that cite it: given
-`hsize : branch.size = depth`, the check accepts iff the left/right
-fold of `branch` over `leaf` reconstructs `root`. The fold reads
+/-- **Reconstruction (acceptance #1).** The check's public contract.
+Given `hsize : branch.size = depth`, the check accepts iff the
+left/right fold of `branch` over `leaf` reconstructs `root`.
+The fold reads
 `index`'s bits to pick each side, one `testBit` per level
 (`routeRight_eq_testBit`).
 
@@ -246,7 +246,7 @@ over the leaf reconstructs the root, then
 siblings are 32-byte roots, `branch` runs bottom-up, and the
 reconstruction hypothesis is stated on `gindexBits (2 ^ depth +
 index)`, the bit path the generalized index produces. The SizzLean
-ledger's branch-completeness row cites it. -/
+ledger's `branch × opening` row cites it. -/
 theorem isValidMerkleBranch_of_foldOpening [HasherTag]
     (leaf root : Vector UInt8 32) (sibs : List (Vector UInt8 32)) (depth index : Nat)
     (hsize : sibs.length = depth) (hindex : index < 2 ^ depth)

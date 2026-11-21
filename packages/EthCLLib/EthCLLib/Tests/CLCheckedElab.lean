@@ -18,7 +18,7 @@ import EthCLLib
   identically inside and outside the authoring scope, closing by `rfl` in
   both. The elaborator restores the state and hands every non-checked tree
   back to core, so the terms match (`§4.7`, unchanged elaborated terms).
-- **The two hard operator shapes**:
+- **The two elaboration hazards**:
   the one-line `ofNat?` bind in both
   forms, and the prior do-bound dividend with a non-literal `Nat` operand, in
   both the bare and the ascription-escaped spelling.
@@ -288,8 +288,8 @@ example : ((do
     let x ← v + 1
     pure x) : SM CLUint64).run 0 = .ok (6, 0) := by decide
 
--- The one-line form with a non-literal `Nat` operand, the `reserveChurn`
--- shape.
+-- The one-line form with a non-literal `Nat` operand uses the same
+-- checked conversion and addition.
 def reserveChurn (n : Nat) (delta : CLUint64) : SM CLUint64 := do
   let x ← CLUint64.ofNat? n + delta
   pure x
