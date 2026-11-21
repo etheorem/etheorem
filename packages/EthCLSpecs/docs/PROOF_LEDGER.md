@@ -165,7 +165,7 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | `canBuilderCoverBid` | `Gloas/Operations.lean:512-515` | Its `Bool` result is characterized exactly against the implementation's computed `minBalance`. Proving that queuing an accepted bid preserves `MIN_DEPOSIT_AMOUNT` + pending obligations ≤ builder balance is the caller-level follow-up, and needs pending-total no-overflow and ring-cell freshness hypotheses | proved | #36, `Proofs/Gloas/CanBuilderCoverBid.lean` |
 | `applyWithdrawals` | `Gloas/Withdrawals.lean:207-217` | A builder-flagged withdrawal decreases the builder's balance by at most its own balance, so the balance never goes negative | proposed |  |
 | `getAncestor` | `Gloas/ForkChoice.lean:184-191` | The fuel supplied to its `fuelLoop` DAG walk is sufficient for the walk to terminate before running out | proposed |  |
-| `getHead` | `Gloas/ForkChoice.lean:536-573` | The fuel `2 * blocks.length + 2` supplied to its LMD-GHOST walk is sufficient for the walk to reach a decided head before running out | proposed |  |
+| `getHead` | `Gloas/ForkChoice.lean:538-575` | The fuel `2 * blocks.length + 2` supplied to its LMD-GHOST walk is sufficient for the walk to reach a decided head before running out | proposed |  |
 
 ### Safety and invariant preservation
 
@@ -177,7 +177,7 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | `slashValidator` | `Gloas/EpochProcessing.lean:118-151` | The closing EIP-7732 loop resets to the empty payment exactly the `builderPendingPayments` entries whose `proposerIndex` is the slashed validator, and leaves every other proposer's entry untouched. New at v1.7.0-beta.4, where the voiding moved here from `processProposerSlashing` and widened to both payment epochs and to the attester-slashing path | proposed |  |
 | `processAttestation` | `Gloas/Operations.lean:336-420` | Committee-index safety together with builder-payment weight accounting: a validator's effective balance adds to the slot's payment weight at most once, and only when it set a new flag and held no flag before the attestation (the `had_no_participation` gate, new at v1.7.0-beta.4) | proposed |  |
 | `processBuilderPendingPayments` | `Gloas/EpochProcessing.lean:303-322` | Whole-transition equation over a plain `BeaconState`: the run returns `preState` with only `builderPendingWithdrawals` (the qualifying withdrawals, folded through `ProgressiveList.push` in slot order; every one is appended) and `builderPendingPayments` (the window shifted down by `SLOTS_PER_EPOCH` and padded with empties) written. This does not establish protocol-wide exactly-once settlement | proved | #25, `Proofs/Gloas/BuilderPendingPayments.lean` |
-| `processPtcWindow` | `Gloas/EpochProcessing.lean:345-355` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
+| `processPtcWindow` | `Gloas/EpochProcessing.lean:349-364` | Each newly populated `ptcWindow` entry equals `computePtc` evaluated for its corresponding slot | proposed |  |
 | `applyDepositForBuilder` | `Gloas/Operations.lean:145-153` | A deposit with an invalid signature is neither applied to a builder's balance nor requeued | proposed |  |
 | `processBuilderDepositRequest` | `Gloas/Operations.lean:243-259` | A new builder is onboarded only when its deposit signature is valid | proposed |  |
 | `getIndexedPayloadAttestation` | `Gloas/Operations.lean:463-469` | Preserves `pa.data` and `pa.signature`, and produces the sorted multiset of PTC seats selected by `pa.aggregationBits`. The proof requires `Array.qsort` sortedness and permutation lemmas not currently available in core/Std | proposed |  |
@@ -192,9 +192,9 @@ Functions whose output only moves in one direction as their input grows or accum
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `getWeight` | `Gloas/ForkChoice.lean:426-438` | Weight only grows as more attestations accumulate for a node | proposed |  |
-| `onAttesterSlashing` | `Gloas/ForkChoice.lean:1026-1036` | The set of equivocating indices only grows, never shrinks | proposed |  |
-| `updateCheckpoints` | `Gloas/ForkChoice.lean:588-590` | Each justified/finalized checkpoint either remains unchanged or advances to its candidate, so its epoch never decreases, and no other Store field moves | proved | #30, `Proofs/Gloas/UpdateCheckpoints.lean` |
+| `getWeight` | `Gloas/ForkChoice.lean:428-440` | Weight only grows as more attestations accumulate for a node | proposed |  |
+| `onAttesterSlashing` | `Gloas/ForkChoice.lean:1032-1042` | The set of equivocating indices only grows, never shrinks | proposed |  |
+| `updateCheckpoints` | `Gloas/ForkChoice.lean:590-592` | Each justified/finalized checkpoint either remains unchanged or advances to its candidate, so its epoch never decreases, and no other Store field moves | proved | #30, `Proofs/Gloas/UpdateCheckpoints.lean` |
 
 ### State-transition correctness
 
@@ -213,11 +213,11 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `onBlock` | `Gloas/ForkChoice.lean:775-826` | Accepts a block only if a full parent implies a verified payload, and the block's ancestry agrees with the currently finalized checkpoint | proposed |  |
-| `validateOnAttestation` | `Gloas/ForkChoice.lean:952-985` | Validates that the attestation's index is 0 or 1, that a same-slot attestation has index 0, and that a full-vote attestation's payload is verified | proposed |  |
-| `getForkchoiceStore` | `Gloas/ForkChoice.lean:1051-1077` | Every root-keyed map in a freshly built store agrees on the anchor entry | proposed |  |
+| `onBlock` | `Gloas/ForkChoice.lean:781-832` | Accepts a block only if a full parent implies a verified payload, and the block's ancestry agrees with the currently finalized checkpoint | proposed |  |
+| `validateOnAttestation` | `Gloas/ForkChoice.lean:958-991` | Validates that the attestation's index is 0 or 1, that a same-slot attestation has index 0, and that a full-vote attestation's payload is verified | proposed |  |
+| `getForkchoiceStore` | `Gloas/ForkChoice.lean:1057-1083` | Every root-keyed map in a freshly built store agrees on the anchor entry | proposed |  |
 | `isAncestor` | `Gloas/ForkChoice.lean:196-201` | Agrees with the ancestor relation that `getAncestor` computes iteratively | proposed |  |
-| `verifyExecutionPayloadEnvelope` | `Gloas/ForkChoice.lean:869-906` | Acceptance requires every validation check performed by `verifyExecutionPayloadEnvelope` to succeed | proposed |  |
+| `verifyExecutionPayloadEnvelope` | `Gloas/ForkChoice.lean:875-912` | Acceptance requires every validation check performed by `verifyExecutionPayloadEnvelope` to succeed | proposed |  |
 
 ### Upgrade-boundary properties
 
@@ -227,7 +227,7 @@ Functions whose entire purpose is the Fulu-to-Gloas upgrade itself: preserving s
 | --- | --- | --- | --- | --- |
 | `upgradeToGloas` | `Gloas/Upgrade.lean:83-149` | Preserves inherited state while correctly initializing the new ePBS state | proposed |  |
 | `computePtcFromFulu` | removed | Out of scope: removed at v1.7.0-beta.4. `upgrade_to_gloas` now builds the window over the Gloas post-state with Gloas's own `compute_ptc`, so no Fulu-side twin is left to agree with it | out of scope |  |
-| `initializePtcWindow` | `Gloas/Operations.lean:198-210` | Each entry is an `Except` carrying its own two faults: the entry's checked add `current_epoch + e` rejects with the `.arithmetic` fault exactly at `current_epoch = UINT64_MAX`, and the `compute_ptc` read rejects a slot with no committee members; `completeUpgradeToGloas` maps the entries in index order, so the first rejecting slot surfaces. `initializePtcWindow_eq` states the whole vector equation and carries the `@[characterizes]` tag; `initializePtcWindow_getElem` joins the two regions at the element level. A `forkdef` over the Gloas state since v1.7.0-beta.4, so it is a spec function in the coverage report's denominator; alpha.12 kept it a plain `def` over the Fulu pre-state. The window's slots are exact below the same `2 ^ 59` epoch bound the `computeEpochAtSlot` row records, because the slots come from `computeStartSlotAtEpoch`'s bare multiply; at the bound the multiply wraps where the spec raises | proved | #26, `Proofs/Gloas/InitializePtcWindow.lean` |
+| `initializePtcWindow` | `Gloas/Operations.lean:198-210` | Each entry is an `Except` carrying its own three faults: the entry's checked add `current_epoch + e` rejects with the `.arithmetic` fault exactly at `current_epoch = UINT64_MAX`, the start slot's checked multiply rejects with `.arithmetic` where the spec raises, and the `compute_ptc` read rejects a slot with no committee members; `completeUpgradeToGloas` maps the entries in index order, so the first rejecting slot surfaces. `initializePtcWindow_eq` states the whole vector equation and carries the `@[characterizes]` tag; `initializePtcWindow_getElem` joins the two regions at the element level. A `forkdef` over the Gloas state since v1.7.0-beta.4, so it is a spec function in the coverage report's denominator; alpha.12 kept it a plain `def` over the Fulu pre-state | proved | #26, `Proofs/Gloas/InitializePtcWindow.lean` |
 
 ### Candidates needing a sharper statement
 
@@ -248,8 +248,8 @@ Functions whose natural theorem is an inverse relationship with another Fulu fun
 
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
-| `computeEpochAtSlot` | `Fulu/Time.lean:33` | `computeEpochAtSlot (computeStartSlotAtEpoch e) = e`, for `e < 2^59`. The raw `UInt64` multiply wraps above `2^59`, so the identity needs that bound | proposed |  |
-| `computeStartSlotAtEpoch` | `Fulu/Time.lean:36` | The same identity, seen from this side. The round trip is the row above | proposed |  |
+| `computeEpochAtSlot` | `Fulu/Time.lean:33` | `computeEpochAtSlot (computeStartSlotAtEpoch e) = e`, conditional on `e * SLOTS_PER_EPOCH < 2^64` at a symbolic preset. Closed unconditionally at both shipped presets, for `e < 2^61` at minimal and `e < 2^59` at mainnet | proved | `Proofs/Fulu/Time.lean` |
+| `computeStartSlotAtEpoch` | `Fulu/Time.lean:45-47` | The same identity, seen from this side. The round trip is the row above | proved | `Proofs/Fulu/Time.lean` |
 
 ### Bounds and termination properties
 
@@ -265,6 +265,9 @@ Functions where the theorem is a numeric bound, no overflow, no underflow, never
 | `processRegistryUpdates` | `Fulu/EpochProcessing.lean:179` | The registry never exceeds `VALIDATOR_REGISTRY_LIMIT` | proposed |  |
 | `getBeaconCommittee` | `Fulu/Committees.lean:82` | An active-validator count in `[32, 2^22]` implies every committee size is in `(0, MAX_VALIDATORS_PER_COMMITTEE]`. Dafny proves the same bound in `ActiveValidatorBounds` | proposed |  |
 | `computeBalanceWeightedSelection` | `Fulu/Committees.lean:117` | An `.ok` result holds exactly `size` indices, and the run rejects with `.arithmetic` at the `2**64` counter bound. `cbwsAux` is well-founded, so `rfl` and `decide` do not unfold it, and the proof goes through `cbwsAux.induct` and its equation lemmas | proposed |  |
+| `computeStartSlotAtEpoch` | `Fulu/Time.lean:45-47` | The function multiplies an epoch back to a slot. It faults with `.arithmetic` above `2^64`. It never faults on an epoch derived from a slot. The claim is open where the caller supplies the epoch | proved | `Proofs/Fulu/Time.lean` |
+| `computeStartSlotAtEpoch` | `Gloas/EpochProcessing.lean:34` | The Fulu claims, restated at Gloas's own constant. Each theorem takes the Fulu proof term through the `Downgrade` bridge | proved | `Proofs/Gloas/Time.lean` |
+| `computeStartSlotAtEpoch` | `Heze/EpochProcessing.lean:26` | The same claims at Heze's constant. The bridge reaches one fork up, so the proof terms come from Gloas | proved | `Proofs/Heze/Time.lean` |
 
 ### Safety and invariant preservation
 
@@ -279,6 +282,14 @@ Functions with a specific invariant, precondition bundle, or side-effect guarant
 | `processRegistryUpdates` | `Fulu/EpochProcessing.lean:179` | One third of a joint claim with `initiateValidatorExit` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
 | `initiateValidatorExit` | `Fulu/RegistryUpdates.lean:114` | One third of a joint claim with `processRegistryUpdates` and `computeExitEpochAndUpdateChurn`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
 | `computeExitEpochAndUpdateChurn` | `Fulu/RegistryUpdates.lean:78` | One third of a joint claim with `processRegistryUpdates` and `initiateValidatorExit`: a validator flows from active to exited at most once, and the churn consumed in an epoch never exceeds the churn limit | proposed |  |
+
+### Monotonicity properties
+
+Functions whose output only moves in one direction as their input grows or accumulates: never decreasing, never shrinking, never losing a previously-added element.
+
+| Function | Location | Property | Status | Tracking |
+| --- | --- | --- | --- | --- |
+| `computeEpochAtSlot` | `Fulu/Time.lean:33` | The epoch never decreases as the slot grows. A `uint64` division by a positive constant, so the proof needs no preset bound | proved | `Proofs/Fulu/Time.lean` |
 
 ### State-transition correctness
 
@@ -295,8 +306,8 @@ Properties specific to the fork-choice store and the LMD-GHOST tree: agreement b
 | Function | Location | Property | Status | Tracking |
 | --- | --- | --- | --- | --- |
 | `getAncestor` | `Fulu/ForkChoice.lean:134` | One third of a joint claim with `getHead` and `onBlock`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
-| `getHead` | `Fulu/ForkChoice.lean:296` | One third of a joint claim with `getAncestor` and `onBlock`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
-| `onBlock` | `Fulu/ForkChoice.lean:628` | One third of a joint claim with `getAncestor` and `getHead`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
+| `getHead` | `Fulu/ForkChoice.lean:297` | One third of a joint claim with `getAncestor` and `onBlock`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
+| `onBlock` | `Fulu/ForkChoice.lean:639` | One third of a joint claim with `getAncestor` and `getHead`: a valid store is a chain, ancestry is slot-monotone, and an accepted block stays accepted. Dafny proves the chain and slot-monotone parts as `aValidStoreIsAChain` | proposed |  |
 
 
 ---

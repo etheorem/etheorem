@@ -557,7 +557,7 @@ forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit :=
   assert (FcMap.contains store.blocks inclusionList.dependentRoot)
   assert (FcMap.contains store.blockStates inclusionList.dependentRoot)
   let epoch := computeEpochAtSlot inclusionList.slot
-  let dependentSlot := computeShufflingDependentSlot epoch
+  let dependentSlot ← liftErr (computeShufflingDependentSlot epoch)
   let dependentBlock ← FcMap.getOrThrow store.blocks inclusionList.dependentRoot
   assert (dependentBlock.slot ≤ dependentSlot)
   assert (← isValidDependentRoot store inclusionList.dependentRoot dependentSlot)
@@ -565,7 +565,7 @@ forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit :=
   -- The validator must be in the inclusion-list committee, computed on a copy of the dependent
   -- block's state advanced to the lookahead start.
   let dependentState ← FcMap.getOrThrow store.blockStates inclusionList.dependentRoot
-  let lookaheadStartSlot := computeShufflingLookaheadStartSlot epoch
+  let lookaheadStartSlot ← liftErr (computeShufflingLookaheadStartSlot epoch)
   let state ←
     if (sszGet dependentState slot) < lookaheadStartSlot then
       runNestedStateTransition dependentState (processSlots lookaheadStartSlot)

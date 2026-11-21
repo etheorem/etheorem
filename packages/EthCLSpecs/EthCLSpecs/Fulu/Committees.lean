@@ -130,8 +130,8 @@ forkdef computeBalanceWeightedSelection (state : State) (indices : Array Validat
 /-- `compute_proposer_indices`: one balance-weighted proposer per slot in `epoch`. An empty
 `indices` rejects through `computeBalanceWeightedSelection`'s `assert total > 0`. -/
 forkdef computeProposerIndices (state : State) (epoch : Epoch) (seed : Bytes32)
-    (indices : Array ValidatorIndex) : Except StateTransitionError (Array ValidatorIndex) :=
-  let startSlot := computeStartSlotAtEpoch epoch
+    (indices : Array ValidatorIndex) : Except StateTransitionError (Array ValidatorIndex) := do
+  let startSlot ← computeStartSlotAtEpoch epoch
   (Array.range Const.slotsPerEpoch).mapM (fun i => do
     let sd := sha (seed ++ uint64ToBytes (startSlot + UInt64.ofNat i))
     return (← computeBalanceWeightedSelection state indices sd 1 true)[0]!)

@@ -272,7 +272,7 @@ forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
   let nextEpoch := currentEpochOf state + 1
   let avail := (sszGet state depositBalanceToConsume) + getActivationExitChurnLimit state
-  let finalizedSlot := computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
+  let finalizedSlot ← liftErr (computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch)
   let deposits := (sszGet state pendingDeposits).toArray
 
   let scan ← ppdLoop deposits finalizedSlot avail nextEpoch

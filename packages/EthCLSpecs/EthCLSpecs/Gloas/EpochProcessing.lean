@@ -250,7 +250,7 @@ forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
   let nextEpoch := currentEpochOf state + 1
   let avail := (sszGet state depositBalanceToConsume) + getActivationChurnLimit state
-  let finalizedSlot := computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
+  let finalizedSlot ← liftErr (computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch)
   let deposits := (sszGet state pendingDeposits).toArray
 
   let scan ← ppdLoop deposits finalizedSlot avail nextEpoch
@@ -341,18 +341,27 @@ forkdef computePtc (state : State) (slot : Slot) :
 by `SLOTS_PER_EPOCH` and recompute the last epoch's per-slot PTCs from the snapshot
 state. The window length is `(2 + MIN_SEED_LOOKAHEAD) * SLOTS_PER_EPOCH = 3 *
 SLOTS_PER_EPOCH` (MIN_SEED_LOOKAHEAD = 1). The per-slot PTCs are computed in slot order,
-so the run surfaces the first slot whose `compute_ptc` rejects. -/
+so the run surfaces the first slot whose `compute_ptc` rejects.
+
+The body writes twice. The pyspec shifts the window in place before
+`compute_start_slot_at_epoch` and `compute_ptc` can raise, so when either raises, the state
+keeps the shifted window with the old last epoch, in the pyspec and here. -/
 forkdef processPtcWindow : StateTransition Unit := do
   let state ← get
+  let old := sszGet state ptcWindow
+  set (sszUpdate state with ptcWindow :=
+    shiftWindow old Const.slotsPerEpoch (2 * Const.slotsPerEpoch)
+      (fun k => vget old (2 * Const.slotsPerEpoch + k)))
+
+  let state ← get
   let nextEpoch := currentEpochOf state + Const.minSeedLookahead + 1
-  let startSlot := computeStartSlotAtEpoch nextEpoch
+  let startSlot ← liftErr (computeStartSlotAtEpoch nextEpoch)
   let fresh : Array (Vector ValidatorIndex Const.ptcSize) ← liftErr
     ((Array.range Const.slotsPerEpoch).mapM (fun i => computePtc state (startSlot + UInt64.ofNat i)))
 
   modifyState fun state =>
     sszUpdate state with ptcWindow :=
-      shiftWindow (sszGet state ptcWindow) Const.slotsPerEpoch (2 * Const.slotsPerEpoch)
-        (fun k => fresh[k]!)
+      shiftWindow (sszGet state ptcWindow) 0 (2 * Const.slotsPerEpoch) (fun k => fresh[k]!)
 
 end
 
