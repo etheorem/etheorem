@@ -91,8 +91,8 @@ def computeMerkleBranchRoot [HasherTag] (leaf : Vector UInt8 32)
 
 /-- `is_valid_merkle_branch(leaf, branch, depth, index, root)`
 (`phase0/beacon-chain.md:1195-1203`): reject on `depth != len(branch)`, else
-compare the reconstructed root. Used by `processDeposit` against
-`eth1Data.depositRoot`.
+compare the reconstructed root. No fork body calls it, because the pinned forks have no
+`process_deposit`. The framework tests and `EthCLLib.Proofs.MerkleBranch` cover it.
 
 The guard runs first, so the fold reads `branch` only in range. The reject arm is
 therefore unreachable from here. The spec returns `False` on the guard, so it

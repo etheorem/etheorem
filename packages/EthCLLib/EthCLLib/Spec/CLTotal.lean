@@ -44,7 +44,7 @@ namespace EthCLLib.Spec
 /-! ## The positive divisor
 
 A natural divisor plus its positivity proof. A named constant view
-(`Const.slotsPerEpochDiv`, Stage 4) carries the proof once, so a formula that
+(`Const.slotsPerEpochDiv` in each fork's constants) carries the proof once, so a formula that
 divides by the constant stays pure. The wrapper has no literal instance and no
 coercion: building one is an explicit `⟨n, h⟩`, so the proof is visible at
 every construction site. The ordinary divisor routes on two `CLUint64` values

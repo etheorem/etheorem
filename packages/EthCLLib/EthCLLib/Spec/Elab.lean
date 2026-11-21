@@ -36,13 +36,14 @@ The explicit `(expression : Checked _)` ascription stays the supported
 fallback everywhere: an ascription fixes the expected type, the instances
 match it directly, and the elaborator is never involved.
 
-Two hazards the spike stage recorded, and where they stand here (its
-findings 9 and 17):
+Two elaboration hazards, and how this elaborator handles them:
 
 - A one-line `← CLUint64.ofNat? x + y` bind with a checked or typed-literal
   `y` elaborates here: the operand matrix carries the
   `HAdd (Checked CLUint64) _ (Checked CLUint64)` rows, the probe pass keeps
-  the term, and the lift bridges once. A *bare* numeral beside a
+  the term, and the lift bridges once. This is what the elaborator accepts. A
+  fork body still splits the conversion from the arithmetic that follows it
+  (`SPEC_ARITHMETIC.md` §4.3). A *bare* numeral beside a
   `Checked`-typed operand, on EITHER side, does not elaborate, ascription
   included: core's `binop%` types the numeral with the checked operand's type,
   the kernel literal gate rejects that `OfNat`, and no `Nat` retry follows, so
@@ -54,15 +55,15 @@ findings 9 and 17):
   ever mis-elaborate, the ascription `(s % n : Checked _)` is the escape; it
   forces the expected type and hides nothing.
 
-Build cost, recorded at introduction (2026-11-17, warm SizzLean deps): a cold
-`lake build EthCLLib EthCLLibTests` runs 49.7s wall over 303 jobs, and the
-four-target chain `EthCLLib EthCLLibTests EthCLSpecs EthCLSpecsTests` runs
-6m6s wall over 652 jobs, dominated by re-elaborating the fork bodies against
-the new barrel entry. The incremental case authors feel daily: touching this
-module alone re-elaborates it (0.8s) and replays the chain in 1.4s wall over
-652 jobs, because no downstream module imports its declarations yet; Stage 4's
-first fork use is where the per-module cost lands. Per §4.7, cost is recorded,
-never a stop threshold.
+Historical build measurement, taken on 2026-11-17 with warm SizzLean
+dependencies, before any fork body used this elaborator. A cold
+`lake build EthCLLib EthCLLibTests` ran 49.7s wall over 303 jobs. The
+four-target chain `EthCLLib EthCLLibTests EthCLSpecs EthCLSpecsTests` ran
+6m6s wall over 652 jobs, mostly to re-elaborate the fork bodies against the
+new barrel entry. A change to this module alone re-elaborated it in 0.8s and
+replayed the chain in 1.4s wall over 652 jobs. The figures do not describe
+the current fork bodies. Per §4.7, cost is recorded, never a stop
+threshold.
 -/
 
 set_option autoImplicit false
