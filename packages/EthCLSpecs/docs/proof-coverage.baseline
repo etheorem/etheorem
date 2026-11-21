@@ -55,6 +55,8 @@ tier1 EthCLSpecs.Heze.committeeCountOf
 tier1 EthCLSpecs.Heze.computeEpochAtSlot
 tier1 EthCLSpecs.Heze.computeProposerScore
 tier1 EthCLSpecs.Heze.computePulledUpTip
+tier1 EthCLSpecs.Heze.computeSlotAtTimeMs
+tier1 EthCLSpecs.Heze.computeTimeAtSlotMs
 tier1 EthCLSpecs.Heze.convertBuilderIndexToValidatorIndex
 tier1 EthCLSpecs.Heze.currentEpochOf
 tier1 EthCLSpecs.Heze.decreaseBalance
@@ -104,6 +106,7 @@ tier1 EthCLSpecs.Heze.getTotalBalance
 tier1 EthCLSpecs.Heze.getUnslashedParticipatingIndices
 tier1 EthCLSpecs.Heze.getValidatorFromDeposit
 tier1 EthCLSpecs.Heze.getValidatorsSweepWithdrawals
+tier1 EthCLSpecs.Heze.getVotingSource
 tier1 EthCLSpecs.Heze.getWeight
 tier1 EthCLSpecs.Heze.hasCompoundingWithdrawalCredential
 tier1 EthCLSpecs.Heze.hasEth1WithdrawalCredential

@@ -52,8 +52,39 @@ theorem locView_of_frames {s s' : BeaconState}
   simp only [locView, Prod.mk.injEq]
   exact ⟨ho, e2⟩
 
+/-- `Q` holds after each run of the three operations of the body that come before or inside
+the attestation loop, from a state where it holds. -/
+def OpsKeep (Q : BeaconState → Prop) : Prop :=
+  (∀ ps s s', (EthCLSpecs.Heze.processProposerSlashing (StateTransition := HezeRun) ps).run
+    (pureState s) = .ok ((), pureState s') → Q s → Q s') ∧
+  (∀ a s s', (EthCLSpecs.Heze.processAttesterSlashing (StateTransition := HezeRun) a).run
+    (pureState s) = .ok ((), pureState s') → Q s → Q s') ∧
+  (∀ a ps s s', (EthCLSpecs.Heze.processAttestation (StateTransition := HezeRun) a ps).run
+    (pureState s) = .ok ((), pureState s') → Q s → Q s')
+
+/-- `Q` holds after each run of the functions of `processBlock b` before the operations, and
+of the operations of `OpsKeep`, from a state where it holds. -/
+def PreKeep (b : BeaconBlock) (Q : BeaconState → Prop) : Prop :=
+  (∀ s s', (EthCLSpecs.Heze.processParentExecutionPayload (StateTransition := HezeRun) b).run
+    (pureState s) = .ok ((), pureState s') → Q s → Q s') ∧
+  (∀ s s', (EthCLSpecs.Heze.processBlockHeader (StateTransition := HezeRun) b).run
+    (pureState s) = .ok ((), pureState s') → Q s → Q s') ∧
+  (∀ s s', (EthCLSpecs.Heze.processWithdrawals (StateTransition := HezeRun)).run
+    (pureState s) = .ok ((), pureState s') → Q s → Q s') ∧
+  (∀ s s', (EthCLSpecs.Heze.processExecutionPayloadBid (StateTransition := HezeRun)
+    b.body.signedExecutionPayloadBid).run (pureState s) = .ok ((), pureState s') → Q s → Q s') ∧
+  (∀ s s', (EthCLSpecs.Heze.processRandao (StateTransition := HezeRun) b.body).run
+    (pureState s) = .ok ((), pureState s') → Q s → Q s') ∧
+  OpsKeep Q
+
+/-- `pre` comes from `u` through the part of `processBlock b` before or inside the attestation
+loop: every predicate that this part keeps and that `u` holds, `pre` holds. -/
+def BlockReach (b : BeaconBlock) (u pre : BeaconState) : Prop :=
+  ∀ Q, PreKeep b Q → Q u → Q pre
+
 /-- A target flag after `processOperations` was set before it, or an attestation of the body
-set it on a state with the `locView` and the `keyView` of the start state. -/
+set it on a state with the `locView` and the `keyView` of the start state. That state comes
+from the start state through the operations of `OpsKeep`. -/
 theorem processOperations_flags_at (body : EthCLSpecs.Heze.BeaconBlockBody)
     (parentSlot : EthCLSpecs.Heze.Slot) {st st' : BeaconState}
     (h : (EthCLSpecs.Heze.processOperations (StateTransition := HezeRun) body parentSlot).run
@@ -62,7 +93,8 @@ theorem processOperations_flags_at (body : EthCLSpecs.Heze.BeaconBlockBody)
     TargetFlagSet st j e ∨ ∃ att ∈ body.attestations.toArray, ∃ pre post : BeaconState,
       att.data.target.epoch = e ∧ VoteAt pre post att (UInt64.ofNat j) ∧
       locView (pureState pre) = locView (pureState st) ∧
-      keyView (pureState pre) = keyView (pureState st) := by
+      keyView (pureState pre) = keyView (pureState st) ∧
+      (∀ Q, OpsKeep Q → Q st → Q pre) := by
   -- The predicate: the state keeps `locView`, and a flag of `(j, e)` comes from `st` or from
   -- an attestation of the body on a state with the two views of `st`.
   let P : BeaconState → Prop := fun s => locView (pureState s) = locView (pureState st) ∧
@@ -70,9 +102,12 @@ theorem processOperations_flags_at (body : EthCLSpecs.Heze.BeaconBlockBody)
       ∃ att ∈ body.attestations.toArray, ∃ pre post : BeaconState,
         att.data.target.epoch = e ∧ VoteAt pre post att (UInt64.ofNat j) ∧
         locView (pureState pre) = locView (pureState st) ∧
-        keyView (pureState pre) = keyView (pureState st))
-  -- The state before each attestation also keeps `keyView`.
+        keyView (pureState pre) = keyView (pureState st) ∧
+        (∀ Q, OpsKeep Q → Q st → Q pre))
+  -- The state before each attestation also keeps `keyView`, and it comes from `st` through
+  -- the operations of `OpsKeep`.
   let K : BeaconState → Prop := fun s => keyView (pureState s) = keyView (pureState st)
+  let R : BeaconState → Prop := fun s => ∀ Q, OpsKeep Q → Q st → Q s
   have keep : ∀ s s' : BeaconState, P s →
       locView (pureState s') = locView (pureState s) →
       (∀ w, partView w j (pureState s') = partView w j (pureState s)) → P s' :=
@@ -98,6 +133,9 @@ theorem processOperations_flags_at (body : EthCLSpecs.Heze.BeaconBlockBody)
   have k1 : K s1 := forIn_array_ops_inv K _ keepsUncached_processProposerSlashing
     body.proposerSlashings.val (fun _ _ _ _ hs hr => (processProposerSlashing_frame_key hr).trans hs)
     st s1 rfl h1
+  have r1 : R s1 := forIn_array_ops_inv R _ keepsUncached_processProposerSlashing
+    body.proposerSlashings.val (fun ps _ s s' hs hr Q hQ hq => hQ.1 ps s s' hr (hs Q hQ hq))
+    st s1 (fun _ _ hq => hq) h1
   obtain ⟨⟨⟩, s2, h2, h⟩ := run_bind_eq_ok_pure (keepsUncached_forIn_array _ (fun a _ =>
     keepsUncached_bind (keepsUncached_processAttesterSlashing a)
       (fun _ => keepsUncached_pure _)) body.attesterSlashings.val _) h
@@ -111,21 +149,25 @@ theorem processOperations_flags_at (body : EthCLSpecs.Heze.BeaconBlockBody)
   have k2 : K s2 := forIn_array_ops_inv K _ keepsUncached_processAttesterSlashing
     body.attesterSlashings.val
     (fun _ _ _ _ hs hr => (processAttesterSlashing_frame_key hr).trans hs) s1 s2 k1 h2
+  have r2 : R s2 := forIn_array_ops_inv R _ keepsUncached_processAttesterSlashing
+    body.attesterSlashings.val (fun a _ s s' hs hr Q hQ hq => hQ.2.1 a s s' hr (hs Q hQ hq))
+    s1 s2 r1 h2
   obtain ⟨⟨⟩, s3, h3, h⟩ := run_bind_eq_ok_pure (keepsUncached_forIn_array _ (fun a _ =>
     keepsUncached_bind (keepsUncached_processAttestation a parentSlot)
       (fun _ => keepsUncached_pure _)) body.attestations.val _) h
   -- The attestation loop: a new flag comes from the attestation that sets it, on a state with
   -- the two views of `st`.
-  have t3 : P s3 ∧ K s3 := forIn_array_ops_inv (fun s => P s ∧ K s) _
+  have t3 : P s3 ∧ K s3 ∧ R s3 := forIn_array_ops_inv (fun s => P s ∧ K s ∧ R s) _
     (keepsUncached_processAttestation · parentSlot) body.attestations.val
     (fun a ha s s' hs hr => by
       refine ⟨⟨(locView_of_frames (processAttestation_frame_ord hr)
         (processAttestation_frame_hdr hr)).trans hs.1.1, fun hf' => ?_⟩,
-        (processAttestation_frame_key hr).trans hs.2⟩
+        (processAttestation_frame_key hr).trans hs.2.1,
+        fun Q hQ hq => hQ.2.2 a parentSlot s s' hr (hs.2.2 Q hQ hq)⟩
       rcases processAttestation_explained a parentSlot hr hf' with h0 | ⟨he, hv⟩
       · exact hs.1.2 h0
-      · exact .inr ⟨a, ha, s, s', he, hv, hs.1.1, hs.2⟩)
-    s2 s3 ⟨t2, k2⟩ h3
+      · exact .inr ⟨a, ha, s, s', he, hv, hs.1.1, hs.2.1, hs.2.2⟩)
+    s2 s3 ⟨t2, k2, r2⟩ h3
   replace t3 := t3.1
   obtain ⟨⟨⟩, s4, h4, h⟩ := run_bind_eq_ok_pure (keepsUncached_forIn_array _ (fun a _ =>
     keepsUncached_bind (keepsUncached_processVoluntaryExit a)
@@ -159,14 +201,15 @@ theorem processOperations_flags_at (body : EthCLSpecs.Heze.BeaconBlockBody)
     s5 s6 t5 h6).2 hf
 
 /-- A target flag after `processBlock` was set before it, or an attestation of the block body
-set it on a state with the `locView` and the `keyView` of the start state. -/
+set it on a state with the `locView` and the `keyView` of the start state. That state comes
+from the start state through the part of the block before or inside the attestation loop. -/
 theorem processBlock_flags_at (b : BeaconBlock) {st st' : BeaconState}
     (h : (EthCLSpecs.Heze.processBlock (StateTransition := HezeRun) b).run (pureState st)
       = .ok ((), pureState st')) {j : Nat} {e : Epoch} (hf : TargetFlagSet st' j e) :
     TargetFlagSet st j e ∨ ∃ att ∈ b.body.attestations.toArray, ∃ pre post : BeaconState,
       att.data.target.epoch = e ∧ VoteAt pre post att (UInt64.ofNat j) ∧
       locView (pureState pre) = locView (pureState st) ∧
-      keyView (pureState pre) = keyView (pureState st) := by
+      keyView (pureState pre) = keyView (pureState st) ∧ BlockReach b st pre := by
   unfold EthCLSpecs.Heze.processBlock at h
   -- The read of the parent slot keeps the state.
   have h := run_get_bind_eq_ok _ _ _ h
@@ -194,7 +237,8 @@ theorem processBlock_flags_at (b : BeaconBlock) {st st' : BeaconState}
     ((processExecutionPayloadBid_frame_key h4).trans ((processWithdrawals_frame_key h3).trans
       ((processBlockHeader_frame_key h2).trans (processParentExecutionPayload_frame_key h1))))
   have f8 := hf.of_partView fun w => processSyncAggregate_frame_part (cur := w) (i := j) h8
-  rcases processOperations_flags_at b.body _ h7 f8 with f7 | ⟨att, ha, pre, post, he, hv, hl, hk⟩
+  rcases processOperations_flags_at b.body _ h7 f8 with
+    f7 | ⟨att, ha, pre, post, he, hv, hl, hk, hr⟩
   · refine .inl ?_
     have f5 := f7.of_partView fun w => processRandao_frame_part (cur := w) (i := j) h5
     have f4 := f5.of_partView fun w =>
@@ -203,12 +247,15 @@ theorem processBlock_flags_at (b : BeaconBlock) {st st' : BeaconState}
     have f2 := f3.of_partView fun w => processBlockHeader_frame_part (cur := w) (i := j) h2
     exact f2.of_partView fun w =>
       processParentExecutionPayload_frame_part (cur := w) (i := j) h1
-  · exact .inr ⟨att, ha, pre, post, he, hv, hl.trans l15, hk.trans k15⟩
+  · refine .inr ⟨att, ha, pre, post, he, hv, hl.trans l15, hk.trans k15, fun Q hQ hq => ?_⟩
+    obtain ⟨k1, k2, k3, k4, k5, ko⟩ := hQ
+    exact hr Q ko (k5 _ _ h5 (k4 _ _ h4 (k3 _ _ h3 (k2 _ _ h2 (k1 _ _ h1 hq)))))
 
 /-- A vote of validator `i` with the data `data`, placed on the run. The run of the prefix
 `s₁` reaches `u`, and the next step is the block that includes the attestation.
 `processAttestation` accepted it on a state `pre` with the `locView` and the `keyView` of `u`.
-The target epoch is the current or the previous epoch of `u`. -/
+The target epoch is the current or the previous epoch of `u`. The block step reaches `pre`
+from `u` (`BlockReach`). -/
 def RunVote (hi : Nat) (st₀ : BeaconState) (steps : List ChainStep) (i : ValidatorIndex)
     (data : AttestationData) : Prop :=
   ∃ (s₁ s₂ : List ChainStep) (sb : SignedBeaconBlock) (v : Bool) (u pre post : BeaconState)
@@ -218,7 +265,8 @@ def RunVote (hi : Nat) (st₀ : BeaconState) (steps : List ChainStep) (i : Valid
     locView (pureState pre) = locView (pureState u) ∧
     keyView (pureState pre) = keyView (pureState u) ∧
     (data.target.epoch = currentEpochOf (pureState u) ∨
-      data.target.epoch = previousEpochOf (pureState u))
+      data.target.epoch = previousEpochOf (pureState u)) ∧
+    BlockReach sb.message u pre
 
 /-- A placed vote stays placed when more steps follow. -/
 theorem RunVote.append {hi : Nat} {st₀ : BeaconState} {steps : List ChainStep}
@@ -261,7 +309,7 @@ theorem ChainRun.flag_located {hi : Nat} {st₀ : BeaconState} {q : List ChainSt
         h2 | ⟨att, ha, pre, post, he, hv, hl⟩
       · exact .inl h2
       · refine .inr ⟨att.data, he, p, steps, sb, v, st1, pre, post, att, rfl, hp, ha, rfl, hv,
-          hl.1, hl.2, ?_⟩
+          hl.1, hl.2.1, ?_, hl.2.2⟩
         -- The flag after the block names an epoch there, and the block step keeps the slot.
         obtain ⟨hc, hpv⟩ := epochs_eq_of_toNat (a := st2) (b := st1) (by rw [hstep.slot.1])
         rcases h1.epoch_cases with h' | h'

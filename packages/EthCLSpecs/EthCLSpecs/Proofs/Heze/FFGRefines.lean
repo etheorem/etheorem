@@ -449,7 +449,7 @@ theorem RunVote.target_eq
     (hval : ValidatedSteps steps) (hroots : AnchorRoots st₀) (hrun : ChainRun hi steps st₀ st)
     (h1 : 1 ≤ d.target.epoch.toNat) :
     toCp d.target = cpOf st₀ steps d.target.epoch.toNat := by
-  obtain ⟨s₁, s₂, sb, v, ub, pre, post, att, hs, hr, -, hd, ⟨-, -, -, htgt⟩, hloc, -, hep⟩ := hv
+  obtain ⟨s₁, s₂, sb, v, ub, pre, post, att, hs, hr, -, hd, ⟨-, -, -, htgt⟩, hloc, -, hep, -⟩ := hv
   subst hd hs
   obtain ⟨-, hsl, hbr⟩ := locView_eq hloc
   have hinv := hr.rootsInv hw hhi (fun sb v hm => hval sb v (List.mem_append_left _ hm))
@@ -486,7 +486,7 @@ theorem RunVote.source_cur {hi : Nat} (hhi : hi ≤ 2 ^ 64 - 1) {st₀ u : Beaco
     (hv : RunVote hi st₀ p i d) (hu : ChainRun hi p st₀ u)
     (he : d.target.epoch = currentEpochOf (pureState u)) (h2 : 2 ≤ epochOf u) :
     d.source = u.currentJustifiedCheckpoint := by
-  obtain ⟨s₁, s₂, sb, v, ub, pre, post, att, hs, hr, -, hd, ⟨-, -, hsrc, -⟩, hloc, -, hep⟩ := hv
+  obtain ⟨s₁, s₂, sb, v, ub, pre, post, att, hs, hr, -, hd, ⟨-, -, hsrc, -⟩, hloc, -, hep, -⟩ := hv
   subst hd hs
   obtain ⟨hck, hsl, -⟩ := locView_eq hloc
   obtain ⟨m, hm1, hm2⟩ := hu.split
@@ -518,7 +518,7 @@ theorem RunVote.source_prev {hi : Nat} (hhi : hi ≤ 2 ^ 64 - 1) {st₀ u : Beac
     (hv : RunVote hi st₀ p i d) (hu : ChainRun hi p st₀ u)
     (he : d.target.epoch = previousEpochOf (pureState u)) (h3 : 3 ≤ epochOf u) :
     d.source = u.previousJustifiedCheckpoint := by
-  obtain ⟨s₁, s₂, sb, v, ub, pre, post, att, hs, hr, -, hd, ⟨-, -, hsrc, -⟩, hloc, -, hep⟩ := hv
+  obtain ⟨s₁, s₂, sb, v, ub, pre, post, att, hs, hr, -, hd, ⟨-, -, hsrc, -⟩, hloc, -, hep, -⟩ := hv
   subst hd hs
   obtain ⟨hck, hsl, -⟩ := locView_eq hloc
   obtain ⟨m, hm1, hm2⟩ := hu.split

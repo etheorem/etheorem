@@ -1,12 +1,14 @@
 import EthCLSpecs.Proofs.Heze.RaceCheck
+import EthCLSpecs.Proofs.Heze.ViableNext
 import EthCLSpecs.Tests.HezeWitnessSeams
 import EthCLSpecs.Tests.HezeNetworkWitness
 
 /-!
 # `EthCLSpecs.Tests.HezeRaceWitness`: the composed race has a witness
 
-`race_empty_persists_composed` (`Proofs/Heze/PayloadRaceDecision.lean`) states tier T2 under
-`RaceSetting.Core`, `DecisionSetting`, and `RaceCommittees`. This module builds two honest
+`race_empty_persists_spec` (`Proofs/Heze/ViableNext.lean`) states tier T2 under
+`RaceSetting.Core`, `DecisionSetting`, `RaceCommittees`, and the facts of the anchor that prove
+viability at the slot after `r`. This module builds two honest
 nodes, `A` and `B`, at the minimal preset, and checks every premise on them except
 `QsortMem`. So the premises can hold together. `raceWitness` takes `QsortMem` as its one
 hypothesis.
@@ -389,6 +391,20 @@ def allChk : Bool :=
   | .ok s0 => raceChk s0
   | .error _ => false
 
+/-- The anchor facts of `race_empty_persists_spec`: the genesis checkpoints are ordered, the
+genesis slot is `0`, `r` is not the genesis root, no block of either trace has a zero state
+root, and two epochs fit in the block-root ring. -/
+def anchorChk : Bool :=
+  decide (genesisV.finalizedCheckpoint.epoch ≤ genesisV.previousJustifiedCheckpoint.epoch ∧
+    genesisV.previousJustifiedCheckpoint.epoch ≤ genesisV.currentJustifiedCheckpoint.epoch ∧
+    genesisV.currentJustifiedCheckpoint.epoch ≤ EthCLSpecs.Heze.previousEpochOf genesisState) &&
+  decide (genesisV.slot.toNat = 0) &&
+  decide (rootR ≠ genesisRoot) &&
+  (tevs true ++ tevs false).all (fun x => match x.1 with
+    | .handler (.block sb) => decide (sb.message.stateRoot ≠ EthCLSpecs.Heze.zeroRoot)
+    | _ => true) &&
+  decide (2 * EthCLSpecs.Heze.Const.slotsPerEpoch ≤ EthCLSpecs.Heze.Const.slotsPerHistoricalRoot)
+
 /-! ## The witness -/
 
 /-- The seed exists. -/
@@ -665,8 +681,37 @@ theorem raceWitness (hsort : QsortMem) :
       unfold raceVs
       rw [hvotes]
       exact of_decide_eq_true hlater
+  -- `headRunB` checks that `empty r` is viable beside `full r` at each head run.
+  have hviableAt : ∀ v t, raceLo blockR ≤ t → t ≤ 4 →
+      EmptyViableWithFull (runOf s0 v t).store rootR := by
+    intro v t hlo hhi
+    rw [raceLo_blockR] at hlo
+    have hrc : runChk s0 v t = true := List.all_eq_true.mp (parts v).runs t (by
+      rcases (by omega : t = 2 ∨ t = 3 ∨ t = 4) with rfl | rfl | rfl <;> simp)
+    simp only [runChk, Bool.and_eq_true, decide_eq_true_eq] at hrc
+    exact EmptyViableWithFull.of_headRunB hrc.1.2
+  -- The anchor facts that prove viability at the slot after `r`.
+  have hanc : anchorChk = true := by native_decide
+  simp only [anchorChk, Bool.and_eq_true] at hanc
+  obtain ⟨⟨⟨⟨hord, hslot0⟩, hne⟩, hroots⟩, hsph⟩ := hanc
+  have hslot0' := of_decide_eq_true hslot0
   refine ⟨s0, hseed, ?_⟩
-  rcases race_empty_persists_composed combine_size hset hdec hcomm with h | h
+  rcases race_empty_persists_spec combine_size hset hdec hcomm (of_decide_eq_true hsph)
+      (fun _ _ => by have h := of_decide_eq_true hord; exact h)
+      (fun v _ sb w hm => by
+        change (TraceEvent.handler (.block sb), w) ∈ tevs v at hm
+        have hm' : (TraceEvent.handler (.block sb), w) ∈ tevs true ++ tevs false := by
+          cases v
+          · exact List.mem_append_right _ hm
+          · exact List.mem_append_left _ hm
+        have := List.all_eq_true.mp hroots _ hm'
+        exact of_decide_eq_true this)
+      (fun _ _ => by
+        show genesisV.slot.toNat / _ ≤ _
+        rw [hslot0', Nat.zero_div]
+        exact Nat.zero_le _)
+      (fun _ _ => of_decide_eq_true hne)
+      (fun s h1 h2 _ v _ => hviableAt v s (Nat.le_of_lt h1) h2) with h | h
   · exact Or.inl h
   · exact Or.inr fun v t h2 h4 => h v trivial t (by rw [raceLo_blockR]; exact h2) h4
 

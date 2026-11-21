@@ -11,8 +11,10 @@ import EthCLSpecs.Tests.GloasCommitteesPins
 import EthCLSpecs.Tests.GloasEpochPins
 import EthCLSpecs.Tests.GloasForkChoicePins
 import EthCLSpecs.Tests.GloasPtcWindowPins
+import EthCLSpecs.Tests.HezeAccountableWitness
 import EthCLSpecs.Tests.HezeCommitteesPins
 import EthCLSpecs.Tests.HezeDichotomyWitness
+import EthCLSpecs.Tests.HezeFinalityWitness
 import EthCLSpecs.Tests.HezeForkChoicePins
 import EthCLSpecs.Tests.HezeNetworkWitness
 import EthCLSpecs.Tests.HezePayloadRace
