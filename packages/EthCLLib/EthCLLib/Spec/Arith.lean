@@ -21,7 +21,7 @@ The collection helpers (`sszDrop`, `vget`, `bitGet` / `bitSet`) are total. A bit
 past the end changes nothing, and an out-of-range read returns the default. Use them
 only at a position the caller already knows is in range, such as a fixed byte offset.
 A read where the pyspec can raise `IndexError` goes through the size-aware
-`sszGetIdx` / `getAt` (`Spec/State.lean`, `SPEC_ARITHMETIC.md` §4.6), never a default.
+`sszGetIdx` / `getAt` (`Spec/State.lean`, `SPEC_ARITHMETIC.md` §4.6).
 `sszOfArray` takes a proof that the array fits. A list whose length is known only at
 run time goes through `sszOfArrayM` (`Spec.Header`), which raises as the spec's
 `List[T, N](...)` does. A boxed-state field reads and writes through SizzLean's

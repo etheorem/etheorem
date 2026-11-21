@@ -401,14 +401,15 @@ That `ValueError` is not an `AssertionError`, so the reference runner's
 fault (`classify`s as `uncaughtFault`, an expected rejection only under the one
 `except ValueError` wrapper). Lean's raw `UInt64` ops wrap instead of raising.
 
-A fork body does not use the helpers below for spec arithmetic. It writes the `CLUint64`
-and `CLInt` operators (`Spec/CLUint.lean`, `Spec/CLInt.lean`), and their faults reach the
-reject surface through `StateTransitionError.ofArithFault` (`Spec/Checked.lean`). The
-helpers below are the raw-word form of the same classes: `checkedAdd`, `checkedSub`, and
-`checkedMul` raise through `throwArithmetic`, the range class's constructor site, and a
-zero divisor raises through `throwZeroDivision`, its own reference class. Their callers are
-the framework tests and proofs; the one fork-body caller is `checkedSucc`, the structural
-loop counter. `descr` names the faulting op, diagnostic only. -/
+A fork body writes the `CLUint64` and `CLInt` operators for spec arithmetic
+(`Spec/CLUint.lean`, `Spec/CLInt.lean`). Their faults reach the reject surface through
+`StateTransitionError.ofArithFault` (`Spec/Checked.lean`). The raw-word helpers
+`checkedAdd`, `checkedSub`, and `checkedMul` raise through `throwArithmetic`.
+Only the framework tests call these three helpers. A zero divisor raises through
+`throwZeroDivision`, its own reference class. `checkedSucc` is the one helper below
+that a fork body calls. It models the spec's `uint64` loop counter `i += 1` in
+`compute_balance_weighted_selection`; its result carries the bound the caller's
+`termination_by` needs. `descr` names the faulting op, diagnostic only. -/
 
 /-- Raise the `.arithmetic` fault, the `ArithCause.range` class (an `SSZValueError`, a
 Python `ValueError`, at the 0.1.0 pin). The single place the raw-word helpers construct
@@ -428,8 +429,7 @@ never counts as an expected rejection under any `RunnerCaughtSet`. Same
 `[ErrorConv StateTransitionError E]` shape as `throwArithmetic`, so one definition serves
 both machines. The spec's example is `get_inclusion_list_committee`'s empty-committee
 `indices[i % len(indices)]` (`heze/beacon-chain.md:274-276`); the fork body reaches that
-class through the `CLInt` `%` and `StateTransitionError.ofArithFault`, not through this
-helper. -/
+class through the `CLInt` `%` and `StateTransitionError.ofArithFault`. -/
 @[inline] def throwZeroDivision {m : Type → Type u} {α E : Type} [Monad m] [MonadExcept E m]
     [ErrorConv StateTransitionError E] (descr : String) : m α :=
   liftErr (E := StateTransitionError) (.error (.zeroDivision descr))
