@@ -185,9 +185,9 @@ example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
 
 /-- `processBuilderPendingPayments_run` likewise, and this is the one that shows the point:
 its proof rests on a `List.forIn` induction over the withdrawals loop, and that induction is
-not re-entered here. `builderPendingWithdrawals` is a progressive list, so the
-contract is unconditional: the run always appends the qualifying withdrawals and shifts the
-payment window. -/
+not re-entered here. After `builderPaymentQuorum` succeeds, the run appends the qualifying
+withdrawals and shifts the payment window. `builderPendingWithdrawals` is a progressive
+list, so the append needs no capacity premise. -/
 example [Preset] [HasherTag] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
     ∀ (preState : BeaconState) (quorum : Gwei),
