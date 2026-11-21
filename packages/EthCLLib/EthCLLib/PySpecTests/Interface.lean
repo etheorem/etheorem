@@ -224,7 +224,8 @@ def FcStepKind.catchesIndexError : FcStepKind → Bool
 open EthCLLib.Spec in
 /-- Whether `e` is the expected rejection of a `valid: false` step of this kind: the general
 caught set (`isExpectedRejection`) minus the index miss on the kinds whose wrapper lets an
-`IndexError` escape. -/
+`IndexError` escape. The caught-set classes are the ones `eth-ssz-specs` 0.1.0 raises at
+this pin, so neither wrapped arithmetic cause is admitted under any kind. -/
 def FcStepKind.admits (kind : FcStepKind) (e : StoreTransitionError) : Bool :=
   e.isExpectedRejection && (kind.catchesIndexError || !e.isIndexMiss)
 
@@ -265,8 +266,9 @@ open EthCLLib.Spec in
 `.assert` (bare and `.transition`-wrapped) is the expected rejection everywhere (pass, threading
 the error-time store), and `.transition (.outOfBounds …)`, the store machine's only index-miss
 shape, joins it on every kind but `.block`. A `.missingKey` (a bare-`Dict` `KeyError`), a
-`.transition (.arithmetic …)` (a `uint64` `ValueError`), or a `.decodeFailure` (a decoder /
-container bug, never a spec raise), none of which the reference catches, propagates as a
+`.transition (.arithmetic …)` (`eth-ssz-specs` 0.1.0's `SSZValueError`, a `ValueError`), a
+`.transition (.zeroDivision …)` (a bare `ZeroDivisionError`), or a `.decodeFailure` (a decoder /
+container bug, never a spec raise), none of which the reference wrapper catches, propagates as a
 failure; `.todo` / `.outOfScope` stay deferrals. Each conjunct is a concrete evaluation, closed
 by `rfl` (`Except` carries no `DecidableEq`, so `decide` cannot run). -/
 example :
@@ -281,12 +283,16 @@ example :
       = .error (.missingKey (Vector.replicate 32 0))
   ∧ checkStepValidity (σ := Nat) .attestation false (.error (.transition (.arithmetic "x"), 7))
       = .error (.transition (.arithmetic "x"))
+  -- The attestation step's wrapper is `expect_assertion_error`: it catches `AssertionError`
+  -- and `IndexError`, so a bare `ZeroDivisionError` escapes and the step fails.
+  ∧ checkStepValidity (σ := Nat) .attestation false (.error (.transition (.zeroDivision "x"), 7))
+      = .error (.transition (.zeroDivision "x"))
   ∧ checkStepValidity (σ := Nat) .attestation false (.error (.decodeFailure "x", 7))
       = .error (.decodeFailure "x")
   ∧ checkStepValidity (σ := Nat) .attestation false (.error (.todo "later", 7)) = .error (.todo "later")
   ∧ checkStepValidity (σ := Nat) .attestation false (.error (.outOfScope "n/a", 7))
       = .error (.outOfScope "n/a") :=
-  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 open EthCLLib.Spec in
 /-- Decode a fork-choice step's SSZ `bytes` to its typed value and run `f` on it, or

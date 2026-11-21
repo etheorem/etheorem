@@ -59,6 +59,25 @@ def isqrtAux (n : Nat) : Nat → Nat → Nat
 /-- `⌊√n⌋`. -/
 def isqrt (n : Nat) : Nat := if n = 0 then 0 else isqrtAux n 200 n
 
+/-- Newton's iteration never climbs above its start: each step either moves to a
+smaller `y` or stops at `x`. -/
+theorem isqrtAux_le (n : Nat) : ∀ (fuel x : Nat), isqrtAux n fuel x ≤ x
+  | 0, x => Nat.le_refl x
+  | fuel + 1, x => by
+    show (if (x + n / x) / 2 < x then isqrtAux n fuel ((x + n / x) / 2) else x) ≤ x
+    split
+    · rename_i h
+      exact Nat.le_trans (isqrtAux_le n fuel _) (Nat.le_of_lt h)
+    · exact Nat.le_refl x
+
+/-- The root is at most its argument, so a root of a `uint64` value fits a
+`uint64` (the range premise of `CLUint64.integerSquareroot`). -/
+theorem isqrt_le (n : Nat) : isqrt n ≤ n := by
+  unfold isqrt
+  split
+  · omega
+  · exact isqrtAux_le n 200 n
+
 /-! ## Type-directed `uintToBytes` -/
 
 /-- Little-endian serialization whose width is fixed by the type, the
@@ -165,23 +184,6 @@ the vector, the index, and the period. A proof-carrying read, so no `Inhabited` 
     [vd : ValidModulus d] (hle : d ≤ n := by omega) : α :=
   v[(x % UInt64.ofNat d).toNat]'(by have := uint64ModOfNatToNatLt x d vd.pos vd.lt; omega)
 
-/-- The ring-buffer index `x % d` as a `Nat`, the write-side companion of `vmodGet`'s read
-index. Names the `(x % UInt64.ofNat d).toNat` spelling a per-element reset or cache write
-uses (`process_slot`'s root caching, the slashings / RANDAO / builder-payment ring buffers),
-so the period is written once and a `slotsPerEpoch`-versus-`slotsPerHistoricalRoot` mixup is
-harder. Index-only: it feeds the same total `field[idx]!` write, so it cannot change which
-slot is hit (no bounds-carrying `vmodSet`, which a proof could discharge differently). -/
-@[inline] def umodIdx (x : UInt64) (d : Nat) : Nat := (x % UInt64.ofNat d).toNat
-
-/-- A `Nat` cursor advanced modulo a length, with the length-zero case pinned to `0`. Names
-the `if n == 0 then 0 else x % n` guard the withdrawal sweeps repeat when they wrap the
-builder / validator cursor past the end of a (possibly empty) collection: an empty collection
-has no slot to land on, so the cursor resets to `0` instead of evaluating `x % 0` (which
-Lean's `Nat` `%` defines as `x`, leaking a non-wrapped index). With a non-empty collection it
-is the ordinary `x % n`. Pure `Nat` index arithmetic, so it cannot change which slot a
-downstream total write hits. -/
-@[inline] def modWrap (x n : Nat) : Nat := if n == 0 then 0 else x % n
-
 /-- A list that can drop a prefix and stay the same collection type.
 `SSZList` keeps its cap (the tail is no longer); `ProgressiveList` has no cap. -/
 class SszDrop (ρ : Type) where
@@ -207,19 +209,6 @@ takes the array whole: `⟨a⟩`. -/
 def sszOfArray {α : Type} {cap : Nat} (a : Array α)
     (h : a.size ≤ cap) : SSZList α cap :=
   ⟨a, h⟩
-
-/-- The indices of `xs` whose element (with its position) satisfies `p`, as `uint64`s. Names
-the `mut out / for i / push (UInt64.ofNat i)` accumulator that the registry walks
-(`get_active_validator_indices` and its eligible-set sibling) repeat, leaving only the
-one-line predicate at the call site. The predicate takes the element and its index; the spec
-walks only inspect the element, the index is offered for generality. Same iteration order
-(`0 … xs.size-1`) and same push order as the longhand loop, so the resulting index array is
-byte-for-byte the one the loop produced. -/
-def indicesWhere {α : Type} [Inhabited α] (xs : Array α) (p : α → Nat → Bool) : Array UInt64 := Id.run do
-  let mut out : Array UInt64 := #[]
-  for i in [0 : xs.size] do
-    if p (xs[i]!) i then out := out.push (UInt64.ofNat i)
-  return out
 
 /-- Intersection by membership: the elements of `xs` that also appear in `ys`, kept in `xs`'s
 order. A `filter`, so it does not deduplicate `xs` itself; a value repeated in `xs` and present
@@ -258,13 +247,5 @@ def Bitvector.trueIndices {n : Nat} (bv : Bitvector n) : Array Nat := Id.run do
   for i in [0:n] do
     if bitGet bv i then out := out.push i
   return out
-
-/-- Test participation-flag bit `idx` of a `uint8` flag byte. -/
-@[inline] def hasFlag (flags : UInt8) (idx : Nat) : Bool :=
-  (flags >>> (UInt8.ofNat idx)) &&& 1 == 1
-
-/-- Set participation-flag bit `idx` of a `uint8` flag byte. -/
-@[inline] def addFlag (flags : UInt8) (idx : Nat) : UInt8 :=
-  flags ||| (1 <<< (UInt8.ofNat idx))
 
 end EthCLLib.Spec
