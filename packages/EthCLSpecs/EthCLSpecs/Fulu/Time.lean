@@ -4,9 +4,9 @@ import EthCLSpecs.Fulu.State
 # `EthCLSpecs.Fulu.Time`: slot / epoch accessors (load order row 20)
 
 The time-domain helpers (`SPECS_ARCHITECTURE.md` §3.1 row 20). `computeEpochAtSlot`
-and `computeActivationExitEpoch` are state-free and pure. `computeStartSlotAtEpoch` is
-state-free and faults on its multiply, so it returns an `Except`. Accessors that read the
-threaded state come in two shapes, the monadic `getCurrentEpoch` / `getPreviousEpoch` and the pure
+is state-free and pure. `computeStartSlotAtEpoch` and `computeActivationExitEpoch` are
+state-free and fault, the first on its multiply and the second on its additions, so each
+returns an `Except`. Accessors that read the threaded state come in two shapes, the monadic `getCurrentEpoch` / `getPreviousEpoch` and the pure
 `currentEpochOf` / `previousEpochOf` (functions of the boxed state, for the
 `modifyState` / `Id.run` bodies the epoch substeps build), the state-free-pure /
 state-reading-monadic split of §5. They are `forkdef`s so a later fork can
@@ -46,8 +46,18 @@ forkdef computeStartSlotAtEpoch (epoch : Epoch) : Except StateTransitionError Sl
   checkedMul epoch (UInt64.ofNat Const.slotsPerEpoch)
     "compute_start_slot_at_epoch: epoch * SLOTS_PER_EPOCH"
 
-/-- `compute_activation_exit_epoch(epoch)`. Pure. -/
-forkdef computeActivationExitEpoch (e : Epoch) : Epoch := e + 1 + Const.maxSeedLookahead
+/-- `compute_activation_exit_epoch(epoch)` = `epoch + 1 + MAX_SEED_LOOKAHEAD`
+(`phase0/beacon-chain.md:928`). The pyspec adds on bare `uint64` values, and the SSZ backend
+raises a `ValueError` when a sum passes `2 ^ 64 - 1`. So each addition is `checkedAdd`, in the
+spec's order, and the reject is `.arithmetic`.
+
+Every caller passes the current epoch, which `computeEpochAtSlot` produced. That epoch is at
+most `(2 ^ 64 - 1) / SLOTS_PER_EPOCH`, so the fault cannot occur there.
+`EthCLSpecs.Proofs.Fulu.Time` proves this. -/
+forkdef computeActivationExitEpoch (e : Epoch) : Except StateTransitionError Epoch := do
+  let next ← checkedAdd e 1 "compute_activation_exit_epoch: epoch + 1"
+  checkedAdd next Const.maxSeedLookahead
+    "compute_activation_exit_epoch: epoch + 1 + MAX_SEED_LOOKAHEAD"
 
 /-- `seconds_to_milliseconds(seconds)` (`phase0/fork-choice.md:550-557`): convert seconds to
 milliseconds, returning `UINT64_MAX` where the product would overflow. Total: the guard runs
