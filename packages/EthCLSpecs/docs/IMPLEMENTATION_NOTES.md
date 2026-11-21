@@ -1725,13 +1725,13 @@ The user settled these decisions on 2026-11-15, before Stage 0:
 
 | Subject | Decision |
 |---|---|
-| Cost | Keep native-backed wrappers. Record compilation and run-time costs. No performance threshold can stop the transition. |
-| Authoring | Explicit `Checked` result ascriptions are the baseline. Bounded automatic elaboration may add readability with the same semantics. |
-| Binding | Bind each local checked computation immediately in a fork body. Source review and behavior pins check this rule. |
-| Configurations | Keep checked behavior for every accepted configuration. A total operation needs an explicit premise. |
-| Widths | Start with 64-bit and 8-bit wrappers. Build another width only for an arithmetic consumer. |
-| Coverage | Move all consensus-spec arithmetic in `EthCLSpecs`, including the sites the spike left raw. |
-| Linters | Defer linter work. `SPEC_ARITHMETIC_LINTING.md` holds it. |
+| Cost | Keep native-backed wrappers. Record compilation and run-time costs. Complete the transition regardless of those costs; there is no performance stop threshold. |
+| Authoring | Explicit `Checked` result ascriptions are the reliable baseline. Compare them with bounded automatic elaboration. Preserve the same semantics in either form. |
+| Binding | Bind local checked computations immediately in fork bodies. Check this through source review and behavior tests during the transition. |
+| Configurations | Preserve checked behavior for arbitrary accepted configurations. Total operations require explicit premises. |
+| Widths | Start with native-backed 64-bit and 8-bit wrappers. Share laws and generation; measure before choosing a generic width-indexed representation. |
+| Coverage | Finish all consensus-spec arithmetic in `EthCLSpecs`, including sites omitted by the spike. |
+| Linters | Defer implementation until after the transition. The separate [SPEC_ARITHMETIC_LINTING.md](SPEC_ARITHMETIC_LINTING.md) records that future work. |
 
 The spike on branch `specs-arithmetics-spike` (head `ff520aa`) tested the approach on a
 partial port and answered "go". The transition re-authored every change against the
@@ -1817,9 +1817,10 @@ The implemented `CLUint64` and `CLInt` operation matrix matches every row.
 
 ### Chosen implementation
 
-**Native-backed checked wrappers.** `CLUint64` and `CLUint8` are private structures over
-`UInt64` and `UInt8` (`EthCLLib/Spec/CLUint.lean`). `CLInt` models the pyspec's plain
-`int` (`Spec/CLInt.lean`). A fallible operation returns `Checked`
+**Native-backed checked wrappers.** `CLUint64` and `CLUint8` are public structures with
+private constructors over `UInt64` and `UInt8` (`EthCLLib/Spec/CLUint.lean`).
+`CLInt` models the pyspec's plain `int` (`Spec/CLInt.lean`). A fallible operation
+returns `Checked`
 (`Spec/Checked.lean`). The total routes live in `Spec/CLTotal.lean`: proof-carrying
 positive divisors, same-width bitwise operations, right shifts, and bounded checked
 power and left shift. No `CLUint32` or `CLUint256` exists, because no arithmetic consumer
@@ -1873,7 +1874,8 @@ lost, and no claim was weakened. The fork-body axioms stay `propext`,
 `Classical.choice`, and `Quot.sound`. `Lean.ofReduceBool` and the SHA-256 equivalence
 axioms are absent from the fork-body proofs. Three Gloas theorems in
 `Proofs/Gloas/BuilderIndex.lean` rest on `bv_decide` certificates. They did before the
-transition, and `allowedAxioms` in `scripts/ProofCoverage.lean` admits that class.
+transition. The `axiomClass` function in `scripts/ProofCoverage.lean` admits that class
+through `bvDecideOwner?`, which checks the certificate name and its theorem owner.
 
 **Body re-authoring.** Task 8.3 (`f52bf90`) re-authored `processPendingDeposits` from
 the pinned text. It is a `for` over the finite queue, with `break` at the three pinned
@@ -1904,7 +1906,7 @@ first migrated form, before its commit. Each named pin fails under the wrong for
 | `process_sync_aggregate` participant lookup | skipped an unknown pubkey | `ValueError`, the new `.notInList` arm | 9.5a, `b42af6d` | `SyncAggregateLookupPins` |
 | `computeCommittee` permutation read | defaulting read | `.assert` at the first position past `len(indices)` | 9.5b, `3436194` | `CommitteeBoundsAssertPins` |
 | `processDeposit` and its `eth1DepositIndex + 1` | raw wrap in a body with no pinned caller | body removed; the pinned Fulu `process_operations` asserts no deposits | 9.5c, `c563e40` | `DepositOperationPins` |
-| `processProposerLookahead` shift window | sized for `MIN_SEED_LOOKAHEAD = 1` only | sized from the preset | 9.5d, `f36cb2b` | none; `proposer_lookahead` vectors |
+| `processProposerLookahead` shift window | sized for `MIN_SEED_LOOKAHEAD = 1` only | sized from the preset | 9.5d, `c2acd971` | none; `proposer_lookahead` vectors |
 
 Pin modules are under `EthCLSpecs/Tests/`. Review also put the Gloas reorg-threshold
 operands in the pinned order at 4.1 (`5fc2cfa`). No vector reaches most of these rows,
@@ -1912,7 +1914,8 @@ because they need values near `2^64` or an unusual configuration.
 
 ### Final costs
 
-All build rows use `lake build EthCLSpecs`, run alone and in sequence. "Cold" is
+Builds ran alone and in sequence. The target is `lake build EthCLSpecs`, except for
+the Stage 0.2 no-op: `lake build EthCLSpecs EthCLLib SizzLean`, 609 jobs. "Cold" is
 `lake clean && lake build EthCLSpecs` after a warm-up build. "Incremental" appends a
 newline to `EthCLSpecs/Fulu/Time.lean` and rebuilds; Stage 4.3 touched `Fulu/Balances.lean`
 instead. The spike row is historical: it measured a partial port.
@@ -1921,7 +1924,7 @@ instead. The spike row is historical: it measured a partial port.
 |---|---|---:|---|---|
 | Stage 0.2 baseline, `58ba389` | 6m52.3s | 607 | 0.52s | 2m57.7s |
 | Spike, historical | 10m58s to 10m59s | 621 | not recorded | not recorded |
-| Stage 4.3, `a9eec86` | 10m03s | 621 | not recorded | 3m38s (`Balances`) |
+| Stage 4.3, `a9eec86` | 10m03s | 621 | 0.6s | 3m38s (`Balances`) |
 | Stage 5.4, Stage 5 tree | 15m02s | 621 | 0.4s | not recorded |
 | Stage 7.4, `9515566` | 25m02.9s | 621 | 0.64s | 5m57.1s |
 | Stage 8.5, `e3eec4c` | 25m03.9s | 621 | 0.60s | 5m59.9s |
@@ -1931,12 +1934,16 @@ At 8.5 and 10.2 the warm-up took 25m02.2s and 25m51.9s. Restoring the incrementa
 took 6m02.4s and 6m07.1s. The final cold build is 3.71 times the baseline. The final
 incremental build is 2.07 times the baseline. The no-op build did not change.
 
-| Profile median, `just ethcl-profile` | `ForkInterface.stateRoot BeaconState` | `ForkInterface.runBlocks` |
+| Profile, `just ethcl-profile` | `ForkInterface.stateRoot BeaconState` | `ForkInterface.runBlocks` |
 |---|---|---|
-| Stage 0.2 baseline | 273.8 ms | 617.9 ms |
-| Spike `main` copy, historical | 265.1 ms | 605.3 ms |
-| Stage 4.3 | 263.3 ms | 602.5 ms |
-| Stage 10.2 | 264.66 ms | 600.32 ms |
+| Stage 0.2 baseline, median | 273.23 ms | 617.31 ms |
+| Spike `main` copy, historical, statistic unverified | 265.1 ms | 605.3 ms |
+| Stage 4.3, median | 263.18 ms | 601.33 ms |
+| Stage 10.2, median | 264.66 ms | 600.32 ms |
+
+The three transition rows use the recorded `median_ns` column. Earlier stage summaries
+labelled the Stage 0.2 and 4.3 means as medians. The spike summary calls its values
+medians, but no retained TSV verifies that statistic.
 
 The profile case is the Gloas mainnet `sanity/blocks` vector `full_random_operations_0`:
 a 3171397-byte state, 256 validators, one block.
@@ -1954,8 +1961,9 @@ The epoch suite is the Gloas mainnet `epoch_processing` handler, 154 cases:
 
 #### Explanation status of each difference
 
-- **Run time: parity.** Both profile rows sit within 0.5% of Stage 4.3 and below the
-  Stage 0 baseline. Epoch-suite run 2 is within 0.5% of the baseline.
+- **Run time: parity.** The final profile medians differ from Stage 4.3 by +0.56%
+  (`stateRoot`) and -0.17% (`runBlocks`). Both remain below the Stage 0 baseline.
+  Epoch-suite run 2 is within 0.5% of the baseline.
 - **Epoch-suite run 1: cause unknown.** It is 6.4s slower than run 2. That spread is
   larger than run 2's distance from the baseline. The same session's profile shows no
   slowdown, so the arithmetic code is not the likely cause. No repeat at zero load exists.
@@ -1970,8 +1978,9 @@ The epoch suite is the Gloas mainnet `epoch_processing` handler, 154 cases:
   601s increase. Which Stage 6 or Stage 7 change grew the generated C is not
   established; no Stage 6 build log exists.
 - **Stage 8.5 to Stage 10.2: within 3.3%.** Cold grew 1.7%, incremental 2.3%, and warm-up
-  3.3%. Stage 8.5 matched Stage 7.4 within 0.1%. The job count is unchanged. The 10.2 run started at load 0.50 and ran at 1.3 to 2.2, where 8.5 started
-  at 0.14. The share that load explains is not established.
+  3.3%. Stage 8.5's cold build matched Stage 7.4 within 0.1%; its incremental build grew
+  0.8%. The job count is unchanged. The 10.2 run started at load 0.50 and ran at 1.3 to
+  2.2, where 8.5 started at 0.14. The share that load explains is not established.
 - **Spike epoch-suite command: reconstructed.** The spike record names the suite
   "Mainnet" but did not keep `--preset`. The harness default is `minimal`, so 10.2 added
   `--preset=mainnet`.
@@ -1990,15 +1999,17 @@ The next longest job takes 8.4s (`EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 The transition added `set_option maxHeartbeats` where elaboration needed more time.
 There are nine at 1000000 in the `Interface` modules (one Fulu, four Gloas, four Heze),
 and two at 4000000 in `Proofs/Gloas/KeepsUncached.lean`. The pre-transition tree had
-none in `EthCLSpecs`. Stage 3.1 measured the elaborator alone: a cold `EthCLLib` build of
-49.7s over 303 jobs, and a 1.4s incremental chain, before any fork body used it.
+none in `EthCLSpecs`. At Stage 3.1, before any fork body used the elaborator, a cold
+`EthCLLib` build with its tests took 49.7s over 303 jobs. The incremental chain took 1.4s.
 
 ### Verification record
 
 Task 10.1 (WS-117) ran the final checks on `7dbe320`. That tree carries the
 `specs-arithmetics` code after 9.5a to 9.5d. One driver script ran every step in order,
-alone on the machine, from 2026-11-21T11:39:41Z to 13:23:15Z. Every package `.lake/build`
-was deleted first, so `just ethcl-test` was a cold build. No source changed.
+alone on the machine, from 2026-11-21T11:39:41Z to 13:23:15Z. The starting one-minute
+load was 5.88, the tail of the stopped earlier attempts. It fell to about 2 during the
+build and 1.1 to 2.6 during the sweeps. Every package `.lake/build` was deleted first,
+so `just ethcl-test` was a cold build. No source changed.
 
 | Command | Result | Stage 8.5 anchor |
 |---|---|---|
@@ -2022,8 +2033,15 @@ Each difference from Stage 8.5 has a known cause:
 - Coverage denominator: spec functions 627 to 625 and authored functions 307 to 305,
   because 9.5c removed Fulu `applyDeposit` and `processDeposit`. The 87 claims are unchanged.
 
-The full matrix ran as the six `PYTEST_JOBS=6 just ethcl-pyspec-full` commands in order,
-each with `-vv -rA --tb=no`. Nothing built during the matrix.
+The full matrix driver invoked pytest directly in `packages/EthCLSpecs/PySpecTests`,
+using the repository's `.venv/bin/python`:
+
+```bash
+python -m pytest -vv -rA --tb=no --subset=0 -n 6 --preset=<preset> --fork=<fork>
+```
+
+It ran `minimal` then `mainnet`, with `fulu`, `gloas`, and `heze` in that order for each
+preset. The runners were built first. Nothing built during the matrix.
 
 | Preset and fork | Passed / skipped | Case ids | Compared with |
 |---|---|---:|---|
@@ -2038,11 +2056,13 @@ each with `-vv -rA --tb=no`. Nothing built during the matrix.
 errored, xfailed, or xpassed. Every skip is an `ssz_static` type the fork does not model,
 the same groups at both presets.
 
-The comparison chain runs back to Stage 0. The minimal sweeps kept per-case logs from
-Stage 0, and each verification stage (4.3, 5.4, 6.4, 7.4, 8.1 to 8.5, 9.5d, 10.1) matched
-the one before it case for case. The mainnet counts matched the pre-transition `main`
-counts at Stage 0, 4.3, and 8.5. Stage 8.5 kept the first mainnet per-case logs, and
-10.1 matched them case for case. No vector outcome changed during the transition.
+The minimal comparison chain starts with Stage 0's passed case ids and skip-group
+counts. Stages 4.3, 5.4, 6.4, and 7.4 matched those against the preceding stage.
+Full (outcome, case id) comparisons start at Stage 8.4b and continue through 8.5, 9.5d,
+and 10.1. The mainnet counts matched the pre-transition `main` counts at Stage 0, 4.3,
+and 8.5. Stage 8.5 kept the first mainnet per-case logs, and 10.1 matched them case for
+case. These comparisons found no change within the recorded evidence. Earlier
+comparisons do not establish mainnet case identity or individual minimal skip identity.
 
 Two earlier 10.1 driver starts failed before the matrix, both for environment reasons.
 The first had no vendored native libraries. Its smoke step then started six parallel
@@ -2082,6 +2102,11 @@ No item below blocks the transition. The cost decision accepts the measured cost
 The deferred linter work stays a separate future proposal in
 `SPEC_ARITHMETIC_LINTING.md`.
 
+### Other deferred arithmetic work
+
+Stage 2 deferred replacing the diagnostic-only `ArithFault.op : String` with an
+inductive `ArithOp` and `ToString`. This remains open. No behavior branches on `op`.
+
 ## Spike fixes outside the arithmetic transition
 
 These non-arithmetic items came from the spike or the transition. Each keeps its own
@@ -2091,9 +2116,10 @@ tracking, apart from the completion record above.
    `Gloas/Interface.lean` and `Heze/Interface.lean` walks the node tree with fuel
    `2 * blocks + 2`. Under ePBS one block root holds up to three nodes: PENDING, EMPTY,
    and FULL. The worst case needs `3 * blocks + 1` steps. The docstring still claims
-   that twice the block count plus two bounds the walk. On fuel-out the helper returns a partial leaf
-   set, so the vector comparison fails. No current vector trips it. The spike fixed it as
-   `3 * blocks + 2` (spike finding 14, commit `7b2accc` on `specs-arithmetics-spike`).
+   that twice the block count plus two bounds the walk. On fuel-out the helper returns
+   a partial leaf set, so the vector comparison fails. No current vector trips it.
+   The spike fixed it as `3 * blocks + 2` (spike finding 14, commit `7b2accc` on
+   `specs-arithmetics-spike`).
    That fix is not in this tree. Status: open.
 2. **`compute_weak_subjectivity_period`.** The spike added this validator-guide helper
    with oracle pins (commit `965885f`). It is outside the modeled fork bodies, and the
