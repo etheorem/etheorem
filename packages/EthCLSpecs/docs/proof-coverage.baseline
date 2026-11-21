@@ -53,6 +53,7 @@ tier1 EthCLSpecs.Heze.applyWithdrawals
 tier1 EthCLSpecs.Heze.builderPaymentIndex
 tier1 EthCLSpecs.Heze.committeeCountOf
 tier1 EthCLSpecs.Heze.computeEpochAtSlot
+tier1 EthCLSpecs.Heze.computeProposerScore
 tier1 EthCLSpecs.Heze.currentEpochOf
 tier1 EthCLSpecs.Heze.decreaseBalance
 tier1 EthCLSpecs.Heze.fcZeroRoot
