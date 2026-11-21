@@ -778,9 +778,9 @@ arithmetic site remains unreviewed because its module built without edits.
   conversion names. Preserve descriptions of intentionally raw arithmetic in other
   packages and clearly label historical measurements and superseded designs.
   (WS-101, `cdbd9f5184d14a3ab6728418f1f1a0acb3ca80b7`)
-- [ ] **9.3 Verify documentation examples.** Build affected Lean modules and examples.
+- [x] **9.3 Verify documentation examples.** Build affected Lean modules and examples.
   Run the citation and project checks. Repeat the targeted searches and inspect remaining
-  matches. Record each reviewed document and the resolution of each conflict.
+  matches. Record each reviewed document and the resolution of each conflict. (WS-102, `170f0b00fa112b0fa95c38b43fe28f3fbac1ee3b`)
 - [ ] **9.4 Check document links and status.** Update the docs index and cross-references.
   Ensure current guidance describes the implemented state and keeps deferred linter
   work separate. Leave removal of this temporary plan to the final acceptance stage.
