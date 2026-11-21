@@ -35,7 +35,7 @@ forkdef getActiveValidatorIndices (state : State) (epoch : Epoch) :
   return active
 
 /-- `get_eligible_validator_indices` (for rewards / inactivity,
-`fulu/mainnet.py:1799-1806`). The comprehension's `previous_epoch + 1` is the pyspec's
+`fulu/mainnet.py:1805-1812`). The comprehension's `previous_epoch + 1` is the pyspec's
 checked `Epoch` add, and Python's `or` / `and` short-circuit, so the sum forms only for a
 slashed validator the previous epoch left inactive; the fold binds it inside that branch
 (`SPEC_ARITHMETIC.md` §4.3) and the result carries the fault. Each kept position is cast
@@ -55,12 +55,13 @@ forkdef getEligibleValidatorIndices (state : State) : Checked (Array ValidatorIn
 
 /-- The registry index of the first validator whose `pubkey` equals `pk`, or `none` when no
 validator carries that pubkey. The single home for the
-`(sszGet state validators).findIdx? (·.pubkey == …)` scan that the deposit, withdrawal-request,
-consolidation, and pending-deposit paths each re-spell. Returns the raw `Nat` index `findIdx?`
-produces, not a narrowed `ValidatorIndex`: most callers need the index in both forms in the same
-branch (as a `Nat` to read the registry or a parallel list, as a `UInt64` to hand a balance / exit
-mutator), so the per-caller narrowing is left at the call site and only the scan and the pubkey
-key are centralized. -/
+`(sszGet state validators).findIdx? (·.pubkey == …)` scan of the pending-deposit,
+withdrawal-request, consolidation-request, and sync-aggregate paths. Returns the plain `Nat`
+position `findIdx?` produces. Most callers need the index in two forms in the same branch: a
+`Nat` to read the registry or a parallel list, and a `ValidatorIndex` to hand a balance or exit
+mutator. A call site that needs the `ValidatorIndex` forms the pyspec's checked
+`ValidatorIndex(...)` cast itself (`CLUint64.ofNat?`), so only the scan and the pubkey key
+live here. -/
 forkdef validatorIndexByPubkey? (state : State) (pk : BLSPubkey) : Option Nat :=
   (sszGet state validators).findIdx? (·.pubkey == pk)
 

@@ -44,20 +44,17 @@ forkdef isEligibleForPartialWithdrawals (v : Validator) (balance : Gwei) : Bool 
 /-! ## Expected withdrawals -/
 
 /-- `get_balance_after_withdrawals` (`capella/beacon-chain.md:411-421`): the balance net of any
-already-queued withdrawals for that validator. Throwing (`StateTransition`): the spec's
-`state.balances[validator_index]` is a bare list index (`IndexError`, via `sszGetIdx` →
-`outOfBounds`), and `- withdrawn` is a bare `uint64` subtraction whose underflow raises Python
-`ValueError`, which the reference runner does NOT catch (`context.py:424-435` catches only
-`AssertionError` / `IndexError`), so it throws the uncaught `.arithmetic` reject rather than a
-caught `.assert`. Both reads are unreachable on a well-formed state and modeled rather than
-clamped.
+already-queued withdrawals for that validator. Throwing (`StateTransition`). The spec's
+`state.balances[validator_index]` is a bare list index, so a read past the end rejects with
+`outOfBounds` through `sszGetIdx`, the class of Python's `IndexError`.
 
 The `withdrawn` accumulator is a `Gwei`, and the folded add is the checked `Gwei` `+`
-(`SPEC_ARITHMETIC.md` §3.2, the `sum` row), so a running sum past `2^64` raises during the
-accumulation, and the final `balances[i] - withdrawn` is the checked subtraction, whose
-underflow raises Python `ValueError` the reference runner does not catch (`context.py:424-435`
-catches only `AssertionError` / `IndexError`). Both reads are unreachable on a well-formed
-state and modeled rather than clamped. -/
+(`SPEC_ARITHMETIC.md` §3.2, the `sum` row), so a running sum past `2^64 - 1` raises during
+the accumulation. The final `balances[i] - withdrawn` is the checked subtraction. Its
+underflow raises Python `ValueError`, which `expect_assertion_error` does not catch
+(`context.py:451-462` catches only `AssertionError` and `IndexError`), so the body throws the
+uncaught `.arithmetic` reject. A well-formed state reaches none of these faults, and the
+body still models each one. -/
 def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Withdrawal) :
     StateTransition Gwei := do
   let withdrawn ← ws.foldlM (init := (0 : Gwei)) fun acc w =>

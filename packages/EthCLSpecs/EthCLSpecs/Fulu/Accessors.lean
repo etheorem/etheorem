@@ -29,7 +29,7 @@ forkdef getTotalActiveBalance (state : State) : Except StateTransitionError Gwei
   getTotalBalance state active
 
 /-- `get_unslashed_participating_indices(state, flag_index, epoch)`
-(`fulu/minimal.py:4380-4396`). No committees. The pyspec reads `epoch_participation[index]`
+(`fulu/minimal.py:4380-4397`). No committees. The pyspec reads `epoch_participation[index]`
 for every active index first, then `state.validators[index].slashed` for each participating
 one; both reads raise `IndexError` past the end, so they go through `getAt` in that order.
 `has_flag`'s mask `ParticipationFlags(2**flag_index)` raises past flag index 7, so the
@@ -70,7 +70,7 @@ forkdef getBlockRootAtSlot (state : State) (s : Slot) : StateTransition Root := 
   assert (sszGet state slot ≤ bound)
   pure (vmodGet (sszGet state blockRoots) s.val Const.slotsPerHistoricalRoot)
 
-/-- `get_block_root` (`fulu/mainnet.py:1443-1445`): the epoch's first slot. The start slot
+/-- `get_block_root` (`fulu/mainnet.py:1440-1444`): the epoch's first slot. The start slot
 is `compute_start_slot_at_epoch`, so its checked product binds here. -/
 forkdef getBlockRoot (state : State) (epoch : Epoch) : StateTransition Root := do
   getBlockRootAtSlot state (← computeStartSlotAtEpoch epoch)

@@ -52,7 +52,8 @@ forkcontainer BeaconState where
   currentJustifiedCheckpoint    : Checkpoint
   finalizedCheckpoint           : Checkpoint
   -- `inactivity_scores` is `InactivityScores(List[Uint64])` at the pin
-  -- (`altair/minimal.py:294`), not `Gwei`: a score is not a balance. Naming only.
+  -- (`altair/minimal.py:294`), so the element is the plain checked `CLUint64`. A score
+  -- is an inactivity counter, and the `Gwei` alias names a balance.
   inactivityScores              : SSZList CLUint64 Const.validatorRegistryLimit
   currentSyncCommittee          : SyncCommittee
   nextSyncCommittee             : SyncCommittee

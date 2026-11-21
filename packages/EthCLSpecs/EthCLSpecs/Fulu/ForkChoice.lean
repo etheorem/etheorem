@@ -290,8 +290,7 @@ where
       -- Python's `or` short-circuits, so it forms `voting_source.epoch + 2` only once the two
       -- earlier disjuncts fail. Bind it in that branch alone: an eager checked add would raise
       -- on a sum the reference never evaluates.
-      -- `decide` because `≥` on `UInt64` is a `Prop`: in the original the comparison sat inside
-      -- a `Bool` `||` chain, which drove the coercion; standalone under `pure` it needs saying.
+      -- `decide` because `≥` on `Epoch` is a `Prop`, and the branch returns a `Bool`.
       let correctJustified ← if justifiedWithoutHorizon then pure true else do
         let horizon ← votingSource.epoch + 2
         pure (decide (horizon ≥ currentEpoch))
@@ -569,7 +568,7 @@ forkdef onTick (timeMs : CLUint64) : StoreTransition Unit := do
   -- plain values (`SPEC_ARITHMETIC.md` §4.2, `Nat` for termination measures): the truncated
   -- difference is `0` on a backwards tick, where the loop `.done`s on its first pass. Each pass
   -- moves the clock to the next slot start, so `tickSlot - cur + 1` passes suffice;
-  -- `fuelIterateM!` throws on fuel-out rather than returning a wrong store.
+  -- On fuel-out, `fuelIterateM!` throws, so an exhausted bound never yields a store.
   fuelIterateM! (tickSlot.toPlainNat - cur.toPlainNat + 1) () "on_tick: per-slot catch-up" fun _ => do
     let cs ← getCurrentSlot (← get)
     if cs < tickSlot then

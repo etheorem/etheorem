@@ -7,8 +7,8 @@ The reward arithmetic the epoch rewards/penalties and inactivity substeps call:
 `get_base_reward_per_increment`, `get_base_reward`, `get_finality_delay`,
 `is_in_inactivity_leak` (`SPECS_ARCHITECTURE.md` §3.1 row 29). These read the
 derived `get_total_active_balance` (`Accessors`), so they sit above it. The
-base-reward pair is the pyspec's checked `Gwei` chain; the finality-delay pair
-runs in the raw `Epoch` until Stage 5.
+base-reward pair is the pyspec's checked `Gwei` chain, and the finality-delay pair is
+the checked `Epoch` subtraction.
 -/
 
 set_option autoImplicit false
@@ -35,12 +35,12 @@ forkdef getBaseRewardPerIncrement (state : State) : Except StateTransitionError 
   let perIncrement ← numerator / total.integerSquareroot
   return perIncrement
 
-/-- `get_base_reward` (`fulu/mainnet.py:1789-1795`): `increments *
+/-- `get_base_reward` (`fulu/mainnet.py:1789-1794`): `increments *
 get_base_reward_per_increment(state)` with
 `increments = state.validators[index].effective_balance // EFFECTIVE_BALANCE_INCREMENT`.
 Reads `validators[i]`, so it rejects with the `IndexError`-shaped `outOfBounds`
-(`StateTransitionError`); the arithmetic rides the same channel as the typed
-`ArithFault`. A monadic caller binds it through `liftErr`; a same-error caller
+(`StateTransitionError`). The checked divide and product lift their `ArithFault` into
+the same error type. A monadic caller binds it through `liftErr`; a same-error caller
 binds directly. -/
 forkdef getBaseReward (state : State) (i : ValidatorIndex) :
     Except StateTransitionError Gwei := do
@@ -50,7 +50,7 @@ forkdef getBaseReward (state : State) (i : ValidatorIndex) :
   let total ← increments * base
   return total
 
-/-- `get_finality_delay` (`fulu/mainnet.py:1807-1809`):
+/-- `get_finality_delay` (`fulu/mainnet.py:1797-1798`):
 `get_previous_epoch(state) - state.finalized_checkpoint.epoch`. The subtraction is the
 pyspec's checked `Epoch` operation and raises on underflow, so it binds and the helper
 carries the fault (`SPEC_ARITHMETIC.md` §4.3). -/
@@ -58,7 +58,7 @@ forkdef getFinalityDelay (state : State) : Checked Epoch := do
   let prevEpoch := previousEpochOf state
   prevEpoch - (sszGet state finalizedCheckpoint).epoch
 
-/-- `is_in_inactivity_leak` (`fulu/mainnet.py:1811-1812`): the finality delay exceeds
+/-- `is_in_inactivity_leak` (`fulu/mainnet.py:1801-1802`): the finality delay exceeds
 `MIN_EPOCHS_TO_INACTIVITY_PENALTY`. The comparison never raises, so the fault is the
 delay's own; it binds before the comparison. -/
 forkdef isInInactivityLeak (state : State) : Checked Bool := do
