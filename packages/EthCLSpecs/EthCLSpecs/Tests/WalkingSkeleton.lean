@@ -10,8 +10,8 @@ acceptance):
   StateTransitionError (Box Sha256 BeaconState)`, round-tripping `sszGet` /
   `sszUpdate` over the boxed state;
 - the fork-interface `stateRoot` decodes a `BeaconState` and reproduces its root;
-- the deferral safety net works: a `todo` stub a vector reaches fails loudly
-  (the driver classifies it out-of-scope, never a silent pass);
+- the deferral safety net works: a vector that reaches an `outOfScope` entry
+  (`runGenesis`) does not pass, and the driver reports it in the `outOfScope` (`skip`) bucket;
 - the generic driver dispatches a `CaseRequest` to the interface and classifies.
 -/
 

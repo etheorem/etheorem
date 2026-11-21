@@ -9,14 +9,15 @@ import SizzLean.Proofs.UncachedBox
 /-!
 # `EthCLSpecs.Proofs.Fulu.Balances`: what the balance mutators reject, and what they store
 
-The pyspec's `state.balances[index] += delta` reads a bare list, and remerkleable re-runs its
-`uint64` bound check on the result. The read raises `IndexError` past the end. The addition
-raises `ValueError` on overflow. `increaseBalance` reads through `sszGetIdx` and adds through
-the checked `Gwei` `+` (`CLUint64.add`, `SPEC_ARITHMETIC.md` §4.1), so it rejects on exactly
-those two conditions. In range and below the bound, the stored balance is the exact
-natural-number sum, with no wrap through `2 ^ 64`. The success and value readings go through
-the checked-chain laws (`SPEC_ARITHMETIC.md` §4.9): the range condition is `add_ok_iff`'s
-success condition on the plain values, and the stored value is `add_value`'s read-back.
+The pyspec's `state.balances[index] += delta` reads a bare list, and the `uint64` addition of
+`eth-ssz-specs` 0.1.0 checks the bound on the result. The read raises `IndexError` past the end.
+The addition raises `SSZValueError`, a `ValueError` subclass, on overflow. `increaseBalance` reads
+through `sszGetIdx` and adds through the checked `Gwei` `+` (`CLUint64.add`, `SPEC_ARITHMETIC.md`
+§4.2), so it rejects on exactly those two conditions. In range and below the bound, the stored
+balance is the exact natural-number sum, with no wrap through `2 ^ 64`. The success and value
+readings go through the checked-chain laws (`SPEC_ARITHMETIC.md` §4.9): the range condition is
+`add_ok_iff`'s success condition on the plain values, and the stored value is `add_value`'s
+read-back.
 
 `decrease_balance` clamps at zero, so its subtraction raises nothing. `decreaseBalance`
 therefore rejects on the read alone. Its stored balance is the truncating `Nat` difference, so
@@ -24,8 +25,8 @@ the `uint64` subtraction never wraps.
 
 These theorems do not bound the total balance, and that bound does not follow from the spec.
 `VALIDATOR_REGISTRY_LIMIT` times `MAX_EFFECTIVE_BALANCE_ELECTRA` is about `2 ^ 81`. The real
-bound is the ETH supply, which the consensus spec never gives. `processDeposit` carries the
-same gap.
+bound is the ETH supply, which the consensus spec never gives. Every caller of
+`increaseBalance`, `applyPendingDeposit` among them, carries the same gap.
 
 `increaseBalance` takes the state it writes as an explicit argument and returns the new one as
 its value. It never calls `set`, so a successful run leaves the threaded state untouched; the
@@ -223,8 +224,8 @@ theorem increaseBalance_run_no_wrap [Preset] [HasherTag] :
 
 `decreaseBalance` reads `balances` through `sszGetIdx`, as `increaseBalance` does, and then
 writes the floored difference. The floor is the pyspec's own `saturating_sub(balance, delta)`
-(v1.7.0-beta.4; earlier pins spelled it `0 if delta > balance else balance - delta`). The
-subtraction therefore raises nothing, and the index read is the only reject. -/
+(`fulu/minimal.py:1603`). The subtraction therefore raises nothing, and the index read is the
+only reject. -/
 
 /-- **Exact run equation.** Past the end of `balances` the run rejects with `.outOfBounds`. In
 range it returns the new state, `modBalance (pureState state) i …`, the source's own write with
@@ -269,7 +270,7 @@ theorem decreaseBalance_run_outOfRange [Preset] [HasherTag] :
   rfl
 
 /-- **In range, no underflow.** The whole-state equation writes the floored difference
-`saturatingSub balance delta` into that one balance. `decreaseBalance_run_toNat` reads the
+`saturatingSub balance delta` into that one balance. `decreaseBalance_written_toNat` reads the
 stored balance back as the truncating `Nat` difference, so a bare `UInt64` subtraction, which
 would wrap to a balance near `2 ^ 64` on the underflowing arm, is excluded. -/
 theorem decreaseBalance_run_no_underflow [Preset] [HasherTag] :

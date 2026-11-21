@@ -41,7 +41,7 @@ The `ForkInterface` rows matter for pass 2 specifically. Inside this
 module the preset is a statically known instance, so the compiler
 already sees which `SSZRepr` instance every call uses. The pyspec
 driver instead injects the preset as a *runtime* value
-(`gloasInterfaceFor mainnet mainnetConfig`), so its calls resolve the
+(`gloasInterfaceFor mainnet mainnetConfig gloasForkVersionMainnet`), so its calls resolve the
 instance through a dictionary. Comparing a `ForkInterface` row against
 the matching direct row prices that dispatch, which is exactly what a
 `@[specialize]` hint can remove.

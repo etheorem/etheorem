@@ -2,21 +2,20 @@ import EthCLSpecs.Fulu
 import EthCLSpecs.Heze
 
 /-!
-# `EthCLSpecs.Tests.FuluDeclarationsAuditPins`: the Stage 8.4a3 preset-view fix
+# `EthCLSpecs.Tests.FuluDeclarationsAuditPins`: the preset-view range pins
 
-Behavior pins for the Stage 8.4a3 audit of the Fulu declarations, state, withdrawals, and
-constants. The audit found one class of unjustified raw construction: seven checked preset
-views in `Fulu/Constants.lean` built as `CLUint64.trustedOfUInt64 (UInt64.ofNat n)`.
+Behavior pins for seven checked preset views in `Fulu/Constants.lean`. A view built as
+`CLUint64.trustedOfUInt64 (UInt64.ofNat n)` is an unjustified raw construction.
 `UInt64.ofNat` wraps a value past `2 ^ 64 - 1` before the wrapper sees it
 (`SPEC_ARITHMETIC.md` §4.5). The pinned module types each of the seven `Epoch` or `Uint64`
 (`EPOCHS_PER_SLASHINGS_VECTOR`, `EPOCHS_PER_ETH1_VOTING_PERIOD`,
 `EPOCHS_PER_SYNC_COMMITTEE_PERIOD`, `MAX_COMMITTEES_PER_SLOT`, `TARGET_COMMITTEE_SIZE`,
 `MAX_WITHDRAWALS_PER_PAYLOAD`, `MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP`), so a value of
-`2 ^ 64` raises when the module loads. The old view instead read such a preset as `0`, and
-`TARGET_COMMITTEE_SIZE = 2 ^ 64` then divided by zero inside `get_committee_count_per_slot`.
+`2 ^ 64` raises when the module loads. The raw view reads such a preset as `0`, and
+`TARGET_COMMITTEE_SIZE = 2 ^ 64` then divides by zero inside `get_committee_count_per_slot`.
 
-Each view is now `CLUint64.ofNatLT` over a new preset premise `…Lt : … < 2 ^ 64`, so that
-preset cannot be built.
+Each view is `CLUint64.ofNatLT` over a preset premise `…Lt : … < 2 ^ 64`, so that preset
+cannot be built.
 
 1. The premise boundary: `2 ^ 64 - 1` is admitted, `2 ^ 64` is not, and the pre-change
    route wrapped `2 ^ 64` to `0`.

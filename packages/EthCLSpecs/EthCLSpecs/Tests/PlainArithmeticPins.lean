@@ -5,12 +5,11 @@ import EthCLSpecs.Heze
 /-!
 # `EthCLSpecs.Tests.PlainArithmeticPins`: the plain-integer formula pins
 
-Behavior pins for the port of the pyspec's plain-integer formulas (spec arithmetic Stage 6.3):
-Python lengths, negative indices, zero divisors, mixed `min` / `max`, and empty sums. Each
-failure pin pairs with a nearby success that reaches the same operation, and the successes
-read back exact values. The pinned pyspec gives the same class or value at every pin
-(`.spike/stage6/oracle63.py` replays them). Every failure pin fails under the pre-port body,
-which the pin's own comment names.
+Behavior pins for the pyspec's plain-integer formulas: Python lengths, negative indices,
+zero divisors, mixed `min` / `max`, and empty sums. Each failure pin pairs with a nearby
+success that reaches the same operation, and the successes read back exact values. The pinned
+pyspec gives the same class or value at every pin. Every failure pin fails under the pre-port
+body, which the pin's own comment names.
 
 1. `integer_squareroot(n: Uint64) -> Uint64`: the total checked-kind root, with the pinned
    special case at `UINT64_MAX`. Value pins.
@@ -353,8 +352,7 @@ private def pinFuluSyncEmptyRaises : Bool :=
   | _ => false
 example : pinFuluSyncEmptyRaises = true := by native_decide
 
-/-- Four active validators: the pinned pyspec draws these 32 indices
-(`.spike/stage6/probe_sync_fix1.py`). -/
+/-- Four active validators: the pinned pyspec draws these 32 indices. -/
 example : okIs (fuluSyncIndices 4)
     [2, 2, 0, 1, 1, 1, 1, 2, 1, 3, 2, 2, 0, 0, 3, 0, 3, 2, 1, 2, 3, 2, 3, 0, 3, 0, 1, 1, 3, 2,
       0, 2] = true := by native_decide
@@ -433,7 +431,7 @@ example : okIs (builderWithdrawals
 /-! ### 9. `get_next_sync_committee_indices` (Gloas) -/
 
 /-- An empty active set: Gloas draws through `compute_balance_weighted_selection`, whose
-`assert total > 0` raises the assert class (`.spike/stage6/probe_sync_fix1.py`). -/
+`assert total > 0` raises the assert class. -/
 private def pinGloasSyncEmptyAsserts : Bool :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag

@@ -35,8 +35,6 @@ paired with the walk's `postRunnerStore`. Here `ilTxs` is the pure
 `mem_getInclusionListTransactions_iff` describes.
 
 At v1.7.0-beta.4 the function takes no `state`, and collecting the transactions cannot throw.
-alpha.12 recomputed the committee from a state and could raise an empty-committee or a
-missing-timeliness error; the corollaries that named those errors went with them.
 
 The theorems do not prove that a subsequent lookup returns the recorded
 value, because the generic `FcMap` interface does not provide an insert/lookup

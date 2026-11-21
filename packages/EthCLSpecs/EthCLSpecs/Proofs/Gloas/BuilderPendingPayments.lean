@@ -19,8 +19,9 @@ shifts the payment window down by `SLOTS_PER_EPOCH`, padding the vacated half wi
 
 The withdrawals side rests on `progressiveListFoldlPush_val`
 (`SizzLean.Proofs.ProgressiveListPush`): iterating `push` over a list of values ends at
-the original list plus every value, in order. Alpha.12 dropped
-`BUILDER_PENDING_WITHDRAWALS_LIMIT`, so there is no capacity clamp to assume.
+the original list plus every value, in order. The pinned spec types
+`builder_pending_withdrawals` as a progressive list with no limit, so the append has no
+capacity check to assume.
 
 The window side is a direct instance of `shiftWindow`'s general behavior:
 `expectedPaymentWindow_get_lt` / `expectedPaymentWindow_get_upper` state the two
@@ -691,7 +692,7 @@ theorem processBuilderPendingPayments_run [Preset] [HasherTag] :
     (fun i => (vget preState.builderPendingPayments i).weight ≥ quorum)
     (fun i => (vget preState.builderPendingPayments i).withdrawal) preState
   unfold processBuilderPendingPayments builderPaymentQuorum
-  -- Re-elaborate the source shape here: the threshold call rides `liftErr`,
+  -- Re-elaborate the source shape here: the threshold call goes through `liftErr`,
   -- the loop term matches `hloop`'s left side, and the final `sszUpdate` reduces
   -- against the record-update form on the right.
   show (do
