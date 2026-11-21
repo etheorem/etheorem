@@ -18,10 +18,10 @@ shapes, for the record:
   `failed to synthesize instance of type class OfNat CLUint64
   18446744073709551616`, the same shape through a reducible alias (the
   alias's name stands in for the type).
-- The power ascription `2 ^ 64` fails earlier, with
+- The power ascription `2 ^ 64` written at the bare checked type fails earlier, with
   `failed to synthesize instance of type class HPow CLUint64 Nat CLUint64`:
-  no checked power route exists yet, so the out-of-range value cannot be
-  written this way either.
+  the checked power returns `Checked CLUint64` (`SPEC_ARITHMETIC.md` §5.1), so the
+  out-of-range value cannot be written this way either.
 - A non-reducible alias (a plain `def` of `CLUint64`) takes no literals at
   all, in range included, because instance search does not unfold a plain
   `def`: `failed to synthesize instance of type class OfNat SlowAlias 5`.

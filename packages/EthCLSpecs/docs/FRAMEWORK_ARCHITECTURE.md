@@ -328,7 +328,7 @@ section
 variable [Preset] [Config]
 
 forkabbrev slotsPerEpoch : Nat := Preset.slotsPerEpoch          -- carries [Preset]
-forkabbrev farFutureEpoch : Epoch := 2 ^ 64 - 1                 -- carries nothing
+forkabbrev farFutureEpoch : Epoch := 0xffffffffffffffff         -- carries nothing
 forkabbrev genesisForkVersion : Version := Config.genesisForkVersion  -- carries [Config]
 
 end
@@ -508,12 +508,19 @@ monad's exception parameter is one of these types.
 inductive StateTransitionError where
   | assert (descr : String)          -- a spec assertion failed
   | todo (what : String)             -- an unimplemented branch
+  | outOfScope (what : String)       -- a branch we do not model
   | outOfBounds (idx bound : Nat)    -- indexed access past the end
+  | arithmetic (descr : String)      -- a checked range fault
+  | zeroDivision (descr : String)    -- a zero divisor
+  | listFull (field : String)        -- a list over its limit
+  | notInList (descr : String)       -- a `list.index` lookup miss
 
 inductive StoreTransitionError where
   | assert (descr : String)
   | todo (what : String)
+  | outOfScope (what : String)
   | missingKey (key : Root)          -- an FcMap lookup found nothing
+  | decodeFailure (what : String)    -- a step input that did not decode
   | transition (e : StateTransitionError)  -- a nested-transition failure
 ```
 
@@ -524,22 +531,34 @@ transition failure has to surface (the effect-monad architecture section owns th
 bridge).
 
 Constructors carry typed terms per failure kind rather than a baked string, in
-keeping with the project's stringly-typed-is-a-smell principle. The two exceptions
-are `assert`'s `descr` (rendered from the asserted expression's syntax) and
-`todo`'s `what`. Both are diagnostic strings, printed only on a vector mismatch and
-never branched on, since the vectors record valid-or-invalid and never a reason.
+keeping with the project's stringly-typed-is-a-smell principle. The `String`
+payloads (`assert`'s `descr`, rendered from the asserted expression's syntax, and
+the `what`, `descr`, or `field` of the other constructors) are diagnostic only. The
+driver prints them on a vector mismatch and never branches on them, since the
+vectors record valid-or-invalid and never a reason.
 The error *constructor* is what counts, and the pyspec harness reads
 it in its classify mode:
 
 | Constructor | Classify-mode meaning |
 |---|---|
 | `assert` | an expected rejection, unless the case's own wrapper catches only `ValueError` (`SPECS_ARCHITECTURE.md` §10.2) |
-| `todo` | an unimplemented branch; flagged out-of-scope, not counted as a rejection |
-| `outOfBounds` / `decodeFailure` | a smell; the spec should not hit these on well-formed input, so they surface as likely bugs |
+| `todo` | an unimplemented branch, a work-queue item; reported `xfail`, never counted as a rejection |
+| `outOfScope` | a branch we deliberately do not model; reported `skip`, never counted as work or as a rejection |
+| `outOfBounds` / `decodeFailure` | a smell; the spec should not hit these on well-formed input, so they surface as likely bugs. Under `expect_assertion_error` an `outOfBounds` (`IndexError`) still counts as the rejection of an invalid vector, flagged |
 | `missingKey` | a fault the reference propagates rather than catches, so it never counts as a rejection |
 | `arithmetic` | the same, except under a case whose own wrapper catches `ValueError` (`SPECS_ARCHITECTURE.md` §10.2) |
 | `zeroDivision` | a zero divisor. At the `eth-ssz-specs` 0.1.0 pin the reference raises a bare `ZeroDivisionError`, which no wrapper's class set holds, so it never counts as a rejection |
 | `listFull` | a list over its limit, from an append or a constructor. At the 0.1.0 pin the reference raises a `ValueError` in both places (`SSZValueError` on an append, a pydantic `ValidationError` on the constructor), so it passes under the one `except ValueError` wrapper (`SPECS_ARCHITECTURE.md` §10.2) and fails everywhere else |
+| `notInList` | a `list.index` lookup miss, such as `process_sync_aggregate`'s committee pubkey that no validator carries. The reference raises a plain `ValueError`, so it passes under the one `except ValueError` wrapper (`SPECS_ARCHITECTURE.md` §10.2) and fails everywhere else |
+
+The two arithmetic constructors carry the typed cause of a checked fault. `ArithCause`
+(`Spec/Errors.lean`) names the Python class the pinned integer library raises: `.range`
+for an `SSZValueError`, a Python `ValueError`, and `.zeroDivision` for a bare
+`ZeroDivisionError`. A checked expression fails with an `ArithFault` that carries its
+cause (§10). `StateTransitionError.ofArithFault` maps `.range` to `.arithmetic` and
+`.zeroDivision` to `.zeroDivision`, so the reject keeps the cause and no code reads it
+back from the diagnostic text. The store machine receives the same reject wrapped as
+`.transition`.
 
 ### 6.1 `todo` as the deferral work-queue
 
@@ -801,7 +820,9 @@ The access primitives are SizzLean's generic macros, used directly.
 
 ```lean
 def incrementSlot : StateTransition Unit := do
-  modifyState fun state => sszUpdate state with slot := sszGet state slot + 1
+  -- `slot + 1` is the checked `Slot` add, so it binds before the store.
+  let nextSlot ← (sszGet (← get) slot) + 1
+  modifyState fun state => sszUpdate state with slot := nextSlot
 
 def checkSlot (expected : Slot) : StateTransition Unit := do
   let state ← get
@@ -903,35 +924,52 @@ types late-bind in the Gloas namespace, so `blockStates` picks up Gloas's
 
 ## 10. The arithmetic layer
 
-Arithmetic stays in `UInt64`, matching SSZ `uint64` semantics: `Gwei = UInt64`,
-fast and native. The `pyspec`'s operation order is transcribed faithfully. The
-spec keeps intermediates in range, it divides before multiplying and floors
-subtraction with `min` rather than underflow-wrapping, so the `UInt64` computation
-neither overflows nor errors and equals the `pyspec`'s unbounded result.
+The arithmetic layer models the pyspec's two integer kinds. `SPEC_ARITHMETIC.md` is
+the contract: it fixes the operation matrix, the binding rules, and the conversion
+names. This section says where each part lives in `EthCLLib` and how the parts fit.
 
-Operation order is never reordered for convenience. Under truncating division
-`(a * b) / c` and `(a / c) * b` differ, so faithful transcription is the rule, not
-a cheaper reorder. The spec's explicit floors, `decreaseBalance`'s `min` for
-instance, are reproduced as spec logic, with no reliance on wraparound either way.
+| Module | Holds |
+|---|---|
+| `Spec/Checked.lean` | `ArithFault`, `Checked α` (`Except ArithFault α`), and the one lift into the machine monads |
+| `Spec/CLUint.lean` | `CLUint64` and `CLUint8`, the checked kind: private constructors, kernel-checked literals, the checked conversions, and the raising operator matrix |
+| `Spec/CLInt.lean` | `CLInt`, the plain kind: total `+ - *`, floor division, and the mixed routes with `CLUint64` |
+| `Spec/CLTotal.lean` | the proved-total routes: `PositiveDivisor`, same-width bitwise operations, right shift, and `integerSquareroot` |
+| `Spec/Elab.lean` | the scoped operator elaborator, active while `EthCLLib.Spec` is open |
+| `Spec/Arith.lean` | `isqrt` on `Nat`, the raw-word helpers `umax` / `umin` / `saturatingSub`, the `ValidModulus` / `vmodGet` modulo-bound route, the codec helpers over raw machine words (`uint64ToBytes`, the type-directed `uintToBytes`), and the byte and collection helpers |
 
-`Nat` is the fallback only where a computation's faithful order genuinely needs an
-intermediate above `2^64` (to be verified against the `pyspec`, likely few or none)
-or where `Nat` is much simpler. There the result narrows back with an exact
-`UInt64.ofNat`, never a reject. There is no `Nat` tier in the state itself; `Nat`
-appears only as a transient intermediate.
+A fork body declares its unit types (`Slot`, `Epoch`, `Gwei`, `ValidatorIndex`, and
+the others) as abbreviations of `CLUint64`, and `ParticipationFlags` as `CLUint8`. No
+core operator instance applies to these types, so a wrapping `UInt64` operation never
+reaches a spec value. An operator that can raise returns `Checked`, and a `do` block
+binds the whole expression once with `←`. The lift `MonadLift (Except ArithFault) m`
+carries the fault into any monad whose error accepts a `StateTransitionError`, and
+`StateTransitionError.ofArithFault` keeps its typed cause (§6).
 
-The framework provides `umax`, `umin`, and `isqrt` (the integer square root the
-committee math needs), and a type-directed `uintToBytes` whose width follows from
-the value's type. The width-from-type discipline removes a whole bug class, the
-4-versus-8-byte serialization mistake, by never letting the author pick the width
-by hand.
+Each step runs its own range test, in the pyspec's operation order. In `a * b / c` the
+product raises past `2^64 - 1` even where the quotient fits, so a reorder can change the
+answer and the body never reorders. A plain `CLInt` operand meets a checked operand on
+the original values, and only the result takes the range test. The spec's explicit
+floors, `saturating_sub` for instance, stay spec logic (`CLUint64.saturatingSub`).
+Lean `Nat` holds structural counts, termination measures, and positions the framework
+already bounds. It is not a spec integer kind.
 
-For proofs, the framework provides a library of `UInt64`-to-`Nat` correspondence
-lemmas, `(a + b).toNat = a.toNat + b.toNat` under a no-overflow bound and the like.
-A proof lifts `UInt64` arithmetic into `Nat` for clean reasoning about sums and
-bounds, then lifts the result back, discharging the no-overflow side conditions
-from the spec's invariants. The runtime body stays fast in `UInt64` while proofs
-get `Nat`'s ease.
+Conversion names state the result type: `toCLInt` returns `CLInt`, `toPlainNat` returns
+Lean `Nat`, and `toPlainInt` returns Lean `Int`. `CLUint64.ofNat?` and `toCLUint64?`
+are the checked narrowings, the pyspec's `Uint64(n)`. `ofNatLT` (with a range proof)
+and `trustedOfUInt64` (from a raw word) serve the codec, the constants, and the
+proved-total routes. They never repair an operator elaboration error.
+
+Byte data stays outside spec arithmetic. A fork body passes a checked value's
+underlying word to the codec helper at the boundary (`uint64ToBytes epoch.val`).
+`uintToBytes` takes its width from the value's type, so the author never picks it by
+hand. That removes the 4-versus-8-byte serialization mistake.
+
+For proofs, `EthCLLib.Proofs.CLUint` and `EthCLLib.Proofs.CLInt` hold the law library:
+success conditions (`add_ok_iff`, `sub_ok_iff`, and the others), value laws
+(`add_value`, `sub_value`), chain and checked-fold lemmas, conversion round-trips, and
+the lift laws. A proof reads a checked value through `toPlainNat` and reasons in `Nat`
+under the success condition of each step. Every law is a kernel proof within the axioms
+`propext`, `Classical.choice`, and `Quot.sound`.
 
 ---
 
@@ -1167,13 +1205,14 @@ span workers. The plumbing to build is small: the Lean server request/result loo
 and the pytest fixture managing the subprocess.
 
 The report distinguishes the classify buckets from the error model: a passing
-case, an expected rejection (`assert` against an invalid vector), an out-of-scope
-deferral (`todo`), a likely bug (`outOfBounds` / `decodeFailure` on well-formed
+case, an expected rejection (`assert` against an invalid vector), a work-queue
+deferral (`todo`, reported `xfail`), a branch we do not model (`outOfScope`, reported
+`skip`), a likely bug (`outOfBounds` / `decodeFailure` on well-formed
 input), and an uncaught fault (`missingKey` / `arithmetic` / `zeroDivision` /
-`listFull`, which the
+`listFull` / `notInList`, which the
 reference propagates). Whether a reject passes its invalid vector is read from the case's own
-`RunnerCaughtSet` (§6), so an `.arithmetic` fault and a `.listFull` fault pass under the
-one `except ValueError` wrapper (`epoch_processing` / `registry_updates`), and a
+`RunnerCaughtSet` (§6), so an `.arithmetic`, a `.listFull`, and a `.notInList` fault pass
+under the one `except ValueError` wrapper (`epoch_processing` / `registry_updates`), and a
 `.zeroDivision` fault fails under every wrapper. A `todo` that a vector actually reaches fails
 loudly rather than passing silently, which is the deferral safety net at work.
 
@@ -1199,8 +1238,11 @@ The framework's own self-tests cover what it adds:
   backend's answer, so memoization never changes a result.
 - **Inheritance-macro dispatch.** The capture/replay of the capturing declaration
   forms resolves to the child's overrides, so an inherited caller late-binds.
-- **The arithmetic correspondence lemmas.** The `UInt64`-to-`Nat` lemmas hold
-  (basic `UInt64` lemmas are stdlib, so they are not re-proved).
+- **The checked arithmetic.** Behavior pins for every operator, conversion, literal,
+  and index route of the arithmetic layer (`Tests/CLUintArith.lean`,
+  `Tests/CLIntArith.lean`, `Tests/CLTotalArith.lean`, `Tests/CLUintLit.lean`,
+  `Tests/CLIndex.lean`), the elaborator's scope and fallback (`Tests/CLCheckedElab.lean`),
+  and the law library's chain reductions (`Tests/CLArithLaws.lean`).
 
 These are Lean-internal unit tests, written as `#guard` / `native_decide` /
 `example`, distinct from the `pytest` vector harness. The project has two test
@@ -1276,9 +1318,9 @@ Seven anti-patterns the framework avoids in every definition, in order of severi
    and a proof that quantifies over all store keys needs `treeMap`. The `FcMap`
    abstraction supports both, and the pure path uses `treeMap`.
 
-Two further facts the design records for the eventual proof work. The
-`UInt64`-to-`Nat` correspondence lemmas let arithmetic proofs reason in `Nat` under
-no-overflow bounds while the runtime stays `UInt64`. And inheritance is by symbol,
+Two further facts the design records for the proof work. The checked-arithmetic law
+library (§10) lets a proof read each checked step through `toPlainNat` and reason in
+`Nat` under that step's success condition. And inheritance is by symbol,
 so a property about a caller is proved per fork; `Fulu.processOperations` and
 `Gloas.processOperations` are distinct symbols, and proof reuse across forks is a
 known cost, accepted while proofs are deferred. The theorems module is the

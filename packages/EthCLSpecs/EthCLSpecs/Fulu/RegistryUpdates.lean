@@ -58,14 +58,14 @@ forkdef getBalanceChurnLimit (state : State) : Except StateTransitionError Gwei 
   let limit ← churn - rounded
   return limit
 
-/-- `get_activation_exit_churn_limit` (`fulu/mainnet.py:5980-5985`):
+/-- `get_activation_exit_churn_limit` (`fulu/mainnet.py:5980-5984`):
 `min(config.MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT, get_balance_churn_limit(state))`.
 The churn limit binds first, the comparison picks an operand. -/
 forkdef getActivationExitChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let churn ← getBalanceChurnLimit state
   return min Const.maxPerEpochActivationExitChurnLimit churn
 
-/-- `get_consolidation_churn_limit` (`fulu/mainnet.py:5988-5990`): the balance
+/-- `get_consolidation_churn_limit` (`fulu/mainnet.py:5987-5988`): the balance
 churn limit minus the activation/exit one, both bound before the checked
 subtraction. -/
 forkdef getConsolidationChurnLimit (state : State) : Except StateTransitionError Gwei := do
@@ -78,7 +78,7 @@ forkdef getConsolidationChurnLimit (state : State) : Except StateTransitionError
 
 /-- The Electra churn-reservation arithmetic core shared by
 `compute_exit_epoch_and_update_churn` and `compute_consolidation_epoch_and_update_churn`
-(`fulu/mainnet.py:6034-6042`): given the `balance` to reserve, the churn already
+(`fulu/mainnet.py:6038-6042`): given the `balance` to reserve, the churn already
 `consume`d this epoch, and the `perEpoch` churn limit, return the assigned `Epoch`
 and the new consumed total. When `balance` fits in the remaining budget
 (`balance ≤ consume`) the epoch and consumption are unchanged; otherwise the leftover is
@@ -86,7 +86,7 @@ spread forward by the ceiling-division `(balanceToProcess - 1) / perEpoch + 1`, 
 `-1 … +1` rounding the quotient up. Every step is the pyspec's checked arithmetic, so the
 core returns a `Checked` pair and each branch binds its own arithmetic.
 
-`earliest` and `additional` are both on the checked surface now: the pyspec's
+`earliest` and `additional` are both on the checked surface: the pyspec's
 `earliest_exit_epoch += Epoch(additional_epochs)` cast cannot fault (same width),
 so the sum is the checked `Epoch` add itself. -/
 forkdef reserveChurn (balance consume perEpoch : Gwei) (earliest : Epoch) :
@@ -99,7 +99,7 @@ forkdef reserveChurn (balance consume perEpoch : Gwei) (earliest : Epoch) :
     return (sum, consumed)
   else return (earliest, consume)
 
-/-- `compute_exit_epoch_and_update_churn` (`fulu/mainnet.py:6026-6049`): reserve
+/-- `compute_exit_epoch_and_update_churn` (`fulu/mainnet.py:6026-6048`): reserve
 exit churn, returning the assigned exit epoch and advancing the bookkeeping.
 The per-epoch churn limit and the reservation arithmetic are checked `Gwei`
 chains, so each binds where the pyspec assigns it. -/
@@ -137,7 +137,7 @@ forkdef computeConsolidationEpochAndUpdateChurn (consolidationBalance : Gwei) : 
 
 /-! ## Validator-lifecycle mutators -/
 
-/-- `initiate_validator_exit` (`fulu/mainnet.py:1612-1631`). The
+/-- `initiate_validator_exit` (`fulu/mainnet.py:1614-1628`). The
 `withdrawable_epoch = exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY` sum is the pyspec's
 checked `Epoch` addition, so it binds (`SPEC_ARITHMETIC.md` §4.3) and raises past `2^64 - 1`;
 `test_invalid_large_withdrawable_epoch` catches that raise in its own `except ValueError`
@@ -153,10 +153,10 @@ forkdef initiateValidatorExit (i : ValidatorIndex) : StateTransition Unit := do
     modifyState fun state => modValidator state i fun validator =>
       { validator with exitEpoch := exitEpoch, withdrawableEpoch := withdrawableEpoch }
 
-/-- `slash_validator` (whistleblower = proposer; `fulu/mainnet.py:1631-1661`).
+/-- `slash_validator` (whistleblower = proposer; `fulu/mainnet.py:1631-1659`).
 The `slashings` ring store and the penalty / reward chain are the checked
 `Gwei` surface: the ring `+=` reads, adds, and stores
-(`fulu/mainnet.py:1644`), the penalty divides by
+(`fulu/mainnet.py:1646`), the penalty divides by
 `MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA`, and the whistleblower reward splits by
 `PROPOSER_WEIGHT // WEIGHT_DENOMINATOR`, each step a checked `Gwei` operation
 bound where the pyspec forms it. The withdrawability extension is the pyspec's

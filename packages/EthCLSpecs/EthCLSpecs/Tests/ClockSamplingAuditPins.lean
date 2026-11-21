@@ -3,19 +3,18 @@ import EthCLSpecs.Fulu
 /-!
 # `EthCLSpecs.Tests.ClockSamplingAuditPins`: the clock, sampling, and fork-choice audit pins
 
-Pins for the manual audit of the Fulu clock, sampling, and fork-choice files (Stage 8.4a2).
-The audit changed no behavior. These pins hold two of its proof justifications to the
-pinned pyspec, so the build fails if a later edit breaks them. Every value comes from the
-pinned pyspec (1.7.0b4).
+Pins for two proof justifications in the Fulu clock, sampling, and fork-choice files. The
+pins hold each justification to the pinned pyspec, so the build fails if an edit breaks
+one. Every value comes from the pinned pyspec (1.7.0b4).
 
 1. `on_tick_per_slot` binds `compute_slots_since_epoch_start(current_slot)` above the
-   branch where Python's `and` forms it. The audit accepts the eager bind because neither
-   step can raise: the epoch-start slot is at most the slot. At `slot = UINT64_MAX` the
+   branch where Python's `and` forms it. The eager bind is safe because neither step can
+   raise: the epoch-start slot is at most the slot. At `slot = UINT64_MAX` the
    start slot is `2^64 - 8` at minimal and `2^64 - 32` at mainnet, and the difference is
    `7` and `31`.
 2. `compute_committee` iterates `range(start, end)` as the `Nat` difference
-   `stop - start`. The audit accepts the truncated subtraction because `end ≥ start` for
-   every `index`, so the difference is zero exactly where Python's range is empty. Two
+   `stop - start`. The truncated subtraction is exact because `end ≥ start` for every
+   `index`, so the difference is zero exactly where Python's range is empty. Two
    indices over four committees of two validators read the empty range, and the three
    committees of eight validators partition the shuffled registry.
 
@@ -60,7 +59,8 @@ example : pinSinceEpochStartMaxMainnet = true := by native_decide
 
 /-- Runs `compute_committee` over the indices `0 … n - 1` and a zero seed, reading back the
 committee's indices. -/
-private def committeeOf (n : Nat) (index count : CLUint64) : Except ArithFault (List Nat) :=
+private def committeeOf (n : Nat) (index count : CLUint64) :
+    Except StateTransitionError (List Nat) :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   (computeCommittee ((Array.range n).map fun i => ((CLUint64.ofNat? i).toOption.getD 0))
@@ -69,15 +69,15 @@ private def committeeOf (n : Nat) (index count : CLUint64) : Except ArithFault (
 /-- Two validators, four committees. Indices `0` and `2` give `start = end`, so the range is
 empty. Indices `1` and `3` give one member each. -/
 private def pinCommitteeEmptyRanges : Bool :=
-  committeeOf 2 0 4 == .ok [] && committeeOf 2 1 4 == .ok [1]
-    && committeeOf 2 2 4 == .ok [] && committeeOf 2 3 4 == .ok [0]
+  (committeeOf 2 0 4).toOption == some [] && (committeeOf 2 1 4).toOption == some [1]
+    && (committeeOf 2 2 4).toOption == some [] && (committeeOf 2 3 4).toOption == some [0]
 example : pinCommitteeEmptyRanges = true := by native_decide
 
 /-- Eight validators, three committees: the bounds `0, 2, 5, 8` split the shuffled registry
 `[4, 1, 0, 2, 6, 5, 3, 7]` into three consecutive slices. -/
 private def pinCommitteePartition : Bool :=
-  committeeOf 8 0 3 == .ok [4, 1] && committeeOf 8 1 3 == .ok [0, 2, 6]
-    && committeeOf 8 2 3 == .ok [5, 3, 7]
+  (committeeOf 8 0 3).toOption == some [4, 1] && (committeeOf 8 1 3).toOption == some [0, 2, 6]
+    && (committeeOf 8 2 3).toOption == some [5, 3, 7]
 example : pinCommitteePartition = true := by native_decide
 
 end EthCLSpecs.Tests.ClockSamplingAuditPins

@@ -157,7 +157,9 @@ penalties. The participant pubkey list is the bit-selected committee keys, and
 majority-subtraction branches start from the cached `aggregate_pubkey` instead, so the
 answers agree whenever that aggregate is the sum of the committee's `pubkeys`, as
 `get_next_sync_committee` builds it. The crypto seam has no point addition or negation to
-model those branches; `IMPLEMENTATION_NOTES.md` records the divergence. -/
+model those branches; `IMPLEMENTATION_NOTES.md` records the divergence. A committee pubkey
+that no validator carries raises `.notInList`, the pinned `list.index` `ValueError`, before
+any balance changes. -/
 forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let state ← get
 
@@ -187,22 +189,29 @@ forkdef processSyncAggregate (agg : SyncAggregate) : StateTransition Unit := do
   let participantReward ← maxParticipantRewards / Const.syncCommitteeSize
   let proposerReward ← participantReward * Const.proposerWeight / (Const.weightDenominator - Const.proposerWeight)
   let proposerIdx := getBeaconProposerIndex state
-  let validators := (sszGet state validators).toArray
+
+  -- `committee_indices` (`fulu/minimal.py:4515-4518`): resolve every committee pubkey to
+  -- its registry index before the reward loop, left to right as the comprehension runs.
+  -- `all_pubkeys.index(pubkey)` raises a plain `ValueError` on a pubkey no validator
+  -- carries, so a miss faults before any balance changes and before the cast of any
+  -- later position. `Vector.mapM` keeps the committee's length, so the loop below indexes
+  -- the result with the same range proof it uses on the bits.
+  let committeeIndices : Vector ValidatorIndex Const.syncCommitteeSize ←
+    syncCommittee.pubkeys.mapM fun pk => do
+      match validatorIndexByPubkey? state pk with
+      -- `ValidatorIndex(all_pubkeys.index(pubkey))`: the pyspec's checked cast.
+      | some pIdx => CLUint64.ofNat? pIdx
+      | none => throw (.notInList "process_sync_aggregate: all_pubkeys.index(pubkey)")
 
   -- Reward participants (and the proposer), penalize non-participants.
   let mut state := state
   for h : i in [0:Const.syncCommitteeSize] do
-    let pk := syncCommittee.pubkeys[i]
-    match validators.findIdx? (·.pubkey == pk) with
-    | some pIdx =>
-      -- `ValidatorIndex(all_pubkeys.index(pubkey))`: the pyspec's checked cast.
-      let participantIndex ← CLUint64.ofNat? pIdx
-      if bitGet bits i then
-        state ← increaseBalance state participantIndex participantReward
-        state ← increaseBalance state proposerIdx proposerReward
-      else
-        state ← decreaseBalance state participantIndex participantReward
-    | none => pure ()
+    let participantIndex := committeeIndices[i]
+    if bitGet bits i then
+      state ← increaseBalance state participantIndex participantReward
+      state ← increaseBalance state proposerIdx proposerReward
+    else
+      state ← decreaseBalance state participantIndex participantReward
   set state
 
 /-- `process_execution_payload` (Fulu, `fulu/beacon-chain.md`, "Modified

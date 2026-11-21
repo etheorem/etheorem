@@ -14,9 +14,7 @@ import SizzLean.Proofs.UncachedBox
 At v1.7.0-beta.4 the store is keyed by `(slot, dependent_root)` and each stored entry carries
 its own timeliness, so `getInclusionListTransactions` is pure: it filters the key's items
 (`inclusionListItems`, the spec's `inclusion_lists[key].items()`) to the counted ones and
-deduplicates their transactions. alpha.12 derived the committee from a state inside the
-accessor and raised on a missing timeliness record; both are gone, and the throwing theorems
-that described them went with them.
+deduplicates their transactions.
 
 This module proves the committee run equation and its empty-committee error, then the
 transactions contract: a transaction is in the result exactly when some counted item's list
@@ -34,7 +32,7 @@ namespace EthCLSpecs.Proofs.Heze
 
 open EthCLLib.Proofs (ForkChoiceStoreRun run_bind run_pure except_bind_ok except_bind_error
   run_liftErr_of_ok run_liftErr_of_error mem_arrayUnion_iff nodup_arrayUnion)
-open EthCLLib.Spec (HasherTag MapKind FcMap htr StoreTransitionError arrayUnion)
+open EthCLLib.Spec (HasherTag MapKind FcMap htr StoreTransitionError arrayUnion liftErr)
 open EthCLSpecs.Heze (Preset Store State BeaconState Root Slot ValidatorIndex InclusionList
   Transaction InclusionListStore InclusionListEntry getInclusionListCommittee
   getInclusionListTransactions inclusionListItems isCountedInclusionList countedInclusionLists
@@ -62,11 +60,12 @@ theorem cyclicSample_empty {α : Type} (n : Nat) (hn : 0 < n) :
 binds first: its active-set `ValidatorIndex` casts are checked, so a fault there
 ends the run. The concatenated indices expression is the one in the source: the
 monadic fold over the slot's committees, each `get_beacon_committee` bound as it
-forms (its checked seed walk can reject, and that fault propagates through the
-fold). The fold runs over the plain positions below the checked count. The
-result is `cyclicSample` of the concatenation: its fault (the zero-divisor fault
-of an empty concatenation) becomes the wrapped store reject, and its value
-returns with the runner state unchanged. The committee accessor does not read
+forms (its checked seed walk and the shuffled-index assert of `compute_committee`
+can reject, and that fault propagates through the fold). The fold runs over the
+plain positions below the checked count. The result is `cyclicSample` of the
+concatenation: its fault (the zero-divisor fault of an empty concatenation)
+becomes the wrapped store reject, and its value returns with the runner state
+unchanged. The committee accessor does not read
 the runner state, so the equation holds for an arbitrary `σ`. -/
 @[characterizes EthCLSpecs.Heze.getInclusionListCommittee]
 theorem getInclusionListCommittee_run_eq :
@@ -83,7 +82,7 @@ theorem getInclusionListCommittee_run_eq :
         match ((Array.foldlM
             (fun acc i => do
               let committeeIndex ← liftM (EthCLLib.Spec.CLUint64.ofNat? i)
-              let committee ← liftM (getBeaconCommittee (pureState state) slot committeeIndex)
+              let committee ← liftErr (getBeaconCommittee (pureState state) slot committeeIndex)
               pure (acc ++ committee))
             (#[] : Array ValidatorIndex)
             (Array.range count.toPlainNat) :
@@ -115,7 +114,7 @@ theorem getInclusionListCommittee_run_eq :
     cases hf : ((Array.foldlM
         (fun acc i => do
           let committeeIndex ← liftM (EthCLLib.Spec.CLUint64.ofNat? i)
-          let committee ← liftM (getBeaconCommittee (pureState state) slot committeeIndex)
+          let committee ← liftErr (getBeaconCommittee (pureState state) slot committeeIndex)
           pure (acc ++ committee))
         (#[] : Array ValidatorIndex)
         (Array.range count.toPlainNat) :
@@ -143,7 +142,7 @@ theorem getInclusionListCommittee_run_error_of_empty
     (h : ((Array.foldlM
         (fun acc i => do
           let committeeIndex ← liftM (EthCLLib.Spec.CLUint64.ofNat? i)
-          let committee ← liftM (getBeaconCommittee (pureState state) slot committeeIndex)
+          let committee ← liftErr (getBeaconCommittee (pureState state) slot committeeIndex)
           pure (acc ++ committee))
         (#[] : Array ValidatorIndex)
         (Array.range count.toPlainNat) :

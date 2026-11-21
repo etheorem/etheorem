@@ -18,10 +18,10 @@ operator and the two operands as plain values, diagnostic only: the runner
 never branches on them.
 
 This module is the semantic core. It holds instances and definitions alone, so
-the proof modules import it without any authoring elaborator. Stage 3 owns the
-operator surface (`Spec/Elab.lean`, the scoped elaborator) and the lift into
-the transition monads, which this module carries beside the fault type
-(`SPEC_ARITHMETIC.md` §4.4).
+the proof modules import it without any authoring elaborator. The operator
+instances live in `Spec/CLUint.lean` and `Spec/CLInt.lean`, and the scoped
+elaborator in `Spec/Elab.lean`. This module also carries the lift into the
+transition monads (`SPEC_ARITHMETIC.md` §4.4), beside the fault type.
 -/
 
 set_option autoImplicit false
@@ -30,7 +30,7 @@ namespace EthCLLib.Spec
 
 /-- The typed cause of an arithmetic raise.
 
-`cause` reuses `ArithCause`, the reference-exception-class seam Stage 1 pinned:
+`cause` reuses `ArithCause` (`Spec/Errors.lean`), the reference-exception-class seam:
 `.range` is an `SSZValueError` (a Python `ValueError`) at the pin and
 `.zeroDivision` is a bare `ZeroDivisionError`, so the runner's caught sets can
 keep the two apart without reading text.

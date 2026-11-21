@@ -4,17 +4,16 @@ import EthCLSpecs.Gloas.EpochProcessing
 /-!
 # `EthCLSpecs.Proofs.Gloas.GetPtc`: the `get_ptc` else-branch offset bound
 
-`EthCLSpecs.Gloas.getPtc` (`Gloas/Operations.lean:566-592`) reads the cached
+`EthCLSpecs.Gloas.getPtc` (`Gloas/Operations.lean:566-596`) reads the cached
 Payload Timeliness Committee for a slot out of the `ptcWindow` ring buffer. Its
 `if`-branch (a slot in the previous epoch) reads through `vmodGet`, already
-proof-carrying and safe by construction. Its `else`-branch computes a raw
-`UInt64` offset, `(epoch - stateEpoch + 1) * spe + slot % spe`, and reads
-`ptcWindow` at it via the total `vget`, so an out-of-range offset would not
-correspond to the intended cached committee. Inside `getPtc` the branch's
+proof-carrying and safe by construction. Its `else`-branch computes the offset
+`(epoch - stateEpoch + 1) * spe + slot % spe` through a checked chain. It reads
+`ptcWindow` at the offset's plain value via the total `vget`, so an out-of-range offset
+would not correspond to the intended cached committee. Inside `getPtc` the branch's
 `MIN_SEED_LOOKAHEAD` assert bounds the offset. This file proves the bound from the
 slot relation of each of `getPtc`'s two guarded call sites, with no appeal to that
-assert. The `GLOAS_FORK_EPOCH` assert that opens `getPtc` at v1.7.0-beta.4 does not
-touch the offset, so neither bound changed.
+assert. The `GLOAS_FORK_EPOCH` assert that opens `getPtc` does not touch the offset.
 
 `getPtcElseOffset_lt_next_slot` covers the slot-successor guard used by
 `processPayloadAttestation`. `getPtcElseOffset_lt_same_slot` covers the
@@ -22,13 +21,12 @@ same-slot guard used by fork-choice replay paths. Calls without an established
 relation between the queried slot and state slot are outside this module's
 index-correctness scope.
 
-`getPtcElseOffset_lt_next_slot` states its bound at the `Nat` level (`hcaller`
-via `UInt64.toNat`), not over the raw `UInt64` `slot + 1 == curSlot`: at
-`slot = UInt64.max` that reading wraps to `0`, so the caller's guarantee could
-hold by wraparound while the bound itself fails. `Nat` equality has no such
-wraparound.
+`getPtcElseOffset_lt_next_slot` states the caller's guard at the `Nat` level
+(`hcaller`, through `toPlainNat`). The caller forms `data.slot + 1` as a checked
+`Slot` add, which raises when `data.slot` is `2 ^ 64 - 1`. So a run that passes
+the guard has the `Nat` equality, and the statement needs no `Checked` value.
 
-The migrated `getPtc` computes the offset through the checked `Epoch` chain
+`getPtc` computes the offset through a checked chain
 (`diff ← epoch - stateEpoch`, `offset ← diff + 1`, `scaled ← offset *
 SLOTS_PER_EPOCH`, `idx ← scaled + slot % SLOTS_PER_EPOCH`), so the index the
 run passes to `vget` is that chain's plain value. `getPtcElseOffset` names the
@@ -63,18 +61,18 @@ theorem computeEpochAtSlot_toPlainNat [Preset] (slot : Slot) :
 /-- Names `getPtc`'s `else`-branch index into `ptcWindow`
 (`Gloas/Operations.lean`'s checked chain `(epoch - stateEpoch + 1) * spe +
 slot % spe`, read back as a `Nat`), so `getPtcElseOffset_lt_next_slot` states
-the bound over one named quantity instead of repeating the raw arithmetic. -/
+the bound over one named quantity instead of repeating the arithmetic. -/
 def getPtcElseOffset [Preset] (slot curSlot : Slot) : Nat :=
   ((computeEpochAtSlot slot).toPlainNat - (computeEpochAtSlot curSlot).toPlainNat + 1)
     * slotsPerEpoch + slot.toPlainNat % slotsPerEpoch
 
-/-- `getPtc`'s unchecked precondition: callers (`process_payload_attestation`)
-guarantee `data.slot + 1 == state.slot` (`hcaller`, at the `Nat` level so
-`slot`'s wraparound at `UInt64.max` cannot vacuously satisfy it). `hbranch` is
+/-- `getPtc`'s caller precondition: callers (`process_payload_attestation`)
+guarantee `data.slot + 1 == state.slot` (`hcaller`, at the `Nat` level, where the
+checked add's success puts it). `hbranch` is
 the negated `else`-branch guard; without it, the epoch subtraction can
 underflow when `getPtc` would have taken the `if`-branch. Together they force
 the two epochs equal, collapsing the offset to `spe + slot % spe`, comfortably
-under `3 * SLOTS_PER_EPOCH`. -/
+under `3 * SLOTS_PER_EPOCH` (the window bound at `MIN_SEED_LOOKAHEAD = 1`). -/
 theorem getPtcElseOffset_lt_next_slot [Preset] {slot curSlot : Slot}
     (hcaller : slot.toPlainNat + 1 = curSlot.toPlainNat)
     (hbranch : ¬ computeEpochAtSlot slot < computeEpochAtSlot curSlot) :
@@ -98,7 +96,8 @@ theorem getPtcElseOffset_lt_next_slot [Preset] {slot curSlot : Slot}
 
 /-- Equality-guarded call sites query `getPtc` at the state's current slot.
 Then the else-branch offset collapses to `slotsPerEpoch + slot % slotsPerEpoch`,
-which is below the `3 * slotsPerEpoch` window bound. -/
+which is below the `3 * slotsPerEpoch` window bound (the `MIN_SEED_LOOKAHEAD = 1`
+value). -/
 theorem getPtcElseOffset_lt_same_slot [Preset] (slot : Slot) :
     getPtcElseOffset slot slot < 3 * slotsPerEpoch := by
   have hmod : slot.toPlainNat % slotsPerEpoch < slotsPerEpoch :=

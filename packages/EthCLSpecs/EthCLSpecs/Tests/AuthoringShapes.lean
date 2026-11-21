@@ -1,11 +1,10 @@
 import EthCLSpecs.Fulu.Constants
 
 /-!
-# `EthCLSpecs.Tests.AuthoringShapes`: the state-function shape the fork ports use
+# `EthCLSpecs.Tests.AuthoringShapes`: the state-function shape the fork bodies use
 
-The state-function shape of the transition plan's Stage 3.4
-(`SPEC_ARITHMETIC.md` §4.3, §4.4's last row): a `forkdef` over the section
-pattern a real operation file
+The state-function shape the fork bodies use (`SPEC_ARITHMETIC.md` §4.3,
+§4.4's last row): a `forkdef` over the section pattern a real operation file
 uses, reading a field, binding a checked sum under `←`, taking the
 proved-total divisor route through Fulu's `Const.slotsPerEpochDiv` view,
 running one `assert`, and writing back through `modifyState`.
@@ -14,11 +13,8 @@ The fork here is a toy: a one-field `forkcontainer`, its own `Preset` / `Config`
 stand-ins, and a `state_preamble` + `state_section`, exactly the header layout
 `Fulu/Time.lean` and its siblings use. What is real is the divisor: both pins
 inject `EthCLSpecs.Fulu.Const.slotsPerEpochDiv` at a concrete Fulu preset, so
-the view Stage 3.3 pinned is the divisor the toy body divides by, at mainnet
-(32) and at minimal (8).
-
-This is the shape Stage 4 ports the fork bodies to; nothing here touches a
-production fork body.
+the toy body divides by the production view, at mainnet (32) and at minimal
+(8). Nothing here touches a production fork body.
 -/
 
 set_option autoImplicit false
@@ -40,7 +36,7 @@ class Config where
 @[reducible] def mini : Preset := {}
 
 /-- A one-field toy state container, `slot` in the checked width the fork
-bodies move to in Stage 4. -/
+bodies use. -/
 forkcontainer ToyState where
   slot : CLUint64
 
@@ -48,8 +44,8 @@ state_preamble ToyState
 
 state_section
 
-/-- `compute_epoch_at_slot` after a checked counter bump, the Stage-4 body
-shape in one `forkdef`: read the field, bind the checked sum immediately,
+/-- `compute_epoch_at_slot` after a checked counter bump, the fork-body shape
+in one `forkdef`: read the field, bind the checked sum immediately,
 divide by the proved-total divisor view (no bind: the route is total), assert
 the epoch fits a test bound, and write the new slot back. -/
 forkdef bumpSlotEpoch (delta : CLUint64) (div : PositiveDivisor) :

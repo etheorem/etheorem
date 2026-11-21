@@ -4,7 +4,7 @@ import EthCLSpecs.Gloas
 /-!
 # `EthCLSpecs.Tests.ParticipationFlagsMigrationPins`: the checked-8 flag pins
 
-Behavior pins for the Stage 8.1 move of `ParticipationFlags` onto the checked-8
+Behavior pins for `ParticipationFlags` on the checked-8
 surface (`CLUint8`): the mask boundary of `has_flag` / `add_flag`, add-flag
 idempotence at `255`, and the short-circuit call placement of
 `process_attestation`'s flag walk. Each failure pin names the pre-change form
@@ -15,8 +15,8 @@ it fails under. The pinned pyspec gives the same class or value at every pin
 1. Mask boundary (`fulu/minimal.py:4301-4314`, the `add_flag` / `has_flag`
    bodies): the mask `ParticipationFlags(2**flag_index)` range-tests against
    `[0, 255]`, so flag index 7 succeeds and flag index 8 raises the typed range
-   fault. The pre-change raw helpers (`Spec/Arith.lean`) shifted by the index
-   mod 8, so index 8 read or wrote bit 0 and never raised.
+   fault. The pre-change raw helpers shifted by the index mod 8, so index 8
+   read or wrote bit 0 and never raised.
 2. Add-flag idempotence at `255`: `add_flag(255, i) == 255` and
    `has_flag(255, i)` for every in-range flag; at the body level, processing
    the same attestation twice changes nothing the second time, because the

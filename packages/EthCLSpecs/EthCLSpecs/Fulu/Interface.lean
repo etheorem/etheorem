@@ -134,7 +134,6 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     | .proposerSlashing      => (decodeOp (@ProposerSlashing P) opBytes).map processProposerSlashing
     | .attesterSlashing      => (decodeOp (@AttesterSlashing P) opBytes).map processAttesterSlashing
     | .attestation           => (decodeOp (@Attestation P) opBytes).map processAttestation
-    | .deposit               => (decodeOp (@Deposit P) opBytes).map processDeposit
     | .voluntaryExit         => (decodeOp (@SignedVoluntaryExit P) opBytes).map processVoluntaryExit
     | .blsToExecutionChange  => (decodeOp (@SignedBLSToExecutionChange P) opBytes).map processBlsToExecutionChange
     | .depositRequest        => (decodeOp (@DepositRequest P) opBytes).map processDepositRequest
@@ -149,7 +148,11 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     | .executionPayload      => (decodeOp (@BeaconBlockBody P) opBytes).map (fun body => do
         assert cmeta.executionValid
         processExecutionPayload body)
-    -- Gloas / EIP-7732 / EIP-8282-only operation handlers; not standalone Fulu operations.
+    -- Handlers with no standalone Fulu operation. Fulu removes `process_deposit`: the
+    -- pinned `process_operations` asserts `len(body.deposits) == 0` (`fulu/minimal.py:1983`),
+    -- and the pin ships no fulu `operations/deposit` vector. The other handlers are Gloas /
+    -- EIP-7732 / EIP-8282 only. The Gloas and Heze interfaces reject `deposit` the same way.
+    | .deposit
     | .voluntaryExitChurn | .payloadAttestation | .executionPayloadBid | .parentExecutionPayload
     | .builderDepositRequest | .builderExitRequest =>
         .error (.spec (.todo s!"operations/{reprStr kind}: not a standalone Fulu operation"))
@@ -265,9 +268,9 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
             onTick (map := hashMap) (secondsToMilliseconds tickSeconds) :
           EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes columns valid =>
-      -- pyspec `add_block` (`fork_choice.py:382-406`) runs `on_block` ALONE against `valid`: an
-      -- invalid block returns right after `on_block` rejects (`:393`), so its own attestations /
-      -- attester-slashings replay only on the valid path (`:400-406`), each `valid = True`. So
+      -- pyspec `add_block` (`fork_choice.py:323-426`) runs `on_block` ALONE against `valid`: an
+      -- invalid block returns right after `on_block` rejects (`:387`), so its own attestations /
+      -- attester-slashings replay only on the valid path (`:394-400`), each `valid = True`. So
       -- check `on_block` against `valid`, then replay the sub-steps only when the block was
       -- accepted. (Combining them would let a sub-attestation reject stand in for `on_block`'s on
       -- a `valid: false` step.) A decode failure is the step's reject, as `decodeStepOr` gives.
@@ -292,7 +295,7 @@ private def fcInterpret [Preset] [Config] [HasherTag] [CryptoBackend]
             (runOn store (onBlock (map := hashMap) sb cols : EStateM StoreTransitionError (Store hashMap) Unit)))
           if valid then
             -- The reference replays each list under its OWN wrapper, `run_on_attestation` then
-            -- `run_on_attester_slashing` (`fork_choice.py:400-406`), so they are scored as two
+            -- `run_on_attester_slashing` (`fork_choice.py:394-400`), so they are scored as two
             -- sub-steps naming their own kind. Both carry `valid = True`, so `FcStepKind.admits`
             -- is never consulted and the split is score-equivalent to one combined action; it
             -- keeps the rule that no call site hides which reference wrapper scores it.
@@ -453,9 +456,10 @@ instance (`FRAMEWORK_ARCHITECTURE.md` §4). -/
 schedule Fulu models. A vector that activates its forks at genesis ships a `config.yaml`
 setting these epochs to `0`, and a `transition` vector moves its post-fork's epoch to the
 `fork_epoch`; `EthCLLib.PySpecTests.applyConfigOverrides` applies them. -/
--- The vector's plain `int` epoch crosses the runner boundary through the wire iso
--- (`SPEC_ARITHMETIC.md` §4.5: `trustedOfUInt64`, the config-constant route; a `UInt64`
--- cannot leave the range, so the wrap cannot fault).
+-- The vector's plain `int` epoch crosses the runner boundary as a `UInt64` word.
+-- `applyConfigOverrides` rejects a value past `2^64 - 1` before it forms the word, so
+-- `trustedOfUInt64` receives the exact value (`SPEC_ARITHMETIC.md` §4.5, the config-constant
+-- route).
 def configSetters : List (String × (UInt64 → Config → Config)) := [
   ("ALTAIR_FORK_EPOCH",    fun v c => { c with altairForkEpoch := CLUint64.trustedOfUInt64 v }),
   ("BELLATRIX_FORK_EPOCH", fun v c => { c with bellatrixForkEpoch := CLUint64.trustedOfUInt64 v }),

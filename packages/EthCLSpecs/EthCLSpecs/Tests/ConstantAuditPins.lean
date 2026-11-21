@@ -3,11 +3,11 @@ import EthCLSpecs.Heze.ForkChoice
 /-!
 # `EthCLSpecs.Tests.ConstantAuditPins`: the configuration constants at arbitrary values
 
-Behavior pins for Stages 7.3a, 7.3b, and 7.3c of the arithmetic transition, the constant
-audit's Fulu rows, then its Gloas rows, then its Heze rows and the audit's closure. The
-pinned module (`eth-consensus-specs` 1.7.0b4) types each of these configuration values
-`Uint64`, or `Epoch` for `REORG_MAX_EPOCHS_SINCE_FINALIZATION`, so each `Config` field and
-`Const` mirror is `CLUint64`:
+Behavior pins for the configuration constants that feed checked arithmetic: the Fulu rows,
+then the Gloas rows, then the Heze rows. The pinned module (`eth-consensus-specs` 1.7.0b4)
+types each of these configuration values `Uint64`, or `Epoch` for
+`REORG_MAX_EPOCHS_SINCE_FINALIZATION`, so each `Config` field and `Const` mirror is
+`CLUint64`:
 
 | Constant | Consumer | Checked operation |
 |---|---|---|
@@ -18,11 +18,11 @@ pinned module (`eth-consensus-specs` 1.7.0b4) types each of these configuration 
 | `PROPOSER_SCORE_BOOST`, `REORG_HEAD_WEIGHT_THRESHOLD`, `REORG_PARENT_WEIGHT_THRESHOLD` | `calculate_committee_fraction` | `committee_weight * committee_percent` |
 | `CHURN_LIMIT_QUOTIENT_GLOAS` | `get_exit_churn_limit`, `get_activation_churn_limit` | `//` |
 | `CONSOLIDATION_CHURN_LIMIT_QUOTIENT` | `get_consolidation_churn_limit` | `//` |
-| `BUILDER_PAYMENT_THRESHOLD_NUMERATOR` / `…_DENOMINATOR` | `get_builder_payment_quorum_threshold` | `*`, then `//` (adjudication F2) |
+| `BUILDER_PAYMENT_THRESHOLD_NUMERATOR` / `…_DENOMINATOR` | `get_builder_payment_quorum_threshold` | `*`, then `//` |
 | `PAYLOAD_TIMELY_THRESHOLD`, `DATA_AVAILABILITY_TIMELY_THRESHOLD` | `payload_timeliness`, `payload_data_availability` | `PTC_SIZE // 2` at import, then `vote_count > threshold` |
 | `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` | `on_inclusion_list` | mixed `int <= Uint64` against the plain byte sum (never raises) |
 | `MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS` (`Slot`) | `on_inclusion_list` | the checked `Slot` add of the retention window |
-| `INCLUSION_LIST_DUE_BPS` (7.1b, closure confirmed) | `get_inclusion_list_due_ms` | `bps * SLOT_DURATION_MS // BASIS_POINTS` |
+| `INCLUSION_LIST_DUE_BPS` | `get_inclusion_list_due_ms` | `bps * SLOT_DURATION_MS // BASIS_POINTS` |
 
 The checked kind decides the answer once a configuration leaves the shipped values. Each
 pin below sets one value, and each failure pin has a nearby success that reaches the same
@@ -269,7 +269,7 @@ example : gloasInactivityPenalty minimalConfig = .answer 47683 := by native_deci
 example : gloasInactivityPenalty { minimalConfig with inactivityScoreBias := biasProductEdge }
     = .rangeFault := by native_decide
 
-/-! ### Gloas: the Stage 7.3b rows
+/-! ### Gloas: the churn and builder-payment rows
 
 The Gloas churn quotients and the builder-payment threshold pair. Each pin's expected
 value is the pinned module's answer for the same one-validator state (`gloasAuditState`
@@ -333,7 +333,7 @@ example : gloasConsolidationChurnLimit
     { minimalConfig with consolidationChurnLimitQuotient := 0 }
     = .zeroDivision := by native_decide
 
--- `get_builder_payment_quorum_threshold` (adjudication F2): the checked `Uint64(6)` /
+-- `get_builder_payment_quorum_threshold`: the checked `Uint64(6)` /
 -- `Uint64(10)` pair over `32_000_000_000 / 8` per slot gives `2_400_000_000`.
 example : gloasPaymentQuorum minimalConfig = .answer 2400000000 := by native_decide
 
@@ -373,8 +373,8 @@ example : gloasEdgePaymentQuorum = .answer 1383505805528216370 := by native_deci
 
 `PAYLOAD_TIMELY_THRESHOLD` / `DATA_AVAILABILITY_TIMELY_THRESHOLD` are `PTC_SIZE // 2`
 over the checked `PTC_SIZE` (`Uint64` at the pin), so each is `CLUint64`, derived at
-import. The pins read the derived value at both presets, then run the relabeled
-comparison end-to-end: `payload_timeliness` counts `some true` votes and compares the
+import. The pins read the derived value at both presets, then run the comparison
+end-to-end: `payload_timeliness` counts `some true` votes and compares the
 plain count against the threshold's plain projection, exactly Python's mixed
 `int > Uint64` (never raising, ordering the values). At `PTC_SIZE = 16` the threshold is
 `8`, so `8` timely votes are not a majority and `9` are. -/
@@ -515,18 +515,19 @@ example : hezeConsolidationChurnLimit
     { minimalConfig with consolidationChurnLimitQuotient := 0 }
     = .zeroDivision := by native_decide
 
-/-! ### Heze: the Stage 7.3c rows
+/-! ### Heze: the inclusion-list rows
 
-The audit's last two rows and the closure. `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` is
+The table's last three rows. `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` is
 `Uint64(8192)` in the pinned module at both presets, so its `Config` field and mirror are
 `CLUint64`; `on_inclusion_list` compares the plain byte sum against it as Python's mixed
 `int <= Uint64`, which never raises and orders the values, so the consumer reads the plain
 projection. `MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS` is `Slot(1)` (the checked kind), and
-`on_inclusion_list`'s retention window is the checked `Slot` add. The `INCLUSION_LIST_DUE_BPS`
-closure from 7.1b is confirmed. The value pins read all three at both presets; the handler
-pins below set one configuration value each and run `on_inclusion_list` end-to-end, expected
-values from the pinned module (a one-byte list filed at the shipped cap, rejected at cap `0`,
-the window edge at current slot 2). Each pin module keeps its harness private, so the
+`on_inclusion_list`'s retention window is the checked `Slot` add. `INCLUSION_LIST_DUE_BPS`
+feeds the checked `bpsDeadlineMs` route, pinned in `Tests/HezeForkChoicePins.lean`. The value
+pins read all three at both presets; the handler pins below set one configuration value
+each and run `on_inclusion_list` end-to-end, expected values from the pinned module (a
+one-byte list filed at the shipped cap, rejected at cap `0`, the window edge at current
+slot 2). Each pin module keeps its harness private, so the
 `on_inclusion_list` fixture repeats `Tests/HezeForkChoicePins`'s shape at the arbitrary
 configurations this file exists to drive. -/
 

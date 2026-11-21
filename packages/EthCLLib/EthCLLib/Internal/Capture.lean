@@ -100,7 +100,7 @@ content depends on `kind`:
 | ------------ | ---------------------- | ------------------- | ------------- |
 | `def_`       | ∅                      | `optDeclSig`        | `declVal`     |
 | `abbrev_`    | ∅                      | `optDeclSig`        | `declVal`     |
-| `instance_`  | ∅ (they ride in `sig`) | `declSig`           | `declVal`     |
+| `instance_`  | ∅ (stored in `sig`)   | `declSig`           | `declVal`     |
 | `container`  | ∅                      | ∅                   | `structFields`|
 | `struct`     | the author's binders   | ∅                   | `structFields`|
 | `tier`       | ∅                      | ∅                   | entry block   |

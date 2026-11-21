@@ -49,7 +49,7 @@ class StateRoot (S : Type) where
 committed intermediate-node hashes, so this writes that box back through
 `MonadStateOf`, and a later root reuses the tree instead of rebuilding it. This is the
 way to take a state root in a `StateTransition` / store-machine step; the pure
-`stateRoot!` below is the terminal-only escape hatch. Whether retention actually caches
+`stateRoot!` below is the terminal-only discard form. Whether retention actually caches
 is the box flavour's call (a cached box keeps the tree, a pure box does not), so the
 spec calls this unconditionally and the runner picks the flavour and manages memory. -/
 @[inline] def getStateRoot {S : Type} {m : Type → Type u} [MonadState S m] [StateRoot S] :
@@ -278,8 +278,8 @@ maps the miss to the context's reject. Generic over the error type, so it reads 
 the state machine (`E = StateTransitionError`, a direct `outOfBounds`) and the
 fork-choice machine (`E = StoreTransitionError`, the wrapped `transition (outOfBounds …)`).
 A spec *validation* of an index pairs this with a preceding `assert (i < size)`: the
-`assert` rejects a bad index first as the spec's `IndexError` (`assert`, an
-`expectedRejection`), so `sszGetIdx`'s own `outOfBounds` stays unreachable, the safe
+`assert` rejects a bad index first, as the spec's own `assert` does (an `AssertionError`,
+classified `expectedRejection`), so `sszGetIdx`'s own `outOfBounds` stays unreachable, the safe
 read behind the validation and a defense-in-depth signal if the assert is ever wrong.
 The collection is any `IdxRead`: a capped `SSZList` or an uncapped `ProgressiveList`.
 The index is any `ToIndex` kind (`SPEC_ARITHMETIC.md` §4.6): a `Nat` position, a

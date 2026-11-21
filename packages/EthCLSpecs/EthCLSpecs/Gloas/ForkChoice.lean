@@ -382,7 +382,7 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
   let headWeight ← (List.range committeeCount.toPlainNat).foldlM (init := baseWeight) fun acc index => do
     -- `CommitteeIndex(index)`: the pyspec's checked cast of the plain loop variable.
     let committeeIndex ← CLUint64.ofNat? index
-    let committee ← getBeaconCommittee headState headBlock.slot committeeIndex
+    let committee ← liftErr (getBeaconCommittee headState headBlock.slot committeeIndex)
     -- `head_weight += Gwei(sum(...))` (`gloas/minimal.py:3837-3845`): the committee's
     -- equivocator sum runs first, from zero, then the one add to `head_weight`. The start
     -- `(0 : Gwei)` keeps every raise of the nonempty sum (see `Fulu.isHeadWeak`).
@@ -661,9 +661,9 @@ forkdef onTickPerSlot (store : Store map) (timeMs : CLUint64) : StoreTransition 
 /-- `on_tick(store, time_ms)` (`phase0/fork-choice.md:946-954`): advance the store clock to
 `time_ms`, running `on_tick_per_slot` at the start of every slot the clock passes on the way.
 Each `on_tick_per_slot` commits before the next iteration, because pyspec calls it against the
-live store and a raise partway through the catch-up leaves the earlier per-slot boost resets
-and checkpoint updates applied. Threading a local and committing once discarded them. Same
-rule as `aed053b`'s, at the site it did not reach; the loop body can throw. -/
+live store. A raise partway through the catch-up therefore keeps the earlier per-slot boost
+resets and checkpoint updates. The loop body can throw, so each commit lands at the pyspec
+statement boundary. -/
 forkdef onTick (timeMs : CLUint64) : StoreTransition Unit := do
   let store ← get
   let tickSlot ← computeSlotAtTimeMs store.genesisTimeMs timeMs
@@ -674,7 +674,7 @@ forkdef onTick (timeMs : CLUint64) : StoreTransition Unit := do
   -- plain values (`SPEC_ARITHMETIC.md` §4.2, `Nat` for termination measures): the truncated
   -- difference is `0` on a backwards tick, where the loop `.done`s on its first pass. Each pass
   -- moves the clock to the next slot start, so `tickSlot - cur + 1` passes suffice;
-  -- `fuelIterateM!` throws on fuel-out rather than returning a wrong store.
+  -- on fuel-out, `fuelIterateM!` throws a `todo` reject, so a short count surfaces as an error.
   fuelIterateM! (tickSlot.toPlainNat - cur.toPlainNat + 1) () "on_tick: per-slot catch-up" fun _ => do
     let cs ← getCurrentSlot (← get)
     if cs < tickSlot then
@@ -926,9 +926,9 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
   assert (payload.gasLimit == bid.gasLimit)
   assert (payload.blockHash == bid.blockHash)
   assert (htr envelope.executionRequests == bid.executionRequestsRoot)
-  -- `slot_number` is the raw payload `uint64` field (Stage 7 retypes it) and the pinned
-  -- `Uint64.__eq__` compares by value across the unit subclasses, so the assert reads the
-  -- checked slot's word (§4.5).
+  -- `slot_number` is a raw `UInt64` payload field: data only, compared here and never used in
+  -- arithmetic. The pinned `Uint64.__eq__` compares by value across the unit subclasses, so
+  -- the assert reads the checked slot's word (§4.5).
   assert (payload.slotNumber == (sszGet state slot).val)
   assert (payload.parentHash == sszGet state latestBlockHash)
   -- `compute_time_at_slot(state.genesis_time, state.slot)` (`Fulu/Time.lean`, inherited): the
@@ -1015,11 +1015,11 @@ forkdef validateOnAttestation (store : Store map) (att : Attestation) (isFromBlo
   assert (target.root == checkpointBlock)
   let currentSlot ← getCurrentSlot store
   -- `att.data.slot` is wire-controlled and the epoch-scope guard above is skipped when
-  -- `is_from_block`, so a block-implied attestation reaches here with an arbitrary slot. A
-  -- bare `+` would wrap `0xFFFF…FFFF + 1` to `0`, `currentSlot ≥ 0` would hold for every
-  -- store, and the attestation would be ACCEPTED into `latest_messages`, corrupting the head
-  -- walk. pyspec (`phase0/fork-choice.md:854`) forms a checked `uint64` sum that raises
-  -- `ValueError`, which `expect_assertion_error` does not catch. Sequenced after every
+  -- `is_from_block`, so a block-implied attestation reaches here with an arbitrary slot.
+  -- pyspec (`phase0/fork-choice.md:854`) forms the checked `uint64` sum `att.data.slot + 1`.
+  -- At `UINT64_MAX` it raises `SSZValueError`, a `ValueError` that `expect_assertion_error`
+  -- does not catch. The checked add binds here and rejects with the range fault, which
+  -- arrives on this machine as `.transition (.arithmetic …)`. Sequenced after every
   -- preceding assert, matching Python's evaluation order.
   let attestationDeadline ← att.data.slot + 1
   assert (currentSlot ≥ attestationDeadline)

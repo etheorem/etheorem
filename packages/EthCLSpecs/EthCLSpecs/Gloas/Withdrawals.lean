@@ -40,11 +40,11 @@ already-queued withdrawals for `vi`. Fulu's version is a plain `def` bound to
 Throwing (`StateTransition`), because the spec's `return state.balances[validator_index] -
 withdrawn` (`capella/beacon-chain.md:421`) raises two ways, neither an explicit `assert`:
 `state.balances[validator_index]` is a bare list index (`IndexError` out of range), so it goes
-through `sszGetIdx` (→ `outOfBounds`); `- withdrawn` is a bare `uint64` subtraction whose
-underflow raises `ValueError`, which the reference runner does NOT catch (`context.py:424-435`),
-so it throws the uncaught `.arithmetic` reject rather than a caught `.assert`. Both are
+through `sszGetIdx` (→ `outOfBounds`); `- withdrawn` is the checked `uint64` subtraction, whose
+underflow raises `SSZValueError`, a `ValueError` the reference runner does NOT catch
+(`context.py:451-462`), so it throws the uncaught `.arithmetic` reject. Both are
 unreachable on a well-formed state (`len(balances) == len(validators)`, and a validator's queued
-withdrawals never exceed its balance), and the reads are modeled rather than clamped.
+withdrawals never exceed its balance), and the body still models both raises.
 
 The `withdrawn` accumulator is a `Gwei` and the folded add is the checked `Gwei` `+`,
 as in Fulu: pyspec's `sum(...)` accumulates in `Gwei` rather than widening to a Python
@@ -58,7 +58,7 @@ def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Wi
   let bal ← sszGetIdx (sszGet state balances) vi
   bal - withdrawn
 
-/-- `get_builder_withdrawals` (NEW, EIP-7732, `gloas/minimal.py:8003-8030`): drain
+/-- `get_builder_withdrawals` (NEW, EIP-7732, `gloas/minimal.py:8003-8031`): drain
 `builder_pending_withdrawals` into validator-flagged withdrawals, capped at
 `MAX_WITHDRAWALS_PER_PAYLOAD - 1`. `withdrawal_index += 1` is the checked `WithdrawalIndex`
 add, so it raises past `2^64 - 1`.

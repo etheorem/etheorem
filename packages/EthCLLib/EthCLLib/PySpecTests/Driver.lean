@@ -28,9 +28,9 @@ wrapper that scores it:
 | invalid | `todo` reject | fail (an unimplemented path is not a validation) |
 | invalid | ran clean | fail (should have rejected) |
 
-The step/check interpreter (`fork_choice`) and the delta-comparison (`rewards`)
-have different shapes and join in Phase 2.3 / 2.5; this driver reports them as
-out-of-scope `todo` until then.
+`runCase` compares `rewards` deltas through `ForkInterface.runRewards`.
+The runner handles the `fork_choice` step/check interpreter through
+`ForkInterface.runForkChoice`.
 -/
 
 set_option autoImplicit false

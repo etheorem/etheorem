@@ -16,11 +16,11 @@ Three documents define the design. Read them in order.
 The glossary in the first document is the single source of truth for shared
 vocabulary; the other two quote it.
 
-[PLAN.md](PLAN.md) sequences the implementation into phases over the `EthCLLib`,
-`EthCLSpecs`, and `EthCLProofs` packages, and opens with the background an
-implementor needs. During implementation, deviations and notable findings go in
-`IMPLEMENTATION_NOTES.md` (created then), not into these four documents, which stay
-the design of record.
+[PLAN.md](PLAN.md) is the historical implementation plan: it sequences the work into
+phases over the `EthCLLib`, `EthCLSpecs`, and planned `EthCLProofs` packages, and its
+status snapshot records the state when the plan was written. Deviations and notable
+findings live in [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md). The three design
+documents remain the design of record.
 
 [DISCREPANCIES.md](DISCREPANCIES.md) is the narrow spec-vs-vector ledger: it records
 only cases where a released vector contradicts the spec text (upstream pyspec bugs)
@@ -28,18 +28,18 @@ and resolved vector-level gaps, keyed by vector id. Deliberate implementation
 divergences that no vector observes belong in `IMPLEMENTATION_NOTES.md` instead,
 catalogued per fork.
 
-[SPEC_ARITHMETIC.md](SPEC_ARITHMETIC.md) prescribes the final arithmetic behavior and
-future-authoring rules for all consensus-spec code in `EthCLSpecs`.
-[SPEC_ARITHMETIC_PLAN.md](SPEC_ARITHMETIC_PLAN.md) sequences the transition from the
-current implementation. Remove that temporary plan when the transition completes.
-[SPEC_ARITHMETIC_LINTING.md](SPEC_ARITHMETIC_LINTING.md) records deferred automated
-checks for the authoring rules. Implement those checks in a separate follow-up after
-the transition.
+[SPEC_ARITHMETIC.md](SPEC_ARITHMETIC.md) is the arithmetic contract for all
+consensus-spec code in `EthCLSpecs`: the implemented checked behavior and the
+authoring rules. [SPEC_ARITHMETIC_PLAN.md](SPEC_ARITHMETIC_PLAN.md) is the temporary
+transition plan; its stages record the migration state, and the final acceptance stage
+removes it. [SPEC_ARITHMETIC_LINTING.md](SPEC_ARITHMETIC_LINTING.md) records deferred
+automated checks for the authoring rules. No linter enforces them; implementation and
+activation are separate follow-up work outside the transition.
 
 [FUTURE_WORK.md](FUTURE_WORK.md) records deferred changes: what is left, why it waits,
 and the shape it will take, so a later pass picks each one up whole. The current entry is
-the provability of the pure indexed reads: a proof parameter or a refined index-list type,
-plus the invariant lemmas they rest on.
+the provability of the remaining total indexed reads: a proof parameter or a refined
+index-list type, plus the invariant lemmas they rest on.
 
 [PROOF_LEDGER.md](PROOF_LEDGER.md) is the proof ledger: one row per candidate spec
 function, grouped by fork and by the kind of theorem it asks for, with the property

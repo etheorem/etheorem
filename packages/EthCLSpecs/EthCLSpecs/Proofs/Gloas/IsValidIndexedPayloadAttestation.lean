@@ -7,7 +7,7 @@ import SizzLean.Proofs.UncachedBox
 # `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: a two-layer characterization
 
 An exact backend-generic characterization of
-`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:608-624`).
+`EthCLSpecs.Gloas.isValidIndexedPayloadAttestation` (`Gloas/Operations.lean:612-628`).
 
 **Layer 1** (`isValidIndexedPayloadAttestation_eq_true_iff_checks`) restates the
 function's `if` / `||` / `!` control flow as a plain conjunction, one conjunct per
@@ -104,7 +104,7 @@ private theorem indexedPayloadAttestation_adjacentNondecreasing_iff (idx : Array
     exact h i (by omega)
 
 /-- Bridges the in-range check `isValidIndexedPayloadAttestation` performs
-(`Array.all` over the raw elements) into a membership-indexed bound. The bound is an
+(`Array.all` over the elements) into a membership-indexed bound. The bound is an
 arbitrary `n`, the validator-registry size the caller instantiates it at plays no
 part in the argument. Membership rather than position, because the bound's consumer
 is the pubkey map below, which reads `validators` at an element of `idx`. -/

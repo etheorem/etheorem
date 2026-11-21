@@ -26,7 +26,9 @@ are:
 - `ofNat?` / `ofInt?` / `ofCLInt?`: the checked narrowings, the pyspec's
   `Uint64(n)` cast (`SPEC_ARITHMETIC.md` §4.5).
 - `ofNatLT`: proof-carrying construction from a `Nat` with a kernel-checked
-  range proof. Framework-facing: SSZ decode helpers and preset constants.
+  range proof. The caller supplies the proof: a preset constant, or a fork-body
+  site where a written guard or a preset premise bounds the value
+  (`SPEC_ARITHMETIC.md` §6).
 - `trustedOfUInt64`: the wire iso's inverse, for a raw `UInt64` the framework
   already holds. Every `UInt64` sits inside `[0, 2^64)`, so the wrap cannot
   fault. Callers are SSZ decode, config constants, and the codec's
@@ -60,9 +62,9 @@ differ. The shared content is the mechanism, the naming, and the fault shape,
 documented here once. The operations differ too: width 64 carries the full
 five-operator matrix (`SPEC_ARITHMETIC.md` §4.2), width 8 carries construction
 and the flag masks only, the surface `add_flag` / `has_flag` use. No width
-beyond 8 and 64 is built: the Stage 0 inventory found no arithmetic consumer
-at `uint32` or `uint256` (those widths appear only at the codec boundary,
-which Stage 8 audits).
+beyond 8 and 64 is built, because no spec arithmetic runs at `uint32` or
+`uint256`. `uint32` appears only in the framework codec (`uint32ToBytes`, the
+shuffle's `u32leBytes` feed), and `uint256` (`baseFeePerGas`) is data only.
 
 Settled conversion names (`SPEC_ARITHMETIC.md` §4.1): `toPlainNat` returns a
 Lean `Nat`, `toCLInt` returns a `CLInt`, and a checked conversion to a checked
@@ -92,7 +94,7 @@ namespace CLUint64
 /-- The wire iso's inverse: wrap a raw `UInt64`. Every `UInt64` already sits in
 `[0, 2^64)`, so the wrap cannot fault and the route needs no range test.
 
-Callers are the framework's codec sites only: SSZ decode, config
+Framework callers include SSZ decode, validated config overrides,
 constants, and total bitwise writes over raw operands. A spec body builds values from
 computed numbers through `ofNat?`, `ofInt?`, `ofCLInt?`, `ofNatLT`, the
 operators, or a literal. A trusted constructor never repairs an operator
@@ -112,9 +114,11 @@ plain `UInt64` one. -/
 theorem val_inj {a b : CLUint64} (h : a.val = b.val) : a = b :=
   congrArg mk h
 
-/-- The value as a Lean `Nat` (the settled name, `SPEC_ARITHMETIC.md` §4.1).
-The pyspec's `int(x)` at width 64. The result is unchecked, so each executable
-use is a site a reviewer sees (`SPEC_ARITHMETIC.md` §5.6). -/
+/-- The value as a Lean `Nat` (the settled name, `SPEC_ARITHMETIC.md` §4.1),
+for proofs and framework boundaries. The pyspec's `int(x)` is `toCLInt`
+(`Spec/CLInt.lean`), which returns a `CLInt`. The result here is unchecked, so
+each executable use cites the conversion or bound that permits it
+(`SPEC_ARITHMETIC.md` §4.5, §5.6). -/
 @[inline] def toPlainNat (a : CLUint64) : Nat := a.val.toNat
 
 instance : Inhabited CLUint64 := ⟨⟨0⟩⟩
@@ -378,8 +382,7 @@ At the pin, `ParticipationFlags` is a `Uint8` subclass, and the pinned
 in-range values cannot leave the range, so those two are total here and return
 the value, matching the §5.1 row for same-width bitwise operators. The masks
 raise, so `addFlag` and `hasFlag` return a `Checked` result: the raise is the
-pyspec's. Stage 8 moved the flag sites onto this surface; the raw-`UInt8`
-helpers that used to sit in `Spec/Arith.lean` are gone. -/
+pyspec's. -/
 
 /-- The pyspec `Uint8`. Same shape as `CLUint64`: no core operator instance
 applies, the constructor is private, and `ofNat?` is the checked route from a
@@ -484,7 +487,7 @@ instance : HAnd CLUint8 CLUint8 CLUint8 := ⟨CLUint8.bitAnd⟩
 
 `SSZRepr` instances for the two wrappers. The shape is the corresponding
 `uintN`, so a container field of the checked type packs, serializes, and
-merkleizes exactly as the raw `UInt64` / `UInt8` field it replaced
+merkleizes exactly as a raw `UInt64` / `UInt8` field
 (`SPEC_ARITHMETIC.md` §4.8): the bytes are the little-endian integer, the
 root is the leaf hash. The iso is the projection and the wire route
 `trustedOfUInt64` / `trustedOfUInt8`, so both laws close by `rfl`. -/

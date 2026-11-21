@@ -16,20 +16,19 @@ once, here.
 The `fork Fulu` lineage edge lives in `Fulu/Fork.lean` (row 0), which this module
 reaches through `Types`. It has to elaborate before any capturing form runs.
 
-Two numeric flavours, by design: `UInt64` / `Gwei` constants combine directly
-with `uint64`-shaped state fields (slots, epochs, indices, balances); `Nat`
-constants feed the reward / penalty arithmetic, evaluated in `Nat` (unbounded, no
-wraparound) to match the pyspec's Python `int` exactly, narrowing back to `Gwei`
-only at the application site. A `…G` suffix marks the `Gwei` form of a value that
-also has a `Nat` form. A `…G` field is also the *stored* flavour when the pyspec
-declares the value a `Gwei`: the `Nat` twin is then a derived view in `Const`
-(`SPEC_ARITHMETIC.md` §4.2, checked constants stay checked), and the numeral
-appears once per value set.
+Two numeric kinds. A constant that the pyspec types `Uint64`, `Gwei`, `Slot`, or
+`Epoch` is a checked value (`CLUint64` or one of its unit aliases), so it meets the
+checked state fields through the checked operators (`SPEC_ARITHMETIC.md` §4.2, checked
+constants stay checked). A preset count that sizes a type or caps a list is a structural
+`Nat`. The reward, penalty, and hysteresis quotients are `Nat` preset fields too. Each
+consumer meets them through the mixed `Gwei op Nat` route, which computes on the exact
+operands and checks the range of the result (§4.2). A `…G` suffix marks the stored `Gwei`
+field of a value that also has a suffix-free `Nat` view in `Const`. The numeral appears
+once per value set.
 
-Derived views (`SPEC_ARITHMETIC.md` §4.2, §4.5): a `…C` suffix marks the
-`CLUint64` view of a tier field, proof-carrying construction over the preset's
-own `< 2 ^ 64` premise for a `Nat` structural field, the wire route for a raw
-`UInt64` config field, and a `…Div` suffix marks
+Derived views (`SPEC_ARITHMETIC.md` §4.2, §4.5): a `…C` suffix marks the `CLUint64`
+view of a structural `Nat` preset field. It is the proof-carrying `ofNatLT` construction
+over the preset's own `< 2 ^ 64` premise. A `…Div` suffix marks
 the `PositiveDivisor` view, which pairs the stored value with the preset's own
 positivity premise. No view stores a value: each body projects the original
 entry, so a child override re-proves through the tier's proof fields, and the
@@ -107,13 +106,13 @@ forkpreset where
   -- flavour is the pyspec's own: `EFFECTIVE_BALANCE_INCREMENT` is a `Gwei` in
   -- the source, so the `Gwei` field stores the value here and the suffix-free
   -- `Nat` entry is a derived view in `Const` (`SPEC_ARITHMETIC.md` §4.2).
-  -- `maxEffectiveBalanceElectra` keeps its two fields until its retype lands
-  -- with a consumer.
+  -- `MAX_EFFECTIVE_BALANCE_ELECTRA` stores only its `Gwei` flavour: every body
+  -- reads `…ElectraG` (`SPEC_ARITHMETIC.md` §4.2, the checked kind is the
+  -- stored one).
   effectiveBalanceIncrementG : Gwei
   minDepositAmountG : Gwei
   minActivationBalance : Gwei
   maxEffectiveBalanceG : Gwei
-  maxEffectiveBalanceElectra : Nat
   maxEffectiveBalanceElectraG : Gwei
   hysteresisQuotient : Nat
   hysteresisDownwardMultiplier : Nat
@@ -238,8 +237,8 @@ forkabbrev pendingPartialWithdrawalsLimit : Nat := Preset.pendingPartialWithdraw
 forkabbrev pendingConsolidationsLimit : Nat := Preset.pendingConsolidationsLimit
 
 -- Well-formedness of the vector-length constants (positive, `uint64`-ranged), surfaced
--- with the `Const.` prefix like the values. The proof-carrying premises of
--- `EthCLLib.Spec.uint64ModOfNatToNatLt` at a modulo index into the matching vector.
+-- with the `Const.` prefix like the values. `ValidModulus` supplies these premises
+-- to `vmodGet` for a modulo index into the matching vector.
 forkabbrev slotsPerEpochPos : 0 < slotsPerEpoch := Preset.slotsPerEpochPos
 forkabbrev slotsPerEpochLt : slotsPerEpoch < 2 ^ 64 := Preset.slotsPerEpochLt
 forkabbrev slotsPerHistoricalRootPos : 0 < slotsPerHistoricalRoot := Preset.slotsPerHistoricalRootPos
@@ -249,8 +248,8 @@ forkabbrev epochsPerHistoricalVectorLt : epochsPerHistoricalVector < 2 ^ 64 := P
 /-- Every shuffle round index fits the pyspec's `Uint8(current_round)` cast. -/
 forkabbrev shuffleRoundCountLe : shuffleRoundCount ≤ 2 ^ 8 := Preset.shuffleRoundCountLe
 
--- The derived views of `slotsPerEpoch`, the divisor every Stage 4 / 5 epoch
--- formula divides by. Each view stores nothing: its body projects the preset's
+-- The derived views of `slotsPerEpoch`, the divisor of every slot-to-epoch
+-- formula. Each view stores nothing: its body projects the preset's
 -- own fields, so the numeral stays in the value set alone, an override gets a
 -- fresh proof through the same fields, and a child fork replays the view
 -- against its own `Preset`.
@@ -285,9 +284,10 @@ checked constants stay checked). Each stores nothing: the body projects the
 preset's own field, so a child override re-proves through the same fields, and
 the type-level `Nat` sizes above stay structural for the type-level caps.
 Each view is the proof-carrying `ofNatLT` (§4.5) over the preset's own `< 2 ^ 64`
-premise, so a preset value past `2 ^ 64 - 1` cannot be built, where `UInt64.ofNat`
-would wrap it. These views are permanent, not crossings: the `Nat` fields stay the
-structural sizes the type-level caps read, and the `…C` twin is their checked face. -/
+premise. A preset with a value past `2 ^ 64 - 1` cannot be built, and the pinned module
+raises when it loads such a value. The views are permanent parts of the tier. The `Nat`
+fields stay the structural sizes that the type-level caps read, and each `…C` view is the
+checked form of its field. -/
 forkabbrev epochsPerHistoricalVectorC : CLUint64 :=
   CLUint64.ofNatLT Preset.epochsPerHistoricalVector Preset.epochsPerHistoricalVectorLt
 forkabbrev epochsPerSlashingsVectorC : CLUint64 :=
@@ -362,14 +362,15 @@ forkabbrev maxBytesPerTransaction : Nat := Preset.maxBytesPerTransaction
 forkabbrev maxTransactionsPerPayload : Nat := Preset.maxTransactionsPerPayload
 forkabbrev bytesPerLogsBloom : Nat := Preset.bytesPerLogsBloom
 -- Balance / effective-balance thresholds, in Gwei. The `G` suffix marks the
--- `Gwei` (`UInt64`) form; the letter abbreviates "Gwei". `effectiveBalanceIncrement`
--- stores its value once, in the `…G` preset field, the flavour the pyspec gives
--- the YAML value; the suffix-free `Nat` entry is the derived view the ratio
--- arithmetic reads. `maxEffectiveBalanceElectra` still carries both flavours as
--- preset fields until a consumer retypes it.
-/-- `EFFECTIVE_BALANCE_INCREMENT` as the plain ratio operand, derived from the
+-- checked `Gwei` (`CLUint64`) form; the letter abbreviates "Gwei". `effectiveBalanceIncrement`
+-- stores its value once, in the `…G` preset field, the kind the pyspec gives
+-- the YAML value. The suffix-free `Nat` entry is a derived view that only the tests
+-- read. `maxEffectiveBalanceElectra` stores only its `Gwei` flavour:
+-- no body or test reads a suffix-free form, every body reads `…ElectraG`.
+/-- `EFFECTIVE_BALANCE_INCREMENT` as a plain `Nat`, derived from the
 stored `Gwei` field (`SPEC_ARITHMETIC.md` §4.2: the pyspec's kind is checked, so
-the checked field is the source and the `Nat` form is the projection). The
+the checked field is the source and the `Nat` form is the projection). No fork body
+reads it: every body reads the checked `effectiveBalanceIncrementG`. The
 underlying-type projection is the view itself, the use §4.5 asks each site to
 cite; the tests pin the round trip at both presets. -/
 forkabbrev effectiveBalanceIncrement : Nat := Preset.effectiveBalanceIncrementG.toPlainNat
@@ -377,9 +378,11 @@ forkabbrev effectiveBalanceIncrementG : Gwei := Preset.effectiveBalanceIncrement
 forkabbrev minDepositAmountG : Gwei := Preset.minDepositAmountG
 forkabbrev minActivationBalance : Gwei := Preset.minActivationBalance
 forkabbrev maxEffectiveBalanceG : Gwei := Preset.maxEffectiveBalanceG
-forkabbrev maxEffectiveBalanceElectra : Nat := Preset.maxEffectiveBalanceElectra
 forkabbrev maxEffectiveBalanceElectraG : Gwei := Preset.maxEffectiveBalanceElectraG
 forkabbrev ejectionBalanceG : Gwei := Config.ejectionBalanceG
+/-- `UNSET_DEPOSIT_REQUESTS_START_INDEX`, `Uint64(2**64 - 1)` at the pin. A raw `UInt64`
+literal: the constant is data only, and it stays raw to match the raw
+`depositRequestsStartIndex` field it names a value of. No body in the tree reads it. -/
 forkabbrev unsetDepositRequestsStartIndex : UInt64 := 0xffffffffffffffff
 forkabbrev fullExitRequestAmount : Gwei := 0
 /-- The BLS G2 point at infinity (`0xc0` then 95 zero bytes); the signature
@@ -390,7 +393,7 @@ forkabbrev maxSeedLookahead : Epoch := Preset.maxSeedLookahead
 forkabbrev minSeedLookahead : Epoch := Preset.minSeedLookahead
 forkabbrev minAttestationInclusionDelay : Slot := Preset.minAttestationInclusionDelay
 forkabbrev minEpochsToInactivityPenalty : Epoch := Preset.minEpochsToInactivityPenalty
--- reward / penalty weights + quotients (Nat)
+-- reward / penalty: the `Nat` preset factor, then the checked weights
 forkabbrev baseRewardFactor : Nat := Preset.baseRewardFactor
 /-- `WEIGHT_DENOMINATOR`, the checked kind: the pin's `Uint64(64)` (constants table,
 altair). Every consumer divides a checked `Gwei` chain by it (`get_flag_index_deltas`,
@@ -577,12 +580,10 @@ forkpresetvalues minimal where
   minEpochsToInactivityPenalty := 4
   -- Balance thresholds. `effectiveBalanceIncrementG` stores its value; the
   -- `Nat` view derives from it in `Const`, so that numeral appears once.
-  -- `maxEffectiveBalanceElectra` keeps both flavours until its retype lands.
   effectiveBalanceIncrementG := 1000000000
   minDepositAmountG := 1000000000
   minActivationBalance := 32000000000
   maxEffectiveBalanceG := 32000000000
-  maxEffectiveBalanceElectra := 2048000000000
   maxEffectiveBalanceElectraG := 2048000000000
   hysteresisQuotient := 4
   hysteresisDownwardMultiplier := 1
@@ -659,12 +660,10 @@ forkpresetvalues mainnet where
   minEpochsToInactivityPenalty := 4
   -- Balance thresholds. `effectiveBalanceIncrementG` stores its value; the
   -- `Nat` view derives from it in `Const`, so that numeral appears once.
-  -- `maxEffectiveBalanceElectra` keeps both flavours until its retype lands.
   effectiveBalanceIncrementG := 1000000000
   minDepositAmountG := 1000000000
   minActivationBalance := 32000000000
   maxEffectiveBalanceG := 32000000000
-  maxEffectiveBalanceElectra := 2048000000000
   maxEffectiveBalanceElectraG := 2048000000000
   hysteresisQuotient := 4
   hysteresisDownwardMultiplier := 1

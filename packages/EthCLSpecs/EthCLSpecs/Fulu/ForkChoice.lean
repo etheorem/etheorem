@@ -290,8 +290,7 @@ where
       -- Python's `or` short-circuits, so it forms `voting_source.epoch + 2` only once the two
       -- earlier disjuncts fail. Bind it in that branch alone: an eager checked add would raise
       -- on a sum the reference never evaluates.
-      -- `decide` because `≥` on `UInt64` is a `Prop`: in the original the comparison sat inside
-      -- a `Bool` `||` chain, which drove the coercion; standalone under `pure` it needs saying.
+      -- `decide` because `≥` on `Epoch` is a `Prop`, and the branch returns a `Bool`.
       let correctJustified ← if justifiedWithoutHorizon then pure true else do
         let horizon ← votingSource.epoch + 2
         pure (decide (horizon ≥ currentEpoch))
@@ -368,7 +367,7 @@ pyspec (`phase0/fork-choice.md:631-633`) computes the epoch gap as a checked `ui
 subtraction that raises `ValueError`. `on_tick_per_slot` sets `store.time_ms = time_ms` with no
 monotonicity assert (`phase0/fork-choice.md:792-808`), so the spec permits a tick that moves
 the clock back below the finalized epoch's start slot, where the subtraction underflows.
-`checkedSub` rejects there. No conformance vector emits a backwards tick, so the path is
+The checked `Epoch` subtraction rejects there. No conformance vector emits a backwards tick, so the path is
 unreachable in the corpus and carries no pin. Throwing, so the caller binds it. -/
 forkdef isFinalizationOk (store : Store map) (slot : Slot) : StoreTransition Bool := do
   let gap ← computeEpochAtSlot slot - store.finalizedCheckpoint.epoch
@@ -418,7 +417,7 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
       (init := baseWeight) fun acc index => do
     -- `CommitteeIndex(index)`: the pyspec's checked cast of the plain loop variable.
     let committeeIndex ← CLUint64.ofNat? index
-    let committee ← getBeaconCommittee headState headBlock.slot committeeIndex
+    let committee ← liftErr (getBeaconCommittee headState headBlock.slot committeeIndex)
     let equivocatorWeight ← committee.foldlM (init := (0 : Gwei)) fun a i =>
       if store.equivocatingIndices.contains i then do
         let v ← sszGetIdx validators i
@@ -569,7 +568,7 @@ forkdef onTick (timeMs : CLUint64) : StoreTransition Unit := do
   -- plain values (`SPEC_ARITHMETIC.md` §4.2, `Nat` for termination measures): the truncated
   -- difference is `0` on a backwards tick, where the loop `.done`s on its first pass. Each pass
   -- moves the clock to the next slot start, so `tickSlot - cur + 1` passes suffice;
-  -- `fuelIterateM!` throws on fuel-out rather than returning a wrong store.
+  -- On fuel-out, `fuelIterateM!` throws, so an exhausted bound never yields a store.
   fuelIterateM! (tickSlot.toPlainNat - cur.toPlainNat + 1) () "on_tick: per-slot catch-up" fun _ => do
     let cs ← getCurrentSlot (← get)
     if cs < tickSlot then

@@ -13,7 +13,7 @@ import SizzLean.Proofs.UncachedBox
 conditional bind law: a successful run that starts on `pureState preState` ends on an
 uncached box. This file discharges it for the Gloas handlers the per-step split
 of `processOperations_run_ok_iff` builds on. All six `processOperations`
-handlers have lemmas: the spike set (`computeExitEpochAndUpdateChurn`,
+handlers have lemmas: the exit path (`computeExitEpochAndUpdateChurn`,
 `initiateValidatorExit`, `processVoluntaryExit`), the readers
 (`processProposerSlashing`, `processBlsToExecutionChange`,
 `processPayloadAttestation`, with `getPtc` and `getIndexedPayloadAttestation`
@@ -203,7 +203,7 @@ set_option maxRecDepth 40000 in
 /-- `getPtc` keeps the flavour: it takes the state as an explicit argument, and
 its body reads and gates only, through checked ops and asserts. The ladder is
 explicit, and the declaration carries a local `maxRecDepth` raise for the
-re-elaborated checked-operator terms (Stage 5.1 repair record). -/
+re-elaborated checked-operator terms. -/
 theorem keepsUncached_getPtc (state : BeaconState) (slot : EthCLSpecs.Gloas.Slot) :
     KeepsUncached (getPtc (StateTransition := GloasRun) (pureState state) slot) := by
   unfold getPtc
@@ -356,7 +356,7 @@ theorem returnsUncached_increaseBalance (state : BeaconState) (i : ValidatorInde
     | none => simp; rfl
     | some balance =>
       -- The read succeeded, so the body's first bind discharges; the checked add
-      -- rides the monad lift, whose fault arm is `ofArithFault`.
+      -- goes through the monad lift, whose fault arm is `ofArithFault`.
       have hlift : ∀ x : Checked Gwei, (liftM x : GloasRun Gwei)
           = MonadExcept.ofExcept (x.mapError StateTransitionError.ofArithFault) := by
         intro x
@@ -415,7 +415,7 @@ theorem returnsUncached_decreaseBalance (state : BeaconState) (i : ValidatorInde
 
 set_option maxHeartbeats 4000000 in
 /-- `slashValidator` keeps the flavour: the reads and the exit write keep it as
-the spike lemmas do, and the threaded states, the local write chain, the checked
+the exit-path lemmas do, and the threaded states, the local write chain, the checked
 `Gwei` binds, and the two balance returns stay uncached. The closing EIP-7732
 loop over the payment window is a pure `modifyState` writer, and
 `pureState_forIn_range_id` carries the flavour through its steps. -/
@@ -435,8 +435,8 @@ theorem keepsUncached_slashValidator (i : ValidatorIndex) :
     (keepsUncachedFrom_liftErr (T := BeaconState) (ε := EthCLLib.Spec.StateTransitionError)
       (ε' := EthCLLib.Spec.IndexError) (α := Validator) state _)
     (fun validator midState₃ => ?_)
-  -- The checked `Epoch` binds the migration added (the ring index and the
-  -- withdrawability extension) are `liftM`s of pure values, as are the checked
+  -- The checked `Epoch` binds (the ring index and the withdrawability
+  -- extension) are `liftM`s of pure values, as are the checked
   -- `Gwei` binds (the slashings ring add, the slashing penalty, and the
   -- whistleblower chain): each passes the box through unchanged, by
   -- `keepsUncachedFrom_liftChecked`.
@@ -1093,8 +1093,8 @@ theorem keepsUncached_processAttestation (att : EthCLSpecs.Gloas.Attestation) (p
                                 -- `current_epoch_target` ite around the whole body, the
                                 -- inner flag read around the inner-loop body, and the write
                                 -- around its two record updates; one `split` reduces all
-                                -- three to the concrete field, and
-                                -- `keepsUncached_attLoopBranch` covers the walk. The flag
+                                -- three to the concrete field, and `keepsUncached_attLoopCurr`
+                                -- or `keepsUncached_attLoopPrev` covers the walk. The flag
                                 -- indices term is inaccessible after the `split`, so the
                                 -- applications hand it to unification.
                                 intro vi b v r s hb hrun

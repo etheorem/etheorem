@@ -133,7 +133,10 @@ Per-subpackage design docs live next to the code they describe:
   (the EthCLLib framework and fork-authoring DSL), and
   [`SPECS_ARCHITECTURE.md`](packages/EthCLSpecs/docs/SPECS_ARCHITECTURE.md)
   (how the fork specs are organized, ported, and tested).
-  [`PLAN.md`](packages/EthCLSpecs/docs/PLAN.md) sequences the
+  [`SPEC_ARITHMETIC.md`](packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md) is the
+  arithmetic contract; deferred linter work is in
+  [`SPEC_ARITHMETIC_LINTING.md`](packages/EthCLSpecs/docs/SPEC_ARITHMETIC_LINTING.md).
+  The historical [`PLAN.md`](packages/EthCLSpecs/docs/PLAN.md) records the
   implementation phases; `IMPLEMENTATION_NOTES.md`, `DISCREPANCIES.md`,
   and `FUTURE_WORK.md` track deviations, spec disagreements, and
   deferred work.
@@ -338,7 +341,7 @@ which ships its own JSON vector archive per release.
 - **`ssz_static`** (EthCLSpecs, Fulu + Gloas + Heze): the consensus containers
   EthCLSpecs models pass at both the minimal and mainnet presets; the types it
   does not model (light-client, gossip-aggregation, networking identifiers,
-  signing helpers) xfail as out of scope. Earlier forks (Phase 0 through
+  signing helpers) skip as out of scope. Earlier forks (Phase 0 through
   Electra) are not covered: EthCLSpecs authors Fulu as the accumulated base,
   not a per-fork container set.
 
@@ -354,7 +357,7 @@ package stands.
 <!-- proof-coverage:begin -->
 | Package | What a proof covers here | Where it stands |
 | --- | --- | --- |
-| `EthCLSpecs` | the spec functions the fork bodies declare | 19 characterized, 63 touched, of 627 |
+| `EthCLSpecs` | the spec functions the fork bodies declare | 19 characterized, 63 touched, of 625 |
 | `SizzLean` | SSZ properties over the whole `SSZType` universe, gated by a predicate | 5 of 5 properties, over 15 admitted arms; none open |
 | `LeanSha256`, `LeanHazmat*` | nothing to cover: `@[extern]` bindings, and a spec side pinned by the NIST CAVP vectors | 3 named equivalence axioms: `sha256Hash_eq_spec`, `sha256Combine_eq_spec`, `sha256BatchCombine_eq_spec` |
 | `LeanPoseidon` | `permute_eq_permuteRef`, in the standalone `LeanPoseidonProofs` package | outside this run: it pins mathlib of its own |

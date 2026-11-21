@@ -1,11 +1,12 @@
 # Spec arithmetic transition plan
 
-Status: in progress. Stages 0 through 6 are complete and committed (inventory and
+Status: in progress. Stages 0 through 8 are complete and committed (inventory and
 baselines; SSZ packing and typed causes; the checked core, authoring surface, and tier
 views; `Gwei` across every fork with proofs; `Epoch` and `Slot` with evaluation-order
-fixes; indices and plain-integer formulas). Each stage's task checkboxes below carry a
-one-line completion note with the commit. Stage 7 (clocks and remaining configuration
-arithmetic) is next.
+fixes; indices and plain-integer formulas; clocks and remaining configuration
+arithmetic; flags, widths, and the full-scope closure). Each stage's task checkboxes
+below carry a one-line completion note with the commit. Stage 9 (the repository-wide
+documentation audit) is next.
 Durable working records (stage reports, findings, incidents, baselines, oracle
 results) live outside git in `mb/spec-arithmetic-implementation/` and are distilled
 into the tracked records at Stage 10.
@@ -745,16 +746,60 @@ arithmetic site remains unreviewed because its module built without edits.
   worked examples, and Lean module and declaration docstrings. Search for raw `UInt64`
   authoring guidance, unbounded-intermediate assumptions, wrapping conversions, error
   classification, obsolete conversion names, and arithmetic examples that omit binds.
-- [ ] **9.2 Reconcile each finding.** Update current guidance and executable examples
+  - [x] **9.1a Find and reconcile: arithmetic and authoring documents.** Covers the 9.1
+    find sweep and the 9.2 reconciliation for the arithmetic and authoring documents.
+    (WS-97, `c5c7b09e75b34d63bc2b92c3457417066028943a`)
+  - [x] **9.1b Find and reconcile: architecture and records documents.** Covers the 9.1
+    find sweep and the 9.2 reconciliation for the architecture and records documents.
+    (WS-98, `e86a07e13001485222c09dce90d1a16f95c6aedd`)
+  - [x] **9.1c Find and reconcile: repo-level, contributor, and other-package
+    documents.** Covers the 9.1 find sweep and the 9.2 reconciliation for the repo-level,
+    contributor, and other-package documents.
+    (WS-99, `b7bbaf6b2b8b4f3c7653966bafaf8390208f4b7d`)
+  - [ ] **9.1d1 Find and reconcile: EthCLLib `Spec/`, `Internal/`, and root module
+    docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
+    docstrings of the EthCLLib `Spec/`, `Internal/`, and root modules.
+  - [x] **9.1d2 Find and reconcile: EthCLLib `Proofs/`, `Tests/`, `PySpecTests/`, and
+    other-package docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for
+    the Lean docstrings of the EthCLLib `Proofs/`, `Tests/`, and `PySpecTests/` modules
+    and the other packages' `.lean` files. (WS-107, `2c6c6052772b7d58c42e60462acb3a24446a9088`)
+  - [x] **9.1d3 Find and reconcile: Fulu fork body and EthCLSpecs root module
+    docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
+    docstrings of the Fulu fork body and the EthCLSpecs root modules. (WS-108, `4792eb3d56310f29b0bfe16e74c447e47acd4fc5`)
+  - [x] **9.1d4 Find and reconcile: Gloas and Heze fork body docstrings.** Covers the 9.1
+    find sweep and the 9.2 reconciliation for the Lean docstrings of the Gloas and Heze
+    fork bodies. (WS-109, `311b7244993082bf95c79a702542d64f3a5e3c68`)
+  - [x] **9.1d5 Find and reconcile: EthCLSpecs `Proofs/`, `Tests/`, `PySpecTests/`, and
+    bench docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
+    docstrings of the EthCLSpecs `Proofs/`, `Tests/`, and `PySpecTests/` modules and the
+    bench. (WS-110, `3fbe87d4fbde469aafc88c28e654111941640cf4`)
+- [x] **9.2 Reconcile each finding.** Update current guidance and executable examples
   to match the implemented arithmetic contract. Check the actual result types behind
   conversion names. Preserve descriptions of intentionally raw arithmetic in other
   packages and clearly label historical measurements and superseded designs.
-- [ ] **9.3 Verify documentation examples.** Build affected Lean modules and examples.
+  (WS-101, `cdbd9f5184d14a3ab6728418f1f1a0acb3ca80b7`)
+- [x] **9.3 Verify documentation examples.** Build affected Lean modules and examples.
   Run the citation and project checks. Repeat the targeted searches and inspect remaining
-  matches. Record each reviewed document and the resolution of each conflict.
-- [ ] **9.4 Check document links and status.** Update the docs index and cross-references.
+  matches. Record each reviewed document and the resolution of each conflict. (WS-102, `170f0b00fa112b0fa95c38b43fe28f3fbac1ee3b`)
+- [x] **9.4 Check document links and status.** Update the docs index and cross-references.
   Ensure current guidance describes the implemented state and keeps deferred linter
   work separate. Leave removal of this temporary plan to the final acceptance stage.
+  (WS-103, `205929ad3f7b2cb5c63029a1f71cdd442639f151`)
+- [ ] **9.5 Close the Stage 8 routed items.** The 8.4 sub-stage records route these items
+  to the Epic Lead / Stage 9. They run before the documentation families, so the audit
+  sees final names and docstrings.
+  - [x] **9.5a Close the sync-committee participant lookup fault arm.** Closes the
+    `findIdx?` arm in the `processSyncAggregate` rewards loop (the 8.4a1 record, 8.4b
+    open item 1). (WS-94, `b42af6dec3f49589f59407344b25ae12c8068767`)
+  - [x] **9.5b Close the `computeCommittee` honest bounds fault.** Replaces the
+    defaulting permutation read of `computeCommittee` with an honest bounds fault (the
+    8.4a2 record, 8.4b open item 2). (WS-105, `3436194c8caa9f1839867af4eecabd86c1b4498b`)
+  - [x] **9.5c Close the unpinned `processDeposit` body and its raw `eth1DepositIndex`
+    wrap.** Closes the raw `eth1DepositIndex + 1` wrap in `processDeposit` (the 8.4a1
+    and 8.4a3 records, 8.4b open item 3). (WS-95, `c563e4043e8efaf98281ba88d1a7c64e5683a476`)
+  - [x] **9.5d Close the deferred cleanup batch.** Lands the behavior-preserving cleanup
+    items that the 8.4a3 and 8.4a4 records hand to the Epic Lead / Stage 9.
+    (WS-96, `f36cb2b7549994dab7db9fc2fd2783d0af5de673`)
 
 **Done when:** the repository-wide audit has a recorded scope and findings; every
 identified conflict with the implemented arithmetic contract has a resolution; affected

@@ -42,9 +42,10 @@ too (`phase0/beacon-chain.md:1815-1819`). Gloas repeats both sentences for paylo
 (`gloas/beacon-chain.md:1590-1603`). Fork choice says the same of its handlers, and an invalid
 call must leave `store` unchanged (`phase0/fork-choice.md:97-99`).
 
-The built Heze module holds 177 `assert` statements and no `try` block. Every raise ends the
-call that started it. The test wrappers still catch selected exception classes, so their
-classification remains part of the runner contract in Section 1.
+The functions of the built Heze module hold 177 `assert` statements, and the module holds no
+`try` block. Thirteen more asserts run at module level and check the configuration at import.
+Every raise ends the call that started it. The test wrappers still catch selected exception
+classes, so their classification remains part of the runner contract in Section 1.
 
 ## 3. What the pyspec does
 
@@ -173,7 +174,7 @@ where the pyspec raises, so a fork body writes the same expression the pyspec wr
 | `Uint64` and its subclasses | `CLUint64` | A `structure` over `UInt64`. No core operator instance applies to it. |
 | `int` | `CLInt` | A `structure` over `Int`. Unbounded and signed. |
 | a raise | `Checked α` | `Except ArithFault α`: a value or a fault. The type of an arithmetic expression. |
-| a range fault, zero divisor, or invalid shift count | `ArithFault` | A typed cause, with the operator, width, and signed operands available for diagnosis. |
+| a range fault or a zero divisor | `ArithFault` | A typed cause, `.range` or `.zeroDivision`, with the operator, width, and signed operands available for diagnosis. A negative shift count is a `.range` fault. |
 
 `Slot`, `Epoch`, `Gwei`, `ValidatorIndex`, and the other unsigned 64-bit consensus units
 are abbreviations of `CLUint64`. Unit aliases share the checked operators. `CLUint64`
@@ -183,9 +184,11 @@ has the `SSZRepr` instance of `uint64`, so fields retain their bytes and roots.
 Keep the semantic core separate from operator elaboration, indexing, and SSZ instances.
 Proofs import the semantic core without requiring authoring elaborators. The 64-bit and
 8-bit types use native-backed wrappers. Share laws and instance generation where useful.
-Every width used by consensus-spec code must have an explicit operation matrix and
-conversion laws, including widths used only at codec boundaries. All arithmetic at
-those widths must follow the same checked rules.
+Every width with a consensus arithmetic consumer must have an explicit operation
+matrix and conversion laws. The implemented arithmetic widths are 64 and 8 bits.
+The 32-bit uses are codec conversions; the 256-bit uses are data representations.
+Those data-only widths retain their codec rules. An arithmetic consumer at either
+width requires a checked surface and its operation matrix before use.
 
 Use exact type names in the Lean API and its documentation. Python `int` is the source
 type; `CLInt` is its spec-facing Lean model; Lean `Int` is the underlying signed type.
@@ -204,11 +207,29 @@ yet.
 | `U`, `U` | `/ %` | `Checked U` | zero divisor |
 | `I`, `I` | `+ - *` | `I` | never |
 | `I`, `I` | `/ %` | `Checked I` | zero divisor |
+| `I`, `Nat` or Lean `Int` in either order | `/ %` | `Checked I` | zero divisor |
 | `I`, `U` in either order | `+ - * / %` | `Checked U` | outside `[0, 2^64)`, or zero divisor |
 | `Nat`, `U` in either order | `+ - * / %` | `Checked U` | outside `[0, 2^64)`, or zero divisor |
 | `Nat`, `I` in either order | `+ - *` | `I`, the `Nat` coerces | never |
 | `Nat`, `Nat` | all | core Lean | total, but subtraction and zero division differ from Python |
 | supported numeric pairs with a `Checked` operand | same | `Checked` of the same type | the operand's fault, then the operator's |
+
+The other operators use the Lean operator names. Python's `**` is `^`, `<<` is `<<<`, `>>` is
+`>>>`, and `&`, `|`, `^` are `&&&`, `|||`, `^^^`.
+
+| Operands | Operators | Result | Raises |
+|---|---|---|---|
+| `U`, `U` | `&&&`, `\|\|\|`, `^^^` | `U` | never |
+| `U`, `Nat` | `>>>` | `U` | never; zero for a count of 64 or more |
+| `Nat`, `U` | `>>>` | `Checked U` | outside `[0, 2^64)` |
+| `U`, `Nat` | `<<<` | `Checked U` | outside `[0, 2^64)` |
+| `U`, `Nat`; `Nat`, `U`; Lean `Int`, `U` | `^` | `Checked U` | outside `[0, 2^64)` |
+| `I`, `U` in either order | `&&&` | `Checked U` | outside `[0, 2^64)` |
+| `U`, `PositiveDivisor` | `/ %` | `U` | never |
+| `CLUint8`, `CLUint8` | `&&&`, `\|\|\|` | `CLUint8` | never |
+
+Python's `~x` on a checked value is `x.invert`, a `CLInt`. `CLUint8.addFlag` and
+`CLUint8.hasFlag` return `Checked`, because the mask `2**flag_index` raises past index 7.
 
 Three properties follow.
 
@@ -263,12 +284,15 @@ reward_numerator = base_reward * weight * unslashed_participating_increments
 rewards[index] += reward_numerator // (active_increments * WEIGHT_DENOMINATOR)
 ```
 
+`getFlagIndexDeltas` in `Fulu/EpochProcessing.lean` writes these lines:
+
 ```lean
 let rewardNumerator ← baseReward * weight * unslashedIncrements
-let previousReward ← sszGetIdx rewards index
+-- `rewards[index] += …` reads the element before it forms the right side.
+let previousReward ← liftErr (getAt rewards vi)
 let rewardDelta ← rewardNumerator / (activeIncrements * Const.weightDenominator)
 let updatedReward ← previousReward + rewardDelta
--- Write updatedReward to rewards[index] through the checked indexed-write interface.
+rewards ← liftErr (setAt rewards vi updatedReward)
 ```
 
 A bind is required in two places:
@@ -346,7 +370,7 @@ A function's result type states whether it can raise:
 | a literal typed as a checked width | a bound-checked literal | compilation fails if out of range |
 | `max(a, b)`, `min(a, b)` of the same numeric kind | `max a b`, `min a b` | never |
 | `saturating_sub(a, b)` | `a.saturatingSub b` | never |
-| `sum(xs)` | `xs.foldlM (fun acc x => acc + x) 0` | as `+` |
+| `sum(xs)` | `xs.foldlM (fun acc x => acc + x) (0 : Gwei)`, with the element type's zero | as `+` |
 | a store into a checked field | checked conversion if needed, then the store | range failure at conversion; index failures remain separate |
 
 `x.toCLInt` models Python's `int(x)` and returns `CLInt`. For `x : CLUint64`,
@@ -365,14 +389,19 @@ A public trusted constructor must never repair an operator elaboration error.
 `trustedOfUInt64 (UInt64.ofNat n)` loses overflow information before the wrapper sees it.
 Audit raw projections and trusted constructors as well as `toPlainNat` and `toPlainInt`.
 
-Literal safety belongs in the `OfNat` construction itself. Require a kernel-checked
-bound, for example through a decidable proof premise, so an out-of-range instance cannot
-be synthesized. A scoped elaborator may improve diagnostics but cannot be the only gate.
+Literal safety belongs in the `OfNat` construction itself. The `CLUint64` instance carries
+the premise `NeZero (2^64 - n)`, and the `CLUint8` instance carries `NeZero (256 - n)`.
+Core instance search discharges the premise only for an in-range `n`, so an out-of-range
+instance cannot be synthesized. A scoped elaborator may improve diagnostics but cannot be
+the only gate.
 Test direct `OfNat` use, reducible and non-reducible aliases, delayed expected types,
 and a module that never opens `EthCLLib.Spec`.
 
 Mixed `min`/`max` select an operand and retain its numeric kind in Python. `sum([])`
 starts as a plain zero. Audit those sites before choosing a homogeneous Lean encoding.
+The fork bodies start each checked `sum` at the checked zero of the element type. The
+pyspec's plain `0` meets a checked element at the first add, so both forms raise at the
+same element; only the kind of an empty sum differs.
 Any normalization must preserve subsequent raises, including the first addition of a
 nonempty sum. Do not cast a large plain operand merely to satisfy an instance.
 
@@ -383,19 +412,22 @@ An index class in `EthCLLib` says how an integer type names a position:
 ```lean
 class ToIndex (ι : Type) where
   pos? : ι → Nat → Option Nat      -- `none` where the pyspec raises `IndexError`
+  idx? : ι → Nat                   -- the rejected index, for diagnostics only
 ```
 
 It has instances for `Nat`, `CLUint64`, and `CLInt`. The `CLInt` instance counts a negative
-index from the end. The raising read `sszGetIdx` takes any index type with an instance, and a
-write helper takes the same class. `SizzLean` keeps `Nat` indices.
+index from the end. Its `idx?` gives `0` for a negative index, because the `IndexError`
+payload holds a `Nat`. The pure read `getAt`, the pure write `setAt`, and the raising read
+`sszGetIdx` take any index type with an instance. `SizzLean` keeps `Nat` indices.
 
 The raising read stays in the ambient monad. Its failure remains `IndexError`-shaped,
 mapped to `outOfBounds` by the error conversion.
 
-A state-free read returns `Except IndexError α`, or `Except StateTransitionError α`
-when it also performs arithmetic or assertions. Apply the same rule to arrays, SSZ
-collections, bit lists, and writes. Moving an index fault into a pure helper does not
-change its exception class. A pure indexed read must preserve that typed error.
+`getAt` returns `Except IndexError α`. A state-free helper that also performs arithmetic
+or assertions returns `Except StateTransitionError α` and lifts the read with `liftErr`.
+Apply the same rule to arrays, SSZ collections, bit lists, and writes. Moving an index
+fault into a pure helper does not change its exception class. A pure indexed read must
+preserve that typed error.
 
 Test `-1`, `-size`, an index below `-size`, `size`, and empty collections for reads and
 writes. Keep available index and bound information in diagnostics. Do not use a default

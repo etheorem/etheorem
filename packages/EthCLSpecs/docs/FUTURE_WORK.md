@@ -8,18 +8,22 @@ the shape it will take, so a later pass can pick it up whole rather than redisco
 ### What is left
 
 The error model already splits indexed reads two ways. A read whose index arrives from
-block or external input rejects through `Except IndexError` (`sszGetIdx` / `bitlistGetIdx`
-in `Spec/State.lean`, lifted by `liftErr`); a guarded read with an explicit
+block or external input rejects through `Except IndexError` (`sszGetIdx` / `getAt` /
+`bitlistGetIdx` in `Spec/State.lean`, lifted by `liftErr`); a guarded read with an explicit
 `assert (i < size)` reads the proof-carrying `xs[i]'hb.down` through `assertH`. What stays
 on a total `[i]!` or `vget`, the provability residual, is every read whose index is in
 range by construction but does not yet carry the proof. A proof over one of these unfolds
 through the `Inhabited` default rather than a bounded lookup. The shapes:
 
-- **Pure data-derived index reads.** The foundational accessors and index-list consumers:
-  `getTotalBalance`, `getTotalActiveBalance`, `getActiveValidatorIndices`,
-  `getUnslashedParticipatingIndices`, `getInactivityPenaltyDeltas`, and the committee and
-  weighted-selection helpers. The index is a parameter or a validated list. Approach A or B
-  below, and the invariant lemmas they rest on.
+- **Pure data-derived index reads.** The committee and weighted-selection helpers:
+  `computeCommittee`'s permutation and `indices` reads after its position assert, and
+  `cbwsAux`'s `perm`, `effBals`, and `indices` reads. The index is a permutation entry
+  or a position below a length the helper already holds. Approach A or B below, and the
+  invariant lemmas they rest on. The foundational accessors and index-list consumers
+  (`getTotalBalance`, `getTotalActiveBalance`, `getUnslashedParticipatingIndices`,
+  `getInactivityPenaltyDeltas`) read through `getAt` and raise `IndexError` as the pyspec
+  does, so they are outside this residual. A proof parameter on one of them would trade
+  that raise for an obligation on every caller.
 - **Loop and fold bodies.** Reads inside `for i in [0:n]`, `.foldl`, `.map`, `.all` over an
   array's own indices, where `i < n` holds but sits out of scope. The iteration carries the
   bound once restructured (`for h : i in [0:n]`, or `.attach` for the membership), the same
@@ -48,27 +52,32 @@ optional proof, Lean's `autoParam`:
 
 ```lean
 forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex)
-    (hvalid : ∀ i ∈ indices, i.toNat < (sszGet state validators).size := by …) : Gwei :=
+    (hvalid : ∀ i ∈ indices, i.toPlainNat < (sszGet state validators).size := by …) :
+    Checked Gwei := do
   let validators := sszGet state validators
-  indices.attach.foldl (fun acc ⟨i, hi⟩ =>
-    acc + (validators[i.toNat]'(hvalid i hi)).effectiveBalance) 0
+  let total ← indices.attach.foldlM (fun acc ⟨i, hi⟩ =>
+    acc + (validators[i.toPlainNat]'(hvalid i hi)).effectiveBalance) (0 : Gwei)
+  return max total Const.effectiveBalanceIncrementG
 ```
 
-The fold runs over `indices.attach`, so each step carries `hi : i ∈ indices`, and
-`hvalid i hi` discharges the read's bound. A plain `foldl` lambda gives `i` but no
-membership, which is why `.attach` is needed. The read is then `[i]'(…)`, proof-carrying,
-with no default.
+The sketch uses `getTotalBalance` because its call graph shows the cost. The
+implemented body reads through `getAt` and raises `IndexError` instead (see the first
+shape above). The fold runs over `indices.attach`, so each step carries
+`hi : i ∈ indices`, and `hvalid i hi` discharges the read's bound. A plain `foldlM`
+lambda gives `i` but no membership, which is why `.attach` is needed. The read is then
+`[i]'(…)`, proof-carrying, with no default. The checked `Gwei` add keeps its range
+fault, so the result stays `Checked`.
 
-The definition site changes little: the parameter, `foldl` to `attach.foldl`, and the
-proof term in place of the bang. The cost lands at the callers. The default tactic cannot
+The definition site changes little: the parameter, `foldlM` to `attach.foldlM`, and the
+proof term in place of the raising read. The cost lands at the callers. The default tactic cannot
 prove `∀ i ∈ indices, …` for an arbitrary `indices`, so each call site owes the proof. A
 spike on `getTotalBalance` with a `by sorry` default put the obligation at
 `getTotalActiveBalance`, the reward-delta helpers, and the Gloas mirrors. The way to make
 most call sites free is a small set of invariant lemmas the default tactic can find:
 
 - `getActiveValidatorIndices` returns in-range indices,
-  `∀ vi ∈ result, vi.toNat < (sszGet state validators).size`, a loop invariant over its
-  `for i in [0:validators.size]`.
+  `∀ vi ∈ result, vi.toPlainNat < (sszGet state validators).size`, a loop invariant over its
+  `for h : i in [0 : validators.size]` and the checked `CLUint64.ofNat? i` cast.
 - the parallel-length invariant `(sszGet state balances).size = (sszGet state
   validators).size`, for the reward and penalty reads that index `balances` at a validator
   index.
@@ -82,11 +91,11 @@ Bundle the proof into the index-list type instead of a per-call argument:
 
 ```lean
 abbrev ValidIndices (state : State) :=
-  { idx : Array ValidatorIndex // ∀ i ∈ idx, i.toNat < (sszGet state validators).size }
+  { idx : Array ValidatorIndex // ∀ i ∈ idx, i.toPlainNat < (sszGet state validators).size }
 ```
 
-`getActiveValidatorIndices` returns `ValidIndices state`, proving validity once at the
-producer, and `getTotalBalance` consumes it. The proof rides with the data through the
+`getActiveValidatorIndices` returns `Checked (ValidIndices state)`, proving validity once
+at the producer, and `getTotalBalance` consumes it. The proof moves with the data through the
 call graph, so consumers carry no obligation. This changes the index-list signatures, and
 in exchange the invariant is proved in one place rather than restated at every consumer.
 It is the cleaner threading and the one to reach for first.

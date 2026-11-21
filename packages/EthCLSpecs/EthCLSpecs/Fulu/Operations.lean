@@ -5,15 +5,20 @@ import EthCLSpecs.Fulu.Blocks
 # `EthCLSpecs.Fulu.Operations`: `process_operations` and the per-operation steps
 
 The block-operation pipeline: proposer / attester slashings, attestations (with
-participation-flag accounting and the proposer reward), deposits, voluntary exits,
+participation-flag accounting and the proposer reward), voluntary exits,
 BLS-to-execution changes, and the Electra execution requests (deposit / withdrawal
-/ consolidation). Signature checks go through the `[CryptoBackend]` seam; the
-deposit Merkle branch is checked against `eth1_data.deposit_root`.
+/ consolidation). Signature checks go through the `[CryptoBackend]` seam.
+
+Fulu has no in-block deposit step. The pinned `process_operations` asserts
+`len(body.deposits) == 0` and drops `process_deposit`, so this file declares no
+`process_deposit` or `apply_deposit`. A deposit enters through
+`process_deposit_request` as a pending deposit.
 
 Each `assert` is an expected rejection: an invalid vector hits one and the harness
-classifies it as a faithful reject. Input-controlled indices are bounds-guarded
-(`assert idx < size`) so an out-of-range read rejects the way the pyspec's
-`IndexError` does, never panicking.
+classifies it as a faithful reject. An input-controlled index reads through the raising
+`sszGetIdx` / `getAt`, so an out-of-range read rejects with `.outOfBounds`, the class of the
+pyspec's `IndexError`, and never panics. `expect_assertion_error` catches both classes
+(`RunnerCaughtSet.assertionAndIndex`).
 -/
 
 set_option autoImplicit false
@@ -68,7 +73,7 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
   assert (h1.proposerIndex == h2.proposerIndex)
   assert (htr h1 != htr h2)
 
-  -- `proposer = state.validators[header_1.proposer_index]` (`fulu/minimal.py:2008`): a
+  -- `proposer = state.validators[header_1.proposer_index]` (`fulu/minimal.py:2012`): a
   -- raising list read, so an out-of-range proposer rejects with `IndexError`'s class.
   let proposer ← sszGetIdx (sszGet state validators) h1.proposerIndex
   assert (isSlashableValidator proposer (currentEpochOf state))
@@ -138,8 +143,10 @@ forkdef getAttestationParticipationFlagIndices (state : State) (data : Attestati
 mixed fallible helper uses the common typed error channel): the block-supplied
 `aggregation_bits` is read at a committee offset it does not bound, so an over-length read
 rejects `IndexError`-shaped rather than masking to `false`, and each `getBeaconCommittee`
-carries the seed walk's checked `Epoch` chain. The `committee[i]` read stays total, `i` is
-bounded by the committee it just built. -/
+carries the seed walk's checked `Epoch` chain and the shuffled-index assert. That assert fires
+on a committee index at or past the slot's committee count, which `process_attestation` rules
+out first and the fork-choice `on_attestation` path does not. The `committee[i]` read stays
+total, `i` is bounded by the committee it just built. -/
 forkdef getAttestingIndices (state : State) (att : Attestation) :
     Except StateTransitionError (Array ValidatorIndex) := do
   let mut out : Array ValidatorIndex := #[]
@@ -200,8 +207,9 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
       -- `flag_index in participation_flag_indices and not has_flag(epoch_participation[index],
       -- flag_index)` (`fulu/minimal.py:2081-2084`): the `and` short-circuits, so the flag read
       -- forms only for a flag the attestation earns. The `in` compares a plain enumerate
-      -- index against the checked constants by value — a total comparison (`BaseUint.__eq__`
-      -- admits a bare integer) — so the membership reads the elements' plain values.
+      -- index against the checked constants by value. That is a total comparison
+      -- (`BaseUint.__eq__` admits a bare integer), so the membership reads the elements' plain
+      -- values.
       -- `vi` is a data-derived attesting-validator index; the read goes through
       -- `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather than
       -- masking as a default flag.
@@ -266,31 +274,6 @@ where
               pure (if bit then a + 1 else a)) 0
           pure (attesters > 0, off + committee.size))
       (true, 0)
-
-/-! ## Deposits -/
-
-/-- `apply_deposit`: a new pubkey is added only with a valid proof-of-possession;
-either way (existing, or freshly added) the amount is queued as a pending deposit. -/
-forkdef applyDeposit (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) (sig : BLSSignature) :
-    StateTransition Unit := do
-  let state ← get
-  let pendingDeposit : PendingDeposit :=
-    { pubkey, withdrawalCredentials := wc, amount, signature := sig, slot := Const.genesisSlot }
-  if (sszGet state validators).any (·.pubkey == pubkey) then
-    appendState pendingDeposits pendingDeposit
-  else if isValidDepositSignature pubkey wc amount sig then
-    addValidatorToRegistry pubkey wc 0
-    appendState pendingDeposits pendingDeposit
-
-/-- `process_deposit`: verify the Merkle branch into `eth1_data.deposit_root`,
-advance `eth1_deposit_index`, then apply. -/
-forkdef processDeposit (d : Deposit) : StateTransition Unit := do
-  let state ← get
-  assert (isValidMerkleBranch (htr d.data) d.proof.toArray (Const.depositContractTreeDepth + 1)
-    (sszGet state eth1DepositIndex).toNat (sszGet state eth1Data).depositRoot)
-
-  modifyState fun state => sszUpdate state with eth1DepositIndex := (sszGet state eth1DepositIndex) + 1
-  applyDeposit d.data.pubkey d.data.withdrawalCredentials d.data.amount d.data.signature
 
 /-! ## Voluntary exits -/
 

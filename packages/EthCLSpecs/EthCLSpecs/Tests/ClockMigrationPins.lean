@@ -3,7 +3,7 @@ import EthCLSpecs.Fulu.ForkChoice
 /-!
 # `EthCLSpecs.Tests.ClockMigrationPins`: the clock boundary pins
 
-Fulu behavior pins for the clock migration (Stage 7.1a). The clock values
+Fulu behavior pins for the clock. The clock values
 (`time_ms`, `genesis_time_ms`, `genesis_time`, `SLOT_DURATION_MS`) are `Uint64` in the
 pinned module, so every clock operation is the checked kind. Gloas and Heze inherit the
 clock helpers from Fulu. Each pin pairs a targeted failure with a nearby success that

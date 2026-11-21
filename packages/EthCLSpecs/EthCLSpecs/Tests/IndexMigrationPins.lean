@@ -4,11 +4,10 @@ import EthCLSpecs.Gloas
 /-!
 # `EthCLSpecs.Tests.IndexMigrationPins`: the other index behavior pins
 
-Behavior pins for the migration of `BuilderIndex`, `WithdrawalIndex`, `CommitteeIndex`,
-`ColumnIndex`, and `CellIndex` to `CLUint64` (spec arithmetic Stage 6.2). Each pin pairs a
-targeted failure case with a nearby success that reaches the same operation, and the
-successes read back exact values. The pinned pyspec gives the same class or value at every
-pin (`.spike/stage6/oracle62.py` replays them). Every failure pin fails under the
+Behavior pins for `BuilderIndex`, `WithdrawalIndex`, `CommitteeIndex`, `ColumnIndex`, and
+`CellIndex` as the checked `CLUint64` kind. Each pin pairs a targeted failure case with a
+nearby success that reaches the same operation, and the successes read back exact values. The
+pinned pyspec gives the same class or value at every pin. Every failure pin fails under the
 pre-migration body, which the pin's own comment names.
 
 1. `withdrawal_index += 1` (Fulu `get_expected_withdrawals`, Gloas `get_builder_withdrawals`):
@@ -101,7 +100,7 @@ example : pinFuluWithdrawalIndexBelowMaxReads = true := by native_decide
 
 /-- Runs `compute_committee` over the indices `0 … 7` and a zero seed, reading back the
 committee's indices. -/
-private def committeeOf (index count : CLUint64) : Except ArithFault (List Nat) :=
+private def committeeOf (index count : CLUint64) : Except StateTransitionError (List Nat) :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   (computeCommittee ((Array.range 8).map fun i => ((CLUint64.ofNat? i).toOption.getD 0))
@@ -112,31 +111,31 @@ private def committeeOf (index count : CLUint64) : Except ArithFault (List Nat) 
 call returned an empty committee. -/
 private def pinComputeCommitteeProductRaises : Bool :=
   match committeeOf 2305843009213693951 18446744073709551615 with
-  | .error f => f.cause == .range && f.op == "*"
-  | .ok _ => false
+  | .error (.arithmetic op) => op == "*"
+  | _ => false
 example : pinComputeCommitteeProductRaises = true := by native_decide
 
 /-- `index = 2^61 - 2`: both products fit, and both bounds divide to `0`. -/
 private def pinComputeCommitteeProductFits : Bool :=
-  committeeOf 2305843009213693950 18446744073709551615 == .ok []
+  (committeeOf 2305843009213693950 18446744073709551615).toOption == some []
 example : pinComputeCommitteeProductFits = true := by native_decide
 
 /-- `count = 0`: `// count` raises `ZeroDivisionError`. The old `Nat` division returned `0`
 and the call returned an empty committee. -/
 private def pinComputeCommitteeZeroCountRaises : Bool :=
   match committeeOf 0 0 with
-  | .error f => f.cause == .zeroDivision
-  | .ok _ => false
+  | .error (.zeroDivision _) => true
+  | _ => false
 example : pinComputeCommitteeZeroCountRaises = true := by native_decide
 
 /-- `count = 1`: the whole shuffled registry, in the pinned shuffle order. -/
 private def pinComputeCommitteeOneCountReads : Bool :=
-  committeeOf 0 1 == .ok [4, 1, 0, 2, 6, 5, 3, 7]
+  (committeeOf 0 1).toOption == some [4, 1, 0, 2, 6, 5, 3, 7]
 example : pinComputeCommitteeOneCountReads = true := by native_decide
 
 /-- `index = 1`, `count = 4`: the slice `[2, 4)` of the shuffled registry. -/
 private def pinComputeCommitteeSliceReads : Bool :=
-  committeeOf 1 4 == .ok [0, 2]
+  (committeeOf 1 4).toOption == some [0, 2]
 example : pinComputeCommitteeSliceReads = true := by native_decide
 
 /-! ### 3. `get_beacon_committee` -/
@@ -162,16 +161,17 @@ private def pinBeaconCommitteeIndexAddRaises : Bool :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   match (getBeaconCommittee (activeState 1) 1 18446744073709551615 :
-      Checked (Array ValidatorIndex)) with
-  | .error f => f.cause == .range && f.op == "+"
-  | .ok _ => false
+      Except StateTransitionError (Array ValidatorIndex)) with
+  | .error (.arithmetic op) => op == "+"
+  | _ => false
 example : pinBeaconCommitteeIndexAddRaises = true := by native_decide
 
 /-- Slot `1`, committee index `0`: the add fits, and the committee is validator `7`. -/
 private def pinBeaconCommitteeIndexAddReads : Bool :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  match (getBeaconCommittee (activeState 1) 1 0 : Checked (Array ValidatorIndex)) with
+  match (getBeaconCommittee (activeState 1) 1 0 :
+      Except StateTransitionError (Array ValidatorIndex)) with
   | .ok c => c.toList.map (·.toPlainNat) == [7]
   | .error _ => false
 example : pinBeaconCommitteeIndexAddReads = true := by native_decide

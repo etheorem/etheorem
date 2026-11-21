@@ -3,14 +3,12 @@ import EthCLSpecs.Fulu.Deposits
 /-!
 # `EthCLSpecs.Fulu.EpochProcessing`: epoch-transition substeps (load order row 31)
 
-The `process_epoch` substeps. This slice ports the period-reset substeps, the
-smallest, dependency-light members of the set (`process_slashings_reset`,
-`process_randao_mixes_reset`, `process_eth1_data_reset`,
-`process_participation_flag_updates`); they read only the time / RANDAO helpers
-and rewrite one state field. The heavier substeps (justification/finalization,
-rewards/penalties, registry updates, slashings, pending deposits/consolidations,
-effective balances, sync-committee updates, proposer lookahead) and the
-`processEpoch` composition follow.
+The `process_epoch` substeps: justification and finalization, inactivity updates, rewards
+and penalties, registry updates, slashings, the pending-deposit and pending-consolidation
+queues, effective-balance updates, the period resets (`process_slashings_reset`,
+`process_randao_mixes_reset`, `process_eth1_data_reset`), the historical summaries, the
+participation-flag rotation, the sync-committee updates, and the proposer lookahead.
+`processEpoch` in `Transition` runs them in the Fulu order.
 
 Each is a `forkdef StateTransition Unit`, driven in isolation by the
 `epoch_processing/<handler>` vector format.
@@ -105,7 +103,7 @@ forkdef processJustificationAndFinalization : StateTransition Unit := do
   let genesisPlusOne ← Const.genesisEpoch + 1
   if currentEpochOf state ≤ genesisPlusOne then pure ()
   else
-    -- `fulu/minimal.py:1724-1734`: both index sets, then the three totals, in this order;
+    -- `fulu/minimal.py:1725-1733`: both index sets, then the three totals, in this order;
     -- each can raise `IndexError` on a registry read.
     -- `TIMELY_TARGET_FLAG_INDEX` is the pin's checked `Uint64(1)`; the flag-index
     -- parameter is the pyspec's plain `int`, and the mask exponent reads the checked
@@ -207,7 +205,7 @@ forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) :
       penalties ← liftErr (setAt penalties vi updatedPenalty)
   return (rewards, penalties)
 
-/-- `get_inactivity_penalty_deltas` (`fulu/mainnet.py:1815-1832`): penalties only.
+/-- `get_inactivity_penalty_deltas` (`fulu/mainnet.py:1815-1833`): penalties only.
 The numerator is the checked `effective_balance * inactivity_scores[index]`
 product, the divisor the checked product
 `INACTIVITY_SCORE_BIAS * INACTIVITY_PENALTY_QUOTIENT_BELLATRIX`, and the `+=` the
@@ -298,7 +296,7 @@ forkdef processRegistryUpdates : StateTransition Unit := do
 
 /-! ## Slashings (epoch penalty) -/
 
-/-- `process_slashings` (`fulu/mainnet.py:1871-1895`). The `sum(state.slashings)`
+/-- `process_slashings` (`fulu/mainnet.py:1871-1891`). The `sum(state.slashings)`
 accumulator and the multiplier product are the checked `Gwei` chain; the
 increment division divides first, the guard the spec writes out
 (`SPEC_ARITHMETIC.md` §3.5). Each intermediate binds where the pyspec forms it. -/
@@ -457,7 +455,7 @@ forkdef processPendingConsolidations : StateTransition Unit := do
 
 /-! ## Effective-balance updates -/
 
-/-- `process_effective_balance_updates` (`fulu/mainnet.py:1901-1926`), the
+/-- `process_effective_balance_updates` (`fulu/mainnet.py:1901-1917`), the
 hysteresis rule. The thresholds are the checked `Gwei` chain
 `EFFECTIVE_BALANCE_INCREMENT // HYSTERESIS_QUOTIENT` and its multiplier
 products, and each comparison operand binds where the pyspec forms it; the
@@ -574,10 +572,12 @@ forkdef processProposerLookahead : StateTransition Unit := do
   let newProposers ←
     liftErr (getBeaconProposerIndices state lookaheadEpoch)
   let old := sszGet state proposerLookahead
+  -- `last_epoch_start = len - SLOTS_PER_EPOCH` (`fulu/minimal.py:6621`) is
+  -- `MIN_SEED_LOOKAHEAD * SLOTS_PER_EPOCH`: that many leading slots copy the window read
+  -- forward by one epoch; the last `SLOTS_PER_EPOCH` slots take the fresh proposers.
   set (sszUpdate state with proposerLookahead :=
-    Vector.ofFn (fun i : Fin (2 * Const.slotsPerEpoch) =>
-      if i.val < Const.slotsPerEpoch then vget old (i.val + Const.slotsPerEpoch)
-      else newProposers[i.val - Const.slotsPerEpoch]!))
+    shiftWindow old Const.slotsPerEpoch (Const.minSeedLookahead.toPlainNat * Const.slotsPerEpoch)
+      (fun k => newProposers[k]!))
 
 end
 

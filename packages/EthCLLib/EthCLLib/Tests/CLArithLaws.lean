@@ -6,7 +6,7 @@ import EthCLLib.Proofs.CLInt
 Executable pins for the fused laws of `Proofs/CLUint.lean` and
 `Proofs/CLInt.lean` (`SPEC_ARITHMETIC.md` §4.9): the `simp_arith` chain
 reduction, the checked fold, the conversion round-trips, the `Checked` lift
-laws, and the reward-shaped division formula Stage 4 reuses. Concrete pins run
+laws, and the reward-shaped division formula. Concrete pins run
 in the kernel through `decide`; the law-shaped pins cite the theorems. A few
 facts restate a pin from `Tests/CLUintArith.lean` or `Tests/CLIntArith.lean`
 on purpose: each law carries its own executable witness beside its theorem.

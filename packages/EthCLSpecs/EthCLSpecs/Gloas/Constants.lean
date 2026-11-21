@@ -32,7 +32,7 @@ namespace EthCLSpecs.Gloas
 Fulu's fields merge in through the lineage, so the emitted `Gloas.Preset` is one
 flat class carrying both.
 
-Stage 7.3b audit: the pinned module types every one of these `Uint64` (`PTC_SIZE`,
+The pinned module types every one of these `Uint64` (`PTC_SIZE`,
 `MAX_BUILDERS_PER_WITHDRAWALS_SWEEP`, `MAX_PAYLOAD_ATTESTATIONS`,
 `MAX_BUILDER_DEPOSIT_REQUESTS_PER_PAYLOAD`, `MAX_BUILDER_EXIT_REQUESTS_PER_PAYLOAD`),
 but each stays a structural `Nat`, with no checked view of its own. Each shapes a
@@ -42,7 +42,7 @@ compare or choose a plain size, which orders the values exactly as Python's plai
 `int` against a `Uint64` does, and `Array.range`/`Array.replicate` take a plain
 count. `PTC_SIZE` alone also feeds an arithmetic formula, the majority threshold
 `PTC_SIZE // 2`, so it is the one that carries a checked view (`ptcSizeC` below);
-its `< 2 ^ 64` premise rides the preset, Fulu's own pattern. -/
+its `< 2 ^ 64` premise is a preset field, as in Fulu. -/
 forkpreset where
   /-- `PTC_SIZE`: the payload-timeliness committee's member count. -/
   ptcSize : Nat
@@ -129,9 +129,9 @@ forkabbrev minBuilderWithdrawabilityDelay : Epoch := Config.minBuilderWithdrawab
 forkabbrev consolidationChurnLimitQuotient : CLUint64 := Config.consolidationChurnLimitQuotient
 
 /-- The builder-payment threshold, as a fraction of the bid
-(`BUILDER_PAYMENT_THRESHOLD_NUMERATOR / …_DENOMINATOR`). Adjudication F2 closed by
-the Stage 7.3b oracle run: the pinned module types both `Uint64(6)` / `Uint64(10)`
-at every preset, so they store as `Gwei`, the checked kind the quorum product and
+(`BUILDER_PAYMENT_THRESHOLD_NUMERATOR / …_DENOMINATOR`). The pinned module types
+both `Uint64(6)` / `Uint64(10)` at every preset, so they store as `Gwei`, the
+checked kind the quorum product and
 fraction in `get_builder_payment_quorum_threshold` use. -/
 forkabbrev builderPaymentThresholdNumerator : Gwei := 6
 forkabbrev builderPaymentThresholdDenominator : Gwei := 10
@@ -154,8 +154,8 @@ forkabbrev builderIndexSelfBuild : BuilderIndex := 0xffffffffffffffff
 -- EIP-7732 / EIP-8282 BLS domain-type tags, beside the ones inherited below.
 forkabbrev domainBeaconBuilder : ByteArray := ⟨#[0x0B, 0, 0, 0]⟩
 forkabbrev domainPtcAttester : ByteArray := ⟨#[0x0C, 0, 0, 0]⟩
--- EIP-8282 `DOMAIN_BUILDER_DEPOSIT` (`0x0E000000`). Consumed by the deferred
--- builder-deposit signature check; recorded now alongside the other domain tags.
+-- EIP-8282 `DOMAIN_BUILDER_DEPOSIT` (`0x0E000000`). `isValidBuilderDepositSignature`
+-- (`Gloas/Operations.lean`) verifies builder-deposit signatures under it.
 forkabbrev domainBuilderDeposit : ByteArray := ⟨#[0x0E, 0, 0, 0]⟩
 /-- ePBS fork-choice payload statuses for a `ForkChoiceNode`: `PayloadStatus(Uint8)` sentinels
 at the pin. The fork-choice bodies compare them for equality, and
@@ -229,7 +229,7 @@ inherit maxTransactionsPerPayload bytesPerLogsBloom
 
 -- Balance and effective-balance thresholds.
 inherit effectiveBalanceIncrement effectiveBalanceIncrementG minDepositAmountG
-inherit minActivationBalance maxEffectiveBalanceG maxEffectiveBalanceElectra
+inherit minActivationBalance maxEffectiveBalanceG
 inherit maxEffectiveBalanceElectraG ejectionBalanceG unsetDepositRequestsStartIndex
 inherit fullExitRequestAmount g2PointAtInfinity
 

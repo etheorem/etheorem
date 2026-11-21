@@ -239,7 +239,7 @@ forkdef getInclusionListCommittee (state : State) (slot : Slot) :
     (fun acc i => do
       -- `CommitteeIndex(i)`: the pyspec's checked cast of the plain loop variable.
       let committeeIndex ← CLUint64.ofNat? i
-      let committee ← getBeaconCommittee state slot committeeIndex
+      let committee ← liftErr (getBeaconCommittee state slot committeeIndex)
       pure (acc ++ committee))
     (#[] : Array ValidatorIndex)
   liftErr (cyclicSample indices Const.inclusionListCommitteeSize)

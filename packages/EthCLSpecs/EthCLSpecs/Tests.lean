@@ -2,11 +2,13 @@ import EthCLSpecs.Tests.AuthoringShapes
 import EthCLSpecs.Tests.BoxBinderPins
 import EthCLSpecs.Tests.ClockMigrationPins
 import EthCLSpecs.Tests.ClockSamplingAuditPins
+import EthCLSpecs.Tests.CommitteeBoundsAssertPins
 import EthCLSpecs.Tests.CommitteeCoverageOrderPins
 import EthCLSpecs.Tests.ConfigurationClockPins
 import EthCLSpecs.Tests.ConstantAuditPins
 import EthCLSpecs.Tests.ConstantViews
 import EthCLSpecs.Tests.DeadlineMigrationPins
+import EthCLSpecs.Tests.DepositOperationPins
 import EthCLSpecs.Tests.EpochMigrationPins
 import EthCLSpecs.Tests.FuluDeclarationsAuditPins
 import EthCLSpecs.Tests.FuluForkChoicePins
@@ -21,6 +23,7 @@ import EthCLSpecs.Tests.ParticipationFlagsMigrationPins
 import EthCLSpecs.Tests.PendingDepositsScanPins
 import EthCLSpecs.Tests.PlainArithmeticPins
 import EthCLSpecs.Tests.SlotMigrationPins
+import EthCLSpecs.Tests.SyncAggregateLookupPins
 import EthCLSpecs.Tests.TransitionFamilyAuditPins
 import EthCLSpecs.Tests.ValidatorIndexMigrationPins
 import EthCLSpecs.Tests.WalkingSkeleton

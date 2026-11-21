@@ -13,12 +13,12 @@ import EthCLLib
   the state, store, and abstract-machine monads (the scoped elaborator in
   `Spec/Elab.lean` claims the tree and the `MonadLift` bridges it). Each pin
   asserts the computed value by kernel `decide`, the same convention the
-  Stage 2 operator pins use.
+  operator pins of `Tests/CLUintArith.lean` and `Tests/CLIntArith.lean` use.
 - **The untouched trees.** `Nat`, `Int`, and `UInt64` arithmetic, written
   identically inside and outside the authoring scope, closing by `rfl` in
   both. The elaborator restores the state and hands every non-checked tree
   back to core, so the terms match (`§4.7`, unchanged elaborated terms).
-- **The spike's two hazards**, its findings 9 and 17 from the spike stage:
+- **The two elaboration hazards**:
   the one-line `ofNat?` bind in both
   forms, and the prior do-bound dividend with a non-literal `Nat` operand, in
   both the bare and the ascription-escaped spelling.
@@ -169,7 +169,7 @@ example (n : Nat) : SM CLUint64 := do
   let y ← s + n
   pure y
 
--- The spike's finding 17 shape: `%` with a prior do-bound dividend and a
+-- The `%` with a prior do-bound dividend and a
 -- non-literal `Nat` divisor.
 example : ((do
     let a : CLUint64 := 7
@@ -229,7 +229,7 @@ example : ((do
     let d ← k / 2
     pure d) : SM CLInt).run 0 = .ok (3, 0) := by decide
 
--- The one-line `ofNat?` bind, the spike's finding 9 hazard: the bind reads
+-- The one-line `ofNat?` bind: the bind reads
 -- one `Checked` layer, not two, and the fault travels with its cause. With a
 -- checked or typed-literal right operand the tree elaborates un-ascribed.
 def oneLineBind (delta : CLUint64) : SM CLUint64 := do
@@ -288,8 +288,8 @@ example : ((do
     let x ← v + 1
     pure x) : SM CLUint64).run 0 = .ok (6, 0) := by decide
 
--- The one-line form with a non-literal `Nat` operand, the `reserveChurn`
--- context of the spike's finding 9.
+-- The one-line form with a non-literal `Nat` operand uses the same
+-- checked conversion and addition.
 def reserveChurn (n : Nat) (delta : CLUint64) : SM CLUint64 := do
   let x ← CLUint64.ofNat? n + delta
   pure x
