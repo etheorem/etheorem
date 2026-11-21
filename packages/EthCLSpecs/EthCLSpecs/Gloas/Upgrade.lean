@@ -82,7 +82,11 @@ and the builder onboarding) run after this through `completeUpgradeToGloas`, sin
 need the Gloas state-side helpers. -/
 def upgradeToGloas [Preset] [HasherTag] (gloasForkVersion : Version) (pre : Fulu.BeaconState) :
     Gloas.BeaconState :=
-  let epoch : Epoch := pre.slot / UInt64.ofNat Const.slotsPerEpoch
+  -- `epoch = fulu.get_current_epoch(pre)` = `Epoch(pre.slot // SLOTS_PER_EPOCH)`: the
+  -- quotient rides the proved-positive `slotsPerEpochDiv` view, so it needs no range
+  -- test, and the `Epoch(...)` casts of a `Slot` value cannot fault (`SPEC_ARITHMETIC.md`
+  -- §4.2, the total route).
+  let epoch : Epoch := pre.slot / Const.slotsPerEpochDiv
   { genesisTime                   := pre.genesisTime
     genesisValidatorsRoot         := pre.genesisValidatorsRoot
     slot                          := pre.slot

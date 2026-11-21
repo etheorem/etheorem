@@ -5,7 +5,17 @@ import EthCLLib.Tests.TierMerge
 import EthCLLib.Tests.CryptoBackendSpike
 import EthCLLib.Tests.ContainerForm
 import EthCLLib.Tests.FrameworkUtils
+import EthCLLib.Tests.ErrorClassify
 import EthCLLib.Tests.PreambleSection
+import EthCLLib.Tests.CLUintLit
+import EthCLLib.Tests.CLUintArith
+import EthCLLib.Tests.CLIntArith
+import EthCLLib.Tests.CLTotalArith
+import EthCLLib.Tests.CLArithLaws
+import EthCLLib.Tests.CLCheckedElab
+import EthCLLib.Tests.CLIndex
+import EthCLLib.Tests.CLAuthoring
+import EthCLLib.Tests.CLInheritChecked
 
 /-!
 # `EthCLLib.Tests`: framework self-tests
