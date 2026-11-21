@@ -30,11 +30,11 @@ The out-of-range case rejects where the pinned Gloas spec rejects: Python's
 `state.builders[builder_index]` raises `IndexError` there, and the body's `sszGetIdx`
 read surfaces the same fault class as `.outOfBounds`.
 
-No-wrap for the withdrawability-delay sum is conditional for an arbitrary `[Config]`,
-and unconditional for the two shipped Gloas preset/config pairs, with no epoch or slot
-hypothesis from the caller. The body forms the sum as a checked `Epoch` add, which
-raises where the pinned Python raises. The readings carry the no-overflow bound as a
-premise.
+The body forms the withdrawability-delay sum as a checked `Epoch` add, which raises
+where the pinned Python raises. For an arbitrary `[Config]` the readings carry the sum's
+no-overflow bound as a premise. The corollaries for the two shipped Gloas preset/config
+pairs discharge that bound, with no epoch or slot hypothesis from the caller. Every
+success reading keeps the in-range index premise.
 
 Scope is Gloas's `initiateBuilderExit`. Heze inherits the function
 (`Heze/Operations.lean:45`) at its own `State`; these theorems say nothing about that
@@ -64,9 +64,10 @@ the raising `builders[builderIndex]` read and then on the checked
 `current_epoch + MIN_BUILDER_WITHDRAWABILITY_DELAY` sum. An out-of-range index rejects
 before the sum runs; in range, success returns `preState`
 with only `builders[builderIndex.toPlainNat]!` written.
-`initiateBuilderExit_run_inRange` and `initiateBuilderExit_run_outOfRange` read that one
-equation through the `ProgressiveList.set!` lemmas under the sum's no-overflow bound, so
-the range split happens at the read. -/
+`initiateBuilderExit_run_inRange` reads that equation through the `ProgressiveList.set!`
+lemmas, for an in-range index under the sum's no-overflow bound.
+`initiateBuilderExit_run_outOfRange` reads the reject and needs no sum bound, so the
+range split happens at the read. -/
 
 /-- `sszGetIdx`'s in-range read is the identity action at the Gloas runner, so the body's
 bind on it substitutes the element: the monad law `bind (pure v) k = k v` at the runner.
@@ -138,8 +139,8 @@ theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
           = .error (StateTransitionError.ofArithFault f) from rfl,
         except_bind_error]
 
-/-- **In range.** Under the sum's no-overflow bound, running
-`initiateBuilderExit builderIndex` never rejects, and the written builder reads back with
+/-- **In range.** For an in-range index and under the sum's no-overflow bound, the run of
+`initiateBuilderExit builderIndex` succeeds, and the written builder reads back with
 `withdrawableEpoch` set to the checked sum's value, which the law library reads back as
 the plain `Nat` sum, while every other builder and the registry's `.size` are unchanged.
 The index-level reading of `initiateBuilderExit_run_eq` through `ProgressiveList.set!`'s
@@ -201,13 +202,14 @@ theorem initiateBuilderExit_run_outOfRange [Preset] [HasherTag] [Config] :
 No generic invariant relates the bounded current epoch
 to the independently configurable withdrawal delay (a `[Config]` instance is free to set
 `minBuilderWithdrawabilityDelay` arbitrarily), so the no-wrap fact is necessarily
-**conditional**. Its condition is the bound `initiateBuilderExit_run_inRange` carries,
-a hypothesis the caller must establish elsewhere, say from a slot/epoch bound on
-`mainnet`, since the function itself carries no run-time guard. -/
+**conditional**. Its condition is the sum bound `initiateBuilderExit_run_inRange` carries,
+a hypothesis the caller must establish elsewhere. When the bound fails for an in-range
+index, the checked add raises and the run rejects with the sum's arithmetic fault
+(`initiateBuilderExit_run_eq`). -/
 
 /-- **Function-level corollary.** Chaining `initiateBuilderExit_run_inRange` with the
-law library's value lemma: under the epoch-bound hypothesis (read from the *pre*-state's
-`currentEpochOf`, as in the unconditional in-range theorem), the post-state builder's
+law library's value lemma: for an in-range index and under the same sum bound (read from
+the *pre*-state's `currentEpochOf`), the run succeeds and the post-state builder's
 `withdrawableEpoch.toPlainNat` is exactly the natural-number sum
 `currentEpochOf(pre-state).toPlainNat + MIN_BUILDER_WITHDRAWABILITY_DELAY.toPlainNat`,
 with no silent wrap through `2 ^ 64`. -/
@@ -233,7 +235,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap [Preset] [HasherTag] [Config] :
     rw [hview]
   rw [hwe', hwv]
 
-/-! ## Shipped preset/config pairs: unconditional
+/-! ## Shipped preset/config pairs: the sum bound holds
 
 `initiateBuilderExit_run_inRange_no_wrap`'s `hbound` premise is conditional because a
 `[Config]` instance is free, in general, to pick `minBuilderWithdrawabilityDelay` large
@@ -244,7 +246,7 @@ preset/config pairs used by the shipped Gloas interfaces) don't: `slotsPerEpoch`
 sum with the concrete `minBuilderWithdrawabilityDelay` (`2` on minimal, `64` on
 mainnet) can never reach `2 ^ 64`.
 Each corollary below discharges `hbound` from that arithmetic fact alone, with no epoch
-or slot hypothesis from the caller, and reuses
+or slot hypothesis from the caller, and keeps the in-range index premise. It reuses
 `initiateBuilderExit_run_inRange_no_wrap` rather than re-deriving the state
 transition. -/
 
@@ -256,7 +258,7 @@ theorem currentEpochOf_toPlainNat [Preset] [HasherTag] (state : BeaconState) :
   simp only [currentEpochOf, view_uncachedBox]
   exact computeEpochAtSlot_toPlainNat state.slot
 
-/-- **Minimal preset/config (`minimal`, `minimalConfig`), unconditional.**
+/-- **Minimal preset/config (`minimal`, `minimalConfig`), no sum-bound premise.**
 `slotsPerEpoch = 8`, `minBuilderWithdrawabilityDelay = 2`:
 `currentEpochOf preState ≤ (2 ^ 64 - 1) / 8`, so the sum with `2` is nowhere near
 `2 ^ 64`, for every `preState`. -/
@@ -285,7 +287,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap_minimal [HasherTag] :
   show preState.slot.toPlainNat / 8 + 2 < 18446744073709551616
   omega
 
-/-- **Mainnet preset/config (`mainnet`, `mainnetConfig`), unconditional.**
+/-- **Mainnet preset/config (`mainnet`, `mainnetConfig`), no sum-bound premise.**
 `slotsPerEpoch = 32`, `minBuilderWithdrawabilityDelay = 64`:
 `currentEpochOf preState ≤ (2 ^ 64 - 1) / 32`, so the sum with `64` is nowhere near
 `2 ^ 64`, for every `preState`. -/

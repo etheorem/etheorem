@@ -9,13 +9,15 @@ import SizzLean.Proofs.UncachedBox
 # `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: the builder-payment epoch substep
 
 `EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:376-393`)
-modifies two fields sequentially within one state transition. This file characterizes the
-whole transition as one value: the run on `pureState preState` returns `pureState` of
-`preState` with `builderPendingWithdrawals` and `builderPendingPayments` written, and
-nothing else. When
-invoked by the epoch substep, it feeds every qualifying previous-epoch payment's
-withdrawal, in slot order, through `ProgressiveList.push`, which always appends. It then
-shifts the payment window down by `SLOTS_PER_EPOCH`, padding the vacated half with empties.
+computes the quorum threshold, then modifies two fields sequentially within one state
+transition. This file characterizes the whole transition as one value. When
+`builderPaymentQuorum preState` succeeds, the run on `pureState preState` returns
+`pureState` of `preState` with `builderPendingWithdrawals` and `builderPendingPayments`
+written, and nothing else. When the quorum computation fails, the run rejects with the
+same error and returns no state. On the success path, the substep feeds every qualifying
+previous-epoch payment's withdrawal, in slot order, through `ProgressiveList.push`, which
+always appends. It then shifts the payment window down by `SLOTS_PER_EPOCH`, padding the
+vacated half with empties.
 
 The withdrawals side rests on `progressiveListFoldlPush_val`
 (`SizzLean.Proofs.ProgressiveListPush`): iterating `push` over a list of values ends at
@@ -448,9 +450,9 @@ theorem totalOf_eq_ok [Preset] (bals : List Gwei) (tab : Gwei) :
     show (max c Gloas.Const.effectiveBalanceIncrementG).toPlainNat = tab.toPlainNat
     rw [max_value, hval, ← foldlM_add_value 0 _ _ hfold]
 
-/-- The total's unconditional reading: `getTotalActiveBalance` succeeds with `tab` exactly
-when the active set's casts fit, every running sum of `activeBalances` stays in range, and
-`tab` is the fold's final running sum floored at one increment. -/
+/-- The total's reading with no side hypothesis: `getTotalActiveBalance` succeeds with
+`tab` exactly when the active set's casts fit, every running sum of `activeBalances` stays
+in range, and `tab` is the fold's final running sum floored at one increment. -/
 theorem getTotalActiveBalance_eq_ok [Preset] [HasherTag] (state : BeaconState) (tab : Gwei) :
     getTotalActiveBalance (pureState state) = .ok tab ↔
       activeCastsFit state ∧
@@ -581,9 +583,9 @@ theorem builderPaymentQuorum_eq [Preset] [HasherTag] (state : BeaconState)
     cases x <;> rfl
   simp only [hlift, hmap]
 
-/-- The quorum's unconditional reading: `builderPaymentQuorum` succeeds with `quorum`
-exactly when the active set's `ValidatorIndex(index)` casts fit `uint64`, and the quorum
-chain over `activeBalances` meets the arithmetic obligations of `quorumCore_eq_ok`. This is
+/-- The quorum's reading with no side hypothesis: `builderPaymentQuorum` succeeds with
+`quorum` exactly when the active set's `ValidatorIndex(index)` casts fit `uint64`, and the
+quorum chain over `activeBalances` meets the arithmetic obligations of `quorumCore_eq_ok`. This is
 the real obligation the contract's `.ok quorum` hypothesis names. The cast conjunct stays
 because the Gloas registry is a `ProgressiveList`, whose type carries no `2^40` cap: an
 active position at or past `2^64` makes the pyspec's cast raise, and the run rejects. -/
@@ -667,16 +669,22 @@ theorem expectedPaymentWindow_get_upper [Preset] [HasherTag] (state : BeaconStat
 
 /-! ## The whole-transition contract
 
-`processBuilderPendingPayments_run` is the contract: the run returns `preState` with only
-`builderPendingWithdrawals` and `builderPendingPayments` written, as one value. The
-withdrawals half comes from `builderPendingWithdrawalsLoop_run_eq`; the payment-window
-half is the final `modifyState`, whose read of the field is unaffected by the loop. -/
+`processBuilderPendingPayments_run` is the contract. It matches on
+`builderPaymentQuorum preState`. A quorum error propagates: the run rejects with that
+error and writes nothing. After a successful quorum computation, the run returns
+`preState` with only `builderPendingWithdrawals` and `builderPendingPayments` written, as
+one value. The withdrawals half comes from `builderPendingWithdrawalsLoop_run_eq`. The
+payment-window half is the final `modifyState`, whose read of the field is unaffected by
+the loop. -/
 
 /-- Exact whole-transition contract for `processBuilderPendingPayments`, at the box the
-pure configuration runs: the step on `pureState preState` returns the uncached box of the original
-value with only the two fields written through the source-level writes. Stated at the box
-level so the fork-choice bridge consumes it by application; `runPure_of_run_ok` derives
-the `runPure` form (`processBuilderPendingPayments_run_appended` reads it). -/
+pure configuration runs. The step on `pureState preState` matches on
+`builderPaymentQuorum preState`. On `.error e` the quorum error propagates: the run is
+`.error e` and returns no state. On `.ok quorum` the run returns the uncached box of the
+original value with only the two fields written through the source-level writes. Stated
+at the box level so the fork-choice bridge consumes it by application. On the success
+path, `runPure_of_run_ok` derives the `runPure` form
+(`processBuilderPendingPayments_run_appended` reads it). -/
 @[characterizes EthCLSpecs.Gloas.processBuilderPendingPayments]
 theorem processBuilderPendingPayments_run [Preset] [HasherTag] :
     ∀ (preState : BeaconState),

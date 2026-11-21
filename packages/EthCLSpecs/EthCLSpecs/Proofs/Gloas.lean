@@ -31,9 +31,9 @@ Re-exports:
 * `EthCLSpecs.Proofs.Gloas.BuilderIndex`: the builder-index flag round-trip
   (`isBuilderIndex`, `toBuilderIndex`, `convertBuilderIndexToValidatorIndex`).
 * `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: `processBuilderPendingPayments`'s
-  withdrawal-queuing and payment-window-shift postcondition
-  (`processBuilderPendingPayments_run`, plus
-  `processBuilderPendingPayments_run_appended`).
+  run equation (`processBuilderPendingPayments_run`): a quorum error propagates, and
+  a successful quorum computation gives the withdrawal-queuing and
+  payment-window-shift postcondition (`processBuilderPendingPayments_run_appended`).
 * `EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid`: the run equation of `canBuilderCoverBid`
   over the checked `Gwei` chain, and its reading as one `Nat` inequality on the plain values.
 * `EthCLSpecs.Proofs.Gloas.ForkChoiceRun`: `GloasStoreRun`, the Gloas store monad, with the

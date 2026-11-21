@@ -113,8 +113,8 @@ example : pinTargetAdvanceRejects = true := by native_decide
 
 /-- `balanceAfterWithdrawals` rejects (`outOfBounds`) on an out-of-range validator
 index: the pinned bare `state.balances[vi]` list read. A `default` state has zero
-validators, so index 99 misses, where the pre-conversion `def` clamped
-(`balances[vi]!` defaulting, `0` on underflow). `State` is FFI-backed, so
+validators, so index 99 misses. A defaulting `balances[vi]!` read returns `0`
+there with no reject, and the pin fails under that form. `State` is FFI-backed, so
 `native_decide`. -/
 private def pinBalanceAfterWithdrawalsThrows : Bool :=
   letI : Preset := minimal

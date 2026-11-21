@@ -19,7 +19,7 @@ readings go through the checked-chain laws (`SPEC_ARITHMETIC.md` §4.9): the ran
 `add_ok_iff`'s success condition on the plain values, and the stored value is `add_value`'s
 read-back.
 
-`decrease_balance` clamps at zero, so its subtraction raises nothing. `decreaseBalance`
+`decrease_balance` floors at zero, so its subtraction raises nothing. `decreaseBalance`
 therefore rejects on the read alone. Its stored balance is the truncating `Nat` difference, so
 the `uint64` subtraction never wraps.
 
