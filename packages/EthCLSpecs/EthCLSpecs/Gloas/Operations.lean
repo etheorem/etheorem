@@ -225,8 +225,8 @@ forkdef onboardBuildersFromPendingDeposits : StateTransition Unit := do
 /-- `initialize_ptc_window(state)` (`gloas/fork.md:37-56`): the cached PTC window that seeds
 a Gloas state at the fork. The first `SLOTS_PER_EPOCH` entries (the previous epoch, which has
 no Gloas PTC) hold zeroed committees; the next `1 + MIN_SEED_LOOKAHEAD` epochs hold
-`compute_ptc` for each slot. `MIN_SEED_LOOKAHEAD` is `1`, so the window is
-`3 * SLOTS_PER_EPOCH` long, the `ptc_window` field's declared length.
+`compute_ptc` for each slot. The window is `(2 + MIN_SEED_LOOKAHEAD) * SLOTS_PER_EPOCH`
+long (`MIN_SEED_LOOKAHEAD` is `1`), the `ptc_window` field's declared length.
 
 At v1.7.0-beta.4 `upgrade_to_gloas` computes it over the Gloas post-state, with Gloas's own
 `compute_ptc`; alpha.12 computed it over the Fulu pre-state. The registry, balances, and
@@ -240,10 +240,10 @@ read, and `compute_ptc` itself rejects a slot with no committee members.
 surfaces, matching the spec's list comprehension. -/
 forkdef initializePtcWindow (state : State) :
     Vector (Except StateTransitionError (Vector ValidatorIndex Const.ptcSize))
-      (3 * Const.slotsPerEpoch) :=
+      ((Const.minSeedLookahead.toPlainNat + 2) * Const.slotsPerEpoch) :=
   let currentEpoch := currentEpochOf state
   let emptyCommittee : Vector ValidatorIndex Const.ptcSize := Vector.replicate Const.ptcSize 0
-  Vector.ofFn fun i : Fin (3 * Const.slotsPerEpoch) =>
+  Vector.ofFn fun i : Fin ((Const.minSeedLookahead.toPlainNat + 2) * Const.slotsPerEpoch) =>
     if i.val < Const.slotsPerEpoch then pure emptyCommittee
     else do
       let j := i.val - Const.slotsPerEpoch
@@ -574,8 +574,12 @@ forkdef getPtc (state : State) (slot : Slot) :
     let nextEpoch ← epoch + 1
     assert (nextEpoch == stateEpoch)
     -- The window index `slot % SLOTS_PER_EPOCH` passes the checked slot's word to the
-    -- proved-total `vmodGet` route, whose bound is the mod itself (§4.5).
-    pure (vmodGet (sszGet state ptcWindow) slot.val Const.slotsPerEpoch)
+    -- proved-total `vmodGet` route, whose bound is the mod itself (§4.5). The window
+    -- length is the preset product, so the call passes the `d ≤ n` bound: `1 ≤
+    -- MIN_SEED_LOOKAHEAD + 2`.
+    pure (vmodGet (sszGet state ptcWindow) slot.val Const.slotsPerEpoch
+      (hle := Nat.le_mul_of_pos_left Const.slotsPerEpoch
+        (Nat.succ_pos (Const.minSeedLookahead.toPlainNat + 1))))
   else
     -- `epoch <= state_epoch + MIN_SEED_LOOKAHEAD`: the checked `Epoch` add.
     let lookaheadBound ← stateEpoch + Const.minSeedLookahead

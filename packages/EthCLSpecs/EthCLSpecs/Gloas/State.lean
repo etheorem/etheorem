@@ -50,7 +50,9 @@ forkcontainer BeaconState where
   previousJustifiedCheckpoint   : Checkpoint
   currentJustifiedCheckpoint    : Checkpoint
   finalizedCheckpoint           : Checkpoint
-  inactivityScores              : ProgressiveList Gwei
+  -- `inactivity_scores` is plain `uint64` at the pin (`gloas/minimal.py:1075`), not
+  -- `Gwei`: a score is not a balance. Same checked type, naming only.
+  inactivityScores              : ProgressiveList CLUint64
   currentSyncCommittee          : SyncCommittee
   nextSyncCommittee             : SyncCommittee
   latestBlockHash               : Hash32
@@ -69,7 +71,9 @@ forkcontainer BeaconState where
   pendingDeposits               : ProgressiveList PendingDeposit
   pendingPartialWithdrawals     : ProgressiveList PendingPartialWithdrawal
   pendingConsolidations         : ProgressiveList PendingConsolidation
-  proposerLookahead             : Vector ValidatorIndex (2 * Const.slotsPerEpoch)
+  -- The pin computes `(MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH`
+  -- (`gloas/minimal.py:1092`); both presets set `minSeedLookahead` to `1`.
+  proposerLookahead             : Vector ValidatorIndex ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch)
   builders                      : ProgressiveList Builder
   nextWithdrawalBuilderIndex    : BuilderIndex
   executionPayloadAvailability  : Bitvector Const.slotsPerHistoricalRoot
@@ -77,7 +81,9 @@ forkcontainer BeaconState where
   builderPendingWithdrawals     : ProgressiveList BuilderPendingWithdrawal
   latestExecutionPayloadBid     : ExecutionPayloadBid
   payloadExpectedWithdrawals    : ProgressiveList Withdrawal
-  ptcWindow                     : Vector (Vector ValidatorIndex Const.ptcSize) (3 * Const.slotsPerEpoch)
+  -- The pin computes `(2 + MIN_SEED_LOOKAHEAD) * SLOTS_PER_EPOCH`
+  -- (`gloas/beacon-chain.md:1737-1748`); both presets set `minSeedLookahead` to `1`.
+  ptcWindow                     : Vector (Vector ValidatorIndex Const.ptcSize) ((Const.minSeedLookahead.toPlainNat + 2) * Const.slotsPerEpoch)
 
 -- The once-per-fork preamble: declares `State` (the boxed `BeaconState`) and the
 -- concrete-domain `modifyState` (`SPEC_AUTHORING_MODEL.md` §6, `EthCLLib.Spec.Header`).

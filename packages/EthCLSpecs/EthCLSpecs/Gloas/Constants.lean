@@ -229,7 +229,7 @@ inherit maxTransactionsPerPayload bytesPerLogsBloom
 
 -- Balance and effective-balance thresholds.
 inherit effectiveBalanceIncrement effectiveBalanceIncrementG minDepositAmountG
-inherit minActivationBalance maxEffectiveBalanceG maxEffectiveBalanceElectra
+inherit minActivationBalance maxEffectiveBalanceG
 inherit maxEffectiveBalanceElectraG ejectionBalanceG unsetDepositRequestsStartIndex
 inherit fullExitRequestAmount g2PointAtInfinity
 

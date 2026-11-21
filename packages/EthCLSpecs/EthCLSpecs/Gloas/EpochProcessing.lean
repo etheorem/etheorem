@@ -449,7 +449,10 @@ forkdef processPtcWindow : StateTransition Unit := do
 
   modifyState fun state =>
     sszUpdate state with ptcWindow :=
-      shiftWindow (sszGet state ptcWindow) Const.slotsPerEpoch (2 * Const.slotsPerEpoch)
+      -- `keep` is the window minus the shifted-out epoch:
+      -- `(MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH`.
+      shiftWindow (sszGet state ptcWindow) Const.slotsPerEpoch
+        ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch)
         (fun k => fresh[k]!)
 
 end
