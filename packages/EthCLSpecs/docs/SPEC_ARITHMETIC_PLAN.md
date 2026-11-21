@@ -752,9 +752,10 @@ arithmetic site remains unreviewed because its module built without edits.
   - [x] **9.1b Find and reconcile: architecture and records documents.** Covers the 9.1
     find sweep and the 9.2 reconciliation for the architecture and records documents.
     (WS-98, `e86a07e13001485222c09dce90d1a16f95c6aedd`)
-  - [ ] **9.1c Find and reconcile: repo-level, contributor, and other-package
+  - [x] **9.1c Find and reconcile: repo-level, contributor, and other-package
     documents.** Covers the 9.1 find sweep and the 9.2 reconciliation for the repo-level,
     contributor, and other-package documents.
+    (WS-99, `b7bbaf6b2b8b4f3c7653966bafaf8390208f4b7d`)
   - [ ] **9.1d1 Find and reconcile: EthCLLib `Spec/`, `Internal/`, and root module
     docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
     docstrings of the EthCLLib `Spec/`, `Internal/`, and root modules.
