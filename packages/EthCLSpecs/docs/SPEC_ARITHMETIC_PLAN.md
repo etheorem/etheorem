@@ -766,9 +766,9 @@ arithmetic site remains unreviewed because its module built without edits.
   - [x] **9.1d3 Find and reconcile: Fulu fork body and EthCLSpecs root module
     docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
     docstrings of the Fulu fork body and the EthCLSpecs root modules. (WS-108, `4792eb3d56310f29b0bfe16e74c447e47acd4fc5`)
-  - [ ] **9.1d4 Find and reconcile: Gloas and Heze fork body docstrings.** Covers the 9.1
+  - [x] **9.1d4 Find and reconcile: Gloas and Heze fork body docstrings.** Covers the 9.1
     find sweep and the 9.2 reconciliation for the Lean docstrings of the Gloas and Heze
-    fork bodies.
+    fork bodies. (WS-109, `311b7244993082bf95c79a702542d64f3a5e3c68`)
   - [x] **9.1d5 Find and reconcile: EthCLSpecs `Proofs/`, `Tests/`, `PySpecTests/`, and
     bench docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
     docstrings of the EthCLSpecs `Proofs/`, `Tests/`, and `PySpecTests/` modules and the
