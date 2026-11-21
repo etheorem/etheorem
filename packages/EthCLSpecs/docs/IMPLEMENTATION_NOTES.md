@@ -519,7 +519,8 @@ thread the store; the policy lives in `checkStepValidity`. A step that carries a
 flag is `block`, the standalone `attestation` / `attester_slashing`, and in Gloas the
 `execution_payload` envelope and `payload_attestation_message`; a step with no flag (`tick`,
 the block's own `is_from_block` sub-attestations) is implicitly `valid := true`. The
-harness then reports a returned error by its constructor (a `.todo` as out-of-scope, any
+harness then reports a returned error by its constructor (a `.todo` as a work-queue
+`xfail`, a `.outOfScope` as a `skip`, any
 other as a bug-smell test failure). The `valid` flag on the standalone `attestation` /
 `attester_slashing` steps matters for the `validate_on_attestation` vectors, where the wire
 `valid: false` marks an attestation `on_attestation` is meant to reject.
@@ -1425,8 +1426,8 @@ route has one disposition. The consolidation changes documentation and comments 
 | X16 | Builder/validator cast comments and a suggested size-bound lemma | Retains the comments verified in 9.1d4 against the size bounds. The proposed reusable lemma is optional code work; no documentation conflict requires it. |
 | X17 | A trusted maximum-value fixture could use a checked literal | Retains the in-range fixture. The existing trusted construction is accurate test setup; literal replacement is optional code work. |
 | X18 | The ledger's builder-exit row and the proof module's "no-wrap" header | The `processBuilderExitRequest` row now states the exact result: the selected builder receives `withdrawableEpoch` equal to the `Nat` sum of the current epoch and the delay, under the shipped sum bound. The `InitiateBuilderExit` section header and the `Gloas.lean` proof index now name the sum bound instead of no-wrap; the checked add raises past the bound, so it cannot wrap. Routed by the 9.1b review (`01a1fc22-8303-73f4-84ed-6c6cfb29d066`). |
-| X19 | `PLAN.md` used `todo` for two meanings | The classify-bucket bullet now calls `todo` the work-queue bucket, matching `FRAMEWORK_ARCHITECTURE.md` §6 and the separate `outOfScope` skip bucket. Routed by the 9.1b review (`01a1fc22-8303-73f4-84ed-6c6cfb29d066`). |
-| X20 | The §10 `Spec/Arith.lean` row omitted the raw-word helpers and the modulo-bound route | The row now lists `umax` / `umin` / `saturatingSub` and `ValidModulus` / `vmodGet`, matching this record and D1-03. This is the cross-family description mismatch the reviewer routed. |
+| X19 | `PLAN.md` used `todo` for two meanings | The classify-bucket bullet now calls `todo` the work-queue bucket, matching `FRAMEWORK_ARCHITECTURE.md` §6 and the separate `outOfScope` skip bucket. The fork-choice note in this record likewise reports `.todo` as a work-queue `xfail` and `.outOfScope` as a `skip`. Routed by the 9.1b review (`01a1fc22-8303-73f4-84ed-6c6cfb29d066`). |
+| X20 | The §10 `Spec/Arith.lean` row omitted the raw-word helpers and the modulo-bound route | The row now lists `umax` / `umin` / `saturatingSub` and `ValidModulus` / `vmodGet`, matching this record and D1-03/D1-05. This is the cross-family description mismatch the reviewer routed. |
 
 ### Conversion result types
 
@@ -1493,12 +1494,14 @@ the Epic Lead can sequence them without losing the original findings.
    label. Heze sites are version comparisons in constants, inclusion-list
    containers, fork choice, and signing. Root coding style §6 retains deposit-scan
    history. The "ride" wording that X13 fixed at the eight WS-100 sites remains
-   outside them at `EthCLLib/Tests/CLAuthoring.lean:250`, `Tests/TierMerge.lean:12`,
-   `Tests/ForkScoping.lean:25`, `Spec/Forms.lean:28`, `Fulu/Transition.lean:122`,
-   `Gloas/Upgrade.lean:86`, `Heze/Upgrade.lean:93`, `Gloas/ForkChoice.lean:872`,
-   `Heze/ForkChoice.lean:392`, and `Proofs/KeepsUncached.lean:612`. These passages
+   outside them in `EthCLLib/Tests/CLAuthoring.lean:250`, `EthCLLib/Tests/TierMerge.lean:12`,
+   `EthCLLib/Tests/ForkScoping.lean:25`, `EthCLLib/Proofs/KeepsUncached.lean:612`,
+   `EthCLSpecs/Forms.lean:28`, `EthCLSpecs/Fulu/Transition.lean:122`,
+   `EthCLSpecs/Gloas/Upgrade.lean:86`, `EthCLSpecs/Heze/Upgrade.lean:93`,
+   `EthCLSpecs/Heze/Fork.lean:12`, `EthCLSpecs/Gloas/ForkChoice.lean:872`, and
+   `EthCLSpecs/Heze/ForkChoice.lean:392`. These passages
    need a separate current-state style pass. Their exact sites are recorded in the
-   source hand-offs for 9.1a, 9.1d1, 9.1d3, and 9.1d4.
+   source hand-offs for 9.1a, 9.1d1, 9.1d2, 9.1d3, and 9.1d4.
 3. **R3, tracker IDs in the committed record, Epic Lead.** The source table above
    holds Multica comment UUIDs, and the command list below opens with
    `git merge epic/WS-92`. A reader on GitHub cannot resolve the branch name or the
