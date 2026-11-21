@@ -378,6 +378,124 @@ def EpochStep.ofString? : String → Option EpochStep
   | "ptc_window"                     => some .ptcWindow
   | _                                => none
 
+/-- The shuffle and selection functions the differential test drives, one constructor per
+pyspec function. The test runs each function in the pinned pyspec and in the fork body on
+the same inputs, and compares the outputs or the reject kinds. No `consensus-spec-tests`
+format exercises these functions alone, apart from `shuffling`, which covers only
+`compute_shuffled_index`. Exhaustive like `OpKind`: a fork that does not define a function
+maps it to an explicit `outOfScope` arm. -/
+inductive SpecFn where
+  /-- `compute_shuffled_permutation(index_count, seed)`. -/
+  | shuffledPermutation
+  /-- The `shuffling` format's `mapping`: `[compute_shuffled_index(i, count, seed) for i in
+  range(count)]`. A test-format list, not a pyspec function. Each call asserts `i < count`,
+  which holds, and returns entry `i` of the one permutation. So the list is the permutation
+  for `count > 0`, and for `count = 0` the list makes no call and is empty. -/
+  | shufflingMapping
+  /-- `compute_committee(indices, seed, index, count)`. -/
+  | computeCommittee
+  /-- `get_active_validator_indices(state, epoch)`. -/
+  | activeValidatorIndices
+  /-- `get_seed(state, epoch, domain_type)`. -/
+  | seed
+  /-- `get_committee_count_per_slot(state, epoch)`. -/
+  | committeeCountPerSlot
+  /-- `get_beacon_committee(state, slot, index)`. -/
+  | beaconCommittee
+  /-- `compute_proposer_indices(state, epoch, seed, indices)`. -/
+  | proposerIndices
+  /-- `get_beacon_proposer_indices(state, epoch)`. -/
+  | beaconProposerIndices
+  /-- `get_next_sync_committee(state)`. -/
+  | nextSyncCommittee
+  /-- `compute_balance_weighted_selection(state, indices, seed, size, shuffle_indices)`, from
+  Gloas. -/
+  | balanceWeightedSelection
+  /-- `compute_ptc(state, slot)`, from Gloas. -/
+  | computePtc
+  /-- `get_ptc(state, slot)`, from Gloas. -/
+  | getPtc
+  /-- `get_inclusion_list_committee(state, slot)`, from Heze. -/
+  | inclusionListCommittee
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Parse a pyspec function name to its `SpecFn`; `none` for a function the test does not
+drive. -/
+def SpecFn.ofString? : String → Option SpecFn
+  | "compute_shuffled_permutation"       => some .shuffledPermutation
+  | "shuffling_mapping"                  => some .shufflingMapping
+  | "compute_committee"                  => some .computeCommittee
+  | "get_active_validator_indices"       => some .activeValidatorIndices
+  | "get_seed"                           => some .seed
+  | "get_committee_count_per_slot"       => some .committeeCountPerSlot
+  | "get_beacon_committee"               => some .beaconCommittee
+  | "compute_proposer_indices"           => some .proposerIndices
+  | "get_beacon_proposer_indices"        => some .beaconProposerIndices
+  | "get_next_sync_committee"            => some .nextSyncCommittee
+  | "compute_balance_weighted_selection" => some .balanceWeightedSelection
+  | "compute_ptc"                        => some .computePtc
+  | "get_ptc"                            => some .getPtc
+  | "get_inclusion_list_committee"       => some .inclusionListCommittee
+  | _                                    => none
+
+/-- The arguments of one `SpecFn` call, grouped by wire type. Each function reads its own
+arguments in pyspec signature order: `nats` holds the integer arguments, `indices` the one
+index list, and `bytes` the byte strings (a seed, a domain type). `state` is the SSZ
+`BeaconState`, empty for the two functions that take none. -/
+structure SpecFnArgs where
+  state   : ByteArray := ByteArray.empty
+  nats    : Array Nat := #[]
+  indices : Array Nat := #[]
+  bytes   : Array ByteArray := #[]
+  deriving Inhabited
+
+/-- The output of one `SpecFn` call: an index list (a count is a one-entry list), or a byte
+string (a seed, or a serialized `SyncCommittee`). -/
+inductive SpecFnOut where
+  | nats (xs : Array Nat)
+  | bytes (b : ByteArray)
+  deriving Inhabited, BEq
+
+open EthCLLib.Spec in
+/-- The `i`-th integer argument. A call with too few is the runner's `decode` error, the
+request's fault and never a spec reject. -/
+def SpecFnArgs.nat {E : Type} (a : SpecFnArgs) (i : Nat) : Except (RunError E) Nat :=
+  match a.nats[i]? with
+  | some n => .ok n
+  | none   => .error (.decode s!"spec_fn integer argument {i}")
+
+open EthCLLib.Spec in
+/-- The `i`-th integer argument as a `uint64`. The pyspec builds a `uint64` argument before
+the call, and the construction raises at `2 ^ 64` or above, so such a value never reaches
+the function. The runner treats it as a request fault, a `decode` error. -/
+def SpecFnArgs.u64 {E : Type} (a : SpecFnArgs) (i : Nat) : Except (RunError E) UInt64 := do
+  let n ← a.nat i
+  if n < 2 ^ 64 then pure (UInt64.ofNat n)
+  else .error (.decode s!"spec_fn integer argument {i}: {n} is not a uint64")
+
+open EthCLLib.Spec in
+/-- The `i`-th byte-string argument. -/
+def SpecFnArgs.byteArg {E : Type} (a : SpecFnArgs) (i : Nat) : Except (RunError E) ByteArray :=
+  match a.bytes[i]? with
+  | some b => .ok b
+  | none   => .error (.decode s!"spec_fn byte argument {i}")
+
+open EthCLLib.Spec in
+/-- The `i`-th byte-string argument as a `Bytes32`; any other length is a request fault. -/
+def SpecFnArgs.bytes32 {E : Type} (a : SpecFnArgs) (i : Nat) : Except (RunError E) (Vector UInt8 32) := do
+  let b ← a.byteArg i
+  -- `ByteArray.size` unfolds to `b.data.size`, so `h` is the vector's length proof as it stands.
+  if h : b.size = 32 then pure ⟨b.data, h⟩
+  else .error (.decode s!"spec_fn byte argument {i}: {b.size} bytes, expected 32")
+
+open EthCLLib.Spec in
+/-- The index-list argument as validator indices; an entry at or above `2 ^ 64` is a request
+fault, as in `u64`. -/
+def SpecFnArgs.validatorIndices {E : Type} (a : SpecFnArgs) : Except (RunError E) (Array UInt64) :=
+  a.indices.mapM fun n =>
+    if n < 2 ^ 64 then .ok (UInt64.ofNat n)
+    else .error (.decode s!"spec_fn index {n} is not a uint64")
+
 open EthCLLib.Spec in
 /-- The fixed entry-point surface every fork implements so `PySpecTests` can
 drive it. Methods return the post-state root (a `ByteArray`) or a typed reject;
@@ -435,5 +553,9 @@ class ForkInterface where
   /-- Fold a block sequence across the fork boundary at `meta.forkEpoch`,
   applying the upgrade mid-fold, and return the post root. Drives `transition`. -/
   runTransition : ByteArray → Array ByteArray → CaseMeta → Except (RunError StateTransitionError) ByteArray
+  /-- Run one shuffle or selection function on `args` and return its output. Drives the
+  differential test against the pinned pyspec, and the `shuffling` vectors through
+  `shuffledPermutation`. -/
+  runSpecFn : SpecFn → SpecFnArgs → Except (RunError StateTransitionError) SpecFnOut
 
 end EthCLLib.PySpecTests

@@ -29,6 +29,8 @@ def pytest_addoption(parser):
     parser.addoption("--no-crypto-cache", action="store_true", default=False,
                      help="disable the server's BLS-verify memo (plain FFI); "
                           "the default keeps caching on")
+    parser.addoption("--spec-fn-cases", default=None,
+                     help="a directory spec_fn_cases.py wrote; test_spec_fn.py runs its cases")
 
 
 def pytest_generate_tests(metafunc):

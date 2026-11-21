@@ -23,8 +23,8 @@ disappears. Supporting lemmas stay untagged and count as touched.
 
 ## One directory per fork
 
-`Proofs/Gloas/` holds the Gloas theorems, and a later fork's theorems get their
-own directory beside it. The rule is the one `docs/SPECS_ARCHITECTURE.md` §3.4
+`Proofs/Fulu/`, `Proofs/Gloas/`, and `Proofs/Heze/` hold each fork's theorems.
+The rule is the one `docs/SPECS_ARCHITECTURE.md` §3.4
 sets for the fork bodies, and it holds here for the reason inheritance gives:
 a child fork re-elaborates a parent declaration into its own namespace, so
 `EthCLSpecs.Fulu.f` and `EthCLSpecs.Gloas.f` are two constants, and a proof about

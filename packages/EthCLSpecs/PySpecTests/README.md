@@ -14,7 +14,12 @@ cache stays warm (`FRAMEWORK_ARCHITECTURE.md` §13.3).
   options `--preset`, `--fork`, `--subset`, `--tag`, `--no-crypto-cache`.
 - `test_pyspec.py` — one test per case; the reject-faithfulness check
   (`bug` fails hard, `todo` is `xfail` the Phase-2 work-queue, otherwise the case
-  must pass).
+  must pass). The `shuffling` vectors sit under `phase0`, and every fork runs them.
+- `spec_fn_cases.py` — the case generator of the differential test. It runs under the
+  pinned pyspec's own interpreter, calls each shuffle and selection function on random
+  and edge-case inputs, and records the answer or the exception class.
+- `test_spec_fn.py` — the differential test: one `spec_fn` request per generated case.
+  The server runs the fork body on the same inputs and compares the two answers.
 
 ## Running
 
@@ -35,6 +40,12 @@ cache-on against cache-off timings.
 
 The pin (`--tag`, default `v1.7.0-beta.4`) selects the release; the archive is
 downloaded once and cached.
+
+The differential test needs the pyspec itself, which the repo venv does not hold. Check
+out `ethereum/consensus-specs` at the pinned tag and run `make build` there. Then
+`just ethcl-spec-fn <fork> <preset>` generates the cases with that checkout's interpreter
+and runs them. `PYSPEC_PYTHON` names the interpreter when the checkout is not the sibling
+directory `../consensus-specs-v1.7.0-beta.4`.
 
 ### Re-pinning checklist
 

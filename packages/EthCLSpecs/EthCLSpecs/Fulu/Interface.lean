@@ -419,6 +419,57 @@ private def sszStaticImpl (P : Preset) (typeName : String) (bytes : ByteArray) :
   | "SignedVoluntaryExit"      => runStatic (@SignedVoluntaryExit P) typeName bytes
   | _ => .error (.spec (.outOfScope s!"ssz_static/{typeName}: not modeled by EthCLSpecs.Fulu"))
 
+/-- `runSpecFn`: run one Fulu shuffle or selection function on the decoded arguments and
+return its output. A state argument decodes through the cached `decodeState` box, the type
+the functions read. `get_next_sync_committee` aggregates the real public keys, so the FFI
+crypto backend is used. The functions that are new in Gloas or Heze do not exist in the
+Fulu pyspec, so they are `outOfScope`. -/
+private def runSpecFnImpl (P : Preset) (C : Config) (fn : SpecFn) (args : SpecFnArgs) :
+    Except (RunError StateTransitionError) SpecFnOut :=
+  letI : Preset := P
+  letI : Config := C
+  letI : HasherTag := fastHasherTag
+  letI : CryptoBackend := CryptoBackend.realBackend
+  let indicesOut (xs : Array ValidatorIndex) : SpecFnOut := .nats (xs.map (·.toNat))
+  match fn with
+  | .shuffledPermutation => do
+    let perm ← RunError.ofSpec (computeShuffledPermutation (← args.nat 0) (← args.byteArg 0))
+    pure (indicesOut perm)
+  | .shufflingMapping => do
+    let count ← args.nat 0
+    if count == 0 then pure (.nats #[])
+    else pure (indicesOut (← RunError.ofSpec (computeShuffledPermutation count (← args.byteArg 0))))
+  | .computeCommittee => do
+    let committee ← RunError.ofSpec
+      (computeCommittee (← args.validatorIndices) (← args.bytes32 0) (← args.nat 0) (← args.nat 1))
+    pure (indicesOut committee)
+  | .activeValidatorIndices => do
+    let state ← decodeState P args.state
+    pure (indicesOut (← RunError.ofSpec (getActiveValidatorIndices state (← args.u64 0))))
+  | .seed => do
+    let state ← decodeState P args.state
+    pure (.bytes (vecToBytes (← RunError.ofSpec (getSeed state (← args.u64 0) (← args.byteArg 0)))))
+  | .committeeCountPerSlot => do
+    let state ← decodeState P args.state
+    pure (.nats #[← RunError.ofSpec (getCommitteeCountPerSlot state (← args.u64 0))])
+  | .beaconCommittee => do
+    let state ← decodeState P args.state
+    let committee ← RunError.ofSpec (getBeaconCommittee state (← args.u64 0) (← args.nat 1))
+    pure (indicesOut committee)
+  | .proposerIndices => do
+    let state ← decodeState P args.state
+    let proposers ← RunError.ofSpec
+      (computeProposerIndices state (← args.u64 0) (← args.bytes32 0) (← args.validatorIndices))
+    pure (indicesOut proposers)
+  | .beaconProposerIndices => do
+    let state ← decodeState P args.state
+    pure (indicesOut (← RunError.ofSpec (getBeaconProposerIndices state (← args.u64 0))))
+  | .nextSyncCommittee => do
+    let state ← decodeState P args.state
+    pure (.bytes (SSZ.serialize (← RunError.ofSpec (getNextSyncCommittee state))))
+  | .balanceWeightedSelection | .computePtc | .getPtc | .inclusionListCommittee =>
+    .error (.spec (.outOfScope s!"spec_fn {reprStr fn}: not a Fulu function"))
+
 /-- Fulu's fork-interface instance at preset `P`. The runner injects `minimal` or
 `mainnet` per test; both coexist because the preset is a parameter, not a global
 instance (`FRAMEWORK_ARCHITECTURE.md` §4). -/
@@ -434,6 +485,7 @@ instance (`FRAMEWORK_ARCHITECTURE.md` §4). -/
   runGenesis      := fun _ _   => .error (.spec (.outOfScope "genesis: out of scope (not modeled)"))
   runUpgrade      := fun _     => .error (.spec (.outOfScope "fork upgrade: Gloas only (out of scope for Fulu)"))
   runTransition   := fun _ _ _ => .error (.spec (.outOfScope "transition: needs the Electra parent fork (out of scope; Electra→Fulu boundary)"))
+  runSpecFn       := runSpecFnImpl P C
 
 /-- The config values a vector can override, one `(KEY, set)` pair per value: the fork
 schedule Fulu models. A vector that activates its forks at genesis ships a `config.yaml`

@@ -38,7 +38,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 # scope (they exercise primitives a dependency owns). `fast_confirmation` (the
 # confirmation-rule fork-choice format, minimal-only) is a runner we have not
 # implemented yet: deliberately uncollected, a named future work item rather
-# than a silent omission.
+# than a silent omission. `shuffling` is in scope too, but its vectors sit under
+# `phase0`, so `walk_cases` collects them for each fork outside this set.
 IN_SCOPE_RUNNERS = {
     "sanity", "finality", "random", "epoch_processing", "operations",
     "rewards", "genesis", "fork", "transition", "fork_choice", "ssz_static",
@@ -138,6 +139,20 @@ def walk_cases(extract_root: Path, preset: str, fork: str,
                         continue
                     counts[key] = counts.get(key, 0) + 1
                     yield Case(preset, fork, runner, handler, suite_dir.name,
+                               case_dir.name, case_dir)
+    # The `shuffling` vectors exist only under `phase0`: the swap-or-not shuffle has not
+    # changed since. Each fork re-elaborates its own copy of the shuffle, so every fork runs
+    # them against its own body.
+    shuffle_dir = extract_root / "tests" / preset / "phase0" / "shuffling"
+    if shuffle_dir.is_dir():
+        for handler_dir in sorted(p for p in shuffle_dir.iterdir() if p.is_dir()):
+            for suite_dir in sorted(p for p in handler_dir.iterdir() if p.is_dir()):
+                for case_dir in sorted(p for p in suite_dir.iterdir() if p.is_dir()):
+                    key = ("shuffling", handler_dir.name)
+                    if limit_per_handler is not None and counts.get(key, 0) >= limit_per_handler:
+                        continue
+                    counts[key] = counts.get(key, 0) + 1
+                    yield Case(preset, fork, "shuffling", handler_dir.name, suite_dir.name,
                                case_dir.name, case_dir)
 
 
@@ -299,6 +314,16 @@ def _build_ssz_static_request(case: Case, tmpdir: Path) -> str:
                       config_overrides(case)])
 
 
+def _build_shuffling_request(case: Case) -> str:
+    """Encode a `shuffling` vector as a `spec_fn` request. `mapping.yaml` holds the seed, the
+    count, and `mapping`, which is `[compute_shuffled_index(i, count, seed) for i in
+    range(count)]`. The server computes the same list and compares it with `mapping`."""
+    m = yaml.safe_load((case.path / "mapping.yaml").read_text())
+    expected = "ok:n:" + ",".join(str(int(x)) for x in m["mapping"])
+    return "\t".join(["spec_fn", "shuffling_mapping", "-", str(int(m["count"])), "",
+                      str(m["seed"]), expected, "cfg=-"])
+
+
 def build_request(case: Case, tmpdir: Path) -> str:
     """Decompress the case's SSZ blobs and encode the tab-separated request line
     the Lean server reads. `post` is `-` when the case has no `post` (an invalid
@@ -307,6 +332,8 @@ def build_request(case: Case, tmpdir: Path) -> str:
         return _build_fork_choice_request(case, tmpdir)
     if case.runner == "ssz_static":
         return _build_ssz_static_request(case, tmpdir)
+    if case.runner == "shuffling":
+        return _build_shuffling_request(case)
     meta = parse_meta(case)
     pre = _decompress_to(tmpdir, case.path / "pre.ssz_snappy") if (case.path / "pre.ssz_snappy").exists() else None
     post_src = case.path / "post.ssz_snappy"
