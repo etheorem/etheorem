@@ -134,9 +134,9 @@ private def pinTargetAdvanceRejects : Bool :=
   let store := { pinStore with blockStates := FcMap.insert FcMap.empty pinRoot state }
   let target : Checkpoint := { epoch := 1, root := pinRoot }
   match (storeTargetCheckpointState (map := treeMap) store target : PinM (Store treeMap)).run store with
-  -- Match the constructor, not the wrapper: `.transition` also spans `.arithmetic`, an uncaught
-  -- fault that would fail the very step this fixture pins as an expected rejection. The pin has
-  -- to break when the reject class changes, which is what Leo's note 3 asked for.
+  -- Match the inner constructor. `.transition` also wraps `.arithmetic`, an uncaught fault
+  -- that fails the step this fixture pins as an expected rejection, so the pin breaks when
+  -- the reject class changes.
   | .error (.transition (.outOfBounds _ _)) _ => true
   | _ => false
 example : pinTargetAdvanceRejects = true := by native_decide

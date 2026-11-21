@@ -16,8 +16,9 @@ runner every Gloas proof here pins to, they establish three facts about Gloas
   (the parent block's slot, new at v1.7.0-beta.4) to each `processAttestation`.
 * `processOperations_nonempty_deposits_error` shows that non-empty in-block
   deposits fail that assertion immediately, for any pre-state value.
-* `processOperations_run_ok_iff` characterizes success as empty deposits plus
-  the six folds succeeding in order over five plain intermediate values.
+* `processOperations_run_ok_iff` characterizes success as empty deposits, the
+  six length bounds, and the six folds succeeding in order over five plain
+  intermediate values.
 
 The implementation's `for op in ops do handler op` loops elaborate to `forIn`
 over `ProgressiveList`. This module names that fold `processOperationsForM`
@@ -28,8 +29,8 @@ equation and the success characterization speak in named folds rather than raw
 Statements bind plain `BeaconState` values and read the runs through `runPure`.
 The success characterization splits over five plain intermediate values,
 `afterProposerSlashings` through `afterBlsToExecutionChanges`: empty deposits,
-then one `runPure` fact per operation-family loop, each loop's post-state a
-plain value. The fact behind the split is `KeepsUncached`
+the six length bounds, then one `runPure` fact per operation-family loop, each
+loop's post-state a plain value. The fact behind the split is `KeepsUncached`
 (`Proofs/Gloas/KeepsUncached.lean`): every one of the six handlers keeps the
 flavour, so `runPure_bind_of_keepsUncached` names each fold's post-state as a
 plain value, and the six loop facts `keepsUncached_forM_*` carry it to the
@@ -160,12 +161,9 @@ private theorem processOperations_eq_loops_of_bounds (body : BeaconBlockBody) (p
 assert immediately, from any pre-state value. The error is an `assert`
 constructor; its diagnostic string is existential and unpinned in the statement.
 
-A reject at this monad carries no state. Where the `EStateM` spelling of this
-theorem had to *claim* that the gate preserved the pre-state (`EStateM` keeps
-whatever state a failing run had reached, and only this opening gate was known
-to have reached none), `StateT` over `Except` returns the error alone. So the
-statement no longer mentions a post-state, and the same silence covers a later
-handler failure, which is why no companion theorem is owed for those. -/
+A reject at this monad carries no state: `StateT` over `Except` returns the error
+alone. So the statement mentions no post-state. The same holds for a later handler
+failure, which is why no companion theorem is owed for those. -/
 theorem processOperations_nonempty_deposits_error :
     ∀ (preState : BeaconState) (body : BeaconBlockBody) (parentSlot : Slot),
       body.deposits.size ≠ 0 →
@@ -230,8 +228,9 @@ private theorem keepsUncached_forM_payloadAttestations [Preset] [HasherTag] [Con
     (fun a => keepsUncached_processPayloadAttestation a) body.payloadAttestations.val
 
 /-- Exact success ↔: `processOperations` succeeds on the uncached box of `preState`
-with post-value `postState` iff deposits are empty and the six operation-family
-loops succeed in order over five plain intermediate values,
+with post-value `postState` iff deposits are empty, the six progressive lists
+meet their length bounds, and the six operation-family loops succeed in order
+over five plain intermediate values,
 `afterProposerSlashings` through `afterBlsToExecutionChanges`, each named after
 the loop that produced it. The forward direction names each fold's post-box as
 `pureState` of a plain value through the loop's `KeepsUncached` fact; the

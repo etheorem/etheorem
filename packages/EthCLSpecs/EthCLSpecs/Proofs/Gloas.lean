@@ -31,11 +31,14 @@ Re-exports:
 * `EthCLSpecs.Proofs.Gloas.BuilderIndex`: the builder-index flag round-trip
   (`isBuilderIndex`, `toBuilderIndex`, `convertBuilderIndexToValidatorIndex`).
 * `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: `processBuilderPendingPayments`'s
-  withdrawal-queuing and payment-window-shift postcondition
-  (`processBuilderPendingPayments_run`, plus
-  `processBuilderPendingPayments_run_appended`).
-* `EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid`: the exact `Bool`-vs-`UInt64`-inequality
-  characterization of `canBuilderCoverBid`.
+  run equation (`processBuilderPendingPayments_run`): a quorum error propagates, and
+  a successful quorum computation gives the withdrawal-queuing and
+  payment-window-shift postcondition (`processBuilderPendingPayments_run_appended`).
+* `EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid`: the run equation of `canBuilderCoverBid`
+  over the checked `Gwei` chain, and its reading as one `Nat` inequality on the plain values.
+* `EthCLSpecs.Proofs.Gloas.ForkChoiceRun`: `GloasStoreRun`, the Gloas store monad, with the
+  `getSlotsSinceGenesis` and `getCurrentSlot` run equations at genesis time and the
+  `.zeroDivision` reject of a zero `SLOT_DURATION_MS`.
 * `EthCLSpecs.Proofs.Gloas.GetPtc`: `getPtc`'s else-branch `ptcWindow` offset bound,
   for the `data.slot + 1 == state.slot` caller (`getPtcElseOffset`,
   `getPtcElseOffset_lt_next_slot`) and the `slot == curSlot` fork-choice replay callers
@@ -48,8 +51,8 @@ Re-exports:
   corollaries for the written `withdrawableEpoch`.
 * `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: literal and semantic
   characterizations of `isValidIndexedPayloadAttestation`, including its adjacent
-  nondecreasing and validator-range checks. The semantic layer indexes the
-  validator registry in bounds rather than through `!`.
+  nondecreasing and validator-range checks. The semantic layer reads the
+  validator registry with in-bounds proofs, so its statement has no `!` read.
 * `EthCLSpecs.Proofs.Gloas.ProcessDepositRequest`: `processDepositRequest_run`, the
   whole-transition equation (the run appends one pending deposit and writes nothing
   else), and

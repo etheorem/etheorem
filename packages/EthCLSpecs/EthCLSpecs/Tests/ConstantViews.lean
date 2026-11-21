@@ -13,7 +13,7 @@ The pins for the two view kinds of `SPEC_ARITHMETIC.md` §4.5 and §4.2:
   value with the preset's own positivity premise.
 
 Each view body projects the original entry, so the numeral lives in the value
-set alone. These pins lock the three properties the later stages rely on: the
+set alone. These pins lock the three properties the fork bodies rely on: the
 views reduce at a concrete preset, the divisor view's positivity is the tier's
 own proof field (no `decide` at the view), and tier inheritance carries both
 through Fulu, Gloas, and Heze, with a child override getting a fresh proof from
@@ -216,11 +216,11 @@ example : @Const.effectiveBalanceIncrement mainnet
 /-! ### The child override
 
 A synthetic fourth fork overrides `slotsPerEpoch` and `slotsPerHistoricalRoot`
-and nothing else. Its `forkpresetvalues` names only the overrides; the merged
-value set re-runs Fulu's `slotsPerEpochPos := by decide` (and the
-`slotsPerHistoricalRoot` twins) against the child's numbers, so each proof is
-fresh with nothing restated (`FRAMEWORK_ARCHITECTURE.md` §4): proof fields
-merge like any other field and re-prove against the child's numbers. The
+and nothing else. Its `forkpresetvalues` names only the overrides. The merged
+value set re-runs Fulu's `by decide` proofs of `slotsPerEpochPos`,
+`slotsPerEpochLt`, `slotsPerHistoricalRootPos`, and `slotsPerHistoricalRootLt`
+against the child's numbers. Proof fields merge like any other field, so each
+proof is fresh with nothing restated (`FRAMEWORK_ARCHITECTURE.md` §4). The
 replayed views then read the child's numbers through the child's own `Preset`.
 
 The fork sits in its own namespace directly under `EthCLSpecs`, the depth the
@@ -237,7 +237,7 @@ fork ConstViewChild from Heze
 -- The type aliases the merged tier fields' types name. Each real fork declares
 -- its own set in its `Types.lean`; a replayed tier class re-emits the raw field
 -- types, so the child's namespace needs these four before `forkpreset`.
--- `Slot` and `Epoch` take the post-migration checked kind the real forks declare.
+-- `Slot` and `Epoch` take the checked kind the real forks declare.
 forkabbrev Slot := CLUint64
 forkabbrev Epoch := CLUint64
 forkabbrev Gwei := CLUint64

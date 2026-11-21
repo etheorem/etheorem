@@ -151,15 +151,14 @@ private def pinIlDueMs : Bool :=
 example : pinIlDueMs = true := by native_decide
 
 /-- The faithful empty-committee throw. Over a zero-validator `default BeaconState`, slot 0's
-beacon committee is empty, so `getInclusionListCommittee` hits the empty-committee guard and
-rejects. Pyspec raises a bare `ZeroDivisionError` on the same `indices[i % 0]`, an uncaught
-fault no wrapper's class set holds, so the pin checks the reject is exactly the
-`.zeroDivision` cause, not a caught `.assert` and not the `.arithmetic` range class. A
-regression to `assert`, or to the range cause, breaks it. `on_inclusion_list` reaches the
-helper after its state advance. At
-v1.7.0-beta.4 the record path no longer computes a committee, so the pin drives the helper
-directly, in plain `Except` (it needs no `MonadStateOf`). `State` is FFI-backed (`FastBox`), so
-`native_decide`. -/
+beacon committee is empty, so the plain `%` inside `cyclicSample` forms `i % 0` and
+`getInclusionListCommittee` rejects. The pyspec raises a bare `ZeroDivisionError` on the same
+`indices[i % len(indices)]`, an uncaught fault that neither `RunnerCaughtSet` admits. So the
+pin checks that the reject is exactly the `.zeroDivision` cause. A regression to a caught
+`.assert`, or to the `.arithmetic` range cause, breaks it. `on_inclusion_list` reaches the
+helper after its state advance. At v1.7.0-beta.4 the record path computes no committee, so the
+pin drives the helper directly, in plain `Except` (it needs no `MonadStateOf`). `State` is
+FFI-backed (`FastBox`), so `native_decide`. -/
 private def pinCommitteeThrows : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
@@ -372,9 +371,9 @@ private inductive IlOutcome where
 /-- `on_inclusion_list` over a list from the committee's first member for `ilSlot` carrying
 `txs`, the store clock `intoSlotMs` ms into slot 0 (genesis time `0`, so the store time is the
 time into slot 0): the filed timeliness on success, the reject class otherwise. The general
-form the Stage 7.3c pins drive (any slot, any transaction list); the timeliness pins below
-specialize it. `getForkchoiceStore` hashes the anchor (FFI `Sha256`), so these are
-`native_decide` `example`s (`Lean.ofReduceBool`). -/
+form the retention-window and byte-cap pins drive (any slot, any transaction list); the
+timeliness pins below specialize it. `getForkchoiceStore` hashes the anchor (FFI `Sha256`), so
+these are `native_decide` `example`s (`Lean.ofReduceBool`). -/
 private def pinOnIl (intoSlotMs : CLUint64) (ilSlot : Slot) (txs : Array Transaction) : IlOutcome :=
   letI : Preset := minimal
   letI : Config := minimalConfig
@@ -414,15 +413,15 @@ example : pinOnIl 3999 0 #[pinTx 0xAA] = .filed true := by native_decide
 -- 4000 ms into the slot: not < 4000 ⇒ untimely.
 example : pinOnIl 4000 0 #[pinTx 0xAA] = .filed false := by native_decide
 
-/-! #### The retention window and the byte cap (Stage 7.3c)
+/-! #### The retention window and the byte cap
 
 The handler's two configuration asserts, at their shipped boundaries. `MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS`
 is `Slot(1)` in the pinned module (checked kind) and enters the window through the checked `Slot`
 add `inclusion_list.slot + MIN_SLOTS_FOR_INCLUSION_LISTS_REQUESTS`, which raises past `2^64 - 1`
-where a raw add would wrap. `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` is `Uint64(8192)`
-(`Uint64` at the pin, the checked kind since Stage 7.3c's audit): the spec compares the plain
-byte sum against it as a mixed `int <= Uint64`, which never raises and orders the values, so the
-consumer reads the cap's plain projection. Both asserts precede the dependent-block checks, so a
+where a raw add would wrap. `MAX_TRANSACTIONS_BYTES_PER_INCLUSION_LIST` is `Uint64(8192)`,
+the checked kind at the pin. The spec compares the plain byte sum against it as a mixed
+`int <= Uint64`, which never raises and orders the values, so the consumer reads the cap's
+plain projection. Both asserts precede the dependent-block checks, so a
 reject here is the window's or the cap's, not a later one. -/
 
 /-- A single transaction of `n` bytes, each `b`. -/

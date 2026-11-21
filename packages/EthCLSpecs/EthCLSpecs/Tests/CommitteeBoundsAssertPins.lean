@@ -33,9 +33,9 @@ both presets:
    attestation at slot `SLOTS_PER_EPOCH - 1` with committee bit `1` reaches committee index
    `count`, so it raises the assert. Its pair, committee bit `0`, returns the one member.
 
-Every expected answer is the pinned pyspec's (1.7.0b4) on the same fixture. Under the
-defaulting read that the assert replaces, every assert pin returns a committee instead
-(`perm[i]!` past the end reads `0`), so each one fails there.
+Every expected answer is the pinned pyspec's (1.7.0b4) on the same fixture. Under a
+defaulting read with no assert, every assert pin returns a committee instead (`perm[i]!` past
+the end reads `0`), so each one fails there.
 `State` is FFI-backed, so `native_decide`.
 -/
 
