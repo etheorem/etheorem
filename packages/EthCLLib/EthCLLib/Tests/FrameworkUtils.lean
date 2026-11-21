@@ -34,14 +34,14 @@ namespace EthCLLib.Tests.FrameworkUtils
 #guard le8 (uint64ToBytes 258) = 258
 #guard le8 (uintToBytes (258 : UInt64)) = 258
 
-/-! ## Checked `uint64` arithmetic: the faithful over/underflow faults
+/-! ## Raw-word helpers: checked overflow and underflow faults
 
-`checkedAdd` / `checkedSub` / `checkedMul` mirror `eth-ssz-specs` 0.1.0's `Uint64`, which
+The raw-word `checkedAdd` / `checkedSub` / `checkedMul` mirror `eth-ssz-specs` 0.1.0's `Uint64`, which
 raises `SSZValueError` (a `ValueError`) on
 over/underflow rather than wrapping, and `checkedSucc` mirrors the loop-counter increment
 `i += 1`, whose `.ok` result carries the counter's range for the caller's `termination_by`.
 In range they reduce to `.ok`; out of range they raise the uncaught `.arithmetic` fault. The same
-source fault rides in as `.arithmetic` on the state machine
+source fault becomes `.arithmetic` on the state machine
 and, via `[ErrorConv …]`, as `.transition (.arithmetic …)` on the store machine, so both
 instantiations are pinned. Faults are unreachable on well-formed vectors, so these guards are
 the only thing exercising the throw. -/

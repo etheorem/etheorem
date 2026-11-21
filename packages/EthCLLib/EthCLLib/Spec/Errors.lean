@@ -110,8 +110,8 @@ inductive StateTransitionError where
   does not catch it, while the one `except ValueError` wrapper does
   (`RunnerCaughtSet.valueError`). It `classify`s as `ClassifyBucket.uncaughtFault` and
   carries no `ArithCause`, since a lookup is not an arithmetic operator. `descr` names the
-  lookup, diagnostic only. The standing case is `process_sync_aggregate`'s
-  `all_pubkeys.index(pubkey)` (`fulu/minimal.py:4515-4517`) on a current-sync-committee
+  lookup, diagnostic only. One caller is `process_sync_aggregate`'s
+  `all_pubkeys.index(pubkey)` (`fulu/minimal.py:4515-4518`) on a current-sync-committee
   pubkey that no validator carries. -/
   | notInList (descr : String)
   deriving Inhabited, Repr, DecidableEq

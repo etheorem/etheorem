@@ -1537,26 +1537,24 @@ generalized index rather than raw tree position. The blob and
 data-column sidecar inclusion proofs do the same.
 `kzgCommitmentsInclusionProof`
 (`EthCLSpecs/Fulu/Blocks.lean:63`) is the sidecar case, not
-modeled yet. Deposits are the exception. Their index is a plain
-tree position.
+modeled yet. The deposit contract's incremental tree also uses a plain
+tree position; that tree is outside the modeled fork bodies.
 
 **Branch completeness.** Proved end to end within scope:
 `Proofs/Merkle/Opening.lean` emits the sibling roots along a
 pure-path tree's path (`naiveOpeningAt`) and folds a real tree
-path back to the tree's root (`foldOpening_openingAt`), with the
-mix-in-length variant `processDeposit` needs. EthCLLib proves
+path back to the tree's root (`foldOpening_openingAt`), with a
+mix-in-length variant for list openings. EthCLLib proves
 `routeRight_eq_testBit`, ties `branchFold` to `foldOpening`
 (`branchFold_eq_foldOpening`), and concludes that
 `isValidMerkleBranch` accepts an honest opening
 (`isValidMerkleBranch_of_foldOpening`,
 `EthCLLib/Proofs/MerkleBranch.lean`).
 
-Two gaps separate that from the shipped call sites. Each call site
-checks a branch taken off the wire.
-`EthCLSpecs/Fulu/Operations.lean:261` checks it against the
-deposit contract's incremental tree, which is not an `ofShape`
-tree. The wire value therefore needs its own connection to the
-tree the theorem describes. The light-client sites call
+Two gaps remain outside the modeled fork bodies. Branches from the deposit
+contract's incremental tree need their own connection to the tree the
+theorem describes. Fulu, Gloas, and Heze have no `processDeposit` entry
+point. The pinned light-client sites call
 `is_valid_normalized_merkle_branch`, which pads a short branch
 with a zero prefix. `isValidMerkleBranch` rejects any branch
 whose length differs from the depth, so those openings need the

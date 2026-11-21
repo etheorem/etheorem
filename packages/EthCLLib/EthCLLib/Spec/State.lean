@@ -49,7 +49,7 @@ class StateRoot (S : Type) where
 committed intermediate-node hashes, so this writes that box back through
 `MonadStateOf`, and a later root reuses the tree instead of rebuilding it. This is the
 way to take a state root in a `StateTransition` / store-machine step; the pure
-`stateRoot!` below is the terminal-only escape hatch. Whether retention actually caches
+`stateRoot!` below is the terminal-only discard form. Whether retention actually caches
 is the box flavour's call (a cached box keeps the tree, a pure box does not), so the
 spec calls this unconditionally and the runner picks the flavour and manages memory. -/
 @[inline] def getStateRoot {S : Type} {m : Type → Type u} [MonadState S m] [StateRoot S] :

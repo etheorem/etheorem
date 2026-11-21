@@ -67,7 +67,7 @@ the inner failure in the caller's own error (`FRAMEWORK_ARCHITECTURE.md` §6, §
 store handler binds the result in its own monad `m`. This is the one-way bridge: the store
 machine runs the state machine, never the reverse.
 
-The inner reject rides out through `liftErr`, so this names no error type of its own:
+`liftErr` converts the inner reject to the caller's error type:
 `E` is read off the caller's `MonadExcept`, and `[ErrorConv StateTransitionError E]`
 supplies the conversion. In a fork-choice handler that resolves to `E :=
 StoreTransitionError` and the `.transition` wrapper, which is the only conversion that

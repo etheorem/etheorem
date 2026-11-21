@@ -32,8 +32,8 @@ forkdef modBalance (state : State) (i : ValidatorIndex) (f : Gwei → Gwei) : St
   -- `toPlainNat`: the caller's raising read already proved `i` in range (see above).
   sszModify state balances[i.toPlainNat]! := f
 
-/-- `increase_balance`. The pyspec's `+=` is a bare `uint64` addition, and remerkleable re-runs
-the bound check on the result, so an overflow raises `ValueError`. The reference runner lets that
+/-- `increase_balance`. The pyspec's `+=` uses `eth-ssz-specs`' checked `uint64` addition.
+The result's bound check raises `SSZValueError`, a `ValueError` subclass. The reference runner lets that
 raise escape. The checked `+` on `Gwei` models the addition, and the action rejects with the
 `.arithmetic` uncaught fault.
 

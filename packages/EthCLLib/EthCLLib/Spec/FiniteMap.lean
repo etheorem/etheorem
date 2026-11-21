@@ -325,7 +325,7 @@ def FcMap.getOrThrowKey {map : MapKind} [FcMap map] {K V : Type} [Ord K] [BEq K]
 
 /-- `getOrThrowKey` for a `Root`-keyed map: a miss reports the lookup key itself.
 The `Vector UInt8 32` structure it needs is all global here (`instOrdVectorUInt8`,
-`instHashableVector`, `Vector`'s own `BEq`), so nothing rides in as a binder. -/
+`instHashableVector`, `Vector`'s own `BEq`), so the function needs no instance binder. -/
 @[inline] def FcMap.getOrThrow {map : MapKind} [FcMap map] {V : Type}
     {m : Type → Type} [Monad m] [MonadExceptOf StoreTransitionError m]
     (mp : map (Vector UInt8 32) V) (k : Vector UInt8 32) : m V :=
