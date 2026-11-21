@@ -5,16 +5,16 @@ import EthCLSpecs.Gloas.Containers
 
 The flagship of the fork-inheritance model (`SPEC_AUTHORING_MODEL.md` §4,
 `SPECS_ARCHITECTURE.md` §4.1). Gloas's `BeaconState` carries every field the Fulu
-epoch substeps read, and EIP-7732 changes none of those substeps' bodies, so they
-are `inherit`ed verbatim: each captured Fulu `forkdef` is re-elaborated in the
-Gloas namespace against `Gloas.State` (`= SSZ.Box _ Gloas.BeaconState`), with its
-sibling calls rebinding to the Gloas copies. No substep body is restated.
-
-The two shuffle-dependent substeps (`process_sync_committee_updates`,
-`process_proposer_lookahead`) and the Gloas-new `process_builder_pending_payments`
-are not inherited: the committee / proposer helpers are plain `def`s bound to
-`Fulu.State`, and the builder-payment substep is an ePBS addition. They stay
-`todo` in the Gloas interface.
+epoch substeps read, so most substeps are `inherit`ed verbatim: each captured Fulu
+`forkdef` is re-elaborated in the Gloas namespace against `Gloas.State`
+(`= SSZ.Box _ Gloas.BeaconState`), with its sibling calls rebinding to the Gloas
+copies. Gloas restates only the bodies its pinned text changes: the EIP-8061 churn
+helpers, `slash_validator`, `get_next_sync_committee_indices`,
+`get_beacon_proposer_indices`, `process_pending_deposits`, and
+`process_participation_flag_updates`. The two shuffle-dependent substeps are
+inherited too, after the committee layer. The Gloas-new substeps
+`process_builder_pending_payments` and `process_ptc_window` close the file, with
+their helpers.
 
 The `inherit` order is the Fulu load order (the `Time` … `Deposits` concern files,
 then `Committees` and `EpochProcessing`), so every body's dependencies are already
@@ -81,8 +81,8 @@ inherit reserveChurn
 -- Gloas (EIP-8061) churn: `get_exit_churn_limit` / `get_activation_churn_limit`
 -- use `CHURN_LIMIT_QUOTIENT_GLOAS`, and `compute_exit_epoch_and_update_churn` uses
 -- `get_exit_churn_limit` rather than Fulu's `get_activation_exit_churn_limit`. These
--- override the inherited Fulu versions; `initiateValidatorExit`/`slashValidator`
--- (inherited below) bind to this `computeExitEpochAndUpdateChurn`.
+-- override the inherited Fulu versions; the inherited `initiateValidatorExit` binds to
+-- this `computeExitEpochAndUpdateChurn`, and the restated `slashValidator` calls it.
 /-- `get_exit_churn_limit` (`gloas/mainnet.py:7889-7898`): the Gloas quotient in
 place of Fulu's, the checked `Gwei` chain as `getBalanceChurnLimit` ports it. -/
 forkdef getExitChurnLimit (state : State) : Except StateTransitionError Gwei := do
@@ -93,7 +93,7 @@ forkdef getExitChurnLimit (state : State) : Except StateTransitionError Gwei := 
   let limit ← churn - rounded
   return limit
 
-/-- `get_activation_churn_limit` (`gloas/mainnet.py:7876-7887`): the rounded
+/-- `get_activation_churn_limit` (`gloas/mainnet.py:7876-7886`): the rounded
 churn capped at `MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS`. -/
 forkdef getActivationChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let totalActiveBalance ← getTotalActiveBalance state
@@ -179,7 +179,7 @@ inherit getPendingBalanceToWithdraw
 -- Gloas (EIP-8061) consolidation churn: `total_active // CONSOLIDATION_CHURN_LIMIT_QUOTIENT`
 -- (no `MIN` floor, no balance-churn subtraction). Overrides the inherited Fulu
 -- version; the inherited `computeConsolidationEpochAndUpdateChurn` below binds to it.
-/-- `get_consolidation_churn_limit` (`gloas/mainnet.py:6678-6687`): the
+/-- `get_consolidation_churn_limit` (`gloas/mainnet.py:6678-6685`): the
 EIP-7732 quotient, the checked `Gwei` chain as `getBalanceChurnLimit` ports it. -/
 forkdef getConsolidationChurnLimit (state : State) : Except StateTransitionError Gwei := do
   let totalActiveBalance ← getTotalActiveBalance state
@@ -333,8 +333,8 @@ inherit processHistoricalSummariesUpdate
 /-- `process_participation_flag_updates` (Gloas override of the Fulu substep): rotate
 current participation into previous and reset current to all-zero flags, one per
 validator. Fulu's body builds the zero flags through the capped `SSZList`
-constructor, the raise #120 added; Gloas's `currentEpochParticipation` is an
-uncapped progressive list at alpha.12, so the reset takes the array whole and
+constructor, which raises `.listFull` past the cap. Gloas's `currentEpochParticipation`
+is an uncapped progressive list at the pin, so the reset takes the array whole and
 nothing can raise. Heze inherits this override. -/
 forkdef processParticipationFlagUpdates : StateTransition Unit := do
   let state ← get
@@ -355,7 +355,7 @@ inherit processProposerLookahead
 
 /-! ## Gloas-new epoch substep (EIP-7732) -/
 
-/-- `get_builder_payment_quorum_threshold` (`gloas/mainnet.py:7867-7874`):
+/-- `get_builder_payment_quorum_threshold` (`gloas/mainnet.py:7867-7873`):
 `get_total_active_balance(state) // Uint64(SLOTS_PER_EPOCH) *
 BUILDER_PAYMENT_THRESHOLD_NUMERATOR // BUILDER_PAYMENT_THRESHOLD_DENOMINATOR`. The
 per-slot division takes the proved-total `PositiveDivisor` view; the product and

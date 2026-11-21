@@ -148,7 +148,7 @@ private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
 -- `withdrawals`, `execution_payload_bid`, `parent_execution_payload`, `block_header`,
 -- the EIP-8282 `builder_deposit_request` / `builder_exit_request`, and the builder-branch
 -- `voluntary_exit` / `deposit_request`. The checked `Epoch` arithmetic makes the compiled
--- body heavier; the annotation is a build-cost note (`SPEC_ARITHMETIC_PLAN.md` Stage 10).
+-- body heavier; the `maxHeartbeats` annotation covers that elaboration cost.
 set_option maxHeartbeats 1000000 in
 private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     (preBytes opBytes : ByteArray) (cmeta : CaseMeta) : Except (RunError StateTransitionError) ByteArray := do
@@ -367,9 +367,9 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
             onTick (map := hashMap) (secondsToMilliseconds tickSeconds) :
           EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes _columns valid =>
-      -- pyspec `add_block` (`fork_choice.py:382-406`) runs `on_block` ALONE against `valid`: an
-      -- invalid block returns right after `on_block` rejects (`:393`), so its own attestations /
-      -- attester-slashings replay only on the valid path (`:400-406`), each `valid = True`. So
+      -- pyspec `add_block` (`fork_choice.py:323-427`) runs `on_block` ALONE against `valid`: an
+      -- invalid block returns right after `on_block` rejects (`:387`), so its own attestations /
+      -- attester-slashings replay only on the valid path (`:394-400`), each `valid = True`. So
       -- check `on_block` against `valid`, then replay the sub-steps only when the block was
       -- accepted. (Combining them would let a sub-attestation reject stand in for `on_block`'s on
       -- a `valid: false` step.) A decode failure is the step's reject, as `decodeStepOr` gives.
@@ -381,7 +381,7 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
           (runOn store (onBlock (map := hashMap) sb : EStateM StoreTransitionError (Store hashMap) Unit)))
         if valid then
           -- The reference replays each list under its OWN wrapper, `run_on_attestation` then
-          -- `run_on_attester_slashing` (`fork_choice.py:400-406`), so they are scored as two
+          -- `run_on_attester_slashing` (`fork_choice.py:394-400`), so they are scored as two
           -- sub-steps naming their own kind. Both carry `valid = True`, so `FcStepKind.admits`
           -- is never consulted and the split is score-equivalent to one combined action; it
           -- keeps the rule that no call site hides which reference wrapper scores it.
@@ -418,12 +418,12 @@ private def fcInterpretGloas [Preset] [Config] [HasherTag] [CryptoBackend]
       let head ← queryHead store
       assert (head.payloadStatus.toNat == status)
     | .checkPayloadTimelinessVote blockRoot votes =>
-      -- `add_payload_vote_checks` subscripts a plain `Dict` (`fork_choice.py:517-519`),
+      -- `add_payload_vote_checks` subscripts a plain `Dict` (`fork_choice.py:511-513`),
       -- so a missing key raises; the spec-side reads of this same map already throw.
       let recorded ← FcMap.getOrThrow store.payloadTimelinessVote (bytesToRoot blockRoot)
       assert (recorded == votes)
     | .checkPayloadDataAvailabilityVote blockRoot votes =>
-      -- `add_payload_vote_checks` subscripts a plain `Dict` (`fork_choice.py:517-519`),
+      -- `add_payload_vote_checks` subscripts a plain `Dict` (`fork_choice.py:511-513`),
       -- so a missing key raises; the spec-side reads of this same map already throw.
       let recorded ← FcMap.getOrThrow store.payloadDataAvailabilityVote (bytesToRoot blockRoot)
       assert (recorded == votes)
