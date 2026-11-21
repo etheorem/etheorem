@@ -1573,3 +1573,51 @@ Consolidation results on the source tree plus the 9.2 edits:
 The build reused copied local Lake caches and gitignored native vendor trees.
 Lake rebuilt modules whose source hashes changed. No formula, signature, theorem
 statement, or characterization tag changes in this consolidation.
+
+### Integrated verification sweep (9.3)
+
+Task 9.3 (WS-102) re-runs the build and project gates on the integrated
+`epic/WS-92` tree at `5ff4e967`, the tree this sub-issue hands off. The sweep
+checks the documentation edits of 9.1a through 9.2 and the code edits of 9.5a
+through 9.5d together. It re-runs the targeted searches and inspects every
+remaining match. No new conflict surfaced, so no reconciliation edit is needed;
+every remaining match falls under a disposition in the sections above.
+
+| Command | Result |
+|---|---|
+| `just ethcl-test` | Passed, 677 jobs |
+| `lake build EthCLSpecsBench` | Passed, 672 jobs |
+| `just build-cli` | Passed, 628 jobs |
+| `just lint` | Passed |
+| `just check-citations` | Passed, 194 citations in nine files |
+| `just check-constants` | Passed, 166 constants against 244 upstream names; two untabled and three tier-only advisories |
+| `just proof-coverage-update` | Empty diff |
+| `just proof-coverage-check` | Passed, 87 claims |
+| `just ethcl-pyspec-smoke` | Passed; Fulu 155 passed / 46 skipped, Gloas 207 / 52, Heze 209 / 52 |
+| `git grep 'TEMPORARY CROSSING' -- '*.lean'` | Empty (exit 1) |
+| `git diff --check` | Clean |
+
+Differences from the Stage 8.5 reference, each with its cause:
+
+- `ethcl-test` 674 to 677 jobs: the three pin modules of 9.5a, 9.5b, and 9.5c.
+- `check-citations` 196 to 194 citations: 9.5c removes the two removed-`processDeposit` ledger citations.
+- `check-constants` 167 to 166 constants: 9.5d removes `maxEffectiveBalanceElectra`.
+- `build-cli` 628 jobs, `proof-coverage` 87 claims, and the smoke counts are unchanged.
+
+Targeted searches re-run over the integrated tree:
+
+| Search | Matches | Disposition |
+|---|---:|---|
+| Raw `UInt64` / `UInt8` in documents | 92 | Data-only byte vectors, contract comparison tables, audit rows, the temporary plan, and other-package raw code. No current spec-arithmetic guidance. |
+| Unbounded / wrapping wording in documents | 74 | Contract rejected-form tables, labelled historical and superseded passages, and this audit record. |
+| `UInt64.ofNat` and `.val` in Lean | 769 | Codec conversion after a range check, structural projections, and labelled framework internals. |
+| Trusted constructors (`trustedOfUInt64`, `trustedOfUInt8`, `ofNatLT`) in Lean | 184 | Bridge after validation or a preset proof; the docstrings state the caller obligation. |
+| Obsolete conversion names (`getAt`, `toNat?`) in Lean | 126 | `getAt` is the live typed-index read and `toNat?` is the server input parse, both matching the conversion table above. |
+| `spike` in Lean and documents | 52 | Module names, the deferred linter document, and labelled historical or superseded passages. |
+| Error-class wording (`IndexError`, `AssertionError`, `SSZValueError`, `outOfBounds`) in documents | 78 | Current contract descriptions and audit rows. |
+
+The routed spans resolve at their documented sites: `context.py:451-462`,
+`fork_choice.py:383-387`, `fulu/minimal.py:4515-4518`, and the `add_block` span
+`323-426`. The verification cross-references this record and adds no finding of
+its own. The builds reused copied local Lake caches and the gitignored native
+vendor trees.
