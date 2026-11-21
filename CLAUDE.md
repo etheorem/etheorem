@@ -38,6 +38,12 @@ its own subpackage under `packages/`:
   hash, a standalone island parallel to `LeanSha256` that nothing in the
   monorepo imports yet, and its mathlib-isolated equivalence proof. See
   [`packages/LeanPoseidon/docs/ARCHITECTURE.md`](packages/LeanPoseidon/docs/ARCHITECTURE.md).
+- **`LeanRlp`**: a Recursive-Length Prefix (RLP) codec for the execution
+  layer. A standalone island independent of the rest of the monorepo:
+  a total encoder, a total strict decoder, `deriving RlpRepr` record
+  codecs, and the round-trip, canonical-form, and injectivity theorems
+  behind a clean axiom gate. See
+  [`packages/LeanRlp/README.md`](packages/LeanRlp/README.md).
 
 Mentions of "SizzLean" elsewhere in this file refer to the SSZ library
 specifically, not to the monorepo as a whole.
@@ -133,7 +139,7 @@ and patterns do elsewhere.
 
 ## Layout
 
-Lake monorepo. `packages/` holds six standalone subpackages and the
+Lake monorepo. `packages/` holds seven standalone subpackages and the
 `hazmat/` group, thirteen LeanHazmat crypto-family packages plus the
 cross-family docs under `packages/hazmat/docs/`. Each package has its
 own lakefile; an umbrella `lakefile.toml` at the root coordinates them
@@ -174,13 +180,14 @@ so its mathlib dependency never touches the root build.
 │   │   └── lakefile.toml, EthCLSpecs/{Fulu,Gloas,Heze,Proofs} / Forms.lean / PySpecTests/ / docs/ / README.md
 │   ├── LeanPoseidon/            # Pure-Lean Poseidon2 (standalone island parallel to LeanSha256).
 │   │   └── lakefile.lean (C ABI shim + cargo zkhash oracle), csrc/ / rust-oracle/ / docs/ / README.md
-│   └── LeanPoseidonProofs/      # Poseidon2 permute ≡ reference proof (mathlib; standalone, NOT in the umbrella).
+│   ├── LeanPoseidonProofs/      # Poseidon2 permute ≡ reference proof (mathlib; standalone, NOT in the umbrella).
+│   └── LeanRlp/                 # Recursive-Length Prefix codec (standalone island, built by the umbrella).
 └── .github/workflows/           # `leanprover/lean-action` runs `lake build`.
 ```
 
 The umbrella package is `Etheorem`; building it walks the whole
 dependency chain (`LeanSha256 → SizzLean → EthCLLib → EthCLSpecs`, with
-the crypto families feeding in and the `LeanPoseidon` island built
+the crypto families feeding in and the `LeanPoseidon` and `LeanRlp` islands built
 alongside). `LeanPoseidonProofs` is built on its own so mathlib stays
 out of the root build.
 
@@ -190,8 +197,12 @@ design of record is under
 [`SPEC_AUTHORING_MODEL.md`](packages/EthCLSpecs/docs/SPEC_AUTHORING_MODEL.md),
 [`FRAMEWORK_ARCHITECTURE.md`](packages/EthCLSpecs/docs/FRAMEWORK_ARCHITECTURE.md),
 and [`SPECS_ARCHITECTURE.md`](packages/EthCLSpecs/docs/SPECS_ARCHITECTURE.md)
-in that order, with `PLAN.md`, `IMPLEMENTATION_NOTES.md`,
+in that order, with `PLAN.md` (historical), `IMPLEMENTATION_NOTES.md`,
 `DISCREPANCIES.md`, and `FUTURE_WORK.md` for sequencing and deviations.
+The arithmetic contract is
+[`SPEC_ARITHMETIC.md`](packages/EthCLSpecs/docs/SPEC_ARITHMETIC.md).
+Deferred linter work is in
+[`SPEC_ARITHMETIC_LINTING.md`](packages/EthCLSpecs/docs/SPEC_ARITHMETIC_LINTING.md).
 The SSZ library's design is under
 [`packages/SizzLean/docs/`](packages/SizzLean/docs/):
 [`ARCHITECTURE.md`](packages/SizzLean/docs/ARCHITECTURE.md) binds the

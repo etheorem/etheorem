@@ -1,5 +1,8 @@
 # EthCLSpecs: Implementation Plan
 
+Status: historical implementation plan. For the implemented state, read
+[IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) and the [docs index](README.md).
+
 This document sequences the work that the three design documents describe.
 `SPEC_AUTHORING_MODEL.md` is the contract between author and framework,
 `FRAMEWORK_ARCHITECTURE.md` builds the framework from below, and
@@ -600,7 +603,10 @@ shipping path.
 
 ## Status snapshot
 
-| Phase | Package | Status |
+This table records the plan's status when it was written. It is historical. For the
+implemented state, read `IMPLEMENTATION_NOTES.md` and the design documents.
+
+| Phase | Package | Status when written |
 |---|---|---|
 | 0: Foundations and spikes | SizzLean, `EthCLLib` | preset-cap derive landed; the three spikes pending |
 | 1: The walking skeleton | `EthCLLib`, `EthCLSpecs` | pending |

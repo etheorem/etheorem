@@ -173,7 +173,11 @@ The design is written down under [`docs/`](docs/):
   provides from below.
 - [`SPEC_AUTHORING_MODEL.md`](docs/SPEC_AUTHORING_MODEL.md), the author/framework
   boundary and the authoring forms.
-- [`PLAN.md`](docs/PLAN.md), [`IMPLEMENTATION_NOTES.md`](docs/IMPLEMENTATION_NOTES.md),
+- [`SPEC_ARITHMETIC.md`](docs/SPEC_ARITHMETIC.md), the arithmetic contract for
+  consensus-spec code, and
+  [`SPEC_ARITHMETIC_LINTING.md`](docs/SPEC_ARITHMETIC_LINTING.md), its deferred
+  automated checks.
+- [`PLAN.md`](docs/PLAN.md) (historical), [`IMPLEMENTATION_NOTES.md`](docs/IMPLEMENTATION_NOTES.md),
   [`DISCREPANCIES.md`](docs/DISCREPANCIES.md), and
   [`FUTURE_WORK.md`](docs/FUTURE_WORK.md).
 

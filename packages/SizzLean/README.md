@@ -130,7 +130,7 @@ theorems.
   cache logic.
 
 - **Every Ethereum consensus fork covered.** Phase 0 through
-  Gloas, including the new ePBS containers.
+  Heze, including the ePBS and FOCIL containers.
 
 ## Scope
 
@@ -141,9 +141,12 @@ container definitions live in the sibling `EthCLSpecs` package
 ## Status
 
 **Experimental, pyspec-validated.** Every SSZ type used by
-the Ethereum consensus spec from Phase 0 through Gloas is
-implemented. Upstream test suites (`ethereum/consensus-spec-tests
-v1.6.0-beta.0`) pass clean on **both** preset configurations:
+the Ethereum consensus spec from Phase 0 through Heze is
+implemented.
+
+The following counts record the historical `ethereum/consensus-spec-tests
+v1.6.0-beta.0` run at **both** presets. The `ssz_static` counts cover Phase 0 through
+Fulu:
 
 * `ssz_generic --all`: **2188 / 2188** in-scope cases passed
   on that release. The current pin's live count, including the
@@ -393,8 +396,9 @@ just doctor          # checks elan/lake/lean + pkg-config/OpenSSL + python3/uv
 
 ### System-level (build-time native deps)
 
-The production `Hasher.Sha256` instance is an FFI shim
-(`csrc/sha256_shim.c`) that links to **OpenSSL 3.x**. Lake
+The production `Hasher.Sha256` instance is an FFI shim owned by
+`LeanHazmatSha256` (`../hazmat/LeanHazmatSha256/csrc/sha256_shim.c`)
+that links to **OpenSSL 3.x**. Lake
 discovers the right link flags via `pkg-config --libs libcrypto`
 at build time, so the same `lake build` works on Debian/Ubuntu
 multiarch, Fedora `/usr/lib64`, Arch, Alpine, macOS Homebrew
@@ -440,13 +444,15 @@ anything's missing. The CI `test` and `pyspec` jobs run
 
 ### Why a procedural lakefile
 
-The FFI shim build (`csrc/sha256_shim.c` + `csrc/sha256_batch.c`)
-needs a `target … : FilePath := do …` step that the declarative
-`lakefile.toml` syntax can't express. The procedural `lakefile.lean`
-also hosts the `pkg-config` discovery (a `BaseIO` call at lakefile-
-load time via `unsafeBaseIO`); both reasons keep this subpackage on
-`lakefile.lean` even though the umbrella and the two sibling
-subpackages stay on declarative TOML.
+SizzLean's `lakefile.lean` hosts the `pkg-config` discovery for the
+OpenSSL link arguments and the one-directory-deep `globsUnder`
+auto-discovery; the declarative `lakefile.toml` syntax can express
+neither, so this subpackage stays on `lakefile.lean`. The umbrella
+stays on declarative TOML.
+The FFI shim and its C build targets live in `LeanHazmatSha256`
+(`../hazmat/LeanHazmatSha256/csrc/sha256_shim.c` and
+`sha256_batch.c`); SizzLean links that package's `extern_lib` archive
+transitively.
 
 ## Module overview
 

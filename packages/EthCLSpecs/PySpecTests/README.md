@@ -3,7 +3,10 @@
 `pytest-xdist` driver for the upstream `consensus-spec-tests` vectors. Each
 worker holds one long-lived `pyspec_server` (the Lean pyspec runner) through
 a `session`-scoped fixture, so there is no per-vector Lean startup and the crypto
-cache stays warm (`FRAMEWORK_ARCHITECTURE.md` §13.3).
+cache stays warm ([FRAMEWORK_ARCHITECTURE.md](../docs/FRAMEWORK_ARCHITECTURE.md) §13.3).
+
+See the [docs index](../docs/README.md) for the design documents and
+[SPEC_ARITHMETIC.md](../docs/SPEC_ARITHMETIC.md) for the implemented arithmetic contract.
 
 ## Layout
 
@@ -12,9 +15,9 @@ cache stays warm (`FRAMEWORK_ARCHITECTURE.md` §13.3).
   and `ServerClient` (the long-lived server with re-spawn on death).
 - `conftest.py` — the `server` session fixture and the `case` parametrization;
   options `--preset`, `--fork`, `--subset`, `--tag`, `--no-crypto-cache`.
-- `test_pyspec.py` — one test per case; the reject-faithfulness check
-  (`bug` fails hard, `todo` is `xfail` the Phase-2 work-queue, otherwise the case
-  must pass).
+- `test_pyspec.py`, one test per case and the reject-faithfulness check:
+  `bug` fails hard, `todo` reports `xfail`, and out-of-scope cases report `skip`.
+  All other cases must pass.
 
 ## Running
 
@@ -56,9 +59,10 @@ Bumping the pin touches more than the constant. In one pass:
 
 ## Status
 
-While the spec port is in progress, in-scope cases that reach an unimplemented
-branch report `xfail` (`todo`) rather than failing, so the run stays green and the
-work-queue stays visible. A vector that reaches a `todo` never passes silently; an
-`outOfBounds` / `missingKey` on well-formed input fails hard as a bug-smell. As the
-Fulu/Gloas/Heze ports fill the `todo` stubs (Phase 2+), the `xfail`s become passes with
-no harness change.
+The Fulu, Gloas, and Heze ports are complete: the in-scope suite passes at both
+presets with no expected failure.
+[IMPLEMENTATION_NOTES.md](../docs/IMPLEMENTATION_NOTES.md) records the validation
+results and deliberate divergences. The harness classifies a case as `todo` (`xfail`)
+when the server reports an unimplemented branch, so such a case stays visible rather
+than passing silently. An `outOfBounds` / `missingKey` on well-formed input fails
+hard as a bug-smell.

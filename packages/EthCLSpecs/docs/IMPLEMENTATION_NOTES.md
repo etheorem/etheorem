@@ -1515,8 +1515,9 @@ the Epic Lead can sequence them without losing the original findings.
 Each family re-ran `just lint`, `just check-citations`, and `just check-constants`.
 The Lean families also report the affected library and runner builds and an
 unchanged proof baseline. The 9.1d4 coder reported its builds pending; its review
-thread records successful `ethcl-test` and `build-cli` completion. Task 9.3 must
-verify the full integrated tree, including coverage, as its own deliverable.
+thread records successful `ethcl-test` and `build-cli` completion. Task 9.3 verifies
+the full integrated tree, including coverage; see "Integrated verification sweep
+(9.3)" below.
 
 The source hand-offs record targeted searches for raw `UInt64`/`UInt8` guidance,
 `UInt64.ofNat`, `.val`, trusted constructors, unbounded intermediates, wrapping,
@@ -1577,7 +1578,7 @@ statement, or characterization tag changes in this consolidation.
 ### Integrated verification sweep (9.3)
 
 Task 9.3 (WS-102) re-runs the build and project gates on the integrated
-`epic/WS-92` tree at `5ff4e967`, the tree this sub-issue hands off. The sweep
+`epic/WS-92` tree at `5ff4e967`. The sweep
 checks the documentation edits of 9.1a through 9.2 and the code edits of 9.5a
 through 9.5d together. It re-runs the targeted searches and inspects every
 remaining match. No new conflict surfaced, so no reconciliation edit is needed;
@@ -1595,7 +1596,7 @@ every remaining match falls under a disposition in the sections above.
 | `just proof-coverage-check` | Passed, 87 claims |
 | `just ethcl-pyspec-smoke` | Passed; Fulu 155 passed / 46 skipped, Gloas 207 / 52, Heze 209 / 52 |
 | `git grep 'TEMPORARY CROSSING' -- '*.lean'` | Empty (exit 1) |
-| `git diff --check` | Clean |
+| `git diff --check 5ff4e967 170f0b00` (the 9.3 edits) | Clean |
 
 Differences from the Stage 8.5 reference, each with its cause:
 
@@ -1615,6 +1616,22 @@ Targeted searches re-run over the integrated tree:
 | Obsolete conversion names (`getAt`, `toNat?`) in Lean | 126 | `getAt` is the live typed-index read and `toNat?` is the server input parse, both matching the conversion table above. |
 | `spike` in Lean and documents | 52 | Module names, the deferred linter document, and labelled historical or superseded passages. |
 | Error-class wording (`IndexError`, `AssertionError`, `SSZValueError`, `outOfBounds`) in documents | 78 | Current contract descriptions and audit rows. |
+| Arithmetic examples that omit binds in documents | 12 | The labelled rejected form at `SPEC_ARITHMETIC.md:308`, the bound-dividend total route at `SPEC_ARITHMETIC.md:264`, list concatenation, and intentionally raw LeanPoseidon and SizzLean examples. No current guidance teaches an unbound checked computation. |
+
+The search commands, run from the repository root on `5ff4e967`:
+
+```bash
+git grep -n -E 'UInt64|UInt8' -- '*.md'
+git grep -n -i -E 'unbounded|wrapping|overflow' -- '*.md'
+git grep -n -E 'UInt64\.ofNat|\.val\b' -- '*.lean'
+git grep -n -E 'trustedOfUInt64|trustedOfUInt8|ofNatLT' -- '*.lean'
+git grep -n -E '\bgetAt\b|\btoNat\?' -- '*.lean'
+git grep -n -i -E 'spike' -- '*.lean' '*.md'
+git grep -n -E 'IndexError|AssertionError|SSZValueError|outOfBounds' -- '*.md'
+git grep -n -E 'let [A-Za-z_][A-Za-z0-9_]* := .*[+*/]|let [A-Za-z_][A-Za-z0-9_]* := .* - ' -- '*.md'
+```
+
+The counts are matching lines.
 
 The routed spans resolve at their documented sites: `context.py:451-462`,
 `fork_choice.py:383-387`, `fulu/minimal.py:4515-4518`, and the `add_block` span
