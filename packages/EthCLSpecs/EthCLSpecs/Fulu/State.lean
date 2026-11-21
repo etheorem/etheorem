@@ -51,8 +51,8 @@ forkcontainer BeaconState where
   previousJustifiedCheckpoint   : Checkpoint
   currentJustifiedCheckpoint    : Checkpoint
   finalizedCheckpoint           : Checkpoint
-  -- `inactivity_scores` is plain `uint64` at the pin (`fulu/minimal.py:870`), not
-  -- `Gwei`: a score is not a balance. Same checked type, naming only.
+  -- `inactivity_scores` is `InactivityScores(List[Uint64])` at the pin
+  -- (`altair/minimal.py:294`), not `Gwei`: a score is not a balance. Naming only.
   inactivityScores              : SSZList CLUint64 Const.validatorRegistryLimit
   currentSyncCommittee          : SyncCommittee
   nextSyncCommittee             : SyncCommittee
@@ -72,8 +72,8 @@ forkcontainer BeaconState where
   pendingDeposits               : SSZList PendingDeposit Const.pendingDepositsLimit
   pendingPartialWithdrawals     : SSZList PendingPartialWithdrawal Const.pendingPartialWithdrawalsLimit
   pendingConsolidations         : SSZList PendingConsolidation Const.pendingConsolidationsLimit
-  -- The pin computes `(MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH`
-  -- (`fulu/minimal.py:887`); both presets set `minSeedLookahead` to `1`.
+  -- The length is `ProposerLookahead.LENGTH = (MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH`
+  -- (`fulu/minimal.py:640-646`); both presets set `minSeedLookahead` to `1`.
   proposerLookahead             : Vector ValidatorIndex ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch)
 
 -- The once-per-fork preamble: declares `State` (the boxed `BeaconState`) and the

@@ -50,8 +50,8 @@ forkcontainer BeaconState where
   previousJustifiedCheckpoint   : Checkpoint
   currentJustifiedCheckpoint    : Checkpoint
   finalizedCheckpoint           : Checkpoint
-  -- `inactivity_scores` is plain `uint64` at the pin (`gloas/minimal.py:1075`), not
-  -- `Gwei`: a score is not a balance. Same checked type, naming only.
+  -- `inactivity_scores` is `InactivityScores(ProgressiveList[Uint64])` at the pin
+  -- (`gloas/minimal.py:490`), not `Gwei`: a score is not a balance. Naming only.
   inactivityScores              : ProgressiveList CLUint64
   currentSyncCommittee          : SyncCommittee
   nextSyncCommittee             : SyncCommittee
@@ -71,8 +71,8 @@ forkcontainer BeaconState where
   pendingDeposits               : ProgressiveList PendingDeposit
   pendingPartialWithdrawals     : ProgressiveList PendingPartialWithdrawal
   pendingConsolidations         : ProgressiveList PendingConsolidation
-  -- The pin computes `(MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH`
-  -- (`gloas/minimal.py:1092`); both presets set `minSeedLookahead` to `1`.
+  -- The length is `ProposerLookahead.LENGTH = (MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH`
+  -- (`gloas/minimal.py:940` → `fulu/minimal.py:640-646`); both presets set `minSeedLookahead` to `1`.
   proposerLookahead             : Vector ValidatorIndex ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch)
   builders                      : ProgressiveList Builder
   nextWithdrawalBuilderIndex    : BuilderIndex
@@ -81,8 +81,8 @@ forkcontainer BeaconState where
   builderPendingWithdrawals     : ProgressiveList BuilderPendingWithdrawal
   latestExecutionPayloadBid     : ExecutionPayloadBid
   payloadExpectedWithdrawals    : ProgressiveList Withdrawal
-  -- The pin computes `(2 + MIN_SEED_LOOKAHEAD) * SLOTS_PER_EPOCH`
-  -- (`gloas/beacon-chain.md:1737-1748`); both presets set `minSeedLookahead` to `1`.
+  -- The length is `PayloadTimelinessCommitteeWindow.LENGTH` = `(MIN_SEED_LOOKAHEAD + 2) *
+  -- SLOTS_PER_EPOCH` (`gloas/minimal.py:931-937`); both presets set `minSeedLookahead` to `1`.
   ptcWindow                     : Vector (Vector ValidatorIndex Const.ptcSize) ((Const.minSeedLookahead.toPlainNat + 2) * Const.slotsPerEpoch)
 
 -- The once-per-fork preamble: declares `State` (the boxed `BeaconState`) and the

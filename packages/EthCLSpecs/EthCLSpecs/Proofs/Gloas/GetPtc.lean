@@ -74,7 +74,7 @@ guarantee `data.slot + 1 == state.slot` (`hcaller`, at the `Nat` level so
 the negated `else`-branch guard; without it, the epoch subtraction can
 underflow when `getPtc` would have taken the `if`-branch. Together they force
 the two epochs equal, collapsing the offset to `spe + slot % spe`, comfortably
-under `3 * SLOTS_PER_EPOCH`. -/
+under `3 * SLOTS_PER_EPOCH` (the window bound at `MIN_SEED_LOOKAHEAD = 1`). -/
 theorem getPtcElseOffset_lt_next_slot [Preset] {slot curSlot : Slot}
     (hcaller : slot.toPlainNat + 1 = curSlot.toPlainNat)
     (hbranch : ¬ computeEpochAtSlot slot < computeEpochAtSlot curSlot) :
@@ -98,7 +98,8 @@ theorem getPtcElseOffset_lt_next_slot [Preset] {slot curSlot : Slot}
 
 /-- Equality-guarded call sites query `getPtc` at the state's current slot.
 Then the else-branch offset collapses to `slotsPerEpoch + slot % slotsPerEpoch`,
-which is below the `3 * slotsPerEpoch` window bound. -/
+which is below the `3 * slotsPerEpoch` window bound (the `MIN_SEED_LOOKAHEAD = 1`
+value). -/
 theorem getPtcElseOffset_lt_same_slot [Preset] (slot : Slot) :
     getPtcElseOffset slot slot < 3 * slotsPerEpoch := by
   have hmod : slot.toPlainNat % slotsPerEpoch < slotsPerEpoch :=

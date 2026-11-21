@@ -574,10 +574,12 @@ forkdef processProposerLookahead : StateTransition Unit := do
   let newProposers ←
     liftErr (getBeaconProposerIndices state lookaheadEpoch)
   let old := sszGet state proposerLookahead
+  -- `last_epoch_start = len - SLOTS_PER_EPOCH` (`fulu/minimal.py:6621`) is
+  -- `MIN_SEED_LOOKAHEAD * SLOTS_PER_EPOCH`: the first `keep` slots copy the window
+  -- read forward by one epoch; the last `SLOTS_PER_EPOCH` slots take the fresh proposers.
   set (sszUpdate state with proposerLookahead :=
-    Vector.ofFn (fun i : Fin ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch) =>
-      if i.val < Const.slotsPerEpoch then vget old (i.val + Const.slotsPerEpoch)
-      else newProposers[i.val - Const.slotsPerEpoch]!))
+    shiftWindow old Const.slotsPerEpoch (Const.minSeedLookahead.toPlainNat * Const.slotsPerEpoch)
+      (fun k => newProposers[k]!))
 
 end
 
