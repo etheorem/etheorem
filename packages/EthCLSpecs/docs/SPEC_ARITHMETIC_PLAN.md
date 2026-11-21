@@ -816,9 +816,10 @@ examples and checks pass. Preserve the audit record in `IMPLEMENTATION_NOTES.md`
   the baseline method. Record profile and epoch-suite results. Explain measured causes
   and mark unknown causes explicitly. Accept the correct implementation regardless of cost.
   (WS-118, `fed8705d`)
-- [ ] **10.3 Synchronize lasting documents.** Update the arithmetic contract, the authoring
+- [x] **10.3 Synchronize lasting documents.** Update the arithmetic contract, the authoring
   model's arithmetic row, framework architecture §§6 and 10, spec architecture, and
   implementation/discrepancy records. Keep claims aligned with code and tests.
+  (WS-119, `7578eb5be3fb9065623fa97315edaf6698be7030`)
 - [ ] **10.4 Preserve completion evidence.** Move the final scope, chosen implementation,
   costs, and any remaining optimization work into `IMPLEMENTATION_NOTES.md`. Keep the
   deferred linter document separate. Track unrelated spike fixes independently.
