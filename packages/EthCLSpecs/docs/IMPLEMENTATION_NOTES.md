@@ -292,10 +292,16 @@ an `Except` query) at the read.
   proof-carrying is the residual recorded in `FUTURE_WORK.md`.
 - **A data-derived index in a pure query with no reject channel and a valid-by-construction
   index** reads total `vs[i]!`, resting on the invariant the query assumes (validators /
-  balances / participation share a length; the input is well-formed). `getWeight`,
-  `computeCommittee`, and the builder-registry queries keep this shape. Making it reject
+  balances / participation share a length; the input is well-formed). Making it reject
   means either an `Except` return, when the index is genuinely untrusted (the first case
   above), or the proof-carrying form once the length invariants are proved (`FUTURE_WORK.md`).
+  `getWeight`, `computeCommittee`, and the builder-registry queries carry a reject channel
+  instead. `getWeight` reads each validator through `sszGetIdx` in `getAttestationScore`.
+  `isActiveBuilder` reads the builder through `getAt` and `liftErr`, and
+  `getBuilderBalanceAfterWithdrawals` through `sszGetIdx`. `computeCommittee` returns
+  `Except StateTransitionError`. It binds its checked bounds, then asserts each position
+  below `len(indices)`, as `compute_shuffled_index` does, before its structural reads of
+  the permutation and of `indices`.
 
 `vs[i]?` is the faithful option read (`none` past the end); the `GetElem` instance uses
 the real validity `i < vs.size`, so `vs[i]!` and `vs[i]?` behave like `Array`'s.
@@ -318,7 +324,10 @@ not a fabricated index.
 
 `StoreTransitionError.missingKey` carries the 32-byte root (`Vector UInt8 32`).
 `StateTransitionError` and `StoreTransitionError` classify by constructor into the
-driver's pass / expected-rejection / out-of-scope / bug-smell buckets.
+`ClassifyBucket`s: pass, expected rejection, `todo`, out of scope, likely bug, and
+uncaught fault. A checked fault reaches the state machine through
+`StateTransitionError.ofArithFault`, which keeps its `ArithCause`: a range fault becomes
+`.arithmetic` and a zero divisor becomes `.zeroDivision`.
 
 `RunError E` (`EthCLLib/Spec/Errors.lean`) is the runner-level error one layer above a spec
 reject: `decode what` is a wire-deserialization failure (always a bug-smell, a well-formed
@@ -409,9 +418,13 @@ concerns map on: `Preset` / `Monad` / `Box` → `Spec.State` + `Spec.Header`; `M
 `Errors` / `Header` read better than the sketch, so §3.6 is reconciled by this mapping.
 
 `Spec.Arith` carries `umax` / `umin` / `isqrt`, type-directed `uintToBytes`, byte
-conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet` /
-`umodIdx` (ring-buffer read / write index), `sszDrop` / `sszOfArray`, `bitGet` / `bitSet`,
-and `hasFlag` / `addFlag`. The append lives in SizzLean: `SSZList.push` takes a proof
+conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet`
+(ring-buffer read index), `shiftWindow`, `sszDrop` / `sszOfArray`, and `bitGet` /
+`bitSet`. The checked arithmetic lives beside it: `Spec.Checked` (`Checked`,
+`ArithFault`, the lift), `Spec.CLUint` (`CLUint64`, `CLUint8`, and the participation-flag
+helpers `CLUint8.hasFlag` / `addFlag`, which return `Checked`), `Spec.CLInt`,
+`Spec.CLTotal`, and the scoped elaborator `Spec.Elab` (`FRAMEWORK_ARCHITECTURE.md` §10).
+The append lives in SizzLean: `SSZList.push` takes a proof
 that the list has room, and `SSZList.push?` / `sszAppend?` return `none` on a full list.
 `appendState` (`Spec.Header`) turns that `none` into the `.listFull` fault, the spec's
 `List.append` raise, and `setOrAppendState` models `set_or_append_list` on top of it.
@@ -519,11 +532,12 @@ set, and the block shares the head's dependent root (`get_dependent_root`, gated
 
 The store clock counts milliseconds at v1.7.0-beta.4: `Store.timeMs` and
 `Store.genesisTimeMs` replace the second-based `time` and `genesis_time`. `on_tick` takes
-milliseconds. A vector's `tick` step still carries seconds, so the harness passes
-`seconds_to_milliseconds(tick)`, as the reference runner does, and reads the `time` check back
-through `milliseconds_to_seconds`. `compute_slot_at_time_ms` and `compute_time_at_slot_ms` are
-checked `uint64` ops, so a clock read raises where pyspec raises. `get_current_slot` drops the
-`GENESIS_SLOT +` term.
+milliseconds. A vector's `tick` step still carries seconds, so the harness casts it through the
+checked `Uint64(tick)` and passes `seconds_to_milliseconds` of the result, as the reference
+runner does. It reads the `time` check back through `milliseconds_to_seconds`. The clock
+values are the checked kind (`SPEC_ARITHMETIC.md`), so `compute_slot_at_time_ms` and
+`compute_time_at_slot_ms` raise where pyspec raises, including the zero divisor of a
+`SLOT_DURATION_MS = 0` configuration. `get_current_slot` drops the `GENESIS_SLOT +` term.
 
 The linear DAG walks route through fuel-bounded combinators (§12). `getAncestor` and the
 `getHead` descent read `store.blocks` as they go, so they thread the store monad through
@@ -532,24 +546,16 @@ The linear DAG walks route through fuel-bounded combinators (§12). `getAncestor
 which a linear combinator cannot express, so it keeps a local fuel-bounded `where` helper.
 The totality the doc wants is met either way.
 
-The fork-choice weight path still runs on raw `UInt64` where the pyspec's `uint64` ops
-raise, and it is deferred as one piece because it rests on one root: `getTotalBalance`
-(`phase0/beacon-chain.md:1559-1570`), whose `sum(...)` accumulates in `Gwei` and raises,
-while this fold wraps. `calculateCommitteeFraction` divides `getTotalBalance` over the
-unslashed active validators by `SLOTS_PER_EPOCH` (v1.7.0-beta.4; alpha.12 took
-`getTotalActiveBalance`), `computeProposerScore` and the re-org threshold are its products, and
-`getWeight`'s proposer-boost add takes one operand from them, so checking any of those while
-the total underneath still wraps would only move the wrong number around.
-
-The conversion is larger than the fork-choice layer. `getTotalBalance` and
-`getTotalActiveBalance` are pure `forkdef`s with 15 call sites across epoch processing,
-rewards, registry updates, the transition spine, and fork choice; making them throwing
-propagates upward through every pure caller (§7.1's rule, one layer over). The remaining
-independent site is `getAttestationScore`'s own balance fold, which sums
-`state.validators[i].effective_balance` directly and could be checked on its own; it stays
-with the rest so the weight path converts in one go rather than half-guarded. Reaching any
-of them takes a total active balance within a factor of the `uint64` bound, which no
-preset's validator set approaches.
+The fork-choice weight path runs on checked `Gwei` and raises where the pyspec's `uint64`
+operations raise. Its root is `getTotalBalance` (`phase0/beacon-chain.md:1559-1570`), whose
+`sum(...)` is a checked fold that returns `Except StateTransitionError Gwei`.
+`calculateCommitteeFraction` divides `getTotalBalance` over the unslashed active validators
+by `SLOTS_PER_EPOCH` (v1.7.0-beta.4), and `computeProposerScore` and the re-org threshold
+are its products. `getAttestationScore` folds the effective balances with the checked add,
+and `getWeight`'s proposer-boost add binds the same way. `getTotalBalance` and
+`getTotalActiveBalance` return `Except`, so every pure caller carries the reject channel
+(§7.1's rule, one layer over). A fault takes a total balance near the `uint64` bound,
+which no preset's validator set approaches.
 
 The reference catches different exceptions per step kind, so what satisfies a
 `valid: false` step varies too. `expect_assertion_error` (`context.py:424-435`) catches
@@ -587,22 +593,25 @@ Spec-faithfulness facts worth knowing:
 
 - **`process_pending_deposits` resets `deposit_balance_to_consume` by stop reason.** A
   not-finalized / per-epoch-limit stop resets it to zero; a churn-limit stop carries
-  `available_for_processing − processed_amount` forward. `ppdLoop` returns the
-  `churnLimitReached` flag so the caller writes the right value.
+  `available_for_processing − processed_amount` forward. `processPendingDeposits`
+  keeps the pinned text's `is_churn_limit_reached` local, set only in the churn
+  branch, and the write-back reads it.
 - **The old deposit mechanism is gone.** Fulu removes it (consensus-specs #4704, in the
   text since alpha.12): `process_operations` asserts `len(body.deposits) == 0` and runs no
   deposit loop, `process_deposit_request` no longer writes `deposit_requests_start_index`,
   and `process_pending_deposits` has no eth1-bridge stop. The tree ran the Electra forms of
   all three until the beta.4 re-pin found the gap; `DISCREPANCIES.md` records the fix. Gloas
-  carried the same stale eth1-bridge stop in its own `ppdLoop`, removed with it.
+  carried the same stale eth1-bridge stop in its own `processPendingDeposits`, removed
+  with it.
 - **`apply_pending_deposit` is signature-gated.** A new pubkey joins the registry only
   when `is_valid_deposit_signature` passes (the proof-of-possession the deposit contract
   does not check). The domain is fixed (`compute_domain(DOMAIN_DEPOSIT)`, genesis fork
   version, zero `genesis_validators_root`), so the check is one `[CryptoBackend].verify`.
-- **`initiate_validator_exit` bounds the withdrawable epoch.** It asserts `exit_epoch +
-  MIN_VALIDATOR_WITHDRAWABILITY_DELAY < 2^64` before the write, so an over-range case
-  rejects faithfully (matching the pyspec's `uint64` serialization `ValueError`) instead
-  of wrapping silently on Lean's `UInt64`. Valid exits never approach the bound. Gloas
+- **`initiate_validator_exit` raises past the `uint64` bound.** The `exit_epoch +
+  MIN_VALIDATOR_WITHDRAWABILITY_DELAY` sum is the checked `Epoch` add, so an over-range
+  case raises the `.arithmetic` fault, the pyspec's `ValueError`.
+  `test_invalid_large_withdrawable_epoch` catches it in its own `except ValueError`
+  wrapper (`RunnerCaughtSet.valueError`). Valid exits never approach the bound. Gloas
   inherits the substep with no Gloas-side change.
 - **The balance-weighted sampler rejects on an empty candidate set.**
   `compute_balance_weighted_selection` asserts `total > 0` (`gloas/beacon-chain.md:1213`),
@@ -989,19 +998,20 @@ separation.
   anything about `settleBuilderPayment` / `slashValidator`, the other paths
   that clear a `BuilderPendingPayment`.
 
-- **`Proofs/Gloas/CanBuilderCoverBid.lean`** characterizes `canBuilderCoverBid`'s
-  `Bool` result exactly: `canBuilderCoverBid_iff` states the guard in the
-  implementation's own `UInt64` `builderBalance` / `minBalance` terms;
-  `canBuilderCoverBid_iff_toNat_add_le` restates it over `Nat` as a single
-  non-wrapping addition-fits-in-balance fact. Both hold unconditionally under
-  total/default indexing semantics, including fallback behavior for an
-  out-of-range `builderIndex`.
+- **`Proofs/Gloas/CanBuilderCoverBid.lean`** characterizes `canBuilderCoverBid`, whose
+  result is an `Except StateTransitionError Bool`: the raising builder read, then the
+  checked `Gwei` chain. `canBuilderCoverBid_eq` is the exact run equation.
+  `canBuilderCoverBid_ok_iff` states that, under the read's success, the pending sum's
+  success, and the success conditions of the `+` and `-` steps, `true` is exactly the
+  bid fitting the remainder, as one `Nat` inequality. `canBuilderCoverBid_ok_toNat_add_le`
+  restates it as an addition-fits-in-balance fact.
 
 - **`Proofs/Gloas/InitializePtcWindow.lean`** gives the whole vector equation
   `initializePtcWindow_eq` over the window entries: each entry is an `Except`
-  carrying its own two faults, the checked per-entry add `current_epoch + e`
-  (the `.arithmetic` fault at `current_epoch = UINT64_MAX`) and the `compute_ptc`
-  read (the empty-candidate reject), and `completeUpgradeToGloas` maps the
+  carrying its own faults, the checked per-entry add `current_epoch + e`
+  (the `.arithmetic` fault at `current_epoch = UINT64_MAX`), the checked
+  `compute_start_slot_at_epoch` product, the checked `start_slot + index` add, and the
+  `compute_ptc` read (the empty-candidate reject), and `completeUpgradeToGloas` maps the
   entries in index order. Its two index regions (the empty first-epoch
   placeholder and the remainder binding the checked add then Gloas's
   `computePtc`) are read off the equation, `initializePtcWindow_getElem` joins
@@ -1017,8 +1027,8 @@ separation.
   write. The in-range and out-of-range theorems state the `runPure` form of that
   contract and read it through `SizzLean.Proofs.ProgressiveListSet`, so the range split happens
   at the read rather than in a second transition proof; out of range the run returns
-  the pre-state value itself. It also proves that the
-  withdrawability-delay addition does not wrap for the shipped minimal and
+  the pre-state value itself. It also proves that the checked
+  withdrawability-delay addition succeeds for the shipped minimal and
   mainnet configurations.
 
 - **`EthCLLib/Proofs/Run.lean`** (framework package) names the `StateT`-over-`Except`
@@ -1046,16 +1056,17 @@ separation.
 
 - **`EthCLLib/Proofs/StoreRun.lean`** (framework package) names `ForkChoiceStoreRun`, the shared pure
   store-machine runner every fork's fork-choice proofs pin at that fork's
-  `Store`. It also holds `ForkChoiceStoreRun.throwArithmetic_run`, the
-  store-specific equation for `throwArithmetic` under the store machine's
-  `.transition` wrapper. The generic `StateT`/`Except` equations live in
+  `Store`. It also holds the store-specific equations under the store machine's
+  `.transition` wrapper: `throwArithmetic_run` and `throwZeroDivision_run` for the two
+  explicit throws, and `liftChecked_ok_run` / `liftChecked_error_run` for a lifted
+  checked expression, whose fault becomes `.transition (StateTransitionError.ofArithFault e)`. The generic `StateT`/`Except` equations live in
   `EthCLLib/Proofs/Run.lean`. The module lives in the framework's generic
   proof toolkit because the runner is a monad over an arbitrary store type
   and so belongs to no fork.
 
 - **`Proofs/Gloas/IsValidIndexedPayloadAttestation.lean`** proves a two-layer,
   backend-generic characterization of `isValidIndexedPayloadAttestation`. Layer 1
-  mirrors the implementation's literal validation gates, `validators[i.toNat]!`
+  mirrors the implementation's literal validation gates, `validators[i.toPlainNat]!`
   included. Layer 2 restates them semantically and binds the in-range proof in an
   `∃`, so its pubkey array reads the registry through `Array.attach` and no
   panicking index survives into the public statement. No mathlib.
@@ -1092,8 +1103,8 @@ separation.
   `EthCLSpecs.Proofs.Heze` because `shouldExtendPayload` exists in both Gloas
   and Heze. `shouldExtendPayload_run` is the complete `.run` equation at
   `ForkChoiceStoreRun (Store map)` and carries `@[characterizes]`. The
-  right-hand side is the evaluation order: block lookup, `getCurrentSlot`,
-  the slot increment and assertion, `isPayloadVerified`,
+  right-hand side is the evaluation order: block lookup, the slot increment,
+  `getCurrentSlot`, the slot assertion, `isPayloadVerified`,
   `isPayloadInclusionListSatisfied`, then the inherited Gloas tail. Named
   corollaries cover the prefix rejects, the FOCIL gate, the vote membership
   asserts, and the inherited Gloas accept and reject arms. Successful binds
@@ -1102,11 +1113,11 @@ separation.
   corollary: if the initial block lookup and slot checks succeed, Heze
   rejects a verified payload when the queried root has a recorded `false`
   inclusion-list satisfaction result, and the runner state remains
-  unchanged. The bind lemmas it cites are the fork-neutral `run_throw`,
-  `except_bind_ok`, and `except_bind_error` in `EthCLLib/Proofs/Run.lean`, plus
-  `ForkChoiceStoreRun.throwArithmetic_run` in `EthCLLib/Proofs/StoreRun.lean`. They
+  unchanged. The bind lemmas it cites are the fork-neutral `run_bind`, `run_throw`,
+  `except_bind_ok`, and `except_bind_error` in `EthCLLib/Proofs/Run.lean`. They
   are stated at an arbitrary state type, so they apply to
-  `ForkChoiceStoreRun`. The successful path that records
+  `ForkChoiceStoreRun`. The checked slot increment reads through `hadd_un_eq`
+  (`EthCLLib/Proofs/CLUint.lean`). The successful path that records
   the result of `isInclusionListSatisfied` is proved in
   `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`. The successful
   handler path that writes `blockStates`, `payloads`, and

@@ -19,13 +19,18 @@ namespace EthCLSpecs.Fulu
 
 state_section
 
-/-- `get_validator_from_deposit`. -/
-forkdef getValidatorFromDeposit (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) : Validator :=
+/-- `get_validator_from_deposit` (`fulu/mainnet.py:2104-2124`). The Electra
+floor `min(amount - amount % EFFECTIVE_BALANCE_INCREMENT, max_effective_balance)`
+is the checked `Gwei` chain, so the rounding subtraction binds before the `min`
+picks its operand and the result carries the fault. -/
+forkdef getValidatorFromDeposit (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) :
+    Checked Validator := do
   let v : Validator :=
     { pubkey, withdrawalCredentials := wc, effectiveBalance := 0, slashed := false,
       activationEligibilityEpoch := Const.farFutureEpoch, activationEpoch := Const.farFutureEpoch,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  { v with effectiveBalance := umin (amount - amount % Const.effectiveBalanceIncrementG) (getMaxEffectiveBalance v) }
+  let rounded ← amount - amount % Const.effectiveBalanceIncrementG
+  return { v with effectiveBalance := min rounded (getMaxEffectiveBalance v) }
 
 /-- `add_validator_to_registry` (`electra/beacon-chain.md:1736-1746`): write a fresh
 validator and its parallel records at `get_index_for_new_validator`, the length of
@@ -34,9 +39,11 @@ lists match `validators` in length, every write appends, and an append to a full
 raises `.listFull`. -/
 forkdef addValidatorToRegistry (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei) : StateTransition Unit := do
   let state ← get
-  -- `get_index_for_new_validator(state)`: `len(state.validators)`.
-  let index := (sszGet state validators).val.size
-  setOrAppendState validators index (getValidatorFromDeposit pubkey wc amount)
+  -- `get_index_for_new_validator(state)` (`fulu/minimal.py:4317-4318`):
+  -- `ValidatorIndex(len(state.validators))`, the pyspec's checked cast of the plain length.
+  let index ← CLUint64.ofNat? (sszGet state validators).val.size
+  let validator ← getValidatorFromDeposit pubkey wc amount
+  setOrAppendState validators index validator
   setOrAppendState balances index amount
   setOrAppendState previousEpochParticipation index 0
   setOrAppendState currentEpochParticipation index 0
@@ -59,7 +66,10 @@ pubkey with a valid proof-of-possession, add it to the registry. -/
 forkdef applyPendingDeposit (deposit : PendingDeposit) : StateTransition Unit := do
   let state ← get
   match validatorIndexByPubkey? state deposit.pubkey with
-  | some vi => set (← increaseBalance state (UInt64.ofNat vi) deposit.amount)
+  | some vi =>
+      -- `ValidatorIndex(validator_pubkeys.index(deposit.pubkey))`: the pyspec's checked cast.
+      let index ← CLUint64.ofNat? vi
+      set (← increaseBalance state index deposit.amount)
   | none    =>
       if isValidDepositSignature deposit.pubkey deposit.withdrawalCredentials deposit.amount deposit.signature then
         addValidatorToRegistry deposit.pubkey deposit.withdrawalCredentials deposit.amount

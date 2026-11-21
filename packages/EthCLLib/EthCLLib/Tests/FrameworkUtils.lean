@@ -36,11 +36,12 @@ namespace EthCLLib.Tests.FrameworkUtils
 
 /-! ## Checked `uint64` arithmetic: the faithful over/underflow faults
 
-`checkedAdd` / `checkedSub` / `checkedMul` mirror remerkleable's `uint64`, which raises on
+`checkedAdd` / `checkedSub` / `checkedMul` mirror `eth-ssz-specs` 0.1.0's `Uint64`, which
+raises `SSZValueError` (a `ValueError`) on
 over/underflow rather than wrapping, and `checkedSucc` mirrors the loop-counter increment
 `i += 1`, whose `.ok` result carries the counter's range for the caller's `termination_by`.
-In range they reduce to `.ok`; out of range they raise the uncaught `.arithmetic` fault (never
-an expected rejection). The same source fault rides in as `.arithmetic` on the state machine
+In range they reduce to `.ok`; out of range they raise the uncaught `.arithmetic` fault. The same
+source fault rides in as `.arithmetic` on the state machine
 and, via `[ErrorConv …]`, as `.transition (.arithmetic …)` on the store machine, so both
 instantiations are pinned. Faults are unreachable on well-formed vectors, so these guards are
 the only thing exercising the throw. -/
@@ -57,10 +58,10 @@ the only thing exercising the throw. -/
 
 /-! ## Appends to a full list: the `.listFull` fault
 
-`throwListFull` stands for remerkleable's `List.append` raise on a full list, a bare `Exception`.
-Like `.arithmetic`, it arrives as `.listFull` on the state machine and as
-`.transition (.listFull …)` on the store machine, and it is an uncaught fault that no wrapper
-admits. -/
+`throwListFull` stands for `eth-ssz-specs` 0.1.0's `List.append` raise on a full list, an
+`SSZValueError` (a `ValueError` subclass). Like `.arithmetic`, it arrives as `.listFull` on
+the state machine and as `.transition (.listFull …)` on the store machine. `expect_assertion_error`
+does not catch it, but the one `except ValueError` wrapper does. -/
 #guard (throwListFull "xs" : Except StateTransitionError Unit) matches .error (.listFull _)
 #guard (throwListFull "xs" : Except StoreTransitionError Unit) matches .error (.transition (.listFull _))
 #guard StateTransitionError.classify (.listFull "xs") == .uncaughtFault
@@ -81,12 +82,16 @@ and `IndexError`. The guards pin both sets and the pair that selects them. -/
 #guard RunnerCaughtSet.assertionAndIndex.admits (.assert "x") == true
 #guard RunnerCaughtSet.assertionAndIndex.admits (.outOfBounds 0 0) == true
 #guard RunnerCaughtSet.assertionAndIndex.admits (.arithmetic "x") == false
+#guard RunnerCaughtSet.assertionAndIndex.admits (.zeroDivision "x") == false
 #guard RunnerCaughtSet.assertionAndIndex.admits (.listFull "x") == false
+#guard RunnerCaughtSet.assertionAndIndex.admits (.notInList "x") == false
 
 #guard RunnerCaughtSet.valueError.admits (.arithmetic "x") == true
+#guard RunnerCaughtSet.valueError.admits (.listFull "x") == true
+#guard RunnerCaughtSet.valueError.admits (.notInList "x") == true
+#guard RunnerCaughtSet.valueError.admits (.zeroDivision "x") == false
 #guard RunnerCaughtSet.valueError.admits (.assert "x") == false
 #guard RunnerCaughtSet.valueError.admits (.outOfBounds 0 0) == false
-#guard RunnerCaughtSet.valueError.admits (.listFull "x") == false
 
 /-! ### The reject table (`classifyReject`)
 
@@ -109,8 +114,21 @@ a pass or a fail. The guards above pin the first. These pin the second, one row 
 
 #guard (classifyReject .assertionAndIndex (.listFull "x")).passed == false
 #guard (classifyReject .assertionAndIndex (.listFull "x")).bucket == .uncaughtFault
-#guard (classifyReject .valueError (.listFull "x")).passed == false
-#guard (classifyReject .valueError (.listFull "x")).bucket == .uncaughtFault
+-- A `ValueError` at the pin, so the `except ValueError` wrapper catches it.
+#guard (classifyReject .valueError (.listFull "x")).passed == true
+#guard (classifyReject .valueError (.listFull "x")).bucket == .expectedRejection
+
+#guard (classifyReject .assertionAndIndex (.notInList "x")).passed == false
+#guard (classifyReject .assertionAndIndex (.notInList "x")).bucket == .uncaughtFault
+-- The plain `ValueError` of a `list.index` miss, so the `except ValueError` wrapper catches it.
+#guard (classifyReject .valueError (.notInList "x")).passed == true
+#guard (classifyReject .valueError (.notInList "x")).bucket == .expectedRejection
+
+#guard (classifyReject .assertionAndIndex (.zeroDivision "x")).passed == false
+#guard (classifyReject .assertionAndIndex (.zeroDivision "x")).bucket == .uncaughtFault
+-- A bare `ZeroDivisionError` is not a `ValueError`, so even this wrapper lets it escape.
+#guard (classifyReject .valueError (.zeroDivision "x")).passed == false
+#guard (classifyReject .valueError (.zeroDivision "x")).bucket == .uncaughtFault
 
 #guard (classifyReject .valueError (.todo "x")).bucket == .todo
 #guard (classifyReject .assertionAndIndex (.todo "x")).bucket == .todo
