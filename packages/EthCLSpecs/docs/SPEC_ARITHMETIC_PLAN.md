@@ -741,7 +741,7 @@ arithmetic site remains unreviewed because its module built without edits.
 
 ### Stage 9: repository-wide documentation audit
 
-- [ ] **9.1 Find conflicting guidance.** Audit documentation throughout the repository,
+- [x] **9.1 Find conflicting guidance.** Audit documentation throughout the repository,
   including READMEs, contributor and agent instructions, architecture documents, manuals,
   worked examples, and Lean module and declaration docstrings. Search for raw `UInt64`
   authoring guidance, unbounded-intermediate assumptions, wrapping conversions, error
@@ -756,9 +756,10 @@ arithmetic site remains unreviewed because its module built without edits.
     documents.** Covers the 9.1 find sweep and the 9.2 reconciliation for the repo-level,
     contributor, and other-package documents.
     (WS-99, `b7bbaf6b2b8b4f3c7653966bafaf8390208f4b7d`)
-  - [ ] **9.1d1 Find and reconcile: EthCLLib `Spec/`, `Internal/`, and root module
+  - [x] **9.1d1 Find and reconcile: EthCLLib `Spec/`, `Internal/`, and root module
     docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for the Lean
     docstrings of the EthCLLib `Spec/`, `Internal/`, and root modules.
+    (WS-100, `f07436131353a1ceda76b682abdd3eaf482c332f`)
   - [x] **9.1d2 Find and reconcile: EthCLLib `Proofs/`, `Tests/`, `PySpecTests/`, and
     other-package docstrings.** Covers the 9.1 find sweep and the 9.2 reconciliation for
     the Lean docstrings of the EthCLLib `Proofs/`, `Tests/`, and `PySpecTests/` modules
@@ -785,7 +786,7 @@ arithmetic site remains unreviewed because its module built without edits.
   Ensure current guidance describes the implemented state and keeps deferred linter
   work separate. Leave removal of this temporary plan to the final acceptance stage.
   (WS-103, `205929ad3f7b2cb5c63029a1f71cdd442639f151`)
-- [ ] **9.5 Close the Stage 8 routed items.** The 8.4 sub-stage records route these items
+- [x] **9.5 Close the Stage 8 routed items.** The 8.4 sub-stage records route these items
   to the Epic Lead / Stage 9. They run before the documentation families, so the audit
   sees final names and docstrings.
   - [x] **9.5a Close the sync-committee participant lookup fault arm.** Closes the
