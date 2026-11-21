@@ -1820,11 +1820,10 @@ The implemented `CLUint64` and `CLInt` operation matrix matches every row.
 **Native-backed checked wrappers.** `CLUint64` and `CLUint8` are public structures with
 private constructors over `UInt64` and `UInt8` (`EthCLLib/Spec/CLUint.lean`).
 `CLInt` models the pyspec's plain `int` (`Spec/CLInt.lean`). A fallible operation
-returns `Checked`
-(`Spec/Checked.lean`). The total routes live in `Spec/CLTotal.lean`: proof-carrying
-positive divisors, same-width bitwise operations, right shifts, and bounded checked
-power and left shift. No `CLUint32` or `CLUint256` exists, because no arithmetic consumer
-needs that width. The transition built no generic width-indexed type.
+returns `Checked` (`Spec/Checked.lean`). The total routes live in `Spec/CLTotal.lean`:
+proof-carrying positive divisors, same-width bitwise operations, right shifts, and
+bounded checked power and left shift. No `CLUint32` or `CLUint256` exists, because no
+arithmetic consumer needs that width. The transition built no generic width-indexed type.
 
 The spike rejected an abbreviation with scoped instances. A probe of
 `abbrev CheckedUInt := UInt64` with a scoped checked `HAdd` showed three leaks: `a + 1`
@@ -1874,8 +1873,8 @@ lost, and no claim was weakened. The fork-body axioms stay `propext`,
 `Classical.choice`, and `Quot.sound`. `Lean.ofReduceBool` and the SHA-256 equivalence
 axioms are absent from the fork-body proofs. Three Gloas theorems in
 `Proofs/Gloas/BuilderIndex.lean` rest on `bv_decide` certificates. They did before the
-transition. The `axiomClass` function in `scripts/ProofCoverage.lean` admits that class
-through `bvDecideOwner?`, which checks the certificate name and its theorem owner.
+transition. `scripts/ProofCoverage.lean` admits that class: `bvDecideOwner?` recovers
+the owner from the certificate name, and `axiomClass` checks that the owner is a theorem.
 
 **Body re-authoring.** Task 8.3 (`f52bf90`) re-authored `processPendingDeposits` from
 the pinned text. It is a `for` over the finite queue, with `break` at the three pinned
@@ -2056,13 +2055,29 @@ preset. The runners were built first. Nothing built during the matrix.
 errored, xfailed, or xpassed. Every skip is an `ssz_static` type the fork does not model,
 the same groups at both presets.
 
-The minimal comparison chain starts with Stage 0's passed case ids and skip-group
-counts. Stages 4.3, 5.4, 6.4, and 7.4 matched those against the preceding stage.
-Full (outcome, case id) comparisons start at Stage 8.4b and continue through 8.5, 9.5d,
-and 10.1. The mainnet counts matched the pre-transition `main` counts at Stage 0, 4.3,
-and 8.5. Stage 8.5 kept the first mainnet per-case logs, and 10.1 matched them case for
-case. These comparisons found no change within the recorded evidence. Earlier
-comparisons do not establish mainnet case identity or individual minimal skip identity.
+The minimal chain starts with Stage 0's per-case logs: passed case ids, and skips grouped
+by reason with counts. Stages 4.3, 5.4, 6.4, and 7.4 each matched those lines against the
+stage before. Stage 8.1 kept one line per skip and matched passed ids and counts against
+7.4. From Stage 8.2, every stage matched sorted (outcome, case id) sets against an
+earlier stage, with zero differences:
+
+| Stage | Compared with |
+|---|---|
+| 8.2 | 8.1 |
+| 8.3 | 8.2 |
+| 8.4a1, 8.4a2, 8.4a3, 8.4a4 | 8.3 |
+| 8.4b | 8.4a4 |
+| 8.5 | 8.4b; also the 7.4 passed ids and skip groups |
+| 9.5a, 9.5b, 9.5c, 9.5d | 8.5 |
+| 10.1 | 9.5d |
+
+One set of 8147 / 9958 / 10170 pairs therefore holds from 8.1 through 10.1.
+
+The mainnet counts matched the pre-transition `main` counts at Stage 0, 4.3, and 8.5.
+Stage 8.5 kept the first mainnet per-case logs, and 10.1 matched them case for case.
+These comparisons found no change within the recorded evidence. Earlier comparisons do
+not establish mainnet case identity or individual minimal skip identity: mainnet has
+counts only before Stage 8.5, and minimal has skip groups only before Stage 8.1.
 
 Two earlier 10.1 driver starts failed before the matrix, both for environment reasons.
 The first had no vendored native libraries. Its smoke step then started six parallel
@@ -2119,8 +2134,7 @@ tracking, apart from the completion record above.
    that twice the block count plus two bounds the walk. On fuel-out the helper returns
    a partial leaf set, so the vector comparison fails. No current vector trips it.
    The spike fixed it as `3 * blocks + 2` (spike finding 14, commit `7b2accc` on
-   `specs-arithmetics-spike`).
-   That fix is not in this tree. Status: open.
+   `specs-arithmetics-spike`). That fix is not in this tree. Status: open.
 2. **`compute_weak_subjectivity_period`.** The spike added this validator-guide helper
    with oracle pins (commit `965885f`). It is outside the modeled fork bodies, and the
    transition did not carry it. Status: not scheduled.
