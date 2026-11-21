@@ -197,9 +197,9 @@ intra-fork import chain. The fork's library root cannot hold it, being a
 re-export aggregator that elaborates last. Every other module of the fork imports
 intra-fork only, so `Fork.lean` is the fork's one physical edge to its parent.
 
-The table below is the full Fulu fork in load order. Gloas is the same skeleton
-through the fork diff, minus the PeerDAS-specific files where ePBS supersedes
-them, plus the ePBS files.
+The table below describes the Fulu module design in load order. The `Genesis` row
+reserves an unmodeled design (§6.1). Gloas uses the same skeleton through the fork
+diff, with the ePBS files replacing the PeerDAS-specific files.
 
 | # | File | Layer | Contains |
 |---|------|-------|----------|
@@ -237,7 +237,7 @@ them, plus the ePBS files.
 | 31 | `EpochProcessing` | operations | `processEpoch` plus the generated-`fulu` substep set in order: `processJustificationAndFinalization`, `processInactivityUpdates`, `processRewardsAndPenalties`, `processRegistryUpdates`, `processSlashings`, `processEth1DataReset`, `processPendingDeposits`, `processPendingConsolidations` (Electra), `processEffectiveBalanceUpdates`, `processSlashingsReset`, `processRandaoMixesReset`, `processHistoricalSummariesUpdate`, `processParticipationFlagUpdates`, `processSyncCommitteeUpdates`, `processProposerLookahead` (Fulu) |
 | 32 | `Operations` | operations | `processBlockHeader`, `processWithdrawals`, `processExecutionPayload`, `processRandao`, `processEth1Data`, `processOperations` plus every operation handler, `processSyncAggregate` (`fastAggregateVerify`) |
 | 33 | `DataAvailability` | operations | (Fulu) `isDataAvailable`, KZG cell-verify glue |
-| 34 | `Genesis` | operations | `initializeBeaconStateFromEth1`, `isValidGenesisState` |
+| 34 | `Genesis` (reserved) | operations | Unmodeled design: `initializeBeaconStateFromEth1`, `isValidGenesisState` (§6.1) |
 | 35 | `Transition` | operations | `stateTransition`, `processSlots` (per slot calls `processSlot`, and `processEpoch` at epoch boundaries), `processSlot` (caches the state root into `stateRoots`), `processBlock` |
 | 36 | `ForkChoice/Store` | fork choice | `Store` structure plus `LatestMessage` / `FcNode` records, `getCurrentSlot`, `getAncestor`, store accessors |
 | 37 | `ForkChoice/Weight` | fork choice | `getWeight`, `getVotingSource`, `filterNodeTree` |
@@ -600,41 +600,29 @@ lets the Lean read naturally.
 
 ## 6. Genesis construction and fork upgrade
 
-Two state-lifecycle functions sit outside the per-slot transition. They are
-per-fork `forkdef`s and they are the `genesis` and `fork` entry points of the fork
-interface.
+The lifecycle design covers genesis construction and fork upgrade outside the
+per-slot transition. The fork interface exposes `runGenesis` and `runUpgrade`.
+The upgrades are implemented; genesis construction remains unmodeled.
 
 ### 6.1 Genesis
 
-`initializeBeaconStateFromEth1` is a `StateTransition Unit`, not a state-builder. It
-runs over a default initial state already threaded through the monad: it sets the
-genesis fields, then adds each genesis deposit's validator through the same
-registry helper the pending-deposit path uses.
+Genesis construction is an **unmodeled design**. The proposed
+`initializeBeaconStateFromEth1 : … → StateTransition Unit` would run over a default
+initial state. It would follow the pinned `initialize_beacon_state_from_eth1`
+(`phase0/beacon-chain.md:1754-1789`), which updates `eth1_data.deposit_root` before
+calling the pinned `process_deposit` for each deposit.
 
-```lean
-forkdef initializeBeaconStateFromEth1
-    (eth1BlockHash : Hash32) (eth1Timestamp : CLUint64)
-    (deposits : List Deposit) : StateTransition Unit := do
-  modifyState fun state => -- set genesisTime, fork, eth1Data, latest header, ...
-    ...
-  for d in deposits do
-    addValidatorToRegistry d.data.pubkey d.data.withdrawalCredentials d.data.amount
-  -- effective-balance and activation finalization follow
-```
+That path checks the Merkle branch and calls `apply_deposit`
+(`electra/beacon-chain.md:1806-1827`). For a new pubkey, `apply_deposit` checks the
+signature and adds a validator with zero balance. It queues the amount as a
+`PendingDeposit`; an invalid new-pubkey signature returns before the append
+(`electra/beacon-chain.md:1754-1780`). Repeated pubkeys retain the existing validator.
 
-The runner is the sole anchor. It boxes `default : BeaconState` with the config's
-flavour, `FastBox` for the runner and `UncachedBox Sha256Spec` for proofs, and runs
-genesis over that boxed state. So genesis never touches a box and the box type is never passed to
-it. The flavour choice lives at the one anchor where the state is first built, the
-arrangement the contract's `State`-from-the-author's-view section describes.
-
-`isValidGenesisState` is a pure `State → Bool` predicate. The harness calls it
-standalone, not inside a transition, so it stays pure under the state-reading rule
-of Section 5: it does not read the threaded state, it inspects a state it is handed,
-which reads cleanly as a pure predicate.
-
-Both are per-fork. Gloas overrides `initializeBeaconStateFromEth1` to initialize the
-ePBS fields, and the `genesis` vector format exercises them.
+The fork bodies omit `processDeposit` and `applyDeposit`; Fulu block processing
+asserts that `body.deposits` is empty. No fork declares
+`initializeBeaconStateFromEth1` or `isValidGenesisState`. All three `runGenesis`
+implementations return `.spec (.outOfScope …)`. The pin ships no genesis vectors
+for these forks (§10.1).
 
 ### 6.2 Fork upgrade
 
@@ -809,10 +797,11 @@ forkdef isValidDepositSignature (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gw
   blsVerify pubkey signingRoot signature
 ```
 
-`applyPendingDeposit` calls it as a conditional, not a gate. It tops up an existing
-validator, and for a new pubkey it adds the validator on a valid signature and skips
-the deposit otherwise, rather than rejecting the block. This is the one place crypto
-verification branches instead of asserting.
+`applyPendingDeposit` tops up an existing validator. For a new pubkey, it adds the
+validator on a valid signature and skips the deposit otherwise. Gloas also uses
+`isValidDepositSignature` in `isPendingValidator` and `applyDepositForBuilder`;
+Heze inherits these paths. The deposit-signature check is the crypto check that
+branches instead of asserting.
 
 ### 8.3 `verify` as a gate, `todo` for the unreachable
 
@@ -908,7 +897,7 @@ interface and `PySpecTests`, written once and fork-agnostic, runs every format.
 | `operations/*` | a single operation handler | yes |
 | `rewards/*` | a single delta function | yes |
 | `fork_choice` | the `on_*` handlers | yes |
-| `genesis` | `initializeBeaconStateFromEth1` | yes |
+| `genesis` | `runGenesis` | no (out of scope; no vectors at the pin) |
 | `fork` | `upgradeToGloas` / `upgradeToHeze` | yes (Fulu→Gloas, Gloas→Heze) |
 | `transition` | `stateTransition` with the upgrade mid-fold | yes (Fulu→Gloas, Gloas→Heze) |
 | `ssz_static` | each container's `SSZRepr` (decode, hash-tree-root, round-trip) | yes (Fulu + Gloas + Heze) |
@@ -919,9 +908,10 @@ the reward and penalty deltas of the `Rewards` concern file (row 29). `fork` and
 `transition` run the Fulu-to-Gloas and Gloas-to-Heze upgrades only, since Electra is
 not built. Both presets run; mainnet runs on demand rather than on every CI pass.
 
-`genesis` is in the design scope, but the `v1.7.0-beta.4` pin ships no `genesis` vectors
-for Fulu, Gloas, or Heze, so `initializeBeaconStateFromEth1` stays a `todo` stub in the
-fork interfaces with nothing to drive (`IMPLEMENTATION_NOTES.md`, "Genesis").
+The `v1.7.0-beta.4` pin ships no `genesis` vectors for Fulu, Gloas, or Heze.
+Each fork's `runGenesis` reports `.spec (.outOfScope …)`, which the driver classifies
+as `skip` (`IMPLEMENTATION_NOTES.md`, "Genesis"). Section 6.1 describes the unmodeled
+design.
 
 ### 10.2 The reject-faithfulness audit
 

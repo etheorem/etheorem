@@ -3,10 +3,10 @@
 The required arithmetic behavior and authoring rules for all consensus-spec code in
 `EthCLSpecs`, supported by the arithmetic layer in `EthCLLib`.
 
-This document prescribes the final state. It remains the contract for future additions
+This document defines the implemented arithmetic contract. It governs future additions
 and spec re-pins. Sections 1 to 3 describe the pinned behavior; Sections 4 to 7 prescribe
 the implementation and its use. The temporary [SPEC_ARITHMETIC_PLAN.md](SPEC_ARITHMETIC_PLAN.md)
-records the transition that produced this contract; the final acceptance change removes it.
+records the transition to this contract; the final acceptance change removes it.
 
 Pin: `v1.7.0-beta.4`, with `eth-ssz-specs` 0.1.0 as the pyspec's integer library. Line citations
 (`<file>.md:NN`) resolve under `specs/` in `ethereum/consensus-specs` at the pin. Every re-pin

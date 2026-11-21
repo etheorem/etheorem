@@ -982,9 +982,9 @@ Framework-owned mechanics come in two kinds. The **hashing-based** primitives ar
 the signing-root combinators, `computeForkDataRoot`, `computeDomain`, and
 `computeSigningRoot`, which hash over small byte containers and take a fork-version
 value without reading state, plus `isValidMerkleBranch`, the `is_valid_merkle_branch`
-Merkle-proof check. No fork body calls it: its pinned callers are the light-client and
-data-column sidecar inclusion-proof checks, which the fork bodies do not model, and the
-framework tests and `EthCLLib.Proofs.MerkleBranch` cover it. Both are backed
+Merkle-proof check. No fork body calls it. Its pinned callers (`process_deposit`, the
+light-client and data-column sidecar inclusion-proof checks) sit outside the modeled
+fork bodies. The framework tests and `EthCLLib.Proofs.MerkleBranch` cover it. Both are backed
 by SizzLean's hashing by default, and the framework is free to swap another
 implementation if it fits better. The **signature- and commitment-based**
 primitives are the BLS verify and aggregate (including the `fastAggregateVerify`
