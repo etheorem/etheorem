@@ -37,14 +37,15 @@ it.
 ### 1.1 The surface per fork
 
 Each fork delivers the six deliverables of the contract's
-what-a-fork-spec-is section, drawn from the upstream specification. The surface
-that is in scope:
+what-a-fork-spec-is section, drawn from the upstream specification. Genesis
+construction is the one exception: its lifecycle function stays an unmodeled design
+(§6.1). The surface that is in scope:
 
 | In scope | Out of scope |
 |---|---|
 | `beacon-chain` (containers, helpers, state transition, epoch processing, operations) | the validator guide's honest-behavior duties |
 | `fork-choice` (the `Store` and its `on_*` handlers) | the p2p networking layer |
-| the `fork` upgrade and `genesis` construction | |
+| the `fork` upgrade | `genesis` construction (an unmodeled design, §6.1) |
 | Fulu's PeerDAS additions (EIP-7594) | |
 | Gloas's ePBS additions (EIP-7732) | |
 | Heze's FOCIL additions (EIP-7805) | |
@@ -797,11 +798,15 @@ forkdef isValidDepositSignature (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gw
   blsVerify pubkey signingRoot signature
 ```
 
-`applyPendingDeposit` tops up an existing validator. For a new pubkey, it adds the
-validator on a valid signature and skips the deposit otherwise. Gloas also uses
-`isValidDepositSignature` in `isPendingValidator` and `applyDepositForBuilder`;
-Heze inherits these paths. The deposit-signature check is the crypto check that
-branches instead of asserting.
+In Fulu and Gloas, `applyPendingDeposit` tops up an existing validator. For a new
+pubkey, it adds the validator on a valid signature and skips the deposit otherwise.
+Heze adds one exception (EIP-8365). Its `applyPendingDeposit` drops a new pubkey with
+BLS (`0x00`) withdrawal credentials before the signature check, so even a valid
+signature adds no validator. Gloas also uses `isValidDepositSignature` in
+`isPendingValidator` and `applyDepositForBuilder`, and Heze inherits both paths.
+These deposit-signature checks branch instead of asserting. Gloas's
+`processBuilderDepositRequest` branches the same way on its own verifier,
+`isValidBuilderDepositSignature`.
 
 ### 8.3 `verify` as a gate, `todo` for the unreachable
 
