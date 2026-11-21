@@ -56,24 +56,25 @@ under a one-line header naming the phase:
 Each header maps to a step of the zkhash schedule, so the comments teach the
 reference and mark the phases at once.
 
-The long, unbroken bodies are what diverge from this. The densest is
-`process_attestation` in Gloas (`packages/EthCLSpecs/EthCLSpecs/Gloas/Operations.lean:processAttestation`),
-57 lines with one internal comment, running six distinct phases together:
+The long, unbroken bodies are what diverge from this. `process_attestation` in Gloas
+(`packages/EthCLSpecs/EthCLSpecs/Gloas/Operations.lean:processAttestation`) runs five
+distinct phases. Written as one block, it reads like this:
 
 ```lean
 -- before (abbreviated)
-forkdef processAttestation (att : Attestation) : StateTransition Unit := do
+forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransition Unit := do
   let state ← get
   let data := att.data
   assert (data.target.epoch == previousEpochOf state || data.target.epoch == currentEpochOf state)
   assert (data.target.epoch == computeEpochAtSlot data.slot)
-  assert (data.slot + Const.minAttestationInclusionDelay ≤ sszGet state slot)
+  let inclusionSlot ← data.slot + Const.minAttestationInclusionDelay
+  assert (inclusionSlot ≤ sszGet state slot)
   assert (data.index < 2)
-  let count := getCommitteeCountPerSlot state data.target.epoch
-  let (ok, offset) := (getCommitteeIndices att.committeeBits).foldl …
+  let (ok, offset) ← liftErr (verifyCommitteeCoverage state data att)
   assert ok
   assert (att.aggregationBits.size == offset)
-  let flagIndices ← match getAttestationParticipationFlagIndices state data … with
+  let inclusionDelay ← (sszGet state slot) - data.slot
+  let flagIndices ← match ← getAttestationParticipationFlagIndices state data inclusionDelay parentSlot with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
   let indexedAttestation : IndexedAttestation := …
@@ -82,34 +83,38 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   …
   for vi in (← liftErr (getAttestingIndices state att)) do
     …
-  stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := …
-  let proposerDenom := …
-  stateAcc := increaseBalance stateAcc (getBeaconProposerIndex stateAcc) …
+  let proposerDenom ← (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
+  let proposerReward ← proposerNum / proposerDenom
+  stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc) proposerReward
+  stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := { payment0 with weight := weight }
   set stateAcc
 ```
 
-The same body with phase breaks and four short headers:
+The same body with phase breaks and five short headers:
 
 ```lean
--- after
-forkdef processAttestation (att : Attestation) : StateTransition Unit := do
+-- after (abbreviated)
+forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransition Unit := do
   let state ← get
   let data := att.data
 
   -- Reject on shape: target epoch, slot timing, and the payload-presence bit.
   assert (data.target.epoch == previousEpochOf state || data.target.epoch == currentEpochOf state)
   assert (data.target.epoch == computeEpochAtSlot data.slot)
-  assert (data.slot + Const.minAttestationInclusionDelay ≤ sszGet state slot)
+  let inclusionSlot ← data.slot + Const.minAttestationInclusionDelay
+  assert (inclusionSlot ≤ sszGet state slot)
   assert (data.index < 2)
 
   -- Every committee index is valid and non-empty; the bitfield covers them all.
-  let count := getCommitteeCountPerSlot state data.target.epoch
-  let (ok, offset) := (getCommitteeIndices att.committeeBits).foldl …
+  let (ok, offset) ← liftErr (verifyCommitteeCoverage state data att)
   assert ok
   assert (att.aggregationBits.size == offset)
 
-  -- Resolve the participation flags, then validate the aggregate signature.
-  let flagIndices ← match getAttestationParticipationFlagIndices state data … with
+  -- Resolve the participation flags, then validate the aggregate signature. The
+  -- inclusion delay is the pyspec's checked `state.slot - data.slot`, bound at the
+  -- argument position Python evaluates it.
+  let inclusionDelay ← (sszGet state slot) - data.slot
+  let flagIndices ← match ← getAttestationParticipationFlagIndices state data inclusionDelay parentSlot with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
   let indexedAttestation : IndexedAttestation := …
@@ -121,14 +126,16 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   for vi in (← liftErr (getAttestingIndices state att)) do
     …
 
-  -- Write back the payment weight and pay the proposer.
-  stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := …
-  let proposerDenom := …
-  stateAcc := increaseBalance stateAcc (getBeaconProposerIndex stateAcc) …
+  -- Reward the proposer, then write back the (possibly weight-updated) payment, which the
+  -- spec does unconditionally and in this order. …
+  let proposerDenom ← (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
+  let proposerReward ← proposerNum / proposerDenom
+  stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc) proposerReward
+  stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := { payment0 with weight := weight }
   set stateAcc
 ```
 
-Same logic, same line count of code. The four headers carry the spec's own phase
+Same logic, same line count of code. The five headers carry the spec's own phase
 structure, so they tell the reader where they are.
 
 Those headers are not mandatory. The blank line is the rule; the header above it is
@@ -154,55 +161,55 @@ the same reason it needs them in a flat body.
 
 The leaf case of `filterNodeTree.go` (`EthCLSpecs/Gloas/ForkChoice.lean:filterNodeTree.go`)
 decides a branch's viability from two independent criteria, the voting-source
-check and the finalized-checkpoint check. The snippets below are its pure
-predecessor, `filterBlockTree.go`, which v1.7.0-beta.4 replaced; the current
-body keeps the same two paragraphs. They run in sequence and are combined
+check and the finalized-checkpoint check. They run in sequence and are combined
 once at the end, so the one branch holds two phases:
 
 ```lean
 -- before
-    if children.isEmpty then
-      let currentEpoch := getCurrentStoreEpoch store
-      let votingSource := getVotingSource store blockRoot
-      let correctJustified :=
+    else
+      let currentEpoch ← getCurrentStoreEpoch store
+      let votingSource ← getVotingSource store node.root
+      let justifiedWithoutHorizon :=
         store.justifiedCheckpoint.epoch == Const.genesisEpoch
           || votingSource.epoch == store.justifiedCheckpoint.epoch
-          || votingSource.epoch + 2 ≥ currentEpoch
-      let finalizedBlock := getCheckpointBlock store blockRoot store.finalizedCheckpoint.epoch
+      let correctJustified ← if justifiedWithoutHorizon then pure true else do
+        let horizon ← votingSource.epoch + 2
+        pure (decide (horizon ≥ currentEpoch))
+      let finalizedBlock ← getCheckpointBlock store node.root store.finalizedCheckpoint.epoch
       let correctFinalized :=
         store.finalizedCheckpoint.epoch == Const.genesisEpoch
           || store.finalizedCheckpoint.root == finalizedBlock
-      if correctJustified && correctFinalized then (acc.push blockRoot, true) else (acc, false)
-    else
-      …
+      if correctJustified && correctFinalized then pure #[node] else pure #[]
 ```
 
 ```lean
 -- after
-    if children.isEmpty then
+    else
       -- A leaf branch is viable when its voting source stays close to the justified
       -- checkpoint (genesis, the same epoch, or within two epochs of the current one).
-      let currentEpoch := getCurrentStoreEpoch store
-      let votingSource := getVotingSource store blockRoot
-      let correctJustified :=
+      let currentEpoch ← getCurrentStoreEpoch store
+      let votingSource ← getVotingSource store node.root
+      -- Python's `or` short-circuits, so the `+ 2` runs only once the two cheap disjuncts
+      -- fail; the guard keeps that order, since the add is a checked `uint64` op.
+      let justifiedWithoutHorizon :=
         store.justifiedCheckpoint.epoch == Const.genesisEpoch
           || votingSource.epoch == store.justifiedCheckpoint.epoch
-          || votingSource.epoch + 2 ≥ currentEpoch
+      let correctJustified ← if justifiedWithoutHorizon then pure true else do
+        let horizon ← votingSource.epoch + 2
+        pure (decide (horizon ≥ currentEpoch))
 
       -- The finalized checkpoint must also lie on this branch.
-      let finalizedBlock := getCheckpointBlock store blockRoot store.finalizedCheckpoint.epoch
+      let finalizedBlock ← getCheckpointBlock store node.root store.finalizedCheckpoint.epoch
       let correctFinalized :=
         store.finalizedCheckpoint.epoch == Const.genesisEpoch
           || store.finalizedCheckpoint.root == finalizedBlock
-      if correctJustified && correctFinalized then (acc.push blockRoot, true) else (acc, false)
-    else
-      …
+      if correctJustified && correctFinalized then pure #[node] else pure #[]
 ```
 
 A header earns its place on each group here, since the criterion a predicate
 encodes is not obvious from its name alone (§3). The §7 limits still bind inside a
-branch: do not blank-line between the two `let`s that build one predicate
-(`correctJustified` spans three lines and is one paragraph), and do not paragraph a
+branch: do not blank-line between the `let`s that build one predicate
+(`justifiedWithoutHorizon` and `correctJustified` form one paragraph), and do not paragraph a
 branch that does a single thing. And the seam between the arms is the `if` / `else`
 itself, never a blank line between `match` arms.
 
@@ -249,26 +256,28 @@ each paragraph that just renames it is the noise §3 warns against.
 
 ### 2. Name intermediates for what they hold
 
-A two-letter local hides its meaning. `getHead.better`
-(`EthCLSpecs/Gloas/ForkChoice.lean:getHead.better`) compares two fork-choice nodes:
+A two-letter local hides its meaning. `getHead.betterOf`
+(`EthCLSpecs/Gloas/ForkChoice.lean:getHead.betterOf`) compares two fork-choice nodes:
 
 ```lean
 -- before
-  better (store : Store map) (a b : ForkChoiceNode) : Bool :=
-    let wa := getWeight store a
-    let wb := getWeight store b
-    if wa > wb then true
-    else if wa < wb then false
+  betterOf (store : Store map) (a b : ForkChoiceNode) : StoreTransition ForkChoiceNode := do
+    let wa ← getWeight store a
+    let wb ← getWeight store b
+    …
+    if wa > wb then pure a
+    else if wb > wa then pure b
     else match compare a.root b.root with …
 ```
 
 ```lean
 -- after
-  better (store : Store map) (a b : ForkChoiceNode) : Bool :=
-    let weightA := getWeight store a
-    let weightB := getWeight store b
-    if weightA > weightB then true
-    else if weightA < weightB then false
+  betterOf (store : Store map) (a b : ForkChoiceNode) : StoreTransition ForkChoiceNode := do
+    let weightA ← getWeight store a
+    let weightB ← getWeight store b
+    …
+    if weightA > weightB then pure a
+    else if weightB > weightA then pure b
     else match compare a.root b.root with …
 ```
 
@@ -364,66 +373,84 @@ A nested expression that spans a line and a half does two jobs: it computes a
 value and it hides what the value is. Splitting it names the value and often
 removes a duplicated subexpression.
 
-`advanceStoreTime`, an earlier form of the `on_tick` catch-up loop, buried the target slot
-in the fuel argument, then recomputed the identical formula inside the loop. The snippets
-are that earlier code, with the second-based store clock; at v1.7.0-beta.4 the clock counts
-milliseconds and the loop lives in `onTick` (`EthCLSpecs/Fulu/ForkChoice.lean:onTick`):
+`onTick` (`EthCLSpecs/Fulu/ForkChoice.lean:onTick`) runs the `on_tick` catch-up loop.
+Written with the target slot inside the fuel argument, it computes the same slot again
+inside the loop:
 
 ```lean
 -- before
-forkdef advanceStoreTime (store : Store map) (time : UInt64) : Store map :=
-  fuelIterate (((((time - store.genesisTime) * 1000) / Const.slotDurationMs) - getCurrentSlot store).toNat + 1) store fun store =>
-    let tickSlot := ((time - store.genesisTime) * 1000) / Const.slotDurationMs
-    if getCurrentSlot store < tickSlot then
-      let previousTime := store.genesisTime + (getCurrentSlot store + 1) * Const.slotDurationMs / 1000
-      .next (onTickPerSlot store previousTime)
-    else .done (onTickPerSlot store time)
+forkdef onTick (timeMs : CLUint64) : StoreTransition Unit := do
+  let store ← get
+  fuelIterateM! ((← computeSlotAtTimeMs store.genesisTimeMs timeMs).toPlainNat - (← getCurrentSlot store).toPlainNat + 1) () "on_tick: per-slot catch-up" fun _ => do
+    let cs ← getCurrentSlot (← get)
+    if cs < (← computeSlotAtTimeMs store.genesisTimeMs timeMs) then
+      let nextSlot ← cs + 1
+      let nextSlotTimeMs ← computeTimeAtSlotMs (← get).genesisTimeMs nextSlot
+      set (← onTickPerSlot (← get) nextSlotTimeMs)
+      pure (.next ())
+    else
+      set (← onTickPerSlot (← get) timeMs)
+      pure (.done ())
 ```
 
 ```lean
 -- after
-forkdef advanceStoreTime (store : Store map) (time : UInt64) : Store map :=
-  -- The slot `time` lands in. It is loop-invariant (only `time` and the fixed
-  -- `genesisTime` feed it, and `onTickPerSlot` touches neither), so it doubles as
-  -- the fuel bound and is read unchanged inside the sweep.
-  let targetSlot := ((time - store.genesisTime) * 1000) / Const.slotDurationMs
-  let fuel := (targetSlot - getCurrentSlot store).toNat + 1
-  fuelIterate fuel store fun store =>
-    if getCurrentSlot store < targetSlot then
-      let nextSlotTime := store.genesisTime + (getCurrentSlot store + 1) * Const.slotDurationMs / 1000
-      .next (onTickPerSlot store nextSlotTime)
-    else .done (onTickPerSlot store time)
+forkdef onTick (timeMs : CLUint64) : StoreTransition Unit := do
+  let store ← get
+  let tickSlot ← computeSlotAtTimeMs store.genesisTimeMs timeMs
+  let cur ← getCurrentSlot store
+  -- Fuel rather than a measure (§7.2): the body reads the store and can throw, so a decreasing
+  -- `tickSlot - get_current_slot` would have to be carried past a rejecting step. The bound is a
+  -- Lean termination measure with no pyspec twin, so it is a structural `Nat` count over the
+  -- plain values (`SPEC_ARITHMETIC.md` §4.2, `Nat` for termination measures): the truncated
+  -- difference is `0` on a backwards tick, where the loop `.done`s on its first pass. Each pass
+  -- moves the clock to the next slot start, so `tickSlot - cur + 1` passes suffice;
+  -- `fuelIterateM!` throws on fuel-out rather than returning a wrong store.
+  fuelIterateM! (tickSlot.toPlainNat - cur.toPlainNat + 1) () "on_tick: per-slot catch-up" fun _ => do
+    let cs ← getCurrentSlot (← get)
+    if cs < tickSlot then
+      -- `get_current_slot(store) + 1`: the spec's checked add, bound where Python forms it.
+      let nextSlot ← cs + 1
+      let nextSlotTimeMs ← computeTimeAtSlotMs (← get).genesisTimeMs nextSlot
+      set (← onTickPerSlot (← get) nextSlotTimeMs)
+      pure (.next ())
+    else
+      set (← onTickPerSlot (← get) timeMs)
+      pure (.done ())
 ```
 
-The giant fuel argument becomes a named `fuel`, the duplicated `tickSlot` formula
-collapses to one `targetSlot`, and the comment records the invariant that makes the
-dedup safe. That invariant is the kind of inference CLAUDE.md asks to
-be spelled out, since a reader cannot tell from the old code that the inner
-recompute was redundant.
+The slot formula leaves the fuel argument and becomes one named `tickSlot`, which the
+loop reads unchanged. The dedup is safe because only `timeMs` and the fixed genesis
+time feed the formula, and `onTickPerSlot` changes neither. The comment on the fuel
+records why the bound is a structural `Nat` count. A reader cannot recover that from
+the code, so CLAUDE.md asks for it to be spelled out.
 
 The Gloas `process_withdrawals` cursor update
-(`EthCLSpecs/Gloas/Withdrawals.lean:processWithdrawals`) has a duplicated shape worth collapsing:
-two `sszUpdate` arms, each wrapping the same `if nvals == 0 then 0 else … % nvals`
-guard.
+(`EthCLSpecs/Gloas/Withdrawals.lean:processWithdrawals`) shows the same move on a
+branch. The two cases differ only in the cursor they compute, so the branch decides one
+value, and the modulo and the write follow once:
 
 ```lean
 -- after
-  -- update_next_withdrawal_validator_index: a full payload resumes one past the
-  -- last validator drained; a short one jumps a whole sweep window ahead. Both
-  -- wrap modulo the registry size (0 when empty).
-  modifyState fun state =>
-    let nvals := (sszGet state validators).size
-    let sweptFullPayload := expected.size == Const.maxWithdrawalsPerPayload
-    let nextCursor :=
-      if sweptFullPayload then (expected[expected.size - 1]!).validatorIndex.toNat + 1
-      else (sszGet state nextWithdrawalValidatorIndex).toNat + Const.maxValidatorsPerWithdrawalsSweep
-    let wrapped := if nvals == 0 then 0 else nextCursor % nvals
-    sszUpdate state with nextWithdrawalValidatorIndex := UInt64.ofNat wrapped
+  let state ← get
+  let nvals := len (sszGet state validators)
+  let nextCursor ←
+    if len expected == Const.maxWithdrawalsPerPayloadC.toCLInt then do
+      let latestWithdrawal ← sszGetIdx expected (-1 : CLInt)
+      let advanced ← (latestWithdrawal.validatorIndex + 1 : Checked _)
+      pure advanced
+    else do
+      let advanced ←
+        (sszGet state nextWithdrawalValidatorIndex + Const.maxValidatorsPerWithdrawalsSweep : Checked _)
+      pure advanced
+  let nextValidatorIndex ← (nextCursor % nvals : Checked _)
+  modifyState fun state => sszUpdate state with nextWithdrawalValidatorIndex := nextValidatorIndex
 ```
 
-The branch now decides one value (`nextCursor`); the wrap and the write happen once
-each. The two cases stand side by side instead of being buried in parallel
-`sszUpdate` boilerplate.
+The branch decides one value (`nextCursor`); the modulo and the write happen once
+each. The modulo is the pyspec's checked `%` by the plain `len(state.validators)`, so
+an empty registry raises `ZeroDivisionError` as the pyspec does
+(`SPEC_ARITHMETIC.md` §6 forbids a default on a zero divisor).
 
 #### When the duplication is structural, realign to the reference
 
@@ -432,9 +459,9 @@ check sits in two arms of a `match` because the port grew a control-flow shape t
 reference does not have. Lifting a `let` does not fix that. Restoring the
 reference's shape does, and it writes the check once.
 
-The `process_pending_deposits` scan in `processPendingDeposits`
-(`EthCLSpecs/Fulu/EpochProcessing.lean:processPendingDeposits`) once matched
-`validatorIndexByPubkey?` first and then ran the churn-limit check in *both* the
+A port of the `process_pending_deposits` scan in `processPendingDeposits`
+(`EthCLSpecs/Fulu/EpochProcessing.lean:processPendingDeposits`) can match
+`validatorIndexByPubkey?` first. It then runs the churn-limit check in *both* the
 `some` and the `none` arm:
 
 ```lean
@@ -446,12 +473,16 @@ The `process_pending_deposits` scan in `processPendingDeposits`
             applyPendingDeposit deposit; return cont processed postpone
           else if validator.exitEpoch < Const.farFutureEpoch then
             return cont processed (postpone.push deposit)
-          else if processed + deposit.amount > avail then
+          else if (← processed + deposit.amount) > avail then
             return .done (true, processed, ndi, postpone)
-          else applyPendingDeposit deposit; return cont (processed + deposit.amount) postpone
+          else
+            let processed' ← processed + deposit.amount
+            applyPendingDeposit deposit; return cont processed' postpone
         | none =>
-          if processed + deposit.amount > avail then return .done (true, processed, ndi, postpone)
-          else applyPendingDeposit deposit; return cont (processed + deposit.amount) postpone
+          if (← processed + deposit.amount) > avail then return .done (true, processed, ndi, postpone)
+          else
+            let processed' ← processed + deposit.amount
+            applyPendingDeposit deposit; return cont processed' postpone
 ```
 
 The spec writes this with two precomputed flags and one ladder:
@@ -575,7 +606,7 @@ top-level `def`. The helper stays invisible at namespace scope and reads as
 subordinate to its parent, so the top level still presents as one reference
 function. The codebase leans on this: `getHead.betterOf`
 (`EthCLSpecs/Gloas/ForkChoice.lean:getHead.betterOf`), `filterNodeTree.go` (`:filterNodeTree.go`),
-`onTickPerSlot.computeSlotsSinceEpochStart` (`EthCLSpecs/Fulu/ForkChoice.lean:onTickPerSlot.computeSlotsSinceEpochStart`).
+`processAttestation.verifyCommitteeCoverage` (`EthCLSpecs/Gloas/Operations.lean:processAttestation.verifyCommitteeCoverage`).
 
 Promote a helper to namespace scope only when it is reused, mirrors a named
 reference helper, or must be recursive. A good promotion-for-reuse candidate: the
@@ -602,11 +633,11 @@ whole, and toward `where` over promotion, is stronger than elsewhere.
 
 `processAttestation` (`EthCLSpecs/Gloas/Operations.lean:processAttestation`) is the case where both
 tools apply. The committee-coverage check (the `(ok, offset)` fold) is a
-self-contained validity computation with a clean boundary; lift it to a `where
+self-contained validity computation with a clean boundary, so it lives in the `where
 verifyCommitteeCoverage` helper. The participation-flag loop that follows mutates
 three accumulators together (`stateAcc`, `proposerNum`, `weight`), so extracting it
-cleanly means returning a triple, which buys little. Leave that inline and
-paragraph it (§1). The judgment is per-block: extract the parts with clean
+cleanly means returning a triple, which buys little. It stays inline, paragraphed
+(§1). The judgment is per-block: extract the parts with clean
 signatures, keep the tangled-accumulator core in place.
 
 ### 6. Shape the state a loop threads
@@ -721,15 +752,16 @@ are already at their best. These need no blank lines, no internal comments, no
 extra locals:
 
 ```lean
-forkdef getCurrentSlot (store : Store map) : Slot := Const.genesisSlot + getSlotsSinceGenesis store
+forkdef getCurrentSlot (store : Store map) : StoreTransition Slot :=
+  getSlotsSinceGenesis store
 
 forkdef isBuilderIndex (vi : ValidatorIndex) : Bool := (vi &&& Const.builderIndexFlag) != 0
 
 def sbox (x : R) : R := let x2 := x * x; x2 * x2 * x
 
-forkdef calculateCommitteeFraction (state : State) (committeePercent : UInt64) : Gwei :=
-  let committeeWeight := (getTotalActiveBalance state) / UInt64.ofNat Const.slotsPerEpoch
-  committeeWeight * committeePercent / 100
+forkdef computeActivationExitEpoch (e : Epoch) : Checked Epoch := do
+  let next ← e + 1
+  next + Const.maxSeedLookahead
 ```
 
 The signature plus docstring already says everything. A single expression, or a
@@ -749,24 +781,12 @@ Heuristics for restraint:
 ### Where the payoff is largest
 
 The packages outside EthCLSpecs are largely already at the bar: `permuteWith` and
-`Node.ofShape` are positive models, not work items. The densest backlog is in
-EthCLSpecs, ranked by density and call-site importance:
-
-1. `processAttestation` (Gloas `Gloas/Operations.lean:processAttestation`, Fulu
-   `Fulu/Operations.lean:processAttestation`) — paragraphing + phase headers (§1), and lift the
-   committee-coverage fold to a `where` helper (§5).
-2. `getExpectedWithdrawals` (Gloas `Gloas/Withdrawals.lean:getExpectedWithdrawals`) — tuple-thread
-   naming (§2); (Fulu `Fulu/Withdrawals.lean:getExpectedWithdrawals`) — blank-line phases (§1).
-3. `advanceStoreTime` (`Gloas/ForkChoice.lean:advanceStoreTime`) — lift + dedup the slot formula
-   (§4).
-4. `process_withdrawals` cursor update (`Gloas/Withdrawals.lean:processWithdrawals`) — collapse the
-   duplicated guard (§4).
-5. `processConsolidationRequest` (`Fulu/Operations.lean:processConsolidationRequest`) and
-   `processWithdrawalRequest` (`Fulu/Operations.lean:processWithdrawalRequest`) — long `else if` ladders
-   that would read better with a one-line header naming the validity gate they
-   walk.
-6. `getHead.better` (`Gloas/ForkChoice.lean:getHead.better`) — the `wa` / `wb` rename (§2),
-   small, and it is the exact pattern to standardize on.
+`Node.ofShape` are positive models, not work items. The worked examples above show
+the current EthCLSpecs code. One backlog item remains:
+`processConsolidationRequest` (`Fulu/Operations.lean:processConsolidationRequest`) and
+`processWithdrawalRequest` (`Fulu/Operations.lean:processWithdrawalRequest`) hold long
+`else if` ladders. A one-line header naming the validity gate each ladder walks would
+help.
 
 The big `forkdef` epoch substeps (`weighJustificationAndFinalization`,
 `processSlashings`, `processEffectiveBalanceUpdates`) are already close: each is one
