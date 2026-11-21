@@ -338,7 +338,7 @@ private def fcInterpretHeze [Preset] [Config] [HasherTag] [CryptoBackend]
             onTick (map := hashMap) (secondsToMilliseconds tickSeconds) :
           EStateM StoreTransitionError (Store hashMap) Unit)))
     | .block bytes _columns valid =>
-      -- pyspec `add_block` (`fork_choice.py:323-427`) runs `on_block` ALONE against `valid`: an
+      -- pyspec `add_block` (`fork_choice.py:323-426`) runs `on_block` ALONE against `valid`: an
       -- invalid block returns right after `on_block` rejects (`:387`), so its own attestations /
       -- attester-slashings replay only on the valid path (`:394-400`), each `valid = True`. So
       -- check `on_block` against `valid`, then replay the sub-steps only when the block was
@@ -525,9 +525,9 @@ is the pure Gloas→Heze copy and `runTransition` the Gloas→Heze boundary. `ru
 schedule Heze models. A vector that activates its forks at genesis ships a `config.yaml`
 setting these epochs to `0`, and a `transition` vector moves its post-fork's epoch to the
 `fork_epoch`; `EthCLLib.PySpecTests.applyConfigOverrides` applies them. -/
--- The vector's plain `int` epoch crosses the runner boundary through the wire iso
--- (`SPEC_ARITHMETIC.md` §4.5: `trustedOfUInt64`, the config-constant route; a `UInt64`
--- cannot leave the range, so the wrap cannot fault).
+-- `applyConfigOverrides` checks the plain `int` epoch's range before `UInt64.ofNat`.
+-- `trustedOfUInt64` therefore receives the exact value (`SPEC_ARITHMETIC.md` §4.5,
+-- the validated config route).
 def configSetters : List (String × (UInt64 → Config → Config)) := [
   ("ALTAIR_FORK_EPOCH",    fun v c => { c with altairForkEpoch := CLUint64.trustedOfUInt64 v }),
   ("BELLATRIX_FORK_EPOCH", fun v c => { c with bellatrixForkEpoch := CLUint64.trustedOfUInt64 v }),

@@ -110,8 +110,8 @@ inductive StateTransitionError where
   does not catch it, while the one `except ValueError` wrapper does
   (`RunnerCaughtSet.valueError`). It `classify`s as `ClassifyBucket.uncaughtFault` and
   carries no `ArithCause`, since a lookup is not an arithmetic operator. `descr` names the
-  lookup, diagnostic only. The standing case is `process_sync_aggregate`'s
-  `all_pubkeys.index(pubkey)` (`fulu/minimal.py:4515-4517`) on a current-sync-committee
+  lookup, diagnostic only. One caller is `process_sync_aggregate`'s
+  `all_pubkeys.index(pubkey)` (`fulu/minimal.py:4515-4518`) on a current-sync-committee
   pubkey that no validator carries. -/
   | notInList (descr : String)
   deriving Inhabited, Repr, DecidableEq
@@ -225,7 +225,7 @@ pin, `.missingKey` (an uncaught
 
 That wrapper scores the attestation, attester-slashing, envelope, and PTC-message steps. The
 block step is scored by `add_block`'s own `except (AssertionError, BlockNotFoundException)`
-(`fork_choice.py:381-389`), which never catches `IndexError`, so its admitted set is this one
+(`fork_choice.py:383-387`), which never catches `IndexError`, so its admitted set is this one
 minus the index miss. `FcStepKind.admits` applies that narrowing; `isIndexMiss` is the shape
 it subtracts.
 

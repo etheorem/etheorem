@@ -94,7 +94,7 @@ namespace CLUint64
 /-- The wire iso's inverse: wrap a raw `UInt64`. Every `UInt64` already sits in
 `[0, 2^64)`, so the wrap cannot fault and the route needs no range test.
 
-Callers are the framework's codec sites only: SSZ decode, config
+Framework callers include SSZ decode, validated config overrides,
 constants, and total bitwise writes over raw operands. A spec body builds values from
 computed numbers through `ofNat?`, `ofInt?`, `ofCLInt?`, `ofNatLT`, the
 operators, or a literal. A trusted constructor never repairs an operator

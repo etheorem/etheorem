@@ -47,7 +47,7 @@ Re-exports:
   regions (`initializePtcWindow`).
 * `EthCLSpecs.Proofs.Gloas.InitiateBuilderExit`: `initiateBuilderExit_run_eq`, the
   whole-transition equation over the plain `BeaconState`, with the in-range /
-  out-of-range reads of that equation and conditional and shipped-configuration no-wrap
+  out-of-range reads of that equation and conditional and shipped-configuration sum-bound
   corollaries for the written `withdrawableEpoch`.
 * `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: literal and semantic
   characterizations of `isValidIndexedPayloadAttestation`, including its adjacent

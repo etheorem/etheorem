@@ -935,7 +935,7 @@ names. This section says where each part lives in `EthCLLib` and how the parts f
 | `Spec/CLInt.lean` | `CLInt`, the plain kind: total `+ - *`, floor division, and the mixed routes with `CLUint64` |
 | `Spec/CLTotal.lean` | the proved-total routes: `PositiveDivisor`, same-width bitwise operations, right shift, and `integerSquareroot` |
 | `Spec/Elab.lean` | the scoped operator elaborator, active while `EthCLLib.Spec` is open |
-| `Spec/Arith.lean` | `isqrt` on `Nat`, the codec helpers over raw machine words (`uint64ToBytes`, the type-directed `uintToBytes`), and the byte and collection helpers |
+| `Spec/Arith.lean` | `isqrt` on `Nat`, the raw-word helpers `umax` / `umin` / `saturatingSub`, the `ValidModulus` / `vmodGet` modulo-bound route, the codec helpers over raw machine words (`uint64ToBytes`, the type-directed `uintToBytes`), and the byte and collection helpers |
 
 A fork body declares its unit types (`Slot`, `Epoch`, `Gwei`, `ValidatorIndex`, and
 the others) as abbreviations of `CLUint64`, and `ParticipationFlags` as `CLUint8`. No

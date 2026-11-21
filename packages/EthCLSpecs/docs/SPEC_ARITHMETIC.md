@@ -184,9 +184,11 @@ has the `SSZRepr` instance of `uint64`, so fields retain their bytes and roots.
 Keep the semantic core separate from operator elaboration, indexing, and SSZ instances.
 Proofs import the semantic core without requiring authoring elaborators. The 64-bit and
 8-bit types use native-backed wrappers. Share laws and instance generation where useful.
-Every width used by consensus-spec code must have an explicit operation matrix and
-conversion laws, including widths used only at codec boundaries. All arithmetic at
-those widths must follow the same checked rules.
+Every width with a consensus arithmetic consumer must have an explicit operation
+matrix and conversion laws. The implemented arithmetic widths are 64 and 8 bits.
+The 32-bit uses are codec conversions; the 256-bit uses are data representations.
+Those data-only widths retain their codec rules. An arithmetic consumer at either
+width requires a checked surface and its operation matrix before use.
 
 Use exact type names in the Lean API and its documentation. Python `int` is the source
 type; `CLInt` is its spec-facing Lean model; Lean `Int` is the underlying signed type.
