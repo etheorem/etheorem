@@ -81,7 +81,7 @@ forkdef computeShuffledPermutation (indexCount : Nat) (seed : ByteArray) : Array
 
 /-! ## Seeds and committee counts -/
 
-/-- `get_seed(state, epoch, domain_type)` (`fulu/mainnet.py:1483-1491`). The randao-mix
+/-- `get_seed(state, epoch, domain_type)` (`fulu/mainnet.py:1483-1490`). The randao-mix
 slot is a `% EPOCHS_PER_HISTORICAL_VECTOR` ring-buffer index, read with the proof-carrying
 `vmodGet` (the modulus's positivity / bound come from the `[Preset]` well-formedness fields,
 so the read needs no `Inhabited` default). The epoch sum
@@ -99,7 +99,7 @@ forkdef getSeed (state : State) (epoch : Epoch) (domainType : ByteArray) :
   pure (bytesToRoot (sha (domainType ++ uint64ToBytes epoch.val ++
     vmodGet (sszGet state randaoMixes) mixIdx.val Const.epochsPerHistoricalVector)))
 
-/-- `get_committee_count_per_slot` (`fulu/minimal.py:1485-1496`):
+/-- `get_committee_count_per_slot` (`fulu/minimal.py:1485-1497`):
 `max(Uint64(1), min(MAX_COMMITTEES_PER_SLOT, Uint64(len(active)) // Uint64(SLOTS_PER_EPOCH)
 // TARGET_COMMITTEE_SIZE))`. Every operand is a `Uint64`, so the result is a `Uint64`.
 The active set's checked `ValidatorIndex` casts carry their fault into the result. The
@@ -158,7 +158,7 @@ forkdef computeCommittee (indices : Array ValidatorIndex) (seed : Bytes32) (inde
     -- bounds `perm[position]` and every entry of `perm` bounds the `indices` read.
     pure indices[perm[position]!]!
 
-/-- `get_beacon_committee(state, slot, index)` (`fulu/minimal.py:1500-1514`). The seed walk
+/-- `get_beacon_committee(state, slot, index)` (`fulu/minimal.py:1500-1513`). The seed walk
 is `get_seed`, which raises on its checked epoch chain, so the helper carries the fault and
 each caller binds it. The pyspec forms the count, then the keyword arguments in order: the
 active set, the seed, the index, the count. The index

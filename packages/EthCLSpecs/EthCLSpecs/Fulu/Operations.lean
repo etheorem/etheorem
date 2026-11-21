@@ -15,9 +15,10 @@ Fulu has no in-block deposit step. The pinned `process_operations` asserts
 `process_deposit_request` as a pending deposit.
 
 Each `assert` is an expected rejection: an invalid vector hits one and the harness
-classifies it as a faithful reject. Input-controlled indices are bounds-guarded
-(`assert idx < size`) so an out-of-range read rejects the way the pyspec's
-`IndexError` does, never panicking.
+classifies it as a faithful reject. An input-controlled index reads through the raising
+`sszGetIdx` / `getAt`, so an out-of-range read rejects with `.outOfBounds`, the class of the
+pyspec's `IndexError`, and never panics. `expect_assertion_error` catches both classes
+(`RunnerCaughtSet.assertionAndIndex`).
 -/
 
 set_option autoImplicit false
@@ -72,7 +73,7 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
   assert (h1.proposerIndex == h2.proposerIndex)
   assert (htr h1 != htr h2)
 
-  -- `proposer = state.validators[header_1.proposer_index]` (`fulu/minimal.py:2008`): a
+  -- `proposer = state.validators[header_1.proposer_index]` (`fulu/minimal.py:2012`): a
   -- raising list read, so an out-of-range proposer rejects with `IndexError`'s class.
   let proposer ← sszGetIdx (sszGet state validators) h1.proposerIndex
   assert (isSlashableValidator proposer (currentEpochOf state))
@@ -206,8 +207,9 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
       -- `flag_index in participation_flag_indices and not has_flag(epoch_participation[index],
       -- flag_index)` (`fulu/minimal.py:2081-2084`): the `and` short-circuits, so the flag read
       -- forms only for a flag the attestation earns. The `in` compares a plain enumerate
-      -- index against the checked constants by value — a total comparison (`BaseUint.__eq__`
-      -- admits a bare integer) — so the membership reads the elements' plain values.
+      -- index against the checked constants by value. That is a total comparison
+      -- (`BaseUint.__eq__` admits a bare integer), so the membership reads the elements' plain
+      -- values.
       -- `vi` is a data-derived attesting-validator index; the read goes through
       -- `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather than
       -- masking as a default flag.

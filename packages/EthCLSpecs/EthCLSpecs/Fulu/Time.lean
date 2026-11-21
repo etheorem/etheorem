@@ -45,7 +45,7 @@ forkdef computeStartSlotAtEpoch (epoch : Epoch) : Checked Slot :=
   epoch * Const.slotsPerEpochC
 
 /-- `compute_activation_exit_epoch(epoch)` = `epoch + 1 + MAX_SEED_LOOKAHEAD`
-(`fulu/mainnet.py:1377-1380`). Two checked adds, tested per operation in Python's
+(`fulu/mainnet.py:1378-1382`). Two checked adds, tested per operation in Python's
 left-to-right order, so each binds (`SPEC_ARITHMETIC.md` §4.3) and the function raises
 where the pyspec raises. -/
 forkdef computeActivationExitEpoch (e : Epoch) : Checked Epoch := do
