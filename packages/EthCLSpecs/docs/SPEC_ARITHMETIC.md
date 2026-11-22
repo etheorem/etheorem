@@ -668,6 +668,32 @@ Source review and behavior tests establish adherence to the bind rules. Changes 
 arithmetic framework also record build and run-time costs. Prefer a cheaper equivalent
 implementation when measurements support it; preserve the semantic contract at any cost.
 
+The accepted `specs-arithmetics` measurements below are the baseline for a new
+measurement. The completion record in [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md)
+holds their anchors, full comparisons, and method detail.
+
+| Measurement | Accepted value |
+|---|---|
+| Cold build | 25m29.8s, 621 jobs |
+| No-op build | 0.443s |
+| Incremental build | 6m08.3s |
+| Profile, `ForkInterface.stateRoot BeaconState` median | 264.66 ms |
+| Profile, `ForkInterface.runBlocks` median | 600.32 ms |
+| Epoch suite, Gloas mainnet `epoch_processing` | 125.08s |
+
+The builds follow one recipe: warm-up, cold, no-op, incremental, restore. The cold build
+is `lake clean && lake build EthCLSpecs`. The incremental build appends one line to
+`EthCLSpecs/Fulu/Time.lean` and rebuilds. Every step ran sequentially and alone on the
+machine, on 12 cores with Lake default parallelism and pytest `-n 6`. The profile rows
+are the two headline medians of `just ethcl-profile` on the Gloas mainnet
+`sanity/blocks` vector `full_random_operations_0`. The epoch suite is the Gloas mainnet
+`epoch_processing` handler, 154 cases; the table value is the second of two runs.
+
+Run-to-run variance is real, and a new measurement must allow for it: the two
+epoch-suite runs sat 6.4s (5.1%) apart, and the builds moved within 3.3% against the
+recorded anchors. Two causes stay unknown: the share of background load in that build
+spread, and the first epoch run's extra 6.4s.
+
 ## 8. Checking this document against a pin
 
 The claims in Section 3 are observations, and a re-pin can change them. Install the built
