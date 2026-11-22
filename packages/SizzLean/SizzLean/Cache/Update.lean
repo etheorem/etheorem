@@ -44,16 +44,24 @@ The elaborator inspects `t`'s type at expansion time and emits
   even reject basic-packed element indexing (a restriction that
   only matters when there's a Merkle leaf to re-encode).
 
-Anything else is a type error at the macro call site. There is no
-caching *typeclass* to be generic over: flavour-generic code takes a
-concrete `SSZ.Box H T` and relies on this macro's two-arm dispatch
+Anything else is the *plain-value mode*: the base is an ordinary
+SSZ struct (no box, no cache), and the macro emits the view-side
+update rooted at the base itself, so `sszUpdate t with f := v`
+*is* the record update `{ t with f := v }` and an element clause
+`fs[i]! := v` *is* `{ t with fs := t.fs.set! i v }` (see the
+emission-shape section below). This fourth arm is temporary
+scaffolding for moving a spec codebase from boxed to plain
+states one fork at a time; it never reaches `main`.
+
+There is no caching *typeclass* to be generic over: flavour-generic code takes a
+concrete `SSZ.Box H T` and relies on this macro's box dispatch
 (see `Cache/Box.lean` for why a class can't drive `sszUpdate`).
 Specialise the function to a concrete cache type at the call site
 if you need `sszUpdate`-style ergonomics.
 
 ## What runs at macro-expansion time
 
-For both flavours:
+For every flavour (this is all the plain arm ever runs):
 * **Path parsing.** Each clause's LHS becomes an `Array PathStep`
   with `field`/`index` segments.
 * **View-update chain.** A `let`-chain that applies each clause's
@@ -99,6 +107,30 @@ let t₀ : UncachedSSZ H T := t
 ```
 
 That's it, no Merkle, no `Node.ofShape`, no `setManyAt`.
+
+## Emission shape (plain path)
+
+For `sszUpdate t with f := v` where `t : T` is none of the three cache types,
+the emission is the bare record update — no `let`, no wrapper:
+
+```lean
+{ t with f := v }
+```
+
+An element clause `fs[i]! := v` emits `{ t with fs := t.fs.set! i v }`, a
+nested clause `a.b := v` emits `{ t with a := { t.a with b := v } }`: exactly
+the `nestedViewUpdate` view-side code the cache flavours build, rooted at the
+base itself instead of `t.view`. Because a one-clause plain update elaborates
+to literally the hand-written record-update term, `rfl` proofs written against
+the record spelling hold unchanged — the property the boxed-to-plain switch
+relies on. Several clauses reuse the cache flavours' `let`-chain with the base
+as the root read, so every right-hand side is evaluated against the original
+`t`, matching multi-field record-update semantics.
+
+A *checked* `[i]` segment is a compile error on a plain base: it is the only
+form whose result type would differ (`Except IndexError _`), and the
+infallible `[i]!` spelling covers the plain mode (no spec body uses a checked
+index there).
 
 ## Nested paths
 
@@ -187,7 +219,7 @@ keep their O(log N) behaviour.
   value is a type error.
 * **`term_elab`, not `macro`.** The elaborator needs `t`'s static
   type to look up structure fields, extract the hasher, *and*
-  decide between the two emission paths. That requires `elabTerm`
+  decide between the four emission paths. That requires `elabTerm`
   / `inferType` on the base, which is a `TermElabM` capability.
 * **Per-cache-type emission, not typeclass dispatch.** Each cache
   type gets its specialised optimal emission, and `SSZ.Box`'s closed
@@ -380,18 +412,34 @@ macro_rules
       `(((sszGet $t $head:ident $segs:sszUpdateSegment*).push? $v).map
           fun l => sszUpdate $t with $clause)
 
-/-- Which cache flavour the macro is targeting. The elaborator
+/-- Which flavour the macro is targeting. The elaborator
 picks this from the base term's type and branches the emission. -/
 private inductive CacheKind where
   | cached    -- `TreeBacked H T` (= `CachedSSZ H T`)
   | uncached  -- `UncachedSSZ H T`
   | box       -- `SSZ.Box H T`: closed sum; expand to two-arm match
+  | plain     -- any other type: the temporary plain-value mode
   deriving Inhabited
 
+/-- Classify the base term's type for the `sszUpdate` dispatch: one of the
+three cache types (after `whnf`, so abbreviations like `CachedSSZ` count as
+their cache head), or `.plain` for anything else — the plain-value mode, where
+the emission is the view-side update rooted at the base itself. -/
+private def classifyCacheKind (ty : Expr) : MetaM CacheKind := do
+  let ty ← whnf ty
+  match ty.getAppFn with
+  | .const head _ =>
+      if head == ``SizzLean.Cache.TreeBacked then return .cached
+      else if head == ``SizzLean.Cache.UncachedSSZ then return .uncached
+      else if head == ``SizzLean.Cache.SSZ.Box then return .box
+      else return .plain
+  | _ => return .plain
+
 /-- Extract the hasher `H` (as an `Expr`), `T` (as a `Name`), and
-the cache flavour from the base term's type. The two accepted
-shapes are concrete `TreeBacked H T` and concrete `UncachedSSZ H T`,
-anything else is a clean macro-time error.
+the whnf'd value-type application from the base term's type, for one
+of the three cache kinds already decided by `classifyCacheKind`. A
+cache head with missing arguments or a non-constant value type is a
+clean macro-time error.
 
 The hasher is returned as an `Expr` rather than a `Name` because
 user-facing call sites expect the inferred-`H` to be delab-rendered
@@ -408,30 +456,19 @@ concrete preset, so a per-element write resolves the field cap to a literal
 (or to the in-scope local `[Preset]` fvar) rather than a dangling telescope
 variable. -/
 private def extractConcreteCacheHT (ty : Expr) :
-    MetaM (Expr × Expr × Name × CacheKind) := do
+    MetaM (Expr × Expr × Name) := do
   let ty ← whnf ty
   match ty.getAppFn, ty.getAppArgs with
   | .const head _, args =>
-      let kind? : Option CacheKind :=
-        if head == ``SizzLean.Cache.TreeBacked then some .cached
-        else if head == ``SizzLean.Cache.UncachedSSZ then some .uncached
-        else if head == ``SizzLean.Cache.SSZ.Box then some .box
-        else none
-      match kind? with
-      | some kind =>
-          match args.toList with
-          | hArg :: tArg :: _ =>
-            let tArgW ← whnf tArg
-            match tArgW.getAppFn with
-            | .const tName _ => return (hArg, tArgW, tName, kind)
-            | _ =>
-                throwError "sszUpdate: value type in {head} is not a constant"
+      match args.toList with
+      | hArg :: tArg :: _ =>
+          let tArgW ← whnf tArg
+          match tArgW.getAppFn with
+          | .const tName _ => return (hArg, tArgW, tName)
           | _ =>
-              throwError "sszUpdate: {head} is missing required type arguments"
-      | none =>
-          throwError
-            "sszUpdate: base must be one of `TreeBacked H T`, `UncachedSSZ H T`, \
-             or `SSZ.Box H T`; got {ty}."
+              throwError "sszUpdate: value type in {head} is not a constant"
+      | _ =>
+          throwError "sszUpdate: {head} is missing required type arguments"
   | _, _ =>
       throwError
         "sszUpdate: base type is not a constant application (got {ty}). The macro requires a concrete \
@@ -794,11 +831,11 @@ private def parseClause (clauseStx : Syntax) :
   let valStx : TSyntax `term := ⟨clauseStx[3]⟩
   (path, valStx)
 
-/-- Build the view-update let-chain shared by both cache flavours.
-For `n` clauses, emits:
+/-- Build the view-update let-chain shared by all four flavours. For `n`
+clauses, emits:
 
 ```lean
-let v_0 := t₀.view
+let v_0 := <rootRead>
 let v_1 := <nested-with on v_0 for clause 0>
 …
 let v_n := <nested-with on v_{n-1} for clause n-1>
@@ -806,10 +843,13 @@ v_n
 ```
 
 Each clause's update reads the *previous* view binding so
-shared-prefix clauses compose correctly. `t₀.view` is field-access
-on the concrete cache type, works for `TreeBacked` and
-`UncachedSSZ` alike (both have a `view` field). -/
+shared-prefix clauses compose correctly. `rootRead` is how the chain
+reads the base: `t₀.view` for the cache flavours (field access on the
+concrete cache type, which works for `TreeBacked` and `UncachedSSZ`
+alike, both having a `view` field), and the base `t₀` itself for the
+plain arm. -/
 private def buildViewLetChain
+    (rootRead : TSyntax `term)
     (clausePaths : Array (Array PathStep))
     (clauseValues : Array (TSyntax `term)) :
     TermElabM (TSyntax `term) := do
@@ -823,7 +863,7 @@ private def buildViewLetChain
     let vCur  := mkVName (i + 1)
     let updateRHS ← nestedViewUpdate vPrev path valStx
     body ← `(let $vCur:ident := $updateRHS; $body)
-  `(let $(mkVName 0):ident := t₀.view; $body)
+  `(let $(mkVName 0):ident := $rootRead; $body)
 
 /-- A path step that is a *checked* index `[i]` (vs a field `.f` or an
 infallible `[i]!`, both of which never reject). This is what decides whether
@@ -914,7 +954,7 @@ private def buildSszUpdateUncached
     let (path, valStx) := parseClause clauseStx
     clausePaths := clausePaths.push path
     clauseValues := clauseValues.push valStx
-  let viewLetChain ← buildViewLetChain clausePaths clauseValues
+  let viewLetChain ← buildViewLetChain (← `(t₀.view)) clausePaths clauseValues
   if clausePaths.any (·.any isCheckedIdxStep) then
     -- Checked-index form: reject (in program order) when a `[i]` index is out
     -- of range, matching the pyspec's `IndexError`. `t₀.view` is read by both
@@ -957,7 +997,7 @@ private def buildSszUpdateCachedProgressive
     (([] : List Bool),
       ((fun ($viewIdent:ident : $tyStx) => $closureBody)
         : _root_.SizzLean.Cache.PendingWrite $tyStx))])
-  let viewLetChain ← buildViewLetChain clausePaths clauseValues
+  let viewLetChain ← buildViewLetChain (← `(t₀.view)) clausePaths clauseValues
   if clausePaths.any (·.any isCheckedIdxStep) then
     let guard ← buildIndexGuardExcept clausePaths
     `(
@@ -1030,7 +1070,7 @@ private def buildSszUpdateCached
         ((fun ($viewIdent:ident : $tIdent) => $closureBody)
          : _root_.SizzLean.Cache.PendingWrite $tIdent)))
     updatePairs := updatePairs.push pairStx
-  let viewLetChain ← buildViewLetChain clausePaths clauseValues
+  let viewLetChain ← buildViewLetChain (← `(t₀.view)) clausePaths clauseValues
   let updatesListStx ← `([$updatePairs,*])
   -- Cached emission: accumulate into the pending overlay rather than
   -- walking the spine here. Cross-statement batching falls out
@@ -1056,6 +1096,53 @@ private def buildSszUpdateCached
           $updatesListStx
           $viewLetChain) :
         _root_.SizzLean.Cache.TreeBacked $hashStx $tIdent))
+
+/-- Plain-value emission path (the temporary fourth arm; it exists for the
+boxed-to-plain transition of a spec codebase and never reaches `main`). The
+base term's type is none of the three cache types, so there is no box to keep
+warm and no Merkle spine to address: the emission is the view-side update
+alone, rooted at the base itself, and the result is a plain value of the same
+type.
+
+* A **single clause** emits the bare record update `nestedViewUpdate` builds,
+  with no `let`: `sszUpdate t with f := v` elaborates to exactly
+  `{ t with f := v }` (and an element clause `fs[i]! := v` to
+  `{ t with fs := t.fs.set! i v }`) — the same term a hand-written record
+  update produces, so `rfl` / `decide` proofs written against the record
+  spelling hold unchanged across the switch.
+* **Several clauses** reuse the cache flavours' `let`-chain
+  (`buildViewLetChain`) with the base itself as the root read (`t₀`, not
+  `t₀.view`), so shared-prefix clauses compose exactly as on a box and every
+  right-hand side is evaluated against the original base, matching
+  multi-field record-update semantics.
+
+A *checked* `[i]` segment is a compile error: it is the only form whose
+result type would differ (`Except IndexError _`), no spec body uses one on a
+plain base, and the infallible `[i]!` spelling (an out-of-range write is a
+no-op) covers the plain mode. Progressive containers need no special case
+here: with no `Node.ofShape` emission there is no gindex geometry to get
+wrong. -/
+private def buildSszUpdatePlain
+    (baseStx : TSyntax `term) (clauses : Array Syntax) :
+    TermElabM (TSyntax `term) := do
+  if clausesHaveCheckedIndex clauses then
+    throwError
+      "sszUpdate: a checked `[i]` index segment is not supported on a plain \
+       (non-boxed) base; use the infallible `[i]!` form, whose out-of-range \
+       write is a no-op"
+  let mut clausePaths : Array (Array PathStep) := #[]
+  let mut clauseValues : Array (TSyntax `term) := #[]
+  for clauseStx in clauses do
+    let (path, valStx) := parseClause clauseStx
+    clausePaths := clausePaths.push path
+    clauseValues := clauseValues.push valStx
+  if clausePaths.size == 1 then
+    -- Bare record update, no `let`: the emitted term is literally the
+    -- hand-written projection update, keeping one-clause `rfl` proofs stable.
+    nestedViewUpdate baseStx clausePaths[0]! clauseValues[0]!
+  else
+    let viewLetChain ← buildViewLetChain (← `(t₀)) clausePaths clauseValues
+    `(let t₀ := $baseStx; $viewLetChain)
 
 /-- Box emission path. The base term has type `SSZ.Box H T`, the
 closed sum over the two cache flavours. The macro builds each arm
@@ -1113,21 +1200,31 @@ private def elabSszUpdate : TermElab := fun stx expectedType? => do
     throwError "sszUpdate: at least one clause required"
   let base ← elabTerm baseStx none
   let baseType ← inferType base
-  let (hExpr, tType, T, kind) ← extractConcreteCacheHT baseType
-  let hashStx : TSyntax `term ← PrettyPrinter.delab hExpr
-  let tIdent : Ident := mkIdent (`_root_ ++ T)
   -- Early dispatch. Each branch emits in a different shape; the
-  -- uncached and box branches never touch `walkPath` or any Merkle
-  -- machinery on the uncached arm, so unfolding `sszUpdate` in a
-  -- proof about an `UncachedSSZ` (or `SSZ.Box`-on-uncached) value
-  -- drags in nothing extra.
-  match kind with
-  | .uncached => do
+  -- plain branch emits view-side code only, and the uncached and box
+  -- branches never touch `walkPath` or any Merkle machinery on the
+  -- uncached arm, so unfolding `sszUpdate` in a proof about a plain,
+  -- `UncachedSSZ` (or `SSZ.Box`-on-uncached) value drags in nothing extra.
+  match ← classifyCacheKind baseType with
+  | .plain =>
+      let stx ← buildSszUpdatePlain baseStx clauses
+      elabTerm stx expectedType?
+  | .uncached =>
+      let (hExpr, _tType, T) ← extractConcreteCacheHT baseType
+      let hashStx : TSyntax `term ← PrettyPrinter.delab hExpr
+      let tIdent : Ident := mkIdent (`_root_ ++ T)
       let stx ← buildSszUpdateUncached baseStx hashStx tIdent clauses
       elabTerm stx expectedType?
-  | .cached   => do
+  | .cached =>
+      let (hExpr, tType, T) ← extractConcreteCacheHT baseType
+      let hashStx : TSyntax `term ← PrettyPrinter.delab hExpr
+      let tIdent : Ident := mkIdent (`_root_ ++ T)
       let stx ← buildSszUpdateCached baseStx hashStx tIdent tType clauses
       elabTerm stx expectedType?
-  | .box      => elabSszUpdateBox baseStx hashStx tIdent tType clauses expectedType?
+  | .box =>
+      let (hExpr, tType, T) ← extractConcreteCacheHT baseType
+      let hashStx : TSyntax `term ← PrettyPrinter.delab hExpr
+      let tIdent : Ident := mkIdent (`_root_ ++ T)
+      elabSszUpdateBox baseStx hashStx tIdent tType clauses expectedType?
 
 end SizzLean.Cache
