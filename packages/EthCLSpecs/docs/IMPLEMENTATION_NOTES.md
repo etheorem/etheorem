@@ -1709,7 +1709,8 @@ describe deferred work.
 
 This record closes the spec arithmetic transition, Stages 0 through 10. It holds the
 final scope, the chosen implementation, the final costs, the verification record, and
-the open optimization work. The contract is `SPEC_ARITHMETIC.md`. The deferred linter
+the open optimization work. The Stage 9 documentation audit record above stays intact
+and holds the documentation audit. The contract is `SPEC_ARITHMETIC.md`. The deferred linter
 proposal is in `SPEC_ARITHMETIC_LINTING.md`; it is future work, and no arithmetic linter
 is active. The record needs no local working file: every number below is copied here
 with its command, tree, and method.
@@ -1913,8 +1914,12 @@ because they need values near `2^64` or an unusual configuration.
 
 ### Final costs
 
-Builds ran alone and in sequence. The target is `lake build EthCLSpecs`, except for
-the Stage 0.2 no-op: `lake build EthCLSpecs EthCLLib SizzLean`, 609 jobs. "Cold" is
+Builds ran alone and in sequence. The Stage 10.2 run started at
+2026-11-21T13:30:48Z, ended at 14:43:17Z, and ran at load 1.3 to 2.2. It fetched six
+vendored natives before the measurements: isa-l_crypto v2.26.1, blst v0.3.16,
+c-kzg v2.1.7, keccak-tiny `64b6647`, libsecp256k1 v0.8.0, and mcl v4.10. Fetching them
+is part of no measurement. The target is `lake build EthCLSpecs`, except for the
+Stage 0.2 no-op: `lake build EthCLSpecs EthCLLib SizzLean`, 609 jobs. "Cold" is
 `lake clean && lake build EthCLSpecs` after a warm-up build. "Incremental" appends a
 newline to `EthCLSpecs/Fulu/Time.lean` and rebuilds; Stage 4.3 touched `Fulu/Balances.lean`
 instead. The spike row is historical: it measured a partial port.
@@ -1930,8 +1935,13 @@ instead. The spike row is historical: it measured a partial port.
 | Stage 10.2, `fed8705d` | 25m29.8s | 621 | 0.443s | 6m08.3s |
 
 At 8.5 and 10.2 the warm-up took 25m02.2s and 25m51.9s. Restoring the incremental edit
-took 6m02.4s and 6m07.1s. The final cold build is 3.71 times the baseline. The final
-incremental build is 2.07 times the baseline. The no-op build did not change.
+took 6m02.4s and 6m07.1s. Against Stage 8.5, the Stage 10.2 warm-up grew 49.7s (+3.3%),
+the cold build 25.9s (+1.7%), the incremental build 8.4s (+2.3%), and the restore
+4.7s (+1.3%); the no-op fell 0.157s. The job count stayed at 621, so the build graph did
+not grow. The Stage 10.2 cold build sits between the Stage 7.4 and Stage 8.5 anchors, so
+the accepted tree is at cold-build parity within a few percent. The final cold build is
+3.71 times the baseline. The final incremental build is 2.07 times the baseline. The
+no-op build did not change.
 
 | Profile, `just ethcl-profile` | `ForkInterface.stateRoot BeaconState` | `ForkInterface.runBlocks` |
 |---|---|---|
@@ -1945,11 +1955,12 @@ labelled the Stage 0.2 and 4.3 means as medians. The spike summary calls its val
 medians, but no retained TSV verifies that statistic.
 
 The profile case is the Gloas mainnet `sanity/blocks` vector `full_random_operations_0`:
-a 3171397-byte state, 256 validators, one block.
+a 3171397-byte state, 256 validators, one block. The recipe wall was 3m45.6s.
 
 The epoch suite is the Gloas mainnet `epoch_processing` handler, 154 cases:
 `pytest -q --preset=mainnet --subset=0 --fork=gloas -k epoch_processing` in
-`PySpecTests`, runners built first.
+`PySpecTests`, runners built first. The suite collected 154 cases and deselected 1070,
+the other Gloas handlers.
 
 | Epoch suite | Wall |
 |---|---|
@@ -2008,21 +2019,24 @@ Task 10.1 (WS-117) ran the final checks on `7dbe320`. That tree carries the
 alone on the machine, from 2026-11-21T11:39:41Z to 13:23:15Z. The starting one-minute
 load was 5.88, the tail of the stopped earlier attempts. It fell to about 2 during the
 build and 1.1 to 2.6 during the sweeps. Every package `.lake/build` was deleted first,
-so `just ethcl-test` was a cold build. No source changed.
+so `just ethcl-test` was a cold build. The run also pinned the vendored natives
+isa-l_crypto v2.26.1, blst v0.3.16, and c-kzg v2.1.7. No source changed.
 
-| Command | Result | Stage 8.5 anchor |
-|---|---|---|
-| `lake build` | "Nothing to build."; the umbrella declares no library, so this is no build evidence | same |
-| `just ethcl-test` | 677 jobs, no warnings | 674 |
-| `just build-cli` | 628 jobs; `pyspec_server` and `ssz_generic_runner` rebuilt | 628 |
-| `just lint` | clean | clean |
-| `just check-citations` | 194 citations in 9 files, all resolve | 196 |
-| `just check-constants` | 166 constants; 2 untabled (`g2PointAtInfinity`, `maxRandomValue`), 3 tier-only advisories | 167, same advisories |
-| `just proof-coverage-update` | baselines and README blocks byte-identical | same |
-| `just proof-coverage-check` | 87 claims | 87 |
-| `just proof-coverage` axiom report | `propext` 173, `Classical.choice` 150, `Quot.sound` 167, `Lean.ofReduceBool` 0, `Lean.trustCompiler` 0, SHA-256 equivalence axioms 0, `bv_decide` certificates 3 | same four headline counts |
-| `just ethcl-pyspec-smoke` | Fulu 155 passed / 46 skipped, Gloas 207 / 52, Heze 209 / 52 | same |
-| `git grep "TEMPORARY CROSSING" -- '*.lean'` | empty | empty |
+| Command | Result | Wall | Stage 8.5 anchor |
+|---|---|---|---|
+| `lake build` | "Nothing to build."; the umbrella declares no library, so this is no build evidence | 0.5s | same |
+| `just ethcl-test` | 677 jobs, no warnings | 1543.7s (cold) | 674 |
+| `just build-cli` | 628 jobs; `pyspec_server` and `ssz_generic_runner` rebuilt | 4.9s | 628 |
+| `just lint` | clean | 0.1s | clean |
+| `just check-citations` | 194 citations in 9 files, all resolve | 0.1s | 196 |
+| `just check-constants` | 166 constants; 2 untabled (`g2PointAtInfinity`, `maxRandomValue`), 3 tier-only advisories | 0.1s | 167, same advisories |
+| `just proof-coverage-update` | baselines and README blocks byte-identical | 29.5s | same |
+| `just proof-coverage-check` | 87 claims | 28.4s | 87 |
+| `just proof-coverage` axiom report | `propext` 173, `Classical.choice` 150, `Quot.sound` 167, `Lean.ofReduceBool` 0, `Lean.trustCompiler` 0, SHA-256 equivalence axioms 0, `bv_decide` certificates 3 | ran after the sweeps | same four headline counts |
+| `just ethcl-pyspec-smoke` | Fulu 155 passed / 46 skipped, Gloas 207 / 52, Heze 209 / 52 | 58.7s | same |
+| `git grep "TEMPORARY CROSSING" -- '*.lean'` | empty | 0.0s | empty |
+
+The walls in this section are task walls; Stage 10.2 owns the cost measurements.
 
 Each difference from Stage 8.5 has a known cause:
 
@@ -2042,18 +2056,19 @@ python -m pytest -vv -rA --tb=no --subset=0 -n 6 --preset=<preset> --fork=<fork>
 It ran `minimal` then `mainnet`, with `fulu`, `gloas`, and `heze` in that order for each
 preset. The runners were built first. Nothing built during the matrix.
 
-| Preset and fork | Passed / skipped | Case ids | Compared with |
-|---|---|---:|---|
-| minimal Fulu | 5318 / 2829 | 8147 | 9.5d per-case log: identical; 23 skip groups identical |
-| minimal Gloas | 6760 / 3198 | 9958 | 9.5d: identical; 26 groups identical |
-| minimal Heze | 6972 / 3198 | 10170 | 9.5d: identical; 26 groups identical |
-| mainnet Fulu | 859 / 115 | 974 | 8.5 per-case log: identical; 23 groups identical |
-| mainnet Gloas | 1094 / 130 | 1224 | 8.5: identical; 26 groups identical |
-| mainnet Heze | 1073 / 130 | 1203 | 8.5: identical; 26 groups identical |
+| Preset and fork | Passed / skipped | Wall | Case ids | Compared with |
+|---|---|---:|---|---|
+| minimal Fulu | 5318 / 2829 | 23.4s | 8147 | 9.5d per-case log: identical; 23 skip groups identical |
+| minimal Gloas | 6760 / 3198 | 88.3s | 9958 | 9.5d: identical; 26 groups identical |
+| minimal Heze | 6972 / 3198 | 88.5s | 10170 | 9.5d: identical; 26 groups identical |
+| mainnet Fulu | 859 / 115 | 155.7s | 974 | 8.5 per-case log: identical; 23 groups identical |
+| mainnet Gloas | 1094 / 130 | 2160.7s | 1224 | 8.5: identical; 26 groups identical |
+| mainnet Heze | 1073 / 130 | 2029.5s | 1203 | 8.5: identical; 26 groups identical |
 
 "Identical" compares the sorted sets of (outcome, case id) pairs. No case failed,
 errored, xfailed, or xpassed. Every skip is an `ssz_static` type the fork does not model,
-the same groups at both presets.
+the same groups at both presets. The mainnet walls moved against the Stage 8.5 runs:
+Fulu 154.3s to 155.7s, Gloas 2073.1s to 2160.7s, Heze 1979.9s to 2029.5s.
 
 The minimal chain starts with Stage 0's per-case logs: passed case ids, and skips grouped
 by reason with counts. Stages 4.3, 5.4, 6.4, and 7.4 each matched those lines against the
