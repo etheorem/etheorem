@@ -84,7 +84,7 @@ macro_rules
 
 /-- `assertH cond` is `assert` that **returns the proof** of its condition. It throws the
 section's `assert` reject when `cond` is false, exactly as `assert`; when `cond` holds it binds
-the witness, lifted through `PLift` so a proof can ride in the `Type`-valued monad. Bind it
+the witness, lifted through `PLift` so a proof can inhabit the `Type`-valued monad. Bind it
 (`let h ← assertH cond`) when a later step needs `cond` as a hypothesis: a spec-validated index
 becomes a proof-carrying read `xs[i]'h.down`, whose bound *is* the asserted `i < xs.size`. The
 monad reaches the continuation only when the check passed, so `h.down` is a sound witness and

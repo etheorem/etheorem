@@ -1,4 +1,6 @@
 import EthCLLib.Proofs.Arith
+import EthCLLib.Proofs.CLInt
+import EthCLLib.Proofs.CLUint
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
@@ -21,20 +23,25 @@ counts none of these modules; it audits their axioms through this same root.
 
 Re-exports:
 
-* `EthCLLib.Proofs.Arith`: what `saturatingSub` computes (`saturatingSub_toNat`,
-  `saturatingSub_le`).
+* `EthCLLib.Proofs.Arith`: what the raw-word `saturatingSub` of `Spec/Arith.lean`
+  computes (`saturatingSub_toNat`, `saturatingSub_le`), and what `arrayUnion`
+  computes. The laws of the checked `CLUint64.saturatingSub` sit in
+  `EthCLLib.Proofs.CLUint`.
 * `EthCLLib.Proofs.LawfulFcMap`: same-key insertion for `FcMap`
   (`LawfulFcMap`, `FcMap.lookup_insert_self`,
   `FcMap.contains_insert_self`), with `instLawfulFcMapTreeMap` and
   `instLawfulFcMapHashMap`.
 * `EthCLLib.Proofs.MerkleBranch`: what `isValidMerkleBranch` accepts.
+* `EthCLLib.Proofs.CLUint` / `EthCLLib.Proofs.CLInt`: the checked-arithmetic
+  law library, the `simp_arith` chain set, the checked-fold law, and the
+  conversion round-trips (`SPEC_ARITHMETIC.md` §4.9).
 * `EthCLLib.Proofs.Run`: the `StateT`-over-`Except` run facts every pure runner
   shares (`run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
   `except_bind_error`, the `ofExcept` and `liftErr` run equations), plus the pure
   box helpers `pureState` and `runPure` and their lemmas.
 * `EthCLLib.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine runner
   every fork's fork-choice proofs pin at that fork's `Store`, and the
-  store-specific `throwArithmetic_run` equation.
+  store-specific `throwArithmetic_run` / `throwZeroDivision_run` equations.
 * `EthCLLib.Proofs.KeepsUncached`: the box-flavour predicates (`KeepsUncached`,
   `KeepsUncachedFrom`, `ReturnsUncached`, `RunPassesP`), their closure and loop
   lemmas, the indexed-read run equations, and the conditional bind law

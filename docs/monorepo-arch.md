@@ -362,7 +362,8 @@ see `just --list` for the full set.
 Repo-wide design docs live in the root `docs/` (this file).
 Per-subpackage design docs live under `packages/<Pkg>/docs/`
 (`SizzLean` carries ARCHITECTURE / PLAN / OPTIMISATION /
-research; `EthCLSpecs` carries IMPLEMENTATION_NOTES / PLAN).
+research; `EthCLSpecs` carries SPEC_ARITHMETIC / IMPLEMENTATION_NOTES /
+DISCREPANCIES / FUTURE_WORK / PLAN).
 The hazmat group keeps the crypto family's cross-family design
 under `packages/hazmat/docs/` (ARCHITECTURE / PLAN), one level
 above the packages it describes. When the other subpackages grow

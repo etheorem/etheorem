@@ -37,15 +37,17 @@ it.
 ### 1.1 The surface per fork
 
 Each fork delivers the six deliverables of the contract's
-what-a-fork-spec-is section, drawn from the upstream specification. The surface
-that is in scope:
+what-a-fork-spec-is section, drawn from the upstream specification. The lifecycle
+functions carry two exceptions. Genesis construction stays an unmodeled design in
+every fork (§6.1). Fulu declares no upgrade, because `upgrade_to_fulu` takes an
+Electra state (§6.2). The surface that is in scope:
 
 | In scope | Out of scope |
 |---|---|
 | `beacon-chain` (containers, helpers, state transition, epoch processing, operations) | the validator guide's honest-behavior duties |
 | `fork-choice` (the `Store` and its `on_*` handlers) | the p2p networking layer |
-| the `fork` upgrade and `genesis` construction | |
-| Fulu's PeerDAS additions (EIP-7594) | |
+| the `fork` upgrade (Fulu to Gloas, Gloas to Heze) | `genesis` construction (an unmodeled design, §6.1) |
+| Fulu's PeerDAS additions (EIP-7594) | the Electra-to-Fulu `fork` upgrade (§6.2) |
 | Gloas's ePBS additions (EIP-7732) | |
 | Heze's FOCIL additions (EIP-7805) | |
 
@@ -197,14 +199,14 @@ intra-fork import chain. The fork's library root cannot hold it, being a
 re-export aggregator that elaborates last. Every other module of the fork imports
 intra-fork only, so `Fork.lean` is the fork's one physical edge to its parent.
 
-The table below is the full Fulu fork in load order. Gloas is the same skeleton
-through the fork diff, minus the PeerDAS-specific files where ePBS supersedes
-them, plus the ePBS files.
+The table below describes the Fulu module design in load order. The `Genesis` row
+reserves an unmodeled design (§6.1). Gloas uses the same skeleton through the fork
+diff, with the ePBS files replacing the PeerDAS-specific files.
 
 | # | File | Layer | Contains |
 |---|------|-------|----------|
 | 0 | `Fork` | foundations | The `fork … from …` lineage edge, plus a child's feeder import of its parent |
-| 1 | `Types` | foundations | Consensus type aliases (`Slot`, `Epoch`, `ValidatorIndex`, `Gwei`, `Root`, `BLSPubkey`, `ParticipationFlags`) over SizzLean basic types and crypto-backend types |
+| 1 | `Types` | foundations | Consensus type aliases: the unit types (`Slot`, `Epoch`, `ValidatorIndex`, `Gwei`, `ParticipationFlags`) over the checked `CLUint64` / `CLUint8`, and the byte types (`Root`, `BLSPubkey`) over SizzLean basic types and crypto-backend types |
 | 2 | `Constants` | foundations | This fork's `Preset` / `Config` classes and value sets (declared as a diff over the lineage), its own `Const` entries, and the `inherit Const.*` block replaying the parent's |
 | 3 | `Containers/Fork` | containers | `Fork`, `ForkData` |
 | 4 | `Containers/Checkpoint` | containers | `Checkpoint` |
@@ -237,7 +239,7 @@ them, plus the ePBS files.
 | 31 | `EpochProcessing` | operations | `processEpoch` plus the generated-`fulu` substep set in order: `processJustificationAndFinalization`, `processInactivityUpdates`, `processRewardsAndPenalties`, `processRegistryUpdates`, `processSlashings`, `processEth1DataReset`, `processPendingDeposits`, `processPendingConsolidations` (Electra), `processEffectiveBalanceUpdates`, `processSlashingsReset`, `processRandaoMixesReset`, `processHistoricalSummariesUpdate`, `processParticipationFlagUpdates`, `processSyncCommitteeUpdates`, `processProposerLookahead` (Fulu) |
 | 32 | `Operations` | operations | `processBlockHeader`, `processWithdrawals`, `processExecutionPayload`, `processRandao`, `processEth1Data`, `processOperations` plus every operation handler, `processSyncAggregate` (`fastAggregateVerify`) |
 | 33 | `DataAvailability` | operations | (Fulu) `isDataAvailable`, KZG cell-verify glue |
-| 34 | `Genesis` | operations | `initializeBeaconStateFromEth1`, `isValidGenesisState` |
+| 34 | `Genesis` (reserved) | operations | Unmodeled design: `initializeBeaconStateFromEth1`, `isValidGenesisState` (§6.1) |
 | 35 | `Transition` | operations | `stateTransition`, `processSlots` (per slot calls `processSlot`, and `processEpoch` at epoch boundaries), `processSlot` (caches the state root into `stateRoots`), `processBlock` |
 | 36 | `ForkChoice/Store` | fork choice | `Store` structure plus `LatestMessage` / `FcNode` records, `getCurrentSlot`, `getAncestor`, store accessors |
 | 37 | `ForkChoice/Weight` | fork choice | `getWeight`, `getVotingSource`, `filterNodeTree` |
@@ -600,62 +602,70 @@ lets the Lean read naturally.
 
 ## 6. Genesis construction and fork upgrade
 
-Two state-lifecycle functions sit outside the per-slot transition. They are
-per-fork `forkdef`s and they are the `genesis` and `fork` entry points of the fork
-interface.
+The lifecycle design covers genesis construction and fork upgrade outside the
+per-slot transition. The fork interface exposes `runGenesis` and `runUpgrade`.
+The upgrades are implemented; genesis construction remains unmodeled.
 
 ### 6.1 Genesis
 
-`initializeBeaconStateFromEth1` is a `StateTransition Unit`, not a state-builder. It
-runs over a default initial state already threaded through the monad: it sets the
-genesis fields, then runs the same monadic `processDeposit` that block processing
-uses, over each genesis deposit.
+Genesis construction is an **unmodeled design**. The proposed
+`initializeBeaconStateFromEth1 : … → StateTransition Unit` would run over a default
+initial state. It would follow the pinned `initialize_beacon_state_from_eth1`
+(`phase0/beacon-chain.md:1754-1789`), which updates `eth1_data.deposit_root` before
+calling the pinned `process_deposit` for each deposit.
 
-```lean
-forkdef initializeBeaconStateFromEth1
-    (eth1BlockHash : Hash32) (eth1Timestamp : UInt64)
-    (deposits : List Deposit) : StateTransition Unit := do
-  modifyState fun state => -- set genesisTime, fork, eth1Data, latest header, ...
-    ...
-  for d in deposits do
-    processDeposit d            -- the same monadic step block processing runs
-  -- effective-balance and activation finalization follow
-```
+That path checks the Merkle branch and calls `apply_deposit`
+(`electra/beacon-chain.md:1806-1827`). For a new pubkey, `apply_deposit` checks the
+signature and adds a validator with zero balance. It queues the amount as a
+`PendingDeposit`; an invalid new-pubkey signature returns before the append
+(`electra/beacon-chain.md:1754-1780`). Repeated pubkeys retain the existing validator.
 
-The runner is the sole anchor. It boxes `default : BeaconState` with the config's
-flavour, `FastBox` for the runner and `UncachedBox Sha256Spec` for proofs, and runs
-genesis over that boxed state. So genesis never touches a box and the box type is never passed to
-it. The flavour choice lives at the one anchor where the state is first built, the
-arrangement the contract's `State`-from-the-author's-view section describes.
-
-`isValidGenesisState` is a pure `State → Bool` predicate. The harness calls it
-standalone, not inside a transition, so it stays pure under the state-reading rule
-of Section 5: it does not read the threaded state, it inspects a state it is handed,
-which reads cleanly as a pure predicate.
-
-Both are per-fork. Gloas overrides `initializeBeaconStateFromEth1` to initialize the
-ePBS fields, and the `genesis` vector format exercises them.
+The fork bodies omit `processDeposit` and `applyDeposit`; Fulu block processing
+asserts that `body.deposits` is empty. No fork declares
+`initializeBeaconStateFromEth1` or `isValidGenesisState`. All three `runGenesis`
+implementations return `.spec (.outOfScope …)`. The pin ships no genesis vectors
+for these forks (§10.1).
 
 ### 6.2 Fork upgrade
 
-`upgradeToGloas : Fulu.State → Except StateTransitionError Gloas.State` reads a
-finished Fulu state and constructs the Gloas one. It can reject, since
-`initialize_ptc_window` runs `compute_ptc`.
+Each child fork declares one upgrade. The upgrade reads a finished parent state and
+constructs the child state.
 
 ```lean
-def upgradeToGloas (pre : Fulu.State) : Except StateTransitionError Gloas.State :=
-  -- reads Fulu fields by sszGet, writes the Gloas BeaconState,
-  -- carrying common fields across and initializing the ePBS ones
+def upgradeToGloas [Preset] [HasherTag] (gloasForkVersion : Version)
+    (pre : Fulu.BeaconState) : Gloas.BeaconState :=
+  -- copies the common fields by projection and initializes the ePBS fields
+  ...
+
+def upgradeToHeze [Preset] (hezeForkVersion : Version) (pre : Gloas.BeaconState) :
+    Except StateTransitionError Heze.BeaconState := do
+  -- asserts the EIP-8015 deposit condition, then copies the carried fields
   ...
 ```
 
-It is one of two sanctioned cross-fork references. It names both forks' `State`
-types, so it lives in Gloas, imports the Fulu module it needs, and reads Fulu
-fields by `sszGet`. The other is `Interface.lean`, the pyspec runner, which drives
-the parent spine for the pre-fork blocks of a mixed `fork_transition` vector.
-These two files are the only ones in a child fork that write a qualified parent
-name; every other file names its own namespace and the framework. The count is
-enforced by grep:
+Both take a plain `BeaconState` and read its fields by projection. The runner passes
+the fork version, which is a config value.
+
+`upgradeToGloas` (`Gloas/Upgrade.lean`) is total. The pinned `upgrade_to_gloas` ends
+with two steps that read and write the Gloas state: `initialize_ptc_window` and
+`onboard_builders_from_pending_deposits`. The step
+`completeUpgradeToGloas : StateTransition Unit` (`Gloas/Operations.lean`) runs both on
+the state that `upgradeToGloas` built. This step can reject, since
+`initialize_ptc_window` runs `compute_ptc`.
+
+`upgradeToHeze` (`Heze/Upgrade.lean`) returns `Except StateTransitionError`. The pinned
+`upgrade_to_heze` opens with
+`assert pre.eth1_deposit_index == pre.deposit_requests_start_index` (EIP-8015), and a
+failed assert is the `.assert` reject. Heze needs no closing step.
+
+`Upgrade.lean` is one of a child fork's two allowed cross-fork references. It names the
+`BeaconState` types of both forks, so it lives in the child fork. The other is
+`Interface.lean`, the pyspec runner, which drives the parent spine for the pre-fork
+blocks of a mixed `fork_transition` vector. `Fork.lean` declares the lineage and holds
+the fork's one import of its parent. Every other file imports its own fork and the
+framework. One file outside this set writes a qualified parent name in code:
+`Gloas/Transition.lean` compares against `Fulu.zeroRoot`. Two greps check the `open`
+and `import` edges, and each prints no line:
 
 ```bash
 grep -rn "open EthCLSpecs.Fulu"   packages/EthCLSpecs/EthCLSpecs/{Gloas,Heze}
@@ -674,11 +684,12 @@ both forks import for common helpers, which the inheritance mechanism removes th
 need for; the upgrade is the opposite, a deliberate single edge from the child to
 the parent, named once, for the one operation that genuinely spans two forks.
 
-Only `upgradeToGloas` is implemented. `upgradeToFulu` would require an Electra
-state, and Electra is not built, so only the Fulu-to-Gloas `fork` and `transition`
-vectors run; Electra-to-Fulu upgrade vectors are out of scope. This is the runtime
-counterpart to the static fork diff of Section 2. Section 2 says what changes
-between forks; the upgrade performs the change on a live state.
+Fulu declares no upgrade. `upgrade_to_fulu` takes an Electra state, and the library
+does not build Electra. Fulu's `runUpgrade` and `runTransition` return `outOfScope`,
+and the harness does not collect the Fulu `fork` and `transition` vectors. The
+Fulu-to-Gloas and Gloas-to-Heze `fork` and `transition` vectors run (§10.1). This is
+the runtime counterpart to the static fork diff of Section 2. Section 2 says what
+changes between forks; the upgrade performs the change on a live state.
 
 ---
 
@@ -800,20 +811,24 @@ validators root through `computeDomain` directly, bypassing `getDomain`, because
 deposit signature is made before the depositor knows the chain it will join.
 
 ```lean
-forkdef processDeposit (deposit : Deposit) : StateTransition Unit := do
-  -- ... merkle-branch check against eth1Data.depositRoot ...
-  let domain := computeDomain Const.domainDeposit
-                  (some Const.genesisForkVersion) (zeroBytes 32)  -- fixed, zero gvr
-  let signingRoot := computeSigningRoot deposit.data.message domain
-  if blsVerify deposit.data.pubkey signingRoot deposit.data.signature then
-    -- add or top up the validator
-    ...
-  -- else: skip this deposit; a bad deposit signature does not reject the block
+forkdef isValidDepositSignature (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwei)
+    (signature : BLSSignature) : Bool :=
+  let domain := computeDomain Const.domainDeposit Const.genesisForkVersion
+                  (Vector.replicate 32 0)              -- fixed fork version, zero genesis root
+  let signingRoot := computeSigningRoot
+    ({ pubkey, withdrawalCredentials := wc, amount } : DepositMessage) domain
+  blsVerify pubkey signingRoot signature
 ```
 
-The deposit's `verify` is a conditional, not a gate. A bad deposit signature skips
-the validator rather than rejecting the block, which is the one place crypto
-verification branches instead of asserting.
+In Fulu and Gloas, `applyPendingDeposit` tops up an existing validator. For a new
+pubkey, it adds the validator on a valid signature and skips the deposit otherwise.
+Heze adds one exception (EIP-8365). Its `applyPendingDeposit` drops a new pubkey with
+BLS (`0x00`) withdrawal credentials before the signature check, so even a valid
+signature adds no validator. Gloas also uses `isValidDepositSignature` in
+`isPendingValidator` and `applyDepositForBuilder`, and Heze inherits both paths.
+These deposit-signature checks branch instead of asserting. Gloas's
+`processBuilderDepositRequest` branches the same way on its own verifier,
+`isValidBuilderDepositSignature`.
 
 ### 8.3 `verify` as a gate, `todo` for the unreachable
 
@@ -860,6 +875,12 @@ vector width), the universal and config tiers do not. The author writes
 `Const.slotsPerEpoch` and the SCREAMING_SNAKE `SLOTS_PER_EPOCH` of the spec maps to
 that `Const.camelCase` projection.
 
+Each constant keeps the numeric kind the pinned pyspec gives it (`SPEC_ARITHMETIC.md`
+§4.2). A checked constant that only enters formulas is a `CLUint64`. A preset value
+that also sizes a type stays a structural `Nat` with a range premise, and formulas read
+its derived views: the checked `Const.slotsPerEpochC` and the proved-total divisor
+`Const.slotsPerEpochDiv`.
+
 ### 9.1 The tier system is per fork
 
 The tier system is per fork. Each fork has its own `Preset` and `Config` classes
@@ -903,7 +924,7 @@ interface and `PySpecTests`, written once and fork-agnostic, runs every format.
 | `operations/*` | a single operation handler | yes |
 | `rewards/*` | a single delta function | yes |
 | `fork_choice` | the `on_*` handlers | yes |
-| `genesis` | `initializeBeaconStateFromEth1` | yes |
+| `genesis` | `runGenesis` | no (out of scope; no vectors at the pin) |
 | `fork` | `upgradeToGloas` / `upgradeToHeze` | yes (Fulu→Gloas, Gloas→Heze) |
 | `transition` | `stateTransition` with the upgrade mid-fold | yes (Fulu→Gloas, Gloas→Heze) |
 | `ssz_static` | each container's `SSZRepr` (decode, hash-tree-root, round-trip) | yes (Fulu + Gloas + Heze) |
@@ -913,6 +934,11 @@ The `rewards/*` format is in scope and drives a single delta function in isolati
 the reward and penalty deltas of the `Rewards` concern file (row 29). `fork` and
 `transition` run the Fulu-to-Gloas and Gloas-to-Heze upgrades only, since Electra is
 not built. Both presets run; mainnet runs on demand rather than on every CI pass.
+
+The `v1.7.0-beta.4` pin ships no `genesis` vectors for Fulu, Gloas, or Heze.
+Each fork's `runGenesis` reports `.spec (.outOfScope …)`, which the driver classifies
+as `skip` (`IMPLEMENTATION_NOTES.md`, "Genesis"). Section 6.1 describes the unmodeled
+design.
 
 ### 10.2 The reject-faithfulness audit
 
@@ -931,7 +957,8 @@ and an `outOfBounds` on a valid vector is the bug-smell of the error model, surf
 a likely framework or spec bug rather than a validation. An invalid vector must be
 rejected the way its own reference wrapper expects, which `RunnerCaughtSet` records
 (`FRAMEWORK_ARCHITECTURE.md` §6). Under `expect_assertion_error` that is an `assert` or a
-caught `outOfBounds`; under the `except ValueError` wrapper it is the `.arithmetic` fault.
+caught `outOfBounds`. Under the `except ValueError` wrapper it is an `.arithmetic`, a
+`.listFull`, or a `.notInList` fault.
 A `todo` is never a faithful rejection;
 an unimplemented path is not a validation, so a `todo` on an invalid vector fails and
 points to the work. A caught `outOfBounds` counts as rejected but is
@@ -1021,10 +1048,11 @@ hasher by what the goal needs, independent of the box flavour and the monad.
 
 ### 11.3 The techniques and the candidate theorems
 
-When proofs start, the techniques are the gate-split on `assert` conditions and the
-abstract `[CryptoBackend]`, both from the deferred proof-support layer, with
-arithmetic lifted to `Nat` through the `UInt64`-to-`Nat` correspondence lemmas of the
-arithmetic layer. The candidate theorems per fork are invariant preservation and
+The techniques are the gate-split on `assert` conditions and the abstract
+`[CryptoBackend]`, both from the proof-support layer. Arithmetic goes through the
+checked-arithmetic law library of the arithmetic layer (`FRAMEWORK_ARCHITECTURE.md`
+§10): a proof reads each checked step through `toPlainNat` and reasons in `Nat` under
+that step's success condition. The candidate theorems per fork are invariant preservation and
 happy-path correctness. Each is proved per fork, since inheritance is by symbol and
 Fulu's and Gloas's steps are distinct symbols. A theorem is itself a declaration,
 though, so it can ride the inheritance replay into the child namespace: an unchanged

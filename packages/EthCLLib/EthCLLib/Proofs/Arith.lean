@@ -3,12 +3,12 @@ import EthCLLib.Spec.Arith
 /-!
 # `EthCLLib.Proofs.Arith`: what `saturatingSub` and `arrayUnion` compute
 
-`saturatingSub` is the spec's `saturating_sub` (`phase0/beacon-chain.md:1038-1042`), a helper
-that predates v1.7.0. Beta.4 applies it at every subtraction the spec floors at zero:
-`decrease_balance`, `get_previous_epoch`, the inactivity-score updates, the builder balance
-sweep. A fork proof about one of those wants to read the stored value back as a number, and
-the facts below say what that number is: the truncating `Nat` difference, which never exceeds
-the minuend. That is the no-underflow claim, stated once for every caller.
+These theorems describe the framework's raw-word `saturatingSub` and `arrayUnion`.
+The raw subtraction models `saturating_sub` (`phase0/beacon-chain.md:1038-1042`)
+on `UInt64` operands. Its value is the truncating `Nat` difference, which never
+exceeds the minuend. Fork bodies use `CLUint64.saturatingSub`; its laws live in
+`EthCLLib.Proofs.CLUint`. The array-union laws below describe membership and
+duplicate removal for structural collections.
 -/
 
 set_option autoImplicit false

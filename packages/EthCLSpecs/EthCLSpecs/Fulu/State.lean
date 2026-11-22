@@ -27,7 +27,7 @@ namespace EthCLSpecs.Fulu
 /-- The complete Fulu `BeaconState`: the accumulated Phase 0 → Fulu field list, in
 SSZ order. The consensus `fork` field is `forkData` (keyword avoidance). -/
 forkcontainer BeaconState where
-  genesisTime                   : UInt64
+  genesisTime                   : CLUint64
   genesisValidatorsRoot         : Root
   slot                          : Slot
   forkData                      : Fork
@@ -37,6 +37,9 @@ forkcontainer BeaconState where
   historicalRoots               : SSZList Root Const.historicalRootsLimit
   eth1Data                      : Eth1Data
   eth1DataVotes                 : SSZList Eth1Data (Const.epochsPerEth1VotingPeriod * Const.slotsPerEpoch)
+  -- `eth1_deposit_index` stays a raw `UInt64`: it is data only at the pin. No pinned
+  -- body computes with it. The Gloas upgrade copies it, and the Heze upgrade compares it
+  -- with `depositRequestsStartIndex`.
   eth1DepositIndex              : UInt64
   validators                    : SSZList Validator Const.validatorRegistryLimit
   balances                      : SSZList Gwei Const.validatorRegistryLimit
@@ -48,13 +51,19 @@ forkcontainer BeaconState where
   previousJustifiedCheckpoint   : Checkpoint
   currentJustifiedCheckpoint    : Checkpoint
   finalizedCheckpoint           : Checkpoint
-  inactivityScores              : SSZList UInt64 Const.validatorRegistryLimit
+  -- `inactivity_scores` is `InactivityScores(List[Uint64])` at the pin
+  -- (`altair/minimal.py:294`), so the element is the plain checked `CLUint64`. A score
+  -- is an inactivity counter, and the `Gwei` alias names a balance.
+  inactivityScores              : SSZList CLUint64 Const.validatorRegistryLimit
   currentSyncCommittee          : SyncCommittee
   nextSyncCommittee             : SyncCommittee
   latestExecutionPayloadHeader  : ExecutionPayloadHeader
   nextWithdrawalIndex           : WithdrawalIndex
   nextWithdrawalValidatorIndex  : ValidatorIndex
   historicalSummaries           : SSZList HistoricalSummary Const.historicalRootsLimit
+  -- `deposit_requests_start_index` stays a raw `UInt64`: it is data only at the pin. No
+  -- pinned body computes with it. The Gloas upgrade copies it, and the Heze upgrade
+  -- compares it with `eth1DepositIndex`.
   depositRequestsStartIndex     : UInt64
   depositBalanceToConsume       : Gwei
   exitBalanceToConsume          : Gwei
@@ -64,7 +73,9 @@ forkcontainer BeaconState where
   pendingDeposits               : SSZList PendingDeposit Const.pendingDepositsLimit
   pendingPartialWithdrawals     : SSZList PendingPartialWithdrawal Const.pendingPartialWithdrawalsLimit
   pendingConsolidations         : SSZList PendingConsolidation Const.pendingConsolidationsLimit
-  proposerLookahead             : Vector ValidatorIndex (2 * Const.slotsPerEpoch)
+  -- The length is `ProposerLookahead.LENGTH = (MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH`
+  -- (`fulu/minimal.py:640-646`); both presets set `minSeedLookahead` to `1`.
+  proposerLookahead             : Vector ValidatorIndex ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch)
 
 -- The once-per-fork preamble: declares `State` (the boxed `BeaconState`) and the
 -- concrete-domain `modifyState` (`SPEC_AUTHORING_MODEL.md` §6, `EthCLLib.Spec.Header`).

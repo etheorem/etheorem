@@ -7,7 +7,7 @@ SizzLean's `Hasher (H)` class stays untouched; the framework adds only a
 *selector* that carries the chosen hasher tag as a field, so it threads by
 instance resolution exactly like `[Preset]` (`FRAMEWORK_ARCHITECTURE.md` §8). A
 free `{H}` type variable does not thread into caller steps (the metavariable
-failure a value-implicit binder hits), so the tag rides a class field instead.
+failure a value-implicit binder hits), so a class field holds the tag.
 
 `HasherTag.H` is the hasher the boxed `State` uses. The fast configuration picks
 `Sha256` (FFI, opaque); the pure configuration picks `Sha256Spec` (pure-Lean,

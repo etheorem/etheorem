@@ -120,7 +120,7 @@ The users are registrations whose subject is a fork-owned name, e.g. a
 its own `Preset`. An instance that mentions no spec name belongs in `EthCLLib`
 instead, where no fork owns it. -/
 -- `declSig` is `bracketedBinder* >> ": " term`, so the author's `[Preset]` and
--- friends ride inside `sig` with no separate binder slot, exactly as they do for
+-- other binders occur inside `sig` with no separate binder slot, as they do for
 -- Lean's own `instance`.
 scoped syntax (name := forkinstanceCmd)
   declModifiers "forkinstance " declId Parser.Command.declSig declVal : command

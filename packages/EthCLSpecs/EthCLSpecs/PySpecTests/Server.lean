@@ -16,12 +16,16 @@ one tab-separated request line per case; the server reads the files, runs the
 case through `runCase`, and writes one result line. Keeping the bytes on disk and
 passing paths avoids framing binary SSZ on the line.
 
-Request (8 tab-separated fields):
+Request (tab-separated fields):
 ```
 runner ⇥ handler ⇥ prePath ⇥ postPath ⇥ blsSetting ⇥ blocksCount ⇥ forkEpoch ⇥ inputPaths
+  ⇥ forkBlock ⇥ executionValid ⇥ parentSlot ⇥ cfg=…
 ```
-`postPath` / `forkEpoch` are `-` when absent (an absent `post` marks an invalid
-vector); `inputPaths` is comma-separated (possibly empty).
+`prePath`, `postPath`, `forkEpoch`, `forkBlock`, and `parentSlot` are `-` when absent. An
+absent `post` marks an invalid vector. `inputPaths` is comma-separated and can be empty.
+`executionValid` and `parentSlot` are optional. An optional last `cfg=` field carries the
+vector's config overrides (`splitConfigOverrides`). The `ssz_static` and `fork_choice` requests
+use their own layouts (`handleSszStatic`, `handleForkChoice`).
 
 Result (the driver's `CaseResult.render`):
 ```
@@ -76,8 +80,7 @@ private def buildRequest (fields : Array String) : IO CaseRequest := do
 
   let runner  := fields[0]!
   let handler := fields[1]!
-  -- `pre` is `-` for formats with no single pre-state file (`fork_choice`'s
-  -- step/check cases); an empty buffer stands in until those formats are wired.
+  -- `pre` is `-` for a case with no pre-state file; an empty buffer stands in.
   let pre ← match dashToNone fields[2]! with
     | none   => pure ByteArray.empty
     | some p => IO.FS.readBinFile p

@@ -267,8 +267,11 @@ before it appears downstream.
 | `state_preamble` | Header macro, written once in the fork's `State` module, declaring the per-fork `State` abbrev and the concrete-domain `modifyState`. |
 | `state_section` | Header macro opening a state-transition `section` and emitting its `variable` line (raw `Monad` / `MonadStateOf` / `MonadExceptOf` constraints, no custom bundle). |
 | `fork_choice_section` | Header macro opening a fork-choice `section` and emitting its `Store map` store-machine constraints plus `{map} [FcMap map]`. |
-| `StateTransitionError` | The state machine's reject type; typed constructors per failure kind (`assert`, `todo`, `outOfBounds idx bound`). |
+| `StateTransitionError` | The state machine's reject type; typed constructors per failure kind (`assert`, `todo`, `outOfBounds idx bound`, the arithmetic faults `arithmetic` and `zeroDivision`, and others). |
 | `StoreTransitionError` | The store machine's reject type; its own `assert` / `todo`, plus `missingKey`, and `transition` wrapping a `StateTransitionError`. |
+| `CLUint64` | The checked model of the pyspec `Uint64`. `Slot`, `Epoch`, `Gwei`, `ValidatorIndex`, and the other 64-bit units are its abbreviations (`SPEC_ARITHMETIC.md` §4.1). |
+| `CLInt` | The model of a Python plain `int`: unbounded and signed. |
+| `Checked` | `Except ArithFault α`, the type of an arithmetic expression that can raise; a `do` block binds it with `←`. |
 | `Hasher` | SizzLean's Merkleization-backend class, parameterized by a tag type; unchanged by this framework. |
 | `HasherTag` | The framework selector class carrying the chosen hasher as the field `HasherTag.H`. |
 | `Sha256` | The FFI hasher tag (opaque, fast); the fast configuration's hasher. |
@@ -296,7 +299,7 @@ before it appears downstream.
 | `fast` | The configuration the runner instantiates. |
 | `pure` | The configuration the theorems module instantiates. |
 | `initializeBeaconStateFromEth1` | The genesis-construction lifecycle entry point. |
-| `upgradeToGloas` | The fork-upgrade lifecycle entry point; the single cross-fork reference. |
+| `upgradeToGloas`, `upgradeToHeze` | The fork-upgrade lifecycle entry points, one per child fork. Each lives in one of its fork's two cross-fork boundary files (`SPECS_ARCHITECTURE.md` §6.2). |
 | `PySpecTests` | The conformance layer that runs the upstream vectors against a fork's interface. |
 | `pyspecPinnedVersion` | The per-fork constant holding the pinned spec release tag (stable or pre-release). |
 
@@ -334,7 +337,7 @@ order, so they map one to one.
 | **Field access and assertions** via `sszGet` / `sszUpdate` / `modifyState` / `assert` | the access primitives, the size-proof discharge, the cache maintenance, the `assert` descriptor rendering | the state representation, the error model |
 | **Fork-choice `on_*` handlers** as `StoreTransition` actions over the `Store` | `FcMap`, `Store`, and the step/check driver | the finite-map and fork-choice store |
 | **Lifecycle functions** (`initializeBeaconStateFromEth1`, `isValidGenesisState`, `upgradeToGloas`) over the container constructors | the container constructors and the `genesis` / `fork` harness drivers | the container front-end, the conformance framework |
-| **Arithmetic** as faithful `UInt64` transcription | the `UInt64` operations, the `Nat`-correspondence lemmas, `umax` / `umin` / `isqrt`, the type-directed `uintToBytes` width | the arithmetic layer |
+| **Arithmetic** in the checked types (`CLUint64` and its unit abbreviations, `CLUint8`, `CLInt`), each fallible expression bound with `←` (`SPEC_ARITHMETIC.md`) | the checked operator matrix and its `Checked` results, the lift into both machines, the conversions (`toCLInt`, `toCLUint64?`, `ofNat?`, `toPlainNat`), `PositiveDivisor`, `saturatingSub`, `integerSquareroot`, the scoped operator elaborator, and the success and value laws | the arithmetic layer |
 | **Crypto calls** through the framework's signing-root and verify helpers | `computeSigningRoot` and friends, `isValidMerkleBranch`, the vector-typed BLS wrappers (`blsVerify` / `blsVerifySigned` / `blsFastAggregateVerify` / `blsEthFastAggregateVerify` / `blsAggregatePubkeys`) over the BLS and KZG primitives behind `[CryptoBackend]` | the crypto layer |
 | **Bounded loops** as fold / `forM` / well-founded recursion, or `fuelLoop` / `fuelIterateM` where the measure resists | the `Step` type, `fuelLoop`, `fuelIterateM` and `fuelIterateM!` | the control-flow combinators |
 | **Constants** as `Const.*` references, grouped by tier | the three-tier `Preset` / universal / `Config` system under one `Const` namespace | the preset / constant / config tier system |
@@ -362,7 +365,8 @@ never constructs or unwraps the box, and never names the hasher.
 -- Read the current slot, write a new one, take the post-state root.
 def processSlot : StateTransition Unit := do
   let state ← get
-  set (sszUpdate state with slot := sszGet state slot + 1)
+  let nextSlot ← (sszGet state slot) + 1
+  set (sszUpdate state with slot := nextSlot)
   -- elsewhere, when a vector wants the post-state root:
   --   let root ← getStateRoot
 ```
@@ -414,13 +418,15 @@ equivalent.
 | `setOrAppendState field i v` | `set_or_append_list(state.field, i, v)` | Appends `v` when `i` is the list's length, overwrites entry `i` inside the list, and throws `outOfBounds` past the end. |
 | `← sszOfArrayM "field" a` | `List[T, N](a)` | Builds a list from an array of any size. On too many elements it throws `StateTransitionError.listFull`, as the spec's constructor raises. An array of fixed size uses `sszOfArray a`, which takes a proof that it fits. |
 | `getStateRoot` | `hash_tree_root(state)` | Takes the threaded state's Merkle root, keeping the cache-warmed box so a later root reuses the tree. |
-| `sszGetIdx xs i` / `bitlistGetIdx bs i` | `xs[i]` | Reads element `i` of an untrusted or parameter index; an out-of-range index surfaces as the typed reject `outOfBounds idx bound` through `liftErr`, never a crash. |
+| `sszGetIdx xs i` / `bitlistGetIdx bs i` | `xs[i]` | Reads element `i` of an untrusted or parameter index. `sszGetIdx` takes a `Nat`, a `CLUint64`, or a `CLInt` index (`SPEC_ARITHMETIC.md` §4.6), and `bitlistGetIdx` a `Nat`; an out-of-range index surfaces as the typed reject `outOfBounds idx bound` through `liftErr`, never a crash. |
 | `xs[i]'h.down`, after `let h ← assertH (i < size)` | `xs[i]` | Proof-carrying read of an index a validation has checked; total, no reject branch, the bad index rejected at the `assertH`. |
-| do-block sequencing | statement sequence | Threads the monad; `let x ← …` binds an effectful result, plain `let` a pure one. |
+| `liftErr (getAt xs i)` / `liftErr (setAt xs i v)` | `xs[i]` / `xs[i] = v` on a local list | The pure read and write with the same index kinds as `sszGetIdx`; a miss is `outOfBounds`. |
+| do-block sequencing | statement sequence | Threads the monad; `let x ← …` binds an effectful result or a `Checked` arithmetic expression, plain `let` a pure one (`SPEC_ARITHMETIC.md` §4.3). |
 
 ```lean
 def incrementSlot : StateTransition Unit := do
-  modifyState fun state => sszUpdate state with slot := sszGet state slot + 1
+  let nextSlot ← (sszGet (← get) slot) + 1
+  modifyState fun state => sszUpdate state with slot := nextSlot
 
 def checkSlot (expected : Slot) : StateTransition Unit := do
   let state ← get
@@ -435,12 +441,15 @@ the descriptor sits outside the stringly-typed concern, which is about strings i
 `assert` versus `todo` versus `outOfBounds`, which is typed. The error model
 section of `FRAMEWORK_ARCHITECTURE.md` owns the constructor set.
 
-Indexed access carries the same discipline, in two forms. A read of an untrusted or
+Indexed access carries the same discipline. A read of an untrusted or
 parameter index is `sszGetIdx xs i` (or `bitlistGetIdx` for a `Bitlist`), which returns the
 element or the typed reject `outOfBounds idx bound` through the error channel, never a panic.
-A read the author has already validated is guarded by `let h ← assertH (i < size)` and taken
-as the total, reject-free `xs[i]'h.down`, whose bound is the asserted condition; the bad
-index rejected at the `assertH`.
+A read that an operation validates uses the same `sszGetIdx`, and the reject class follows
+the pyspec. `process_voluntary_exit` reads the registry with no range guard, as the pyspec
+does, so a bad index rejects with `outOfBounds`. `process_bls_to_execution_change` writes
+the pyspec's `assert` before the read, so a bad index rejects with `assert`. The
+proof-carrying form, `let h ← assertH (i < size)` then the total `xs[i]'h.down`, stays in
+the primitive set. No fork body uses it.
 
 ---
 
@@ -752,7 +761,7 @@ knows how to decode the case, which interface entry point to drive, and what
 | `operations/*` | a single operation handler | the operation's post-state root matches |
 | `rewards/*` | a single delta function | the delta function's output matches |
 | `genesis` | `initializeBeaconStateFromEth1` | the constructed state's root matches |
-| `fork` | `upgradeToGloas` | the upgraded state's root matches |
+| `fork` | `upgradeToGloas` / `upgradeToHeze` | the upgraded state's root matches |
 | `fork_choice` | the `on_*` handlers | the interleaved store checks pass |
 
 So the author writes no handler table and maps nothing to tests. They implement

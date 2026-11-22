@@ -28,20 +28,22 @@ _No open discrepancies._ Every collected in-scope minimal and mainnet vector pas
 by root or rejects faithfully (`epoch_processing`, `operations` incl. standalone
 `execution_payload`, `sanity/blocks`, `sanity/slots`, `finality`, `random`,
 `rewards`, `fork_choice` incl. the PeerDAS data-availability `on_block` cases and
-`get_proposer_head`), with zero `xfail`. The only Fulu vectors not run are the
-deselected out-of-scope ones (`IMPLEMENTATION_NOTES.md`, "Scope and conformance"): the Fulu `fork` /
-`transition` formats (the Electra→Fulu upgrade / boundary, needing an Electra parent
-fork) and the `light_client` / `networking` / `merkle_proof` / `sync` runners.
+`get_proposer_head`, `ssz_static` for the modeled types), with zero `xfail`. Two kinds of
+Fulu vectors do not run (`IMPLEMENTATION_NOTES.md`, "Scope and conformance"). The
+deselected formats are never collected: the Fulu `fork` / `transition` formats (the
+Electra→Fulu upgrade / boundary, needing an Electra parent fork) and the `light_client` /
+`networking` / `merkle_proof` / `sync` runners. The collected `ssz_static` cases for types
+the fork does not model report `skip` ("out of scope (not modeled)").
 
 | Vector id | Spec citation | Upstream issue | Resolution |
 |---|---|---|---|
 | `epoch_processing/registry_updates/pyspec_tests/invalid_large_withdrawable_epoch` | `electra/beacon-chain.md`, `initiate_validator_exit` | none (Lean-side gap) | Fixed in Lean |
 
-The one resolved entry was a Lean-side gap: Lean's `UInt64`
-wrapped where the pyspec raises a `ValueError` serializing the overflowed
-`withdrawable_epoch`. Closed by asserting the `exit_epoch +
-MIN_VALIDATOR_WITHDRAWABILITY_DELAY` bound in `initiateValidatorExit`, so the case
-now rejects faithfully.
+The one resolved entry was a Lean-side gap: the `exit_epoch +
+MIN_VALIDATOR_WITHDRAWABILITY_DELAY` sum wrapped in Lean where the pyspec raises a
+`ValueError`. `initiateValidatorExit` now computes the sum with the checked `Epoch` add,
+which raises the `.arithmetic` fault past `2^64 - 1`. The test's own `except ValueError`
+wrapper catches that fault (`RunnerCaughtSet.valueError`), so the case passes.
 
 The v1.7.0-beta.4 re-pin found four Lean-side gaps against the spec text that no vector
 observed. Three are in the deposit path: the tree had kept its Electra forms after Fulu
@@ -63,8 +65,8 @@ _No open discrepancies._ Gloas is fully ported (the EIP-7732 ePBS spine, that is
 state-transition pipeline, plus operations, fork choice, and the Fulu→Gloas
 transition); every in-scope minimal and mainnet vector passes by root or rejects
 faithfully, with no `xfail`. Gloas inherits the Fulu `registry_updates` substep (the
-DSL re-elaborates the captured `forkdef` in the Gloas namespace), so the overflow fix
-above propagated to Gloas with no Gloas-side change. Deliberate divergences are
+DSL re-elaborates the captured `forkdef` in the Gloas namespace), so the checked add
+above applies to Gloas with no Gloas-side change. Deliberate divergences are
 catalogued in `IMPLEMENTATION_NOTES.md`, "Gloas diff" and "Fork choice".
 
 The Gloas `process_pending_deposits` (`gloas/beacon-chain.md:1659`) is a Gloas override, and
