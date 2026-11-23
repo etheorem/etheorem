@@ -1,7 +1,7 @@
 import EthCLLib.Proofs.Arith
 import EthCLLib.Proofs.CLInt
 import EthCLLib.Proofs.CLUint
-import EthCLLib.Proofs.KeepsUncached
+import EthCLLib.Proofs.IndexRead
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
 import EthCLLib.Proofs.Run
@@ -12,8 +12,7 @@ import EthCLLib.Proofs.StoreRun
 
 The theorems about the spec functions `EthCLLib.Spec` declares, plus the
 generic proof toolkit the fork proofs build on: the runners' `StateT`-over-
-`Except` run facts, the pure box helpers `pureState` and `runPure`, and the
-flavour preservation behind the conditional `runPure` bind law. A fork body's
+`Except` run facts. A fork body's
 theorems live in `EthCLSpecs/Proofs/<Fork>/` instead, one directory per fork,
 because each fork re-elaborates its own declarations.
 
@@ -37,13 +36,12 @@ Re-exports:
   conversion round-trips (`SPEC_ARITHMETIC.md` §4.9).
 * `EthCLLib.Proofs.Run`: the `StateT`-over-`Except` run facts every pure runner
   shares (`run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
-  `except_bind_error`, the `ofExcept` and `liftErr` run equations), plus the pure
-  box helpers `pureState` and `runPure` and their lemmas.
+  `except_bind_error`, the `ofExcept` and `liftErr` run equations).
+* `EthCLLib.Proofs.IndexRead`: what the indexed reads compute (`getAt` at a
+  `CLUint64` or `Nat` index, over a lawful collection and over the `SSZList` /
+  `ProgressiveList` shapes) and the `sszGetIdx` run equations
+  (`run_sszGetIdx_some`, `run_sszGetIdx_none`).
 * `EthCLLib.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine runner
   every fork's fork-choice proofs pin at that fork's `Store`, and the
   store-specific `throwArithmetic_run` / `throwZeroDivision_run` equations.
-* `EthCLLib.Proofs.KeepsUncached`: the box-flavour predicates (`KeepsUncached`,
-  `KeepsUncachedFrom`, `ReturnsUncached`, `RunPassesP`), their closure and loop
-  lemmas, the indexed-read run equations, and the conditional bind law
-  `runPure_bind_of_keepsUncached`.
 -/

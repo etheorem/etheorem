@@ -16,7 +16,8 @@ bound keep `state.slot` below `slot`), so no vector reaches the fault.
 The second pair pins `process_ptc_window` (`gloas/minimal.py:7925-7936`). Its
 `range(start_slot, start_slot + SLOTS_PER_EPOCH)` forms the checked range end once, before
 any `compute_ptc`. At `start_slot = 2^64 - 8` that end raises; one epoch below, the fresh
-entries read back exactly. `State` is FFI-backed, so `native_decide`.
+entries read back exactly. The pins hash through the FFI `Sha256` (`fastHasherTag`), so
+`native_decide`.
 -/
 
 set_option autoImplicit false
@@ -31,18 +32,16 @@ namespace EthCLSpecs.Tests.GloasSlotMigrationPins
 
 open EthCLSpecs.Gloas
 
-/-- The pins' state-machine monad over the minimal preset and the FFI hasher. -/
-private abbrev PinM := EStateM StateTransitionError (@State minimal fastHasherTag)
+/-- The pins' state-machine monad over the minimal preset. -/
+private abbrev PinM := EStateM StateTransitionError (@State minimal)
 
 /-- A minimal Gloas state at slot `s` with the availability bits at ring indices `0` and
 `63` set, so the pins can see which index the clear hits. -/
-private def availabilityState (s : Slot) : @State minimal fastHasherTag :=
+private def availabilityState (s : Slot) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
-      slot := s
-      executionPayloadAvailability := bitSet (bitSet default 0 true) 63 true }
+  { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
+    slot := s
+    executionPayloadAvailability := bitSet (bitSet default 0 true) 63 true }
 
 /-- At slot `UINT64_MAX` the checked `state.slot + 1` raises the range fault. -/
 private def pinProcessSlotAtMaxSlotRejects : Bool :=
@@ -73,18 +72,16 @@ example : pinProcessSlotBelowMaxClearsNextBit = true := by native_decide
 
 /-- A minimal Gloas state at slot `s` with eight active validators at the maximum
 effective balance, so every slot's PTC selection has a member and accepts at once. -/
-private def ptcWindowState (s : Slot) : @State minimal fastHasherTag :=
+private def ptcWindowState (s : Slot) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       effectiveBalance := 2048000000000,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
-      slot := s
-      validators := ⟨Array.replicate 8 v⟩
-      balances := ⟨Array.replicate 8 2048000000000⟩ }
+  { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
+    slot := s
+    validators := ⟨Array.replicate 8 v⟩
+    balances := ⟨Array.replicate 8 2048000000000⟩ }
 
 /-- Current epoch `2^61 - 3` at the minimal preset: `next_epoch = 2^61 - 1`, so
 `start_slot = 2^64 - 8` and the range end `start_slot + SLOTS_PER_EPOCH` is `2^64`. The
