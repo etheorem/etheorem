@@ -8,9 +8,9 @@ import EthCLLib.Spec.Hasher
 
 `State` is the fork's `BeaconState` record itself; the per-fork abbrev and the
 `modifyState` updater are emitted by `state_preamble` (`EthCLLib.Spec.Header`).
-Reads and writes are SizzLean's generic `sszGet` / `sszUpdate` macros, available as
-global syntax the moment `SizzLean` is imported, so the framework adds no per-field
-lenses. This module supplies the small generic helpers the step primitives need:
+A step reads a field as `state.f` and writes it with the record update
+`{ state with f := v }`, so the framework adds no per-field lenses. This module
+supplies the small generic helpers the step primitives need:
 `getStateRoot` (the root of the threaded state), the index-error lift
 (`FRAMEWORK_ARCHITECTURE.md` §8.1), and the size-aware indexing layer
 (`SPEC_ARITHMETIC.md` §4.6): the `ToIndex` class with the pure raising read

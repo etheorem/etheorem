@@ -10,12 +10,13 @@ behavior is checked at build (`FRAMEWORK_ARCHITECTURE.md` §14):
   `modifyState`, once;
 - `state_section` opens the `section` itself and brings the transition variables into
   scope (closed by the matching `end`);
-- a step writes `modifyState fun state => sszUpdate state with …` with **no**
+- a step writes `modifyState fun state => { state with … }` with **no**
   `(state : State)` annotation, the payoff of the concrete-domain `modifyState`, and
   it both typechecks and *runs* at the fast config;
 - the seven helpers run on the plain fork in both monads, `StateT State
-  (Except StateTransitionError)` and `EStateM StateTransitionError State`: `sszGet`,
-  `sszUpdate` (through `bumpSlot` / `setFlag`), `sszModify` (through `bumpXsHead`),
+  (Except StateTransitionError)` and `EStateM StateTransitionError State`: the field
+  read and the record update (through `bumpSlot` / `setFlag`), `sszModify` (through
+  `bumpXsHead`),
   `appendState`, `setOrAppendState`, `getStateRoot` (through `rootAfterBump`) and
   `runToRoot`;
 - `sszOfArrayM` raises `.listFull` on too many elements;
@@ -73,14 +74,13 @@ state_section
 
 /-- A step written with **no** binder annotation: the concrete-domain `modifyState`
 from the preamble types `state : State`, and `state_section` brought the monad and
-instances into scope. On the plain state `sszGet` is the projection and `sszUpdate`
-the record update, so this *is* `fun state => { state with slot := state.slot + 1 }`. -/
+instances into scope. -/
 def bumpSlot : StateTransition Unit :=
-  modifyState fun state => sszUpdate state with slot := sszGet state slot + 1
+  modifyState fun state => { state with slot := state.slot + 1 }
 
 /-- A second annotation-free step, writing a different field. -/
 def setFlag (v : UInt64) : StateTransition Unit :=
-  modifyState fun state => sszUpdate state with flag := v
+  modifyState fun state => { state with flag := v }
 
 /-- The spec's read-modify-write through `sszModify`: the list head incremented in
 place, the path named once. -/
@@ -98,7 +98,7 @@ def setOrAppendX (i : CLUint64) (v : UInt64) : StateTransition Unit :=
 /-- The spec's `state.xs = List[uint64, 2](a)`, through `sszOfArrayM`. -/
 def setXs (a : Array UInt64) : StateTransition Unit := do
   let l : SSZList UInt64 2 ← sszOfArrayM "xs" a
-  modifyState fun state => sszUpdate state with xs := l
+  modifyState fun state => { state with xs := l }
 
 /-- The spec's state root taken inside a step: `bumpSlot`, then `getStateRoot`. On the
 plain state this reads the record and recomputes the root in full. -/
@@ -123,7 +123,7 @@ reject. `Sum` has `DecidableEq`, so `native_decide` can compare it. -/
 def runXs (action : EStateM StateTransitionError State Unit) :
     Array UInt64 ⊕ StateTransitionError :=
   match action.run s0 with
-  | .ok _ st   => .inl (sszGet st xs).toArray
+  | .ok _ st   => .inl st.xs.toArray
   | .error e _ => .inr e
 
 /-- `bumpSlot` executes over the plain record: `slot 41 → 42`, with the binder typed
@@ -131,7 +131,7 @@ annotation-free. -/
 example :
     (let action : EStateM StateTransitionError State Unit := bumpSlot
      match action.run s0 with
-     | .ok _ st   => sszGet st slot
+     | .ok _ st   => st.slot
      | .error _ _ => 0)
       = 42 := by native_decide
 
@@ -139,7 +139,7 @@ example :
 example :
     (let action : EStateM StateTransitionError State Unit := setFlag 9
      match action.run s0 with
-     | .ok _ st   => sszGet st flag
+     | .ok _ st   => st.flag
      | .error _ _ => 0)
       = 9 := by native_decide
 
@@ -208,14 +208,14 @@ local instance : HasherTag := fastHasherTag
 def runXsT (action : StateT State (Except StateTransitionError) Unit) :
     Array UInt64 ⊕ StateTransitionError :=
   match action.run s0 with
-  | .ok (_, st) => .inl (sszGet st xs).toArray
+  | .ok (_, st) => .inl st.xs.toArray
   | .error e    => .inr e
 
 /-- `bumpSlot` in the pure column: `slot 41 → 42`. -/
 example :
     (let action : StateT State (Except StateTransitionError) Unit := bumpSlot
      match action.run s0 with
-     | .ok (_, st) => sszGet st slot
+     | .ok (_, st) => st.slot
      | .error _    => 0)
       = 42 := by native_decide
 

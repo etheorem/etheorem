@@ -64,7 +64,7 @@ forkdef factor : CLUint64 := 2
 checked product under `←` immediately (§4.3). -/
 forkdef scaledSlot : StateTransition CLUint64 := do
   let s ← get
-  let cur := sszGet s slot
+  let cur := s.slot
   let product ← cur * factor
   pure product
 
