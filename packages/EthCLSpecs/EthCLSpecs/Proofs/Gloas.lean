@@ -1,4 +1,5 @@
 import EthCLSpecs.Proofs.Gloas.BuilderIndex
+import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 import EthCLSpecs.Proofs.Gloas.GetPtc
 import EthCLSpecs.Proofs.Gloas.Run
 import EthCLSpecs.Proofs.Gloas.UpdateCheckpoints
@@ -8,9 +9,7 @@ import EthCLSpecs.Proofs.Gloas.UpdateCheckpoints
 -- `InitiateBuilderExit` and `BuilderPendingPayments`. `ProcessOperations` imported the
 -- deleted `Proofs/Gloas/KeepsUncached.lean`. Task 4.3 reattaches `CanBuilderCoverBid`,
 -- `InitializePtcWindow`, `IsValidIndexedPayloadAttestation` and `ProcessDepositRequest`;
--- task 4.4 `InitiateBuilderExit`; task 4.5 `BuilderPendingPayments`; task 4.6
--- `ProcessOperations`; task 4.7 `ForkChoiceRun`.
--- import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
+-- task 4.4 `InitiateBuilderExit`; task 4.6 `ProcessOperations`; task 4.7 `ForkChoiceRun`.
 -- import EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid
 -- import EthCLSpecs.Proofs.Gloas.ForkChoiceRun
 -- import EthCLSpecs.Proofs.Gloas.InitializePtcWindow
