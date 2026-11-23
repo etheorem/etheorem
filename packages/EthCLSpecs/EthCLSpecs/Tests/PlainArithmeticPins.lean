@@ -40,7 +40,8 @@ body, which the pin's own comment names.
    shared the Gloas selection and raised the assert class. A four-validator Fulu draw pins
    the exact indices.
 
-`State` is FFI-backed, so `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`). The Fulu and Gloas states are
+FFI-backed boxes, and the Heze state is the plain record. So `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -465,7 +466,7 @@ private def pinEmptyCommitteeZeroSizeReturns : Bool :=
   letI : Preset := { minimal with inclusionListCommitteeSize := 0 }
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  let state : State := SSZ.FastBox (default : BeaconState)
+  let state : State := (default : BeaconState)
   match (getInclusionListCommittee (StoreTransition := Except StoreTransitionError) state 0) with
   | .ok c => c.toList.isEmpty
   | .error _ => false
@@ -478,7 +479,7 @@ example : pinEmptyCommitteeZeroSizeReturns = true := by native_decide
 private def pinHezeSyncEmptyAsserts : Bool :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  match getNextSyncCommitteeIndices (SSZ.FastBox (default : BeaconState) : State) with
+  match getNextSyncCommitteeIndices (default : State) with
   | .error (.assert _) => true
   | _ => false
 example : pinHezeSyncEmptyAsserts = true := by native_decide
