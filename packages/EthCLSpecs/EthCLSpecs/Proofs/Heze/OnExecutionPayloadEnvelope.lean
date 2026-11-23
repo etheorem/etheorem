@@ -21,14 +21,14 @@ explicitly updated `Store` value with `pure`. The handler uses that returned
 value as the base of its final `set`, discarding the recorder-produced runner
 state.
 
-The corollaries state the block state as a plain value `state`, stored as
-`pureState state` (`SPECS_ARCHITECTURE.md` §11.1). On `pureState state` a successful
-verification returns `pureState state` itself
-(`verifyExecutionPayloadEnvelope_pureState`): its only box result is the warm
-half of `stateRoot state`, and `hashTreeRoot_uncachedBox` hands the uncached box
-back unchanged. So the corollaries ask only that the verification succeeds, and
-`onExecutionPayloadEnvelope_run_of_pureState` restates the whole `.run`
-equation with no box beyond `pureState state`.
+The Heze `State` is the plain `BeaconState`, so the store keeps plain block
+states and the corollaries bind the block state as a plain value `state`.
+A successful verification returns `state` itself
+(`verifyExecutionPayloadEnvelope_eq_map_const`): its only state result is the
+second half of `stateRoot state`, and the plain `StateRoot` instance returns the
+state it reads. So the corollaries ask only that the verification succeeds, and
+`onExecutionPayloadEnvelope_run_of_lookup` restates the whole `.run` equation
+with the stored state written back as `state`.
 
 Lookup-after-insert, contains-after-insert, `isPayloadVerified`, and
 composition with `shouldExtendPayload` remain open. The generic `FcMap`
@@ -39,7 +39,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Heze
 
-open EthCLLib.Proofs (ForkChoiceStoreRun run_throw except_bind_error pureState)
+open EthCLLib.Proofs (ForkChoiceStoreRun run_throw except_bind_error)
 open EthCLLib.Spec (HasherTag MapKind FcMap ExecutionEngine DataAvailability CryptoBackend
   StoreTransitionError)
 open EthCLSpecs.Heze (Preset Config Store BeaconState BeaconBlock Root Slot ExecutionPayload
@@ -53,34 +53,36 @@ variable {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
   [DataAvailability] [CryptoBackend]
 
 omit [DataAvailability] in
-/-- On the uncached box of a plain value, a successful verification returns that
-same box. The verification's only box result is the `warm` half of
-`stateRoot state`, and `hashTreeRoot_uncachedBox` hands the uncached box back
-unchanged. Stated as a `map` so the statement binds no box: the success value
-of the left side is `pureState state` itself. `map_bind` and `map_pure` push the
-`map` through every bind, and no assert condition is evaluated. -/
-theorem verifyExecutionPayloadEnvelope_pureState :
+/-- On a plain state, a successful verification returns that same state. The
+verification's only state result is the second half of `stateRoot state`, and the
+plain `StateRoot` instance (`state_preamble`) pairs the root with the state
+it reads. Stated as a `map`, so the success value of the left side is `state`
+itself. `map_bind` and `map_pure` push the `map` through every bind, and no assert
+condition is evaluated. -/
+theorem verifyExecutionPayloadEnvelope_eq_map_const :
     ∀ (state : BeaconState) (signedEnv : SignedExecutionPayloadEnvelope),
-      verifyExecutionPayloadEnvelope (pureState state) signedEnv
-        = (fun _ => pureState state) <$> verifyExecutionPayloadEnvelope (pureState state) signedEnv := by
+      verifyExecutionPayloadEnvelope state signedEnv
+        = (fun _ => state) <$> verifyExecutionPayloadEnvelope state signedEnv := by
   intro state signedEnv
-  simp only [verifyExecutionPayloadEnvelope, EthCLLib.Spec.stateRoot,
-    SizzLean.Proofs.hashTreeRoot_uncachedBox, map_bind, map_pure]
+  -- The plain instance's `rootAndWarm s` is `(hashTreeRoot s, s)`, so its second half is
+  -- `state` by `rfl`. `simp only` does not unfold the instance by itself.
+  have hwarm : (EthCLLib.Spec.StateRoot.rootAndWarm state).2 = state := rfl
+  simp only [verifyExecutionPayloadEnvelope, EthCLLib.Spec.stateRoot, hwarm, map_bind, map_pure]
 
 omit [DataAvailability] in
-/-- A successful verification on `pureState state` returns `pureState state`: the
-`isOk` reading of `verifyExecutionPayloadEnvelope_pureState`. -/
-private theorem verifyExecutionPayloadEnvelope_pureState_of_isOk :
+/-- A successful verification on `state` returns `state`: the `isOk` reading of
+`verifyExecutionPayloadEnvelope_eq_map_const`. -/
+private theorem verifyExecutionPayloadEnvelope_eq_ok_of_isOk :
     ∀ (state : BeaconState) (signedEnv : SignedExecutionPayloadEnvelope),
-      (verifyExecutionPayloadEnvelope (pureState state) signedEnv).isOk = true →
-      verifyExecutionPayloadEnvelope (pureState state) signedEnv = .ok (pureState state) := by
+      (verifyExecutionPayloadEnvelope state signedEnv).isOk = true →
+      verifyExecutionPayloadEnvelope state signedEnv = .ok state := by
   intro state signedEnv hok
-  have hmap := verifyExecutionPayloadEnvelope_pureState state signedEnv
-  cases hv : verifyExecutionPayloadEnvelope (pureState state) signedEnv with
+  have hmap := verifyExecutionPayloadEnvelope_eq_map_const state signedEnv
+  cases hv : verifyExecutionPayloadEnvelope state signedEnv with
   | error e => simp [hv, Except.isOk, Except.toBool] at hok
   | ok w =>
-    -- `hmap` reads `.ok w = (fun _ => pureState state) <$> .ok w`, and the right side
-    -- reduces to `.ok (pureState state)`.
+    -- `hmap` reads `.ok w = (fun _ => state) <$> .ok w`, and the right side
+    -- reduces to `.ok state`.
     rw [hv] at hmap
     exact hmap
 
@@ -153,14 +155,13 @@ theorem onExecutionPayloadEnvelope_run :
 
 /--
 The complete `.run` equation of `onExecutionPayloadEnvelope` when the block
-state at the root is the uncached box of a plain value `state`. It is
-`onExecutionPayloadEnvelope_run` with the lookup resolved and the warm state
-replaced by `pureState state` (`verifyExecutionPayloadEnvelope_pureState`), so the
-right side names no box beyond `pureState state`.
+state at the root is `state`. It is `onExecutionPayloadEnvelope_run` with the
+lookup resolved and the verification's state result replaced by `state`
+(`verifyExecutionPayloadEnvelope_eq_map_const`).
 -/
-theorem onExecutionPayloadEnvelope_run_of_pureState :
+theorem onExecutionPayloadEnvelope_run_of_lookup :
     ∀ (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope) (state : BeaconState),
-      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some (pureState state) →
+      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state →
       (onExecutionPayloadEnvelope (map := map)
           (StoreTransition := ForkChoiceStoreRun (Store map))
           signedEnv).run store
@@ -168,7 +169,7 @@ theorem onExecutionPayloadEnvelope_run_of_pureState :
         if !isDataAvailable signedEnv.message.beaconBlockRoot then
           .error (.assert "(isDataAvailable envelope.beaconBlockRoot)")
         else
-          match verifyExecutionPayloadEnvelope (pureState state) signedEnv with
+          match verifyExecutionPayloadEnvelope state signedEnv with
           | .error e => .error e
           | .ok _ =>
               match (recordPayloadInclusionListSatisfaction
@@ -181,7 +182,7 @@ theorem onExecutionPayloadEnvelope_run_of_pureState :
                     { recordedStore with
                       blockStates :=
                         FcMap.insert recordedStore.blockStates
-                          signedEnv.message.beaconBlockRoot (pureState state),
+                          signedEnv.message.beaconBlockRoot state,
                       payloads :=
                         FcMap.insert recordedStore.payloads
                           signedEnv.message.beaconBlockRoot
@@ -191,11 +192,11 @@ theorem onExecutionPayloadEnvelope_run_of_pureState :
   simp only [hlookup]
   by_cases hda : isDataAvailable signedEnv.message.beaconBlockRoot
   · simp only [hda]
-    cases hv : verifyExecutionPayloadEnvelope (pureState state) signedEnv with
+    cases hv : verifyExecutionPayloadEnvelope state signedEnv with
     | error e => rfl
     | ok w =>
-      have hw : verifyExecutionPayloadEnvelope (pureState state) signedEnv = .ok (pureState state) :=
-        verifyExecutionPayloadEnvelope_pureState_of_isOk state signedEnv (by rw [hv]; rfl)
+      have hw : verifyExecutionPayloadEnvelope state signedEnv = .ok state :=
+        verifyExecutionPayloadEnvelope_eq_ok_of_isOk state signedEnv (by rw [hv]; rfl)
       rw [hv] at hw
       cases hw
       rfl
@@ -234,9 +235,9 @@ theorem onExecutionPayloadEnvelope_run_error_of_data_unavailable :
 theorem onExecutionPayloadEnvelope_run_error_of_verify :
     ∀ (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope)
       (state : BeaconState) (err : StoreTransitionError),
-      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some (pureState state) →
+      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state →
       isDataAvailable signedEnv.message.beaconBlockRoot = true →
-      verifyExecutionPayloadEnvelope (pureState state) signedEnv = .error err →
+      verifyExecutionPayloadEnvelope state signedEnv = .error err →
       (onExecutionPayloadEnvelope (map := map)
           (StoreTransition := ForkChoiceStoreRun (Store map))
           signedEnv).run store
@@ -249,9 +250,9 @@ theorem onExecutionPayloadEnvelope_run_error_of_verify :
 theorem onExecutionPayloadEnvelope_run_error_of_record :
     ∀ (store : Store map) (signedEnv : SignedExecutionPayloadEnvelope)
       (state : BeaconState) (err : StoreTransitionError),
-      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some (pureState state) →
+      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state →
       isDataAvailable signedEnv.message.beaconBlockRoot = true →
-      (verifyExecutionPayloadEnvelope (pureState state) signedEnv).isOk = true →
+      (verifyExecutionPayloadEnvelope state signedEnv).isOk = true →
       (recordPayloadInclusionListSatisfaction
           (StoreTransition := ForkChoiceStoreRun (Store map))
           store signedEnv.message.beaconBlockRoot
@@ -263,14 +264,14 @@ theorem onExecutionPayloadEnvelope_run_error_of_record :
         = .error err := by
   intro store signedEnv state err hlookup hda hok hrec
   rw [onExecutionPayloadEnvelope_run]
-  simp [hlookup, hda, verifyExecutionPayloadEnvelope_pureState_of_isOk state signedEnv hok, hrec]
+  simp [hlookup, hda, verifyExecutionPayloadEnvelope_eq_ok_of_isOk state signedEnv hok, hrec]
 
 /--
 Successful-path run equation for `onExecutionPayloadEnvelope`. The handler's
 lookup and checks succeed, `slot` is the slot before the envelope's block (so that block
 sits at a nonzero slot), and the dependent-root walk returns `dependentRoot`. Then the final store is the original
 store updated by three same-root `FcMap.insert` expressions: the block state
-`pureState state` in `blockStates`, the envelope in `payloads`, and the
+`state` in `blockStates`, the envelope in `payloads`, and the
 inclusion-list result for the timely transactions stored under
 `(slot, dependentRoot)`. The inserts may overwrite a prior entry.
 -/
@@ -280,9 +281,9 @@ theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks :
       (state : BeaconState)
       (block : BeaconBlock) (slot : Slot) (dependentRoot : Root)
       (postRunnerStore : Store map),
-      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some (pureState state) →
+      FcMap.lookup store.blockStates signedEnv.message.beaconBlockRoot = some state →
       isDataAvailable signedEnv.message.beaconBlockRoot = true →
-      (verifyExecutionPayloadEnvelope (pureState state) signedEnv).isOk = true →
+      (verifyExecutionPayloadEnvelope state signedEnv).isOk = true →
       FcMap.lookup store.blocks signedEnv.message.beaconBlockRoot = some block →
       slot.toPlainNat + 1 = block.slot.toPlainNat →
       (getShufflingDependentRoot
@@ -295,7 +296,7 @@ theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks :
         = .ok ((),
             { store with
               blockStates :=
-                FcMap.insert store.blockStates signedEnv.message.beaconBlockRoot (pureState state),
+                FcMap.insert store.blockStates signedEnv.message.beaconBlockRoot state,
               payloads :=
                 FcMap.insert store.payloads signedEnv.message.beaconBlockRoot
                   signedEnv.message,
@@ -310,7 +311,7 @@ theorem onExecutionPayloadEnvelope_run_eq_of_successful_checks :
   -- `hlookup`, `hda`, and `hok` discharge the handler prefix;
   -- `hblock`, `hprev`, and `hdep` select the recorder's successful branch.
   rw [onExecutionPayloadEnvelope_run]
-  simp [hlookup, hda, verifyExecutionPayloadEnvelope_pureState_of_isOk state signedEnv hok,
+  simp [hlookup, hda, verifyExecutionPayloadEnvelope_eq_ok_of_isOk state signedEnv hok,
     recordPayloadInclusionListSatisfaction_run_eq (map := map) store store postRunnerStore
       signedEnv.message.beaconBlockRoot signedEnv.message.payload block slot dependentRoot
       hblock hprev hdep]

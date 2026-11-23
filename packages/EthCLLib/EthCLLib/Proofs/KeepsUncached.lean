@@ -1,5 +1,6 @@
 import EthCLLib.Spec.State
 import EthCLLib.Spec.Header
+import EthCLLib.Proofs.IndexRead
 import EthCLLib.Proofs.Run
 import SizzLean.Proofs.UncachedBox
 
@@ -52,6 +53,14 @@ open EthCLLib.Spec (HasherTag ErrorConv)
 open EthCLLib.Spec
 open SizzLean (SSZRepr)
 open SizzLean.Cache
+
+/-- The box's own `StateRoot`, kept beside the one lemma that instantiates a root read
+at the box (`keepsUncached_getStateRoot`). The framework surface carries no box
+instance, while this module's box-level claims stay until their own deletion (plan
+task 6.4). Local, so no importer sees it. -/
+private local instance instStateRootBox {H T : Type} [SizzLean.Hasher H] [SSZRepr T] :
+    StateRoot (SSZ.Box H T) where
+  rootAndWarm s := s.hashTreeRoot
 
 /-- `act`, run on an uncached box, returns an uncached box whenever it succeeds.
 Every successful run that starts on `pureState v` lands on `pureState` of the
@@ -792,89 +801,6 @@ theorem keepsUncachedFrom_forIn_range_run_inv {T ε α β : Type} [SSZRepr T] [H
   intro r s h
   have hpair := keepsUncachedFrom_forIn_range_inv (α := α) f P hf n init v hinit
   exact ⟨hpair.1 r s h, hpair.2 r s h⟩
-
-/-- `getAt` at a `CLUint64` index is the collection's `get?` at the index's value, with the
-reject carrying that value and the collection's size, on any collection whose `get?` misses
-past its size. The `ToIndex CLUint64` range test then agrees with the collection's own. -/
-theorem getAt_clUint64_eq {α ρ : Type} [EthCLLib.Spec.IdxRead ρ α] (xs : ρ)
-    (i : EthCLLib.Spec.CLUint64)
-    (hlaw : ∀ k, EthCLLib.Spec.IdxRead.size xs ≤ k → EthCLLib.Spec.IdxRead.get? xs k = none) :
-    (EthCLLib.Spec.getAt xs i : Except IndexError α) =
-      (match EthCLLib.Spec.IdxRead.get? xs i.toPlainNat with
-        | some a => .ok a
-        | none => .error (IndexError.indexError i.toPlainNat
-            (EthCLLib.Spec.IdxRead.size xs))) := by
-  unfold EthCLLib.Spec.getAt
-  simp only [EthCLLib.Spec.ToIndex.pos?, EthCLLib.Spec.ToIndex.idx?]
-  by_cases h : i.toPlainNat < EthCLLib.Spec.IdxRead.size xs
-  · simp only [h, ↓reduceIte]
-    try rfl
-  · simp only [h, ↓reduceIte, hlaw _ (Nat.le_of_not_lt h)]
-
-/-- `getAt_clUint64_eq` on an SSZ list, stated over the list's array. -/
-theorem getAt_sszList_clUint64 {α : Type} {cap : Nat} (xs : SizzLean.Repr.SSZList α cap)
-    (i : EthCLLib.Spec.CLUint64) :
-    (EthCLLib.Spec.getAt xs i : Except IndexError α) =
-      (match xs.val[i.toPlainNat]? with
-        | some a => .ok a
-        | none => .error (IndexError.indexError i.toPlainNat xs.val.size)) :=
-  getAt_clUint64_eq xs i (fun _ hk => Array.getElem?_eq_none_iff.mpr hk)
-
-/-- `getAt_clUint64_eq` on a progressive list, stated over the list's array. -/
-theorem getAt_progressiveList_clUint64 {α : Type} (xs : SizzLean.Repr.ProgressiveList α)
-    (i : EthCLLib.Spec.CLUint64) :
-    (EthCLLib.Spec.getAt xs i : Except IndexError α) =
-      (match xs.val[i.toPlainNat]? with
-        | some a => .ok a
-        | none => .error (IndexError.indexError i.toPlainNat xs.val.size)) :=
-  getAt_clUint64_eq xs i (fun _ hk => Array.getElem?_eq_none_iff.mpr hk)
-
-/-- `getAt` at a `Nat` index is the collection's `get?` at that index, with the reject
-carrying the index and the collection's size, on any collection whose `get?` misses past
-its size. -/
-theorem getAt_nat_eq {α ρ : Type} [EthCLLib.Spec.IdxRead ρ α] (xs : ρ) (i : Nat)
-    (hlaw : ∀ k, EthCLLib.Spec.IdxRead.size xs ≤ k → EthCLLib.Spec.IdxRead.get? xs k = none) :
-    (EthCLLib.Spec.getAt xs i : Except IndexError α) =
-      (match EthCLLib.Spec.IdxRead.get? xs i with
-        | some a => .ok a
-        | none => .error (IndexError.indexError i (EthCLLib.Spec.IdxRead.size xs))) := by
-  unfold EthCLLib.Spec.getAt
-  simp only [EthCLLib.Spec.ToIndex.pos?, EthCLLib.Spec.ToIndex.idx?]
-  by_cases h : i < EthCLLib.Spec.IdxRead.size xs
-  · simp only [h, ↓reduceIte]
-    try rfl
-  · simp only [h, ↓reduceIte, hlaw _ (Nat.le_of_not_lt h)]
-
-/-- `getAt_nat_eq` on a progressive list, stated over the list's array. -/
-theorem getAt_progressiveList_nat {α : Type} (xs : SizzLean.Repr.ProgressiveList α) (i : Nat) :
-    (EthCLLib.Spec.getAt xs i : Except IndexError α) =
-      (match xs.val[i]? with
-        | some a => .ok a
-        | none => .error (IndexError.indexError i xs.val.size)) :=
-  getAt_nat_eq xs i (fun _ hk => Array.getElem?_eq_none_iff.mpr hk)
-
-/-- A hit of `sszGetIdx`: when the pure read `getAt` returns an element, the run returns
-it and leaves the state unchanged. Any `ToIndex` kind. -/
-theorem run_sszGetIdx_some {α ρ ι : Type} {σ ε : Type}
-    [EthCLLib.Spec.IdxRead ρ α] [EthCLLib.Spec.ToIndex ι] [ErrorConv IndexError ε] {y : α}
-    (xs : ρ) (i : ι) (sb : σ)
-    (hq : EthCLLib.Spec.getAt xs i = .ok y) :
-    (EthCLLib.Spec.sszGetIdx (E := ε) (m := StateT σ (Except ε)) xs i).run sb = .ok (y, sb) := by
-  unfold EthCLLib.Spec.sszGetIdx EthCLLib.Spec.liftErr
-  rw [hq]
-  exact run_ofExcept_ok sb
-
-/-- A miss of `sszGetIdx`: when the pure read `getAt` rejects, the run raises the
-converted `IndexError`. -/
-theorem run_sszGetIdx_none {α ρ ι : Type} {σ ε : Type}
-    [EthCLLib.Spec.IdxRead ρ α] [EthCLLib.Spec.ToIndex ι] [ErrorConv IndexError ε]
-    (xs : ρ) (i : ι) (sb : σ) (e : IndexError)
-    (hq : (EthCLLib.Spec.getAt xs i : Except IndexError α) = .error e) :
-    (EthCLLib.Spec.sszGetIdx (E := ε) (m := StateT σ (Except ε)) xs i).run sb
-      = .error (ErrorConv.conv e) := by
-  unfold EthCLLib.Spec.sszGetIdx EthCLLib.Spec.liftErr
-  rw [hq]
-  exact run_ofExcept_error sb
 
 /-- `sszGetIdx` reads and never writes: a hit returns the start box unchanged, and a miss
 raises. -/

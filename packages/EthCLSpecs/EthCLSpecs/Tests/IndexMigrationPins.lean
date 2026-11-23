@@ -29,7 +29,7 @@ pre-migration body, which the pin's own comment names.
    is the mixed `&` with the plain `~BUILDER_INDEX_FLAG` and cannot raise, so these are value
    pins with no failure case.
 
-`State` is FFI-backed, so `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -58,12 +58,11 @@ private def withdrawableState (nextIndex : WithdrawalIndex) : @State minimal fas
     { (default : Validator) with
       withdrawalCredentials := Vector.ofFn (fun i => if i.val = 0 then 1 else 0)
       effectiveBalance := 32000000000, exitEpoch := 0, withdrawableEpoch := 0 }
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      slot := 8
-      validators := ⟨#[v], by decide⟩
-      balances := ⟨#[32000000000], by decide⟩
-      nextWithdrawalIndex := nextIndex }
+  { (default : @BeaconState minimal) with
+    slot := 8
+    validators := ⟨#[v], by decide⟩
+    balances := ⟨#[32000000000], by decide⟩
+    nextWithdrawalIndex := nextIndex }
 
 /-- Runs Fulu `get_expected_withdrawals` and reads back each withdrawal's index, validator
 index, and amount. -/
@@ -149,11 +148,10 @@ private def activeState (s : Slot) : @State minimal fastHasherTag :=
     { (default : Validator) with
       effectiveBalance := 32000000000,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      slot := s
-      validators := ⟨Array.replicate 8 v, by decide⟩
-      balances := ⟨Array.replicate 8 32000000000, by decide⟩ }
+  { (default : @BeaconState minimal) with
+    slot := s
+    validators := ⟨Array.replicate 8 v, by decide⟩
+    balances := ⟨Array.replicate 8 32000000000, by decide⟩ }
 
 /-- Slot `1`, committee index `UINT64_MAX`: `Uint64(1 % 8) * 1 + index` raises at the
 checked add. The old `Nat` sum never raised. -/
@@ -225,10 +223,9 @@ open EthCLSpecs.Gloas
 private def builderPendingState : @State minimal fastHasherTag :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      builderPendingWithdrawals := ⟨#[{ (default : BuilderPendingWithdrawal) with
-        amount := 7, builderIndex := 3 }]⟩ }
+  { (default : @BeaconState minimal) with
+    builderPendingWithdrawals := ⟨#[{ (default : BuilderPendingWithdrawal) with
+      amount := 7, builderIndex := 3 }]⟩ }
 
 /-- Runs Gloas `get_builder_withdrawals` from `withdrawalIndex` with no prior withdrawals,
 reading back the withdrawals, the next index, and the processed count. -/
@@ -271,11 +268,10 @@ private def gloasActiveState (s : Slot) : @State minimal fastHasherTag :=
     { (default : Validator) with
       effectiveBalance := 32000000000,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      slot := s
-      validators := ⟨Array.replicate 8 v⟩
-      balances := ⟨Array.replicate 8 32000000000⟩ }
+  { (default : @BeaconState minimal) with
+    slot := s
+    validators := ⟨Array.replicate 8 v⟩
+    balances := ⟨Array.replicate 8 32000000000⟩ }
 
 /-- Runs Gloas `process_attestation` at state slot `9` with `parent_slot = 0`, for an
 attestation at slot `8`, target epoch `1`, committee `0`, with the given aggregation bits. -/
@@ -318,10 +314,9 @@ private def bidRun (n : Nat) (builderIndex : BuilderIndex) :
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let st : State :=
-    SSZ.FastBox
-      { (default : @BeaconState minimal) with
-        slot := 1
-        builders := ⟨Array.replicate n default⟩ }
+    { (default : @BeaconState minimal) with
+      slot := 1
+      builders := ⟨Array.replicate n default⟩ }
   let bid : SignedExecutionPayloadBid :=
     { (default : SignedExecutionPayloadBid) with
       message := { (default : ExecutionPayloadBid) with builderIndex, slot := 1 } }

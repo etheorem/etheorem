@@ -61,19 +61,20 @@ private def runUpgradeImpl (P : Preset) (C : Config) (forkVersion : Version) (pr
   letI : CryptoBackend := CryptoBackend.realBackend
   match SSZ.deserialize (T := Fulu.BeaconState) preBytes with
   | .ok pre  =>
-    let box0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox (upgradeToGloas forkVersion pre)
-    let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit :=
+    let action : EStateM StateTransitionError (@Gloas.BeaconState P) Unit :=
       completeUpgradeToGloas
-    RunError.ofSpec (runToRoot box0 action)
+    RunError.ofSpec (runToRoot (upgradeToGloas forkVersion pre) action)
   | .error _ => .error (.decode "Fulu BeaconState")
 
-/-- Decode a Gloas `BeaconState` into a `FastBox`, or the runner's `decode` error. -/
+/-- Decode a plain Gloas `BeaconState`, or the runner's `decode` error. Gloas's `State` is
+the plain record (`state_preamble`), so the runner threads the decoded value itself, and
+each root is a full merkleization through the `StateRoot State` instance. -/
 private def decodeState (P : Preset) (bytes : ByteArray) :
-    Except (RunError StateTransitionError) (SSZ.Box Sha256 (@Gloas.BeaconState P)) :=
+    Except (RunError StateTransitionError) (@Gloas.BeaconState P) :=
   letI : Preset := P
-  match SSZ.FastBox.deserialize (T := @Gloas.BeaconState P) bytes with
-  | .ok box  => .ok box
-  | .error _ => .error (.decode "BeaconState")
+  match SSZ.deserialize (T := @Gloas.BeaconState P) bytes with
+  | .ok state => .ok state
+  | .error _  => .error (.decode "BeaconState")
 
 /-- `runEpochSubstep`: dispatch the `epoch_processing/<handler>` name to its
 substep, run it over the decoded Gloas pre-state at the fast config, return the
@@ -83,12 +84,12 @@ that the committees are inheritable), and the ePBS-new `builder_pending_payments
 and `ptc_window`. -/
 private def runEpochSubstepImpl (P : Preset) (C : Config) (step : EpochStep) (preBytes : ByteArray) :
     Except (RunError StateTransitionError) ByteArray := do
-  let box0 ← decodeState P preBytes
+  let state0 ← decodeState P preBytes
   letI : Preset := P
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.realBackend
-  let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit :=
+  let action : EStateM StateTransitionError (@Gloas.BeaconState P) Unit :=
     match step with
     | .slashingsReset               => processSlashingsReset
     | .randaoMixesReset             => processRandaoMixesReset
@@ -109,7 +110,7 @@ private def runEpochSubstepImpl (P : Preset) (C : Config) (step : EpochStep) (pr
     | .syncCommitteeUpdates         => processSyncCommitteeUpdates
     | .proposerLookahead            => processProposerLookahead
     | .ptcWindow                    => processPtcWindow
-  RunError.ofSpec (runToRoot box0 action)
+  RunError.ofSpec (runToRoot state0 action)
 
 /-- `runRewards`: the same four reward-delta blobs as Fulu, computed by the
 inherited Gloas delta functions over the Gloas pre-state. The `Deltas` container is
@@ -149,15 +150,16 @@ private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
 -- the EIP-8282 `builder_deposit_request` / `builder_exit_request`, and the builder-branch
 -- `voluntary_exit` / `deposit_request`. The checked `Epoch` arithmetic makes the compiled
 -- body heavier; the `maxHeartbeats` annotation covers that elaboration cost.
+-- `IMPLEMENTATION_NOTES.md`, "Final costs", records that cost.
 set_option maxHeartbeats 1000000 in
 private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     (preBytes opBytes : ByteArray) (cmeta : CaseMeta) : Except (RunError StateTransitionError) ByteArray := do
-  let box0 ← decodeState P preBytes
+  let state0 ← decodeState P preBytes
   letI : Preset := P
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.forBlsSetting cmeta.blsSetting
-  let dispatch : Except (RunError StateTransitionError) (EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit) :=
+  let dispatch : Except (RunError StateTransitionError) (EStateM StateTransitionError (@Gloas.BeaconState P) Unit) :=
     match kind with
     | .proposerSlashing       => (decodeOp (@ProposerSlashing P) opBytes).map processProposerSlashing
     | .attesterSlashing       => (decodeOp (@AttesterSlashing P) opBytes).map processAttesterSlashing
@@ -199,24 +201,24 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
   match dispatch with
   | .error e   => .error e
   | .ok action =>
-    RunError.ofSpec (runToRoot box0 action)
+    RunError.ofSpec (runToRoot state0 action)
 
 /-- `runSlots`: advance the decoded Gloas pre-state by `n` empty slots through the
 Gloas `process_slots` (which runs the Gloas `process_epoch` at boundaries). -/
 private def runSlotsImpl (P : Preset) (C : Config) (preBytes : ByteArray) (n : Nat) :
     Except (RunError StateTransitionError) ByteArray := do
-  let box0 ← decodeState P preBytes
+  let state0 ← decodeState P preBytes
   letI : Preset := P
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.realBackend
-  let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit := do
+  let action : EStateM StateTransitionError (@Gloas.BeaconState P) Unit := do
     let state ← get
     -- The harness's `state.slot + slots`: the checked `Slot` add of the plain `int` slot
     -- count, so a target past `2^64 - 1` raises (§4.2).
     let target ← (sszGet state slot) + n
     processSlots target
-  RunError.ofSpec (runToRoot box0 action)
+  RunError.ofSpec (runToRoot state0 action)
 
 -- `runBlocks` (`sanity/blocks`, `finality`, `random`): fold the Gloas
 -- `state_transition` over the decoded signed blocks (verify-off at `bls_setting = 2`),
@@ -224,7 +226,7 @@ private def runSlotsImpl (P : Preset) (C : Config) (preBytes : ByteArray) (n : N
 set_option maxHeartbeats 1000000 in
 private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
     (blocks : Array ByteArray) (cmeta : CaseMeta) : Except (RunError StateTransitionError) ByteArray := do
-  let box0 ← decodeState P preBytes
+  let state0 ← decodeState P preBytes
   -- Decode the block sequence up front (both binds stay ahead of the `letI`s, which close
   -- the do-block into term context): a malformed block is a `decode` error, not a reject.
   let signedBlocks ← blocks.mapM (fun bb =>
@@ -235,17 +237,18 @@ private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.forBlsSetting cmeta.blsSetting
-  let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit := do
+  let action : EStateM StateTransitionError (@Gloas.BeaconState P) Unit := do
     for sb in signedBlocks do stateTransition sb
-  RunError.ofSpec (runToRoot box0 action)
+  RunError.ofSpec (runToRoot state0 action)
 
 -- `runTransition` (the `transition` format, Fulu→Gloas): fold the pre-fork blocks
 -- (indices `0..forkBlock`) under Fulu `state_transition`, advance the Fulu state to the
 -- fork-epoch boundary (so the boundary `process_epoch` runs under Fulu rules), apply
 -- `upgradeToGloas` + `completeUpgradeToGloas`, then fold the post-fork blocks under Gloas
 -- `state_transition`. A post-fork block landing exactly on the boundary slot skips the
--- slot advance (the upgrade already positioned the state there). Build-cost note as
--- `runOperationImpl` above.
+-- slot advance (the upgrade already positioned the state there). Both legs run on the plain
+-- record: the Fulu leg threads the decoded Fulu state, and the Gloas leg threads the state
+-- that `upgradeToGloas` returns. Build-cost note as `runOperationImpl` above.
 set_option maxHeartbeats 1000000 in
 private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
     (preBytes : ByteArray) (blocks : Array ByteArray) (cmeta : CaseMeta) :
@@ -286,15 +289,14 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
       match SSZ.deserialize (T := @Gloas.SignedBeaconBlock P) bb with
       | .ok sb   => Except.ok sb
       | .error _ => Except.error (RunError.decode "Gloas SignedBeaconBlock"))
-    let fuluBox0 : SSZ.Box Sha256 (Fulu.BeaconState) := SSZ.FastBox preFulu
-    let fuluAction : EStateM StateTransitionError (SSZ.Box Sha256 (Fulu.BeaconState)) Unit := do
+    let fuluAction : EStateM StateTransitionError (Fulu.BeaconState) Unit := do
       for sb in fuluBlocks do Fulu.stateTransition sb
       if (sszGet (← get) slot) < boundary then Fulu.processSlots boundary
-    match fuluAction.run fuluBox0 with
+    match fuluAction.run preFulu with
     | .error e _ => Except.error (RunError.spec e)
     | .ok _ fuluSt =>
-      let gloasBox0 : SSZ.Box Sha256 (@Gloas.BeaconState P) := SSZ.FastBox (upgradeToGloas forkVersion fuluSt.view)
-      let gloasAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Gloas.BeaconState P)) Unit := do
+      let gloasPost : @Gloas.BeaconState P := upgradeToGloas forkVersion fuluSt
+      let gloasAction : EStateM StateTransitionError (@Gloas.BeaconState P) Unit := do
         completeUpgradeToGloas
         for sb in gloasBlocks do
           if (sszGet (← get) slot) < sb.message.slot then Gloas.processSlots sb.message.slot
@@ -302,7 +304,7 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
           Gloas.processBlock sb.message
           let root ← getStateRoot
           assert (sb.message.stateRoot == bytesToRoot root)
-      RunError.ofSpec (runToRoot gloasBox0 gloasAction)
+      RunError.ofSpec (runToRoot gloasPost gloasAction)
 
 /-- Run `getHead` over the snapshot store as a pure query (`runQuery` discards the final
 store; `getHead` only reads it). Shared by the `checkHead` / `checkHeadPayloadStatus` arms,
@@ -458,7 +460,7 @@ private def runForkChoiceImpl (P : Preset) (C : Config) (anchorStateBytes anchor
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.realBackend
-  match SSZ.FastBox.deserialize (T := @Gloas.BeaconState P) anchorStateBytes,
+  match SSZ.deserialize (T := @Gloas.BeaconState P) anchorStateBytes,
         SSZ.deserialize (T := @Gloas.BeaconBlock P) anchorBlockBytes with
   | .error _, _ => .error (.decode "fork_choice anchor state")
   | _, .error _ => .error (.decode "fork_choice anchor block")
