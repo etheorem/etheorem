@@ -1,6 +1,5 @@
 import EthCLSpecs.Gloas.Operations
 import EthCLLib.Proofs.Run
-import SizzLean.Proofs.UncachedBox
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid`: Boolean characterization
@@ -15,8 +14,9 @@ read and a fault on any step reject the bid exactly where the pyspec raises.
 These are the literal `Gwei` values; the theorem does not assert that accumulation
 of pending obligations is overflow-free.
 
-Statements bind plain `BeaconState` values; the state readers and the spec
-functions receive `pureState state`, and the read spells `getAt state.builders i`.
+Statements bind plain `BeaconState` values. The Gloas `State` is that type, so the
+state readers and the spec functions take `state` itself, and the read spells
+`getAt state.builders i`.
 
 Three theorems:
 
@@ -33,22 +33,22 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (HasherTag Checked StateTransitionError getAt liftErr)
+open EthCLLib.Spec (Checked StateTransitionError getAt liftErr)
 open EthCLSpecs.Gloas (BeaconState BuilderIndex Builder Gwei Preset)
 open EthCLSpecs.Gloas (canBuilderCoverBid getPendingBalanceToWithdrawForBuilder)
-open EthCLLib.Proofs (pureState add_ok_iff add_value sub_ok_iff sub_value)
+open EthCLLib.Proofs (add_ok_iff add_value sub_ok_iff sub_value)
 
 /-- **Exact run equation.** The raising builder read, then the pending sum and the
 reserve add bind in order; the guard then picks a branch, and only the else branch binds
 the checked cover subtraction. This is the body itself, so `rfl` states it. -/
 @[characterizes EthCLSpecs.Gloas.canBuilderCoverBid]
-theorem canBuilderCoverBid_eq [Preset] [HasherTag] :
+theorem canBuilderCoverBid_eq [Preset] :
     ∀ (state : BeaconState) (builderIndex : BuilderIndex) (bidAmount : Gwei),
-      canBuilderCoverBid (pureState state) builderIndex bidAmount
+      canBuilderCoverBid state builderIndex bidAmount
         = ((do
             let builder ← liftErr (getAt state.builders builderIndex)
             let builderBalance := builder.balance
-            let pending ← getPendingBalanceToWithdrawForBuilder (pureState state) builderIndex
+            let pending ← getPendingBalanceToWithdrawForBuilder state builderIndex
             let minBalance ← (Gloas.Const.minDepositAmountG + pending : Checked Gwei)
             if builderBalance < minBalance then pure false
             else
@@ -64,15 +64,15 @@ name the arithmetic the chain checks and no intermediate `minBalance` or `cover`
 appears: the conclusion reads the remainder off through `add_value` and `sub_value` as
 one `Nat` inequality. No claim is made that pending-obligation accumulation is
 overflow-free. Laws: `add_ok_iff`, `add_value`, `sub_ok_iff`, `sub_value`. -/
-theorem canBuilderCoverBid_ok_iff [Preset] [HasherTag] :
+theorem canBuilderCoverBid_ok_iff [Preset] :
     ∀ (state : BeaconState) (builderIndex : BuilderIndex) (builder : Builder)
       (bidAmount pending : Gwei),
       getAt state.builders builderIndex = .ok builder →
-      getPendingBalanceToWithdrawForBuilder (pureState state) builderIndex = .ok pending →
+      getPendingBalanceToWithdrawForBuilder state builderIndex = .ok pending →
       Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat < 2 ^ 64 →
       Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat
           ≤ builder.balance.toPlainNat →
-      (canBuilderCoverBid (pureState state) builderIndex bidAmount = .ok true ↔
+      (canBuilderCoverBid state builderIndex bidAmount = .ok true ↔
         bidAmount.toPlainNat ≤ builder.balance.toPlainNat
           - (Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat)) := by
   intro state builderIndex builder bidAmount pending hread hpend hrange hfit
@@ -165,15 +165,15 @@ balance, an addition that cannot wrap. A corollary of `canBuilderCoverBid_ok_iff
 by arithmetic: the remainder there is exact because the fit hypothesis bounds the
 subtrahend. Laws used: `canBuilderCoverBid_ok_iff` (hence `add_value`,
 `sub_value`). -/
-theorem canBuilderCoverBid_ok_toNat_add_le [Preset] [HasherTag] :
+theorem canBuilderCoverBid_ok_toNat_add_le [Preset] :
     ∀ (state : BeaconState) (builderIndex : BuilderIndex) (builder : Builder)
       (bidAmount pending : Gwei),
       getAt state.builders builderIndex = .ok builder →
-      getPendingBalanceToWithdrawForBuilder (pureState state) builderIndex = .ok pending →
+      getPendingBalanceToWithdrawForBuilder state builderIndex = .ok pending →
       Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat < 2 ^ 64 →
       Gloas.Const.minDepositAmountG.toPlainNat + pending.toPlainNat
           ≤ builder.balance.toPlainNat →
-      canBuilderCoverBid (pureState state) builderIndex bidAmount = .ok true →
+      canBuilderCoverBid state builderIndex bidAmount = .ok true →
         bidAmount.toPlainNat + (Gloas.Const.minDepositAmountG.toPlainNat
             + pending.toPlainNat)
           ≤ builder.balance.toPlainNat := by
