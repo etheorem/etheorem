@@ -21,6 +21,7 @@ import SizzLeanTests.SerializeCacheCoherence
 import SizzLeanTests.ZeroHashDepth
 import SizzLeanTests.ProgressiveGaps
 import SizzLeanTests.CheckedWrapperPacking
+import SizzLeanTests.PlainUpdate
 
 /-!
 # `SizzLeanTests`: SSZ-only empirical / property-test gates
