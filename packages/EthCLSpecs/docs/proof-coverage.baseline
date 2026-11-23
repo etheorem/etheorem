@@ -2,10 +2,15 @@
 # Every line is a claim `just proof-coverage-check` enforces exactly.
 tier1 EthCLSpecs.Gloas.computeEpochAtSlot
 tier1 EthCLSpecs.Gloas.computePtc
+tier1 EthCLSpecs.Gloas.computeSlotAtTimeMs
 tier1 EthCLSpecs.Gloas.computeStartSlotAtEpoch
 tier1 EthCLSpecs.Gloas.currentEpochOf
+tier1 EthCLSpecs.Gloas.getActiveValidatorIndices
+tier1 EthCLSpecs.Gloas.getCurrentSlot
 tier1 EthCLSpecs.Gloas.getDomain
 tier1 EthCLSpecs.Gloas.getPendingBalanceToWithdrawForBuilder
+tier1 EthCLSpecs.Gloas.getSlotsSinceGenesis
+tier1 EthCLSpecs.Gloas.getTotalActiveBalance
 tier1 EthCLSpecs.Gloas.isBuilderIndex
 tier1 EthCLSpecs.Gloas.processAttestation
 tier1 EthCLSpecs.Gloas.processAttesterSlashing
@@ -34,6 +39,7 @@ tier2 EthCLSpecs.Gloas.convertBuilderIndexToValidatorIndex
 tier2 EthCLSpecs.Gloas.initializePtcWindow
 tier2 EthCLSpecs.Gloas.initiateBuilderExit
 tier2 EthCLSpecs.Gloas.isValidIndexedPayloadAttestation
+tier2 EthCLSpecs.Gloas.processBuilderPendingPayments
 tier2 EthCLSpecs.Gloas.processDepositRequest
 tier2 EthCLSpecs.Gloas.processOperations
 tier2 EthCLSpecs.Gloas.toBuilderIndex
