@@ -180,15 +180,15 @@ state_section
 /-- A nested step that adds one to the counter, checked. -/
 def nestedBump : StateTransition Unit := do
   let s ← get
-  let cur := sszGet s counter
+  let cur := s.counter
   let next ← cur + 1
-  modifyState fun st => sszUpdate st with counter := next
+  modifyState fun st => { st with counter := next }
 
 /-- A nested step whose very first bind faults: the fault is formed before any
 state change. -/
 def nestedFaulting : StateTransition Unit := do
   let x ← (0 : CLUint64) - 1
-  modifyState fun st => sszUpdate st with counter := x
+  modifyState fun st => { st with counter := x }
 
 end   -- closes the section opened by `state_section`
 
@@ -252,7 +252,7 @@ counter or the reject. The nested machine's own pre-state rides inside the
 action, the same hand `on_block` gets it by. -/
 def runStoreState (action : PinM State) : CLUint64 ⊕ StoreTransitionError :=
   match action.run store0 with
-  | .ok (post, _) => .inl (sszGet post counter)
+  | .ok (post, _) => .inl post.counter
   | .error e      => .inr e
 
 -- The checked store arithmetic lands: 1 + 4 = 5. The `map` named argument

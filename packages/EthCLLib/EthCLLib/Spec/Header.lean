@@ -186,13 +186,19 @@ def elabForkChoiceSection : CommandElab := fun stx => do
 
 /-! ## `appendState`: append to a list field of the threaded state -/
 
+/-- The field projection `base.field` as syntax. The term quotation has no splice for the
+field name after a dot, so the `Term.proj` node is built directly. -/
+private def mkFieldProj (base : Term) (field : Ident) : Term :=
+  ⟨Syntax.node SourceInfo.none ``Lean.Parser.Term.proj
+    #[base, Syntax.atom SourceInfo.none ".", field]⟩
+
 /-- `appendState f v`: the spec's `state.f.append(v)`. It appends `v` to the threaded
 state's list field `f`, or raises the `.listFull` fault when the list is at its limit, as
 `eth-ssz-specs` 0.1.0's `List.append` does (`SSZValueError`, a `ValueError`). The expansion
-reads the state and runs SizzLean's
-`sszAppend?` on it. `some` of the updated state goes back through the per-fork
-`modifyState` (a use-site identifier, resolved to the running fork's). `none` becomes
-`throwListFull`.
+reads the state and runs `push?` on the field, which works on `SSZList` and
+`ProgressiveList` alike. `some` of the longer list goes back into the state through a
+record update and the per-fork `modifyState` (a use-site identifier, resolved to the
+running fork's). `none` becomes `throwListFull`.
 
 The macro's own read is hygienic, so `v` cannot see it. A `state` that `v` names is the
 caller's binding, and it can predate a write the caller made since. A `v` that must read
@@ -204,11 +210,13 @@ macro_rules
       let stateId  := mkIdent `State
       let modifyId := mkIdent `modifyState
       let field    := Syntax.mkStrLit head.getId.toString
-      -- `($v)`: `sszAppend?` takes the value as a `term:max`.
+      -- `s` is hygienic: every quotation of one expansion shares its macro scope, so the
+      -- `s` here and the `s` the `do` block binds are one name.
+      let read := mkFieldProj (← `(s)) head
       `(do
           let s ← getThe $stateId
-          match sszAppend? s $head:ident ($v) with
-          | some s' => $modifyId:ident fun _ => s'
+          match ($read).push? ($v) with
+          | some l => $modifyId:ident fun _ => { s with $head:ident := l }
           | none => throwListFull $field)
 
 /-! ## `setOrAppendState`: the spec's `set_or_append_list` on a state field -/
@@ -226,7 +234,9 @@ macro_rules
   | `(setOrAppendState $head:ident $i $v) => do
       let stateId  := mkIdent `State
       let modifyId := mkIdent `modifyState
-      let clause ← `(sszUpdateClause| $head:ident[k]! := v)
+      -- `s` and `state` are hygienic, as in `appendState`.
+      let read := mkFieldProj (← `(s)) head
+      let old  := mkFieldProj (← `(state)) head
       `(do
           let v := $v
           let s ← getThe $stateId
@@ -235,9 +245,10 @@ macro_rules
           -- a position inside the list, the `ToIndex CLUint64` reading (`SPEC_ARITHMETIC.md`
           -- §4.6); no operator runs on it.
           let k := i.toPlainNat
-          let n := (sszGet s $head:ident).val.size
+          let n := ($read).size
           if k == n then appendState $head:ident v
-          else if k < n then $modifyId:ident fun state => sszUpdate state with $clause
+          else if k < n then
+            $modifyId:ident fun state => { state with $head:ident := ($old).set! k v }
           else liftErr (Except.error (SizzLean.Cache.IndexError.indexError k n)
             : Except SizzLean.Cache.IndexError PUnit))
 

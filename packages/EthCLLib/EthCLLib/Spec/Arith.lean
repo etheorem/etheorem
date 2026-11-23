@@ -24,9 +24,9 @@ A read where the pyspec can raise `IndexError` goes through the size-aware
 `sszGetIdx` / `getAt` (`Spec/State.lean`, `SPEC_ARITHMETIC.md` §4.6).
 `sszOfArray` takes a proof that the array fits. A list whose length is known only at
 run time goes through `sszOfArrayM` (`Spec.Header`), which raises as the spec's
-`List[T, N](...)` does. A boxed-state field reads and writes through SizzLean's
-`sszGet` / `sszUpdate` index forms: `f[i]` rejects on a miss, and the total `f[i]!`
-is for an index already known to be in range.
+`List[T, N](...)` does. An element of a state field reads as `state.f[i]!` and
+writes as `{ state with f := state.f.set! i v }`. Both are total, so they are for an
+index already known to be in range.
 -/
 
 set_option autoImplicit false
@@ -40,9 +40,7 @@ namespace EthCLLib.Spec
 The variable-length SSZ collection types a spec body names in container fields and
 signatures live in `SizzLean.Repr`. Re-export them here so `open EthCLLib.Spec`
 alone brings the author surface into scope (`SPEC_AUTHORING_MODEL.md` §3.2), with
-no second `open SizzLean.Repr`. The fixed-length `Vector` is core Lean; the boxed
-`State` representation (`SizzLean.Cache`) stays behind `sszGet` / `sszUpdate` and is
-deliberately not re-exported. -/
+no second `open SizzLean.Repr`. The fixed-length `Vector` is core Lean. -/
 export SizzLean.Repr (SSZList Bitvector Bitlist ProgressiveList ProgressiveBitlist)
 
 /-! ## `UInt64` arithmetic -/
