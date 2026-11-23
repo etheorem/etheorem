@@ -4,19 +4,18 @@ import EthCLLib.Proofs.Run
 /-!
 # `EthCLLib.Proofs.IndexRead`: the indexed reads, box-free
 
-What the pure read `EthCLLib.Spec.getAt` computes — at a `CLUint64` index, whose
+What the pure read `EthCLLib.Spec.getAt` computes: at a `CLUint64` index, whose
 `ToIndex` range test agrees with the collection's own on any collection whose
-`IdxRead` instance misses past its size, at a `Nat` index, and over the two list
+`IdxRead` instance misses past its size; at a `Nat` index; and over the two list
 shapes the forks hold (`SSZList`, `ProgressiveList`, stated over the list's
-array) — and how the machine read `EthCLLib.Spec.sszGetIdx` runs: a hit returns
-the element and leaves the state alone, a miss raises the converted
+array). It also states how the machine read `EthCLLib.Spec.sszGetIdx` runs: a hit
+returns the element and leaves the state alone, a miss raises the converted
 `IndexError`.
 
 No statement here names the uncached box: the lemmas quantify over the monadic
-state `σ`, so both spec modes — boxed and plain — read them. The box-flavour
-lemma about `sszGetIdx` (`keepsUncached_sszGetIdx`, in
-`EthCLLib.Proofs.KeepsUncached`) is stated over these run equations, which is
-why this module sits beside it.
+state `σ`, so both spec modes, boxed and plain, read them. `keepsUncached_sszGetIdx`,
+in `EthCLLib.Proofs.KeepsUncached`, proves its box-flavour fact from these run
+equations.
 -/
 
 set_option autoImplicit false
@@ -108,4 +107,5 @@ theorem run_sszGetIdx_none {α ρ ι : Type} {σ ε : Type}
   unfold EthCLLib.Spec.sszGetIdx EthCLLib.Spec.liftErr
   rw [hq]
   exact run_ofExcept_error sb
+
 end EthCLLib.Proofs

@@ -12,10 +12,11 @@ and every framework helper runs on it unchanged (`FRAMEWORK_ARCHITECTURE.md` §1
   through `SSZ.hashTreeRoot`;
 - `state_section` is preamble-agnostic: the same macro serves both modes, and the steps
   are written exactly as the boxed twin writes them;
-- the plan's seven helpers run on the plain fork in both monads — `sszGet`, `sszUpdate`
-  (through `bumpSlot` / `setFlag`), `sszModify` (through `bumpXsHead`), `appendState`,
-  `setOrAppendState`, `getStateRoot` (through `rootAfterBump`) and `runToRoot` —
-  `StateT State (Except StateTransitionError)` and `EStateM StateTransitionError State`;
+- the plan's seven helpers run on the plain fork in both monads, `StateT State
+  (Except StateTransitionError)` and `EStateM StateTransitionError State`: `sszGet`,
+  `sszUpdate` (through `bumpSlot` / `setFlag`), `sszModify` (through `bumpXsHead`),
+  `appendState`, `setOrAppendState`, `getStateRoot` (through `rootAfterBump`) and
+  `runToRoot`;
 - `sszOfArrayM` raises `.listFull` on too many elements, as in the boxed twin. The
   boxed twin keeps covering the box mode; the fork-choice half needs no plain twin (the
   store never touches `State`).
@@ -24,12 +25,6 @@ A plain state carries no Merkle cache, so `getStateRoot`'s warmed successor is t
 state itself and every root is a full `SSZ.hashTreeRoot` of the record; the roots are
 compared against `SSZ.hashTreeRoot Sha256` of the expected plain record, closed by
 `native_decide` (CLAUDE.md, *Proofs involving SSZ hashes*).
-
-`runToRoot` is exercised through `runToRootPlain` below: the framework helper's exact
-body at the `[StateRoot S]` signature the root helpers take once the genericizing task
-(plan task 2.1) lands, which runs in parallel with this one. When it has landed on the
-epic branch, the examples below call the framework's `runToRoot` verbatim — same
-signature, same body — and this twin goes.
 -/
 
 set_option autoImplicit false
@@ -108,20 +103,6 @@ def rootAfterBump : StateTransition ByteArray := do
 
 end   -- closes the section opened by `state_section`
 
-/-! ## `runToRoot` on the plain fork -/
-
-/-- The framework's `runToRoot`, at the `[StateRoot S]` signature the root helpers take
-once the genericizing task (plan task 2.1) lands; that task runs in parallel with this
-one, and the plain state already carries its side of the contract: the `StateRoot
-State` instance above. The body is the helper's, verbatim — run the action from `pre`,
-project the post-state's root, or the reject. When 2.1 has landed on the epic branch,
-delete this twin and rename the call sites below to the framework's `runToRoot`. -/
-private def runToRootPlain [Preset] [HasherTag] {M : Type → Type} [MonadRunState State M]
-    (pre : State) (act : M Unit) : Except StateTransitionError ByteArray :=
-  match MonadRunState.runFrom pre act with
-  | .ok (_, post) => .ok (StateRoot.rootAndWarm post).1
-  | .error e      => .error e
-
 /-! ## The steps run in `EStateM` -/
 
 section EStateMRuns
@@ -129,7 +110,7 @@ section EStateMRuns
 local instance : Preset := mini
 local instance : HasherTag := fastHasherTag
 
-/-- The plain starting state — no wrapper, where the boxed twin wraps in
+/-- The plain starting state, no wrapper, where the boxed twin wraps in
 `SSZ.CachedBox`. -/
 def s0 : State := { slot := 41, flag := 7, xs := ⟨#[1], by decide⟩ }
 
@@ -196,7 +177,7 @@ example :
 `DecidableEq`, so both gates below compare through `Option`. -/
 example :
     (let action : EStateM StateTransitionError State Unit := bumpSlot
-     match runToRootPlain s0 action with
+     match runToRoot s0 action with
      | .ok root => some root
      | .error _ => none)
       = some (SSZ.hashTreeRoot Sha256
@@ -205,7 +186,7 @@ example :
 /-- … and the reject propagates: a full-list append roots nothing. -/
 example :
     (let action : EStateM StateTransitionError State Unit := do appendX 5; appendX 6
-     match runToRootPlain s0 action with
+     match runToRoot s0 action with
      | .error e => some e
      | .ok _    => none)
       = some (.listFull "xs") := by native_decide
@@ -263,7 +244,7 @@ example :
 /-- `runToRoot` in the pure column: run `bumpSlot`, root the post-state. -/
 example :
     (let action : StateT State (Except StateTransitionError) Unit := bumpSlot
-     match runToRootPlain s0 action with
+     match runToRoot s0 action with
      | .ok root => some root
      | .error _ => none)
       = some (SSZ.hashTreeRoot Sha256
@@ -274,7 +255,7 @@ branch, so a full-list append roots nothing. -/
 example :
     (let action : StateT State (Except StateTransitionError) Unit :=
        do appendX 5; appendX 6
-     match runToRootPlain s0 action with
+     match runToRoot s0 action with
      | .error e => some e
      | .ok _    => none)
       = some (.listFull "xs") := by native_decide
