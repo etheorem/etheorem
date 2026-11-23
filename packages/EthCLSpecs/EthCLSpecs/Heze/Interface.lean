@@ -70,7 +70,7 @@ private def runUpgradeImpl (P : Preset) (forkVersion : Version) (preBytes : Byte
 
 /-- Decode a plain Heze `BeaconState`, or the runner's `decode` error. Heze's `State` is the
 plain record (`state_preamble`), so the runner threads the decoded value itself, and
-each root is a full merkleization through the `StateRoot State` instance. -/
+each root is a full merkleization of the record through `SSZ.hashTreeRoot`. -/
 private def decodeState (P : Preset) (bytes : ByteArray) :
     Except (RunError StateTransitionError) (@Heze.BeaconState P) :=
   letI : Preset := P

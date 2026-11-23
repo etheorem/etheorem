@@ -899,10 +899,8 @@ forkdef isDataAvailable (beaconBlockRoot : Root) : Bool :=
   DataAvailability.isDataAvailable beaconBlockRoot
 
 /-- `verify_execution_payload_envelope`: the consensus-side envelope checks, closing with
-the EL's `verify_and_notify_new_payload` answer. Returns the cache-warmed
-state (the `hashTreeRoot` computed for the block-root check) in
-`Except StoreTransitionError`; the handler stores it back so the warm tree is kept
-rather than thrown away. -/
+the EL's `verify_and_notify_new_payload` answer. Returns the state it was handed in
+`Except StoreTransitionError`, and the handler stores it back. -/
 forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecutionPayloadEnvelope) :
     Except StoreTransitionError State := do
   let envelope := signedEnv.message
@@ -912,10 +910,9 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
   -- v1.7.0-beta.4). `liftErr` lands its `outOfBounds` reject as `.transition (.outOfBounds …)`.
   assert (← liftErr (verifyExecutionPayloadEnvelopeSignature state signedEnv))
 
-  -- Block-root binding: the envelope commits to this state's block header (warmed
-  -- with its computed state root) and its parent.
-  let (stateRootBytes, warm) := stateRoot state
-  let header : BeaconBlockHeader := { sszGet state latestBlockHeader with stateRoot := bytesToRoot stateRootBytes }
+  -- Block-root binding: the envelope commits to this state's block header (with its
+  -- computed state root) and its parent.
+  let header : BeaconBlockHeader := { sszGet state latestBlockHeader with stateRoot := htr state }
   assert (envelope.beaconBlockRoot == htr header)
   assert (envelope.parentBeaconBlockRoot == (sszGet state latestBlockHeader).parentRoot)
 
@@ -944,7 +941,7 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
   -- execution requests come off the envelope.
   assert (verifyAndNotifyNewPayload payload bid.blobKzgCommitments.toArray
     envelope.parentBeaconBlockRoot envelope.executionRequests)
-  return warm
+  return state
 
 /-- `on_execution_payload_envelope`: verify the revealed payload envelope against the
 committed bid and record it. The recorded payload flips the block's head node to FULL
@@ -1090,9 +1087,9 @@ checked), and seeds the anchor's two PTC vote arrays with `[None] * PTC_SIZE`, w
 left both vote maps empty. -/
 forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
     Except StoreTransitionError (Store map) := do
-  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: `stateRoot` roots the state
-  -- through its `StateRoot State` instance, a full merkleization of the plain record.
-  assert (anchorBlock.stateRoot == bytesToRoot (stateRoot anchorState).1)
+  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the anchor state is a value,
+  -- so `htr` roots it, a full merkleization of the plain record.
+  assert (anchorBlock.stateRoot == htr anchorState)
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }

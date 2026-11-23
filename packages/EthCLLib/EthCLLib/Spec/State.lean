@@ -6,13 +6,12 @@ import EthCLLib.Spec.Hasher
 /-!
 # `EthCLLib.Spec.State`: the state access surface
 
-`State` is the fork's `BeaconState` record itself; the per-fork abbrev (and the
-`modifyState` updater, and the `StateRoot State` instance) are emitted by
-`state_preamble` (`EthCLLib.Spec.Header`).
+`State` is the fork's `BeaconState` record itself; the per-fork abbrev and the
+`modifyState` updater are emitted by `state_preamble` (`EthCLLib.Spec.Header`).
 Reads and writes are SizzLean's generic `sszGet` / `sszUpdate` macros, available as
 global syntax the moment `SizzLean` is imported, so the framework adds no per-field
 lenses. This module supplies the small generic helpers the step primitives need:
-`getStateRoot` / `stateRoot` / `stateRoot!`, the index-error lift
+`getStateRoot` (the root of the threaded state), the index-error lift
 (`FRAMEWORK_ARCHITECTURE.md` §8.1), and the size-aware indexing layer
 (`SPEC_ARITHMETIC.md` §4.6): the `ToIndex` class with the pure raising read
 `getAt` and write `setAt`, beside the machine read `sszGetIdx` they extend.
@@ -31,59 +30,18 @@ universe u
 all-zero) lives in SizzLean alongside the type definitions, so a `forkcontainer`
 derives `Inhabited` for the runner's genesis anchor with no framework-side instance. -/
 
-/-- A state that yields its Merkle root together with a successor state. On a plain
-state the successor is the state itself, so the write-back is the identity.
-`state_preamble` emits the instance for each fork's plain record. The class exists so
-`getStateRoot` pins the state type `S` from its
-`MonadState S m` constraint (where the state type is an `outParam`) as one metavariable,
-then finds the root through the instance, rather than leaving the record's `SSZRepr` /
-hasher as metavariables instance search cannot solve in the abstract `state_section`.
-The pure helpers `stateRoot` / `stateRoot!` and `runToRoot` (`Spec/RunState.lean`) take
-the same class, so every root read works on any state type with an instance. -/
-class StateRoot (S : Type) where
-  /-- The root and the successor state; on a plain state, the state itself. -/
-  rootAndWarm : S → ByteArray × S
+/-- The Merkle root of the threaded state, read inside a step. This is the one seam for
+that read: `processSlot` and `stateTransition` take the state root through it, so a runner
+that keeps a cache beside the state has one call to intercept. A state held as a value
+uses `htr` (`Spec/SigningRoot.lean`), as any container does.
 
-/-- Take the threaded state's Merkle root inside a step. `StateRoot.rootAndWarm` returns
-the root *and* a successor state, so this writes the successor back through
-`MonadStateOf`; on the plain fork state the successor is the state itself, the write-back
-is the identity, and each root is a full recomputation through `SSZ.hashTreeRoot`. This
-is the way to take a state root in a `StateTransition` / store-machine step; the pure
-`stateRoot!` below is the terminal-only discard form. -/
-@[inline] def getStateRoot {S : Type} {m : Type → Type u} [MonadState S m] [StateRoot S] :
-    m ByteArray :=
-  modifyGet StateRoot.rootAndWarm
-
-/-- The Merkle root of a state value in hand, **with** the successor state
-`StateRoot.rootAndWarm` returns (on a plain state, the state itself), for a non-monadic
-context that threads the state by hand: a pure `State → State`
-transformer like `processSlot`, or an `Except` handler that returns the post-state. This is
-the lossless pure form, so it carries no bang. `getStateRoot` is the monadic form that
-threads the state automatically; `stateRoot!` is the form that drops it. Keeping spec
-bodies on this surface avoids naming `SSZ.hashTreeRoot` directly.
-
-The body reads the instance through its class projection `StateRoot.rootAndWarm`, the way
-`getStateRoot` does. The compiler unfolds and specialises the instance under the
-projection at the call site; a body that destructures the instance with `match` gets no
-such unfolding, and every call stays a closure call into the generic `SSZ.hashTreeRoot`
-(the WS-138 pilot review's corrected cause analysis). For proofs, `simp only [stateRoot]`
-stops at the projection and does not unfold the instance by itself; on the fork states the
-pair fact a proof needs is `(StateRoot.rootAndWarm state).2 = state`, which holds by `rfl`
-for the instance's `rootAndWarm s := (SSZ.hashTreeRoot HasherTag.H s, s)`. -/
-@[inline] def stateRoot {S : Type} [StateRoot S] (state : S) : ByteArray × S :=
-  StateRoot.rootAndWarm state
-
-/-- The Merkle root of a state value in hand, **discarding** the successor state
-`StateRoot.rootAndWarm` returns (on a plain state, the state itself). The `!` marks the
-discard, this library's bang convention for the convenient-but-lossy variant (as in
-`Array.get!` / `sszUpdate field[i]!`): it never panics, it drops the successor. On a
-plain state the successor is the state itself, so nothing of value is lost; use it at a
-terminal site, where the state dies right after the root is taken (the
-`PySpecTests` interface impls, where the root is the return value). A step on the threaded
-state uses `getStateRoot`; a non-monadic context that still needs the post-state uses the
-lossless `stateRoot`. -/
-@[inline] def stateRoot! {S : Type} [StateRoot S] (state : S) : ByteArray :=
-  (stateRoot state).1
+The state type `S` is an `outParam` of `MonadState S m`, so the monad pins it, and
+instance search then finds the record's `SSZRepr` with no metavariable left open. The
+root is a full merkleization through `SSZ.hashTreeRoot`, because the plain state carries
+no Merkle tree. The read leaves the state unchanged. -/
+@[inline] def getStateRoot {S : Type} {m : Type → Type u} [Monad m] [MonadState S m]
+    [SSZRepr S] [HasherTag] : m ByteArray := do
+  return SSZ.hashTreeRoot HasherTag.H (← get)
 
 -- Re-export `IndexError` onto the spec surface, so a pure query reading `validators[i]` can
 -- be typed `Except IndexError α` under the single `open EthCLLib.Spec`.

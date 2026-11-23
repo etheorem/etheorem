@@ -841,9 +841,9 @@ are checked. `anchor_state` comes straight off the wire, so a slot at or above
 `2^64 / SLOT_DURATION_MS` faults where a bare product would wrap and seed a wrong clock. -/
 forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
     Except StoreTransitionError (Store map) := do
-  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: `stateRoot` roots the state
-  -- through its `StateRoot State` instance, a full merkleization of the plain record.
-  assert (anchorBlock.stateRoot == bytesToRoot (stateRoot anchorState).1)
+  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the anchor state is a value,
+  -- so `htr` roots it, a full merkleization of the plain record.
+  assert (anchorBlock.stateRoot == htr anchorState)
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }

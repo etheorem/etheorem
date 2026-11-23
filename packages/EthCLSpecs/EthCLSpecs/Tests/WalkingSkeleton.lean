@@ -48,13 +48,12 @@ def slotAfter (n : Nat) : Nat :=
 #guard slotAfter 1 = 1
 #guard slotAfter 5 = 5
 
-/-- `stateRoot` decodes a serialized `BeaconState` and reproduces its root. The
-`StateRoot` instance hangs on `State` under a `[HasherTag]`, so the right side names
-`@State minimal fastHasherTag`, the plain record at the tag the interface roots with. The
-FFI `Sha256` reduces only through the compiler, so `native_decide`. -/
+/-- `stateRoot` decodes a serialized `BeaconState` and reproduces its root. The right
+side roots the record with `Sha256`, the hasher of `fastHasherTag`, which the interface
+roots with. The FFI `Sha256` reduces only through the compiler, so `native_decide`. -/
 example :
     (fuluInterface.stateRoot (SizzLean.SSZ.serialize (default : @BeaconState minimal))).toOption
-      = some (stateRoot! (default : @State minimal fastHasherTag)) := by
+      = some (SizzLean.SSZ.hashTreeRoot Sha256 (default : @BeaconState minimal)) := by
   native_decide
 
 /-- `runSlots` through the interface advances the state and returns a root. -/

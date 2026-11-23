@@ -24,9 +24,8 @@ state.
 The Heze `State` is the plain `BeaconState`, so the store keeps plain block
 states and the corollaries bind the block state as a plain value `state`.
 A successful verification returns `state` itself
-(`verifyExecutionPayloadEnvelope_eq_map_const`): its only state result is the
-second half of `stateRoot state`, and the plain `StateRoot` instance returns the
-state it reads. So the corollaries ask only that the verification succeeds, and
+(`verifyExecutionPayloadEnvelope_eq_map_const`): it ends with `return state`
+and roots the state with `htr`, which leaves it unchanged. So the corollaries ask only that the verification succeeds, and
 `onExecutionPayloadEnvelope_run_of_lookup` restates the whole `.run` equation
 with the stored state written back as `state`.
 
@@ -54,9 +53,8 @@ variable {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
 
 omit [DataAvailability] in
 /-- On a plain state, a successful verification returns that same state. The
-verification's only state result is the second half of `stateRoot state`, and the
-plain `StateRoot` instance (`state_preamble`) pairs the root with the state
-it reads. Stated as a `map`, so the success value of the left side is `state`
+verification ends with `return state`, and its block-root check reads the root
+with `htr`, which leaves the state unchanged. Stated as a `map`, so the success value of the left side is `state`
 itself. `map_bind` and `map_pure` push the `map` through every bind, and no assert
 condition is evaluated. -/
 theorem verifyExecutionPayloadEnvelope_eq_map_const :
@@ -64,10 +62,7 @@ theorem verifyExecutionPayloadEnvelope_eq_map_const :
       verifyExecutionPayloadEnvelope state signedEnv
         = (fun _ => state) <$> verifyExecutionPayloadEnvelope state signedEnv := by
   intro state signedEnv
-  -- The plain instance's `rootAndWarm s` is `(hashTreeRoot s, s)`, so its second half is
-  -- `state` by `rfl`. `simp only` does not unfold the instance by itself.
-  have hwarm : (EthCLLib.Spec.StateRoot.rootAndWarm state).2 = state := rfl
-  simp only [verifyExecutionPayloadEnvelope, EthCLLib.Spec.stateRoot, hwarm, map_bind, map_pure]
+  simp only [verifyExecutionPayloadEnvelope, map_bind, map_pure]
 
 omit [DataAvailability] in
 /-- A successful verification on `state` returns `state`: the `isOk` reading of

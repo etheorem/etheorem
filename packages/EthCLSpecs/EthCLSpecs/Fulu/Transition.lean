@@ -32,14 +32,16 @@ forkdef zeroRoot : Root := Vector.replicate 32 0
 
 /-- `process_slot` (`fulu/mainnet.py:1696-1706`): cache the state root, fill the latest
 header's empty state root, then cache the block root, all at
-`slot % SLOTS_PER_HISTORICAL_ROOT`. The ring index is the checked slot reduced by the
-proved-total divisor view (`SPEC_ARITHMETIC.md` §4.2); `toPlainNat` names the structural
-vector index the result narrows to (`SPEC_ARITHMETIC.md` §4.5). -/
-forkdef processSlot : StateTransition Unit :=
+`slot % SLOTS_PER_HISTORICAL_ROOT`. The state root comes from `getStateRoot`, the one
+seam for the root of the threaded state, before the pure caching body runs. The ring index
+is the checked slot reduced by the proved-total divisor view (`SPEC_ARITHMETIC.md` §4.2);
+`toPlainNat` names the structural vector index the result narrows to
+(`SPEC_ARITHMETIC.md` §4.5). -/
+forkdef processSlot : StateTransition Unit := do
+  -- Cache state root
+  let prevStateRoot : Root := bytesToRoot (← getStateRoot)
   modifyState fun state => Id.run do
-    let (prevStateRootBytes, state) := stateRoot state
     let mut state := state
-    let prevStateRoot : Root := bytesToRoot prevStateRootBytes
     let idx := ((sszGet state slot) % Const.slotsPerHistoricalRootDiv).toPlainNat
     state := sszUpdate state with stateRoots[idx]! := prevStateRoot
 
