@@ -1,6 +1,7 @@
 import EthCLLib.Proofs.Arith
 import EthCLLib.Proofs.CLInt
 import EthCLLib.Proofs.CLUint
+import EthCLLib.Proofs.IndexRead
 import EthCLLib.Proofs.KeepsUncached
 import EthCLLib.Proofs.LawfulFcMap
 import EthCLLib.Proofs.MerkleBranch
@@ -39,11 +40,15 @@ Re-exports:
   shares (`run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
   `except_bind_error`, the `ofExcept` and `liftErr` run equations), plus the pure
   box helpers `pureState` and `runPure` and their lemmas.
+* `EthCLLib.Proofs.IndexRead`: what the indexed reads compute (`getAt` at a
+  `CLUint64` or `Nat` index, over a lawful collection and over the `SSZList` /
+  `ProgressiveList` shapes) and the `sszGetIdx` run equations
+  (`run_sszGetIdx_some`, `run_sszGetIdx_none`). The lemmas name no box, so both
+  spec modes use them.
 * `EthCLLib.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine runner
   every fork's fork-choice proofs pin at that fork's `Store`, and the
   store-specific `throwArithmetic_run` / `throwZeroDivision_run` equations.
 * `EthCLLib.Proofs.KeepsUncached`: the box-flavour predicates (`KeepsUncached`,
   `KeepsUncachedFrom`, `ReturnsUncached`, `RunPassesP`), their closure and loop
-  lemmas, the indexed-read run equations, and the conditional bind law
-  `runPure_bind_of_keepsUncached`.
+  lemmas, and the conditional bind law `runPure_bind_of_keepsUncached`.
 -/

@@ -45,9 +45,7 @@ open EthCLLib.Spec (Checked CLUint64 ArithFault)
 open EthCLLib.Proofs (sub_eq_ok sub_ok_iff div_eq_ok)
 open EthCLSpecs.Gloas (Store getSlotsSinceGenesis getCurrentSlot State currentEpochOf
   initiateBuilderExit processBuilderPendingPayments)
-open EthCLLib.Proofs (pureState ForkChoiceStoreRun)
-open SizzLean.Repr
-open SizzLean.Cache
+open EthCLLib.Proofs (ForkChoiceStoreRun)
 
 /-- Gloas specialization of `ForkChoiceStoreRun`: pure `StateT`/`Except` over
 `Gloas.Store`, parameterized by the map backing rather than fixed to `treeMap`. -/
@@ -137,9 +135,9 @@ theorem getCurrentSlot_run_of_time_eq_genesis
 `EthCLLib/Spec/NestedMachine.lean` proves once, for every action, that the bridge hands a
 successful run's post-state back with `pure`. So carrying a state-machine fact into the
 store machine is function application, and there is nothing left here to state as a
-theorem of the Gloas spec. The fact must be a `.run` fact: a contract theorem states
-`act.run (pureState preState) = .ok (a, pureState postState)` (`EthCLLib/Proofs/Run.lean`),
-and the `runPure` value-level reading of the same contract hides the box, so it cannot feed the bridge.
+theorem of the Gloas spec. The fact must be a `.run` fact. The Gloas `State` is the plain
+`BeaconState`, so a contract theorem states `act.run preState = .ok (a, postState)`, and
+that one equation is the shape the bridge consumes.
 
 These are `example`s rather than named theorems for that reason: they claim nothing about
 Gloas that `Proofs/Gloas/InitiateBuilderExit.lean` and `Proofs/Gloas/BuilderPendingPayments.lean` do
@@ -153,7 +151,7 @@ store monad in that column. No store value appears; a state transition's effect 
 depend on one. -/
 
 /-- `initiateBuilderExit_run_eq` crossing the bridge, by application. The contract is a
-`.run` fact on `pureState preState`, exactly the shape `runNestedStateTransition_of_ok` consumes.
+`.run` fact on the plain `preState`, exactly the shape `runNestedStateTransition_of_ok` consumes.
 The bridge is conditional on the raising `builders[builder_index]` read being in range and on
 the checked withdrawability sum succeeding: past the registry's end the run raises the
 `.outOfBounds` fault, past `2 ^ 64 - 1` the sum raises the `.arithmetic` fault, and in both
@@ -162,19 +160,18 @@ example [Preset] [HasherTag] [Config] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex) (we : Gloas.Epoch),
       builderIndex.toPlainNat < preState.builders.size →
-      (currentEpochOf (pureState preState) +
+      (currentEpochOf preState +
           EthCLSpecs.Gloas.Const.minBuilderWithdrawabilityDelay : Checked Gloas.Epoch) = .ok we →
-      runNestedStateTransition (pureState preState)
+      runNestedStateTransition preState
           (initiateBuilderExit (StateTransition := GloasRun) builderIndex)
-        = (pure (pureState
+        = (pure
           { preState with builders :=
               (preState.builders.set! builderIndex.toPlainNat
-                { preState.builders[builderIndex.toPlainNat]! with withdrawableEpoch := we }) })
+                { preState.builders[builderIndex.toPlainNat]! with withdrawableEpoch := we }) }
             : m State) := by
   intro preState builderIndex we hidx hwe
   refine runNestedStateTransition_of_ok ?_
-  show (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run
-      (pureState preState) = _
+  show (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run preState = _
   have hsome : preState.builders.val[builderIndex.toPlainNat]?
       = some preState.builders[builderIndex.toPlainNat]! := by
     rw [getElem!_pos (dom := fun (xs : SizzLean.Repr.ProgressiveList Builder) i =>
@@ -192,11 +189,11 @@ example [Preset] [HasherTag] {m : Type → Type} [Monad m]
     [MonadExceptOf StoreTransitionError m] [NestedStateMachine m State GloasRun] :
     ∀ (preState : BeaconState) (quorum : Gwei),
       builderPaymentQuorum preState = .ok quorum →
-      runNestedStateTransition (pureState preState)
+      runNestedStateTransition preState
           (processBuilderPendingPayments (StateTransition := GloasRun))
-        = (pure (pureState { preState with
+        = (pure { preState with
               builderPendingWithdrawals := expectedWithdrawals quorum preState,
-              builderPendingPayments := expectedPaymentWindow preState }) : m State) :=
+              builderPendingPayments := expectedPaymentWindow preState } : m State) :=
   fun preState quorum hq =>
     runNestedStateTransition_of_ok (processBuilderPendingPayments_run_ok preState quorum hq)
 
