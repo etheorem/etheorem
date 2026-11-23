@@ -1,10 +1,10 @@
 import EthCLSpecs.Gloas.Containers.Execution
 
 /-!
-# `EthCLSpecs.Gloas.State`: the Gloas `BeaconState` and its boxed view (EIP-7732)
+# `EthCLSpecs.Gloas.State`: the Gloas `BeaconState` and its `State` (EIP-7732)
 
 The Gloas `BeaconState` (v1.7.0-beta.4, 46 fields), then the `State` abbrev that
-views it as an SSZ box. The eth1 fields remain; `latestExecutionPayloadHeader` is
+names it as the plain record. The eth1 fields remain; `latestExecutionPayloadHeader` is
 dropped (its slot now holds `latestBlockHash`), and the ePBS block is appended
 after `proposerLookahead`. The unchanged component containers are this fork's
 copies of Fulu's, replayed in `Inherited`; the ePBS containers are its own
@@ -85,8 +85,9 @@ forkcontainer BeaconState where
   -- SLOTS_PER_EPOCH` (`gloas/minimal.py:931-937`); both presets set `minSeedLookahead` to `1`.
   ptcWindow                     : Vector (Vector ValidatorIndex Const.ptcSize) ((Const.minSeedLookahead.toPlainNat + 2) * Const.slotsPerEpoch)
 
--- The once-per-fork preamble: declares `State` (the boxed `BeaconState`) and the
--- concrete-domain `modifyState` (`SPEC_AUTHORING_MODEL.md` §6, `EthCLLib.Spec.Header`).
-state_preamble BeaconState
+-- The once-per-fork preamble: declares `State` (the plain `BeaconState` record), the
+-- concrete-domain `modifyState`, and the `StateRoot State` instance that roots the record
+-- (`SPEC_AUTHORING_MODEL.md` §6, `EthCLLib.Spec.Header`).
+plain_state_preamble BeaconState
 
 end EthCLSpecs.Gloas
