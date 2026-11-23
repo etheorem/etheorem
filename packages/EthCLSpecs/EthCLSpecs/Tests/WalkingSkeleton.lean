@@ -7,8 +7,8 @@ Confirms the walking skeleton runs, not just typechecks (`PLAN.md` §1.1, §1.2
 acceptance):
 
 - a `forkdef` step (`processSlot`) **executes** at the fast config `EStateM
-  StateTransitionError (Box Sha256 BeaconState)`, round-tripping `sszGet` /
-  `sszUpdate` over the boxed state;
+  StateTransitionError BeaconState`, round-tripping `sszGet` / `sszUpdate` over
+  the plain state;
 - the fork-interface `stateRoot` decodes a `BeaconState` and reproduces its root;
 - the deferral safety net works: a vector that reaches an `outOfScope` entry
   (`runGenesis`) does not pass, and the driver reports it in the `outOfScope` (`skip`) bucket;
@@ -28,19 +28,19 @@ namespace EthCLSpecs.Tests.WalkingSkeleton
 
 /-- Advance a default `BeaconState` to slot `n` through the real `processSlots`
 (below the first epoch boundary, so no `processEpoch`) and read back the slot.
-Exercises the generated header, `[HasherTag]`, the `EStateM`-over-a-box
-composition, and `sszGet` / `sszUpdate`. -/
+Exercises the generated header, `[HasherTag]`, the `EStateM` composition over
+the plain state, and `sszGet` / `sszUpdate`. -/
 def slotAfter (n : Nat) : Nat :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
-  let box0 : SSZ.Box Sha256 (@BeaconState minimal) := SSZ.FastBox default
-  let action : EStateM StateTransitionError (SSZ.Box Sha256 (@BeaconState minimal)) Unit := do
+  let st0 : @BeaconState minimal := default
+  let action : EStateM StateTransitionError (@BeaconState minimal) Unit := do
     -- The target slot is the checked narrow of the plain count.
     let target ← CLUint64.ofNat? n
     processSlots target
-  match action.run box0 with
+  match action.run st0 with
   | .ok _ st   => (sszGet st slot).toPlainNat
   | .error _ _ => 0xdead
 
@@ -48,11 +48,12 @@ def slotAfter (n : Nat) : Nat :=
 #guard slotAfter 1 = 1
 #guard slotAfter 5 = 5
 
-/-- `stateRoot` decodes a serialized `BeaconState` and reproduces its root. The
-FFI `Sha256` reduces only through the compiler, so `native_decide`. -/
+/-- `stateRoot` decodes a serialized `BeaconState` and reproduces its root. The right
+side roots the record with `Sha256`, the hasher of `fastHasherTag`, which the interface
+roots with. The FFI `Sha256` reduces only through the compiler, so `native_decide`. -/
 example :
     (fuluInterface.stateRoot (SizzLean.SSZ.serialize (default : @BeaconState minimal))).toOption
-      = some (stateRoot! (SSZ.FastBox (default : @BeaconState minimal))) := by
+      = some (SizzLean.SSZ.hashTreeRoot Sha256 (default : @BeaconState minimal)) := by
   native_decide
 
 /-- `runSlots` through the interface advances the state and returns a root. -/

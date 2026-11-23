@@ -11,7 +11,7 @@ boost). The store is a `forkstruct` (captured for inheritance); the section open
 with `fork_choice_section map`, so the handlers are monadic `StoreTransition` actions
 over the typed `StoreTransitionError` (`assert` / `missingKey` / `todo`),
 and the queries (`get_weight`, `get_head`, the reorg predicates) are pure functions
-of the boxed store.
+of the store.
 
 The handlers reuse the Fulu spine: `on_block` runs `state_transition` on a copy of
 the parent post-state through `runNestedStateTransition` (the one-way bridge that wraps an
@@ -20,7 +20,7 @@ runs `process_slots` and `compute_pulled_up_tip` runs
 `process_justification_and_finalization`, each best-effort through `EStateM.run`.
 
 The `Store` is parameterized by its finite-map backing (`EthCLLib.Spec.FcMap`); the
-runner fixes it to `hashMap` over `Sha256` boxed states.
+runner fixes it to `hashMap`, and roots the plain states with `Sha256`.
 -/
 
 set_option autoImplicit false
@@ -44,8 +44,8 @@ forkstruct LatestMessage where
 deriving instance Inhabited for LatestMessage
 
 /-- The fork-choice store, parameterized by its map backing and (via `forkstruct`'s
-auto `[Preset]`) the preset / hasher tag. The boxed states reuse the transition
-layer's `State` (`= SSZ.Box HasherTag.H BeaconState`). At v1.7.0-beta.4 the clock is in
+auto `[Preset]`) the preset. The stored states reuse the transition
+layer's `State` (the plain `BeaconState` record). At v1.7.0-beta.4 the clock is in
 milliseconds (`time_ms`, `genesis_time_ms`), so slot arithmetic needs no seconds-to-ms
 conversion past `get_forkchoice_store`. Both clock fields are `Uint64` in the pinned `Store`, so
 they are the checked kind.
@@ -53,7 +53,7 @@ they are the checked kind.
 A node is its block root here: the phase0 `ForkChoiceNode` carries only `root`, so the
 Fulu walks pass `Root` where the spec passes a node, and a membership test on nodes is a
 membership test on roots. -/
-forkstruct Store (map : MapKind) [HasherTag] where
+forkstruct Store (map : MapKind) where
   timeMs                        : CLUint64
   genesisTimeMs                 : CLUint64
   justifiedCheckpoint           : Checkpoint
@@ -841,9 +841,9 @@ are checked. `anchor_state` comes straight off the wire, so a slot at or above
 `2^64 / SLOT_DURATION_MS` faults where a bare product would wrap and seed a wrong clock. -/
 forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
     Except StoreTransitionError (Store map) := do
-  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the boxed state hashes
-  -- through `stateRoot` (the cached-tree path), not `htr` (which wants a bare `SSZRepr`).
-  assert (anchorBlock.stateRoot == bytesToRoot (stateRoot anchorState).1)
+  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the anchor state is a value,
+  -- so `htr` roots it, a full merkleization of the plain record.
+  assert (anchorBlock.stateRoot == htr anchorState)
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }

@@ -26,7 +26,7 @@ the pin's own comment names.
    `assert` and rejected with the `assert` class. The nearby success passes the read and
    rejects at the next assert, which the pin names.
 
-`State` is FFI-backed, so `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -53,14 +53,12 @@ private def activeValidator : @Validator minimal :=
 /-- A Fulu state over the given registry, balances, and withdrawal cursor. -/
 private def fuluState (vs : Array (@Validator minimal)) (bals : Array Gwei)
     (cursor : ValidatorIndex) (hv : vs.size ≤ 4 := by decide) (hb : bals.size ≤ 4 := by decide) :
-    @State minimal fastHasherTag :=
+    @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      validators := ⟨vs, Nat.le_trans hv (by decide)⟩
-      balances := ⟨bals, Nat.le_trans hb (by decide)⟩
-      nextWithdrawalValidatorIndex := cursor }
+  { (default : @BeaconState minimal) with
+    validators := ⟨vs, Nat.le_trans hv (by decide)⟩
+    balances := ⟨bals, Nat.le_trans hb (by decide)⟩
+    nextWithdrawalValidatorIndex := cursor }
 
 /-! ### 1. The withdrawal validator cursor (Fulu) -/
 
@@ -111,7 +109,6 @@ example : pinFuluCursorAdvanceReads = true := by native_decide
 read returned the default validator, and the total floored at one increment. -/
 private def pinTotalBalanceOutOfRangeRaises : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   match getTotalBalance (fuluState #[activeValidator] #[32000000000] 0) #[5] with
   | .error (.outOfBounds 5 1) => true
   | _ => false
@@ -119,7 +116,6 @@ example : pinTotalBalanceOutOfRangeRaises = true := by native_decide
 
 private def pinTotalBalanceInRangeReads : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   match getTotalBalance (fuluState #[activeValidator] #[32000000000] 0) #[0] with
   | .ok total => total.toPlainNat = 32000000000
   | _ => false
@@ -132,7 +128,6 @@ example : pinTotalBalanceInRangeReads = true := by native_decide
 private def pinEffectiveBalanceShortBalancesRaises : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processEffectiveBalanceUpdates : EStateM StateTransitionError State Unit).run
       (fuluState #[activeValidator] #[] 0) with
@@ -145,7 +140,6 @@ hysteresis threshold, so the effective balance drops to `31 ETH`. -/
 private def pinEffectiveBalanceInRangeReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processEffectiveBalanceUpdates : EStateM StateTransitionError State Unit).run
       (fuluState #[activeValidator] #[31000000000] 0) with
@@ -158,9 +152,8 @@ example : pinEffectiveBalanceInRangeReads = true := by native_decide
 /-- A state at epoch `2` (slot `16`) with one active validator and zero participation flags,
 so the validator is eligible and not a timely-target voter. `withScore` picks an inactivity
 scores list of `[100]` or an empty one. -/
-private def inactivityState (withScore : Bool) : @State minimal fastHasherTag :=
+private def inactivityState (withScore : Bool) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let base : @BeaconState minimal :=
     { (default : @BeaconState minimal) with
       slot := 16
@@ -168,15 +161,13 @@ private def inactivityState (withScore : Bool) : @State minimal fastHasherTag :=
       balances := ⟨#[32000000000], by decide⟩
       previousEpochParticipation := ⟨#[0], by decide⟩
       currentEpochParticipation := ⟨#[0], by decide⟩ }
-  SSZ.FastBox
-    (if withScore then { base with inactivityScores := ⟨#[100], by decide⟩ } else base)
+  (if withScore then { base with inactivityScores := ⟨#[100], by decide⟩ } else base)
 
 /-- An empty scores list: the score read raises `IndexError`. The old `[i]!` read the
 default `0` and the write past the end was a no-op, so the run succeeded. -/
 private def pinInactivityShortScoresRaises : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processInactivityUpdates : EStateM StateTransitionError State Unit).run
       (inactivityState false) with
@@ -189,7 +180,6 @@ example : pinInactivityShortScoresRaises = true := by native_decide
 private def pinInactivityInRangeReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processInactivityUpdates : EStateM StateTransitionError State Unit).run
       (inactivityState true) with
@@ -272,14 +262,12 @@ open EthCLSpecs.Gloas
 
 /-- A Gloas state over `n` default validators (zero balances) and the given cursor. The
 default bid and the default latest block hash agree, so `process_withdrawals` runs. -/
-private def gloasState (n : Nat) (cursor : ValidatorIndex) : @State minimal fastHasherTag :=
+private def gloasState (n : Nat) (cursor : ValidatorIndex) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      validators := ⟨Array.replicate n default⟩
-      balances := ⟨Array.replicate n 0⟩
-      nextWithdrawalValidatorIndex := cursor }
+  { (default : @BeaconState minimal) with
+    validators := ⟨Array.replicate n default⟩
+    balances := ⟨Array.replicate n 0⟩
+    nextWithdrawalValidatorIndex := cursor }
 
 /-! ### 1. The withdrawal validator cursor (Gloas) -/
 
@@ -288,7 +276,6 @@ modulo helper stored `0` and the run succeeded. -/
 private def pinGloasCursorEmptyRegistryRaises : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processWithdrawals : EStateM StateTransitionError State Unit).run (gloasState 0 0) with
   | .error (.zeroDivision _) _ => true
@@ -300,7 +287,6 @@ the cursor to `(1 + 16) % 3 = 2`. -/
 private def pinGloasCursorAdvanceReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processWithdrawals : EStateM StateTransitionError State Unit).run (gloasState 3 1) with
   | .ok _ post => (sszGet post nextWithdrawalValidatorIndex).toPlainNat = 2

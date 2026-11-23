@@ -220,6 +220,14 @@ def ProgressiveList.set! {α : Type} (xs : ProgressiveList α) (i : Nat) (v : α
     ProgressiveList α :=
   ⟨xs.val.setIfInBounds i v⟩
 
+/-- Replace the `i`-th element with `f` applied to it. Out of range the list is
+returned unchanged, as with `set!`. `Array.modify` moves the element out of the array
+before it calls `f`, so `f` gets the only reference and can update it in place.
+`SizzLean.Proofs.progressiveListModify_eq_set!` restates it as `set!`. -/
+def ProgressiveList.modify {α : Type} (xs : ProgressiveList α) (i : Nat) (f : α → α) :
+    ProgressiveList α :=
+  ⟨xs.val.modify i f⟩
+
 /-- Append `x`. A progressive list has no capacity, so this always grows. -/
 def ProgressiveList.push {α : Type} (xs : ProgressiveList α) (x : α) : ProgressiveList α :=
   ⟨xs.val.push x⟩
@@ -345,6 +353,24 @@ abbrev SSZList.set! {α : Type} {cap : Nat}
     have h : (xs.val.set! i v).size = xs.val.size := by
       simp [Array.set!_eq_setIfInBounds]
     rw [h]; exact xs.property⟩
+
+/-- Replace the `i`-th element of an `SSZList` with `f` applied to it. Out of range the
+list is returned unchanged, as with `set!`. `Array.modify` moves the element out of the
+buffer before it calls `f`, so `f` gets the only reference and can update a large element
+(a validator record) in place. `Array.modify` keeps the size, so the cap bound carries
+through. `SizzLean.Proofs.sszListModify_eq_set!` restates it as `set!`. -/
+def SSZList.modify {α : Type} {cap : Nat}
+    (xs : SSZList α cap) (i : Nat) (f : α → α) : SSZList α cap :=
+  ⟨xs.val.modify i f, by rw [Array.size_modify]; exact xs.property⟩
+
+/-- Replace the `i`-th element of a `Vector` with `f` applied to it. Out of range the
+vector is returned unchanged, as with core `Vector.set!`. Core `Vector` has no `modify`
+at toolchain v4.34.1, so SizzLean adds one in the `Vector` namespace (`_root_`), where
+dot notation finds it. Delete this definition when the toolchain ships its own.
+`SizzLean.Proofs.vectorModify_eq_set!` restates it as `set!`. -/
+def _root_.Vector.modify {α : Type} {n : Nat} (xs : Vector α n) (i : Nat) (f : α → α) :
+    Vector α n :=
+  ⟨xs.toArray.modify i f, by rw [Array.size_modify, Vector.size_toArray]⟩
 
 /-- Append `x` to a list that has room. The caller proves `h : xs.val.size < cap`, so no
 call site can append to a full list by accident. The SSZ spec's `List.append` raises on a

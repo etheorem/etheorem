@@ -175,7 +175,7 @@ def emitContainer (mods : TSyntax ``Parser.Command.declModifiers) (nameId : Iden
 
 /-- Emit a non-SSZ structure: a `[Preset]`-parameterized `structure` with no SSZ
 derive, plus any extra `binders` the author wrote (e.g. the fork-choice `Store`'s
-`(map : MapKind) [HasherTag]`). Used for the fork-choice `Store`, `FcNode`,
+`(map : MapKind)`). Used for the fork-choice `Store`, `FcNode`,
 `LatestMessage`. -/
 def emitStruct (mods : TSyntax ``Parser.Command.declModifiers) (nameId : Ident)
     (binders : Array (TSyntax ``Lean.Parser.Term.bracketedBinder))
@@ -355,7 +355,7 @@ def elabForkcontainer : CommandElab := fun stx => do
 /-- `forkstruct Name <binders> where <fields>`: declare a non-SSZ structure and
 capture it (with its extra binders) for per-fork replay. The binders let a struct
 carry parameters beyond the auto `[Preset]`, e.g. the fork-choice `Store`'s
-`(map : MapKind) [HasherTag]`. -/
+`(map : MapKind)`. -/
 scoped syntax (name := forkstructCmd)
   declModifiers "forkstruct " ident (ppSpace bracketedBinder)* " where " Parser.Command.structFields : command
 
