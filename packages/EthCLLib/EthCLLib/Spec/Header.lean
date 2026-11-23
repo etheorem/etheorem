@@ -5,7 +5,7 @@ import EthCLLib.Spec.NestedMachine
 /-!
 # `EthCLLib.Spec.Header`: the section-header macros
 
-A fork's state-transition surface is set up by two macros, split along the seam
+A fork's state-transition surface is set up by three macros, split along the seam
 that **declarations persist across modules but `variable`s do not**:
 
 * `state_preamble BeaconState` runs **once per fork**, in the `State` module, right
@@ -26,6 +26,28 @@ that **declarations persist across modules but `variable`s do not**:
   `modifyState`; this is the same generation pattern `forkcontainer` uses, a
   framework-owned macro emitting a fork's plumbing.
 
+* `plain_state_preamble BeaconState` is the boxed preamble's plain twin, for the forks
+  that hold plain SSZ structs in the spec bodies. It emits the same declarations with
+  `State` the **plain** `BeaconState` record:
+
+  ```lean
+  abbrev State [Preset] [HasherTag] : Type := BeaconState
+  @[inline] def modifyState [Preset] [HasherTag] {m : Type → Type}
+      [MonadStateOf State m] (f : State → State) : m PUnit := modifyThe State f
+  instance [Preset] [HasherTag] : StateRoot State where
+    rootAndWarm s := (SSZ.hashTreeRoot HasherTag.H s, s)
+  ```
+
+  A read is then a projection and a write a record update. The `StateRoot` instance
+  roots the record through SizzLean's user-facing `SSZ.hashTreeRoot` and returns the
+  state itself as the "warmed" successor: a plain state carries no incremental tree, so
+  `getStateRoot`'s write-back is the identity and each root is a full recomputation.
+  `modifyState` is emitted verbatim as the boxed one, and `state_section`,
+  `appendState`, `setOrAppendState` and the step macros are preamble-agnostic — they
+  resolve `State` and `modifyState` by name and serve both modes unchanged. The boxed
+  self-test (`EthCLLib.Tests.PreambleSection`) has a plain twin,
+  `EthCLLib.Tests.PlainPreambleSection`.
+
 * `state_section` runs **once per section** (per operation file). It opens an
   anonymous `section` and emits the `variable` line that re-establishes the
   section-scoped instances and monad (these do not persist across files):
@@ -44,12 +66,14 @@ that **declarations persist across modules but `variable`s do not**:
   declared. `[Config]` and `[CryptoBackend]` are instance-implicit, so they attach only
   to the declarations that use them; a pure-accessor step carries neither.
 
-`state_preamble` is the single declarer of `State` / `modifyState`, and the `State`
-module is imported by every operation file, so there is no redeclaration and no guard.
-`Preset` resolves to the fork's own preset class (the tier system is per fork,
-`SPECS_ARCHITECTURE.md` §9.1); `State`, `StateTransition`, `StateTransitionError`,
-`HasherTag` are named with use-site identifiers (`mkIdent`) so they resolve where the
-macro expands, not where it is defined.
+`state_preamble` is the single declarer of the boxed fork's `State` / `modifyState`,
+`plain_state_preamble` of the plain fork's, and a fork runs exactly one of the two,
+once, in the `State` module. The `State` module is imported by every operation file,
+so there is no redeclaration and no guard. `Preset` resolves to the fork's own preset
+class (the tier system is per fork, `SPECS_ARCHITECTURE.md` §9.1); `State`,
+`StateTransition`, `StateTransitionError`, `HasherTag` are named with use-site
+identifiers (`mkIdent`) so they resolve where the macro expands, not where it is
+defined.
 -/
 
 set_option autoImplicit false
@@ -80,6 +104,37 @@ def elabStatePreamble : CommandElab := fun stx => do
   -- effect monad.
   elabCommand (← `(@[inline] def $modifyId [$presetId] [$hasherTagId] {m : Type → Type}
     [MonadStateOf $stateId m] (f : $stateId → $stateId) : m PUnit := modifyThe $stateId f))
+
+/-! ## `plain_state_preamble`: the once-per-fork declarations, plain -/
+
+/-- `plain_state_preamble BeaconState`: declare the fork's plain `State` — the
+`BeaconState` record itself, no box — the same concrete-domain `modifyState`, and the
+`StateRoot State` instance that roots the record. Written once, in the `State` module,
+as the boxed twin is. -/
+scoped syntax (name := plainStatePreambleStx) "plain_state_preamble " ident : command
+
+@[command_elab plainStatePreambleStx]
+def elabPlainStatePreamble : CommandElab := fun stx => do
+  let stateTy : TSyntax `term := ⟨stx[1]⟩
+  -- Use-site identifiers: resolve where the macro expands (the fork namespace).
+  let stateId      := mkIdent `State
+  let modifyId     := mkIdent `modifyState
+  let presetId     := mkIdent `Preset
+  let hasherTagId  := mkIdent ``HasherTag
+  let hasherHId    := mkIdent (``HasherTag ++ `H)
+  let stateRootId := mkIdent `StateRoot
+  -- `State` is the plain `BeaconState`: a read is a projection, a write a record update.
+  elabCommand (← `(abbrev $stateId [$presetId] [$hasherTagId] : Type := $stateTy))
+  -- The identical concrete-domain `modifyState` of the boxed preamble: `State → State`
+  -- so the binder type flows in and step bodies need no `(state : State)` annotation.
+  elabCommand (← `(@[inline] def $modifyId [$presetId] [$hasherTagId] {m : Type → Type}
+    [MonadStateOf $stateId m] (f : $stateId → $stateId) : m PUnit := modifyThe $stateId f))
+  -- The plain `StateRoot`: the record's Merkle root through SizzLean's user-facing
+  -- `hashTreeRoot`, and the state itself as the "warmed" successor (a plain state carries
+  -- no incremental tree, so the write-back is the identity). `HasherTag.H` is the ambient
+  -- hasher type, the projection the boxed preamble boxes with.
+  elabCommand (← `(instance [$presetId] [$hasherTagId] : $stateRootId $stateId where
+    rootAndWarm s := (SizzLean.SSZ.hashTreeRoot $hasherHId s, s)))
 
 /-! ## `state_section`: open a state-transition section -/
 
