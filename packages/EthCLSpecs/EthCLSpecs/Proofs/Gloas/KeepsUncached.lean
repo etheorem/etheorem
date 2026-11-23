@@ -1,4 +1,5 @@
 import EthCLLib.Spec
+import EthCLLib.Proofs.IndexRead
 import EthCLLib.Proofs.KeepsUncached
 import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Gloas.Run
