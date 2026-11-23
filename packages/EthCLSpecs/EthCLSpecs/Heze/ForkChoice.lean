@@ -487,9 +487,9 @@ hash_tree_root(anchor_state)`, so the seed is a throwing `Except StoreTransition
 rather than a total store literal. `pinAnchorRejects` locks the reject branch. -/
 forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
     Except StoreTransitionError (Store map) := do
-  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the boxed state hashes
-  -- through `stateRoot` (the cached-tree path), not `htr` (which wants a bare `SSZRepr`).
-  assert (anchorBlock.stateRoot == bytesToRoot (stateRoot anchorState).1)
+  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the anchor state is a value,
+  -- so `htr` roots it, a full merkleization of the plain record.
+  assert (anchorBlock.stateRoot == htr anchorState)
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }

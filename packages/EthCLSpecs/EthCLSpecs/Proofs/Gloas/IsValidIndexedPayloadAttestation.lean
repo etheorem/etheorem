@@ -1,7 +1,5 @@
 import EthCLSpecs.Gloas.Operations
-import EthCLLib.Proofs.Run
 import SizzLean.Proofs.ProgressiveListMap
-import SizzLean.Proofs.UncachedBox
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation`: a two-layer characterization
@@ -32,8 +30,9 @@ Layer 1 keeps `validators[i.toPlainNat]!` on purpose. Mirroring the implementati
 literal gates is that layer's entire job, and the implementation panics-by-default
 there.
 
-Statements bind plain `BeaconState` values; the state readers and the spec
-functions receive `pureState state`, and the reads spell `state.validators`.
+Statements bind plain `BeaconState` values. The Gloas `State` is that type, so the
+state readers and the spec functions take `state` itself, and the reads spell
+`state.validators`.
 
 **Shared scope.** Sortedness is deliberately adjacent and non-strict (the PTC can
 repeat a validator). This module does not assert uniqueness, full `List.Pairwise`
@@ -51,7 +50,6 @@ open EthCLSpecs.Gloas (Preset ValidatorIndex BeaconState)
 open EthCLSpecs.Gloas.Const (domainPtcAttester)
 open EthCLSpecs.Gloas
   (IndexedPayloadAttestation isValidIndexedPayloadAttestation getDomain computeEpochAtSlot)
-open EthCLLib.Proofs (pureState)
 open SizzLean.Proofs (progressiveListMap_getElem!_eq_attachMap)
 
 /-! ## Layer 1: the literal characterization -/
@@ -60,7 +58,7 @@ open SizzLean.Proofs (progressiveListMap_getElem!_eq_attachMap)
 `Array.all` validation gates. -/
 theorem isValidIndexedPayloadAttestation_eq_true_iff_checks [Preset] [HasherTag] [CryptoBackend]
     (state : BeaconState) (a : IndexedPayloadAttestation) :
-    isValidIndexedPayloadAttestation (pureState state) a = true ↔
+    isValidIndexedPayloadAttestation state a = true ↔
       let idx := a.attestingIndices.toArray
       let validators := state.validators
       idx.size ≠ 0 ∧
@@ -69,13 +67,9 @@ theorem isValidIndexedPayloadAttestation_eq_true_iff_checks [Preset] [HasherTag]
       idx.all (fun i => i.toPlainNat < validators.size) = true ∧
       blsFastAggregateVerify (idx.map (fun i => (validators[i.toPlainNat]!).pubkey))
         (computeSigningRoot a.data
-          (getDomain (pureState state) domainPtcAttester (computeEpochAtSlot a.data.slot)))
+          (getDomain state domainPtcAttester (computeEpochAtSlot a.data.slot)))
         a.signature = true := by
   simp [isValidIndexedPayloadAttestation, and_assoc]
-  -- `simp` leaves the bounds gate as `decide P = true` under a binder; the
-  -- instance-generic `decide` lemmas close it.
-  intro _ _ _
-  exact ⟨fun h i hi => of_decide_eq_true (h i hi), fun h i hi => decide_eq_true (h i hi)⟩
 
 /-! ## Layer 2: private core-only bridge lemmas, then the public semantic theorem -/
 
@@ -120,7 +114,7 @@ proof so the pubkey array can be read in bounds; see the module docstring. -/
 @[characterizes EthCLSpecs.Gloas.isValidIndexedPayloadAttestation]
 theorem isValidIndexedPayloadAttestation_eq_true_iff [Preset] [HasherTag] [CryptoBackend]
     (state : BeaconState) (a : IndexedPayloadAttestation) :
-    isValidIndexedPayloadAttestation (pureState state) a = true ↔
+    isValidIndexedPayloadAttestation state a = true ↔
       let idx := a.attestingIndices.toArray
       let validators := state.validators
       idx.size ≠ 0 ∧
@@ -129,7 +123,7 @@ theorem isValidIndexedPayloadAttestation_eq_true_iff [Preset] [HasherTag] [Crypt
         blsFastAggregateVerify
           (idx.attach.map (fun i => (validators[i.1.toPlainNat]'(hRange i.1 i.2)).pubkey))
           (computeSigningRoot a.data
-            (getDomain (pureState state) domainPtcAttester (computeEpochAtSlot a.data.slot)))
+            (getDomain state domainPtcAttester (computeEpochAtSlot a.data.slot)))
           a.signature = true := by
   rw [isValidIndexedPayloadAttestation_eq_true_iff_checks]
   simp only [indexedPayloadAttestation_adjacentNondecreasing_iff,

@@ -10,8 +10,8 @@ proved-total divisor route through Fulu's `Const.slotsPerEpochDiv` view,
 running one `assert`, and writing back through `modifyState`.
 
 The fork here is a toy: a one-field `forkcontainer`, its own `Preset` / `Config`
-stand-ins, and a `state_preamble` + `state_section`, exactly the header layout
-`Fulu/Time.lean` and its siblings use. What is real is the divisor: both pins
+stand-ins, and a `state_preamble` + `state_section`, the header layout of
+`Fulu/State.lean` and `Fulu/Time.lean`. What is real is the divisor: both pins
 inject `EthCLSpecs.Fulu.Const.slotsPerEpochDiv` at a concrete Fulu preset, so
 the toy body divides by the production view, at mainnet (32) and at minimal
 (8). Nothing here touches a production fork body.
@@ -86,8 +86,8 @@ abbrev SM := EStateM StateTransitionError State
 post-state slot, or the reject. -/
 def runBump (delta : CLUint64) (div : PositiveDivisor) :
     (CLUint64 × Nat) ⊕ StateTransitionError :=
-  let box0 : State := SSZ.CachedBox Sha256 ({ slot := 40 } : ToyState)
-  match (bumpSlotEpoch delta div : SM CLUint64).run box0 with
+  let st0 : State := ({ slot := 40 } : ToyState)
+  match (bumpSlotEpoch delta div : SM CLUint64).run st0 with
   | .ok v st  => .inl (v, (sszGet st slot).toPlainNat)
   | .error e _ => .inr e
 
