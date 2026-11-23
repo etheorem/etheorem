@@ -1,11 +1,8 @@
 import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
+import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
--- Detached while Heze runs on the plain `State` (WS-126 task 3.1).
--- `OnExecutionPayloadEnvelope` states its runs through the box vocabulary (`pureState`),
--- so it fails on the plain state. Task 3.3 reattaches it.
--- import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 
 /-!
 # `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems (index)
