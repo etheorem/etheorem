@@ -99,7 +99,7 @@ private def pinFuluCursorAdvanceReads : Bool :=
   match (processWithdrawals (default : ExecutionPayload) :
       EStateM StateTransitionError State Unit).run
       (fuluState #[default, default, default] #[0, 0, 0] 1) with
-  | .ok _ post => (sszGet post nextWithdrawalValidatorIndex).toPlainNat = 2
+  | .ok _ post => post.nextWithdrawalValidatorIndex.toPlainNat = 2
   | _ => false
 example : pinFuluCursorAdvanceReads = true := by native_decide
 
@@ -143,7 +143,7 @@ private def pinEffectiveBalanceInRangeReads : Bool :=
   letI : CryptoBackend := CryptoBackend.ffi
   match (processEffectiveBalanceUpdates : EStateM StateTransitionError State Unit).run
       (fuluState #[activeValidator] #[31000000000] 0) with
-  | .ok _ post => (sszGet post validators)[0]!.effectiveBalance.toPlainNat = 31000000000
+  | .ok _ post => post.validators[0]!.effectiveBalance.toPlainNat = 31000000000
   | _ => false
 example : pinEffectiveBalanceInRangeReads = true := by native_decide
 
@@ -183,7 +183,7 @@ private def pinInactivityInRangeReads : Bool :=
   letI : CryptoBackend := CryptoBackend.ffi
   match (processInactivityUpdates : EStateM StateTransitionError State Unit).run
       (inactivityState true) with
-  | .ok _ post => (sszGet post inactivityScores)[0]!.toPlainNat = 88
+  | .ok _ post => post.inactivityScores[0]!.toPlainNat = 88
   | _ => false
 example : pinInactivityInRangeReads = true := by native_decide
 
@@ -289,7 +289,7 @@ private def pinGloasCursorAdvanceReads : Bool :=
   letI : Config := minimalConfig
   letI : CryptoBackend := CryptoBackend.ffi
   match (processWithdrawals : EStateM StateTransitionError State Unit).run (gloasState 3 1) with
-  | .ok _ post => (sszGet post nextWithdrawalValidatorIndex).toPlainNat = 2
+  | .ok _ post => post.nextWithdrawalValidatorIndex.toPlainNat = 2
   | _ => false
 example : pinGloasCursorAdvanceReads = true := by native_decide
 

@@ -51,11 +51,11 @@ the epoch fits a test bound, and write the new slot back. -/
 forkdef bumpSlotEpoch (delta : CLUint64) (div : PositiveDivisor) :
     StateTransition CLUint64 := do
   let s ← get
-  let cur := sszGet s slot
+  let cur := s.slot
   let next ← cur + delta
   let epoch := next / div
   assert (epoch.toPlainNat < 1024)
-  modifyState fun st => sszUpdate st with slot := next
+  modifyState fun st => { st with slot := next }
   pure epoch
 
 end   -- closes the section opened by `state_section`
@@ -88,7 +88,7 @@ def runBump (delta : CLUint64) (div : PositiveDivisor) :
     (CLUint64 × Nat) ⊕ StateTransitionError :=
   let st0 : State := ({ slot := 40 } : ToyState)
   match (bumpSlotEpoch delta div : SM CLUint64).run st0 with
-  | .ok v st  => .inl (v, (sszGet st slot).toPlainNat)
+  | .ok v st  => .inl (v, st.slot.toPlainNat)
   | .error e _ => .inr e
 
 -- The whole body lands at mainnet: 40 + 8 = 48, 48 // 32 = 1, and the write

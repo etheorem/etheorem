@@ -89,8 +89,8 @@ private def fuluState (P : Preset) (s : Slot) : @BeaconState P :=
 
 /-- Both Fulu fixture presets hold all eight validators. -/
 private def pinFuluStatesHoldEight : Bool :=
-  (letI : Preset := minimal; (sszGet (fuluState minimal 0) validators).size == 8) &&
-    (letI : Preset := oneSlotEpochs; (sszGet (fuluState oneSlotEpochs 0) validators).size == 8)
+  (letI : Preset := minimal; (fuluState minimal 0).validators.size == 8) &&
+    (letI : Preset := oneSlotEpochs; (fuluState oneSlotEpochs 0).validators.size == 8)
 example : pinFuluStatesHoldEight = true := by native_decide
 
 /-- An attestation at `slot` for `targetEpoch`, with the source checkpoint at

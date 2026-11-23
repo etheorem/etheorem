@@ -192,14 +192,14 @@ private def pinFuluSecondRunChangesNothing : Bool :=
   match attRun minimal 19 (some (Array.replicate 8 0)) att with
   | .error _ _ => false
   | .ok _ st1 =>
-    let part1 := (sszGet st1 currentEpochParticipation).val.map CLUint8.toPlainNat
-    let bal1 := (sszGet st1 balances).val.map CLUint64.toPlainNat
+    let part1 := st1.currentEpochParticipation.val.map CLUint8.toPlainNat
+    let bal1 := st1.balances.val.map CLUint64.toPlainNat
     part1.contains 1 &&
     match attRunFrom minimal st1 att with
     | .error _ _ => false
     | .ok _ st2 =>
-      part1 == (sszGet st2 currentEpochParticipation).val.map CLUint8.toPlainNat
-        && bal1 == (sszGet st2 balances).val.map CLUint64.toPlainNat
+      part1 == st2.currentEpochParticipation.val.map CLUint8.toPlainNat
+        && bal1 == st2.balances.val.map CLUint64.toPlainNat
 example : pinFuluSecondRunChangesNothing = true := by native_decide
 
 end FuluPins
@@ -296,14 +296,14 @@ private def pinGloasSecondRunChangesNothing : Bool :=
   match gAttRun minimal 19 (some (Array.replicate 8 0)) att with
   | .error _ _ => false
   | .ok _ st1 =>
-    let part1 := (sszGet st1 currentEpochParticipation).val.map CLUint8.toPlainNat
-    let bal1 := (sszGet st1 balances).val.map CLUint64.toPlainNat
+    let part1 := st1.currentEpochParticipation.val.map CLUint8.toPlainNat
+    let bal1 := st1.balances.val.map CLUint64.toPlainNat
     part1.contains 1 &&
     match gAttRunFrom minimal st1 att with
     | .error _ _ => false
     | .ok _ st2 =>
-      part1 == (sszGet st2 currentEpochParticipation).val.map CLUint8.toPlainNat
-        && bal1 == (sszGet st2 balances).val.map CLUint64.toPlainNat
+      part1 == st2.currentEpochParticipation.val.map CLUint8.toPlainNat
+        && bal1 == st2.balances.val.map CLUint64.toPlainNat
 example : pinGloasSecondRunChangesNothing = true := by native_decide
 
 end GloasPins

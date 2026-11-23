@@ -57,7 +57,7 @@ private def pinProcessSlotsToMaxSlotReadsMax : Bool :=
       (@BeaconState minimal) Unit :=
     processSlots (18446744073709551615 : Slot)
   match action.run st0 with
-  | .ok _ st => sszGet st slot = 18446744073709551615
+  | .ok _ st => st.slot = 18446744073709551615
   | _ => false
 example : pinProcessSlotsToMaxSlotReadsMax = true := by native_decide
 
