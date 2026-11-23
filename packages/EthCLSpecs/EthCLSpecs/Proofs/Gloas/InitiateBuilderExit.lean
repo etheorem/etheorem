@@ -2,6 +2,7 @@ import EthCLSpecs.Gloas.Operations
 import EthCLSpecs.Proofs.Gloas.GetPtc
 import EthCLSpecs.Proofs.Gloas.Run
 import EthCLLib.Proofs.Run
+import EthCLLib.Proofs.IndexRead
 import EthCLLib.Proofs.KeepsUncached
 import SizzLean.Proofs.UncachedBox
 import SizzLean.Proofs.SSZListSet

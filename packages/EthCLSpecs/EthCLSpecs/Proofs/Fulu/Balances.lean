@@ -2,6 +2,7 @@ import EthCLSpecs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Run
 import EthCLLib.Proofs.Run
 import EthCLLib.Proofs.Arith
+import EthCLLib.Proofs.IndexRead
 import EthCLLib.Proofs.KeepsUncached
 import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.UncachedBox
