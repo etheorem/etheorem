@@ -17,6 +17,7 @@ import SizzLean.Proofs.SSZListPush
 import SizzLean.Proofs.SSZListGetElem
 import SizzLean.Proofs.SSZListSet
 import SizzLean.Proofs.ProgressiveListSet
+import SizzLean.Proofs.CollectionModify
 import SizzLean.Proofs.ProgressiveListPush
 import SizzLean.Proofs.ProgressiveListMap
 import SizzLean.Proofs.UncachedBox
