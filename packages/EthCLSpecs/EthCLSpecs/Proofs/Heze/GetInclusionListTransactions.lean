@@ -2,7 +2,6 @@ import EthCLSpecs.Heze.ForkChoice
 import EthCLLib.Proofs.Run
 import EthCLLib.Proofs.StoreRun
 import EthCLLib.Proofs.Arith
-import SizzLean.Proofs.UncachedBox
 
 /-!
 # Collecting inclusion-list transactions
@@ -22,8 +21,8 @@ carries it, and the result holds no duplicate. `FcMap` gives no law relating `fo
 map's contents, so the contract is stated over `inclusionListItems`, the fold's output, which
 is what the spec's loop iterates.
 
-Statements bind plain `BeaconState` values; the committee reader receives `pureState state`,
-the uncached box, and never a boxed `State` of its own.
+Statements bind plain `BeaconState` values. The Heze `State` is the plain record, so the
+committee reader receives `state` itself.
 -/
 
 set_option autoImplicit false
@@ -38,7 +37,6 @@ open EthCLSpecs.Heze (Preset Store State BeaconState Root Slot ValidatorIndex In
   getInclusionListTransactions inclusionListItems isCountedInclusionList countedInclusionLists
   getBeaconCommittee getCommitteeCountPerSlot computeEpochAtSlot cyclicSample)
 open EthCLSpecs.Heze.Const (inclusionListCommitteeSize)
-open EthCLLib.Proofs (pureState)
 
 section CommitteeRun
 variable {σ : Type} [Preset]
@@ -71,8 +69,8 @@ the runner state, so the equation holds for an arbitrary `σ`. -/
 theorem getInclusionListCommittee_run_eq :
     ∀ (state : BeaconState) (slot : Slot) (runnerStore : σ),
       (getInclusionListCommittee
-          (StoreTransition := ForkChoiceStoreRun σ) (pureState state) slot).run runnerStore =
-        match ((liftM (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot)) :
+          (StoreTransition := ForkChoiceStoreRun σ) state slot).run runnerStore =
+        match ((liftM (getCommitteeCountPerSlot state (computeEpochAtSlot slot)) :
             ForkChoiceStoreRun σ EthCLLib.Spec.CLUint64).run runnerStore) with
         | .error e =>
           (Except.error e :
@@ -82,7 +80,7 @@ theorem getInclusionListCommittee_run_eq :
         match ((Array.foldlM
             (fun acc i => do
               let committeeIndex ← liftM (EthCLLib.Spec.CLUint64.ofNat? i)
-              let committee ← liftErr (getBeaconCommittee (pureState state) slot committeeIndex)
+              let committee ← liftErr (getBeaconCommittee state slot committeeIndex)
               pure (acc ++ committee))
             (#[] : Array ValidatorIndex)
             (Array.range count.toPlainNat) :
@@ -104,7 +102,7 @@ theorem getInclusionListCommittee_run_eq :
   intro state slot runnerStore
   simp only [getInclusionListCommittee]
   rw [run_bind]
-  cases hc : ((liftM (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot)) :
+  cases hc : ((liftM (getCommitteeCountPerSlot state (computeEpochAtSlot slot)) :
       ForkChoiceStoreRun σ EthCLLib.Spec.CLUint64).run runnerStore) with
   | error e => rfl
   | ok q =>
@@ -114,7 +112,7 @@ theorem getInclusionListCommittee_run_eq :
     cases hf : ((Array.foldlM
         (fun acc i => do
           let committeeIndex ← liftM (EthCLLib.Spec.CLUint64.ofNat? i)
-          let committee ← liftErr (getBeaconCommittee (pureState state) slot committeeIndex)
+          let committee ← liftErr (getBeaconCommittee state slot committeeIndex)
           pure (acc ++ committee))
         (#[] : Array ValidatorIndex)
         (Array.range count.toPlainNat) :
@@ -137,19 +135,19 @@ raises. -/
 theorem getInclusionListCommittee_run_error_of_empty
     (state : BeaconState) (slot : Slot) (runnerStore : σ) (count : EthCLLib.Spec.CLUint64)
     (hn : 0 < inclusionListCommitteeSize)
-    (hc : ((liftM (getCommitteeCountPerSlot (pureState state) (computeEpochAtSlot slot)) :
+    (hc : ((liftM (getCommitteeCountPerSlot state (computeEpochAtSlot slot)) :
         ForkChoiceStoreRun σ EthCLLib.Spec.CLUint64).run runnerStore) = .ok (count, runnerStore))
     (h : ((Array.foldlM
         (fun acc i => do
           let committeeIndex ← liftM (EthCLLib.Spec.CLUint64.ofNat? i)
-          let committee ← liftErr (getBeaconCommittee (pureState state) slot committeeIndex)
+          let committee ← liftErr (getBeaconCommittee state slot committeeIndex)
           pure (acc ++ committee))
         (#[] : Array ValidatorIndex)
         (Array.range count.toPlainNat) :
       ForkChoiceStoreRun σ (Array ValidatorIndex)).run runnerStore)
       = .ok (#[], runnerStore)) :
     (getInclusionListCommittee
-        (StoreTransition := ForkChoiceStoreRun σ) (pureState state) slot).run runnerStore
+        (StoreTransition := ForkChoiceStoreRun σ) state slot).run runnerStore
       = .error (.transition (.zeroDivision "%")) := by
   rw [getInclusionListCommittee_run_eq state slot runnerStore, hc]
   simp only []
