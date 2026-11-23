@@ -40,13 +40,13 @@ namespace EthCLSpecs.Proofs.Gloas
 
 open EthCLSpecs.Gloas (Store updateCheckpoints Checkpoint)
 open EthCLSpecs.Gloas (Preset)
-open EthCLLib.Spec (MapKind HasherTag)
+open EthCLLib.Spec (MapKind)
 
 /-! Every theorem below is stated about one arbitrary Store and one arbitrary pair of
-candidate checkpoints, under the `[Preset]` / `[HasherTag]` the `Store` forkstruct binds.
+candidate checkpoints, under the `[Preset]` the `Store` forkstruct binds.
 Lean includes each of these in a signature only when the statement mentions it, and all
 five statements mention all five. -/
-variable {map : MapKind} [Preset] [HasherTag] (store : Store map) (j f : Checkpoint)
+variable {map : MapKind} [Preset] (store : Store map) (j f : Checkpoint)
 
 /-- `updateCheckpoints` rewritten as a single record update: each checkpoint field
 takes its candidate exactly when that candidate's epoch is strictly greater, and

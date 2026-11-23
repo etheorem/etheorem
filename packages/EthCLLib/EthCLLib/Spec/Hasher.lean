@@ -9,7 +9,9 @@ instance resolution exactly like `[Preset]` (`FRAMEWORK_ARCHITECTURE.md` §8). A
 free `{H}` type variable does not thread into caller steps (the metavariable
 failure a value-implicit binder hits), so a class field holds the tag.
 
-`HasherTag.H` is the hasher the boxed `State` uses. The fast configuration picks
+`HasherTag.H` is the hasher behind every root and digest a fork body computes
+(`htr`, `sha`, `getStateRoot`). `State` itself carries no tag: a declaration takes
+`[HasherTag]` only when it hashes. The fast configuration picks
 `Sha256` (FFI, opaque); the pure configuration picks `Sha256Spec` (pure-Lean,
 kernel-reducible). Both selectors are `@[reducible] def`s the runner/proofs
 inject at the call boundary, kept unregistered (not global instances) so the two
