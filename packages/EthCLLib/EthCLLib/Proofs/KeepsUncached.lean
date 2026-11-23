@@ -55,11 +55,10 @@ open SizzLean (SSZRepr)
 open SizzLean.Cache
 
 /-- The box's own `StateRoot`, kept beside the one lemma that instantiates a root read
-at the box (`keepsUncached_getStateRoot`). The framework instance lived in
-`EthCLLib.Spec.State`; task 6.1 deleted it, so the framework surface carries no box
-instance while this module's box-level claims stay until their own deletion (plan
-task 6.4). Private, so no importer sees it. -/
-private instance instStateRootBox {H T : Type} [SizzLean.Hasher H] [SSZRepr T] :
+at the box (`keepsUncached_getStateRoot`). The framework surface carries no box
+instance, while this module's box-level claims stay until their own deletion (plan
+task 6.4). Local, so no importer sees it. -/
+private local instance instStateRootBox {H T : Type} [SizzLean.Hasher H] [SSZRepr T] :
     StateRoot (SSZ.Box H T) where
   rootAndWarm s := s.hashTreeRoot
 

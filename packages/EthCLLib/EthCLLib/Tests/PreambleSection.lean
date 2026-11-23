@@ -14,7 +14,7 @@ behavior is checked at build (`FRAMEWORK_ARCHITECTURE.md` §14):
 - a step writes `modifyState fun state => sszUpdate state with …` with **no**
   `(state : State)` annotation, the payoff of the concrete-domain `modifyState`, and
   it both typechecks and *runs* at the fast config;
-- the plan's seven helpers run on the plain fork in both monads, `StateT State
+- the seven helpers run on the plain fork in both monads, `StateT State
   (Except StateTransitionError)` and `EStateM StateTransitionError State`: `sszGet`,
   `sszUpdate` (through `bumpSlot` / `setFlag`), `sszModify` (through `bumpXsHead`),
   `appendState`, `setOrAppendState`, `getStateRoot` (through `rootAfterBump`) and
