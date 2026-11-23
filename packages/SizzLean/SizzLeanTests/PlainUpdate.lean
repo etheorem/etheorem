@@ -9,10 +9,11 @@ import SizzLean.Cache.Update
 import SizzLeanTests.ExampleContainers
 
 /-!
-# `SizzLeanTests.PlainUpdate`: the plain arm of `sszUpdate`
+# `SizzLeanTests.PlainUpdate`: the plain arms of `sszUpdate` and `sszGet`
 
 Acceptance gates for the temporary plain-value dispatch arm of
-`sszUpdate` (the fourth arm of `elabSszUpdate`): when the base
+`sszUpdate` (the fourth arm of `elabSszUpdate`) and the plain arm of
+the type-directed `sszGet` (`elabSszGet`). When the base
 term's type is none of `TreeBacked H T` / `UncachedSSZ H T` /
 `SSZ.Box H T`, the macro emits the view-side update rooted at the
 base itself, so on a plain SSZ struct
@@ -30,23 +31,29 @@ base itself, so on a plain SSZ struct
   shared-prefix clauses compose;
 * a *checked* `[i]` segment is a compile error (the plain arm has no
   `Except` result to reject into); the infallible `[i]!` form, whose
-  out-of-range write is a no-op, covers the plain mode.
+  out-of-range write is a no-op, covers the plain mode;
+* a read `sszGet t path` *is* the projection `t.path`, literally the
+  same elaborated term (the `with_unfolding_none rfl` gates below
+  compare the terms with no unfolding at all), while a cache value
+  still reads through `.view`. A checked `[i]` read keeps its
+  `Except IndexError _` result on a plain base too;
+* `sszModify` (both forms) and `sszAppend?` work unchanged on a plain
+  value, because they expand to `sszGet` and `sszUpdate`.
 
 The cases mirror `Modify.lean`, `InfallibleIndex.lean` and
-`MultiSetterIndex.lean` on a plain value (`sszModify` itself waits
-for the plain arm of `sszGet`; here its write forms are spelled
-through `sszUpdate` with plain reads on the right-hand side), plus
-one `@[sizzlean_progressive]` container, which needs no special
-case because the plain arm emits view-side code only. Value and
+`MultiSetterIndex.lean` on a plain value, plus one
+`@[sizzlean_progressive]` container, which needs no special case
+because the plain arms emit view-side code only. Value and
 root comparisons involve SSZ hashes / array primitives, so they
 close by `native_decide` (CLAUDE.md, *Proofs involving SSZ hashes*,
 case 2 and the array-reduction caveat).
 
 ## Expected panic lines
 
-The out-of-range `[i]!` case below drives `Array.set!` past the end,
-which prints an `Error: index out of bounds` line to stderr before
-returning the array unchanged. That line is expected; the
+The out-of-range `[i]!` cases below drive `Array.set!` and the `get!`
+read past the end. Each one prints an `index out of bounds` line
+(with a `PANIC` prefix for the read) before it returns the array
+unchanged or the element's `default`. Those lines are expected; the
 authoritative signal is `Build completed successfully`.
 -/
 
@@ -171,11 +178,12 @@ example :
       = SSZ.hashTreeRoot Sha256 s0 := by
   native_decide
 
-/-! ## The `Modify` write forms on a plain value
+/-! ## The `Modify` write forms, spelled through `sszUpdate`
 
-`sszModify` itself needs the plain arm of `sszGet`; its two body
-forms are spelled here through `sszUpdate`, with the read on the
-right-hand side in plain projection syntax. -/
+The two body forms of `sszModify`, spelled by hand through
+`sszUpdate`, with the read on the right-hand side in plain
+projection syntax. The section *`sszModify` and `sszAppend?` on a
+plain value* below runs the macros themselves. -/
 
 /-- The `:= g` form: the read element feeds the function
 (`xs[1] = 20`, `+5 = 25`). -/
@@ -262,5 +270,129 @@ error: sszUpdate: a checked `[i]` index segment is not supported on a plain (non
 -/
 #guard_msgs in
 example : S := sszUpdate s0 with xs[1] := 99
+
+/-! ## Plain reads: `sszGet` is the projection
+
+On a plain base `elabSszGet` emits the projection rooted at the base
+itself. `with_unfolding_none rfl` unifies the two sides with no
+definition unfolded, so each gate holds only when `sszGet` elaborates
+to the very term the hand-written projection gives. A wrapper, a
+`let` or a stray `.view` would make it fail. -/
+
+/-- Flat field. -/
+example : sszGet s0 marker = s0.marker := by with_unfolding_none rfl
+
+/-- Infallible element read. -/
+example : sszGet s0 xs[1]! = s0.xs[1]! := by with_unfolding_none rfl
+
+/-- Nested field. -/
+example : sszGet n0 message.slot = n0.message.slot := by with_unfolding_none rfl
+
+/-- Element, then field. -/
+example : sszGet t0 es[1]!.b = t0.es[1]!.b := by with_unfolding_none rfl
+
+/-- A progressive container reads the same way. -/
+example : sszGet p0 color = p0.color := by with_unfolding_none rfl
+
+/-- The values (`xs = #[10, 20, 30]`, `es[1] = { a := 3, b := 4 }`). -/
+example : sszGet s0 xs[1]! = 20 := by native_decide
+example : sszGet t0 es[1]!.b = 4 := by native_decide
+example : sszGet n0 message.marker = 2 := by native_decide
+
+/-- An out-of-range `[i]!` read yields the element's `default`, as
+`get!` does (`xs` holds 3 of 8). -/
+example : sszGet s0 xs[5]! = 0 := by native_decide
+
+/-! ## A checked `[i]` read keeps its `Except` result
+
+The read side has an `Except IndexError _` result to reject into on
+any base, so the checked form stays available on a plain value: in
+range it is `.ok` of the element, out of range it rejects with the
+real index and bound. -/
+
+example : Except IndexError UInt64 := sszGet s0 xs[1]
+
+example : (sszGet s0 xs[1]).toOption = some 20 := by native_decide
+
+example :
+    (match sszGet s0 xs[5] with
+     | .error (.indexError 5 3) => true
+     | _ => false) = true := by
+  native_decide
+
+/-! ## Cache values still read through `.view`
+
+The type-directed dispatch keeps the term of the earlier `sszGet`
+macro on the three cache types. -/
+
+private def u0 : UncachedSSZ Sha256 S := ⟨s0⟩
+
+example : sszGet u0 marker = u0.view.marker := by with_unfolding_none rfl
+
+private def b0 : SSZ.Box Sha256 S := SSZ.FastBox s0
+
+example : sszGet b0 xs[1]! = b0.view.xs[1]! := by with_unfolding_none rfl
+
+/-! ## The base type decides after postponing
+
+In `List.map (fun s => sszGet s marker) [x]` the binder `s` has no
+type when the body elaborates; the list argument fixes it later.
+`elabSszGet` postpones until then and picks the arm from the type
+it finally gets: the projection for `S`, `.view` for the box. With no
+later argument the type stays unknown, and the elaborator asks for an
+ascription. -/
+
+example : List.map (fun s => sszGet s marker) [s0] = [7] := by native_decide
+
+example : List.map (fun b => sszGet b marker) [b0] = [7] := by native_decide
+
+/-- error: sszGet: the type of the base `s` is not known; add a type ascription -/
+#guard_msgs in
+example := fun s => sszGet s marker
+
+/-! ## `sszModify` and `sszAppend?` on a plain value
+
+Both macros expand to `sszGet` and `sszUpdate`, so with both plain
+arms in place they run on a plain value with no change. The results
+are plain values (the ascriptions fail to typecheck otherwise) and
+match the hand-written record updates. -/
+
+example : S := sszModify s0 xs[1]! := (fun w => w + 5)
+example : S2 := sszModify t0 es[0]! as e => { e with a := e.a + 10 }
+example : Option S := sszAppend? s0 xs 99
+
+/-- The `:= g` form on an element (`xs[1] = 20`, `+5 = 25`). -/
+example :
+    (sszModify s0 xs[1]! := (fun w => w + 5)) = { s0 with xs := s0.xs.set! 1 25 } := by
+  native_decide
+
+/-- The `:= g` form on a field (`marker + 1 = 8`). -/
+example : (sszModify s0 marker := (· + 1)) = { s0 with marker := 8 } := by
+  native_decide
+
+/-- The `as x => { x with … }` form (`es[0] = { a := 1, b := 2 }`,
+so `a + 10` gives `{ a := 11, b := 2 }`). -/
+example :
+    (sszModify t0 es[0]! as e => { e with a := e.a + 10 })
+      = { t0 with es := t0.es.set! 0 { a := 11, b := 2 } } := by
+  native_decide
+
+/-- An out-of-range `sszModify` is a no-op, as the `[i]!` write is. -/
+example : (sszModify s0 xs[7]! := (fun w => w + 5)) = s0 := by native_decide
+
+/-- `sszAppend?` with room: `some` of the longer list (3 of 8 → 4). -/
+example :
+    (sszAppend? s0 xs 99).map (fun s => s.xs.toArray) = some #[10, 20, 30, 99] := by
+  native_decide
+
+/-- A full list for the `none` case. -/
+structure Full where
+  ys : SSZList UInt64 2
+  deriving DecidableEq, Inhabited, SSZRepr
+
+private def f0 : Full := { ys := ⟨#[1, 2], by decide⟩ }
+
+/-- `sszAppend?` on a full list: `none`, the spec's reject. -/
+example : sszAppend? f0 ys 3 = none := by native_decide
 
 end SizzLeanTests.PlainUpdate
