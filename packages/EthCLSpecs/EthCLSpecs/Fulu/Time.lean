@@ -125,7 +125,7 @@ forkdef computeSlotAtTime (genesisTime time : CLUint64) : Checked Slot :=
 /-- `get_current_epoch(state)`. Monadic: reads `state.slot`. -/
 forkdef getCurrentEpoch : StateTransition Epoch := do
   let state ← get
-  return computeEpochAtSlot (sszGet state slot)
+  return computeEpochAtSlot state.slot
 
 /-- `get_previous_epoch(state)` (`phase0/beacon-chain.md:1428-1432`):
 `saturating_sub(get_current_epoch(state), 1)`, the current epoch minus one, floored at
@@ -135,7 +135,7 @@ forkdef getPreviousEpoch : StateTransition Epoch := do
 
 /-- `get_current_epoch(state)` as a pure function of the plain state, for use in
 the pure `modifyState` / `Id.run` bodies the epoch substeps build. -/
-forkdef currentEpochOf (state : State) : Epoch := computeEpochAtSlot (sszGet state slot)
+forkdef currentEpochOf (state : State) : Epoch := computeEpochAtSlot state.slot
 
 /-- `get_previous_epoch(state)`, pure: `saturating_sub(get_current_epoch(state), 1)`. -/
 forkdef previousEpochOf (state : State) : Epoch := (currentEpochOf state).saturatingSub 1

@@ -14,8 +14,8 @@ keyword; the wire format and root are unchanged.
 
 `State` and the concrete-domain `modifyState` are declared once here by
 `state_preamble BeaconState`; every operation file's `state_section` reuses them.
-Field access is the framework's generic `sszGet` / `sszUpdate`, so there are no
-per-field accessors to colocate.
+The fork bodies read a field as `state.f` and write it with Lean's record update
+`{ state with f := v }`, so there are no per-field accessors to colocate.
 -/
 
 set_option autoImplicit false
