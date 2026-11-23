@@ -101,7 +101,6 @@ private abbrev FuluPinM := EStateM StoreTransitionError (@Store minimal treeMap)
 `0`, so in the current slot) at `fuluRoot`. -/
 private def fuluStore (timeMs : CLUint64) : @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { timeMs := timeMs, genesisTimeMs := 0
     justifiedCheckpoint := default, finalizedCheckpoint := default
     unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
@@ -118,7 +117,6 @@ private def fuluStore (timeMs : CLUint64) : @Store minimal treeMap :=
 private def fuluOnTime (cfg : Config) (timeMs : CLUint64) : Outcome Bool :=
   letI : Preset := minimal
   letI : Config := cfg
-  letI : HasherTag := fastHasherTag
   let store := fuluStore timeMs
   outcomeOf ((isProposingOnTime (map := treeMap) store : FuluPinM Bool).run store)
 
@@ -140,7 +138,6 @@ example : fuluOnTime hugeCutoffConfig 0 = .rangeFault := by native_decide
 private def fuluTimeliness (cfg : Config) (timeMs : CLUint64) : Outcome (Option Bool) :=
   letI : Preset := minimal
   letI : Config := cfg
-  letI : HasherTag := fastHasherTag
   let store := fuluStore timeMs
   let action : FuluPinM (Option Bool) := do
     let after ← recordBlockTimeliness (map := treeMap) store fuluRoot
@@ -175,7 +172,6 @@ private abbrev GloasPinM := EStateM StoreTransitionError (@Store minimal treeMap
 private def gloasStore (timeMs : CLUint64) (blockSlot : Slot) :
     @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { timeMs := timeMs, genesisTimeMs := 0
     justifiedCheckpoint := default, finalizedCheckpoint := default
     unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
@@ -198,7 +194,6 @@ private def gloasTimeliness (cfg : Config) (timeMs : CLUint64) (blockSlot : Slot
     Outcome (Option (Array Bool)) :=
   letI : Preset := minimal
   letI : Config := cfg
-  letI : HasherTag := fastHasherTag
   let store := gloasStore timeMs blockSlot
   let action : GloasPinM (Option (Array Bool)) := do
     let after ← recordBlockTimeliness (map := treeMap) store gloasRoot

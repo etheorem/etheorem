@@ -55,7 +55,6 @@ private def fuluState (vs : Array (@Validator minimal)) (bals : Array Gwei)
     (cursor : ValidatorIndex) (hv : vs.size ≤ 4 := by decide) (hb : bals.size ≤ 4 := by decide) :
     @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { (default : @BeaconState minimal) with
     validators := ⟨vs, Nat.le_trans hv (by decide)⟩
     balances := ⟨bals, Nat.le_trans hb (by decide)⟩
@@ -110,7 +109,6 @@ example : pinFuluCursorAdvanceReads = true := by native_decide
 read returned the default validator, and the total floored at one increment. -/
 private def pinTotalBalanceOutOfRangeRaises : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   match getTotalBalance (fuluState #[activeValidator] #[32000000000] 0) #[5] with
   | .error (.outOfBounds 5 1) => true
   | _ => false
@@ -118,7 +116,6 @@ example : pinTotalBalanceOutOfRangeRaises = true := by native_decide
 
 private def pinTotalBalanceInRangeReads : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   match getTotalBalance (fuluState #[activeValidator] #[32000000000] 0) #[0] with
   | .ok total => total.toPlainNat = 32000000000
   | _ => false
@@ -131,7 +128,6 @@ example : pinTotalBalanceInRangeReads = true := by native_decide
 private def pinEffectiveBalanceShortBalancesRaises : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processEffectiveBalanceUpdates : EStateM StateTransitionError State Unit).run
       (fuluState #[activeValidator] #[] 0) with
@@ -144,7 +140,6 @@ hysteresis threshold, so the effective balance drops to `31 ETH`. -/
 private def pinEffectiveBalanceInRangeReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processEffectiveBalanceUpdates : EStateM StateTransitionError State Unit).run
       (fuluState #[activeValidator] #[31000000000] 0) with
@@ -159,7 +154,6 @@ so the validator is eligible and not a timely-target voter. `withScore` picks an
 scores list of `[100]` or an empty one. -/
 private def inactivityState (withScore : Bool) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let base : @BeaconState minimal :=
     { (default : @BeaconState minimal) with
       slot := 16
@@ -174,7 +168,6 @@ default `0` and the write past the end was a no-op, so the run succeeded. -/
 private def pinInactivityShortScoresRaises : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processInactivityUpdates : EStateM StateTransitionError State Unit).run
       (inactivityState false) with
@@ -187,7 +180,6 @@ example : pinInactivityShortScoresRaises = true := by native_decide
 private def pinInactivityInRangeReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processInactivityUpdates : EStateM StateTransitionError State Unit).run
       (inactivityState true) with
@@ -272,7 +264,6 @@ open EthCLSpecs.Gloas
 default bid and the default latest block hash agree, so `process_withdrawals` runs. -/
 private def gloasState (n : Nat) (cursor : ValidatorIndex) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { (default : @BeaconState minimal) with
     validators := ⟨Array.replicate n default⟩
     balances := ⟨Array.replicate n 0⟩
@@ -285,7 +276,6 @@ modulo helper stored `0` and the run succeeded. -/
 private def pinGloasCursorEmptyRegistryRaises : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processWithdrawals : EStateM StateTransitionError State Unit).run (gloasState 0 0) with
   | .error (.zeroDivision _) _ => true
@@ -297,7 +287,6 @@ the cursor to `(1 + 16) % 3 = 2`. -/
 private def pinGloasCursorAdvanceReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processWithdrawals : EStateM StateTransitionError State Unit).run (gloasState 3 1) with
   | .ok _ post => (sszGet post nextWithdrawalValidatorIndex).toPlainNat = 2

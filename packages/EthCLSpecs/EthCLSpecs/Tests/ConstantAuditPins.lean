@@ -116,7 +116,6 @@ flags, and an inactivity score of `100`. The validator is eligible and not a tim
 voter. The finality delay is `1`, so the chain is not in an inactivity leak. -/
 private def auditState : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { (default : @BeaconState minimal) with
     slot := 16
     validators := ⟨#[activeValidator], by decide⟩
@@ -129,7 +128,6 @@ private def auditState : @State minimal :=
 private def inactivityScoreAfter (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processInactivityUpdates : EStateM StateTransitionError State Unit).run auditState with
   | .ok _ post => .answer (sszGet post inactivityScores)[0]!.toPlainNat
@@ -139,7 +137,6 @@ private def inactivityScoreAfter (c : Config) : Outcome :=
 private def inactivityPenalty (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   deltaOutcome (getInactivityPenaltyDeltas auditState)
 
@@ -147,7 +144,6 @@ private def inactivityPenalty (c : Config) : Outcome :=
 private def balanceChurnLimit (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   gweiOutcome (getBalanceChurnLimit auditState)
 
@@ -155,7 +151,6 @@ private def balanceChurnLimit (c : Config) : Outcome :=
 private def proposerScore (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   gweiOutcome (computeProposerScore auditState)
 
@@ -163,7 +158,6 @@ private def proposerScore (c : Config) : Outcome :=
 private def committeeFraction (p : CLUint64) : Outcome :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   gweiOutcome (calculateCommitteeFraction auditState p)
 
@@ -227,7 +221,6 @@ open EthCLSpecs.Gloas
 /-- The Fulu audit state, over Gloas's own `BeaconState`. -/
 private def gloasAuditState : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       activationEpoch := 0
@@ -246,7 +239,6 @@ private def gloasAuditState : @State minimal :=
 private def gloasProposerScore (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   gweiOutcome (computeProposerScore gloasAuditState)
 
@@ -254,7 +246,6 @@ private def gloasProposerScore (c : Config) : Outcome :=
 private def gloasInactivityPenalty (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   deltaOutcome (getInactivityPenaltyDeltas gloasAuditState)
 
@@ -280,7 +271,6 @@ so the pair pins that the division ran without pinning its quotient alone;
 private def gloasExitChurnLimit (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   gweiOutcome (getExitChurnLimit gloasAuditState)
 
@@ -288,7 +278,6 @@ private def gloasExitChurnLimit (c : Config) : Outcome :=
 private def gloasActivationChurnLimit (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   gweiOutcome (getActivationChurnLimit gloasAuditState)
 
@@ -296,7 +285,6 @@ private def gloasActivationChurnLimit (c : Config) : Outcome :=
 private def gloasConsolidationChurnLimit (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   gweiOutcome (getConsolidationChurnLimit gloasAuditState)
 
@@ -304,7 +292,6 @@ private def gloasConsolidationChurnLimit (c : Config) : Outcome :=
 private def gloasPaymentQuorum (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   gweiOutcome (getBuilderPaymentQuorumThreshold gloasAuditState)
 
@@ -340,7 +327,6 @@ balance `2 ^ 64 - 2` is the greatest that fits, and the quorum product
 `(2 ^ 64 - 2) / 8 * 6` is the nearest in-range product the fixture can reach. -/
 private def gloasEdgeState : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       activationEpoch := 0
@@ -360,7 +346,6 @@ threshold answers rather than raising. -/
 private def gloasEdgePaymentQuorum : Outcome :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   gweiOutcome (getBuilderPaymentQuorumThreshold gloasEdgeState)
 
@@ -400,7 +385,6 @@ private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 fields mirror `GloasForkChoicePins.pinStore`. -/
 private def timelinessStore (trues : Nat) : @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let root : Root := Vector.replicate 32 9
   let votes : Array (Option Bool) :=
     (Array.range 16).map fun i => if i < trues then some true else some false
@@ -424,7 +408,6 @@ against the threshold `8`. -/
 private def payloadTimelinessAt (trues : Nat) : Option Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   let store := timelinessStore trues
   match (payloadTimeliness (map := treeMap) store (Vector.replicate 32 9) true :
     PinM Bool).run store with
@@ -445,7 +428,6 @@ open EthCLSpecs.Heze
 /-- The Fulu audit state, over Heze's own `BeaconState`. -/
 private def hezeAuditState : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       activationEpoch := 0
@@ -464,7 +446,6 @@ private def hezeAuditState : @State minimal :=
 private def hezeProposerScore (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   gweiOutcome (computeProposerScore hezeAuditState)
 
@@ -472,7 +453,6 @@ private def hezeProposerScore (c : Config) : Outcome :=
 private def hezeInactivityPenalty (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   deltaOutcome (getInactivityPenaltyDeltas hezeAuditState)
 
@@ -491,7 +471,6 @@ answers as the Gloas pins. -/
 private def hezeExitChurnLimit (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   gweiOutcome (getExitChurnLimit hezeAuditState)
 
@@ -499,7 +478,6 @@ private def hezeExitChurnLimit (c : Config) : Outcome :=
 private def hezeConsolidationChurnLimit (c : Config) : Outcome :=
   letI : Preset := minimal
   letI : Config := c
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   gweiOutcome (getConsolidationChurnLimit hezeAuditState)
 

@@ -53,7 +53,6 @@ open EthCLSpecs.Fulu
 withdrawable at epoch `0`, balance `32 ETH`) and the given `next_withdrawal_index`. -/
 private def withdrawableState (nextIndex : WithdrawalIndex) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       withdrawalCredentials := Vector.ofFn (fun i => if i.val = 0 then 1 else 0)
@@ -70,7 +69,6 @@ private def fuluExpected (nextIndex : WithdrawalIndex) :
     Except StateTransitionError (List (Nat × Nat × Nat)) :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let st := withdrawableState nextIndex
   match (getExpectedWithdrawals st : EStateM StateTransitionError State _).run st with
@@ -143,7 +141,6 @@ example : pinComputeCommitteeSliceReads = true := by native_decide
 has one committee of one member. -/
 private def activeState (s : Slot) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       effectiveBalance := 32000000000,
@@ -222,7 +219,6 @@ open EthCLSpecs.Gloas
 /-- A Gloas state with one pending builder withdrawal of `7` Gwei for builder `3`. -/
 private def builderPendingState : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { (default : @BeaconState minimal) with
     builderPendingWithdrawals := ⟨#[{ (default : BuilderPendingWithdrawal) with
       amount := 7, builderIndex := 3 }]⟩ }
@@ -233,7 +229,6 @@ private def gloasBuilderWs (withdrawalIndex : WithdrawalIndex) :
     Except StateTransitionError (List (Nat × Nat × Nat) × Nat × Nat) :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (getBuilderWithdrawals withdrawalIndex #[] : EStateM StateTransitionError State _).run
       builderPendingState with
@@ -263,7 +258,6 @@ example : pinGloasBuilderWithdrawalIndexBelowMaxReads = true := by native_decide
 /-- A Gloas state at slot `s` with eight active validators. -/
 private def gloasActiveState (s : Slot) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       effectiveBalance := 32000000000,

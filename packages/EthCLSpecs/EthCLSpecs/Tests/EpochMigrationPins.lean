@@ -32,7 +32,6 @@ Pins 1 and 2 run the `Checked` helper alone, so the raise surfaces as the
 `ArithFault` range cause, `.error (.range _ 64 _ _)`. Pins 3 and 4 run the
 transition, where the lift turns that fault into `.error (.arithmetic _)`. The
 old wrapping form returned a wrapped `.ok`, so each failure pin discriminates.
-The pins hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -105,7 +104,6 @@ withdrawability sum is reached. The config argument is the run's, so the two
 pins below can run the same state under the two configs. -/
 private def exitState (_cfg : Gloas.Config) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       activationEligibilityEpoch := 0
@@ -122,7 +120,6 @@ private def exitState (_cfg : Gloas.Config) : @State minimal :=
 private def pinValidatorExitOverflowRaises : Bool :=
   letI : Preset := minimal
   letI : Config := hugeDelayConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (initiateValidatorExit 0 : EStateM StateTransitionError State Unit).run
       (exitState hugeDelayConfig) with
@@ -133,7 +130,6 @@ example : pinValidatorExitOverflowRaises = true := by native_decide
 private def pinValidatorExitDefaultReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (initiateValidatorExit 0 : EStateM StateTransitionError State Unit).run
       (exitState minimalConfig) with
@@ -156,7 +152,6 @@ in this fork body), so the request passes the gates and reaches
 private def pinWithdrawalRequestOverflowRaises : Bool :=
   letI : Preset := minimal
   letI : Config := hugeDelayConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let wr : WithdrawalRequest :=
     { sourceAddress := (Vector.replicate 20 (1 : UInt8))
@@ -171,7 +166,6 @@ example : pinWithdrawalRequestOverflowRaises = true := by native_decide
 private def pinWithdrawalRequestDefaultReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let wr : WithdrawalRequest :=
     { sourceAddress := (Vector.replicate 20 (1 : UInt8))

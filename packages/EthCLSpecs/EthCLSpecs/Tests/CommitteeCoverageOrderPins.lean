@@ -209,7 +209,6 @@ open EthCLSpecs.Gloas
 /-- A Gloas state at slot `s` with eight active validators. -/
 private def gloasState (P : Preset) (s : Slot) : @State P :=
   letI : Preset := P
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       effectiveBalance := 32000000000,

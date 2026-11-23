@@ -57,7 +57,6 @@ private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 /-- An empty Gloas store with one block at `slot`, keyed by `pinRoot`. -/
 private def pinStore (slot : Slot) : @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { timeMs := 0, genesisTimeMs := 0
     justifiedCheckpoint := default, finalizedCheckpoint := default
     unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
@@ -77,7 +76,6 @@ private def pinStore (slot : Slot) : @Store minimal treeMap :=
 private def previousSlotDecision (slot : Slot) : Outcome :=
   letI : Preset := minimal
   letI : Config := { minimalConfig with slotDurationMs := 0 }
-  letI : HasherTag := fastHasherTag
   let store := pinStore slot
   classify ((isPreviousSlotPayloadDecision (map := treeMap) store (.full pinRoot) :
     PinM Bool).run store)
@@ -86,7 +84,6 @@ private def previousSlotDecision (slot : Slot) : Outcome :=
 private def extendPayload (slot : Slot) : Outcome :=
   letI : Preset := minimal
   letI : Config := { minimalConfig with slotDurationMs := 0 }
-  letI : HasherTag := fastHasherTag
   let store := pinStore slot
   classify ((shouldExtendPayload (map := treeMap) store pinRoot : PinM Bool).run store)
 
@@ -108,7 +105,6 @@ private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 /-- An empty Heze store with one block at `slot`, keyed by `pinRoot`. -/
 private def pinStore (slot : Slot) : @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { timeMs := 0, genesisTimeMs := 0
     justifiedCheckpoint := default, finalizedCheckpoint := default
     unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
@@ -130,7 +126,6 @@ private def pinStore (slot : Slot) : @Store minimal treeMap :=
 private def extendPayload (slot : Slot) : Outcome :=
   letI : Preset := minimal
   letI : Config := { minimalConfig with slotDurationMs := 0 }
-  letI : HasherTag := fastHasherTag
   let store := pinStore slot
   classify ((shouldExtendPayload (map := treeMap) store pinRoot : PinM Bool).run store)
 

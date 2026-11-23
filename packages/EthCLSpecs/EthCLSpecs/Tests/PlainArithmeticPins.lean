@@ -113,7 +113,6 @@ private def fuluState (P : Preset) (n : Nat) (eb : Gwei := 32000000000) (active 
 /-- The count at epoch `0` over `n` active validators, read back as a `Nat`. -/
 private def countOf (P : Preset) (n : Nat) : Except ArithFault Nat :=
   letI : Preset := P
-  letI : HasherTag := fastHasherTag
   (getCommitteeCountPerSlot (fuluState P n) 0).map (·.toPlainNat)
 
 /-- `TARGET_COMMITTEE_SIZE = 0`: `... // TARGET_COMMITTEE_SIZE` raises `ZeroDivisionError`.
@@ -153,7 +152,6 @@ private def fuluExpected (P : Preset) (n : Nat) :
     Except StateTransitionError (List (Nat × Nat)) :=
   letI : Preset := P
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let st := withdrawState P n
   match (getExpectedWithdrawals st : EStateM StateTransitionError State _).run st with
@@ -383,7 +381,6 @@ private def gloasProcess (n : Nat) (idle : Bool := false) :
     Except StateTransitionError (Nat × Nat × Nat) :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processWithdrawals : EStateM StateTransitionError State Unit).run
       (gloasWithdrawState minimal n idle) with
@@ -402,7 +399,6 @@ example : (okIs (gloasProcess 2) (2, 7, 0) && okIs (gloasProcess 5) (4, 9, 4) &&
 private def builderWithdrawals (P : Preset) : Except StateTransitionError Nat :=
   letI : Preset := P
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let st := gloasWithdrawState P 1
   match (getBuilderWithdrawals 5 #[] : EStateM StateTransitionError State _).run st with

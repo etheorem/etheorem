@@ -144,7 +144,7 @@ column is the fork's own diff, for scale.
 
 | Axiom | Theorems resting on it |
 | --- | --- |
-| `propext` | 142 |
+| `propext` | 138 |
 | `Classical.choice` | 64 |
 | `Quot.sound` | 130 |
 | `Lean.ofReduceBool` | 0 |

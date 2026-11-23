@@ -48,7 +48,7 @@ The pin fixes the recorded bit by hand rather than through the engine, so the
 drives that refuting branch through the record path into this gate. -/
 
 /-- The pins' concrete fork-choice monad: the minimal preset over the deterministic
-`treeMap` and the FFI hasher, the annotation every pin's `.run` otherwise repeats. -/
+`treeMap`, the annotation every pin's `.run` otherwise repeats. -/
 private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 private def pinPilsRoot : Root := Vector.replicate 32 9
@@ -58,11 +58,10 @@ private def pinPilsRoot : Root := Vector.replicate 32 9
 the optional `payloadInclusionListSatisfaction[root]` entry. Every other field is empty/zero
 (`FcMap.empty`, default checkpoints, `fcZeroRoot`), mirroring the `getForkchoiceStore` literal. The
 `payloads` value is never read (the predicate tests membership only), so a `default` envelope
-serves. The `letI`s fix the preset / hasher so the anonymous `Store` constructor synthesizes them. -/
+serves. The `letI` fixes the preset so the anonymous `Store` constructor synthesizes it. -/
 private def pinPilsStore (payloadPresent : Bool) (recorded : Option Bool) :
     @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { timeMs := 0, genesisTimeMs := 0
     justifiedCheckpoint := default, finalizedCheckpoint := default
     unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
@@ -99,12 +98,11 @@ private inductive PilsAnswer where
   | otherReject
   deriving DecidableEq
 
-/-- The predicate's answer on `pinPilsStore payloadPresent recorded`. The `letI`s re-supply the
-preset / hasher the `forkdef` parameters want (Lean re-synthesizes them rather than reading the
+/-- The predicate's answer on `pinPilsStore payloadPresent recorded`. The `letI` re-supplies the
+preset the `forkdef` parameters want (Lean re-synthesizes it rather than reading the
 store's fixed type), the same pattern the `InclusionListStore` pins in this file use. -/
 private def pinPils (payloadPresent : Bool) (recorded : Option Bool) : PilsAnswer :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let store := pinPilsStore payloadPresent recorded
   -- Run the predicate concretely and match on *which* reject fired: `.assert` is the spec's
   -- own guard, anything else is our bug.
@@ -144,7 +142,6 @@ record, so `native_decide`, as the migration pins do. -/
 private def pinIlDueMs : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   match getInclusionListDueMs with
   | .ok due => due.toPlainNat = 4000
   | .error _ => false
@@ -206,7 +203,6 @@ private def pinSIL (v : ValidatorIndex) (slot : Slot) (dependentRoot : Root)
 private def pinFiledStore (filedUnder : Root) (timely : Bool) :
     @InclusionListStore minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let entry : InclusionListEntry :=
     { signedInclusionList := pinSIL 5 0 filedUnder #[pinTx 0xAA], timely := timely }
   { InclusionListStore.empty with
@@ -218,7 +214,6 @@ private def pinRecordStore (payloadPresent : Bool) (headSlot : Slot)
     (ils : @InclusionListStore minimal treeMap) :
     @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let parent : @BeaconBlock minimal := default
   let head : @BeaconBlock minimal :=
     { (default : @BeaconBlock minimal) with slot := headSlot, parentRoot := pinParentRoot }
@@ -231,7 +226,6 @@ private def pinRecordStore (payloadPresent : Bool) (headSlot : Slot)
 private def pinRecordMissingBlock : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   let store := pinPilsStore false none
   match (recordPayloadInclusionListSatisfaction (map := treeMap) store pinPilsRoot
       (default : @EthCLSpecs.Heze.ExecutionPayload minimal) : PinM (Store treeMap)).run store with
@@ -245,7 +239,6 @@ which pyspec raises as `ValueError`, an uncaught fault, so the reject is `.trans
 private def pinRecordSlotZero : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   let store := pinRecordStore false 0 InclusionListStore.empty
   match (recordPayloadInclusionListSatisfaction (map := treeMap) store pinPilsRoot
       (default : @EthCLSpecs.Heze.ExecutionPayload minimal) : PinM (Store treeMap)).run store with
@@ -262,7 +255,6 @@ kernel `#guard`. -/
 private def pinRecordSatisfied : Option Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   let store := pinRecordStore false 1 InclusionListStore.empty
   match (recordPayloadInclusionListSatisfaction (map := treeMap) store pinPilsRoot
       (default : @EthCLSpecs.Heze.ExecutionPayload minimal) : PinM (Store treeMap)).run store with
@@ -292,7 +284,6 @@ passes and the recorded bit is what decides. Hash-free, so kernel `#guard`. -/
 private def pinRecordRefuted : RecordAnswer :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : ExecutionEngine (@EthCLSpecs.Heze.ExecutionPayload minimal) Transaction
       (@EthCLSpecs.Heze.ExecutionRequests minimal) :=
     { isInclusionListSatisfied := fun _ _ => false
@@ -317,7 +308,6 @@ other root, or filed untimely, is not. Hash-free, so kernel `#guard`. -/
 private def pinRecordKeyed (filedUnder : Root) (timely : Bool) : Option Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : ExecutionEngine (@EthCLSpecs.Heze.ExecutionPayload minimal) Transaction
       (@EthCLSpecs.Heze.ExecutionRequests minimal) :=
     { isInclusionListSatisfied := fun _ ilTxs => ilTxs.contains (pinTx 0xAA)
@@ -446,24 +436,21 @@ example : pinOnIl 0 1 #[pinTx 0xAA] = .assertReject := by native_decide
 FOCIL has no conformance vector (the module docstring carries the coverage story), so these
 pin `process_inclusion_list`'s two branches, `get_inclusion_list_transactions`, and
 `get_inclusion_list_bits` to hand-derived outcomes. They build a small
-`InclusionListStore treeMap` (deterministic key order) under the minimal preset and the FFI
-hasher. At v1.7.0-beta.4 the store is keyed by `(slot, dependent_root)` and each entry carries its
+`InclusionListStore treeMap` (deterministic key order) under the minimal preset. At v1.7.0-beta.4 the store is keyed by `(slot, dependent_root)` and each entry carries its
 own timeliness, so nothing here hashes, and every pin is a kernel `#guard`. -/
 
 private def pinKey : Root := Vector.replicate 32 7
 private def pinAltRoot : Root := Vector.replicate 32 2
 
-/-- Number of inclusion lists stored under `(0, pinKey)`. The `letI`s supply the store's preset /
-hasher for the field projection (Lean re-synthesizes them rather than reading the argument's
+/-- Number of inclusion lists stored under `(0, pinKey)`. The `letI` supplies the store's preset
+for the field projection (Lean re-synthesizes it rather than reading the argument's
 fixed type). -/
 private def pinNumStored (s : @InclusionListStore minimal treeMap) : Nat :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   ((FcMap.lookup s.inclusionLists ((0 : Slot), pinKey)).getD FcMap.empty |> FcMap.keys).length
 /-- The equivocator set recorded under `(0, pinKey)`. -/
 private def pinEquivs (s : @InclusionListStore minimal treeMap) : Array ValidatorIndex :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   FcMap.lookupD s.equivocators ((0 : Slot), pinKey)
 
 /-- A store already holding one timely list from validator 5 under `(0, pinKey)`. Shared by the
@@ -475,7 +462,6 @@ private def pinStoreB : @InclusionListStore minimal treeMap := pinFiledStore pin
 -- (#[5], 1).
 private def pinResConflict : Array ValidatorIndex × Nat :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let after := processInclusionList pinStoreB (pinSIL 5 0 pinKey #[pinTx 0xBB]) true
   (pinEquivs after, pinNumStored after)
 #guard pinResConflict = (#[5], 1)
@@ -484,7 +470,6 @@ private def pinResConflict : Array ValidatorIndex × Nat :=
 -- is not added twice. Expected (#[5], 1).
 private def pinResRepeatConflict : Array ValidatorIndex × Nat :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let once := processInclusionList pinStoreB (pinSIL 5 0 pinKey #[pinTx 0xBB]) true
   let after := processInclusionList once (pinSIL 5 0 pinKey #[pinTx 0xCC]) true
   (pinEquivs after, pinNumStored after)
@@ -494,7 +479,6 @@ private def pinResRepeatConflict : Array ValidatorIndex × Nat :=
 -- stored count); expected (0, 1).
 private def pinResMatch : Nat × Nat :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let after := processInclusionList pinStoreB (pinSIL 5 0 pinKey #[pinTx 0xAA]) true
   ((pinEquivs after).size, pinNumStored after)
 #guard pinResMatch = (0, 1)
@@ -505,7 +489,6 @@ private def pinResMatch : Nat × Nat :=
 -- of validator 5's entry); expected (1, some isTimely).
 private def pinResNew (isTimely : Bool) : Nat × Option Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let after := processInclusionList InclusionListStore.empty (pinSIL 5 0 pinKey #[pinTx 0xAA]) isTimely
   let entries := (FcMap.lookup after.inclusionLists ((0 : Slot), pinKey)).getD FcMap.empty
   (pinNumStored after, (FcMap.lookup entries 5).map (·.timely))
@@ -517,7 +500,6 @@ private def pinResNew (isTimely : Bool) : Nat × Option Bool :=
 private def pinTwoLists (equiv : Array ValidatorIndex) :
     @InclusionListStore minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let entry5 : InclusionListEntry :=
     { signedInclusionList := pinSIL 5 0 pinKey #[pinTx 0xAA], timely := true }
   let entry6 : InclusionListEntry :=
@@ -531,7 +513,6 @@ the `#guard`s below compare the result directly. -/
 private def pinTxs (equiv : Array ValidatorIndex) (dependentRoot : Root) (onlyTimely : Bool) :
     Array Transaction :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   getInclusionListTransactions (pinTwoLists equiv) 0 dependentRoot onlyTimely
 
 -- No equivocators, timeliness ignored: union of {0xAA} and {0xAA, 0xBB}, deduped to two.
@@ -554,7 +535,6 @@ private def pinCommittee : Vector ValidatorIndex 16 :=
 `pinCommittee`: a member's bit is set when it has a counted list for the key. -/
 private def pinBits (equiv : Array ValidatorIndex) (onlyTimely : Bool) : List Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let bits := getInclusionListBits (pinTwoLists equiv) pinCommittee 0 pinKey onlyTimely
   [bitGet bits 0, bitGet bits 1, bitGet bits 2]
 
@@ -569,7 +549,6 @@ private def pinBits (equiv : Array ValidatorIndex) (onlyTimely : Bool) : List Bo
 that set position 0 are inclusive, and bits that miss it are not. -/
 private def pinInclusive (given : List Nat) : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let bits := given.foldl (fun b i => bitSet b i true) (default : Bitvector 16)
   isInclusionListBitsInclusive (pinTwoLists #[]) pinCommittee 0 pinKey bits
 

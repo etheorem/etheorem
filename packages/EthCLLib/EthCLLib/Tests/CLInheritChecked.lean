@@ -118,7 +118,6 @@ open SizzLean.Hasher
 /-- The base's own body: slot 4 at factor 2 is 8. -/
 example :
     (letI : BaseChecked.Preset := BaseChecked.mini
-     letI : HasherTag := fastHasherTag
      let st0 : @BaseChecked.State BaseChecked.mini :=
        ({ slot := 4 } : @BaseChecked.Toy BaseChecked.mini)
      let action : EStateM StateTransitionError
@@ -133,7 +132,6 @@ example :
 at factor 3 is 12, not the base's 8. -/
 example :
     (letI : ChildChecked.Preset := ChildChecked.mini
-     letI : HasherTag := fastHasherTag
      let st0 : @ChildChecked.State ChildChecked.mini :=
        ({ slot := 4 } : @ChildChecked.Toy ChildChecked.mini)
      let action : EStateM StateTransitionError
@@ -150,7 +148,6 @@ at factor 3 passes 2^64, and the §4.4 lift surfaces it as the machine's
 multiply) would answer `.ok` here and fail this pin. -/
 example :
     (letI : ChildChecked.Preset := ChildChecked.mini
-     letI : HasherTag := fastHasherTag
      let st0 : @ChildChecked.State ChildChecked.mini :=
        ({ slot := 18446744073709551615 } : @ChildChecked.Toy ChildChecked.mini)
      let action : EStateM StateTransitionError

@@ -120,7 +120,6 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
   let state ← decodeState P preBytes
   letI : Preset := P
   letI : Config := C
-  letI : HasherTag := fastHasherTag
   -- `Deltas(rewards=…, penalties=…)` builds two `List`s, which raise on too many elements.
   let mkDeltas : Array Gwei × Array Gwei → Except StateTransitionError ByteArray := fun rp => do
     pure (SSZ.serialize ({ rewards := ← sszOfArrayM "rewards" rp.1,

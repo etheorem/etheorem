@@ -107,7 +107,6 @@ bound `1`, and the recency assert then rejects with `.assert` instead. -/
 private def pinBlockRootRecencyBoundOverflows : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let st0 : @BeaconState minimal :=
     { (default : @BeaconState minimal) with slot := 18446744073709551615 }
@@ -125,7 +124,6 @@ and returns the marker root stored there, and no other entry holds it. -/
 private def pinBlockRootRingWrapReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let marker : Root := Vector.replicate 32 7
   let st0 : @BeaconState minimal :=
