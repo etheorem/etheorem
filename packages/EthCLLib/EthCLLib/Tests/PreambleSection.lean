@@ -15,9 +15,8 @@ behavior is checked at build (`FRAMEWORK_ARCHITECTURE.md` §14):
   it both typechecks and *runs* at the fast config;
 - the seven helpers run on the plain fork in both monads, `StateT State
   (Except StateTransitionError)` and `EStateM StateTransitionError State`: the field
-  read and the record update (through `bumpSlot` / `setFlag`), `sszModify` (through
-  `bumpXsHead`),
-  `appendState`, `setOrAppendState`, `getStateRoot` (through `rootAfterBump`) and
+  read and the record update (through `bumpSlot` / `setFlag`), `SSZList.modify` (through
+  `bumpXsHead`), `appendState`, `setOrAppendState`, `getStateRoot` (through `rootAfterBump`) and
   `runToRoot`;
 - `sszOfArrayM` raises `.listFull` on too many elements;
 - `appendState` appends to a list with room and raises `.listFull` on a full one.
@@ -82,10 +81,10 @@ def bumpSlot : StateTransition Unit :=
 def setFlag (v : UInt64) : StateTransition Unit :=
   modifyState fun state => { state with flag := v }
 
-/-- The spec's read-modify-write through `sszModify`: the list head incremented in
-place, the path named once. -/
+/-- The spec's read-modify-write through `SSZList.modify`: the list head incremented
+in place, inside a record update. -/
 def bumpXsHead : StateTransition Unit :=
-  modifyState fun state => (sszModify state xs[0]! := fun v => v + 1)
+  modifyState fun state => { state with xs := state.xs.modify 0 (· + 1) }
 
 /-- The spec's `state.xs.append(v)`. -/
 def appendX (v : UInt64) : StateTransition Unit :=
@@ -143,7 +142,7 @@ example :
      | .error _ _ => 0)
       = 9 := by native_decide
 
-/-- `sszModify` read-modify-writes the list head: `[1] → [2]`. -/
+/-- `SSZList.modify` read-modify-writes the list head: `[1] → [2]`. -/
 example : runXs bumpXsHead = .inl #[2] := by native_decide
 
 /-- An append with room: `[1] → [1, 5]`. -/
@@ -219,7 +218,7 @@ example :
      | .error _    => 0)
       = 42 := by native_decide
 
-/-- `sszModify` read-modify-writes the list head: `[1] → [2]`. -/
+/-- `SSZList.modify` read-modify-writes the list head: `[1] → [2]`. -/
 example : runXsT bumpXsHead = .inl #[2] := by native_decide
 
 /-- An append with room: `[1] → [1, 5]`. -/
