@@ -4,10 +4,11 @@ import EthCLLib.Spec.CLInt
 import EthCLLib.Spec.Hasher
 
 /-!
-# `EthCLLib.Spec.State`: the boxed-state access surface
+# `EthCLLib.Spec.State`: the state access surface
 
-`State` is the fork's `BeaconState` as an SSZ box; the per-fork abbrev (and the
-`modifyState` updater) are emitted by `state_preamble` (`EthCLLib.Spec.Header`).
+`State` is the fork's `BeaconState` record itself; the per-fork abbrev (and the
+`modifyState` updater, and the `StateRoot State` instance) are emitted by
+`state_preamble` (`EthCLLib.Spec.Header`).
 Reads and writes are SizzLean's generic `sszGet` / `sszUpdate` macros, available as
 global syntax the moment `SizzLean` is imported, so the framework adds no per-field
 lenses. This module supplies the small generic helpers the step primitives need:
@@ -30,71 +31,56 @@ universe u
 all-zero) lives in SizzLean alongside the type definitions, so a `forkcontainer`
 derives `Inhabited` for the runner's genesis anchor with no framework-side instance. -/
 
-/-- A state that yields its Merkle root together with a successor state. On a box the
-successor is the cache-warmed box (`Box.hashTreeRoot`). The framework's instance is for
-`SSZ.Box`; `plain_state_preamble` emits one for a plain record. The class exists so
+/-- A state that yields its Merkle root together with a successor state. On a plain
+state the successor is the state itself, so the write-back is the identity.
+`state_preamble` emits the instance for each fork's plain record. The class exists so
 `getStateRoot` pins the state type `S` from its
 `MonadState S m` constraint (where the state type is an `outParam`) as one metavariable,
-then finds the root through the instance, rather than leaving the box's `H` / `T` as
-metavariables instance search cannot solve in the abstract `state_section`. The pure
-helpers `stateRoot` / `stateRoot!` and `runToRoot` (`Spec/RunState.lean`) take the same
-class, so every root read works on any state type with an instance. -/
+then finds the root through the instance, rather than leaving the record's `SSZRepr` /
+hasher as metavariables instance search cannot solve in the abstract `state_section`.
+The pure helpers `stateRoot` / `stateRoot!` and `runToRoot` (`Spec/RunState.lean`) take
+the same class, so every root read works on any state type with an instance. -/
 class StateRoot (S : Type) where
-  /-- The root and the successor state; on a box, `Box.hashTreeRoot`. -/
+  /-- The root and the successor state; on a plain state, the state itself. -/
   rootAndWarm : S → ByteArray × S
 
-@[reducible] instance instStateRootBox {H T : Type} [Hasher H] [SSZRepr T] :
-    StateRoot (SSZ.Box H T) where
-  rootAndWarm s := s.hashTreeRoot
-
-/-- Take the threaded state's Merkle root inside a step, keeping the cache-warmed box.
-`Box.hashTreeRoot` is `modifyGet`-shaped: it returns the root *and* a box holding the
-committed intermediate-node hashes, so this writes that box back through
-`MonadStateOf`, and a later root reuses the tree instead of rebuilding it. This is the
-way to take a state root in a `StateTransition` / store-machine step; the pure
-`stateRoot!` below is the terminal-only discard form. Whether retention actually caches
-is the box flavour's call (a cached box keeps the tree, a pure box does not), so the
-spec calls this unconditionally and the runner picks the flavour and manages memory. -/
+/-- Take the threaded state's Merkle root inside a step. `StateRoot.rootAndWarm` returns
+the root *and* a successor state, so this writes the successor back through
+`MonadStateOf`; on the plain fork state the successor is the state itself, the write-back
+is the identity, and each root is a full recomputation through `SSZ.hashTreeRoot`. This
+is the way to take a state root in a `StateTransition` / store-machine step; the pure
+`stateRoot!` below is the terminal-only discard form. -/
 @[inline] def getStateRoot {S : Type} {m : Type → Type u} [MonadState S m] [StateRoot S] :
     m ByteArray :=
   modifyGet StateRoot.rootAndWarm
 
 /-- The Merkle root of a state value in hand, **with** the successor state
-`StateRoot.rootAndWarm` returns (on a box, the cache-warmed box of `Box.hashTreeRoot`),
-for a non-monadic context that threads the state by hand: a pure `State → State`
-transformer like `processSlot`, or an `Except` handler that returns the warm box. This is
+`StateRoot.rootAndWarm` returns (on a plain state, the state itself), for a non-monadic
+context that threads the state by hand: a pure `State → State`
+transformer like `processSlot`, or an `Except` handler that returns the post-state. This is
 the lossless pure form, so it carries no bang. `getStateRoot` is the monadic form that
 threads the state automatically; `stateRoot!` is the form that drops it. Keeping spec
-bodies on this surface avoids naming `Box.hashTreeRoot` directly.
+bodies on this surface avoids naming `SSZ.hashTreeRoot` directly.
 
 The body reads the instance through its class projection `StateRoot.rootAndWarm`, the way
 `getStateRoot` does. The compiler unfolds and specialises the instance under the
 projection at the call site; a body that destructures the instance with `match` gets no
 such unfolding, and every call stays a closure call into the generic `SSZ.hashTreeRoot`
 (the WS-138 pilot review's corrected cause analysis). For proofs, `simp only [stateRoot]`
-stops at the projection and does not unfold the instance by itself; the `rfl` lemma
-`stateRoot_box_eq` below carries the behaviour proofs leaned on, on a box landing on
-`Box.hashTreeRoot`, where the SizzLean box lemmas apply. -/
+stops at the projection and does not unfold the instance by itself; on the fork states the
+pair fact a proof needs is `(StateRoot.rootAndWarm state).2 = state`, which holds by `rfl`
+for the instance's `rootAndWarm s := (SSZ.hashTreeRoot HasherTag.H s, s)`. -/
 @[inline] def stateRoot {S : Type} [StateRoot S] (state : S) : ByteArray × S :=
   StateRoot.rootAndWarm state
 
-/-- Task 2.1's `simp only [stateRoot]` behaviour, carried by a `rfl` lemma: on the box
-instance, a `stateRoot` read is the box's own `hashTreeRoot` (root and warmed box), so the
-SizzLean box lemmas apply to it. On a plain state (`plain_state_preamble`) the pair fact a
-proof needs is `(StateRoot.rootAndWarm state).2 = state`, which holds by `rfl` for the
-instance's `rootAndWarm s := (SSZ.hashTreeRoot HasherTag.H s, s)`. -/
-theorem stateRoot_box_eq {H T : Type} [Hasher H] [SSZRepr T] (s : SSZ.Box H T) :
-    stateRoot s = s.hashTreeRoot := rfl
-
 /-- The Merkle root of a state value in hand, **discarding** the successor state
-`StateRoot.rootAndWarm` returns (on a box, the cache-warmed box). The `!` marks the
+`StateRoot.rootAndWarm` returns (on a plain state, the state itself). The `!` marks the
 discard, this library's bang convention for the convenient-but-lossy variant (as in
-`Array.get!` / `sszUpdate field[i]!`): it never panics, it drops the warm tree.
-Correctness is unaffected, the cached and uncached roots are equal by SizzLean's
-coherence invariant, only the caching speedup is lost. Use it only at a terminal site,
-where the box dies right after the root is taken (the
+`Array.get!` / `sszUpdate field[i]!`): it never panics, it drops the successor. On a
+plain state the successor is the state itself, so nothing of value is lost; use it at a
+terminal site, where the state dies right after the root is taken (the
 `PySpecTests` interface impls, where the root is the return value). A step on the threaded
-state uses `getStateRoot`; a non-monadic context that still needs the warm box uses the
+state uses `getStateRoot`; a non-monadic context that still needs the post-state uses the
 lossless `stateRoot`. -/
 @[inline] def stateRoot! {S : Type} [StateRoot S] (state : S) : ByteArray :=
   (stateRoot state).1

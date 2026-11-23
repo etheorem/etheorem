@@ -237,8 +237,9 @@ abbrev PinM := StateT (@Store mini treeMap) (Except StoreTransitionError)
 
 def store0 : @Store mini treeMap := { balance := 1, heights := FcMap.empty }
 
-/-- The nested machine's pre-state, shared by the composition pins. -/
-def boxPre : State := SSZ.CachedBox Sha256 ({ counter := 41 } : ToyState)
+/-- The nested machine's pre-state, shared by the composition pins. A `ToyState`
+literal types as the nested machine's `State` with no wrapper. -/
+def statePre : State := ({ counter := 41 } : ToyState)
 
 /-- Run a store action from `store0`, reporting the value or the reject. -/
 def runStore (action : PinM CLUint64) : CLUint64 ⊕ StoreTransitionError :=
@@ -268,12 +269,12 @@ example : (runStore (addBalance (map := treeMap) 18446744073709551615) :
 
 -- The nested composition: the store handler ran the state step, and the
 -- post-state carries the checked increment 41 → 42.
-example : (runStoreState (onNestedBlock boxPre) : CLUint64 ⊕ StoreTransitionError) = .inl 42 := by
+example : (runStoreState (onNestedBlock statePre) : CLUint64 ⊕ StoreTransitionError) = .inl 42 := by
   native_decide
 
 -- The faulting nested step surfaces as the wrapped arithmetic fault, and the
 -- store handler cannot recover it.
-example : (runStoreState (onNestedFault boxPre) : CLUint64 ⊕ StoreTransitionError)
+example : (runStoreState (onNestedFault statePre) : CLUint64 ⊕ StoreTransitionError)
   = .inr (.transition (.arithmetic "-")) := by native_decide
 
 end StoreRun
