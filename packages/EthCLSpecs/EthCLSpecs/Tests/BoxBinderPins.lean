@@ -1,9 +1,9 @@
 import EthCLLib.Internal.BoxBinders
 import EthCLLib.Internal.ProofLedger
 import EthCLLib.Spec
-import EthCLSpecs.Gloas.State
-import EthCLSpecs.Heze.ForkChoice
-import EthCLSpecs.Proofs.Gloas.Run
+import EthCLSpecs.Fulu.ForkChoice
+import EthCLSpecs.Fulu.State
+import EthCLSpecs.Proofs.Fulu.Run
 
 /-!
 # `EthCLSpecs.Tests.BoxBinderPins`: the plain-value check pins
@@ -34,7 +34,8 @@ this module instead of passing quietly:
 * `connectiveNested` puts a `∀ s : State` under `True ∧ _`; a connective's
   arguments stay in proposition position, so `s` draws one finding.
 
-Each fixture names a fork constant, so each is in scope: a failing fixture that
+The fixtures name Fulu constants, because Fulu is the fork whose `State` is still
+the box. Each fixture names a fork constant, so each is in scope: a failing fixture that
 is out of scope would pass for the wrong reason. Four more fixtures pin the
 remaining edges. A `Store` binder holds a `State` inside a field type, and the
 head is `Store`, so it passes. A function-typed parameter over `State` is a
@@ -61,9 +62,8 @@ namespace EthCLSpecs.Tests.BoxBinderPins
 
 open EthCLLib.Spec (MapKind FcMap HasherTag)
 open EthCLLib.Internal (boxQuantifiers boxCheckScopes namesFork boxGenerics)
-open EthCLSpecs.Gloas (Preset State BeaconState modifyState)
-open EthCLSpecs.Heze (Store)
-open EthCLSpecs.Proofs.Gloas (GloasRun)
+open EthCLSpecs.Fulu (Preset State BeaconState Store modifyState)
+open EthCLSpecs.Proofs.Fulu (FuluRun)
 
 section Fixtures
 
@@ -88,11 +88,11 @@ is program text inside an equation, so the walk reports nothing. -/
 theorem lambdaInProgram [Preset] [HasherTag] :
     ∀ (preState : BeaconState),
       ((modifyState fun state =>
-          sszUpdate state with builderPendingPayments :=
-            sszGet state builderPendingPayments) : GloasRun PUnit)
+          sszUpdate state with balances :=
+            sszGet state balances) : FuluRun PUnit)
         = ((modifyState fun state =>
-          sszUpdate state with builderPendingPayments :=
-            sszGet state builderPendingPayments) : GloasRun PUnit) → True :=
+          sszUpdate state with balances :=
+            sszGet state balances) : FuluRun PUnit) → True :=
   fun _ _ => trivial
 
 /-- In scope. The boxed `State` quantifier sits inside a hypothesis, one
@@ -102,7 +102,7 @@ theorem nestedForall [Preset] [HasherTag] :
 
 /-- In scope. A `Store` binder holds a `State` inside a field type; the walk
 reads the head only, and the head is `Store`. No finding. -/
-theorem storeBinder {map : MapKind} [EthCLSpecs.Heze.Preset] [HasherTag] [FcMap map] :
+theorem storeBinder {map : MapKind} [Preset] [HasherTag] [FcMap map] :
     ∀ (store : Store map), True := fun _ => trivial
 
 /-- In scope. A function over boxes is a program, not a quantified claim: the

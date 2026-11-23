@@ -26,7 +26,8 @@ the pin's own comment names.
    `assert` and rejected with the `assert` class. The nearby success passes the read and
    rejects at the next assert, which the pin names.
 
-`State` is FFI-backed, so `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`). The Fulu state is an FFI-backed
+box, and the Gloas state is the plain record. So `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -275,11 +276,10 @@ default bid and the default latest block hash agree, so `process_withdrawals` ru
 private def gloasState (n : Nat) (cursor : ValidatorIndex) : @State minimal fastHasherTag :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      validators := ⟨Array.replicate n default⟩
-      balances := ⟨Array.replicate n 0⟩
-      nextWithdrawalValidatorIndex := cursor }
+  { (default : @BeaconState minimal) with
+    validators := ⟨Array.replicate n default⟩
+    balances := ⟨Array.replicate n 0⟩
+    nextWithdrawalValidatorIndex := cursor }
 
 /-! ### 1. The withdrawal validator cursor (Gloas) -/
 

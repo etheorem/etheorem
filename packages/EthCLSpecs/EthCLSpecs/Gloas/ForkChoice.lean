@@ -11,7 +11,7 @@ distinct fork-choice vertices, so `get_ancestor` / `is_ancestor` / `get_weight` 
 `get_node_children` / `get_head` all thread a payload status through the DAG.
 
 The shape mirrors `EthCLSpecs.Fulu.ForkChoice`: the `Store` is a `forkstruct` over the
-map backing (`EthCLLib.Spec.FcMap`) and the Gloas boxed `State`, the section opens with
+map backing (`EthCLLib.Spec.FcMap`) and the plain Gloas `State`, the section opens with
 `fork_choice_section map`, and the wire handlers are monadic `StoreTransition` actions over
 the typed `StoreTransitionError`. The ePBS surface adds `on_execution_payload_envelope`,
 `on_payload_attestation_message`, the two per-block PTC vote maps, the parent-payload
@@ -1090,8 +1090,8 @@ checked), and seeds the anchor's two PTC vote arrays with `[None] * PTC_SIZE`, w
 left both vote maps empty. -/
 forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
     Except StoreTransitionError (Store map) := do
-  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the boxed state hashes
-  -- through `stateRoot` (the cached-tree path), not `htr` (which wants a bare `SSZRepr`).
+  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: `stateRoot` roots the state
+  -- through its `StateRoot State` instance, a full merkleization of the plain record.
   assert (anchorBlock.stateRoot == bytesToRoot (stateRoot anchorState).1)
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState

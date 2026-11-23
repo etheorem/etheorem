@@ -36,7 +36,8 @@ both presets:
 Every expected answer is the pinned pyspec's (1.7.0b4) on the same fixture. Under a
 defaulting read with no assert, every assert pin returns a committee instead (`perm[i]!` past
 the end reads `0`), so each one fails there.
-`State` is FFI-backed, so `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`). The Fulu state is an
+FFI-backed box, and the Gloas and Heze states are the plain record. So `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -192,12 +193,11 @@ private def validator (P : Preset) : @Validator P :=
 
 /-- A state at slot `0` with `SLOTS_PER_EPOCH` active validators. The registry lists are
 progressive, so they take the arrays without a cap. -/
-private def fixture (P : Preset) : SSZ.Box Sha256 (@BeaconState P) :=
+private def fixture (P : Preset) : @BeaconState P :=
   letI : Preset := P
-  SSZ.FastBox
-    { (default : @BeaconState P) with
-      validators := ⟨Array.replicate Const.slotsPerEpoch (validator P)⟩
-      balances := ⟨Array.replicate Const.slotsPerEpoch (u64 32000000000)⟩ }
+  { (default : @BeaconState P) with
+    validators := ⟨Array.replicate Const.slotsPerEpoch (validator P)⟩
+    balances := ⟨Array.replicate Const.slotsPerEpoch (u64 32000000000)⟩ }
 
 /-- Runs Gloas `get_beacon_committee` on the fixture at preset `P`. -/
 private def beacon (P : Preset) (slot index : Nat) : Outcome :=
@@ -256,12 +256,11 @@ private def validator (P : Preset) : @Validator P :=
     withdrawableEpoch := Const.farFutureEpoch }
 
 /-- A state at slot `0` with `SLOTS_PER_EPOCH` active validators, as in the Gloas group. -/
-private def fixture (P : Preset) : SSZ.Box Sha256 (@BeaconState P) :=
+private def fixture (P : Preset) : @BeaconState P :=
   letI : Preset := P
-  SSZ.FastBox
-    { (default : @BeaconState P) with
-      validators := ⟨Array.replicate Const.slotsPerEpoch (validator P)⟩
-      balances := ⟨Array.replicate Const.slotsPerEpoch (u64 32000000000)⟩ }
+  { (default : @BeaconState P) with
+    validators := ⟨Array.replicate Const.slotsPerEpoch (validator P)⟩
+    balances := ⟨Array.replicate Const.slotsPerEpoch (u64 32000000000)⟩ }
 
 /-- Runs Heze `get_beacon_committee` on the fixture at preset `P`. -/
 private def beacon (P : Preset) (slot index : Nat) : Outcome :=
