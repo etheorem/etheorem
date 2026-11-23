@@ -40,9 +40,9 @@ Re-exports:
   shares (`run_bind`, `run_pure`, `run_throw`, `except_bind_ok`,
   `except_bind_error`, the `ofExcept` and `liftErr` run equations), plus the pure
   box helpers `pureState` and `runPure` and their lemmas.
-* `EthCLLib.Proofs.IndexRead`: what the indexed reads compute — `getAt` at a
+* `EthCLLib.Proofs.IndexRead`: what the indexed reads compute (`getAt` at a
   `CLUint64` or `Nat` index, over a lawful collection and over the `SSZList` /
-  `ProgressiveList` shapes — and the `sszGetIdx` run equations
+  `ProgressiveList` shapes) and the `sszGetIdx` run equations
   (`run_sszGetIdx_some`, `run_sszGetIdx_none`). The lemmas name no box, so both
   spec modes use them.
 * `EthCLLib.Proofs.StoreRun`: `ForkChoiceStoreRun`, the pure store-machine runner

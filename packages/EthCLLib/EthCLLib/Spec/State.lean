@@ -31,8 +31,9 @@ all-zero) lives in SizzLean alongside the type definitions, so a `forkcontainer`
 derives `Inhabited` for the runner's genesis anchor with no framework-side instance. -/
 
 /-- A state that yields its Merkle root together with a successor state. On a box the
-successor is the cache-warmed box (`Box.hashTreeRoot`); the one instance today is for
-`SSZ.Box`. The class exists so `getStateRoot` pins the state type `S` from its
+successor is the cache-warmed box (`Box.hashTreeRoot`). The framework's instance is for
+`SSZ.Box`; `plain_state_preamble` emits one for a plain record. The class exists so
+`getStateRoot` pins the state type `S` from its
 `MonadState S m` constraint (where the state type is an `outParam`) as one metavariable,
 then finds the root through the instance, rather than leaving the box's `H` / `T` as
 metavariables instance search cannot solve in the abstract `state_section`. The pure
@@ -68,10 +69,9 @@ bodies on this surface avoids naming `Box.hashTreeRoot` directly.
 
 The body destructures the instance with `match` in place of the class projection
 `StateRoot.rootAndWarm`. Both compile to the same field read. The difference is in proofs:
-`simp` never unfolds a class projection it was not asked to, but it reduces this `match`
-once the instance unfolds to its constructor. So `simp only [stateRoot]` on a box lands on
-`Box.hashTreeRoot`, where the SizzLean box lemmas apply, as it did before the helper
-became generic. -/
+`simp only [stateRoot]` stops at a class projection applied to a named instance, but it
+reduces this `match` once the instance unfolds to its constructor. So on a box it lands on
+`Box.hashTreeRoot`, where the SizzLean box lemmas apply. -/
 @[inline] def stateRoot {S : Type} [inst : StateRoot S] (state : S) : ByteArray × S :=
   match inst with
   | ⟨rootAndWarm⟩ => rootAndWarm state

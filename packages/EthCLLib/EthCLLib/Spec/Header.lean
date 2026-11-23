@@ -43,7 +43,7 @@ that **declarations persist across modules but `variable`s do not**:
   state itself as the "warmed" successor: a plain state carries no incremental tree, so
   `getStateRoot`'s write-back is the identity and each root is a full recomputation.
   `modifyState` is emitted verbatim as the boxed one, and `state_section`,
-  `appendState`, `setOrAppendState` and the step macros are preamble-agnostic — they
+  `appendState`, `setOrAppendState` and the step macros are preamble-agnostic: they
   resolve `State` and `modifyState` by name and serve both modes unchanged. The boxed
   self-test (`EthCLLib.Tests.PreambleSection`) has a plain twin,
   `EthCLLib.Tests.PlainPreambleSection`.
@@ -107,8 +107,8 @@ def elabStatePreamble : CommandElab := fun stx => do
 
 /-! ## `plain_state_preamble`: the once-per-fork declarations, plain -/
 
-/-- `plain_state_preamble BeaconState`: declare the fork's plain `State` — the
-`BeaconState` record itself, no box — the same concrete-domain `modifyState`, and the
+/-- `plain_state_preamble BeaconState`: declare the fork's plain `State` (the
+`BeaconState` record itself, no box), the same concrete-domain `modifyState`, and the
 `StateRoot State` instance that roots the record. Written once, in the `State` module,
 as the boxed twin is. -/
 scoped syntax (name := plainStatePreambleStx) "plain_state_preamble " ident : command
@@ -116,13 +116,15 @@ scoped syntax (name := plainStatePreambleStx) "plain_state_preamble " ident : co
 @[command_elab plainStatePreambleStx]
 def elabPlainStatePreamble : CommandElab := fun stx => do
   let stateTy : TSyntax `term := ⟨stx[1]⟩
-  -- Use-site identifiers: resolve where the macro expands (the fork namespace).
+  -- `State`, `modifyState` and `Preset` are use-site identifiers: they resolve where the
+  -- macro expands (the fork namespace). `HasherTag` and `StateRoot` use global ones, so
+  -- they resolve to the framework's constants at every use site.
   let stateId      := mkIdent `State
   let modifyId     := mkIdent `modifyState
   let presetId     := mkIdent `Preset
   let hasherTagId  := mkIdent ``HasherTag
   let hasherHId    := mkIdent (``HasherTag ++ `H)
-  let stateRootId := mkIdent `StateRoot
+  let stateRootId := mkIdent ``StateRoot
   -- `State` is the plain `BeaconState`: a read is a projection, a write a record update.
   elabCommand (← `(abbrev $stateId [$presetId] [$hasherTagId] : Type := $stateTy))
   -- The identical concrete-domain `modifyState` of the boxed preamble: `State → State`
