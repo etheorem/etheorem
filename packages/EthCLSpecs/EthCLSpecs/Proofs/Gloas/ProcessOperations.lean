@@ -1,5 +1,4 @@
 import EthCLSpecs.Gloas.Transition
-import EthCLSpecs.Proofs.Gloas.KeepsUncached
 import EthCLSpecs.Proofs.Gloas.Run
 import EthCLLib.Proofs.Run
 
@@ -26,15 +25,12 @@ over `ProgressiveList`. This module names that fold `processOperationsForM`
 equation and the success characterization speak in named folds rather than raw
 `forIn` terms.
 
-Statements bind plain `BeaconState` values and read the runs through `runPure`.
+Statements bind plain `BeaconState` values and state each run as `.run` on one.
 The success characterization splits over five plain intermediate values,
 `afterProposerSlashings` through `afterBlsToExecutionChanges`: empty deposits,
-the six length bounds, then one `runPure` fact per operation-family loop, each
-loop's post-state a plain value. The fact behind the split is `KeepsUncached`
-(`Proofs/Gloas/KeepsUncached.lean`): every one of the six handlers keeps the
-flavour, so `runPure_bind_of_keepsUncached` names each fold's post-state as a
-plain value, and the six loop facts `keepsUncached_forM_*` carry it to the
-folds.
+the six length bounds, then one `.run` fact per operation-family loop. Gloas
+`State` is the plain `BeaconState`, so `run_bind` splits each bind of the loop
+chain, and each loop's post-state is already a plain value.
 
 A rejecting run returns the error alone at this monad, with no state attached,
 so there is nothing to say about how far a failing run got, and no theorem
@@ -55,10 +51,7 @@ open EthCLSpecs.Gloas (
   State BeaconState BeaconBlockBody processOperations
   processProposerSlashing processAttesterSlashing processAttestation
   processVoluntaryExit processBlsToExecutionChange processPayloadAttestation)
-open EthCLLib.Proofs (runPure runPure_eq KeepsUncached pureState
-  run_bind run_throw except_bind_ok except_bind_error
-  keepsUncached_forM_array runPure_bind_of_keepsUncached)
-open SizzLean.Proofs (view_uncachedBox)
+open EthCLLib.Proofs (run_bind run_throw except_bind_ok except_bind_error)
 
 section
 variable [Preset] [HasherTag]
@@ -168,78 +161,41 @@ theorem processOperations_nonempty_deposits_error :
     ∀ (preState : BeaconState) (body : BeaconBlockBody) (parentSlot : Slot),
       body.deposits.size ≠ 0 →
       ∃ descr : String,
-        runPure (processOperations (StateTransition := GloasRun) body parentSlot) preState
+        (processOperations (StateTransition := GloasRun) body parentSlot).run preState
           = .error (.assert descr) := by
   intro preState body parentSlot hne
   have hfalse : (body.deposits.size == 0) = false :=
     beq_eq_false_iff_ne.2 hne
-  rw [runPure_eq, processOperations_eq_seq]
+  rw [processOperations_eq_seq]
   simp only [hfalse, SpecReject.assert]
   refine ⟨_, rfl⟩
 
-set_option linter.unusedSectionVars false in
-/-- The six family loops keep the flavour, one fact per loop, each through
-`keepsUncached_forM_array` and its handler's own `KeepsUncached` lemma. -/
-private theorem keepsUncached_forM_proposerSlashings [Preset] [HasherTag] [Config] [CryptoBackend]
-    (body : BeaconBlockBody) :
-    KeepsUncached (processOperationsForM body.proposerSlashings processProposerSlashing) :=
-  keepsUncached_forM_array processProposerSlashing
-    (fun a => keepsUncached_processProposerSlashing a) body.proposerSlashings.val
+omit [Preset] [HasherTag] [Config] [CryptoBackend] in
+/-- A run of `x >>= fun _ => y`, with `x` a `Unit` action, succeeds iff `x` succeeds
+from `s` into some plain value `mid` and `y` succeeds from `mid`. `run_bind` splits the
+run. The `Except` bind then succeeds only on the `.ok` branch of `x`. -/
+private theorem run_bind_unit_ok_iff {σ ε β : Type}
+    (x : StateT σ (Except ε) Unit) (y : StateT σ (Except ε) β) (s : σ) (b : β) (t : σ) :
+    (x >>= fun _ => y).run s = .ok (b, t) ↔
+      ∃ mid : σ, x.run s = .ok ((), mid) ∧ y.run mid = .ok (b, t) := by
+  rw [run_bind]
+  cases hx : x.run s with
+  | error e => simp [except_bind_error]
+  | ok p =>
+    obtain ⟨⟨⟩, mid⟩ := p
+    simp [except_bind_ok]
 
-set_option linter.unusedSectionVars false in
-set_option linter.unusedSectionVars false in
-private theorem keepsUncached_forM_attesterSlashings [Preset] [HasherTag] [Config] [CryptoBackend]
-    (body : BeaconBlockBody) :
-    KeepsUncached (processOperationsForM body.attesterSlashings processAttesterSlashing) :=
-  keepsUncached_forM_array processAttesterSlashing
-    (fun a => keepsUncached_processAttesterSlashing a) body.attesterSlashings.val
-
-set_option linter.unusedSectionVars false in
-set_option linter.unusedSectionVars false in
-private theorem keepsUncached_forM_attestations [Preset] [HasherTag] [Config] [CryptoBackend]
-    (body : BeaconBlockBody) (parentSlot : Slot) :
-    KeepsUncached (processOperationsForM body.attestations (processAttestation · parentSlot)) :=
-  keepsUncached_forM_array (processAttestation · parentSlot)
-    (fun a => keepsUncached_processAttestation a parentSlot) body.attestations.val
-
-set_option linter.unusedSectionVars false in
-set_option linter.unusedSectionVars false in
-private theorem keepsUncached_forM_voluntaryExits [Preset] [HasherTag] [Config] [CryptoBackend]
-    (body : BeaconBlockBody) :
-    KeepsUncached (processOperationsForM body.voluntaryExits processVoluntaryExit) :=
-  keepsUncached_forM_array processVoluntaryExit
-    (fun a => keepsUncached_processVoluntaryExit a) body.voluntaryExits.val
-
-set_option linter.unusedSectionVars false in
-set_option linter.unusedSectionVars false in
-private theorem keepsUncached_forM_blsToExecutionChanges [Preset] [HasherTag] [Config] [CryptoBackend]
-    (body : BeaconBlockBody) :
-    KeepsUncached (processOperationsForM body.blsToExecutionChanges
-      processBlsToExecutionChange) :=
-  keepsUncached_forM_array processBlsToExecutionChange
-    (fun a => keepsUncached_processBlsToExecutionChange a) body.blsToExecutionChanges.val
-
-set_option linter.unusedSectionVars false in
-set_option linter.unusedSectionVars false in
-private theorem keepsUncached_forM_payloadAttestations [Preset] [HasherTag] [Config] [CryptoBackend]
-    (body : BeaconBlockBody) :
-    KeepsUncached (processOperationsForM body.payloadAttestations processPayloadAttestation) :=
-  keepsUncached_forM_array processPayloadAttestation
-    (fun a => keepsUncached_processPayloadAttestation a) body.payloadAttestations.val
-
-/-- Exact success ↔: `processOperations` succeeds on the uncached box of `preState`
-with post-value `postState` iff deposits are empty, the six progressive lists
-meet their length bounds, and the six operation-family loops succeed in order
-over five plain intermediate values,
-`afterProposerSlashings` through `afterBlsToExecutionChanges`, each named after
-the loop that produced it. The forward direction names each fold's post-box as
-`pureState` of a plain value through the loop's `KeepsUncached` fact; the
-reverse chains `runPure_bind_of_keepsUncached` over the six folds. This is a coordinator sequencing characterization rather
-than complete correctness of operation processing. -/
+/-- Exact success ↔: `processOperations` succeeds on `preState` with post-value
+`postState` iff deposits are empty, the six progressive lists meet their length bounds,
+and the six operation-family loops succeed in order over five plain intermediate values,
+`afterProposerSlashings` through `afterBlsToExecutionChanges`, each named after the loop
+that produced it. Once the gates pass, `run_bind_unit_ok_iff` splits the loop chain at
+each of its five binds. This is a coordinator sequencing characterization rather than
+complete correctness of operation processing. -/
 @[characterizes EthCLSpecs.Gloas.processOperations]
 theorem processOperations_run_ok_iff :
     ∀ (preState postState : BeaconState) (body : BeaconBlockBody) (parentSlot : Slot),
-      runPure (processOperations (StateTransition := GloasRun) body parentSlot) preState
+      (processOperations (StateTransition := GloasRun) body parentSlot).run preState
           = .ok ((), postState) ↔
         body.deposits.size = 0 ∧
         body.proposerSlashings.size ≤ maxProposerSlashings ∧
@@ -250,34 +206,45 @@ theorem processOperations_run_ok_iff :
         body.payloadAttestations.size ≤ maxPayloadAttestations ∧
         ∃ afterProposerSlashings afterAttesterSlashings afterAttestations
             afterVoluntaryExits afterBlsToExecutionChanges : BeaconState,
-          runPure (processOperationsForM body.proposerSlashings
-              processProposerSlashing) preState = .ok ((), afterProposerSlashings) ∧
-          runPure (processOperationsForM body.attesterSlashings
-              processAttesterSlashing) afterProposerSlashings
-            = .ok ((), afterAttesterSlashings) ∧
-          runPure (processOperationsForM body.attestations (processAttestation · parentSlot))
+          (processOperationsForM body.proposerSlashings processProposerSlashing).run
+              preState = .ok ((), afterProposerSlashings) ∧
+          (processOperationsForM body.attesterSlashings processAttesterSlashing).run
+              afterProposerSlashings = .ok ((), afterAttesterSlashings) ∧
+          (processOperationsForM body.attestations (processAttestation · parentSlot)).run
               afterAttesterSlashings = .ok ((), afterAttestations) ∧
-          runPure (processOperationsForM body.voluntaryExits processVoluntaryExit)
+          (processOperationsForM body.voluntaryExits processVoluntaryExit).run
               afterAttestations = .ok ((), afterVoluntaryExits) ∧
-          runPure (processOperationsForM body.blsToExecutionChanges
-              processBlsToExecutionChange) afterVoluntaryExits
-            = .ok ((), afterBlsToExecutionChanges) ∧
-          runPure (processOperationsForM body.payloadAttestations
-              processPayloadAttestation) afterBlsToExecutionChanges = .ok ((), postState) := by
+          (processOperationsForM body.blsToExecutionChanges processBlsToExecutionChange).run
+              afterVoluntaryExits = .ok ((), afterBlsToExecutionChanges) ∧
+          (processOperationsForM body.payloadAttestations processPayloadAttestation).run
+              afterBlsToExecutionChanges = .ok ((), postState) := by
   intro preState postState body parentSlot
-  have H1 := keepsUncached_forM_proposerSlashings body
-  have H2 := keepsUncached_forM_attesterSlashings body
-  have H3 := keepsUncached_forM_attestations body parentSlot
-  have H4 := keepsUncached_forM_voluntaryExits body
-  have H5 := keepsUncached_forM_blsToExecutionChanges body
-  have H6 := keepsUncached_forM_payloadAttestations body
+  -- Once every gate passes, the coordinator is the loop chain, and the five binds of
+  -- that chain split into the five named intermediate values.
+  have hLoops :
+      (processOperationsLoops body parentSlot).run preState = .ok ((), postState) ↔
+        ∃ afterProposerSlashings afterAttesterSlashings afterAttestations
+            afterVoluntaryExits afterBlsToExecutionChanges : BeaconState,
+          (processOperationsForM body.proposerSlashings processProposerSlashing).run
+              preState = .ok ((), afterProposerSlashings) ∧
+          (processOperationsForM body.attesterSlashings processAttesterSlashing).run
+              afterProposerSlashings = .ok ((), afterAttesterSlashings) ∧
+          (processOperationsForM body.attestations (processAttestation · parentSlot)).run
+              afterAttesterSlashings = .ok ((), afterAttestations) ∧
+          (processOperationsForM body.voluntaryExits processVoluntaryExit).run
+              afterAttestations = .ok ((), afterVoluntaryExits) ∧
+          (processOperationsForM body.blsToExecutionChanges processBlsToExecutionChange).run
+              afterVoluntaryExits = .ok ((), afterBlsToExecutionChanges) ∧
+          (processOperationsForM body.payloadAttestations processPayloadAttestation).run
+              afterBlsToExecutionChanges = .ok ((), postState) := by
+    simp only [processOperationsLoops, run_bind_unit_ok_iff, exists_and_left]
   constructor
-  · rintro hok
-    rw [runPure_eq] at hok
+  · intro hok
+    -- Each failing gate is a `throw`, so a successful run rules it out.
     cases hbeq0 : (body.deposits.size == 0) with
     | false =>
       rw [processOperations_eq_seq, hbeq0] at hok
-      simp [Except.map, run_throw, except_bind_error, SpecReject.assert] at hok
+      simp [run_throw, except_bind_error, SpecReject.assert] at hok
     | true =>
       by_cases hProp : body.proposerSlashings.size ≤ maxProposerSlashings
       · by_cases hAttSl : body.attesterSlashings.size ≤ maxAttesterSlashingsElectra
@@ -285,114 +252,30 @@ theorem processOperations_run_ok_iff :
           · by_cases hExit : body.voluntaryExits.size ≤ maxVoluntaryExits
             · by_cases hBls : body.blsToExecutionChanges.size ≤ maxBlsToExecutionChanges
               · by_cases hPay : body.payloadAttestations.size ≤ maxPayloadAttestations
-                · refine ⟨beq_iff_eq.mp hbeq0, hProp, hAttSl, hAtt, hExit, hBls, hPay, ?_⟩
-                  rw [processOperations_eq_loops_of_bounds body parentSlot hbeq0 hProp hAttSl hAtt hExit hBls hPay] at hok
-                  rw [run_bind] at hok
-                  cases hr1 : (processOperationsForM body.proposerSlashings processProposerSlashing).run (pureState preState) with
-                  | error e => rw [hr1, except_bind_error] at hok; simp [Except.map] at hok
-                  | ok p1 =>
-                    obtain ⟨_, s1⟩ := p1
-                    have hu1 := H1 preState () s1 hr1
-                    rw [hr1, except_bind_ok, hu1] at hok
-                    simp only [] at hok
-                    have hF1 : runPure (processOperationsForM body.proposerSlashings processProposerSlashing) preState = .ok ((), s1.view) := by
-                      rw [runPure_eq, hr1, hu1]
-                      rfl
-                    rw [run_bind] at hok
-                    cases hr2 : (processOperationsForM body.attesterSlashings processAttesterSlashing).run (pureState s1.view) with
-                    | error e => rw [hr2, except_bind_error] at hok; simp [Except.map] at hok
-                    | ok p2 =>
-                      obtain ⟨_, s2⟩ := p2
-                      have hu2 := H2 s1.view () s2 hr2
-                      rw [hr2, except_bind_ok, hu2] at hok
-                      dsimp only at hok
-                      have hF2 : runPure (processOperationsForM body.attesterSlashings processAttesterSlashing) s1.view = .ok ((), s2.view) := by
-                        rw [runPure_eq, hr2, hu2]
-                        rfl
-                      rw [run_bind] at hok
-                      cases hr3 : (processOperationsForM body.attestations (processAttestation · parentSlot)).run (pureState s2.view) with
-                      | error e => rw [hr3, except_bind_error] at hok; simp [Except.map] at hok
-                      | ok p3 =>
-                        obtain ⟨_, s3⟩ := p3
-                        have hu3 := H3 s2.view () s3 hr3
-                        rw [hr3, except_bind_ok, hu3] at hok
-                        dsimp only at hok
-                        have hF3 : runPure (processOperationsForM body.attestations (processAttestation · parentSlot)) s2.view = .ok ((), s3.view) := by
-                          rw [runPure_eq, hr3, hu3]
-                          rfl
-                        rw [run_bind] at hok
-                        cases hr4 : (processOperationsForM body.voluntaryExits processVoluntaryExit).run (pureState s3.view) with
-                        | error e => rw [hr4, except_bind_error] at hok; simp [Except.map] at hok
-                        | ok p4 =>
-                          obtain ⟨_, s4⟩ := p4
-                          have hu4 := H4 s3.view () s4 hr4
-                          rw [hr4, except_bind_ok, hu4] at hok
-                          dsimp only at hok
-                          have hF4 : runPure (processOperationsForM body.voluntaryExits processVoluntaryExit) s3.view = .ok ((), s4.view) := by
-                            rw [runPure_eq, hr4, hu4]
-                            rfl
-                          rw [run_bind] at hok
-                          cases hr5 : (processOperationsForM body.blsToExecutionChanges processBlsToExecutionChange).run (pureState s4.view) with
-                          | error e => rw [hr5, except_bind_error] at hok; simp [Except.map] at hok
-                          | ok p5 =>
-                            obtain ⟨_, s5⟩ := p5
-                            have hu5 := H5 s4.view () s5 hr5
-                            rw [hr5, except_bind_ok, hu5] at hok
-                            dsimp only at hok
-                            have hF5 : runPure (processOperationsForM body.blsToExecutionChanges processBlsToExecutionChange) s4.view = .ok ((), s5.view) := by
-                              rw [runPure_eq, hr5, hu5]
-                              rfl
-                            cases hr6 : (processOperationsForM body.payloadAttestations processPayloadAttestation).run (pureState s5.view) with
-                            | error e => rw [hr6] at hok; simp [Except.map] at hok
-                            | ok p6 =>
-                              obtain ⟨_, s6⟩ := p6
-                              rw [hr6] at hok
-                              have hu6 := H6 s5.view () s6 hr6
-                              simp only [Except.map] at hok
-                              injection hok with h1
-                              injection h1 with _ heq
-                              refine ⟨s1.view, s2.view, s3.view, s4.view, s5.view,
-                                hF1, hF2, hF3, hF4, hF5, ?_⟩
-                              rw [runPure_eq, hr6]
-                              simp only [Except.map]
-                              rw [heq]
+                · rw [processOperations_eq_loops_of_bounds body parentSlot hbeq0 hProp hAttSl
+                    hAtt hExit hBls hPay] at hok
+                  exact ⟨beq_iff_eq.mp hbeq0, hProp, hAttSl, hAtt, hExit, hBls, hPay,
+                    hLoops.mp hok⟩
                 · rw [processOperations_eq_seq] at hok
-                  simp [hbeq0, hProp, hAttSl, hAtt, hExit, hBls, hPay, Except.map, run_throw,
+                  simp [hbeq0, hProp, hAttSl, hAtt, hExit, hBls, hPay, run_throw,
                     except_bind_error, SpecReject.assert] at hok
               · rw [processOperations_eq_seq] at hok
-                simp [hbeq0, hProp, hAttSl, hAtt, hExit, hBls, Except.map, run_throw,
+                simp [hbeq0, hProp, hAttSl, hAtt, hExit, hBls, run_throw,
                   except_bind_error, SpecReject.assert] at hok
             · rw [processOperations_eq_seq] at hok
-              simp [hbeq0, hProp, hAttSl, hAtt, hExit, Except.map, run_throw,
+              simp [hbeq0, hProp, hAttSl, hAtt, hExit, run_throw,
                 except_bind_error, SpecReject.assert] at hok
           · rw [processOperations_eq_seq] at hok
-            simp [hbeq0, hProp, hAttSl, hAtt, Except.map, run_throw,
+            simp [hbeq0, hProp, hAttSl, hAtt, run_throw,
               except_bind_error, SpecReject.assert] at hok
         · rw [processOperations_eq_seq] at hok
-          simp [hbeq0, hProp, hAttSl, Except.map, run_throw, except_bind_error, SpecReject.assert] at hok
+          simp [hbeq0, hProp, hAttSl, run_throw, except_bind_error, SpecReject.assert] at hok
       · rw [processOperations_eq_seq] at hok
-        simp [hbeq0, hProp, Except.map, run_throw, except_bind_error, SpecReject.assert] at hok
-  · rintro ⟨hsize, hProp, hAttSl, hAtt, hExit, hBls, hPay, afterProposerSlashings,
-      afterAttesterSlashings, afterAttestations, afterVoluntaryExits,
-      afterBlsToExecutionChanges, hu1, hu2, hu3, hu4, hu5, hu6⟩
+        simp [hbeq0, hProp, run_throw, except_bind_error, SpecReject.assert] at hok
+  · rintro ⟨hsize, hProp, hAttSl, hAtt, hExit, hBls, hPay, hChain⟩
     rw [processOperations_eq_loops_of_bounds body parentSlot (beq_iff_eq.mpr hsize)
       hProp hAttSl hAtt hExit hBls hPay]
-    rw [runPure_bind_of_keepsUncached H1 preState]
-    rw [hu1, except_bind_ok]
-    simp only []
-    rw [runPure_bind_of_keepsUncached H2 afterProposerSlashings]
-    rw [hu2, except_bind_ok]
-    simp only []
-    rw [runPure_bind_of_keepsUncached H3 afterAttesterSlashings]
-    rw [hu3, except_bind_ok]
-    simp only []
-    rw [runPure_bind_of_keepsUncached H4 afterAttestations]
-    rw [hu4, except_bind_ok]
-    simp only []
-    rw [runPure_bind_of_keepsUncached H5 afterVoluntaryExits]
-    rw [hu5, except_bind_ok]
-    simp only []
-    exact hu6
+    exact hLoops.mpr hChain
 end
 end
 
