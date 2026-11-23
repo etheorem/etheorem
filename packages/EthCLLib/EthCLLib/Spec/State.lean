@@ -30,14 +30,16 @@ universe u
 all-zero) lives in SizzLean alongside the type definitions, so a `forkcontainer`
 derives `Inhabited` for the runner's genesis anchor with no framework-side instance. -/
 
-/-- A boxed state that yields its Merkle root together with a cache-warmed successor
-box (`Box.hashTreeRoot`). The single instance is for `SSZ.Box`. The class exists so
-`getStateRoot` pins the state type `S` from its `MonadState S m` constraint (where the
-state type is an `outParam`) as one metavariable, then recovers the box structure,
-rather than leaving the box's `H` / `T` as metavariables instance search cannot solve in
-the abstract `state_section`. -/
+/-- A state that yields its Merkle root together with a successor state. On a box the
+successor is the cache-warmed box (`Box.hashTreeRoot`); the one instance today is for
+`SSZ.Box`. The class exists so `getStateRoot` pins the state type `S` from its
+`MonadState S m` constraint (where the state type is an `outParam`) as one metavariable,
+then finds the root through the instance, rather than leaving the box's `H` / `T` as
+metavariables instance search cannot solve in the abstract `state_section`. The pure
+helpers `stateRoot` / `stateRoot!` and `runToRoot` (`Spec/RunState.lean`) take the same
+class, so every root read works on any state type with an instance. -/
 class StateRoot (S : Type) where
-  /-- The root and the cache-warmed box, from `Box.hashTreeRoot`. -/
+  /-- The root and the successor state; on a box, `Box.hashTreeRoot`. -/
   rootAndWarm : S → ByteArray × S
 
 @[reducible] instance instStateRootBox {H T : Type} [Hasher H] [SSZRepr T] :
@@ -56,28 +58,36 @@ spec calls this unconditionally and the runner picks the flavour and manages mem
     m ByteArray :=
   modifyGet StateRoot.rootAndWarm
 
-/-- The Merkle root of a boxed state value in hand, **with** the cache-warmed box
-`Box.hashTreeRoot` returns, for a non-monadic context that threads the box by hand: a
-pure `State → State` transformer like `processSlot`, or an `Except` handler that returns
-the warm box. This is the lossless pure form, so it carries no bang. `getStateRoot` is
-the monadic form that threads the box automatically; `stateRoot!` is the form that drops
-it. Keeping spec bodies on this surface avoids naming `Box.hashTreeRoot` directly. -/
-@[inline] def stateRoot {H T : Type} [Hasher H] [SSZRepr T] (state : SSZ.Box H T) :
-    ByteArray × SSZ.Box H T :=
-  state.hashTreeRoot
+/-- The Merkle root of a state value in hand, **with** the successor state
+`StateRoot.rootAndWarm` returns (on a box, the cache-warmed box of `Box.hashTreeRoot`),
+for a non-monadic context that threads the state by hand: a pure `State → State`
+transformer like `processSlot`, or an `Except` handler that returns the warm box. This is
+the lossless pure form, so it carries no bang. `getStateRoot` is the monadic form that
+threads the state automatically; `stateRoot!` is the form that drops it. Keeping spec
+bodies on this surface avoids naming `Box.hashTreeRoot` directly.
 
-/-- The Merkle root of a boxed state value in hand, **discarding** the cache-warmed box
-`Box.hashTreeRoot` returns. The `!` marks the discard, this library's bang convention for
-the convenient-but-lossy variant (as in `Array.get!` / `sszUpdate field[i]!`): it never
-panics, it drops the warm tree. Correctness is unaffected, the cached and uncached roots
-are equal by SizzLean's coherence invariant, only the caching speedup is lost. Use it
-only at a terminal site, where the box dies right after the root is taken (the
+The body destructures the instance with `match` in place of the class projection
+`StateRoot.rootAndWarm`. Both compile to the same field read. The difference is in proofs:
+`simp` never unfolds a class projection it was not asked to, but it reduces this `match`
+once the instance unfolds to its constructor. So `simp only [stateRoot]` on a box lands on
+`Box.hashTreeRoot`, where the SizzLean box lemmas apply, as it did before the helper
+became generic. -/
+@[inline] def stateRoot {S : Type} [inst : StateRoot S] (state : S) : ByteArray × S :=
+  match inst with
+  | ⟨rootAndWarm⟩ => rootAndWarm state
+
+/-- The Merkle root of a state value in hand, **discarding** the successor state
+`StateRoot.rootAndWarm` returns (on a box, the cache-warmed box). The `!` marks the
+discard, this library's bang convention for the convenient-but-lossy variant (as in
+`Array.get!` / `sszUpdate field[i]!`): it never panics, it drops the warm tree.
+Correctness is unaffected, the cached and uncached roots are equal by SizzLean's
+coherence invariant, only the caching speedup is lost. Use it only at a terminal site,
+where the box dies right after the root is taken (the
 `PySpecTests` interface impls, where the root is the return value). A step on the threaded
 state uses `getStateRoot`; a non-monadic context that still needs the warm box uses the
 lossless `stateRoot`. -/
-@[inline] def stateRoot! {H T : Type} [Hasher H] [SSZRepr T] (state : SSZ.Box H T) :
-    ByteArray :=
-  (state.hashTreeRoot).1
+@[inline] def stateRoot! {S : Type} [StateRoot S] (state : S) : ByteArray :=
+  (stateRoot state).1
 
 -- Re-export `IndexError` onto the spec surface, so a pure query reading `validators[i]` can
 -- be typed `Except IndexError α` under the single `open EthCLLib.Spec`.
