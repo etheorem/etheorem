@@ -91,7 +91,8 @@ rejects (`outOfBounds`), and the unguarded pinned `process_slots` means the help
 re-throws it (`.transition`) with nothing cached. The consolidation carrier is
 deliberate. A bare zero-validator advance would reject later, at the sync-committee
 or proposer-lookahead selection's `assert total > 0`, an `.assert` rather than the
-`outOfBounds` this pin matches. `State` is FFI-backed, so `native_decide`. -/
+`outOfBounds` this pin matches. The pin hashes through the FFI `Sha256` (`fastHasherTag`),
+so `native_decide`. -/
 private def pinTargetAdvanceRejects : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
@@ -100,7 +101,7 @@ private def pinTargetAdvanceRejects : Bool :=
   let bs : @EthCLSpecs.Fulu.BeaconState minimal :=
     { (default : @EthCLSpecs.Fulu.BeaconState minimal) with
       pendingConsolidations := sszOfArray #[{ sourceIndex := 0, targetIndex := 0 }] (by decide) }
-  let state : State := SSZ.FastBox bs
+  let state : State := bs
   let store := { pinStore with blockStates := FcMap.insert FcMap.empty pinRoot state }
   let target : Checkpoint := { epoch := 1, root := pinRoot }
   match (storeTargetCheckpointState (map := treeMap) store target : PinM (Store treeMap)).run store with
@@ -114,13 +115,13 @@ example : pinTargetAdvanceRejects = true := by native_decide
 /-- `balanceAfterWithdrawals` rejects (`outOfBounds`) on an out-of-range validator
 index: the pinned bare `state.balances[vi]` list read. A `default` state has zero
 validators, so index 99 misses. A defaulting `balances[vi]!` read returns `0`
-there with no reject, and the pin fails under that form. `State` is FFI-backed, so
-`native_decide`. -/
+there with no reject, and the pin fails under that form. The pin hashes through the FFI
+`Sha256` (`fastHasherTag`), so `native_decide`. -/
 private def pinBalanceAfterWithdrawalsThrows : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  let state : State := SSZ.FastBox (default : @EthCLSpecs.Fulu.BeaconState minimal)
+  let state : State := (default : @EthCLSpecs.Fulu.BeaconState minimal)
   match (balanceAfterWithdrawals state 99 #[] : EStateM StateTransitionError State Gwei).run state with
   | .error (.outOfBounds _ _) _ => true
   | _ => false
@@ -131,14 +132,15 @@ queued withdrawals exceed its balance drives `balances[vi] - withdrawn` negative
 (`capella/beacon-chain.md:421`). The pyspec raises `SSZValueError`, a `ValueError`, which
 `expect_assertion_error` (`context.py:451-462`) does not catch. So the Lean throws the uncaught
 `.arithmetic` reject, and a caught `.assert` fails the pin. Fixture: balance 5 at index 0, a
-queued withdrawal of 10. `State` is FFI-backed, so `native_decide`. -/
+queued withdrawal of 10. The pin hashes through the FFI `Sha256` (`fastHasherTag`), so
+`native_decide`. -/
 private def pinBalanceUnderflowThrows : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   let bs : @EthCLSpecs.Fulu.BeaconState minimal :=
     { (default : @EthCLSpecs.Fulu.BeaconState minimal) with balances := sszOfArray #[(5 : Gwei)] (by decide) }
-  let state : State := SSZ.FastBox bs
+  let state : State := bs
   let w : Withdrawal := { (default : Withdrawal) with validatorIndex := 0, amount := 10 }
   match (balanceAfterWithdrawals state 0 #[w] : EStateM StateTransitionError State Gwei).run state with
   | .error (.arithmetic _) _ => true

@@ -8,7 +8,7 @@ committee assignment (`get_beacon_committee`), the balance-weighted sampler
 (`compute_balance_weighted_selection`) used for proposer and sync-committee
 selection, and `get_next_sync_committee`.
 
-These are pure functions of the boxed `State` (no monad); the epoch and operation
+These are pure functions of the plain `State` (no monad); the epoch and operation
 steps call them. They hash through the `[HasherTag]` seam (`sha`), so the same
 swap-or-not bytes a real client computes. Performance is unoptimised but adequate
 for the minimal preset: the permutation is recomputed per committee, and the
