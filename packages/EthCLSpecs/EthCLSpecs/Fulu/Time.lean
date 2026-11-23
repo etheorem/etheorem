@@ -7,7 +7,7 @@ The time-domain helpers (`SPECS_ARCHITECTURE.md` §3.1 row 20). State-free
 conversions are pure (`computeEpochAtSlot`, `computeStartSlotAtEpoch`,
 `computeActivationExitEpoch`); accessors that read the threaded state come in two
 shapes, the monadic `getCurrentEpoch` / `getPreviousEpoch` and the pure
-`currentEpochOf` / `previousEpochOf` (functions of the boxed state, for the
+`currentEpochOf` / `previousEpochOf` (functions of the plain state, for the
 `modifyState` / `Id.run` bodies the epoch substeps build), the state-free-pure /
 state-reading-monadic split of §5. They are `forkdef`s so a later fork can
 `inherit` them.
@@ -133,7 +133,7 @@ forkdef getCurrentEpoch : StateTransition Epoch := do
 forkdef getPreviousEpoch : StateTransition Epoch := do
   return (← getCurrentEpoch).saturatingSub 1
 
-/-- `get_current_epoch(state)` as a pure function of the boxed state, for use in
+/-- `get_current_epoch(state)` as a pure function of the plain state, for use in
 the pure `modifyState` / `Id.run` bodies the epoch substeps build. -/
 forkdef currentEpochOf (state : State) : Epoch := computeEpochAtSlot (sszGet state slot)
 

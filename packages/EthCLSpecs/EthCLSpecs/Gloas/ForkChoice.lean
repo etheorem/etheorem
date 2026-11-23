@@ -11,7 +11,7 @@ distinct fork-choice vertices, so `get_ancestor` / `is_ancestor` / `get_weight` 
 `get_node_children` / `get_head` all thread a payload status through the DAG.
 
 The shape mirrors `EthCLSpecs.Fulu.ForkChoice`: the `Store` is a `forkstruct` over the
-map backing (`EthCLLib.Spec.FcMap`) and the Gloas boxed `State`, the section opens with
+map backing (`EthCLLib.Spec.FcMap`) and the plain Gloas `State`, the section opens with
 `fork_choice_section map`, and the wire handlers are monadic `StoreTransition` actions over
 the typed `StoreTransitionError`. The ePBS surface adds `on_execution_payload_envelope`,
 `on_payload_attestation_message`, the two per-block PTC vote maps, the parent-payload
@@ -60,11 +60,11 @@ forkstruct LatestMessage where
 deriving instance Inhabited for LatestMessage
 
 /-- The Gloas fork-choice store, a `forkstruct` over its map backing and (via the auto
-`[Preset]`) the preset / hasher tag. Over the prior fork it adds the ePBS payload state:
+`[Preset]`) the preset. Over the prior fork it adds the ePBS payload state:
 the revealed `payloads`, the two per-block PTC vote arrays, and a two-element
 `blockTimeliness` (the attestation-due and PTC-due deadlines). At v1.7.0-beta.4 the clock is in
 milliseconds (`time_ms`, `genesis_time_ms`), as in phase0, both the checked kind. -/
-forkstruct Store (map : MapKind) [HasherTag] where
+forkstruct Store (map : MapKind) where
   timeMs                        : CLUint64
   genesisTimeMs                 : CLUint64
   justifiedCheckpoint           : Checkpoint
@@ -899,12 +899,10 @@ forkdef isDataAvailable (beaconBlockRoot : Root) : Bool :=
   DataAvailability.isDataAvailable beaconBlockRoot
 
 /-- `verify_execution_payload_envelope`: the consensus-side envelope checks, closing with
-the EL's `verify_and_notify_new_payload` answer. Returns the cache-warmed
-state (the `hashTreeRoot` computed for the block-root check) in
-`Except StoreTransitionError`; the handler stores it back so the warm tree is kept
-rather than thrown away. -/
+the EL's `verify_and_notify_new_payload` answer. The pyspec function returns `None` and
+raises on a failed check, so this one returns `Unit` in `Except StoreTransitionError`. -/
 forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecutionPayloadEnvelope) :
-    Except StoreTransitionError State := do
+    Except StoreTransitionError Unit := do
   let envelope := signedEnv.message
   let payload := envelope.payload
 
@@ -912,10 +910,9 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
   -- v1.7.0-beta.4). `liftErr` lands its `outOfBounds` reject as `.transition (.outOfBounds …)`.
   assert (← liftErr (verifyExecutionPayloadEnvelopeSignature state signedEnv))
 
-  -- Block-root binding: the envelope commits to this state's block header (warmed
-  -- with its computed state root) and its parent.
-  let (stateRootBytes, warm) := stateRoot state
-  let header : BeaconBlockHeader := { sszGet state latestBlockHeader with stateRoot := bytesToRoot stateRootBytes }
+  -- Block-root binding: the envelope commits to this state's block header (with its
+  -- computed state root) and its parent.
+  let header : BeaconBlockHeader := { sszGet state latestBlockHeader with stateRoot := htr state }
   assert (envelope.beaconBlockRoot == htr header)
   assert (envelope.parentBeaconBlockRoot == (sszGet state latestBlockHeader).parentRoot)
 
@@ -944,7 +941,6 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
   -- execution requests come off the envelope.
   assert (verifyAndNotifyNewPayload payload bid.blobKzgCommitments.toArray
     envelope.parentBeaconBlockRoot envelope.executionRequests)
-  return warm
 
 /-- `on_execution_payload_envelope`: verify the revealed payload envelope against the
 committed bid and record it. The recorded payload flips the block's head node to FULL
@@ -958,10 +954,11 @@ forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) 
   -- between the block-state read and the verification, as the spec orders it.
   assert (isDataAvailable envelope.beaconBlockRoot)
 
+  -- `verify_execution_payload_envelope(state, signed_envelope, EXECUTION_ENGINE)`: a
+  -- reject aborts the handler, and success writes only `store.payloads`.
   match verifyExecutionPayloadEnvelope state signedEnv with
   | .error e => throw e
-  | .ok warm => set { store with
-      blockStates := FcMap.insert store.blockStates envelope.beaconBlockRoot warm,
+  | .ok () => set { store with
       payloads := FcMap.insert store.payloads envelope.beaconBlockRoot envelope }
 
 end EngineSeam
@@ -1090,9 +1087,9 @@ checked), and seeds the anchor's two PTC vote arrays with `[None] * PTC_SIZE`, w
 left both vote maps empty. -/
 forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
     Except StoreTransitionError (Store map) := do
-  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the boxed state hashes
-  -- through `stateRoot` (the cached-tree path), not `htr` (which wants a bare `SSZRepr`).
-  assert (anchorBlock.stateRoot == bytesToRoot (stateRoot anchorState).1)
+  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the anchor state is a value,
+  -- so `htr` roots it, a full merkleization of the plain record.
+  assert (anchorBlock.stateRoot == htr anchorState)
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }

@@ -175,12 +175,11 @@ section Fulu
 open EthCLSpecs.Fulu
 
 /-- The Fulu pins' fork-choice monad. -/
-private abbrev FuluPinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev FuluPinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- An empty Fulu `Store` with the clock at `timeMs` and genesis at `genesisTimeMs`. -/
-private def fuluStore (genesisTimeMs timeMs : CLUint64) : @Store minimal treeMap fastHasherTag :=
+private def fuluStore (genesisTimeMs timeMs : CLUint64) : @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { timeMs := timeMs, genesisTimeMs := genesisTimeMs
     justifiedCheckpoint := default, finalizedCheckpoint := default
     unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
@@ -197,7 +196,6 @@ private def fuluStore (genesisTimeMs timeMs : CLUint64) : @Store minimal treeMap
 private def fuluCurrentSlot (d genesisTimeMs timeMs : CLUint64) : Outcome :=
   letI : Preset := minimal
   letI : Config := durationConfig d
-  letI : HasherTag := fastHasherTag
   let store := fuluStore genesisTimeMs timeMs
   storeOutcome ((getCurrentSlot (map := treeMap) store : FuluPinM Slot).run store)
 
@@ -205,7 +203,6 @@ private def fuluCurrentSlot (d genesisTimeMs timeMs : CLUint64) : Outcome :=
 private def fuluTimeIntoSlot (d genesisTimeMs timeMs : CLUint64) : Outcome :=
   letI : Preset := minimal
   letI : Config := durationConfig d
-  letI : HasherTag := fastHasherTag
   let store := fuluStore genesisTimeMs timeMs
   storeOutcome ((getTimeIntoSlotMs (map := treeMap) store : FuluPinM CLUint64).run store)
 
@@ -213,7 +210,6 @@ private def fuluTimeIntoSlot (d genesisTimeMs timeMs : CLUint64) : Outcome :=
 private def fuluTick (d genesisTimeMs timeMs to : CLUint64) : Outcome × Nat :=
   letI : Preset := minimal
   letI : Config := durationConfig d
-  letI : HasherTag := fastHasherTag
   let action : FuluPinM Slot := do
     onTick (map := treeMap) to
     getCurrentSlot (← get)
@@ -240,13 +236,12 @@ private def gloasDurationConfig (d : CLUint64) : Config :=
   { minimalConfig with slotDurationMs := d }
 
 /-- The Gloas pins' fork-choice monad. -/
-private abbrev GloasPinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev GloasPinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- An empty Gloas `Store` with the clock at `timeMs` and genesis at `genesisTimeMs`. -/
 private def gloasStore (genesisTimeMs timeMs : CLUint64) :
-    @Store minimal treeMap fastHasherTag :=
+    @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { timeMs := timeMs, genesisTimeMs := genesisTimeMs
     justifiedCheckpoint := default, finalizedCheckpoint := default
     unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
@@ -266,7 +261,6 @@ private def gloasStore (genesisTimeMs timeMs : CLUint64) :
 private def gloasCurrentSlot (d genesisTimeMs timeMs : CLUint64) : Outcome :=
   letI : Preset := minimal
   letI : Config := gloasDurationConfig d
-  letI : HasherTag := fastHasherTag
   let store := gloasStore genesisTimeMs timeMs
   storeOutcome ((getCurrentSlot (map := treeMap) store : GloasPinM Slot).run store)
 
@@ -274,7 +268,6 @@ private def gloasCurrentSlot (d genesisTimeMs timeMs : CLUint64) : Outcome :=
 private def gloasTimeIntoSlot (d genesisTimeMs timeMs : CLUint64) : Outcome :=
   letI : Preset := minimal
   letI : Config := gloasDurationConfig d
-  letI : HasherTag := fastHasherTag
   let store := gloasStore genesisTimeMs timeMs
   storeOutcome ((getTimeIntoSlotMs (map := treeMap) store : GloasPinM CLUint64).run store)
 
@@ -288,7 +281,6 @@ private def gloasDeadlineMs (d bps : CLUint64) : Outcome :=
 private def gloasTick (d genesisTimeMs timeMs to : CLUint64) : Outcome × Nat :=
   letI : Preset := minimal
   letI : Config := gloasDurationConfig d
-  letI : HasherTag := fastHasherTag
   let action : GloasPinM Slot := do
     onTick (map := treeMap) to
     getCurrentSlot (← get)
@@ -318,13 +310,12 @@ private def hezeDurationConfig (d : CLUint64) : Config :=
   { minimalConfig with slotDurationMs := d }
 
 /-- The Heze pins' fork-choice monad. -/
-private abbrev HezePinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev HezePinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- An empty Heze `Store` with the clock at `timeMs` and genesis at `genesisTimeMs`. -/
 private def hezeStore (genesisTimeMs timeMs : CLUint64) :
-    @Store minimal treeMap fastHasherTag :=
+    @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { timeMs := timeMs, genesisTimeMs := genesisTimeMs
     justifiedCheckpoint := default, finalizedCheckpoint := default
     unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
@@ -346,7 +337,6 @@ private def hezeStore (genesisTimeMs timeMs : CLUint64) :
 private def hezeCurrentSlot (d genesisTimeMs timeMs : CLUint64) : Outcome :=
   letI : Preset := minimal
   letI : Config := hezeDurationConfig d
-  letI : HasherTag := fastHasherTag
   let store := hezeStore genesisTimeMs timeMs
   storeOutcome ((getCurrentSlot (map := treeMap) store : HezePinM Slot).run store)
 
@@ -354,7 +344,6 @@ private def hezeCurrentSlot (d genesisTimeMs timeMs : CLUint64) : Outcome :=
 private def hezeTimeIntoSlot (d genesisTimeMs timeMs : CLUint64) : Outcome :=
   letI : Preset := minimal
   letI : Config := hezeDurationConfig d
-  letI : HasherTag := fastHasherTag
   let store := hezeStore genesisTimeMs timeMs
   storeOutcome ((getTimeIntoSlotMs (map := treeMap) store : HezePinM CLUint64).run store)
 
@@ -362,7 +351,6 @@ private def hezeTimeIntoSlot (d genesisTimeMs timeMs : CLUint64) : Outcome :=
 private def hezeTick (d genesisTimeMs timeMs to : CLUint64) : Outcome × Nat :=
   letI : Preset := minimal
   letI : Config := hezeDurationConfig d
-  letI : HasherTag := fastHasherTag
   let action : HezePinM Slot := do
     onTick (map := treeMap) to
     getCurrentSlot (← get)
