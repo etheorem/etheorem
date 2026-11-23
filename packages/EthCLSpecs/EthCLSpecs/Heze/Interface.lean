@@ -143,7 +143,7 @@ private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
 -- `runOperation`: dispatch every operation handler over the decoded Heze pre-state. Each
 -- handler is the Gloas one re-instantiated over Heze. The checked `Epoch` arithmetic makes
 -- the compiled body heavier; the `maxHeartbeats` annotation covers that elaboration
--- cost.
+-- cost. `IMPLEMENTATION_NOTES.md`, "Final costs", records that cost.
 set_option maxHeartbeats 1000000 in
 private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     (preBytes opBytes : ByteArray) (cmeta : CaseMeta) : Except (RunError StateTransitionError) ByteArray := do
