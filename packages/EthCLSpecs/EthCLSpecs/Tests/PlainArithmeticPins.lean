@@ -40,8 +40,7 @@ body, which the pin's own comment names.
    shared the Gloas selection and raised the assert class. A four-validator Fulu draw pins
    the exact indices.
 
-The pins hash through the FFI `Sha256` (`fastHasherTag`). The Fulu state is an
-FFI-backed box, and the Gloas and Heze states are the plain record. So `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -99,12 +98,11 @@ private def fuluValidator (P : Preset) (eb : Gwei) (active : Bool := true) : @Va
 
 /-- A Fulu state at slot `0` over `n` validators with the given effective balance. -/
 private def fuluState (P : Preset) (n : Nat) (eb : Gwei := 32000000000) (active : Bool := true) :
-    SSZ.Box Sha256 (@BeaconState P) :=
+    @BeaconState P :=
   letI : Preset := P
-  SSZ.FastBox
-    { (default : @BeaconState P) with
-      validators := capped (Array.replicate n (fuluValidator P eb active))
-      balances := capped (Array.replicate n 32000000000) }
+  { (default : @BeaconState P) with
+    validators := capped (Array.replicate n (fuluValidator P eb active))
+    balances := capped (Array.replicate n 32000000000) }
 
 /-! ### 2. `get_committee_count_per_slot` -/
 
@@ -137,19 +135,18 @@ example : (countOf minimal 8, countOf minimal 64, countOf (targetSize 1) 17)
 withdrawable at epoch `0`, balance `32 ETH`), `next_withdrawal_index = 5`. With `idle`, the
 validators never become withdrawable. -/
 private def withdrawState (P : Preset) (n : Nat) (idle : Bool := false) :
-    SSZ.Box Sha256 (@BeaconState P) :=
+    @BeaconState P :=
   letI : Preset := P
   let epoch : Epoch := if idle then Const.farFutureEpoch else 0
   let v : Validator :=
     { (default : Validator) with
       withdrawalCredentials := Vector.ofFn (fun i => if i.val = 0 then 1 else 0)
       effectiveBalance := 32000000000, exitEpoch := epoch, withdrawableEpoch := epoch }
-  SSZ.FastBox
-    { (default : @BeaconState P) with
-      slot := 8
-      validators := capped (Array.replicate n v)
-      balances := capped (Array.replicate n 32000000000)
-      nextWithdrawalIndex := 5 }
+  { (default : @BeaconState P) with
+    slot := 8
+    validators := capped (Array.replicate n v)
+    balances := capped (Array.replicate n 32000000000)
+    nextWithdrawalIndex := 5 }
 
 /-- Fulu `get_expected_withdrawals`, reading back each withdrawal's index and validator. -/
 private def fuluExpected (P : Preset) (n : Nat) :
@@ -290,7 +287,7 @@ private def eth1Adopted (P : Preset) : Except StateTransitionError Nat :=
   letI : Preset := P
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  let st : State := SSZ.FastBox (default : BeaconState)
+  let st : State := (default : BeaconState)
   let body : BeaconBlockBody :=
     { (default : BeaconBlockBody) with eth1Data := { (default : Eth1Data) with depositCount := 7 } }
   match (processEth1Data body : EStateM StateTransitionError State Unit).run st with

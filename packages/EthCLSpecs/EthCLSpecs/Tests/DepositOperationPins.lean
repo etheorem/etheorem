@@ -21,7 +21,8 @@ forks at both presets:
 2. The generic driver classifies an `operations/deposit` case in the `todo` bucket.
 
 The operation bytes are empty. No fork decodes them, because the arm rejects first.
-`decodeState` builds an FFI-backed box, so `native_decide`.
+`decodeState` runs `SSZ.deserialize`, which compiles to `WellFounded.fix` and does not
+reduce in the kernel, so `native_decide`.
 -/
 
 set_option autoImplicit false

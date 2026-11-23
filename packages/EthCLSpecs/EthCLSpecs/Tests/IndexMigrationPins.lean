@@ -29,8 +29,7 @@ pre-migration body, which the pin's own comment names.
    is the mixed `&` with the plain `~BUILDER_INDEX_FLAG` and cannot raise, so these are value
    pins with no failure case.
 
-The pins hash through the FFI `Sha256` (`fastHasherTag`). The Fulu state is an FFI-backed
-box, and the Gloas state is the plain record. So `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -59,12 +58,11 @@ private def withdrawableState (nextIndex : WithdrawalIndex) : @State minimal fas
     { (default : Validator) with
       withdrawalCredentials := Vector.ofFn (fun i => if i.val = 0 then 1 else 0)
       effectiveBalance := 32000000000, exitEpoch := 0, withdrawableEpoch := 0 }
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      slot := 8
-      validators := ⟨#[v], by decide⟩
-      balances := ⟨#[32000000000], by decide⟩
-      nextWithdrawalIndex := nextIndex }
+  { (default : @BeaconState minimal) with
+    slot := 8
+    validators := ⟨#[v], by decide⟩
+    balances := ⟨#[32000000000], by decide⟩
+    nextWithdrawalIndex := nextIndex }
 
 /-- Runs Fulu `get_expected_withdrawals` and reads back each withdrawal's index, validator
 index, and amount. -/
@@ -150,11 +148,10 @@ private def activeState (s : Slot) : @State minimal fastHasherTag :=
     { (default : Validator) with
       effectiveBalance := 32000000000,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      slot := s
-      validators := ⟨Array.replicate 8 v, by decide⟩
-      balances := ⟨Array.replicate 8 32000000000, by decide⟩ }
+  { (default : @BeaconState minimal) with
+    slot := s
+    validators := ⟨Array.replicate 8 v, by decide⟩
+    balances := ⟨Array.replicate 8 32000000000, by decide⟩ }
 
 /-- Slot `1`, committee index `UINT64_MAX`: `Uint64(1 % 8) * 1 + index` raises at the
 checked add. The old `Nat` sum never raised. -/
