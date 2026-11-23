@@ -32,7 +32,7 @@ Pins 1 and 2 run the `Checked` helper alone, so the raise surfaces as the
 `ArithFault` range cause, `.error (.range _ 64 _ _)`. Pins 3 and 4 run the
 transition, where the lift turns that fault into `.error (.arithmetic _)`. The
 old wrapping form returned a wrapped `.ok`, so each failure pin discriminates.
-`State` is FFI-backed, so `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -115,10 +115,9 @@ private def exitState (_cfg : Gloas.Config) : @State minimal fastHasherTag :=
       exitEpoch := Const.farFutureEpoch
       withdrawableEpoch := Const.farFutureEpoch
       withdrawalCredentials := (Vector.replicate 32 (1 : UInt8)) }
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
-      slot := 800
-      validators := ⟨#[v]⟩, balances := ⟨#[32000000000]⟩ }
+  { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
+    slot := 800
+    validators := ⟨#[v]⟩, balances := ⟨#[32000000000]⟩ }
 
 private def pinValidatorExitOverflowRaises : Bool :=
   letI : Preset := minimal
@@ -143,7 +142,7 @@ private def pinValidatorExitDefaultReads : Bool :=
     -- preset, the exit epoch is `100 + 1 + MAX_SEED_LOOKAHEAD = 105` (the
     -- churn limit covers the one `32 Gwei` exit), and the withdrawability
     -- epoch is `105 + 256`.
-    let v := (SSZ.Box.view post).validators[0]!
+    let v := post.validators[0]!
     v.exitEpoch.toPlainNat = 105 && v.withdrawableEpoch.toPlainNat = 361
   | _ => false
 example : pinValidatorExitDefaultReads = true := by native_decide
@@ -183,7 +182,7 @@ private def pinWithdrawalRequestDefaultReads : Bool :=
   | .ok _ post =>
     -- The same exact epochs the direct validator-exit pin asserts: the request
     -- path reaches `initiate_validator_exit` and writes `105` and `361`.
-    let v := (SSZ.Box.view post).validators[0]!
+    let v := post.validators[0]!
     v.exitEpoch.toPlainNat = 105 && v.withdrawableEpoch.toPlainNat = 361
   | _ => false
 example : pinWithdrawalRequestDefaultReads = true := by native_decide
