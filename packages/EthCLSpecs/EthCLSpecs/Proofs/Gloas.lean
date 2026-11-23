@@ -4,18 +4,17 @@ import EthCLSpecs.Proofs.Gloas.GetPtc
 import EthCLSpecs.Proofs.Gloas.InitializePtcWindow
 import EthCLSpecs.Proofs.Gloas.IsValidIndexedPayloadAttestation
 import EthCLSpecs.Proofs.Gloas.ProcessDepositRequest
+import EthCLSpecs.Proofs.Gloas.ProcessOperations
 import EthCLSpecs.Proofs.Gloas.Run
 import EthCLSpecs.Proofs.Gloas.UpdateCheckpoints
 -- Detached while Gloas runs on the plain `State` (WS-126 task 4.1).
 -- The modules below state their runs through the box vocabulary (`pureState`, `runPure`,
 -- `view_uncachedBox`), so they fail on the plain state. `ForkChoiceRun` imports
--- `InitiateBuilderExit` and `BuilderPendingPayments`. `ProcessOperations` imported the
--- deleted `Proofs/Gloas/KeepsUncached.lean`. Task 4.4 reattaches `InitiateBuilderExit`;
--- task 4.5 `BuilderPendingPayments`; task 4.6 `ProcessOperations`; task 4.7 `ForkChoiceRun`.
+-- `InitiateBuilderExit` and `BuilderPendingPayments`. Task 4.4 reattaches
+-- `InitiateBuilderExit`; task 4.5 `BuilderPendingPayments`; task 4.7 `ForkChoiceRun`.
 -- import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 -- import EthCLSpecs.Proofs.Gloas.ForkChoiceRun
 -- import EthCLSpecs.Proofs.Gloas.InitiateBuilderExit
--- import EthCLSpecs.Proofs.Gloas.ProcessOperations
 
 /-!
 # `EthCLSpecs.Proofs.Gloas`: the Gloas fork's theorems (index)
