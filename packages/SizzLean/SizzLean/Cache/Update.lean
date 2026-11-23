@@ -278,10 +278,10 @@ syntax (name := sszUpdateClauseDotted)
 syntax (name := sszUpdateStx) "sszUpdate " term:max " with "
     sepBy1(sszUpdateClause, ", ") : term
 
-/-- The read-side companion of `sszUpdate`. `sszGet b path` expands
-to `b.view.path` so user code never has to spell out the
-internal `.view` projection. Path syntax mirrors `sszUpdate`
-exactly:
+/-- The read-side companion of `sszUpdate`. On a cache value,
+`sszGet b path` elaborates to `b.view.path`, so user code never has to
+spell out the internal `.view` projection. Path syntax mirrors
+`sszUpdate` exactly:
 
 ```
 sszGet b epoch                       -- flat field read
@@ -290,10 +290,13 @@ sszGet b validators[i]               -- vector / list index
 sszGet b validators[i].effBalance    -- index + field
 ```
 
-The expansion is purely syntactic: `sszGet b epoch` rewrites to
-`b.view.epoch`, which Lean's kernel handles definitionally. So
-`rfl` / `decide` / `simp` proofs about reads close exactly as if
-the user had written `.view.epoch` by hand. -/
+The read is type-directed, like `sszUpdate`. The term elaborator
+`elabSszGet` (below) elaborates `b` first and reads its type. On
+`TreeBacked H T`, `UncachedSSZ H T` or `SSZ.Box H T` it emits
+`b.view.epoch`. On any other type, the temporary plain-value mode, it
+emits `b.epoch`. Either way the result is the projection term a user
+would write by hand, so `rfl` / `decide` / `simp` proofs about reads
+close exactly as they do on the hand-written spelling. -/
 syntax (name := sszGetStx) "sszGet " term:max ident sszUpdateSegment* : term
 
 /-- Append one path segment onto an accumulating term, for the
@@ -347,22 +350,83 @@ private partial def appendSszGetExcept
   else
     `(_root_.Except.ok $cur)
 
-macro_rules
-  | `(sszGet $base $head:ident $segs:sszUpdateSegment*) => do
-      if segsHaveCheckedIndex segs then
-        -- Checked-index form: out-of-range reads reject with the real index
-        -- and bound, matching `IndexError`.
-        appendSszGetExcept (← `(($base).view.$head)) segs 0
-      else
-        -- Field-only or all-`[i]!` form: pure bare read. Reduces for
-        -- `rfl`/`decide` exactly as a hand-written `.view.path`; `[i]!`
-        -- yields the element's `default` on a miss (no `Except`).
-        let init : Lean.TSyntax `term ← `(($base).view.$head)
-        appendSszGetSegments init segs 0
+/-- Which flavour a `sszGet` / `sszUpdate` call targets. Each elaborator
+picks this from the base term's type and branches the emission. -/
+private inductive CacheKind where
+  | cached    -- `TreeBacked H T` (= `CachedSSZ H T`)
+  | uncached  -- `UncachedSSZ H T`
+  | box       -- `SSZ.Box H T`: closed sum; expand to two-arm match
+  | plain     -- any other type: the temporary plain-value mode
+  deriving Inhabited
+
+/-- Classify the base term's type for the `sszGet` and `sszUpdate` dispatch:
+one of the three cache types (after `whnf`, so abbreviations like `CachedSSZ`
+count as their cache head), or `.plain` for anything else. In the plain-value
+mode a read projects from the base itself and an update is the view-side
+update rooted at the base itself. -/
+private def classifyCacheKind (ty : Expr) : MetaM CacheKind := do
+  let ty ← whnf ty
+  match ty.getAppFn with
+  | .const head _ =>
+      if head == ``SizzLean.Cache.TreeBacked then return .cached
+      else if head == ``SizzLean.Cache.UncachedSSZ then return .uncached
+      else if head == ``SizzLean.Cache.SSZ.Box then return .box
+      else return .plain
+  | _ => return .plain
+
+/-- The `sszGet` term elaborator: type-directed, like `elabSszUpdate`.
+
+It elaborates the base once and reads its type. While that type is still a
+metavariable (a `fun` binder whose type a later argument fixes, for example)
+it postpones, and the term elaborator runs it again when more of the context
+is known. A type that stays unknown after the last retry is an error that asks
+for an ascription, because a guess could pick the wrong projection.
+
+The emitted root read is `base.view.head` on the three cache types (the term
+the earlier `sszGet` macro produced) and `base.head` on any other type. The
+segments then extend that root exactly as before: bare projections and `[i]!`
+reads for an infallible path, the `Except IndexError _` walk of
+`appendSszGetExcept` for a path with a checked `[i]`.
+
+`exprToSyntax` hands the already-elaborated base back to the emitted syntax as
+a metavariable assigned to it. The base is therefore elaborated once, and the
+final term, after metavariable instantiation, is the projection applied to the
+base itself, with no `let` or wrapper around it. -/
+@[term_elab sszGetStx]
+private def elabSszGet : TermElab := fun stx expectedType? => do
+  let baseStx : TSyntax `term := ⟨stx[1]⟩
+  let head : Ident := ⟨stx[2]⟩
+  let segs : Array (TSyntax `sszUpdateSegment) := stx[3].getArgs.map (⟨·⟩)
+  let base ← elabTerm baseStx none
+  -- `whnfR` unfolds reducible abbreviations (such as a spec's `abbrev State`)
+  -- far enough to expose a metavariable head; `classifyCacheKind` below does
+  -- the full `whnf` for the cache heads.
+  let baseTypeOf : TermElabM Expr := do whnfR (← instantiateMVars (← inferType base))
+  if (← baseTypeOf).getAppFn.isMVar then
+    tryPostpone
+    synthesizeSyntheticMVarsNoPostponing
+    if (← baseTypeOf).getAppFn.isMVar then
+      throwError "sszGet: the type of the base `{baseStx}` is not known; \
+        add a type ascription"
+  let baseRef ← exprToSyntax base
+  let root : TSyntax `term ← match ← classifyCacheKind (← inferType base) with
+    | .plain => `(($baseRef).$head:ident)
+    | .cached | .uncached | .box => `(($baseRef).view.$head:ident)
+  let readStx ← liftMacroM <|
+    if segsHaveCheckedIndex segs then
+      -- Checked-index form: out-of-range reads reject with the real index
+      -- and bound, matching `IndexError`.
+      appendSszGetExcept root segs 0
+    else
+      -- Field-only or all-`[i]!` form: pure bare read. Reduces for
+      -- `rfl`/`decide` exactly as a hand-written projection; `[i]!`
+      -- yields the element's `default` on a miss (no `Except`).
+      appendSszGetSegments root segs 0
+  withMacroExpansion stx readStx <| elabTerm readStx expectedType?
 
 /-! ## `sszModify`: read-modify-write of one path -/
 
-/-- Read-modify-write of one field or element on a boxed value, naming the path once.
+/-- Read-modify-write of one field or element on a boxed or plain value, naming the path once.
 Two forms: `sszModify t path := g` applies the function `g` to the current value, and
 `sszModify t path as x => body` binds the current value to `x` and rewrites it to `body`
 (the `fun`-free inline form, for `{ x with … }`-style updates). Both are pure syntactic
@@ -395,12 +459,12 @@ macro_rules
           (let $x := sszGet $t $head:ident $segs:sszUpdateSegment*; $body))
       `(sszUpdate $t with $clause)
 
-/-- Append `v` to a list field of a boxed value, naming the field once. `sszAppend? s f v`
-is `some` of the updated box when the list has room, and `none` when it is full. It
-expands to `SSZList.push?` on `sszGet s f`, then `sszUpdate s with f := …` on the longer
-list. The `none` branch is where the spec's `List.append` raises, so the caller decides
-the reject. The monadic state-threading wrapper is the spec's `appendState`, which throws
-on `none`. -/
+/-- Append `v` to a list field of a boxed or plain value, naming the field once.
+`sszAppend? s f v` is `some` of the updated value when the list has room, and `none` when
+it is full. It expands to `SSZList.push?` on `sszGet s f`, then `sszUpdate s with f := …`
+on the longer list. The `none` branch is where the spec's `List.append` raises, so the
+caller decides the reject. The monadic state-threading wrapper is the spec's
+`appendState`, which throws on `none`. -/
 syntax (name := sszAppendStx)
     "sszAppend? " term:max ident sszUpdateSegment* ppSpace term:max : term
 
@@ -411,29 +475,6 @@ macro_rules
       let clause ← `(sszUpdateClause| $head:ident $segs:sszUpdateSegment* := l)
       `(((sszGet $t $head:ident $segs:sszUpdateSegment*).push? $v).map
           fun l => sszUpdate $t with $clause)
-
-/-- Which flavour the macro is targeting. The elaborator
-picks this from the base term's type and branches the emission. -/
-private inductive CacheKind where
-  | cached    -- `TreeBacked H T` (= `CachedSSZ H T`)
-  | uncached  -- `UncachedSSZ H T`
-  | box       -- `SSZ.Box H T`: closed sum; expand to two-arm match
-  | plain     -- any other type: the temporary plain-value mode
-  deriving Inhabited
-
-/-- Classify the base term's type for the `sszUpdate` dispatch: one of the
-three cache types (after `whnf`, so abbreviations like `CachedSSZ` count as
-their cache head), or `.plain` for anything else — the plain-value mode, where
-the emission is the view-side update rooted at the base itself. -/
-private def classifyCacheKind (ty : Expr) : MetaM CacheKind := do
-  let ty ← whnf ty
-  match ty.getAppFn with
-  | .const head _ =>
-      if head == ``SizzLean.Cache.TreeBacked then return .cached
-      else if head == ``SizzLean.Cache.UncachedSSZ then return .uncached
-      else if head == ``SizzLean.Cache.SSZ.Box then return .box
-      else return .plain
-  | _ => return .plain
 
 /-- Extract the hasher `H` (as an `Expr`), `T` (as a `Name`), and
 the whnf'd value-type application from the base term's type, for one
