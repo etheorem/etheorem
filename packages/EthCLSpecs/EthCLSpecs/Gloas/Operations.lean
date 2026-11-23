@@ -149,7 +149,8 @@ forkdef initiateBuilderExit (builderIndex : BuilderIndex) : StateTransition Unit
   let withdrawableEpoch ← epoch + Const.minBuilderWithdrawabilityDelay
   -- `toPlainNat`: the raising read above proved `builderIndex` in range for this list.
   modifyState fun state =>
-    sszModify state builders[builderIndex.toPlainNat]! as b => { b with withdrawableEpoch := withdrawableEpoch }
+    { state with builders := state.builders.modify builderIndex.toPlainNat fun b =>
+        { b with withdrawableEpoch := withdrawableEpoch } }
 /-- `get_index_for_new_builder` (`gloas/minimal.py:8203-8207`): a recyclable slot
 (withdrawable + zero balance) or the end. Each return is the `BuilderIndex(...)` cast of a
 plain position, the pyspec's checked narrowing, so the result is `Checked`. -/
@@ -190,7 +191,8 @@ forkdef applyDepositForBuilder (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwe
       -- writes the value the add returned.
       let newBalance ← state.builders[builderIndex]!.balance + amount
       modifyState fun state =>
-        sszModify state builders[builderIndex]! as b => { b with balance := newBalance }
+        { state with builders := state.builders.modify builderIndex fun b =>
+            { b with balance := newBalance } }
   | none =>
     if isValidDepositSignature pubkey wc amount sig then
       addBuilderToRegistry pubkey Const.payloadBuilderVersion (addressOfCred wc) amount slot
@@ -311,8 +313,8 @@ forkdef processBuilderDepositRequest (request : BuilderDepositRequest) : StateTr
     let newBalance ← b.balance + request.amount
     -- `toPlainNat`: the raising read above proved `builderIndex` in range for this list.
     modifyState fun state =>
-      sszModify state builders[builderIndex.toPlainNat]! as b =>
-        { b with balance := newBalance, withdrawableEpoch := withdrawable }
+      { state with builders := state.builders.modify builderIndex.toPlainNat fun b =>
+          { b with balance := newBalance, withdrawableEpoch := withdrawable } }
 
 /-- `process_builder_exit_request` (EIP-8282): an EL-triggered builder exit. A no-op
 unless the pubkey names an active builder whose registered execution address matches the

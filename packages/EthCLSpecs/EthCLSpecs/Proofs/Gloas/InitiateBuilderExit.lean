@@ -4,6 +4,7 @@ import EthCLSpecs.Proofs.Gloas.Run
 import EthCLLib.Proofs.Run
 import EthCLLib.Proofs.IndexRead
 import SizzLean.Proofs.ProgressiveListSet
+import SizzLean.Proofs.CollectionModify
 
 /-!
 # `EthCLSpecs.Proofs.Gloas.InitiateBuilderExit`: `initiateBuilderExit`'s effect on the builder registry
@@ -51,7 +52,7 @@ open EthCLSpecs.Gloas (Preset Config BuilderIndex Epoch BeaconState State)
 open EthCLSpecs.Gloas (minimal mainnet minimalConfig mainnetConfig)
 open EthCLSpecs.Gloas (initiateBuilderExit currentEpochOf)
 open SizzLean.Proofs (progressiveListSet!_size progressiveListSet!_getElem!_self
-  progressiveListSet!_getElem!_ne)
+  progressiveListSet!_getElem!_ne progressiveListModify_eq_set!)
 
 /-! ## The whole-transition equation
 
@@ -89,7 +90,9 @@ checked sum `current_epoch + MIN_BUILDER_WITHDRAWABILITY_DELAY`; past the regist
 the read rejects with `.outOfBounds` (the `IndexError` the pinned Python read raises), the
 sum's arithmetic fault propagates as the machine reject, and the success value lands in
 the `withdrawableEpoch` of `builders[builderIndex.toPlainNat]!` through the source-level
-write. Stated in `.run` form on the plain `BeaconState` — the Gloas `State` is the plain
+write. The body spells `ProgressiveList.modify`; the contract keeps the `set!` reading
+through `progressiveListModify_eq_set!`. Stated in `.run` form on the plain
+`BeaconState` — the Gloas `State` is the plain
 record, so this one equation is both the value-level contract and the shape the
 fork-choice bridge consumes by application. -/
 @[characterizes EthCLSpecs.Gloas.initiateBuilderExit]
@@ -127,6 +130,11 @@ theorem initiateBuilderExit_run_eq [Preset] [Config] :
         show ((liftM (Except.ok we : Checked Epoch) : GloasRun Epoch).run preState)
           = .ok (we, preState) from rfl,
         except_bind_ok]
+      -- The body writes through `ProgressiveList.modify` (`Array.modify` moves the
+      -- builder out for the in-place update); the contract keeps the `set!` reading,
+      -- so one rewrite through `progressiveListModify_eq_set!` puts both sides on the
+      -- `set!` form and the `rfl` closes.
+      simp only [progressiveListModify_eq_set!]
       rfl
     | error f =>
       rw [run_bind,
