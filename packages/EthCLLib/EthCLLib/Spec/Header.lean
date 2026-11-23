@@ -5,7 +5,7 @@ import EthCLLib.Spec.NestedMachine
 /-!
 # `EthCLLib.Spec.Header`: the section-header macros
 
-A fork's state-transition surface is set up by two macros, split along the seam
+A fork's state-transition surface is set up by three macros, split along the seam
 that **declarations persist across modules but `variable`s do not**:
 
 * `state_preamble BeaconState` runs **once per fork**, in the `State` module, right
@@ -13,18 +13,25 @@ that **declarations persist across modules but `variable`s do not**:
   exactly once and survive into the `.olean`:
 
   ```lean
-  abbrev State [Preset] [HasherTag] : Type := SSZ.Box HasherTag.H BeaconState
-  @[inline] def modifyState [Preset] [HasherTag] {m : Type → Type}
+  abbrev State [Preset] : Type := BeaconState
+  @[inline] def modifyState [Preset] {m : Type → Type}
       [MonadStateOf State m] (f : State → State) : m PUnit := modifyThe State f
   ```
 
-  `State` is the boxed `BeaconState`; `modifyState` is its multi-field updater. The
-  updater is declared here with the **concrete** `State → State` domain (rather than a
-  generic framework function) so the expected type flows into a step's lambda binder,
-  and the author writes `modifyState fun state => …` with no `(state : State)`
-  annotation. Because `State` is per-fork, the framework cannot own one generic
-  `modifyState`; this is the same generation pattern `forkcontainer` uses, a
-  framework-owned macro emitting a fork's plumbing.
+  `State` is the plain `BeaconState` record: a read is a projection and a write a
+  record update. The hasher is not part of the type: a declaration that hashes takes
+  `[HasherTag]` from the section variables, and one that never hashes carries no tag.
+  `modifyState` is its multi-field updater, declared with the
+  **concrete** `State → State` domain (rather than a generic framework function) so
+  the expected type flows into a step's lambda binder, and the author writes
+  `modifyState fun state => …` with no `(state : State)` annotation. Because `State`
+  is per-fork, the framework cannot own one generic `modifyState`; this is the same
+  generation pattern `forkcontainer` uses, a framework-owned macro emitting a fork's
+  plumbing. The preamble emits no root instance: `getStateRoot` (`Spec/State.lean`)
+  roots any state with an `SSZRepr`, and each root is a full merkleization of the
+  plain record. `state_section`, `appendState`,
+  `setOrAppendState` and the step macros are preamble-agnostic: they resolve `State`
+  and `modifyState` by name. The self-test is `EthCLLib.Tests.PreambleSection`.
 
 * `state_section` runs **once per section** (per operation file). It opens an
   anonymous `section` and emits the `variable` line that re-establishes the
@@ -41,15 +48,18 @@ that **declarations persist across modules but `variable`s do not**:
 
   The author writes `state_section` (which opens the section) and closes it with the
   matching `end`. It takes no argument: it references the `State` the preamble already
-  declared. `[Config]` and `[CryptoBackend]` are instance-implicit, so they attach only
-  to the declarations that use them; a pure-accessor step carries neither.
+  declared. `[HasherTag]`, `[Config]` and `[CryptoBackend]` are instance-implicit, so
+  they attach only to the declarations that use them; a pure-accessor step carries none
+  of them.
 
-`state_preamble` is the single declarer of `State` / `modifyState`, and the `State`
-module is imported by every operation file, so there is no redeclaration and no guard.
-`Preset` resolves to the fork's own preset class (the tier system is per fork,
-`SPECS_ARCHITECTURE.md` §9.1); `State`, `StateTransition`, `StateTransitionError`,
-`HasherTag` are named with use-site identifiers (`mkIdent`) so they resolve where the
-macro expands, not where it is defined.
+`state_preamble` is the single declarer of the fork's `State` and `modifyState`, and a
+fork runs it exactly once, in the `State` module. The
+`State` module is imported by every operation file,
+so there is no redeclaration and no guard. `Preset` resolves to the fork's own preset
+class (the tier system is per fork, `SPECS_ARCHITECTURE.md` §9.1); `State`,
+`StateTransition`, `StateTransitionError`, `HasherTag` are named with use-site
+identifiers (`mkIdent`) so they resolve where the macro expands, not where it is
+defined.
 -/
 
 set_option autoImplicit false
@@ -60,25 +70,26 @@ namespace EthCLLib.Spec
 
 /-! ## `state_preamble`: the once-per-fork declarations -/
 
-/-- `state_preamble BeaconState`: declare the fork's boxed `State` and its
-concrete-domain `modifyState`. Written once, in the `State` module. -/
+/-- `state_preamble BeaconState`: declare the fork's plain `State` (the `BeaconState`
+record itself, no box) and the concrete-domain `modifyState`. Written once, in the
+`State` module. -/
 scoped syntax (name := statePreambleStx) "state_preamble " ident : command
 
 @[command_elab statePreambleStx]
 def elabStatePreamble : CommandElab := fun stx => do
   let stateTy : TSyntax `term := ⟨stx[1]⟩
-  -- Use-site identifiers: resolve where the macro expands (the fork namespace).
+  -- `State`, `modifyState` and `Preset` are use-site identifiers: they resolve where the
+  -- macro expands (the fork namespace).
   let stateId      := mkIdent `State
   let modifyId     := mkIdent `modifyState
   let presetId     := mkIdent `Preset
-  let hasherTagId  := mkIdent ``HasherTag
-  let hasherHId    := mkIdent (``HasherTag ++ `H)
-  elabCommand (← `(abbrev $stateId [$presetId] [$hasherTagId] : Type :=
-    SizzLean.Cache.SSZ.Box $hasherHId $stateTy))
+  -- `State` is the plain `BeaconState`: a read is a projection, a write a record update.
+  -- It carries no `[HasherTag]`: no hasher selects anything about the record.
+  elabCommand (← `(abbrev $stateId [$presetId] : Type := $stateTy))
   -- The concrete-domain `modifyState`: `State → State` so the binder type flows in
   -- and step bodies need no `(state : State)` annotation. `m` stays generic over the
   -- effect monad.
-  elabCommand (← `(@[inline] def $modifyId [$presetId] [$hasherTagId] {m : Type → Type}
+  elabCommand (← `(@[inline] def $modifyId [$presetId] {m : Type → Type}
     [MonadStateOf $stateId m] (f : $stateId → $stateId) : m PUnit := modifyThe $stateId f))
 
 /-! ## `state_section`: open a state-transition section -/
@@ -97,10 +108,10 @@ def elabStateSection : CommandElab := fun _ => do
   let stId         := mkIdent `StateTransition
   let errId        := mkIdent ``StateTransitionError
   elabCommand (← `(section))
+  -- The `[HasherTag]` seam, the `[Config]` constants tier and the `[CryptoBackend]` seam
+  -- are in scope in every state section. All three are instance-implicit, so they attach
+  -- only to the declarations that use them; a step that never hashes carries no tag.
   elabCommand (← `(variable [$presetId] [$hasherTagId]))
-  -- The `[Config]` constants tier and the `[CryptoBackend]` seam are in scope in every
-  -- state section. Both are instance-implicit, so they attach only to the declarations
-  -- that use them; a pure-accessor step carries neither.
   elabCommand (← `(variable [$configId] [$cryptoId]))
   elabCommand (← `(variable {$stId : Type → Type}))
   elabCommand (← `(variable [Monad $stId]))
@@ -110,9 +121,9 @@ def elabStateSection : CommandElab := fun _ => do
 /-! ## `fork_choice_section`: open a fork-choice section
 
 The companion of `state_section` for the second state machine. The fork-choice map
-cannot hide the way the hasher and box flavour do, since `map` appears in the `Store`
-type itself, so the macro emits `{map : MapKind} [FcMap map]` explicitly and `Store map`
-(`Store hashMap` and `Store treeMap` are distinct types). The store machine carries its
+appears in the `Store` type itself, so the macro emits `{map : MapKind} [FcMap map]`
+explicitly and `Store map` (`Store hashMap` and `Store treeMap` are distinct types). The
+hasher does not: `[HasherTag]` attaches only to the handlers that hash. The store machine carries its
 own three raw constraints over `StoreTransitionError`. Like `state_section`, it opens
 the `section`; close with the matching `end`.
 
@@ -147,8 +158,8 @@ def elabForkChoiceSection : CommandElab := fun stx => do
   let nestedId   := mkIdent ``NestedStateMachine
   let runStateId := mkIdent ``MonadRunState
   elabCommand (← `(section))
-  -- `[Preset] [HasherTag]` first: `Store map` (preset- and hasher-parameterized) needs
-  -- them before the `MonadStateOf (Store map)` line below. `[Config]` and `[CryptoBackend]`
+  -- `[Preset]` first: `Store map` (preset-parameterized) needs it before the
+  -- `MonadStateOf (Store map)` line below. `[HasherTag]`, `[Config]` and `[CryptoBackend]`
   -- are in scope too (instance-implicit, attached only where used), as on the state side.
   elabCommand (← `(variable [$presetId] [$hasherTagId]))
   elabCommand (← `(variable [$configId] [$cryptoId]))

@@ -8,22 +8,21 @@ to pin the monad the body elaborates into. Every Fulu proof in this directory pi
 named here, through `(StateTransition := FuluRun)`. `SPECS_ARCHITECTURE.md` §11.1 names the
 pure configuration this runner belongs to.
 
-The box is pinned in the framework, in `EthCLLib/Proofs/Run.lean`: a theorem states its run on `pureState preState`,
-the uncached box of the plain value, and `runPure` gives the value-level reading. A theorem
-never runs an action on a `State` it bound itself.
+The Fulu `State` is the plain `BeaconState`, so a theorem binds `preState : BeaconState` and
+runs the action on `preState` itself.
 -/
 
 set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu
 
-open EthCLLib.Spec (HasherTag StateTransitionError)
+open EthCLLib.Spec (StateTransitionError)
 open EthCLSpecs.Fulu (Preset State)
 
-/-- The monad the Fulu spec bodies are proved at: `StateT` over `Except`, threading the boxed
+/-- The monad the Fulu spec bodies are proved at: `StateT` over `Except`, threading the plain
 Fulu `BeaconState` and rejecting with `StateTransitionError`. `abbrev` (reducible), so a goal
 that mentions it unifies with the spelled-out type. -/
-abbrev FuluRun [Preset] [HasherTag] : Type → Type :=
+abbrev FuluRun [Preset] : Type → Type :=
   StateT State (Except StateTransitionError)
 
 end EthCLSpecs.Proofs.Fulu
