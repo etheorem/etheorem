@@ -33,7 +33,8 @@ The fixture holds four active `32 ETH` validators with pubkeys `0x01…` to `0x0
 `i % 3 = 0`. `CryptoBackend.verifyOff` accepts the aggregate signature. Every expected
 answer is the pinned pyspec's (1.7.0b4) on the same fixture: `ValueError` for both miss
 cases, `SSZValueError` for the overflow, and the balances below for the success.
-`State` is FFI-backed, so `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`). The Fulu state is an
+FFI-backed box, and the Gloas and Heze states are the plain record. So `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -182,16 +183,15 @@ private def validator (P : Preset) (b : UInt8) : @Validator P :=
 
 /-- The fixture state of case `c` at preset `P`. The registry lists are progressive, so they
 take the arrays without a cap. -/
-private def fixture (P : Preset) (c : Case) : SSZ.Box Sha256 (@BeaconState P) :=
+private def fixture (P : Preset) (c : Case) : @BeaconState P :=
   letI : Preset := P
-  SSZ.FastBox
-    { (default : @BeaconState P) with
-      slot := 1
-      validators := ⟨(#[1, 2, 3, 4] : Array UInt8).map (validator P)⟩
-      balances := ⟨(Array.range 4).map fun i => u64 (balanceOf c i)⟩
-      currentSyncCommittee :=
-        { pubkeys := Vector.ofFn fun i => pubkey (committeeKeyByte c Const.syncCommitteeSize i.val)
-          aggregatePubkey := default } }
+  { (default : @BeaconState P) with
+    slot := 1
+    validators := ⟨(#[1, 2, 3, 4] : Array UInt8).map (validator P)⟩
+    balances := ⟨(Array.range 4).map fun i => u64 (balanceOf c i)⟩
+    currentSyncCommittee :=
+      { pubkeys := Vector.ofFn fun i => pubkey (committeeKeyByte c Const.syncCommitteeSize i.val)
+        aggregatePubkey := default } }
 
 /-- Runs Gloas `process_sync_aggregate` on case `c` at preset `P` and config `C`. -/
 private def run (P : Preset) (C : Config) (c : Case) : Outcome :=
@@ -203,8 +203,8 @@ private def run (P : Preset) (C : Config) (c : Case) : Outcome :=
     { syncCommitteeBits := ⟨BitVec.ofNat _ (everyThirdBit Const.syncCommitteeSize)⟩
       syncCommitteeSignature := default }
   match (processSyncAggregate agg : EStateM StateTransitionError
-      (SSZ.Box Sha256 (@BeaconState P)) Unit).run (fixture P c) with
-  | .ok _ post => .balances ((SSZ.Box.view post).balances.val.toList.map (·.toPlainNat))
+      (@BeaconState P) Unit).run (fixture P c) with
+  | .ok _ post => .balances (post.balances.val.toList.map (·.toPlainNat))
   | .error (.notInList _) _ => .notInList
   | .error (.arithmetic _) _ => .arithmetic
   | .error _ _ => .other
@@ -239,16 +239,15 @@ private def validator (P : Preset) (b : UInt8) : @Validator P :=
 
 /-- The fixture state of case `c` at preset `P`. The registry lists are progressive, so they
 take the arrays without a cap. -/
-private def fixture (P : Preset) (c : Case) : SSZ.Box Sha256 (@BeaconState P) :=
+private def fixture (P : Preset) (c : Case) : @BeaconState P :=
   letI : Preset := P
-  SSZ.FastBox
-    { (default : @BeaconState P) with
-      slot := 1
-      validators := ⟨(#[1, 2, 3, 4] : Array UInt8).map (validator P)⟩
-      balances := ⟨(Array.range 4).map fun i => u64 (balanceOf c i)⟩
-      currentSyncCommittee :=
-        { pubkeys := Vector.ofFn fun i => pubkey (committeeKeyByte c Const.syncCommitteeSize i.val)
-          aggregatePubkey := default } }
+  { (default : @BeaconState P) with
+    slot := 1
+    validators := ⟨(#[1, 2, 3, 4] : Array UInt8).map (validator P)⟩
+    balances := ⟨(Array.range 4).map fun i => u64 (balanceOf c i)⟩
+    currentSyncCommittee :=
+      { pubkeys := Vector.ofFn fun i => pubkey (committeeKeyByte c Const.syncCommitteeSize i.val)
+        aggregatePubkey := default } }
 
 /-- Runs Heze `process_sync_aggregate` on case `c` at preset `P` and config `C`. -/
 private def run (P : Preset) (C : Config) (c : Case) : Outcome :=
@@ -260,8 +259,8 @@ private def run (P : Preset) (C : Config) (c : Case) : Outcome :=
     { syncCommitteeBits := ⟨BitVec.ofNat _ (everyThirdBit Const.syncCommitteeSize)⟩
       syncCommitteeSignature := default }
   match (processSyncAggregate agg : EStateM StateTransitionError
-      (SSZ.Box Sha256 (@BeaconState P)) Unit).run (fixture P c) with
-  | .ok _ post => .balances ((SSZ.Box.view post).balances.val.toList.map (·.toPlainNat))
+      (@BeaconState P) Unit).run (fixture P c) with
+  | .ok _ post => .balances (post.balances.val.toList.map (·.toPlainNat))
   | .error (.notInList _) _ => .notInList
   | .error (.arithmetic _) _ => .arithmetic
   | .error _ _ => .other

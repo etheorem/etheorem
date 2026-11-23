@@ -1,10 +1,10 @@
 import EthCLSpecs.Fulu.Containers
 
 /-!
-# `EthCLSpecs.Fulu.State`: the `BeaconState` definition and its boxed view (load order row 19)
+# `EthCLSpecs.Fulu.State`: the `BeaconState` definition and its `State` (load order row 19)
 
 The complete Fulu `BeaconState`, the accumulated Phase 0 → Fulu field list in SSZ
-order, then the `State` abbrev that views it as an SSZ box. This module imports
+order, then the `State` abbrev that names it as the plain record. This module imports
 all of the component containers (`Containers`) the state references
 (`SPECS_ARCHITECTURE.md` §3.1 row 19).
 
@@ -13,7 +13,7 @@ consensus `fork` field is named `forkData` here to avoid the `fork` command
 keyword; the wire format and root are unchanged.
 
 `State` and the concrete-domain `modifyState` are declared once here by
-`state_preamble BeaconState`; every operation file's `state_section` reuses them.
+`plain_state_preamble BeaconState`; every operation file's `state_section` reuses them.
 Field access is the framework's generic `sszGet` / `sszUpdate`, so there are no
 per-field accessors to colocate.
 -/
@@ -77,8 +77,9 @@ forkcontainer BeaconState where
   -- (`fulu/minimal.py:640-646`); both presets set `minSeedLookahead` to `1`.
   proposerLookahead             : Vector ValidatorIndex ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch)
 
--- The once-per-fork preamble: declares `State` (the boxed `BeaconState`) and the
--- concrete-domain `modifyState` (`SPEC_AUTHORING_MODEL.md` §6, `EthCLLib.Spec.Header`).
-state_preamble BeaconState
+-- The once-per-fork preamble: declares `State` (the plain `BeaconState` record), the
+-- concrete-domain `modifyState`, and the `StateRoot State` instance that roots the record
+-- (`SPEC_AUTHORING_MODEL.md` §6, `EthCLLib.Spec.Header`).
+plain_state_preamble BeaconState
 
 end EthCLSpecs.Fulu
