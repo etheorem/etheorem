@@ -55,7 +55,7 @@ variable {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
 omit [DataAvailability] in
 /-- On a plain state, a successful verification returns that same state. The
 verification's only state result is the second half of `stateRoot state`, and the
-plain `StateRoot` instance (`plain_state_preamble`) pairs the root with the state
+plain `StateRoot` instance (`state_preamble`) pairs the root with the state
 it reads. Stated as a `map`, so the success value of the left side is `state`
 itself. `map_bind` and `map_pure` push the `map` through every bind, and no assert
 condition is evaluated. -/

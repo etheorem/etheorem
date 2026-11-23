@@ -13,7 +13,7 @@ consensus `fork` field is named `forkData` here to avoid the `fork` command
 keyword; the wire format and root are unchanged.
 
 `State` and the concrete-domain `modifyState` are declared once here by
-`plain_state_preamble BeaconState`; every operation file's `state_section` reuses them.
+`state_preamble BeaconState`; every operation file's `state_section` reuses them.
 Field access is the framework's generic `sszGet` / `sszUpdate`, so there are no
 per-field accessors to colocate.
 -/
@@ -80,6 +80,6 @@ forkcontainer BeaconState where
 -- The once-per-fork preamble: declares `State` (the plain `BeaconState` record), the
 -- concrete-domain `modifyState`, and the `StateRoot State` instance that roots the record
 -- (`SPEC_AUTHORING_MODEL.md` §6, `EthCLLib.Spec.Header`).
-plain_state_preamble BeaconState
+state_preamble BeaconState
 
 end EthCLSpecs.Fulu

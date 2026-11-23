@@ -50,12 +50,12 @@ instance instMonadRunEStateM (S : Type) :
 /-- Run a state-machine action on a state and project the result to the post-state
 root, or the reject. The state-machine twin of `runOn` (`PySpecTests.Interface`, which does
 the same for a fork-choice store): a `PySpecTests` entry point decodes a pre-state, builds
-its action, and ends with `runToRoot box0 action`, replacing the open-coded match on the
+its action, and ends with `runToRoot state0 action`, replacing the open-coded match on the
 run.
 
 Generic over the monad through `MonadRunState`, so the entry point's own ascription on
 `action` picks the column and this stays out of it. Generic over the state through
-`StateRoot`, so a boxed and a plain state both work. The post-state dies right after, so
+`StateRoot`, so any state carrying the instance works. The post-state dies right after, so
 `stateRoot!` (the form that drops the warm state) is correct here. -/
 @[inline] def runToRoot {S : Type} {M : Type → Type} [StateRoot S]
     [MonadRunState S M] (state0 : S) (act : M Unit) :

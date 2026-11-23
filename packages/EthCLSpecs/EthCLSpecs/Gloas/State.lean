@@ -88,6 +88,6 @@ forkcontainer BeaconState where
 -- The once-per-fork preamble: declares `State` (the plain `BeaconState` record), the
 -- concrete-domain `modifyState`, and the `StateRoot State` instance that roots the record
 -- (`SPEC_AUTHORING_MODEL.md` §6, `EthCLLib.Spec.Header`).
-plain_state_preamble BeaconState
+state_preamble BeaconState
 
 end EthCLSpecs.Gloas

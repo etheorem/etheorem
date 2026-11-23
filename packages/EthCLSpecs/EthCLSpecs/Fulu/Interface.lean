@@ -38,7 +38,7 @@ def pyspecPinnedVersion : String := "v1.7.0-beta.4"
 
 /-- Decode a plain `BeaconState` at preset `P`, or the runner's `decode` error (a
 well-formed vector should always decode, so a parse failure is our bug, not a consensus
-reject). Fulu's `State` is the plain record (`plain_state_preamble`), so the runner threads
+reject). Fulu's `State` is the plain record (`state_preamble`), so the runner threads
 the decoded value itself, and each root is a full merkleization through the
 `StateRoot State` instance. -/
 private def decodeState (P : Preset) (bytes : ByteArray) :

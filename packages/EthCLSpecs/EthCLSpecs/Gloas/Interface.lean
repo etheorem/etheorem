@@ -67,7 +67,7 @@ private def runUpgradeImpl (P : Preset) (C : Config) (forkVersion : Version) (pr
   | .error _ => .error (.decode "Fulu BeaconState")
 
 /-- Decode a plain Gloas `BeaconState`, or the runner's `decode` error. Gloas's `State` is
-the plain record (`plain_state_preamble`), so the runner threads the decoded value itself, and
+the plain record (`state_preamble`), so the runner threads the decoded value itself, and
 each root is a full merkleization through the `StateRoot State` instance. -/
 private def decodeState (P : Preset) (bytes : ByteArray) :
     Except (RunError StateTransitionError) (@Gloas.BeaconState P) :=

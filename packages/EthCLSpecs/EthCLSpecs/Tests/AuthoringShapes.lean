@@ -10,7 +10,7 @@ proved-total divisor route through Fulu's `Const.slotsPerEpochDiv` view,
 running one `assert`, and writing back through `modifyState`.
 
 The fork here is a toy: a one-field `forkcontainer`, its own `Preset` / `Config`
-stand-ins, and a `plain_state_preamble` + `state_section`, the header layout of
+stand-ins, and a `state_preamble` + `state_section`, the header layout of
 `Fulu/State.lean` and `Fulu/Time.lean`. What is real is the divisor: both pins
 inject `EthCLSpecs.Fulu.Const.slotsPerEpochDiv` at a concrete Fulu preset, so
 the toy body divides by the production view, at mainnet (32) and at minimal
@@ -40,7 +40,7 @@ bodies use. -/
 forkcontainer ToyState where
   slot : CLUint64
 
-plain_state_preamble ToyState
+state_preamble ToyState
 
 state_section
 

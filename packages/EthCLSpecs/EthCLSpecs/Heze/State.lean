@@ -9,7 +9,7 @@ Heze's `BeaconState` is Gloas's progressive container with the eth1 deposit mach
 the four positions empty, `active_fields(width=46, gaps=(8, 9, 10, 28))`, so every remaining
 field keeps its Gloas generalized index. `@[sizzlean_progressive_gaps 8 9 10 28]` carries that
 mask. `latestExecutionPayloadBid` binds to Heze's bid (the extra `inclusionListBits` field).
-`plain_state_preamble` declares `State` as the plain `BeaconState` record, so a Heze body
+`state_preamble` declares `State` as the plain `BeaconState` record, so a Heze body
 reads a field by projection and writes it by record update.
 
 The `Containers.InclusionList` import is the load-order entry: it transitively pulls
@@ -83,6 +83,6 @@ forkcontainer BeaconState where
 
 -- The once-per-fork preamble: declares `State` (the plain `BeaconState` record),
 -- `modifyState`, and the `StateRoot State` instance that roots the record.
-plain_state_preamble BeaconState
+state_preamble BeaconState
 
 end EthCLSpecs.Heze
