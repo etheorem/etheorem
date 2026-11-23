@@ -54,7 +54,7 @@ open EthCLSpecs.Gloas (Preset)
 open EthCLSpecs.Gloas (State)
 
 /-- The monad the Gloas spec bodies are proved at: `StateT` over `Except`, threading the
-boxed Gloas `BeaconState` and rejecting with `StateTransitionError`. `abbrev`
+plain Gloas `BeaconState` and rejecting with `StateTransitionError`. `abbrev`
 (reducible) so a goal mentioning it unifies with the spelled-out
 `StateT State (Except StateTransitionError)`.
 
