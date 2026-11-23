@@ -345,7 +345,7 @@ them and `getSupportedNode` / `isAncestor`, which can reject. -/
 forkdef getAttestationScore (store : Store map) (node : ForkChoiceNode) (state : State) :
     StoreTransition Gwei := do
   let active ← getActiveValidatorIndices state (currentEpochOf state)
-  let validators := sszGet state validators
+  let validators := state.validators
   active.foldlM (init := 0) fun acc i => do
     let validator ← sszGetIdx validators i
     if validator.slashed then pure acc
@@ -371,7 +371,7 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
   let epoch := computeEpochAtSlot headBlock.slot
   let headNode : ForkChoiceNode := .pending headRoot
   let baseWeight ← getAttestationScore store headNode justifiedState
-  let validators := sszGet justifiedState validators
+  let validators := justifiedState.validators
   -- The equivocator read is `justified_state.validators[i]` with `i` drawn from the *head*
   -- state's committees, so a cross-branch registry skew can push it past the justified
   -- registry's end; the spec raises `IndexError` there, hence `sszGetIdx` (the wrapped
@@ -475,7 +475,7 @@ forkdef getVotingSource (store : Store map) (blockRoot : Root) : StoreTransition
     FcMap.getOrThrow store.unrealizedJustifications blockRoot
   else
     let hs ← FcMap.getOrThrow store.blockStates blockRoot
-    pure (sszGet hs currentJustifiedCheckpoint)
+    pure hs.currentJustifiedCheckpoint
 
 /-- `get_node_children(store, node)` (Gloas, `gloas/fork-choice.md:614-628`): a pending node's
 children are its own empty (always) and full (when the payload is verified) realisations; a
@@ -628,8 +628,8 @@ forkdef computePulledUpTip (blockRoot : Root) : StoreTransition Unit := do
   let store ← get
   let state ← FcMap.getOrThrow store.blockStates blockRoot
   let pulled ← runNestedStateTransition state processJustificationAndFinalization
-  let cj := sszGet pulled currentJustifiedCheckpoint
-  let fz := sszGet pulled finalizedCheckpoint
+  let cj := pulled.currentJustifiedCheckpoint
+  let fz := pulled.finalizedCheckpoint
   set { store with
     unrealizedJustifications := FcMap.insert store.unrealizedJustifications blockRoot cj }
   set (updateUnrealizedCheckpoints (← get) cj fz)
@@ -758,7 +758,7 @@ forkdef onPayloadAttestationMessage (msg : PayloadAttestationMessage) (isFromBlo
   let state ← FcMap.getOrAssert store.blockStates data.beaconBlockRoot
     "data.beacon_block_root in store.block_states"
 
-  if !(data.slot == sszGet state slot) then pure ()
+  if !(data.slot == state.slot) then pure ()
   else
     -- `get_ptc` asserts, and it is a state-file `forkdef`, so its `StateTransitionError`
     -- crosses `evalNestedStateTransition` to reach this store handler. The bind sits after the
@@ -790,7 +790,7 @@ the `ptc_indices` assert. Either reject aborts the whole surrounding `on_block`.
 state from the store, as the spec does. -/
 forkdef notifyPtcMessages (state : State) (payloadAttestations : Array PayloadAttestation) :
     StoreTransition Unit := do
-  if sszGet state slot == 0 then return
+  if state.slot == 0 then return
   for pa in payloadAttestations do
     -- Second bridge crossing: `get_indexed_payload_attestation` inherited `get_ptc`'s asserts,
     -- and this replay loop runs in the store machine.
@@ -856,7 +856,7 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) : StoreTransition Unit := do
   set store
   let store ← updateProposerBoostRoot store head.root blockRoot
   set store
-  let store := updateCheckpoints store (sszGet postState currentJustifiedCheckpoint) (sszGet postState finalizedCheckpoint)
+  let store := updateCheckpoints store postState.currentJustifiedCheckpoint postState.finalizedCheckpoint
   set store
   -- `(map := map)`: no store argument, so the section's map backing is undetermined here
   -- (the ambient `get`/`set` constraint alone leaves it a stuck metavariable); name it.
@@ -912,12 +912,12 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
 
   -- Block-root binding: the envelope commits to this state's block header (with its
   -- computed state root) and its parent.
-  let header : BeaconBlockHeader := { sszGet state latestBlockHeader with stateRoot := htr state }
+  let header : BeaconBlockHeader := { state.latestBlockHeader with stateRoot := htr state }
   assert (envelope.beaconBlockRoot == htr header)
-  assert (envelope.parentBeaconBlockRoot == (sszGet state latestBlockHeader).parentRoot)
+  assert (envelope.parentBeaconBlockRoot == state.latestBlockHeader.parentRoot)
 
   -- Bid consistency: the revealed payload matches the committed bid and the state.
-  let bid := sszGet state latestExecutionPayloadBid
+  let bid := state.latestExecutionPayloadBid
   assert (envelope.builderIndex == bid.builderIndex)
   assert (payload.prevRandao == bid.prevRandao)
   assert (payload.gasLimit == bid.gasLimit)
@@ -926,15 +926,15 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
   -- `slot_number` is a raw `UInt64` payload field: data only, compared here and never used in
   -- arithmetic. The pinned `Uint64.__eq__` compares by value across the unit subclasses, so
   -- the assert reads the checked slot's word (§4.5).
-  assert (payload.slotNumber == (sszGet state slot).val)
-  assert (payload.parentHash == sszGet state latestBlockHash)
+  assert (payload.slotNumber == state.slot.val)
+  assert (payload.parentHash == state.latestBlockHash)
   -- `compute_time_at_slot(state.genesis_time, state.slot)` (`Fulu/Time.lean`, inherited): the
   -- arithmetic lift wraps its fault as `.transition (.arithmetic …)`, the store machine's shape
   -- for the same fault.
-  let expectedTime ← computeTimeAtSlot (sszGet state genesisTime) (sszGet state slot)
+  let expectedTime ← computeTimeAtSlot state.genesisTime state.slot
   -- `payload.timestamp` is a `Uint64` field, so both sides are the checked kind.
   assert (payload.timestamp == expectedTime)
-  assert (htr payload.withdrawals == htr (sszGet state payloadExpectedWithdrawals))
+  assert (htr payload.withdrawals == htr state.payloadExpectedWithdrawals)
 
   -- The EL answer, last as in the spec. `bid.blobKzgCommitments` supplies the request's
   -- versioned hashes (unmapped, see the seam's docstring); the parent root and the
@@ -980,7 +980,7 @@ forkdef storeTargetCheckpointState (store : Store map) (target : Checkpoint) :
     let base ← FcMap.getOrThrow store.blockStates target.root
     let targetSlot ← computeStartSlotAtEpoch target.epoch
     let advanced ←
-      if (sszGet base slot) < targetSlot then
+      if base.slot < targetSlot then
         runNestedStateTransition base (processSlots targetSlot)
       else pure base
     pure { store with checkpointStates := FcMap.insert store.checkpointStates target advanced }
@@ -1093,8 +1093,8 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }
-  let genesisTimeMs := secondsToMilliseconds (sszGet anchorState genesisTime)
-  let timeMs ← computeTimeAtSlotMs genesisTimeMs (sszGet anchorState slot)
+  let genesisTimeMs := secondsToMilliseconds anchorState.genesisTime
+  let timeMs ← computeTimeAtSlotMs genesisTimeMs anchorState.slot
   let emptyVotes : Array (Option Bool) := Array.replicate Const.ptcSize none
   pure
     { timeMs := timeMs
