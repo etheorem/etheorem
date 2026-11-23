@@ -7,8 +7,8 @@ Confirms the walking skeleton runs, not just typechecks (`PLAN.md` §1.1, §1.2
 acceptance):
 
 - a `forkdef` step (`processSlot`) **executes** at the fast config `EStateM
-  StateTransitionError BeaconState`, round-tripping `sszGet` / `sszUpdate` over
-  the plain state;
+  StateTransitionError BeaconState`, round-tripping field reads and
+  record updates over the plain state;
 - the fork-interface `stateRoot` decodes a `BeaconState` and reproduces its root;
 - the deferral safety net works: a vector that reaches an `outOfScope` entry
   (`runGenesis`) does not pass, and the driver reports it in the `outOfScope` (`skip`) bucket;
@@ -29,7 +29,7 @@ namespace EthCLSpecs.Tests.WalkingSkeleton
 /-- Advance a default `BeaconState` to slot `n` through the real `processSlots`
 (below the first epoch boundary, so no `processEpoch`) and read back the slot.
 Exercises the generated header, `[HasherTag]`, the `EStateM` composition over
-the plain state, and `sszGet` / `sszUpdate`. -/
+the plain state, and the native field reads and record updates. -/
 def slotAfter (n : Nat) : Nat :=
   letI : Preset := minimal
   letI : Config := minimalConfig
@@ -41,7 +41,7 @@ def slotAfter (n : Nat) : Nat :=
     let target ← CLUint64.ofNat? n
     processSlots target
   match action.run st0 with
-  | .ok _ st   => (sszGet st slot).toPlainNat
+  | .ok _ st   => st.slot.toPlainNat
   | .error _ _ => 0xdead
 
 -- The spine runs: `processSlots` advances `slot` from 0 to the target.

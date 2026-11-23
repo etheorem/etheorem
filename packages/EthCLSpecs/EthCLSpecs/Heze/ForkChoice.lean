@@ -492,8 +492,8 @@ forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }
-  let genesisTimeMs := secondsToMilliseconds (sszGet anchorState genesisTime)
-  let timeMs ← computeTimeAtSlotMs genesisTimeMs (sszGet anchorState slot)
+  let genesisTimeMs := secondsToMilliseconds anchorState.genesisTime
+  let timeMs ← computeTimeAtSlotMs genesisTimeMs anchorState.slot
   let emptyVotes : Array (Option Bool) := Array.replicate Const.ptcSize none
   pure
     { timeMs := timeMs
@@ -579,7 +579,7 @@ forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit :=
   let dependentState ← FcMap.getOrThrow store.blockStates inclusionList.dependentRoot
   let lookaheadStartSlot ← computeShufflingLookaheadStartSlot epoch
   let state ←
-    if (sszGet dependentState slot) < lookaheadStartSlot then
+    if dependentState.slot < lookaheadStartSlot then
       runNestedStateTransition dependentState (processSlots lookaheadStartSlot)
     else pure dependentState
   let committee ← getInclusionListCommittee state inclusionList.slot

@@ -73,7 +73,7 @@ private def runSlotsImpl (P : Preset) (C : Config) (preBytes : ByteArray) (n : N
     -- The harness's `state.slot + slots` (`test/phase0/sanity/test_slots.py:25`): the
     -- checked `Slot` add of the plain `int` slot count, so a target past `2^64 - 1` raises
     -- (`SPEC_ARITHMETIC.md` §4.2).
-    let target ← (sszGet state slot) + n
+    let target ← state.slot + n
     processSlots target
   RunError.ofSpec (runToRoot state0 action)
 
@@ -174,7 +174,7 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
   let mkDeltas : Array Gwei × Array Gwei → Except StateTransitionError ByteArray := fun rp => do
     pure (SSZ.serialize ({ rewards := ← sszOfArrayM "rewards" rp.1,
                            penalties := ← sszOfArrayM "penalties" rp.2 } : Deltas))
-  let n := (sszGet state validators).size
+  let n := state.validators.size
   let zeros := Array.replicate n (0 : Gwei)
   RunError.ofSpec do
     let d0 ← liftErr (getFlagIndexDeltas state 0)

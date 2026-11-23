@@ -63,8 +63,8 @@ private def pinProcessSlotBelowMaxClearsNextBit : Bool :=
   letI : CryptoBackend := CryptoBackend.ffi
   match (processSlot : PinM Unit).run (availabilityState 18446744073709551614) with
   | .ok _ st =>
-    bitGet (sszGet st executionPayloadAvailability) 63 == false &&
-      bitGet (sszGet st executionPayloadAvailability) 0 == true
+    bitGet st.executionPayloadAvailability 63 == false &&
+      bitGet st.executionPayloadAvailability 0 == true
   | _ => false
 example : pinProcessSlotBelowMaxClearsNextBit = true := by native_decide
 
@@ -107,7 +107,7 @@ private def pinPtcWindowBelowRangeEndReads : Bool :=
   match (processPtcWindow : PinM Unit).run state0,
       computePtc state0 18446744073709551600, computePtc state0 18446744073709551607 with
   | .ok _ st, .ok first, .ok last =>
-    vget (sszGet st ptcWindow) 16 == first && vget (sszGet st ptcWindow) 23 == last
+    vget st.ptcWindow 16 == first && vget st.ptcWindow 23 == last
   | _, _, _ => false
 example : pinPtcWindowBelowRangeEndReads = true := by native_decide
 

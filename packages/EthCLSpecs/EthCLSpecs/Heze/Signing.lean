@@ -74,10 +74,10 @@ forkdef isValidInclusionListSignature (state : State) (signed : SignedInclusionL
   -- `IndexError` for an out-of-range index rather than yielding an answer: `sszGetIdx`
   -- (→ `outOfBounds`), the monadic safe read, in place of an `if index < size` guard that would
   -- mask the raise as a `false` and read the `Inhabited` default (zero-pubkey) validator.
-  let validator ← sszGetIdx (sszGet state validators) index
+  let validator ← sszGetIdx state.validators index
   let pubkey := validator.pubkey
   let domain := computeDomain Const.domainInclusionListCommittee
-    (computeForkVersion (computeEpochAtSlot message.slot)) (sszGet state genesisValidatorsRoot)
+    (computeForkVersion (computeEpochAtSlot message.slot)) state.genesisValidatorsRoot
   return blsVerifySigned pubkey message domain signed.signature
 
 end

@@ -190,8 +190,8 @@ private def fuluProcess (n : Nat) (idle : Bool := false) :
     let payload : ExecutionPayload := { (default : ExecutionPayload) with withdrawals := capped ws }
     match (processWithdrawals payload : EStateM StateTransitionError State Unit).run st with
     | .ok _ post =>
-      .ok (ws.size, (sszGet post nextWithdrawalIndex).toPlainNat,
-        (sszGet post nextWithdrawalValidatorIndex).toPlainNat)
+      .ok (ws.size, post.nextWithdrawalIndex.toPlainNat,
+        post.nextWithdrawalValidatorIndex.toPlainNat)
     | .error e _ => .error e
 
 /-- Two withdrawals at indices `5` and `6`: `withdrawals[-1].index + 1 = 7`. The short payload
@@ -289,7 +289,7 @@ private def eth1Adopted (P : Preset) : Except StateTransitionError Nat :=
   let body : BeaconBlockBody :=
     { (default : BeaconBlockBody) with eth1Data := { (default : Eth1Data) with depositCount := 7 } }
   match (processEth1Data body : EStateM StateTransitionError State Unit).run st with
-  | .ok _ post => .ok (sszGet post eth1Data).depositCount.toPlainNat
+  | .ok _ post => .ok post.eth1Data.depositCount.toPlainNat
   | .error e _ => .error e
 
 /-- `EPOCHS_PER_ETH1_VOTING_PERIOD = 2^61`: the checked product
@@ -385,9 +385,9 @@ private def gloasProcess (n : Nat) (idle : Bool := false) :
   match (processWithdrawals : EStateM StateTransitionError State Unit).run
       (gloasWithdrawState minimal n idle) with
   | .ok _ post =>
-    .ok ((sszGet post payloadExpectedWithdrawals).val.size,
-      (sszGet post nextWithdrawalIndex).toPlainNat,
-      (sszGet post nextWithdrawalValidatorIndex).toPlainNat)
+    .ok (post.payloadExpectedWithdrawals.val.size,
+      post.nextWithdrawalIndex.toPlainNat,
+      post.nextWithdrawalValidatorIndex.toPlainNat)
   | .error e _ => .error e
 
 /-- `withdrawals[-1]` after two withdrawals, after a full payload, and the guarded empty

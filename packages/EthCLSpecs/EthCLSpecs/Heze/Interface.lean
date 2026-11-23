@@ -124,7 +124,7 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
   let mkDeltas : Array Gwei × Array Gwei → Except StateTransitionError ByteArray := fun rp => do
     pure (SSZ.serialize ({ rewards := ← sszOfArrayM "rewards" rp.1,
                            penalties := ← sszOfArrayM "penalties" rp.2 } : Deltas))
-  let n := (sszGet state validators).size
+  let n := state.validators.size
   let zeros := Array.replicate n (0 : Gwei)
   RunError.ofSpec do
     let d0 ← liftErr (getFlagIndexDeltas state 0)
@@ -203,7 +203,7 @@ private def runSlotsImpl (P : Preset) (C : Config) (preBytes : ByteArray) (n : N
     let state ← get
     -- The harness's `state.slot + slots`: the checked `Slot` add of the plain `int` slot
     -- count, so a target past `2^64 - 1` raises (§4.2).
-    let target ← (sszGet state slot) + n
+    let target ← state.slot + n
     processSlots target
   RunError.ofSpec (runToRoot state0 action)
 
@@ -268,14 +268,14 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
       | .error _ => Except.error (RunError.decode "Heze SignedBeaconBlock"))
     let gloasAction : EStateM StateTransitionError (Gloas.BeaconState) Unit := do
       for sb in preBlocks do Gloas.stateTransition sb
-      if (sszGet (← get) slot) < boundary then Gloas.processSlots boundary
+      if (← get).slot < boundary then Gloas.processSlots boundary
     match gloasAction.run preGloas with
     | .error e _ => Except.error (RunError.spec e)
     | .ok _ gloasSt =>
       let hezePost ← RunError.ofSpec (upgradeToHeze forkVersion gloasSt)
       let hezeAction : EStateM StateTransitionError (@Heze.BeaconState P) Unit := do
         for sb in postBlocks do
-          if (sszGet (← get) slot) < sb.message.slot then processSlots sb.message.slot
+          if (← get).slot < sb.message.slot then processSlots sb.message.slot
           if cmeta.blsSetting != 2 then assert (verifyBlockSignature (← get) sb)
           processBlock sb.message
           let root ← getStateRoot

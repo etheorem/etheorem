@@ -130,7 +130,7 @@ private def inactivityScoreAfter (c : Config) : Outcome :=
   letI : Config := c
   letI : CryptoBackend := CryptoBackend.ffi
   match (processInactivityUpdates : EStateM StateTransitionError State Unit).run auditState with
-  | .ok _ post => .answer (sszGet post inactivityScores)[0]!.toPlainNat
+  | .ok _ post => .answer post.inactivityScores[0]!.toPlainNat
   | .error e _ => errorOutcome e
 
 /-- The one penalty `get_inactivity_penalty_deltas` returns under configuration `c`. -/
