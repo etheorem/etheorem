@@ -48,7 +48,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (HasherTag StateTransitionError)
+open EthCLLib.Spec (StateTransitionError)
 open EthCLSpecs.Gloas (Preset)
 open EthCLSpecs.Gloas (State)
 
@@ -59,7 +59,7 @@ plain Gloas `BeaconState` and rejecting with `StateTransitionError`. `abbrev`
 
 `.run` here yields `Except StateTransitionError (α × State)`, so a successful run reads
 `.ok (a, state')` and a rejecting one reads `.error e`, carrying no state. -/
-abbrev GloasRun [Preset] [HasherTag] : Type → Type :=
+abbrev GloasRun [Preset] : Type → Type :=
   StateT State (Except StateTransitionError)
 
 end EthCLSpecs.Proofs.Gloas

@@ -207,7 +207,7 @@ open EthCLSpecs.Gloas
   { minimal with slotsPerEpoch := 1, slotsPerEpochPos := by decide, slotsPerEpochLt := by decide }
 
 /-- A Gloas state at slot `s` with eight active validators. -/
-private def gloasState (P : Preset) (s : Slot) : @State P fastHasherTag :=
+private def gloasState (P : Preset) (s : Slot) : @State P :=
   letI : Preset := P
   letI : HasherTag := fastHasherTag
   let v : Validator :=
@@ -233,12 +233,12 @@ private def gloasAtt (P : Preset) (slot : Slot) (targetEpoch sourceEpoch : Epoch
 
 /-- Runs Gloas `process_attestation` with `parent_slot = 0`. -/
 private def gloasRun (P : Preset) (s : Slot) (att : @Attestation P) :
-    EStateM.Result StateTransitionError (@State P fastHasherTag) Unit :=
+    EStateM.Result StateTransitionError (@State P) Unit :=
   letI : Preset := P
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
-  (processAttestation att 0 : EStateM StateTransitionError (@State P fastHasherTag) Unit).run
+  (processAttestation att 0 : EStateM StateTransitionError (@State P) Unit).run
     (gloasState P s)
 
 /-! ### 1. The committee loop -/

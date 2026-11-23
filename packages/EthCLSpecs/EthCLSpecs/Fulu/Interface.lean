@@ -208,7 +208,7 @@ private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
 
 /-- Run `getHead` over the snapshot store as a pure query (`runQuery` discards the final
 store). Shared by the `checkHead` / `checkProposerHead` arms. -/
-private def queryHead [Preset] [Config] [HasherTag] (store : Store hashMap) :
+private def queryHead [Preset] [Config] (store : Store hashMap) :
     Except StoreTransitionError Root :=
   runQuery store (getHead (map := hashMap) store :
     EStateM StoreTransitionError (Store hashMap) Root)
@@ -219,7 +219,7 @@ stepping into every child that is in the filtered node tree, and collect each no
 such child, paired with its `get_weight`. A test-helper walk, not a spec function, so it lives
 with the interpreter. The stack walk visits each block once, so the block count plus one bounds
 it; fuel-out returns the leaves found so far, which then fail the comparison loudly. -/
-private def viableForHeadLeaves [Preset] [Config] [HasherTag] (store : Store hashMap) :
+private def viableForHeadLeaves [Preset] [Config] (store : Store hashMap) :
     Except StoreTransitionError (Array (ByteArray × Nat × Option Nat)) :=
   let walk : EStateM StoreTransitionError (Store hashMap) (Array (ByteArray × Nat × Option Nat)) := do
     let nodes ← getFilteredNodeTree (map := hashMap) store

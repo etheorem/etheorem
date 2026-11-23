@@ -114,7 +114,7 @@ private def activeValidator : @Validator minimal :=
 /-- A state at epoch `2` (slot `16`) with the one active validator, zero participation
 flags, and an inactivity score of `100`. The validator is eligible and not a timely-target
 voter. The finality delay is `1`, so the chain is not in an inactivity leak. -/
-private def auditState : @State minimal fastHasherTag :=
+private def auditState : @State minimal :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { (default : @BeaconState minimal) with
@@ -225,7 +225,7 @@ section Gloas
 open EthCLSpecs.Gloas
 
 /-- The Fulu audit state, over Gloas's own `BeaconState`. -/
-private def gloasAuditState : @State minimal fastHasherTag :=
+private def gloasAuditState : @State minimal :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let v : Validator :=
@@ -338,7 +338,7 @@ example : gloasPaymentQuorum minimalConfig = .answer 2400000000 := by native_dec
 /-- A two-validator edge state, both active at `2 ^ 63 - 1` each: the total active
 balance `2 ^ 64 - 2` is the greatest that fits, and the quorum product
 `(2 ^ 64 - 2) / 8 * 6` is the nearest in-range product the fixture can reach. -/
-private def gloasEdgeState : @State minimal fastHasherTag :=
+private def gloasEdgeState : @State minimal :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let v : Validator :=
@@ -393,12 +393,12 @@ example : thresholdMainnet = (256, 256) := by native_decide
 
 /-- The pins' concrete fork-choice monad: the minimal preset over the deterministic
 `treeMap`. -/
-private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- A store whose root has a revealed payload (so `is_payload_verified` holds) and a
 16-vote timeliness array: `trues` entries `some true`, the rest `some false`. The empty
 fields mirror `GloasForkChoicePins.pinStore`. -/
-private def timelinessStore (trues : Nat) : @Store minimal treeMap fastHasherTag :=
+private def timelinessStore (trues : Nat) : @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let root : Root := Vector.replicate 32 9
@@ -443,7 +443,7 @@ section Heze
 open EthCLSpecs.Heze
 
 /-- The Fulu audit state, over Heze's own `BeaconState`. -/
-private def hezeAuditState : @State minimal fastHasherTag :=
+private def hezeAuditState : @State minimal :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let v : Validator :=

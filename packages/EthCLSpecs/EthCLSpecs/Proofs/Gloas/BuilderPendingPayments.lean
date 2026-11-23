@@ -90,7 +90,7 @@ instance, matching the production `p.weight ≥ quorum` guard. -/
 
 /-- The loop's whole-transition equation over an arbitrary index list. Stated as a run on
 `preState`, so the composite contract below rewrites with it directly. -/
-private theorem builderPendingWithdrawalsList_run_eq [Preset] [HasherTag]
+private theorem builderPendingWithdrawalsList_run_eq [Preset]
     (cond : Nat → Prop) [DecidablePred cond]
     (val : Nat → BuilderPendingWithdrawal) (preState : BeaconState) (l : List Nat) :
     (do for i in l do
@@ -125,7 +125,7 @@ private theorem builderPendingWithdrawalsList_run_eq [Preset] [HasherTag]
 
 /-- `processBuilderPendingPayments`'s withdrawals loop over `[0:n]`, the source's own
 range: the list equation above at `List.range n`. -/
-private theorem builderPendingWithdrawalsLoop_run_eq [Preset] [HasherTag] (n : Nat)
+private theorem builderPendingWithdrawalsLoop_run_eq [Preset] (n : Nat)
     (cond : Nat → Prop) [DecidablePred cond]
     (val : Nat → BuilderPendingWithdrawal) (preState : BeaconState) :
     (do for i in [0:n] do
@@ -155,7 +155,7 @@ the two value definitions below share it. The chain is the checked `Gwei`
 surface over the total active balance, whose registry reads raise `IndexError`,
 so the threshold is an `Except StateTransitionError` value: a fault here rejects
 the substep exactly where the pyspec raises. -/
-def builderPaymentQuorum [Preset] [HasherTag] (state : BeaconState) :
+def builderPaymentQuorum [Preset] (state : BeaconState) :
     Except StateTransitionError Gwei :=
   getBuilderPaymentQuorumThreshold state
 
@@ -231,7 +231,7 @@ private theorem activeReads_ok [Preset] (state : BeaconState) (active : Array Va
 
 /-- `getTotalActiveBalance` on an active set that casts and reads in range is the checked
 total `totalOf` of the members' effective balances, its fault mapped to the state error. -/
-private theorem getTotalActiveBalance_eq_of_active [Preset] [HasherTag] (state : BeaconState)
+private theorem getTotalActiveBalance_eq_of_active [Preset] (state : BeaconState)
     (active : Array ValidatorIndex)
     (hact : getActiveValidatorIndices state (computeEpochAtSlot state.slot)
       = .ok active)
@@ -290,7 +290,7 @@ private theorem forIn'_filter_push {ε β : Type} (p : Nat → Bool) (g : Nat �
 
 /-- `getActiveValidatorIndices` is the checked `ValidatorIndex(index)` cast of every
 active position, in registry order. -/
-theorem getActiveValidatorIndices_eq [Preset] [HasherTag] (state : BeaconState)
+theorem getActiveValidatorIndices_eq [Preset] (state : BeaconState)
     (epoch : Epoch) :
     getActiveValidatorIndices state epoch
       = ((activePositions state epoch).mapM CLUint64.ofNat?).map List.toArray := by
@@ -376,7 +376,7 @@ private theorem mapM_ofNat?_fit : ∀ (l : List Nat), (∀ p ∈ l, p < UInt64.s
 /-- `getTotalActiveBalance` under `activeCastsFit` is the checked total `totalOf` of
 `activeBalances`, its fault mapped to the state error. The registry reads cannot raise:
 every active position indexes the registry (`activePositions_lt`). -/
-theorem getTotalActiveBalance_eq [Preset] [HasherTag] (state : BeaconState)
+theorem getTotalActiveBalance_eq [Preset] (state : BeaconState)
     (hfit : activeCastsFit state) :
     getTotalActiveBalance state
       = (totalOf (activeBalances state)).mapError StateTransitionError.ofArithFault := by
@@ -400,7 +400,7 @@ theorem getTotalActiveBalance_eq [Preset] [HasherTag] (state : BeaconState)
 
 /-- When a cast of the active set does not fit, `getTotalActiveBalance` rejects: the
 `ValidatorIndex(index)` cast raises before any registry read. -/
-theorem getTotalActiveBalance_error [Preset] [HasherTag] (state : BeaconState)
+theorem getTotalActiveBalance_error [Preset] (state : BeaconState)
     (hfit : ¬ activeCastsFit state) :
     ∃ e, getTotalActiveBalance state = .error e := by
   cases hxs : (activePositions state (computeEpochAtSlot state.slot)).mapM CLUint64.ofNat? with
@@ -452,7 +452,7 @@ theorem totalOf_eq_ok [Preset] (bals : List Gwei) (tab : Gwei) :
 /-- The total's reading with no side hypothesis: `getTotalActiveBalance` succeeds with
 `tab` exactly when the active set's casts fit, every running sum of `activeBalances` stays
 in range, and `tab` is the fold's final running sum floored at one increment. -/
-theorem getTotalActiveBalance_eq_ok [Preset] [HasherTag] (state : BeaconState) (tab : Gwei) :
+theorem getTotalActiveBalance_eq_ok [Preset] (state : BeaconState) (tab : Gwei) :
     getTotalActiveBalance state = .ok tab ↔
       activeCastsFit state ∧
       (∀ i ≤ (activeBalances state).length, runSum 0 (activeBalances state) i < UInt64.size) ∧
@@ -562,7 +562,7 @@ theorem quorumCore_eq_ok [Preset] (bals : List Gwei) (quorum : Gwei) :
 
 /-- `builderPaymentQuorum` under `activeCastsFit` is the checked quorum chain `quorumCore`
 over `activeBalances`, its fault mapped to the state error. -/
-theorem builderPaymentQuorum_eq [Preset] [HasherTag] (state : BeaconState)
+theorem builderPaymentQuorum_eq [Preset] (state : BeaconState)
     (hfit : activeCastsFit state) :
     builderPaymentQuorum state
       = (quorumCore (activeBalances state)).mapError StateTransitionError.ofArithFault := by
@@ -588,7 +588,7 @@ quorum chain over `activeBalances` meets the arithmetic obligations of `quorumCo
 the real obligation the contract's `.ok quorum` hypothesis names. The cast conjunct stays
 because the Gloas registry is a `ProgressiveList`, whose type carries no `2^40` cap: an
 active position at or past `2^64` makes the pyspec's cast raise, and the run rejects. -/
-theorem builderPaymentQuorum_eq_ok [Preset] [HasherTag] (state : BeaconState)
+theorem builderPaymentQuorum_eq_ok [Preset] (state : BeaconState)
     (quorum : Gwei) :
     builderPaymentQuorum state = .ok quorum ↔
       activeCastsFit state ∧
@@ -615,7 +615,7 @@ theorem builderPaymentQuorum_eq_ok [Preset] [HasherTag] (state : BeaconState)
 
 /-- The previous-epoch payments whose weight clears `quorum`, mapped to their
 withdrawals, in slot order. -/
-def qualifyingBuilderWithdrawals [Preset] [HasherTag] (quorum : Gwei) (state : BeaconState) :
+def qualifyingBuilderWithdrawals [Preset] (quorum : Gwei) (state : BeaconState) :
     List BuilderPendingWithdrawal :=
   let payments := state.builderPendingPayments
   ((List.range slotsPerEpoch).filter
@@ -625,21 +625,21 @@ def qualifyingBuilderWithdrawals [Preset] [HasherTag] (quorum : Gwei) (state : B
 /-- The `builderPendingWithdrawals` value `processBuilderPendingPayments` produces:
 `qualifyingBuilderWithdrawals`, folded through `ProgressiveList.push` from the field's
 current value. `progressiveListFoldlPush_val` says that fold appends every withdrawal. -/
-def expectedWithdrawals [Preset] [HasherTag] (quorum : Gwei) (state : BeaconState) :
+def expectedWithdrawals [Preset] (quorum : Gwei) (state : BeaconState) :
     ProgressiveList BuilderPendingWithdrawal :=
   (qualifyingBuilderWithdrawals quorum state).foldl (fun l w => l.push w)
     state.builderPendingWithdrawals
 
 /-- The `builderPendingPayments` value `processBuilderPendingPayments` produces: the
 field's current value shifted down by `SLOTS_PER_EPOCH` and padded with empties. -/
-def expectedPaymentWindow [Preset] [HasherTag] (state : BeaconState) :
+def expectedPaymentWindow [Preset] (state : BeaconState) :
     Vector BuilderPendingPayment (2 * slotsPerEpoch) :=
   shiftWindow state.builderPendingPayments slotsPerEpoch slotsPerEpoch
     (fun _ => (default : BuilderPendingPayment))
 
 /-- Lower half of `expectedPaymentWindow`: each index `i < slotsPerEpoch` copies the
 old upper half at `i + slotsPerEpoch`. -/
-theorem expectedPaymentWindow_get_lt [Preset] [HasherTag] (state : BeaconState)
+theorem expectedPaymentWindow_get_lt [Preset] (state : BeaconState)
     (i : Nat) (hi : i < slotsPerEpoch) :
     vget (expectedPaymentWindow state) i =
       vget state.builderPendingPayments (i + slotsPerEpoch) := by
@@ -654,7 +654,7 @@ theorem expectedPaymentWindow_get_lt [Preset] [HasherTag] (state : BeaconState)
 
 /-- Upper half of `expectedPaymentWindow`: each index in
 `[slotsPerEpoch, 2 * slotsPerEpoch)` is the empty `BuilderPendingPayment`. -/
-theorem expectedPaymentWindow_get_upper [Preset] [HasherTag] (state : BeaconState)
+theorem expectedPaymentWindow_get_upper [Preset] (state : BeaconState)
     (i : Nat) (hi : slotsPerEpoch ≤ i) (hi' : i < 2 * slotsPerEpoch) :
     vget (expectedPaymentWindow state) i = (default : BuilderPendingPayment) := by
   unfold expectedPaymentWindow shiftWindow vget
@@ -683,7 +683,7 @@ the original value with only the two fields written through the source-level wri
 The statement is a `.run` fact, so the fork-choice bridge consumes it by application.
 `processBuilderPendingPayments_run_appended` reads the success path. -/
 @[characterizes EthCLSpecs.Gloas.processBuilderPendingPayments]
-theorem processBuilderPendingPayments_run [Preset] [HasherTag] :
+theorem processBuilderPendingPayments_run [Preset] :
     ∀ (preState : BeaconState),
       (processBuilderPendingPayments (StateTransition := GloasRun)).run preState
         = (match builderPaymentQuorum preState with
@@ -762,7 +762,7 @@ theorem processBuilderPendingPayments_run [Preset] [HasherTag] :
 /-- The contract on the threshold's success path, as a literal `.ok` value: the
 form `runNestedStateTransition_of_ok` consumes. The `.ok` hypothesis names the quorum chain's
 real arithmetic obligation through `builderPaymentQuorum_eq_ok`. -/
-theorem processBuilderPendingPayments_run_ok [Preset] [HasherTag] (preState : BeaconState)
+theorem processBuilderPendingPayments_run_ok [Preset] (preState : BeaconState)
     (quorum : Gwei) (hq : builderPaymentQuorum preState = .ok quorum) :
     (processBuilderPendingPayments (StateTransition := GloasRun)).run preState
       = .ok ((), { preState with
@@ -775,7 +775,7 @@ success path: every qualifying withdrawal is appended in slot order. The
 payment-window half is unchanged from the contract. On the fault path the run
 rejects, so the reading states the success case through the threshold's own
 `.ok` hypothesis. -/
-theorem processBuilderPendingPayments_run_appended [Preset] [HasherTag] (preState : BeaconState)
+theorem processBuilderPendingPayments_run_appended [Preset] (preState : BeaconState)
     (quorum : Gwei) (hq : builderPaymentQuorum preState = .ok quorum) :
     (processBuilderPendingPayments (StateTransition := GloasRun)).run preState
       = .ok ((), { preState with

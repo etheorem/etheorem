@@ -159,7 +159,7 @@ end
 end CommitteeRun
 
 section Transactions
-variable {map : MapKind} [Preset] [HasherTag] [FcMap map]
+variable {map : MapKind} [Preset] [FcMap map]
 
 /-- Which items count. An item is in `countedInclusionLists` exactly when it is one of the
 key's items, its validator is not an equivocator for the key, and, when only timely lists

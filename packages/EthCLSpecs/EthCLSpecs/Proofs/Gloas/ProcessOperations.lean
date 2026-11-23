@@ -54,7 +54,7 @@ open EthCLSpecs.Gloas (
 open EthCLLib.Proofs (run_bind run_throw except_bind_ok except_bind_error)
 
 section
-variable [Preset] [HasherTag]
+variable [Preset]
 
 /-- Left-to-right monadic fold of a body's operation list through its handler.
 Definitionally `ForM.forM ops.val handler`. This is the `forIn` expression Lean
@@ -99,7 +99,7 @@ private theorem forIn_ops_eq_processOperationsForM :
   simp only [ForM.forM, Array.forM, map_const_eq_bind_pure, bind_pure_unit]
 
 section
-variable [Config] [CryptoBackend]
+variable [HasherTag] [Config] [CryptoBackend]
 
 /-- Structural coordinator equation: `processOperations` equals the deposit
 assert, the six progressive-list length asserts, and the six operation-family

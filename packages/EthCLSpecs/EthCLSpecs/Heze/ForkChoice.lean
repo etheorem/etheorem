@@ -91,7 +91,7 @@ timeliness inside the entry. alpha.12 keyed by the committee's root, stored list
 root, and kept the timeliness in a separate map.
 
 A `forkstruct` rather than a bare `structure`, so a later fork can `inherit` it, and so it
-carries the auto `[Preset]` / `[HasherTag]` uniformly with the containers it nests.
+carries the auto `[Preset]` uniformly with the containers it nests.
 
 This declaration is the canonical home of the fold-in rationale. The spec keeps
 `InclusionListStore` as a process-lifetime singleton reached through
@@ -100,7 +100,7 @@ the generic `StoreTransition` monad (`SPEC_AUTHORING_MODEL.md` §4), with no amb
 singleton to hang the spec's store off, so the store is modeled as a `Store` field instead
 and moves with the rest of the state. Behavior is identical. It is fork-choice state, so it
 lives here, next to the handlers that drive it. -/
-forkstruct InclusionListStore (map : MapKind) [HasherTag] where
+forkstruct InclusionListStore (map : MapKind) where
   inclusionLists : map (Slot × Root) (map ValidatorIndex InclusionListEntry)
   equivocators   : map (Slot × Root) (Array ValidatorIndex)
 
@@ -252,7 +252,7 @@ end
 satisfied the inclusion-list constraints (`consensus-specs/specs/heze/fork-choice.md:133`);
 `inclusionListStore` folds in the spec's separate `InclusionListStore` (see the module docstring).
 The seventeen Gloas fields are restated verbatim. -/
-forkstruct Store (map : MapKind) [HasherTag] where
+forkstruct Store (map : MapKind) where
   timeMs                        : CLUint64
   genesisTimeMs                 : CLUint64
   justifiedCheckpoint           : Checkpoint

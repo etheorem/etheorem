@@ -175,10 +175,10 @@ section Fulu
 open EthCLSpecs.Fulu
 
 /-- The Fulu pins' fork-choice monad. -/
-private abbrev FuluPinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev FuluPinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- An empty Fulu `Store` with the clock at `timeMs` and genesis at `genesisTimeMs`. -/
-private def fuluStore (genesisTimeMs timeMs : CLUint64) : @Store minimal treeMap fastHasherTag :=
+private def fuluStore (genesisTimeMs timeMs : CLUint64) : @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { timeMs := timeMs, genesisTimeMs := genesisTimeMs
@@ -240,11 +240,11 @@ private def gloasDurationConfig (d : CLUint64) : Config :=
   { minimalConfig with slotDurationMs := d }
 
 /-- The Gloas pins' fork-choice monad. -/
-private abbrev GloasPinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev GloasPinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- An empty Gloas `Store` with the clock at `timeMs` and genesis at `genesisTimeMs`. -/
 private def gloasStore (genesisTimeMs timeMs : CLUint64) :
-    @Store minimal treeMap fastHasherTag :=
+    @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { timeMs := timeMs, genesisTimeMs := genesisTimeMs
@@ -318,11 +318,11 @@ private def hezeDurationConfig (d : CLUint64) : Config :=
   { minimalConfig with slotDurationMs := d }
 
 /-- The Heze pins' fork-choice monad. -/
-private abbrev HezePinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev HezePinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- An empty Heze `Store` with the clock at `timeMs` and genesis at `genesisTimeMs`. -/
 private def hezeStore (genesisTimeMs timeMs : CLUint64) :
-    @Store minimal treeMap fastHasherTag :=
+    @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { timeMs := timeMs, genesisTimeMs := genesisTimeMs

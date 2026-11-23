@@ -95,11 +95,11 @@ example : pinDeadlineProductFits = true := by native_decide
 /-! ### 2. Fulu `is_proposing_on_time` -/
 
 /-- The pins' Fulu fork-choice monad. -/
-private abbrev FuluPinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev FuluPinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- A Fulu `Store` at genesis `0` with the clock at `timeMs`, holding one default block (slot
 `0`, so in the current slot) at `fuluRoot`. -/
-private def fuluStore (timeMs : CLUint64) : @Store minimal treeMap fastHasherTag :=
+private def fuluStore (timeMs : CLUint64) : @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { timeMs := timeMs, genesisTimeMs := 0
@@ -168,12 +168,12 @@ open EthCLSpecs.Gloas
 private def gloasRoot : Root := Vector.replicate 32 9
 
 /-- The pins' Gloas fork-choice monad. -/
-private abbrev GloasPinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev GloasPinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- A Gloas `Store` at genesis `0` with the clock at `timeMs`, holding one default block at
 `blockSlot` under `gloasRoot`. -/
 private def gloasStore (timeMs : CLUint64) (blockSlot : Slot) :
-    @Store minimal treeMap fastHasherTag :=
+    @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { timeMs := timeMs, genesisTimeMs := 0

@@ -119,10 +119,10 @@ open SizzLean.Hasher
 example :
     (letI : BaseChecked.Preset := BaseChecked.mini
      letI : HasherTag := fastHasherTag
-     let st0 : @BaseChecked.State BaseChecked.mini fastHasherTag :=
+     let st0 : @BaseChecked.State BaseChecked.mini :=
        ({ slot := 4 } : @BaseChecked.Toy BaseChecked.mini)
      let action : EStateM StateTransitionError
-         (@BaseChecked.State BaseChecked.mini fastHasherTag) CLUint64 :=
+         (@BaseChecked.State BaseChecked.mini) CLUint64 :=
        BaseChecked.scaledSlot
      match action.run st0 with
      | .ok v _   => v.toPlainNat
@@ -134,10 +134,10 @@ at factor 3 is 12, not the base's 8. -/
 example :
     (letI : ChildChecked.Preset := ChildChecked.mini
      letI : HasherTag := fastHasherTag
-     let st0 : @ChildChecked.State ChildChecked.mini fastHasherTag :=
+     let st0 : @ChildChecked.State ChildChecked.mini :=
        ({ slot := 4 } : @ChildChecked.Toy ChildChecked.mini)
      let action : EStateM StateTransitionError
-         (@ChildChecked.State ChildChecked.mini fastHasherTag) CLUint64 :=
+         (@ChildChecked.State ChildChecked.mini) CLUint64 :=
        ChildChecked.scaledSlot
      match action.run st0 with
      | .ok v _   => v.toPlainNat
@@ -151,10 +151,10 @@ multiply) would answer `.ok` here and fail this pin. -/
 example :
     (letI : ChildChecked.Preset := ChildChecked.mini
      letI : HasherTag := fastHasherTag
-     let st0 : @ChildChecked.State ChildChecked.mini fastHasherTag :=
+     let st0 : @ChildChecked.State ChildChecked.mini :=
        ({ slot := 18446744073709551615 } : @ChildChecked.Toy ChildChecked.mini)
      let action : EStateM StateTransitionError
-         (@ChildChecked.State ChildChecked.mini fastHasherTag) CLUint64 :=
+         (@ChildChecked.State ChildChecked.mini) CLUint64 :=
        ChildChecked.scaledSlot
      match action.run st0 with
      | .ok _ _   => false

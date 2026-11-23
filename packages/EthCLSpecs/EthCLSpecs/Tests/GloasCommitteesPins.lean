@@ -24,10 +24,10 @@ namespace EthCLSpecs.Tests.GloasCommitteesPins
 open EthCLSpecs.Gloas
 
 /-- The pins' state-machine monad over the minimal preset and the FFI hasher. -/
-private abbrev PinM := EStateM StateTransitionError (@State minimal fastHasherTag)
+private abbrev PinM := EStateM StateTransitionError (@State minimal)
 
 /-- A minimal Gloas state with one active 32 ETH validator, slashed or not. -/
-private def oneValidatorState (slashed : Bool) : @State minimal fastHasherTag :=
+private def oneValidatorState (slashed : Bool) : @State minimal :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let v : Validator :=

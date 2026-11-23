@@ -42,14 +42,14 @@ same pattern as Heze's inclusion-list pins. `pinStore` mirrors Heze's
 
 /-- The pins' concrete fork-choice monad: the minimal preset over the deterministic
 `treeMap` and the FFI hasher. -/
-private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 private def pinRoot : Root := Vector.replicate 32 9
 
 /-- A minimal empty Gloas `Store`: every field empty/zero, mirroring the
 `getForkchoiceStore` literal. The `letI`s fix the preset / hasher so the anonymous
 `Store` constructor synthesizes them. -/
-private def pinStore : @Store minimal treeMap fastHasherTag :=
+private def pinStore : @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { timeMs := 0, genesisTimeMs := 0
@@ -264,7 +264,7 @@ private def boostRootP : Root := Vector.replicate 32 2
 private def boostRootX : Root := Vector.replicate 32 3
 
 /-- The fixture store. `xTimely` is block `X`'s PTC-timeliness bit. -/
-private def boostStore (xTimely : Bool) : @Store minimal treeMap fastHasherTag :=
+private def boostStore (xTimely : Bool) : @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let state : State := (default : @EthCLSpecs.Gloas.BeaconState minimal)

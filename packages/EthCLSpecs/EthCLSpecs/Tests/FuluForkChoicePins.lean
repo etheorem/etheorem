@@ -36,12 +36,12 @@ are locked here, the same pattern as the Gloas pins. `pinStore` mirrors the
 `getForkchoiceStore` literal with every map empty. -/
 
 /-- The pins' concrete fork-choice monad: the minimal preset over `treeMap` + FFI hasher. -/
-private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 private def pinRoot : Root := Vector.replicate 32 9
 
 /-- A minimal empty Fulu `Store`. -/
-private def pinStore : @Store minimal treeMap fastHasherTag :=
+private def pinStore : @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { timeMs := 0, genesisTimeMs := 0

@@ -240,7 +240,7 @@ private def headWeak (equivocators : Array ValidatorIndex) :
   let head := fuluState pairs 32
   let justified := fuluState pairs 22 (CLUint64.trustedOfUInt64 18446744073709551615) false
   let jc : Checkpoint := { epoch := 0, root := pinRoot }
-  let store : @Store pairs treeMap fastHasherTag :=
+  let store : @Store pairs treeMap :=
     { timeMs := 0, genesisTimeMs := 0
       justifiedCheckpoint := jc, finalizedCheckpoint := jc
       unrealizedJustifiedCheckpoint := jc, unrealizedFinalizedCheckpoint := jc
@@ -253,7 +253,7 @@ private def headWeak (equivocators : Array ValidatorIndex) :
       latestMessages := FcMap.empty
       unrealizedJustifications := FcMap.empty }
   match (isHeadWeak (map := treeMap) store pinRoot :
-      EStateM StoreTransitionError (@Store pairs treeMap fastHasherTag) Bool).run store with
+      EStateM StoreTransitionError (@Store pairs treeMap) Bool).run store with
   | .ok b _ => .ok b
   | .error e _ => .error e
 

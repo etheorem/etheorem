@@ -44,7 +44,7 @@ forkstruct LatestMessage where
 deriving instance Inhabited for LatestMessage
 
 /-- The fork-choice store, parameterized by its map backing and (via `forkstruct`'s
-auto `[Preset]`) the preset / hasher tag. The stored states reuse the transition
+auto `[Preset]`) the preset. The stored states reuse the transition
 layer's `State` (the plain `BeaconState` record). At v1.7.0-beta.4 the clock is in
 milliseconds (`time_ms`, `genesis_time_ms`), so slot arithmetic needs no seconds-to-ms
 conversion past `get_forkchoice_store`. Both clock fields are `Uint64` in the pinned `Store`, so
@@ -53,7 +53,7 @@ they are the checked kind.
 A node is its block root here: the phase0 `ForkChoiceNode` carries only `root`, so the
 Fulu walks pass `Root` where the spec passes a node, and a membership test on nodes is a
 membership test on roots. -/
-forkstruct Store (map : MapKind) [HasherTag] where
+forkstruct Store (map : MapKind) where
   timeMs                        : CLUint64
   genesisTimeMs                 : CLUint64
   justifiedCheckpoint           : Checkpoint

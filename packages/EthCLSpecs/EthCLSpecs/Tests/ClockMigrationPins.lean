@@ -128,10 +128,10 @@ example : pinTimeAtSlotCappedGenesisSlotZero = true := by native_decide
 
 /-- The pins' concrete fork-choice monad: the minimal preset over `treeMap` and the FFI
 hasher. -/
-private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- An empty Fulu `Store` at `genesis_time_ms = 6000` with the clock at `timeMs`. -/
-private def clockStore (timeMs : CLUint64) : @Store minimal treeMap fastHasherTag :=
+private def clockStore (timeMs : CLUint64) : @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { timeMs := timeMs, genesisTimeMs := 6000

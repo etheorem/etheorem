@@ -53,7 +53,7 @@ private def activeValidator : @Validator minimal :=
 /-- A Fulu state over the given registry, balances, and withdrawal cursor. -/
 private def fuluState (vs : Array (@Validator minimal)) (bals : Array Gwei)
     (cursor : ValidatorIndex) (hv : vs.size ≤ 4 := by decide) (hb : bals.size ≤ 4 := by decide) :
-    @State minimal fastHasherTag :=
+    @State minimal :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { (default : @BeaconState minimal) with
@@ -157,7 +157,7 @@ example : pinEffectiveBalanceInRangeReads = true := by native_decide
 /-- A state at epoch `2` (slot `16`) with one active validator and zero participation flags,
 so the validator is eligible and not a timely-target voter. `withScore` picks an inactivity
 scores list of `[100]` or an empty one. -/
-private def inactivityState (withScore : Bool) : @State minimal fastHasherTag :=
+private def inactivityState (withScore : Bool) : @State minimal :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let base : @BeaconState minimal :=
@@ -270,7 +270,7 @@ open EthCLSpecs.Gloas
 
 /-- A Gloas state over `n` default validators (zero balances) and the given cursor. The
 default bid and the default latest block hash agree, so `process_withdrawals` runs. -/
-private def gloasState (n : Nat) (cursor : ValidatorIndex) : @State minimal fastHasherTag :=
+private def gloasState (n : Nat) (cursor : ValidatorIndex) : @State minimal :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { (default : @BeaconState minimal) with

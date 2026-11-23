@@ -52,10 +52,10 @@ namespace Gloas
 
 open EthCLSpecs.Gloas
 
-private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- An empty Gloas store with one block at `slot`, keyed by `pinRoot`. -/
-private def pinStore (slot : Slot) : @Store minimal treeMap fastHasherTag :=
+private def pinStore (slot : Slot) : @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { timeMs := 0, genesisTimeMs := 0
@@ -103,10 +103,10 @@ namespace Heze
 
 open EthCLSpecs.Heze
 
-private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- An empty Heze store with one block at `slot`, keyed by `pinRoot`. -/
-private def pinStore (slot : Slot) : @Store minimal treeMap fastHasherTag :=
+private def pinStore (slot : Slot) : @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { timeMs := 0, genesisTimeMs := 0

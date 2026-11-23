@@ -103,7 +103,7 @@ private def hugeDelayConfig : Gloas.Config :=
 (current epoch `100`), so `initiate_validator_exit`'s gates pass and the
 withdrawability sum is reached. The config argument is the run's, so the two
 pins below can run the same state under the two configs. -/
-private def exitState (_cfg : Gloas.Config) : @State minimal fastHasherTag :=
+private def exitState (_cfg : Gloas.Config) : @State minimal :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let v : Validator :=

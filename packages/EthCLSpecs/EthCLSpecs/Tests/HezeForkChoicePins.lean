@@ -49,7 +49,7 @@ drives that refuting branch through the record path into this gate. -/
 
 /-- The pins' concrete fork-choice monad: the minimal preset over the deterministic
 `treeMap` and the FFI hasher, the annotation every pin's `.run` otherwise repeats. -/
-private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 private def pinPilsRoot : Root := Vector.replicate 32 9
 
@@ -60,7 +60,7 @@ the optional `payloadInclusionListSatisfaction[root]` entry. Every other field i
 `payloads` value is never read (the predicate tests membership only), so a `default` envelope
 serves. The `letI`s fix the preset / hasher so the anonymous `Store` constructor synthesizes them. -/
 private def pinPilsStore (payloadPresent : Bool) (recorded : Option Bool) :
-    @Store minimal treeMap fastHasherTag :=
+    @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   { timeMs := 0, genesisTimeMs := 0
@@ -204,7 +204,7 @@ private def pinSIL (v : ValidatorIndex) (slot : Slot) (dependentRoot : Root)
 /-- An inclusion-list store holding one list from validator 5, filed under
 `(0, filedUnder)` with timeliness `timely`, carrying the transaction `0xAA`. -/
 private def pinFiledStore (filedUnder : Root) (timely : Bool) :
-    @InclusionListStore minimal treeMap fastHasherTag :=
+    @InclusionListStore minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let entry : InclusionListEntry :=
@@ -215,8 +215,8 @@ private def pinFiledStore (filedUnder : Root) (timely : Bool) :
 /-- `pinPilsStore payloadPresent none` with the two fixture blocks and the given
 inclusion-list store. -/
 private def pinRecordStore (payloadPresent : Bool) (headSlot : Slot)
-    (ils : @InclusionListStore minimal treeMap fastHasherTag) :
-    @Store minimal treeMap fastHasherTag :=
+    (ils : @InclusionListStore minimal treeMap) :
+    @Store minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let parent : @BeaconBlock minimal := default
@@ -456,19 +456,19 @@ private def pinAltRoot : Root := Vector.replicate 32 2
 /-- Number of inclusion lists stored under `(0, pinKey)`. The `letI`s supply the store's preset /
 hasher for the field projection (Lean re-synthesizes them rather than reading the argument's
 fixed type). -/
-private def pinNumStored (s : @InclusionListStore minimal treeMap fastHasherTag) : Nat :=
+private def pinNumStored (s : @InclusionListStore minimal treeMap) : Nat :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   ((FcMap.lookup s.inclusionLists ((0 : Slot), pinKey)).getD FcMap.empty |> FcMap.keys).length
 /-- The equivocator set recorded under `(0, pinKey)`. -/
-private def pinEquivs (s : @InclusionListStore minimal treeMap fastHasherTag) : Array ValidatorIndex :=
+private def pinEquivs (s : @InclusionListStore minimal treeMap) : Array ValidatorIndex :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   FcMap.lookupD s.equivocators ((0 : Slot), pinKey)
 
 /-- A store already holding one timely list from validator 5 under `(0, pinKey)`. Shared by the
 stored-entry pins. -/
-private def pinStoreB : @InclusionListStore minimal treeMap fastHasherTag := pinFiledStore pinKey true
+private def pinStoreB : @InclusionListStore minimal treeMap := pinFiledStore pinKey true
 
 -- Stored entry, conflict: a second, differing list from validator 5 adds 5 to
 -- `equivocators[key]` and stores nothing new. Returns (equivocators, stored count); expected
@@ -515,7 +515,7 @@ private def pinResNew (isTimely : Bool) : Nat × Option Bool :=
 /-- Two stored lists under `(0, pinKey)`: validator 5 → [0xAA] timely, validator 6 →
 [0xAA, 0xBB] untimely, and the key's equivocator set `equiv`. -/
 private def pinTwoLists (equiv : Array ValidatorIndex) :
-    @InclusionListStore minimal treeMap fastHasherTag :=
+    @InclusionListStore minimal treeMap :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
   let entry5 : InclusionListEntry :=
