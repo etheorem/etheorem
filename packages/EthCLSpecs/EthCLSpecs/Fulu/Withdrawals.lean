@@ -59,7 +59,7 @@ def balanceAfterWithdrawals (state : State) (vi : ValidatorIndex) (ws : Array Wi
     StateTransition Gwei := do
   let withdrawn ← ws.foldlM (init := (0 : Gwei)) fun acc w =>
     if w.validatorIndex == vi then acc + w.amount else pure acc
-  let bal ← sszGetIdx (sszGet state balances) vi
+  let bal ← sszGetIdx state.balances vi
   bal - withdrawn
 
 /-- `get_expected_withdrawals`: the pending-partial queue then the validator sweep.
@@ -68,9 +68,9 @@ Throwing: the two `validators[i]` reads are bare list indices (`IndexError`, via
 raises on the balance read / underflow. Both unreachable on a well-formed state. -/
 forkdef getExpectedWithdrawals (state : State) : StateTransition (Array Withdrawal × Nat) := do
   let epoch := currentEpochOf state
-  let nvals := len (sszGet state validators)
+  let nvals := len state.validators
   let mut withdrawals : Array Withdrawal := #[]
-  let mut withdrawalIndex := sszGet state nextWithdrawalIndex
+  let mut withdrawalIndex := state.nextWithdrawalIndex
   -- `processed_count` is a pinned `Uint64` counter. It stays a structural `Nat`: it counts
   -- entries of the pending-partials list, whose cap is below `2^64`, so its checked
   -- `+= 1` cannot raise, and `update_pending_partial_withdrawals` reads it as a slice start.
@@ -85,12 +85,12 @@ forkdef getExpectedWithdrawals (state : State) : StateTransition (Array Withdraw
   let pendingCap ← len withdrawals + Const.maxPendingPartialsPerWithdrawalsSweepC
   let payloadCap ← Const.maxWithdrawalsPerPayloadC - 1
   let partialLimit := min pendingCap payloadCap
-  for w in (sszGet state pendingPartialWithdrawals) do
+  for w in state.pendingPartialWithdrawals do
     -- `len(all_withdrawals) >= withdrawals_limit`: the plain length against the checked
     -- limit, a comparison that never raises; `int(x)` carries the limit into the plain kind.
     if !(w.withdrawableEpoch ≤ epoch) || len withdrawals ≥ partialLimit.toCLInt then break
     let vi := w.validatorIndex
-    let validator ← sszGetIdx (sszGet state validators) vi
+    let validator ← sszGetIdx state.validators vi
     let bal ← balanceAfterWithdrawals state vi withdrawals
     if isEligibleForPartialWithdrawals validator bal then
       -- `withdrawal_amount = min(balance - MIN_ACTIVATION_BALANCE, withdrawal.amount)`
@@ -107,12 +107,12 @@ forkdef getExpectedWithdrawals (state : State) : StateTransition (Array Withdraw
   -- mixes a plain length and a `Uint64`, so Python's result kind is whichever operand wins.
   -- The result only bounds `range(...)`, which iterates the same positions for either kind,
   -- so the structural `Nat` minimum names the same loop.
-  let validatorsLimit := Nat.min (sszGet state validators).size Const.maxValidatorsPerWithdrawalsSweep
-  let mut validatorIndex := sszGet state nextWithdrawalValidatorIndex
+  let validatorsLimit := Nat.min state.validators.size Const.maxValidatorsPerWithdrawalsSweep
+  let mut validatorIndex := state.nextWithdrawalValidatorIndex
   for _ in [0:validatorsLimit] do
     -- `len(all_withdrawals) >= MAX_WITHDRAWALS_PER_PAYLOAD`: a comparison, which never raises.
     if len withdrawals ≥ Const.maxWithdrawalsPerPayloadC.toCLInt then break
-    let validator ← sszGetIdx (sszGet state validators) validatorIndex
+    let validator ← sszGetIdx state.validators validatorIndex
     let bal ← balanceAfterWithdrawals state validatorIndex withdrawals
     if isFullyWithdrawable validator bal epoch then
       withdrawals := withdrawals.push
@@ -150,7 +150,7 @@ forkdef processWithdrawals (payload : ExecutionPayload) : StateTransition Unit :
     sszOfArrayM "withdrawals" expected
   assert (htr expectedList == htr payload.withdrawals)
 
-  let nvals := len (sszGet state validators)
+  let nvals := len state.validators
   let mut stateAcc := state
   for w in expected do
     stateAcc ← decreaseBalance stateAcc w.validatorIndex w.amount
@@ -162,8 +162,9 @@ forkdef processWithdrawals (payload : ExecutionPayload) : StateTransition Unit :
   if len expected != 0 then
     let latestWithdrawal ← sszGetIdx expected (-1 : CLInt)
     let nextIndex ← latestWithdrawal.index + 1
-    stateAcc := sszUpdate stateAcc with nextWithdrawalIndex := nextIndex
-  stateAcc := sszUpdate stateAcc with pendingPartialWithdrawals := sszDrop (sszGet stateAcc pendingPartialWithdrawals) processedPartial
+    stateAcc := { stateAcc with nextWithdrawalIndex := nextIndex }
+  stateAcc := { stateAcc with
+    pendingPartialWithdrawals := sszDrop stateAcc.pendingPartialWithdrawals processedPartial }
   -- `update_next_withdrawal_validator_index` (`fulu/minimal.py:5718-5730`): the plain
   -- `len(withdrawals)` against the checked `MAX_WITHDRAWALS_PER_PAYLOAD`, a comparison. Each
   -- branch forms the checked `ValidatorIndex` add, then the modulo by the plain
@@ -173,11 +174,11 @@ forkdef processWithdrawals (payload : ExecutionPayload) : StateTransition Unit :
     let latestWithdrawal ← sszGetIdx expected (-1 : CLInt)
     let advanced ← latestWithdrawal.validatorIndex + 1
     let nextV ← (advanced % nvals : Checked _)
-    stateAcc := sszUpdate stateAcc with nextWithdrawalValidatorIndex := nextV
+    stateAcc := { stateAcc with nextWithdrawalValidatorIndex := nextV }
   else
-    let nextIndex ← sszGet stateAcc nextWithdrawalValidatorIndex + Const.maxValidatorsPerWithdrawalsSweep
+    let nextIndex ← stateAcc.nextWithdrawalValidatorIndex + Const.maxValidatorsPerWithdrawalsSweep
     let nextV ← (nextIndex % nvals : Checked _)
-    stateAcc := sszUpdate stateAcc with nextWithdrawalValidatorIndex := nextV
+    stateAcc := { stateAcc with nextWithdrawalValidatorIndex := nextV }
   set stateAcc
 
 end
