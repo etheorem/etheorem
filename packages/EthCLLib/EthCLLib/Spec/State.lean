@@ -67,14 +67,24 @@ the lossless pure form, so it carries no bang. `getStateRoot` is the monadic for
 threads the state automatically; `stateRoot!` is the form that drops it. Keeping spec
 bodies on this surface avoids naming `Box.hashTreeRoot` directly.
 
-The body destructures the instance with `match` in place of the class projection
-`StateRoot.rootAndWarm`. Both compile to the same field read. The difference is in proofs:
-`simp only [stateRoot]` stops at a class projection applied to a named instance, but it
-reduces this `match` once the instance unfolds to its constructor. So on a box it lands on
+The body reads the instance through its class projection `StateRoot.rootAndWarm`, the way
+`getStateRoot` does. The compiler unfolds and specialises the instance under the
+projection at the call site; a body that destructures the instance with `match` gets no
+such unfolding, and every call stays a closure call into the generic `SSZ.hashTreeRoot`
+(the WS-138 pilot review's corrected cause analysis). For proofs, `simp only [stateRoot]`
+stops at the projection and does not unfold the instance by itself; the `rfl` lemma
+`stateRoot_box_eq` below carries the behaviour proofs leaned on, on a box landing on
 `Box.hashTreeRoot`, where the SizzLean box lemmas apply. -/
-@[inline] def stateRoot {S : Type} [inst : StateRoot S] (state : S) : ByteArray × S :=
-  match inst with
-  | ⟨rootAndWarm⟩ => rootAndWarm state
+@[inline] def stateRoot {S : Type} [StateRoot S] (state : S) : ByteArray × S :=
+  StateRoot.rootAndWarm state
+
+/-- Task 2.1's `simp only [stateRoot]` behaviour, carried by a `rfl` lemma: on the box
+instance, a `stateRoot` read is the box's own `hashTreeRoot` (root and warmed box), so the
+SizzLean box lemmas apply to it. On a plain state (`plain_state_preamble`) the pair fact a
+proof needs is `(StateRoot.rootAndWarm state).2 = state`, which holds by `rfl` for the
+instance's `rootAndWarm s := (SSZ.hashTreeRoot HasherTag.H s, s)`. -/
+theorem stateRoot_box_eq {H T : Type} [Hasher H] [SSZRepr T] (s : SSZ.Box H T) :
+    stateRoot s = s.hashTreeRoot := rfl
 
 /-- The Merkle root of a state value in hand, **discarding** the successor state
 `StateRoot.rootAndWarm` returns (on a box, the cache-warmed box). The `!` marks the
