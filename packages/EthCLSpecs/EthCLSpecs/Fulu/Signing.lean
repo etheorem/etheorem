@@ -20,9 +20,9 @@ state_section
 before `state.fork.epoch`, the current one after, combined with the domain tag and
 `genesis_validators_root`. -/
 forkdef getDomain (state : State) (domainType : ByteArray) (epoch : Epoch) : Vector UInt8 32 :=
-  let fk := sszGet state forkData
+  let fk := state.forkData
   let forkVersion := if epoch < fk.epoch then fk.previousVersion else fk.currentVersion
-  computeDomain domainType forkVersion (sszGet state genesisValidatorsRoot)
+  computeDomain domainType forkVersion state.genesisValidatorsRoot
 
 end
 
