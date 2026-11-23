@@ -157,13 +157,13 @@ beacon committee is empty, so the plain `%` inside `cyclicSample` forms `i % 0` 
 pin checks that the reject is exactly the `.zeroDivision` cause. A regression to a caught
 `.assert`, or to the `.arithmetic` range cause, breaks it. `on_inclusion_list` reaches the
 helper after its state advance. At v1.7.0-beta.4 the record path computes no committee, so the
-pin drives the helper directly, in plain `Except` (it needs no `MonadStateOf`). `State` is
-FFI-backed (`FastBox`), so `native_decide`. -/
+pin drives the helper directly, in plain `Except` (it needs no `MonadStateOf`). The helper
+hashes through the FFI `Sha256` (`fastHasherTag`), so `native_decide`. -/
 private def pinCommitteeThrows : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  let state : State := SSZ.FastBox (default : @EthCLSpecs.Heze.BeaconState minimal)
+  let state : State := (default : @EthCLSpecs.Heze.BeaconState minimal)
   match (getInclusionListCommittee (StoreTransition := Except StoreTransitionError) state 0) with
   | .ok _    => false
   -- The `ErrorConv StateTransitionError StoreTransitionError` instance wraps the reject as
@@ -379,7 +379,7 @@ private def pinOnIl (intoSlotMs : CLUint64) (ilSlot : Slot) (txs : Array Transac
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.verifyOff
-  let state : State := SSZ.FastBox pinPopulatedState
+  let state : State := pinPopulatedState
   let anchorBlock : @BeaconBlock minimal :=
     { (default : @BeaconBlock minimal) with stateRoot := htr pinPopulatedState }
   let anchorRoot := htr anchorBlock
@@ -593,7 +593,7 @@ private def pinAnchorRejects : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
-  match getForkchoiceStore (SSZ.FastBox (default : @BeaconState minimal))
+  match getForkchoiceStore (default : @BeaconState minimal)
       (default : @BeaconBlock minimal) (map := treeMap) with
   | .error (.assert _) => true
   | _                  => false
