@@ -17,8 +17,8 @@ parent fork the library does not build). A vector that reaches a `todo` fails
 loudly rather than passing silently.
 
 The discharge here pins the **fast** configuration: `EStateM
-StateTransitionError`, `FastBox` (cached `Sha256`), and the FFI `CryptoBackend`,
-at the preset/config the runner selects (`minimal` or `mainnet`).
+StateTransitionError` over the plain `BeaconState` record, the FFI `Sha256` hasher, and the
+FFI `CryptoBackend`, at the preset/config the runner selects (`minimal` or `mainnet`).
 -/
 
 set_option autoImplicit false
@@ -36,21 +36,20 @@ latest `consensus-spec-tests` release; confirmed to carry the Fulu, Gloas, and
 Heze minimal vectors. -/
 def pyspecPinnedVersion : String := "v1.7.0-beta.4"
 
-/-- Decode a `BeaconState` at preset `P` into a `FastBox`, or the runner's `decode`
-error (a well-formed vector should always decode, so a parse failure is our bug, not a
-consensus reject). -/
+/-- Decode a plain `BeaconState` at preset `P`, or the runner's `decode` error (a
+well-formed vector should always decode, so a parse failure is our bug, not a consensus
+reject). Fulu's `State` is the plain record (`state_preamble`), so the runner threads
+the decoded value itself, and each root is a full merkleization through the
+`StateRoot State` instance. -/
 private def decodeState (P : Preset) (bytes : ByteArray) :
-    Except (RunError StateTransitionError) (SSZ.Box Sha256 (@BeaconState P)) :=
-  match SSZ.FastBox.deserialize (T := @BeaconState P) bytes with
-  | .ok box  => .ok box
-  | .error _ => .error (.decode "BeaconState")
+    Except (RunError StateTransitionError) (@BeaconState P) :=
+  match SSZ.deserialize (T := @BeaconState P) bytes with
+  | .ok state => .ok state
+  | .error _  => .error (.decode "BeaconState")
 
-/-- `stateRoot`: decode a `BeaconState` and take its hash-tree-root. A one-shot
-terminal root: the decoded value never escapes (the interface returns bytes), and
-no mutation happens between decode and root, so it roots through the uncached
-`htr` with no cached box to build and immediately drop. The mutating entries
-(`runOperation`, `runSlots`, …) still take the cached `decodeState` box, where the
-cache earns its keep across `sszUpdate` re-hashes. -/
+/-- `stateRoot`: decode a `BeaconState` and take its hash-tree-root through `htr`. The
+decoded value never escapes (the interface returns bytes), and no mutation happens between
+decode and root. -/
 private def stateRootImpl (P : Preset) (bytes : ByteArray) :
     Except (RunError StateTransitionError) ByteArray :=
   letI : Preset := P
@@ -64,31 +63,31 @@ private def stateRootImpl (P : Preset) (bytes : ByteArray) :
 return the post root. Drives `sanity/slots`. -/
 private def runSlotsImpl (P : Preset) (C : Config) (preBytes : ByteArray) (n : Nat) :
     Except (RunError StateTransitionError) ByteArray := do
-  let box0 ← decodeState P preBytes
+  let state0 ← decodeState P preBytes
   letI : Preset := P
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.realBackend
-  let action : EStateM StateTransitionError (SSZ.Box Sha256 (@BeaconState P)) Unit := do
+  let action : EStateM StateTransitionError (@BeaconState P) Unit := do
     let state ← get
     -- The harness's `state.slot + slots` (`test/phase0/sanity/test_slots.py:25`): the
     -- checked `Slot` add of the plain `int` slot count, so a target past `2^64 - 1` raises
     -- (`SPEC_ARITHMETIC.md` §4.2).
     let target ← (sszGet state slot) + n
     processSlots target
-  RunError.ofSpec (runToRoot box0 action)
+  RunError.ofSpec (runToRoot state0 action)
 
 /-- `runEpochSubstep`: dispatch the `epoch_processing/<handler>` name to its
 substep, run it over the decoded pre-state at the fast config, return the post
 root. All epoch substeps are wired; an unknown handler is a `todo`. -/
 private def runEpochSubstepImpl (P : Preset) (C : Config) (step : EpochStep) (preBytes : ByteArray) :
     Except (RunError StateTransitionError) ByteArray := do
-  let box0 ← decodeState P preBytes
+  let state0 ← decodeState P preBytes
   letI : Preset := P
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.realBackend
-  let action : EStateM StateTransitionError (SSZ.Box Sha256 (@BeaconState P)) Unit :=
+  let action : EStateM StateTransitionError (@BeaconState P) Unit :=
     match step with
     | .slashingsReset               => processSlashingsReset
     | .randaoMixesReset             => processRandaoMixesReset
@@ -108,9 +107,9 @@ private def runEpochSubstepImpl (P : Preset) (C : Config) (step : EpochStep) (pr
     -- Gloas-only epoch substeps; Fulu does not run them as standalone steps.
     | .pendingDepositsChurn | .builderPendingPayments | .ptcWindow =>
         throw (.todo s!"epoch_processing/{reprStr step}: not a Fulu substep")
-  RunError.ofSpec (runToRoot box0 action)
+  RunError.ofSpec (runToRoot state0 action)
 
-/-- Decode a plain (non-boxed) SSZ operation value, or the runner's `decode` error (a
+/-- Decode an SSZ operation value, or the runner's `decode` error (a
 well-formed operation vector always decodes). -/
 private def decodeOp (T : Type) [SSZRepr T] (b : ByteArray) :
     Except (RunError StateTransitionError) T :=
@@ -124,12 +123,12 @@ root. The block-scoped handlers (`block_header`, `sync_aggregate`, `withdrawals`
 `execution_payload`) are driven through `runBlocks`, so they stay `todo` here. -/
 private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     (preBytes opBytes : ByteArray) (cmeta : CaseMeta) : Except (RunError StateTransitionError) ByteArray := do
-  let box0 ← decodeState P preBytes
+  let state0 ← decodeState P preBytes
   letI : Preset := P
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.forBlsSetting cmeta.blsSetting
-  let dispatch : Except (RunError StateTransitionError) (EStateM StateTransitionError (SSZ.Box Sha256 (@BeaconState P)) Unit) :=
+  let dispatch : Except (RunError StateTransitionError) (EStateM StateTransitionError (@BeaconState P) Unit) :=
     match kind with
     | .proposerSlashing      => (decodeOp (@ProposerSlashing P) opBytes).map processProposerSlashing
     | .attesterSlashing      => (decodeOp (@AttesterSlashing P) opBytes).map processAttesterSlashing
@@ -159,7 +158,7 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
   match dispatch with
   | .error e     => .error e
   | .ok action   =>
-    RunError.ofSpec (runToRoot box0 action)
+    RunError.ofSpec (runToRoot state0 action)
 
 /-- `runRewards`: decode the pre-state and return the four reward-delta blobs
 (`source` / `target` / `head` flag-index deltas, then the inactivity-penalty
@@ -191,7 +190,7 @@ sequence (verify-off when `bls_setting = 2`), and return the post root. Drives
 `sanity/blocks`, `finality`, `random`. -/
 private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
     (blocks : Array ByteArray) (cmeta : CaseMeta) : Except (RunError StateTransitionError) ByteArray := do
-  let box0 ← decodeState P preBytes
+  let state0 ← decodeState P preBytes
   -- Decode the whole block sequence up front (both binds stay ahead of the `letI`s, which
   -- close the do-block into term context): deserialization is the runner's job, so a
   -- malformed block is a `decode` error, not a consensus reject inside the fold.
@@ -203,9 +202,9 @@ private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.forBlsSetting cmeta.blsSetting
-  let action : EStateM StateTransitionError (SSZ.Box Sha256 (@BeaconState P)) Unit := do
+  let action : EStateM StateTransitionError (@BeaconState P) Unit := do
     for sb in signedBlocks do stateTransition sb
-  RunError.ofSpec (runToRoot box0 action)
+  RunError.ofSpec (runToRoot state0 action)
 
 /-- Run `getHead` over the snapshot store as a pure query (`runQuery` discards the final
 store). Shared by the `checkHead` / `checkProposerHead` arms. -/
@@ -368,7 +367,7 @@ private def runForkChoiceImpl (P : Preset) (C : Config) (anchorStateBytes anchor
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.realBackend
-  match SSZ.FastBox.deserialize (T := @BeaconState P) anchorStateBytes,
+  match SSZ.deserialize (T := @BeaconState P) anchorStateBytes,
         SSZ.deserialize (T := @BeaconBlock P) anchorBlockBytes with
   | .error _, _ => .error (.decode "fork_choice anchor state")
   | _, .error _ => .error (.decode "fork_choice anchor block")

@@ -7,7 +7,7 @@ The flagship of the fork-inheritance model (`SPEC_AUTHORING_MODEL.md` §4,
 `SPECS_ARCHITECTURE.md` §4.1). Gloas's `BeaconState` carries every field the Fulu
 epoch substeps read, so most substeps are `inherit`ed verbatim: each captured Fulu
 `forkdef` is re-elaborated in the Gloas namespace against `Gloas.State`
-(`= SSZ.Box _ Gloas.BeaconState`), with its sibling calls rebinding to the Gloas
+(the plain `Gloas.BeaconState` record), with its sibling calls rebinding to the Gloas
 copies. Gloas restates only the bodies its pinned text changes: the EIP-8061 churn
 helpers, `slash_validator`, `get_next_sync_committee_indices`,
 `get_beacon_proposer_indices`, `process_pending_deposits`, and

@@ -35,10 +35,9 @@ monad it resolves to this one. So every theorem below is a theorem about the ste
 under fork choice too. Carrying one over is function application:
 `runNestedStateTransition_of_ok` (`EthCLLib/Spec/NestedMachine.lean`) takes a step's
 `.run` fact and returns the store-machine statement, for any action. This is why a
-contract theorem states the run on `pureState preState`, at the box, in `.run` form: that is
-the shape the bridge consumes. `runPure` (`EthCLLib/Proofs/Run.lean`) pins the box and gives the
-value-level reading of the same contract; a theorem never runs an action on a `State`
-it bound itself.
+contract theorem states the run in `.run` form: that is the shape the bridge consumes. The
+Gloas `State` is the plain `BeaconState`, so a theorem binds `preState : BeaconState` and
+runs the action on `preState` itself.
 
 The `StateT`-over-`Except` bind, throw, and `Except` facts that every run proof rewrites
 with live in `EthCLLib/Proofs/Run.lean`, at any state and error type. Gloas and Heze call sites
@@ -54,7 +53,7 @@ open EthCLSpecs.Gloas (Preset)
 open EthCLSpecs.Gloas (State)
 
 /-- The monad the Gloas spec bodies are proved at: `StateT` over `Except`, threading the
-boxed Gloas `BeaconState` and rejecting with `StateTransitionError`. `abbrev`
+plain Gloas `BeaconState` and rejecting with `StateTransitionError`. `abbrev`
 (reducible) so a goal mentioning it unifies with the spelled-out
 `StateT State (Except StateTransitionError)`.
 
