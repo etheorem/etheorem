@@ -39,8 +39,8 @@ def pyspecPinnedVersion : String := "v1.7.0-beta.4"
 /-- Decode a plain `BeaconState` at preset `P`, or the runner's `decode` error (a
 well-formed vector should always decode, so a parse failure is our bug, not a consensus
 reject). Fulu's `State` is the plain record (`state_preamble`), so the runner threads
-the decoded value itself, and each root is a full merkleization through the
-`StateRoot State` instance. -/
+the decoded value itself, and each root is a full merkleization of the record through
+`SSZ.hashTreeRoot`. -/
 private def decodeState (P : Preset) (bytes : ByteArray) :
     Except (RunError StateTransitionError) (@BeaconState P) :=
   match SSZ.deserialize (T := @BeaconState P) bytes with

@@ -54,14 +54,6 @@ open EthCLLib.Spec
 open SizzLean (SSZRepr)
 open SizzLean.Cache
 
-/-- The box's own `StateRoot`, kept beside the one lemma that instantiates a root read
-at the box (`keepsUncached_getStateRoot`). The framework surface carries no box
-instance, while this module's box-level claims stay until their own deletion (plan
-task 6.4). Local, so no importer sees it. -/
-private local instance instStateRootBox {H T : Type} [SizzLean.Hasher H] [SSZRepr T] :
-    StateRoot (SSZ.Box H T) where
-  rootAndWarm s := s.hashTreeRoot
-
 /-- `act`, run on an uncached box, returns an uncached box whenever it succeeds.
 Every successful run that starts on `pureState v` lands on `pureState` of the
 post-state's own view, which is the defining property of the uncached flavour. -/
@@ -182,21 +174,6 @@ theorem pureState_forIn_range_id {T : Type} [SSZRepr T] [HasherTag]
   rw [hsize, show ([:n] : Std.Legacy.Range).start = 0 from rfl,
     show ([:n] : Std.Legacy.Range).step = 1 from rfl, ← List.range_eq_range']
   exact pureState_forIn_list_id f hf (List.range n) v
-
-/-- `getStateRoot` writes back the box `Box.hashTreeRoot` returned, and
-`hashTreeRoot_uncachedBox` says the uncached box comes back unchanged. -/
-theorem keepsUncached_getStateRoot {T ε : Type} [SSZRepr T] [HasherTag] :
-    KeepsUncached (getStateRoot (S := SSZ.Box HasherTag.H T) :
-      StateT (SSZ.Box HasherTag.H T) (Except ε) ByteArray) := by
-  intro v a s h
-  rw [show ((getStateRoot (S := SSZ.Box HasherTag.H T) : StateT (SSZ.Box HasherTag.H T)
-      (Except ε) ByteArray).run (pureState v))
-      = .ok (((pureState v).hashTreeRoot).1, ((pureState v).hashTreeRoot).2) from rfl,
-    SizzLean.Proofs.hashTreeRoot_uncachedBox] at h
-  injection h with h1
-  injection h1 with _ h2
-  subst h2
-  rfl
 
 /-- `liftErr` of a pure `Except` value passes the state through unchanged; the
 flavour never leaves the box it started on. -/

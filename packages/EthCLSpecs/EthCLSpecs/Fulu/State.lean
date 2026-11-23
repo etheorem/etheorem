@@ -77,9 +77,8 @@ forkcontainer BeaconState where
   -- (`fulu/minimal.py:640-646`); both presets set `minSeedLookahead` to `1`.
   proposerLookahead             : Vector ValidatorIndex ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch)
 
--- The once-per-fork preamble: declares `State` (the plain `BeaconState` record), the
--- concrete-domain `modifyState`, and the `StateRoot State` instance that roots the record
--- (`SPEC_AUTHORING_MODEL.md` §6, `EthCLLib.Spec.Header`).
+-- The once-per-fork preamble: declares `State` (the plain `BeaconState` record) and the
+-- concrete-domain `modifyState` (`SPEC_AUTHORING_MODEL.md` §6, `EthCLLib.Spec.Header`).
 state_preamble BeaconState
 
 end EthCLSpecs.Fulu

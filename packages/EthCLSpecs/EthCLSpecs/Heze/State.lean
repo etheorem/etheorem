@@ -81,8 +81,8 @@ forkcontainer BeaconState where
   -- set `minSeedLookahead` to `1`.
   ptcWindow                     : Vector (Vector ValidatorIndex Const.ptcSize) ((Const.minSeedLookahead.toPlainNat + 2) * Const.slotsPerEpoch)
 
--- The once-per-fork preamble: declares `State` (the plain `BeaconState` record),
--- `modifyState`, and the `StateRoot State` instance that roots the record.
+-- The once-per-fork preamble: declares `State` (the plain `BeaconState` record) and
+-- `modifyState`.
 state_preamble BeaconState
 
 end EthCLSpecs.Heze

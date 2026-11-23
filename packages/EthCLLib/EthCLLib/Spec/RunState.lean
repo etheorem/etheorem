@@ -55,13 +55,13 @@ run.
 
 Generic over the monad through `MonadRunState`, so the entry point's own ascription on
 `action` picks the column and this stays out of it. Generic over the state through
-`StateRoot`, so any state carrying the instance works. The post-state dies right after, so
-`stateRoot!` (the form that drops the warm state) is correct here. -/
-@[inline] def runToRoot {S : Type} {M : Type → Type} [StateRoot S]
+`SSZRepr`: the post-state dies right after, so its root is one full merkleization through
+`SSZ.hashTreeRoot`, outside any step. -/
+@[inline] def runToRoot {S : Type} {M : Type → Type} [SizzLean.SSZRepr S] [HasherTag]
     [MonadRunState S M] (state0 : S) (act : M Unit) :
     Except StateTransitionError ByteArray :=
   match MonadRunState.runFrom state0 act with
-  | .ok (_, post) => .ok (stateRoot! post)
+  | .ok (_, post) => .ok (SizzLean.SSZ.hashTreeRoot HasherTag.H post)
   | .error e      => .error e
 
 end EthCLLib.Spec

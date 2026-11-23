@@ -6,9 +6,8 @@ import EthCLLib
 Exercises the section header (`EthCLLib.Spec.Header`) on a toy fork, so the
 behavior is checked at build (`FRAMEWORK_ARCHITECTURE.md` §14):
 
-- `state_preamble Toy` declares `State` (the plain `Toy`), the concrete-domain
-  `modifyState`, and the `StateRoot State` instance rooting the record through
-  `SSZ.hashTreeRoot`, once;
+- `state_preamble Toy` declares `State` (the plain `Toy`) and the concrete-domain
+  `modifyState`, once;
 - `state_section` opens the `section` itself and brings the transition variables into
   scope (closed by the matching `end`);
 - a step writes `modifyState fun state => sszUpdate state with …` with **no**
@@ -25,8 +24,8 @@ behavior is checked at build (`FRAMEWORK_ARCHITECTURE.md` §14):
   `set_or_append_list` does;
 - `fork_choice_section` opens its section and establishes the store-machine variables.
 
-A plain state carries no Merkle cache, so `getStateRoot`'s warmed successor is the
-state itself and every root is a full `SSZ.hashTreeRoot` of the record; the roots are
+A plain state carries no Merkle cache, so `getStateRoot` and `runToRoot` take every root
+as a full `SSZ.hashTreeRoot` of the record; the roots are
 compared against `SSZ.hashTreeRoot Sha256` of the expected plain record, closed by
 `native_decide` (CLAUDE.md, *Proofs involving SSZ hashes*).
 -/
@@ -60,8 +59,8 @@ forkcontainer Toy where
 
 /-! ## The once-per-fork preamble -/
 
--- Declares `abbrev State := Toy` (the plain record), the concrete-domain
--- `modifyState`, and the `StateRoot State` instance rooting the record.
+-- Declares `abbrev State := Toy` (the plain record) and the concrete-domain
+-- `modifyState`.
 state_preamble Toy
 
 -- `State` is the plain record: it *is* `Toy`, a `Toy` literal types as `State` with no
@@ -102,7 +101,7 @@ def setXs (a : Array UInt64) : StateTransition Unit := do
   modifyState fun state => sszUpdate state with xs := l
 
 /-- The spec's state root taken inside a step: `bumpSlot`, then `getStateRoot`. On the
-plain state this threads the record itself back and recomputes the root in full. -/
+plain state this reads the record and recomputes the root in full. -/
 def rootAfterBump : StateTransition ByteArray := do
   bumpSlot
   getStateRoot
