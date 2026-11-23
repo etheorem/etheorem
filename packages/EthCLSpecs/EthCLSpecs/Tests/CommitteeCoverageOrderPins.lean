@@ -44,7 +44,8 @@ Site 1's pins record the class at a slot near the maximum. There the committee c
 fault is `get_seed`'s epoch chain, which depends on the slot alone. The call also raises
 through `compute_committee`'s checked products, which depend on the committee index, but
 those products pass `2^64 - 1` only for a registry far larger than a fixture can hold.
-`State` is FFI-backed, so `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`). The Fulu state is an FFI-backed
+box, and the Gloas state is the plain record. So `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -215,11 +216,10 @@ private def gloasState (P : Preset) (s : Slot) : @State P fastHasherTag :=
     { (default : Validator) with
       effectiveBalance := 32000000000,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Gloas.BeaconState P) with
-      slot := s
-      validators := ⟨Array.replicate 8 v⟩
-      balances := ⟨Array.replicate 8 32000000000⟩ }
+  { (default : @EthCLSpecs.Gloas.BeaconState P) with
+    slot := s
+    validators := ⟨Array.replicate 8 v⟩
+    balances := ⟨Array.replicate 8 32000000000⟩ }
 
 /-- A Gloas attestation, shaped as `fuluAtt`. Gloas `aggregation_bits` is an uncapped
 `ProgressiveBitlist` (EIP-7688). -/

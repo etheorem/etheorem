@@ -40,8 +40,8 @@ body, which the pin's own comment names.
    shared the Gloas selection and raised the assert class. A four-validator Fulu draw pins
    the exact indices.
 
-The pins hash through the FFI `Sha256` (`fastHasherTag`). The Fulu and Gloas states are
-FFI-backed boxes, and the Heze state is the plain record. So `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`). The Fulu state is an
+FFI-backed box, and the Gloas and Heze states are the plain record. So `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -367,19 +367,18 @@ open EthCLSpecs.Gloas
 = 5`. The default bid and the default latest block hash agree, so `process_withdrawals` runs.
 With `idle`, the validators never become withdrawable. -/
 private def gloasWithdrawState (P : Preset) (n : Nat) (idle : Bool := false) :
-    SSZ.Box Sha256 (@BeaconState P) :=
+    @BeaconState P :=
   letI : Preset := P
   let epoch : Epoch := if idle then Const.farFutureEpoch else 0
   let v : Validator :=
     { (default : Validator) with
       withdrawalCredentials := Vector.ofFn (fun i => if i.val = 0 then 1 else 0)
       effectiveBalance := 32000000000, exitEpoch := epoch, withdrawableEpoch := epoch }
-  SSZ.FastBox
-    { (default : @BeaconState P) with
-      slot := 8
-      validators := ⟨Array.replicate n v⟩
-      balances := ⟨Array.replicate n 32000000000⟩
-      nextWithdrawalIndex := 5 }
+  { (default : @BeaconState P) with
+    slot := 8
+    validators := ⟨Array.replicate n v⟩
+    balances := ⟨Array.replicate n 32000000000⟩
+    nextWithdrawalIndex := 5 }
 
 /-- Gloas `process_withdrawals`: reads back the committed withdrawal count,
 `next_withdrawal_index`, and `next_withdrawal_validator_index`. -/
@@ -436,7 +435,7 @@ example : okIs (builderWithdrawals
 private def pinGloasSyncEmptyAsserts : Bool :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  match getNextSyncCommitteeIndices (SSZ.FastBox (default : BeaconState) : State) with
+  match getNextSyncCommitteeIndices (default : State) with
   | .error (.assert _) => true
   | _ => false
 example : pinGloasSyncEmptyAsserts = true := by native_decide
