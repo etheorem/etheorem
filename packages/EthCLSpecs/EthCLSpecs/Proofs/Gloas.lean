@@ -1,4 +1,5 @@
 import EthCLSpecs.Proofs.Gloas.BuilderIndex
+import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 import EthCLSpecs.Proofs.Gloas.CanBuilderCoverBid
 import EthCLSpecs.Proofs.Gloas.GetPtc
 import EthCLSpecs.Proofs.Gloas.InitializePtcWindow
@@ -11,9 +12,7 @@ import EthCLSpecs.Proofs.Gloas.UpdateCheckpoints
 -- Detached while Gloas runs on the plain `State` (WS-126 task 4.1).
 -- The modules below state their runs through the box vocabulary (`pureState`, `runPure`,
 -- `view_uncachedBox`), so they fail on the plain state. `ForkChoiceRun` imports
--- `BuilderPendingPayments`. Task 4.5 reattaches `BuilderPendingPayments`;
--- task 4.7 `ForkChoiceRun`.
--- import EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
+-- `BuilderPendingPayments`. Task 4.7 reattaches `ForkChoiceRun`.
 -- import EthCLSpecs.Proofs.Gloas.ForkChoiceRun
 
 /-!
