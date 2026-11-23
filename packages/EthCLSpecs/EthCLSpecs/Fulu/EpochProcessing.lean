@@ -154,8 +154,9 @@ forkdef processInactivityUpdates : StateTransition Unit := do
       -- `is_in_inactivity_leak` runs here, after the score update, per validator.
       let leak ← isInInactivityLeak state
       let cur := if !leak then cur.saturatingSub Const.inactivityScoreRecoveryRate else cur
-      -- `toPlainNat`: the raising read above proved `vi` in range for this list.
-      state := sszModify state inactivityScores[vi.toPlainNat]! as _old => cur
+      -- `toPlainNat`: the raising read above proved `vi` in range for this list. The
+      -- old score is already bound as `cur`, so the write ignores the old element.
+      state := { state with inactivityScores := state.inactivityScores.set! vi.toPlainNat cur }
     set state
 
 /-! ## Rewards & penalties -/
@@ -285,14 +286,16 @@ forkdef processRegistryUpdates : StateTransition Unit := do
       -- `validator.activation_eligibility_epoch = current_epoch + 1`: the checked `Epoch`
       -- add, formed in this branch only, as Python forms it.
       let nextEligibility ← currentEpoch + 1
-      modifyState fun state => sszModify state validators[idx]! := fun validator =>
-        { validator with activationEligibilityEpoch := nextEligibility }
+      modifyState fun state =>
+        { state with validators := state.validators.modify idx fun validator =>
+            { validator with activationEligibilityEpoch := nextEligibility } }
     else if isActiveValidator validator currentEpoch && validator.effectiveBalance ≤ Const.ejectionBalanceG then
       let vi ← CLUint64.ofNat? idx
       initiateValidatorExit vi
     else if isEligibleForActivation state validator then
-      modifyState fun state => sszModify state validators[idx]! := fun validator =>
-        { validator with activationEpoch := activationEpoch }
+      modifyState fun state =>
+        { state with validators := state.validators.modify idx fun validator =>
+            { validator with activationEpoch := activationEpoch } }
 
 /-! ## Slashings (epoch penalty) -/
 
@@ -485,8 +488,8 @@ forkdef processEffectiveBalanceUpdates : StateTransition Unit := do
       let excess ← balance - rounded
       let newEff := min excess (getMaxEffectiveBalance validator)
       -- The pyspec writes through the enumerated `validator` object, with no cast.
-      state := sszModify state validators[i]! := fun validator =>
-        { validator with effectiveBalance := newEff }
+      state := { state with validators := state.validators.modify i fun validator =>
+        { validator with effectiveBalance := newEff } }
   set state
 
 /-- `process_slashings_reset`: zero the next epoch's slashings slot. The index is in

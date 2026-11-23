@@ -2,6 +2,7 @@ import EthCLSpecs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Run
 import EthCLLib.Proofs.Arith
 import EthCLLib.Proofs.IndexRead
+import SizzLean.Proofs.CollectionModify
 
 /-!
 # `EthCLSpecs.Proofs.Fulu.Balances`: what the balance mutators reject, and what they store
@@ -47,6 +48,7 @@ open EthCLLib.Spec (StateTransitionError Checked liftErr sszGetIdx IdxRead Index
 open EthCLSpecs.Fulu (Preset BeaconState ValidatorIndex Gwei increaseBalance decreaseBalance
   modBalance)
 open EthCLLib.Proofs (getAt_sszList_clUint64 add_ok_iff add_value)
+open SizzLean.Proofs (sszListModify_eq_set!)
 
 /-- In range, `sszGetIdx`'s `[i]?` read carries the same element as the total `[i]!` read. The
 run equation matches on `[i]?`, and the theorems below state their balances through `[i]!`, so
@@ -58,16 +60,19 @@ private theorem sszList_getElem?_eq_getElem! {α : Type} [Inhabited α] {cap : N
   show xs.val[i]? = some (xs.val[i]'h)
   exact Array.getElem?_eq_getElem h
 
-/-- `modBalance`'s whole contract: the `sszModify state balances[i.toPlainNat]! := f` expansion
-writes `set!` with `f` applied to the old element, so the writer is one plain record update.
-The two mutator readings below close into this shape. `rfl`: on the plain `State`, `sszModify`
-unfolds to the record update itself. -/
+/-- `modBalance`'s whole contract: the write stores `set!` with `f` applied to the old
+element, so the writer is one plain record update. The body spells `SSZList.modify`
+(`Array.modify` moves the element out so `f` updates it in place); the contract keeps the
+`set!` reading through `sszListModify_eq_set!`, so it states the same shape as before the
+native spelling and the two mutator readings below close into it unchanged. -/
 @[characterizes EthCLSpecs.Fulu.modBalance]
 theorem modBalance_eq [Preset] :
     ∀ (state : BeaconState) (i : ValidatorIndex) (f : Gwei → Gwei),
       modBalance state i f =
-        { state with balances := state.balances.set! i.toPlainNat (f state.balances[i.toPlainNat]!) } :=
-  fun _ _ _ => rfl
+        { state with balances := state.balances.set! i.toPlainNat (f state.balances[i.toPlainNat]!) } := by
+  intro state i f
+  unfold modBalance
+  rw [sszListModify_eq_set!]
 
 /-! ## `increaseBalance` -/
 

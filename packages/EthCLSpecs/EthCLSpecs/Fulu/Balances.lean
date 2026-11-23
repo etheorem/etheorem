@@ -26,11 +26,12 @@ state_section
 
 /-- Modify balance `i` via the infallible `[i]!` element write (total). `balances`
 is a basic-packed `Gwei` field, so the write rebuilds the field's subtree, the same
-cost as the old whole-field form. The helper has no pyspec twin: every caller reads
-`balances[i]` through the raising `sszGetIdx` first, so the position is in range here. -/
+cost as the old whole-field form; `Array.modify` moves the element out before `f`
+applies. The helper has no pyspec twin: every caller reads `balances[i]` through the
+raising `sszGetIdx` first, so the position is in range here. -/
 forkdef modBalance (state : State) (i : ValidatorIndex) (f : Gwei → Gwei) : State :=
   -- `toPlainNat`: the caller's raising read already proved `i` in range (see above).
-  sszModify state balances[i.toPlainNat]! := f
+  { state with balances := state.balances.modify i.toPlainNat f }
 
 /-- `increase_balance`. The pyspec's `+=` uses `eth-ssz-specs`' checked `uint64` addition.
 The result's bound check raises `SSZValueError`, a `ValueError` subclass. The reference runner lets that

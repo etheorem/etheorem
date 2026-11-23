@@ -146,7 +146,7 @@ column is the fork's own diff, for scale.
 | --- | --- |
 | `propext` | 138 |
 | `Classical.choice` | 64 |
-| `Quot.sound` | 130 |
+| `Quot.sound` | 131 |
 | `Lean.ofReduceBool` | 0 |
 | `Lean.trustCompiler` | 0 |
 | `SizzLean.Hasher.sha256Hash_eq_spec` | 0 |
