@@ -2,7 +2,7 @@ import EthCLLib.Spec.State
 import EthCLLib.Proofs.Run
 
 /-!
-# `EthCLLib.Proofs.IndexRead`: the indexed reads, box-free
+# `EthCLLib.Proofs.IndexRead`: the indexed reads
 
 What the pure read `EthCLLib.Spec.getAt` computes: at a `CLUint64` index, whose
 `ToIndex` range test agrees with the collection's own on any collection whose
@@ -11,11 +11,6 @@ shapes the forks hold (`SSZList`, `ProgressiveList`, stated over the list's
 array). It also states how the machine read `EthCLLib.Spec.sszGetIdx` runs: a hit
 returns the element and leaves the state alone, a miss raises the converted
 `IndexError`.
-
-No statement here names the uncached box: the lemmas quantify over the monadic
-state `σ`, so both spec modes, boxed and plain, read them. `keepsUncached_sszGetIdx`,
-in `EthCLLib.Proofs.KeepsUncached`, proves its box-flavour fact from these run
-equations.
 -/
 
 set_option autoImplicit false
