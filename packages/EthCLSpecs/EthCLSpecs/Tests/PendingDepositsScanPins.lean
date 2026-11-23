@@ -34,8 +34,7 @@ finalized checkpoint at epoch `10` (start slot `80`). Each deposit's pubkey is a
 known validator's, so `apply_pending_deposit` takes the top-up branch and no
 signature check runs. With one active `32 ETH` validator the Fulu budget is the
 minimal config's `MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA = 64 ETH`. The pins hash
-through the FFI `Sha256` (`fastHasherTag`). The Fulu state is an FFI-backed box, and the
-Gloas state is the plain record. So `native_decide`.
+through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -97,31 +96,29 @@ private def deposit (pk : UInt8) (amount slot : Nat) : @PendingDeposit minimal :
 and `deposit_balance_to_consume = carry`. -/
 private def scanState (validators : Array (@Validator minimal))
     (queue : Array (@PendingDeposit minimal)) (carry : Nat) :
-    SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState minimal) :=
+    @EthCLSpecs.Fulu.BeaconState minimal :=
   letI : Preset := minimal
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Fulu.BeaconState minimal) with
-      slot := 800
-      finalizedCheckpoint := { (default : @Checkpoint minimal) with epoch := 10 }
-      validators := capped validators
-      balances := capped (Array.replicate validators.size 32000000000)
-      depositBalanceToConsume := u64 carry
-      pendingDeposits := capped queue }
+  { (default : @EthCLSpecs.Fulu.BeaconState minimal) with
+    slot := 800
+    finalizedCheckpoint := { (default : @Checkpoint minimal) with epoch := 10 }
+    validators := capped validators
+    balances := capped (Array.replicate validators.size 32000000000)
+    depositBalanceToConsume := u64 carry
+    pendingDeposits := capped queue }
 
 /-- Runs Fulu `process_pending_deposits` and reads back the queue's amounts, the
 balances, and `deposit_balance_to_consume`, all as plain `Nat`s. -/
-private def scanRun (st : SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState minimal)) :
+private def scanRun (st : @EthCLSpecs.Fulu.BeaconState minimal) :
     Option (List Nat × List Nat × Nat) :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processPendingDeposits : EStateM StateTransitionError
-      (SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState minimal)) Unit).run st with
+      (@EthCLSpecs.Fulu.BeaconState minimal) Unit).run st with
   | .ok _ post =>
-    let v := SSZ.Box.view post
-    some (v.pendingDeposits.val.toList.map (·.amount.toPlainNat),
-      v.balances.val.toList.map (·.toPlainNat), v.depositBalanceToConsume.toPlainNat)
+    some (post.pendingDeposits.val.toList.map (·.amount.toPlainNat),
+      post.balances.val.toList.map (·.toPlainNat), post.depositBalanceToConsume.toPlainNat)
   | .error _ _ => none
 
 /-! ### 1. Churn reached -/

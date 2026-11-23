@@ -24,8 +24,7 @@ pin pair: two nearby inputs that land on its two sides.
 Gloas and Heze inherit both bodies. The Gloas pin shows that the inherited body
 carries the fix. The fixture states sit at slot `800` (epoch `100`). At the minimal
 preset `compute_activation_exit_epoch(100) = 100 + 1 + MAX_SEED_LOOKAHEAD = 105`.
-The pins hash through the FFI `Sha256` (`fastHasherTag`). The Fulu state is an FFI-backed
-box, and the Gloas state is the plain record. So `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -74,14 +73,13 @@ private def validator (eligibility activation : Nat) (slashed : Bool := false) :
 /-- The registry-update fixture: validator `v` with a `32 ETH` balance, at slot `800`,
 with the finalized checkpoint at `finalized`. -/
 private def registryState (v : @Validator minimal) (finalized : Nat) :
-    SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState minimal) :=
+    @EthCLSpecs.Fulu.BeaconState minimal :=
   letI : Preset := minimal
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Fulu.BeaconState minimal) with
-      slot := 800
-      finalizedCheckpoint := { (default : @Checkpoint minimal) with epoch := u64 finalized }
-      validators := capped #[v]
-      balances := capped #[32000000000] }
+  { (default : @EthCLSpecs.Fulu.BeaconState minimal) with
+    slot := 800
+    finalizedCheckpoint := { (default : @Checkpoint minimal) with epoch := u64 finalized }
+    validators := capped #[v]
+    balances := capped #[32000000000] }
 
 /-- The minimal config with `EJECTION_BALANCE = 32 ETH`, equal to
 `MIN_ACTIVATION_BALANCE`. -/
@@ -90,16 +88,16 @@ private def registryState (v : @Validator minimal) (finalized : Nat) :
 
 /-- Runs Fulu `process_registry_updates` under `cfg` and reads back validator `0`'s
 `(activation_eligibility_epoch, activation_epoch, exit_epoch)`. -/
-private def registryRun (st : SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState minimal))
+private def registryRun (st : @EthCLSpecs.Fulu.BeaconState minimal)
     (cfg : Config := minimalConfig) : Option (Nat × Nat × Nat) :=
   letI : Preset := minimal
   letI : Config := cfg
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processRegistryUpdates : EStateM StateTransitionError
-      (SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState minimal)) Unit).run st with
+      (@EthCLSpecs.Fulu.BeaconState minimal) Unit).run st with
   | .ok _ post =>
-    let v := (SSZ.Box.view post).validators.val[0]!
+    let v := post.validators.val[0]!
     some (v.activationEligibilityEpoch.toPlainNat, v.activationEpoch.toPlainNat,
       v.exitEpoch.toPlainNat)
   | .error _ _ => none
@@ -141,7 +139,7 @@ and can reach the `Epoch` range limit. `EPOCHS_PER_SLASHINGS_VECTOR // 2 = 32`. 
 /-- The slashings fixture at `oneSlotEpochs`: one validator (`slashed` as given, active,
 withdrawable at `FAR_FUTURE_EPOCH`) at slot `slot`. -/
 private def slashingsState (slot : Nat) (slashed : Bool) :
-    SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState oneSlotEpochs) :=
+    @EthCLSpecs.Fulu.BeaconState oneSlotEpochs :=
   letI : Preset := oneSlotEpochs
   let v : @Validator oneSlotEpochs :=
     { (default : @Validator oneSlotEpochs) with
@@ -150,23 +148,22 @@ private def slashingsState (slot : Nat) (slashed : Bool) :
       slashed := slashed
       exitEpoch := Const.farFutureEpoch
       withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Fulu.BeaconState oneSlotEpochs) with
-      slot := u64 slot
-      validators := capped #[v]
-      balances := capped #[32000000000] }
+  { (default : @EthCLSpecs.Fulu.BeaconState oneSlotEpochs) with
+    slot := u64 slot
+    validators := capped #[v]
+    balances := capped #[32000000000] }
 
 /-- Runs Fulu `process_slashings` at `oneSlotEpochs` and reads back validator `0`'s
 balance (`.inr`), or whether the error is the `.arithmetic` range fault (`.inl`). -/
-private def slashingsRun (st : SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState oneSlotEpochs)) :
+private def slashingsRun (st : @EthCLSpecs.Fulu.BeaconState oneSlotEpochs) :
     Bool ⊕ Nat :=
   letI : Preset := oneSlotEpochs
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processSlashings : EStateM StateTransitionError
-      (SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState oneSlotEpochs)) Unit).run st with
-  | .ok _ post => .inr (SSZ.Box.view post).balances.val[0]!.toPlainNat
+      (@EthCLSpecs.Fulu.BeaconState oneSlotEpochs) Unit).run st with
+  | .ok _ post => .inr post.balances.val[0]!.toPlainNat
   | .error (.arithmetic _) _ => .inl true
   | .error _ _ => .inl false
 

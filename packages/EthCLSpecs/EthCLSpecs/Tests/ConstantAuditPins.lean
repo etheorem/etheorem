@@ -117,14 +117,13 @@ voter. The finality delay is `1`, so the chain is not in an inactivity leak. -/
 private def auditState : @State minimal fastHasherTag :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      slot := 16
-      validators := ⟨#[activeValidator], by decide⟩
-      balances := ⟨#[32000000000], by decide⟩
-      previousEpochParticipation := ⟨#[0], by decide⟩
-      currentEpochParticipation := ⟨#[0], by decide⟩
-      inactivityScores := ⟨#[100], by decide⟩ }
+  { (default : @BeaconState minimal) with
+    slot := 16
+    validators := ⟨#[activeValidator], by decide⟩
+    balances := ⟨#[32000000000], by decide⟩
+    previousEpochParticipation := ⟨#[0], by decide⟩
+    currentEpochParticipation := ⟨#[0], by decide⟩
+    inactivityScores := ⟨#[100], by decide⟩ }
 
 /-- The score `process_inactivity_updates` leaves under configuration `c`. -/
 private def inactivityScoreAfter (c : Config) : Outcome :=
