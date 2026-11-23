@@ -10,8 +10,8 @@ the four positions empty, `active_fields(width=46, gaps=(8, 9, 10, 28))`, so eve
 field keeps its Gloas generalized index. `@[sizzlean_progressive_gaps 8 9 10 28]` carries that
 mask. `latestExecutionPayloadBid` binds to Heze's bid (the extra `inclusionListBits` field).
 `plain_state_preamble` declares `State` as the plain `BeaconState` record, so a Heze body
-reads a field by projection and writes it by record update. Fulu and Gloas stay boxed until
-their own switch.
+reads a field by projection and writes it by record update. Fulu stays boxed until its own
+switch.
 
 The `Containers.InclusionList` import is the load-order entry: it transitively pulls
 `Heze.Inherited` (the inherited containers) and the `fork Heze from Gloas` lineage that

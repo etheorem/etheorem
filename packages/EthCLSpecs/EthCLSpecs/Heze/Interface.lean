@@ -231,8 +231,8 @@ set_option maxHeartbeats 1000000 in
 Gloas `state_transition`, advance the Gloas state to the fork-epoch boundary, apply
 `upgradeToHeze` (see its docstring), then fold the post-fork blocks under the
 Heze spine. Unqualified spine names resolve to the Heze copies; the pre-fork Gloas calls are
-qualified. The Gloas leg runs on the boxed Gloas `State`, and `upgradeToHeze` reads its view;
-the Heze leg runs on the plain Heze `State`, which the upgrade returns as is. -/
+qualified. Both legs run on the plain record: the Gloas leg threads the decoded Gloas state,
+and the Heze leg threads the state that `upgradeToHeze` returns. -/
 private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
     (preBytes : ByteArray) (blocks : Array ByteArray) (cmeta : CaseMeta) :
     Except (RunError StateTransitionError) ByteArray :=
@@ -267,14 +267,13 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
       match SSZ.deserialize (T := @Heze.SignedBeaconBlock P) bb with
       | .ok sb   => Except.ok sb
       | .error _ => Except.error (RunError.decode "Heze SignedBeaconBlock"))
-    let gloasBox0 : SSZ.Box Sha256 (Gloas.BeaconState) := SSZ.FastBox preGloas
-    let gloasAction : EStateM StateTransitionError (SSZ.Box Sha256 (Gloas.BeaconState)) Unit := do
+    let gloasAction : EStateM StateTransitionError (Gloas.BeaconState) Unit := do
       for sb in preBlocks do Gloas.stateTransition sb
       if (sszGet (← get) slot) < boundary then Gloas.processSlots boundary
-    match gloasAction.run gloasBox0 with
+    match gloasAction.run preGloas with
     | .error e _ => Except.error (RunError.spec e)
     | .ok _ gloasSt =>
-      let hezePost ← RunError.ofSpec (upgradeToHeze forkVersion gloasSt.view)
+      let hezePost ← RunError.ofSpec (upgradeToHeze forkVersion gloasSt)
       let hezeAction : EStateM StateTransitionError (@Heze.BeaconState P) Unit := do
         for sb in postBlocks do
           if (sszGet (← get) slot) < sb.message.slot then processSlots sb.message.slot
