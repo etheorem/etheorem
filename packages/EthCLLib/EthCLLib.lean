@@ -1,4 +1,3 @@
-import EthCLLib.Internal.BoxBinders
 import EthCLLib.Internal.Capture
 import EthCLLib.Internal.ProofLedger
 import EthCLLib.Spec
