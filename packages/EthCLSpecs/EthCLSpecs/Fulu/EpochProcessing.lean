@@ -51,31 +51,31 @@ forkdef weighJustificationAndFinalization (totalActive prevTarget currTarget : G
   let currRoot ← if justifyCurr then getBlockRoot state currEpoch else pure default
   -- The checkpoints the finalization tests read are the ones the shift-and-justify write
   -- started from, so they are captured before it lands.
-  let oldPrev := sszGet state previousJustifiedCheckpoint
-  let oldCurr := sszGet state currentJustifiedCheckpoint
+  let oldPrev := state.previousJustifiedCheckpoint
+  let oldCurr := state.currentJustifiedCheckpoint
 
   -- Shift the bit window, then justify the previous and current epochs that reached
   -- a two-thirds target supermajority.
   modifyState fun state => Id.run do
     let mut state := state
-    state := sszUpdate state with
+    state := { state with
       previousJustifiedCheckpoint := oldCurr,
-      justificationBits := { data := (sszGet state justificationBits).data <<< 1 }
+      justificationBits := { data := state.justificationBits.data <<< 1 } }
     if justifyPrev then
-      state := sszUpdate state with
+      state := { state with
         currentJustifiedCheckpoint := { epoch := prevEpoch, root := prevRoot },
-        justificationBits := bitSet (sszGet state justificationBits) 1 true
+        justificationBits := bitSet state.justificationBits 1 true }
     if justifyCurr then
-      state := sszUpdate state with
+      state := { state with
         currentJustifiedCheckpoint := { epoch := currEpoch, root := currRoot },
-        justificationBits := bitSet (sszGet state justificationBits) 0 true
+        justificationBits := bitSet state.justificationBits 0 true }
     return state
 
   -- Finalize on the four supermajority-link bit patterns. Python tests them in order
   -- against the updated bits, forming each `old.epoch + k` only once its bit conjuncts
   -- pass, so every sum binds inside its own branch (`SPEC_ARITHMETIC.md` §4.3), and a
   -- later match overwrites an earlier one.
-  let bits := sszGet (← get) justificationBits
+  let bits := (← get).justificationBits
   let fin3 ← if bitGet bits 1 && bitGet bits 2 && bitGet bits 3 then
     (do let sum ← oldPrev.epoch + 3; pure (sum == currEpoch))
   else pure false
@@ -94,7 +94,7 @@ forkdef weighJustificationAndFinalization (totalActive prevTarget currTarget : G
   if fin3c then finalized := some oldCurr
   if fin2c then finalized := some oldCurr
   if let some cp := finalized then
-    modifyState fun state => sszUpdate state with finalizedCheckpoint := cp
+    modifyState fun state => { state with finalizedCheckpoint := cp }
 
 /-- `process_justification_and_finalization`. -/
 forkdef processJustificationAndFinalization : StateTransition Unit := do
@@ -148,14 +148,15 @@ forkdef processInactivityUpdates : StateTransition Unit := do
       -- spec's own guard), and `+= INACTIVITY_SCORE_BIAS` is the checked add,
       -- bound in the branch that forms it; the write is the plain store of the
       -- value the monadic block computed.
-      let cur ← sszGetIdx (sszGet state inactivityScores) vi
+      let cur ← sszGetIdx state.inactivityScores vi
       let cur ← if matching.contains vi then pure (cur.saturatingSub 1)
                 else cur + Const.inactivityScoreBias
       -- `is_in_inactivity_leak` runs here, after the score update, per validator.
       let leak ← isInInactivityLeak state
       let cur := if !leak then cur.saturatingSub Const.inactivityScoreRecoveryRate else cur
-      -- `toPlainNat`: the raising read above proved `vi` in range for this list.
-      state := sszModify state inactivityScores[vi.toPlainNat]! as _old => cur
+      -- `toPlainNat`: the raising read above proved `vi` in range for this list. The
+      -- old score is already bound as `cur`, so the write ignores the old element.
+      state := { state with inactivityScores := state.inactivityScores.set! vi.toPlainNat cur }
     set state
 
 /-! ## Rewards & penalties -/
@@ -171,7 +172,7 @@ branch never calls `is_in_inactivity_leak`, so its fault cannot fire where Pytho
 succeeds. -/
 forkdef getFlagIndexDeltas (state : State) (flagIndex : Nat) :
     Except StateTransitionError (Array Gwei × Array Gwei) := do
-  let n := (sszGet state validators).size
+  let n := state.validators.size
   let mut rewards := Array.replicate n (0 : Gwei)
   let mut penalties := Array.replicate n (0 : Gwei)
 
@@ -213,8 +214,8 @@ checked `Gwei` add. The two reads `state.validators[index]` and
 `state.inactivity_scores[index]` raise `IndexError` past the end, so they go through
 `getAt` in the pyspec's order. -/
 forkdef getInactivityPenaltyDeltas (state : State) : Except StateTransitionError (Array Gwei) := do
-  let validators := sszGet state validators
-  let iscores := sszGet state inactivityScores
+  let validators := state.validators
+  let iscores := state.inactivityScores
   let mut penalties := Array.replicate validators.size (0 : Gwei)
   let matchingTarget ← getUnslashedParticipatingIndices state Const.timelyTargetFlagIndex.toPlainNat (previousEpochOf state)
 
@@ -242,7 +243,7 @@ have the registry's length, so their reads are structural. -/
 forkdef applyDeltas (rewards penalties : Array Gwei) (state : State) :
     StateTransition State := do
   let mut state := state
-  for i in [0 : (sszGet state validators).size] do
+  for i in [0 : state.validators.size] do
     let vi ← CLUint64.ofNat? i
     state ← increaseBalance state vi (rewards[i]!)
     let vi ← CLUint64.ofNat? i
@@ -256,7 +257,7 @@ forkdef processRewardsAndPenalties : StateTransition Unit := do
   else
     let flagDeltas ← liftErr ((List.range 3).mapM (fun f => getFlagIndexDeltas state f))
     let inactPenalties ← liftErr (getInactivityPenaltyDeltas state)
-    let zeros := Array.replicate (sszGet state validators).size (0 : Gwei)
+    let zeros := Array.replicate state.validators.size (0 : Gwei)
 
     for (rewards, penalties) in flagDeltas do
       set (← applyDeltas rewards penalties (← get))
@@ -273,26 +274,28 @@ even when it also passes them (an `EJECTION_BALANCE` at or above
 forkdef processRegistryUpdates : StateTransition Unit := do
   let currentEpoch := currentEpochOf (← get)
   let activationEpoch ← computeActivationExitEpoch currentEpoch
-  let n := (sszGet (← get) validators).size
+  let n := (← get).validators.size
 
   for idx in [0 : n] do
     let state ← get
     -- `idx` enumerates the registry, which the loop never shrinks, so the read is in range.
-    let validator := sszGet state validators[idx]!
+    let validator := state.validators[idx]!
     -- The two field writes go through the enumerated position, as the pyspec writes
     -- through the `validator` object; only the exit call casts `ValidatorIndex(index)`.
     if isEligibleForActivationQueue validator then
       -- `validator.activation_eligibility_epoch = current_epoch + 1`: the checked `Epoch`
       -- add, formed in this branch only, as Python forms it.
       let nextEligibility ← currentEpoch + 1
-      modifyState fun state => sszModify state validators[idx]! := fun validator =>
-        { validator with activationEligibilityEpoch := nextEligibility }
+      modifyState fun state =>
+        { state with validators := state.validators.modify idx fun validator =>
+            { validator with activationEligibilityEpoch := nextEligibility } }
     else if isActiveValidator validator currentEpoch && validator.effectiveBalance ≤ Const.ejectionBalanceG then
       let vi ← CLUint64.ofNat? idx
       initiateValidatorExit vi
     else if isEligibleForActivation state validator then
-      modifyState fun state => sszModify state validators[idx]! := fun validator =>
-        { validator with activationEpoch := activationEpoch }
+      modifyState fun state =>
+        { state with validators := state.validators.modify idx fun validator =>
+            { validator with activationEpoch := activationEpoch } }
 
 /-! ## Slashings (epoch penalty) -/
 
@@ -304,7 +307,7 @@ forkdef processSlashings : StateTransition Unit := do
   let state ← get
   let epoch := currentEpochOf state
   let totalBalance ← liftErr (getTotalActiveBalance state)
-  let sumSlashings ← (sszGet state slashings).toArray.foldlM (fun acc x => acc + x) (0 : Gwei)
+  let sumSlashings ← state.slashings.toArray.foldlM (fun acc x => acc + x) (0 : Gwei)
   let scaled ← sumSlashings * Const.proportionalSlashingMultiplierBellatrix
   let adjusted := min scaled totalBalance
   let increment := Const.effectiveBalanceIncrementG
@@ -315,8 +318,8 @@ forkdef processSlashings : StateTransition Unit := do
   let halfRing ← Const.epochsPerSlashingsVectorC / 2
   let mut state := state
   -- `index` enumerates the registry, which the loop never resizes, so the read is in range.
-  for i in [0 : (sszGet state validators).size] do
-    let validator := sszGet state validators[i]!
+  for i in [0 : state.validators.size] do
+    let validator := state.validators[i]!
     -- `validator.slashed and epoch + EPOCHS_PER_SLASHINGS_VECTOR // 2 == …`: Python's `and`
     -- short-circuits, so the checked `Epoch` sum forms only for a slashed validator, and
     -- binds inside that branch (`SPEC_ARITHMETIC.md` §4.3).
@@ -353,13 +356,13 @@ forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
   let nextEpoch ← currentEpochOf state + 1
   let availableForProcessing ←
-    (sszGet state depositBalanceToConsume) + (← liftErr (getActivationExitChurnLimit state))
+    state.depositBalanceToConsume + (← liftErr (getActivationExitChurnLimit state))
   let mut processedAmount : Gwei := 0
   let mut nextDepositIndex := 0
   let mut depositsToPostpone : Array PendingDeposit := #[]
   let mut isChurnLimitReached := false
-  let finalizedSlot ← computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
-  let pendingDeposits := (sszGet state pendingDeposits).toArray
+  let finalizedSlot ← computeStartSlotAtEpoch state.finalizedCheckpoint.epoch
+  let pendingDeposits := state.pendingDeposits.toArray
 
   for deposit in pendingDeposits do
     -- Check if deposit has been finalized, otherwise, stop processing.
@@ -374,7 +377,7 @@ forkdef processPendingDeposits : StateTransition Unit := do
     let (isValidatorExited, isValidatorWithdrawn) :=
       match validatorIndexByPubkey? state deposit.pubkey with
       | some vi =>
-        let validator := sszGet state validators[vi]!
+        let validator := state.validators[vi]!
         (decide (validator.exitEpoch < Const.farFutureEpoch),
           decide (validator.withdrawableEpoch < nextEpoch))
       | none => (false, false)
@@ -406,9 +409,9 @@ forkdef processPendingDeposits : StateTransition Unit := do
   -- only in that branch, as Python's does.
   let depositBalance : Gwei ←
     if isChurnLimitReached then availableForProcessing - processedAmount else pure 0
-  modifyState fun state => sszUpdate state with
+  modifyState fun state => { state with
     pendingDeposits := remaining,
-    depositBalanceToConsume := depositBalance
+    depositBalanceToConsume := depositBalance }
 
 /-! ## Pending consolidations -/
 
@@ -430,11 +433,11 @@ forkdef pcLoop (cons : Array PendingConsolidation) (nextEpoch : Epoch) : StateTr
       -- `pc.sourceIndex` is a data-derived validator index from the queued
       -- consolidation; the source validator and balance reads go through `sszGetIdx`,
       -- so an out-of-range source rejects with `outOfBounds` instead of masking.
-      let src ← sszGetIdx (sszGet state validators) pc.sourceIndex
+      let src ← sszGetIdx state.validators pc.sourceIndex
       if src.slashed then return .next (npc + 1)
       else if src.withdrawableEpoch > nextEpoch then return .done npc
       else
-        let srcBal ← sszGetIdx (sszGet state balances) pc.sourceIndex
+        let srcBal ← sszGetIdx state.balances pc.sourceIndex
         -- `source_effective_balance = min(balances[source_index],
         -- source_validator.effective_balance)`: `min` picks an operand, total.
         let amt := min srcBal src.effectiveBalance
@@ -446,12 +449,12 @@ forkdef pcLoop (cons : Array PendingConsolidation) (nextEpoch : Epoch) : StateTr
 forkdef processPendingConsolidations : StateTransition Unit := do
   let state ← get
   let nextEpoch ← currentEpochOf state + 1
-  let pending := sszGet state pendingConsolidations
+  let pending := state.pendingConsolidations
   let cons := pending.toArray
   let npc ← pcLoop cons nextEpoch
 
   modifyState fun state =>
-    sszUpdate state with pendingConsolidations := sszDrop pending npc
+    { state with pendingConsolidations := sszDrop pending npc }
 
 /-! ## Effective-balance updates -/
 
@@ -464,11 +467,11 @@ comparison is false. The reset is the checked round-and-cap pair. -/
 forkdef processEffectiveBalanceUpdates : StateTransition Unit := do
   let mut state ← get
 
-  for i in [0 : (sszGet state validators).size] do
+  for i in [0 : state.validators.size] do
     -- `balance = state.balances[index]` comes first (`fulu/minimal.py:1896`), a raising
     -- list read: a `balances` list shorter than the registry raises `IndexError` here.
-    let validator := sszGet state validators[i]!
-    let balance ← sszGetIdx (sszGet state balances) i
+    let validator := state.validators[i]!
+    let balance ← sszGetIdx state.balances i
     -- Python assigns the three thresholds inside the loop
     -- (`fulu/mainnet.py:1903-1907`), so they form only for a validator that
     -- exists; a degenerate configuration raises there, not before the loop.
@@ -485,8 +488,8 @@ forkdef processEffectiveBalanceUpdates : StateTransition Unit := do
       let excess ← balance - rounded
       let newEff := min excess (getMaxEffectiveBalance validator)
       -- The pyspec writes through the enumerated `validator` object, with no cast.
-      state := sszModify state validators[i]! := fun validator =>
-        { validator with effectiveBalance := newEff }
+      state := { state with validators := state.validators.modify i fun validator =>
+        { validator with effectiveBalance := newEff } }
   set state
 
 /-- `process_slashings_reset`: zero the next epoch's slashings slot. The index is in
@@ -498,7 +501,7 @@ forkdef processSlashingsReset : StateTransition Unit := do
   -- remainder is the write index (§4.5: the projection the mod bound permits).
   let idx ← nextEpoch % Const.epochsPerSlashingsVectorC
   modifyState fun state =>
-    sszUpdate state with slashings[idx.toPlainNat]! := (0 : Gwei)
+    { state with slashings := state.slashings.set! idx.toPlainNat (0 : Gwei) }
 
 /-- `process_randao_mixes_reset`: carry the current epoch's RANDAO mix into the
 next epoch's slot. -/
@@ -508,7 +511,7 @@ forkdef processRandaoMixesReset : StateTransition Unit := do
   let nextEpoch ← currentEpoch + 1
   let idx ← nextEpoch % Const.epochsPerHistoricalVectorC
   modifyState fun state =>
-    sszUpdate state with randaoMixes[idx.toPlainNat]! := mix
+    { state with randaoMixes := state.randaoMixes.set! idx.toPlainNat mix }
 
 /-- `process_eth1_data_reset`: clear the eth1 vote tally at the end of a voting
 period. -/
@@ -517,7 +520,7 @@ forkdef processEth1DataReset : StateTransition Unit := do
   let period ← nextEpoch % Const.epochsPerEth1VotingPeriodC
   if period == (0 : Epoch) then
     modifyState fun state =>
-      sszUpdate state with eth1DataVotes := sszOfArray #[] (by simp)
+      { state with eth1DataVotes := sszOfArray #[] (by simp) }
 
 /-- `process_historical_summaries_update`: at the end of a historical-root period,
 append a summary of the block-roots and state-roots vectors. -/
@@ -529,22 +532,21 @@ forkdef processHistoricalSummariesUpdate : StateTransition Unit := do
   if period == (0 : Epoch) then
     let state ← get
     let summary : HistoricalSummary :=
-      { blockSummaryRoot := htr (sszGet state blockRoots),
-        stateSummaryRoot := htr (sszGet state stateRoots) }
+      { blockSummaryRoot := htr state.blockRoots,
+        stateSummaryRoot := htr state.stateRoots }
     appendState historicalSummaries summary
 
 /-- `process_participation_flag_updates`: rotate current participation into
 previous and reset current to all-zero flags, one per validator. -/
 forkdef processParticipationFlagUpdates : StateTransition Unit := do
   let state ← get
-  let current := sszGet state currentEpochParticipation
-  let count := (sszGet state validators).size
+  let current := state.currentEpochParticipation
+  let count := state.validators.size
   let zeros : SSZList ParticipationFlags Const.validatorRegistryLimit ←
     sszOfArrayM "currentEpochParticipation" (Array.replicate count (0 : ParticipationFlags))
-  modifyState fun state =>
-    sszUpdate state with
-      previousEpochParticipation := current,
-      currentEpochParticipation  := zeros
+  modifyState fun state => { state with
+    previousEpochParticipation := current,
+    currentEpochParticipation  := zeros }
 
 /-! ## Sync-committee rotation & proposer lookahead (shuffle-dependent) -/
 
@@ -557,9 +559,9 @@ forkdef processSyncCommitteeUpdates : StateTransition Unit := do
   let period ← nextEpoch % Const.epochsPerSyncCommitteePeriodC
   if period == (0 : Epoch) then
     let nsc ← liftErr (getNextSyncCommittee state)
-    set (sszUpdate state with
-      currentSyncCommittee := sszGet state nextSyncCommittee,
-      nextSyncCommittee := nsc)
+    set { state with
+      currentSyncCommittee := state.nextSyncCommittee,
+      nextSyncCommittee := nsc }
 
 /-- `process_proposer_lookahead` (Fulu, EIP-7917): shift out the first epoch's
 proposers and append the freshly-computed proposers for
@@ -571,13 +573,13 @@ forkdef processProposerLookahead : StateTransition Unit := do
   let lookaheadEpoch ← currentEpochOf state + Const.minSeedLookahead + 1
   let newProposers ←
     liftErr (getBeaconProposerIndices state lookaheadEpoch)
-  let old := sszGet state proposerLookahead
+  let old := state.proposerLookahead
   -- `last_epoch_start = len - SLOTS_PER_EPOCH` (`fulu/minimal.py:6621`) is
   -- `MIN_SEED_LOOKAHEAD * SLOTS_PER_EPOCH`: that many leading slots copy the window read
   -- forward by one epoch; the last `SLOTS_PER_EPOCH` slots take the fresh proposers.
-  set (sszUpdate state with proposerLookahead :=
-    shiftWindow old Const.slotsPerEpoch (Const.minSeedLookahead.toPlainNat * Const.slotsPerEpoch)
-      (fun k => newProposers[k]!))
+  set { state with proposerLookahead :=
+    (shiftWindow old Const.slotsPerEpoch (Const.minSeedLookahead.toPlainNat * Const.slotsPerEpoch)
+      (fun k => newProposers[k]!)) }
 
 end
 

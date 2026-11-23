@@ -29,12 +29,12 @@ namespace (`SPEC_AUTHORING_MODEL.md` §3.2): the `fork*` forms and `inherit`
 value sets), the header macros `state_preamble` / `state_section` /
 `fork_choice_section`, `assert` and the step
 primitives (`modifyState`, `todo`), the `HasherTag` selector, the `CryptoBackend`
-seam, the state helpers (`getStateRoot` / `stateRoot!`), the checked operator
+seam, the state-root seam `getStateRoot`, the checked operator
 surface (the operand-matrix instances plus the scoped elaborator in
 `Spec/Elab.lean` and the §4.4 lift in `Spec/Checked.lean`), and the size-aware
 indexing layer (`ToIndex` / `getAt` / `setAt` in `Spec/State.lean`).
-SizzLean's `sszGet` / `sszUpdate` are
-global syntax brought in by `import SizzLean`, so they need no re-export.
+A state field reads as `state.f` and writes with the record update `{ state with … }`,
+so the framework adds no read or write syntax of its own.
 
 What lives here is the *forms*, never a `Preset` / `Config` class or a `Const`
 entry: the tier system is per fork (`SPECS_ARCHITECTURE.md` §9.1), and each fork

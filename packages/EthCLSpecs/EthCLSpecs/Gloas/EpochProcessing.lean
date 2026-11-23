@@ -7,7 +7,7 @@ The flagship of the fork-inheritance model (`SPEC_AUTHORING_MODEL.md` §4,
 `SPECS_ARCHITECTURE.md` §4.1). Gloas's `BeaconState` carries every field the Fulu
 epoch substeps read, so most substeps are `inherit`ed verbatim: each captured Fulu
 `forkdef` is re-elaborated in the Gloas namespace against `Gloas.State`
-(`= SSZ.Box _ Gloas.BeaconState`), with its sibling calls rebinding to the Gloas
+(the plain `Gloas.BeaconState` record), with its sibling calls rebinding to the Gloas
 copies. Gloas restates only the bodies its pinned text changes: the EIP-8061 churn
 helpers, `slash_validator`, `get_next_sync_committee_indices`,
 `get_beacon_proposer_indices`, `process_pending_deposits`, and
@@ -105,19 +105,19 @@ forkdef getActivationChurnLimit (state : State) : Except StateTransitionError Gw
 
 forkdef computeExitEpochAndUpdateChurn (exitBalance : Gwei) : StateTransition Epoch := do
   let state ← get
-  let currentEpoch := computeEpochAtSlot (sszGet state slot)
+  let currentEpoch := computeEpochAtSlot state.slot
   -- `max(state.earliest_exit_epoch, compute_activation_exit_epoch(get_current_epoch(state)))`:
   -- the exit epoch is the checked `Epoch` chain, bound before the `max` that reads it
   -- (`SPEC_ARITHMETIC.md` §4.3).
   let exitEpoch ← computeActivationExitEpoch currentEpoch
-  let earliest := max (sszGet state earliestExitEpoch) exitEpoch
+  let earliest := max state.earliestExitEpoch exitEpoch
   let perEpochChurn ← liftErr (getExitChurnLimit state)
-  let consume := if (sszGet state earliestExitEpoch) < earliest then perEpochChurn else (sszGet state exitBalanceToConsume)
+  let consume := if state.earliestExitEpoch < earliest then perEpochChurn else state.exitBalanceToConsume
   let (ee, ebtc) ← reserveChurn exitBalance consume perEpochChurn earliest
   let remaining ← ebtc - exitBalance
 
   modifyState fun state =>
-    sszUpdate state with exitBalanceToConsume := remaining, earliestExitEpoch := ee
+    { state with exitBalanceToConsume := remaining, earliestExitEpoch := ee }
   return ee
 
 inherit initiateValidatorExit
@@ -131,10 +131,10 @@ path. Now every path that slashes a validator (proposer and attester slashings a
 every payment the validator proposed. The Fulu body is restated because the spec restates it;
 `whistleblower_index` defaults to the proposer, as the spec's `None` does. -/
 forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
-  let epoch := computeEpochAtSlot (sszGet (← get) slot)
+  let epoch := computeEpochAtSlot (← get).slot
   initiateValidatorExit i
   let state ← get
-  let validator ← sszGetIdx (sszGet state validators) i
+  let validator ← sszGetIdx state.validators i
   let slashIdx ← epoch % Const.epochsPerSlashingsVectorC
 
   -- Mark slashed, extend withdrawability, record the effective balance in the
@@ -149,9 +149,9 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
     { validator with
         slashed := true,
         withdrawableEpoch := withdrawable }
-  let ringTotal ← vget (sszGet state slashings) slashIdx.toPlainNat + validator.effectiveBalance
-  let state := sszUpdate state with
-    slashings[slashIdx.toPlainNat]! := ringTotal
+  let ringTotal ← vget state.slashings slashIdx.toPlainNat + validator.effectiveBalance
+  let state := { state with
+    slashings := state.slashings.set! slashIdx.toPlainNat ringTotal }
   let slashingPenalty ← validator.effectiveBalance / Const.minSlashingPenaltyQuotientElectra
   let state ← decreaseBalance state i slashingPenalty
   set state
@@ -170,8 +170,9 @@ forkdef slashValidator (i : ValidatorIndex) : StateTransition Unit := do
   modifyState fun state => Id.run do
     let mut state := state
     for paymentIndex in [0:2 * Const.slotsPerEpoch] do
-      if (vget (sszGet state builderPendingPayments) paymentIndex).proposerIndex == i then
-        state := sszUpdate state with builderPendingPayments[paymentIndex]! := empty
+      if (vget state.builderPendingPayments paymentIndex).proposerIndex == i then
+        state := { state with
+          builderPendingPayments := state.builderPendingPayments.set! paymentIndex empty }
     return state
 inherit getDomain
 inherit getPendingBalanceToWithdraw
@@ -234,7 +235,7 @@ validator is slashed, the candidate set is empty, and `compute_balance_weighted_
 list read through `getAt`, before the seed, as the pinned comprehension does. -/
 forkdef getBeaconProposerIndices (state : State) (epoch : Epoch) :
     Except StateTransitionError (Array ValidatorIndex) := do
-  let validators := sszGet state validators
+  let validators := state.validators
   let active ← getActiveValidatorIndices state epoch
   let indices ← active.filterM fun vi => do
     let validator ← liftErr (getAt validators vi)
@@ -263,13 +264,13 @@ forkdef processPendingDeposits : StateTransition Unit := do
   let nextEpoch ← currentEpochOf state + 1
   -- [Modified in Gloas:EIP8061] Deposits still consume the activation-only churn budget.
   let availableForProcessing ←
-    (sszGet state depositBalanceToConsume) + (← liftErr (getActivationChurnLimit state))
+    state.depositBalanceToConsume + (← liftErr (getActivationChurnLimit state))
   let mut processedAmount : Gwei := 0
   let mut nextDepositIndex := 0
   let mut depositsToPostpone : Array PendingDeposit := #[]
   let mut isChurnLimitReached := false
-  let finalizedSlot ← computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
-  let pendingDeposits := (sszGet state pendingDeposits).toArray
+  let finalizedSlot ← computeStartSlotAtEpoch state.finalizedCheckpoint.epoch
+  let pendingDeposits := state.pendingDeposits.toArray
 
   for deposit in pendingDeposits do
     -- Check if deposit has been finalized, otherwise, stop processing.
@@ -288,7 +289,7 @@ forkdef processPendingDeposits : StateTransition Unit := do
         -- read is in range, because `findIdx?` returned `vi`. The cast is omitted and cannot
         -- raise. Gloas's registry is a `ProgressiveList` with no SSZ cap, but a Lean array of
         -- 8-byte entries holds fewer than `2^61` of them, so the position is below `2^64`.
-        let validator := sszGet state validators[vi]!
+        let validator := state.validators[vi]!
         (decide (validator.exitEpoch < Const.farFutureEpoch),
           decide (validator.withdrawableEpoch < nextEpoch))
       | none => (false, false)
@@ -318,9 +319,9 @@ forkdef processPendingDeposits : StateTransition Unit := do
   -- only in that branch, as Python's does.
   let depositBalance : Gwei ←
     if isChurnLimitReached then availableForProcessing - processedAmount else pure 0
-  modifyState fun state => sszUpdate state with
+  modifyState fun state => { state with
     pendingDeposits := remaining,
-    depositBalanceToConsume := depositBalance
+    depositBalanceToConsume := depositBalance }
 
 inherit pcLoop
 inherit processPendingConsolidations
@@ -338,14 +339,14 @@ is an uncapped progressive list at the pin, so the reset takes the array whole a
 nothing can raise. Heze inherits this override. -/
 forkdef processParticipationFlagUpdates : StateTransition Unit := do
   let state ← get
-  let current := sszGet state currentEpochParticipation
-  let count := (sszGet state validators).size
+  let current := state.currentEpochParticipation
+  let count := state.validators.size
   let zeros : ProgressiveList ParticipationFlags :=
     ⟨Array.replicate count (0 : ParticipationFlags)⟩
   modifyState fun state =>
-    sszUpdate state with
+    { state with
       previousEpochParticipation := current,
-      currentEpochParticipation  := zeros
+      currentEpochParticipation  := zeros }
 
 -- Shuffle-dependent substeps: now inheritable since the committee layer is in the
 -- Gloas namespace. `processProposerLookahead`'s `getBeaconProposerIndices` call binds
@@ -379,7 +380,7 @@ forkdef processBuilderPendingPayments : StateTransition Unit := do
   let quorum ← liftErr (getBuilderPaymentQuorumThreshold state)
 
   -- Queue the withdrawal of every previous-epoch payment whose weight clears the quorum.
-  let payments := sszGet state builderPendingPayments
+  let payments := state.builderPendingPayments
   for i in [0:Const.slotsPerEpoch] do
     let p := vget payments i
     if p.weight ≥ quorum then
@@ -388,9 +389,10 @@ forkdef processBuilderPendingPayments : StateTransition Unit := do
   -- Shift the payment window down by `SLOTS_PER_EPOCH` and pad with empties.
   let empty : BuilderPendingPayment := default
   modifyState fun state =>
-    sszUpdate state with builderPendingPayments :=
-      shiftWindow (sszGet state builderPendingPayments) Const.slotsPerEpoch Const.slotsPerEpoch
-        (fun _ => empty)
+    { state with
+        builderPendingPayments :=
+          shiftWindow state.builderPendingPayments Const.slotsPerEpoch Const.slotsPerEpoch
+            (fun _ => empty) }
 
 /-- `compute_ptc` (EIP-7732, `gloas/beacon-chain.md:1266-1282`): the payload-timeliness committee for
 `slot`, with possible duplicates. Concatenate every beacon committee for the slot in
@@ -448,12 +450,13 @@ forkdef processPtcWindow : StateTransition Unit := do
       computePtc state slot))
 
   modifyState fun state =>
-    sszUpdate state with ptcWindow :=
-      -- `keep` is the window minus the shifted-out epoch:
-      -- `(MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH`.
-      shiftWindow (sszGet state ptcWindow) Const.slotsPerEpoch
-        ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch)
-        (fun k => fresh[k]!)
+    { state with
+        ptcWindow :=
+          -- `keep` is the window minus the shifted-out epoch:
+          -- `(MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH`.
+          shiftWindow state.ptcWindow Const.slotsPerEpoch
+            ((Const.minSeedLookahead.toPlainNat + 1) * Const.slotsPerEpoch)
+            (fun k => fresh[k]!) }
 
 end
 
