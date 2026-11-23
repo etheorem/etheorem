@@ -44,7 +44,7 @@ Site 1's pins record the class at a slot near the maximum. There the committee c
 fault is `get_seed`'s epoch chain, which depends on the slot alone. The call also raises
 through `compute_committee`'s checked products, which depend on the committee index, but
 those products pass `2^64 - 1` only for a registry far larger than a fixture can hold.
-`State` is FFI-backed, so `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -76,17 +76,16 @@ seed's checked `epoch + EPOCHS_PER_HISTORICAL_VECTOR` overflows for slots at or 
 /-- A Fulu state at slot `s` with eight active validators, so each committee at the
 minimal preset has a member. The preset is a parameter, so the list caps are not known
 here; `capped` checks them, and `pinFuluStatesHoldEight` confirms both presets fit. -/
-private def fuluState (P : Preset) (s : Slot) : SSZ.Box Sha256 (@BeaconState P) :=
+private def fuluState (P : Preset) (s : Slot) : @BeaconState P :=
   letI : Preset := P
   let v : Validator :=
     { (default : Validator) with
       effectiveBalance := 32000000000,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @BeaconState P) with
-      slot := s
-      validators := capped (Array.replicate 8 v)
-      balances := capped (Array.replicate 8 32000000000) }
+  { (default : @BeaconState P) with
+    slot := s
+    validators := capped (Array.replicate 8 v)
+    balances := capped (Array.replicate 8 32000000000) }
 
 /-- Both Fulu fixture presets hold all eight validators. -/
 private def pinFuluStatesHoldEight : Bool :=
@@ -108,13 +107,13 @@ private def fuluAtt (P : Preset) (slot : Slot) (targetEpoch sourceEpoch : Epoch)
 
 /-- Runs Fulu `process_attestation` over a state and an attestation. -/
 private def fuluRun (P : Preset) (s : Slot) (att : @Attestation P) :
-    EStateM.Result StateTransitionError (SSZ.Box Sha256 (@BeaconState P)) Unit :=
+    EStateM.Result StateTransitionError (@BeaconState P) Unit :=
   letI : Preset := P
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   (processAttestation att : EStateM StateTransitionError
-    (SSZ.Box Sha256 (@BeaconState P)) Unit).run (fuluState P s)
+    (@BeaconState P) Unit).run (fuluState P s)
 
 /-! ### 1. The committee loop -/
 
@@ -215,11 +214,10 @@ private def gloasState (P : Preset) (s : Slot) : @State P fastHasherTag :=
     { (default : Validator) with
       effectiveBalance := 32000000000,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Gloas.BeaconState P) with
-      slot := s
-      validators := ⟨Array.replicate 8 v⟩
-      balances := ⟨Array.replicate 8 32000000000⟩ }
+  { (default : @EthCLSpecs.Gloas.BeaconState P) with
+    slot := s
+    validators := ⟨Array.replicate 8 v⟩
+    balances := ⟨Array.replicate 8 32000000000⟩ }
 
 /-- A Gloas attestation, shaped as `fuluAtt`. Gloas `aggregation_bits` is an uncapped
 `ProgressiveBitlist` (EIP-7688). -/

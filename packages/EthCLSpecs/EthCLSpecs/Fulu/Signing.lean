@@ -5,7 +5,7 @@ import EthCLSpecs.Fulu.BlobParameters
 
 `get_domain(state, domain_type, epoch)` (`SPECS_ARCHITECTURE.md` §3.1 row 21).
 The spec owns this, it reads `state.fork`; the framework owns the version-free
-`compute_domain`. A pure read of the boxed state.
+`compute_domain`. A pure read of the state.
 -/
 
 set_option autoImplicit false

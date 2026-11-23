@@ -299,7 +299,7 @@ before it appears downstream.
 | `fast` | The configuration the runner instantiates. |
 | `pure` | The configuration the theorems module instantiates. |
 | `initializeBeaconStateFromEth1` | The genesis-construction lifecycle entry point. |
-| `upgradeToGloas` | The fork-upgrade lifecycle entry point; the single cross-fork reference. |
+| `upgradeToGloas`, `upgradeToHeze` | The fork-upgrade lifecycle entry points, one per child fork. Each lives in one of its fork's two cross-fork boundary files (`SPECS_ARCHITECTURE.md` §6.2). |
 | `PySpecTests` | The conformance layer that runs the upstream vectors against a fork's interface. |
 | `pyspecPinnedVersion` | The per-fork constant holding the pinned spec release tag (stable or pre-release). |
 
@@ -441,12 +441,15 @@ the descriptor sits outside the stringly-typed concern, which is about strings i
 `assert` versus `todo` versus `outOfBounds`, which is typed. The error model
 section of `FRAMEWORK_ARCHITECTURE.md` owns the constructor set.
 
-Indexed access carries the same discipline, in two forms. A read of an untrusted or
+Indexed access carries the same discipline. A read of an untrusted or
 parameter index is `sszGetIdx xs i` (or `bitlistGetIdx` for a `Bitlist`), which returns the
 element or the typed reject `outOfBounds idx bound` through the error channel, never a panic.
-A read the author has already validated is guarded by `let h ← assertH (i < size)` and taken
-as the total, reject-free `xs[i]'h.down`, whose bound is the asserted condition; the bad
-index rejected at the `assertH`.
+A read that an operation validates uses the same `sszGetIdx`, and the reject class follows
+the pyspec. `process_voluntary_exit` reads the registry with no range guard, as the pyspec
+does, so a bad index rejects with `outOfBounds`. `process_bls_to_execution_change` writes
+the pyspec's `assert` before the read, so a bad index rejects with `assert`. The
+proof-carrying form, `let h ← assertH (i < size)` then the total `xs[i]'h.down`, stays in
+the primitive set. No fork body uses it.
 
 ---
 
@@ -758,7 +761,7 @@ knows how to decode the case, which interface entry point to drive, and what
 | `operations/*` | a single operation handler | the operation's post-state root matches |
 | `rewards/*` | a single delta function | the delta function's output matches |
 | `genesis` | `initializeBeaconStateFromEth1` | the constructed state's root matches |
-| `fork` | `upgradeToGloas` | the upgraded state's root matches |
+| `fork` | `upgradeToGloas` / `upgradeToHeze` | the upgraded state's root matches |
 | `fork_choice` | the `on_*` handlers | the interleaved store checks pass |
 
 So the author writes no handler table and maps nothing to tests. They implement

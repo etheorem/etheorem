@@ -26,7 +26,7 @@ the pin's own comment names.
    `assert` and rejected with the `assert` class. The nearby success passes the read and
    rejects at the next assert, which the pin names.
 
-`State` is FFI-backed, so `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -56,11 +56,10 @@ private def fuluState (vs : Array (@Validator minimal)) (bals : Array Gwei)
     @State minimal fastHasherTag :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      validators := ⟨vs, Nat.le_trans hv (by decide)⟩
-      balances := ⟨bals, Nat.le_trans hb (by decide)⟩
-      nextWithdrawalValidatorIndex := cursor }
+  { (default : @BeaconState minimal) with
+    validators := ⟨vs, Nat.le_trans hv (by decide)⟩
+    balances := ⟨bals, Nat.le_trans hb (by decide)⟩
+    nextWithdrawalValidatorIndex := cursor }
 
 /-! ### 1. The withdrawal validator cursor (Fulu) -/
 
@@ -168,8 +167,7 @@ private def inactivityState (withScore : Bool) : @State minimal fastHasherTag :=
       balances := ⟨#[32000000000], by decide⟩
       previousEpochParticipation := ⟨#[0], by decide⟩
       currentEpochParticipation := ⟨#[0], by decide⟩ }
-  SSZ.FastBox
-    (if withScore then { base with inactivityScores := ⟨#[100], by decide⟩ } else base)
+  (if withScore then { base with inactivityScores := ⟨#[100], by decide⟩ } else base)
 
 /-- An empty scores list: the score read raises `IndexError`. The old `[i]!` read the
 default `0` and the write past the end was a no-op, so the run succeeded. -/
@@ -275,11 +273,10 @@ default bid and the default latest block hash agree, so `process_withdrawals` ru
 private def gloasState (n : Nat) (cursor : ValidatorIndex) : @State minimal fastHasherTag :=
   letI : Preset := minimal
   letI : HasherTag := fastHasherTag
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      validators := ⟨Array.replicate n default⟩
-      balances := ⟨Array.replicate n 0⟩
-      nextWithdrawalValidatorIndex := cursor }
+  { (default : @BeaconState minimal) with
+    validators := ⟨Array.replicate n default⟩
+    balances := ⟨Array.replicate n 0⟩
+    nextWithdrawalValidatorIndex := cursor }
 
 /-! ### 1. The withdrawal validator cursor (Gloas) -/
 

@@ -441,9 +441,9 @@ forkdef recordPayloadInclusionListSatisfaction (store : Store map) (root : Root)
 /-- `on_execution_payload_envelope` (Heze override,
 `consensus-specs/specs/heze/fork-choice.md:317-344`): the Gloas body with one added step,
 `record_payload_inclusion_list_satisfaction` is called on the verified envelope *before* the
-payload is stored, so `should_extend_payload` can later read the recorded answer. `state` is the
-pre-verify `block_states[root]`, as in the spec; the warm state from
-`verify_execution_payload_envelope` is kept only for `blockStates`. -/
+payload is stored, so `should_extend_payload` can later read the recorded answer. As in the
+spec, the handler writes `payloads` and the recorder's satisfaction map, and leaves
+`blockStates` as it was. -/
 forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) : StoreTransition Unit := do
   let store ← get
   let envelope := signedEnv.message
@@ -455,7 +455,7 @@ forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) 
 
   match verifyExecutionPayloadEnvelope state signedEnv with
   | .error e => throw e
-  | .ok warm =>
+  | .ok () =>
     -- [New in Heze:EIP7805] record whether the payload satisfies the inclusion-list constraints
     let store ← recordPayloadInclusionListSatisfaction store envelope.beaconBlockRoot envelope.payload
     -- INVARIANT: `payloads[root]` and `payloadInclusionListSatisfaction[root]` are written
@@ -465,7 +465,6 @@ forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) 
     -- and this pairing is what keeps that reject unreachable for any verified `root`
     -- (present in `payloads`).
     set { store with
-      blockStates := FcMap.insert store.blockStates envelope.beaconBlockRoot warm,
       payloads := FcMap.insert store.payloads envelope.beaconBlockRoot envelope }
 
 end EngineSeam
@@ -487,9 +486,9 @@ hash_tree_root(anchor_state)`, so the seed is a throwing `Except StoreTransition
 rather than a total store literal. `pinAnchorRejects` locks the reject branch. -/
 forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
     Except StoreTransitionError (Store map) := do
-  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the boxed state hashes
-  -- through `stateRoot` (the cached-tree path), not `htr` (which wants a bare `SSZRepr`).
-  assert (anchorBlock.stateRoot == bytesToRoot (stateRoot anchorState).1)
+  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the anchor state is a value,
+  -- so `htr` roots it, a full merkleization of the plain record.
+  assert (anchorBlock.stateRoot == htr anchorState)
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }
