@@ -899,10 +899,10 @@ forkdef isDataAvailable (beaconBlockRoot : Root) : Bool :=
   DataAvailability.isDataAvailable beaconBlockRoot
 
 /-- `verify_execution_payload_envelope`: the consensus-side envelope checks, closing with
-the EL's `verify_and_notify_new_payload` answer. Returns the state it was handed in
-`Except StoreTransitionError`, and the handler stores it back. -/
+the EL's `verify_and_notify_new_payload` answer. The pyspec function returns `None` and
+raises on a failed check, so this one returns `Unit` in `Except StoreTransitionError`. -/
 forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecutionPayloadEnvelope) :
-    Except StoreTransitionError State := do
+    Except StoreTransitionError Unit := do
   let envelope := signedEnv.message
   let payload := envelope.payload
 
@@ -941,7 +941,6 @@ forkdef verifyExecutionPayloadEnvelope (state : State) (signedEnv : SignedExecut
   -- execution requests come off the envelope.
   assert (verifyAndNotifyNewPayload payload bid.blobKzgCommitments.toArray
     envelope.parentBeaconBlockRoot envelope.executionRequests)
-  return state
 
 /-- `on_execution_payload_envelope`: verify the revealed payload envelope against the
 committed bid and record it. The recorded payload flips the block's head node to FULL
@@ -955,10 +954,11 @@ forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) 
   -- between the block-state read and the verification, as the spec orders it.
   assert (isDataAvailable envelope.beaconBlockRoot)
 
+  -- `verify_execution_payload_envelope(state, signed_envelope, EXECUTION_ENGINE)`: a
+  -- reject aborts the handler, and success writes only `store.payloads`.
   match verifyExecutionPayloadEnvelope state signedEnv with
   | .error e => throw e
-  | .ok warm => set { store with
-      blockStates := FcMap.insert store.blockStates envelope.beaconBlockRoot warm,
+  | .ok () => set { store with
       payloads := FcMap.insert store.payloads envelope.beaconBlockRoot envelope }
 
 end EngineSeam

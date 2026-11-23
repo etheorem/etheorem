@@ -373,9 +373,8 @@ then recovers the box through the `StateRoot` class, so the box's hasher and val
 need not be inferred as metavariables. The `state_transition` spine and the monadic
 interface folds call it. The non-monadic sites use the pure `stateRoot` (root plus warm
 box, `Spec/State.lean`), which keeps spec bodies off `Box.hashTreeRoot`: `process_slot`
-calls it inside its `Id.run` block, since it needs both halves while it keeps mutating,
-and `onExecutionPayloadEnvelope` calls it and returns the warm box, which the handler
-stores back into `blockStates`. The pure `stateRoot!` (`Spec/State.lean`) is the discard
+calls it inside its `Id.run` block, since it needs both halves while it keeps mutating.
+The pure `stateRoot!` (`Spec/State.lean`) is the discard
 form, its `!` marking that it drops the warm box (the convenient-but-lossy variant, like
 `Array.get!`). It is reserved for the terminal `Interface` sites, where the root is the
 function's return value and the box dies with the call. Whether retention actually caches
@@ -1134,7 +1133,7 @@ separation.
   (`EthCLLib/Proofs/CLUint.lean`). The successful path that records
   the result of `isInclusionListSatisfied` is proved in
   `Proofs/Heze/RecordPayloadInclusionListSatisfaction.lean`. The successful
-  handler path that writes `blockStates`, `payloads`, and
+  handler path that writes `payloads` and
   `payloadInclusionListSatisfaction` at the same
   `signedEnv.message.beaconBlockRoot` is proved in
   `Proofs/Heze/OnExecutionPayloadEnvelope.lean`. Handler postconditions
@@ -1183,12 +1182,13 @@ separation.
   equation is complete at `ForkChoiceStoreRun (Store map)`. Missing
   `blockStates` and failed data availability are `.assert` errors.
   Verification and recorder errors propagate unchanged. On recorder
-  success the handler's final `set` writes `blockStates` and `payloads`
-  on the recorder's explicitly returned store and discards the
-  recorder-produced runner state. `.error err` contains no post-state.
-  `onExecutionPayloadEnvelope_run_eq_of_successful_checks` restates the
-  successful branch as the original store updated by three same-root
-  `FcMap.insert` expressions. `recordPayloadInclusionListSatisfaction_run`
+  success the handler's final `set` writes `payloads` on the recorder's
+  explicitly returned store and discards the recorder-produced runner
+  state. As in the pyspec, `verifyExecutionPayloadEnvelope` returns `Unit`
+  and the handler leaves `blockStates` unchanged. `.error err` contains no
+  post-state. `onExecutionPayloadEnvelope_run_eq_of_successful_checks`
+  restates the successful branch as the original store updated by two
+  same-root `FcMap.insert` expressions. `recordPayloadInclusionListSatisfaction_run`
   characterizes the recorder's missing-block, slot-zero, and walk outcomes. The
   `proposed` `onExecutionPayloadEnvelope` row in `PROOF_LEDGER.md` lists
   lookup-after-insert and composition with the read-side theorems.
