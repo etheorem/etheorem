@@ -1,14 +1,11 @@
 import EthCLSpecs.Proofs.Heze.IsPayloadInclusionListSatisfied
+import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 import EthCLSpecs.Proofs.Heze.ShouldExtendPayload
--- Detached while Heze runs on the plain `State` (WS-126 task 3.1).
--- `GetInclusionListTransactions` and `OnExecutionPayloadEnvelope` state their runs through
--- the box vocabulary (`pureState`), so they fail on the plain state.
--- `RecordPayloadInclusionListSatisfaction` names no box, but it imports
--- `GetInclusionListTransactions`. Task 3.2 reattaches the first two of the list below;
--- task 3.3 reattaches `OnExecutionPayloadEnvelope`.
+-- Detached while Heze runs on the plain `State` (WS-126 task 3.1). Task 3.2 reattaches
+-- them. `OnExecutionPayloadEnvelope` imports both through
+-- `RecordPayloadInclusionListSatisfaction`, so it builds after task 3.2 lands.
 -- import EthCLSpecs.Proofs.Heze.GetInclusionListTransactions
 -- import EthCLSpecs.Proofs.Heze.RecordPayloadInclusionListSatisfaction
--- import EthCLSpecs.Proofs.Heze.OnExecutionPayloadEnvelope
 
 /-!
 # `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems (index)
